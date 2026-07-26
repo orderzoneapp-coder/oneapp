@@ -398,7 +398,10 @@ const DATAOPS_VENDOR_CHIP_MODULE = Object.freeze({
         const aggregated = DATAOPS_VENDOR_CHIP_MODULE.aggregateDetails(item.출고내역 || {});
         let reconciledDetails = {};
         Object.entries(aggregated).forEach(([displayVendor, data]) => {
-            if (Math.abs(safeNum(data.qty)) < 0.0000001) return;
+            const isEmptyDetail = Math.abs(safeNum(data.qty)) < 0.0000001 &&
+                Math.abs(safeNum(data.rev)) < 0.0000001 &&
+                Math.abs(safeNum(data.cogs)) < 0.0000001;
+            if (isEmptyDetail) return;
             reconciledDetails[displayVendor] = {
                 ...data._sample,
                 qty: safeNum(data.qty),
@@ -413,7 +416,7 @@ const DATAOPS_VENDOR_CHIP_MODULE = Object.freeze({
         const delta = outQty - chipSum;
         // 출고가 있는데 거래처칩 합계가 부족하면 대표 칩에 차이를 보정한다.
         // 이 보정은 같은 표시 거래처 중복행이 덮어쓰기/누락된 경우를 방어하기 위한 것이다.
-        if (outQty > 0 && Math.abs(delta) > 0.0000001) {
+        if (Math.abs(delta) > 0.0000001) {
             const firstKey = Object.keys(reconciledDetails)[0] || '미지정';
             if (!reconciledDetails[firstKey]) {
                 reconciledDetails[firstKey] = { qty: 0, rev: 0, cogs: 0, isLifo: false, isPerfectMatch: false, displayVendor: firstKey, matchMode: 'RECONCILED' };
@@ -426,7 +429,6 @@ const DATAOPS_VENDOR_CHIP_MODULE = Object.freeze({
             base.cogs += delta * unitCogs;
             base._reconciledDelta = delta;
         }
-        if (outQty <= 0) reconciledDetails = {};
         return { ...item, 출고내역: reconciledDetails };
     },
     cancelVendorChip: (item = {}, displayVendor = '', nextQty = null) => {
@@ -436,8 +438,8 @@ const DATAOPS_VENDOR_CHIP_MODULE = Object.freeze({
         const current = aggregated[targetVendor];
         if (!current) return item;
         const currentQty = safeNum(current.qty);
-        const safeNextQty = nextQty === null || nextQty === undefined ? 0 : Math.max(0, safeNum(nextQty));
-        const ratio = currentQty !== 0 ? Math.min(1, Math.max(0, safeNextQty / currentQty)) : 0;
+        const safeNextQty = nextQty === null || nextQty === undefined ? 0 : safeNum(nextQty);
+        const ratio = currentQty !== 0 ? Math.min(1, Math.max(0, Math.abs(safeNextQty / currentQty))) : 0;
         const removedQty = currentQty - safeNextQty;
         const removedRev = safeNum(current.rev) * (1 - ratio);
         const removedCogs = safeNum(current.cogs) * (1 - ratio);
@@ -464,9 +466,9 @@ const DATAOPS_VENDOR_CHIP_MODULE = Object.freeze({
         const nextItem = {
             ...item,
             출고내역: details,
-            출고: Math.max(0, safeNum(item.출고) - removedQty),
-            매출액: Math.max(0, safeNum(item.매출액) - removedRev),
-            매출원가: Math.max(0, safeNum(item.매출원가) - removedCogs),
+            출고: safeNum(item.출고) - removedQty,
+            매출액: safeNum(item.매출액) - removedRev,
+            매출원가: safeNum(item.매출원가) - removedCogs,
             _costLayers: scaleLayers(item._costLayers),
             _operationOutLayers: scaleLayers(item._operationOutLayers),
             메모: currentMemo.includes(memoText) ? currentMemo : (currentMemo ? `${currentMemo} / ${memoText}` : memoText),
@@ -1926,7 +1928,9 @@ const DATAOPS_SUBSTITUTION_CANDIDATE_MODULE = Object.freeze({
             next.이슈 = (next.이슈 || []).filter(msg => !safeStr(msg).includes('수량부족') && !safeStr(msg).includes('전산 재고 부족'));
         }
         next.이슈 = DATAOPS_ISSUE_HELPER.unique(next.이슈 || []);
-        next.수기확인완료 = !DATAOPS_ISSUE_HELPER.hasUnresolved(next.이슈);
+        next.수기확인완료 = false;
+        next._adminCompletedAt = '';
+        next._adminCompletionSource = '';
         return next;
     }
 });
@@ -2118,7 +2122,7 @@ const PARSER_MODULE = Object.freeze({
             return 'CLOSING_RESTORE';
         const rawKeys = rows.flatMap(row => row && row._raw ? Object.keys(row._raw) : []);
         const keySet = new Set(rawKeys);
-        const closingKeys = ['기초수량', '입고수량', '출고량', '기말실사(이월수량)', '매입단가(원가)', '로스/조정수량', '이슈/결과', '수기메모'];
+        const closingKeys = ['기초수량', '입고수량', '출고량', '기말실사(이월수량)', '매입단가(원가)', '로스/조정수량', '이슈/결과', '수기메모', '관리자확인완료', '관리자확인시각'];
         const stockLedgerKeys = ['재고', '입고', '출고', '잔량', '입고가'];
         if (closingKeys.filter(k => keySet.has(k)).length >= 4)
             return 'CLOSING_RESTORE';
@@ -2296,7 +2300,7 @@ const FILTER_SORT_MODULE = Object.freeze({
 // V1.a22.80: 재고/Lot 필터를 품목코드 그룹 유지 방식으로 보완한다. 한 Lot을 0으로 수정해 다중 Lot 조건이 해제되어도 같은 코드의 나머지 행은 편집 중 사라지지 않으며, 순수 Lot 후보의 0재고 행 제외 정책은 유지한다.
 // V1.a22.84: 재고/Lot 이슈카드는 필터가 아니라 탐색 기능으로 동작한다. 카드/Tab 이동 중에도 전체 상품행을 유지하고, 검출대상만 품목코드순으로 스크롤 이동한다.
 // V1.a22.84: Lot 상세형의 통합 후보 각 행에 [이 기준 통합] 버튼을 노출한다. 클릭한 행의 구매일자·구매처·단가를 대표값으로 사용하고 수량은 해당 품목의 양수 재고 Lot 전체를 합산한다.
-// V1.a22.84: 재고/Lot Tab 이동 시 현재 Lot 상세형 상품코드를 확인 완료로 기록한다. 확인된 다중 Lot 상품은 미확인 목록과 카드 건수에서 제외하여 마지막 항목이 무한 반복되지 않도록 한다.
+// V1.a22.84: 재고/Lot Tab은 검토 위치만 이동한다. 확인 완료는 관리자 행 버튼으로만 기록한다.
 // V1.a22.84: 재고/Lot 이동은 카드 선택 시 생성한 고정 품목코드순 큐와 방문경로 커서로 관리한다. Tab/Shift+Tab이 같은 기준을 사용하며 현재 행 제외 후 첫 항목으로 튀는 오류를 제거한다.
 // V1.a22.84: 스페이스바 치환 중 선택한 두 행을 현재 검토 세션의 완료키로 기록한다. 치환 후에도 검토 커서와 방문경로를 유지하고 다음 미확인 항목부터 순서대로 이동한다.
 // V1.a22.84: 이슈 이동 시 중첩되던 지연 포커스/스크롤 타이머를 취소하고, 카드 최초 선택 때만 필터·Lot 상세형 전환을 실행해 역탭 흔들림과 순서 초기화를 방지한다.
@@ -2983,7 +2987,6 @@ const EXPORT_MODULE = Object.freeze({
     // V1.a22.69: 엑셀 다운로드 1번 시트는 현재 화면 보기모드 그대로 출력한다.
     // 코드통합형/상세형/필터 결과를 보존하기 위해 화면 rows 순서를 유지한다.
     buildScreenStockRows: ({ productData = [], targetDateStr = '' } = {}) => (productData || [])
-        .filter(item => STOCK_ENGINE_MODULE.getActualQty(item) > 0)
         .map(item => {
         const qty = STOCK_ENGINE_MODULE.getActualQty(item);
         const raw = item._raw || {};
@@ -3227,7 +3230,9 @@ const EXPORT_MODULE = Object.freeze({
             '관리구분': getStockManageGroup(item),
             ...masterCols,
             '이슈/결과': (item.이슈 || []).join(', '),
-            '수기메모': item.메모 || ''
+            '수기메모': item.메모 || '',
+            '관리자확인완료': item.수기확인완료 ? 'Y' : 'N',
+            '관리자확인시각': safeStr(item._adminCompletedAt, '')
         };
     }),
     buildMasterCheckRows: ({ productData = [], targetDateStr = '' }) => {
@@ -3283,7 +3288,7 @@ const EXPORT_MODULE = Object.freeze({
         const qty = STOCK_ENGINE_MODULE.getActualQty(item);
         const adjust = STOCK_ENGINE_MODULE.getAdjustmentQty(item);
         const price = safeNum(item.단가) || 0;
-        return { '결산일자': targetDateStr, '매입처(Lot)': safeStr(item.거래처, '미지정'), '상품코드': item.코드 === 'NO_CODE' ? '' : safeStr(item.코드, '').replace(/\.0$/, '').trim(), '상품명(규격)': item.품명, '단위': safeStr(item.단위 || ((_a = item._raw) === null || _a === void 0 ? void 0 : _a['단위']) || ((_b = item._raw) === null || _b === void 0 ? void 0 : _b['규격단위']) || ((_c = item._raw) === null || _c === void 0 ? void 0 : _c['포장단위']), ''), '기초수량': safeNum(item.기초), '입고수량': safeNum(item.입고), '출고량': safeNum(item.출고), '기말실사(이월수량)': qty, '매입단가(원가)': price, '기말재고액(자산가치)': qty * price, '로스/조정수량': adjust, '기본': getBasicDisplayValue(item), '관리구분': getStockManageGroup(item), '이슈/결과': [...displayIssues, ...vendorStrs].join(', '), '수기메모': item.메모 || '' };
+        return { '결산일자': targetDateStr, '매입처(Lot)': safeStr(item.거래처, '미지정'), '상품코드': item.코드 === 'NO_CODE' ? '' : safeStr(item.코드, '').replace(/\.0$/, '').trim(), '상품명(규격)': item.품명, '단위': safeStr(item.단위 || ((_a = item._raw) === null || _a === void 0 ? void 0 : _a['단위']) || ((_b = item._raw) === null || _b === void 0 ? void 0 : _b['규격단위']) || ((_c = item._raw) === null || _c === void 0 ? void 0 : _c['포장단위']), ''), '기초수량': safeNum(item.기초), '입고수량': safeNum(item.입고), '출고량': safeNum(item.출고), '기말실사(이월수량)': qty, '매입단가(원가)': price, '기말재고액(자산가치)': qty * price, '로스/조정수량': adjust, '기본': getBasicDisplayValue(item), '관리구분': getStockManageGroup(item), '이슈/결과': [...displayIssues, ...vendorStrs].join(', '), '수기메모': item.메모 || '', '관리자확인완료': item.수기확인완료 ? 'Y' : 'N', '관리자확인시각': safeStr(item._adminCompletedAt, '') };
     }),
     buildStockCountSheetRows: ({ productData = [], targetDateStr = '' }) => {
         const aggregated = {};
@@ -3296,8 +3301,7 @@ const EXPORT_MODULE = Object.freeze({
         });
         const rows = [];
         Object.keys(aggregated).forEach(key => {
-            if (aggregated[key].수량 !== 0)
-                rows.push({ '일자': targetDateStr, '순번': '', '담당자': '', '창고': '01', '상품코드': aggregated[key].코드, '상품명(규격)': aggregated[key].품명, '수량': aggregated[key].수량, '적요': '' });
+            rows.push({ '일자': targetDateStr, '순번': '', '담당자': '', '창고': '01', '상품코드': aggregated[key].코드, '상품명(규격)': aggregated[key].품명, '수량': aggregated[key].수량, '적요': '' });
         });
         return rows.sort((a, b) =>
             safeStr(a['상품코드'] || '~~~~').localeCompare(safeStr(b['상품코드'] || '~~~~'), 'ko', { numeric: false, sensitivity: 'base' })
@@ -3623,7 +3627,7 @@ const EXPORT_MODULE = Object.freeze({
         w.document.close();
         return true;
     },
-    createCombinedWorkbook: ({ productData = [], screenRows = null, analysisPeriod = '', targetDateStr = '', closingStats = {} }) => {
+    createCombinedWorkbook: ({ productData = [], analysisPeriod = '', targetDateStr = '', closingStats = {} }) => {
         const exportFileNameDate = targetDateStr ? targetDateStr.replace(/-/g, '') : (() => { const today = new Date(); return `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`; })();
         // V1.a22.30: 운영 출력은 코드통합형을 기본으로 한다. Lot/일자/구매처 상세는 분석원장에만 보존한다.
         const operationalProductData = DATAOPS_VIEW_LAYER_MODULE.buildCodeSummaryRows(productData || []).sort((a, b) => FILTER_SORT_MODULE.compareByCodeThenName(a, b));
@@ -3637,17 +3641,14 @@ const EXPORT_MODULE = Object.freeze({
         // 코드통합형 operationalProductData를 쓰면 2개 구매처/2개 단가 Lot이 1행으로 합쳐져 구매잔량 개념이 깨진다.
         const purchaseBalanceRows = EXPORT_MODULE.buildPurchaseBalanceRows({ productData, targetDateStr });
         const otherStockRows = EXPORT_MODULE.buildOtherStockRows({ productData, targetDateStr });
-        const screenRowsForExport = Array.isArray(screenRows) && screenRows.length ? screenRows : null;
-        // V1.a22.69: 1번 시트 전체재고는 현재 화면 보기모드 그대로 출력한다.
-        // 화면 rows가 있으면 코드통합형/상세형/필터 상태를 그대로 반영하고, 없을 때만 구매잔량+기타상품 합본을 fallback으로 사용한다.
-        const wholeStockRows = screenRowsForExport
-            ? EXPORT_MODULE.buildScreenStockRows({ productData: screenRowsForExport, targetDateStr })
-            : EXPORT_MODULE.buildWholeStockRowsFromBalance({ purchaseBalanceRows, otherStockRows });
+        // F9 전체재고는 화면 필터·검색·숨김 상태와 무관하게 전체 작업데이터를 기준으로 만든다.
+        // 내일 기초재고로 넘길 실제 잔량 > 0 조건은 buildNextBaseStockRows에서만 적용한다.
+        const wholeStockRows = EXPORT_MODULE.buildNextBaseStockRows({ productData, targetDateStr });
         const checkRequestRows = EXPORT_MODULE.buildManagementIssueRows({ productData: operationalProductData });
         const wb = XLSX.utils.book_new();
         // V1.a22.69: 수불마감 기본 보고서는 전체재고 / 구매잔량 / 기타상품 3단계로 분리한다.
-        // 전체재고는 앞으로 재고현황 입력으로 계속 사용할 기준 시트다.
-        // 단, 실사양식/코드통합형 집계가 아니라 구매잔량 + 기타상품을 그대로 합친다.
+        // 전체재고는 화면 상태와 무관하게 productData 전체에서 다음날 재고현황으로 넘길 양수 잔량만 만든다.
+        // 구매잔량과 기타상품 시트는 전체재고의 Lot/관리구분 근거를 별도로 보여준다.
         // 구매잔량은 남은 재고를 구매현황 양식처럼 일자/구매처/단가별 Lot 잔량으로 보여준다.
         // 실사양식은 ERP 재고실사 업로드용이므로 기존 출력 로직을 그대로 유지한다.
         XLSX.utils.book_append_sheet(wb, EXPORT_MODULE.buildNextBaseStockSheet({ rows: wholeStockRows, targetDateStr }), '전체재고');
@@ -3674,8 +3675,8 @@ const EXPORT_MODULE = Object.freeze({
             XLSX.utils.book_append_sheet(wb, EXPORT_MODULE.jsonSheet([], [24], { emptyMessage: '실사양식 데이터가 없습니다.' }), '실사양식');
         }
         XLSX.utils.book_append_sheet(wb, EXPORT_MODULE.jsonSheet(checkRequestRows, [12, 10, 14, 34, 10, 10, 10, 10, 10, 12, 12, 42], { emptyMessage: '확인요청 항목이 없습니다.' }), '확인요청');
-        XLSX.utils.book_append_sheet(wb, EXPORT_MODULE.jsonSheet(exportData1, [12, 18, 13, 34, 10, 10, 10, 10, 16, 14, 18, 15, 10, 12, 42, 32], { emptyMessage: '유효한 데이터가 없습니다.' }), '재고수불_마감');
-        XLSX.utils.book_append_sheet(wb, EXPORT_MODULE.jsonSheet(analysisLedgerRows, [12, 14, 34, 10, 18, 10, 10, 10, 10, 10, 10, 10, 10, 14, 14, 12, 16, 20, 14, 24, 10, 24, 12, 10, 24, 12, 10, 10, 20, 14, 14, 14, 14, 14, 14, 42, 32], { emptyMessage: '수불마감 분석원장 데이터가 없습니다.' }), '수불마감_분석원장');
+        XLSX.utils.book_append_sheet(wb, EXPORT_MODULE.jsonSheet(exportData1, [12, 18, 13, 34, 10, 10, 10, 10, 16, 14, 18, 15, 10, 12, 42, 32, 12, 22], { emptyMessage: '유효한 데이터가 없습니다.' }), '재고수불_마감');
+        XLSX.utils.book_append_sheet(wb, EXPORT_MODULE.jsonSheet(analysisLedgerRows, [12, 14, 34, 10, 18, 10, 10, 10, 10, 10, 10, 10, 10, 14, 14, 12, 16, 20, 14, 24, 10, 24, 12, 10, 24, 12, 10, 10, 20, 14, 14, 14, 14, 14, 14, 42, 32, 12, 22], { emptyMessage: '수불마감 분석원장 데이터가 없습니다.' }), '수불마감_분석원장');
         XLSX.utils.book_append_sheet(wb, EXPORT_MODULE.jsonSheet(substitutionCandidateRows, [12, 12, 14, 34, 14, 10, 12, 12, 12, 14, 24, 14, 10, 10, 12, 14, 12, 12, 14, 14, 24, 42], { emptyMessage: '소분치환 후보가 없습니다.' }), '소분치환_후보');
         XLSX.utils.book_append_sheet(wb, EXPORT_MODULE.jsonSheet(masterCheckRows, [12, 16, 14, 34, 16, 14, 24, 14, 10, 12, 14, 14, 10, 42], { emptyMessage: '마스터 확인필요 항목이 없습니다.' }), '마스터_확인필요');
         XLSX.utils.book_append_sheet(wb, EXPORT_MODULE.buildClosingReportSheet({ productData: operationalProductData, targetDateStr, analysisPeriod, closingStats }), '보고서');
@@ -3705,6 +3706,191 @@ const STORAGE_MODULE = Object.freeze({
         }
     }
 });
+let dataOpsWorkStateWriteQueue = Promise.resolve();
+const enqueueDataOpsWorkStateWrite = (task) => {
+    const queuedWrite = dataOpsWorkStateWriteQueue.then(task, task);
+    dataOpsWorkStateWriteQueue = queuedWrite.catch(() => undefined);
+    return queuedWrite;
+};
+const DATAOPS_WORK_STATE_MODULE = Object.freeze({
+    DB_NAME: 'oneapp_dataops_work_v1',
+    STORE_NAME: 'workspaces',
+    CURRENT_KEY: 'current',
+    VERSION: 1,
+    openDb: () => new Promise((resolve, reject) => {
+        if (typeof indexedDB === 'undefined') {
+            reject(new Error('IndexedDB를 사용할 수 없습니다.'));
+            return;
+        }
+        const request = indexedDB.open(DATAOPS_WORK_STATE_MODULE.DB_NAME, 1);
+        request.onupgradeneeded = () => {
+            const db = request.result;
+            if (!db.objectStoreNames.contains(DATAOPS_WORK_STATE_MODULE.STORE_NAME))
+                db.createObjectStore(DATAOPS_WORK_STATE_MODULE.STORE_NAME);
+        };
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error || new Error('작업 저장소 열기 실패'));
+    }),
+    withStore: async (mode, task) => {
+        const db = await DATAOPS_WORK_STATE_MODULE.openDb();
+        try {
+            return await new Promise((resolve, reject) => {
+                const transaction = db.transaction(DATAOPS_WORK_STATE_MODULE.STORE_NAME, mode);
+                const store = transaction.objectStore(DATAOPS_WORK_STATE_MODULE.STORE_NAME);
+                let result;
+                try {
+                    result = task(store);
+                }
+                catch (error) {
+                    reject(error);
+                    return;
+                }
+                transaction.oncomplete = () => resolve(result);
+                transaction.onerror = () => reject(transaction.error || new Error('작업 저장 실패'));
+                transaction.onabort = () => reject(transaction.error || new Error('작업 저장 취소'));
+            });
+        }
+        finally {
+            db.close();
+        }
+    },
+    save: async (state = {}) => {
+        const snapshot = {
+            version: DATAOPS_WORK_STATE_MODULE.VERSION,
+            savedAt: new Date().toISOString(),
+            productData: Array.isArray(state.productData) ? state.productData : [],
+            substHistory: Array.isArray(state.substHistory) ? state.substHistory : [],
+            ackMultiCodes: Array.isArray(state.ackMultiCodes) ? state.ackMultiCodes : [],
+            analysisPeriod: safeStr(state.analysisPeriod, '전체 기간'),
+            targetDateStr: safeStr(state.targetDateStr, '')
+        };
+        await enqueueDataOpsWorkStateWrite(() =>
+            DATAOPS_WORK_STATE_MODULE.withStore('readwrite', store => store.put(snapshot, DATAOPS_WORK_STATE_MODULE.CURRENT_KEY)));
+        return snapshot;
+    },
+    load: async () => {
+        const db = await DATAOPS_WORK_STATE_MODULE.openDb();
+        try {
+            return await new Promise((resolve, reject) => {
+                const transaction = db.transaction(DATAOPS_WORK_STATE_MODULE.STORE_NAME, 'readonly');
+                const request = transaction.objectStore(DATAOPS_WORK_STATE_MODULE.STORE_NAME).get(DATAOPS_WORK_STATE_MODULE.CURRENT_KEY);
+                request.onsuccess = () => resolve(request.result || null);
+                request.onerror = () => reject(request.error || new Error('작업 복구 실패'));
+            });
+        }
+        finally {
+            db.close();
+        }
+    },
+    clear: async () => {
+        try {
+            await enqueueDataOpsWorkStateWrite(() =>
+                DATAOPS_WORK_STATE_MODULE.withStore('readwrite', store => store.delete(DATAOPS_WORK_STATE_MODULE.CURRENT_KEY)));
+            return true;
+        }
+        catch (error) {
+            console.warn('DataOps 작업 저장소 초기화 실패', error);
+            return false;
+        }
+    }
+});
+const DATAOPS_XLSX_WORKER_MODULE = Object.freeze({
+    XLSX_URL: 'https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js',
+    createWorker: () => {
+        if (typeof Worker === 'undefined' || typeof Blob === 'undefined' || typeof URL === 'undefined')
+            throw new Error('Web Worker를 사용할 수 없습니다.');
+        const source = `
+            self.onmessage = function(event) {
+                try {
+                    importScripts(${JSON.stringify('https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js')});
+                    var payload = event.data || {};
+                    if (payload.action === 'read') {
+                        var workbook = XLSX.read(new Uint8Array(payload.buffer), { type: 'array' });
+                        var sheetRows = {};
+                        (workbook.SheetNames || []).forEach(function(name) {
+                            sheetRows[name] = XLSX.utils.sheet_to_json(workbook.Sheets[name], { header: 1, defval: '' });
+                        });
+                        self.postMessage({ ok: true, sheetNames: workbook.SheetNames || [], sheetRows: sheetRows });
+                        return;
+                    }
+                    if (payload.action === 'write') {
+                        var output = XLSX.write(payload.workbook, { bookType: 'xlsx', type: 'array' });
+                        var outputBuffer = output instanceof ArrayBuffer
+                            ? output
+                            : output.buffer.slice(output.byteOffset || 0, (output.byteOffset || 0) + output.byteLength);
+                        self.postMessage({ ok: true, buffer: outputBuffer }, [outputBuffer]);
+                        return;
+                    }
+                    throw new Error('지원하지 않는 Worker 작업입니다.');
+                } catch (error) {
+                    self.postMessage({ ok: false, error: error && error.message ? error.message : String(error) });
+                }
+            };
+        `;
+        const url = URL.createObjectURL(new Blob([source], { type: 'text/javascript' }));
+        return { worker: new Worker(url), url };
+    },
+    run: (action, payload = {}, transfer = []) => new Promise((resolve, reject) => {
+        let workerInfo;
+        try {
+            workerInfo = DATAOPS_XLSX_WORKER_MODULE.createWorker();
+        }
+        catch (error) {
+            reject(error);
+            return;
+        }
+        const { worker, url } = workerInfo;
+        let settled = false;
+        let timeoutId = null;
+        const cleanup = () => {
+            if (timeoutId !== null)
+                clearTimeout(timeoutId);
+            worker.terminate();
+            URL.revokeObjectURL(url);
+        };
+        worker.onmessage = (event) => {
+            if (settled)
+                return;
+            settled = true;
+            const result = event.data || {};
+            cleanup();
+            if (result.ok)
+                resolve(result);
+            else
+                reject(new Error(result.error || 'XLSX Worker 처리 실패'));
+        };
+        worker.onerror = (event) => {
+            if (settled)
+                return;
+            settled = true;
+            cleanup();
+            reject(new Error(event.message || 'XLSX Worker 실행 실패'));
+        };
+        timeoutId = setTimeout(() => {
+            if (settled)
+                return;
+            settled = true;
+            cleanup();
+            reject(new Error('XLSX Worker 응답 시간 초과'));
+        }, 30000);
+        try {
+            worker.postMessage({ action, ...payload }, transfer);
+        }
+        catch (error) {
+            settled = true;
+            cleanup();
+            reject(error);
+        }
+    }),
+    readWorkbookRows: async (arrayBuffer) => {
+        const transferable = arrayBuffer.slice(0);
+        return DATAOPS_XLSX_WORKER_MODULE.run('read', { buffer: transferable }, [transferable]);
+    },
+    writeWorkbook: async (workbook) => {
+        const result = await DATAOPS_XLSX_WORKER_MODULE.run('write', { workbook });
+        return result.buffer;
+    }
+});
 /* =======================================================================
    2. 엑셀 파싱 엔진 (Excel Parsing Layer)
    ======================================================================= */
@@ -3714,7 +3900,7 @@ const parseExcelData = (file, currentMappings, uploadRole = '') => {
             return resolve([]);
         const role = safeStr(uploadRole, '');
         const reader = new FileReader();
-        reader.onload = (e) => {
+        reader.onload = async (e) => {
             try {
                 const data = new Uint8Array(e.target.result);
                 const processWorkbook = (wb) => {
@@ -3730,7 +3916,7 @@ const parseExcelData = (file, currentMappings, uploadRole = '') => {
                         date: currentMappings.date ? currentMappings.date.split(',').map(s => s.trim().toLowerCase()) : [],
                         basic: currentMappings.basic ? currentMappings.basic.split(',').map(s => s.trim().toLowerCase()) : ['구분(기본)', '구분기본', '기본여부', '기본']
                     };
-                    const closingColumns = ['단위', '기초수량', '입고수량', '출고량', '기말실사(이월수량)', '매입단가(원가)', '로스/조정수량', '이슈/결과', '수기메모'];
+                    const closingColumns = ['단위', '기초수량', '입고수량', '출고량', '기말실사(이월수량)', '매입단가(원가)', '로스/조정수량', '이슈/결과', '수기메모', '관리자확인완료', '관리자확인시각'];
                     const stockLedgerColumns = ['재고', '입고', '출고', '잔량', '입고가'];
                     const getRoleSheetBonus = (sheetName, roleName) => {
                         const n = safeStr(sheetName, '').replace(/\s/g, '');
@@ -3773,8 +3959,9 @@ const parseExcelData = (file, currentMappings, uploadRole = '') => {
                         return 0;
                     };
                     const scoreSheet = (sheetName) => {
-                        const sheet = wb.Sheets[sheetName];
-                        const jsonAll = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
+                        const jsonAll = wb.__sheetRows
+                            ? (wb.__sheetRows[sheetName] || [])
+                            : XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1, defval: "" });
                         let headerRowIdx = -1;
                         let maxScore = 0;
                         let closingScore = 0;
@@ -3810,7 +3997,15 @@ const parseExcelData = (file, currentMappings, uploadRole = '') => {
                     const best = results.sort((a, b) => b.maxScore - a.maxScore)[0] || { jsonAll: [], headerRowIdx: -1, maxScore: 0, closingScore: 0, keywords, sheetName: '' };
                     return best;
                 };
-                let wb = XLSX.read(data, { type: 'array' });
+                let wb;
+                try {
+                    const workerWorkbook = await DATAOPS_XLSX_WORKER_MODULE.readWorkbookRows(e.target.result);
+                    wb = { SheetNames: workerWorkbook.sheetNames || [], __sheetRows: workerWorkbook.sheetRows || {} };
+                }
+                catch (workerError) {
+                    console.warn('XLSX Worker 파싱 실패, 메인 스레드 경로로 복구합니다.', workerError);
+                    wb = XLSX.read(data, { type: 'array' });
+                }
                 let { jsonAll, headerRowIdx, maxScore, keywords, sheetName, closingScore } = processWorkbook(wb);
                 if (maxScore < 2) {
                     try {
@@ -4097,8 +4292,11 @@ const parseExcelData = (file, currentMappings, uploadRole = '') => {
                             normObj._shipmentInstruction = safeStr(salesShipmentInstruction, '');
                         // 판매전표의 일자는 판매/전표 생성일이다. 구매일자 표시·Lot 매칭 근거로 쓰지 않는다.
                         normObj._salesSlipDate = normObj.일자;
-                        if (safeNum(normObj._salesPurchaseUnitCost) <= 0 && safeNum(normObj._salesPurchaseAmount) > 0 && safeNum(normObj.수량) !== 0)
-                            normObj._salesPurchaseUnitCost = Math.abs(safeNum(normObj._salesPurchaseAmount) / safeNum(normObj.수량));
+                        if (safeNum(normObj._salesPurchaseUnitCost) <= 0 && safeNum(normObj._salesPurchaseAmount) !== 0 && safeNum(normObj.수량) !== 0) {
+                            const derivedPurchaseUnitCost = safeNum(normObj._salesPurchaseAmount) / safeNum(normObj.수량);
+                            if (derivedPurchaseUnitCost > 0)
+                                normObj._salesPurchaseUnitCost = derivedPurchaseUnitCost;
+                        }
                     }
                     parsedData.push(normObj);
                 }
@@ -4120,6 +4318,69 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
     const [targetDateStr, setTargetDateStr] = useState('');
     const [substHistory, setSubstHistory] = useState([]);
     const [ackMultiCodes, setAckMultiCodes] = useState(new Set());
+    const [workStateHydrated, setWorkStateHydrated] = useState(false);
+    const restoreWorkState = useCallback(async ({ silent = false } = {}) => {
+        try {
+            const snapshot = await DATAOPS_WORK_STATE_MODULE.load();
+            if (!snapshot || !Array.isArray(snapshot.productData) || snapshot.productData.length === 0)
+                return false;
+            setProductData(DATAOPS_MASTER_LINK_MODULE.applyMasterLinksToRows(snapshot.productData));
+            setSubstHistory(Array.isArray(snapshot.substHistory) ? snapshot.substHistory : []);
+            setAckMultiCodes(new Set(Array.isArray(snapshot.ackMultiCodes) ? snapshot.ackMultiCodes : []));
+            setAnalysisPeriod(safeStr(snapshot.analysisPeriod, '전체 기간'));
+            setTargetDateStr(safeStr(snapshot.targetDateStr, ''));
+            setAppStep('closing');
+            if (!silent)
+                setAlertMsg(`저장된 DataOps 작업을 복구했습니다.\n\n저장시각: ${safeStr(snapshot.savedAt, '미상')}`);
+            return true;
+        }
+        catch (error) {
+            console.warn('DataOps 작업 복구 실패', error);
+            if (!silent)
+                setAlertMsg('저장된 작업을 복구하지 못했습니다.');
+            return false;
+        }
+    }, [setAlertMsg, setAppStep]);
+    useEffect(() => {
+        let active = true;
+        restoreWorkState({ silent: true }).finally(() => {
+            if (active)
+                setWorkStateHydrated(true);
+        });
+        return () => { active = false; };
+    }, [restoreWorkState]);
+    useEffect(() => {
+        if (!workStateHydrated || productData.length === 0)
+            return;
+        const timer = setTimeout(() => {
+            DATAOPS_WORK_STATE_MODULE.save({
+                productData,
+                substHistory,
+                ackMultiCodes: Array.from(ackMultiCodes),
+                analysisPeriod,
+                targetDateStr
+            }).catch(error => console.warn('DataOps 작업 자동저장 실패', error));
+        }, 600);
+        return () => clearTimeout(timer);
+    }, [workStateHydrated, productData, substHistory, ackMultiCodes, analysisPeriod, targetDateStr]);
+    const saveWorkState = useCallback(async () => {
+        try {
+            const snapshot = await DATAOPS_WORK_STATE_MODULE.save({
+                productData,
+                substHistory,
+                ackMultiCodes: Array.from(ackMultiCodes),
+                analysisPeriod,
+                targetDateStr
+            });
+            setAlertMsg(`현재 DataOps 작업을 저장했습니다.\n\n저장시각: ${snapshot.savedAt}`);
+            return true;
+        }
+        catch (error) {
+            console.warn('DataOps 작업 저장 실패', error);
+            setAlertMsg('작업 저장에 실패했습니다. 브라우저 저장공간을 확인하세요.');
+            return false;
+        }
+    }, [productData, substHistory, ackMultiCodes, analysisPeriod, targetDateStr, setAlertMsg]);
     const resetEngine = useCallback(() => {
         setProductData([]);
         setAnalysisPeriod('전체 기간');
@@ -4142,7 +4403,6 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
             let nextItem = { ...currentItem, [field]: numVal };
             if (field === '단가') {
                 nextItem.이슈 = DATAOPS_ISSUE_HELPER.syncPriceIssues(nextItem, nextItem.이슈 || []).filter(msg => msg !== '매입내역 없음');
-                nextItem.수기확인완료 = !DATAOPS_ISSUE_HELPER.hasUnresolved(nextItem.이슈);
             }
             else {
                 // 기초/입고/출고는 장부 기준값이다. 장부값 수정 시 최종 잔량도 새 계산잔량으로 따른다.
@@ -4158,8 +4418,10 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                 if (isBaseChanged)
                     newIssues.push('장부 수기조정');
                 nextItem.이슈 = DATAOPS_ISSUE_HELPER.unique(newIssues);
-                nextItem.수기확인완료 = !DATAOPS_ISSUE_HELPER.hasUnresolved(nextItem.이슈);
             }
+            nextItem.수기확인완료 = false;
+            nextItem._adminCompletedAt = '';
+            nextItem._adminCompletionSource = '';
             const nextData = [...prevP];
             nextData[rowIndex] = nextItem;
             return nextData;
@@ -4185,7 +4447,9 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
             nextItem.로스 = finalQty - systemQty;
             nextItem.이슈 = DATAOPS_ISSUE_HELPER.syncQuantityIssues(nextItem, nextItem.이슈 || []);
             nextItem = DATAOPS_OPERATION_MODULE.syncSplitLossInsight(nextItem);
-            nextItem.수기확인완료 = !DATAOPS_ISSUE_HELPER.hasUnresolved(nextItem.이슈);
+            nextItem.수기확인완료 = false;
+            nextItem._adminCompletedAt = '';
+            nextItem._adminCompletionSource = '';
             const nextData = [...prev];
             nextData[rowIndex] = nextItem;
             return nextData;
@@ -4255,7 +4519,9 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                     메모: '관리자 Lot 재배정',
                     이슈: DATAOPS_ISSUE_HELPER.unique([`✅${candidate.date}(${candidate.vendor})원가추출`, '✅관리자확정Lot']),
                     _orig: { 기초: qty, 입고: 0, 출고: 0, 단가: safeNum(candidate.unitPrice) },
-                    수기확인완료: true,
+                    수기확인완료: false,
+                    _adminCompletedAt: '',
+                    _adminCompletionSource: '',
                     _costExtractMode: 'MANUAL_PURCHASE_LOT_OVERRIDE',
                     _manualLotOverrideApplied: true,
                     _purchaseCandidateLots: candidates,
@@ -4556,7 +4822,9 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                 next.전산잔량 = safeNum(next.기초) + safeNum(next.입고) + safeNum(next.대체입고) - safeNum(next.출고) - safeNum(next.대체출고);
                 const finalQty = next.실사 === '' || next.실사 === null || next.실사 === undefined ? next.전산잔량 : safeNum(next.실사);
                 next.로스 = finalQty - next.전산잔량;
-                next.수기확인완료 = true;
+                next.수기확인완료 = false;
+                next._adminCompletedAt = '';
+                next._adminCompletionSource = '';
                 return next;
             };
             const subPricePatch = buildManualSubPricePatch(sourceItem, targetItem, sourceLossQty, targetLossQty);
@@ -4599,6 +4867,27 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                     costAmount: manualTargetUnitCost * targetLossQty
                 } : null;
                 manualAppliedCostAmount = manualTargetUnitCost * targetLossQty;
+                // 대상 판매행 전체가 아니라 이번 치환수량의 기존 원가만 교체한다.
+                // 나머지 판매수량과 거래처별 원가는 그대로 유지한다.
+                const targetSalesQty = safeNum(targetAfter.출고);
+                const replacementQtyRatio = targetSalesQty !== 0
+                    ? Math.min(1, Math.max(0, safeNum(targetLossQty) / targetSalesQty))
+                    : 0;
+                const previousManualCostForReplacementQty = safeNum(targetAfter.매출원가) * replacementQtyRatio;
+                targetAfter.매출원가 = safeNum(targetAfter.매출원가) - previousManualCostForReplacementQty + manualAppliedCostAmount;
+                let remainingManualReplacementQty = safeNum(targetLossQty);
+                Object.values(targetAfter.출고내역 || {}).forEach(detail => {
+                    if (remainingManualReplacementQty <= 0)
+                        return;
+                    const detailQty = safeNum(detail && detail.qty);
+                    if (detailQty <= 0)
+                        return;
+                    const appliedQty = Math.min(detailQty, remainingManualReplacementQty);
+                    const previousDetailCost = safeNum(detail.cogs) * (appliedQty / detailQty);
+                    const replacementDetailCost = manualAppliedCostAmount * (appliedQty / safeNum(targetLossQty));
+                    detail.cogs = safeNum(detail.cogs) - previousDetailCost + replacementDetailCost;
+                    remainingManualReplacementQty -= appliedQty;
+                });
                 const targetWithLayer = DATAOPS_OPERATION_MODULE.appendCostLayer(targetAfter, manualCostLayer);
                 targetAfter = {
                     ...targetWithLayer,
@@ -4630,13 +4919,14 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                 [item2Orig.batchKey]: safeNum(item2Orig.단가)
             };
             const restoreProtectedPrice = (item = {}, role = '') => {
+                const originalPrice = safeNum(originalPriceByKey[item.batchKey]);
                 if (role === 'source')
-                    return { ...item, 단가: safeNum(originalPriceByKey[item.batchKey]) };
-                if (role === 'target' && subPricePatch && item.batchKey === subPricePatch.batchKey)
+                    return { ...item, 단가: originalPrice };
+                if (role === 'target' && originalPrice <= 0 && subPricePatch && item.batchKey === subPricePatch.batchKey)
                     return { ...item, 단가: safeNum(subPricePatch.subPrice) };
-                if (role === 'target' && item._manualReplacementPriceApplied && safeNum(item._matchedUnitCost) > 0)
+                if (role === 'target' && originalPrice <= 0 && item._manualReplacementPriceApplied && safeNum(item._matchedUnitCost) > 0)
                     return { ...item, 단가: safeNum(item._matchedUnitCost) };
-                return { ...item, 단가: safeNum(originalPriceByKey[item.batchKey]) };
+                return { ...item, 단가: originalPrice };
             };
             sourceAfter = restoreProtectedPrice(sourceAfter, 'source');
             targetAfter = restoreProtectedPrice(targetAfter, 'target');
@@ -4716,8 +5006,22 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                 subItem._autoSubstitutionInQty = safeNum(subItem._autoSubstitutionInQty) + generatedSubQty;
                 subItem._autoSubstitutionRawQty = safeNum(subItem._autoSubstitutionRawQty) + requiredRawQty;
                 if (subUnitCost > 0) {
-                    subItem.단가 = subUnitCost;
-                    subItem.매출원가 = safeNum(subItem.출고) * subUnitCost;
+                    // 기존 소분/LOT 단가는 보존하고, 단가가 없는 신규 소분행에만 계산단가를 표시한다.
+                    if (safeNum(subItem.단가) <= 0)
+                        subItem.단가 = subUnitCost;
+                    const substitutionLayer = DATAOPS_OPERATION_MODULE.buildCostLayer({
+                        type: DATAOPS_OPERATION_MODULE.TYPES.SPLIT_REMAINDER,
+                        sourceItem: firstRawAfter || {},
+                        targetItem: subItem,
+                        vendorName: safeStr(firstRawAfter && firstRawAfter.거래처, '소분치환'),
+                        sourceQty: requiredRawQty,
+                        targetQty: generatedSubQty,
+                        unitCost: subUnitCost,
+                        revenue: 0
+                    });
+                    const withLayer = DATAOPS_OPERATION_MODULE.appendCostLayer(subItem, substitutionLayer);
+                    subItem._costLayers = withLayer._costLayers;
+                    subItem._lotCostResolved = withLayer._lotCostResolved;
                 }
                 if (firstRawAfter) {
                     subItem.거래처 = safeStr(firstRawAfter.거래처, subItem.거래처 || '미지정');
@@ -4857,18 +5161,28 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                     if (p.batchKey === sourceKey) {
                         const np = { ...p, 출고내역: JSON.parse(JSON.stringify(p.출고내역 || {})), 이슈: [...(p.이슈 || [])] };
                         np.대체입고 = safeNum(np.대체입고) + sourceDeductQty;
-                        np.매출원가 = replacementCostAmount;
+                        // 대체된 거래처칩 수량의 기존 원가만 교체한다. 행의 다른 판매원가는 그대로 보존한다.
+                        const sourceVendorKey = Object.keys(np.출고내역 || {}).find(key => safeStr(key).replace('_perfect', '') === cleanVendorNameGlobal);
+                        const sourceVendorDetail = sourceVendorKey && np.출고내역[sourceVendorKey] ? np.출고내역[sourceVendorKey] : null;
+                        const previousVendorCogs = sourceVendorDetail ? safeNum(sourceVendorDetail.cogs) : 0;
+                        const sourceVendorQty = sourceVendorDetail ? safeNum(sourceVendorDetail.qty) : 0;
+                        const replacedQtyRatio = sourceVendorQty !== 0
+                            ? Math.min(1, Math.max(0, safeNum(sourceDeductQty) / sourceVendorQty))
+                            : 0;
+                        const previousCostForReplacedQty = previousVendorCogs * replacedQtyRatio;
+                        const nextVendorCogs = previousVendorCogs - previousCostForReplacedQty + replacementCostAmount;
+                        np.매출원가 = safeNum(np.매출원가) - previousCostForReplacedQty + replacementCostAmount;
                         if (replacementUnitCost > 0) {
-                            // V1.a22.88: source는 판매전표 상품이다. 실제출고 상품(target)의 원가를
-                            // 판매전표 상품의 단가(입고가)에 반영하고, 실제출고 Lot 단가는 보존한다.
+                            // 행 단가는 원본 그대로 두고 대체수량 원가는 별도 원가레이어에만 기록한다.
                             const previousUnitCost = safeNum(np.단가);
-                            np.단가 = replacementUnitCost;
                             np._matchedUnitCost = replacementUnitCost;
                             np._matchedCostAmount = replacementCostAmount;
-                            np._manualReplacementPriceApplied = true;
+                            np._manualReplacementPriceApplied = false;
                             np._convertedUnitCostApplied = previousUnitCost !== safeNum(replacementUnitCost) || safeNum(sourceDeductQty) !== safeNum(targetAddQty);
                             np._convertedUnitCostFormula = replacementMatch.formula;
                         }
+                        if (sourceVendorDetail)
+                            sourceVendorDetail.cogs = nextVendorCogs;
                         const withLayer = DATAOPS_OPERATION_MODULE.appendCostLayer(np, replacementCostLayer);
                         np._costLayers = withLayer._costLayers;
                         np._lotCostResolved = withLayer._lotCostResolved;
@@ -4886,7 +5200,9 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                             np.실사 = np.전산잔량;
                             np.로스 = 0;
                         }
-                        np.수기확인완료 = true;
+                        np.수기확인완료 = false;
+                        np._adminCompletedAt = '';
+                        np._adminCompletionSource = '';
                         return DATAOPS_OPERATION_MODULE.syncSplitLossInsight(np);
                     }
                     if (p.batchKey === targetKey) {
@@ -4909,7 +5225,9 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                             np.실사 = np.전산잔량;
                             np.로스 = 0;
                         }
-                        np.수기확인완료 = true;
+                        np.수기확인완료 = false;
+                        np._adminCompletedAt = '';
+                        np._adminCompletionSource = '';
                         return DATAOPS_OPERATION_MODULE.syncSplitLossInsight(np);
                     }
                     return p;
@@ -4964,19 +5282,19 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                     else {
                         np._hiddenBySalesMove = false;
                     }
-                    np.수기확인완료 = true;
+                    np.수기확인완료 = false;
+                    np._adminCompletedAt = '';
+                    np._adminCompletionSource = '';
                     return DATAOPS_OPERATION_MODULE.syncSplitLossInsight(np);
                 }
                 if (p.batchKey === targetKey) {
                     const np = { ...p, 출고내역: JSON.parse(JSON.stringify(p.출고내역 || {})), 이슈: [...(p.이슈 || [])] };
                     np.출고 += targetAddQty;
-                    // V1.a22.42: 대체/묶음 작업은 화면 단가도 총원가 보존 단가로 갱신한다.
-                    // 예: 10kg 2박스(12,000원) → 20kg 1박스는 대상 단가 24,000원.
-                    np.매출원가 += targetCostMoved;
-                    np.매출액 += sourceRevenueMoved;
+                    // 이동한 대체수량의 원가만 추가하고 기존 대상 BOX/LOT 단가는 보존한다.
+                    np.매출원가 = safeNum(np.매출원가) + targetCostMoved;
+                    np.매출액 = safeNum(np.매출액) + sourceRevenueMoved;
                     if (operationType !== DATAOPS_OPERATION_MODULE.TYPES.NORMAL && safeNum(targetUnitCost) > 0) {
                         const previousUnitCost = safeNum(np.단가);
-                        np.단가 = targetUnitCost;
                         np._convertedUnitCostApplied = safeNum(sourceDeductQty) !== safeNum(targetAddQty) || previousUnitCost !== safeNum(targetUnitCost);
                         np._convertedUnitCostFormula = `${formatMoney(sPrice)} × ${formatQty(sourceDeductQty)} ÷ ${formatQty(targetAddQty)}`;
                     }
@@ -5024,7 +5342,9 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                         np.이슈 = np.이슈.filter(msg => !msg.includes('수량부족'));
                     }
                     np._hiddenBySalesMove = false;
-                    np.수기확인완료 = true;
+                    np.수기확인완료 = false;
+                    np._adminCompletedAt = '';
+                    np._adminCompletionSource = '';
                     return DATAOPS_OPERATION_MODULE.syncSplitLossInsight(np);
                 }
                 return p;
@@ -5162,14 +5482,16 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                     const vendor = (item.거래처 && item.거래처 !== '미지정') ? item.거래처 : (rawVal(item._raw, ['매입처(Lot)', '구매처'], '미지정'));
                     const batchKey = generateBatchKey(code, name, price, vendor, date);
                     const { issues, vendors } = parseIssuesAndVendors(item._raw['이슈/결과'] || '', price);
+                    const hasExplicitAdminStatus = rawHas(item._raw || {}, '관리자확인완료');
+                    const adminStatusText = safeStr(rawVal(item._raw || {}, ['관리자확인완료'], ''), '').trim().toUpperCase();
+                    const restoredAdminComplete = hasExplicitAdminStatus &&
+                        ['Y', 'YES', 'TRUE', '1', '완료'].includes(adminStatusText);
+                    const restoredAdminCompletedAt = restoredAdminComplete ? safeStr(rawVal(item._raw || {}, ['관리자확인시각'], ''), '') : '';
                     const baseQty = getClosingBaseQty(item);
                     const inQty = getClosingInQty(item);
                     const outQty = getClosingOutQty(item);
                     let actualQty = getClosingFinalQty(item);
                     const adjustQty = getClosingAdjustQty(item);
-                    // V1.a22.12: 수불마감 기초재고는 잔량 0 이하 행을 현재 기준재고로 올리지 않는다.
-                    if (baseQty <= 0)
-                        return;
                     if (!pData[batchKey]) {
                         let tRev = 0, tCogs = 0;
                         Object.values(vendors).forEach(v => { tRev += v.rev; tCogs += v.cogs; });
@@ -5180,9 +5502,9 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                             대체입고: 0, 대체출고: 0, 전산잔량: baseQty + inQty - outQty,
                             실사: actualQty, 로스: adjustQty,
                             매출액: tRev, 매출원가: tCogs, 메모: item._raw['수기메모'] || '',
-                            이슈: issues.filter(i => !i.includes('🚨')),
+                            이슈: DATAOPS_ISSUE_HELPER.unique(issues),
                             출고내역: vendors, _orig: { 기초: baseQty, 입고: inQty, 출고: outQty, 단가: price },
-                            isDummy: (!code || code === 'NO_CODE'), 수기확인완료: true, _fromFile4: true, 기본: getBasicRawValue(item),
+                            isDummy: (!code || code === 'NO_CODE'), 수기확인완료: restoredAdminComplete, _adminCompletedAt: restoredAdminCompletedAt, _adminCompletionSource: restoredAdminComplete ? 'RESTORED_ADMIN' : '', _fromFile4: true, 기본: getBasicRawValue(item),
                             _totalCostForAvg: price * (baseQty + inQty), _latestDateNum: extractDateNum(date), _lotSortDate: getLotDateNum(date), _lotSourceRank: 0, _dateDisplayMemo: getDateDisplayMemo(item, 'prev')
                         };
                     }
@@ -5218,13 +5540,21 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                             pData[batchKey].매출액 += vData.rev;
                             pData[batchKey].매출원가 += vData.cogs;
                         });
-                        issues.filter(i => !i.includes('🚨')).forEach(iss => { if (!pData[batchKey].이슈.includes(iss))
+                        issues.forEach(iss => { if (!pData[batchKey].이슈.includes(iss))
                             pData[batchKey].이슈.push(iss); });
                         if (item._raw['수기메모'])
                             pData[batchKey].메모 = pData[batchKey].메모 ? pData[batchKey].메모 + ' / ' + item._raw['수기메모'] : item._raw['수기메모'];
+                        pData[batchKey].수기확인완료 = !!pData[batchKey].수기확인완료 && restoredAdminComplete;
+                        if (!pData[batchKey].수기확인완료) {
+                            pData[batchKey]._adminCompletedAt = '';
+                            pData[batchKey]._adminCompletionSource = '';
+                        }
                     }
                 });
-                Object.values(pData).forEach(p => { autoAckCodes.add(p.코드); });
+                Object.values(pData).forEach(p => {
+                    if (p.수기확인완료)
+                        autoAckCodes.add(p.코드);
+                });
             }
             const stockPool = {};
             let lotSequence = 0;
@@ -5300,10 +5630,8 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
             };
             const addStock = (item, type, qtyToApply) => {
                 var _a, _b, _c, _d, _e;
-                // V1.a22.12: 수불마감/시스템누적 기초재고는 잔량 0 이하 행을 제외한다.
-                // 과거 입출고 흔적만 있고 최종 보유재고가 없는 Lot의 입고가가 화면에 뜨는 문제를 차단한다.
-                if (type === 'prev' && isClosingItem(item) && safeNum(qtyToApply) <= 0)
-                    return;
+                // 분석 입력은 0·마이너스 행을 그대로 유지한다.
+                // 양수 잔량만 남기는 정책은 내일 기초재고 생성(buildNextBaseStockRows) 단계에서만 적용한다.
                 // 제외거래처는 외부 구매/판매 계산에서 제외한다.
                 // V1.a22.29: 제외거래처는 거래처명(_transactionVendor) 기준만 사용한다. 구매처/Lot 필드는 제외 판정에 사용하지 않는다.
                 if (type === 'in' && isExcludedTransactionRow(item, 'in'))
@@ -5424,6 +5752,20 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                     return seqA - seqB;
                 return String(a.거래처 || '').localeCompare(String(b.거래처 || ''));
             }));
+            // 대용량 매칭에서 판매행마다 전체 LOT 배열을 재검색하지 않도록 코드+구매처+단가 인덱스를 만든다.
+            const stockLotIndex = new Map();
+            const getStockLotIndexKey = (code, vendor, unitCost) => {
+                const normalizedCost = Math.round(safeNum(unitCost) * 1000000) / 1000000;
+                return `${safeStr(code, 'NO_CODE')}|${normalizeLotNameForMatch(vendor)}|${normalizedCost}`;
+            };
+            Object.entries(stockPool).forEach(([poolCode, pool]) => {
+                (pool.buckets || []).forEach(bucket => {
+                    const indexKey = getStockLotIndexKey(poolCode, bucket.거래처, bucket.단가);
+                    if (!stockLotIndex.has(indexKey))
+                        stockLotIndex.set(indexKey, []);
+                    stockLotIndex.get(indexKey).push(bucket);
+                });
+            });
             // 1. 초기 수량 및 개별 매출액 계산
             outItems.forEach(sale => {
                 let qty = parseNumber(sale.수량);
@@ -5448,10 +5790,13 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                 sale._finalRevenue = finalRevenue;
                 const purchaseUnitCost = safeNum(sale._salesPurchaseUnitCost);
                 const purchaseAmount = safeNum(sale._salesPurchaseAmount);
-                if (purchaseUnitCost > 0 && purchaseAmount <= 0 && qty !== 0)
-                    sale._salesPurchaseAmount = Math.abs(qty) * purchaseUnitCost;
-                else if (purchaseUnitCost <= 0 && purchaseAmount > 0 && qty !== 0)
-                    sale._salesPurchaseUnitCost = Math.abs(purchaseAmount / qty);
+                if (purchaseUnitCost > 0 && purchaseAmount === 0 && qty !== 0)
+                    sale._salesPurchaseAmount = qty * purchaseUnitCost;
+                else if (purchaseUnitCost <= 0 && purchaseAmount !== 0 && qty !== 0) {
+                    const derivedPurchaseUnitCost = purchaseAmount / qty;
+                    if (derivedPurchaseUnitCost > 0)
+                        sale._salesPurchaseUnitCost = derivedPurchaseUnitCost;
+                }
             });
             // 2. 🌟 V1.a22.12: Lot/원가 매칭용 전표 병합 기준 정정.
             // 원가 배정 기준은 판매처가 아니라 "상품코드 + 품명 + 판매현황 구매처(Lot)"이다.
@@ -5645,8 +5990,10 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                     const unitCostFromSales = safeNum(sale._salesPurchaseUnitCost);
                     const amountFromSales = safeNum(sale._salesPurchaseAmount);
                     if (unitCostFromSales > 0) return unitCostFromSales;
-                    if (amountFromSales > 0 && safeNum(qtyToDeduct) !== 0)
-                        return Math.abs(amountFromSales / qtyToDeduct);
+                    if (amountFromSales !== 0 && safeNum(qtyToDeduct) !== 0) {
+                        const derivedPurchaseUnitCost = amountFromSales / qtyToDeduct;
+                        return derivedPurchaseUnitCost > 0 ? derivedPurchaseUnitCost : 0;
+                    }
                     return 0;
                 };
                 const salesConfirmedUnitCostForCheck = getSalesConfirmedUnitCost();
@@ -5662,7 +6009,9 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                 const findConfirmedPurchaseBuckets = (expectedUnitCost = 0) => {
                     if (!pool || !Array.isArray(pool.buckets) || !hasSalesConfirmedPurchase || safeNum(expectedUnitCost) <= 0)
                         return [];
-                    const sameVendorBuckets = pool.buckets
+                    const indexedBuckets = stockLotIndex.get(getStockLotIndexKey(code, sale.매입처매칭, expectedUnitCost)) || [];
+                    const searchBuckets = indexedBuckets.length > 0 ? indexedBuckets : pool.buckets;
+                    const sameVendorBuckets = searchBuckets
                         .filter(bucket => bucket && !bucket._confirmedLotClosed && safeNum(bucket.수량) > 0)
                         .filter(bucket => bucket && (normalizeLotName(bucket.거래처) === matchStr || isSameLotName(bucket.거래처, sale.매입처매칭)))
                         .filter(bucket => isSameUnitCost(bucket.단가, expectedUnitCost));
@@ -5699,6 +6048,61 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                         row.이슈.push(issueMsg);
                     row.수기확인완료 = false;
                 };
+                const recordUnallocatedLot = ({ qty = 0, revenue = 0, requestedVendor = '', requestedUnitCost = 0, mode = 'LOT_SHORTAGE', detailRows = [] } = {}) => {
+                    const shortageQty = safeNum(qty);
+                    if (shortageQty <= 0)
+                        return null;
+                    const vendorLabel = safeStr(requestedVendor, '미지정');
+                    const unitCostLabel = safeNum(requestedUnitCost);
+                    const keyVendor = normalizeLotNameForMatch(vendorLabel) || 'UNSPECIFIED';
+                    const keyCost = unitCostLabel > 0 ? String(Math.round(unitCostLabel * 1000000) / 1000000) : 'NO_COST';
+                    const bKey = `UNALLOCATED_LOT|${code}|${keyVendor}|${keyCost}|${mode}`;
+                    if (!pData[bKey]) {
+                        pData[bKey] = {
+                            batchKey: bKey, 코드: code, 품명: sale.품명, 단위: safeStr(sale.단위, ''), 단가: 0, 일자: '', 거래처: 'LOT 미배정',
+                            _transactionVendor: safeStr(sale._transactionVendor || sale._salesVendor || sale.거래처 || '', ''), _salesVendor: safeStr(sale._salesVendor || sale.거래처 || '', ''), _salesDisplayVendor: safeStr(sale._salesDisplayVendor || sale.거래처 || '', ''), _salesGroupVendor: safeStr(sale._salesGroupVendor || sale.거래처 || '', ''),
+                            _confirmedPurchaseVendor: vendorLabel, _purchaseLotVendor: '', _displayPurchaseVendor: 'LOT 미배정', _uploadRole: 'out',
+                            기초: 0, 입고: 0, 출고: 0, 대체입고: 0, 대체출고: 0, 전산잔량: 0, 실사: 0, 로스: 0,
+                            매출액: 0, 매출원가: 0, 메모: '', 이슈: [], 출고내역: {}, _orig: { 기초: 0, 입고: 0, 출고: 0, 단가: 0 },
+                            isDummy: true, 수기확인완료: false, _lotAllocationStatus: 'UNALLOCATED', _unallocatedLotQty: 0,
+                            _requestedLotVendor: vendorLabel, _requestedLotUnitCost: unitCostLabel, _dateDisplayMemo: '실제 구매 LOT에 배정되지 않은 부족수량'
+                        };
+                    }
+                    const row = pData[bKey];
+                    row.출고 += shortageQty;
+                    row.전산잔량 = safeNum(row.기초) + safeNum(row.입고) - safeNum(row.출고);
+                    row.실사 = 0;
+                    row.로스 = safeNum(row.실사) - safeNum(row.전산잔량);
+                    row.매출액 += safeNum(revenue);
+                    row._unallocatedLotQty += shortageQty;
+                    const issueMsg = `🚨Lot미배정(${vendorLabel}${unitCostLabel > 0 ? '/' + formatMoney(unitCostLabel) : ''} 부족 ${formatQty(shortageQty)})`;
+                    pushConfirmedIssue(row, issueMsg);
+                    pushConfirmedIssue(row, '🚨수량부족');
+                    if (unitCostLabel > 0)
+                        pushConfirmedIssue(row, `🚨구매처단가확인(${vendorLabel}/${formatMoney(unitCostLabel)})`);
+                    appendLotMemo(row, `Lot미배정: 요청=${vendorLabel}${unitCostLabel > 0 ? ' / 요청단가=' + formatMoney(unitCostLabel) : ''} / 부족=${formatQty(shortageQty)}`);
+                    const details = Array.isArray(detailRows) && detailRows.length
+                        ? detailRows
+                        : [{ vendor: sale.거래처, qty: shortageQty, rev: revenue }];
+                    const detailQtyTotal = details.reduce((sum, detail) => sum + safeNum(detail.qty), 0) || shortageQty;
+                    details.forEach(detail => {
+                        const detailShare = detailQtyTotal !== 0 ? safeNum(detail.qty) / detailQtyTotal : 0;
+                        const detailQty = shortageQty * detailShare;
+                        if (detailQty === 0)
+                            return;
+                        const displayVendor = safeStr(detail.vendor, sale.거래처);
+                        const vendorKey = `${displayVendor}_unallocated`;
+                        if (!row.출고내역[vendorKey]) {
+                            row.출고내역[vendorKey] = {
+                                qty: 0, rev: 0, cogs: 0, isLifo: false, isPerfectMatch: false, displayVendor,
+                                requestedLot: vendorLabel, appliedLot: 'LOT 미배정', matchMode: mode
+                            };
+                        }
+                        row.출고내역[vendorKey].qty += detailQty;
+                        row.출고내역[vendorKey].rev += safeNum(revenue) * detailShare;
+                    });
+                    return row;
+                };
                 const applySalesConfirmedPurchase = () => {
                     const confirmedVendor = safeStr(sale.매입처매칭, '미지정');
                     const confirmedUnitCost = getSalesConfirmedUnitCost();
@@ -5709,10 +6113,8 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                     const requestedQty = safeNum(qtyToDeduct);
                     if (requestedQty <= 0)
                         return false;
-                    const matchedAvailableQty = confirmedBuckets.reduce((sum, bucket) => sum + Math.max(0, safeNum(bucket.수량)), 0);
                     let remainingConfirmedQty = requestedQty;
                     let allocatedQty = 0;
-                    let lastRow = null;
                     const details = (sale._salesVendorDetails && sale._salesVendorDetails.length)
                         ? sale._salesVendorDetails
                         : [{ vendor: sale.거래처, qty: requestedQty, rev: finalRevenue }];
@@ -5728,7 +6130,6 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                         const row = pData[bKey];
                         if (!row)
                             continue;
-                        lastRow = row;
                         const allocationShare = requestedQty !== 0 ? takeQty / requestedQty : 0;
                         const revShare = safeNum(finalRevenue) * allocationShare;
                         const rowUnitCost = confirmedUnitCost > 0 ? confirmedUnitCost : safeNum(row.단가);
@@ -5791,36 +6192,17 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                         allocatedQty += takeQty;
                     }
 
-                    if (allocatedQty > 0 && remainingConfirmedQty > 0.0000001 && lastRow) {
+                    if (allocatedQty > 0 && remainingConfirmedQty > 0.0000001) {
                         const shortageShare = requestedQty !== 0 ? remainingConfirmedQty / requestedQty : 0;
                         const shortageRevenue = safeNum(finalRevenue) * shortageShare;
-                        const shortageCogs = confirmedUnitCost > 0 ? remainingConfirmedQty * confirmedUnitCost : 0;
-                        lastRow.출고 += remainingConfirmedQty;
-                        lastRow.매출액 += shortageRevenue;
-                        lastRow.매출원가 += shortageCogs;
-                        details.forEach(detail => {
-                            const dQtyBase = safeNum(detail.qty);
-                            if (dQtyBase === 0)
-                                return;
-                            const dVendor = safeStr(detail.vendor, sale.거래처);
-                            const vendorKey = `${dVendor}_confirmed_shortage`;
-                            const detailShare = totalDetailQty !== 0 ? dQtyBase / totalDetailQty : 0;
-                            const dQty = remainingConfirmedQty * detailShare;
-                            const dRev = safeNum(detail.rev) * shortageShare;
-                            if (!lastRow.출고내역[vendorKey]) {
-                                lastRow.출고내역[vendorKey] = {
-                                    qty: 0, rev: 0, cogs: 0, isLifo: false, isPerfectMatch: false, displayVendor: dVendor,
-                                    requestedLot: confirmedVendor, appliedLot: confirmedVendor, matchMode: 'SALES_CONFIRMED_PURCHASE_SHORTAGE'
-                                };
-                            }
-                            lastRow.출고내역[vendorKey].qty += dQty;
-                            lastRow.출고내역[vendorKey].rev += dRev;
-                            lastRow.출고내역[vendorKey].cogs += shortageCogs * detailShare;
+                        recordUnallocatedLot({
+                            qty: remainingConfirmedQty,
+                            revenue: shortageRevenue,
+                            requestedVendor: confirmedVendor,
+                            requestedUnitCost: confirmedUnitCost,
+                            mode: 'SALES_CONFIRMED_PURCHASE_UNALLOCATED',
+                            detailRows: details
                         });
-                        const issueMsg = `🚨확정Lot수량부족(${confirmedVendor}/${formatMoney(confirmedUnitCost)} 부족 ${formatQty(remainingConfirmedQty)})`;
-                        pushConfirmedIssue(lastRow, issueMsg);
-                        pushConfirmedIssue(lastRow, `🚨구매처단가확인(${confirmedVendor}/${formatMoney(confirmedUnitCost)})`);
-                        appendLotMemo(lastRow, `확정Lot수량부족: 요청=${formatQty(requestedQty)} / 가용=${formatQty(matchedAvailableQty)} / 부족=${formatQty(remainingConfirmedQty)} / 부족분은 동일 확정 Lot에 음수잔량으로 반영`);
                         remainingConfirmedQty = 0;
                     }
 
@@ -5839,6 +6221,19 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                     sale._confirmedMatchFailedMemo = `구매처단가확인(${salesPurchaseVendorRaw}/${formatMoney(salesConfirmedUnitCostForCheck)})`;
                 }
                 if (!pool || pool.buckets.length === 0) {
+                    if (qtyToDeduct > 0) {
+                        const unallocatedRow = recordUnallocatedLot({
+                            qty: qtyToDeduct,
+                            revenue: finalRevenue,
+                            requestedVendor: safeStr(sale.매입처매칭, '미지정'),
+                            requestedUnitCost: salesConfirmedUnitCostForCheck,
+                            mode: 'NO_PURCHASE_LOT_UNALLOCATED',
+                            detailRows: sale._salesVendorDetails || []
+                        });
+                        if (unallocatedRow && code === 'NO_CODE')
+                            pushConfirmedIssue(unallocatedRow, '🚨코드없음(수기확인)');
+                        return;
+                    }
                     const bKey = generateBatchKey(code, sale.품명, 0, '매입내역 없음', '');
                     if (!pData[bKey]) {
                         pData[bKey] = {
@@ -5865,7 +6260,7 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                 let remainingQty = qtyToDeduct;
                 const deductFromBucket = (bucket, take, isPerfect = false, matchMode = '') => {
                     const cogs = take * bucket.단가;
-                    const revShare = qtyToDeduct > 0 ? finalRevenue * (take / qtyToDeduct) : 0;
+                    const revShare = qtyToDeduct !== 0 ? finalRevenue * (take / qtyToDeduct) : 0;
                     if (bucket.수량 !== undefined)
                         bucket.수량 -= take;
                     pData[bucket.batchKey].출고 += take;
@@ -5919,7 +6314,7 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                     // V1.a22.12: Lot 잔여수량 잠금 + 재고우선 분할매칭 정책.
                     // 1) 2전송 + 외부 구매처 지정: 당일 동일 구매처 Lot → 기존 재고 FIFO → 부족분만 당일 다른 구매 Lot.
                     // 2) 구매처 매칭 실패/미지정/우리농산 계열: 기존 재고 FIFO → 부족분만 당일 구매 FIFO.
-                    // 3) 어떤 경우에도 잔여수량이 0인 Lot에는 추가 배정하지 않는다. 전체 가용수량이 부족할 때만 Lot초과배정 이슈를 남긴다.
+                    // 3) 어떤 경우에도 잔여수량이 0인 Lot에는 추가 배정하지 않는다. 부족분은 별도 LOT 미배정 행으로 남긴다.
                     // 4) 화면/리스트 정렬은 같은 품목코드 안에서 재고 있는 Lot를 상단으로 올린다.
                     let matchFailedFlag = false;
                     let fifoReviewFlag = false;
@@ -5998,15 +6393,23 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                             break;
                     }
                     if (remainingQty > 0) {
-                        // 전체 가용 Lot이 부족한 진짜 부족분만 마지막 Lot에 남긴다.
-                        const shortageBucket = uniqueBuckets(allBuckets).filter(Boolean).slice(-1)[0];
-                        if (shortageBucket) {
-                            deductFromBucket(shortageBucket, remainingQty, false, 'SHORTAGE_OVER_ALLOC');
-                            applyLotMatchPolicy(shortageBucket, { matchFailed: matchFailedFlag, fifoReview: fifoReviewFlag });
-                            markShortageIfNeeded(shortageBucket, '🚨Lot초과배정');
-                            markShortageIfNeeded(shortageBucket, '🚨수량부족');
-                            remainingQty = 0;
-                        }
+                        const shortageRevenue = qtyToDeduct !== 0 ? safeNum(finalRevenue) * (remainingQty / qtyToDeduct) : 0;
+                        const remainingDetails = (sale._salesVendorDetails && sale._salesVendorDetails.length)
+                            ? sale._salesVendorDetails.map(detail => ({
+                                vendor: detail.vendor,
+                                qty: safeNum(detail.remainingQty),
+                                rev: safeNum(detail.remainingRev)
+                            })).filter(detail => detail.qty > 0)
+                            : [{ vendor: sale.거래처, qty: remainingQty, rev: shortageRevenue }];
+                        recordUnallocatedLot({
+                            qty: remainingQty,
+                            revenue: shortageRevenue,
+                            requestedVendor: safeStr(sale.매입처매칭, '미지정'),
+                            requestedUnitCost: salesConfirmedUnitCostForCheck,
+                            mode: sale._confirmedMatchFailed ? 'CONFIRMED_LOT_NOT_FOUND_UNALLOCATED' : 'FIFO_SHORTAGE_UNALLOCATED',
+                            detailRows: remainingDetails
+                        });
+                        remainingQty = 0;
                     }
                 }
             });
@@ -6017,21 +6420,57 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                 }
             });
             const simpleCountEndItems = parsedEnd.filter(item => !isClosingItem(item));
-            const simpleEndCodeSet = new Set(simpleCountEndItems.map(item => safeStr(item.코드 || 'NO_CODE')).filter(code => code && code !== 'NO_CODE'));
-            const currentProductCodeSet = new Set(Object.values(pData).map(item => safeStr(item.코드 || 'NO_CODE')).filter(code => code && code !== 'NO_CODE'));
-            const isFullEndFile = hasClosingEnd || (simpleCountEndItems.length > 0 && simpleEndCodeSet.size >= Math.max(1, Math.ceil(currentProductCodeSet.size * 0.7)));
-            if (!hasClosingEnd && parsedEnd.length > 0) {
-                const endQtyByCode = {};
+            const normalizeCountKey = (item = {}) => {
+                const code = safeStr(item.코드 || '').replace(/\.0$/, '').trim();
+                if (code && code !== 'NO_CODE' && code !== '-')
+                    return `CODE|${code}`;
+                const name = normalizeKeyText(item.품명 || '');
+                return name ? `NAME|${name}` : '';
+            };
+            const pDataKeysByCountKey = new Map();
+            Object.entries(pData).forEach(([batchKey, item]) => {
+                const countKey = normalizeCountKey(item);
+                if (!countKey)
+                    return;
+                if (!pDataKeysByCountKey.has(countKey))
+                    pDataKeysByCountKey.set(countKey, []);
+                pDataKeysByCountKey.get(countKey).push(batchKey);
+            });
+            // 실사파일은 비율로 전체 여부를 추정하지 않는다.
+            // 현재 재고/수불 대상 품목이 한 건이라도 빠지면 분석 결과를 만들지 않고 즉시 중단한다.
+            if (!hasClosingEnd && pDataKeysByCountKey.size > 0 && simpleCountEndItems.length === 0) {
+                setAlertMsg('🚨 실사파일이 없거나 실사 품목을 읽지 못해 작업을 중단했습니다.\n\n재고 품목 전체가 포함된 실사파일을 확인하세요.');
+                return false;
+            }
+            if (!hasClosingEnd && simpleCountEndItems.length > 0) {
+                const countedKeySet = new Set(simpleCountEndItems.map(normalizeCountKey).filter(Boolean));
+                const missingCountItems = Array.from(pDataKeysByCountKey.entries())
+                    .filter(([countKey]) => !countedKeySet.has(countKey))
+                    .map(([, batchKeys]) => pData[batchKeys[0]])
+                    .filter(Boolean)
+                    .sort((a, b) => FILTER_SORT_MODULE.compareByCodeThenName(a, b));
+                if (missingCountItems.length > 0) {
+                    const preview = missingCountItems.slice(0, 30)
+                        .map(item => `${safeStr(item.코드, 'NO_CODE')} ${safeStr(item.품명, '이름없음')}`)
+                        .join('\n');
+                    const extra = missingCountItems.length > 30 ? `\n외 ${missingCountItems.length - 30}건` : '';
+                    setAlertMsg(`🚨 실사파일 품목 누락으로 작업을 중단했습니다.\n\n누락 ${missingCountItems.length}건\n${preview}${extra}\n\n재고 품목은 수량이 0이어도 실사파일에 반드시 포함되어야 합니다.`);
+                    return false;
+                }
+            }
+            if (!hasClosingEnd && simpleCountEndItems.length > 0) {
+                const endQtyByCountKey = new Map();
                 simpleCountEndItems.forEach(endItem => {
-                    const code = String(endItem.코드 || 'NO_CODE');
+                    const countKey = normalizeCountKey(endItem);
+                    if (!countKey)
+                        return;
                     const actualQty = parseNumber(endItem.수량);
-                    if (!endQtyByCode[code])
-                        endQtyByCode[code] = 0;
-                    endQtyByCode[code] += actualQty;
+                    if (!endQtyByCountKey.has(countKey))
+                        endQtyByCountKey.set(countKey, { qty: 0, item: endItem });
+                    endQtyByCountKey.get(countKey).qty += actualQty;
                 });
-                Object.keys(endQtyByCode).forEach(code => {
-                    const totalActualQty = endQtyByCode[code];
-                    const matchingKeys = Object.keys(pData).filter(k => pData[k].코드 === code);
+                endQtyByCountKey.forEach(({ qty: totalActualQty, item: simpleItem }, countKey) => {
+                    const matchingKeys = pDataKeysByCountKey.get(countKey) || [];
                     if (matchingKeys.length > 0) {
                         let remainingActual = totalActualQty;
                         matchingKeys.forEach((key, index) => {
@@ -6059,7 +6498,7 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                         });
                     }
                     else {
-                        const simpleItem = simpleCountEndItems.find(i => String(i.코드) === code);
+                        const code = String(simpleItem && simpleItem.코드 || 'NO_CODE');
                         const batchKey = generateBatchKey(code, simpleItem ? simpleItem.품명 : '미상', 0, '미지정', targetDateStrFromData);
                         pData[batchKey] = {
                             batchKey, 코드: code, 품명: simpleItem ? simpleItem.품명 : '미상', 단가: 0, 일자: targetDateStrFromData, 거래처: '미지정', 기초: 0, 입고: 0, 출고: 0, 대체입고: 0, 대체출고: 0, 전산잔량: 0, 실사: totalActualQty, 로스: totalActualQty, 매출액: 0, 매출원가: 0, 메모: '', 이슈: ['🚨전산 재고 없음'], 출고내역: {}, _orig: { 기초: 0, 입고: 0, 출고: 0, 단가: 0 }, isDummy: (!code || code === 'NO_CODE'), 수기확인완료: false
@@ -6071,24 +6510,10 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                 if (!item._fromFile4) {
                     item._orig = { 기초: item.기초, 입고: item.입고, 출고: item.출고, 단가: item.단가 };
                     item.전산잔량 = item.기초 + item.입고 - item.출고;
-                    // V1.a22.12: 실사값이 비어있을 때(null) 전체 실사 파일과 부분 실사 파일을 구분한다.
-                    // 전체 실사/수불마감이면 누락 품목을 0재고로 볼 수 있지만,
-                    // 일부 품목만 담긴 실사 파일이면 누락 품목을 0으로 강제하지 않는다.
+                    // 실사 누락은 위에서 작업 중단한다. 실사값이 없다는 이유로 0을 자동 확정하지 않는다.
                     if (item.실사 === null) {
-                        if (parsedEnd.length > 0 && isFullEndFile) {
-                            item.실사 = 0;
-                            item.로스 = item.실사 - item.전산잔량;
-                            if (item.로스 !== 0) {
-                                if (!item.이슈.includes(`🚨수량변동(실사누락)`))
-                                    item.이슈.push(`🚨수량변동(실사누락)`);
-                                item.수기확인완료 = false;
-                            }
-                        }
-                        else {
-                            // 4번 파일이 없거나 부분 실사 파일이면, 누락행은 미조사로 보고 전산잔량을 유지한다.
-                            item.실사 = item.전산잔량;
-                            item.로스 = 0;
-                        }
+                        item.실사 = item.전산잔량;
+                        item.로스 = 0;
                     }
                 }
             });
@@ -6132,7 +6557,6 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
             const finalProductData = Object.values(pData)
                 .map(item => DATAOPS_VENDOR_CHIP_MODULE.reconcileItem(item))
                 .filter(item => !isSummaryOrInvalidProductRow({ code: item.코드, name: item.품명, raw: item._raw }))
-                .filter(item => !(item.기초 === 0 && item.입고 === 0 && item.출고 === 0 && item.실사 === 0 && item.로스 === 0))
                 .sort((a, b) => {
                 const codeA = safeStr(a.코드 || '').replace(/\.0$/, '').trim();
                 const codeB = safeStr(b.코드 || '').replace(/\.0$/, '').trim();
@@ -6248,10 +6672,12 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
             else if (parsedEnd.length > 0) {
                 setTimeout(() => { setAlertMsg("🔄 [실사 교차 검증 모드]\n\n실사 엑셀(단순수량)과 원시 데이터가 함께 업로드되었습니다.\n\n전산 수량(기초+입고-출고)과 실사 수량을 비교하여 변동된 항목만 이슈 카드로 안내합니다."); }, 800);
             }
+            return true;
         }
         catch (err) {
             setAlertMsg('데이터 분석 중 오류가 발생했습니다. 엑셀 파일 형식이나 매핑 규칙을 확인해주세요.');
             console.error(err);
+            return false;
         }
         finally {
             setIsProcessing(false);
@@ -6331,15 +6757,17 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
             if (warnings.length > 0) {
                 setConfirmModal({ isOpen: true, warnings, payload });
                 setIsProcessing(false);
+                return null;
             }
             else {
-                executeAnalysis(payload);
+                return executeAnalysis(payload);
             }
         }
         catch (err) {
             setAlertMsg('데이터 분석 중 오류가 발생했습니다.');
             console.error(err);
             setIsProcessing(false);
+            return false;
         }
     }, [mappings, executeAnalysis, setAlertMsg, setConfirmModal, setIsProcessing]);
     const runCostExtraction = useCallback(async (filesObj) => {
@@ -6467,8 +6895,6 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                     actualQty = parseNumber(item._raw['기말실사(이월수량)']);
                 else if (((_d = item._raw) === null || _d === void 0 ? void 0 : _d['기말실사']) !== undefined)
                     actualQty = parseNumber(item._raw['기말실사']);
-                if (actualQty <= 0)
-                    return;
                 let remainingQty = actualQty;
                 const codeKey = normalizeCodeKey(code);
                 const nameKey = normalizeKeyText(stockName);
@@ -6513,7 +6939,7 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                         기초: qty, 입고: 0, 출고: 0, 대체입고: 0, 대체출고: 0, 전산잔량: qty, 실사: qty, 로스: 0,
                         매출액: 0, 매출원가: 0, 메모: memo || (((_e = item._raw) === null || _e === void 0 ? void 0 : _e['수기메모']) || ''),
                         이슈: [fallback ? fallbackLabel : `✅${purchaseDate}(${purchaseVendor})원가추출`, priceMismatchIssue, ...(issues || [])].filter(Boolean),
-                        출고내역: {}, _orig: { 기초: qty, 입고: 0, 출고: 0, 단가: unitPrice }, isDummy: (!code || code === 'NO_CODE') && fallback, 수기확인완료: fallback ? (unitPrice > 0) : true,
+                        출고내역: {}, _orig: { 기초: qty, 입고: 0, 출고: 0, 단가: unitPrice }, isDummy: (!code || code === 'NO_CODE') && fallback, 수기확인완료: false,
                         _costExtractMode: mode, _stockRecordDate: item.일자 || '', _stockRecordVendor: item.거래처 || '', _stockRecordPrice: origPrice, 기본: getBasicRawValue(item),
                         _dateDisplayMemo: fallback ? '구매현황에서 해당 재고수량에 배정할 구매일자를 찾지 못했습니다. 오늘 날짜로 보정하지 않았습니다.' : `${purchaseDate}(${candidate.source || '구매현황'})`,
                         _matchedBy: inPoolByCode[codeKey] ? 'code' : 'name', _costExtractAdjustGroupKey: adjustGroupKey, _purchaseCandidateLots: purchaseCandidates,
@@ -6522,38 +6948,66 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                         _purchaseLotName: candidate ? safeStr(candidate.name) : '', _purchaseLotSpec: candidate ? safeStr(candidate.spec) : '', _purchaseLotUnit: candidate ? safeStr(candidate.unit) : ''
                     };
                 };
-                const override = manualLotOverrides[adjustGroupKey];
-                const overrideLots = override && override.lots ? override.lots : null;
-                const overrideQtySum = overrideLots ? Object.values(overrideLots).reduce((s, v) => s + safeNum(v), 0) : 0;
-                const overrideMatchesCurrentQty = overrideLots && Math.abs(overrideQtySum - actualQty) < 0.0000001;
-                if (overrideMatchesCurrentQty) {
-                    purchaseCandidates.forEach(candidate => {
-                        const qty = safeNum(overrideLots[candidate.lotKey]);
-                        if (qty <= 0) return;
-                        const sourceLot = inList.find(l => buildCandidateLot(l, 0).lotKey === candidate.lotKey);
-                        if (sourceLot) sourceLot._remainQty = Math.max(0, safeNum(sourceLot._remainQty) - qty);
-                        remainingQty -= qty;
-                        makeExtractRow({ qty, candidate, mode: 'MANUAL_PURCHASE_LOT_OVERRIDE', issues: ['✅관리자확정Lot'], memo: '관리자 Lot 재배정' });
-                    });
+                const makeNonPositiveStockRow = () => {
+                    const mode = actualQty < 0 ? 'NEGATIVE_STOCK' : 'ZERO_STOCK';
+                    const groupKey = `${code}|${origPrice}|${mode}|${uniqueIdCounter++}`;
+                    const stockDate = safeStr(item.일자, '');
+                    const stockVendor = safeStr(item.거래처, '미지정');
+                    const row = {
+                        batchKey: groupKey, 코드: code, 품명: stockName, 단가: origPrice, 일자: stockDate, 거래처: stockVendor,
+                        기초: actualQty, 입고: 0, 출고: 0, 대체입고: 0, 대체출고: 0, 전산잔량: actualQty, 실사: actualQty, 로스: 0,
+                        매출액: 0, 매출원가: 0, 메모: ((_e = item._raw) === null || _e === void 0 ? void 0 : _e['수기메모']) || '',
+                        이슈: [], 출고내역: {}, _orig: { 기초: actualQty, 입고: 0, 출고: 0, 단가: origPrice }, isDummy: (!code || code === 'NO_CODE'), 수기확인완료: false,
+                        _costExtractMode: mode, _stockRecordDate: stockDate, _stockRecordVendor: stockVendor, _stockRecordPrice: origPrice, 기본: getBasicRawValue(item),
+                        _dateDisplayMemo: actualQty < 0 ? '마이너스 재고 원본값 유지' : '0재고 원본값 유지',
+                        _matchedBy: 'stock-nonpositive', _costExtractAdjustGroupKey: adjustGroupKey, _purchaseCandidateLots: purchaseCandidates,
+                        _raw: stockRaw, _stockLotName: safeStr(stockName), _stockLotSpec: safeStr(stockSpec), _stockLotUnit: safeStr(stockUnit),
+                        _purchaseLotKey: '', _manualLotOverrideApplied: false, _purchaseLotName: '', _purchaseLotSpec: '', _purchaseLotUnit: ''
+                    };
+                    if (actualQty < 0) {
+                        row.이슈 = DATAOPS_ISSUE_HELPER.syncQuantityIssues(row, row.이슈);
+                        row.이슈 = DATAOPS_ISSUE_HELPER.syncPriceIssues(row, row.이슈);
+                        row.수기확인완료 = false;
+                    }
+                    pData[groupKey] = row;
+                };
+                if (actualQty <= 0) {
+                    makeNonPositiveStockRow();
                 }
                 else {
-                    for (let i = 0; i < inList.length && remainingQty > 0; i++) {
-                        const inItem = inList[i];
-                        const availableQty = parseNumber(inItem._remainQty);
-                        const unitPrice = parseNumber(inItem.단가);
-                        if (availableQty <= 0 || unitPrice <= 0)
-                            continue;
-                        const takeQty = Math.min(remainingQty, availableQty);
-                        remainingQty -= takeQty;
-                        inItem._remainQty = availableQty - takeQty;
-                        makeExtractRow({ qty: takeQty, candidate: buildCandidateLot(inItem, i) });
+                    const override = manualLotOverrides[adjustGroupKey];
+                    const overrideLots = override && override.lots ? override.lots : null;
+                    const overrideQtySum = overrideLots ? Object.values(overrideLots).reduce((s, v) => s + safeNum(v), 0) : 0;
+                    const overrideMatchesCurrentQty = overrideLots && Math.abs(overrideQtySum - actualQty) < 0.0000001;
+                    if (overrideMatchesCurrentQty) {
+                        purchaseCandidates.forEach(candidate => {
+                            const qty = safeNum(overrideLots[candidate.lotKey]);
+                            if (qty <= 0) return;
+                            const sourceLot = inList.find(l => buildCandidateLot(l, 0).lotKey === candidate.lotKey);
+                            if (sourceLot) sourceLot._remainQty = Math.max(0, safeNum(sourceLot._remainQty) - qty);
+                            remainingQty -= qty;
+                            makeExtractRow({ qty, candidate, mode: 'MANUAL_PURCHASE_LOT_OVERRIDE', issues: ['✅관리자확정Lot'], memo: '관리자 Lot 재배정' });
+                        });
+                    }
+                    else {
+                        for (let i = 0; i < inList.length && remainingQty > 0; i++) {
+                            const inItem = inList[i];
+                            const availableQty = parseNumber(inItem._remainQty);
+                            const unitPrice = parseNumber(inItem.단가);
+                            if (availableQty <= 0 || unitPrice <= 0)
+                                continue;
+                            const takeQty = Math.min(remainingQty, availableQty);
+                            remainingQty -= takeQty;
+                            inItem._remainQty = availableQty - takeQty;
+                            makeExtractRow({ qty: takeQty, candidate: buildCandidateLot(inItem, i) });
+                        }
+                    }
+                    if (remainingQty > 0) {
+                        makeExtractRow({ qty: remainingQty, fallback: true, mode: 'STOCK_FALLBACK' });
                     }
                 }
-                if (remainingQty > 0) {
-                    makeExtractRow({ qty: remainingQty, fallback: true, mode: 'STOCK_FALLBACK' });
-                }
             });
-            const finalProductData = Object.values(pData).filter(item => !isSummaryOrInvalidProductRow({ code: item.코드, name: item.품명, raw: item._raw })).filter(item => !(item.기초 === 0 && item.입고 === 0 && item.출고 === 0 && item.실사 === 0 && item.로스 === 0)).sort((a, b) => FILTER_SORT_MODULE.compareByCodeThenName(a, b));
+            const finalProductData = Object.values(pData).filter(item => !isSummaryOrInvalidProductRow({ code: item.코드, name: item.품명, raw: item._raw })).sort((a, b) => FILTER_SORT_MODULE.compareByCodeThenName(a, b));
             setProductData(DATAOPS_MASTER_LINK_MODULE.applyMasterLinksToRows(finalProductData));
             setAppStep('closing');
             setTimeout(() => { setAlertMsg("✨ [초기 재고 셋업 완료]\n\n재고/수불마감 자료를 현재 보유수량으로 보고, 매입 내역(2번)의 최신 구매분부터 역순 적용하여 실제 구매일·구매처·구매단가 기준으로 자산화 데이터를 추출했습니다.\n\n수불마감 기준일은 상품별 구매일이 아니라 재고/수불마감 파일의 기준일로 설정했습니다."); }, 800);
@@ -6568,7 +7022,7 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
     }, [mappings, setAlertMsg, setIsProcessing, setAppStep]);
     return {
         productData, setProductData, analysisPeriod, setAnalysisPeriod, targetDateStr, setTargetDateStr, substHistory, setSubstHistory, ackMultiCodes, setAckMultiCodes,
-        resetEngine, handleBaseDataChange, handleManualStockChange, executeImmediateSubstitution, handlePurchaseLotManualAdjust, executeMasterSubstitutionCandidates, handleSalesMove, executeAnalysis, runAnalysis, runCostExtraction
+        resetEngine, saveWorkState, restoreWorkState, handleBaseDataChange, handleManualStockChange, executeImmediateSubstitution, handlePurchaseLotManualAdjust, executeMasterSubstitutionCandidates, handleSalesMove, executeAnalysis, runAnalysis, runCostExtraction
     };
 };
 /* =======================================================================
@@ -6715,7 +7169,30 @@ const GuideModal = ({ isOpen, onClose }) => {
             React.createElement("div", { className: "mt-6 flex justify-end" },
                 React.createElement("button", { onClick: onClose, className: "px-6 py-2.5 bg-slate-800 text-white rounded-lg text-sm font-bold hover:bg-slate-900 transition shadow-md w-full sm:w-auto" }, "\uD655\uC778 \uBC0F \uB2EB\uAE30")))));
 };
-const ProductRow = React.memo(({ item, idx, isLinked, isActiveMulti, isMultiGroupItem, splitLotMemo, targetDateStr, onStockChange, onSpacebar, onFocusInput, onBaseDataChange, onOpenMemo, onSalesMove, onVendorChipDelete, onVendorChipEdit, onViewLayerEditBlocked, internalLotMapping, isGroupStart, isNewCategory, isMergeGroupStart, isMergeGroupEnd, isLotReviewMode, isLotReviewCandidate, isLotReviewGroupStart, isLotReviewGroupEnd, isActiveLotReviewGroup, normalizeDisplayIssues, onPurchaseLotAdjust, onToggleCodeMerge }) => {
+const DATAOPS_VENDOR_DRAG_TYPE = 'application/x-oneapp-vendor-chip';
+const DATAOPS_DRAG_EVENT_MODULE = Object.freeze({
+    types(event) {
+        try {
+            return Array.from(event?.dataTransfer?.types || []).map(type => String(type).toLowerCase());
+        }
+        catch (err) {
+            return [];
+        }
+    },
+    isFileDrag(event) {
+        const transfer = event?.dataTransfer;
+        return this.types(event).includes('files') || !!(transfer?.files && transfer.files.length > 0);
+    },
+    isVendorDrag(event) {
+        return this.types(event).includes(DATAOPS_VENDOR_DRAG_TYPE);
+    },
+    staysWithinCurrentTarget(event) {
+        const currentTarget = event?.currentTarget;
+        const relatedTarget = event?.relatedTarget;
+        return !!(currentTarget && relatedTarget && typeof currentTarget.contains === 'function' && currentTarget.contains(relatedTarget));
+    }
+});
+const ProductRow = React.memo(({ item, idx, isLinked, isActiveMulti, isMultiGroupItem, splitLotMemo, targetDateStr, onStockChange, onSpacebar, onFocusInput, onBaseDataChange, onOpenMemo, onSalesMove, onVendorChipDelete, onVendorChipEdit, onToggleAdminComplete, onViewLayerEditBlocked, internalLotMapping, isGroupStart, isNewCategory, isMergeGroupStart, isMergeGroupEnd, isLotReviewMode, isLotReviewCandidate, isLotReviewGroupStart, isLotReviewGroupEnd, isActiveLotReviewGroup, normalizeDisplayIssues, onPurchaseLotAdjust, onToggleCodeMerge }) => {
     const [isDragOver, setIsDragOver] = useState(false);
     let displayIssues = item.이슈 ? [...item.이슈] : [];
     displayIssues = displayIssues.filter(msg => !msg.includes('매입내역 없음') && !msg.includes('전산 재고 부족') && !msg.includes('재고 부족'));
@@ -7028,9 +7505,25 @@ const ProductRow = React.memo(({ item, idx, isLinked, isActiveMulti, isMultiGrou
     const lotReviewPointClass = !!isLotReviewCandidate && !isLotReviewMode ? 'border-l-4 border-l-cyan-400' : '';
     // V1.a22.29: 상품명 하단 구매정보에는 구매처 계열만 표시한다. 3.매출 거래처명(판매처)은 오른쪽 거래처칩 전용이다.
     const displayPurchaseVendor = safeStr(item._displayPurchaseVendor || item._purchaseLotVendor || item._confirmedPurchaseVendor || (item._uploadRole === 'out' || item._fromSalesConfirmedPurchase ? '' : item.거래처) || '미지정', '미지정');
-    return (React.createElement("tr", { "data-code": item.코드, "data-batch": item.batchKey, "data-merge-candidate": isMergeBoxRow ? "1" : undefined, "data-merge-group": isMergeBoxRow ? mergeGroupKey : undefined, "data-merge-group-start": isMergeBoxRow && isMergeGroupStart ? "1" : undefined, "data-merge-group-end": isMergeBoxRow && isMergeGroupEnd ? "1" : undefined, "data-lot-review-candidate": isLotReviewCandidate ? "1" : undefined, "data-lot-review-group": isLotReviewCandidate ? safeStr(item._lotReviewGroupKey || item.코드 || '') : undefined, "data-lot-review-group-start": isLotReviewMode && isLotReviewCandidate && isLotReviewGroupStart ? "1" : undefined, "data-lot-review-group-end": isLotReviewMode && isLotReviewCandidate && isLotReviewGroupEnd ? "1" : undefined, tabIndex: (isMergeBoxRow && isMergeGroupStart) ? 0 : undefined, onDragOver: (e) => { e.preventDefault(); setIsDragOver(true); }, onDragLeave: (e) => { e.preventDefault(); setIsDragOver(false); }, onDrop: (e) => {
+    return (React.createElement("tr", { "data-code": item.코드, "data-batch": item.batchKey, "data-merge-candidate": isMergeBoxRow ? "1" : undefined, "data-merge-group": isMergeBoxRow ? mergeGroupKey : undefined, "data-merge-group-start": isMergeBoxRow && isMergeGroupStart ? "1" : undefined, "data-merge-group-end": isMergeBoxRow && isMergeGroupEnd ? "1" : undefined, "data-lot-review-candidate": isLotReviewCandidate ? "1" : undefined, "data-lot-review-group": isLotReviewCandidate ? safeStr(item._lotReviewGroupKey || item.코드 || '') : undefined, "data-lot-review-group-start": isLotReviewMode && isLotReviewCandidate && isLotReviewGroupStart ? "1" : undefined, "data-lot-review-group-end": isLotReviewMode && isLotReviewCandidate && isLotReviewGroupEnd ? "1" : undefined, tabIndex: (isMergeBoxRow && isMergeGroupStart) ? 0 : undefined, onDragOver: (e) => {
+            if (!DATAOPS_DRAG_EVENT_MODULE.isVendorDrag(e))
+                return;
             e.preventDefault();
-            setIsDragOver(false);
+            if (!isDragOver)
+                setIsDragOver(true);
+        }, onDragLeave: (e) => {
+            if (!DATAOPS_DRAG_EVENT_MODULE.isVendorDrag(e) || DATAOPS_DRAG_EVENT_MODULE.staysWithinCurrentTarget(e))
+                return;
+            e.preventDefault();
+            if (isDragOver)
+                setIsDragOver(false);
+        }, onDrop: (e) => {
+            if (!DATAOPS_DRAG_EVENT_MODULE.isVendorDrag(e))
+                return;
+            e.preventDefault();
+            e.stopPropagation();
+            if (isDragOver)
+                setIsDragOver(false);
             try {
                 const d = JSON.parse(e.dataTransfer.getData('text/plain'));
                 // 🌟 2중 방어막: 드래그된 수량이 정상적인 숫자일 때만 이동을 허용하여 NaN 감염 방지
@@ -7116,7 +7609,7 @@ const ProductRow = React.memo(({ item, idx, isLinked, isActiveMulti, isMultiGrou
                         else if (data.isLifo) {
                             chipClass = "bg-sky-50 border-sky-200 text-sky-600 hover:bg-sky-100 hover:border-sky-300";
                         }
-                        return (React.createElement("div", { key: vendor, draggable: true, onDragStart: (e) => { e.stopPropagation(); const payload = { sourceKey: operationBatchKey, vendor, qty: data.qty, code: item.코드 }; if (isProtectedMergedViewRow) { payload.sourceIsViewRow = true; payload.sourceViewKey = item.batchKey; payload.sourceViewLotCount = safeNum(item._viewLotCount || 0); payload.sourceViewSourceKeys = Array.isArray(item._viewSourceKeys) ? item._viewSourceKeys : []; payload.sourceAllocations = Array.isArray(data._sourceAllocations) ? data._sourceAllocations : []; } e.dataTransfer.setData('text/plain', JSON.stringify(payload)); e.currentTarget.classList.add('opacity-40', 'scale-95'); }, onDragEnd: (e) => { e.currentTarget.classList.remove('opacity-40', 'scale-95'); }, onDoubleClick: (e) => { e.stopPropagation(); if (rejectCodeSummaryEdit()) return; if (onVendorChipEdit) onVendorChipEdit(operationBatchKey, displayVendor, data.qty); }, className: `group flex items-center px-2 py-0.5 rounded text-[10px] font-semibold cursor-grab active:cursor-grabbing border shadow-sm transition-all hover:-translate-y-0.5 ${chipClass}`, title: isCodeSummaryViewRow ? `${formatQty(data.qty)}개 출고 - 통합1은 즉시 이동 / 통합2 이상은 Lot 상세형에서 수동 이동` : `${formatQty(data.qty)}개 출고 ${data.matchMode === 'LOT_MATCH_FAILED' ? '(Lot매칭실패)' : (data.matchMode && String(data.matchMode).includes('FIXED_LOT') ? '(구매처Lot고정)' : (data.isLifo ? '(당일우선)' : '(순차차감)'))} - 더블클릭: 수량수정 / x: 칩삭제` },
+                        return (React.createElement("div", { key: vendor, draggable: true, onDragStart: (e) => { e.stopPropagation(); const payload = { sourceKey: operationBatchKey, vendor, qty: data.qty, code: item.코드 }; if (isProtectedMergedViewRow) { payload.sourceIsViewRow = true; payload.sourceViewKey = item.batchKey; payload.sourceViewLotCount = safeNum(item._viewLotCount || 0); payload.sourceViewSourceKeys = Array.isArray(item._viewSourceKeys) ? item._viewSourceKeys : []; payload.sourceAllocations = Array.isArray(data._sourceAllocations) ? data._sourceAllocations : []; } e.dataTransfer.setData(DATAOPS_VENDOR_DRAG_TYPE, '1'); e.dataTransfer.setData('text/plain', JSON.stringify(payload)); e.currentTarget.classList.add('opacity-40', 'scale-95'); }, onDragEnd: (e) => { e.currentTarget.classList.remove('opacity-40', 'scale-95'); }, onDoubleClick: (e) => { e.stopPropagation(); if (rejectCodeSummaryEdit()) return; if (onVendorChipEdit) onVendorChipEdit(operationBatchKey, displayVendor, data.qty); }, className: `group flex items-center px-2 py-0.5 rounded text-[10px] font-semibold cursor-grab active:cursor-grabbing border shadow-sm transition-all hover:-translate-y-0.5 ${chipClass}`, title: isCodeSummaryViewRow ? `${formatQty(data.qty)}개 출고 - 통합1은 즉시 이동 / 통합2 이상은 Lot 상세형에서 수동 이동` : `${formatQty(data.qty)}개 출고 ${data.matchMode === 'LOT_MATCH_FAILED' ? '(Lot매칭실패)' : (data.matchMode && String(data.matchMode).includes('FIXED_LOT') ? '(구매처Lot고정)' : (data.isLifo ? '(당일우선)' : '(순차차감)'))} - 더블클릭: 수량수정 / x: 칩삭제` },
                             React.createElement("span", { className: "truncate max-w-[120px] flex items-center" },
                                 safeStr(displayVendor, '미지정'),
                                 "(",
@@ -7125,6 +7618,7 @@ const ProductRow = React.memo(({ item, idx, isLinked, isActiveMulti, isMultiGrou
                             React.createElement("button", { type: "button", onMouseDown: e => { e.stopPropagation(); e.preventDefault(); }, onClick: e => { e.stopPropagation(); if (rejectCodeSummaryEdit()) return; if (onVendorChipDelete) onVendorChipDelete(operationBatchKey, displayVendor, data.qty); }, className: "ml-1 hidden group-hover:inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-rose-50 text-rose-500 border border-rose-200 hover:bg-rose-100", title: "이 상품의 해당 거래처칩 삭제" }, "×")));
                     })))),
                 React.createElement("div", { className: "flex flex-col items-end gap-1 text-right shrink-0 ml-2" },
+                    React.createElement("button", { type: "button", onClick: (e) => { e.preventDefault(); e.stopPropagation(); if (onToggleAdminComplete) onToggleAdminComplete(item); }, className: `px-1.5 py-0.5 rounded border text-[9px] font-black whitespace-nowrap ${item.수기확인완료 ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-100'}`, title: item.수기확인완료 ? "관리자 완료 취소" : "관리자가 이 행의 최종 완료를 직접 확정" }, item.수기확인완료 ? "관리자 완료" : "완료 확정"),
                     item._costExtractAdjustGroupKey && Array.isArray(item._purchaseCandidateLots) && React.createElement("button", { onClick: () => onPurchaseLotAdjust && onPurchaseLotAdjust(operationBatchKey), className: "text-emerald-600 hover:text-emerald-800 mb-0.5", title: "구매잔량 Lot 조정: 최근 Lot 0 처리 / 이전 Lot 수량 입력" },
                         React.createElement("i", { className: "fas fa-layer-group text-xs" })),
                     React.createElement("button", { onClick: () => onOpenMemo(operationBatchKey, visibleMemoText || ''), className: `transition-colors ${hasVisibleMemo ? 'text-blue-500 hover:text-blue-700 mb-0.5' : 'text-slate-300 hover:text-slate-400'}`, title: "\uBA54\uBAA8 \uCD94\uAC00/\uC218\uC815" },
@@ -7136,11 +7630,29 @@ const ProductRow = React.memo(({ item, idx, isLinked, isActiveMulti, isMultiGrou
                     internalMemos.length > 0 && internalMemos.map((msg, i) => (React.createElement("span", { key: `int-${i}`, className: "px-2 py-0.5 bg-slate-50 text-slate-500 border border-slate-200 border-dashed rounded font-medium text-[10px] whitespace-nowrap shadow-sm mt-0.5", title: "\uB0B4\uBD80 \uBD84\uBC30 \uAE30\uB85D" },
                         React.createElement("i", { className: "fas fa-info-circle text-[9px] mr-1 text-slate-400" }),
                         '내부'))))))));
-}, (prevProps, nextProps) => prevProps.item === nextProps.item && prevProps.isLinked === nextProps.isLinked && prevProps.idx === nextProps.idx && prevProps.isActiveMulti === nextProps.isActiveMulti && prevProps.isMultiGroupItem === nextProps.isMultiGroupItem && prevProps.splitLotMemo === nextProps.splitLotMemo && prevProps.targetDateStr === nextProps.targetDateStr && prevProps.internalLotMapping === nextProps.internalLotMapping && prevProps.isGroupStart === nextProps.isGroupStart && prevProps.isNewCategory === nextProps.isNewCategory && prevProps.isMergeGroupStart === nextProps.isMergeGroupStart && prevProps.isMergeGroupEnd === nextProps.isMergeGroupEnd && prevProps.isLotReviewMode === nextProps.isLotReviewMode && prevProps.isLotReviewCandidate === nextProps.isLotReviewCandidate && prevProps.isLotReviewGroupStart === nextProps.isLotReviewGroupStart && prevProps.isLotReviewGroupEnd === nextProps.isLotReviewGroupEnd && prevProps.isActiveLotReviewGroup === nextProps.isActiveLotReviewGroup && prevProps.onPurchaseLotAdjust === nextProps.onPurchaseLotAdjust && prevProps.onToggleCodeMerge === nextProps.onToggleCodeMerge);
+}, (prevProps, nextProps) => prevProps.item === nextProps.item && prevProps.isLinked === nextProps.isLinked && prevProps.idx === nextProps.idx && prevProps.isActiveMulti === nextProps.isActiveMulti && prevProps.isMultiGroupItem === nextProps.isMultiGroupItem && prevProps.splitLotMemo === nextProps.splitLotMemo && prevProps.targetDateStr === nextProps.targetDateStr && prevProps.internalLotMapping === nextProps.internalLotMapping && prevProps.isGroupStart === nextProps.isGroupStart && prevProps.isNewCategory === nextProps.isNewCategory && prevProps.isMergeGroupStart === nextProps.isMergeGroupStart && prevProps.isMergeGroupEnd === nextProps.isMergeGroupEnd && prevProps.isLotReviewMode === nextProps.isLotReviewMode && prevProps.isLotReviewCandidate === nextProps.isLotReviewCandidate && prevProps.isLotReviewGroupStart === nextProps.isLotReviewGroupStart && prevProps.isLotReviewGroupEnd === nextProps.isLotReviewGroupEnd && prevProps.isActiveLotReviewGroup === nextProps.isActiveLotReviewGroup && prevProps.onPurchaseLotAdjust === nextProps.onPurchaseLotAdjust && prevProps.onToggleCodeMerge === nextProps.onToggleCodeMerge && prevProps.onToggleAdminComplete === nextProps.onToggleAdminComplete);
 const FileBox = React.memo(({ title, type, icon, files, setFiles, autoAssignFiles, isCompact }) => {
     const inputRef = useRef(null);
     const [isDragging, setIsDragging] = useState(false);
-    const handleBoxDrop = (e) => { e.preventDefault(); e.stopPropagation(); setIsDragging(false); const droppedFiles = Array.from(e.dataTransfer.files); if (droppedFiles.length > 1)
+    const handleBoxDragOver = (e) => {
+        if (!DATAOPS_DRAG_EVENT_MODULE.isFileDrag(e))
+            return;
+        e.preventDefault();
+        e.stopPropagation();
+        if (!isDragging)
+            setIsDragging(true);
+    };
+    const handleBoxDragLeave = (e) => {
+        if (!DATAOPS_DRAG_EVENT_MODULE.isFileDrag(e) || DATAOPS_DRAG_EVENT_MODULE.staysWithinCurrentTarget(e))
+            return;
+        e.preventDefault();
+        e.stopPropagation();
+        if (isDragging)
+            setIsDragging(false);
+    };
+    const handleBoxDrop = (e) => { if (!DATAOPS_DRAG_EVENT_MODULE.isFileDrag(e))
+        return; e.preventDefault(); e.stopPropagation(); if (isDragging)
+        setIsDragging(false); const droppedFiles = Array.from(e.dataTransfer.files); if (droppedFiles.length > 1)
         autoAssignFiles(droppedFiles);
     else if (droppedFiles.length === 1)
         setFiles(prev => ({ ...prev, [type]: droppedFiles[0] })); if (document.activeElement)
@@ -7151,7 +7663,7 @@ const FileBox = React.memo(({ title, type, icon, files, setFiles, autoAssignFile
         setFiles(prev => ({ ...prev, [type]: selectedFiles[0] })); e.target.value = ''; e.target.blur(); if (document.activeElement)
         document.activeElement.blur(); window.focus(); };
     if (isCompact) {
-        return (React.createElement("div", { className: `relative border rounded-lg transition-all cursor-pointer flex items-center justify-between h-[42px] z-10 px-3 overflow-hidden text-left shadow-sm hover:-translate-y-0.5 ${files[type] ? 'border-slate-500 bg-slate-700' : 'border-slate-600 bg-slate-800 hover:border-slate-500 hover:bg-slate-700'} ${isDragging ? 'border-blue-500 bg-slate-700 border-dashed shadow-md ring-1 ring-blue-400' : ''}`, onDragOver: (e) => { e.preventDefault(); e.stopPropagation(); setIsDragging(true); }, onDragLeave: (e) => { e.preventDefault(); e.stopPropagation(); setIsDragging(false); }, onDrop: handleBoxDrop, onClick: () => inputRef.current.click() },
+        return (React.createElement("div", { className: `relative border rounded-lg transition-all cursor-pointer flex items-center justify-between h-[42px] z-10 px-3 overflow-hidden text-left shadow-sm hover:-translate-y-0.5 ${files[type] ? 'border-slate-500 bg-slate-700' : 'border-slate-600 bg-slate-800 hover:border-slate-500 hover:bg-slate-700'} ${isDragging ? 'border-blue-500 bg-slate-700 border-dashed shadow-md ring-1 ring-blue-400' : ''}`, onDragOver: handleBoxDragOver, onDragLeave: handleBoxDragLeave, onDrop: handleBoxDrop, onClick: () => inputRef.current.click() },
             React.createElement("input", { type: "file", ref: inputRef, accept: ".xlsx, .xls, .csv", onChange: handleOnChange, className: "hidden", multiple: true }),
             React.createElement("div", { className: "flex items-center gap-2.5 overflow-hidden w-full" },
                 React.createElement("i", { className: `fas ${icon} ${files[type] ? 'text-blue-400' : 'text-slate-400'} shrink-0 text-sm` }),
@@ -7159,7 +7671,7 @@ const FileBox = React.memo(({ title, type, icon, files, setFiles, autoAssignFile
                     React.createElement("div", { className: "font-bold text-[10px] text-slate-400 truncate uppercase tracking-tight" }, title),
                     React.createElement("div", { className: "text-[12px] font-bold truncate leading-none mt-0.5" }, files[type] ? React.createElement("span", { className: "text-slate-100" }, files[type].name) : React.createElement("span", { className: "text-slate-500" }, "\uD074\uB9AD\uD558\uC5EC \uBCC0\uACBD"))))));
     }
-    return (React.createElement("div", { className: `relative border-[3px] rounded-2xl transition-all cursor-pointer flex flex-col items-center justify-center min-h-[140px] z-10 p-5 text-center ${files[type] ? 'border-slate-300 bg-white border-solid shadow-sm' : 'border-slate-200 bg-slate-50 border-dashed hover:border-slate-300 hover:bg-white shadow-sm'} ${isDragging ? 'border-blue-500 bg-blue-50 border-dashed scale-[1.02] shadow-md' : ''}`, onDragOver: (e) => { e.preventDefault(); e.stopPropagation(); setIsDragging(true); }, onDragLeave: (e) => { e.preventDefault(); e.stopPropagation(); setIsDragging(false); }, onDrop: handleBoxDrop, onClick: () => inputRef.current.click() },
+    return (React.createElement("div", { className: `relative border-[3px] rounded-2xl transition-all cursor-pointer flex flex-col items-center justify-center min-h-[140px] z-10 p-5 text-center ${files[type] ? 'border-slate-300 bg-white border-solid shadow-sm' : 'border-slate-200 bg-slate-50 border-dashed hover:border-slate-300 hover:bg-white shadow-sm'} ${isDragging ? 'border-blue-500 bg-blue-50 border-dashed scale-[1.02] shadow-md' : ''}`, onDragOver: handleBoxDragOver, onDragLeave: handleBoxDragLeave, onDrop: handleBoxDrop, onClick: () => inputRef.current.click() },
         React.createElement("input", { type: "file", ref: inputRef, accept: ".xlsx, .xls, .csv", onChange: handleOnChange, className: "hidden", multiple: true }),
         React.createElement("i", { className: `fas ${icon} text-4xl mb-3 ${files[type] ? 'text-blue-500' : 'text-slate-300'}` }),
         React.createElement("div", { className: "font-black text-[16px] text-slate-800 tracking-tight" }, title),
@@ -7176,13 +7688,13 @@ function App() {
     const [activeIssueMode, setActiveIssueMode] = useState(null);
     const [activeMultiCode, setActiveMultiCode] = useState(null);
     const [isProcessing, setIsProcessing] = useState(false);
+    const isClosingOutputBlocked = isProcessing || ['processing', 'blocked', 'awaiting-confirmation'].includes(analysisMeta.status);
     const [error, setError] = useState('');
     const [alertMsg, setAlertMsg] = useState('');
     // V1.a22.74: 02창고 마감오차는 일반 문장 팝업이 아니라 구매/판매 상세 박스 전용 팝업으로 표시한다.
     const [transferClosingAlert, setTransferClosingAlert] = useState(null);
     const [confirmModal, setConfirmModal] = useState({ isOpen: false, warnings: [], payload: null });
     const [showSettings, setShowSettings] = useState(false);
-    const [isGlobalDragging, setIsGlobalDragging] = useState(false);
     const [undoUi, setUndoUi] = useState({ state: 'closed' });
     const [linkSourceKey, setLinkSourceKey] = useState(null);
     const [memoModal, setMemoModal] = useState({ isOpen: false, batchKey: null, text: '' });
@@ -7361,7 +7873,7 @@ function App() {
         return true;
     }, [viewMode, getVisibleMergeCandidateRows, focusMergeCandidateAt, setAlertMsg]);
     // 비즈니스 로직 엔진 연결
-    const { productData, setProductData, analysisPeriod, setAnalysisPeriod, targetDateStr, setTargetDateStr, substHistory, setSubstHistory, ackMultiCodes, setAckMultiCodes, resetEngine, handleBaseDataChange, handleManualStockChange, executeImmediateSubstitution, handlePurchaseLotManualAdjust, executeMasterSubstitutionCandidates, handleSalesMove, executeAnalysis, runAnalysis, runCostExtraction } = useInventoryEngine({ mappings, grouping, setAlertMsg, setConfirmModal, setIsProcessing, setAppStep });
+    const { productData, setProductData, analysisPeriod, setAnalysisPeriod, targetDateStr, setTargetDateStr, substHistory, setSubstHistory, ackMultiCodes, setAckMultiCodes, resetEngine, saveWorkState, restoreWorkState, handleBaseDataChange, handleManualStockChange, executeImmediateSubstitution, handlePurchaseLotManualAdjust, executeMasterSubstitutionCandidates, handleSalesMove, executeAnalysis, runAnalysis, runCostExtraction } = useInventoryEngine({ mappings, grouping, setAlertMsg, setConfirmModal, setIsProcessing, setAppStep });
     const isCostExtractionMode = !files.prev && files.in && !files.out && files.end;
     const hasEndFile = !!files.end;
     // V1.a22.12: 실행 버튼은 업로드된 파일 역할에 맞는 것만 노출한다.
@@ -7414,6 +7926,18 @@ function App() {
         const pad = (n) => String(n).padStart(2, '0');
         return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
     }, []);
+    const handleRestoreSavedWork = useCallback(async () => {
+        if (!window.confirm('현재 화면 작업을 저장된 작업으로 교체할까요?'))
+            return;
+        const restored = await restoreWorkState();
+        if (restored) {
+            setAnalysisMeta({
+                fileLabel: '저장된 DataOps 작업',
+                analyzedAt: formatAnalysisTime(new Date()),
+                status: 'done'
+            });
+        }
+    }, [restoreWorkState, formatAnalysisTime]);
     const resetAnalysisWorkspace = useCallback((nextStatus = 'selected') => {
         resetEngine();
         setViewMode('LOT_DETAIL');
@@ -7857,6 +8381,7 @@ function App() {
                 msg.includes('🚨Lot원가확인') ||
                 msg.includes('🚨Lot불일치') ||
                 msg.includes('🚨Lot매치실패') ||
+                msg.includes('🚨Lot미배정') ||
                 msg.includes('🚨Lot확인필요') ||
                 msg.includes('🚨Lot매치확인') ||
                 msg.includes('🚨1창고FIFO') ||
@@ -7872,6 +8397,7 @@ function App() {
                 msg.includes('Lot원가확인') ||
                 msg.includes('Lot불일치') ||
                 msg.includes('Lot매치실패') ||
+                msg.includes('Lot미배정') ||
                 msg.includes('Lot확인필요') ||
                 msg.includes('Lot매치확인') ||
                 msg.includes('🚨1창고FIFO') ||
@@ -8204,8 +8730,13 @@ function App() {
         issueFocusTimersRef.current.forEach(id => clearTimeout(id));
         issueFocusTimersRef.current = [];
         focusedInputRef.current = { key: null, idx: -1 };
-        await runAnalysis(targetFiles);
-        setAnalysisMeta({ fileLabel, analyzedAt: formatAnalysisTime(new Date()), status: 'done' });
+        const analysisResult = await runAnalysis(targetFiles);
+        if (analysisResult === true)
+            setAnalysisMeta({ fileLabel, analyzedAt: formatAnalysisTime(new Date()), status: 'done' });
+        else if (analysisResult === false)
+            setAnalysisMeta({ fileLabel, analyzedAt: '', status: 'blocked' });
+        else
+            setAnalysisMeta({ fileLabel, analyzedAt: '', status: 'awaiting-confirmation' });
     }, [files, isProcessing, buildAnalysisFileLabel, getDefaultFilters, runAnalysis, formatAnalysisTime]);
     /* =======================================================================
        V1.a22.12 2전송검증 / 단가확인 알고리즘 불일치 전용 + 잔량확인 시트 추가
@@ -9521,7 +10052,7 @@ ${issueLine}`);
                     출고내역: {},
                     _orig: { 기초: 0, 입고: row.purchaseQty, 출고: row.salesQty, 단가: avgCost },
                     isDummy: false,
-                    수기확인완료: true,
+                    수기확인완료: false,
                     _analysisMode: 'TRANSFER_DIRECT_CHECK',
                     _transfer: transferInfo
                 };
@@ -9921,8 +10452,19 @@ ${balanceText}
             return updated;
         });
     }, [resetAnalysisWorkspace, buildAnalysisFileLabel]);
-    const handleGlobalDrop = useCallback((e) => { e.preventDefault(); setIsGlobalDragging(false); const droppedFiles = Array.from(e.dataTransfer.files); if (droppedFiles.length > 0)
-        autoAssignFiles(droppedFiles); window.focus(); }, [autoAssignFiles]);
+    const handleGlobalDragOver = useCallback((e) => {
+        if (DATAOPS_DRAG_EVENT_MODULE.isFileDrag(e))
+            e.preventDefault();
+    }, []);
+    const handleGlobalDrop = useCallback((e) => {
+        if (!DATAOPS_DRAG_EVENT_MODULE.isFileDrag(e))
+            return;
+        e.preventDefault();
+        const droppedFiles = Array.from(e.dataTransfer.files);
+        if (droppedFiles.length > 0)
+            autoAssignFiles(droppedFiles);
+        window.focus();
+    }, [autoAssignFiles]);
     const handleResetFiles = useCallback(() => {
         setFiles({ prev: null, in: null, out: null, end: null });
         resetAnalysisWorkspace('idle');
@@ -10071,7 +10613,9 @@ ${balanceText}
             let next = DATAOPS_VENDOR_CHIP_MODULE.cancelVendorChip(item, label, 0);
             next.이슈 = DATAOPS_ISSUE_HELPER.syncQuantityIssues(next, next.이슈 || []);
             next = DATAOPS_OPERATION_MODULE.syncSplitLossInsight(next);
-            next.수기확인완료 = !DATAOPS_ISSUE_HELPER.hasUnresolved(next.이슈);
+            next.수기확인완료 = false;
+            next._adminCompletedAt = '';
+            next._adminCompletionSource = '';
             return next;
         }));
     }, [setProductData]);
@@ -10080,16 +10624,62 @@ ${balanceText}
         const input = window.prompt(`${label} 거래처칩 수량 수정`, formatQty(qty));
         if (input === null) return;
         const nextQty = parseNumber(input);
-        if (!isFinite(nextQty) || nextQty < 0) { setAlertMsg('수량은 0 이상 숫자로 입력해야 합니다.'); return; }
+        if (!isFinite(nextQty)) { setAlertMsg('수량은 숫자로 입력해야 합니다.'); return; }
+        if ((safeNum(qty) < 0 && nextQty > 0) || (safeNum(qty) > 0 && nextQty < 0)) {
+            setAlertMsg('반품/출고 부호는 변경할 수 없습니다. 원본과 같은 부호 또는 0을 입력하세요.');
+            return;
+        }
         setProductData(prev => prev.map(item => {
             if (item.batchKey !== batchKey) return item;
             let next = DATAOPS_VENDOR_CHIP_MODULE.cancelVendorChip(item, label, nextQty);
             next.이슈 = DATAOPS_ISSUE_HELPER.syncQuantityIssues(next, next.이슈 || []);
             next = DATAOPS_OPERATION_MODULE.syncSplitLossInsight(next);
-            next.수기확인완료 = !DATAOPS_ISSUE_HELPER.hasUnresolved(next.이슈);
+            next.수기확인완료 = false;
+            next._adminCompletedAt = '';
+            next._adminCompletionSource = '';
             return next;
         }));
     }, [setProductData, setAlertMsg]);
+    const handleToggleAdminComplete = useCallback((displayRow = {}) => {
+        const sourceKeys = Array.isArray(displayRow._viewSourceKeys) && displayRow._viewSourceKeys.length
+            ? displayRow._viewSourceKeys.map(safeStr).filter(Boolean)
+            : [safeStr(displayRow._representativeSourceKey || displayRow.batchKey)].filter(Boolean);
+        if (sourceKeys.length === 0)
+            return;
+        const sourceKeySet = new Set(sourceKeys);
+        const targetRows = productData.filter(row => sourceKeySet.has(safeStr(row.batchKey)));
+        if (targetRows.length === 0)
+            return;
+        const shouldComplete = targetRows.some(row => !row.수기확인완료);
+        const completedAt = shouldComplete ? new Date().toISOString() : '';
+        const completionIssuePattern = /잔량|계산|수량변동|단가없음|단가변경|Lot|수량부족|구매처단가확인|매입처없음|전산 재고 없음/;
+        setProductData(prev => prev.map(row => {
+            if (!sourceKeySet.has(safeStr(row.batchKey)))
+                return row;
+            const issues = (row.이슈 || []).map(message => {
+                const text = safeStr(message);
+                if (shouldComplete)
+                    return text.replace(/🚨/g, '✅');
+                if (text.includes('✅') && completionIssuePattern.test(text))
+                    return text.replace(/✅/g, '🚨');
+                return text;
+            });
+            return {
+                ...row,
+                이슈: DATAOPS_ISSUE_HELPER.unique(issues),
+                수기확인완료: shouldComplete,
+                _adminCompletedAt: completedAt,
+                _adminCompletionSource: shouldComplete ? 'MANUAL_ADMIN' : ''
+            };
+        }));
+        const codes = new Set(targetRows.map(row => DATAOPS_VIEW_LAYER_MODULE.normalizeCode(row)).filter(code => code && code !== 'NO_CODE'));
+        setAckMultiCodes(prev => {
+            const next = new Set(prev);
+            codes.forEach(code => shouldComplete ? next.add(code) : next.delete(code));
+            return next;
+        });
+        setAlertMsg(shouldComplete ? '관리자가 선택 행을 최종 완료로 확정했습니다.' : '관리자 완료를 취소했습니다.');
+    }, [productData, setProductData, setAckMultiCodes, setAlertMsg]);
     // V1.a22.84: 이슈카드 이동은 카드 선택 시 만든 고정 큐와 방문경로 커서로 관리한다.
     // - Tab: 현재 항목을 확인 처리하고 큐의 다음 미완료 항목으로 이동한다.
     // - Shift+Tab/<: 실제 방문경로의 직전 항목으로 복귀하며 확인상태는 변경하지 않는다.
@@ -10256,44 +10846,7 @@ ${balanceText}
             return;
         }
 
-        // V1.a22.85: 수동 스크롤/수정으로 포커스가 다른 행에 있어도 검토 기준점은 session.currentKey다.
-        // 따라서 Tab은 우회한 행을 기준으로 순서를 바꾸지 않고, 원래 검토행을 확인 처리한 뒤 다음 큐 항목으로 복귀한다.
-        const currentKey = safeStr(session.currentKey || session.keys[session.cursor]);
-        const currentIndex = productData.findIndex(p => safeStr(p.batchKey) === currentKey);
-        if (currentKey)
-            session.completedKeys.add(currentKey);
-        if (currentIndex >= 0) {
-            const currentItem = productData[currentIndex];
-            const currentCode = DATAOPS_VIEW_LAYER_MODULE.normalizeCode(currentItem);
-            setProductData(prev => prev.map(item => {
-                if (safeStr(item.batchKey) !== currentKey) return item;
-                let needsUpdate = false;
-                const next = { ...item };
-                if (!next.수기확인완료) {
-                    next.수기확인완료 = true;
-                    needsUpdate = true;
-                }
-                if (next.이슈 && next.이슈.some(i => safeStr(i).includes('🚨'))) {
-                    next.이슈 = next.이슈.map(msg => safeStr(msg).replace(/🚨/g, '✅'));
-                    needsUpdate = true;
-                }
-                return needsUpdate ? next : item;
-            }));
-            if (type === 'stockLot' && currentCode && currentCode !== 'NO_CODE' && lotReviewCandidateCodeSet.has(currentCode) && !DATAOPS_CODE_MERGE_OVERRIDE_MODULE.isDetailMerged(currentCode)) {
-                setAckMultiCodes(prev => {
-                    const next = new Set(prev);
-                    next.add(currentCode);
-                    return next;
-                });
-            }
-            if (type === 'multiPrice' && multiPriceCodes.includes(currentItem.코드)) {
-                setAckMultiCodes(prev => {
-                    const next = new Set(prev);
-                    next.add(currentItem.코드);
-                    return next;
-                });
-            }
-        }
+        // Tab은 검토 위치만 이동한다. 완료 상태와 이슈 표시는 관리자의 명시적 완료 버튼으로만 변경한다.
 
         // 역탭 후 다시 Tab을 누르면 기존 방문경로를 그대로 전진한다.
         if (session.pathCursor < session.path.length - 1) {
@@ -10316,7 +10869,7 @@ ${balanceText}
         const nextQueueIndex = findExistingQueueIndex(session, session.cursor + 1, 1, true);
         if (nextQueueIndex < 0) {
             cancelFocusTimers();
-            setAlertMsg('모든 항목의 확인이 완료되었습니다.');
+            setAlertMsg('검토 목록의 마지막 항목입니다.\n\nTab 이동은 완료 처리하지 않습니다. 최종 완료는 각 행의 관리자 완료 버튼으로 결정하세요.');
             setActiveIssueMode(null);
             activeIssueModeRef.current = null;
             setActiveMultiCode(null);
@@ -10327,57 +10880,10 @@ ${balanceText}
         session.path.push(nextQueueIndex);
         session.pathCursor = session.path.length - 1;
         focusIssueTargetByKey(session.keys[nextQueueIndex], nextQueueIndex);
-    }, [productData, multiPriceCodes, viewMode, setProductData, setAckMultiCodes, hasUnresolvedQtyIssue, hasUnresolvedLotIssue, scrollIssueRowIntoWorkCenter, getStockLotReviewTargets, lotReviewCandidateCodeSet]);
+    }, [productData, viewMode, hasUnresolvedQtyIssue, hasUnresolvedLotIssue, scrollIssueRowIntoWorkCenter, getStockLotReviewTargets]);
     const handleAcknowledgeAll = useCallback((type) => {
-        setProductData(prev => {
-            return prev.map(p => {
-                let shouldAck = false;
-                if (type === 'missingPrice') {
-                    if (!DATAOPS_OPERATION_MODULE.hasLotCostResolved(p) && (((!p.수기확인완료 && safeNum(p.단가) <= 0)) || (p.이슈 && p.이슈.some(i => i.includes('🚨단가변경') || i.includes('🚨단가없음')))))
-                        shouldAck = true;
-                }
-                else if (type === 'stockLot') {
-                    if (hasUnresolvedQtyIssue(p) || hasUnresolvedLotIssue(p))
-                        shouldAck = true;
-                }
-                else if (type === 'loss') {
-                    if (hasUnresolvedQtyIssue(p))
-                        shouldAck = true;
-                }
-                else if (type === 'splitLoss') {
-                    if (p._splitLossCandidate || (p.이슈 && p.이슈.some(i => (safeStr(i).includes('소분로스후보') || safeStr(i).includes('소분오차')))))
-                        shouldAck = true;
-                }
-                else if (type === 'multiPrice') {
-                    if (hasUnresolvedLotIssue(p))
-                        shouldAck = true;
-                }
-                if (shouldAck) {
-                    const newP = { ...p, 수기확인완료: true };
-                    if (newP.이슈 && newP.이슈.some(i => i.includes('🚨'))) {
-                        newP.이슈 = newP.이슈.map(msg => msg.replace(/🚨/g, '✅'));
-                    }
-                    return newP;
-                }
-                return p;
-            });
-        });
-        if (type === 'multiPrice' || type === 'stockLot') {
-            setAckMultiCodes(prev => {
-                const newSet = new Set(prev);
-                const codesToAck = type === 'stockLot' ? lotReviewCandidateCodes : multiPriceCodes;
-                codesToAck.forEach(c => newSet.add(c));
-                return newSet;
-            });
-        }
-        setAlertMsg("선택한 항목의 모든 이슈가 확인(✅) 처리되었습니다.");
-        setFilters(f => ({ ...f, reviewType: null }));
-        setActiveIssueMode(null);
-        activeIssueModeRef.current = null;
-        issueReviewSessionRef.current = { type: null, keys: [], cursor: -1, currentKey: '', completedKeys: new Set(), path: [], pathCursor: -1, detourActive: false, detourKey: '' };
-        issueFocusTimersRef.current.forEach(id => clearTimeout(id));
-        issueFocusTimersRef.current = [];
-    }, [setProductData, multiPriceCodes, lotReviewCandidateCodes, setAckMultiCodes, hasUnresolvedQtyIssue, hasUnresolvedLotIssue]);
+        handleIssueJump(type, 'next', false);
+    }, [handleIssueJump]);
     const handleSpacebarLink = useCallback((targetBatchKey, targetIdx) => {
         setLinkSourceKey(prevKey => {
             if (!prevKey) {
@@ -10394,25 +10900,31 @@ ${balanceText}
                 } }, 50);
                 return null;
             }
-            // V1.a22.84: 스페이스 치환은 재고/Lot 검토 큐를 재생성하지 않는다.
-            // 두 선택행은 현재 세션의 완료키로 표시해 치환 후 Tab이 다음 미확인 항목부터 이어진다.
-            const reviewSession = issueReviewSessionRef.current;
-            if (reviewSession && reviewSession.type === 'stockLot' && reviewSession.completedKeys instanceof Set) {
-                reviewSession.completedKeys.add(safeStr(prevKey));
-                reviewSession.completedKeys.add(safeStr(targetBatchKey));
-            }
+            // 스페이스 치환도 완료 상태를 바꾸지 않는다. 완료는 관리자 버튼으로만 확정한다.
             setTimeout(() => executeImmediateSubstitution(prevKey, targetBatchKey, targetIdx), 0);
             return null;
         });
     }, [executeImmediateSubstitution]);
-    const handleCombinedExport = useCallback(() => {
+    const handleCombinedExport = useCallback(async () => {
+        if (isClosingOutputBlocked) {
+            setAlertMsg("분석이 완료되기 전에는 마감자료를 생성할 수 없습니다.");
+            return;
+        }
         if (productData.length === 0) {
             setAlertMsg("다운로드할 데이터가 없습니다.");
             return;
         }
-        const { wb, exportFileNameDate } = EXPORT_MODULE.createCombinedWorkbook({ productData, screenRows: filteredProductDataRef.current || [], analysisPeriod, targetDateStr, closingStats });
+        setIsProcessing(true);
         try {
-            const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+            const { wb, exportFileNameDate } = EXPORT_MODULE.createCombinedWorkbook({ productData, analysisPeriod, targetDateStr, closingStats });
+            let excelBuffer;
+            try {
+                excelBuffer = await DATAOPS_XLSX_WORKER_MODULE.writeWorkbook(wb);
+            }
+            catch (workerError) {
+                console.warn('XLSX Worker 출력 실패, 메인 스레드 경로로 복구합니다.', workerError);
+                excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+            }
             const blob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
@@ -10428,8 +10940,15 @@ ${balanceText}
             console.error('엑셀 생성 중 오류:', err);
             setAlertMsg("엑셀 파일 생성 중 오류가 발생했습니다.");
         }
-    }, [productData, analysisPeriod, targetDateStr, closingStats]);
+        finally {
+            setIsProcessing(false);
+        }
+    }, [isClosingOutputBlocked, productData, analysisPeriod, targetDateStr, closingStats, setAlertMsg, setIsProcessing]);
     const handlePrintOutput = useCallback(() => {
+        if (isClosingOutputBlocked) {
+            setAlertMsg("분석이 완료되기 전에는 출력할 수 없습니다.");
+            return;
+        }
         const printData = filteredProductDataRef.current || [];
         if (productData.length === 0) {
             setAlertMsg("출력할 데이터가 없습니다.");
@@ -10442,7 +10961,7 @@ ${balanceText}
         const ok = EXPORT_MODULE.openPrintWindow({ productData: printData, targetDateStr, title: 'DataOps 재고 실사 출력' });
         if (!ok)
             setAlertMsg("팝업 차단으로 프린터 출력창을 열 수 없습니다. 브라우저 팝업 허용 후 다시 시도하세요.");
-    }, [productData, targetDateStr]);
+    }, [isClosingOutputBlocked, productData, targetDateStr, setAlertMsg]);
     // V1.a22.85: 검토 중 다른 행을 수정한 직후 Tab을 눌러도 250ms 입력 디바운스보다 먼저 이동할 수 있다.
     // 현재 포커스된 셀 값을 엔진에 즉시 반영한 뒤 검토 큐 이동을 계속한다.
     const flushFocusedTableEdit = useCallback(() => {
@@ -10696,7 +11215,7 @@ ${balanceText}
     useEffect(() => {
         filteredProductDataRef.current = filteredProductData;
     }, [filteredProductData]);
-    return (React.createElement("div", { className: "h-screen flex flex-col w-full relative bg-[#f8fafc]", onDragOver: (e) => { e.preventDefault(); setIsGlobalDragging(true); }, onDragLeave: (e) => { e.preventDefault(); setIsGlobalDragging(false); }, onDrop: handleGlobalDrop },
+    return (React.createElement("div", { className: "h-screen flex flex-col w-full relative bg-[#f8fafc]", onDragOver: handleGlobalDragOver, onDrop: handleGlobalDrop },
         React.createElement("header", { className: "shrink-0 bg-white border-b border-slate-200 w-full z-[60] relative shadow-sm" },
             React.createElement("div", { className: "max-w-7xl mx-auto px-4 md:px-6 py-3 flex justify-between items-center" },
                 React.createElement("div", { className: "flex flex-col md:flex-row md:items-center gap-4" },
@@ -10707,15 +11226,18 @@ ${balanceText}
                 React.createElement("div", { className: "flex items-center gap-2 shrink-0" },
                     productData.length > 0 && (React.createElement(React.Fragment, null,
                         React.createElement("button", { onClick: () => setGuideModalOpen(true), className: "px-3 py-1.5 rounded text-[12px] font-bold transition flex items-center border bg-white text-slate-700 border-slate-300 hover:bg-slate-50 shadow-sm mr-1" }, "\uC774\uC288 \uAC00\uC774\uB4DC"),
+                        React.createElement("button", { onClick: () => saveWorkState(), disabled: isProcessing, className: "px-2.5 py-1.5 rounded text-[12px] font-bold transition flex items-center border bg-white text-blue-700 border-blue-200 hover:bg-blue-50 shadow-sm disabled:opacity-40 disabled:cursor-not-allowed", title: "관리자 수정·완료·대체/치환 상태 저장" }, "작업 저장"),
+                        React.createElement("button", { onClick: handleRestoreSavedWork, disabled: isProcessing, className: "px-2.5 py-1.5 rounded text-[12px] font-bold transition flex items-center border bg-white text-violet-700 border-violet-200 hover:bg-violet-50 shadow-sm disabled:opacity-40 disabled:cursor-not-allowed", title: "마지막 저장 작업 복구" }, "작업 복구"),
                         React.createElement("div", { className: "w-px h-5 bg-slate-300 mx-1 hidden md:block" }),
-                        React.createElement("button", { onClick: handleCombinedExport, className: "px-3 py-1.5 bg-white text-slate-700 hover:bg-slate-50 rounded text-[12px] font-bold shadow-sm transition flex items-center border border-slate-300 hidden md:flex" },
+                        React.createElement("button", { onClick: handleCombinedExport, disabled: isClosingOutputBlocked, className: `px-3 py-1.5 rounded text-[12px] font-bold shadow-sm transition items-center border hidden md:flex ${isClosingOutputBlocked ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed' : 'bg-white text-slate-700 hover:bg-slate-50 border-slate-300'}` },
                             React.createElement("i", { className: "fas fa-file-excel mr-1.5 text-emerald-600" }),
                             "\uC5D1\uC140 \uB2E4\uC6B4\uB85C\uB4DC",
                             React.createElement("span", { className: "ml-1.5 px-1 py-[1px] rounded text-[9px] font-mono border-b-2 border-slate-300 bg-slate-100 text-slate-500 shadow-sm font-black" }, "F9")),
-                        React.createElement("button", { onClick: handlePrintOutput, className: "px-3 py-1.5 bg-white text-slate-700 hover:bg-slate-50 rounded text-[12px] font-bold shadow-sm transition flex items-center border border-slate-300 hidden md:flex" },
+                        React.createElement("button", { onClick: handlePrintOutput, disabled: isClosingOutputBlocked, className: `px-3 py-1.5 rounded text-[12px] font-bold shadow-sm transition items-center border hidden md:flex ${isClosingOutputBlocked ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed' : 'bg-white text-slate-700 hover:bg-slate-50 border-slate-300'}` },
                             React.createElement("i", { className: "fas fa-print mr-1.5 text-slate-600" }),
                             "\uD504\uB9B0\uD130",
                             React.createElement("span", { className: "ml-1.5 px-1 py-[1px] rounded text-[9px] font-mono border-b-2 border-slate-300 bg-slate-100 text-slate-500 shadow-sm font-black" }, "F10")))),
+                    productData.length === 0 && React.createElement("button", { onClick: handleRestoreSavedWork, disabled: isProcessing, className: "px-2.5 py-1.5 rounded text-[12px] font-bold transition flex items-center border bg-white text-violet-700 border-violet-200 hover:bg-violet-50 shadow-sm disabled:opacity-40 disabled:cursor-not-allowed", title: "마지막 저장 작업 복구" }, "작업 복구"),
                     React.createElement("button", { onClick: () => setShowSettings(!showSettings), className: "px-3 py-1.5 ml-1 md:ml-2 bg-white border border-slate-300 text-slate-700 rounded text-[12px] font-bold shadow-sm hover:bg-slate-50 transition shrink-0" }, "\uB9E4\uD551\uC124\uC815")))),
         showSettings && (React.createElement("div", { className: "fixed top-[60px] bottom-0 left-0 right-0 z-50 flex justify-center items-start animate-[fadeIn_0.3s_ease-out] bg-slate-900/10 px-3 pb-4 overflow-y-auto" },
             React.createElement("div", { className: "bg-white border-2 border-blue-200 p-5 md:p-6 rounded-xl shadow-xl relative overflow-y-auto w-full max-w-7xl mx-0 md:mx-4 mt-3 mb-6 max-h-[calc(100vh-84px)]" },
@@ -10899,7 +11421,7 @@ ${balanceText}
                     " (\uD574\uB2F9 \uAE30\uAC04\uC744 \uBC97\uC5B4\uB098\uB294 \uB370\uC774\uD130\uB294 \uBD84\uC11D\uC5D0\uC11C \uC81C\uC678\uB429\uB2C8\uB2E4)"),
                 React.createElement("div", { className: "flex justify-end gap-2" },
                     React.createElement("button", { onClick: () => { setConfirmModal({ isOpen: false, warnings: [], payload: null }); setIsProcessing(false); }, className: "px-5 py-2.5 bg-slate-100 text-slate-600 rounded-lg text-sm font-bold hover:bg-slate-200 transition" }, "\uCDE8\uC18C (\uC7AC\uC5C5\uB85C\uB4DC)"),
-                    React.createElement("button", { id: "confirm-modal-btn", onClick: () => executeAnalysis(confirmModal.payload), className: "px-5 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-700 transition shadow-sm" }, "\uD655\uC778 \uBC0F \uBD84\uC11D \uC9C4\uD589"))))),
+                    React.createElement("button", { id: "confirm-modal-btn", onClick: () => { const result = executeAnalysis(confirmModal.payload); setAnalysisMeta(meta => ({ ...meta, analyzedAt: result === true ? formatAnalysisTime(new Date()) : '', status: result === true ? 'done' : 'blocked' })); }, className: "px-5 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-700 transition shadow-sm" }, "\uD655\uC778 \uBC0F \uBD84\uC11D \uC9C4\uD589"))))),
         transferClosingAlert && !confirmModal.isOpen && (React.createElement("div", { className: "fixed inset-0 z-[360] bg-slate-900 bg-opacity-60 flex items-center justify-center p-4" },
             React.createElement("div", { className: "bg-white rounded-xl shadow-2xl p-6 w-full max-w-2xl modal-bounce" },
                 React.createElement("div", { className: "text-center mb-4" },
@@ -11060,8 +11582,8 @@ ${balanceText}
                                             React.createElement("i", { className: "fas fa-check-circle mr-1" }),
                                             "완료")) : (React.createElement("div", { className: "text-[10px] text-slate-400 font-bold mb-0 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-100 shadow-sm" }, "검토")))),
                                     activeIssueMode === 'stockLot' ? (React.createElement("button", { onClick: (e) => { e.stopPropagation(); handleAcknowledgeAll('stockLot'); }, className: `absolute top-1 right-1 text-[10px] font-bold px-1.5 py-0.5 rounded text-white shadow-md z-10 transition ${activeIssueMode === 'stockLot' ? 'bg-cyan-700 hover:bg-cyan-800 ring-2 ring-white' : 'bg-cyan-600 hover:bg-cyan-700'}` },
-                                        React.createElement("i", { className: "fas fa-check-double mr-1" }),
-                                        "확인")) : (React.createElement("button", { onClick: (e) => { e.stopPropagation(); handleIssueJump('stockLot', 'next', true); }, className: `absolute top-1 right-1 text-[10px] font-bold px-1.5 py-0.5 rounded shadow-sm z-10 transition ${activeIssueMode === 'stockLot' ? 'bg-white text-cyan-600 border border-cyan-200 hover:bg-cyan-100' : 'bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-cyan-600'}`, title: "재고 수량과 Lot 매칭 이슈를 함께 모아봅니다." },
+                                        React.createElement("i", { className: "fas fa-chevron-right mr-1" }),
+                                        "다음")) : (React.createElement("button", { onClick: (e) => { e.stopPropagation(); handleIssueJump('stockLot', 'next', true); }, className: `absolute top-1 right-1 text-[10px] font-bold px-1.5 py-0.5 rounded shadow-sm z-10 transition ${activeIssueMode === 'stockLot' ? 'bg-white text-cyan-600 border border-cyan-200 hover:bg-cyan-100' : 'bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-cyan-600'}`, title: "재고 수량과 Lot 매칭 이슈를 함께 모아봅니다." },
                                         React.createElement("i", { className: "fas fa-list mr-1" }),
                                         "보기"))),
                                 React.createElement("div", { onClick: () => { if (activeIssueMode !== 'missingPrice') {
@@ -11088,8 +11610,8 @@ ${balanceText}
                                             React.createElement("i", { className: "fas fa-check-circle mr-1" }),
                                             "완료")) : (React.createElement("div", { className: "text-[10px] text-slate-400 font-bold mb-0 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-100 shadow-sm" }, "검토")))),
                                     filters.reviewType === 'missingPrice' ? (React.createElement("button", { onClick: (e) => { e.stopPropagation(); handleAcknowledgeAll('missingPrice'); }, className: `absolute top-1 right-1 text-[10px] font-bold px-1.5 py-0.5 rounded text-white shadow-md z-10 transition ${activeIssueMode === 'missingPrice' ? 'bg-rose-700 hover:bg-rose-800 ring-2 ring-white' : 'bg-rose-600 hover:bg-rose-700'}` },
-                                        React.createElement("i", { className: "fas fa-check-double mr-1" }),
-                                        "확인")) : (React.createElement("button", { onClick: (e) => { e.stopPropagation(); handleIssueJump('missingPrice', 'next', true); }, className: `absolute top-1 right-1 text-[10px] font-bold px-1.5 py-0.5 rounded shadow-sm z-10 transition ${activeIssueMode === 'missingPrice' ? 'bg-white text-rose-600 border border-rose-200 hover:bg-rose-100' : 'bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-rose-600'}`, title: "단가 검증 항목을 검토합니다." },
+                                        React.createElement("i", { className: "fas fa-chevron-right mr-1" }),
+                                        "다음")) : (React.createElement("button", { onClick: (e) => { e.stopPropagation(); handleIssueJump('missingPrice', 'next', true); }, className: `absolute top-1 right-1 text-[10px] font-bold px-1.5 py-0.5 rounded shadow-sm z-10 transition ${activeIssueMode === 'missingPrice' ? 'bg-white text-rose-600 border border-rose-200 hover:bg-rose-100' : 'bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-rose-600'}`, title: "단가 검증 항목을 검토합니다." },
                                         React.createElement("i", { className: "fas fa-list mr-1" }),
                                         "\uBAA8\uC544\uBCF4\uAE30"))))))),
                         React.createElement("div", { className: "px-4 md:px-6 py-4 pb-12 max-w-7xl mx-auto w-full flex-1 flex flex-col" },
@@ -11228,7 +11750,7 @@ ${balanceText}
                                                     "\u2500\u2500\u2500\u2500 ",
                                                     currGroupLabel || '미지정',
                                                     " \u2500\u2500\u2500\u2500")))),
-                                            React.createElement(ProductRow, { key: item.batchKey, item: item, idx: idx, isLinked: linkSourceKey === item.batchKey || (Array.isArray(item._viewSourceKeys) && item._viewSourceKeys.includes(linkSourceKey)), isActiveMulti: activeMultiCode === item.코드, isMultiGroupItem: multiPriceCodes.includes(item.코드), splitLotMemo: splitLotMemoMap[item.batchKey] || '', targetDateStr: targetDateStr, onStockChange: handleManualStockChange, onSpacebar: handleSpacebarLink, onFocusInput: handleFocusInput, onBaseDataChange: handleBaseDataChange, onOpenMemo: (key, text) => { if (DATAOPS_VIEW_LAYER_MODULE.isViewRowKey(key)) { handleViewLayerEditBlocked(); return; } setMemoModal({ isOpen: true, batchKey: key, text }); }, onSalesMove: handleChipDropRequest, onVendorChipDelete: handleVendorChipDelete, onVendorChipEdit: handleVendorChipEdit, onViewLayerEditBlocked: handleViewLayerEditBlocked, internalLotMapping: mappings.internalLot, isGroupStart: isGroupStart, isNewCategory: isNewCategory, isMergeGroupStart: isMergeGroupStart, isMergeGroupEnd: isMergeGroupEnd, isLotReviewMode: viewMode === 'LOT_DETAIL', isLotReviewCandidate: isLotReviewCandidate, isLotReviewGroupStart: isLotReviewGroupStart, isLotReviewGroupEnd: isLotReviewGroupEnd, isActiveLotReviewGroup: isActiveLotReviewGroup, normalizeDisplayIssues: normalizeDisplayIssues, onPurchaseLotAdjust: handlePurchaseLotManualAdjust, onToggleCodeMerge: handleToggleCodeMerge })));
+                                            React.createElement(ProductRow, { key: item.batchKey, item: item, idx: idx, isLinked: linkSourceKey === item.batchKey || (Array.isArray(item._viewSourceKeys) && item._viewSourceKeys.includes(linkSourceKey)), isActiveMulti: activeMultiCode === item.코드, isMultiGroupItem: multiPriceCodes.includes(item.코드), splitLotMemo: splitLotMemoMap[item.batchKey] || '', targetDateStr: targetDateStr, onStockChange: handleManualStockChange, onSpacebar: handleSpacebarLink, onFocusInput: handleFocusInput, onBaseDataChange: handleBaseDataChange, onOpenMemo: (key, text) => { if (DATAOPS_VIEW_LAYER_MODULE.isViewRowKey(key)) { handleViewLayerEditBlocked(); return; } setMemoModal({ isOpen: true, batchKey: key, text }); }, onSalesMove: handleChipDropRequest, onVendorChipDelete: handleVendorChipDelete, onVendorChipEdit: handleVendorChipEdit, onToggleAdminComplete: handleToggleAdminComplete, onViewLayerEditBlocked: handleViewLayerEditBlocked, internalLotMapping: mappings.internalLot, isGroupStart: isGroupStart, isNewCategory: isNewCategory, isMergeGroupStart: isMergeGroupStart, isMergeGroupEnd: isMergeGroupEnd, isLotReviewMode: viewMode === 'LOT_DETAIL', isLotReviewCandidate: isLotReviewCandidate, isLotReviewGroupStart: isLotReviewGroupStart, isLotReviewGroupEnd: isLotReviewGroupEnd, isActiveLotReviewGroup: isActiveLotReviewGroup, normalizeDisplayIssues: normalizeDisplayIssues, onPurchaseLotAdjust: handlePurchaseLotManualAdjust, onToggleCodeMerge: handleToggleCodeMerge })));
                                     })))))))))),
         splitModal.isOpen && (React.createElement("div", { className: "fixed inset-0 z-[400] bg-slate-900 bg-opacity-60 flex items-center justify-center p-4" },
             React.createElement("div", { className: "bg-white rounded-xl shadow-2xl p-6 w-full max-w-xs modal-bounce" },

@@ -35,6 +35,12 @@ jobs:
       - name: Test client-side import and storage safety
         run: node scripts/test-client-safety.mjs
 
+      - name: Test DataOps zero and negative stock preservation
+        run: node scripts/test-dataops-zero-stock-contract.mjs
+
+      - name: Test DataOps operational integrity contracts
+        run: node scripts/test-dataops-operational-integrity.mjs
+
       - name: Test MerchOps sale availability pipeline
         run: node scripts/test-merchops-sale-pipeline.mjs
 
