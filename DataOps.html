@@ -40,6 +40,14 @@
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
         .loader-text { font-family: 'Pretendard', sans-serif; font-size: 14px; font-weight: 700; color: #475569; letter-spacing: -0.5px; animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
+
+        /* 외부 파일 드래그 중에는 대형 상품표의 hit-test·hover·transition 계산을 중단한다. */
+        .dataops-external-file-drag .dataops-work-table tbody,
+        .dataops-external-file-drag .dataops-work-table tbody * {
+            pointer-events: none !important;
+            transition: none !important;
+            animation: none !important;
+        }
     </style>
 </head>
 <body>
@@ -7190,6 +7198,18 @@ const DATAOPS_DRAG_EVENT_MODULE = Object.freeze({
         const currentTarget = event?.currentTarget;
         const relatedTarget = event?.relatedTarget;
         return !!(currentTarget && relatedTarget && typeof currentTarget.contains === 'function' && currentTarget.contains(relatedTarget));
+    },
+    setExternalFileDragActive(event, active) {
+        const currentTarget = event?.currentTarget;
+        const root = currentTarget?.matches?.('[data-dataops-root="1"]')
+            ? currentTarget
+            : currentTarget?.closest?.('[data-dataops-root="1"]');
+        if (!root?.classList)
+            return;
+        const className = 'dataops-external-file-drag';
+        if (root.classList.contains(className) === !!active)
+            return;
+        root.classList.toggle(className, !!active);
     }
 });
 const ProductRow = React.memo(({ item, idx, isLinked, isActiveMulti, isMultiGroupItem, splitLotMemo, targetDateStr, onStockChange, onSpacebar, onFocusInput, onBaseDataChange, onOpenMemo, onSalesMove, onVendorChipDelete, onVendorChipEdit, onToggleAdminComplete, onViewLayerEditBlocked, internalLotMapping, isGroupStart, isNewCategory, isMergeGroupStart, isMergeGroupEnd, isLotReviewMode, isLotReviewCandidate, isLotReviewGroupStart, isLotReviewGroupEnd, isActiveLotReviewGroup, normalizeDisplayIssues, onPurchaseLotAdjust, onToggleCodeMerge }) => {
@@ -7650,13 +7670,23 @@ const FileBox = React.memo(({ title, type, icon, files, setFiles, autoAssignFile
         if (isDragging)
             setIsDragging(false);
     };
-    const handleBoxDrop = (e) => { if (!DATAOPS_DRAG_EVENT_MODULE.isFileDrag(e))
-        return; e.preventDefault(); e.stopPropagation(); if (isDragging)
-        setIsDragging(false); const droppedFiles = Array.from(e.dataTransfer.files); if (droppedFiles.length > 1)
-        autoAssignFiles(droppedFiles);
-    else if (droppedFiles.length === 1)
-        setFiles(prev => ({ ...prev, [type]: droppedFiles[0] })); if (document.activeElement)
-        document.activeElement.blur(); window.focus(); };
+    const handleBoxDrop = (e) => {
+        if (!DATAOPS_DRAG_EVENT_MODULE.isFileDrag(e))
+            return;
+        e.preventDefault();
+        e.stopPropagation();
+        DATAOPS_DRAG_EVENT_MODULE.setExternalFileDragActive(e, false);
+        if (isDragging)
+            setIsDragging(false);
+        const droppedFiles = Array.from(e.dataTransfer.files);
+        if (droppedFiles.length > 1)
+            autoAssignFiles(droppedFiles);
+        else if (droppedFiles.length === 1)
+            setFiles(prev => ({ ...prev, [type]: droppedFiles[0] }));
+        if (document.activeElement)
+            document.activeElement.blur();
+        window.focus();
+    };
     const handleOnChange = (e) => { const selectedFiles = Array.from(e.target.files); if (selectedFiles.length > 1)
         autoAssignFiles(selectedFiles);
     else if (selectedFiles.length === 1)
@@ -10452,14 +10482,24 @@ ${balanceText}
             return updated;
         });
     }, [resetAnalysisWorkspace, buildAnalysisFileLabel]);
+    const handleGlobalDragEnter = useCallback((e) => {
+        if (DATAOPS_DRAG_EVENT_MODULE.isFileDrag(e))
+            DATAOPS_DRAG_EVENT_MODULE.setExternalFileDragActive(e, true);
+    }, []);
     const handleGlobalDragOver = useCallback((e) => {
         if (DATAOPS_DRAG_EVENT_MODULE.isFileDrag(e))
             e.preventDefault();
+    }, []);
+    const handleGlobalDragLeave = useCallback((e) => {
+        if (!DATAOPS_DRAG_EVENT_MODULE.isFileDrag(e) || DATAOPS_DRAG_EVENT_MODULE.staysWithinCurrentTarget(e))
+            return;
+        DATAOPS_DRAG_EVENT_MODULE.setExternalFileDragActive(e, false);
     }, []);
     const handleGlobalDrop = useCallback((e) => {
         if (!DATAOPS_DRAG_EVENT_MODULE.isFileDrag(e))
             return;
         e.preventDefault();
+        DATAOPS_DRAG_EVENT_MODULE.setExternalFileDragActive(e, false);
         const droppedFiles = Array.from(e.dataTransfer.files);
         if (droppedFiles.length > 0)
             autoAssignFiles(droppedFiles);
@@ -11215,7 +11255,7 @@ ${balanceText}
     useEffect(() => {
         filteredProductDataRef.current = filteredProductData;
     }, [filteredProductData]);
-    return (React.createElement("div", { className: "h-screen flex flex-col w-full relative bg-[#f8fafc]", onDragOver: handleGlobalDragOver, onDrop: handleGlobalDrop },
+    return (React.createElement("div", { "data-dataops-root": "1", className: "h-screen flex flex-col w-full relative bg-[#f8fafc]", onDragEnter: handleGlobalDragEnter, onDragOver: handleGlobalDragOver, onDragLeave: handleGlobalDragLeave, onDrop: handleGlobalDrop },
         React.createElement("header", { className: "shrink-0 bg-white border-b border-slate-200 w-full z-[60] relative shadow-sm" },
             React.createElement("div", { className: "max-w-7xl mx-auto px-4 md:px-6 py-3 flex justify-between items-center" },
                 React.createElement("div", { className: "flex flex-col md:flex-row md:items-center gap-4" },
@@ -11682,7 +11722,7 @@ ${balanceText}
                                     React.createElement("button", { onClick: () => setFilters(f => ({ ...f, excludeZeroActual: !f.excludeZeroActual })), title: "\uC794\uB7C9/\uC2E4\uC0AC \uC218\uB7C9\uC774 0\uC778 \uC0C1\uD488 \uC81C\uC678", className: `px-2 py-1 rounded border whitespace-nowrap transition ${filters.excludeZeroActual ? 'bg-blue-600 text-white border-blue-700 shadow-sm' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}` }, "\uC2E4\uC0AC 0 \uC81C\uC678"),
                                     hiddenMovedSourceCount > 0 && React.createElement("button", { onClick: () => setFilters(f => ({ ...f, showHiddenMoveRows: !f.showHiddenMoveRows })), title: "드래그 매칭으로 비워진 원본 행을 표시/숨김합니다. 원본값은 삭제하지 않고 내부 이력으로 보관됩니다.", className: `px-2 py-1 rounded border whitespace-nowrap transition ${filters.showHiddenMoveRows ? 'bg-amber-500 text-white border-amber-600 shadow-sm' : 'bg-white text-slate-500 border-slate-300 hover:bg-slate-50'}` }, "매칭원본 ", hiddenMovedSourceCount),
                                     React.createElement("button", { onClick: resetTableFilters, title: "필터와 정렬을 기본값으로 되돌립니다. 기본 정렬은 품목 오름차순입니다.", className: "ml-auto px-2 py-1 rounded border whitespace-nowrap bg-slate-50 text-slate-500 border-slate-300 hover:bg-slate-100" }, "\u21BA \uD544\uD130 \uCD08\uAE30\uD654"))),
-                                React.createElement("table", { className: "w-full text-left border-collapse whitespace-nowrap text-sm" },
+                                React.createElement("table", { className: "dataops-work-table w-full text-left border-collapse whitespace-nowrap text-sm" },
                                     React.createElement("thead", { className: "bg-slate-50 text-slate-600 font-extrabold text-[12px] tracking-tight sticky z-[35] border-b-2 border-slate-200 shadow-md transition-all duration-75", style: { top: `${systemStickyOffset + (showCards ? cardHeight : 0) + filterBarHeight}px` } },
                                         React.createElement("tr", null,
                                             React.createElement("th", { className: "p-2 border-r border-slate-200 sticky left-0 bg-slate-50 z-30 shadow-[1px_0_0_#e2e8f0] w-[320px] min-w-[280px]" },

@@ -206,6 +206,11 @@ assert.doesNotMatch(
   /\bisGlobalDragging\b|\bsetIsGlobalDragging\b/,
   "external file drag must not rerender the full DataOps app",
 );
+assert.match(
+  source,
+  /\.dataops-external-file-drag\s+\.dataops-work-table\s+tbody[\s\S]*?pointer-events:\s*none\s*!important/,
+  "external file drag must bypass hit-testing in the large work table",
+);
 const dragEventModuleSource = section(
   "const DATAOPS_VENDOR_DRAG_TYPE",
   "const ProductRow",
@@ -236,6 +241,26 @@ assert.equal(
   false,
   "external Excel drag must not enter row-level vendor movement",
 );
+const externalDragClasses = new Set();
+const externalDragRoot = {
+  classList: {
+    contains: (name) => externalDragClasses.has(name),
+    toggle: (name, active) => (
+      active ? externalDragClasses.add(name) : externalDragClasses.delete(name)
+    ),
+  },
+};
+const externalDragChild = { closest: () => externalDragRoot };
+dragEventModule.setExternalFileDragActive(
+  { currentTarget: externalDragChild },
+  true,
+);
+assert.equal(externalDragClasses.has("dataops-external-file-drag"), true);
+dragEventModule.setExternalFileDragActive(
+  { currentTarget: externalDragChild },
+  false,
+);
+assert.equal(externalDragClasses.has("dataops-external-file-drag"), false);
 const productRowDrag = section("const ProductRow", "const FileBox");
 assert.match(
   productRowDrag,
@@ -246,13 +271,19 @@ assert.match(
   /setData\(DATAOPS_VENDOR_DRAG_TYPE,\s*'1'\)/,
 );
 const globalDragHandlers = section(
-  "const handleGlobalDragOver",
+  "const handleGlobalDragEnter",
   "const handleResetFiles",
 );
 assert.match(
   globalDragHandlers,
   /if\s*\(DATAOPS_DRAG_EVENT_MODULE\.isFileDrag\(e\)\)\s*e\.preventDefault\(\)/,
 );
+assert.match(globalDragHandlers, /setExternalFileDragActive\(e,\s*true\)/);
+assert.match(globalDragHandlers, /setExternalFileDragActive\(e,\s*false\)/);
+assert.match(source, /"data-dataops-root":\s*"1"/);
+assert.match(source, /onDragEnter:\s*handleGlobalDragEnter/);
+assert.match(source, /onDragLeave:\s*handleGlobalDragLeave/);
+assert.match(source, /className:\s*"dataops-work-table /);
 assert.match(source, /const DATAOPS_XLSX_WORKER_MODULE/);
 assert.match(source, /XLSX Worker 파싱 실패, 메인 스레드 경로로 복구합니다/);
 assert.match(source, /XLSX Worker 출력 실패, 메인 스레드 경로로 복구합니다/);
