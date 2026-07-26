@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.167_GeneralWorkflowFix]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.168_AtomicMasterCommit]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -87,6 +87,7 @@
         // v2.1.165: 마스터 기본 단가를 입고가·판매가·시중가로 변경한다. 판매가는 행사가가 있으면 행사가, 없으면 출고가를 표시하며 행사 적용 시 색상으로 강조한다. F7=마스터 적용, F8=엑셀 출력, F9=출력검증으로 완전히 분리한다.
         // v2.1.166: 클라우드 백업 응답검증, 상품코드 문자열 보존, 수기 공란 우선, 활성 source 우선, F7 저장 안정화, 한국시간 파일명과 F7 안내문을 통합 보정한다.
         // v2.1.167: 일반업무 안정화. 별칭값 누락을 수정하고, 행사초기화는 작업테이블에만 반영하며, F7 실제 저장 성공 후 완료 처리, 정보/일반 혼합 F8 차단, 재고 0 보존을 적용한다.
+        // v2.1.168: 마스터 레코드와 전체 스냅샷을 하나의 IndexedDB 트랜잭션으로 교체하고 저장 후 전수 검증한다. F7 히스토리 저장까지 성공해야 완료하며 실패 시 이전 마스터로 롤백한다. 기존 로컬 히스토리는 초기 상태에서 먼저 복원한다.
         // v2.1.123: 구매·재고 작업 리포트에 히스토리 비교값을 연결한다. 현재 마스터 기준, 전일 히스토리, 최근 7일/30일 평균 대비 차이를 리포트 보조줄에 표시해 견적 적용 후에도 어제/단기/장기 흐름을 함께 판단한다.
         // v2.1.122: info(쇼핑몰 상품정보) 작업군의 매핑·불러오기·F8 원본양식 출력을 안정화한다. 상품코드=품목코드, 판매가격=출고가, 시중가격=시중가, 판매 1/0=판매여부, 테마1~5=행사테마로 연결한다. 오더즈판매가/오더즈구매가는 작업테이블에서는 숨기되 v2.1.162부터 원본 출력에는 보존한다.
         // v2.1.121: 상단 툴바를 유형별 그룹으로 시각 구분하고, 양식보기를 상단 파일작업 영역 우측으로 이동한다. 테이블 열폭 저장/초기화는 헤더 위에 겹치지 않게 우측 도구줄로 분리한다.
@@ -1009,6 +1010,91 @@
                 tx.oncomplete = () => resolve(); 
                 tx.onerror = () => reject(tx.error); 
             }); 
+        };
+
+        window.getMasterIDBItems = (data = {}) => Object.values(data || {}).map((item, index) => {
+            if (!item || item.코드 === undefined || item.코드 === null || String(item.코드).trim() === '') {
+                throw new Error(`마스터 코드 검증 실패: ${index + 1}번째 레코드`);
+            }
+            return item;
+        });
+
+        window.stableMerchSerialize = (value) => {
+            const normalize = (input) => {
+                if (Array.isArray(input)) return input.map(normalize);
+                if (input && typeof input === 'object') {
+                    const result = {};
+                    Object.keys(input).sort().forEach(key => {
+                        if (input[key] !== undefined) result[key] = normalize(input[key]);
+                    });
+                    return result;
+                }
+                return input;
+            };
+            return JSON.stringify(normalize(value));
+        };
+
+        // master_products와 store.merchMaster_v870을 같은 트랜잭션에서 읽어
+        // 저장 전 상태 보존과 저장 후 검증의 기준으로 사용한다.
+        window.readMasterIDBState = async () => {
+            const db = await window.initIDB();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(['master_products', 'store'], 'readonly');
+                const itemsRequest = tx.objectStore('master_products').getAll();
+                const snapshotRequest = tx.objectStore('store').get('merchMaster_v870');
+                tx.oncomplete = () => resolve({
+                    items: Array.isArray(itemsRequest.result) ? itemsRequest.result : [],
+                    snapshot: snapshotRequest.result
+                });
+                tx.onerror = () => reject(tx.error || new Error('마스터 저장상태 조회 실패'));
+                tx.onabort = () => reject(tx.error || new Error('마스터 저장상태 조회 중단'));
+            });
+        };
+
+        // clear/put/전체 스냅샷 갱신을 하나의 IDB 트랜잭션으로 묶는다.
+        // 중간 요청 하나라도 실패하면 브라우저가 트랜잭션 전체를 자동 롤백한다.
+        window.replaceMasterIDBState = async (state = {}) => {
+            const db = await window.initIDB();
+            const items = Array.isArray(state.items) ? state.items : [];
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(['master_products', 'store'], 'readwrite');
+                const masterStore = tx.objectStore('master_products');
+                const keyValueStore = tx.objectStore('store');
+                try {
+                    masterStore.clear();
+                    items.forEach(item => masterStore.put(item));
+                    if (state.snapshot === undefined) keyValueStore.delete('merchMaster_v870');
+                    else keyValueStore.put(state.snapshot, 'merchMaster_v870');
+                }
+                catch (error) {
+                    try { tx.abort(); }
+                    catch (abortError) { console.error('MerchOps master transaction abort failed', abortError); }
+                    reject(error);
+                    return;
+                }
+                tx.oncomplete = () => resolve({ count: items.length });
+                tx.onerror = () => reject(tx.error || new Error('마스터 원자 저장 실패'));
+                tx.onabort = () => reject(tx.error || new Error('마스터 원자 저장 중단'));
+            });
+        };
+
+        window.verifyMasterIDBState = async (expectedData = {}) => {
+            const expectedItems = window.getMasterIDBItems(expectedData);
+            const actualState = await window.readMasterIDBState();
+            if (actualState.items.length !== expectedItems.length) {
+                throw new Error(`마스터 레코드 수 검증 실패 (${actualState.items.length}/${expectedItems.length})`);
+            }
+            const actualByCode = new Map(actualState.items.map(item => [String(item.코드), item]));
+            for (const expectedItem of expectedItems) {
+                const actualItem = actualByCode.get(String(expectedItem.코드));
+                if (!actualItem || window.stableMerchSerialize(actualItem) !== window.stableMerchSerialize(expectedItem)) {
+                    throw new Error(`마스터 레코드 검증 실패: ${expectedItem.코드}`);
+                }
+            }
+            if (window.stableMerchSerialize(actualState.snapshot || {}) !== window.stableMerchSerialize(expectedData || {})) {
+                throw new Error('마스터 전체 스냅샷 검증 실패');
+            }
+            return { ok: true, count: expectedItems.length };
         };
 
         window.getAllIDB = async (storeName) => { 
@@ -2947,7 +3033,14 @@ const useMerchConfig = () => {
 const useMerchData = () => {
     const [masterProducts, setMasterProducts] = useState({});
     const [managedItems, setManagedItems] = useState({});
-    const [historyLogs, setHistoryLogs] = useState([]);
+    const [historyLogs, setHistoryLogs] = useState(() => {
+        const saved = safeJSONParse('merchHistory_v870', []);
+        return Array.isArray(saved) ? saved : [];
+    });
+    const historyLogsRef = useRef(historyLogs);
+    useEffect(() => {
+        historyLogsRef.current = historyLogs;
+    }, [historyLogs]);
     useEffect(() => {
         window.getAllIDB('master_products').then(items => {
             if (items && items.length > 0) {
@@ -2961,48 +3054,100 @@ const useMerchData = () => {
                     if (data) {
                         setMasterProducts(data);
                         (_a = window.requestIdleCallback) === null || _a === void 0 ? void 0 : _a.call(window, async () => {
-                            await window.bulkPutIDB('master_products', Object.values(data).filter(item => item && item.코드));
+                            await window.replaceMasterIDBState({
+                                items: window.getMasterIDBItems(data),
+                                snapshot: data
+                            });
                         });
                     }
                 }).catch(console.error);
             }
         }).catch(console.error);
     }, []);
-    const saveMasterToLocal = useCallback(async (data) => {
+    const saveMasterToLocal = useCallback(async (data, options = {}) => {
+        let previousState = null;
+        let rollbackOk = false;
         try {
-            await window.bulkPutIDB('master_products', Object.values(data).filter(item => item && item.코드));
-            if (window.setIDB)
-                await window.setIDB('merchMaster_v870', data);
-            localStorage.setItem('merchMaster_sync_trigger', Date.now().toString());
+            previousState = await window.readMasterIDBState();
+            const items = window.getMasterIDBItems(data);
+            await window.replaceMasterIDBState({ items, snapshot: data });
+            const verified = await window.verifyMasterIDBState(data);
+            if (typeof options.afterVerified === 'function') {
+                const afterVerifiedOk = await options.afterVerified();
+                if (afterVerifiedOk === false) {
+                    throw new Error(options.afterVerifiedError || '마스터 후속 저장 검증 실패');
+                }
+            }
+            try {
+                localStorage.setItem('merchMaster_sync_trigger', Date.now().toString());
+            }
+            catch (triggerError) {
+                console.warn('MerchOps master sync trigger failed', triggerError);
+            }
             setMasterProducts(data);
             window.__MERCHOPS_LAST_MASTER_SAVE_ERROR = '';
+            window.__MERCHOPS_LAST_MASTER_SAVE_RESULT = {
+                ok: true,
+                verified: true,
+                count: verified.count,
+                rollbackOk: false,
+                savedAt: new Date().toISOString()
+            };
             return true;
         }
         catch (e) {
             console.error('MerchOps master local save failed', e);
+            if (previousState) {
+                try {
+                    await window.replaceMasterIDBState(previousState);
+                    rollbackOk = true;
+                }
+                catch (rollbackError) {
+                    console.error('MerchOps master rollback failed', rollbackError);
+                }
+            }
             window.__MERCHOPS_LAST_MASTER_SAVE_ERROR = String(e?.message || e || '알 수 없는 저장 오류');
-            window.setTimeout(() => window.alert(`마스터 로컬 저장에 실패했습니다.\n${window.__MERCHOPS_LAST_MASTER_SAVE_ERROR}\n브라우저 저장공간과 권한을 확인하세요.`), 0);
+            window.__MERCHOPS_LAST_MASTER_SAVE_RESULT = {
+                ok: false,
+                verified: false,
+                rollbackOk,
+                error: window.__MERCHOPS_LAST_MASTER_SAVE_ERROR,
+                failedAt: new Date().toISOString()
+            };
+            const rollbackMessage = rollbackOk
+                ? '이전 마스터 저장상태로 복원했습니다.'
+                : '이전 마스터 자동 복원에도 실패했습니다. 추가 저장을 중단하고 백업을 확인하세요.';
+            window.setTimeout(() => window.alert(`마스터 저장을 완료하지 못했습니다.\n${window.__MERCHOPS_LAST_MASTER_SAVE_ERROR}\n${rollbackMessage}`), 0);
             return false;
         }
     }, []);
-    const addHistoryLogs = useCallback((newLogs) => {
-        setHistoryLogs(prev => {
-            const allLogs = [...newLogs, ...prev];
-            const agriLogs = allLogs.filter(l => String(l.code).startsWith('10')).slice(0, 1000);
-            const generalLogs = allLogs.filter(l => !String(l.code).startsWith('10')).slice(0, 1000);
-            const safeAgriIds = new Set(agriLogs.map(l => l.id));
-            const safeGeneralIds = new Set(generalLogs.map(l => l.id));
-            const finalLogs = allLogs.filter(l => safeAgriIds.has(l.id) || safeGeneralIds.has(l.id));
-            try {
-                localStorage.setItem('merchHistory_v870', JSON.stringify(finalLogs));
-                window.__MERCHOPS_LAST_HISTORY_SAVE_ERROR = '';
-            } catch (e) {
-                console.error('MerchOps history local save failed', e);
-                window.__MERCHOPS_LAST_HISTORY_SAVE_ERROR = String(e?.message || e || '알 수 없는 저장 오류');
+    const addHistoryLogs = useCallback((newLogs, options = {}) => {
+        const previousLogs = Array.isArray(historyLogsRef.current) ? historyLogsRef.current : [];
+        const allLogs = [...(Array.isArray(newLogs) ? newLogs : []), ...previousLogs];
+        const agriLogs = allLogs.filter(l => String(l.code).startsWith('10')).slice(0, 1000);
+        const generalLogs = allLogs.filter(l => !String(l.code).startsWith('10')).slice(0, 1000);
+        const safeAgriIds = new Set(agriLogs.map(l => l.id));
+        const safeGeneralIds = new Set(generalLogs.map(l => l.id));
+        const finalLogs = allLogs.filter(l => safeAgriIds.has(l.id) || safeGeneralIds.has(l.id));
+        try {
+            const serializedLogs = JSON.stringify(finalLogs);
+            localStorage.setItem('merchHistory_v870', serializedLogs);
+            if (localStorage.getItem('merchHistory_v870') !== serializedLogs) {
+                throw new Error('히스토리 저장 후 검증 실패');
+            }
+            historyLogsRef.current = finalLogs;
+            setHistoryLogs(finalLogs);
+            window.__MERCHOPS_LAST_HISTORY_SAVE_ERROR = '';
+            return true;
+        }
+        catch (e) {
+            console.error('MerchOps history local save failed', e);
+            window.__MERCHOPS_LAST_HISTORY_SAVE_ERROR = String(e?.message || e || '알 수 없는 저장 오류');
+            if (!options.silent) {
                 window.setTimeout(() => window.alert(`히스토리 저장에 실패했습니다.\n${window.__MERCHOPS_LAST_HISTORY_SAVE_ERROR}\n브라우저 저장공간을 확인하세요.`), 0);
             }
-            return finalLogs;
-        });
+            return false;
+        }
     }, []);
     return { masterProducts, setMasterProducts: saveMasterToLocal, managedItems, setManagedItems, historyLogs, setHistoryLogs, addHistoryLogs };
 };
@@ -5554,13 +5699,13 @@ ${targetModeText} ${targets.size}건을 MerchOps 마스터에 저장합니다. �
             }
             commitCount++;
         });
-        const masterSaveOk = await data.setMasterProducts(newMaster);
+        const masterSaveOk = await data.setMasterProducts(newMaster, {
+            afterVerified: () => localLogs.length === 0 || data.addHistoryLogs(localLogs, { silent: true }),
+            afterVerifiedError: 'F7 히스토리 저장 실패'
+        });
         if (!masterSaveOk) {
             ui.showToast('❌ F7 마스터 저장 실패: 완료 처리하지 않았습니다.');
             return;
-        }
-        if (localLogs.length > 0) {
-            data.addHistoryLogs(localLogs);
         }
         const committedStopCodes = new Set(currentOnlyTargetRows.filter(row => row?.finalData?._salesStopRequested === true).map(row => window.normalizeProductCodeText(row.코드 || '')).filter(Boolean));
         const committedResumeCodes = new Set(currentOnlyTargetRows.filter(row => row?.finalData?._salesResumeRequested === true).map(row => window.normalizeProductCodeText(row.코드 || '')).filter(Boolean));
@@ -8621,7 +8766,7 @@ const WelcomeGuide = ({ onUpload, onCloudSync }) => (React.createElement("div", 
         React.createElement("i", { className: "fas fa-box-open" }),
         React.createElement("div", { className: "absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm" },
             React.createElement("i", { className: "fas fa-check" }))),
-    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.167_GeneralWorkflowFix]"),
+    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.168_AtomicMasterCommit]"),
     React.createElement("p", { className: "text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold" },
         "\uD604\uC7AC \uB4F1\uB85D\uB41C ",
         React.createElement("span", { className: "text-indigo-500" }, "\uB9C8\uC2A4\uD130 \uC0C1\uD488 \uB370\uC774\uD130"),
@@ -9035,7 +9180,7 @@ const App = () => {
                                 React.createElement("div", { className: "flex flex-col border-l-2 border-slate-700 pl-3" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "MerchOps"),
-                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.167_GeneralWorkflowFix")),
+                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.168_AtomicMasterCommit")),
                                     React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "MAIN WORKSPACE"))),
                             React.createElement(SystemConsole, { itemCount: Object.keys(data.masterProducts).length, isProcessing: ui.isProcessing, processMsg: ui.processMsg, estimateCount: Object.keys(data.managedItems).length, filteredCount: fullDisplayRows.length, activeTags: ui.activeTags }),
                             React.createElement("nav", { className: "flex gap-1.5 text-[14px] shrink-0 items-center" },
