@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const html = fs.readFileSync(path.join(ROOT, "MerchOps.html"), "utf8");
-assert.match(html, /v2\.1\.161_WorktableHistoryPreserve/);
+assert.match(html, /ONEAPP MerchOps - Main Workspace \[v\d+\.\d+\.\d+_[^\]]+\]/);
 assert.doesNotMatch(html, /v2\.1\.151_ResetVerticalAlign/);
 const inlineScripts = [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi)]
   .map((match) => match[1])
@@ -72,6 +72,20 @@ assert.deepEqual(
 );
 assert.equal(browser.getMerchExplicitSaleAvailability(inventorySelling).code, "1");
 assert.equal(browser.resolveMerchSaleAvailability(estimateStopped, { 판매여부: 1 }).code, "0");
+assert.deepEqual(
+  JSON.parse(JSON.stringify(browser.getMasterIDBItems({ "001": { 코드: "001", 품목명: "테스트" } }))),
+  [{ 코드: "001", 품목명: "테스트" }],
+);
+assert.throws(
+  () => browser.getMasterIDBItems({ "001": { 품목명: "코드 누락" } }),
+  /마스터 코드 검증 실패/,
+  "master replacement must stop instead of silently dropping a row without a code",
+);
+assert.equal(
+  browser.stableMerchSerialize({ b: 2, a: { d: 4, c: 3 } }),
+  browser.stableMerchSerialize({ a: { c: 3, d: 4 }, b: 2 }),
+  "full-record verification must not depend on object key order",
+);
 
 assert.match(html, /const saleKey = headerCache\['판매'\] \|\| headerCache\['판매여부'\]/);
 assert.match(html, /_saleAvailabilitySourceHeader/);
@@ -92,8 +106,14 @@ assert.ok(
 );
 
 assert.match(html, /\? '공통 일괄입력' : '엑셀 판매여부 반영'/);
-assert.match(html, /window\.resolveMerchSaleAvailability\(current, mItem\)/);
 assert.match(html, /판매여부: mItem\['판매여부'\] \?\? ''/);
+assert.match(html, /db\.transaction\(\['master_products', 'store'\], 'readwrite'\)/);
+assert.match(html, /masterStore\.clear\(\)/);
+assert.match(html, /try \{ tx\.abort\(\); \}/);
+assert.match(html, /await window\.verifyMasterIDBState\(data\)/);
+assert.match(html, /afterVerified: \(\) => localLogs\.length === 0 \|\| data\.addHistoryLogs/);
+assert.match(html, /const \[historyLogs, setHistoryLogs\] = useState\(\(\) =>/);
+assert.match(html, /localStorage\.getItem\('merchHistory_v870'\) !== serializedLogs/);
 
 console.log("MerchOps sale availability pipeline tests passed.");
 
