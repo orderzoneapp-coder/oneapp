@@ -119,6 +119,37 @@
       ]
     },
     {
+      "id": "master-lookup",
+      "name": "Master",
+      "path": "Master.html",
+      "kind": "web-entry",
+      "status": "pilot",
+      "purpose": "Provide a category-based product master lookup with controlled master upload and cloud synchronization.",
+      "productionWrites": true,
+      "runtimeDependencies": [
+        "core-engine"
+      ],
+      "sharedContracts": [
+        "product-master"
+      ]
+    },
+    {
+      "id": "item-manager",
+      "name": "Item Manager",
+      "path": "Item_manager.html",
+      "kind": "web-entry",
+      "status": "pilot",
+      "purpose": "Provide category-based product lookup and controlled product-management writes.",
+      "productionWrites": true,
+      "runtimeDependencies": [
+        "core-engine"
+      ],
+      "sharedContracts": [
+        "product-master",
+        "change-history"
+      ]
+    },
+    {
       "id": "history-viewer",
       "name": "History Viewer",
       "path": "history_viewer.html",
@@ -395,85 +426,6 @@
     ]
   },
   "plannedApplications": [
-    {
-      "id": "master-lookup",
-      "name": "Master",
-      "proposedPath": "Master.html",
-      "kind": "web-entry",
-      "status": "planned",
-      "developmentState": "on-hold",
-      "purpose": "Provide a category-based product master lookup with controlled master upload and cloud synchronization.",
-      "owner": "merchops-roadmap",
-      "inputs": [
-        "product-master",
-        "category hierarchy"
-      ],
-      "outputs": [
-        "categorized product lookup view"
-      ],
-      "sharedContracts": [
-        "product-master"
-      ],
-      "upstream": [
-        "merchops",
-        "dataops"
-      ],
-      "downstream": [],
-      "productionWrites": true,
-      "validation": [
-        "Category and product counts match the product master.",
-        "Master writes use the shared revision-checked atomic writer.",
-        "No production navigation depends on this page."
-      ],
-      "rollback": "Remove any pilot navigation entry and keep the file isolated from production entry points.",
-      "targetStatus": "pilot",
-      "resumeAfter": [
-        "MerchOps core workflow is stable.",
-        "DataOps core workflow is stable."
-      ]
-    },
-    {
-      "id": "item-manager",
-      "name": "Item Manager",
-      "proposedPath": "Item_manager.html",
-      "kind": "web-entry",
-      "status": "planned",
-      "developmentState": "on-hold",
-      "purpose": "Provide category-based product lookup and controlled product-management writes.",
-      "owner": "merchops-roadmap",
-      "inputs": [
-        "product-master",
-        "category hierarchy",
-        "approved product change request"
-      ],
-      "outputs": [
-        "categorized product lookup view",
-        "reviewable product change draft"
-      ],
-      "sharedContracts": [
-        "product-master",
-        "change-history"
-      ],
-      "upstream": [
-        "merchops",
-        "dataops"
-      ],
-      "downstream": [
-        "merchops"
-      ],
-      "productionWrites": true,
-      "validation": [
-        "Lookup results match the product master.",
-        "Management writes use the shared revision-checked atomic writer.",
-        "No production navigation depends on this page."
-      ],
-      "rollback": "Remove any pilot navigation entry and keep all proposed changes in read-only or draft state.",
-      "targetStatus": "pilot",
-      "resumeAfter": [
-        "MerchOps write and rollback flow is stable.",
-        "DataOps product contracts are stable."
-      ]
-    },
     {
       "id": "trend-report",
       "name": "Trend Report",
