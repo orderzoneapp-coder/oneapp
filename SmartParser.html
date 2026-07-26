@@ -527,6 +527,41 @@ const saveMerchHistoryWithRetry = (localLogs, storageKey = 'merchHistory_v870') 
     }
     throw new Error('히스토리 저장 실패: 브라우저 저장공간이 부족하거나 localStorage가 차단되었습니다. ' + (lastError?.message || lastError?.name || String(lastError || '')));
 };
+const commitSmartParserMaster = async (data, storeEntries = {}, historyLogs = [], onCommitted = () => {}) => {
+    const commonStorage = window.ONEAPP?.STORAGE;
+    if (!commonStorage?.commitMasterStateOrThrow) {
+        throw new Error('공통 마스터 저장 엔진을 불러오지 못했습니다.');
+    }
+    const logs = Array.isArray(historyLogs) ? historyLogs.filter(Boolean) : [];
+    const previousHistory = logs.length > 0 ? localStorage.getItem('merchHistory_v870') : null;
+    try {
+        const result = await commonStorage.commitMasterStateOrThrow(data, {
+            extraStoreEntries: storeEntries,
+            ...(logs.length > 0 ? {
+                afterVerified: () => {
+                    saveMerchHistoryWithRetry(logs);
+                    return true;
+                },
+                afterVerifiedError: 'SmartParser 히스토리 저장 실패'
+            } : {})
+        });
+        onCommitted(data, result);
+        localStorage.setItem('merchMaster_sync_trigger', Date.now().toString());
+        return result;
+    }
+    catch (error) {
+        if (logs.length > 0) {
+            try {
+                if (previousHistory === null) localStorage.removeItem('merchHistory_v870');
+                else localStorage.setItem('merchHistory_v870', previousHistory);
+            }
+            catch (restoreError) {
+                console.error('SmartParser history rollback failed', restoreError);
+            }
+        }
+        throw new Error('마스터/연동대기 IndexedDB 저장 실패: ' + (error?.message || error?.name || String(error)));
+    }
+};
 const useParserApp = () => {
     const [masterProducts, setMasterProducts] = useState({});
     const [parserDict, setParserDict] = useState(() => { try {
@@ -563,19 +598,15 @@ const useParserApp = () => {
     }, []);
     useEffect(() => { const handleStorageChange = (e) => { if (e.key === 'merchMaster_sync_trigger' || e.key === 'merch_settings_update_trigger')
         window.location.reload(); }; window.addEventListener('storage', handleStorageChange); return () => window.removeEventListener('storage', handleStorageChange); }, []);
-    const saveMaster = async (data, storeEntries = {}) => {
+    const saveMaster = async (data, storeEntries = {}, historyLogs = []) => {
         try {
-            const commonStorage = window.ONEAPP?.STORAGE;
-            if (!commonStorage?.commitMasterStateOrThrow) {
-                throw new Error('공통 마스터 저장 엔진을 불러오지 못했습니다.');
-            }
-            await commonStorage.commitMasterStateOrThrow(data, { extraStoreEntries: storeEntries });
-            setMasterProducts(data);
-            localStorage.setItem('merchMaster_sync_trigger', Date.now().toString());
+            await commitSmartParserMaster(data, storeEntries, historyLogs, savedData => {
+                setMasterProducts(savedData);
+            });
         }
         catch (e) {
             console.error("IndexedDB 저장 실패", e);
-            throw new Error('마스터/연동대기 IndexedDB 저장 실패: ' + (e?.message || e?.name || String(e)));
+            throw e;
         }
     };
     const saveDict = (data) => {
@@ -888,9 +919,6 @@ const useParserActions = (appState) => {
             if (masterMutationCount > 0 && localLogs.length === 0) {
                 throw new Error('마스터 변경 항목이 있으나 히스토리 로그가 생성되지 않았습니다.');
             }
-            if (localLogs.length > 0) {
-                saveMerchHistoryWithRetry(localLogs);
-            }
             const sharedEntries = {};
             if (addedToPending) sharedEntries.pending_shop_status = pendingList;
             if (stoppedQueueChanged) sharedEntries[STOP_MANAGER_STORAGE_KEY] = stoppedProducts;
@@ -899,7 +927,7 @@ const useParserActions = (appState) => {
                 ? { ...catalogUpdatedAt, [catalogLabel]: nowISO }
                 : catalogUpdatedAt;
             if (catalogWasUpdated) sharedEntries[CATALOG_UPDATED_AT_KEY] = nextCatalogUpdatedAt;
-            await saveMaster(newMaster, sharedEntries);
+            await saveMaster(newMaster, sharedEntries, localLogs);
             if (catalogWasUpdated) setCatalogUpdatedAt(nextCatalogUpdatedAt);
             if (stoppedQueueChanged) saveSharedObject(STOP_MANAGER_STORAGE_KEY, stoppedProducts, 'merchStopManager_sync_trigger');
             saveDict(newDict);

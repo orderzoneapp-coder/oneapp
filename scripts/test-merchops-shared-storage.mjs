@@ -16,8 +16,10 @@ const createMemoryIDB = (initial = {}) => {
       ["merchMaster_revision_v870", initial.revision],
     ]),
   };
+  const stats = { masterClearCount: 0 };
   let transactionQueue = Promise.resolve();
   let nextPause = null;
+  let failStorePutKey = null;
 
   const pauseNextCommit = () => {
     let markStarted;
@@ -57,7 +59,10 @@ const createMemoryIDB = (initial = {}) => {
                 return request;
               },
               clear() {
-                operations.push(() => activeState.master.clear());
+                operations.push(() => {
+                  stats.masterClearCount++;
+                  activeState.master.clear();
+                });
               },
               put(item) {
                 const copied = clone(item);
@@ -76,6 +81,7 @@ const createMemoryIDB = (initial = {}) => {
               return request;
             },
             put(value, key) {
+              if (key === failStorePutKey) throw new DOMException(`Forced put failure: ${key}`, "QuotaExceededError");
               const copied = clone(value);
               operations.push(() => activeState.store.set(key, clone(copied)));
             },
@@ -98,6 +104,10 @@ const createMemoryIDB = (initial = {}) => {
         };
         try {
           for (let index = 0; index < operations.length; index++) operations[index]();
+          if (aborted) {
+            tx.onabort?.();
+            return;
+          }
           if (nextPause && mode === "readwrite") {
             const pause = nextPause;
             nextPause = null;
@@ -122,7 +132,11 @@ const createMemoryIDB = (initial = {}) => {
   return {
     db,
     state,
+    stats,
     pauseNextCommit,
+    setFailStorePutKey(key) {
+      failStorePutKey = key;
+    },
     snapshot() {
       return {
         items: [...state.master.values()].map(clone),
@@ -191,6 +205,27 @@ await assert.rejects(storage.bulkPutIDB("master_products", []), /commitMasterSta
 await assert.rejects(storage.replaceAllIDB("master_products", []), /commitMasterState/);
 await assert.rejects(storage.setIDB("merchMaster_v870", {}), /commitMasterState/);
 
+const emptyBefore = memoryIDB.snapshot();
+const emptyCommit = await storage.commitMasterState({});
+assert.equal(emptyCommit.ok, false);
+assert.match(emptyCommit.error, /빈 마스터 전체교체/);
+assert.deepEqual(memoryIDB.snapshot(), emptyBefore);
+const duplicateCommit = await storage.commitMasterState([
+  { 코드: "DUP", 품목명: "first" },
+  { 코드: "DUP", 품목명: "second" },
+]);
+assert.equal(duplicateCommit.ok, false);
+assert.match(duplicateCommit.error, /중복 코드/);
+assert.deepEqual(memoryIDB.snapshot(), emptyBefore);
+const intentionalEmptyIDB = createMemoryIDB(initial);
+const intentionalEmptyRuntime = createCoreRuntime("intentional-empty", intentionalEmptyIDB);
+const intentionalEmpty = await intentionalEmptyRuntime.ONEAPP.STORAGE.commitMasterState({}, {
+  allowEmpty: true,
+});
+assert.equal(intentionalEmpty.ok, true);
+assert.deepEqual(intentionalEmptyIDB.snapshot().items, []);
+assert.deepEqual(intentionalEmptyIDB.snapshot().snapshot, {});
+
 const legacyIDB = createMemoryIDB({ items: [], snapshot: dataA, revision: undefined });
 const legacyRuntime = createCoreRuntime("legacy-migration", legacyIDB);
 const legacyMigration = await legacyRuntime.ONEAPP.STORAGE.commitMasterState(dataA, {
@@ -221,17 +256,103 @@ assert.deepEqual(
 
 const missingLeaseIDB = createMemoryIDB(initial);
 const missingLeaseRuntime = createCoreRuntime("missing-lease", missingLeaseIDB);
-assert.equal(
-  await missingLeaseRuntime.ONEAPP.STORAGE.mutateFallbackLock("release-check", "owner", "acquire"),
-  true,
-);
-const leaseKey = [...missingLeaseIDB.state.store.keys()].find((key) => String(key).includes("release-check"));
+const missingLease = await missingLeaseRuntime.ONEAPP.STORAGE.mutateFallbackLock("release-check", "owner", "acquire");
+assert.equal(missingLease.owner, "owner");
+assert.ok(missingLease.token > 0);
+const leaseKey = [...missingLeaseIDB.state.store.keys()].find((key) => String(key).startsWith("merch_fallback_lock_v1:release-check"));
 missingLeaseIDB.state.store.delete(leaseKey);
 assert.equal(
-  await missingLeaseRuntime.ONEAPP.STORAGE.mutateFallbackLock("release-check", "owner", "release"),
+  await missingLeaseRuntime.ONEAPP.STORAGE.mutateFallbackLock("release-check", missingLease, "release"),
   false,
   "a missing lease record must be treated as ownership loss",
 );
+
+const fencedMissingIDB = createMemoryIDB(initial);
+const fencedMissingRuntime = createCoreRuntime("fenced-missing", fencedMissingIDB);
+const fencedMissingNewerRuntime = createCoreRuntime("fenced-missing-newer", fencedMissingIDB);
+const fencedMissingStorage = fencedMissingRuntime.ONEAPP.STORAGE;
+const replaceWithMissingFence = fencedMissingStorage.replaceMasterState.bind(fencedMissingStorage);
+let missingLeaseNewerPromise;
+fencedMissingStorage.replaceMasterState = async (state, extraEntries, lease) => {
+  fencedMissingIDB.state.store.delete(lease.lockKey);
+  missingLeaseNewerPromise = fencedMissingNewerRuntime.ONEAPP.STORAGE.commitMasterState(dataB);
+  const newer = await missingLeaseNewerPromise;
+  assert.equal(newer.ok, true);
+  return replaceWithMissingFence(state, extraEntries, lease);
+};
+const fencedMissingResult = await fencedMissingStorage.commitMasterState(dataA);
+const missingLeaseNewerResult = await missingLeaseNewerPromise;
+assert.equal(fencedMissingResult.ok, false);
+assert.equal(fencedMissingResult.lockFailure, true);
+assert.equal(missingLeaseNewerResult.ok, true);
+assert.equal(
+  [fencedMissingResult, missingLeaseNewerResult].filter(result => result.ok).length,
+  1,
+);
+assert.equal(fencedMissingIDB.stats.masterClearCount, 1, "the fenced stale writer must not enter master clear/put");
+assert.deepEqual(
+  fencedMissingIDB.snapshot().snapshot,
+  dataB,
+  "a writer whose lease record disappeared must be fenced without overwriting the newer commit",
+);
+
+const expiredFenceIDB = createMemoryIDB(initial);
+const expiredWriterA = createCoreRuntime("expired-a", expiredFenceIDB);
+const expiredWriterB = createCoreRuntime("expired-b", expiredFenceIDB);
+const originalExpiredReplace = expiredWriterA.ONEAPP.STORAGE.replaceMasterState.bind(expiredWriterA.ONEAPP.STORAGE);
+let newerCommitPromise;
+expiredWriterA.ONEAPP.STORAGE.replaceMasterState = async (state, extraEntries, lease) => {
+  const staleLease = expiredFenceIDB.state.store.get(lease.lockKey);
+  expiredFenceIDB.state.store.set(lease.lockKey, { ...staleLease, expiresAt: Date.now() - 1 });
+  newerCommitPromise = expiredWriterB.ONEAPP.STORAGE.commitMasterState(dataB);
+  const newerResult = await newerCommitPromise;
+  assert.equal(newerResult.ok, true);
+  return originalExpiredReplace(state, extraEntries, lease);
+};
+const expiredWriterResult = await expiredWriterA.ONEAPP.STORAGE.commitMasterState(dataA);
+const expiredNewerResult = await newerCommitPromise;
+assert.equal(expiredWriterResult.ok, false);
+assert.equal(expiredWriterResult.lockFailure, true);
+assert.equal(expiredNewerResult.ok, true);
+assert.equal(
+  [expiredWriterResult, expiredNewerResult].filter(result => result.ok).length,
+  1,
+  "lease expiry competition must produce exactly one successful master writer",
+);
+assert.equal(expiredFenceIDB.stats.masterClearCount, 1, "only the new fencing token may enter master clear/put");
+assert.deepEqual(
+  expiredFenceIDB.snapshot().snapshot,
+  dataB,
+  "only the newer fenced writer may commit after the previous lease expires",
+);
+
+const renewFailureIDB = createMemoryIDB(initial);
+const renewFailureRuntime = createCoreRuntime("renew-failure", renewFailureIDB);
+const renewFailureStorage = renewFailureRuntime.ONEAPP.STORAGE;
+const originalRenewMutation = renewFailureStorage.mutateFallbackLock.bind(renewFailureStorage);
+renewFailureStorage.mutateFallbackLock = async (lockName, lease, action, leaseMs) => {
+  if (action === "renew") return false;
+  return originalRenewMutation(lockName, lease, action, leaseMs);
+};
+const originalRenewReplace = renewFailureStorage.replaceMasterState.bind(renewFailureStorage);
+renewFailureStorage.replaceMasterState = async (...args) => {
+  await new Promise((resolve) => setTimeout(resolve, 15));
+  return originalRenewReplace(...args);
+};
+const renewFailureResult = await renewFailureStorage.commitMasterState(dataA, {
+  lockOptions: { heartbeatMs: 4 },
+});
+const renewFailureNewerRuntime = createCoreRuntime("renew-failure-newer", renewFailureIDB);
+const renewFailureNewerResult = await renewFailureNewerRuntime.ONEAPP.STORAGE.commitMasterState(dataB);
+assert.equal(renewFailureResult.ok, false);
+assert.equal(renewFailureResult.lockFailure, true);
+assert.equal(renewFailureNewerResult.ok, true);
+assert.equal(
+  [renewFailureResult, renewFailureNewerResult].filter(result => result.ok).length,
+  1,
+);
+assert.equal(renewFailureIDB.stats.masterClearCount, 1, "heartbeat ownership loss must fence the stale master transaction");
+assert.deepEqual(renewFailureIDB.snapshot().snapshot, dataB);
 
 const firstCommit = await storage.commitMasterState(dataA, { expectedRevision: "rev-old" });
 assert.equal(firstCommit.ok, true);
@@ -270,9 +391,7 @@ const mixedIDB = createMemoryIDB(initial);
 const webLockTab = createCoreRuntime("web-lock-tab", mixedIDB, {
   locks: { request: async (_name, _options, callback) => callback() },
 });
-const fallbackTab = createCoreRuntime("fallback-tab", mixedIDB, {
-  locks: { request: async () => { throw new Error("initial Web Locks failure"); } },
-});
+const fallbackTab = createCoreRuntime("fallback-tab", mixedIDB);
 let activeWriters = 0;
 let maximumWriters = 0;
 const lockedTask = (runtimeValue, delay) => runtimeValue.ONEAPP.STORAGE.withStorageLock("mixed-lock", async () => {
@@ -302,8 +421,15 @@ assert.deepEqual(failureIDB.snapshot().snapshot, initial.snapshot);
 
 const releaseWarningIDB = createMemoryIDB(initial);
 const releaseWarningRuntime = createCoreRuntime("release-warning", releaseWarningIDB);
-releaseWarningRuntime.ONEAPP.STORAGE.acquireFallbackLock = async () => async () => {
-  throw new Error("forced release ownership loss");
+const acquireReleaseWarning = releaseWarningRuntime.ONEAPP.STORAGE.acquireFallbackLock.bind(releaseWarningRuntime.ONEAPP.STORAGE);
+releaseWarningRuntime.ONEAPP.STORAGE.acquireFallbackLock = async (...args) => {
+  const lease = await acquireReleaseWarning(...args);
+  const release = lease.release;
+  lease.release = async () => {
+    await release();
+    throw new Error("forced release ownership loss");
+  };
+  return lease;
 };
 const committedWithReleaseWarning = await releaseWarningRuntime.ONEAPP.STORAGE.commitMasterState(dataA);
 assert.equal(committedWithReleaseWarning.ok, true);
@@ -318,14 +444,21 @@ assert.deepEqual(
 
 const supersededIDB = createMemoryIDB(initial);
 const supersededRuntime = createCoreRuntime("release-superseded", supersededIDB);
-supersededRuntime.ONEAPP.STORAGE.acquireFallbackLock = async () => async () => {
-  await supersededRuntime.ONEAPP.STORAGE.replaceMasterState({
-    items: Object.values(dataB),
-    snapshot: dataB,
-    revision: "rev-B",
-    extraStoreEntries: {},
-  });
-  throw new Error("forced release after newer writer");
+const acquireSuperseded = supersededRuntime.ONEAPP.STORAGE.acquireFallbackLock.bind(supersededRuntime.ONEAPP.STORAGE);
+supersededRuntime.ONEAPP.STORAGE.acquireFallbackLock = async (...args) => {
+  const lease = await acquireSuperseded(...args);
+  const release = lease.release;
+  lease.release = async () => {
+    await release();
+    await supersededRuntime.ONEAPP.STORAGE.replaceMasterState({
+      items: Object.values(dataB),
+      snapshot: dataB,
+      revision: "rev-B",
+      extraStoreEntries: {},
+    });
+    throw new Error("forced release after newer writer");
+  };
+  return lease;
 };
 const supersededCommit = await supersededRuntime.ONEAPP.STORAGE.commitMasterState(dataA);
 assert.equal(supersededCommit.ok, false);
@@ -336,6 +469,121 @@ assert.deepEqual(
   supersededIDB.snapshot().snapshot,
   dataB,
   "release recovery must not overwrite a newer successful revision",
+);
+
+const dataOpsIDB = createMemoryIDB(initial);
+const dataOpsRuntime = createCoreRuntime("dataops-linked", dataOpsIDB);
+dataOpsRuntime.ONEAPP.CLOUD.fetchJson = async () => ({ data: { master: dataA, summary: {} } });
+const dataOpsResult = await dataOpsRuntime.ONEAPP.CLOUD.pullMerchMasterForDataOps({
+  url: "https://example.invalid/exec",
+});
+assert.equal(dataOpsResult.status, "success");
+assert.equal(
+  JSON.stringify(dataOpsIDB.snapshot().snapshot),
+  JSON.stringify(dataOpsResult.master),
+);
+assert.equal(
+  JSON.stringify(dataOpsIDB.state.store.get("dataops_merch_master_cache_v1")),
+  JSON.stringify(dataOpsResult.master),
+);
+assert.ok(dataOpsIDB.state.store.get("dataops_raw_subdivision_cache_v1"));
+
+const dataOpsFailureIDB = createMemoryIDB(initial);
+const dataOpsFailureRuntime = createCoreRuntime("dataops-failure", dataOpsFailureIDB);
+dataOpsFailureRuntime.ONEAPP.CLOUD.fetchJson = async () => ({ data: { master: dataA, summary: {} } });
+dataOpsFailureIDB.setFailStorePutKey("dataops_raw_subdivision_cache_v1");
+await assert.rejects(
+  dataOpsFailureRuntime.ONEAPP.CLOUD.pullMerchMasterForDataOps({
+    url: "https://example.invalid/exec",
+  }),
+);
+assert.deepEqual(
+  dataOpsFailureIDB.snapshot().snapshot,
+  initial.snapshot,
+  "a required DataOps cache failure must abort the master and linked cache transaction",
+);
+assert.equal(dataOpsFailureIDB.state.store.has("dataops_merch_master_cache_v1"), false);
+
+const restoreFailureIDB = createMemoryIDB(initial);
+const restoreFailureRuntime = createCoreRuntime("restore-failure", restoreFailureIDB);
+restoreFailureIDB.setFailStorePutKey("pending_shop_status");
+let restoreHookCalls = 0;
+await assert.rejects(
+  restoreFailureRuntime.ONEAPP.CLOUD.restoreCloudData(
+    {
+      status: "success",
+      data: { master: dataA, pendingShopStatus: [{ code: "A" }] },
+    },
+    { setMasterProducts: () => { restoreHookCalls++; } },
+  ),
+);
+assert.equal(restoreHookCalls, 0, "restore UI hooks must not run before the atomic commit succeeds");
+assert.deepEqual(restoreFailureIDB.snapshot().snapshot, initial.snapshot);
+assert.equal(restoreFailureIDB.state.store.has("pending_shop_status"), false);
+
+const restoreSuccessIDB = createMemoryIDB(initial);
+const restoreSuccessRuntime = createCoreRuntime("restore-success", restoreSuccessIDB);
+let restoreSuccessHookCalls = 0;
+await restoreSuccessRuntime.ONEAPP.CLOUD.restoreCloudData(
+  {
+    status: "success",
+    data: { master: dataA, pendingShopStatus: [{ code: "A" }] },
+  },
+  { setMasterProducts: () => { restoreSuccessHookCalls++; } },
+);
+assert.equal(restoreSuccessHookCalls, 1);
+assert.deepEqual(restoreSuccessIDB.snapshot().snapshot, dataA);
+assert.deepEqual(
+  restoreSuccessIDB.state.store.get("pending_shop_status"),
+  [{ code: "A" }],
+);
+
+const excelRollbackIDB = createMemoryIDB(initial);
+const excelRollbackRuntime = createCoreRuntime("excel-rollback", excelRollbackIDB);
+const excelStorage = excelRollbackRuntime.ONEAPP.STORAGE;
+const excelAnalysis = {
+  sourceColumns: ["품목코드", "품목명"],
+  summary: {
+    totalRows: 1,
+    noCodeCount: 0,
+    duplicateCodeCount: 0,
+    updateCount: 0,
+    createCount: 1,
+  },
+  candidates: [{
+    code: "A",
+    status: "create",
+    item: { 코드: "A", 품목코드: "A", 품목명: "A 저장" },
+    sourceColumns: ["품목코드", "품목명"],
+    changes: [],
+  }],
+};
+const originalExcelWriteLocalValue = excelStorage.writeLocalValue.bind(excelStorage);
+excelStorage.writeLocalValue = (key, ...args) => {
+  if (key === "merchMaster_sync_trigger") throw new Error("forced sync trigger failure");
+  return originalExcelWriteLocalValue(key, ...args);
+};
+const originalExcelCommitOrThrow = excelStorage.commitMasterStateOrThrow.bind(excelStorage);
+let excelCommitCalls = 0;
+excelStorage.commitMasterStateOrThrow = async (...args) => {
+  const result = await originalExcelCommitOrThrow(...args);
+  excelCommitCalls++;
+  if (excelCommitCalls === 1) {
+    const newer = await excelStorage.commitMasterState(dataB);
+    assert.equal(newer.ok, true);
+  }
+  return result;
+};
+await assert.rejects(
+  excelRollbackRuntime.ONEAPP.MASTER.applyMasterExcelUpload({
+    analysis: excelAnalysis,
+    currentMaster: initial.snapshot,
+  }),
+);
+assert.deepEqual(
+  excelRollbackIDB.snapshot().snapshot,
+  dataB,
+  "Excel follow-up failure must not restore backup over a newer B revision",
 );
 
 const files = Object.fromEntries(
@@ -351,6 +599,55 @@ const files = Object.fromEntries(
   ]
     .map((name) => [name, fs.readFileSync(path.join(ROOT, name), "utf8")]),
 );
+const smartParserHelperStart = files["SmartParser.html"].indexOf("const commitSmartParserMaster = async");
+const smartParserHelperEnd = files["SmartParser.html"].indexOf("const useParserApp =", smartParserHelperStart);
+assert.ok(smartParserHelperStart >= 0 && smartParserHelperEnd > smartParserHelperStart);
+const smartParserContext = vm.createContext({
+  window: {
+    ONEAPP: {
+      STORAGE: {
+        commitMasterStateOrThrow: async () => {
+          throw new Error("forced master failure");
+        },
+      },
+    },
+  },
+  localStorage: createSharedLocalStorage(new Map([
+    ["merchHistory_v870", JSON.stringify([{ id: "before" }])],
+  ])),
+  saveMerchHistoryWithRetry: () => {
+    throw new Error("history must not run before master verification");
+  },
+  console,
+  Date,
+  Array,
+  String,
+  Error,
+});
+smartParserContext.window.window = smartParserContext.window;
+vm.runInContext(
+  `${files["SmartParser.html"].slice(smartParserHelperStart, smartParserHelperEnd)}
+window.__commitSmartParserMaster = commitSmartParserMaster;`,
+  smartParserContext,
+);
+let smartParserMemoryUpdates = 0;
+await assert.rejects(
+  smartParserContext.window.__commitSmartParserMaster(
+    dataA,
+    {},
+    [{ id: "success-only", code: "A" }],
+    () => { smartParserMemoryUpdates++; },
+  ),
+  /forced master failure/,
+);
+assert.equal(smartParserMemoryUpdates, 0);
+assert.deepEqual(
+  JSON.parse(smartParserContext.localStorage.getItem("merchHistory_v870")),
+  [{ id: "before" }],
+  "SmartParser history must remain unchanged when the master commit fails",
+);
+assert.equal(smartParserContext.localStorage.getItem("merchMaster_sync_trigger"), null);
+
 for (const name of [
   "MerchOps.html",
   "SmartParser.html",
@@ -361,7 +658,8 @@ for (const name of [
 ]) {
   assert.match(files[name], /<script src="coreEngine\.js"><\/script>/, `${name} must load the shared storage engine`);
 }
-assert.match(files["SmartParser.html"], /commitMasterStateOrThrow\(data, \{ extraStoreEntries: storeEntries \}\)/);
+assert.match(files["SmartParser.html"], /afterVerified: \(\) => \{\s*saveMerchHistoryWithRetry\(logs\)/);
+assert.match(files["SmartParser.html"], /await commitSmartParserMaster\(data, storeEntries, historyLogs/);
 assert.match(files["settings.html"], /commitMasterStateOrThrow\(newMaster\)/);
 assert.match(files["export_center.html"], /commitMasterStateOrThrow\(newMaster\)/);
 assert.match(
@@ -392,16 +690,30 @@ assert.match(
 );
 assert.doesNotMatch(files["coreEngine.js"], /bulkPutIDB\(STORE_MASTER/);
 assert.doesNotMatch(files["coreEngine.js"], /replaceAllIDB\(STORE_MASTER/);
-assert.match(files["coreEngine.js"], /CLOUD\.pullMerchMasterForDataOps[\s\S]*commitMasterStateOrThrow\(normalizedMaster\)/);
+assert.match(files["coreEngine.js"], /CLOUD\.pullMerchMasterForDataOps[\s\S]*commitMasterStateOrThrow\(normalizedMaster, \{/);
+assert.match(files["coreEngine.js"], /\[DATAOPS_MASTER_CACHE_KEY\]: normalizedMaster/);
+assert.match(files["coreEngine.js"], /\[DATAOPS_RAW_SUBDIVISION_KEY\]: rawSubdivision/);
+assert.match(files["coreEngine.js"], /pending_shop_status: data\.pendingShopStatus/);
 assert.match(files["coreEngine.js"], /MASTER\.restoreMasterBackup[\s\S]*commitMasterStateOrThrow\(backup\.data \|\| \{\}\)/);
 assert.match(files["coreEngine.js"], /totalCount: Object\.keys\(masterMap\)\.length/);
 assert.doesNotMatch(files["coreEngine.js"], /totalCount: items\.length/);
+assert.match(
+  files["coreEngine.js"],
+  /commitMasterStateOrThrow\(backup\.data \|\| \{\}, \{\s*expectedRevision: committedRevision/,
+);
 assert.match(files["MerchOps.html"], /catch \(error\) \{\s*result = \{\s*ok: false,[\s\S]*lockFailure: true/);
 assert.match(
   files["MerchOps.html"],
   /const migration = await window\.commitMerchMasterState\(state\.snapshot, \{\s*expectedRevision: state\.revision/,
 );
+for (const name of ["Master.html", "Item_manager.html"]) {
+  assert.doesNotMatch(files[name], /ROW-\$\{idx\}/);
+  assert.match(files[name], /마스터 중복 코드가 있습니다/);
+  assert.match(files[name], /Object\.keys\(legacy\)\.length > 0/);
+}
+assert.match(files["Master.html"], /마스터 Excel에 저장할 상품 행이 없습니다/);
+assert.match(files["Master.html"], /마스터 Excel 중복 코드가 있습니다/);
 assert.match(files["app-manifest.json"], /"F7": "Apply current work to the MerchOps master/);
 assert.match(files["app-manifest.json"], /"F8": "Create the Excel output from current work without changing the master/);
 
-console.log("Shared master writer, CAS rollback, mixed lock, failure contract, and F7/F8 manifest tests passed.");
+console.log("Shared writer, fencing, invalid-input, linked-store, CAS rollback, SmartParser history, and F7/F8 tests passed.");

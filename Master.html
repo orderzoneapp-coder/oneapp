@@ -211,9 +211,18 @@
 
         const masterArrayToMap = (items = []) => {
             const map = {};
-            (Array.isArray(items) ? items : Object.values(items || {})).forEach((item, idx) => {
-                const normalized = normalizeMasterItem(item, item && (item.코드 || item['품목코드']) || `ROW-${idx}`);
-                if (normalized.코드) map[normalized.코드] = normalized;
+            const entries = Array.isArray(items)
+                ? items.map((item, idx) => [String(idx + 1), item, ''])
+                : Object.entries(items || {}).map(([key, item], idx) => [String(idx + 1), item, key]);
+            entries.forEach(([rowNumber, item, objectKey]) => {
+                const normalized = normalizeMasterItem(item, objectKey);
+                if (!normalized.코드) {
+                    throw new Error(`마스터 ${rowNumber}행에 코드가 없습니다.`);
+                }
+                if (map[normalized.코드]) {
+                    throw new Error(`마스터 중복 코드가 있습니다: ${normalized.코드}`);
+                }
+                map[normalized.코드] = normalized;
             });
             return map;
         };
@@ -232,7 +241,7 @@
             const items = await getAllMasterIDB().catch(() => []);
             if (items && items.length > 0) return masterArrayToMap(items);
             const legacy = await getIDB(STORAGE_KEYS.MASTER_DB).catch(() => null);
-            if (legacy && typeof legacy === 'object') {
+            if (legacy && typeof legacy === 'object' && Object.keys(legacy).length > 0) {
                 const safeMap = await saveMasterLocal(legacy);
                 return safeMap;
             }
@@ -720,8 +729,11 @@
                             const rowObj = {};
                             headers.forEach((h, idx) => { if (h) rowObj[h] = rowArr[idx]; });
                             const code = safeStr(rowObj['코드'] || rowObj['품목코드']);
-                            if (code) newMaster[code] = rowObj;
+                            if (!code) throw new Error(`마스터 Excel ${i + 1}행에 코드가 없습니다.`);
+                            if (newMaster[code]) throw new Error(`마스터 Excel 중복 코드가 있습니다: ${code}`);
+                            newMaster[code] = rowObj;
                         }
+                        if (Object.keys(newMaster).length === 0) throw new Error('마스터 Excel에 저장할 상품 행이 없습니다.');
                         const savedMaster = await saveMasterLocal(newMaster);
                         setMasterProducts(savedMaster);
                         showToast(`✅ ${Object.keys(savedMaster).length}건 등록 완료! MerchOps 공통 마스터 캐시에 반영되었습니다.`);
