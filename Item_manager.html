@@ -12,6 +12,7 @@
     <script src="https://unpkg.com/react@18.2.0/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone@7.24.7/babel.min.js"></script>
+    <script src="coreEngine.js"></script>
     <!-- FontAwesome fallback icons only: 외부 아이콘 모듈 제거 -->
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     
@@ -220,30 +221,19 @@
             request.onsuccess = () => resolve(request.result);
             request.onerror = () => reject(request.error);
         });
-        const setIDB = async (key, val) => { const db = await initIDB(); return new Promise((resolve, reject) => { const tx = db.transaction('store', 'readwrite'); tx.objectStore('store').put(val, key); tx.oncomplete = () => resolve(); tx.onerror = () => reject(tx.error); }); };
+        const setIDB = async (key, val) => {
+            if ([STORAGE_KEYS.MASTER_DB, 'merchMaster_revision_v870'].includes(key)) {
+                throw new Error(`${key}는 공통 원자 저장 경로만 사용할 수 있습니다.`);
+            }
+            const db = await initIDB();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction('store', 'readwrite');
+                tx.objectStore('store').put(val, key);
+                tx.oncomplete = () => resolve();
+                tx.onerror = () => reject(tx.error);
+            });
+        };
         const getIDB = async (key) => { const db = await initIDB(); return new Promise((resolve, reject) => { const tx = db.transaction('store', 'readonly'); const req = tx.objectStore('store').get(key); req.onsuccess = () => resolve(req.result); req.onerror = () => reject(tx.error); }); };
-
-        const clearIDBStore = async (storeName) => {
-            const db = await initIDB();
-            return new Promise((resolve, reject) => {
-                const tx = db.transaction(storeName, 'readwrite');
-                tx.objectStore(storeName).clear();
-                tx.oncomplete = () => resolve();
-                tx.onerror = () => reject(tx.error);
-            });
-        };
-
-        const bulkPutMasterIDB = async (items = []) => {
-            const db = await initIDB();
-            return new Promise((resolve, reject) => {
-                const tx = db.transaction(STORAGE_KEYS.MASTER_STORE, 'readwrite');
-                const store = tx.objectStore(STORAGE_KEYS.MASTER_STORE);
-                store.clear();
-                items.forEach(item => { if (item && item.코드) store.put(item); });
-                tx.oncomplete = () => resolve();
-                tx.onerror = () => reject(tx.error);
-            });
-        };
 
         const getAllMasterIDB = async () => {
             const db = await initIDB();
@@ -279,9 +269,10 @@
 
         const saveMasterLocal = async (masterMap = {}) => {
             const safeMap = masterArrayToMap(masterMap);
-            const items = Object.values(safeMap);
-            await setIDB(STORAGE_KEYS.MASTER_DB, safeMap);
-            await bulkPutMasterIDB(items);
+            if (!window.ONEAPP?.STORAGE?.commitMasterStateOrThrow) {
+                throw new Error('공통 마스터 저장 엔진을 불러오지 못했습니다.');
+            }
+            await window.ONEAPP.STORAGE.commitMasterStateOrThrow(safeMap);
             try { localStorage.setItem(STORAGE_KEYS.SYNC_TRIGGER, Date.now().toString()); } catch (e) {}
             return safeMap;
         };
@@ -1177,10 +1168,15 @@
                 const normalized = normalizeMasterItem(updatedItem, updatedItem && (updatedItem.코드 || updatedItem['품목코드']));
                 if (!normalized.코드) return showToast('⚠️ 품목코드가 없는 상품은 저장할 수 없습니다.');
                 const nextMaster = { ...masterProducts, [normalized.코드]: normalized };
-                const saved = await saveMasterLocal(nextMaster);
-                setMasterProducts(saved);
-                await loadMaster();
-                showToast(`✅ [${safeStr(normalized['품목명'], normalized.코드)}] 행사테마 ${safeStr(normalized['행사테마'], '미지정')} 저장 완료`);
+                try {
+                    const saved = await saveMasterLocal(nextMaster);
+                    setMasterProducts(saved);
+                    await loadMaster();
+                    showToast(`✅ [${safeStr(normalized['품목명'], normalized.코드)}] 행사테마 ${safeStr(normalized['행사테마'], '미지정')} 저장 완료`);
+                } catch (error) {
+                    console.error(error);
+                    showToast(`❌ 마스터 저장 실패: ${error.message}`);
+                }
             };
 
             // 카탈로그에서 다수 항목 전송 시 (Pipeline 관리 대기열로 넘김)

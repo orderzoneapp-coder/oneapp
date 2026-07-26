@@ -9,6 +9,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="coreEngine.js"></script>
 
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <style>
@@ -136,20 +137,11 @@ const getIDB = async (key) => {
     });
 };
 const setIDB = async (key, val) => {
+    if (['merchMaster_v870', 'merchMaster_revision_v870'].includes(key)) throw new Error(`${key}는 공통 원자 저장 경로만 사용할 수 있습니다.`);
     const db = await initIDB();
     return new Promise((resolve, reject) => {
         const tx = db.transaction('store', 'readwrite');
         tx.objectStore('store').put(val, key);
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => reject(tx.error);
-    });
-};
-const bulkPutIDB = async (storeName, items) => {
-    const db = await initIDB();
-    return new Promise((resolve, reject) => {
-        const tx = db.transaction(storeName, 'readwrite');
-        const store = tx.objectStore(storeName);
-        items.forEach(item => store.put(item));
         tx.oncomplete = () => resolve();
         tx.onerror = () => reject(tx.error);
     });
@@ -964,7 +956,6 @@ const ExportApp = () => {
         setTimeout(async () => {
             try {
                 const newMaster = { ...masterProducts };
-                const updatedItems = [];
                 reviewRows.forEach(item => {
                     var _a, _b, _c, _d;
                     const code = item.코드;
@@ -1006,11 +997,12 @@ const ExportApp = () => {
                     mItem['테마4'] = themeFlags[3];
                     mItem['테마5'] = themeFlags[4];
                     mItem['견적서'] = item.카테고리 || mItem['견적서'] || mItem['카테고리'] || '';
-                    updatedItems.push(mItem);
                     newMaster[code] = mItem;
                 });
-                await bulkPutIDB('master_products', updatedItems);
-                await setIDB('merchMaster_v870', newMaster);
+                const commonStorage = window.ONEAPP?.STORAGE;
+                if (!commonStorage?.commitMasterStateOrThrow)
+                    throw new Error('공통 마스터 저장 엔진을 불러오지 못했습니다.');
+                await commonStorage.commitMasterStateOrThrow(newMaster);
                 setMasterProducts(newMaster);
                 localStorage.setItem('merchMaster_sync_trigger', Date.now().toString());
                 const { wb, subOutputCount } = buildIntegratedUploadWorkbook(reviewRows, newMaster);

@@ -1,6 +1,6 @@
 /**
  * ONEAPP MerchOps - coreEngine.js
- * v1.1.0 / Client Safety
+ * v1.2.0 / Atomic Master Storage
  *
  * 목적:
  * - HTML 화면 파일에서 중복되는 저장소, 가격계산, 히스토리, F9 전달, 클라우드 로직을 중앙화한다.
@@ -29,6 +29,11 @@
  * - localStorage/IndexedDB 쓰기를 검증하며 마스터 적용 실패 시 변경 전 데이터로 자동 복구한다.
  * - 저장공간 부족, 브라우저 차단, IndexedDB 중단 오류를 사용자가 조치할 수 있는 문구로 변환한다.
  *
+ * v1.2.0_AtomicMasterStorage:
+ * - 모든 화면의 master_products·merchMaster_v870·revision 저장을 공통 원자 트랜잭션으로 통합한다.
+ * - IndexedDB 임대 잠금을 모든 writer가 사용하고 Web Locks는 보조 잠금으로만 사용한다.
+ * - 저장 후 검증과 CAS rollback으로 더 최신 성공 저장을 이전 상태가 덮지 못하게 한다.
+ *
  * v1.0.8_PricingPolicySync:
  * - computeFinalData를 최신 MerchOps 정책에 맞게 정리한다. 엑셀 source에 없는 입고가는 마스터값으로 자동 대체하지 않는다.
  * - 구매/재고 작업의 시중가는 마스터 시중가를 참조하고, 구매/재고 원가로 시중가를 자동 산출하거나 갱신하지 않는다.
@@ -40,7 +45,7 @@
   'use strict';
 
   const ONEAPP = global.ONEAPP = global.ONEAPP || {};
-  ONEAPP.VERSION = ONEAPP.VERSION || 'coreEngine-v1.1.0 ClientSafety';
+  ONEAPP.VERSION = ONEAPP.VERSION || 'coreEngine-v1.2.0 AtomicMasterStorage';
 
   const DEFAULT_DB_NAME = 'MerchOpsDB';
   const DEFAULT_DB_VERSION = 2;
@@ -319,6 +324,10 @@
   // STORAGE ENGINE
   // ============================================================
   const STORAGE = ONEAPP.STORAGE = ONEAPP.STORAGE || {};
+  const MASTER_SNAPSHOT_KEY = 'merchMaster_v870';
+  const MASTER_REVISION_KEY = 'merchMaster_revision_v870';
+  const MASTER_LOCK_NAME = 'oneapp-merch-master-save';
+  const FALLBACK_LOCK_PREFIX = 'merch_fallback_lock_v1:';
 
   STORAGE.writeLocalValue = (key, value, options = {}) => {
     const safeKey = String(key || '').trim();
@@ -388,6 +397,9 @@
   };
 
   STORAGE.setIDB = async (key, val) => {
+    if ([MASTER_SNAPSHOT_KEY, MASTER_REVISION_KEY].includes(key)) {
+      throw new Error(`${key}는 commitMasterState 원자 저장 경로만 사용할 수 있습니다.`);
+    }
     const db = await STORAGE.initIDB();
     return new Promise((resolve, reject) => {
       const tx = db.transaction(STORE_KV, 'readwrite');
@@ -411,6 +423,9 @@
   };
 
   STORAGE.bulkPutIDB = async (storeName, items = []) => {
+    if (storeName === STORE_MASTER) {
+      throw new Error('master_products는 commitMasterState 원자 저장 경로만 사용할 수 있습니다.');
+    }
     if (!Array.isArray(items)) throw new Error(`브라우저 일괄 저장(${storeName}) 실패: 저장 데이터가 배열이 아닙니다.`);
     const db = await STORAGE.initIDB();
     return new Promise((resolve, reject) => {
@@ -431,6 +446,9 @@
   };
 
   STORAGE.replaceAllIDB = async (storeName, items = []) => {
+    if (storeName === STORE_MASTER) {
+      throw new Error('master_products는 commitMasterState 원자 저장 경로만 사용할 수 있습니다.');
+    }
     if (!Array.isArray(items)) throw new Error(`브라우저 전체교체(${storeName}) 실패: 저장 데이터가 배열이 아닙니다.`);
     const db = await STORAGE.initIDB();
     return new Promise((resolve, reject) => {
@@ -449,6 +467,446 @@
       tx.onerror = () => reject(ERRORS.create(tx.error, `브라우저 전체교체(${storeName})`));
       tx.onabort = () => reject(ERRORS.create(tx.error || new DOMException('Transaction aborted', 'AbortError'), `브라우저 전체교체(${storeName})`));
     });
+  };
+
+  STORAGE.stableSerialize = (value) => {
+    const normalize = (input) => {
+      if (Array.isArray(input)) return input.map(normalize);
+      if (input && typeof input === 'object') {
+        const result = {};
+        Object.keys(input).sort().forEach(key => {
+          if (input[key] !== undefined) result[key] = normalize(input[key]);
+        });
+        return result;
+      }
+      return input;
+    };
+    return JSON.stringify(normalize(value));
+  };
+
+  STORAGE.getMasterItems = (data = {}) => Object.values(data || {}).map((item, index) => {
+    if (!item || item.코드 === undefined || item.코드 === null || String(item.코드).trim() === '') {
+      throw new Error(`마스터 코드 검증 실패: ${index + 1}번째 레코드`);
+    }
+    return item;
+  });
+
+  STORAGE.createMasterRevision = () => `${Date.now()}-${generateUUID()}`;
+
+  STORAGE.readMasterState = async (extraKeys = []) => {
+    const db = await STORAGE.initIDB();
+    const safeExtraKeys = [...new Set((Array.isArray(extraKeys) ? extraKeys : []).map(key => String(key || '')).filter(Boolean))];
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction([STORE_MASTER, STORE_KV], 'readonly');
+      const masterStore = tx.objectStore(STORE_MASTER);
+      const sharedStore = tx.objectStore(STORE_KV);
+      const itemsRequest = masterStore.getAll();
+      const snapshotRequest = sharedStore.get(MASTER_SNAPSHOT_KEY);
+      const revisionRequest = sharedStore.get(MASTER_REVISION_KEY);
+      const extraRequests = new Map(safeExtraKeys.map(key => [key, sharedStore.get(key)]));
+      tx.oncomplete = () => {
+        const extraStoreEntries = {};
+        extraRequests.forEach((request, key) => { extraStoreEntries[key] = request.result; });
+        resolve({
+          items: Array.isArray(itemsRequest.result) ? itemsRequest.result : [],
+          snapshot: snapshotRequest.result,
+          revision: revisionRequest.result,
+          extraStoreEntries
+        });
+      };
+      tx.onerror = () => reject(ERRORS.create(tx.error, '마스터 저장상태 조회'));
+      tx.onabort = () => reject(ERRORS.create(tx.error || new DOMException('Transaction aborted', 'AbortError'), '마스터 저장상태 조회'));
+    });
+  };
+
+  STORAGE.replaceMasterState = async (state = {}, extraStoreEntries = state.extraStoreEntries || {}) => {
+    const db = await STORAGE.initIDB();
+    const items = Array.isArray(state.items) ? state.items : [];
+    const safeExtraEntries = extraStoreEntries && typeof extraStoreEntries === 'object' ? extraStoreEntries : {};
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction([STORE_MASTER, STORE_KV], 'readwrite');
+      const masterStore = tx.objectStore(STORE_MASTER);
+      const sharedStore = tx.objectStore(STORE_KV);
+      try {
+        masterStore.clear();
+        items.forEach(item => masterStore.put(item));
+        if (state.snapshot === undefined) sharedStore.delete(MASTER_SNAPSHOT_KEY);
+        else sharedStore.put(state.snapshot, MASTER_SNAPSHOT_KEY);
+        if (state.revision === undefined) sharedStore.delete(MASTER_REVISION_KEY);
+        else sharedStore.put(state.revision, MASTER_REVISION_KEY);
+        Object.entries(safeExtraEntries).forEach(([key, value]) => {
+          if (value === undefined) sharedStore.delete(key);
+          else sharedStore.put(value, key);
+        });
+      } catch (error) {
+        try { tx.abort(); } catch (abortError) {}
+        reject(ERRORS.create(error, '마스터 원자 저장'));
+        return;
+      }
+      tx.oncomplete = () => resolve({ count: items.length });
+      tx.onerror = () => reject(ERRORS.create(tx.error, '마스터 원자 저장'));
+      tx.onabort = () => reject(ERRORS.create(tx.error || new DOMException('Transaction aborted', 'AbortError'), '마스터 원자 저장'));
+    });
+  };
+
+  STORAGE.verifyMasterState = async (expectedData = {}, expectedRevision, expectedExtraEntries = {}) => {
+    const expectedItems = STORAGE.getMasterItems(expectedData);
+    const extraKeys = Object.keys(expectedExtraEntries || {});
+    const actual = await STORAGE.readMasterState(extraKeys);
+    if (expectedRevision !== undefined && actual.revision !== expectedRevision) {
+      throw new Error('마스터 저장 세대 검증 실패');
+    }
+    if (actual.items.length !== expectedItems.length) {
+      throw new Error(`마스터 레코드 수 검증 실패 (${actual.items.length}/${expectedItems.length})`);
+    }
+    const actualByCode = new Map(actual.items.map(item => [String(item.코드), item]));
+    for (const expectedItem of expectedItems) {
+      const actualItem = actualByCode.get(String(expectedItem.코드));
+      if (!actualItem || STORAGE.stableSerialize(actualItem) !== STORAGE.stableSerialize(expectedItem)) {
+        throw new Error(`마스터 레코드 검증 실패: ${expectedItem.코드}`);
+      }
+    }
+    if (STORAGE.stableSerialize(actual.snapshot || {}) !== STORAGE.stableSerialize(expectedData || {})) {
+      throw new Error('마스터 전체 스냅샷 검증 실패');
+    }
+    for (const [key, value] of Object.entries(expectedExtraEntries || {})) {
+      if (STORAGE.stableSerialize(actual.extraStoreEntries[key]) !== STORAGE.stableSerialize(value)) {
+        throw new Error(`마스터 연동 저장 검증 실패: ${key}`);
+      }
+    }
+    return { ok: true, count: expectedItems.length };
+  };
+
+  STORAGE.isSameMasterState = (left = {}, right = {}) => {
+    const normalizeItems = (state) => (Array.isArray(state.items) ? state.items : [])
+      .slice()
+      .sort((a, b) => String(a?.코드 || '').localeCompare(String(b?.코드 || '')));
+    return STORAGE.stableSerialize(normalizeItems(left)) === STORAGE.stableSerialize(normalizeItems(right))
+      && STORAGE.stableSerialize(left.snapshot) === STORAGE.stableSerialize(right.snapshot)
+      && left.revision === right.revision
+      && STORAGE.stableSerialize(left.extraStoreEntries || {}) === STORAGE.stableSerialize(right.extraStoreEntries || {});
+  };
+
+  STORAGE.mutateFallbackLock = async (lockName, owner, action, leaseMs = 120000) => {
+    const db = await STORAGE.initIDB();
+    const lockKey = `${FALLBACK_LOCK_PREFIX}${lockName}`;
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_KV, 'readwrite');
+      const store = tx.objectStore(STORE_KV);
+      const request = store.get(lockKey);
+      let result = false;
+      request.onsuccess = () => {
+        const current = request.result;
+        const now = Date.now();
+        if (action === 'acquire') {
+          if (!current || current.owner === owner || Number(current.expiresAt) <= now) {
+            store.put({ owner, expiresAt: now + leaseMs }, lockKey);
+            result = true;
+          }
+        } else if (action === 'renew') {
+          if (current && current.owner === owner) {
+            store.put({ owner, expiresAt: now + leaseMs }, lockKey);
+            result = true;
+          }
+        } else if (action === 'release') {
+          if (current && current.owner === owner) {
+            store.delete(lockKey);
+            result = true;
+          }
+        }
+      };
+      request.onerror = () => reject(ERRORS.create(request.error, `탭 간 저장 잠금 조회(${lockName})`));
+      tx.oncomplete = () => resolve(result);
+      tx.onerror = () => reject(ERRORS.create(tx.error, `탭 간 저장 잠금 처리(${lockName})`));
+      tx.onabort = () => reject(ERRORS.create(tx.error || new DOMException('Transaction aborted', 'AbortError'), `탭 간 저장 잠금 처리(${lockName})`));
+    });
+  };
+
+  STORAGE.acquireFallbackLock = async (lockName, options = {}) => {
+    const owner = `${global.__MERCHOPS_TAB_ID || (global.__MERCHOPS_TAB_ID = generateUUID())}:${generateUUID()}`;
+    const leaseMs = Math.max(10000, Number(options.leaseMs) || 120000);
+    const timeoutMs = Math.max(1000, Number(options.timeoutMs) || 20000);
+    const pollMs = Math.max(4, Number(options.pollMs) || 20);
+    const deadline = Date.now() + timeoutMs;
+    const wait = () => new Promise(resolve => setTimeout(resolve, pollMs + Math.floor(Math.random() * pollMs)));
+    while (Date.now() < deadline) {
+      if (await STORAGE.mutateFallbackLock(lockName, owner, 'acquire', leaseMs)) {
+        let heartbeatWork = Promise.resolve();
+        let ownershipError = null;
+        const heartbeat = setInterval(() => {
+          heartbeatWork = heartbeatWork
+            .then(() => STORAGE.mutateFallbackLock(lockName, owner, 'renew', leaseMs))
+            .then(renewed => {
+              if (!renewed) ownershipError = new Error(`탭 간 저장 잠금 소유권 상실: ${lockName}`);
+            })
+            .catch(error => { ownershipError = error; });
+        }, Math.max(1000, Math.floor(leaseMs / 3)));
+        return async () => {
+          clearInterval(heartbeat);
+          await heartbeatWork.catch(error => { ownershipError = ownershipError || error; });
+          const released = await STORAGE.mutateFallbackLock(lockName, owner, 'release', leaseMs);
+          if (!released) ownershipError = ownershipError || new Error(`탭 간 저장 잠금 해제 검증 실패: ${lockName}`);
+          if (ownershipError) throw ownershipError;
+        };
+      }
+      await wait();
+    }
+    const timeoutError = new Error(`탭 간 저장 잠금 대기시간 초과: ${lockName}`);
+    timeoutError.code = 'MERCH_FALLBACK_LOCK_TIMEOUT';
+    throw timeoutError;
+  };
+
+  STORAGE._queues = STORAGE._queues || {};
+  STORAGE.withStorageLock = (lockName, task, options = {}) => {
+    const previous = STORAGE._queues[lockName] || Promise.resolve();
+    const run = previous.catch(() => undefined).then(async () => {
+      const runWithLease = async () => {
+        const release = await STORAGE.acquireFallbackLock(lockName, options);
+        let taskResult;
+        let taskError = null;
+        try {
+          taskResult = await task();
+        } catch (error) {
+          taskError = error;
+        }
+        try {
+          await release();
+        } catch (releaseError) {
+          if (taskError) {
+            taskError.lockReleaseError = releaseError;
+            throw taskError;
+          }
+          const boundaryError = new Error(`IndexedDB lease lock release failed: ${lockName}`);
+          boundaryError.code = 'MERCH_LOCK_RELEASE_FAILED';
+          boundaryError.releaseError = releaseError;
+          boundaryError.taskResult = taskResult;
+          throw boundaryError;
+        }
+        if (taskError) throw taskError;
+        return taskResult;
+      };
+      if (global.navigator?.locks && typeof global.navigator.locks.request === 'function') {
+        let entered = false;
+        try {
+          return await global.navigator.locks.request(lockName, { mode: 'exclusive' }, async () => {
+            entered = true;
+            return runWithLease();
+          });
+        } catch (error) {
+          if (entered) throw error;
+          console.warn('ONEAPP Web Locks unavailable; using IndexedDB lease lock', error);
+        }
+      }
+      return runWithLease();
+    });
+    const settled = run.catch(() => undefined);
+    STORAGE._queues[lockName] = settled;
+    settled.finally(() => {
+      if (STORAGE._queues[lockName] === settled) delete STORAGE._queues[lockName];
+    });
+    return run;
+  };
+
+  STORAGE.rollbackMasterStateCAS = async (expectedState = {}, previousState = {}) => {
+    const db = await STORAGE.initIDB();
+    const expectedExtra = expectedState.extraStoreEntries || {};
+    const previousExtra = previousState.extraStoreEntries || {};
+    const extraKeys = [...new Set([...Object.keys(expectedExtra), ...Object.keys(previousExtra)])];
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction([STORE_MASTER, STORE_KV], 'readwrite');
+      const masterStore = tx.objectStore(STORE_MASTER);
+      const sharedStore = tx.objectStore(STORE_KV);
+      const itemsRequest = masterStore.getAll();
+      const snapshotRequest = sharedStore.get(MASTER_SNAPSHOT_KEY);
+      const revisionRequest = sharedStore.get(MASTER_REVISION_KEY);
+      const extraRequests = new Map(extraKeys.map(key => [key, sharedStore.get(key)]));
+      let pending = 3 + extraRequests.size;
+      let result = { restored: false, stale: false };
+      const maybeRestore = () => {
+        pending--;
+        if (pending > 0) return;
+        const currentExtra = {};
+        extraRequests.forEach((request, key) => { currentExtra[key] = request.result; });
+        const currentState = {
+          items: Array.isArray(itemsRequest.result) ? itemsRequest.result : [],
+          snapshot: snapshotRequest.result,
+          revision: revisionRequest.result,
+          extraStoreEntries: currentExtra
+        };
+        if (!STORAGE.isSameMasterState(currentState, {
+          ...expectedState,
+          extraStoreEntries: Object.fromEntries(extraKeys.map(key => [key, expectedExtra[key]]))
+        })) {
+          result = { restored: false, stale: true };
+          return;
+        }
+        try {
+          masterStore.clear();
+          (Array.isArray(previousState.items) ? previousState.items : []).forEach(item => masterStore.put(item));
+          if (previousState.snapshot === undefined) sharedStore.delete(MASTER_SNAPSHOT_KEY);
+          else sharedStore.put(previousState.snapshot, MASTER_SNAPSHOT_KEY);
+          if (previousState.revision === undefined) sharedStore.delete(MASTER_REVISION_KEY);
+          else sharedStore.put(previousState.revision, MASTER_REVISION_KEY);
+          extraKeys.forEach(key => {
+            if (previousExtra[key] === undefined) sharedStore.delete(key);
+            else sharedStore.put(previousExtra[key], key);
+          });
+          result = { restored: true, stale: false };
+        } catch (error) {
+          try { tx.abort(); } catch (abortError) {}
+          reject(ERRORS.create(error, '마스터 CAS 자동복구'));
+        }
+      };
+      itemsRequest.onsuccess = maybeRestore;
+      snapshotRequest.onsuccess = maybeRestore;
+      revisionRequest.onsuccess = maybeRestore;
+      extraRequests.forEach(request => { request.onsuccess = maybeRestore; });
+      const failRequest = (request) => { request.onerror = () => reject(ERRORS.create(request.error, '마스터 CAS 자동복구 조회')); };
+      failRequest(itemsRequest);
+      failRequest(snapshotRequest);
+      failRequest(revisionRequest);
+      extraRequests.forEach(failRequest);
+      tx.oncomplete = () => resolve(result);
+      tx.onerror = () => reject(ERRORS.create(tx.error, '마스터 CAS 자동복구'));
+      tx.onabort = () => reject(ERRORS.create(tx.error || new DOMException('Transaction aborted', 'AbortError'), '마스터 CAS 자동복구'));
+    });
+  };
+
+  STORAGE.commitMasterState = async (data = {}, options = {}) => {
+    let previousState = null;
+    let revision = '';
+    let expectedWrittenState = null;
+    try {
+      return await STORAGE.withStorageLock(MASTER_LOCK_NAME, async () => {
+        let rollbackOk = false;
+        let staleRollbackSkipped = false;
+        const extraStoreEntries = options.extraStoreEntries && typeof options.extraStoreEntries === 'object'
+          ? options.extraStoreEntries
+          : {};
+        const extraKeys = Object.keys(extraStoreEntries);
+        try {
+          previousState = await STORAGE.readMasterState(extraKeys);
+          if (Object.prototype.hasOwnProperty.call(options, 'expectedRevision')
+            && previousState.revision !== options.expectedRevision) {
+            const conflict = new Error('다른 저장이 먼저 완료되어 현재 저장 요청이 오래된 상태가 되었습니다.');
+            conflict.code = 'MERCH_MASTER_REVISION_CONFLICT';
+            throw conflict;
+          }
+          const items = STORAGE.getMasterItems(data);
+          revision = STORAGE.createMasterRevision();
+          expectedWrittenState = { items, snapshot: data, revision, extraStoreEntries };
+          await STORAGE.replaceMasterState(expectedWrittenState, extraStoreEntries);
+          const verified = await STORAGE.verifyMasterState(data, revision, extraStoreEntries);
+          if (typeof options.afterVerified === 'function') {
+            const afterVerifiedOk = await options.afterVerified();
+            if (afterVerifiedOk === false) {
+              throw new Error(options.afterVerifiedError || '마스터 후속 저장 검증 실패');
+            }
+          }
+          return {
+            ok: true,
+            verified: true,
+            count: verified.count,
+            revision,
+            rollbackOk: false,
+            staleRollbackSkipped: false
+          };
+        } catch (error) {
+          if (previousState && expectedWrittenState) {
+            try {
+              const rollback = await STORAGE.rollbackMasterStateCAS(expectedWrittenState, previousState);
+              rollbackOk = rollback.restored;
+              staleRollbackSkipped = rollback.stale;
+              if (!rollbackOk && !staleRollbackSkipped) {
+                const currentState = await STORAGE.readMasterState(extraKeys);
+                rollbackOk = STORAGE.isSameMasterState(currentState, previousState);
+              }
+            } catch (rollbackError) {
+              console.error('ONEAPP master rollback failed', rollbackError);
+            }
+          } else if (previousState) {
+            rollbackOk = true;
+          }
+          return {
+            ok: false,
+            verified: false,
+            revision,
+            rollbackOk,
+            staleRollbackSkipped,
+            conflict: error?.code === 'MERCH_MASTER_REVISION_CONFLICT',
+            error: String(error?.message || error || '알 수 없는 저장 오류')
+          };
+        }
+      }, options.lockOptions || {});
+    } catch (error) {
+      if (error?.code === 'MERCH_LOCK_RELEASE_FAILED' && error.taskResult) {
+        const releaseMessage = String(error.releaseError?.message || error.message || 'storage lock release failed');
+        if (error.taskResult.ok && expectedWrittenState) {
+          try {
+            await STORAGE.verifyMasterState(
+              expectedWrittenState.snapshot,
+              expectedWrittenState.revision,
+              expectedWrittenState.extraStoreEntries
+            );
+            return {
+              ...error.taskResult,
+              lockReleaseWarning: true,
+              warning: releaseMessage
+            };
+          } catch (verifyError) {
+            let conflict = false;
+            try {
+              const currentState = await STORAGE.readMasterState(
+                Object.keys(expectedWrittenState.extraStoreEntries || {})
+              );
+              conflict = currentState.revision !== expectedWrittenState.revision;
+            } catch (readError) {
+              console.error('ONEAPP master state read after lock release failure failed', readError);
+            }
+            return {
+              ok: false,
+              verified: false,
+              revision,
+              rollbackOk: false,
+              staleRollbackSkipped: conflict,
+              conflict,
+              lockFailure: true,
+              lockReleaseWarning: true,
+              error: conflict
+                ? `The committed master was superseded while releasing the storage lock: ${releaseMessage}`
+                : `The committed master could not be verified after storage lock release failed: ${releaseMessage}`
+            };
+          }
+        }
+        return {
+          ...error.taskResult,
+          lockFailure: true,
+          lockReleaseWarning: true,
+          error: `${error.taskResult.error || 'Master commit failed'} / ${releaseMessage}`
+        };
+      }
+      return {
+        ok: false,
+        verified: false,
+        revision,
+        rollbackOk: false,
+        staleRollbackSkipped: false,
+        conflict: false,
+        lockFailure: true,
+        error: String(error?.message || error || '저장 잠금 오류')
+      };
+    }
+  };
+
+  STORAGE.commitMasterStateOrThrow = async (data = {}, options = {}) => {
+    const result = await STORAGE.commitMasterState(data, options);
+    if (!result.ok) {
+      const error = new Error(result.error || '마스터 저장 실패');
+      error.code = result.conflict ? 'MERCH_MASTER_REVISION_CONFLICT' : (result.lockFailure ? 'MERCH_MASTER_LOCK_FAILURE' : 'MERCH_MASTER_COMMIT_FAILURE');
+      error.result = result;
+      throw error;
+    }
+    return result;
   };
 
   STORAGE.safeJSONParse = safeJSONParse;
@@ -1196,7 +1654,7 @@
     const masterItems = Object.values(normalizedMaster);
     const rawSubdivision = CLOUD.buildRawSubdivisionFromMaster(normalizedMaster);
 
-    await STORAGE.bulkPutIDB(STORE_MASTER, masterItems).catch(() => false);
+    await STORAGE.commitMasterStateOrThrow(normalizedMaster);
     await STORAGE.setIDB(DATAOPS_MASTER_CACHE_KEY, normalizedMaster).catch(() => false);
     await STORAGE.setIDB(DATAOPS_RAW_SUBDIVISION_KEY, rawSubdivision).catch(() => false);
 
@@ -1292,8 +1750,7 @@
     const data = result.data;
 
     if (data.master && Object.keys(data.master).length > 0) {
-      const safeData = Object.values(data.master).filter(item => item && item.코드);
-      await STORAGE.bulkPutIDB(STORE_MASTER, safeData);
+      await STORAGE.commitMasterStateOrThrow(data.master);
       global.localStorage.setItem('merchMaster_sync_trigger', Date.now().toString());
       if (typeof hooks.setMasterProducts === 'function') hooks.setMasterProducts(data.master);
     }
@@ -1710,8 +2167,7 @@
     const backups = await MASTER.getMasterBackups();
     const backup = backups.find(b => b && b.id === backupId);
     if (!backup) throw new Error('백업을 찾을 수 없습니다.');
-    const items = Object.values(backup.data || {}).filter(item => item && (item.코드 || item.품목코드));
-    await STORAGE.replaceAllIDB(STORE_MASTER, items);
+    await STORAGE.commitMasterStateOrThrow(backup.data || {});
     STORAGE.writeLocalValue('merchMaster_sync_trigger', Date.now().toString(), { label: '마스터 복구 알림 저장' });
     return backup;
   };
@@ -1760,23 +2216,26 @@
       }
     });
 
-    const items = Object.values(masterMap).filter(item => item && (item.코드 || item.품목코드));
-    const previousItems = Object.values(backup.data || {}).filter(item => item && (item.코드 || item.품목코드));
     let previousHistory = null;
     try { previousHistory = global.localStorage.getItem(HISTORY_KEY); } catch (e) {}
     let masterWriteCompleted = false;
 
     HISTORY.assertHistoryForMutation(updateCount + createCount, historyLogs);
     try {
-      await STORAGE.replaceAllIDB(STORE_MASTER, items);
+      await STORAGE.commitMasterStateOrThrow(masterMap, {
+        afterVerified: () => {
+          if (historyLogs.length > 0) HISTORY.addHistoryLogs(historyLogs);
+          return true;
+        },
+        afterVerifiedError: '마스터 업로드 히스토리 저장 실패'
+      });
       masterWriteCompleted = true;
-      if (historyLogs.length > 0) HISTORY.addHistoryLogs(historyLogs);
       STORAGE.writeLocalValue('merchMaster_sync_trigger', Date.now().toString(), { label: '마스터 변경 알림 저장' });
       STORAGE.writeLocalValue('config_sync_trigger', Date.now().toString(), { label: '설정 변경 알림 저장' });
     } catch (error) {
       const rollbackFailures = [];
       if (masterWriteCompleted) {
-        try { await STORAGE.replaceAllIDB(STORE_MASTER, previousItems); }
+        try { await STORAGE.commitMasterStateOrThrow(backup.data || {}); }
         catch (rollbackError) { rollbackFailures.push(ERRORS.toActionableMessage(rollbackError, '마스터 자동복구')); }
       }
       try { STORAGE.restoreLocalValue(HISTORY_KEY, previousHistory, { label: '변경 이력 자동복구' }); }
@@ -1797,7 +2256,7 @@
       updateCount,
       createCount,
       historyCount: historyLogs.length,
-      totalCount: items.length
+      totalCount: Object.keys(masterMap).length
     };
   };
 
@@ -1817,6 +2276,17 @@
   global.getAllIDB = global.getAllIDB || STORAGE.getAllIDB;
   global.bulkPutIDB = global.bulkPutIDB || STORAGE.bulkPutIDB;
   global.replaceAllIDB = global.replaceAllIDB || STORAGE.replaceAllIDB;
+  global.stableMerchSerialize = global.stableMerchSerialize || STORAGE.stableSerialize;
+  global.getMasterIDBItems = global.getMasterIDBItems || STORAGE.getMasterItems;
+  global.createMerchMasterRevision = global.createMerchMasterRevision || STORAGE.createMasterRevision;
+  global.readMasterIDBState = global.readMasterIDBState || STORAGE.readMasterState;
+  global.replaceMasterIDBState = global.replaceMasterIDBState || STORAGE.replaceMasterState;
+  global.verifyMasterIDBState = global.verifyMasterIDBState || STORAGE.verifyMasterState;
+  global.isSameMerchMasterState = global.isSameMerchMasterState || STORAGE.isSameMasterState;
+  global.mutateMerchFallbackLock = global.mutateMerchFallbackLock || STORAGE.mutateFallbackLock;
+  global.acquireMerchFallbackStorageLock = global.acquireMerchFallbackStorageLock || STORAGE.acquireFallbackLock;
+  global.withMerchStorageLock = global.withMerchStorageLock || STORAGE.withStorageLock;
+  global.commitMerchMasterState = global.commitMerchMasterState || STORAGE.commitMasterState;
   global.getDefaultMerchMarginRules = global.getDefaultMerchMarginRules || getDefaultMerchMarginRules;
   global.sanitizeMerchMarginRules = global.sanitizeMerchMarginRules || sanitizeMerchMarginRules;
   global.normalizeMerchWarehouseForRule = global.normalizeMerchWarehouseForRule || normalizeMerchWarehouseForRule;

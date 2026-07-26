@@ -9,6 +9,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="coreEngine.js"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     
     <script>
@@ -124,6 +125,9 @@
                 danger = false
             } = options;
             return new Promise(resolve => {
+                if (typeof window.__MERCHOPS_LARGE_CONFIRM_CLOSE === 'function') {
+                    window.__MERCHOPS_LARGE_CONFIRM_CLOSE(false);
+                }
                 const old = document.getElementById('merchops-large-confirm-modal');
                 if (old) old.remove();
                 const overlay = document.createElement('div');
@@ -195,7 +199,17 @@
                 okBtn.type = 'button';
                 okBtn.textContent = confirmText;
                 okBtn.style.cssText = `height:40px;padding:0 20px;border-radius:10px;border:1px solid ${danger ? '#fb7185' : '#22c55e'};background:${danger ? '#e11d48' : '#16a34a'};color:#fff;font-weight:900;cursor:pointer;`;
-                const close = (result) => { overlay.remove(); resolve(result); };
+                let settled = false;
+                const close = (result) => {
+                    if (settled) return;
+                    settled = true;
+                    overlay.remove();
+                    if (window.__MERCHOPS_LARGE_CONFIRM_CLOSE === close) {
+                        window.__MERCHOPS_LARGE_CONFIRM_CLOSE = null;
+                    }
+                    resolve(result);
+                };
+                window.__MERCHOPS_LARGE_CONFIRM_CLOSE = close;
                 cancelBtn.onclick = () => close(false);
                 okBtn.onclick = () => close(true);
                 overlay.addEventListener('click', (ev) => { if (ev.target === overlay) close(false); });
@@ -1004,6 +1018,7 @@
         });
 
         window.bulkPutIDB = async (storeName, items) => { 
+            if (storeName === 'master_products') throw new Error('master_products는 공통 원자 저장 경로만 사용할 수 있습니다.');
             const db = await window.initIDB(); 
             return new Promise((resolve, reject) => { 
                 const tx = db.transaction(storeName, 'readwrite'); 
@@ -1016,7 +1031,7 @@
 
         window.__MERCHOPS_STORAGE_QUEUES = window.__MERCHOPS_STORAGE_QUEUES || {};
         window.__MERCHOPS_TAB_ID = window.__MERCHOPS_TAB_ID || window.generateUUID();
-        window.mutateMerchFallbackLock = async (lockName, owner, action, leaseMs = 120000) => {
+        window.mutateMerchFallbackLock = window.mutateMerchFallbackLock || (async (lockName, owner, action, leaseMs = 120000) => {
             const db = await window.initIDB();
             const lockKey = `merch_fallback_lock_v1:${lockName}`;
             return new Promise((resolve, reject) => {
@@ -1040,7 +1055,7 @@
                         }
                     }
                     else if (action === 'release') {
-                        if (!current || current.owner === owner) {
+                        if (current && current.owner === owner) {
                             store.delete(lockKey);
                             result = true;
                         }
@@ -1051,9 +1066,9 @@
                 tx.onerror = () => reject(tx.error || new Error(`탭 간 저장 잠금 처리 실패: ${lockName}`));
                 tx.onabort = () => reject(tx.error || new Error(`탭 간 저장 잠금 중단: ${lockName}`));
             });
-        };
-        window.acquireMerchFallbackStorageLock = async (lockName, options = {}) => {
-            const owner = window.__MERCHOPS_TAB_ID;
+        });
+        window.acquireMerchFallbackStorageLock = window.acquireMerchFallbackStorageLock || (async (lockName, options = {}) => {
+            const owner = `${window.__MERCHOPS_TAB_ID}:${window.generateUUID()}`;
             const leaseMs = Math.max(10000, Number(options.leaseMs) || 120000);
             const timeoutMs = Math.max(1000, Number(options.timeoutMs) || 20000);
             const pollMs = Math.max(4, Number(options.pollMs) || 20);
@@ -1062,19 +1077,21 @@
             while (Date.now() < deadline) {
                 if (await window.mutateMerchFallbackLock(lockName, owner, 'acquire', leaseMs)) {
                     let heartbeatWork = Promise.resolve();
+                    let ownershipError = null;
                     const heartbeat = setInterval(() => {
                         heartbeatWork = heartbeatWork
                             .then(() => window.mutateMerchFallbackLock(lockName, owner, 'renew', leaseMs))
                             .then(renewed => {
-                                if (!renewed) console.error(`MerchOps fallback lock ownership lost: ${lockName}`);
+                                if (!renewed) ownershipError = new Error(`탭 간 저장 잠금 소유권 상실: ${lockName}`);
                             })
-                            .catch(error => console.error('MerchOps fallback lock heartbeat failed', error));
+                            .catch(error => { ownershipError = error; });
                     }, Math.max(1000, Math.floor(leaseMs / 3)));
                     return async () => {
                         clearInterval(heartbeat);
-                        await heartbeatWork.catch(() => undefined);
+                        await heartbeatWork.catch(error => { ownershipError = ownershipError || error; });
                         const released = await window.mutateMerchFallbackLock(lockName, owner, 'release', leaseMs);
-                        if (!released) throw new Error(`탭 간 저장 잠금 해제 검증 실패: ${lockName}`);
+                        if (!released) ownershipError = ownershipError || new Error(`탭 간 저장 잠금 해제 검증 실패: ${lockName}`);
+                        if (ownershipError) throw ownershipError;
                     };
                 }
                 await wait();
@@ -1082,8 +1099,8 @@
             const timeoutError = new Error(`탭 간 저장 잠금 대기시간 초과: ${lockName}`);
             timeoutError.code = 'MERCH_FALLBACK_LOCK_TIMEOUT';
             throw timeoutError;
-        };
-        window.withMerchFallbackStorageLock = async (lockName, task) => {
+        });
+        window.withMerchFallbackStorageLock = window.withMerchFallbackStorageLock || (async (lockName, task) => {
             const release = await window.acquireMerchFallbackStorageLock(lockName);
             try {
                 return await task();
@@ -1091,8 +1108,8 @@
             finally {
                 await release();
             }
-        };
-        window.withMerchStorageLock = (lockName, task) => {
+        });
+        window.withMerchStorageLock = window.withMerchStorageLock || ((lockName, task) => {
             const queues = window.__MERCHOPS_STORAGE_QUEUES;
             const previous = queues[lockName] || Promise.resolve();
             const run = previous.catch(() => undefined).then(async () => {
@@ -1101,7 +1118,7 @@
                     try {
                         return await navigator.locks.request(lockName, { mode: 'exclusive' }, async () => {
                             entered = true;
-                            return task();
+                            return window.withMerchFallbackStorageLock(lockName, task);
                         });
                     }
                     catch (error) {
@@ -1117,18 +1134,18 @@
                 if (queues[lockName] === settled) delete queues[lockName];
             });
             return run;
-        };
+        });
 
-        window.createMerchMasterRevision = () => `${Date.now()}-${window.generateUUID()}`;
+        window.createMerchMasterRevision = window.createMerchMasterRevision || (() => `${Date.now()}-${window.generateUUID()}`);
 
-        window.getMasterIDBItems = (data = {}) => Object.values(data || {}).map((item, index) => {
+        window.getMasterIDBItems = window.getMasterIDBItems || ((data = {}) => Object.values(data || {}).map((item, index) => {
             if (!item || item.코드 === undefined || item.코드 === null || String(item.코드).trim() === '') {
                 throw new Error(`마스터 코드 검증 실패: ${index + 1}번째 레코드`);
             }
             return item;
-        });
+        }));
 
-        window.stableMerchSerialize = (value) => {
+        window.stableMerchSerialize = window.stableMerchSerialize || ((value) => {
             const normalize = (input) => {
                 if (Array.isArray(input)) return input.map(normalize);
                 if (input && typeof input === 'object') {
@@ -1141,11 +1158,11 @@
                 return input;
             };
             return JSON.stringify(normalize(value));
-        };
+        });
 
         // master_products와 store.merchMaster_v870을 같은 트랜잭션에서 읽어
         // 저장 전 상태 보존과 저장 후 검증의 기준으로 사용한다.
-        window.readMasterIDBState = async () => {
+        window.readMasterIDBState = window.readMasterIDBState || (async () => {
             const db = await window.initIDB();
             return new Promise((resolve, reject) => {
                 const tx = db.transaction(['master_products', 'store'], 'readonly');
@@ -1160,11 +1177,11 @@
                 tx.onerror = () => reject(tx.error || new Error('마스터 저장상태 조회 실패'));
                 tx.onabort = () => reject(tx.error || new Error('마스터 저장상태 조회 중단'));
             });
-        };
+        });
 
         // clear/put/전체 스냅샷 갱신을 하나의 IDB 트랜잭션으로 묶는다.
         // 중간 요청 하나라도 실패하면 브라우저가 트랜잭션 전체를 자동 롤백한다.
-        window.replaceMasterIDBState = async (state = {}) => {
+        window.replaceMasterIDBState = window.replaceMasterIDBState || (async (state = {}) => {
             const db = await window.initIDB();
             const items = Array.isArray(state.items) ? state.items : [];
             return new Promise((resolve, reject) => {
@@ -1189,9 +1206,9 @@
                 tx.onerror = () => reject(tx.error || new Error('마스터 원자 저장 실패'));
                 tx.onabort = () => reject(tx.error || new Error('마스터 원자 저장 중단'));
             });
-        };
+        });
 
-        window.verifyMasterIDBState = async (expectedData = {}, expectedRevision) => {
+        window.verifyMasterIDBState = window.verifyMasterIDBState || (async (expectedData = {}, expectedRevision) => {
             const expectedItems = window.getMasterIDBItems(expectedData);
             const actualState = await window.readMasterIDBState();
             if (expectedRevision !== undefined && actualState.revision !== expectedRevision) {
@@ -1211,18 +1228,18 @@
                 throw new Error('마스터 전체 스냅샷 검증 실패');
             }
             return { ok: true, count: expectedItems.length };
-        };
+        });
 
-        window.isSameMerchMasterState = (left = {}, right = {}) => {
+        window.isSameMerchMasterState = window.isSameMerchMasterState || ((left = {}, right = {}) => {
             const normalizeItems = (state) => (Array.isArray(state.items) ? state.items : [])
                 .slice()
                 .sort((a, b) => String(a?.코드 || '').localeCompare(String(b?.코드 || '')));
             return window.stableMerchSerialize(normalizeItems(left)) === window.stableMerchSerialize(normalizeItems(right))
                 && window.stableMerchSerialize(left.snapshot) === window.stableMerchSerialize(right.snapshot)
                 && left.revision === right.revision;
-        };
+        });
 
-        window.commitMerchMasterState = (data, options = {}) => window.withMerchStorageLock('oneapp-merch-master-save', async () => {
+        window.commitMerchMasterState = window.commitMerchMasterState || ((data, options = {}) => window.withMerchStorageLock('oneapp-merch-master-save', async () => {
             let previousState = null;
             let revision = '';
             let rollbackOk = false;
@@ -1283,7 +1300,7 @@
                     error: String(error?.message || error || '알 수 없는 저장 오류')
                 };
             }
-        });
+        }));
 
         window.getMerchHistoryLogKey = (log = {}) => {
             const id = String(log?.id ?? '').trim();
@@ -1358,6 +1375,7 @@
         };
 
         window.setIDB = async (key, val) => { 
+            if (['merchMaster_v870', 'merchMaster_revision_v870'].includes(key)) throw new Error(`${key}는 공통 원자 저장 경로만 사용할 수 있습니다.`);
             const db = await window.initIDB(); 
             return new Promise((resolve, reject) => { 
                 const tx = db.transaction('store', 'readwrite'); 
@@ -3304,24 +3322,19 @@ const useMerchData = () => {
             const state = await window.readMasterIDBState();
             applyMasterState(state);
             if ((!state.items || state.items.length === 0) && state.snapshot && Object.keys(state.snapshot).length > 0) {
-                await window.withMerchStorageLock('oneapp-merch-master-save', async () => {
-                    const current = await window.readMasterIDBState();
-                    if (current.items.length > 0) {
-                        applyMasterState(current);
-                        return;
-                    }
-                    if (window.stableMerchSerialize(current.snapshot) !== window.stableMerchSerialize(state.snapshot)) {
-                        applyMasterState(current);
-                        return;
-                    }
-                    const revision = current.revision || window.createMerchMasterRevision();
-                    await window.replaceMasterIDBState({
-                        items: window.getMasterIDBItems(state.snapshot),
-                        snapshot: state.snapshot,
-                        revision
-                    });
-                    if (!cancelled) masterRevisionRef.current = revision;
+                const migration = await window.commitMerchMasterState(state.snapshot, {
+                    expectedRevision: state.revision
                 });
+                if (!migration.ok) {
+                    const current = await window.readMasterIDBState();
+                    applyMasterState(current);
+                    if (!migration.conflict) {
+                        throw new Error(migration.error || '기존 마스터 DB 마이그레이션에 실패했습니다.');
+                    }
+                    return;
+                }
+                const migrated = await window.readMasterIDBState();
+                applyMasterState(migrated);
             }
         };
         const handleMasterSync = (event) => {
@@ -3341,7 +3354,20 @@ const useMerchData = () => {
         if (!options.allowStaleBase && !Object.prototype.hasOwnProperty.call(commitOptions, 'expectedRevision')) {
             commitOptions.expectedRevision = masterRevisionRef.current;
         }
-        const result = await window.commitMerchMasterState(data, commitOptions);
+        let result;
+        try {
+            result = await window.commitMerchMasterState(data, commitOptions);
+        }
+        catch (error) {
+            result = {
+                ok: false,
+                verified: false,
+                rollbackOk: false,
+                staleRollbackSkipped: false,
+                lockFailure: true,
+                error: String(error?.message || error || '저장 잠금 오류')
+            };
+        }
         window.__MERCHOPS_LAST_MASTER_SAVE_RESULT = {
             ...result,
             ...(result.ok ? { savedAt: new Date().toISOString() } : { failedAt: new Date().toISOString() })
@@ -3360,7 +3386,9 @@ const useMerchData = () => {
         }
         console.error('MerchOps master local save failed', result);
         window.__MERCHOPS_LAST_MASTER_SAVE_ERROR = result.error;
-        const recoveryMessage = result.conflict
+        const recoveryMessage = result.lockFailure
+            ? '저장 잠금을 얻지 못해 마스터를 변경하지 않았습니다. 진행 중인 다른 탭 작업을 확인한 뒤 다시 실행하세요.'
+            : result.conflict
             ? '다른 저장이 먼저 완료되어 오래된 요청을 안전하게 중단했습니다. 현재 마스터를 기준으로 다시 실행하세요.'
             : (result.rollbackOk
                 ? '이전 마스터 저장상태를 유지·복원했습니다.'
@@ -3828,9 +3856,15 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
                     count++;
                 }
             }
-            const saved = await data.setMasterProducts(newMaster);
-            if (saved) ui.showToast(`✅ ${count}건의 상품에서 찌꺼기 데이터를 삭제했습니다. (적용 후 우측 상단 ☁️클라우드 백업을 눌러주세요)`);
-            else ui.showToast('❌ 상품태그 정리 저장에 실패했습니다.');
+            try {
+                const saved = await data.setMasterProducts(newMaster);
+                if (saved) ui.showToast(`✅ ${count}건의 상품에서 찌꺼기 데이터를 삭제했습니다. (적용 후 우측 상단 ☁️클라우드 백업을 눌러주세요)`);
+                else ui.showToast('❌ 상품태그 정리 저장에 실패했습니다.');
+            }
+            catch (error) {
+                console.error('MerchOps garbage tag cleanup failed', error);
+                ui.showToast(`❌ 상품태그 정리 저장 실패: ${error?.message || '알 수 없는 오류'}`);
+            }
         }
     }, [data.masterProducts, data.setMasterProducts, ui]);
     const getUploadRoleMeta = (role = 'estimate') => {
@@ -4998,6 +5032,10 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
             }
             ui.showToast(`✅ ${count}개의 상품에서 [${tagName}] 태그를 삭제했습니다.`);
         }
+        catch (error) {
+            console.error('MerchOps tag delete failed', error);
+            ui.showToast(`❌ 태그 삭제 저장 실패: ${error?.message || '알 수 없는 오류'}`);
+        }
         finally {
             ui.setIsProcessing(false);
             ui.setProcessMsg('');
@@ -5533,6 +5571,8 @@ ${targetText} ${targetRows.length}건을 엑셀로 생성합니다.${workflowTex
             ui.showToast('⚠️ 다른 저장 또는 작업이 진행 중입니다. 완료 후 다시 실행하세요.');
             return;
         }
+        masterCommitInFlightRef.current = true;
+        try {
         const activeWorkflowSteps = (window.normalizeMerchFilterSteps ? window.normalizeMerchFilterSteps(ui.filterSteps || []) : [])
             .filter((step, idx) => {
                 if (step.stepType !== 'action') return false;
@@ -6005,7 +6045,6 @@ ${targetModeText} ${targets.size}건을 MerchOps 마스터에 저장합니다. �
             }
             commitCount++;
         });
-        masterCommitInFlightRef.current = true;
         ui.setIsProcessing(true);
         ui.setProcessMsg('F7 마스터 저장·검증 중...');
         try {
@@ -6058,9 +6097,16 @@ ${targetModeText} ${targets.size}건을 MerchOps 마스터에 저장합니다. �
             ui.showToast(`✅ F7 마스터 적용 완료: ${commitCount}건`);
         }
         finally {
-            masterCommitInFlightRef.current = false;
             ui.setIsProcessing(false);
             ui.setProcessMsg('');
+        }
+        }
+        catch (error) {
+            console.error('MerchOps F7 commit failed', error);
+            ui.showToast(`❌ F7 마스터 저장 실패: ${error?.message || '완료 처리하지 않았습니다.'}`);
+        }
+        finally {
+            masterCommitInFlightRef.current = false;
         }
     }, [ui.selectedRows, fullDisplayRows, data.masterProducts, data.managedItems, data.setMasterProducts, data.setManagedItems, data.addHistoryLogs, config.masterLinks, ui, collectWholesaleBelowCostWarnings]);
     const toggleAllRows = useCallback(() => {
@@ -6648,19 +6694,27 @@ ${targetModeText} ${targets.size}건을 MerchOps 마스터에 저장합니다. �
         });
         ui.setIsProcessing(true);
         ui.setProcessMsg('신규상품 마스터 저장 및 검증 중...');
-        const masterSaved = await data.setMasterProducts(nextMaster);
-        ui.setIsProcessing(false);
-        ui.setProcessMsg('');
-        if (!masterSaved) {
-            ui.showToast('❌ 신규상품 마스터 저장에 실패했습니다.');
-            return;
+        try {
+            const masterSaved = await data.setMasterProducts(nextMaster);
+            if (!masterSaved) {
+                ui.showToast('❌ 신규상품 마스터 저장에 실패했습니다.');
+                return;
+            }
+            data.setManagedItems(nextManaged);
+            ui.setSelectedRows(new Set());
+            const remaining = candidateRows.length - validRows.length;
+            ui.showToast(`✅ 신규상품 ${validRows.length}건 마스터 적용 완료${remaining > 0 ? ` / 남은 미등록 ${remaining}건` : ''}`);
+            if (remaining <= 0)
+                (_b = ui.setRegistrationMode) === null || _b === void 0 ? void 0 : _b.call(ui, false);
         }
-        data.setManagedItems(nextManaged);
-        ui.setSelectedRows(new Set());
-        const remaining = candidateRows.length - validRows.length;
-        ui.showToast(`✅ 신규상품 ${validRows.length}건 마스터 적용 완료${remaining > 0 ? ` / 남은 미등록 ${remaining}건` : ''}`);
-        if (remaining <= 0)
-            (_b = ui.setRegistrationMode) === null || _b === void 0 ? void 0 : _b.call(ui, false);
+        catch (error) {
+            console.error('MerchOps unregistered item save failed', error);
+            ui.showToast(`❌ 신규상품 마스터 저장 실패: ${error?.message || '알 수 없는 오류'}`);
+        }
+        finally {
+            ui.setIsProcessing(false);
+            ui.setProcessMsg('');
+        }
     }, [fullDisplayRows, ui.selectedRows, data.masterProducts, data.managedItems, data.setMasterProducts, data.setManagedItems, ui]);
     // v2.1.98: 상단 구분 라벨은 제거했다. 마스터 조건상품 불러오기 버튼/액션은 제거하고, 마스터 상태 작업은 선택 테마 + 행사초기화 파이프라인으로 처리한다.
     const handleExitRegistrationMode = useCallback(() => {
@@ -9398,7 +9452,7 @@ const App = () => {
             var _a;
             const activeEl = document.activeElement;
             const isInput = ['INPUT', 'TEXTAREA', 'SELECT'].includes(activeEl === null || activeEl === void 0 ? void 0 : activeEl.tagName);
-            const hasModal = document.querySelector('[role="dialog"], .modal, .fixed.inset-0');
+            const hasModal = document.querySelector('#merchops-large-confirm-modal, [role="dialog"], .modal, .fixed.inset-0');
             if (e.key === 'F3') {
                 e.preventDefault();
                 const searchEl = document.getElementById('merch-global-search');
@@ -9447,6 +9501,10 @@ const App = () => {
             }
             if (e.key === 'F7') {
                 e.preventDefault();
+                if (hasModal) {
+                    appActions.showToast('⚠️ 확인창을 먼저 완료하거나 취소하세요.');
+                    return;
+                }
                 if (isInput)
                     activeEl.blur();
                 const hasPendingStopAction = Object.values(appState.stoppedProducts || {}).some(item => ['stop', 'resume'].includes(String(item?.pendingAction || '')));

@@ -179,7 +179,9 @@ const createFakeIDB = (initial) => {
                   stagedMaster.set(copied.코드, copied);
                 },
                 getAll() {
-                  return { result: [...stagedMaster.values()].map(clone) };
+                  const request = { result: [...stagedMaster.values()].map(clone), onsuccess: null, onerror: null };
+                  queueMicrotask(() => request.onsuccess?.());
+                  return request;
                 },
               };
             }
@@ -191,7 +193,9 @@ const createFakeIDB = (initial) => {
                 stagedStore.delete(key);
               },
               get(key) {
-                return { result: clone(stagedStore.get(key)) };
+                const request = { result: clone(stagedStore.get(key)), onsuccess: null, onerror: null };
+                queueMicrotask(() => request.onsuccess?.());
+                return request;
               },
             };
           },
@@ -398,6 +402,18 @@ assert.equal(
   "expired fallback lock entries must not block the next writer",
 );
 
+const missingLeaseKey = "merch_fallback_lock_v1:missing-release";
+assert.equal(
+  await fallbackTabA.mutateMerchFallbackLock("missing-release", "owner-a", "acquire", 10000),
+  true,
+);
+fallbackLockIDB.state.delete(missingLeaseKey);
+assert.equal(
+  await fallbackTabA.mutateMerchFallbackLock("missing-release", "owner-a", "release", 10000),
+  false,
+  "a missing fallback lease must be treated as ownership loss",
+);
+
 fallbackStorage.clear();
 await Promise.all([
   fallbackTabA.persistMerchHistoryLogs([{ id: "fallback-production-a", code: "2001" }], []),
@@ -409,4 +425,23 @@ assert.deepEqual(
   "production history persistence must preserve both logs without Web Locks",
 );
 
-console.log("MerchOps IndexedDB atomicity, save queue, stale rollback, fallback tab lock, and persisted history merge tests passed.");
+const firstConfirm = fallbackTabA.showMerchopsLargeConfirm({ title: "first" });
+const secondConfirm = fallbackTabA.showMerchopsLargeConfirm({ title: "second" });
+assert.equal(
+  await Promise.race([
+    firstConfirm,
+    new Promise((_, reject) => setTimeout(() => reject(new Error("replaced F7 modal promise remained pending")), 100)),
+  ]),
+  false,
+  "replacing the F7 confirmation modal must resolve the previous promise as false",
+);
+fallbackTabA.__MERCHOPS_LARGE_CONFIRM_CLOSE(false);
+assert.equal(await secondConfirm, false);
+
+const f7Start = html.indexOf("const handleCommitEstimate = useCallback(async () => {");
+const f7Gate = html.indexOf("masterCommitInFlightRef.current = true;", f7Start);
+const f7Work = html.indexOf("const activeWorkflowSteps =", f7Start);
+assert.ok(f7Start >= 0 && f7Gate > f7Start && f7Gate < f7Work, "F7 re-entry guard must start before confirmation and work preparation");
+assert.match(html, /#merchops-large-confirm-modal, \[role="dialog"\]/);
+
+console.log("MerchOps IndexedDB atomicity, save queue, stale rollback, fallback tab lock, persisted history merge, and F7 modal tests passed.");

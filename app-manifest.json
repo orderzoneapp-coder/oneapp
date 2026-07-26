@@ -571,7 +571,8 @@
     "crossApplicationSemanticUnification": false,
     "assignments": {
       "merchops": {
-        "F8": "Apply current work to the master and create the immediate Excel output.",
+        "F7": "Apply current work to the MerchOps master after atomic storage and history verification.",
+        "F8": "Create the Excel output from current work without changing the master.",
         "F9": "Open Export Center for review and downstream output."
       },
       "dataops": {
@@ -633,7 +634,8 @@
           "id": "5A",
           "application": "merchops",
           "shortcuts": {
-            "F8": "Apply current work to the master and create the immediate Excel output.",
+            "F7": "Apply current work to the MerchOps master after atomic storage and history verification.",
+            "F8": "Create the Excel output from current work without changing the master.",
             "F9": "Open Export Center for review and downstream output."
           }
         },
