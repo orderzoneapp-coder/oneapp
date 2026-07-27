@@ -6,6 +6,17 @@
   const CODE_FIELDS = ['코드', '품목코드', '상품코드'];
   const EDITABLE_FIELDS = ['품목명', '규격', '단위'];
   const REQUIRED_NEW_FIELDS = ['품목명', '규격', '단위'];
+  const HISTORY_DEFAULT_LIMIT = 5000;
+  const ERROR_CODES = {
+    INITIAL_REGISTRATION_REQUIRED: 'MASTER_ADD_UPDATE_INITIAL_REGISTRATION_REQUIRED',
+    NEW_REQUIRED_MISSING: 'MASTER_ADD_UPDATE_NEW_REQUIRED_MISSING',
+    BLOCKED_CANDIDATE: 'MASTER_ADD_UPDATE_BLOCKED_CANDIDATE',
+    HISTORY_CAPACITY_EXCEEDED: 'MASTER_ADD_UPDATE_HISTORY_CAPACITY_EXCEEDED'
+  };
+  const REQUIRED_BLOCKING_REASONS = [
+    'new_required_value_missing',
+    'new_required_approval_incomplete'
+  ];
   const ISSUE_TAGS = {
     NEW: '신규 상품',
     CHANGED: '기존 상품 변경',
@@ -57,7 +68,11 @@
   };
 
   const normalizeCode = (value) => String(value === undefined || value === null ? '' : value).trim();
-  const isBlankValue = (value) => value === '' || value === null || value === undefined;
+  const isBlankValue = (value) => (
+    value === null
+    || value === undefined
+    || (typeof value === 'string' && value.trim() === '')
+  );
   const valuesEqual = (left, right) => Object.is(left, right);
 
   const getDisplayValue = (row, field) => {
@@ -96,6 +111,69 @@
       out[code].코드 = code;
     });
     return out;
+  };
+
+  const createOperationalError = (code, message, details = {}) => {
+    const error = new Error(message);
+    error.code = code;
+    Object.assign(error, details);
+    return error;
+  };
+
+  const assertExistingMaster = (currentMaster, stage = '추가·갱신') => {
+    const master = buildMasterIndex(currentMaster);
+    if (Object.keys(master).length === 0) {
+      throw createOperationalError(
+        ERROR_CODES.INITIAL_REGISTRATION_REQUIRED,
+        `현재 master가 0건이므로 ${stage}을(를) 실행할 수 없습니다. 최초 등록 승인 절차를 사용해야 합니다.`,
+        { stage }
+      );
+    }
+    return master;
+  };
+
+  const parseWorkbook = (arrayBuffer, XLSXRef = global.XLSX) => {
+    if (!XLSXRef) throw new Error('Excel 라이브러리를 불러오지 못했습니다.');
+    const wb = XLSXRef.read(new Uint8Array(arrayBuffer), { type: 'array', cellDates: false });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    if (!ws) throw new Error('첫 번째 Excel 시트를 읽을 수 없습니다.');
+    const rawRows = XLSXRef.utils.sheet_to_json(ws, { header: 1, defval: '', raw: true });
+    const displayRows = XLSXRef.utils.sheet_to_json(ws, { header: 1, defval: '', raw: false });
+    let headerRowIndex = -1;
+    for (let index = 0; index < Math.min(15, displayRows.length); index++) {
+      const labels = (displayRows[index] || []).map(value => String(value ?? '').trim());
+      if (labels.some(label => CODE_FIELDS.includes(label))) {
+        headerRowIndex = index;
+        break;
+      }
+    }
+    if (headerRowIndex < 0) {
+      throw new Error('Excel 상단 15행 안에서 코드·품목코드·상품코드 헤더를 찾지 못했습니다.');
+    }
+    const headers = (displayRows[headerRowIndex] || []).map(value => String(value ?? '').trim());
+    const duplicateHeaders = headers.filter((header, index) => header && headers.indexOf(header) !== index);
+    if (duplicateHeaders.length > 0) {
+      throw new Error(`중복 Excel 컬럼명이 있습니다: ${[...new Set(duplicateHeaders)].join(', ')}`);
+    }
+    const rows = [];
+    for (let rowIndex = headerRowIndex + 1; rowIndex < rawRows.length; rowIndex++) {
+      const rawRow = rawRows[rowIndex] || [];
+      const displayRow = displayRows[rowIndex] || [];
+      const hasAnyValue = headers.some((header, columnIndex) => (
+        header && String(displayRow[columnIndex] ?? rawRow[columnIndex] ?? '').trim() !== ''
+      ));
+      if (!hasAnyValue) continue;
+      const row = { __rowNumber: rowIndex + 1, __display: {} };
+      headers.forEach((header, columnIndex) => {
+        if (!header) return;
+        row[header] = rawRow[columnIndex] === undefined ? '' : rawRow[columnIndex];
+        row.__display[header] = displayRow[columnIndex];
+      });
+      rows.push(row);
+      if (rows.length > 100000) throw new Error('Excel 데이터 행은 100,000건을 초과할 수 없습니다.');
+    }
+    if (rows.length === 0) throw new Error('비교할 상품 행이 없습니다.');
+    return { headers: headers.filter(Boolean), rows };
   };
 
   const getSourceFields = (row = {}, headers = []) => {
@@ -154,6 +232,33 @@
     if (fieldState.source === 'blank') return '';
     if (fieldState.source === 'old') return fieldState.oldValue;
     return fieldState.uploadPresent ? fieldState.uploadRaw : undefined;
+  };
+
+  const syncCandidateBlocking = (candidate) => {
+    if (!candidate) return candidate;
+    candidate.blockingReasons = (candidate.blockingReasons || [])
+      .filter(reason => !REQUIRED_BLOCKING_REASONS.includes(reason));
+    if (candidate.status === 'new' && !candidate.productExcluded) {
+      const requiredStates = REQUIRED_NEW_FIELDS.map(field => candidate.fields && candidate.fields[field]);
+      const valueMissing = requiredStates.some(state => (
+        !state || state.excluded || isBlankValue(getFieldFinalValue(state))
+      ));
+      if (valueMissing) addTag(candidate.blockingReasons, 'new_required_value_missing');
+
+      const approvalStarted = candidate.productApproved
+        || candidate.adminComplete
+        || Object.values(candidate.fields || {}).some(field => field.approved || field.excluded);
+      const approvalIncomplete = approvalStarted && requiredStates.some(state => (
+        !state
+        || state.excluded
+        || isBlankValue(getFieldFinalValue(state))
+        || (!candidate.productApproved && !state.approved)
+      ));
+      if (approvalIncomplete) addTag(candidate.blockingReasons, 'new_required_approval_incomplete');
+    }
+    candidate.issueTags = (candidate.issueTags || []).filter(tag => tag !== ISSUE_TAGS.BLOCKING);
+    if (candidate.blockingReasons.length > 0) addTag(candidate.issueTags, ISSUE_TAGS.BLOCKING);
+    return candidate;
   };
 
   const createFieldState = ({ field, row, existing, isNew, synthetic = false }) => {
@@ -216,7 +321,7 @@
     const blockingReasons = [];
     if (duplicateKind && !duplicateResolved) blockingReasons.push('duplicate_unresolved');
     if (blockingReasons.length > 0) addTag(tags, ISSUE_TAGS.BLOCKING);
-    return {
+    return syncCandidateBlocking({
       id,
       code,
       status,
@@ -234,7 +339,7 @@
       productApproved: false,
       productExcluded: false,
       adminComplete: false
-    };
+    });
   };
 
   const createBlankCodeCandidate = (row, headers, index) => {
@@ -269,11 +374,7 @@
     const countTag = tag => candidates.filter(candidate => matchesTag(candidate, tag)).length;
     const requiredMissingCount = candidates.filter(candidate => (
       candidate.blockingReasons.includes('blank_code')
-      || (candidate.status === 'new'
-        && REQUIRED_NEW_FIELDS.some(field => {
-          const state = candidate.fields[field];
-          return !state || !state.uploadPresent || isBlankValue(state.uploadRaw);
-        }))
+      || candidate.blockingReasons.includes('new_required_value_missing')
     )).length;
     return {
       compareCount: candidates.filter(candidate => candidate.status !== 'missing').length,
@@ -305,7 +406,7 @@
     fileName = '',
     masterMismatch = false
   } = {}) => {
-    const master = buildMasterIndex(currentMaster);
+    const master = assertExistingMaster(currentMaster, '추가·갱신 비교 분석');
     const groups = new Map();
     const candidates = [];
     rows.forEach((row, index) => {
@@ -391,6 +492,7 @@
     const index = next.candidates.findIndex(candidate => candidate.id === candidateId);
     if (index < 0) return next;
     updater(next.candidates[index]);
+    syncCandidateBlocking(next.candidates[index]);
     next.summary = summarize(next.candidates);
     return next;
   };
@@ -424,8 +526,14 @@
       field.adminEdited = true;
       field.adminValue = decision.adminValue;
     }
-    if (hasOwn(decision, 'approved')) field.approved = decision.approved === true;
-    if (hasOwn(decision, 'excluded')) field.excluded = decision.excluded === true;
+    if (hasOwn(decision, 'approved')) {
+      field.approved = decision.approved === true;
+      if (field.approved) field.excluded = false;
+    }
+    if (hasOwn(decision, 'excluded')) {
+      field.excluded = decision.excluded === true;
+      if (field.excluded) field.approved = false;
+    }
   });
 
   const resolveDuplicate = (analysis, candidateId, rowNumber) => updateCandidate(analysis, candidateId, candidate => {
@@ -461,6 +569,7 @@
         field.approved = false;
         field.excluded = false;
       });
+      syncCandidateBlocking(candidate);
     });
     next.summary = summarize(next.candidates);
     return next;
@@ -476,6 +585,24 @@
     });
   };
 
+  const assertNewProductsComplete = (plan, stage = '실행계획') => {
+    const createdCodes = (plan && plan.details || [])
+      .filter(detail => detail.executionField === '코드')
+      .map(detail => detail.code);
+    createdCodes.forEach(code => {
+      const item = plan.nextMaster && plan.nextMaster[code];
+      const missingRequiredFields = REQUIRED_NEW_FIELDS.filter(field => !item || isBlankValue(item[field]));
+      if (missingRequiredFields.length > 0) {
+        throw createOperationalError(
+          ERROR_CODES.NEW_REQUIRED_MISSING,
+          `${stage}에서 ${code} 신규 상품의 필수 최종값이 확인되지 않았습니다: ${missingRequiredFields.join(', ')}`,
+          { stage, productCode: code, missingRequiredFields }
+        );
+      }
+    });
+    return true;
+  };
+
   const buildExecutionPlan = (analysis, currentMaster = {}) => {
     if (!analysis || analysis.mode !== MODE) throw new Error('추가·갱신 비교 결과가 없습니다.');
     if (analysis.masterMismatch) {
@@ -483,7 +610,7 @@
       error.code = 'MASTER_ADD_UPDATE_MASTER_MISMATCH';
       throw error;
     }
-    const nextMaster = buildMasterIndex(currentMaster);
+    const nextMaster = assertExistingMaster(currentMaster, '추가·갱신 실행계획 생성');
     const details = [];
     const savedProducts = new Set();
     let createCount = 0;
@@ -492,7 +619,18 @@
 
     analysis.candidates.forEach(candidate => {
       if (!candidate || ['same', 'missing', 'blocked'].includes(candidate.status)) return;
-      if (candidate.productExcluded || !candidate.adminComplete || candidate.blockingReasons.length > 0) return;
+      if (candidate.productExcluded || !candidate.adminComplete) return;
+      const normalizedCandidate = syncCandidateBlocking(cloneValue(candidate));
+      if (normalizedCandidate.blockingReasons.length > 0) {
+        throw createOperationalError(
+          normalizedCandidate.blockingReasons.includes('new_required_value_missing')
+            || normalizedCandidate.blockingReasons.includes('new_required_approval_incomplete')
+            ? ERROR_CODES.NEW_REQUIRED_MISSING
+            : ERROR_CODES.BLOCKED_CANDIDATE,
+          `${candidate.code || `${candidate.rowNumber}행`} 상품의 저장 차단 이슈를 먼저 해결해야 합니다.`,
+          { productCode: candidate.code, blockingReasons: normalizedCandidate.blockingReasons.slice() }
+        );
+      }
       const isNew = candidate.status === 'new';
       const before = isNew ? null : nextMaster[candidate.code];
       if (!isNew && !before) return;
@@ -527,6 +665,14 @@
 
       if (isNew) {
         if (!candidate.productApproved && acceptedFields.length === 0) return;
+        const missingRequiredFields = REQUIRED_NEW_FIELDS.filter(field => isBlankValue(target[field]));
+        if (missingRequiredFields.length > 0) {
+          throw createOperationalError(
+            ERROR_CODES.NEW_REQUIRED_MISSING,
+            `${candidate.code} 신규 상품의 최종 반영값에 필수값이 없습니다: ${missingRequiredFields.join(', ')}`,
+            { productCode: candidate.code, missingRequiredFields }
+          );
+        }
         target.코드 = candidate.code;
         nextMaster[candidate.code] = target;
         createCount++;
@@ -569,7 +715,9 @@
       failedCount: 0,
       savedProductCount: savedProducts.size
     };
-    return { nextMaster, details, counts };
+    const plan = { nextMaster, details, counts };
+    assertNewProductsComplete(plan, '추가·갱신 실행계획');
+    return plan;
   };
 
   const createExecutionId = () => {
@@ -664,7 +812,27 @@
     return parsed;
   };
 
+  const prepareHistoryAppend = (localStorageRef, logs, historyApi) => {
+    const current = readHistory(localStorageRef);
+    const configuredLimit = Number(historyApi && historyApi.DEFAULT_LIMIT);
+    const limit = Number.isInteger(configuredLimit) && configuredLimit > 0
+      ? configuredLimit
+      : HISTORY_DEFAULT_LIMIT;
+    const nextLogs = Array.isArray(logs) ? logs : [];
+    if (nextLogs.length > limit || current.length + nextLogs.length > limit) {
+      throw createOperationalError(
+        ERROR_CODES.HISTORY_CAPACITY_EXCEEDED,
+        `공식 history 보관 한도(${limit.toLocaleString()}건)를 초과하므로 master 저장을 시작하지 않았습니다. 기존 감사 이력을 보존한 뒤 관리자가 보관 정책을 결정해야 합니다.`,
+        { historyLimit: limit, existingHistoryCount: current.length, newHistoryCount: nextLogs.length }
+      );
+    }
+    const merged = [...nextLogs, ...current];
+    JSON.stringify(merged);
+    return { merged, limit, existingHistoryCount: current.length, newHistoryCount: nextLogs.length };
+  };
+
   const restoreHistory = (storage, localStorageRef, raw, executionLogs = []) => {
+    if (localStorageRef.getItem(HISTORY_KEY) === raw) return;
     const executionIds = new Set(executionLogs.map(log => log && log.id).filter(Boolean));
     let previous = [];
     let current = [];
@@ -703,9 +871,10 @@
     }
   };
 
-  const writeAndVerifyHistory = (storage, localStorageRef, logs) => {
-    const current = readHistory(localStorageRef);
-    const merged = [...logs, ...current];
+  const writeAndVerifyHistory = (storage, localStorageRef, logs, preparedHistory) => {
+    const merged = preparedHistory && Array.isArray(preparedHistory.merged)
+      ? preparedHistory.merged
+      : prepareHistoryAppend(localStorageRef, logs).merged;
     if (storage && typeof storage.writeLocalJSON === 'function') {
       storage.writeLocalJSON(HISTORY_KEY, merged, { label: 'Master 추가·갱신 공식 history 저장' });
     } else {
@@ -752,12 +921,14 @@
     }
     if (!localStorageRef) throw new Error('공식 history 저장소를 사용할 수 없습니다.');
     const currentState = await storage.readMasterSnapshotState();
+    assertExistingMaster(currentState.masterMap, '추가·갱신 저장');
     if (currentState.revision !== expectedRevision) {
       const error = new Error('비교 이후 master가 변경되었습니다. 최신 master로 비교를 다시 생성해야 합니다.');
       error.code = 'MERCH_MASTER_REVISION_CONFLICT';
       throw error;
     }
     const plan = buildExecutionPlan(analysis, currentState.masterMap);
+    assertNewProductsComplete(plan, '추가·갱신 최종 저장 경계');
     if (plan.counts.savedProductCount === 0 || plan.details.length === 0) {
       const error = new Error('관리자 확인·승인을 마친 저장 대상이 없습니다.');
       error.code = 'MASTER_ADD_UPDATE_NOTHING_APPROVED';
@@ -775,13 +946,14 @@
       timestampISO
     });
     const previousHistoryRaw = localStorageRef.getItem(HISTORY_KEY);
+    const preparedHistory = prepareHistoryAppend(localStorageRef, logs, historyApi);
     const baseMaster = buildMasterIndex(currentState.masterMap);
     let commitResult;
     try {
       commitResult = await storage.commitMasterStateOrThrow(plan.nextMaster, {
         expectedRevision,
         afterVerified: async () => {
-          writeAndVerifyHistory(storage, localStorageRef, logs);
+          writeAndVerifyHistory(storage, localStorageRef, logs, preparedHistory);
           await verifyMasterAndHistory({
             storage,
             localStorageRef,
@@ -845,11 +1017,15 @@
     CODE_FIELDS,
     EDITABLE_FIELDS,
     REQUIRED_NEW_FIELDS,
+    HISTORY_DEFAULT_LIMIT,
+    ERROR_CODES,
     ISSUE_TAGS,
     normalizeCode,
     getRowCode,
     getMasterCode,
     buildMasterIndex,
+    assertExistingMaster,
+    parseWorkbook,
     analyzeUploadRows,
     summarize,
     filterCandidates,
@@ -860,8 +1036,10 @@
     resolveDuplicate,
     clearMasterMismatch,
     getFieldFinalValue,
+    assertNewProductsComplete,
     buildExecutionPlan,
     buildOfficialLogs,
+    prepareHistoryAppend,
     verifyMasterAndHistory,
     commitApprovedChanges,
     stableSerialize

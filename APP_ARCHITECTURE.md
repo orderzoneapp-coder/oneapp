@@ -157,9 +157,12 @@ The master Excel workflow in settings.html uses the shared core engine and appli
 2. The operator reviews new, changed, same, missing, duplicate, blank, zero, and field-specific issues before any write.
 3. Products and fields begin unapproved; only administrator-confirmed and approved values enter the execution scope.
 4. Missing products remain in the master, and workbook columns that are absent do not become change candidates.
-5. The shared master writer checks the comparison revision and completes the selected master changes and execution-linked history as one verified unit; a failure restores the previous master and history.
-6. Initial registration and full replacement remain unavailable until their separate approval, backup, and recovery workflows are implemented.
-7. Item_manager.html remains available during the transition and is not removed by this phase.
+5. A new product is created only when the final approved values for product name, specification, and unit are all nonblank. Upload omission, administrator-entered blank, blank selection, field exclusion, or partial field approval cannot bypass this rule.
+6. A zero-row master is rejected independently at workbook analysis, execution-plan construction, and the final commit boundary. It must use the separately approved initial-registration workflow.
+7. The shared master writer checks the comparison revision and completes the selected master changes and execution-linked history as one verified unit; a failure restores the previous master and history.
+8. Master add/update uses the shared history retention contract (currently 5,000 records). If the complete new execution history and existing retained history cannot both fit, the operation stops before the master write instead of silently truncating audit records. Storage quota or history verification failure restores the exact previous master and history.
+9. Initial registration and full replacement remain unavailable until their separate approval, backup, and recovery workflows are implemented.
+10. Item_manager.html remains available during the transition and is not removed by this phase.
 
 ## 7. Change-impact rules
 

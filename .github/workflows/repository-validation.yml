@@ -56,6 +56,9 @@ jobs:
       - name: Test Master add/update review and rollback workflow
         run: node scripts/test-master-add-update.mjs
 
+      - name: Read a real Master XLSX and verify approval persistence
+        run: node scripts/test-master-add-update-xlsx-e2e.mjs
+
       - name: Test MerchOps rule placement and SmartParser direct information apply
         run: node scripts/test-merchops-direct-info.mjs
 

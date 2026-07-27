@@ -1293,9 +1293,11 @@
   // ============================================================
   const HISTORY = ONEAPP.HISTORY = ONEAPP.HISTORY || {};
   const HISTORY_KEY = 'merchHistory_v870';
+  const HISTORY_DEFAULT_LIMIT = 5000;
 
   HISTORY.calcDiffRate = calcDiffRate;
   HISTORY.getNowISO = getNowISO;
+  HISTORY.DEFAULT_LIMIT = HISTORY_DEFAULT_LIMIT;
 
   HISTORY.normalizeHistoryLog = (log = {}) => {
     const oldVal = log.oldVal ?? log.beforeVal ?? '';
@@ -1358,7 +1360,7 @@
   };
 
   HISTORY.addHistoryLogs = (newLogs = [], options = {}) => {
-    const limit = options.limit || 5000;
+    const limit = options.limit || HISTORY.DEFAULT_LIMIT;
     const logs = Array.isArray(newLogs) ? newLogs : [newLogs];
     const normalized = logs.filter(Boolean).map(HISTORY.normalizeHistoryLog);
 

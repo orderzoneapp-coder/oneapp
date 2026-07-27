@@ -399,46 +399,11 @@
         };
 
         const parseMasterAddUpdateWorkbook = (arrayBuffer) => {
-            const XLSX = window.XLSX;
-            if (!XLSX) throw new Error('Excel 라이브러리를 불러오지 못했습니다.');
-            const wb = XLSX.read(new Uint8Array(arrayBuffer), { type: 'array', cellDates: false });
-            const ws = wb.Sheets[wb.SheetNames[0]];
-            if (!ws) throw new Error('첫 번째 Excel 시트를 읽을 수 없습니다.');
-            const rawRows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: true });
-            const displayRows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: false });
-            let headerRowIndex = -1;
-            for (let i = 0; i < Math.min(15, displayRows.length); i++) {
-                const labels = (displayRows[i] || []).map(value => safeStr(value).trim());
-                if (labels.some(label => ['코드', '품목코드', '상품코드'].includes(label))) {
-                    headerRowIndex = i;
-                    break;
-                }
+            const api = window.ONEAPP_MASTER_ADD_UPDATE;
+            if (!api || typeof api.parseWorkbook !== 'function') {
+                throw new Error('Master 추가·갱신 Excel 분석 모듈을 불러오지 못했습니다.');
             }
-            if (headerRowIndex < 0) throw new Error('Excel 상단 15행 안에서 코드·품목코드·상품코드 헤더를 찾지 못했습니다.');
-            const headers = (displayRows[headerRowIndex] || []).map(value => safeStr(value).trim());
-            const duplicateHeaders = headers.filter((header, index) => header && headers.indexOf(header) !== index);
-            if (duplicateHeaders.length > 0) {
-                throw new Error(`중복 Excel 컬럼명이 있습니다: ${[...new Set(duplicateHeaders)].join(', ')}`);
-            }
-            const rows = [];
-            for (let rowIndex = headerRowIndex + 1; rowIndex < rawRows.length; rowIndex++) {
-                const rawRow = rawRows[rowIndex] || [];
-                const displayRow = displayRows[rowIndex] || [];
-                const hasAnyValue = headers.some((header, columnIndex) => (
-                    header && safeStr(displayRow[columnIndex], safeStr(rawRow[columnIndex])).trim() !== ''
-                ));
-                if (!hasAnyValue) continue;
-                const row = { __rowNumber: rowIndex + 1, __display: {} };
-                headers.forEach((header, columnIndex) => {
-                    if (!header) return;
-                    row[header] = rawRow[columnIndex] === undefined ? '' : rawRow[columnIndex];
-                    row.__display[header] = displayRow[columnIndex];
-                });
-                rows.push(row);
-                if (rows.length > 100000) throw new Error('Excel 데이터 행은 100,000건을 초과할 수 없습니다.');
-            }
-            if (rows.length === 0) throw new Error('비교할 상품 행이 없습니다.');
-            return { headers: headers.filter(Boolean), rows };
+            return api.parseWorkbook(arrayBuffer, window.XLSX);
         };
 
 
@@ -828,6 +793,11 @@
                             const fieldRows = Object.values(candidate.fields || {}).filter(field => (
                                 candidate.status === 'new' || field.changed || field.issueTags.length > 0
                             ));
+                            const hardBlocked = candidate.blockingReasons.some(reason => ![
+                                'new_required_value_missing',
+                                'new_required_approval_incomplete'
+                            ].includes(reason));
+                            const requiredValueMissing = candidate.blockingReasons.includes('new_required_value_missing');
                             return (
                                 <section key={candidate.id} className={`bg-white rounded-xl border shadow-sm overflow-hidden ${candidate.blockingReasons.length > 0 ? 'border-rose-300' : 'border-slate-200'}`}>
                                     <div className="px-4 py-3 bg-slate-50 border-b border-slate-200 flex items-start gap-3">
@@ -843,12 +813,12 @@
                                         {!['same', 'missing', 'blocked'].includes(candidate.status) && (
                                             <div className="flex items-center gap-2">
                                                 <button
-                                                    disabled={candidate.blockingReasons.length > 0}
+                                                    disabled={hardBlocked || requiredValueMissing}
                                                     onClick={() => onChange(api.setProductApproved(analysis, candidate.id, !candidate.productApproved))}
                                                     className={`px-3 py-1.5 rounded-lg text-[11px] font-bold disabled:opacity-40 ${candidate.productApproved ? 'bg-emerald-600 text-white' : 'border border-emerald-300 text-emerald-700'}`}
                                                 >상품 전체 승인</button>
                                                 <button
-                                                    disabled={candidate.blockingReasons.length > 0}
+                                                    disabled={hardBlocked}
                                                     onClick={() => onChange(api.setProductExcluded(analysis, candidate.id, !candidate.productExcluded))}
                                                     className={`px-3 py-1.5 rounded-lg text-[11px] font-bold disabled:opacity-40 ${candidate.productExcluded ? 'bg-slate-700 text-white' : 'border border-slate-300 text-slate-600'}`}
                                                 >상품 전체 제외</button>
@@ -864,6 +834,12 @@
                                             </div>
                                         )}
                                     </div>
+
+                                    {candidate.status === 'new' && candidate.blockingReasons.some(reason => reason.startsWith('new_required_')) && !candidate.productExcluded && (
+                                        <div className="px-4 py-3 bg-rose-50 border-b border-rose-200 text-[11px] font-bold text-rose-900">
+                                            신규 상품은 품목명·규격·단위의 최종값이 모두 있어야 하며, 세 필드가 상품 승인 또는 필드별 승인 범위에 포함되어야 저장할 수 있습니다.
+                                        </div>
+                                    )}
 
                                     {candidate.duplicateRows.length > 0 && (
                                         <div className="p-4 bg-amber-50 border-b border-amber-200">
@@ -920,27 +896,27 @@
                                                                             type="text"
                                                                             value={field.adminEdited ? safeStr(field.adminValue) : ''}
                                                                             placeholder="직접 입력"
-                                                                            disabled={candidate.blockingReasons.length > 0}
+                                                                            disabled={hardBlocked}
                                                                             onChange={e => updateField(candidate.id, field.field, { adminValue: e.target.value })}
                                                                             className="w-full border border-slate-300 rounded px-2 py-1.5 mb-2 outline-none focus:border-indigo-500 disabled:bg-slate-100"
                                                                         />
                                                                     )}
                                                                     <div className="flex flex-wrap gap-1">
-                                                                        <button disabled={!field.uploadPresent || candidate.blockingReasons.length > 0} onClick={() => updateField(candidate.id, field.field, { source: 'upload' })} className="px-2 py-1 rounded border border-slate-300 disabled:opacity-30">업로드값</button>
-                                                                        <button disabled={candidate.blockingReasons.length > 0} onClick={() => updateField(candidate.id, field.field, { source: 'old' })} className="px-2 py-1 rounded border border-slate-300 disabled:opacity-30">기존값</button>
-                                                                        <button disabled={candidate.blockingReasons.length > 0} onClick={() => updateField(candidate.id, field.field, { source: 'blank' })} className="px-2 py-1 rounded border border-slate-300 disabled:opacity-30">공란</button>
+                                                                        <button disabled={!field.uploadPresent || hardBlocked} onClick={() => updateField(candidate.id, field.field, { source: 'upload' })} className="px-2 py-1 rounded border border-slate-300 disabled:opacity-30">업로드값</button>
+                                                                        <button disabled={hardBlocked} onClick={() => updateField(candidate.id, field.field, { source: 'old' })} className="px-2 py-1 rounded border border-slate-300 disabled:opacity-30">기존값</button>
+                                                                        <button disabled={hardBlocked} onClick={() => updateField(candidate.id, field.field, { source: 'blank' })} className="px-2 py-1 rounded border border-slate-300 disabled:opacity-30">공란</button>
                                                                     </div>
                                                                 </td>
                                                                 <td className="px-3 py-3 align-top font-bold break-all">{formatReviewValue(finalValue, finalValue !== undefined)}</td>
                                                                 <td className="px-3 py-3 align-top">
                                                                     <div className="flex gap-1">
                                                                         <button
-                                                                            disabled={candidate.blockingReasons.length > 0}
+                                                                            disabled={hardBlocked}
                                                                             onClick={() => updateField(candidate.id, field.field, { approved: !field.approved, excluded: false })}
                                                                             className={`px-2.5 py-1.5 rounded font-bold disabled:opacity-40 ${field.approved ? 'bg-emerald-600 text-white' : 'border border-emerald-300 text-emerald-700'}`}
                                                                         >필드 승인</button>
                                                                         <button
-                                                                            disabled={candidate.blockingReasons.length > 0}
+                                                                            disabled={hardBlocked}
                                                                             onClick={() => updateField(candidate.id, field.field, { excluded: !field.excluded })}
                                                                             className={`px-2.5 py-1.5 rounded font-bold disabled:opacity-40 ${field.excluded ? 'bg-slate-700 text-white' : 'border border-slate-300 text-slate-600'}`}
                                                                         >반영 제외</button>
@@ -1176,7 +1152,25 @@
                             setShowAddUpdateReview(true);
                             setAddUpdateError('비교 이후 master가 변경되어 저장을 차단했습니다. 최신 master 기준으로 비교를 다시 만들었고 이전 승인 상태는 모두 폐기했습니다.');
                         } catch (reloadError) {
-                            setAddUpdateError(`revision 충돌 후 최신 master 재조회에도 실패했습니다: ${reloadError.message}`);
+                            if (reloadError?.code === 'MASTER_ADD_UPDATE_INITIAL_REGISTRATION_REQUIRED') {
+                                setAddUpdateAnalysis(null);
+                                setShowAddUpdateReview(false);
+                                setShowAddUpdateConfirm(false);
+                                setAddUpdateError(`revision 충돌 후 최신 master가 0건으로 확인되어 추가·갱신을 중단했습니다. ${reloadError.message}`);
+                            } else {
+                                setAddUpdateError(`revision 충돌 후 최신 master 재조회에도 실패했습니다: ${reloadError.message}`);
+                            }
+                        }
+                    } else if (error?.code === 'MASTER_ADD_UPDATE_INITIAL_REGISTRATION_REQUIRED') {
+                        setAddUpdateAnalysis(null);
+                        setShowAddUpdateReview(false);
+                        setShowAddUpdateConfirm(false);
+                        setAddUpdateError(error.message);
+                        try {
+                            const restored = await loadMasterLocal();
+                            setMasterProducts(restored);
+                        } catch (reloadError) {
+                            setAddUpdateError(`${error.message} / master 상태 재조회 실패: ${reloadError.message}`);
                         }
                     } else {
                         setAddUpdateError(error.message);

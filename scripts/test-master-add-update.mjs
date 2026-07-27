@@ -68,6 +68,21 @@ class MemoryLocalStorage {
   }
 }
 
+class QuotaFailingLocalStorage extends MemoryLocalStorage {
+  constructor(initial = {}) {
+    super(initial);
+    this.failWrites = true;
+  }
+  setItem(key, value) {
+    if (this.failWrites) {
+      const error = new Error("forced quota exceeded");
+      error.name = "QuotaExceededError";
+      throw error;
+    }
+    super.setItem(key, value);
+  }
+}
+
 function createStorage(initialMaster, localStorageRef, options = {}) {
   let state = { masterMap: clone(initialMaster), revision: options.revision || "rev-1" };
   let revisionCounter = 1;
@@ -475,6 +490,175 @@ await scenario("24. 누락 상품 유지 검증", async () => {
   assert.equal(logs[0].actor, null);
 });
 
+await scenario("필수 1. 신규 품목명·규격·단위 각각 누락 차단", () => {
+  for (const missingField of api.REQUIRED_NEW_FIELDS) {
+    const values = { 품목명: "신규", 규격: "1kg", 단위: "EA" };
+    delete values[missingField];
+    let review = analyze({
+      headers: ["품목코드", ...Object.keys(values)],
+      rows: [makeRow(2, `N-${missingField}`, values)]
+    });
+    const candidate = findCode(review, `N-${missingField}`);
+    assert.ok(candidate.blockingReasons.includes("new_required_value_missing"), `${missingField} 누락 표시`);
+    review = api.setProductApproved(review, candidate.id, true);
+    review = api.setAdminComplete(review, candidate.id, true);
+    assert.throws(
+      () => api.buildExecutionPlan(review, baseMaster),
+      error => error.code === api.ERROR_CODES.NEW_REQUIRED_MISSING
+    );
+  }
+});
+
+await scenario("필수 2. 신규 세 필드 업로드 후 한 필드만 승인 차단", async () => {
+  let review = analyze({
+    headers: ["품목코드", "품목명", "규격", "단위"],
+    rows: [makeRow(2, "N-PART", { 품목명: "신규", 규격: "1kg", 단위: "EA" })]
+  });
+  review = approveField(review, "N-PART", "품목명");
+  const candidate = findCode(review, "N-PART");
+  assert.ok(candidate.blockingReasons.includes("new_required_approval_incomplete"));
+  assert.throws(
+    () => api.buildExecutionPlan(review, baseMaster),
+    error => error.code === api.ERROR_CODES.NEW_REQUIRED_MISSING
+  );
+  const beforeHistory = JSON.stringify([{ id: "before-partial-new" }]);
+  const local = new MemoryLocalStorage({ [api.HISTORY_KEY]: beforeHistory });
+  const storage = createStorage(baseMaster, local);
+  await assert.rejects(
+    api.commitApprovedChanges({
+      analysis: review,
+      currentMaster: baseMaster,
+      expectedRevision: "rev-1",
+      storage,
+      localStorageRef: local
+    }),
+    error => error.code === api.ERROR_CODES.NEW_REQUIRED_MISSING
+  );
+  assert.equal(api.stableSerialize(storage.state.masterMap), api.stableSerialize(baseMaster));
+  assert.equal(local.getItem(api.HISTORY_KEY), beforeHistory);
+});
+
+await scenario("필수 3. 신규 필수 필드 제외·공란 선택·관리자 공란 입력 차단", () => {
+  const mutations = [
+    ["규격", { excluded: true }],
+    ["단위", { source: "blank" }],
+    ["품목명", { adminValue: "" }]
+  ];
+  for (const [field, decision] of mutations) {
+    let review = analyze({
+      headers: ["품목코드", "품목명", "규격", "단위"],
+      rows: [makeRow(2, `N-${field}-${Object.keys(decision)[0]}`, { 품목명: "신규", 규격: "1kg", 단위: "EA" })]
+    });
+    const code = findCode(review, `N-${field}-${Object.keys(decision)[0]}`).code;
+    const candidate = findCode(review, code);
+    review = api.setFieldDecision(review, candidate.id, field, decision);
+    review = api.setProductApproved(review, candidate.id, true);
+    review = api.setAdminComplete(review, candidate.id, true);
+    assert.throws(
+      () => api.buildExecutionPlan(review, baseMaster),
+      error => error.code === api.ERROR_CODES.NEW_REQUIRED_MISSING
+    );
+  }
+});
+
+await scenario("필수 4. 신규 필수 세 필드 최종 승인 정상 생성", () => {
+  let review = analyze({
+    headers: ["품목코드", "품목명", "규격", "단위"],
+    rows: [makeRow(2, "N-OK", { 품목명: "정상 신규", 규격: "2kg", 단위: "BOX" })]
+  });
+  for (const field of api.REQUIRED_NEW_FIELDS) {
+    review = api.setFieldDecision(review, findCode(review, "N-OK").id, field, { approved: true });
+  }
+  review = api.setAdminComplete(review, findCode(review, "N-OK").id, true);
+  const plan = api.buildExecutionPlan(review, baseMaster);
+  assert.deepEqual(
+    [plan.nextMaster["N-OK"].품목명, plan.nextMaster["N-OK"].규격, plan.nextMaster["N-OK"].단위],
+    ["정상 신규", "2kg", "BOX"]
+  );
+});
+
+await scenario("필수 5. 빈 master 분석·실행계획·commit 및 충돌 후 빈 master 차단", async () => {
+  assert.throws(
+    () => analyze({ headers: ["품목코드"], rows: [makeRow(2, "001")], master: {} }),
+    error => error.code === api.ERROR_CODES.INITIAL_REGISTRATION_REQUIRED
+  );
+  const review = approveProduct(analyze({
+    headers: ["품목코드", "품목명"],
+    rows: [makeRow(2, "001", { 품목명: "청사과" })]
+  }), "001");
+  assert.throws(
+    () => api.buildExecutionPlan(review, {}),
+    error => error.code === api.ERROR_CODES.INITIAL_REGISTRATION_REQUIRED
+  );
+  for (const revision of ["rev-1", "rev-2"]) {
+    const beforeHistory = JSON.stringify([{ id: "before-empty" }]);
+    const local = new MemoryLocalStorage({ [api.HISTORY_KEY]: beforeHistory });
+    const storage = createStorage({}, local, { revision });
+    await assert.rejects(
+      api.commitApprovedChanges({
+        analysis: review,
+        currentMaster: baseMaster,
+        expectedRevision: "rev-1",
+        storage,
+        localStorageRef: local
+      }),
+      error => error.code === api.ERROR_CODES.INITIAL_REGISTRATION_REQUIRED
+    );
+    assert.deepEqual(storage.state.masterMap, {});
+    assert.equal(local.getItem(api.HISTORY_KEY), beforeHistory);
+  }
+});
+
+await scenario("필수 8. history 한도 초과 시 master와 기존 history 원상 유지", async () => {
+  const existingHistory = Array.from({ length: api.HISTORY_DEFAULT_LIMIT }, (_, index) => ({ id: `old-${index}` }));
+  const beforeHistory = JSON.stringify(existingHistory);
+  const local = new MemoryLocalStorage({ [api.HISTORY_KEY]: beforeHistory });
+  const storage = createStorage(baseMaster, local);
+  const review = approveProduct(analyze({
+    headers: ["품목코드", "품목명"],
+    rows: [makeRow(2, "001", { 품목명: "청사과" })]
+  }), "001");
+  await assert.rejects(
+    api.commitApprovedChanges({
+      analysis: review,
+      currentMaster: baseMaster,
+      expectedRevision: "rev-1",
+      storage,
+      historyApi: { DEFAULT_LIMIT: api.HISTORY_DEFAULT_LIMIT },
+      localStorageRef: local
+    }),
+    error => error.code === api.ERROR_CODES.HISTORY_CAPACITY_EXCEEDED
+  );
+  assert.equal(api.stableSerialize(storage.state.masterMap), api.stableSerialize(baseMaster));
+  assert.equal(local.getItem(api.HISTORY_KEY), beforeHistory);
+  assert.throws(
+    () => api.prepareHistoryAppend(new MemoryLocalStorage(), Array.from(
+      { length: api.HISTORY_DEFAULT_LIMIT + 1 },
+      (_, index) => ({ id: `new-${index}` })
+    )),
+    error => error.code === api.ERROR_CODES.HISTORY_CAPACITY_EXCEEDED
+  );
+});
+
+await scenario("필수 8. 브라우저 저장공간 부족 시 master와 history 원상 유지", async () => {
+  const beforeHistory = JSON.stringify([{ id: "stable-before-quota" }]);
+  const local = new QuotaFailingLocalStorage({ [api.HISTORY_KEY]: beforeHistory });
+  const storage = createStorage(baseMaster, local);
+  const review = approveProduct(analyze({
+    headers: ["품목코드", "품목명"],
+    rows: [makeRow(2, "001", { 품목명: "청사과" })]
+  }), "001");
+  await assert.rejects(api.commitApprovedChanges({
+    analysis: review,
+    currentMaster: baseMaster,
+    expectedRevision: "rev-1",
+    storage,
+    localStorageRef: local
+  }), /forced quota exceeded/);
+  assert.equal(api.stableSerialize(storage.state.masterMap), api.stableSerialize(baseMaster));
+  assert.equal(local.getItem(api.HISTORY_KEY), beforeHistory);
+});
+
 await scenario("25. MerchOps F7 회귀검사", () => {
   const merchOps = fs.readFileSync(path.join(ROOT, "MerchOps.html"), "utf8");
   assert.match(merchOps, /afterVerifiedError:\s*'F7 히스토리 저장 실패'/);
@@ -493,7 +677,9 @@ const masterHtml = fs.readFileSync(path.join(ROOT, "Master.html"), "utf8");
 assert.match(masterHtml, /masterAddUpdate\.js/);
 assert.match(masterHtml, /ONEAPP_MASTER_ADD_UPDATE\.analyzeUploadRows/);
 assert.match(masterHtml, /ONEAPP_MASTER_ADD_UPDATE\.commitApprovedChanges/);
+assert.match(masterHtml, /api\.parseWorkbook\(arrayBuffer,\s*window\.XLSX\)/);
 assert.doesNotMatch(masterHtml, /const newMaster = \{\};[\s\S]{0,1500}saveMasterLocal\(newMaster\)/);
 assert.match(masterHtml, /기존 master가 0건입니다[\s\S]*최초 등록은 차단/);
+assert.match(masterHtml, /MASTER_ADD_UPDATE_INITIAL_REGISTRATION_REQUIRED/);
 
 console.log(`Master add/update tests passed (${scenarios.length} required scenarios).`);
