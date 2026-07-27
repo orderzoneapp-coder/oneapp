@@ -30,8 +30,13 @@ const executeAnalysis = section(
 assert.doesNotMatch(executeAnalysis, /0\.7|70\s*%|isFullEndFile/);
 assert.match(
   executeAnalysis,
-  /simpleCountEndItems\.length === 0[\s\S]*실사파일이 없거나 실사 품목을 읽지 못해 작업을 중단했습니다[\s\S]*return false;/,
-  "missing actual-count file must stop analysis",
+  /!hasClosingEnd\s*&&\s*endFileProvided\s*&&\s*simpleCountEndItems\.length === 0[\s\S]*return false;/,
+  "an uploaded but unreadable actual-count file must stop analysis",
+);
+assert.doesNotMatch(
+  executeAnalysis,
+  /pDataKeysByCountKey\.size\s*>\s*0\s*&&\s*simpleCountEndItems\.length === 0/,
+  "normal analysis without slot-4 actual-count input must remain available",
 );
 assert.match(
   executeAnalysis,
@@ -72,6 +77,11 @@ assert.doesNotMatch(source, /수기확인완료\s*:\s*true/);
 const parseAndAnalysis = section(
   "const parseExcelData =",
   "const runCostExtraction = useCallback",
+);
+assert.match(
+  parseAndAnalysis,
+  /endFileProvided:\s*!!filesObj\.end/,
+  "runAnalysis must distinguish an absent count file from an uploaded unreadable file",
 );
 assert.match(parseAndAnalysis, /sale\._salesPurchaseAmount\s*=\s*qty\s*\*\s*purchaseUnitCost/);
 assert.match(parseAndAnalysis, /item\.전산잔량\s*=\s*item\.기초\s*\+\s*item\.입고\s*-\s*item\.출고/);

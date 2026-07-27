@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP DataOps - 핵심 수불부 관리 (V1.a22.94_PerformanceFix)</title>
+    <title>ONEAPP DataOps - 핵심 수불부 관리 (V1.a22.95_StockInputFix)</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         body { font-family: 'Pretendard', -apple-system, sans-serif; background-color: #f8fafc; overflow: hidden; }
@@ -46,7 +46,7 @@
     <!-- 초기 로딩 스크린 -->
     <div id="initial-loader">
         <div class="spinner"></div>
-        <div class="loader-text">ONEAPP DataOps V1.a22.94_PerformanceFix.....</div>
+        <div class="loader-text">ONEAPP DataOps V1.a22.95_StockInputFix.....</div>
         <div style="font-size: 11px; color: #94a3b8; margin-top: 8px;">앱 환경을 구성하고 있습니다</div>
     </div>
 
@@ -911,7 +911,7 @@ const clearTableSortPreference = () => {
    - 주의: 물리적 파일 분리는 하지 않는다. 단일 HTML 실행 구조를 유지한다.
    ======================================================================= */
 const CONFIG_MODULE = Object.freeze({
-    version: 'V1.a22.94_PerformanceFix',
+    version: 'V1.a22.95_StockInputFix',
     categoryMap: Object.freeze({
         '10': '채소.과일',
         '20': '수산.축산',
@@ -2315,6 +2315,7 @@ const FILTER_SORT_MODULE = Object.freeze({
 // V1.a22.92: 재고 실사 출력은 A4 세로형으로 전환하고 열 너비·셀 여백·상단 정보를 압축한다. 품목 식별 영역과 시스템 정보의 가독성을 유지하면서 불필요한 가로 공백과 페이지당 낭비 공간을 줄인다.
 // V1.a22.93: 당일 구매 강조의 아이보리 배경을 구매정보 3개 셀에서 행 전체로 확장한다. 마이너스 잔량의 붉은 배경과 입·출고 색상은 기존 우선순위를 유지한다.
 // V1.a22.94: Tab은 코드통합형 통합후보 행 내부에서만 가로채고 일반 입력·브라우저 Tab은 유지한다. 동일값 편집은 productData를 갱신하지 않으며 즉시 저장 시 250ms 타이머를 취소한다. 사용되지 않는 중복 보기 계산을 제거해 키 입력 후 전체 재계산·재렌더링 부담을 줄인다.
+// V1.a22.95: 4번 실사파일 미업로드를 파싱 실패로 오판해 정상 1번 기초재고 분석을 차단하던 회귀를 수정한다. 실사 누락 검증은 4번 파일을 실제로 올린 경우에만 수행한다.
 // V1.a22.69: 코드통합형 해제/다시 통합 상태 관리.
 // 원본 Lot은 수정하지 않고 화면 보기/엑셀 1번 시트 출력에만 반영한다.
 const DATAOPS_CODE_MERGE_OVERRIDE_MODULE = Object.freeze({
@@ -5355,7 +5356,7 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
         setIsProcessing(true);
         setConfirmModal({ isOpen: false, warnings: [], payload: null });
         try {
-            const { parsedPrev, parsedIn, parsedOut, parsedEnd, periodStr, targetDateStrFromData } = payload;
+            const { parsedPrev, parsedIn, parsedOut, parsedEnd, periodStr, targetDateStrFromData, endFileProvided = false } = payload;
             setAnalysisPeriod(periodStr);
             setTargetDateStr(targetDateStrFromData);
             const rawHas = (raw = {}, key) => Object.prototype.hasOwnProperty.call(raw, key);
@@ -6437,9 +6438,10 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                 pDataKeysByCountKey.get(countKey).push(batchKey);
             });
             // 실사파일은 비율로 전체 여부를 추정하지 않는다.
-            // 현재 재고/수불 대상 품목이 한 건이라도 빠지면 분석 결과를 만들지 않고 즉시 중단한다.
-            if (!hasClosingEnd && pDataKeysByCountKey.size > 0 && simpleCountEndItems.length === 0) {
-                setAlertMsg('🚨 실사파일이 없거나 실사 품목을 읽지 못해 작업을 중단했습니다.\n\n재고 품목 전체가 포함된 실사파일을 확인하세요.');
+            // 4번 실사파일을 실제로 올렸는데 읽을 품목이 없거나 품목이 한 건이라도 빠지면 중단한다.
+            // 4번 파일 자체가 없는 일반 수불 분석은 1번 기초재고를 정상 입력으로 사용한다.
+            if (!hasClosingEnd && endFileProvided && simpleCountEndItems.length === 0) {
+                setAlertMsg('🚨 업로드한 실사파일에서 실사 품목을 읽지 못해 작업을 중단했습니다.\n\n파일의 시트·헤더와 재고 품목을 확인하세요.');
                 return false;
             }
             if (!hasClosingEnd && simpleCountEndItems.length > 0) {
@@ -6753,7 +6755,7 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                 warnings.push(`매입/매출에 기초재고 파일명 기준일(${formatStrForPeriod(prevDateNum)}) 이전의 과거 데이터가 포함되어 있습니다.`);
             if (endDateNum && maxD !== 0 && maxD > endDateNum)
                 warnings.push(`매입/매출에 실사 파일명 기준일(${formatStrForPeriod(endDateNum)}) 이후의 미래 데이터가 포함되어 있습니다.`);
-            const payload = { parsedPrev, parsedIn: validIn, parsedOut: validOut, parsedEnd, periodStr, targetDateStrFromData };
+            const payload = { parsedPrev, parsedIn: validIn, parsedOut: validOut, parsedEnd, periodStr, targetDateStrFromData, endFileProvided: !!filesObj.end };
             if (warnings.length > 0) {
                 setConfirmModal({ isOpen: true, warnings, payload });
                 setIsProcessing(false);
