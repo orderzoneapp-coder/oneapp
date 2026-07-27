@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.170_FallbackTabLock]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.171_ResetTableGuard]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -91,6 +91,7 @@
         // v2.1.168: 마스터 레코드와 전체 스냅샷을 하나의 IndexedDB 트랜잭션으로 교체하고 저장 후 전수 검증한다. 저장 큐·브라우저 잠금·세대 검증으로 늦은 롤백을 차단하고, F7 히스토리까지 성공해야 완료한다. 히스토리는 ID 중복 제거·탭간 병합 후 보존한다.
         // v2.1.169: 히스토리 잠금·최신값 재조회·병합·검증을 단일 production 함수로 통합한다. 실제 F8 XLSX 생성·재열기 회귀검사와 Chrome 두 탭 동시 저장·storage 동기화 검증을 완료한다.
         // v2.1.170: Web Locks 미지원 브라우저에서도 IndexedDB 원자 임대 잠금으로 복수 탭 저장을 직렬화한다. 잠금 만료·갱신·대기 타임아웃·소유권 확인으로 비정상 종료와 영구 대기를 방지한다.
+        // v2.1.171: 명시적 초기화 후 빈 작업테이블을 전체 마스터로 다시 채우지 않는다. 다음 작업 데이터 불러오기 전까지 초기화 상태를 세션에 유지해 불필요한 대량 렌더링을 막는다.
         // v2.1.123: 구매·재고 작업 리포트에 히스토리 비교값을 연결한다. 현재 마스터 기준, 전일 히스토리, 최근 7일/30일 평균 대비 차이를 리포트 보조줄에 표시해 견적 적용 후에도 어제/단기/장기 흐름을 함께 판단한다.
         // v2.1.122: info(쇼핑몰 상품정보) 작업군의 매핑·불러오기·F8 원본양식 출력을 안정화한다. 상품코드=품목코드, 판매가격=출고가, 시중가격=시중가, 판매 1/0=판매여부, 테마1~5=행사테마로 연결한다. 오더즈판매가/오더즈구매가는 작업테이블에서는 숨기되 v2.1.162부터 원본 출력에는 보존한다.
         // v2.1.121: 상단 툴바를 유형별 그룹으로 시각 구분하고, 양식보기를 상단 파일작업 영역 우측으로 이동한다. 테이블 열폭 저장/초기화는 헤더 위에 겹치지 않게 우측 도구줄로 분리한다.
@@ -3291,6 +3292,7 @@ const useMerchConfig = () => {
 const useMerchData = () => {
     const [masterProducts, setMasterProducts] = useState({});
     const [managedItems, setManagedItems] = useState({});
+    const [suppressMasterFallback, setSuppressMasterFallback] = useState(false);
     const [historyLogs, setHistoryLogs] = useState(() => {
         const saved = safeJSONParse('merchHistory_v870', []);
         return window.mergeMerchHistoryLogs(Array.isArray(saved) ? saved : []);
@@ -3300,6 +3302,11 @@ const useMerchData = () => {
     useEffect(() => {
         historyLogsRef.current = historyLogs;
     }, [historyLogs]);
+    useEffect(() => {
+        if (suppressMasterFallback && Object.keys(managedItems || {}).length > 0) {
+            setSuppressMasterFallback(false);
+        }
+    }, [managedItems, suppressMasterFallback]);
     useEffect(() => {
         let cancelled = false;
         const applyMasterState = (state = {}) => {
@@ -3432,7 +3439,16 @@ const useMerchData = () => {
         window.addEventListener('storage', handleHistorySync);
         return () => window.removeEventListener('storage', handleHistorySync);
     }, []);
-    return { masterProducts, setMasterProducts: saveMasterToLocal, managedItems, setManagedItems, historyLogs, addHistoryLogs };
+    return {
+        masterProducts,
+        setMasterProducts: saveMasterToLocal,
+        managedItems,
+        setManagedItems,
+        suppressMasterFallback,
+        setSuppressMasterFallback,
+        historyLogs,
+        addHistoryLogs
+    };
 };
 const useMerchUI = () => {
     const [selectedRows, setSelectedRows] = useState(new Set());
@@ -3712,6 +3728,17 @@ window.isMerchRowInWorkScope = (row = {}, masterProducts = {}, activeTags = [], 
     // 견적의 추가상품은 선택 카탈로그 밖에 있어야 검출되므로 비교화면에서는 예외로 표시한다.
     if (options.allowEstimateAdd && window.getMerchEstimateCompareStatus?.(row) === 'add') return true;
     return false;
+};
+
+window.getMerchDisplayBaseRows = (managedItems = {}, masterProducts = {}, options = {}) => {
+    const workRows = Object.values(managedItems || {});
+    if (workRows.length > 0) return workRows;
+    if (options.suppressMasterFallback === true) return [];
+    return Object.values(masterProducts || {}).map(masterItem => ({
+        코드: masterItem.코드,
+        sources: {},
+        finalData: {}
+    }));
 };
 
 const useMerchActions = (config, data, ui, fullDisplayRows) => {
@@ -6121,6 +6148,7 @@ ${targetModeText} ${targets.size}건을 MerchOps 마스터에 저장합니다. �
     }, [fullDisplayRows, ui.selectedRows, ui.setSelectedRows]);
     const handleReset = useCallback(() => {
         var _a, _b, _c;
+        data.setSuppressMasterFallback(true);
         data.setManagedItems({});
         ui.setSessionExcludedItems?.({});
         ui.setShowExcludedPanel?.(false);
@@ -6151,7 +6179,7 @@ ${targetModeText} ${targets.size}건을 MerchOps 마스터에 저장합니다. �
         catch (e) { }
         window.setIDB('merchops_session', null);
         ui.showToast('작업 데이터가 초기화 되었습니다. 다음 불러오기 후 해당 대상 보기만 표시됩니다.');
-    }, [data.setManagedItems, config.setVisibleUploadCols, ui]);
+    }, [data.setManagedItems, data.setSuppressMasterFallback, config.setVisibleUploadCols, ui]);
     // ============================================================
     // [M-FLOW-03] 현재 작업범위 마진룰 재계산
     // 역할: 환경설정의 연산룰 변경 시 현재 화면/선택 작업범위에 계산출고가를 다시 적용한다.
@@ -6605,6 +6633,8 @@ ${targetModeText} ${targets.size}건을 MerchOps 마스터에 저장합니다. �
     useEffect(() => {
         window.getIDB('merchops_session').then(state => {
             if (state) {
+                if (state.suppressMasterFallback === true)
+                    data.setSuppressMasterFallback(true);
                 if (state.managedItems && Object.keys(state.managedItems).length > 0)
                     data.setManagedItems(state.managedItems);
                 if (state.activeTags && state.activeTags.length > 0)
@@ -6617,10 +6647,11 @@ ${targetModeText} ${targets.size}건을 MerchOps 마스터에 저장합니다. �
     useEffect(() => {
         window.setIDB('merchops_session', {
             managedItems: data.managedItems,
+            suppressMasterFallback: data.suppressMasterFallback,
             activeTags: ui.activeTags,
             selectedRows: Array.from(ui.selectedRows)
         });
-    }, [data.managedItems, ui.activeTags, ui.selectedRows]);
+    }, [data.managedItems, data.suppressMasterFallback, ui.activeTags, ui.selectedRows]);
     const handleRegisterUnregisteredItems = useCallback(async () => {
         var _a, _b;
         const candidateRows = (fullDisplayRows || []).filter(row => row && row.코드 && !(window.getMerchMasterItemForRow ? (window.getMerchMasterItemForRow(data.masterProducts, row)?.코드 || window.getMerchMasterItemForRow(data.masterProducts, row)?.['품목코드']) : data.masterProducts[row.코드]));
@@ -9149,7 +9180,7 @@ const WelcomeGuide = ({ onUpload, onCloudSync }) => (React.createElement("div", 
         React.createElement("i", { className: "fas fa-box-open" }),
         React.createElement("div", { className: "absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm" },
             React.createElement("i", { className: "fas fa-check" }))),
-    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.170_FallbackTabLock]"),
+    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.171_ResetTableGuard]"),
     React.createElement("p", { className: "text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold" },
         "\uD604\uC7AC \uB4F1\uB85D\uB41C ",
         React.createElement("span", { className: "text-indigo-500" }, "\uB9C8\uC2A4\uD130 \uC0C1\uD488 \uB370\uC774\uD130"),
@@ -9235,13 +9266,9 @@ const App = () => {
         return Object.keys(counts).sort().map(tag => ({ name: tag, count: counts[tag] }));
     }, [data.masterProducts]);
     const fullDisplayRows = useMemo(() => {
-        let baseList = [];
-        if (isEstimateUploaded) {
-            baseList = Object.values(data.managedItems);
-        }
-        else {
-            baseList = Object.values(data.masterProducts).map(m => data.managedItems[m.코드] || { 코드: m.코드, sources: {}, finalData: {} });
-        }
+        let baseList = window.getMerchDisplayBaseRows(data.managedItems, data.masterProducts, {
+            suppressMasterFallback: data.suppressMasterFallback
+        });
         const activeWorkRole = normalizeMerchTableTarget((config && config.activeTableTarget) || DEFAULT_TABLE_VIEW_TARGET);
         if (!ui.registrationMode) {
             const workScope = window.buildMerchWorkScope ? window.buildMerchWorkScope(data.masterProducts, ui.activeTags || []) : { mode: 'all', codeSet: new Set() };
@@ -9433,7 +9460,7 @@ const App = () => {
             });
         }
         return baseList;
-    }, [isEstimateUploaded, data.managedItems, data.masterProducts, ui.activeTags, ui.globalSearch, ui.priceFilter, ui.detailFilters, ui.categoryFilters, ui.basicSearch, ui.filterSteps, ui.disabledFilterStepIds, ui.registrationMode, ui.hideMasterAddedRows, ui.stoppedProducts, config.uploadColumnMeta, config.activeTableTarget]);
+    }, [isEstimateUploaded, data.managedItems, data.masterProducts, data.suppressMasterFallback, ui.activeTags, ui.globalSearch, ui.priceFilter, ui.detailFilters, ui.categoryFilters, ui.basicSearch, ui.filterSteps, ui.disabledFilterStepIds, ui.registrationMode, ui.hideMasterAddedRows, ui.stoppedProducts, config.uploadColumnMeta, config.activeTableTarget]);
     const customActions = useMerchActions(config, data, ui, fullDisplayRows);
     const appState = useMemo(() => ({
         config, data, activeTags: ui.activeTags, isEstimateUploaded, selectedRows: ui.selectedRows, globalSearch: ui.globalSearch, isProcessing: ui.isProcessing, processMsg: ui.processMsg, registrationMode: ui.registrationMode,
@@ -9567,7 +9594,7 @@ const App = () => {
                                 React.createElement("div", { className: "flex flex-col border-l-2 border-slate-700 pl-3" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "MerchOps"),
-                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.170_FallbackTabLock")),
+                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.171_ResetTableGuard")),
                                     React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "MAIN WORKSPACE"))),
                             React.createElement(SystemConsole, { itemCount: Object.keys(data.masterProducts).length, isProcessing: ui.isProcessing, processMsg: ui.processMsg, estimateCount: Object.keys(data.managedItems).length, filteredCount: fullDisplayRows.length, activeTags: ui.activeTags }),
                             React.createElement("nav", { className: "flex gap-1.5 text-[14px] shrink-0 items-center" },
