@@ -50,6 +50,28 @@ assert.equal(catalogBrowser.hasMerchExistingWorktableRows(parserListRows), true,
 assert.equal(catalogBrowser.hasMerchExistingWorktableRows(catalogEditRows), false,
   "Catalog-only edit rows must be replaceable when catalog scope changes");
 
+const displayHelperStart = merch.indexOf("window.getMerchDisplayBaseRows =");
+const displayHelperEnd = merch.indexOf("const useMerchActions =", displayHelperStart);
+assert.ok(displayHelperStart >= 0 && displayHelperEnd > displayHelperStart,
+  "MerchOps display-base helper block was not found");
+const displayBrowser = {};
+vm.runInContext(merch.slice(displayHelperStart, displayHelperEnd), vm.createContext({ window: displayBrowser, Object }));
+const resetMaster = {
+  P001: { 코드: "P001", 품목명: "기존 마스터 1" },
+  P002: { 코드: "P002", 품목명: "기존 마스터 2" },
+};
+assert.equal(displayBrowser.getMerchDisplayBaseRows({}, resetMaster, { suppressMasterFallback: true }).length, 0,
+  "An explicit reset must keep the worktable empty instead of expanding the full master");
+assert.equal(displayBrowser.getMerchDisplayBaseRows({}, resetMaster).length, 2,
+  "Initial idle mode must preserve the existing master fallback");
+assert.equal(displayBrowser.getMerchDisplayBaseRows({
+  P003: { 코드: "P003", sources: { estimate: {} }, finalData: {} },
+}, resetMaster, { suppressMasterFallback: true })[0].코드, "P003",
+  "Newly loaded work rows must display even before the reset guard state effect settles");
+assert.match(merch, /data\.setSuppressMasterFallback\(true\);\s*data\.setManagedItems\(\{\}\);/);
+assert.match(merch, /suppressMasterFallback: data\.suppressMasterFallback/);
+assert.match(merch, /if \(suppressMasterFallback && Object\.keys\(managedItems \|\| \{\}\)\.length > 0\)/);
+
 for (const removed of [
   "정보변경 대기",
   "merchInfoChangeQueue_v1",
