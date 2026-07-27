@@ -1,8 +1,8 @@
 # ONEAPP Application Architecture
 
 - Repository: orderzoneapp-coder/oneapp
-- Architecture document version: 1.2.0
-- Last reviewed: 2026-07-20
+- Architecture document version: 1.2.1
+- Last reviewed: 2026-07-27
 - Machine-readable companion: app-manifest.json
 
 ## 1. Purpose
@@ -52,6 +52,8 @@ All applications exchange state through shared browser storage and, where config
 | export_center.html | Web entry | Production | Validate selected results, prepare output payloads, export Excel, and apply approved master changes |
 | settings.html | Web entry | Production | Manage mappings, pricing rules, visible columns, table views, cloud URL, and shared configuration |
 | history_viewer.html | Web entry | Production | Inspect product-change history and price trends |
+| Master.html | Web entry | Pilot | Product-master lookup and administrator-reviewed add/update; initial registration and full replacement are not active in the first phase |
+| Item_manager.html | Web entry | Pilot / transition | Existing category lookup and product-management route retained until approved feature migration and result verification are complete |
 | coreEngine.js | Shared library | Production | Storage, pricing, history, export, cloud synchronization, and master-data utilities |
 | code.gs | Cloud service | Production | Google Apps Script API for master, history, and configuration backup and restore |
 
@@ -111,7 +113,7 @@ coreEngine.js defines the intended ONEAPP shared modules:
 - ONEAPP.MASTER
 - ONEAPP.ERRORS
 
-As of this review, settings.html explicitly loads coreEngine.js. MerchOps, DataOps, and SmartParser still contain overlapping or locally implemented logic. Treat coreEngine.js as the intended shared contract, but do not remove duplicated implementations until compatibility tests prove that each application produces the same output.
+As of this review, settings.html, Master.html, and Item_manager.html explicitly load coreEngine.js. MerchOps, DataOps, and SmartParser still contain overlapping or locally implemented logic. Treat coreEngine.js as the intended shared contract, but do not remove duplicated implementations until compatibility tests prove that each application produces the same output.
 
 ### 5.5 Client-side safety baseline
 
@@ -148,6 +150,19 @@ The master Excel workflow in settings.html uses the shared core engine and appli
 1. Settings manages shared mappings, pricing rules, columns, views, and cloud URL.
 2. Configuration can be backed up to or restored from code.gs.
 3. Data restoration must preserve the existing product master, history, and compatibility keys unless an explicit migration has been reviewed.
+
+### 6.4 Master add/update review
+
+1. Master accepts an Excel workbook only as an add/update comparison source when an existing master is present.
+2. The operator reviews new, changed, same, missing, duplicate, blank, zero, and field-specific issues before any write.
+3. Products and fields begin unapproved; only administrator-confirmed and approved values enter the execution scope.
+4. Missing products remain in the master, and workbook columns that are absent do not become change candidates.
+5. A new product is created only when the final approved values for product name, specification, and unit are all nonblank. Upload omission, administrator-entered blank, blank selection, field exclusion, or partial field approval cannot bypass this rule.
+6. A zero-row master is rejected independently at workbook analysis, execution-plan construction, and the final commit boundary. It must use the separately approved initial-registration workflow.
+7. The shared master writer checks the comparison revision and completes the selected master changes and execution-linked history as one verified unit; a failure restores the previous master and history.
+8. Master add/update uses the shared history retention contract (currently 5,000 records). If the complete new execution history and existing retained history cannot both fit, the operation stops before the master write instead of silently truncating audit records. Storage quota or history verification failure restores the exact previous master and history.
+9. Initial registration and full replacement remain unavailable until their separate approval, backup, and recovery workflows are implemented.
+10. Item_manager.html remains available during the transition and is not removed by this phase.
 
 ## 7. Change-impact rules
 
@@ -187,8 +202,6 @@ A planned application must record:
 
 | Component | Status | Intended purpose | Development trigger |
 |---|---|---|---|
-| Master.html | Planned / on hold | Read-only category-based product master lookup | Resume after MerchOps and DataOps core workflows are stable |
-| Item_manager.html | Planned / on hold | Category-based product lookup and future management workspace | Resume after the lookup scope and write policy are approved |
 | trend_report.html | Planned | Provide insight from MerchOps and DataOps results | Resume after both applications produce stable master, history, inventory, and performance data |
 | image_generator.html | Planned utility | Produce offline-sales images and printed materials for price changes and promotional products | Resume after the MerchOps F9 review payload and downstream F10 print workflow are finalized |
 

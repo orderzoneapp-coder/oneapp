@@ -607,6 +607,7 @@ const files = Object.fromEntries(
     "Item_manager.html",
     "DataOps.html",
     "coreEngine.js",
+    "masterAddUpdate.js",
     "app-manifest.json",
     "APP_ARCHITECTURE.md",
   ]
@@ -799,8 +800,11 @@ for (const name of ["Master.html", "Item_manager.html"]) {
   assert.match(files[name], /마스터 중복 코드가 있습니다/);
   assert.match(files[name], /Object\.keys\(legacy\)\.length > 0/);
 }
-assert.match(files["Master.html"], /마스터 Excel에 저장할 상품 행이 없습니다/);
-assert.match(files["Master.html"], /마스터 Excel 중복 코드가 있습니다/);
+assert.match(files["Master.html"], /ONEAPP_MASTER_ADD_UPDATE\.analyzeUploadRows/);
+assert.match(files["Master.html"], /ONEAPP_MASTER_ADD_UPDATE\.commitApprovedChanges/);
+assert.doesNotMatch(files["Master.html"], /saveMasterLocal\(newMaster\)/);
+assert.match(files["masterAddUpdate.js"], /commitMasterStateOrThrow\(plan\.nextMaster/);
+assert.match(files["masterAddUpdate.js"], /afterVerifiedError: 'Master 추가·갱신 master\/history 검증 실패'/);
 assert.match(files["app-manifest.json"], /"F7": "Apply current work to the MerchOps master/);
 assert.match(files["app-manifest.json"], /"F8": "Create the Excel output from current work without changing the master/);
 assert.match(files["app-manifest.json"], /"id": "master-lookup"[\s\S]*?"path": "Master\.html"[\s\S]*?"status": "pilot"[\s\S]*?"productionWrites": true/);
