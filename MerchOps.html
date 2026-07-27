@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.171_ResetTableGuard]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.172_ExplicitMasterLookup]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -92,6 +92,7 @@
         // v2.1.169: 히스토리 잠금·최신값 재조회·병합·검증을 단일 production 함수로 통합한다. 실제 F8 XLSX 생성·재열기 회귀검사와 Chrome 두 탭 동시 저장·storage 동기화 검증을 완료한다.
         // v2.1.170: Web Locks 미지원 브라우저에서도 IndexedDB 원자 임대 잠금으로 복수 탭 저장을 직렬화한다. 잠금 만료·갱신·대기 타임아웃·소유권 확인으로 비정상 종료와 영구 대기를 방지한다.
         // v2.1.171: 명시적 초기화 후 빈 작업테이블을 전체 마스터로 다시 채우지 않는다. 다음 작업 데이터 불러오기 전까지 초기화 상태를 세션에 유지해 불필요한 대량 렌더링을 막는다.
+        // v2.1.172: 초기화 후 전체·코드 카테고리 버튼을 눌렀을 때만 마스터 조회행을 표시한다. 조회 전용 행은 변경 전까지 F7 대상에서 제외하고 파서리스트·파일 작업목록과 분리한다.
         // v2.1.123: 구매·재고 작업 리포트에 히스토리 비교값을 연결한다. 현재 마스터 기준, 전일 히스토리, 최근 7일/30일 평균 대비 차이를 리포트 보조줄에 표시해 견적 적용 후에도 어제/단기/장기 흐름을 함께 판단한다.
         // v2.1.122: info(쇼핑몰 상품정보) 작업군의 매핑·불러오기·F8 원본양식 출력을 안정화한다. 상품코드=품목코드, 판매가격=출고가, 시중가격=시중가, 판매 1/0=판매여부, 테마1~5=행사테마로 연결한다. 오더즈판매가/오더즈구매가는 작업테이블에서는 숨기되 v2.1.162부터 원본 출력에는 보존한다.
         // v2.1.121: 상단 툴바를 유형별 그룹으로 시각 구분하고, 양식보기를 상단 파일작업 영역 우측으로 이동한다. 테이블 열폭 저장/초기화는 헤더 위에 겹치지 않게 우측 도구줄로 분리한다.
@@ -3292,7 +3293,8 @@ const useMerchConfig = () => {
 const useMerchData = () => {
     const [masterProducts, setMasterProducts] = useState({});
     const [managedItems, setManagedItems] = useState({});
-    const [suppressMasterFallback, setSuppressMasterFallback] = useState(false);
+    const [suppressMasterFallback, setSuppressMasterFallback] = useState(true);
+    const [masterLookupMode, setMasterLookupMode] = useState('');
     const [historyLogs, setHistoryLogs] = useState(() => {
         const saved = safeJSONParse('merchHistory_v870', []);
         return window.mergeMerchHistoryLogs(Array.isArray(saved) ? saved : []);
@@ -3303,10 +3305,10 @@ const useMerchData = () => {
         historyLogsRef.current = historyLogs;
     }, [historyLogs]);
     useEffect(() => {
-        if (suppressMasterFallback && Object.keys(managedItems || {}).length > 0) {
-            setSuppressMasterFallback(false);
-        }
-    }, [managedItems, suppressMasterFallback]);
+        if (Object.keys(managedItems || {}).length === 0) return;
+        if (!suppressMasterFallback) setSuppressMasterFallback(true);
+        if (masterLookupMode) setMasterLookupMode('');
+    }, [managedItems, suppressMasterFallback, masterLookupMode]);
     useEffect(() => {
         let cancelled = false;
         const applyMasterState = (state = {}) => {
@@ -3446,6 +3448,8 @@ const useMerchData = () => {
         setManagedItems,
         suppressMasterFallback,
         setSuppressMasterFallback,
+        masterLookupMode,
+        setMasterLookupMode,
         historyLogs,
         addHistoryLogs
     };
@@ -3733,17 +3737,56 @@ window.isMerchRowInWorkScope = (row = {}, masterProducts = {}, activeTags = [], 
 window.getMerchDisplayBaseRows = (managedItems = {}, masterProducts = {}, options = {}) => {
     const workRows = Object.values(managedItems || {});
     if (workRows.length > 0) return workRows;
-    if (options.suppressMasterFallback === true) return [];
+    const masterLookupMode = ['all', 'category'].includes(String(options.masterLookupMode || ''))
+        ? String(options.masterLookupMode)
+        : '';
+    if (options.suppressMasterFallback === true && !masterLookupMode) return [];
     return Object.values(masterProducts || {}).map(masterItem => ({
         코드: masterItem.코드,
+        _managedKey: `MASTER_LOOKUP__${masterItem.코드}`,
+        _lastUploadRole: 'masterLookup',
+        _masterLookupOnly: true,
+        _masterLookupMode: masterLookupMode || 'legacy',
         sources: {},
         finalData: {}
     }));
 };
 
+window.isMerchUnmodifiedMasterLookupRow = (row = {}) => {
+    if (row?._masterLookupOnly !== true) return false;
+    const finalData = row.finalData || {};
+    const hasWritableValue = Object.keys(finalData).some(field => !String(field || '').startsWith('_'));
+    const hasEditMarker = Object.keys(finalData._editedFields || {}).length > 0
+        || Object.keys(finalData._bulkEditedFields || {}).length > 0
+        || finalData._bulkApplied === true
+        || finalData._promoResetRequested === true
+        || finalData._salesStopRequested === true
+        || finalData._salesResumeRequested === true;
+    const hasWorkSource = ['estimate', 'purchase', 'sales', 'inventory', 'info', 'catalog', 'parser']
+        .some(role => {
+            const source = row.sources?.[role];
+            return !!source && Object.keys(source).some(field => !String(field || '').startsWith('_'));
+        });
+    return !hasWritableValue && !hasEditMarker && !hasWorkSource;
+};
+
 const useMerchActions = (config, data, ui, fullDisplayRows) => {
     const quickExcelReadyRef = useRef({ ready: false, at: 0, count: 0, codes: [], rows: [] });
     const masterCommitInFlightRef = useRef(false);
+    const handleMasterLookup = useCallback((categoryValues = []) => {
+        if (Object.keys(data.managedItems || {}).length > 0) return false;
+        const categories = Array.from(new Set((Array.isArray(categoryValues) ? categoryValues : [])
+            .map(value => String(value || '').trim())
+            .filter(Boolean)));
+        data.setMasterLookupMode(categories.length > 0 ? 'category' : 'all');
+        data.setSuppressMasterFallback(false);
+        ui.setActiveTags([]);
+        ui.setSelectedRows(new Set());
+        ui.showToast(categories.length > 0
+            ? `🔎 마스터 카테고리 조회: ${categories.join(', ')}`
+            : `🔎 전체 마스터 조회: ${Object.keys(data.masterProducts || {}).length.toLocaleString()}건`);
+        return true;
+    }, [data.managedItems, data.masterProducts, data.setMasterLookupMode, data.setSuppressMasterFallback, ui]);
     const handleCloudSync = useCallback(async (type) => {
         const targetCloudUrl = window.getOneAppCloudSyncUrl ? window.getOneAppCloudSyncUrl(config.cloudUrl) : (config.cloudUrl || '');
         if (!targetCloudUrl)
@@ -4317,6 +4360,9 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
 
             const masterSaved = await data.setMasterProducts(newMaster);
             if (!masterSaved) throw new Error('파일 불러오기 후 마스터 저장 검증 실패');
+            if (data.masterLookupMode) ui.setCategoryFilters?.([]);
+            data.setMasterLookupMode('');
+            data.setSuppressMasterFallback(true);
             data.setManagedItems(newManaged);
             const unregisteredRows = Object.values(newManaged).filter(item => {
                 if (!item || !item.코드 || newMaster[item.코드] || ['purchase', 'info'].includes(item._lastUploadRole)) return false;
@@ -4403,6 +4449,11 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
         const filterName = isAllCatalogs ? '전체리스트' : name;
         const tagKey = `${type}:${filterName}`;
         const typeLabel = type === 'catalog' ? '파서리스트' : '카탈로그';
+        if (data.masterLookupMode) {
+            data.setMasterLookupMode('');
+            data.setSuppressMasterFallback(true);
+            ui.setCategoryFilters?.([]);
+        }
         if (type === 'category') {
             const isSameScope = (ui.activeTags || []).some(t => String(t?.type || '') === 'category' && String(t?.name || '') === filterName);
             const nextCatalogName = isSameScope ? '' : filterName;
@@ -5608,9 +5659,10 @@ ${targetText} ${targetRows.length}건을 엑셀로 생성합니다.${workflowTex
             });
         const hasProductInitializationWorkflow = activeWorkflowSteps.length > 0;
         // 상품초기화 양식은 일부 선택이 아니라 자동필터 결과 전체를 출력 대상으로 사용한다.
-        const visibleTargetRows = hasProductInitializationWorkflow
+        const visibleTargetRowsRaw = hasProductInitializationWorkflow
             ? fullDisplayRows
             : (ui.selectedRows.size > 0 ? fullDisplayRows.filter(row => ui.selectedRows.has(window.getManagedRowKey(row))) : fullDisplayRows);
+        const visibleTargetRows = (visibleTargetRowsRaw || []).filter(row => !(window.isMerchUnmodifiedMasterLookupRow?.(row)));
         // 누락상품은 비교·정지판단 대상이며 자동 마스터 저장/쇼핑몰 출력 대상이 아니다.
         // 기존 정지기능으로 정지예정이 명시된 경우에만 아래 정지관리 병합으로 출력한다.
         const baseTargetRows = (visibleTargetRows || []).filter(row => {
@@ -6149,6 +6201,7 @@ ${targetModeText} ${targets.size}건을 MerchOps 마스터에 저장합니다. �
     const handleReset = useCallback(() => {
         var _a, _b, _c;
         data.setSuppressMasterFallback(true);
+        data.setMasterLookupMode('');
         data.setManagedItems({});
         ui.setSessionExcludedItems?.({});
         ui.setShowExcludedPanel?.(false);
@@ -6179,7 +6232,7 @@ ${targetModeText} ${targets.size}건을 MerchOps 마스터에 저장합니다. �
         catch (e) { }
         window.setIDB('merchops_session', null);
         ui.showToast('작업 데이터가 초기화 되었습니다. 다음 불러오기 후 해당 대상 보기만 표시됩니다.');
-    }, [data.setManagedItems, data.setSuppressMasterFallback, config.setVisibleUploadCols, ui]);
+    }, [data.setManagedItems, data.setSuppressMasterFallback, data.setMasterLookupMode, config.setVisibleUploadCols, ui]);
     // ============================================================
     // [M-FLOW-03] 현재 작업범위 마진룰 재계산
     // 역할: 환경설정의 연산룰 변경 시 현재 화면/선택 작업범위에 계산출고가를 다시 적용한다.
@@ -6633,12 +6686,28 @@ ${targetModeText} ${targets.size}건을 MerchOps 마스터에 저장합니다. �
     useEffect(() => {
         window.getIDB('merchops_session').then(state => {
             if (state) {
-                if (state.suppressMasterFallback === true)
-                    data.setSuppressMasterFallback(true);
-                if (state.managedItems && Object.keys(state.managedItems).length > 0)
+                const hasSavedWork = !!(state.managedItems && Object.keys(state.managedItems).length > 0);
+                const savedCategories = Array.isArray(state.categoryFilters) ? state.categoryFilters : [];
+                const savedLookupMode = ['all', 'category'].includes(String(state.masterLookupMode || ''))
+                    ? String(state.masterLookupMode)
+                    : '';
+                if (hasSavedWork) {
                     data.setManagedItems(state.managedItems);
+                    data.setSuppressMasterFallback(true);
+                    data.setMasterLookupMode('');
+                }
+                else if (savedLookupMode) {
+                    data.setMasterLookupMode(savedLookupMode === 'category' && savedCategories.length === 0 ? 'all' : savedLookupMode);
+                    data.setSuppressMasterFallback(false);
+                }
+                else {
+                    data.setSuppressMasterFallback(true);
+                    data.setMasterLookupMode('');
+                }
                 if (state.activeTags && state.activeTags.length > 0)
                     ui.setActiveTags(state.activeTags);
+                if (savedCategories.length > 0)
+                    ui.setCategoryFilters(savedCategories);
                 if (state.selectedRows && state.selectedRows.length > 0)
                     ui.setSelectedRows(new Set(state.selectedRows));
             }
@@ -6648,10 +6717,12 @@ ${targetModeText} ${targets.size}건을 MerchOps 마스터에 저장합니다. �
         window.setIDB('merchops_session', {
             managedItems: data.managedItems,
             suppressMasterFallback: data.suppressMasterFallback,
+            masterLookupMode: data.masterLookupMode,
             activeTags: ui.activeTags,
+            categoryFilters: ui.categoryFilters,
             selectedRows: Array.from(ui.selectedRows)
         });
-    }, [data.managedItems, data.suppressMasterFallback, ui.activeTags, ui.selectedRows]);
+    }, [data.managedItems, data.suppressMasterFallback, data.masterLookupMode, ui.activeTags, ui.categoryFilters, ui.selectedRows]);
     const handleRegisterUnregisteredItems = useCallback(async () => {
         var _a, _b;
         const candidateRows = (fullDisplayRows || []).filter(row => row && row.코드 && !(window.getMerchMasterItemForRow ? (window.getMerchMasterItemForRow(data.masterProducts, row)?.코드 || window.getMerchMasterItemForRow(data.masterProducts, row)?.['품목코드']) : data.masterProducts[row.코드]));
@@ -6755,11 +6826,11 @@ ${targetModeText} ${targets.size}건을 MerchOps 마스터에 저장합니다. �
         ui.showToast('↩️ 신규등록용 양식에서 복귀했습니다.');
     }, [ui]);
     return useMemo(() => ({
-        handleCloudSync, cleanUpGarbageTags, handleFileUpload, handleLoadFilter, handleRemoveFilter, handleStopSales, handleExcludeSelectedFromUpdate, handleRestoreExcludedItems, handleUpdateStoppedProduct, handleBulkStoppedReason, handleBulkStoppedMemo, handleResumeStoppedProducts, handleApplyBulkFields, handleSaveAsCategory, handleSaveAsCatalog, handleDeleteTag, handleCommitEstimate, handleQuickExcelExport, toggleAllRows, handleReset, handleForceApplyMarginRules, handleApplyScreenPercent, handleResetPromoValues, handleOpenExportCenter, handleRegisterUnregisteredItems, handleExitRegistrationMode
-    }), [handleCloudSync, cleanUpGarbageTags, handleFileUpload, handleLoadFilter, handleRemoveFilter, handleStopSales, handleExcludeSelectedFromUpdate, handleRestoreExcludedItems, handleUpdateStoppedProduct, handleBulkStoppedReason, handleBulkStoppedMemo, handleResumeStoppedProducts, handleApplyBulkFields, handleSaveAsCategory, handleSaveAsCatalog, handleDeleteTag, handleCommitEstimate, handleQuickExcelExport, toggleAllRows, handleReset, handleForceApplyMarginRules, handleApplyScreenPercent, handleResetPromoValues, handleOpenExportCenter, handleRegisterUnregisteredItems, handleExitRegistrationMode]);
+        handleMasterLookup, handleCloudSync, cleanUpGarbageTags, handleFileUpload, handleLoadFilter, handleRemoveFilter, handleStopSales, handleExcludeSelectedFromUpdate, handleRestoreExcludedItems, handleUpdateStoppedProduct, handleBulkStoppedReason, handleBulkStoppedMemo, handleResumeStoppedProducts, handleApplyBulkFields, handleSaveAsCategory, handleSaveAsCatalog, handleDeleteTag, handleCommitEstimate, handleQuickExcelExport, toggleAllRows, handleReset, handleForceApplyMarginRules, handleApplyScreenPercent, handleResetPromoValues, handleOpenExportCenter, handleRegisterUnregisteredItems, handleExitRegistrationMode
+    }), [handleMasterLookup, handleCloudSync, cleanUpGarbageTags, handleFileUpload, handleLoadFilter, handleRemoveFilter, handleStopSales, handleExcludeSelectedFromUpdate, handleRestoreExcludedItems, handleUpdateStoppedProduct, handleBulkStoppedReason, handleBulkStoppedMemo, handleResumeStoppedProducts, handleApplyBulkFields, handleSaveAsCategory, handleSaveAsCatalog, handleDeleteTag, handleCommitEstimate, handleQuickExcelExport, toggleAllRows, handleReset, handleForceApplyMarginRules, handleApplyScreenPercent, handleResetPromoValues, handleOpenExportCenter, handleRegisterUnregisteredItems, handleExitRegistrationMode]);
 };
 // --- UI Components ---
-const SystemConsole = ({ itemCount, isProcessing, processMsg, estimateCount, filteredCount, activeTags }) => {
+const SystemConsole = ({ itemCount, isProcessing, processMsg, estimateCount, filteredCount, activeTags, masterLookupMode }) => {
     const [time, setTime] = useState(new Date());
     useEffect(() => {
         const t = setInterval(() => setTime(new Date()), 1000);
@@ -6771,7 +6842,13 @@ const SystemConsole = ({ itemCount, isProcessing, processMsg, estimateCount, fil
         " ",
         React.createElement("span", null, ">"),
         " ",
-        processMsg)) : activeTags.length > 0 ? (React.createElement("div", { className: "text-indigo-300 flex items-center truncate" },
+        processMsg)) : masterLookupMode ? (React.createElement("div", { className: "text-blue-300 flex items-center truncate" },
+        "> ",
+        masterLookupMode === 'category' ? "카테고리 마스터 조회" : "전체 마스터 조회",
+        " (",
+        Number(filteredCount || 0).toLocaleString(),
+        "건) ",
+        React.createElement("span", { className: "w-1.5 h-3 bg-blue-300 ml-1.5 animate-pulse" }))) : activeTags.length > 0 ? (React.createElement("div", { className: "text-indigo-300 flex items-center truncate" },
         "> ",
         activeTags.map(t => `[${t.name}]`).join(' + '),
         " \uD45C\uC2DC\uB428 (",
@@ -6853,7 +6930,7 @@ const SearchBar = ({ value, onChange, placeholder }) => {
 };
 const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCategories }) => {
     const { activeTags, selectedRows, globalSearch, priceFilter, detailFilters = [], categoryFilters = [], basicSearch, filterSteps = [], disabledFilterStepIds = [], pendingFilterAction = 'include', hideMasterAddedRows = false, fullDisplayRows, config, registrationMode, data, sessionExcludedItems = {}, showExcludedPanel = false, stoppedProducts = {}, showStopManager = false } = state;
-    const { handleStopSales, handleExcludeSelectedFromUpdate, handleApplyBulkFields, setGlobalSearch, handleReset, handleFileUpload, handleLoadFilter, handleForceApplyMarginRules, handleApplyScreenPercent, handleResetPromoValues, setPriceFilter, setDetailFilters, setCategoryFilters, setSelectedRows, setBasicSearch, setFilterSteps, setDisabledFilterStepIds, setPendingFilterAction, setShowCatalogModal, handleOpenExportCenter, handleCommitEstimate, handleRegisterUnregisteredItems, handleExitRegistrationMode, setShowExcludedPanel, setShowStopManager } = actions;
+    const { handleMasterLookup, handleStopSales, handleExcludeSelectedFromUpdate, handleApplyBulkFields, setGlobalSearch, handleReset, handleFileUpload, handleLoadFilter, handleForceApplyMarginRules, handleApplyScreenPercent, handleResetPromoValues, setPriceFilter, setDetailFilters, setCategoryFilters, setSelectedRows, setBasicSearch, setFilterSteps, setDisabledFilterStepIds, setPendingFilterAction, setShowCatalogModal, handleOpenExportCenter, handleCommitEstimate, handleRegisterUnregisteredItems, handleExitRegistrationMode, setShowExcludedPanel, setShowStopManager } = actions;
     const [filterPanelOpen, setFilterPanelOpen] = useState(false);
     const [bulkInputs, setBulkInputs] = useState(() => window.createMerchEmptyBulkInputs());
     const [bulkFocus, setBulkFocus] = useState('');
@@ -6939,6 +7016,16 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
     // type='catalog'는 파서리스트, type='category'는 카탈로그로만 판정한다.
     const isParserListLoaded = (activeTags || []).some(t => String(t?.type || '') === 'catalog');
     const isCategoryLoaded = (activeTags || []).some(t => String(t?.type || '') === 'category');
+    const hasManagedWorktable = Object.keys(data?.managedItems || {}).length > 0;
+    const masterLookupMode = String(data?.masterLookupMode || '');
+    const isMasterLookupActive = !hasManagedWorktable && ['all', 'category'].includes(masterLookupMode);
+    const isAllMasterLookupActive = isMasterLookupActive && masterLookupMode === 'all' && categoryFilters.length === 0;
+    const isCategoryMasterLookupActive = isMasterLookupActive && masterLookupMode === 'category';
+    useEffect(() => {
+        if (!isMasterLookupActive) return;
+        const nextMode = categoryFilters.length > 0 ? 'category' : 'all';
+        if (nextMode !== masterLookupMode) data.setMasterLookupMode?.(nextMode);
+    }, [isMasterLookupActive, masterLookupMode, categoryFilters, data.setMasterLookupMode]);
     const getLoadButtonClass = (loaded, tone = 'blue') => {
         const base = 'cursor-pointer h-8 px-2.5 rounded-lg text-[11px] font-bold transition-all flex items-center justify-center shadow-sm border shrink-0';
         if (!loaded) {
@@ -7103,12 +7190,17 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
         if (!drag.active || drag.visited.includes(cat)) return;
         drag.moved = true;
         drag.visited = [...drag.visited, cat];
-        setCategoryFilters(() => {
-            if (!drag.multi) return [...drag.visited];
+        let nextCategories;
+        if (!drag.multi) {
+            nextCategories = [...drag.visited];
+        }
+        else {
             const next = new Set(drag.base);
             drag.visited.forEach(value => drag.mode === 'remove' ? next.delete(value) : next.add(value));
-            return Array.from(next);
-        });
+            nextCategories = Array.from(next);
+        }
+        setCategoryFilters(nextCategories);
+        if (!hasManagedWorktable) handleMasterLookup?.(nextCategories);
         setSelectedRows(new Set());
     };
     const beginThemeDrag = (value, event) => {
@@ -7151,15 +7243,22 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
         if (!setCategoryFilters)
             return;
         const multi = isMultiSelectEvent(event);
-        setCategoryFilters(prev => {
-            const current = Array.isArray(prev) ? prev : [];
-            if (cat === 'all')
-                return [];
+        const current = Array.isArray(categoryFilters) ? categoryFilters : [];
+        let nextCategories = [];
+        if (cat !== 'all') {
             if (multi)
-                return current.includes(cat) ? current.filter(v => v !== cat) : [...current, cat];
-            return (current.length === 1 && current[0] === cat) ? [] : [cat];
-        });
+                nextCategories = current.includes(cat) ? current.filter(v => v !== cat) : [...current, cat];
+            else
+                nextCategories = (current.length === 1 && current[0] === cat) ? [] : [cat];
+        }
+        setCategoryFilters(nextCategories);
+        if (!hasManagedWorktable) handleMasterLookup?.(nextCategories);
         setSelectedRows(new Set());
+    };
+    const handleAllCategoryClick = () => {
+        setCategoryFilters?.([]);
+        setSelectedRows(new Set());
+        if (!hasManagedWorktable) handleMasterLookup?.([]);
     };
     const toggleThemeFilter = (value, event = null) => {
         if (!detailFilterValues.includes(value) || !/^theme[1-5]$/.test(String(value))) return;
@@ -7252,8 +7351,16 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
         React.createElement("div", { className: "pl-5 pr-[128px] py-2 bg-slate-50 border-b border-slate-200 flex items-center gap-2 flex-nowrap w-full whitespace-nowrap" },
             React.createElement("div", { className: "flex items-center gap-1 min-w-0 flex-1 overflow-hidden pr-1", title: "마스터·파서·카탈로그·작업정보" },
                 React.createElement("div", { className: "flex items-center justify-start gap-1 min-w-0 shrink-0 rounded-xl border border-slate-200 bg-white/90 px-1.5 py-1 shadow-sm select-none", title: "마스터&작업 구분: 클릭 단일선택, Ctrl/⌘ 클릭 다중선택, 마우스 드래그 연속선택" },
-                React.createElement("button", { onClick: () => { setCategoryFilters?.([]); setSelectedRows(new Set()); }, className: `h-8 px-2.5 rounded-lg text-[11px] font-black border shadow-sm transition-all whitespace-nowrap shrink-0 ${(!Array.isArray(categoryFilters) || categoryFilters.length === 0) ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-600 border-slate-300 hover:bg-blue-50'}`, title: "전체 카테고리: 카테고리 필터를 해제해 전체를 봅니다." }, "전체"),
-                MERCH_CATEGORY_FILTERS.map(cat => (React.createElement("button", { key: `cat-main-${cat}`, onMouseDown: (event) => beginCategoryDrag(cat, event), onMouseEnter: () => continueCategoryDrag(cat), onClick: (event) => handleCategoryClick(cat, event), draggable: false, className: `h-8 px-2.5 rounded-lg text-[11px] font-black border shadow-sm transition-all whitespace-nowrap shrink-0 select-none ${categoryFilters.includes(cat) ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-600 border-slate-300 hover:bg-blue-50'}`, title: `${cat} 카테고리: 클릭 단일선택 / Ctrl·⌘ 클릭 다중선택 / 드래그 연속선택` }, cat)))),
+                React.createElement("button", { onClick: handleAllCategoryClick, className: `h-8 px-2.5 rounded-lg text-[11px] font-black border shadow-sm transition-all whitespace-nowrap shrink-0 ${(!Array.isArray(categoryFilters) || categoryFilters.length === 0) ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-600 border-slate-300 hover:bg-blue-50'} ${isAllMasterLookupActive ? 'ring-2 ring-blue-300 ring-offset-1' : ''}`, title: isAllMasterLookupActive ? "전체 마스터 조회 실행 중" : "기본 조회범위: 전체 · 작업테이블이 비어 있으면 터치하여 전체 마스터 조회" },
+                    "전체",
+                    isAllMasterLookupActive && React.createElement("i", { className: "fas fa-eye ml-1.5 text-[9px]", title: "조회 실행됨" })),
+                MERCH_CATEGORY_FILTERS.map(cat => {
+                    const selected = categoryFilters.includes(cat);
+                    const lookupExecuted = isCategoryMasterLookupActive && selected;
+                    return React.createElement("button", { key: `cat-main-${cat}`, onMouseDown: (event) => beginCategoryDrag(cat, event), onMouseEnter: () => continueCategoryDrag(cat), onClick: (event) => handleCategoryClick(cat, event), draggable: false, className: `h-8 px-2.5 rounded-lg text-[11px] font-black border shadow-sm transition-all whitespace-nowrap shrink-0 select-none ${selected ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-600 border-slate-300 hover:bg-blue-50'} ${lookupExecuted ? 'ring-2 ring-blue-300 ring-offset-1' : ''}`, title: lookupExecuted ? `${cat} 카테고리 마스터 조회 실행 중` : `${cat} 카테고리: 클릭 단일선택 / Ctrl·⌘ 클릭 다중선택 / 드래그 연속선택` },
+                        cat,
+                        lookupExecuted && React.createElement("i", { className: "fas fa-eye ml-1.5 text-[9px]", title: "조회 실행됨" }));
+                })),
             React.createElement("div", { className: "flex items-center justify-start gap-1 min-w-0 shrink-0 rounded-xl border border-indigo-100 bg-white/90 px-1.5 py-1 shadow-sm", title: "파서·마스터 범위 작업" },
                 React.createElement("button", { onClick: () => window.location.href = 'SmartParser.html', className: `h-8 px-2.5 rounded-lg flex items-center justify-center shadow-sm transition-all border font-black text-[11px] whitespace-nowrap shrink-0 ${state.isProcessing ? 'opacity-40 pointer-events-none bg-slate-100 text-slate-400 border-slate-200' : 'bg-white text-indigo-700 border-indigo-200 hover:bg-indigo-50 hover:border-indigo-300'}`, title: "스마트파서 웹 화면으로 이동" },
                     React.createElement("i", { className: "fas fa-magic mr-1.5 text-[12px]" }),
@@ -8975,7 +9082,7 @@ const MemoizedTableRow = React.memo(({ row, idx, state, actions, isSel, mItem })
                     React.createElement("div", { className: "text-[10px] font-bold text-slate-500 whitespace-nowrap", title: reportLines[1] || '' }, reportLines[1] || ''))))))));
 });
 const ExcelDataGrid = ({ state, actions }) => {
-    const { isEstimateUploaded, selectedRows, fullDisplayRows, visibleMasterCols, visibleUploadCols, masterProducts, activeTableTarget = 'estimate', registrationMode = false, config = {} } = state;
+    const { isEstimateUploaded, selectedRows, fullDisplayRows, visibleMasterCols, visibleUploadCols, masterProducts, activeTableTarget = 'estimate', registrationMode = false, config = {}, data = {} } = state;
     const [visibleCount, setVisibleCount] = useState(100);
     useEffect(() => { setVisibleCount(100); }, [fullDisplayRows]);
     // [M-DRAG-ROW-01] 테이블 상품 체크박스 드래그 연속선택
@@ -9027,6 +9134,16 @@ const ExcelDataGrid = ({ state, actions }) => {
     }, [fullDisplayRows.length]);
     const displayRows = fullDisplayRows.slice(0, visibleCount);
     const hiddenCount = fullDisplayRows.length - displayRows.length;
+    const masterLookupMode = String(data.masterLookupMode || '');
+    const isExplicitEmptyWorkspace = !isEstimateUploaded && data.suppressMasterFallback === true && !masterLookupMode;
+    const isEmptyMasterLookupResult = !isEstimateUploaded && ['all', 'category'].includes(masterLookupMode) && displayRows.length === 0;
+    const emptyTableMessage = isExplicitEmptyWorkspace
+        ? "작업 테이블이 비어 있습니다.\n[전체] 또는 10·20·30·40·50 카테고리 버튼을 눌러 마스터를 조회하세요."
+        : isEmptyMasterLookupResult
+            ? "선택한 마스터 조회 범위에 상품이 없습니다.\n카테고리 또는 검색·필터 조건을 확인하세요."
+            : isEstimateUploaded
+                ? "불러온 작업목록에서 조건에 일치하는 항목이 없습니다."
+                : "조건에 일치하는 상품이 없습니다.";
     const requiredCoreFields = ['품목코드', '품목명', '규격'];
     const targetMasterCols = (visibleMasterCols === null || visibleMasterCols === void 0 ? void 0 : visibleMasterCols[activeTableTarget]);
     const targetWorkCols = (visibleUploadCols === null || visibleUploadCols === void 0 ? void 0 : visibleUploadCols[activeTableTarget]);
@@ -9163,7 +9280,7 @@ const ExcelDataGrid = ({ state, actions }) => {
                     displayRows.length === 0 ? (React.createElement("tr", null,
                         React.createElement("td", { colSpan: "50", className: "p-16 text-center text-slate-400 bg-white" },
                             React.createElement("i", { className: "fas fa-folder-open text-4xl mb-4 block" }),
-                            isEstimateUploaded ? "작업 버퍼에 일치하는 항목이 없습니다." : "조건에 일치하는 상품이 없거나, 데이터가 비어있습니다.\n상단의 [파서리스트] 또는 [카탈로그]를 통해 목록을 띄우세요."))) : displayRows.map((row, idx) => {
+                            emptyTableMessage))) : displayRows.map((row, idx) => {
                         const isSel = selectedRows.has(window.getManagedRowKey(row));
                         return React.createElement(MemoizedTableRow, { key: window.getManagedRowKey(row), row: row, idx: idx, state: { ...state, columnWidths: currentColumnWidths }, actions: tableRowActions, isSel: isSel, mItem: (window.getMerchMasterItemForRow ? window.getMerchMasterItemForRow(masterProducts, row) : masterProducts[row.코드]) || {} });
                     }),
@@ -9180,7 +9297,7 @@ const WelcomeGuide = ({ onUpload, onCloudSync }) => (React.createElement("div", 
         React.createElement("i", { className: "fas fa-box-open" }),
         React.createElement("div", { className: "absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm" },
             React.createElement("i", { className: "fas fa-check" }))),
-    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.171_ResetTableGuard]"),
+    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.172_ExplicitMasterLookup]"),
     React.createElement("p", { className: "text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold" },
         "\uD604\uC7AC \uB4F1\uB85D\uB41C ",
         React.createElement("span", { className: "text-indigo-500" }, "\uB9C8\uC2A4\uD130 \uC0C1\uD488 \uB370\uC774\uD130"),
@@ -9267,7 +9384,8 @@ const App = () => {
     }, [data.masterProducts]);
     const fullDisplayRows = useMemo(() => {
         let baseList = window.getMerchDisplayBaseRows(data.managedItems, data.masterProducts, {
-            suppressMasterFallback: data.suppressMasterFallback
+            suppressMasterFallback: data.suppressMasterFallback,
+            masterLookupMode: data.masterLookupMode
         });
         const activeWorkRole = normalizeMerchTableTarget((config && config.activeTableTarget) || DEFAULT_TABLE_VIEW_TARGET);
         if (!ui.registrationMode) {
@@ -9460,12 +9578,16 @@ const App = () => {
             });
         }
         return baseList;
-    }, [isEstimateUploaded, data.managedItems, data.masterProducts, data.suppressMasterFallback, ui.activeTags, ui.globalSearch, ui.priceFilter, ui.detailFilters, ui.categoryFilters, ui.basicSearch, ui.filterSteps, ui.disabledFilterStepIds, ui.registrationMode, ui.hideMasterAddedRows, ui.stoppedProducts, config.uploadColumnMeta, config.activeTableTarget]);
+    }, [isEstimateUploaded, data.managedItems, data.masterProducts, data.suppressMasterFallback, data.masterLookupMode, ui.activeTags, ui.globalSearch, ui.priceFilter, ui.detailFilters, ui.categoryFilters, ui.basicSearch, ui.filterSteps, ui.disabledFilterStepIds, ui.registrationMode, ui.hideMasterAddedRows, ui.stoppedProducts, config.uploadColumnMeta, config.activeTableTarget]);
+    const hasF7EligibleRows = useMemo(
+        () => fullDisplayRows.some(row => !(window.isMerchUnmodifiedMasterLookupRow?.(row))),
+        [fullDisplayRows]
+    );
     const customActions = useMerchActions(config, data, ui, fullDisplayRows);
     const appState = useMemo(() => ({
-        config, data, activeTags: ui.activeTags, isEstimateUploaded, selectedRows: ui.selectedRows, globalSearch: ui.globalSearch, isProcessing: ui.isProcessing, processMsg: ui.processMsg, registrationMode: ui.registrationMode,
+        config, data, activeTags: ui.activeTags, isEstimateUploaded, hasF7EligibleRows, selectedRows: ui.selectedRows, globalSearch: ui.globalSearch, isProcessing: ui.isProcessing, processMsg: ui.processMsg, registrationMode: ui.registrationMode,
         visibleMasterCols: config.visibleMasterCols, visibleUploadCols: config.visibleUploadCols, activeTableTarget: config.activeTableTarget, activeTableViewId: config.activeTableViewId, masterProducts: data.masterProducts, fullDisplayRows, priceFilter: ui.priceFilter, detailFilters: ui.detailFilters, categoryFilters: ui.categoryFilters, basicSearch: ui.basicSearch, filterSteps: ui.filterSteps, disabledFilterStepIds: ui.disabledFilterStepIds, pendingFilterAction: ui.pendingFilterAction, hideMasterAddedRows: ui.hideMasterAddedRows, showExcludedPanel: ui.showExcludedPanel, sessionExcludedItems: ui.sessionExcludedItems, showStopManager: ui.showStopManager, stoppedProducts: ui.stoppedProducts
-    }), [config, data, ui.activeTags, ui.registrationMode, isEstimateUploaded, ui.selectedRows, ui.globalSearch, ui.isProcessing, ui.processMsg, config.visibleMasterCols, config.visibleUploadCols, config.activeTableTarget, config.activeTableViewId, config.tableViewPresets, data.masterProducts, fullDisplayRows, ui.priceFilter, ui.detailFilters, ui.categoryFilters, ui.basicSearch, ui.filterSteps, ui.disabledFilterStepIds, ui.pendingFilterAction, ui.hideMasterAddedRows, ui.showExcludedPanel, ui.sessionExcludedItems, ui.showStopManager, ui.stoppedProducts]);
+    }), [config, data, ui.activeTags, ui.registrationMode, isEstimateUploaded, hasF7EligibleRows, ui.selectedRows, ui.globalSearch, ui.isProcessing, ui.processMsg, config.visibleMasterCols, config.visibleUploadCols, config.activeTableTarget, config.activeTableViewId, config.tableViewPresets, data.masterProducts, fullDisplayRows, ui.priceFilter, ui.detailFilters, ui.categoryFilters, ui.basicSearch, ui.filterSteps, ui.disabledFilterStepIds, ui.pendingFilterAction, ui.hideMasterAddedRows, ui.showExcludedPanel, ui.sessionExcludedItems, ui.showStopManager, ui.stoppedProducts]);
     const appActions = useMemo(() => ({
         setShowCategoryModal: ui.setShowCategoryModal, setShowCatalogModal: ui.setShowCatalogModal, setSelectedRows: ui.setSelectedRows, setGlobalSearch: ui.setGlobalSearch, showToast: ui.showToast, setPriceFilter: ui.setPriceFilter, setDetailFilters: ui.setDetailFilters, setCategoryFilters: ui.setCategoryFilters, setBasicSearch: ui.setBasicSearch, setFilterSteps: ui.setFilterSteps, setDisabledFilterStepIds: ui.setDisabledFilterStepIds, setPendingFilterAction: ui.setPendingFilterAction, setShowExcludedPanel: ui.setShowExcludedPanel, setShowStopManager: ui.setShowStopManager, ...customActions
     }), [ui.setShowCategoryModal, ui.setShowCatalogModal, ui.setSelectedRows, ui.setGlobalSearch, ui.showToast, ui.setPriceFilter, ui.setDetailFilters, ui.setCategoryFilters, ui.setBasicSearch, ui.setFilterSteps, ui.setDisabledFilterStepIds, ui.setPendingFilterAction, ui.setShowExcludedPanel, ui.setShowStopManager, customActions]);
@@ -9535,11 +9657,11 @@ const App = () => {
                 if (isInput)
                     activeEl.blur();
                 const hasPendingStopAction = Object.values(appState.stoppedProducts || {}).some(item => ['stop', 'resume'].includes(String(item?.pendingAction || '')));
-                if (!appState.isProcessing && (appState.fullDisplayRows.length > 0 || hasPendingStopAction)) {
+                if (!appState.isProcessing && (appState.hasF7EligibleRows || hasPendingStopAction)) {
                     appActions.handleCommitEstimate();
                 }
-                else if (appState.fullDisplayRows.length === 0)
-                    appActions.showToast("⚠️ [F7] 마스터에 적용할 화면 데이터·정지관리 변경대기가 없습니다.");
+                else
+                    appActions.showToast("⚠️ [F7] 마스터에 적용할 변경 작업·정지관리 변경대기가 없습니다. 조회 전용 마스터 행은 반영하지 않습니다.");
             }
             else if (e.key === 'F8') {
                 e.preventDefault();
@@ -9594,11 +9716,11 @@ const App = () => {
                                 React.createElement("div", { className: "flex flex-col border-l-2 border-slate-700 pl-3" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "MerchOps"),
-                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.171_ResetTableGuard")),
+                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.172_ExplicitMasterLookup")),
                                     React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "MAIN WORKSPACE"))),
-                            React.createElement(SystemConsole, { itemCount: Object.keys(data.masterProducts).length, isProcessing: ui.isProcessing, processMsg: ui.processMsg, estimateCount: Object.keys(data.managedItems).length, filteredCount: fullDisplayRows.length, activeTags: ui.activeTags }),
+                            React.createElement(SystemConsole, { itemCount: Object.keys(data.masterProducts).length, isProcessing: ui.isProcessing, processMsg: ui.processMsg, estimateCount: Object.keys(data.managedItems).length, filteredCount: fullDisplayRows.length, activeTags: ui.activeTags, masterLookupMode: data.masterLookupMode }),
                             React.createElement("nav", { className: "flex gap-1.5 text-[14px] shrink-0 items-center" },
-                                React.createElement("button", { onClick: customActions.handleCommitEstimate, disabled: ui.isProcessing || (fullDisplayRows.length === 0 && !Object.values(ui.stoppedProducts || {}).some(item => ['stop', 'resume'].includes(String(item?.pendingAction || '')))), className: `h-8 px-3 rounded flex items-center justify-center shadow-sm transition-all duration-300 border font-black text-[11px] tracking-wider ${(!ui.isProcessing && (fullDisplayRows.length > 0 || Object.values(ui.stoppedProducts || {}).some(item => ['stop', 'resume'].includes(String(item?.pendingAction || ''))))) ? 'text-white bg-indigo-600 border-indigo-500 hover:bg-indigo-700 hover:border-indigo-400' : 'text-slate-500 bg-[#0f172a] border-slate-800 cursor-not-allowed'}`, title: "현재 작업값을 MerchOps 내부 마스터에 적용 (F7) · 엑셀 생성 없음" },
+                                React.createElement("button", { onClick: customActions.handleCommitEstimate, disabled: ui.isProcessing || (!hasF7EligibleRows && !Object.values(ui.stoppedProducts || {}).some(item => ['stop', 'resume'].includes(String(item?.pendingAction || '')))), className: `h-8 px-3 rounded flex items-center justify-center shadow-sm transition-all duration-300 border font-black text-[11px] tracking-wider ${(!ui.isProcessing && (hasF7EligibleRows || Object.values(ui.stoppedProducts || {}).some(item => ['stop', 'resume'].includes(String(item?.pendingAction || ''))))) ? 'text-white bg-indigo-600 border-indigo-500 hover:bg-indigo-700 hover:border-indigo-400' : 'text-slate-500 bg-[#0f172a] border-slate-800 cursor-not-allowed'}`, title: hasF7EligibleRows ? "현재 변경 작업값을 MerchOps 내부 마스터에 적용 (F7) · 엑셀 생성 없음" : "조회 전용 마스터 행은 F7 반영 대상이 아닙니다." },
                                     React.createElement("i", { className: "fas fa-database mr-1.5 text-[12px]" }),
                                     "F7"),
                                 React.createElement("button", { onClick: customActions.handleQuickExcelExport, disabled: fullDisplayRows.length === 0, className: `h-8 px-3 rounded flex items-center justify-center shadow-sm transition-all duration-300 border font-black text-[11px] tracking-wider ${fullDisplayRows.length > 0 ? 'text-white bg-slate-700 border-slate-600 hover:bg-slate-600 hover:border-slate-400' : 'text-slate-500 bg-[#0f172a] border-slate-800 cursor-not-allowed'}`, title: "현재 작업값으로 쇼핑몰·ERP 엑셀 출력 (F8) · 마스터 변경 없음" },

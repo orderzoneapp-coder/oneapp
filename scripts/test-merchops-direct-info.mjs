@@ -62,15 +62,34 @@ const resetMaster = {
 };
 assert.equal(displayBrowser.getMerchDisplayBaseRows({}, resetMaster, { suppressMasterFallback: true }).length, 0,
   "An explicit reset must keep the worktable empty instead of expanding the full master");
-assert.equal(displayBrowser.getMerchDisplayBaseRows({}, resetMaster).length, 2,
-  "Initial idle mode must preserve the existing master fallback");
+const explicitAllRows = displayBrowser.getMerchDisplayBaseRows({}, resetMaster, {
+  suppressMasterFallback: true,
+  masterLookupMode: "all",
+});
+assert.equal(explicitAllRows.length, 2,
+  "Touching the all button must explicitly expose the full master");
+assert.equal(explicitAllRows.every(row => row._masterLookupOnly === true), true,
+  "Explicit master lookup rows must be marked as read-only lookup rows");
 assert.equal(displayBrowser.getMerchDisplayBaseRows({
   P003: { 코드: "P003", sources: { estimate: {} }, finalData: {} },
 }, resetMaster, { suppressMasterFallback: true })[0].코드, "P003",
   "Newly loaded work rows must display even before the reset guard state effect settles");
-assert.match(merch, /data\.setSuppressMasterFallback\(true\);\s*data\.setManagedItems\(\{\}\);/);
+assert.equal(displayBrowser.isMerchUnmodifiedMasterLookupRow(explicitAllRows[0]), true,
+  "An untouched master lookup row must not be eligible for F7");
+assert.equal(displayBrowser.isMerchUnmodifiedMasterLookupRow({
+  ...explicitAllRows[0],
+  finalData: { 입고가: 1234, _editedFields: { 입고가: true } },
+}), false, "An edited master lookup row must become eligible for F7");
+assert.match(merch, /const \[suppressMasterFallback, setSuppressMasterFallback\] = useState\(true\);/);
+assert.match(merch, /data\.setSuppressMasterFallback\(true\);\s*data\.setMasterLookupMode\(''\);\s*data\.setManagedItems\(\{\}\);/);
+assert.match(merch, /handleMasterLookup\?\.\(\[\]\)/);
+assert.match(merch, /handleMasterLookup\?\.\(nextCategories\)/);
 assert.match(merch, /suppressMasterFallback: data\.suppressMasterFallback/);
-assert.match(merch, /if \(suppressMasterFallback && Object\.keys\(managedItems \|\| \{\}\)\.length > 0\)/);
+assert.match(merch, /masterLookupMode: data\.masterLookupMode/);
+assert.match(merch, /visibleTargetRowsRaw[\s\S]{0,500}isMerchUnmodifiedMasterLookupRow/);
+assert.match(merch, /조회 전용 마스터 행은 F7 반영 대상이 아닙니다/);
+assert.match(merch, /작업 테이블이 비어 있습니다/);
+assert.match(merch, /선택한 마스터 조회 범위에 상품이 없습니다/);
 
 for (const removed of [
   "정보변경 대기",
