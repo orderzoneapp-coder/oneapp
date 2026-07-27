@@ -187,13 +187,7 @@ const executeAnalysis = section(
   "const executeAnalysis = useCallback",
   "const runAnalysis = useCallback",
 );
-const unallocatedLot = section(
-  "const recordUnallocatedLot =",
-  "const deductFromBucket =",
-);
-assert.match(unallocatedLot, /실사:\s*null/);
-assert.doesNotMatch(unallocatedLot, /실사:\s*0/);
-assert.doesNotMatch(unallocatedLot, /row\.실사\s*=\s*0/);
+assert.doesNotMatch(executeAnalysis, /recordUnallocatedLot|UNALLOCATED_LOT/);
 assert.match(executeAnalysis, /item\._actualQtySource\s*=\s*'SYSTEM_CALCULATED'/);
 
 const previewFilter = section(

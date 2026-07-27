@@ -71,7 +71,8 @@ const acknowledgeAll = section(
 );
 assert.doesNotMatch(acknowledgeAll, /setProductData|수기확인완료\s*=\s*true/);
 assert.match(acknowledgeAll, /handleIssueJump\(type,\s*'next',\s*false\)/);
-assert.match(source, /_adminCompletionSource:\s*shouldComplete\s*\?\s*'MANUAL_ADMIN'/);
+assert.doesNotMatch(source, /handleToggleAdminComplete|onToggleAdminComplete/);
+assert.doesNotMatch(source, />완료 확정<|>관리자 완료</);
 assert.doesNotMatch(source, /수기확인완료\s*:\s*true/);
 
 const parseAndAnalysis = section(
@@ -145,13 +146,11 @@ assert.equal(reducedReturn.출고, -1);
 assert.equal(reducedReturn.매출액, -100);
 assert.equal(reducedReturn.매출원가, -50);
 
-assert.match(executeAnalysis, /const recordUnallocatedLot\s*=/);
-assert.match(executeAnalysis, /_lotAllocationStatus:\s*'UNALLOCATED'/);
-assert.match(executeAnalysis, /_unallocatedLotQty/);
-assert.match(executeAnalysis, /mode:\s*'NO_PURCHASE_LOT_UNALLOCATED'/);
-assert.doesNotMatch(executeAnalysis, /SHORTAGE_OVER_ALLOC/);
-assert.doesNotMatch(executeAnalysis, /lastRow\.출고\s*\+=\s*remaining/);
-assert.match(source, /msg\.includes\('🚨Lot미배정'\)/);
+assert.doesNotMatch(executeAnalysis, /recordUnallocatedLot|UNALLOCATED_LOT|_unallocatedLotQty/);
+assert.match(executeAnalysis, /DATAOPS_SALES_POLICY_MODULE\.buildSameCodeAllocationPlan/);
+assert.match(executeAnalysis, /FIFO_SHORTAGE_SAME_CODE/);
+assert.match(executeAnalysis, /const pool = stockPool\[code\]/);
+assert.doesNotMatch(executeAnalysis, /detailShare/);
 
 const substitution = section(
   "const executeImmediateSubstitution = useCallback",
@@ -175,11 +174,12 @@ const stockCountRows = section(
   "buildStockCountSheetRows:",
   "buildSalesDetailRows:",
 );
-assert.doesNotMatch(
+assert.match(
   stockCountRows,
-  /aggregated\[key\]\.수량\s*!==\s*0/,
-  "actual-count output must retain zero rows",
+  /safeNum\(aggregated\[key\]\.수량\)\s*===\s*0/,
+  "next-day actual-count template must omit zero rows",
 );
+assert.match(stockCountRows, /addOneDay\(extractDateNum\(targetDateStr\)\)/);
 const combinedExport = section(
   "const handleCombinedExport = useCallback",
   "const handlePrintOutput = useCallback",
@@ -203,6 +203,8 @@ for (const field of [
 }
 assert.match(source, /'관리자확인완료'/);
 assert.match(source, /'관리자확인시각'/);
+assert.match(source, /'관리자확인완료':\s*''/);
+assert.match(source, /'관리자확인시각':\s*''/);
 assert.match(source, /restoreWorkState/);
 
 assert.match(source, /const stockLotIndex = new Map\(\)/);

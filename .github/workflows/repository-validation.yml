@@ -41,6 +41,12 @@ jobs:
       - name: Test DataOps operational integrity contracts
         run: node scripts/test-dataops-operational-integrity.mjs
 
+      - name: Test DataOps sales and Lot policy regressions
+        run: node scripts/test-dataops-sales-lot-policy.mjs
+
+      - name: Test DataOps substitution preview read-only behavior
+        run: node scripts/test-dataops-substitution-preview-readonly.mjs
+
       - name: Test MerchOps sale availability pipeline
         run: node scripts/test-merchops-sale-pipeline.mjs
 
