@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP DataOps - 핵심 수불부 관리 (V1.a22.95_StockInputFix)</title>
+    <title>ONEAPP DataOps - 핵심 수불부 관리 (V1.a22.96_SubstitutionPreviewReadOnly)</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         body { font-family: 'Pretendard', -apple-system, sans-serif; background-color: #f8fafc; overflow: hidden; }
@@ -46,7 +46,7 @@
     <!-- 초기 로딩 스크린 -->
     <div id="initial-loader">
         <div class="spinner"></div>
-        <div class="loader-text">ONEAPP DataOps V1.a22.95_StockInputFix.....</div>
+        <div class="loader-text">ONEAPP DataOps V1.a22.96_SubstitutionPreviewReadOnly.....</div>
         <div style="font-size: 11px; color: #94a3b8; margin-top: 8px;">앱 환경을 구성하고 있습니다</div>
     </div>
 
@@ -911,7 +911,7 @@ const clearTableSortPreference = () => {
    - 주의: 물리적 파일 분리는 하지 않는다. 단일 HTML 실행 구조를 유지한다.
    ======================================================================= */
 const CONFIG_MODULE = Object.freeze({
-    version: 'V1.a22.95_StockInputFix',
+    version: 'V1.a22.96_SubstitutionPreviewReadOnly',
     categoryMap: Object.freeze({
         '10': '채소.과일',
         '20': '수산.축산',
@@ -2019,7 +2019,9 @@ const STOCK_ENGINE_MODULE = Object.freeze({
         next.로스 = calc.diffQty;
         return next;
     },
-    getActualQty: (item = {}) => item.실사 === '' || item.실사 === null || item.실사 === undefined ? 0 : safeNum(item.실사),
+    // 관리자 잔량 입력이 없으면 최종 잔량은 산수잔량을 그대로 따른다.
+    // 빈 실사를 0으로 해석하면 마이너스 산수잔량이 0으로 보정되고 가짜 오차가 생긴다.
+    getActualQty: (item = {}) => STOCK_ENGINE_MODULE.calculateStock(item).finalQty,
     getAdjustmentQty: (item = {}) => {
         const calc = STOCK_ENGINE_MODULE.calculateStock(item);
         return calc.diffQty + safeNum(item.대체입고) - safeNum(item.대체출고);
@@ -4325,7 +4327,31 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
             const snapshot = await DATAOPS_WORK_STATE_MODULE.load();
             if (!snapshot || !Array.isArray(snapshot.productData) || snapshot.productData.length === 0)
                 return false;
-            setProductData(DATAOPS_MASTER_LINK_MODULE.applyMasterLinksToRows(snapshot.productData));
+            const restoredProductData = snapshot.productData.map(item => {
+                const systemQty = safeNum(item.기초) + safeNum(item.입고) + safeNum(item.대체입고) - safeNum(item.출고) - safeNum(item.대체출고);
+                const issueText = (Array.isArray(item.이슈) ? item.이슈 : []).map(v => safeStr(v)).join(' ');
+                const hasManualActual = !!item._manualActualEdited
+                    || safeStr(item._actualQtySource) === 'MANUAL_ADMIN'
+                    || issueText.includes('수량변동(잔량수정)')
+                    || issueText.includes('실사 수기조정');
+                const isLegacyAutoZero = item._lotAllocationStatus === 'UNALLOCATED'
+                    && !hasManualActual
+                    && systemQty < 0
+                    && safeNum(item.실사) === 0
+                    && safeNum(item.로스) === -systemQty;
+                if (!isLegacyAutoZero)
+                    return item;
+                const next = {
+                    ...item,
+                    전산잔량: systemQty,
+                    실사: systemQty,
+                    로스: 0,
+                    _actualQtySource: 'SYSTEM_CALCULATED'
+                };
+                next.이슈 = DATAOPS_ISSUE_HELPER.syncQuantityIssues(next, next.이슈 || []);
+                return next;
+            });
+            setProductData(DATAOPS_MASTER_LINK_MODULE.applyMasterLinksToRows(restoredProductData));
             setSubstHistory(Array.isArray(snapshot.substHistory) ? snapshot.substHistory : []);
             setAckMultiCodes(new Set(Array.isArray(snapshot.ackMultiCodes) ? snapshot.ackMultiCodes : []));
             setAnalysisPeriod(safeStr(snapshot.analysisPeriod, '전체 기간'));
@@ -4446,6 +4472,9 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
             const finalQty = nextItem.실사 === '' || nextItem.실사 === null || nextItem.실사 === undefined ? systemQty : safeNum(nextItem.실사);
             nextItem.전산잔량 = systemQty;
             nextItem.로스 = finalQty - systemQty;
+            nextItem._manualActualEdited = nextActual !== '';
+            nextItem._actualQtySource = nextActual === '' ? 'SYSTEM_CALCULATED' : 'MANUAL_ADMIN';
+            nextItem._manualActualEditedAt = nextActual === '' ? '' : new Date().toISOString();
             nextItem.이슈 = DATAOPS_ISSUE_HELPER.syncQuantityIssues(nextItem, nextItem.이슈 || []);
             nextItem = DATAOPS_OPERATION_MODULE.syncSplitLossInsight(nextItem);
             nextItem.수기확인완료 = false;
@@ -6063,7 +6092,7 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                             batchKey: bKey, 코드: code, 품명: sale.품명, 단위: safeStr(sale.단위, ''), 단가: 0, 일자: '', 거래처: 'LOT 미배정',
                             _transactionVendor: safeStr(sale._transactionVendor || sale._salesVendor || sale.거래처 || '', ''), _salesVendor: safeStr(sale._salesVendor || sale.거래처 || '', ''), _salesDisplayVendor: safeStr(sale._salesDisplayVendor || sale.거래처 || '', ''), _salesGroupVendor: safeStr(sale._salesGroupVendor || sale.거래처 || '', ''),
                             _confirmedPurchaseVendor: vendorLabel, _purchaseLotVendor: '', _displayPurchaseVendor: 'LOT 미배정', _uploadRole: 'out',
-                            기초: 0, 입고: 0, 출고: 0, 대체입고: 0, 대체출고: 0, 전산잔량: 0, 실사: 0, 로스: 0,
+                            기초: 0, 입고: 0, 출고: 0, 대체입고: 0, 대체출고: 0, 전산잔량: 0, 실사: null, 로스: 0,
                             매출액: 0, 매출원가: 0, 메모: '', 이슈: [], 출고내역: {}, _orig: { 기초: 0, 입고: 0, 출고: 0, 단가: 0 },
                             isDummy: true, 수기확인완료: false, _lotAllocationStatus: 'UNALLOCATED', _unallocatedLotQty: 0,
                             _requestedLotVendor: vendorLabel, _requestedLotUnitCost: unitCostLabel, _dateDisplayMemo: '실제 구매 LOT에 배정되지 않은 부족수량'
@@ -6072,8 +6101,11 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                     const row = pData[bKey];
                     row.출고 += shortageQty;
                     row.전산잔량 = safeNum(row.기초) + safeNum(row.입고) - safeNum(row.출고);
-                    row.실사 = 0;
-                    row.로스 = safeNum(row.실사) - safeNum(row.전산잔량);
+                    // Lot 미배정은 산수잔량 부족을 기록하는 단계일 뿐 관리자 잔량 수정이 아니다.
+                    // 실사를 0으로 확정하지 않고 아래 공통 최종화에서 산수잔량을 그대로 적용한다.
+                    row.실사 = null;
+                    row.로스 = 0;
+                    row._actualQtySource = 'SYSTEM_CALCULATED';
                     row.매출액 += safeNum(revenue);
                     row._unallocatedLotQty += shortageQty;
                     const issueMsg = `🚨Lot미배정(${vendorLabel}${unitCostLabel > 0 ? '/' + formatMoney(unitCostLabel) : ''} 부족 ${formatQty(shortageQty)})`;
@@ -6481,6 +6513,7 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                             if (isLast) {
                                 pItem.실사 = remainingActual;
                                 pItem.로스 = pItem.실사 - pItem.전산잔량;
+                                pItem._actualQtySource = 'COUNT_FILE';
                             }
                             else {
                                 let assignQty = 0;
@@ -6489,6 +6522,7 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                                 }
                                 pItem.실사 = assignQty;
                                 pItem.로스 = pItem.실사 - pItem.전산잔량;
+                                pItem._actualQtySource = 'COUNT_FILE';
                                 remainingActual -= assignQty;
                             }
                             if (pItem.로스 !== 0) {
@@ -6516,6 +6550,7 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                     if (item.실사 === null) {
                         item.실사 = item.전산잔량;
                         item.로스 = 0;
+                        item._actualQtySource = 'SYSTEM_CALCULATED';
                     }
                 }
             });
@@ -11149,6 +11184,8 @@ ${balanceText}
                 .map(p => {
                     const meta = substitutionPreviewView.metaByBatchKey[p.batchKey];
                     if (!meta) return p;
+                    // 후보 조회는 표시용 임시 계산만 사용한다. productData와 저장 대상 행은 변경하지 않는다.
+                    const previewStock = STOCK_ENGINE_MODULE.calculateStock(p);
                     const previewIssue = meta.role === 'raw'
                         ? `🔄원물차감예정(${formatQty(meta.plannedRawQty)})`
                         : `🔄소분생성예정(${formatQty(meta.generatedSubQty)})`;
@@ -11157,6 +11194,9 @@ ${balanceText}
                         : `[치환예정] ${safeStr(meta.rawName, '원물')} → ${formatQty(meta.generatedSubQty)} / ${safeStr(meta.shortText)}`;
                     return {
                         ...p,
+                        전산잔량: previewStock.systemQty,
+                        실사: previewStock.finalQty,
+                        로스: previewStock.diffQty,
                         _substitutionPreviewMeta: meta,
                         이슈: DATAOPS_ISSUE_HELPER.unique([...(p.이슈 || []), previewIssue]),
                         메모: safeStr(p.메모, '').includes(previewMemo) ? p.메모 : `${safeStr(p.메모, '')}${safeStr(p.메모, '') ? ' ' : ''}${previewMemo}`
