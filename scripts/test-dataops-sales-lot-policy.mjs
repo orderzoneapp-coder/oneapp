@@ -109,7 +109,8 @@ const executeAnalysis = section(
 );
 assert.match(executeAnalysis, /const code = String\(sale\.코드 \|\| 'NO_CODE'\)/);
 assert.match(executeAnalysis, /const pool = stockPool\[code\]/);
-assert.match(executeAnalysis, /const aggKey = `\$\{code\}\|/);
+assert.match(executeAnalysis, /DATAOPS_PRODUCT_IDENTITY_MODULE\.buildSalesAggregationKey/);
+assert.doesNotMatch(executeAnalysis, /const aggKey = `\$\{code\}\|\$\{sale\.품명\}\|/);
 assert.match(executeAnalysis, /getStockLotIndexKey\(code,/);
 assert.match(executeAnalysis, /FIFO_SHORTAGE_SAME_CODE/);
 assert.match(executeAnalysis, /구매처단가확인/);

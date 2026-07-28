@@ -44,6 +44,9 @@ jobs:
       - name: Test DataOps sales and Lot policy regressions
         run: node scripts/test-dataops-sales-lot-policy.mjs
 
+      - name: Test DataOps code-primary product-name merge
+        run: node scripts/test-dataops-code-primary-name-merge.mjs
+
       - name: Test DataOps substitution preview read-only behavior
         run: node scripts/test-dataops-substitution-preview-readonly.mjs
 

@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP DataOps - 핵심 수불부 관리 (V1.a22.97_SalesLotPolicy)</title>
+    <title>ONEAPP DataOps - 핵심 수불부 관리 (V1.a22.98_CodePrimaryNameMerge)</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         body { font-family: 'Pretendard', -apple-system, sans-serif; background-color: #f8fafc; overflow: hidden; }
@@ -46,7 +46,7 @@
     <!-- 초기 로딩 스크린 -->
     <div id="initial-loader">
         <div class="spinner"></div>
-        <div class="loader-text">ONEAPP DataOps V1.a22.97_SalesLotPolicy.....</div>
+        <div class="loader-text">ONEAPP DataOps V1.a22.98_CodePrimaryNameMerge.....</div>
         <div style="font-size: 11px; color: #94a3b8; margin-top: 8px;">앱 환경을 구성하고 있습니다</div>
     </div>
 
@@ -911,7 +911,7 @@ const clearTableSortPreference = () => {
    - 주의: 물리적 파일 분리는 하지 않는다. 단일 HTML 실행 구조를 유지한다.
    ======================================================================= */
 const CONFIG_MODULE = Object.freeze({
-    version: 'V1.a22.97_SalesLotPolicy',
+    version: 'V1.a22.98_CodePrimaryNameMerge',
     categoryMap: Object.freeze({
         '10': '채소.과일',
         '20': '수산.축산',
@@ -2021,6 +2021,49 @@ const DATAOPS_SALES_POLICY_MODULE = Object.freeze({
     }
 });
 window.DATAOPS_SALES_POLICY_MODULE = DATAOPS_SALES_POLICY_MODULE;
+
+const DATAOPS_PRODUCT_IDENTITY_MODULE = Object.freeze({
+    normalizeCode: (value) => safeStr(value, '').replace(/\.0$/, '').trim(),
+    hasValidCode: (value) => {
+        const code = DATAOPS_PRODUCT_IDENTITY_MODULE.normalizeCode(value);
+        return !!code && code !== 'NO_CODE' && code !== '-';
+    },
+    buildBatchKey: ({ code, name = '', price = 0, vendor = '', date = '', manageMode = 'CODE_SUMMARY' } = {}) => {
+        const normalizedCode = DATAOPS_PRODUCT_IDENTITY_MODULE.normalizeCode(code);
+        if (!DATAOPS_PRODUCT_IDENTITY_MODULE.hasValidCode(normalizedCode))
+            return `NO_CODE|${safeStr(name, '이름없음')}|${price}|${safeStr(vendor, '미지정')}|${safeStr(date, '')}`;
+        if (manageMode !== 'LOT_DETAIL')
+            return normalizedCode;
+        return `${normalizedCode}|${price}|${safeStr(vendor, '미지정')}|${safeStr(date, '')}`;
+    },
+    buildSalesAggregationKey: ({ code, name = '', purchaseVendor = '', costKey = 'NO_COST' } = {}) => {
+        const normalizedCode = DATAOPS_PRODUCT_IDENTITY_MODULE.normalizeCode(code);
+        const productKey = DATAOPS_PRODUCT_IDENTITY_MODULE.hasValidCode(normalizedCode)
+            ? normalizedCode
+            : `NO_CODE|${safeStr(name, '이름없음')}`;
+        return `${productKey}|${safeStr(purchaseVendor, '미지정')}|${safeStr(costKey, 'NO_COST')}`;
+    },
+    resolveRepresentativeName: ({ code, masterName = '', baseName = '', purchaseName = '', salesName = '', fallbackName = '' } = {}) => {
+        if (!DATAOPS_PRODUCT_IDENTITY_MODULE.hasValidCode(code))
+            return safeStr(fallbackName || salesName || purchaseName || baseName || masterName, '이름없음');
+        return safeStr(masterName || baseName || purchaseName || salesName || fallbackName, '이름없음');
+    },
+    buildNameVariantMemo: ({ representativeName = '', aliases = [] } = {}) => {
+        const representative = safeStr(representativeName, '');
+        const distinct = [];
+        [representative, ...(aliases || [])].map(name => safeStr(name, '')).filter(Boolean).forEach(name => {
+            if (!distinct.includes(name))
+                distinct.push(name);
+        });
+        if (distinct.length <= 1)
+            return '';
+        const sourceNames = distinct.filter(name => name !== representative);
+        const visibleNames = sourceNames.slice(0, 5);
+        const extra = sourceNames.length > visibleNames.length ? ` 외 ${sourceNames.length - visibleNames.length}건` : '';
+        return `품명표기통합: ${visibleNames.join(' ↔ ')}${extra} / 대표=${representative}`;
+    }
+});
+window.DATAOPS_PRODUCT_IDENTITY_MODULE = DATAOPS_PRODUCT_IDENTITY_MODULE;
 
 const UTIL_MODULE = Object.freeze({
     safeNum,
@@ -5522,18 +5565,78 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
             const prevItems = hasClosingEnd ? parsedPrev.filter(item => !isClosingItem(item)) : parsedPrev;
             const inItems = parsedIn.filter(item => !isClosingItem(item));
             const outItems = parsedOut.filter(item => !isClosingItem(item));
+            const productNameSourcesByCode = new Map();
+            const registerProductNames = (items = [], sourceField = '') => {
+                (items || []).forEach(item => {
+                    const raw = item && item._raw ? item._raw : {};
+                    const code = DATAOPS_PRODUCT_IDENTITY_MODULE.normalizeCode(item && (item.코드 || raw['상품코드'] || raw['품목코드']));
+                    if (!DATAOPS_PRODUCT_IDENTITY_MODULE.hasValidCode(code))
+                        return;
+                    const name = safeStr(item && (item.품명 || raw['상품명(규격)'] || raw['품목명(규격)'] || raw['품명'] || raw['상품명']), '');
+                    if (!productNameSourcesByCode.has(code)) {
+                        productNameSourcesByCode.set(code, {
+                            baseName: '',
+                            purchaseName: '',
+                            salesName: '',
+                            aliases: []
+                        });
+                    }
+                    const source = productNameSourcesByCode.get(code);
+                    if (sourceField && !source[sourceField] && name)
+                        source[sourceField] = name;
+                    if (name && !source.aliases.includes(name))
+                        source.aliases.push(name);
+                });
+            };
+            registerProductNames(closingEndItems, 'baseName');
+            registerProductNames(prevItems, 'baseName');
+            registerProductNames(inItems, 'purchaseName');
+            registerProductNames(outItems, 'salesName');
+            const representativeProductNameByCode = new Map();
+            productNameSourcesByCode.forEach((source, code) => {
+                const fallbackName = source.baseName || source.purchaseName || source.salesName || '';
+                const masterInfo = DATAOPS_MASTER_LINK_MODULE.buildMasterLedgerInfo({ 코드: code, 품명: fallbackName });
+                const masterName = masterInfo && masterInfo.matchType === 'CODE' ? safeStr(masterInfo.masterName, '') : '';
+                representativeProductNameByCode.set(code, DATAOPS_PRODUCT_IDENTITY_MODULE.resolveRepresentativeName({
+                    code,
+                    masterName,
+                    baseName: source.baseName,
+                    purchaseName: source.purchaseName,
+                    salesName: source.salesName,
+                    fallbackName
+                }));
+            });
+            const getRepresentativeProductName = (code, fallbackName = '') => {
+                const normalizedCode = DATAOPS_PRODUCT_IDENTITY_MODULE.normalizeCode(code);
+                if (!DATAOPS_PRODUCT_IDENTITY_MODULE.hasValidCode(normalizedCode))
+                    return safeStr(fallbackName, '이름없음');
+                return safeStr(representativeProductNameByCode.get(normalizedCode), fallbackName || '이름없음');
+            };
+            const applyRepresentativeProductName = (item = {}) => {
+                const code = DATAOPS_PRODUCT_IDENTITY_MODULE.normalizeCode(item.코드);
+                if (!DATAOPS_PRODUCT_IDENTITY_MODULE.hasValidCode(code))
+                    return item;
+                const representativeName = getRepresentativeProductName(code, item.품명);
+                item.품명 = representativeName;
+                const source = productNameSourcesByCode.get(code);
+                const memo = DATAOPS_PRODUCT_IDENTITY_MODULE.buildNameVariantMemo({
+                    representativeName,
+                    aliases: source ? source.aliases : []
+                });
+                if (memo && !safeStr(item.메모, '').includes(memo))
+                    item.메모 = item.메모 ? `${item.메모} / ${memo}` : memo;
+                return item;
+            };
             const generateBatchKey = (code, name, price, vendor, date) => {
-                const actualCode = String(code || 'NO_CODE');
                 const activeGrouping = normalizeDataOpsGrouping(grouping);
-                if (actualCode === 'NO_CODE')
-                    return `NO_CODE|${name}|${price}|${vendor}|${date}`;
-                let key = actualCode;
-                if (activeGrouping.manageMode === 'LOT_DETAIL') {
-                    key += `|${price}`;
-                    key += `|${safeStr(vendor, '미지정')}`;
-                    key += `|${safeStr(date, '')}`;
-                }
-                return key;
+                return DATAOPS_PRODUCT_IDENTITY_MODULE.buildBatchKey({
+                    code,
+                    name,
+                    price,
+                    vendor,
+                    date,
+                    manageMode: activeGrouping.manageMode
+                });
             };
             const UNKNOWN_LOT_SORT_DATE = 19000101;
             const getLotDateNum = (date) => {
@@ -5598,7 +5701,8 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                     const code = String(item.코드 || item._raw['상품코드'] || 'NO_CODE');
                     const price = getClosingPrice(item);
                     const date = String(item.일자 || '');
-                    const name = rawVal(item._raw, ['상품명(규격)', '품목명', '품명', '상품명'], item.품명);
+                    const sourceName = rawVal(item._raw, ['상품명(규격)', '품목명', '품명', '상품명'], item.품명);
+                    const name = getRepresentativeProductName(code, sourceName);
                     const vendor = (item.거래처 && item.거래처 !== '미지정') ? item.거래처 : (rawVal(item._raw, ['매입처(Lot)', '구매처'], '미지정'));
                     const batchKey = generateBatchKey(code, name, price, vendor, date);
                     const { issues, vendors } = parseIssuesAndVendors(item._raw['이슈/결과'] || '', price);
@@ -5756,7 +5860,7 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                 const code = String(item.코드 || 'NO_CODE');
                 const price = parseNumber(item.단가);
                 const date = String(item.일자 || '');
-                const name = item.품명;
+                const name = getRepresentativeProductName(code, item.품명);
                 const vendor = item.거래처 || (type === 'prev' ? '이월재고' : '미지정');
                 const unit = safeStr(item.단위 || ((_a = item._raw) === null || _a === void 0 ? void 0 : _a['단위']) || ((_b = item._raw) === null || _b === void 0 ? void 0 : _b['규격단위']) || ((_c = item._raw) === null || _c === void 0 ? void 0 : _c['포장단위']) || ((_d = item._raw) === null || _d === void 0 ? void 0 : _d['단위명']) || ((_e = item._raw) === null || _e === void 0 ? void 0 : _e['판매단위']), '');
                 // V1.a22.12: 수불마감/시스템누적을 기초재고로 올린 경우 같은 품목의 구매현황/판매현황이
@@ -5934,11 +6038,19 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                 // 같은 구매처라도 구매단가가 다르면 다른 Lot이므로 병합하면 안 된다.
                 const unitCostForAgg = safeNum(sale._salesPurchaseUnitCost);
                 const costKey = unitCostForAgg > 0 ? String(Math.round(unitCostForAgg * 1000000) / 1000000) : 'NO_COST';
-                // 판매거래처는 병합키에서 제외한다. 같은 구매처+동일 원가 Lot이면 판매처가 달라도 원가 배정은 합산 처리한다.
-                const aggKey = `${code}|${sale.품명}|${matchKey}|${costKey}`;
+                // 유효한 상품코드는 절대 기본키다. 품명 표기와 판매거래처는 병합키에서 제외하고,
+                // 구매처+동일 원가 Lot 조건만 유지한다. 코드가 없는 행에만 품명을 보조키로 사용한다.
+                const representativeName = getRepresentativeProductName(code, sale.품명);
+                const aggKey = DATAOPS_PRODUCT_IDENTITY_MODULE.buildSalesAggregationKey({
+                    code,
+                    name: sale.품명,
+                    purchaseVendor: matchKey,
+                    costKey
+                });
                 if (!aggregatedSales[aggKey]) {
                     aggregatedSales[aggKey] = {
                         ...sale,
+                        품명: representativeName,
                         거래처: vendorKey,
                         _computedQty: 0,
                         _finalRevenue: 0,
@@ -6570,6 +6682,7 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                 if (hasBlockingIssue)
                     item.수기확인완료 = false;
             });
+            Object.values(pData).forEach(applyRepresentativeProductName);
             const finalProductData = Object.values(pData)
                 .map(item => DATAOPS_VENDOR_CHIP_MODULE.reconcileItem(item))
                 .filter(item => !isSummaryOrInvalidProductRow({ code: item.코드, name: item.품명, raw: item._raw }))
