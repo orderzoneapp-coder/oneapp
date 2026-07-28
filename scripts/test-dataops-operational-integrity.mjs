@@ -177,9 +177,10 @@ const stockCountRows = section(
 assert.match(
   stockCountRows,
   /safeNum\(aggregated\[key\]\.수량\)\s*===\s*0/,
-  "next-day actual-count template must omit zero rows",
+  "same-day actual-count template must omit zero rows",
 );
-assert.match(stockCountRows, /addOneDay\(extractDateNum\(targetDateStr\)\)/);
+assert.match(stockCountRows, /const stockCountDate\s*=\s*targetDateStr\s*;/);
+assert.doesNotMatch(stockCountRows, /addOneDay\s*\(/);
 const combinedExport = section(
   "const handleCombinedExport = useCallback",
   "const handlePrintOutput = useCallback",
