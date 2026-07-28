@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP DataOps - 핵심 수불부 관리 (V1.a22.98_StockCountDateFix)</title>
+    <title>ONEAPP DataOps - 핵심 수불부 관리 (V1.a22.99_SalesUploadColumns)</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         body { font-family: 'Pretendard', -apple-system, sans-serif; background-color: #f8fafc; overflow: hidden; }
@@ -46,7 +46,7 @@
     <!-- 초기 로딩 스크린 -->
     <div id="initial-loader">
         <div class="spinner"></div>
-        <div class="loader-text">ONEAPP DataOps V1.a22.98_StockCountDateFix.....</div>
+        <div class="loader-text">ONEAPP DataOps V1.a22.99_SalesUploadColumns.....</div>
         <div style="font-size: 11px; color: #94a3b8; margin-top: 8px;">앱 환경을 구성하고 있습니다</div>
     </div>
 
@@ -911,7 +911,7 @@ const clearTableSortPreference = () => {
    - 주의: 물리적 파일 분리는 하지 않는다. 단일 HTML 실행 구조를 유지한다.
    ======================================================================= */
 const CONFIG_MODULE = Object.freeze({
-    version: 'V1.a22.98_StockCountDateFix',
+    version: 'V1.a22.99_SalesUploadColumns',
     categoryMap: Object.freeze({
         '10': '채소.과일',
         '20': '수산.축산',
@@ -9166,11 +9166,16 @@ function App() {
             // V1.a22.42: 업로드불가/검수대상 항목은 확인요청 시트 최상단에 병합한다.
             // 치명 항목은 판매입력 행에서는 제외하되, 나머지 정상 행의 엑셀 생성은 계속 진행한다.
             const wb = XLSX.utils.book_new();
-            const uploadColumns = ['일자', '순번', '거래처코드', '거래처명', '출하창고', '거래유형', '전잔액', '전달사항', '품목코드', '품목명', '규격', '수량', '단가', '외화금액', '공급가액', '적요', '출고지시', '공지', '구매처', '날짜', '구매', '생산전표생성'];
+            const salesUploadColumns = ['일자', '순번', '거래처코드', '거래처명', '출하창고', '거래유형', '전잔액', '전달사항', '품목코드', '품목명', '규격', '수량', '단가', '외화금액', '공급가액', '적요', '출고지시', '공지', '구매처', '날짜', '구매'];
+            const transferOutboundColumns = ['일자', '순번', '거래처코드', '거래처명', '출하창고', '거래유형', '전잔액', '전달사항', '품목코드', '품목명', '규격', '수량'];
+            const transferPurchaseColumns = ['일자', '순번', '거래처코드', '거래처명', '출하창고', '거래유형', '전잔액', '전달사항', '품목코드', '품목명', '규격', '수량', '단가', '외화금액', '공급가액', '적요', '출고지시', '공지', '구매처', '날짜'];
+            const salesUploadColumnWidths = [10, 8, 12, 16, 8, 10, 10, 14, 14, 34, 14, 10, 12, 10, 14, 18, 18, 12, 18, 10, 12];
+            const transferOutboundColumnWidths = [10, 8, 12, 16, 8, 10, 10, 20, 14, 34, 18, 10];
+            const transferPurchaseColumnWidths = [10, 8, 12, 16, 8, 10, 10, 20, 14, 34, 18, 10, 12, 10, 14, 18, 18, 12, 18, 10];
             // V1.a22.12: 2전송 판매업로드 파일 안에 가전표용 시트2/시트3을 추가한다.
-            // 전송출고: 구매처가 우리농산인 판매입력 행을 1전송/40 창고 출고 가전표로 변환하되, 수량까지만 입력하고 단가부터 이하 컬럼은 공란 처리한다.
+            // 전송출고: 구매처가 우리농산인 판매입력 행을 1전송/40 창고 출고 가전표로 변환하되, 수량까지만 생성한다.
             // 전송구매: 거래처명이 3우리인 판매입력 행을 3우리/03 창고 구매 전표로 변환한다.
-            // 주의: 전송구매의 단가/공급가액/구매값은 재계산·fallback 없이 이미 생성된 판매입력 row 값을 그대로 복사한다.
+            // 주의: 전송구매의 단가/공급가액은 재계산·fallback 없이 이미 생성된 판매입력 row 값을 그대로 복사한다.
             const cleanVoucherCell = (value, blank22 = true) => {
                 const raw = value === undefined || value === null ? '' : value;
                 const str = safeStr(raw, '').trim();
@@ -9182,18 +9187,19 @@ function App() {
                 const s = safeStr(value, '').replace(/\s/g, '');
                 return s === '우리농산' || s === '우리' || s === '3우리';
             };
-            const makeUploadShapeRow = (row = {}, overrides = {}) => {
+            const projectUploadRow = (row = {}, columns = [], overrides = {}) => {
                 const o = {};
-                uploadColumns.forEach(col => {
-                    const base = row[col] !== undefined && row[col] !== null ? row[col] : '';
-                    o[col] = overrides[col] !== undefined ? overrides[col] : base;
+                columns.forEach(col => {
+                    const hasOverride = Object.prototype.hasOwnProperty.call(overrides, col);
+                    const value = hasOverride ? overrides[col] : row[col];
+                    o[col] = value !== undefined && value !== null ? value : '';
                 });
                 return o;
             };
             const buildTransferOutboundVoucherRows = (sourceRows = []) => {
                 return sourceRows
                     .filter(r => isWooriVendor(r['_구매처보정전'] || r['구매처']))
-                    .map(r => makeUploadShapeRow(r, {
+                    .map(r => projectUploadRow(r, transferOutboundColumns, {
                     '일자': '',
                     '순번': '',
                     '거래처코드': '',
@@ -9205,24 +9211,13 @@ function App() {
                     '품목코드': r['품목코드'] || '',
                     '품목명': r['품목명'] || '',
                     '규격': r['규격'] || '',
-                    '수량': r['수량'] ?? '',
-                    // 전송출고 가전표는 수량까지만 입력한다. 단가부터 이하 ERP 컬럼은 필요 없으므로 전부 공란 처리한다.
-                    '단가': '',
-                    '외화금액': '',
-                    '공급가액': '',
-                    '적요': '',
-                    '출고지시': '',
-                    '공지': '',
-                    '구매처': '',
-                    '날짜': '',
-                    '구매': '',
-                    '생산전표생성': ''
+                    '수량': r['수량'] ?? ''
                 }));
             };
             const buildTransferPurchaseVoucherRows = (sourceRows = []) => {
                 return sourceRows
                     .filter(r => safeStr(r['거래처명'], '').replace(/\s/g, '') === '3우리')
-                    .map(r => makeUploadShapeRow(r, {
+                    .map(r => projectUploadRow(r, transferPurchaseColumns, {
                     '일자': '',
                     '순번': '',
                     '거래처코드': '',
@@ -9242,30 +9237,22 @@ function App() {
                     '출고지시': '',
                     '공지': '',
                     '구매처': r['구매처'] || '',
-                    '날짜': r['날짜'] || '',
-                    '구매': r['구매'] ?? '',
-                    '생산전표생성': ''
+                    '날짜': r['날짜'] || ''
                 }));
             };
-            const appendUploadSheet = (wb, sheetName, sheetRows) => {
-                const safeRows = sheetRows.length ? sheetRows : [Object.fromEntries(uploadColumns.map(c => [c, '']))];
-                const ws = XLSX.utils.json_to_sheet(safeRows, { header: uploadColumns });
-                ws['!cols'] = [10, 8, 12, 16, 8, 10, 10, 20, 14, 34, 18, 10, 12, 10, 14, 18, 18, 12, 18, 10, 12, 14].map(wch => ({ wch }));
+            const appendUploadSheet = (wb, sheetName, sheetRows, columns, columnWidths) => {
+                const projectedRows = sheetRows.map(row => projectUploadRow(row, columns));
+                const ws = XLSX.utils.json_to_sheet(projectedRows, { header: columns });
+                ws['!cols'] = columnWidths.map(wch => ({ wch }));
                 XLSX.utils.book_append_sheet(wb, ws, sheetName);
                 return ws;
             };
-            const outputRows = rows.map(r => {
-                const o = { ...r };
-                uploadColumns.forEach(col => { var _a; return o[col] = (_a = r[col]) !== null && _a !== void 0 ? _a : ''; });
-                return o;
-            });
-            const wsUpload = XLSX.utils.json_to_sheet(outputRows.length ? outputRows : [Object.fromEntries(uploadColumns.map(c => [c, '']))], { header: uploadColumns });
-            wsUpload['!cols'] = [10, 8, 12, 16, 8, 10, 10, 14, 14, 34, 14, 10, 12, 10, 14, 18, 18, 12, 18, 10, 12, 14].map(wch => ({ wch }));
-            XLSX.utils.book_append_sheet(wb, wsUpload, '판매입력');
-            const transferOutboundVoucherRows = buildTransferOutboundVoucherRows(outputRows);
-            const transferPurchaseVoucherRows = buildTransferPurchaseVoucherRows(outputRows);
-            appendUploadSheet(wb, '전송출고', transferOutboundVoucherRows);
-            appendUploadSheet(wb, '전송구매', transferPurchaseVoucherRows);
+            const outputRows = rows.map(r => projectUploadRow(r, salesUploadColumns));
+            const transferOutboundVoucherRows = buildTransferOutboundVoucherRows(rows);
+            const transferPurchaseVoucherRows = buildTransferPurchaseVoucherRows(rows);
+            appendUploadSheet(wb, '판매입력', outputRows, salesUploadColumns, salesUploadColumnWidths);
+            appendUploadSheet(wb, '전송출고', transferOutboundVoucherRows, transferOutboundColumns, transferOutboundColumnWidths);
+            appendUploadSheet(wb, '전송구매', transferPurchaseVoucherRows, transferPurchaseColumns, transferPurchaseColumnWidths);
             const today = new Date();
             const ymd = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
             const currentYear = today.getFullYear();
