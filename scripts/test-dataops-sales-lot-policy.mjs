@@ -130,7 +130,8 @@ const stockCountRows = section(
   "buildStockCountSheetRows:",
   "buildSalesDetailRows:",
 );
-assert.match(stockCountRows, /addOneDay\(extractDateNum\(targetDateStr\)\)/);
+assert.match(stockCountRows, /const stockCountDate\s*=\s*targetDateStr\s*;/);
+assert.doesNotMatch(stockCountRows, /addOneDay\s*\(/);
 assert.match(stockCountRows, /safeNum\(aggregated\[key\]\.수량\) === 0/);
 
 assert.doesNotMatch(source, /handleToggleAdminComplete|onToggleAdminComplete/);

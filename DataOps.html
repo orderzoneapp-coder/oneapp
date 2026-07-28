@@ -3380,10 +3380,7 @@ const EXPORT_MODULE = Object.freeze({
         return { '결산일자': targetDateStr, '매입처(Lot)': safeStr(item.거래처, '미지정'), '상품코드': item.코드 === 'NO_CODE' ? '' : safeStr(item.코드, '').replace(/\.0$/, '').trim(), '상품명(규격)': item.품명, '단위': safeStr(item.단위 || ((_a = item._raw) === null || _a === void 0 ? void 0 : _a['단위']) || ((_b = item._raw) === null || _b === void 0 ? void 0 : _b['규격단위']) || ((_c = item._raw) === null || _c === void 0 ? void 0 : _c['포장단위']), ''), '기초수량': safeNum(item.기초), '입고수량': safeNum(item.입고), '출고량': safeNum(item.출고), '기말실사(이월수량)': qty, '매입단가(원가)': price, '기말재고액(자산가치)': qty * price, '로스/조정수량': adjust, '기본': getBasicDisplayValue(item), '관리구분': getStockManageGroup(item), '이슈/결과': [...displayIssues, ...vendorStrs].join(', '), '수기메모': item.메모 || '', '관리자확인완료': '', '관리자확인시각': '' };
     }),
     buildStockCountSheetRows: ({ productData = [], targetDateStr = '' }) => {
-        const nextDateNum = addOneDay(extractDateNum(targetDateStr));
-        const stockCountDate = nextDateNum
-            ? `${String(nextDateNum).slice(0, 4)}-${String(nextDateNum).slice(4, 6)}-${String(nextDateNum).slice(6, 8)}`
-            : targetDateStr;
+        const stockCountDate = targetDateStr;
         const aggregated = {};
         productData.forEach(item => {
             const actualCode = (!item.코드 || item.코드 === 'NO_CODE' || item.코드 === '-') ? '' : item.코드;

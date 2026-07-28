@@ -44,6 +44,9 @@ jobs:
       - name: Test DataOps sales and Lot policy regressions
         run: node scripts/test-dataops-sales-lot-policy.mjs
 
+      - name: Generate and reopen DataOps stock-count XLSX dates
+        run: node scripts/test-dataops-stock-count-date.mjs
+
       - name: Test DataOps substitution preview read-only behavior
         run: node scripts/test-dataops-substitution-preview-readonly.mjs
 
