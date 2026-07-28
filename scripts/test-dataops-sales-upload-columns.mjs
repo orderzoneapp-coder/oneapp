@@ -19,6 +19,14 @@ const handlerSource = section(
   "const handleGenerateTransferSalesUpload = useCallback",
   "const handleValidateTransferSalesPrice = useCallback",
 );
+const baseFieldsSource = section(
+  "const getTransferBaseFields = useCallback",
+  "const isTransferSummaryLikeRow = useCallback",
+);
+const rowBuilderSource = section(
+  "const buildTransferSalesUploadRows = useCallback",
+  "const downloadWorkbook = useCallback",
+);
 
 const sheetJsUrl =
   "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
@@ -33,8 +41,9 @@ assert.equal(
   "SheetJS asset hash changed",
 );
 
-let scenarioRows = [];
+let scenarioInput = [];
 let capturedDownload = null;
+let priceResolutionCount = 0;
 const context = vm.createContext({
   console,
   Date,
@@ -64,26 +73,22 @@ Object.assign(context, {
   useCallback: (fn) => fn,
   files: { in: { name: "purchase.xlsx" } },
   isProcessing: false,
-  mappings: { transferPriceGroups: {} },
-  defaultMappings: { transferPriceGroups: {} },
+  mappings: { transferPriceGroups: {}, transferPriceColumns: {} },
+  defaultMappings: { transferPriceGroups: {}, transferPriceColumns: {} },
   validateTransferPriceGroupText: () => [],
-  parseExcelData: async () => [],
-  buildTransferSalesUploadRows: () => ({
-    rows: scenarioRows.map((row) => ({ ...row })),
-    fatalErrors: [],
-    warnings: [],
-  }),
+  parseExcelData: async () => scenarioInput.map((row) => ({ ...row })),
   buildTransferPriceConfig: () => ({
     groups: {
-      sample: {
+      샘플거래처: {
         customer: "샘플거래처",
         groupName: "샘플그룹",
         rule: ["입고가"],
         feeMode: "NONE",
         profitMode: "NONE",
-        outputCustomerMode: "GROUP_NAME",
+        outputCustomerMode: "ORIGINAL_CUSTOMER",
       },
     },
+    columns: {},
   }),
   downloadWorkbook: (wb, filename) => {
     capturedDownload = { wb, filename };
@@ -98,7 +103,88 @@ Object.assign(context, {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : 0;
   },
+  parseNumber: (value) => {
+    if (value === undefined || value === null || value === "") return 0;
+    if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+    const text = String(value).trim().replace(/,/g, "");
+    if (/^\(.+\)$/.test(text)) return -Number(text.slice(1, -1)) || 0;
+    const parsed = Number(text);
+    return Number.isFinite(parsed) ? parsed : 0;
+  },
+  formatMoney: (value) => String(value),
+  getRawCell: (raw = {}, names = []) => {
+    const normalize = (value) =>
+      String(value ?? "")
+        .replace(/\s/g, "")
+        .toLowerCase();
+    const keys = Object.keys(raw || {});
+    for (const name of names) {
+      const found = keys.find((key) => normalize(key) === normalize(name));
+      if (
+        found !== undefined &&
+        raw[found] !== undefined &&
+        raw[found] !== null &&
+        String(raw[found]).trim() !== ""
+      ) {
+        return raw[found];
+      }
+    }
+    return null;
+  },
+  transferStrictNumber: (value) => {
+    if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+    const text = String(value ?? "").replace(/,/g, "").trim();
+    if (!/^-?\d+(?:\.\d+)?$/.test(text)) return 0;
+    return Number(text);
+  },
+  getTransferRawValue: (raw = {}, columnName = "") => {
+    const target = String(columnName).replace(/\s/g, "").toLowerCase();
+    const key = Object.keys(raw || {}).find(
+      (candidate) =>
+        String(candidate).replace(/\s/g, "").toLowerCase() === target,
+    );
+    return key === undefined ? null : raw[key];
+  },
+  isTransferSummaryLikeRow: () => false,
+  getTransferPriceMissingReason: () => "판매단가 기준 없음",
 });
+
+new vm.Script(
+  `${baseFieldsSource}\nglobalThis.actualGetTransferBaseFields = getTransferBaseFields;`,
+  { filename: "DataOps.transfer-base-fields.js" },
+).runInContext(context);
+
+Object.assign(context, {
+  resolveTransferSalesPrice: (item) => {
+    priceResolutionCount += 1;
+    const base = context.actualGetTransferBaseFields(item);
+    const group = context.buildTransferPriceConfig().groups[base.groupCustomer];
+    return {
+      status: "MATCHED",
+      price: 4500,
+      priceKey: "입고가",
+      columnName: "입고가",
+      groupName: group?.groupName || "",
+      rulePath: "입고가",
+      feeMode: group?.feeMode || "NONE",
+      profitMode: group?.profitMode || "NORMAL",
+      outputCustomerMode: group?.outputCustomerMode || "GROUP_NAME",
+      group,
+      base,
+    };
+  },
+  getTransferOutputCustomerName: (resolved) =>
+    resolved.outputCustomerMode === "ORIGINAL_CUSTOMER"
+      ? context.safeStr(
+          resolved.base.detailCustomer || resolved.base.groupCustomer,
+        )
+      : context.safeStr(resolved.base.groupCustomer || resolved.groupName),
+});
+
+new vm.Script(
+  `${rowBuilderSource}\nglobalThis.actualBuildTransferSalesUploadRows = buildTransferSalesUploadRows;`,
+  { filename: "DataOps.transfer-sales-rows.js" },
+).runInContext(context);
 
 new vm.Script(
   `${handlerSource}\nglobalThis.runSalesUploadExport = handleGenerateTransferSalesUpload;`,
@@ -141,37 +227,107 @@ const bannedHeaders = [
   "_구매처보정",
 ];
 
-const representativeRow = {
-  일자: "2026-07-29",
-  순번: 7,
-  거래처코드: "C001",
-  거래처명: "3우리",
-  출하창고: "01",
-  거래유형: "판매",
-  전잔액: 0,
-  전달사항: "전달",
-  품목코드: "101020116",
-  품목명: "대파_서울_10단",
-  규격: "10단",
-  수량: 2,
-  단가: 4500,
-  외화금액: 0,
-  공급가액: 9000,
-  적요: "정상",
-  출고지시: "오전",
-  공지: 5000,
-  구매처: "우리농산",
-  날짜: "2026-07-29",
-  구매: 3200,
-  생산전표생성: "Y",
-  _적용그룹: "청과상장",
-  _적용단가명: "입고가",
-  _단가룰: "입고가",
-  _확인필요: "N",
-  _수익: 2600,
-  _구매처보정전: "우리농산",
-  _구매처보정: "우리농산",
-};
+function purchaseInput(code, quantity, overrides = {}) {
+  return {
+    _raw: {
+      거래처: "샘플거래처",
+      거래처명: "3우리",
+      품목코드: code,
+      품목명: `상품-${code}`,
+      수량: quantity,
+      단가: 3200,
+      도매A: 3800,
+      구매처: "우리농산",
+      날짜: "2026-07-29",
+      적요: "정상",
+      출고지시: "오전",
+      전달사항: "전달",
+      ...overrides,
+    },
+  };
+}
+
+const purchaseInputs = [
+  purchaseInput("Q-BLANK", ""),
+  purchaseInput("Q-ZERO", 0),
+  purchaseInput("Q-POSITIVE", 2),
+  purchaseInput("Q-NEGATIVE", -1),
+  purchaseInput("Q-INVALID", "두개"),
+  purchaseInput("Q-NO-CUSTOMER", 1, { 거래처: "", 거래처명: "" }),
+  purchaseInput("", 1),
+];
+
+for (const missingQuantity of [null, undefined, "   "]) {
+  const parsed = context.actualGetTransferBaseFields(
+    purchaseInput("Q-MISSING-DIRECT", missingQuantity),
+  );
+  assert.equal(parsed.qtyMissing, true);
+  assert.equal(parsed.qtyInvalid, false);
+  assert.equal(parsed.qty, 0);
+}
+
+priceResolutionCount = 0;
+const rowBuildResult = context.actualBuildTransferSalesUploadRows(
+  purchaseInputs.map((row) => ({ ...row, _raw: { ...row._raw } })),
+);
+assert.equal(
+  priceResolutionCount,
+  2,
+  "판매가 후보는 정상 양수와 음수 수량에만 적용해야 합니다.",
+);
+assert.equal(rowBuildResult.rows.length, 4);
+assert.equal(rowBuildResult.fatalErrors.length, 3);
+assert.equal(
+  rowBuildResult.fatalErrors.some((row) =>
+    String(row.reason).includes("수량 형식 확인"),
+  ),
+  true,
+);
+assert.equal(
+  rowBuildResult.fatalErrors.some((row) =>
+    String(row.reason).includes("거래처명 없음"),
+  ),
+  true,
+);
+assert.equal(
+  rowBuildResult.fatalErrors.some((row) =>
+    String(row.reason).includes("품목코드 없음"),
+  ),
+  true,
+);
+assert.equal(
+  rowBuildResult.fatalErrors.some((row) =>
+    ["Q-BLANK", "Q-ZERO"].includes(row.code),
+  ),
+  false,
+  "수량 공란·0 행은 업로드불가에 포함되면 안 됩니다.",
+);
+const zeroWarnings = rowBuildResult.warnings.filter((row) =>
+  String(row.reason).includes("수량 없음/0"),
+);
+assert.equal(zeroWarnings.length, 2);
+assert.ok(
+  zeroWarnings.every(
+    (row) =>
+      !String(row.reason).includes("역마진") &&
+      !String(row.reason).includes("도매A과대"),
+  ),
+);
+const builtRowsByCode = Object.fromEntries(
+  rowBuildResult.rows.map((row) => [row["품목코드"], row]),
+);
+for (const code of ["Q-BLANK", "Q-ZERO"]) {
+  assert.equal(builtRowsByCode[code]["수량"], 0);
+  assert.equal(builtRowsByCode[code]["단가"], 0);
+  assert.equal(builtRowsByCode[code]["공급가액"], 0);
+  assert.equal(builtRowsByCode[code]["_수익"], 0);
+}
+assert.equal(builtRowsByCode["Q-POSITIVE"]["수량"], 2);
+assert.equal(builtRowsByCode["Q-POSITIVE"]["단가"], 4500);
+assert.equal(builtRowsByCode["Q-POSITIVE"]["공급가액"], 9000);
+assert.equal(builtRowsByCode["Q-NEGATIVE"]["수량"], -1);
+assert.equal(builtRowsByCode["Q-NEGATIVE"]["단가"], 4500);
+assert.equal(builtRowsByCode["Q-NEGATIVE"]["공급가액"], -4500);
 
 function plainRows(rows) {
   return Array.from(rows, (row) =>
@@ -185,8 +341,8 @@ function readSheetRows(XLSX, workbook, sheetName) {
   );
 }
 
-async function buildAndReopen(rows) {
-  scenarioRows = rows;
+async function buildAndReopen(inputRows) {
+  scenarioInput = inputRows;
   capturedDownload = null;
   await context.runSalesUploadExport({ in: { name: "purchase.xlsx" } });
   assert.ok(capturedDownload?.wb, "판매업로드 workbook was not generated");
@@ -241,44 +397,70 @@ function assertColumnWidths(workbook, sheetName, expectedColumnCount) {
   );
 }
 
-const populatedResult = await buildAndReopen([representativeRow]);
+const populatedResult = await buildAndReopen(purchaseInputs);
 const populatedWorkbook = populatedResult.reopened;
-assertUploadSheet(populatedWorkbook, "판매입력", salesColumns, 1);
-assertUploadSheet(populatedWorkbook, "전송출고", outboundColumns, 1);
-assertUploadSheet(populatedWorkbook, "전송구매", purchaseColumns, 1);
+assert.deepEqual(Array.from(populatedWorkbook.SheetNames), [
+  "확인요청",
+  "판매입력",
+  "전송출고",
+  "전송구매",
+  "거래처별",
+  "단가설정",
+]);
+assertUploadSheet(populatedWorkbook, "판매입력", salesColumns, 4);
+assertUploadSheet(populatedWorkbook, "전송출고", outboundColumns, 4);
+assertUploadSheet(populatedWorkbook, "전송구매", purchaseColumns, 4);
 assertColumnWidths(populatedResult.original, "판매입력", salesColumns.length);
 assertColumnWidths(populatedResult.original, "전송출고", outboundColumns.length);
 assertColumnWidths(populatedResult.original, "전송구매", purchaseColumns.length);
 
 const salesRows = readSheetRows(context.XLSX, populatedWorkbook, "판매입력");
-assert.equal(salesRows[0]["거래처명"], representativeRow["거래처명"]);
-assert.equal(salesRows[0]["품목코드"], representativeRow["품목코드"]);
-assert.equal(salesRows[0]["수량"], representativeRow["수량"]);
-assert.equal(salesRows[0]["단가"], representativeRow["단가"]);
-assert.equal(salesRows[0]["공급가액"], representativeRow["공급가액"]);
-assert.equal(salesRows[0]["구매"], representativeRow["구매"]);
+const salesRowsByCode = Object.fromEntries(
+  salesRows.map((row) => [row["품목코드"], row]),
+);
+for (const code of ["Q-BLANK", "Q-ZERO"]) {
+  assert.equal(salesRowsByCode[code]["수량"], 0);
+  assert.equal(typeof salesRowsByCode[code]["수량"], "number");
+  assert.equal(salesRowsByCode[code]["단가"], 0);
+  assert.equal(typeof salesRowsByCode[code]["단가"], "number");
+  assert.equal(salesRowsByCode[code]["공급가액"], 0);
+  assert.equal(typeof salesRowsByCode[code]["공급가액"], "number");
+}
+assert.equal(salesRowsByCode["Q-POSITIVE"]["수량"], 2);
+assert.equal(salesRowsByCode["Q-POSITIVE"]["단가"], 4500);
+assert.equal(salesRowsByCode["Q-POSITIVE"]["공급가액"], 9000);
+assert.equal(salesRowsByCode["Q-NEGATIVE"]["수량"], -1);
+assert.equal(salesRowsByCode["Q-NEGATIVE"]["단가"], 4500);
+assert.equal(salesRowsByCode["Q-NEGATIVE"]["공급가액"], -4500);
 
 const outboundRows = readSheetRows(
   context.XLSX,
   populatedWorkbook,
   "전송출고",
 );
-assert.equal(outboundRows[0]["거래처명"], "1전송");
-assert.equal(outboundRows[0]["품목코드"], representativeRow["품목코드"]);
-assert.equal(outboundRows[0]["수량"], representativeRow["수량"]);
+assert.ok(outboundRows.every((row) => row["거래처명"] === "1전송"));
+assert.equal(
+  outboundRows.find((row) => row["품목코드"] === "Q-BLANK")["수량"],
+  0,
+);
 
 const purchaseRows = readSheetRows(
   context.XLSX,
   populatedWorkbook,
   "전송구매",
 );
-assert.equal(purchaseRows[0]["거래처명"], "3우리");
-assert.equal(purchaseRows[0]["품목코드"], representativeRow["품목코드"]);
-assert.equal(purchaseRows[0]["수량"], representativeRow["수량"]);
-assert.equal(purchaseRows[0]["단가"], representativeRow["단가"]);
-assert.equal(purchaseRows[0]["공급가액"], representativeRow["공급가액"]);
-assert.equal(purchaseRows[0]["구매처"], representativeRow["구매처"]);
-assert.equal(purchaseRows[0]["날짜"], representativeRow["날짜"]);
+const purchaseRowsByCode = Object.fromEntries(
+  purchaseRows.map((row) => [row["품목코드"], row]),
+);
+for (const code of ["Q-BLANK", "Q-ZERO"]) {
+  assert.equal(purchaseRowsByCode[code]["수량"], 0);
+  assert.equal(purchaseRowsByCode[code]["단가"], 0);
+  assert.equal(purchaseRowsByCode[code]["공급가액"], 0);
+}
+assert.equal(purchaseRowsByCode["Q-POSITIVE"]["단가"], 4500);
+assert.equal(purchaseRowsByCode["Q-POSITIVE"]["공급가액"], 9000);
+assert.equal(purchaseRowsByCode["Q-NEGATIVE"]["단가"], 4500);
+assert.equal(purchaseRowsByCode["Q-NEGATIVE"]["공급가액"], -4500);
 
 for (const sheetName of ["거래처별", "확인요청", "단가설정"]) {
   assert.ok(
@@ -287,8 +469,86 @@ for (const sheetName of ["거래처별", "확인요청", "단가설정"]) {
   );
 }
 
+const previewSheet = populatedWorkbook.Sheets["거래처별"];
+const previewGrid = context.XLSX.utils.sheet_to_json(previewSheet, {
+  header: 1,
+  raw: true,
+  blankrows: false,
+});
+const previewColumns = [
+  "일자",
+  "거래처명",
+  "no.",
+  "품목코드",
+  "품명",
+  "수량",
+  "단가",
+  "공급가",
+  "적요",
+  "출고지시",
+  "출고가 (공지)",
+  "구매처",
+  "구매",
+  "구매합계",
+  "정리",
+  "정산",
+  "수수료",
+];
+assert.deepEqual(Array.from(previewGrid[0]), previewColumns);
+assert.equal(previewGrid.length, 5);
+assert.ok(
+  ["Q-BLANK", "Q-ZERO", "Q-POSITIVE", "Q-NEGATIVE"].includes(
+    previewGrid[1][3],
+  ),
+  "거래처별 첫 데이터 행은 2행이어야 합니다.",
+);
+assert.equal(previewSheet["!merges"], undefined);
+const previewRows = readSheetRows(context.XLSX, populatedWorkbook, "거래처별");
+const previewRowsByCode = Object.fromEntries(
+  previewRows.map((row) => [row["품목코드"], row]),
+);
+for (const code of ["Q-BLANK", "Q-ZERO"]) {
+  assert.equal(previewRowsByCode[code]["수량"], 0);
+  assert.equal(previewRowsByCode[code]["단가"], 0);
+  assert.equal(previewRowsByCode[code]["공급가"], 0);
+  assert.equal(previewRowsByCode[code]["정리"], 0);
+  assert.equal(previewRowsByCode[code]["정산"], 0);
+  assert.equal(previewRowsByCode[code]["수수료"], 0);
+}
+
+const checkRows = readSheetRows(context.XLSX, populatedWorkbook, "확인요청");
+assert.equal(
+  checkRows.filter((row) =>
+    String(row["확인사항"]).includes(
+      "수량 없음/0: 수량 0, 판매가 0으로 업로드",
+    ),
+  ).length,
+  2,
+);
+assert.equal(
+  checkRows.some((row) => String(row["확인사항"]).includes("수량 형식 확인")),
+  true,
+);
+assert.equal(
+  checkRows.some(
+    (row) =>
+      String(row["확인사항"]).includes("수량 없음/0") &&
+      (String(row["확인사항"]).includes("역마진") ||
+        String(row["확인사항"]).includes("도매A과대")),
+  ),
+  false,
+);
+
 const emptyResult = await buildAndReopen([]);
 const emptyWorkbook = emptyResult.reopened;
+assert.deepEqual(Array.from(emptyWorkbook.SheetNames), [
+  "확인요청",
+  "판매입력",
+  "전송출고",
+  "전송구매",
+  "거래처별",
+  "단가설정",
+]);
 assertUploadSheet(emptyWorkbook, "판매입력", salesColumns, 0);
 assertUploadSheet(emptyWorkbook, "전송출고", outboundColumns, 0);
 assertUploadSheet(emptyWorkbook, "전송구매", purchaseColumns, 0);
@@ -296,7 +556,17 @@ assertColumnWidths(emptyResult.original, "판매입력", salesColumns.length);
 assertColumnWidths(emptyResult.original, "전송출고", outboundColumns.length);
 assertColumnWidths(emptyResult.original, "전송구매", purchaseColumns.length);
 
-const expectedVersion = "V1.a22.99_SalesUploadColumns";
+const emptyPreviewSheet = emptyWorkbook.Sheets["거래처별"];
+const emptyPreviewGrid = context.XLSX.utils.sheet_to_json(emptyPreviewSheet, {
+  header: 1,
+  raw: true,
+  blankrows: false,
+});
+assert.deepEqual(Array.from(emptyPreviewGrid[0]), previewColumns);
+assert.equal(emptyPreviewGrid.length, 1);
+assert.equal(emptyPreviewSheet["!merges"], undefined);
+
+const expectedVersion = "V1.a22.100_SalesUploadZeroQty";
 assert.match(
   source,
   new RegExp(
