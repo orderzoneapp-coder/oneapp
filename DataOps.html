@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP DataOps - 핵심 수불부 관리 (V1.a22.99_SalesUploadColumns)</title>
+    <title>ONEAPP DataOps - 핵심 수불부 관리 (V1.a22.100_SalesUploadZeroQty)</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         body { font-family: 'Pretendard', -apple-system, sans-serif; background-color: #f8fafc; overflow: hidden; }
@@ -46,7 +46,7 @@
     <!-- 초기 로딩 스크린 -->
     <div id="initial-loader">
         <div class="spinner"></div>
-        <div class="loader-text">ONEAPP DataOps V1.a22.99_SalesUploadColumns.....</div>
+        <div class="loader-text">ONEAPP DataOps V1.a22.100_SalesUploadZeroQty.....</div>
         <div style="font-size: 11px; color: #94a3b8; margin-top: 8px;">앱 환경을 구성하고 있습니다</div>
     </div>
 
@@ -911,7 +911,7 @@ const clearTableSortPreference = () => {
    - 주의: 물리적 파일 분리는 하지 않는다. 단일 HTML 실행 구조를 유지한다.
    ======================================================================= */
 const CONFIG_MODULE = Object.freeze({
-    version: 'V1.a22.99_SalesUploadColumns',
+    version: 'V1.a22.100_SalesUploadZeroQty',
     categoryMap: Object.freeze({
         '10': '채소.과일',
         '20': '수산.축산',
@@ -8853,7 +8853,7 @@ function App() {
         return { price: 0, columnName: '' };
     }, [buildTransferPriceConfig, getTransferRawValue, transferStrictNumber]);
     const getTransferBaseFields = useCallback((item = {}) => {
-        var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l;
+        var _a, _b, _c, _d, _e, _f, _h, _j, _k, _l;
         const raw = item._raw || {};
         const code = safeStr((_a = getRawCell(raw, ['품목코드', '상품코드', '코드'])) !== null && _a !== void 0 ? _a : item.코드, '').replace(/\.0$/, '').trim();
         const name = safeStr((_b = getRawCell(raw, ['품목명(규격)', '품명', '품목명', '상품명'])) !== null && _b !== void 0 ? _b : item.품명, '').trim();
@@ -8870,7 +8870,28 @@ function App() {
         // 현재 2전송 구매현황에서는 '거래처명' 컬럼이 판매업로드 K열 규격 자리에 들어가는 운영값이다.
         const purchaseSpecValue = safeStr((_f = (_e = getRawCell(raw, ['거래처명'])) !== null && _e !== void 0 ? _e : getRawCell(raw, ['규격', '규격명', '포장규격', '상품규격', '옵션', '사이즈'])) !== null && _f !== void 0 ? _f : '', '').trim();
         const spec = purchaseSpecValue || detailCustomer;
-        const qty = parseNumber((_g = getRawCell(raw, ['수량', '입고수량', '구매수량', '매입수량'])) !== null && _g !== void 0 ? _g : item.수량);
+        const qtyFieldNames = ['수량', '입고수량', '구매수량', '매입수량'];
+        const normalizeQtyField = (value) => safeStr(value, '').replace(/\s/g, '').toLowerCase();
+        const qtyFieldKeys = Object.keys(raw || {}).filter(key => qtyFieldNames.some(name => normalizeQtyField(key) === normalizeQtyField(name)));
+        const qtyValueKey = qtyFieldKeys.find(key => raw[key] !== undefined && raw[key] !== null && String(raw[key]).trim() !== '');
+        const qtyRaw = qtyValueKey !== undefined
+            ? raw[qtyValueKey]
+            : (qtyFieldKeys.length > 0 ? raw[qtyFieldKeys[0]] : item.수량);
+        const qtyMissing = qtyRaw === undefined || qtyRaw === null || String(qtyRaw).trim() === '';
+        let qtyInvalid = false;
+        if (!qtyMissing) {
+            if (typeof qtyRaw === 'number') {
+                qtyInvalid = !Number.isFinite(qtyRaw);
+            }
+            else {
+                const qtyText = String(qtyRaw).trim().replace(/,/g, '');
+                const wrappedNegative = qtyText.startsWith('(') && qtyText.endsWith(')');
+                const numericText = wrappedNegative ? qtyText.slice(1, -1) : qtyText;
+                qtyInvalid = (!wrappedNegative && (qtyText.startsWith('(') || qtyText.endsWith(')'))) ||
+                    !/^[+-]?\d+(?:\.\d+)?$/.test(numericText);
+            }
+        }
+        const qty = qtyMissing || qtyInvalid ? 0 : parseNumber(qtyRaw);
         const dateValue = safeStr((_h = getRawCell(raw, ['일자', '날짜', '매입일자'])) !== null && _h !== void 0 ? _h : item.일자, '');
         const purchaseVendor = safeStr((_j = getRawCell(raw, ['구매처', '원구매처', '매입처'])) !== null && _j !== void 0 ? _j : item.거래처, '');
         const cost = transferStrictNumber(getTransferRawValue(raw, '단가')) || transferStrictNumber(getTransferRawValue(raw, '입고가')) || safeNum(item.단가);
@@ -8881,7 +8902,7 @@ function App() {
         const orderNote = safeStr((_l = getRawCell(raw, ['출고지시'])) !== null && _l !== void 0 ? _l : '', '');
         const deliveryMessage = safeStr(getRawCell(raw, ['전달사항', '전달 사항', '메모', '비고']), '');
         const notice = getTransferRawValue(raw, '출고가(공지)');
-        return { raw, code, name, spec, groupCustomer, detailCustomer, qty, dateValue, purchaseVendor, cost, wholesaleA, outsourceCost, laborCost, memo, orderNote, deliveryMessage, notice };
+        return { raw, code, name, spec, groupCustomer, detailCustomer, qty, qtyRaw, qtyMissing, qtyInvalid, dateValue, purchaseVendor, cost, wholesaleA, outsourceCost, laborCost, memo, orderNote, deliveryMessage, notice };
     }, [getTransferRawValue, transferStrictNumber]);
     const isTransferSummaryLikeRow = useCallback((f = {}) => {
         const code = safeStr(f.code, '').trim();
@@ -9033,53 +9054,79 @@ function App() {
                 fatalReasons.push('거래처명 없음');
             if (!f.code)
                 fatalReasons.push('품목코드 없음');
-            if (safeNum(f.qty) === 0)
-                fatalReasons.push('수량 없음');
+            if (f.qtyInvalid)
+                fatalReasons.push('수량 형식 확인');
             if (fatalReasons.length) {
                 addFatal({ ...rowBase, reason: fatalReasons.join(', ') });
                 return;
             }
-            const resolved = resolveTransferSalesPrice(item);
+            const isZeroQuantity = safeNum(f.qty) === 0;
+            const resolved = isZeroQuantity
+                ? (() => {
+                    const group = buildTransferPriceConfig().groups[f.groupCustomer];
+                    return {
+                        status: 'ZERO_QUANTITY',
+                        price: 0,
+                        priceKey: '',
+                        columnName: '',
+                        groupName: group ? group.groupName : '',
+                        rulePath: '',
+                        feeMode: group ? group.feeMode : 'NONE',
+                        profitMode: group ? group.profitMode : 'NORMAL',
+                        outputCustomerMode: group ? (group.outputCustomerMode || 'GROUP_NAME') : 'GROUP_NAME',
+                        group,
+                        base: f
+                    };
+                })()
+                : resolveTransferSalesPrice(item);
             const outputCustomer = getTransferOutputCustomerName(resolved) || f.detailCustomer || f.groupCustomer;
             const checkReasons = [];
-            if (resolved.status === 'CUSTOMER_GROUP_MISSING')
-                checkReasons.push('거래처 단가그룹 없음');
-            if (resolved.status === 'PRICE_MISSING')
-                checkReasons.push(getTransferPriceMissingReason(resolved.groupName));
+            if (isZeroQuantity) {
+                checkReasons.push('수량 없음/0: 수량 0, 판매가 0으로 업로드');
+            }
+            else {
+                if (resolved.status === 'CUSTOMER_GROUP_MISSING')
+                    checkReasons.push('거래처 단가그룹 없음');
+                if (resolved.status === 'PRICE_MISSING')
+                    checkReasons.push(getTransferPriceMissingReason(resolved.groupName));
+            }
             if (!f.name)
                 checkReasons.push('품명 없음');
-            const price = resolved.status === 'MATCHED' ? safeNum(resolved.price) : '';
+            const price = isZeroQuantity ? 0 : (resolved.status === 'MATCHED' ? safeNum(resolved.price) : '');
             // V1.a22.69: 입고가보다 판매가/도매가/행사가가 낮으면 관리자 타이핑 실수 가능성이 높으므로 확인요청 시트로 보낸다.
             // 자동 보정은 금지하고, ERP 업로드 전 관리자가 직접 수정하도록 안내한다.
             const baseCost = safeNum(f.cost);
             const wholesaleAForCheck = safeNum(f.wholesaleA);
-            if (price !== '' && safeNum(price) > 0 && baseCost > 0 && safeNum(price) < baseCost) {
-                const priceSourceName = safeStr(resolved.priceKey || resolved.columnName || '판매가', '판매가');
-                checkReasons.push(`역마진/입고가초과: 입고가 ${formatMoney(baseCost)} > 판매가 ${formatMoney(price)} (${priceSourceName})`);
-            }
-            // V1.a22.69: 도매A는 업로드 양식 생성값과 별개로 수기입력 오류 확인용 이상치 검수를 한다.
-            // 예: 입고가 2,800 / 정상 도매A 3,800인데 38,000으로 입력된 경우는 4배 이상 조건으로 확인요청한다.
-            if (baseCost > 0 && wholesaleAForCheck > 0) {
-                if (wholesaleAForCheck < baseCost && !checkReasons.some(reason => safeStr(reason).includes('역마진/입고가초과'))) {
-                    checkReasons.push(`역마진/입고가초과: 입고가 ${formatMoney(baseCost)} > 도매A ${formatMoney(wholesaleAForCheck)}`);
+            if (!isZeroQuantity) {
+                if (price !== '' && safeNum(price) > 0 && baseCost > 0 && safeNum(price) < baseCost) {
+                    const priceSourceName = safeStr(resolved.priceKey || resolved.columnName || '판매가', '판매가');
+                    checkReasons.push(`역마진/입고가초과: 입고가 ${formatMoney(baseCost)} > 판매가 ${formatMoney(price)} (${priceSourceName})`);
                 }
-                if (wholesaleAForCheck >= baseCost * 4) {
-                    const ratio = wholesaleAForCheck / baseCost;
-                    checkReasons.push(`도매A과대의심: 입고가 ${formatMoney(baseCost)} / 도매A ${formatMoney(wholesaleAForCheck)} (${ratio.toFixed(1)}배, 수기입력 오류 확인)`);
+                // V1.a22.69: 도매A는 업로드 양식 생성값과 별개로 수기입력 오류 확인용 이상치 검수를 한다.
+                // 예: 입고가 2,800 / 정상 도매A 3,800인데 38,000으로 입력된 경우는 4배 이상 조건으로 확인요청한다.
+                if (baseCost > 0 && wholesaleAForCheck > 0) {
+                    if (wholesaleAForCheck < baseCost && !checkReasons.some(reason => safeStr(reason).includes('역마진/입고가초과'))) {
+                        checkReasons.push(`역마진/입고가초과: 입고가 ${formatMoney(baseCost)} > 도매A ${formatMoney(wholesaleAForCheck)}`);
+                    }
+                    if (wholesaleAForCheck >= baseCost * 4) {
+                        const ratio = wholesaleAForCheck / baseCost;
+                        checkReasons.push(`도매A과대의심: 입고가 ${formatMoney(baseCost)} / 도매A ${formatMoney(wholesaleAForCheck)} (${ratio.toFixed(1)}배, 수기입력 오류 확인)`);
+                    }
                 }
             }
-            rowInfos.push({ item, idx, rowNo, f, rowBase, resolved, outputCustomer, checkReasons, price });
+            rowInfos.push({ item, idx, rowNo, f, rowBase, resolved, outputCustomer, checkReasons, price, isZeroQuantity });
         });
         rowInfos.forEach(info => {
-            const { f, rowBase, resolved, outputCustomer, checkReasons } = info;
-            let price = info.price;
-            let supply = price === '' ? '' : safeNum(f.qty) * safeNum(price);
+            const { f, rowBase, resolved, outputCustomer, checkReasons, isZeroQuantity } = info;
+            let price = isZeroQuantity ? 0 : info.price;
+            let supply = isZeroQuantity ? 0 : (price === '' ? '' : safeNum(f.qty) * safeNum(price));
             const originalPurchaseVendor = safeStr(f.purchaseVendor, '');
             const finalPurchaseVendor = originalPurchaseVendor;
             const purchaseVendorFixNote = '';
             // V1.a22.34: 판매업로드 단계에서는 구매처 원본을 그대로 보존한다.
             // 내부값(우리농산/1전송/3우리 등)도 Lot 분배 신호로 해석하지 않고, 판매현황 검증/DataOps 수불 단계에서만 판단한다.
-            // V1.a22.12: 치명 에러는 거래처명/품목코드/수량 없음만 막는다.
+            // V1.a22.100: 거래처명/품목코드 없음과 잘못된 수량 형식만 업로드를 막는다.
+            // 수량 공란 또는 명시적 0은 수량·판매가·공급가액 0으로 출력하고 확인요청에 남긴다.
             // 단가그룹 없음·기준단가 없음·단가오염 의심은 실무상 후속 입력 가능성이 있으므로 업로드 행은 생성하고 확인필요로 안내한다.
             // V1.a22.12: 확정 단가룰에서 가져온 값은 공급가액성 금액으로 임의 공백 처리하지 않는다.
             // 단가가 의심되어도 프로그램이 판매가를 지우면 관리자가 검수할 수 없으므로, 정해진 단가 후보값은 그대로 출력한다.
@@ -9094,9 +9141,9 @@ function App() {
                     action: '업로드는 허용하되 단가/매핑/구매처 확인 후 최종 통보 또는 재검증'
                 });
             }
-            const costAmount = price === '' ? 0 : safeNum(f.qty) * safeNum(f.cost);
+            const costAmount = isZeroQuantity ? 0 : (price === '' ? 0 : safeNum(f.qty) * safeNum(f.cost));
             const fee = resolved.feeMode === 'LISTING_FEE' ? 0 : 0;
-            const profit = price === '' ? '' : (resolved.profitMode === 'ZERO_PROFIT' ? 0 : (safeNum(supply) - fee - costAmount));
+            const profit = isZeroQuantity ? 0 : (price === '' ? '' : (resolved.profitMode === 'ZERO_PROFIT' ? 0 : (safeNum(supply) - fee - costAmount)));
             rows.push({
                 '일자': '',
                 '순번': '',
@@ -9134,7 +9181,7 @@ function App() {
             safeStr(a['규격']).localeCompare(safeStr(b['규격']), 'ko') ||
             safeStr(a['품목코드']).localeCompare(safeStr(b['품목코드']), 'ko'));
         return { rows, fatalErrors, warnings, excluded: fatalErrors, notices: warnings };
-    }, [getTransferBaseFields, getTransferOutputCustomerName, getTransferPriceMissingReason, getTransferRawValue, isTransferSummaryLikeRow, resolveTransferSalesPrice, transferStrictNumber]);
+    }, [buildTransferPriceConfig, getTransferBaseFields, getTransferOutputCustomerName, getTransferPriceMissingReason, getTransferRawValue, isTransferSummaryLikeRow, resolveTransferSalesPrice, transferStrictNumber]);
     const downloadWorkbook = useCallback((wb, filename) => {
         const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
         const blob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
@@ -9274,7 +9321,7 @@ function App() {
                 const qty = safeNum(r['수량']);
                 const price = safeNum(r['단가']);
                 const cost = safeNum(r['구매']);
-                const supply = safeNum(r['공급가액']) || (qty * price);
+                const supply = qty === 0 ? 0 : (safeNum(r['공급가액']) || (qty * price));
                 const unitProfit = price - cost;
                 const settlement = unitProfit * qty;
                 const fee = safeStr(r['_적용그룹']) === '청과상장' ? Math.round(supply * 0.09) : 0;
@@ -9285,27 +9332,24 @@ function App() {
                     '품목코드': r['품목코드'] || '',
                     '품명': r['품목명'] || '',
                     '수량': qty,
-                    '단가': price || '',
-                    '공급가': supply || '',
+                    '단가': qty === 0 ? 0 : (price > 0 ? price : ''),
+                    '공급가': qty === 0 ? 0 : (supply !== 0 ? supply : ''),
                     '적요': r['적요'] || '',
                     '출고지시': r['출고지시'] || '',
                     '출고가 (공지)': r['공지'] || '',
                     '구매처': r['구매처'] || '',
                     '구매': cost || '',
                     '구매합계': cost ? qty * cost : '',
-                    '정리': price && cost ? unitProfit : '',
-                    '정산': price && cost ? settlement : '',
-                    '수수료': fee || ''
+                    '정리': qty === 0 ? 0 : (price && cost ? unitProfit : ''),
+                    '정산': qty === 0 ? 0 : (price && cost ? settlement : ''),
+                    '수수료': qty === 0 ? 0 : (fee !== 0 ? fee : '')
                 };
             });
-            const previewTitle = `회사명 : 원앱 / 2전송 / ${formatPreviewDate('')}  ~  ${formatPreviewDate('')} `;
             const previewAoa = [
-                [previewTitle, ...Array(previewColumns.length - 1).fill('')],
                 previewColumns,
                 ...previewRows.map(row => previewColumns.map(col => { var _a; return (_a = row[col]) !== null && _a !== void 0 ? _a : ''; }))
             ];
             const wsPreview = XLSX.utils.aoa_to_sheet(previewAoa);
-            wsPreview['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: previewColumns.length - 1 } }];
             wsPreview['!cols'] = [16, 14, 14, 14, 34, 9, 10, 12, 14, 14, 14, 18, 10, 12, 10, 12, 10].map(wch => ({ wch }));
             XLSX.utils.book_append_sheet(wb, wsPreview, '거래처별');
             const checkColumns = ['그룹', '거래처', '품목코드', '품명', '수량', '확인사항'];
@@ -9341,6 +9385,7 @@ function App() {
                 '정확일치': 'Y'
             }));
             XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(groupRows), '단가설정');
+            wb.SheetNames = ['확인요청', '판매입력', '전송출고', '전송구매', '거래처별', '단가설정'];
             downloadWorkbook(wb, `2전송_판매업로드_생성_${ymd}.xlsx`);
             const issueCount = warnings.length + fatalErrors.length;
             const reverseMarginCount = warnings.filter(w => {
