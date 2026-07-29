@@ -28,7 +28,7 @@ const printRows = [
     outQty: 2,
     purchaseDate: "2026-07-29",
     purchaseVendor: "가락(청산유통)",
-    price: 12500,
+    price: 123456,
     systemText: "관리자 확인 완료",
     category2Code: "1010",
   },
@@ -114,25 +114,26 @@ const opened = context.actualOpenPrintWindow({
 assert.equal(opened, true);
 assert.match(renderedHtml, /@page\{size:A4 portrait;/);
 assert.match(renderedHtml, /thead\{display:table-header-group\}/);
-assert.match(renderedHtml, /table\{[^}]*width:100%[^}]*font-size:16px[^}]*line-height:1\.17[^}]*table-layout:fixed/);
+assert.match(renderedHtml, /table\{[^}]*width:100%[^}]*font-size:11px[^}]*line-height:1\.17[^}]*table-layout:fixed/);
 assert.match(renderedHtml, /h1\{font-size:22px;/);
 assert.match(renderedHtml, /\.meta\{font-size:13\.5px;/);
 assert.match(renderedHtml, /\.summary\{[^}]*font-size:13\.5px;/);
-assert.match(renderedHtml, /th\{[^}]*font-size:15\.5px;/);
+assert.match(renderedHtml, /th\{[^}]*font-size:10px;/);
 assert.match(renderedHtml, /td\{[^}]*padding:3\.5px 3px;[^}]*text-overflow:ellipsis/);
-assert.match(renderedHtml, /\.code\{[^}]*font-size:15\.5px/);
+assert.match(renderedHtml, /\.code\{[^}]*font-size:11px/);
+assert.doesNotMatch(renderedHtml, /\.code\{[^}]*font-size:15\.5px/);
 
 const expectedWidths = {
-  "code-col": 8,
-  "name-col": 29,
-  "spec-col": 5,
-  "final-col": 5,
-  "stock-col": 5,
-  "move-col": 4.5,
-  "date-col": 6,
-  "vendor-col": 13,
-  "price-col": 8,
-  "system-col": 12,
+  "code-col": 6.7,
+  "name-col": 34.2,
+  "spec-col": 5.9,
+  "price-col": 9.4,
+  "final-col": 5.9,
+  "stock-col": 4.2,
+  "move-col": 3.8,
+  "date-col": 5.1,
+  "vendor-col": 10.9,
+  "system-col": 10.1,
 };
 for (const [className, width] of Object.entries(expectedWidths)) {
   assert.match(
@@ -144,18 +145,40 @@ const widthSum =
   expectedWidths["code-col"] +
   expectedWidths["name-col"] +
   expectedWidths["spec-col"] +
+  expectedWidths["price-col"] +
   expectedWidths["final-col"] +
   expectedWidths["stock-col"] +
   expectedWidths["move-col"] * 2 +
   expectedWidths["date-col"] +
   expectedWidths["vendor-col"] +
-  expectedWidths["price-col"] +
   expectedWidths["system-col"];
-assert.equal(widthSum, 100);
+assert.equal(Math.round(widthSum * 10) / 10, 100);
+for (const viewportWidth of [1366, 1920]) {
+  const pixelTotal = (widthSum / 100) * viewportWidth;
+  assert.ok(Math.abs(pixelTotal - viewportWidth) < 0.001);
+  assert.ok((expectedWidths["code-col"] / 100) * viewportWidth >= 91);
+  assert.ok((expectedWidths["name-col"] / 100) * viewportWidth >= 467);
+  assert.ok((expectedWidths["price-col"] / 100) * viewportWidth >= 128);
+  assert.ok((expectedWidths["date-col"] / 100) * viewportWidth >= 69);
+  assert.ok((expectedWidths["vendor-col"] / 100) * viewportWidth >= 148);
+}
+
+const expectedColgroup =
+  '<colgroup><col class="code-col"><col class="name-col"><col class="spec-col"><col class="price-col"><col class="final-col"><col class="stock-col"><col class="move-col"><col class="move-col"><col class="date-col"><col class="vendor-col"><col class="system-col"></colgroup>';
+const expectedHeader =
+  '<thead><tr><th>품목코드</th><th>품명</th><th>규격</th><th>구매가</th><th class="divider-core">잔량</th><th>재고</th><th>입고</th><th class="divider-check">출고</th><th>구매일</th><th>구매처</th><th>시스템</th></tr></thead>';
+assert.ok(renderedHtml.includes(expectedColgroup));
+assert.ok(renderedHtml.includes(expectedHeader));
+assert.match(
+  renderedHtml,
+  /<td class="spec">BOX<\/td>\s*<td class="price">123,456<\/td>\s*<td class="qty final divider-core [^"]*">123<\/td>/,
+);
 
 assert.equal((renderedHtml.match(/<tr class="/g) || []).length, printRows.length);
 assert.match(renderedHtml, /101020116/);
 assert.match(renderedHtml, /1010201170/);
+assert.match(renderedHtml, /07\/29/);
+assert.match(renderedHtml, /123,456/);
 assert.match(renderedHtml, /가락\(청산유통\)/);
 assert.match(renderedHtml, /inbound-value/);
 assert.match(renderedHtml, /outbound-value/);
@@ -163,7 +186,7 @@ assert.match(renderedHtml, /negative-final/);
 assert.match(renderedHtml, /category-break/);
 assert.match(renderedHtml, /window\.print\(\)/);
 
-const expectedVersion = "V1.a22.101_StockPrintReadable";
+const expectedVersion = "V1.a22.102_StockPrintLayout";
 assert.equal(
   (source.match(new RegExp(expectedVersion, "g")) || []).length,
   3,
