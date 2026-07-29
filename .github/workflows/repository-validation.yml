@@ -53,6 +53,9 @@ jobs:
       - name: Test DataOps substitution preview read-only behavior
         run: node scripts/test-dataops-substitution-preview-readonly.mjs
 
+      - name: Test DataOps stock print readability
+        run: node scripts/test-dataops-stock-print-readable.mjs
+
       - name: Test MerchOps sale availability pipeline
         run: node scripts/test-merchops-sale-pipeline.mjs
 
