@@ -168,7 +168,10 @@ const exportModule = section(
   "createCombinedWorkbook:",
   "const STORAGE_MODULE",
 );
-assert.match(exportModule, /buildNextBaseStockRows\(\{\s*productData,\s*targetDateStr\s*\}\)/);
+assert.match(
+  exportModule,
+  /buildNextBaseStockRows\(\{\s*productData:\s*operationalProductData,\s*targetDateStr\s*\}\)/,
+);
 assert.doesNotMatch(exportModule, /filteredProductData|screenRows/);
 const stockCountRows = section(
   "buildStockCountSheetRows:",

@@ -70,8 +70,13 @@ const combinedWorkbook = section(
 assert.doesNotMatch(combinedWorkbook, /\bscreenRows\b/);
 assert.match(
   combinedWorkbook,
-  /buildNextBaseStockRows\(\{ productData, targetDateStr \}\)/,
-  "F9 whole-stock sheet must use the complete productData collection",
+  /buildNextBaseStockRows\(\{ productData: operationalProductData, targetDateStr \}\)/,
+  "F9 whole-stock sheet must use the administrator-aware summary built from complete productData",
+);
+assert.match(
+  combinedWorkbook,
+  /const operationalProductData = DATAOPS_VIEW_LAYER_MODULE\.buildCodeSummaryRows\(productData \|\| \[\]\)/,
+  "administrator-aware whole-stock data must originate from the complete productData collection",
 );
 
 const f9Handler = section(
