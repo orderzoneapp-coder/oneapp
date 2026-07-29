@@ -47,6 +47,9 @@ jobs:
       - name: Generate and reopen DataOps stock-count XLSX dates
         run: node scripts/test-dataops-stock-count-date.mjs
 
+      - name: Generate and reopen DataOps administrator-merged whole-stock XLSX
+        run: node scripts/test-dataops-whole-stock-admin-merge.mjs
+
       - name: Generate and reopen DataOps sales-upload XLSX columns
         run: node scripts/test-dataops-sales-upload-columns.mjs
 
