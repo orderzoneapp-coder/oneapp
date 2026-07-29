@@ -24,8 +24,8 @@ const printRows = [
     spec: "BOX",
     finalQty: 123,
     baseQty: 100,
-    inQty: 25,
-    outQty: 2,
+    inQty: 123,
+    outQty: 999,
     purchaseDate: "2026-07-29",
     purchaseVendor: "가락(청산유통)",
     price: 123456,
@@ -36,8 +36,8 @@ const printRows = [
     code: "1010201170",
     name: "팽이버섯 국내산 5개입 상품",
     spec: "EA",
-    finalQty: -1,
-    baseQty: 0,
+    finalQty: -123,
+    baseQty: -123,
     inQty: 0,
     outQty: 1,
     purchaseDate: "",
@@ -121,17 +121,19 @@ assert.match(renderedHtml, /\.summary\{[^}]*font-size:13\.5px;/);
 assert.match(renderedHtml, /th\{[^}]*font-size:10px;/);
 assert.match(renderedHtml, /td\{[^}]*padding:3\.5px 3px;[^}]*text-overflow:ellipsis/);
 assert.match(renderedHtml, /\.code\{[^}]*font-size:11px/);
+assert.match(renderedHtml, /\.qty\{padding-left:1px;padding-right:1px\}/);
+assert.match(renderedHtml, /\.purchase-date\{text-align:center;padding-left:1px;padding-right:1px\}/);
 assert.doesNotMatch(renderedHtml, /\.code\{[^}]*font-size:15\.5px/);
 
 const expectedWidths = {
   "code-col": 6.7,
-  "name-col": 34.2,
+  "name-col": 30,
   "spec-col": 5.9,
   "price-col": 9.4,
   "final-col": 5.9,
-  "stock-col": 4.2,
-  "move-col": 3.8,
-  "date-col": 5.1,
+  "stock-col": 5,
+  "move-col": 5,
+  "date-col": 6.1,
   "vendor-col": 10.9,
   "system-col": 10.1,
 };
@@ -157,11 +159,29 @@ for (const viewportWidth of [1366, 1920]) {
   const pixelTotal = (widthSum / 100) * viewportWidth;
   assert.ok(Math.abs(pixelTotal - viewportWidth) < 0.001);
   assert.ok((expectedWidths["code-col"] / 100) * viewportWidth >= 91);
-  assert.ok((expectedWidths["name-col"] / 100) * viewportWidth >= 467);
+  assert.ok((expectedWidths["name-col"] / 100) * viewportWidth >= 409);
   assert.ok((expectedWidths["price-col"] / 100) * viewportWidth >= 128);
   assert.ok((expectedWidths["date-col"] / 100) * viewportWidth >= 69);
   assert.ok((expectedWidths["vendor-col"] / 100) * viewportWidth >= 148);
 }
+
+const a4PrintableWidthPx = ((210 - 10) / 25.4) * 96;
+const maxQtyTextWidthPx = 4 * 6.5;
+for (const quantityColumn of ["stock-col", "move-col"]) {
+  const effectiveWidthPx =
+    (expectedWidths[quantityColumn] / 100) * a4PrintableWidthPx - 4;
+  assert.ok(
+    effectiveWidthPx > maxQtyTextWidthPx,
+    `${quantityColumn} must fit 0-999 and -999 at 11px with 1px horizontal padding`,
+  );
+}
+const effectivePurchaseDateWidthPx =
+  (expectedWidths["date-col"] / 100) * a4PrintableWidthPx - 4;
+const boldPurchaseDateWidthPx = 5 * 6.5;
+assert.ok(
+  effectivePurchaseDateWidthPx > boldPurchaseDateWidthPx,
+  "purchase-date must fit bold MM/DD at 11px with 1px horizontal padding",
+);
 
 const expectedColgroup =
   '<colgroup><col class="code-col"><col class="name-col"><col class="spec-col"><col class="price-col"><col class="final-col"><col class="stock-col"><col class="move-col"><col class="move-col"><col class="date-col"><col class="vendor-col"><col class="system-col"></colgroup>';
@@ -179,6 +199,10 @@ assert.match(renderedHtml, /101020116/);
 assert.match(renderedHtml, /1010201170/);
 assert.match(renderedHtml, /07\/29/);
 assert.match(renderedHtml, /123,456/);
+assert.match(renderedHtml, /<td class="qty">100<\/td>/);
+assert.match(renderedHtml, /<td class="qty inbound-value">123<\/td>/);
+assert.match(renderedHtml, /<td class="qty divider-check outbound-value">999<\/td>/);
+assert.match(renderedHtml, /<td class="qty">-123<\/td>/);
 assert.match(renderedHtml, /가락\(청산유통\)/);
 assert.match(renderedHtml, /inbound-value/);
 assert.match(renderedHtml, /outbound-value/);
@@ -186,7 +210,7 @@ assert.match(renderedHtml, /negative-final/);
 assert.match(renderedHtml, /category-break/);
 assert.match(renderedHtml, /window\.print\(\)/);
 
-const expectedVersion = "V1.a22.102_StockPrintLayout";
+const expectedVersion = "V1.a22.103_StockPrintQtyWidth";
 assert.equal(
   (source.match(new RegExp(expectedVersion, "g")) || []).length,
   3,
