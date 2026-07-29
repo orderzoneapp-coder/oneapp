@@ -1,0 +1,173 @@
+#!/usr/bin/env node
+
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import vm from "node:vm";
+
+const source = fs.readFileSync("DataOps.html", "utf8");
+const methodStart = source.indexOf("openPrintWindow: (");
+const methodEnd = source.indexOf("\n    createCombinedWorkbook:", methodStart);
+assert.notEqual(methodStart, -1, "openPrintWindow start marker is missing");
+assert.notEqual(methodEnd, -1, "openPrintWindow end marker is missing");
+
+const methodSource = source
+  .slice(methodStart, methodEnd)
+  .trim()
+  .replace(/^openPrintWindow:\s*/, "")
+  .replace(/,\s*$/, "");
+
+let renderedHtml = "";
+const printRows = [
+  {
+    code: "101020116",
+    name: "대파 서울 10단",
+    spec: "BOX",
+    finalQty: 123,
+    baseQty: 100,
+    inQty: 25,
+    outQty: 2,
+    purchaseDate: "2026-07-29",
+    purchaseVendor: "가락(청산유통)",
+    price: 12500,
+    systemText: "관리자 확인 완료",
+    category2Code: "1010",
+  },
+  {
+    code: "1010201170",
+    name: "팽이버섯 국내산 5개입 상품",
+    spec: "EA",
+    finalQty: -1,
+    baseQty: 0,
+    inQty: 0,
+    outQty: 1,
+    purchaseDate: "",
+    purchaseVendor: "",
+    price: 0,
+    systemText:
+      "장문 시스템 메모는 기존처럼 말줄임표로 표시되어 표 영역을 벗어나지 않아야 합니다.",
+    category2Code: "1010",
+  },
+  {
+    code: "202030405",
+    name: "냉동 수산 가공품 1kg",
+    spec: "BOX",
+    finalQty: 8,
+    baseQty: 5,
+    inQty: 3,
+    outQty: 0,
+    purchaseDate: "2026-07-29",
+    purchaseVendor: "부산 공동어시장",
+    price: 8800,
+    systemText: "",
+    category2Code: "2020",
+  },
+];
+
+const context = vm.createContext({
+  console,
+  Date,
+  setTimeout,
+  clearTimeout,
+  safeNum: (value) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  },
+  safeStr: (value, fallback = "") => {
+    if (value === undefined || value === null || value === "") return fallback;
+    return String(value);
+  },
+  formatQty: (value) => String(value),
+  formatMoney: (value) => Number(value).toLocaleString("ko-KR"),
+});
+context.window = {
+  open: () => ({
+    document: {
+      write: (html) => {
+        renderedHtml += html;
+      },
+      close: () => {},
+    },
+  }),
+};
+context.EXPORT_MODULE = {
+  buildPrintRows: ({ productData }) => productData.map((row) => ({ ...row })),
+  escapeHtml: (value) =>
+    String(value ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;"),
+};
+context.globalThis = context;
+
+new vm.Script(
+  `globalThis.actualOpenPrintWindow = ${methodSource};`,
+  { filename: "DataOps.openPrintWindow.js" },
+).runInContext(context);
+
+const opened = context.actualOpenPrintWindow({
+  productData: printRows,
+  targetDateStr: "2026-07-29",
+  title: "DataOps 재고 실사 출력",
+});
+assert.equal(opened, true);
+assert.match(renderedHtml, /@page\{size:A4 portrait;/);
+assert.match(renderedHtml, /thead\{display:table-header-group\}/);
+assert.match(renderedHtml, /table\{[^}]*width:100%[^}]*font-size:16px[^}]*line-height:1\.17[^}]*table-layout:fixed/);
+assert.match(renderedHtml, /h1\{font-size:22px;/);
+assert.match(renderedHtml, /\.meta\{font-size:13\.5px;/);
+assert.match(renderedHtml, /\.summary\{[^}]*font-size:13\.5px;/);
+assert.match(renderedHtml, /th\{[^}]*font-size:15\.5px;/);
+assert.match(renderedHtml, /td\{[^}]*padding:3\.5px 3px;[^}]*text-overflow:ellipsis/);
+assert.match(renderedHtml, /\.code\{[^}]*font-size:15\.5px/);
+
+const expectedWidths = {
+  "code-col": 8,
+  "name-col": 29,
+  "spec-col": 5,
+  "final-col": 5,
+  "stock-col": 5,
+  "move-col": 4.5,
+  "date-col": 6,
+  "vendor-col": 13,
+  "price-col": 8,
+  "system-col": 12,
+};
+for (const [className, width] of Object.entries(expectedWidths)) {
+  assert.match(
+    renderedHtml,
+    new RegExp(`col\\.${className}\\{width:${String(width).replace(".", "\\.")}%\\}`),
+  );
+}
+const widthSum =
+  expectedWidths["code-col"] +
+  expectedWidths["name-col"] +
+  expectedWidths["spec-col"] +
+  expectedWidths["final-col"] +
+  expectedWidths["stock-col"] +
+  expectedWidths["move-col"] * 2 +
+  expectedWidths["date-col"] +
+  expectedWidths["vendor-col"] +
+  expectedWidths["price-col"] +
+  expectedWidths["system-col"];
+assert.equal(widthSum, 100);
+
+assert.equal((renderedHtml.match(/<tr class="/g) || []).length, printRows.length);
+assert.match(renderedHtml, /101020116/);
+assert.match(renderedHtml, /1010201170/);
+assert.match(renderedHtml, /가락\(청산유통\)/);
+assert.match(renderedHtml, /inbound-value/);
+assert.match(renderedHtml, /outbound-value/);
+assert.match(renderedHtml, /negative-final/);
+assert.match(renderedHtml, /category-break/);
+assert.match(renderedHtml, /window\.print\(\)/);
+
+const expectedVersion = "V1.a22.101_StockPrintReadable";
+assert.equal(
+  (source.match(new RegExp(expectedVersion, "g")) || []).length,
+  3,
+  "DataOps title, loader, and CONFIG_MODULE version must match",
+);
+
+console.log("DataOps stock print readability contract passed.");
