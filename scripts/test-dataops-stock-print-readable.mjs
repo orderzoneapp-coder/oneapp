@@ -210,7 +210,7 @@ assert.match(renderedHtml, /negative-final/);
 assert.match(renderedHtml, /category-break/);
 assert.match(renderedHtml, /window\.print\(\)/);
 
-const expectedVersion = "V1.a22.104_WholeStockAdminMerge";
+const expectedVersion = "V1.a22.105_SpacePerformance";
 assert.equal(
   (source.match(new RegExp(expectedVersion, "g")) || []).length,
   3,
