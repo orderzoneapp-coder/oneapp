@@ -1,0 +1,1275 @@
+<!DOCTYPE html>
+<html lang="ko" translate="no">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="google" content="notranslate">
+  <title>ONEAPP Shipping Management</title>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net">
+  <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
+  <script src="orderFulfillmentEngine.js"></script>
+  <script src="orderFulfillmentWorkbook.js"></script>
+  <style>
+    :root {
+      color-scheme: light;
+      --navy-950: #07101f;
+      --navy-900: #0b162a;
+      --navy-800: #153b55;
+      --slate-900: #0f172a;
+      --slate-700: #334155;
+      --slate-600: #475569;
+      --slate-500: #64748b;
+      --slate-400: #94a3b8;
+      --slate-300: #cbd5e1;
+      --slate-200: #e2e8f0;
+      --slate-100: #f1f5f9;
+      --slate-50: #f8fafc;
+      --white: #ffffff;
+      --teal-700: #0f766e;
+      --teal-600: #0d9488;
+      --teal-100: #ccfbf1;
+      --blue-700: #1d4ed8;
+      --blue-100: #dbeafe;
+      --amber-700: #b45309;
+      --amber-100: #fef3c7;
+      --red-700: #b91c1c;
+      --red-100: #fee2e2;
+      --green-700: #15803d;
+      --green-100: #dcfce7;
+      --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.05);
+      --shadow-md: 0 16px 40px rgba(15, 23, 42, 0.08);
+    }
+
+    * { box-sizing: border-box; }
+    html { min-width: 320px; background: var(--slate-50); }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Pretendard, "Noto Sans KR", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--slate-900);
+      background:
+        radial-gradient(circle at top right, rgba(13, 148, 136, 0.08), transparent 32rem),
+        var(--slate-50);
+    }
+    button, input { font: inherit; }
+    button { cursor: pointer; }
+    button:disabled { cursor: not-allowed; }
+    .hidden { display: none !important; }
+
+    .global-header {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      height: 72px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 28px;
+      color: var(--white);
+      background: var(--navy-950);
+      border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+      box-shadow: 0 8px 28px rgba(7, 16, 31, 0.22);
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      min-width: 0;
+      gap: 16px;
+    }
+    .brand-mark {
+      font-size: 23px;
+      line-height: 1;
+      font-weight: 900;
+      letter-spacing: 0.08em;
+    }
+    .brand-divider { width: 2px; height: 34px; background: #334155; }
+    .brand-stack { min-width: 0; }
+    .brand-suite {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: #5eead4;
+      font-size: 12px;
+      font-weight: 900;
+      letter-spacing: 0.18em;
+    }
+    .brand-badge {
+      padding: 2px 6px;
+      border: 1px solid rgba(94, 234, 212, 0.35);
+      border-radius: 5px;
+      color: #5eead4;
+      background: rgba(13, 148, 136, 0.12);
+      font-size: 9px;
+      letter-spacing: 0.08em;
+    }
+    .brand-product {
+      overflow: hidden;
+      margin-top: 3px;
+      color: var(--slate-300);
+      font-size: 12px;
+      font-weight: 700;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .header-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 38px;
+      padding: 0 14px;
+      border: 1px solid rgba(148, 163, 184, 0.3);
+      border-radius: 9px;
+      color: var(--slate-200);
+      background: rgba(255, 255, 255, 0.03);
+      font-size: 13px;
+      font-weight: 800;
+      text-decoration: none;
+      transition: 0.16s ease;
+    }
+    .header-link:hover { border-color: #5eead4; color: #5eead4; }
+
+    .page-shell {
+      width: min(1480px, calc(100% - 40px));
+      margin: 0 auto;
+      padding: 34px 0 56px;
+    }
+    .hero {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 24px;
+      margin-bottom: 22px;
+    }
+    .eyebrow {
+      margin: 0 0 8px;
+      color: var(--teal-700);
+      font-size: 12px;
+      font-weight: 900;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+    h1 {
+      margin: 0;
+      font-size: clamp(27px, 4vw, 40px);
+      line-height: 1.16;
+      letter-spacing: -0.04em;
+    }
+    .hero-copy {
+      max-width: 720px;
+      margin: 12px 0 0;
+      color: var(--slate-600);
+      font-size: 15px;
+      line-height: 1.7;
+    }
+    .workflow-chip {
+      flex: 0 0 auto;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 14px;
+      border: 1px solid var(--slate-200);
+      border-radius: 12px;
+      color: var(--slate-600);
+      background: rgba(255, 255, 255, 0.74);
+      box-shadow: var(--shadow-sm);
+      font-size: 12px;
+      font-weight: 800;
+    }
+    .workflow-chip strong { color: var(--teal-700); }
+
+    .stage-strip {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      overflow: hidden;
+      margin-bottom: 18px;
+      border: 1px solid var(--slate-200);
+      border-radius: 12px;
+      background: var(--white);
+      box-shadow: var(--shadow-sm);
+    }
+    .stage {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-height: 54px;
+      padding: 10px 18px;
+      color: var(--slate-500);
+      font-size: 13px;
+      font-weight: 800;
+      border-right: 1px solid var(--slate-200);
+    }
+    .stage:last-child { border-right: 0; }
+    .stage-number {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 25px;
+      height: 25px;
+      border-radius: 999px;
+      color: var(--slate-600);
+      background: var(--slate-100);
+      font-size: 11px;
+      font-weight: 900;
+    }
+    .stage.active { color: var(--teal-700); background: #f0fdfa; }
+    .stage.active .stage-number { color: var(--white); background: var(--teal-700); }
+    .stage.complete { color: var(--green-700); }
+    .stage.complete .stage-number { color: var(--green-700); background: var(--green-100); }
+
+    .panel {
+      border: 1px solid var(--slate-200);
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.96);
+      box-shadow: var(--shadow-md);
+    }
+    .input-panel { padding: 22px; }
+    .panel-heading {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      margin-bottom: 18px;
+    }
+    .panel-heading h2 {
+      margin: 0;
+      font-size: 18px;
+      letter-spacing: -0.025em;
+    }
+    .panel-heading p {
+      margin: 4px 0 0;
+      color: var(--slate-500);
+      font-size: 12px;
+    }
+    .readonly-badge {
+      flex: 0 0 auto;
+      padding: 5px 9px;
+      border: 1px solid var(--blue-100);
+      border-radius: 999px;
+      color: var(--blue-700);
+      background: #eff6ff;
+      font-size: 11px;
+      font-weight: 900;
+    }
+
+    .upload-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+    .upload-card {
+      min-width: 0;
+      border: 1px solid var(--slate-200);
+      border-radius: 14px;
+      background: var(--slate-50);
+      transition: 0.16s ease;
+    }
+    .upload-card.has-file { border-color: #99f6e4; background: #f0fdfa; }
+    .upload-card.has-error { border-color: #fecaca; background: #fff7f7; }
+    .drop-zone {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 14px;
+      min-height: 122px;
+      padding: 18px;
+      border: 2px dashed transparent;
+      border-radius: 14px 14px 0 0;
+      outline: none;
+    }
+    .drop-zone:focus-visible { border-color: var(--teal-600); }
+    .drop-zone.dragover { border-color: var(--teal-600); background: var(--teal-100); }
+    .file-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 46px;
+      height: 46px;
+      border-radius: 12px;
+      color: var(--teal-700);
+      background: var(--teal-100);
+      font-size: 20px;
+      font-weight: 900;
+    }
+    .drop-title {
+      margin: 0;
+      font-size: 14px;
+      font-weight: 900;
+    }
+    .drop-help {
+      overflow: hidden;
+      margin: 5px 0 0;
+      color: var(--slate-500);
+      font-size: 12px;
+      line-height: 1.5;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .file-button {
+      min-height: 38px;
+      padding: 0 13px;
+      border: 1px solid var(--slate-300);
+      border-radius: 9px;
+      color: var(--slate-700);
+      background: var(--white);
+      font-size: 12px;
+      font-weight: 900;
+    }
+    .file-button:hover { border-color: var(--teal-600); color: var(--teal-700); }
+    .file-meta {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      border-top: 1px solid var(--slate-200);
+      background: rgba(255, 255, 255, 0.72);
+    }
+    .meta-item {
+      min-width: 0;
+      padding: 11px 12px;
+      border-right: 1px solid var(--slate-200);
+    }
+    .meta-item:last-child { border-right: 0; }
+    .meta-label {
+      color: var(--slate-500);
+      font-size: 10px;
+      font-weight: 800;
+    }
+    .meta-value {
+      overflow: hidden;
+      margin-top: 4px;
+      color: var(--slate-900);
+      font-size: 12px;
+      font-weight: 900;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .meta-value.good { color: var(--green-700); }
+    .meta-value.warn { color: var(--amber-700); }
+    .meta-value.bad { color: var(--red-700); }
+
+    .validation-box {
+      margin-top: 16px;
+      padding: 14px 16px;
+      border: 1px solid var(--slate-200);
+      border-radius: 12px;
+      background: var(--slate-50);
+    }
+    .validation-box.good { border-color: #bbf7d0; background: #f0fdf4; }
+    .validation-box.bad { border-color: #fecaca; background: #fff7f7; }
+    .validation-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 0;
+      font-size: 13px;
+      font-weight: 900;
+    }
+    .validation-detail {
+      margin: 6px 0 0;
+      color: var(--slate-600);
+      font-size: 12px;
+      line-height: 1.6;
+    }
+    .validation-list { margin: 8px 0 0; padding-left: 18px; color: var(--red-700); }
+    .validation-list li { margin: 3px 0; font-size: 12px; line-height: 1.45; }
+
+    .action-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-top: 18px;
+      padding-top: 18px;
+      border-top: 1px solid var(--slate-200);
+    }
+    .action-note {
+      color: var(--slate-500);
+      font-size: 12px;
+      line-height: 1.55;
+    }
+    .primary-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 9px;
+      min-width: 168px;
+      min-height: 46px;
+      padding: 0 20px;
+      border: 0;
+      border-radius: 11px;
+      color: var(--white);
+      background: var(--teal-700);
+      box-shadow: 0 9px 22px rgba(15, 118, 110, 0.22);
+      font-size: 14px;
+      font-weight: 900;
+      transition: 0.16s ease;
+    }
+    .primary-button:hover:not(:disabled) { background: #115e59; transform: translateY(-1px); }
+    .primary-button:disabled {
+      color: var(--slate-400);
+      background: var(--slate-200);
+      box-shadow: none;
+    }
+
+    .results-panel { margin-top: 20px; overflow: hidden; }
+    .results-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      padding: 20px 22px;
+      color: var(--white);
+      background: var(--navy-800);
+    }
+    .results-header h2 { margin: 0; font-size: 18px; }
+    .results-header p { margin: 5px 0 0; color: #cbd5e1; font-size: 12px; }
+    .download-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 9px;
+      min-height: 44px;
+      padding: 0 18px;
+      border: 0;
+      border-radius: 10px;
+      color: var(--navy-900);
+      background: #5eead4;
+      font-size: 13px;
+      font-weight: 900;
+      box-shadow: 0 8px 18px rgba(15, 23, 42, 0.18);
+    }
+    .download-button:hover { background: #99f6e4; }
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 1px;
+      background: var(--slate-200);
+      border-bottom: 1px solid var(--slate-200);
+    }
+    .summary-card {
+      min-width: 0;
+      padding: 17px 18px;
+      background: var(--white);
+    }
+    .summary-label {
+      color: var(--slate-500);
+      font-size: 10px;
+      font-weight: 900;
+      letter-spacing: 0.04em;
+    }
+    .summary-value {
+      margin-top: 7px;
+      font-size: 23px;
+      font-weight: 900;
+      letter-spacing: -0.04em;
+    }
+    .summary-value.warn { color: var(--amber-700); }
+    .summary-value.bad { color: var(--red-700); }
+
+    .preview-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 14px 18px 0;
+      background: var(--white);
+    }
+    .preview-tabs {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      overflow-x: auto;
+      padding-bottom: 10px;
+      scrollbar-width: thin;
+    }
+    .tab-button {
+      flex: 0 0 auto;
+      min-height: 35px;
+      padding: 0 12px;
+      border: 1px solid var(--slate-200);
+      border-radius: 8px;
+      color: var(--slate-600);
+      background: var(--white);
+      font-size: 11px;
+      font-weight: 900;
+    }
+    .tab-button.active { border-color: var(--teal-700); color: var(--white); background: var(--teal-700); }
+    .preview-count {
+      flex: 0 0 auto;
+      padding-bottom: 10px;
+      color: var(--slate-500);
+      font-size: 11px;
+      font-weight: 800;
+    }
+    .table-wrap {
+      overflow: auto;
+      max-height: 520px;
+      border-top: 1px solid var(--slate-200);
+      background: var(--white);
+    }
+    table {
+      width: 100%;
+      min-width: 980px;
+      border-collapse: separate;
+      border-spacing: 0;
+      font-size: 11px;
+    }
+    th {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      padding: 10px 11px;
+      color: var(--white);
+      background: var(--slate-700);
+      border-right: 1px solid rgba(255, 255, 255, 0.12);
+      text-align: left;
+      white-space: nowrap;
+    }
+    td {
+      max-width: 300px;
+      padding: 9px 11px;
+      color: var(--slate-700);
+      background: var(--white);
+      border-right: 1px solid var(--slate-100);
+      border-bottom: 1px solid var(--slate-200);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    tbody tr:nth-child(even) td { background: var(--slate-50); }
+    td.number { text-align: right; font-variant-numeric: tabular-nums; }
+    td.status { font-weight: 900; }
+    td.status[data-tone="good"] { color: var(--green-700); background: var(--green-100); }
+    td.status[data-tone="warn"] { color: var(--amber-700); background: var(--amber-100); }
+    td.status[data-tone="bad"] { color: var(--red-700); background: var(--red-100); }
+    .empty-state {
+      padding: 44px 20px;
+      color: var(--slate-500);
+      text-align: center;
+      font-size: 13px;
+    }
+    .result-footnote {
+      padding: 14px 18px 18px;
+      color: var(--slate-500);
+      background: var(--white);
+      font-size: 11px;
+      line-height: 1.6;
+    }
+
+    .page-footer {
+      display: flex;
+      justify-content: space-between;
+      gap: 18px;
+      margin-top: 18px;
+      color: var(--slate-500);
+      font-size: 11px;
+    }
+    .page-footer a { color: var(--teal-700); font-weight: 800; }
+    .toast {
+      position: fixed;
+      right: 22px;
+      bottom: 22px;
+      z-index: 100;
+      max-width: min(420px, calc(100% - 44px));
+      padding: 13px 16px;
+      border-radius: 10px;
+      color: var(--white);
+      background: var(--navy-900);
+      box-shadow: 0 18px 42px rgba(15, 23, 42, 0.28);
+      font-size: 12px;
+      font-weight: 800;
+      line-height: 1.5;
+    }
+    .toast.error { background: var(--red-700); }
+
+    @media (max-width: 1050px) {
+      .summary-grid { grid-template-columns: repeat(3, 1fr); }
+      .upload-grid { grid-template-columns: 1fr; }
+      .hero { align-items: flex-start; flex-direction: column; }
+      .workflow-chip { align-self: stretch; justify-content: center; }
+    }
+    @media (max-width: 680px) {
+      .global-header { height: 64px; padding: 0 16px; }
+      .brand-mark { font-size: 18px; }
+      .brand-divider { height: 28px; }
+      .brand-product { display: none; }
+      .header-link span { display: none; }
+      .page-shell { width: min(100% - 24px, 1480px); padding-top: 24px; }
+      .stage { padding: 9px; justify-content: center; }
+      .stage span:last-child { display: none; }
+      .input-panel { padding: 16px; }
+      .panel-heading { align-items: flex-start; }
+      .drop-zone { grid-template-columns: auto minmax(0, 1fr); }
+      .file-button { grid-column: 1 / -1; width: 100%; }
+      .file-meta { grid-template-columns: repeat(2, 1fr); }
+      .meta-item:nth-child(2) { border-right: 0; }
+      .meta-item:nth-child(-n+2) { border-bottom: 1px solid var(--slate-200); }
+      .action-bar, .results-header { align-items: stretch; flex-direction: column; }
+      .primary-button, .download-button { width: 100%; }
+      .summary-grid { grid-template-columns: repeat(2, 1fr); }
+      .preview-toolbar { align-items: stretch; flex-direction: column; }
+      .preview-count { padding: 0 0 10px; }
+      .page-footer { flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+  <header class="global-header">
+    <div class="brand" aria-label="ONEAPP NEXUS Shipping Management">
+      <div class="brand-mark">ONEAPP</div>
+      <div class="brand-divider" aria-hidden="true"></div>
+      <div class="brand-stack">
+        <div class="brand-suite">NEXUS <span class="brand-badge">PILOT</span></div>
+        <div class="brand-product">Shipping Management</div>
+      </div>
+    </div>
+    <a class="header-link" href="dashboard.html" aria-label="NEXUS 대시보드로 이동">
+      <span aria-hidden="true">←</span><span>NEXUS 대시보드</span>
+    </a>
+  </header>
+
+  <main class="page-shell">
+    <section class="hero">
+      <div>
+        <p class="eyebrow">DataOps Lite · Excel Workbench</p>
+        <h1>Shipping Management</h1>
+        <p class="hero-copy">
+          주문현황과 창고별재고를 상품코드로 대조해 전재고, 서울 1차 구매잔량, 추가 구매 필요를
+          입력 행 순서대로 배정합니다. 원본과 검증 내역을 포함한 미출고현황 Excel 한 개로 내려받으세요.
+        </p>
+      </div>
+      <div class="workflow-chip"><strong>2개 파일</strong> → 분석 → <strong>1개 Excel</strong></div>
+    </section>
+
+    <nav class="stage-strip" aria-label="작업 단계">
+      <div class="stage active" id="stageUpload"><span class="stage-number">1</span><span>파일 선택</span></div>
+      <div class="stage" id="stageAnalyze"><span class="stage-number">2</span><span>출고 분석</span></div>
+      <div class="stage" id="stageDownload"><span class="stage-number">3</span><span>Excel 다운로드</span></div>
+    </nav>
+
+    <section class="panel input-panel" aria-labelledby="inputHeading">
+      <div class="panel-heading">
+        <div>
+          <h2 id="inputHeading">입력 파일</h2>
+          <p>Excel은 브라우저 메모리에서만 분석하며 다른 ONEAPP 데이터에 쓰지 않습니다.</p>
+        </div>
+        <span class="readonly-badge">읽기 전용 분석</span>
+      </div>
+
+      <div class="upload-grid">
+        <article class="upload-card" id="ordersCard">
+          <div class="drop-zone" id="ordersDrop" tabindex="0" role="button" aria-label="주문현황 Excel 선택">
+            <div class="file-icon" aria-hidden="true">1</div>
+            <div>
+              <p class="drop-title">주문현황 Excel</p>
+              <p class="drop-help" id="ordersFileName">파일을 놓거나 선택하세요 · .xlsx / .xls</p>
+            </div>
+            <button class="file-button" type="button" data-pick="orders">파일 선택</button>
+          </div>
+          <div class="file-meta" id="ordersMeta">
+            <div class="meta-item"><div class="meta-label">인식 시트</div><div class="meta-value">-</div></div>
+            <div class="meta-item"><div class="meta-label">주문행</div><div class="meta-value">-</div></div>
+            <div class="meta-item"><div class="meta-label">필수 열</div><div class="meta-value">대기</div></div>
+            <div class="meta-item"><div class="meta-label">적요 / 미매칭</div><div class="meta-value">-</div></div>
+          </div>
+          <input class="hidden" id="ordersInput" type="file" accept=".xlsx,.xls">
+        </article>
+
+        <article class="upload-card" id="inventoryCard">
+          <div class="drop-zone" id="inventoryDrop" tabindex="0" role="button" aria-label="창고별재고 Excel 선택">
+            <div class="file-icon" aria-hidden="true">2</div>
+            <div>
+              <p class="drop-title">창고별재고 Excel</p>
+              <p class="drop-help" id="inventoryFileName">파일을 놓거나 선택하세요 · .xlsx / .xls</p>
+            </div>
+            <button class="file-button" type="button" data-pick="inventory">파일 선택</button>
+          </div>
+          <div class="file-meta" id="inventoryMeta">
+            <div class="meta-item"><div class="meta-label">인식 시트</div><div class="meta-value">-</div></div>
+            <div class="meta-item"><div class="meta-label">재고행</div><div class="meta-value">-</div></div>
+            <div class="meta-item"><div class="meta-label">필수 열</div><div class="meta-value">대기</div></div>
+            <div class="meta-item"><div class="meta-label">중복 상품코드</div><div class="meta-value">-</div></div>
+          </div>
+          <input class="hidden" id="inventoryInput" type="file" accept=".xlsx,.xls">
+        </article>
+      </div>
+
+      <div class="validation-box" id="validationBox" role="status" aria-live="polite">
+        <p class="validation-title"><span aria-hidden="true">○</span>두 파일을 선택하면 차단 검증을 시작합니다.</p>
+        <p class="validation-detail">필수 열, 수량, 재고 상품코드 중복을 확인한 뒤 분석 버튼을 활성화합니다.</p>
+      </div>
+
+      <div class="action-bar">
+        <div class="action-note">
+          미매칭 상품은 `재고정보 없음`으로 남고 구매수량을 자동 확정하지 않습니다.<br>
+          적요·적요1은 별도 이슈로 모으되 우선순위를 추론하지 않습니다.
+        </div>
+        <button class="primary-button" id="analyzeButton" type="button" disabled>
+          <span aria-hidden="true">▸</span> 출고 분석
+        </button>
+      </div>
+    </section>
+
+    <section class="panel results-panel hidden" id="resultsPanel" aria-labelledby="resultsHeading">
+      <div class="results-header">
+        <div>
+          <h2 id="resultsHeading">분석 결과</h2>
+          <p id="resultSubtitle">입력 행 순서 기준 배정과 대사가 완료되었습니다.</p>
+        </div>
+        <button class="download-button" id="downloadButton" type="button">
+          <span aria-hidden="true">↓</span> 미출고현황 Excel 다운로드
+        </button>
+      </div>
+
+      <div class="summary-grid" id="summaryGrid"></div>
+
+      <div class="preview-toolbar">
+        <div class="preview-tabs" id="previewTabs" role="tablist" aria-label="결과 미리보기"></div>
+        <div class="preview-count" id="previewCount"></div>
+      </div>
+      <div class="table-wrap" id="previewTable" role="tabpanel"></div>
+      <div class="result-footnote">
+        계산 결과는 관리자 검토용입니다. 다운로드 파일의 `검증결과`, `주문원본`, `재고원본`을 비교한 뒤 실제 출고·구매를 결정하세요.
+      </div>
+    </section>
+
+    <footer class="page-footer">
+      <span>Shipping Management MVP · workspace shipping-workspace/v1 · cloud writes 없음</span>
+      <a href="SHIPPING_MANAGEMENT_GUIDANCE.md">개발·운영 기준 보기</a>
+    </footer>
+  </main>
+
+  <div class="toast hidden" id="toast" role="status" aria-live="polite"></div>
+
+  <noscript>Shipping Management를 사용하려면 JavaScript를 활성화해야 합니다.</noscript>
+
+  <script>
+    (function () {
+      "use strict";
+
+      const engine = window.ShippingManagementEngine;
+      const workbookTools = window.ShippingManagementWorkbook;
+      const MAX_FILE_SIZE = 25 * 1024 * 1024;
+      const state = {
+        orders: null,
+        inventory: null,
+        validation: null,
+        workspace: null,
+        activePreview: "allocations",
+        loading: { orders: false, inventory: false },
+      };
+
+      const elements = {
+        ordersInput: document.getElementById("ordersInput"),
+        inventoryInput: document.getElementById("inventoryInput"),
+        ordersDrop: document.getElementById("ordersDrop"),
+        inventoryDrop: document.getElementById("inventoryDrop"),
+        ordersCard: document.getElementById("ordersCard"),
+        inventoryCard: document.getElementById("inventoryCard"),
+        ordersFileName: document.getElementById("ordersFileName"),
+        inventoryFileName: document.getElementById("inventoryFileName"),
+        ordersMeta: document.getElementById("ordersMeta"),
+        inventoryMeta: document.getElementById("inventoryMeta"),
+        validationBox: document.getElementById("validationBox"),
+        analyzeButton: document.getElementById("analyzeButton"),
+        resultsPanel: document.getElementById("resultsPanel"),
+        resultSubtitle: document.getElementById("resultSubtitle"),
+        summaryGrid: document.getElementById("summaryGrid"),
+        previewTabs: document.getElementById("previewTabs"),
+        previewCount: document.getElementById("previewCount"),
+        previewTable: document.getElementById("previewTable"),
+        downloadButton: document.getElementById("downloadButton"),
+        stageUpload: document.getElementById("stageUpload"),
+        stageAnalyze: document.getElementById("stageAnalyze"),
+        stageDownload: document.getElementById("stageDownload"),
+        toast: document.getElementById("toast"),
+      };
+
+      function escapeHtml(value) {
+        return String(value ?? "")
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;")
+          .replace(/'/g, "&#039;");
+      }
+
+      function formatNumber(value) {
+        if (value === null || value === undefined || value === "") return "";
+        const number = Number(value);
+        return Number.isFinite(number)
+          ? new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 3 }).format(number)
+          : String(value);
+      }
+
+      function showToast(message, isError) {
+        elements.toast.textContent = message;
+        elements.toast.classList.toggle("error", Boolean(isError));
+        elements.toast.classList.remove("hidden");
+        window.clearTimeout(showToast.timer);
+        showToast.timer = window.setTimeout(() => elements.toast.classList.add("hidden"), 3600);
+      }
+
+      function isSupportedFile(file) {
+        return Boolean(file && /\.(xlsx|xls)$/i.test(file.name));
+      }
+
+      function parsedScore(parsed) {
+        return (parsed.missingColumns?.length || 0) * 1000 +
+          (parsed.errors?.length || 0) * 100 +
+          (parsed.rowCount > 0 ? 0 : 10);
+      }
+
+      async function parseExcelFile(file, kind) {
+        if (!window.XLSX) throw new Error("Excel 라이브러리를 불러오지 못했습니다. 네트워크 연결 후 다시 시도하세요.");
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        const workbook = window.XLSX.read(bytes, {
+          type: "array",
+          cellDates: false,
+          cellNF: true,
+          cellText: true,
+        });
+        if (!workbook.SheetNames.length) throw new Error("Excel에 읽을 수 있는 시트가 없습니다.");
+
+        let best = null;
+        workbook.SheetNames.forEach((sheetName) => {
+          const sheet = workbook.Sheets[sheetName];
+          const rawMatrix = window.XLSX.utils.sheet_to_json(sheet, {
+            header: 1,
+            raw: true,
+            defval: null,
+            blankrows: true,
+          });
+          const displayMatrix = window.XLSX.utils.sheet_to_json(sheet, {
+            header: 1,
+            raw: false,
+            defval: "",
+            blankrows: true,
+          });
+          const parsed = kind === "orders"
+            ? engine.parseOrderWorkbook({ fileName: file.name, sheetName, rawMatrix, displayMatrix })
+            : engine.parseInventoryWorkbook({ fileName: file.name, sheetName, rawMatrix, displayMatrix });
+          if (!best || parsedScore(parsed) < parsedScore(best)) best = parsed;
+        });
+        return best;
+      }
+
+      function setLoading(kind, loading) {
+        state.loading[kind] = loading;
+        const fileName = elements[kind + "FileName"];
+        if (loading) fileName.textContent = "Excel 구조를 확인하는 중...";
+        elements.analyzeButton.disabled = true;
+      }
+
+      function resetResults() {
+        state.workspace = null;
+        elements.resultsPanel.classList.add("hidden");
+        elements.stageAnalyze.classList.remove("complete", "active");
+        elements.stageDownload.classList.remove("complete", "active");
+      }
+
+      async function handleFile(kind, file) {
+        if (!file) return;
+        if (!isSupportedFile(file)) {
+          showToast(".xlsx 또는 .xls 파일만 선택할 수 있습니다.", true);
+          return;
+        }
+        if (file.size > MAX_FILE_SIZE) {
+          showToast("파일 크기는 25MB 이하여야 합니다.", true);
+          return;
+        }
+
+        resetResults();
+        setLoading(kind, true);
+        try {
+          state[kind] = await parseExcelFile(file, kind);
+          showToast(`${file.name} 파일을 읽었습니다.`);
+        } catch (error) {
+          state[kind] = null;
+          showToast(error.message || "Excel 파일을 읽지 못했습니다.", true);
+        } finally {
+          setLoading(kind, false);
+          refreshInputState();
+        }
+      }
+
+      function metaHtml(items) {
+        return items.map((item) => `
+          <div class="meta-item">
+            <div class="meta-label">${escapeHtml(item.label)}</div>
+            <div class="meta-value ${item.tone || ""}" title="${escapeHtml(item.value)}">${escapeHtml(item.value)}</div>
+          </div>
+        `).join("");
+      }
+
+      function renderFileCard(kind) {
+        const parsed = state[kind];
+        const card = elements[kind + "Card"];
+        const name = elements[kind + "FileName"];
+        const meta = elements[kind + "Meta"];
+        const loading = state.loading[kind];
+        card.classList.toggle("has-file", Boolean(parsed));
+        card.classList.toggle("has-error", Boolean(parsed?.errors?.length));
+        if (loading) return;
+
+        if (!parsed) {
+          name.textContent = "파일을 놓거나 선택하세요 · .xlsx / .xls";
+          meta.innerHTML = metaHtml(kind === "orders"
+            ? [
+                { label: "인식 시트", value: "-" },
+                { label: "주문행", value: "-" },
+                { label: "필수 열", value: "대기" },
+                { label: "적요 / 미매칭", value: "-" },
+              ]
+            : [
+                { label: "인식 시트", value: "-" },
+                { label: "재고행", value: "-" },
+                { label: "필수 열", value: "대기" },
+                { label: "중복 상품코드", value: "-" },
+              ]);
+          return;
+        }
+
+        name.textContent = parsed.fileName;
+        const requiredGood = parsed.missingColumns.length === 0;
+        if (kind === "orders") {
+          const unmatched = state.validation?.unmatchedCount ?? "-";
+          meta.innerHTML = metaHtml([
+            { label: "인식 시트", value: parsed.sheetName || "-" },
+            { label: "주문행", value: `${formatNumber(parsed.rowCount)}행` },
+            {
+              label: "필수 열",
+              value: requiredGood ? "충족" : `${parsed.missingColumns.length}개 누락`,
+              tone: requiredGood ? "good" : "bad",
+            },
+            {
+              label: "적요 / 미매칭",
+              value: `${formatNumber(parsed.memoCount)} / ${formatNumber(unmatched)}`,
+              tone: unmatched === 0 ? "" : "warn",
+            },
+          ]);
+        } else {
+          meta.innerHTML = metaHtml([
+            { label: "인식 시트", value: parsed.sheetName || "-" },
+            { label: "재고행", value: `${formatNumber(parsed.rowCount)}행` },
+            {
+              label: "필수 열",
+              value: requiredGood ? "충족" : `${parsed.missingColumns.length}개 누락`,
+              tone: requiredGood ? "good" : "bad",
+            },
+            {
+              label: "중복 상품코드",
+              value: `${formatNumber(parsed.duplicateCodes.length)}개`,
+              tone: parsed.duplicateCodes.length ? "bad" : "good",
+            },
+          ]);
+        }
+      }
+
+      function renderValidation() {
+        const bothReady = Boolean(state.orders && state.inventory);
+        if (!bothReady) {
+          elements.validationBox.className = "validation-box";
+          elements.validationBox.innerHTML = `
+            <p class="validation-title"><span aria-hidden="true">○</span>두 파일을 선택하면 차단 검증을 시작합니다.</p>
+            <p class="validation-detail">필수 열, 수량, 재고 상품코드 중복을 확인한 뒤 분석 버튼을 활성화합니다.</p>
+          `;
+          return;
+        }
+
+        const validation = state.validation;
+        if (validation.canAnalyze) {
+          const details = [
+            `미매칭 상품 ${formatNumber(validation.unmatchedCount)}개`,
+            `재고 중복 ${formatNumber(validation.duplicateCount)}개`,
+            `적요 확인 ${formatNumber(validation.memoCount)}행`,
+          ];
+          if (validation.warnings.length) details.push(`수량 경고 ${formatNumber(validation.warnings.length)}건`);
+          const codeDetail = validation.unmatchedCodes.length
+            ? `<br>미매칭 코드: ${escapeHtml(validation.unmatchedCodes.slice(0, 12).join(", "))}${validation.unmatchedCodes.length > 12 ? " 외" : ""}`
+            : "";
+          elements.validationBox.className = "validation-box good";
+          elements.validationBox.innerHTML = `
+            <p class="validation-title"><span aria-hidden="true">✓</span>차단 검증을 통과했습니다.</p>
+            <p class="validation-detail">${details.join(" · ")}${codeDetail}</p>
+          `;
+        } else {
+          elements.validationBox.className = "validation-box bad";
+          elements.validationBox.innerHTML = `
+            <p class="validation-title"><span aria-hidden="true">!</span>분석을 시작할 수 없습니다.</p>
+            <p class="validation-detail">원본 Excel에서 아래 항목을 수정한 뒤 다시 선택하세요.</p>
+            <ul class="validation-list">
+              ${validation.errors.slice(0, 10).map((issue) => `<li>${escapeHtml(issue.message)}</li>`).join("")}
+              ${validation.errors.length > 10 ? `<li>그 외 ${validation.errors.length - 10}건</li>` : ""}
+            </ul>
+          `;
+        }
+      }
+
+      function refreshInputState() {
+        state.validation = state.orders && state.inventory
+          ? engine.validateInputs(state.orders, state.inventory)
+          : null;
+        renderFileCard("orders");
+        renderFileCard("inventory");
+        renderValidation();
+        elements.analyzeButton.disabled = !state.validation?.canAnalyze;
+        const bothSelected = Boolean(state.orders && state.inventory);
+        elements.stageUpload.classList.toggle("complete", bothSelected);
+        elements.stageUpload.classList.toggle("active", !bothSelected);
+        elements.stageAnalyze.classList.toggle("active", Boolean(state.validation?.canAnalyze && !state.workspace));
+      }
+
+      function getPreviewDefinitions(workspace) {
+        return {
+          allocations: {
+            label: "미출고현황",
+            headers: ["순서", "상품코드", "품목명", "주문수량", "전재고 배정", "서울 배정", "추가 구매", "출고판정", "거래처", "그룹", "매칭"],
+            numeric: [0, 3, 4, 5, 6],
+            status: 7,
+            rows: workspace.allocations.map((row) => [
+              row.inputOrder,
+              row.productCode,
+              row.productName,
+              row.quantity,
+              row.wholeAllocation,
+              row.seoulAllocation,
+              row.purchaseNeed,
+              row.status,
+              row.customer,
+              row.group,
+              row.matchStatus,
+            ]),
+          },
+          summaries: {
+            label: "상품별요약",
+            headers: ["상품코드", "품목명", "전체 주문", "전재고", "서울 잔량", "전재고 배정", "서울 배정", "추가 구매", "출고판정", "주문건수", "매칭"],
+            numeric: [2, 3, 4, 5, 6, 7, 9],
+            status: 8,
+            rows: workspace.productSummaries.map((row) => [
+              row.productCode,
+              row.productName,
+              row.totalOrderQuantity,
+              row.inventoryMatched ? row.wholeStockRaw : "",
+              row.inventoryMatched ? row.seoulFirstPurchaseRemaining : "",
+              row.wholeAllocation,
+              row.seoulAllocation,
+              row.purchaseNeed,
+              row.status,
+              row.orderCount,
+              row.matchStatus,
+            ]),
+          },
+          purchases: {
+            label: "발주관리",
+            headers: ["상품코드", "품목명", "전체 주문", "전재고", "서울 잔량", "추가 구매", "관리상태", "거래처", "적요", "매칭"],
+            numeric: [2, 3, 4, 5],
+            status: 6,
+            rows: workspace.purchaseManagement.map((row) => [
+              row.productCode,
+              row.productName,
+              row.totalOrderQuantity,
+              row.inventoryMatched ? row.wholeStockRaw : "",
+              row.inventoryMatched ? row.seoulFirstPurchaseRemaining : "",
+              row.purchaseNeed,
+              row.managementStatus,
+              row.customers,
+              [row.notes, row.notes1].filter(Boolean).join(" / "),
+              row.matchStatus,
+            ]),
+          },
+          memos: {
+            label: "적요이슈",
+            headers: ["순서", "원본행", "상품코드", "품목명", "적요", "적요1", "거래처", "그룹"],
+            numeric: [0, 1],
+            status: -1,
+            rows: workspace.memoIssues.map((row) => [
+              row.inputOrder,
+              row.sourceRowNumber,
+              row.productCode,
+              row.productName,
+              row.note,
+              row.note1,
+              row.customer,
+              row.group,
+            ]),
+          },
+          validation: {
+            label: "검증결과",
+            headers: ["검증 항목", "계산 결과", "정상 기준", "판정", "설명"],
+            numeric: [1, 2],
+            status: 3,
+            rows: workspace.validationResults.map((row) => [
+              row.item,
+              row.result,
+              row.expected,
+              row.status,
+              row.description,
+            ]),
+          },
+        };
+      }
+
+      function statusTone(value) {
+        const text = String(value || "");
+        if (text.includes("오류") || text.includes("재고정보") || text.includes("추가 구매") || text.includes("발주 필요")) return "bad";
+        if (text.includes("확인") || text.includes("부분출고")) return "warn";
+        return text ? "good" : "";
+      }
+
+      function renderPreview() {
+        const definitions = getPreviewDefinitions(state.workspace);
+        if (!definitions[state.activePreview]) state.activePreview = "allocations";
+        elements.previewTabs.innerHTML = Object.entries(definitions).map(([id, definition]) => `
+          <button class="tab-button ${id === state.activePreview ? "active" : ""}" type="button" role="tab"
+            aria-selected="${id === state.activePreview}" data-preview="${id}">
+            ${escapeHtml(definition.label)}
+          </button>
+        `).join("");
+
+        const preview = definitions[state.activePreview];
+        elements.previewCount.textContent = `${formatNumber(preview.rows.length)}행`;
+        if (!preview.rows.length) {
+          elements.previewTable.innerHTML = `<div class="empty-state">표시할 항목이 없습니다.</div>`;
+          return;
+        }
+        elements.previewTable.innerHTML = `
+          <table>
+            <thead><tr>${preview.headers.map((header) => `<th>${escapeHtml(header)}</th>`).join("")}</tr></thead>
+            <tbody>
+              ${preview.rows.map((row) => `
+                <tr>
+                  ${preview.headers.map((_, index) => {
+                    const value = row[index];
+                    const isNumber = preview.numeric.includes(index) && value !== "";
+                    const isStatus = preview.status === index;
+                    return `<td class="${isNumber ? "number" : ""} ${isStatus ? "status" : ""}"
+                      ${isStatus ? `data-tone="${statusTone(value)}"` : ""}
+                      title="${escapeHtml(value)}">${escapeHtml(isNumber ? formatNumber(value) : value)}</td>`;
+                  }).join("")}
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        `;
+      }
+
+      function renderResults() {
+        const stats = state.workspace.stats;
+        const summaryItems = [
+          { label: "주문행", value: stats.orderRowCount },
+          { label: "상품", value: stats.productCount },
+          { label: "총 주문수량", value: stats.totalOrderQuantity },
+          { label: "추가 구매 필요", value: stats.totalPurchaseNeed, tone: stats.totalPurchaseNeed > 0 ? "warn" : "" },
+          { label: "재고정보 없음", value: stats.unmatchedCount, tone: stats.unmatchedCount > 0 ? "bad" : "" },
+          { label: "적요 확인", value: stats.memoCount, tone: stats.memoCount > 0 ? "warn" : "" },
+        ];
+        elements.summaryGrid.innerHTML = summaryItems.map((item) => `
+          <div class="summary-card">
+            <div class="summary-label">${escapeHtml(item.label)}</div>
+            <div class="summary-value ${item.tone || ""}">${escapeHtml(formatNumber(item.value))}</div>
+          </div>
+        `).join("");
+        elements.resultSubtitle.textContent =
+          `${state.workspace.sourceFiles.orders.fileName} ${formatNumber(stats.orderRowCount)}행 · ` +
+          `${state.workspace.sourceFiles.inventory.fileName} ${formatNumber(stats.inventoryRowCount)}행 · 배정 대사 ${stats.allocationDifference === 0 ? "정상" : "오류"}`;
+        renderPreview();
+        elements.resultsPanel.classList.remove("hidden");
+        elements.stageAnalyze.classList.remove("active");
+        elements.stageAnalyze.classList.add("complete");
+        elements.stageDownload.classList.add("active");
+      }
+
+      function runAnalysis() {
+        if (!state.validation?.canAnalyze) return;
+        elements.analyzeButton.disabled = true;
+        elements.analyzeButton.textContent = "분석 중...";
+        window.setTimeout(() => {
+          try {
+            state.workspace = engine.analyze(state.orders, state.inventory);
+            state.activePreview = "allocations";
+            renderResults();
+            elements.resultsPanel.scrollIntoView({ behavior: "smooth", block: "start" });
+            showToast("출고 배정과 검증이 완료되었습니다.");
+          } catch (error) {
+            showToast(error.message || "분석 중 오류가 발생했습니다.", true);
+          } finally {
+            elements.analyzeButton.innerHTML = '<span aria-hidden="true">▸</span> 출고 분석';
+            elements.analyzeButton.disabled = !state.validation?.canAnalyze;
+          }
+        }, 20);
+      }
+
+      function downloadResult() {
+        if (!state.workspace) return;
+        try {
+          const fileName = workbookTools.getOutputFileName(state.workspace.createdAt);
+          workbookTools.downloadWorkbook(state.workspace, window.XLSX, fileName);
+          elements.stageDownload.classList.remove("active");
+          elements.stageDownload.classList.add("complete");
+          showToast(`${fileName} 다운로드를 시작했습니다.`);
+        } catch (error) {
+          showToast(error.message || "Excel을 생성하지 못했습니다.", true);
+        }
+      }
+
+      function bindDropZone(kind) {
+        const drop = elements[kind + "Drop"];
+        const input = elements[kind + "Input"];
+        drop.addEventListener("click", (event) => {
+          if (!event.target.closest("button")) input.click();
+        });
+        drop.addEventListener("keydown", (event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            input.click();
+          }
+        });
+        ["dragenter", "dragover"].forEach((eventName) => {
+          drop.addEventListener(eventName, (event) => {
+            event.preventDefault();
+            drop.classList.add("dragover");
+          });
+        });
+        ["dragleave", "drop"].forEach((eventName) => {
+          drop.addEventListener(eventName, (event) => {
+            event.preventDefault();
+            drop.classList.remove("dragover");
+          });
+        });
+        drop.addEventListener("drop", (event) => handleFile(kind, event.dataTransfer.files[0]));
+        input.addEventListener("change", () => {
+          handleFile(kind, input.files[0]);
+          input.value = "";
+        });
+      }
+
+      document.querySelectorAll("[data-pick]").forEach((button) => {
+        button.addEventListener("click", (event) => {
+          event.stopPropagation();
+          elements[button.dataset.pick + "Input"].click();
+        });
+      });
+      elements.analyzeButton.addEventListener("click", runAnalysis);
+      elements.downloadButton.addEventListener("click", downloadResult);
+      elements.previewTabs.addEventListener("click", (event) => {
+        const button = event.target.closest("[data-preview]");
+        if (!button || !state.workspace) return;
+        state.activePreview = button.dataset.preview;
+        renderPreview();
+      });
+      bindDropZone("orders");
+      bindDropZone("inventory");
+
+      if (!engine || !workbookTools || !window.XLSX) {
+        elements.validationBox.className = "validation-box bad";
+        elements.validationBox.innerHTML = `
+          <p class="validation-title"><span aria-hidden="true">!</span>실행 라이브러리 로딩 실패</p>
+          <p class="validation-detail">네트워크 연결을 확인하고 페이지를 새로고침하세요.</p>
+        `;
+        document.querySelectorAll("button").forEach((button) => {
+          if (!button.closest(".global-header")) button.disabled = true;
+        });
+      }
+    })();
+  </script>
+</body>
+</html>

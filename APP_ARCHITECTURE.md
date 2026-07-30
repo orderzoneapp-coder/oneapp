@@ -91,6 +91,7 @@ Shared storage or navigation does not make their business meaning identical.
 | `history_viewer.html` | Web entry | Production | Inspect product-change history and price trends |
 | `Master.html` | Web entry | Pilot | Product-master lookup and administrator-reviewed add/update; initial registration and full replacement are not active in the first phase |
 | `Item_manager.html` | Web entry | Pilot / transition | Existing category lookup and product-management route retained until approved feature migration and result verification are complete |
+| `orders.html` | Planned web entry / Pilot candidate | Planned | Shipping Management aggregate-stock allocation and unshipped-status Excel review; browser-memory only with no production writes |
 | `coreEngine.js` | Shared library | Production | Storage, pricing, history, export, cloud synchronization, and master-data utilities |
 | `code.gs` | Cloud service | Production | Google Apps Script API for master, history, and configuration backup and restore |
 
@@ -362,6 +363,7 @@ A planned application must record:
 
 | Component | Status | Intended purpose | Development trigger |
 |---|---|---|---|
+| `orders.html` | Planned / Pilot candidate | Match order status with aggregate warehouse stock in input order and generate one reviewed unshipped-status workbook | Promote only after reference-file, allocation-reconciliation, workbook, and browser-flow validation |
 | `trend_report.html` | Planned | Provide insight from MerchOps and DataOps results | Resume after both applications produce stable master, history, inventory, and performance data |
 | `image_generator.html` | Planned utility | Produce offline-sales images and printed materials for price changes and promotional products | Resume after the MerchOps F9 review payload and downstream F10 print workflow are finalized |
 
@@ -370,6 +372,8 @@ These files may remain in the repository, but they are not production dependenci
 They do not receive feature expansion during the current MerchOps and DataOps development cycle unless separately approved.
 
 Planned applications must not write production master data until they are promoted through architecture review.
+
+Shipping Management currently uses the existing NEXUS Operations route to `orders.html` as a pilot entry only. It owns no shared storage or cloud contract, does not call `coreEngine.js`, and does not change MerchOps or DataOps behavior.
 
 ---
 

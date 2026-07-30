@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.2.0",
-  "updatedAt": "2026-07-27",
+  "updatedAt": "2026-07-30",
   "repository": {
     "fullName": "orderzoneapp-coder/oneapp",
     "defaultBranch": "main",
@@ -427,6 +427,38 @@
     ]
   },
   "plannedApplications": [
+    {
+      "id": "shipping-management",
+      "name": "Shipping Management",
+      "proposedPath": "orders.html",
+      "kind": "web-entry",
+      "status": "planned",
+      "developmentState": "mvp-pilot-candidate",
+      "purpose": "Reduce administrator Excel reconciliation time by matching order status and aggregate warehouse inventory, allocating available stock in input order, and generating one reviewed unshipped-status workbook.",
+      "owner": "shipping-operations",
+      "inputs": [
+        "주문현황 Excel",
+        "창고별재고 Excel"
+      ],
+      "outputs": [
+        "미출고현황 Excel workbook",
+        "shipping-workspace/v1 in-memory analysis result"
+      ],
+      "sharedContracts": [],
+      "upstream": [],
+      "downstream": [],
+      "productionWrites": false,
+      "validation": [
+        "Required columns and numeric quantities pass before analysis.",
+        "Inventory duplicate product codes block analysis.",
+        "Matched allocations reconcile by order row and product without reusing aggregate stock.",
+        "Unmatched product codes remain explicit and do not receive a confirmed purchase quantity.",
+        "The generated workbook contains all seven required review and source sheets.",
+        "Representative reference files, focused edge cases, and the local browser workflow pass."
+      ],
+      "rollback": "Disable the pilot orders.html route and revert the isolated Shipping Management entry, engine, workbook helper, documentation, and tests; no shared storage or production data migration is required.",
+      "targetStatus": "pilot"
+    },
     {
       "id": "trend-report",
       "name": "Trend Report",

@@ -88,3 +88,6 @@ jobs:
 
       - name: Test MerchOps Excel codes, bulk edit, and price filters
         run: node scripts/test-merchops-spot-price.mjs
+
+      - name: Test Shipping Management allocation and workbook contracts
+        run: node scripts/test-shipping-management.mjs
