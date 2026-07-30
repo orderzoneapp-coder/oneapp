@@ -112,6 +112,15 @@ assert.doesNotMatch(html, /onOpenMemo: \(key, text\) =>/);
 assert.match(html, /isMultiGroupItem: multiPriceCodeSet\.has\(item\.코드\)/);
 assert.match(html, /const stabilizeViewRows = useCallback/);
 
+const appStart = html.indexOf("function App() {");
+const productDataBinding = html.indexOf("const { productData, setProductData", appStart);
+const productDataRefBinding = html.indexOf("const productDataRef = useRef(productData);", appStart);
+assert.ok(appStart >= 0 && productDataBinding > appStart, "App productData binding must be present");
+assert.ok(
+  productDataRefBinding > productDataBinding,
+  "App productDataRef must be initialized after productData to prevent initial-render TDZ failures",
+);
+
 const benchmarkRows = Array.from({ length: 5000 }, (_, index) => ({
   batchKey: `RAW_${index}`,
   코드: `RAW_${index % 500}`,

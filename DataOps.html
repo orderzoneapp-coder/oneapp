@@ -7748,8 +7748,6 @@ function App() {
     const focusedInputRef = useRef({ key: null, idx: -1 });
     const activeIssueModeRef = useRef(null);
     const filteredProductDataRef = useRef([]); // V1.a22.12: 프린터 출력은 현재 화면 필터 결과를 그대로 사용한다.
-    const productDataRef = useRef(productData);
-    productDataRef.current = productData;
     const viewRowCacheRef = useRef(new Map());
     const systemUiCollapsedRef = useRef(false); // V1.a22.12: 스크롤 중 헤더 깜박임 방지용 현재 접힘 상태 참조
     const scrollUiGuardRef = useRef({
@@ -7895,6 +7893,8 @@ function App() {
     }, [viewMode, getVisibleMergeCandidateRows, focusMergeCandidateAt, setAlertMsg]);
     // 비즈니스 로직 엔진 연결
     const { productData, setProductData, analysisPeriod, setAnalysisPeriod, targetDateStr, setTargetDateStr, substHistory, setSubstHistory, ackMultiCodes, setAckMultiCodes, resetEngine, saveWorkState, restoreWorkState, handleBaseDataChange, handleManualStockChange, executeImmediateSubstitution, handlePurchaseLotManualAdjust, executeMasterSubstitutionCandidates, handleSalesMove, executeAnalysis, runAnalysis, runCostExtraction } = useInventoryEngine({ mappings, grouping, setAlertMsg, setConfirmModal, setIsProcessing, setAppStep });
+    const productDataRef = useRef(productData);
+    productDataRef.current = productData;
     const isCostExtractionMode = !files.prev && files.in && !files.out && files.end;
     const hasEndFile = !!files.end;
     // V1.a22.12: 실행 버튼은 업로드된 파일 역할에 맞는 것만 노출한다.
