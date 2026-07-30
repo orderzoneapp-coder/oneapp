@@ -566,7 +566,7 @@ assert.deepEqual(Array.from(emptyPreviewGrid[0]), previewColumns);
 assert.equal(emptyPreviewGrid.length, 1);
 assert.equal(emptyPreviewSheet["!merges"], undefined);
 
-const expectedVersion = "V1.a22.104_WholeStockAdminMerge";
+const expectedVersion = "V1.a22.105_SpacePerformance";
 assert.match(
   source,
   new RegExp(
