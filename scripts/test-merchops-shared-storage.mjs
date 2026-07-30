@@ -811,7 +811,7 @@ assert.match(files["app-manifest.json"], /"id": "master-lookup"[\s\S]*?"path": "
 assert.match(files["app-manifest.json"], /"id": "item-manager"[\s\S]*?"path": "Item_manager\.html"[\s\S]*?"status": "pilot"[\s\S]*?"productionWrites": true/);
 const plannedManifestSection = files["app-manifest.json"].slice(files["app-manifest.json"].indexOf('"plannedApplications"'));
 assert.doesNotMatch(plannedManifestSection, /"id": "(master-lookup|item-manager)"/);
-assert.match(files["APP_ARCHITECTURE.md"], /MerchOps: F7 applies reviewed work[\s\S]*F8 creates the Excel output/);
+assert.match(files["APP_ARCHITECTURE.md"], /#### MerchOps[\s\S]*F7 applies reviewed work[\s\S]*F8 creates the Excel output/);
 assert.match(files["DataOps.html"], /persistDataOpsMasterCache[\s\S]*storage\.setItem\(DATAOPS_MERCH_MASTER_CACHE_KEY/);
 assert.match(files["DataOps.html"], /const rawSubdivision = DATAOPS_CLOUD_MODULE\.buildRawSubdivisionFromMaster\(master\)/);
 assert.match(files["DataOps.html"], /derived cache mirror update failed after atomic master cache save/);
