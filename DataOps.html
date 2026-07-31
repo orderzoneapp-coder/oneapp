@@ -6435,6 +6435,7 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                 }
             });
             const simpleCountEndItems = parsedEnd.filter(item => !isClosingItem(item));
+            const normalizeKeyText = (val) => safeStr(val, '').replace(/\s/g, '').replace(/[\-_()（）\[\]{}]/g, '').toLowerCase();
             const normalizeCountKey = (item = {}) => {
                 const code = safeStr(item.코드 || '').replace(/\.0$/, '').trim();
                 if (code && code !== 'NO_CODE' && code !== '-')

@@ -10,8 +10,12 @@ const mainScriptStart = source.indexOf(mainScriptMarker);
 const mainScriptEnd = source.lastIndexOf("</script>");
 assert.notEqual(mainScriptStart, -1, "Missing DataOps main script block");
 assert.ok(mainScriptEnd > mainScriptStart, "Missing DataOps main script closing tag");
+const mainScriptSource = source.slice(
+  mainScriptStart + mainScriptMarker.length,
+  mainScriptEnd,
+);
 new vm.Script(
-  source.slice(mainScriptStart + mainScriptMarker.length, mainScriptEnd),
+  mainScriptSource,
   { filename: "DataOps.inline.js" },
 );
 
@@ -27,6 +31,111 @@ const executeAnalysis = section(
   "const executeAnalysis = useCallback",
   "const runAnalysis = useCallback",
 );
+
+const inventoryEngineMarker = "const useInventoryEngine =";
+const inventoryEngineStart = mainScriptSource.indexOf(inventoryEngineMarker);
+const inventoryEngineEnd = mainScriptSource.indexOf(
+  "const IssueChip = React.memo",
+  inventoryEngineStart,
+);
+assert.notEqual(
+  inventoryEngineStart,
+  -1,
+  "Missing useInventoryEngine runtime source",
+);
+assert.ok(
+  inventoryEngineEnd > inventoryEngineStart,
+  "Missing useInventoryEngine runtime end marker",
+);
+
+const hookState = [];
+let hookIndex = 0;
+const runtimeReact = {
+  useState: (initialValue) => {
+    const index = hookIndex++;
+    const initial =
+      typeof initialValue === "function" ? initialValue() : initialValue;
+    hookState[index] = initial;
+    return [
+      initial,
+      (nextValue) => {
+        hookState[index] =
+          typeof nextValue === "function"
+            ? nextValue(hookState[index])
+            : nextValue;
+      },
+    ];
+  },
+  useRef: (initialValue) => ({ current: initialValue }),
+  useEffect: () => {},
+  useMemo: (factory) => factory(),
+  useCallback: (callback) => callback,
+};
+const storageValues = new Map();
+const runtimeContext = vm.createContext({
+  console,
+  React: runtimeReact,
+  localStorage: {
+    getItem: (key) =>
+      storageValues.has(String(key)) ? storageValues.get(String(key)) : null,
+    setItem: (key, value) => storageValues.set(String(key), String(value)),
+    removeItem: (key) => storageValues.delete(String(key)),
+  },
+  setTimeout: (callback) => {
+    callback();
+    return 1;
+  },
+  clearTimeout: () => {},
+});
+runtimeContext.window = runtimeContext;
+runtimeContext.self = runtimeContext;
+runtimeContext.globalThis = runtimeContext;
+
+new vm.Script(mainScriptSource.slice(0, inventoryEngineStart), {
+  filename: "DataOps.runtime-preamble.js",
+}).runInContext(runtimeContext);
+new vm.Script(
+  `${mainScriptSource.slice(
+    inventoryEngineStart,
+    inventoryEngineEnd,
+  )}\nglobalThis.actualUseInventoryEngine = useInventoryEngine;`,
+  { filename: "DataOps.inventory-engine.js" },
+).runInContext(runtimeContext);
+
+const runtimeAlerts = [];
+const inventoryEngine = runtimeContext.actualUseInventoryEngine({
+  mappings: {},
+  grouping: {},
+  setAlertMsg: (message) => runtimeAlerts.push(message),
+  setConfirmModal: () => {},
+  setIsProcessing: () => {},
+  setAppStep: () => {},
+});
+const actualExecuteResult = inventoryEngine.executeAnalysis({
+  parsedPrev: [],
+  parsedIn: [],
+  parsedOut: [],
+  parsedEnd: [
+    {
+      코드: "",
+      품명: "기준선 테스트 상품",
+      수량: 0,
+      _raw: {},
+    },
+  ],
+  periodStr: "2026-07-31",
+  targetDateStrFromData: "2026-07-31",
+  endFileProvided: true,
+});
+assert.equal(
+  actualExecuteResult,
+  true,
+  "actual executeAnalysis must complete for a name-keyed stock-count row",
+);
+assert.equal(hookState[0].length, 1);
+assert.equal(hookState[0][0].품명, "기준선 테스트 상품");
+assert.equal(hookState[0][0].실사, 0);
+
 assert.doesNotMatch(executeAnalysis, /0\.7|70\s*%|isFullEndFile/);
 assert.match(
   executeAnalysis,
