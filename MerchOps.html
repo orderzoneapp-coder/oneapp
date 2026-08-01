@@ -1874,6 +1874,28 @@ const safeJSONParse = (key, defaultVal) => {
         return defaultVal;
     }
 };
+// ============================================================
+// [M-PARSER-LIST-RULE-01] SmartParser 카탈로그 룰 읽기 전용 계약
+// - parserListMarginRules_v1은 로컬 설정만 읽으며 MerchOps 설정 저장/클라우드 payload에는 넣지 않는다.
+// - trim한 카탈로그명 exact key와 확정 필드만 화면 분석에 사용한다.
+// ============================================================
+window.PARSER_LIST_MARGIN_RULES_KEY = 'parserListMarginRules_v1';
+window.normalizeParserListMarginRules = (raw = {}) => {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+    const normalized = Object.create(null);
+    Object.entries(raw).forEach(([catalogName, value]) => {
+        const name = String(catalogName || '').trim();
+        if (!name || !value || typeof value !== 'object' || Array.isArray(value)) return;
+        const marginRate = value.marginRate;
+        const calculationType = String(value.calculationType || '').trim();
+        const updatedAt = String(value.updatedAt || '').trim();
+        const parsedUpdatedAt = new Date(updatedAt);
+        if (typeof marginRate !== 'number' || !Number.isFinite(marginRate) || !['divide', 'multiply'].includes(calculationType) || Number.isNaN(parsedUpdatedAt.getTime())) return;
+        if (calculationType === 'divide' && marginRate === 100) return;
+        normalized[name] = { marginRate, calculationType, updatedAt: parsedUpdatedAt.toISOString() };
+    });
+    return normalized;
+};
 const TABLE_VIEW_TARGETS = [
     { id: 'estimate', label: '견적' },
     { id: 'purchase', label: '구매' },
@@ -3620,6 +3642,7 @@ const useMerchConfig = () => {
     });
     const [uploadColumnMeta, setUploadColumnMeta] = useState(() => safeJSONParse('merchUploadColumnMeta_v870', {}));
     const [marginRules, setMarginRules] = useState(() => window.sanitizeMerchMarginRules(safeJSONParse('merchMarginRules_v878', window.getDefaultMerchMarginRules())));
+    const [parserListMarginRules, setParserListMarginRules] = useState(() => window.normalizeParserListMarginRules(safeJSONParse(window.PARSER_LIST_MARGIN_RULES_KEY, {})));
     const configHydratedRef = useRef(false);
     // v2.0.9 필수 매핑 보강: 기존 localStorage 설정이 있어도 단위/브랜드/검색어등록을 자동 보강한다.
     useEffect(() => {
@@ -3677,6 +3700,17 @@ const useMerchConfig = () => {
             }
             catch (e) { }
         }
+    }, []);
+    // SmartParser 카탈로그 룰은 로컬 읽기 전용이다. 일반 MerchOps 설정 저장/IDB/클라우드 payload와 분리한다.
+    useEffect(() => {
+        const reloadParserListMarginRules = () => {
+            setParserListMarginRules(window.normalizeParserListMarginRules(safeJSONParse(window.PARSER_LIST_MARGIN_RULES_KEY, {})));
+        };
+        const handleParserListRuleStorage = (event) => {
+            if (event.key === window.PARSER_LIST_MARGIN_RULES_KEY) reloadParserListMarginRules();
+        };
+        window.addEventListener('storage', handleParserListRuleStorage);
+        return () => window.removeEventListener('storage', handleParserListRuleStorage);
     }, []);
     // 환경설정 영속화: localStorage를 1차 저장소로 쓰고 IndexedDB에 백업한다.
     // 기존 코드에는 상태 변경 후 localStorage.setItem이 없어, 재접속 시 하드코딩 기본값으로 돌아갈 수 있었다.
@@ -3824,7 +3858,8 @@ const useMerchConfig = () => {
         mappings, setMappings,
         masterLinks, setMasterLinks,
         uploadColumnMeta, setUploadColumnMeta,
-        marginRules, setMarginRules
+        marginRules, setMarginRules,
+        parserListMarginRules
     };
 };
 const useMerchData = () => {
@@ -8852,10 +8887,8 @@ const getHistoryLogCode = (log = {}) => String(log.code || log.코드 || log.ite
 const getHistoryFieldName = (log = {}) => String(log.field || log.fieldName || log.column || log.header || log.항목 || log.masterField || '').trim();
 const getHistoryOldValue = (log = {}) => log.oldVal ?? log.oldValue ?? log.beforeValue ?? log.before ?? log.previous ?? log.oldInPrice ?? log.기존값 ?? '';
 const getHistoryNewValue = (log = {}) => log.newVal ?? log.newValue ?? log.afterValue ?? log.after ?? log.current ?? log.parsedInPrice ?? log.신규값 ?? log.변경값 ?? '';
-const isParserHistoryLog = (log = {}) => {
-    const marker = [log.source, log.origin, log.actionType, log.type, log.module, log.app, log.from].map(v => String(v || '').toLowerCase()).join(' ');
-    return marker.includes('parser') || marker.includes('smart') || !!(log.parserListName || log.parserList || log.catalogName || log.catalog);
-};
+const isExactParserHistoryLog = (log = {}) => String(log?.source || '').trim() === 'parser';
+const areMerchHistoryValuesEqual = (left, right) => String(left ?? '').trim() === String(right ?? '').trim();
 const normalizeHistoryLogForField = (log = {}, field = '입고가') => {
     const changes = Array.isArray(log.changes) ? log.changes : (Array.isArray(log.diffList) ? log.diffList : []);
     if (changes.length > 0) {
@@ -8867,19 +8900,184 @@ const normalizeHistoryLogForField = (log = {}, field = '입고가') => {
     if (field && f && f !== field) return null;
     return { ...log, field: f || field, oldVal: getHistoryOldValue(log), newVal: getHistoryNewValue(log) };
 };
-const findLatestParserHistory = (code, catalogNames = [], field = '입고가') => {
+const findLatestParserHistory = (code, catalogNames = [], field = '입고가', historyLogs = null) => {
     const targetCode = String(code || '').trim();
     const targets = Array.isArray(catalogNames) ? catalogNames.map(v => String(v).trim()).filter(Boolean) : [String(catalogNames || '').trim()].filter(Boolean);
     if (!targetCode)
         return null;
-    const logs = getHistoryLogsFromLocal()
+    const sourceLogs = Array.isArray(historyLogs) ? historyLogs : getHistoryLogsFromLocal();
+    const logs = sourceLogs
         .map(log => normalizeHistoryLogForField(log, field))
         .filter(Boolean)
         .filter(log => getHistoryLogCode(log) === targetCode)
-        .filter(isParserHistoryLog)
+        .filter(isExactParserHistoryLog)
+        .filter(log => !areMerchHistoryValuesEqual(getHistoryOldValue(log), getHistoryNewValue(log)))
         .sort((a, b) => parseHistoryTime(b) - parseHistoryTime(a));
     const exact = logs.filter(log => targets.length === 0 || targets.includes(normalizeHistoryCatalog(log)));
-    return exact[0] || logs[0] || null;
+    return exact[0] || null;
+};
+
+// ============================================================
+// [M-PARSER-HISTORY-01] 파서리스트 단가·공급 이력 읽기 전용 분석
+// - 실제 파서리스트 activeTag가 있을 때만 호출하며 작업행/finalData/F7 대상을 변경하지 않는다.
+// - 단가 이벤트는 selected catalog + source=parser + field=입고가 + master code exact + old!=new만 허용한다.
+// - 가격 근거는 code/catalog/source/timestampISO/field exact join만 허용하고 근접시각 fallback을 두지 않는다.
+// ============================================================
+window.MERCH_PARSER_PRICE_HISTORY_FIELDS = Object.freeze(['출고가', '시중가', '1입고', '1출고']);
+window.MERCH_PARSER_ANALYSIS_FILTERS = Object.freeze({
+    all: '전체',
+    cost_up: '인상',
+    cost_down: '인하',
+    cost_zero: '0',
+    cost_recovery: '복구',
+    supply_new: '신규',
+    supply_stopped: '공급중단',
+    supply_reappeared: '재등장'
+});
+window.getMerchLoadedParserListSelection = (activeTags = []) => {
+    const loadedNames = [...new Set((Array.isArray(activeTags) ? activeTags : [])
+        .filter(tag => String(tag?.type || '') === 'catalog')
+        .map(tag => String(tag?.name || '').trim())
+        .filter(Boolean))];
+    const all = loadedNames.includes('전체리스트');
+    return {
+        loaded: loadedNames.length > 0,
+        all,
+        loadedNames,
+        catalogNames: loadedNames.filter(name => name !== '전체리스트')
+    };
+};
+window.normalizeMerchParserSupplyChangeType = (logOrValue = '') => {
+    const raw = logOrValue && typeof logOrValue === 'object'
+        ? (logOrValue.supplyChangeType ?? logOrValue.supplyType ?? logOrValue.supplyEventType ?? '')
+        : logOrValue;
+    const value = String(raw || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+    if (['new', 'tag_first', 'first_tag', 'first', '신규'].includes(value)) return 'new';
+    if (['stopped', 'stop', 'supply_stopped', 'discontinued', '공급중단'].includes(value)) return 'stopped';
+    if (['reappeared', 'reappear', 'returned', 'supply_reappeared', '재등장'].includes(value)) return 'reappeared';
+    return '';
+};
+window.classifyMerchParserCostChange = (oldVal, newVal) => {
+    const oldNum = window.parseNum(oldVal);
+    const newNum = window.parseNum(newVal);
+    if (newNum === 0) return 'zero';
+    if (oldNum === 0 && newNum > 0) return 'recovery';
+    if (newNum > oldNum) return 'up';
+    if (newNum < oldNum) return 'down';
+    return '';
+};
+window.findMerchParserPriceHistoryExact = (historyLogs = [], query = {}) => {
+    const code = String(query.code || '').trim();
+    const catalogName = String(query.catalogName || '').trim();
+    const timestampISO = String(query.timestampISO || '').trim();
+    const field = String(query.field || '').trim();
+    if (!code || !catalogName || !timestampISO || !window.MERCH_PARSER_PRICE_HISTORY_FIELDS.includes(field)) return null;
+    return (Array.isArray(historyLogs) ? historyLogs : []).find(log => (
+        isExactParserHistoryLog(log) &&
+        getHistoryLogCode(log) === code &&
+        normalizeHistoryCatalog(log) === catalogName &&
+        String(log?.timestampISO || '').trim() === timestampISO &&
+        getHistoryFieldName(log) === field &&
+        !areMerchHistoryValuesEqual(getHistoryOldValue(log), getHistoryNewValue(log))
+    )) || null;
+};
+window.matchMerchParserAnalysisFilter = (event = {}, filter = 'all') => {
+    const value = String(filter || 'all');
+    if (value === 'all') return true;
+    if (value.startsWith('cost_')) return event.kind === 'cost' && event.changeType === value.replace('cost_', '');
+    if (value.startsWith('supply_')) return event.kind === 'supply' && event.changeType === value.replace('supply_', '');
+    return true;
+};
+window.buildMerchParserListHistoryAnalysis = ({ historyLogs = [], activeTags = [], masterProducts = {}, parserListMarginRules = {} } = {}) => {
+    const selection = window.getMerchLoadedParserListSelection(activeTags);
+    if (!selection.loaded) return { active: false, selection, events: [], counts: {} };
+    const logs = Array.isArray(historyLogs) ? historyLogs : [];
+    const rules = window.normalizeParserListMarginRules(parserListMarginRules);
+    const masterByCode = new Map();
+    Object.entries(masterProducts || {}).forEach(([key, item]) => {
+        const code = String(item?.코드 || item?.['품목코드'] || key || '').trim();
+        if (code && !masterByCode.has(code)) masterByCode.set(code, item || {});
+    });
+    const catalogMatches = (catalogName) => {
+        const name = String(catalogName || '').trim();
+        return !!name && (selection.all || selection.catalogNames.includes(name));
+    };
+    const buildCommon = (log, kind, changeType, index) => {
+        const code = getHistoryLogCode(log);
+        const catalogName = normalizeHistoryCatalog(log);
+        const master = masterByCode.get(code) || {};
+        const currentSale = window.getMerchMasterSalePriceInfo ? window.getMerchMasterSalePriceInfo(master) : { value: master?.['출고가'] ?? '', source: '출고가' };
+        const saleState = window.getMasterSalesState ? window.getMasterSalesState(master) : { text: String(master?.['판매여부'] ?? '-') };
+        return {
+            id: String(log?.id || `${kind}:${catalogName}:${code}:${String(log?.timestampISO || log?.timestamp || '')}:${index}`),
+            kind,
+            changeType,
+            code,
+            name: String(master?.['품목명'] || master?.['상품명'] || log?.name || '').trim(),
+            spec: String(master?.['규격'] || log?.spec || '').trim(),
+            catalogName,
+            timestampISO: String(log?.timestampISO || '').trim(),
+            displayTimestamp: String(log?.timestampISO || log?.timestamp || '').trim(),
+            currentSalePrice: currentSale?.value ?? '',
+            currentSalePriceSource: currentSale?.source || '',
+            currentSaleAvailability: master?.['판매여부'] ?? '',
+            currentSaleStatus: saleState?.text || saleState?.label || '-',
+            rule: rules[catalogName] || null,
+            log
+        };
+    };
+    const events = [];
+    logs.forEach((log, index) => {
+        if (!isExactParserHistoryLog(log)) return;
+        const code = getHistoryLogCode(log);
+        const catalogName = normalizeHistoryCatalog(log);
+        if (!code || !masterByCode.has(code) || !catalogMatches(catalogName)) return;
+        const field = getHistoryFieldName(log);
+        if (field === '입고가') {
+            const oldVal = getHistoryOldValue(log);
+            const newVal = getHistoryNewValue(log);
+            if (!areMerchHistoryValuesEqual(oldVal, newVal)) {
+                const changeType = window.classifyMerchParserCostChange(oldVal, newVal);
+                if (changeType) {
+                    const oldNum = window.parseNum(oldVal);
+                    const newNum = window.parseNum(newVal);
+                    const diff = newNum - oldNum;
+                    const timestampISO = String(log?.timestampISO || '').trim();
+                    const priceChanges = window.MERCH_PARSER_PRICE_HISTORY_FIELDS.map(priceField => {
+                        const priceLog = window.findMerchParserPriceHistoryExact(logs, { code, catalogName, timestampISO, field: priceField });
+                        return priceLog ? {
+                            field: priceField,
+                            oldVal: getHistoryOldValue(priceLog),
+                            newVal: getHistoryNewValue(priceLog),
+                            log: priceLog
+                        } : null;
+                    }).filter(Boolean);
+                    events.push({
+                        ...buildCommon(log, 'cost', changeType, index),
+                        oldVal,
+                        newVal,
+                        oldNum,
+                        newNum,
+                        diff,
+                        diffRate: oldNum !== 0 ? (diff / oldNum) * 100 : null,
+                        priceChanges
+                    });
+                }
+            }
+        }
+        const supplyChangeType = window.normalizeMerchParserSupplyChangeType(log);
+        const isNewProductTagDetail = String(log?.supplyChangeType || '').trim() === 'tag_first' && log?.isNewProduct === true;
+        if (supplyChangeType && !isNewProductTagDetail) {
+            // 공급 이벤트에는 의도적으로 diff/diffRate 필드를 만들지 않는다.
+            events.push(buildCommon(log, 'supply', supplyChangeType, index));
+        }
+    });
+    events.sort((left, right) => parseHistoryTime(right.log) - parseHistoryTime(left.log));
+    const counts = {};
+    Object.keys(window.MERCH_PARSER_ANALYSIS_FILTERS).forEach(key => {
+        counts[key] = key === 'all' ? events.length : events.filter(event => window.matchMerchParserAnalysisFilter(event, key)).length;
+    });
+    return { active: true, selection, events, counts };
 };
 const formatSignedNumber = (v) => {
     const n = Number(v || 0);
@@ -9617,7 +9815,11 @@ const MemoizedTableRow = React.memo(({ row, idx, state, actions, isSel, mItem })
     };
     const issueBadgeClass = issueBadgeClassMap[issueText] || 'bg-slate-50 text-slate-600 border-slate-200';
     const displayIssueSubText = state.registrationMode ? issueSubText : ((['품절', '품절임박', '역마진', '파일없음', '정지후보'].includes(issueSubText) || /^테마[1-5]$/.test(issueSubText) || issueSubText === '테마미지정') ? issueSubText : '');
-    const latestParserHistory = findLatestParserHistory(row.코드, getRowCatalogNames(row, mItem), '입고가');
+    const parserHistorySelection = window.getMerchLoadedParserListSelection(state.activeTags || []);
+    const parserHistoryCatalogTargets = parserHistorySelection.all ? [] : parserHistorySelection.catalogNames;
+    const latestParserHistory = isParserListTableMode
+        ? findLatestParserHistory(row.코드, parserHistoryCatalogTargets, '입고가', data.historyLogs || [])
+        : null;
     let reportLines = buildRowReport({ row, mItem, issueText, issueSubText, latestHistory: latestParserHistory, compareSummary, marginInfo, stockQty, safeStock, promoActive });
     if (estimateCompareMeta.status) {
         const fmtPrice = window.formatMerchComparePrice || ((v) => v === null || v === undefined || v === '' ? '공란' : window.parseNum(v).toLocaleString());
@@ -9732,6 +9934,101 @@ const MemoizedTableRow = React.memo(({ row, idx, state, actions, isSel, mItem })
                         : React.createElement("div", { className: "text-[11px] font-black whitespace-nowrap", title: reportLines[0] || '' }, reportLines[0] || '-'),
                     React.createElement("div", { className: "text-[10px] font-bold text-slate-500 whitespace-nowrap", title: reportLines[1] || '' }, reportLines[1] || ''))))))));
 });
+const ParserListHistoryAnalysisPanel = ({ state }) => {
+    const h = React.createElement;
+    const [eventFilter, setEventFilter] = useState('all');
+    const [collapsed, setCollapsed] = useState(false);
+    const activeTags = state.activeTags || [];
+    const selection = useMemo(() => window.getMerchLoadedParserListSelection(activeTags), [activeTags]);
+    const selectionSignature = `${selection.all ? 'all' : 'exact'}:${selection.catalogNames.join('|')}`;
+    useEffect(() => {
+        setEventFilter('all');
+    }, [selectionSignature]);
+    const analysis = useMemo(() => {
+        if (!selection.loaded) return { active: false, selection, events: [], counts: {} };
+        return window.buildMerchParserListHistoryAnalysis({
+            historyLogs: state.data?.historyLogs || [],
+            activeTags,
+            masterProducts: state.masterProducts || state.data?.masterProducts || {},
+            parserListMarginRules: state.config?.parserListMarginRules || {}
+        });
+    }, [selection.loaded, selectionSignature, activeTags, state.data?.historyLogs, state.masterProducts, state.data?.masterProducts, state.config?.parserListMarginRules]);
+    if (!selection.loaded) return null;
+    const visibleEvents = analysis.events.filter(event => window.matchMerchParserAnalysisFilter(event, eventFilter));
+    const filterEntries = Object.entries(window.MERCH_PARSER_ANALYSIS_FILTERS);
+    const formatPrice = (value) => {
+        if (value === undefined || value === null || String(value).trim() === '') return '-';
+        return window.parseNum(value).toLocaleString();
+    };
+    const formatTimestamp = (value) => {
+        const raw = String(value || '').trim();
+        if (!raw) return '-';
+        const date = new Date(raw);
+        return Number.isNaN(date.getTime()) ? raw : date.toLocaleString('ko-KR');
+    };
+    const formatRule = (rule) => {
+        if (!rule) return '룰 없음';
+        const type = rule.calculationType === 'divide' ? '나누기' : '곱하기';
+        return `${type} ${Number(rule.marginRate).toLocaleString()}%`;
+    };
+    const changeLabels = { up: '인상', down: '인하', zero: '0', recovery: '복구', new: '신규', stopped: '공급중단', reappeared: '재등장' };
+    const changeTones = {
+        up: 'bg-rose-50 text-rose-700 border-rose-200',
+        down: 'bg-blue-50 text-blue-700 border-blue-200',
+        zero: 'bg-slate-100 text-slate-700 border-slate-300',
+        recovery: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+        new: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+        stopped: 'bg-rose-50 text-rose-700 border-rose-200',
+        reappeared: 'bg-indigo-50 text-indigo-700 border-indigo-200'
+    };
+    const listLabel = selection.all ? '전체리스트' : (selection.catalogNames.join(', ') || '-');
+    return h("section", { className: "shrink-0 border-b border-indigo-200 bg-indigo-50/60" },
+        h("div", { className: "flex items-center gap-2 px-3 py-2 min-h-[42px]" },
+            h("div", { className: "flex items-center gap-2 min-w-0 shrink-0" },
+                h("span", { className: "w-7 h-7 rounded-lg bg-indigo-600 text-white flex items-center justify-center shadow-sm" }, h("i", { className: "fas fa-clock-rotate-left text-[12px]" })),
+                h("div", { className: "min-w-0" },
+                    h("div", { className: "text-[12px] font-black text-slate-800 whitespace-nowrap" }, "SmartParser 단가·공급 이력"),
+                    h("div", { className: "text-[10px] font-bold text-indigo-600 truncate max-w-[180px]", title: listLabel }, listLabel))),
+            h("div", { className: "flex items-center gap-1 overflow-x-auto flex-1 min-w-0 px-1" },
+                filterEntries.map(([value, label]) => h("button", {
+                    key: `parser-history-filter-${value}`,
+                    onClick: () => setEventFilter(value),
+                    className: `h-7 px-2 rounded-full border text-[10px] font-black whitespace-nowrap ${eventFilter === value ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200 hover:border-indigo-300'}`,
+                    title: value.startsWith('supply_') ? `${label}: 공급정보 이벤트만 표시하며 변동률은 계산하지 않습니다.` : `${label} 단가 이벤트 표시`
+                }, `${label} ${analysis.counts[value] || 0}`))),
+            h("button", { onClick: () => setCollapsed(value => !value), className: "h-7 w-7 rounded-lg border border-indigo-200 bg-white text-indigo-600 shrink-0", title: collapsed ? '분석 펼치기' : '분석 접기' },
+                h("i", { className: `fas ${collapsed ? 'fa-chevron-down' : 'fa-chevron-up'} text-[10px]` }))),
+        !collapsed && h("div", { className: "max-h-[238px] overflow-auto custom-scrollbar border-t border-indigo-100 bg-white/80" },
+            visibleEvents.length === 0
+                ? h("div", { className: "px-4 py-5 text-center text-[11px] font-bold text-slate-400" }, "선택한 파서리스트와 필터에 맞는 정확 일치 이력이 없습니다.")
+                : h("div", { className: "divide-y divide-slate-100" }, visibleEvents.map(event => {
+                    const eventLabel = changeLabels[event.changeType] || event.changeType;
+                    const ruleText = formatRule(event.rule);
+                    const priceEvidence = event.kind === 'cost' && Array.isArray(event.priceChanges) && event.priceChanges.length > 0
+                        ? event.priceChanges.map(change => `${change.field} 적용 전 ${formatPrice(change.oldVal)} / 반영 ${formatPrice(change.newVal)}`).join(' · ')
+                        : (event.kind === 'cost' ? '동일 timestampISO의 변경 가격이력 없음' : '');
+                    return h("div", { key: event.id, className: "grid grid-cols-[minmax(190px,1.1fr)_minmax(250px,1.5fr)_minmax(220px,1.2fr)_minmax(150px,0.8fr)] gap-3 px-3 py-2 text-[11px] items-center" },
+                        h("div", { className: "min-w-0" },
+                            h("div", { className: "flex items-center gap-1.5 min-w-0" },
+                                h("span", { className: `px-1.5 py-0.5 rounded-full border text-[10px] font-black shrink-0 ${changeTones[event.changeType] || 'bg-slate-50 text-slate-600 border-slate-200'}` }, eventLabel),
+                                h("span", { className: "font-mono text-[10px] text-indigo-500 shrink-0" }, event.code),
+                                h("span", { className: "font-black text-slate-800 truncate", title: `${event.name} ${event.spec}`.trim() }, event.name || '-')),
+                            h("div", { className: "mt-0.5 text-[10px] font-bold text-slate-500 truncate", title: event.catalogName }, `${event.catalogName} · ${formatTimestamp(event.displayTimestamp)}`)),
+                        event.kind === 'cost'
+                            ? h("div", { className: "min-w-0" },
+                                h("div", { className: "font-black text-slate-800 whitespace-nowrap" }, `입고 ${formatPrice(event.oldVal)} → ${formatPrice(event.newVal)} · 차액 ${formatSignedNumber(event.diff)}`),
+                                h("div", { className: "text-[10px] font-bold text-slate-500 whitespace-normal leading-tight", title: priceEvidence }, `변동률 ${event.diffRate === null ? '-' : formatSignedRate(event.diffRate)} · ${priceEvidence}`))
+                            : h("div", { className: "min-w-0" },
+                                h("div", { className: "font-black text-slate-800" }, `공급정보 ${eventLabel}`),
+                                h("div", { className: "text-[10px] font-bold text-slate-500" }, "공급정보는 변동률을 계산하지 않습니다.")),
+                        h("div", { className: "min-w-0" },
+                            h("div", { className: "font-black text-slate-800 whitespace-nowrap" }, `현재 판매가격 ${formatPrice(event.currentSalePrice)}${event.currentSalePriceSource ? ` (${event.currentSalePriceSource})` : ''}`),
+                            h("div", { className: "text-[10px] font-bold text-slate-500 whitespace-nowrap" }, `현재 판매여부 ${String(event.currentSaleAvailability ?? '').trim() || '-'} · ${event.currentSaleStatus}`)),
+                        h("div", { className: "min-w-0 text-right" },
+                            h("div", { className: `font-black ${event.rule ? 'text-indigo-700' : 'text-amber-700'}` }, `카탈로그 룰 ${ruleText}`),
+                            h("div", { className: "text-[10px] font-bold text-slate-400 truncate", title: event.rule?.updatedAt || '' }, event.rule?.updatedAt ? `룰수정 ${formatTimestamp(event.rule.updatedAt)}` : '전용 룰 미설정')));
+                }))));
+};
 const ExcelDataGrid = ({ state, actions }) => {
     const { isEstimateUploaded, selectedRows, fullDisplayRows, visibleMasterCols, visibleUploadCols, masterProducts, activeTableTarget = 'estimate', registrationMode = false, config = {}, data = {} } = state;
     const [visibleCount, setVisibleCount] = useState(100);
@@ -9903,6 +10200,7 @@ const ExcelDataGrid = ({ state, actions }) => {
         setColumnWidthDirty(false);
     };
     return (React.createElement("div", { className: "bg-white border border-slate-200 rounded-xl shadow-sm h-full flex flex-col relative overflow-hidden" },
+        React.createElement(ParserListHistoryAnalysisPanel, { state: state }),
         React.createElement("div", { className: "flex justify-end items-center gap-1 bg-white border-b border-slate-100 px-3 py-1.5 shrink-0" },
             React.createElement("button", { className: `px-2 py-1 rounded text-[11px] font-black border ${columnWidthDirty ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-500 border-slate-200'}`, onClick: saveColumnWidths, title: "현재 양식 열폭과 조정한 컬럼의 공통 열폭을 함께 저장" }, "열폭 저장"),
             React.createElement("button", { className: "px-2 py-1 rounded text-[11px] font-black border bg-white text-slate-500 border-slate-200 hover:bg-slate-50", onClick: resetColumnWidths, title: "현재 양식과 화면에 보이는 컬럼의 공통 열폭을 초기화" }, "초기화")),
@@ -10235,8 +10533,19 @@ const App = () => {
                 str.split(',').map(s => s.trim()).filter(Boolean).forEach(t => counts[t] = (counts[t] || 0) + 1);
             }
         });
+        // 전용 룰 또는 기존 parser 이력이 남은 리스트는 현재 태그가 0건이어도 다시 열 수 있다.
+        // 별도 리스트 DB를 만들지 않으며, 분석은 실제 activeTag 로드 뒤 전용 패널에서만 수행한다.
+        Object.keys(config.parserListMarginRules || {}).forEach(catalogName => {
+            const name = String(catalogName || '').trim();
+            if (name && counts[name] === undefined) counts[name] = 0;
+        });
+        (Array.isArray(data.historyLogs) ? data.historyLogs : []).forEach(log => {
+            if (!isExactParserHistoryLog(log)) return;
+            const name = normalizeHistoryCatalog(log);
+            if (name && counts[name] === undefined) counts[name] = 0;
+        });
         return Object.keys(counts).sort().map(tag => ({ name: tag, count: counts[tag] }));
-    }, [data.masterProducts]);
+    }, [data.masterProducts, data.historyLogs, config.parserListMarginRules]);
     const availableCategories = useMemo(() => {
         const counts = {};
         Object.values(data.masterProducts).forEach(m => {
