@@ -180,10 +180,11 @@ assert.deepEqual(Object.keys(spacedApplyPlan.newMaster), ["A 1"]);
 assert.equal(Object.prototype.hasOwnProperty.call(spacedApplyPlan.newMaster, "A1"), false);
 assert.equal(spacedApplyPlan.newMaster["A 1"]["코드"], "A 1");
 assert.equal(spacedApplyPlan.newMaster["A 1"]["판매여부"], 0);
-assert.equal(spacedApplyPlan.logs.some((log) => log.supplyChangeType === "new"), false);
+assert.equal(spacedApplyPlan.logs.filter((log) => log.field === "카탈로그" && log.supplyChangeType === "new").length, 1);
+assert.equal(spacedApplyPlan.logs.find((log) => log.field === "카탈로그").changeType, "신규");
 assert.deepEqual(JSON.parse(JSON.stringify(spacedApplyPlan.processedCodes)), ["A 1"]);
 
-const spacedReappearedPlan = h.buildSmartParserApplyPlan({
+const spacedStoppedHistoryPlan = h.buildSmartParserApplyPlan({
   masterProducts: spacedMaster,
   rows: [{ _matchCode: "A1", _hasParsedInPrice: false, "품목명": "공백코드 기존상품", finalData: {} }],
   catalogLabel: "Cat",
@@ -194,9 +195,10 @@ const spacedReappearedPlan = h.buildSmartParserApplyPlan({
   updateTextData: false,
   allowExistingInfoChanges: false,
 });
-assert.equal(spacedReappearedPlan.logs.filter((log) => log.supplyChangeType === "reappeared").length, 1);
-assert.equal(spacedReappearedPlan.logs.some((log) => ["new", "tag_first"].includes(log.supplyChangeType)), false);
-assert.deepEqual(Object.keys(spacedReappearedPlan.newMaster), ["A 1"]);
+assert.equal(spacedStoppedHistoryPlan.logs.filter((log) => log.supplyChangeType === "new").length, 1);
+assert.equal(spacedStoppedHistoryPlan.logs.filter((log) => log.supplyChangeType === "reappeared").length, 0);
+assert.equal(spacedStoppedHistoryPlan.logs.find((log) => log.field === "카탈로그").changeType, "신규");
+assert.deepEqual(Object.keys(spacedStoppedHistoryPlan.newMaster), ["A 1"]);
 
 const spacedMissingPlan = h.buildSmartParserMissingTagPlan({
   masterProducts: { "A 1": { ...spacedMaster["A 1"], "카탈로그": "Cat, Other" } },
@@ -226,7 +228,7 @@ const distinctKeyPlan = h.buildSmartParserApplyPlan({
 });
 assert.deepEqual(Object.keys(distinctKeyPlan.newMaster), ["stored-row-key"]);
 assert.equal(distinctKeyPlan.newMaster["stored-row-key"]["코드"], "A 1");
-assert.equal(distinctKeyPlan.logs.some((log) => log.supplyChangeType === "new"), false);
+assert.equal(distinctKeyPlan.logs.filter((log) => log.field === "카탈로그" && log.supplyChangeType === "new").length, 1);
 assert.ok(distinctKeyPlan.logs.every((log) => log.code === "A 1"));
 
 const ambiguousMaster = {
@@ -307,7 +309,7 @@ assert.equal(newPlan.newMaster.B["출고가"], 1100);
 assert.equal(newPlan.newMaster.B["시중가"], 1100);
 assert.equal(newPlan.newMaster.B["판매여부"], undefined);
 assert.ok(newPlan.logs.some((log) => log.supplyChangeType === "new"));
-assert.ok(newPlan.logs.some((log) => log.supplyChangeType === "tag_first" && log.isNewProduct === true));
+assert.ok(newPlan.logs.some((log) => log.field === "카탈로그" && log.supplyChangeType === "new" && log.isNewProduct === true));
 assert.ok(newPlan.logs.every((log) => log.timestampISO === iso));
 assert.equal(newPlan.logs.find((log) => log.field === "출고가").oldVal, "");
 const newPlanInPriceLog = newPlan.logs.find((log) => log.field === "입고가");
@@ -578,22 +580,6 @@ assert.equal(samePlan.logs.some((log) => ["출고가", "시중가"].includes(log
 assert.equal(h.areParserPriceValuesEqual("", 0), false, "blank and numeric zero remain distinguishable");
 assert.equal(h.areParserPriceValuesEqual("0", 0), true);
 
-const reappearedPlan = h.buildSmartParserApplyPlan({
-  masterProducts: existingMaster,
-  rows: [{ _matchCode: "A", _hasParsedInPrice: false, "품목명": "기존상품", finalData: {} }],
-  catalogLabel: "Cat",
-  catalogRule: null,
-  priorHistory: [{ source: "parser", code: "A", catalogName: "Cat", supplyChangeType: "stopped" }],
-  timestampISO: iso,
-  timestampLabel: "now",
-  updateTextData: false,
-  allowExistingInfoChanges: false,
-});
-assert.equal(Object.keys(reappearedPlan.newMaster).length, 1);
-assert.equal(reappearedPlan.logs.filter((log) => log.supplyChangeType === "reappeared").length, 1);
-assert.equal(reappearedPlan.logs.some((log) => log.supplyChangeType === "new"), false);
-assert.equal(reappearedPlan.newMaster.A["판매여부"], existingMaster.A["판매여부"]);
-
 const existingTagFormattingPlan = h.buildSmartParserApplyPlan({
   masterProducts: { A: { ...existingMaster.A, "카탈로그": "Cat,  Other" } },
   rows: [{ _matchCode: "A", _hasParsedInPrice: false, "품목명": "기존상품", finalData: {} }],
@@ -618,6 +604,24 @@ assert.equal(missingTagPlan.newMaster.A["카탈로그"], "Other");
 assert.equal(missingTagPlan.newMaster.A["판매여부"], 0);
 assert.equal(missingTagPlan.logs.length, 1);
 assert.equal(missingTagPlan.logs[0].supplyChangeType, "stopped");
+
+const catalogNewAfterStopPlan = h.buildSmartParserApplyPlan({
+  masterProducts: missingTagPlan.newMaster,
+  rows: [{ _matchCode: "A", _hasParsedInPrice: true, "품목명": "기존상품", finalData: { "입고가": 9000 } }],
+  catalogLabel: "Cat",
+  catalogRule: null,
+  priorHistory: missingTagPlan.logs,
+  timestampISO: iso,
+  timestampLabel: "now",
+  updateTextData: false,
+  allowExistingInfoChanges: false,
+});
+assert.equal(Object.keys(catalogNewAfterStopPlan.newMaster).length, 1);
+assert.equal(catalogNewAfterStopPlan.newMaster.A["카탈로그"], "Other, Cat");
+assert.equal(catalogNewAfterStopPlan.newMaster.A["판매여부"], missingTagPlan.newMaster.A["판매여부"]);
+assert.equal(catalogNewAfterStopPlan.logs.filter((log) => log.supplyChangeType === "new").length, 1);
+assert.equal(catalogNewAfterStopPlan.logs.filter((log) => log.supplyChangeType === "reappeared").length, 0);
+assert.equal(catalogNewAfterStopPlan.logs[0].changeType, "신규");
 const absentTagPlan = h.buildSmartParserMissingTagPlan({
   masterProducts: { A: { ...existingMaster.A, "카탈로그": "Other,  Extra" } },
   codes: ["A"],
@@ -790,6 +794,13 @@ vm.runInContext(
   merchContext,
 );
 const mh = merchContext.window;
+assert.deepEqual(
+  JSON.parse(JSON.stringify(Object.keys(mh.MERCH_PARSER_ANALYSIS_FILTERS))),
+  ["all", "cost_up", "cost_down", "cost_zero", "supply_new", "supply_stopped"],
+);
+assert.equal(Object.prototype.hasOwnProperty.call(mh.MERCH_PARSER_ANALYSIS_FILTERS, "cost_recovery"), false);
+assert.equal(Object.prototype.hasOwnProperty.call(mh.MERCH_PARSER_ANALYSIS_FILTERS, "supply_reappeared"), false);
+assert.equal(mh.normalizeMerchParserSupplyChangeType("reappeared"), "new", "legacy reappeared history is read as 신규");
 assert.equal(mh.classifyMerchParserCostChange("", 1000), "new_price");
 assert.equal(mh.classifyMerchParserCostChange(null, 1000), "new_price");
 assert.equal(mh.classifyMerchParserCostChange(0, 1000), "new_price");
@@ -833,14 +844,13 @@ const merchAnalysis = mh.buildMerchParserListHistoryAnalysis({
   parserListMarginRules: { Cat: divide10 },
 });
 assert.equal(merchAnalysis.active, true);
-assert.equal(merchAnalysis.events.length, 7);
+assert.equal(merchAnalysis.events.length, 6);
 assert.equal(merchAnalysis.counts.cost_up, 1);
 assert.equal(merchAnalysis.counts.cost_down, 1);
 assert.equal(merchAnalysis.counts.cost_zero, 1);
-assert.equal(merchAnalysis.counts.cost_recovery, 0);
 assert.equal(merchAnalysis.counts.supply_new, 2, "new_price and the distinct new-product supply event are both 신규");
 assert.equal(merchAnalysis.counts.supply_stopped, 1);
-assert.equal(merchAnalysis.counts.supply_reappeared, 1);
+assert.equal(merchAnalysis.events.some((event) => ["recovery", "reappeared"].includes(event.changeType)), false);
 const upEvent = merchAnalysis.events.find((event) => event.log.id === "cost-up");
 assert.deepEqual(JSON.parse(JSON.stringify(upEvent.priceChanges.map((entry) => entry.field))), ["출고가"]);
 assert.equal(upEvent.currentSalePrice, 190);
@@ -858,11 +868,33 @@ assert.deepEqual(JSON.parse(JSON.stringify(newPriceEvent.priceChanges.map((entry
 assert.equal(mh.matchMerchParserAnalysisFilter(newPriceEvent, "supply_new"), true);
 assert.equal(mh.matchMerchParserAnalysisFilter(newPriceEvent, "cost_up"), false);
 assert.equal(mh.matchMerchParserAnalysisFilter(newPriceEvent, "cost_down"), false);
-assert.equal(mh.matchMerchParserAnalysisFilter(newPriceEvent, "cost_recovery"), false);
 const supplyEvent = merchAnalysis.events.find((event) => event.log.id === "supply-stopped");
 assert.equal(Object.prototype.hasOwnProperty.call(supplyEvent, "diffRate"), false);
 assert.equal(mh.findMerchParserPriceHistoryExact(analysisLogs, { code: "A", catalogName: "Cat", timestampISO: t1, field: "출고가" }).id, "price-exact");
 assert.equal(mh.findMerchParserPriceHistoryExact(analysisLogs, { code: "A", catalogName: "Cat", timestampISO: t1, field: "시중가" }), null);
+
+const legacyReappearedAnalysis = mh.buildMerchParserListHistoryAnalysis({
+  historyLogs: [{ id: "legacy-reappeared-only", source: "parser", code: "A", catalogName: "Cat", timestampISO: t4, field: "카탈로그", oldVal: "", newVal: "Cat", supplyChangeType: "reappeared" }],
+  activeTags: [{ type: "catalog", name: "Cat" }],
+  masterProducts: { A: { 코드: "A", 품목명: "상품A", 출고가: 190, 판매여부: 1 } },
+  parserListMarginRules: { Cat: divide10 },
+});
+assert.equal(legacyReappearedAnalysis.events.length, 1);
+assert.equal(legacyReappearedAnalysis.events[0].kind, "supply");
+assert.equal(legacyReappearedAnalysis.events[0].changeType, "new");
+assert.equal(legacyReappearedAnalysis.counts.supply_new, 1);
+
+const catalogNewAfterStopAnalysis = mh.buildMerchParserListHistoryAnalysis({
+  historyLogs: catalogNewAfterStopPlan.logs,
+  activeTags: [{ type: "catalog", name: "Cat" }],
+  masterProducts: catalogNewAfterStopPlan.newMaster,
+  parserListMarginRules: { Cat: divide10 },
+});
+assert.equal(catalogNewAfterStopAnalysis.events.length, 1, "stopped history followed by catalog registration is one 신규 supply row");
+assert.equal(catalogNewAfterStopAnalysis.events[0].kind, "supply");
+assert.equal(catalogNewAfterStopAnalysis.events[0].changeType, "new");
+assert.equal(catalogNewAfterStopAnalysis.counts.supply_new, 1);
+assert.equal(catalogNewAfterStopAnalysis.events.some((event) => event.changeType === "reappeared"), false);
 
 const blankCostAnalysis = mh.buildMerchParserListHistoryAnalysis({
   historyLogs: [
@@ -886,7 +918,6 @@ assert.deepEqual(JSON.parse(JSON.stringify(blankCostAnalysis.events[0].priceChan
 assert.equal(blankCostAnalysis.counts.supply_new, 1);
 assert.equal(blankCostAnalysis.counts.cost_up, 0);
 assert.equal(blankCostAnalysis.counts.cost_down, 0);
-assert.equal(blankCostAnalysis.counts.cost_recovery, 0);
 
 const newProductAnalysis = mh.buildMerchParserListHistoryAnalysis({
   historyLogs: newPlan.logs,
@@ -898,7 +929,6 @@ assert.equal(newProductAnalysis.events.length, 1, "new product supply, tag detai
 assert.equal(newProductAnalysis.counts.supply_new, 1);
 assert.equal(newProductAnalysis.counts.cost_up, 0);
 assert.equal(newProductAnalysis.counts.cost_down, 0);
-assert.equal(newProductAnalysis.counts.cost_recovery, 0);
 const newProductEvent = newProductAnalysis.events[0];
 assert.equal(newProductEvent.kind, "supply");
 assert.equal(newProductEvent.changeType, "new");
@@ -926,12 +956,10 @@ assert.equal(zeroCostAnalysis.events[0].diffRate, null);
 assert.equal(zeroCostAnalysis.counts.supply_new, 1);
 assert.equal(zeroCostAnalysis.counts.cost_up, 0);
 assert.equal(zeroCostAnalysis.counts.cost_down, 0);
-assert.equal(zeroCostAnalysis.counts.cost_recovery, 0);
 [newProductEvent, blankCostAnalysis.events[0], zeroCostAnalysis.events[0]].forEach((event) => {
   assert.equal(mh.matchMerchParserAnalysisFilter(event, "supply_new"), true);
   assert.equal(mh.matchMerchParserAnalysisFilter(event, "cost_up"), false);
   assert.equal(mh.matchMerchParserAnalysisFilter(event, "cost_down"), false);
-  assert.equal(mh.matchMerchParserAnalysisFilter(event, "cost_recovery"), false);
 });
 
 const makePerformanceCostLogs = (count) => Array.from({ length: count }, (_, index) => ({
@@ -984,6 +1012,11 @@ assert.ok(exactPriceElapsedMs < 5000, `2,000 exact price joins must finish under
 const parserAnalysisBlock = sliceBetween(merch, "window.buildMerchParserListHistoryAnalysis =", "const formatSignedNumber =", "MerchOps analysis implementation");
 assert.match(parserAnalysisBlock, /buildMerchParserPriceHistoryExactIndex\(logs, metrics\)/);
 assert.doesNotMatch(parserAnalysisBlock, /findMerchParserPriceHistoryExact\(logs,/);
+assert.doesNotMatch(smart, /hasPriorParserSupplyStop|parser_catalog_reappeared|supplyChangeType === 'reappeared'/);
+const parserFilterBlock = sliceBetween(merch, "window.MERCH_PARSER_ANALYSIS_FILTERS =", "window.getMerchLoadedParserListSelection =", "MerchOps parser filter definition");
+assert.doesNotMatch(parserFilterBlock, /cost_recovery|supply_reappeared|복구|재등장/);
+const parserPanelBlock = sliceBetween(merch, "const ParserListHistoryAnalysisPanel =", "const ExcelDataGrid =", "MerchOps parser analysis panel");
+assert.doesNotMatch(parserPanelBlock, /recovery\s*:|reappeared\s*:|복구|재등장/);
 assert.match(merch, /이전 단가 없음/);
 assert.match(merch, /const isNewPriceEvent = event\.priceChangeType === 'new_price'/);
 assert.match(merch, /`입고 \$\{formatPreviousCost\(event\.oldVal\)\} → \$\{formatPrice\(event\.newVal\)\}`/);

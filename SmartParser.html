@@ -570,16 +570,7 @@ const createSmartParserMasterCodeResolver = (masterProducts = {}) => {
     };
     return { resolve, normalize: normalizeSharedProductCode };
 };
-const getSmartParserHistoryCatalog = (log = {}) => normalizeParserCatalogName(log.catalogName || log.catalog || log.parserListName || log.parserList || '');
-const hasPriorParserSupplyStop = (history = [], codeValue = '', catalogName = '') => {
-    const code = normalizeSharedProductCode(codeValue);
-    const catalog = normalizeParserCatalogName(catalogName);
-    return (Array.isArray(history) ? history : []).some(log => String(log?.source || '').trim() === 'parser'
-        && normalizeSharedProductCode(log?.code || log?.품목코드 || log?.productCode) === code
-        && getSmartParserHistoryCatalog(log) === catalog
-        && String(log?.supplyChangeType || '').trim() === 'stopped');
-};
-const buildSmartParserApplyPlan = ({ masterProducts = {}, rows = [], catalogLabel = '', catalogRule = null, priorHistory = [], timestampISO = '', timestampLabel = '', updateTextData = true, allowExistingInfoChanges = true } = {}) => {
+const buildSmartParserApplyPlan = ({ masterProducts = {}, rows = [], catalogLabel = '', catalogRule = null, timestampISO = '', timestampLabel = '', updateTextData = true, allowExistingInfoChanges = true } = {}) => {
     catalogLabel = normalizeParserCatalogName(catalogLabel);
     const catalog = catalogLabel;
     if (!catalog)
@@ -725,20 +716,17 @@ const buildSmartParserApplyPlan = ({ masterProducts = {}, rows = [], catalogLabe
         const hadCatalogTag = String(oldCatalogTags).split(',').map(tag => tag.trim()).filter(Boolean).includes(catalog);
         const newCatalogTags = hadCatalogTag ? oldCatalogTags : addTag(oldCatalogTags, catalog);
         if (!hadCatalogTag) {
-            const supplyChangeType = isNewProduct
-                ? 'tag_first'
-                : (hasPriorParserSupplyStop(priorHistory, code, catalog) ? 'reappeared' : 'tag_first');
             masterMutationCount++;
             supplyChangedCodes.add(code);
             logs.push(makeHistoryLog({
                 code, row, oldItem,
                 field: '카탈로그', oldVal: oldCatalogTags, newVal: newCatalogTags,
-                memo: supplyChangeType === 'reappeared' ? 'SmartParser 파서리스트 재등장으로 카탈로그 태그 재등록' : 'SmartParser 카탈로그 태그 최초 등록',
+                memo: 'SmartParser 카탈로그 태그 신규 등록',
                 extra: {
-                    actionType: supplyChangeType === 'reappeared' ? 'parser_catalog_reappeared' : 'parser_catalog_tag_first',
-                    supplyChangeType,
+                    actionType: 'parser_catalog_tag_first',
+                    supplyChangeType: 'new',
                     isNewProduct,
-                    changeType: supplyChangeType === 'reappeared' ? '재등장' : '태그 최초 등록',
+                    changeType: '신규',
                     diff: '',
                     diffRate: null
                 }
@@ -1124,13 +1112,11 @@ const useParserActions = (appState) => {
         try {
             const nowISO = getNowISO();
             const nowStr = new Date(nowISO).toLocaleString('ko-KR');
-            const priorHistory = safeParseJson(localStorage.getItem('merchHistory_v870'), []);
             const plan = buildSmartParserApplyPlan({
                 masterProducts,
                 rows: toApply,
                 catalogLabel,
                 catalogRule,
-                priorHistory,
                 timestampISO: nowISO,
                 timestampLabel: nowStr,
                 updateTextData,

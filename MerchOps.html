@@ -8934,10 +8934,8 @@ window.MERCH_PARSER_ANALYSIS_FILTERS = Object.freeze({
     cost_up: '인상',
     cost_down: '인하',
     cost_zero: '0',
-    cost_recovery: '복구',
     supply_new: '신규',
-    supply_stopped: '공급중단',
-    supply_reappeared: '재등장'
+    supply_stopped: '공급중단'
 });
 window.getMerchLoadedParserListSelection = (activeTags = []) => {
     const loadedNames = [...new Set((Array.isArray(activeTags) ? activeTags : [])
@@ -8957,9 +8955,9 @@ window.normalizeMerchParserSupplyChangeType = (logOrValue = '') => {
         ? (logOrValue.supplyChangeType ?? logOrValue.supplyType ?? logOrValue.supplyEventType ?? '')
         : logOrValue;
     const value = String(raw || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
-    if (['new', 'new_price', 'tag_first', 'first_tag', 'first', '신규'].includes(value)) return 'new';
+    // 구버전 재등장 이력은 현 정책의 공급정보 신규로 읽기 호환한다.
+    if (['new', 'new_price', 'tag_first', 'first_tag', 'first', '신규', 'reappeared', 'reappear', 'returned', 'supply_reappeared', '재등장'].includes(value)) return 'new';
     if (['stopped', 'stop', 'supply_stopped', 'discontinued', '공급중단'].includes(value)) return 'stopped';
-    if (['reappeared', 'reappear', 'returned', 'supply_reappeared', '재등장'].includes(value)) return 'reappeared';
     return '';
 };
 window.getMerchParserCostValueState = (value) => {
@@ -9131,12 +9129,18 @@ window.buildMerchParserListHistoryAnalysis = ({ historyLogs = [], activeTags = [
         }
     });
     const newPriceSupplyKeys = new Set(events
-        .filter(event => event.priceChangeType === 'new_price')
+        .filter(event => event.priceChangeType === 'new_price' && event.timestampISO)
         .map(event => makeSupplyEventKey(event.code, event.catalogName, event.timestampISO)));
-    const dedupedEvents = events.filter(event => !(event.kind === 'supply'
-        && event.changeType === 'new'
-        && event.priceChangeType !== 'new_price'
-        && newPriceSupplyKeys.has(makeSupplyEventKey(event.code, event.catalogName, event.timestampISO))));
+    const seenSupplyNewKeys = new Set();
+    const dedupedEvents = events.filter(event => {
+        if (event.kind !== 'supply' || event.changeType !== 'new') return true;
+        if (!event.timestampISO) return true;
+        const key = makeSupplyEventKey(event.code, event.catalogName, event.timestampISO);
+        if (event.priceChangeType !== 'new_price' && newPriceSupplyKeys.has(key)) return false;
+        if (seenSupplyNewKeys.has(key)) return false;
+        seenSupplyNewKeys.add(key);
+        return true;
+    });
     dedupedEvents.sort((left, right) => parseHistoryTime(right.log) - parseHistoryTime(left.log));
     const counts = {};
     Object.keys(window.MERCH_PARSER_ANALYSIS_FILTERS).forEach(key => {
@@ -10042,15 +10046,13 @@ const ParserListHistoryAnalysisPanel = ({ state }) => {
         const type = rule.calculationType === 'divide' ? '나누기' : '곱하기';
         return `${type} ${Number(rule.marginRate).toLocaleString()}%`;
     };
-    const changeLabels = { up: '인상', down: '인하', zero: '0', recovery: '복구', new: '신규', stopped: '공급중단', reappeared: '재등장' };
+    const changeLabels = { up: '인상', down: '인하', zero: '0', new: '신규', stopped: '공급중단' };
     const changeTones = {
         up: 'bg-rose-50 text-rose-700 border-rose-200',
         down: 'bg-blue-50 text-blue-700 border-blue-200',
         zero: 'bg-slate-100 text-slate-700 border-slate-300',
-        recovery: 'bg-emerald-50 text-emerald-700 border-emerald-200',
         new: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-        stopped: 'bg-rose-50 text-rose-700 border-rose-200',
-        reappeared: 'bg-indigo-50 text-indigo-700 border-indigo-200'
+        stopped: 'bg-rose-50 text-rose-700 border-rose-200'
     };
     const listLabel = selection.all ? '전체리스트' : (selection.catalogNames.join(', ') || '-');
     return h("section", { className: "shrink-0 border-b border-indigo-200 bg-indigo-50/60" },
