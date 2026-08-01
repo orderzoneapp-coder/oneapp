@@ -83,7 +83,7 @@ window.PROMOTION_THEMES = window.PROMOTION_THEMES || [
     { code: '4', label: '실사진', type: '뱃지' },
     { code: '5', label: '행사', type: '뱃지' }
 ];
-const { useState, useMemo, useEffect, useCallback } = React;
+const { useState, useMemo, useEffect, useCallback, useRef } = React;
 const safeJSONParse = (key, defaultValue) => {
     try {
         const raw = localStorage.getItem(key);
@@ -98,12 +98,47 @@ const safeJSONParse = (key, defaultValue) => {
 };
 const PARSER_LIST_MARGIN_RULES_KEY = 'parserListMarginRules_v1';
 const normalizeParserCatalogName = (value) => String(value !== null && value !== void 0 ? value : '').trim();
+const getParserUnitRuleCandidates = (value) => {
+    const raw = String(value !== null && value !== void 0 ? value : '').trim().toLowerCase();
+    if (!raw || raw === '*') return raw === '*' ? ['*'] : [];
+    const compact = raw.replace(/\s/g, '');
+    const parts = [compact, ...raw.split(/[,./|\s()_\-]+/).map(part => part.trim()).filter(Boolean)];
+    const candidates = [];
+    const push = candidate => { if (candidate && !candidates.includes(candidate)) candidates.push(candidate); };
+    parts.forEach(part => {
+        const normalized = String(part || '').toLowerCase().replace(/\s/g, '');
+        if (!normalized) return;
+        if (/box|박스|상자|bx/.test(normalized)) push('box');
+        if (/소분|분할|절단|컷|소포장|묶음/.test(normalized)) push('sub');
+        if (/ea|each|개|낱개|낱|kg|킬로|단|봉|포/.test(normalized)) push('ea');
+        push(normalized);
+    });
+    return candidates;
+};
+const normalizeParserUnitCondition = (value) => String(value !== null && value !== void 0 ? value : '').trim() || '*';
+const getParserUnitConditionKeys = (value) => {
+    const condition = normalizeParserUnitCondition(value);
+    if (condition === '*') return ['*'];
+    return Array.from(new Set(condition.split(',').flatMap(alias => getParserUnitRuleCandidates(alias)).filter(candidate => candidate && candidate !== '*')));
+};
 const normalizeParserRuleUpdatedAt = (value) => {
     const rawUpdatedAt = typeof value === 'string' ? value.trim() : '';
     if (!rawUpdatedAt || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/.test(rawUpdatedAt))
         return '';
     const parsedUpdatedAt = new Date(rawUpdatedAt);
     return Number.isNaN(parsedUpdatedAt.getTime()) ? '' : parsedUpdatedAt.toISOString();
+};
+const normalizeParserListMarginRuleEntry = (rawRule, fallbackUpdatedAt = '') => {
+    if (!rawRule || typeof rawRule !== 'object' || Array.isArray(rawRule)) return null;
+    const marginRate = rawRule.marginRate;
+    const calculationType = rawRule.calculationType;
+    const updatedAt = normalizeParserRuleUpdatedAt(rawRule.updatedAt || fallbackUpdatedAt);
+    const unitCondition = normalizeParserUnitCondition(rawRule.unitCondition !== undefined ? rawRule.unitCondition : (rawRule.unit !== undefined ? rawRule.unit : '*'));
+    if (typeof marginRate !== 'number' || !Number.isFinite(marginRate)) return null;
+    if (calculationType !== 'divide' && calculationType !== 'multiply') return null;
+    if (calculationType === 'divide' && marginRate >= 100) return null;
+    if (!updatedAt || (unitCondition !== '*' && getParserUnitConditionKeys(unitCondition).length === 0)) return null;
+    return { unitCondition, marginRate, calculationType, updatedAt };
 };
 const normalizeParserListMarginRules = (input = {}) => {
     const result = Object.create(null);
@@ -113,24 +148,41 @@ const normalizeParserListMarginRules = (input = {}) => {
         const catalogName = normalizeParserCatalogName(rawCatalogName);
         if (!catalogName || !rawRule || typeof rawRule !== 'object' || Array.isArray(rawRule))
             return;
-        const marginRate = rawRule.marginRate;
-        const calculationType = rawRule.calculationType;
-        const updatedAt = normalizeParserRuleUpdatedAt(rawRule.updatedAt);
-        if (typeof marginRate !== 'number' || !Number.isFinite(marginRate))
-            return;
-        if (calculationType !== 'divide' && calculationType !== 'multiply')
-            return;
-        if (calculationType === 'divide' && marginRate >= 100)
-            return;
-        if (!updatedAt)
-            return;
-        result[catalogName] = {
-            marginRate,
-            calculationType,
-            updatedAt
-        };
+        const rawRules = Array.isArray(rawRule.rules) ? rawRule.rules : [rawRule];
+        const rules = [];
+        const seenUnitKeys = new Set();
+        rawRules.forEach(candidate => {
+            const normalizedRule = normalizeParserListMarginRuleEntry(candidate, rawRule.updatedAt);
+            if (!normalizedRule) return;
+            const unitKeys = getParserUnitConditionKeys(normalizedRule.unitCondition);
+            if (unitKeys.some(unitKey => seenUnitKeys.has(unitKey))) return;
+            unitKeys.forEach(unitKey => seenUnitKeys.add(unitKey));
+            rules.push(normalizedRule);
+        });
+        if (rules.length > 0) result[catalogName] = { rules };
     });
     return result;
+};
+const validateParserCatalogRuleSet = (catalogName, rawRules = []) => {
+    const name = normalizeParserCatalogName(catalogName);
+    if (!name) return 'SmartParser 카탈로그명을 입력하세요.';
+    const seenUnitKeys = new Set();
+    let defaultCount = 0;
+    for (const rawRule of Array.isArray(rawRules) ? rawRules : []) {
+        const unitCondition = normalizeParserUnitCondition(rawRule && (rawRule.unitCondition !== undefined ? rawRule.unitCondition : rawRule.unit));
+        const marginRate = Number(rawRule && rawRule.marginRate);
+        const calculationType = rawRule && rawRule.calculationType;
+        if (!Number.isFinite(marginRate)) return 'SmartParser 마진율은 유효한 숫자로 입력하세요.';
+        if (!['divide', 'multiply'].includes(calculationType)) return 'SmartParser 계산방식을 다시 선택하세요.';
+        if (calculationType === 'divide' && marginRate >= 100) return '나누기 방식은 마진율 100% 이상을 사용할 수 없습니다.';
+        const unitKeys = getParserUnitConditionKeys(unitCondition);
+        if (unitCondition === '*') defaultCount++;
+        if (defaultCount > 1) return `카탈로그 [${name}]에는 전체 단위(*) 룰을 하나만 저장할 수 있습니다.`;
+        if (unitKeys.length === 0) return '단위조건을 입력하세요. 전체 단위는 *를 사용하세요.';
+        if (unitKeys.some(unitKey => seenUnitKeys.has(unitKey))) return `정규화 후 중복되는 단위조건 [${unitCondition}]이 있습니다.`;
+        unitKeys.forEach(unitKey => seenUnitKeys.add(unitKey));
+    }
+    return '';
 };
 const TABLE_VIEW_TARGETS = [
     { id: 'estimate', label: '견적', tone: 'emerald' },
@@ -446,6 +498,7 @@ const useMerchConfig = () => {
     const [tableShortcuts, setTableShortcuts] = useState(() => safeJSONParse('merchTableShortcuts_v870', []));
     const [tableViewPresets, setTableViewPresets] = useState(() => sanitizeTableViewPresets(safeJSONParse('merchTableViewPresets_v1', getDefaultTableViewPresets())));
     const [parserListMarginRules, setParserListMarginRules] = useState(() => normalizeParserListMarginRules(safeJSONParse(PARSER_LIST_MARGIN_RULES_KEY, {})));
+    const parserListRulesLoadedRef = useRef(false);
     const [marginRules, setMarginRules] = useState(() => {
         var _a, _b, _c, _d, _e;
         const defaultRules = [
@@ -470,6 +523,10 @@ const useMerchConfig = () => {
         return defaultRules;
     });
     useEffect(() => {
+        if (!parserListRulesLoadedRef.current) {
+            parserListRulesLoadedRef.current = true;
+            return;
+        }
         localStorage.setItem(PARSER_LIST_MARGIN_RULES_KEY, JSON.stringify(normalizeParserListMarginRules(parserListMarginRules)));
     }, [parserListMarginRules]);
     useEffect(() => {
@@ -561,8 +618,9 @@ const App = () => {
     const [masterUploadFileName, setMasterUploadFileName] = useState('');
     const [masterUploadError, setMasterUploadError] = useState('');
     const [masterBackups, setMasterBackups] = useState([]);
-    const [parserListRuleDraft, setParserListRuleDraft] = useState({ catalogName: '', marginRate: '', calculationType: 'divide' });
+    const [parserListRuleDraft, setParserListRuleDraft] = useState({ catalogName: '', unitCondition: '*', marginRate: '', calculationType: 'divide' });
     const [editingParserCatalogName, setEditingParserCatalogName] = useState('');
+    const [editingParserRuleIndex, setEditingParserRuleIndex] = useState(-1);
     const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
     const getActionableError = (error, context) => {
         if (error?.name === 'OneAppClientError' && error?.message) return error.message;
@@ -593,10 +651,12 @@ const App = () => {
         });
         return Object.keys(counts).sort().map(tag => ({ name: tag, count: counts[tag] }));
     }, [data.masterProducts]);
-    const parserListMarginRuleEntries = useMemo(() => Object.entries(normalizeParserListMarginRules(config.parserListMarginRules || {})).sort(([left], [right]) => left.localeCompare(right)), [config.parserListMarginRules]);
+    const parserListMarginRuleEntries = useMemo(() => Object.entries(normalizeParserListMarginRules(config.parserListMarginRules || {}))
+        .sort(([left], [right]) => left.localeCompare(right))
+        .flatMap(([catalogName, ruleSet]) => (ruleSet.rules || []).map((rule, ruleIndex) => ({ catalogName, rule, ruleIndex }))), [config.parserListMarginRules]);
     const parserCatalogOptions = useMemo(() => Array.from(new Set([
         ...availableCatalogs.map(item => normalizeParserCatalogName(item.name)),
-        ...parserListMarginRuleEntries.map(([catalogName]) => catalogName)
+        ...parserListMarginRuleEntries.map(entry => entry.catalogName)
     ].filter(Boolean))).sort((left, right) => left.localeCompare(right)), [availableCatalogs, parserListMarginRuleEntries]);
     const availableCategories = useMemo(() => {
         const counts = {};
@@ -1454,24 +1514,28 @@ const App = () => {
     const updateMarginRule = (id, field, value) => config.setMarginRules((config.marginRules || []).map(r => r.id === id ? { ...r, [field]: value } : r));
     const deleteMarginRule = (id) => config.setMarginRules((config.marginRules || []).filter(r => r.id !== id));
     const resetParserListRuleDraft = () => {
-        setParserListRuleDraft({ catalogName: '', marginRate: '', calculationType: 'divide' });
+        setParserListRuleDraft({ catalogName: '', unitCondition: '*', marginRate: '', calculationType: 'divide' });
         setEditingParserCatalogName('');
+        setEditingParserRuleIndex(-1);
     };
-    const editParserListMarginRule = (catalogName, rule) => {
+    const editParserListMarginRule = (catalogName, rule, ruleIndex) => {
         const exactCatalogName = normalizeParserCatalogName(catalogName);
         if (!exactCatalogName || !rule)
             return;
         setParserListRuleDraft({
             catalogName: exactCatalogName,
+            unitCondition: rule.unitCondition,
             marginRate: String(rule.marginRate),
             calculationType: rule.calculationType
         });
         setEditingParserCatalogName(exactCatalogName);
+        setEditingParserRuleIndex(ruleIndex);
     };
     const saveParserListMarginRule = () => {
         const catalogName = normalizeParserCatalogName(editingParserCatalogName || parserListRuleDraft.catalogName);
         const marginRateText = String(parserListRuleDraft.marginRate !== null && parserListRuleDraft.marginRate !== void 0 ? parserListRuleDraft.marginRate : '').trim();
         const calculationType = parserListRuleDraft.calculationType;
+        const unitCondition = normalizeParserUnitCondition(parserListRuleDraft.unitCondition);
         if (!catalogName)
             return showToast('⚠️ SmartParser 카탈로그명을 입력하세요.');
         if (!marginRateText)
@@ -1483,33 +1547,42 @@ const App = () => {
             return showToast('⚠️ SmartParser 계산방식을 다시 선택하세요.');
         if (calculationType === 'divide' && marginRate >= 100)
             return showToast('⚠️ 나누기 방식은 마진율 100% 이상을 사용할 수 없습니다.');
-        const existed = Object.prototype.hasOwnProperty.call(config.parserListMarginRules || {}, catalogName);
+        const existingRuleSet = normalizeParserListMarginRules(config.parserListMarginRules || {})[catalogName];
+        const nextCatalogRules = existingRuleSet ? [...existingRuleSet.rules] : [];
+        const nextRule = { unitCondition, marginRate, calculationType, updatedAt: new Date().toISOString() };
+        if (editingParserCatalogName && editingParserRuleIndex >= 0)
+            nextCatalogRules[editingParserRuleIndex] = nextRule;
+        else
+            nextCatalogRules.push(nextRule);
+        const validationError = validateParserCatalogRuleSet(catalogName, nextCatalogRules);
+        if (validationError) return showToast('⚠️ ' + validationError);
         config.setParserListMarginRules(prev => {
             const next = { ...normalizeParserListMarginRules(prev || {}) };
-            next[catalogName] = {
-                marginRate,
-                calculationType,
-                updatedAt: new Date().toISOString()
-            };
+            next[catalogName] = { rules: nextCatalogRules };
             return next;
         });
+        const wasEditing = editingParserCatalogName && editingParserRuleIndex >= 0;
         resetParserListRuleDraft();
-        showToast(existed ? `✅ [${catalogName}] SmartParser 룰을 수정했습니다.` : `✅ [${catalogName}] SmartParser 룰을 추가했습니다.`);
+        showToast(wasEditing ? `✅ [${catalogName}] 단위별 SmartParser 룰을 수정했습니다.` : `✅ [${catalogName}] 단위별 SmartParser 룰을 추가했습니다.`);
     };
-    const deleteParserListMarginRule = (catalogName) => {
+    const deleteParserListMarginRule = (catalogName, ruleIndex) => {
         const exactCatalogName = normalizeParserCatalogName(catalogName);
         if (!exactCatalogName || !Object.prototype.hasOwnProperty.call(config.parserListMarginRules || {}, exactCatalogName))
             return;
-        if (!window.confirm(`[${exactCatalogName}] SmartParser 카탈로그 룰을 삭제할까요?`))
+        const existingRuleSet = normalizeParserListMarginRules(config.parserListMarginRules || {})[exactCatalogName];
+        const targetRule = existingRuleSet?.rules?.[ruleIndex];
+        if (!targetRule || !window.confirm(`[${exactCatalogName}] 단위조건 [${targetRule.unitCondition}] 룰을 삭제할까요?`))
             return;
         config.setParserListMarginRules(prev => {
             const next = { ...normalizeParserListMarginRules(prev || {}) };
-            delete next[exactCatalogName];
+            const remainingRules = (next[exactCatalogName]?.rules || []).filter((_, index) => index !== ruleIndex);
+            if (remainingRules.length > 0) next[exactCatalogName] = { rules: remainingRules };
+            else delete next[exactCatalogName];
             return next;
         });
-        if (editingParserCatalogName === exactCatalogName)
+        if (editingParserCatalogName === exactCatalogName && editingParserRuleIndex === ruleIndex)
             resetParserListRuleDraft();
-        showToast(`✅ [${exactCatalogName}] SmartParser 룰을 삭제했습니다.`);
+        showToast(`✅ [${exactCatalogName}] 단위조건 [${targetRule.unitCondition}] 룰을 삭제했습니다.`);
     };
 
     const masterUploadSummary = (masterUploadAnalysis && masterUploadAnalysis.summary) || {};
@@ -1569,14 +1642,17 @@ const App = () => {
         React.createElement("div", { className: "flex items-start justify-between gap-4 px-6 py-5 bg-indigo-50 border-b border-indigo-100" },
             React.createElement("div", null,
                 React.createElement("h3", { className: "text-[16px] font-black text-indigo-900" }, "SmartParser 카탈로그별 판매가 룰"),
-                React.createElement("p", { className: "text-[12px] text-indigo-700 mt-1 font-bold" }, "카탈로그명을 앞뒤 공백 제거 후 정확히 일치시킵니다. 일반 가격룰이나 기본 마진율로 대체하지 않습니다.")),
+                React.createElement("p", { className: "text-[12px] text-indigo-700 mt-1 font-bold" }, "카탈로그별 복수 단위 룰을 저장합니다. 특정 단위가 전체 단위(*)보다 우선하며 일반 가격룰이나 기본 마진율로 대체하지 않습니다.")),
             React.createElement("span", { className: "shrink-0 px-3 py-1.5 rounded-full bg-white border border-indigo-200 text-[11px] font-black text-indigo-700" }, parserListMarginRuleEntries.length, "개 저장")),
         React.createElement("div", { className: "p-6" },
             React.createElement("div", { className: "grid grid-cols-12 gap-3 items-end" },
-                React.createElement("div", { className: "col-span-5" },
+                React.createElement("div", { className: "col-span-3" },
                     React.createElement("label", { className: "block text-[11px] font-black text-slate-600 mb-1.5" }, "카탈로그명 (정확 일치)"),
                     React.createElement("input", { type: "text", list: "parser-list-margin-rule-catalogs", value: parserListRuleDraft.catalogName, readOnly: Boolean(editingParserCatalogName), onChange: e => setParserListRuleDraft(prev => ({ ...prev, catalogName: e.target.value })), placeholder: "기존 카탈로그 선택 또는 새 이름 입력", className: `w-full border rounded-lg px-3 py-2.5 text-[13px] font-bold outline-none ${editingParserCatalogName ? 'bg-slate-100 border-slate-200 text-slate-500' : 'bg-white border-slate-300 focus:border-indigo-500'}` }),
                     React.createElement("datalist", { id: "parser-list-margin-rule-catalogs" }, parserCatalogOptions.map(catalogName => React.createElement("option", { key: catalogName, value: catalogName })))),
+                React.createElement("div", { className: "col-span-3" },
+                    React.createElement("label", { className: "block text-[11px] font-black text-slate-600 mb-1.5" }, "단위조건 (콤마 별칭 / 전체 *)"),
+                    React.createElement("input", { type: "text", value: parserListRuleDraft.unitCondition, onChange: e => setParserListRuleDraft(prev => ({ ...prev, unitCondition: e.target.value })), placeholder: "BOX, 박스 또는 *", className: "w-full border border-slate-300 rounded-lg px-3 py-2.5 text-[13px] font-bold outline-none focus:border-indigo-500" })),
                 React.createElement("div", { className: "col-span-2" },
                     React.createElement("label", { className: "block text-[11px] font-black text-slate-600 mb-1.5" }, "마진율(%)"),
                     React.createElement("input", { type: "number", value: parserListRuleDraft.marginRate, onChange: e => setParserListRuleDraft(prev => ({ ...prev, marginRate: e.target.value })), placeholder: "예: 10", className: "w-full border border-slate-300 rounded-lg px-3 py-2.5 text-[13px] font-black text-center outline-none focus:border-indigo-500" })),
@@ -1585,10 +1661,10 @@ const App = () => {
                     React.createElement("select", { value: parserListRuleDraft.calculationType, onChange: e => setParserListRuleDraft(prev => ({ ...prev, calculationType: e.target.value })), className: "w-full border border-slate-300 rounded-lg px-3 py-2.5 text-[13px] font-bold bg-white outline-none focus:border-indigo-500" },
                         React.createElement("option", { value: "divide" }, "나누기(÷)"),
                         React.createElement("option", { value: "multiply" }, "곱하기(×)"))),
-                React.createElement("div", { className: "col-span-3 flex gap-2" },
+                React.createElement("div", { className: "col-span-2 flex gap-2" },
                     React.createElement("button", { onClick: saveParserListMarginRule, className: "flex-1 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-lg text-[12px] font-black shadow-sm" }, editingParserCatalogName ? "수정 저장" : "룰 추가"),
                     editingParserCatalogName && React.createElement("button", { onClick: resetParserListRuleDraft, className: "px-4 py-2.5 rounded-lg border border-slate-300 bg-white text-slate-600 text-[12px] font-black hover:bg-slate-50" }, "취소"))),
-            React.createElement("div", { className: "mt-3 text-[11px] text-slate-500 font-bold leading-relaxed" }, "이 설정은 이 브라우저의 parserListMarginRules_v1에만 저장됩니다. 나누기 방식의 100%는 계산할 수 없어 저장하지 않습니다.")),
+            React.createElement("div", { className: "mt-3 text-[11px] text-slate-500 font-bold leading-relaxed" }, "이 설정은 명시적인 추가·수정·삭제 때만 이 브라우저의 parserListMarginRules_v1에 저장됩니다. 구 단일 룰은 전체 단위(*)로 표시되며 단순 로드만으로 재저장하지 않습니다. 정규화 후 단위 중복과 나누기 100% 이상은 차단합니다.")),
         parserListMarginRuleEntries.length === 0
             ? React.createElement("div", { className: "px-6 py-8 border-t border-slate-100 text-center text-[13px] font-bold text-slate-400" }, "저장된 SmartParser 카탈로그 룰이 없습니다.")
             : React.createElement("div", { className: "border-t border-slate-100 overflow-x-auto" },
@@ -1596,19 +1672,21 @@ const App = () => {
                     React.createElement("thead", { className: "bg-slate-50 text-slate-600 font-black" },
                         React.createElement("tr", null,
                             React.createElement("th", { className: "px-5 py-3" }, "카탈로그명"),
+                            React.createElement("th", { className: "px-5 py-3 text-center" }, "단위조건"),
                             React.createElement("th", { className: "px-5 py-3 text-center" }, "마진율"),
                             React.createElement("th", { className: "px-5 py-3 text-center" }, "계산방식"),
                             React.createElement("th", { className: "px-5 py-3 text-center" }, "최종 수정"),
                             React.createElement("th", { className: "px-5 py-3 text-center" }, "관리"))),
-                    React.createElement("tbody", { className: "divide-y divide-slate-100" }, parserListMarginRuleEntries.map(([catalogName, rule]) => React.createElement("tr", { key: catalogName, className: "hover:bg-indigo-50/40" },
+                    React.createElement("tbody", { className: "divide-y divide-slate-100" }, parserListMarginRuleEntries.map(({ catalogName, rule, ruleIndex }) => React.createElement("tr", { key: `${catalogName}-${ruleIndex}`, className: "hover:bg-indigo-50/40" },
                         React.createElement("td", { className: "px-5 py-3 font-black text-slate-800" }, catalogName),
+                        React.createElement("td", { className: "px-5 py-3 text-center font-black text-emerald-700" }, rule.unitCondition),
                         React.createElement("td", { className: "px-5 py-3 text-center font-black text-indigo-700" }, rule.marginRate, "%"),
                         React.createElement("td", { className: "px-5 py-3 text-center font-bold text-slate-600" }, rule.calculationType === 'divide' ? '나누기(÷)' : '곱하기(×)'),
                         React.createElement("td", { className: "px-5 py-3 text-center text-[11px] font-bold text-slate-500" }, new Date(rule.updatedAt).toLocaleString('ko-KR')),
                         React.createElement("td", { className: "px-5 py-3 text-center" },
                             React.createElement("div", { className: "inline-flex gap-2" },
-                                React.createElement("button", { onClick: () => editParserListMarginRule(catalogName, rule), className: "px-3 py-1.5 rounded-lg bg-indigo-50 border border-indigo-200 text-indigo-700 text-[11px] font-black hover:bg-indigo-100" }, "수정"),
-                                React.createElement("button", { onClick: () => deleteParserListMarginRule(catalogName), className: "px-3 py-1.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-600 text-[11px] font-black hover:bg-rose-100" }, "삭제")))))))));
+                                React.createElement("button", { onClick: () => editParserListMarginRule(catalogName, rule, ruleIndex), className: "px-3 py-1.5 rounded-lg bg-indigo-50 border border-indigo-200 text-indigo-700 text-[11px] font-black hover:bg-indigo-100" }, "수정"),
+                                React.createElement("button", { onClick: () => deleteParserListMarginRule(catalogName, ruleIndex), className: "px-3 py-1.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-600 text-[11px] font-black hover:bg-rose-100" }, "삭제")))))))));
     const requiredCoreFields = ['품목코드', '품목명', '규격'];
     const selectableMasterHeaders = useMemo(() => { var _a; return Array.from(new Set([...(window.MASTER_HEADERS || []), ...(((_a = config.visibleMasterCols) === null || _a === void 0 ? void 0 : _a[activeUploadRole]) || [])])); }, [config.visibleMasterCols, activeUploadRole]);
     return (React.createElement("div", { className: "flex h-screen overflow-hidden bg-slate-50 relative fade-in" },

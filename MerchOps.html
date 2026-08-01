@@ -1886,20 +1886,51 @@ window.normalizeParserRuleUpdatedAt = (value) => {
     const parsedUpdatedAt = new Date(rawUpdatedAt);
     return Number.isNaN(parsedUpdatedAt.getTime()) ? '' : parsedUpdatedAt.toISOString();
 };
+window.normalizeParserUnitCondition = (value) => String(value ?? '').trim() || '*';
+window.getParserUnitConditionKeys = (value) => {
+    const condition = window.normalizeParserUnitCondition(value);
+    if (condition === '*') return ['*'];
+    return Array.from(new Set(condition.split(',').flatMap(alias => window.getMerchUnitRuleCandidates ? window.getMerchUnitRuleCandidates(alias) : [String(alias || '').trim().toLowerCase()]).filter(candidate => candidate && candidate !== '*')));
+};
+window.normalizeParserListMarginRuleEntry = (value, fallbackUpdatedAt = '') => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+    const marginRate = value.marginRate;
+    const calculationType = value.calculationType;
+    const updatedAt = window.normalizeParserRuleUpdatedAt(value.updatedAt || fallbackUpdatedAt);
+    const unitCondition = window.normalizeParserUnitCondition(value.unitCondition ?? value.unit ?? '*');
+    if (typeof marginRate !== 'number' || !Number.isFinite(marginRate) || !['divide', 'multiply'].includes(calculationType) || !updatedAt) return null;
+    if (calculationType === 'divide' && marginRate >= 100) return null;
+    if (unitCondition !== '*' && window.getParserUnitConditionKeys(unitCondition).length === 0) return null;
+    return { unitCondition, marginRate, calculationType, updatedAt };
+};
 window.normalizeParserListMarginRules = (raw = {}) => {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
     const normalized = Object.create(null);
     Object.entries(raw).forEach(([catalogName, value]) => {
         const name = String(catalogName || '').trim();
         if (!name || !value || typeof value !== 'object' || Array.isArray(value)) return;
-        const marginRate = value.marginRate;
-        const calculationType = value.calculationType;
-        const updatedAt = window.normalizeParserRuleUpdatedAt(value.updatedAt);
-        if (typeof marginRate !== 'number' || !Number.isFinite(marginRate) || !['divide', 'multiply'].includes(calculationType) || !updatedAt) return;
-        if (calculationType === 'divide' && marginRate >= 100) return;
-        normalized[name] = { marginRate, calculationType, updatedAt };
+        const rawRules = Array.isArray(value.rules) ? value.rules : [value];
+        const rules = [];
+        const seenUnitKeys = new Set();
+        rawRules.forEach(candidate => {
+            const rule = window.normalizeParserListMarginRuleEntry(candidate, value.updatedAt);
+            if (!rule) return;
+            const unitKeys = window.getParserUnitConditionKeys(rule.unitCondition);
+            if (unitKeys.some(unitKey => seenUnitKeys.has(unitKey))) return;
+            unitKeys.forEach(unitKey => seenUnitKeys.add(unitKey));
+            rules.push(rule);
+        });
+        if (rules.length > 0) normalized[name] = { rules };
     });
     return normalized;
+};
+window.resolveParserListMarginRule = (rules, catalogName, unitValue = '') => {
+    const name = String(catalogName || '').trim();
+    const ruleSet = window.normalizeParserListMarginRules(rules)[name];
+    if (!ruleSet) return null;
+    const targetUnits = window.getMerchUnitRuleCandidates ? window.getMerchUnitRuleCandidates(unitValue) : [String(unitValue || '').trim().toLowerCase()].filter(Boolean);
+    const exactRule = ruleSet.rules.find(rule => rule.unitCondition !== '*' && window.getParserUnitConditionKeys(rule.unitCondition).some(ruleUnit => targetUnits.some(targetUnit => targetUnit === ruleUnit || targetUnit.includes(ruleUnit) || ruleUnit.includes(targetUnit))));
+    return exactRule || ruleSet.rules.find(rule => rule.unitCondition === '*') || null;
 };
 const TABLE_VIEW_TARGETS = [
     { id: 'estimate', label: '견적' },
@@ -9037,6 +9068,8 @@ window.buildMerchParserListHistoryAnalysis = ({ historyLogs = [], activeTags = [
         const master = masterByCode.get(code) || {};
         const currentSale = window.getMerchMasterSalePriceInfo ? window.getMerchMasterSalePriceInfo(master) : { value: master?.['출고가'] ?? '', source: '출고가' };
         const saleState = window.getMasterSalesState ? window.getMasterSalesState(master) : { text: String(master?.['판매여부'] ?? '-') };
+        const historyRule = window.normalizeParserListMarginRuleEntry(log?.priceRule, log?.priceRule?.updatedAt);
+        const currentUnitRule = window.resolveParserListMarginRule(rules, catalogName, log?.parsedUnit || log?.unit || master?.['단위'] || '');
         return {
             id: String(log?.id || `${kind}:${catalogName}:${code}:${String(log?.timestampISO || log?.timestamp || '')}:${index}`),
             kind,
@@ -9051,7 +9084,7 @@ window.buildMerchParserListHistoryAnalysis = ({ historyLogs = [], activeTags = [
             currentSalePriceSource: currentSale?.source || '',
             currentSaleAvailability: master?.['판매여부'] ?? '',
             currentSaleStatus: saleState?.text || saleState?.label || '-',
-            rule: rules[catalogName] || null,
+            rule: historyRule || currentUnitRule,
             log
         };
     };
@@ -10044,7 +10077,7 @@ const ParserListHistoryAnalysisPanel = ({ state }) => {
     const formatRule = (rule) => {
         if (!rule) return '룰 없음';
         const type = rule.calculationType === 'divide' ? '나누기' : '곱하기';
-        return `${type} ${Number(rule.marginRate).toLocaleString()}%`;
+        return `${rule.unitCondition || '*'} · ${type} ${Number(rule.marginRate).toLocaleString()}%`;
     };
     const changeLabels = { up: '인상', down: '인하', zero: '0', new: '신규', stopped: '공급중단' };
     const changeTones = {
