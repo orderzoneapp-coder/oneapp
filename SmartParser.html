@@ -132,7 +132,7 @@
             return { label, fullLabel, isToday, timestampMs: parsed.getTime() };
         };
 
-        const calculatePricesEngine = (baseInPrice, mItem = {}, currentFinalData = {}, marginRules = [], forceRecalc = false) => {
+        const calculatePricesEngine = (baseInPrice, mItem = {}, currentFinalData = {}, marginRules = [], forceRecalc = false, explicitRule = null) => {
             const ROUND_UNIT = 100;
             const outsrc = (!currentFinalData?.['외주비'] && currentFinalData?.['외주비'] !== 0) ? parseNum(mItem?.['외주비']) : parseNum(currentFinalData?.['외주비']);
             const labor = (!currentFinalData?.['노무비'] && currentFinalData?.['노무비'] !== 0) ? parseNum(mItem?.['노무비']) : parseNum(currentFinalData?.['노무비']);
@@ -145,9 +145,13 @@
 
             let bestRule = null; let bestScore = -1;
             const safeMarginRules = Array.isArray(marginRules) ? marginRules : [];
-            safeMarginRules.forEach(r => { if (matchWh(r.whCode, whCode) && matchUnit(r.unit, unitStr)) { let score = 0; if (r.whCode !== '*') score += 2; if (r.unit !== '*') score += 1; if (score > bestScore) { bestScore = score; bestRule = r; } } });
+            if (!explicitRule) {
+                safeMarginRules.forEach(r => { if (matchWh(r.whCode, whCode) && matchUnit(r.unit, unitStr)) { let score = 0; if (r.whCode !== '*') score += 2; if (r.unit !== '*') score += 1; if (score > bestScore) { bestScore = score; bestRule = r; } } });
+            }
 
-            const appliedRule = bestRule || { rate: 10, type: 'divide' }; let calcOutPrice = 0;
+            const appliedRule = explicitRule
+                ? { rate: Number(explicitRule.marginRate), type: explicitRule.calculationType }
+                : (bestRule || { rate: 10, type: 'divide' }); let calcOutPrice = 0;
             if (baseInPrice > 0) { if (appliedRule.type === 'divide') calcOutPrice = totalCost / (1 - (appliedRule.rate / 100)); else calcOutPrice = totalCost * (1 + (appliedRule.rate / 100)); calcOutPrice = Math.round(calcOutPrice / ROUND_UNIT) * ROUND_UNIT; }
 
             let newFinalData = { ...currentFinalData, '입고가': baseInPrice }; newFinalData['시중가'] = calcOutPrice;
@@ -400,6 +404,99 @@ const safeParseJson = (raw, fallback) => {
         return fallback;
     }
 };
+const PARSER_LIST_MARGIN_RULES_KEY = 'parserListMarginRules_v1';
+const PARSER_PRICE_HISTORY_FIELDS = ['출고가', '시중가', '1입고', '1출고'];
+const normalizeParserCatalogName = (value) => String(value == null ? '' : value).trim();
+const normalizeParserRuleUpdatedAt = (value) => {
+    const rawUpdatedAt = typeof value === 'string' ? value.trim() : '';
+    if (!rawUpdatedAt || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/.test(rawUpdatedAt))
+        return '';
+    const parsedUpdatedAt = new Date(rawUpdatedAt);
+    return Number.isNaN(parsedUpdatedAt.getTime()) ? '' : parsedUpdatedAt.toISOString();
+};
+const normalizeParserListMarginRules = (input = {}) => {
+    const result = Object.create(null);
+    if (!input || typeof input !== 'object' || Array.isArray(input))
+        return result;
+    Object.entries(input).forEach(([rawName, rawRule]) => {
+        const name = normalizeParserCatalogName(rawName);
+        if (!name || !rawRule || typeof rawRule !== 'object' || Array.isArray(rawRule))
+            return;
+        const marginRate = rawRule.marginRate;
+        const calculationType = rawRule.calculationType;
+        const updatedAt = normalizeParserRuleUpdatedAt(rawRule.updatedAt);
+        if (typeof marginRate !== 'number' || !Number.isFinite(marginRate) || !['divide', 'multiply'].includes(calculationType) || !updatedAt)
+            return;
+        if (calculationType === 'divide' && marginRate >= 100)
+            return;
+        result[name] = {
+            marginRate,
+            calculationType,
+            updatedAt
+        };
+    });
+    return result;
+};
+const loadParserListMarginRules = () => normalizeParserListMarginRules(safeParseJson(localStorage.getItem(PARSER_LIST_MARGIN_RULES_KEY), {}));
+const resolveParserListMarginRule = (rules, catalogName) => {
+    const name = normalizeParserCatalogName(catalogName);
+    if (!name)
+        return null;
+    const normalized = normalizeParserListMarginRules(rules);
+    return Object.prototype.hasOwnProperty.call(normalized, name) ? normalized[name] : null;
+};
+const hasParserCostValue = (value) => value !== null && value !== undefined && String(value).trim() !== '';
+const classifyParserInPriceChange = (oldValue, newValue) => {
+    if (!hasParserCostValue(newValue))
+        return '';
+    const hasOldValue = hasParserCostValue(oldValue);
+    const oldPrice = parseNum(oldValue);
+    const newPrice = parseNum(newValue);
+    if (newPrice >= 1 && (!hasOldValue || oldPrice === 0))
+        return 'new_price';
+    if (oldPrice >= 1 && newPrice === 0)
+        return 'zero';
+    if (oldPrice >= 1 && newPrice >= 1 && newPrice > oldPrice)
+        return 'up';
+    if (oldPrice >= 1 && newPrice >= 1 && newPrice < oldPrice)
+        return 'down';
+    return '';
+};
+const hasParserRowInPrice = (row = {}) => {
+    if (typeof row._hasParsedInPrice === 'boolean')
+        return row._hasParsedInPrice;
+    // 구버전 parser_session은 가격 미제공 행에도 finalData.입고가=0을 넣었다.
+    // 플래그가 없는 세션은 원본 파싱 행의 실제 입고가 필드로만 제공 여부를 복원한다.
+    return Object.prototype.hasOwnProperty.call(row, '입고가') && String(row['입고가'] ?? '').trim() !== '';
+};
+const getParserRowInPrice = (row = {}) => {
+    if (!hasParserRowInPrice(row))
+        return null;
+    if (row.finalData && Object.prototype.hasOwnProperty.call(row.finalData, '입고가'))
+        return parseNum(row.finalData['입고가']);
+    return parseNum(row['입고가']);
+};
+const areParserPriceValuesEqual = (left, right) => {
+    const hasLeft = left !== null && left !== undefined && String(left).trim() !== '';
+    const hasRight = right !== null && right !== undefined && String(right).trim() !== '';
+    if (!hasLeft || !hasRight)
+        return hasLeft === hasRight;
+    return parseNum(left) === parseNum(right);
+};
+const calculateParserCatalogPrices = (baseInPrice, mItem = {}, currentFinalData = {}, catalogRule = null) => {
+    const inputPrice = parseNum(baseInPrice);
+    const calculationInput = { ...currentFinalData, '입고가': inputPrice };
+    PARSER_PRICE_HISTORY_FIELDS.forEach(field => { delete calculationInput[field]; });
+    if (inputPrice <= 0 || !catalogRule)
+        return { '입고가': inputPrice };
+    const calculated = calculatePricesEngine(inputPrice, mItem, calculationInput, [], true, catalogRule);
+    const priceResult = { '입고가': inputPrice };
+    PARSER_PRICE_HISTORY_FIELDS.forEach(field => {
+        if (Object.prototype.hasOwnProperty.call(calculated, field))
+            priceResult[field] = calculated[field];
+    });
+    return priceResult;
+};
 const normalizeParserExcludeDict = (dict) => {
     const source = dict && typeof dict === 'object' && !Array.isArray(dict) ? dict : {};
     const normalized = {};
@@ -442,53 +539,287 @@ const loadParserExcludeDict = () => {
     return normalized;
 };
 const getParserExcludeList = (excludeDict, currentTag = '') => Object.entries(normalizeParserExcludeDict(excludeDict || {})).map(([key, item]) => ({ key, ...(item || {}) })).filter(item => !currentTag || !item.catalog || item.catalog === currentTag);
-const STOP_MANAGER_STORAGE_KEY = 'merchStoppedProducts_v2';
 const normalizeSharedProductCode = (value) => String(value == null ? '' : value).replace(/\s/g, '').trim();
-const loadSharedObject = (key, fallback = {}) => {
-    const value = safeParseJson(localStorage.getItem(key), fallback);
-    return value && typeof value === 'object' && !Array.isArray(value) ? value : fallback;
-};
-const normalizeStoppedProductsMap = (source = {}) => {
-    const next = {};
-    const entries = Array.isArray(source) ? source.map((item, index) => [String(index), item]) : Object.entries(source || {});
-    entries.forEach(([rawKey, rawItem]) => {
+const createSmartParserMasterCodeResolver = (masterProducts = {}) => {
+    const source = masterProducts && typeof masterProducts === 'object' && !Array.isArray(masterProducts) ? masterProducts : {};
+    const byNormalizedCode = new Map();
+    Object.entries(source).forEach(([masterKey, rawItem]) => {
         const item = rawItem && typeof rawItem === 'object' ? rawItem : {};
-        const code = normalizeSharedProductCode(item.productCode || item.코드 || rawKey);
-        if (!code) return;
-        next[code] = { ...item, productCode: code };
+        const storedCode = hasParserCostValue(item['코드']) ? String(item['코드']) : String(masterKey);
+        const entry = { masterKey, actualCode: storedCode, item };
+        const aliases = new Set([normalizeSharedProductCode(masterKey), normalizeSharedProductCode(storedCode)].filter(Boolean));
+        aliases.forEach(alias => {
+            const candidates = byNormalizedCode.get(alias) || [];
+            if (!candidates.some(candidate => candidate.masterKey === masterKey))
+                candidates.push(entry);
+            byNormalizedCode.set(alias, candidates);
+        });
     });
-    return next;
-};
-const saveSharedObject = (key, value, triggerKey = '') => {
-    try {
-        localStorage.setItem(key, JSON.stringify(value || {}));
-        if (triggerKey) localStorage.setItem(triggerKey, Date.now().toString());
-    } catch (error) {
-        cleanupSmartParserStorage();
-        localStorage.setItem(key, JSON.stringify(value || {}));
-        if (triggerKey) localStorage.setItem(triggerKey, Date.now().toString());
-    }
-};
-const upsertParserStoppedProduct = (source = {}, codeValue = '', options = {}) => {
-    const code = normalizeSharedProductCode(codeValue);
-    const next = normalizeStoppedProductsMap(source);
-    if (!code) return next;
-    const before = next[code] || {};
-    const now = options.now || getNowISO();
-    next[code] = {
-        ...before,
-        productCode: code,
-        stoppedAt: before.stoppedAt || now,
-        updatedAt: now,
-        reason: options.reason || before.reason || '공급중단',
-        memo: options.memo !== undefined ? String(options.memo || '') : (before.memo || ''),
-        source: 'SmartParser',
-        sourceCatalog: options.catalog || before.sourceCatalog || '',
-        sourceLabel: options.sourceLabel || before.sourceLabel || '공급사 텍스트',
-        status: 'pendingStop',
-        pendingAction: 'stop'
+    const resolve = (value) => {
+        const normalizedCode = normalizeSharedProductCode(value);
+        if (!normalizedCode)
+            return { exists: false, normalizedCode: '', masterKey: '', actualCode: '', item: null };
+        const candidates = byNormalizedCode.get(normalizedCode) || [];
+        if (candidates.length > 1) {
+            const candidateKeys = candidates.map(candidate => candidate.masterKey).join(', ');
+            throw new Error(`정규화 상품코드 [${normalizedCode}]와 일치하는 마스터 항목이 여러 개입니다: ${candidateKeys}`);
+        }
+        if (candidates.length === 1)
+            return { exists: true, normalizedCode, ...candidates[0] };
+        return { exists: false, normalizedCode, masterKey: normalizedCode, actualCode: normalizedCode, item: null };
     };
-    return next;
+    return { resolve, normalize: normalizeSharedProductCode };
+};
+const buildSmartParserApplyPlan = ({ masterProducts = {}, rows = [], catalogLabel = '', catalogRule = null, timestampISO = '', timestampLabel = '', updateTextData = true, allowExistingInfoChanges = true } = {}) => {
+    catalogLabel = normalizeParserCatalogName(catalogLabel);
+    const catalog = catalogLabel;
+    if (!catalog)
+        throw new Error('SmartParser 적용 카탈로그가 없습니다.');
+    const applyRows = Array.isArray(rows) ? rows.filter(Boolean) : [];
+    const codeResolver = createSmartParserMasterCodeResolver(masterProducts);
+    const resolvedRows = applyRows.map(row => ({ row, resolved: codeResolver.resolve(row?._matchCode || row?.코드) }));
+    const seenCodes = new Set();
+    resolvedRows.forEach(({ resolved }) => {
+        if (!resolved.normalizedCode)
+            throw new Error('SmartParser 적용 상품코드가 없습니다.');
+        if (seenCodes.has(resolved.normalizedCode))
+            throw new Error(`같은 상품코드가 한 번의 적용에 중복되었습니다: ${resolved.normalizedCode}`);
+        seenCodes.add(resolved.normalizedCode);
+    });
+    const newMaster = { ...(masterProducts || {}) };
+    const logs = [];
+    const processedCodes = [];
+    const dictionaryEntries = [];
+    const directInfoChangedCodes = new Set();
+    const supplyChangedCodes = new Set();
+    let masterMutationCount = 0;
+    const historyBase = {
+        source: 'parser',
+        sourceLabel: '스마트 파서',
+        actionType: 'catalog_price_apply',
+        applyMode: 'direct_master_apply',
+        path: `SmartParser > ${catalog} > master_products`,
+        route: `파서/${catalog}/마스터직접적용`,
+        catalog,
+        catalogName: catalog,
+        quoteName: '',
+        timestamp: timestampLabel,
+        timestampISO,
+        version: 'smart-parser-v3.1-parser-list-price-rule-history'
+    };
+    const makeHistoryLog = ({ code, row, oldItem, field, oldVal, newVal, memo, extra = {} }) => {
+        const numericField = ['입고가', ...PARSER_PRICE_HISTORY_FIELDS].includes(field);
+        const oldNum = parseNum(oldVal);
+        const newNum = parseNum(newVal);
+        return {
+            id: generateUUID(),
+            ...historyBase,
+            code,
+            name: oldItem?.품목명 || row?.품목명 || '',
+            spec: oldItem?.규격 || row?.규격 || '',
+            unit: oldItem?.단위 || row?.단위 || '',
+            parsedName: row?.품목명 || '',
+            parsedSpec: row?.규격 || '',
+            parsedUnit: row?.단위 || '',
+            parsedInPrice: hasParserRowInPrice(row) ? getParserRowInPrice(row) : '',
+            parsedSoldOut: !!row?._isSoldOut,
+            matchStatus: row?._matchStatus || '',
+            field,
+            oldVal,
+            newVal,
+            diff: numericField ? newNum - oldNum : '',
+            diffRate: numericField ? calcDiffRate(oldVal, newVal) : null,
+            oldOutPrice: parseNum(oldItem?.출고가),
+            oldSalePrice: parseNum(oldItem?.행사가),
+            oldInPrice: parseNum(oldItem?.입고가),
+            stockQty: parseNum(oldItem?.재고수량 ?? oldItem?.현재고 ?? oldItem?.재고),
+            safeStock: parseNum(oldItem?.안전재고),
+            memo: memo || '스마트 파서 마스터 직접 적용',
+            ...extra
+        };
+    };
+    resolvedRows.forEach(({ row, resolved }) => {
+        const masterKey = resolved.masterKey;
+        const code = resolved.actualCode;
+        const sourceItem = resolved.item;
+        const isNewProduct = !resolved.exists;
+        const oldItem = sourceItem ? { ...sourceItem } : {};
+        const nextItem = sourceItem
+            ? { ...sourceItem }
+            : { 코드: code, 품목명: row['품목명'] || '', 규격: row['규격'] || '', 단위: row['단위'] || '' };
+        processedCodes.push(code);
+        if (isNewProduct) {
+            masterMutationCount++;
+            logs.push(makeHistoryLog({
+                code, row, oldItem,
+                field: '신규', oldVal: '', newVal: code,
+                memo: 'SmartParser 신규 상품 등록',
+                extra: { actionType: 'parser_new_product', supplyChangeType: 'new', changeType: '신규', diff: '', diffRate: null }
+            }));
+            supplyChangedCodes.add(code);
+        }
+
+        const hasInPrice = hasParserRowInPrice(row);
+        const newInPrice = hasInPrice ? getParserRowInPrice(row) : null;
+        const oldInValue = isNewProduct
+            ? ''
+            : (Object.prototype.hasOwnProperty.call(oldItem, '입고가') ? oldItem['입고가'] : '');
+        const hadOldInValue = hasParserCostValue(oldInValue);
+        const oldInPrice = parseNum(oldInValue);
+        const inPriceChangeType = hasInPrice ? classifyParserInPriceChange(oldInValue, newInPrice) : '';
+        if (hasInPrice && (isNewProduct || oldInPrice !== newInPrice || newInPrice === 0)) {
+            logs.push(makeHistoryLog({
+                code, row, oldItem,
+                field: '입고가', oldVal: oldInValue, newVal: newInPrice,
+                memo: newInPrice === 0 ? 'SmartParser 단가 0 · 판매불가 기록(판매여부는 변경하지 않음)' : '카탈로그/견적서 파서 단가를 마스터 입고가에 적용',
+                extra: {
+                    priceChangeType: inPriceChangeType,
+                    availabilityType: newInPrice === 0 ? 'unavailable' : 'available',
+                    isNewProduct,
+                    ...(inPriceChangeType === 'new_price' ? {
+                        supplyChangeType: 'new',
+                        changeType: '신규',
+                        diff: null,
+                        diffRate: null
+                    } : {})
+                }
+            }));
+        }
+        if (hasInPrice && (isNewProduct || !hadOldInValue || oldInPrice !== newInPrice))
+            masterMutationCount++;
+        if (hasInPrice)
+            nextItem['입고가'] = newInPrice;
+
+        if (hasInPrice && newInPrice > 0 && catalogRule) {
+            const beforePrices = Object.fromEntries(PARSER_PRICE_HISTORY_FIELDS.map(field => [field, isNewProduct ? (oldItem[field] ?? '') : (nextItem[field] ?? '')]));
+            const recalculated = calculateParserCatalogPrices(newInPrice, nextItem, row.finalData || {}, catalogRule);
+            Object.assign(nextItem, recalculated);
+            PARSER_PRICE_HISTORY_FIELDS.forEach(field => {
+                const beforeValue = beforePrices[field];
+                const afterValue = nextItem[field] ?? '';
+                if (areParserPriceValuesEqual(beforeValue, afterValue))
+                    return;
+                masterMutationCount++;
+                logs.push(makeHistoryLog({
+                    code, row, oldItem,
+                    field, oldVal: beforeValue, newVal: afterValue,
+                    memo: field === '출고가' ? '카탈로그 룰에 따른 출고가 재계산' : (field === '시중가' ? '카탈로그 룰에 따른 시중가 재계산' : `카탈로그 룰에 따른 ${field} 재계산`),
+                    extra: {
+                        actionType: field.startsWith('1') ? 'parser_unit_price_recalc' : 'parser_price_recalc',
+                        priceRule: { marginRate: catalogRule.marginRate, calculationType: catalogRule.calculationType, updatedAt: catalogRule.updatedAt }
+                    }
+                }));
+            });
+        }
+
+        const oldCatalogTags = nextItem['카탈로그'] || '';
+        const hadCatalogTag = String(oldCatalogTags).split(',').map(tag => tag.trim()).filter(Boolean).includes(catalog);
+        const newCatalogTags = hadCatalogTag ? oldCatalogTags : addTag(oldCatalogTags, catalog);
+        if (!hadCatalogTag) {
+            masterMutationCount++;
+            supplyChangedCodes.add(code);
+            logs.push(makeHistoryLog({
+                code, row, oldItem,
+                field: '카탈로그', oldVal: oldCatalogTags, newVal: newCatalogTags,
+                memo: 'SmartParser 카탈로그 태그 신규 등록',
+                extra: {
+                    actionType: 'parser_catalog_tag_first',
+                    supplyChangeType: 'new',
+                    isNewProduct,
+                    changeType: '신규',
+                    diff: '',
+                    diffRate: null
+                }
+            }));
+        }
+        nextItem['카탈로그'] = newCatalogTags;
+        newMaster[masterKey] = nextItem;
+
+        if (!isNewProduct && allowExistingInfoChanges) {
+            const code = masterKey;
+            ['품목명', '규격', '단위'].forEach(fieldName => {
+                const editedTextFields = row._editedTextFields || {};
+                const hasExplicitTextEdit = Object.prototype.hasOwnProperty.call(editedTextFields, fieldName);
+                const shouldApplyTextField = hasExplicitTextEdit || updateTextData;
+                if (!shouldApplyTextField) return;
+                const parsedVal = hasExplicitTextEdit ? editedTextFields[fieldName] : (row[fieldName] || '');
+                const oldVal = nextItem[fieldName] || '';
+                const hasApplicableValue = hasExplicitTextEdit || !!parsedVal;
+                if (hasApplicableValue && String(oldVal ?? '') !== String(parsedVal ?? '')) {
+                    logs.push(makeHistoryLog({
+                        code, row, oldItem,
+                        field: fieldName, oldVal, newVal: parsedVal,
+                        memo: `스마트 파서에서 수정·저장한 ${fieldName}을 정보 마스터에 즉시 반영`,
+                        extra: {
+                            actionType: '정보변경', historyType: '정보변경', changeType: '정보변경',
+                            applyMode: 'direct_master_apply',
+                            path: `SmartParser > ${catalogLabel} > 정보 마스터 즉시 반영`,
+                            route: `파서/${catalogLabel}/정보마스터즉시반영`
+                        }
+                    }));
+                    directInfoChangedCodes.add(code);
+                    newMaster[code][fieldName] = parsedVal;
+                    masterMutationCount++;
+                }
+            });
+        }
+        if (row['품목명'] && (String(row._matchStatus || '').includes('수동일치') || isNewProduct)) {
+            dictionaryEntries.push({ key: `${normalizeText(row['품목명'])}|${normalizeText(row['규격'])}`, code });
+        }
+    });
+    if (masterMutationCount > 0 && logs.length === 0)
+        throw new Error('마스터 변경 항목이 있으나 히스토리 로그가 생성되지 않았습니다.');
+    return {
+        newMaster,
+        logs,
+        processedCodes,
+        dictionaryEntries,
+        directInfoChangedCodes: Array.from(directInfoChangedCodes),
+        supplyChangedCodes: Array.from(supplyChangedCodes),
+        masterMutationCount,
+        catalogWasUpdated: logs.length > 0
+    };
+};
+const buildSmartParserMissingTagPlan = ({ masterProducts = {}, codes = [], catalogLabel = '', timestampISO = '', timestampLabel = '' } = {}) => {
+    const catalog = normalizeParserCatalogName(catalogLabel);
+    if (!catalog)
+        throw new Error('SmartParser 공급중단 카탈로그가 없습니다.');
+    const codeResolver = createSmartParserMasterCodeResolver(masterProducts);
+    const resolvedByMasterKey = new Map();
+    (Array.isArray(codes) ? codes : []).forEach(value => {
+        const resolved = codeResolver.resolve(value);
+        if (resolved.exists && !resolvedByMasterKey.has(resolved.masterKey))
+            resolvedByMasterKey.set(resolved.masterKey, resolved);
+    });
+    const newMaster = { ...(masterProducts || {}) };
+    const logs = [];
+    const processedCodes = [];
+    resolvedByMasterKey.forEach(resolved => {
+        const { masterKey, actualCode: code, item: oldItem } = resolved;
+        const oldCatalogTags = oldItem['카탈로그'] || '';
+        const hadCatalogTag = String(oldCatalogTags).split(',').map(tag => tag.trim()).filter(Boolean).includes(catalog);
+        if (!hadCatalogTag)
+            return;
+        const newCatalogTags = removeTag(oldCatalogTags, catalog);
+        newMaster[masterKey] = { ...oldItem, '카탈로그': newCatalogTags };
+        processedCodes.push(code);
+        logs.push({
+            id: generateUUID(),
+            source: 'parser', sourceLabel: '스마트 파서',
+            actionType: 'parser_supply_stopped', supplyChangeType: 'stopped', changeType: '공급중단',
+            applyMode: 'direct_master_apply',
+            path: `SmartParser > ${catalog} > 카탈로그 태그 삭제`, route: `파서/${catalog}/공급중단`,
+            catalog, catalogName: catalog, quoteName: '',
+            timestamp: timestampLabel, timestampISO,
+            code, name: oldItem.품목명 || '', spec: oldItem.규격 || '', unit: oldItem.단위 || '',
+            field: '카탈로그', oldVal: oldCatalogTags, newVal: newCatalogTags,
+            diff: '', diffRate: null,
+            oldOutPrice: parseNum(oldItem.출고가), oldSalePrice: parseNum(oldItem.행사가), oldInPrice: parseNum(oldItem.입고가),
+            memo: '선택 파서리스트 전체 누락으로 해당 카탈로그 태그만 삭제(판매여부 유지)',
+            version: 'smart-parser-v3.1-parser-list-price-rule-history'
+        });
+    });
+    return { newMaster, logs, processedCodes };
 };
 const cleanupSmartParserStorage = () => {
     try { localStorage.removeItem('parser_session'); } catch (e) { }
@@ -588,12 +919,7 @@ const useParserApp = () => {
     } });
     const [parserExcludeDict, setParserExcludeDict] = useState(() => loadParserExcludeDict());
     const [catalogUpdatedAt, setCatalogUpdatedAt] = useState({});
-    const [marginRules, setMarginRules] = useState(() => { try {
-        return JSON.parse(localStorage.getItem('merchMarginRules_v878')) || [{ id: 'default', whCode: '*', unit: '*', rate: 10, type: 'divide' }];
-    }
-    catch (e) {
-        return [{ id: 'default', whCode: '*', unit: '*', rate: 10, type: 'divide' }];
-    } });
+    const [parserListMarginRules, setParserListMarginRules] = useState(() => loadParserListMarginRules());
     useEffect(() => { window.ONEAPP.STORAGE.readMasterSnapshotState().then(state => {
         smartParserMasterRevision = state.revision;
         const items = state.items;
@@ -615,9 +941,17 @@ const useParserApp = () => {
             });
         return () => { isActive = false; };
     }, []);
-    useEffect(() => { const handleStorageChange = (e) => { if (e.key === 'merchMaster_sync_trigger' || e.key === 'merch_settings_update_trigger')
-        window.location.reload(); }; window.addEventListener('storage', handleStorageChange); return () => window.removeEventListener('storage', handleStorageChange); }, []);
-    const saveMaster = async (data, storeEntries = {}, historyLogs = []) => {
+    useEffect(() => { const handleStorageChange = (e) => {
+        if (e.key === PARSER_LIST_MARGIN_RULES_KEY) {
+            setParserListMarginRules(loadParserListMarginRules());
+            return;
+        }
+        if (e.key === 'merchMaster_sync_trigger' || e.key === 'merch_settings_update_trigger')
+            window.location.reload();
+    }; window.addEventListener('storage', handleStorageChange); return () => window.removeEventListener('storage', handleStorageChange); }, []);
+    const saveMaster = async (data, transaction = {}) => {
+        const storeEntries = transaction?.storeEntries || {};
+        const historyLogs = Array.isArray(transaction?.historyLogs) ? transaction.historyLogs : [];
         try {
             await commitSmartParserMaster(data, storeEntries, historyLogs, savedData => {
                 setMasterProducts(savedData);
@@ -689,10 +1023,10 @@ const useParserApp = () => {
     const [showMappingExcludeModal, setShowMappingExcludeModal] = useState(false);
     const [lastExcludedCount, setLastExcludedCount] = useState(0);
     const showToast = useCallback((msg) => { setToastMsg(msg); setTimeout(() => setToastMsg(''), 3000); }, []);
-    return { masterProducts, saveMaster, parserDict, saveDict, parserExcludeDict, saveParserExcludeDict, catalogUpdatedAt, setCatalogUpdatedAt, marginRules, parserBuffer, setParserBuffer, currentTag, setCurrentTag, activeTab, setActiveTab, showInputModal, setShowInputModal, showReviewModal, setShowReviewModal, showErpModal, setShowErpModal, toastMsg, showToast, isProcessing, setIsProcessing, processMsg, setProcessMsg, globalSearch, setGlobalSearch, targetId, setTargetId, selectedMissingCodes, setSelectedMissingCodes, processedCodes, setProcessedCodes, missingSearch, setMissingSearch, showExcludeModal, setShowExcludeModal, excludeTarget, setExcludeTarget, showMappingExcludeModal, setShowMappingExcludeModal, lastExcludedCount, setLastExcludedCount };
+    return { masterProducts, saveMaster, parserDict, saveDict, parserExcludeDict, saveParserExcludeDict, catalogUpdatedAt, setCatalogUpdatedAt, parserListMarginRules, parserBuffer, setParserBuffer, currentTag, setCurrentTag, activeTab, setActiveTab, showInputModal, setShowInputModal, showReviewModal, setShowReviewModal, showErpModal, setShowErpModal, toastMsg, showToast, isProcessing, setIsProcessing, processMsg, setProcessMsg, globalSearch, setGlobalSearch, targetId, setTargetId, selectedMissingCodes, setSelectedMissingCodes, processedCodes, setProcessedCodes, missingSearch, setMissingSearch, showExcludeModal, setShowExcludeModal, excludeTarget, setExcludeTarget, showMappingExcludeModal, setShowMappingExcludeModal, lastExcludedCount, setLastExcludedCount };
 };
 const useParserActions = (appState) => {
-    const { masterProducts, saveMaster, parserDict, saveDict, parserExcludeDict, saveParserExcludeDict, catalogUpdatedAt, setCatalogUpdatedAt, marginRules, parserBuffer, setParserBuffer, currentTag, setCurrentTag, setActiveTab, setShowInputModal, showToast, setIsProcessing, setProcessMsg, setGlobalSearch, targetId, setTargetId, selectedMissingCodes, setSelectedMissingCodes, processedCodes, setProcessedCodes, setShowErpModal, setShowExcludeModal, setExcludeTarget, setShowMappingExcludeModal, setLastExcludedCount } = appState;
+    const { masterProducts, saveMaster, parserDict, saveDict, parserExcludeDict, saveParserExcludeDict, catalogUpdatedAt, setCatalogUpdatedAt, parserListMarginRules, parserBuffer, setParserBuffer, currentTag, setCurrentTag, setActiveTab, setShowInputModal, showToast, setIsProcessing, setProcessMsg, setGlobalSearch, targetId, setTargetId, selectedMissingCodes, setSelectedMissingCodes, processedCodes, setProcessedCodes, setShowErpModal, setShowExcludeModal, setExcludeTarget, setShowMappingExcludeModal, setLastExcludedCount } = appState;
     const executeParser = useCallback((rawText, tag, forceManual = false) => {
         setShowInputModal(false);
         setIsProcessing(true);
@@ -705,6 +1039,7 @@ const useParserActions = (appState) => {
                 const parsedData = parseTextSemantically(rawText);
                 const results = [];
                 const cleanExcludeDict = normalizeParserExcludeDict(parserExcludeDict || {});
+                const catalogRule = resolveParserListMarginRule(parserListMarginRules, tag);
                 let excludedCount = 0;
                 parsedData.forEach(rowData => {
                     const excludeKey = makeParserExcludeKey(tag, rowData['품목명'] || '', rowData['규격'] || '');
@@ -717,12 +1052,15 @@ const useParserActions = (appState) => {
                     rowData._matchStatus = matchResult.status;
                     if (matchResult.code)
                         rowData.코드 = matchResult.code;
+                    const hasParsedInPrice = Object.prototype.hasOwnProperty.call(rowData, '입고가') && String(rowData['입고가'] ?? '').trim() !== '';
+                    rowData._hasParsedInPrice = hasParsedInPrice;
                     rowData.finalData = {};
-                    const pInNum = rowData['입고가'] ? parseNum(rowData['입고가']) : 0;
-                    if (pInNum > 0 && matchResult.code)
-                        rowData.finalData = calculatePricesEngine(pInNum, masterProducts[matchResult.code] || {}, {}, marginRules, true);
-                    else
-                        rowData.finalData['입고가'] = pInNum;
+                    if (hasParsedInPrice) {
+                        const pInNum = parseNum(rowData['입고가']);
+                        rowData.finalData = matchResult.code
+                            ? calculateParserCatalogPrices(pInNum, masterProducts[matchResult.code] || {}, {}, catalogRule)
+                            : { '입고가': pInNum };
+                    }
                     results.push(rowData);
                 });
                 setLastExcludedCount(excludedCount);
@@ -743,219 +1081,70 @@ const useParserActions = (appState) => {
                 setProcessMsg('');
             }
         }, 100);
-    }, [masterProducts, parserDict, parserExcludeDict, marginRules, setLastExcludedCount]);
+    }, [masterProducts, parserDict, parserExcludeDict, parserListMarginRules, setLastExcludedCount]);
     const handleApplyMatched = useCallback(async (updateTextData = true) => {
         const toApply = parserBuffer.filter(r => r && !r._excluded && r._apply && r._matchCode && !String(r._matchStatus || '').includes('매핑제외'));
         if (toApply.length === 0) {
             showToast("⚠️ 적용할 항목이 없습니다.");
             return false;
         }
-        if (!currentTag || !String(currentTag).trim()) {
+        const catalogLabel = normalizeParserCatalogName(currentTag);
+        if (!catalogLabel) {
             showToast("⚠️ 마스터 적용 전 기준 카탈로그 또는 견적서명을 먼저 선택/생성하세요.");
             return false;
         }
-        const catalogLabel = String(currentTag).trim();
-        if (!window.confirm(`분석된 ${toApply.length}건의 데이터를 마스터에 바로 적용하시겠습니까?\n\n※ 카탈로그/견적서 단가는 기존 구조처럼 마스터값으로 반영됩니다.\n※ 변경 전/후 값과 작업 경로는 히스토리에 상세 저장됩니다.\n※ 히스토리 저장에 실패하면 마스터 적용을 중단합니다.`))
+        try {
+            const codeResolver = createSmartParserMasterCodeResolver(masterProducts);
+            toApply.forEach(row => codeResolver.resolve(row?._matchCode || row?.코드));
+        }
+        catch (error) {
+            showToast('❌ ' + (error?.message || '상품코드 중복을 확인할 수 없습니다.'));
+            return false;
+        }
+        const catalogRule = resolveParserListMarginRule(parserListMarginRules, catalogLabel);
+        const confirmMessage = catalogRule
+            ? `분석된 ${toApply.length}건을 [${catalogLabel}] 카탈로그 룰(${catalogRule.marginRate}% · ${catalogRule.calculationType === 'divide' ? '나누기' : '곱하기'})로 마스터에 적용하시겠습니까?\n\n※ 변경된 입고가와 가격 필드는 같은 시각의 히스토리로 저장됩니다.\n※ 히스토리 저장에 실패하면 마스터 적용도 원상복구됩니다.`
+            : `[${catalogLabel}] 카탈로그 전용 판매가 룰이 없습니다.\n\n계속하면 ${toApply.length}건의 매칭·신규등록, 입고가와 카탈로그 태그만 반영하고 판매가격은 계산하거나 변경하지 않습니다.\n취소하면 마스터와 히스토리를 전혀 변경하지 않습니다.\n\n계속하시겠습니까?`;
+        if (!window.confirm(confirmMessage))
             return false;
         setIsProcessing(true);
         setProcessMsg("마스터 적용 및 상세 히스토리 기록 중...");
         try {
-            let newMaster = { ...masterProducts };
-            let newDict = { ...parserDict };
-            let newlyProcessed = new Set(processedCodes);
-            let localLogs = [];
-            const nowStr = new Date().toLocaleString('ko-KR');
             const nowISO = getNowISO();
-            const historyBase = {
-                source: 'parser',
-                sourceLabel: '스마트 파서',
-                actionType: 'catalog_price_apply',
-                applyMode: 'direct_master_apply',
-                path: `SmartParser > ${catalogLabel} > master_products`,
-                route: `파서/${catalogLabel}/마스터직접적용`,
-                catalog: catalogLabel,
-                catalogName: catalogLabel,
-                quoteName: '',
-                timestamp: nowStr,
+            const nowStr = new Date(nowISO).toLocaleString('ko-KR');
+            const plan = buildSmartParserApplyPlan({
+                masterProducts,
+                rows: toApply,
+                catalogLabel,
+                catalogRule,
                 timestampISO: nowISO,
-                version: 'smart-parser-v3.0.21-no-op-save-fix-catalog-updated-at-enter-execute-explicit-info-save'
-            };
-            const makeHistoryLog = ({ code, row, oldItem, field, oldVal, newVal, memo, extra = {} }) => {
-                const oldNum = parseNum(oldVal);
-                const newNum = parseNum(newVal);
-                const isNumericChange = !isNaN(oldNum) && !isNaN(newNum) && (String(oldVal).match(/[0-9]/) || String(newVal).match(/[0-9]/));
-                const diff = isNumericChange ? newNum - oldNum : '';
-                return {
-                    id: generateUUID(),
-                    ...historyBase,
-                    code,
-                    name: oldItem?.품목명 || row?.품목명 || '',
-                    spec: oldItem?.규격 || row?.규격 || '',
-                    unit: oldItem?.단위 || row?.단위 || '',
-                    parsedName: row?.품목명 || '',
-                    parsedSpec: row?.규격 || '',
-                    parsedUnit: row?.단위 || '',
-                    parsedInPrice: parseNum(row?.finalData?.['입고가'] !== undefined ? row.finalData['입고가'] : row?.입고가),
-                    parsedSoldOut: !!row?._isSoldOut,
-                    matchStatus: row?._matchStatus || '',
-                    field,
-                    oldVal,
-                    newVal,
-                    diff,
-                    diffRate: isNumericChange ? calcDiffRate(oldVal, newVal) : null,
-                    oldOutPrice: parseNum(oldItem?.출고가),
-                    oldSalePrice: parseNum(oldItem?.행사가),
-                    oldInPrice: parseNum(oldItem?.입고가),
-                    stockQty: parseNum(oldItem?.재고수량 ?? oldItem?.현재고 ?? oldItem?.재고),
-                    safeStock: parseNum(oldItem?.안전재고),
-                    memo: memo || '스마트 파서 마스터 직접 적용',
-                    ...extra
-                };
-            };
-            let pendingList = await getIDB('pending_shop_status') || [];
-            if (!Array.isArray(pendingList)) pendingList = [];
-            let stoppedProducts = normalizeStoppedProductsMap((await getIDB(STOP_MANAGER_STORAGE_KEY)) || loadSharedObject(STOP_MANAGER_STORAGE_KEY, {}));
-            let addedToPending = false;
-            let stoppedQueueChanged = false;
-            const stoppedCodes = new Set();
-            const directInfoChangedCodes = new Set();
-            let masterMutationCount = 0;
-            toApply.forEach(row => {
-                const code = row._matchCode;
-                newlyProcessed.add(code);
-                const oldItem = { ...(newMaster[code] || {}) };
-                if (!newMaster[code])
-                    newMaster[code] = { 코드: code };
-                else
-                    newMaster[code] = { ...newMaster[code] };
-                // ⭐ 텍스트 품절 감지 시 기존 구조대로 마스터 판매여부 반영 및 대기열 적재
-                if (row._isSoldOut) {
-                    const oldSaleStatus = newMaster[code]['판매여부'];
-                    newMaster[code]['판매여부'] = 0;
-                    if (String(oldSaleStatus ?? '') !== '0') {
-                        masterMutationCount++;
-                        localLogs.push(makeHistoryLog({
-                            code, row, oldItem,
-                            field: '판매여부',
-                            oldVal: oldSaleStatus ?? '',
-                            newVal: 0,
-                            memo: '파서 텍스트에서 품절/단종/판매중단 감지',
-                            extra: { actionType: 'parser_soldout_detected', statusType: 'stop' }
-                        }));
-                    }
-                    const pendingIndex = pendingList.findIndex(p => normalizeSharedProductCode(p?.code) === normalizeSharedProductCode(code));
-                    const pendingItem = { code: code, type: 'stop', name: newMaster[code].품목명 || row['품목명'], source: 'SmartParser', reason: '공급중단', catalog: catalogLabel, updatedAt: nowISO };
-                    if (pendingIndex >= 0) pendingList[pendingIndex] = { ...pendingList[pendingIndex], ...pendingItem };
-                    else pendingList.push(pendingItem);
-                    addedToPending = true;
-                    stoppedProducts = upsertParserStoppedProduct(stoppedProducts, code, { now: nowISO, reason: '공급중단', catalog: catalogLabel, sourceLabel: '공급사 품절/단종 텍스트' });
-                    stoppedQueueChanged = true;
-                    stoppedCodes.add(normalizeSharedProductCode(code));
-                }
-                const pInNum = parseNum(row.finalData?.['입고가'] || row['입고가']);
-                if (pInNum > 0) {
-                    const oldP = parseNum(oldItem['입고가']);
-                    const beforeOut = parseNum(newMaster[code]['출고가']);
-                    const beforeMarket = parseNum(newMaster[code]['시중가']);
-                    const beforeUnitIn = parseNum(newMaster[code]['1입고']);
-                    const beforeUnitOut = parseNum(newMaster[code]['1출고']);
-                    if (oldP !== pInNum) {
-                        localLogs.push(makeHistoryLog({
-                            code, row, oldItem,
-                            field: '입고가',
-                            oldVal: oldP,
-                            newVal: pInNum,
-                            memo: '카탈로그/견적서 파서 단가를 마스터 입고가에 적용',
-                            extra: { priceChangeType: oldP === 0 ? 'new_price' : (pInNum > oldP ? 'up' : 'down') }
-                        }));
-                    }
-                    newMaster[code]['입고가'] = pInNum;
-                    const recalculated = calculatePricesEngine(pInNum, newMaster[code], row.finalData || {}, marginRules, false);
-                    Object.assign(newMaster[code], recalculated);
-                    const afterOut = parseNum(newMaster[code]['출고가']);
-                    const afterMarket = parseNum(newMaster[code]['시중가']);
-                    const afterUnitIn = parseNum(newMaster[code]['1입고']);
-                    const afterUnitOut = parseNum(newMaster[code]['1출고']);
-                    if (oldP !== pInNum || beforeOut !== afterOut || beforeMarket !== afterMarket || beforeUnitIn !== afterUnitIn || beforeUnitOut !== afterUnitOut)
-                        masterMutationCount++;
-                    if (beforeOut !== afterOut)
-                        localLogs.push(makeHistoryLog({ code, row, oldItem, field: '출고가', oldVal: beforeOut, newVal: afterOut, memo: '입고가 변경에 따른 출고가 재계산', extra: { actionType: 'parser_price_recalc' } }));
-                    if (beforeMarket !== afterMarket)
-                        localLogs.push(makeHistoryLog({ code, row, oldItem, field: '시중가', oldVal: beforeMarket, newVal: afterMarket, memo: '입고가 변경에 따른 시중가 재계산', extra: { actionType: 'parser_price_recalc' } }));
-                    if (beforeUnitIn !== afterUnitIn)
-                        localLogs.push(makeHistoryLog({ code, row, oldItem, field: '1입고', oldVal: beforeUnitIn, newVal: afterUnitIn, memo: '입고가 변경에 따른 소분 입고가 재계산', extra: { actionType: 'parser_unit_price_recalc' } }));
-                    if (beforeUnitOut !== afterUnitOut)
-                        localLogs.push(makeHistoryLog({ code, row, oldItem, field: '1출고', oldVal: beforeUnitOut, newVal: afterUnitOut, memo: '출고가 변경에 따른 소분 출고가 재계산', extra: { actionType: 'parser_unit_price_recalc' } }));
-                }
-                if (currentTag) {
-                    const oldCatalogTags = newMaster[code]['카탈로그'] || '';
-                    const newCatalogTags = addTag(oldCatalogTags, currentTag);
-                    if (oldCatalogTags !== newCatalogTags) {
-                        masterMutationCount++;
-                        localLogs.push(makeHistoryLog({
-                            code, row, oldItem,
-                            field: '카탈로그',
-                            oldVal: oldCatalogTags,
-                            newVal: newCatalogTags,
-                            memo: '파서 적용으로 카탈로그 태그 추가',
-                            extra: { actionType: 'parser_catalog_tag_add' }
-                        }));
-                    }
-                    newMaster[code]['카탈로그'] = newCatalogTags;
-                }
-                ['품목명', '규격', '단위'].forEach(fieldName => {
-                    const editedTextFields = row._editedTextFields || {};
-                    const hasExplicitTextEdit = Object.prototype.hasOwnProperty.call(editedTextFields, fieldName);
-                    const shouldApplyTextField = hasExplicitTextEdit || updateTextData;
-                    if (!shouldApplyTextField) return;
-                    const parsedVal = hasExplicitTextEdit ? editedTextFields[fieldName] : (row[fieldName] || '');
-                    const oldVal = newMaster[code][fieldName] || '';
-                    const hasApplicableValue = hasExplicitTextEdit || !!parsedVal;
-                    if (hasApplicableValue && String(oldVal ?? '') !== String(parsedVal ?? '')) {
-                        localLogs.push(makeHistoryLog({
-                            code, row, oldItem,
-                            field: fieldName,
-                            oldVal,
-                            newVal: parsedVal,
-                            memo: `스마트 파서에서 수정·저장한 ${fieldName}을 정보 마스터에 즉시 반영`,
-                            extra: {
-                                actionType: '정보변경',
-                                historyType: '정보변경',
-                                changeType: '정보변경',
-                                applyMode: 'direct_master_apply',
-                                path: `SmartParser > ${catalogLabel} > 정보 마스터 즉시 반영`,
-                                route: `파서/${catalogLabel}/정보마스터즉시반영`
-                            }
-                        }));
-                        directInfoChangedCodes.add(normalizeSharedProductCode(code));
-                        newMaster[code][fieldName] = parsedVal;
-                        masterMutationCount++;
-                    }
-                });
-                if (row['품목명'] && row._matchStatus.includes('수동일치'))
-                    newDict[`${normalizeText(row['품목명'])}|${normalizeText(row['규격'])}`] = code;
+                timestampLabel: nowStr,
+                updateTextData,
+                allowExistingInfoChanges: !!catalogRule
             });
-            if (masterMutationCount > 0 && localLogs.length === 0) {
-                throw new Error('마스터 변경 항목이 있으나 히스토리 로그가 생성되지 않았습니다.');
-            }
-            const sharedEntries = {};
-            if (addedToPending) sharedEntries.pending_shop_status = pendingList;
-            if (stoppedQueueChanged) sharedEntries[STOP_MANAGER_STORAGE_KEY] = stoppedProducts;
-            const catalogWasUpdated = localLogs.some(log => !log?.blocked && String(log?.oldVal ?? '') !== String(log?.newVal ?? ''));
-            const nextCatalogUpdatedAt = catalogWasUpdated
+            const newDict = { ...parserDict };
+            plan.dictionaryEntries.forEach(entry => { newDict[entry.key] = entry.code; });
+            const newlyProcessed = new Set(processedCodes);
+            plan.processedCodes.forEach(code => newlyProcessed.add(code));
+            const extraStoreEntries = {};
+            const nextCatalogUpdatedAt = plan.catalogWasUpdated
                 ? { ...catalogUpdatedAt, [catalogLabel]: nowISO }
                 : catalogUpdatedAt;
-            if (catalogWasUpdated) sharedEntries[CATALOG_UPDATED_AT_KEY] = nextCatalogUpdatedAt;
-            await saveMaster(newMaster, sharedEntries, localLogs);
-            if (catalogWasUpdated) setCatalogUpdatedAt(nextCatalogUpdatedAt);
-            if (stoppedQueueChanged) saveSharedObject(STOP_MANAGER_STORAGE_KEY, stoppedProducts, 'merchStopManager_sync_trigger');
+            if (plan.catalogWasUpdated)
+                extraStoreEntries[CATALOG_UPDATED_AT_KEY] = nextCatalogUpdatedAt;
+            const newMaster = plan.newMaster;
+            const sharedEntries = { storeEntries: extraStoreEntries, historyLogs: plan.logs };
+            await saveMaster(newMaster, sharedEntries);
+            if (plan.catalogWasUpdated)
+                setCatalogUpdatedAt(nextCatalogUpdatedAt);
             saveDict(newDict);
             setProcessedCodes(newlyProcessed);
             const appliedIds = new Set(toApply.map(r => r._id));
             setParserBuffer(prev => prev.filter(r => !appliedIds.has(r._id)));
             const syncSummary = [
-                stoppedCodes.size > 0 ? `정지관리 ${stoppedCodes.size}건` : '',
-                directInfoChangedCodes.size > 0 ? `정보 마스터 즉시반영 ${directInfoChangedCodes.size}건` : ''
+                !catalogRule ? '판매가격 미반영(룰 없음)' : '',
+                plan.supplyChangedCodes.length > 0 ? `공급정보 ${plan.supplyChangedCodes.length}건` : '',
+                plan.directInfoChangedCodes.length > 0 ? `정보 마스터 즉시반영 ${plan.directInfoChangedCodes.length}건` : ''
             ].filter(Boolean).join(' / ');
             showToast(`✅ ${toApply.length}건 마스터 적용 완료${syncSummary ? ` · ${syncSummary}` : ''}`);
             return true;
@@ -963,7 +1152,7 @@ const useParserActions = (appState) => {
         catch (error) {
             console.error(error);
             const errorMsg = error?.message || error?.name || String(error || '알 수 없는 오류');
-            if (errorMsg.includes('히스토리') || errorMsg.includes('마스터') || errorMsg.includes('IndexedDB') || errorMsg.includes('매핑사전') || errorMsg.includes('매핑제외') || errorMsg.includes('저장공간') || errorMsg.includes('Quota') || errorMsg.includes('localStorage'))
+            if (errorMsg.includes('정규화 상품코드') || errorMsg.includes('히스토리') || errorMsg.includes('마스터') || errorMsg.includes('IndexedDB') || errorMsg.includes('매핑사전') || errorMsg.includes('매핑제외') || errorMsg.includes('저장공간') || errorMsg.includes('Quota') || errorMsg.includes('localStorage'))
                 showToast('❌ ' + errorMsg);
             else
                 showToast('❌ 데이터베이스 저장 중 오류: ' + errorMsg);
@@ -973,7 +1162,7 @@ const useParserActions = (appState) => {
             setIsProcessing(false);
             setProcessMsg('');
         }
-    }, [parserBuffer, masterProducts, parserDict, marginRules, currentTag, processedCodes, catalogUpdatedAt, saveMaster, saveDict, setCatalogUpdatedAt, setProcessedCodes, setParserBuffer, setIsProcessing, setProcessMsg, showToast]);
+    }, [parserBuffer, masterProducts, parserDict, parserListMarginRules, currentTag, processedCodes, catalogUpdatedAt, saveMaster, saveDict, setCatalogUpdatedAt, setProcessedCodes, setParserBuffer, setIsProcessing, setProcessMsg, showToast]);
     const handleConfirmMapping = useCallback(async (masterCode) => {
         if (!targetId)
             return showToast("⚠️ 먼저 왼쪽에서 매핑할 타겟 상품을 선택하세요.");
@@ -982,10 +1171,10 @@ const useParserActions = (appState) => {
             return;
         try {
             let mItem = masterProducts[masterCode] || { 코드: masterCode };
-            const pInNum = row.finalData?.['입고가'] ? parseNum(row.finalData['입고가']) : parseNum(row['입고가']);
-            let recalculatedFinal = row.finalData || {};
-            if (pInNum > 0)
-                recalculatedFinal = calculatePricesEngine(pInNum, mItem, recalculatedFinal, marginRules, false);
+            const hasInPrice = hasParserRowInPrice(row);
+            const pInNum = hasInPrice ? getParserRowInPrice(row) : null;
+            const catalogRule = resolveParserListMarginRule(parserListMarginRules, currentTag);
+            const recalculatedFinal = hasInPrice ? calculateParserCatalogPrices(pInNum, mItem, row.finalData || {}, catalogRule) : {};
             setParserBuffer(parserBuffer.map(r => r._id === targetId ? { ...r, _matchCode: masterCode, _matchStatus: '🟢 수동일치', _apply: true, finalData: recalculatedFinal } : r));
             setTargetId(null);
             setGlobalSearch('');
@@ -994,7 +1183,7 @@ const useParserActions = (appState) => {
         catch (error) {
             showToast("❌ 수동 매핑 처리 중 오류가 발생했습니다.");
         }
-    }, [targetId, parserBuffer, masterProducts, marginRules, setParserBuffer, setTargetId, setGlobalSearch, showToast]);
+    }, [targetId, parserBuffer, masterProducts, parserListMarginRules, currentTag, setParserBuffer, setTargetId, setGlobalSearch, showToast]);
     const handleCancelMapping = useCallback((rowId) => { setParserBuffer(prev => prev.map(r => r._id === rowId ? { ...r, _matchCode: '', _matchStatus: '🔴 불일치(취소됨)', _apply: false } : r)); }, [setParserBuffer]);
     const handleCreateNewMasterItem = useCallback(async (erpCode) => {
         if (!targetId)
@@ -1005,32 +1194,33 @@ const useParserActions = (appState) => {
         if (!erpCode || !erpCode.trim())
             return showToast("⚠️ ERP 코드를 입력해주세요.");
         const newCode = erpCode.trim();
-        if (masterProducts[newCode])
-            return showToast("⚠️ 이미 마스터 DB에 존재하는 코드입니다. '연결(바인딩)' 버튼을 이용해주세요.");
-        setIsProcessing(true);
-        setProcessMsg("신규 마스터 품목 등록 중...");
+        let existingResolution;
         try {
-            let newMaster = { ...masterProducts };
-            const catalogLabel = String(currentTag || '').trim();
-            const pInNum = row.finalData?.['입고가'] !== undefined ? parseNum(row.finalData['입고가']) : parseNum(row['입고가']);
-            newMaster[newCode] = { 코드: newCode, 품목명: row['품목명'], 규격: row['규격'] || '', 단위: row['단위'] || '', 입고가: pInNum, 카탈로그: catalogLabel };
-            const recalculatedFinal = calculatePricesEngine(pInNum, newMaster[newCode], row.finalData || {}, marginRules, false);
-            Object.assign(newMaster[newCode], recalculatedFinal);
-            const savedAt = getNowISO();
-            const nextCatalogUpdatedAt = catalogLabel
-                ? { ...catalogUpdatedAt, [catalogLabel]: savedAt }
-                : catalogUpdatedAt;
-            await saveMaster(newMaster, catalogLabel ? { [CATALOG_UPDATED_AT_KEY]: nextCatalogUpdatedAt } : {});
-            if (catalogLabel) setCatalogUpdatedAt(nextCatalogUpdatedAt);
-            saveDict({ ...parserDict, [`${normalizeText(row['품목명'])}|${normalizeText(row['규격'])}`]: newCode });
-            const newProcessed = new Set(processedCodes);
-            newProcessed.add(newCode);
-            setProcessedCodes(newProcessed);
-            setParserBuffer(parserBuffer.map(r => r._id === targetId ? { ...r, _matchCode: newCode, _matchStatus: '🟢 신규등록', _apply: true, finalData: recalculatedFinal, 코드: newCode } : r));
+            existingResolution = createSmartParserMasterCodeResolver(masterProducts).resolve(newCode);
+        }
+        catch (error) {
+            return showToast('❌ ' + (error?.message || '상품코드 중복을 확인할 수 없습니다.'));
+        }
+        if (existingResolution.exists)
+            return showToast(`⚠️ 정규화 기준으로 이미 마스터 DB에 존재하는 코드입니다: ${existingResolution.actualCode}. '연결(바인딩)' 버튼을 이용해주세요.`);
+        if (parserBuffer.some(item => item && item._id !== targetId && normalizeSharedProductCode(item._matchCode) === normalizeSharedProductCode(newCode)))
+            return showToast("⚠️ 같은 ERP 코드가 이번 적용 목록에 이미 연결되어 있습니다.");
+        const catalogLabel = normalizeParserCatalogName(currentTag);
+        if (!catalogLabel)
+            return showToast("⚠️ 신규 등록 전 기준 카탈로그를 선택하세요.");
+        setIsProcessing(true);
+        setProcessMsg("신규 마스터 품목 적용 준비 중...");
+        try {
+            const hasInPrice = hasParserRowInPrice(row);
+            const pInNum = hasInPrice ? getParserRowInPrice(row) : null;
+            const catalogRule = resolveParserListMarginRule(parserListMarginRules, catalogLabel);
+            const previewItem = { 코드: newCode, 품목명: row['품목명'], 규격: row['규격'] || '', 단위: row['단위'] || '' };
+            const recalculatedFinal = hasInPrice ? calculateParserCatalogPrices(pInNum, previewItem, row.finalData || {}, catalogRule) : {};
+            setParserBuffer(parserBuffer.map(r => r._id === targetId ? { ...r, _matchCode: newCode, _matchStatus: '🟢 신규등록 예정', _isNewProduct: true, _apply: true, finalData: recalculatedFinal, 코드: newCode } : r));
             setTargetId(null);
             setGlobalSearch('');
             setShowErpModal(false);
-            showToast(`✅ [${newCode}] 신규 등록 및 카탈로그 저장 완료`);
+            showToast(`✅ [${newCode}] 신규 등록 예정입니다. [마스터 적용 및 학습저장]에서 이력과 함께 저장됩니다.`);
         }
         catch (error) {
             showToast("❌ 신규 등록 처리 중 오류가 발생했습니다.");
@@ -1039,7 +1229,7 @@ const useParserActions = (appState) => {
             setIsProcessing(false);
             setProcessMsg('');
         }
-    }, [targetId, parserBuffer, masterProducts, currentTag, marginRules, parserDict, processedCodes, catalogUpdatedAt, saveMaster, saveDict, setCatalogUpdatedAt, setProcessedCodes, setParserBuffer, setTargetId, setGlobalSearch, setShowErpModal, setIsProcessing, setProcessMsg, showToast]);
+    }, [targetId, parserBuffer, masterProducts, currentTag, parserListMarginRules, setParserBuffer, setTargetId, setGlobalSearch, setShowErpModal, setIsProcessing, setProcessMsg, showToast]);
     const handleIgnoreParsedItem = useCallback((id) => { setParserBuffer(prev => prev.filter(r => r._id !== id)); if (targetId === id) {
         setTargetId(null);
         setGlobalSearch('');
@@ -1107,58 +1297,41 @@ const useParserActions = (appState) => {
         saveParserExcludeDict(nextDict);
         showToast(`✅ 매핑제외 ${targetEntries.length}건을 삭제했습니다.`);
     }, [parserExcludeDict, saveParserExcludeDict, currentTag, showToast]);
-    const executeExclusion = useCallback(async (codesToProcess, statusType) => {
+    const executeExclusion = useCallback(async (codesToProcess) => {
         setIsProcessing(true);
-        setProcessMsg("카탈로그 제외 및 상태 처리 중...");
+        setProcessMsg("카탈로그 공급중단 이력 기록 중...");
         try {
-            let newMaster = { ...masterProducts };
-            let count = 0;
-            let catalogWasUpdated = false;
-            let pending = await getIDB('pending_shop_status') || [];
-            if (!Array.isArray(pending)) pending = [];
-            let stoppedProducts = normalizeStoppedProductsMap((await getIDB(STOP_MANAGER_STORAGE_KEY)) || loadSharedObject(STOP_MANAGER_STORAGE_KEY, {}));
-            let stoppedQueueChanged = false;
-            const now = getNowISO();
-            codesToProcess.forEach(rawCode => {
-                const code = normalizeSharedProductCode(rawCode);
-                if (!code || !newMaster[code]) return;
-                const oldCatalogTags = newMaster[code]['카탈로그'] || '';
-                const newCatalogTags = removeTag(oldCatalogTags, currentTag);
-                newMaster[code] = { ...newMaster[code], '카탈로그': newCatalogTags };
-                if (oldCatalogTags !== newCatalogTags) catalogWasUpdated = true;
-                if (statusType === 'stop') {
-                    if (String(newMaster[code]['판매여부'] ?? '') !== '0') catalogWasUpdated = true;
-                    newMaster[code]['판매여부'] = 0;
-                    stoppedProducts = upsertParserStoppedProduct(stoppedProducts, code, { now, reason: '공급중단', catalog: currentTag, sourceLabel: '카탈로그 누락/단종 처리' });
-                    stoppedQueueChanged = true;
-                }
-                if (statusType !== 'none') {
-                    const idx = pending.findIndex(item => normalizeSharedProductCode(item?.code) === code);
-                    const pendingItem = { code, type: statusType, name: newMaster[code]?.품목명, source: 'SmartParser', reason: statusType === 'stop' ? '공급중단' : '일시품절', catalog: currentTag, updatedAt: now };
-                    if (idx >= 0) pending[idx] = { ...pending[idx], ...pendingItem };
-                    else pending.push(pendingItem);
-                }
-                count++;
+            const catalogLabel = normalizeParserCatalogName(currentTag);
+            const nowISO = getNowISO();
+            const plan = buildSmartParserMissingTagPlan({
+                masterProducts,
+                codes: codesToProcess,
+                catalogLabel,
+                timestampISO: nowISO,
+                timestampLabel: new Date(nowISO).toLocaleString('ko-KR')
             });
-            const sharedEntries = {};
-            if (statusType !== 'none') sharedEntries.pending_shop_status = pending;
-            if (stoppedQueueChanged) sharedEntries[STOP_MANAGER_STORAGE_KEY] = stoppedProducts;
-            const catalogLabel = String(currentTag || '').trim();
-            const nextCatalogUpdatedAt = catalogWasUpdated && catalogLabel
-                ? { ...catalogUpdatedAt, [catalogLabel]: now }
-                : catalogUpdatedAt;
-            if (catalogWasUpdated && catalogLabel) sharedEntries[CATALOG_UPDATED_AT_KEY] = nextCatalogUpdatedAt;
+            if (plan.logs.length === 0) {
+                setSelectedMissingCodes(new Set());
+                setShowExcludeModal(false);
+                setExcludeTarget(null);
+                showToast("⚠️ 삭제할 카탈로그 태그 변경이 없습니다.");
+                return;
+            }
+            const extraStoreEntries = {};
+            const nextCatalogUpdatedAt = { ...catalogUpdatedAt, [catalogLabel]: nowISO };
+            extraStoreEntries[CATALOG_UPDATED_AT_KEY] = nextCatalogUpdatedAt;
+            const newMaster = plan.newMaster;
+            const sharedEntries = { storeEntries: extraStoreEntries, historyLogs: plan.logs };
             await saveMaster(newMaster, sharedEntries);
-            if (catalogWasUpdated && catalogLabel) setCatalogUpdatedAt(nextCatalogUpdatedAt);
-            if (stoppedQueueChanged) saveSharedObject(STOP_MANAGER_STORAGE_KEY, stoppedProducts, 'merchStopManager_sync_trigger');
+            setCatalogUpdatedAt(nextCatalogUpdatedAt);
             setSelectedMissingCodes(new Set());
             setShowExcludeModal(false);
             setExcludeTarget(null);
-            showToast(`✅ ${count}개 상품 제외${statusType === 'stop' ? ' · 정지관리 연동' : (statusType !== 'none' ? ' · 쇼핑몰 연동대기' : '')} 완료`);
+            showToast(`✅ ${plan.processedCodes.length}개 상품의 해당 카탈로그 태그만 삭제하고 공급중단 이력을 기록했습니다.`);
         }
         catch (error) {
             console.error(error);
-            showToast("❌ 제외/정지 연동 처리 중 오류가 발생했습니다.");
+            showToast('❌ ' + (error?.message || '카탈로그 태그 삭제/공급중단 이력 저장 중 오류가 발생했습니다.'));
         }
         finally {
             setIsProcessing(false);
@@ -1226,13 +1399,12 @@ const ErpCodeInputModal = ({ onClose, onSubmit, targetItem }) => {
                     React.createElement("button", { onClick: () => code.trim() && onSubmit(code), disabled: !code.trim(), className: `flex-1 font-bold py-3 rounded-xl transition-all text-[13px] ${code.trim() ? 'bg-indigo-600 text-white hover:bg-indigo-700' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}` }, "\uB4F1\uB85D \uBC0F \uC5F0\uACB0"))))));
 };
 const ExcludeOptionModal = ({ onClose, onConfirm, count }) => {
-    const [selectedOption, setSelectedOption] = useState('soldout');
     return (React.createElement("div", { className: "fixed inset-0 bg-slate-900/60 z-[300] flex justify-center items-center backdrop-blur-sm fade-in", onClick: onClose },
         React.createElement("div", { className: "bg-white w-[480px] rounded-2xl shadow-2xl flex flex-col overflow-hidden border border-slate-200", onClick: (e) => e.stopPropagation() },
             React.createElement("div", { className: "px-5 py-4 border-b border-slate-200 flex justify-between items-center bg-slate-50" },
                 React.createElement("h2", { className: "font-bold text-slate-800 text-[15px]" },
                     React.createElement("i", { className: "fas fa-eraser text-rose-500 mr-2" }),
-                    "\uCE74\uD0C8\uB85C\uADF8 \uC81C\uC678 \uBC0F \uC1FC\uD551\uBAB0 \uC5F0\uB3D9"),
+                    "\uCE74\uD0C8\uB85C\uADF8 \uACF5\uAE09\uC911\uB2E8 \uCC98\uB9AC"),
                 React.createElement("button", { onClick: onClose, className: "text-slate-400 hover:text-slate-600" },
                     React.createElement("i", { className: "fas fa-times" }))),
             React.createElement("div", { className: "p-6 space-y-4" },
@@ -1241,26 +1413,12 @@ const ExcludeOptionModal = ({ onClose, onConfirm, count }) => {
                     React.createElement("strong", { className: "font-black text-rose-600" }, count),
                     "\uAC1C\uC758 \uC0C1\uD488\uC744 \uD604\uC7AC \uCE74\uD0C8\uB85C\uADF8\uC5D0\uC11C \uC81C\uC678\uD569\uB2C8\uB2E4.",
                     React.createElement("br", null),
-                    "\uC1FC\uD551\uBAB0(\uC5D1\uC140)\uC5D0 \uC5F0\uB3D9\uD560 \uC0C1\uD0DC\uB97C \uC120\uD0DD\uD574\uC8FC\uC138\uC694."),
-                React.createElement("div", { className: "space-y-2" },
-                    React.createElement("label", { className: `flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${selectedOption === 'soldout' ? 'bg-amber-50 border-amber-500' : 'bg-white border-slate-200 hover:bg-slate-50'}` },
-                        React.createElement("input", { type: "radio", name: "exclude_opt", value: "soldout", checked: selectedOption === 'soldout', onChange: () => setSelectedOption('soldout'), className: "mt-1 text-amber-500 focus:ring-amber-500" }),
-                        React.createElement("div", null,
-                            React.createElement("div", { className: "font-bold text-slate-800 text-[13px]" }, "\uC77C\uC2DC \uD488\uC808 (\uC7AC\uACE0\uC218\uB7C9 0)"),
-                            React.createElement("div", { className: "text-[11px] text-slate-500 mt-0.5" }, "\uB300\uCCB4\uC7AC \uD310\uB9E4 \uC720\uB3C4\uB97C \uC704\uD574 \uC77C\uC2DC\uC801\uC73C\uB85C \uC7AC\uACE0\uB9CC 0\uC73C\uB85C \uCC98\uB9AC\uD569\uB2C8\uB2E4."))),
-                    React.createElement("label", { className: `flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${selectedOption === 'stop' ? 'bg-rose-50 border-rose-500' : 'bg-white border-slate-200 hover:bg-slate-50'}` },
-                        React.createElement("input", { type: "radio", name: "exclude_opt", value: "stop", checked: selectedOption === 'stop', onChange: () => setSelectedOption('stop'), className: "mt-1 text-rose-500 focus:ring-rose-500" }),
-                        React.createElement("div", null,
-                            React.createElement("div", { className: "font-bold text-slate-800 text-[13px]" }, "\uC644\uC804 \uD310\uB9E4 \uC911\uB2E8 (\uD310\uB9E4\uC5EC\uBD80 0)"),
-                            React.createElement("div", { className: "text-[11px] text-slate-500 mt-0.5" }, "\uB2E8\uC885\uB41C \uC0C1\uD488\uC73C\uB85C, \uC1FC\uD551\uBAB0\uC5D0\uC11C \uD310\uB9E4 \uC0C1\uD0DC\uB97C \uC911\uC9C0\uD569\uB2C8\uB2E4."))),
-                    React.createElement("label", { className: `flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${selectedOption === 'none' ? 'bg-slate-100 border-slate-400' : 'bg-white border-slate-200 hover:bg-slate-50'}` },
-                        React.createElement("input", { type: "radio", name: "exclude_opt", value: "none", checked: selectedOption === 'none', onChange: () => setSelectedOption('none'), className: "mt-1 text-slate-500 focus:ring-slate-500" }),
-                        React.createElement("div", null,
-                            React.createElement("div", { className: "font-bold text-slate-800 text-[13px]" }, "\uC1FC\uD551\uBAB0 \uC5F0\uB3D9 \uC548\uD568 (\uB2E8\uC21C \uC81C\uC678)"),
-                            React.createElement("div", { className: "text-[11px] text-slate-500 mt-0.5" }, "\uC5D1\uC140\uC5D0 \uC5F0\uB3D9\uD558\uC9C0 \uC54A\uACE0 \uD604\uC7AC \uD654\uBA74\uC5D0\uC11C\uB9CC \uC870\uC6A9\uD788 \uC9C0\uC6C1\uB2C8\uB2E4.")))),
+                    "\uD574\uB2F9 \uCE74\uD0C8\uB85C\uADF8 \uD0DC\uADF8\uB9CC \uC0AD\uC81C\uD558\uACE0 \uACF5\uAE09\uC911\uB2E8 \uC774\uB825\uC744 \uB0A8\uAE41\uB2C8\uB2E4.",
+                    React.createElement("br", null),
+                    React.createElement("strong", null, "\uD310\uB9E4\uC5EC\uBD80, \uB2E4\uB978 \uCE74\uD0C8\uB85C\uADF8 \uD0DC\uADF8, \uC815\uC9C0\uAD00\uB9AC\uB97C \uBCC0\uACBD\uD558\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.")),
                 React.createElement("div", { className: "flex gap-2 pt-2" },
                     React.createElement("button", { onClick: onClose, className: "flex-1 bg-slate-100 text-slate-600 font-bold py-3 rounded-xl hover:bg-slate-200 text-[13px]" }, "\uCDE8\uC18C"),
-                    React.createElement("button", { onClick: () => onConfirm(selectedOption), className: "flex-1 font-bold py-3 rounded-xl transition-all text-[13px] bg-rose-600 text-white hover:bg-rose-700 shadow-sm" }, "\uD655\uC778 \uBC0F \uCC98\uB9AC"))))));
+                    React.createElement("button", { onClick: onConfirm, className: "flex-1 font-bold py-3 rounded-xl transition-all text-[13px] bg-rose-600 text-white hover:bg-rose-700 shadow-sm" }, "\uD0DC\uADF8 \uC0AD\uC81C \uBC0F \uC774\uB825 \uC800\uC7A5"))))));
 };
 const MappingExcludeListModal = ({ onClose, excludeDict, currentTag, onRestore, onClear }) => {
     const [keyword, setKeyword] = useState('');
@@ -1453,7 +1611,7 @@ const ParserReviewModal = ({ onClose, onConfirm, state, actions }) => {
         targetRows.forEach(row => {
             const mItem = masterProducts[row._matchCode] || {};
             const oldP = parseNum(mItem['입고가']);
-            const newP = parseNum(row.finalData?.['입고가'] !== undefined ? row.finalData['입고가'] : row['입고가']);
+            const newP = hasParserRowInPrice(row) ? getParserRowInPrice(row) : oldP;
             let status = 'same';
             if (oldP === 0 || newP === 0) {
                 same++;
@@ -1677,13 +1835,15 @@ const ParserApp = () => {
     const missingRows = useMemo(() => {
         if (!currentTag)
             return [];
-        const matchedCodes = new Set(matchedRows.map(r => String(r._matchCode)));
-        const processedStr = new Set(Array.from(processedCodes).map(String));
+        const codeResolver = createSmartParserMasterCodeResolver(masterProducts);
+        const matchedCodes = new Set(matchedRows.map(r => codeResolver.normalize(r._matchCode)).filter(Boolean));
+        const processedStr = new Set(Array.from(processedCodes).map(codeResolver.normalize).filter(Boolean));
         const missing = [];
         for (const code in masterProducts) {
             const mItem = masterProducts[code];
             const tags = String(mItem['카탈로그'] || '').split(',').map(s => s.trim());
-            if (tags.includes(currentTag) && !matchedCodes.has(String(code)) && !processedStr.has(String(code)))
+            const normalizedCode = codeResolver.normalize(mItem?.코드 || code);
+            if (tags.includes(currentTag) && !matchedCodes.has(normalizedCode) && !processedStr.has(normalizedCode))
                 missing.push(mItem);
         }
         return missing;
@@ -1728,22 +1888,29 @@ const ParserApp = () => {
             setAutoCompletionShown(false);
     }, [parserBuffer.length, pendingApplyRows.length, unresolvedQueueCount, autoCompletionShown, showReviewModal, isProcessing, showToast, setShowReviewModal]);
     const handleUpdateMatchedPrice = useCallback((rowId, newVal) => {
+        const priceText = String(newVal ?? '').trim();
+        if (priceText && !/^\d+(?:,\d{3})*(?:\.\d+)?$/.test(priceText)) {
+            showToast('⚠️ 입고가는 0 이상의 숫자로 입력하세요. 공란은 단가 미반영으로 처리됩니다.');
+            return;
+        }
         appState.setParserBuffer(prev => prev.map(r => {
             if (r._id === rowId) {
+                if (!priceText)
+                    return { ...r, finalData: {}, _hasParsedInPrice: false };
                 const mItem = masterProducts[r._matchCode] || {};
-                const recalculatedFinal = calculatePricesEngine(parseNum(newVal), mItem, r.finalData || {}, appState.marginRules, true);
-                return { ...r, finalData: recalculatedFinal };
+                const catalogRule = resolveParserListMarginRule(appState.parserListMarginRules, currentTag);
+                const recalculatedFinal = calculateParserCatalogPrices(parseNum(priceText), mItem, r.finalData || {}, catalogRule);
+                return { ...r, finalData: recalculatedFinal, _hasParsedInPrice: true };
             }
             return r;
         }));
-    }, [masterProducts, appState]);
+    }, [masterProducts, appState, currentTag, showToast]);
     const handleUpdateMatchedText = useCallback((rowId, fieldName, newValue) => {
         appState.setParserBuffer(prev => prev.map(row => {
             if (row._id !== rowId) return row;
             return {
                 ...row,
                 [fieldName]: newValue,
-                finalData: { ...(row.finalData || {}), [fieldName]: newValue },
                 _editedTextFields: { ...(row._editedTextFields || {}), [fieldName]: newValue }
             };
         }));
@@ -2092,7 +2259,7 @@ const ParserApp = () => {
         showReviewModal && React.createElement(ParserReviewModal, { onClose: () => setShowReviewModal(false), onConfirm: actions.handleApplyMatched, state: memoizedState, actions: memoizedActions }),
         showErpModal && React.createElement(ErpCodeInputModal, { onClose: () => setShowErpModal(false), onSubmit: actions.handleCreateNewMasterItem, targetItem: parserBuffer.find(r => r._id === targetId) }),
         appState.showMappingExcludeModal && React.createElement(MappingExcludeListModal, { onClose: () => appState.setShowMappingExcludeModal(false), excludeDict: parserExcludeDict, currentTag: currentTag, onRestore: actions.handleRestoreParserExcluded, onClear: actions.handleClearParserExclusions }),
-        appState.showExcludeModal && React.createElement(ExcludeOptionModal, { onClose: () => appState.setShowExcludeModal(false), onConfirm: (type) => { actions.executeExclusion(appState.excludeTarget === 'selected' ? Array.from(selectedMissingCodes) : [appState.excludeTarget], type); }, count: appState.excludeTarget === 'selected' ? selectedMissingCodes.size : 1 })));
+        appState.showExcludeModal && React.createElement(ExcludeOptionModal, { onClose: () => appState.setShowExcludeModal(false), onConfirm: () => { actions.executeExclusion(appState.excludeTarget === 'selected' ? Array.from(selectedMissingCodes) : [appState.excludeTarget]); }, count: appState.excludeTarget === 'selected' ? selectedMissingCodes.size : 1 })));
 };
 
 (function bootSmartParser() {
