@@ -85,9 +85,9 @@ const parserRuleNormalizationCorpus = {
   divide101: { marginRate: 101, calculationType: "divide", updatedAt: iso },
 };
 const expectedNormalizedRules = {
-  Cat: { marginRate: 10, calculationType: "divide", updatedAt: iso },
-  Offset: { marginRate: 15, calculationType: "multiply", updatedAt: canonicalOffsetIso },
-  MultiplyAbove100: { marginRate: 101, calculationType: "multiply", updatedAt: iso },
+  Cat: { rules: [{ unitCondition: "*", marginRate: 10, calculationType: "divide", updatedAt: iso }] },
+  Offset: { rules: [{ unitCondition: "*", marginRate: 15, calculationType: "multiply", updatedAt: canonicalOffsetIso }] },
+  MultiplyAbove100: { rules: [{ unitCondition: "*", marginRate: 101, calculationType: "multiply", updatedAt: iso }] },
 };
 
 assert.equal(h.calculatePricesEngine(10000, {}, {}, [], true, divide10)["출고가"], 11100);
@@ -292,7 +292,7 @@ assert.equal(existingPriceLogs.length, 4);
 assert.ok(existingPlan.logs.every((log) => log.timestampISO === iso));
 assert.deepEqual(
   JSON.parse(JSON.stringify(existingPriceLogs[0].priceRule)),
-  divide10,
+  { unitCondition: "*", ...divide10 },
   "price history records the exact catalog rule",
 );
 assert.equal(existingPlan.logs.find((log) => log.field === "입고가").priceChangeType, "up");
@@ -660,8 +660,8 @@ assert.ok(applyBlock.indexOf("window.confirm(confirmMessage)") < applyBlock.inde
 assert.ok(applyBlock.indexOf("window.confirm(confirmMessage)") < applyBlock.indexOf("buildSmartParserApplyPlan({"));
 assert.ok(applyBlock.indexOf("window.confirm(confirmMessage)") < applyBlock.indexOf("await saveMaster(newMaster, sharedEntries)"));
 assert.match(applyBlock, /if \(!window\.confirm\(confirmMessage\)\)\s*return false/);
-assert.match(applyBlock, /allowExistingInfoChanges: !!catalogRule/);
-assert.match(applyBlock, /판매가격은 계산하거나 변경하지 않습니다/);
+assert.match(applyBlock, /allowExistingInfoChanges: true/);
+assert.match(applyBlock, /판매가격만 계산하거나 변경하지 않습니다/);
 const createNewBlock = sliceBetween(smart, "const handleCreateNewMasterItem =", "const handleIgnoreParsedItem =", "SmartParser new-product precheck");
 assert.match(createNewBlock, /createSmartParserMasterCodeResolver\(masterProducts\)\.resolve\(newCode\)/);
 assert.doesNotMatch(createNewBlock, /if \(masterProducts\[newCode\]\)/);
@@ -753,8 +753,24 @@ const merchRuleHelperSource = sliceBetween(
   "const TABLE_VIEW_TARGETS =",
   "MerchOps parser-list rule helpers",
 );
-const merchRuleWindow = {};
-const merchRuleContext = vm.createContext({ window: merchRuleWindow, Date, Object, Array, String, Number });
+const merchRuleWindow = {
+  getMerchUnitRuleCandidates(value) {
+    const raw = String(value ?? "").trim().toLowerCase();
+    if (!raw || raw === "*") return raw === "*" ? ["*"] : [];
+    const candidates = [];
+    const push = (candidate) => { if (candidate && !candidates.includes(candidate)) candidates.push(candidate); };
+    [raw.replace(/\s/g, ""), ...raw.split(/[,./|\s()_\-]+/)].forEach((part) => {
+      const normalized = String(part || "").toLowerCase().replace(/\s/g, "");
+      if (!normalized) return;
+      if (/box|박스|상자|bx/.test(normalized)) push("box");
+      if (/소분|분할|절단|컷|소포장|묶음/.test(normalized)) push("sub");
+      if (/ea|each|개|낱개|낱|kg|킬로|단|봉|포/.test(normalized)) push("ea");
+      push(normalized);
+    });
+    return candidates;
+  },
+};
+const merchRuleContext = vm.createContext({ window: merchRuleWindow, Date, Object, Array, String, Number, Set });
 vm.runInContext(merchRuleHelperSource, merchRuleContext);
 const merchNormalizedRules = JSON.parse(JSON.stringify(merchRuleWindow.normalizeParserListMarginRules(parserRuleNormalizationCorpus)));
 assert.deepEqual(merchNormalizedRules, expectedNormalizedRules);
@@ -766,7 +782,7 @@ const merchHelpers = sliceBetween(
   "MerchOps parser analysis helpers",
 );
 const merchWindow = {
-  normalizeParserListMarginRules: merchRuleWindow.normalizeParserListMarginRules,
+  ...merchRuleWindow,
   parseNum(value) {
     if (!value) return 0;
     return Number(String(value).replace(/,/g, "").replace(/[^\d.-]/g, "")) || 0;
