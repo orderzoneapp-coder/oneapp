@@ -452,15 +452,13 @@ const classifyParserInPriceChange = (oldValue, newValue) => {
     const hasOldValue = hasParserCostValue(oldValue);
     const oldPrice = parseNum(oldValue);
     const newPrice = parseNum(newValue);
-    if (!hasOldValue)
-        return newPrice > 0 ? 'up' : '';
-    if (oldPrice === 0 && newPrice > 0)
-        return 'recovery';
-    if (oldPrice > 0 && newPrice === 0)
+    if (newPrice >= 1 && (!hasOldValue || oldPrice === 0))
+        return 'new_price';
+    if (oldPrice >= 1 && newPrice === 0)
         return 'zero';
-    if (newPrice > oldPrice)
+    if (oldPrice >= 1 && newPrice >= 1 && newPrice > oldPrice)
         return 'up';
-    if (newPrice < oldPrice)
+    if (oldPrice >= 1 && newPrice >= 1 && newPrice < oldPrice)
         return 'down';
     return '';
 };
@@ -672,7 +670,9 @@ const buildSmartParserApplyPlan = ({ masterProducts = {}, rows = [], catalogLabe
 
         const hasInPrice = hasParserRowInPrice(row);
         const newInPrice = hasInPrice ? getParserRowInPrice(row) : null;
-        const oldInValue = isNewProduct ? '' : (oldItem['입고가'] ?? '');
+        const oldInValue = isNewProduct
+            ? ''
+            : (Object.prototype.hasOwnProperty.call(oldItem, '입고가') ? oldItem['입고가'] : '');
         const hadOldInValue = hasParserCostValue(oldInValue);
         const oldInPrice = parseNum(oldInValue);
         const inPriceChangeType = hasInPrice ? classifyParserInPriceChange(oldInValue, newInPrice) : '';
@@ -684,7 +684,13 @@ const buildSmartParserApplyPlan = ({ masterProducts = {}, rows = [], catalogLabe
                 extra: {
                     priceChangeType: inPriceChangeType,
                     availabilityType: newInPrice === 0 ? 'unavailable' : 'available',
-                    isNewProduct
+                    isNewProduct,
+                    ...(inPriceChangeType === 'new_price' ? {
+                        supplyChangeType: 'new',
+                        changeType: '신규',
+                        diff: null,
+                        diffRate: null
+                    } : {})
                 }
             }));
         }

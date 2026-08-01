@@ -8957,7 +8957,7 @@ window.normalizeMerchParserSupplyChangeType = (logOrValue = '') => {
         ? (logOrValue.supplyChangeType ?? logOrValue.supplyType ?? logOrValue.supplyEventType ?? '')
         : logOrValue;
     const value = String(raw || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
-    if (['new', 'tag_first', 'first_tag', 'first', '신규'].includes(value)) return 'new';
+    if (['new', 'new_price', 'tag_first', 'first_tag', 'first', '신규'].includes(value)) return 'new';
     if (['stopped', 'stop', 'supply_stopped', 'discontinued', '공급중단'].includes(value)) return 'stopped';
     if (['reappeared', 'reappear', 'returned', 'supply_reappeared', '재등장'].includes(value)) return 'reappeared';
     return '';
@@ -8972,11 +8972,10 @@ window.classifyMerchParserCostChange = (oldVal, newVal) => {
     if (!newState.present) return '';
     const oldNum = oldState.value;
     const newNum = newState.value;
-    if (!oldState.present) return newNum > 0 ? 'up' : '';
-    if (oldNum === 0 && newNum > 0) return 'recovery';
-    if (oldNum > 0 && newNum === 0) return 'zero';
-    if (newNum > oldNum) return 'up';
-    if (newNum < oldNum) return 'down';
+    if (newNum >= 1 && (!oldState.present || oldNum === 0)) return 'new_price';
+    if (oldNum >= 1 && newNum === 0) return 'zero';
+    if (oldNum >= 1 && newNum >= 1 && newNum > oldNum) return 'up';
+    if (oldNum >= 1 && newNum >= 1 && newNum < oldNum) return 'down';
     return '';
 };
 window.makeMerchParserPriceHistoryExactKey = (query = {}) => {
@@ -9058,6 +9057,18 @@ window.buildMerchParserListHistoryAnalysis = ({ historyLogs = [], activeTags = [
             log
         };
     };
+    const collectExactPriceChanges = (code, catalogName, timestampISO) => window.MERCH_PARSER_PRICE_HISTORY_FIELDS.map(priceField => {
+        metrics.priceHistoryLookups++;
+        const priceLog = window.findMerchParserPriceHistoryExact(priceHistoryIndex, { code, catalogName, timestampISO, field: priceField });
+        return priceLog ? {
+            field: priceField,
+            oldVal: getHistoryOldValue(priceLog),
+            newVal: getHistoryNewValue(priceLog),
+            log: priceLog
+        } : null;
+    }).filter(Boolean);
+    const makeSupplyEventKey = (code, catalogName, timestampISO) => JSON.stringify([code, catalogName, timestampISO]);
+    const emittedNewPriceKeys = new Set();
     const events = [];
     logs.forEach((log, index) => {
         metrics.historyEventVisits++;
@@ -9076,44 +9087,62 @@ window.buildMerchParserListHistoryAnalysis = ({ historyLogs = [], activeTags = [
                     const newState = window.getMerchParserCostValueState(newVal);
                     const oldNum = oldState.value;
                     const newNum = newState.value;
-                    const diff = oldState.present ? newNum - oldNum : null;
                     const timestampISO = String(log?.timestampISO || '').trim();
-                    const priceChanges = window.MERCH_PARSER_PRICE_HISTORY_FIELDS.map(priceField => {
-                        metrics.priceHistoryLookups++;
-                        const priceLog = window.findMerchParserPriceHistoryExact(priceHistoryIndex, { code, catalogName, timestampISO, field: priceField });
-                        return priceLog ? {
-                            field: priceField,
-                            oldVal: getHistoryOldValue(priceLog),
-                            newVal: getHistoryNewValue(priceLog),
-                            log: priceLog
-                        } : null;
-                    }).filter(Boolean);
-                    events.push({
-                        ...buildCommon(log, 'cost', changeType, index),
-                        oldVal,
-                        newVal,
-                        oldNum,
-                        newNum,
-                        diff,
-                        diffRate: oldState.present && oldNum !== 0 ? (diff / oldNum) * 100 : null,
-                        priceChanges
-                    });
+                    const priceChanges = collectExactPriceChanges(code, catalogName, timestampISO);
+                    if (changeType === 'new_price') {
+                        const newPriceKey = makeSupplyEventKey(code, catalogName, timestampISO);
+                        if (!emittedNewPriceKeys.has(newPriceKey)) {
+                            emittedNewPriceKeys.add(newPriceKey);
+                            events.push({
+                                ...buildCommon(log, 'supply', 'new', index),
+                                priceChangeType: 'new_price',
+                                oldVal,
+                                newVal,
+                                oldNum,
+                                newNum,
+                                diff: null,
+                                diffRate: null,
+                                priceChanges
+                            });
+                        }
+                    }
+                    else {
+                        const diff = oldState.present ? newNum - oldNum : null;
+                        events.push({
+                            ...buildCommon(log, 'cost', changeType, index),
+                            oldVal,
+                            newVal,
+                            oldNum,
+                            newNum,
+                            diff,
+                            diffRate: oldState.present && oldNum !== 0 ? (diff / oldNum) * 100 : null,
+                            priceChanges
+                        });
+                    }
                 }
             }
         }
         const supplyChangeType = window.normalizeMerchParserSupplyChangeType(log);
         const isNewProductTagDetail = String(log?.supplyChangeType || '').trim() === 'tag_first' && log?.isNewProduct === true;
-        if (supplyChangeType && !isNewProductTagDetail) {
+        const isNewPriceLog = field === '입고가' && window.classifyMerchParserCostChange(getHistoryOldValue(log), getHistoryNewValue(log)) === 'new_price';
+        if (supplyChangeType && !isNewProductTagDetail && !isNewPriceLog) {
             // 공급 이벤트에는 의도적으로 diff/diffRate 필드를 만들지 않는다.
             events.push(buildCommon(log, 'supply', supplyChangeType, index));
         }
     });
-    events.sort((left, right) => parseHistoryTime(right.log) - parseHistoryTime(left.log));
+    const newPriceSupplyKeys = new Set(events
+        .filter(event => event.priceChangeType === 'new_price')
+        .map(event => makeSupplyEventKey(event.code, event.catalogName, event.timestampISO)));
+    const dedupedEvents = events.filter(event => !(event.kind === 'supply'
+        && event.changeType === 'new'
+        && event.priceChangeType !== 'new_price'
+        && newPriceSupplyKeys.has(makeSupplyEventKey(event.code, event.catalogName, event.timestampISO))));
+    dedupedEvents.sort((left, right) => parseHistoryTime(right.log) - parseHistoryTime(left.log));
     const counts = {};
     Object.keys(window.MERCH_PARSER_ANALYSIS_FILTERS).forEach(key => {
-        counts[key] = key === 'all' ? events.length : events.filter(event => window.matchMerchParserAnalysisFilter(event, key)).length;
+        counts[key] = key === 'all' ? dedupedEvents.length : dedupedEvents.filter(event => window.matchMerchParserAnalysisFilter(event, key)).length;
     });
-    return { active: true, selection, events, counts, metrics };
+    return { active: true, selection, events: dedupedEvents, counts, metrics };
 };
 const formatSignedNumber = (v) => {
     const n = Number(v || 0);
@@ -10046,9 +10075,11 @@ const ParserListHistoryAnalysisPanel = ({ state }) => {
                 : h("div", { className: "divide-y divide-slate-100" }, visibleEvents.map(event => {
                     const eventLabel = changeLabels[event.changeType] || event.changeType;
                     const ruleText = formatRule(event.rule);
-                    const priceEvidence = event.kind === 'cost' && Array.isArray(event.priceChanges) && event.priceChanges.length > 0
+                    const isNewPriceEvent = event.priceChangeType === 'new_price';
+                    const hasPriceEvidenceTarget = event.kind === 'cost' || isNewPriceEvent;
+                    const priceEvidence = hasPriceEvidenceTarget && Array.isArray(event.priceChanges) && event.priceChanges.length > 0
                         ? event.priceChanges.map(change => `${change.field} 적용 전 ${formatPrice(change.oldVal)} / 반영 ${formatPrice(change.newVal)}`).join(' · ')
-                        : (event.kind === 'cost' ? '동일 timestampISO의 변경 가격이력 없음' : '');
+                        : (hasPriceEvidenceTarget ? '동일 timestampISO의 변경 가격이력 없음' : '');
                     return h("div", { key: event.id, className: "grid grid-cols-[minmax(190px,1.1fr)_minmax(250px,1.5fr)_minmax(220px,1.2fr)_minmax(150px,0.8fr)] gap-3 px-3 py-2 text-[11px] items-center" },
                         h("div", { className: "min-w-0" },
                             h("div", { className: "flex items-center gap-1.5 min-w-0" },
@@ -10060,6 +10091,10 @@ const ParserListHistoryAnalysisPanel = ({ state }) => {
                             ? h("div", { className: "min-w-0" },
                                 h("div", { className: "font-black text-slate-800 whitespace-nowrap" }, `입고 ${formatPreviousCost(event.oldVal)} → ${formatPrice(event.newVal)} · 차액 ${formatCostDiff(event.diff)}`),
                                 h("div", { className: "text-[10px] font-bold text-slate-500 whitespace-normal leading-tight", title: priceEvidence }, `변동률 ${event.diffRate === null ? '-' : formatSignedRate(event.diffRate)} · ${priceEvidence}`))
+                            : isNewPriceEvent
+                                ? h("div", { className: "min-w-0" },
+                                    h("div", { className: "font-black text-slate-800 whitespace-nowrap" }, `입고 ${formatPreviousCost(event.oldVal)} → ${formatPrice(event.newVal)}`),
+                                    h("div", { className: "text-[10px] font-bold text-slate-500 whitespace-normal leading-tight", title: priceEvidence }, `차액 - · 변동률 - · ${priceEvidence}`))
                             : h("div", { className: "min-w-0" },
                                 h("div", { className: "font-black text-slate-800" }, `공급정보 ${eventLabel}`),
                                 h("div", { className: "text-[10px] font-bold text-slate-500" }, "공급정보는 변동률을 계산하지 않습니다.")),

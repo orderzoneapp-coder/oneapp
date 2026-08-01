@@ -126,10 +126,12 @@ assert.deepEqual(normalizedRule, expectedNormalizedRules);
 assert.equal(h.resolveParserListMarginRule(normalizedRule, " Cat ").marginRate, 10);
 assert.equal(h.resolveParserListMarginRule(normalizedRule, "cat"), null, "catalog matching is case-sensitive exact matching");
 assert.equal(h.resolveParserListMarginRule({ Cat: parserRuleNormalizationCorpus.nullDate }, "Cat"), null, "null updatedAt must never become an epoch rule");
-assert.equal(h.classifyParserInPriceChange("", 10000), "up");
-assert.equal(h.classifyParserInPriceChange(null, 10000), "up");
-assert.equal(h.classifyParserInPriceChange(0, 10000), "recovery");
-assert.equal(h.classifyParserInPriceChange("0", 10000), "recovery");
+assert.equal(h.classifyParserInPriceChange("", 1000), "new_price");
+assert.equal(h.classifyParserInPriceChange(null, 1000), "new_price");
+assert.equal(h.classifyParserInPriceChange(0, 1000), "new_price");
+assert.equal(h.classifyParserInPriceChange("0", 1000), "new_price");
+assert.equal(h.classifyParserInPriceChange(800, 1000), "up");
+assert.equal(h.classifyParserInPriceChange(1200, 1000), "down");
 assert.equal(h.classifyParserInPriceChange(10000, 0), "zero");
 assert.equal(h.classifyParserInPriceChange("", 0), "", "blank-to-zero is not a positive-to-zero event");
 
@@ -295,14 +297,14 @@ assert.equal(existingPlan.logs.find((log) => log.field === "입고가").priceCha
 
 const newPlan = h.buildSmartParserApplyPlan({
   masterProducts: {},
-  rows: [{ _matchCode: "B", _hasParsedInPrice: true, "품목명": "신규", "규격": "1개", "단위": "ea", finalData: { "입고가": 10000 } }],
+  rows: [{ _matchCode: "B", _hasParsedInPrice: true, "품목명": "신규", "규격": "1개", "단위": "ea", finalData: { "입고가": 1000 } }],
   catalogLabel: "Cat",
   catalogRule: multiply10,
   timestampISO: iso,
   timestampLabel: "now",
 });
-assert.equal(newPlan.newMaster.B["출고가"], 11000);
-assert.equal(newPlan.newMaster.B["시중가"], 11000);
+assert.equal(newPlan.newMaster.B["출고가"], 1100);
+assert.equal(newPlan.newMaster.B["시중가"], 1100);
 assert.equal(newPlan.newMaster.B["판매여부"], undefined);
 assert.ok(newPlan.logs.some((log) => log.supplyChangeType === "new"));
 assert.ok(newPlan.logs.some((log) => log.supplyChangeType === "tag_first" && log.isNewProduct === true));
@@ -310,16 +312,20 @@ assert.ok(newPlan.logs.every((log) => log.timestampISO === iso));
 assert.equal(newPlan.logs.find((log) => log.field === "출고가").oldVal, "");
 const newPlanInPriceLog = newPlan.logs.find((log) => log.field === "입고가");
 assert.equal(newPlanInPriceLog.oldVal, "");
-assert.equal(newPlanInPriceLog.priceChangeType, "up", "a first positive cost is not a zero recovery");
+assert.equal(newPlanInPriceLog.newVal, 1000);
+assert.equal(newPlanInPriceLog.priceChangeType, "new_price");
+assert.equal(newPlanInPriceLog.changeType, "신규");
+assert.equal(newPlanInPriceLog.diff, null);
+assert.equal(newPlanInPriceLog.diffRate, null);
 
 const blankCostMaster = {
   C: { "코드": "C", "품목명": "공란단가", "카탈로그": "Cat", "입고가": "", "출고가": 5000, "판매여부": 1 },
 };
 const blankToPositivePlan = h.buildSmartParserApplyPlan({
   masterProducts: blankCostMaster,
-  rows: [{ _matchCode: "C", _hasParsedInPrice: true, "품목명": "공란단가", finalData: { "입고가": 10000 } }],
+  rows: [{ _matchCode: "C", _hasParsedInPrice: true, "품목명": "공란단가", finalData: { "입고가": 1000 } }],
   catalogLabel: "Cat",
-  catalogRule: null,
+  catalogRule: divide10,
   timestampISO: iso,
   timestampLabel: "now",
   updateTextData: false,
@@ -327,9 +333,15 @@ const blankToPositivePlan = h.buildSmartParserApplyPlan({
 });
 const blankToPositiveLog = blankToPositivePlan.logs.find((log) => log.field === "입고가");
 assert.equal(blankToPositiveLog.oldVal, "");
-assert.equal(blankToPositiveLog.newVal, 10000);
-assert.equal(blankToPositiveLog.priceChangeType, "up");
+assert.equal(blankToPositiveLog.newVal, 1000);
+assert.equal(blankToPositiveLog.priceChangeType, "new_price");
+assert.equal(blankToPositiveLog.changeType, "신규");
+assert.equal(blankToPositiveLog.diff, null);
 assert.equal(blankToPositiveLog.diffRate, null);
+assert.equal(blankToPositivePlan.newMaster.C["출고가"], 1100);
+assert.equal(blankToPositivePlan.newMaster.C["판매여부"], 1);
+assert.ok(blankToPositivePlan.logs.every((log) => log.timestampISO === iso));
+assert.ok(blankToPositivePlan.logs.some((log) => log.field === "출고가" && log.oldVal === 5000 && log.newVal === 1100));
 
 const blankInputMaster = {
   C: { "코드": "C", "품목명": "공란입력", "카탈로그": "Cat", "입고가": 9000, "출고가": 10000, "판매여부": 1 },
@@ -348,9 +360,31 @@ assert.deepEqual(JSON.parse(JSON.stringify(blankInputPlan.newMaster)), blankInpu
 assert.equal(blankInputPlan.masterMutationCount, 0);
 assert.equal(blankInputPlan.logs.length, 0);
 
-const explicitRecoveryPlan = h.buildSmartParserApplyPlan({
-  masterProducts: { C: { ...blankInputMaster.C, "입고가": 0 } },
-  rows: [{ _matchCode: "C", _hasParsedInPrice: true, "품목명": "복구", finalData: { "입고가": 10000 } }],
+const zeroToNewPricePlan = h.buildSmartParserApplyPlan({
+  masterProducts: { Z: { ...blankInputMaster.C, "코드": "Z", "품목명": "0단가", "입고가": 0 } },
+  rows: [{ _matchCode: "Z", _hasParsedInPrice: true, "품목명": "0단가", finalData: { "입고가": 1000 } }],
+  catalogLabel: "Cat",
+  catalogRule: divide10,
+  timestampISO: iso,
+  timestampLabel: "now",
+  updateTextData: false,
+  allowExistingInfoChanges: false,
+});
+const zeroToNewPriceLog = zeroToNewPricePlan.logs.find((log) => log.field === "입고가");
+assert.equal(zeroToNewPriceLog.oldVal, 0);
+assert.equal(zeroToNewPriceLog.newVal, 1000);
+assert.equal(zeroToNewPriceLog.priceChangeType, "new_price");
+assert.equal(zeroToNewPriceLog.changeType, "신규");
+assert.equal(zeroToNewPriceLog.diff, null);
+assert.equal(zeroToNewPriceLog.diffRate, null);
+assert.equal(zeroToNewPricePlan.newMaster.Z["출고가"], 1100);
+assert.equal(zeroToNewPricePlan.newMaster.Z["판매여부"], 1);
+assert.ok(zeroToNewPricePlan.logs.every((log) => log.timestampISO === iso));
+assert.ok(zeroToNewPricePlan.logs.some((log) => log.field === "출고가" && log.oldVal === 10000 && log.newVal === 1100));
+
+const positiveUpPlan = h.buildSmartParserApplyPlan({
+  masterProducts: { U: { "코드": "U", "품목명": "인상", "카탈로그": "Cat", "입고가": 800, "판매여부": 1 } },
+  rows: [{ _matchCode: "U", _hasParsedInPrice: true, "품목명": "인상", finalData: { "입고가": 1000 } }],
   catalogLabel: "Cat",
   catalogRule: null,
   timestampISO: iso,
@@ -358,7 +392,25 @@ const explicitRecoveryPlan = h.buildSmartParserApplyPlan({
   updateTextData: false,
   allowExistingInfoChanges: false,
 });
-assert.equal(explicitRecoveryPlan.logs.find((log) => log.field === "입고가").priceChangeType, "recovery");
+const positiveUpLog = positiveUpPlan.logs.find((log) => log.field === "입고가");
+assert.equal(positiveUpLog.priceChangeType, "up");
+assert.equal(positiveUpLog.diff, 200);
+assert.equal(positiveUpLog.diffRate, 25);
+
+const positiveDownPlan = h.buildSmartParserApplyPlan({
+  masterProducts: { D: { "코드": "D", "품목명": "인하", "카탈로그": "Cat", "입고가": 1200, "판매여부": 1 } },
+  rows: [{ _matchCode: "D", _hasParsedInPrice: true, "품목명": "인하", finalData: { "입고가": 1000 } }],
+  catalogLabel: "Cat",
+  catalogRule: null,
+  timestampISO: iso,
+  timestampLabel: "now",
+  updateTextData: false,
+  allowExistingInfoChanges: false,
+});
+const positiveDownLog = positiveDownPlan.logs.find((log) => log.field === "입고가");
+assert.equal(positiveDownLog.priceChangeType, "down");
+assert.equal(positiveDownLog.diff, -200);
+assert.equal(positiveDownLog.diffRate, -16.7);
 
 const existingMultiplyPlan = h.buildSmartParserApplyPlan({
   masterProducts: existingMaster,
@@ -738,10 +790,12 @@ vm.runInContext(
   merchContext,
 );
 const mh = merchContext.window;
-assert.equal(mh.classifyMerchParserCostChange("", 10000), "up");
-assert.equal(mh.classifyMerchParserCostChange(null, 10000), "up");
-assert.equal(mh.classifyMerchParserCostChange(0, 10000), "recovery");
-assert.equal(mh.classifyMerchParserCostChange("0", 10000), "recovery");
+assert.equal(mh.classifyMerchParserCostChange("", 1000), "new_price");
+assert.equal(mh.classifyMerchParserCostChange(null, 1000), "new_price");
+assert.equal(mh.classifyMerchParserCostChange(0, 1000), "new_price");
+assert.equal(mh.classifyMerchParserCostChange("0", 1000), "new_price");
+assert.equal(mh.classifyMerchParserCostChange(800, 1000), "up");
+assert.equal(mh.classifyMerchParserCostChange(1200, 1000), "down");
 assert.equal(mh.classifyMerchParserCostChange(10000, 0), "zero");
 assert.equal(mh.classifyMerchParserCostChange("", 0), "");
 assert.equal(mh.buildMerchParserListHistoryAnalysis({
@@ -760,7 +814,8 @@ const analysisLogs = [
   { id: "price-other-catalog", source: "parser", code: "A", catalogName: "Other", timestampISO: t1, field: "시중가", oldVal: 150, newVal: 999 },
   { id: "price-near-time", source: "parser", code: "A", catalogName: "Cat", timestampISO: "2026-08-01T01:00:01.000Z", field: "시중가", oldVal: 150, newVal: 190 },
   { id: "cost-zero", source: "parser", code: "A", catalogName: "Cat", timestampISO: t2, field: "입고가", oldVal: 120, newVal: 0 },
-  { id: "cost-recovery", source: "parser", code: "A", catalogName: "Cat", timestampISO: t3, field: "입고가", oldVal: 0, newVal: 130 },
+  { id: "cost-new-price", source: "parser", code: "A", catalogName: "Cat", timestampISO: t3, field: "입고가", oldVal: 0, newVal: 130, priceChangeType: "new_price" },
+  { id: "price-new-exact", source: "parser", code: "A", catalogName: "Cat", timestampISO: t3, field: "출고가", oldVal: 150, newVal: 181 },
   { id: "cost-down", source: "parser", code: "A", catalogName: "Cat", timestampISO: t4, field: "입고가", oldVal: 130, newVal: 110 },
   { id: "same", source: "parser", code: "A", catalogName: "Cat", timestampISO: t4, field: "입고가", oldVal: 110, newVal: 110 },
   { id: "wrong-source", source: "estimate", code: "A", catalogName: "Cat", timestampISO: t4, field: "입고가", oldVal: 110, newVal: 200 },
@@ -782,8 +837,8 @@ assert.equal(merchAnalysis.events.length, 7);
 assert.equal(merchAnalysis.counts.cost_up, 1);
 assert.equal(merchAnalysis.counts.cost_down, 1);
 assert.equal(merchAnalysis.counts.cost_zero, 1);
-assert.equal(merchAnalysis.counts.cost_recovery, 1);
-assert.equal(merchAnalysis.counts.supply_new, 1, "new-product tag detail must not duplicate the new supply event");
+assert.equal(merchAnalysis.counts.cost_recovery, 0);
+assert.equal(merchAnalysis.counts.supply_new, 2, "new_price and the distinct new-product supply event are both 신규");
 assert.equal(merchAnalysis.counts.supply_stopped, 1);
 assert.equal(merchAnalysis.counts.supply_reappeared, 1);
 const upEvent = merchAnalysis.events.find((event) => event.log.id === "cost-up");
@@ -791,23 +846,93 @@ assert.deepEqual(JSON.parse(JSON.stringify(upEvent.priceChanges.map((entry) => e
 assert.equal(upEvent.currentSalePrice, 190);
 assert.equal(upEvent.currentSaleAvailability, 1);
 assert.equal(upEvent.rule.marginRate, 10);
-const supplyEvent = merchAnalysis.events.find((event) => event.kind === "supply");
+const newPriceEvent = merchAnalysis.events.find((event) => event.log.id === "cost-new-price");
+assert.equal(newPriceEvent.kind, "supply");
+assert.equal(newPriceEvent.changeType, "new");
+assert.equal(newPriceEvent.priceChangeType, "new_price");
+assert.equal(newPriceEvent.oldVal, 0);
+assert.equal(newPriceEvent.newVal, 130);
+assert.equal(newPriceEvent.diff, null);
+assert.equal(newPriceEvent.diffRate, null);
+assert.deepEqual(JSON.parse(JSON.stringify(newPriceEvent.priceChanges.map((entry) => entry.field))), ["출고가"]);
+assert.equal(mh.matchMerchParserAnalysisFilter(newPriceEvent, "supply_new"), true);
+assert.equal(mh.matchMerchParserAnalysisFilter(newPriceEvent, "cost_up"), false);
+assert.equal(mh.matchMerchParserAnalysisFilter(newPriceEvent, "cost_down"), false);
+assert.equal(mh.matchMerchParserAnalysisFilter(newPriceEvent, "cost_recovery"), false);
+const supplyEvent = merchAnalysis.events.find((event) => event.log.id === "supply-stopped");
 assert.equal(Object.prototype.hasOwnProperty.call(supplyEvent, "diffRate"), false);
 assert.equal(mh.findMerchParserPriceHistoryExact(analysisLogs, { code: "A", catalogName: "Cat", timestampISO: t1, field: "출고가" }).id, "price-exact");
 assert.equal(mh.findMerchParserPriceHistoryExact(analysisLogs, { code: "A", catalogName: "Cat", timestampISO: t1, field: "시중가" }), null);
 
 const blankCostAnalysis = mh.buildMerchParserListHistoryAnalysis({
-  historyLogs: [{ id: "cost-first-positive", source: "parser", code: "A", catalogName: "Cat", timestampISO: t1, field: "입고가", oldVal: "", newVal: 10000 }],
+  historyLogs: [
+    { id: "cost-first-positive", source: "parser", code: "A", catalogName: "Cat", timestampISO: t1, field: "입고가", oldVal: "", newVal: 1000, priceChangeType: "new_price" },
+    { id: "blank-price-exact", source: "parser", code: "A", catalogName: "Cat", timestampISO: t1, field: "출고가", oldVal: 5000, newVal: 1100 },
+  ],
   activeTags: [{ type: "catalog", name: "Cat" }],
   masterProducts: { A: { 코드: "A", 품목명: "상품A", 출고가: 12000, 판매여부: 1 } },
   parserListMarginRules: { Cat: divide10 },
 });
 assert.equal(blankCostAnalysis.events.length, 1);
-assert.equal(blankCostAnalysis.events[0].changeType, "up");
+assert.equal(blankCostAnalysis.events[0].kind, "supply");
+assert.equal(blankCostAnalysis.events[0].changeType, "new");
+assert.equal(blankCostAnalysis.events[0].priceChangeType, "new_price");
 assert.equal(blankCostAnalysis.events[0].oldVal, "");
+assert.equal(blankCostAnalysis.events[0].newVal, 1000);
 assert.equal(blankCostAnalysis.events[0].oldNum, null);
 assert.equal(blankCostAnalysis.events[0].diff, null);
 assert.equal(blankCostAnalysis.events[0].diffRate, null);
+assert.deepEqual(JSON.parse(JSON.stringify(blankCostAnalysis.events[0].priceChanges.map((entry) => entry.field))), ["출고가"]);
+assert.equal(blankCostAnalysis.counts.supply_new, 1);
+assert.equal(blankCostAnalysis.counts.cost_up, 0);
+assert.equal(blankCostAnalysis.counts.cost_down, 0);
+assert.equal(blankCostAnalysis.counts.cost_recovery, 0);
+
+const newProductAnalysis = mh.buildMerchParserListHistoryAnalysis({
+  historyLogs: newPlan.logs,
+  activeTags: [{ type: "catalog", name: "Cat" }],
+  masterProducts: newPlan.newMaster,
+  parserListMarginRules: { Cat: multiply10 },
+});
+assert.equal(newProductAnalysis.events.length, 1, "new product supply, tag detail, and new_price logs must render as one 신규 event");
+assert.equal(newProductAnalysis.counts.supply_new, 1);
+assert.equal(newProductAnalysis.counts.cost_up, 0);
+assert.equal(newProductAnalysis.counts.cost_down, 0);
+assert.equal(newProductAnalysis.counts.cost_recovery, 0);
+const newProductEvent = newProductAnalysis.events[0];
+assert.equal(newProductEvent.kind, "supply");
+assert.equal(newProductEvent.changeType, "new");
+assert.equal(newProductEvent.priceChangeType, "new_price");
+assert.equal(newProductEvent.oldVal, "");
+assert.equal(newProductEvent.newVal, 1000);
+assert.equal(newProductEvent.diff, null);
+assert.equal(newProductEvent.diffRate, null);
+assert.ok(newProductEvent.priceChanges.some((entry) => entry.field === "출고가" && entry.oldVal === "" && entry.newVal === 1100));
+
+const zeroCostAnalysis = mh.buildMerchParserListHistoryAnalysis({
+  historyLogs: zeroToNewPricePlan.logs,
+  activeTags: [{ type: "catalog", name: "Cat" }],
+  masterProducts: zeroToNewPricePlan.newMaster,
+  parserListMarginRules: { Cat: divide10 },
+});
+assert.equal(zeroCostAnalysis.events.length, 1);
+assert.equal(zeroCostAnalysis.events[0].kind, "supply");
+assert.equal(zeroCostAnalysis.events[0].changeType, "new");
+assert.equal(zeroCostAnalysis.events[0].priceChangeType, "new_price");
+assert.equal(zeroCostAnalysis.events[0].oldVal, 0);
+assert.equal(zeroCostAnalysis.events[0].newVal, 1000);
+assert.equal(zeroCostAnalysis.events[0].diff, null);
+assert.equal(zeroCostAnalysis.events[0].diffRate, null);
+assert.equal(zeroCostAnalysis.counts.supply_new, 1);
+assert.equal(zeroCostAnalysis.counts.cost_up, 0);
+assert.equal(zeroCostAnalysis.counts.cost_down, 0);
+assert.equal(zeroCostAnalysis.counts.cost_recovery, 0);
+[newProductEvent, blankCostAnalysis.events[0], zeroCostAnalysis.events[0]].forEach((event) => {
+  assert.equal(mh.matchMerchParserAnalysisFilter(event, "supply_new"), true);
+  assert.equal(mh.matchMerchParserAnalysisFilter(event, "cost_up"), false);
+  assert.equal(mh.matchMerchParserAnalysisFilter(event, "cost_down"), false);
+  assert.equal(mh.matchMerchParserAnalysisFilter(event, "cost_recovery"), false);
+});
 
 const makePerformanceCostLogs = (count) => Array.from({ length: count }, (_, index) => ({
   id: `perf-cost-${index}`,
@@ -860,6 +985,9 @@ const parserAnalysisBlock = sliceBetween(merch, "window.buildMerchParserListHist
 assert.match(parserAnalysisBlock, /buildMerchParserPriceHistoryExactIndex\(logs, metrics\)/);
 assert.doesNotMatch(parserAnalysisBlock, /findMerchParserPriceHistoryExact\(logs,/);
 assert.match(merch, /이전 단가 없음/);
+assert.match(merch, /const isNewPriceEvent = event\.priceChangeType === 'new_price'/);
+assert.match(merch, /`입고 \$\{formatPreviousCost\(event\.oldVal\)\} → \$\{formatPrice\(event\.newVal\)\}`/);
+assert.match(merch, /`차액 - · 변동률 - · \$\{priceEvidence\}`/);
 
 assert.match(historyViewer, /merchHistory_v870/);
 assert.match(historyViewer, /oldVal/);
