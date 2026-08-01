@@ -1880,6 +1880,12 @@ const safeJSONParse = (key, defaultVal) => {
 // - trim한 카탈로그명 exact key와 확정 필드만 화면 분석에 사용한다.
 // ============================================================
 window.PARSER_LIST_MARGIN_RULES_KEY = 'parserListMarginRules_v1';
+window.normalizeParserRuleUpdatedAt = (value) => {
+    const rawUpdatedAt = typeof value === 'string' ? value.trim() : '';
+    if (!rawUpdatedAt || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/.test(rawUpdatedAt)) return '';
+    const parsedUpdatedAt = new Date(rawUpdatedAt);
+    return Number.isNaN(parsedUpdatedAt.getTime()) ? '' : parsedUpdatedAt.toISOString();
+};
 window.normalizeParserListMarginRules = (raw = {}) => {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
     const normalized = Object.create(null);
@@ -1887,12 +1893,11 @@ window.normalizeParserListMarginRules = (raw = {}) => {
         const name = String(catalogName || '').trim();
         if (!name || !value || typeof value !== 'object' || Array.isArray(value)) return;
         const marginRate = value.marginRate;
-        const calculationType = String(value.calculationType || '').trim();
-        const updatedAt = String(value.updatedAt || '').trim();
-        const parsedUpdatedAt = new Date(updatedAt);
-        if (typeof marginRate !== 'number' || !Number.isFinite(marginRate) || !['divide', 'multiply'].includes(calculationType) || Number.isNaN(parsedUpdatedAt.getTime())) return;
-        if (calculationType === 'divide' && marginRate === 100) return;
-        normalized[name] = { marginRate, calculationType, updatedAt: parsedUpdatedAt.toISOString() };
+        const calculationType = value.calculationType;
+        const updatedAt = window.normalizeParserRuleUpdatedAt(value.updatedAt);
+        if (typeof marginRate !== 'number' || !Number.isFinite(marginRate) || !['divide', 'multiply'].includes(calculationType) || !updatedAt) return;
+        if (calculationType === 'divide' && marginRate >= 100) return;
+        normalized[name] = { marginRate, calculationType, updatedAt };
     });
     return normalized;
 };
@@ -8957,29 +8962,54 @@ window.normalizeMerchParserSupplyChangeType = (logOrValue = '') => {
     if (['reappeared', 'reappear', 'returned', 'supply_reappeared', '재등장'].includes(value)) return 'reappeared';
     return '';
 };
+window.getMerchParserCostValueState = (value) => {
+    const present = value !== null && value !== undefined && String(value).trim() !== '';
+    return { present, value: present ? window.parseNum(value) : null };
+};
 window.classifyMerchParserCostChange = (oldVal, newVal) => {
-    const oldNum = window.parseNum(oldVal);
-    const newNum = window.parseNum(newVal);
-    if (newNum === 0) return 'zero';
+    const oldState = window.getMerchParserCostValueState(oldVal);
+    const newState = window.getMerchParserCostValueState(newVal);
+    if (!newState.present) return '';
+    const oldNum = oldState.value;
+    const newNum = newState.value;
+    if (!oldState.present) return newNum > 0 ? 'up' : '';
     if (oldNum === 0 && newNum > 0) return 'recovery';
+    if (oldNum > 0 && newNum === 0) return 'zero';
     if (newNum > oldNum) return 'up';
     if (newNum < oldNum) return 'down';
     return '';
 };
-window.findMerchParserPriceHistoryExact = (historyLogs = [], query = {}) => {
+window.makeMerchParserPriceHistoryExactKey = (query = {}) => {
     const code = String(query.code || '').trim();
     const catalogName = String(query.catalogName || '').trim();
     const timestampISO = String(query.timestampISO || '').trim();
     const field = String(query.field || '').trim();
-    if (!code || !catalogName || !timestampISO || !window.MERCH_PARSER_PRICE_HISTORY_FIELDS.includes(field)) return null;
-    return (Array.isArray(historyLogs) ? historyLogs : []).find(log => (
-        isExactParserHistoryLog(log) &&
-        getHistoryLogCode(log) === code &&
-        normalizeHistoryCatalog(log) === catalogName &&
-        String(log?.timestampISO || '').trim() === timestampISO &&
-        getHistoryFieldName(log) === field &&
-        !areMerchHistoryValuesEqual(getHistoryOldValue(log), getHistoryNewValue(log))
-    )) || null;
+    if (!code || !catalogName || !timestampISO || !window.MERCH_PARSER_PRICE_HISTORY_FIELDS.includes(field)) return '';
+    return JSON.stringify([code, catalogName, 'parser', timestampISO, field]);
+};
+window.buildMerchParserPriceHistoryExactIndex = (historyLogs = [], metrics = null) => {
+    const index = new Map();
+    (Array.isArray(historyLogs) ? historyLogs : []).forEach(log => {
+        if (metrics) metrics.historyIndexVisits = Number(metrics.historyIndexVisits || 0) + 1;
+        if (!isExactParserHistoryLog(log)) return;
+        const key = window.makeMerchParserPriceHistoryExactKey({
+            code: getHistoryLogCode(log),
+            catalogName: normalizeHistoryCatalog(log),
+            timestampISO: String(log?.timestampISO || '').trim(),
+            field: getHistoryFieldName(log)
+        });
+        if (!key || areMerchHistoryValuesEqual(getHistoryOldValue(log), getHistoryNewValue(log)) || index.has(key)) return;
+        index.set(key, log);
+    });
+    return index;
+};
+window.findMerchParserPriceHistoryExact = (historyOrIndex = [], query = {}) => {
+    const key = window.makeMerchParserPriceHistoryExactKey(query);
+    if (!key) return null;
+    const index = historyOrIndex instanceof Map
+        ? historyOrIndex
+        : window.buildMerchParserPriceHistoryExactIndex(historyOrIndex);
+    return index.get(key) || null;
 };
 window.matchMerchParserAnalysisFilter = (event = {}, filter = 'all') => {
     const value = String(filter || 'all');
@@ -8990,8 +9020,10 @@ window.matchMerchParserAnalysisFilter = (event = {}, filter = 'all') => {
 };
 window.buildMerchParserListHistoryAnalysis = ({ historyLogs = [], activeTags = [], masterProducts = {}, parserListMarginRules = {} } = {}) => {
     const selection = window.getMerchLoadedParserListSelection(activeTags);
-    if (!selection.loaded) return { active: false, selection, events: [], counts: {} };
+    const metrics = { historyIndexVisits: 0, historyEventVisits: 0, priceHistoryLookups: 0 };
+    if (!selection.loaded) return { active: false, selection, events: [], counts: {}, metrics };
     const logs = Array.isArray(historyLogs) ? historyLogs : [];
+    const priceHistoryIndex = window.buildMerchParserPriceHistoryExactIndex(logs, metrics);
     const rules = window.normalizeParserListMarginRules(parserListMarginRules);
     const masterByCode = new Map();
     Object.entries(masterProducts || {}).forEach(([key, item]) => {
@@ -9028,6 +9060,7 @@ window.buildMerchParserListHistoryAnalysis = ({ historyLogs = [], activeTags = [
     };
     const events = [];
     logs.forEach((log, index) => {
+        metrics.historyEventVisits++;
         if (!isExactParserHistoryLog(log)) return;
         const code = getHistoryLogCode(log);
         const catalogName = normalizeHistoryCatalog(log);
@@ -9039,12 +9072,15 @@ window.buildMerchParserListHistoryAnalysis = ({ historyLogs = [], activeTags = [
             if (!areMerchHistoryValuesEqual(oldVal, newVal)) {
                 const changeType = window.classifyMerchParserCostChange(oldVal, newVal);
                 if (changeType) {
-                    const oldNum = window.parseNum(oldVal);
-                    const newNum = window.parseNum(newVal);
-                    const diff = newNum - oldNum;
+                    const oldState = window.getMerchParserCostValueState(oldVal);
+                    const newState = window.getMerchParserCostValueState(newVal);
+                    const oldNum = oldState.value;
+                    const newNum = newState.value;
+                    const diff = oldState.present ? newNum - oldNum : null;
                     const timestampISO = String(log?.timestampISO || '').trim();
                     const priceChanges = window.MERCH_PARSER_PRICE_HISTORY_FIELDS.map(priceField => {
-                        const priceLog = window.findMerchParserPriceHistoryExact(logs, { code, catalogName, timestampISO, field: priceField });
+                        metrics.priceHistoryLookups++;
+                        const priceLog = window.findMerchParserPriceHistoryExact(priceHistoryIndex, { code, catalogName, timestampISO, field: priceField });
                         return priceLog ? {
                             field: priceField,
                             oldVal: getHistoryOldValue(priceLog),
@@ -9059,7 +9095,7 @@ window.buildMerchParserListHistoryAnalysis = ({ historyLogs = [], activeTags = [
                         oldNum,
                         newNum,
                         diff,
-                        diffRate: oldNum !== 0 ? (diff / oldNum) * 100 : null,
+                        diffRate: oldState.present && oldNum !== 0 ? (diff / oldNum) * 100 : null,
                         priceChanges
                     });
                 }
@@ -9077,7 +9113,7 @@ window.buildMerchParserListHistoryAnalysis = ({ historyLogs = [], activeTags = [
     Object.keys(window.MERCH_PARSER_ANALYSIS_FILTERS).forEach(key => {
         counts[key] = key === 'all' ? events.length : events.filter(event => window.matchMerchParserAnalysisFilter(event, key)).length;
     });
-    return { active: true, selection, events, counts };
+    return { active: true, selection, events, counts, metrics };
 };
 const formatSignedNumber = (v) => {
     const n = Number(v || 0);
@@ -9960,6 +9996,12 @@ const ParserListHistoryAnalysisPanel = ({ state }) => {
         if (value === undefined || value === null || String(value).trim() === '') return '-';
         return window.parseNum(value).toLocaleString();
     };
+    const formatPreviousCost = (value) => value === undefined || value === null || String(value).trim() === ''
+        ? '이전 단가 없음'
+        : formatPrice(value);
+    const formatCostDiff = (value) => value === undefined || value === null || String(value).trim() === ''
+        ? '-'
+        : formatSignedNumber(value);
     const formatTimestamp = (value) => {
         const raw = String(value || '').trim();
         if (!raw) return '-';
@@ -10016,7 +10058,7 @@ const ParserListHistoryAnalysisPanel = ({ state }) => {
                             h("div", { className: "mt-0.5 text-[10px] font-bold text-slate-500 truncate", title: event.catalogName }, `${event.catalogName} · ${formatTimestamp(event.displayTimestamp)}`)),
                         event.kind === 'cost'
                             ? h("div", { className: "min-w-0" },
-                                h("div", { className: "font-black text-slate-800 whitespace-nowrap" }, `입고 ${formatPrice(event.oldVal)} → ${formatPrice(event.newVal)} · 차액 ${formatSignedNumber(event.diff)}`),
+                                h("div", { className: "font-black text-slate-800 whitespace-nowrap" }, `입고 ${formatPreviousCost(event.oldVal)} → ${formatPrice(event.newVal)} · 차액 ${formatCostDiff(event.diff)}`),
                                 h("div", { className: "text-[10px] font-bold text-slate-500 whitespace-normal leading-tight", title: priceEvidence }, `변동률 ${event.diffRate === null ? '-' : formatSignedRate(event.diffRate)} · ${priceEvidence}`))
                             : h("div", { className: "min-w-0" },
                                 h("div", { className: "font-black text-slate-800" }, `공급정보 ${eventLabel}`),

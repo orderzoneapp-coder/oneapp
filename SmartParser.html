@@ -407,6 +407,13 @@ const safeParseJson = (raw, fallback) => {
 const PARSER_LIST_MARGIN_RULES_KEY = 'parserListMarginRules_v1';
 const PARSER_PRICE_HISTORY_FIELDS = ['출고가', '시중가', '1입고', '1출고'];
 const normalizeParserCatalogName = (value) => String(value == null ? '' : value).trim();
+const normalizeParserRuleUpdatedAt = (value) => {
+    const rawUpdatedAt = typeof value === 'string' ? value.trim() : '';
+    if (!rawUpdatedAt || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/.test(rawUpdatedAt))
+        return '';
+    const parsedUpdatedAt = new Date(rawUpdatedAt);
+    return Number.isNaN(parsedUpdatedAt.getTime()) ? '' : parsedUpdatedAt.toISOString();
+};
 const normalizeParserListMarginRules = (input = {}) => {
     const result = Object.create(null);
     if (!input || typeof input !== 'object' || Array.isArray(input))
@@ -417,15 +424,15 @@ const normalizeParserListMarginRules = (input = {}) => {
             return;
         const marginRate = rawRule.marginRate;
         const calculationType = rawRule.calculationType;
-        const parsedUpdatedAt = new Date(rawRule.updatedAt);
-        if (typeof marginRate !== 'number' || !Number.isFinite(marginRate) || !['divide', 'multiply'].includes(calculationType) || Number.isNaN(parsedUpdatedAt.getTime()))
+        const updatedAt = normalizeParserRuleUpdatedAt(rawRule.updatedAt);
+        if (typeof marginRate !== 'number' || !Number.isFinite(marginRate) || !['divide', 'multiply'].includes(calculationType) || !updatedAt)
             return;
-        if (calculationType === 'divide' && marginRate === 100)
+        if (calculationType === 'divide' && marginRate >= 100)
             return;
         result[name] = {
             marginRate,
             calculationType,
-            updatedAt: parsedUpdatedAt.toISOString()
+            updatedAt
         };
     });
     return result;
@@ -438,18 +445,24 @@ const resolveParserListMarginRule = (rules, catalogName) => {
     const normalized = normalizeParserListMarginRules(rules);
     return Object.prototype.hasOwnProperty.call(normalized, name) ? normalized[name] : null;
 };
+const hasParserCostValue = (value) => value !== null && value !== undefined && String(value).trim() !== '';
 const classifyParserInPriceChange = (oldValue, newValue) => {
+    if (!hasParserCostValue(newValue))
+        return '';
+    const hasOldValue = hasParserCostValue(oldValue);
     const oldPrice = parseNum(oldValue);
     const newPrice = parseNum(newValue);
-    if (newPrice === 0)
-        return 'zero';
+    if (!hasOldValue)
+        return newPrice > 0 ? 'up' : '';
     if (oldPrice === 0 && newPrice > 0)
         return 'recovery';
+    if (oldPrice > 0 && newPrice === 0)
+        return 'zero';
     if (newPrice > oldPrice)
         return 'up';
     if (newPrice < oldPrice)
         return 'down';
-    return 'same';
+    return '';
 };
 const hasParserRowInPrice = (row = {}) => {
     if (typeof row._hasParsedInPrice === 'boolean')
@@ -529,6 +542,36 @@ const loadParserExcludeDict = () => {
 };
 const getParserExcludeList = (excludeDict, currentTag = '') => Object.entries(normalizeParserExcludeDict(excludeDict || {})).map(([key, item]) => ({ key, ...(item || {}) })).filter(item => !currentTag || !item.catalog || item.catalog === currentTag);
 const normalizeSharedProductCode = (value) => String(value == null ? '' : value).replace(/\s/g, '').trim();
+const createSmartParserMasterCodeResolver = (masterProducts = {}) => {
+    const source = masterProducts && typeof masterProducts === 'object' && !Array.isArray(masterProducts) ? masterProducts : {};
+    const byNormalizedCode = new Map();
+    Object.entries(source).forEach(([masterKey, rawItem]) => {
+        const item = rawItem && typeof rawItem === 'object' ? rawItem : {};
+        const storedCode = hasParserCostValue(item['코드']) ? String(item['코드']) : String(masterKey);
+        const entry = { masterKey, actualCode: storedCode, item };
+        const aliases = new Set([normalizeSharedProductCode(masterKey), normalizeSharedProductCode(storedCode)].filter(Boolean));
+        aliases.forEach(alias => {
+            const candidates = byNormalizedCode.get(alias) || [];
+            if (!candidates.some(candidate => candidate.masterKey === masterKey))
+                candidates.push(entry);
+            byNormalizedCode.set(alias, candidates);
+        });
+    });
+    const resolve = (value) => {
+        const normalizedCode = normalizeSharedProductCode(value);
+        if (!normalizedCode)
+            return { exists: false, normalizedCode: '', masterKey: '', actualCode: '', item: null };
+        const candidates = byNormalizedCode.get(normalizedCode) || [];
+        if (candidates.length > 1) {
+            const candidateKeys = candidates.map(candidate => candidate.masterKey).join(', ');
+            throw new Error(`정규화 상품코드 [${normalizedCode}]와 일치하는 마스터 항목이 여러 개입니다: ${candidateKeys}`);
+        }
+        if (candidates.length === 1)
+            return { exists: true, normalizedCode, ...candidates[0] };
+        return { exists: false, normalizedCode, masterKey: normalizedCode, actualCode: normalizedCode, item: null };
+    };
+    return { resolve, normalize: normalizeSharedProductCode };
+};
 const getSmartParserHistoryCatalog = (log = {}) => normalizeParserCatalogName(log.catalogName || log.catalog || log.parserListName || log.parserList || '');
 const hasPriorParserSupplyStop = (history = [], codeValue = '', catalogName = '') => {
     const code = normalizeSharedProductCode(codeValue);
@@ -544,14 +587,15 @@ const buildSmartParserApplyPlan = ({ masterProducts = {}, rows = [], catalogLabe
     if (!catalog)
         throw new Error('SmartParser 적용 카탈로그가 없습니다.');
     const applyRows = Array.isArray(rows) ? rows.filter(Boolean) : [];
+    const codeResolver = createSmartParserMasterCodeResolver(masterProducts);
+    const resolvedRows = applyRows.map(row => ({ row, resolved: codeResolver.resolve(row?._matchCode || row?.코드) }));
     const seenCodes = new Set();
-    applyRows.forEach(row => {
-        const code = normalizeSharedProductCode(row?._matchCode || row?.코드);
-        if (!code)
+    resolvedRows.forEach(({ resolved }) => {
+        if (!resolved.normalizedCode)
             throw new Error('SmartParser 적용 상품코드가 없습니다.');
-        if (seenCodes.has(code))
-            throw new Error(`같은 상품코드가 한 번의 적용에 중복되었습니다: ${code}`);
-        seenCodes.add(code);
+        if (seenCodes.has(resolved.normalizedCode))
+            throw new Error(`같은 상품코드가 한 번의 적용에 중복되었습니다: ${resolved.normalizedCode}`);
+        seenCodes.add(resolved.normalizedCode);
     });
     const newMaster = { ...(masterProducts || {}) };
     const logs = [];
@@ -605,10 +649,11 @@ const buildSmartParserApplyPlan = ({ masterProducts = {}, rows = [], catalogLabe
             ...extra
         };
     };
-    applyRows.forEach(row => {
-        const code = normalizeSharedProductCode(row._matchCode || row.코드);
-        const sourceItem = masterProducts?.[code];
-        const isNewProduct = !sourceItem;
+    resolvedRows.forEach(({ row, resolved }) => {
+        const masterKey = resolved.masterKey;
+        const code = resolved.actualCode;
+        const sourceItem = resolved.item;
+        const isNewProduct = !resolved.exists;
         const oldItem = sourceItem ? { ...sourceItem } : {};
         const nextItem = sourceItem
             ? { ...sourceItem }
@@ -628,6 +673,7 @@ const buildSmartParserApplyPlan = ({ masterProducts = {}, rows = [], catalogLabe
         const hasInPrice = hasParserRowInPrice(row);
         const newInPrice = hasInPrice ? getParserRowInPrice(row) : null;
         const oldInValue = isNewProduct ? '' : (oldItem['입고가'] ?? '');
+        const hadOldInValue = hasParserCostValue(oldInValue);
         const oldInPrice = parseNum(oldInValue);
         const inPriceChangeType = hasInPrice ? classifyParserInPriceChange(oldInValue, newInPrice) : '';
         if (hasInPrice && (isNewProduct || oldInPrice !== newInPrice || newInPrice === 0)) {
@@ -642,7 +688,7 @@ const buildSmartParserApplyPlan = ({ masterProducts = {}, rows = [], catalogLabe
                 }
             }));
         }
-        if (hasInPrice && (isNewProduct || oldInPrice !== newInPrice))
+        if (hasInPrice && (isNewProduct || !hadOldInValue || oldInPrice !== newInPrice))
             masterMutationCount++;
         if (hasInPrice)
             nextItem['입고가'] = newInPrice;
@@ -693,9 +739,10 @@ const buildSmartParserApplyPlan = ({ masterProducts = {}, rows = [], catalogLabe
             }));
         }
         nextItem['카탈로그'] = newCatalogTags;
-        newMaster[code] = nextItem;
+        newMaster[masterKey] = nextItem;
 
         if (!isNewProduct && allowExistingInfoChanges) {
+            const code = masterKey;
             ['품목명', '규격', '단위'].forEach(fieldName => {
                 const editedTextFields = row._editedTextFields || {};
                 const hasExplicitTextEdit = Object.prototype.hasOwnProperty.call(editedTextFields, fieldName);
@@ -743,20 +790,24 @@ const buildSmartParserMissingTagPlan = ({ masterProducts = {}, codes = [], catal
     const catalog = normalizeParserCatalogName(catalogLabel);
     if (!catalog)
         throw new Error('SmartParser 공급중단 카탈로그가 없습니다.');
+    const codeResolver = createSmartParserMasterCodeResolver(masterProducts);
+    const resolvedByMasterKey = new Map();
+    (Array.isArray(codes) ? codes : []).forEach(value => {
+        const resolved = codeResolver.resolve(value);
+        if (resolved.exists && !resolvedByMasterKey.has(resolved.masterKey))
+            resolvedByMasterKey.set(resolved.masterKey, resolved);
+    });
     const newMaster = { ...(masterProducts || {}) };
     const logs = [];
     const processedCodes = [];
-    const uniqueCodes = new Set((Array.isArray(codes) ? codes : []).map(normalizeSharedProductCode).filter(Boolean));
-    uniqueCodes.forEach(code => {
-        const oldItem = masterProducts?.[code];
-        if (!oldItem)
-            return;
+    resolvedByMasterKey.forEach(resolved => {
+        const { masterKey, actualCode: code, item: oldItem } = resolved;
         const oldCatalogTags = oldItem['카탈로그'] || '';
         const hadCatalogTag = String(oldCatalogTags).split(',').map(tag => tag.trim()).filter(Boolean).includes(catalog);
         if (!hadCatalogTag)
             return;
         const newCatalogTags = removeTag(oldCatalogTags, catalog);
-        newMaster[code] = { ...oldItem, '카탈로그': newCatalogTags };
+        newMaster[masterKey] = { ...oldItem, '카탈로그': newCatalogTags };
         processedCodes.push(code);
         logs.push({
             id: generateUUID(),
@@ -1048,6 +1099,14 @@ const useParserActions = (appState) => {
             showToast("⚠️ 마스터 적용 전 기준 카탈로그 또는 견적서명을 먼저 선택/생성하세요.");
             return false;
         }
+        try {
+            const codeResolver = createSmartParserMasterCodeResolver(masterProducts);
+            toApply.forEach(row => codeResolver.resolve(row?._matchCode || row?.코드));
+        }
+        catch (error) {
+            showToast('❌ ' + (error?.message || '상품코드 중복을 확인할 수 없습니다.'));
+            return false;
+        }
         const catalogRule = resolveParserListMarginRule(parserListMarginRules, catalogLabel);
         const confirmMessage = catalogRule
             ? `분석된 ${toApply.length}건을 [${catalogLabel}] 카탈로그 룰(${catalogRule.marginRate}% · ${catalogRule.calculationType === 'divide' ? '나누기' : '곱하기'})로 마스터에 적용하시겠습니까?\n\n※ 변경된 입고가와 가격 필드는 같은 시각의 히스토리로 저장됩니다.\n※ 히스토리 저장에 실패하면 마스터 적용도 원상복구됩니다.`
@@ -1101,7 +1160,7 @@ const useParserActions = (appState) => {
         catch (error) {
             console.error(error);
             const errorMsg = error?.message || error?.name || String(error || '알 수 없는 오류');
-            if (errorMsg.includes('히스토리') || errorMsg.includes('마스터') || errorMsg.includes('IndexedDB') || errorMsg.includes('매핑사전') || errorMsg.includes('매핑제외') || errorMsg.includes('저장공간') || errorMsg.includes('Quota') || errorMsg.includes('localStorage'))
+            if (errorMsg.includes('정규화 상품코드') || errorMsg.includes('히스토리') || errorMsg.includes('마스터') || errorMsg.includes('IndexedDB') || errorMsg.includes('매핑사전') || errorMsg.includes('매핑제외') || errorMsg.includes('저장공간') || errorMsg.includes('Quota') || errorMsg.includes('localStorage'))
                 showToast('❌ ' + errorMsg);
             else
                 showToast('❌ 데이터베이스 저장 중 오류: ' + errorMsg);
@@ -1143,8 +1202,15 @@ const useParserActions = (appState) => {
         if (!erpCode || !erpCode.trim())
             return showToast("⚠️ ERP 코드를 입력해주세요.");
         const newCode = erpCode.trim();
-        if (masterProducts[newCode])
-            return showToast("⚠️ 이미 마스터 DB에 존재하는 코드입니다. '연결(바인딩)' 버튼을 이용해주세요.");
+        let existingResolution;
+        try {
+            existingResolution = createSmartParserMasterCodeResolver(masterProducts).resolve(newCode);
+        }
+        catch (error) {
+            return showToast('❌ ' + (error?.message || '상품코드 중복을 확인할 수 없습니다.'));
+        }
+        if (existingResolution.exists)
+            return showToast(`⚠️ 정규화 기준으로 이미 마스터 DB에 존재하는 코드입니다: ${existingResolution.actualCode}. '연결(바인딩)' 버튼을 이용해주세요.`);
         if (parserBuffer.some(item => item && item._id !== targetId && normalizeSharedProductCode(item._matchCode) === normalizeSharedProductCode(newCode)))
             return showToast("⚠️ 같은 ERP 코드가 이번 적용 목록에 이미 연결되어 있습니다.");
         const catalogLabel = normalizeParserCatalogName(currentTag);
@@ -1273,7 +1339,7 @@ const useParserActions = (appState) => {
         }
         catch (error) {
             console.error(error);
-            showToast("❌ 카탈로그 태그 삭제/공급중단 이력 저장 중 오류가 발생했습니다.");
+            showToast('❌ ' + (error?.message || '카탈로그 태그 삭제/공급중단 이력 저장 중 오류가 발생했습니다.'));
         }
         finally {
             setIsProcessing(false);
@@ -1777,13 +1843,15 @@ const ParserApp = () => {
     const missingRows = useMemo(() => {
         if (!currentTag)
             return [];
-        const matchedCodes = new Set(matchedRows.map(r => String(r._matchCode)));
-        const processedStr = new Set(Array.from(processedCodes).map(String));
+        const codeResolver = createSmartParserMasterCodeResolver(masterProducts);
+        const matchedCodes = new Set(matchedRows.map(r => codeResolver.normalize(r._matchCode)).filter(Boolean));
+        const processedStr = new Set(Array.from(processedCodes).map(codeResolver.normalize).filter(Boolean));
         const missing = [];
         for (const code in masterProducts) {
             const mItem = masterProducts[code];
             const tags = String(mItem['카탈로그'] || '').split(',').map(s => s.trim());
-            if (tags.includes(currentTag) && !matchedCodes.has(String(code)) && !processedStr.has(String(code)))
+            const normalizedCode = codeResolver.normalize(mItem?.코드 || code);
+            if (tags.includes(currentTag) && !matchedCodes.has(normalizedCode) && !processedStr.has(normalizedCode))
                 missing.push(mItem);
         }
         return missing;

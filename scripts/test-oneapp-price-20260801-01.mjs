@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import vm from "node:vm";
+import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -54,7 +55,7 @@ vm.runInContext(
     "const removeTag = (oldTags, tag) => String(oldTags || '').split(',').map(v => v.trim()).filter(v => v && v !== tag).join(', ');",
     engineSource,
     smartHelpers,
-    "globalThis.helpers = { calculatePricesEngine, normalizeParserListMarginRules, resolveParserListMarginRule, hasParserRowInPrice, getParserRowInPrice, areParserPriceValuesEqual, calculateParserCatalogPrices, buildSmartParserApplyPlan, buildSmartParserMissingTagPlan };",
+    "globalThis.helpers = { calculatePricesEngine, normalizeParserListMarginRules, resolveParserListMarginRule, classifyParserInPriceChange, hasParserRowInPrice, getParserRowInPrice, areParserPriceValuesEqual, calculateParserCatalogPrices, createSmartParserMasterCodeResolver, buildSmartParserApplyPlan, buildSmartParserMissingTagPlan };",
   ].join("\n"),
   smartContext,
 );
@@ -63,6 +64,31 @@ const iso = "2026-08-01T03:04:05.678Z";
 const divide10 = { marginRate: 10, calculationType: "divide", updatedAt: iso };
 const divide20 = { marginRate: 20, calculationType: "divide", updatedAt: iso };
 const multiply10 = { marginRate: 10, calculationType: "multiply", updatedAt: iso };
+const offsetIso = "2026-08-01T12:04:05.678+09:00";
+const canonicalOffsetIso = "2026-08-01T03:04:05.678Z";
+const parserRuleNormalizationCorpus = {
+  "  Cat  ": { marginRate: 10, calculationType: "divide", updatedAt: iso, extra: "drop" },
+  Offset: { marginRate: 15, calculationType: "multiply", updatedAt: offsetIso },
+  MultiplyAbove100: { marginRate: 101, calculationType: "multiply", updatedAt: iso },
+  stringRate: { marginRate: "10", calculationType: "divide", updatedAt: iso },
+  invalidDate: { marginRate: 5, calculationType: "divide", updatedAt: "invalid" },
+  nullDate: { marginRate: 5, calculationType: "divide", updatedAt: null },
+  blankDate: { marginRate: 5, calculationType: "divide", updatedAt: "   " },
+  numericEpochZero: { marginRate: 5, calculationType: "divide", updatedAt: 0 },
+  numericEpochPositive: { marginRate: 5, calculationType: "divide", updatedAt: 1722481445678 },
+  stringEpochZero: { marginRate: 5, calculationType: "divide", updatedAt: "0" },
+  naturalLanguageDate: { marginRate: 5, calculationType: "divide", updatedAt: "August 1, 2026" },
+  timezoneMissing: { marginRate: 5, calculationType: "divide", updatedAt: "2026-08-01T03:04:05.678" },
+  dateObject: { marginRate: 5, calculationType: "divide", updatedAt: new Date(iso) },
+  paddedType: { marginRate: 5, calculationType: " divide ", updatedAt: iso },
+  divide100: { marginRate: 100, calculationType: "divide", updatedAt: iso },
+  divide101: { marginRate: 101, calculationType: "divide", updatedAt: iso },
+};
+const expectedNormalizedRules = {
+  Cat: { marginRate: 10, calculationType: "divide", updatedAt: iso },
+  Offset: { marginRate: 15, calculationType: "multiply", updatedAt: canonicalOffsetIso },
+  MultiplyAbove100: { marginRate: 101, calculationType: "multiply", updatedAt: iso },
+};
 
 assert.equal(h.calculatePricesEngine(10000, {}, {}, [], true, divide10)["출고가"], 11100);
 assert.equal(h.calculatePricesEngine(10000, {}, {}, [], true, divide20)["출고가"], 12500);
@@ -95,17 +121,17 @@ assert.equal(
   "the legacy engine fallback remains available outside the SmartParser exact-rule path",
 );
 
-const normalizedRule = JSON.parse(JSON.stringify(h.normalizeParserListMarginRules({
-  "  Cat  ": { marginRate: 10, calculationType: "divide", updatedAt: iso, extra: "drop" },
-  stringRate: { marginRate: "10", calculationType: "divide", updatedAt: iso },
-  bad: { marginRate: 5, calculationType: "divide", updatedAt: "invalid" },
-  hundred: { marginRate: 100, calculationType: "divide", updatedAt: iso },
-})));
-assert.deepEqual(normalizedRule, {
-  Cat: { marginRate: 10, calculationType: "divide", updatedAt: iso },
-});
+const normalizedRule = JSON.parse(JSON.stringify(h.normalizeParserListMarginRules(parserRuleNormalizationCorpus)));
+assert.deepEqual(normalizedRule, expectedNormalizedRules);
 assert.equal(h.resolveParserListMarginRule(normalizedRule, " Cat ").marginRate, 10);
 assert.equal(h.resolveParserListMarginRule(normalizedRule, "cat"), null, "catalog matching is case-sensitive exact matching");
+assert.equal(h.resolveParserListMarginRule({ Cat: parserRuleNormalizationCorpus.nullDate }, "Cat"), null, "null updatedAt must never become an epoch rule");
+assert.equal(h.classifyParserInPriceChange("", 10000), "up");
+assert.equal(h.classifyParserInPriceChange(null, 10000), "up");
+assert.equal(h.classifyParserInPriceChange(0, 10000), "recovery");
+assert.equal(h.classifyParserInPriceChange("0", 10000), "recovery");
+assert.equal(h.classifyParserInPriceChange(10000, 0), "zero");
+assert.equal(h.classifyParserInPriceChange("", 0), "", "blank-to-zero is not a positive-to-zero event");
 
 const existingMaster = {
   A: {
@@ -124,6 +150,115 @@ const existingMaster = {
     "판매여부": 1,
   },
 };
+const spacedMaster = {
+  "A 1": {
+    "코드": "A 1",
+    "품목명": "공백코드 기존상품",
+    "카탈로그": "Other",
+    "입고가": 9000,
+    "출고가": 10000,
+    "판매여부": 0,
+  },
+};
+const spacedResolution = h.createSmartParserMasterCodeResolver(spacedMaster).resolve("A1");
+assert.equal(spacedResolution.exists, true);
+assert.equal(spacedResolution.masterKey, "A 1");
+assert.equal(spacedResolution.actualCode, "A 1");
+const spacedApplyPlan = h.buildSmartParserApplyPlan({
+  masterProducts: spacedMaster,
+  rows: [{ _matchCode: "A1", _hasParsedInPrice: false, "품목명": "공백코드 기존상품", finalData: {} }],
+  catalogLabel: "Cat",
+  catalogRule: null,
+  timestampISO: iso,
+  timestampLabel: "now",
+  updateTextData: false,
+  allowExistingInfoChanges: false,
+});
+assert.deepEqual(Object.keys(spacedApplyPlan.newMaster), ["A 1"]);
+assert.equal(Object.prototype.hasOwnProperty.call(spacedApplyPlan.newMaster, "A1"), false);
+assert.equal(spacedApplyPlan.newMaster["A 1"]["코드"], "A 1");
+assert.equal(spacedApplyPlan.newMaster["A 1"]["판매여부"], 0);
+assert.equal(spacedApplyPlan.logs.some((log) => log.supplyChangeType === "new"), false);
+assert.deepEqual(JSON.parse(JSON.stringify(spacedApplyPlan.processedCodes)), ["A 1"]);
+
+const spacedReappearedPlan = h.buildSmartParserApplyPlan({
+  masterProducts: spacedMaster,
+  rows: [{ _matchCode: "A1", _hasParsedInPrice: false, "품목명": "공백코드 기존상품", finalData: {} }],
+  catalogLabel: "Cat",
+  catalogRule: null,
+  priorHistory: [{ source: "parser", code: "A1", catalogName: "Cat", supplyChangeType: "stopped" }],
+  timestampISO: iso,
+  timestampLabel: "now",
+  updateTextData: false,
+  allowExistingInfoChanges: false,
+});
+assert.equal(spacedReappearedPlan.logs.filter((log) => log.supplyChangeType === "reappeared").length, 1);
+assert.equal(spacedReappearedPlan.logs.some((log) => ["new", "tag_first"].includes(log.supplyChangeType)), false);
+assert.deepEqual(Object.keys(spacedReappearedPlan.newMaster), ["A 1"]);
+
+const spacedMissingPlan = h.buildSmartParserMissingTagPlan({
+  masterProducts: { "A 1": { ...spacedMaster["A 1"], "카탈로그": "Cat, Other" } },
+  codes: ["A1"],
+  catalogLabel: "Cat",
+  timestampISO: iso,
+  timestampLabel: "now",
+});
+assert.deepEqual(Object.keys(spacedMissingPlan.newMaster), ["A 1"]);
+assert.equal(spacedMissingPlan.newMaster["A 1"]["카탈로그"], "Other");
+assert.equal(spacedMissingPlan.newMaster["A 1"]["판매여부"], 0);
+assert.equal(spacedMissingPlan.logs.length, 1);
+assert.equal(spacedMissingPlan.logs[0].code, "A 1");
+
+const distinctKeyMaster = {
+  "stored-row-key": { ...spacedMaster["A 1"], "코드": "A 1" },
+};
+const distinctKeyPlan = h.buildSmartParserApplyPlan({
+  masterProducts: distinctKeyMaster,
+  rows: [{ _matchCode: "A1", _hasParsedInPrice: false, "품목명": "공백코드 기존상품", finalData: {} }],
+  catalogLabel: "Cat",
+  catalogRule: null,
+  timestampISO: iso,
+  timestampLabel: "now",
+  updateTextData: false,
+  allowExistingInfoChanges: false,
+});
+assert.deepEqual(Object.keys(distinctKeyPlan.newMaster), ["stored-row-key"]);
+assert.equal(distinctKeyPlan.newMaster["stored-row-key"]["코드"], "A 1");
+assert.equal(distinctKeyPlan.logs.some((log) => log.supplyChangeType === "new"), false);
+assert.ok(distinctKeyPlan.logs.every((log) => log.code === "A 1"));
+
+const ambiguousMaster = {
+  "A 1": { "코드": "A 1", "품목명": "중복1", "카탈로그": "Cat", "판매여부": 1 },
+  A1: { "코드": "A1", "품목명": "중복2", "카탈로그": "Cat", "판매여부": 0 },
+};
+const ambiguousMasterBefore = JSON.parse(JSON.stringify(ambiguousMaster));
+const ambiguousHistory = [{ id: "before", source: "parser" }];
+const ambiguousHistoryBefore = JSON.parse(JSON.stringify(ambiguousHistory));
+let ambiguousApplyWrites = 0;
+assert.throws(() => {
+  h.buildSmartParserApplyPlan({
+    masterProducts: ambiguousMaster,
+    rows: [{ _matchCode: "A1", _hasParsedInPrice: false, "품목명": "중복", finalData: {} }],
+    catalogLabel: "Cat",
+    catalogRule: null,
+    priorHistory: ambiguousHistory,
+    timestampISO: iso,
+    timestampLabel: "now",
+  });
+  ambiguousApplyWrites++;
+}, /정규화 상품코드 \[A1\].*여러 개/);
+assert.equal(ambiguousApplyWrites, 0);
+assert.deepEqual(ambiguousMaster, ambiguousMasterBefore);
+assert.deepEqual(ambiguousHistory, ambiguousHistoryBefore);
+assert.throws(() => h.buildSmartParserMissingTagPlan({
+  masterProducts: ambiguousMaster,
+  codes: ["A1"],
+  catalogLabel: "Cat",
+  timestampISO: iso,
+  timestampLabel: "now",
+}), /정규화 상품코드 \[A1\].*여러 개/);
+assert.deepEqual(ambiguousMaster, ambiguousMasterBefore);
+
 const existingPlan = h.buildSmartParserApplyPlan({
   masterProducts: existingMaster,
   rows: [{
@@ -173,6 +308,57 @@ assert.ok(newPlan.logs.some((log) => log.supplyChangeType === "new"));
 assert.ok(newPlan.logs.some((log) => log.supplyChangeType === "tag_first" && log.isNewProduct === true));
 assert.ok(newPlan.logs.every((log) => log.timestampISO === iso));
 assert.equal(newPlan.logs.find((log) => log.field === "출고가").oldVal, "");
+const newPlanInPriceLog = newPlan.logs.find((log) => log.field === "입고가");
+assert.equal(newPlanInPriceLog.oldVal, "");
+assert.equal(newPlanInPriceLog.priceChangeType, "up", "a first positive cost is not a zero recovery");
+
+const blankCostMaster = {
+  C: { "코드": "C", "품목명": "공란단가", "카탈로그": "Cat", "입고가": "", "출고가": 5000, "판매여부": 1 },
+};
+const blankToPositivePlan = h.buildSmartParserApplyPlan({
+  masterProducts: blankCostMaster,
+  rows: [{ _matchCode: "C", _hasParsedInPrice: true, "품목명": "공란단가", finalData: { "입고가": 10000 } }],
+  catalogLabel: "Cat",
+  catalogRule: null,
+  timestampISO: iso,
+  timestampLabel: "now",
+  updateTextData: false,
+  allowExistingInfoChanges: false,
+});
+const blankToPositiveLog = blankToPositivePlan.logs.find((log) => log.field === "입고가");
+assert.equal(blankToPositiveLog.oldVal, "");
+assert.equal(blankToPositiveLog.newVal, 10000);
+assert.equal(blankToPositiveLog.priceChangeType, "up");
+assert.equal(blankToPositiveLog.diffRate, null);
+
+const blankInputMaster = {
+  C: { "코드": "C", "품목명": "공란입력", "카탈로그": "Cat", "입고가": 9000, "출고가": 10000, "판매여부": 1 },
+};
+const blankInputPlan = h.buildSmartParserApplyPlan({
+  masterProducts: blankInputMaster,
+  rows: [{ _matchCode: "C", _hasParsedInPrice: false, "품목명": "공란입력", "입고가": "   ", finalData: {} }],
+  catalogLabel: "Cat",
+  catalogRule: divide10,
+  timestampISO: iso,
+  timestampLabel: "now",
+  updateTextData: false,
+  allowExistingInfoChanges: false,
+});
+assert.deepEqual(JSON.parse(JSON.stringify(blankInputPlan.newMaster)), blankInputMaster);
+assert.equal(blankInputPlan.masterMutationCount, 0);
+assert.equal(blankInputPlan.logs.length, 0);
+
+const explicitRecoveryPlan = h.buildSmartParserApplyPlan({
+  masterProducts: { C: { ...blankInputMaster.C, "입고가": 0 } },
+  rows: [{ _matchCode: "C", _hasParsedInPrice: true, "품목명": "복구", finalData: { "입고가": 10000 } }],
+  catalogLabel: "Cat",
+  catalogRule: null,
+  timestampISO: iso,
+  timestampLabel: "now",
+  updateTextData: false,
+  allowExistingInfoChanges: false,
+});
+assert.equal(explicitRecoveryPlan.logs.find((log) => log.field === "입고가").priceChangeType, "recovery");
 
 const existingMultiplyPlan = h.buildSmartParserApplyPlan({
   masterProducts: existingMaster,
@@ -413,12 +599,19 @@ noEngineContext.pricingProbe.calculateParserCatalogPrices(10000, {}, {}, divide1
 assert.equal(noEngineContext.pricingProbe.calls(), 1);
 
 const applyBlock = sliceBetween(smart, "const handleApplyMatched =", "const handleConfirmMapping =", "SmartParser apply handler");
+assert.ok(applyBlock.indexOf("createSmartParserMasterCodeResolver(masterProducts)") < applyBlock.indexOf("window.confirm(confirmMessage)"), "ambiguous normalized codes must be rejected before confirmation and writes");
 assert.ok(applyBlock.indexOf("window.confirm(confirmMessage)") < applyBlock.indexOf("setIsProcessing(true)"), "cancel must return before mutations");
 assert.ok(applyBlock.indexOf("window.confirm(confirmMessage)") < applyBlock.indexOf("buildSmartParserApplyPlan({"));
 assert.ok(applyBlock.indexOf("window.confirm(confirmMessage)") < applyBlock.indexOf("await saveMaster(newMaster, sharedEntries)"));
 assert.match(applyBlock, /if \(!window\.confirm\(confirmMessage\)\)\s*return false/);
 assert.match(applyBlock, /allowExistingInfoChanges: !!catalogRule/);
 assert.match(applyBlock, /판매가격은 계산하거나 변경하지 않습니다/);
+const createNewBlock = sliceBetween(smart, "const handleCreateNewMasterItem =", "const handleIgnoreParsedItem =", "SmartParser new-product precheck");
+assert.match(createNewBlock, /createSmartParserMasterCodeResolver\(masterProducts\)\.resolve\(newCode\)/);
+assert.doesNotMatch(createNewBlock, /if \(masterProducts\[newCode\]\)/);
+const missingRowsBlock = sliceBetween(smart, "const missingRows = useMemo", "const masterSearchResults = useMemo", "SmartParser missing rows");
+assert.match(missingRowsBlock, /createSmartParserMasterCodeResolver\(masterProducts\)/);
+assert.match(missingRowsBlock, /codeResolver\.normalize/);
 assert.doesNotMatch(smart, /merchMarginRules_v878/);
 assert.doesNotMatch(smart, /pending_shop_status|merchStoppedProducts_v2/);
 assert.doesNotMatch(smart, /\['판매여부'\]\s*=(?!=)/);
@@ -487,17 +680,28 @@ const settingsHelperSource = sliceBetween(
 );
 const settingsContext = vm.createContext({ Date, Object, Array, String, Number });
 vm.runInContext(settingsHelperSource + "\nglobalThis.normalizeRules = normalizeParserListMarginRules;", settingsContext);
-const settingsNormalized = JSON.parse(JSON.stringify(settingsContext.normalizeRules({
-  " Cat ": { marginRate: 20, calculationType: "multiply", updatedAt: iso, warehouse: "must-drop" },
-  invalid100: { marginRate: 100, calculationType: "divide", updatedAt: iso },
-})));
-assert.deepEqual(settingsNormalized, { Cat: { marginRate: 20, calculationType: "multiply", updatedAt: iso } });
+const settingsNormalized = JSON.parse(JSON.stringify(settingsContext.normalizeRules(parserRuleNormalizationCorpus)));
+assert.deepEqual(settingsNormalized, expectedNormalizedRules);
 const cloudBlock = sliceBetween(settings, "const CONFIG_SYNC_KEYS =", "const applySettingsCloudData =", "settings cloud payload");
 assert.doesNotMatch(cloudBlock, /parserListMarginRules_v1|PARSER_LIST_MARGIN_RULES_KEY/);
 assert.match(settings, /merchMarginRules_v878/);
 assert.match(settings, /const addMarginRule =/);
 assert.match(settings, /const updateMarginRule =/);
 assert.match(settings, /const deleteMarginRule =/);
+const saveParserListRuleBlock = sliceBetween(settings, "const saveParserListMarginRule =", "const deleteParserListMarginRule =", "settings parser-list rule save handler");
+assert.match(saveParserListRuleBlock, /calculationType === 'divide' && marginRate >= 100/);
+
+const merchRuleHelperSource = sliceBetween(
+  merch,
+  "window.PARSER_LIST_MARGIN_RULES_KEY =",
+  "const TABLE_VIEW_TARGETS =",
+  "MerchOps parser-list rule helpers",
+);
+const merchRuleWindow = {};
+const merchRuleContext = vm.createContext({ window: merchRuleWindow, Date, Object, Array, String, Number });
+vm.runInContext(merchRuleHelperSource, merchRuleContext);
+const merchNormalizedRules = JSON.parse(JSON.stringify(merchRuleWindow.normalizeParserListMarginRules(parserRuleNormalizationCorpus)));
+assert.deepEqual(merchNormalizedRules, expectedNormalizedRules);
 
 const merchHelpers = sliceBetween(
   merch,
@@ -506,9 +710,7 @@ const merchHelpers = sliceBetween(
   "MerchOps parser analysis helpers",
 );
 const merchWindow = {
-  normalizeParserListMarginRules(raw) {
-    return raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
-  },
+  normalizeParserListMarginRules: merchRuleWindow.normalizeParserListMarginRules,
   parseNum(value) {
     if (!value) return 0;
     return Number(String(value).replace(/,/g, "").replace(/[^\d.-]/g, "")) || 0;
@@ -536,6 +738,12 @@ vm.runInContext(
   merchContext,
 );
 const mh = merchContext.window;
+assert.equal(mh.classifyMerchParserCostChange("", 10000), "up");
+assert.equal(mh.classifyMerchParserCostChange(null, 10000), "up");
+assert.equal(mh.classifyMerchParserCostChange(0, 10000), "recovery");
+assert.equal(mh.classifyMerchParserCostChange("0", 10000), "recovery");
+assert.equal(mh.classifyMerchParserCostChange(10000, 0), "zero");
+assert.equal(mh.classifyMerchParserCostChange("", 0), "");
 assert.equal(mh.buildMerchParserListHistoryAnalysis({
   historyLogs: [],
   activeTags: [],
@@ -587,6 +795,71 @@ const supplyEvent = merchAnalysis.events.find((event) => event.kind === "supply"
 assert.equal(Object.prototype.hasOwnProperty.call(supplyEvent, "diffRate"), false);
 assert.equal(mh.findMerchParserPriceHistoryExact(analysisLogs, { code: "A", catalogName: "Cat", timestampISO: t1, field: "출고가" }).id, "price-exact");
 assert.equal(mh.findMerchParserPriceHistoryExact(analysisLogs, { code: "A", catalogName: "Cat", timestampISO: t1, field: "시중가" }), null);
+
+const blankCostAnalysis = mh.buildMerchParserListHistoryAnalysis({
+  historyLogs: [{ id: "cost-first-positive", source: "parser", code: "A", catalogName: "Cat", timestampISO: t1, field: "입고가", oldVal: "", newVal: 10000 }],
+  activeTags: [{ type: "catalog", name: "Cat" }],
+  masterProducts: { A: { 코드: "A", 품목명: "상품A", 출고가: 12000, 판매여부: 1 } },
+  parserListMarginRules: { Cat: divide10 },
+});
+assert.equal(blankCostAnalysis.events.length, 1);
+assert.equal(blankCostAnalysis.events[0].changeType, "up");
+assert.equal(blankCostAnalysis.events[0].oldVal, "");
+assert.equal(blankCostAnalysis.events[0].oldNum, null);
+assert.equal(blankCostAnalysis.events[0].diff, null);
+assert.equal(blankCostAnalysis.events[0].diffRate, null);
+
+const makePerformanceCostLogs = (count) => Array.from({ length: count }, (_, index) => ({
+  id: `perf-cost-${index}`,
+  source: "parser",
+  code: "A",
+  catalogName: "Cat",
+  timestampISO: new Date(Date.UTC(2026, 7, 1) + index).toISOString(),
+  field: "입고가",
+  oldVal: 100,
+  newVal: 101,
+}));
+const performanceMaster = { A: { 코드: "A", 품목명: "성능상품", 출고가: 150, 판매여부: 1 } };
+const performanceTags = [{ type: "catalog", name: "Cat" }];
+const noPricePerformanceLogs = makePerformanceCostLogs(2000);
+const noPriceStarted = performance.now();
+const noPricePerformance = mh.buildMerchParserListHistoryAnalysis({
+  historyLogs: noPricePerformanceLogs,
+  activeTags: performanceTags,
+  masterProducts: performanceMaster,
+  parserListMarginRules: {},
+});
+const noPriceElapsedMs = performance.now() - noPriceStarted;
+assert.equal(noPricePerformance.events.length, 2000);
+assert.equal(noPricePerformance.metrics.historyIndexVisits, 2000);
+assert.equal(noPricePerformance.metrics.historyEventVisits, 2000);
+assert.equal(noPricePerformance.metrics.priceHistoryLookups, 8000);
+assert.ok(noPricePerformance.events.every((event) => event.priceChanges.length === 0));
+assert.ok(noPriceElapsedMs < 5000, `2,000 no-price histories must finish under 5 seconds (actual ${Math.round(noPriceElapsedMs)}ms)`);
+
+const exactPricePerformanceLogs = noPricePerformanceLogs.flatMap((costLog, index) => [
+  costLog,
+  { id: `perf-price-${index}`, source: "parser", code: "A", catalogName: "Cat", timestampISO: costLog.timestampISO, field: "출고가", oldVal: 120, newVal: 130 },
+]);
+const exactPriceStarted = performance.now();
+const exactPricePerformance = mh.buildMerchParserListHistoryAnalysis({
+  historyLogs: exactPricePerformanceLogs,
+  activeTags: performanceTags,
+  masterProducts: performanceMaster,
+  parserListMarginRules: {},
+});
+const exactPriceElapsedMs = performance.now() - exactPriceStarted;
+assert.equal(exactPricePerformance.events.length, 2000);
+assert.equal(exactPricePerformance.metrics.historyIndexVisits, 4000);
+assert.equal(exactPricePerformance.metrics.historyEventVisits, 4000);
+assert.equal(exactPricePerformance.metrics.priceHistoryLookups, 8000);
+assert.ok(exactPricePerformance.events.every((event) => event.priceChanges.length === 1 && event.priceChanges[0].field === "출고가"));
+assert.ok(exactPriceElapsedMs < 5000, `2,000 exact price joins must finish under 5 seconds (actual ${Math.round(exactPriceElapsedMs)}ms)`);
+
+const parserAnalysisBlock = sliceBetween(merch, "window.buildMerchParserListHistoryAnalysis =", "const formatSignedNumber =", "MerchOps analysis implementation");
+assert.match(parserAnalysisBlock, /buildMerchParserPriceHistoryExactIndex\(logs, metrics\)/);
+assert.doesNotMatch(parserAnalysisBlock, /findMerchParserPriceHistoryExact\(logs,/);
+assert.match(merch, /이전 단가 없음/);
 
 assert.match(historyViewer, /merchHistory_v870/);
 assert.match(historyViewer, /oldVal/);

@@ -98,6 +98,13 @@ const safeJSONParse = (key, defaultValue) => {
 };
 const PARSER_LIST_MARGIN_RULES_KEY = 'parserListMarginRules_v1';
 const normalizeParserCatalogName = (value) => String(value !== null && value !== void 0 ? value : '').trim();
+const normalizeParserRuleUpdatedAt = (value) => {
+    const rawUpdatedAt = typeof value === 'string' ? value.trim() : '';
+    if (!rawUpdatedAt || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/.test(rawUpdatedAt))
+        return '';
+    const parsedUpdatedAt = new Date(rawUpdatedAt);
+    return Number.isNaN(parsedUpdatedAt.getTime()) ? '' : parsedUpdatedAt.toISOString();
+};
 const normalizeParserListMarginRules = (input = {}) => {
     const result = Object.create(null);
     if (!input || typeof input !== 'object' || Array.isArray(input))
@@ -108,20 +115,19 @@ const normalizeParserListMarginRules = (input = {}) => {
             return;
         const marginRate = rawRule.marginRate;
         const calculationType = rawRule.calculationType;
-        const rawUpdatedAt = typeof rawRule.updatedAt === 'string' ? rawRule.updatedAt.trim() : '';
-        const parsedUpdatedAt = rawUpdatedAt ? new Date(rawUpdatedAt) : null;
+        const updatedAt = normalizeParserRuleUpdatedAt(rawRule.updatedAt);
         if (typeof marginRate !== 'number' || !Number.isFinite(marginRate))
             return;
         if (calculationType !== 'divide' && calculationType !== 'multiply')
             return;
-        if (calculationType === 'divide' && marginRate === 100)
+        if (calculationType === 'divide' && marginRate >= 100)
             return;
-        if (!parsedUpdatedAt || Number.isNaN(parsedUpdatedAt.getTime()))
+        if (!updatedAt)
             return;
         result[catalogName] = {
             marginRate,
             calculationType,
-            updatedAt: parsedUpdatedAt.toISOString()
+            updatedAt
         };
     });
     return result;
@@ -1475,8 +1481,8 @@ const App = () => {
             return showToast('⚠️ SmartParser 마진율은 유효한 숫자로 입력하세요.');
         if (calculationType !== 'divide' && calculationType !== 'multiply')
             return showToast('⚠️ SmartParser 계산방식을 다시 선택하세요.');
-        if (calculationType === 'divide' && marginRate === 100)
-            return showToast('⚠️ 나누기 방식은 마진율 100%를 사용할 수 없습니다.');
+        if (calculationType === 'divide' && marginRate >= 100)
+            return showToast('⚠️ 나누기 방식은 마진율 100% 이상을 사용할 수 없습니다.');
         const existed = Object.prototype.hasOwnProperty.call(config.parserListMarginRules || {}, catalogName);
         config.setParserListMarginRules(prev => {
             const next = { ...normalizeParserListMarginRules(prev || {}) };
