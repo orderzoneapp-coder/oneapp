@@ -7,15 +7,15 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  const WORKBOOK_VERSION = "1.0.0";
+  const WORKBOOK_VERSION = "1.1.0";
   const REQUIRED_SHEETS = Object.freeze([
+    "창고별 재고",
     "미출고현황",
     "상품별요약",
     "발주관리",
     "적요이슈",
     "검증결과",
     "주문원본",
-    "재고원본",
   ]);
 
   const COLORS = Object.freeze({
@@ -27,6 +27,7 @@
     orange: "B45309",
     orangeSoft: "FEF3C7",
     blueSoft: "DBEAFE",
+    purpleSoft: "F3E8FF",
     greenSoft: "DCFCE7",
     red: "B91C1C",
     redSoft: "FEE2E2",
@@ -86,6 +87,56 @@
   function applyCellStyle(cell, style) {
     if (!cell) return;
     cell.s = style;
+  }
+
+  function tableBorder() {
+    const border = { style: "thin", color: { rgb: COLORS.line } };
+    return { top: border, bottom: border, left: border, right: border };
+  }
+
+  function ensureCell(sheet, XLSX, rowIndex, columnIndex) {
+    const address = XLSX.utils.encode_cell({ r: rowIndex, c: columnIndex });
+    if (!sheet[address]) sheet[address] = { t: "s", v: "" };
+    return sheet[address];
+  }
+
+  function isBlank(value) {
+    return value === undefined || value === null || String(value).trim() === "";
+  }
+
+  function displayInventoryValue(value) {
+    if (value === 0 || (typeof value === "string" && value.trim() === "0")) return "";
+    return safeValue(value);
+  }
+
+  function allocationStatusLabel(status) {
+    const labels = {
+      "추가 구매 필요": "구매",
+      "부분출고·추가구매": "추가",
+      "서울 1차 구매분 출고": "서울",
+      "전재고 출고": "재고",
+    };
+    return labels[status] || safeValue(status);
+  }
+
+  function managerFill(manager) {
+    const palette = ["FCE7D6", "DDEBF7", "E2F0D9", "EDE9FE", "FEF3C7", "FCE7F3", "CCFBF1"];
+    const text = String(manager || "");
+    let hash = 0;
+    for (let index = 0; index < text.length; index += 1) {
+      hash = (hash * 31 + text.charCodeAt(index)) >>> 0;
+    }
+    return palette[hash % palette.length];
+  }
+
+  function allocationStatusStyle(status) {
+    if (status === "구매" || status === "재고정보 없음") {
+      return { fill: COLORS.redSoft, font: COLORS.red };
+    }
+    if (status === "추가") return { fill: COLORS.orangeSoft, font: COLORS.orange };
+    if (status === "서울") return { fill: COLORS.blueSoft, font: "1D4ED8" };
+    if (status === "재고") return { fill: COLORS.greenSoft, font: "15803D" };
+    return { fill: COLORS.orangeSoft, font: COLORS.orange };
   }
 
   function buildTableSheet(XLSX, config) {
@@ -214,108 +265,104 @@
 
   function buildAllocationSheet(workspace, XLSX) {
     const headers = [
-      "배정순서",
-      "일자-No.",
       "담당",
       "상품코드",
       "품목명",
       "규격",
       "주문수량",
-      "전재고 원값",
-      "서울 1차 구매분",
-      "4전송 원값",
-      "서울 1차 구매잔량",
-      "전재고 배정",
-      "서울 1차 구매분 배정",
-      "추가 구매 필요",
-      "출고판정",
-      "배정 후 전재고",
-      "배정 후 서울잔량",
-      "단가",
+      "재고",
+      "서울",
+      "전송",
       "적요",
-      "적요1",
       "거래처",
       "그룹",
-      "재고 매칭상태",
-      "배정 검증",
+      "출고",
     ];
     const rows = workspace.allocations.map((row) => [
-      row.inputOrder,
-      row.orderNumber,
       row.manager,
       row.productCode,
       row.productName,
       row.specification,
       row.quantity,
-      row.inventoryMatched ? row.wholeStockRaw : "",
-      row.inventoryMatched ? row.seoulFirstPurchaseRaw : "",
-      row.inventoryMatched ? row.firstTransferRaw : "",
-      row.inventoryMatched ? row.seoulFirstPurchaseRemaining : "",
-      row.wholeAllocation,
-      row.seoulAllocation,
-      row.inventoryMatched ? row.purchaseNeed : "",
-      row.status,
-      row.inventoryMatched ? row.wholeRemaining : "",
-      row.inventoryMatched ? row.seoulRemaining : "",
-      row.unitPrice ?? "",
+      row.inventoryMatched ? displayInventoryValue(row.wholeStockRaw) : "",
+      row.inventoryMatched ? displayInventoryValue(row.seoulFirstPurchaseRaw) : "",
+      row.inventoryMatched ? displayInventoryValue(row.firstTransferRaw) : "",
       row.note,
-      row.note1,
       row.customer,
       row.group,
-      row.matchStatus,
-      row.inventoryMatched
-        ? Math.abs(row.reconciliationDifference || 0) <= 1e-9
-          ? "정상"
-          : "오류"
-        : "확인 필요",
+      allocationStatusLabel(row.status),
     ]);
+    const sheet = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+    const lastRow = Math.max(1, rows.length + 1);
+    sheet["!cols"] = [
+      { wch: 13 }, { wch: 15 }, { wch: 31 }, { wch: 13 }, { wch: 11 }, { wch: 12 },
+      { wch: 12 }, { wch: 12 }, { wch: 24 }, { wch: 22 }, { wch: 14 }, { wch: 12 },
+    ];
+    sheet["!rows"] = [{ hpt: 27 }];
+    sheet["!autofilter"] = { ref: `A1:L${lastRow}` };
+    sheet["!freeze"] = { xSplit: 0, ySplit: 1 };
+    sheet["!views"] = [{ showGridLines: false }];
+    sheet["!margins"] = {
+      left: 0.25,
+      right: 0.25,
+      top: 0.75,
+      bottom: 0.75,
+      header: 0.3,
+      footer: 0.3,
+    };
+    sheet["!pageSetup"] = {
+      paperSize: 9,
+      orientation: "landscape",
+      fitToPage: true,
+      fitToWidth: 1,
+      fitToHeight: 0,
+    };
+    sheet["!printArea"] = `A1:L${lastRow}`;
+    sheet["!printTitles"] = "$1:$1";
 
-    return buildTableSheet(XLSX, {
-      title: "미출고현황",
-      subtitle:
-        "배정 기준: 주문현황 Excel 행 순서. 전재고 → 서울 1차 구매잔량 → 추가 구매 필요 순서이며 재고정보가 없는 상품은 구매수량을 확정하지 않습니다.",
-      headers,
-      rows,
-      widths: [9, 13, 13, 15, 31, 13, 11, 12, 15, 12, 16, 12, 16, 14, 20, 14, 14, 12, 24, 24, 22, 14, 15, 12],
-      numericColumns: [0, 6, 7, 8, 9, 10, 11, 12, 13, 15, 16],
-      priceColumns: [17],
-      textColumns: [3],
-      statusColumn: 14,
-      formulaWriter(sheet, startRow, sourceRows) {
-        sourceRows.forEach((row, index) => {
-          const zeroBasedRow = startRow + index;
-          const excelRow = zeroBasedRow + 1;
-          const matched = row[22] !== "재고정보 없음";
-          addCachedFormula(
-            sheet,
-            XLSX,
-            zeroBasedRow,
-            10,
-            `IF(W${excelRow}="재고정보 없음","",MAX(0,I${excelRow}+J${excelRow}))`,
-            matched ? row[10] : "",
-            matched ? "n" : "s",
-          );
-          addCachedFormula(
-            sheet,
-            XLSX,
-            zeroBasedRow,
-            13,
-            `IF(W${excelRow}="재고정보 없음","",MAX(0,G${excelRow}-L${excelRow}-M${excelRow}))`,
-            matched ? row[13] : "",
-            matched ? "n" : "s",
-          );
-          addCachedFormula(
-            sheet,
-            XLSX,
-            zeroBasedRow,
-            23,
-            `IF(W${excelRow}="재고정보 없음","확인 필요",IF(ABS(G${excelRow}-L${excelRow}-M${excelRow}-N${excelRow})<0.000000001,"정상","오류"))`,
-            row[23],
-            "s",
-          );
-        });
-      },
+    for (let column = 0; column < headers.length; column += 1) {
+      applyCellStyle(ensureCell(sheet, XLSX, 0, column), {
+        fill: { fgColor: { rgb: COLORS.teal } },
+        font: { name: "Pretendard", sz: 10, bold: true, color: { rgb: COLORS.white } },
+        alignment: { vertical: "center", horizontal: "center", wrapText: true },
+        border: tableBorder(),
+      });
+    }
+
+    rows.forEach((row, rowIndex) => {
+      const sheetRow = rowIndex + 1;
+      row.forEach((value, column) => {
+        const cell = ensureCell(sheet, XLSX, sheetRow, column);
+        const style = {
+          fill: { fgColor: { rgb: COLORS.white } },
+          font: { ...BASE_FONT },
+          alignment: {
+            vertical: "center",
+            horizontal: column >= 4 && column <= 7 ? "right" : "left",
+            wrapText: false,
+          },
+          border: tableBorder(),
+        };
+        if (column >= 4 && column <= 7) style.numFmt = "#,##0.###";
+        if (column === 0) style.fill = { fgColor: { rgb: managerFill(value) } };
+        if (column === 5 && !isBlank(value)) style.fill = { fgColor: { rgb: COLORS.greenSoft } };
+        if (column === 6 && !isBlank(value)) style.fill = { fgColor: { rgb: COLORS.blueSoft } };
+        if (column === 7 && !isBlank(value)) style.fill = { fgColor: { rgb: COLORS.purpleSoft } };
+        if (column === 11) {
+          const statusStyle = allocationStatusStyle(String(value || ""));
+          style.fill = { fgColor: { rgb: statusStyle.fill } };
+          style.font = { ...BASE_FONT, color: { rgb: statusStyle.font }, bold: true };
+        }
+        if (column === 1) {
+          cell.t = "s";
+          cell.v = String(cell.v ?? "");
+          cell.w = cell.v;
+          style.numFmt = "@";
+        }
+        applyCellStyle(cell, style);
+      });
     });
+    return sheet;
   }
 
   function buildProductSummarySheet(workspace, XLSX) {
@@ -526,21 +573,21 @@
       statusColumn: 3,
     });
 
-    const allocationStart = 5;
-    const allocationEnd = Math.max(allocationStart, workspace.allocations.length + 4);
+    const allocationStart = 2;
+    const allocationEnd = Math.max(allocationStart, workspace.allocations.length + 1);
     const summaryStart = 5;
     const summaryEnd = Math.max(summaryStart, workspace.productSummaries.length + 4);
     const memoStart = 5;
     const memoEnd = Math.max(memoStart, workspace.memoIssues.length + 4);
     const formulaByItem = {
       "상품별 주문수량 대사 차이": {
-        formula: `SUM('미출고현황'!$G$${allocationStart}:$G$${allocationEnd})-SUM('상품별요약'!$D$${summaryStart}:$D$${summaryEnd})`,
+        formula: `SUM('미출고현황'!$E$${allocationStart}:$E$${allocationEnd})-SUM('상품별요약'!$D$${summaryStart}:$D$${summaryEnd})`,
       },
       "매칭 주문 배정 대사 차이": {
-        formula: `SUMIFS('미출고현황'!$G$${allocationStart}:$G$${allocationEnd},'미출고현황'!$W$${allocationStart}:$W$${allocationEnd},"매칭완료")-SUM('미출고현황'!$L$${allocationStart}:$N$${allocationEnd})`,
+        formula: `SUMIFS('상품별요약'!$D$${summaryStart}:$D$${summaryEnd},'상품별요약'!$R$${summaryStart}:$R$${summaryEnd},"매칭완료")-SUM('상품별요약'!$I$${summaryStart}:$K$${summaryEnd})`,
       },
       "음수 추가 구매 필요": {
-        formula: `COUNTIF('미출고현황'!$N$${allocationStart}:$N$${allocationEnd},"<0")`,
+        formula: `COUNTIF('상품별요약'!$K$${summaryStart}:$K$${summaryEnd},"<0")`,
       },
       "재고정보 없음": {
         formula: `COUNTIF('상품별요약'!$R$${summaryStart}:$R$${summaryEnd},"재고정보 없음")`,
@@ -637,6 +684,355 @@
     return styleSourceSheet(sheet, XLSX, workspaceSource);
   }
 
+  function normalizedHeader(value) {
+    return String(value ?? "").trim().replace(/\s+/g, "").toLowerCase();
+  }
+
+  function isWarehouseQuantityHeader(value) {
+    const header = normalizedHeader(value);
+    if (!header || /단가|가격|금액|원가/.test(header)) return false;
+    return /^\d+[^\d].*$/.test(header);
+  }
+
+  function warehouseFill(value) {
+    const header = normalizedHeader(value);
+    const fixed = {
+      "1창고": COLORS.graySoft,
+      "3서울": "FFEDD5",
+      "4전송": COLORS.blueSoft,
+      "7진영": COLORS.greenSoft,
+    };
+    if (fixed[header]) return fixed[header];
+    const palette = ["F3E8FF", "E0F2FE", "FEF9C3", "FCE7F3", "E2E8F0", "CCFBF1"];
+    let hash = 0;
+    for (let index = 0; index < header.length; index += 1) {
+      hash = (hash * 31 + header.charCodeAt(index)) >>> 0;
+    }
+    return palette[hash % palette.length];
+  }
+
+  function buildWarehouseInventorySheet(workspaceSource, XLSX) {
+    const matrix = Array.isArray(workspaceSource.matrix)
+      ? workspaceSource.matrix.map((row) => (Array.isArray(row) ? row.slice() : []))
+      : [];
+    const headerRowIndex = Math.max(0, workspaceSource.headerRowIndex || 0);
+    const sourceHeaders = (matrix[headerRowIndex] || []).map(safeValue);
+    const indexByHeader = new Map();
+    sourceHeaders.forEach((header, index) => {
+      const normalized = normalizedHeader(header);
+      if (normalized && !indexByHeader.has(normalized)) indexByHeader.set(normalized, index);
+    });
+
+    const layout = [];
+    const usedIndexes = new Set();
+    const addSource = (header) => {
+      const index = indexByHeader.get(normalizedHeader(header));
+      if (index === undefined || usedIndexes.has(index)) return;
+      usedIndexes.add(index);
+      layout.push({ header: sourceHeaders[index], sourceIndex: index });
+    };
+    addSource("품목코드");
+    addSource("품목명");
+    addSource("규격");
+    layout.push({ header: "구매", sourceIndex: null, purchase: true });
+    addSource("수량");
+    ["1창고", "3서울", "4전송", "7진영"].forEach(addSource);
+    sourceHeaders.forEach((header, index) => {
+      if (usedIndexes.has(index) || normalizedHeader(header) === "구매") return;
+      usedIndexes.add(index);
+      layout.push({ header, sourceIndex: index });
+    });
+
+    const dataRows = matrix.slice(headerRowIndex + 1).map((sourceRow) =>
+      layout.map((column) => (column.purchase ? "" : safeValue(sourceRow[column.sourceIndex]))),
+    );
+    const headers = layout.map((column) => safeValue(column.header));
+    const sheet = XLSX.utils.aoa_to_sheet([headers, ...dataRows]);
+    const codeColumn = headers.findIndex((header) => normalizedHeader(header) === "품목코드");
+    const specificationColumn = headers.findIndex((header) => normalizedHeader(header) === "규격");
+    const quantityColumn = headers.findIndex((header) => normalizedHeader(header) === "수량");
+    const warehouseColumns = headers
+      .map((header, index) => (isWarehouseQuantityHeader(header) ? index : -1))
+      .filter((index) => index >= 0);
+    const lastColumn = columnName(Math.max(0, headers.length - 1));
+    const lastRow = Math.max(1, dataRows.length + 1);
+    sheet["!cols"] = headers.map((header) => {
+      const normalized = normalizedHeader(header);
+      if (normalized === "품목코드") return { wch: 15 };
+      if (normalized === "품목명") return { wch: 31 };
+      if (normalized === "규격") return { wch: 13 };
+      if (normalized === "구매") return { wch: 11 };
+      return { wch: isWarehouseQuantityHeader(header) ? 11 : 13 };
+    });
+    sheet["!rows"] = [{ hpt: 27 }];
+    sheet["!freeze"] = { xSplit: 0, ySplit: 1 };
+    sheet["!autofilter"] = { ref: `A1:${lastColumn}${lastRow}` };
+    sheet["!views"] = [{ showGridLines: false }];
+
+    headers.forEach((_, column) => {
+      applyCellStyle(ensureCell(sheet, XLSX, 0, column), {
+        fill: { fgColor: { rgb: COLORS.slate } },
+        font: { name: "Pretendard", sz: 10, bold: true, color: { rgb: COLORS.white } },
+        alignment: { vertical: "center", horizontal: "center", wrapText: true },
+        border: tableBorder(),
+      });
+    });
+
+    dataRows.forEach((row, rowIndex) => {
+      const sheetRow = rowIndex + 1;
+      const specification = String(row[specificationColumn] ?? "").trim().toUpperCase();
+      const highlightText = specification === "EA" || specification === "소분";
+      const quantity = Number(row[quantityColumn]);
+      const negativeQuantity = !isBlank(row[quantityColumn]) && Number.isFinite(quantity) && quantity < 0;
+      row.forEach((_, column) => {
+        const cell = ensureCell(sheet, XLSX, sheetRow, column);
+        const style = {
+          fill: { fgColor: { rgb: COLORS.white } },
+          font: {
+            ...BASE_FONT,
+            ...(highlightText && !isBlank(cell.v) ? { color: { rgb: COLORS.red } } : {}),
+          },
+          alignment: {
+            vertical: "center",
+            horizontal: typeof cell.v === "number" ? "right" : "left",
+            wrapText: false,
+          },
+          border: tableBorder(),
+          ...(typeof cell.v === "number" ? { numFmt: "#,##0.###" } : {}),
+        };
+        if (warehouseColumns.includes(column)) {
+          style.fill = { fgColor: { rgb: warehouseFill(headers[column]) } };
+        }
+        if (negativeQuantity && column >= codeColumn && column <= quantityColumn) {
+          style.fill = { fgColor: { rgb: "FFF200" } };
+        }
+        if (column === codeColumn && !isBlank(cell.v)) {
+          cell.t = "s";
+          cell.v = String(cell.v ?? "");
+          cell.w = cell.v;
+          style.numFmt = "@";
+        }
+        applyCellStyle(cell, style);
+      });
+    });
+    return sheet;
+  }
+
+  function addPrintNames(workbook, sheetName, lastRow) {
+    const sheetIndex = workbook.SheetNames.indexOf(sheetName);
+    workbook.Workbook = workbook.Workbook || {};
+    workbook.Workbook.Names = workbook.Workbook.Names || [];
+    workbook.Workbook.Names.push(
+      {
+        Name: "_xlnm.Print_Area",
+        Sheet: sheetIndex,
+        Ref: `'${sheetName}'!$A$1:$L$${lastRow}`,
+      },
+      {
+        Name: "_xlnm.Print_Titles",
+        Sheet: sheetIndex,
+        Ref: `'${sheetName}'!$1:$1`,
+      },
+    );
+  }
+
+  function crc32(bytes) {
+    const table = crc32.table || (crc32.table = Array.from({ length: 256 }, (_, index) => {
+      let value = index;
+      for (let bit = 0; bit < 8; bit += 1) {
+        value = value & 1 ? 0xedb88320 ^ (value >>> 1) : value >>> 1;
+      }
+      return value >>> 0;
+    }));
+    let value = 0xffffffff;
+    for (const byte of bytes) value = table[(value ^ byte) & 0xff] ^ (value >>> 8);
+    return (value ^ 0xffffffff) >>> 0;
+  }
+
+  function readStoredZip(bytes) {
+    const data = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+    const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
+    let endOffset = -1;
+    for (let offset = data.length - 22; offset >= Math.max(0, data.length - 65557); offset -= 1) {
+      if (view.getUint32(offset, true) === 0x06054b50) {
+        endOffset = offset;
+        break;
+      }
+    }
+    if (endOffset < 0) throw new Error("XLSX ZIP 끝 레코드를 찾지 못했습니다.");
+    const entryCount = view.getUint16(endOffset + 10, true);
+    let centralOffset = view.getUint32(endOffset + 16, true);
+    const decoder = new TextDecoder("utf-8");
+    const entries = [];
+    for (let index = 0; index < entryCount; index += 1) {
+      if (view.getUint32(centralOffset, true) !== 0x02014b50) {
+        throw new Error("XLSX ZIP 중앙 디렉터리가 손상되었습니다.");
+      }
+      const method = view.getUint16(centralOffset + 10, true);
+      if (method !== 0) throw new Error("인쇄 설정 보강에는 비압축 XLSX 패키지가 필요합니다.");
+      const time = view.getUint16(centralOffset + 12, true);
+      const date = view.getUint16(centralOffset + 14, true);
+      const compressedSize = view.getUint32(centralOffset + 20, true);
+      const nameLength = view.getUint16(centralOffset + 28, true);
+      const extraLength = view.getUint16(centralOffset + 30, true);
+      const commentLength = view.getUint16(centralOffset + 32, true);
+      const localOffset = view.getUint32(centralOffset + 42, true);
+      const nameBytes = data.slice(centralOffset + 46, centralOffset + 46 + nameLength);
+      const name = decoder.decode(nameBytes);
+      if (view.getUint32(localOffset, true) !== 0x04034b50) {
+        throw new Error(`XLSX ZIP 로컬 엔트리가 손상되었습니다: ${name}`);
+      }
+      const localNameLength = view.getUint16(localOffset + 26, true);
+      const localExtraLength = view.getUint16(localOffset + 28, true);
+      const contentStart = localOffset + 30 + localNameLength + localExtraLength;
+      entries.push({
+        name,
+        nameBytes,
+        time,
+        date,
+        content: data.slice(contentStart, contentStart + compressedSize),
+      });
+      centralOffset += 46 + nameLength + extraLength + commentLength;
+    }
+    return entries;
+  }
+
+  function writeStoredZip(entries) {
+    const localSize = entries.reduce(
+      (total, entry) => total + 30 + entry.nameBytes.length + entry.content.length,
+      0,
+    );
+    const centralSize = entries.reduce(
+      (total, entry) => total + 46 + entry.nameBytes.length,
+      0,
+    );
+    const output = new Uint8Array(localSize + centralSize + 22);
+    const view = new DataView(output.buffer);
+    const writeUint16 = (offset, value) => view.setUint16(offset, value, true);
+    const writeUint32 = (offset, value) => view.setUint32(offset, value >>> 0, true);
+    const metadata = [];
+    let offset = 0;
+    entries.forEach((entry) => {
+      const checksum = crc32(entry.content);
+      metadata.push({ ...entry, checksum, localOffset: offset });
+      writeUint32(offset, 0x04034b50);
+      writeUint16(offset + 4, 20);
+      writeUint16(offset + 6, 0x0800);
+      writeUint16(offset + 8, 0);
+      writeUint16(offset + 10, entry.time);
+      writeUint16(offset + 12, entry.date);
+      writeUint32(offset + 14, checksum);
+      writeUint32(offset + 18, entry.content.length);
+      writeUint32(offset + 22, entry.content.length);
+      writeUint16(offset + 26, entry.nameBytes.length);
+      writeUint16(offset + 28, 0);
+      output.set(entry.nameBytes, offset + 30);
+      output.set(entry.content, offset + 30 + entry.nameBytes.length);
+      offset += 30 + entry.nameBytes.length + entry.content.length;
+    });
+    const centralOffset = offset;
+    metadata.forEach((entry) => {
+      writeUint32(offset, 0x02014b50);
+      writeUint16(offset + 4, 20);
+      writeUint16(offset + 6, 20);
+      writeUint16(offset + 8, 0x0800);
+      writeUint16(offset + 10, 0);
+      writeUint16(offset + 12, entry.time);
+      writeUint16(offset + 14, entry.date);
+      writeUint32(offset + 16, entry.checksum);
+      writeUint32(offset + 20, entry.content.length);
+      writeUint32(offset + 24, entry.content.length);
+      writeUint16(offset + 28, entry.nameBytes.length);
+      writeUint16(offset + 30, 0);
+      writeUint16(offset + 32, 0);
+      writeUint16(offset + 34, 0);
+      writeUint16(offset + 36, 0);
+      writeUint32(offset + 38, 0);
+      writeUint32(offset + 42, entry.localOffset);
+      output.set(entry.nameBytes, offset + 46);
+      offset += 46 + entry.nameBytes.length;
+    });
+    writeUint32(offset, 0x06054b50);
+    writeUint16(offset + 4, 0);
+    writeUint16(offset + 6, 0);
+    writeUint16(offset + 8, entries.length);
+    writeUint16(offset + 10, entries.length);
+    writeUint32(offset + 12, centralSize);
+    writeUint32(offset + 16, centralOffset);
+    writeUint16(offset + 20, 0);
+    return output;
+  }
+
+  function addPageSetupXml(xml) {
+    let result = xml.replace(/<pageSetup\b[^>]*\/>/g, "");
+    if (/<sheetPr\b[^>]*\/>/.test(result)) {
+      result = result.replace(
+        /<sheetPr\b([^>]*)\/>/,
+        '<sheetPr$1><pageSetUpPr fitToPage="1"/></sheetPr>',
+      );
+    } else if (/<sheetPr\b[^>]*>/.test(result)) {
+      if (/<pageSetUpPr\b/.test(result)) {
+        result = result.replace(/<pageSetUpPr\b[^>]*\/>/, '<pageSetUpPr fitToPage="1"/>');
+      } else {
+        result = result.replace(/<\/sheetPr>/, '<pageSetUpPr fitToPage="1"/></sheetPr>');
+      }
+    } else {
+      result = result.replace(
+        /(<worksheet\b[^>]*>)/,
+        '$1<sheetPr><pageSetUpPr fitToPage="1"/></sheetPr>',
+      );
+    }
+    const pageSetup =
+      '<pageSetup paperSize="9" orientation="landscape" fitToWidth="1" fitToHeight="0"/>';
+    if (/<pageMargins\b[^>]*\/>/.test(result)) {
+      result = result.replace(/(<pageMargins\b[^>]*\/>)/, `$1${pageSetup}`);
+    } else {
+      result = result.replace(/<\/worksheet>/, `${pageSetup}</worksheet>`);
+    }
+    return result;
+  }
+
+  function writeWorkbook(workbook, XLSX) {
+    requireXlsx(XLSX);
+    const raw = XLSX.write(workbook, {
+      type: "array",
+      bookType: "xlsx",
+      compression: false,
+      cellStyles: true,
+    });
+    const entries = readStoredZip(new Uint8Array(raw));
+    const sheetNumber = workbook.SheetNames.indexOf("미출고현황") + 1;
+    const targetName = `xl/worksheets/sheet${sheetNumber}.xml`;
+    const encoder = new TextEncoder();
+    const decoder = new TextDecoder("utf-8");
+    let updated = false;
+    entries.forEach((entry) => {
+      if (entry.name !== targetName) return;
+      entry.content = encoder.encode(addPageSetupXml(decoder.decode(entry.content)));
+      updated = true;
+    });
+    if (!updated) throw new Error("미출고현황 인쇄 설정 대상 시트를 찾지 못했습니다.");
+    return writeStoredZip(entries);
+  }
+
+  function downloadBytes(bytes, fileName) {
+    if (typeof document === "undefined" || typeof URL === "undefined") {
+      throw new Error("브라우저 다운로드 환경을 찾지 못했습니다.");
+    }
+    const blob = new Blob([bytes], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = fileName;
+    anchor.style.display = "none";
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+  }
+
   function buildWorkbook(workspace, XLSX) {
     requireXlsx(XLSX);
     if (!workspace || workspace.schemaVersion !== "shipping-workspace/v1") {
@@ -652,6 +1048,11 @@
       Comments: `workspace=${workspace.schemaVersion}; workbook=${WORKBOOK_VERSION}`,
       CreatedDate: new Date(workspace.createdAt),
     };
+    XLSX.utils.book_append_sheet(
+      workbook,
+      buildWarehouseInventorySheet(workspace.sourceFiles.inventory, XLSX),
+      "창고별 재고",
+    );
     XLSX.utils.book_append_sheet(workbook, buildAllocationSheet(workspace, XLSX), "미출고현황");
     XLSX.utils.book_append_sheet(
       workbook,
@@ -670,11 +1071,7 @@
       buildSourceSheet(workspace.sourceFiles.orders, XLSX),
       "주문원본",
     );
-    XLSX.utils.book_append_sheet(
-      workbook,
-      buildSourceSheet(workspace.sourceFiles.inventory, XLSX),
-      "재고원본",
-    );
+    addPrintNames(workbook, "미출고현황", Math.max(1, workspace.allocations.length + 1));
     return workbook;
   }
 
@@ -685,11 +1082,10 @@
   function downloadWorkbook(workspace, XLSX, fileName) {
     requireXlsx(XLSX);
     const workbook = buildWorkbook(workspace, XLSX);
-    XLSX.writeFile(workbook, fileName || getOutputFileName(workspace.createdAt), {
-      bookType: "xlsx",
-      compression: true,
-      cellStyles: true,
-    });
+    downloadBytes(
+      writeWorkbook(workbook, XLSX),
+      fileName || getOutputFileName(workspace.createdAt),
+    );
     return workbook;
   }
 
@@ -698,6 +1094,7 @@
     REQUIRED_SHEETS,
     getOutputFileName,
     buildWorkbook,
+    writeWorkbook,
     downloadWorkbook,
   });
 });

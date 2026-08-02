@@ -99,7 +99,7 @@ function buildOrderMatrix(rows) {
     ORDER_HEADERS,
     ...rows.map((row, index) => [
       `07/30-${index + 1}`,
-      "담당",
+      row.manager || "담당",
       row.unit || "EA",
       row.code,
       row.name || `상품 ${row.code}`,
@@ -125,15 +125,15 @@ function buildInventoryMatrix(rows) {
       row.unit || "EA",
       row.name || `상품 ${row.code}`,
       row.spec || row.unit || "EA",
-      "",
+      row.quantity ?? "",
       row.whole ?? "",
-      "",
+      row.transfer2 ?? "",
       row.seoul ?? "",
       row.transfer ?? "",
-      "",
-      "",
-      "",
-      "",
+      row.jinyeong ?? "",
+      row.base ?? "",
+      row.transferLabel ?? "",
+      row.warehousePrice ?? "",
     ]),
   ];
 }
@@ -245,11 +245,287 @@ assert.deepEqual(
   Array.from(workbookTools.REQUIRED_SHEETS),
   "workbook sheet contract changed",
 );
-assert.equal(edgeWorkbook.Sheets["미출고현황"]["D5"].t, "s");
-assert.equal(edgeWorkbook.Sheets["미출고현황"]["D5"].v, "000100");
-assert.ok(edgeWorkbook.Sheets["미출고현황"]["K5"].f, "allocation sheet formula missing");
+assert.deepEqual(Array.from(workbookTools.REQUIRED_SHEETS), [
+  "창고별 재고",
+  "미출고현황",
+  "상품별요약",
+  "발주관리",
+  "적요이슈",
+  "검증결과",
+  "주문원본",
+]);
+assert.deepEqual(
+  Array.from(
+    XLSX.utils.sheet_to_json(edgeWorkbook.Sheets["미출고현황"], {
+      header: 1,
+      raw: true,
+      range: "A1:L1",
+    })[0],
+  ),
+  ["담당", "상품코드", "품목명", "규격", "주문수량", "재고", "서울", "전송", "적요", "거래처", "그룹", "출고"],
+);
+assert.equal(edgeWorkbook.Sheets["미출고현황"]["B2"].t, "s");
+assert.equal(edgeWorkbook.Sheets["미출고현황"]["B2"].v, "000100");
 assert.ok(edgeWorkbook.Sheets["미출고현황"]["!autofilter"], "filter metadata missing");
-assert.deepEqual(edgeWorkbook.Sheets["미출고현황"]["!freeze"], { xSplit: 0, ySplit: 4 });
+assert.deepEqual(edgeWorkbook.Sheets["미출고현황"]["!freeze"], { xSplit: 0, ySplit: 1 });
+
+const formatOrders = parseOrders(
+  buildOrderMatrix([
+    { code: "PURCHASE", quantity: 2, manager: "담당A", spec: "BOX" },
+    { code: "ADDITIONAL", quantity: 2, manager: "담당B", spec: "EA" },
+    { code: "SEOUL", quantity: 2, manager: "담당A", spec: "소분" },
+    { code: "STOCK", quantity: 2, manager: "담당C", spec: "BOX" },
+    { code: "MIXED", quantity: 2, manager: "담당C", spec: "EA" },
+    { code: "NO-STOCK", quantity: 1, manager: "담당D", spec: "BOX" },
+  ]),
+);
+const formatInventory = parseInventory(
+  buildInventoryMatrix([
+    { code: "PURCHASE", spec: "BOX", quantity: -4, whole: 0, seoul: 0, transfer: 0, jinyeong: -4, warehousePrice: 6000 },
+    { code: "ADDITIONAL", spec: "EA", quantity: 1, whole: 1, seoul: 0, transfer: 0, transfer2: 3, warehousePrice: 2000 },
+    { code: "SEOUL", spec: "소분", quantity: 2, whole: 0, seoul: 3, transfer: -1, warehousePrice: 17000 },
+    { code: "STOCK", spec: "BOX", quantity: 5, whole: 5, seoul: 0, transfer: 0, warehousePrice: 15000 },
+    { code: "MIXED", spec: "EA", quantity: 2, whole: 1, seoul: 1, transfer: 0, warehousePrice: 8100 },
+  ]),
+);
+const formatValidation = engine.validateInputs(formatOrders, formatInventory);
+assert.equal(formatValidation.canAnalyze, true, JSON.stringify(formatValidation.errors));
+const formatWorkspace = engine.analyze(formatOrders, formatInventory, {
+  createdAt: "2026-08-03T00:00:00.000Z",
+});
+const inventorySourceSnapshot = JSON.parse(
+  JSON.stringify(formatWorkspace.sourceFiles.inventory.matrix),
+);
+const formatWorkbook = workbookTools.buildWorkbook(formatWorkspace, XLSX);
+assert.deepEqual(
+  formatWorkspace.sourceFiles.inventory.matrix,
+  inventorySourceSnapshot,
+  "inventory source matrix must not be mutated while formatting output",
+);
+const originalDocument = globalThis.document;
+const originalUrl = globalThis.URL;
+const downloadState = { clicked: false, removed: false, appended: false, revoked: false };
+const downloadAnchor = {
+  href: "",
+  download: "",
+  style: {},
+  click() {
+    downloadState.clicked = true;
+  },
+  remove() {
+    downloadState.removed = true;
+  },
+};
+try {
+  globalThis.document = {
+    createElement(tagName) {
+      assert.equal(tagName, "a");
+      return downloadAnchor;
+    },
+    body: {
+      appendChild(anchor) {
+        assert.equal(anchor, downloadAnchor);
+        downloadState.appended = true;
+      },
+    },
+  };
+  globalThis.URL = {
+    createObjectURL(blob) {
+      assert.ok(blob.size > 10000);
+      return "blob:shipping-test";
+    },
+    revokeObjectURL(url) {
+      assert.equal(url, "blob:shipping-test");
+      downloadState.revoked = true;
+    },
+  };
+  const downloadedWorkbook = workbookTools.downloadWorkbook(
+    formatWorkspace,
+    XLSX,
+    "미출고현황_브라우저테스트.xlsx",
+  );
+  assert.equal(downloadedWorkbook.SheetNames[0], "창고별 재고");
+  assert.equal(downloadAnchor.download, "미출고현황_브라우저테스트.xlsx");
+  assert.equal(downloadAnchor.href, "blob:shipping-test");
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.deepEqual(downloadState, {
+    clicked: true,
+    removed: true,
+    appended: true,
+    revoked: true,
+  });
+} finally {
+  globalThis.document = originalDocument;
+  globalThis.URL = originalUrl;
+}
+const stringZeroWorkspace = {
+  ...formatWorkspace,
+  allocations: formatWorkspace.allocations.map((row, index) =>
+    index === 0
+      ? {
+          ...row,
+          wholeStockRaw: "0",
+          seoulFirstPurchaseRaw: "0",
+          firstTransferRaw: "0",
+        }
+      : row,
+  ),
+};
+const stringZeroSheet = workbookTools.buildWorkbook(stringZeroWorkspace, XLSX).Sheets[
+  "미출고현황"
+];
+for (const address of ["F2", "G2", "H2"]) {
+  assert.equal(stringZeroSheet[address].v, "", `${address} string zero must display blank`);
+}
+
+const allocationSheet = formatWorkbook.Sheets["미출고현황"];
+assert.equal(allocationSheet["!ref"], "A1:L7");
+assert.deepEqual(allocationSheet["!autofilter"], { ref: "A1:L7" });
+assert.deepEqual(allocationSheet["!freeze"], { xSplit: 0, ySplit: 1 });
+assert.equal(allocationSheet["B2"].t, "s");
+assert.equal(allocationSheet["B2"].v, "PURCHASE");
+for (const address of ["F2", "G2", "H2"]) {
+  assert.equal(allocationSheet[address].v, "", `${address} zero inventory must display blank`);
+}
+assert.deepEqual(
+  ["L2", "L3", "L4", "L5", "L6", "L7"].map((address) => allocationSheet[address].v),
+  ["구매", "추가", "서울", "재고", "혼합출고", "재고정보 없음"],
+);
+assert.equal(allocationSheet["A2"].s.fill.fgColor.rgb, allocationSheet["A4"].s.fill.fgColor.rgb);
+assert.notEqual(allocationSheet["A2"].s.fill.fgColor.rgb, allocationSheet["A3"].s.fill.fgColor.rgb);
+assert.equal(allocationSheet["F3"].s.fill.fgColor.rgb, "DCFCE7");
+assert.equal(allocationSheet["G4"].s.fill.fgColor.rgb, "DBEAFE");
+assert.equal(allocationSheet["H4"].s.fill.fgColor.rgb, "F3E8FF");
+assert.equal(allocationSheet["L2"].s.fill.fgColor.rgb, "FEE2E2");
+assert.equal(allocationSheet["L3"].s.fill.fgColor.rgb, "FEF3C7");
+assert.equal(allocationSheet["L4"].s.fill.fgColor.rgb, "DBEAFE");
+assert.equal(allocationSheet["L5"].s.fill.fgColor.rgb, "DCFCE7");
+assert.equal(allocationSheet["L7"].s.fill.fgColor.rgb, "FEE2E2");
+for (let row = 1; row <= 7; row += 1) {
+  for (let column = 0; column < 12; column += 1) {
+    const cell = allocationSheet[XLSX.utils.encode_cell({ r: row - 1, c: column })];
+    assert.ok(cell, `allocation table cell missing at row=${row} column=${column + 1}`);
+    for (const edge of ["top", "bottom", "left", "right"]) {
+      assert.equal(cell.s.border[edge].style, "thin");
+      assert.equal(cell.s.border[edge].color.rgb, "CBD5E1");
+    }
+  }
+}
+assert.deepEqual(allocationSheet["!margins"], {
+  left: 0.25,
+  right: 0.25,
+  top: 0.75,
+  bottom: 0.75,
+  header: 0.3,
+  footer: 0.3,
+});
+assert.deepEqual(allocationSheet["!pageSetup"], {
+  paperSize: 9,
+  orientation: "landscape",
+  fitToPage: true,
+  fitToWidth: 1,
+  fitToHeight: 0,
+});
+assert.equal(allocationSheet["!printArea"], "A1:L7");
+assert.equal(allocationSheet["!printTitles"], "$1:$1");
+const printNames = formatWorkbook.Workbook.Names.filter(
+  (name) => name.Sheet === 1 && /^_xlnm\.Print_/.test(name.Name),
+);
+assert.deepEqual(printNames, [
+  { Name: "_xlnm.Print_Area", Sheet: 1, Ref: "'미출고현황'!$A$1:$L$7" },
+  { Name: "_xlnm.Print_Titles", Sheet: 1, Ref: "'미출고현황'!$1:$1" },
+]);
+
+const inventorySheet = formatWorkbook.Sheets["창고별 재고"];
+assert.deepEqual(
+  Array.from(
+    XLSX.utils.sheet_to_json(inventorySheet, { header: 1, raw: true, range: "A1:I1" })[0],
+  ),
+  ["품목코드", "품목명", "규격", "구매", "수량", "1창고", "3서울", "4전송", "7진영"],
+);
+for (let row = 2; row <= 6; row += 1) {
+  assert.equal(inventorySheet[`D${row}`].v, "", "purchase column must default to blank text");
+}
+assert.equal(inventorySheet["A2"].t, "s");
+assert.equal(inventorySheet["A2"].v, "PURCHASE");
+assert.equal(inventorySheet["E2"].v, -4);
+for (const address of ["A2", "B2", "C2", "D2", "E2"]) {
+  assert.equal(inventorySheet[address].s.fill.fgColor.rgb, "FFF200");
+}
+assert.equal(inventorySheet["A3"].s.font.color.rgb, "B91C1C");
+assert.equal(inventorySheet["E3"].s.font.color.rgb, "B91C1C");
+assert.equal(inventorySheet["A4"].s.font.color.rgb, "B91C1C");
+assert.equal(inventorySheet["A2"].s.font.color.rgb, "1E293B");
+assert.equal(inventorySheet["F3"].s.fill.fgColor.rgb, "F1F5F9");
+assert.equal(inventorySheet["G4"].s.fill.fgColor.rgb, "FFEDD5");
+assert.equal(inventorySheet["H4"].s.fill.fgColor.rgb, "DBEAFE");
+assert.equal(inventorySheet["I2"].s.fill.fgColor.rgb, "DCFCE7");
+const inventoryHeaderRow = Array.from(
+  XLSX.utils.sheet_to_json(inventorySheet, { header: 1, raw: true, range: 0 })[0],
+);
+const transfer2Column = inventoryHeaderRow.indexOf("2전송");
+const otherWarehouseColumn = inventoryHeaderRow.indexOf("창고");
+assert.ok(transfer2Column >= 9, "additional warehouse column must remain in output");
+assert.ok(otherWarehouseColumn > transfer2Column, "remaining original columns must be preserved");
+assert.notEqual(
+  inventorySheet[XLSX.utils.encode_cell({ r: 2, c: transfer2Column })].s.fill.fgColor.rgb,
+  "FFFFFF",
+  "additional numbered warehouse column must receive deterministic fill",
+);
+assert.equal(
+  inventorySheet[XLSX.utils.encode_cell({ r: 2, c: otherWarehouseColumn })].s.fill.fgColor.rgb,
+  "FFFFFF",
+  "non-quantity 창고 column must not receive warehouse fill",
+);
+for (let row = 1; row <= 6; row += 1) {
+  for (let column = 0; column < inventoryHeaderRow.length; column += 1) {
+    const cell = inventorySheet[XLSX.utils.encode_cell({ r: row - 1, c: column })];
+    assert.ok(cell, `inventory table cell missing at row=${row} column=${column + 1}`);
+    assert.equal(cell.s.border.top.style, "thin");
+    assert.equal(cell.s.border.top.color.rgb, "CBD5E1");
+  }
+}
+
+const validationSheet = formatWorkbook.Sheets["검증결과"];
+assert.match(validationSheet["B8"].f, /'미출고현황'!\$E\$2:\$E\$7/);
+assert.doesNotMatch(validationSheet["B8"].f, /\$G\$/);
+assert.match(validationSheet["B9"].f, /'상품별요약'!\$D\$5:\$D\$10/);
+assert.match(validationSheet["B9"].f, /'상품별요약'!\$I\$5:\$K\$10/);
+assert.match(validationSheet["B11"].f, /'상품별요약'!\$K\$5:\$K\$10/);
+for (const sheetName of formatWorkbook.SheetNames) {
+  const sheet = formatWorkbook.Sheets[sheetName];
+  for (const [address, cell] of Object.entries(sheet)) {
+    if (address.startsWith("!")) continue;
+    const text = `${cell?.f || ""} ${cell?.v || ""}`;
+    assert.doesNotMatch(text, /#REF!|#VALUE!|#DIV\/0!|#NAME\?|#N\/A/i, `${sheetName}!${address}`);
+  }
+}
+
+const largeRows = Array.from({ length: 180 }, (_, index) => ({
+  code: `ROW-${String(index + 1).padStart(3, "0")}`,
+  quantity: 1,
+  manager: `담당${index % 5}`,
+  spec: index % 2 === 0 ? "BOX" : "EA",
+}));
+const largeOrders = parseOrders(buildOrderMatrix(largeRows));
+const largeInventory = parseInventory(
+  buildInventoryMatrix(
+    largeRows.map((row) => ({ ...row, quantity: 2, whole: 2, seoul: 0, transfer: 0 })),
+  ),
+);
+assert.equal(engine.validateInputs(largeOrders, largeInventory).canAnalyze, true);
+const largeWorkspace = engine.analyze(largeOrders, largeInventory, {
+  createdAt: "2026-08-03T00:00:00.000Z",
+});
+const largeWorkbook = workbookTools.buildWorkbook(largeWorkspace, XLSX);
+assert.equal(largeWorkbook.Sheets["미출고현황"]["!printArea"], "A1:L181");
+assert.equal(largeWorkbook.Sheets["미출고현황"]["!pageSetup"].fitToWidth, 1);
+assert.equal(largeWorkbook.Sheets["미출고현황"]["!pageSetup"].fitToHeight, 0);
+assert.ok(
+  largeWorkbook.Workbook.Names.some(
+    (name) => name.Name === "_xlnm.Print_Area" && name.Ref === "'미출고현황'!$A$1:$L$181",
+  ),
+);
 
 const html = fs.readFileSync(path.join(ROOT, "orders.html"), "utf8");
 for (const requiredText of [
@@ -329,19 +605,20 @@ if (fs.existsSync(referenceOrdersPath) && fs.existsSync(referenceInventoryPath))
   assert.equal(referenceWorkspace.stats.reconciliationErrorCount, 0);
 }
 
-const outputWorkspace = referenceWorkspace || edgeWorkspace;
+const outputWorkspace = referenceWorkspace || formatWorkspace;
 const tempDir = fs.mkdtempSync(path.join(ROOT, ".tmp-shipping-management-"));
 try {
   const outputPath = path.join(tempDir, "미출고현황_테스트.xlsx");
   const outputWorkbook = workbookTools.buildWorkbook(outputWorkspace, XLSX);
-  const outputBytes = XLSX.write(outputWorkbook, {
-    type: "array",
-    bookType: "xlsx",
-    compression: true,
-    cellStyles: true,
-  });
+  const outputBytes = workbookTools.writeWorkbook(outputWorkbook, XLSX);
   fs.writeFileSync(outputPath, Buffer.from(new Uint8Array(outputBytes)));
   assert.ok(fs.statSync(outputPath).size > 10000, "generated workbook is unexpectedly small");
+  const packageText = Buffer.from(outputBytes).toString("utf8");
+  assert.match(packageText, /<pageSetUpPr fitToPage="1"\/>/);
+  assert.match(
+    packageText,
+    /<pageSetup paperSize="9" orientation="landscape" fitToWidth="1" fitToHeight="0"\/>/,
+  );
   if (process.env.SHIPPING_TEST_OUTPUT) {
     const requestedOutput = path.resolve(ROOT, process.env.SHIPPING_TEST_OUTPUT);
     const rootPrefix = ROOT.endsWith(path.sep) ? ROOT : ROOT + path.sep;
@@ -363,10 +640,32 @@ try {
     "reopened workbook sheet contract changed",
   );
   assert.equal(
-    reopened.Sheets["미출고현황"]["D5"].t,
+    reopened.Sheets["미출고현황"]["B2"].t,
     "s",
     "product code must reopen as text",
   );
+  assert.deepEqual(
+    Array.from(
+      XLSX.utils.sheet_to_json(reopened.Sheets["미출고현황"], {
+        header: 1,
+        raw: true,
+        range: "A1:L1",
+      })[0],
+    ),
+    ["담당", "상품코드", "품목명", "규격", "주문수량", "재고", "서울", "전송", "적요", "거래처", "그룹", "출고"],
+  );
+  const reopenedPrintNames = (reopened.Workbook?.Names || []).filter(
+    (name) => name.Sheet === 1 && /^_xlnm\.Print_/.test(name.Name),
+  );
+  assert.equal(reopenedPrintNames.length, 2, "print area and print titles must reopen");
+  assert.deepEqual({ ...reopened.Sheets["미출고현황"]["!margins"] }, {
+    left: 0.25,
+    right: 0.25,
+    top: 0.75,
+    bottom: 0.75,
+    header: 0.3,
+    footer: 0.3,
+  });
 } finally {
   const resolvedTempDir = path.resolve(tempDir);
   const allowedPrefix = path.resolve(ROOT, ".tmp-shipping-management-");
