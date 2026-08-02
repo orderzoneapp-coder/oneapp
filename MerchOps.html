@@ -10236,20 +10236,33 @@ const ExcelDataGrid = ({ state, actions }) => {
             const minWidth = key === 'core:마스터 정보' ? 160 : (key === 'report:리포트' ? 140 : 48);
             const headerCell = e.currentTarget.closest('th');
             const table = headerCell?.closest('table');
-            const columnNumber = headerCell ? headerCell.cellIndex + 1 : 0;
-            const previewAttribute = 'data-merch-column-resize-preview';
-            const previewStyle = table && columnNumber > 0 ? document.createElement('style') : null;
+            const tableRect = table?.getBoundingClientRect();
+            const resizeGuide = tableRect ? document.createElement('div') : null;
             let latestWidth = startWidth;
             let changed = false;
             let previewFrame = 0;
-            if (table && previewStyle) {
-                table.setAttribute(previewAttribute, '1');
-                document.head.appendChild(previewStyle);
+            if (resizeGuide && tableRect) {
+                resizeGuide.className = 'merch-column-resize-guide';
+                Object.assign(resizeGuide.style, {
+                    position: 'fixed',
+                    top: `${Math.max(0, tableRect.top)}px`,
+                    left: '0',
+                    width: '2px',
+                    height: `${Math.max(0, Math.min(window.innerHeight, tableRect.bottom) - Math.max(0, tableRect.top))}px`,
+                    background: '#6366f1',
+                    boxShadow: '0 0 0 1px rgba(99, 102, 241, 0.18)',
+                    pointerEvents: 'none',
+                    zIndex: '9999',
+                    transform: `translate3d(${startX}px, 0, 0)`,
+                    willChange: 'transform'
+                });
+                document.body.appendChild(resizeGuide);
             }
             const paintPreview = () => {
                 previewFrame = 0;
-                if (!previewStyle) return;
-                previewStyle.textContent = `table[${previewAttribute}="1"] tr > *:nth-child(${columnNumber}) { min-width: ${latestWidth}px !important; width: ${latestWidth}px !important; max-width: ${latestWidth}px !important; }`;
+                if (!resizeGuide) return;
+                const guideX = startX + latestWidth - startWidth;
+                resizeGuide.style.transform = `translate3d(${guideX}px, 0, 0)`;
             };
             const onMove = (moveEvent) => {
                 const nextWidth = Math.max(minWidth, Math.min(720, Math.round(startWidth + moveEvent.clientX - startX)));
@@ -10268,10 +10281,7 @@ const ExcelDataGrid = ({ state, actions }) => {
                     setColumnWidthDirtyMap(prev => ({ ...(prev || {}), [key]: String(label || key) }));
                     setColumnWidthDirty(true);
                 }
-                window.requestAnimationFrame(() => {
-                    if (table) table.removeAttribute(previewAttribute);
-                    if (previewStyle) previewStyle.remove();
-                });
+                if (resizeGuide) resizeGuide.remove();
             };
             window.addEventListener('mousemove', onMove);
             window.addEventListener('mouseup', onUp);
