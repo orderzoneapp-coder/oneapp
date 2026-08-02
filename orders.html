@@ -624,7 +624,10 @@
     .system-mode strong { color: #5eead4; }
     .input-panel {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) auto;
+      grid-template-areas:
+        "uploads uploads analyze"
+        "validation note note";
+      grid-template-columns: minmax(0, 1fr) minmax(245px, 300px) 120px;
       gap: 8px;
       padding: 10px 12px 12px;
       border: 0;
@@ -634,7 +637,7 @@
       box-shadow: none;
     }
     .upload-grid {
-      grid-column: 1 / -1;
+      grid-area: uploads;
       gap: 8px;
     }
     .upload-card {
@@ -685,6 +688,7 @@
     .meta-value.warn { color: #fbbf24; }
     .meta-value.bad { color: #fda4af; }
     .validation-box {
+      grid-area: validation;
       min-width: 0;
       margin: 0;
       padding: 7px 10px;
@@ -698,15 +702,25 @@
     .validation-detail { margin-top: 2px; color: var(--slate-400); font-size: 10px; line-height: 1.35; }
     .validation-list { color: #fda4af; }
     .action-bar {
+      grid-area: analyze;
       align-self: stretch;
       margin: 0;
       padding: 0;
       border: 0;
     }
-    .action-note { max-width: 240px; color: var(--slate-400); font-size: 9px; line-height: 1.35; }
+    .action-note {
+      grid-area: note;
+      align-self: center;
+      max-width: none;
+      color: var(--slate-400);
+      font-size: 9px;
+      line-height: 1.35;
+    }
     .primary-button {
+      width: 120px;
       min-width: 120px;
-      min-height: 34px;
+      min-height: 60px;
+      height: 100%;
       padding: 0 12px;
       border-radius: 6px;
       color: #0f172a;
@@ -745,7 +759,15 @@
       .system-topbar { align-items: flex-start; flex-wrap: wrap; gap: 8px 12px; padding: 12px; }
       .system-console { order: 3; width: 100%; max-width: none; }
       .system-mode { margin-left: auto; }
-      .input-panel { grid-template-columns: 1fr; padding: 8px; }
+      .input-panel {
+        grid-template-areas:
+          "uploads"
+          "analyze"
+          "validation"
+          "note";
+        grid-template-columns: 1fr;
+        padding: 8px;
+      }
       .upload-grid { grid-template-columns: 1fr; }
       .upload-card { grid-template-columns: 1fr; }
       .drop-zone { grid-template-columns: auto minmax(0, 1fr); }
@@ -754,6 +776,7 @@
       .meta-item:nth-child(2) { border-right: 0; }
       .meta-item:nth-child(-n+2) { border-bottom-color: #475569; }
       .action-bar { align-items: stretch; }
+      .primary-button { width: 100%; min-height: 36px; }
       .action-note { max-width: none; }
       .results-header { align-items: stretch; flex-direction: column; }
     }
@@ -824,19 +847,20 @@
         </article>
       </div>
 
+      <div class="action-bar">
+        <button class="primary-button" id="analyzeButton" type="button" disabled>
+          <span aria-hidden="true">▸</span> 출고 분석
+        </button>
+      </div>
+
       <div class="validation-box" id="validationBox" role="status" aria-live="polite">
         <p class="validation-title"><span aria-hidden="true">○</span>두 파일을 선택하면 차단 검증을 시작합니다.</p>
         <p class="validation-detail">필수 열, 수량, 재고 상품코드 중복을 확인한 뒤 분석 버튼을 활성화합니다.</p>
       </div>
 
-      <div class="action-bar">
-        <div class="action-note">
-          미매칭 상품은 `재고정보 없음`으로 남고 구매수량을 자동 확정하지 않습니다.<br>
-          적요·적요1은 별도 이슈로 모으되 우선순위를 추론하지 않습니다.
-        </div>
-        <button class="primary-button" id="analyzeButton" type="button" disabled>
-          <span aria-hidden="true">▸</span> 출고 분석
-        </button>
+      <div class="action-note">
+        미매칭 상품은 `재고정보 없음`으로 남고 구매수량을 자동 확정하지 않습니다.<br>
+        적요·적요1은 별도 이슈로 모으되 우선순위를 추론하지 않습니다.
       </div>
       </section>
     </section>
