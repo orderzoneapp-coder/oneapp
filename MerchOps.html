@@ -9500,6 +9500,7 @@ const EditableCell = React.memo(({ row, field, linkedMasterField, mVal, config, 
             React.createElement("div", { className: `flex items-center w-full ${isNumeric ? 'justify-end' : 'justify-center'}` },
                 React.createElement("input", { type: "text", className: `w-full bg-transparent hover:bg-white/60 focus:bg-white focus:ring-1 focus:ring-indigo-300 rounded px-1.5 outline-none ${textClass} text-[12px] py-1`, value: localVal, placeholder: mVal || '', onChange: (e) => setLocalVal(e.target.value), onBlur: (e) => commitChange(e.target.value), onKeyDown: handleKeyDown, onClick: (e) => e.target.select() })))));
 });
+const EMPTY_MERCH_MASTER_ITEM = Object.freeze({});
 const MemoizedTableRow = React.memo(({ row, idx, state, actions, isSel, mItem }) => {
     var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s;
     const { isEstimateUploaded, visibleMasterCols, visibleUploadCols, config, data, activeTableTarget = 'estimate', registrationMode = false } = state;
@@ -9965,13 +9966,17 @@ const ExcelDataGrid = ({ state, actions }) => {
             return next;
         });
     }, [actions.setSelectedRows]);
-    const tableRowActions = useMemo(() => ({ ...actions, beginRowSelectionDrag, continueRowSelectionDrag, toggleRowSelectionKeyboard }), [actions, beginRowSelectionDrag, continueRowSelectionDrag, toggleRowSelectionKeyboard]);
+    const tableRowActions = useMemo(() => ({ beginRowSelectionDrag, continueRowSelectionDrag, toggleRowSelectionKeyboard }), [beginRowSelectionDrag, continueRowSelectionDrag, toggleRowSelectionKeyboard]);
     const handleScroll = useCallback((e) => {
         const { scrollTop, clientHeight, scrollHeight } = e.target;
         if (scrollHeight - scrollTop <= clientHeight + 150)
             setVisibleCount(p => p < fullDisplayRows.length ? p + 100 : p);
     }, [fullDisplayRows.length]);
-    const displayRows = fullDisplayRows.slice(0, visibleCount);
+    const displayRows = useMemo(() => fullDisplayRows.slice(0, visibleCount), [fullDisplayRows, visibleCount]);
+    const tableRowMasterItems = useMemo(() => displayRows.map(row => {
+        const resolved = window.getMerchMasterItemForRow ? window.getMerchMasterItemForRow(masterProducts, row) : masterProducts[row.코드];
+        return resolved && Object.keys(resolved).length > 0 ? resolved : EMPTY_MERCH_MASTER_ITEM;
+    }), [displayRows, masterProducts]);
     const hiddenCount = fullDisplayRows.length - displayRows.length;
     const masterLookupMode = String(data.masterLookupMode || '');
     const isExplicitEmptyWorkspace = !isEstimateUploaded && data.suppressMasterFallback === true && !masterLookupMode;
@@ -9990,7 +9995,7 @@ const ExcelDataGrid = ({ state, actions }) => {
     const isParserListTableMode = !registrationMode && (state.activeTags || []).some(t => String(t?.type || '') === 'catalog');
     const currentWorkCols = registrationMode ? window.MERCH_REGISTRATION_WORK_COLS : window.withMerchSaleAvailabilityColumn(window.filterMerchInfoWorkColumns((Array.isArray(targetWorkCols) ? targetWorkCols : (getInitialVisibleUploadCols()[activeTableTarget] || []))).filter(h => h !== '품목코드' && h !== '구매리포트' && h !== '구매검증리포트'), fullDisplayRows, activeTableTarget);
     const activeView = useMemo(() => window.findMerchTableView ? window.findMerchTableView(config.tableViewPresets || {}, activeTableTarget, config.activeTableViewId || '') : null, [config.tableViewPresets, activeTableTarget, config.activeTableViewId]);
-    const activeViewColumnWidths = activeView && activeView.columnWidths ? activeView.columnWidths : {};
+    const activeViewColumnWidths = useMemo(() => activeView && activeView.columnWidths ? activeView.columnWidths : {}, [activeView]);
     const [columnWidthDraft, setColumnWidthDraft] = useState(() => window.normalizeMerchColumnWidths(activeViewColumnWidths));
     const [sharedColumnWidths, setSharedColumnWidths] = useState(() => window.getMerchSharedColumnWidths ? window.getMerchSharedColumnWidths() : {});
     const [columnWidthDirty, setColumnWidthDirty] = useState(false);
@@ -10001,7 +10006,18 @@ const ExcelDataGrid = ({ state, actions }) => {
         setColumnWidthDirty(false);
         setColumnWidthDirtyMap({});
     }, [activeTableTarget, config.activeTableViewId, config.tableViewPresets]);
-    const currentColumnWidths = window.normalizeMerchColumnWidths(columnWidthDraft || activeViewColumnWidths || {});
+    const currentColumnWidths = useMemo(() => window.normalizeMerchColumnWidths(columnWidthDraft || activeViewColumnWidths || {}), [columnWidthDraft, activeViewColumnWidths]);
+    const tableRowState = useMemo(() => ({
+        isEstimateUploaded,
+        visibleMasterCols,
+        visibleUploadCols,
+        config,
+        data,
+        activeTableTarget,
+        registrationMode,
+        activeTags: state.activeTags || [],
+        columnWidths: currentColumnWidths
+    }), [isEstimateUploaded, visibleMasterCols, visibleUploadCols, config, data, activeTableTarget, registrationMode, state.activeTags, currentColumnWidths]);
     const widthStyle = (key, label, fallback) => window.getMerchColumnWidthStyle(currentColumnWidths, key, label, fallback, sharedColumnWidths);
     const getColumnWidthValue = (key, label, fallback) => window.getMerchColumnWidthValue(currentColumnWidths, key, label, fallback, sharedColumnWidths);
     const resizeHandle = (key, label, fallback = 86) => React.createElement("span", {
@@ -10162,7 +10178,7 @@ const ExcelDataGrid = ({ state, actions }) => {
                             React.createElement("i", { className: "fas fa-folder-open text-4xl mb-4 block" }),
                             emptyTableMessage))) : displayRows.map((row, idx) => {
                         const isSel = selectedRows.has(window.getManagedRowKey(row));
-                        return React.createElement(MemoizedTableRow, { key: window.getManagedRowKey(row), row: row, idx: idx, state: { ...state, columnWidths: currentColumnWidths }, actions: tableRowActions, isSel: isSel, mItem: (window.getMerchMasterItemForRow ? window.getMerchMasterItemForRow(masterProducts, row) : masterProducts[row.코드]) || {} });
+                        return React.createElement(MemoizedTableRow, { key: window.getManagedRowKey(row), row: row, idx: idx, state: tableRowState, actions: tableRowActions, isSel: isSel, mItem: tableRowMasterItems[idx] });
                     }),
                     React.createElement("tr", null,
                         React.createElement("td", { colSpan: "50", className: "h-[80px] bg-slate-50 border-t border-slate-200 text-center align-middle" }, hiddenCount > 0 ? (React.createElement("div", { className: "inline-flex items-center justify-center text-[12px] font-bold text-slate-500 bg-white px-6 py-2 rounded-full border shadow-sm mt-5" },
