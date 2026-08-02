@@ -32,8 +32,18 @@ assert.match(
 );
 assert.match(
     resizeSource,
-    /data-merch-column-resize-preview/,
-    '드래그 중에는 임시 CSS 규칙으로 해당 열만 표시해야 한다.'
+    /merch-column-resize-guide/,
+    '드래그 중에는 열 전체가 아니라 독립된 안내선만 표시해야 한다.'
+);
+assert.match(
+    resizeSource,
+    /resizeGuide\.style\.transform/,
+    '드래그 안내선은 레이아웃을 다시 계산하지 않는 transform으로 이동해야 한다.'
+);
+assert.doesNotMatch(
+    resizeSource,
+    /nth-child|previewStyle\.textContent|data-merch-column-resize-preview/,
+    '드래그 중 테이블 열 전체에 CSS 너비를 적용해 레이아웃을 반복 계산하면 안 된다.'
 );
 assert.match(
     resizeSource,
