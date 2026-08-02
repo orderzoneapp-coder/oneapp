@@ -9784,12 +9784,16 @@ function App() {
 역마진/입고가초과: ${reverseMarginCount}개` : '';
             const wholesaleOverLine = wholesaleOverCount > 0 ? `
 도매A과대의심: ${wholesaleOverCount}개` : '';
-            setToastMsg(`판매업로드 생성 완료
+            const successMessage = `판매업로드 생성 완료
 
 생성 행: ${rows.length}개
 업로드불가: ${fatalErrors.length}개${reverseMarginLine}${wholesaleOverLine}
 
-${issueLine}`);
+${issueLine}`;
+            if (typeof setToastMsg === 'function')
+                setToastMsg(successMessage);
+            else if (typeof setAlertMsg === 'function')
+                setAlertMsg(successMessage);
         }
         catch (err) {
             console.error(err);
