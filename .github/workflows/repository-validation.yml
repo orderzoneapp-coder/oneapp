@@ -65,6 +65,9 @@ jobs:
       - name: Test MerchOps sale availability pipeline
         run: node scripts/test-merchops-sale-pipeline.mjs
 
+      - name: Test MerchOps column resize performance contract
+        run: node scripts/test-merchops-column-resize-performance.mjs
+
       - name: Test MerchOps promotion catalog comparison policy
         run: node scripts/test-merchops-promo-catalog-compare.mjs
 
