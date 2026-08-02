@@ -1,8 +1,8 @@
 # ONEAPP Application Architecture
 
 - Repository: orderzoneapp-coder/oneapp
-- Architecture document version: 1.3.0
-- Last reviewed: 2026-07-29
+- Architecture document version: 1.3.1
+- Last reviewed: 2026-08-02
 - Machine-readable companion: app-manifest.json
 
 ## 1. Purpose
@@ -128,6 +128,7 @@ Important contracts include:
 | Change history | `merchHistory_v870` | MerchOps, SmartParser, DataOps, history viewer, cloud backup |
 | Parser dictionary | `parserDict_v870` | SmartParser, MerchOps, settings, cloud configuration |
 | Margin and pricing rules | `merchMarginRules_v878` | MerchOps, SmartParser, settings, core engine |
+| Parser catalog warehouse map | `parserCatalogWarehouseMap_v1` (`{ [catalogName]: warehouseCodeString }`) | SmartParser, settings, core-engine `config_only` backup and restore |
 | Mapping configuration | `merchMappings_v870` | MerchOps, settings, cloud configuration |
 | Master links | `merchMasterLinks_v870` | MerchOps, settings, cloud configuration |
 | Shared cloud URL | `oneapp_cloud_sync_url_v1` | MerchOps, DataOps, settings, history viewer, core engine |
@@ -182,9 +183,15 @@ Changing any action name, payload shape, response shape, authentication rule, or
 - `ONEAPP.MASTER`
 - `ONEAPP.ERRORS`
 
-As of this review, `settings.html`, `Master.html`, and `Item_manager.html` explicitly load `coreEngine.js`.
+As of this review, `settings.html`, `SmartParser.html`, `MerchOps.html`, `Master.html`, and `Item_manager.html` explicitly load `coreEngine.js`.
 
-MerchOps, DataOps, and SmartParser still contain overlapping or locally implemented logic.
+The `merchMarginRules_v878` normalize/select/calculate path is owned by `ONEAPP.PRICING`. SmartParser supplies the catalog warehouse only as calculation context and the final product `단위`; neither SmartParser nor MerchOps infers that unit from product name or specification. Exact non-wildcard warehouse-and-unit matches use the first saved rule, and every other case uses the single `*/*` default rule. Partial wildcard rules are not selected.
+
+`parserCatalogWarehouseMap_v1` trims catalog names and warehouse-code strings without numeric conversion, so values such as `01` retain their leading zero and blank values remain valid. SmartParser and settings read and write this same key directly and synchronize it on browser storage and focus events. The key is carried inside the existing cloud `settingsKeys`; the `code.gs` action and payload schema are unchanged.
+
+The legacy `parserListMarginRules_v1` value is retained for data compatibility but is not read, normalized, migrated, deleted, or rewritten by SmartParser, settings, MerchOps, or the shared pricing engine.
+
+MerchOps, DataOps, and SmartParser still contain other overlapping or locally implemented logic.
 
 Treat `coreEngine.js` as the intended shared contract, but do not remove duplicated implementations until compatibility tests prove that each application produces the same output.
 

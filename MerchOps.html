@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.173_PromoCatalogCompareMVP]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.174_CoreWarehouseUnitPricing]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -94,6 +94,7 @@
         // v2.1.171: 명시적 초기화 후 빈 작업테이블을 전체 마스터로 다시 채우지 않는다. 다음 작업 데이터 불러오기 전까지 초기화 상태를 세션에 유지해 불필요한 대량 렌더링을 막는다.
         // v2.1.172: 초기화 후 전체·코드 카테고리 버튼을 눌렀을 때만 마스터 조회행을 표시한다. 조회 전용 행은 변경 전까지 F7 대상에서 제외하고 파서리스트·파일 작업목록과 분리한다.
         // v2.1.173: 카탈로그·재고/LOT/원가·고정 마스터 스냅샷을 날짜와 판매량 판단 없이 비교하는 행사가 작업화면을 추가한다. 관리자 완료행만 기존 F7 원자 저장으로 반영한다.
+        // v2.1.174: merchMarginRules_v878의 창고+확정단위 가격 계산을 CoreEngine 단일 원본으로 전환하고 SmartParser 레거시 룰 의존을 제거한다.
         // v2.1.123: 구매·재고 작업 리포트에 히스토리 비교값을 연결한다. 현재 마스터 기준, 전일 히스토리, 최근 7일/30일 평균 대비 차이를 리포트 보조줄에 표시해 견적 적용 후에도 어제/단기/장기 흐름을 함께 판단한다.
         // v2.1.122: info(쇼핑몰 상품정보) 작업군의 매핑·불러오기·F8 원본양식 출력을 안정화한다. 상품코드=품목코드, 판매가격=출고가, 시중가격=시중가, 판매 1/0=판매여부, 테마1~5=행사테마로 연결한다. 오더즈판매가/오더즈구매가는 작업테이블에서는 숨기되 v2.1.162부터 원본 출력에는 보존한다.
         // v2.1.121: 상단 툴바를 유형별 그룹으로 시각 구분하고, 양식보기를 상단 파일작업 영역 우측으로 이동한다. 테이블 열폭 저장/초기화는 헤더 위에 겹치지 않게 우측 도구줄로 분리한다.
@@ -412,81 +413,7 @@
         };
 
 
-        // ============================================================
-        // [M-ENGINE-00] 마진룰 기본값/보정
-        // 역할: 메인 작업대와 ControlTower의 기본 룰셋을 동일하게 유지한다.
-        // 핵심: 01창고 BOX는 10%가 우선이며, 과거 단일 기본룰(*/*/20%)만 남아 있으면 자동 복구한다.
-        // ============================================================
-        window.getDefaultMerchMarginRules = () => ([
-            { id: 'rule_1', whCode: '01', unit: 'box, 박스, BOX', rate: 10, type: 'divide' },
-            { id: 'rule_2', whCode: '01', unit: 'ea, 개, 낱개, EA, kg, 단', rate: 15, type: 'divide' },
-            // 03창고 확정 정책: BOX 10%, EA/kg/단 15%. 과거 03,05 통합룰보다 우선 적용한다.
-            { id: 'rule_03_box', whCode: '03', unit: 'box, 박스, BOX', rate: 10, type: 'divide' },
-            { id: 'rule_03_ea', whCode: '03', unit: 'ea, 개, 낱개, EA, kg, 단', rate: 15, type: 'divide' },
-            { id: 'rule_3', whCode: '03,05', unit: 'box, 박스, BOX', rate: 15, type: 'divide' },
-            { id: 'rule_4', whCode: '03,05', unit: 'ea, 개, 낱개, EA, kg, 단', rate: 10, type: 'divide' },
-            { id: 'rule_5', whCode: '77,99', unit: 'box, 박스, BOX', rate: 10, type: 'divide' },
-            { id: 'rule_6', whCode: '77,99', unit: 'ea, 개, 낱개, EA, kg, 단', rate: 15, type: 'divide' },
-            { id: 'default', whCode: '*', unit: '*', rate: 20, type: 'divide' }
-        ]);
-
-        window.normalizeMerchWarehouseForRule = (v) => {
-            const raw = String(v ?? '').trim();
-            if (!raw || raw === '*') return raw || '';
-            const m = raw.match(/\d+/);
-            return m ? String(Number(m[0])).padStart(2, '0') : raw;
-        };
-
-        window.getMerchUnitRuleCandidates = (v) => {
-            const raw = String(v ?? '').trim().toLowerCase();
-            if (!raw || raw === '*') return raw === '*' ? ['*'] : [];
-            const compact = raw.replace(/\s/g, '');
-            const parts = [compact, ...raw.split(/[,./|\s()_\-]+/).map(s => s.trim()).filter(Boolean)];
-            const cands = [];
-            const push = (x) => { if (x && !cands.includes(x)) cands.push(x); };
-            parts.forEach(part => {
-                const p = String(part || '').toLowerCase().replace(/\s/g, '');
-                if (!p) return;
-                if (/box|박스|상자|bx/.test(p)) push('box');
-                if (/소분|분할|절단|컷|소포장|묶음/.test(p)) push('sub');
-                if (/ea|each|개|낱개|낱|kg|킬로|단|봉|포/.test(p)) push('ea');
-                push(p);
-            });
-            return cands;
-        };
-
-        window.isLegacyDefaultOnlyMarginRules = (rules = []) => {
-            if (!Array.isArray(rules) || rules.length !== 1) return false;
-            const r = rules[0] || {};
-            return String(r.whCode ?? '*').trim() === '*'
-                && String(r.unit ?? '*').trim() === '*'
-                && window.parseNum(r.rate) === 20;
-        };
-
-        window.sanitizeMerchMarginRules = (rules = []) => {
-            const defaults = window.getDefaultMerchMarginRules();
-            if (!Array.isArray(rules) || rules.length === 0 || window.isLegacyDefaultOnlyMarginRules(rules)) {
-                return defaults.map(r => ({ ...r }));
-            }
-            const cleaned = rules
-                .filter(r => r && typeof r === 'object')
-                .map((r, idx) => ({
-                    id: r.id || `rule_${idx + 1}`,
-                    whCode: String(r.whCode ?? '*').trim() || '*',
-                    unit: String(r.unit ?? '*').trim() || '*',
-                    rate: window.parseNum(r.rate),
-                    type: r.type === 'multiply' ? 'multiply' : 'divide'
-                }));
-            const hasDefault = cleaned.some(r => String(r.whCode).trim() === '*' && String(r.unit).trim() === '*');
-            if (!hasDefault) cleaned.push({ ...defaults[defaults.length - 1] });
-            // 저장된 과거 룰셋이 03,05 통합값이어도 03창고 확정룰을 항상 먼저 평가한다.
-            const fixed03Rules = [
-                { id: 'rule_03_box', whCode: '03', unit: 'box, 박스, BOX', rate: 10, type: 'divide' },
-                { id: 'rule_03_ea', whCode: '03', unit: 'ea, 개, 낱개, EA, kg, 단', rate: 15, type: 'divide' }
-            ];
-            const withoutOld03Fixed = cleaned.filter(r => !['rule_03_box', 'rule_03_ea'].includes(String(r.id || '')));
-            return [...fixed03Rules, ...withoutOld03Fixed];
-        };
+        // 마진룰 normalize/select/calculate는 coreEngine.js의 ONEAPP.PRICING을 단일 원본으로 사용한다.
 
         // ============================================================
         // [M-POLICY-01] 엑셀값 원본 우선 정책
@@ -1388,12 +1315,11 @@
             }); 
         };
 
-        // 판매가/룰적용 반올림 정책: 1,000원 미만은 10원 단위, 1,000원 이상은 100원 단위
+        // 공통 가격엔진과 동일한 100원 단위 반올림 보조값.
         window.roundMerchRuleSalePrice = (rawPrice) => {
             const n = Number(rawPrice || 0);
             if (!Number.isFinite(n) || n <= 0) return 0;
-            const roundUnit = n < 1000 ? 10 : 100;
-            return Math.round(n / roundUnit) * roundUnit;
+            return Math.round(n / 100) * 100;
         };
 
         // ============================================================
@@ -1402,95 +1328,7 @@
         // 주의: 행사가 우선 적용 판단은 여기서 하지 않는다. 행사가는 후속 final/출력 단계에서 우선권을 가진다.
         // 수정 시 검증: 입고가 변경, 마진룰 변경, 창고/단위별 룰, forceRecalc 동작을 함께 확인한다.
         // ============================================================
-        window.calculatePricesEngine = (baseInPrice, providedOutPrice, mItem = {}, currentFinalData = {}, marginRules = [], forceRecalc = false) => {
-            const outsrc = (!currentFinalData?.['외주비'] && currentFinalData?.['외주비'] !== 0) 
-                ? window.parseNum(mItem?.['외주비']) 
-                : window.parseNum(currentFinalData?.['외주비']);
-            
-            const labor = (!currentFinalData?.['노무비'] && currentFinalData?.['노무비'] !== 0) 
-                ? window.parseNum(mItem?.['노무비']) 
-                : window.parseNum(currentFinalData?.['노무비']);
-            
-            const totalCost = baseInPrice + outsrc + labor;
-            // 계산용 창고/단위 정책:
-            // - 창고는 _calcWarehouse → 작업값 창고 → 마스터 창고 순으로 잡는다.
-            // - 단위는 단위 필드가 비어도 규격/품명에 붙은 (BOX)/(EA)/kg/단 표기를 함께 참고한다.
-            // - 환경설정 룰셋이 과거 단일 기본룰(*/*/20%)이면 ControlTower 기본룰로 자동 보정한다.
-            const whRaw = String(currentFinalData?.['_calcWarehouse'] ?? currentFinalData?.['창고'] ?? mItem?.['창고'] ?? '').trim();
-            const whCode = window.normalizeMerchWarehouseForRule ? window.normalizeMerchWarehouseForRule(whRaw) : whRaw;
-            const unitRaw = [
-                currentFinalData?.['_calcUnit'],
-                currentFinalData?.['단위'],
-                currentFinalData?.['규격'],
-                currentFinalData?.['품목명'],
-                mItem?.['단위'],
-                mItem?.['규격'],
-                mItem?.['품목명']
-            ].filter(v => v !== undefined && v !== null && String(v).trim() !== '').join(' ');
-            const unitCandidates = window.getMerchUnitRuleCandidates ? window.getMerchUnitRuleCandidates(unitRaw) : [String(unitRaw).trim().toLowerCase()].filter(Boolean);
-            
-            const matchWh = (ruleWh, targetWh) => { 
-                if (String(ruleWh).trim() === '*') return true; 
-                const targetNorm = window.normalizeMerchWarehouseForRule ? window.normalizeMerchWarehouseForRule(targetWh) : String(targetWh ?? '').trim();
-                const targets = String(ruleWh).split(/[,./|\s]+/).map(s => s.trim()).filter(Boolean); 
-                return targets.some(s => {
-                    const ruleNorm = window.normalizeMerchWarehouseForRule ? window.normalizeMerchWarehouseForRule(s) : s;
-                    return ruleNorm !== '' && targetNorm !== '' && ruleNorm === targetNorm;
-                }); 
-            };
-            
-            const matchUnit = (ruleUnit, targetUnits = []) => { 
-                if (String(ruleUnit).trim() === '*') return true; 
-                const targets = String(ruleUnit).split(/[,./|\s]+/)
-                    .flatMap(s => window.getMerchUnitRuleCandidates ? window.getMerchUnitRuleCandidates(s) : [String(s).trim().toLowerCase()])
-                    .filter(Boolean); 
-                return targets.some(ruleUnitNorm => targetUnits.some(targetUnitNorm => targetUnitNorm === ruleUnitNorm || targetUnitNorm.includes(ruleUnitNorm) || ruleUnitNorm.includes(targetUnitNorm))); 
-            };
-
-            let bestRule = null; 
-            let bestScore = -1;
-            const safeMarginRules = window.sanitizeMerchMarginRules ? window.sanitizeMerchMarginRules(marginRules) : (Array.isArray(marginRules) ? marginRules : []);
-            
-            safeMarginRules.forEach((r, ruleIdx) => { 
-                if (matchWh(r.whCode, whCode) && matchUnit(r.unit, unitCandidates)) { 
-                    let score = 0; 
-                    if (String(r.whCode).trim() !== '*') score += 20; 
-                    if (String(r.unit).trim() !== '*') score += 10; 
-                    score -= ruleIdx / 1000;
-                    if (score > bestScore) { 
-                        bestScore = score; 
-                        bestRule = r; 
-                    } 
-                } 
-            });
-
-            const appliedRule = bestRule || { whCode: '*', unit: '*', rate: 20, type: 'divide' };
-            currentFinalData._appliedMarginRule = {
-                inputWarehouse: whCode || '-',
-                inputUnit: unitCandidates[0] || (unitRaw || '-'),
-                inputUnitRaw: unitRaw || '',
-                ruleWhCode: appliedRule.whCode || '*',
-                ruleUnit: appliedRule.unit || '*',
-                rate: window.parseNum(appliedRule.rate),
-                type: appliedRule.type || 'divide',
-                totalCost
-            };
-            let calcOutPrice = 0;
-            
-            if (baseInPrice > 0) { 
-                if (appliedRule.type === 'divide') {
-                    calcOutPrice = totalCost / (1 - (appliedRule.rate / 100)); 
-                } else {
-                    calcOutPrice = totalCost * (1 + (appliedRule.rate / 100)); 
-                }
-                calcOutPrice = window.roundMerchRuleSalePrice ? window.roundMerchRuleSalePrice(calcOutPrice) : (Math.round(calcOutPrice / (calcOutPrice < 1000 ? 10 : 100)) * (calcOutPrice < 1000 ? 10 : 100)); 
-            }
-
-            if (baseInPrice === 0) return 0;
-            if (forceRecalc) return calcOutPrice;
-            if (providedOutPrice > 0) return providedOutPrice;
-            return calcOutPrice;
-        };
+        // calculatePricesEngine은 coreEngine.js가 제공하며 여기서는 재정의하지 않는다.
 
         // ============================================================
         // [M-MARKET-PRICE-01] 시중가 source별 적용 정책
@@ -1873,64 +1711,6 @@ const safeJSONParse = (key, defaultVal) => {
     catch (e) {
         return defaultVal;
     }
-};
-// ============================================================
-// [M-PARSER-LIST-RULE-01] SmartParser 카탈로그 룰 읽기 전용 계약
-// - parserListMarginRules_v1은 로컬 설정만 읽으며 MerchOps 설정 저장/클라우드 payload에는 넣지 않는다.
-// - trim한 카탈로그명 exact key와 확정 필드만 화면 분석에 사용한다.
-// ============================================================
-window.PARSER_LIST_MARGIN_RULES_KEY = 'parserListMarginRules_v1';
-window.normalizeParserRuleUpdatedAt = (value) => {
-    const rawUpdatedAt = typeof value === 'string' ? value.trim() : '';
-    if (!rawUpdatedAt || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/.test(rawUpdatedAt)) return '';
-    const parsedUpdatedAt = new Date(rawUpdatedAt);
-    return Number.isNaN(parsedUpdatedAt.getTime()) ? '' : parsedUpdatedAt.toISOString();
-};
-window.normalizeParserUnitCondition = (value) => String(value ?? '').trim() || '*';
-window.getParserUnitConditionKeys = (value) => {
-    const condition = window.normalizeParserUnitCondition(value);
-    if (condition === '*') return ['*'];
-    return Array.from(new Set(condition.split(',').flatMap(alias => window.getMerchUnitRuleCandidates ? window.getMerchUnitRuleCandidates(alias) : [String(alias || '').trim().toLowerCase()]).filter(candidate => candidate && candidate !== '*')));
-};
-window.normalizeParserListMarginRuleEntry = (value, fallbackUpdatedAt = '') => {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-    const marginRate = value.marginRate;
-    const calculationType = value.calculationType;
-    const updatedAt = window.normalizeParserRuleUpdatedAt(value.updatedAt || fallbackUpdatedAt);
-    const unitCondition = window.normalizeParserUnitCondition(value.unitCondition ?? value.unit ?? '*');
-    if (typeof marginRate !== 'number' || !Number.isFinite(marginRate) || !['divide', 'multiply'].includes(calculationType) || !updatedAt) return null;
-    if (calculationType === 'divide' && marginRate >= 100) return null;
-    if (unitCondition !== '*' && window.getParserUnitConditionKeys(unitCondition).length === 0) return null;
-    return { unitCondition, marginRate, calculationType, updatedAt };
-};
-window.normalizeParserListMarginRules = (raw = {}) => {
-    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
-    const normalized = Object.create(null);
-    Object.entries(raw).forEach(([catalogName, value]) => {
-        const name = String(catalogName || '').trim();
-        if (!name || !value || typeof value !== 'object' || Array.isArray(value)) return;
-        const rawRules = Array.isArray(value.rules) ? value.rules : [value];
-        const rules = [];
-        const seenUnitKeys = new Set();
-        rawRules.forEach(candidate => {
-            const rule = window.normalizeParserListMarginRuleEntry(candidate, value.updatedAt);
-            if (!rule) return;
-            const unitKeys = window.getParserUnitConditionKeys(rule.unitCondition);
-            if (unitKeys.some(unitKey => seenUnitKeys.has(unitKey))) return;
-            unitKeys.forEach(unitKey => seenUnitKeys.add(unitKey));
-            rules.push(rule);
-        });
-        if (rules.length > 0) normalized[name] = { rules };
-    });
-    return normalized;
-};
-window.resolveParserListMarginRule = (rules, catalogName, unitValue = '') => {
-    const name = String(catalogName || '').trim();
-    const ruleSet = window.normalizeParserListMarginRules(rules)[name];
-    if (!ruleSet) return null;
-    const targetUnits = window.getMerchUnitRuleCandidates ? window.getMerchUnitRuleCandidates(unitValue) : [String(unitValue || '').trim().toLowerCase()].filter(Boolean);
-    const exactRule = ruleSet.rules.find(rule => rule.unitCondition !== '*' && window.getParserUnitConditionKeys(rule.unitCondition).some(ruleUnit => targetUnits.some(targetUnit => targetUnit === ruleUnit || targetUnit.includes(ruleUnit) || ruleUnit.includes(targetUnit))));
-    return exactRule || ruleSet.rules.find(rule => rule.unitCondition === '*') || null;
 };
 const TABLE_VIEW_TARGETS = [
     { id: 'estimate', label: '견적' },
@@ -3678,7 +3458,6 @@ const useMerchConfig = () => {
     });
     const [uploadColumnMeta, setUploadColumnMeta] = useState(() => safeJSONParse('merchUploadColumnMeta_v870', {}));
     const [marginRules, setMarginRules] = useState(() => window.sanitizeMerchMarginRules(safeJSONParse('merchMarginRules_v878', window.getDefaultMerchMarginRules())));
-    const [parserListMarginRules, setParserListMarginRules] = useState(() => window.normalizeParserListMarginRules(safeJSONParse(window.PARSER_LIST_MARGIN_RULES_KEY, {})));
     const configHydratedRef = useRef(false);
     // v2.0.9 필수 매핑 보강: 기존 localStorage 설정이 있어도 단위/브랜드/검색어등록을 자동 보강한다.
     useEffect(() => {
@@ -3736,17 +3515,6 @@ const useMerchConfig = () => {
             }
             catch (e) { }
         }
-    }, []);
-    // SmartParser 카탈로그 룰은 로컬 읽기 전용이다. 일반 MerchOps 설정 저장/IDB/클라우드 payload와 분리한다.
-    useEffect(() => {
-        const reloadParserListMarginRules = () => {
-            setParserListMarginRules(window.normalizeParserListMarginRules(safeJSONParse(window.PARSER_LIST_MARGIN_RULES_KEY, {})));
-        };
-        const handleParserListRuleStorage = (event) => {
-            if (event.key === window.PARSER_LIST_MARGIN_RULES_KEY) reloadParserListMarginRules();
-        };
-        window.addEventListener('storage', handleParserListRuleStorage);
-        return () => window.removeEventListener('storage', handleParserListRuleStorage);
     }, []);
     // 환경설정 영속화: localStorage를 1차 저장소로 쓰고 IndexedDB에 백업한다.
     // 기존 코드에는 상태 변경 후 localStorage.setItem이 없어, 재접속 시 하드코딩 기본값으로 돌아갈 수 있었다.
@@ -3894,8 +3662,7 @@ const useMerchConfig = () => {
         mappings, setMappings,
         masterLinks, setMasterLinks,
         uploadColumnMeta, setUploadColumnMeta,
-        marginRules, setMarginRules,
-        parserListMarginRules
+        marginRules, setMarginRules
     };
 };
 const useMerchData = () => {
@@ -8965,7 +8732,7 @@ window.MERCH_PARSER_ANALYSIS_FILTERS = Object.freeze({
     cost_up: '인상',
     cost_down: '인하',
     cost_zero: '0',
-    supply_new: '신규',
+    supply_new: '신규상품',
     supply_stopped: '공급중단'
 });
 window.getMerchLoadedParserListSelection = (activeTags = []) => {
@@ -9046,13 +8813,12 @@ window.matchMerchParserAnalysisFilter = (event = {}, filter = 'all') => {
     if (value.startsWith('supply_')) return event.kind === 'supply' && event.changeType === value.replace('supply_', '');
     return true;
 };
-window.buildMerchParserListHistoryAnalysis = ({ historyLogs = [], activeTags = [], masterProducts = {}, parserListMarginRules = {} } = {}) => {
+window.buildMerchParserListHistoryAnalysis = ({ historyLogs = [], activeTags = [], masterProducts = {} } = {}) => {
     const selection = window.getMerchLoadedParserListSelection(activeTags);
     const metrics = { historyIndexVisits: 0, historyEventVisits: 0, priceHistoryLookups: 0 };
     if (!selection.loaded) return { active: false, selection, events: [], counts: {}, metrics };
     const logs = Array.isArray(historyLogs) ? historyLogs : [];
     const priceHistoryIndex = window.buildMerchParserPriceHistoryExactIndex(logs, metrics);
-    const rules = window.normalizeParserListMarginRules(parserListMarginRules);
     const masterByCode = new Map();
     Object.entries(masterProducts || {}).forEach(([key, item]) => {
         const code = String(item?.코드 || item?.['품목코드'] || key || '').trim();
@@ -9068,8 +8834,17 @@ window.buildMerchParserListHistoryAnalysis = ({ historyLogs = [], activeTags = [
         const master = masterByCode.get(code) || {};
         const currentSale = window.getMerchMasterSalePriceInfo ? window.getMerchMasterSalePriceInfo(master) : { value: master?.['출고가'] ?? '', source: '출고가' };
         const saleState = window.getMasterSalesState ? window.getMasterSalesState(master) : { text: String(master?.['판매여부'] ?? '-') };
-        const historyRule = window.normalizeParserListMarginRuleEntry(log?.priceRule, log?.priceRule?.updatedAt);
-        const currentUnitRule = window.resolveParserListMarginRule(rules, catalogName, log?.parsedUnit || log?.unit || master?.['단위'] || '');
+        const priceRule = log?.priceRule && typeof log.priceRule === 'object' ? log.priceRule : {};
+        const historyRule = (log?.marginRuleId || priceRule.id || priceRule.marginRate !== undefined) ? {
+            id: String(log?.marginRuleId || priceRule.id || ''),
+            whCode: String(priceRule.whCode || log?.catalogWarehouse || '*'),
+            unit: String(priceRule.unit || log?.unit || '*'),
+            rate: window.parseNum(log?.marginRate ?? priceRule.marginRate ?? priceRule.rate),
+            type: String(log?.calculationType || priceRule.calculationType || priceRule.type || 'divide') === 'multiply' ? 'multiply' : 'divide',
+            matchType: String(log?.matchType || priceRule.matchType || 'default'),
+            inputWarehouse: String(log?.catalogWarehouse || ''),
+            inputUnit: String(log?.unit || log?.parsedUnit || '')
+        } : null;
         return {
             id: String(log?.id || `${kind}:${catalogName}:${code}:${String(log?.timestampISO || log?.timestamp || '')}:${index}`),
             kind,
@@ -9084,7 +8859,7 @@ window.buildMerchParserListHistoryAnalysis = ({ historyLogs = [], activeTags = [
             currentSalePriceSource: currentSale?.source || '',
             currentSaleAvailability: master?.['판매여부'] ?? '',
             currentSaleStatus: saleState?.text || saleState?.label || '-',
-            rule: historyRule || currentUnitRule,
+            rule: historyRule,
             log
         };
     };
@@ -9111,11 +8886,13 @@ window.buildMerchParserListHistoryAnalysis = ({ historyLogs = [], activeTags = [
         if (field === '입고가') {
             const oldVal = getHistoryOldValue(log);
             const newVal = getHistoryNewValue(log);
-            if (!areMerchHistoryValuesEqual(oldVal, newVal)) {
-                const changeType = window.classifyMerchParserCostChange(oldVal, newVal);
+            const master = masterByCode.get(code) || {};
+            const newState = window.getMerchParserCostValueState(newVal);
+            const stoppedMasterIsNew = String(master?.['판매여부'] ?? '').trim() === '0' && newState.present && newState.value >= 1;
+            if (stoppedMasterIsNew || !areMerchHistoryValuesEqual(oldVal, newVal)) {
+                const changeType = stoppedMasterIsNew ? 'new_price' : window.classifyMerchParserCostChange(oldVal, newVal);
                 if (changeType) {
                     const oldState = window.getMerchParserCostValueState(oldVal);
-                    const newState = window.getMerchParserCostValueState(newVal);
                     const oldNum = oldState.value;
                     const newNum = newState.value;
                     const timestampISO = String(log?.timestampISO || '').trim();
@@ -9155,7 +8932,10 @@ window.buildMerchParserListHistoryAnalysis = ({ historyLogs = [], activeTags = [
         }
         const supplyChangeType = window.normalizeMerchParserSupplyChangeType(log);
         const isNewProductTagDetail = String(log?.supplyChangeType || '').trim() === 'tag_first' && log?.isNewProduct === true;
-        const isNewPriceLog = field === '입고가' && window.classifyMerchParserCostChange(getHistoryOldValue(log), getHistoryNewValue(log)) === 'new_price';
+        const masterForSupply = masterByCode.get(code) || {};
+        const loggedNewState = window.getMerchParserCostValueState(getHistoryNewValue(log));
+        const stoppedMasterIsNew = field === '입고가' && String(masterForSupply?.['판매여부'] ?? '').trim() === '0' && loggedNewState.present && loggedNewState.value >= 1;
+        const isNewPriceLog = field === '입고가' && (stoppedMasterIsNew || window.classifyMerchParserCostChange(getHistoryOldValue(log), getHistoryNewValue(log)) === 'new_price');
         if (supplyChangeType && !isNewProductTagDetail && !isNewPriceLog) {
             // 공급 이벤트에는 의도적으로 diff/diffRate 필드를 만들지 않는다.
             events.push(buildCommon(log, 'supply', supplyChangeType, index));
@@ -10051,10 +9831,9 @@ const ParserListHistoryAnalysisPanel = ({ state }) => {
         return window.buildMerchParserListHistoryAnalysis({
             historyLogs: state.data?.historyLogs || [],
             activeTags,
-            masterProducts: state.masterProducts || state.data?.masterProducts || {},
-            parserListMarginRules: state.config?.parserListMarginRules || {}
+            masterProducts: state.masterProducts || state.data?.masterProducts || {}
         });
-    }, [selection.loaded, selectionSignature, activeTags, state.data?.historyLogs, state.masterProducts, state.data?.masterProducts, state.config?.parserListMarginRules]);
+    }, [selection.loaded, selectionSignature, activeTags, state.data?.historyLogs, state.masterProducts, state.data?.masterProducts]);
     if (!selection.loaded) return null;
     const visibleEvents = analysis.events.filter(event => window.matchMerchParserAnalysisFilter(event, eventFilter));
     const filterEntries = Object.entries(window.MERCH_PARSER_ANALYSIS_FILTERS);
@@ -10076,10 +9855,10 @@ const ParserListHistoryAnalysisPanel = ({ state }) => {
     };
     const formatRule = (rule) => {
         if (!rule) return '룰 없음';
-        const type = rule.calculationType === 'divide' ? '나누기' : '곱하기';
-        return `${rule.unitCondition || '*'} · ${type} ${Number(rule.marginRate).toLocaleString()}%`;
+        const type = rule.type === 'multiply' ? '곱하기' : '나누기';
+        return `${rule.whCode || '*'} / ${rule.unit || '*'} · ${rule.matchType || 'default'} · ${type} ${Number(rule.rate || 0).toLocaleString()}%`;
     };
-    const changeLabels = { up: '인상', down: '인하', zero: '0', new: '신규', stopped: '공급중단' };
+    const changeLabels = { up: '인상', down: '인하', zero: '0', new: '신규상품', stopped: '공급중단' };
     const changeTones = {
         up: 'bg-rose-50 text-rose-700 border-rose-200',
         down: 'bg-blue-50 text-blue-700 border-blue-200',
@@ -10137,8 +9916,8 @@ const ParserListHistoryAnalysisPanel = ({ state }) => {
                             h("div", { className: "font-black text-slate-800 whitespace-nowrap" }, `현재 판매가격 ${formatPrice(event.currentSalePrice)}${event.currentSalePriceSource ? ` (${event.currentSalePriceSource})` : ''}`),
                             h("div", { className: "text-[10px] font-bold text-slate-500 whitespace-nowrap" }, `현재 판매여부 ${String(event.currentSaleAvailability ?? '').trim() || '-'} · ${event.currentSaleStatus}`)),
                         h("div", { className: "min-w-0 text-right" },
-                            h("div", { className: `font-black ${event.rule ? 'text-indigo-700' : 'text-amber-700'}` }, `카탈로그 룰 ${ruleText}`),
-                            h("div", { className: "text-[10px] font-bold text-slate-400 truncate", title: event.rule?.updatedAt || '' }, event.rule?.updatedAt ? `룰수정 ${formatTimestamp(event.rule.updatedAt)}` : '전용 룰 미설정')));
+                            h("div", { className: `font-black ${event.rule ? 'text-indigo-700' : 'text-amber-700'}` }, `공통 가격룰 ${ruleText}`),
+                            h("div", { className: "text-[10px] font-bold text-slate-400 truncate" }, event.rule ? `입력 창고 ${event.rule.inputWarehouse || '공란'} · 단위 ${event.rule.inputUnit || '공란'}` : '가격 근거 없음')));
                 }))));
 };
 const ExcelDataGrid = ({ state, actions }) => {
@@ -10358,7 +10137,7 @@ const WelcomeGuide = ({ onUpload, onCloudSync }) => (React.createElement("div", 
         React.createElement("i", { className: "fas fa-box-open" }),
         React.createElement("div", { className: "absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm" },
             React.createElement("i", { className: "fas fa-check" }))),
-    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.173_PromoCatalogCompareMVP]"),
+    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.174_CoreWarehouseUnitPricing]"),
     React.createElement("p", { className: "text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold" },
         "\uD604\uC7AC \uB4F1\uB85D\uB41C ",
         React.createElement("span", { className: "text-indigo-500" }, "\uB9C8\uC2A4\uD130 \uC0C1\uD488 \uB370\uC774\uD130"),
@@ -10645,19 +10424,15 @@ const App = () => {
                 str.split(',').map(s => s.trim()).filter(Boolean).forEach(t => counts[t] = (counts[t] || 0) + 1);
             }
         });
-        // 전용 룰 또는 기존 parser 이력이 남은 리스트는 현재 태그가 0건이어도 다시 열 수 있다.
+        // 기존 parser 이력이 남은 리스트는 현재 태그가 0건이어도 다시 열 수 있다.
         // 별도 리스트 DB를 만들지 않으며, 분석은 실제 activeTag 로드 뒤 전용 패널에서만 수행한다.
-        Object.keys(config.parserListMarginRules || {}).forEach(catalogName => {
-            const name = String(catalogName || '').trim();
-            if (name && counts[name] === undefined) counts[name] = 0;
-        });
         (Array.isArray(data.historyLogs) ? data.historyLogs : []).forEach(log => {
             if (!isExactParserHistoryLog(log)) return;
             const name = normalizeHistoryCatalog(log);
             if (name && counts[name] === undefined) counts[name] = 0;
         });
         return Object.keys(counts).sort().map(tag => ({ name: tag, count: counts[tag] }));
-    }, [data.masterProducts, data.historyLogs, config.parserListMarginRules]);
+    }, [data.masterProducts, data.historyLogs]);
     const availableCategories = useMemo(() => {
         const counts = {};
         Object.values(data.masterProducts).forEach(m => {
@@ -11014,7 +10789,7 @@ const App = () => {
                                 React.createElement("div", { className: "flex flex-col border-l-2 border-slate-700 pl-3" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "MerchOps"),
-                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.173_PromoCatalogCompareMVP")),
+                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.174_CoreWarehouseUnitPricing")),
                                     React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "MAIN WORKSPACE"))),
                             React.createElement(SystemConsole, { itemCount: Object.keys(data.masterProducts).length, isProcessing: ui.isProcessing, processMsg: ui.processMsg, estimateCount: Object.keys(data.managedItems).length, filteredCount: fullDisplayRows.length, activeTags: ui.activeTags, masterLookupMode: data.masterLookupMode }),
                             React.createElement("nav", { className: "flex gap-1.5 text-[14px] shrink-0 items-center" },

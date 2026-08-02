@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Smart Parser [v3.0.21 NoOpSaveFix CatalogUpdatedAt EnterExecute ExplicitInfoSave]</title>
+    <title>ONEAPP MerchOps - Smart Parser [v3.2.0 CatalogWarehousePricing]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -132,38 +132,6 @@
             return { label, fullLabel, isToday, timestampMs: parsed.getTime() };
         };
 
-        const calculatePricesEngine = (baseInPrice, mItem = {}, currentFinalData = {}, marginRules = [], forceRecalc = false, explicitRule = null) => {
-            const ROUND_UNIT = 100;
-            const outsrc = (!currentFinalData?.['외주비'] && currentFinalData?.['외주비'] !== 0) ? parseNum(mItem?.['외주비']) : parseNum(currentFinalData?.['외주비']);
-            const labor = (!currentFinalData?.['노무비'] && currentFinalData?.['노무비'] !== 0) ? parseNum(mItem?.['노무비']) : parseNum(currentFinalData?.['노무비']);
-            const totalCost = baseInPrice + outsrc + labor;
-            const whCode = String(currentFinalData?.['창고'] ?? mItem?.['창고'] ?? '').trim();
-            const unitStr = String(currentFinalData?.['단위'] ?? mItem?.['단위'] ?? '').trim().toLowerCase();
-            
-            const matchWh = (ruleWh, targetWh) => { if (ruleWh === '*') return true; const targets = String(ruleWh).split(/[,./|\s]+/).map(s => s.trim()).filter(Boolean); return targets.some(s => s === targetWh || (targetWh !== '' && !isNaN(s) && !isNaN(targetWh) && Number(s) === Number(targetWh))); };
-            const matchUnit = (ruleUnit, targetUnit) => { if (ruleUnit === '*') return true; const targets = String(ruleUnit).toLowerCase().split(/[,./|\s]+/).map(s => s.trim()).filter(Boolean); return targets.some(s => targetUnit === s || targetUnit.includes(s)); };
-
-            let bestRule = null; let bestScore = -1;
-            const safeMarginRules = Array.isArray(marginRules) ? marginRules : [];
-            if (!explicitRule) {
-                safeMarginRules.forEach(r => { if (matchWh(r.whCode, whCode) && matchUnit(r.unit, unitStr)) { let score = 0; if (r.whCode !== '*') score += 2; if (r.unit !== '*') score += 1; if (score > bestScore) { bestScore = score; bestRule = r; } } });
-            }
-
-            const appliedRule = explicitRule
-                ? { rate: Number(explicitRule.marginRate), type: explicitRule.calculationType }
-                : (bestRule || { rate: 10, type: 'divide' }); let calcOutPrice = 0;
-            if (baseInPrice > 0) { if (appliedRule.type === 'divide') calcOutPrice = totalCost / (1 - (appliedRule.rate / 100)); else calcOutPrice = totalCost * (1 + (appliedRule.rate / 100)); calcOutPrice = Math.round(calcOutPrice / ROUND_UNIT) * ROUND_UNIT; }
-
-            let newFinalData = { ...currentFinalData, '입고가': baseInPrice }; newFinalData['시중가'] = calcOutPrice;
-            const providedOutPrice = parseNum(currentFinalData?.['출고가']); const mIn = parseNum(mItem?.['입고가']); const mOut = parseNum(mItem?.['출고가']);
-
-            if (baseInPrice === 0) newFinalData['출고가'] = 0; else if (providedOutPrice > 0 && !forceRecalc) newFinalData['출고가'] = providedOutPrice; else if (baseInPrice === mIn && mOut > 0 && !forceRecalc) newFinalData['출고가'] = mOut; else newFinalData['출고가'] = calcOutPrice;
-
-            const div1 = parseNum(currentFinalData?.['1종연산'] ?? mItem?.['1종연산']); const extraCost = parseNum(currentFinalData?.['경비'] ?? mItem?.['경비']); 
-            if (div1 > 0) { if (baseInPrice === 0) { newFinalData['1입고'] = 0; newFinalData['1출고'] = 0; } else { newFinalData['1입고'] = Math.round(((baseInPrice + outsrc) / div1) / ROUND_UNIT) * ROUND_UNIT; newFinalData['1출고'] = Math.round((Math.round((newFinalData['출고가'] / div1) + extraCost)) / 10) * 10; } }
-            return newFinalData;
-        };
-    
     </script>
 </head>
 <body>
@@ -404,133 +372,14 @@ const safeParseJson = (raw, fallback) => {
         return fallback;
     }
 };
-const PARSER_LIST_MARGIN_RULES_KEY = 'parserListMarginRules_v1';
 const PARSER_PRICE_HISTORY_FIELDS = ['출고가', '시중가', '1입고', '1출고'];
 const normalizeParserCatalogName = (value) => String(value == null ? '' : value).trim();
-const getParserUnitRuleCandidates = (value) => {
-    const raw = String(value == null ? '' : value).trim().toLowerCase();
-    if (!raw || raw === '*')
-        return raw === '*' ? ['*'] : [];
-    const compact = raw.replace(/\s/g, '');
-    const parts = [compact, ...raw.split(/[,./|\s()_\-]+/).map(part => part.trim()).filter(Boolean)];
-    const candidates = [];
-    const push = candidate => {
-        if (candidate && !candidates.includes(candidate)) candidates.push(candidate);
-    };
-    parts.forEach(part => {
-        const normalized = String(part || '').toLowerCase().replace(/\s/g, '');
-        if (!normalized) return;
-        if (/box|박스|상자|bx/.test(normalized)) push('box');
-        if (/소분|분할|절단|컷|소포장|묶음/.test(normalized)) push('sub');
-        if (/ea|each|개|낱개|낱|kg|킬로|단|봉|포/.test(normalized)) push('ea');
-        push(normalized);
-    });
-    return candidates;
-};
-const normalizeParserUnitCondition = (value) => {
-    const condition = String(value == null ? '' : value).trim();
-    return condition || '*';
-};
-const getParserUnitConditionKeys = (value) => {
-    const condition = normalizeParserUnitCondition(value);
-    if (condition === '*') return ['*'];
-    return Array.from(new Set(condition.split(',').flatMap(alias => getParserUnitRuleCandidates(alias)).filter(candidate => candidate && candidate !== '*')));
-};
-const normalizeParserRuleUpdatedAt = (value) => {
-    const rawUpdatedAt = typeof value === 'string' ? value.trim() : '';
-    if (!rawUpdatedAt || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/.test(rawUpdatedAt))
-        return '';
-    const parsedUpdatedAt = new Date(rawUpdatedAt);
-    return Number.isNaN(parsedUpdatedAt.getTime()) ? '' : parsedUpdatedAt.toISOString();
-};
-const normalizeParserListMarginRuleEntry = (rawRule, fallbackUpdatedAt = '') => {
-    if (!rawRule || typeof rawRule !== 'object' || Array.isArray(rawRule)) return null;
-    const marginRate = rawRule.marginRate;
-    const calculationType = rawRule.calculationType;
-    const updatedAt = normalizeParserRuleUpdatedAt(rawRule.updatedAt || fallbackUpdatedAt);
-    const unitCondition = normalizeParserUnitCondition(rawRule.unitCondition ?? rawRule.unit ?? '*');
-    if (typeof marginRate !== 'number' || !Number.isFinite(marginRate) || !['divide', 'multiply'].includes(calculationType) || !updatedAt)
-        return null;
-    if (calculationType === 'divide' && marginRate >= 100)
-        return null;
-    if (unitCondition !== '*' && getParserUnitConditionKeys(unitCondition).length === 0)
-        return null;
-    return { unitCondition, marginRate, calculationType, updatedAt };
-};
-const normalizeParserListMarginRules = (input = {}) => {
-    const result = Object.create(null);
-    if (!input || typeof input !== 'object' || Array.isArray(input))
-        return result;
-    Object.entries(input).forEach(([rawName, rawRule]) => {
-        const name = normalizeParserCatalogName(rawName);
-        if (!name || !rawRule || typeof rawRule !== 'object' || Array.isArray(rawRule))
-            return;
-        const rawRules = Array.isArray(rawRule.rules) ? rawRule.rules : [rawRule];
-        const rules = [];
-        const seenUnitKeys = new Set();
-        rawRules.forEach(candidate => {
-            const normalizedRule = normalizeParserListMarginRuleEntry(candidate, rawRule.updatedAt);
-            if (!normalizedRule) return;
-            const unitKeys = getParserUnitConditionKeys(normalizedRule.unitCondition);
-            if (unitKeys.some(unitKey => seenUnitKeys.has(unitKey))) return;
-            unitKeys.forEach(unitKey => seenUnitKeys.add(unitKey));
-            rules.push(normalizedRule);
-        });
-        if (rules.length > 0)
-            result[name] = { rules };
-    });
-    return result;
-};
-const loadParserListMarginRules = () => normalizeParserListMarginRules(safeParseJson(localStorage.getItem(PARSER_LIST_MARGIN_RULES_KEY), {}));
-const getParserListMarginRuleSet = (rules, catalogName) => {
-    const name = normalizeParserCatalogName(catalogName);
-    if (!name)
-        return null;
-    const normalized = normalizeParserListMarginRules(rules);
-    return Object.prototype.hasOwnProperty.call(normalized, name) ? normalized[name] : null;
-};
-const resolveParserRuleSetUnit = (ruleSet, unitValue) => {
-    const safeRules = Array.isArray(ruleSet?.rules) ? ruleSet.rules : [];
-    const targetUnits = getParserUnitRuleCandidates(unitValue);
-    const exactRule = safeRules.find(rule => {
-        if (rule.unitCondition === '*') return false;
-        const ruleUnits = getParserUnitConditionKeys(rule.unitCondition);
-        return ruleUnits.some(ruleUnit => targetUnits.some(targetUnit => targetUnit === ruleUnit || targetUnit.includes(ruleUnit) || ruleUnit.includes(targetUnit)));
-    });
-    return exactRule || safeRules.find(rule => rule.unitCondition === '*') || null;
-};
-const resolveParserListMarginRule = (rules, catalogName, unitValue = '') => resolveParserRuleSetUnit(getParserListMarginRuleSet(rules, catalogName), unitValue);
-const validateParserCatalogRuleSet = (catalogName, rawRules = []) => {
-    const name = normalizeParserCatalogName(catalogName);
-    if (!name) return '카탈로그명을 입력하세요.';
-    const seenUnitKeys = new Set();
-    let defaultCount = 0;
-    for (const rawRule of Array.isArray(rawRules) ? rawRules : []) {
-        const unitCondition = normalizeParserUnitCondition(rawRule?.unitCondition ?? rawRule?.unit ?? '*');
-        const marginRate = Number(rawRule?.marginRate);
-        const calculationType = rawRule?.calculationType;
-        if (!Number.isFinite(marginRate)) return '마진율은 유효한 숫자로 입력하세요.';
-        if (!['divide', 'multiply'].includes(calculationType)) return '계산방식을 다시 선택하세요.';
-        if (calculationType === 'divide' && marginRate >= 100) return '나누기 방식은 마진율 100% 이상을 사용할 수 없습니다.';
-        const unitKeys = getParserUnitConditionKeys(unitCondition);
-        if (unitCondition === '*') defaultCount++;
-        if (defaultCount > 1) return `카탈로그 [${name}]에는 전체 단위(*) 룰을 하나만 저장할 수 있습니다.`;
-        if (unitKeys.length === 0) return '단위조건을 입력하세요. 전체 단위는 *를 사용하세요.';
-        const duplicateKey = unitKeys.find(unitKey => seenUnitKeys.has(unitKey));
-        if (duplicateKey) return `정규화 후 중복되는 단위조건 [${unitCondition}]이 있습니다.`;
-        unitKeys.forEach(unitKey => seenUnitKeys.add(unitKey));
-    }
-    return '';
-};
-const getParserCatalogRuleMatch = (rules, catalogName, unitValue) => {
-    const ruleSet = getParserListMarginRuleSet(rules, catalogName);
-    if (!ruleSet)
-        return { ruleSet: null, rule: null, status: 'no_rule', reason: '카탈로그 판매가 룰 없음' };
-    const rule = resolveParserRuleSetUnit(ruleSet, unitValue);
-    if (!rule)
-        return { ruleSet, rule: null, status: 'unit_unmatched', reason: `단위 [${String(unitValue || '').trim() || '공란'}]에 일치하는 룰 없음` };
-    return { ruleSet, rule, status: 'matched', reason: '' };
-};
+const readParserMarginRules = () => window.sanitizeMerchMarginRules
+    ? window.sanitizeMerchMarginRules(safeParseJson(localStorage.getItem('merchMarginRules_v878'), window.getDefaultMerchMarginRules?.() || []))
+    : [];
+const getParserPriceSelection = (catalogWarehouse, unitValue, marginRules = readParserMarginRules()) => window.selectMerchMarginRule
+    ? window.selectMerchMarginRule(marginRules, { _calcWarehouse: String(catalogWarehouse ?? '').trim(), _calcUnit: String(unitValue ?? '').trim() })
+    : { rule: { id: 'default', whCode: '*', unit: '*', rate: 20, type: 'divide' }, ruleId: 'default', marginRate: 20, calculationType: 'divide', matchType: 'default', inputWarehouse: String(catalogWarehouse ?? '').trim(), inputUnit: String(unitValue ?? '').trim() };
 const hasParserCostValue = (value) => value !== null && value !== undefined && String(value).trim() !== '';
 const classifyParserInPriceChange = (oldValue, newValue) => {
     if (!hasParserCostValue(newValue))
@@ -569,19 +418,19 @@ const areParserPriceValuesEqual = (left, right) => {
         return hasLeft === hasRight;
     return parseNum(left) === parseNum(right);
 };
-const calculateParserCatalogPrices = (baseInPrice, mItem = {}, currentFinalData = {}, catalogRule = null) => {
+const calculateParserCatalogPrices = (baseInPrice, mItem = {}, currentFinalData = {}, pricingContext = {}) => {
+    if (!window.calculateMerchPriceBundle)
+        throw new Error('CoreEngine 공통 가격엔진을 불러오지 못했습니다.');
     const inputPrice = parseNum(baseInPrice);
-    const calculationInput = { ...currentFinalData, '입고가': inputPrice };
-    PARSER_PRICE_HISTORY_FIELDS.forEach(field => { delete calculationInput[field]; });
-    if (inputPrice <= 0 || !catalogRule)
-        return { '입고가': inputPrice };
-    const calculated = calculatePricesEngine(inputPrice, mItem, calculationInput, [], true, catalogRule);
-    const priceResult = { '입고가': inputPrice };
-    PARSER_PRICE_HISTORY_FIELDS.forEach(field => {
-        if (Object.prototype.hasOwnProperty.call(calculated, field))
-            priceResult[field] = calculated[field];
-    });
-    return priceResult;
+    const catalogWarehouse = String(pricingContext.catalogWarehouse ?? currentFinalData?._calcWarehouse ?? '').trim();
+    const finalUnit = String(pricingContext.unit ?? currentFinalData?._calcUnit ?? currentFinalData?.['단위'] ?? mItem?.['단위'] ?? '').trim();
+    const marginRules = Array.isArray(pricingContext.marginRules) ? pricingContext.marginRules : readParserMarginRules();
+    return window.calculateMerchPriceBundle(inputPrice, mItem, {
+        ...currentFinalData,
+        _calcWarehouse: catalogWarehouse,
+        _calcUnit: finalUnit,
+        '단위': finalUnit
+    }, marginRules);
 };
 const normalizeParserExcludeDict = (dict) => {
     const source = dict && typeof dict === 'object' && !Array.isArray(dict) ? dict : {};
@@ -656,9 +505,32 @@ const createSmartParserMasterCodeResolver = (masterProducts = {}) => {
     };
     return { resolve, normalize: normalizeSharedProductCode };
 };
-const buildSmartParserApplyPlan = ({ masterProducts = {}, rows = [], catalogLabel = '', catalogRule = null, timestampISO = '', timestampLabel = '', updateTextData = true, allowExistingInfoChanges = true } = {}) => {
+const normalizeSmartParserStoppedProducts = (input = {}) => {
+    const result = {};
+    const entries = Array.isArray(input)
+        ? input.map(item => [item?.productCode || item?.코드 || '', item])
+        : Object.entries(input && typeof input === 'object' ? input : {});
+    entries.forEach(([rawCode, rawItem]) => {
+        const item = rawItem && typeof rawItem === 'object' ? rawItem : {};
+        const code = normalizeSharedProductCode(item.productCode || item.코드 || rawCode);
+        if (code) result[code] = { ...item, productCode: code };
+    });
+    return result;
+};
+const normalizeSmartParserPendingShopStatus = (input = []) => {
+    const byCode = new Map();
+    (Array.isArray(input) ? input : []).forEach(rawItem => {
+        const item = rawItem && typeof rawItem === 'object' ? rawItem : {};
+        const code = normalizeSharedProductCode(item.code || item.productCode || item.코드);
+        if (code) byCode.set(code, { ...item, code });
+    });
+    return Array.from(byCode.values());
+};
+const buildSmartParserApplyPlan = ({ masterProducts = {}, rows = [], catalogLabel = '', catalogWarehouse = '', marginRules = [], stoppedProducts = {}, pendingShopStatus = [], timestampISO = '', timestampLabel = '', updateTextData = true, allowExistingInfoChanges = true } = {}) => {
     catalogLabel = normalizeParserCatalogName(catalogLabel);
     const catalog = catalogLabel;
+    catalogWarehouse = String(catalogWarehouse ?? '').trim();
+    marginRules = window.sanitizeMerchMarginRules ? window.sanitizeMerchMarginRules(marginRules) : (Array.isArray(marginRules) ? marginRules : []);
     if (!catalog)
         throw new Error('SmartParser 적용 카탈로그가 없습니다.');
     const applyRows = Array.isArray(rows) ? rows.filter(Boolean) : [];
@@ -673,19 +545,18 @@ const buildSmartParserApplyPlan = ({ masterProducts = {}, rows = [], catalogLabe
         seenCodes.add(resolved.normalizedCode);
     });
     const newMaster = { ...(masterProducts || {}) };
+    const nextStoppedProducts = normalizeSmartParserStoppedProducts(stoppedProducts);
+    let nextPendingShopStatus = normalizeSmartParserPendingShopStatus(pendingShopStatus);
     const logs = [];
     const processedCodes = [];
     const dictionaryEntries = [];
     const directInfoChangedCodes = new Set();
     const supplyChangedCodes = new Set();
-    let priceRuleMatchedCount = 0;
-    let priceRuleUnmatchedCount = 0;
+    let priceRuleExactCount = 0;
+    let priceRuleDefaultCount = 0;
+    let stoppedProductsChanged = false;
+    let pendingShopStatusChanged = false;
     let masterMutationCount = 0;
-    const resolveApplyPriceRule = row => {
-        if (!catalogRule) return null;
-        if (Array.isArray(catalogRule.rules)) return resolveParserRuleSetUnit(catalogRule, row?.['단위']);
-        return catalogRule.marginRate !== undefined ? catalogRule : null;
-    };
     const historyBase = {
         source: 'parser',
         sourceLabel: '스마트 파서',
@@ -695,10 +566,11 @@ const buildSmartParserApplyPlan = ({ masterProducts = {}, rows = [], catalogLabe
         route: `파서/${catalog}/마스터직접적용`,
         catalog,
         catalogName: catalog,
+        catalogWarehouse,
         quoteName: '',
         timestamp: timestampLabel,
         timestampISO,
-        version: 'smart-parser-v3.1-parser-list-price-rule-history'
+        version: 'smart-parser-v3.2-catalog-warehouse-pricing'
     };
     const makeHistoryLog = ({ code, row, oldItem, field, oldVal, newVal, memo, extra = {} }) => {
         const numericField = ['입고가', ...PARSER_PRICE_HISTORY_FIELDS].includes(field);
@@ -710,7 +582,7 @@ const buildSmartParserApplyPlan = ({ masterProducts = {}, rows = [], catalogLabe
             code,
             name: oldItem?.품목명 || row?.품목명 || '',
             spec: oldItem?.규격 || row?.규격 || '',
-            unit: oldItem?.단위 || row?.단위 || '',
+            unit: row?.단위 || oldItem?.단위 || '',
             parsedName: row?.품목명 || '',
             parsedSpec: row?.규격 || '',
             parsedUnit: row?.단위 || '',
@@ -740,6 +612,10 @@ const buildSmartParserApplyPlan = ({ masterProducts = {}, rows = [], catalogLabe
         const nextItem = sourceItem
             ? { ...sourceItem }
             : { 코드: code, 품목명: row['품목명'] || '', 규격: row['규격'] || '', 단위: row['단위'] || '' };
+        const editedTextFields = row._editedTextFields || {};
+        const hasExplicitUnitEdit = Object.prototype.hasOwnProperty.call(editedTextFields, '단위');
+        const parsedUnit = hasExplicitUnitEdit ? editedTextFields['단위'] : (row['단위'] || '');
+        const finalUnit = String((hasExplicitUnitEdit || (updateTextData && parsedUnit)) ? parsedUnit : (nextItem['단위'] || '')).trim();
         processedCodes.push(code);
         if (isNewProduct) {
             masterMutationCount++;
@@ -760,12 +636,13 @@ const buildSmartParserApplyPlan = ({ masterProducts = {}, rows = [], catalogLabe
         const hadOldInValue = hasParserCostValue(oldInValue);
         const oldInPrice = parseNum(oldInValue);
         const inPriceChangeType = hasInPrice ? classifyParserInPriceChange(oldInValue, newInPrice) : '';
-        if (hasInPrice && (isNewProduct || oldInPrice !== newInPrice || newInPrice === 0)) {
+        if (hasInPrice && (isNewProduct || !hadOldInValue || oldInPrice !== newInPrice)) {
             logs.push(makeHistoryLog({
                 code, row, oldItem,
                 field: '입고가', oldVal: oldInValue, newVal: newInPrice,
-                memo: newInPrice === 0 ? 'SmartParser 단가 0 · 판매불가 기록(판매여부는 변경하지 않음)' : '카탈로그/견적서 파서 단가를 마스터 입고가에 적용',
+                memo: newInPrice === 0 ? 'SmartParser 입고가 0 · 판매 정지 적용' : '카탈로그/견적서 파서 단가를 마스터 입고가에 적용',
                 extra: {
+                    unit: finalUnit,
                     priceChangeType: inPriceChangeType,
                     availabilityType: newInPrice === 0 ? 'unavailable' : 'available',
                     isNewProduct,
@@ -783,12 +660,14 @@ const buildSmartParserApplyPlan = ({ masterProducts = {}, rows = [], catalogLabe
         if (hasInPrice)
             nextItem['입고가'] = newInPrice;
 
-        const matchedCatalogRule = resolveApplyPriceRule(row);
-        if (hasInPrice && newInPrice > 0 && matchedCatalogRule) {
-            priceRuleMatchedCount++;
+        if (hasInPrice && newInPrice > 0) {
+            const selection = getParserPriceSelection(catalogWarehouse, finalUnit, marginRules);
+            if (selection.matchType === 'exact') priceRuleExactCount++;
+            else priceRuleDefaultCount++;
             const beforePrices = Object.fromEntries(PARSER_PRICE_HISTORY_FIELDS.map(field => [field, isNewProduct ? (oldItem[field] ?? '') : (nextItem[field] ?? '')]));
-            const recalculated = calculateParserCatalogPrices(newInPrice, nextItem, row.finalData || {}, matchedCatalogRule);
-            Object.assign(nextItem, recalculated);
+            const recalculated = calculateParserCatalogPrices(newInPrice, nextItem, row.finalData || {}, { catalogWarehouse, unit: finalUnit, marginRules });
+            const { pricingEvidence, ...priceFields } = recalculated;
+            Object.assign(nextItem, priceFields);
             PARSER_PRICE_HISTORY_FIELDS.forEach(field => {
                 const beforeValue = beforePrices[field];
                 const afterValue = nextItem[field] ?? '';
@@ -798,21 +677,102 @@ const buildSmartParserApplyPlan = ({ masterProducts = {}, rows = [], catalogLabe
                 logs.push(makeHistoryLog({
                     code, row, oldItem,
                     field, oldVal: beforeValue, newVal: afterValue,
-                    memo: field === '출고가' ? '카탈로그 룰에 따른 출고가 재계산' : (field === '시중가' ? '카탈로그 룰에 따른 시중가 재계산' : `카탈로그 룰에 따른 ${field} 재계산`),
+                    memo: `공통 창고·단위 룰에 따른 ${field} 재계산`,
                     extra: {
+                        unit: finalUnit,
+                        catalogWarehouse,
+                        marginRuleId: selection.ruleId,
+                        marginRate: selection.marginRate,
+                        calculationType: selection.calculationType,
+                        matchType: selection.matchType,
                         actionType: field.startsWith('1') ? 'parser_unit_price_recalc' : 'parser_price_recalc',
                         priceRule: {
-                            unitCondition: normalizeParserUnitCondition(matchedCatalogRule.unitCondition ?? '*'),
-                            marginRate: matchedCatalogRule.marginRate,
-                            calculationType: matchedCatalogRule.calculationType,
-                            updatedAt: matchedCatalogRule.updatedAt
+                            id: selection.ruleId,
+                            whCode: selection.rule?.whCode || '*',
+                            unit: selection.rule?.unit || '*',
+                            marginRate: selection.marginRate,
+                            calculationType: selection.calculationType,
+                            matchType: selection.matchType
                         }
                     }
                 }));
             });
         }
-        else if (hasInPrice && newInPrice > 0) {
-            priceRuleUnmatchedCount++;
+        else if (hasInPrice && newInPrice === 0) {
+            const zeroFields = ['출고가', '시중가', '1입고', '1출고', '판매여부'];
+            zeroFields.forEach(field => {
+                const beforeValue = isNewProduct ? (oldItem[field] ?? '') : (nextItem[field] ?? '');
+                nextItem[field] = 0;
+                if (areParserPriceValuesEqual(beforeValue, 0)) return;
+                masterMutationCount++;
+                logs.push(makeHistoryLog({
+                    code, row, oldItem,
+                    field, oldVal: beforeValue, newVal: 0,
+                    memo: field === '판매여부' ? '입고가 0으로 판매 정지' : `입고가 0으로 ${field} 초기화`,
+                    extra: { unit: finalUnit, actionType: field === '판매여부' ? 'parser_zero_price_stop' : 'parser_zero_price_reset' }
+                }));
+            });
+
+            const normalizedCode = resolved.normalizedCode;
+            const stoppedName = nextItem['품목명'] || row['품목명'] || '';
+            const beforeStopped = nextStoppedProducts[normalizedCode] || null;
+            const stoppedEquivalent = !!beforeStopped
+                && beforeStopped.reason === '입고가 0'
+                && beforeStopped.source === 'SmartParser'
+                && beforeStopped.catalog === catalog
+                && beforeStopped.status === 'stopped'
+                && String(beforeStopped.pendingAction || '') === ''
+                && String(beforeStopped.name || '') === String(stoppedName);
+            if (!stoppedEquivalent) {
+                nextStoppedProducts[normalizedCode] = {
+                    ...(beforeStopped || {}),
+                    productCode: normalizedCode,
+                    name: stoppedName,
+                    stoppedAt: beforeStopped?.stoppedAt || timestampISO,
+                    updatedAt: timestampISO,
+                    reason: '입고가 0',
+                    source: 'SmartParser',
+                    catalog,
+                    status: 'stopped',
+                    pendingAction: ''
+                };
+                stoppedProductsChanged = true;
+                logs.push(makeHistoryLog({
+                    code, row, oldItem,
+                    field: '정지관리', oldVal: beforeStopped?.status || '', newVal: 'stopped',
+                    memo: '입고가 0 정지관리 등록',
+                    extra: { unit: finalUnit, actionType: 'parser_zero_price_stop_manager' }
+                }));
+            }
+
+            const pendingIndex = nextPendingShopStatus.findIndex(item => normalizeSharedProductCode(item?.code) === normalizedCode);
+            const beforePending = pendingIndex >= 0 ? nextPendingShopStatus[pendingIndex] : null;
+            const pendingEquivalent = !!beforePending
+                && beforePending.type === 'stop'
+                && beforePending.source === 'SmartParser'
+                && beforePending.reason === '입고가 0'
+                && beforePending.catalog === catalog
+                && String(beforePending.name || '') === String(stoppedName);
+            if (!pendingEquivalent) {
+                const pendingEntry = {
+                    code: normalizedCode,
+                    type: 'stop',
+                    name: stoppedName,
+                    source: 'SmartParser',
+                    reason: '입고가 0',
+                    catalog,
+                    updatedAt: timestampISO
+                };
+                if (pendingIndex >= 0) nextPendingShopStatus[pendingIndex] = pendingEntry;
+                else nextPendingShopStatus.push(pendingEntry);
+                pendingShopStatusChanged = true;
+                logs.push(makeHistoryLog({
+                    code, row, oldItem,
+                    field: 'pending_shop_status', oldVal: beforePending?.type || '', newVal: 'stop',
+                    memo: '입고가 0 쇼핑몰 정지 대기열 등록',
+                    extra: { unit: finalUnit, actionType: 'parser_zero_price_pending_stop' }
+                }));
+            }
         }
 
         const oldCatalogTags = nextItem['카탈로그'] || '';
@@ -841,7 +801,6 @@ const buildSmartParserApplyPlan = ({ masterProducts = {}, rows = [], catalogLabe
         if (!isNewProduct && allowExistingInfoChanges) {
             const code = masterKey;
             ['품목명', '규격', '단위'].forEach(fieldName => {
-                const editedTextFields = row._editedTextFields || {};
                 const hasExplicitTextEdit = Object.prototype.hasOwnProperty.call(editedTextFields, fieldName);
                 const shouldApplyTextField = hasExplicitTextEdit || updateTextData;
                 if (!shouldApplyTextField) return;
@@ -879,8 +838,12 @@ const buildSmartParserApplyPlan = ({ masterProducts = {}, rows = [], catalogLabe
         dictionaryEntries,
         directInfoChangedCodes: Array.from(directInfoChangedCodes),
         supplyChangedCodes: Array.from(supplyChangedCodes),
-        priceRuleMatchedCount,
-        priceRuleUnmatchedCount,
+        priceRuleExactCount,
+        priceRuleDefaultCount,
+        nextStoppedProducts,
+        nextPendingShopStatus,
+        stoppedProductsChanged,
+        pendingShopStatusChanged,
         masterMutationCount,
         catalogWasUpdated: logs.length > 0
     };
@@ -921,7 +884,7 @@ const buildSmartParserMissingTagPlan = ({ masterProducts = {}, codes = [], catal
             diff: '', diffRate: null,
             oldOutPrice: parseNum(oldItem.출고가), oldSalePrice: parseNum(oldItem.행사가), oldInPrice: parseNum(oldItem.입고가),
             memo: '선택 파서리스트 전체 누락으로 해당 카탈로그 태그만 삭제(판매여부 유지)',
-            version: 'smart-parser-v3.1-parser-list-price-rule-history'
+            version: 'smart-parser-v3.2-catalog-warehouse-pricing'
         });
     });
     return { newMaster, logs, processedCodes };
@@ -964,24 +927,35 @@ const saveMerchHistoryWithRetry = (localLogs, storageKey = 'merchHistory_v870') 
     throw new Error('히스토리 저장 실패: 브라우저 저장공간이 부족하거나 localStorage가 차단되었습니다. ' + (lastError?.message || lastError?.name || String(lastError || '')));
 };
 let smartParserMasterRevision = undefined;
-const commitSmartParserMaster = async (data, storeEntries = {}, historyLogs = [], onCommitted = () => {}) => {
+const commitSmartParserMaster = async (data, storeEntries = {}, historyLogs = [], localWrites = {}, onCommitted = () => {}) => {
     const commonStorage = window.ONEAPP?.STORAGE;
     if (!commonStorage?.commitMasterStateOrThrow) {
         throw new Error('공통 마스터 저장 엔진을 불러오지 못했습니다.');
     }
     const logs = Array.isArray(historyLogs) ? historyLogs.filter(Boolean) : [];
     const previousHistory = logs.length > 0 ? localStorage.getItem('merchHistory_v870') : null;
+    const safeLocalWrites = localWrites && typeof localWrites === 'object' ? localWrites : {};
+    const previousLocalValues = Object.fromEntries(Object.keys(safeLocalWrites).map(key => [key, localStorage.getItem(key)]));
+    const writeAndVerifyLocalEntries = () => {
+        Object.entries(safeLocalWrites).forEach(([key, value]) => {
+            const serialized = typeof value === 'string' ? value : JSON.stringify(value);
+            localStorage.setItem(key, serialized);
+            if (localStorage.getItem(key) !== serialized)
+                throw new Error(`${key} localStorage 저장 검증에 실패했습니다.`);
+        });
+    };
     let result;
     try {
         result = await commonStorage.commitMasterStateOrThrow(data, {
             expectedRevision: smartParserMasterRevision,
             extraStoreEntries: storeEntries,
-            ...(logs.length > 0 ? {
+            ...(logs.length > 0 || Object.keys(safeLocalWrites).length > 0 ? {
                 afterVerified: () => {
                     saveMerchHistoryWithRetry(logs);
+                    writeAndVerifyLocalEntries();
                     return true;
                 },
-                afterVerifiedError: 'SmartParser 히스토리 저장 실패'
+                afterVerifiedError: 'SmartParser 히스토리/공유상태 저장 실패'
             } : {})
         });
     }
@@ -995,6 +969,15 @@ const commitSmartParserMaster = async (data, storeEntries = {}, historyLogs = []
                 console.error('SmartParser history rollback failed', restoreError);
             }
         }
+        Object.entries(previousLocalValues).forEach(([key, previousValue]) => {
+            try {
+                if (previousValue === null) localStorage.removeItem(key);
+                else localStorage.setItem(key, previousValue);
+            }
+            catch (restoreError) {
+                console.error(`SmartParser ${key} rollback failed`, restoreError);
+            }
+        });
         throw new Error('마스터/연동대기 IndexedDB 저장 실패: ' + (error?.message || error?.name || String(error)));
     }
     smartParserMasterRevision = result.revision;
@@ -1004,13 +987,6 @@ const commitSmartParserMaster = async (data, storeEntries = {}, historyLogs = []
     catch (memoryError) {
         console.warn('SmartParser memory refresh failed after a verified commit', memoryError);
         result.memoryWarning = memoryError?.message || String(memoryError);
-    }
-    try {
-        localStorage.setItem('merchMaster_sync_trigger', Date.now().toString());
-    }
-    catch (triggerError) {
-        console.warn('SmartParser master sync notification failed after a verified commit', triggerError);
-        result.syncWarning = triggerError?.message || String(triggerError);
     }
     return result;
 };
@@ -1024,12 +1000,12 @@ const useParserApp = () => {
     } });
     const [parserExcludeDict, setParserExcludeDict] = useState(() => loadParserExcludeDict());
     const [catalogUpdatedAt, setCatalogUpdatedAt] = useState({});
-    const [parserListMarginRules, setParserListMarginRules] = useState(() => loadParserListMarginRules());
-    const saveParserListMarginRules = useCallback((nextRules) => {
-        const normalized = normalizeParserListMarginRules(nextRules || {});
-        localStorage.setItem(PARSER_LIST_MARGIN_RULES_KEY, JSON.stringify(normalized));
-        setParserListMarginRules(normalized);
-        return normalized;
+    const [catalogWarehouseMap, setCatalogWarehouseMap] = useState(() => window.readParserCatalogWarehouseMap?.() || {});
+    const [marginRules, setMarginRules] = useState(() => readParserMarginRules());
+    const saveCatalogWarehouse = useCallback((catalogName, warehouseCode) => {
+        const next = window.setParserCatalogWarehouse?.(catalogName, warehouseCode) || {};
+        setCatalogWarehouseMap(next);
+        return next;
     }, []);
     useEffect(() => { window.ONEAPP.STORAGE.readMasterSnapshotState().then(state => {
         smartParserMasterRevision = state.revision;
@@ -1052,19 +1028,23 @@ const useParserApp = () => {
             });
         return () => { isActive = false; };
     }, []);
-    useEffect(() => { const handleStorageChange = (e) => {
-        if (e.key === PARSER_LIST_MARGIN_RULES_KEY) {
-            setParserListMarginRules(loadParserListMarginRules());
+    useEffect(() => { const refreshSharedPricing = () => {
+        setCatalogWarehouseMap(window.readParserCatalogWarehouseMap?.() || {});
+        setMarginRules(readParserMarginRules());
+    }; const handleStorageChange = (e) => {
+        if (e.key === (window.ONEAPP?.CONFIG?.PARSER_CATALOG_WAREHOUSE_MAP_KEY || 'parserCatalogWarehouseMap_v1') || e.key === 'merchMarginRules_v878') {
+            refreshSharedPricing();
             return;
         }
         if (e.key === 'merchMaster_sync_trigger' || e.key === 'merch_settings_update_trigger')
             window.location.reload();
-    }; window.addEventListener('storage', handleStorageChange); return () => window.removeEventListener('storage', handleStorageChange); }, []);
+    }; window.addEventListener('storage', handleStorageChange); window.addEventListener('focus', refreshSharedPricing); return () => { window.removeEventListener('storage', handleStorageChange); window.removeEventListener('focus', refreshSharedPricing); }; }, []);
     const saveMaster = async (data, transaction = {}) => {
         const storeEntries = transaction?.storeEntries || {};
         const historyLogs = Array.isArray(transaction?.historyLogs) ? transaction.historyLogs : [];
+        const localWrites = transaction?.localWrites || {};
         try {
-            await commitSmartParserMaster(data, storeEntries, historyLogs, savedData => {
+            await commitSmartParserMaster(data, storeEntries, historyLogs, localWrites, savedData => {
                 setMasterProducts(savedData);
             });
         }
@@ -1134,11 +1114,12 @@ const useParserApp = () => {
     const [showMappingExcludeModal, setShowMappingExcludeModal] = useState(false);
     const [lastExcludedCount, setLastExcludedCount] = useState(0);
     const showToast = useCallback((msg) => { setToastMsg(msg); setTimeout(() => setToastMsg(''), 3000); }, []);
-    return { masterProducts, saveMaster, parserDict, saveDict, parserExcludeDict, saveParserExcludeDict, catalogUpdatedAt, setCatalogUpdatedAt, parserListMarginRules, saveParserListMarginRules, parserBuffer, setParserBuffer, currentTag, setCurrentTag, activeTab, setActiveTab, showInputModal, setShowInputModal, showReviewModal, setShowReviewModal, showErpModal, setShowErpModal, toastMsg, showToast, isProcessing, setIsProcessing, processMsg, setProcessMsg, globalSearch, setGlobalSearch, targetId, setTargetId, selectedMissingCodes, setSelectedMissingCodes, processedCodes, setProcessedCodes, missingSearch, setMissingSearch, showExcludeModal, setShowExcludeModal, excludeTarget, setExcludeTarget, showMappingExcludeModal, setShowMappingExcludeModal, lastExcludedCount, setLastExcludedCount };
+    return { masterProducts, saveMaster, parserDict, saveDict, parserExcludeDict, saveParserExcludeDict, catalogUpdatedAt, setCatalogUpdatedAt, catalogWarehouseMap, saveCatalogWarehouse, marginRules, parserBuffer, setParserBuffer, currentTag, setCurrentTag, activeTab, setActiveTab, showInputModal, setShowInputModal, showReviewModal, setShowReviewModal, showErpModal, setShowErpModal, toastMsg, showToast, isProcessing, setIsProcessing, processMsg, setProcessMsg, globalSearch, setGlobalSearch, targetId, setTargetId, selectedMissingCodes, setSelectedMissingCodes, processedCodes, setProcessedCodes, missingSearch, setMissingSearch, showExcludeModal, setShowExcludeModal, excludeTarget, setExcludeTarget, showMappingExcludeModal, setShowMappingExcludeModal, lastExcludedCount, setLastExcludedCount };
 };
 const useParserActions = (appState) => {
-    const { masterProducts, saveMaster, parserDict, saveDict, parserExcludeDict, saveParserExcludeDict, catalogUpdatedAt, setCatalogUpdatedAt, parserListMarginRules, parserBuffer, setParserBuffer, currentTag, setCurrentTag, setActiveTab, setShowInputModal, showToast, setIsProcessing, setProcessMsg, setGlobalSearch, targetId, setTargetId, selectedMissingCodes, setSelectedMissingCodes, processedCodes, setProcessedCodes, setShowErpModal, setShowExcludeModal, setExcludeTarget, setShowMappingExcludeModal, setLastExcludedCount } = appState;
-    const executeParser = useCallback((rawText, tag, forceManual = false) => {
+    const { masterProducts, saveMaster, parserDict, saveDict, parserExcludeDict, saveParserExcludeDict, catalogUpdatedAt, setCatalogUpdatedAt, catalogWarehouseMap, marginRules, parserBuffer, setParserBuffer, currentTag, setCurrentTag, setActiveTab, setShowInputModal, showToast, setIsProcessing, setProcessMsg, setGlobalSearch, targetId, setTargetId, selectedMissingCodes, setSelectedMissingCodes, processedCodes, setProcessedCodes, setShowErpModal, setShowExcludeModal, setExcludeTarget, setShowMappingExcludeModal, setLastExcludedCount } = appState;
+    const executeParser = useCallback((rawText, tag, forceManual = false, explicitCatalogWarehouse = undefined) => {
+        const catalogWarehouse = String(explicitCatalogWarehouse ?? catalogWarehouseMap?.[normalizeParserCatalogName(tag)] ?? '').trim();
         setShowInputModal(false);
         setIsProcessing(true);
         setProcessMsg("AI 분석 및 스마트 매칭 중...");
@@ -1165,15 +1146,14 @@ const useParserActions = (appState) => {
                     const hasParsedInPrice = Object.prototype.hasOwnProperty.call(rowData, '입고가') && String(rowData['입고가'] ?? '').trim() !== '';
                     rowData._hasParsedInPrice = hasParsedInPrice;
                     rowData.finalData = {};
-                    const ruleMatch = getParserCatalogRuleMatch(parserListMarginRules, tag, rowData['단위']);
+                    const ruleMatch = getParserPriceSelection(catalogWarehouse, rowData['단위'], marginRules);
+                    rowData._catalogWarehouse = catalogWarehouse;
                     rowData._catalogPriceRule = ruleMatch.rule;
-                    rowData._catalogPriceRuleStatus = ruleMatch.status;
-                    rowData._catalogPriceRuleReason = ruleMatch.reason;
+                    rowData._catalogPriceRuleStatus = ruleMatch.matchType;
+                    rowData._catalogPriceRuleReason = ruleMatch.matchType === 'exact' ? '창고+단위 정확 일치' : '*/* 기본 룰';
                     if (hasParsedInPrice) {
                         const pInNum = parseNum(rowData['입고가']);
-                        rowData.finalData = matchResult.code
-                            ? calculateParserCatalogPrices(pInNum, masterProducts[matchResult.code] || {}, {}, ruleMatch.rule)
-                            : { '입고가': pInNum };
+                        rowData.finalData = calculateParserCatalogPrices(pInNum, matchResult.code ? (masterProducts[matchResult.code] || {}) : {}, {}, { catalogWarehouse, unit: rowData['단위'], marginRules });
                     }
                     results.push(rowData);
                 });
@@ -1195,7 +1175,7 @@ const useParserActions = (appState) => {
                 setProcessMsg('');
             }
         }, 100);
-    }, [masterProducts, parserDict, parserExcludeDict, parserListMarginRules, setLastExcludedCount]);
+    }, [masterProducts, parserDict, parserExcludeDict, catalogWarehouseMap, marginRules, setLastExcludedCount]);
     const handleApplyMatched = useCallback(async (updateTextData = true) => {
         const toApply = parserBuffer.filter(r => r && !r._excluded && r._apply && r._matchCode && !String(r._matchStatus || '').includes('매핑제외'));
         if (toApply.length === 0) {
@@ -1215,16 +1195,16 @@ const useParserActions = (appState) => {
             showToast('❌ ' + (error?.message || '상품코드 중복을 확인할 수 없습니다.'));
             return false;
         }
-        const catalogRuleSet = getParserListMarginRuleSet(parserListMarginRules, catalogLabel);
+        const catalogWarehouse = String(catalogWarehouseMap?.[catalogLabel] ?? '').trim();
         const priceRuleSummary = toApply.reduce((summary, row) => {
-            const match = getParserCatalogRuleMatch(parserListMarginRules, catalogLabel, row?.['단위']);
-            if (match.rule) summary.matched++;
-            else summary.unmatched++;
+            if (!hasParserRowInPrice(row) || getParserRowInPrice(row) <= 0) return summary;
+            const match = getParserPriceSelection(catalogWarehouse, row?.['단위'], marginRules);
+            if (match.matchType === 'exact') summary.exact++;
+            else summary.defaulted++;
             return summary;
-        }, { matched: 0, unmatched: 0 });
-        const confirmMessage = catalogRuleSet
-            ? `분석된 ${toApply.length}건을 [${catalogLabel}] 카탈로그 단위 룰로 마스터에 적용하시겠습니까?\n\n판매가 룰 일치 ${priceRuleSummary.matched}건 · 단위 미일치 ${priceRuleSummary.unmatched}건\n※ 단위 미일치 상품은 판매가격만 계산·변경하지 않고 입고가·태그·매칭·신규등록·허용된 텍스트는 그대로 반영합니다.\n※ 변경된 입고가와 가격 필드는 같은 시각의 히스토리로 저장됩니다.\n※ 히스토리 저장에 실패하면 마스터 적용도 원상복구됩니다.`
-            : `[${catalogLabel}] 카탈로그 전용 판매가 룰이 없습니다.\n\n계속하면 ${toApply.length}건의 매칭·신규등록, 입고가·카탈로그 태그·허용된 텍스트는 반영하고 판매가격만 계산하거나 변경하지 않습니다.\n취소하면 마스터와 히스토리를 전혀 변경하지 않습니다.\n\n계속하시겠습니까?`;
+        }, { exact: 0, defaulted: 0 });
+        const zeroCount = toApply.filter(row => hasParserRowInPrice(row) && getParserRowInPrice(row) === 0).length;
+        const confirmMessage = `분석된 ${toApply.length}건을 [${catalogLabel}] · 창고 [${catalogWarehouse || '공란'}] 기준으로 마스터에 적용하시겠습니까?\n\n창고+단위 정확 룰 ${priceRuleSummary.exact}건 · */* 기본 룰 ${priceRuleSummary.defaulted}건 · 입고가 0 정지 ${zeroCount}건\n※ 입고가 0은 가격·소분가·판매여부를 0으로 저장하고 정지관리와 쇼핑몰 정지 대기열을 함께 갱신합니다.\n※ 정상 단가가 다시 들어와도 기존 판매여부 0은 자동 활성화하지 않습니다.\n※ 마스터·공유상태·히스토리 중 하나라도 저장 실패하면 함께 원상복구됩니다.`;
         if (!window.confirm(confirmMessage))
             return false;
         setIsProcessing(true);
@@ -1232,11 +1212,19 @@ const useParserActions = (appState) => {
         try {
             const nowISO = getNowISO();
             const nowStr = new Date(nowISO).toLocaleString('ko-KR');
+            const sharedState = await window.ONEAPP.STORAGE.readMasterState(['pending_shop_status', 'merchStoppedProducts_v2']);
+            const stoppedProducts = sharedState.extraStoreEntries?.merchStoppedProducts_v2
+                || safeParseJson(localStorage.getItem('merchStoppedProducts_v2'), {});
+            const pendingShopStatus = sharedState.extraStoreEntries?.pending_shop_status
+                || safeParseJson(localStorage.getItem('pendingShopStatus'), []);
             const plan = buildSmartParserApplyPlan({
                 masterProducts,
                 rows: toApply,
                 catalogLabel,
-                catalogRule: catalogRuleSet,
+                catalogWarehouse,
+                marginRules,
+                stoppedProducts,
+                pendingShopStatus,
                 timestampISO: nowISO,
                 timestampLabel: nowStr,
                 updateTextData,
@@ -1252,8 +1240,18 @@ const useParserActions = (appState) => {
                 : catalogUpdatedAt;
             if (plan.catalogWasUpdated)
                 extraStoreEntries[CATALOG_UPDATED_AT_KEY] = nextCatalogUpdatedAt;
+            if (zeroCount > 0)
+                extraStoreEntries.merchStoppedProducts_v2 = plan.nextStoppedProducts;
+            if (zeroCount > 0)
+                extraStoreEntries.pending_shop_status = plan.nextPendingShopStatus;
             const newMaster = plan.newMaster;
-            const sharedEntries = { storeEntries: extraStoreEntries, historyLogs: plan.logs };
+            const localWrites = { merchMaster_sync_trigger: nowISO };
+            if (zeroCount > 0) {
+                localWrites.merchStoppedProducts_v2 = plan.nextStoppedProducts;
+                localWrites.merchStopManager_sync_trigger = nowISO;
+                localWrites.pendingShopStatus = plan.nextPendingShopStatus;
+            }
+            const sharedEntries = { storeEntries: extraStoreEntries, historyLogs: plan.logs, localWrites };
             await saveMaster(newMaster, sharedEntries);
             if (plan.catalogWasUpdated)
                 setCatalogUpdatedAt(nextCatalogUpdatedAt);
@@ -1262,8 +1260,9 @@ const useParserActions = (appState) => {
             const appliedIds = new Set(toApply.map(r => r._id));
             setParserBuffer(prev => prev.filter(r => !appliedIds.has(r._id)));
             const syncSummary = [
-                !catalogRuleSet ? '판매가격 미반영(룰 없음)' : '',
-                catalogRuleSet && plan.priceRuleUnmatchedCount > 0 ? `단위 미일치 ${plan.priceRuleUnmatchedCount}건 판매가격 미반영` : '',
+                plan.priceRuleExactCount > 0 ? `정확 룰 ${plan.priceRuleExactCount}건` : '',
+                plan.priceRuleDefaultCount > 0 ? `기본 룰 ${plan.priceRuleDefaultCount}건` : '',
+                zeroCount > 0 ? `입고가 0 정지 ${zeroCount}건` : '',
                 plan.supplyChangedCodes.length > 0 ? `공급정보 ${plan.supplyChangedCodes.length}건` : '',
                 plan.directInfoChangedCodes.length > 0 ? `정보 마스터 즉시반영 ${plan.directInfoChangedCodes.length}건` : ''
             ].filter(Boolean).join(' / ');
@@ -1283,7 +1282,7 @@ const useParserActions = (appState) => {
             setIsProcessing(false);
             setProcessMsg('');
         }
-    }, [parserBuffer, masterProducts, parserDict, parserListMarginRules, currentTag, processedCodes, catalogUpdatedAt, saveMaster, saveDict, setCatalogUpdatedAt, setProcessedCodes, setParserBuffer, setIsProcessing, setProcessMsg, showToast]);
+    }, [parserBuffer, masterProducts, parserDict, catalogWarehouseMap, marginRules, currentTag, processedCodes, catalogUpdatedAt, saveMaster, saveDict, setCatalogUpdatedAt, setProcessedCodes, setParserBuffer, setIsProcessing, setProcessMsg, showToast]);
     const handleConfirmMapping = useCallback(async (masterCode) => {
         if (!targetId)
             return showToast("⚠️ 먼저 왼쪽에서 매핑할 타겟 상품을 선택하세요.");
@@ -1294,9 +1293,10 @@ const useParserActions = (appState) => {
             let mItem = masterProducts[masterCode] || { 코드: masterCode };
             const hasInPrice = hasParserRowInPrice(row);
             const pInNum = hasInPrice ? getParserRowInPrice(row) : null;
-            const ruleMatch = getParserCatalogRuleMatch(parserListMarginRules, currentTag, row['단위']);
-            const recalculatedFinal = hasInPrice ? calculateParserCatalogPrices(pInNum, mItem, row.finalData || {}, ruleMatch.rule) : {};
-            setParserBuffer(parserBuffer.map(r => r._id === targetId ? { ...r, _matchCode: masterCode, _matchStatus: '🟢 수동일치', _apply: true, finalData: recalculatedFinal, _catalogPriceRule: ruleMatch.rule, _catalogPriceRuleStatus: ruleMatch.status, _catalogPriceRuleReason: ruleMatch.reason } : r));
+            const catalogWarehouse = String(catalogWarehouseMap?.[normalizeParserCatalogName(currentTag)] ?? '').trim();
+            const ruleMatch = getParserPriceSelection(catalogWarehouse, row['단위'], marginRules);
+            const recalculatedFinal = hasInPrice ? calculateParserCatalogPrices(pInNum, mItem, row.finalData || {}, { catalogWarehouse, unit: row['단위'], marginRules }) : {};
+            setParserBuffer(parserBuffer.map(r => r._id === targetId ? { ...r, _matchCode: masterCode, _matchStatus: '🟢 수동일치', _apply: true, finalData: recalculatedFinal, _catalogWarehouse: catalogWarehouse, _catalogPriceRule: ruleMatch.rule, _catalogPriceRuleStatus: ruleMatch.matchType, _catalogPriceRuleReason: ruleMatch.matchType === 'exact' ? '창고+단위 정확 일치' : '*/* 기본 룰' } : r));
             setTargetId(null);
             setGlobalSearch('');
             showToast(`✅ 수동 연결 완료. 아직 저장 전입니다. [마스터 적용 및 학습저장]까지 완료해야 다음 작업에도 반영됩니다.`);
@@ -1304,7 +1304,7 @@ const useParserActions = (appState) => {
         catch (error) {
             showToast("❌ 수동 매핑 처리 중 오류가 발생했습니다.");
         }
-    }, [targetId, parserBuffer, masterProducts, parserListMarginRules, currentTag, setParserBuffer, setTargetId, setGlobalSearch, showToast]);
+    }, [targetId, parserBuffer, masterProducts, catalogWarehouseMap, marginRules, currentTag, setParserBuffer, setTargetId, setGlobalSearch, showToast]);
     const handleCancelMapping = useCallback((rowId) => { setParserBuffer(prev => prev.map(r => r._id === rowId ? { ...r, _matchCode: '', _matchStatus: '🔴 불일치(취소됨)', _apply: false } : r)); }, [setParserBuffer]);
     const handleCreateNewMasterItem = useCallback(async (erpCode) => {
         if (!targetId)
@@ -1334,10 +1334,11 @@ const useParserActions = (appState) => {
         try {
             const hasInPrice = hasParserRowInPrice(row);
             const pInNum = hasInPrice ? getParserRowInPrice(row) : null;
-            const ruleMatch = getParserCatalogRuleMatch(parserListMarginRules, catalogLabel, row['단위']);
+            const catalogWarehouse = String(catalogWarehouseMap?.[catalogLabel] ?? '').trim();
+            const ruleMatch = getParserPriceSelection(catalogWarehouse, row['단위'], marginRules);
             const previewItem = { 코드: newCode, 품목명: row['품목명'], 규격: row['규격'] || '', 단위: row['단위'] || '' };
-            const recalculatedFinal = hasInPrice ? calculateParserCatalogPrices(pInNum, previewItem, row.finalData || {}, ruleMatch.rule) : {};
-            setParserBuffer(parserBuffer.map(r => r._id === targetId ? { ...r, _matchCode: newCode, _matchStatus: '🟢 신규등록 예정', _isNewProduct: true, _apply: true, finalData: recalculatedFinal, 코드: newCode, _catalogPriceRule: ruleMatch.rule, _catalogPriceRuleStatus: ruleMatch.status, _catalogPriceRuleReason: ruleMatch.reason } : r));
+            const recalculatedFinal = hasInPrice ? calculateParserCatalogPrices(pInNum, previewItem, row.finalData || {}, { catalogWarehouse, unit: row['단위'], marginRules }) : {};
+            setParserBuffer(parserBuffer.map(r => r._id === targetId ? { ...r, _matchCode: newCode, _matchStatus: '🟢 신규등록 예정', _isNewProduct: true, _apply: true, finalData: recalculatedFinal, 코드: newCode, _catalogWarehouse: catalogWarehouse, _catalogPriceRule: ruleMatch.rule, _catalogPriceRuleStatus: ruleMatch.matchType, _catalogPriceRuleReason: ruleMatch.matchType === 'exact' ? '창고+단위 정확 일치' : '*/* 기본 룰' } : r));
             setTargetId(null);
             setGlobalSearch('');
             setShowErpModal(false);
@@ -1350,7 +1351,7 @@ const useParserActions = (appState) => {
             setIsProcessing(false);
             setProcessMsg('');
         }
-    }, [targetId, parserBuffer, masterProducts, currentTag, parserListMarginRules, setParserBuffer, setTargetId, setGlobalSearch, setShowErpModal, setIsProcessing, setProcessMsg, showToast]);
+    }, [targetId, parserBuffer, masterProducts, currentTag, catalogWarehouseMap, marginRules, setParserBuffer, setTargetId, setGlobalSearch, setShowErpModal, setIsProcessing, setProcessMsg, showToast]);
     const handleIgnoreParsedItem = useCallback((id) => { setParserBuffer(prev => prev.filter(r => r._id !== id)); if (targetId === id) {
         setTargetId(null);
         setGlobalSearch('');
@@ -1607,14 +1608,13 @@ const EditablePriceCell = React.memo(({ rowId, initialVal, onUpdate }) => {
     } };
     return (React.createElement("input", { type: "text", className: "w-full bg-transparent text-right outline-none hover:bg-slate-50 focus:bg-white focus:ring-1 rounded px-1.5 py-1 text-[12px] font-bold text-indigo-700 transition-colors", value: localVal === "오류" ? "" : localVal, onChange: (e) => setLocalVal(e.target.value), onFocus: () => setIsFocused(true), onBlur: (e) => { setIsFocused(false); commitChange(e.target.value); }, onKeyDown: handleKeyDown, onClick: (e) => e.target.select() }));
 });
-const SmartParserInputModal = ({ onClose, executeParser, showToast, availableTags = [], parserListMarginRules = {}, saveParserListMarginRules }) => {
+const SmartParserInputModal = ({ onClose, executeParser, showToast, availableTags = [], catalogWarehouseMap = {}, saveCatalogWarehouse }) => {
     const [rawText, setRawText] = useState("");
     const [catalogMode, setCatalogMode] = useState(availableTags.length > 0 ? 'select' : 'input');
     const [selectedCatalog, setSelectedCatalog] = useState('');
     const [newCatalogInput, setNewCatalogInput] = useState("");
     const [forceManual, setForceManual] = useState(false);
-    const [createCatalogRule, setCreateCatalogRule] = useState(false);
-    const [newRuleDraft, setNewRuleDraft] = useState({ unitCondition: '*', marginRate: '10', calculationType: 'divide' });
+    const [catalogWarehouse, setCatalogWarehouse] = useState('');
     const [catalogMenuOpen, setCatalogMenuOpen] = useState(false);
     const [nowTick, setNowTick] = useState(Date.now());
     const catalogMenuRef = useRef(null);
@@ -1635,35 +1635,33 @@ const SmartParserInputModal = ({ onClose, executeParser, showToast, availableTag
         return () => document.removeEventListener('mousedown', closeOnOutsideClick);
     }, []);
     const selectedTag = availableTags.find(tag => tag.name === selectedCatalog);
-    const selectedRuleSet = getParserListMarginRuleSet(parserListMarginRules, catalogMode === 'select' ? selectedCatalog : newCatalogInput);
+    const activeCatalogName = normalizeParserCatalogName(catalogMode === 'select' ? selectedCatalog : newCatalogInput);
+    useEffect(() => {
+        setCatalogWarehouse(String(catalogWarehouseMap?.[activeCatalogName] ?? '').trim());
+    }, [activeCatalogName, catalogWarehouseMap]);
+    const handleSaveWarehouse = () => {
+        if (!activeCatalogName) return showToast('⚠️ 창고를 저장할 카탈로그를 먼저 선택/입력하세요.');
+        try {
+            saveCatalogWarehouse(activeCatalogName, catalogWarehouse);
+            showToast(`✅ [${activeCatalogName}] 창고코드를 저장했습니다.`);
+        }
+        catch (error) {
+            showToast('❌ 창고코드 저장 실패: ' + (error?.message || String(error)));
+        }
+    };
     const handleExecute = () => {
         if (!rawText.trim())
             return showToast("⚠️ 시세 텍스트를 붙여넣어주세요.");
         const finalTag = catalogMode === 'select' ? selectedCatalog : newCatalogInput.trim();
         if (!finalTag)
             return showToast("⚠️ 기준 카탈로그 또는 견적서명을 선택/입력하세요.");
-        if (catalogMode === 'input' && createCatalogRule) {
-            const marginRateText = String(newRuleDraft.marginRate ?? '').trim();
-            if (!marginRateText) return showToast('⚠️ 함께 저장할 마진율을 입력하세요.');
-            const nextRule = {
-                unitCondition: normalizeParserUnitCondition(newRuleDraft.unitCondition),
-                marginRate: Number(marginRateText),
-                calculationType: newRuleDraft.calculationType,
-                updatedAt: getNowISO()
-            };
-            const currentRules = getParserListMarginRuleSet(parserListMarginRules, finalTag)?.rules || [];
-            const validationError = validateParserCatalogRuleSet(finalTag, [...currentRules, nextRule]);
-            if (validationError) return showToast('⚠️ ' + validationError);
-            try {
-                const nextRules = { ...normalizeParserListMarginRules(parserListMarginRules) };
-                nextRules[finalTag] = { rules: [...currentRules, nextRule] };
-                saveParserListMarginRules(nextRules);
-            }
-            catch (error) {
-                return showToast('❌ 카탈로그 단위 룰 저장 실패: ' + (error?.message || String(error)));
-            }
+        try {
+            saveCatalogWarehouse(finalTag, catalogWarehouse);
         }
-        executeParser(rawText, finalTag, forceManual);
+        catch (error) {
+            return showToast('❌ 창고코드 저장 실패: ' + (error?.message || String(error)));
+        }
+        executeParser(rawText, finalTag, forceManual, catalogWarehouse);
     };
     const handleExecuteKeyDown = (event) => {
         if (event.key !== 'Enter' || event.shiftKey || event.isComposing || event.nativeEvent?.isComposing)
@@ -1725,22 +1723,12 @@ const SmartParserInputModal = ({ onClose, executeParser, showToast, availableTag
                                 },
                                     React.createElement("span", { className: "min-w-0 flex-1 truncate font-bold" }, "\uD83D\uDCC2 ", tag.name, " (", tag.count, "\uAC74)"),
                                     renderCatalogUpdatedAt(tag))))))) : (React.createElement("input", { type: "text", value: newCatalogInput, onChange: (e) => setNewCatalogInput(e.target.value), onKeyDown: handleExecuteKeyDown, placeholder: "\uC0C8 \uCE74\uD0C8\uB85C\uADF8 \uC774\uB984", className: "w-full border border-slate-300 rounded-lg px-4 py-2.5 text-[13px] font-bold outline-none focus:border-indigo-500" })),
-                    catalogMode === 'select' && selectedCatalog && React.createElement("div", { className: `mt-3 rounded-lg border px-3 py-2 text-[11px] font-bold ${selectedRuleSet ? 'bg-indigo-50 border-indigo-200 text-indigo-800' : 'bg-amber-50 border-amber-200 text-amber-800'}` },
-                        selectedRuleSet
-                            ? React.createElement("div", null,
-                                React.createElement("div", { className: "font-black mb-1" }, `판매가 룰 ${selectedRuleSet.rules.length}개`),
-                                React.createElement("div", { className: "flex flex-wrap gap-1.5" }, selectedRuleSet.rules.map((rule, index) => React.createElement("span", { key: `${rule.unitCondition}-${index}`, className: "bg-white border border-indigo-200 rounded px-2 py-1" }, `${rule.unitCondition} · ${rule.marginRate}% · ${rule.calculationType === 'divide' ? '나누기' : '곱하기'}`))))
-                            : '전용 판매가 룰이 없습니다. 계속 진행하면 판매가격만 반영하지 않습니다.'),
-                    catalogMode === 'input' && React.createElement("div", { className: "mt-3 rounded-lg border border-indigo-100 bg-indigo-50/60 p-3" },
-                        React.createElement("label", { className: "flex items-center gap-2 text-[12px] font-black text-indigo-900 cursor-pointer" },
-                            React.createElement("input", { type: "checkbox", checked: createCatalogRule, onChange: e => setCreateCatalogRule(e.target.checked), className: "rounded text-indigo-600" }),
-                            "새 카탈로그와 단위별 판매가 룰 함께 저장"),
-                        createCatalogRule && React.createElement("div", { className: "grid grid-cols-12 gap-2 mt-3" },
-                            React.createElement("input", { className: "col-span-5 border border-indigo-200 rounded-lg px-3 py-2 text-[12px] font-bold", value: newRuleDraft.unitCondition, onChange: e => setNewRuleDraft(prev => ({ ...prev, unitCondition: e.target.value })), placeholder: "단위조건: BOX, 박스 또는 *" }),
-                            React.createElement("input", { type: "number", className: "col-span-3 border border-indigo-200 rounded-lg px-3 py-2 text-[12px] font-bold", value: newRuleDraft.marginRate, onChange: e => setNewRuleDraft(prev => ({ ...prev, marginRate: e.target.value })), placeholder: "마진율" }),
-                            React.createElement("select", { className: "col-span-4 border border-indigo-200 rounded-lg px-3 py-2 text-[12px] font-bold bg-white", value: newRuleDraft.calculationType, onChange: e => setNewRuleDraft(prev => ({ ...prev, calculationType: e.target.value })) },
-                                React.createElement("option", { value: "divide" }, "나누기(÷)"),
-                                React.createElement("option", { value: "multiply" }, "곱하기(×)"))))),
+                    activeCatalogName && React.createElement("div", { className: "mt-3 rounded-lg border border-indigo-100 bg-indigo-50/60 p-3" },
+                        React.createElement("div", { className: "flex items-center gap-2" },
+                            React.createElement("label", { className: "text-[12px] font-black text-indigo-900 shrink-0" }, "창고코드"),
+                            React.createElement("input", { type: "text", value: catalogWarehouse, onChange: e => setCatalogWarehouse(e.target.value), onKeyDown: handleExecuteKeyDown, placeholder: "공란 허용 · 01 그대로 보존", className: "flex-1 border border-indigo-200 rounded-lg px-3 py-2 text-[12px] font-bold bg-white" }),
+                            React.createElement("button", { type: "button", onClick: handleSaveWarehouse, className: "px-3 py-2 rounded-lg bg-indigo-600 text-white text-[11px] font-black" }, "창고 저장")),
+                        React.createElement("div", { className: "mt-2 text-[10px] text-indigo-700" }, "Settings와 같은 공유키를 사용하며 숫자로 변환하지 않습니다. 분석 시작 시 현재 값이 다시 저장됩니다."))),
                 React.createElement("div", { className: "bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col h-[350px]" },
                     React.createElement("label", { className: "text-[13px] font-bold text-slate-800 mb-2 block" }, "\uD14D\uC2A4\uD2B8 \uBCF5\uC0AC/\uBD99\uC5EC\uB123\uAE30"),
                     React.createElement("textarea", { value: rawText, onChange: (e) => setRawText(e.target.value), onKeyDown: handleExecuteKeyDown, title: "Enter: 분석 시작 · Shift+Enter: 줄바꿈", className: "w-full flex-1 bg-slate-800 text-slate-200 rounded-lg p-4 font-mono text-[13px] outline-none border-none resize-none shadow-inner", placeholder: "\uBCF5\uC0AC\uD55C \uC2DC\uC138 \uD14D\uC2A4\uD2B8 \uC804\uCCB4\uB97C \uBD99\uC5EC\uB123\uC73C\uC138\uC694..." }),
@@ -1762,7 +1750,7 @@ const ParserReviewModal = ({ onClose, onConfirm, state, actions }) => {
     const [priceFilter, setPriceFilter] = useState('all');
     const [issueFilter, setIssueFilter] = useState('all');
     const [updateText, setUpdateText] = useState(true);
-    const { parserBuffer, masterProducts, currentTag, parserListMarginRules } = state;
+    const { parserBuffer, masterProducts, currentTag, catalogWarehouseMap, marginRules } = state;
     useEffect(() => {
         const previousOverflow = document.body.style.overflow;
         document.body.style.overflow = 'hidden';
@@ -1774,9 +1762,14 @@ const ParserReviewModal = ({ onClose, onConfirm, state, actions }) => {
     const analysis = useMemo(() => {
         let up = 0, down = 0, same = 0;
         const list = [];
+        const catalogWarehouse = String(catalogWarehouseMap?.[normalizeParserCatalogName(currentTag)] ?? '').trim();
         targetRows.forEach(row => {
             const mItem = masterProducts[row._matchCode] || {};
-            const ruleMatch = getParserCatalogRuleMatch(parserListMarginRules, currentTag, row['단위']);
+            const hasExplicitUnitEdit = Object.prototype.hasOwnProperty.call(row?._editedTextFields || {}, '단위');
+            const finalUnit = String(hasExplicitUnitEdit
+                ? row._editedTextFields['단위']
+                : ((updateText && String(row['단위'] ?? '').trim()) ? row['단위'] : (mItem['단위'] ?? ''))).trim();
+            const ruleMatch = getParserPriceSelection(catalogWarehouse, finalUnit, marginRules);
             const oldP = parseNum(mItem['입고가']);
             const newP = hasParserRowInPrice(row) ? getParserRowInPrice(row) : oldP;
             let status = 'same';
@@ -1794,11 +1787,14 @@ const ParserReviewModal = ({ onClose, onConfirm, state, actions }) => {
             else {
                 same++;
             }
-            list.push({ ...row, 기존단가: oldP, 새단가: newP, 차액: newP - oldP, 상태: status, 마스터품명: mItem.품목명 || '', 마스터규격: mItem.규격 || '', 적용룰: ruleMatch.rule, 룰상태: ruleMatch.status, 룰사유: ruleMatch.reason, 예상판매가: parseNum(row.finalData?.['출고가']) });
+            const preview = hasParserRowInPrice(row)
+                ? calculateParserCatalogPrices(newP, mItem, row.finalData || {}, { catalogWarehouse, unit: finalUnit, marginRules })
+                : row.finalData || {};
+            list.push({ ...row, ...preview, 기존단가: oldP, 새단가: newP, 차액: newP - oldP, 상태: status, 마스터품명: mItem.품목명 || '', 마스터규격: mItem.규격 || '', 확정단위: finalUnit, 카탈로그창고: catalogWarehouse, 적용룰: ruleMatch.rule, 룰상태: ruleMatch.matchType, 룰사유: ruleMatch.matchType === 'exact' ? '창고+단위 정확 일치' : '*/* 기본 룰', 예상판매가: parseNum(preview?.['출고가']) });
         });
         const ruleMatched = list.filter(item => item.적용룰).length;
         return { up, down, same, total: targetRows.length, ruleMatched, ruleUnmatched: targetRows.length - ruleMatched, list, priceList: [...list].sort((a, b) => Math.abs(b.차액) - Math.abs(a.차액)) };
-    }, [targetRows, masterProducts, parserListMarginRules, currentTag]);
+    }, [targetRows, masterProducts, catalogWarehouseMap, marginRules, currentTag, updateText]);
     const issueSummary = useMemo(() => {
         const largeChange = analysis.list.filter(item => Math.abs(item.차액 || 0) >= 500 || Math.abs(calcDiffRate(item.기존단가, item.새단가) || 0) >= 10);
         const noOldPrice = analysis.list.filter(item => !item.기존단가 || item.기존단가 <= 0);
@@ -1882,7 +1878,7 @@ const ParserReviewModal = ({ onClose, onConfirm, state, actions }) => {
                                         " ",
                                         item._isSoldOut && React.createElement("span", { className: "ml-1 bg-rose-100 text-rose-600 px-1.5 py-0.5 rounded text-[10px] font-black" }, "\uD488\uC808")),
                                     React.createElement("span", { className: "text-[11px] text-emerald-600/70 mt-0.5" }, item['규격'], item['단위'] ? ` · ${item['단위']}` : ''),
-                                    React.createElement("span", { className: `text-[10px] mt-1 font-black ${item.적용룰 ? 'text-indigo-600' : 'text-amber-600'}` }, item.적용룰 ? `${item.적용룰.unitCondition} · ${item.적용룰.marginRate}% · ${item.적용룰.calculationType === 'divide' ? '나누기' : '곱하기'} · 예상 ${item.예상판매가 ? item.예상판매가.toLocaleString() + '원' : '-'}` : item.룰사유))),
+                                    React.createElement("span", { className: "text-[10px] mt-1 font-black text-indigo-600" }, `창고 ${item.카탈로그창고 || '공란'} · 단위 ${item.확정단위 || '공란'} · ${item.룰상태} · ${item.적용룰?.rate ?? 20}% · ${item.적용룰?.type === 'multiply' ? '곱하기' : '나누기'} · 출고 ${parseNum(item['출고가']).toLocaleString()} · 시중 ${parseNum(item['시중가']).toLocaleString()} · 소분 ${parseNum(item['1입고']).toLocaleString()}/${parseNum(item['1출고']).toLocaleString()}`))),
                             React.createElement("td", { className: "px-2 py-2 text-center text-slate-300" },
                                 React.createElement("i", { className: "fas fa-arrow-right" })),
                             React.createElement("td", { className: "px-4 py-2 bg-indigo-50/10" },
@@ -1973,7 +1969,7 @@ const ParserReviewModal = ({ onClose, onConfirm, state, actions }) => {
                                         item.마스터규격 || item['규격'],
                                         ")"),
                                     getIssueBadges(item).length > 0 && React.createElement("div", { className: "flex flex-wrap gap-1 mt-1" }, getIssueBadges(item).map(badge => React.createElement("span", { key: `${item._id}-${badge.label}`, className: `border px-1.5 py-0.5 rounded text-[10px] font-black ${badge.cls}` }, badge.label))),
-                                    React.createElement("span", { className: `text-[10px] mt-1 font-black ${item.적용룰 ? 'text-indigo-600' : 'text-amber-600'}` }, item.적용룰 ? `${item.적용룰.unitCondition} · ${item.적용룰.marginRate}% · ${item.적용룰.calculationType === 'divide' ? '나누기' : '곱하기'} · 예상판매가 ${item.예상판매가 ? item.예상판매가.toLocaleString() + '원' : '-'}` : item.룰사유))),
+                                    React.createElement("span", { className: "text-[10px] mt-1 font-black text-indigo-600" }, `창고 ${item.카탈로그창고 || '공란'} · 단위 ${item.확정단위 || '공란'} · ${item.룰상태} · ${item.적용룰?.rate ?? 20}% · ${item.적용룰?.type === 'multiply' ? '곱하기' : '나누기'} · 출고 ${parseNum(item['출고가']).toLocaleString()} · 시중 ${parseNum(item['시중가']).toLocaleString()} · 소분 ${parseNum(item['1입고']).toLocaleString()}/${parseNum(item['1출고']).toLocaleString()}`))),
                             React.createElement("td", { className: "px-4 py-2 text-right text-slate-500" }, item.기존단가 > 0 ? item.기존단가.toLocaleString() : '-'),
                             React.createElement("td", { className: "px-4 py-2 text-right font-black text-indigo-600" }, item.새단가 > 0 ? item.새단가.toLocaleString() : '-'),
                             React.createElement("td", { className: "px-4 py-2 text-right font-bold" }, item.차액 > 0 ? React.createElement("span", { className: "text-rose-500" },
@@ -1992,11 +1988,11 @@ const ParserReviewModal = ({ onClose, onConfirm, state, actions }) => {
 const ParserApp = () => {
     const appState = useParserApp();
     const actions = useParserActions(appState);
-    const { masterProducts, parserBuffer, currentTag, activeTab, setActiveTab, showInputModal, setShowInputModal, showReviewModal, setShowReviewModal, showErpModal, setShowErpModal, toastMsg, showToast, isProcessing, processMsg, globalSearch, setGlobalSearch, targetId, setTargetId, selectedMissingCodes, setSelectedMissingCodes, processedCodes, parserExcludeDict, catalogUpdatedAt, lastExcludedCount } = appState;
+    const { masterProducts, parserBuffer, currentTag, activeTab, setActiveTab, showInputModal, setShowInputModal, showReviewModal, setShowReviewModal, showErpModal, setShowErpModal, toastMsg, showToast, isProcessing, processMsg, globalSearch, setGlobalSearch, targetId, setTargetId, selectedMissingCodes, setSelectedMissingCodes, processedCodes, parserExcludeDict, catalogUpdatedAt, catalogWarehouseMap, marginRules, lastExcludedCount } = appState;
     const availableTags = useMemo(() => { const counts = {}; Object.values(masterProducts).forEach(m => String(m['카탈로그'] || '').split(',').forEach(t => { const r = t.trim(); if (r)
-        counts[r] = (counts[r] || 0) + 1; })); return Object.keys(counts)
+        counts[r] = (counts[r] || 0) + 1; })); Object.keys(catalogWarehouseMap || {}).forEach(tag => { if (!Object.prototype.hasOwnProperty.call(counts, tag)) counts[tag] = 0; }); return Object.keys(counts)
             .map(tag => ({ name: tag, count: counts[tag], updatedAt: catalogUpdatedAt[tag] || '' }))
-            .sort((a, b) => formatCatalogUpdatedAt(b.updatedAt).timestampMs - formatCatalogUpdatedAt(a.updatedAt).timestampMs || a.name.localeCompare(b.name, 'ko')); }, [masterProducts, catalogUpdatedAt]);
+            .sort((a, b) => formatCatalogUpdatedAt(b.updatedAt).timestampMs - formatCatalogUpdatedAt(a.updatedAt).timestampMs || a.name.localeCompare(b.name, 'ko')); }, [masterProducts, catalogUpdatedAt, catalogWarehouseMap]);
     const mappingExcludeCount = useMemo(() => getParserExcludeList(parserExcludeDict, currentTag).length, [parserExcludeDict, currentTag]);
     const matchedRows = parserBuffer.filter(r => r._matchCode);
     const similarRows = parserBuffer.filter(r => !r._matchCode && r._matchStatus.includes('유사') && !r._matchStatus.includes('중복'));
@@ -2069,9 +2065,10 @@ const ParserApp = () => {
                 if (!priceText)
                     return { ...r, finalData: {}, _hasParsedInPrice: false };
                 const mItem = masterProducts[r._matchCode] || {};
-                const ruleMatch = getParserCatalogRuleMatch(appState.parserListMarginRules, currentTag, r['단위']);
-                const recalculatedFinal = calculateParserCatalogPrices(parseNum(priceText), mItem, r.finalData || {}, ruleMatch.rule);
-                return { ...r, finalData: recalculatedFinal, _hasParsedInPrice: true, _catalogPriceRule: ruleMatch.rule, _catalogPriceRuleStatus: ruleMatch.status, _catalogPriceRuleReason: ruleMatch.reason };
+                const warehouse = String(catalogWarehouseMap?.[normalizeParserCatalogName(currentTag)] ?? '').trim();
+                const ruleMatch = getParserPriceSelection(warehouse, r['단위'], marginRules);
+                const recalculatedFinal = calculateParserCatalogPrices(parseNum(priceText), mItem, r.finalData || {}, { catalogWarehouse: warehouse, unit: r['단위'], marginRules });
+                return { ...r, finalData: recalculatedFinal, _hasParsedInPrice: true, _catalogWarehouse: warehouse, _catalogPriceRule: ruleMatch.rule, _catalogPriceRuleStatus: ruleMatch.matchType, _catalogPriceRuleReason: ruleMatch.matchType === 'exact' ? '창고+단위 정확 일치' : '*/* 기본 룰' };
             }
             return r;
         }));
@@ -2085,18 +2082,20 @@ const ParserApp = () => {
                 _editedTextFields: { ...(row._editedTextFields || {}), [fieldName]: newValue }
             };
             if (fieldName === '단위') {
-                const ruleMatch = getParserCatalogRuleMatch(appState.parserListMarginRules, currentTag, newValue);
+                const warehouse = String(catalogWarehouseMap?.[normalizeParserCatalogName(currentTag)] ?? '').trim();
+                const ruleMatch = getParserPriceSelection(warehouse, newValue, marginRules);
                 nextRow._catalogPriceRule = ruleMatch.rule;
-                nextRow._catalogPriceRuleStatus = ruleMatch.status;
-                nextRow._catalogPriceRuleReason = ruleMatch.reason;
+                nextRow._catalogWarehouse = warehouse;
+                nextRow._catalogPriceRuleStatus = ruleMatch.matchType;
+                nextRow._catalogPriceRuleReason = ruleMatch.matchType === 'exact' ? '창고+단위 정확 일치' : '*/* 기본 룰';
                 if (hasParserRowInPrice(row)) {
                     const mItem = masterProducts[row._matchCode] || {};
-                    nextRow.finalData = calculateParserCatalogPrices(getParserRowInPrice(row), mItem, row.finalData || {}, ruleMatch.rule);
+                    nextRow.finalData = calculateParserCatalogPrices(getParserRowInPrice(row), mItem, row.finalData || {}, { catalogWarehouse: warehouse, unit: newValue, marginRules });
                 }
             }
             return nextRow;
         }));
-    }, [appState.setParserBuffer, appState.parserListMarginRules, currentTag, masterProducts]);
+    }, [appState.setParserBuffer, catalogWarehouseMap, marginRules, currentTag, masterProducts]);
     const safeGoToMain = async () => {
         const toApply = appState.parserBuffer.filter(r => r._apply && r._matchCode);
         if (toApply.length > 0) {
@@ -2110,7 +2109,7 @@ const ParserApp = () => {
         }
         window.location.href = 'MerchOps.html';
     };
-    const memoizedState = useMemo(() => ({ masterProducts, parserBuffer, currentTag, parserListMarginRules: appState.parserListMarginRules, activeTab, targetId, globalSearch, missingRows, selectedMissingCodes, isProcessing, processMsg }), [masterProducts, parserBuffer, currentTag, appState.parserListMarginRules, activeTab, targetId, globalSearch, missingRows, selectedMissingCodes, isProcessing, processMsg]);
+    const memoizedState = useMemo(() => ({ masterProducts, parserBuffer, currentTag, catalogWarehouseMap, marginRules, activeTab, targetId, globalSearch, missingRows, selectedMissingCodes, isProcessing, processMsg }), [masterProducts, parserBuffer, currentTag, catalogWarehouseMap, marginRules, activeTab, targetId, globalSearch, missingRows, selectedMissingCodes, isProcessing, processMsg]);
     const memoizedActions = useMemo(() => ({ ...actions, setShowReviewModal, setShowInputModal, setActiveTab, setGlobalSearch }), [actions, setShowReviewModal, setShowInputModal, setActiveTab, setGlobalSearch]);
     // [1순위] 작업 데이터 세션 자동 저장 및 복원 (Auto-Save)
     useEffect(() => {
@@ -2174,7 +2173,7 @@ const ParserApp = () => {
                                 React.createElement("div", { className: "flex flex-col border-l-2 border-slate-700 pl-3" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "Smart Parser"),
-                                        React.createElement("span", { className: "ml-2 bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 px-1.5 py-0.5 rounded text-[9px] font-bold" }, "v3.0.21 NoOpSaveFix")),
+                                        React.createElement("span", { className: "ml-2 bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 px-1.5 py-0.5 rounded text-[9px] font-bold" }, "v3.2.0 CatalogWarehousePricing")),
                                     React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "TEXT ANALYSIS & DELTA SYNC"))),
                             React.createElement("div", { className: "flex flex-1 max-w-md xl:max-w-xl mx-4" }, isProcessing ? React.createElement("div", { className: "w-full bg-amber-400 text-amber-900 px-4 py-1.5 rounded-md font-mono text-[12px] font-bold flex items-center shadow-inner truncate" },
                                 React.createElement("i", { className: "fas fa-spinner fa-spin mr-2" }),
@@ -2272,8 +2271,10 @@ const ParserApp = () => {
                         React.createElement("tbody", { className: "divide-y divide-slate-100" }, matchedRows.length === 0 ? React.createElement("tr", null,
                             React.createElement("td", { colSpan: "6", className: "p-10 text-center text-slate-400" }, "\uB370\uC774\uD130\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4.")) : matchedRows.map(row => {
                             const mItem = masterProducts[row._matchCode] || {};
-                            const rowRuleMatch = getParserCatalogRuleMatch(appState.parserListMarginRules, currentTag, row['단위']);
-                            const rowExpectedSale = hasParserRowInPrice(row) ? parseNum(calculateParserCatalogPrices(getParserRowInPrice(row), mItem, row.finalData || {}, rowRuleMatch.rule)['출고가']) : 0;
+                            const rowWarehouse = String(catalogWarehouseMap?.[normalizeParserCatalogName(currentTag)] ?? '').trim();
+                            const rowRuleMatch = getParserPriceSelection(rowWarehouse, row['단위'], marginRules);
+                            const rowPrices = hasParserRowInPrice(row) ? calculateParserCatalogPrices(getParserRowInPrice(row), mItem, row.finalData || {}, { catalogWarehouse: rowWarehouse, unit: row['단위'], marginRules }) : {};
+                            const rowExpectedSale = parseNum(rowPrices['출고가']);
                             const mIn = parseNum(mItem['입고가']);
                             const pIn = parseNum(row.finalData['입고가']);
                             const isDiff = mIn > 0 && mIn !== pIn;
@@ -2295,7 +2296,7 @@ const ParserApp = () => {
                                     React.createElement("div", { className: "mt-1 flex items-center gap-1" },
                                         React.createElement("input", { type: "text", value: row['규격'] || '', onChange: e => handleUpdateMatchedText(row._id, '규격', e.target.value), placeholder: "규격", className: "h-7 min-w-0 flex-1 rounded border border-slate-200 bg-white px-2 text-[10px] font-bold text-slate-700 outline-none focus:border-emerald-400", title: "저장할 규격 수정" }),
                                         React.createElement("input", { type: "text", value: row['단위'] || '', onChange: e => handleUpdateMatchedText(row._id, '단위', e.target.value), placeholder: "단위", className: "h-7 w-[64px] rounded border border-slate-200 bg-white px-2 text-[10px] font-bold text-slate-700 outline-none focus:border-emerald-400", title: "저장할 단위 수정" })),
-                                    React.createElement("div", { className: `mt-1 text-[10px] font-black ${rowRuleMatch.rule ? 'text-indigo-600' : 'text-amber-600'}` }, rowRuleMatch.rule ? `${rowRuleMatch.rule.unitCondition} · ${rowRuleMatch.rule.marginRate}% · ${rowRuleMatch.rule.calculationType === 'divide' ? '나누기' : '곱하기'} · 예상판매가 ${rowExpectedSale ? rowExpectedSale.toLocaleString() + '원' : '-'}` : rowRuleMatch.reason)),
+                                    React.createElement("div", { className: "mt-1 text-[10px] font-black text-indigo-600 whitespace-normal" }, `창고 ${rowWarehouse || '공란'} · 단위 ${row['단위'] || '공란'} · ${rowRuleMatch.matchType} · ${rowRuleMatch.marginRate}% ${rowRuleMatch.calculationType === 'divide' ? '나누기' : '곱하기'} · 출고 ${rowExpectedSale ? rowExpectedSale.toLocaleString() : 0} · 시중 ${parseNum(rowPrices['시중가']).toLocaleString()} · 소분 ${parseNum(rowPrices['1입고']).toLocaleString()}/${parseNum(rowPrices['1출고']).toLocaleString()}`)),
                                 React.createElement("td", { className: "py-2 px-3 text-right text-slate-500 font-bold" }, mIn ? mIn.toLocaleString() : '-'),
                                 React.createElement("td", { className: `py-2 px-3 text-right font-black ${isDiff ? 'text-rose-500 bg-rose-50/30' : 'text-emerald-700 bg-emerald-50/20'}` },
                                     React.createElement(EditablePriceCell, { rowId: row._id, initialVal: row.finalData['입고가'], onUpdate: handleUpdateMatchedPrice }))));
@@ -2440,7 +2441,7 @@ const ParserApp = () => {
                                             React.createElement("button", { onClick: (e) => { e.stopPropagation(); actions.handleExcludeParsedItem(row._id); }, className: "text-rose-400 hover:text-rose-600 hover:bg-rose-50 px-2 py-1.5 rounded", title: "다음부터 매핑제외" },
                                                 React.createElement("i", { className: "fas fa-ban" }))))));
                             }))))))))),
-        showInputModal && React.createElement(SmartParserInputModal, { onClose: () => setShowInputModal(false), executeParser: actions.executeParser, showToast: showToast, availableTags: availableTags, parserListMarginRules: appState.parserListMarginRules, saveParserListMarginRules: appState.saveParserListMarginRules }),
+        showInputModal && React.createElement(SmartParserInputModal, { onClose: () => setShowInputModal(false), executeParser: actions.executeParser, showToast: showToast, availableTags: availableTags, catalogWarehouseMap: catalogWarehouseMap, saveCatalogWarehouse: appState.saveCatalogWarehouse }),
         showReviewModal && React.createElement(ParserReviewModal, { onClose: () => setShowReviewModal(false), onConfirm: actions.handleApplyMatched, state: memoizedState, actions: memoizedActions }),
         showErpModal && React.createElement(ErpCodeInputModal, { onClose: () => setShowErpModal(false), onSubmit: actions.handleCreateNewMasterItem, targetItem: parserBuffer.find(r => r._id === targetId) }),
         appState.showMappingExcludeModal && React.createElement(MappingExcludeListModal, { onClose: () => appState.setShowMappingExcludeModal(false), excludeDict: parserExcludeDict, currentTag: currentTag, onRestore: actions.handleRestoreParserExcluded, onClear: actions.handleClearParserExclusions }),
