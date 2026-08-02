@@ -21,15 +21,14 @@ assert.doesNotMatch(
     /setColumnWidthDraft|setColumnWidthDirtyMap|setColumnWidthDirty/,
     '드래그 중에는 React 상태를 변경해 전체 작업표를 다시 렌더링하면 안 된다.'
 );
-assert.match(moveSource, /requestAnimationFrame\(paintPreview\)/, '드래그 미리보기는 프레임당 한 번으로 제한해야 한다.');
 assert.match(upSource, /setColumnWidthDraft/, '마우스를 놓을 때 최종 열폭을 React 상태에 반영해야 한다.');
-assert.match(resizeSource, /merch-column-resize-guide/, '드래그 중에는 열 전체가 아니라 독립된 안내선만 표시해야 한다.');
-assert.match(resizeSource, /resizeGuide\.style\.transform/, '드래그 안내선은 transform으로 이동해야 한다.');
 assert.doesNotMatch(
     resizeSource,
-    /nth-child|previewStyle\.textContent|data-merch-column-resize-preview/,
-    '드래그 중 테이블 열 전체에 CSS 너비를 적용하면 안 된다.'
+    /nth-child|previewStyle\.textContent|data-merch-column-resize-preview|merch-column-resize-guide|document\.createElement|appendChild|requestAnimationFrame/,
+    '드래그 중 테이블 열 전체 또는 별도 안내 요소를 만들면 안 된다.'
 );
+assert.match(resizeSource, /cursorRoot\.style\.cursor = 'col-resize'/, '드래그 중에는 실제 마우스 커서 하나만 열폭 조정 모양으로 유지해야 한다.');
+assert.match(resizeSource, /cursorRoot\.style\.cursor = previousCursor/, '드래그 종료 시 기존 마우스 커서를 복원해야 한다.');
 assert.match(resizeSource, /addEventListener\('blur', onUp\)/, '창 포커스를 잃어도 드래그 자원을 정리해야 한다.');
 
 const gridStart = source.indexOf('const ExcelDataGrid =');
@@ -53,19 +52,16 @@ const shallowEqual = (left, right) => {
 
 const createResizeHarness = ({ rowCount = 2000, startWidth = 100 } = {}) => {
     const listeners = new Map();
-    const rafCallbacks = new Map();
     const rows = Array.from({ length: rowCount }, (_, idx) => ({ code: `ROW-${idx}` }));
     const actions = Object.freeze({});
     const masterItem = Object.freeze({});
     let rowState = Object.freeze({ columnWidths: Object.freeze({}) });
     let rowProps = rows.map((row, idx) => ({ row, idx, state: rowState, actions, isSel: false, mItem: masterItem }));
-    let nextRafId = 1;
     let draft = {};
     let widthApplyCount = 0;
     let rowRenderIncrease = 0;
     let dirtyMapUpdates = 0;
     let dirtyUpdates = 0;
-    let appendedGuide = null;
 
     const addEventListener = (type, callback) => {
         if (!listeners.has(type)) listeners.set(type, new Set());
@@ -74,17 +70,6 @@ const createResizeHarness = ({ rowCount = 2000, startWidth = 100 } = {}) => {
     const removeEventListener = (type, callback) => listeners.get(type)?.delete(callback);
     const dispatch = (type, event = {}) => {
         for (const callback of [...(listeners.get(type) || [])]) callback(event);
-    };
-    const requestAnimationFrame = callback => {
-        const id = nextRafId++;
-        rafCallbacks.set(id, callback);
-        return id;
-    };
-    const cancelAnimationFrame = id => rafCallbacks.delete(id);
-    const flushAnimationFrames = () => {
-        const pending = [...rafCallbacks.entries()];
-        rafCallbacks.clear();
-        pending.forEach(([, callback]) => callback());
     };
     const applyRowState = nextColumnWidths => {
         const nextState = Object.freeze({ columnWidths: Object.freeze({ ...nextColumnWidths }) });
@@ -97,20 +82,10 @@ const createResizeHarness = ({ rowCount = 2000, startWidth = 100 } = {}) => {
     const windowMock = {
         innerHeight: 900,
         addEventListener,
-        removeEventListener,
-        requestAnimationFrame,
-        cancelAnimationFrame
+        removeEventListener
     };
     const documentMock = {
-        createElement: () => ({
-            className: '',
-            style: {},
-            removed: false,
-            remove() { this.removed = true; }
-        }),
-        body: {
-            appendChild(guide) { appendedGuide = guide; }
-        }
+        documentElement: { style: { cursor: '', userSelect: '' } }
     };
     const context = {
         React: { createElement: (type, props) => ({ type, props }) },
@@ -151,19 +126,17 @@ const createResizeHarness = ({ rowCount = 2000, startWidth = 100 } = {}) => {
         },
         move(clientX) { dispatch('mousemove', { clientX }); },
         finish(type = 'mouseup') { dispatch(type); },
-        flushAnimationFrames,
         snapshot: () => ({
             draft: { ...draft },
             widthApplyCount,
             rowRenderIncrease,
             dirtyMapUpdates,
             dirtyUpdates,
-            pendingRafCount: rafCallbacks.size,
             moveListenerCount: listeners.get('mousemove')?.size || 0,
             upListenerCount: listeners.get('mouseup')?.size || 0,
             blurListenerCount: listeners.get('blur')?.size || 0,
-            guideTransform: appendedGuide?.style.transform || '',
-            guideRemoved: appendedGuide?.removed === true
+            cursor: documentMock.documentElement.style.cursor,
+            userSelect: documentMock.documentElement.style.userSelect
         })
     };
 };
@@ -172,15 +145,14 @@ const changedDrag = createResizeHarness({ rowCount: 2000, startWidth: 100 });
 changedDrag.start(200);
 for (let index = 0; index < 500; index += 1) {
     changedDrag.move(201 + (index % 300));
-    if (index % 25 === 24) changedDrag.flushAnimationFrames();
 }
-changedDrag.flushAnimationFrames();
 
 let changedSnapshot = changedDrag.snapshot();
 assert.equal(changedSnapshot.widthApplyCount, 0, '반복 mousemove 중 최종 열폭 상태 반영은 0회여야 한다.');
 assert.equal(changedSnapshot.rowRenderIncrease, 0, '2,000행 모델에서 mousemove 중 행 렌더 증가는 0이어야 한다.');
 assert.equal(changedSnapshot.dirtyUpdates, 0, 'mousemove 중 dirty 상태를 바꾸면 안 된다.');
-assert.match(changedSnapshot.guideTransform, /^translate3d\(/, '반복 이동은 독립 안내선 transform에만 반영되어야 한다.');
+assert.equal(changedSnapshot.cursor, 'col-resize', '드래그 중에는 실제 마우스 커서 하나만 열폭 조정 모양이어야 한다.');
+assert.equal(changedSnapshot.userSelect, 'none', '드래그 중 텍스트 선택을 막아야 한다.');
 
 changedDrag.finish('mouseup');
 changedSnapshot = changedDrag.snapshot();
@@ -192,8 +164,8 @@ assert.equal(changedSnapshot.dirtyUpdates, 1, '실제 폭 변경은 dirty 상태
 assert.equal(changedSnapshot.moveListenerCount, 0, '종료 시 mousemove 이벤트를 정리해야 한다.');
 assert.equal(changedSnapshot.upListenerCount, 0, '종료 시 mouseup 이벤트를 정리해야 한다.');
 assert.equal(changedSnapshot.blurListenerCount, 0, '종료 시 blur 이벤트를 정리해야 한다.');
-assert.equal(changedSnapshot.pendingRafCount, 0, '종료 시 남은 RAF가 없어야 한다.');
-assert.equal(changedSnapshot.guideRemoved, true, '종료 시 안내선을 제거해야 한다.');
+assert.equal(changedSnapshot.cursor, '', '종료 시 기존 마우스 커서를 복원해야 한다.');
+assert.equal(changedSnapshot.userSelect, '', '종료 시 기존 텍스트 선택 상태를 복원해야 한다.');
 
 const unchangedBlur = createResizeHarness({ rowCount: 2000, startWidth: 100 });
 unchangedBlur.start(200);
@@ -203,7 +175,8 @@ assert.equal(unchangedSnapshot.widthApplyCount, 0, '폭이 바뀌지 않은 blur
 assert.equal(unchangedSnapshot.rowRenderIncrease, 0, '폭이 바뀌지 않은 종료는 행을 다시 렌더링하면 안 된다.');
 assert.equal(unchangedSnapshot.dirtyMapUpdates, 0, '폭이 바뀌지 않은 종료는 dirty 열을 만들면 안 된다.');
 assert.equal(unchangedSnapshot.dirtyUpdates, 0, '폭이 바뀌지 않은 종료는 dirty 상태를 만들면 안 된다.');
-assert.equal(unchangedSnapshot.guideRemoved, true, 'blur 종료도 안내선을 제거해야 한다.');
+assert.equal(unchangedSnapshot.cursor, '', 'blur 종료도 기존 마우스 커서를 복원해야 한다.');
+assert.equal(unchangedSnapshot.userSelect, '', 'blur 종료도 기존 텍스트 선택 상태를 복원해야 한다.');
 
 const widthContractStart = source.indexOf('window.normalizeMerchColumnWidths =');
 const widthContractEnd = source.indexOf('const MERCH_RESIZE_HANDLE_CLASS', widthContractStart);

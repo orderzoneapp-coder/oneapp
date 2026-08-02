@@ -10029,54 +10029,30 @@ const ExcelDataGrid = ({ state, actions }) => {
             const startX = e.clientX;
             const startWidth = getColumnWidthValue(key, label, fallback);
             const minWidth = key === 'core:마스터 정보' ? 160 : (key === 'report:리포트' ? 140 : 48);
-            const headerCell = e.currentTarget.closest('th');
-            const table = headerCell?.closest('table');
-            const tableRect = table?.getBoundingClientRect();
-            const resizeGuide = tableRect ? document.createElement('div') : null;
+            const cursorRoot = document.documentElement;
+            const previousCursor = cursorRoot.style.cursor;
+            const previousUserSelect = cursorRoot.style.userSelect;
             let latestWidth = startWidth;
             let changed = false;
-            let previewFrame = 0;
-            if (resizeGuide && tableRect) {
-                resizeGuide.className = 'merch-column-resize-guide';
-                Object.assign(resizeGuide.style, {
-                    position: 'fixed',
-                    top: `${Math.max(0, tableRect.top)}px`,
-                    left: '0',
-                    width: '2px',
-                    height: `${Math.max(0, Math.min(window.innerHeight, tableRect.bottom) - Math.max(0, tableRect.top))}px`,
-                    background: '#6366f1',
-                    boxShadow: '0 0 0 1px rgba(99, 102, 241, 0.18)',
-                    pointerEvents: 'none',
-                    zIndex: '9999',
-                    transform: `translate3d(${startX}px, 0, 0)`,
-                    willChange: 'transform'
-                });
-                document.body.appendChild(resizeGuide);
-            }
-            const paintPreview = () => {
-                previewFrame = 0;
-                if (!resizeGuide) return;
-                const guideX = startX + latestWidth - startWidth;
-                resizeGuide.style.transform = `translate3d(${guideX}px, 0, 0)`;
-            };
+            cursorRoot.style.cursor = 'col-resize';
+            cursorRoot.style.userSelect = 'none';
             const onMove = (moveEvent) => {
                 const nextWidth = Math.max(minWidth, Math.min(720, Math.round(startWidth + moveEvent.clientX - startX)));
                 if (nextWidth === latestWidth) return;
                 latestWidth = nextWidth;
                 changed = latestWidth !== startWidth;
-                if (!previewFrame) previewFrame = window.requestAnimationFrame(paintPreview);
             };
             const onUp = () => {
                 window.removeEventListener('mousemove', onMove);
                 window.removeEventListener('mouseup', onUp);
                 window.removeEventListener('blur', onUp);
-                if (previewFrame) window.cancelAnimationFrame(previewFrame);
+                cursorRoot.style.cursor = previousCursor;
+                cursorRoot.style.userSelect = previousUserSelect;
                 if (changed) {
                     setColumnWidthDraft(prev => ({ ...(prev || {}), [key]: latestWidth }));
                     setColumnWidthDirtyMap(prev => ({ ...(prev || {}), [key]: String(label || key) }));
                     setColumnWidthDirty(true);
                 }
-                if (resizeGuide) resizeGuide.remove();
             };
             window.addEventListener('mousemove', onMove);
             window.addEventListener('mouseup', onUp);
