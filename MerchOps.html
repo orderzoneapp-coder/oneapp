@@ -10234,18 +10234,48 @@ const ExcelDataGrid = ({ state, actions }) => {
             const startX = e.clientX;
             const startWidth = getColumnWidthValue(key, label, fallback);
             const minWidth = key === 'core:마스터 정보' ? 160 : (key === 'report:리포트' ? 140 : 48);
+            const headerCell = e.currentTarget.closest('th');
+            const table = headerCell?.closest('table');
+            const columnNumber = headerCell ? headerCell.cellIndex + 1 : 0;
+            const previewAttribute = 'data-merch-column-resize-preview';
+            const previewStyle = table && columnNumber > 0 ? document.createElement('style') : null;
+            let latestWidth = startWidth;
+            let changed = false;
+            let previewFrame = 0;
+            if (table && previewStyle) {
+                table.setAttribute(previewAttribute, '1');
+                document.head.appendChild(previewStyle);
+            }
+            const paintPreview = () => {
+                previewFrame = 0;
+                if (!previewStyle) return;
+                previewStyle.textContent = `table[${previewAttribute}="1"] tr > *:nth-child(${columnNumber}) { min-width: ${latestWidth}px !important; width: ${latestWidth}px !important; max-width: ${latestWidth}px !important; }`;
+            };
             const onMove = (moveEvent) => {
                 const nextWidth = Math.max(minWidth, Math.min(720, Math.round(startWidth + moveEvent.clientX - startX)));
-                setColumnWidthDraft(prev => ({ ...(prev || {}), [key]: nextWidth }));
-                setColumnWidthDirtyMap(prev => ({ ...(prev || {}), [key]: String(label || key) }));
-                setColumnWidthDirty(true);
+                if (nextWidth === latestWidth) return;
+                latestWidth = nextWidth;
+                changed = latestWidth !== startWidth;
+                if (!previewFrame) previewFrame = window.requestAnimationFrame(paintPreview);
             };
             const onUp = () => {
                 window.removeEventListener('mousemove', onMove);
                 window.removeEventListener('mouseup', onUp);
+                window.removeEventListener('blur', onUp);
+                if (previewFrame) window.cancelAnimationFrame(previewFrame);
+                if (changed) {
+                    setColumnWidthDraft(prev => ({ ...(prev || {}), [key]: latestWidth }));
+                    setColumnWidthDirtyMap(prev => ({ ...(prev || {}), [key]: String(label || key) }));
+                    setColumnWidthDirty(true);
+                }
+                window.requestAnimationFrame(() => {
+                    if (table) table.removeAttribute(previewAttribute);
+                    if (previewStyle) previewStyle.remove();
+                });
             };
             window.addEventListener('mousemove', onMove);
             window.addEventListener('mouseup', onUp);
+            window.addEventListener('blur', onUp);
         }
     });
     const saveColumnWidths = () => {
