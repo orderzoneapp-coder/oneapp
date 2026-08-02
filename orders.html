@@ -133,88 +133,6 @@
       margin: 0 auto;
       padding: 34px 0 56px;
     }
-    .hero {
-      display: flex;
-      align-items: flex-end;
-      justify-content: space-between;
-      gap: 24px;
-      margin-bottom: 22px;
-    }
-    .eyebrow {
-      margin: 0 0 8px;
-      color: var(--teal-700);
-      font-size: 12px;
-      font-weight: 900;
-      letter-spacing: 0.14em;
-      text-transform: uppercase;
-    }
-    h1 {
-      margin: 0;
-      font-size: clamp(27px, 4vw, 40px);
-      line-height: 1.16;
-      letter-spacing: -0.04em;
-    }
-    .hero-copy {
-      max-width: 720px;
-      margin: 12px 0 0;
-      color: var(--slate-600);
-      font-size: 15px;
-      line-height: 1.7;
-    }
-    .workflow-chip {
-      flex: 0 0 auto;
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 12px 14px;
-      border: 1px solid var(--slate-200);
-      border-radius: 12px;
-      color: var(--slate-600);
-      background: rgba(255, 255, 255, 0.74);
-      box-shadow: var(--shadow-sm);
-      font-size: 12px;
-      font-weight: 800;
-    }
-    .workflow-chip strong { color: var(--teal-700); }
-
-    .stage-strip {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      overflow: hidden;
-      margin-bottom: 18px;
-      border: 1px solid var(--slate-200);
-      border-radius: 12px;
-      background: var(--white);
-      box-shadow: var(--shadow-sm);
-    }
-    .stage {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      min-height: 54px;
-      padding: 10px 18px;
-      color: var(--slate-500);
-      font-size: 13px;
-      font-weight: 800;
-      border-right: 1px solid var(--slate-200);
-    }
-    .stage:last-child { border-right: 0; }
-    .stage-number {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      width: 25px;
-      height: 25px;
-      border-radius: 999px;
-      color: var(--slate-600);
-      background: var(--slate-100);
-      font-size: 11px;
-      font-weight: 900;
-    }
-    .stage.active { color: var(--teal-700); background: #f0fdfa; }
-    .stage.active .stage-number { color: var(--white); background: var(--teal-700); }
-    .stage.complete { color: var(--green-700); }
-    .stage.complete .stage-number { color: var(--green-700); background: var(--green-100); }
 
     .panel {
       border: 1px solid var(--slate-200);
@@ -223,33 +141,6 @@
       box-shadow: var(--shadow-md);
     }
     .input-panel { padding: 22px; }
-    .panel-heading {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 18px;
-      margin-bottom: 18px;
-    }
-    .panel-heading h2 {
-      margin: 0;
-      font-size: 18px;
-      letter-spacing: -0.025em;
-    }
-    .panel-heading p {
-      margin: 4px 0 0;
-      color: var(--slate-500);
-      font-size: 12px;
-    }
-    .readonly-badge {
-      flex: 0 0 auto;
-      padding: 5px 9px;
-      border: 1px solid var(--blue-100);
-      border-radius: 999px;
-      color: var(--blue-700);
-      background: #eff6ff;
-      font-size: 11px;
-      font-weight: 900;
-    }
 
     .upload-grid {
       display: grid;
@@ -583,8 +474,6 @@
     @media (max-width: 1050px) {
       .summary-grid { grid-template-columns: repeat(3, 1fr); }
       .upload-grid { grid-template-columns: 1fr; }
-      .hero { align-items: flex-start; flex-direction: column; }
-      .workflow-chip { align-self: stretch; justify-content: center; }
     }
     @media (max-width: 680px) {
       .global-header { height: 64px; padding: 0 16px; }
@@ -593,10 +482,7 @@
       .brand-product { display: none; }
       .header-link span { display: none; }
       .page-shell { width: min(100% - 24px, 1480px); padding-top: 24px; }
-      .stage { padding: 9px; justify-content: center; }
-      .stage span:last-child { display: none; }
       .input-panel { padding: 16px; }
-      .panel-heading { align-items: flex-start; }
       .drop-zone { grid-template-columns: auto minmax(0, 1fr); }
       .file-button { grid-column: 1 / -1; width: 100%; }
       .file-meta { grid-template-columns: repeat(2, 1fr); }
@@ -736,124 +622,51 @@
       white-space: nowrap;
     }
     .system-mode strong { color: #5eead4; }
-    .system-intro {
+    .input-panel {
       display: grid;
       grid-template-columns: minmax(0, 1fr) auto;
-      align-items: center;
-      gap: 20px;
-      padding: 15px 18px 14px;
+      gap: 8px;
+      padding: 10px 12px 12px;
+      border: 0;
+      border-radius: 0;
       color: var(--slate-200);
-      border-bottom: 1px solid #334155;
-      background: #162238;
+      background: #1e293b;
+      box-shadow: none;
     }
-    .system-title-row {
-      display: flex;
-      align-items: baseline;
-      gap: 12px;
-      min-width: 0;
+    .upload-grid {
+      grid-column: 1 / -1;
+      gap: 8px;
     }
-    .system-intro .eyebrow {
-      flex: 0 0 auto;
-      margin: 0;
-      color: #67e8f9;
-      font-size: 10px;
-    }
-    .system-intro h1 {
+    .upload-card {
+      display: grid;
+      grid-template-columns: minmax(265px, 1fr) minmax(245px, 1fr);
       overflow: hidden;
-      color: var(--white);
-      font-size: 22px;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-    .system-intro .hero-copy {
-      max-width: 860px;
-      margin: 6px 0 0;
-      color: var(--slate-400);
-      font-size: 12px;
-      line-height: 1.55;
-    }
-    .system-intro .workflow-chip {
-      padding: 8px 11px;
       border-color: #475569;
       border-radius: 6px;
-      color: var(--slate-300);
-      background: rgba(15, 23, 42, 0.72);
-      box-shadow: none;
-      font-size: 11px;
-    }
-    .system-intro .workflow-chip strong { color: #5eead4; }
-    .stage-strip {
-      margin: 0;
-      border: 0;
-      border-bottom: 1px solid #334155;
-      border-radius: 0;
-      background: #1e293b;
-      box-shadow: none;
-    }
-    .stage {
-      min-height: 46px;
-      padding: 8px 18px;
-      color: var(--slate-400);
-      border-right-color: #334155;
-      font-size: 12px;
-    }
-    .stage-number {
-      width: 23px;
-      height: 23px;
-      color: var(--slate-300);
-      background: #334155;
-    }
-    .stage.active {
-      color: #67e8f9;
-      background: #172554;
-      box-shadow: inset 0 -2px #22d3ee;
-    }
-    .stage.active .stage-number { color: #0f172a; background: #67e8f9; }
-    .stage.complete { color: #6ee7b7; background: #172a30; }
-    .stage.complete .stage-number { color: #064e3b; background: #6ee7b7; }
-    .input-panel {
-      padding: 16px 18px 18px;
-      border: 0;
-      border-radius: 0;
-      color: var(--slate-200);
-      background: #1e293b;
-      box-shadow: none;
-    }
-    .panel-heading { margin-bottom: 12px; }
-    .panel-heading h2 { color: var(--white); font-size: 15px; }
-    .panel-heading p { color: var(--slate-400); }
-    .readonly-badge {
-      border-color: #475569;
-      color: #93c5fd;
-      background: #172554;
-    }
-    .upload-grid { gap: 10px; }
-    .upload-card {
-      border-color: #475569;
-      border-radius: 8px;
       background: #273449;
     }
     .upload-card.has-file { border-color: #2dd4bf; background: #15383b; }
     .upload-card.has-error { border-color: #fb7185; background: #3f2533; }
     .drop-zone {
-      min-height: 82px;
-      padding: 12px;
-      border-radius: 8px 8px 0 0;
+      min-height: 60px;
+      padding: 7px 8px;
+      border-radius: 6px 0 0 6px;
     }
     .drop-zone:focus-visible { border-color: #67e8f9; }
     .drop-zone.dragover { border-color: #2dd4bf; background: rgba(13, 148, 136, 0.2); }
     .file-icon {
-      width: 36px;
-      height: 36px;
-      border-radius: 7px;
+      width: 30px;
+      height: 30px;
+      border-radius: 5px;
       color: #99f6e4;
       background: rgba(13, 148, 136, 0.26);
-      font-size: 15px;
+      font-size: 13px;
     }
-    .drop-title { color: var(--white); font-size: 13px; }
-    .drop-help { color: var(--slate-400); }
+    .drop-title { color: var(--white); font-size: 12px; }
+    .drop-help { margin-top: 2px; color: var(--slate-400); font-size: 10px; }
     .file-button {
-      min-height: 34px;
+      min-height: 30px;
+      padding: 0 9px;
       border-color: #64748b;
       border-radius: 6px;
       color: var(--slate-200);
@@ -861,36 +674,40 @@
     }
     .file-button:hover { border-color: #5eead4; color: #5eead4; background: #1e293b; }
     .file-meta {
-      border-top-color: #475569;
+      border-top: 0;
+      border-left: 1px solid #475569;
       background: rgba(15, 23, 42, 0.36);
     }
-    .meta-item { padding: 8px 10px; border-right-color: #475569; }
-    .meta-label { color: var(--slate-400); }
-    .meta-value { color: var(--slate-100); }
+    .meta-item { display: flex; min-width: 0; flex-direction: column; justify-content: center; padding: 5px 7px; border-right-color: #475569; }
+    .meta-label { color: var(--slate-400); font-size: 9px; }
+    .meta-value { margin-top: 2px; color: var(--slate-100); font-size: 11px; }
     .meta-value.good { color: #6ee7b7; }
     .meta-value.warn { color: #fbbf24; }
     .meta-value.bad { color: #fda4af; }
     .validation-box {
-      margin-top: 10px;
-      padding: 10px 12px;
+      min-width: 0;
+      margin: 0;
+      padding: 7px 10px;
       border-color: #475569;
       border-radius: 7px;
       background: #172033;
     }
     .validation-box.good { border-color: #059669; background: #12352f; }
     .validation-box.bad { border-color: #e11d48; background: #3b1f2c; }
-    .validation-title { color: var(--slate-100); font-size: 12px; }
-    .validation-detail { margin-top: 4px; color: var(--slate-400); font-size: 11px; }
+    .validation-title { color: var(--slate-100); font-size: 11px; }
+    .validation-detail { margin-top: 2px; color: var(--slate-400); font-size: 10px; line-height: 1.35; }
     .validation-list { color: #fda4af; }
     .action-bar {
-      margin-top: 12px;
-      padding-top: 12px;
-      border-top-color: #475569;
+      align-self: stretch;
+      margin: 0;
+      padding: 0;
+      border: 0;
     }
-    .action-note { color: var(--slate-400); font-size: 11px; }
+    .action-note { max-width: 240px; color: var(--slate-400); font-size: 9px; line-height: 1.35; }
     .primary-button {
-      min-width: 156px;
-      min-height: 38px;
+      min-width: 120px;
+      min-height: 34px;
+      padding: 0 12px;
       border-radius: 6px;
       color: #0f172a;
       background: #5eead4;
@@ -900,15 +717,24 @@
     .primary-button:hover:not(:disabled) { background: #99f6e4; }
     .primary-button:disabled { color: var(--slate-500); background: #334155; }
     .results-panel {
-      margin-top: 14px;
-      border-radius: 10px;
+      margin-top: 8px;
+      border-radius: 8px;
       box-shadow: var(--shadow-sm);
     }
-    .results-header { padding: 15px 18px; background: #173d56; }
-    .results-header h2 { font-size: 16px; }
-    .download-button { min-height: 38px; border-radius: 6px; font-size: 12px; }
-    .summary-card { padding: 14px 16px; }
-    .summary-value { margin-top: 5px; font-size: 21px; }
+    .results-header { padding: 9px 12px; background: #173d56; }
+    .results-header h2 { font-size: 14px; }
+    .results-header p { margin-top: 2px; font-size: 10px; }
+    .download-button { min-height: 32px; padding: 0 12px; border-radius: 5px; font-size: 11px; }
+    .summary-card { padding: 8px 10px; }
+    .summary-value { margin-top: 2px; font-size: 18px; }
+    .preview-toolbar { padding: 7px 10px 0; }
+    .preview-tabs { padding-bottom: 5px; }
+    .tab-button { min-height: 29px; padding: 0 9px; }
+    .preview-count { padding-bottom: 5px; }
+    .table-wrap { max-height: calc(100vh - 330px); }
+    th { padding: 7px 9px; }
+    td { padding: 6px 9px; }
+    .result-footnote { padding: 8px 10px 10px; font-size: 10px; }
 
     @media (max-width: 760px) {
       .global-header { height: 58px; padding: 0 16px; }
@@ -919,18 +745,17 @@
       .system-topbar { align-items: flex-start; flex-wrap: wrap; gap: 8px 12px; padding: 12px; }
       .system-console { order: 3; width: 100%; max-width: none; }
       .system-mode { margin-left: auto; }
-      .system-intro { grid-template-columns: 1fr; gap: 10px; padding: 13px 12px; }
-      .system-title-row { align-items: flex-start; flex-direction: column; gap: 4px; }
-      .system-intro h1 { font-size: 19px; white-space: normal; }
-      .system-intro .workflow-chip { align-self: flex-start; }
-      .input-panel { padding: 13px 12px; }
-      .stage { flex-direction: column; gap: 4px; min-height: 60px; padding: 7px 4px; font-size: 10px; }
-      .stage span:last-child { display: inline; }
+      .input-panel { grid-template-columns: 1fr; padding: 8px; }
+      .upload-grid { grid-template-columns: 1fr; }
+      .upload-card { grid-template-columns: 1fr; }
       .drop-zone { grid-template-columns: auto minmax(0, 1fr); }
       .file-button { grid-column: 1 / -1; width: 100%; }
+      .file-meta { border-top: 1px solid #475569; border-left: 0; }
       .meta-item:nth-child(2) { border-right: 0; }
       .meta-item:nth-child(-n+2) { border-bottom-color: #475569; }
-      .action-bar, .results-header { align-items: stretch; flex-direction: column; }
+      .action-bar { align-items: stretch; }
+      .action-note { max-width: none; }
+      .results-header { align-items: stretch; flex-direction: column; }
     }
   </style>
 </head>
@@ -950,7 +775,7 @@
   </header>
 
   <main class="page-shell">
-    <section class="system-workbench" aria-labelledby="inputHeading">
+    <section class="system-workbench" aria-label="주문관리 파일 작업영역">
       <div class="system-topbar">
         <div class="system-name">System.IO</div>
         <div class="system-console" role="status" aria-live="polite">
@@ -960,34 +785,7 @@
         <div class="system-mode"><strong>READ ONLY</strong> · browser memory</div>
       </div>
 
-      <div class="system-intro">
-        <div>
-          <div class="system-title-row">
-            <p class="eyebrow">NEXUS · Excel Workbench</p>
-            <h1>Shipping Management</h1>
-          </div>
-          <p class="hero-copy">
-            주문현황과 창고별재고를 상품코드로 대조해 입력 행 순서대로 배정하고 미출고현황 Excel을 생성합니다.
-          </p>
-        </div>
-        <div class="workflow-chip"><strong>2개 파일</strong> → 분석 → <strong>1개 Excel</strong></div>
-      </div>
-
-      <nav class="stage-strip" aria-label="작업 단계">
-        <div class="stage active" id="stageUpload"><span class="stage-number">1</span><span>파일 선택</span></div>
-        <div class="stage" id="stageAnalyze"><span class="stage-number">2</span><span>출고 분석</span></div>
-        <div class="stage" id="stageDownload"><span class="stage-number">3</span><span>Excel 다운로드</span></div>
-      </nav>
-
-      <section class="panel input-panel" aria-labelledby="inputHeading">
-      <div class="panel-heading">
-        <div>
-          <h2 id="inputHeading">입력 파일</h2>
-          <p>Excel은 브라우저 메모리에서만 분석하며 다른 ONEAPP 데이터에 쓰지 않습니다.</p>
-        </div>
-        <span class="readonly-badge">읽기 전용 분석</span>
-      </div>
-
+      <section class="panel input-panel" aria-label="입력 파일">
       <div class="upload-grid">
         <article class="upload-card" id="ordersCard">
           <div class="drop-zone" id="ordersDrop" tabindex="0" role="button" aria-label="주문현황 Excel 선택">
@@ -1113,9 +911,6 @@
         previewTable: document.getElementById("previewTable"),
         downloadButton: document.getElementById("downloadButton"),
         systemMessage: document.getElementById("systemMessage"),
-        stageUpload: document.getElementById("stageUpload"),
-        stageAnalyze: document.getElementById("stageAnalyze"),
-        stageDownload: document.getElementById("stageDownload"),
         toast: document.getElementById("toast"),
       };
 
@@ -1205,8 +1000,6 @@
       function resetResults() {
         state.workspace = null;
         elements.resultsPanel.classList.add("hidden");
-        elements.stageAnalyze.classList.remove("complete", "active");
-        elements.stageDownload.classList.remove("complete", "active");
       }
 
       async function handleFile(kind, file) {
@@ -1356,9 +1149,6 @@
         renderValidation();
         elements.analyzeButton.disabled = !state.validation?.canAnalyze;
         const bothSelected = Boolean(state.orders && state.inventory);
-        elements.stageUpload.classList.toggle("complete", bothSelected);
-        elements.stageUpload.classList.toggle("active", !bothSelected);
-        elements.stageAnalyze.classList.toggle("active", Boolean(state.validation?.canAnalyze && !state.workspace));
         const selectedCount = Number(Boolean(state.orders)) + Number(Boolean(state.inventory));
         if (!bothSelected) {
           setSystemMessage(`waiting for data_blocks... (${selectedCount}/2 파일 선택)`);
@@ -1524,9 +1314,6 @@
           `${state.workspace.sourceFiles.inventory.fileName} ${formatNumber(stats.inventoryRowCount)}행 · 배정 대사 ${stats.allocationDifference === 0 ? "정상" : "오류"}`;
         renderPreview();
         elements.resultsPanel.classList.remove("hidden");
-        elements.stageAnalyze.classList.remove("active");
-        elements.stageAnalyze.classList.add("complete");
-        elements.stageDownload.classList.add("active");
         setSystemMessage("analysis complete... (Excel 다운로드 준비 완료)");
       }
 
@@ -1557,8 +1344,6 @@
         try {
           const fileName = workbookTools.getOutputFileName(state.workspace.createdAt);
           workbookTools.downloadWorkbook(state.workspace, window.XLSX, fileName);
-          elements.stageDownload.classList.remove("active");
-          elements.stageDownload.classList.add("complete");
           setSystemMessage("workbook saved... (작업 완료)");
           showToast(`${fileName} 다운로드를 시작했습니다.`);
         } catch (error) {
