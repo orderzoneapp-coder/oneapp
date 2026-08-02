@@ -6057,7 +6057,12 @@ const useInventoryEngine = ({ mappings, grouping, viewMode, setViewMode, mergeOv
                     : [];
                 // V1.a22.12: 수불마감 기초행과 구매현황을 병합할 때 코드만 맞으면 붙이는 방식 금지.
                 // 코드만으로 붙이면 가락(마니농산), 우리농산 등 Lot이 한 행으로 합쳐져 판매현황 구매처 기준 Lot 매칭이 실패한다.
-                const baseRowByCode = closingBaseRowsForCode.find(p => isSameLotName(p.거래처, vendor))
+                const baseRowByCode = closingBaseRowsForCode.find(p => {
+                    if (!isSameLotName(p.거래처, vendor)) return false;
+                    if (!p._closingRestoredLot) return true;
+                    return normalizeLotDate(p.일자) === normalizeLotDate(date)
+                        && Math.abs(safeNum(p.단가) - safeNum(price)) <= DATAOPS_STOCK_TOLERANCE;
+                })
                     || (closingBaseRowsForCode.length === 1 && (!vendor || vendor === '미지정') ? closingBaseRowsForCode[0] : null);
                 const batchKey = baseRowByCode ? baseRowByCode.batchKey : generateBatchKey(code, name, price, vendor, date, !!item._closingRestoredLot);
                 if (!pData[batchKey]) {
@@ -8607,7 +8612,7 @@ function App() {
         if (errors.length)
             lines.push(...errors.slice(0, 20));
         setAlertMsg(`2전송 단가설정 확인 필요\n\n${lines.join('\n')}${errors.length > 20 ? '\n...외 추가 오류 있음' : ''}`);
-    }, [mappings.transferPriceGroups, validateTransferPriceGroupText, detectLegacyTransferPriceGroups, setAlertMsg]);
+    }, [mappings.transferPriceGroups, validateTransferPriceGroupText, detectLegacyTransferPriceGroups, setAlertMsg, setToastMsg]);
     const transferGroupCards = useMemo(() => parseTransferPriceGroupCards(mappings.transferPriceGroups || defaultMappings.transferPriceGroups), [mappings.transferPriceGroups]);
     const setTransferGroupCards = useCallback((nextCards) => {
         setMappings(prev => ({ ...prev, transferPriceGroups: serializeTransferPriceGroupCards(nextCards) }));
@@ -8671,7 +8676,7 @@ function App() {
         catch (err) {
             setAlertMsg(`클라우드 URL 저장 실패\n\n${err.message || err}`);
         }
-    }, [cloudUrlInput, setAlertMsg]);
+    }, [cloudUrlInput, setAlertMsg, setToastMsg]);
     const handleResetCloudUrl = useCallback(() => {
         const ok = window.confirm('MerchOps 클라우드 URL을 기본값으로 복원하시겠습니까?');
         if (!ok)
@@ -8697,7 +8702,7 @@ function App() {
         finally {
             setIsProcessing(false);
         }
-    }, [cloudUrlInput, setAlertMsg]);
+    }, [cloudUrlInput, setAlertMsg, setToastMsg]);
     const handlePullMerchMaster = useCallback(async () => {
         try {
             setIsProcessing(true);
@@ -8725,7 +8730,7 @@ function App() {
         finally {
             setIsProcessing(false);
         }
-    }, [cloudUrlInput, setAlertMsg]);
+    }, [cloudUrlInput, setAlertMsg, setToastMsg]);
     const saveMappings = () => {
         const nextGrouping = normalizeDataOpsGrouping(grouping);
         setGrouping(nextGrouping);
