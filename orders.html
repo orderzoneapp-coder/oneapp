@@ -158,13 +158,13 @@
     .upload-card.has-error { border-color: #fecaca; background: #fff7f7; }
     .drop-zone {
       display: grid;
-      grid-template-columns: auto minmax(0, 1fr) auto;
+      grid-template-columns: auto minmax(0, 1fr);
       align-items: center;
       gap: 14px;
       min-height: 122px;
       padding: 18px;
       border: 2px dashed transparent;
-      border-radius: 14px 14px 0 0;
+      border-radius: 14px;
       outline: none;
     }
     .drop-zone:focus-visible { border-color: var(--teal-600); }
@@ -195,47 +195,6 @@
       text-overflow: ellipsis;
       white-space: nowrap;
     }
-    .file-button {
-      min-height: 38px;
-      padding: 0 13px;
-      border: 1px solid var(--slate-300);
-      border-radius: 9px;
-      color: var(--slate-700);
-      background: var(--white);
-      font-size: 12px;
-      font-weight: 900;
-    }
-    .file-button:hover { border-color: var(--teal-600); color: var(--teal-700); }
-    .file-meta {
-      display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      border-top: 1px solid var(--slate-200);
-      background: rgba(255, 255, 255, 0.72);
-    }
-    .meta-item {
-      min-width: 0;
-      padding: 11px 12px;
-      border-right: 1px solid var(--slate-200);
-    }
-    .meta-item:last-child { border-right: 0; }
-    .meta-label {
-      color: var(--slate-500);
-      font-size: 10px;
-      font-weight: 800;
-    }
-    .meta-value {
-      overflow: hidden;
-      margin-top: 4px;
-      color: var(--slate-900);
-      font-size: 12px;
-      font-weight: 900;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-    .meta-value.good { color: var(--green-700); }
-    .meta-value.warn { color: var(--amber-700); }
-    .meta-value.bad { color: var(--red-700); }
-
     .validation-box {
       margin-top: 16px;
       padding: 14px 16px;
@@ -484,10 +443,6 @@
       .page-shell { width: min(100% - 24px, 1480px); padding-top: 24px; }
       .input-panel { padding: 16px; }
       .drop-zone { grid-template-columns: auto minmax(0, 1fr); }
-      .file-button { grid-column: 1 / -1; width: 100%; }
-      .file-meta { grid-template-columns: repeat(2, 1fr); }
-      .meta-item:nth-child(2) { border-right: 0; }
-      .meta-item:nth-child(-n+2) { border-bottom: 1px solid var(--slate-200); }
       .action-bar, .results-header { align-items: stretch; flex-direction: column; }
       .primary-button, .download-button { width: 100%; }
       .summary-grid { grid-template-columns: repeat(2, 1fr); }
@@ -641,8 +596,7 @@
       gap: 8px;
     }
     .upload-card {
-      display: grid;
-      grid-template-columns: minmax(265px, 1fr) minmax(245px, 1fr);
+      display: block;
       overflow: hidden;
       border-color: #475569;
       border-radius: 6px;
@@ -652,8 +606,8 @@
     .upload-card.has-error { border-color: #fb7185; background: #3f2533; }
     .drop-zone {
       min-height: 60px;
-      padding: 7px 8px;
-      border-radius: 6px 0 0 6px;
+      padding: 8px 12px;
+      border-radius: 6px;
     }
     .drop-zone:focus-visible { border-color: #67e8f9; }
     .drop-zone.dragover { border-color: #2dd4bf; background: rgba(13, 148, 136, 0.2); }
@@ -667,26 +621,6 @@
     }
     .drop-title { color: var(--white); font-size: 12px; }
     .drop-help { margin-top: 2px; color: var(--slate-400); font-size: 10px; }
-    .file-button {
-      min-height: 30px;
-      padding: 0 9px;
-      border-color: #64748b;
-      border-radius: 6px;
-      color: var(--slate-200);
-      background: #334155;
-    }
-    .file-button:hover { border-color: #5eead4; color: #5eead4; background: #1e293b; }
-    .file-meta {
-      border-top: 0;
-      border-left: 1px solid #475569;
-      background: rgba(15, 23, 42, 0.36);
-    }
-    .meta-item { display: flex; min-width: 0; flex-direction: column; justify-content: center; padding: 5px 7px; border-right-color: #475569; }
-    .meta-label { color: var(--slate-400); font-size: 9px; }
-    .meta-value { margin-top: 2px; color: var(--slate-100); font-size: 11px; }
-    .meta-value.good { color: #6ee7b7; }
-    .meta-value.warn { color: #fbbf24; }
-    .meta-value.bad { color: #fda4af; }
     .validation-box {
       grid-area: validation;
       min-width: 0;
@@ -769,12 +703,7 @@
         padding: 8px;
       }
       .upload-grid { grid-template-columns: 1fr; }
-      .upload-card { grid-template-columns: 1fr; }
       .drop-zone { grid-template-columns: auto minmax(0, 1fr); }
-      .file-button { grid-column: 1 / -1; width: 100%; }
-      .file-meta { border-top: 1px solid #475569; border-left: 0; }
-      .meta-item:nth-child(2) { border-right: 0; }
-      .meta-item:nth-child(-n+2) { border-bottom-color: #475569; }
       .action-bar { align-items: stretch; }
       .primary-button { width: 100%; min-height: 36px; }
       .action-note { max-width: none; }
@@ -815,15 +744,8 @@
             <div class="file-icon" aria-hidden="true">1</div>
             <div>
               <p class="drop-title">주문현황 Excel</p>
-              <p class="drop-help" id="ordersFileName">파일을 놓거나 선택하세요 · .xlsx / .xls</p>
+              <p class="drop-help" id="ordersFileName">클릭하거나 파일을 드래그하세요 · .xlsx / .xls</p>
             </div>
-            <button class="file-button" type="button" data-pick="orders">파일 선택</button>
-          </div>
-          <div class="file-meta" id="ordersMeta">
-            <div class="meta-item"><div class="meta-label">인식 시트</div><div class="meta-value">-</div></div>
-            <div class="meta-item"><div class="meta-label">주문행</div><div class="meta-value">-</div></div>
-            <div class="meta-item"><div class="meta-label">필수 열</div><div class="meta-value">대기</div></div>
-            <div class="meta-item"><div class="meta-label">적요 / 미매칭</div><div class="meta-value">-</div></div>
           </div>
           <input class="hidden" id="ordersInput" type="file" accept=".xlsx,.xls">
         </article>
@@ -833,15 +755,8 @@
             <div class="file-icon" aria-hidden="true">2</div>
             <div>
               <p class="drop-title">창고별재고 Excel</p>
-              <p class="drop-help" id="inventoryFileName">파일을 놓거나 선택하세요 · .xlsx / .xls</p>
+              <p class="drop-help" id="inventoryFileName">클릭하거나 파일을 드래그하세요 · .xlsx / .xls</p>
             </div>
-            <button class="file-button" type="button" data-pick="inventory">파일 선택</button>
-          </div>
-          <div class="file-meta" id="inventoryMeta">
-            <div class="meta-item"><div class="meta-label">인식 시트</div><div class="meta-value">-</div></div>
-            <div class="meta-item"><div class="meta-label">재고행</div><div class="meta-value">-</div></div>
-            <div class="meta-item"><div class="meta-label">필수 열</div><div class="meta-value">대기</div></div>
-            <div class="meta-item"><div class="meta-label">중복 상품코드</div><div class="meta-value">-</div></div>
           </div>
           <input class="hidden" id="inventoryInput" type="file" accept=".xlsx,.xls">
         </article>
@@ -923,8 +838,6 @@
         inventoryCard: document.getElementById("inventoryCard"),
         ordersFileName: document.getElementById("ordersFileName"),
         inventoryFileName: document.getElementById("inventoryFileName"),
-        ordersMeta: document.getElementById("ordersMeta"),
-        inventoryMeta: document.getElementById("inventoryMeta"),
         validationBox: document.getElementById("validationBox"),
         analyzeButton: document.getElementById("analyzeButton"),
         resultsPanel: document.getElementById("resultsPanel"),
@@ -1051,77 +964,21 @@
         }
       }
 
-      function metaHtml(items) {
-        return items.map((item) => `
-          <div class="meta-item">
-            <div class="meta-label">${escapeHtml(item.label)}</div>
-            <div class="meta-value ${item.tone || ""}" title="${escapeHtml(item.value)}">${escapeHtml(item.value)}</div>
-          </div>
-        `).join("");
-      }
-
       function renderFileCard(kind) {
         const parsed = state[kind];
         const card = elements[kind + "Card"];
         const name = elements[kind + "FileName"];
-        const meta = elements[kind + "Meta"];
         const loading = state.loading[kind];
         card.classList.toggle("has-file", Boolean(parsed));
         card.classList.toggle("has-error", Boolean(parsed?.errors?.length));
         if (loading) return;
 
         if (!parsed) {
-          name.textContent = "파일을 놓거나 선택하세요 · .xlsx / .xls";
-          meta.innerHTML = metaHtml(kind === "orders"
-            ? [
-                { label: "인식 시트", value: "-" },
-                { label: "주문행", value: "-" },
-                { label: "필수 열", value: "대기" },
-                { label: "적요 / 미매칭", value: "-" },
-              ]
-            : [
-                { label: "인식 시트", value: "-" },
-                { label: "재고행", value: "-" },
-                { label: "필수 열", value: "대기" },
-                { label: "중복 상품코드", value: "-" },
-              ]);
+          name.textContent = "클릭하거나 파일을 드래그하세요 · .xlsx / .xls";
           return;
         }
 
         name.textContent = parsed.fileName;
-        const requiredGood = parsed.missingColumns.length === 0;
-        if (kind === "orders") {
-          const unmatched = state.validation?.unmatchedCount ?? "-";
-          meta.innerHTML = metaHtml([
-            { label: "인식 시트", value: parsed.sheetName || "-" },
-            { label: "주문행", value: `${formatNumber(parsed.rowCount)}행` },
-            {
-              label: "필수 열",
-              value: requiredGood ? "충족" : `${parsed.missingColumns.length}개 누락`,
-              tone: requiredGood ? "good" : "bad",
-            },
-            {
-              label: "적요 / 미매칭",
-              value: `${formatNumber(parsed.memoCount)} / ${formatNumber(unmatched)}`,
-              tone: unmatched === 0 ? "" : "warn",
-            },
-          ]);
-        } else {
-          meta.innerHTML = metaHtml([
-            { label: "인식 시트", value: parsed.sheetName || "-" },
-            { label: "재고행", value: `${formatNumber(parsed.rowCount)}행` },
-            {
-              label: "필수 열",
-              value: requiredGood ? "충족" : `${parsed.missingColumns.length}개 누락`,
-              tone: requiredGood ? "good" : "bad",
-            },
-            {
-              label: "중복 상품코드",
-              value: `${formatNumber(parsed.duplicateCodes.length)}개`,
-              tone: parsed.duplicateCodes.length ? "bad" : "good",
-            },
-          ]);
-        }
       }
 
       function renderValidation() {
@@ -1406,12 +1263,6 @@
         });
       }
 
-      document.querySelectorAll("[data-pick]").forEach((button) => {
-        button.addEventListener("click", (event) => {
-          event.stopPropagation();
-          elements[button.dataset.pick + "Input"].click();
-        });
-      });
       elements.analyzeButton.addEventListener("click", runAnalysis);
       elements.downloadButton.addEventListener("click", downloadResult);
       elements.previewTabs.addEventListener("click", (event) => {
