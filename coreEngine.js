@@ -1,6 +1,6 @@
 /**
  * ONEAPP MerchOps - coreEngine.js
- * v1.2.1 / Fenced Atomic Master Storage
+ * v1.3.0 / Parser Catalog Warehouse Pricing
  *
  * 목적:
  * - HTML 화면 파일에서 중복되는 저장소, 가격계산, 히스토리, F9 전달, 클라우드 로직을 중앙화한다.
@@ -49,7 +49,7 @@
   'use strict';
 
   const ONEAPP = global.ONEAPP = global.ONEAPP || {};
-  ONEAPP.VERSION = ONEAPP.VERSION || 'coreEngine-v1.2.1 FencedAtomicMasterStorage';
+  ONEAPP.VERSION = 'coreEngine-v1.3.0 ParserCatalogWarehousePricing';
 
   const DEFAULT_DB_NAME = 'MerchOpsDB';
   const DEFAULT_DB_VERSION = 2;
@@ -222,6 +222,8 @@
   const getDefaultMerchMarginRules = () => ([
     { id: 'rule_1', whCode: '01', unit: 'box, 박스, BOX', rate: 10, type: 'divide' },
     { id: 'rule_2', whCode: '01', unit: 'ea, 개, 낱개, EA, kg, 단', rate: 15, type: 'divide' },
+    { id: 'rule_03_box', whCode: '03', unit: 'box, 박스, BOX', rate: 10, type: 'divide' },
+    { id: 'rule_03_ea', whCode: '03', unit: 'ea, 개, 낱개, EA, kg, 단', rate: 15, type: 'divide' },
     { id: 'rule_3', whCode: '03,05', unit: 'box, 박스, BOX', rate: 15, type: 'divide' },
     { id: 'rule_4', whCode: '03,05', unit: 'ea, 개, 낱개, EA, kg, 단', rate: 10, type: 'divide' },
     { id: 'rule_5', whCode: '77,99', unit: 'box, 박스, BOX', rate: 10, type: 'divide' },
@@ -232,26 +234,15 @@
   const normalizeMerchWarehouseForRule = (v) => {
     const raw = String(v ?? '').trim();
     if (!raw || raw === '*') return raw || '';
-    const m = raw.match(/\d+/);
-    return m ? String(Number(m[0])).padStart(2, '0') : raw;
+    return /^\d+$/.test(raw) ? String(Number(raw)).padStart(2, '0') : raw;
   };
 
   const getMerchUnitRuleCandidates = (v) => {
     const raw = String(v ?? '').trim().toLowerCase();
     if (!raw || raw === '*') return raw === '*' ? ['*'] : [];
-    const compact = raw.replace(/\s/g, '');
-    const parts = [compact, ...raw.split(/[,./|\s()_\-]+/).map(s => s.trim()).filter(Boolean)];
-    const cands = [];
-    const push = (x) => { if (x && !cands.includes(x)) cands.push(x); };
-    parts.forEach(part => {
-      const p = String(part || '').toLowerCase().replace(/\s/g, '');
-      if (!p) return;
-      if (/box|박스|상자|bx/.test(p)) push('box');
-      if (/소분|분할|절단|컷|소포장|묶음/.test(p)) push('sub');
-      if (/ea|each|개|낱개|낱|kg|킬로|단|봉|포/.test(p)) push('ea');
-      push(p);
-    });
-    return cands;
+    // 확정 단위 필드 하나를 trim/case/공백만 정규화한다. 품명·규격 토큰화나 includes 추론은 하지 않는다.
+    const normalized = raw.replace(/\s/g, '');
+    return normalized ? [normalized] : [];
   };
 
   const isLegacyDefaultOnlyMarginRules = (rules = []) => {
@@ -262,6 +253,9 @@
       && parseNum(r.rate) === 20;
   };
 
+  const isMerchDefaultMarginRule = (rule = {}) => String(rule.whCode ?? '').trim() === '*'
+    && String(rule.unit ?? '').trim() === '*';
+
   const sanitizeMerchMarginRules = (rules = []) => {
     const defaults = getDefaultMerchMarginRules();
     if (!Array.isArray(rules) || rules.length === 0 || isLegacyDefaultOnlyMarginRules(rules)) {
@@ -271,57 +265,91 @@
       .filter(r => r && typeof r === 'object')
       .map((r, idx) => ({
         id: r.id || `rule_${idx + 1}`,
-        whCode: String(r.whCode ?? '*').trim() || '*',
-        unit: String(r.unit ?? '*').trim() || '*',
+        whCode: String(r.whCode ?? '').trim(),
+        unit: String(r.unit ?? '').trim(),
         rate: parseNum(r.rate),
         type: r.type === 'multiply' ? 'multiply' : 'divide'
       }));
-    const hasDefault = cleaned.some(r => String(r.whCode).trim() === '*' && String(r.unit).trim() === '*');
-    if (!hasDefault) cleaned.push({ ...defaults[defaults.length - 1] });
-    return cleaned;
+    let defaultSeen = false;
+    const exactlyOneDefault = cleaned.filter(rule => {
+      if (!isMerchDefaultMarginRule(rule)) return true;
+      if (defaultSeen) return false;
+      defaultSeen = true;
+      return true;
+    });
+    if (!defaultSeen) exactlyOneDefault.push({ ...defaults[defaults.length - 1] });
+    return exactlyOneDefault;
   };
 
   const matchWh = (ruleWh, targetWh) => {
-    if (!ruleWh || String(ruleWh).trim() === '*') return true;
+    if (!ruleWh || String(ruleWh).trim() === '*') return false;
     const target = normalizeMerchWarehouseForRule(targetWh);
     const targets = String(ruleWh).split(/[,./|\s]+/).map(s => normalizeMerchWarehouseForRule(s)).filter(Boolean);
     return targets.some(s => s !== '' && target !== '' && s === target);
   };
 
   const matchUnit = (ruleUnit, targetUnit) => {
-    if (!ruleUnit || String(ruleUnit).trim() === '*') return true;
+    if (!ruleUnit || String(ruleUnit).trim() === '*') return false;
     const targetUnits = Array.isArray(targetUnit) ? targetUnit : getMerchUnitRuleCandidates(targetUnit);
     const targets = String(ruleUnit)
       .split(/[,./|\s]+/)
       .flatMap(s => getMerchUnitRuleCandidates(s))
       .filter(Boolean);
-    return targets.some(ruleUnitNorm => targetUnits.some(targetUnitNorm => targetUnitNorm === ruleUnitNorm || targetUnitNorm.includes(ruleUnitNorm) || ruleUnitNorm.includes(targetUnitNorm)));
+    return targets.some(ruleUnitNorm => targetUnits.some(targetUnitNorm => targetUnitNorm === ruleUnitNorm));
   };
 
-  const findBestMarginRule = (marginRules = [], context = {}) => {
-    const whCode = normalizeMerchWarehouseForRule(context['창고'] ?? context.whCode ?? '');
-    const unitRaw = [context['단위'], context.unit, context['규격'], context.spec, context['품목명'], context.name]
-      .filter(v => v !== undefined && v !== null && String(v).trim() !== '')
-      .join(' ');
+  const selectMerchMarginRule = (marginRules = [], context = {}) => {
+    const inputWarehouse = String(context['_calcWarehouse'] ?? context['창고'] ?? context.whCode ?? '').trim();
+    const inputUnit = String(context['_calcUnit'] ?? context['단위'] ?? context.unit ?? '').trim();
+    const whCode = normalizeMerchWarehouseForRule(inputWarehouse);
+    const unitRaw = inputUnit;
     const unitCandidates = getMerchUnitRuleCandidates(unitRaw);
-    let bestRule = null;
-    let bestScore = -1;
     const safeRules = sanitizeMerchMarginRules(marginRules);
+    const defaultRule = safeRules.find(isMerchDefaultMarginRule)
+      || { id: 'default', whCode: '*', unit: '*', rate: 20, type: 'divide' };
+    const exactRule = whCode && unitCandidates.length > 0
+      ? safeRules.find(rule => !isMerchDefaultMarginRule(rule)
+        && String(rule.whCode || '').trim() !== '*'
+        && String(rule.unit || '').trim() !== '*'
+        && matchWh(rule.whCode, whCode)
+        && matchUnit(rule.unit, unitCandidates))
+      : null;
+    const rule = exactRule || defaultRule;
+    return {
+      rule,
+      ruleId: String(rule.id || ''),
+      marginRate: parseNum(rule.rate),
+      calculationType: rule.type === 'multiply' ? 'multiply' : 'divide',
+      matchType: exactRule ? 'exact' : 'default',
+      inputWarehouse,
+      inputUnit
+    };
+  };
 
-    safeRules.forEach((rule, ruleIdx) => {
-      if (matchWh(rule.whCode, whCode) && matchUnit(rule.unit, unitCandidates)) {
-        let score = 0;
-        if (rule.whCode && String(rule.whCode).trim() !== '*') score += 20;
-        if (rule.unit && String(rule.unit).trim() !== '*') score += 10;
-        score -= ruleIdx / 1000;
-        if (score > bestScore) {
-          bestScore = score;
-          bestRule = rule;
-        }
+  const findBestMarginRule = (marginRules = [], context = {}) => selectMerchMarginRule(marginRules, context).rule;
+
+  const normalizeMerchRuleConditionTokens = (value, normalizer) => {
+    const raw = String(value ?? '').trim();
+    if (!raw) return [];
+    if (raw === '*') return ['*'];
+    return [...new Set(raw.split(/[,./|\s]+/).map(token => normalizer(token)).filter(Boolean))].sort();
+  };
+
+  const findDuplicateMerchMarginRuleConditions = (rules = []) => {
+    const seen = new Map();
+    const duplicates = [];
+    (Array.isArray(rules) ? rules : []).forEach((rule, index) => {
+      if (!rule || typeof rule !== 'object') return;
+      const whTokens = normalizeMerchRuleConditionTokens(rule.whCode, normalizeMerchWarehouseForRule);
+      const unitTokens = normalizeMerchRuleConditionTokens(rule.unit, token => getMerchUnitRuleCandidates(token).sort().join('+'));
+      const key = JSON.stringify([whTokens, unitTokens]);
+      if (seen.has(key)) {
+        duplicates.push({ firstIndex: seen.get(key), duplicateIndex: index, whCode: String(rule.whCode ?? '').trim(), unit: String(rule.unit ?? '').trim() });
+      } else {
+        seen.set(key, index);
       }
     });
-
-    return bestRule || { id: 'default', whCode: '*', unit: '*', rate: 20, type: 'divide' };
+    return duplicates;
   };
 
   // ============================================================
@@ -359,6 +387,45 @@
       throw ERRORS.create(error, `${label} 직렬화`);
     }
     return STORAGE.writeLocalValue(key, serialized, { ...options, label });
+  };
+
+  // ============================================================
+  // SHARED PARSER CATALOG CONFIG
+  // 카탈로그명과 창고코드는 trim만 수행한다. 창고코드는 숫자로 변환하지 않아 01을 보존한다.
+  // ============================================================
+  const CONFIG = ONEAPP.CONFIG = ONEAPP.CONFIG || {};
+  const PARSER_CATALOG_WAREHOUSE_MAP_KEY = 'parserCatalogWarehouseMap_v1';
+
+  CONFIG.PARSER_CATALOG_WAREHOUSE_MAP_KEY = PARSER_CATALOG_WAREHOUSE_MAP_KEY;
+  CONFIG.normalizeParserCatalogWarehouseMap = (input = {}) => {
+    const normalized = {};
+    if (!input || typeof input !== 'object' || Array.isArray(input)) return normalized;
+    Object.entries(input).forEach(([rawCatalogName, rawWarehouseCode]) => {
+      const catalogName = String(rawCatalogName ?? '').trim();
+      if (!catalogName) return;
+      normalized[catalogName] = String(rawWarehouseCode ?? '').trim();
+    });
+    return normalized;
+  };
+
+  CONFIG.readParserCatalogWarehouseMap = () => CONFIG.normalizeParserCatalogWarehouseMap(
+    safeJSONParse(PARSER_CATALOG_WAREHOUSE_MAP_KEY, {})
+  );
+
+  CONFIG.writeParserCatalogWarehouseMap = (input = {}) => {
+    const normalized = CONFIG.normalizeParserCatalogWarehouseMap(input);
+    STORAGE.writeLocalJSON(PARSER_CATALOG_WAREHOUSE_MAP_KEY, normalized, { label: '카탈로그별 창고 설정 저장' });
+    return normalized;
+  };
+
+  CONFIG.setParserCatalogWarehouse = (catalogName, warehouseCode, inputMap) => {
+    const name = String(catalogName ?? '').trim();
+    if (!name) throw new Error('카탈로그명을 입력하세요.');
+    const next = CONFIG.normalizeParserCatalogWarehouseMap(inputMap === undefined
+      ? CONFIG.readParserCatalogWarehouseMap()
+      : inputMap);
+    next[name] = String(warehouseCode ?? '').trim();
+    return CONFIG.writeParserCatalogWarehouseMap(next);
   };
 
   STORAGE.restoreLocalValue = (key, previousValue, options = {}) => {
@@ -1049,12 +1116,14 @@
 
   PRICING.parseNum = parseNum;
   PRICING.findBestMarginRule = findBestMarginRule;
+  PRICING.selectMerchMarginRule = selectMerchMarginRule;
   PRICING.getDefaultMerchMarginRules = getDefaultMerchMarginRules;
   PRICING.sanitizeMerchMarginRules = sanitizeMerchMarginRules;
+  PRICING.findDuplicateMerchMarginRuleConditions = findDuplicateMerchMarginRuleConditions;
   PRICING.normalizeMerchWarehouseForRule = normalizeMerchWarehouseForRule;
   PRICING.getMerchUnitRuleCandidates = getMerchUnitRuleCandidates;
 
-  PRICING.calculatePricesEngine = (baseInPrice, providedOutPrice = 0, mItem = {}, currentFinalData = {}, marginRules = [], forceRecalc = false) => {
+  PRICING.calculatePriceResult = (baseInPrice, mItem = {}, currentFinalData = {}, marginRules = []) => {
     const ROUND_UNIT = 100;
     const inPrice = parseNum(baseInPrice);
     const outsrc = (!currentFinalData?.['외주비'] && currentFinalData?.['외주비'] !== 0)
@@ -1066,17 +1135,18 @@
       : parseNum(currentFinalData?.['노무비']);
 
     const totalCost = inPrice + outsrc + labor;
-    const appliedRule = findBestMarginRule(marginRules, {
-      // 계산용 창고/단위는 원본값을 덮어쓰지 않는 보조 컨텍스트다.
-      // 재고 불러오기 상품이 창고 각인이 없을 때만 _calcWarehouse=01이 전달된다.
-      창고: currentFinalData?.['_calcWarehouse'] ?? currentFinalData?.['창고'] ?? mItem?.['창고'] ?? '',
-      단위: currentFinalData?.['_calcUnit'] ?? currentFinalData?.['단위'] ?? mItem?.['단위'] ?? ''
+    const selection = selectMerchMarginRule(marginRules, {
+      // 계산 컨텍스트는 원본 마스터의 창고를 덮어쓰지 않는다.
+      _calcWarehouse: currentFinalData?.['_calcWarehouse'] ?? currentFinalData?.['창고'] ?? mItem?.['창고'] ?? '',
+      // 단위는 적용 직전 확정된 단위 필드만 사용한다. 품명·규격 추론은 금지한다.
+      _calcUnit: currentFinalData?.['_calcUnit'] ?? currentFinalData?.['단위'] ?? mItem?.['단위'] ?? ''
     });
+    const appliedRule = selection.rule;
 
     let calcOutPrice = 0;
     if (inPrice > 0) {
-      const rate = parseNum(appliedRule.rate);
-      if (appliedRule.type === 'divide') {
+      const rate = selection.marginRate;
+      if (selection.calculationType === 'divide') {
         calcOutPrice = totalCost / (1 - (rate / 100));
       } else {
         calcOutPrice = totalCost * (1 + (rate / 100));
@@ -1084,10 +1154,67 @@
       calcOutPrice = Math.round(calcOutPrice / ROUND_UNIT) * ROUND_UNIT;
     }
 
-    if (inPrice === 0) return 0;
-    if (forceRecalc) return calcOutPrice;
+    return {
+      inPrice,
+      outPrice: calcOutPrice,
+      marketPrice: calcOutPrice,
+      totalCost,
+      ...selection,
+      rule: { ...appliedRule }
+    };
+  };
+
+  PRICING.calculatePricesEngine = (baseInPrice, providedOutPrice = 0, mItem = {}, currentFinalData = {}, marginRules = [], forceRecalc = false) => {
+    const result = PRICING.calculatePriceResult(baseInPrice, mItem, currentFinalData, marginRules);
+    if (currentFinalData && typeof currentFinalData === 'object') {
+      currentFinalData._appliedMarginRule = {
+        id: result.ruleId,
+        inputWarehouse: result.inputWarehouse,
+        inputUnit: result.inputUnit,
+        ruleWhCode: result.rule?.whCode || '*',
+        ruleUnit: result.rule?.unit || '*',
+        rate: result.marginRate,
+        type: result.calculationType,
+        matchType: result.matchType,
+        totalCost: result.totalCost
+      };
+    }
+
+    if (result.inPrice === 0) return 0;
+    if (forceRecalc) return result.outPrice;
     if (parseNum(providedOutPrice) > 0) return parseNum(providedOutPrice);
-    return calcOutPrice;
+    return result.outPrice;
+  };
+
+  PRICING.calculatePriceBundle = (baseInPrice, mItem = {}, currentFinalData = {}, marginRules = []) => {
+    const input = { ...(currentFinalData || {}), 입고가: parseNum(baseInPrice) };
+    const result = PRICING.calculatePriceResult(baseInPrice, mItem, input, marginRules);
+    const bundle = {
+      입고가: result.inPrice,
+      출고가: result.outPrice,
+      시중가: result.marketPrice,
+      pricingEvidence: {
+        marginRuleId: result.ruleId,
+        marginRate: result.marginRate,
+        calculationType: result.calculationType,
+        matchType: result.matchType,
+        inputWarehouse: result.inputWarehouse,
+        inputUnit: result.inputUnit
+      }
+    };
+    const sourceForSub = { ...(mItem || {}), ...input, ...bundle };
+    const div1 = parseNum(sourceForSub['1종연산']);
+    const outsrc = parseNum(sourceForSub['외주비']);
+    const extraCost = parseNum(sourceForSub['경비']);
+    if (result.inPrice === 0) {
+      bundle['1입고'] = 0;
+      bundle['1출고'] = 0;
+    } else if (div1 > 0) {
+      bundle['1입고'] = Math.round(((result.inPrice + outsrc) / div1) / 100) * 100;
+      const rawSubOut = Math.round((result.outPrice / div1) + extraCost);
+      bundle['1출고'] = rawSubOut > 0 ? Math.round(rawSubOut / 10) * 10 : 0;
+    }
+    return bundle;
   };
 
   PRICING.getWorkingSourceRole = (sources = {}) => {
@@ -1345,7 +1472,11 @@
       oldInPrice: log.oldInPrice,
       stockQty: log.stockQty,
       safeStock: log.safeStock,
+      catalogWarehouse: String(log.catalogWarehouse || ''),
+      marginRuleId: String(log.marginRuleId || log.priceRule?.id || ''),
       marginRate: log.marginRate,
+      calculationType: String(log.calculationType || log.priceRule?.calculationType || ''),
+      matchType: String(log.matchType || ''),
       memo: String(log.memo || log.note || '')
     };
   };
@@ -1604,7 +1735,8 @@
       'parserDict_v870', 'merchMarginRules_v878', 'merchMappings_v870', 'merchMasterLinks_v870',
       'merchVisUpload_v870', 'merchVisMaster_v870', 'merchUploadColumnMeta_v870',
       'merchTableShortcuts_v870', 'merchTableViewPresets_v1', 'merchProductStatusRecords_v1',
-      'merchActiveTableTarget_v1', 'merchActiveTableViewId_v1', ONEAPP_CLOUD_URL_KEY, 'merchCloudUrl_v870'
+      'merchActiveTableTarget_v1', 'merchActiveTableViewId_v1', PARSER_CATALOG_WAREHOUSE_MAP_KEY,
+      ONEAPP_CLOUD_URL_KEY, 'merchCloudUrl_v870'
     ].forEach(key => {
       try {
         const value = global.localStorage.getItem(key);
@@ -2453,9 +2585,18 @@
   global.commitMerchMasterState = global.commitMerchMasterState || STORAGE.commitMasterState;
   global.getDefaultMerchMarginRules = global.getDefaultMerchMarginRules || getDefaultMerchMarginRules;
   global.sanitizeMerchMarginRules = global.sanitizeMerchMarginRules || sanitizeMerchMarginRules;
+  global.selectMerchMarginRule = global.selectMerchMarginRule || selectMerchMarginRule;
+  global.findDuplicateMerchMarginRuleConditions = global.findDuplicateMerchMarginRuleConditions || findDuplicateMerchMarginRuleConditions;
   global.normalizeMerchWarehouseForRule = global.normalizeMerchWarehouseForRule || normalizeMerchWarehouseForRule;
   global.getMerchUnitRuleCandidates = global.getMerchUnitRuleCandidates || getMerchUnitRuleCandidates;
   global.calculatePricesEngine = global.calculatePricesEngine || PRICING.calculatePricesEngine;
+  global.calculateMerchPriceResult = global.calculateMerchPriceResult || PRICING.calculatePriceResult;
+  global.calculateMerchPriceBundle = global.calculateMerchPriceBundle || PRICING.calculatePriceBundle;
+  global.PARSER_CATALOG_WAREHOUSE_MAP_KEY = global.PARSER_CATALOG_WAREHOUSE_MAP_KEY || PARSER_CATALOG_WAREHOUSE_MAP_KEY;
+  global.normalizeParserCatalogWarehouseMap = global.normalizeParserCatalogWarehouseMap || CONFIG.normalizeParserCatalogWarehouseMap;
+  global.readParserCatalogWarehouseMap = global.readParserCatalogWarehouseMap || CONFIG.readParserCatalogWarehouseMap;
+  global.writeParserCatalogWarehouseMap = global.writeParserCatalogWarehouseMap || CONFIG.writeParserCatalogWarehouseMap;
+  global.setParserCatalogWarehouse = global.setParserCatalogWarehouse || CONFIG.setParserCatalogWarehouse;
   global.getWorkingSourceRole = global.getWorkingSourceRole || PRICING.getWorkingSourceRole;
   global.shouldUseMasterMarketPriceForRole = global.shouldUseMasterMarketPriceForRole || PRICING.shouldUseMasterMarketPriceForRole;
   global.shouldAllowMarketPriceRecalcForRole = global.shouldAllowMarketPriceRecalcForRole || PRICING.shouldAllowMarketPriceRecalcForRole;

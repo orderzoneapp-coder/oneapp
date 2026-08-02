@@ -670,7 +670,7 @@ await scenario("26. SmartParser 반영 경로 회귀검사", () => {
   const smartParser = fs.readFileSync(path.join(ROOT, "SmartParser.html"), "utf8");
   assert.match(smartParser, /commitSmartParserMaster/);
   assert.match(smartParser, /commitMasterStateOrThrow\(data,\s*\{/);
-  assert.match(smartParser, /afterVerifiedError:\s*'SmartParser 히스토리 저장 실패'/);
+  assert.match(smartParser, /afterVerifiedError:\s*'SmartParser 히스토리\/공유상태 저장 실패'/);
 });
 
 const masterHtml = fs.readFileSync(path.join(ROOT, "Master.html"), "utf8");

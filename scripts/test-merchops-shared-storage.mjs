@@ -697,6 +697,7 @@ await assert.rejects(
     dataA,
     {},
     [{ id: "success-only", code: "A" }],
+    {},
     () => { smartParserMemoryUpdates++; },
   ),
   /forced master failure/,
@@ -716,21 +717,23 @@ smartParserLocalStorage.setItem = (key, value) => {
   if (key === "merchMaster_sync_trigger") throw new Error("forced trigger failure");
   return originalSmartParserSetItem(key, value);
 };
-const smartParserSuccess = await smartParserContext.window.__commitSmartParserMaster(
-  dataA,
-  {},
-  [{ id: "committed", code: "A" }],
-  () => { smartParserMemoryUpdates++; },
+await assert.rejects(
+  smartParserContext.window.__commitSmartParserMaster(
+    dataA,
+    {},
+    [{ id: "committed", code: "A" }],
+    { merchMaster_sync_trigger: "now" },
+    () => { smartParserMemoryUpdates++; },
+  ),
+  /forced trigger failure/,
 );
-assert.equal(smartParserSuccess.revision, "rev-smart-success");
-assert.match(smartParserSuccess.syncWarning, /forced trigger failure/);
-assert.equal(smartParserWarnings.length, 1);
-assert.equal(smartParserMemoryUpdates, 1);
+assert.equal(smartParserWarnings.length, 0);
+assert.equal(smartParserMemoryUpdates, 0);
 assert.equal(smartParserHistoryWrites, 1);
 assert.deepEqual(
   JSON.parse(smartParserContext.localStorage.getItem("merchHistory_v870")),
-  [{ id: "committed", code: "A" }],
-  "a notification failure after commit must preserve the committed history",
+  [{ id: "before" }],
+  "a notification failure inside the atomic commit must restore the previous history",
 );
 
 for (const name of [
