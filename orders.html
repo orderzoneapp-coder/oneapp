@@ -609,6 +609,329 @@
       .preview-count { padding: 0 0 10px; }
       .page-footer { flex-direction: column; }
     }
+
+    /* ONEAPP common workbench: DataOps-aligned System.IO shell */
+    body {
+      background: #f8fafc;
+    }
+    .global-header {
+      position: relative;
+      height: 58px;
+      padding: 0 max(20px, calc((100% - 1240px) / 2));
+      color: var(--slate-900);
+      background: var(--white);
+      border-bottom: 1px solid var(--slate-200);
+      box-shadow: var(--shadow-sm);
+    }
+    .brand { gap: 9px; }
+    .brand-mark {
+      color: #2563eb;
+      font-size: 19px;
+      letter-spacing: -0.04em;
+    }
+    .brand-divider { display: none; }
+    .brand-stack {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+    }
+    .brand-suite {
+      color: var(--slate-900);
+      font-size: 17px;
+      letter-spacing: -0.025em;
+    }
+    .brand-badge {
+      border-color: var(--slate-200);
+      color: var(--slate-500);
+      background: var(--slate-100);
+      box-shadow: var(--shadow-sm);
+    }
+    .brand-product {
+      margin: 0;
+      color: var(--slate-500);
+      font-size: 11px;
+      font-weight: 700;
+    }
+    .header-link {
+      min-height: 34px;
+      border-color: var(--slate-300);
+      border-radius: 5px;
+      color: var(--slate-700);
+      background: var(--white);
+      font-size: 12px;
+      box-shadow: var(--shadow-sm);
+    }
+    .header-link:hover {
+      border-color: var(--blue-700);
+      color: var(--blue-700);
+      background: #eff6ff;
+    }
+    .page-shell {
+      width: min(1240px, calc(100% - 32px));
+      padding: 0 0 40px;
+    }
+    .system-workbench {
+      overflow: hidden;
+      margin-top: 2px;
+      border: 1px solid #1e293b;
+      border-radius: 0 0 16px 16px;
+      background: var(--navy-900);
+      box-shadow: 0 14px 34px rgba(15, 23, 42, 0.13);
+    }
+    .system-topbar {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      min-height: 62px;
+      padding: 12px 18px;
+      border-bottom: 1px solid #334155;
+      background: #0f172a;
+    }
+    .system-name {
+      flex: 0 0 auto;
+      color: var(--slate-200);
+      font-size: 16px;
+      font-weight: 900;
+      letter-spacing: -0.02em;
+    }
+    .system-console {
+      display: flex;
+      align-items: center;
+      width: min(560px, 100%);
+      min-width: 0;
+      min-height: 34px;
+      padding: 6px 11px;
+      border: 1px solid #475569;
+      border-radius: 5px;
+      color: #34d399;
+      background: #020617;
+      box-shadow: inset 0 1px 5px rgba(0, 0, 0, 0.45);
+      font: 700 12px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+    .system-message {
+      flex: 1 1 auto;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .system-cursor {
+      flex: 0 0 auto;
+      width: 6px;
+      height: 15px;
+      margin-left: 8px;
+      background: #34d399;
+      animation: system-cursor 1.1s steps(1) infinite;
+    }
+    @keyframes system-cursor { 50% { opacity: 0.25; } }
+    @media (prefers-reduced-motion: reduce) {
+      .system-cursor { animation: none; }
+    }
+    .system-mode {
+      flex: 0 0 auto;
+      margin-left: auto;
+      color: var(--slate-300);
+      font-size: 11px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+    .system-mode strong { color: #5eead4; }
+    .system-intro {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 20px;
+      padding: 15px 18px 14px;
+      color: var(--slate-200);
+      border-bottom: 1px solid #334155;
+      background: #162238;
+    }
+    .system-title-row {
+      display: flex;
+      align-items: baseline;
+      gap: 12px;
+      min-width: 0;
+    }
+    .system-intro .eyebrow {
+      flex: 0 0 auto;
+      margin: 0;
+      color: #67e8f9;
+      font-size: 10px;
+    }
+    .system-intro h1 {
+      overflow: hidden;
+      color: var(--white);
+      font-size: 22px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .system-intro .hero-copy {
+      max-width: 860px;
+      margin: 6px 0 0;
+      color: var(--slate-400);
+      font-size: 12px;
+      line-height: 1.55;
+    }
+    .system-intro .workflow-chip {
+      padding: 8px 11px;
+      border-color: #475569;
+      border-radius: 6px;
+      color: var(--slate-300);
+      background: rgba(15, 23, 42, 0.72);
+      box-shadow: none;
+      font-size: 11px;
+    }
+    .system-intro .workflow-chip strong { color: #5eead4; }
+    .stage-strip {
+      margin: 0;
+      border: 0;
+      border-bottom: 1px solid #334155;
+      border-radius: 0;
+      background: #1e293b;
+      box-shadow: none;
+    }
+    .stage {
+      min-height: 46px;
+      padding: 8px 18px;
+      color: var(--slate-400);
+      border-right-color: #334155;
+      font-size: 12px;
+    }
+    .stage-number {
+      width: 23px;
+      height: 23px;
+      color: var(--slate-300);
+      background: #334155;
+    }
+    .stage.active {
+      color: #67e8f9;
+      background: #172554;
+      box-shadow: inset 0 -2px #22d3ee;
+    }
+    .stage.active .stage-number { color: #0f172a; background: #67e8f9; }
+    .stage.complete { color: #6ee7b7; background: #172a30; }
+    .stage.complete .stage-number { color: #064e3b; background: #6ee7b7; }
+    .input-panel {
+      padding: 16px 18px 18px;
+      border: 0;
+      border-radius: 0;
+      color: var(--slate-200);
+      background: #1e293b;
+      box-shadow: none;
+    }
+    .panel-heading { margin-bottom: 12px; }
+    .panel-heading h2 { color: var(--white); font-size: 15px; }
+    .panel-heading p { color: var(--slate-400); }
+    .readonly-badge {
+      border-color: #475569;
+      color: #93c5fd;
+      background: #172554;
+    }
+    .upload-grid { gap: 10px; }
+    .upload-card {
+      border-color: #475569;
+      border-radius: 8px;
+      background: #273449;
+    }
+    .upload-card.has-file { border-color: #2dd4bf; background: #15383b; }
+    .upload-card.has-error { border-color: #fb7185; background: #3f2533; }
+    .drop-zone {
+      min-height: 82px;
+      padding: 12px;
+      border-radius: 8px 8px 0 0;
+    }
+    .drop-zone:focus-visible { border-color: #67e8f9; }
+    .drop-zone.dragover { border-color: #2dd4bf; background: rgba(13, 148, 136, 0.2); }
+    .file-icon {
+      width: 36px;
+      height: 36px;
+      border-radius: 7px;
+      color: #99f6e4;
+      background: rgba(13, 148, 136, 0.26);
+      font-size: 15px;
+    }
+    .drop-title { color: var(--white); font-size: 13px; }
+    .drop-help { color: var(--slate-400); }
+    .file-button {
+      min-height: 34px;
+      border-color: #64748b;
+      border-radius: 6px;
+      color: var(--slate-200);
+      background: #334155;
+    }
+    .file-button:hover { border-color: #5eead4; color: #5eead4; background: #1e293b; }
+    .file-meta {
+      border-top-color: #475569;
+      background: rgba(15, 23, 42, 0.36);
+    }
+    .meta-item { padding: 8px 10px; border-right-color: #475569; }
+    .meta-label { color: var(--slate-400); }
+    .meta-value { color: var(--slate-100); }
+    .meta-value.good { color: #6ee7b7; }
+    .meta-value.warn { color: #fbbf24; }
+    .meta-value.bad { color: #fda4af; }
+    .validation-box {
+      margin-top: 10px;
+      padding: 10px 12px;
+      border-color: #475569;
+      border-radius: 7px;
+      background: #172033;
+    }
+    .validation-box.good { border-color: #059669; background: #12352f; }
+    .validation-box.bad { border-color: #e11d48; background: #3b1f2c; }
+    .validation-title { color: var(--slate-100); font-size: 12px; }
+    .validation-detail { margin-top: 4px; color: var(--slate-400); font-size: 11px; }
+    .validation-list { color: #fda4af; }
+    .action-bar {
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top-color: #475569;
+    }
+    .action-note { color: var(--slate-400); font-size: 11px; }
+    .primary-button {
+      min-width: 156px;
+      min-height: 38px;
+      border-radius: 6px;
+      color: #0f172a;
+      background: #5eead4;
+      box-shadow: 0 8px 18px rgba(15, 23, 42, 0.3);
+      font-size: 12px;
+    }
+    .primary-button:hover:not(:disabled) { background: #99f6e4; }
+    .primary-button:disabled { color: var(--slate-500); background: #334155; }
+    .results-panel {
+      margin-top: 14px;
+      border-radius: 10px;
+      box-shadow: var(--shadow-sm);
+    }
+    .results-header { padding: 15px 18px; background: #173d56; }
+    .results-header h2 { font-size: 16px; }
+    .download-button { min-height: 38px; border-radius: 6px; font-size: 12px; }
+    .summary-card { padding: 14px 16px; }
+    .summary-value { margin-top: 5px; font-size: 21px; }
+
+    @media (max-width: 760px) {
+      .global-header { height: 58px; padding: 0 16px; }
+      .brand-product { display: none; }
+      .header-link { width: 34px; padding: 0; justify-content: center; }
+      .header-link span:first-child { display: inline; }
+      .page-shell { width: min(100% - 20px, 1240px); padding-top: 0; }
+      .system-topbar { align-items: flex-start; flex-wrap: wrap; gap: 8px 12px; padding: 12px; }
+      .system-console { order: 3; width: 100%; max-width: none; }
+      .system-mode { margin-left: auto; }
+      .system-intro { grid-template-columns: 1fr; gap: 10px; padding: 13px 12px; }
+      .system-title-row { align-items: flex-start; flex-direction: column; gap: 4px; }
+      .system-intro h1 { font-size: 19px; white-space: normal; }
+      .system-intro .workflow-chip { align-self: flex-start; }
+      .input-panel { padding: 13px 12px; }
+      .stage { flex-direction: column; gap: 4px; min-height: 60px; padding: 7px 4px; font-size: 10px; }
+      .stage span:last-child { display: inline; }
+      .drop-zone { grid-template-columns: auto minmax(0, 1fr); }
+      .file-button { grid-column: 1 / -1; width: 100%; }
+      .meta-item:nth-child(2) { border-right: 0; }
+      .meta-item:nth-child(-n+2) { border-bottom-color: #475569; }
+      .action-bar, .results-header { align-items: stretch; flex-direction: column; }
+    }
   </style>
 </head>
 <body>
@@ -627,25 +950,36 @@
   </header>
 
   <main class="page-shell">
-    <section class="hero">
-      <div>
-        <p class="eyebrow">DataOps Lite · Excel Workbench</p>
-        <h1>Shipping Management</h1>
-        <p class="hero-copy">
-          주문현황과 창고별재고를 상품코드로 대조해 전재고, 서울 1차 구매잔량, 추가 구매 필요를
-          입력 행 순서대로 배정합니다. 원본과 검증 내역을 포함한 미출고현황 Excel 한 개로 내려받으세요.
-        </p>
+    <section class="system-workbench" aria-labelledby="inputHeading">
+      <div class="system-topbar">
+        <div class="system-name">System.IO</div>
+        <div class="system-console" role="status" aria-live="polite">
+          <span class="system-message" id="systemMessage">waiting for data_blocks... (두 Excel을 업로드하세요)</span>
+          <span class="system-cursor" aria-hidden="true"></span>
+        </div>
+        <div class="system-mode"><strong>READ ONLY</strong> · browser memory</div>
       </div>
-      <div class="workflow-chip"><strong>2개 파일</strong> → 분석 → <strong>1개 Excel</strong></div>
-    </section>
 
-    <nav class="stage-strip" aria-label="작업 단계">
-      <div class="stage active" id="stageUpload"><span class="stage-number">1</span><span>파일 선택</span></div>
-      <div class="stage" id="stageAnalyze"><span class="stage-number">2</span><span>출고 분석</span></div>
-      <div class="stage" id="stageDownload"><span class="stage-number">3</span><span>Excel 다운로드</span></div>
-    </nav>
+      <div class="system-intro">
+        <div>
+          <div class="system-title-row">
+            <p class="eyebrow">NEXUS · Excel Workbench</p>
+            <h1>Shipping Management</h1>
+          </div>
+          <p class="hero-copy">
+            주문현황과 창고별재고를 상품코드로 대조해 입력 행 순서대로 배정하고 미출고현황 Excel을 생성합니다.
+          </p>
+        </div>
+        <div class="workflow-chip"><strong>2개 파일</strong> → 분석 → <strong>1개 Excel</strong></div>
+      </div>
 
-    <section class="panel input-panel" aria-labelledby="inputHeading">
+      <nav class="stage-strip" aria-label="작업 단계">
+        <div class="stage active" id="stageUpload"><span class="stage-number">1</span><span>파일 선택</span></div>
+        <div class="stage" id="stageAnalyze"><span class="stage-number">2</span><span>출고 분석</span></div>
+        <div class="stage" id="stageDownload"><span class="stage-number">3</span><span>Excel 다운로드</span></div>
+      </nav>
+
+      <section class="panel input-panel" aria-labelledby="inputHeading">
       <div class="panel-heading">
         <div>
           <h2 id="inputHeading">입력 파일</h2>
@@ -706,6 +1040,7 @@
           <span aria-hidden="true">▸</span> 출고 분석
         </button>
       </div>
+      </section>
     </section>
 
     <section class="panel results-panel hidden" id="resultsPanel" aria-labelledby="resultsHeading">
@@ -777,6 +1112,7 @@
         previewCount: document.getElementById("previewCount"),
         previewTable: document.getElementById("previewTable"),
         downloadButton: document.getElementById("downloadButton"),
+        systemMessage: document.getElementById("systemMessage"),
         stageUpload: document.getElementById("stageUpload"),
         stageAnalyze: document.getElementById("stageAnalyze"),
         stageDownload: document.getElementById("stageDownload"),
@@ -806,6 +1142,10 @@
         elements.toast.classList.remove("hidden");
         window.clearTimeout(showToast.timer);
         showToast.timer = window.setTimeout(() => elements.toast.classList.add("hidden"), 3600);
+      }
+
+      function setSystemMessage(message) {
+        elements.systemMessage.textContent = message;
       }
 
       function isSupportedFile(file) {
@@ -855,7 +1195,10 @@
       function setLoading(kind, loading) {
         state.loading[kind] = loading;
         const fileName = elements[kind + "FileName"];
-        if (loading) fileName.textContent = "Excel 구조를 확인하는 중...";
+        if (loading) {
+          fileName.textContent = "Excel 구조를 확인하는 중...";
+          setSystemMessage(`reading ${kind}_data_block...`);
+        }
         elements.analyzeButton.disabled = true;
       }
 
@@ -1016,6 +1359,14 @@
         elements.stageUpload.classList.toggle("complete", bothSelected);
         elements.stageUpload.classList.toggle("active", !bothSelected);
         elements.stageAnalyze.classList.toggle("active", Boolean(state.validation?.canAnalyze && !state.workspace));
+        const selectedCount = Number(Boolean(state.orders)) + Number(Boolean(state.inventory));
+        if (!bothSelected) {
+          setSystemMessage(`waiting for data_blocks... (${selectedCount}/2 파일 선택)`);
+        } else if (state.validation?.canAnalyze) {
+          setSystemMessage("data_blocks ready... (출고 분석을 실행하세요)");
+        } else {
+          setSystemMessage("validation blocked... (입력 파일을 확인하세요)");
+        }
       }
 
       function getPreviewDefinitions(workspace) {
@@ -1176,12 +1527,14 @@
         elements.stageAnalyze.classList.remove("active");
         elements.stageAnalyze.classList.add("complete");
         elements.stageDownload.classList.add("active");
+        setSystemMessage("analysis complete... (Excel 다운로드 준비 완료)");
       }
 
       function runAnalysis() {
         if (!state.validation?.canAnalyze) return;
         elements.analyzeButton.disabled = true;
         elements.analyzeButton.textContent = "분석 중...";
+        setSystemMessage("processing data_blocks...");
         window.setTimeout(() => {
           try {
             state.workspace = engine.analyze(state.orders, state.inventory);
@@ -1190,6 +1543,7 @@
             elements.resultsPanel.scrollIntoView({ behavior: "smooth", block: "start" });
             showToast("출고 배정과 검증이 완료되었습니다.");
           } catch (error) {
+            setSystemMessage("analysis failed... (오류 내용을 확인하세요)");
             showToast(error.message || "분석 중 오류가 발생했습니다.", true);
           } finally {
             elements.analyzeButton.innerHTML = '<span aria-hidden="true">▸</span> 출고 분석';
@@ -1205,6 +1559,7 @@
           workbookTools.downloadWorkbook(state.workspace, window.XLSX, fileName);
           elements.stageDownload.classList.remove("active");
           elements.stageDownload.classList.add("complete");
+          setSystemMessage("workbook saved... (작업 완료)");
           showToast(`${fileName} 다운로드를 시작했습니다.`);
         } catch (error) {
           showToast(error.message || "Excel을 생성하지 못했습니다.", true);
@@ -1260,6 +1615,7 @@
       bindDropZone("inventory");
 
       if (!engine || !workbookTools || !window.XLSX) {
+        setSystemMessage("system unavailable... (실행 라이브러리 로딩 실패)");
         elements.validationBox.className = "validation-box bad";
         elements.validationBox.innerHTML = `
           <p class="validation-title"><span aria-hidden="true">!</span>실행 라이브러리 로딩 실패</p>
