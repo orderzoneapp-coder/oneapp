@@ -1,7 +1,7 @@
 # ONEAPP Application Architecture
 
 - Repository: orderzoneapp-coder/oneapp
-- Architecture document version: 1.3.2
+- Architecture document version: 1.3.3
 - Last reviewed: 2026-08-04
 - Machine-readable companion: app-manifest.json
 
@@ -91,9 +91,9 @@ Shared storage or navigation does not make their business meaning identical.
 | `history_viewer.html` | Web entry | Production | Inspect product-change history and price trends |
 | `Master.html` | Web entry | Pilot | Product-master lookup and administrator-reviewed add/update; initial registration and full replacement are not active in the first phase |
 | `Item_manager.html` | Web entry | Pilot / transition | Existing category lookup and product-management route retained until approved feature migration and result verification are complete |
-| `orders.html` | Planned web entry / Pilot candidate | Planned | Shipping Management aggregate-stock allocation and unshipped-status Excel review; browser-memory only with no production writes |
+| `orders.html` | Web entry | Pilot | Shipping Management aggregate-stock allocation, purchase-plan editing and recovery, explicit revisioned cloud sharing, and reviewed unshipped-status/purchase-upload Excel output |
 | `coreEngine.js` | Shared library | Production | Storage, pricing, history, export, cloud synchronization, and master-data utilities |
-| `code.gs` | Cloud service | Production | Google Apps Script API for master, history, configuration, and the finalized DataOps inventory snapshot |
+| `code.gs` | Cloud service | Production | Google Apps Script API for master, history, configuration, the finalized DataOps inventory snapshot, and immutable Shipping purchase-plan revisions |
 
 ---
 
@@ -135,6 +135,7 @@ Important contracts include:
 | Legacy cloud URL | `merchCloudUrl_v870` | Compatibility fallback only |
 | Active table target | `merchActiveTableTarget_v1` | MerchOps and settings |
 | Active table view | `merchActiveTableViewId_v1` | MerchOps and settings |
+| Shipping local recovery | IndexedDB `ONEAPPShippingManagementDB` / `workspaces`; `oneapp.shipping.recovery.pointer.v1` and `oneapp.shipping.recovery.meta.v1` | Shipping Management only; IndexedDB stores the analysis workspace and inputs, while localStorage stores only the recovery pointer and metadata |
 
 A storage-key rename is a schema migration.
 
@@ -160,6 +161,9 @@ It must:
 | POST | `config` | Save shared configuration |
 | POST | `dataops_snapshot_commit` | Validate and atomically finalize one DataOps FULL inventory snapshot |
 | POST | `dataops_snapshot_get` | Return the latest finalized DataOps FULL inventory snapshot |
+| POST | `shipping_plan_save` | Stage, verify, append an immutable Shipping purchase-plan payload, then publish its index row |
+| POST | `shipping_plan_list` | List only indexed Shipping purchase-plan revisions, newest first |
+| POST | `shipping_plan_get` | Verify and return an indexed Shipping purchase-plan revision |
 | GET | `full` or omitted | Return master, history, and configuration |
 | GET | `master_only` | Return product master and summary |
 | GET | `config_only` | Return configuration only |
@@ -169,6 +173,10 @@ The DataOps snapshot contract is `ONEAPP_DATAOPS_SNAPSHOT_V1`. Its canonical row
 `dataops_snapshot_commit` writes the inactive `DataOpsSnapshot_A` or `DataOpsSnapshot_B` sheet, verifies schema, SHA-256, row count, cell count, and same-code LOT promotion consistency, then switches the `ONEAPP_DATAOPS_CURRENT_SLOT` Script Property under `LockService`. A failed staging write leaves the previous current slot unchanged. The revision is derived by the server from basis date and canonical hash, so rereading or recommitting the same finalized snapshot returns the same identity.
 
 Both DataOps snapshot actions use POST bodies and require the `ONEAPP_DATAOPS_ACCESS_TOKEN` Apps Script Property. A missing server token, missing request token, or mismatch is rejected. Clients store the operator-entered token only in browser-local configuration; it must not be embedded in public HTML or sent in a query string. Existing master, history, and configuration actions, sheets, and response contracts remain unchanged.
+
+The Shipping cloud contract is `ONEAPP_SHIPPING_PURCHASE_PLAN_V1`, and its embedded analysis contract is `shipping-workspace/v2`. `shipping_plan_save` writes `ShippingPlanStaging`, verifies SHA-256 and declared row/cell counts, appends the immutable payload to `ShippingPlanHistory`, rereads it, and only then appends `ShippingPlanIndex`. The index is the sole visibility boundary: an append that is not indexed is an orphan and must never be returned by list/get, while an index failure leaves every previously finalized revision and the previous latest revision unchanged. Revisions are not automatically deleted.
+
+All Shipping plan actions use POST bodies and the separate `ONEAPP_SHIPPING_PLAN_ACCESS_TOKEN`. They do not read or write DataOps A/B snapshots, `ONEAPP_DATAOPS_CURRENT_SLOT`, `MasterDB`, `HistoryLogs`, or `AppConfig`. Local autosave is not cloud transfer; another computer can retrieve only revisions saved through the explicit cloud-save action.
 
 Changing any action name, payload shape, response shape, authentication rule, or field normalization requires coordinated updates to:
 
@@ -312,7 +320,7 @@ Equivalent safety controls must be preserved when another application writes the
 | Product field, canonical name, or Excel mapping | MerchOps, SmartParser, DataOps, export center, settings, history viewer |
 | Pricing or margin calculation | coreEngine, MerchOps, DataOps, SmartParser, export center |
 | Storage key or IndexedDB schema | Every listed consumer plus migration and rollback |
-| Cloud action or payload | code.gs, coreEngine, MerchOps, DataOps, settings, history viewer |
+| Cloud action or payload | code.gs and every listed consumer; Shipping plan actions additionally require Shipping failure-injection and token-isolation tests |
 | Navigation path or filename | Every HTML entry point and deployed route |
 | Information-change workflow | SmartParser direct master apply, existing history viewer, master refresh behavior, and cloud history backup |
 | Master add/update or master writer | Master, coreEngine, MerchOps refresh, DataOps synchronization, SmartParser, history, backup and rollback |
@@ -378,7 +386,6 @@ A planned application must record:
 
 | Component | Status | Intended purpose | Development trigger |
 |---|---|---|---|
-| `orders.html` | Planned / Pilot candidate | Match order status with aggregate warehouse stock in input order and generate one reviewed unshipped-status workbook | Promote only after reference-file, allocation-reconciliation, workbook, and browser-flow validation |
 | `trend_report.html` | Planned | Provide insight from MerchOps and DataOps results | Resume after both applications produce stable master, history, inventory, and performance data |
 | `image_generator.html` | Planned utility | Produce offline-sales images and printed materials for price changes and promotional products | Resume after the MerchOps F9 review payload and downstream F10 print workflow are finalized |
 
@@ -388,7 +395,7 @@ They do not receive feature expansion during the current MerchOps and DataOps de
 
 Planned applications must not write production master data until they are promoted through architecture review.
 
-Shipping Management currently uses the existing NEXUS Operations route to `orders.html` as a pilot entry only. It owns no shared storage or cloud contract, does not call `coreEngine.js`, and does not change MerchOps or DataOps behavior.
+Shipping Management is registered as a Pilot on the existing NEXUS Operations `orders.html` route. It owns the isolated `shipping-purchase-plan` local/cloud contract, does not call `coreEngine.js`, and does not change MerchOps or DataOps business behavior. Disabling the route and reverting its PR is the code rollback path; already finalized cloud revisions remain append-only operational records and are not deleted by rollback.
 
 ---
 

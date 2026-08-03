@@ -7,16 +7,22 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  const WORKBOOK_VERSION = "1.1.1";
+  const WORKBOOK_VERSION = "2.0.0";
   const REQUIRED_SHEETS = Object.freeze([
-    "창고별 재고",
+    "발주관리",
     "미출고현황",
     "상품별요약",
-    "발주관리",
-    "적요이슈",
     "검증결과",
+    "창고별 재고",
     "주문원본",
   ]);
+  const PURCHASE_UPLOAD_SCHEMA_VERSION = "shipping-purchase-upload/v1";
+  const PURCHASE_UPLOAD_HEADERS = Object.freeze([
+    "일자", "순번", "거래처코드", "거래처명", "입고창고", "거래유형", "전잔액", "전달사항",
+    "코드", "품명", "규격(기본)", "수량", "단가", "외화금액", "공급가", "간단설명(품위)",
+    "지시사항", "출고가 (공지)", "판매", "no.",
+  ]);
+  const PURCHASE_UPLOAD_REQUIRED_HEADER_INDEXES = Object.freeze([0, 4, 5, 8, 9, 11]);
 
   const COLORS = Object.freeze({
     navy: "153B55",
@@ -129,6 +135,17 @@
     return palette[hash % palette.length];
   }
 
+  function numberFormatForValue(value, maxDecimals = 9) {
+    if (typeof value !== "number" || !Number.isFinite(value) || Number.isInteger(value)) return "#,##0";
+    const decimalText = Math.abs(value).toFixed(maxDecimals).replace(/0+$/, "").split(".")[1] || "";
+    return decimalText ? `#,##0.${"0".repeat(decimalText.length)}` : "#,##0";
+  }
+
+  function rowManagerFill(row, strong) {
+    const color = strong ? row?.managerColors?.strong : row?.managerColors?.base;
+    return color || managerFill(row?.manager);
+  }
+
   function allocationStatusStyle(status) {
     if (status === "구매" || status === "재고정보 없음") {
       return { fill: COLORS.redSoft, font: COLORS.red };
@@ -151,6 +168,8 @@
       textColumns = [],
       priceColumns = [],
       statusColumn = -1,
+      inventoryColumns = [],
+      rowStyleResolver,
       formulaWriter,
     } = config;
     const columnCount = Math.max(1, headers.length);
@@ -213,11 +232,15 @@
 
     for (let row = 4; row <= range.e.r; row += 1) {
       const alternateFill = row % 2 === 0 ? COLORS.white : "F8FAFC";
+      const sourceRow = rows[row - 4];
+      const rowStyle = typeof rowStyleResolver === "function"
+        ? rowStyleResolver(sourceRow, row - 4) || {}
+        : {};
       for (let column = range.s.c; column <= range.e.c; column += 1) {
         const cell = sheet[XLSX.utils.encode_cell({ r: row, c: column })];
         if (!cell) continue;
         const style = {
-          fill: { fgColor: { rgb: alternateFill } },
+          fill: { fgColor: { rgb: rowStyle.fill || alternateFill } },
           font: { ...BASE_FONT },
           alignment: {
             vertical: "center",
@@ -228,8 +251,18 @@
           },
           border: { bottom: { style: "hair", color: { rgb: COLORS.line } } },
         };
-        if (numericColumns.includes(column)) style.numFmt = "#,##0.###";
-        if (priceColumns.includes(column)) style.numFmt = "#,##0";
+        if (numericColumns.includes(column) || priceColumns.includes(column)) {
+          style.numFmt = numberFormatForValue(cell.v);
+        }
+        if (
+          !rowStyle.suppressInventory &&
+          inventoryColumns.includes(column) &&
+          typeof cell.v === "number" &&
+          Number.isFinite(cell.v) &&
+          cell.v !== 0
+        ) {
+          style.fill = { fgColor: { rgb: COLORS.greenSoft } };
+        }
         if (textColumns.includes(column)) {
           cell.t = "s";
           cell.v = String(cell.v ?? "");
@@ -239,22 +272,23 @@
         if (column === statusColumn) {
           const status = String(cell.v || "");
           if (status.includes("재고정보") || status === "추가 구매 필요") {
-            style.fill = { fgColor: { rgb: COLORS.redSoft } };
             style.font = { ...BASE_FONT, color: { rgb: COLORS.red }, bold: true };
           } else if (
             status.includes("부분출고") ||
             status.includes("확인") ||
             status.includes("발주 필요")
           ) {
-            style.fill = { fgColor: { rgb: COLORS.orangeSoft } };
             style.font = { ...BASE_FONT, color: { rgb: COLORS.orange }, bold: true };
           } else if (status.includes("서울")) {
-            style.fill = { fgColor: { rgb: COLORS.blueSoft } };
             style.font = { ...BASE_FONT, color: { rgb: "1D4ED8" }, bold: true };
           } else if (status) {
-            style.fill = { fgColor: { rgb: COLORS.greenSoft } };
             style.font = { ...BASE_FONT, color: { rgb: "15803D" }, bold: true };
           }
+          if (status.includes("오류")) style.fill = { fgColor: { rgb: COLORS.redSoft } };
+        }
+        if (typeof cell.v === "number" && (!Number.isFinite(cell.v) || cell.v < 0)) {
+          style.fill = { fgColor: { rgb: COLORS.redSoft } };
+          style.font = { ...BASE_FONT, color: { rgb: COLORS.red }, bold: true };
         }
         applyCellStyle(cell, style);
       }
@@ -274,8 +308,9 @@
       "서울",
       "전송",
       "적요",
-      "거래처",
+      "거래처(단가)",
       "그룹",
+      "구매",
       "출고",
     ];
     const rows = workspace.allocations.map((row) => [
@@ -288,18 +323,20 @@
       row.inventoryMatched ? displayInventoryValue(row.seoulFirstPurchaseRaw) : "",
       row.inventoryMatched ? displayInventoryValue(row.firstTransferRaw) : "",
       row.note,
-      row.customer,
+      row.supplierDisplay,
       row.group,
+      row.purchase,
       allocationStatusLabel(row.status),
     ]);
     const sheet = XLSX.utils.aoa_to_sheet([headers, ...rows]);
     const lastRow = Math.max(1, rows.length + 1);
     sheet["!cols"] = [
       { wch: 15 }, { wch: 31 }, { wch: 13 }, { wch: 11 }, { wch: 11 }, { wch: 12 },
-      { wch: 12 }, { wch: 12 }, { wch: 24 }, { wch: 22 }, { wch: 14 }, { wch: 12 },
+      { wch: 12 }, { wch: 12 }, { wch: 24 }, { wch: 22 }, { wch: 14 }, { wch: 16 },
+      { wch: 12 },
     ];
     sheet["!rows"] = [{ hpt: 27 }];
-    sheet["!autofilter"] = { ref: `A1:L${lastRow}` };
+    sheet["!autofilter"] = { ref: `A1:M${lastRow}` };
     sheet["!freeze"] = { xSplit: 0, ySplit: 1 };
     sheet["!views"] = [{ showGridLines: false }];
     sheet["!margins"] = {
@@ -317,7 +354,7 @@
       fitToWidth: 1,
       fitToHeight: 0,
     };
-    sheet["!printArea"] = `A1:L${lastRow}`;
+    sheet["!printArea"] = `A1:M${lastRow}`;
     sheet["!printTitles"] = "$1:$1";
 
     for (let column = 0; column < headers.length; column += 1) {
@@ -331,7 +368,11 @@
 
     rows.forEach((row, rowIndex) => {
       const sheetRow = rowIndex + 1;
-      const rowFill = managerFill(workspace.allocations[rowIndex]?.manager);
+      const sourceRow = workspace.allocations[rowIndex];
+      const rowFill = rowManagerFill(
+        sourceRow,
+        typeof sourceRow?.purchaseNeed === "number" && sourceRow.purchaseNeed > 0,
+      );
       row.forEach((value, column) => {
         const cell = ensureCell(sheet, XLSX, sheetRow, column);
         const style = {
@@ -344,14 +385,17 @@
           },
           border: tableBorder(),
         };
-        if (column >= 3 && column <= 7) style.numFmt = "#,##0.###";
-        if (column === 5 && !isBlank(value)) style.fill = { fgColor: { rgb: COLORS.greenSoft } };
-        if (column === 6 && !isBlank(value)) style.fill = { fgColor: { rgb: COLORS.blueSoft } };
-        if (column === 7 && !isBlank(value)) style.fill = { fgColor: { rgb: COLORS.purpleSoft } };
-        if (column === 11) {
+        if (column >= 3 && column <= 7) style.numFmt = numberFormatForValue(cell.v);
+        if (column >= 5 && column <= 7 && !isBlank(value)) {
+          style.fill = { fgColor: { rgb: COLORS.greenSoft } };
+        }
+        if (column === 12) {
           const statusStyle = allocationStatusStyle(String(value || ""));
-          style.fill = { fgColor: { rgb: statusStyle.fill } };
           style.font = { ...BASE_FONT, color: { rgb: statusStyle.font }, bold: true };
+        }
+        if (typeof cell.v === "number" && (!Number.isFinite(cell.v) || cell.v < 0)) {
+          style.fill = { fgColor: { rgb: COLORS.redSoft } };
+          style.font = { ...BASE_FONT, color: { rgb: COLORS.red }, bold: true };
         }
         if (column === 0) {
           cell.t = "s";
@@ -378,13 +422,13 @@
       "전재고 배정",
       "서울 1차 구매분 배정",
       "추가 구매 필요",
+      "구매",
       "출고판정",
       "주문건수",
-      "관련 거래처",
+      "거래처(단가)",
       "적요",
       "적요1",
       "배송그룹",
-      "재고 매칭상태",
       "배정 검증",
     ];
     const rows = workspace.productSummaries.map((row) => [
@@ -399,13 +443,13 @@
       row.wholeAllocation,
       row.seoulAllocation,
       row.inventoryMatched ? row.purchaseNeed : "",
+      row.purchase,
       row.status,
       row.orderCount,
-      row.customers,
+      row.suppliers,
       row.notes,
       row.notes1,
       row.groups,
-      row.matchStatus,
       row.inventoryMatched
         ? Math.abs(row.reconciliationDifference || 0) <= 1e-9
           ? "정상"
@@ -419,39 +463,53 @@
         "상품코드별 주문·재고·배정을 한 번만 집계합니다. 서울 1차 구매잔량은 MAX(0, 3서울 + 4전송)이며 상품명은 표시용입니다.",
       headers,
       rows,
-      widths: [15, 31, 13, 14, 13, 15, 12, 16, 13, 17, 14, 20, 10, 32, 25, 25, 20, 15, 12],
-      numericColumns: [3, 4, 5, 6, 7, 8, 9, 10, 12],
+      widths: [15, 31, 13, 14, 13, 15, 12, 16, 13, 17, 14, 16, 20, 10, 32, 25, 25, 20, 12],
+      numericColumns: [3, 4, 5, 6, 7, 8, 9, 10, 13],
       textColumns: [0],
-      statusColumn: 11,
+      statusColumn: 12,
+      inventoryColumns: [4, 5, 6, 7],
+      rowStyleResolver(row, index) {
+        const source = workspace.productSummaries[index];
+        return {
+          fill: rowManagerFill(
+            source,
+            typeof source?.purchaseNeed === "number" && source.purchaseNeed > 0,
+          ),
+        };
+      },
       formulaWriter(sheet, startRow, sourceRows) {
         sourceRows.forEach((row, index) => {
           const zeroBasedRow = startRow + index;
           const excelRow = zeroBasedRow + 1;
-          const matched = row[17] !== "재고정보 없음";
-          addCachedFormula(
-            sheet,
-            XLSX,
-            zeroBasedRow,
-            7,
-            `IF(R${excelRow}="재고정보 없음","",MAX(0,F${excelRow}+G${excelRow}))`,
-            matched ? row[7] : "",
-            matched ? "n" : "s",
-          );
-          addCachedFormula(
-            sheet,
-            XLSX,
-            zeroBasedRow,
-            10,
-            `IF(R${excelRow}="재고정보 없음","",MAX(0,D${excelRow}-I${excelRow}-J${excelRow}))`,
-            matched ? row[10] : "",
-            matched ? "n" : "s",
-          );
+          const matched = workspace.productSummaries[index].inventoryMatched;
+          if (matched) {
+            addCachedFormula(
+              sheet,
+              XLSX,
+              zeroBasedRow,
+              7,
+              `MAX(0,F${excelRow}+G${excelRow})`,
+              row[7],
+              "n",
+            );
+            addCachedFormula(
+              sheet,
+              XLSX,
+              zeroBasedRow,
+              10,
+              `MAX(0,D${excelRow}-I${excelRow}-J${excelRow})`,
+              row[10],
+              "n",
+            );
+          }
           addCachedFormula(
             sheet,
             XLSX,
             zeroBasedRow,
             18,
-            `IF(R${excelRow}="재고정보 없음","확인 필요",IF(ABS(D${excelRow}-I${excelRow}-J${excelRow}-K${excelRow})<0.000000001,"정상","오류"))`,
+            matched
+              ? `IF(ABS(D${excelRow}-I${excelRow}-J${excelRow}-K${excelRow})<0.000000001,"정상","오류")`
+              : '"확인 필요"',
             row[18],
             "s",
           );
@@ -469,86 +527,48 @@
       "전재고 원값",
       "서울 1차 구매잔량",
       "추가 구매 필요",
-      "관리상태",
+      "구매",
+      "담당",
       "주문건수",
-      "관련 거래처",
+      "거래처(단가)",
       "적요",
       "적요1",
       "배송그룹",
-      "재고 매칭상태",
-      "확정 발주수량",
-      "관리자 확인",
     ];
     const rows = workspace.purchaseManagement.map((row) => [
       row.productCode,
-      row.productName,
+      row.rowType === "reference" ? `[참고] ${row.productName}` : row.productName,
       row.specification,
-      row.totalOrderQuantity,
+      row.rowType === "reference" ? "" : row.totalOrderQuantity,
       row.inventoryMatched ? row.wholeStockRaw : "",
       row.inventoryMatched ? row.seoulFirstPurchaseRemaining : "",
-      row.inventoryMatched ? row.purchaseNeed : "",
-      row.managementStatus,
-      row.orderCount,
-      row.customers,
+      row.rowType === "reference" ? "" : row.inventoryMatched ? row.purchaseNeed : "",
+      row.rowType === "reference" ? "" : row.purchase,
+      row.manager,
+      row.rowType === "reference" ? "" : row.orderCount,
+      row.suppliers,
       row.notes,
       row.notes1,
       row.groups,
-      row.matchStatus,
-      "",
-      "",
     ]);
 
     return buildTableSheet(XLSX, {
       title: "발주관리",
       subtitle:
-        "추가 구매 필요 상품과 재고정보 없음 상품을 함께 표시합니다. 재고정보 없음은 구매수량을 비워 두고 원본 상품코드를 먼저 확인하십시오.",
+        "추가 구매 필요·재고정보 없음·적요 보유 상품을 상품코드별 한 행으로 통합합니다. 구매값이 정확히 대체 또는 소분인 행만 구매업로드에서 제외됩니다.",
       headers,
       rows,
-      widths: [15, 31, 13, 14, 13, 16, 14, 17, 10, 32, 25, 25, 20, 15, 14, 22],
+      widths: [15, 34, 13, 14, 13, 16, 14, 18, 14, 10, 34, 30, 30, 20],
       headerFill: COLORS.orange,
-      numericColumns: [3, 4, 5, 6, 8, 14],
+      numericColumns: [3, 4, 5, 6, 9],
       textColumns: [0],
-      statusColumn: 7,
-    });
-  }
-
-  function buildMemoIssueSheet(workspace, XLSX) {
-    const headers = [
-      "배정순서",
-      "원본행",
-      "상품코드",
-      "품목명",
-      "적요",
-      "적요1",
-      "거래처",
-      "그룹",
-      "관리자 검토",
-    ];
-    const rows =
-      workspace.memoIssues.length > 0
-        ? workspace.memoIssues.map((row) => [
-            row.inputOrder,
-            row.sourceRowNumber,
-            row.productCode,
-            row.productName,
-            row.note,
-            row.note1,
-            row.customer,
-            row.group,
-            "",
-          ])
-        : [["", "", "", "적요·적요1 확인 대상 없음", "", "", "", "", ""]];
-
-    return buildTableSheet(XLSX, {
-      title: "적요이슈",
-      subtitle:
-        "적요 또는 적요1의 원문만 수집합니다. 긴급도·거래처 우선순위·처리방법은 자동 추론하지 않습니다.",
-      headers,
-      rows,
-      widths: [9, 9, 15, 31, 32, 32, 25, 16, 24],
-      headerFill: COLORS.slate,
-      numericColumns: [0, 1],
-      textColumns: [2],
+      inventoryColumns: [4, 5],
+      rowStyleResolver(row, index) {
+        const source = workspace.purchaseManagement[index];
+        if (source.rowType === "reference") return { fill: COLORS.graySoft, suppressInventory: true };
+        const purchaseNeeded = typeof source.purchaseNeed === "number" && source.purchaseNeed > 0;
+        return { fill: rowManagerFill(source, purchaseNeeded) };
+      },
     });
   }
 
@@ -577,25 +597,18 @@
     const allocationEnd = Math.max(allocationStart, workspace.allocations.length + 1);
     const summaryStart = 5;
     const summaryEnd = Math.max(summaryStart, workspace.productSummaries.length + 4);
-    const memoStart = 5;
-    const memoEnd = Math.max(memoStart, workspace.memoIssues.length + 4);
     const formulaByItem = {
       "상품별 주문수량 대사 차이": {
         formula: `SUM('미출고현황'!$E$${allocationStart}:$E$${allocationEnd})-SUM('상품별요약'!$D$${summaryStart}:$D$${summaryEnd})`,
       },
       "매칭 주문 배정 대사 차이": {
-        formula: `SUMIFS('상품별요약'!$D$${summaryStart}:$D$${summaryEnd},'상품별요약'!$R$${summaryStart}:$R$${summaryEnd},"매칭완료")-SUM('상품별요약'!$I$${summaryStart}:$K$${summaryEnd})`,
+        formula: `SUMIFS('상품별요약'!$D$${summaryStart}:$D$${summaryEnd},'상품별요약'!$K$${summaryStart}:$K$${summaryEnd},"<>")-SUM('상품별요약'!$I$${summaryStart}:$K$${summaryEnd})`,
       },
       "음수 추가 구매 필요": {
         formula: `COUNTIF('상품별요약'!$K$${summaryStart}:$K$${summaryEnd},"<0")`,
       },
       "재고정보 없음": {
-        formula: `COUNTIF('상품별요약'!$R$${summaryStart}:$R$${summaryEnd},"재고정보 없음")`,
-      },
-      "적요 확인": {
-        formula: workspace.memoIssues.length
-          ? `COUNTA('적요이슈'!$A$${memoStart}:$A$${memoEnd})`
-          : "0",
+        formula: `COUNTBLANK('상품별요약'!$K$${summaryStart}:$K$${summaryEnd})`,
       },
     };
     workspace.validationResults.forEach((row, index) => {
@@ -711,7 +724,8 @@
     return palette[hash % palette.length];
   }
 
-  function buildWarehouseInventorySheet(workspaceSource, XLSX) {
+  function buildWarehouseInventorySheet(workspace, XLSX) {
+    const workspaceSource = workspace.sourceFiles.inventory;
     const matrix = Array.isArray(workspaceSource.matrix)
       ? workspaceSource.matrix.map((row) => (Array.isArray(row) ? row.slice() : []))
       : [];
@@ -722,6 +736,10 @@
       const normalized = normalizedHeader(header);
       if (normalized && !indexByHeader.has(normalized)) indexByHeader.set(normalized, index);
     });
+    const sourceCodeIndex = indexByHeader.get(normalizedHeader("품목코드"));
+    const purchaseByCode = new Map(
+      (workspace.productSummaries || []).map((row) => [String(row.productCode), String(row.purchase || "")]),
+    );
 
     const layout = [];
     const usedIndexes = new Set();
@@ -744,7 +762,11 @@
     });
 
     const dataRows = matrix.slice(headerRowIndex + 1).map((sourceRow) =>
-      layout.map((column) => (column.purchase ? "" : safeValue(sourceRow[column.sourceIndex]))),
+      layout.map((column) => {
+        if (!column.purchase) return safeValue(sourceRow[column.sourceIndex]);
+        const code = sourceCodeIndex === undefined ? "" : String(sourceRow[sourceCodeIndex] ?? "").trim();
+        return purchaseByCode.get(code) || "";
+      }),
     );
     const headers = layout.map((column) => safeValue(column.header));
     const sheet = XLSX.utils.aoa_to_sheet([headers, ...dataRows]);
@@ -798,7 +820,7 @@
             wrapText: false,
           },
           border: tableBorder(),
-          ...(typeof cell.v === "number" ? { numFmt: "#,##0.###" } : {}),
+          ...(typeof cell.v === "number" ? { numFmt: numberFormatForValue(cell.v) } : {}),
         };
         if (warehouseColumns.includes(column)) {
           style.fill = { fgColor: { rgb: warehouseFill(headers[column]) } };
@@ -826,7 +848,7 @@
       {
         Name: "_xlnm.Print_Area",
         Sheet: sheetIndex,
-        Ref: `'${sheetName}'!$A$1:$L$${lastRow}`,
+        Ref: `'${sheetName}'!$A$1:$M$${lastRow}`,
       },
       {
         Name: "_xlnm.Print_Titles",
@@ -1033,16 +1055,157 @@
     setTimeout(() => URL.revokeObjectURL(url), 0);
   }
 
+  function getPurchaseUploadRows(workspace) {
+    return (workspace?.purchaseManagement || []).filter(
+      (row) =>
+        row.rowType !== "reference" &&
+        row.inventoryMatched &&
+        typeof row.purchaseNeed === "number" &&
+        row.purchaseNeed > 0 &&
+        row.purchase !== "대체" &&
+        row.purchase !== "소분",
+    );
+  }
+
+  function requirePurchaseUploadReady(workspace) {
+    if (!workspace || workspace.schemaVersion !== "shipping-workspace/v2") {
+      throw new Error("지원하지 않는 Shipping Management 작업공간입니다.");
+    }
+    if (workspace.basisDateStatus !== "valid" || !/^\d{8}$/.test(String(workspace.uploadDate || ""))) {
+      const dates = Array.isArray(workspace.basisDates) ? workspace.basisDates.join(", ") : "";
+      throw new Error(
+        dates
+          ? `구매업로드 기준일이 서로 다르거나 올바르지 않습니다: ${dates}`
+          : "구매업로드 기준일을 일자-No.에서 확인할 수 없습니다.",
+      );
+    }
+  }
+
+  function buildPurchaseUploadWorkbook(workspace, XLSX) {
+    requireXlsx(XLSX);
+    requirePurchaseUploadReady(workspace);
+    const sourceRows = getPurchaseUploadRows(workspace);
+    const rows = sourceRows.map((row) => [
+      workspace.uploadDate,
+      "",
+      "",
+      String(row.purchase || ""),
+      "01",
+      "",
+      "",
+      "",
+      String(row.productCode || ""),
+      String(row.productName || ""),
+      String(row.specification || ""),
+      row.purchaseNeed,
+      0,
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+    ]);
+    const sheet = XLSX.utils.aoa_to_sheet([[...PURCHASE_UPLOAD_HEADERS], ...rows]);
+    const lastRow = Math.max(1, rows.length + 1);
+    sheet["!ref"] = `A1:T${lastRow}`;
+    sheet["!cols"] = PURCHASE_UPLOAD_HEADERS.map(() => ({ wch: 15.125 }));
+    sheet["!rows"] = Array.from({ length: lastRow }, () => ({ hpt: 16.5 }));
+
+    PURCHASE_UPLOAD_HEADERS.forEach((_, column) => {
+      const cell = ensureCell(sheet, XLSX, 0, column);
+      cell.t = "s";
+      cell.v = PURCHASE_UPLOAD_HEADERS[column];
+      cell.w = cell.v;
+      applyCellStyle(cell, {
+        fill: { fgColor: { rgb: "FFFFFF" } },
+        font: {
+          name: "Arial",
+          sz: PURCHASE_UPLOAD_REQUIRED_HEADER_INDEXES.includes(column) ? 11 : 10,
+          color: { rgb: "000000" },
+          ...(PURCHASE_UPLOAD_REQUIRED_HEADER_INDEXES.includes(column) ? { bold: true } : {}),
+        },
+        alignment: { horizontal: "left", vertical: "center", wrapText: false },
+        border: {
+          top: { style: "thin", color: { rgb: "000000" } },
+          bottom: { style: "thin", color: { rgb: "000000" } },
+          left: { style: "thin", color: { rgb: "000000" } },
+          right: { style: "thin", color: { rgb: "000000" } },
+        },
+        protection: { locked: false },
+      });
+    });
+
+    for (let row = 1; row < lastRow; row += 1) {
+      for (let column = 0; column < PURCHASE_UPLOAD_HEADERS.length; column += 1) {
+        const cell = ensureCell(sheet, XLSX, row, column);
+        const numeric = column === 11 || column === 12;
+        if (numeric) {
+          cell.t = "n";
+          cell.v = Number(cell.v || 0);
+        } else {
+          cell.t = "s";
+          cell.v = String(cell.v ?? "");
+          cell.w = cell.v;
+        }
+        applyCellStyle(cell, {
+          fill: { fgColor: { rgb: "FFFFFF" } },
+          font: { name: "맑은 고딕", sz: 11, color: { rgb: "000000" } },
+          alignment: { horizontal: "left", vertical: "center", wrapText: false },
+          protection: { locked: false },
+          numFmt: numeric ? numberFormatForValue(cell.v) : "@",
+        });
+      }
+    }
+
+    const workbook = XLSX.utils.book_new();
+    workbook.Props = {
+      Title: "구매업로드",
+      Subject: "ONEAPP Shipping Management 구매입력",
+      Author: "ONEAPP Shipping Management",
+      Company: "ONEAPP",
+      Comments: `schema=${PURCHASE_UPLOAD_SCHEMA_VERSION}; workbook=${WORKBOOK_VERSION}`,
+      CreatedDate: new Date(workspace.createdAt),
+    };
+    XLSX.utils.book_append_sheet(workbook, sheet, "구매입력");
+    return workbook;
+  }
+
+  function getPurchaseUploadFileName(workspace) {
+    requirePurchaseUploadReady(workspace);
+    return `구매업로드_${workspace.uploadDate}.xlsx`;
+  }
+
+  function writeStandardWorkbook(workbook, XLSX) {
+    requireXlsx(XLSX);
+    return XLSX.write(workbook, {
+      type: "array",
+      bookType: "xlsx",
+      compression: true,
+      cellStyles: true,
+    });
+  }
+
+  function downloadPurchaseUploadWorkbook(workspace, XLSX, fileName) {
+    const workbook = buildPurchaseUploadWorkbook(workspace, XLSX);
+    downloadBytes(
+      writeStandardWorkbook(workbook, XLSX),
+      fileName || getPurchaseUploadFileName(workspace),
+    );
+    return workbook;
+  }
+
   function buildWorkbook(workspace, XLSX) {
     requireXlsx(XLSX);
-    if (!workspace || workspace.schemaVersion !== "shipping-workspace/v1") {
+    if (!workspace || workspace.schemaVersion !== "shipping-workspace/v2") {
       throw new Error("지원하지 않는 Shipping Management 작업공간입니다.");
     }
 
     const workbook = XLSX.utils.book_new();
     workbook.Props = {
-      Title: "Shipping Management 미출고현황",
-      Subject: "전재고·서울 1차 구매잔량·추가 구매 필요 배정",
+      Title: "Shipping Management 발주·미출고 계획",
+      Subject: "발주관리·전재고·서울 1차 구매잔량·추가 구매 필요 배정",
       Author: "ONEAPP Shipping Management",
       Company: "ONEAPP",
       Comments: `workspace=${workspace.schemaVersion}; workbook=${WORKBOOK_VERSION}`,
@@ -1050,8 +1213,8 @@
     };
     XLSX.utils.book_append_sheet(
       workbook,
-      buildWarehouseInventorySheet(workspace.sourceFiles.inventory, XLSX),
-      "창고별 재고",
+      buildPurchaseManagementSheet(workspace, XLSX),
+      "발주관리",
     );
     XLSX.utils.book_append_sheet(workbook, buildAllocationSheet(workspace, XLSX), "미출고현황");
     XLSX.utils.book_append_sheet(
@@ -1059,13 +1222,12 @@
       buildProductSummarySheet(workspace, XLSX),
       "상품별요약",
     );
+    XLSX.utils.book_append_sheet(workbook, buildValidationSheet(workspace, XLSX), "검증결과");
     XLSX.utils.book_append_sheet(
       workbook,
-      buildPurchaseManagementSheet(workspace, XLSX),
-      "발주관리",
+      buildWarehouseInventorySheet(workspace, XLSX),
+      "창고별 재고",
     );
-    XLSX.utils.book_append_sheet(workbook, buildMemoIssueSheet(workspace, XLSX), "적요이슈");
-    XLSX.utils.book_append_sheet(workbook, buildValidationSheet(workspace, XLSX), "검증결과");
     XLSX.utils.book_append_sheet(
       workbook,
       buildSourceSheet(workspace.sourceFiles.orders, XLSX),
@@ -1092,9 +1254,16 @@
   return Object.freeze({
     WORKBOOK_VERSION,
     REQUIRED_SHEETS,
+    PURCHASE_UPLOAD_SCHEMA_VERSION,
+    PURCHASE_UPLOAD_HEADERS,
     getOutputFileName,
+    getPurchaseUploadRows,
+    getPurchaseUploadFileName,
     buildWorkbook,
+    buildPurchaseUploadWorkbook,
     writeWorkbook,
+    writeStandardWorkbook,
     downloadWorkbook,
+    downloadPurchaseUploadWorkbook,
   });
 });
