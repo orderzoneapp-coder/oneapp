@@ -27,6 +27,7 @@ const headerOrder = [
   'colSpan: "2"',
   'w-[350px] min-w-[350px]',
   '}, "단가")',
+  '}, "행사가")',
   '}, "기초 재고")',
   '}, "입고")',
   '}, "출고")',
@@ -50,6 +51,6 @@ assert.doesNotMatch(source, /LOT 복원 불가 · 통합 유지/, "unavailable r
 assert.match(source, /현재 단위: \$\{displayUnit\}/, "product name must expose the current unit badge");
 assert.doesNotMatch(source, /코드통합형은 같은 품목을 1행으로 합치는 운영\/출력 기준입니다/, "settings guidance must describe the fixed Lot-detail policy");
 assert.doesNotMatch(source, /기존 구매잔량\/기타상품·BOX\/EA\/소분·검색 필터와 교차 적용됩니다/, "category guidance must not mention removed stock-list filters");
-assert.equal((source.match(/colSpan: "9"/g) || []).length, 3, "all table spanning rows must cover the new nine-column layout");
+assert.equal((source.match(/colSpan: "10"/g) || []).length, 3, "all table spanning rows must cover the ten-column layout with promo price");
 
 console.log("DataOps fixed Lot-detail layout contract passed.");

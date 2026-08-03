@@ -298,7 +298,7 @@ const combinedExport = section(
   "const handlePrintOutput = useCallback",
 );
 assert.match(combinedExport, /if\s*\(isClosingOutputBlocked\)/);
-assert.match(combinedExport, /createCombinedWorkbook\(\{\s*productData,/);
+assert.match(combinedExport, /createCombinedWorkbook\(\{\s*productData: closingProductData,[\s\S]*wholeStockRows: closingRows/);
 assert.doesNotMatch(combinedExport, /filteredProductDataRef/);
 
 const workState = section(

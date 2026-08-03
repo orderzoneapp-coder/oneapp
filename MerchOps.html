@@ -336,6 +336,7 @@
         window.ONEAPP_DEFAULT_CLOUD_SYNC_URL = window.ONEAPP_DEFAULT_CLOUD_SYNC_URL || 'https://script.google.com/macros/s/AKfycbzOUOIu_bP7NkiFVziDR0Og1da1KO1ePoU09Q3pSlPr-9uD-WkdCpWN7nidO5hlrJi6Qw/exec';
         window.ONEAPP_CLOUD_URL_KEY = window.ONEAPP_CLOUD_URL_KEY || 'oneapp_cloud_sync_url_v1';
         window.MERCH_LEGACY_CLOUD_URL_KEY = window.MERCH_LEGACY_CLOUD_URL_KEY || 'merchCloudUrl_v870';
+        window.ONEAPP_DATAOPS_CLOUD_TOKEN_KEY = window.ONEAPP_DATAOPS_CLOUD_TOKEN_KEY || 'oneapp_dataops_cloud_token_v1';
 
         window.normalizeOneAppCloudSyncUrl = (url = '') => {
             const raw = String(url || '').trim();
@@ -380,6 +381,96 @@
         };
 
         try { window.ensureOneAppCloudSyncUrl(); } catch (e) {}
+
+        window.MERCH_DATAOPS_SNAPSHOT_MODULE = Object.freeze({
+            schemaVersion: 'ONEAPP_DATAOPS_SNAPSHOT_V1',
+            columns: Object.freeze(['단위', '품목코드', '품명', '규격', '재고', '기록', '거래', '구매가', '기본', '적요', '행사가']),
+            getAccessToken: () => {
+                let token = '';
+                try { token = String(localStorage.getItem(window.ONEAPP_DATAOPS_CLOUD_TOKEN_KEY) || '').trim(); }
+                catch (e) { }
+                if (!token) {
+                    token = String(window.prompt('DataOps 클라우드 접근 토큰을 입력하세요.') || '').trim();
+                    if (token) {
+                        try { localStorage.setItem(window.ONEAPP_DATAOPS_CLOUD_TOKEN_KEY, token); }
+                        catch (e) { }
+                    }
+                }
+                if (!token)
+                    throw new Error('클라우드 접근 토큰이 설정되지 않았습니다.');
+                return token;
+            },
+            sha256Hex: async (text) => {
+                if (!window.crypto?.subtle)
+                    throw new Error('이 브라우저에서는 클라우드 무결성 검사를 사용할 수 없습니다.');
+                const digest = await window.crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+                return Array.from(new Uint8Array(digest)).map(value => value.toString(16).padStart(2, '0')).join('');
+            },
+            validate: async (snapshot) => {
+                if (!snapshot || snapshot.schemaVersion !== window.MERCH_DATAOPS_SNAPSHOT_MODULE.schemaVersion)
+                    throw new Error('DataOps 스냅샷 schema가 올바르지 않습니다.');
+                if (!snapshot.revision || !/^\d{4}-\d{2}-\d{2}$/.test(String(snapshot.basisDate || '')))
+                    throw new Error('DataOps 스냅샷 revision/기준일이 올바르지 않습니다.');
+                if (!Array.isArray(snapshot.columns) || JSON.stringify(snapshot.columns) !== JSON.stringify(window.MERCH_DATAOPS_SNAPSHOT_MODULE.columns))
+                    throw new Error('DataOps 스냅샷 열 계약이 올바르지 않습니다.');
+                if (!Array.isArray(snapshot.rows) || snapshot.rows.some(row => !Array.isArray(row) || row.length !== snapshot.columns.length))
+                    throw new Error('DataOps 스냅샷 행 계약이 올바르지 않습니다.');
+                const rowCount = snapshot.rows.length;
+                const cellCount = rowCount * snapshot.columns.length;
+                if (Number(snapshot.rowCount) !== rowCount || Number(snapshot.cellCount) !== cellCount)
+                    throw new Error('DataOps 스냅샷 행/셀 수 검산에 실패했습니다.');
+                const canonicalJson = JSON.stringify({
+                    schemaVersion: snapshot.schemaVersion,
+                    basisDate: snapshot.basisDate,
+                    columns: snapshot.columns,
+                    rows: snapshot.rows
+                });
+                const hash = await window.MERCH_DATAOPS_SNAPSHOT_MODULE.sha256Hex(canonicalJson);
+                if (hash !== String(snapshot.hash || '').toLowerCase())
+                    throw new Error('DataOps 스냅샷 hash 검산에 실패했습니다.');
+                const promoByCode = new Map();
+                snapshot.rows.forEach(row => {
+                    const code = String(row[1] ?? '').replace(/\.0$/, '').trim();
+                    const rawPromo = row[10];
+                    const promo = rawPromo === '' || rawPromo === null || rawPromo === undefined ? 0 : Number(String(rawPromo).replace(/,/g, ''));
+                    if (!Number.isFinite(promo) || promo < 0)
+                        throw new Error(`DataOps 행사가 값이 올바르지 않습니다: ${code}`);
+                    if (code && promoByCode.has(code) && promoByCode.get(code) !== promo)
+                        throw new Error(`같은 품목코드의 LOT별 행사가가 다릅니다: ${code}`);
+                    if (code) promoByCode.set(code, promo);
+                });
+                return { ...snapshot, hash };
+            },
+            fetchLatest: async (fallbackUrl = '') => {
+                const url = window.getOneAppCloudSyncUrl(fallbackUrl);
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                    body: JSON.stringify({ action: 'dataops_snapshot_get', token: window.MERCH_DATAOPS_SNAPSHOT_MODULE.getAccessToken() })
+                });
+                let result;
+                try { result = await response.json(); }
+                catch (e) { throw new Error(`DataOps 클라우드 응답 해석 실패 (HTTP ${response.status || '-'})`); }
+                if (!response.ok || !result || result.status !== 'success') {
+                    if (result?.message === 'DATAOPS_ACCESS_DENIED') {
+                        try { localStorage.removeItem(window.ONEAPP_DATAOPS_CLOUD_TOKEN_KEY); }
+                        catch (e) { }
+                    }
+                    throw new Error(result?.message || `DataOps 클라우드 조회 실패 (HTTP ${response.status || '-'})`);
+                }
+                if (!result.data)
+                    throw new Error('확정된 DataOps 클라우드 자료가 없습니다.');
+                return window.MERCH_DATAOPS_SNAPSHOT_MODULE.validate(result.data);
+            },
+            toWorkbookFile: (snapshot) => {
+                const title = `회사명 : 원앱 / 1창고 / ${String(snapshot.basisDate).replace(/-/g, '/')} / 전체재고`;
+                const aoa = [[title, '', '', '', '', '', '', '', '', '', ''], snapshot.columns, ...snapshot.rows];
+                const workbook = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(aoa), '전체재고');
+                const buffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+                return new File([buffer], `수불마감_cloud_${snapshot.revision}.xlsx`, { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+            }
+        });
 
 
         // ============================================================
@@ -1360,6 +1451,131 @@
         //       계산값은 _calculatedOutPrice/_appliedMarginRule에만 보관하고, 룰적용(forceRecalc) 때만 출고가를 변경한다.
         //       단, 구매/재고 작업의 시중가는 source 원가로 갱신하지 않고 마스터 시중가를 참조한다.
         // ============================================================
+        window.MERCH_DATAOPS_PROMO_MODULE = Object.freeze({
+            normalizeCode: (value) => String(value ?? '').replace(/\s/g, '').replace(/\.0$/, ''),
+            hasDataOpsRevision: (sources = {}) => !!String(sources?.inventory?._dataOpsRevision || '').trim(),
+            resolve: (row = {}, mItem = {}) => {
+                const sources = row.sources || {};
+                const revision = String(sources?.inventory?._dataOpsRevision || '').trim();
+                if (!revision)
+                    return null;
+                const dataOpsPromo = Math.max(0, window.parseNum(sources.inventory?.['행사가']));
+                const ownState = sources._merchOwnPromoState || {};
+                const estimatePromo = ownState.source === 'estimate' ? Math.max(0, window.parseNum(ownState.value)) : 0;
+                const masterPromo = Math.max(0, window.parseNum(mItem?.['행사가']));
+                const ownPromo = estimatePromo > 0 ? estimatePromo : masterPromo;
+                const ownSource = estimatePromo > 0 ? 'estimate' : (masterPromo > 0 ? 'master' : 'none');
+                const overrideState = sources._dataOpsPromoState || {};
+                const hasOverride = String(overrideState.revision || '') === revision
+                    && Object.prototype.hasOwnProperty.call(overrideState, 'value');
+                const price = hasOverride ? Math.max(0, window.parseNum(overrideState.value)) : (dataOpsPromo > 0 ? dataOpsPromo : ownPromo);
+                const conflict = !hasOverride && dataOpsPromo > 0 && ownPromo > 0 && dataOpsPromo !== ownPromo;
+                const conflictMessage = conflict
+                    ? `DataOps 행사가 적용 / MerchOps ${Math.round(ownPromo).toLocaleString('ko-KR')}원 → DataOps ${Math.round(dataOpsPromo).toLocaleString('ko-KR')}원`
+                    : '';
+                return {
+                    revision,
+                    price,
+                    source: hasOverride ? 'override' : (dataOpsPromo > 0 ? 'dataops' : ownSource),
+                    dataOpsPromo,
+                    ownPromo,
+                    ownSource,
+                    hasOverride,
+                    conflict,
+                    conflictMessage
+                };
+            },
+            applyToFinal: (working = {}, mItem = {}, sources = {}) => {
+                const resolved = window.MERCH_DATAOPS_PROMO_MODULE.resolve({ finalData: working, sources }, mItem);
+                if (!resolved)
+                    return working;
+                const next = { ...working, '행사가': resolved.price, _isPromo: resolved.price > 0 };
+                next._dataOpsRevision = resolved.revision;
+                next._dataOpsPromoValue = resolved.dataOpsPromo;
+                next._merchOwnPromoValue = resolved.ownPromo;
+                next._effectivePromoSource = resolved.source;
+                next._dataOpsPromoOverrideApplied = resolved.hasOverride;
+                next._dataOpsPromoConflict = resolved.conflict;
+                next._dataOpsPromoConflictMessage = resolved.conflictMessage;
+                return next;
+            },
+            resolveF7MasterPromoCommit: ({ sources = {}, activeRole = '', masterPromo = '' } = {}) => {
+                if (!window.MERCH_DATAOPS_PROMO_MODULE.hasDataOpsRevision(sources))
+                    return { handled: false, shouldWrite: false, value: masterPromo };
+                if (String(activeRole || '') !== 'estimate')
+                    return { handled: true, shouldWrite: false, value: masterPromo };
+                const estimateSource = sources?.estimate;
+                const hasExplicitEstimatePromo = !!estimateSource && Object.prototype.hasOwnProperty.call(estimateSource, '행사가');
+                const estimatePromo = hasExplicitEstimatePromo ? Math.max(0, window.parseNum(estimateSource['행사가'])) : 0;
+                if (estimatePromo <= 0)
+                    return { handled: true, shouldWrite: false, value: masterPromo };
+                return { handled: true, shouldWrite: true, value: estimatePromo };
+            },
+            refreshManagedItems: (items = {}, masterProducts = {}) => {
+                const estimatePromoByCode = new Map();
+                Object.values(items || {}).forEach(item => {
+                    const estimate = item?.sources?.estimate;
+                    const code = window.MERCH_DATAOPS_PROMO_MODULE.normalizeCode(item?.코드);
+                    const promo = Math.max(0, window.parseNum(estimate?.['행사가']));
+                    if (code && promo > 0 && !estimatePromoByCode.has(code))
+                        estimatePromoByCode.set(code, promo);
+                });
+                const nextItems = { ...(items || {}) };
+                Object.entries(nextItems).forEach(([key, item]) => {
+                    if (!window.MERCH_DATAOPS_PROMO_MODULE.hasDataOpsRevision(item?.sources))
+                        return;
+                    const code = window.MERCH_DATAOPS_PROMO_MODULE.normalizeCode(item?.코드);
+                    const nextSources = { ...(item.sources || {}) };
+                    if (estimatePromoByCode.has(code))
+                        nextSources._merchOwnPromoState = { source: 'estimate', value: estimatePromoByCode.get(code) };
+                    else
+                        delete nextSources._merchOwnPromoState;
+                    nextItems[key] = {
+                        ...item,
+                        sources: nextSources,
+                        finalData: window.MERCH_DATAOPS_PROMO_MODULE.applyToFinal(item.finalData || {}, masterProducts[code] || {}, nextSources)
+                    };
+                });
+                return nextItems;
+            },
+            prepareFullInventoryReplace: (items = {}, masterProducts = {}, marginRules = [], revision = '') => {
+                const nextItems = { ...(items || {}) };
+                const retainedPromoStateByCode = new Map();
+                Object.keys(nextItems).forEach(key => {
+                    const current = nextItems[key];
+                    if (!current?.sources?.inventory)
+                        return;
+                    const code = window.MERCH_DATAOPS_PROMO_MODULE.normalizeCode(current.코드);
+                    const currentRevision = String(current.sources.inventory._dataOpsRevision || '');
+                    const promoState = current.sources._dataOpsPromoState;
+                    if (currentRevision === revision && String(promoState?.revision || '') === revision && Object.prototype.hasOwnProperty.call(promoState, 'value'))
+                        retainedPromoStateByCode.set(code, { ...promoState });
+                    const nextSources = { ...(current.sources || {}) };
+                    delete nextSources.inventory;
+                    delete nextSources._inventoryRefSummary;
+                    delete nextSources._dataOpsPromoState;
+                    if (String(nextSources._activeRole || '') === 'inventory') {
+                        nextSources._activeRole = ['estimate', 'purchase', 'sales', 'info', 'catalog', 'parser']
+                            .find(sourceRole => window.hasMerchSourceObjectData ? window.hasMerchSourceObjectData(nextSources[sourceRole]) : !!nextSources[sourceRole]) || '';
+                    }
+                    const nextTags = new Set(Array.from(current._tags || []).filter(tag => String(tag || '') !== 'excel:재고업로드'));
+                    const hasOtherSource = ['estimate', 'purchase', 'sales', 'info', 'catalog', 'parser']
+                        .some(sourceRole => window.hasMerchSourceObjectData ? window.hasMerchSourceObjectData(nextSources[sourceRole]) : !!nextSources[sourceRole]);
+                    if (!hasOtherSource && nextTags.size === 0) {
+                        delete nextItems[key];
+                        return;
+                    }
+                    nextItems[key] = {
+                        ...current,
+                        sources: nextSources,
+                        _tags: nextTags,
+                        finalData: window.computeFinalData(masterProducts[code] || {}, nextSources, marginRules, false)
+                    };
+                });
+                return { items: nextItems, retainedPromoStateByCode };
+            }
+        });
+
         window.computeFinalData = (mItem = {}, sources = {}, marginRules = [], forceRecalc = false) => {
             const hasUploadSource = window.hasAnyUploadSource(sources);
             const targetSource = hasUploadSource
@@ -1385,6 +1601,8 @@
             working._calculatedOutPrice = calculatedOutPrice || 0;
             working._normalPrice = window.hasOwnField(working, '출고가') ? window.parseNum(working['출고가']) : 0;
             working._isPromo = window.parseNum(working['행사가']) > 0;
+            if (window.MERCH_DATAOPS_PROMO_MODULE?.hasDataOpsRevision(sources))
+                working = window.MERCH_DATAOPS_PROMO_MODULE.applyToFinal(working, mItem || {}, sources || {});
 
             // 행사테마는 행사가 여부로 자동 배정하지 않는다.
             // 명시 행사테마/테마1~5/_theme 값이 있으면 source 값을 우선한다.
@@ -2386,7 +2604,8 @@ const getInitialMappings = () => {
         '기본': '기본, 기본여부, 구분(기본), 구분기본, 관리구분',
         '적재위치': '적재위치, 위치',
         '적요': '적요, 비고, 메모',
-        '간단설명': '적요, 비고, 메모, 간단설명'
+        '간단설명': '적요, 비고, 메모, 간단설명',
+        '행사가': '행사가, 행사, 특가'
     };
     base.info = {
         '상품코드': '상품코드, 품목코드, 코드, 바코드',
@@ -2501,7 +2720,8 @@ const getInitialMasterLinks = () => {
         '기본': '기본',
         '적재위치': '',
         '적요': '간단설명',
-        '간단설명': '간단설명'
+        '간단설명': '간단설명',
+        '행사가': '행사가'
     };
     base.info = {
         '상품코드': '품목코드',
@@ -4339,13 +4559,15 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
     // 역할: 업로드 파일을 파싱하고 managedItems.sources 및 finalData를 구성한다.
     // 주의: 여기서 masterProducts 전체를 작업 대상으로 만들지 않는다. 업로드/필터로 들어온 대상만 managedItems에 들어간다.
     // ============================================================
-    const handleFileUpload = useCallback(async (e, role = 'estimate') => {
+    const handleFileUpload = useCallback(async (e, role = 'estimate', options = {}) => {
         const files = Array.from(e.target.files);
         const targetInput = e.target;
         if (files.length === 0)
-            return;
-        if (!window.XLSX)
-            return ui.setAlertMsg("엑셀 파서 로드 대기중입니다.");
+            return false;
+        if (!window.XLSX) {
+            ui.setAlertMsg("엑셀 파서 로드 대기중입니다.");
+            return false;
+        }
         // 새 파일 불러오기는 새 작업의 시작이다. 이전 작업에서 임시 제외한 행은 먼저 복구하고 제외상태를 초기화한다.
         const excludedToRestore = { ...(ui.sessionExcludedItems || {}) };
         ui.setSessionExcludedItems?.({});
@@ -4361,6 +4583,17 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
             let newManaged = window.stripMerchCatalogEditRows
                 ? window.stripMerchCatalogEditRows({ ...data.managedItems, ...excludedToRestore })
                 : { ...data.managedItems, ...excludedToRestore };
+            const snapshotMeta = role === 'inventory' && options.dataOpsSnapshot ? options.dataOpsSnapshot : null;
+            const inventoryRevision = role === 'inventory'
+                ? String(snapshotMeta?.revision || `EXCEL-${files.map(file => `${file.name}:${file.size}:${file.lastModified}`).join('|')}`)
+                : '';
+            let retainedPromoStateByCode = new Map();
+            if (role === 'inventory') {
+                const safeMarginRules = window.sanitizeMerchMarginRules ? window.sanitizeMerchMarginRules(config.marginRules) : (Array.isArray(config.marginRules) ? config.marginRules : []);
+                const fullReplace = window.MERCH_DATAOPS_PROMO_MODULE.prepareFullInventoryReplace(newManaged, newMaster, safeMarginRules, inventoryRevision);
+                newManaged = fullReplace.items;
+                retainedPromoStateByCode = fullReplace.retainedPromoStateByCode;
+            }
             let totalCount = 0;
             const workScope = window.buildMerchWorkScope ? window.buildMerchWorkScope(newMaster, ui.activeTags || []) : { mode: 'all', catalogNames: [], codeSet: new Set(Object.keys(newMaster || {})), scopeCount: Object.keys(newMaster || {}).length, masterCount: Object.keys(newMaster || {}).length };
             const selectedCompareCatalogs = role === 'estimate' && workScope.mode === 'catalog' ? [...workScope.catalogNames] : [];
@@ -4589,6 +4822,7 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
                         const actualBasicKey = headerCache['구분(기본)'] || headerCache['기본'] || actualHeaders.find(h => String(h).replace(/\s/g, '') === '구분(기본)' || String(h).replace(/\s/g, '') === '구분기본' || String(h).replace(/\s/g, '') === '기본' || String(h).replace(/\s/g, '') === '기본여부' || String(h).replace(/\s/g, '') === '관리구분');
                         const actualLocationKey = headerCache['적재위치'] || actualHeaders.find(h => String(h).replace(/\s/g, '') === '적재위치' || String(h).replace(/\s/g, '') === '위치');
                         const actualMemoKey = headerCache['적요'] || actualHeaders.find(h => String(h).replace(/\s/g, '') === '적요' || String(h).replace(/\s/g, '') === '비고' || String(h).replace(/\s/g, '') === '메모');
+                        const actualPromoKey = headerCache['행사가'] || actualHeaders.find(h => ['행사가', '행사', '특가'].includes(String(h).replace(/\s/g, '')));
                         const metaWarehouseCode = window.normalizeWarehouseCode(sheetMeta.warehouseCode || sheetMeta.warehouseRaw || '');
                         const metaBaseDate = sheetMeta.baseDate || '';
                         // 기존 일반 매핑에서 '창고'가 '최종(창고)'에 부분일치되어 들어온 경우를 방어적으로 제거한다.
@@ -4643,6 +4877,16 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
                             source['적요'] = row[actualMemoKey] || '';
                             source['비고'] = row[actualMemoKey] || '';
                         }
+                        if (actualPromoKey && actualHeaders.includes(actualPromoKey))
+                            source['행사가'] = window.keepExcelCellValue(row[actualPromoKey], true);
+                        source['_dataOpsRevision'] = inventoryRevision;
+                        source['_dataOpsBasisDate'] = snapshotMeta?.basisDate || metaBaseDate || '';
+                        source['_dataOpsSavedAt'] = snapshotMeta?.savedAt || '';
+                        source['_dataOpsHash'] = snapshotMeta?.hash || '';
+                        if (retainedPromoStateByCode.has(cleanCode))
+                            mItem.sources._dataOpsPromoState = { ...retainedPromoStateByCode.get(cleanCode) };
+                        else
+                            delete mItem.sources._dataOpsPromoState;
                         source['_inventoryFifoKey'] = window.getInventoryPurchaseDateKey(source['상품 구매일자'], metaBaseDate);
                         source['_inventorySourceRole'] = '1재고현황_기초재고';
                     }
@@ -4745,6 +4989,10 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
                 };
             }
 
+            // DataOps inventory 행은 견적 source의 명시 행사(없으면 master)를 별도 원본으로 참조한다.
+            // FULL 교체 뒤 모든 inventory LOT에 같은 resolver를 다시 적용하되 원본 source는 변경하지 않는다.
+            newManaged = window.MERCH_DATAOPS_PROMO_MODULE.refreshManagedItems(newManaged, newMaster);
+
             const masterSaved = await data.setMasterProducts(newMaster);
             if (!masterSaved) throw new Error('파일 불러오기 후 마스터 저장 검증 실패');
             if (data.masterLookupMode) ui.setCategoryFilters?.([]);
@@ -4786,6 +5034,12 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
             const autoAppliedTemplate = window.applyMerchTableView
                 ? window.applyMerchTableView(config, autoTableTarget, null, { manual: false, uploadRole: role })
                 : null;
+            if (role === 'inventory' && config.setVisibleUploadCols) {
+                config.setVisibleUploadCols(prev => {
+                    const current = Array.isArray(prev?.inventory) ? prev.inventory : (getInitialVisibleUploadCols().inventory || []);
+                    return current.includes('행사가') ? prev : { ...(prev || {}), inventory: [...current, '행사가'] };
+                });
+            }
             if (window.applyMerchFilterPresetToState && autoAppliedTemplate) {
                 window.applyMerchFilterPresetToState(autoAppliedTemplate, ui);
             }
@@ -4808,6 +5062,7 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
             } else if ((workScopeExcludedCount + workScopeUnregisteredCount) > 0) {
                 ui.showToast(`⚠️ [${roleMeta.label}] 선택 카탈로그 범위에 해당하는 행이 없습니다. 범위외 ${workScopeExcludedCount + workScopeUnregisteredCount}건 제외`);
             }
+            return true;
         }
         catch (error) {
             console.error(error);
@@ -4815,6 +5070,7 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
                 data.setManagedItems(prev => ({ ...prev, ...excludedToRestore }));
             }
             ui.setAlertMsg(`❌ 파일 처리 실패: ${error?.message || '엑셀 파일 형식과 저장공간을 확인하세요.'}`);
+            return false;
         }
         finally {
             if (targetInput)
@@ -4822,7 +5078,38 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
             ui.setIsProcessing(false);
             ui.setProcessMsg('');
         }
-    }, [data.masterProducts, data.managedItems, config.mappings, config.masterLinks, config.uploadColumnMeta, config.marginRules, config.tableViewPresets, ui]);
+    }, [data.masterProducts, data.managedItems, config.mappings, config.masterLinks, config.uploadColumnMeta, config.marginRules, config.tableViewPresets, config.setVisibleUploadCols, ui]);
+    const handleLoadDataOpsSnapshot = useCallback(async () => {
+        ui.setIsProcessing(true);
+        ui.setProcessMsg('최신 DataOps 확정자료 수신 및 검산 중...');
+        try {
+            const snapshot = await window.MERCH_DATAOPS_SNAPSHOT_MODULE.fetchLatest(config.cloudUrl);
+            const file = window.MERCH_DATAOPS_SNAPSHOT_MODULE.toWorkbookFile(snapshot);
+            const imported = await handleFileUpload({ target: { files: [file], value: '' } }, 'inventory', {
+                dataOpsSnapshot: {
+                    revision: snapshot.revision,
+                    basisDate: snapshot.basisDate,
+                    savedAt: snapshot.savedAt,
+                    hash: snapshot.hash,
+                    rowCount: snapshot.rowCount,
+                    cellCount: snapshot.cellCount
+                }
+            });
+            if (!imported)
+                return false;
+            ui.showToast(`✅ 재고 DataOps 클라우드 반영 · ${snapshot.revision} · ${snapshot.rowCount.toLocaleString()}행`);
+            return true;
+        }
+        catch (error) {
+            console.error('MerchOps DataOps snapshot load failed', error);
+            ui.setAlertMsg(`❌ DataOps 클라우드 재고 불러오기 실패: ${error?.message || 'URL·토큰·확정자료를 확인하세요.'}`);
+            return false;
+        }
+        finally {
+            ui.setIsProcessing(false);
+            ui.setProcessMsg('');
+        }
+    }, [config.cloudUrl, handleFileUpload, ui]);
     // ============================================================
     // [M-FLOW-02] 파서리스트 불러오기 / 카탈로그 편집·비교범위 선택
     // - 파서리스트(type/catalog)는 기존처럼 목록 source를 작업대에 불러온다.
@@ -5841,6 +6128,8 @@ ${targetText} ${targetRows.length}건을 엑셀로 생성합니다.${workflowTex
             return defaultValue;
         };
         const getBestNum = (row, key, defaultValue = '') => {
+            if (key === '행사가')
+                return getEffectivePromoPriceForMargin(row, getMasterForQuickRow(row));
             const value = getOutputValueByAliases(row, [key], defaultValue);
             return window.isBlankCell(value) ? '' : window.parseNum(value);
         };
@@ -6321,27 +6610,34 @@ ${targetModeText} ${targets.size}건을 MerchOps 마스터에 저장합니다. �
                 applyEstimateBasicState(managedKey, item, estimateBasicFlag);
             }
             if (item.finalData) {
-                const promoResetRequested = item.finalData._promoResetRequested === true;
+                const dataOpsPromoCommit = window.MERCH_DATAOPS_PROMO_MODULE.resolveF7MasterPromoCommit({
+                    sources: item.sources || {},
+                    activeRole: activeRoleForCommit,
+                    masterPromo: oldItem['행사가']
+                });
+                const promoResetRequested = activeRoleForCommit !== 'inventory' && item.finalData._promoResetRequested === true;
                 if (promoResetRequested) {
                     const oldTheme = window.normalizePromotionThemeValue(oldItem || {});
+                    const resetsMasterPromo = !dataOpsPromoCommit.handled;
                     // 마스터 행사정리 단계에서는 상품정보/가격값을 건드리지 않고 테마 관련 활성값만 정리한다.
                     // 별도 테마 보호는 하지 않는다. 관리자가 선택한 테마 초기화 작업이 기준이다.
-                    newMaster[item.코드]['행사가'] = 0;
+                    if (resetsMasterPromo)
+                        newMaster[item.코드]['행사가'] = 0;
                     newMaster[item.코드]['행사테마'] = '';
                     [1, 2, 3, 4, 5].forEach(n => { newMaster[item.코드][`테마${n}`] = ''; });
                     const oldPromo = window.parseNum(oldItem['행사가']);
-                    if (oldPromo > 0 || oldTheme) {
+                    if ((resetsMasterPromo && oldPromo > 0) || oldTheme) {
                         localLogs.push({
                             id: window.generateUUID(),
                             timestamp: nowStr,
                             code: code,
                             name: oldItem.품목명 || (item.sources?.estimate?.품목명) || '',
                             spec: oldItem.규격 || (item.sources?.estimate?.규격) || '',
-                            field: '행사초기화',
-                            oldVal: `행사가 ${oldPromo || 0}${oldTheme ? ` / 테마 ${oldTheme}` : ''}`,
-                            newVal: '행사가 0 / 테마 삭제',
+                            field: resetsMasterPromo ? '행사초기화' : '행사테마초기화',
+                            oldVal: resetsMasterPromo ? `행사가 ${oldPromo || 0}${oldTheme ? ` / 테마 ${oldTheme}` : ''}` : `테마 ${oldTheme}`,
+                            newVal: resetsMasterPromo ? '행사가 0 / 테마 삭제' : '행사가 보존 / 테마 삭제',
                             diff: 0,
-                            actionType: '행사초기화',
+                            actionType: resetsMasterPromo ? '행사초기화' : '행사테마초기화',
                             source: 'MerchOps'
                         });
                     }
@@ -6364,6 +6660,25 @@ ${targetModeText} ${targets.size}건을 MerchOps 마스터에 저장합니다. �
                         newMaster[item.코드]['행사테마'] = themeValue;
                         [1, 2, 3, 4, 5].forEach(n => { newMaster[item.코드][`테마${n}`] = themeValue.split(',').includes(String(n)) ? '1' : ''; });
                     }
+                }
+                if (dataOpsPromoCommit.shouldWrite) {
+                    const oldPromo = window.parseNum(oldItem['행사가']);
+                    if (oldPromo !== dataOpsPromoCommit.value) {
+                        localLogs.push({
+                            id: window.generateUUID(),
+                            timestamp: nowStr,
+                            code,
+                            name: oldItem.품목명 || item.sources?.estimate?.품목명 || '',
+                            spec: oldItem.규격 || item.sources?.estimate?.규격 || '',
+                            field: '행사가',
+                            oldVal: oldPromo || '공백',
+                            newVal: dataOpsPromoCommit.value,
+                            diff: dataOpsPromoCommit.value - oldPromo,
+                            actionType: '견적서 행사가 반영',
+                            source: 'MerchOps estimate source'
+                        });
+                    }
+                    newMaster[item.코드]['행사가'] = dataOpsPromoCommit.value;
                 }
                 // 정지관리 요청을 우선하고, 그 외에는 엑셀/수기 작업에 판매여부가 명시된 경우에만 마스터에 반영한다.
                 if (item.finalData._salesResumeRequested === true) {
@@ -6430,6 +6745,9 @@ ${targetModeText} ${targets.size}건을 MerchOps 마스터에 저장합니다. �
                             // 견적서 원본 공란은 공란 상태로 표시만 하고 마스터 기존값을 0/공란으로 덮어쓰지 않는다.
                             // 룰적용으로 생성된 출고가는 비공란이므로 정상 반영된다.
                             if (activeRoleForCommit === 'estimate' && window.isBlankCell(item.finalData[field])) return;
+                            // DataOps revision이 있으면 active role과 무관하게 finalData effective/override를 master로 평탄화하지 않는다.
+                            // active estimate의 명시적 양수 source 행사가는 위 resolveF7MasterPromoCommit에서만 확정한다.
+                            if (linked === '행사가' && (dataOpsPromoCommit.handled || activeRoleForCommit === 'inventory')) return;
                             // 구매/재고 작업의 시중가는 마스터 참고값이다. 작업 원가나 룰적용 결과로 마스터 시중가를 갱신하지 않는다.
                             if (linked === '시중가' && window.shouldUseMasterMarketPriceForRole && window.shouldUseMasterMarketPriceForRole(activeRoleForCommit))
                                 return;
@@ -6993,6 +7311,7 @@ ${targetModeText} ${targets.size}건을 MerchOps 마스터에 저장합니다. �
                     : window.normalizePromotionThemeValue(finalData, estimate, purchase, sales, inventory, master)
                 ).split(',').filter(Boolean);
             const hasPromoTheme = (n) => promoThemeCodes.includes(String(n));
+            const effectivePromoPrice = getEffectivePromoPriceForMargin(row, master);
             return {
                 코드: code,
                 working: {
@@ -7006,7 +7325,7 @@ ${targetModeText} ${targets.size}건을 MerchOps 마스터에 저장합니다. �
                     _calcWarehouseReason: getStr('_calcWarehouseReason'),
                     입고가: getNum('입고가'),
                     출고가: getNum('출고가'),
-                    행사가: getNum('행사가'),
+                    행사가: effectivePromoPrice,
                     도매A: getNum('도매A'),
                     도매B: getNum('도매B'),
                     시중가: getNum('시중가'),
@@ -7312,8 +7631,8 @@ ${targetModeText} ${targets.size}건을 MerchOps 마스터에 저장합니다. �
         }
     }, [data.masterProducts, data.setMasterProducts, data.addHistoryLogs, ui]);
     return useMemo(() => ({
-        handleMasterLookup, handleCloudSync, cleanUpGarbageTags, handleFileUpload, handleLoadFilter, handleRemoveFilter, handleStopSales, handleExcludeSelectedFromUpdate, handleRestoreExcludedItems, handleUpdateStoppedProduct, handleBulkStoppedReason, handleBulkStoppedMemo, handleResumeStoppedProducts, handleApplyBulkFields, handleSaveAsCategory, handleSaveAsCatalog, handleDeleteTag, handleCommitEstimate, handleQuickExcelExport, toggleAllRows, handleReset, handleForceApplyMarginRules, handleApplyScreenPercent, handleResetPromoValues, handleOpenExportCenter, handleRegisterUnregisteredItems, handleExitRegistrationMode, handleOpenPromoCompare, handleApplyPromoCompare
-    }), [handleMasterLookup, handleCloudSync, cleanUpGarbageTags, handleFileUpload, handleLoadFilter, handleRemoveFilter, handleStopSales, handleExcludeSelectedFromUpdate, handleRestoreExcludedItems, handleUpdateStoppedProduct, handleBulkStoppedReason, handleBulkStoppedMemo, handleResumeStoppedProducts, handleApplyBulkFields, handleSaveAsCategory, handleSaveAsCatalog, handleDeleteTag, handleCommitEstimate, handleQuickExcelExport, toggleAllRows, handleReset, handleForceApplyMarginRules, handleApplyScreenPercent, handleResetPromoValues, handleOpenExportCenter, handleRegisterUnregisteredItems, handleExitRegistrationMode, handleOpenPromoCompare, handleApplyPromoCompare]);
+        handleMasterLookup, handleCloudSync, cleanUpGarbageTags, handleFileUpload, handleLoadDataOpsSnapshot, handleLoadFilter, handleRemoveFilter, handleStopSales, handleExcludeSelectedFromUpdate, handleRestoreExcludedItems, handleUpdateStoppedProduct, handleBulkStoppedReason, handleBulkStoppedMemo, handleResumeStoppedProducts, handleApplyBulkFields, handleSaveAsCategory, handleSaveAsCatalog, handleDeleteTag, handleCommitEstimate, handleQuickExcelExport, toggleAllRows, handleReset, handleForceApplyMarginRules, handleApplyScreenPercent, handleResetPromoValues, handleOpenExportCenter, handleRegisterUnregisteredItems, handleExitRegistrationMode, handleOpenPromoCompare, handleApplyPromoCompare
+    }), [handleMasterLookup, handleCloudSync, cleanUpGarbageTags, handleFileUpload, handleLoadDataOpsSnapshot, handleLoadFilter, handleRemoveFilter, handleStopSales, handleExcludeSelectedFromUpdate, handleRestoreExcludedItems, handleUpdateStoppedProduct, handleBulkStoppedReason, handleBulkStoppedMemo, handleResumeStoppedProducts, handleApplyBulkFields, handleSaveAsCategory, handleSaveAsCatalog, handleDeleteTag, handleCommitEstimate, handleQuickExcelExport, toggleAllRows, handleReset, handleForceApplyMarginRules, handleApplyScreenPercent, handleResetPromoValues, handleOpenExportCenter, handleRegisterUnregisteredItems, handleExitRegistrationMode, handleOpenPromoCompare, handleApplyPromoCompare]);
 };
 // --- UI Components ---
 const SystemConsole = ({ itemCount, isProcessing, processMsg, estimateCount, filteredCount, activeTags, masterLookupMode }) => {
@@ -7416,7 +7735,7 @@ const SearchBar = ({ value, onChange, placeholder }) => {
 };
 const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCategories }) => {
     const { activeTags, selectedRows, globalSearch, priceFilter, detailFilters = [], categoryFilters = [], basicSearch, filterSteps = [], disabledFilterStepIds = [], pendingFilterAction = 'include', hideMasterAddedRows = false, fullDisplayRows, config, registrationMode, data, sessionExcludedItems = {}, showExcludedPanel = false, stoppedProducts = {}, showStopManager = false } = state;
-    const { handleMasterLookup, handleStopSales, handleExcludeSelectedFromUpdate, handleApplyBulkFields, setGlobalSearch, handleReset, handleFileUpload, handleLoadFilter, handleForceApplyMarginRules, handleApplyScreenPercent, handleResetPromoValues, setPriceFilter, setDetailFilters, setCategoryFilters, setSelectedRows, setBasicSearch, setFilterSteps, setDisabledFilterStepIds, setPendingFilterAction, setShowCatalogModal, handleOpenExportCenter, handleCommitEstimate, handleRegisterUnregisteredItems, handleExitRegistrationMode, setShowExcludedPanel, setShowStopManager, handleOpenPromoCompare } = actions;
+    const { handleMasterLookup, handleStopSales, handleExcludeSelectedFromUpdate, handleApplyBulkFields, setGlobalSearch, handleReset, handleFileUpload, handleLoadDataOpsSnapshot, handleLoadFilter, handleForceApplyMarginRules, handleApplyScreenPercent, handleResetPromoValues, setPriceFilter, setDetailFilters, setCategoryFilters, setSelectedRows, setBasicSearch, setFilterSteps, setDisabledFilterStepIds, setPendingFilterAction, setShowCatalogModal, handleOpenExportCenter, handleCommitEstimate, handleRegisterUnregisteredItems, handleExitRegistrationMode, setShowExcludedPanel, setShowStopManager, handleOpenPromoCompare } = actions;
     const [filterPanelOpen, setFilterPanelOpen] = useState(false);
     const [bulkInputs, setBulkInputs] = useState(() => window.createMerchEmptyBulkInputs());
     const [bulkFocus, setBulkFocus] = useState('');
@@ -7885,9 +8204,11 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
                     React.createElement("i", { className: "fas fa-receipt mr-1.5 text-[14px]" }),
                     "구매",
                     React.createElement("input", { type: "file", className: "hidden", multiple: true, onChange: (e) => handleFileUpload(e, 'purchase'), accept: ".xlsx, .xls, .csv", disabled: state.isProcessing })),
-                React.createElement("label", { className: `cursor-pointer h-8 px-2.5 rounded-lg text-[11px] font-bold transition-all flex items-center justify-center shadow-sm border shrink-0 ${isInventoryLoaded ? 'bg-slate-100 text-slate-800 border-slate-400 ring-1 ring-slate-200' : 'bg-white text-slate-600 hover:bg-slate-50 border-slate-300'}`, title: "자사 재고 엑셀을 업로드합니다." },
+                React.createElement("button", { type: "button", onClick: handleLoadDataOpsSnapshot, disabled: state.isProcessing, className: `cursor-pointer h-8 px-2.5 rounded-lg text-[11px] font-bold transition-all flex items-center justify-center shadow-sm border shrink-0 disabled:opacity-40 ${isInventoryLoaded ? 'bg-slate-100 text-slate-800 border-slate-400 ring-1 ring-slate-200' : 'bg-white text-slate-600 hover:bg-slate-50 border-slate-300'}`, title: "최신 DataOps 확정 재고를 클라우드에서 불러옵니다." },
                     React.createElement("i", { className: "fas fa-box mr-1.5 text-[14px]" }),
-                    "재고",
+                    "재고"),
+                React.createElement("label", { className: "cursor-pointer h-8 px-2 rounded-lg text-[10px] font-bold transition-all flex items-center justify-center shadow-sm border shrink-0 bg-white text-slate-500 hover:bg-slate-50 border-slate-300", title: "보조 경로: DataOps 전체재고 Excel을 같은 재고 import adapter로 불러옵니다." },
+                    "Excel",
                     React.createElement("input", { type: "file", className: "hidden", multiple: true, onChange: (e) => handleFileUpload(e, 'inventory'), accept: ".xlsx, .xls, .csv", disabled: state.isProcessing })),
                 React.createElement("label", { className: getLoadButtonClass((state.activeTags || []).some(t => String(t?.name || '').includes('정보')), 'purple'), title: "쇼핑몰/ERP 상품정보 엑셀을 업로드합니다." },
                     React.createElement("i", { className: "fas fa-circle-info mr-1.5 text-[14px]" }),
@@ -8460,8 +8781,11 @@ const matchCompositeDetailFilters = (row = {}, mItem = {}, filters = [], basicSe
         return false;
     return true;
 };
-const resolveWorkingPromoPrice = (row = {}) => {
+const resolveWorkingPromoPrice = (row = {}, mItem = {}) => {
     const finalData = row.finalData || {};
+    const dataOpsResolved = window.MERCH_DATAOPS_PROMO_MODULE?.resolve(row, mItem);
+    if (dataOpsResolved)
+        return { hasValue: true, price: dataOpsResolved.price, source: dataOpsResolved.source, dataOps: dataOpsResolved };
     if (finalData._promoResetRequested === true)
         return { hasValue: true, price: 0, source: '행사초기화' };
     const hasExplicitPromo = (obj = {}) => Object.prototype.hasOwnProperty.call(obj, '행사가')
@@ -8483,9 +8807,9 @@ const resolveWorkingPromoPrice = (row = {}) => {
     }
     return { hasValue: false, price: 0, source: '' };
 };
-const getWorkingPromoPrice = (row = {}) => resolveWorkingPromoPrice(row).price;
+const getWorkingPromoPrice = (row = {}, mItem = {}) => resolveWorkingPromoPrice(row, mItem).price;
 const getEffectivePromoPriceForMargin = (row = {}, mItem = {}) => {
-    const workingPromo = resolveWorkingPromoPrice(row);
+    const workingPromo = resolveWorkingPromoPrice(row, mItem);
     if (workingPromo.hasValue)
         return workingPromo.price;
     return getMasterPromoPrice(mItem);
@@ -9408,7 +9732,9 @@ const EditableCell = React.memo(({ row, field, linkedMasterField, mVal, config, 
             // 관리자가 셀에서 수정한 값은 현재 활성 source에만 반영한다.
             // 여러 source 전체에 쓰면 견적/재고/구매 원본값이 서로 오염되어 마스터 비교 기준이 무너진다.
             const activeSourceRole = window.getCurrentMerchSourceRole ? window.getCurrentMerchSourceRole(nextItem.sources || {}, currentItem._lastUploadRole) : '';
-            if (activeSourceRole && nextItem.sources[activeSourceRole]) {
+            const dataOpsRevision = String(nextItem.sources?.inventory?._dataOpsRevision || '');
+            const isDataOpsPromoOverride = isDirectPromoEdit && !!dataOpsRevision;
+            if (activeSourceRole && nextItem.sources[activeSourceRole] && !isDataOpsPromoOverride) {
                 nextItem.sources[activeSourceRole][field] = normalizedVal;
                 if (effectiveField && effectiveField !== field) {
                     nextItem.sources[activeSourceRole][effectiveField] = normalizedVal;
@@ -9435,9 +9761,32 @@ const EditableCell = React.memo(({ row, field, linkedMasterField, mVal, config, 
             }
             else if (isDirectPromoEdit) {
                 nextItem.finalData['행사가'] = normalizedVal;
+                if (isDataOpsPromoOverride) {
+                    // 현 revision의 관리자 최종값은 managedItems 제어상태로만 보관한다.
+                    // inventory source와 master 행사가에는 기록하지 않는다.
+                    nextItem.sources._dataOpsPromoState = { revision: dataOpsRevision, value: normalizedVal };
+                    nextItem.finalData = window.MERCH_DATAOPS_PROMO_MODULE.applyToFinal(nextItem.finalData, mItem, nextItem.sources);
+                }
             }
             else if (directPriceFields.includes(field) || directPriceFields.includes(effectiveField)) {
                 nextItem.finalData[effectiveField] = normalizedVal;
+            }
+            if (isDataOpsPromoOverride) {
+                const nextManaged = { ...prev, [managedKey]: nextItem };
+                Object.entries(nextManaged).forEach(([key, sibling]) => {
+                    if (key === managedKey || String(sibling?.코드 || '') !== String(code || '') || String(sibling?.sources?.inventory?._dataOpsRevision || '') !== dataOpsRevision)
+                        return;
+                    const siblingSources = {
+                        ...(sibling.sources || {}),
+                        _dataOpsPromoState: { revision: dataOpsRevision, value: normalizedVal }
+                    };
+                    nextManaged[key] = {
+                        ...sibling,
+                        sources: siblingSources,
+                        finalData: window.MERCH_DATAOPS_PROMO_MODULE.applyToFinal({ ...(sibling.finalData || {}), 행사가: normalizedVal }, mItem, siblingSources)
+                    };
+                });
+                return nextManaged;
             }
             return { ...prev, [managedKey]: nextItem };
         });
@@ -9536,6 +9885,8 @@ const MemoizedTableRow = React.memo(({ row, idx, state, actions, isSel, mItem })
     const isStopPending = ((_r = row.finalData) === null || _r === void 0 ? void 0 : _r._salesStopRequested) === true || String((_s = row.finalData) === null || _s === void 0 ? void 0 : _s['판매여부']) === '0';
     const isStopped = salesState.code === '0' || isStopPending;
     const promoActive = isPromoActive(row, mItem);
+    const dataOpsPromoResolution = window.MERCH_DATAOPS_PROMO_MODULE?.resolve(row, mItem);
+    const dataOpsPromoConflictMessage = dataOpsPromoResolution?.conflict ? dataOpsPromoResolution.conflictMessage : '';
     const stockQty = getStockQty(row, mItem);
     const safeStock = getSafeStock(mItem);
     const purchaseTrendInfo = window.getMerchPurchaseTrend ? window.getMerchPurchaseTrend(row, mItem) : null;
@@ -9801,6 +10152,7 @@ const MemoizedTableRow = React.memo(({ row, idx, state, actions, isSel, mItem })
             React.createElement("td", { className: `px-2 py-1.5 border-l-2 border-l-slate-300 border-r-2 border-r-slate-300 text-center w-[100px] min-w-[100px] max-w-[100px] ${issueCellBg} ${isSel ? '!bg-indigo-100/70' : 'group-hover:!bg-slate-50'}`, style: widthStyle('issue:이슈', state.registrationMode ? '상태' : '이슈', 100) },
                 React.createElement("div", { className: "flex flex-col items-center justify-center gap-1 min-w-0" },
                     issueText && issueText !== '-' && (React.createElement("span", { className: `inline-flex items-center max-w-full px-2 py-0.5 rounded-full border text-[11px] font-black whitespace-nowrap ${issueBadgeClass}`, title: issueText }, issueText)),
+                    dataOpsPromoConflictMessage && (React.createElement("span", { className: "inline-flex items-center max-w-full px-2 py-0.5 rounded-full border border-amber-300 bg-amber-50 text-amber-800 text-[10px] font-black whitespace-nowrap", title: dataOpsPromoConflictMessage }, "행사가 확인")),
                     displayIssueSubText && (React.createElement("div", { className: "flex items-center justify-center gap-1 min-w-0 max-w-full" },
                         React.createElement("span", { className: `text-[10px] font-bold whitespace-nowrap ${issueBadgeClass} border px-1.5 py-0.5 rounded-full`, title: displayIssueSubText }, displayIssueSubText))))),
             currentWorkCols.map((h, i, arr) => {
