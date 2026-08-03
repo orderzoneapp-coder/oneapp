@@ -262,10 +262,11 @@ assert.deepEqual(
       range: "A1:L1",
     })[0],
   ),
-  ["담당", "상품코드", "품목명", "규격", "주문수량", "재고", "서울", "전송", "적요", "거래처", "그룹", "출고"],
+  ["상품코드", "품목명", "규격", "단가", "수량", "재고", "서울", "전송", "적요", "거래처", "그룹", "출고"],
 );
-assert.equal(edgeWorkbook.Sheets["미출고현황"]["B2"].t, "s");
-assert.equal(edgeWorkbook.Sheets["미출고현황"]["B2"].v, "000100");
+assert.equal(edgeWorkbook.Sheets["미출고현황"]["A2"].t, "s");
+assert.equal(edgeWorkbook.Sheets["미출고현황"]["A2"].v, "000100");
+assert.equal(edgeWorkbook.Sheets["미출고현황"]["D2"].v, 1000);
 assert.ok(edgeWorkbook.Sheets["미출고현황"]["!autofilter"], "filter metadata missing");
 assert.deepEqual(edgeWorkbook.Sheets["미출고현황"]["!freeze"], { xSplit: 0, ySplit: 1 });
 
@@ -382,8 +383,9 @@ const allocationSheet = formatWorkbook.Sheets["미출고현황"];
 assert.equal(allocationSheet["!ref"], "A1:L7");
 assert.deepEqual(allocationSheet["!autofilter"], { ref: "A1:L7" });
 assert.deepEqual(allocationSheet["!freeze"], { xSplit: 0, ySplit: 1 });
-assert.equal(allocationSheet["B2"].t, "s");
-assert.equal(allocationSheet["B2"].v, "PURCHASE");
+assert.equal(allocationSheet["A2"].t, "s");
+assert.equal(allocationSheet["A2"].v, "PURCHASE");
+assert.equal(allocationSheet["D2"].v, 1000);
 for (const address of ["F2", "G2", "H2"]) {
   assert.equal(allocationSheet[address].v, "", `${address} zero inventory must display blank`);
 }
@@ -393,6 +395,18 @@ assert.deepEqual(
 );
 assert.equal(allocationSheet["A2"].s.fill.fgColor.rgb, allocationSheet["A4"].s.fill.fgColor.rgb);
 assert.notEqual(allocationSheet["A2"].s.fill.fgColor.rgb, allocationSheet["A3"].s.fill.fgColor.rgb);
+for (const address of ["A2", "B2", "C2", "D2", "E2", "I2", "J2", "K2"]) {
+  assert.equal(
+    allocationSheet[address].s.fill.fgColor.rgb,
+    allocationSheet["A2"].s.fill.fgColor.rgb,
+    `${address} must inherit the manager row fill`,
+  );
+}
+assert.equal(
+  allocationSheet["F2"].s.fill.fgColor.rgb,
+  allocationSheet["A2"].s.fill.fgColor.rgb,
+  "blank stock quantity must retain the manager row fill",
+);
 assert.equal(allocationSheet["F3"].s.fill.fgColor.rgb, "DCFCE7");
 assert.equal(allocationSheet["G4"].s.fill.fgColor.rgb, "DBEAFE");
 assert.equal(allocationSheet["H4"].s.fill.fgColor.rgb, "F3E8FF");
@@ -421,7 +435,7 @@ assert.deepEqual(allocationSheet["!margins"], {
 });
 assert.deepEqual(allocationSheet["!pageSetup"], {
   paperSize: 9,
-  orientation: "landscape",
+  orientation: "portrait",
   fitToPage: true,
   fitToWidth: 1,
   fitToHeight: 0,
@@ -617,7 +631,7 @@ try {
   assert.match(packageText, /<pageSetUpPr fitToPage="1"\/>/);
   assert.match(
     packageText,
-    /<pageSetup paperSize="9" orientation="landscape" fitToWidth="1" fitToHeight="0"\/>/,
+    /<pageSetup paperSize="9" orientation="portrait" fitToWidth="1" fitToHeight="0"\/>/,
   );
   if (process.env.SHIPPING_TEST_OUTPUT) {
     const requestedOutput = path.resolve(ROOT, process.env.SHIPPING_TEST_OUTPUT);
@@ -640,7 +654,7 @@ try {
     "reopened workbook sheet contract changed",
   );
   assert.equal(
-    reopened.Sheets["미출고현황"]["B2"].t,
+    reopened.Sheets["미출고현황"]["A2"].t,
     "s",
     "product code must reopen as text",
   );
@@ -652,7 +666,7 @@ try {
         range: "A1:L1",
       })[0],
     ),
-    ["담당", "상품코드", "품목명", "규격", "주문수량", "재고", "서울", "전송", "적요", "거래처", "그룹", "출고"],
+    ["상품코드", "품목명", "규격", "단가", "수량", "재고", "서울", "전송", "적요", "거래처", "그룹", "출고"],
   );
   const reopenedPrintNames = (reopened.Workbook?.Names || []).filter(
     (name) => name.Sheet === 1 && /^_xlnm\.Print_/.test(name.Name),
