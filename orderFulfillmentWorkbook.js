@@ -7,7 +7,7 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  const WORKBOOK_VERSION = "1.1.0";
+  const WORKBOOK_VERSION = "1.1.1";
   const REQUIRED_SHEETS = Object.freeze([
     "창고별 재고",
     "미출고현황",
@@ -265,11 +265,11 @@
 
   function buildAllocationSheet(workspace, XLSX) {
     const headers = [
-      "담당",
       "상품코드",
       "품목명",
       "규격",
-      "주문수량",
+      "단가",
+      "수량",
       "재고",
       "서울",
       "전송",
@@ -279,10 +279,10 @@
       "출고",
     ];
     const rows = workspace.allocations.map((row) => [
-      row.manager,
       row.productCode,
       row.productName,
       row.specification,
+      row.unitPrice ?? "",
       row.quantity,
       row.inventoryMatched ? displayInventoryValue(row.wholeStockRaw) : "",
       row.inventoryMatched ? displayInventoryValue(row.seoulFirstPurchaseRaw) : "",
@@ -295,7 +295,7 @@
     const sheet = XLSX.utils.aoa_to_sheet([headers, ...rows]);
     const lastRow = Math.max(1, rows.length + 1);
     sheet["!cols"] = [
-      { wch: 13 }, { wch: 15 }, { wch: 31 }, { wch: 13 }, { wch: 11 }, { wch: 12 },
+      { wch: 15 }, { wch: 31 }, { wch: 13 }, { wch: 11 }, { wch: 11 }, { wch: 12 },
       { wch: 12 }, { wch: 12 }, { wch: 24 }, { wch: 22 }, { wch: 14 }, { wch: 12 },
     ];
     sheet["!rows"] = [{ hpt: 27 }];
@@ -312,7 +312,7 @@
     };
     sheet["!pageSetup"] = {
       paperSize: 9,
-      orientation: "landscape",
+      orientation: "portrait",
       fitToPage: true,
       fitToWidth: 1,
       fitToHeight: 0,
@@ -331,20 +331,20 @@
 
     rows.forEach((row, rowIndex) => {
       const sheetRow = rowIndex + 1;
+      const rowFill = managerFill(workspace.allocations[rowIndex]?.manager);
       row.forEach((value, column) => {
         const cell = ensureCell(sheet, XLSX, sheetRow, column);
         const style = {
-          fill: { fgColor: { rgb: COLORS.white } },
+          fill: { fgColor: { rgb: rowFill } },
           font: { ...BASE_FONT },
           alignment: {
             vertical: "center",
-            horizontal: column >= 4 && column <= 7 ? "right" : "left",
+            horizontal: column >= 3 && column <= 7 ? "right" : "left",
             wrapText: false,
           },
           border: tableBorder(),
         };
-        if (column >= 4 && column <= 7) style.numFmt = "#,##0.###";
-        if (column === 0) style.fill = { fgColor: { rgb: managerFill(value) } };
+        if (column >= 3 && column <= 7) style.numFmt = "#,##0.###";
         if (column === 5 && !isBlank(value)) style.fill = { fgColor: { rgb: COLORS.greenSoft } };
         if (column === 6 && !isBlank(value)) style.fill = { fgColor: { rgb: COLORS.blueSoft } };
         if (column === 7 && !isBlank(value)) style.fill = { fgColor: { rgb: COLORS.purpleSoft } };
@@ -353,7 +353,7 @@
           style.fill = { fgColor: { rgb: statusStyle.fill } };
           style.font = { ...BASE_FONT, color: { rgb: statusStyle.font }, bold: true };
         }
-        if (column === 1) {
+        if (column === 0) {
           cell.t = "s";
           cell.v = String(cell.v ?? "");
           cell.w = cell.v;
@@ -983,7 +983,7 @@
       );
     }
     const pageSetup =
-      '<pageSetup paperSize="9" orientation="landscape" fitToWidth="1" fitToHeight="0"/>';
+      '<pageSetup paperSize="9" orientation="portrait" fitToWidth="1" fitToHeight="0"/>';
     if (/<pageMargins\b[^>]*\/>/.test(result)) {
       result = result.replace(/(<pageMargins\b[^>]*\/>)/, `$1${pageSetup}`);
     } else {
