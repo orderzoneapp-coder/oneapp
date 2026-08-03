@@ -24,8 +24,8 @@ assert.match(source, /_purchaseRemark: safeStr\(lot\._purchaseRemark, ''\)/, "re
 assert.match(source, /displayPurchaseRemark \|\| '-'/, "blank purchase remarks must render as a dash");
 
 const headerOrder = [
-  'w-[250px] min-w-[250px]',
-  '}, "적요")',
+  'colSpan: "2"',
+  'w-[350px] min-w-[350px]',
   '}, "단가")',
   '}, "기초 재고")',
   '}, "입고")',
@@ -41,7 +41,8 @@ for (const token of headerOrder) {
   assert.ok(next >= cursor, `table header order missing token: ${token}`);
   cursor = next;
 }
-assert.match(source, /w-\[140px\] min-w-\[140px\] max-w-\[140px\]/, "remark column must stay compact");
+assert.doesNotMatch(source, /React\.createElement\("th", \{ className: "[^"]*w-\[140px\][^"]*" \}, "적요"\)/, "remark header must be unified with product search");
+assert.match(source, /w-\[100px\] min-w-\[100px\] max-w-\[100px\]/, "remark column must stay compact");
 assert.match(source, /w-\[80px\] min-w-\[80px\]/, "price column must stay compact");
 assert.doesNotMatch(source, /text-slate-400 font-semibold text-\[10px\] mr-1" }, "\\u20A9"/, "price input must not have a won-symbol prefix");
 assert.doesNotMatch(source, /이 기준 통합/, "candidate action label must be shortened to 통합");
