@@ -788,9 +788,8 @@ const DATAOPS_DEFAULT_GROUPING = Object.freeze({ manageMode: 'LOT_DETAIL', price
 const DATAOPS_PRICE_MODE_LABELS = Object.freeze({ latest: '최신단가', average: '가중평균', highest: '최고단가', fifo: 'FIFO추정', separate: 'Lot상세' });
 const normalizeDataOpsGrouping = (raw = {}) => {
     const input = raw && typeof raw === 'object' ? raw : {};
-    const explicitMode = ['CODE_SUMMARY', 'LOT_DETAIL'].includes(input.manageMode) ? input.manageMode : '';
-    const legacySeparate = !explicitMode && (input.priceMode === 'separate' || input.splitByVendor === true || input.splitByDate === true);
-    const manageMode = explicitMode || (legacySeparate ? 'LOT_DETAIL' : DATAOPS_DEFAULT_GROUPING.manageMode);
+    // 재고 작업 화면은 Lot 상세형으로 고정한다. 저장된 과거 코드통합 설정은 가격 기준만 보존한다.
+    const manageMode = 'LOT_DETAIL';
     let priceMode = safeStr(input.priceMode || DATAOPS_DEFAULT_GROUPING.priceMode, 'latest');
     if (!['latest', 'average', 'highest', 'fifo'].includes(priceMode)) priceMode = DATAOPS_DEFAULT_GROUPING.priceMode;
     if (manageMode === 'LOT_DETAIL') priceMode = input.priceMode && input.priceMode !== 'separate' ? priceMode : 'latest';
@@ -2456,7 +2455,7 @@ const FILTER_SORT_MODULE = Object.freeze({
 // V1.a22.79: 별도 Lot 검수모드와 일반 Tab 가로채기를 제거한다. 재고/Lot 카드에서는 기존 수량·Lot 이슈, 마이너스 재고, 재고가 남은 다중 Lot 상품을 한 목록으로 합쳐 품목코드 오름차순으로 검출·이동한다.
 // V1.a22.80: 재고/Lot 필터를 품목코드 그룹 유지 방식으로 보완한다. 한 Lot을 0으로 수정해 다중 Lot 조건이 해제되어도 같은 코드의 나머지 행은 편집 중 사라지지 않으며, 순수 Lot 후보의 0재고 행 제외 정책은 유지한다.
 // V1.a22.84: 재고/Lot 이슈카드는 필터가 아니라 탐색 기능으로 동작한다. 카드/Tab 이동 중에도 전체 상품행을 유지하고, 검출대상만 품목코드순으로 스크롤 이동한다.
-// V1.a22.84: Lot 상세형의 통합 후보 각 행에 [이 기준 통합] 버튼을 노출한다. 클릭한 행의 구매일자·구매처·단가를 대표값으로 사용하고 수량은 해당 품목의 양수 재고 Lot 전체를 합산한다.
+// V1.a22.84: Lot 상세형의 통합 후보 각 행에 작은 [통합] 버튼을 노출한다. 클릭한 행의 구매일자·구매처·단가를 대표값으로 사용하고 수량은 해당 품목의 양수 재고 Lot 전체를 합산한다.
 // V1.a22.84: 재고/Lot Tab은 검토 위치만 이동한다. 확인 완료는 관리자 행 버튼으로만 기록한다.
 // V1.a22.84: 재고/Lot 이동은 카드 선택 시 생성한 고정 품목코드순 큐와 방문경로 커서로 관리한다. Tab/Shift+Tab이 같은 기준을 사용하며 현재 행 제외 후 첫 항목으로 튀는 오류를 제거한다.
 // V1.a22.84: 스페이스바 치환 중 선택한 두 행을 현재 검토 세션의 완료키로 기록한다. 치환 후에도 검토 커서와 방문경로를 유지하고 다음 미확인 항목부터 순서대로 이동한다.
@@ -2562,12 +2561,9 @@ const DATAOPS_VIEW_LAYER_MODULE = Object.freeze({
     getCostBasisLabel: (mode = '') => getDataOpsPriceModeLabel(mode || DATAOPS_VIEW_LAYER_MODULE.getCostBasisMode()),
     normalizeCode: (row = {}) => safeStr(row.코드 || row.code || 'NO_CODE').replace(/\.0$/, '').trim() || 'NO_CODE',
     isViewRowKey: (batchKey = '') => { const key = safeStr(batchKey, ''); return key.startsWith('VIEW_CODE|') || key.startsWith('VIEW_DETAIL|'); },
-    getSavedViewMode: () => {
-        try { return localStorage.getItem(DATAOPS_VIEW_LAYER_MODULE.STORAGE_KEY) === 'CODE_SUMMARY' ? 'CODE_SUMMARY' : 'LOT_DETAIL'; }
-        catch (e) { return 'LOT_DETAIL'; }
-    },
+    getSavedViewMode: () => 'LOT_DETAIL',
     saveViewMode: (mode = 'LOT_DETAIL') => {
-        const safeMode = mode === 'LOT_DETAIL' ? 'LOT_DETAIL' : 'CODE_SUMMARY';
+        const safeMode = 'LOT_DETAIL';
         try { localStorage.setItem(DATAOPS_VIEW_LAYER_MODULE.STORAGE_KEY, safeMode); } catch (e) { }
         return safeMode;
     },
@@ -2804,6 +2800,7 @@ const DATAOPS_VIEW_LAYER_MODULE = Object.freeze({
             _viewSummaryText: '',
             _sourceLedgerRows: logicalLotRows,
             _representativeSourceKey: representativeRow ? safeStr(representativeRow.batchKey || '') : '',
+            _purchaseRemark: representativeRow ? safeStr(representativeRow._purchaseRemark, '') : '',
             _hasPositiveRepresentative: !!representativeRow,
             // 원본이 정확히 1행인 통합1만 통합형 화면에서 직접 수정할 수 있다.
             _directEditSourceKey: sourceKeys.length === 1 ? safeStr(sourceKeys[0]) : '',
@@ -4013,6 +4010,7 @@ const DATAOPS_CLOSING_LOT_RESTORE_MODULE = Object.freeze({
                         _closingLotRestoreStatus: 'AVAILABLE',
                         _closingRestoredLot: true,
                         _closingRestoredLotIndex: index,
+                        _purchaseRemark: safeStr(lot._purchaseRemark, ''),
                         ...commonMeta
                     });
                 });
@@ -4030,6 +4028,7 @@ const DATAOPS_CLOSING_LOT_RESTORE_MODULE = Object.freeze({
                     거래처: lot.거래처,
                     _purchaseLotVendor: lot._purchaseLotVendor || lot.거래처,
                     _displayPurchaseVendor: lot._displayPurchaseVendor || lot.거래처,
+                    _purchaseRemark: safeStr(lot._purchaseRemark, ''),
                     _raw: { ...(lot._raw || {}), 재고: totalQty },
                     _closingLotRestoreStatus: 'SINGLE',
                     ...commonMeta
@@ -4451,11 +4450,14 @@ const parseExcelData = (file, currentMappings, uploadRole = '', preferredSheetNa
                     const hasStandardClosingCols = ['기초수량', '입고수량', '출고량', '기말실사(이월수량)'].some(k => Object.prototype.hasOwnProperty.call(rowObj, k));
                     const hasStockLedgerCols = ['재고', '입고', '출고', '잔량'].filter(k => Object.prototype.hasOwnProperty.call(rowObj, k)).length >= 3;
                     const isClosingRestoreRow = (role !== 'in' && role !== 'out') && (closingScore >= 4 || sheetName === '재고수불_마감' || hasStandardClosingCols || hasStockLedgerCols);
+                    const purchaseRemark = (role === 'in' || isClosingRestoreRow)
+                        ? safeStr(getExactRawVal(rowObj, ['적요']), '')
+                        : '';
                     const normObj = {
                         코드: codeStr || 'NO_CODE', 품명: fullName, 단위: unitVal,
                         수량: parseNumber(getValByKeywords(rowObj, keywords.qty)), 단가: parseNumber(getValByKeywords(rowObj, keywords.price)),
                         거래처: safeStr(getValByKeywords(rowObj, keywords.vendor), '미지정'), 매입처매칭: safeStr(getValByKeywords(rowObj, keywords.matchVendor), ''),
-                        일자: safeStr(dateCell.value, ''), _dateSource: safeStr(dateCell.key, ''), 기본: safeStr(basicCell.value, ''), _basicSource: safeStr(basicCell.key, ''), 메모: '', _raw: rowObj,
+                        일자: safeStr(dateCell.value, ''), _dateSource: safeStr(dateCell.key, ''), 기본: safeStr(basicCell.value, ''), _basicSource: safeStr(basicCell.key, ''), 메모: '', _purchaseRemark: purchaseRemark, _raw: rowObj,
                         _transactionVendor: '', _purchaseGroupVendor: '', _purchaseLotVendor: '', _displayPurchaseVendor: '', _salesVendor: '', _salesDisplayVendor: '', _salesGroupVendor: '', _confirmedPurchaseVendor: '',
                         _sourceSheet: sheetName || '', _sourceFileName: file.name || '', _sourceTitleText: sourceTitleText, _uploadRole: role, _fileType: isClosingRestoreRow ? 'CLOSING_RESTORE' : 'RAW_DATA',
                         _sheetBasisDate: sheetBasisDate.dateNum || 0, _sheetBasisDateSource: sheetBasisDate.source || '', _sheetBasisDateRaw: sheetBasisDate.raw || ''
@@ -5907,7 +5909,7 @@ const useInventoryEngine = ({ mappings, grouping, viewMode, setViewMode, mergeOv
                         Object.values(vendors).forEach(v => { tRev += v.rev; tCogs += v.cogs; });
                         pData[batchKey] = {
                             batchKey, 코드: code, 품명: name, 단위: safeStr(item.단위 || ((_a = item._raw) === null || _a === void 0 ? void 0 : _a['단위']) || ((_b = item._raw) === null || _b === void 0 ? void 0 : _b['규격단위']) || ((_c = item._raw) === null || _c === void 0 ? void 0 : _c['포장단위']), ''), 단가: price, 일자: date, 거래처: vendor,
-                            _transactionVendor: safeStr(item._transactionVendor || '', ''), _purchaseLotVendor: safeStr(item._purchaseLotVendor || vendor, ''), _displayPurchaseVendor: safeStr(item._displayPurchaseVendor || item._purchaseLotVendor || vendor, '미지정'),
+                            _transactionVendor: safeStr(item._transactionVendor || '', ''), _purchaseLotVendor: safeStr(item._purchaseLotVendor || vendor, ''), _displayPurchaseVendor: safeStr(item._displayPurchaseVendor || item._purchaseLotVendor || vendor, '미지정'), _purchaseRemark: safeStr(item._purchaseRemark, ''),
                             기초: baseQty, 입고: inQty, 출고: outQty,
                             대체입고: 0, 대체출고: 0, 전산잔량: baseQty + inQty - outQty,
                             실사: actualQty, 로스: adjustQty,
@@ -6068,7 +6070,7 @@ const useInventoryEngine = ({ mappings, grouping, viewMode, setViewMode, mergeOv
                 if (!pData[batchKey]) {
                     pData[batchKey] = {
                         batchKey, 코드: code, 품명: name, 단위: unit, 단가: price, 일자: date, 거래처: vendor,
-                        _transactionVendor: safeStr(item._transactionVendor, ''), _purchaseGroupVendor: safeStr(item._purchaseGroupVendor, ''), _purchaseLotVendor: safeStr(item._purchaseLotVendor || vendor, ''), _displayPurchaseVendor: safeStr(item._displayPurchaseVendor || item._purchaseLotVendor || vendor, '미지정'), _salesVendor: safeStr(item._salesVendor, ''), _salesDisplayVendor: safeStr(item._salesDisplayVendor, ''), _salesGroupVendor: safeStr(item._salesGroupVendor, ''), _confirmedPurchaseVendor: safeStr(item._confirmedPurchaseVendor || item._salesConfirmedPurchaseVendor || '', ''), _uploadRole: type,
+                        _transactionVendor: safeStr(item._transactionVendor, ''), _purchaseGroupVendor: safeStr(item._purchaseGroupVendor, ''), _purchaseLotVendor: safeStr(item._purchaseLotVendor || vendor, ''), _displayPurchaseVendor: safeStr(item._displayPurchaseVendor || item._purchaseLotVendor || vendor, '미지정'), _purchaseRemark: safeStr(item._purchaseRemark, ''), _salesVendor: safeStr(item._salesVendor, ''), _salesDisplayVendor: safeStr(item._salesDisplayVendor, ''), _salesGroupVendor: safeStr(item._salesGroupVendor, ''), _confirmedPurchaseVendor: safeStr(item._confirmedPurchaseVendor || item._salesConfirmedPurchaseVendor || '', ''), _uploadRole: type,
                         기초: 0, 입고: 0, 출고: 0, 대체입고: 0, 대체출고: 0, 전산잔량: 0, 실사: null, 로스: 0,
                         매출액: 0, 매출원가: 0, 메모: '', 이슈: [], 출고내역: {}, _orig: { 기초: 0, 입고: 0, 출고: 0, 단가: price },
                         isDummy: (!code || code === 'NO_CODE'), 수기확인완료: false, _fromClosingBase: (type === 'prev' && isClosingItem(item)), 기본: getBasicRawValue(item), _totalCostForAvg: qtyToApply * price, _latestDateNum: extractDateNum(date), _lotSortDate: getLotDateNum(date), _lotSourceRank: getLotSourceRank(type, item), _dateDisplayMemo: getDateDisplayMemo(item, type),
@@ -6105,6 +6107,8 @@ const useInventoryEngine = ({ mappings, grouping, viewMode, setViewMode, mergeOv
                 pData[batchKey]._salesDisplayVendor = pData[batchKey]._salesDisplayVendor || safeStr(item._salesDisplayVendor, '');
                 pData[batchKey]._salesGroupVendor = pData[batchKey]._salesGroupVendor || safeStr(item._salesGroupVendor, '');
                 pData[batchKey]._confirmedPurchaseVendor = pData[batchKey]._confirmedPurchaseVendor || safeStr(item._confirmedPurchaseVendor || item._salesConfirmedPurchaseVendor || '', '');
+                if (type === 'in' && safeStr(item._purchaseRemark, ''))
+                    pData[batchKey]._purchaseRemark = safeStr(item._purchaseRemark, '');
                 pData[batchKey].기초 += type === 'prev' ? qtyToApply : 0;
                 pData[batchKey].입고 += type === 'in' ? qtyToApply : 0;
                 const lotDateNum = getLotDateNum(date);
@@ -7289,6 +7293,7 @@ const useInventoryEngine = ({ mappings, grouping, viewMode, setViewMode, mergeOv
                         remainQty: parseNumber(inItem._remainQty),
                         seq: inItem._seq,
                         source: inItem._purchaseDateSource || '구매현황',
+                        remark: safeStr(inItem._purchaseRemark, ''),
                         name: purchaseName,
                         spec: purchaseSpec,
                         unit: purchaseUnit
@@ -7315,7 +7320,8 @@ const useInventoryEngine = ({ mappings, grouping, viewMode, setViewMode, mergeOv
                         _matchedBy: inPoolByCode[codeKey] ? 'code' : 'name', _costExtractAdjustGroupKey: adjustGroupKey, _purchaseCandidateLots: purchaseCandidates,
                         _raw: stockRaw, _stockLotName: safeStr(stockName), _stockLotSpec: safeStr(stockSpec), _stockLotUnit: safeStr(stockUnit),
                         _purchaseLotKey: candidate ? candidate.lotKey : '', _manualLotOverrideApplied: mode === 'MANUAL_PURCHASE_LOT_OVERRIDE',
-                        _purchaseLotName: candidate ? safeStr(candidate.name) : '', _purchaseLotSpec: candidate ? safeStr(candidate.spec) : '', _purchaseLotUnit: candidate ? safeStr(candidate.unit) : ''
+                        _purchaseLotName: candidate ? safeStr(candidate.name) : '', _purchaseLotSpec: candidate ? safeStr(candidate.spec) : '', _purchaseLotUnit: candidate ? safeStr(candidate.unit) : '',
+                        _purchaseRemark: candidate ? safeStr(candidate.remark, '') : safeStr(item._purchaseRemark, '')
                     };
                 };
                 const makeNonPositiveStockRow = () => {
@@ -7875,6 +7881,8 @@ const ProductRow = React.memo(({ item, idx, isLinked, isActiveMulti, isMultiGrou
     const lotReviewPointClass = !!isLotReviewCandidate && !isLotReviewMode ? 'border-l-4 border-l-cyan-400' : '';
     // V1.a22.29: 상품명 하단 구매정보에는 구매처 계열만 표시한다. 3.매출 거래처명(판매처)은 오른쪽 거래처칩 전용이다.
     const displayPurchaseVendor = safeStr(item._displayPurchaseVendor || item._purchaseLotVendor || item._confirmedPurchaseVendor || (item._uploadRole === 'out' || item._fromSalesConfirmedPurchase ? '' : item.거래처) || '미지정', '미지정');
+    const displayPurchaseRemark = safeStr(item._purchaseRemark, '');
+    const displayUnit = safeStr(item.단위 || item._stockLotUnit || item._purchaseLotUnit || '', '');
     return (React.createElement("tr", { "data-code": item.코드, "data-batch": item.batchKey, "data-merge-candidate": isMergeBoxRow ? "1" : undefined, "data-merge-group": isMergeBoxRow ? mergeGroupKey : undefined, "data-merge-group-start": isMergeBoxRow && isMergeGroupStart ? "1" : undefined, "data-merge-group-end": isMergeBoxRow && isMergeGroupEnd ? "1" : undefined, "data-lot-review-candidate": isLotReviewCandidate ? "1" : undefined, "data-lot-review-group": isLotReviewCandidate ? safeStr(item._lotReviewGroupKey || item.코드 || '') : undefined, "data-lot-review-group-start": isLotReviewMode && isLotReviewCandidate && isLotReviewGroupStart ? "1" : undefined, "data-lot-review-group-end": isLotReviewMode && isLotReviewCandidate && isLotReviewGroupEnd ? "1" : undefined, tabIndex: (isMergeBoxRow && isMergeGroupStart) ? 0 : undefined, onDragOver: (e) => {
             if (!DATAOPS_DRAG_EVENT_MODULE.isVendorDrag(e))
                 return;
@@ -7917,24 +7925,25 @@ const ProductRow = React.memo(({ item, idx, isLinked, isActiveMulti, isMultiGrou
         }, className: `transition duration-200 ${isActiveMulti ? 'bg-blue-50/60 outline outline-2 outline-blue-500 z-20 relative shadow-md' : (isLinked ? 'bg-slate-50 ring-1 ring-blue-400 shadow-md relative z-10 scale-[1.01]' : 'border-b border-slate-100 hover:bg-slate-50')} ${isDragOver ? 'bg-blue-50 outline outline-2 outline-blue-400 scale-[1.01] z-20 shadow-md' : ''} ${!isActiveMulti && item.isDummy && item.단가 === 0 ? 'bg-rose-50/30' : ''} ${mergeBoxRowClass} ${isActiveLotReviewGroup ? 'bg-amber-100/50 relative z-20' : ''}` },
         React.createElement("td", { className: `py-2 px-3 sticky left-0 z-10 shadow-[1px_0_0_rgba(0,0,0,0.03)] border-r border-slate-200 ${lotReviewPointClass} ${isLinked ? 'bg-blue-50/50 border-l-4 border-l-blue-600' : ''} ${isActiveMulti ? 'bg-blue-50/60' : (item.isDummy && item.단가 === 0 ? 'bg-rose-50' : 'bg-white group-hover:bg-slate-50')} ${topBorderClass} ${mergeHorizontalCellBoxClass} ${mergeFirstCellBoxClass} ${lotReviewHorizontalCellBoxClass} ${lotReviewFirstCellBoxClass}` },
             React.createElement("div", { className: "flex items-center justify-between w-full" },
-                React.createElement("div", { className: "flex flex-col justify-center flex-1 pr-3 overflow-hidden max-w-[280px]" },
+                React.createElement("div", { className: "flex flex-col justify-center flex-1 overflow-hidden max-w-[250px]" },
                     React.createElement("div", { className: "font-semibold text-slate-800 text-[13px] flex items-start gap-1 mb-0.5" },
                         isLinked && React.createElement("i", { className: "fas fa-link text-blue-500 mr-1 mt-0.5 animate-pulse" }),
                         isActiveMulti && React.createElement("i", { className: "fas fa-tags text-blue-500 mr-1 mt-0.5" }),
                         React.createElement("span", { title: item.품명, className: "truncate leading-tight text-slate-900" }, item.품명),
+                        displayUnit && React.createElement("span", { className: "shrink-0 rounded border border-slate-200 bg-slate-100 px-1 py-px text-[9px] font-bold leading-none text-slate-500", title: `현재 단위: ${displayUnit}` }, displayUnit),
                         (isMergeCandidateRow || isMergeDisabledRow || isLotDetailMergeButtonRow || isDetailMergedViewRow) && onToggleCodeMerge && (() => {
                             const isMergeAction = isMergeDisabledRow || isLotDetailMergeButtonRow;
                             const action = isDetailMergedViewRow ? 'detail-split' : (isLotDetailMergeButtonRow ? 'detail-merge' : (isMergeDisabledRow ? 'merge' : 'split'));
                             const representativeKey = isMergeAction ? safeStr(item.batchKey || '') : '';
                             const isClosingLotSplit = action === 'split' && item._closingLotRestoreStatus === 'AVAILABLE';
-                            const label = isLotDetailMergeButtonRow ? '이 기준 통합' : (isMergeAction ? '통합' : (isClosingLotSplit ? 'LOT 해체' : '해제'));
+                            const label = isMergeAction ? '통합' : (isClosingLotSplit ? 'LOT 해체' : '해제');
                             const title = isLotDetailMergeButtonRow
                                 ? '이 행의 구매일자·구매처·단가를 대표 기준으로 선택하여, 재고가 남은 Lot을 1행으로 통합합니다.'
                                 : (isDetailMergedViewRow ? '통합한 LOT 상품을 다시 상세행으로 풉니다.' : (isMergeDisabledRow ? '이 LOT 기준으로 다시 통합합니다.' : (isClosingLotSplit ? '수불마감 파일에 보존된 원본 LOT별 상세행으로 해체합니다.' : '이 상품을 LOT별 상세행으로 풉니다.')));
                             const buttonClass = isMergeAction
                                 ? 'bg-cyan-600 text-white border-cyan-700 hover:bg-cyan-700'
                                 : 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100';
-                            return React.createElement("button", { type: "button", onClick: (e) => { e.preventDefault(); e.stopPropagation(); onToggleCodeMerge(item._mergeOverrideCode || item.코드, representativeKey, action); }, className: `ml-2 shrink-0 px-2 py-[3px] rounded border text-[11px] font-black ${buttonClass}`, title }, label);
+                            return React.createElement("button", { type: "button", onClick: (e) => { e.preventDefault(); e.stopPropagation(); onToggleCodeMerge(item._mergeOverrideCode || item.코드, representativeKey, action); }, className: `ml-1 shrink-0 px-1.5 py-0.5 rounded border text-[10px] leading-none font-black ${buttonClass}`, title }, label);
                         })()),
                     React.createElement("div", { className: "text-[10px] text-slate-500 truncate font-medium tracking-tight flex items-center" },
                         item.코드 !== '-' && item.코드 !== 'NO_CODE' ? React.createElement("span", { className: "mr-1" }, item.코드) : '',
@@ -7943,15 +7952,15 @@ const ProductRow = React.memo(({ item, idx, isLinked, isActiveMulti, isMultiGrou
                         React.createElement("span", { className: `truncate ${isToday ? 'text-blue-700 font-bold' : ''}`, title: displayPurchaseVendor }, displayPurchaseVendor),
                         item.대체입고 > 0 && React.createElement("span", { className: "text-[9px] text-blue-500 font-semibold whitespace-nowrap ml-1 shrink-0" }, "(\uC870\uC815\uB428)")),
                     item._closingLotRestoreStatus === 'AVAILABLE' && isCodeSummaryViewRow && React.createElement("div", { className: "mt-1 text-[10px] font-black text-cyan-700" }, `LOT 해체 가능 · ${safeNum(item._viewLotCount)}개 LOT`),
-                    item._closingLotRestoreStatus === 'UNAVAILABLE' && React.createElement("div", { className: "mt-1 text-[10px] font-black text-amber-700", title: safeStr(item._closingLotRestoreReason, '') }, "LOT 복원 불가 · 통합 유지"),
                     isMergeCandidateRow && mergeDetailRows.length > 0 && React.createElement("div", { className: "mt-1 max-h-[48px] overflow-y-auto pr-1 space-y-0.5 text-[11px] leading-snug font-bold text-slate-800 bg-amber-50 border border-amber-300 rounded-md px-2 py-1 shadow-sm", title: mergeDetailRows.map(x => x.title).join('\\n') },
                         mergeDetailRows.map((row, lotIdx) => React.createElement("div", { key: `${item.batchKey}-lot-${lotIdx}`, className: "whitespace-nowrap overflow-hidden text-ellipsis" },
                             React.createElement("span", { className: "font-black text-amber-700 mr-1" }, "+"),
                             row.text))),
-                    false && isMergeDisabledRow && splitRepresentativeInfo && React.createElement("div", { className: "hidden", title: splitRepresentativeInfo.title }, splitRepresentativeInfo.text)),
-                React.createElement("div", { className: "flex items-center justify-end shrink-0 pl-3 border-l border-slate-200" },
-                    React.createElement("span", { className: "text-slate-400 font-semibold text-[10px] mr-1" }, "\u20A9"),
-                    React.createElement("input", { id: `price-input-${idx}`, ref: el => bindImmediateFlush(el, 'price-input'), "data-field": "price-input", type: "number", className: `${cellInputBase} w-[70px] font-bold ${item.단가 === 0 ? 'border-rose-300 bg-rose-50 text-rose-600' : 'text-slate-800'}`, value: localPrice, onChange: handlePriceChange, onClick: (e) => e.stopPropagation(), onFocus: e => { e.target.select(); onFocusInput(operationBatchKey, idx); }, onKeyDown: (e) => handleKd(e, 'price-input'), placeholder: "0" })))),
+                    false && isMergeDisabledRow && splitRepresentativeInfo && React.createElement("div", { className: "hidden", title: splitRepresentativeInfo.title }, splitRepresentativeInfo.text)))),
+        React.createElement("td", { className: `py-2 px-2 w-[140px] min-w-[140px] max-w-[140px] border-r border-slate-100 ${topBorderClass} ${mergeHorizontalCellBoxClass} ${lotReviewHorizontalCellBoxClass}` },
+            React.createElement("div", { className: "truncate text-[11px] font-medium text-slate-600", title: displayPurchaseRemark || '-' }, displayPurchaseRemark || '-')),
+        React.createElement("td", { className: `py-2 px-2 text-right w-[80px] min-w-[80px] border-r border-slate-100 ${topBorderClass} ${mergeHorizontalCellBoxClass} ${lotReviewHorizontalCellBoxClass}` },
+            React.createElement("input", { id: `price-input-${idx}`, ref: el => bindImmediateFlush(el, 'price-input'), "data-field": "price-input", type: "number", className: `${cellInputBase} w-full font-bold ${item.단가 === 0 ? 'border-rose-300 bg-rose-50 text-rose-600' : 'text-slate-800'}`, value: localPrice, onChange: handlePriceChange, onClick: (e) => e.stopPropagation(), onFocus: e => { e.target.select(); onFocusInput(operationBatchKey, idx); }, onKeyDown: (e) => handleKd(e, 'price-input'), placeholder: "0" })),
         React.createElement("td", { className: `py-2 px-2 text-right ${isActiveMulti ? 'bg-slate-50/50' : ''} border-r border-slate-100 ${topBorderClass} ${mergeHorizontalCellBoxClass} ${lotReviewHorizontalCellBoxClass}` },
             React.createElement("input", { id: `base-prev-${idx}`, ref: el => bindImmediateFlush(el, 'base-prev'), "data-field": "base-prev", type: "number", step: "any", className: `${cellInputBase} font-semibold ${item.기초 < 0 ? 'text-rose-600 border-rose-200' : 'text-slate-700'}`, value: localPrev, onChange: handlePrevChange, onFocus: e => { e.target.select(); onFocusInput(operationBatchKey, idx); }, onKeyDown: (e) => handleKd(e, 'base-prev'), onWheel: e => e.target.blur(), placeholder: "0" })),
         React.createElement("td", { className: `py-2 px-2 text-right border-r border-slate-100 ${topBorderClass} ${mergeHorizontalCellBoxClass} ${lotReviewHorizontalCellBoxClass}` },
@@ -8166,8 +8175,8 @@ function App() {
     const [cloudStatusMsg, setCloudStatusMsg] = useState('');
     const [grouping, setGrouping] = useState(() => readSavedDataOpsGrouping());
     const activeGrouping = useMemo(() => normalizeDataOpsGrouping(grouping), [grouping]);
-    const [viewMode, setViewMode] = useState(() => DATAOPS_VIEW_LAYER_MODULE.getSavedViewMode());
-    useEffect(() => { DATAOPS_VIEW_LAYER_MODULE.saveViewMode(viewMode); }, [viewMode]);
+    const viewMode = 'LOT_DETAIL';
+    const setViewMode = useCallback(() => 'LOT_DETAIL', []);
     // V1.a22.79: Lot 상세형은 별도 검수모드 없이 일반 보기로 동작한다.
     const [mergeOverrideVersion, setMergeOverrideVersion] = useState(0);
     const mergeCandidateIndexRef = useRef(-1);
@@ -8732,12 +8741,12 @@ function App() {
         }
     }, [cloudUrlInput, setAlertMsg, setToastMsg]);
     const saveMappings = () => {
-        const nextGrouping = normalizeDataOpsGrouping(grouping);
+        const nextGrouping = normalizeDataOpsGrouping({ ...grouping, manageMode: 'LOT_DETAIL' });
         setGrouping(nextGrouping);
         localStorage.setItem('inventoryMappingsLight', JSON.stringify(mappings));
         localStorage.setItem('inventoryGroupingV79', JSON.stringify(nextGrouping));
         DATAOPS_VIEW_LAYER_MODULE.saveViewMode(nextGrouping.manageMode);
-        setViewMode(nextGrouping.manageMode);
+        setViewMode('LOT_DETAIL');
         DATAOPS_CLOUD_MODULE.setCloudUrl(cloudUrlInput);
         setShowSettings(false);
     };
@@ -11562,10 +11571,6 @@ ${balanceText}
             sourceRows = sourceRows.filter(p => !p._hiddenBySalesMove);
         // V1.a22.69: 구매잔량/기타상품 필터는 원본 Lot 행 기준으로 먼저 적용한 뒤 보기 계층을 만든다.
         // 코드통합형을 먼저 만들면 구매잔량 Lot과 기타상품 Lot이 한 행으로 섞여 필터 결과가 틀어진다.
-        if (filters.stockListType === 'PURCHASE_BALANCE')
-            sourceRows = sourceRows.filter(p => EXPORT_MODULE.isPurchaseBalanceStockItem(p));
-        else if (filters.stockListType === 'OTHER_STOCK')
-            sourceRows = sourceRows.filter(p => STOCK_ENGINE_MODULE.getActualQty(p) > 0 && !EXPORT_MODULE.isPurchaseBalanceStockItem(p));
         let data = filters.reviewType === 'substitution' ? sourceRows : DATAOPS_VIEW_LAYER_MODULE.buildViewRows(sourceRows, { viewMode });
         if (filters.reviewType !== 'substitution')
             data = stabilizeViewRows(data, sourceRows);
@@ -11822,16 +11827,13 @@ ${balanceText}
                             React.createElement("i", { className: "fas fa-layer-group text-indigo-500 mr-2" }),
                             "품목 관리 기준 설정"),
                         React.createElement("p", { className: "text-xs text-slate-500 mt-1.5 ml-6 leading-relaxed" },
-                            "코드통합형은 같은 품목을 1행으로 합치는 운영/출력 기준입니다. 통합형을 선택하면 대표단가 기준을 반드시 함께 지정합니다. Lot상세형은 검수·분석용이며 기본 실사양식/ERP/MerchOps 출력 행을 분리하지 않습니다.")),
+                            "재고 화면은 구매일자·구매처·단가별 Lot 상세형으로 고정됩니다. 대표단가 기준은 개별 통합 작업에만 적용됩니다.")),
                     React.createElement("div", { className: "grid grid-cols-1 lg:grid-cols-3 gap-4" },
-                        React.createElement("div", { className: "bg-indigo-50/70 p-4 rounded-xl border border-indigo-200" },
+                            React.createElement("div", { className: "bg-indigo-50/70 p-4 rounded-xl border border-indigo-200" },
                             React.createElement("div", { className: "text-xs font-black text-indigo-900 mb-2" }, "1. 관리 방식"),
-                            [['CODE_SUMMARY', '코드통합형', '실사양식·MerchOps·ERP 업로드 기본'], ['LOT_DETAIL', 'Lot상세형', '구매일자·구매처·단가별 원장 검수']].map(([mode, label, desc]) => {
-                                const isActive = activeGrouping.manageMode === mode;
-                                return React.createElement("button", { key: mode, type: "button", onClick: () => { const next = normalizeDataOpsGrouping({ ...grouping, manageMode: mode }); setGrouping(next); setViewMode(mode); if (mode === 'CODE_SUMMARY') jumpToFirstMergeCandidate(); }, className: `w-full text-left mb-2 px-3 py-2 rounded-lg border transition shadow-sm ${isActive ? 'bg-indigo-600 text-white border-indigo-700' : 'bg-white text-slate-700 border-indigo-100 hover:bg-indigo-50'}` },
-                                    React.createElement("div", { className: "text-sm font-black" }, label),
-                                    React.createElement("div", { className: `text-[11px] mt-0.5 ${isActive ? 'text-indigo-100' : 'text-slate-500'}` }, desc));
-                            })),
+                            React.createElement("div", { className: "rounded-lg border border-indigo-200 bg-white px-3 py-2" },
+                                React.createElement("div", { className: "text-sm font-black text-indigo-800" }, "Lot상세형"),
+                                React.createElement("div", { className: "text-[11px] mt-0.5 text-slate-500" }, "구매일자·구매처·단가별 원장 고정"))),
                         React.createElement("div", { className: `p-4 rounded-xl border ${activeGrouping.manageMode === 'CODE_SUMMARY' ? 'bg-emerald-50/70 border-emerald-200' : 'bg-slate-50 border-slate-200 opacity-75'}` },
                             React.createElement("div", { className: "flex items-center justify-between mb-2" },
                                 React.createElement("div", { className: "text-xs font-black text-emerald-900" }, "2. 대표단가 기준"),
@@ -12069,41 +12071,6 @@ ${balanceText}
                         React.createElement("div", { className: "px-4 md:px-6 py-4 pb-12 max-w-7xl mx-auto w-full flex-1 flex flex-col" },
                             React.createElement("div", { className: "bg-white border border-slate-200 rounded-xl shadow-sm flex flex-col flex-1 overflow-visible" },
                                 productData.length > 0 && (React.createElement("div", { ref: filterBarRef, className: "shrink-0 sticky bg-white border-b border-slate-200 px-2 py-1.5 flex flex-nowrap items-center gap-1 text-[11px] font-bold z-[38] shadow-sm overflow-x-auto hide-scrollbar", style: { top: `${systemStickyOffset + (showCards ? cardHeight : 0)}px` } },
-                                    React.createElement("div", { className: "flex items-center gap-1 whitespace-nowrap", title: "원본 Lot 원장은 보존하고 화면 표시 방식만 변경합니다." },
-                                        [['CODE_SUMMARY', '코드 통합형'], ['LOT_DETAIL', 'Lot 상세형']].map(([mode, label]) => {
-                                            const isActive = viewMode === mode;
-                                            const handleModeClick = () => {
-                                                if (mode === 'CODE_SUMMARY') {
-                                                    // V1.a22.79: 통합형 보기는 이전 개별 통합/해제 작업을 무시하고 전체 품목을 새로 통합한다.
-                                                    // 이후 각 통합행의 [해제] 버튼으로 필요한 품목만 하나씩 Lot 상세로 풀 수 있다.
-                                                    DATAOPS_CODE_MERGE_OVERRIDE_MODULE.clear();
-                                                    setMergeOverrideVersion(v => v + 1);
-                                                    setActiveIssueMode(null);
-                                                    activeIssueModeRef.current = null;
-                                                    issueReviewSessionRef.current = { type: null, keys: [], cursor: -1, currentKey: '', completedKeys: new Set(), path: [], pathCursor: -1, detourActive: false, detourKey: '' };
-                                                    issueFocusTimersRef.current.forEach(id => clearTimeout(id));
-                                                    issueFocusTimersRef.current = [];
-                                                    setActiveMultiCode(null);
-                                                    setViewMode('CODE_SUMMARY');
-                                                    setGrouping(prev => normalizeDataOpsGrouping({ ...prev, manageMode: 'CODE_SUMMARY' }));
-                                                    jumpToFirstMergeCandidate();
-                                                    return;
-                                                }
-                                                setViewMode('LOT_DETAIL');
-                                                setGrouping(prev => normalizeDataOpsGrouping({ ...prev, manageMode: 'LOT_DETAIL' }));
-                                                setActiveIssueMode(null);
-                                                activeIssueModeRef.current = null;
-                                                issueReviewSessionRef.current = { type: null, keys: [], cursor: -1, currentKey: '', completedKeys: new Set(), path: [], pathCursor: -1, detourActive: false, detourKey: '' };
-                                                issueFocusTimersRef.current.forEach(id => clearTimeout(id));
-                                                issueFocusTimersRef.current = [];
-                                                setFilters(f => ({ ...f, reviewType: null, sortMode: 'DEFAULT', sortDesc: false }));
-                                            };
-                                            return React.createElement("button", { key: mode, onClick: handleModeClick, title: mode === 'LOT_DETAIL' ? 'Lot별 상세행으로 봅니다. 재고가 남은 Lot이 2개 이상인 상품은 테두리와 통합 버튼을 항상 표시합니다.' : '같은 품목코드를 한 행으로 봅니다.', className: `px-2.5 py-1 rounded border transition font-black ${isActive ? 'bg-indigo-600 text-white border-indigo-700 shadow-sm' : 'bg-white text-indigo-600 border-indigo-200 hover:bg-indigo-50'}` }, label);
-                                        })),
-                                    viewMode === 'CODE_SUMMARY' && React.createElement("div", { className: "flex items-center gap-1 whitespace-nowrap ml-0.5", title: "통합후보 이동: Tab 다음 / Shift+Tab 이전" },
-                                        React.createElement("button", { type: "button", onClick: () => moveMergeCandidate('prev'), className: "px-2 py-1 rounded border border-amber-300 bg-white text-amber-700 hover:bg-amber-50 font-black", title: "이전 통합후보 (Shift+Tab)" }, "◀"),
-                                        React.createElement("button", { type: "button", onClick: () => moveMergeCandidate('next'), className: "px-2 py-1 rounded border border-amber-500 bg-amber-50 text-amber-800 hover:bg-amber-100 font-black", title: "다음 통합후보 (Tab)" }, "Tab ▶")),
-                                    React.createElement("div", { className: "w-px h-5 bg-slate-200 mx-0.5" }),
                                     React.createElement("select", { value: filters.sortMode, onChange: (e) => setFilters(f => ({ ...f, sortMode: e.target.value, sortDesc: false })), title: "정렬 기준을 선택합니다.", className: "px-2 py-1 rounded border border-slate-300 bg-white text-slate-700 font-black shadow-sm focus:outline-none focus:ring-1 focus:ring-slate-400" },
                                         React.createElement("option", { value: "DEFAULT" }, "품목순"),
                                         React.createElement("option", { value: "DATE" }, "구매일순"),
@@ -12119,7 +12086,7 @@ ${balanceText}
                                             const next = current.includes(categoryCode) ? current.filter(v => v !== categoryCode) : [...current, categoryCode];
                                             return { ...f, category: next, favoriteVendorOnly: false };
                                         });
-                                        return React.createElement("div", { className: "flex items-center gap-1 whitespace-nowrap", title: "카테고리 필터는 중복 선택 가능합니다. 기존 구매잔량/기타상품·BOX/EA/소분·검색 필터와 교차 적용됩니다." },
+                                        return React.createElement("div", { className: "flex items-center gap-1 whitespace-nowrap", title: "카테고리 필터는 중복 선택 가능합니다. BOX/EA/소분·검색 필터와 교차 적용됩니다." },
                                             React.createElement("button", { onClick: () => toggleCategory('ALL'), className: `px-2 py-1 rounded border transition ${selectedCategories.length === 0 ? 'bg-blue-600 text-white border-blue-700 shadow-sm' : 'bg-white text-blue-600 border-blue-200 hover:bg-blue-50'}` }, "전체"),
                                             [['10', '10'], ['20', '20'], ['30', '30'], ['40', '40'], ['50', '50']].map(([code, label]) => {
                                                 const isActive = selectedCategories.includes(code);
@@ -12128,8 +12095,6 @@ ${balanceText}
                                         );
                                     })(),
                                     React.createElement("div", { className: "w-px h-5 bg-slate-200 mx-0.5" }),
-                                    [['PURCHASE_BALANCE', '구매잔량'], ['OTHER_STOCK', '기타상품']].map(([type, label]) => (React.createElement("button", { key: type, onClick: () => setFilters(f => ({ ...f, stockListType: f.stockListType === type ? 'ALL' : type })), title: `${label}만 보기. 기존 BOX/EA/소분·카테고리·검색 필터와 중복 적용됩니다.`, className: `px-2 py-1 rounded border whitespace-nowrap transition ${filters.stockListType === type ? 'bg-sky-600 text-white border-sky-700 shadow-sm' : 'bg-white text-sky-600 border-sky-200 hover:bg-sky-50'}` }, label))),
-                                    React.createElement("div", { className: "w-px h-5 bg-slate-200 mx-0.5" }),
                                     ['BOX', 'EA', 'SPLIT'].map(unit => (React.createElement("button", { key: unit, onClick: () => setFilters(f => ({ ...f, unit: { ...f.unit, [unit]: !f.unit[unit] } })), title: `${unit === 'SPLIT' ? '소분' : unit} 단위 상품 노출`, className: `px-2 py-1 rounded border transition ${filters.unit[unit] ? 'bg-emerald-600 text-white border-emerald-700' : 'bg-white text-slate-400 border-slate-300 hover:bg-slate-50'}` }, unit === 'SPLIT' ? '소분' : unit))),
                                     React.createElement("button", { onClick: () => setFilters(f => ({ ...f, excludeZeroActual: !f.excludeZeroActual })), title: "\uC794\uB7C9/\uC2E4\uC0AC \uC218\uB7C9\uC774 0\uC778 \uC0C1\uD488 \uC81C\uC678", className: `px-2 py-1 rounded border whitespace-nowrap transition ${filters.excludeZeroActual ? 'bg-blue-600 text-white border-blue-700 shadow-sm' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}` }, "\uC2E4\uC0AC 0 \uC81C\uC678"),
                                     hiddenMovedSourceCount > 0 && React.createElement("button", { onClick: () => setFilters(f => ({ ...f, showHiddenMoveRows: !f.showHiddenMoveRows })), title: "드래그 매칭으로 비워진 원본 행을 표시/숨김합니다. 원본값은 삭제하지 않고 내부 이력으로 보관됩니다.", className: `px-2 py-1 rounded border whitespace-nowrap transition ${filters.showHiddenMoveRows ? 'bg-amber-500 text-white border-amber-600 shadow-sm' : 'bg-white text-slate-500 border-slate-300 hover:bg-slate-50'}` }, "매칭원본 ", hiddenMovedSourceCount),
@@ -12137,7 +12102,7 @@ ${balanceText}
                                 React.createElement("table", { className: "w-full text-left border-collapse whitespace-nowrap text-sm" },
                                     React.createElement("thead", { className: "bg-slate-50 text-slate-600 font-extrabold text-[12px] tracking-tight sticky z-[35] border-b-2 border-slate-200 shadow-md transition-all duration-75", style: { top: `${systemStickyOffset + (showCards ? cardHeight : 0) + filterBarHeight}px` } },
                                         React.createElement("tr", null,
-                                            React.createElement("th", { className: "p-2 border-r border-slate-200 sticky left-0 bg-slate-50 z-30 shadow-[1px_0_0_#e2e8f0] w-[320px] min-w-[280px]" },
+                                            React.createElement("th", { className: "p-2 border-r border-slate-200 sticky left-0 bg-slate-50 z-30 shadow-[1px_0_0_#e2e8f0] w-[250px] min-w-[250px]" },
                                                 React.createElement("div", { className: "relative w-full flex items-center" },
                                                     React.createElement("input", { id: "searchInput", type: "text", placeholder: "\uD488\uBA85(\uADDC\uACA9) / \uC77C\uC790 / \uAC70\uB798\uCC98 | \uB2E8\uAC00 \uAC80\uC0C9 (F3)", value: searchInputVal, onChange: e => setSearchInputVal(e.target.value), onKeyDown: e => { if (e.key === 'Enter') {
                                                             e.preventDefault();
@@ -12145,14 +12110,16 @@ ${balanceText}
                                                         } }, className: "w-full py-1.5 pl-3 pr-8 bg-white border border-slate-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-slate-700 font-bold outline-none placeholder-slate-400 transition-colors rounded-md shadow-sm" }),
                                                     React.createElement("div", { className: "absolute right-3 text-slate-400 pointer-events-none" },
                                                         React.createElement("i", { className: "fas fa-search text-sm" })))),
-                                            React.createElement("th", { className: "py-2.5 px-2 border-r border-slate-200 text-right w-[85px] min-w-[85px]" }, "\uAE30\uCD08 \uC7AC\uACE0"),
-                                            React.createElement("th", { className: "py-2.5 px-2 border-r border-slate-200 text-right w-[85px] min-w-[85px]" }, "\uC785\uACE0"),
-                                            React.createElement("th", { className: "py-2.5 px-2 border-r border-slate-200 text-right w-[85px] min-w-[85px]" }, "\uCD9C\uACE0"),
-                                            React.createElement("th", { className: "py-2.5 px-2 border-r border-slate-200 text-right w-[85px] min-w-[85px]" }, "\uC794\uB7C9"),
-                                            React.createElement("th", { className: "py-2.5 px-2 border-r border-slate-200 text-right w-[85px] min-w-[85px]" }, "\uC624\uCC28"),
+                                            React.createElement("th", { className: "py-2.5 px-2 border-r border-slate-200 text-left w-[140px] min-w-[140px]" }, "적요"),
+                                            React.createElement("th", { className: "py-2.5 px-2 border-r border-slate-200 text-right w-[80px] min-w-[80px]" }, "단가"),
+                                            React.createElement("th", { className: "py-2.5 px-2 border-r border-slate-200 text-right w-[85px] min-w-[85px]" }, "기초 재고"),
+                                            React.createElement("th", { className: "py-2.5 px-2 border-r border-slate-200 text-right w-[85px] min-w-[85px]" }, "입고"),
+                                            React.createElement("th", { className: "py-2.5 px-2 border-r border-slate-200 text-right w-[85px] min-w-[85px]" }, "출고"),
+                                            React.createElement("th", { className: "py-2.5 px-2 border-r border-slate-200 text-right w-[85px] min-w-[85px]" }, "잔량"),
+                                            React.createElement("th", { className: "py-2.5 px-2 border-r border-slate-200 text-right w-[85px] min-w-[85px]" }, "오차"),
                                             React.createElement("th", { className: "py-1.5 px-4 text-left w-full min-w-[250px] align-middle" },
                                                 React.createElement("div", { className: "flex justify-between items-center w-full" },
-                                                    React.createElement("span", null, "\uC774\uC288/\uACB0\uACFC \uBC0F \uBA54\uBAA8"),
+                                                    React.createElement("span", null, "이슈/결과 및 메모"),
                                                     React.createElement("div", { className: "flex items-center gap-2" },
                                                         substHistory.length > 0 && (React.createElement("button", { onClick: () => setUndoUi({ state: 'list' }), className: "px-2.5 py-1 rounded border border-rose-200 text-[11px] font-bold bg-white text-rose-600 hover:bg-rose-50 transition flex items-center shadow-sm" },
                                                             React.createElement("i", { className: "fas fa-undo mr-1.5" }),
@@ -12171,7 +12138,7 @@ ${balanceText}
                                                             linkSourceKey ? '대상 선택...' : '재고 조정(로스상계)',
                                                             React.createElement("span", { className: `ml-1.5 px-1 py-0.5 rounded text-[9px] border hidden sm:inline-block font-normal tracking-wide ${linkSourceKey ? 'bg-slate-700 border-slate-600 text-slate-200' : 'bg-slate-200/50 border-transparent text-slate-400'}` }, "Space"))))))),
                                     React.createElement("tbody", { className: "divide-y divide-slate-100 bg-white" }, filteredProductData.length === 0 ? (React.createElement("tr", null,
-                                        React.createElement("td", { colSpan: "7", className: "p-12 text-center text-slate-400 font-bold bg-slate-50/50" },
+                                        React.createElement("td", { colSpan: "9", className: "p-12 text-center text-slate-400 font-bold bg-slate-50/50" },
                                             React.createElement("i", { className: "fas fa-box-open mb-3 text-3xl opacity-50 block" }),
                                             productData.length === 0 ? "상단 '데이터 소스'에 파일을 업로드하고 [분석 실행]을 눌러주세요." : "조건에 맞는 데이터가 없습니다."))) : (filteredProductData.map((item, idx) => {
                                         const getMergeGroupKey = (row = {}) => {
@@ -12197,8 +12164,8 @@ ${balanceText}
                                         const isNewCategory = filters.sortMode !== 'DEFAULT' && idx > 0 && currGroupLabel !== prevGroupLabel;
                                         return (React.createElement(React.Fragment, { key: item.batchKey },
                                             filters.sortMode !== 'DEFAULT' && idx > 0 && currGroupLabel !== prevGroupLabel && (filters.sortMode === 'CATEGORY' ? (React.createElement("tr", { className: "bg-white" },
-                                                React.createElement("td", { colSpan: "7", className: "p-0 border-t-2 border-slate-300" }))) : (React.createElement("tr", { className: "bg-slate-100 border-y border-slate-300" },
-                                                React.createElement("td", { colSpan: "7", className: "px-3 py-1.5 text-[11px] font-black text-slate-600 tracking-tight" },
+                                                React.createElement("td", { colSpan: "9", className: "p-0 border-t-2 border-slate-300" }))) : (React.createElement("tr", { className: "bg-slate-100 border-y border-slate-300" },
+                                                React.createElement("td", { colSpan: "9", className: "px-3 py-1.5 text-[11px] font-black text-slate-600 tracking-tight" },
                                                     "\u2500\u2500\u2500\u2500 ",
                                                     currGroupLabel || '미지정',
                                                     " \u2500\u2500\u2500\u2500")))),
