@@ -716,6 +716,7 @@
         reconciliationDifference,
         matchStatus: matched ? "매칭완료" : "재고정보 없음",
         purchase: "",
+        supplierDisplay: uniqueSupplierPairs([order])[0]?.display || "",
         managerColors: managerColors(order.manager),
       });
     }

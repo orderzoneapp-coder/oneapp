@@ -240,6 +240,15 @@ assert.deepEqual(
   ["같은거래처(1000)", "같은거래처(1200)", "거래처 3(1000)"],
   "same customer with different original prices must remain separate",
 );
+assert.deepEqual(
+  edgeWorkspace.allocations.slice(0, 3).map((row) => [row.supplierDisplay, row.unitPrice, typeof row.unitPrice]),
+  [
+    ["같은거래처(1000)", 1000, "number"],
+    ["같은거래처(1200)", 1200, "number"],
+    ["거래처 3(1000)", 1000, "number"],
+  ],
+  "each allocation must preserve its original numeric unit price and pair display",
+);
 assert.equal(
   edgeWorkspace.productSummaries.find((row) => row.productCode === "000100").noteValues.length,
   1,
@@ -289,7 +298,7 @@ assert.deepEqual(
       range: "A1:M1",
     })[0],
   ),
-  ["상품코드", "품목명", "규격", "단가", "수량", "재고", "서울", "전송", "적요", "거래처", "그룹", "구매", "출고"],
+  ["상품코드", "품목명", "규격", "단가", "수량", "재고", "서울", "전송", "적요", "거래처(단가)", "그룹", "구매", "출고"],
 );
 assert.equal(engine.parseOrderBasisDate("2026-08-04-17"), "2026-08-04");
 assert.equal(engine.parseOrderBasisDate("20260804-17"), "2026-08-04");
@@ -315,6 +324,17 @@ assert.ok(edgeWorkspace.allocations.filter((row) => row.productCode === "000100"
 assert.equal(edgeWorkspace.productSummaries.find((row) => row.productCode === "000100").purchase, "거래처A");
 assert.equal(edgeWorkspace.purchaseManagement.find((row) => row.productCode === "000100" && row.rowType === "main").purchase, "거래처A");
 const linkedPurchaseWorkbook = workbookTools.buildWorkbook(edgeWorkspace, XLSX);
+assert.deepEqual(
+  [
+    [linkedPurchaseWorkbook.Sheets["미출고현황"].J2.v, linkedPurchaseWorkbook.Sheets["미출고현황"].D2.t, linkedPurchaseWorkbook.Sheets["미출고현황"].D2.v],
+    [linkedPurchaseWorkbook.Sheets["미출고현황"].J3.v, linkedPurchaseWorkbook.Sheets["미출고현황"].D3.t, linkedPurchaseWorkbook.Sheets["미출고현황"].D3.v],
+  ],
+  [
+    ["같은거래처(1000)", "n", 1000],
+    ["같은거래처(1200)", "n", 1200],
+  ],
+  "미출고현황 workbook must show each customer-price pair while retaining numeric unit prices",
+);
 assert.equal(linkedPurchaseWorkbook.Sheets["미출고현황"].L2.v, "거래처A");
 assert.equal(linkedPurchaseWorkbook.Sheets["상품별요약"].L5.v, "거래처A");
 assert.equal(linkedPurchaseWorkbook.Sheets["발주관리"].H5.v, "거래처A");
@@ -683,6 +703,29 @@ for (const requiredText of [
   assert.ok(html.includes(requiredText), `orders.html is missing: ${requiredText}`);
 }
 
+const previewDefinitionsSource = html.slice(
+  html.indexOf("function getPreviewDefinitions"),
+  html.indexOf("function statusTone"),
+);
+const purchasePreviewSource = previewDefinitionsSource.match(/purchases:\s*\{([\s\S]*?)\n\s*\},\n\s*allocations:/)?.[1] || "";
+const allocationPreviewSource = previewDefinitionsSource.match(/allocations:\s*\{([\s\S]*?)\n\s*\},\n\s*summaries:/)?.[1] || "";
+const summaryPreviewSource = previewDefinitionsSource.match(/summaries:\s*\{([\s\S]*?)\n\s*\},\n\s*validation:/)?.[1] || "";
+assert.match(purchasePreviewSource, /purchaseEditable:\s*true/, "발주관리 purchase must be editable");
+assert.match(allocationPreviewSource, /purchaseEditable:\s*false/, "미출고현황 purchase must be readonly");
+assert.match(summaryPreviewSource, /purchaseEditable:\s*false/, "상품별요약 purchase must be readonly");
+assert.match(allocationPreviewSource, /"거래처\(단가\)"/, "미출고현황 web must label the pair display column");
+assert.match(allocationPreviewSource, /row\.supplierDisplay/, "미출고현황 web must use each allocation pair display");
+assert.match(
+  html,
+  /const editablePurchase = preview\.purchaseEditable === true && preview\.purchase === index && !referenceRow;/,
+  "only a preview explicitly marked purchaseEditable may render purchase inputs",
+);
+assert.match(
+  html,
+  /if \(!input \|\| !state\.workspace \|\| state\.activePreview !== "purchases"\) return;[\s\S]*?engine\.setPurchaseValue\(state\.workspace, input\.dataset\.purchaseCode, input\.value\);/,
+  "purchase edit events must stay on 발주관리 and update by product code",
+);
+
 function readFileMatrices(filePath, sheetName) {
   const workbook = XLSX.read(fs.readFileSync(filePath), {
     type: "buffer",
@@ -809,7 +852,7 @@ try {
         range: "A1:M1",
       })[0],
     ),
-    ["상품코드", "품목명", "규격", "단가", "수량", "재고", "서울", "전송", "적요", "거래처", "그룹", "구매", "출고"],
+    ["상품코드", "품목명", "규격", "단가", "수량", "재고", "서울", "전송", "적요", "거래처(단가)", "그룹", "구매", "출고"],
   );
   const reopenedPrintNames = (reopened.Workbook?.Names || []).filter(
     (name) => name.Sheet === 1 && /^_xlnm\.Print_/.test(name.Name),

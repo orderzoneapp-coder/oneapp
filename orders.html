@@ -1372,6 +1372,7 @@
             numeric: [2, 3, 4, 5],
             inventory: [3, 4],
             purchase: 6,
+            purchaseEditable: true,
             status: -1,
             sourceRows: workspace.purchaseManagement,
             rows: workspace.purchaseManagement.map((row) => [
@@ -1391,10 +1392,11 @@
           },
           allocations: {
             label: "미출고현황",
-            headers: ["상품코드", "품목명", "주문수량", "전재고", "서울 잔량", "전재고 배정", "서울 배정", "추가 구매", "구매", "출고판정", "거래처", "담당", "그룹"],
+            headers: ["상품코드", "품목명", "주문수량", "전재고", "서울 잔량", "전재고 배정", "서울 배정", "추가 구매", "구매", "출고판정", "거래처(단가)", "담당", "그룹"],
             numeric: [2, 3, 4, 5, 6, 7],
             inventory: [3, 4],
             purchase: 8,
+            purchaseEditable: false,
             status: 9,
             sourceRows: workspace.allocations,
             rows: workspace.allocations.map((row) => [
@@ -1408,7 +1410,7 @@
               row.purchaseNeed,
               row.purchase,
               row.status,
-              row.customer,
+              row.supplierDisplay,
               row.manager,
               row.group,
             ]),
@@ -1419,6 +1421,7 @@
             numeric: [2, 3, 4, 5, 6, 7, 10],
             inventory: [3, 4],
             purchase: 8,
+            purchaseEditable: false,
             status: 9,
             sourceRows: workspace.productSummaries,
             rows: workspace.productSummaries.map((row) => [
@@ -1443,6 +1446,7 @@
             numeric: [1, 2],
             inventory: [],
             purchase: -1,
+            purchaseEditable: false,
             status: 3,
             sourceRows: workspace.validationResults,
             rows: workspace.validationResults.map((row) => [
@@ -1504,7 +1508,7 @@
                     const isInventory = !referenceRow && preview.inventory?.includes(index) && typeof value === "number" && value !== 0;
                     const isWarning = (typeof value === "number" && value < 0) || (isStatus && statusTone(value) === "bad" && String(value).includes("오류"));
                     const classes = [isNumber ? "number" : "", isStatus ? "status" : "", isInventory ? "inventory-value" : "", isWarning ? "warning-value" : ""].filter(Boolean).join(" ");
-                    const editablePurchase = state.activePreview === "purchases" && preview.purchase === index && !referenceRow;
+                    const editablePurchase = preview.purchaseEditable === true && preview.purchase === index && !referenceRow;
                     const content = editablePurchase
                       ? `<input class="purchase-input" data-purchase-code="${escapeHtml(sourceRow.productCode)}" value="${escapeHtml(value)}" aria-label="${escapeHtml(sourceRow.productCode)} 구매">`
                       : escapeHtml(isNumber ? formatNumber(value) : value);
@@ -1824,13 +1828,13 @@
       });
       elements.previewTable.addEventListener("input", (event) => {
         const input = event.target.closest("[data-purchase-code]");
-        if (!input || !state.workspace) return;
+        if (!input || !state.workspace || state.activePreview !== "purchases") return;
         engine.setPurchaseValue(state.workspace, input.dataset.purchaseCode, input.value);
         scheduleLocalSave();
       });
       elements.previewTable.addEventListener("change", (event) => {
         const input = event.target.closest("[data-purchase-code]");
-        if (!input || !state.workspace) return;
+        if (!input || !state.workspace || state.activePreview !== "purchases") return;
         renderResults();
       });
       elements.restoreButton.addEventListener("click", () => {
