@@ -93,6 +93,38 @@ assert.equal(promoModule.resolve({ ...dataOpsRow, sources: { inventory: { _dataO
 assert.equal(promoModule.resolve({ ...dataOpsRow, sources: { inventory: { _dataOpsRevision: 'R1', 행사가: 0 } } }, { 행사가: 3000 }).price, 3000, 'DataOps zero must fall back to MerchOps own promo');
 assert.equal(promoModule.resolve({ ...dataOpsRow, sources: { inventory: { _dataOpsRevision: 'R1', 행사가: '' }, _merchOwnPromoState: { source: 'estimate', value: 3500 } } }, { 행사가: 3000 }).price, 3500, 'explicit estimate promo must precede master promo');
 
+const f7BaseSources = {
+  inventory: { _dataOpsRevision: 'R1', 행사가: 2500 },
+  estimate: { 행사가: 2800 }
+};
+const f7SourcesBefore = JSON.stringify(f7BaseSources);
+let f7PromoCommit = promoModule.resolveF7MasterPromoCommit({ sources: f7BaseSources, activeRole: 'estimate', masterPromo: 3000 });
+assert.deepEqual({ ...f7PromoCommit }, { handled: true, shouldWrite: true, value: 2800 }, 'F7 must confirm only the explicit positive estimate promo');
+f7PromoCommit = promoModule.resolveF7MasterPromoCommit({
+  sources: { ...f7BaseSources, _dataOpsPromoState: { revision: 'R1', value: 2700 } },
+  activeRole: 'estimate',
+  masterPromo: 3000
+});
+assert.equal(f7PromoCommit.value, 2800, 'F7 estimate commit must ignore the DataOps revision override');
+['', 0].forEach(estimatePromo => {
+  const result = promoModule.resolveF7MasterPromoCommit({
+    sources: { inventory: { _dataOpsRevision: 'R1', 행사가: 2500 }, estimate: { 행사가: estimatePromo } },
+    activeRole: 'estimate',
+    masterPromo: 3000
+  });
+  assert.deepEqual({ ...result }, { handled: true, shouldWrite: false, value: 3000 }, 'blank/zero estimate promo must preserve master promo');
+});
+['inventory', 'purchase'].forEach(activeRole => {
+  const result = promoModule.resolveF7MasterPromoCommit({
+    sources: { ...f7BaseSources, _dataOpsPromoState: { revision: 'R1', value: 2700 } },
+    activeRole,
+    masterPromo: 3000
+  });
+  assert.deepEqual({ ...result }, { handled: true, shouldWrite: false, value: 3000 }, `${activeRole} F7 must preserve master promo`);
+});
+assert.equal(JSON.stringify(f7BaseSources), f7SourcesBefore, 'F7 promo policy must not mutate separated source state');
+assert.equal(promoModule.resolve({ ...dataOpsRow, sources: { inventory: { _dataOpsRevision: 'R1', 행사가: 2500 }, _dataOpsPromoState: { revision: 'R1', value: 2700 } } }, { 행사가: 3000 }).price, 2700, 'F8/F9 effective resolver must keep the current-revision override');
+
 resolved = promoModule.resolve({
   ...dataOpsRow,
   sources: {
@@ -272,7 +304,7 @@ assert.equal(post({ action: 'dataops_snapshot_commit', token: 'secret', snapshot
 
 assert.match(merchSource, /fetchLatest\(config\.cloudUrl\)[\s\S]*handleFileUpload\([^]*'inventory',[\s\S]*dataOpsSnapshot/);
 assert.match(merchSource, /onChange: \(e\) => handleFileUpload\(e, 'inventory'\)/, 'Excel fallback must use the same inventory adapter');
-assert.match(merchSource, /activeRoleForCommit === 'inventory' && linked === '행사가'/, 'F7 must protect master promo from inventory flow');
+assert.match(merchSource, /linked === '행사가' && \(dataOpsPromoCommit\.handled \|\| activeRoleForCommit === 'inventory'\)/, 'F7 must protect master promo from every DataOps revision flow');
 assert.match(merchSource, /if \(key === '행사가'\)[\s\S]*getEffectivePromoPriceForMargin/, 'F8 must use the effective promo resolver');
 assert.match(merchSource, /const effectivePromoPrice = getEffectivePromoPriceForMargin\(row, master\)[\s\S]*행사가: effectivePromoPrice/, 'F9 must use the effective promo resolver');
 assert.match(merchSource, /dataOpsPromoConflictMessage[\s\S]*"행사가 확인"/, 'conflict chip must remain independent from the primary issue label');
