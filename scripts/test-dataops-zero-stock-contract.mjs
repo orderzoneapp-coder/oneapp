@@ -86,7 +86,8 @@ const f9Handler = section(
 assert.doesNotMatch(f9Handler, /filteredProductDataRef/);
 assert.match(
   f9Handler,
-  /createCombinedWorkbook\(\{ productData, analysisPeriod, targetDateStr, closingStats \}\)/,
+  /createCombinedWorkbook\(\{ productData: closingProductData, analysisPeriod, targetDateStr, closingStats, wholeStockRows: closingRows \}\)/,
+  "F9 must feed one frozen full closing-row set to the workbook and cloud snapshot",
 );
 
 const nextBaseRows = section(

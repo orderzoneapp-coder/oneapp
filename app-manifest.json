@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.2.0",
-  "updatedAt": "2026-07-30",
+  "updatedAt": "2026-08-04",
   "repository": {
     "fullName": "orderzoneapp-coder/oneapp",
     "defaultBranch": "main",
@@ -192,13 +192,15 @@
       "path": "code.gs",
       "kind": "google-apps-script-service",
       "status": "production",
-      "purpose": "Back up and restore product master, history, and shared configuration.",
+      "purpose": "Back up and restore product master, history, shared configuration, and the finalized DataOps inventory snapshot.",
       "apiActions": {
         "post": [
           "initSync",
           "chunk_master",
           "chunk_history",
-          "config"
+          "config",
+          "dataops_snapshot_commit",
+          "dataops_snapshot_get"
         ],
         "get": [
           "full",
@@ -213,11 +215,43 @@
         "pricing-rules",
         "mapping-config",
         "table-view-config",
-        "cloud-url"
+        "cloud-url",
+        "dataops-inventory-snapshot"
       ]
     }
   ],
   "sharedDataContracts": [
+    {
+      "id": "dataops-inventory-snapshot",
+      "owner": "dataops",
+      "consumers": [
+        "DataOps.html",
+        "MerchOps.html"
+      ],
+      "schemaVersion": "ONEAPP_DATAOPS_SNAPSHOT_V1",
+      "columns": [
+        "단위",
+        "품목코드",
+        "품명",
+        "규격",
+        "재고",
+        "기록",
+        "거래",
+        "구매가",
+        "기본",
+        "적요",
+        "행사가"
+      ],
+      "resources": {
+        "cloud": [
+          "dataops_snapshot_commit",
+          "dataops_snapshot_get",
+          "DataOpsSnapshot_A",
+          "DataOpsSnapshot_B",
+          "ONEAPP_DATAOPS_CURRENT_SLOT"
+        ]
+      }
+    },
     {
       "id": "product-master",
       "owner": "merchops",

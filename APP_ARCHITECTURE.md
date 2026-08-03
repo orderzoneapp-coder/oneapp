@@ -1,8 +1,8 @@
 # ONEAPP Application Architecture
 
 - Repository: orderzoneapp-coder/oneapp
-- Architecture document version: 1.3.1
-- Last reviewed: 2026-08-02
+- Architecture document version: 1.3.2
+- Last reviewed: 2026-08-04
 - Machine-readable companion: app-manifest.json
 
 ## 1. Purpose
@@ -93,7 +93,7 @@ Shared storage or navigation does not make their business meaning identical.
 | `Item_manager.html` | Web entry | Pilot / transition | Existing category lookup and product-management route retained until approved feature migration and result verification are complete |
 | `orders.html` | Planned web entry / Pilot candidate | Planned | Shipping Management aggregate-stock allocation and unshipped-status Excel review; browser-memory only with no production writes |
 | `coreEngine.js` | Shared library | Production | Storage, pricing, history, export, cloud synchronization, and master-data utilities |
-| `code.gs` | Cloud service | Production | Google Apps Script API for master, history, and configuration backup and restore |
+| `code.gs` | Cloud service | Production | Google Apps Script API for master, history, configuration, and the finalized DataOps inventory snapshot |
 
 ---
 
@@ -158,9 +158,17 @@ It must:
 | POST | `chunk_master` | Append a chunk of product-master records |
 | POST | `chunk_history` | Append a chunk of history records |
 | POST | `config` | Save shared configuration |
+| POST | `dataops_snapshot_commit` | Validate and atomically finalize one DataOps FULL inventory snapshot |
+| POST | `dataops_snapshot_get` | Return the latest finalized DataOps FULL inventory snapshot |
 | GET | `full` or omitted | Return master, history, and configuration |
 | GET | `master_only` | Return product master and summary |
 | GET | `config_only` | Return configuration only |
+
+The DataOps snapshot contract is `ONEAPP_DATAOPS_SNAPSHOT_V1`. Its canonical row order is the existing whole-stock ten columns (`단위`, `품목코드`, `품명`, `규격`, `재고`, `기록`, `거래`, `구매가`, `기본`, `적요`) followed by `행사가`. It is a FULL snapshot; consumers must not aggregate units, combine LOT rows, or treat it as a partial update.
+
+`dataops_snapshot_commit` writes the inactive `DataOpsSnapshot_A` or `DataOpsSnapshot_B` sheet, verifies schema, SHA-256, row count, cell count, and same-code LOT promotion consistency, then switches the `ONEAPP_DATAOPS_CURRENT_SLOT` Script Property under `LockService`. A failed staging write leaves the previous current slot unchanged. The revision is derived by the server from basis date and canonical hash, so rereading or recommitting the same finalized snapshot returns the same identity.
+
+Both DataOps snapshot actions use POST bodies and require the `ONEAPP_DATAOPS_ACCESS_TOKEN` Apps Script Property. A missing server token, missing request token, or mismatch is rejected. Clients store the operator-entered token only in browser-local configuration; it must not be embedded in public HTML or sent in a query string. Existing master, history, and configuration actions, sheets, and response contracts remain unchanged.
 
 Changing any action name, payload shape, response shape, authentication rule, or field normalization requires coordinated updates to:
 

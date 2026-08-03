@@ -960,6 +960,7 @@ const CONFIG_MODULE = Object.freeze({
    ======================================================================= */
 const DATAOPS_CLOUD_DEFAULT_URL = 'https://script.google.com/macros/s/AKfycbzOUOIu_bP7NkiFVziDR0Og1da1KO1ePoU09Q3pSlPr-9uD-WkdCpWN7nidO5hlrJi6Qw/exec';
 const DATAOPS_CLOUD_URL_KEY = 'oneapp_cloud_sync_url_v1';
+const DATAOPS_CLOUD_TOKEN_KEY = 'oneapp_dataops_cloud_token_v1';
 const DATAOPS_MERCH_MASTER_CACHE_KEY = 'dataops_merch_master_cache_v1';
 const DATAOPS_MERCH_MASTER_SUMMARY_KEY = 'dataops_merch_master_summary_v1';
 const DATAOPS_RAW_SUBDIVISION_CACHE_KEY = 'dataops_raw_subdivision_cache_v1';
@@ -1244,6 +1245,140 @@ const DATAOPS_CLOUD_MODULE = Object.freeze({
     getSummary: () => (window.DATAOPS_MASTER_CACHE_MODULE ? window.DATAOPS_MASTER_CACHE_MODULE.getContext().summary : DATAOPS_CLOUD_MODULE.getCachedMaster().summary) || {}
 });
 window.DATAOPS_CLOUD_MODULE = DATAOPS_CLOUD_MODULE;
+
+// DataOps 확정 FULL 스냅샷. 기존 전체재고 10열에 행사가만 추가하며
+// 화면에서 확정된 통합/분리 행과 셀값을 재집계 없이 같은 순서로 전달한다.
+const DATAOPS_PROMO_SNAPSHOT_MODULE = Object.freeze({
+    schemaVersion: 'ONEAPP_DATAOPS_SNAPSHOT_V1',
+    columns: Object.freeze(['단위', '품목코드', '품명', '규격', '재고', '기록', '거래', '구매가', '기본', '적요', '행사가']),
+    normalizeCell: (value) => {
+        if (value === undefined || value === null)
+            return '';
+        if (typeof value === 'number') {
+            if (!Number.isFinite(value))
+                throw new Error('클라우드 스냅샷에 유효하지 않은 숫자가 있습니다.');
+            return value;
+        }
+        if (typeof value === 'string' || typeof value === 'boolean')
+            return value;
+        throw new Error('클라우드 스냅샷 셀 형식이 올바르지 않습니다.');
+    },
+    canonicalizeRows: (rows = []) => (rows || []).map(row => DATAOPS_PROMO_SNAPSHOT_MODULE.columns.map(column =>
+        DATAOPS_PROMO_SNAPSHOT_MODULE.normalizeCell(row && Object.prototype.hasOwnProperty.call(row, column) ? row[column] : '')
+    )),
+    sha256Hex: async (text) => {
+        if (!window.crypto || !window.crypto.subtle)
+            throw new Error('이 브라우저에서는 클라우드 무결성 검사를 사용할 수 없습니다.');
+        const bytes = new TextEncoder().encode(text);
+        const digest = await window.crypto.subtle.digest('SHA-256', bytes);
+        return Array.from(new Uint8Array(digest)).map(v => v.toString(16).padStart(2, '0')).join('');
+    },
+    buildEnvelope: async ({ rows = [], basisDate = '' } = {}) => {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(safeStr(basisDate)))
+            throw new Error('클라우드 저장 기준일이 올바르지 않습니다.');
+        const canonicalRows = DATAOPS_PROMO_SNAPSHOT_MODULE.canonicalizeRows(rows);
+        const canonical = {
+            schemaVersion: DATAOPS_PROMO_SNAPSHOT_MODULE.schemaVersion,
+            basisDate,
+            columns: [...DATAOPS_PROMO_SNAPSHOT_MODULE.columns],
+            rows: canonicalRows
+        };
+        const canonicalJson = JSON.stringify(canonical);
+        return {
+            schemaVersion: DATAOPS_PROMO_SNAPSHOT_MODULE.schemaVersion,
+            basisDate,
+            savedAt: new Date().toISOString(),
+            hashAlgorithm: 'SHA-256',
+            hash: await DATAOPS_PROMO_SNAPSHOT_MODULE.sha256Hex(canonicalJson),
+            rowCount: canonicalRows.length,
+            cellCount: canonicalRows.length * DATAOPS_PROMO_SNAPSHOT_MODULE.columns.length,
+            canonicalJson
+        };
+    },
+    getAccessToken: () => {
+        let token = '';
+        try {
+            token = safeStr(localStorage.getItem(DATAOPS_CLOUD_TOKEN_KEY), '');
+        }
+        catch (e) { }
+        if (!token) {
+            token = safeStr(window.prompt('DataOps 클라우드 접근 토큰을 입력하세요.'), '');
+            if (token) {
+                try { localStorage.setItem(DATAOPS_CLOUD_TOKEN_KEY, token); }
+                catch (e) { }
+            }
+        }
+        if (!token)
+            throw new Error('클라우드 접근 토큰이 설정되지 않았습니다.');
+        return token;
+    },
+    postAction: async (action, body = {}) => {
+        const url = DATAOPS_CLOUD_MODULE.normalizeUrl(DATAOPS_CLOUD_MODULE.getCloudUrl());
+        if (!url)
+            throw new Error('클라우드 URL이 비어 있습니다.');
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify({ action, token: DATAOPS_PROMO_SNAPSHOT_MODULE.getAccessToken(), ...body })
+        });
+        if (!response.ok)
+            throw new Error(`클라우드 저장 실패: HTTP ${response.status}`);
+        const json = await DATAOPS_CLOUD_MODULE.readJsonResponse(response);
+        if (!json || json.status !== 'success') {
+            if (json && json.message === 'DATAOPS_ACCESS_DENIED') {
+                try { localStorage.removeItem(DATAOPS_CLOUD_TOKEN_KEY); }
+                catch (e) { }
+            }
+            throw new Error((json && json.message) || '클라우드 저장에 실패했습니다.');
+        }
+        return json.data || {};
+    },
+    commit: async (envelope) => {
+        const result = await DATAOPS_PROMO_SNAPSHOT_MODULE.postAction('dataops_snapshot_commit', { snapshot: envelope });
+        if (!safeStr(result.revision) || result.hash !== envelope.hash || safeNum(result.rowCount) !== envelope.rowCount || safeNum(result.cellCount) !== envelope.cellCount)
+            throw new Error('클라우드 저장 검산 결과가 일치하지 않습니다.');
+        return result;
+    }
+});
+window.DATAOPS_PROMO_SNAPSHOT_MODULE = DATAOPS_PROMO_SNAPSHOT_MODULE;
+
+const DATAOPS_PROMO_INPUT_MODULE = Object.freeze({
+    normalizeCode: (value) => safeStr(value, '').replace(/\.0$/, '').trim(),
+    parsePromo: (value) => {
+        if (value === undefined || value === null || String(value).trim() === '')
+            return 0;
+        const parsed = typeof value === 'number' ? value : Number(String(value).replace(/,/g, '').trim());
+        if (!Number.isFinite(parsed) || parsed < 0)
+            throw new Error(`행사가 값이 올바르지 않습니다: ${String(value)}`);
+        return parsed > 0 ? parsed : 0;
+    },
+    normalizeCell: (value) => {
+        if (value === undefined || value === null || String(value).trim() === '')
+            return '';
+        return DATAOPS_PROMO_INPUT_MODULE.parsePromo(value);
+    },
+    buildPromoByCode: (items = []) => {
+        const promoByCode = new Map();
+        const semanticPromoByCode = new Map();
+        (items || []).forEach(item => {
+            const raw = item && item._raw ? item._raw : {};
+            if (!Object.prototype.hasOwnProperty.call(raw, '행사가'))
+                return;
+            const code = DATAOPS_PROMO_INPUT_MODULE.normalizeCode(item && (item.코드 || raw['품목코드'] || raw['상품코드']));
+            if (!code)
+                return;
+            const promoCell = DATAOPS_PROMO_INPUT_MODULE.normalizeCell(raw['행사가']);
+            const promo = DATAOPS_PROMO_INPUT_MODULE.parsePromo(promoCell);
+            if (semanticPromoByCode.has(code) && semanticPromoByCode.get(code) !== promo)
+                throw new Error(`같은 품목코드의 LOT별 행사가가 다릅니다: ${code}`);
+            if (!promoByCode.has(code))
+                promoByCode.set(code, promoCell);
+            semanticPromoByCode.set(code, promo);
+        });
+        return promoByCode;
+    }
+});
+window.DATAOPS_PROMO_INPUT_MODULE = DATAOPS_PROMO_INPUT_MODULE;
 
 
 /* =======================================================================
@@ -3152,7 +3287,8 @@ const EXPORT_MODULE = Object.freeze({
             '구매가': Math.round(safeNum(item.단가)),
             // V1.a22.69: 전체재고는 앞으로 재고현황 입력 시트로 사용하므로 원본 재고현황의 기본값을 그대로 보존한다.
             '기본': getBasicDisplayValue(item),
-            '적요': EXPORT_MODULE.sanitizeStockRemark(raw['적요'] || raw['비고'] || raw['메모'] || '')
+            '적요': EXPORT_MODULE.sanitizeStockRemark(raw['적요'] || raw['비고'] || raw['메모'] || ''),
+            '행사가': item.행사가 === undefined || item.행사가 === null ? '' : item.행사가
         };
     }),
     // V1.a22.69: 엑셀 다운로드 1번 시트는 현재 화면 보기모드 그대로 출력한다.
@@ -3173,7 +3309,8 @@ const EXPORT_MODULE = Object.freeze({
             '거래': EXPORT_MODULE.sanitizeLedgerTradeValue(item.거래처),
             '구매가': Math.round(safeNum(item.단가)),
             '기본': getBasicDisplayValue(item),
-            '적요': EXPORT_MODULE.sanitizeStockRemark(raw['적요'] || raw['비고'] || raw['메모'] || '')
+            '적요': EXPORT_MODULE.sanitizeStockRemark(raw['적요'] || raw['비고'] || raw['메모'] || ''),
+            '행사가': item.행사가 === undefined || item.행사가 === null ? '' : item.행사가
         };
     }),
     buildNextBaseStockSheet: ({ productData = [], rows = null, targetDateStr = '' }) => {
@@ -3181,18 +3318,18 @@ const EXPORT_MODULE = Object.freeze({
         const displayDate = safeStr(targetDateStr, '').replace(/-/g, '/');
         const title = `회사명 : 원앱 / 1창고 / ${displayDate || '기준일미상'} / 전체재고`;
         // V1.a22.69: 전체재고는 재고현황 입력으로 계속 사용할 시트다.
-        // 양식은 단위/품목코드/품명/규격/재고/기록/거래/구매가/기본/적요 순서로 고정한다.
-        const headers = ['단위', '품목코드', '품명', '규격', '재고', '기록', '거래', '구매가', '기본', '적요'];
+        // 기존 10열 순서를 유지하고, DataOps 확정 행사가를 마지막 11번째 열로만 추가한다.
+        const headers = ['단위', '품목코드', '품명', '규격', '재고', '기록', '거래', '구매가', '기본', '적요', '행사가'];
         const aoa = [
-            [title, '', '', '', '', '', '', '', '', ''],
+            [title, '', '', '', '', '', '', '', '', '', ''],
             headers,
             ...rowsToUse.map(row => headers.map(h => { var _a; return (_a = row[h]) !== null && _a !== void 0 ? _a : ''; }))
         ];
         const ws = XLSX.utils.aoa_to_sheet(aoa);
         EXPORT_MODULE.forceTextColumnsByHeader(ws, 1);
-        ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 9 } }];
-        ws['!cols'] = [10, 14, 34, 10, 10, 12, 14, 14, 12, 18].map(wch => ({ wch }));
-        ws['!autofilter'] = { ref: `A2:J${Math.max(2, aoa.length)}` };
+        ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 10 } }];
+        ws['!cols'] = [10, 14, 34, 10, 10, 12, 14, 14, 12, 18, 14].map(wch => ({ wch }));
+        ws['!autofilter'] = { ref: `A2:K${Math.max(2, aoa.length)}` };
         return ws;
     },
     // V1.a22.69: 전체재고는 실사양식/코드통합형 집계가 아니라 구매잔량 + 기타상품을 합친 현황이다.
@@ -3799,7 +3936,7 @@ const EXPORT_MODULE = Object.freeze({
         w.document.close();
         return true;
     },
-    createCombinedWorkbook: ({ productData = [], analysisPeriod = '', targetDateStr = '', closingStats = {} }) => {
+    createCombinedWorkbook: ({ productData = [], analysisPeriod = '', targetDateStr = '', closingStats = {}, wholeStockRows: suppliedWholeStockRows = null }) => {
         const exportFileNameDate = targetDateStr ? targetDateStr.replace(/-/g, '') : (() => { const today = new Date(); return `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`; })();
         // V1.a22.30: 운영 출력은 코드통합형을 기본으로 한다. Lot/일자/구매처 상세는 분석원장에만 보존한다.
         const operationalProductData = DATAOPS_VIEW_LAYER_MODULE.buildCodeSummaryRows(productData || []).sort((a, b) => FILTER_SORT_MODULE.compareByCodeThenName(a, b));
@@ -3815,7 +3952,9 @@ const EXPORT_MODULE = Object.freeze({
         const otherStockRows = EXPORT_MODULE.buildOtherStockRows({ productData, targetDateStr });
         // F9 전체재고는 전체 원본에서 만든 관리자 통합/해제 결과를 기준으로 하며 화면 필터·검색·숨김 상태와 무관하다.
         // 내일 기초재고로 넘길 통합 잔량 > 0 조건은 buildNextBaseStockRows에서만 적용한다.
-        const wholeStockRows = EXPORT_MODULE.buildNextBaseStockRows({ productData: operationalProductData, targetDateStr });
+        const wholeStockRows = Array.isArray(suppliedWholeStockRows)
+            ? suppliedWholeStockRows
+            : EXPORT_MODULE.buildNextBaseStockRows({ productData: operationalProductData, targetDateStr });
         const checkRequestRows = EXPORT_MODULE.buildManagementIssueRows({ productData: operationalProductData });
         const wb = XLSX.utils.book_new();
         // V1.a22.69: 수불마감 기본 보고서는 전체재고 / 구매잔량 / 기타상품 3단계로 분리한다.
@@ -4021,7 +4160,7 @@ const DATAOPS_CLOSING_LOT_RESTORE_MODULE = Object.freeze({
                         단위: safeStr(base.단위 || lot.단위, ''),
                         수량: lotQty,
                         기본: safeStr(base.기본 || lot.기본, ''),
-                        _raw: { ...(lot._raw || {}), 재고: lotQty },
+                        _raw: { ...(base._raw || {}), ...(lot._raw || {}), 재고: lotQty },
                         _closingLotRestoreStatus: 'AVAILABLE',
                         _closingRestoredLot: true,
                         _closingRestoredLotIndex: index,
@@ -4044,7 +4183,7 @@ const DATAOPS_CLOSING_LOT_RESTORE_MODULE = Object.freeze({
                     _purchaseLotVendor: lot._purchaseLotVendor || lot.거래처,
                     _displayPurchaseVendor: lot._displayPurchaseVendor || lot.거래처,
                     _purchaseRemark: safeStr(lot._purchaseRemark, ''),
-                    _raw: { ...(lot._raw || {}), 재고: totalQty },
+                    _raw: { ...(base._raw || {}), ...(lot._raw || {}), 재고: totalQty },
                     _closingLotRestoreStatus: 'SINGLE',
                     ...commonMeta
                 });
@@ -4786,6 +4925,28 @@ const useInventoryEngine = ({ mappings, grouping, viewMode, setViewMode, mergeOv
             return nextData;
         });
     }, []);
+    const handlePromoChange = useCallback((code, val) => {
+        const normalizedCode = DATAOPS_PROMO_INPUT_MODULE.normalizeCode(code);
+        let promoCell;
+        try {
+            promoCell = DATAOPS_PROMO_INPUT_MODULE.normalizeCell(val);
+        }
+        catch (error) {
+            setAlertMsg(error && error.message ? error.message : '행사가 값이 올바르지 않습니다.');
+            return false;
+        }
+        setProductData(prev => {
+            let changed = false;
+            const next = prev.map(item => {
+                if (DATAOPS_PROMO_INPUT_MODULE.normalizeCode(item.코드) !== normalizedCode || Object.is(item.행사가, promoCell))
+                    return item;
+                changed = true;
+                return { ...item, 행사가: promoCell };
+            });
+            return changed ? next : prev;
+        });
+        return true;
+    }, [setAlertMsg]);
     const handleManualStockChange = useCallback((batchKey, val) => {
         const nextActual = val === '' ? '' : Number(val);
         setProductData(prev => {
@@ -5766,6 +5927,12 @@ const useInventoryEngine = ({ mappings, grouping, viewMode, setViewMode, mergeOv
             const prevItems = hasClosingEnd ? parsedPrev.filter(item => !isClosingItem(item)) : parsedPrev;
             const inItems = parsedIn.filter(item => !isClosingItem(item));
             const outItems = parsedOut.filter(item => !isClosingItem(item));
+            // 전일 확정 전체재고의 행사가를 품목코드 단위로 승계한다. 공란/0은 행사 없음이며,
+            // 같은 코드의 LOT가 서로 다른 값을 갖는 파일은 자동 보정하지 않고 입력 오류로 중단한다.
+            const previousPromoByCode = DATAOPS_PROMO_INPUT_MODULE.buildPromoByCode([
+                ...(parsedPrev || []),
+                ...(closingEndItems || [])
+            ]);
             const productNameSourcesByCode = new Map();
             const registerProductNames = (items = [], sourceField = '') => {
                 (items || []).forEach(item => {
@@ -6901,6 +7068,10 @@ const useInventoryEngine = ({ mappings, grouping, viewMode, setViewMode, mergeOv
                     item.수기확인완료 = false;
             });
             Object.values(pData).forEach(applyRepresentativeProductName);
+            Object.values(pData).forEach(item => {
+                const promoCode = DATAOPS_PROMO_INPUT_MODULE.normalizeCode(item.코드);
+                item.행사가 = previousPromoByCode.has(promoCode) ? previousPromoByCode.get(promoCode) : 0;
+            });
             const finalProductData = Object.values(pData)
                 .map(item => DATAOPS_VENDOR_CHIP_MODULE.reconcileItem(item))
                 .filter(item => !isSummaryOrInvalidProductRow({ code: item.코드, name: item.품명, raw: item._raw }))
@@ -7024,7 +7195,9 @@ const useInventoryEngine = ({ mappings, grouping, viewMode, setViewMode, mergeOv
             return true;
         }
         catch (err) {
-            setAlertMsg('데이터 분석 중 오류가 발생했습니다. 엑셀 파일 형식이나 매핑 규칙을 확인해주세요.');
+            setAlertMsg(err && err.message && err.message.includes('행사가')
+                ? err.message
+                : '데이터 분석 중 오류가 발생했습니다. 엑셀 파일 형식이나 매핑 규칙을 확인해주세요.');
             console.error(err);
             return false;
         }
@@ -7413,7 +7586,7 @@ const useInventoryEngine = ({ mappings, grouping, viewMode, setViewMode, mergeOv
     }, [mappings, setAlertMsg, setToastMsg, setIsProcessing, setAppStep]);
     return {
         productData, setProductData, analysisPeriod, setAnalysisPeriod, targetDateStr, setTargetDateStr, substHistory, setSubstHistory, ackMultiCodes, setAckMultiCodes,
-        hasSavedWork, savedWorkMeta, autoSaveStatus, resetEngine, restoreWorkState, handleBaseDataChange, handleManualStockChange, executeImmediateSubstitution, handlePurchaseLotManualAdjust, executeMasterSubstitutionCandidates, handleSalesMove, executeAnalysis, runAnalysis, runCostExtraction
+        hasSavedWork, savedWorkMeta, autoSaveStatus, resetEngine, restoreWorkState, handleBaseDataChange, handlePromoChange, handleManualStockChange, executeImmediateSubstitution, handlePurchaseLotManualAdjust, executeMasterSubstitutionCandidates, handleSalesMove, executeAnalysis, runAnalysis, runCostExtraction
     };
 };
 /* =======================================================================
@@ -7583,7 +7756,7 @@ const DATAOPS_DRAG_EVENT_MODULE = Object.freeze({
         return !!(currentTarget && relatedTarget && typeof currentTarget.contains === 'function' && currentTarget.contains(relatedTarget));
     }
 });
-const ProductRow = React.memo(({ item, idx, isLinked, isActiveMulti, isMultiGroupItem, splitLotMemo, targetDateStr, onStockChange, onSpacebar, onFocusInput, onBaseDataChange, onOpenMemo, onSalesMove, onVendorChipDelete, onVendorChipEdit, onViewLayerEditBlocked, internalLotMapping, isGroupStart, isNewCategory, isMergeGroupStart, isMergeGroupEnd, isLotReviewMode, isLotReviewCandidate, isLotReviewGroupStart, isLotReviewGroupEnd, isActiveLotReviewGroup, normalizeDisplayIssues, onPurchaseLotAdjust, onToggleCodeMerge }) => {
+const ProductRow = React.memo(({ item, idx, isLinked, isActiveMulti, isMultiGroupItem, splitLotMemo, targetDateStr, onStockChange, onSpacebar, onFocusInput, onBaseDataChange, onPromoChange, onOpenMemo, onSalesMove, onVendorChipDelete, onVendorChipEdit, onViewLayerEditBlocked, internalLotMapping, isGroupStart, isNewCategory, isMergeGroupStart, isMergeGroupEnd, isLotReviewMode, isLotReviewCandidate, isLotReviewGroupStart, isLotReviewGroupEnd, isActiveLotReviewGroup, normalizeDisplayIssues, onPurchaseLotAdjust, onToggleCodeMerge }) => {
     const [isDragOver, setIsDragOver] = useState(false);
     let displayIssues = item.이슈 ? [...item.이슈] : [];
     displayIssues = displayIssues.filter(msg => !msg.includes('매입내역 없음') && !msg.includes('전산 재고 부족') && !msg.includes('재고 부족'));
@@ -7690,6 +7863,9 @@ const ProductRow = React.memo(({ item, idx, isLinked, isActiveMulti, isMultiGrou
     const [localPrice, setLocalPrice] = useState(item.단가 === 0 ? '' : Math.round(item.단가));
     useEffect(() => setLocalPrice(item.단가 === 0 ? '' : Math.round(item.단가)), [item.단가]);
     const priceTimeout = useRef(null);
+    const [localPromo, setLocalPromo] = useState(safeNum(item.행사가) > 0 ? item.행사가 : '');
+    useEffect(() => setLocalPromo(safeNum(item.행사가) > 0 ? item.행사가 : ''), [item.행사가]);
+    const promoTimeout = useRef(null);
     const [localPrev, setLocalPrev] = useState(item.기초 === 0 ? '' : item.기초);
     useEffect(() => setLocalPrev(item.기초 === 0 ? '' : item.기초), [item.기초]);
     const prevTimeout = useRef(null);
@@ -7706,6 +7882,8 @@ const ProductRow = React.memo(({ item, idx, isLinked, isActiveMulti, isMultiGrou
         return () => {
             if (priceTimeout.current)
                 clearTimeout(priceTimeout.current);
+            if (promoTimeout.current)
+                clearTimeout(promoTimeout.current);
             if (prevTimeout.current)
                 clearTimeout(prevTimeout.current);
             if (inTimeout.current)
@@ -7734,6 +7912,18 @@ const ProductRow = React.memo(({ item, idx, isLinked, isActiveMulti, isMultiGrou
             return;
         }
         priceTimeout.current = setTimeout(() => onBaseDataChange(editBatchKey, '단가', val), 250);
+    };
+    const handlePromoInputChange = (e) => {
+        const value = e.target.value;
+        if (value !== '' && (!Number.isFinite(Number(value)) || Number(value) < 0)) {
+            onPromoChange(item.코드, value);
+            setLocalPromo(safeNum(item.행사가) > 0 ? item.행사가 : '');
+            return;
+        }
+        setLocalPromo(value);
+        if (promoTimeout.current)
+            clearTimeout(promoTimeout.current);
+        promoTimeout.current = setTimeout(() => onPromoChange(item.코드, value), 250);
     };
     const handlePrevChange = (e) => {
         if (rejectCodeSummaryEdit()) { e.preventDefault(); setLocalPrev(item.기초 === 0 ? '' : item.기초); return; }
@@ -7777,6 +7967,7 @@ const ProductRow = React.memo(({ item, idx, isLinked, isActiveMulti, isMultiGrou
     const clearPendingEditTimer = (type) => {
         const timerRefMap = {
             'price-input': priceTimeout,
+            'promo-input': promoTimeout,
             'base-prev': prevTimeout,
             'base-in': inTimeout,
             'base-out': outTimeout,
@@ -7798,6 +7989,13 @@ const ProductRow = React.memo(({ item, idx, isLinked, isActiveMulti, isMultiGrou
             if (safeNum(item.단가) === safeNum(nextValue))
                 return false;
             onBaseDataChange(editBatchKey, '단가', nextValue);
+            return true;
+        }
+        if (type === 'promo-input') {
+            const nextValue = DATAOPS_PROMO_INPUT_MODULE.normalizeCell(localPromo);
+            if (Object.is(item.행사가, nextValue))
+                return false;
+            onPromoChange(item.코드, nextValue);
             return true;
         }
         if (rejectCodeSummaryEdit())
@@ -7860,7 +8058,7 @@ const ProductRow = React.memo(({ item, idx, isLinked, isActiveMulti, isMultiGrou
         }
     };
     const handleKd = (e, type) => {
-        const cols = ['price-input', 'base-prev', 'base-in', 'base-out', 'actual-input'];
+        const cols = ['price-input', 'promo-input', 'base-prev', 'base-in', 'base-out', 'actual-input'];
         const colIdx = cols.indexOf(type);
         // V1.a22.94: 통합후보 행의 Tab만 전역 후보 이동기가 처리한다. 일반 Tab과 Enter·방향키는 기존 동작을 유지한다.
         if (e.key === 'ArrowRight') {
@@ -8006,6 +8204,8 @@ const ProductRow = React.memo(({ item, idx, isLinked, isActiveMulti, isMultiGrou
         React.createElement("td", { className: `py-2 px-2 text-right w-[80px] min-w-[80px] border-r border-slate-100 ${topBorderClass} ${mergeHorizontalCellBoxClass} ${lotReviewHorizontalCellBoxClass}` },
             React.createElement("input", { id: `price-input-${idx}`, ref: el => bindImmediateFlush(el, 'price-input'), "data-field": "price-input", type: "number", className: `${cellInputBase} w-full font-bold ${item.단가 === 0 ? 'border-rose-300 bg-rose-50 text-rose-600' : 'text-slate-800'}`, value: localPrice, onChange: handlePriceChange, onClick: (e) => e.stopPropagation(), onFocus: e => { e.target.select(); onFocusInput(operationBatchKey, idx); }, onKeyDown: (e) => handleKd(e, 'price-input'), placeholder: "0" }),
             isDetailMergedViewRow && mergedWeightedAveragePrice !== null && React.createElement("div", { "data-weighted-average": "true", title: `수량가중 평균단가 ${formatMoney(mergedWeightedAveragePrice)}원`, "aria-label": `수량가중 평균단가 ${formatMoney(mergedWeightedAveragePrice)}원`, className: "mt-1 text-[10px] leading-tight font-bold text-slate-500 whitespace-nowrap" }, `평균 ${formatMoney(mergedWeightedAveragePrice)}`)),
+        React.createElement("td", { className: `py-2 px-2 text-right w-[90px] min-w-[90px] border-r border-slate-100 ${topBorderClass} ${mergeHorizontalCellBoxClass} ${lotReviewHorizontalCellBoxClass}` },
+            React.createElement("input", { id: `promo-input-${idx}`, ref: el => bindImmediateFlush(el, 'promo-input'), "data-field": "promo-input", type: "number", min: "0", step: "1", className: `${cellInputBase} w-full font-bold ${safeNum(item.행사가) > 0 ? 'border-amber-300 bg-amber-50 text-amber-800' : 'text-slate-400'}`, value: localPromo, onChange: handlePromoInputChange, onClick: (e) => e.stopPropagation(), onFocus: e => { e.target.select(); onFocusInput(operationBatchKey, idx); }, onKeyDown: (e) => handleKd(e, 'promo-input'), placeholder: "0" })),
         React.createElement("td", { className: `py-2 px-2 text-right ${isActiveMulti ? 'bg-slate-50/50' : ''} border-r border-slate-100 ${topBorderClass} ${mergeHorizontalCellBoxClass} ${lotReviewHorizontalCellBoxClass}` },
             React.createElement("input", { id: `base-prev-${idx}`, ref: el => bindImmediateFlush(el, 'base-prev'), "data-field": "base-prev", type: "number", step: "any", className: `${cellInputBase} font-semibold ${item.기초 < 0 ? 'text-rose-600 border-rose-200' : 'text-slate-700'}`, value: localPrev, onChange: handlePrevChange, onFocus: e => { e.target.select(); onFocusInput(operationBatchKey, idx); }, onKeyDown: (e) => handleKd(e, 'base-prev'), onWheel: e => e.target.blur(), placeholder: "0" })),
         React.createElement("td", { className: `py-2 px-2 text-right border-r border-slate-100 ${topBorderClass} ${mergeHorizontalCellBoxClass} ${lotReviewHorizontalCellBoxClass}` },
@@ -8146,6 +8346,7 @@ function App() {
     }, []);
     // 🌟 성능 최적화: 검색창 디바운스(Debounce) 처리를 위한 로컬 상태 분리
     const [searchInputVal, setSearchInputVal] = useState('');
+    const [promoOnly, setPromoOnly] = useState(false);
     // Native Sticky Scroll 적용을 위한 반응형 상태
     const [cardHeight, setCardHeight] = useState(0);
     const [filterBarHeight, setFilterBarHeight] = useState(0); // V1.a22.12: 정렬/카테고리/단위/F10 전 설정바 sticky 높이
@@ -8314,7 +8515,7 @@ function App() {
         if (safeNum(meta.restoredCodes) > 0)
             setToastMsg(`수불마감 LOT 근거를 연결했습니다. · 해체 가능 ${safeNum(meta.restoredCodes)}개`);
     }, []);
-    const { productData, setProductData, analysisPeriod, setAnalysisPeriod, targetDateStr, setTargetDateStr, substHistory, setSubstHistory, ackMultiCodes, setAckMultiCodes, hasSavedWork, savedWorkMeta, autoSaveStatus, resetEngine, restoreWorkState, handleBaseDataChange, handleManualStockChange, executeImmediateSubstitution, handlePurchaseLotManualAdjust, executeMasterSubstitutionCandidates, handleSalesMove, executeAnalysis, runAnalysis, runCostExtraction } = useInventoryEngine({ mappings, grouping, viewMode, setViewMode, mergeOverrideVersion, setMergeOverrideVersion, setAlertMsg, setToastMsg, setConfirmModal, setIsProcessing, setAppStep, onClosingWorkbookDetected: handleClosingWorkbookDetected });
+    const { productData, setProductData, analysisPeriod, setAnalysisPeriod, targetDateStr, setTargetDateStr, substHistory, setSubstHistory, ackMultiCodes, setAckMultiCodes, hasSavedWork, savedWorkMeta, autoSaveStatus, resetEngine, restoreWorkState, handleBaseDataChange, handlePromoChange, handleManualStockChange, executeImmediateSubstitution, handlePurchaseLotManualAdjust, executeMasterSubstitutionCandidates, handleSalesMove, executeAnalysis, runAnalysis, runCostExtraction } = useInventoryEngine({ mappings, grouping, viewMode, setViewMode, mergeOverrideVersion, setMergeOverrideVersion, setAlertMsg, setToastMsg, setConfirmModal, setIsProcessing, setAppStep, onClosingWorkbookDetected: handleClosingWorkbookDetected });
     const productDataRef = useRef(productData);
     productDataRef.current = productData;
     const isCostExtractionMode = !files.prev && files.in && !files.out && files.end;
@@ -11361,8 +11562,20 @@ ${balanceText}
             return;
         }
         setIsProcessing(true);
+        let closingRows = [];
         try {
-            const { wb, exportFileNameDate } = EXPORT_MODULE.createCombinedWorkbook({ productData, analysisPeriod, targetDateStr, closingStats });
+            const activeElement = document.activeElement;
+            if (activeElement && typeof activeElement.__dataopsFlushNow === 'function') {
+                activeElement.__dataopsFlushNow();
+                await new Promise(resolve => setTimeout(resolve, 0));
+            }
+            const closingProductData = productDataRef.current || productData;
+            // 필터는 전달자료에서 제외하고, 관리자 통합/분리 결과만 반영한다.
+            // 기존 전체재고 adapter가 만든 10열 셀과 행 순서를 그대로 사용하고 행사가만 11열로 붙인다.
+            const closingViewRows = DATAOPS_VIEW_LAYER_MODULE.buildViewRows(closingProductData, { viewMode })
+                .filter(item => STOCK_ENGINE_MODULE.getActualQty(item) > 0);
+            closingRows = EXPORT_MODULE.buildScreenStockRows({ productData: closingViewRows, targetDateStr });
+            const { wb, exportFileNameDate } = EXPORT_MODULE.createCombinedWorkbook({ productData: closingProductData, analysisPeriod, targetDateStr, closingStats, wholeStockRows: closingRows });
             let excelBuffer;
             try {
                 excelBuffer = await DATAOPS_XLSX_WORKER_MODULE.writeWorkbook(wb);
@@ -11380,16 +11593,27 @@ ${balanceText}
             a.click();
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
-            setTimeout(() => { setToastMsg('수불마감 다운로드 완료 · 전체재고/구매잔량/기타상품 포함'); }, 500);
+            setToastMsg('Excel 다운로드 완료 · 클라우드 저장을 확인 중입니다.');
         }
         catch (err) {
             console.error('엑셀 생성 중 오류:', err);
-            setAlertMsg("엑셀 파일 생성 중 오류가 발생했습니다.");
+            setAlertMsg(`Excel 파일 생성 또는 다운로드에 실패했습니다. 클라우드에는 저장하지 않았습니다.${err && err.message ? ` · ${err.message}` : ''}`);
+            setIsProcessing(false);
+            return;
+        }
+        try {
+            const envelope = await DATAOPS_PROMO_SNAPSHOT_MODULE.buildEnvelope({ rows: closingRows, basisDate: targetDateStr });
+            const result = await DATAOPS_PROMO_SNAPSHOT_MODULE.commit(envelope);
+            setToastMsg(`실사 마감 저장 완료 · Excel + 클라우드 ${result.revision}`);
+        }
+        catch (err) {
+            console.error('DataOps 클라우드 저장 오류:', err);
+            setAlertMsg(`Excel 다운로드는 완료되었지만 클라우드 저장에 실패했습니다. 이전 확정자료는 유지됩니다.${err && err.message ? ` · ${err.message}` : ''}`);
         }
         finally {
             setIsProcessing(false);
         }
-    }, [isClosingOutputBlocked, productData, analysisPeriod, targetDateStr, closingStats, setAlertMsg, setIsProcessing]);
+    }, [isClosingOutputBlocked, productData, analysisPeriod, targetDateStr, closingStats, viewMode, setAlertMsg, setToastMsg, setIsProcessing]);
     const handlePrintOutput = useCallback(() => {
         if (isClosingOutputBlocked) {
             setAlertMsg("분석이 완료되기 전에는 출력할 수 없습니다.");
@@ -11670,6 +11894,8 @@ ${balanceText}
             data = data.filter(d => d.이슈 && d.이슈.length > 0);
         if (filters.excludeZeroActual)
             data = data.filter(d => { const act = d.실사 === '' || d.실사 === null || d.실사 === undefined ? 0 : Number(d.실사); return act !== 0; });
+        if (promoOnly)
+            data = data.filter(d => safeNum(d.행사가) > 0);
         if (filters.reviewType === 'stockLot')
             return [...data].sort((a, b) => {
                 const codeCompare = FILTER_SORT_MODULE.getCodeSortValue(a).localeCompare(FILTER_SORT_MODULE.getCodeSortValue(b), 'ko', { numeric: false, sensitivity: 'base' });
@@ -11694,7 +11920,7 @@ ${balanceText}
             });
         }
         return FILTER_SORT_MODULE.sortRows(data, filters.sortMode, filters.sortDesc);
-    }, [productData, viewMode, mergeOverrideVersion, filters, multiPriceCodes, mappings, hasQtyIssueTotal, hasLotIssueTotal, substitutionCandidateCodeSet, substitutionPreviewView, lotReviewCandidateCodeSet, stockLotIssueGroupCodeSet, stockLotStandaloneIssueKeySet, stabilizeViewRows]);
+    }, [productData, viewMode, mergeOverrideVersion, filters, promoOnly, multiPriceCodes, mappings, hasQtyIssueTotal, hasLotIssueTotal, substitutionCandidateCodeSet, substitutionPreviewView, lotReviewCandidateCodeSet, stockLotIssueGroupCodeSet, stockLotStandaloneIssueKeySet, stabilizeViewRows]);
     const splitLotMemoMap = useMemo(() => {
         const counts = {};
         filteredProductData.forEach(row => {
@@ -11713,6 +11939,12 @@ ${balanceText}
     useEffect(() => {
         filteredProductDataRef.current = filteredProductData;
     }, [filteredProductData]);
+    const handleResetPromos = useCallback(() => {
+        if (!window.confirm('현재 작업표의 행사가를 모두 초기화하시겠습니까? MerchOps와 클라우드에는 실사 마감 저장 전까지 반영되지 않습니다.'))
+            return;
+        setProductData(prev => prev.map(item => item.행사가 === '' ? item : { ...item, 행사가: '' }));
+        setToastMsg('현재 작업표의 행사가를 초기화했습니다.');
+    }, [setProductData, setToastMsg]);
     return (React.createElement("div", { className: "h-screen flex flex-col w-full relative bg-[#f8fafc]", onDragOver: handleGlobalDragOver, onDrop: handleGlobalDrop },
         React.createElement("header", { className: "shrink-0 bg-white border-b border-slate-200 w-full z-[60] relative shadow-sm" },
             React.createElement("div", { className: "max-w-7xl mx-auto px-4 md:px-6 py-3 flex justify-between items-center" },
@@ -11728,10 +11960,12 @@ ${balanceText}
                         savedWorkMeta && React.createElement("span", { className: "text-[9px] text-slate-400 truncate w-full text-right" }, `${safeStr(savedWorkMeta.workMeta && savedWorkMeta.workMeta.sourceFileName, '원본 파일 미복원')} · ${safeStr(savedWorkMeta.targetDateStr, '기준일 미상')} · ${safeNum(savedWorkMeta.productCount)}건`)),
                     productData.length > 0 && (React.createElement(React.Fragment, null,
                         React.createElement("button", { onClick: () => setGuideModalOpen(true), className: "px-3 py-1.5 rounded text-[12px] font-bold transition flex items-center border bg-white text-slate-700 border-slate-300 hover:bg-slate-50 shadow-sm mr-1" }, "\uC774\uC288 \uAC00\uC774\uB4DC"),
+                        React.createElement("button", { onClick: () => setPromoOnly(value => !value), className: `px-3 py-1.5 rounded text-[12px] font-bold transition flex items-center border shadow-sm ${promoOnly ? 'bg-amber-500 text-white border-amber-600' : 'bg-white text-amber-700 border-amber-300 hover:bg-amber-50'}` }, "행사 보기"),
+                        React.createElement("button", { onClick: handleResetPromos, className: "px-3 py-1.5 rounded text-[12px] font-bold transition flex items-center border bg-white text-rose-600 border-rose-200 hover:bg-rose-50 shadow-sm" }, "행사가 초기화"),
                         React.createElement("div", { className: "w-px h-5 bg-slate-300 mx-1 hidden md:block" }),
                         React.createElement("button", { onClick: handleCombinedExport, disabled: isClosingOutputBlocked, className: `px-3 py-1.5 rounded text-[12px] font-bold shadow-sm transition items-center border hidden md:flex ${isClosingOutputBlocked ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed' : 'bg-white text-slate-700 hover:bg-slate-50 border-slate-300'}` },
                             React.createElement("i", { className: "fas fa-file-excel mr-1.5 text-emerald-600" }),
-                            "\uC5D1\uC140 \uB2E4\uC6B4\uB85C\uB4DC",
+                            "실사 마감 저장",
                             React.createElement("span", { className: "ml-1.5 px-1 py-[1px] rounded text-[9px] font-mono border-b-2 border-slate-300 bg-slate-100 text-slate-500 shadow-sm font-black" }, "F9")),
                         React.createElement("button", { onClick: handlePrintOutput, disabled: isClosingOutputBlocked, className: `px-3 py-1.5 rounded text-[12px] font-bold shadow-sm transition items-center border hidden md:flex ${isClosingOutputBlocked ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed' : 'bg-white text-slate-700 hover:bg-slate-50 border-slate-300'}` },
                             React.createElement("i", { className: "fas fa-print mr-1.5 text-slate-600" }),
@@ -11752,9 +11986,9 @@ ${balanceText}
                         React.createElement("div", null,
                             React.createElement("h4", { className: "text-sm font-black text-slate-900 flex items-center" },
                                 React.createElement("i", { className: "fas fa-cloud-arrow-down text-emerald-600 mr-2" }),
-                                "MerchOps \uD074\uB77C\uC6B0\uB4DC \uB9C8\uC2A4\uD130 \uC5F0\uB3D9"),
+                                "MerchOps 마스터 · DataOps 마감 클라우드 연동"),
                             React.createElement("p", { className: "text-xs text-emerald-800 mt-1.5 ml-6 leading-relaxed" },
-                                "MerchOps Apps Script \uC6F9\uC571 URL\uC744 \uC800\uC7A5\uD558\uACE0 MasterDB\uB97C \uC77D\uAE30 \uC804\uC6A9\uC73C\uB85C \uBD88\uB7EC\uC635\uB2C8\uB2E4. DataOps\uB294 \uD074\uB77C\uC6B0\uB4DC\uB97C \uC218\uC815\uD558\uC9C0 \uC54A\uACE0 \uCE90\uC2DC\uB85C\uB9CC \uC0AC\uC6A9\uD569\uB2C8\uB2E4.")),
+                                "같은 Apps Script 웹앱 URL에서 MerchOps MasterDB를 읽고, 실사 마감 저장 때 확정 FULL 재고를 별도 DataOps snapshot으로 저장합니다. 기존 MasterDB/HistoryLogs/AppConfig는 변경하지 않습니다.")),
                         React.createElement("div", { className: "grid grid-cols-2 md:grid-cols-4 gap-2 text-center min-w-[280px]" },
                             React.createElement("div", { className: "bg-white rounded-lg border border-emerald-200 px-3 py-2" },
                                 React.createElement("div", { className: "text-[10px] font-bold text-slate-500" }, "\uB9C8\uC2A4\uD130"),
@@ -12157,6 +12391,7 @@ ${balanceText}
                                                     React.createElement("div", { className: "absolute right-3 text-slate-400 pointer-events-none" },
                                                         React.createElement("i", { className: "fas fa-search text-sm" })))),
                                             React.createElement("th", { className: "py-2.5 px-2 border-r border-slate-200 text-right w-[80px] min-w-[80px]" }, "단가"),
+                                            React.createElement("th", { className: "py-2.5 px-2 border-r border-slate-200 text-right w-[90px] min-w-[90px]" }, "행사가"),
                                             React.createElement("th", { className: "py-2.5 px-2 border-r border-slate-200 text-right w-[85px] min-w-[85px]" }, "기초 재고"),
                                             React.createElement("th", { className: "py-2.5 px-2 border-r border-slate-200 text-right w-[85px] min-w-[85px]" }, "입고"),
                                             React.createElement("th", { className: "py-2.5 px-2 border-r border-slate-200 text-right w-[85px] min-w-[85px]" }, "출고"),
@@ -12183,7 +12418,7 @@ ${balanceText}
                                                             linkSourceKey ? '대상 선택...' : '재고 조정(로스상계)',
                                                             React.createElement("span", { className: `ml-1.5 px-1 py-0.5 rounded text-[9px] border hidden sm:inline-block font-normal tracking-wide ${linkSourceKey ? 'bg-slate-700 border-slate-600 text-slate-200' : 'bg-slate-200/50 border-transparent text-slate-400'}` }, "Space"))))))),
                                     React.createElement("tbody", { className: "divide-y divide-slate-100 bg-white" }, filteredProductData.length === 0 ? (React.createElement("tr", null,
-                                        React.createElement("td", { colSpan: "9", className: "p-12 text-center text-slate-400 font-bold bg-slate-50/50" },
+                                        React.createElement("td", { colSpan: "10", className: "p-12 text-center text-slate-400 font-bold bg-slate-50/50" },
                                             React.createElement("i", { className: "fas fa-box-open mb-3 text-3xl opacity-50 block" }),
                                             productData.length === 0 ? "상단 '데이터 소스'에 파일을 업로드하고 [분석 실행]을 눌러주세요." : "조건에 맞는 데이터가 없습니다."))) : (filteredProductData.map((item, idx) => {
                                         const getMergeGroupKey = (row = {}) => {
@@ -12209,12 +12444,12 @@ ${balanceText}
                                         const isNewCategory = filters.sortMode !== 'DEFAULT' && idx > 0 && currGroupLabel !== prevGroupLabel;
                                         return (React.createElement(React.Fragment, { key: item.batchKey },
                                             filters.sortMode !== 'DEFAULT' && idx > 0 && currGroupLabel !== prevGroupLabel && (filters.sortMode === 'CATEGORY' ? (React.createElement("tr", { className: "bg-white" },
-                                                React.createElement("td", { colSpan: "9", className: "p-0 border-t-2 border-slate-300" }))) : (React.createElement("tr", { className: "bg-slate-100 border-y border-slate-300" },
-                                                React.createElement("td", { colSpan: "9", className: "px-3 py-1.5 text-[11px] font-black text-slate-600 tracking-tight" },
+                                                React.createElement("td", { colSpan: "10", className: "p-0 border-t-2 border-slate-300" }))) : (React.createElement("tr", { className: "bg-slate-100 border-y border-slate-300" },
+                                                React.createElement("td", { colSpan: "10", className: "px-3 py-1.5 text-[11px] font-black text-slate-600 tracking-tight" },
                                                     "\u2500\u2500\u2500\u2500 ",
                                                     currGroupLabel || '미지정',
                                                     " \u2500\u2500\u2500\u2500")))),
-                                            React.createElement(ProductRow, { key: item.batchKey, item: item, idx: idx, isLinked: linkSourceKey === item.batchKey || (Array.isArray(item._viewSourceKeys) && item._viewSourceKeys.includes(linkSourceKey)), isActiveMulti: activeMultiCode === item.코드, isMultiGroupItem: multiPriceCodeSet.has(item.코드), splitLotMemo: splitLotMemoMap[item.batchKey] || '', targetDateStr: targetDateStr, onStockChange: handleManualStockChange, onSpacebar: handleSpacebarLink, onFocusInput: handleFocusInput, onBaseDataChange: handleBaseDataChange, onOpenMemo: handleOpenMemo, onSalesMove: handleChipDropRequest, onVendorChipDelete: handleVendorChipDelete, onVendorChipEdit: handleVendorChipEdit, onViewLayerEditBlocked: handleViewLayerEditBlocked, internalLotMapping: mappings.internalLot, isGroupStart: isGroupStart, isNewCategory: isNewCategory, isMergeGroupStart: isMergeGroupStart, isMergeGroupEnd: isMergeGroupEnd, isLotReviewMode: viewMode === 'LOT_DETAIL', isLotReviewCandidate: isLotReviewCandidate, isLotReviewGroupStart: isLotReviewGroupStart, isLotReviewGroupEnd: isLotReviewGroupEnd, isActiveLotReviewGroup: isActiveLotReviewGroup, normalizeDisplayIssues: normalizeDisplayIssues, onPurchaseLotAdjust: handlePurchaseLotManualAdjust, onToggleCodeMerge: handleToggleCodeMerge })));
+                                            React.createElement(ProductRow, { key: item.batchKey, item: item, idx: idx, isLinked: linkSourceKey === item.batchKey || (Array.isArray(item._viewSourceKeys) && item._viewSourceKeys.includes(linkSourceKey)), isActiveMulti: activeMultiCode === item.코드, isMultiGroupItem: multiPriceCodeSet.has(item.코드), splitLotMemo: splitLotMemoMap[item.batchKey] || '', targetDateStr: targetDateStr, onStockChange: handleManualStockChange, onSpacebar: handleSpacebarLink, onFocusInput: handleFocusInput, onBaseDataChange: handleBaseDataChange, onPromoChange: handlePromoChange, onOpenMemo: handleOpenMemo, onSalesMove: handleChipDropRequest, onVendorChipDelete: handleVendorChipDelete, onVendorChipEdit: handleVendorChipEdit, onViewLayerEditBlocked: handleViewLayerEditBlocked, internalLotMapping: mappings.internalLot, isGroupStart: isGroupStart, isNewCategory: isNewCategory, isMergeGroupStart: isMergeGroupStart, isMergeGroupEnd: isMergeGroupEnd, isLotReviewMode: viewMode === 'LOT_DETAIL', isLotReviewCandidate: isLotReviewCandidate, isLotReviewGroupStart: isLotReviewGroupStart, isLotReviewGroupEnd: isLotReviewGroupEnd, isActiveLotReviewGroup: isActiveLotReviewGroup, normalizeDisplayIssues: normalizeDisplayIssues, onPurchaseLotAdjust: handlePurchaseLotManualAdjust, onToggleCodeMerge: handleToggleCodeMerge })));
                                     })))))))))),
         splitModal.isOpen && (React.createElement("div", { className: "fixed inset-0 z-[400] bg-slate-900 bg-opacity-60 flex items-center justify-center p-4" },
             React.createElement("div", { className: "bg-white rounded-xl shadow-2xl p-6 w-full max-w-xs modal-bounce" },
