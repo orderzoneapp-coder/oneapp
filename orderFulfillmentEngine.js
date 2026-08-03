@@ -7,9 +7,18 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  const ENGINE_VERSION = "1.0.0";
-  const WORKSPACE_SCHEMA_VERSION = "shipping-workspace/v1";
+  const ENGINE_VERSION = "2.0.0";
+  const WORKSPACE_SCHEMA_VERSION = "shipping-workspace/v2";
   const HEADER_SCAN_LIMIT = 30;
+  const MANAGER_PALETTE = Object.freeze([
+    Object.freeze({ base: "FCE7D6", strong: "FDBA74" }),
+    Object.freeze({ base: "DDEBF7", strong: "93C5FD" }),
+    Object.freeze({ base: "E2F0D9", strong: "86EFAC" }),
+    Object.freeze({ base: "EDE9FE", strong: "C4B5FD" }),
+    Object.freeze({ base: "FEF3C7", strong: "FCD34D" }),
+    Object.freeze({ base: "FCE7F3", strong: "F9A8D4" }),
+    Object.freeze({ base: "CCFBF1", strong: "5EEAD4" }),
+  ]);
 
   const ORDER_REQUIRED_COLUMNS = Object.freeze([
     "품목코드",
@@ -68,6 +77,38 @@
       return Number.isInteger(value) ? String(value) : String(value).replace(/\.0+$/, "");
     }
     return String(value).trim();
+  }
+
+  function normalizeCategoryCode(value) {
+    return normalizeProductCode(value).replace(/\s+/g, "").toUpperCase();
+  }
+
+  function managerColors(manager) {
+    const text = cleanText(manager);
+    let hash = 0;
+    for (let index = 0; index < text.length; index += 1) {
+      hash = (hash * 31 + text.charCodeAt(index)) >>> 0;
+    }
+    return MANAGER_PALETTE[hash % MANAGER_PALETTE.length];
+  }
+
+  function validIsoDate(year, month, day) {
+    const iso = `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    const timestamp = Date.parse(`${iso}T00:00:00.000Z`);
+    return Number.isNaN(timestamp) || new Date(timestamp).toISOString().slice(0, 10) !== iso
+      ? ""
+      : iso;
+  }
+
+  function parseOrderBasisDate(value) {
+    if (value instanceof Date && !Number.isNaN(value.getTime())) {
+      return validIsoDate(value.getFullYear(), value.getMonth() + 1, value.getDate());
+    }
+    const text = cleanText(value);
+    if (!text) return "";
+    let match = text.match(/^(\d{4})[-./](\d{1,2})[-./](\d{1,2})(?:\D|$)/);
+    if (!match) match = text.match(/^(\d{4})(\d{2})(\d{2})(?:\D|$)/);
+    return match ? validIsoDate(Number(match[1]), Number(match[2]), Number(match[3])) : "";
   }
 
   function roundQuantity(value) {
@@ -261,10 +302,12 @@
         }
 
         const price = parseNumericCell(getField(row, columnMap, "단가"));
+        const orderNumberValue = getField(row, columnMap, "일자-No.");
         rows.push({
           inputOrder: rows.length + 1,
           sourceRowNumber: rowIndex + 1,
-          orderNumber: cleanText(getField(row, columnMap, "일자-No.")),
+          orderNumber: cleanText(orderNumberValue),
+          basisDate: parseOrderBasisDate(orderNumberValue),
           manager: cleanText(getField(row, columnMap, "담당")),
           sourceUnit: cleanText(getField(row, columnMap, "단위")),
           productCode: code,
@@ -295,6 +338,7 @@
       kind: "orders",
       fileName: cleanText(input.fileName) || "주문현황.xlsx",
       sheetName: cleanText(input.sheetName),
+      fileHash: cleanText(input.fileHash),
       headerRowIndex,
       headerRowNumber: headerRowIndex >= 0 ? headerRowIndex + 1 : null,
       headers: headerRow.map(cleanText),
@@ -459,6 +503,7 @@
       kind: "inventory",
       fileName: cleanText(input.fileName) || "창고별재고.xlsx",
       sheetName: cleanText(input.sheetName),
+      fileHash: cleanText(input.fileHash),
       headerRowIndex,
       headerRowNumber: headerRowIndex >= 0 ? headerRowIndex + 1 : null,
       headers: headerRow.map(cleanText),
@@ -549,6 +594,48 @@
     return [...new Set(values.filter(Boolean))].join(", ");
   }
 
+  function uniqueTextValues(values) {
+    return [...new Set(values.map(cleanText).filter(Boolean))];
+  }
+
+  function formatPlainNumber(value) {
+    if (typeof value !== "number" || !Number.isFinite(value)) return "";
+    return Number.isInteger(value) ? String(value) : String(roundQuantity(value));
+  }
+
+  function uniqueSupplierPairs(rows) {
+    const seen = new Set();
+    const result = [];
+    rows.forEach((row) => {
+      const customer = cleanText(row.customer);
+      const unitPrice = typeof row.unitPrice === "number" && Number.isFinite(row.unitPrice)
+        ? row.unitPrice
+        : null;
+      if (!customer && unitPrice === null) return;
+      const key = JSON.stringify([customer, unitPrice]);
+      if (seen.has(key)) return;
+      seen.add(key);
+      result.push({
+        customer,
+        unitPrice,
+        display: `${customer}${unitPrice === null ? "" : `(${formatPlainNumber(unitPrice)})`}`,
+      });
+    });
+    return result;
+  }
+
+  function buildPlanId(basisDate, sourceFingerprint) {
+    const date = String(basisDate || "").replace(/[^0-9]/g, "");
+    const fingerprint = String(sourceFingerprint || "").replace(/[^a-fA-F0-9]/g, "").toLowerCase();
+    return date.length === 8 && fingerprint.length >= 16
+      ? `SHIPPLAN-${date}-${fingerprint.slice(0, 16)}`
+      : "";
+  }
+
+  function isPurchaseUploadExcluded(value) {
+    return value === "대체" || value === "소분";
+  }
+
   function analyze(ordersParsed, inventoryParsed, options = {}) {
     const inputValidation = validateInputs(ordersParsed, inventoryParsed);
     if (!inputValidation.canAnalyze) {
@@ -628,6 +715,8 @@
         ),
         reconciliationDifference,
         matchStatus: matched ? "매칭완료" : "재고정보 없음",
+        purchase: "",
+        managerColors: managerColors(order.manager),
       });
     }
 
@@ -651,7 +740,9 @@
           purchaseNeed: allocation.inventoryMatched ? 0 : null,
           orderCount: 0,
           customers: [],
+          supplierRows: [],
           groups: [],
+          managers: [],
           notes: [],
           notes1: [],
         });
@@ -673,7 +764,9 @@
       }
       summary.orderCount += 1;
       summary.customers.push(allocation.customer);
+      summary.supplierRows.push(allocation);
       summary.groups.push(allocation.group);
+      summary.managers.push(allocation.manager);
       summary.notes.push(allocation.note);
       summary.notes1.push(allocation.note1);
     }
@@ -687,12 +780,26 @@
               summary.purchaseNeed,
           )
         : null;
+      const noteValues = uniqueTextValues(summary.notes);
+      const note1Values = uniqueTextValues(summary.notes1);
+      const managerValues = uniqueTextValues(summary.managers);
+      const supplierPairs = uniqueSupplierPairs(summary.supplierRows);
+      const primaryManager = managerValues[0] || "";
+      const { supplierRows, ...publicSummary } = summary;
       return {
-        ...summary,
+        ...publicSummary,
         customers: uniqueJoined(summary.customers),
         groups: uniqueJoined(summary.groups),
-        notes: uniqueJoined(summary.notes),
-        notes1: uniqueJoined(summary.notes1),
+        managers: managerValues.join(", "),
+        manager: primaryManager,
+        managerColors: managerColors(primaryManager),
+        noteValues,
+        note1Values,
+        notes: noteValues.join("\n"),
+        notes1: note1Values.join("\n"),
+        supplierPairs,
+        suppliers: supplierPairs.map((pair) => pair.display).join("\n"),
+        purchase: "",
         status: classifyAllocation(
           summary.wholeAllocation,
           summary.seoulAllocation,
@@ -703,17 +810,66 @@
       };
     });
 
-    const purchaseManagement = productSummaries
+    const purchaseManagement = [];
+    productSummaries
       .filter(
         (summary) =>
           !summary.inventoryMatched ||
-          (typeof summary.purchaseNeed === "number" && summary.purchaseNeed > 0),
+          (typeof summary.purchaseNeed === "number" && summary.purchaseNeed > 0) ||
+          summary.noteValues.length > 0 ||
+          summary.note1Values.length > 0,
       )
-      .map((summary) => ({
-        ...summary,
-        managementStatus: summary.inventoryMatched ? "발주 필요" : "재고 확인 필요",
-        confirmedPurchaseQuantity: null,
-      }));
+      .forEach((summary) => {
+        purchaseManagement.push({
+          ...summary,
+          rowType: "main",
+          referenceFor: "",
+        });
+        if (!(typeof summary.purchaseNeed === "number" && summary.purchaseNeed > 0)) return;
+        const categoryPrefix = normalizeCategoryCode(summary.productCode).slice(0, 6);
+        if (categoryPrefix.length < 6) return;
+        inventoryParsed.rows
+          .filter(
+            (inventory) =>
+              inventory.productCode !== summary.productCode &&
+              normalizeCategoryCode(inventory.productCode).slice(0, 6) === categoryPrefix,
+          )
+          .forEach((inventory) => {
+            purchaseManagement.push({
+              rowType: "reference",
+              referenceFor: summary.productCode,
+              productCode: inventory.productCode,
+              productName: inventory.productName,
+              specification: inventory.specification,
+              inventoryMatched: true,
+              matchStatus: "매칭완료",
+              wholeStockRaw: inventory.wholeStockRaw,
+              wholeStockAvailable: inventory.wholeStockAvailable,
+              seoulFirstPurchaseRaw: inventory.seoulFirstPurchaseRaw,
+              firstTransferRaw: inventory.firstTransferRaw,
+              seoulFirstPurchaseRemaining: inventory.seoulFirstPurchaseRemaining,
+              totalOrderQuantity: null,
+              wholeAllocation: null,
+              seoulAllocation: null,
+              purchaseNeed: null,
+              orderCount: null,
+              customers: "",
+              suppliers: "",
+              supplierPairs: [],
+              groups: "",
+              managers: "",
+              manager: "",
+              managerColors: { base: "F1F5F9", strong: "E2E8F0" },
+              noteValues: [],
+              note1Values: [],
+              notes: "",
+              notes1: "",
+              purchase: "",
+              status: "카테고리 대체 참고",
+              reconciliationDifference: null,
+            });
+          });
+      });
 
     const totalOrderQuantity = roundQuantity(
       allocations.reduce((sum, row) => sum + row.quantity, 0),
@@ -760,6 +916,23 @@
       result[row.status] = (result[row.status] || 0) + 1;
       return result;
     }, {});
+    const basisDates = uniqueTextValues(ordersParsed.rows.map((row) => row.basisDate));
+    const invalidDateRows = ordersParsed.rows
+      .filter((row) => row.orderNumber && !row.basisDate)
+      .map((row) => row.sourceRowNumber);
+    const basisDate = basisDates.length === 1 && invalidDateRows.length === 0
+      ? basisDates[0]
+      : "";
+    const basisDateStatus = basisDates.length > 1
+      ? "conflict"
+      : invalidDateRows.length > 0
+        ? "invalid"
+        : basisDates.length === 0
+          ? "missing"
+          : "valid";
+    const uploadDate = basisDate ? basisDate.replace(/-/g, "") : "";
+    const sourceFingerprint = cleanText(options.sourceFingerprint);
+    const planId = buildPlanId(basisDate, sourceFingerprint);
 
     const memoIssues = collectMemoIssues(ordersParsed.rows);
     const validationResults = [
@@ -820,6 +993,19 @@
         description: "구매수량을 자동 확정하지 않는 상품 수",
       },
       {
+        item: "구매업로드 기준일",
+        result: basisDateStatus === "valid" ? basisDate : basisDates.join(", ") || "없음",
+        expected: "단일 YYYY-MM-DD",
+        status: basisDateStatus === "valid" ? "정상" : "오류",
+        description: basisDateStatus === "conflict"
+          ? "일자-No.에서 서로 다른 기준일이 확인되어 구매업로드·클라우드 저장을 차단합니다."
+          : basisDateStatus === "invalid"
+            ? `일자-No.를 날짜로 해석할 수 없는 원본행: ${invalidDateRows.join(", ")}`
+            : basisDateStatus === "missing"
+              ? "일자-No.에서 기준일을 찾지 못했습니다."
+              : "일자-No.의 일련번호를 제외한 단일 기준일",
+      },
+      {
         item: "적요 확인",
         result: memoIssues.length,
         expected: 0,
@@ -832,12 +1018,20 @@
       schemaVersion: WORKSPACE_SCHEMA_VERSION,
       engineVersion: ENGINE_VERSION,
       createdAt: options.createdAt || new Date().toISOString(),
+      sourceFingerprint,
+      planId,
+      basisDate,
+      uploadDate,
+      basisDateStatus,
+      basisDates,
+      invalidDateRows,
       sourceFiles: {
         orders: {
           fileName: ordersParsed.fileName,
           sheetName: ordersParsed.sheetName,
           headerRowIndex: ordersParsed.headerRowIndex,
           rowCount: ordersParsed.rowCount,
+          sha256: ordersParsed.fileHash,
           matrix: ordersParsed.sourceMatrix,
           productCodeColumnIndex: ordersParsed.productCodeColumnIndex,
         },
@@ -846,6 +1040,7 @@
           sheetName: inventoryParsed.sheetName,
           headerRowIndex: inventoryParsed.headerRowIndex,
           rowCount: inventoryParsed.rowCount,
+          sha256: inventoryParsed.fileHash,
           matrix: inventoryParsed.sourceMatrix,
           productCodeColumnIndex: inventoryParsed.productCodeColumnIndex,
         },
@@ -872,8 +1067,70 @@
         negativePurchaseCount,
         reconciliationErrorCount,
         statusCounts,
+        purchaseManagementMainCount: purchaseManagement.filter((row) => row.rowType === "main").length,
+        purchaseReferenceCount: purchaseManagement.filter((row) => row.rowType === "reference").length,
       },
     };
+  }
+
+  function setPurchaseValue(workspace, productCode, value) {
+    if (!workspace || workspace.schemaVersion !== WORKSPACE_SCHEMA_VERSION) {
+      throw new Error("지원하지 않는 Shipping Management 작업공간입니다.");
+    }
+    const code = normalizeProductCode(productCode);
+    const purchase = value === undefined || value === null ? "" : String(value);
+    [workspace.allocations, workspace.productSummaries].forEach((rows) => {
+      (rows || []).forEach((row) => {
+        if (row.productCode === code) row.purchase = purchase;
+      });
+    });
+    (workspace.purchaseManagement || []).forEach((row) => {
+      if (row.rowType === "main" && row.productCode === code) row.purchase = purchase;
+    });
+    return purchase;
+  }
+
+  function applyPurchaseInputs(workspace, inputs) {
+    Object.entries(inputs && typeof inputs === "object" ? inputs : {}).forEach(([code, value]) => {
+      setPurchaseValue(workspace, code, value);
+    });
+    return workspace;
+  }
+
+  function getPurchaseInputs(workspace) {
+    const result = {};
+    (workspace?.purchaseManagement || []).forEach((row) => {
+      if (row.rowType === "main") result[row.productCode] = String(row.purchase || "");
+    });
+    return result;
+  }
+
+  function getPurchaseUploadSelection(workspace) {
+    if (!workspace || workspace.schemaVersion !== WORKSPACE_SCHEMA_VERSION) {
+      throw new Error("지원하지 않는 Shipping Management 작업공간입니다.");
+    }
+    const included = [];
+    const excluded = [];
+    (workspace.purchaseManagement || []).forEach((row) => {
+      if (row.rowType === "reference") {
+        excluded.push({ productCode: row.productCode, reason: "카테고리 대체 참고행" });
+        return;
+      }
+      if (!row.inventoryMatched || typeof row.purchaseNeed !== "number") {
+        excluded.push({ productCode: row.productCode, reason: "재고정보 없음·구매수량 근거 없음" });
+        return;
+      }
+      if (!(row.purchaseNeed > 0)) {
+        excluded.push({ productCode: row.productCode, reason: "추가 구매 필요 수량 없음" });
+        return;
+      }
+      if (isPurchaseUploadExcluded(row.purchase)) {
+        excluded.push({ productCode: row.productCode, reason: `구매값 ${row.purchase}` });
+        return;
+      }
+      included.push(row);
+    });
+    return { included, excluded };
   }
 
   return Object.freeze({
@@ -884,11 +1141,20 @@
     ORDER_OPTIONAL_COLUMNS,
     INVENTORY_OPTIONAL_COLUMNS,
     normalizeProductCode,
+    normalizeCategoryCode,
+    parseOrderBasisDate,
+    managerColors,
+    buildPlanId,
+    isPurchaseUploadExcluded,
     parseNumericCell,
     findHeaderRow,
     parseOrderWorkbook,
     parseInventoryWorkbook,
     validateInputs,
     analyze,
+    setPurchaseValue,
+    applyPurchaseInputs,
+    getPurchaseInputs,
+    getPurchaseUploadSelection,
   });
 });

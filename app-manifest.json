@@ -1,5 +1,5 @@
 {
-  "schemaVersion": "1.2.0",
+  "schemaVersion": "1.3.0",
   "updatedAt": "2026-08-04",
   "repository": {
     "fullName": "orderzoneapp-coder/oneapp",
@@ -187,12 +187,29 @@
       "integrationNote": "Settings explicitly loads this library. Other production pages still contain overlapping local implementations and require compatibility validation before consolidation."
     },
     {
+      "id": "shipping-management",
+      "name": "Shipping Management",
+      "path": "orders.html",
+      "kind": "web-entry",
+      "status": "pilot",
+      "purpose": "Analyze order and aggregate warehouse inventory files, manage purchase plans with recoverable local state and explicit revisioned cloud saves, and generate reviewed unshipped-status and purchase-upload workbooks.",
+      "owner": "shipping-operations",
+      "productionWrites": true,
+      "services": [
+        "cloud-sync"
+      ],
+      "sharedContracts": [
+        "cloud-url",
+        "shipping-purchase-plan"
+      ]
+    },
+    {
       "id": "cloud-sync",
       "name": "ONEAPP Cloud Sync",
       "path": "code.gs",
       "kind": "google-apps-script-service",
       "status": "production",
-      "purpose": "Back up and restore product master, history, shared configuration, and the finalized DataOps inventory snapshot.",
+      "purpose": "Back up and restore product master, history, shared configuration, the finalized DataOps inventory snapshot, and explicitly saved Shipping purchase-plan revisions.",
       "apiActions": {
         "post": [
           "initSync",
@@ -200,7 +217,10 @@
           "chunk_history",
           "config",
           "dataops_snapshot_commit",
-          "dataops_snapshot_get"
+          "dataops_snapshot_get",
+          "shipping_plan_save",
+          "shipping_plan_list",
+          "shipping_plan_get"
         ],
         "get": [
           "full",
@@ -216,11 +236,41 @@
         "mapping-config",
         "table-view-config",
         "cloud-url",
-        "dataops-inventory-snapshot"
+        "dataops-inventory-snapshot",
+        "shipping-purchase-plan"
       ]
     }
   ],
   "sharedDataContracts": [
+    {
+      "id": "shipping-purchase-plan",
+      "owner": "shipping-management",
+      "consumers": [
+        "orders.html"
+      ],
+      "schemaVersion": "ONEAPP_SHIPPING_PURCHASE_PLAN_V1",
+      "workspaceSchemaVersion": "shipping-workspace/v2",
+      "localRecoverySchemaVersion": "shipping-local-recovery/v1",
+      "resources": {
+        "indexedDb": {
+          "database": "ONEAPPShippingManagementDB",
+          "store": "workspaces"
+        },
+        "localStorage": [
+          "oneapp.shipping.recovery.pointer.v1",
+          "oneapp.shipping.recovery.meta.v1"
+        ],
+        "cloud": [
+          "shipping_plan_save",
+          "shipping_plan_list",
+          "shipping_plan_get",
+          "ShippingPlanStaging",
+          "ShippingPlanHistory",
+          "ShippingPlanIndex",
+          "ONEAPP_SHIPPING_PLAN_ACCESS_TOKEN"
+        ]
+      }
+    },
     {
       "id": "dataops-inventory-snapshot",
       "owner": "dataops",
@@ -461,38 +511,6 @@
     ]
   },
   "plannedApplications": [
-    {
-      "id": "shipping-management",
-      "name": "Shipping Management",
-      "proposedPath": "orders.html",
-      "kind": "web-entry",
-      "status": "planned",
-      "developmentState": "mvp-pilot-candidate",
-      "purpose": "Reduce administrator Excel reconciliation time by matching order status and aggregate warehouse inventory, allocating available stock in input order, and generating one reviewed unshipped-status workbook.",
-      "owner": "shipping-operations",
-      "inputs": [
-        "주문현황 Excel",
-        "창고별재고 Excel"
-      ],
-      "outputs": [
-        "미출고현황 Excel workbook",
-        "shipping-workspace/v1 in-memory analysis result"
-      ],
-      "sharedContracts": [],
-      "upstream": [],
-      "downstream": [],
-      "productionWrites": false,
-      "validation": [
-        "Required columns and numeric quantities pass before analysis.",
-        "Inventory duplicate product codes block analysis.",
-        "Matched allocations reconcile by order row and product without reusing aggregate stock.",
-        "Unmatched product codes remain explicit and do not receive a confirmed purchase quantity.",
-        "The generated workbook contains all seven required review and source sheets.",
-        "Representative reference files, focused edge cases, and the local browser workflow pass."
-      ],
-      "rollback": "Disable the pilot orders.html route and revert the isolated Shipping Management entry, engine, workbook helper, documentation, and tests; no shared storage or production data migration is required.",
-      "targetStatus": "pilot"
-    },
     {
       "id": "trend-report",
       "name": "Trend Report",

@@ -97,3 +97,6 @@ jobs:
 
       - name: Test Shipping Management allocation and workbook contracts
         run: node scripts/test-shipping-management.mjs
+
+      - name: Test Shipping purchase-plan cloud failure safety
+        run: node scripts/test-shipping-purchase-plan-cloud.mjs
