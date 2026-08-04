@@ -1,6 +1,6 @@
 # Shipping Management 개발 가이드
 
-- 문서 버전: 3.0.0
+- 문서 버전: 3.1.0
 - 대상 진입점: `orders.html`
 - 현재 단계: 구매계획·로컬 복구·명시적 클라우드 저장 Pilot
 - 업무 소유자: 배송·발주 운영 관리자
@@ -31,6 +31,7 @@ Shipping Management는 관리자가 주문현황과 창고별재고 Excel을 수
 - 탭은 `발주관리 → 미출고현황 → 창고별 재고 → 검증결과` 순서이며 발주관리를 기본으로 표시한다.
 - 활성 탭에만 상품코드·상품명·규격·적요·담당자·그룹 통합 검색과 exact `BOX`/`EA`/`소분` 복수 필터를 적용한다.
 - 현재 필터 결과 표만 A4 세로로 화면 인쇄한다.
+- 모든 결과 탭은 헤더 경계를 드래그하거나 방향키로 열폭을 조절하며, 현재 탭의 열폭만 명시적으로 로컬 저장하거나 기본값으로 초기화할 수 있다.
 - 아래 5개 시트를 가진 `Shipping 업무표 Excel`을 생성한다.
   - `발주관리`
   - `미출고현황`
@@ -94,7 +95,7 @@ Shipping Management는 관리자가 주문현황과 창고별재고 Excel을 수
 - 계산 시트에는 제목, 기준 설명, 필터, 고정 머리글, 열 너비, 수량 서식, 상태 색상을 적용한다.
 - `주문원본`과 `창고별 재고`는 입력값 비교를 위한 감사 원본이며, 출력 계산값으로 원본을 덮어쓰지 않는다.
 - `발주관리`는 첫 시트이며 재고가 매칭되고 계산된 `purchaseNeed > 0`인 본 상품만 상품코드당 한 행으로 표시한다. 담당자·그룹과 내부 배정·판정 열은 표시하지 않는다.
-- `창고별 재고`는 주문 여부와 무관하게 원본의 `품목코드, 품목명, 규격, 수량, 1창고, 3서울, 4전송, 7진영, 기본, 전송, 창고` 전체 행과 마지막 `구매` 열을 표시한다.
+- `창고별 재고`는 주문 여부와 무관하게 원본 머리글의 비공란 열을 원본 순서·타입 그대로 모두 표시하고 마지막에 Shipping 전용 `구매` 열을 한 번 추가한다. 새 창고 열은 표시·검색·음수 경고와 일반 workbook에만 확장되며 기존 배정·판정 계산에는 자동 합산하지 않는다.
 - 주문 없는 재고상품의 구매값은 기존 purchaseInputs 계약 안에서 inventory shadow row로만 보존한다. 주문수량·배정·합계를 만들지 않으며 발주관리·미출고현황·구매업로드에 나타나지 않는다.
 - 구매값이 정확히 `대체` 또는 `소분`일 때만 구매업로드에서 제외한다. 공란과 오타·확장 문구는 일반 거래처명으로 처리한다.
 - 거래처(단가)는 주문 원본의 거래처+단가 쌍을 평균내지 않고 중복 제거해 표시한다.
@@ -137,6 +138,7 @@ Shipping Management는 관리자가 주문현황과 창고별재고 Excel을 수
 - `orderFulfillmentWorkbook.js`는 Shipping Management 결과 통합문서 구조와 표시 형식의 소유자다.
 - `orders.html`은 파일 선택, 상태 표시, 결과 미리보기, 다운로드 흐름만 소유한다.
 - 로컬 복구는 전용 IndexedDB `ONEAPPShippingManagementDB`의 `workspaces` store를 사용한다. `sourceFingerprint`와 `schemaVersion`이 일치하지 않는 자료는 자동복구하지 않는다.
+- 탭별 열폭은 Shipping 전용 localStorage `oneapp.shipping.table-widths.v1`에 UI preference로만 저장하며 workspace, IndexedDB 복구, cloud plan, 구매업로드에는 포함하지 않는다. 화면 인쇄와 일반 workbook 열폭도 이 preference를 사용하지 않는다.
 - cloud 계획은 `ShippingPlanStaging`, append-only `ShippingPlanHistory`, 확정 `ShippingPlanIndex`를 사용한다. index가 유일한 조회 경계다.
 - Shipping cloud action은 전용 `ONEAPP_SHIPPING_PLAN_ACCESS_TOKEN`을 사용하고 DataOps/Master/History/Config 저장계약과 격리한다.
 - `coreEngine.js`를 로드하거나 수정하지 않는다.

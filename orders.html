@@ -424,10 +424,41 @@
     .tab-button.active { border-color: var(--teal-700); color: var(--white); background: var(--teal-700); }
     .preview-count {
       flex: 0 0 auto;
-      padding-bottom: 10px;
       color: var(--slate-500);
       font-size: 11px;
       font-weight: 800;
+    }
+    .preview-meta {
+      display: flex;
+      flex: 0 0 auto;
+      align-items: center;
+      gap: 8px;
+      padding-bottom: 10px;
+    }
+    .column-width-tools {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px;
+      border: 1px solid var(--slate-200);
+      border-radius: 6px;
+      background: var(--white);
+    }
+    .column-width-tools button {
+      min-height: 25px;
+      padding: 0 8px;
+      border: 1px solid var(--slate-200);
+      border-radius: 4px;
+      color: var(--slate-600);
+      background: var(--white);
+      font-size: 10px;
+      font-weight: 900;
+    }
+    .column-width-tools button:hover { border-color: var(--teal-700); color: var(--teal-700); }
+    .column-width-tools .column-width-save.dirty {
+      border-color: #4f46e5;
+      color: var(--white);
+      background: #4f46e5;
     }
     .table-wrap {
       overflow: auto;
@@ -442,6 +473,12 @@
       border-spacing: 0;
       font-size: 11px;
     }
+    table.column-width-managed {
+      width: max-content;
+      min-width: 100%;
+      table-layout: fixed;
+    }
+    table.column-width-managed td { max-width: none; }
     th {
       position: sticky;
       top: 0;
@@ -453,6 +490,34 @@
       text-align: left;
       white-space: nowrap;
     }
+    th.column-resizable { padding-right: 15px; }
+    .column-resize-handle {
+      position: absolute;
+      top: 0;
+      right: -4px;
+      bottom: 0;
+      z-index: 4;
+      width: 9px;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      cursor: col-resize;
+      touch-action: none;
+    }
+    .column-resize-handle::after {
+      position: absolute;
+      top: 18%;
+      right: 4px;
+      bottom: 18%;
+      width: 1px;
+      background: rgba(255, 255, 255, 0.48);
+      content: "";
+    }
+    .column-resize-handle:hover::after,
+    .column-resize-handle:focus-visible::after { width: 2px; background: #5eead4; }
+    .column-resize-handle:focus-visible { outline: 2px solid #5eead4; outline-offset: -2px; }
+    html.shipping-column-resizing,
+    html.shipping-column-resizing * { cursor: col-resize !important; user-select: none !important; }
     td {
       max-width: 300px;
       padding: 9px 11px;
@@ -1003,7 +1068,7 @@
     .preview-toolbar { padding: 7px 10px 0; }
     .preview-tabs { padding-bottom: 5px; }
     .tab-button { min-height: 29px; padding: 0 9px; }
-    .preview-count { padding-bottom: 5px; }
+    .preview-meta { padding-bottom: 5px; }
     .table-wrap { max-height: calc(100vh - 330px); }
     th { padding: 7px 9px; }
     td { padding: 6px 9px; }
@@ -1037,6 +1102,9 @@
       .view-controls { grid-template-columns: 1fr; align-items: stretch; }
       .spec-filter { flex-wrap: wrap; }
       .print-button { width: 100%; }
+      .preview-toolbar { align-items: flex-start; flex-wrap: wrap; }
+      .preview-tabs { flex: 1 1 100%; }
+      .preview-meta { width: 100%; justify-content: space-between; }
     }
   </style>
 </head>
@@ -1159,7 +1227,13 @@
 
       <div class="preview-toolbar">
         <div class="preview-tabs" id="previewTabs" role="tablist" aria-label="결과 미리보기"></div>
-        <div class="preview-count" id="previewCount"></div>
+        <div class="preview-meta">
+          <div class="preview-count" id="previewCount"></div>
+          <div class="column-width-tools" aria-label="현재 표 열폭 편집">
+            <button class="column-width-save" id="columnWidthSaveButton" type="button">열폭 저장</button>
+            <button id="columnWidthResetButton" type="button">초기화</button>
+          </div>
+        </div>
       </div>
       <div class="table-wrap" id="previewTable" role="tabpanel"></div>
       <div class="result-footnote">
@@ -1168,7 +1242,7 @@
     </section>
 
     <footer class="page-footer">
-      <span>Shipping Management v3.0.0 · workspace shipping-workspace/v2 · cloud plan v1</span>
+      <span>Shipping Management v3.1.0 · workspace shipping-workspace/v2 · cloud plan v1</span>
       <a href="SHIPPING_MANAGEMENT_GUIDANCE.md">개발·운영 기준 보기</a>
     </footer>
   </main>
@@ -1226,6 +1300,11 @@
       const LOCAL_STORE_NAME = "workspaces";
       const LOCAL_POINTER_KEY = "oneapp.shipping.recovery.pointer.v1";
       const LOCAL_META_KEY = "oneapp.shipping.recovery.meta.v1";
+      const TABLE_WIDTHS_KEY = "oneapp.shipping.table-widths.v1";
+      const TABLE_WIDTHS_SCHEMA = "shipping-table-widths/v1";
+      const TABLE_WIDTH_MIN = 48;
+      const TABLE_WIDTH_MAX = 720;
+      const TABLE_WIDTH_TABS = new Set(["purchases", "allocations", "inventory", "validation"]);
       const CLOUD_PLAN_SCHEMA = "ONEAPP_SHIPPING_PURCHASE_PLAN_V1";
       const state = {
         orders: null,
@@ -1240,6 +1319,10 @@
         recoveryRecord: null,
         recoveryCorruptionDetected: false,
         cloudRevisions: [],
+        columnWidthSettings: { schemaVersion: TABLE_WIDTHS_SCHEMA, tabs: Object.create(null) },
+        columnWidthDrafts: Object.create(null),
+        columnWidthDirtyTabs: new Set(),
+        activeColumnResize: null,
       };
 
       const elements = {
@@ -1266,6 +1349,8 @@
         printArea: document.getElementById("printArea"),
         previewTabs: document.getElementById("previewTabs"),
         previewCount: document.getElementById("previewCount"),
+        columnWidthSaveButton: document.getElementById("columnWidthSaveButton"),
+        columnWidthResetButton: document.getElementById("columnWidthResetButton"),
         previewTable: document.getElementById("previewTable"),
         downloadButton: document.getElementById("downloadButton"),
         purchaseUploadButton: document.getElementById("purchaseUploadButton"),
@@ -1313,6 +1398,145 @@
         return Number.isFinite(number)
           ? new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 3 }).format(number)
           : String(value);
+      }
+
+      function isPlainRecord(value) {
+        if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+        const prototype = Object.getPrototypeOf(value);
+        return prototype === Object.prototype || prototype === null;
+      }
+
+      function isSafeColumnKey(value) {
+        const key = String(value || "");
+        return key.length > 0 && key.length <= 500 && /^(?:shipping|inventory):/.test(key) &&
+          !/(?:^|:)(?:__proto__|prototype|constructor)(?:$|:)/i.test(key);
+      }
+
+      function loadColumnWidthSettings() {
+        const fallback = { schemaVersion: TABLE_WIDTHS_SCHEMA, tabs: Object.create(null) };
+        try {
+          const raw = localStorage.getItem(TABLE_WIDTHS_KEY);
+          if (!raw) return fallback;
+          const parsed = JSON.parse(raw);
+          if (!isPlainRecord(parsed) || parsed.schemaVersion !== TABLE_WIDTHS_SCHEMA || !isPlainRecord(parsed.tabs)) {
+            return fallback;
+          }
+          const tabs = Object.create(null);
+          Object.entries(parsed.tabs).forEach(([tabId, widths]) => {
+            if (!TABLE_WIDTH_TABS.has(tabId) || !isPlainRecord(widths)) return;
+            const safeWidths = Object.create(null);
+            Object.entries(widths).forEach(([columnKey, width]) => {
+              if (!isSafeColumnKey(columnKey) || typeof width !== "number" || !Number.isFinite(width) ||
+                width < TABLE_WIDTH_MIN || width > TABLE_WIDTH_MAX) return;
+              safeWidths[columnKey] = Math.round(width);
+            });
+            if (Object.keys(safeWidths).length > 0) tabs[tabId] = safeWidths;
+          });
+          return { schemaVersion: TABLE_WIDTHS_SCHEMA, tabs };
+        } catch (error) {
+          return fallback;
+        }
+      }
+
+      function defaultColumnWidth(column) {
+        const header = String(column?.header || "").trim();
+        if (/상품코드|품목코드|코드/.test(header)) return 120;
+        if (/상품명|품목명/.test(header)) return 220;
+        if (/설명/.test(header)) return 260;
+        if (/거래처|적요/.test(header)) return 180;
+        if (/규격|담당자|구매/.test(header)) return 110;
+        if (column?.numeric) return 88;
+        return 104;
+      }
+
+      function createPreviewColumns(previewId, headers, numericIndexes = []) {
+        const numeric = new Set(numericIndexes);
+        return headers.map((header, index) => ({
+          key: `shipping:${previewId}:${index}:${encodeURIComponent(String(header).trim())}`,
+          header,
+          numeric: numeric.has(index),
+        }));
+      }
+
+      function getColumnWidthDraft(tabId) {
+        if (!Object.prototype.hasOwnProperty.call(state.columnWidthDrafts, tabId)) {
+          const draft = Object.create(null);
+          const saved = state.columnWidthSettings.tabs[tabId];
+          if (isPlainRecord(saved)) {
+            Object.entries(saved).forEach(([key, width]) => {
+              if (isSafeColumnKey(key) && Number.isFinite(width) && width >= TABLE_WIDTH_MIN && width <= TABLE_WIDTH_MAX) {
+                draft[key] = Math.round(width);
+              }
+            });
+          }
+          state.columnWidthDrafts[tabId] = draft;
+        }
+        return state.columnWidthDrafts[tabId];
+      }
+
+      function currentColumnWidth(tabId, column) {
+        const width = getColumnWidthDraft(tabId)[column.key];
+        return Number.isFinite(width) ? width : defaultColumnWidth(column);
+      }
+
+      function setColumnWidthDraft(tabId, columnKey, width) {
+        if (!TABLE_WIDTH_TABS.has(tabId) || !isSafeColumnKey(columnKey)) return;
+        getColumnWidthDraft(tabId)[columnKey] = Math.max(
+          TABLE_WIDTH_MIN,
+          Math.min(TABLE_WIDTH_MAX, Math.round(width)),
+        );
+        state.columnWidthDirtyTabs.add(tabId);
+        updateColumnWidthToolbar();
+      }
+
+      function updateColumnWidthToolbar() {
+        const dirty = state.columnWidthDirtyTabs.has(state.activePreview);
+        elements.columnWidthSaveButton.classList.toggle("dirty", dirty);
+        elements.columnWidthSaveButton.setAttribute("aria-pressed", dirty ? "true" : "false");
+      }
+
+      function persistActiveColumnWidths() {
+        if (!state.workspace || !TABLE_WIDTH_TABS.has(state.activePreview)) return;
+        const definitions = getPreviewDefinitions(state.workspace);
+        const preview = definitions[state.activePreview];
+        if (!preview) return;
+        const draft = getColumnWidthDraft(state.activePreview);
+        const nextTabs = Object.create(null);
+        TABLE_WIDTH_TABS.forEach((tabId) => {
+          const existing = state.columnWidthSettings.tabs[tabId];
+          if (isPlainRecord(existing) && Object.keys(existing).length > 0) nextTabs[tabId] = { ...existing };
+        });
+        const activeWidths = Object.create(null);
+        preview.columns.forEach((column) => {
+          const width = draft[column.key];
+          if (Number.isFinite(width) && width >= TABLE_WIDTH_MIN && width <= TABLE_WIDTH_MAX &&
+            width !== defaultColumnWidth(column)) activeWidths[column.key] = Math.round(width);
+        });
+        if (Object.keys(activeWidths).length > 0) nextTabs[state.activePreview] = activeWidths;
+        else delete nextTabs[state.activePreview];
+        const serializableTabs = {};
+        Object.entries(nextTabs).forEach(([tabId, widths]) => {
+          serializableTabs[tabId] = { ...widths };
+        });
+        const payload = { schemaVersion: TABLE_WIDTHS_SCHEMA, tabs: serializableTabs };
+        try {
+          localStorage.setItem(TABLE_WIDTHS_KEY, JSON.stringify(payload));
+          state.columnWidthSettings = loadColumnWidthSettings();
+          state.columnWidthDrafts[state.activePreview] = Object.assign(Object.create(null), activeWidths);
+          state.columnWidthDirtyTabs.delete(state.activePreview);
+          updateColumnWidthToolbar();
+          showToast("현재 표의 열폭을 이 브라우저에 저장했습니다.");
+        } catch (error) {
+          showToast("열폭을 저장하지 못했습니다.", true);
+        }
+      }
+
+      function resetActiveColumnWidths() {
+        if (!state.workspace || !TABLE_WIDTH_TABS.has(state.activePreview)) return;
+        state.columnWidthDrafts[state.activePreview] = Object.create(null);
+        state.columnWidthDirtyTabs.add(state.activePreview);
+        renderPreview();
+        showToast("현재 표를 기본 열폭으로 되돌렸습니다. 열폭 저장을 누르면 유지됩니다.");
       }
 
       function showToast(message, isError) {
@@ -1746,13 +1970,24 @@
             typeof row.purchaseNeed === "number" && row.purchaseNeed > 0,
         );
         const inventoryView = engine.getInventoryViewRows(workspace);
-        const inventoryNumericHeaders = new Set([
-          "수량", "1창고", "3서울", "4전송", "7진영", "기본", "전송", "창고",
-        ]);
+        const purchaseHeaders = ["상품코드", "품목명", "규격", "전체주문", "전재고", "서울잔량", "구매수량", "구매", "거래처(단가)", "적요", "적요1"];
+        const allocationHeaders = ["상품코드", "품목명", "규격", "주문수량", "전재고", "서울잔량", "구매수량", "구매", "거래처(단가)", "적요", "적요1", "담당자"];
+        const validationHeaders = ["검증 항목", "계산 결과", "정상 기준", "판정", "설명"];
+        const inventoryColumns = inventoryView.columns.map((column) => ({
+          key: column.key,
+          header: column.header,
+          numeric: true,
+        }));
+        inventoryColumns.push({
+          key: "shipping:inventory:purchase",
+          header: "구매",
+          numeric: false,
+        });
         return {
           purchases: {
             label: "발주관리",
-            headers: ["상품코드", "품목명", "규격", "전체주문", "전재고", "서울잔량", "구매수량", "구매", "거래처(단가)", "적요", "적요1"],
+            headers: purchaseHeaders,
+            columns: createPreviewColumns("purchases", purchaseHeaders, [3, 4, 5, 6]),
             numeric: [3, 4, 5, 6],
             purchase: 7,
             purchaseEditable: true,
@@ -1774,7 +2009,8 @@
           },
           allocations: {
             label: "미출고현황",
-            headers: ["상품코드", "품목명", "규격", "주문수량", "전재고", "서울잔량", "구매수량", "구매", "거래처(단가)", "적요", "적요1", "담당자"],
+            headers: allocationHeaders,
+            columns: createPreviewColumns("allocations", allocationHeaders, [3, 4, 5, 6]),
             numeric: [3, 4, 5, 6],
             purchase: 7,
             purchaseEditable: false,
@@ -1797,10 +2033,9 @@
           },
           inventory: {
             label: "창고별 재고",
-            headers: [...inventoryView.headers, "구매"],
-            numeric: inventoryView.headers
-              .map((header, index) => (inventoryNumericHeaders.has(String(header).trim()) ? index : -1))
-              .filter((index) => index >= 0),
+            headers: inventoryColumns.map((column) => column.header),
+            columns: inventoryColumns,
+            numeric: inventoryView.columns.map((_, index) => index),
             purchase: inventoryView.headers.length,
             purchaseEditable: true,
             status: -1,
@@ -1812,7 +2047,8 @@
           },
           validation: {
             label: "검증결과",
-            headers: ["검증 항목", "계산 결과", "정상 기준", "판정", "설명"],
+            headers: validationHeaders,
+            columns: createPreviewColumns("validation", validationHeaders, [1, 2]),
             numeric: [1, 2],
             inventory: [],
             purchase: -1,
@@ -1869,7 +2105,7 @@
         return !manager || manager === whiteManager ? "#ffffff" : operationalManagerFill(manager);
       }
 
-      function previewSearchCorpus(sourceRow) {
+      function previewSearchCorpus(sourceRow, displayRow) {
         return [
           sourceRow?.productCode,
           sourceRow?.productName,
@@ -1882,13 +2118,14 @@
           sourceRow?.managers,
           sourceRow?.group,
           sourceRow?.groups,
-        ].map((value) => String(value || "").trim().toLocaleLowerCase("ko-KR")).filter(Boolean).join(" ");
+          ...(Array.isArray(displayRow) ? displayRow : []),
+        ].map((value) => String(value ?? "").trim().toLocaleLowerCase("ko-KR")).filter(Boolean).join(" ");
       }
 
       function filteredPreviewPairs(preview) {
         const query = state.searchQuery.trim().toLocaleLowerCase("ko-KR");
         return preview.rows.map((row, index) => ({ row, sourceRow: preview.sourceRows[index] })).filter(({ sourceRow }) => {
-          const queryMatches = !query || previewSearchCorpus(sourceRow).includes(query);
+          const queryMatches = !query || previewSearchCorpus(sourceRow, row).includes(query);
           const specification = String(sourceRow?.specification || "").trim();
           const unitMatches = state.specificationFilters.size === 0 || state.specificationFilters.has(specification);
           return queryMatches && unitMatches;
@@ -1912,21 +2149,118 @@
           : `- · ${filters}`;
       }
 
+      function updateRenderedColumnWidth(columnKey, width) {
+        elements.previewTable.querySelectorAll("[data-column-key]").forEach((element) => {
+          if (element.dataset.columnKey !== columnKey) return;
+          if (element.tagName === "COL") element.style.width = `${width}px`;
+          if (element.classList.contains("column-resize-handle")) {
+            element.setAttribute("aria-valuenow", String(width));
+          }
+        });
+      }
+
+      function handleColumnPointerMove(event) {
+        const resize = state.activeColumnResize;
+        if (!resize || event.pointerId !== resize.pointerId) return;
+        event.preventDefault();
+        const width = Math.max(
+          TABLE_WIDTH_MIN,
+          Math.min(TABLE_WIDTH_MAX, resize.startWidth + event.clientX - resize.startX),
+        );
+        setColumnWidthDraft(resize.tabId, resize.columnKey, width);
+        updateRenderedColumnWidth(resize.columnKey, Math.round(width));
+      }
+
+      function finishColumnResize(event) {
+        const resize = state.activeColumnResize;
+        if (!resize || (event?.pointerId !== undefined && event.pointerId !== resize.pointerId)) return;
+        try {
+          if (resize.handle.hasPointerCapture?.(resize.pointerId)) resize.handle.releasePointerCapture(resize.pointerId);
+        } catch (error) {}
+        document.removeEventListener("pointermove", handleColumnPointerMove);
+        document.removeEventListener("pointerup", finishColumnResize);
+        document.removeEventListener("pointercancel", finishColumnResize);
+        window.removeEventListener("blur", finishColumnResize);
+        document.documentElement.classList.remove("shipping-column-resizing");
+        state.activeColumnResize = null;
+      }
+
+      function beginColumnResize(event) {
+        const handle = event.target.closest(".column-resize-handle");
+        if (!handle || !state.workspace || (event.pointerType === "mouse" && event.button !== 0)) return;
+        const columnKey = handle.dataset.columnKey;
+        const definitions = getPreviewDefinitions(state.workspace);
+        const preview = definitions[state.activePreview];
+        const column = preview?.columns.find((candidate) => candidate.key === columnKey);
+        if (!column) return;
+        finishColumnResize();
+        event.preventDefault();
+        const startWidth = currentColumnWidth(state.activePreview, column);
+        state.activeColumnResize = {
+          tabId: state.activePreview,
+          columnKey,
+          pointerId: event.pointerId,
+          startX: event.clientX,
+          startWidth,
+          handle,
+        };
+        try { handle.setPointerCapture?.(event.pointerId); } catch (error) {}
+        document.documentElement.classList.add("shipping-column-resizing");
+        document.addEventListener("pointermove", handleColumnPointerMove, { passive: false });
+        document.addEventListener("pointerup", finishColumnResize);
+        document.addEventListener("pointercancel", finishColumnResize);
+        window.addEventListener("blur", finishColumnResize);
+      }
+
+      function handleColumnResizeKeydown(event) {
+        const handle = event.target.closest(".column-resize-handle");
+        if (!handle || !["ArrowLeft", "ArrowRight"].includes(event.key) || !state.workspace) return;
+        const definitions = getPreviewDefinitions(state.workspace);
+        const preview = definitions[state.activePreview];
+        const column = preview?.columns.find((candidate) => candidate.key === handle.dataset.columnKey);
+        if (!column) return;
+        event.preventDefault();
+        const direction = event.key === "ArrowRight" ? 1 : -1;
+        const step = event.shiftKey ? 24 : 8;
+        const width = Math.max(
+          TABLE_WIDTH_MIN,
+          Math.min(TABLE_WIDTH_MAX, currentColumnWidth(state.activePreview, column) + direction * step),
+        );
+        setColumnWidthDraft(state.activePreview, column.key, width);
+        updateRenderedColumnWidth(column.key, width);
+      }
+
       function renderTableMarkup(preview, pairs, editable) {
         const whiteManager = dominantManager(state.workspace?.allocations || []);
+        const columns = preview.columns || createPreviewColumns(state.activePreview, preview.headers, preview.numeric);
+        const useColumnWidths = editable === true;
+        const colgroup = useColumnWidths ? `<colgroup>${columns.map((column) => {
+          const width = currentColumnWidth(state.activePreview, column);
+          return `<col data-column-key="${escapeHtml(column.key)}" style="width:${width}px">`;
+        }).join("")}</colgroup>` : "";
+        const headers = columns.map((column) => {
+          if (!useColumnWidths) return `<th>${escapeHtml(column.header)}</th>`;
+          const width = currentColumnWidth(state.activePreview, column);
+          return `<th class="column-resizable">${escapeHtml(column.header)}
+            <span class="column-resize-handle" role="separator" tabindex="0"
+              aria-label="${escapeHtml(column.header)} 열폭 조절" aria-orientation="vertical"
+              aria-valuemin="${TABLE_WIDTH_MIN}" aria-valuemax="${TABLE_WIDTH_MAX}" aria-valuenow="${width}"
+              data-column-key="${escapeHtml(column.key)}"></span></th>`;
+        }).join("");
         return `
-          <table class="preview-${state.activePreview}">
-            <thead><tr>${preview.headers.map((header) => `<th>${escapeHtml(header)}</th>`).join("")}</tr></thead>
+          <table class="preview-${state.activePreview}${useColumnWidths ? " column-width-managed" : ""}">
+            ${colgroup}
+            <thead><tr>${headers}</tr></thead>
             <tbody>
               ${pairs.length ? pairs.map(({ row, sourceRow }) => {
                 const rowFill = previewRowFill(state.activePreview, sourceRow, whiteManager);
                 const rowClasses = exactWarningUnit(sourceRow) ? "unit-alert-row" : "";
-                return `<tr class="${rowClasses}">${preview.headers.map((_, index) => {
+                return `<tr class="${rowClasses}">${columns.map((_, index) => {
                   const value = row[index];
-                  const isNumber = preview.numeric.includes(index) && value !== "";
+                  const isNumber = preview.numeric.includes(index) && typeof value === "number" && Number.isFinite(value);
                   const isStatus = preview.status === index;
                   const inventoryNegative = state.activePreview === "inventory" && isNumber &&
-                    Number.isFinite(Number(value)) && Number(value) < 0;
+                    value < 0;
                   const isWarning = inventoryNegative || (isStatus && statusTone(value) === "bad" && String(value).includes("오류"));
                   const classes = [isNumber ? "number" : "", isStatus ? "status" : "", inventoryNegative ? "inventory-negative" : "", isWarning ? "warning-value" : ""].filter(Boolean).join(" ");
                   const editablePurchase = editable && preview.purchaseEditable === true && preview.purchase === index;
@@ -1937,12 +2271,13 @@
                     ${isStatus ? `data-tone="${statusTone(value)}"` : ""}
                     title="${escapeHtml(value)}">${content}</td>`;
                 }).join("")}</tr>`;
-              }).join("") : `<tr><td colspan="${preview.headers.length}">표시할 항목이 없습니다.</td></tr>`}
+              }).join("") : `<tr><td colspan="${columns.length}">표시할 항목이 없습니다.</td></tr>`}
             </tbody>
           </table>`;
       }
 
       function renderPreview() {
+        finishColumnResize();
         const definitions = getPreviewDefinitions(state.workspace);
         if (!definitions[state.activePreview]) state.activePreview = "purchases";
         elements.previewTabs.innerHTML = Object.entries(definitions).map(([id, definition]) => `
@@ -1956,6 +2291,7 @@
         const pairs = filteredPreviewPairs(preview);
         elements.previewCount.textContent = `${formatNumber(pairs.length)}/${formatNumber(preview.rows.length)}행`;
         elements.previewTable.innerHTML = renderTableMarkup(preview, pairs, true);
+        updateColumnWidthToolbar();
         updateSystemInformation(pairs.length, preview.rows.length);
       }
 
@@ -2280,6 +2616,8 @@
         });
       }
 
+      state.columnWidthSettings = loadColumnWidthSettings();
+
       elements.analyzeButton.addEventListener("click", runAnalysis);
       elements.downloadButton.addEventListener("click", downloadResult);
       elements.purchaseUploadButton.addEventListener("click", downloadPurchaseUpload);
@@ -2319,6 +2657,10 @@
         if (!input || !state.workspace || !["purchases", "inventory"].includes(state.activePreview)) return;
         renderResults();
       });
+      elements.previewTable.addEventListener("pointerdown", beginColumnResize);
+      elements.previewTable.addEventListener("keydown", handleColumnResizeKeydown);
+      elements.columnWidthSaveButton.addEventListener("click", persistActiveColumnWidths);
+      elements.columnWidthResetButton.addEventListener("click", resetActiveColumnWidths);
       elements.restoreButton.addEventListener("click", () => {
         try { restoreLocalRecord(state.recoveryRecord); }
         catch (error) {

@@ -7,7 +7,7 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  const ENGINE_VERSION = "3.0.0";
+  const ENGINE_VERSION = "3.1.0";
   const WORKSPACE_SCHEMA_VERSION = "shipping-workspace/v2";
   const HEADER_SCAN_LIMIT = 30;
   const MANAGER_PALETTE = Object.freeze([
@@ -696,26 +696,39 @@
     return workspace;
   }
 
+  function getInventoryColumnDescriptors(workspace) {
+    const source = workspace?.sourceFiles?.inventory || {};
+    const matrix = Array.isArray(source.matrix) ? source.matrix : [];
+    const headerRowIndex = Math.max(0, Number(source.headerRowIndex) || 0);
+    return (matrix[headerRowIndex] || []).map((value, sourceIndex) => {
+      const header = cleanText(value);
+      if (!header) return null;
+      const normalizedLabel = normalizeHeader(header);
+      if (!normalizedLabel) return null;
+      return {
+        key: `inventory:${sourceIndex}:${encodeURIComponent(normalizedLabel)}`,
+        header,
+        sourceIndex,
+      };
+    }).filter(Boolean);
+  }
+
   function getInventoryViewRows(workspace) {
     ensureInventoryPurchaseRows(workspace);
     const source = workspace.sourceFiles?.inventory || {};
     const matrix = Array.isArray(source.matrix) ? source.matrix : [];
     const headerRowIndex = Math.max(0, Number(source.headerRowIndex) || 0);
-    const sourceHeaders = (matrix[headerRowIndex] || []).map(cleanText);
-    const sourceColumnMap = createColumnMap(sourceHeaders);
-    const headers = [
-      "품목코드", "품목명", "규격", "수량", "1창고", "3서울", "4전송", "7진영", "기본", "전송", "창고",
-    ];
+    const columns = getInventoryColumnDescriptors(workspace);
+    const productCodeColumnIndex = Number(source.productCodeColumnIndex);
     const purchaseInputs = getPurchaseInputs(workspace);
     const rows = (Array.isArray(workspace.inventory) ? workspace.inventory : []).map((inventory) => {
       const sourceRowIndex = Math.max(headerRowIndex + 1, Number(inventory.sourceRowNumber || 0) - 1);
       const rawValues = Array.isArray(matrix[sourceRowIndex]) ? matrix[sourceRowIndex] : [];
-      const values = headers.map((header) => {
-        const sourceIndex = sourceColumnMap[normalizeHeader(header)];
-        return sourceIndex === undefined ? null : toSerializableCell(rawValues[sourceIndex]);
-      });
       const productCode = normalizeProductCode(inventory.productCode);
-      values[0] = productCode;
+      const values = columns.map((column) => {
+        if (column.sourceIndex === productCodeColumnIndex) return productCode;
+        return toSerializableCell(rawValues[column.sourceIndex]);
+      });
       return {
         productCode,
         productName: cleanText(inventory.productName),
@@ -724,7 +737,7 @@
         purchase: String(purchaseInputs[productCode] || ""),
       };
     });
-    return { headers, rows };
+    return { columns, headers: columns.map((column) => column.header), rows };
   }
 
   function analyze(ordersParsed, inventoryParsed, options = {}) {
@@ -1266,6 +1279,7 @@
     getPurchaseInputs,
     getPurchaseUploadSelection,
     ensureInventoryPurchaseRows,
+    getInventoryColumnDescriptors,
     getInventoryViewRows,
   });
 });
