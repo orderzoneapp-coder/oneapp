@@ -163,6 +163,114 @@ function parseInventory(matrix, fileName = "창고별재고.xlsx") {
   });
 }
 
+const CANONICAL_ORDER_HEADERS = [...ORDER_HEADERS, "공급가액"];
+const CANONICAL_ORDER_VALUES = Object.freeze({
+  "일자-No.": "2026-08-04-1",
+  "담당": "담당A",
+  "단위": "EA",
+  "품목코드": "ALIAS-001",
+  "품목명": "별칭 상품",
+  "규격": "EA",
+  "수량": 3,
+  "재고": 7,
+  "단가": 1200,
+  "공급가액": 3600,
+  "적요": "별칭 적요",
+  "적요1": "유지 적요1",
+  "거래처": "별칭 거래처",
+  "그룹": "별칭 그룹",
+});
+
+function buildCanonicalOrderMatrix({ replacements = {}, headerOrder = CANONICAL_ORDER_HEADERS, preambleCount = 1, extraHeaders = [] } = {}) {
+  const headers = [...headerOrder.map((canonical) => replacements[canonical] || canonical), ...extraHeaders];
+  const values = [...headerOrder.map((canonical) => CANONICAL_ORDER_VALUES[canonical]), ...extraHeaders.map(() => "확인값")];
+  return [
+    ...Array.from({ length: preambleCount }, (_, index) => [`상단 안내 ${index + 1}`]),
+    headers,
+    values,
+  ];
+}
+
+const approvedAliasGroups = {
+  "품목코드": ["상품코드", "품목코드", "코드"],
+  "품목명": ["상품명", "품목명", "제품명"],
+  "수량": ["수량", "주문수량", "미출고수량"],
+  "단가": ["단가", "판매단가", "출고단가"],
+  "공급가액": ["공급가액", "금액", "합계금액"],
+  "거래처": ["거래처", "거래처명", "고객명"],
+  "적요": ["메모", "비고", "적요"],
+};
+for (const [canonical, aliases] of Object.entries(approvedAliasGroups)) {
+  for (const alias of aliases) {
+    const parsed = parseOrders(buildCanonicalOrderMatrix({ replacements: { [canonical]: alias } }));
+    assert.equal(parsed.errors.length, 0, `${canonical} alias ${alias} must parse`);
+    assert.equal(parsed.headerMapping.columns.some((column) => column.canonical === canonical && column.header === alias), true);
+    assert.equal(parsed.rows[0].productCode, "ALIAS-001");
+    assert.equal(parsed.rows[0].productName, "별칭 상품");
+    assert.equal(parsed.rows[0].quantity, 3);
+    assert.equal(parsed.rows[0].unitPrice, 1200);
+    assert.equal(parsed.rows[0].supplyAmount, 3600);
+    assert.equal(parsed.rows[0].customer, "별칭 거래처");
+    assert.equal(parsed.rows[0].note, "별칭 적요");
+  }
+}
+
+const normalizedAliasOrders = parseOrders(buildCanonicalOrderMatrix({
+  replacements: { "일자-No.": "일자 - nO .", "품목코드": " 상-품_코 드 ", "품목명": "제 품-명" },
+  headerOrder: [...CANONICAL_ORDER_HEADERS].reverse(),
+  preambleCount: 29,
+}));
+assert.equal(normalizedAliasOrders.headerRowIndex, 29, "the thirtieth row must remain inside the order header scan range");
+assert.equal(normalizedAliasOrders.rows[0].productCode, "ALIAS-001", "punctuation, spaces, and case must not change alias matching");
+assert.deepEqual(
+  normalizedAliasOrders.sourceMatrix[29],
+  [...CANONICAL_ORDER_HEADERS].reverse().map((canonical) => ({
+    "일자-No.": "일자 - nO .",
+    "품목코드": " 상-품_코 드 ",
+    "품목명": "제 품-명",
+  }[canonical] || canonical)),
+  "source headers must not be renamed by canonical mapping",
+);
+
+const duplicateCanonicalOrders = parseOrders(buildCanonicalOrderMatrix({ extraHeaders: ["상품코드"] }));
+assert.equal(duplicateCanonicalOrders.errors.some((issue) => issue.code === "ORDER_DUPLICATE_CANONICAL_HEADERS"), true);
+assert.match(
+  duplicateCanonicalOrders.errors.find((issue) => issue.code === "ORDER_DUPLICATE_CANONICAL_HEADERS").message,
+  /품목코드: 품목코드\(4열\), 상품코드\(15열\)/,
+  "duplicate canonical errors must identify the standard field and source positions",
+);
+assert.equal(duplicateCanonicalOrders.rows.length, 0, "ambiguous canonical mappings must block row import");
+
+const missingCanonicalOrders = parseOrders(buildCanonicalOrderMatrix({
+  headerOrder: CANONICAL_ORDER_HEADERS.filter((header) => header !== "규격"),
+}));
+assert.deepEqual(missingCanonicalOrders.missingColumns, ["규격"]);
+assert.match(missingCanonicalOrders.errors[0].message, /규격/);
+
+const unknownHeaderOrders = parseOrders(buildCanonicalOrderMatrix({ extraHeaders: ["사용자 정의 열"] }));
+assert.equal(unknownHeaderOrders.errors.length, 0);
+assert.equal(unknownHeaderOrders.warnings.some((issue) => issue.code === "ORDER_UNKNOWN_HEADERS"), true);
+assert.match(unknownHeaderOrders.warnings[0].message, /사용자 정의 열\(15열\)/);
+
+const supplyHeaders = [...CANONICAL_ORDER_HEADERS];
+const supplyMatrix = [
+  ["공급가액 보존"],
+  supplyHeaders,
+  ...[
+    ["SUPPLY-0", 0],
+    ["SUPPLY-BLANK", ""],
+    ["SUPPLY-TEXT", "숫자 확인 필요"],
+  ].map(([code, supplyAmount], index) => supplyHeaders.map((canonical) => ({
+    ...CANONICAL_ORDER_VALUES,
+    "일자-No.": `2026-08-04-${index + 1}`,
+    "품목코드": code,
+    "공급가액": supplyAmount,
+  }[canonical]))),
+];
+const supplyOrders = parseOrders(supplyMatrix);
+assert.deepEqual(supplyOrders.rows.map((row) => row.supplyAmount), [0, null, "숫자 확인 필요"]);
+assert.deepEqual(supplyOrders.sourceMatrix, supplyMatrix, "supply source cells and headers must remain unchanged");
+
 const edgeOrders = parseOrders(
   buildOrderMatrix([
     { code: "000100", quantity: 4, note: "원문 적요", customer: "같은거래처", price: 1000 },
@@ -177,6 +285,52 @@ const edgeInventory = parseInventory(
     { code: "000100-A", name: "대체 참고상품", whole: 7, seoul: 0, transfer: 0 },
   ]),
 );
+const unknownHeaderInventory = parseInventory(buildInventoryMatrix([
+  { code: "ALIAS-001", whole: 3, seoul: 0, transfer: 0 },
+]));
+assert.equal(
+  engine.validateInputs(unknownHeaderOrders, unknownHeaderInventory).canAnalyze,
+  true,
+  "unknown headers must warn without blocking otherwise valid input",
+);
+
+const supplyInventory = parseInventory(buildInventoryMatrix([
+  { code: "SUPPLY-0", whole: 0, seoul: 0, transfer: 0 },
+  { code: "SUPPLY-BLANK", whole: 0, seoul: 0, transfer: 0 },
+  { code: "SUPPLY-TEXT", whole: 0, seoul: 0, transfer: 0 },
+]));
+const supplyWorkspace = engine.analyze(supplyOrders, supplyInventory, {
+  createdAt: "2026-08-04T00:00:00.000Z",
+});
+const blankSupplyMatrix = supplyMatrix.map((row, rowIndex) =>
+  rowIndex <= 1 ? [...row] : row.map((value, columnIndex) =>
+    columnIndex === supplyHeaders.indexOf("공급가액") ? "" : value,
+  ),
+);
+const blankSupplyWorkspace = engine.analyze(parseOrders(blankSupplyMatrix), supplyInventory, {
+  createdAt: "2026-08-04T00:00:00.000Z",
+});
+assert.equal(supplyWorkspace.stats.totalOrderQuantity, 9);
+assert.equal(supplyWorkspace.stats.totalPurchaseNeed, 9);
+assert.equal(supplyWorkspace.stats.allocationDifference, 0);
+assert.deepEqual(
+  supplyWorkspace.allocations.map((row) => [row.quantity, row.wholeAllocation, row.seoulAllocation, row.purchaseNeed]),
+  blankSupplyWorkspace.allocations.map((row) => [row.quantity, row.wholeAllocation, row.seoulAllocation, row.purchaseNeed]),
+  "supply amount must not participate in allocation or purchase-need calculations",
+);
+assert.deepEqual(supplyWorkspace.allocations.map((row) => row.supplyAmount), [0, null, "숫자 확인 필요"]);
+assert.equal(supplyWorkspace.sourceFiles.orders.headerMapping.schemaVersion, "shipping-order-header-mapping/v1");
+const supplyWorkbook = workbookTools.buildWorkbook(supplyWorkspace, XLSX);
+assert.deepEqual(
+  [2, 3, 4].map((rowNumber) => sheetCellByHeader(supplyWorkbook.Sheets["미출고현황"], "공급가액", rowNumber).v),
+  [0, "", "숫자 확인 필요"],
+  "general Excel must preserve supply amount zero, blank, and nonnumeric source meaning",
+);
+assert.equal(
+  XLSX.utils.decode_range(workbookTools.buildPurchaseUploadWorkbook(supplyWorkspace, XLSX).Sheets["구매입력"]["!ref"]).e.c,
+  19,
+  "supply amount must not change the purchase-upload A:T contract",
+);
 const edgeValidation = engine.validateInputs(edgeOrders, edgeInventory);
 assert.equal(edgeValidation.canAnalyze, true);
 assert.equal(edgeValidation.unmatchedCount, 1);
@@ -186,8 +340,8 @@ const edgeWorkspace = engine.analyze(edgeOrders, edgeInventory, {
   createdAt: "2026-07-30T00:00:00.000Z",
   sourceFingerprint: "a".repeat(64),
 });
-assert.equal(engine.ENGINE_VERSION, "3.2.0");
-assert.equal(workbookTools.WORKBOOK_VERSION, "3.2.0");
+assert.equal(engine.ENGINE_VERSION, "3.3.0");
+assert.equal(workbookTools.WORKBOOK_VERSION, "3.3.0");
 assert.equal(edgeWorkspace.schemaVersion, "shipping-workspace/v2");
 assert.equal(edgeWorkspace.basisDate, "2026-08-04");
 assert.equal(edgeWorkspace.uploadDate, "20260804");
@@ -559,7 +713,7 @@ assert.deepEqual(
   ),
   [
     "상품코드", "품목명", "규격", "1창고", "2전송", "3서울", "4전송", "7진영",
-    "주문수량", "전재고", "서울잔량", "구매수량", "구매", "거래처", "단가", "적요", "적요1", "담당자",
+    "주문수량", "전재고", "서울잔량", "구매수량", "구매", "거래처", "단가", "공급가액", "적요", "적요1", "담당자",
   ],
 );
 assert.equal(engine.parseOrderBasisDate("2026-08-04-17"), "2026-08-04");
@@ -752,8 +906,8 @@ try {
   globalThis.URL = originalUrl;
 }
 const allocationSheet = formatWorkbook.Sheets["미출고현황"];
-assert.equal(allocationSheet["!ref"], "A1:R7");
-assert.deepEqual(allocationSheet["!autofilter"], { ref: "A1:R7" });
+assert.equal(allocationSheet["!ref"], "A1:S7");
+assert.deepEqual(allocationSheet["!autofilter"], { ref: "A1:S7" });
 assert.deepEqual(allocationSheet["!freeze"], { xSplit: 0, ySplit: 1 });
 assert.equal(allocationSheet["A2"].t, "s");
 assert.equal(allocationSheet["A2"].v, "PURCHASE");
@@ -769,7 +923,7 @@ assert.equal(allocationSheet["A2"].s.fill.fgColor.rgb, "FFFFFF", "stable tie win
 assert.equal(allocationSheet["A4"].s.fill.fgColor.rgb, "FFFFFF", "all rows for the dominant manager must remain white");
 assert.notEqual(allocationSheet["A2"].s.fill.fgColor.rgb, allocationSheet["A3"].s.fill.fgColor.rgb);
 assert.equal(allocationSheet["A5"].s.fill.fgColor.rgb, allocationSheet["A6"].s.fill.fgColor.rgb);
-for (let column = 0; column < 18; column += 1) {
+for (let column = 0; column < 19; column += 1) {
   const address = XLSX.utils.encode_cell({ r: 1, c: column });
   if (address === "H2") continue;
   assert.equal(
@@ -781,10 +935,10 @@ for (let column = 0; column < 18; column += 1) {
 assert.equal(allocationSheet["H2"].s.fill.fgColor.rgb, "FEE2E2", "negative warehouse cells must override manager fill");
 for (const row of [3, 4, 6]) {
   assert.equal(allocationSheet[`A${row}`].s.font.color.rgb, "B91C1C", `EA/소분 row ${row} must use red text`);
-  assert.equal(allocationSheet[`R${row}`].s.font.color.rgb, "B91C1C", `EA/소분 manager row ${row} must use red text`);
+  assert.equal(allocationSheet[`S${row}`].s.font.color.rgb, "B91C1C", `EA/소분 manager row ${row} must use red text`);
 }
 for (let row = 1; row <= 7; row += 1) {
-  for (let column = 0; column < 18; column += 1) {
+  for (let column = 0; column < 19; column += 1) {
     const cell = allocationSheet[XLSX.utils.encode_cell({ r: row - 1, c: column })];
     assert.ok(cell, `allocation table cell missing at row=${row} column=${column + 1}`);
     for (const edge of ["top", "bottom", "left", "right"]) {
@@ -808,13 +962,13 @@ assert.deepEqual(allocationSheet["!pageSetup"], {
   fitToWidth: 1,
   fitToHeight: 0,
 });
-assert.equal(allocationSheet["!printArea"], "A1:R7");
+assert.equal(allocationSheet["!printArea"], "A1:S7");
 assert.equal(allocationSheet["!printTitles"], "$1:$1");
 const printNames = formatWorkbook.Workbook.Names.filter(
   (name) => name.Sheet === 1 && /^_xlnm\.Print_/.test(name.Name),
 );
 assert.deepEqual(printNames, [
-  { Name: "_xlnm.Print_Area", Sheet: 1, Ref: "'미출고현황'!$A$1:$R$7" },
+  { Name: "_xlnm.Print_Area", Sheet: 1, Ref: "'미출고현황'!$A$1:$S$7" },
   { Name: "_xlnm.Print_Titles", Sheet: 1, Ref: "'미출고현황'!$1:$1" },
 ]);
 
@@ -894,16 +1048,66 @@ const largeWorkspace = engine.analyze(largeOrders, largeInventory, {
   createdAt: "2026-08-03T00:00:00.000Z",
 });
 const largeWorkbook = workbookTools.buildWorkbook(largeWorkspace, XLSX);
-assert.equal(largeWorkbook.Sheets["미출고현황"]["!printArea"], "A1:R181");
+assert.equal(largeWorkbook.Sheets["미출고현황"]["!printArea"], "A1:S181");
 assert.equal(largeWorkbook.Sheets["미출고현황"]["!pageSetup"].fitToWidth, 1);
 assert.equal(largeWorkbook.Sheets["미출고현황"]["!pageSetup"].fitToHeight, 0);
 assert.ok(
   largeWorkbook.Workbook.Names.some(
-    (name) => name.Name === "_xlnm.Print_Area" && name.Ref === "'미출고현황'!$A$1:$R$181",
+    (name) => name.Name === "_xlnm.Print_Area" && name.Ref === "'미출고현황'!$A$1:$S$181",
   ),
 );
 
 const html = fs.readFileSync(path.join(ROOT, "orders.html"), "utf8");
+const styleBlocks = [...html.matchAll(/<style(?:\s[^>]*)?>([\s\S]*?)<\/style>/gi)].map((match) => match[1]);
+assert.ok(styleBlocks.length > 0, "orders.html must contain a style block");
+
+function assertBalancedCssBraces(css) {
+  let depth = 0;
+  let quote = "";
+  let escaped = false;
+  let inComment = false;
+
+  for (let index = 0; index < css.length; index += 1) {
+    const character = css[index];
+    const nextCharacter = css[index + 1];
+    if (inComment) {
+      if (character === "*" && nextCharacter === "/") {
+        inComment = false;
+        index += 1;
+      }
+      continue;
+    }
+    if (quote) {
+      if (escaped) escaped = false;
+      else if (character === "\\") escaped = true;
+      else if (character === quote) quote = "";
+      continue;
+    }
+    if (character === "/" && nextCharacter === "*") {
+      inComment = true;
+      index += 1;
+    } else if (character === '"' || character === "'") {
+      quote = character;
+    } else if (character === "{") {
+      depth += 1;
+    } else if (character === "}") {
+      depth -= 1;
+      assert.ok(depth >= 0, "orders.html CSS must not contain an unmatched closing brace");
+    }
+  }
+
+  assert.equal(inComment, false, "orders.html CSS comment must be closed");
+  assert.equal(quote, "", "orders.html CSS string must be closed");
+  assert.equal(depth, 0, "orders.html CSS braces must be balanced");
+}
+
+const combinedCss = styleBlocks.join("\n");
+styleBlocks.forEach(assertBalancedCssBraces);
+assert.match(
+  combinedCss,
+  /(?:^|})\s*th\s*\{[^{}]*\boverflow\s*:\s*hidden\s*;/m,
+  "the standalone th rule must contain overflow: hidden",
+);
 for (const requiredText of [
   "Shipping Management",
   "주문현황 Excel",
@@ -922,7 +1126,11 @@ for (const requiredText of [
   "oneapp.shipping.recovery.meta.v1",
   "oneapp.shipping.table-widths.v1",
   "shipping-table-widths/v1",
+  "oneapp.shipping.hidden-columns.v1",
+  "shipping-hidden-columns/v1",
   "열폭 저장",
+  "열 표시/숨김",
+  "현재 탭 모두 표시",
   "orderFulfillmentEngine.js",
   "orderFulfillmentWorkbook.js",
 ]) {
@@ -949,7 +1157,7 @@ assert.match(
   /id="settingsModal" role="dialog" aria-modal="true"[\s\S]*?aria-labelledby="settingsModalTitle" aria-describedby="settingsModalDescription" aria-hidden="true"/,
   "the settings modal must expose an accessible title, description, and modal state",
 );
-assert.match(html, /Shipping Management v3\.2\.0/, "Shipping UI version must be 3.2.0");
+assert.match(html, /Shipping Management v3\.3\.0/, "Shipping UI version must be 3.3.0");
 
 for (const id of [
   "cloudUrlInput",
@@ -1015,19 +1223,24 @@ const previewDefinitionsSource = html.slice(
   html.indexOf("function getPreviewDefinitions"),
   html.indexOf("function statusTone"),
 );
-const inventoryPreviewSource = previewDefinitionsSource.match(/inventory:\s*\{([\s\S]*?)\n\s*\},\n\s*allocations:/)?.[1] || "";
-const allocationPreviewSource = previewDefinitionsSource.match(/allocations:\s*\{([\s\S]*?)\n\s*\},\n\s*validation:/)?.[1] || "";
+const inventoryPreviewStart = previewDefinitionsSource.indexOf("inventory: {");
+const allocationPreviewStart = previewDefinitionsSource.indexOf("allocations: {");
+const validationPreviewStart = previewDefinitionsSource.indexOf("validation: {");
+const inventoryPreviewSource = previewDefinitionsSource.slice(inventoryPreviewStart, allocationPreviewStart);
+const allocationPreviewSource = previewDefinitionsSource.slice(allocationPreviewStart, validationPreviewStart);
+assert.ok(inventoryPreviewStart >= 0 && allocationPreviewStart > inventoryPreviewStart && validationPreviewStart > allocationPreviewStart,
+  "preview object boundaries must be found without depending on nested object braces");
 assert.doesNotMatch(previewDefinitionsSource, /purchases:\s*\{/, "발주관리 screen tab must be removed");
 assert.ok(previewDefinitionsSource.indexOf("inventory:") < previewDefinitionsSource.indexOf("allocations:"), "inventory must be the first screen tab");
 assert.match(allocationPreviewSource, /purchaseEditable:\s*false/, "미출고현황 purchase must be readonly");
 assert.match(inventoryPreviewSource, /purchaseEditable:\s*true/, "창고별 재고 purchase must be editable");
-assert.match(previewDefinitionsSource, /const allocationHeaders = \[[\s\S]*?"거래처", "단가"/, "미출고현황 web must split customer and price");
-assert.match(allocationPreviewSource, /row\.customer[\s\S]*?row\.unitPrice/, "미출고현황 web must preserve original customer and numeric price");
+assert.match(previewDefinitionsSource, /const allocationHeaders = \[[\s\S]*?"거래처", "단가", "공급가액"/, "미출고현황 web must split customer, price, and supply amount");
+assert.match(allocationPreviewSource, /row\.customer[\s\S]*?row\.unitPrice[\s\S]*?row\.supplyAmount/, "미출고현황 web must preserve original customer, numeric price, and independent supply amount");
 assert.match(previewDefinitionsSource, /engine\.getInventoryViewRows/, "창고별 재고 must derive the complete inventory view");
 assert.match(previewDefinitionsSource, /engine\.getAllocationInventoryView/, "미출고현황 must derive all dynamic warehouse values");
 assert.match(
   html,
-  /const editablePurchase = editable && preview\.purchaseEditable === true && preview\.purchase === index;/,
+  /const editablePurchase = editable && preview\.purchaseEditable === true && column\.role === "purchase";/,
   "only a preview explicitly marked purchaseEditable may render purchase inputs",
 );
 assert.match(
@@ -1051,7 +1264,7 @@ assert.match(
 );
 assert.match(html, /workspace: state\.workspace/, "Cloud revisions must include the additive override workspace");
 assert.match(html, /workspace: state\.workspace[\s\S]*?ui: \{ activePreview: state\.activePreview \}/, "local recovery must include the additive override workspace");
-for (const id of ["tableSearchInput", "specFilterGroup", "printButton", "printArea", "systemBasisDate", "systemFileState", "systemMatchState", "systemViewState", "columnWidthSaveButton", "columnWidthResetButton"]) {
+for (const id of ["tableSearchInput", "specFilterGroup", "printButton", "printArea", "systemBasisDate", "systemFileState", "systemMatchState", "systemViewState", "columnVisibilityTools", "columnVisibilityList", "showAllColumnsButton", "columnWidthSaveButton", "columnWidthResetButton"]) {
   assert.equal(html.split(`id="${id}"`).length - 1, 1, `${id} must exist exactly once`);
 }
 assert.match(html, /<div class="validation-box hidden" id="validationBox"/, "initial duplicate validation guidance must stay hidden in the compact System.IO layout");
@@ -1062,7 +1275,11 @@ assert.match(html, /body\.printing-table \* \{ visibility: hidden !important; \}
 assert.match(html, /thead \{ display: table-header-group; \}/, "print headers must repeat");
 assert.match(html, /function printActiveTable\([\s\S]*?filteredPreviewPairs\(preview\)[\s\S]*?window\.print\(\)/, "print must use the current filtered active table");
 assert.match(html, /const TABLE_WIDTHS_KEY = "oneapp\.shipping\.table-widths\.v1"/, "Shipping width preference key changed");
-assert.match(html, /const TABLE_WIDTH_MIN = 48;[\s\S]*?const TABLE_WIDTH_MAX = 720;/, "column widths must be clamped to the approved range");
+assert.match(html, /const TABLE_WIDTH_MIN = 24;[\s\S]*?const TABLE_WIDTH_MAX = 720;/, "column widths must support the approved compact range");
+assert.match(html, /\.purchase-input,[\s\S]*?\.inventory-grid-input \{[\s\S]*?min-width: 0;[\s\S]*?border: 1px solid transparent;/, "editable cells must stay compact and borderless until focus");
+assert.match(html, /\.overflow-shell\.is-overflowing::after \{[\s\S]*?content: "\.\.";/, "clipped table values must use the exact two-dot marker");
+assert.match(html, /function refreshOverflowMarkers\(\)[\s\S]*?scrollWidth > probe\.clientWidth[\s\S]*?scrollHeight > probe\.clientHeight/, "two-dot markers must appear only after real overflow measurement");
+assert.match(html, /const managedTableWidth = useColumnWidths[\s\S]*?columns\.reduce\(\(sum, column\) => sum \+ currentColumnWidth[\s\S]*?style="width:\$\{managedTableWidth\}px;min-width:\$\{managedTableWidth\}px"/, "managed tables must use the exact sum of visible compact column widths");
 assert.match(html, /role="separator"[\s\S]*?aria-orientation="vertical"[\s\S]*?aria-valuemin=/, "resize handles must expose the separator ARIA contract");
 assert.match(html, /\["ArrowLeft", "ArrowRight"\][\s\S]*?event\.shiftKey \? 24 : 8/, "resize handles must support small and shifted keyboard steps");
 assert.match(html, /addEventListener\("pointerdown", beginColumnResize\)/, "pointer resize wiring is missing");
@@ -1107,7 +1324,9 @@ const widthLoaderContext = vm.createContext({
   Math,
   TABLE_WIDTHS_KEY: "oneapp.shipping.table-widths.v1",
   TABLE_WIDTHS_SCHEMA: "shipping-table-widths/v1",
-  TABLE_WIDTH_MIN: 48,
+  HIDDEN_COLUMNS_KEY: "oneapp.shipping.hidden-columns.v1",
+  HIDDEN_COLUMNS_SCHEMA: "shipping-hidden-columns/v1",
+  TABLE_WIDTH_MIN: 24,
   TABLE_WIDTH_MAX: 720,
   TABLE_WIDTH_TABS: new Set(["inventory", "allocations", "validation"]),
   localStorage: { getItem: () => storedWidthPayload },
@@ -1128,6 +1347,68 @@ assert.deepEqual(JSON.parse(JSON.stringify(widthLoaderContext.fallbackWidths)), 
   schemaVersion: "shipping-table-widths/v1",
   tabs: {},
 }, "corrupt local width JSON must fall back without throwing");
+
+const storedHiddenPayload = JSON.stringify({
+  schemaVersion: "shipping-hidden-columns/v1",
+  tabs: {
+    inventory: [
+      "inventory:7:%EC%8B%A0%EA%B7%9C%EC%B0%BD%EA%B3%A0",
+      "inventory:8:%EC%8B%A0%EA%B7%9C%EC%B0%BD%EA%B3%A0",
+      "inventory:9:__proto__",
+      "inventory:7:%EC%8B%A0%EA%B7%9C%EC%B0%BD%EA%B3%A0",
+    ],
+    allocations: ["shipping:allocations:inventory:7:%EC%8B%A0%EA%B7%9C%EC%B0%BD%EA%B3%A0"],
+    unknown: ["shipping:unknown:column"],
+  },
+  workspace: { forbidden: true },
+});
+widthLoaderContext.localStorage.getItem = (key) => key === "oneapp.shipping.hidden-columns.v1" ? storedHiddenPayload : null;
+vm.runInContext("globalThis.loadedHidden = loadHiddenColumnSettings();", widthLoaderContext);
+assert.deepEqual(JSON.parse(JSON.stringify(widthLoaderContext.loadedHidden)), {
+  schemaVersion: "shipping-hidden-columns/v1",
+  tabs: {
+    inventory: [
+      "inventory:7:%EC%8B%A0%EA%B7%9C%EC%B0%BD%EA%B3%A0",
+      "inventory:8:%EC%8B%A0%EA%B7%9C%EC%B0%BD%EA%B3%A0",
+    ],
+    allocations: ["shipping:allocations:inventory:7:%EC%8B%A0%EA%B7%9C%EC%B0%BD%EA%B3%A0"],
+  },
+}, "hidden-column state must keep duplicate source labels isolated and reject unsafe or unknown data");
+widthLoaderContext.localStorage.getItem = () => "{broken";
+vm.runInContext("globalThis.fallbackHidden = loadHiddenColumnSettings();", widthLoaderContext);
+assert.deepEqual(JSON.parse(JSON.stringify(widthLoaderContext.fallbackHidden)), {
+  schemaVersion: "shipping-hidden-columns/v1",
+  tabs: {},
+}, "corrupt hidden-column JSON must fall back without throwing");
+
+assert.match(html, /const HIDDEN_COLUMNS_KEY = "oneapp\.shipping\.hidden-columns\.v1"/, "hidden-column preference key changed");
+assert.match(html, /function loadHiddenColumnSettings\(\)[\s\S]*?Array\.isArray\(keys\)[\s\S]*?isSafeColumnKey\(key\)/, "hidden-column payload must validate tab arrays and safe stable keys");
+assert.match(html, /allocationInventory\.columns\.map\(\(column\) => `shipping:allocations:\$\{column\.key\}`\)/, "allocation warehouse visibility keys must preserve inventory sourceIndex identity");
+assert.match(html, /function visiblePreviewColumns[\s\S]*?!hidden\.has\(columnVisibilityKey\(column\)\)/, "new columns absent from the hidden-key set must default to visible");
+assert.match(html, /column\?\.role === "calculatedQuantity"[\s\S]*?column\?\.role === "purchase"/, "inventory quantity and purchase columns must be protected");
+assert.match(html, /visiblePreviewColumns\(preview\)\.length <= 1[\s\S]*?최소 한 열을 표시/, "the last visible column must not be hidden");
+assert.match(html, /function moveInventoryGridFocus[\s\S]*?visiblePreviewColumns\(preview, "inventory"\)[\s\S]*?visibleColumns\.length - 1/, "arrow and Enter navigation must use visible columns");
+assert.match(html, /function focusAdjacentNegativeInventory[\s\S]*?findIndex\(\(column\) => column\.role === "purchase"\)/, "negative Tab navigation must target the visible protected purchase column");
+assert.doesNotMatch(
+  html.slice(html.indexOf("async function persistLocalWorkspace"), html.indexOf("function scheduleLocalSave")),
+  /hiddenColumnSettings|HIDDEN_COLUMNS_KEY/,
+  "hidden-column preferences must not enter IndexedDB recovery records",
+);
+assert.doesNotMatch(
+  html.slice(html.indexOf("async function buildCloudEnvelope"), html.indexOf("async function postCloudAction")),
+  /hiddenColumnSettings|HIDDEN_COLUMNS_KEY/,
+  "hidden-column preferences must not enter Cloud payloads",
+);
+assert.doesNotMatch(
+  html.slice(html.indexOf("function setActiveColumnVisible"), html.indexOf("function renderColumnVisibilityControls")),
+  /scheduleLocalSave|state\.workspace\s*=/,
+  "visibility changes must stay outside workspace autosave",
+);
+assert.doesNotMatch(
+  fs.readFileSync(path.join(ROOT, "orderFulfillmentWorkbook.js"), "utf8"),
+  /hidden-columns|hiddenColumnSettings/,
+  "hidden-column preferences must not alter general or purchase-upload workbooks",
+);
 
 function readFileMatrices(filePath, sheetName) {
   const workbook = XLSX.read(fs.readFileSync(filePath), {
@@ -1300,7 +1581,7 @@ try {
     [
       "상품코드", "품목명", "규격",
       ...engine.getAllocationInventoryView(outputWorkspace).columns.map((column) => column.header),
-      "주문수량", "전재고", "서울잔량", "구매수량", "구매", "거래처", "단가", "적요", "적요1", "담당자",
+      "주문수량", "전재고", "서울잔량", "구매수량", "구매", "거래처", "단가", "공급가액", "적요", "적요1", "담당자",
     ],
   );
   const reopenedPrintNames = (reopened.Workbook?.Names || []).filter(

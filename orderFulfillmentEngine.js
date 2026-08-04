@@ -7,7 +7,7 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  const ENGINE_VERSION = "3.2.0";
+  const ENGINE_VERSION = "3.3.0";
   const WORKSPACE_SCHEMA_VERSION = "shipping-workspace/v2";
   const INVENTORY_OVERRIDE_SCHEMA_VERSION = "shipping-inventory-overrides/v1";
   const HEADER_SCAN_LIMIT = 30;
@@ -40,7 +40,25 @@
     "단위",
     "재고",
     "단가",
+    "공급가액",
   ]);
+
+  const ORDER_CANONICAL_ALIASES = Object.freeze({
+    "일자-No.": Object.freeze(["일자-No."]),
+    "담당": Object.freeze(["담당"]),
+    "단위": Object.freeze(["단위"]),
+    "품목코드": Object.freeze(["품목코드", "상품코드", "코드"]),
+    "품목명": Object.freeze(["품목명", "상품명", "제품명"]),
+    "규격": Object.freeze(["규격"]),
+    "수량": Object.freeze(["수량", "주문수량", "미출고수량"]),
+    "재고": Object.freeze(["재고"]),
+    "단가": Object.freeze(["단가", "판매단가", "출고단가"]),
+    "공급가액": Object.freeze(["공급가액", "금액", "합계금액"]),
+    "적요": Object.freeze(["적요", "메모", "비고"]),
+    "적요1": Object.freeze(["적요1"]),
+    "거래처": Object.freeze(["거래처", "거래처명", "고객명"]),
+    "그룹": Object.freeze(["그룹"]),
+  });
 
   const INVENTORY_OPTIONAL_COLUMNS = Object.freeze([
     "사용",
@@ -64,6 +82,20 @@
   function normalizeHeader(value) {
     return cleanText(value).replace(/\s+/g, "");
   }
+
+  function normalizeOrderHeader(value) {
+    return cleanText(value)
+      .replace(/[^\p{L}\p{N}]+/gu, "")
+      .toLocaleLowerCase("ko-KR");
+  }
+
+  const ORDER_ALIAS_LOOKUP = (() => {
+    const lookup = new Map();
+    Object.entries(ORDER_CANONICAL_ALIASES).forEach(([canonical, aliases]) => {
+      aliases.forEach((alias) => lookup.set(normalizeOrderHeader(alias), canonical));
+    });
+    return lookup;
+  })();
 
   function normalizeProductCode(value) {
     if (isBlank(value)) return "";
@@ -234,6 +266,71 @@
     return result;
   }
 
+  function resolveOrderHeaders(headerRow) {
+    const matches = Object.create(null);
+    const mappedColumns = [];
+    const unmatchedHeaders = [];
+    (Array.isArray(headerRow) ? headerRow : []).forEach((value, columnIndex) => {
+      const header = cleanText(value);
+      if (!header) return;
+      const normalized = normalizeOrderHeader(header);
+      const canonical = ORDER_ALIAS_LOOKUP.get(normalized);
+      const metadata = {
+        header,
+        normalized,
+        columnIndex,
+        columnNumber: columnIndex + 1,
+      };
+      if (!canonical) {
+        unmatchedHeaders.push(metadata);
+        return;
+      }
+      const mapped = { ...metadata, canonical };
+      if (!matches[canonical]) matches[canonical] = [];
+      matches[canonical].push(mapped);
+      mappedColumns.push(mapped);
+    });
+
+    const columnMap = Object.create(null);
+    Object.entries(matches).forEach(([canonical, columns]) => {
+      if (columns.length === 1) columnMap[normalizeHeader(canonical)] = columns[0].columnIndex;
+    });
+    const duplicateCanonicalFields = Object.entries(matches)
+      .filter(([, columns]) => columns.length > 1)
+      .map(([canonical, columns]) => ({ canonical, columns }));
+    return {
+      columnMap,
+      matches,
+      mappedColumns,
+      unmatchedHeaders,
+      duplicateCanonicalFields,
+    };
+  }
+
+  function findBestOrderHeaderRow(matrix) {
+    let best = { rowIndex: -1, requiredCount: -1, mappedCount: -1 };
+    let completeWithConflict = -1;
+    const limit = Math.min(Array.isArray(matrix) ? matrix.length : 0, HEADER_SCAN_LIMIT);
+    for (let rowIndex = 0; rowIndex < limit; rowIndex += 1) {
+      const resolution = resolveOrderHeaders(matrix[rowIndex]);
+      const requiredCount = ORDER_REQUIRED_COLUMNS.filter(
+        (canonical) => Array.isArray(resolution.matches[canonical]) && resolution.matches[canonical].length > 0,
+      ).length;
+      const mappedCount = resolution.mappedColumns.length;
+      if (requiredCount === ORDER_REQUIRED_COLUMNS.length) {
+        if (resolution.duplicateCanonicalFields.length === 0) return rowIndex;
+        if (completeWithConflict < 0) completeWithConflict = rowIndex;
+      }
+      if (
+        requiredCount > best.requiredCount ||
+        (requiredCount === best.requiredCount && mappedCount > best.mappedCount)
+      ) {
+        best = { rowIndex, requiredCount, mappedCount };
+      }
+    }
+    return completeWithConflict >= 0 ? completeWithConflict : best.rowIndex;
+  }
+
   function findHeaderRow(matrix, requiredColumns) {
     const expected = requiredColumns.map(normalizeHeader);
     const limit = Math.min(Array.isArray(matrix) ? matrix.length : 0, HEADER_SCAN_LIMIT);
@@ -299,11 +396,12 @@
   function parseOrderWorkbook(input = {}) {
     const displayMatrix = cloneMatrix(input.displayMatrix || input.rawMatrix || []);
     const rawMatrix = cloneMatrix(input.rawMatrix || input.displayMatrix || []);
-    const headerRowIndex = findBestHeaderRow(displayMatrix, ORDER_REQUIRED_COLUMNS);
+    const headerRowIndex = findBestOrderHeaderRow(displayMatrix);
     const headerRow = headerRowIndex >= 0 ? displayMatrix[headerRowIndex] || [] : [];
-    const columnMap = createColumnMap(headerRow);
+    const headerResolution = resolveOrderHeaders(headerRow);
+    const columnMap = headerResolution.columnMap;
     const missingColumns = ORDER_REQUIRED_COLUMNS.filter(
-      (column) => columnMap[normalizeHeader(column)] === undefined,
+      (column) => !Array.isArray(headerResolution.matches[column]) || headerResolution.matches[column].length === 0,
     );
     const errors = [];
     const warnings = [];
@@ -318,8 +416,35 @@
       );
     }
 
+    if (headerResolution.duplicateCanonicalFields.length > 0) {
+      const conflictText = headerResolution.duplicateCanonicalFields.map(({ canonical, columns }) =>
+        `${canonical}: ${columns.map((column) => `${column.header}(${column.columnNumber}열)`).join(", ")}`,
+      ).join(" / ");
+      errors.push(
+        createIssue(
+          "ORDER_DUPLICATE_CANONICAL_HEADERS",
+          `주문현황 표준 항목에 둘 이상의 원본 열이 매칭되었습니다: ${conflictText}`,
+          { conflicts: headerResolution.duplicateCanonicalFields },
+        ),
+      );
+    }
+
+    if (headerResolution.unmatchedHeaders.length > 0) {
+      warnings.push(
+        createIssue(
+          "ORDER_UNKNOWN_HEADERS",
+          `자동 매칭하지 않은 주문현황 열: ${headerResolution.unmatchedHeaders
+            .map((column) => `${column.header}(${column.columnNumber}열)`)
+            .join(", ")}`,
+          { headers: headerResolution.unmatchedHeaders },
+        ),
+      );
+    }
+
     const rows = [];
-    if (headerRowIndex >= 0) {
+    const canonicalMappingIsValid = missingColumns.length === 0 &&
+      headerResolution.duplicateCanonicalFields.length === 0;
+    if (headerRowIndex >= 0 && canonicalMappingIsValid) {
       for (let rowIndex = headerRowIndex + 1; rowIndex < displayMatrix.length; rowIndex += 1) {
         const row = displayMatrix[rowIndex] || [];
         const code = normalizeProductCode(getField(row, columnMap, "품목코드"));
@@ -361,6 +486,8 @@
         }
 
         const price = parseNumericCell(getField(row, columnMap, "단가"));
+        const supplyAmountCell = getField(row, columnMap, "공급가액");
+        const supplyAmount = parseNumericCell(supplyAmountCell);
         const orderNumberValue = getField(row, columnMap, "일자-No.");
         rows.push({
           inputOrder: rows.length + 1,
@@ -375,6 +502,11 @@
           quantity: quantity.value,
           sourceStock: getField(row, columnMap, "재고"),
           unitPrice: price.ok && !price.blank ? price.value : null,
+          supplyAmount: isBlank(supplyAmountCell)
+            ? null
+            : supplyAmount.ok
+              ? supplyAmount.value
+              : cleanText(supplyAmountCell),
           note: cleanText(getField(row, columnMap, "적요")),
           note1: cleanText(getField(row, columnMap, "적요1")),
           customer: cleanText(getField(row, columnMap, "거래처")),
@@ -383,7 +515,7 @@
       }
     }
 
-    if (missingColumns.length === 0 && rows.length === 0) {
+    if (canonicalMappingIsValid && rows.length === 0) {
       errors.push(createIssue("ORDER_NO_DATA", "분석할 주문 데이터행이 없습니다."));
     }
 
@@ -409,6 +541,13 @@
       memoCount,
       errors,
       warnings,
+      headerMapping: {
+        schemaVersion: "shipping-order-header-mapping/v1",
+        normalization: "unicode-letters-numbers-case-insensitive/v1",
+        columns: headerResolution.mappedColumns,
+        duplicateCanonicalFields: headerResolution.duplicateCanonicalFields,
+        unmatchedHeaders: headerResolution.unmatchedHeaders,
+      },
       sourceMatrix: prepareSourceMatrix(
         rawMatrix,
         displayMatrix,
@@ -1366,6 +1505,7 @@
           sha256: ordersParsed.fileHash,
           matrix: ordersParsed.sourceMatrix,
           productCodeColumnIndex: ordersParsed.productCodeColumnIndex,
+          headerMapping: ordersParsed.headerMapping,
         },
         inventory: {
           fileName: inventoryParsed.fileName,
@@ -1486,8 +1626,10 @@
     ORDER_REQUIRED_COLUMNS,
     INVENTORY_REQUIRED_COLUMNS,
     ORDER_OPTIONAL_COLUMNS,
+    ORDER_CANONICAL_ALIASES,
     INVENTORY_OPTIONAL_COLUMNS,
     normalizeProductCode,
+    normalizeOrderHeader,
     normalizeCategoryCode,
     parseOrderBasisDate,
     managerColors,
