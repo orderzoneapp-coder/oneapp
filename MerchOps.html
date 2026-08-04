@@ -4053,6 +4053,49 @@ const useMerchData = () => {
         addHistoryLogs
     };
 };
+const normalizeMerchStoppedProductsForRead = (input = {}) => {
+    const normalizeCode = (value) => window.normalizeProductCodeText ? window.normalizeProductCodeText(value) : String(value || '').trim();
+    const entries = Array.isArray(input) ? input.map(item => [item?.productCode || item?.코드 || '', item]) : Object.entries(input && typeof input === 'object' ? input : {});
+    const result = {};
+    entries.forEach(([rawCode, rawItem]) => {
+        const item = rawItem && typeof rawItem === 'object' ? rawItem : {};
+        const code = normalizeCode(item.productCode || item.코드 || rawCode);
+        if (!code) return;
+        const rawAction = String(item.pendingAction || '').trim().toLowerCase();
+        const rawStatus = String(item.status || '').trim().toLowerCase();
+        let pendingAction = '';
+        if (['stop', 'pendingstop', '정지', '정지예정'].includes(rawAction) || rawStatus === 'pendingstop') pendingAction = 'stop';
+        if (['resume', 'pendingresume', '재개', '재개예정'].includes(rawAction) || rawStatus === 'pendingresume') pendingAction = 'resume';
+        result[code] = { ...item, productCode: code, pendingAction, status: pendingAction === 'stop' ? 'pendingStop' : (pendingAction === 'resume' ? 'pendingResume' : (item.status || 'stopped')) };
+    });
+    return result;
+};
+window.normalizeMerchStoppedProductsForRead = normalizeMerchStoppedProductsForRead;
+const readMerchStoppedProductsForProtection = () => {
+    const saved = normalizeMerchStoppedProductsForRead(safeJSONParse('merchStoppedProducts_v2', {}));
+    const legacy = safeJSONParse('merchWorkArchive_v1', []);
+    const legacyStopped = {};
+    if (Array.isArray(legacy)) {
+        legacy.filter(group => String(group?.status || '').trim() === '정지').forEach(group => {
+            (Array.isArray(group?.rows) ? group.rows : []).forEach(row => {
+                const code = window.normalizeProductCodeText ? window.normalizeProductCodeText(row?.코드 || row?.['품목코드'] || '') : String(row?.코드 || row?.['품목코드'] || '').trim();
+                if (!code || saved[code]) return;
+                const legacyTime = group.createdAt || '';
+                legacyStopped[code] = {
+                    productCode: code,
+                    stoppedAt: legacyTime,
+                    updatedAt: legacyTime,
+                    reason: '기존 정지 보관함 변환',
+                    memo: '',
+                    source: 'legacy-merchops-archive',
+                    status: 'stopped',
+                    pendingAction: ''
+                };
+            });
+        });
+    }
+    return normalizeMerchStoppedProductsForRead({ ...legacyStopped, ...saved });
+};
 const useMerchUI = () => {
     const [selectedRows, setSelectedRows] = useState(new Set());
     const [promoCompareOpen, setPromoCompareOpen] = useState(false);
@@ -4081,60 +4124,12 @@ const useMerchUI = () => {
     // v2.1.137: 제외는 현재 실행 세션에만 유지하며 localStorage/IDB에 저장하지 않는다.
     const [showExcludedPanel, setShowExcludedPanel] = useState(false);
     const [sessionExcludedItems, setSessionExcludedItems] = useState({});
-    // 정지는 상품코드 기준 지속 관리상태다. 기존 폴더형 보관함의 정지 데이터는 최초 1회 상품별 목록으로 변환한다.
-    const [showStopManager, setShowStopManager] = useState(false);
-    const [stoppedProducts, setStoppedProducts] = useState(() => {
-        const normalizeCode = (v) => window.normalizeProductCodeText ? window.normalizeProductCodeText(v) : String(v || '').trim();
-        const saved = safeJSONParse('merchStoppedProducts_v2', {});
-        const next = {};
-        if (Array.isArray(saved)) {
-            saved.forEach(item => {
-                const code = normalizeCode(item?.productCode || item?.코드);
-                if (code) next[code] = { ...item, productCode: code };
-            });
-        } else if (saved && typeof saved === 'object') {
-            Object.entries(saved).forEach(([key, item]) => {
-                const code = normalizeCode(item?.productCode || item?.코드 || key);
-                if (code) next[code] = { ...item, productCode: code };
-            });
-        }
-        const legacy = safeJSONParse('merchWorkArchive_v1', []);
-        if (Array.isArray(legacy)) {
-            legacy.filter(group => String(group?.status || '').trim() === '정지').forEach(group => {
-                (group.rows || []).forEach(row => {
-                    const code = normalizeCode(row?.코드 || row?.['품목코드']);
-                    if (!code) return;
-                    const legacyTime = group.createdAt || new Date().toISOString();
-                    const before = next[code];
-                    if (!before || String(before.updatedAt || before.stoppedAt || '') <= String(legacyTime)) {
-                        next[code] = {
-                            productCode: code,
-                            stoppedAt: before?.stoppedAt || legacyTime,
-                            updatedAt: legacyTime,
-                            reason: before?.reason || '기존 정지 보관함 변환',
-                            memo: before?.memo || '',
-                            status: 'stopped',
-                            pendingAction: ''
-                        };
-                    }
-                });
-            });
-        }
-        try { localStorage.removeItem('merchWorkArchive_v1'); } catch (e) { }
-        return next;
-    });
-    useEffect(() => {
-        try {
-            localStorage.setItem('merchStoppedProducts_v2', JSON.stringify(stoppedProducts || {}));
-        }
-        catch (e) { }
-        if (window.setIDB) window.setIDB('merchStoppedProducts_v2', stoppedProducts || {}).catch(console.warn);
-    }, [stoppedProducts]);
+    // 정지자료는 SmartParser가 소유한다. MerchOps는 v2와 기존 보관함을 메모리에서만 합쳐 작업화면 보호에 사용한다.
+    const [stoppedProducts, setStoppedProducts] = useState(() => readMerchStoppedProductsForProtection());
     useEffect(() => {
         const handleSharedQueueStorage = (e) => {
             if (e.key === 'merchStopManager_sync_trigger') {
-                const latest = safeJSONParse('merchStoppedProducts_v2', {});
-                if (latest && typeof latest === 'object') setStoppedProducts(latest);
+                setStoppedProducts(readMerchStoppedProductsForProtection());
             }
         };
         window.addEventListener('storage', handleSharedQueueStorage);
@@ -4172,7 +4167,6 @@ const useMerchUI = () => {
         hideMasterAddedRows, setHideMasterAddedRows,
         showExcludedPanel, setShowExcludedPanel,
         sessionExcludedItems, setSessionExcludedItems,
-        showStopManager, setShowStopManager,
         stoppedProducts, setStoppedProducts
     };
 };
@@ -5440,142 +5434,6 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
     }, [data.setManagedItems, cloneManagedRowForSession, ui]);
 
     // ============================================================
-    // [M-STOP-MANAGER-01] 지속 정지관리
-    // 정지는 상품코드별 1건만 유지하고 정지/재개 변경대기는 F7 마스터 적용 대상에 추가한다.
-    // ============================================================
-    const handleStopSales = useCallback(async () => {
-        const rows = getRowsForWorkAction();
-        if (rows.length === 0) return ui.showToast('⚠️ 정지처리할 상품이 없습니다.');
-        const scopeText = ui.selectedRows.size > 0 ? `선택 ${rows.length}건` : `현재 필터 ${rows.length}건`;
-        if (!window.confirm(`${scopeText}을 정지예정으로 등록하시겠습니까?\n\n현재 테이블의 판매여부를 0으로 표시하며, 다음 F7에서 마스터에 반영됩니다.\n정지상품은 정지관리에서 개별·선택·전체 관리할 수 있습니다.`)) return;
-        const now = new Date().toISOString();
-        const targetKeys = new Set(rows.map(row => window.getManagedRowKey(row)));
-        const targetCodes = new Set(rows.map(row => getWorkRowCode(row)).filter(Boolean));
-        data.setManagedItems(prev => {
-            const next = { ...prev };
-            targetKeys.forEach(key => {
-                const current = next[key];
-                if (!current) return;
-                next[key] = {
-                    ...current,
-                    finalData: {
-                        ...(current.finalData || {}),
-                        '판매여부': 0,
-                        _salesStopRequested: true,
-                        _salesResumeRequested: false,
-                        _stopManagementStatus: '정지예정'
-                    }
-                };
-            });
-            return next;
-        });
-        ui.setStoppedProducts(prev => {
-            const next = { ...(prev || {}) };
-            targetCodes.forEach(code => {
-                const before = next[code] || {};
-                next[code] = {
-                    ...before,
-                    productCode: code,
-                    stoppedAt: before.stoppedAt || now,
-                    updatedAt: now,
-                    reason: before.reason || '관리자 정지',
-                    memo: before.memo || '',
-                    status: 'pendingStop',
-                    pendingAction: 'stop'
-                };
-            });
-            return next;
-        });
-        ui.setSelectedRows(new Set());
-        ui.showToast(`⏸️ ${targetCodes.size}건 정지예정 등록 / F7 반영대기`);
-    }, [getRowsForWorkAction, getWorkRowCode, data.setManagedItems, ui]);
-    const handleUpdateStoppedProduct = useCallback((code, patch = {}) => {
-        const cleanCode = window.normalizeProductCodeText(code || '');
-        if (!cleanCode) return;
-        ui.setStoppedProducts(prev => {
-            const before = (prev || {})[cleanCode];
-            if (!before) return prev;
-            return {
-                ...(prev || {}),
-                [cleanCode]: { ...before, ...patch, productCode: cleanCode, updatedAt: new Date().toISOString() }
-            };
-        });
-    }, [ui.setStoppedProducts]);
-    const handleBulkStoppedReason = useCallback((codes = [], reason = '') => {
-        const cleanCodes = Array.from(new Set((codes || []).map(v => window.normalizeProductCodeText(v || '')).filter(Boolean)));
-        if (cleanCodes.length === 0 || !String(reason || '').trim()) return ui.showToast('⚠️ 대상과 정지사유를 확인하세요.');
-        const now = new Date().toISOString();
-        ui.setStoppedProducts(prev => {
-            const next = { ...(prev || {}) };
-            cleanCodes.forEach(code => {
-                if (next[code]) next[code] = { ...next[code], reason: String(reason).trim(), updatedAt: now };
-            });
-            return next;
-        });
-        ui.showToast(`✅ 정지사유 ${cleanCodes.length}건 일괄 변경`);
-    }, [ui]);
-    const handleBulkStoppedMemo = useCallback((codes = [], memo = '') => {
-        const cleanCodes = Array.from(new Set((codes || []).map(v => window.normalizeProductCodeText(v || '')).filter(Boolean)));
-        if (cleanCodes.length === 0) return ui.showToast('⚠️ 메모를 적용할 정지상품을 선택하세요.');
-        const now = new Date().toISOString();
-        ui.setStoppedProducts(prev => {
-            const next = { ...(prev || {}) };
-            cleanCodes.forEach(code => {
-                if (next[code]) next[code] = { ...next[code], memo: String(memo || ''), updatedAt: now };
-            });
-            return next;
-        });
-        ui.showToast(`✅ 정지상품 메모 ${cleanCodes.length}건 일괄 변경`);
-    }, [ui]);
-    const handleResumeStoppedProducts = useCallback((codes = []) => {
-        const cleanCodes = Array.from(new Set((codes || []).map(v => window.normalizeProductCodeText(v || '')).filter(Boolean))).filter(code => !!(ui.stoppedProducts || {})[code]);
-        if (cleanCodes.length === 0) return ui.showToast('⚠️ 판매재개할 정지상품이 없습니다.');
-        if (!window.confirm(`정지상품 ${cleanCodes.length}건을 판매재개 예정으로 변경하시겠습니까?\n다음 F7에서 판매여부 1로 반영되며, 성공 후 정지관리에서 제거됩니다.`)) return;
-        const codeSet = new Set(cleanCodes);
-        const now = new Date().toISOString();
-        ui.setStoppedProducts(prev => {
-            const next = { ...(prev || {}) };
-            cleanCodes.forEach(code => {
-                if (next[code]) next[code] = { ...next[code], pendingAction: 'resume', status: 'pendingResume', updatedAt: now };
-            });
-            return next;
-        });
-        data.setManagedItems(prev => {
-            const next = { ...prev };
-            const matched = new Set();
-            Object.keys(next).forEach(key => {
-                const row = next[key];
-                const code = getWorkRowCode(row);
-                if (!codeSet.has(code)) return;
-                matched.add(code);
-                next[key] = {
-                    ...row,
-                    finalData: {
-                        ...(row.finalData || {}),
-                        '판매여부': 1,
-                        _salesStopRequested: false,
-                        _salesResumeRequested: true,
-                        _stopManagementStatus: '재개예정'
-                    }
-                };
-            });
-            cleanCodes.forEach(code => {
-                if (matched.has(code)) return;
-                next[`STOP_MANAGER__${code}`] = {
-                    코드: code,
-                    _managedKey: `STOP_MANAGER__${code}`,
-                    _lastUploadRole: 'stopManager',
-                    sources: { _activeRole: 'stopManager' },
-                    finalData: { '판매여부': 1, _salesStopRequested: false, _salesResumeRequested: true, _stopManagementStatus: '재개예정' },
-                    _tags: new Set(['정지관리:재개예정'])
-                };
-            });
-            return next;
-        });
-        ui.showToast(`▶️ ${cleanCodes.length}건 판매재개 예정 / F7 반영대기`);
-    }, [data.setManagedItems, getWorkRowCode, ui]);
-
-    // ============================================================
     // [M-ACTION-03] 공통 일괄입력
     // 역할: 행사테마·재고·판매여부·연동·싯가·창고 중 입력된 항목만 현재 작업값에 함께 반영한다.
     // 정책: 선택행이 있으면 선택행, 없으면 현재 작업테이블 전체가 대상이며 마스터/히스토리는 F7에서 확정한다.
@@ -6343,42 +6201,19 @@ ${targetText} ${targetRows.length}건을 엑셀로 생성합니다.${workflowTex
             ? fullDisplayRows
             : (ui.selectedRows.size > 0 ? fullDisplayRows.filter(row => ui.selectedRows.has(window.getManagedRowKey(row))) : fullDisplayRows);
         const visibleTargetRows = (visibleTargetRowsRaw || []).filter(row => !(window.isMerchUnmodifiedMasterLookupRow?.(row)));
-        // 누락상품은 비교·정지판단 대상이며 자동 마스터 저장/쇼핑몰 출력 대상이 아니다.
-        // 기존 정지기능으로 정지예정이 명시된 경우에만 아래 정지관리 병합으로 출력한다.
+        // 누락상품은 비교 대상이며 자동 마스터 저장/쇼핑몰 출력 대상이 아니다.
+        // 품절/정지 직접 반영과 기존 pendingAction 정리는 SmartParser 전용 경로가 소유한다.
         const baseTargetRows = (visibleTargetRows || []).filter(row => {
             const status = window.getMerchEstimateCompareStatus ? window.getMerchEstimateCompareStatus(row) : '';
-            if (status !== 'missing') return true;
-            return row?.finalData?._salesStopRequested === true || row?.finalData?._salesResumeRequested === true;
+            return status !== 'missing' && row?._lastUploadRole !== 'stopManager';
         });
-        // v2.1.137: 현재 화면 작업값에 정지관리의 변경대기(stop/resume)만 추가한다. 전체 정지목록은 매번 병합하지 않는다.
-        const currentOnlyTargetRows = Array.isArray(baseTargetRows) ? baseTargetRows.filter(Boolean).map(row => ({ ...row, finalData: { ...(row.finalData || {}) } })) : [];
-        const pendingStopEntries = hasProductInitializationWorkflow
-            ? []
-            : Object.values(ui.stoppedProducts || {}).filter(item => ['stop', 'resume'].includes(String(item?.pendingAction || '')));
-        pendingStopEntries.forEach(entry => {
-            const code = window.normalizeProductCodeText(entry.productCode || '');
-            if (!code) return;
-            const idx = currentOnlyTargetRows.findIndex(row => window.normalizeProductCodeText(row?.코드 || '') === code);
-            const saleValue = entry.pendingAction === 'resume' ? 1 : 0;
-            const flags = {
-                '판매여부': saleValue,
-                _salesStopRequested: entry.pendingAction === 'stop',
-                _salesResumeRequested: entry.pendingAction === 'resume',
-                _stopManagementStatus: entry.pendingAction === 'resume' ? '재개예정' : '정지예정'
-            };
-            if (idx >= 0) {
-                currentOnlyTargetRows[idx] = { ...currentOnlyTargetRows[idx], finalData: { ...(currentOnlyTargetRows[idx].finalData || {}), ...flags } };
-            } else {
-                currentOnlyTargetRows.push({
-                    코드: code,
-                    _managedKey: `STOP_MANAGER__${code}`,
-                    _lastUploadRole: 'stopManager',
-                    sources: { _activeRole: 'stopManager' },
-                    finalData: flags,
-                    _tags: new Set([`정지관리:${flags._stopManagementStatus}`])
-                });
-            }
-        });
+        // MerchOps는 공유 정지목록을 읽기 보호에만 사용한다. 과거 작업행의 관리 플래그도 F7에 반영하지 않는다.
+        const currentOnlyTargetRows = Array.isArray(baseTargetRows) ? baseTargetRows.filter(Boolean).map(row => {
+            const finalData = { ...(row.finalData || {}) };
+            delete finalData._salesStopRequested;
+            delete finalData._salesResumeRequested;
+            return { ...row, finalData };
+        }) : [];
         const targetRowByKey = new Map(currentOnlyTargetRows.map(row => [window.getManagedRowKey(row), row]));
         const targets = new Set(currentOnlyTargetRows.map(r => window.getManagedRowKey(r)));
         if (targets.size === 0)
@@ -6409,8 +6244,7 @@ ${targetText} ${targetRows.length}건을 엑셀로 생성합니다.${workflowTex
             const confirmed = await window.showMerchopsLargeConfirm({
                 title: `⚠️ 확인요청 ${wholesaleWarningsForConfirm.length}건`,
                 lead: '도매가가 매칭 입고가보다 낮은 항목이 있습니다.',
-                body: `비교기준: 입고가↔도매A, 입고B↔도매B\n마스터 적용 전 확인이 필요한 항목입니다.\n\nF7 마스터 적용\n${targetModeText} ${targets.size}건을 MerchOps 마스터에 저장합니다. 엑셀은 생성하지 않습니다.\n\n※ 이번 작업 제외상품은 반영하지 않으며, 정지관리 변경대기도 함께 마스터에 반영합니다.
-※ 견적 비교의 누락상품은 자동 저장하지 않습니다. 관리자가 정지 처리한 상품만 정지관리 변경대기로 반영합니다.`,
+                body: `비교기준: 입고가↔도매A, 입고B↔도매B\n마스터 적용 전 확인이 필요한 항목입니다.\n\nF7 마스터 적용\n${targetModeText} ${targets.size}건을 MerchOps 마스터에 저장합니다. 엑셀은 생성하지 않습니다.\n\n※ 이번 작업 제외상품과 견적 비교의 누락상품은 반영하지 않습니다.\n※ 품절/정지 관리 및 판매재개는 SmartParser에서 직접 반영합니다.`,
                 items: wholesaleWarningsForConfirm,
                 confirmText: '계속 진행',
                 cancelText: '취소',
@@ -6421,8 +6255,8 @@ ${targetText} ${targetRows.length}건을 엑셀로 생성합니다.${workflowTex
 
 ${targetModeText} ${targets.size}건을 MerchOps 마스터에 저장합니다. 엑셀은 생성하지 않습니다.
 
-※ 이번 작업 제외상품은 반영하지 않으며, 정지관리 변경대기도 함께 마스터에 반영합니다.
-※ 견적 비교의 누락상품은 자동 저장하지 않습니다. 관리자가 정지 처리한 상품만 정지관리 변경대기로 반영합니다.
+※ 이번 작업 제외상품과 견적 비교의 누락상품은 반영하지 않습니다.
+※ 품절/정지 관리 및 판매재개는 SmartParser에서 직접 반영합니다.
 현재 엑셀/화면 작업값만 적용합니다.
 
 계속 진행하시겠습니까?`)) {
@@ -6554,13 +6388,6 @@ ${targetModeText} ${targets.size}건을 MerchOps 마스터에 저장합니다. �
             newMaster[item.코드] = { ...(newMaster[item.코드] || { 코드: item.코드 }) };
             if (activeRoleForCommit === 'info') {
                 applyInfoMasterValues(item, oldItem, newMaster[item.코드]);
-                if (item.finalData?._salesResumeRequested === true) {
-                    newMaster[item.코드]['판매여부'] = 1;
-                    localLogs.push({ id: window.generateUUID(), timestamp: nowStr, code, name: oldItem.품목명 || '', spec: oldItem.규격 || '', field: '판매여부', oldVal: oldItem['판매여부'] ?? '-', newVal: '판매재개', diff: 0, actionType: '정지관리 판매재개', source: 'MerchOps' });
-                } else if (item.finalData?._salesStopRequested === true) {
-                    newMaster[item.코드]['판매여부'] = 0;
-                    localLogs.push({ id: window.generateUUID(), timestamp: nowStr, code, name: oldItem.품목명 || '', spec: oldItem.규격 || '', field: '판매여부', oldVal: oldItem['판매여부'] ?? '-', newVal: '정지', diff: 0, actionType: '정지관리 판매정지', source: 'MerchOps' });
-                }
                 commitCount++;
                 return;
             }
@@ -6684,58 +6511,28 @@ ${targetModeText} ${targets.size}건을 MerchOps 마스터에 저장합니다. �
                     }
                     newMaster[item.코드]['행사가'] = dataOpsPromoCommit.value;
                 }
-                // 정지관리 요청을 우선하고, 그 외에는 엑셀/수기 작업에 판매여부가 명시된 경우에만 마스터에 반영한다.
-                if (item.finalData._salesResumeRequested === true) {
-                    const oldStatus = oldItem['판매여부'] !== undefined && oldItem['판매여부'] !== '' ? oldItem['판매여부'] : '-';
-                    if (String(oldStatus) !== '1') {
-                        localLogs.push({
-                            id: window.generateUUID(), timestamp: nowStr, code,
-                            name: oldItem.품목명 || '', spec: oldItem.규격 || '', field: '판매여부',
-                            oldVal: oldStatus, newVal: '판매재개', diff: 0, actionType: '정지관리 판매재개', source: 'MerchOps'
-                        });
-                    }
-                    newMaster[item.코드]['판매여부'] = 1;
-                } else if (item.finalData._salesStopRequested === true) {
-                    const oldStatus = oldItem['판매여부'] !== undefined && oldItem['판매여부'] !== '' ? oldItem['판매여부'] : '-';
-                    if (String(oldStatus) !== '0') {
+                // 파일/수기 작업에 판매여부가 명시된 경우에만 반영한다. 공유 정지관리 플래그는 위에서 제거한다.
+                const explicitSale = window.getMerchExplicitSaleAvailability
+                    ? window.getMerchExplicitSaleAvailability(item)
+                    : { hasValue: false, code: '' };
+                if (explicitSale.hasValue) {
+                    const oldStatus = window.normalizeMerchSaleAvailability ? window.normalizeMerchSaleAvailability(oldItem['판매여부']) : String(oldItem['판매여부'] ?? '');
+                    if (oldStatus !== explicitSale.code) {
                         localLogs.push({
                             id: window.generateUUID(),
                             timestamp: nowStr,
-                            code: code,
-                            name: oldItem.품목명 || item.sources?.estimate?.품목명 || '',
-                            spec: oldItem.규격 || item.sources?.estimate?.규격 || '',
+                            code,
+                            name: oldItem.품목명 || item.finalData?.품목명 || '',
+                            spec: oldItem.규격 || item.finalData?.규격 || '',
                             field: '판매여부',
-                            oldVal: oldStatus,
-                            newVal: '정지',
+                            oldVal: oldStatus === '' ? '공백' : oldStatus,
+                            newVal: explicitSale.code,
                             diff: 0,
-                            actionType: '정지관리 판매정지',
-                            source: 'MerchOps'
+                            actionType: item.finalData?._bulkEditedFields?.['판매여부'] ? '공통 일괄입력' : '엑셀 판매여부 반영',
+                            source: item.finalData?._bulkEditedFields?.['판매여부'] ? 'MerchOps bulk' : `MerchOps ${explicitSale.origin || 'working'}`
                         });
                     }
-                    newMaster[item.코드]['판매여부'] = 0;
-                } else {
-                    const explicitSale = window.getMerchExplicitSaleAvailability
-                        ? window.getMerchExplicitSaleAvailability(item)
-                        : { hasValue: false, code: '' };
-                    if (explicitSale.hasValue) {
-                        const oldStatus = window.normalizeMerchSaleAvailability ? window.normalizeMerchSaleAvailability(oldItem['판매여부']) : String(oldItem['판매여부'] ?? '');
-                        if (oldStatus !== explicitSale.code) {
-                            localLogs.push({
-                                id: window.generateUUID(),
-                                timestamp: nowStr,
-                                code,
-                                name: oldItem.품목명 || item.finalData?.품목명 || '',
-                                spec: oldItem.규격 || item.finalData?.규격 || '',
-                                field: '판매여부',
-                                oldVal: oldStatus === '' ? '공백' : oldStatus,
-                                newVal: explicitSale.code,
-                                diff: 0,
-                                actionType: item.finalData?._bulkEditedFields?.['판매여부'] ? '공통 일괄입력' : '엑셀 판매여부 반영',
-                                source: item.finalData?._bulkEditedFields?.['판매여부'] ? 'MerchOps bulk' : `MerchOps ${explicitSale.origin || 'working'}`
-                            });
-                        }
-                        newMaster[item.코드]['판매여부'] = Number(explicitSale.code);
-                    }
+                    newMaster[item.코드]['판매여부'] = Number(explicitSale.code);
                 }
                 if (!promoResetRequested) {
                     const recordedFieldChangeLogs = new Set();
@@ -6844,41 +6641,7 @@ ${targetModeText} ${targets.size}건을 MerchOps 마스터에 저장합니다. �
                 ui.showToast('❌ F7 마스터 저장 실패: 완료 처리하지 않았습니다.');
                 return;
             }
-            const committedStopCodes = new Set(currentOnlyTargetRows.filter(row => row?.finalData?._salesStopRequested === true).map(row => window.normalizeProductCodeText(row.코드 || '')).filter(Boolean));
-            const committedResumeCodes = new Set(currentOnlyTargetRows.filter(row => row?.finalData?._salesResumeRequested === true).map(row => window.normalizeProductCodeText(row.코드 || '')).filter(Boolean));
-            const cleanedManagedAfterStop = { ...nextManagedForBasic };
-            Object.keys(cleanedManagedAfterStop).forEach(key => {
-                const row = cleanedManagedAfterStop[key];
-                const code = window.normalizeProductCodeText(row?.코드 || '');
-                if (committedResumeCodes.has(code) && String(key).startsWith('STOP_MANAGER__')) {
-                    delete cleanedManagedAfterStop[key];
-                    return;
-                }
-                if (!committedStopCodes.has(code) && !committedResumeCodes.has(code)) return;
-                const nextFinal = { ...(row.finalData || {}) };
-                nextFinal._salesStopRequested = false;
-                nextFinal._salesResumeRequested = false;
-                if (committedStopCodes.has(code)) {
-                    nextFinal['판매여부'] = 0;
-                    nextFinal._stopManagementStatus = '정지중';
-                } else {
-                    nextFinal['판매여부'] = 1;
-                    delete nextFinal._stopManagementStatus;
-                }
-                cleanedManagedAfterStop[key] = { ...row, finalData: nextFinal };
-            });
-            data.setManagedItems(cleanedManagedAfterStop);
-            if (committedStopCodes.size > 0 || committedResumeCodes.size > 0) {
-                const committedAt = new Date().toISOString();
-                ui.setStoppedProducts(prev => {
-                    const next = { ...(prev || {}) };
-                    committedStopCodes.forEach(code => {
-                        if (next[code]) next[code] = { ...next[code], status: 'stopped', pendingAction: '', updatedAt: committedAt };
-                    });
-                    committedResumeCodes.forEach(code => { delete next[code]; });
-                    return next;
-                });
-            }
+            data.setManagedItems(nextManagedForBasic);
             window.__MERCHOPS_QUICK_MASTER_OVERRIDE = null;
             quickExcelReadyRef.current = { ready: false, at: 0, count: 0, codes: [], rows: [] };
             ui.setSelectedRows(new Set());
@@ -7635,8 +7398,8 @@ ${targetModeText} ${targets.size}건을 MerchOps 마스터에 저장합니다. �
         }
     }, [data.masterProducts, data.setMasterProducts, data.addHistoryLogs, ui]);
     return useMemo(() => ({
-        handleMasterLookup, handleCloudSync, cleanUpGarbageTags, handleFileUpload, handleLoadDataOpsSnapshot, handleLoadFilter, handleRemoveFilter, handleStopSales, handleExcludeSelectedFromUpdate, handleRestoreExcludedItems, handleUpdateStoppedProduct, handleBulkStoppedReason, handleBulkStoppedMemo, handleResumeStoppedProducts, handleApplyBulkFields, handleSaveAsCategory, handleSaveAsCatalog, handleDeleteTag, handleCommitEstimate, handleQuickExcelExport, toggleAllRows, handleReset, handleForceApplyMarginRules, handleApplyScreenPercent, handleResetPromoValues, handleOpenExportCenter, handleRegisterUnregisteredItems, handleExitRegistrationMode, handleOpenPromoCompare, handleApplyPromoCompare
-    }), [handleMasterLookup, handleCloudSync, cleanUpGarbageTags, handleFileUpload, handleLoadDataOpsSnapshot, handleLoadFilter, handleRemoveFilter, handleStopSales, handleExcludeSelectedFromUpdate, handleRestoreExcludedItems, handleUpdateStoppedProduct, handleBulkStoppedReason, handleBulkStoppedMemo, handleResumeStoppedProducts, handleApplyBulkFields, handleSaveAsCategory, handleSaveAsCatalog, handleDeleteTag, handleCommitEstimate, handleQuickExcelExport, toggleAllRows, handleReset, handleForceApplyMarginRules, handleApplyScreenPercent, handleResetPromoValues, handleOpenExportCenter, handleRegisterUnregisteredItems, handleExitRegistrationMode, handleOpenPromoCompare, handleApplyPromoCompare]);
+        handleMasterLookup, handleCloudSync, cleanUpGarbageTags, handleFileUpload, handleLoadDataOpsSnapshot, handleLoadFilter, handleRemoveFilter, handleExcludeSelectedFromUpdate, handleRestoreExcludedItems, handleApplyBulkFields, handleSaveAsCategory, handleSaveAsCatalog, handleDeleteTag, handleCommitEstimate, handleQuickExcelExport, toggleAllRows, handleReset, handleForceApplyMarginRules, handleApplyScreenPercent, handleResetPromoValues, handleOpenExportCenter, handleRegisterUnregisteredItems, handleExitRegistrationMode, handleOpenPromoCompare, handleApplyPromoCompare
+    }), [handleMasterLookup, handleCloudSync, cleanUpGarbageTags, handleFileUpload, handleLoadDataOpsSnapshot, handleLoadFilter, handleRemoveFilter, handleExcludeSelectedFromUpdate, handleRestoreExcludedItems, handleApplyBulkFields, handleSaveAsCategory, handleSaveAsCatalog, handleDeleteTag, handleCommitEstimate, handleQuickExcelExport, toggleAllRows, handleReset, handleForceApplyMarginRules, handleApplyScreenPercent, handleResetPromoValues, handleOpenExportCenter, handleRegisterUnregisteredItems, handleExitRegistrationMode, handleOpenPromoCompare, handleApplyPromoCompare]);
 };
 // --- UI Components ---
 const SystemConsole = ({ itemCount, isProcessing, processMsg, estimateCount, filteredCount, activeTags, masterLookupMode }) => {
@@ -7738,8 +7501,8 @@ const SearchBar = ({ value, onChange, placeholder }) => {
         showCodeMeta && React.createElement("span", { className: `absolute -top-2 -right-2 min-w-[22px] h-5 px-1 rounded-full text-[10px] font-black flex items-center justify-center border shadow-sm ${codeMeta.missing && codeMeta.missing.length ? 'bg-rose-600 text-white border-rose-600' : 'bg-emerald-600 text-white border-emerald-600'}`, title: missingTitle }, `${codeMeta.matched.length}/${codeMeta.requested.length}`)));
 };
 const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCategories }) => {
-    const { activeTags, selectedRows, globalSearch, priceFilter, detailFilters = [], categoryFilters = [], basicSearch, filterSteps = [], disabledFilterStepIds = [], pendingFilterAction = 'include', hideMasterAddedRows = false, fullDisplayRows, config, registrationMode, data, sessionExcludedItems = {}, showExcludedPanel = false, stoppedProducts = {}, showStopManager = false } = state;
-    const { handleMasterLookup, handleStopSales, handleExcludeSelectedFromUpdate, handleApplyBulkFields, setGlobalSearch, handleReset, handleFileUpload, handleLoadDataOpsSnapshot, handleLoadFilter, handleForceApplyMarginRules, handleApplyScreenPercent, handleResetPromoValues, setPriceFilter, setDetailFilters, setCategoryFilters, setSelectedRows, setBasicSearch, setFilterSteps, setDisabledFilterStepIds, setPendingFilterAction, setShowCatalogModal, handleOpenExportCenter, handleCommitEstimate, handleRegisterUnregisteredItems, handleExitRegistrationMode, setShowExcludedPanel, setShowStopManager, handleOpenPromoCompare } = actions;
+    const { activeTags, selectedRows, globalSearch, priceFilter, detailFilters = [], categoryFilters = [], basicSearch, filterSteps = [], disabledFilterStepIds = [], pendingFilterAction = 'include', hideMasterAddedRows = false, fullDisplayRows, config, registrationMode, data, sessionExcludedItems = {}, showExcludedPanel = false, stoppedProducts = {} } = state;
+    const { handleMasterLookup, handleExcludeSelectedFromUpdate, handleApplyBulkFields, setGlobalSearch, handleReset, handleFileUpload, handleLoadDataOpsSnapshot, handleLoadFilter, handleForceApplyMarginRules, handleApplyScreenPercent, handleResetPromoValues, setPriceFilter, setDetailFilters, setCategoryFilters, setSelectedRows, setBasicSearch, setFilterSteps, setDisabledFilterStepIds, setPendingFilterAction, setShowCatalogModal, handleOpenExportCenter, handleCommitEstimate, handleRegisterUnregisteredItems, handleExitRegistrationMode, setShowExcludedPanel, handleOpenPromoCompare } = actions;
     const [filterPanelOpen, setFilterPanelOpen] = useState(false);
     const [bulkInputs, setBulkInputs] = useState(() => window.createMerchEmptyBulkInputs());
     const [bulkFocus, setBulkFocus] = useState('');
@@ -8262,14 +8025,7 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
                         React.createElement("i", { className: "fas fa-eye-slash mr-1.5 text-[12px]" }),
                         "제외상품",
                         React.createElement("span", { className: "ml-1.5 text-[10px] font-black px-1.5 py-0.5 rounded-full bg-white/80 text-slate-700 border border-slate-200" }, Object.keys(sessionExcludedItems || {}).length)),
-                    React.createElement("button", { onClick: handleStopSales, disabled: fullDisplayRows.length === 0, className: `h-8 px-2.5 rounded-lg text-[11px] font-bold shadow-sm flex items-center border whitespace-nowrap shrink-0 ${fullDisplayRows.length > 0 ? 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100' : 'bg-slate-100 text-slate-300 border-slate-200 cursor-not-allowed'}`, title: "선택행이 있으면 선택행, 없으면 현재 필터 결과를 정지예정으로 등록" },
-                        React.createElement("i", { className: "fas fa-ban mr-1.5 text-[12px]" }),
-                        "정지"),
-                    React.createElement("div", { className: "w-px h-5 bg-slate-300 mx-0.5 shrink-0" }),
-                    React.createElement("button", { onClick: () => setShowStopManager?.(!showStopManager), className: `h-8 px-2.5 rounded-lg text-[11px] font-bold shadow-sm flex items-center border whitespace-nowrap shrink-0 ${showStopManager ? 'bg-slate-900 text-white border-slate-900' : 'bg-slate-50 text-slate-700 border-slate-300 hover:bg-slate-100'}`, title: "지속 정지상품 보기·개별·선택·전체 수정" },
-                        React.createElement("i", { className: "fas fa-user-lock mr-1.5 text-[12px]" }),
-                        "정지관리",
-                        Object.keys(stoppedProducts || {}).length > 0 && React.createElement("span", { className: "ml-1.5 text-[10px] font-black px-1.5 py-0.5 rounded-full bg-white/80 text-slate-700 border border-slate-200" }, Object.keys(stoppedProducts || {}).length))),
+                    React.createElement("span", { className: "sr-only" }, `SmartParser 전용 품절/정지 관리 · MerchOps는 정지상태 ${Object.keys(stoppedProducts || {}).length}건을 읽기 보호에만 사용`)),
                 React.createElement("div", { className: "ml-auto sticky right-0 z-20 flex items-center justify-end gap-1 shrink-0 order-last bg-white pl-3", title: "기본 판매가·필터 초기화·검색" },
                     React.createElement("button", { onClick: handleForceApplyMarginRules, disabled: fullDisplayRows.length === 0, className: `h-9 px-3 rounded-lg text-[11px] font-black shadow-sm flex items-center border transition-all whitespace-nowrap shrink-0 ${fullDisplayRows.length > 0 ? 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100' : 'bg-slate-100 text-slate-300 border-slate-200 cursor-not-allowed'}`, title: "룰적용: 선택행 또는 현재 화면에 기본 판매가(출고가)를 불러옵니다. 행사작업과 독립된 가격 작업입니다." },
                         React.createElement("i", { className: "fas fa-magic mr-1.5 text-[12px]" }),
@@ -8409,59 +8165,6 @@ const SessionExcludedPanel = ({ items = {}, onClose, onRestore }) => {
                             React.createElement("div", { className: "text-[12px] font-black text-slate-800 truncate" }, `${row?.코드 || ''} · ${name}`),
                             React.createElement("div", { className: "text-[11px] font-bold text-slate-500 truncate" }, spec || '규격 없음')),
                         React.createElement("button", { onClick: () => onRestore?.([key]), className: "h-7 px-2.5 rounded-lg text-[11px] font-black border border-indigo-200 text-indigo-700 bg-indigo-50 hover:bg-indigo-100" }, "복구"));
-                }))));
-};
-
-const StoppedProductsManager = ({ products = {}, masterProducts = {}, onClose, onUpdate, onBulkReason, onBulkMemo, onResume }) => {
-    const entries = Object.values(products || {}).sort((a, b) => String(b.updatedAt || b.stoppedAt || '').localeCompare(String(a.updatedAt || a.stoppedAt || '')));
-    const [selected, setSelected] = useState(new Set());
-    const [bulkReason, setBulkReason] = useState('');
-    const [bulkMemo, setBulkMemo] = useState('');
-    const reasons = ['', '공급중단', '품절', '계절종료', '상품정보 오류', '판매종료', '기타', '관리자 정지'];
-    const toggle = (code) => setSelected(prev => { const next = new Set(prev); if (next.has(code)) next.delete(code); else next.add(code); return next; });
-    const allCodes = entries.map(item => item.productCode).filter(Boolean);
-    const allSelected = allCodes.length > 0 && selected.size === allCodes.length;
-    const getStatus = (item, master) => {
-        if (item.pendingAction === 'stop') return { label: '정지예정', cls: 'bg-amber-100 text-amber-800 border-amber-200' };
-        if (item.pendingAction === 'resume') return { label: '재개예정', cls: 'bg-blue-100 text-blue-800 border-blue-200' };
-        if (String(master?.['판매여부'] ?? '') === '0') return { label: '정지중', cls: 'bg-rose-100 text-rose-800 border-rose-200' };
-        return { label: '확인필요', cls: 'bg-violet-100 text-violet-800 border-violet-200' };
-    };
-    return React.createElement("div", { className: "fixed inset-0 z-[125] pointer-events-none" },
-        React.createElement("div", { className: "absolute inset-0 bg-slate-900/15 pointer-events-auto", onClick: onClose }),
-        React.createElement("aside", { className: "absolute right-0 top-0 h-full w-[920px] max-w-[98vw] bg-slate-50 border-l border-slate-200 shadow-2xl pointer-events-auto flex flex-col" },
-            React.createElement("div", { className: "h-12 px-4 bg-slate-950 text-white flex items-center justify-between shrink-0" },
-                React.createElement("div", { className: "font-black text-[14px] flex items-center" }, React.createElement("i", { className: "fas fa-user-lock mr-2 text-rose-300" }), `정지관리 ${entries.length}건`),
-                React.createElement("button", { onClick: onClose, className: "w-8 h-8 rounded-lg hover:bg-white/10 flex items-center justify-center" }, React.createElement("i", { className: "fas fa-times" }))),
-            React.createElement("div", { className: "px-3 py-2 border-b border-slate-200 bg-white flex items-center gap-2 flex-wrap" },
-                React.createElement("button", { onClick: () => setSelected(allSelected ? new Set() : new Set(allCodes)), className: "h-8 px-3 rounded-lg border border-slate-300 bg-white text-[11px] font-black text-slate-700 hover:bg-slate-50" }, allSelected ? "전체해제" : "전체선택"),
-                React.createElement("select", { value: bulkReason, onChange: e => setBulkReason(e.target.value), className: "h-8 px-2 rounded-lg border border-slate-300 bg-white text-[11px] font-bold" }, reasons.map(r => React.createElement("option", { key: r || '__blank', value: r }, r || '정지사유 선택'))),
-                React.createElement("button", { onClick: () => onBulkReason?.(Array.from(selected), bulkReason), disabled: selected.size === 0 || !bulkReason, className: `h-8 px-3 rounded-lg text-[11px] font-black border ${selected.size > 0 && bulkReason ? 'bg-slate-700 text-white border-slate-700' : 'bg-slate-100 text-slate-300 border-slate-200'}` }, `선택 사유변경 ${selected.size}`),
-                React.createElement("input", { value: bulkMemo, onChange: e => setBulkMemo(e.target.value), placeholder: "선택상품 메모", className: "h-8 w-[140px] px-2 rounded-lg border border-slate-300 text-[11px] font-bold" }),
-                React.createElement("button", { onClick: () => onBulkMemo?.(Array.from(selected), bulkMemo), disabled: selected.size === 0, className: `h-8 px-3 rounded-lg text-[11px] font-black border ${selected.size > 0 ? 'bg-slate-600 text-white border-slate-600' : 'bg-slate-100 text-slate-300 border-slate-200'}` }, "선택 메모적용"),
-                React.createElement("button", { onClick: () => onResume?.(Array.from(selected)), disabled: selected.size === 0, className: `h-8 px-3 rounded-lg text-[11px] font-black border ${selected.size > 0 ? 'bg-blue-600 text-white border-blue-600' : 'bg-slate-100 text-slate-300 border-slate-200'}` }, `선택 판매재개 ${selected.size}`),
-                React.createElement("button", { onClick: () => onResume?.(allCodes), disabled: allCodes.length === 0, className: "h-8 px-3 rounded-lg text-[11px] font-black border bg-rose-50 text-rose-700 border-rose-200 ml-auto" }, "전체 판매재개")),
-            React.createElement("div", { className: "grid grid-cols-[34px_100px_minmax(150px,1fr)_90px_80px_80px_80px_90px_125px_minmax(150px,1fr)_72px] gap-1 px-3 py-2 bg-slate-100 border-b border-slate-200 text-[10px] font-black text-slate-500 items-center sticky top-0" },
-                React.createElement("span", null, "선택"), React.createElement("span", null, "상품코드"), React.createElement("span", null, "상품명/규격"), React.createElement("span", null, "상태"), React.createElement("span", null, "입고가"), React.createElement("span", null, "출고가"), React.createElement("span", null, "행사가"), React.createElement("span", null, "재고"), React.createElement("span", null, "정지사유"), React.createElement("span", null, "메모"), React.createElement("span", null, "관리")),
-            React.createElement("div", { className: "flex-1 overflow-auto p-3 space-y-1.5" },
-                entries.length === 0 && React.createElement("div", { className: "mt-10 text-center text-[12px] font-bold text-slate-400" }, "관리 중인 정지상품이 없습니다."),
-                entries.map(item => {
-                    const code = item.productCode;
-                    const master = masterProducts[code] || {};
-                    const status = getStatus(item, master);
-                    const stoppedDate = String(item.stoppedAt || '').slice(0, 10);
-                    return React.createElement("div", { key: code, className: "grid grid-cols-[34px_100px_minmax(150px,1fr)_90px_80px_80px_80px_90px_125px_minmax(150px,1fr)_72px] gap-1 items-center rounded-lg border border-slate-200 bg-white px-2 py-2 shadow-sm" },
-                        React.createElement("input", { type: "checkbox", checked: selected.has(code), onChange: () => toggle(code), className: "w-4 h-4 accent-indigo-600" }),
-                        React.createElement("span", { className: "text-[11px] font-black text-slate-700 truncate", title: code }, code),
-                        React.createElement("div", { className: "min-w-0" }, React.createElement("div", { className: "text-[11px] font-black text-slate-800 truncate" }, master.품목명 || '마스터 상품명 없음'), React.createElement("div", { className: "text-[10px] font-bold text-slate-400 truncate" }, `${master.규격 || ''}${stoppedDate ? ` · ${stoppedDate}` : ''}`)),
-                        React.createElement("span", { className: `h-6 px-2 rounded-full border text-[10px] font-black flex items-center justify-center whitespace-nowrap ${status.cls}` }, status.label),
-                        React.createElement("span", { className: "text-[11px] font-bold text-right" }, window.parseNum(master.입고가).toLocaleString()),
-                        React.createElement("span", { className: "text-[11px] font-bold text-right" }, window.parseNum(master.출고가).toLocaleString()),
-                        React.createElement("span", { className: "text-[11px] font-bold text-right" }, window.parseNum(master.행사가).toLocaleString()),
-                        React.createElement("span", { className: "text-[11px] font-bold text-right" }, String(master.재고수량 ?? master.재고 ?? '')),
-                        React.createElement("select", { value: item.reason || '', onChange: e => onUpdate?.(code, { reason: e.target.value }), className: "h-8 w-full px-1 rounded border border-slate-300 bg-white text-[10px] font-bold" }, reasons.map(r => React.createElement("option", { key: r || '__blank', value: r }, r || '미지정'))),
-                        React.createElement("input", { value: item.memo || '', onChange: e => onUpdate?.(code, { memo: e.target.value }), placeholder: "메모", className: "h-8 w-full px-2 rounded border border-slate-300 text-[10px] font-bold" }),
-                        React.createElement("button", { onClick: () => onResume?.([code]), className: "h-8 px-2 rounded-lg border border-blue-200 bg-blue-50 text-blue-700 text-[10px] font-black hover:bg-blue-100" }, "재개"));
                 }))));
 };
 
@@ -10987,7 +10690,7 @@ const App = () => {
                 return matchCompositeDetailFilters(item, mItem, ui.detailFilters, ui.basicSearch);
             });
         }
-        // 지속 정지상품은 어떤 파일을 불러와도 판매여부 0을 유지한다. 판매재개 예정만 1로 표시한다.
+        // 공유 정지자료는 상태 뱃지와 보호 필터에만 사용한다. 판매여부 쓰기는 SmartParser가 소유한다.
         if (!ui.registrationMode && ui.stoppedProducts && Object.keys(ui.stoppedProducts).length > 0) {
             baseList = baseList.map(item => {
                 const code = window.normalizeProductCodeText(item?.코드 || '');
@@ -11001,9 +10704,6 @@ const App = () => {
                     _stopManagementStatus: statusLabel,
                     finalData: {
                         ...(item.finalData || {}),
-                        '판매여부': isResume ? 1 : 0,
-                        _salesStopRequested: isPendingStop,
-                        _salesResumeRequested: isResume,
                         _stopManagementStatus: statusLabel
                     }
                 };
@@ -11040,13 +10740,13 @@ const App = () => {
     const appState = useMemo(() => ({
         config, data, activeTags: ui.activeTags, isEstimateUploaded, hasF7EligibleRows, hasPromoCompareEligibleRows, selectedRows: ui.selectedRows, globalSearch: ui.globalSearch, isProcessing: ui.isProcessing, processMsg: ui.processMsg, registrationMode: ui.registrationMode,
         promoCompareOpen: ui.promoCompareOpen, promoCompareSession: ui.promoCompareSession, promoComparePurpose: ui.promoComparePurpose, promoCompareStatus: ui.promoCompareStatus, promoCompareSelected: ui.promoCompareSelected, promoCompareDetailKey: ui.promoCompareDetailKey,
-        visibleMasterCols: config.visibleMasterCols, visibleUploadCols: config.visibleUploadCols, activeTableTarget: config.activeTableTarget, activeTableViewId: config.activeTableViewId, masterProducts: data.masterProducts, fullDisplayRows, priceFilter: ui.priceFilter, detailFilters: ui.detailFilters, categoryFilters: ui.categoryFilters, basicSearch: ui.basicSearch, filterSteps: ui.filterSteps, disabledFilterStepIds: ui.disabledFilterStepIds, pendingFilterAction: ui.pendingFilterAction, hideMasterAddedRows: ui.hideMasterAddedRows, showExcludedPanel: ui.showExcludedPanel, sessionExcludedItems: ui.sessionExcludedItems, showStopManager: ui.showStopManager, stoppedProducts: ui.stoppedProducts
-    }), [config, data, ui.activeTags, ui.registrationMode, isEstimateUploaded, hasF7EligibleRows, hasPromoCompareEligibleRows, ui.selectedRows, ui.globalSearch, ui.isProcessing, ui.processMsg, ui.promoCompareOpen, ui.promoCompareSession, ui.promoComparePurpose, ui.promoCompareStatus, ui.promoCompareSelected, ui.promoCompareDetailKey, config.visibleMasterCols, config.visibleUploadCols, config.activeTableTarget, config.activeTableViewId, config.tableViewPresets, data.masterProducts, fullDisplayRows, ui.priceFilter, ui.detailFilters, ui.categoryFilters, ui.basicSearch, ui.filterSteps, ui.disabledFilterStepIds, ui.pendingFilterAction, ui.hideMasterAddedRows, ui.showExcludedPanel, ui.sessionExcludedItems, ui.showStopManager, ui.stoppedProducts]);
+        visibleMasterCols: config.visibleMasterCols, visibleUploadCols: config.visibleUploadCols, activeTableTarget: config.activeTableTarget, activeTableViewId: config.activeTableViewId, masterProducts: data.masterProducts, fullDisplayRows, priceFilter: ui.priceFilter, detailFilters: ui.detailFilters, categoryFilters: ui.categoryFilters, basicSearch: ui.basicSearch, filterSteps: ui.filterSteps, disabledFilterStepIds: ui.disabledFilterStepIds, pendingFilterAction: ui.pendingFilterAction, hideMasterAddedRows: ui.hideMasterAddedRows, showExcludedPanel: ui.showExcludedPanel, sessionExcludedItems: ui.sessionExcludedItems, stoppedProducts: ui.stoppedProducts
+    }), [config, data, ui.activeTags, ui.registrationMode, isEstimateUploaded, hasF7EligibleRows, hasPromoCompareEligibleRows, ui.selectedRows, ui.globalSearch, ui.isProcessing, ui.processMsg, ui.promoCompareOpen, ui.promoCompareSession, ui.promoComparePurpose, ui.promoCompareStatus, ui.promoCompareSelected, ui.promoCompareDetailKey, config.visibleMasterCols, config.visibleUploadCols, config.activeTableTarget, config.activeTableViewId, config.tableViewPresets, data.masterProducts, fullDisplayRows, ui.priceFilter, ui.detailFilters, ui.categoryFilters, ui.basicSearch, ui.filterSteps, ui.disabledFilterStepIds, ui.pendingFilterAction, ui.hideMasterAddedRows, ui.showExcludedPanel, ui.sessionExcludedItems, ui.stoppedProducts]);
     const appActions = useMemo(() => ({
-        setShowCategoryModal: ui.setShowCategoryModal, setShowCatalogModal: ui.setShowCatalogModal, setSelectedRows: ui.setSelectedRows, setGlobalSearch: ui.setGlobalSearch, showToast: ui.showToast, setPriceFilter: ui.setPriceFilter, setDetailFilters: ui.setDetailFilters, setCategoryFilters: ui.setCategoryFilters, setBasicSearch: ui.setBasicSearch, setFilterSteps: ui.setFilterSteps, setDisabledFilterStepIds: ui.setDisabledFilterStepIds, setPendingFilterAction: ui.setPendingFilterAction, setShowExcludedPanel: ui.setShowExcludedPanel, setShowStopManager: ui.setShowStopManager,
+        setShowCategoryModal: ui.setShowCategoryModal, setShowCatalogModal: ui.setShowCatalogModal, setSelectedRows: ui.setSelectedRows, setGlobalSearch: ui.setGlobalSearch, showToast: ui.showToast, setPriceFilter: ui.setPriceFilter, setDetailFilters: ui.setDetailFilters, setCategoryFilters: ui.setCategoryFilters, setBasicSearch: ui.setBasicSearch, setFilterSteps: ui.setFilterSteps, setDisabledFilterStepIds: ui.setDisabledFilterStepIds, setPendingFilterAction: ui.setPendingFilterAction, setShowExcludedPanel: ui.setShowExcludedPanel,
         setPromoCompareOpen: ui.setPromoCompareOpen, setPromoCompareSession: ui.setPromoCompareSession, setPromoComparePurpose: ui.setPromoComparePurpose, setPromoCompareStatus: ui.setPromoCompareStatus, setPromoCompareSelected: ui.setPromoCompareSelected, setPromoCompareDetailKey: ui.setPromoCompareDetailKey,
         ...customActions
-    }), [ui.setShowCategoryModal, ui.setShowCatalogModal, ui.setSelectedRows, ui.setGlobalSearch, ui.showToast, ui.setPriceFilter, ui.setDetailFilters, ui.setCategoryFilters, ui.setBasicSearch, ui.setFilterSteps, ui.setDisabledFilterStepIds, ui.setPendingFilterAction, ui.setShowExcludedPanel, ui.setShowStopManager, ui.setPromoCompareOpen, ui.setPromoCompareSession, ui.setPromoComparePurpose, ui.setPromoCompareStatus, ui.setPromoCompareSelected, ui.setPromoCompareDetailKey, customActions]);
+    }), [ui.setShowCategoryModal, ui.setShowCatalogModal, ui.setSelectedRows, ui.setGlobalSearch, ui.showToast, ui.setPriceFilter, ui.setDetailFilters, ui.setCategoryFilters, ui.setBasicSearch, ui.setFilterSteps, ui.setDisabledFilterStepIds, ui.setPendingFilterAction, ui.setShowExcludedPanel, ui.setPromoCompareOpen, ui.setPromoCompareSession, ui.setPromoComparePurpose, ui.setPromoCompareStatus, ui.setPromoCompareSelected, ui.setPromoCompareDetailKey, customActions]);
     useEffect(() => {
         // ============================================================
         // [M-UX-01] 전역 키보드 조작
@@ -11117,12 +10817,11 @@ const App = () => {
                     else appActions.showToast("⚠️ [F7] 행사가 비교에서 완료·확정된 적용대상이 없습니다.");
                     return;
                 }
-                const hasPendingStopAction = Object.values(appState.stoppedProducts || {}).some(item => ['stop', 'resume'].includes(String(item?.pendingAction || '')));
-                if (!appState.isProcessing && (appState.hasF7EligibleRows || hasPendingStopAction)) {
+                if (!appState.isProcessing && appState.hasF7EligibleRows) {
                     appActions.handleCommitEstimate();
                 }
                 else
-                    appActions.showToast("⚠️ [F7] 마스터에 적용할 변경 작업·정지관리 변경대기가 없습니다. 조회 전용 마스터 행은 반영하지 않습니다.");
+                    appActions.showToast("⚠️ [F7] 마스터에 적용할 변경 작업이 없습니다. 조회 전용 마스터 행은 반영하지 않습니다.");
             }
             else if (e.key === 'F8') {
                 e.preventDefault();
@@ -11181,7 +10880,7 @@ const App = () => {
                                     React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "MAIN WORKSPACE"))),
                             React.createElement(SystemConsole, { itemCount: Object.keys(data.masterProducts).length, isProcessing: ui.isProcessing, processMsg: ui.processMsg, estimateCount: Object.keys(data.managedItems).length, filteredCount: fullDisplayRows.length, activeTags: ui.activeTags, masterLookupMode: data.masterLookupMode }),
                             React.createElement("nav", { className: "flex gap-1.5 text-[14px] shrink-0 items-center" },
-                                React.createElement("button", { onClick: ui.promoCompareOpen ? customActions.handleApplyPromoCompare : customActions.handleCommitEstimate, disabled: ui.isProcessing || (ui.promoCompareOpen ? !hasPromoCompareEligibleRows : (!hasF7EligibleRows && !Object.values(ui.stoppedProducts || {}).some(item => ['stop', 'resume'].includes(String(item?.pendingAction || ''))))), className: `h-8 px-3 rounded flex items-center justify-center shadow-sm transition-all duration-300 border font-black text-[11px] tracking-wider ${(!ui.isProcessing && (ui.promoCompareOpen ? hasPromoCompareEligibleRows : (hasF7EligibleRows || Object.values(ui.stoppedProducts || {}).some(item => ['stop', 'resume'].includes(String(item?.pendingAction || '')))))) ? 'text-white bg-indigo-600 border-indigo-500 hover:bg-indigo-700 hover:border-indigo-400' : 'text-slate-500 bg-[#0f172a] border-slate-800 cursor-not-allowed'}`, title: ui.promoCompareOpen ? "행사가 비교에서 완료·확정된 상품만 마스터에 적용 (F7)" : (hasF7EligibleRows ? "현재 변경 작업값을 MerchOps 내부 마스터에 적용 (F7) · 엑셀 생성 없음" : "조회 전용 마스터 행은 F7 반영 대상이 아닙니다.") },
+                                React.createElement("button", { onClick: ui.promoCompareOpen ? customActions.handleApplyPromoCompare : customActions.handleCommitEstimate, disabled: ui.isProcessing || (ui.promoCompareOpen ? !hasPromoCompareEligibleRows : !hasF7EligibleRows), className: `h-8 px-3 rounded flex items-center justify-center shadow-sm transition-all duration-300 border font-black text-[11px] tracking-wider ${(!ui.isProcessing && (ui.promoCompareOpen ? hasPromoCompareEligibleRows : hasF7EligibleRows)) ? 'text-white bg-indigo-600 border-indigo-500 hover:bg-indigo-700 hover:border-indigo-400' : 'text-slate-500 bg-[#0f172a] border-slate-800 cursor-not-allowed'}`, title: ui.promoCompareOpen ? "행사가 비교에서 완료·확정된 상품만 마스터에 적용 (F7)" : (hasF7EligibleRows ? "현재 변경 작업값을 MerchOps 내부 마스터에 적용 (F7) · 엑셀 생성 없음" : "조회 전용 마스터 행은 F7 반영 대상이 아닙니다.") },
                                     React.createElement("i", { className: "fas fa-database mr-1.5 text-[12px]" }),
                                     "F7"),
                                 React.createElement("button", { onClick: customActions.handleQuickExcelExport, disabled: fullDisplayRows.length === 0, className: `h-8 px-3 rounded flex items-center justify-center shadow-sm transition-all duration-300 border font-black text-[11px] tracking-wider ${fullDisplayRows.length > 0 ? 'text-white bg-slate-700 border-slate-600 hover:bg-slate-600 hover:border-slate-400' : 'text-slate-500 bg-[#0f172a] border-slate-800 cursor-not-allowed'}`, title: "현재 작업값으로 쇼핑몰·ERP 엑셀 출력 (F8) · 마스터 변경 없음" },
@@ -11205,7 +10904,6 @@ const App = () => {
                 ? React.createElement(PromoCatalogCompareWorkspace, { state: appState, actions: appActions })
                 : (isMasterEmpty ? (React.createElement(WelcomeGuide, { onUpload: (e) => customActions.handleFileUpload(e, 'master'), onCloudSync: customActions.handleCloudSync })) : (React.createElement(ExcelDataGrid, { state: appState, actions: appActions }))))),
         ui.showExcludedPanel && React.createElement(SessionExcludedPanel, { items: ui.sessionExcludedItems, onClose: () => ui.setShowExcludedPanel(false), onRestore: customActions.handleRestoreExcludedItems }),
-        ui.showStopManager && React.createElement(StoppedProductsManager, { products: ui.stoppedProducts, masterProducts: data.masterProducts, onClose: () => ui.setShowStopManager(false), onUpdate: customActions.handleUpdateStoppedProduct, onBulkReason: customActions.handleBulkStoppedReason, onBulkMemo: customActions.handleBulkStoppedMemo, onResume: customActions.handleResumeStoppedProducts }),
         ui.showCatalogModal && React.createElement(CatalogSaveModal, { onClose: () => ui.setShowCatalogModal(false), onSave: customActions.handleSaveAsCatalog }),
         ui.showCategoryModal && React.createElement(CategorySaveModal, { onClose: () => ui.setShowCategoryModal(false), onSave: customActions.handleSaveAsCategory })));
 };

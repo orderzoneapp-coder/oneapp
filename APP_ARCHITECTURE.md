@@ -1,7 +1,7 @@
 # ONEAPP Application Architecture
 
 - Repository: orderzoneapp-coder/oneapp
-- Architecture document version: 1.3.3
+- Architecture document version: 1.3.4
 - Last reviewed: 2026-08-04
 - Machine-readable companion: app-manifest.json
 
@@ -83,9 +83,9 @@ Shared storage or navigation does not make their business meaning identical.
 
 | Component | Type | Status | Primary responsibility |
 |---|---|---|---|
-| `MerchOps.html` | Web entry | Production | Product master review, pricing, promotion, stop management, and Excel-based product-information application workflow |
+| `MerchOps.html` | Web entry | Production | Product master review, pricing, promotion, and Excel-based product-information application workflow; stopped-product state is consumed only for worktable protection and compatibility reads |
 | `DataOps.html` | Web entry | Production | Purchase, sales, inventory, stock ledger, cost, and performance analysis |
-| `SmartParser.html` | Web entry | Production | Parse external documents, normalize product information, apply saved fields directly to the product master, and record information-change history |
+| `SmartParser.html` | Web entry | Production | Parse external documents, resolve duplicate mappings, own supplier exclusions and stopped/sold-out product management, apply approved changes directly to the product master, and record change history |
 | `export_center.html` | Web entry | Production | Validate selected results, prepare output payloads, export Excel, and apply approved master changes |
 | `settings.html` | Web entry | Production | Manage mappings, pricing rules, visible columns, table views, cloud URL, and shared configuration |
 | `history_viewer.html` | Web entry | Production | Inspect product-change history and price trends |
@@ -127,6 +127,9 @@ Important contracts include:
 | Master change notification | `merchMaster_sync_trigger` | SmartParser, DataOps, export center, and settings; MerchOps reloads master values on a full page refresh and keeps an open worktable unchanged |
 | Change history | `merchHistory_v870` | MerchOps, SmartParser, DataOps, history viewer, cloud backup |
 | Parser dictionary | `parserDict_v870` | SmartParser, MerchOps, settings, cloud configuration |
+| Parser supplier exclusions | `smartParserExcludeDict_v3012`, compatibility backup `smartParserExcludeDict_backup_v3015` | SmartParser owns writes, search, restore, scoped deletion, and automatic exclusion on the next parse; these keys are preserved without migration |
+| Stopped-product management | IndexedDB `MerchOpsDB` keys `merchStoppedProducts_v2`, `pending_shop_status`; local mirrors `merchStoppedProducts_v2`, `pendingShopStatus` | SmartParser owns stop/resume and management metadata writes; MerchOps normalizes legacy `pendingAction` values and reads stopped state only to protect the current worktable |
+| Stopped-product notification | `merchStopManager_sync_trigger` | SmartParser publishes verified stop-management changes; compatible readers refresh their stopped-state view without rewriting the shared list |
 | Margin and pricing rules | `merchMarginRules_v878` | MerchOps, SmartParser, settings, core engine |
 | Parser catalog warehouse map | `parserCatalogWarehouseMap_v1` (`{ [catalogName]: warehouseCodeString }`) | SmartParser, settings, core-engine `config_only` backup and restore |
 | Mapping configuration | `merchMappings_v870` | MerchOps, settings, cloud configuration |
@@ -208,6 +211,8 @@ The `merchMarginRules_v878` normalize/select/calculate path is owned by `ONEAPP.
 
 The legacy `parserListMarginRules_v1` value is retained for data compatibility but is not read, normalized, migrated, deleted, or rewritten by SmartParser, settings, MerchOps, or the shared pricing engine.
 
+SmartParser uses `ONEAPP.STORAGE.commitMasterStateOrThrow` for stopped-product changes. The product master, `merchStoppedProducts_v2`, `pending_shop_status`, history, local compatibility mirrors, and synchronization notifications form one verified success unit. A history, mirror, notification, or linked-store failure restores the previous master and linked state. Existing `pendingAction` stop/resume records are normalized in place for compatibility and are not migrated to new keys.
+
 MerchOps, DataOps, and SmartParser still contain other overlapping or locally implemented logic.
 
 Treat `coreEngine.js` as the intended shared contract, but do not remove duplicated implementations until compatibility tests prove that each application produces the same output.
@@ -252,7 +257,19 @@ Equivalent safety controls must be preserved when another application writes the
 7. A full MerchOps page refresh loads the changed master values.
 8. MerchOps information Excel import/export remains available as an independent bidirectional correction workflow.
 
-### 6.2 Inventory and performance insight
+### 6.2 Supplier collision and stopped-product management
+
+1. SmartParser removes saved supplier-exclusion entries before matching, without deleting or changing the internal product master.
+2. Existing multiple-master candidates and multiple supplier rows that resolve to the same normalized applied code are shown in the duplicate tab and receive `_apply=false`.
+3. No duplicate group is automatically merged, overwritten, or reduced to a representative row.
+4. The operator resolves a duplicate through search and manual relinking, a reviewed new ERP code, connection cancellation, or supplier exclusion.
+5. Saving is blocked while any applied-code duplicate remains, and the duplicate code, count, and duplicate-tab resolution path are shown.
+6. SmartParser owns individual, selected, and all-product stop/resume management, including reason and memo updates.
+7. Stop/resume writes the master sale state, stopped-product list, existing shop-status queue, history before/after values, SmartParser route, timestamp, and synchronization notifications as one verified unit.
+8. MerchOps does not expose the stopped-product management button or panel and does not merge shared stop/resume `pendingAction` records into F7; it retains normalized compatibility reads and stopped-state worktable protection.
+9. The existing exclusion, stopped-product, pending-status, history, and notification keys remain unchanged.
+
+### 6.3 Inventory and performance insight
 
 1. DataOps imports purchase, sales, inventory, and stock-ledger information.
 2. Product codes and master information are matched using shared mappings.
@@ -263,7 +280,7 @@ Equivalent safety controls must be preserved when another application writes the
 7. DataOps file absence, parsing failure, and legitimate empty input must remain distinguishable conditions.
 8. DataOps calculations must preserve source quantities unless an explicitly approved business rule changes them.
 
-### 6.3 Configuration and recovery
+### 6.4 Configuration and recovery
 
 1. Settings manages shared mappings, pricing rules, columns, views, and cloud URL.
 2. Configuration can be backed up to or restored from `code.gs`.
@@ -276,7 +293,7 @@ Equivalent safety controls must be preserved when another application writes the
 5. Backup success must not be assumed from request completion alone.
 6. Restored data must be re-read and checked for expected counts and structure.
 
-### 6.4 Master add/update review
+### 6.5 Master add/update review
 
 1. Master accepts an Excel workbook only as an add/update comparison source when an existing master is present.
 2. The operator reviews:
@@ -324,6 +341,7 @@ Equivalent safety controls must be preserved when another application writes the
 | Cloud action or payload | code.gs and every listed consumer; Shipping plan actions additionally require Shipping failure-injection and token-isolation tests |
 | Navigation path or filename | Every HTML entry point and deployed route |
 | Information-change workflow | SmartParser direct master apply, existing history viewer, master refresh behavior, and cloud history backup |
+| Supplier exclusion or stopped-product management | SmartParser duplicate separation and save blocking, exclusion persistence and next-parse filtering, master/stopped-list/pending-status/history atomicity, MerchOps compatibility reads and worktable protection, rollback and failure injection |
 | Master add/update or master writer | Master, coreEngine, MerchOps refresh, DataOps synchronization, SmartParser, history, backup and rollback |
 | DataOps file classification or parsing | DataOps required/optional file policy, parsing errors, representative operational files, generated workbook, and regression tests |
 | Planned app promotion to production | Manifest update, architecture review, navigation review, and PR validation |
@@ -785,9 +803,10 @@ Roadmap work is delivered as separate pull requests and verified after each merg
 
 #### MerchOps
 
-- F7 applies reviewed work and stop-management changes to the master.
+- F7 applies reviewed work to the master and does not consume shared stop-management `pendingAction` records.
 - F8 creates the Excel output from the current work without changing the master.
 - SmartParser information changes are already applied directly and are not queued into F7.
+- Supplier exclusion and stopped/sold-out product management are SmartParser-owned workflows; MerchOps keeps read-only stopped-state protection for its worktable.
 - F9 sends the current result to Export Center for a separate review-and-output flow.
 
 #### DataOps
