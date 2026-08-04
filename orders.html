@@ -530,8 +530,10 @@
       white-space: nowrap;
     }
     tbody tr:nth-child(even) td { background: var(--slate-50); }
-    table.preview-purchases tbody td,
     table.preview-inventory tbody td { background: var(--white); }
+    tr.inventory-review-row td { box-shadow: inset 0 2px 0 #0d9488, inset 0 -2px 0 #0d9488; }
+    tr.inventory-review-row td:first-child { box-shadow: inset 3px 0 0 #0d9488, inset 0 2px 0 #0d9488, inset 0 -2px 0 #0d9488; }
+    tr.inventory-review-row td:last-child { box-shadow: inset -3px 0 0 #0d9488, inset 0 2px 0 #0d9488, inset 0 -2px 0 #0d9488; }
     tr.unit-alert-row td,
     tr.unit-alert-row .purchase-input { color: var(--red-700) !important; }
     td.inventory-negative {
@@ -746,7 +748,8 @@
     .result-actions { display: flex; align-items: center; gap: 8px; }
     .secondary-download { color: var(--white); background: #2563eb; }
     .secondary-download:hover { background: #3b82f6; }
-    .purchase-input {
+    .purchase-input,
+    .inventory-grid-input {
       width: 100%;
       min-width: 100px;
       height: 27px;
@@ -756,6 +759,15 @@
       color: var(--slate-900);
       background: rgba(255, 255, 255, 0.9);
       font-size: 11px;
+    }
+    td[tabindex="0"]:focus-visible { outline: 2px solid var(--teal-700); outline-offset: -2px; }
+    .supplier-pairs {
+      display: -webkit-box;
+      overflow: hidden;
+      white-space: normal;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+      line-height: 1.35;
     }
     tr.reference-row td { color: var(--slate-600); font-style: italic; }
     td.inventory-value { background: var(--green-100) !important; }
@@ -1242,7 +1254,7 @@
     </section>
 
     <footer class="page-footer">
-      <span>Shipping Management v3.1.0 · workspace shipping-workspace/v2 · cloud plan v1</span>
+      <span>Shipping Management v3.2.0 · workspace shipping-workspace/v2 · cloud plan v1</span>
       <a href="SHIPPING_MANAGEMENT_GUIDANCE.md">개발·운영 기준 보기</a>
     </footer>
   </main>
@@ -1304,14 +1316,15 @@
       const TABLE_WIDTHS_SCHEMA = "shipping-table-widths/v1";
       const TABLE_WIDTH_MIN = 48;
       const TABLE_WIDTH_MAX = 720;
-      const TABLE_WIDTH_TABS = new Set(["purchases", "allocations", "inventory", "validation"]);
+      const TABLE_WIDTH_TABS = new Set(["inventory", "allocations", "validation"]);
       const CLOUD_PLAN_SCHEMA = "ONEAPP_SHIPPING_PURCHASE_PLAN_V1";
       const state = {
         orders: null,
         inventory: null,
         validation: null,
         workspace: null,
-        activePreview: "purchases",
+        activePreview: "inventory",
+        inventoryReviewCode: "",
         searchQuery: "",
         specificationFilters: new Set(),
         loading: { orders: false, inventory: false },
@@ -1768,7 +1781,9 @@
         if (!validRecoveryRecord(record)) throw new Error("복구 자료의 schemaVersion 또는 source fingerprint가 올바르지 않습니다.");
         state.workspace = record.workspace;
         engine.ensureInventoryPurchaseRows(state.workspace);
-        state.activePreview = record.ui?.activePreview || "purchases";
+        state.activePreview = ["inventory", "allocations", "validation"].includes(record.ui?.activePreview)
+          ? record.ui.activePreview
+          : "inventory";
         elements.cloudUrlInput.value = record.settings?.cloudUrl || "";
         elements.cloudTokenInput.value = record.settings?.cloudToken || "";
         elements.cloudSavedByInput.value = record.settings?.savedBy || "";
@@ -1965,84 +1980,85 @@
       }
 
       function getPreviewDefinitions(workspace) {
-        const purchaseRows = workspace.purchaseManagement.filter(
-          (row) => row.rowType === "main" && row.inventoryShadow !== true &&
-            typeof row.purchaseNeed === "number" && row.purchaseNeed > 0,
-        );
         const inventoryView = engine.getInventoryViewRows(workspace);
-        const purchaseHeaders = ["상품코드", "품목명", "규격", "전체주문", "전재고", "서울잔량", "구매수량", "구매", "거래처(단가)", "적요", "적요1"];
-        const allocationHeaders = ["상품코드", "품목명", "규격", "주문수량", "전재고", "서울잔량", "구매수량", "구매", "거래처(단가)", "적요", "적요1", "담당자"];
+        const allocationInventory = engine.getAllocationInventoryView(workspace);
+        const allocationHeaders = [
+          "상품코드", "품목명", "규격",
+          ...allocationInventory.columns.map((column) => column.header),
+          "주문수량", "전재고", "서울잔량", "구매수량", "구매", "거래처", "단가", "적요", "적요1", "담당자",
+        ];
         const validationHeaders = ["검증 항목", "계산 결과", "정상 기준", "판정", "설명"];
         const inventoryColumns = inventoryView.columns.map((column) => ({
           key: column.key,
           header: column.header,
-          numeric: true,
+          numeric: column.numeric === true,
+          role: column.role,
+          editable: column.editable === true,
         }));
         inventoryColumns.push({
           key: "shipping:inventory:purchase",
           header: "구매",
           numeric: false,
+          role: "purchase",
+          editable: true,
         });
+        inventoryColumns.push({
+          key: "shipping:inventory:suppliers",
+          header: "거래처(단가)",
+          numeric: false,
+          role: "suppliers",
+          multilineClamp: true,
+        });
+        const allocationColumns = createPreviewColumns(
+          "allocations",
+          allocationHeaders,
+          allocationHeaders.map((_, index) => index).filter((index) =>
+            (index >= 3 && index < 3 + allocationInventory.columns.length) ||
+            (index >= 3 + allocationInventory.columns.length && index <= 6 + allocationInventory.columns.length) ||
+            index === 9 + allocationInventory.columns.length,
+          ),
+        );
         return {
-          purchases: {
-            label: "발주관리",
-            headers: purchaseHeaders,
-            columns: createPreviewColumns("purchases", purchaseHeaders, [3, 4, 5, 6]),
-            numeric: [3, 4, 5, 6],
-            purchase: 7,
-            purchaseEditable: true,
-            status: -1,
-            sourceRows: purchaseRows,
-            rows: purchaseRows.map((row) => [
-              row.productCode,
-              row.productName,
-              row.specification,
-              row.totalOrderQuantity,
-              row.inventoryMatched ? row.wholeStockRaw : "",
-              row.inventoryMatched ? row.seoulFirstPurchaseRemaining : "",
-              row.purchaseNeed,
-              row.purchase,
-              row.suppliers,
-              row.notes,
-              row.notes1,
-            ]),
-          },
-          allocations: {
-            label: "미출고현황",
-            headers: allocationHeaders,
-            columns: createPreviewColumns("allocations", allocationHeaders, [3, 4, 5, 6]),
-            numeric: [3, 4, 5, 6],
-            purchase: 7,
-            purchaseEditable: false,
-            status: -1,
-            sourceRows: workspace.allocations,
-            rows: workspace.allocations.map((row) => [
-              row.productCode,
-              row.productName,
-              row.specification,
-              row.quantity,
-              row.inventoryMatched ? row.wholeStockRaw : "",
-              row.inventoryMatched ? row.seoulFirstPurchaseRemaining : "",
-              row.inventoryMatched ? row.purchaseNeed : "",
-              row.purchase,
-              row.supplierDisplay,
-              row.note,
-              row.note1,
-              row.manager,
-            ]),
-          },
           inventory: {
             label: "창고별 재고",
             headers: inventoryColumns.map((column) => column.header),
             columns: inventoryColumns,
-            numeric: inventoryView.columns.map((_, index) => index),
+            numeric: inventoryColumns.map((column, index) => column.numeric ? index : -1).filter((index) => index >= 0),
             purchase: inventoryView.headers.length,
+            supplier: inventoryView.headers.length + 1,
             purchaseEditable: true,
             status: -1,
             sourceRows: inventoryView.rows,
             rows: inventoryView.rows.map((row) => [
               ...row.values,
               row.purchase,
+              row.suppliers,
+            ]),
+          },
+          allocations: {
+            label: "미출고현황",
+            headers: allocationHeaders,
+            columns: allocationColumns,
+            numeric: allocationColumns.map((column, index) => column.numeric ? index : -1).filter((index) => index >= 0),
+            purchase: 7 + allocationInventory.columns.length,
+            purchaseEditable: false,
+            status: -1,
+            sourceRows: workspace.allocations,
+            rows: workspace.allocations.map((row, index) => [
+              row.productCode,
+              row.productName,
+              row.specification,
+              ...allocationInventory.rows[index].warehouseValues,
+              row.quantity,
+              row.inventoryMatched ? row.wholeStockRaw : "",
+              row.inventoryMatched ? row.seoulFirstPurchaseRemaining : "",
+              row.inventoryMatched ? row.purchaseNeed : "",
+              row.purchase,
+              row.customer,
+              row.unitPrice === null || row.unitPrice === undefined ? "" : row.unitPrice,
+              row.note,
+              row.note1,
+              row.manager,
             ]),
           },
           validation: {
@@ -2252,22 +2268,42 @@
             ${colgroup}
             <thead><tr>${headers}</tr></thead>
             <tbody>
-              ${pairs.length ? pairs.map(({ row, sourceRow }) => {
+              ${pairs.length ? pairs.map(({ row, sourceRow }, visibleRowIndex) => {
                 const rowFill = previewRowFill(state.activePreview, sourceRow, whiteManager);
-                const rowClasses = exactWarningUnit(sourceRow) ? "unit-alert-row" : "";
-                return `<tr class="${rowClasses}">${columns.map((_, index) => {
+                const rowClasses = [
+                  exactWarningUnit(sourceRow) ? "unit-alert-row" : "",
+                  state.activePreview === "inventory" && state.inventoryReviewCode === sourceRow.productCode
+                    ? "inventory-review-row"
+                    : "",
+                ].filter(Boolean).join(" ");
+                return `<tr class="${rowClasses}" data-product-code="${escapeHtml(sourceRow.productCode)}">${columns.map((column, index) => {
                   const value = row[index];
                   const isNumber = preview.numeric.includes(index) && typeof value === "number" && Number.isFinite(value);
+                  const parsedNumeric = typeof value === "number"
+                    ? value
+                    : Number(String(value ?? "").trim().replace(/,/g, ""));
                   const isStatus = preview.status === index;
-                  const inventoryNegative = state.activePreview === "inventory" && isNumber &&
-                    value < 0;
+                  const inventoryNegative = state.activePreview === "inventory" &&
+                    ["warehouseQuantity", "calculatedQuantity"].includes(column.role) &&
+                    String(value ?? "").trim() !== "" && Number.isFinite(parsedNumeric) && parsedNumeric < 0;
                   const isWarning = inventoryNegative || (isStatus && statusTone(value) === "bad" && String(value).includes("오류"));
                   const classes = [isNumber ? "number" : "", isStatus ? "status" : "", inventoryNegative ? "inventory-negative" : "", isWarning ? "warning-value" : ""].filter(Boolean).join(" ");
                   const editablePurchase = editable && preview.purchaseEditable === true && preview.purchase === index;
-                  const content = editablePurchase
-                    ? `<input class="purchase-input" data-purchase-code="${escapeHtml(sourceRow.productCode)}" value="${escapeHtml(value)}" aria-label="${escapeHtml(sourceRow.productCode)} 구매">`
-                    : escapeHtml(isNumber ? formatNumber(value) : value);
+                  const editableInventory = editable && state.activePreview === "inventory" && column.editable === true;
+                  let content = escapeHtml(isNumber ? formatNumber(value) : value);
+                  if (editablePurchase) {
+                    content = `<input class="purchase-input" data-purchase-code="${escapeHtml(sourceRow.productCode)}"
+                      data-original-value="${escapeHtml(value)}" value="${escapeHtml(value)}" aria-label="${escapeHtml(sourceRow.productCode)} 구매">`;
+                  } else if (editableInventory) {
+                    content = `<input class="inventory-grid-input" data-inventory-code="${escapeHtml(sourceRow.productCode)}"
+                      data-inventory-column="${escapeHtml(column.key)}" data-original-value="${escapeHtml(value)}"
+                      value="${escapeHtml(value)}" aria-label="${escapeHtml(sourceRow.productCode)} ${escapeHtml(column.header)}">`;
+                  } else if (column.multilineClamp) {
+                    content = `<span class="supplier-pairs">${escapeHtml(value)}</span>`;
+                  }
                   return `<td class="${classes}" style="${rowFill ? `background:${rowFill}` : ""}"
+                    tabindex="-1" data-grid-row="${visibleRowIndex}" data-grid-column="${index}"
+                    data-column-key="${escapeHtml(column.key)}"
                     ${isStatus ? `data-tone="${statusTone(value)}"` : ""}
                     title="${escapeHtml(value)}">${content}</td>`;
                 }).join("")}</tr>`;
@@ -2279,7 +2315,7 @@
       function renderPreview() {
         finishColumnResize();
         const definitions = getPreviewDefinitions(state.workspace);
-        if (!definitions[state.activePreview]) state.activePreview = "purchases";
+        if (!definitions[state.activePreview]) state.activePreview = "inventory";
         elements.previewTabs.innerHTML = Object.entries(definitions).map(([id, definition]) => `
           <button class="tab-button ${id === state.activePreview ? "active" : ""}" type="button" role="tab"
             aria-selected="${id === state.activePreview}" data-preview="${id}">
@@ -2289,16 +2325,136 @@
 
         const preview = definitions[state.activePreview];
         const pairs = filteredPreviewPairs(preview);
+        if (state.activePreview === "inventory" && state.inventoryReviewCode) {
+          const reviewIsVisibleNegative = pairs.some(({ sourceRow }) =>
+            sourceRow.productCode === state.inventoryReviewCode && Number(sourceRow.inventoryTotal) < 0,
+          );
+          if (!reviewIsVisibleNegative) state.inventoryReviewCode = "";
+        }
         elements.previewCount.textContent = `${formatNumber(pairs.length)}/${formatNumber(preview.rows.length)}행`;
         elements.previewTable.innerHTML = renderTableMarkup(preview, pairs, true);
         updateColumnWidthToolbar();
         updateSystemInformation(pairs.length, preview.rows.length);
       }
 
+      function commitGridInput(input) {
+        if (!input || !state.workspace) return true;
+        try {
+          if (input.matches("[data-purchase-code]")) {
+            engine.setPurchaseValue(state.workspace, input.dataset.purchaseCode, input.value);
+          } else if (input.matches("[data-inventory-code][data-inventory-column]")) {
+            const saved = engine.setInventoryOverride(
+              state.workspace,
+              input.dataset.inventoryCode,
+              input.dataset.inventoryColumn,
+              input.value,
+            );
+            input.value = saved;
+          } else {
+            return true;
+          }
+          input.dataset.originalValue = input.value;
+          scheduleLocalSave();
+          return true;
+        } catch (error) {
+          input.value = input.dataset.originalValue || "";
+          showToast(error.message || "셀 값을 저장하지 못했습니다.", true);
+          return false;
+        }
+      }
+
+      function focusGridCell(rowIndex, columnIndex, selectInput) {
+        const cell = elements.previewTable.querySelector(
+          `[data-grid-row="${rowIndex}"][data-grid-column="${columnIndex}"]`,
+        );
+        if (!cell) return;
+        const input = cell.querySelector("input");
+        const target = input || cell;
+        target.focus({ preventScroll: true });
+        target.scrollIntoView({ block: "nearest", inline: "nearest" });
+        if (selectInput && input) input.select();
+      }
+
+      function moveInventoryGridFocus(target, rowDelta, columnDelta) {
+        const cell = target.closest("[data-grid-row][data-grid-column]");
+        if (!cell) return;
+        const rowIndex = Number(cell.dataset.gridRow);
+        const columnIndex = Number(cell.dataset.gridColumn);
+        const input = target.closest("input");
+        if (input && !commitGridInput(input)) return;
+        const definitions = getPreviewDefinitions(state.workspace);
+        const preview = definitions.inventory;
+        const pairs = filteredPreviewPairs(preview);
+        const nextRow = Math.max(0, Math.min(pairs.length - 1, rowIndex + rowDelta));
+        const nextColumn = Math.max(0, Math.min(preview.columns.length - 1, columnIndex + columnDelta));
+        renderResults();
+        focusGridCell(nextRow, nextColumn, true);
+      }
+
+      function focusAdjacentNegativeInventory(target, backwards) {
+        const cell = target.closest("[data-grid-row][data-grid-column]");
+        if (!cell) return;
+        const currentRowIndex = Number(cell.dataset.gridRow);
+        const input = target.closest("input");
+        if (input && !commitGridInput(input)) return;
+        const definitions = getPreviewDefinitions(state.workspace);
+        const preview = definitions.inventory;
+        const pairs = filteredPreviewPairs(preview);
+        const candidates = pairs
+          .map((pair, index) => ({ ...pair, index }))
+          .filter((pair) => Number(pair.sourceRow.inventoryTotal) < 0);
+        if (!candidates.length) {
+          state.inventoryReviewCode = "";
+          renderResults();
+          showToast("현재 표시된 표에는 음수 재고 검수 대상이 없습니다.");
+          return;
+        }
+        const ordered = backwards ? candidates.slice().reverse() : candidates;
+        const next = backwards
+          ? ordered.find((candidate) => candidate.index < currentRowIndex) || ordered[0]
+          : ordered.find((candidate) => candidate.index > currentRowIndex) || ordered[0];
+        state.inventoryReviewCode = next.sourceRow.productCode;
+        renderResults();
+        focusGridCell(next.index, preview.purchase, true);
+      }
+
+      function handleInventoryGridKeydown(event) {
+        if (!state.workspace || state.activePreview !== "inventory") return;
+        const target = event.target.closest("input, [data-grid-row][data-grid-column]");
+        if (!target || !elements.previewTable.contains(target)) return;
+        if (event.key === "Escape") {
+          const input = target.closest("input");
+          if (!input) return;
+          event.preventDefault();
+          input.value = input.dataset.originalValue || "";
+          input.select();
+          return;
+        }
+        if (event.key === "Tab") {
+          event.preventDefault();
+          focusAdjacentNegativeInventory(target, event.shiftKey);
+          return;
+        }
+        if (event.key === "Enter") {
+          event.preventDefault();
+          moveInventoryGridFocus(target, event.shiftKey ? -1 : 1, 0);
+          return;
+        }
+        const movement = {
+          ArrowUp: [-1, 0],
+          ArrowDown: [1, 0],
+          ArrowLeft: [0, -1],
+          ArrowRight: [0, 1],
+        }[event.key];
+        if (!movement) return;
+        event.preventDefault();
+        moveInventoryGridFocus(target, movement[0], movement[1]);
+      }
+
       function printActiveTable() {
         if (!state.workspace) return;
         const definitions = getPreviewDefinitions(state.workspace);
-        const preview = definitions[state.activePreview] || definitions.purchases;
+        const preview = definitions[state.activePreview] || definitions.inventory;
         const pairs = filteredPreviewPairs(preview);
         elements.printArea.innerHTML = renderTableMarkup(preview, pairs, false);
         elements.printArea.setAttribute("aria-hidden", "false");
@@ -2318,12 +2474,14 @@
 
       function renderResults() {
         engine.ensureInventoryPurchaseRows(state.workspace);
+        engine.getInventoryViewRows(state.workspace);
         const stats = state.workspace.stats;
         const purchaseUpload = engine.getPurchaseUploadSelection(state.workspace);
         const summaryItems = [
           { label: "주문행", value: stats.orderRowCount },
           { label: "상품", value: stats.productCount },
           { label: "총 주문수량", value: stats.totalOrderQuantity },
+          { label: "음수 재고", value: stats.inventoryNegativeCount || 0, tone: stats.inventoryNegativeCount > 0 ? "bad" : "" },
           { label: "추가 구매 필요", value: stats.totalPurchaseNeed, tone: stats.totalPurchaseNeed > 0 ? "warn" : "" },
           { label: "구매업로드 대상", value: purchaseUpload.included.length },
           { label: "기준일", value: state.workspace.basisDate || "확인 필요", tone: state.workspace.basisDateStatus === "valid" ? "" : "bad" },
@@ -2379,7 +2537,8 @@
               },
             }));
             state.workspace = engine.analyze(state.orders, state.inventory, { sourceFingerprint });
-            state.activePreview = "purchases";
+            state.activePreview = "inventory";
+            state.inventoryReviewCode = "";
             state.searchQuery = "";
             state.specificationFilters.clear();
             elements.tableSearchInput.value = "";
@@ -2572,7 +2731,9 @@
           }
           state.workspace = plan.workspace;
           engine.applyPurchaseInputs(state.workspace, plan.purchaseInputs);
-          state.activePreview = plan.activePreview || "purchases";
+          state.activePreview = ["inventory", "allocations", "validation"].includes(plan.activePreview)
+            ? plan.activePreview
+            : "inventory";
           renderResults();
           scheduleLocalSave();
           setSystemMessage(`cloud revision loaded... (${selected.revision})`);
@@ -2646,17 +2807,13 @@
         renderPreview();
         scheduleLocalSave();
       });
-      elements.previewTable.addEventListener("input", (event) => {
-        const input = event.target.closest("[data-purchase-code]");
-        if (!input || !state.workspace || !["purchases", "inventory"].includes(state.activePreview)) return;
-        engine.setPurchaseValue(state.workspace, input.dataset.purchaseCode, input.value);
-        scheduleLocalSave();
-      });
       elements.previewTable.addEventListener("change", (event) => {
-        const input = event.target.closest("[data-purchase-code]");
-        if (!input || !state.workspace || !["purchases", "inventory"].includes(state.activePreview)) return;
+        const input = event.target.closest("[data-purchase-code], [data-inventory-code][data-inventory-column]");
+        if (!input || !state.workspace || state.activePreview !== "inventory") return;
+        if (!commitGridInput(input)) return;
         renderResults();
       });
+      elements.previewTable.addEventListener("keydown", handleInventoryGridKeydown);
       elements.previewTable.addEventListener("pointerdown", beginColumnResize);
       elements.previewTable.addEventListener("keydown", handleColumnResizeKeydown);
       elements.columnWidthSaveButton.addEventListener("click", persistActiveColumnWidths);

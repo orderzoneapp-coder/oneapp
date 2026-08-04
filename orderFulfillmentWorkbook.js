@@ -1,13 +1,16 @@
 (function (root, factory) {
-  const api = factory();
+  const engine = typeof module === "object" && module.exports
+    ? require("./orderFulfillmentEngine.js")
+    : root.ShippingManagementEngine;
+  const api = factory(engine);
   if (typeof module === "object" && module.exports) {
     module.exports = api;
   }
   root.ShippingManagementWorkbook = api;
-})(typeof globalThis !== "undefined" ? globalThis : this, function () {
+})(typeof globalThis !== "undefined" ? globalThis : this, function (engine) {
   "use strict";
 
-  const WORKBOOK_VERSION = "3.1.0";
+  const WORKBOOK_VERSION = "3.2.0";
   const REQUIRED_SHEETS = Object.freeze([
     "발주관리",
     "미출고현황",
@@ -277,43 +280,71 @@
   }
 
   function buildAllocationSheet(workspace, XLSX) {
+    if (!engine?.getAllocationInventoryView) {
+      throw new Error("Shipping Management 재고 엔진을 불러오지 못했습니다.");
+    }
+    const inventoryView = engine.getAllocationInventoryView(workspace);
+    const warehouseHeaders = inventoryView.columns.map((column) => column.header);
     const headers = [
       "상품코드",
       "품목명",
       "규격",
+      ...warehouseHeaders,
       "주문수량",
       "전재고",
       "서울잔량",
       "구매수량",
       "구매",
-      "거래처(단가)",
+      "거래처",
+      "단가",
       "적요",
       "적요1",
       "담당자",
     ];
-    const rows = workspace.allocations.map((row) => [
+    const rows = workspace.allocations.map((row, index) => [
       row.productCode,
       row.productName,
       row.specification,
+      ...inventoryView.rows[index].warehouseValues,
       row.quantity,
       row.inventoryMatched ? row.wholeStockRaw : "",
       row.inventoryMatched ? row.seoulFirstPurchaseRemaining : "",
       row.inventoryMatched ? row.purchaseNeed : "",
       row.purchase,
-      row.supplierDisplay,
+      row.customer,
+      row.unitPrice === null || row.unitPrice === undefined ? "" : row.unitPrice,
       row.note,
       row.note1,
       row.manager,
     ]);
+    const warehouseStart = 3;
+    const orderQuantityColumn = warehouseStart + warehouseHeaders.length;
+    const purchaseColumn = orderQuantityColumn + 4;
+    const priceColumn = purchaseColumn + 2;
+    const numericColumns = new Set([
+      ...warehouseHeaders.map((_, index) => warehouseStart + index),
+      orderQuantityColumn,
+      orderQuantityColumn + 1,
+      orderQuantityColumn + 2,
+      orderQuantityColumn + 3,
+      priceColumn,
+    ]);
     const whiteManager = dominantManager(workspace.allocations);
     const sheet = XLSX.utils.aoa_to_sheet([headers, ...rows]);
     const lastRow = Math.max(1, rows.length + 1);
-    sheet["!cols"] = [
-      { wch: 15 }, { wch: 31 }, { wch: 13 }, { wch: 11 }, { wch: 12 }, { wch: 12 },
-      { wch: 12 }, { wch: 16 }, { wch: 28 }, { wch: 24 }, { wch: 24 }, { wch: 14 },
-    ];
+    const lastColumn = columnName(headers.length - 1);
+    sheet["!cols"] = headers.map((header, index) => {
+      if (index === 0) return { wch: 15 };
+      if (index === 1) return { wch: 31 };
+      if (index === 2) return { wch: 13 };
+      if (index >= warehouseStart && index < orderQuantityColumn) return { wch: 11 };
+      if (header === "거래처") return { wch: 22 };
+      if (header === "적요" || header === "적요1") return { wch: 24 };
+      if (header === "담당자") return { wch: 14 };
+      return { wch: 12 };
+    });
     sheet["!rows"] = [{ hpt: 27 }];
-    sheet["!autofilter"] = { ref: `A1:L${lastRow}` };
+    sheet["!autofilter"] = { ref: `A1:${lastColumn}${lastRow}` };
     sheet["!freeze"] = { xSplit: 0, ySplit: 1 };
     sheet["!views"] = [{ showGridLines: false }];
     sheet["!margins"] = {
@@ -331,7 +362,7 @@
       fitToWidth: 1,
       fitToHeight: 0,
     };
-    sheet["!printArea"] = `A1:L${lastRow}`;
+    sheet["!printArea"] = `A1:${lastColumn}${lastRow}`;
     sheet["!printTitles"] = "$1:$1";
 
     for (let column = 0; column < headers.length; column += 1) {
@@ -361,12 +392,12 @@
           },
           alignment: {
             vertical: "center",
-            horizontal: column >= 3 && column <= 6 ? "right" : "left",
+            horizontal: numericColumns.has(column) ? "right" : "left",
             wrapText: false,
           },
           border: tableBorder(),
         };
-        if (column >= 3 && column <= 6) style.numFmt = numberFormatForValue(cell.v);
+        if (numericColumns.has(column)) style.numFmt = numberFormatForValue(cell.v);
         if (typeof cell.v === "number" && (!Number.isFinite(cell.v) || cell.v < 0)) {
           style.fill = { fgColor: { rgb: COLORS.redSoft } };
           style.font = { ...BASE_FONT, color: { rgb: COLORS.red }, bold: true };
@@ -579,35 +610,24 @@
   }
 
   function buildWarehouseInventorySheet(workspace, XLSX) {
-    const workspaceSource = workspace.sourceFiles.inventory;
-    const matrix = Array.isArray(workspaceSource.matrix)
-      ? workspaceSource.matrix.map((row) => (Array.isArray(row) ? row.slice() : []))
-      : [];
-    const headerRowIndex = Math.max(0, workspaceSource.headerRowIndex || 0);
-    const purchaseByCode = new Map(
-      (workspace.purchaseManagement || [])
-        .filter((row) => row.rowType === "main")
-        .map((row) => [String(row.productCode), String(row.purchase || "")]),
-    );
-    const layout = getInventoryColumnDescriptors(workspaceSource);
+    if (!engine?.getInventoryViewRows) {
+      throw new Error("Shipping Management 재고 엔진을 불러오지 못했습니다.");
+    }
+    const inventoryView = engine.getInventoryViewRows(workspace);
+    const layout = inventoryView.columns.map((column) => ({ ...column }));
     layout.push({ key: "shipping:inventory:purchase", header: "구매", sourceIndex: null, purchase: true });
-    const productCodeColumnIndex = Number(workspaceSource.productCodeColumnIndex);
+    layout.push({ key: "shipping:inventory:suppliers", header: "거래처(단가)", sourceIndex: null, suppliers: true });
 
-    const dataRows = (workspace.inventory || []).map((inventory) => {
-      const sourceRow = matrix[Math.max(headerRowIndex + 1, Number(inventory.sourceRowNumber || 0) - 1)] || [];
-      return layout.map((column) => {
-        if (!column.purchase) {
-          if (column.sourceIndex === productCodeColumnIndex) return String(inventory.productCode || "");
-          return safeValue(sourceRow[column.sourceIndex]);
-        }
-        const code = String(inventory.productCode || "");
-        return purchaseByCode.get(code) || "";
-      });
-    });
+    const dataRows = inventoryView.rows.map((inventory) => [
+      ...inventory.values,
+      inventory.purchase,
+      inventory.suppliers,
+    ]);
     const headers = layout.map((column) => safeValue(column.header));
     const sheet = XLSX.utils.aoa_to_sheet([headers, ...dataRows]);
-    const codeColumn = layout.findIndex((column) => column.sourceIndex === productCodeColumnIndex);
+    const codeColumn = layout.findIndex((column) => column.role === "productCode");
     const specificationColumn = headers.findIndex((header) => normalizedHeader(header) === "규격");
+    const supplierColumn = layout.findIndex((column) => column.suppliers === true);
     const lastColumn = columnName(Math.max(0, headers.length - 1));
     const lastRow = Math.max(1, dataRows.length + 1);
     sheet["!cols"] = headers.map((header) => {
@@ -616,9 +636,10 @@
       if (normalized === "품목명") return { wch: 31 };
       if (normalized === "규격") return { wch: 13 };
       if (normalized === "구매") return { wch: 11 };
+      if (normalized === "거래처(단가)") return { wch: 34 };
       return { wch: isWarehouseQuantityHeader(header) ? 11 : 13 };
     });
-    sheet["!rows"] = [{ hpt: 27 }];
+    sheet["!rows"] = [{ hpt: 27 }, ...dataRows.map(() => ({ hpt: 32 }))];
     sheet["!freeze"] = { xSplit: 0, ySplit: 1 };
     sheet["!autofilter"] = { ref: `A1:${lastColumn}${lastRow}` };
     sheet["!views"] = [{ showGridLines: false }];
@@ -656,7 +677,12 @@
           cell.w = cell.v;
           style.numFmt = "@";
         }
-        if (typeof cell.v === "number" && Number.isFinite(cell.v) && cell.v < 0) {
+        if (
+          typeof cell.v === "number" &&
+          Number.isFinite(cell.v) &&
+          cell.v < 0 &&
+          ["warehouseQuantity", "calculatedQuantity"].includes(layout[column]?.role)
+        ) {
           style.fill = { fgColor: { rgb: "FFF200" } };
         }
         if (column === codeColumn && !isBlank(cell.v)) {
@@ -664,6 +690,9 @@
           cell.v = String(cell.v ?? "");
           cell.w = cell.v;
           style.numFmt = "@";
+        }
+        if (column === supplierColumn) {
+          style.alignment = { vertical: "top", horizontal: "left", wrapText: true };
         }
         applyCellStyle(cell, style);
       });
@@ -1036,7 +1065,7 @@
     const workbook = XLSX.utils.book_new();
     workbook.Props = {
       Title: "Shipping Management 발주·미출고 계획",
-      Subject: "발주관리·전재고·서울 1차 구매잔량·추가 구매 필요 배정",
+      Subject: "동적 창고재고 검수·미출고 배정·구매 계획",
       Author: "ONEAPP Shipping Management",
       Company: "ONEAPP",
       Comments: `workspace=${workspace.schemaVersion}; workbook=${WORKBOOK_VERSION}`,
@@ -1047,7 +1076,8 @@
       buildPurchaseManagementSheet(workspace, XLSX),
       "발주관리",
     );
-    XLSX.utils.book_append_sheet(workbook, buildAllocationSheet(workspace, XLSX), "미출고현황");
+    const allocationSheet = buildAllocationSheet(workspace, XLSX);
+    XLSX.utils.book_append_sheet(workbook, allocationSheet, "미출고현황");
     XLSX.utils.book_append_sheet(
       workbook,
       buildWarehouseInventorySheet(workspace, XLSX),
@@ -1059,7 +1089,15 @@
       buildSourceSheet(workspace.sourceFiles.orders, XLSX),
       "주문원본",
     );
-    addPrintNames(workbook, "미출고현황", Math.max(1, workspace.allocations.length + 1), "L");
+    const allocationLastColumn = columnName(
+      XLSX.utils.decode_range(allocationSheet["!ref"]).e.c,
+    );
+    addPrintNames(
+      workbook,
+      "미출고현황",
+      Math.max(1, workspace.allocations.length + 1),
+      allocationLastColumn,
+    );
     return workbook;
   }
 
