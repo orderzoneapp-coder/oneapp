@@ -272,7 +272,17 @@ const runSmartMatch = (extName, extSpec, mProducts, pDict) => {
     if (perfectMatches.length === 1)
         return { code: perfectMatches[0].코드, status: '🟢 일치' };
     if (perfectMatches.length > 1)
-        return { code: '', status: '🟡 중복품목(선택필요)' };
+        return {
+            code: '',
+            status: '🟠 다중 마스터 후보',
+            duplicateType: 'master_candidates',
+            duplicateCandidates: perfectMatches.map(item => ({
+                code: normalizeSharedProductCode(item?.코드),
+                name: item?.품목명 || '',
+                spec: item?.규격 || '',
+                unit: item?.단위 || ''
+            }))
+        };
     if (bestMatch && bestScore > 0.6)
         return { code: '', status: '🟡 유사' };
     return { code: '', status: '🔴 불일치' };
@@ -497,13 +507,94 @@ const createSmartParserMasterCodeResolver = (masterProducts = {}) => {
         const candidates = byNormalizedCode.get(normalizedCode) || [];
         if (candidates.length > 1) {
             const candidateKeys = candidates.map(candidate => candidate.masterKey).join(', ');
-            throw new Error(`정규화 상품코드 [${normalizedCode}]와 일치하는 마스터 항목이 여러 개입니다: ${candidateKeys}`);
+            throw new Error(`적용 대상 상품코드 중복: [${normalizedCode}] 마스터 ${candidates.length}건 (${candidateKeys})`);
         }
         if (candidates.length === 1)
             return { exists: true, normalizedCode, ...candidates[0] };
         return { exists: false, normalizedCode, masterKey: normalizedCode, actualCode: normalizedCode, item: null };
     };
-    return { resolve, normalize: normalizeSharedProductCode };
+    const getCandidates = (value) => {
+        const normalizedCode = normalizeSharedProductCode(value);
+        return normalizedCode ? [...(byNormalizedCode.get(normalizedCode) || [])] : [];
+    };
+    return { resolve, getCandidates, normalize: normalizeSharedProductCode };
+};
+const SMART_PARSER_DUPLICATE_STATUS = '🟠 적용코드 중복';
+const reconcileSmartParserDuplicateRows = (inputRows = [], masterProducts = {}) => {
+    const rows = (Array.isArray(inputRows) ? inputRows : []).filter(Boolean).map(rawRow => {
+        const row = { ...rawRow };
+        if (row._duplicateOverlay === true) {
+            row._matchStatus = row._duplicateBaseStatus || (row._matchCode ? '🟢 일치' : '🔴 불일치');
+            row._apply = row._duplicateBaseApply !== false && !!row._matchCode;
+            delete row._duplicateOverlay;
+            delete row._duplicateBaseStatus;
+            delete row._duplicateBaseApply;
+            delete row._duplicateCode;
+            delete row._duplicateCount;
+            delete row._duplicateMasterCandidates;
+            delete row._duplicateType;
+        }
+        if (row._duplicateType === 'master_candidates') row._apply = false;
+        return row;
+    });
+    const resolver = createSmartParserMasterCodeResolver(masterProducts);
+    const markDuplicate = (row, type, normalizedCode, count, candidates = []) => {
+        if (row._duplicateType === 'master_candidates') return row;
+        return {
+            ...row,
+            _duplicateOverlay: true,
+            _duplicateType: type,
+            _duplicateBaseStatus: row._matchStatus || (row._matchCode ? '🟢 일치' : '🔴 불일치'),
+            _duplicateBaseApply: row._apply !== false,
+            _duplicateCode: normalizedCode,
+            _duplicateCount: count,
+            _duplicateMasterCandidates: candidates,
+            _matchStatus: SMART_PARSER_DUPLICATE_STATUS,
+            _apply: false
+        };
+    };
+    let nextRows = rows.map(row => {
+        if (!row._matchCode || row._duplicateType === 'master_candidates') return row;
+        const normalizedCode = resolver.normalize(row._matchCode);
+        const candidates = resolver.getCandidates(normalizedCode);
+        return candidates.length > 1
+            ? markDuplicate(row, 'master_code', normalizedCode, candidates.length, candidates.map(candidate => ({
+                code: candidate.actualCode,
+                key: candidate.masterKey,
+                name: candidate.item?.품목명 || '',
+                spec: candidate.item?.규격 || '',
+                unit: candidate.item?.단위 || ''
+            })))
+            : row;
+    });
+    const byAppliedCode = new Map();
+    nextRows.forEach((row, index) => {
+        if (!row._matchCode || row._duplicateType === 'master_code' || row._duplicateType === 'master_candidates') return;
+        const normalizedCode = resolver.normalize(row._matchCode);
+        if (!normalizedCode) return;
+        const indexes = byAppliedCode.get(normalizedCode) || [];
+        indexes.push(index);
+        byAppliedCode.set(normalizedCode, indexes);
+    });
+    byAppliedCode.forEach((indexes, normalizedCode) => {
+        if (indexes.length < 2) return;
+        indexes.forEach(index => {
+            nextRows[index] = markDuplicate(nextRows[index], 'applied_code', normalizedCode, indexes.length);
+        });
+    });
+    return nextRows;
+};
+const getSmartParserDuplicateSummary = (rows = []) => {
+    const duplicateRows = (Array.isArray(rows) ? rows : []).filter(row => row && (row._duplicateType || String(row._matchStatus || '').includes('중복')));
+    const groups = new Map();
+    duplicateRows.forEach(row => {
+        const candidates = Array.isArray(row._duplicateCandidates) ? row._duplicateCandidates : [];
+        const code = normalizeSharedProductCode(row._duplicateCode || row._matchCode || candidates.map(item => item?.code).filter(Boolean).join('/')) || '마스터 후보';
+        const key = `${row._duplicateType || 'unknown'}|${code}`;
+        if (!groups.has(key)) groups.set(key, { code, count: 0 });
+        groups.get(key).count++;
+    });
+    return { rows: duplicateRows, groups: Array.from(groups.values()) };
 };
 const normalizeSmartParserStoppedProducts = (input = {}) => {
     const result = {};
@@ -513,10 +604,45 @@ const normalizeSmartParserStoppedProducts = (input = {}) => {
     entries.forEach(([rawCode, rawItem]) => {
         const item = rawItem && typeof rawItem === 'object' ? rawItem : {};
         const code = normalizeSharedProductCode(item.productCode || item.코드 || rawCode);
-        if (code) result[code] = { ...item, productCode: code };
+        if (!code) return;
+        const rawPendingAction = String(item.pendingAction || '').trim().toLowerCase();
+        const rawStatus = String(item.status || '').trim().toLowerCase();
+        let pendingAction = '';
+        if (['stop', 'pendingstop', '정지', '정지예정'].includes(rawPendingAction) || rawStatus === 'pendingstop') pendingAction = 'stop';
+        if (['resume', 'pendingresume', '재개', '재개예정'].includes(rawPendingAction) || rawStatus === 'pendingresume') pendingAction = 'resume';
+        const status = pendingAction === 'stop' ? 'pendingStop' : (pendingAction === 'resume' ? 'pendingResume' : (item.status || 'stopped'));
+        result[code] = { ...item, productCode: code, pendingAction, status };
     });
     return result;
 };
+const readSmartParserLegacyStoppedProducts = () => {
+    const result = {};
+    const legacy = safeParseJson(localStorage.getItem('merchWorkArchive_v1'), []);
+    if (!Array.isArray(legacy)) return result;
+    legacy.filter(group => String(group?.status || '').trim() === '정지').forEach(group => {
+        (Array.isArray(group?.rows) ? group.rows : []).forEach(row => {
+            const code = normalizeSharedProductCode(row?.코드 || row?.['품목코드']);
+            if (!code) return;
+            const legacyTime = group.createdAt || '';
+            result[code] = {
+                productCode: code,
+                stoppedAt: legacyTime,
+                updatedAt: legacyTime,
+                reason: '기존 정지 보관함 변환',
+                memo: '',
+                source: 'legacy-merchops-archive',
+                status: 'stopped',
+                pendingAction: ''
+            };
+        });
+    });
+    return result;
+};
+const mergeSmartParserStoppedProductsWithLegacy = (input = {}) => ({
+    ...readSmartParserLegacyStoppedProducts(),
+    ...normalizeSmartParserStoppedProducts(input)
+});
+const hasSmartParserLegacyStoppedProducts = () => Object.keys(readSmartParserLegacyStoppedProducts()).length > 0;
 const normalizeSmartParserPendingShopStatus = (input = []) => {
     const byCode = new Map();
     (Array.isArray(input) ? input : []).forEach(rawItem => {
@@ -541,7 +667,7 @@ const buildSmartParserApplyPlan = ({ masterProducts = {}, rows = [], catalogLabe
         if (!resolved.normalizedCode)
             throw new Error('SmartParser 적용 상품코드가 없습니다.');
         if (seenCodes.has(resolved.normalizedCode))
-            throw new Error(`같은 상품코드가 한 번의 적용에 중복되었습니다: ${resolved.normalizedCode}`);
+            throw new Error(`적용 대상 상품코드 중복: [${resolved.normalizedCode}] 2건 이상`);
         seenCodes.add(resolved.normalizedCode);
     });
     const newMaster = { ...(masterProducts || {}) };
@@ -889,6 +1015,92 @@ const buildSmartParserMissingTagPlan = ({ masterProducts = {}, codes = [], catal
     });
     return { newMaster, logs, processedCodes };
 };
+const buildSmartParserStopManagementPlan = ({ masterProducts = {}, stoppedProducts = {}, pendingShopStatus = [], codes = [], action = 'stop', reason = '', memo = '', timestampISO = '', timestampLabel = '' } = {}) => {
+    if (!['stop', 'resume'].includes(action))
+        throw new Error('품절/정지 관리 작업은 stop 또는 resume이어야 합니다.');
+    const resolver = createSmartParserMasterCodeResolver(masterProducts);
+    const targetCodes = Array.from(new Set((Array.isArray(codes) ? codes : []).map(normalizeSharedProductCode).filter(Boolean)));
+    if (targetCodes.length === 0)
+        throw new Error('품절/정지 관리 대상 상품코드가 없습니다.');
+    const resolvedTargets = targetCodes.map(code => {
+        const resolved = resolver.resolve(code);
+        if (!resolved.exists)
+            throw new Error(`마스터에 없는 상품코드입니다: ${code}`);
+        return resolved;
+    });
+    const newMaster = { ...(masterProducts || {}) };
+    const nextStoppedProducts = normalizeSmartParserStoppedProducts(stoppedProducts);
+    let nextPendingShopStatus = normalizeSmartParserPendingShopStatus(pendingShopStatus);
+    const logs = [];
+    const processedCodes = [];
+    resolvedTargets.forEach(resolved => {
+        const normalizedCode = resolved.normalizedCode;
+        const code = resolved.actualCode;
+        const oldItem = { ...(resolved.item || {}) };
+        const oldSaleValue = oldItem['판매여부'] ?? '';
+        const newSaleValue = action === 'stop' ? 0 : 1;
+        const beforeStopped = nextStoppedProducts[normalizedCode] || {};
+        const resolvedReason = String(reason || beforeStopped.reason || (action === 'stop' ? '관리자 정지' : '판매재개')).trim();
+        const resolvedMemo = String(memo || beforeStopped.memo || '').trim();
+        newMaster[resolved.masterKey] = { ...oldItem, '판매여부': newSaleValue };
+        if (action === 'stop') {
+            nextStoppedProducts[normalizedCode] = {
+                ...beforeStopped,
+                productCode: normalizedCode,
+                name: oldItem['품목명'] || beforeStopped.name || '',
+                stoppedAt: beforeStopped.stoppedAt || timestampISO,
+                updatedAt: timestampISO,
+                reason: resolvedReason,
+                memo: resolvedMemo,
+                source: 'SmartParser',
+                status: 'stopped',
+                pendingAction: ''
+            };
+        }
+        else {
+            delete nextStoppedProducts[normalizedCode];
+        }
+        const pendingIndex = nextPendingShopStatus.findIndex(item => normalizeSharedProductCode(item?.code) === normalizedCode);
+        const pendingEntry = {
+            code: normalizedCode,
+            type: action,
+            name: oldItem['품목명'] || beforeStopped.name || '',
+            source: 'SmartParser',
+            reason: resolvedReason,
+            memo: resolvedMemo,
+            updatedAt: timestampISO
+        };
+        if (pendingIndex >= 0) nextPendingShopStatus[pendingIndex] = pendingEntry;
+        else nextPendingShopStatus.push(pendingEntry);
+        logs.push({
+            id: generateUUID(),
+            source: 'parser',
+            sourceLabel: '스마트 파서',
+            actionType: action === 'stop' ? 'smartparser_stop_management_stop' : 'smartparser_stop_management_resume',
+            historyType: action === 'stop' ? '판매정지' : '판매재개',
+            changeType: action === 'stop' ? '판매정지' : '판매재개',
+            applyMode: 'direct_master_apply',
+            path: 'SmartParser > 공급사 제외 > 품절/정지 관리',
+            route: '파서/품절정지관리/마스터직접반영',
+            timestamp: timestampLabel,
+            timestampISO,
+            code,
+            name: oldItem['품목명'] || beforeStopped.name || '',
+            spec: oldItem['규격'] || '',
+            unit: oldItem['단위'] || '',
+            field: '판매여부',
+            oldVal: oldSaleValue,
+            newVal: newSaleValue,
+            diff: '',
+            diffRate: null,
+            reason: resolvedReason,
+            memo: resolvedMemo || (action === 'stop' ? 'SmartParser 품절/정지 관리에서 판매 정지' : 'SmartParser 품절/정지 관리에서 판매 재개'),
+            version: 'smart-parser-v3.2-stop-management'
+        });
+        processedCodes.push(code);
+    });
+    return { newMaster, nextStoppedProducts, nextPendingShopStatus, logs, processedCodes, action };
+};
 const cleanupSmartParserStorage = () => {
     try { localStorage.removeItem('parser_session'); } catch (e) { }
     try { localStorage.removeItem('smartParserTempData'); } catch (e) { }
@@ -999,6 +1211,8 @@ const useParserApp = () => {
         return {};
     } });
     const [parserExcludeDict, setParserExcludeDict] = useState(() => loadParserExcludeDict());
+    const [stoppedProducts, setStoppedProducts] = useState(() => mergeSmartParserStoppedProductsWithLegacy(safeParseJson(localStorage.getItem('merchStoppedProducts_v2'), {})));
+    const [showStopManager, setShowStopManager] = useState(false);
     const [catalogUpdatedAt, setCatalogUpdatedAt] = useState({});
     const [catalogWarehouseMap, setCatalogWarehouseMap] = useState(() => window.readParserCatalogWarehouseMap?.() || {});
     const [marginRules, setMarginRules] = useState(() => readParserMarginRules());
@@ -1007,14 +1221,18 @@ const useParserApp = () => {
         setCatalogWarehouseMap(next);
         return next;
     }, []);
-    useEffect(() => { window.ONEAPP.STORAGE.readMasterSnapshotState().then(state => {
+    useEffect(() => { window.ONEAPP.STORAGE.readMasterState(['merchStoppedProducts_v2']).then(state => {
         smartParserMasterRevision = state.revision;
         const items = state.items;
         if (items && items.length > 0) {
         const dict = {};
         items.forEach(i => dict[i.코드] = i);
         setMasterProducts(dict);
-    } }).catch(console.error); }, []);
+    }
+        const sharedStoppedProducts = state.extraStoreEntries?.merchStoppedProducts_v2;
+        if (sharedStoppedProducts && typeof sharedStoppedProducts === 'object')
+            setStoppedProducts(mergeSmartParserStoppedProductsWithLegacy(sharedStoppedProducts));
+    }).catch(console.error); }, []);
     useEffect(() => {
         let isActive = true;
         getIDB(CATALOG_UPDATED_AT_KEY)
@@ -1034,6 +1252,10 @@ const useParserApp = () => {
     }; const handleStorageChange = (e) => {
         if (e.key === (window.ONEAPP?.CONFIG?.PARSER_CATALOG_WAREHOUSE_MAP_KEY || 'parserCatalogWarehouseMap_v1') || e.key === 'merchMarginRules_v878') {
             refreshSharedPricing();
+            return;
+        }
+        if (e.key === 'merchStopManager_sync_trigger') {
+            setStoppedProducts(mergeSmartParserStoppedProductsWithLegacy(safeParseJson(localStorage.getItem('merchStoppedProducts_v2'), {})));
             return;
         }
         if (e.key === 'merchMaster_sync_trigger' || e.key === 'merch_settings_update_trigger')
@@ -1114,10 +1336,10 @@ const useParserApp = () => {
     const [showMappingExcludeModal, setShowMappingExcludeModal] = useState(false);
     const [lastExcludedCount, setLastExcludedCount] = useState(0);
     const showToast = useCallback((msg) => { setToastMsg(msg); setTimeout(() => setToastMsg(''), 3000); }, []);
-    return { masterProducts, saveMaster, parserDict, saveDict, parserExcludeDict, saveParserExcludeDict, catalogUpdatedAt, setCatalogUpdatedAt, catalogWarehouseMap, saveCatalogWarehouse, marginRules, parserBuffer, setParserBuffer, currentTag, setCurrentTag, activeTab, setActiveTab, showInputModal, setShowInputModal, showReviewModal, setShowReviewModal, showErpModal, setShowErpModal, toastMsg, showToast, isProcessing, setIsProcessing, processMsg, setProcessMsg, globalSearch, setGlobalSearch, targetId, setTargetId, selectedMissingCodes, setSelectedMissingCodes, processedCodes, setProcessedCodes, missingSearch, setMissingSearch, showExcludeModal, setShowExcludeModal, excludeTarget, setExcludeTarget, showMappingExcludeModal, setShowMappingExcludeModal, lastExcludedCount, setLastExcludedCount };
+    return { masterProducts, saveMaster, parserDict, saveDict, parserExcludeDict, saveParserExcludeDict, stoppedProducts, setStoppedProducts, showStopManager, setShowStopManager, catalogUpdatedAt, setCatalogUpdatedAt, catalogWarehouseMap, saveCatalogWarehouse, marginRules, parserBuffer, setParserBuffer, currentTag, setCurrentTag, activeTab, setActiveTab, showInputModal, setShowInputModal, showReviewModal, setShowReviewModal, showErpModal, setShowErpModal, toastMsg, showToast, isProcessing, setIsProcessing, processMsg, setProcessMsg, globalSearch, setGlobalSearch, targetId, setTargetId, selectedMissingCodes, setSelectedMissingCodes, processedCodes, setProcessedCodes, missingSearch, setMissingSearch, showExcludeModal, setShowExcludeModal, excludeTarget, setExcludeTarget, showMappingExcludeModal, setShowMappingExcludeModal, lastExcludedCount, setLastExcludedCount };
 };
 const useParserActions = (appState) => {
-    const { masterProducts, saveMaster, parserDict, saveDict, parserExcludeDict, saveParserExcludeDict, catalogUpdatedAt, setCatalogUpdatedAt, catalogWarehouseMap, marginRules, parserBuffer, setParserBuffer, currentTag, setCurrentTag, setActiveTab, setShowInputModal, showToast, setIsProcessing, setProcessMsg, setGlobalSearch, targetId, setTargetId, selectedMissingCodes, setSelectedMissingCodes, processedCodes, setProcessedCodes, setShowErpModal, setShowExcludeModal, setExcludeTarget, setShowMappingExcludeModal, setLastExcludedCount } = appState;
+    const { masterProducts, saveMaster, parserDict, saveDict, parserExcludeDict, saveParserExcludeDict, stoppedProducts, setStoppedProducts, catalogUpdatedAt, setCatalogUpdatedAt, catalogWarehouseMap, marginRules, parserBuffer, setParserBuffer, currentTag, setCurrentTag, setActiveTab, setShowInputModal, showToast, setIsProcessing, setProcessMsg, setGlobalSearch, targetId, setTargetId, selectedMissingCodes, setSelectedMissingCodes, processedCodes, setProcessedCodes, setShowErpModal, setShowExcludeModal, setExcludeTarget, setShowMappingExcludeModal, setLastExcludedCount } = appState;
     const executeParser = useCallback((rawText, tag, forceManual = false, explicitCatalogWarehouse = undefined) => {
         const catalogWarehouse = String(explicitCatalogWarehouse ?? catalogWarehouseMap?.[normalizeParserCatalogName(tag)] ?? '').trim();
         setShowInputModal(false);
@@ -1141,6 +1363,9 @@ const useParserActions = (appState) => {
                     let matchResult = forceManual ? { code: '', status: '🔴 불일치' } : runSmartMatch(rowData['품목명'] || '', rowData['규격'] || '', masterProducts, parserDict);
                     rowData._matchCode = matchResult.code;
                     rowData._matchStatus = matchResult.status;
+                    rowData._duplicateType = matchResult.duplicateType || '';
+                    rowData._duplicateCandidates = matchResult.duplicateCandidates || [];
+                    rowData._apply = !!matchResult.code;
                     if (matchResult.code)
                         rowData.코드 = matchResult.code;
                     const hasParsedInPrice = Object.prototype.hasOwnProperty.call(rowData, '입고가') && String(rowData['입고가'] ?? '').trim() !== '';
@@ -1157,9 +1382,12 @@ const useParserActions = (appState) => {
                     }
                     results.push(rowData);
                 });
+                const reconciledResults = reconcileSmartParserDuplicateRows(results, masterProducts);
                 setLastExcludedCount(excludedCount);
-                setParserBuffer(results);
-                setActiveTab(forceManual ? 'unmatched' : 'matched');
+                setParserBuffer(reconciledResults);
+                const hasMatched = reconciledResults.some(row => row._matchCode && !row._duplicateType);
+                const hasDuplicates = getSmartParserDuplicateSummary(reconciledResults).rows.length > 0;
+                setActiveTab(forceManual ? 'unmatched' : (hasMatched ? 'matched' : (hasDuplicates ? 'duplicate' : 'matched')));
                 setTargetId(null);
                 setGlobalSearch('');
                 setSelectedMissingCodes(new Set());
@@ -1177,7 +1405,16 @@ const useParserActions = (appState) => {
         }, 100);
     }, [masterProducts, parserDict, parserExcludeDict, catalogWarehouseMap, marginRules, setLastExcludedCount]);
     const handleApplyMatched = useCallback(async (updateTextData = true) => {
-        const toApply = parserBuffer.filter(r => r && !r._excluded && r._apply && r._matchCode && !String(r._matchStatus || '').includes('매핑제외'));
+        const reconciledRows = reconcileSmartParserDuplicateRows(parserBuffer, masterProducts);
+        const duplicateSummary = getSmartParserDuplicateSummary(reconciledRows);
+        if (duplicateSummary.rows.length > 0) {
+            const codeSummary = duplicateSummary.groups.slice(0, 5).map(group => `${group.code} ${group.count}건`).join(', ');
+            showToast(`❌ 적용 대상 상품코드 중복: ${codeSummary}. 중복 탭에서 재매칭 또는 공급사 제외 후 저장하세요.`);
+            setParserBuffer(reconciledRows);
+            setActiveTab('duplicate');
+            return false;
+        }
+        const toApply = reconciledRows.filter(r => r && !r._excluded && r._apply && r._matchCode && !String(r._matchStatus || '').includes('매핑제외'));
         if (toApply.length === 0) {
             showToast("⚠️ 적용할 항목이 없습니다.");
             return false;
@@ -1192,7 +1429,7 @@ const useParserActions = (appState) => {
             toApply.forEach(row => codeResolver.resolve(row?._matchCode || row?.코드));
         }
         catch (error) {
-            showToast('❌ ' + (error?.message || '상품코드 중복을 확인할 수 없습니다.'));
+            showToast('❌ ' + (error?.message || '적용 대상 상품코드 중복을 확인하세요.'));
             return false;
         }
         const catalogWarehouse = String(catalogWarehouseMap?.[catalogLabel] ?? '').trim();
@@ -1213,8 +1450,10 @@ const useParserActions = (appState) => {
             const nowISO = getNowISO();
             const nowStr = new Date(nowISO).toLocaleString('ko-KR');
             const sharedState = await window.ONEAPP.STORAGE.readMasterState(['pending_shop_status', 'merchStoppedProducts_v2']);
-            const stoppedProducts = sharedState.extraStoreEntries?.merchStoppedProducts_v2
-                || safeParseJson(localStorage.getItem('merchStoppedProducts_v2'), {});
+            const stoppedProducts = mergeSmartParserStoppedProductsWithLegacy(
+                sharedState.extraStoreEntries?.merchStoppedProducts_v2
+                || safeParseJson(localStorage.getItem('merchStoppedProducts_v2'), {})
+            );
             const pendingShopStatus = sharedState.extraStoreEntries?.pending_shop_status
                 || safeParseJson(localStorage.getItem('pendingShopStatus'), []);
             const plan = buildSmartParserApplyPlan({
@@ -1250,9 +1489,12 @@ const useParserActions = (appState) => {
                 localWrites.merchStoppedProducts_v2 = plan.nextStoppedProducts;
                 localWrites.merchStopManager_sync_trigger = nowISO;
                 localWrites.pendingShopStatus = plan.nextPendingShopStatus;
+                if (hasSmartParserLegacyStoppedProducts()) localWrites.merchWorkArchive_v1 = [];
             }
             const sharedEntries = { storeEntries: extraStoreEntries, historyLogs: plan.logs, localWrites };
             await saveMaster(newMaster, sharedEntries);
+            if (zeroCount > 0)
+                setStoppedProducts(plan.nextStoppedProducts);
             if (plan.catalogWasUpdated)
                 setCatalogUpdatedAt(nextCatalogUpdatedAt);
             saveDict(newDict);
@@ -1272,7 +1514,7 @@ const useParserActions = (appState) => {
         catch (error) {
             console.error(error);
             const errorMsg = error?.message || error?.name || String(error || '알 수 없는 오류');
-            if (errorMsg.includes('정규화 상품코드') || errorMsg.includes('히스토리') || errorMsg.includes('마스터') || errorMsg.includes('IndexedDB') || errorMsg.includes('매핑사전') || errorMsg.includes('매핑제외') || errorMsg.includes('저장공간') || errorMsg.includes('Quota') || errorMsg.includes('localStorage'))
+            if (errorMsg.includes('적용 대상 상품코드 중복') || errorMsg.includes('히스토리') || errorMsg.includes('마스터') || errorMsg.includes('IndexedDB') || errorMsg.includes('매핑사전') || errorMsg.includes('매핑제외') || errorMsg.includes('저장공간') || errorMsg.includes('Quota') || errorMsg.includes('localStorage'))
                 showToast('❌ ' + errorMsg);
             else
                 showToast('❌ 데이터베이스 저장 중 오류: ' + errorMsg);
@@ -1282,7 +1524,7 @@ const useParserActions = (appState) => {
             setIsProcessing(false);
             setProcessMsg('');
         }
-    }, [parserBuffer, masterProducts, parserDict, catalogWarehouseMap, marginRules, currentTag, processedCodes, catalogUpdatedAt, saveMaster, saveDict, setCatalogUpdatedAt, setProcessedCodes, setParserBuffer, setIsProcessing, setProcessMsg, showToast]);
+    }, [parserBuffer, masterProducts, parserDict, catalogWarehouseMap, marginRules, currentTag, processedCodes, catalogUpdatedAt, saveMaster, saveDict, setStoppedProducts, setCatalogUpdatedAt, setProcessedCodes, setParserBuffer, setActiveTab, setIsProcessing, setProcessMsg, showToast]);
     const handleConfirmMapping = useCallback(async (masterCode) => {
         if (!targetId)
             return showToast("⚠️ 먼저 왼쪽에서 매핑할 타겟 상품을 선택하세요.");
@@ -1296,7 +1538,10 @@ const useParserActions = (appState) => {
             const catalogWarehouse = String(catalogWarehouseMap?.[normalizeParserCatalogName(currentTag)] ?? '').trim();
             const ruleMatch = getParserPriceSelection(catalogWarehouse, row['단위'], marginRules);
             const recalculatedFinal = hasInPrice ? calculateParserCatalogPrices(pInNum, mItem, row.finalData || {}, { catalogWarehouse, unit: row['단위'], marginRules }) : {};
-            setParserBuffer(parserBuffer.map(r => r._id === targetId ? { ...r, _matchCode: masterCode, _matchStatus: '🟢 수동일치', _apply: true, finalData: recalculatedFinal, _catalogWarehouse: catalogWarehouse, _catalogPriceRule: ruleMatch.rule, _catalogPriceRuleStatus: ruleMatch.matchType, _catalogPriceRuleReason: ruleMatch.matchType === 'exact' ? '창고+단위 정확 일치' : '*/* 기본 룰' } : r));
+            const nextRows = parserBuffer.map(r => r._id === targetId ? { ...r, _matchCode: masterCode, _matchStatus: '🟢 수동일치', _duplicateType: '', _duplicateCandidates: [], _apply: true, finalData: recalculatedFinal, _catalogWarehouse: catalogWarehouse, _catalogPriceRule: ruleMatch.rule, _catalogPriceRuleStatus: ruleMatch.matchType, _catalogPriceRuleReason: ruleMatch.matchType === 'exact' ? '창고+단위 정확 일치' : '*/* 기본 룰' } : r);
+            const reconciledRows = reconcileSmartParserDuplicateRows(nextRows, masterProducts);
+            setParserBuffer(reconciledRows);
+            if (getSmartParserDuplicateSummary(reconciledRows).rows.length === 0) setActiveTab('matched');
             setTargetId(null);
             setGlobalSearch('');
             showToast(`✅ 수동 연결 완료. 아직 저장 전입니다. [마스터 적용 및 학습저장]까지 완료해야 다음 작업에도 반영됩니다.`);
@@ -1304,8 +1549,11 @@ const useParserActions = (appState) => {
         catch (error) {
             showToast("❌ 수동 매핑 처리 중 오류가 발생했습니다.");
         }
-    }, [targetId, parserBuffer, masterProducts, catalogWarehouseMap, marginRules, currentTag, setParserBuffer, setTargetId, setGlobalSearch, showToast]);
-    const handleCancelMapping = useCallback((rowId) => { setParserBuffer(prev => prev.map(r => r._id === rowId ? { ...r, _matchCode: '', _matchStatus: '🔴 불일치(취소됨)', _apply: false } : r)); }, [setParserBuffer]);
+    }, [targetId, parserBuffer, masterProducts, catalogWarehouseMap, marginRules, currentTag, setParserBuffer, setTargetId, setGlobalSearch, setActiveTab, showToast]);
+    const handleCancelMapping = useCallback((rowId) => {
+        setParserBuffer(prev => reconcileSmartParserDuplicateRows(prev.map(r => r._id === rowId ? { ...r, _matchCode: '', _matchStatus: '🔴 불일치(취소됨)', _duplicateType: '', _duplicateCandidates: [], _apply: false } : r), masterProducts));
+        setActiveTab('unmatched');
+    }, [masterProducts, setParserBuffer, setActiveTab]);
     const handleCreateNewMasterItem = useCallback(async (erpCode) => {
         if (!targetId)
             return showToast("⚠️ 먼저 추가할 파싱 항목을 선택하세요.");
@@ -1338,7 +1586,10 @@ const useParserActions = (appState) => {
             const ruleMatch = getParserPriceSelection(catalogWarehouse, row['단위'], marginRules);
             const previewItem = { 코드: newCode, 품목명: row['품목명'], 규격: row['규격'] || '', 단위: row['단위'] || '' };
             const recalculatedFinal = hasInPrice ? calculateParserCatalogPrices(pInNum, previewItem, row.finalData || {}, { catalogWarehouse, unit: row['단위'], marginRules }) : {};
-            setParserBuffer(parserBuffer.map(r => r._id === targetId ? { ...r, _matchCode: newCode, _matchStatus: '🟢 신규등록 예정', _isNewProduct: true, _apply: true, finalData: recalculatedFinal, 코드: newCode, _catalogWarehouse: catalogWarehouse, _catalogPriceRule: ruleMatch.rule, _catalogPriceRuleStatus: ruleMatch.matchType, _catalogPriceRuleReason: ruleMatch.matchType === 'exact' ? '창고+단위 정확 일치' : '*/* 기본 룰' } : r));
+            const nextRows = parserBuffer.map(r => r._id === targetId ? { ...r, _matchCode: newCode, _matchStatus: '🟢 신규등록 예정', _duplicateType: '', _duplicateCandidates: [], _isNewProduct: true, _apply: true, finalData: recalculatedFinal, 코드: newCode, _catalogWarehouse: catalogWarehouse, _catalogPriceRule: ruleMatch.rule, _catalogPriceRuleStatus: ruleMatch.matchType, _catalogPriceRuleReason: ruleMatch.matchType === 'exact' ? '창고+단위 정확 일치' : '*/* 기본 룰' } : r);
+            const reconciledRows = reconcileSmartParserDuplicateRows(nextRows, masterProducts);
+            setParserBuffer(reconciledRows);
+            if (getSmartParserDuplicateSummary(reconciledRows).rows.length === 0) setActiveTab('matched');
             setTargetId(null);
             setGlobalSearch('');
             setShowErpModal(false);
@@ -1351,11 +1602,11 @@ const useParserActions = (appState) => {
             setIsProcessing(false);
             setProcessMsg('');
         }
-    }, [targetId, parserBuffer, masterProducts, currentTag, catalogWarehouseMap, marginRules, setParserBuffer, setTargetId, setGlobalSearch, setShowErpModal, setIsProcessing, setProcessMsg, showToast]);
-    const handleIgnoreParsedItem = useCallback((id) => { setParserBuffer(prev => prev.filter(r => r._id !== id)); if (targetId === id) {
+    }, [targetId, parserBuffer, masterProducts, currentTag, catalogWarehouseMap, marginRules, setParserBuffer, setTargetId, setGlobalSearch, setShowErpModal, setActiveTab, setIsProcessing, setProcessMsg, showToast]);
+    const handleIgnoreParsedItem = useCallback((id) => { setParserBuffer(prev => reconcileSmartParserDuplicateRows(prev.filter(r => r._id !== id), masterProducts)); if (targetId === id) {
         setTargetId(null);
         setGlobalSearch('');
-    } }, [targetId, setParserBuffer, setTargetId, setGlobalSearch]);
+    } }, [targetId, masterProducts, setParserBuffer, setTargetId, setGlobalSearch]);
     const handleExcludeParsedItem = useCallback((id) => {
         const row = parserBuffer.find(r => r._id === id);
         if (!row)
@@ -1391,14 +1642,14 @@ const useParserActions = (appState) => {
             showToast('❌ ' + (error?.message || error?.name || String(error || '매핑제외 저장 실패')));
             return;
         }
-        setParserBuffer(prev => prev.filter(r => r._id !== id));
+        setParserBuffer(prev => reconcileSmartParserDuplicateRows(prev.filter(r => r._id !== id), masterProducts));
         setLastExcludedCount(prev => Number(prev || 0) + 1);
         if (targetId === id) {
             setTargetId(null);
             setGlobalSearch('');
         }
         showToast("✅ 매핑제외 목록에 저장했습니다. 다음 파싱부터 대기열에 표시하지 않습니다.");
-    }, [parserBuffer, parserExcludeDict, saveParserExcludeDict, currentTag, targetId, setParserBuffer, setTargetId, setGlobalSearch, setLastExcludedCount, showToast]);
+    }, [parserBuffer, parserExcludeDict, saveParserExcludeDict, currentTag, targetId, masterProducts, setParserBuffer, setTargetId, setGlobalSearch, setLastExcludedCount, showToast]);
     const handleRestoreParserExcluded = useCallback((key) => {
         const nextDict = { ...(parserExcludeDict || {}) };
         delete nextDict[key];
@@ -1474,6 +1725,101 @@ const useParserActions = (appState) => {
         setExcludeTarget(code);
         setShowExcludeModal(true);
     }, [currentTag, setShowExcludeModal, setExcludeTarget]);
+    const commitStopManagement = useCallback(async (action, codes, options = {}) => {
+        const cleanCodes = Array.from(new Set((Array.isArray(codes) ? codes : []).map(normalizeSharedProductCode).filter(Boolean)));
+        if (cleanCodes.length === 0) {
+            showToast(`⚠️ 판매${action === 'stop' ? '정지' : '재개'}할 상품을 선택하세요.`);
+            return false;
+        }
+        setIsProcessing(true);
+        setProcessMsg(`품절/정지 관리 ${action === 'stop' ? '정지' : '재개'} 원자 반영 중...`);
+        try {
+            const nowISO = getNowISO();
+            const sharedState = await window.ONEAPP.STORAGE.readMasterState(['pending_shop_status', 'merchStoppedProducts_v2']);
+            const sharedStoppedProducts = mergeSmartParserStoppedProductsWithLegacy(
+                sharedState.extraStoreEntries?.merchStoppedProducts_v2
+                || safeParseJson(localStorage.getItem('merchStoppedProducts_v2'), stoppedProducts || {})
+            );
+            const pendingShopStatus = sharedState.extraStoreEntries?.pending_shop_status
+                || safeParseJson(localStorage.getItem('pendingShopStatus'), []);
+            const plan = buildSmartParserStopManagementPlan({
+                masterProducts,
+                stoppedProducts: sharedStoppedProducts,
+                pendingShopStatus,
+                codes: cleanCodes,
+                action,
+                reason: options.reason || '',
+                memo: options.memo || '',
+                timestampISO: nowISO,
+                timestampLabel: new Date(nowISO).toLocaleString('ko-KR')
+            });
+            const localWrites = {
+                merchStoppedProducts_v2: plan.nextStoppedProducts,
+                pendingShopStatus: plan.nextPendingShopStatus,
+                merchMaster_sync_trigger: nowISO,
+                merchStopManager_sync_trigger: nowISO
+            };
+            if (hasSmartParserLegacyStoppedProducts()) localWrites.merchWorkArchive_v1 = [];
+            await saveMaster(plan.newMaster, {
+                storeEntries: {
+                    merchStoppedProducts_v2: plan.nextStoppedProducts,
+                    pending_shop_status: plan.nextPendingShopStatus
+                },
+                historyLogs: plan.logs,
+                localWrites
+            });
+            setStoppedProducts(plan.nextStoppedProducts);
+            showToast(`✅ ${plan.processedCodes.length}건 판매${action === 'stop' ? '정지' : '재개'} 완료 · 마스터/정지목록/히스토리/동기화 반영`);
+            return true;
+        }
+        catch (error) {
+            console.error('SmartParser stop management commit failed', error);
+            showToast(`❌ 품절/정지 관리 저장 실패: ${error?.message || '기존 상태로 복구되었습니다.'}`);
+            return false;
+        }
+        finally {
+            setIsProcessing(false);
+            setProcessMsg('');
+        }
+    }, [masterProducts, stoppedProducts, saveMaster, setStoppedProducts, setIsProcessing, setProcessMsg, showToast]);
+    const handleStopProducts = useCallback(async (codes = [], reason = '', memo = '') => {
+        const cleanCodes = Array.from(new Set((codes || []).map(normalizeSharedProductCode).filter(Boolean)));
+        if (cleanCodes.length === 0) return showToast('⚠️ 판매정지할 상품코드를 확인하세요.');
+        if (!window.confirm(`상품 ${cleanCodes.length}건을 SmartParser에서 즉시 판매정지할까요?\n\n마스터 판매여부 0, 정지목록, 히스토리, 쇼핑몰 정지 대기열을 함께 반영하며 실패 시 전체 복구합니다.`)) return false;
+        return commitStopManagement('stop', cleanCodes, { reason, memo });
+    }, [commitStopManagement, showToast]);
+    const handleResumeStoppedProducts = useCallback(async (codes = []) => {
+        const cleanCodes = Array.from(new Set((codes || []).map(normalizeSharedProductCode).filter(Boolean)));
+        if (cleanCodes.length === 0) return showToast('⚠️ 판매재개할 정지상품을 선택하세요.');
+        if (!window.confirm(`정지상품 ${cleanCodes.length}건을 SmartParser에서 즉시 판매재개할까요?\n\n마스터 판매여부 1, 정지목록 해제, 히스토리, 쇼핑몰 재개 대기열을 함께 반영하며 실패 시 전체 복구합니다.`)) return false;
+        return commitStopManagement('resume', cleanCodes);
+    }, [commitStopManagement, showToast]);
+    const handleUpdateStoppedProducts = useCallback(async (codes = [], patch = {}) => {
+        const cleanCodes = Array.from(new Set((codes || []).map(normalizeSharedProductCode).filter(Boolean)));
+        if (cleanCodes.length === 0) return false;
+        try {
+            const nowISO = getNowISO();
+            const sharedState = await window.ONEAPP.STORAGE.readMasterState(['merchStoppedProducts_v2']);
+            const nextStoppedProducts = mergeSmartParserStoppedProductsWithLegacy(sharedState.extraStoreEntries?.merchStoppedProducts_v2 || stoppedProducts || {});
+            cleanCodes.forEach(code => {
+                if (nextStoppedProducts[code]) nextStoppedProducts[code] = { ...nextStoppedProducts[code], ...patch, productCode: code, updatedAt: nowISO };
+            });
+            const localWrites = { merchStoppedProducts_v2: nextStoppedProducts, merchStopManager_sync_trigger: nowISO };
+            if (hasSmartParserLegacyStoppedProducts()) localWrites.merchWorkArchive_v1 = [];
+            await saveMaster(masterProducts, {
+                storeEntries: { merchStoppedProducts_v2: nextStoppedProducts },
+                localWrites
+            });
+            setStoppedProducts(nextStoppedProducts);
+            showToast(`✅ 정지상품 ${cleanCodes.length}건 관리정보 저장`);
+            return true;
+        }
+        catch (error) {
+            console.error('SmartParser stop metadata commit failed', error);
+            showToast(`❌ 정지상품 관리정보 저장 실패: ${error?.message || '기존 상태 유지'}`);
+            return false;
+        }
+    }, [masterProducts, stoppedProducts, saveMaster, setStoppedProducts, showToast]);
     // ⭐ 초기화 버튼 동작 
     const handleResetParser = useCallback(() => {
         if (window.confirm("진행 중인 파싱 작업을 모두 비우시겠습니까?\n(저장되지 않은 매핑 정보가 전부 삭제됩니다.)")) {
@@ -1487,7 +1833,7 @@ const useParserActions = (appState) => {
             showToast("✅ 파서 화면이 깨끗하게 초기화되었습니다.");
         }
     }, [setParserBuffer, setCurrentTag, setTargetId, setGlobalSearch, setSelectedMissingCodes, setLastExcludedCount, showToast]);
-    return useMemo(() => ({ executeParser, handleApplyMatched, handleConfirmMapping, handleCancelMapping, handleCreateNewMasterItem, handleIgnoreParsedItem, handleExcludeParsedItem, handleRestoreParserExcluded, handleClearParserExclusions, handleRemoveMissingTags, handleRemoveTagDirect, executeExclusion, handleResetParser, openErpModal: () => setShowErpModal(true), openMappingExcludeModal: () => setShowMappingExcludeModal(true) }), [executeParser, handleApplyMatched, handleConfirmMapping, handleCancelMapping, handleCreateNewMasterItem, handleIgnoreParsedItem, handleExcludeParsedItem, handleRestoreParserExcluded, handleClearParserExclusions, handleRemoveMissingTags, handleRemoveTagDirect, executeExclusion, handleResetParser, setShowErpModal, setShowMappingExcludeModal]);
+    return useMemo(() => ({ executeParser, handleApplyMatched, handleConfirmMapping, handleCancelMapping, handleCreateNewMasterItem, handleIgnoreParsedItem, handleExcludeParsedItem, handleRestoreParserExcluded, handleClearParserExclusions, handleRemoveMissingTags, handleRemoveTagDirect, handleStopProducts, handleResumeStoppedProducts, handleUpdateStoppedProducts, executeExclusion, handleResetParser, openErpModal: () => setShowErpModal(true), openMappingExcludeModal: () => setShowMappingExcludeModal(true) }), [executeParser, handleApplyMatched, handleConfirmMapping, handleCancelMapping, handleCreateNewMasterItem, handleIgnoreParsedItem, handleExcludeParsedItem, handleRestoreParserExcluded, handleClearParserExclusions, handleRemoveMissingTags, handleRemoveTagDirect, handleStopProducts, handleResumeStoppedProducts, handleUpdateStoppedProducts, executeExclusion, handleResetParser, setShowErpModal, setShowMappingExcludeModal]);
 };
 const ErpCodeInputModal = ({ onClose, onSubmit, targetItem }) => {
     const [code, setCode] = useState('');
@@ -1559,12 +1905,12 @@ const MappingExcludeListModal = ({ onClose, excludeDict, currentTag, onRestore, 
             React.createElement("div", { className: "px-5 py-4 border-b border-slate-200 flex justify-between items-center bg-slate-50" },
                 React.createElement("h2", { className: "font-black text-slate-800 text-[15px]" },
                     React.createElement("i", { className: "fas fa-ban text-rose-500 mr-2" }),
-                    "매핑제외 목록"),
+                    "공급사 제외목록"),
                 React.createElement("button", { onClick: onClose, className: "text-slate-400 hover:text-slate-600" },
                     React.createElement("i", { className: "fas fa-times" }))),
             React.createElement("div", { className: "p-5 border-b border-slate-100 bg-white space-y-3" },
                 React.createElement("div", { className: "bg-rose-50 border border-rose-100 rounded-xl p-3 text-[12px] text-rose-800 leading-relaxed" },
-                    "매핑제외는 마스터 상품을 삭제하지 않습니다. 파싱된 외부 상품명/규격 기준으로 저장되어 다음 파싱부터 유사·불일치 대기열에 반복 노출되지 않습니다."),
+                    "공급사 제외는 마스터 자사상품을 삭제하지 않습니다. 외부 상품명/규격을 기존 저장키에 보존해 다음 파싱부터 자동 제외합니다."),
                 React.createElement("div", { className: "flex gap-2 items-center" },
                     React.createElement("div", { className: "flex bg-slate-100 p-1 rounded-lg border border-slate-200" },
                         React.createElement("button", { onClick: () => setScope('current'), className: `px-3 py-1.5 text-[12px] font-bold rounded-md ${scope === 'current' ? 'bg-white text-rose-600 shadow-sm border border-slate-200' : 'text-slate-500'}` }, "현재 카탈로그"),
@@ -1581,7 +1927,7 @@ const MappingExcludeListModal = ({ onClose, excludeDict, currentTag, onRestore, 
                             React.createElement("th", { className: "px-4 py-2" }, "상태"),
                             React.createElement("th", { className: "px-4 py-2 text-center" }, "해제"))),
                     React.createElement("tbody", { className: "divide-y divide-slate-100" }, list.length === 0 ? React.createElement("tr", null,
-                        React.createElement("td", { colSpan: "5", className: "p-10 text-center text-slate-400 font-bold" }, totalCount === 0 ? "매핑제외 상품이 없습니다." : "검색/범위에 해당하는 항목이 없습니다.")) : list.map(item => React.createElement("tr", { key: item.key, className: "hover:bg-slate-50" },
+                        React.createElement("td", { colSpan: "5", className: "p-10 text-center text-slate-400 font-bold" }, totalCount === 0 ? "공급사 제외 상품이 없습니다. 일치·중복·유사·불일치 행의 제외 버튼에서 등록하세요." : "검색/범위에 해당하는 항목이 없습니다.")) : list.map(item => React.createElement("tr", { key: item.key, className: "hover:bg-slate-50" },
                         React.createElement("td", { className: "px-4 py-2 text-slate-500 font-bold" }, item.catalog || '-'),
                         React.createElement("td", { className: "px-4 py-2" },
                             React.createElement("div", { className: "font-black text-slate-800" }, item.name || '-'),
@@ -1594,6 +1940,71 @@ const MappingExcludeListModal = ({ onClose, excludeDict, currentTag, onRestore, 
                             React.createElement("button", { onClick: () => onRestore(item.key), className: "px-2.5 py-1.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-100 rounded-lg text-[11px] font-black" },
                                 React.createElement("i", { className: "fas fa-undo mr-1" }),
                                 "해제"))))))))));
+};
+const SmartParserStopManager = ({ onClose, products = {}, masterProducts = {}, onStop, onResume, onUpdate }) => {
+    const entries = useMemo(() => Object.values(normalizeSmartParserStoppedProducts(products)).sort((a, b) => String(b.updatedAt || b.stoppedAt || '').localeCompare(String(a.updatedAt || a.stoppedAt || ''))), [products]);
+    const [selected, setSelected] = useState(new Set());
+    const [keyword, setKeyword] = useState('');
+    const [newCode, setNewCode] = useState('');
+    const [newReason, setNewReason] = useState('관리자 정지');
+    const [newMemo, setNewMemo] = useState('');
+    const [bulkReason, setBulkReason] = useState('');
+    const [bulkMemo, setBulkMemo] = useState('');
+    const reasons = ['', '공급중단', '품절', '계절종료', '상품정보 오류', '판매종료', '기타', '관리자 정지'];
+    const resolver = useMemo(() => createSmartParserMasterCodeResolver(masterProducts), [masterProducts]);
+    const getMaster = (code) => { const candidates = resolver.getCandidates(code); return candidates.length === 1 ? candidates[0].item : {}; };
+    const filteredEntries = entries.filter(item => {
+        const kw = keyword.trim().toLowerCase();
+        if (!kw) return true;
+        const master = getMaster(item.productCode);
+        return [item.productCode, item.reason, item.memo, master?.품목명, master?.규격].some(value => String(value || '').toLowerCase().includes(kw));
+    });
+    const allCodes = entries.map(item => item.productCode).filter(Boolean);
+    const allSelected = allCodes.length > 0 && allCodes.every(code => selected.has(code));
+    const toggle = (code) => setSelected(prev => { const next = new Set(prev); next.has(code) ? next.delete(code) : next.add(code); return next; });
+    const statusMeta = (item, master) => {
+        if (item.pendingAction === 'stop') return ['기존 정지대기', 'bg-amber-100 text-amber-800'];
+        if (item.pendingAction === 'resume') return ['기존 재개대기', 'bg-blue-100 text-blue-800'];
+        if (String(master?.['판매여부'] ?? '') === '0') return ['정지중', 'bg-rose-100 text-rose-800'];
+        return ['확인필요', 'bg-violet-100 text-violet-800'];
+    };
+    return React.createElement("div", { className: "fixed inset-0 z-[350] bg-slate-900/45 flex justify-end", onClick: onClose },
+        React.createElement("aside", { className: "h-full w-[980px] max-w-[98vw] bg-slate-50 border-l border-slate-200 shadow-2xl flex flex-col", onClick: event => event.stopPropagation() },
+            React.createElement("div", { className: "h-14 px-5 bg-slate-950 text-white flex items-center justify-between" },
+                React.createElement("div", { className: "font-black text-[15px]" }, React.createElement("i", { className: "fas fa-user-lock mr-2 text-rose-300" }), `SmartParser 품절/정지 관리 ${entries.length}건`),
+                React.createElement("button", { onClick: onClose, className: "w-8 h-8 rounded-lg hover:bg-white/10" }, React.createElement("i", { className: "fas fa-times" }))),
+            React.createElement("div", { className: "px-4 py-3 border-b bg-white space-y-2" },
+                React.createElement("div", { className: "flex gap-2" },
+                    React.createElement("input", { value: newCode, onChange: e => setNewCode(e.target.value), placeholder: "정지할 마스터 상품코드", className: "h-9 w-[190px] px-3 rounded-lg border text-[11px] font-bold" }),
+                    React.createElement("select", { value: newReason, onChange: e => setNewReason(e.target.value), className: "h-9 px-2 rounded-lg border text-[11px] font-bold" }, reasons.filter(Boolean).map(value => React.createElement("option", { key: value, value }, value))),
+                    React.createElement("input", { value: newMemo, onChange: e => setNewMemo(e.target.value), placeholder: "정지 메모", className: "h-9 flex-1 px-3 rounded-lg border text-[11px] font-bold" }),
+                    React.createElement("button", { onClick: async () => { if (await onStop?.([newCode], newReason, newMemo)) { setNewCode(''); setNewMemo(''); } }, className: "h-9 px-4 rounded-lg bg-rose-600 text-white text-[11px] font-black" }, "즉시 판매정지")),
+                React.createElement("div", { className: "flex gap-2 flex-wrap" },
+                    React.createElement("button", { onClick: () => setSelected(allSelected ? new Set() : new Set(allCodes)), className: "h-8 px-3 rounded-lg border text-[11px] font-black" }, allSelected ? "전체해제" : "전체선택"),
+                    React.createElement("select", { value: bulkReason, onChange: e => setBulkReason(e.target.value), className: "h-8 px-2 rounded-lg border text-[11px] font-bold" }, reasons.map(value => React.createElement("option", { key: value || '_', value }, value || '정지사유 선택'))),
+                    React.createElement("button", { disabled: selected.size === 0 || !bulkReason, onClick: () => onUpdate?.(Array.from(selected), { reason: bulkReason }), className: "h-8 px-3 rounded-lg bg-slate-700 disabled:bg-slate-200 text-white text-[11px] font-black" }, `선택 사유변경 ${selected.size}`),
+                    React.createElement("input", { value: bulkMemo, onChange: e => setBulkMemo(e.target.value), placeholder: "선택상품 메모", className: "h-8 w-[140px] px-2 rounded-lg border text-[11px]" }),
+                    React.createElement("button", { disabled: selected.size === 0, onClick: () => onUpdate?.(Array.from(selected), { memo: bulkMemo }), className: "h-8 px-3 rounded-lg bg-slate-600 disabled:bg-slate-200 text-white text-[11px] font-black" }, "선택 메모적용"),
+                    React.createElement("button", { disabled: selected.size === 0, onClick: () => onResume?.(Array.from(selected)), className: "h-8 px-3 rounded-lg bg-blue-600 disabled:bg-slate-200 text-white text-[11px] font-black" }, `선택 판매재개 ${selected.size}`),
+                    React.createElement("button", { disabled: allCodes.length === 0, onClick: () => onResume?.(allCodes), className: "h-8 px-3 rounded-lg border bg-rose-50 text-rose-700 text-[11px] font-black" }, "전체 판매재개"),
+                    React.createElement("input", { value: keyword, onChange: e => setKeyword(e.target.value), placeholder: "코드/상품명/사유/메모 검색", className: "h-8 ml-auto w-[210px] px-3 rounded-lg border text-[11px]" }))),
+            React.createElement("div", { className: "flex-1 overflow-auto p-3 space-y-2" },
+                entries.length === 0 && React.createElement("div", { className: "mt-12 text-center text-[12px] font-bold text-slate-400" }, "관리 중인 품절/정지 상품이 없습니다. 위 상품코드 입력에서 등록하세요."),
+                entries.length > 0 && filteredEntries.length === 0 && React.createElement("div", { className: "mt-12 text-center text-[12px] font-bold text-slate-400" }, "검색 결과가 없습니다."),
+                filteredEntries.map(item => {
+                    const code = item.productCode, master = getMaster(code), status = statusMeta(item, master);
+                    return React.createElement("div", { key: code, className: "grid grid-cols-[34px_110px_minmax(170px,1fr)_100px_90px_130px_minmax(140px,1fr)_86px] gap-2 items-center rounded-lg border bg-white p-2 shadow-sm" },
+                        React.createElement("input", { type: "checkbox", checked: selected.has(code), onChange: () => toggle(code) }),
+                        React.createElement("span", { className: "text-[11px] font-black truncate", title: code }, code),
+                        React.createElement("div", { className: "min-w-0" }, React.createElement("div", { className: "text-[11px] font-black truncate" }, master?.품목명 || item.name || '마스터 상품명 없음'), React.createElement("div", { className: "text-[10px] text-slate-400 truncate" }, `${master?.규격 || ''} · 입고 ${parseNum(master?.입고가).toLocaleString()} · 출고 ${parseNum(master?.출고가).toLocaleString()} · 재고 ${String(master?.재고수량 ?? master?.재고 ?? '')}`)),
+                        React.createElement("span", { className: `h-6 px-2 rounded-full text-[10px] font-black flex items-center justify-center ${status[1]}` }, status[0]),
+                        React.createElement("select", { value: item.reason || '', onChange: e => onUpdate?.([code], { reason: e.target.value }), className: "h-8 w-full rounded border text-[10px]" }, reasons.map(value => React.createElement("option", { key: value || '_', value }, value || '미지정'))),
+                        React.createElement("input", { defaultValue: item.memo || '', onBlur: e => { if (e.target.value !== String(item.memo || '')) onUpdate?.([code], { memo: e.target.value }); }, placeholder: "메모", className: "h-8 w-full px-2 rounded border text-[10px]" }),
+                        React.createElement("span", { className: "text-[10px] text-slate-400 truncate" }, item.source || 'legacy', item.stoppedAt ? ` · ${String(item.stoppedAt).slice(0, 10)}` : ''),
+                        item.pendingAction === 'stop'
+                            ? React.createElement("button", { onClick: () => onStop?.([code], item.reason, item.memo), className: "h-8 rounded-lg border bg-rose-50 text-rose-700 text-[10px] font-black" }, "정지반영")
+                            : React.createElement("button", { onClick: () => onResume?.([code]), className: "h-8 rounded-lg border bg-blue-50 text-blue-700 text-[10px] font-black" }, item.pendingAction === 'resume' ? "재개반영" : "재개"));
+                }))));
 };
 const EditablePriceCell = React.memo(({ rowId, initialVal, onUpdate }) => {
     const [localVal, setLocalVal] = useState(initialVal);
@@ -1988,16 +2399,17 @@ const ParserReviewModal = ({ onClose, onConfirm, state, actions }) => {
 const ParserApp = () => {
     const appState = useParserApp();
     const actions = useParserActions(appState);
-    const { masterProducts, parserBuffer, currentTag, activeTab, setActiveTab, showInputModal, setShowInputModal, showReviewModal, setShowReviewModal, showErpModal, setShowErpModal, toastMsg, showToast, isProcessing, processMsg, globalSearch, setGlobalSearch, targetId, setTargetId, selectedMissingCodes, setSelectedMissingCodes, processedCodes, parserExcludeDict, catalogUpdatedAt, catalogWarehouseMap, marginRules, lastExcludedCount } = appState;
+    const { masterProducts, parserBuffer, currentTag, activeTab, setActiveTab, showInputModal, setShowInputModal, showReviewModal, setShowReviewModal, showErpModal, setShowErpModal, toastMsg, showToast, isProcessing, processMsg, globalSearch, setGlobalSearch, targetId, setTargetId, selectedMissingCodes, setSelectedMissingCodes, processedCodes, parserExcludeDict, stoppedProducts, showStopManager, setShowStopManager, catalogUpdatedAt, catalogWarehouseMap, marginRules, lastExcludedCount } = appState;
     const availableTags = useMemo(() => { const counts = {}; Object.values(masterProducts).forEach(m => String(m['카탈로그'] || '').split(',').forEach(t => { const r = t.trim(); if (r)
         counts[r] = (counts[r] || 0) + 1; })); Object.keys(catalogWarehouseMap || {}).forEach(tag => { if (!Object.prototype.hasOwnProperty.call(counts, tag)) counts[tag] = 0; }); return Object.keys(counts)
             .map(tag => ({ name: tag, count: counts[tag], updatedAt: catalogUpdatedAt[tag] || '' }))
             .sort((a, b) => formatCatalogUpdatedAt(b.updatedAt).timestampMs - formatCatalogUpdatedAt(a.updatedAt).timestampMs || a.name.localeCompare(b.name, 'ko')); }, [masterProducts, catalogUpdatedAt, catalogWarehouseMap]);
     const mappingExcludeCount = useMemo(() => getParserExcludeList(parserExcludeDict, currentTag).length, [parserExcludeDict, currentTag]);
-    const matchedRows = parserBuffer.filter(r => r._matchCode);
-    const similarRows = parserBuffer.filter(r => !r._matchCode && r._matchStatus.includes('유사') && !r._matchStatus.includes('중복'));
-    const duplicateRows = parserBuffer.filter(r => !r._matchCode && r._matchStatus.includes('중복품목'));
-    const combinedSimilarRows = [...duplicateRows, ...similarRows];
+    const duplicateRows = parserBuffer.filter(r => r && (r._duplicateType || String(r._matchStatus || '').includes('중복')));
+    const duplicateIds = new Set(duplicateRows.map(row => row._id));
+    const matchedRows = parserBuffer.filter(r => r._matchCode && !duplicateIds.has(r._id));
+    const similarRows = parserBuffer.filter(r => !r._matchCode && String(r._matchStatus || '').includes('유사') && !duplicateIds.has(r._id));
+    const combinedSimilarRows = similarRows;
     const unmatchedRows = parserBuffer.filter(r => !r._matchCode && r._matchStatus.includes('불일치'));
     const missingRows = useMemo(() => {
         if (!currentTag)
@@ -2016,13 +2428,13 @@ const ParserApp = () => {
         return missing;
     }, [masterProducts, matchedRows, currentTag, processedCodes]);
     const masterSearchResults = useMemo(() => {
-        if ((activeTab !== 'similar' && activeTab !== 'unmatched') || !globalSearch.trim())
+        if ((activeTab !== 'similar' && activeTab !== 'unmatched' && activeTab !== 'duplicate') || !globalSearch.trim())
             return [];
         return searchMasterProducts(masterProducts, globalSearch).slice(0, 50);
     }, [globalSearch, masterProducts, activeTab]);
-    const displayUnmatchedRows = activeTab === 'similar' ? combinedSimilarRows : unmatchedRows;
+    const displayUnmatchedRows = activeTab === 'similar' ? combinedSimilarRows : (activeTab === 'duplicate' ? duplicateRows : unmatchedRows);
     const selectedMappingExcludeTarget = useMemo(() => {
-        if ((activeTab !== 'similar' && activeTab !== 'unmatched') || !targetId)
+        if ((activeTab !== 'similar' && activeTab !== 'unmatched' && activeTab !== 'duplicate') || !targetId)
             return null;
         return displayUnmatchedRows.find(r => r && r._id === targetId) || null;
     }, [activeTab, targetId, displayUnmatchedRows]);
@@ -2034,7 +2446,9 @@ const ParserApp = () => {
             setActiveTab('matched');
         else if (activeTab === 'missing' && currentTag && missingRows.length === 0 && matchedRows.length > 0)
             setActiveTab('matched');
-    }, [activeTab, unmatchedRows.length, combinedSimilarRows.length, missingRows.length, parserBuffer.length, currentTag, matchedRows.length, setActiveTab]);
+        else if (activeTab === 'duplicate' && duplicateRows.length === 0 && parserBuffer.length > 0)
+            setActiveTab('matched');
+    }, [activeTab, unmatchedRows.length, combinedSimilarRows.length, duplicateRows.length, missingRows.length, parserBuffer.length, currentTag, matchedRows.length, setActiveTab]);
     const filteredMissingRows = useMemo(() => {
         if (!appState.missingSearch.trim())
             return missingRows;
@@ -2042,7 +2456,7 @@ const ParserApp = () => {
         return missingRows.filter(m => (m.품목명 || '').toLowerCase().includes(kw) || (m.코드 || '').toLowerCase().includes(kw));
     }, [missingRows, appState.missingSearch]);
     const pendingApplyRows = useMemo(() => matchedRows.filter(r => r._apply && r._matchCode), [matchedRows]);
-    const unresolvedQueueCount = combinedSimilarRows.length + unmatchedRows.length + (currentTag ? missingRows.length : 0);
+    const unresolvedQueueCount = combinedSimilarRows.length + unmatchedRows.length + duplicateRows.length + (currentTag ? missingRows.length : 0);
     const [autoCompletionShown, setAutoCompletionShown] = useState(false);
     useEffect(() => {
         const workDone = parserBuffer.length > 0 && pendingApplyRows.length > 0 && unresolvedQueueCount === 0;
@@ -2116,7 +2530,7 @@ const ParserApp = () => {
         getIDB('parser_session').then(state => {
             if (state) {
                 if (state.parserBuffer && state.parserBuffer.length > 0) {
-                    appState.setParserBuffer(state.parserBuffer);
+                    appState.setParserBuffer(reconcileSmartParserDuplicateRows(state.parserBuffer, appState.masterProducts));
                     appState.setShowInputModal(false); // 데이터 복원 시 모달 닫기
                 }
                 if (state.currentTag)
@@ -2124,6 +2538,12 @@ const ParserApp = () => {
             }
         }).catch(e => console.warn("세션 복원 실패", e));
     }, []);
+    useEffect(() => {
+        if (!appState.parserBuffer.length || Object.keys(appState.masterProducts || {}).length === 0)
+            return;
+        // 마스터가 비동기로 늦게 복원된 경우에도 저장 전 세션의 중복 적용코드를 다시 분리한다.
+        appState.setParserBuffer(prev => reconcileSmartParserDuplicateRows(prev, appState.masterProducts));
+    }, [appState.masterProducts]);
     useEffect(() => {
         const stateToSave = {
             parserBuffer: appState.parserBuffer,
@@ -2214,7 +2634,10 @@ const ParserApp = () => {
                         React.createElement("div", { className: "w-px bg-slate-300 mx-0.5 my-1" }),
                         React.createElement("button", { onClick: () => setActiveTab('missing'), className: `px-4 py-1.5 rounded-lg text-[12px] font-black flex items-center gap-1.5 ${activeTab === 'missing' ? 'bg-white text-slate-800 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700'}` },
                             "\u26AA \uB204\uB77D ",
-                            currentTag && missingRows.length > 0 && React.createElement("span", { className: "bg-rose-100 text-rose-600 px-1.5 rounded text-[10px]" }, missingRows.length))),
+                            currentTag && missingRows.length > 0 && React.createElement("span", { className: "bg-rose-100 text-rose-600 px-1.5 rounded text-[10px]" }, missingRows.length)),
+                        React.createElement("button", { onClick: () => setActiveTab('duplicate'), className: `px-4 py-1.5 rounded-lg text-[12px] font-black flex items-center gap-1.5 ${activeTab === 'duplicate' ? 'bg-white text-orange-700 shadow-sm border border-orange-200' : 'text-slate-500 hover:text-slate-700'}` },
+                            "🟠 중복 ",
+                            duplicateRows.length > 0 && React.createElement("span", { className: "bg-orange-100 text-orange-700 px-1.5 rounded text-[10px]" }, duplicateRows.length))),
                     React.createElement("div", { className: "flex-1 min-w-[10px]" }),
                     React.createElement("div", { className: "flex items-center gap-2 shrink-0" },
                         activeTab === 'matched' && React.createElement("button", { onClick: () => setShowReviewModal(true), disabled: parserBuffer.length === 0, className: `h-9 px-5 rounded-lg text-[12px] font-black shadow-sm flex items-center ${parserBuffer.length > 0 ? 'bg-slate-800 text-white hover:bg-slate-700' : 'bg-slate-200 text-slate-400'}`, title: "\uC791\uC5C5 \uAC80\uD1A0 (F7)" },
@@ -2225,13 +2648,17 @@ const ParserApp = () => {
                             React.createElement("i", { className: "fas fa-eraser mr-1.5 text-[13px]" }),
                             " \uCE74\uD0C8\uB85C\uADF8 \uC81C\uC678"),
                         (activeTab === 'matched' || activeTab === 'missing') && React.createElement("div", { className: "w-px h-6 bg-slate-300 mx-1" }),
-                        (activeTab === 'similar' || activeTab === 'unmatched') && React.createElement("button", { onClick: () => selectedMappingExcludeTarget ? actions.handleExcludeParsedItem(selectedMappingExcludeTarget._id) : showToast("⚠️ 매핑제외할 상품을 먼저 선택하세요."), className: `h-9 px-3 rounded-lg text-[12px] font-bold border shadow-sm flex items-center ${selectedMappingExcludeTarget ? 'bg-rose-600 text-white border-rose-600 hover:bg-rose-700' : 'bg-white text-slate-400 border-slate-200'}`, title: "선택한 외부상품을 다음부터 매핑제외" },
+                        (activeTab === 'similar' || activeTab === 'unmatched' || activeTab === 'duplicate') && React.createElement("button", { onClick: () => selectedMappingExcludeTarget ? actions.handleExcludeParsedItem(selectedMappingExcludeTarget._id) : showToast("⚠️ 공급사 제외할 상품을 먼저 선택하세요."), className: `h-9 px-3 rounded-lg text-[12px] font-bold border shadow-sm flex items-center ${selectedMappingExcludeTarget ? 'bg-rose-600 text-white border-rose-600 hover:bg-rose-700' : 'bg-white text-slate-400 border-slate-200'}`, title: "선택한 공급사상품을 다음 파싱부터 제외" },
                             React.createElement("i", { className: "fas fa-ban mr-1.5 text-[12px]" }),
-                            "선택 제외"),
-                        React.createElement("button", { onClick: actions.openMappingExcludeModal, className: "h-9 px-3 rounded-lg text-[12px] font-bold bg-white text-rose-500 border border-rose-100 hover:bg-rose-50 shadow-sm flex items-center", title: "매핑제외 목록 관리" },
+                            "공급사 제외"),
+                        React.createElement("button", { onClick: actions.openMappingExcludeModal, className: "h-9 px-3 rounded-lg text-[12px] font-bold bg-white text-rose-500 border border-rose-100 hover:bg-rose-50 shadow-sm flex items-center", title: "공급사 제외목록 관리" },
                             React.createElement("i", { className: "fas fa-list mr-1.5 text-[12px]" }),
-                            "제외목록",
+                            "공급사 제외",
                             mappingExcludeCount > 0 && React.createElement("span", { className: "ml-1.5 bg-rose-100 text-rose-600 px-1.5 rounded text-[10px] font-black" }, mappingExcludeCount)),
+                        React.createElement("button", { onClick: () => setShowStopManager(true), className: "h-9 px-3 rounded-lg text-[12px] font-bold bg-white text-amber-700 border border-amber-200 hover:bg-amber-50 shadow-sm flex items-center", title: "SmartParser 품절/정지 관리" },
+                            React.createElement("i", { className: "fas fa-user-lock mr-1.5 text-[12px]" }),
+                            "품절/정지",
+                            Object.keys(stoppedProducts || {}).length > 0 && React.createElement("span", { className: "ml-1.5 bg-amber-100 text-amber-700 px-1.5 rounded text-[10px] font-black" }, Object.keys(stoppedProducts || {}).length)),
                         React.createElement("button", { onClick: actions.handleResetParser, disabled: parserBuffer.length === 0, className: `w-9 h-9 rounded-lg flex items-center justify-center border shadow-sm shrink-0 transition-colors ${parserBuffer.length > 0 ? 'bg-white border-slate-300 text-slate-500 hover:text-slate-800 hover:bg-slate-100' : 'bg-slate-50 border-slate-200 text-slate-300 cursor-not-allowed'}`, title: "\uC791\uC5C5 \uCD08\uAE30\uD654 (\uC138\uC158 \uBE44\uC6B0\uAE30)" },
                             React.createElement("i", { className: "fas fa-redo-alt text-[13px]" })),
                         React.createElement("button", { onClick: () => setShowInputModal(true), className: "h-9 px-4 rounded-lg text-[12px] font-bold bg-indigo-50 text-indigo-600 border border-indigo-200 hover:bg-indigo-100 shadow-sm" },
@@ -2262,14 +2689,15 @@ const ParserApp = () => {
                         React.createElement("thead", { className: "bg-[#f5f4f0] text-[#5c554d] font-bold sticky top-0 z-10 border-b border-[#e8e4db]" },
                             React.createElement("tr", null,
                                 React.createElement("th", { className: "py-2.5 px-4 w-12 text-center" },
-                                    React.createElement("input", { type: "checkbox", className: "rounded", checked: matchedRows.length > 0 && matchedRows.every(r => r._apply), onChange: () => { const all = matchedRows.every(r => r._apply); appState.setParserBuffer(p => p.map(r => r._matchCode ? { ...r, _apply: !all } : r)); } })),
+                                    React.createElement("input", { type: "checkbox", className: "rounded", checked: matchedRows.length > 0 && matchedRows.every(r => r._apply), onChange: () => { const all = matchedRows.every(r => r._apply); appState.setParserBuffer(p => p.map(r => r._matchCode && !duplicateIds.has(r._id) ? { ...r, _apply: !all } : r)); } })),
                                 React.createElement("th", { className: "py-2.5 px-3" }, "\uC0C1\uD488\uCF54\uB4DC"),
                                 React.createElement("th", { className: "py-2.5 px-3" }, "\uB9C8\uC2A4\uD130 \uD488\uBAA9\uBA85 (\uADDC\uACA9)"),
                                 React.createElement("th", { className: "py-2.5 px-3 text-emerald-700 bg-emerald-50/50" }, "\uD30C\uC2F1 \uD488\uBAA9\uBA85"),
                                 React.createElement("th", { className: "py-2.5 px-3 text-right" }, "\uAE30\uC874 \uC785\uACE0\uAC00"),
-                                React.createElement("th", { className: "py-2.5 px-3 text-right text-emerald-700 bg-emerald-50/50" }, "\uC0C8 \uC785\uACE0\uAC00"))),
+                                React.createElement("th", { className: "py-2.5 px-3 text-right text-emerald-700 bg-emerald-50/50" }, "\uC0C8 \uC785\uACE0\uAC00"),
+                                React.createElement("th", { className: "py-2.5 px-3 text-center" }, "관리"))),
                         React.createElement("tbody", { className: "divide-y divide-slate-100" }, matchedRows.length === 0 ? React.createElement("tr", null,
-                            React.createElement("td", { colSpan: "6", className: "p-10 text-center text-slate-400" }, "\uB370\uC774\uD130\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4.")) : matchedRows.map(row => {
+                            React.createElement("td", { colSpan: "7", className: "p-10 text-center text-slate-400" }, "\uB370\uC774\uD130\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4.")) : matchedRows.map(row => {
                             const mItem = masterProducts[row._matchCode] || {};
                             const rowWarehouse = String(catalogWarehouseMap?.[normalizeParserCatalogName(currentTag)] ?? '').trim();
                             const rowRuleMatch = getParserPriceSelection(rowWarehouse, row['단위'], marginRules);
@@ -2299,7 +2727,11 @@ const ParserApp = () => {
                                     React.createElement("div", { className: "mt-1 text-[10px] font-black text-indigo-600 whitespace-normal" }, `창고 ${rowWarehouse || '공란'} · 단위 ${row['단위'] || '공란'} · ${rowRuleMatch.matchType} · ${rowRuleMatch.marginRate}% ${rowRuleMatch.calculationType === 'divide' ? '나누기' : '곱하기'} · 출고 ${rowExpectedSale ? rowExpectedSale.toLocaleString() : 0} · 시중 ${parseNum(rowPrices['시중가']).toLocaleString()} · 소분 ${parseNum(rowPrices['1입고']).toLocaleString()}/${parseNum(rowPrices['1출고']).toLocaleString()}`)),
                                 React.createElement("td", { className: "py-2 px-3 text-right text-slate-500 font-bold" }, mIn ? mIn.toLocaleString() : '-'),
                                 React.createElement("td", { className: `py-2 px-3 text-right font-black ${isDiff ? 'text-rose-500 bg-rose-50/30' : 'text-emerald-700 bg-emerald-50/20'}` },
-                                    React.createElement(EditablePriceCell, { rowId: row._id, initialVal: row.finalData['입고가'], onUpdate: handleUpdateMatchedPrice }))));
+                                    React.createElement(EditablePriceCell, { rowId: row._id, initialVal: row.finalData['입고가'], onUpdate: handleUpdateMatchedPrice })),
+                                React.createElement("td", { className: "py-2 px-3 text-center" },
+                                    React.createElement("div", { className: "flex justify-center gap-1" },
+                                        React.createElement("button", { onClick: () => actions.handleCancelMapping(row._id), className: "h-7 px-2 rounded border bg-slate-50 text-slate-600 text-[10px] font-black", title: "연결 취소 후 불일치로 이동" }, "연결취소"),
+                                        React.createElement("button", { onClick: () => actions.handleExcludeParsedItem(row._id), className: "h-7 px-2 rounded border bg-rose-50 text-rose-700 text-[10px] font-black", title: "다음 파싱부터 공급사 제외" }, "공급사 제외")))));
                         })))))) : activeTab === 'missing' ? (!currentTag ? React.createElement("div", { className: "h-full flex flex-col items-center justify-center text-slate-400 bg-white border border-slate-200 rounded-xl shadow-sm fade-in" },
                 React.createElement("i", { className: "fas fa-folder-open text-6xl text-slate-200 mb-4" }),
                 React.createElement("h2", { className: "text-xl font-black text-slate-600 mb-2" }, "\uB204\uB77D \uACC4\uC0B0 \uC0DD\uB7B5\uB428")) : (React.createElement("div", { className: "bg-white border border-slate-200 rounded-xl shadow-sm h-full flex flex-col overflow-hidden fade-in" },
@@ -2418,33 +2850,40 @@ const ParserApp = () => {
                                     React.createElement("th", { className: "py-2.5 px-2 text-center w-14" }, "\uC0C1\uD0DC"),
                                     React.createElement("th", { className: "py-2.5 px-3" }, "\uD30C\uC2F1 \uD488\uBA85 \uBC0F \uADDC\uACA9"),
                                     React.createElement("th", { className: "py-2.5 px-3 text-right w-16" }, "\uC785\uACE0\uAC00"),
-                                    React.createElement("th", { className: "py-2.5 px-2 text-center w-24" }, "숨김/제외"))),
+                                    React.createElement("th", { className: "py-2.5 px-2 text-center w-28" }, activeTab === 'duplicate' ? "연결취소/제외" : "숨김/제외"))),
                             React.createElement("tbody", { className: "divide-y divide-slate-100" }, displayUnmatchedRows.length === 0 ? React.createElement("tr", null,
                                 React.createElement("td", { colSpan: "5", className: "p-10 text-center text-slate-400 font-bold" }, "\uB300\uAE30\uC911\uC778 \uB370\uC774\uD130\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4.")) : displayUnmatchedRows.map(row => {
                                 const isTarget = targetId === row._id;
                                 return (React.createElement("tr", { key: row._id, onClick: () => { setTargetId(row._id); setGlobalSearch(row['품목명'].replace(/[()[\]{},./]/g, ' ').replace(/\s+/g, ' ').trim()); }, className: `cursor-pointer transition-colors border-l-4 ${isTarget ? 'bg-indigo-50/50 border-indigo-500' : 'hover:bg-slate-50 border-transparent'}` },
                                     React.createElement("td", { className: "py-2 px-3 text-center" },
                                         React.createElement("div", { className: `w-4 h-4 rounded-full border-2 flex items-center justify-center mx-auto ${isTarget ? 'border-indigo-500 bg-white' : 'border-slate-300'}` }, isTarget && React.createElement("div", { className: "w-2 h-2 rounded-full bg-indigo-500" }))),
-                                    React.createElement("td", { className: "py-2 px-2 text-center" }, row._matchStatus.includes('중복품목') ? React.createElement("span", { className: "bg-amber-200 text-amber-800 px-1.5 py-0.5 rounded text-[10px] font-black" }, "\uC120\uD0DD\uD544\uC694") : React.createElement("span", { className: `px-1.5 py-0.5 rounded text-[10px] font-bold w-max block mx-auto ${activeTab === 'similar' ? 'bg-amber-100 text-amber-700' : 'bg-rose-100 text-rose-700'}` }, row._matchStatus.substring(0, 2))),
+                                    React.createElement("td", { className: "py-2 px-2 text-center" }, activeTab === 'duplicate' ? React.createElement("span", { className: "bg-orange-200 text-orange-800 px-1.5 py-0.5 rounded text-[10px] font-black" }, "중복") : React.createElement("span", { className: `px-1.5 py-0.5 rounded text-[10px] font-bold w-max block mx-auto ${activeTab === 'similar' ? 'bg-amber-100 text-amber-700' : 'bg-rose-100 text-rose-700'}` }, row._matchStatus.substring(0, 2))),
                                     React.createElement("td", { className: "py-2 px-3" },
                                         React.createElement("div", { className: "flex flex-col" },
                                             React.createElement("span", { className: `text-[12px] font-extrabold truncate ${isTarget ? 'text-indigo-900' : 'text-slate-800'}` }, row['품목명']),
                                             React.createElement("span", { className: "text-[11px] text-slate-500 mt-0.5 truncate" },
                                                 row['규격'],
                                                 " ",
-                                                row['단위'] ? `| ${row['단위']}` : ''))),
+                                                row['단위'] ? `| ${row['단위']}` : ''),
+                                            activeTab === 'duplicate' && React.createElement("span", { className: "text-[10px] font-black text-orange-700 mt-1 whitespace-normal" },
+                                                row._duplicateType === 'master_candidates'
+                                                    ? `다중 마스터 후보: ${(row._duplicateCandidates || []).map(item => `${item.code} ${item.name} ${item.spec}`).join(' / ')}`
+                                                    : `현재 연결코드 ${row._duplicateCode || row._matchCode || '-'} · ${row._duplicateCount || row._duplicateMasterCandidates?.length || 0}건 중복 · 마스터 ${(row._duplicateMasterCandidates || []).map(item => `${item.name} ${item.spec}`).filter(Boolean).join(' / ') || (masterProducts[row._matchCode]?.품목명 || '-')}`))),
                                     React.createElement("td", { className: `py-2 px-3 text-right font-bold ${isTarget ? 'text-indigo-600' : 'text-slate-600'}` }, row['입고가'] || '-'),
                                     React.createElement("td", { className: "py-2 px-2 text-center" },
                                         React.createElement("div", { className: "flex items-center justify-center gap-1" },
-                                            React.createElement("button", { onClick: (e) => { e.stopPropagation(); actions.handleIgnoreParsedItem(row._id); }, className: "text-slate-400 hover:text-slate-700 hover:bg-slate-100 px-2 py-1.5 rounded", title: "이번 작업만 숨김" },
+                                            activeTab !== 'duplicate' && React.createElement("button", { onClick: (e) => { e.stopPropagation(); actions.handleIgnoreParsedItem(row._id); }, className: "text-slate-400 hover:text-slate-700 hover:bg-slate-100 px-2 py-1.5 rounded", title: "이번 작업만 숨김" },
                                                 React.createElement("i", { className: "fas fa-eye-slash" })),
-                                            React.createElement("button", { onClick: (e) => { e.stopPropagation(); actions.handleExcludeParsedItem(row._id); }, className: "text-rose-400 hover:text-rose-600 hover:bg-rose-50 px-2 py-1.5 rounded", title: "다음부터 매핑제외" },
+                                            activeTab === 'duplicate' && row._matchCode && React.createElement("button", { onClick: (e) => { e.stopPropagation(); actions.handleCancelMapping(row._id); }, className: "text-slate-500 hover:text-slate-800 hover:bg-slate-100 px-2 py-1.5 rounded", title: "현재 연결 취소" },
+                                                React.createElement("i", { className: "fas fa-unlink" })),
+                                            React.createElement("button", { onClick: (e) => { e.stopPropagation(); actions.handleExcludeParsedItem(row._id); }, className: "text-rose-400 hover:text-rose-600 hover:bg-rose-50 px-2 py-1.5 rounded", title: "다음 파싱부터 공급사 제외" },
                                                 React.createElement("i", { className: "fas fa-ban" }))))));
                             }))))))))),
         showInputModal && React.createElement(SmartParserInputModal, { onClose: () => setShowInputModal(false), executeParser: actions.executeParser, showToast: showToast, availableTags: availableTags, catalogWarehouseMap: catalogWarehouseMap, saveCatalogWarehouse: appState.saveCatalogWarehouse }),
         showReviewModal && React.createElement(ParserReviewModal, { onClose: () => setShowReviewModal(false), onConfirm: actions.handleApplyMatched, state: memoizedState, actions: memoizedActions }),
         showErpModal && React.createElement(ErpCodeInputModal, { onClose: () => setShowErpModal(false), onSubmit: actions.handleCreateNewMasterItem, targetItem: parserBuffer.find(r => r._id === targetId) }),
         appState.showMappingExcludeModal && React.createElement(MappingExcludeListModal, { onClose: () => appState.setShowMappingExcludeModal(false), excludeDict: parserExcludeDict, currentTag: currentTag, onRestore: actions.handleRestoreParserExcluded, onClear: actions.handleClearParserExclusions }),
+        showStopManager && React.createElement(SmartParserStopManager, { onClose: () => setShowStopManager(false), products: stoppedProducts, masterProducts, onStop: actions.handleStopProducts, onResume: actions.handleResumeStoppedProducts, onUpdate: actions.handleUpdateStoppedProducts }),
         appState.showExcludeModal && React.createElement(ExcludeOptionModal, { onClose: () => appState.setShowExcludeModal(false), onConfirm: () => { actions.executeExclusion(appState.excludeTarget === 'selected' ? Array.from(selectedMissingCodes) : [appState.excludeTarget]); }, count: appState.excludeTarget === 'selected' ? selectedMissingCodes.size : 1 })));
 };
 

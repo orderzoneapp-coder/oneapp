@@ -20,7 +20,7 @@
       "path": "MerchOps.html",
       "kind": "web-entry",
       "status": "production",
-      "purpose": "Review and apply product master, pricing, promotion, stop-management, and Excel-based product-information work.",
+      "purpose": "Review and apply product master, pricing, promotion, and Excel-based product-information work while preserving read-only protection for stopped products.",
       "navigatesTo": [
         "smart-parser",
         "export-center",
@@ -37,7 +37,8 @@
         "pricing-rules",
         "mapping-config",
         "table-view-config",
-        "cloud-url"
+        "cloud-url",
+        "stop-management"
       ]
     },
     {
@@ -64,7 +65,7 @@
       "path": "SmartParser.html",
       "kind": "web-entry",
       "status": "production",
-      "purpose": "Parse external documents, normalize product information, apply saved information directly to the product master, and record changes in shared history.",
+      "purpose": "Parse external documents, manage supplier exclusions and stopped or sold-out products, apply approved changes directly to the product master, and record changes in shared history.",
       "navigatesTo": [
         "merchops",
         "settings",
@@ -74,7 +75,9 @@
         "product-master",
         "change-history",
         "parser-dictionary",
-        "pricing-rules"
+        "pricing-rules",
+        "parser-supplier-exclusions",
+        "stop-management"
       ]
     },
     {
@@ -344,6 +347,41 @@
           "parserDict_v870"
         ],
         "cloudConfigField": "dict"
+      }
+    },
+    {
+      "id": "parser-supplier-exclusions",
+      "owner": "smart-parser",
+      "consumers": [
+        "SmartParser.html"
+      ],
+      "resources": {
+        "localStorage": [
+          "smartParserExcludeDict_v3012",
+          "smartParserExcludeDict_backup_v3015"
+        ]
+      }
+    },
+    {
+      "id": "stop-management",
+      "owner": "smart-parser",
+      "consumers": [
+        "SmartParser.html",
+        "MerchOps.html"
+      ],
+      "resources": {
+        "indexedDb": {
+          "database": "MerchOpsDB",
+          "keys": [
+            "merchStoppedProducts_v2",
+            "pending_shop_status"
+          ]
+        },
+        "localStorage": [
+          "merchStoppedProducts_v2",
+          "pendingShopStatus",
+          "merchStopManager_sync_trigger"
+        ]
       }
     },
     {
