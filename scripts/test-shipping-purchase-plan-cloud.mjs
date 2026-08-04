@@ -224,10 +224,30 @@ function buildSnapshot(purchase, savedBy) {
   };
 }
 
+function buildDataOpsSnapshot() {
+  const columns = ["단위", "품목코드", "품명", "규격", "재고", "기록", "거래", "구매가", "기본", "적요", "행사가"];
+  const rows = [["EA", "000100", "테스트 상품", "", 1, "2026-08-04", "", 1000, "", "", 0]];
+  const canonicalJson = JSON.stringify({
+    schemaVersion: "ONEAPP_DATAOPS_SNAPSHOT_V1",
+    basisDate: "2026-08-04",
+    columns,
+    rows,
+  });
+  return {
+    schemaVersion: "ONEAPP_DATAOPS_SNAPSHOT_V1",
+    basisDate: "2026-08-04",
+    savedAt: "2026-08-04T01:00:00.000Z",
+    hashAlgorithm: "SHA-256",
+    hash: crypto.createHash("sha256").update(canonicalJson, "utf8").digest("hex"),
+    rowCount: rows.length,
+    cellCount: rows.length * columns.length,
+    canonicalJson,
+  };
+}
+
 const spreadsheet = new MockSpreadsheet();
 const properties = new Map([
   ["ONEAPP_SHIPPING_PLAN_ACCESS_TOKEN", SHIPPING_TOKEN],
-  ["ONEAPP_DATAOPS_ACCESS_TOKEN", DATAOPS_TOKEN],
 ]);
 let uuidCounter = 0;
 const context = vm.createContext({
@@ -300,6 +320,15 @@ for (const [name, value] of [
 const nonShippingBeforeSave = nonShippingSnapshot();
 
 const firstSnapshot = buildSnapshot("거래처A", "담당A");
+for (const [action, extra] of [
+  ["shipping_plan_save", { snapshot: firstSnapshot }],
+  ["shipping_plan_list", { planId: PLAN_ID }],
+  ["shipping_plan_get", { planId: PLAN_ID }],
+]) {
+  assert.equal(post({ action, ...extra }).message, "SHIPPING_PLAN_ACCESS_DENIED", `${action} must reject a missing token`);
+  assert.equal(post({ action, token: "wrong", ...extra }).message, "SHIPPING_PLAN_ACCESS_DENIED", `${action} must reject a wrong token`);
+  assert.equal(post({ action, token: DATAOPS_TOKEN, ...extra }).message, "SHIPPING_PLAN_ACCESS_DENIED", `${action} must reject a DataOps legacy token value`);
+}
 const firstSave = shippingPost("shipping_plan_save", { snapshot: firstSnapshot });
 assert.equal(firstSave.status, "success", firstSave.message);
 assert.equal(firstSave.data.planId, PLAN_ID);
@@ -365,10 +394,6 @@ assert.equal(latestAfterRetry.data.metadata.hash, failedSnapshot.hash);
 assert.equal(latestAfterRetry.data.metadata.rowCount, failedSnapshot.rowCount);
 assert.equal(latestAfterRetry.data.metadata.cellCount, failedSnapshot.cellCount);
 
-assert.equal(
-  post({ action: "shipping_plan_list", token: DATAOPS_TOKEN, planId: PLAN_ID }).message,
-  "SHIPPING_PLAN_ACCESS_DENIED",
-);
 const dataOpsGetWithLegacyToken = post({ action: "dataops_snapshot_get", token: SHIPPING_TOKEN });
 assert.equal(dataOpsGetWithLegacyToken.status, "success");
 assert.equal(dataOpsGetWithLegacyToken.data, null);
@@ -380,6 +405,22 @@ const shippingStateBeforeSharedActions = JSON.stringify({
   list: shippingList(),
   history: historySheet.snapshot(),
 });
+const dataOpsSnapshot = buildDataOpsSnapshot();
+const dataOpsCommit = post({ action: "dataops_snapshot_commit", snapshot: dataOpsSnapshot });
+assert.equal(dataOpsCommit.status, "success", dataOpsCommit.message);
+const dataOpsLegacyCommit = post({ action: "dataops_snapshot_commit", token: SHIPPING_TOKEN, snapshot: dataOpsSnapshot });
+assert.equal(dataOpsLegacyCommit.status, "success", dataOpsLegacyCommit.message);
+assert.equal(dataOpsLegacyCommit.data.revision, dataOpsCommit.data.revision, "legacy token fields must be ignored without changing DataOps identity");
+const dataOpsTokenlessRead = post({ action: "dataops_snapshot_get" });
+assert.equal(dataOpsTokenlessRead.data.revision, dataOpsCommit.data.revision);
+assert.equal(dataOpsTokenlessRead.data.hash, dataOpsCommit.data.hash);
+assert.equal(dataOpsTokenlessRead.data.rowCount, dataOpsCommit.data.rowCount);
+assert.equal(dataOpsTokenlessRead.data.cellCount, dataOpsCommit.data.cellCount);
+assert.equal(
+  JSON.stringify({ list: shippingList(), history: historySheet.snapshot() }),
+  shippingStateBeforeSharedActions,
+  "DataOps tokenless commit/get must not mutate Shipping plan history or index",
+);
 for (const payload of [
   { action: "initSync" },
   { action: "chunk_master", data: [{ 코드: "M001", 품명: "마스터" }] },

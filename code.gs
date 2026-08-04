@@ -27,7 +27,6 @@ const DATAOPS_SNAPSHOT_COLUMNS = ['단위', '품목코드', '품명', '규격', 
 const DATAOPS_SNAPSHOT_CHUNK_SIZE = 45000;
 const DATAOPS_SNAPSHOT_MAX_ROWS = 100000;
 const DATAOPS_CURRENT_SLOT_PROPERTY = 'ONEAPP_DATAOPS_CURRENT_SLOT';
-const DATAOPS_ACCESS_TOKEN_PROPERTY = 'ONEAPP_DATAOPS_ACCESS_TOKEN';
 const SHIPPING_PLAN_FORMAT = 'ONEAPP_SHIPPING_PURCHASE_PLAN_V1';
 const SHIPPING_PLAN_WORKSPACE_SCHEMA = 'shipping-workspace/v2';
 const SHIPPING_PLAN_CHUNK_SIZE = 45000;
@@ -162,15 +161,6 @@ function constantTimeTextEquals(left, right) {
     diff |= (a.charCodeAt(i % Math.max(1, a.length)) || 0) ^ (b.charCodeAt(i % Math.max(1, b.length)) || 0);
   }
   return diff === 0;
-}
-
-function requireDataOpsAccess(payload) {
-  const configuredToken = String(PropertiesService.getScriptProperties().getProperty(DATAOPS_ACCESS_TOKEN_PROPERTY) || '');
-  if (!configuredToken) throw new Error('DATAOPS_ACCESS_NOT_CONFIGURED');
-  const suppliedToken = String((payload && payload.token) || '');
-  if (!suppliedToken || !constantTimeTextEquals(configuredToken, suppliedToken)) {
-    throw new Error('DATAOPS_ACCESS_DENIED');
-  }
 }
 
 function sha256Hex(text) {
@@ -695,7 +685,6 @@ function doPost(e) {
     }
 
     if (action === 'dataops_snapshot_commit') {
-      requireDataOpsAccess(payload);
       return withScriptLock(() => {
         const saved = commitDataOpsSnapshot(ss, payload.snapshot);
         return jsonResponse({
