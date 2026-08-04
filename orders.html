@@ -333,6 +333,67 @@
     }
     .purchase-upload-notice.bad { color: var(--red-700); background: var(--red-100); }
 
+    .view-controls {
+      display: grid;
+      grid-template-columns: minmax(240px, 1fr) auto auto;
+      align-items: end;
+      gap: 10px;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--slate-200);
+      background: var(--slate-50);
+    }
+    .search-field { display: grid; gap: 4px; min-width: 0; }
+    .search-field span,
+    .spec-filter legend {
+      color: var(--slate-600);
+      font-size: 10px;
+      font-weight: 900;
+    }
+    .search-field input {
+      width: 100%;
+      min-height: 34px;
+      padding: 0 10px;
+      border: 1px solid var(--slate-300);
+      border-radius: 6px;
+      color: var(--slate-900);
+      background: var(--white);
+      font-size: 11px;
+    }
+    .spec-filter {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      min-width: 0;
+      margin: 0;
+      padding: 0;
+      border: 0;
+    }
+    .spec-filter legend { float: left; margin-right: 3px; }
+    .spec-filter label {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      min-height: 34px;
+      padding: 0 8px;
+      border: 1px solid var(--slate-300);
+      border-radius: 6px;
+      color: var(--slate-700);
+      background: var(--white);
+      font-size: 11px;
+      font-weight: 800;
+    }
+    .print-button {
+      min-height: 34px;
+      padding: 0 12px;
+      border: 1px solid var(--slate-300);
+      border-radius: 6px;
+      color: var(--slate-700);
+      background: var(--white);
+      font-size: 11px;
+      font-weight: 900;
+    }
+    .print-button:hover { border-color: var(--teal-700); color: var(--teal-700); }
+
     .preview-toolbar {
       display: flex;
       align-items: center;
@@ -404,6 +465,15 @@
       white-space: nowrap;
     }
     tbody tr:nth-child(even) td { background: var(--slate-50); }
+    table.preview-purchases tbody td,
+    table.preview-inventory tbody td { background: var(--white); }
+    tr.unit-alert-row td,
+    tr.unit-alert-row .purchase-input { color: var(--red-700) !important; }
+    td.inventory-negative {
+      color: var(--red-700) !important;
+      background: #fff200 !important;
+      font-weight: 900;
+    }
     td.number { text-align: right; font-variant-numeric: tabular-nums; }
     td.status { font-weight: 900; }
     td.status[data-tone="good"] { color: var(--green-700); }
@@ -467,6 +537,47 @@
     .cloud-grid select { width: 100%; padding: 0 8px; }
     .storage-note { margin: 7px 0 0; color: var(--slate-400); font-size: 9px; }
     .system-workbench > .recovery-banner { margin: 0 10px 10px; }
+    .print-area { display: none; }
+
+    @page { size: A4 portrait; margin: 9mm; }
+    @media print {
+      body.printing-table { min-height: 0; background: #fff; }
+      body.printing-table * { visibility: hidden !important; }
+      body.printing-table .print-area,
+      body.printing-table .print-area * { visibility: visible !important; }
+      body.printing-table .print-area {
+        position: absolute;
+        inset: 0;
+        display: block !important;
+        width: 100%;
+        color: #111827;
+      }
+      body.printing-table .print-area table {
+        width: 100%;
+        min-width: 0;
+        border-collapse: collapse;
+        table-layout: auto;
+        font-size: 7.5pt;
+      }
+      body.printing-table .print-area thead { display: table-header-group; }
+      body.printing-table .print-area tr { break-inside: avoid; page-break-inside: avoid; }
+      body.printing-table .print-area th,
+      body.printing-table .print-area td {
+        position: static;
+        max-width: none;
+        padding: 3px 4px;
+        border: 1px solid #94a3b8;
+        color: #111827;
+        background: #fff;
+        overflow: visible;
+        text-overflow: clip;
+        white-space: normal;
+        overflow-wrap: anywhere;
+      }
+      body.printing-table .print-area th { color: #fff; background: #334155; }
+      body.printing-table .print-area tr.unit-alert-row td { color: #b91c1c !important; }
+      body.printing-table .print-area td.inventory-negative { background: #fff200 !important; }
+    }
     body.settings-modal-open { overflow: hidden; }
     .settings-modal {
       position: fixed;
@@ -773,6 +884,24 @@
       white-space: nowrap;
     }
     .system-mode strong { color: #5eead4; }
+    .system-info {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(118px, 1fr));
+      gap: 5px 14px;
+      min-width: 330px;
+      margin-left: auto;
+      color: var(--slate-300);
+      font-size: 10px;
+      line-height: 1.35;
+    }
+    .system-info-item { display: flex; min-width: 0; gap: 5px; }
+    .system-info-item strong { flex: 0 0 auto; color: #5eead4; }
+    .system-info-item span {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .system-info .system-mode { grid-column: 1 / -1; margin-left: 0; text-align: right; }
     .input-panel {
       display: grid;
       grid-template-areas:
@@ -888,7 +1017,8 @@
       .page-shell { width: min(100% - 20px, 1240px); padding-top: 0; }
       .system-topbar { align-items: flex-start; flex-wrap: wrap; gap: 8px 12px; padding: 12px; }
       .system-console { order: 3; width: 100%; max-width: none; }
-      .system-mode { margin-left: auto; }
+      .system-info { order: 4; width: 100%; min-width: 0; margin-left: 0; }
+      .system-info .system-mode { text-align: left; }
       .input-panel {
         grid-template-areas:
           "uploads"
@@ -904,6 +1034,9 @@
       .primary-button { width: 100%; min-height: 36px; }
       .action-note { max-width: none; }
       .results-header { align-items: stretch; flex-direction: column; }
+      .view-controls { grid-template-columns: 1fr; align-items: stretch; }
+      .spec-filter { flex-wrap: wrap; }
+      .print-button { width: 100%; }
     }
   </style>
 </head>
@@ -931,7 +1064,13 @@
           <span class="system-message" id="systemMessage">waiting for data_blocks... (두 Excel을 업로드하세요)</span>
           <span class="system-cursor" aria-hidden="true"></span>
         </div>
-        <div class="system-mode"><strong>LOCAL AUTO SAVE</strong> · cloud explicit</div>
+        <div class="system-info" id="systemInfo" aria-label="현재 업무 상태">
+          <div class="system-info-item"><strong>기준일</strong><span id="systemBasisDate">-</span></div>
+          <div class="system-info-item"><strong>파일</strong><span id="systemFileState">0/2 선택</span></div>
+          <div class="system-info-item"><strong>재고</strong><span id="systemMatchState">분석 전</span></div>
+          <div class="system-info-item"><strong>표시</strong><span id="systemViewState">-</span></div>
+          <div class="system-mode"><strong>LOCAL AUTO SAVE</strong> · cloud explicit</div>
+        </div>
       </div>
 
       <section class="panel input-panel" aria-label="입력 파일">
@@ -965,7 +1104,7 @@
         </button>
       </div>
 
-      <div class="validation-box" id="validationBox" role="status" aria-live="polite">
+      <div class="validation-box hidden" id="validationBox" role="status" aria-live="polite">
         <p class="validation-title"><span aria-hidden="true">○</span>두 파일을 선택하면 차단 검증을 시작합니다.</p>
         <p class="validation-detail">필수 열, 수량, 재고 상품코드 중복을 확인한 뒤 분석 버튼을 활성화합니다.</p>
       </div>
@@ -995,13 +1134,28 @@
             <span aria-hidden="true">↓</span> 구매업로드 Excel
           </button>
           <button class="download-button secondary-download" id="downloadButton" type="button">
-            <span aria-hidden="true">↓</span> 미출고현황 Excel 다운로드
+            <span aria-hidden="true">↓</span> Excel 출력
           </button>
         </div>
       </div>
 
       <div class="summary-grid" id="summaryGrid"></div>
       <div class="purchase-upload-notice" id="purchaseUploadNotice"></div>
+
+      <div class="view-controls" aria-label="현재 탭 검색과 규격 필터">
+        <label class="search-field">
+          <span>통합 검색</span>
+          <input id="tableSearchInput" type="search" autocomplete="off"
+            placeholder="상품코드·상품명·규격·적요·담당자·그룹 검색">
+        </label>
+        <fieldset class="spec-filter" id="specFilterGroup">
+          <legend>규격</legend>
+          <label><input type="checkbox" value="BOX">BOX</label>
+          <label><input type="checkbox" value="EA">EA</label>
+          <label><input type="checkbox" value="소분">소분</label>
+        </fieldset>
+        <button class="print-button" id="printButton" type="button">화면 인쇄</button>
+      </div>
 
       <div class="preview-toolbar">
         <div class="preview-tabs" id="previewTabs" role="tablist" aria-label="결과 미리보기"></div>
@@ -1014,7 +1168,7 @@
     </section>
 
     <footer class="page-footer">
-      <span>Shipping Management v2.0.1 · workspace shipping-workspace/v2 · cloud plan v1</span>
+      <span>Shipping Management v3.0.0 · workspace shipping-workspace/v2 · cloud plan v1</span>
       <a href="SHIPPING_MANAGEMENT_GUIDANCE.md">개발·운영 기준 보기</a>
     </footer>
   </main>
@@ -1056,6 +1210,7 @@
   </div>
 
   <div class="toast hidden" id="toast" role="status" aria-live="polite"></div>
+  <div class="print-area" id="printArea" aria-hidden="true"></div>
 
   <noscript>Shipping Management를 사용하려면 JavaScript를 활성화해야 합니다.</noscript>
 
@@ -1078,6 +1233,8 @@
         validation: null,
         workspace: null,
         activePreview: "purchases",
+        searchQuery: "",
+        specificationFilters: new Set(),
         loading: { orders: false, inventory: false },
         db: null,
         recoveryRecord: null,
@@ -1103,6 +1260,10 @@
         resultSubtitle: document.getElementById("resultSubtitle"),
         summaryGrid: document.getElementById("summaryGrid"),
         purchaseUploadNotice: document.getElementById("purchaseUploadNotice"),
+        tableSearchInput: document.getElementById("tableSearchInput"),
+        specFilterGroup: document.getElementById("specFilterGroup"),
+        printButton: document.getElementById("printButton"),
+        printArea: document.getElementById("printArea"),
         previewTabs: document.getElementById("previewTabs"),
         previewCount: document.getElementById("previewCount"),
         previewTable: document.getElementById("previewTable"),
@@ -1122,6 +1283,10 @@
         cloudRevisionSelect: document.getElementById("cloudRevisionSelect"),
         cloudLoadButton: document.getElementById("cloudLoadButton"),
         systemMessage: document.getElementById("systemMessage"),
+        systemBasisDate: document.getElementById("systemBasisDate"),
+        systemFileState: document.getElementById("systemFileState"),
+        systemMatchState: document.getElementById("systemMatchState"),
+        systemViewState: document.getElementById("systemViewState"),
         toast: document.getElementById("toast"),
       };
       const SETTINGS_FOCUSABLE_SELECTOR = [
@@ -1378,6 +1543,7 @@
       function restoreLocalRecord(record) {
         if (!validRecoveryRecord(record)) throw new Error("복구 자료의 schemaVersion 또는 source fingerprint가 올바르지 않습니다.");
         state.workspace = record.workspace;
+        engine.ensureInventoryPurchaseRows(state.workspace);
         state.activePreview = record.ui?.activePreview || "purchases";
         elements.cloudUrlInput.value = record.settings?.cloudUrl || "";
         elements.cloudTokenInput.value = record.settings?.cloudToken || "";
@@ -1522,7 +1688,7 @@
       function renderValidation() {
         const bothReady = Boolean(state.orders && state.inventory);
         if (!bothReady) {
-          elements.validationBox.className = "validation-box";
+          elements.validationBox.className = "validation-box hidden";
           elements.validationBox.innerHTML = `
             <p class="validation-title"><span aria-hidden="true">○</span>두 파일을 선택하면 차단 검증을 시작합니다.</p>
             <p class="validation-detail">필수 열, 수량, 재고 상품코드 중복을 확인한 뒤 분석 버튼을 활성화합니다.</p>
@@ -1535,7 +1701,7 @@
           const matchSummary = validation.unmatchedCount > 0
             ? `재고정보 없음 ${formatNumber(validation.unmatchedCount)}개 상품`
             : "재고 매칭 이상 없음";
-          elements.validationBox.className = "validation-box good";
+          elements.validationBox.className = "validation-box good hidden";
           elements.validationBox.innerHTML = `
             <p class="validation-title"><span aria-hidden="true">✓</span>차단 검증을 통과했습니다.</p>
             <p class="validation-detail">${matchSummary}</p>
@@ -1571,82 +1737,77 @@
         } else {
           setSystemMessage("validation blocked... (입력 파일을 확인하세요)");
         }
+        updateSystemInformation(undefined, undefined);
       }
 
       function getPreviewDefinitions(workspace) {
+        const purchaseRows = workspace.purchaseManagement.filter(
+          (row) => row.rowType === "main" && row.inventoryShadow !== true &&
+            typeof row.purchaseNeed === "number" && row.purchaseNeed > 0,
+        );
+        const inventoryView = engine.getInventoryViewRows(workspace);
+        const inventoryNumericHeaders = new Set([
+          "수량", "1창고", "3서울", "4전송", "7진영", "기본", "전송", "창고",
+        ]);
         return {
           purchases: {
             label: "발주관리",
-            headers: ["상품코드", "품목명", "전체 주문", "전재고", "서울 잔량", "추가 구매", "구매", "담당", "거래처(단가)", "적요", "적요1", "그룹"],
-            numeric: [2, 3, 4, 5],
-            inventory: [3, 4],
-            purchase: 6,
+            headers: ["상품코드", "품목명", "규격", "전체주문", "전재고", "서울잔량", "구매수량", "구매", "거래처(단가)", "적요", "적요1"],
+            numeric: [3, 4, 5, 6],
+            purchase: 7,
             purchaseEditable: true,
             status: -1,
-            sourceRows: workspace.purchaseManagement,
-            rows: workspace.purchaseManagement.map((row) => [
+            sourceRows: purchaseRows,
+            rows: purchaseRows.map((row) => [
               row.productCode,
-              row.rowType === "reference" ? `[참고] ${row.productName}` : row.productName,
-              row.rowType === "reference" ? "" : row.totalOrderQuantity,
+              row.productName,
+              row.specification,
+              row.totalOrderQuantity,
               row.inventoryMatched ? row.wholeStockRaw : "",
               row.inventoryMatched ? row.seoulFirstPurchaseRemaining : "",
-              row.rowType === "reference" ? "" : row.purchaseNeed,
-              row.rowType === "reference" ? "" : row.purchase,
-              row.manager,
+              row.purchaseNeed,
+              row.purchase,
               row.suppliers,
               row.notes,
               row.notes1,
-              row.groups,
             ]),
           },
           allocations: {
             label: "미출고현황",
-            headers: ["상품코드", "품목명", "주문수량", "전재고", "서울 잔량", "전재고 배정", "서울 배정", "추가 구매", "구매", "출고판정", "거래처(단가)", "담당", "그룹"],
-            numeric: [2, 3, 4, 5, 6, 7],
-            inventory: [3, 4],
-            purchase: 8,
+            headers: ["상품코드", "품목명", "규격", "주문수량", "전재고", "서울잔량", "구매수량", "구매", "거래처(단가)", "적요", "적요1", "담당자"],
+            numeric: [3, 4, 5, 6],
+            purchase: 7,
             purchaseEditable: false,
-            status: 9,
+            status: -1,
             sourceRows: workspace.allocations,
             rows: workspace.allocations.map((row) => [
               row.productCode,
               row.productName,
+              row.specification,
               row.quantity,
               row.inventoryMatched ? row.wholeStockRaw : "",
               row.inventoryMatched ? row.seoulFirstPurchaseRemaining : "",
-              row.wholeAllocation,
-              row.seoulAllocation,
-              row.purchaseNeed,
+              row.inventoryMatched ? row.purchaseNeed : "",
               row.purchase,
-              row.status,
               row.supplierDisplay,
+              row.note,
+              row.note1,
               row.manager,
-              row.group,
             ]),
           },
-          summaries: {
-            label: "상품별요약",
-            headers: ["상품코드", "품목명", "전체 주문", "전재고", "서울 잔량", "전재고 배정", "서울 배정", "추가 구매", "구매", "출고판정", "주문건수", "담당", "거래처(단가)"],
-            numeric: [2, 3, 4, 5, 6, 7, 10],
-            inventory: [3, 4],
-            purchase: 8,
-            purchaseEditable: false,
-            status: 9,
-            sourceRows: workspace.productSummaries,
-            rows: workspace.productSummaries.map((row) => [
-              row.productCode,
-              row.productName,
-              row.totalOrderQuantity,
-              row.inventoryMatched ? row.wholeStockRaw : "",
-              row.inventoryMatched ? row.seoulFirstPurchaseRemaining : "",
-              row.wholeAllocation,
-              row.seoulAllocation,
-              row.purchaseNeed,
+          inventory: {
+            label: "창고별 재고",
+            headers: [...inventoryView.headers, "구매"],
+            numeric: inventoryView.headers
+              .map((header, index) => (inventoryNumericHeaders.has(String(header).trim()) ? index : -1))
+              .filter((index) => index >= 0),
+            purchase: inventoryView.headers.length,
+            purchaseEditable: true,
+            status: -1,
+            sourceRows: inventoryView.rows,
+            rows: inventoryView.rows.map((row) => [
+              ...row.values,
               row.purchase,
-              row.status,
-              row.orderCount,
-              row.manager,
-              row.suppliers,
             ]),
           },
           validation: {
@@ -1676,12 +1837,109 @@
         return text ? "good" : "";
       }
 
-      function previewRowFill(previewId, sourceRow) {
-        if (!sourceRow || previewId === "validation") return "";
-        if (sourceRow.rowType === "reference") return "#f1f5f9";
-        const strong = typeof sourceRow.purchaseNeed === "number" && sourceRow.purchaseNeed > 0;
-        const color = strong ? sourceRow.managerColors?.strong : sourceRow.managerColors?.base;
-        return color ? `#${color}` : "";
+      function exactWarningUnit(sourceRow) {
+        const specification = String(sourceRow?.specification || "").trim();
+        return specification === "EA" || specification === "소분";
+      }
+
+      function dominantManager(rows) {
+        const productCodesByManager = new Map();
+        (rows || []).forEach((row) => {
+          const manager = String(row?.manager || "").trim();
+          const productCode = String(row?.productCode || "").trim();
+          if (!manager || !productCode) return;
+          if (!productCodesByManager.has(manager)) productCodesByManager.set(manager, new Set());
+          productCodesByManager.get(manager).add(productCode);
+        });
+        return [...productCodesByManager.entries()]
+          .sort((left, right) => right[1].size - left[1].size || (left[0] < right[0] ? -1 : left[0] > right[0] ? 1 : 0))[0]?.[0] || "";
+      }
+
+      function operationalManagerFill(manager) {
+        const palette = ["#fff7ed", "#eff6ff", "#f0fdf4", "#faf5ff", "#fffbeb", "#fdf2f8", "#f0fdfa"];
+        const text = String(manager || "");
+        let hash = 0;
+        for (let index = 0; index < text.length; index += 1) hash = (hash * 31 + text.charCodeAt(index)) >>> 0;
+        return palette[hash % palette.length];
+      }
+
+      function previewRowFill(previewId, sourceRow, whiteManager) {
+        if (previewId !== "allocations") return "";
+        const manager = String(sourceRow?.manager || "").trim();
+        return !manager || manager === whiteManager ? "#ffffff" : operationalManagerFill(manager);
+      }
+
+      function previewSearchCorpus(sourceRow) {
+        return [
+          sourceRow?.productCode,
+          sourceRow?.productName,
+          sourceRow?.specification,
+          sourceRow?.note,
+          sourceRow?.note1,
+          sourceRow?.notes,
+          sourceRow?.notes1,
+          sourceRow?.manager,
+          sourceRow?.managers,
+          sourceRow?.group,
+          sourceRow?.groups,
+        ].map((value) => String(value || "").trim().toLocaleLowerCase("ko-KR")).filter(Boolean).join(" ");
+      }
+
+      function filteredPreviewPairs(preview) {
+        const query = state.searchQuery.trim().toLocaleLowerCase("ko-KR");
+        return preview.rows.map((row, index) => ({ row, sourceRow: preview.sourceRows[index] })).filter(({ sourceRow }) => {
+          const queryMatches = !query || previewSearchCorpus(sourceRow).includes(query);
+          const specification = String(sourceRow?.specification || "").trim();
+          const unitMatches = state.specificationFilters.size === 0 || state.specificationFilters.has(specification);
+          return queryMatches && unitMatches;
+        });
+      }
+
+      function updateSystemInformation(filteredCount, totalCount) {
+        const selectedFiles = Number(Boolean(state.orders || state.workspace?.sourceFiles?.orders)) +
+          Number(Boolean(state.inventory || state.workspace?.sourceFiles?.inventory));
+        elements.systemBasisDate.textContent = state.workspace?.basisDate || "-";
+        elements.systemFileState.textContent = `${selectedFiles}/2 선택`;
+        elements.systemMatchState.textContent = state.workspace
+          ? state.workspace.stats.unmatchedCount > 0
+            ? `재고정보 없음 ${formatNumber(state.workspace.stats.unmatchedCount)}개`
+            : "이상 없음"
+          : state.validation?.canAnalyze ? "검증 통과" : "분석 전";
+        const unitFilter = [...state.specificationFilters].join("+") || "전체";
+        const filters = state.searchQuery.trim() ? `${unitFilter} · 검색` : unitFilter;
+        elements.systemViewState.textContent = Number.isFinite(filteredCount)
+          ? `${formatNumber(filteredCount)}/${formatNumber(totalCount)}행 · ${filters}`
+          : `- · ${filters}`;
+      }
+
+      function renderTableMarkup(preview, pairs, editable) {
+        const whiteManager = dominantManager(state.workspace?.allocations || []);
+        return `
+          <table class="preview-${state.activePreview}">
+            <thead><tr>${preview.headers.map((header) => `<th>${escapeHtml(header)}</th>`).join("")}</tr></thead>
+            <tbody>
+              ${pairs.length ? pairs.map(({ row, sourceRow }) => {
+                const rowFill = previewRowFill(state.activePreview, sourceRow, whiteManager);
+                const rowClasses = exactWarningUnit(sourceRow) ? "unit-alert-row" : "";
+                return `<tr class="${rowClasses}">${preview.headers.map((_, index) => {
+                  const value = row[index];
+                  const isNumber = preview.numeric.includes(index) && value !== "";
+                  const isStatus = preview.status === index;
+                  const inventoryNegative = state.activePreview === "inventory" && isNumber &&
+                    Number.isFinite(Number(value)) && Number(value) < 0;
+                  const isWarning = inventoryNegative || (isStatus && statusTone(value) === "bad" && String(value).includes("오류"));
+                  const classes = [isNumber ? "number" : "", isStatus ? "status" : "", inventoryNegative ? "inventory-negative" : "", isWarning ? "warning-value" : ""].filter(Boolean).join(" ");
+                  const editablePurchase = editable && preview.purchaseEditable === true && preview.purchase === index;
+                  const content = editablePurchase
+                    ? `<input class="purchase-input" data-purchase-code="${escapeHtml(sourceRow.productCode)}" value="${escapeHtml(value)}" aria-label="${escapeHtml(sourceRow.productCode)} 구매">`
+                    : escapeHtml(isNumber ? formatNumber(value) : value);
+                  return `<td class="${classes}" style="${rowFill ? `background:${rowFill}` : ""}"
+                    ${isStatus ? `data-tone="${statusTone(value)}"` : ""}
+                    title="${escapeHtml(value)}">${content}</td>`;
+                }).join("")}</tr>`;
+              }).join("") : `<tr><td colspan="${preview.headers.length}">표시할 항목이 없습니다.</td></tr>`}
+            </tbody>
+          </table>`;
       }
 
       function renderPreview() {
@@ -1695,44 +1953,35 @@
         `).join("");
 
         const preview = definitions[state.activePreview];
-        elements.previewCount.textContent = `${formatNumber(preview.rows.length)}행`;
-        if (!preview.rows.length) {
-          elements.previewTable.innerHTML = `<div class="empty-state">표시할 항목이 없습니다.</div>`;
-          return;
+        const pairs = filteredPreviewPairs(preview);
+        elements.previewCount.textContent = `${formatNumber(pairs.length)}/${formatNumber(preview.rows.length)}행`;
+        elements.previewTable.innerHTML = renderTableMarkup(preview, pairs, true);
+        updateSystemInformation(pairs.length, preview.rows.length);
+      }
+
+      function printActiveTable() {
+        if (!state.workspace) return;
+        const definitions = getPreviewDefinitions(state.workspace);
+        const preview = definitions[state.activePreview] || definitions.purchases;
+        const pairs = filteredPreviewPairs(preview);
+        elements.printArea.innerHTML = renderTableMarkup(preview, pairs, false);
+        elements.printArea.setAttribute("aria-hidden", "false");
+        document.body.classList.add("printing-table");
+        const cleanup = () => {
+          document.body.classList.remove("printing-table");
+          elements.printArea.setAttribute("aria-hidden", "true");
+          elements.printArea.innerHTML = "";
+        };
+        window.addEventListener("afterprint", cleanup, { once: true });
+        try {
+          window.print();
+        } finally {
+          window.setTimeout(cleanup, 0);
         }
-        elements.previewTable.innerHTML = `
-          <table>
-            <thead><tr>${preview.headers.map((header) => `<th>${escapeHtml(header)}</th>`).join("")}</tr></thead>
-            <tbody>
-              ${preview.rows.map((row, rowIndex) => {
-                const sourceRow = preview.sourceRows[rowIndex];
-                const referenceRow = sourceRow?.rowType === "reference";
-                const rowFill = previewRowFill(state.activePreview, sourceRow);
-                return `
-                <tr class="${referenceRow ? "reference-row" : ""}">
-                  ${preview.headers.map((_, index) => {
-                    const value = row[index];
-                    const isNumber = preview.numeric.includes(index) && value !== "";
-                    const isStatus = preview.status === index;
-                    const isInventory = !referenceRow && preview.inventory?.includes(index) && typeof value === "number" && value !== 0;
-                    const isWarning = (typeof value === "number" && value < 0) || (isStatus && statusTone(value) === "bad" && String(value).includes("오류"));
-                    const classes = [isNumber ? "number" : "", isStatus ? "status" : "", isInventory ? "inventory-value" : "", isWarning ? "warning-value" : ""].filter(Boolean).join(" ");
-                    const editablePurchase = preview.purchaseEditable === true && preview.purchase === index && !referenceRow;
-                    const content = editablePurchase
-                      ? `<input class="purchase-input" data-purchase-code="${escapeHtml(sourceRow.productCode)}" value="${escapeHtml(value)}" aria-label="${escapeHtml(sourceRow.productCode)} 구매">`
-                      : escapeHtml(isNumber ? formatNumber(value) : value);
-                    return `<td class="${classes}" style="${rowFill ? `background:#${rowFill.replace(/^#/, "")}` : ""}"
-                      ${isStatus ? `data-tone="${statusTone(value)}"` : ""}
-                      title="${escapeHtml(value)}">${content}</td>`;
-                  }).join("")}
-                </tr>
-              `;}).join("")}
-            </tbody>
-          </table>
-        `;
       }
 
       function renderResults() {
+        engine.ensureInventoryPurchaseRows(state.workspace);
         const stats = state.workspace.stats;
         const purchaseUpload = engine.getPurchaseUploadSelection(state.workspace);
         const summaryItems = [
@@ -1795,6 +2044,12 @@
             }));
             state.workspace = engine.analyze(state.orders, state.inventory, { sourceFingerprint });
             state.activePreview = "purchases";
+            state.searchQuery = "";
+            state.specificationFilters.clear();
+            elements.tableSearchInput.value = "";
+            elements.specFilterGroup.querySelectorAll("input[type='checkbox']").forEach((input) => {
+              input.checked = false;
+            });
             renderResults();
             scheduleLocalSave();
             elements.resultsPanel.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -2028,6 +2283,18 @@
       elements.analyzeButton.addEventListener("click", runAnalysis);
       elements.downloadButton.addEventListener("click", downloadResult);
       elements.purchaseUploadButton.addEventListener("click", downloadPurchaseUpload);
+      elements.printButton.addEventListener("click", printActiveTable);
+      elements.tableSearchInput.addEventListener("input", () => {
+        state.searchQuery = elements.tableSearchInput.value;
+        if (state.workspace) renderPreview();
+      });
+      elements.specFilterGroup.addEventListener("change", (event) => {
+        const input = event.target.closest("input[type='checkbox']");
+        if (!input) return;
+        if (input.checked) state.specificationFilters.add(input.value);
+        else state.specificationFilters.delete(input.value);
+        if (state.workspace) renderPreview();
+      });
       elements.settingsButton.addEventListener("click", openSettingsModal);
       elements.settingsCloseButton.addEventListener("click", closeSettingsModal);
       elements.settingsModal.addEventListener("click", (event) => {
@@ -2043,13 +2310,13 @@
       });
       elements.previewTable.addEventListener("input", (event) => {
         const input = event.target.closest("[data-purchase-code]");
-        if (!input || !state.workspace || state.activePreview !== "purchases") return;
+        if (!input || !state.workspace || !["purchases", "inventory"].includes(state.activePreview)) return;
         engine.setPurchaseValue(state.workspace, input.dataset.purchaseCode, input.value);
         scheduleLocalSave();
       });
       elements.previewTable.addEventListener("change", (event) => {
         const input = event.target.closest("[data-purchase-code]");
-        if (!input || !state.workspace || state.activePreview !== "purchases") return;
+        if (!input || !state.workspace || !["purchases", "inventory"].includes(state.activePreview)) return;
         renderResults();
       });
       elements.restoreButton.addEventListener("click", () => {

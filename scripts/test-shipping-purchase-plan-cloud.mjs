@@ -158,6 +158,17 @@ function buildSnapshot(purchase, savedBy) {
     purchase,
     inventoryMatched: true,
   };
+  const inventoryShadowRow = {
+    rowType: "main",
+    inventoryShadow: true,
+    productCode: "000200",
+    productName: "주문 없는 재고상품",
+    specification: "EA",
+    purchaseNeed: null,
+    totalOrderQuantity: null,
+    purchase: "재고전용거래처",
+    inventoryMatched: true,
+  };
   const workspace = {
     schemaVersion: WORKSPACE_SCHEMA,
     sourceFingerprint: PLAN_FINGERPRINT,
@@ -175,14 +186,14 @@ function buildSnapshot(purchase, savedBy) {
       inventory: {
         fileName: "재고.xlsx",
         sheetName: "재고",
-        rowCount: 1,
+        rowCount: 2,
         sha256: "c".repeat(64),
-        matrix: [["코드", "000100"]],
+        matrix: [["코드", "000100"], ["코드", "000200"]],
       },
     },
     allocations: [{ productCode: "000100", purchase }],
     productSummaries: [{ productCode: "000100", purchase }],
-    purchaseManagement: [purchaseRow],
+    purchaseManagement: [purchaseRow, inventoryShadowRow],
   };
   const canonical = {
     schemaVersion: SHIPPING_FORMAT,
@@ -192,12 +203,12 @@ function buildSnapshot(purchase, savedBy) {
     sourceFileName: "주문.xlsx / 재고.xlsx",
     sourceFiles: {
       orders: { fileName: "주문.xlsx", sheetName: "주문", rowCount: 1, sha256: "b".repeat(64) },
-      inventory: { fileName: "재고.xlsx", sheetName: "재고", rowCount: 1, sha256: "c".repeat(64) },
+      inventory: { fileName: "재고.xlsx", sheetName: "재고", rowCount: 2, sha256: "c".repeat(64) },
     },
     savedBy,
     productRowCount: 1,
     purchaseUploadRowCount: purchase === "대체" || purchase === "소분" ? 0 : 1,
-    purchaseInputs: { "000100": purchase },
+    purchaseInputs: { "000100": purchase, "000200": "재고전용거래처" },
     activePreview: "purchases",
     workspace,
   };
@@ -308,6 +319,9 @@ assert.equal(firstGet.data.metadata.hash, firstSnapshot.hash);
 assert.equal(firstGet.data.metadata.rowCount, firstSnapshot.rowCount);
 assert.equal(firstGet.data.metadata.cellCount, firstSnapshot.cellCount);
 assert.equal(firstGet.data.plan.purchaseInputs["000100"], "거래처A");
+assert.equal(firstGet.data.plan.purchaseInputs["000200"], "재고전용거래처");
+assert.equal(firstGet.data.metadata.productRowCount, 1, "cloud product metadata must ignore inventory shadow rows");
+assert.equal(firstGet.data.metadata.purchaseUploadRowCount, 1, "cloud upload metadata must ignore inventory shadow rows");
 
 const historySheet = spreadsheet.getSheetByName("ShippingPlanHistory");
 const historyRowsBeforeFailure = historySheet.getLastRow();
@@ -346,6 +360,7 @@ assert.equal(previousAfterRetry.data.plan.purchaseInputs["000100"], "거래처A"
 const latestAfterRetry = shippingPost("shipping_plan_get", { planId: PLAN_ID });
 assert.equal(latestAfterRetry.status, "success", latestAfterRetry.message);
 assert.equal(latestAfterRetry.data.plan.purchaseInputs["000100"], "거래처B");
+assert.equal(latestAfterRetry.data.plan.purchaseInputs["000200"], "재고전용거래처");
 assert.equal(latestAfterRetry.data.metadata.hash, failedSnapshot.hash);
 assert.equal(latestAfterRetry.data.metadata.rowCount, failedSnapshot.rowCount);
 assert.equal(latestAfterRetry.data.metadata.cellCount, failedSnapshot.cellCount);
