@@ -369,10 +369,9 @@ assert.equal(
   post({ action: "shipping_plan_list", token: DATAOPS_TOKEN, planId: PLAN_ID }).message,
   "SHIPPING_PLAN_ACCESS_DENIED",
 );
-assert.equal(
-  post({ action: "dataops_snapshot_get", token: SHIPPING_TOKEN }).message,
-  "DATAOPS_ACCESS_DENIED",
-);
+const dataOpsGetWithLegacyToken = post({ action: "dataops_snapshot_get", token: SHIPPING_TOKEN });
+assert.equal(dataOpsGetWithLegacyToken.status, "success");
+assert.equal(dataOpsGetWithLegacyToken.data, null);
 const dataOpsGet = post({ action: "dataops_snapshot_get", token: DATAOPS_TOKEN });
 assert.equal(dataOpsGet.status, "success");
 assert.equal(dataOpsGet.data, null);

@@ -26,7 +26,7 @@ const dataOpsContext = {
     getCloudUrl: () => 'https://example.invalid/exec',
     readJsonResponse: async response => response.json()
   },
-  localStorage: { getItem: () => '', setItem: () => {} },
+  localStorage: { getItem: () => '', setItem: () => {}, removeItem: () => {} },
   fetch: async () => { throw new Error('unexpected fetch'); }
 };
 dataOpsContext.window = dataOpsContext;
@@ -51,6 +51,64 @@ assert.equal(canonical.rows[0][6], '거래처', 'raw row ordering/value must rem
 assert.equal(envelope.rowCount, 1);
 assert.equal(envelope.cellCount, 11);
 assert.equal(envelope.hash, crypto.createHash('sha256').update(envelope.canonicalJson).digest('hex'));
+assert.throws(() => dataOpsContext.DATAOPS_PROMO_SNAPSHOT_MODULE.getAccessToken(), /쓰기 토큰/, 'DataOps commit must still require the operator write token');
+assert.match(dataOpsContext.DATAOPS_PROMO_SNAPSHOT_MODULE.mapCommitError('DATAOPS_ACCESS_NOT_CONFIGURED'), /ONEAPP_DATAOPS_ACCESS_TOKEN/, 'missing server write token must be actionable');
+assert.match(dataOpsContext.DATAOPS_PROMO_SNAPSHOT_MODULE.mapCommitError('DATAOPS_ACCESS_DENIED'), /쓰기 토큰이 올바르지 않습니다/, 'mismatched write token must be actionable');
+dataOpsContext.localStorage.getItem = () => 'secret';
+dataOpsContext.fetch = async () => ({
+  ok: true,
+  status: 200,
+  json: async () => ({ status: 'error', message: 'DATAOPS_ACCESS_NOT_CONFIGURED' })
+});
+await assert.rejects(
+  dataOpsContext.DATAOPS_PROMO_SNAPSHOT_MODULE.postAction('dataops_snapshot_commit', { snapshot: envelope }),
+  /ONEAPP_DATAOPS_ACCESS_TOKEN/,
+  'DataOps commit failure must explain missing server write-token configuration'
+);
+
+let snapshotReadBody = null;
+const merchSnapshotContext = {
+  console,
+  TextEncoder,
+  URL,
+  Map,
+  Set,
+  fetch: async (_url, options) => {
+    snapshotReadBody = JSON.parse(options.body);
+    return { ok: true, status: 200, json: async () => ({ status: 'success', data: null }) };
+  }
+};
+merchSnapshotContext.window = merchSnapshotContext;
+merchSnapshotContext.window.crypto = crypto.webcrypto;
+merchSnapshotContext.window.getOneAppCloudSyncUrl = () => 'https://example.invalid/exec';
+vm.createContext(merchSnapshotContext);
+const merchSnapshotModuleSource = extract(merchSource, 'window.MERCH_DATAOPS_SNAPSHOT_MODULE = Object.freeze({', '        // [M-NAV-01]');
+assert.doesNotMatch(merchSnapshotModuleSource, /window\.prompt|getAccessToken|\btoken\s*:/, 'MerchOps snapshot read module must not prompt, load, or send a token');
+vm.runInContext(merchSnapshotModuleSource, merchSnapshotContext);
+await assert.rejects(
+  merchSnapshotContext.window.MERCH_DATAOPS_SNAPSHOT_MODULE.fetchLatest(),
+  /확정된 DataOps 클라우드 재고자료가 없습니다/,
+  'a successful empty read must be distinguished from connection failures'
+);
+assert.deepEqual(snapshotReadBody, { action: 'dataops_snapshot_get' }, 'MerchOps snapshot read must send only the read action');
+assert.match(merchSnapshotContext.window.MERCH_DATAOPS_SNAPSHOT_MODULE.mapReadError('알 수 없는 Action입니다: dataops_snapshot_get'), /아직 배포되지 않았습니다/);
+assert.match(merchSnapshotContext.window.MERCH_DATAOPS_SNAPSHOT_MODULE.mapReadError('DATAOPS_ACCESS_NOT_CONFIGURED'), /쓰기 토큰이 설정되지 않았습니다/);
+assert.match(merchSnapshotContext.window.MERCH_DATAOPS_SNAPSHOT_MODULE.mapReadError('DATAOPS_ACCESS_DENIED'), /이전 토큰 인증/);
+assert.match(merchSnapshotContext.window.MERCH_DATAOPS_SNAPSHOT_MODULE.mapReadError('', 503), /HTTP 503/);
+assert.match(merchSnapshotContext.window.MERCH_DATAOPS_SNAPSHOT_MODULE.mapReadError(''), /응답 형식/);
+merchSnapshotContext.window.getOneAppCloudSyncUrl = () => 'invalid-url';
+await assert.rejects(merchSnapshotContext.window.MERCH_DATAOPS_SNAPSHOT_MODULE.fetchLatest(), /클라우드 주소가 올바르지 않습니다/);
+merchSnapshotContext.window.getOneAppCloudSyncUrl = () => 'https://example.invalid/exec';
+merchSnapshotContext.fetch = async () => { throw new Error('network down'); };
+await assert.rejects(merchSnapshotContext.window.MERCH_DATAOPS_SNAPSHOT_MODULE.fetchLatest(), /클라우드 서버에 연결할 수 없습니다/);
+merchSnapshotContext.fetch = async () => ({ ok: false, status: 503, json: async () => ({ status: 'error' }) });
+await assert.rejects(merchSnapshotContext.window.MERCH_DATAOPS_SNAPSHOT_MODULE.fetchLatest(), /HTTP 503/);
+merchSnapshotContext.fetch = async () => ({ ok: true, status: 200, json: async () => { throw new Error('not json'); } });
+await assert.rejects(merchSnapshotContext.window.MERCH_DATAOPS_SNAPSHOT_MODULE.fetchLatest(), /JSON으로 해석할 수 없습니다/);
+merchSnapshotContext.fetch = async () => ({ ok: true, status: 200, json: async () => ({ status: 'error', message: '알 수 없는 Action입니다: dataops_snapshot_get' }) });
+await assert.rejects(merchSnapshotContext.window.MERCH_DATAOPS_SNAPSHOT_MODULE.fetchLatest(), /재고 조회 기능이 아직 배포되지 않았습니다/);
+merchSnapshotContext.fetch = async () => ({ ok: true, status: 200, json: async () => ({ unexpected: true }) });
+await assert.rejects(merchSnapshotContext.window.MERCH_DATAOPS_SNAPSHOT_MODULE.fetchLatest(), /응답 형식이 올바르지 않습니다/);
 
 const promoByCode = dataOpsContext.DATAOPS_PROMO_INPUT_MODULE.buildPromoByCode([
   { 코드: '100', _raw: { 행사가: '' } },
@@ -247,11 +305,14 @@ const makeSnapshot = (rows, basisDate = '2026-08-04') => {
   };
 };
 
-assert.equal(post({ action: 'dataops_snapshot_get', token: '' }).status, 'error', 'missing token must be rejected');
-assert.equal(post({ action: 'dataops_snapshot_get', token: 'wrong' }).status, 'error', 'mismatched token must be rejected');
+assert.equal(post({ action: 'dataops_snapshot_get' }).status, 'success', 'snapshot read must not require a token');
+assert.equal(post({ action: 'dataops_snapshot_get', token: 'wrong' }).status, 'success', 'snapshot read must ignore an optional legacy token');
 properties.delete('ONEAPP_DATAOPS_ACCESS_TOKEN');
-assert.equal(post({ action: 'dataops_snapshot_get', token: 'secret' }).status, 'error', 'unconfigured server token must be rejected');
+assert.equal(post({ action: 'dataops_snapshot_get' }).status, 'success', 'snapshot read must work when the server write token is not configured');
+assert.equal(post({ action: 'dataops_snapshot_commit', token: 'secret', snapshot: makeSnapshot(canonicalRows) }).message, 'DATAOPS_ACCESS_NOT_CONFIGURED', 'commit must reject an unconfigured server token');
 properties.set('ONEAPP_DATAOPS_ACCESS_TOKEN', 'secret');
+assert.equal(post({ action: 'dataops_snapshot_commit', snapshot: makeSnapshot(canonicalRows) }).message, 'DATAOPS_ACCESS_DENIED', 'commit must reject a missing token');
+assert.equal(post({ action: 'dataops_snapshot_commit', token: 'wrong', snapshot: makeSnapshot(canonicalRows) }).message, 'DATAOPS_ACCESS_DENIED', 'commit must reject a mismatched token');
 const badHashSnapshot = makeSnapshot(canonicalRows);
 badHashSnapshot.hash = '0'.repeat(64);
 assert.equal(post({ action: 'dataops_snapshot_commit', token: 'secret', snapshot: badHashSnapshot }).status, 'error', 'hash mismatch must be rejected');
@@ -309,6 +370,7 @@ assert.match(merchSource, /if \(key === '행사가'\)[\s\S]*getEffectivePromoPri
 assert.match(merchSource, /const effectivePromoPrice = getEffectivePromoPriceForMargin\(row, master\)[\s\S]*행사가: effectivePromoPrice/, 'F9 must use the effective promo resolver');
 assert.match(merchSource, /dataOpsPromoConflictMessage[\s\S]*"행사가 확인"/, 'conflict chip must remain independent from the primary issue label');
 assert.doesNotMatch(merchSource, /dataops_snapshot_get[^\n]*\?/, 'snapshot token/action must not be sent through a query string');
+assert.match(merchSource, /body: JSON\.stringify\(\{ action: 'dataops_snapshot_get' \}\)/, 'MerchOps snapshot read must POST only the read action');
 assert.match(dataOpsSource, /Excel 다운로드는 완료되었지만 클라우드 저장에 실패했습니다/);
 assert.match(dataOpsSource, /createCombinedWorkbook\([^]*wholeStockRows: closingRows/);
 

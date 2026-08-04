@@ -715,7 +715,6 @@ function doPost(e) {
     }
 
     if (action === 'dataops_snapshot_get') {
-      requireDataOpsAccess(payload);
       return withScriptLock(() => {
         const snapshot = readCurrentDataOpsSnapshot(ss);
         return jsonResponse({ status: 'success', action, data: snapshot });
