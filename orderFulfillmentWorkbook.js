@@ -10,7 +10,7 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function (engine) {
   "use strict";
 
-  const WORKBOOK_VERSION = "3.2.0";
+  const WORKBOOK_VERSION = "3.3.0";
   const REQUIRED_SHEETS = Object.freeze([
     "발주관리",
     "미출고현황",
@@ -297,6 +297,7 @@
       "구매",
       "거래처",
       "단가",
+      "공급가액",
       "적요",
       "적요1",
       "담당자",
@@ -313,6 +314,7 @@
       row.purchase,
       row.customer,
       row.unitPrice === null || row.unitPrice === undefined ? "" : row.unitPrice,
+      row.supplyAmount === null || row.supplyAmount === undefined ? "" : row.supplyAmount,
       row.note,
       row.note1,
       row.manager,
@@ -321,6 +323,7 @@
     const orderQuantityColumn = warehouseStart + warehouseHeaders.length;
     const purchaseColumn = orderQuantityColumn + 4;
     const priceColumn = purchaseColumn + 2;
+    const supplyAmountColumn = priceColumn + 1;
     const numericColumns = new Set([
       ...warehouseHeaders.map((_, index) => warehouseStart + index),
       orderQuantityColumn,
@@ -328,6 +331,7 @@
       orderQuantityColumn + 2,
       orderQuantityColumn + 3,
       priceColumn,
+      supplyAmountColumn,
     ]);
     const whiteManager = dominantManager(workspace.allocations);
     const sheet = XLSX.utils.aoa_to_sheet([headers, ...rows]);
