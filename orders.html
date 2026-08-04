@@ -75,6 +75,16 @@
       align-items: center;
       min-width: 0;
       gap: 16px;
+      border-radius: 7px;
+      color: inherit;
+      text-decoration: none;
+    }
+    .brand:hover .brand-mark,
+    .brand:focus-visible .brand-mark { color: #5eead4; }
+    .brand:focus-visible,
+    .header-link:focus-visible {
+      outline: 3px solid rgba(45, 212, 191, 0.45);
+      outline-offset: 4px;
     }
     .brand-mark {
       font-size: 23px;
@@ -412,12 +422,6 @@
       font-size: 11px;
       line-height: 1.6;
     }
-    .workspace-storage {
-      padding: 10px 12px 12px;
-      border-top: 1px solid #334155;
-      color: var(--slate-200);
-      background: #172033;
-    }
     .recovery-banner {
       display: flex;
       align-items: center;
@@ -462,6 +466,107 @@
     .cloud-grid input,
     .cloud-grid select { width: 100%; padding: 0 8px; }
     .storage-note { margin: 7px 0 0; color: var(--slate-400); font-size: 9px; }
+    .system-workbench > .recovery-banner { margin: 0 10px 10px; }
+    body.settings-modal-open { overflow: hidden; }
+    .settings-modal {
+      position: fixed;
+      inset: 0;
+      z-index: 90;
+      display: grid;
+      place-items: center;
+      overflow: auto;
+      padding: 24px;
+      background: rgba(15, 23, 42, 0.68);
+      backdrop-filter: blur(3px);
+    }
+    .settings-dialog {
+      width: min(720px, 100%);
+      max-height: calc(100vh - 48px);
+      overflow-y: auto;
+      border: 1px solid var(--slate-300);
+      border-radius: 14px;
+      background: var(--white);
+      box-shadow: 0 24px 70px rgba(15, 23, 42, 0.34);
+    }
+    .settings-modal-header {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 18px;
+      padding: 20px 22px 16px;
+      border-bottom: 1px solid var(--slate-200);
+      background: var(--white);
+    }
+    .settings-modal-header h2 { margin: 0; font-size: 19px; }
+    .settings-modal-header p {
+      margin: 6px 0 0;
+      color: var(--slate-500);
+      font-size: 11px;
+      line-height: 1.5;
+    }
+    .settings-close-button {
+      flex: 0 0 auto;
+      width: 34px;
+      height: 34px;
+      border: 1px solid var(--slate-300);
+      border-radius: 8px;
+      color: var(--slate-700);
+      background: var(--white);
+      font-size: 18px;
+      font-weight: 900;
+    }
+    .settings-close-button:hover { border-color: var(--teal-700); color: var(--teal-700); }
+    .settings-modal-body { padding: 20px 22px 22px; }
+    .settings-cloud-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      padding: 16px;
+      border-radius: 10px;
+      background: #172033;
+    }
+    .settings-field-wide,
+    .settings-action-row { grid-column: 1 / -1; }
+    .settings-action-row { display: flex; flex-wrap: wrap; gap: 8px; }
+    .settings-action-row button { flex: 1 1 150px; min-height: 38px; }
+    .settings-revision-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 8px;
+    }
+    .settings-revision-row select { min-width: 0; }
+    .settings-revision-row button { min-width: 140px; }
+    .local-reset-panel {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      margin-top: 14px;
+      padding: 14px 16px;
+      border: 1px solid #fecaca;
+      border-radius: 10px;
+      background: #fff7f7;
+    }
+    .local-reset-panel strong { display: block; color: var(--red-700); font-size: 12px; }
+    .local-reset-panel p { margin: 5px 0 0; color: var(--slate-600); font-size: 10px; line-height: 1.55; }
+    .local-reset-button {
+      flex: 0 0 auto;
+      min-height: 36px;
+      padding: 0 13px;
+      border: 1px solid #ef4444;
+      border-radius: 7px;
+      color: var(--white);
+      background: var(--red-700);
+      font-size: 11px;
+      font-weight: 900;
+    }
+    .settings-help {
+      margin: 12px 2px 0;
+      color: var(--slate-500);
+      font-size: 10px;
+      line-height: 1.6;
+    }
     .result-actions { display: flex; align-items: center; gap: 8px; }
     .secondary-download { color: var(--white); background: #2563eb; }
     .secondary-download:hover { background: #3b82f6; }
@@ -527,6 +632,19 @@
       .preview-count { padding: 0 0 10px; }
       .page-footer { flex-direction: column; }
       .result-actions { align-items: stretch; flex-direction: column; }
+      .settings-modal { padding: 10px; }
+      .settings-dialog { max-height: calc(100vh - 20px); border-radius: 10px; }
+      .settings-modal-header { padding: 16px; }
+      .settings-modal-body { padding: 14px; }
+      .settings-cloud-grid { grid-template-columns: 1fr; padding: 12px; }
+      .settings-field-wide,
+      .settings-action-row { grid-column: 1; }
+      .settings-action-row,
+      .local-reset-panel { align-items: stretch; flex-direction: column; }
+      .settings-action-row button { flex-basis: auto; width: 100%; }
+      .settings-revision-row { grid-template-columns: 1fr; }
+      .settings-revision-row button { width: 100%; }
+      .local-reset-button { width: 100%; }
     }
 
     /* ONEAPP common workbench: DataOps-aligned System.IO shell */
@@ -791,17 +909,18 @@
 </head>
 <body>
   <header class="global-header">
-    <div class="brand" aria-label="ONEAPP NEXUS Shipping Management">
+    <a class="brand" href="dashboard.html" aria-label="ONEAPP NEXUS 대시보드로 이동">
       <div class="brand-mark">ONEAPP</div>
       <div class="brand-divider" aria-hidden="true"></div>
       <div class="brand-stack">
         <div class="brand-suite">NEXUS <span class="brand-badge">PILOT</span></div>
         <div class="brand-product">Shipping Management</div>
       </div>
-    </div>
-    <a class="header-link" href="dashboard.html" aria-label="NEXUS 대시보드로 이동">
-      <span aria-hidden="true">←</span><span>NEXUS 대시보드</span>
     </a>
+    <button class="header-link" id="settingsButton" type="button" aria-label="환경설정 열기" aria-haspopup="dialog"
+      aria-expanded="false" aria-controls="settingsModal">
+      <span aria-hidden="true">⚙</span><span>환경설정</span>
+    </button>
   </header>
 
   <main class="page-shell">
@@ -857,25 +976,12 @@
       </div>
       </section>
 
-      <section class="workspace-storage" aria-label="발주계획 저장과 복구">
-        <div class="recovery-banner hidden" id="recoveryBanner">
-          <span id="recoveryMessage">복구 가능한 로컬 발주계획이 있습니다.</span>
-          <button type="button" id="restoreButton">복구</button>
-          <button type="button" id="replaceRecoveryButton" disabled>현재 파일로 교체</button>
-          <button type="button" id="discardRecoveryButton">초기화</button>
-        </div>
-        <div class="cloud-grid">
-          <label>Cloud URL<input id="cloudUrlInput" type="url" autocomplete="off" placeholder="Apps Script /exec URL"></label>
-          <label>전용 Token<input id="cloudTokenInput" type="password" autocomplete="off" placeholder="Shipping 전용 토큰"></label>
-          <label>저장자/담당<input id="cloudSavedByInput" type="text" autocomplete="off" placeholder="이름 또는 담당"></label>
-          <button type="button" id="cloudListButton">Cloud 목록</button>
-          <button type="button" id="cloudSaveButton" disabled>Cloud 저장</button>
-          <select id="cloudRevisionSelect" aria-label="클라우드 발주계획 revision"><option value="">저장 이력 선택</option></select>
-          <button type="button" id="cloudLoadButton" disabled>선택 불러오기</button>
-          <button type="button" id="localResetButton">로컬 초기화</button>
-        </div>
-        <p class="storage-note">로컬 자동저장은 IndexedDB 복구용이며 클라우드로 자동 전송하지 않습니다. Cloud 저장 버튼을 눌러 확정한 revision만 다른 PC에서 조회됩니다.</p>
-      </section>
+      <div class="recovery-banner hidden" id="recoveryBanner">
+        <span id="recoveryMessage">복구 가능한 로컬 발주계획이 있습니다.</span>
+        <button type="button" id="restoreButton">복구</button>
+        <button type="button" id="replaceRecoveryButton" disabled>현재 파일로 교체</button>
+        <button type="button" id="discardRecoveryButton">초기화</button>
+      </div>
     </section>
 
     <section class="panel results-panel hidden" id="resultsPanel" aria-labelledby="resultsHeading">
@@ -908,10 +1014,46 @@
     </section>
 
     <footer class="page-footer">
-      <span>Shipping Management v2.0.0 · workspace shipping-workspace/v2 · cloud plan v1</span>
+      <span>Shipping Management v2.0.1 · workspace shipping-workspace/v2 · cloud plan v1</span>
       <a href="SHIPPING_MANAGEMENT_GUIDANCE.md">개발·운영 기준 보기</a>
     </footer>
   </main>
+
+  <div class="settings-modal hidden" id="settingsModal" role="dialog" aria-modal="true"
+    aria-labelledby="settingsModalTitle" aria-describedby="settingsModalDescription" aria-hidden="true">
+    <section class="settings-dialog">
+      <header class="settings-modal-header">
+        <div>
+          <h2 id="settingsModalTitle">환경설정</h2>
+          <p id="settingsModalDescription">Cloud 발주계획과 이 PC의 로컬 자동복구 자료를 관리합니다.</p>
+        </div>
+        <button class="settings-close-button" id="settingsCloseButton" type="button" aria-label="환경설정 닫기">×</button>
+      </header>
+      <div class="settings-modal-body">
+        <div class="cloud-grid settings-cloud-grid">
+          <label class="settings-field-wide">Cloud URL<input id="cloudUrlInput" type="url" autocomplete="off" placeholder="Apps Script /exec URL"></label>
+          <label>전용 Token<input id="cloudTokenInput" type="password" autocomplete="off" placeholder="Shipping 전용 토큰"></label>
+          <label>저장자/담당<input id="cloudSavedByInput" type="text" autocomplete="off" placeholder="이름 또는 담당"></label>
+          <div class="settings-action-row">
+            <button type="button" id="cloudListButton">Cloud 목록</button>
+            <button type="button" id="cloudSaveButton" disabled>현재 계획 저장</button>
+          </div>
+          <div class="settings-revision-row settings-field-wide">
+            <select id="cloudRevisionSelect" aria-label="클라우드 발주계획 revision"><option value="">저장 이력 선택</option></select>
+            <button type="button" id="cloudLoadButton" disabled>선택 불러오기</button>
+          </div>
+        </div>
+        <p class="settings-help storage-note">로컬 자동저장은 IndexedDB 복구용이며 클라우드로 자동 전송하지 않습니다. 명시적으로 저장한 revision만 다른 PC에서 조회됩니다.</p>
+        <div class="local-reset-panel">
+          <div>
+            <strong>로컬 복구 초기화</strong>
+            <p>현재 브라우저의 자동복구 자료만 삭제합니다. Cloud revision과 현재 열려 있는 분석 화면은 삭제하지 않습니다.</p>
+          </div>
+          <button class="local-reset-button" type="button" id="localResetButton">로컬 초기화</button>
+        </div>
+      </div>
+    </section>
+  </div>
 
   <div class="toast hidden" id="toast" role="status" aria-live="polite"></div>
 
@@ -944,6 +1086,9 @@
       };
 
       const elements = {
+        settingsButton: document.getElementById("settingsButton"),
+        settingsModal: document.getElementById("settingsModal"),
+        settingsCloseButton: document.getElementById("settingsCloseButton"),
         ordersInput: document.getElementById("ordersInput"),
         inventoryInput: document.getElementById("inventoryInput"),
         ordersDrop: document.getElementById("ordersDrop"),
@@ -979,6 +1124,14 @@
         systemMessage: document.getElementById("systemMessage"),
         toast: document.getElementById("toast"),
       };
+      const SETTINGS_FOCUSABLE_SELECTOR = [
+        "a[href]",
+        "button:not([disabled])",
+        "input:not([disabled])",
+        "select:not([disabled])",
+        "textarea:not([disabled])",
+        "[tabindex]:not([tabindex='-1'])",
+      ].join(",");
 
       function escapeHtml(value) {
         return String(value ?? "")
@@ -1007,6 +1160,62 @@
 
       function setSystemMessage(message) {
         elements.systemMessage.textContent = message;
+      }
+
+      function settingsFocusableElements() {
+        return Array.from(elements.settingsModal.querySelectorAll(SETTINGS_FOCUSABLE_SELECTOR))
+          .filter((element) => element.getClientRects().length > 0);
+      }
+
+      function openSettingsModal() {
+        elements.settingsModal.classList.remove("hidden");
+        elements.settingsModal.setAttribute("aria-hidden", "false");
+        elements.settingsButton.setAttribute("aria-expanded", "true");
+        document.body.classList.add("settings-modal-open");
+        window.requestAnimationFrame(() => elements.cloudUrlInput.focus({ preventScroll: true }));
+      }
+
+      function closeSettingsModal() {
+        if (elements.settingsModal.classList.contains("hidden")) return;
+        elements.settingsModal.classList.add("hidden");
+        elements.settingsModal.setAttribute("aria-hidden", "true");
+        elements.settingsButton.setAttribute("aria-expanded", "false");
+        document.body.classList.remove("settings-modal-open");
+        elements.settingsButton.focus({ preventScroll: true });
+      }
+
+      function handleSettingsModalKeydown(event) {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          closeSettingsModal();
+          return;
+        }
+        if (event.key !== "Tab") return;
+        const focusable = settingsFocusableElements();
+        if (!focusable.length) {
+          event.preventDefault();
+          elements.settingsCloseButton.focus();
+          return;
+        }
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first.focus();
+        }
+      }
+
+      function confirmAndClearLocalRecovery() {
+        const confirmed = window.confirm(
+          "이 브라우저에 자동저장된 로컬 발주계획을 초기화하시겠습니까? Cloud revision과 현재 화면은 삭제되지 않습니다.",
+        );
+        if (!confirmed) return;
+        clearLocalRecovery().catch((error) => {
+          showToast(error.message || "로컬 복구 자료를 초기화하지 못했습니다.", true);
+        });
       }
 
       async function sha256Hex(value) {
@@ -1819,6 +2028,12 @@
       elements.analyzeButton.addEventListener("click", runAnalysis);
       elements.downloadButton.addEventListener("click", downloadResult);
       elements.purchaseUploadButton.addEventListener("click", downloadPurchaseUpload);
+      elements.settingsButton.addEventListener("click", openSettingsModal);
+      elements.settingsCloseButton.addEventListener("click", closeSettingsModal);
+      elements.settingsModal.addEventListener("click", (event) => {
+        if (event.target === elements.settingsModal) closeSettingsModal();
+      });
+      elements.settingsModal.addEventListener("keydown", handleSettingsModalKeydown);
       elements.previewTabs.addEventListener("click", (event) => {
         const button = event.target.closest("[data-preview]");
         if (!button || !state.workspace) return;
@@ -1850,10 +2065,10 @@
         });
       });
       elements.discardRecoveryButton.addEventListener("click", () => {
-        clearLocalRecovery().catch((error) => showToast(error.message || "로컬 복구 자료를 초기화하지 못했습니다.", true));
+        confirmAndClearLocalRecovery();
       });
       elements.localResetButton.addEventListener("click", () => {
-        clearLocalRecovery().catch((error) => showToast(error.message || "로컬 복구 자료를 초기화하지 못했습니다.", true));
+        confirmAndClearLocalRecovery();
       });
       elements.cloudListButton.addEventListener("click", listCloudPlans);
       elements.cloudSaveButton.addEventListener("click", saveCloudPlan);
