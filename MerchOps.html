@@ -336,7 +336,6 @@
         window.ONEAPP_DEFAULT_CLOUD_SYNC_URL = window.ONEAPP_DEFAULT_CLOUD_SYNC_URL || 'https://script.google.com/macros/s/AKfycbzOUOIu_bP7NkiFVziDR0Og1da1KO1ePoU09Q3pSlPr-9uD-WkdCpWN7nidO5hlrJi6Qw/exec';
         window.ONEAPP_CLOUD_URL_KEY = window.ONEAPP_CLOUD_URL_KEY || 'oneapp_cloud_sync_url_v1';
         window.MERCH_LEGACY_CLOUD_URL_KEY = window.MERCH_LEGACY_CLOUD_URL_KEY || 'merchCloudUrl_v870';
-        window.ONEAPP_DATAOPS_CLOUD_TOKEN_KEY = window.ONEAPP_DATAOPS_CLOUD_TOKEN_KEY || 'oneapp_dataops_cloud_token_v1';
 
         window.normalizeOneAppCloudSyncUrl = (url = '') => {
             const raw = String(url || '').trim();
@@ -385,20 +384,17 @@
         window.MERCH_DATAOPS_SNAPSHOT_MODULE = Object.freeze({
             schemaVersion: 'ONEAPP_DATAOPS_SNAPSHOT_V1',
             columns: Object.freeze(['단위', '품목코드', '품명', '규격', '재고', '기록', '거래', '구매가', '기본', '적요', '행사가']),
-            getAccessToken: () => {
-                let token = '';
-                try { token = String(localStorage.getItem(window.ONEAPP_DATAOPS_CLOUD_TOKEN_KEY) || '').trim(); }
-                catch (e) { }
-                if (!token) {
-                    token = String(window.prompt('DataOps 클라우드 접근 토큰을 입력하세요.') || '').trim();
-                    if (token) {
-                        try { localStorage.setItem(window.ONEAPP_DATAOPS_CLOUD_TOKEN_KEY, token); }
-                        catch (e) { }
-                    }
-                }
-                if (!token)
-                    throw new Error('클라우드 접근 토큰이 설정되지 않았습니다.');
-                return token;
+            mapReadError: (message = '', httpStatus = 0) => {
+                const detail = String(message || '').trim();
+                if (/알 수 없는 Action|unknown action/i.test(detail))
+                    return '클라우드 서버에 재고 조회 기능이 아직 배포되지 않았습니다. Apps Script를 최신 버전으로 배포하세요.';
+                if (detail === 'DATAOPS_ACCESS_NOT_CONFIGURED')
+                    return '클라우드 서버의 DataOps 쓰기 토큰이 설정되지 않았습니다. Apps Script 설정과 최신 배포 상태를 확인하세요.';
+                if (detail === 'DATAOPS_ACCESS_DENIED')
+                    return '클라우드 서버가 재고 조회에 이전 토큰 인증을 요구하고 있습니다. Apps Script를 최신 버전으로 배포하세요.';
+                if (httpStatus)
+                    return `클라우드 서버 응답 오류 (HTTP ${httpStatus}). Apps Script 주소와 배포 권한을 확인하세요.`;
+                return detail || '클라우드 응답 형식이 올바르지 않습니다.';
             },
             sha256Hex: async (text) => {
                 if (!window.crypto?.subtle)
@@ -443,23 +439,31 @@
             },
             fetchLatest: async (fallbackUrl = '') => {
                 const url = window.getOneAppCloudSyncUrl(fallbackUrl);
-                const response = await fetch(url, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                    body: JSON.stringify({ action: 'dataops_snapshot_get', token: window.MERCH_DATAOPS_SNAPSHOT_MODULE.getAccessToken() })
-                });
+                try {
+                    const parsedUrl = new URL(url);
+                    if (!/^https?:$/.test(parsedUrl.protocol)) throw new Error('INVALID_CLOUD_URL');
+                }
+                catch (e) {
+                    throw new Error('클라우드 주소가 올바르지 않습니다. 환경설정의 Apps Script 웹앱 주소를 확인하세요.');
+                }
+                let response;
+                try {
+                    response = await fetch(url, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                        body: JSON.stringify({ action: 'dataops_snapshot_get' })
+                    });
+                }
+                catch (e) {
+                    throw new Error('클라우드 서버에 연결할 수 없습니다. 환경설정의 Apps Script 주소와 네트워크를 확인하세요.');
+                }
                 let result;
                 try { result = await response.json(); }
-                catch (e) { throw new Error(`DataOps 클라우드 응답 해석 실패 (HTTP ${response.status || '-'})`); }
-                if (!response.ok || !result || result.status !== 'success') {
-                    if (result?.message === 'DATAOPS_ACCESS_DENIED') {
-                        try { localStorage.removeItem(window.ONEAPP_DATAOPS_CLOUD_TOKEN_KEY); }
-                        catch (e) { }
-                    }
-                    throw new Error(result?.message || `DataOps 클라우드 조회 실패 (HTTP ${response.status || '-'})`);
-                }
+                catch (e) { throw new Error(`클라우드 응답을 JSON으로 해석할 수 없습니다 (HTTP ${response.status || '-'}). Apps Script 배포 URL을 확인하세요.`); }
+                if (!response.ok || !result || result.status !== 'success')
+                    throw new Error(window.MERCH_DATAOPS_SNAPSHOT_MODULE.mapReadError(result?.message, response.ok ? 0 : response.status));
                 if (!result.data)
-                    throw new Error('확정된 DataOps 클라우드 자료가 없습니다.');
+                    throw new Error('확정된 DataOps 클라우드 재고자료가 없습니다. DataOps에서 F9 저장을 먼저 실행하세요.');
                 return window.MERCH_DATAOPS_SNAPSHOT_MODULE.validate(result.data);
             },
             toWorkbookFile: (snapshot) => {
@@ -5102,7 +5106,7 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
         }
         catch (error) {
             console.error('MerchOps DataOps snapshot load failed', error);
-            ui.setAlertMsg(`❌ DataOps 클라우드 재고 불러오기 실패: ${error?.message || 'URL·토큰·확정자료를 확인하세요.'}`);
+            ui.setAlertMsg(`❌ DataOps 클라우드 재고 불러오기 실패: ${error?.message || '환경설정의 Apps Script 주소와 확정자료를 확인하세요.'}`);
             return false;
         }
         finally {
