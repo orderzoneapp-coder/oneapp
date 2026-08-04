@@ -186,8 +186,8 @@ const edgeWorkspace = engine.analyze(edgeOrders, edgeInventory, {
   createdAt: "2026-07-30T00:00:00.000Z",
   sourceFingerprint: "a".repeat(64),
 });
-assert.equal(engine.ENGINE_VERSION, "3.1.0");
-assert.equal(workbookTools.WORKBOOK_VERSION, "3.1.0");
+assert.equal(engine.ENGINE_VERSION, "3.2.0");
+assert.equal(workbookTools.WORKBOOK_VERSION, "3.2.0");
 assert.equal(edgeWorkspace.schemaVersion, "shipping-workspace/v2");
 assert.equal(edgeWorkspace.basisDate, "2026-08-04");
 assert.equal(edgeWorkspace.uploadDate, "20260804");
@@ -336,7 +336,7 @@ const dynamicInventoryHeaders = [
 const dynamicInventoryMatrix = [
   ["동적 창고열 테스트"],
   dynamicInventoryHeaders,
-  ["000010", "동적상품", "EA", 0, "숨김값", 0, 0, -3, "00123", "A동", "", ""],
+  ["000010", "동적상품", "EA", 0, "숨김값", 0, 0, -130, "00123", "A동", "", ""],
   ["000011", "텍스트상품", "BOX", 2, "숨김값2", 0, 0, "-4", "00007", "B동", "", ""],
 ];
 const baseInventoryMatrix = dynamicInventoryMatrix.map((row, rowIndex) => {
@@ -347,6 +347,7 @@ const baseInventoryMatrix = dynamicInventoryMatrix.map((row, rowIndex) => {
 });
 const dynamicOrders = parseOrders(buildOrderMatrix([
   { code: "000010", quantity: 2, spec: "EA" },
+  { code: "000010", quantity: 1, spec: "EA", customer: "반복거래처" },
   { code: "000011", quantity: 1, spec: "BOX" },
 ]));
 const dynamicWorkspace = engine.analyze(dynamicOrders, parseInventory(dynamicInventoryMatrix), {
@@ -357,27 +358,40 @@ const baseDynamicWorkspace = engine.analyze(dynamicOrders, parseInventory(baseIn
 });
 const dynamicView = engine.getInventoryViewRows(dynamicWorkspace);
 assert.deepEqual(dynamicView.headers, [
-  "품목코드", "품목명", "규격", "1창고", "3서울", "4전송", "신규창고", "신규창고", "창고메모",
+  "품목코드", "품목명", "규격", "수량", "1창고", "3서울", "4전송", "신규창고", "신규창고", "창고메모",
 ]);
-assert.deepEqual(dynamicView.columns.map((column) => column.sourceIndex), [0, 1, 2, 3, 5, 6, 7, 8, 9]);
+assert.deepEqual(dynamicView.columns.map((column) => column.sourceIndex), [0, 1, 2, null, 3, 5, 6, 7, 8, 9]);
 assert.equal(new Set(dynamicView.columns.map((column) => column.key)).size, dynamicView.columns.length);
-assert.notEqual(dynamicView.columns[6].key, dynamicView.columns[7].key, "duplicate labels must remain isolated by source index");
-assert.deepEqual(dynamicView.rows[0].values, ["000010", "동적상품", "EA", 0, 0, 0, -3, "00123", "A동"]);
+assert.notEqual(dynamicView.columns[7].key, dynamicView.columns[8].key, "duplicate labels must remain isolated by source index");
+assert.deepEqual(dynamicView.rows[0].values, ["000010", "동적상품", "EA", -7, 0, 0, 0, -130, "00123", "A동"]);
 assert.equal(dynamicView.rows[0].values.includes("숨김값"), false, "interior blank-header data must not shift into visible columns");
+assert.equal(dynamicView.rows[0].inventoryTotal, -7, "all dynamic warehouse columns must retain signs in the arithmetic total");
+assert.equal(dynamicView.rows[1].inventoryTotal, 5, "numeric text warehouse values must participate without changing source display");
 assert.deepEqual(
   {
     allocations: dynamicWorkspace.allocations,
-    stats: dynamicWorkspace.stats,
     validation: dynamicWorkspace.validationResults,
     upload: engine.getPurchaseUploadSelection(dynamicWorkspace),
   },
   {
     allocations: baseDynamicWorkspace.allocations,
-    stats: baseDynamicWorkspace.stats,
     validation: baseDynamicWorkspace.validationResults,
     upload: engine.getPurchaseUploadSelection(baseDynamicWorkspace),
   },
-  "extra inventory columns must not alter allocation, stats, validation, or purchase-upload selection",
+  "dynamic inspection columns must not alter legacy allocation, validation, or purchase-upload selection",
+);
+assert.equal(dynamicWorkspace.stats.inventoryNegativeCount, 1);
+assert.equal(baseDynamicWorkspace.stats.inventoryNegativeCount, 0);
+const dynamicAllocationView = engine.getAllocationInventoryView(dynamicWorkspace);
+assert.deepEqual(
+  dynamicAllocationView.columns.map((column) => column.header),
+  ["1창고", "3서울", "4전송", "신규창고", "신규창고"],
+  "all dynamic warehouses including 4전송 must appear independently in source order",
+);
+assert.deepEqual(
+  dynamicAllocationView.rows[0].warehouseValues,
+  dynamicAllocationView.rows[1].warehouseValues,
+  "repeated order lines for one product must repeat the same warehouse values",
 );
 const dynamicRoundTrip = JSON.parse(JSON.stringify(dynamicWorkspace));
 assert.deepEqual(
@@ -385,22 +399,146 @@ assert.deepEqual(
   dynamicView.columns,
   "dynamic descriptors and stable keys must survive workspace round-trip",
 );
+const corruptColumnMetadataWorkspace = JSON.parse(JSON.stringify(dynamicWorkspace));
+corruptColumnMetadataWorkspace.sourceFiles.inventory.columns.find(
+  (column) => column.role === "calculatedQuantity",
+).editable = true;
+assert.equal(
+  engine.getInventoryColumnDescriptors(corruptColumnMetadataWorkspace).find(
+    (column) => column.role === "calculatedQuantity",
+  ).editable,
+  false,
+  "corrupt stored column metadata must be re-derived from the original header row",
+);
+const overrideWorkspace = JSON.parse(JSON.stringify(edgeWorkspace));
+const overrideSourceBefore = JSON.stringify(overrideWorkspace.sourceFiles.inventory.matrix);
+const legacyCalculationSnapshot = (workspace) => JSON.stringify({
+  allocations: workspace.allocations.map((row) => [
+    row.productCode, row.quantity, row.wholeAllocation, row.seoulAllocation,
+    row.purchaseNeed, row.wholeRemaining, row.seoulRemaining, row.status,
+  ]),
+  productSummaries: workspace.productSummaries.map((row) => [
+    row.productCode, row.totalOrderQuantity, row.wholeAllocation, row.seoulAllocation,
+    row.purchaseNeed, row.reconciliationDifference,
+  ]),
+  validationResults: workspace.validationResults,
+  purchaseUpload: {
+    included: engine.getPurchaseUploadSelection(workspace).included.map((row) => row.productCode),
+    excluded: engine.getPurchaseUploadSelection(workspace).excluded.map((row) => [row.productCode, row.reason]),
+  },
+});
+const allocationBeforeOverrides = legacyCalculationSnapshot(overrideWorkspace);
+const overrideColumns = engine.getInventoryColumnDescriptors(overrideWorkspace);
+const columnByHeader = new Map(overrideColumns.map((column) => [column.header, column]));
+for (const header of ["1창고", "2전송", "3서울", "4전송", "7진영"]) {
+  assert.equal(columnByHeader.get(header)?.role, "warehouseQuantity", `${header} must be a signed warehouse quantity`);
+}
+
+function sheetCellByHeader(sheet, header, rowNumber = 2) {
+  const headerRow = Array.from(XLSX.utils.sheet_to_json(sheet, { header: 1, raw: true, range: 0 })[0]);
+  const columnIndex = headerRow.indexOf(header);
+  assert.notEqual(columnIndex, -1, `missing workbook header: ${header}`);
+  return sheet[XLSX.utils.encode_cell({ r: rowNumber - 1, c: columnIndex })];
+}
+for (const header of ["기본", "전송", "창고"]) {
+  assert.equal(columnByHeader.get(header)?.editable, true, `${header} must be editable`);
+}
+assert.equal(columnByHeader.get("수량")?.role, "calculatedQuantity");
+assert.equal(columnByHeader.get("수량")?.editable, false, "automatic quantity must remain readonly");
+engine.setInventoryOverride(overrideWorkspace, "000100", columnByHeader.get("2전송").key, -20);
+engine.setInventoryOverride(overrideWorkspace, "000100", columnByHeader.get("기본").key, "검수기본");
+engine.setInventoryOverride(overrideWorkspace, "000100", columnByHeader.get("전송").key, "검수전송");
+engine.setInventoryOverride(overrideWorkspace, "000100", columnByHeader.get("창고").key, 4321);
+engine.setPurchaseValue(overrideWorkspace, "000100", "검수구매");
+const overriddenRow = engine.getInventoryViewRows(overrideWorkspace).rows.find((row) => row.productCode === "000100");
+assert.equal(overriddenRow.inventoryTotal, -12, "blank warehouse cells must be zero and signed transfer warehouses must be summed");
+assert.equal(overriddenRow.values[columnByHeader.get("수량").sourceIndex], -12);
+assert.equal(overriddenRow.values[columnByHeader.get("기본").sourceIndex], "검수기본");
+assert.equal(overriddenRow.values[columnByHeader.get("전송").sourceIndex], "검수전송");
+assert.equal(overriddenRow.values[columnByHeader.get("창고").sourceIndex], 4321);
+assert.equal(overriddenRow.purchase, "검수구매");
+assert.equal(JSON.stringify(overrideWorkspace.sourceFiles.inventory.matrix), overrideSourceBefore, "source inventory matrix must remain byte-shape immutable");
+assert.equal(
+  legacyCalculationSnapshot(overrideWorkspace),
+  allocationBeforeOverrides,
+  "inspection overrides must never feed legacy allocation or purchase-need calculations",
+);
+const recoveredOverrideWorkspace = JSON.parse(JSON.stringify(overrideWorkspace));
+assert.deepEqual(
+  engine.getInventoryViewRows(recoveredOverrideWorkspace).rows.find((row) => row.productCode === "000100"),
+  overriddenRow,
+  "optional overrides must survive local/cloud compatible JSON recovery",
+);
+const corruptOverrideWorkspace = JSON.parse(JSON.stringify(edgeWorkspace));
+corruptOverrideWorkspace.inventoryOverrides = {
+  schemaVersion: engine.INVENTORY_OVERRIDE_SCHEMA_VERSION,
+  cells: [{ productCode: "000100", columnKey: columnByHeader.get("2전송").key, value: "손상숫자" }],
+};
+assert.equal(
+  engine.getInventoryViewRows(corruptOverrideWorkspace).rows.find((row) => row.productCode === "000100").inventoryTotal,
+  8,
+  "corrupt numeric overrides must fall back to the original signed warehouse values",
+);
+assert.throws(
+  () => engine.setInventoryOverride(corruptOverrideWorkspace, "000100", columnByHeader.get("2전송").key, "손상숫자"),
+  /숫자 또는 빈칸/,
+);
+const reorderedOverrideWorkspace = JSON.parse(JSON.stringify(overrideWorkspace));
+const reorderedHeader = reorderedOverrideWorkspace.sourceFiles.inventory.matrix[1];
+[reorderedHeader[7], reorderedHeader[8]] = [reorderedHeader[8], reorderedHeader[7]];
+const reorderedRow = engine.getInventoryViewRows(reorderedOverrideWorkspace).rows.find((row) => row.productCode === "000100");
+assert.notEqual(
+  reorderedRow.values[7],
+  -20,
+  "sourceIndex+normalized-header identity must prevent an override from moving to a reordered column",
+);
 const dynamicWorkbook = workbookTools.buildWorkbook(dynamicWorkspace, XLSX);
 const dynamicInventorySheet = dynamicWorkbook.Sheets["창고별 재고"];
 assert.deepEqual(
-  Array.from(XLSX.utils.sheet_to_json(dynamicInventorySheet, { header: 1, raw: true, range: "A1:J1" })[0]),
-  [...dynamicView.headers, "구매"],
+  Array.from(XLSX.utils.sheet_to_json(dynamicInventorySheet, { header: 1, raw: true, range: "A1:L1" })[0]),
+  [...dynamicView.headers, "구매", "거래처(단가)"],
 );
 assert.equal(dynamicInventorySheet["B1"].v, "품목명");
-assert.equal(dynamicInventorySheet["G1"].v, "신규창고");
 assert.equal(dynamicInventorySheet["H1"].v, "신규창고");
-assert.deepEqual([dynamicInventorySheet["G2"].t, dynamicInventorySheet["G2"].v], ["n", -3]);
-assert.equal(dynamicInventorySheet["G2"].s.fill.fgColor.rgb, "FFF200");
-assert.deepEqual([dynamicInventorySheet["H2"].t, dynamicInventorySheet["H2"].v], ["s", "00123"]);
-assert.equal(dynamicInventorySheet["H2"].s.numFmt, "@");
-assert.notEqual(dynamicInventorySheet["H2"].s.fill.fgColor.rgb, "FFF200");
-assert.equal(dynamicInventorySheet["J1"].v, "구매", "reserved purchase descriptor must be appended exactly once at the end");
-assert.equal(dynamicInventorySheet["!ref"], "A1:J3");
+assert.equal(dynamicInventorySheet["I1"].v, "신규창고");
+assert.deepEqual([dynamicInventorySheet["D2"].t, dynamicInventorySheet["D2"].v], ["n", -7]);
+assert.deepEqual([dynamicInventorySheet["H2"].t, dynamicInventorySheet["H2"].v], ["n", -130]);
+assert.equal(dynamicInventorySheet["D2"].s.fill.fgColor.rgb, "FFF200");
+assert.equal(dynamicInventorySheet["H2"].s.fill.fgColor.rgb, "FFF200");
+assert.deepEqual([dynamicInventorySheet["I2"].t, dynamicInventorySheet["I2"].v], ["s", "00123"]);
+assert.equal(dynamicInventorySheet["I2"].s.numFmt, "@");
+assert.notEqual(dynamicInventorySheet["I2"].s.fill.fgColor.rgb, "FFF200");
+assert.equal(dynamicInventorySheet["K1"].v, "구매", "reserved purchase descriptor must be appended exactly once after source columns");
+assert.equal(dynamicInventorySheet["L1"].v, "거래처(단가)", "supplier pairs must be the rightmost inventory column");
+assert.equal(dynamicInventorySheet["!ref"], "A1:L3", "inventory rows must remain one row per inventory product despite repeated orders");
+const overrideInventorySheet = workbookTools.buildWorkbook(overrideWorkspace, XLSX).Sheets["창고별 재고"];
+assert.deepEqual(
+  ["F2", "H2", "L2", "M2", "N2", "O2", "P2"].map((address) => overrideInventorySheet[address].v),
+  [-12, -20, "검수기본", "검수전송", 4321, "검수구매", "같은거래처(1000)\n같은거래처(1200)\n거래처 3(1000)"],
+  "general Excel must carry every effective override, automatic quantity, purchase, and supplier pairs",
+);
+assert.equal(overrideInventorySheet["P2"].s.alignment.wrapText, true, "Excel supplier pairs must use full wrapped lines");
+assert.equal(overrideInventorySheet["F2"].s.fill.fgColor.rgb, "FFF200", "negative automatic quantity must be highlighted");
+const purchaseContractWorkspace = JSON.parse(JSON.stringify(edgeWorkspace));
+const purchaseShapeBeforeOverride = XLSX.utils.sheet_to_json(
+  workbookTools.buildPurchaseUploadWorkbook(purchaseContractWorkspace, XLSX).Sheets["구매입력"],
+  { header: 1, raw: true, defval: null },
+);
+engine.setInventoryOverride(
+  purchaseContractWorkspace,
+  "000100",
+  engine.getInventoryColumnDescriptors(purchaseContractWorkspace).find((column) => column.header === "2전송").key,
+  -999,
+);
+const purchaseShapeAfterOverride = XLSX.utils.sheet_to_json(
+  workbookTools.buildPurchaseUploadWorkbook(purchaseContractWorkspace, XLSX).Sheets["구매입력"],
+  { header: 1, raw: true, defval: null },
+);
+assert.deepEqual(
+  purchaseShapeAfterOverride,
+  purchaseShapeBeforeOverride,
+  "inventory overrides must not change the purchase-upload workbook shape or meaning",
+);
 
 const edgeWorkbook = workbookTools.buildWorkbook(edgeWorkspace, XLSX);
 assert.deepEqual(
@@ -417,13 +555,12 @@ assert.deepEqual(Array.from(workbookTools.REQUIRED_SHEETS), [
 ]);
 assert.deepEqual(
   Array.from(
-    XLSX.utils.sheet_to_json(edgeWorkbook.Sheets["미출고현황"], {
-      header: 1,
-      raw: true,
-      range: "A1:L1",
-    })[0],
+    XLSX.utils.sheet_to_json(edgeWorkbook.Sheets["미출고현황"], { header: 1, raw: true, range: 0 })[0],
   ),
-  ["상품코드", "품목명", "규격", "주문수량", "전재고", "서울잔량", "구매수량", "구매", "거래처(단가)", "적요", "적요1", "담당자"],
+  [
+    "상품코드", "품목명", "규격", "1창고", "2전송", "3서울", "4전송", "7진영",
+    "주문수량", "전재고", "서울잔량", "구매수량", "구매", "거래처", "단가", "적요", "적요1", "담당자",
+  ],
 );
 assert.equal(engine.parseOrderBasisDate("2026-08-04-17"), "2026-08-04");
 assert.equal(engine.parseOrderBasisDate("20260804-17"), "2026-08-04");
@@ -451,19 +588,28 @@ assert.equal(edgeWorkspace.purchaseManagement.find((row) => row.productCode === 
 const linkedPurchaseWorkbook = workbookTools.buildWorkbook(edgeWorkspace, XLSX);
 assert.deepEqual(
   [
-    [linkedPurchaseWorkbook.Sheets["미출고현황"].I2.v, edgeWorkspace.allocations[0].unitPrice, typeof edgeWorkspace.allocations[0].unitPrice],
-    [linkedPurchaseWorkbook.Sheets["미출고현황"].I3.v, edgeWorkspace.allocations[1].unitPrice, typeof edgeWorkspace.allocations[1].unitPrice],
+    [
+      sheetCellByHeader(linkedPurchaseWorkbook.Sheets["미출고현황"], "거래처", 2).v,
+      sheetCellByHeader(linkedPurchaseWorkbook.Sheets["미출고현황"], "단가", 2).v,
+      typeof sheetCellByHeader(linkedPurchaseWorkbook.Sheets["미출고현황"], "단가", 2).v,
+    ],
+    [
+      sheetCellByHeader(linkedPurchaseWorkbook.Sheets["미출고현황"], "거래처", 3).v,
+      sheetCellByHeader(linkedPurchaseWorkbook.Sheets["미출고현황"], "단가", 3).v,
+      typeof sheetCellByHeader(linkedPurchaseWorkbook.Sheets["미출고현황"], "단가", 3).v,
+    ],
   ],
   [
-    ["같은거래처(1000)", 1000, "number"],
-    ["같은거래처(1200)", 1200, "number"],
+    ["같은거래처", 1000, "number"],
+    ["같은거래처", 1200, "number"],
   ],
-  "미출고현황 workbook must show each customer-price pair while retaining numeric unit prices",
+  "미출고현황 workbook must split each original customer and numeric unit price",
 );
-assert.equal(linkedPurchaseWorkbook.Sheets["미출고현황"].H2.v, "거래처A");
+assert.equal(sheetCellByHeader(linkedPurchaseWorkbook.Sheets["미출고현황"], "구매", 2).v, "거래처A");
 assert.equal(linkedPurchaseWorkbook.Sheets["발주관리"].H5.v, "거래처A");
 assert.equal(linkedPurchaseWorkbook.Sheets["발주관리"].A6, undefined, "reference/shadow rows must not appear in 발주관리");
 assert.equal(linkedPurchaseWorkbook.Sheets["창고별 재고"].O2.v, "거래처A");
+assert.equal(linkedPurchaseWorkbook.Sheets["창고별 재고"].P2.v, "같은거래처(1000)\n같은거래처(1200)\n거래처 3(1000)");
 
 const purchaseUploadWorkbook = workbookTools.buildPurchaseUploadWorkbook(edgeWorkspace, XLSX);
 assert.deepEqual(Array.from(purchaseUploadWorkbook.SheetNames), ["구매입력"]);
@@ -512,7 +658,7 @@ assert.throws(
 );
 assert.equal(edgeWorkbook.Sheets["미출고현황"]["A2"].t, "s");
 assert.equal(edgeWorkbook.Sheets["미출고현황"]["A2"].v, "000100");
-assert.equal(edgeWorkbook.Sheets["미출고현황"]["D2"].v, 4);
+assert.equal(sheetCellByHeader(edgeWorkbook.Sheets["미출고현황"], "주문수량", 2).v, 4);
 assert.ok(edgeWorkbook.Sheets["미출고현황"]["!autofilter"], "filter metadata missing");
 assert.deepEqual(edgeWorkbook.Sheets["미출고현황"]["!freeze"], { xSplit: 0, ySplit: 1 });
 
@@ -606,34 +752,39 @@ try {
   globalThis.URL = originalUrl;
 }
 const allocationSheet = formatWorkbook.Sheets["미출고현황"];
-assert.equal(allocationSheet["!ref"], "A1:L7");
-assert.deepEqual(allocationSheet["!autofilter"], { ref: "A1:L7" });
+assert.equal(allocationSheet["!ref"], "A1:R7");
+assert.deepEqual(allocationSheet["!autofilter"], { ref: "A1:R7" });
 assert.deepEqual(allocationSheet["!freeze"], { xSplit: 0, ySplit: 1 });
 assert.equal(allocationSheet["A2"].t, "s");
 assert.equal(allocationSheet["A2"].v, "PURCHASE");
-assert.equal(allocationSheet["D2"].v, 2);
-assert.equal(allocationSheet["E2"].v, 0);
-assert.equal(allocationSheet["F2"].v, 0);
-assert.equal(allocationSheet["G2"].v, 2);
-assert.equal(allocationSheet["I2"].v, "거래처 1(1000)");
-assert.equal(allocationSheet["L2"].v, "담당A");
+assert.equal(sheetCellByHeader(allocationSheet, "1창고", 2).v, 0);
+assert.equal(sheetCellByHeader(allocationSheet, "4전송", 2).v, 0);
+assert.equal(sheetCellByHeader(allocationSheet, "7진영", 2).v, -4);
+assert.equal(sheetCellByHeader(allocationSheet, "주문수량", 2).v, 2);
+assert.equal(sheetCellByHeader(allocationSheet, "구매수량", 2).v, 2);
+assert.equal(sheetCellByHeader(allocationSheet, "거래처", 2).v, "거래처 1");
+assert.equal(sheetCellByHeader(allocationSheet, "단가", 2).v, 1000);
+assert.equal(sheetCellByHeader(allocationSheet, "담당자", 2).v, "담당A");
 assert.equal(allocationSheet["A2"].s.fill.fgColor.rgb, "FFFFFF", "stable tie winner 담당A must remain white");
 assert.equal(allocationSheet["A4"].s.fill.fgColor.rgb, "FFFFFF", "all rows for the dominant manager must remain white");
 assert.notEqual(allocationSheet["A2"].s.fill.fgColor.rgb, allocationSheet["A3"].s.fill.fgColor.rgb);
 assert.equal(allocationSheet["A5"].s.fill.fgColor.rgb, allocationSheet["A6"].s.fill.fgColor.rgb);
-for (const address of ["A2", "B2", "C2", "D2", "E2", "F2", "G2", "H2", "I2", "J2", "K2", "L2"]) {
+for (let column = 0; column < 18; column += 1) {
+  const address = XLSX.utils.encode_cell({ r: 1, c: column });
+  if (address === "H2") continue;
   assert.equal(
     allocationSheet[address].s.fill.fgColor.rgb,
     allocationSheet["A2"].s.fill.fgColor.rgb,
     `${address} must inherit the manager row fill`,
   );
 }
+assert.equal(allocationSheet["H2"].s.fill.fgColor.rgb, "FEE2E2", "negative warehouse cells must override manager fill");
 for (const row of [3, 4, 6]) {
   assert.equal(allocationSheet[`A${row}`].s.font.color.rgb, "B91C1C", `EA/소분 row ${row} must use red text`);
-  assert.equal(allocationSheet[`L${row}`].s.font.color.rgb, "B91C1C", `EA/소분 manager row ${row} must use red text`);
+  assert.equal(allocationSheet[`R${row}`].s.font.color.rgb, "B91C1C", `EA/소분 manager row ${row} must use red text`);
 }
 for (let row = 1; row <= 7; row += 1) {
-  for (let column = 0; column < 12; column += 1) {
+  for (let column = 0; column < 18; column += 1) {
     const cell = allocationSheet[XLSX.utils.encode_cell({ r: row - 1, c: column })];
     assert.ok(cell, `allocation table cell missing at row=${row} column=${column + 1}`);
     for (const edge of ["top", "bottom", "left", "right"]) {
@@ -657,22 +808,22 @@ assert.deepEqual(allocationSheet["!pageSetup"], {
   fitToWidth: 1,
   fitToHeight: 0,
 });
-assert.equal(allocationSheet["!printArea"], "A1:L7");
+assert.equal(allocationSheet["!printArea"], "A1:R7");
 assert.equal(allocationSheet["!printTitles"], "$1:$1");
 const printNames = formatWorkbook.Workbook.Names.filter(
   (name) => name.Sheet === 1 && /^_xlnm\.Print_/.test(name.Name),
 );
 assert.deepEqual(printNames, [
-  { Name: "_xlnm.Print_Area", Sheet: 1, Ref: "'미출고현황'!$A$1:$L$7" },
+  { Name: "_xlnm.Print_Area", Sheet: 1, Ref: "'미출고현황'!$A$1:$R$7" },
   { Name: "_xlnm.Print_Titles", Sheet: 1, Ref: "'미출고현황'!$1:$1" },
 ]);
 
 const inventorySheet = formatWorkbook.Sheets["창고별 재고"];
 assert.deepEqual(
   Array.from(
-    XLSX.utils.sheet_to_json(inventorySheet, { header: 1, raw: true, range: "A1:O1" })[0],
+    XLSX.utils.sheet_to_json(inventorySheet, { header: 1, raw: true, range: "A1:P1" })[0],
   ),
-  [...INVENTORY_HEADERS, "구매"],
+  [...INVENTORY_HEADERS, "구매", "거래처(단가)"],
 );
 for (let row = 2; row <= 6; row += 1) {
   assert.equal(inventorySheet[`O${row}`].v, "", "purchase column must default to blank text");
@@ -683,7 +834,7 @@ assert.equal(inventorySheet["F2"].v, -4);
 assert.equal(inventorySheet["K2"].v, -4);
 assert.equal(inventorySheet["F2"].s.fill.fgColor.rgb, "FFF200");
 assert.equal(inventorySheet["K2"].s.fill.fgColor.rgb, "FFF200");
-for (const address of ["A2", "B2", "C2", "D2", "E2", "G2", "H2", "I2", "J2", "L2", "M2", "N2", "O2"]) {
+for (const address of ["A2", "B2", "C2", "D2", "E2", "G2", "H2", "I2", "J2", "L2", "M2", "N2", "O2", "P2"]) {
   assert.equal(inventorySheet[address].s.fill.fgColor.rgb, "FFFFFF", `${address} must have no warehouse/manager fill`);
 }
 assert.equal(inventorySheet["B3"].s.font.color.rgb, "B91C1C");
@@ -694,7 +845,8 @@ const inventoryHeaderRow = Array.from(
   XLSX.utils.sheet_to_json(inventorySheet, { header: 1, raw: true, range: 0 })[0],
 );
 assert.equal(inventoryHeaderRow.includes("2전송"), true, "all nonblank source inventory headers must be retained");
-assert.equal(inventoryHeaderRow.at(-1), "구매", "purchase must remain the final dynamic inventory column");
+assert.equal(inventoryHeaderRow.at(-2), "구매", "purchase must follow all dynamic source inventory columns");
+assert.equal(inventoryHeaderRow.at(-1), "거래처(단가)", "supplier pairs must remain the rightmost inventory column");
 for (let row = 1; row <= 6; row += 1) {
   for (let column = 0; column < inventoryHeaderRow.length; column += 1) {
     const cell = inventorySheet[XLSX.utils.encode_cell({ r: row - 1, c: column })];
@@ -742,12 +894,12 @@ const largeWorkspace = engine.analyze(largeOrders, largeInventory, {
   createdAt: "2026-08-03T00:00:00.000Z",
 });
 const largeWorkbook = workbookTools.buildWorkbook(largeWorkspace, XLSX);
-assert.equal(largeWorkbook.Sheets["미출고현황"]["!printArea"], "A1:L181");
+assert.equal(largeWorkbook.Sheets["미출고현황"]["!printArea"], "A1:R181");
 assert.equal(largeWorkbook.Sheets["미출고현황"]["!pageSetup"].fitToWidth, 1);
 assert.equal(largeWorkbook.Sheets["미출고현황"]["!pageSetup"].fitToHeight, 0);
 assert.ok(
   largeWorkbook.Workbook.Names.some(
-    (name) => name.Name === "_xlnm.Print_Area" && name.Ref === "'미출고현황'!$A$1:$L$181",
+    (name) => name.Name === "_xlnm.Print_Area" && name.Ref === "'미출고현황'!$A$1:$R$181",
   ),
 );
 
@@ -797,7 +949,7 @@ assert.match(
   /id="settingsModal" role="dialog" aria-modal="true"[\s\S]*?aria-labelledby="settingsModalTitle" aria-describedby="settingsModalDescription" aria-hidden="true"/,
   "the settings modal must expose an accessible title, description, and modal state",
 );
-assert.match(html, /Shipping Management v3\.1\.0/, "Shipping UI version must be 3.1.0");
+assert.match(html, /Shipping Management v3\.2\.0/, "Shipping UI version must be 3.2.0");
 
 for (const id of [
   "cloudUrlInput",
@@ -863,17 +1015,16 @@ const previewDefinitionsSource = html.slice(
   html.indexOf("function getPreviewDefinitions"),
   html.indexOf("function statusTone"),
 );
-const purchasePreviewSource = previewDefinitionsSource.match(/purchases:\s*\{([\s\S]*?)\n\s*\},\n\s*allocations:/)?.[1] || "";
-const allocationPreviewSource = previewDefinitionsSource.match(/allocations:\s*\{([\s\S]*?)\n\s*\},\n\s*inventory:/)?.[1] || "";
-const inventoryPreviewSource = previewDefinitionsSource.match(/inventory:\s*\{([\s\S]*?)\n\s*\},\n\s*validation:/)?.[1] || "";
-assert.match(purchasePreviewSource, /purchaseEditable:\s*true/, "발주관리 purchase must be editable");
+const inventoryPreviewSource = previewDefinitionsSource.match(/inventory:\s*\{([\s\S]*?)\n\s*\},\n\s*allocations:/)?.[1] || "";
+const allocationPreviewSource = previewDefinitionsSource.match(/allocations:\s*\{([\s\S]*?)\n\s*\},\n\s*validation:/)?.[1] || "";
+assert.doesNotMatch(previewDefinitionsSource, /purchases:\s*\{/, "발주관리 screen tab must be removed");
+assert.ok(previewDefinitionsSource.indexOf("inventory:") < previewDefinitionsSource.indexOf("allocations:"), "inventory must be the first screen tab");
 assert.match(allocationPreviewSource, /purchaseEditable:\s*false/, "미출고현황 purchase must be readonly");
 assert.match(inventoryPreviewSource, /purchaseEditable:\s*true/, "창고별 재고 purchase must be editable");
-assert.match(previewDefinitionsSource, /const allocationHeaders = \[[^\n]*"거래처\(단가\)"/, "미출고현황 web must label the pair display column");
-assert.match(allocationPreviewSource, /row\.supplierDisplay/, "미출고현황 web must use each allocation pair display");
-assert.match(previewDefinitionsSource, /typeof row\.purchaseNeed === "number" && row\.purchaseNeed > 0/, "발주관리 must show purchaseNeed > 0 only");
-assert.doesNotMatch(purchasePreviewSource, /"담당자"|"그룹"/, "발주관리 must hide manager and group columns");
+assert.match(previewDefinitionsSource, /const allocationHeaders = \[[\s\S]*?"거래처", "단가"/, "미출고현황 web must split customer and price");
+assert.match(allocationPreviewSource, /row\.customer[\s\S]*?row\.unitPrice/, "미출고현황 web must preserve original customer and numeric price");
 assert.match(previewDefinitionsSource, /engine\.getInventoryViewRows/, "창고별 재고 must derive the complete inventory view");
+assert.match(previewDefinitionsSource, /engine\.getAllocationInventoryView/, "미출고현황 must derive all dynamic warehouse values");
 assert.match(
   html,
   /const editablePurchase = editable && preview\.purchaseEditable === true && preview\.purchase === index;/,
@@ -881,9 +1032,20 @@ assert.match(
 );
 assert.match(
   html,
-  /!\["purchases", "inventory"\]\.includes\(state\.activePreview\)[\s\S]*?engine\.setPurchaseValue\(state\.workspace, input\.dataset\.purchaseCode, input\.value\);/,
-  "purchase edit events must stay on 발주관리/창고별 재고 and update by product code",
+  /function commitGridInput\(input\)[\s\S]*?engine\.setPurchaseValue\(state\.workspace, input\.dataset\.purchaseCode, input\.value\);/,
+  "purchase edits must stay on the inventory grid and update the internal purchase contract",
 );
+assert.match(html, /addEventListener\("change"[\s\S]*?state\.activePreview !== "inventory"/, "purchase and inventory edit events must be scoped to the inventory grid");
+assert.match(html, /engine\.setInventoryOverride\([\s\S]*?input\.dataset\.inventoryColumn/, "inventory edits must use validated optional overrides");
+assert.match(html, /event\.key === "Tab"[\s\S]*?focusAdjacentNegativeInventory/, "table Tab must navigate negative review rows");
+assert.match(html, /event\.key === "Enter"[\s\S]*?event\.shiftKey \? -1 : 1/, "Enter and Shift+Enter must move vertically");
+assert.match(html, /ArrowUp:[\s\S]*?ArrowDown:[\s\S]*?ArrowLeft:[\s\S]*?ArrowRight:/, "arrow keys must move across inventory cells");
+assert.match(html, /event\.key === "Escape"[\s\S]*?input\.dataset\.originalValue/, "Escape must restore the uncommitted cell value");
+assert.match(html, /scrollIntoView\(\{ block: "nearest", inline: "nearest" \}\)/, "grid focus movement must auto-scroll");
+assert.match(html, /input\.select\(\)/, "negative review navigation must select the purchase value");
+assert.match(html, /inventoryNegativeCount/, "the screen must show the negative inventory count");
+assert.match(html, /workspace: state\.workspace/, "Cloud revisions must include the additive override workspace");
+assert.match(html, /workspace: state\.workspace[\s\S]*?ui: \{ activePreview: state\.activePreview \}/, "local recovery must include the additive override workspace");
 for (const id of ["tableSearchInput", "specFilterGroup", "printButton", "printArea", "systemBasisDate", "systemFileState", "systemMatchState", "systemViewState", "columnWidthSaveButton", "columnWidthResetButton"]) {
   assert.equal(html.split(`id="${id}"`).length - 1, 1, `${id} must exist exactly once`);
 }
@@ -942,7 +1104,7 @@ const widthLoaderContext = vm.createContext({
   TABLE_WIDTHS_SCHEMA: "shipping-table-widths/v1",
   TABLE_WIDTH_MIN: 48,
   TABLE_WIDTH_MAX: 720,
-  TABLE_WIDTH_TABS: new Set(["purchases", "allocations", "inventory", "validation"]),
+  TABLE_WIDTH_TABS: new Set(["inventory", "allocations", "validation"]),
   localStorage: { getItem: () => storedWidthPayload },
 });
 vm.runInContext(`${widthLoaderSource}; globalThis.loadedWidths = loadColumnWidthSettings();`, widthLoaderContext);
@@ -1017,7 +1179,8 @@ if (fs.existsSync(referenceInventoryPath)) {
   assert.equal(engine.getPurchaseUploadSelection(inventoryReferenceWorkspace).included.some((row) => row.productCode === inventoryOnlyCode), false);
   const actualInventorySheet = workbookTools.buildWorkbook(inventoryReferenceWorkspace, XLSX).Sheets["창고별 재고"];
   const actualPurchaseColumn = XLSX.utils.encode_col(actualInventoryView.headers.length);
-  assert.equal(actualInventorySheet["!ref"], `A1:${actualPurchaseColumn}${referenceInventoryOnly.rowCount + 1}`);
+  const actualSupplierColumn = XLSX.utils.encode_col(actualInventoryView.headers.length + 1);
+  assert.equal(actualInventorySheet["!ref"], `A1:${actualSupplierColumn}${referenceInventoryOnly.rowCount + 1}`);
   assert.equal(actualInventorySheet[`${actualPurchaseColumn}${referenceInventoryOnly.rowCount + 1}`].v, "실재고입력검증");
 }
 if (fs.existsSync(referenceOrdersPath) && fs.existsSync(referenceInventoryPath)) {
@@ -1127,13 +1290,13 @@ try {
   );
   assert.deepEqual(
     Array.from(
-      XLSX.utils.sheet_to_json(reopened.Sheets["미출고현황"], {
-        header: 1,
-        raw: true,
-        range: "A1:L1",
-      })[0],
+      XLSX.utils.sheet_to_json(reopened.Sheets["미출고현황"], { header: 1, raw: true, range: 0 })[0],
     ),
-    ["상품코드", "품목명", "규격", "주문수량", "전재고", "서울잔량", "구매수량", "구매", "거래처(단가)", "적요", "적요1", "담당자"],
+    [
+      "상품코드", "품목명", "규격",
+      ...engine.getAllocationInventoryView(outputWorkspace).columns.map((column) => column.header),
+      "주문수량", "전재고", "서울잔량", "구매수량", "구매", "거래처", "단가", "적요", "적요1", "담당자",
+    ],
   );
   const reopenedPrintNames = (reopened.Workbook?.Names || []).filter(
     (name) => name.Sheet === 1 && /^_xlnm\.Print_/.test(name.Name),
@@ -1153,18 +1316,18 @@ try {
     cellText: true,
   });
   assert.deepEqual(
-    Array.from(XLSX.utils.sheet_to_json(reopenedDynamic.Sheets["창고별 재고"], { header: 1, raw: true, range: "A1:J1" })[0]),
-    [...dynamicView.headers, "구매"],
-  );
-  assert.deepEqual(
-    [reopenedDynamic.Sheets["창고별 재고"].G2.t, reopenedDynamic.Sheets["창고별 재고"].G2.v],
-    ["n", -3],
+    Array.from(XLSX.utils.sheet_to_json(reopenedDynamic.Sheets["창고별 재고"], { header: 1, raw: true, range: "A1:L1" })[0]),
+    [...dynamicView.headers, "구매", "거래처(단가)"],
   );
   assert.deepEqual(
     [reopenedDynamic.Sheets["창고별 재고"].H2.t, reopenedDynamic.Sheets["창고별 재고"].H2.v],
+    ["n", -130],
+  );
+  assert.deepEqual(
+    [reopenedDynamic.Sheets["창고별 재고"].I2.t, reopenedDynamic.Sheets["창고별 재고"].I2.v],
     ["s", "00123"],
   );
-  assert.ok(reopenedDynamic.Sheets["창고별 재고"].G2.s, "negative dynamic inventory cell style must reopen");
+  assert.ok(reopenedDynamic.Sheets["창고별 재고"].H2.s, "negative dynamic inventory cell style must reopen");
   assert.ok(reopenedDynamic.Sheets["창고별 재고"].A2.s, "EA row font style must reopen");
   const reopenedPurchase = XLSX.read(fs.readFileSync(purchaseOutputPath), {
     type: "buffer",
