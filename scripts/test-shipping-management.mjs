@@ -1058,6 +1058,56 @@ assert.ok(
 );
 
 const html = fs.readFileSync(path.join(ROOT, "orders.html"), "utf8");
+const styleBlocks = [...html.matchAll(/<style(?:\s[^>]*)?>([\s\S]*?)<\/style>/gi)].map((match) => match[1]);
+assert.ok(styleBlocks.length > 0, "orders.html must contain a style block");
+
+function assertBalancedCssBraces(css) {
+  let depth = 0;
+  let quote = "";
+  let escaped = false;
+  let inComment = false;
+
+  for (let index = 0; index < css.length; index += 1) {
+    const character = css[index];
+    const nextCharacter = css[index + 1];
+    if (inComment) {
+      if (character === "*" && nextCharacter === "/") {
+        inComment = false;
+        index += 1;
+      }
+      continue;
+    }
+    if (quote) {
+      if (escaped) escaped = false;
+      else if (character === "\\") escaped = true;
+      else if (character === quote) quote = "";
+      continue;
+    }
+    if (character === "/" && nextCharacter === "*") {
+      inComment = true;
+      index += 1;
+    } else if (character === '"' || character === "'") {
+      quote = character;
+    } else if (character === "{") {
+      depth += 1;
+    } else if (character === "}") {
+      depth -= 1;
+      assert.ok(depth >= 0, "orders.html CSS must not contain an unmatched closing brace");
+    }
+  }
+
+  assert.equal(inComment, false, "orders.html CSS comment must be closed");
+  assert.equal(quote, "", "orders.html CSS string must be closed");
+  assert.equal(depth, 0, "orders.html CSS braces must be balanced");
+}
+
+const combinedCss = styleBlocks.join("\n");
+styleBlocks.forEach(assertBalancedCssBraces);
+assert.match(
+  combinedCss,
+  /(?:^|})\s*th\s*\{[^{}]*\boverflow\s*:\s*hidden\s*;/m,
+  "the standalone th rule must contain overflow: hidden",
+);
 for (const requiredText of [
   "Shipping Management",
   "주문현황 Excel",
