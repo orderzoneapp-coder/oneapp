@@ -7,13 +7,12 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  const WORKBOOK_VERSION = "2.0.0";
+  const WORKBOOK_VERSION = "3.0.0";
   const REQUIRED_SHEETS = Object.freeze([
     "발주관리",
     "미출고현황",
-    "상품별요약",
-    "검증결과",
     "창고별 재고",
+    "검증결과",
     "주문원본",
   ]);
   const PURCHASE_UPLOAD_SCHEMA_VERSION = "shipping-purchase-upload/v1";
@@ -79,17 +78,6 @@
     return result;
   }
 
-  function addCachedFormula(sheet, XLSX, rowIndex, columnIndex, formula, value, type) {
-    const address = XLSX.utils.encode_cell({ r: rowIndex, c: columnIndex });
-    const existingStyle = sheet[address]?.s;
-    sheet[address] = {
-      t: type || (typeof value === "number" ? "n" : "s"),
-      v: safeValue(value),
-      f: formula,
-      ...(existingStyle ? { s: existingStyle } : {}),
-    };
-  }
-
   function applyCellStyle(cell, style) {
     if (!cell) return;
     cell.s = style;
@@ -110,23 +98,8 @@
     return value === undefined || value === null || String(value).trim() === "";
   }
 
-  function displayInventoryValue(value) {
-    if (value === 0 || (typeof value === "string" && value.trim() === "0")) return "";
-    return safeValue(value);
-  }
-
-  function allocationStatusLabel(status) {
-    const labels = {
-      "추가 구매 필요": "구매",
-      "부분출고·추가구매": "추가",
-      "서울 1차 구매분 출고": "서울",
-      "전재고 출고": "재고",
-    };
-    return labels[status] || safeValue(status);
-  }
-
   function managerFill(manager) {
-    const palette = ["FCE7D6", "DDEBF7", "E2F0D9", "EDE9FE", "FEF3C7", "FCE7F3", "CCFBF1"];
+    const palette = ["FFF7ED", "EFF6FF", "F0FDF4", "FAF5FF", "FFFBEB", "FDF2F8", "F0FDFA"];
     const text = String(manager || "");
     let hash = 0;
     for (let index = 0; index < text.length; index += 1) {
@@ -135,25 +108,28 @@
     return palette[hash % palette.length];
   }
 
+  function exactUnitWarning(specification) {
+    const value = String(specification ?? "").trim();
+    return value === "EA" || value === "소분";
+  }
+
+  function dominantManager(rows) {
+    const productCodesByManager = new Map();
+    (rows || []).forEach((row) => {
+      const manager = String(row?.manager || "").trim();
+      const productCode = String(row?.productCode || "").trim();
+      if (!manager || !productCode) return;
+      if (!productCodesByManager.has(manager)) productCodesByManager.set(manager, new Set());
+      productCodesByManager.get(manager).add(productCode);
+    });
+    return [...productCodesByManager.entries()]
+      .sort((left, right) => right[1].size - left[1].size || (left[0] < right[0] ? -1 : left[0] > right[0] ? 1 : 0))[0]?.[0] || "";
+  }
+
   function numberFormatForValue(value, maxDecimals = 9) {
     if (typeof value !== "number" || !Number.isFinite(value) || Number.isInteger(value)) return "#,##0";
     const decimalText = Math.abs(value).toFixed(maxDecimals).replace(/0+$/, "").split(".")[1] || "";
     return decimalText ? `#,##0.${"0".repeat(decimalText.length)}` : "#,##0";
-  }
-
-  function rowManagerFill(row, strong) {
-    const color = strong ? row?.managerColors?.strong : row?.managerColors?.base;
-    return color || managerFill(row?.manager);
-  }
-
-  function allocationStatusStyle(status) {
-    if (status === "구매" || status === "재고정보 없음") {
-      return { fill: COLORS.redSoft, font: COLORS.red };
-    }
-    if (status === "추가") return { fill: COLORS.orangeSoft, font: COLORS.orange };
-    if (status === "서울") return { fill: COLORS.blueSoft, font: "1D4ED8" };
-    if (status === "재고") return { fill: COLORS.greenSoft, font: "15803D" };
-    return { fill: COLORS.orangeSoft, font: COLORS.orange };
   }
 
   function buildTableSheet(XLSX, config) {
@@ -241,7 +217,10 @@
         if (!cell) continue;
         const style = {
           fill: { fgColor: { rgb: rowStyle.fill || alternateFill } },
-          font: { ...BASE_FONT },
+          font: {
+            ...BASE_FONT,
+            ...(rowStyle.fontColor ? { color: { rgb: rowStyle.fontColor } } : {}),
+          },
           alignment: {
             vertical: "center",
             horizontal: numericColumns.includes(column) || priceColumns.includes(column)
@@ -302,41 +281,39 @@
       "상품코드",
       "품목명",
       "규격",
-      "단가",
-      "수량",
-      "재고",
-      "서울",
-      "전송",
-      "적요",
-      "거래처(단가)",
-      "그룹",
+      "주문수량",
+      "전재고",
+      "서울잔량",
+      "구매수량",
       "구매",
-      "출고",
+      "거래처(단가)",
+      "적요",
+      "적요1",
+      "담당자",
     ];
     const rows = workspace.allocations.map((row) => [
       row.productCode,
       row.productName,
       row.specification,
-      row.unitPrice ?? "",
       row.quantity,
-      row.inventoryMatched ? displayInventoryValue(row.wholeStockRaw) : "",
-      row.inventoryMatched ? displayInventoryValue(row.seoulFirstPurchaseRaw) : "",
-      row.inventoryMatched ? displayInventoryValue(row.firstTransferRaw) : "",
-      row.note,
-      row.supplierDisplay,
-      row.group,
+      row.inventoryMatched ? row.wholeStockRaw : "",
+      row.inventoryMatched ? row.seoulFirstPurchaseRemaining : "",
+      row.inventoryMatched ? row.purchaseNeed : "",
       row.purchase,
-      allocationStatusLabel(row.status),
+      row.supplierDisplay,
+      row.note,
+      row.note1,
+      row.manager,
     ]);
+    const whiteManager = dominantManager(workspace.allocations);
     const sheet = XLSX.utils.aoa_to_sheet([headers, ...rows]);
     const lastRow = Math.max(1, rows.length + 1);
     sheet["!cols"] = [
-      { wch: 15 }, { wch: 31 }, { wch: 13 }, { wch: 11 }, { wch: 11 }, { wch: 12 },
-      { wch: 12 }, { wch: 12 }, { wch: 24 }, { wch: 22 }, { wch: 14 }, { wch: 16 },
-      { wch: 12 },
+      { wch: 15 }, { wch: 31 }, { wch: 13 }, { wch: 11 }, { wch: 12 }, { wch: 12 },
+      { wch: 12 }, { wch: 16 }, { wch: 28 }, { wch: 24 }, { wch: 24 }, { wch: 14 },
     ];
     sheet["!rows"] = [{ hpt: 27 }];
-    sheet["!autofilter"] = { ref: `A1:M${lastRow}` };
+    sheet["!autofilter"] = { ref: `A1:L${lastRow}` };
     sheet["!freeze"] = { xSplit: 0, ySplit: 1 };
     sheet["!views"] = [{ showGridLines: false }];
     sheet["!margins"] = {
@@ -354,7 +331,7 @@
       fitToWidth: 1,
       fitToHeight: 0,
     };
-    sheet["!printArea"] = `A1:M${lastRow}`;
+    sheet["!printArea"] = `A1:L${lastRow}`;
     sheet["!printTitles"] = "$1:$1";
 
     for (let column = 0; column < headers.length; column += 1) {
@@ -369,30 +346,27 @@
     rows.forEach((row, rowIndex) => {
       const sheetRow = rowIndex + 1;
       const sourceRow = workspace.allocations[rowIndex];
-      const rowFill = rowManagerFill(
-        sourceRow,
-        typeof sourceRow?.purchaseNeed === "number" && sourceRow.purchaseNeed > 0,
-      );
+      const rowManager = String(sourceRow.manager || "").trim();
+      const rowFill = !rowManager || rowManager === whiteManager
+        ? COLORS.white
+        : managerFill(rowManager);
+      const warningUnit = exactUnitWarning(sourceRow.specification);
       row.forEach((value, column) => {
         const cell = ensureCell(sheet, XLSX, sheetRow, column);
         const style = {
           fill: { fgColor: { rgb: rowFill } },
-          font: { ...BASE_FONT },
+          font: {
+            ...BASE_FONT,
+            ...(warningUnit ? { color: { rgb: COLORS.red } } : {}),
+          },
           alignment: {
             vertical: "center",
-            horizontal: column >= 3 && column <= 7 ? "right" : "left",
+            horizontal: column >= 3 && column <= 6 ? "right" : "left",
             wrapText: false,
           },
           border: tableBorder(),
         };
-        if (column >= 3 && column <= 7) style.numFmt = numberFormatForValue(cell.v);
-        if (column >= 5 && column <= 7 && !isBlank(value)) {
-          style.fill = { fgColor: { rgb: COLORS.greenSoft } };
-        }
-        if (column === 12) {
-          const statusStyle = allocationStatusStyle(String(value || ""));
-          style.font = { ...BASE_FONT, color: { rgb: statusStyle.font }, bold: true };
-        }
+        if (column >= 3 && column <= 6) style.numFmt = numberFormatForValue(cell.v);
         if (typeof cell.v === "number" && (!Number.isFinite(cell.v) || cell.v < 0)) {
           style.fill = { fgColor: { rgb: COLORS.redSoft } };
           style.font = { ...BASE_FONT, color: { rgb: COLORS.red }, bold: true };
@@ -409,165 +383,53 @@
     return sheet;
   }
 
-  function buildProductSummarySheet(workspace, XLSX) {
-    const headers = [
-      "상품코드",
-      "품목명",
-      "규격",
-      "전체 주문수량",
-      "전재고 원값",
-      "서울 1차 구매분",
-      "4전송 원값",
-      "서울 1차 구매잔량",
-      "전재고 배정",
-      "서울 1차 구매분 배정",
-      "추가 구매 필요",
-      "구매",
-      "출고판정",
-      "주문건수",
-      "거래처(단가)",
-      "적요",
-      "적요1",
-      "배송그룹",
-      "배정 검증",
-    ];
-    const rows = workspace.productSummaries.map((row) => [
-      row.productCode,
-      row.productName,
-      row.specification,
-      row.totalOrderQuantity,
-      row.inventoryMatched ? row.wholeStockRaw : "",
-      row.inventoryMatched ? row.seoulFirstPurchaseRaw : "",
-      row.inventoryMatched ? row.firstTransferRaw : "",
-      row.inventoryMatched ? row.seoulFirstPurchaseRemaining : "",
-      row.wholeAllocation,
-      row.seoulAllocation,
-      row.inventoryMatched ? row.purchaseNeed : "",
-      row.purchase,
-      row.status,
-      row.orderCount,
-      row.suppliers,
-      row.notes,
-      row.notes1,
-      row.groups,
-      row.inventoryMatched
-        ? Math.abs(row.reconciliationDifference || 0) <= 1e-9
-          ? "정상"
-          : "오류"
-        : "확인 필요",
-    ]);
-
-    return buildTableSheet(XLSX, {
-      title: "상품별요약",
-      subtitle:
-        "상품코드별 주문·재고·배정을 한 번만 집계합니다. 서울 1차 구매잔량은 MAX(0, 3서울 + 4전송)이며 상품명은 표시용입니다.",
-      headers,
-      rows,
-      widths: [15, 31, 13, 14, 13, 15, 12, 16, 13, 17, 14, 16, 20, 10, 32, 25, 25, 20, 12],
-      numericColumns: [3, 4, 5, 6, 7, 8, 9, 10, 13],
-      textColumns: [0],
-      statusColumn: 12,
-      inventoryColumns: [4, 5, 6, 7],
-      rowStyleResolver(row, index) {
-        const source = workspace.productSummaries[index];
-        return {
-          fill: rowManagerFill(
-            source,
-            typeof source?.purchaseNeed === "number" && source.purchaseNeed > 0,
-          ),
-        };
-      },
-      formulaWriter(sheet, startRow, sourceRows) {
-        sourceRows.forEach((row, index) => {
-          const zeroBasedRow = startRow + index;
-          const excelRow = zeroBasedRow + 1;
-          const matched = workspace.productSummaries[index].inventoryMatched;
-          if (matched) {
-            addCachedFormula(
-              sheet,
-              XLSX,
-              zeroBasedRow,
-              7,
-              `MAX(0,F${excelRow}+G${excelRow})`,
-              row[7],
-              "n",
-            );
-            addCachedFormula(
-              sheet,
-              XLSX,
-              zeroBasedRow,
-              10,
-              `MAX(0,D${excelRow}-I${excelRow}-J${excelRow})`,
-              row[10],
-              "n",
-            );
-          }
-          addCachedFormula(
-            sheet,
-            XLSX,
-            zeroBasedRow,
-            18,
-            matched
-              ? `IF(ABS(D${excelRow}-I${excelRow}-J${excelRow}-K${excelRow})<0.000000001,"정상","오류")`
-              : '"확인 필요"',
-            row[18],
-            "s",
-          );
-        });
-      },
-    });
-  }
-
   function buildPurchaseManagementSheet(workspace, XLSX) {
     const headers = [
       "상품코드",
       "품목명",
       "규격",
-      "전체 주문수량",
-      "전재고 원값",
-      "서울 1차 구매잔량",
-      "추가 구매 필요",
+      "전체주문",
+      "전재고",
+      "서울잔량",
+      "구매수량",
       "구매",
-      "담당",
-      "주문건수",
       "거래처(단가)",
       "적요",
       "적요1",
-      "배송그룹",
     ];
-    const rows = workspace.purchaseManagement.map((row) => [
+    const sourceRows = workspace.purchaseManagement.filter(
+      (row) => row.rowType === "main" && row.inventoryShadow !== true &&
+        typeof row.purchaseNeed === "number" && row.purchaseNeed > 0,
+    );
+    const rows = sourceRows.map((row) => [
       row.productCode,
-      row.rowType === "reference" ? `[참고] ${row.productName}` : row.productName,
+      row.productName,
       row.specification,
-      row.rowType === "reference" ? "" : row.totalOrderQuantity,
+      row.totalOrderQuantity,
       row.inventoryMatched ? row.wholeStockRaw : "",
       row.inventoryMatched ? row.seoulFirstPurchaseRemaining : "",
-      row.rowType === "reference" ? "" : row.inventoryMatched ? row.purchaseNeed : "",
-      row.rowType === "reference" ? "" : row.purchase,
-      row.manager,
-      row.rowType === "reference" ? "" : row.orderCount,
+      row.purchaseNeed,
+      row.purchase,
       row.suppliers,
       row.notes,
       row.notes1,
-      row.groups,
     ]);
 
     return buildTableSheet(XLSX, {
       title: "발주관리",
       subtitle:
-        "추가 구매 필요·재고정보 없음·적요 보유 상품을 상품코드별 한 행으로 통합합니다. 구매값이 정확히 대체 또는 소분인 행만 구매업로드에서 제외됩니다.",
+        "구매수량이 0보다 큰 상품만 상품코드별 한 행으로 표시합니다. 구매값이 정확히 대체 또는 소분인 행만 구매업로드에서 제외됩니다.",
       headers,
       rows,
-      widths: [15, 34, 13, 14, 13, 16, 14, 18, 14, 10, 34, 30, 30, 20],
+      widths: [15, 34, 13, 14, 13, 16, 14, 18, 34, 30, 30],
       headerFill: COLORS.orange,
-      numericColumns: [3, 4, 5, 6, 9],
+      numericColumns: [3, 4, 5, 6],
       textColumns: [0],
-      inventoryColumns: [4, 5],
+      inventoryColumns: [],
       rowStyleResolver(row, index) {
-        const source = workspace.purchaseManagement[index];
-        if (source.rowType === "reference") return { fill: COLORS.graySoft, suppressInventory: true };
-        const purchaseNeeded = typeof source.purchaseNeed === "number" && source.purchaseNeed > 0;
-        return { fill: rowManagerFill(source, purchaseNeeded) };
+        return exactUnitWarning(sourceRows[index]?.specification)
+          ? { fill: COLORS.white, fontColor: COLORS.red }
+          : { fill: COLORS.white };
       },
     });
   }
@@ -593,29 +455,6 @@
       statusColumn: 3,
     });
 
-    const allocationStart = 2;
-    const allocationEnd = Math.max(allocationStart, workspace.allocations.length + 1);
-    const summaryStart = 5;
-    const summaryEnd = Math.max(summaryStart, workspace.productSummaries.length + 4);
-    const formulaByItem = {
-      "상품별 주문수량 대사 차이": {
-        formula: `SUM('미출고현황'!$E$${allocationStart}:$E$${allocationEnd})-SUM('상품별요약'!$D$${summaryStart}:$D$${summaryEnd})`,
-      },
-      "매칭 주문 배정 대사 차이": {
-        formula: `SUMIFS('상품별요약'!$D$${summaryStart}:$D$${summaryEnd},'상품별요약'!$K$${summaryStart}:$K$${summaryEnd},"<>")-SUM('상품별요약'!$I$${summaryStart}:$K$${summaryEnd})`,
-      },
-      "음수 추가 구매 필요": {
-        formula: `COUNTIF('상품별요약'!$K$${summaryStart}:$K$${summaryEnd},"<0")`,
-      },
-      "재고정보 없음": {
-        formula: `COUNTBLANK('상품별요약'!$K$${summaryStart}:$K$${summaryEnd})`,
-      },
-    };
-    workspace.validationResults.forEach((row, index) => {
-      const formulaConfig = formulaByItem[row.item];
-      if (!formulaConfig) return;
-      addCachedFormula(sheet, XLSX, 4 + index, 1, formulaConfig.formula, row.result, "n");
-    });
     return sheet;
   }
 
@@ -736,46 +575,35 @@
       const normalized = normalizedHeader(header);
       if (normalized && !indexByHeader.has(normalized)) indexByHeader.set(normalized, index);
     });
-    const sourceCodeIndex = indexByHeader.get(normalizedHeader("품목코드"));
     const purchaseByCode = new Map(
-      (workspace.productSummaries || []).map((row) => [String(row.productCode), String(row.purchase || "")]),
+      (workspace.purchaseManagement || [])
+        .filter((row) => row.rowType === "main")
+        .map((row) => [String(row.productCode), String(row.purchase || "")]),
     );
-
-    const layout = [];
-    const usedIndexes = new Set();
-    const addSource = (header) => {
-      const index = indexByHeader.get(normalizedHeader(header));
-      if (index === undefined || usedIndexes.has(index)) return;
-      usedIndexes.add(index);
-      layout.push({ header: sourceHeaders[index], sourceIndex: index });
-    };
-    addSource("품목코드");
-    addSource("품목명");
-    addSource("규격");
+    const inventoryHeaders = [
+      "품목코드", "품목명", "규격", "수량", "1창고", "3서울", "4전송", "7진영", "기본", "전송", "창고",
+    ];
+    const layout = inventoryHeaders.map((header) => ({
+      header,
+      sourceIndex: indexByHeader.get(normalizedHeader(header)),
+    }));
     layout.push({ header: "구매", sourceIndex: null, purchase: true });
-    addSource("수량");
-    ["1창고", "3서울", "4전송", "7진영"].forEach(addSource);
-    sourceHeaders.forEach((header, index) => {
-      if (usedIndexes.has(index) || normalizedHeader(header) === "구매") return;
-      usedIndexes.add(index);
-      layout.push({ header, sourceIndex: index });
-    });
 
-    const dataRows = matrix.slice(headerRowIndex + 1).map((sourceRow) =>
-      layout.map((column) => {
-        if (!column.purchase) return safeValue(sourceRow[column.sourceIndex]);
-        const code = sourceCodeIndex === undefined ? "" : String(sourceRow[sourceCodeIndex] ?? "").trim();
+    const dataRows = (workspace.inventory || []).map((inventory) => {
+      const sourceRow = matrix[Math.max(headerRowIndex + 1, Number(inventory.sourceRowNumber || 0) - 1)] || [];
+      return layout.map((column) => {
+        if (!column.purchase) {
+          if (normalizedHeader(column.header) === normalizedHeader("품목코드")) return inventory.productCode;
+          return column.sourceIndex === undefined ? "" : safeValue(sourceRow[column.sourceIndex]);
+        }
+        const code = String(inventory.productCode || "");
         return purchaseByCode.get(code) || "";
-      }),
-    );
+      });
+    });
     const headers = layout.map((column) => safeValue(column.header));
     const sheet = XLSX.utils.aoa_to_sheet([headers, ...dataRows]);
     const codeColumn = headers.findIndex((header) => normalizedHeader(header) === "품목코드");
     const specificationColumn = headers.findIndex((header) => normalizedHeader(header) === "규격");
-    const quantityColumn = headers.findIndex((header) => normalizedHeader(header) === "수량");
-    const warehouseColumns = headers
-      .map((header, index) => (isWarehouseQuantityHeader(header) ? index : -1))
-      .filter((index) => index >= 0);
     const lastColumn = columnName(Math.max(0, headers.length - 1));
     const lastRow = Math.max(1, dataRows.length + 1);
     sheet["!cols"] = headers.map((header) => {
@@ -802,10 +630,7 @@
 
     dataRows.forEach((row, rowIndex) => {
       const sheetRow = rowIndex + 1;
-      const specification = String(row[specificationColumn] ?? "").trim().toUpperCase();
-      const highlightText = specification === "EA" || specification === "소분";
-      const quantity = Number(row[quantityColumn]);
-      const negativeQuantity = !isBlank(row[quantityColumn]) && Number.isFinite(quantity) && quantity < 0;
+      const highlightText = exactUnitWarning(row[specificationColumn]);
       row.forEach((_, column) => {
         const cell = ensureCell(sheet, XLSX, sheetRow, column);
         const style = {
@@ -822,10 +647,7 @@
           border: tableBorder(),
           ...(typeof cell.v === "number" ? { numFmt: numberFormatForValue(cell.v) } : {}),
         };
-        if (warehouseColumns.includes(column)) {
-          style.fill = { fgColor: { rgb: warehouseFill(headers[column]) } };
-        }
-        if (negativeQuantity && column >= codeColumn && column <= quantityColumn) {
+        if (typeof cell.v === "number" && Number.isFinite(cell.v) && cell.v < 0) {
           style.fill = { fgColor: { rgb: "FFF200" } };
         }
         if (column === codeColumn && !isBlank(cell.v)) {
@@ -840,7 +662,7 @@
     return sheet;
   }
 
-  function addPrintNames(workbook, sheetName, lastRow) {
+  function addPrintNames(workbook, sheetName, lastRow, lastColumn = "L") {
     const sheetIndex = workbook.SheetNames.indexOf(sheetName);
     workbook.Workbook = workbook.Workbook || {};
     workbook.Workbook.Names = workbook.Workbook.Names || [];
@@ -848,7 +670,7 @@
       {
         Name: "_xlnm.Print_Area",
         Sheet: sheetIndex,
-        Ref: `'${sheetName}'!$A$1:$M$${lastRow}`,
+        Ref: `'${sheetName}'!$A$1:$${lastColumn}$${lastRow}`,
       },
       {
         Name: "_xlnm.Print_Titles",
@@ -1219,26 +1041,21 @@
     XLSX.utils.book_append_sheet(workbook, buildAllocationSheet(workspace, XLSX), "미출고현황");
     XLSX.utils.book_append_sheet(
       workbook,
-      buildProductSummarySheet(workspace, XLSX),
-      "상품별요약",
-    );
-    XLSX.utils.book_append_sheet(workbook, buildValidationSheet(workspace, XLSX), "검증결과");
-    XLSX.utils.book_append_sheet(
-      workbook,
       buildWarehouseInventorySheet(workspace, XLSX),
       "창고별 재고",
     );
+    XLSX.utils.book_append_sheet(workbook, buildValidationSheet(workspace, XLSX), "검증결과");
     XLSX.utils.book_append_sheet(
       workbook,
       buildSourceSheet(workspace.sourceFiles.orders, XLSX),
       "주문원본",
     );
-    addPrintNames(workbook, "미출고현황", Math.max(1, workspace.allocations.length + 1));
+    addPrintNames(workbook, "미출고현황", Math.max(1, workspace.allocations.length + 1), "L");
     return workbook;
   }
 
   function getOutputFileName(createdAt) {
-    return `미출고현황_${localDateStamp(createdAt)}.xlsx`;
+    return `Shipping_업무표_${localDateStamp(createdAt)}.xlsx`;
   }
 
   function downloadWorkbook(workspace, XLSX, fileName) {

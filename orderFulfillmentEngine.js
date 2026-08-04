@@ -7,7 +7,7 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  const ENGINE_VERSION = "2.0.0";
+  const ENGINE_VERSION = "3.0.0";
   const WORKSPACE_SCHEMA_VERSION = "shipping-workspace/v2";
   const HEADER_SCAN_LIMIT = 30;
   const MANAGER_PALETTE = Object.freeze([
@@ -636,6 +636,97 @@
     return value === "대체" || value === "소분";
   }
 
+  function createInventoryShadowRow(inventory) {
+    return {
+      rowType: "main",
+      referenceFor: "",
+      inventoryShadow: true,
+      productCode: inventory.productCode,
+      productName: inventory.productName,
+      specification: inventory.specification,
+      inventoryMatched: true,
+      matchStatus: "매칭완료",
+      wholeStockRaw: inventory.wholeStockRaw,
+      wholeStockAvailable: inventory.wholeStockAvailable,
+      seoulFirstPurchaseRaw: inventory.seoulFirstPurchaseRaw,
+      firstTransferRaw: inventory.firstTransferRaw,
+      seoulFirstPurchaseRemaining: inventory.seoulFirstPurchaseRemaining,
+      totalOrderQuantity: null,
+      wholeAllocation: null,
+      seoulAllocation: null,
+      purchaseNeed: null,
+      orderCount: null,
+      customers: "",
+      suppliers: "",
+      supplierPairs: [],
+      groups: "",
+      managers: "",
+      manager: "",
+      managerColors: { base: "FFFFFF", strong: "FFFFFF" },
+      noteValues: [],
+      note1Values: [],
+      notes: "",
+      notes1: "",
+      purchase: "",
+      status: "전체 재고",
+      reconciliationDifference: null,
+    };
+  }
+
+  function ensureInventoryPurchaseRows(workspace) {
+    if (!workspace || workspace.schemaVersion !== WORKSPACE_SCHEMA_VERSION) {
+      throw new Error("지원하지 않는 Shipping Management 작업공간입니다.");
+    }
+    if (!Array.isArray(workspace.purchaseManagement)) workspace.purchaseManagement = [];
+    const mainCodes = new Set(
+      workspace.purchaseManagement
+        .filter((row) => row?.rowType === "main")
+        .map((row) => normalizeProductCode(row.productCode))
+        .filter(Boolean),
+    );
+    (Array.isArray(workspace.inventory) ? workspace.inventory : []).forEach((inventory) => {
+      const productCode = normalizeProductCode(inventory?.productCode);
+      if (!productCode || mainCodes.has(productCode)) return;
+      workspace.purchaseManagement.push(createInventoryShadowRow({
+        ...inventory,
+        productCode,
+      }));
+      mainCodes.add(productCode);
+    });
+    return workspace;
+  }
+
+  function getInventoryViewRows(workspace) {
+    ensureInventoryPurchaseRows(workspace);
+    const source = workspace.sourceFiles?.inventory || {};
+    const matrix = Array.isArray(source.matrix) ? source.matrix : [];
+    const headerRowIndex = Math.max(0, Number(source.headerRowIndex) || 0);
+    const sourceHeaders = (matrix[headerRowIndex] || []).map(cleanText);
+    const sourceColumnMap = createColumnMap(sourceHeaders);
+    const headers = [
+      "품목코드", "품목명", "규격", "수량", "1창고", "3서울", "4전송", "7진영", "기본", "전송", "창고",
+    ];
+    const purchaseInputs = getPurchaseInputs(workspace);
+    const rows = (Array.isArray(workspace.inventory) ? workspace.inventory : []).map((inventory) => {
+      const sourceRowIndex = Math.max(headerRowIndex + 1, Number(inventory.sourceRowNumber || 0) - 1);
+      const rawValues = Array.isArray(matrix[sourceRowIndex]) ? matrix[sourceRowIndex] : [];
+      const values = headers.map((header) => {
+        const sourceIndex = sourceColumnMap[normalizeHeader(header)];
+        return sourceIndex === undefined ? null : toSerializableCell(rawValues[sourceIndex]);
+      });
+      const productCode = normalizeProductCode(inventory.productCode);
+      values[0] = productCode;
+      return {
+        productCode,
+        productName: cleanText(inventory.productName),
+        specification: cleanText(inventory.specification),
+        values,
+        purchase: String(purchaseInputs[productCode] || ""),
+      };
+    });
+    return { headers, rows };
+  }
+
   function analyze(ordersParsed, inventoryParsed, options = {}) {
     const inputValidation = validateInputs(ordersParsed, inventoryParsed);
     if (!inputValidation.canAnalyze) {
@@ -872,6 +963,17 @@
           });
       });
 
+    const purchaseMainCodes = new Set(
+      purchaseManagement
+        .filter((row) => row.rowType === "main")
+        .map((row) => row.productCode),
+    );
+    inventoryParsed.rows.forEach((inventory) => {
+      if (purchaseMainCodes.has(inventory.productCode)) return;
+      purchaseManagement.push(createInventoryShadowRow(inventory));
+      purchaseMainCodes.add(inventory.productCode);
+    });
+
     const totalOrderQuantity = roundQuantity(
       allocations.reduce((sum, row) => sum + row.quantity, 0),
     );
@@ -1068,7 +1170,9 @@
         negativePurchaseCount,
         reconciliationErrorCount,
         statusCounts,
-        purchaseManagementMainCount: purchaseManagement.filter((row) => row.rowType === "main").length,
+        purchaseManagementMainCount: purchaseManagement.filter(
+          (row) => row.rowType === "main" && row.inventoryShadow !== true,
+        ).length,
         purchaseReferenceCount: purchaseManagement.filter((row) => row.rowType === "reference").length,
       },
     };
@@ -1078,6 +1182,7 @@
     if (!workspace || workspace.schemaVersion !== WORKSPACE_SCHEMA_VERSION) {
       throw new Error("지원하지 않는 Shipping Management 작업공간입니다.");
     }
+    ensureInventoryPurchaseRows(workspace);
     const code = normalizeProductCode(productCode);
     const purchase = value === undefined || value === null ? "" : String(value);
     [workspace.allocations, workspace.productSummaries].forEach((rows) => {
@@ -1092,6 +1197,7 @@
   }
 
   function applyPurchaseInputs(workspace, inputs) {
+    ensureInventoryPurchaseRows(workspace);
     Object.entries(inputs && typeof inputs === "object" ? inputs : {}).forEach(([code, value]) => {
       setPurchaseValue(workspace, code, value);
     });
@@ -1099,6 +1205,7 @@
   }
 
   function getPurchaseInputs(workspace) {
+    ensureInventoryPurchaseRows(workspace);
     const result = {};
     (workspace?.purchaseManagement || []).forEach((row) => {
       if (row.rowType === "main") result[row.productCode] = String(row.purchase || "");
@@ -1113,6 +1220,7 @@
     const included = [];
     const excluded = [];
     (workspace.purchaseManagement || []).forEach((row) => {
+      if (row.inventoryShadow === true) return;
       if (row.rowType === "reference") {
         excluded.push({ productCode: row.productCode, reason: "카테고리 대체 참고행" });
         return;
@@ -1157,5 +1265,7 @@
     applyPurchaseInputs,
     getPurchaseInputs,
     getPurchaseUploadSelection,
+    ensureInventoryPurchaseRows,
+    getInventoryViewRows,
   });
 });
