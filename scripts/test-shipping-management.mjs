@@ -1044,6 +1044,11 @@ assert.match(html, /event\.key === "Escape"[\s\S]*?input\.dataset\.originalValue
 assert.match(html, /scrollIntoView\(\{ block: "nearest", inline: "nearest" \}\)/, "grid focus movement must auto-scroll");
 assert.match(html, /input\.select\(\)/, "negative review navigation must select the purchase value");
 assert.match(html, /inventoryNegativeCount/, "the screen must show the negative inventory count");
+assert.match(
+  html,
+  /const reviewIsVisibleNegative = pairs\.some\(\(\{ sourceRow \}\) =>[\s\S]*?sourceRow\.productCode === state\.inventoryReviewCode && Number\(sourceRow\.inventoryTotal\) < 0[\s\S]*?if \(!reviewIsVisibleNegative\) state\.inventoryReviewCode = "";/,
+  "the current inventory review highlight must clear when the row is filtered out or becomes non-negative",
+);
 assert.match(html, /workspace: state\.workspace/, "Cloud revisions must include the additive override workspace");
 assert.match(html, /workspace: state\.workspace[\s\S]*?ui: \{ activePreview: state\.activePreview \}/, "local recovery must include the additive override workspace");
 for (const id of ["tableSearchInput", "specFilterGroup", "printButton", "printArea", "systemBasisDate", "systemFileState", "systemMatchState", "systemViewState", "columnWidthSaveButton", "columnWidthResetButton"]) {

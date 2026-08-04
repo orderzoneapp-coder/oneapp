@@ -2325,6 +2325,12 @@
 
         const preview = definitions[state.activePreview];
         const pairs = filteredPreviewPairs(preview);
+        if (state.activePreview === "inventory" && state.inventoryReviewCode) {
+          const reviewIsVisibleNegative = pairs.some(({ sourceRow }) =>
+            sourceRow.productCode === state.inventoryReviewCode && Number(sourceRow.inventoryTotal) < 0,
+          );
+          if (!reviewIsVisibleNegative) state.inventoryReviewCode = "";
+        }
         elements.previewCount.textContent = `${formatNumber(pairs.length)}/${formatNumber(preview.rows.length)}행`;
         elements.previewTable.innerHTML = renderTableMarkup(preview, pairs, true);
         updateColumnWidthToolbar();
