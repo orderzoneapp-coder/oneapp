@@ -136,6 +136,7 @@ Important contracts include:
 | Active table target | `merchActiveTableTarget_v1` | MerchOps and settings |
 | Active table view | `merchActiveTableViewId_v1` | MerchOps and settings |
 | Shipping local recovery | IndexedDB `ONEAPPShippingManagementDB` / `workspaces`; `oneapp.shipping.recovery.pointer.v1` and `oneapp.shipping.recovery.meta.v1` | Shipping Management only; IndexedDB stores the analysis workspace and inputs, while localStorage stores only the recovery pointer and metadata |
+| Shipping table widths | `oneapp.shipping.table-widths.v1` | Shipping Management local UI preference only; tab-specific widths are excluded from workspace, IndexedDB recovery, cloud plans, and purchase uploads |
 
 A storage-key rename is a schema migration.
 

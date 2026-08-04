@@ -7,7 +7,7 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  const WORKBOOK_VERSION = "3.0.0";
+  const WORKBOOK_VERSION = "3.1.0";
   const REQUIRED_SHEETS = Object.freeze([
     "발주관리",
     "미출고현황",
@@ -563,38 +563,42 @@
     return palette[hash % palette.length];
   }
 
+  function getInventoryColumnDescriptors(workspaceSource) {
+    const matrix = Array.isArray(workspaceSource?.matrix) ? workspaceSource.matrix : [];
+    const headerRowIndex = Math.max(0, Number(workspaceSource?.headerRowIndex) || 0);
+    return (matrix[headerRowIndex] || []).map((value, sourceIndex) => {
+      const header = String(value ?? "").trim();
+      const normalizedLabel = normalizedHeader(header);
+      if (!normalizedLabel) return null;
+      return {
+        key: `inventory:${sourceIndex}:${encodeURIComponent(normalizedLabel)}`,
+        header,
+        sourceIndex,
+      };
+    }).filter(Boolean);
+  }
+
   function buildWarehouseInventorySheet(workspace, XLSX) {
     const workspaceSource = workspace.sourceFiles.inventory;
     const matrix = Array.isArray(workspaceSource.matrix)
       ? workspaceSource.matrix.map((row) => (Array.isArray(row) ? row.slice() : []))
       : [];
     const headerRowIndex = Math.max(0, workspaceSource.headerRowIndex || 0);
-    const sourceHeaders = (matrix[headerRowIndex] || []).map(safeValue);
-    const indexByHeader = new Map();
-    sourceHeaders.forEach((header, index) => {
-      const normalized = normalizedHeader(header);
-      if (normalized && !indexByHeader.has(normalized)) indexByHeader.set(normalized, index);
-    });
     const purchaseByCode = new Map(
       (workspace.purchaseManagement || [])
         .filter((row) => row.rowType === "main")
         .map((row) => [String(row.productCode), String(row.purchase || "")]),
     );
-    const inventoryHeaders = [
-      "품목코드", "품목명", "규격", "수량", "1창고", "3서울", "4전송", "7진영", "기본", "전송", "창고",
-    ];
-    const layout = inventoryHeaders.map((header) => ({
-      header,
-      sourceIndex: indexByHeader.get(normalizedHeader(header)),
-    }));
-    layout.push({ header: "구매", sourceIndex: null, purchase: true });
+    const layout = getInventoryColumnDescriptors(workspaceSource);
+    layout.push({ key: "shipping:inventory:purchase", header: "구매", sourceIndex: null, purchase: true });
+    const productCodeColumnIndex = Number(workspaceSource.productCodeColumnIndex);
 
     const dataRows = (workspace.inventory || []).map((inventory) => {
       const sourceRow = matrix[Math.max(headerRowIndex + 1, Number(inventory.sourceRowNumber || 0) - 1)] || [];
       return layout.map((column) => {
         if (!column.purchase) {
-          if (normalizedHeader(column.header) === normalizedHeader("품목코드")) return inventory.productCode;
-          return column.sourceIndex === undefined ? "" : safeValue(sourceRow[column.sourceIndex]);
+          if (column.sourceIndex === productCodeColumnIndex) return String(inventory.productCode || "");
+          return safeValue(sourceRow[column.sourceIndex]);
         }
         const code = String(inventory.productCode || "");
         return purchaseByCode.get(code) || "";
@@ -602,7 +606,7 @@
     });
     const headers = layout.map((column) => safeValue(column.header));
     const sheet = XLSX.utils.aoa_to_sheet([headers, ...dataRows]);
-    const codeColumn = headers.findIndex((header) => normalizedHeader(header) === "품목코드");
+    const codeColumn = layout.findIndex((column) => column.sourceIndex === productCodeColumnIndex);
     const specificationColumn = headers.findIndex((header) => normalizedHeader(header) === "규격");
     const lastColumn = columnName(Math.max(0, headers.length - 1));
     const lastRow = Math.max(1, dataRows.length + 1);
@@ -647,6 +651,11 @@
           border: tableBorder(),
           ...(typeof cell.v === "number" ? { numFmt: numberFormatForValue(cell.v) } : {}),
         };
+        if (typeof cell.v === "string") {
+          cell.t = "s";
+          cell.w = cell.v;
+          style.numFmt = "@";
+        }
         if (typeof cell.v === "number" && Number.isFinite(cell.v) && cell.v < 0) {
           style.fill = { fgColor: { rgb: "FFF200" } };
         }
