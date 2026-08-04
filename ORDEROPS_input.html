@@ -58,55 +58,26 @@
       padding: 10px 18px;
       background: #0f172a;
     }
-    .brand-area {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-    }
+    .brand-area { display: flex; align-items: center; gap: 12px; }
     .brand-mark { color: #34d399; font-size: 18px; font-weight: 900; letter-spacing: -0.02em; }
     .brand-suite { color: var(--slate-300); font-size: 13px; font-weight: 700; }
     .brand-badge {
-      padding: 2px 6px;
-      border: 1px solid rgba(94, 234, 212, 0.35);
-      border-radius: 5px;
-      color: #5eead4;
-      background: rgba(13, 148, 136, 0.12);
-      font-size: 10px;
-      font-weight: 800;
+      padding: 2px 6px; border: 1px solid rgba(94, 234, 212, 0.35); border-radius: 5px;
+      color: #5eead4; background: rgba(13, 148, 136, 0.12); font-size: 10px; font-weight: 800;
     }
     
     .system-console {
-      flex: 1;
-      display: flex;
-      align-items: center;
-      max-width: 480px;
-      min-height: 32px;
-      padding: 4px 12px;
-      border: 1px solid #475569;
-      border-radius: 5px;
-      color: #cbd5e1;
-      background: #020617;
-      font: 700 12px/1.4 ui-monospace, SFMono-Regular, monospace;
+      flex: 1; display: flex; align-items: center; max-width: 480px; min-height: 32px;
+      padding: 4px 12px; border: 1px solid #475569; border-radius: 5px; color: #cbd5e1;
+      background: #020617; font: 700 12px/1.4 ui-monospace, SFMono-Regular, monospace;
     }
     .system-console span.highlight { color: #5eead4; margin-right: 6px; }
 
-    .header-actions {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
+    .header-actions { display: flex; align-items: center; gap: 6px; }
     .btn-dark {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      height: 32px;
-      padding: 0 12px;
-      background: #1e293b;
-      color: var(--slate-200);
-      border: 1px solid #334155;
-      border-radius: 6px;
-      font-size: 12px;
-      font-weight: 800;
+      display: inline-flex; align-items: center; justify-content: center; height: 32px;
+      padding: 0 12px; background: #1e293b; color: var(--slate-200); border: 1px solid #334155;
+      border-radius: 6px; font-size: 12px; font-weight: 800;
     }
     .btn-dark:hover { background: #334155; color: var(--white); }
     .btn-dark.primary { background: #4f46e5; border-color: #4338ca; color: white; }
@@ -114,95 +85,47 @@
     .btn-icon { width: 32px; padding: 0; }
 
     /* Layout */
-    .page-shell {
-      width: min(1240px, calc(100% - 32px));
-      margin: 0 auto 40px;
-    }
+    .page-shell { width: min(1240px, calc(100% - 32px)); margin: 0 auto 40px; }
     .panel {
-      border: 1px solid var(--slate-200);
-      border-top: none;
-      border-radius: 0 0 12px 12px;
-      background: var(--white);
-      box-shadow: var(--shadow-sm);
+      border: 1px solid var(--slate-200); border-top: none; border-radius: 0 0 12px 12px;
+      background: var(--white); box-shadow: var(--shadow-sm);
     }
     
     /* Top Form Box */
-    .form-grid {
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 16px 32px;
-      padding: 20px;
-    }
-    .form-group {
-      display: grid;
-      grid-template-columns: 80px 1fr;
-      align-items: center;
-      gap: 12px;
-    }
+    .form-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px 32px; padding: 20px; }
+    .form-group { display: grid; grid-template-columns: 80px 1fr; align-items: center; gap: 12px; }
     .form-label { font-size: 13px; font-weight: 700; color: var(--slate-700); }
-    .form-control {
-      display: flex;
-      gap: 6px;
-      align-items: center;
-    }
+    .form-control { display: flex; gap: 6px; align-items: center; }
     .input-field {
-      flex: 1;
-      height: 32px;
-      padding: 0 10px;
-      border: 1px solid var(--slate-300);
-      border-radius: 6px;
-      font-size: 13px;
+      flex: 1; height: 32px; padding: 0 10px; border: 1px solid var(--slate-300);
+      border-radius: 6px; font-size: 13px;
     }
     .input-field:focus { outline: 2px solid var(--teal-600); outline-offset: -1px; border-color: transparent; }
     
     .search-input-wrap { display: flex; flex: 1; }
-    .search-input-wrap .input-field {
-      border-top-right-radius: 0;
-      border-bottom-right-radius: 0;
-      border-right: none;
-    }
+    .search-input-wrap .input-field { border-top-right-radius: 0; border-bottom-right-radius: 0; border-right: none; }
     .search-btn {
-      width: 32px;
-      height: 32px;
-      background: var(--slate-50);
-      border: 1px solid var(--slate-300);
-      border-top-right-radius: 6px;
-      border-bottom-right-radius: 6px;
-      color: var(--slate-500);
-      display: grid;
-      place-items: center;
+      width: 32px; height: 32px; background: var(--slate-50); border: 1px solid var(--slate-300);
+      border-top-right-radius: 6px; border-bottom-right-radius: 6px; color: var(--slate-500);
+      display: grid; place-items: center;
     }
     .search-btn:hover { background: var(--slate-200); color: var(--slate-900); }
 
     /* Date Inputs */
     .date-inputs { display: flex; align-items: center; gap: 4px; }
     .date-inputs select, .date-inputs input {
-      height: 32px;
-      border: 1px solid var(--slate-300);
-      border-radius: 6px;
-      padding: 0 8px;
-      font-size: 13px;
+      height: 32px; border: 1px solid var(--slate-300); border-radius: 6px; padding: 0 8px; font-size: 13px;
     }
     .date-sep { color: var(--slate-400); font-weight: bold; }
     
     /* Toolbar Middle */
     .action-toolbar {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 6px;
-      padding: 12px 20px;
-      background: var(--white);
-      border-top: 1px solid var(--slate-200);
+      display: flex; flex-wrap: wrap; gap: 6px; padding: 12px 20px;
+      background: var(--white); border-top: 1px solid var(--slate-200);
     }
     .btn-sm {
-      height: 28px;
-      padding: 0 10px;
-      border: 1px solid var(--slate-300);
-      border-radius: 4px;
-      background: var(--white);
-      color: var(--slate-700);
-      font-size: 12px;
-      font-weight: 700;
+      height: 28px; padding: 0 10px; border: 1px solid var(--slate-300); border-radius: 4px;
+      background: var(--white); color: var(--slate-700); font-size: 12px; font-weight: 700;
     }
     .btn-sm:hover { background: var(--slate-50); border-color: var(--slate-400); }
 
@@ -218,11 +141,47 @@
     .grid-input { width: 100%; height: 100%; border: none; background: transparent; padding: 0 10px; font-size: 12px; outline: none; }
     .grid-input:focus { background: #f0fdfa; }
     .grid-input.number { text-align: right; }
-    .row-num {
-      width: 24px; height: 24px; border: 1px solid var(--slate-300); border-radius: 4px;
-      display: inline-flex; align-items: center; justify-content: center;
-      font-size: 11px; color: var(--slate-500); background: var(--slate-50);
+    
+    /* 통합된 체크박스 + 일련번호 디자인 */
+    .row-check-wrap {
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      height: 100%;
+      cursor: pointer;
     }
+    .row-check-wrap input[type="checkbox"] {
+      position: absolute;
+      opacity: 0;
+      width: 100%;
+      height: 100%;
+      cursor: pointer;
+      margin: 0;
+      z-index: 1;
+    }
+    .row-num-display {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 24px;
+      height: 24px;
+      border: 1px solid var(--slate-200);
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 800;
+      color: var(--slate-400); /* 연한색 일련번호 */
+      background: var(--slate-50);
+      transition: all 0.1s ease;
+    }
+    /* 터치(체크) 되었을 때의 상태 변화 */
+    .row-check-wrap input[type="checkbox"]:checked + .row-num-display {
+      background: #eff6ff;
+      border-color: #3b82f6;
+      color: #1d4ed8; /* 체크 시 파란색으로 활성화 */
+    }
+
     tfoot td { background: #f8fafc; font-weight: 900; padding: 8px 10px; text-align: right; }
 
     /* Bottom Actions */
@@ -256,7 +215,7 @@
       <div class="header-actions">
         <button class="btn-dark primary">F7 저장/전표</button>
         <button class="btn-dark primary">F8 저장</button>
-        <button class="btn-dark btn-icon" title="환경설정(옵션)" onclick="alert('환경설정 창 호출 (추후 모달 연동)')">⚙️</button>
+        <button class="btn-dark btn-icon" title="환경설정(옵션)">⚙️</button>
         <button class="btn-dark btn-icon" title="도움말">❓</button>
       </div>
     </div>
@@ -280,7 +239,6 @@
             <div class="form-label">출하창고</div>
             <div class="form-control">
               <div class="search-input-wrap">
-                <!-- datalist 연동으로 입력 누적/자동완성 지원 -->
                 <input type="text" id="warehouseInput" class="input-field" placeholder="출하창고 (입력시 자동저장)" list="warehouseList">
                 <datalist id="warehouseList"></datalist>
                 <button class="search-btn" id="btnSaveWarehouse" title="목록에 추가">➕</button>
@@ -300,7 +258,6 @@
             <div class="form-label">거래처</div>
             <div class="form-control">
               <div class="search-input-wrap">
-                <!-- datalist 연동으로 입력 누적/자동완성 지원 -->
                 <input type="text" id="clientInput" class="input-field" placeholder="거래처 (입력시 자동저장)" list="clientList">
                 <datalist id="clientList"></datalist>
                 <button class="search-btn" id="btnSaveClient" title="목록에 추가">➕</button>
@@ -322,7 +279,7 @@
         </div>
       </div>
 
-      <!-- 툴바 영역 -->
+      <!-- 툴바 영역 (요청 버튼 삭제됨) -->
       <div class="action-toolbar">
         <button class="btn-sm">찾기(F3)</button>
         <button class="btn-sm">정렬</button>
@@ -331,19 +288,13 @@
         <button class="btn-sm">견적</button>
         <button class="btn-sm">할인</button>
         <button class="btn-sm">재고불러오기</button>
-        <button class="btn-sm">생성한 전표</button>
-        <button class="btn-sm">바코드</button>
-        <button class="btn-sm">전표 바코드</button>
-        <button class="btn-sm">검증</button>
-        <button class="btn-sm">이익계산</button>
       </div>
 
       <!-- 입력 그리드 영역 -->
       <div class="table-wrap">
         <table id="orderTable">
           <colgroup>
-            <col style="width: 40px;">
-            <col style="width: 50px;">
+            <col style="width: 46px;"> <!-- 통합된 체크박스 컬럼 -->
             <col style="width: 120px;">
             <col style="width: 200px;">
             <col style="width: 100px;">
@@ -356,8 +307,7 @@
           </colgroup>
           <thead>
             <tr>
-              <th><input type="checkbox"></th>
-              <th></th>
+              <th><input type="checkbox" title="전체 선택"></th>
               <th>품목코드</th>
               <th>품목명</th>
               <th>규격</th>
@@ -370,10 +320,14 @@
             </tr>
           </thead>
           <tbody id="orderTbody">
-            <!-- 기본 3개 행 생성 -->
+            <!-- 기본 3개 행 -->
             <tr>
-              <td class="cell-center"><input type="checkbox"></td>
-              <td class="cell-center"><span class="row-num">1</span></td>
+              <td>
+                <label class="row-check-wrap">
+                  <input type="checkbox">
+                  <span class="row-num-display">1</span>
+                </label>
+              </td>
               <td><input type="text" class="grid-input" placeholder="코드"></td>
               <td><input type="text" class="grid-input" placeholder="품목명 검색"></td>
               <td><input type="text" class="grid-input"></td>
@@ -385,8 +339,12 @@
               <td><input type="number" class="grid-input number"></td>
             </tr>
             <tr>
-              <td class="cell-center"><input type="checkbox"></td>
-              <td class="cell-center"><span class="row-num">2</span></td>
+              <td>
+                <label class="row-check-wrap">
+                  <input type="checkbox">
+                  <span class="row-num-display">2</span>
+                </label>
+              </td>
               <td><input type="text" class="grid-input" placeholder="코드"></td>
               <td><input type="text" class="grid-input" placeholder="품목명 검색"></td>
               <td><input type="text" class="grid-input"></td>
@@ -398,8 +356,12 @@
               <td><input type="number" class="grid-input number"></td>
             </tr>
             <tr>
-              <td class="cell-center"><input type="checkbox"></td>
-              <td class="cell-center"><span class="row-num">3</span></td>
+              <td>
+                <label class="row-check-wrap">
+                  <input type="checkbox">
+                  <span class="row-num-display">3</span>
+                </label>
+              </td>
               <td><input type="text" class="grid-input" placeholder="코드"></td>
               <td><input type="text" class="grid-input" placeholder="품목명 검색"></td>
               <td><input type="text" class="grid-input"></td>
@@ -413,7 +375,8 @@
           </tbody>
           <tfoot>
             <tr>
-              <td colspan="5" style="text-align: center; color: var(--slate-500); font-weight: 700;">합계</td>
+              <!-- 열 통합으로 인한 colspan 5 -> 4 변경 -->
+              <td colspan="4" style="text-align: center; color: var(--slate-500); font-weight: 700;">합계</td>
               <td id="totalQty">0</td>
               <td></td>
               <td id="totalSupply">0</td>
@@ -437,7 +400,7 @@
   </main>
 
   <script>
-    // --- 1. 창고/거래처 로컬 저장 및 자동완성(누적) 로직 ---
+    // --- 1. 창고/거래처 로컬 저장 및 자동완성 ---
     const STORAGE_KEY_WH = 'oneapp_saved_warehouses';
     const STORAGE_KEY_CLIENT = 'oneapp_saved_clients';
 
@@ -456,7 +419,7 @@
       if (!savedData.includes(val)) {
         savedData.push(val);
         localStorage.setItem(key, JSON.stringify(savedData));
-        loadDatalist(key, dataListId); // 리스트 갱신
+        loadDatalist(key, dataListId);
         updateSystemMessage(`[${label}] '${val}' 등록 및 저장 완료`);
       } else {
         updateSystemMessage(`[${label}] 이미 등록된 항목입니다.`);
@@ -467,13 +430,11 @@
       document.getElementById('systemMessage').innerHTML = `<span class="highlight">&gt;</span> [알림] ${msg}`;
     }
 
-    // 초기 로드
     window.addEventListener('DOMContentLoaded', () => {
       loadDatalist(STORAGE_KEY_WH, 'warehouseList');
       loadDatalist(STORAGE_KEY_CLIENT, 'clientList');
     });
 
-    // 검색(➕) 버튼 클릭 시 저장
     document.getElementById('btnSaveWarehouse').addEventListener('click', () => {
       saveToDatalist(STORAGE_KEY_WH, 'warehouseList', 'warehouseInput', '출하창고');
     });
@@ -481,7 +442,6 @@
       saveToDatalist(STORAGE_KEY_CLIENT, 'clientList', 'clientInput', '거래처');
     });
 
-    // 엔터키 입력 시 자동 저장
     document.getElementById('warehouseInput').addEventListener('keydown', (e) => {
       if(e.key === 'Enter') saveToDatalist(STORAGE_KEY_WH, 'warehouseList', 'warehouseInput', '출하창고');
     });
@@ -490,7 +450,7 @@
     });
 
 
-    // --- 2. 수량 * 단가 자동 합계 계산 로직 (기존 유지) ---
+    // --- 2. 수량 * 단가 자동 합계 계산 ---
     document.getElementById('orderTbody').addEventListener('input', function(e) {
       if (e.target.classList.contains('qty-input') || e.target.classList.contains('price-input')) {
         const row = e.target.closest('tr');
