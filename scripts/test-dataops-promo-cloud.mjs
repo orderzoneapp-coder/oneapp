@@ -20,21 +20,21 @@ const dataOpsContext = {
   TextEncoder,
   safeNum: value => Number.isFinite(Number(value)) ? Number(value) : 0,
   safeStr: (value, fallback = '') => value === null || value === undefined || String(value).trim() === '' ? fallback : String(value).trim(),
-  DATAOPS_CLOUD_TOKEN_KEY: 'token',
   DATAOPS_CLOUD_MODULE: {
     normalizeUrl: value => String(value || '').trim(),
     getCloudUrl: () => 'https://example.invalid/exec',
     readJsonResponse: async response => response.json()
   },
-  localStorage: { getItem: () => '', setItem: () => {}, removeItem: () => {} },
   fetch: async () => { throw new Error('unexpected fetch'); }
 };
 dataOpsContext.window = dataOpsContext;
 dataOpsContext.window.crypto = crypto.webcrypto;
-dataOpsContext.window.prompt = () => '';
 vm.createContext(dataOpsContext);
+const dataOpsSnapshotModuleSource = extract(dataOpsSource, 'const DATAOPS_PROMO_SNAPSHOT_MODULE', 'const DATAOPS_MASTER_CACHE_MODULE');
+assert.doesNotMatch(dataOpsSource, /oneapp_dataops_cloud_token_v1|DATAOPS_CLOUD_TOKEN_KEY|getAccessToken|ONEAPP_DATAOPS_ACCESS_TOKEN/, 'DataOps source must not retain an operator-token key, accessor, or server-property instruction');
+assert.doesNotMatch(dataOpsSnapshotModuleSource, /window\.prompt|localStorage|\btoken\s*[:,]|getAccessToken/, 'DataOps snapshot module must not prompt, persist, load, or send a token');
 vm.runInContext(
-  extract(dataOpsSource, 'const DATAOPS_PROMO_SNAPSHOT_MODULE', 'const DATAOPS_MASTER_CACHE_MODULE'),
+  dataOpsSnapshotModuleSource,
   dataOpsContext
 );
 
@@ -51,20 +51,20 @@ assert.equal(canonical.rows[0][6], '거래처', 'raw row ordering/value must rem
 assert.equal(envelope.rowCount, 1);
 assert.equal(envelope.cellCount, 11);
 assert.equal(envelope.hash, crypto.createHash('sha256').update(envelope.canonicalJson).digest('hex'));
-assert.throws(() => dataOpsContext.DATAOPS_PROMO_SNAPSHOT_MODULE.getAccessToken(), /쓰기 토큰/, 'DataOps commit must still require the operator write token');
-assert.match(dataOpsContext.DATAOPS_PROMO_SNAPSHOT_MODULE.mapCommitError('DATAOPS_ACCESS_NOT_CONFIGURED'), /ONEAPP_DATAOPS_ACCESS_TOKEN/, 'missing server write token must be actionable');
-assert.match(dataOpsContext.DATAOPS_PROMO_SNAPSHOT_MODULE.mapCommitError('DATAOPS_ACCESS_DENIED'), /쓰기 토큰이 올바르지 않습니다/, 'mismatched write token must be actionable');
-dataOpsContext.localStorage.getItem = () => 'secret';
-dataOpsContext.fetch = async () => ({
+assert.match(dataOpsContext.DATAOPS_PROMO_SNAPSHOT_MODULE.mapCommitError('DATAOPS_ACCESS_NOT_CONFIGURED'), /이전 토큰 인증 버전.*기존 Apps Script 배포를 최신 버전으로 갱신/, 'a rolled-back server must be identified as a deployment-version mismatch');
+assert.match(dataOpsContext.DATAOPS_PROMO_SNAPSHOT_MODULE.mapCommitError('DATAOPS_ACCESS_DENIED'), /이전 토큰 인증 버전.*기존 Apps Script 배포를 최신 버전으로 갱신/, 'legacy token denial must not ask the operator to enter a token');
+assert.doesNotMatch(dataOpsContext.DATAOPS_PROMO_SNAPSHOT_MODULE.mapCommitError('DATAOPS_ACCESS_DENIED'), /입력|다시 입력|Script Properties/, 'legacy auth compatibility guidance must not revive token setup');
+let dataOpsCommitBody = null;
+dataOpsContext.fetch = async (_url, options) => {
+  dataOpsCommitBody = JSON.parse(options.body);
+  return {
   ok: true,
   status: 200,
-  json: async () => ({ status: 'error', message: 'DATAOPS_ACCESS_NOT_CONFIGURED' })
-});
-await assert.rejects(
-  dataOpsContext.DATAOPS_PROMO_SNAPSHOT_MODULE.postAction('dataops_snapshot_commit', { snapshot: envelope }),
-  /ONEAPP_DATAOPS_ACCESS_TOKEN/,
-  'DataOps commit failure must explain missing server write-token configuration'
-);
+  json: async () => ({ status: 'success', data: { revision: 'R1' } })
+  };
+};
+await dataOpsContext.DATAOPS_PROMO_SNAPSHOT_MODULE.postAction('dataops_snapshot_commit', { snapshot: envelope });
+assert.deepEqual(dataOpsCommitBody, { action: 'dataops_snapshot_commit', snapshot: JSON.parse(JSON.stringify(envelope)) }, 'DataOps commit request body must omit an operator token');
 
 let snapshotReadBody = null;
 const merchSnapshotContext = {
@@ -267,7 +267,7 @@ class SpreadsheetMock {
 }
 
 const spreadsheet = new SpreadsheetMock();
-const properties = new Map([['ONEAPP_DATAOPS_ACCESS_TOKEN', 'secret']]);
+const properties = new Map();
 const serverContext = {
   console,
   SpreadsheetApp: { getActiveSpreadsheet: () => spreadsheet },
@@ -307,23 +307,25 @@ const makeSnapshot = (rows, basisDate = '2026-08-04') => {
 
 assert.equal(post({ action: 'dataops_snapshot_get' }).status, 'success', 'snapshot read must not require a token');
 assert.equal(post({ action: 'dataops_snapshot_get', token: 'wrong' }).status, 'success', 'snapshot read must ignore an optional legacy token');
-properties.delete('ONEAPP_DATAOPS_ACCESS_TOKEN');
-assert.equal(post({ action: 'dataops_snapshot_get' }).status, 'success', 'snapshot read must work when the server write token is not configured');
-assert.equal(post({ action: 'dataops_snapshot_commit', token: 'secret', snapshot: makeSnapshot(canonicalRows) }).message, 'DATAOPS_ACCESS_NOT_CONFIGURED', 'commit must reject an unconfigured server token');
-properties.set('ONEAPP_DATAOPS_ACCESS_TOKEN', 'secret');
-assert.equal(post({ action: 'dataops_snapshot_commit', snapshot: makeSnapshot(canonicalRows) }).message, 'DATAOPS_ACCESS_DENIED', 'commit must reject a missing token');
-assert.equal(post({ action: 'dataops_snapshot_commit', token: 'wrong', snapshot: makeSnapshot(canonicalRows) }).message, 'DATAOPS_ACCESS_DENIED', 'commit must reject a mismatched token');
+assert.equal(post({ action: 'dataops_snapshot_get' }).status, 'success', 'snapshot read must work without any DataOps token property');
+const badSchemaSnapshot = makeSnapshot(canonicalRows);
+badSchemaSnapshot.schemaVersion = 'WRONG_SCHEMA';
+assert.equal(post({ action: 'dataops_snapshot_commit', snapshot: badSchemaSnapshot }).status, 'error', 'schema mismatch must be rejected');
 const badHashSnapshot = makeSnapshot(canonicalRows);
 badHashSnapshot.hash = '0'.repeat(64);
-assert.equal(post({ action: 'dataops_snapshot_commit', token: 'secret', snapshot: badHashSnapshot }).status, 'error', 'hash mismatch must be rejected');
+assert.equal(post({ action: 'dataops_snapshot_commit', snapshot: badHashSnapshot }).status, 'error', 'hash mismatch must be rejected');
 const badCountSnapshot = makeSnapshot(canonicalRows);
 badCountSnapshot.cellCount--;
-assert.equal(post({ action: 'dataops_snapshot_commit', token: 'secret', snapshot: badCountSnapshot }).status, 'error', 'cell count mismatch must be rejected');
-const firstCommit = post({ action: 'dataops_snapshot_commit', token: 'secret', snapshot: makeSnapshot(canonicalRows) });
+assert.equal(post({ action: 'dataops_snapshot_commit', snapshot: badCountSnapshot }).status, 'error', 'cell count mismatch must be rejected');
+const firstCommit = post({ action: 'dataops_snapshot_commit', snapshot: makeSnapshot(canonicalRows) });
 assert.equal(firstCommit.status, 'success');
 assert.match(firstCommit.data.revision, /^DATAOPS-20260804-[0-9a-f]{16}$/);
-const firstRead = post({ action: 'dataops_snapshot_get', token: 'secret' });
+const firstRead = post({ action: 'dataops_snapshot_get' });
 assert.deepEqual(firstRead.data.rows, canonicalRows, 'server read must preserve raw rows and ordering');
+assert.equal(firstRead.data.revision, firstCommit.data.revision, 'tokenless get must return the committed revision');
+assert.equal(firstRead.data.hash, firstCommit.data.hash, 'tokenless get must return the committed hash');
+assert.equal(firstRead.data.rowCount, firstCommit.data.rowCount, 'tokenless get must return the committed row count');
+assert.equal(firstRead.data.cellCount, firstCommit.data.cellCount, 'tokenless get must return the committed cell count');
 assert.equal(firstRead.data.rows[1][10], 0, 'server must preserve explicit numeric promo zero');
 assert.equal(firstRead.data.rows[2][10], '', 'server must preserve blank promo independently from equivalent zero semantics');
 assert.equal(post({ action: 'initSync' }).status, 'success', 'legacy initSync action must remain available');
@@ -343,25 +345,25 @@ assert.deepEqual(legacyConfigRead.data.dict, { preserved: true }, 'legacy config
 const legacyFull = get('full');
 assert.equal(legacyFull.data.history[0].id, 'H1', 'legacy history data must remain readable');
 assert.equal(legacyFull.data.appConfig.cloudUrl, 'https://example.invalid', 'legacy full response contract must remain readable');
-const readAfterLegacySync = post({ action: 'dataops_snapshot_get', token: 'secret' });
+const readAfterLegacySync = post({ action: 'dataops_snapshot_get', token: 'legacy-ignored' });
 assert.equal(readAfterLegacySync.data.revision, firstCommit.data.revision, 'legacy initSync must not clear DataOps snapshot slots');
-const sameCommit = post({ action: 'dataops_snapshot_commit', token: 'secret', snapshot: makeSnapshot(canonicalRows) });
+const sameCommit = post({ action: 'dataops_snapshot_commit', token: 'legacy-ignored', snapshot: makeSnapshot(canonicalRows) });
 assert.equal(sameCommit.data.revision, firstCommit.data.revision, 'same finalized snapshot must retain immutable revision');
 
 const currentSlot = properties.get('ONEAPP_DATAOPS_CURRENT_SLOT');
 const inactiveName = currentSlot === 'A' ? 'DataOpsSnapshot_B' : 'DataOpsSnapshot_A';
 const inactiveSheet = spreadsheet.getSheetByName(inactiveName) || spreadsheet.insertSheet(inactiveName);
 inactiveSheet.failNextWrite = true;
-const failedCommit = post({ action: 'dataops_snapshot_commit', token: 'secret', snapshot: makeSnapshot([[...canonicalRows[0].slice(0, 10), 2600]], '2026-08-05') });
+const failedCommit = post({ action: 'dataops_snapshot_commit', snapshot: makeSnapshot([[...canonicalRows[0].slice(0, 10), 2600]], '2026-08-05') });
 assert.equal(failedCommit.status, 'error');
-const readAfterFailure = post({ action: 'dataops_snapshot_get', token: 'secret' });
+const readAfterFailure = post({ action: 'dataops_snapshot_get' });
 assert.equal(readAfterFailure.data.revision, firstCommit.data.revision, 'staging failure must keep previous current snapshot');
 
 const lotMismatchRows = [
   ['BOX', '100', '상품A', '10kg', 1, '', '', 10000, '', '', 2500],
   ['BOX', '100', '상품A', '10kg', 2, '', '', 10000, '', '', 2600]
 ];
-assert.equal(post({ action: 'dataops_snapshot_commit', token: 'secret', snapshot: makeSnapshot(lotMismatchRows) }).status, 'error', 'LOT promo mismatch must be rejected');
+assert.equal(post({ action: 'dataops_snapshot_commit', token: 'legacy-ignored', snapshot: makeSnapshot(lotMismatchRows) }).status, 'error', 'LOT promo mismatch must be rejected even when a legacy token field is present');
 
 assert.match(merchSource, /fetchLatest\(config\.cloudUrl\)[\s\S]*handleFileUpload\([^]*'inventory',[\s\S]*dataOpsSnapshot/);
 assert.match(merchSource, /onChange: \(e\) => handleFileUpload\(e, 'inventory'\)/, 'Excel fallback must use the same inventory adapter');
@@ -373,5 +375,8 @@ assert.doesNotMatch(merchSource, /dataops_snapshot_get[^\n]*\?/, 'snapshot token
 assert.match(merchSource, /body: JSON\.stringify\(\{ action: 'dataops_snapshot_get' \}\)/, 'MerchOps snapshot read must POST only the read action');
 assert.match(dataOpsSource, /Excel 다운로드는 완료되었지만 클라우드 저장에 실패했습니다/);
 assert.match(dataOpsSource, /createCombinedWorkbook\([^]*wholeStockRows: closingRows/);
+const f9Source = extract(dataOpsSource, 'const handleCombinedExport = useCallback', 'const handlePrintOutput');
+assert.ok(f9Source.indexOf('a.click();') < f9Source.indexOf('DATAOPS_PROMO_SNAPSHOT_MODULE.commit(envelope)'), 'F9 must download the workbook before starting the tokenless cloud commit');
+assert.doesNotMatch(f9Source, /window\.prompt|getAccessToken|\btoken\s*:/, 'F9 must continue from workbook download to cloud commit without token interaction');
 
 console.log('DataOps promo cloud contract tests passed');
