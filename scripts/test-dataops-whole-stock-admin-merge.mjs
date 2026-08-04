@@ -19,6 +19,10 @@ const mergeAndViewSource = section(
   "const DATAOPS_CODE_MERGE_OVERRIDE_MODULE",
   "\nconst EXPORT_MODULE",
 );
+const remarkAndSearchSource = section(
+  "const collectDataOpsSourceLedgerRows",
+  "\n// V1.a22.12: 수량은",
+);
 const exportSource = section(
   "const EXPORT_MODULE",
   "\nconst STORAGE_MODULE",
@@ -224,7 +228,8 @@ vm.runInContext(sheetJsSource.toString("utf8"), context, {
 assert.ok(context.XLSX?.utils, "SheetJS did not initialize");
 
 new vm.Script(
-  `${mergeAndViewSource}
+  `${remarkAndSearchSource}
+${mergeAndViewSource}
 ${exportSource}
 globalThis.mergeOverride = DATAOPS_CODE_MERGE_OVERRIDE_MODULE;
 globalThis.viewLayer = DATAOPS_VIEW_LAYER_MODULE;
