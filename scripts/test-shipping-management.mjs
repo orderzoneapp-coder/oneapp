@@ -703,6 +703,88 @@ for (const requiredText of [
   assert.ok(html.includes(requiredText), `orders.html is missing: ${requiredText}`);
 }
 
+assert.match(
+  html,
+  /<a class="brand" href="dashboard\.html" aria-label="ONEAPP NEXUS 대시보드로 이동">/,
+  "the complete ONEAPP NEXUS brand must be a keyboard-accessible dashboard link",
+);
+assert.doesNotMatch(
+  html,
+  /<a class="header-link"[^>]*href="dashboard\.html"/,
+  "the former right-side dashboard button must be removed",
+);
+assert.match(
+  html,
+  /<button class="header-link" id="settingsButton"[^>]*aria-label="환경설정 열기"[^>]*aria-haspopup="dialog"[\s\S]*?aria-expanded="false" aria-controls="settingsModal">/,
+  "the right-side settings button must expose its dialog contract",
+);
+assert.match(
+  html,
+  /id="settingsModal" role="dialog" aria-modal="true"[\s\S]*?aria-labelledby="settingsModalTitle" aria-describedby="settingsModalDescription" aria-hidden="true"/,
+  "the settings modal must expose an accessible title, description, and modal state",
+);
+assert.match(html, /Shipping Management v2\.0\.1/, "Shipping UI patch version must be 2.0.1");
+
+for (const id of [
+  "cloudUrlInput",
+  "cloudTokenInput",
+  "cloudSavedByInput",
+  "cloudListButton",
+  "cloudSaveButton",
+  "cloudRevisionSelect",
+  "cloudLoadButton",
+  "localResetButton",
+]) {
+  assert.equal(html.split(`id="${id}"`).length - 1, 1, `${id} must exist exactly once inside the settings modal`);
+}
+const settingsModalMarkup = html.slice(
+  html.indexOf('<div class="settings-modal hidden"'),
+  html.indexOf('<div class="toast hidden"'),
+);
+for (const id of [
+  "cloudUrlInput",
+  "cloudTokenInput",
+  "cloudSavedByInput",
+  "cloudListButton",
+  "cloudSaveButton",
+  "cloudRevisionSelect",
+  "cloudLoadButton",
+  "localResetButton",
+]) {
+  assert.ok(settingsModalMarkup.includes(`id="${id}"`), `${id} must be located inside the settings modal`);
+}
+
+const settingsBehaviorSource = html.slice(
+  html.indexOf("function settingsFocusableElements"),
+  html.indexOf("async function sha256Hex"),
+);
+assert.match(settingsBehaviorSource, /classList\.remove\("hidden"\)/, "settings open must reveal the modal");
+assert.match(settingsBehaviorSource, /setAttribute\("aria-expanded", "true"\)/, "settings open must update aria-expanded");
+assert.match(settingsBehaviorSource, /cloudUrlInput\.focus\(\{ preventScroll: true \}\)/, "settings open must focus the first form control");
+assert.match(settingsBehaviorSource, /classList\.add\("settings-modal-open"\)/, "settings open must lock background scrolling");
+assert.match(settingsBehaviorSource, /event\.key === "Escape"[\s\S]*?closeSettingsModal\(\)/, "Escape must close settings");
+assert.match(settingsBehaviorSource, /event\.key !== "Tab"[\s\S]*?focusable\[0\][\s\S]*?focusable\[focusable\.length - 1\]/, "Tab focus must be trapped inside settings");
+assert.match(settingsBehaviorSource, /settingsButton\.focus\(\{ preventScroll: true \}\)/, "closing settings must return focus to its button");
+assert.match(
+  settingsBehaviorSource,
+  /const confirmed = window\.confirm\([\s\S]*?if \(!confirmed\) return;[\s\S]*?clearLocalRecovery\(\)/,
+  "cancelling local reset must return before clearLocalRecovery",
+);
+assert.match(
+  html,
+  /settingsModal\.addEventListener\("click", \(event\) => \{[\s\S]*?event\.target === elements\.settingsModal[\s\S]*?closeSettingsModal\(\)/,
+  "clicking the modal backdrop must close settings",
+);
+assert.match(html, /settingsCloseButton\.addEventListener\("click", closeSettingsModal\)/, "the close button must close settings");
+assert.match(html, /cloudListButton\.addEventListener\("click", listCloudPlans\)/, "Cloud list wiring changed");
+assert.match(html, /cloudSaveButton\.addEventListener\("click", saveCloudPlan\)/, "Cloud save wiring changed");
+assert.match(html, /cloudLoadButton\.addEventListener\("click", loadCloudPlan\)/, "Cloud load wiring changed");
+assert.match(
+  html,
+  /localResetButton\.addEventListener\("click", \(\) => \{[\s\S]*?confirmAndClearLocalRecovery\(\)/,
+  "local reset must use the explicit confirmation path",
+);
+
 const previewDefinitionsSource = html.slice(
   html.indexOf("function getPreviewDefinitions"),
   html.indexOf("function statusTone"),

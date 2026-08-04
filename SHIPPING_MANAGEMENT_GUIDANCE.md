@@ -1,6 +1,6 @@
 # Shipping Management 개발 가이드
 
-- 문서 버전: 2.0.0
+- 문서 버전: 2.0.1
 - 대상 진입점: `orders.html`
 - 현재 단계: 구매계획·로컬 복구·명시적 클라우드 저장 Pilot
 - 업무 소유자: 배송·발주 운영 관리자
@@ -41,6 +41,8 @@ Shipping Management는 관리자가 주문현황과 창고별재고 Excel을 수
 - 분석 workspace와 구매 입력은 IndexedDB에 자동저장하며, localStorage에는 복구 포인터와 메타데이터만 저장한다.
 - 사용자가 명시적으로 저장한 계획만 `ONEAPP_SHIPPING_PURCHASE_PLAN_V1` cloud revision으로 공유한다.
 - 원본 A:T 계약을 보존하는 별도 `구매업로드_YYYYMMDD.xlsx`를 생성한다.
+- 헤더의 ONEAPP NEXUS 브랜드 전체는 `dashboard.html`로 이동하는 링크이며, cloud·로컬 관리 컨트롤은 헤더 환경설정 modal에서 제공한다.
+- 환경설정 modal은 키보드 포커스를 내부에 유지하고 ESC·닫기·배경 클릭으로 닫으며, 로컬 복구 초기화는 명시 확인 뒤에만 실행한다.
 
 ### 명시적 비범위
 
