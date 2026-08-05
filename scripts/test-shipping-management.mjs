@@ -1128,6 +1128,10 @@ for (const requiredText of [
   "shipping-table-widths/v1",
   "oneapp.shipping.hidden-columns.v1",
   "shipping-hidden-columns/v1",
+  "두 파일 함께 선택",
+  "oneapp.shipping.filename-mappings.v1",
+  "shipping-filename-mappings/v1",
+  "업로드 파일명 매핑",
   "열폭 저장",
   "열 표시/숨김",
   "현재 탭 모두 표시",
@@ -1136,6 +1140,259 @@ for (const requiredText of [
 ]) {
   assert.ok(html.includes(requiredText), `orders.html is missing: ${requiredText}`);
 }
+
+assert.match(
+  html,
+  /id="bundleInput" type="file" multiple accept="\.xlsx,\.xls"/,
+  "bundle input must accept exactly the supported Excel extensions and allow two-file selection",
+);
+for (const id of ["bundleDrop", "bundleInput", "bundleStatus"]) {
+  assert.equal(html.split(`id="${id}"`).length - 1, 1, `${id} must exist exactly once`);
+}
+
+const filenameMappingSource = html.slice(
+  html.indexOf("function isPlainRecord"),
+  html.indexOf("function isSafeColumnKey"),
+);
+const filenameMappingStorage = new Map();
+const filenameMappingContext = vm.createContext({
+  Object,
+  Array,
+  JSON,
+  String,
+  Number,
+  Set,
+  RegExp,
+  MAX_FILE_SIZE: 25 * 1024 * 1024,
+  FILENAME_MAPPINGS_KEY: "oneapp.shipping.filename-mappings.v1",
+  FILENAME_MAPPINGS_SCHEMA: "shipping-filename-mappings/v1",
+  DEFAULT_FILENAME_MAPPINGS: Object.freeze({
+    schemaVersion: "shipping-filename-mappings/v1",
+    orders: Object.freeze(["미출고현황", "미출고", "주문현황"]),
+    inventory: Object.freeze(["창고별재고", "창고재고", "재고현황"]),
+  }),
+  localStorage: {
+    getItem: (key) => filenameMappingStorage.get(key) ?? null,
+  },
+  isSupportedFile: (file) => Boolean(file && /\.(xlsx|xls)$/i.test(file.name)),
+});
+vm.runInContext(`${filenameMappingSource}; globalThis.filenameMappingHelpers = {
+  cloneFilenameMappings, normalizeFilenameMapping, validateStoredFilenameMappings,
+  loadFilenameMappings, classifyFilename, planBundleSelection,
+};`, filenameMappingContext);
+const filenameHelpers = filenameMappingContext.filenameMappingHelpers;
+assert.equal(
+  filenameHelpers.normalizeFilenameMapping(" 01_(미 출고-현황)_20260805.XLSX "),
+  "01미출고현황20260805",
+  "file-name normalization must ignore extension, whitespace, brackets, separators, and case",
+);
+assert.equal(
+  filenameHelpers.normalizeFilenameMapping("WARE HOUSE-(재고 현황).XLS"),
+  "warehouse재고현황",
+  "Latin case and special characters must normalize identically",
+);
+
+const defaultFilenameMappings = {
+  schemaVersion: "shipping-filename-mappings/v1",
+  orders: ["미출고현황", "미출고", "주문현황"],
+  inventory: ["창고별재고", "창고재고", "재고현황"],
+};
+for (const invalidStoredValue of [
+  "{broken",
+  JSON.stringify({ schemaVersion: "shipping-filename-mappings/v0", orders: [], inventory: [] }),
+  JSON.stringify({ schemaVersion: "shipping-filename-mappings/v1", orders: "주문현황", inventory: [] }),
+  JSON.stringify({ schemaVersion: "shipping-filename-mappings/v1", orders: ["주문현황", 7], inventory: [] }),
+  JSON.stringify({ schemaVersion: "shipping-filename-mappings/v1", orders: ["주문 현황", "주문-현황"], inventory: [] }),
+  JSON.stringify({ schemaVersion: "shipping-filename-mappings/v1", orders: ["공통 규칙"], inventory: ["공통-규칙"] }),
+]) {
+  filenameMappingStorage.set("oneapp.shipping.filename-mappings.v1", invalidStoredValue);
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(filenameHelpers.loadFilenameMappings())),
+    defaultFilenameMappings,
+    "missing, corrupt, old, malformed, or normalized-duplicate mappings must fall back as one complete default set",
+  );
+}
+filenameMappingStorage.delete("oneapp.shipping.filename-mappings.v1");
+assert.deepEqual(
+  JSON.parse(JSON.stringify(filenameHelpers.loadFilenameMappings())),
+  defaultFilenameMappings,
+  "missing mappings must use the complete defaults",
+);
+
+function mockFile(name, size = 1024) {
+  return { name, size };
+}
+const reversedBundlePlan = filenameHelpers.planBundleSelection([
+  mockFile("99_창고별 재고-(20260805).XLSX"),
+  mockFile("1미출고현황_20260805.xlsx"),
+], defaultFilenameMappings);
+assert.equal(reversedBundlePlan.ok, true, "bundle file order must not affect classification");
+assert.equal(reversedBundlePlan.assignments.orders.name, "1미출고현황_20260805.xlsx");
+assert.equal(reversedBundlePlan.assignments.inventory.name, "99_창고별 재고-(20260805).XLSX");
+
+for (const [label, files, mappings, reasonPattern] of [
+  ["one file", [mockFile("주문현황.xlsx")], defaultFilenameMappings, /정확히 2개/],
+  ["three files", [mockFile("주문현황.xlsx"), mockFile("창고별재고.xlsx"), mockFile("추가.xlsx")], defaultFilenameMappings, /정확히 2개/],
+  ["unsupported extension", [mockFile("주문현황.csv"), mockFile("창고별재고.xlsx")], defaultFilenameMappings, /확장자/],
+  ["oversize", [mockFile("주문현황.xlsx", 25 * 1024 * 1024 + 1), mockFile("창고별재고.xlsx")], defaultFilenameMappings, /25MB/],
+  ["unmatched", [mockFile("알수없음.xlsx"), mockFile("창고별재고.xlsx")], defaultFilenameMappings, /일치하지/],
+  ["same type", [mockFile("미출고현황.xlsx"), mockFile("주문현황.xlsx")], defaultFilenameMappings, /모두 주문현황/],
+  ["ambiguous", [mockFile("주문재고.xlsx"), mockFile("창고별재고.xlsx")], {
+    schemaVersion: "shipping-filename-mappings/v1",
+    orders: ["주문"],
+    inventory: ["재고"],
+  }, /모두 일치/],
+]) {
+  const plan = filenameHelpers.planBundleSelection(files, mappings);
+  assert.equal(plan.ok, false, `${label} bundle must be blocked`);
+  assert.ok(plan.errors.some((issue) => reasonPattern.test(issue.message)), `${label} reason must be explicit per file`);
+  if (files.length === 2) assert.equal(plan.errors.length, 2, `${label} must explain the whole rejected pair file by file`);
+}
+
+const bundleHandlerSource = html.slice(
+  html.indexOf("async function handleBundleFiles"),
+  html.indexOf("async function handleFile"),
+);
+assert.match(bundleHandlerSource, /Promise\.allSettled\(/, "both classified workbooks must parse concurrently");
+assert.ok(
+  bundleHandlerSource.indexOf("if (failures.length > 0)") < bundleHandlerSource.indexOf("resetResults();"),
+  "parse failures must return before any current result reset",
+);
+assert.match(
+  bundleHandlerSource,
+  /const nextOrders = parsedResults\[0\]\.value;[\s\S]*?const nextInventory = parsedResults\[1\]\.value;[\s\S]*?resetResults\(\);[\s\S]*?state\.orders = nextOrders;[\s\S]*?state\.inventory = nextInventory;[\s\S]*?refreshInputState\(\);/,
+  "both parsed objects must commit together immediately before the existing validation refresh",
+);
+
+function createBundleHandlerContext(parseExcelFile) {
+  const oldOrders = { fileName: "기존주문.xlsx" };
+  const oldInventory = { fileName: "기존재고.xlsx" };
+  const oldWorkspace = { planId: "existing-plan" };
+  const handlerState = {
+    orders: oldOrders,
+    inventory: oldInventory,
+    workspace: oldWorkspace,
+    loading: { orders: false, inventory: false },
+    filenameMappings: defaultFilenameMappings,
+  };
+  const counters = { reset: 0, refresh: 0, statuses: [] };
+  const handlerContext = vm.createContext({
+    Promise,
+    String,
+    Array,
+    bundleUploadInProgress: false,
+    state: handlerState,
+    planBundleSelection: () => ({
+      ok: true,
+      assignments: {
+        orders: mockFile("미출고현황.xlsx"),
+        inventory: mockFile("창고별재고.xlsx"),
+      },
+    }),
+    parseExcelFile,
+    setBundleBusy: (value) => { handlerContext.bundleUploadInProgress = value; },
+    renderBundleStatus: (...args) => counters.statuses.push(args),
+    showToast: () => {},
+    resetResults: () => { counters.reset += 1; handlerState.workspace = null; },
+    refreshInputState: () => { counters.refresh += 1; },
+  });
+  vm.runInContext(`${bundleHandlerSource}; globalThis.runBundleHandler = handleBundleFiles;`, handlerContext);
+  return { handlerContext, handlerState, counters, oldOrders, oldInventory, oldWorkspace };
+}
+
+const failedBundleHarness = createBundleHandlerContext(async (file, kind) => {
+  if (kind === "inventory") throw new Error("synthetic inventory read failure");
+  return { fileName: file.name, errors: [] };
+});
+await failedBundleHarness.handlerContext.runBundleHandler([
+  mockFile("미출고현황.xlsx"), mockFile("창고별재고.xlsx"),
+]);
+assert.equal(failedBundleHarness.handlerState.orders, failedBundleHarness.oldOrders, "failed pair must preserve the orders object reference");
+assert.equal(failedBundleHarness.handlerState.inventory, failedBundleHarness.oldInventory, "failed pair must preserve the inventory object reference");
+assert.equal(failedBundleHarness.handlerState.workspace, failedBundleHarness.oldWorkspace, "failed pair must preserve the workspace object reference");
+assert.deepEqual([failedBundleHarness.counters.reset, failedBundleHarness.counters.refresh], [0, 0], "failed pair must not reset or refresh the current screen");
+
+const nextParsedPair = {
+  orders: { fileName: "미출고현황.xlsx", errors: [{ message: "synthetic required-column error" }] },
+  inventory: { fileName: "창고별재고.xlsx", errors: [] },
+};
+const successfulBundleHarness = createBundleHandlerContext(async (file, kind) => nextParsedPair[kind]);
+await successfulBundleHarness.handlerContext.runBundleHandler([
+  mockFile("창고별재고.xlsx"), mockFile("미출고현황.xlsx"),
+]);
+assert.equal(successfulBundleHarness.handlerState.orders, nextParsedPair.orders, "parsed orders with existing validation errors must still join the committed pair");
+assert.equal(successfulBundleHarness.handlerState.inventory, nextParsedPair.inventory, "parsed inventory must commit with orders as one pair");
+assert.deepEqual([successfulBundleHarness.counters.reset, successfulBundleHarness.counters.refresh], [1, 1], "a fully parsed pair must reset once and use the existing validation refresh once");
+
+const bundleBindingStart = html.indexOf("function bindBundleDropZone");
+const bundleBindingSource = html.slice(
+  bundleBindingStart,
+  html.indexOf("state.columnWidthSettings = loadColumnWidthSettings", bundleBindingStart),
+);
+function createSyntheticElement() {
+  const listeners = new Map();
+  const classes = new Set();
+  return {
+    listeners,
+    classes,
+    value: "",
+    files: [],
+    clickCount: 0,
+    addEventListener(name, handler) {
+      if (!listeners.has(name)) listeners.set(name, []);
+      listeners.get(name).push(handler);
+    },
+    click() { this.clickCount += 1; },
+    classList: {
+      add(name) { classes.add(name); },
+      remove(name) { classes.delete(name); },
+    },
+  };
+}
+const syntheticBundleDrop = createSyntheticElement();
+const syntheticBundleInput = createSyntheticElement();
+const syntheticHandledLists = [];
+const bundleBindingContext = vm.createContext({
+  bundleUploadInProgress: false,
+  elements: { bundleDrop: syntheticBundleDrop, bundleInput: syntheticBundleInput },
+  handleBundleFiles: (files) => { syntheticHandledLists.push(files); return Promise.resolve(); },
+  renderBundleStatus: () => {},
+  Promise,
+  String,
+});
+vm.runInContext(`${bundleBindingSource}; bindBundleDropZone();`, bundleBindingContext);
+const droppedSyntheticFiles = [mockFile("창고별재고.xlsx"), mockFile("미출고현황.xlsx")];
+let dropPrevented = false;
+const syntheticDropEvent = {
+  preventDefault() { dropPrevented = true; },
+  dataTransfer: { files: droppedSyntheticFiles },
+};
+syntheticBundleDrop.listeners.get("drop").forEach((handler) => handler(syntheticDropEvent));
+await Promise.resolve();
+assert.equal(dropPrevented, true, "bundle drop must prevent browser navigation");
+assert.equal(syntheticHandledLists[0], droppedSyntheticFiles, "bundle drop must pass the complete DataTransfer file list without selecting only the first file");
+syntheticBundleInput.files = droppedSyntheticFiles;
+syntheticBundleInput.value = "selected";
+syntheticBundleInput.listeners.get("change").forEach((handler) => handler());
+await Promise.resolve();
+assert.equal(syntheticHandledLists[1], droppedSyntheticFiles, "bundle chooser must pass its complete multiple-file list");
+assert.equal(syntheticBundleInput.value, "", "bundle chooser value must clear so the same pair can be selected again");
+
+const individualHandlerSource = html.slice(
+  html.indexOf("async function handleFile"),
+  html.indexOf("function renderFileCard"),
+);
+assert.match(
+  individualHandlerSource,
+  /isSupportedFile\(file\)[\s\S]*?file\.size > MAX_FILE_SIZE[\s\S]*?resetResults\(\);[\s\S]*?setLoading\(kind, true\)[\s\S]*?state\[kind\] = await parseExcelFile\(file, kind\)[\s\S]*?catch \(error\)[\s\S]*?state\[kind\] = null[\s\S]*?refreshInputState\(\);/,
+  "the existing individual upload parse, replacement, failure, and validation-refresh flow must remain intact",
+);
+const individualBindingSource = html.slice(
+  html.indexOf("function bindDropZone"),
+  html.indexOf("function bindBundleDropZone"),
+);
+assert.match(individualBindingSource, /handleFile\(kind, event\.dataTransfer\.files\[0\]\)/, "individual card drop must keep its single-file replacement path");
+assert.match(individualBindingSource, /handleFile\(kind, input\.files\[0\]\)[\s\S]*?input\.value = ""/, "individual card chooser must keep its single-file replacement path");
 
 assert.match(
   html,
@@ -1167,6 +1424,11 @@ for (const id of [
   "cloudSaveButton",
   "cloudRevisionSelect",
   "cloudLoadButton",
+  "ordersFilenameMappingList",
+  "inventoryFilenameMappingList",
+  "filenameMappingsSaveButton",
+  "filenameMappingsResetButton",
+  "filenameMappingStatus",
   "localResetButton",
 ]) {
   assert.equal(html.split(`id="${id}"`).length - 1, 1, `${id} must exist exactly once inside the settings modal`);
@@ -1183,6 +1445,11 @@ for (const id of [
   "cloudSaveButton",
   "cloudRevisionSelect",
   "cloudLoadButton",
+  "ordersFilenameMappingList",
+  "inventoryFilenameMappingList",
+  "filenameMappingsSaveButton",
+  "filenameMappingsResetButton",
+  "filenameMappingStatus",
   "localResetButton",
 ]) {
   assert.ok(settingsModalMarkup.includes(`id="${id}"`), `${id} must be located inside the settings modal`);
@@ -1199,6 +1466,100 @@ assert.match(settingsBehaviorSource, /classList\.add\("settings-modal-open"\)/, 
 assert.match(settingsBehaviorSource, /event\.key === "Escape"[\s\S]*?closeSettingsModal\(\)/, "Escape must close settings");
 assert.match(settingsBehaviorSource, /event\.key !== "Tab"[\s\S]*?focusable\[0\][\s\S]*?focusable\[focusable\.length - 1\]/, "Tab focus must be trapped inside settings");
 assert.match(settingsBehaviorSource, /settingsButton\.focus\(\{ preventScroll: true \}\)/, "closing settings must return focus to its button");
+assert.match(html, /function deleteFilenameMappingRow[\s\S]*?remainingInputs[\s\S]*?\.focus\(\)/, "deleting a dynamic mapping row must move focus to a remaining or replacement input");
+assert.match(html, /filenameMappingsSaveButton\.addEventListener\("click", saveFilenameMappings\)/, "mapping save wiring is missing");
+assert.match(html, /filenameMappingsResetButton\.addEventListener\("click", restoreDefaultFilenameMappings\)/, "default mapping restore wiring is missing");
+const mappingCollectorSource = html.slice(
+  html.indexOf("function collectFilenameMappingsFromForm"),
+  html.indexOf("function setFilenameMappingStatus"),
+);
+function mappingInputList(values) {
+  return { querySelectorAll: () => values.map((value) => ({ value })) };
+}
+const mappingCollectorContext = vm.createContext({
+  Set,
+  Map,
+  String,
+  Error,
+  FILENAME_MAPPINGS_SCHEMA: "shipping-filename-mappings/v1",
+  normalizeFilenameMapping: filenameHelpers.normalizeFilenameMapping,
+  elements: {
+    ordersFilenameMappingList: mappingInputList(["주문 현황", "주문-현황", "   "]),
+    inventoryFilenameMappingList: mappingInputList(["재고 현황"]),
+  },
+});
+vm.runInContext(`${mappingCollectorSource}; globalThis.collectMappingsForTest = collectFilenameMappingsFromForm;`, mappingCollectorContext);
+assert.deepEqual(JSON.parse(JSON.stringify(mappingCollectorContext.collectMappingsForTest())), {
+  schemaVersion: "shipping-filename-mappings/v1",
+  orders: ["주문 현황"],
+  inventory: ["재고 현황"],
+}, "blank and same-kind normalized duplicates must not be saved");
+mappingCollectorContext.elements.inventoryFilenameMappingList = mappingInputList(["주문_현황"]);
+assert.throws(
+  () => mappingCollectorContext.collectMappingsForTest(),
+  /같은 정규화 규칙을 동시에 저장할 수 없습니다/,
+  "cross-kind normalized duplicates must block the save instead of picking or silently deleting one side",
+);
+assert.match(
+  html,
+  /function persistFilenameMappings[\s\S]*?const previousMappings = state\.filenameMappings;[\s\S]*?localStorage\.setItem\(FILENAME_MAPPINGS_KEY[\s\S]*?state\.filenameMappings = verified;[\s\S]*?catch \(error\)[\s\S]*?state\.filenameMappings = previousMappings;/,
+  "mapping persistence failure must retain the previous valid in-memory rules",
+);
+const mappingPersistenceSource = html.slice(
+  html.indexOf("function persistFilenameMappings"),
+  html.indexOf("function saveFilenameMappings"),
+);
+const previousValidMappings = { schemaVersion: "shipping-filename-mappings/v1", orders: ["기존주문"], inventory: ["기존재고"] };
+const mappingFailureSignals = { renderCount: 0, status: null, toast: null };
+const mappingFailureContext = vm.createContext({
+  JSON,
+  String,
+  FILENAME_MAPPINGS_KEY: "oneapp.shipping.filename-mappings.v1",
+  state: { filenameMappings: previousValidMappings },
+  localStorage: {
+    getItem: () => JSON.stringify(previousValidMappings),
+    setItem: () => { throw new Error("synthetic quota failure"); },
+    removeItem: () => {},
+  },
+  validateStoredFilenameMappings: filenameHelpers.validateStoredFilenameMappings,
+  renderFilenameMappings: () => { mappingFailureSignals.renderCount += 1; },
+  setFilenameMappingStatus: (message, isError) => { mappingFailureSignals.status = { message, isError }; },
+  showToast: (message, isError) => { mappingFailureSignals.toast = { message, isError }; },
+});
+vm.runInContext(`${mappingPersistenceSource}; globalThis.persistMappingsForTest = persistFilenameMappings;`, mappingFailureContext);
+assert.equal(
+  mappingFailureContext.persistMappingsForTest(defaultFilenameMappings, "saved"),
+  false,
+  "a localStorage write failure must be reported",
+);
+assert.equal(mappingFailureContext.state.filenameMappings, previousValidMappings, "a failed settings save must retain the exact previous valid mapping object");
+assert.equal(mappingFailureSignals.status.isError, true, "a failed settings save must remain visible in the settings panel");
+assert.equal(mappingFailureSignals.toast.isError, true, "a failed settings save must notify the operator");
+const mappingReadFailureSignals = { renderCount: 0, status: null, toast: null };
+const mappingReadFailureContext = vm.createContext({
+  JSON,
+  String,
+  FILENAME_MAPPINGS_KEY: "oneapp.shipping.filename-mappings.v1",
+  state: { filenameMappings: previousValidMappings },
+  localStorage: {
+    getItem: () => { throw new Error("synthetic read denial"); },
+    setItem: () => { throw new Error("rollback must not run without a completed read"); },
+    removeItem: () => { throw new Error("rollback must not run without a completed read"); },
+  },
+  validateStoredFilenameMappings: filenameHelpers.validateStoredFilenameMappings,
+  renderFilenameMappings: () => { mappingReadFailureSignals.renderCount += 1; },
+  setFilenameMappingStatus: (message, isError) => { mappingReadFailureSignals.status = { message, isError }; },
+  showToast: (message, isError) => { mappingReadFailureSignals.toast = { message, isError }; },
+});
+vm.runInContext(`${mappingPersistenceSource}; globalThis.persistMappingsAfterReadFailure = persistFilenameMappings;`, mappingReadFailureContext);
+assert.equal(
+  mappingReadFailureContext.persistMappingsAfterReadFailure(defaultFilenameMappings, "saved"),
+  false,
+  "a localStorage read failure must be caught by the same settings error boundary",
+);
+assert.equal(mappingReadFailureContext.state.filenameMappings, previousValidMappings, "a failed localStorage read must preserve the exact previous valid state");
+assert.equal(mappingReadFailureSignals.status.isError, true, "a failed localStorage read must be displayed in settings");
+assert.equal(mappingReadFailureSignals.toast.isError, true, "a failed localStorage read must notify the operator");
 assert.match(
   settingsBehaviorSource,
   /const confirmed = window\.confirm\([\s\S]*?if \(!confirmed\) return;[\s\S]*?clearLocalRecovery\(\)/,
@@ -1409,6 +1770,26 @@ assert.doesNotMatch(
   /hidden-columns|hiddenColumnSettings/,
   "hidden-column preferences must not alter general or purchase-upload workbooks",
 );
+assert.doesNotMatch(
+  html.slice(html.indexOf("async function persistLocalWorkspace"), html.indexOf("function scheduleLocalSave")),
+  /filenameMappings|FILENAME_MAPPINGS_KEY/,
+  "file-name mappings must not enter IndexedDB recovery records",
+);
+assert.doesNotMatch(
+  html.slice(html.indexOf("async function buildCloudEnvelope"), html.indexOf("async function postCloudAction")),
+  /filenameMappings|FILENAME_MAPPINGS_KEY/,
+  "file-name mappings must not enter Cloud plan payloads",
+);
+assert.doesNotMatch(
+  html.slice(html.indexOf("function persistFilenameMappings"), html.indexOf("function settingsFocusableElements")),
+  /scheduleLocalSave|state\.workspace\s*=/,
+  "file-name mapping persistence must stay outside workspace and recovery autosave",
+);
+assert.doesNotMatch(
+  fs.readFileSync(path.join(ROOT, "orderFulfillmentEngine.js"), "utf8"),
+  /filename-mappings|filenameMappings/,
+  "file-name mappings must not alter the shared shipping workspace engine",
+);
 
 function readFileMatrices(filePath, sheetName) {
   const workbook = XLSX.read(fs.readFileSync(filePath), {
@@ -1440,9 +1821,10 @@ function readFileMatrices(filePath, sheetName) {
 
 const referenceOrdersPath = "C:\\Users\\USER\\Desktop\\미출고.xlsx";
 const referenceInventoryPath = "C:\\Users\\USER\\Desktop\\창고별재고.xlsx";
+const referenceFilesEnabled = process.env.SHIPPING_SKIP_REFERENCE_FILES !== "1";
 let referenceWorkspace = null;
 let inventoryReferenceWorkspace = null;
-if (fs.existsSync(referenceInventoryPath)) {
+if (referenceFilesEnabled && fs.existsSync(referenceInventoryPath)) {
   const inventoryInput = readFileMatrices(referenceInventoryPath, "재고현황");
   const referenceInventoryOnly = engine.parseInventoryWorkbook({
     fileName: path.basename(referenceInventoryPath),
@@ -1469,7 +1851,7 @@ if (fs.existsSync(referenceInventoryPath)) {
   assert.equal(actualInventorySheet["!ref"], `A1:${actualSupplierColumn}${referenceInventoryOnly.rowCount + 1}`);
   assert.equal(actualInventorySheet[`${actualPurchaseColumn}${referenceInventoryOnly.rowCount + 1}`].v, "실재고입력검증");
 }
-if (fs.existsSync(referenceOrdersPath) && fs.existsSync(referenceInventoryPath)) {
+if (referenceFilesEnabled && fs.existsSync(referenceOrdersPath) && fs.existsSync(referenceInventoryPath)) {
   const orderInput = readFileMatrices(referenceOrdersPath, "미판매현황");
   const inventoryInput = readFileMatrices(referenceInventoryPath, "재고현황");
   const referenceOrders = engine.parseOrderWorkbook({
