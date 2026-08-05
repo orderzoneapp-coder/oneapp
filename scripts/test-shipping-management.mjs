@@ -1031,6 +1031,89 @@ for (const sheetName of formatWorkbook.SheetNames) {
   }
 }
 
+const inventory305Rows = Array.from({ length: 305 }, (_, index) => ({
+  code: `FIXTURE-305-${String(index + 1).padStart(3, "0")}`,
+  name: `305행 재고상품 ${index + 1}`,
+  spec: index % 2 === 0 ? "EA" : "BOX",
+  whole: index === 0 ? -5 : 2,
+  transfer2: index === 0 ? -3 : 0,
+  seoul: 0,
+  transfer: 0,
+  jinyeong: 0,
+}));
+const inventory305Orders = parseOrders(buildOrderMatrix([{
+  code: inventory305Rows[0].code,
+  name: inventory305Rows[0].name,
+  quantity: 2,
+  spec: inventory305Rows[0].spec,
+  manager: "305행 검증담당",
+}]));
+const inventory305Parsed = parseInventory(buildInventoryMatrix(inventory305Rows));
+assert.equal(inventory305Orders.rowCount, 1, "305-row fixture must include one representative unshipped order row");
+assert.equal(inventory305Parsed.rowCount, 305, "synthetic inventory fixture must parse exactly 305 data rows");
+const inventory305Validation = engine.validateInputs(inventory305Orders, inventory305Parsed);
+assert.equal(inventory305Validation.canAnalyze, true, JSON.stringify(inventory305Validation.errors, null, 2));
+assert.equal(inventory305Validation.unmatchedCount, 0, "the representative order must match the 305-row inventory fixture");
+assert.equal(
+  inventory305Parsed.rows.find((row) => row.productCode === inventory305Rows[0].code).inventoryTotal,
+  -8,
+  "negative warehouse quantities must retain their signed arithmetic sum during parse",
+);
+const inventory305Workspace = engine.analyze(inventory305Orders, inventory305Parsed, {
+  createdAt: "2026-08-05T00:00:00.000Z",
+  sourceFingerprint: "3".repeat(64),
+});
+assert.equal(inventory305Workspace.stats.inventoryRowCount, 305, "analysis must preserve all 305 parsed inventory rows");
+assert.equal(inventory305Workspace.stats.orderRowCount, 1, "analysis must preserve the representative unshipped row");
+assert.equal(inventory305Workspace.stats.inventoryNegativeCount, 1, "negative inventory is valid review data, not an analysis blocker");
+assert.equal(inventory305Workspace.allocations.length, 1, "the representative order must produce one shipping allocation row");
+const inventory305ViewBefore = engine.getInventoryViewRows(inventory305Workspace);
+assert.equal(inventory305ViewBefore.rows.length, 305, "the inventory review view must preserve all 305 rows");
+assert.equal(inventory305ViewBefore.rows[0].productCode, "FIXTURE-305-001");
+assert.equal(inventory305ViewBefore.rows.at(-1).productCode, "FIXTURE-305-305");
+assert.equal(inventory305ViewBefore.rows[0].inventoryTotal, -8, "the automatic quantity must display the negative signed sum unchanged");
+const inventory305Columns = engine.getInventoryColumnDescriptors(inventory305Workspace);
+const inventory305QuantityColumn = inventory305Columns.find((column) => column.role === "calculatedQuantity");
+const inventory305InboundColumn = inventory305Columns.find(
+  (column) => column.header === "7진영" && column.role === "warehouseQuantity",
+);
+assert.equal(inventory305QuantityColumn?.editable, false, "the 305-row automatic quantity must remain readonly");
+assert.equal(inventory305InboundColumn?.editable, true, "the positive correction must target an editable warehouseQuantity cell");
+const inventory305AllocationBefore = engine.getAllocationInventoryView(inventory305Workspace);
+assert.equal(inventory305AllocationBefore.rows[0].warehouseValues.at(-1), 0);
+engine.setInventoryOverride(
+  inventory305Workspace,
+  inventory305Rows[0].code,
+  inventory305InboundColumn.key,
+  10,
+);
+const inventory305ViewAfter = engine.getInventoryViewRows(inventory305Workspace);
+assert.equal(inventory305ViewAfter.rows.length, 305, "a warehouse correction must not add, drop, or merge inventory rows");
+assert.equal(inventory305ViewAfter.rows[0].inventoryTotal, 2, "positive inbound stock must resolve -8 to the signed arithmetic total 2");
+assert.equal(inventory305Workspace.stats.inventoryNegativeCount, 0, "negative review count must recalculate after the positive correction");
+const inventory305AllocationAfter = engine.getAllocationInventoryView(inventory305Workspace);
+assert.equal(
+  inventory305AllocationAfter.rows[0].warehouseValues.at(-1),
+  10,
+  "the representative unshipped view must recalculate its warehouse display from the corrected cell",
+);
+const inventory305Workbook = workbookTools.buildWorkbook(inventory305Workspace, XLSX);
+assert.equal(
+  XLSX.utils.sheet_to_json(inventory305Workbook.Sheets["창고별 재고"], { header: 1, raw: true }).length,
+  306,
+  "the workbook inventory sheet must contain one header plus all 305 inventory rows",
+);
+assert.equal(
+  sheetCellByHeader(inventory305Workbook.Sheets["창고별 재고"], "수량", 2).v,
+  2,
+  "the workbook automatic quantity must use the corrected signed warehouse sum",
+);
+assert.equal(
+  sheetCellByHeader(inventory305Workbook.Sheets["미출고현황"], "7진영", 2).v,
+  10,
+  "the workbook shipping list must show the corrected positive warehouse quantity",
+);
+
 const largeRows = Array.from({ length: 180 }, (_, index) => ({
   code: `ROW-${String(index + 1).padStart(3, "0")}`,
   quantity: 1,
