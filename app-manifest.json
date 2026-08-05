@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.3.0",
-  "updatedAt": "2026-08-04",
+  "updatedAt": "2026-08-05",
   "repository": {
     "fullName": "orderzoneapp-coder/oneapp",
     "defaultBranch": "main",
@@ -47,7 +47,11 @@
       "path": "DataOps.html",
       "kind": "web-entry",
       "status": "production",
-      "purpose": "Analyze purchase, sales, inventory, stock ledger, cost, and performance information.",
+      "purpose": "Analyze purchase, sales, inventory, stock ledger, cost, and performance information, including administrator-reviewed out-of-list inventory products from the confirmed local master.",
+      "productionWrites": true,
+      "runtimeDependencies": [
+        "core-engine"
+      ],
       "services": [
         "cloud-sync"
       ],
@@ -56,7 +60,9 @@
         "change-history",
         "pricing-rules",
         "mapping-config",
-        "cloud-url"
+        "cloud-url",
+        "stop-management",
+        "dataops-inventory-master-resume"
       ]
     },
     {
@@ -306,6 +312,21 @@
       }
     },
     {
+      "id": "dataops-inventory-master-resume",
+      "owner": "dataops",
+      "consumers": [
+        "DataOps.html"
+      ],
+      "schemaVersion": "dataops-inventory-master-resume/v1",
+      "purpose": "Identify and retry sale-resume work after the related DataOps inventory snapshot has already finalized successfully.",
+      "resources": {
+        "localStorage": [
+          "dataops_inventory_master_resume_v1"
+        ]
+      },
+      "rollback": "Reverting the feature stops new records; unresolved records are retained for manual sale-status review and must not trigger another inventory closing. Successfully resumed records are removed after verified master/history commit."
+    },
+    {
       "id": "product-master",
       "owner": "merchops",
       "resources": {
@@ -367,8 +388,10 @@
       "owner": "smart-parser",
       "consumers": [
         "SmartParser.html",
-        "MerchOps.html"
+        "MerchOps.html",
+        "DataOps.html"
       ],
+      "writerPolicy": "SmartParser owns general stop/resume management. DataOps may perform resume-only writes through masterAddUpdate.js after a finalized positive inventory count, using the existing atomic master/history/linked-state contract.",
       "resources": {
         "indexedDb": {
           "database": "MerchOpsDB",
@@ -651,8 +674,9 @@
         "F9": "Open Export Center for review and downstream output."
       },
       "dataops": {
+        "F6": "Open one out-of-list product search row below the selected inventory row using the confirmed local master.",
         "F8": "Unassigned.",
-        "F9": "Create the combined workbook output.",
+        "F9": "Create the combined workbook, finalize the DataOps inventory snapshot, then independently resume stopped master products with positive counted inventory.",
         "F10": "Open the print output workflow."
       }
     }
@@ -718,8 +742,9 @@
           "id": "5B",
           "application": "dataops",
           "shortcuts": {
+            "F6": "Open one out-of-list product search row below the selected inventory row using the confirmed local master.",
             "F8": "Unassigned.",
-            "F9": "Create the combined workbook output.",
+            "F9": "Create the combined workbook, finalize the DataOps inventory snapshot, then independently resume stopped master products with positive counted inventory.",
             "F10": "Open the print output workflow."
           }
         }
