@@ -10307,6 +10307,8 @@ const ExcelDataGrid = ({ state, actions }) => {
     }), [isEstimateUploaded, visibleMasterCols, visibleUploadCols, config, data, activeTableTarget, registrationMode, state.activeTags, currentColumnWidths]);
     const widthStyle = (key, label, fallback) => window.getMerchColumnWidthStyle(currentColumnWidths, key, label, fallback, sharedColumnWidths);
     const getColumnWidthValue = (key, label, fallback) => window.getMerchColumnWidthValue(currentColumnWidths, key, label, fallback, sharedColumnWidths);
+    // [M-RESIZE-POINTER-01] 드래그 중 mousemove 누적·전역 커서·별도 안내선은 포인터 잔상과 지연 이동을 만든다.
+    // 이동 중에는 아무 작업도 하지 않고 mouseup 좌표로 최종 열폭을 한 번만 반영한다.
     const resizeHandle = (key, label, fallback = 86) => React.createElement("span", {
         className: MERCH_RESIZE_HANDLE_CLASS,
         title: "드래그한 뒤 놓으면 열폭 조정",
