@@ -10307,41 +10307,35 @@ const ExcelDataGrid = ({ state, actions }) => {
     }), [isEstimateUploaded, visibleMasterCols, visibleUploadCols, config, data, activeTableTarget, registrationMode, state.activeTags, currentColumnWidths]);
     const widthStyle = (key, label, fallback) => window.getMerchColumnWidthStyle(currentColumnWidths, key, label, fallback, sharedColumnWidths);
     const getColumnWidthValue = (key, label, fallback) => window.getMerchColumnWidthValue(currentColumnWidths, key, label, fallback, sharedColumnWidths);
+    // [M-RESIZE-POINTER-01] 드래그 중 mousemove 누적·전역 커서·별도 안내선은 포인터 잔상과 지연 이동을 만든다.
+    // 이동 중에는 아무 작업도 하지 않고 mouseup 좌표로 최종 열폭을 한 번만 반영한다.
     const resizeHandle = (key, label, fallback = 86) => React.createElement("span", {
         className: MERCH_RESIZE_HANDLE_CLASS,
-        title: "드래그해서 열폭 조정",
+        title: "드래그한 뒤 놓으면 열폭 조정",
+        draggable: false,
+        onDragStart: (e) => e.preventDefault(),
         onMouseDown: (e) => {
+            if (e.button !== 0) return;
             e.preventDefault();
             e.stopPropagation();
             const startX = e.clientX;
             const startWidth = getColumnWidthValue(key, label, fallback);
             const minWidth = key === 'core:마스터 정보' ? 160 : (key === 'report:리포트' ? 140 : 48);
             const cursorRoot = document.documentElement;
-            const previousCursor = cursorRoot.style.cursor;
             const previousUserSelect = cursorRoot.style.userSelect;
-            let latestWidth = startWidth;
-            let changed = false;
-            cursorRoot.style.cursor = 'col-resize';
             cursorRoot.style.userSelect = 'none';
-            const onMove = (moveEvent) => {
-                const nextWidth = Math.max(minWidth, Math.min(720, Math.round(startWidth + moveEvent.clientX - startX)));
-                if (nextWidth === latestWidth) return;
-                latestWidth = nextWidth;
-                changed = latestWidth !== startWidth;
-            };
-            const onUp = () => {
-                window.removeEventListener('mousemove', onMove);
+            const onUp = (upEvent) => {
                 window.removeEventListener('mouseup', onUp);
                 window.removeEventListener('blur', onUp);
-                cursorRoot.style.cursor = previousCursor;
                 cursorRoot.style.userSelect = previousUserSelect;
-                if (changed) {
-                    setColumnWidthDraft(prev => ({ ...(prev || {}), [key]: latestWidth }));
+                if (upEvent?.type === 'mouseup' && Number.isFinite(upEvent.clientX)) {
+                    const nextWidth = Math.max(minWidth, Math.min(720, Math.round(startWidth + upEvent.clientX - startX)));
+                    if (nextWidth === startWidth) return;
+                    setColumnWidthDraft(prev => ({ ...(prev || {}), [key]: nextWidth }));
                     setColumnWidthDirtyMap(prev => ({ ...(prev || {}), [key]: String(label || key) }));
                     setColumnWidthDirty(true);
                 }
             };
-            window.addEventListener('mousemove', onMove);
             window.addEventListener('mouseup', onUp);
             window.addEventListener('blur', onUp);
         }

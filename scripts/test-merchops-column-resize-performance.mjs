@@ -10,16 +10,13 @@ const resizeEnd = source.indexOf('const saveColumnWidths =', resizeStart);
 assert.ok(resizeStart >= 0 && resizeEnd > resizeStart, '열폭 드래그 처리 구간을 찾을 수 있어야 한다.');
 
 const resizeSource = source.slice(resizeStart, resizeEnd);
-const moveStart = resizeSource.indexOf('const onMove =');
-const upStart = resizeSource.indexOf('const onUp =', moveStart);
-assert.ok(moveStart >= 0 && upStart > moveStart, 'mousemove와 mouseup 처리기를 찾을 수 있어야 한다.');
-
-const moveSource = resizeSource.slice(moveStart, upStart);
+const upStart = resizeSource.indexOf('const onUp =');
+assert.ok(upStart >= 0, 'mouseup 처리기를 찾을 수 있어야 한다.');
 const upSource = resizeSource.slice(upStart);
 assert.doesNotMatch(
-    moveSource,
-    /setColumnWidthDraft|setColumnWidthDirtyMap|setColumnWidthDirty/,
-    '드래그 중에는 React 상태를 변경해 전체 작업표를 다시 렌더링하면 안 된다.'
+    resizeSource,
+    /mousemove|onMove|cursorRoot\.style\.cursor/,
+    '드래그 중 이동 이벤트를 수집하거나 전역 커서를 추가로 변경하면 안 된다.'
 );
 assert.match(upSource, /setColumnWidthDraft/, '마우스를 놓을 때 최종 열폭을 React 상태에 반영해야 한다.');
 assert.doesNotMatch(
@@ -27,8 +24,8 @@ assert.doesNotMatch(
     /nth-child|previewStyle\.textContent|data-merch-column-resize-preview|merch-column-resize-guide|document\.createElement|appendChild|requestAnimationFrame/,
     '드래그 중 테이블 열 전체 또는 별도 안내 요소를 만들면 안 된다.'
 );
-assert.match(resizeSource, /cursorRoot\.style\.cursor = 'col-resize'/, '드래그 중에는 실제 마우스 커서 하나만 열폭 조정 모양으로 유지해야 한다.');
-assert.match(resizeSource, /cursorRoot\.style\.cursor = previousCursor/, '드래그 종료 시 기존 마우스 커서를 복원해야 한다.');
+assert.match(resizeSource, /draggable:\s*false/, '브라우저 기본 요소 드래그를 막아 포인터 잔상을 만들지 않아야 한다.');
+assert.match(resizeSource, /onDragStart:\s*\(e\) => e\.preventDefault\(\)/, '브라우저 기본 dragstart를 명시적으로 차단해야 한다.');
 assert.match(resizeSource, /addEventListener\('blur', onUp\)/, '창 포커스를 잃어도 드래그 자원을 정리해야 한다.');
 
 const gridStart = source.indexOf('const ExcelDataGrid =');
@@ -125,7 +122,7 @@ const createResizeHarness = ({ rowCount = 2000, startWidth = 100 } = {}) => {
             });
         },
         move(clientX) { dispatch('mousemove', { clientX }); },
-        finish(type = 'mouseup') { dispatch(type); },
+        finish(type = 'mouseup', clientX = 200) { dispatch(type, { type, clientX }); },
         snapshot: () => ({
             draft: { ...draft },
             widthApplyCount,
@@ -151,10 +148,11 @@ let changedSnapshot = changedDrag.snapshot();
 assert.equal(changedSnapshot.widthApplyCount, 0, '반복 mousemove 중 최종 열폭 상태 반영은 0회여야 한다.');
 assert.equal(changedSnapshot.rowRenderIncrease, 0, '2,000행 모델에서 mousemove 중 행 렌더 증가는 0이어야 한다.');
 assert.equal(changedSnapshot.dirtyUpdates, 0, 'mousemove 중 dirty 상태를 바꾸면 안 된다.');
-assert.equal(changedSnapshot.cursor, 'col-resize', '드래그 중에는 실제 마우스 커서 하나만 열폭 조정 모양이어야 한다.');
+assert.equal(changedSnapshot.moveListenerCount, 0, '드래그 중 mousemove 이벤트를 등록하면 안 된다.');
+assert.equal(changedSnapshot.cursor, '', '드래그 중 전역 커서를 강제로 추가하면 안 된다.');
 assert.equal(changedSnapshot.userSelect, 'none', '드래그 중 텍스트 선택을 막아야 한다.');
 
-changedDrag.finish('mouseup');
+changedDrag.finish('mouseup', 400);
 changedSnapshot = changedDrag.snapshot();
 assert.equal(changedSnapshot.widthApplyCount, 1, '드래그 종료 후 최종 열폭 반영은 정확히 1회여야 한다.');
 assert.equal(changedSnapshot.draft['work:입고가'], 300, '마우스를 놓은 최종 폭이 실제 열폭 초안에 반영되어야 한다.');
