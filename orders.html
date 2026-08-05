@@ -157,6 +157,40 @@
       grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 16px;
     }
+    .bundle-upload {
+      min-width: 0;
+      border: 1px solid #99f6e4;
+      border-radius: 14px;
+      background: #f0fdfa;
+    }
+    .bundle-drop-zone {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      align-items: center;
+      gap: 14px;
+      min-height: 82px;
+      padding: 14px 16px;
+      border: 2px dashed transparent;
+      border-radius: 14px;
+      outline: none;
+      cursor: pointer;
+    }
+    .bundle-drop-zone:focus-visible,
+    .bundle-drop-zone.dragover { border-color: var(--teal-600); background: var(--teal-100); }
+    .bundle-drop-zone[aria-busy="true"] { cursor: progress; opacity: 0.72; }
+    .bundle-status {
+      margin: 0 12px 12px;
+      padding: 8px 10px;
+      border: 1px solid var(--slate-200);
+      border-radius: 8px;
+      color: var(--slate-600);
+      background: var(--white);
+      font-size: 11px;
+      line-height: 1.45;
+    }
+    .bundle-status.good { border-color: #86efac; color: #166534; background: #f0fdf4; }
+    .bundle-status.bad { border-color: #fda4af; color: #9f1239; background: #fff1f2; }
+    .bundle-status ul { margin: 5px 0 0; padding-left: 18px; }
     .upload-card {
       min-width: 0;
       border: 1px solid var(--slate-200);
@@ -833,6 +867,38 @@
       font-size: 10px;
       line-height: 1.6;
     }
+    .filename-mapping-panel {
+      margin-top: 14px;
+      padding: 16px;
+      border: 1px solid var(--slate-200);
+      border-radius: 10px;
+      background: var(--slate-50);
+    }
+    .filename-mapping-panel h3 { margin: 0; font-size: 14px; }
+    .filename-mapping-description { margin: 6px 0 12px; color: var(--slate-600); font-size: 10px; line-height: 1.55; }
+    .filename-mapping-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+    .filename-mapping-group { min-width: 0; }
+    .filename-mapping-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 7px; }
+    .filename-mapping-heading h4 { margin: 0; font-size: 11px; }
+    .filename-mapping-add,
+    .filename-mapping-delete {
+      min-height: 30px;
+      border: 1px solid var(--slate-300);
+      border-radius: 6px;
+      color: var(--slate-700);
+      background: var(--white);
+      font-size: 10px;
+      font-weight: 800;
+    }
+    .filename-mapping-add { padding: 0 10px; }
+    .filename-mapping-delete { flex: 0 0 auto; width: 32px; padding: 0; }
+    .filename-mapping-list { display: grid; gap: 6px; }
+    .filename-mapping-row { display: flex; align-items: center; gap: 6px; }
+    .filename-mapping-row input { min-width: 0; width: 100%; height: 32px; padding: 0 9px; border: 1px solid var(--slate-300); border-radius: 6px; background: var(--white); }
+    .filename-mapping-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+    .filename-mapping-actions button { min-height: 34px; padding: 0 12px; }
+    .filename-mapping-status { min-height: 16px; margin: 8px 0 0; color: var(--slate-600); font-size: 10px; }
+    .filename-mapping-status.error { color: var(--red-700); }
     .result-actions { display: flex; align-items: center; gap: 8px; }
     .secondary-download { color: var(--white); background: #2563eb; }
     .secondary-download:hover { background: #3b82f6; }
@@ -929,6 +995,7 @@
       .settings-action-row button { flex-basis: auto; width: 100%; }
       .settings-revision-row { grid-template-columns: 1fr; }
       .settings-revision-row button { width: 100%; }
+      .filename-mapping-grid { grid-template-columns: 1fr; }
       .local-reset-button { width: 100%; }
     }
 
@@ -1079,9 +1146,9 @@
     .input-panel {
       display: grid;
       grid-template-areas:
-        "uploads uploads analyze"
-        "validation note note";
-      grid-template-columns: minmax(0, 1fr) minmax(245px, 300px) 120px;
+        "bundle uploads analyze"
+        "bundle validation note";
+      grid-template-columns: minmax(225px, 280px) minmax(0, 1fr) 120px;
       gap: 8px;
       padding: 10px 12px 12px;
       border: 0;
@@ -1094,6 +1161,19 @@
       grid-area: uploads;
       gap: 8px;
     }
+    .bundle-upload {
+      grid-area: bundle;
+      overflow: hidden;
+      border-color: #0f766e;
+      border-radius: 6px;
+      background: #15383b;
+    }
+    .bundle-drop-zone { min-height: 60px; padding: 8px 12px; border-radius: 6px; }
+    .bundle-drop-zone:focus-visible,
+    .bundle-drop-zone.dragover { border-color: #67e8f9; background: rgba(13, 148, 136, 0.2); }
+    .bundle-status { margin: 0 8px 8px; padding: 6px 8px; border-color: #475569; color: var(--slate-300); background: #172033; font-size: 9px; }
+    .bundle-status.good { border-color: #059669; color: #a7f3d0; background: #12352f; }
+    .bundle-status.bad { border-color: #e11d48; color: #fecdd3; background: #3b1f2c; }
     .upload-card {
       display: block;
       overflow: hidden;
@@ -1195,6 +1275,7 @@
       .system-info .system-mode { text-align: left; }
       .input-panel {
         grid-template-areas:
+          "bundle"
           "uploads"
           "analyze"
           "validation"
@@ -1251,6 +1332,18 @@
       </div>
 
       <section class="panel input-panel" aria-label="입력 파일">
+      <article class="bundle-upload" aria-label="두 Excel 자동분류 업로드">
+        <div class="bundle-drop-zone" id="bundleDrop" tabindex="0" role="button"
+          aria-label="주문현황과 창고별재고 Excel 두 파일 함께 선택" aria-busy="false">
+          <div class="file-icon" aria-hidden="true">2×</div>
+          <div>
+            <p class="drop-title">두 파일 함께 선택</p>
+            <p class="drop-help">순서 무관 · 파일명으로 자동분류 · 정확히 2개</p>
+          </div>
+        </div>
+        <input class="hidden" id="bundleInput" type="file" multiple accept=".xlsx,.xls">
+        <div class="bundle-status hidden" id="bundleStatus" role="status" aria-live="polite"></div>
+      </article>
       <div class="upload-grid">
         <article class="upload-card" id="ordersCard">
           <div class="drop-zone" id="ordersDrop" tabindex="0" role="button" aria-label="주문현황 Excel 선택">
@@ -1388,6 +1481,31 @@
           </div>
         </div>
         <p class="settings-help storage-note">로컬 자동저장은 IndexedDB 복구용이며 클라우드로 자동 전송하지 않습니다. 명시적으로 저장한 revision만 다른 PC에서 조회됩니다.</p>
+        <section class="filename-mapping-panel" aria-labelledby="filenameMappingTitle">
+          <h3 id="filenameMappingTitle">업로드 파일명 매핑</h3>
+          <p class="filename-mapping-description">확장자를 뺀 파일명에서 공백·괄호·구분기호와 대소문자 차이를 제거한 뒤, 아래 규칙이 포함되는지 확인합니다. 이 브라우저의 두 파일 자동분류에만 사용하며 Cloud revision·로컬 복구 자료와 분리됩니다.</p>
+          <div class="filename-mapping-grid">
+            <section class="filename-mapping-group" aria-labelledby="ordersMappingTitle">
+              <div class="filename-mapping-heading">
+                <h4 id="ordersMappingTitle">주문현황 규칙</h4>
+                <button class="filename-mapping-add" type="button" data-add-filename-mapping="orders">규칙 추가</button>
+              </div>
+              <div class="filename-mapping-list" id="ordersFilenameMappingList"></div>
+            </section>
+            <section class="filename-mapping-group" aria-labelledby="inventoryMappingTitle">
+              <div class="filename-mapping-heading">
+                <h4 id="inventoryMappingTitle">창고별재고 규칙</h4>
+                <button class="filename-mapping-add" type="button" data-add-filename-mapping="inventory">규칙 추가</button>
+              </div>
+              <div class="filename-mapping-list" id="inventoryFilenameMappingList"></div>
+            </section>
+          </div>
+          <div class="filename-mapping-actions">
+            <button type="button" id="filenameMappingsSaveButton">파일명 규칙 저장</button>
+            <button type="button" id="filenameMappingsResetButton">기본값 복원</button>
+          </div>
+          <p class="filename-mapping-status" id="filenameMappingStatus" role="status" aria-live="polite"></p>
+        </section>
         <div class="local-reset-panel">
           <div>
             <strong>로컬 복구 초기화</strong>
@@ -1420,6 +1538,13 @@
       const TABLE_WIDTHS_SCHEMA = "shipping-table-widths/v1";
       const HIDDEN_COLUMNS_KEY = "oneapp.shipping.hidden-columns.v1";
       const HIDDEN_COLUMNS_SCHEMA = "shipping-hidden-columns/v1";
+      const FILENAME_MAPPINGS_KEY = "oneapp.shipping.filename-mappings.v1";
+      const FILENAME_MAPPINGS_SCHEMA = "shipping-filename-mappings/v1";
+      const DEFAULT_FILENAME_MAPPINGS = Object.freeze({
+        schemaVersion: FILENAME_MAPPINGS_SCHEMA,
+        orders: Object.freeze(["미출고현황", "미출고", "주문현황"]),
+        inventory: Object.freeze(["창고별재고", "창고재고", "재고현황"]),
+      });
       const TABLE_WIDTH_MIN = 24;
       const TABLE_WIDTH_MAX = 720;
       const TABLE_WIDTH_TABS = new Set(["inventory", "allocations", "validation"]);
@@ -1443,12 +1568,17 @@
         columnWidthDirtyTabs: new Set(),
         activeColumnResize: null,
         hiddenColumnSettings: { schemaVersion: HIDDEN_COLUMNS_SCHEMA, tabs: Object.create(null) },
+        filenameMappings: cloneFilenameMappings(),
       };
+      let bundleUploadInProgress = false;
 
       const elements = {
         settingsButton: document.getElementById("settingsButton"),
         settingsModal: document.getElementById("settingsModal"),
         settingsCloseButton: document.getElementById("settingsCloseButton"),
+        bundleInput: document.getElementById("bundleInput"),
+        bundleDrop: document.getElementById("bundleDrop"),
+        bundleStatus: document.getElementById("bundleStatus"),
         ordersInput: document.getElementById("ordersInput"),
         inventoryInput: document.getElementById("inventoryInput"),
         ordersDrop: document.getElementById("ordersDrop"),
@@ -1490,6 +1620,11 @@
         cloudSaveButton: document.getElementById("cloudSaveButton"),
         cloudRevisionSelect: document.getElementById("cloudRevisionSelect"),
         cloudLoadButton: document.getElementById("cloudLoadButton"),
+        ordersFilenameMappingList: document.getElementById("ordersFilenameMappingList"),
+        inventoryFilenameMappingList: document.getElementById("inventoryFilenameMappingList"),
+        filenameMappingsSaveButton: document.getElementById("filenameMappingsSaveButton"),
+        filenameMappingsResetButton: document.getElementById("filenameMappingsResetButton"),
+        filenameMappingStatus: document.getElementById("filenameMappingStatus"),
         systemMessage: document.getElementById("systemMessage"),
         systemBasisDate: document.getElementById("systemBasisDate"),
         systemFileState: document.getElementById("systemFileState"),
@@ -1527,6 +1662,117 @@
         if (!value || typeof value !== "object" || Array.isArray(value)) return false;
         const prototype = Object.getPrototypeOf(value);
         return prototype === Object.prototype || prototype === null;
+      }
+
+      function cloneFilenameMappings(value = DEFAULT_FILENAME_MAPPINGS) {
+        return {
+          schemaVersion: FILENAME_MAPPINGS_SCHEMA,
+          orders: Array.from(value.orders || []),
+          inventory: Array.from(value.inventory || []),
+        };
+      }
+
+      function normalizeFilenameMapping(value) {
+        return String(value ?? "")
+          .trim()
+          .replace(/\.(?:xlsx|xls)$/i, "")
+          .normalize("NFKC")
+          .toLocaleLowerCase("ko-KR")
+          .replace(/[^\p{L}\p{N}]+/gu, "");
+      }
+
+      function validateStoredFilenameMappings(value) {
+        if (!isPlainRecord(value) || value.schemaVersion !== FILENAME_MAPPINGS_SCHEMA) return null;
+        const result = { schemaVersion: FILENAME_MAPPINGS_SCHEMA, orders: [], inventory: [] };
+        const normalizedSeen = new Set();
+        for (const kind of ["orders", "inventory"]) {
+          if (!Array.isArray(value[kind])) return null;
+          for (const item of value[kind]) {
+            if (typeof item !== "string" || !item.trim()) return null;
+            const normalized = normalizeFilenameMapping(item);
+            if (!normalized || normalizedSeen.has(normalized)) return null;
+            normalizedSeen.add(normalized);
+            result[kind].push(item.trim());
+          }
+        }
+        return result;
+      }
+
+      function loadFilenameMappings() {
+        try {
+          const raw = localStorage.getItem(FILENAME_MAPPINGS_KEY);
+          if (!raw) return cloneFilenameMappings();
+          return validateStoredFilenameMappings(JSON.parse(raw)) || cloneFilenameMappings();
+        } catch (error) {
+          return cloneFilenameMappings();
+        }
+      }
+
+      function classifyFilename(fileName, mappings) {
+        const normalizedName = normalizeFilenameMapping(fileName);
+        const matchedKinds = ["orders", "inventory"].filter((kind) =>
+          mappings[kind].some((rule) => normalizedName.includes(normalizeFilenameMapping(rule))),
+        );
+        if (matchedKinds.length === 2) {
+          return { kind: null, reason: "주문현황과 창고별재고 규칙에 모두 일치하여 모호합니다." };
+        }
+        if (matchedKinds.length === 0) {
+          return { kind: null, reason: "저장된 파일명 규칙과 일치하지 않습니다." };
+        }
+        return { kind: matchedKinds[0], reason: "" };
+      }
+
+      function planBundleSelection(fileList, mappings) {
+        const files = Array.from(fileList || []);
+        if (files.length !== 2) {
+          const message = `정확히 2개가 필요하지만 ${files.length}개가 선택되었습니다.`;
+          return {
+            ok: false,
+            errors: files.length > 0
+              ? files.map((file) => ({ fileName: file?.name || "(이름 없음)", message }))
+              : [{ fileName: "선택", message }],
+          };
+        }
+
+        const inspections = files.map((file) => {
+          const fileName = file?.name || "(이름 없음)";
+          const reasons = [];
+          if (!isSupportedFile(file)) {
+            reasons.push(".xlsx 또는 .xls 확장자가 아닙니다.");
+          }
+          if (file.size > MAX_FILE_SIZE) {
+            reasons.push("파일 크기가 25MB를 초과합니다.");
+          }
+          if (reasons.length > 0) return { file, fileName, kind: null, message: reasons.join(" ") };
+          const match = classifyFilename(fileName, mappings);
+          if (!match.kind) {
+            return { file, fileName, kind: null, message: match.reason };
+          }
+          return { file, fileName, kind: match.kind, message: "" };
+        });
+        if (inspections.some((inspection) => !inspection.kind)) {
+          return {
+            ok: false,
+            errors: inspections.map((inspection) => ({
+              fileName: inspection.fileName,
+              message: inspection.message ||
+                `${inspection.kind === "orders" ? "주문현황" : "창고별재고"}로 일치했지만 다른 파일 오류로 묶음 전체를 반영하지 않습니다.`,
+            })),
+          };
+        }
+        if (inspections[0].kind === inspections[1].kind) {
+          const label = inspections[0].kind === "orders" ? "주문현황" : "창고별재고";
+          return {
+            ok: false,
+            errors: inspections.map(({ file }) => ({
+              fileName: file.name,
+              message: `두 파일이 모두 ${label} 유형으로 일치합니다.`,
+            })),
+          };
+        }
+        const assignments = {};
+        inspections.forEach(({ file, kind }) => { assignments[kind] = file; });
+        return { ok: true, assignments, errors: [] };
       }
 
       function isSafeColumnKey(value) {
@@ -1806,6 +2052,134 @@
 
       function setSystemMessage(message) {
         elements.systemMessage.textContent = message;
+      }
+
+      function createFilenameMappingRow(kind, value = "") {
+        const row = document.createElement("div");
+        row.className = "filename-mapping-row";
+        const input = document.createElement("input");
+        input.type = "text";
+        input.value = value;
+        input.autocomplete = "off";
+        input.setAttribute("aria-label", `${kind === "orders" ? "주문현황" : "창고별재고"} 파일명 규칙`);
+        const remove = document.createElement("button");
+        remove.type = "button";
+        remove.className = "filename-mapping-delete";
+        remove.dataset.deleteFilenameMapping = kind;
+        remove.setAttribute("aria-label", `${value || "빈 값"} 삭제`);
+        remove.textContent = "−";
+        row.append(input, remove);
+        return row;
+      }
+
+      function renderFilenameMappingRows(kind, values = state.filenameMappings[kind]) {
+        const list = elements[kind + "FilenameMappingList"];
+        list.replaceChildren(...values.map((value) => createFilenameMappingRow(kind, value)));
+      }
+
+      function renderFilenameMappings() {
+        renderFilenameMappingRows("orders");
+        renderFilenameMappingRows("inventory");
+      }
+
+      function addFilenameMappingRow(kind, value = "") {
+        const list = elements[kind + "FilenameMappingList"];
+        const row = createFilenameMappingRow(kind, value);
+        list.append(row);
+        row.querySelector("input").focus();
+      }
+
+      function deleteFilenameMappingRow(button) {
+        const kind = button.dataset.deleteFilenameMapping;
+        const list = elements[kind + "FilenameMappingList"];
+        const rows = Array.from(list.querySelectorAll(".filename-mapping-row"));
+        const row = button.closest(".filename-mapping-row");
+        const index = rows.indexOf(row);
+        row?.remove();
+        const remainingInputs = Array.from(list.querySelectorAll("input"));
+        if (remainingInputs.length > 0) {
+          remainingInputs[Math.min(Math.max(index, 0), remainingInputs.length - 1)].focus();
+        } else {
+          addFilenameMappingRow(kind);
+        }
+      }
+
+      function collectFilenameMappingsFromForm() {
+        const mappings = { schemaVersion: FILENAME_MAPPINGS_SCHEMA, orders: [], inventory: [] };
+        const seen = new Map();
+        const crossKindDuplicates = [];
+        for (const kind of ["orders", "inventory"]) {
+          elements[kind + "FilenameMappingList"].querySelectorAll("input").forEach((input) => {
+            const value = input.value.trim();
+            const normalized = normalizeFilenameMapping(value);
+            if (!value || !normalized) return;
+            const previous = seen.get(normalized);
+            if (previous) {
+              if (previous.kind !== kind) crossKindDuplicates.push({ value, kind, previous });
+              return;
+            }
+            seen.set(normalized, { value, kind });
+            mappings[kind].push(value);
+          });
+        }
+        if (crossKindDuplicates.length > 0) {
+          const duplicateValues = [...new Set(crossKindDuplicates.map(({ value, previous }) =>
+            `${previous.value} / ${value}`))].join(", ");
+          throw new Error(`주문현황과 창고별재고에 같은 정규화 규칙을 동시에 저장할 수 없습니다: ${duplicateValues}`);
+        }
+        return mappings;
+      }
+
+      function setFilenameMappingStatus(message, isError = false) {
+        elements.filenameMappingStatus.textContent = message;
+        elements.filenameMappingStatus.classList.toggle("error", isError);
+      }
+
+      function persistFilenameMappings(nextMappings, successMessage) {
+        const previousMappings = state.filenameMappings;
+        let previousRaw = null;
+        let previousRawRead = false;
+        try {
+          previousRaw = localStorage.getItem(FILENAME_MAPPINGS_KEY);
+          previousRawRead = true;
+          localStorage.setItem(FILENAME_MAPPINGS_KEY, JSON.stringify(nextMappings));
+          const verified = validateStoredFilenameMappings(JSON.parse(localStorage.getItem(FILENAME_MAPPINGS_KEY)));
+          if (!verified || JSON.stringify(verified) !== JSON.stringify(nextMappings)) {
+            throw new Error("저장한 파일명 규칙을 다시 확인하지 못했습니다.");
+          }
+          state.filenameMappings = verified;
+          renderFilenameMappings();
+          setFilenameMappingStatus(successMessage);
+          showToast(successMessage);
+          return true;
+        } catch (error) {
+          state.filenameMappings = previousMappings;
+          try {
+            if (previousRawRead) {
+              if (previousRaw === null) localStorage.removeItem(FILENAME_MAPPINGS_KEY);
+              else localStorage.setItem(FILENAME_MAPPINGS_KEY, previousRaw);
+            }
+          } catch (rollbackError) {
+            // In-memory mappings remain the last valid rules even when browser storage is unavailable.
+          }
+          renderFilenameMappings();
+          setFilenameMappingStatus(error.message || "파일명 규칙을 저장하지 못했습니다.", true);
+          showToast(error.message || "파일명 규칙을 저장하지 못했습니다.", true);
+          return false;
+        }
+      }
+
+      function saveFilenameMappings() {
+        try {
+          persistFilenameMappings(collectFilenameMappingsFromForm(), "파일명 규칙을 이 브라우저에 저장했습니다.");
+        } catch (error) {
+          setFilenameMappingStatus(error.message || "파일명 규칙을 저장하지 못했습니다.", true);
+          showToast(error.message || "파일명 규칙을 저장하지 못했습니다.", true);
+        }
+      }
+
+      function restoreDefaultFilenameMappings() {
+        persistFilenameMappings(cloneFilenameMappings(), "파일명 규칙을 기본값으로 복원했습니다.");
       }
 
       function settingsFocusableElements() {
@@ -2120,14 +2494,85 @@
         elements.analyzeButton.disabled = true;
       }
 
+      function renderBundleStatus(status, title, issues = []) {
+        elements.bundleStatus.className = `bundle-status ${status || ""}`.trim();
+        elements.bundleStatus.innerHTML = `
+          <strong>${escapeHtml(title)}</strong>
+          ${issues.length > 0 ? `<ul>${issues.map((issue) =>
+            `<li><strong>${escapeHtml(issue.fileName)}</strong>: ${escapeHtml(issue.message)}</li>`).join("")}</ul>` : ""}
+        `;
+      }
+
+      function setBundleBusy(isBusy) {
+        bundleUploadInProgress = isBusy;
+        elements.bundleInput.disabled = isBusy;
+        elements.bundleDrop.setAttribute("aria-busy", String(isBusy));
+      }
+
       function resetResults() {
         state.workspace = null;
         elements.resultsPanel.classList.add("hidden");
         elements.cloudSaveButton.disabled = true;
       }
 
+      async function handleBundleFiles(fileList) {
+        if (bundleUploadInProgress) return;
+        if (state.loading.orders || state.loading.inventory) {
+          renderBundleStatus("bad", "개별 파일을 읽는 중에는 묶음 선택을 시작할 수 없습니다.");
+          showToast("개별 파일 읽기가 끝난 뒤 다시 선택하세요.", true);
+          return;
+        }
+        const plan = planBundleSelection(fileList, state.filenameMappings);
+        if (!plan.ok) {
+          renderBundleStatus("bad", "두 파일 자동분류를 중단했습니다. 기존 화면과 파일은 유지됩니다.", plan.errors);
+          showToast("두 파일 자동분류 조건을 확인하세요.", true);
+          return;
+        }
+
+        setBundleBusy(true);
+        renderBundleStatus("", "두 파일의 기본검증을 마쳤습니다. Excel 구조를 함께 확인하는 중입니다.");
+        try {
+          const parseTargets = [
+            { kind: "orders", file: plan.assignments.orders },
+            { kind: "inventory", file: plan.assignments.inventory },
+          ];
+          const parsedResults = await Promise.allSettled(
+            parseTargets.map(({ kind, file }) => parseExcelFile(file, kind)),
+          );
+          const failures = parsedResults.flatMap((result, index) => result.status === "rejected"
+            ? [{
+                fileName: parseTargets[index].file.name,
+                message: result.reason?.message || "Excel 파일을 읽지 못했습니다.",
+              }]
+            : []);
+          if (failures.length > 0) {
+            renderBundleStatus("bad", "두 파일 중 읽지 못한 파일이 있어 기존 화면과 파일을 유지했습니다.", failures);
+            showToast("두 파일을 한 쌍으로 읽지 못했습니다.", true);
+            return;
+          }
+
+          const nextOrders = parsedResults[0].value;
+          const nextInventory = parsedResults[1].value;
+          resetResults();
+          state.orders = nextOrders;
+          state.inventory = nextInventory;
+          refreshInputState();
+          renderBundleStatus("good", "두 파일을 자동분류해 한 쌍으로 반영했습니다.", [
+            { fileName: nextOrders.fileName, message: "주문현황" },
+            { fileName: nextInventory.fileName, message: "창고별재고" },
+          ]);
+          showToast("두 파일을 자동분류해 읽었습니다.");
+        } finally {
+          setBundleBusy(false);
+        }
+      }
+
       async function handleFile(kind, file) {
         if (!file) return;
+        if (bundleUploadInProgress) {
+          showToast("두 파일 자동분류가 끝난 뒤 개별 파일을 선택하세요.", true);
+          return;
+        }
         if (!isSupportedFile(file)) {
           showToast(".xlsx 또는 .xls 파일만 선택할 수 있습니다.", true);
           return;
@@ -3091,8 +3536,51 @@
         });
       }
 
+      function bindBundleDropZone() {
+        const openPicker = () => {
+          if (!bundleUploadInProgress) elements.bundleInput.click();
+        };
+        elements.bundleDrop.addEventListener("click", openPicker);
+        elements.bundleDrop.addEventListener("keydown", (event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            openPicker();
+          }
+        });
+        ["dragenter", "dragover"].forEach((eventName) => {
+          elements.bundleDrop.addEventListener(eventName, (event) => {
+            event.preventDefault();
+            if (!bundleUploadInProgress) elements.bundleDrop.classList.add("dragover");
+          });
+        });
+        ["dragleave", "drop"].forEach((eventName) => {
+          elements.bundleDrop.addEventListener(eventName, (event) => {
+            event.preventDefault();
+            elements.bundleDrop.classList.remove("dragover");
+          });
+        });
+        elements.bundleDrop.addEventListener("drop", (event) => {
+          handleBundleFiles(event.dataTransfer.files).catch((error) => {
+            renderBundleStatus("bad", "두 파일 자동분류 중 오류가 발생해 기존 화면과 파일을 유지했습니다.", [
+              { fileName: "처리", message: error.message || String(error) },
+            ]);
+          });
+        });
+        elements.bundleInput.addEventListener("change", () => {
+          handleBundleFiles(elements.bundleInput.files).catch((error) => {
+            renderBundleStatus("bad", "두 파일 자동분류 중 오류가 발생해 기존 화면과 파일을 유지했습니다.", [
+              { fileName: "처리", message: error.message || String(error) },
+            ]);
+          });
+          elements.bundleInput.value = "";
+        });
+      }
+
       state.columnWidthSettings = loadColumnWidthSettings();
       state.hiddenColumnSettings = loadHiddenColumnSettings();
+      state.filenameMappings = loadFilenameMappings();
+      renderFilenameMappings();
+      bindBundleDropZone();
 
       elements.analyzeButton.addEventListener("click", runAnalysis);
       elements.downloadButton.addEventListener("click", downloadResult);
@@ -3114,7 +3602,18 @@
       elements.settingsModal.addEventListener("click", (event) => {
         if (event.target === elements.settingsModal) closeSettingsModal();
       });
+      elements.settingsModal.addEventListener("click", (event) => {
+        const addButton = event.target.closest("[data-add-filename-mapping]");
+        if (addButton) {
+          addFilenameMappingRow(addButton.dataset.addFilenameMapping);
+          return;
+        }
+        const deleteButton = event.target.closest("[data-delete-filename-mapping]");
+        if (deleteButton) deleteFilenameMappingRow(deleteButton);
+      });
       elements.settingsModal.addEventListener("keydown", handleSettingsModalKeydown);
+      elements.filenameMappingsSaveButton.addEventListener("click", saveFilenameMappings);
+      elements.filenameMappingsResetButton.addEventListener("click", restoreDefaultFilenameMappings);
       elements.previewTabs.addEventListener("click", (event) => {
         const button = event.target.closest("[data-preview]");
         if (!button || !state.workspace) return;
