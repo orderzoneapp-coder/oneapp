@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP DataOps - 핵심 수불부 관리 (V1.a22.106_CodePrimaryNameMerge)</title>
+    <title>ONEAPP DataOps - 핵심 수불부 관리 (V1.a22.107_SalesUploadCheckSheetFormat)</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         body { font-family: 'Pretendard', -apple-system, sans-serif; background-color: #f8fafc; overflow: hidden; }
@@ -46,7 +46,7 @@
     <!-- 초기 로딩 스크린 -->
     <div id="initial-loader">
         <div class="spinner"></div>
-        <div class="loader-text">ONEAPP DataOps V1.a22.106_CodePrimaryNameMerge.....</div>
+        <div class="loader-text">ONEAPP DataOps V1.a22.107_SalesUploadCheckSheetFormat.....</div>
         <div style="font-size: 11px; color: #94a3b8; margin-top: 8px;">앱 환경을 구성하고 있습니다</div>
     </div>
 
@@ -755,6 +755,7 @@ const normalizeTransferGroupName = (name) => {
 // V1.a22.42: 확정매칭 보강. 동일 구매처+동일단가 Lot이 여러 개면 순서대로 분할 차감하고, 확정 Lot 수량이 부족하면 다른 Lot으로 대체하지 않고 Lot수량부족/구매처단가확인 이슈를 남긴다. 확정값이 전혀 매칭되지 않을 때만 기본 FIFO fallback으로 내려간다.
 // V1.a22.42: 대체/묶음/소분 이동은 출처 총원가를 보존한다. Ctrl 대체이동은 출처 차감수량과 대상 생성수량을 분리해 10kg 2박스→20kg 1박스 같은 경우 대상 단가를 24,000원으로 환산한다.
 // V1.a22.34: 판매업로드 생성에서 합계/소계 판정은 행 전체 includes 검색을 금지한다. 간단설명·적요·출고지시·전달사항·비고의 메모 문구(예: 합계 확인)는 행 제외 조건이 아니다.
+// V1.a22.107: 판매업로드 확인요청 시트를 확인사항/그룹/거래처/품목코드/품명/수량/비고 구조로 재편하고, 이슈 종류별 묶음과 빈 행 구분을 적용한다.
 // V1.a22.42: 판매업로드 생성 시 판매가/도매가/행사가가 입고가보다 낮으면 자동 보정하지 않고 역마진/입고가초과 검수대상으로 확인요청 시트와 완료 팝업에 노출한다.
 // V1.a22.42: 판매업로드 완료 팝업에서 확인요청 총건수 문구는 업로드불가/역마진 세부 건수와 중복되므로 제거한다.
 // V1.a22.69: 수불마감 엑셀보고서는 구매잔량을 메인 시트로 두고, 남은 재고를 재고현황형 양식으로 기록하되 기록·거래·구매가에는 구매 Lot의 일자·구매처·단가를 출력한다.
@@ -1006,7 +1007,7 @@ const clearTableSortPreference = () => {
    - 주의: 물리적 파일 분리는 하지 않는다. 단일 HTML 실행 구조를 유지한다.
    ======================================================================= */
 const CONFIG_MODULE = Object.freeze({
-    version: 'V1.a22.106_CodePrimaryNameMerge',
+    version: 'V1.a22.107_SalesUploadCheckSheetFormat',
     categoryMap: Object.freeze({
         '10': '채소.과일',
         '20': '수산.축산',
@@ -10332,6 +10333,8 @@ function App() {
                 addWarning({
                     ...rowBase,
                     outputCustomer,
+                    // 확인요청 시트에서 이슈별로 분리 표시할 수 있도록 원인 배열을 함께 보존한다.
+                    reasons: [...checkReasons],
                     reason: checkReasons.join(', '),
                     groupName: resolved.groupName || '',
                     rulePath: resolved.rulePath || '',
@@ -10550,26 +10553,122 @@ function App() {
             const wsPreview = XLSX.utils.aoa_to_sheet(previewAoa);
             wsPreview['!cols'] = [16, 14, 14, 14, 34, 9, 10, 12, 14, 14, 14, 18, 10, 12, 10, 12, 10].map(wch => ({ wch }));
             XLSX.utils.book_append_sheet(wb, wsPreview, '거래처별');
-            const checkColumns = ['그룹', '거래처', '품목코드', '품명', '수량', '확인사항'];
-            const fatalCheckRows = fatalErrors.map(e => ({
-                '그룹': e.customer || '',
-                '거래처': e.spec || e.outputCustomer || '',
-                '품목코드': e.code || '',
-                '품명': e.name || '',
-                '수량': e.qty || 0,
-                '확인사항': `업로드불가: ${e.reason || '필수값 확인'}`
-            }));
-            const warningCheckRows = warnings.map(e => ({
-                '그룹': e.customer || '',
-                '거래처': e.spec || e.outputCustomer || '',
-                '품목코드': e.code || '',
-                '품명': e.name || '',
-                '수량': e.qty || 0,
-                '확인사항': e.reason || '확인필요'
-            }));
-            const checkRows = [...fatalCheckRows, ...warningCheckRows];
-            const wsCheck = XLSX.utils.json_to_sheet(checkRows.length ? checkRows : [{ '그룹': '', '거래처': '', '품목코드': '', '품명': '', '수량': '', '확인사항': '확인필요 항목 없음' }], { header: checkColumns });
-            wsCheck['!cols'] = [14, 16, 14, 34, 10, 42].map(wch => ({ wch }));
+            // V1.a22.107: 확인요청은 이슈명과 상세근거를 분리하고 같은 이슈끼리 묶는다.
+            // 열 구조와 구분 방식은 운영자가 제공한 판매업로드 확인요청 양식을 기준으로 한다.
+            const checkColumns = ['확인사항', '그룹', '거래처', '품목코드', '품명', '수량', '비고'];
+            const classifySalesUploadCheckReason = (entry = {}, reason = '', isFatal = false) => {
+                const rawReason = safeStr(reason, '').trim();
+                let checkType = isFatal ? '업로드불가' : '확인필요';
+                let note = rawReason || (isFatal ? '필수값 확인' : '확인필요');
+
+                if (!isFatal && rawReason.includes('수량 없음/0')) {
+                    checkType = '수량없음';
+                    note = rawReason.replace(/^수량\s*없음\/0\s*:\s*/, '0: ');
+                    if (!note || note === rawReason)
+                        note = '0: 수량 0, 판매가 0으로 업로드';
+                }
+                else if (!isFatal && (
+                    rawReason.includes('판매단가 없음') ||
+                    rawReason.includes('판매단가 기준 없음') ||
+                    rawReason.includes('입고가 없음')
+                )) {
+                    checkType = '판매가없음';
+                    note = safeStr(entry.groupName, '') || rawReason;
+                }
+                else if (!isFatal && (
+                    rawReason.includes('역마진') ||
+                    rawReason.includes('입고가초과')
+                )) {
+                    checkType = '역마진';
+                    note = rawReason.replace(/^역마진\/입고가초과\s*:\s*/, '');
+                }
+                else if (!isFatal && (
+                    rawReason.includes('도매A과대의심') ||
+                    rawReason.includes('자리수오류의심')
+                )) {
+                    checkType = '단가확인';
+                    note = rawReason.replace(/^(?:도매A과대의심|자리수오류의심)\s*:\s*/, '');
+                }
+                else if (!isFatal && rawReason.includes('거래처 단가그룹 없음')) {
+                    checkType = '단가그룹없음';
+                    note = rawReason;
+                }
+                else if (!isFatal && rawReason.includes('품명 없음')) {
+                    checkType = '품명없음';
+                    note = rawReason;
+                }
+
+                const qtyValue = entry.qty === undefined || entry.qty === null || entry.qty === ''
+                    ? ''
+                    : entry.qty;
+                return {
+                    '확인사항': checkType,
+                    '그룹': entry.customer || '',
+                    '거래처': entry.spec || entry.outputCustomer || '',
+                    '품목코드': safeStr(entry.code || '', '').replace(/\.0$/, ''),
+                    '품명': entry.name || '',
+                    '수량': qtyValue,
+                    '비고': note
+                };
+            };
+            const rawCheckRows = [];
+            fatalErrors.forEach(entry => {
+                const reasons = Array.isArray(entry.reasons) && entry.reasons.length
+                    ? entry.reasons
+                    : [entry.reason || '필수값 확인'];
+                reasons.forEach(reason => rawCheckRows.push(classifySalesUploadCheckReason(entry, reason, true)));
+            });
+            warnings.forEach(entry => {
+                const reasons = Array.isArray(entry.reasons) && entry.reasons.length
+                    ? entry.reasons
+                    : [entry.reason || '확인필요'];
+                reasons.forEach(reason => rawCheckRows.push(classifySalesUploadCheckReason(entry, reason, false)));
+            });
+
+            const checkTypeOrder = [
+                '업로드불가',
+                '수량없음',
+                '판매가없음',
+                '역마진',
+                '단가확인',
+                '단가그룹없음',
+                '품명없음',
+                '확인필요'
+            ];
+            const orderedTypes = [
+                ...checkTypeOrder,
+                ...Array.from(new Set(rawCheckRows.map(row => row['확인사항']).filter(Boolean)))
+                    .filter(type => !checkTypeOrder.includes(type))
+            ];
+            const checkAoa = [checkColumns];
+            let appendedGroupCount = 0;
+            orderedTypes.forEach(checkType => {
+                const rowsOfType = rawCheckRows.filter(row => row['확인사항'] === checkType);
+                if (!rowsOfType.length)
+                    return;
+                if (appendedGroupCount > 0)
+                    checkAoa.push(checkColumns.map(() => ''));
+                rowsOfType.forEach(row => {
+                    checkAoa.push(checkColumns.map(column => row[column] !== undefined && row[column] !== null ? row[column] : ''));
+                });
+                appendedGroupCount++;
+            });
+            if (appendedGroupCount === 0) {
+                checkAoa.push(['없음', '', '', '', '', '', '확인필요 항목 없음']);
+            }
+
+            const wsCheck = XLSX.utils.aoa_to_sheet(checkAoa);
+            wsCheck['!cols'] = [12, 14, 16, 14, 34, 10, 42].map(wch => ({ wch }));
+            wsCheck['!rows'] = Array.from({ length: checkAoa.length }, () => ({ hpt: 15 }));
+            // 품목코드는 숫자가 아니라 ERP 식별문자열이다. 앞자리 0과 원본 표기를 보존한다.
+            for (let rowNumber = 2; rowNumber <= checkAoa.length; rowNumber++) {
+                const codeCell = wsCheck[`D${rowNumber}`];
+                if (!codeCell || codeCell.v === undefined || codeCell.v === null || String(codeCell.v).trim() === '')
+                    continue;
+                codeCell.v = String(codeCell.v).replace(/\.0$/, '');
+                codeCell.t = 's';
+                codeCell.z = '@';
+            }
             XLSX.utils.book_append_sheet(wb, wsCheck, '확인요청');
             const config = buildTransferPriceConfig();
             const groupRows = Object.values(config.groups).map(g => ({
