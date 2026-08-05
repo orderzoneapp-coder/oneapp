@@ -2,6 +2,11 @@
   'use strict';
 
   const HISTORY_KEY = 'merchHistory_v870';
+  const MASTER_SYNC_TRIGGER_KEY = 'merchMaster_sync_trigger';
+  const STOPPED_PRODUCTS_KEY = 'merchStoppedProducts_v2';
+  const PENDING_SHOP_STATUS_KEY = 'pending_shop_status';
+  const PENDING_SHOP_STATUS_LOCAL_KEY = 'pendingShopStatus';
+  const STOP_MANAGER_SYNC_TRIGGER_KEY = 'merchStopManager_sync_trigger';
   const MODE = '추가·갱신';
   const CODE_FIELDS = ['코드', '품목코드', '상품코드'];
   const EDITABLE_FIELDS = ['품목명', '규격', '단위'];
@@ -68,6 +73,7 @@
   };
 
   const normalizeCode = (value) => String(value === undefined || value === null ? '' : value).trim();
+  const normalizeSharedProductCode = (value) => normalizeCode(value).replace(/\s/g, '');
   const isBlankValue = (value) => (
     value === null
     || value === undefined
@@ -907,6 +913,444 @@
     return state;
   };
 
+  const normalizeOfficialLog = (historyApi, payload = {}) => {
+    const normalized = historyApi && typeof historyApi.normalizeHistoryLog === 'function'
+      ? historyApi.normalizeHistoryLog(payload)
+      : payload;
+    return { ...normalized, ...payload };
+  };
+
+  const readLocalJSON = (localStorageRef, key, fallback) => {
+    const raw = localStorageRef.getItem(key);
+    if (!raw) return cloneValue(fallback);
+    const parsed = JSON.parse(raw);
+    return parsed === undefined || parsed === null ? cloneValue(fallback) : parsed;
+  };
+
+  const writeAndVerifyLocalEntries = (storage, localStorageRef, entries = {}, label = '공유상태') => {
+    Object.entries(entries || {}).forEach(([key, value]) => {
+      const serialized = typeof value === 'string' ? value : JSON.stringify(value);
+      if (storage && typeof storage.writeLocalValue === 'function') {
+        storage.writeLocalValue(key, serialized, { label: `${label} ${key} 저장` });
+      } else {
+        localStorageRef.setItem(key, serialized);
+      }
+      if (localStorageRef.getItem(key) !== serialized) {
+        throw new Error(`${label} ${key} 저장 후 검증에 실패했습니다.`);
+      }
+    });
+  };
+
+  const restoreLocalEntries = (storage, localStorageRef, previous = {}, label = '공유상태') => {
+    Object.entries(previous || {}).forEach(([key, raw]) => {
+      if (storage && typeof storage.restoreLocalValue === 'function') {
+        storage.restoreLocalValue(key, raw, { label: `${label} ${key} rollback` });
+      } else if (raw === null || raw === undefined) {
+        localStorageRef.removeItem(key);
+      } else {
+        localStorageRef.setItem(key, raw);
+      }
+      if (localStorageRef.getItem(key) !== raw) {
+        throw new Error(`${label} ${key} rollback 후 원본 확인에 실패했습니다.`);
+      }
+    });
+  };
+
+  const commitNarrowMasterMutation = async ({
+    storage,
+    historyApi,
+    localStorageRef,
+    currentState,
+    nextMaster,
+    expectedRevision,
+    logs = [],
+    extraStoreEntries = {},
+    localWrites = {},
+    label = 'Master 단건 변경'
+  } = {}) => {
+    const previousHistoryRaw = localStorageRef.getItem(HISTORY_KEY);
+    const preparedHistory = logs.length > 0
+      ? prepareHistoryAppend(localStorageRef, logs, historyApi)
+      : null;
+    const previousLocalValues = Object.fromEntries(
+      Object.keys(localWrites || {}).map(key => [key, localStorageRef.getItem(key)])
+    );
+    const baseMaster = buildMasterIndex(currentState.masterMap);
+    let commitResult;
+    try {
+      commitResult = await storage.commitMasterStateOrThrow(nextMaster, {
+        expectedRevision,
+        ...(Object.keys(extraStoreEntries || {}).length > 0 ? { extraStoreEntries } : {}),
+        afterVerified: async () => {
+          if (logs.length > 0) {
+            writeAndVerifyHistory(storage, localStorageRef, logs, preparedHistory);
+          }
+          writeAndVerifyLocalEntries(storage, localStorageRef, localWrites, label);
+          await verifyMasterAndHistory({ storage, localStorageRef, nextMaster, logs });
+          return true;
+        },
+        afterVerifiedError: `${label} master/history/공유상태 검증 실패`
+      });
+    } catch (error) {
+      if (error?.code === 'MERCH_MASTER_REVISION_CONFLICT') {
+        throw error;
+      }
+      const rollbackErrors = [];
+      if (logs.length > 0) {
+        try {
+          restoreHistory(storage, localStorageRef, previousHistoryRaw, logs);
+        } catch (historyRollbackError) {
+          rollbackErrors.push(historyRollbackError.message);
+        }
+      }
+      try {
+        restoreLocalEntries(storage, localStorageRef, previousLocalValues, label);
+      } catch (localRollbackError) {
+        rollbackErrors.push(localRollbackError.message);
+      }
+      try {
+        const rollbackState = await storage.readMasterSnapshotState(Object.keys(extraStoreEntries || {}));
+        if (stableSerialize(rollbackState.masterMap) !== stableSerialize(baseMaster)) {
+          rollbackErrors.push('master rollback 후 기존 master 값과 일치하지 않습니다.');
+        }
+      } catch (masterRollbackError) {
+        rollbackErrors.push(masterRollbackError.message);
+      }
+      if (rollbackErrors.length > 0) {
+        const wrapped = new Error(`${error.message} / rollback 확인 실패: ${rollbackErrors.join(' / ')}`);
+        wrapped.code = 'MASTER_ADD_UPDATE_ROLLBACK_FAILED';
+        wrapped.cause = error;
+        throw wrapped;
+      }
+      error.message = `${error.message} 변경 전 master, history와 공유상태를 유지했습니다.`;
+      throw error;
+    }
+    return commitResult;
+  };
+
+  const normalizeSingleProductInput = (input = {}) => {
+    const code = normalizeSharedProductCode(input['ERP 품목코드'] || input['품목코드'] || input['코드']);
+    return {
+      ...cloneValue(input),
+      코드: code,
+      품목코드: code,
+      품목명: normalizeCode(input['품목명'] || input['상품명']),
+      규격: normalizeCode(input['규격']),
+      단위: normalizeCode(input['단위'])
+    };
+  };
+
+  const validateSingleProductInput = (input = {}) => {
+    const item = normalizeSingleProductInput(input);
+    const missingFields = [
+      ['ERP 품목코드', item.코드],
+      ['상품명', item.품목명],
+      ['규격', item.규격],
+      ['단위', item.단위]
+    ].filter(([, value]) => isBlankValue(value)).map(([field]) => field);
+    if (missingFields.length > 0) {
+      throw createOperationalError(
+        'MASTER_SINGLE_PRODUCT_REQUIRED_MISSING',
+        `마스터 신규등록 필수값을 입력하세요: ${missingFields.join(', ')}`,
+        { missingFields }
+      );
+    }
+    return item;
+  };
+
+  const commitSingleProductRegistration = async ({
+    item,
+    expectedRevision,
+    storage,
+    historyApi,
+    localStorageRef,
+    actor = null
+  } = {}) => {
+    if (!storage || typeof storage.commitMasterStateOrThrow !== 'function' || typeof storage.readMasterSnapshotState !== 'function') {
+      throw new Error('공통 master 저장 엔진을 사용할 수 없습니다.');
+    }
+    if (!localStorageRef) throw new Error('공식 history 저장소를 사용할 수 없습니다.');
+    const normalizedItem = validateSingleProductInput(item);
+    const currentState = await storage.readMasterSnapshotState();
+    const currentMaster = assertExistingMaster(currentState.masterMap, 'DataOps 마스터 단건 신규등록');
+    if (currentState.revision !== expectedRevision) {
+      const error = new Error('신규등록 입력 중 master가 변경되었습니다. 최신 master에서 품목코드를 다시 확인하세요.');
+      error.code = 'MERCH_MASTER_REVISION_CONFLICT';
+      throw error;
+    }
+    const normalizedCode = normalizeSharedProductCode(normalizedItem.코드);
+    const duplicate = Object.entries(currentMaster).find(([masterKey, masterItem]) => (
+      normalizeSharedProductCode(getMasterCode(masterItem, masterKey)) === normalizedCode
+    ));
+    if (duplicate) {
+      throw createOperationalError(
+        'MASTER_SINGLE_PRODUCT_DUPLICATE_CODE',
+        `이미 등록된 ERP 품목코드입니다: ${normalizedItem.코드}`,
+        { productCode: normalizedItem.코드 }
+      );
+    }
+
+    const nextMaster = cloneValue(currentMaster);
+    nextMaster[normalizedItem.코드] = normalizedItem;
+    const executionId = `dataops-master-register-${Date.now()}-${global.crypto && typeof global.crypto.randomUUID === 'function' ? global.crypto.randomUUID() : Math.random().toString(36).slice(2)}`;
+    const timestampISO = new Date().toISOString();
+    const basePayload = {
+      executionId,
+      mode: '단건 신규등록',
+      actor: actor || null,
+      actorStatus: actor ? 'identified' : 'identity-system-unavailable',
+      timestampISO,
+      source: 'dataops_inventory',
+      sourceRole: 'dataops',
+      sourceLabel: 'DataOps 재고실사',
+      applyMode: 'direct_master_apply',
+      path: 'DataOps > 재고실사 > 마스터 신규등록',
+      route: 'DataOps/재고실사/마스터신규등록',
+      code: normalizedItem.코드,
+      name: normalizedItem.품목명,
+      spec: normalizedItem.규격,
+      unit: normalizedItem.단위
+    };
+    const logs = [
+      normalizeOfficialLog(historyApi, {
+        ...basePayload,
+        id: `${executionId}-job`,
+        recordType: 'master_add_update_job',
+        actionType: 'dataops_inventory_master_create_job',
+        field: '작업',
+        oldVal: '',
+        newVal: '성공',
+        memo: 'DataOps 재고실사 목록 외 상품 단건 신규등록'
+      }),
+      ...['코드', '품목명', '규격', '단위'].map((field, index) => normalizeOfficialLog(historyApi, {
+        ...basePayload,
+        id: `${executionId}-detail-${index + 1}`,
+        recordType: 'master_add_update_detail',
+        actionType: 'master_create',
+        field,
+        oldVal: '',
+        newVal: normalizedItem[field],
+        finalValue: normalizedItem[field],
+        memo: 'DataOps 재고실사 관리자 확인 신규등록'
+      }))
+    ];
+    const trigger = timestampISO;
+    const commitResult = await commitNarrowMasterMutation({
+      storage,
+      historyApi,
+      localStorageRef,
+      currentState,
+      nextMaster,
+      expectedRevision,
+      logs,
+      localWrites: { [MASTER_SYNC_TRIGGER_KEY]: trigger },
+      label: 'DataOps 마스터 단건 신규등록'
+    });
+    return {
+      status: 'success',
+      executionId,
+      revision: commitResult.revision,
+      item: cloneValue(normalizedItem),
+      masterMap: nextMaster,
+      historyCount: logs.length
+    };
+  };
+
+  const normalizeStoppedProducts = (input = {}) => {
+    const out = {};
+    if (!input || typeof input !== 'object' || Array.isArray(input)) return out;
+    Object.entries(input).forEach(([fallbackCode, value]) => {
+      const item = value && typeof value === 'object' ? cloneValue(value) : {};
+      const code = normalizeSharedProductCode(item.productCode || item.code || fallbackCode);
+      if (!code) return;
+      out[code] = { ...item, productCode: code };
+    });
+    return out;
+  };
+
+  const normalizePendingShopStatus = (input = []) => {
+    const out = [];
+    const positions = new Map();
+    (Array.isArray(input) ? input : []).forEach(value => {
+      const item = value && typeof value === 'object' ? cloneValue(value) : {};
+      const code = normalizeSharedProductCode(item.code || item.productCode);
+      if (!code) return;
+      const normalized = { ...item, code };
+      if (positions.has(code)) out[positions.get(code)] = normalized;
+      else {
+        positions.set(code, out.length);
+        out.push(normalized);
+      }
+    });
+    return out;
+  };
+
+  const commitSalesStatusChanges = async ({
+    codes = [],
+    expectedRevision,
+    storage,
+    historyApi,
+    localStorageRef,
+    actor = null,
+    reason = '재고실사 양수 재고 발견'
+  } = {}) => {
+    if (!storage || typeof storage.commitMasterStateOrThrow !== 'function' || typeof storage.readMasterSnapshotState !== 'function') {
+      throw new Error('공통 master 저장 엔진을 사용할 수 없습니다.');
+    }
+    if (!localStorageRef) throw new Error('공식 history 저장소를 사용할 수 없습니다.');
+    const targetCodes = Array.from(new Set((Array.isArray(codes) ? codes : []).map(normalizeSharedProductCode).filter(Boolean)));
+    if (targetCodes.length === 0) {
+      throw createOperationalError('MASTER_SALES_STATUS_TARGET_REQUIRED', '판매재개 대상 품목코드가 없습니다.');
+    }
+    const currentState = await storage.readMasterSnapshotState([STOPPED_PRODUCTS_KEY, PENDING_SHOP_STATUS_KEY]);
+    const currentMaster = assertExistingMaster(currentState.masterMap, 'DataOps 판매재개');
+    if (currentState.revision !== expectedRevision) {
+      const error = new Error('재고 마감 이후 master가 변경되었습니다. 최신 상태를 다시 읽고 판매재개를 재시도하세요.');
+      error.code = 'MERCH_MASTER_REVISION_CONFLICT';
+      throw error;
+    }
+    const resolver = new Map();
+    Object.entries(currentMaster).forEach(([masterKey, masterItem]) => {
+      const code = normalizeSharedProductCode(getMasterCode(masterItem, masterKey));
+      if (code && !resolver.has(code)) resolver.set(code, { masterKey, item: masterItem });
+    });
+    const missingCodes = targetCodes.filter(code => !resolver.has(code));
+    if (missingCodes.length > 0) {
+      throw createOperationalError(
+        'MASTER_SALES_STATUS_TARGET_MISSING',
+        `마스터에서 판매재개 대상 품목코드를 찾지 못했습니다: ${missingCodes.join(', ')}`,
+        { missingCodes }
+      );
+    }
+
+    const nextMaster = cloneValue(currentMaster);
+    const nextStoppedProducts = normalizeStoppedProducts(
+      currentState.extraStoreEntries && currentState.extraStoreEntries[STOPPED_PRODUCTS_KEY] !== undefined
+        ? currentState.extraStoreEntries[STOPPED_PRODUCTS_KEY]
+        : readLocalJSON(localStorageRef, STOPPED_PRODUCTS_KEY, {})
+    );
+    let nextPendingShopStatus = normalizePendingShopStatus(
+      currentState.extraStoreEntries && currentState.extraStoreEntries[PENDING_SHOP_STATUS_KEY] !== undefined
+        ? currentState.extraStoreEntries[PENDING_SHOP_STATUS_KEY]
+        : readLocalJSON(localStorageRef, PENDING_SHOP_STATUS_LOCAL_KEY, [])
+    );
+    const timestampISO = new Date().toISOString();
+    const timestamp = new Date().toLocaleString('ko-KR');
+    const executionId = `dataops-sales-resume-${Date.now()}-${global.crypto && typeof global.crypto.randomUUID === 'function' ? global.crypto.randomUUID() : Math.random().toString(36).slice(2)}`;
+    const logs = [];
+    const changedCodes = [];
+    let sharedStateChanged = false;
+
+    targetCodes.forEach(code => {
+      const resolved = resolver.get(code);
+      const oldItem = cloneValue(resolved.item || {});
+      const oldSaleValue = oldItem['판매여부'] ?? '';
+      if (String(oldSaleValue).trim() !== '1') {
+        nextMaster[resolved.masterKey] = { ...oldItem, 판매여부: 1 };
+        changedCodes.push(code);
+        logs.push(normalizeOfficialLog(historyApi, {
+          id: `${executionId}-detail-${logs.length + 1}`,
+          recordType: 'master_add_update_detail',
+          executionId,
+          mode: '판매재개',
+          actor: actor || null,
+          actorStatus: actor ? 'identified' : 'identity-system-unavailable',
+          timestamp,
+          timestampISO,
+          source: 'dataops_inventory',
+          sourceRole: 'dataops',
+          sourceLabel: 'DataOps 재고실사',
+          actionType: 'dataops_inventory_sales_resume',
+          historyType: '판매재개',
+          changeType: '판매재개',
+          applyMode: 'direct_master_apply',
+          path: 'DataOps > 재고실사 > 마감 후 판매재개',
+          route: 'DataOps/재고실사/마감후판매재개',
+          code,
+          name: oldItem['품목명'] || '',
+          spec: oldItem['규격'] || '',
+          unit: oldItem['단위'] || '',
+          field: '판매여부',
+          oldVal: oldSaleValue,
+          newVal: 1,
+          diff: '',
+          diffRate: null,
+          reason,
+          memo: 'DataOps 재고실사 마감에서 양수 재고가 확인되어 판매 재개',
+          finalValue: 1,
+          version: 'dataops-inventory-master-add-v1'
+        }));
+      }
+      if (Object.prototype.hasOwnProperty.call(nextStoppedProducts, code)) {
+        delete nextStoppedProducts[code];
+        sharedStateChanged = true;
+      }
+      const pendingIndex = nextPendingShopStatus.findIndex(entry => normalizeSharedProductCode(entry && entry.code) === code);
+      const pendingEntry = {
+        code,
+        type: 'resume',
+        name: oldItem['품목명'] || '',
+        source: 'DataOps',
+        reason,
+        memo: '재고실사 마감 양수 재고 판매재개',
+        updatedAt: timestampISO
+      };
+      if (pendingIndex < 0) {
+        nextPendingShopStatus.push(pendingEntry);
+        sharedStateChanged = true;
+      } else if (String(nextPendingShopStatus[pendingIndex] && nextPendingShopStatus[pendingIndex].type || '').trim() !== 'resume') {
+        nextPendingShopStatus[pendingIndex] = pendingEntry;
+        sharedStateChanged = true;
+      }
+    });
+
+    if (changedCodes.length === 0 && !sharedStateChanged) {
+      return {
+        status: 'noop',
+        revision: currentState.revision,
+        changedCodes: [],
+        processedCodes: targetCodes,
+        historyCount: 0,
+        masterMap: currentMaster
+      };
+    }
+
+    const trigger = timestampISO;
+    const extraStoreEntries = {
+      [STOPPED_PRODUCTS_KEY]: nextStoppedProducts,
+      [PENDING_SHOP_STATUS_KEY]: nextPendingShopStatus
+    };
+    const localWrites = {
+      [STOPPED_PRODUCTS_KEY]: nextStoppedProducts,
+      [PENDING_SHOP_STATUS_LOCAL_KEY]: nextPendingShopStatus,
+      [MASTER_SYNC_TRIGGER_KEY]: trigger,
+      [STOP_MANAGER_SYNC_TRIGGER_KEY]: trigger
+    };
+    const commitResult = await commitNarrowMasterMutation({
+      storage,
+      historyApi,
+      localStorageRef,
+      currentState,
+      nextMaster,
+      expectedRevision,
+      logs,
+      extraStoreEntries,
+      localWrites,
+      label: 'DataOps 판매재개'
+    });
+    return {
+      status: 'success',
+      executionId,
+      revision: commitResult.revision,
+      changedCodes,
+      processedCodes: targetCodes,
+      historyCount: logs.length,
+      masterMap: nextMaster,
+      stoppedProducts: nextStoppedProducts,
+      pendingShopStatus: nextPendingShopStatus
+    };
+  };
+
   const commitApprovedChanges = async ({
     analysis,
     currentMaster,
@@ -1021,6 +1465,7 @@
     ERROR_CODES,
     ISSUE_TAGS,
     normalizeCode,
+    normalizeSharedProductCode,
     getRowCode,
     getMasterCode,
     buildMasterIndex,
@@ -1042,6 +1487,10 @@
     prepareHistoryAppend,
     verifyMasterAndHistory,
     commitApprovedChanges,
+    normalizeSingleProductInput,
+    validateSingleProductInput,
+    commitSingleProductRegistration,
+    commitSalesStatusChanges,
     stableSerialize
   };
 })(window);

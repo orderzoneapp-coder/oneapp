@@ -91,6 +91,8 @@
     <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="coreEngine.js"></script>
+    <script src="masterAddUpdate.js"></script>
     <script>
         window.__DATAOPS_DEP_CHECK__();
     </script>
@@ -1536,6 +1538,219 @@ const DATAOPS_MASTER_CACHE_MODULE = {
     }
 };
 window.DATAOPS_MASTER_CACHE_MODULE = DATAOPS_MASTER_CACHE_MODULE;
+
+/* =======================================================================
+   1-C-1. DataOps 재고실사 목록 외 Master 상품 추가
+   - 동일 브라우저의 확정 로컬 master snapshot만 읽는다.
+   - 검색은 품목코드/품목명/규격/검색어등록 네 필드만 사용한다.
+   - F9 확정 스냅샷과 판매재개를 분리하고 재개 실패는 로컬 복구 레코드로 재시도한다.
+   ======================================================================= */
+const DATAOPS_INVENTORY_MASTER_ADD_MODULE = Object.freeze({
+    RETRY_STORAGE_KEY: 'dataops_inventory_master_resume_v1',
+    normalizeCode(value) {
+        return safeStr(value, '').replace(/\s/g, '');
+    },
+    normalizeSearchText(value) {
+        return safeStr(value, '')
+            .normalize('NFKC')
+            .toLocaleLowerCase('ko-KR')
+            .replace(/[\s\p{P}\p{S}_]+/gu, '');
+    },
+    tokenize(query) {
+        return safeStr(query, '')
+            .normalize('NFKC')
+            .split(/\s+/)
+            .map(value => DATAOPS_INVENTORY_MASTER_ADD_MODULE.normalizeSearchText(value))
+            .filter(Boolean);
+    },
+    getMasterCode(item = {}, fallbackCode = '') {
+        return DATAOPS_INVENTORY_MASTER_ADD_MODULE.normalizeCode(item.품목코드 || item.코드 || item.상품코드 || fallbackCode);
+    },
+    getSearchFields(item = {}, fallbackCode = '') {
+        return [
+            DATAOPS_INVENTORY_MASTER_ADD_MODULE.getMasterCode(item, fallbackCode),
+            item.품목명 || item.상품명,
+            item.규격,
+            item.검색어등록
+        ].map(value => DATAOPS_INVENTORY_MASTER_ADD_MODULE.normalizeSearchText(value));
+    },
+    search(masterMap = {}, query = '') {
+        const tokens = DATAOPS_INVENTORY_MASTER_ADD_MODULE.tokenize(query);
+        const normalizedWholeQuery = DATAOPS_INVENTORY_MASTER_ADD_MODULE.normalizeSearchText(query);
+        const entries = Object.entries(masterMap || {}).map(([fallbackCode, source]) => {
+            const item = source && typeof source === 'object' ? source : {};
+            const code = DATAOPS_INVENTORY_MASTER_ADD_MODULE.getMasterCode(item, fallbackCode);
+            return {
+                ...item,
+                코드: safeStr(item.코드 || code),
+                품목코드: safeStr(item.품목코드 || code),
+                _dataopsMasterSearchCode: code,
+                _dataopsMasterSearchFields: DATAOPS_INVENTORY_MASTER_ADD_MODULE.getSearchFields(item, fallbackCode)
+            };
+        }).filter(item => item._dataopsMasterSearchCode);
+        const matches = tokens.length === 0 ? [] : entries.filter(item => (
+            tokens.every(token => item._dataopsMasterSearchFields.some(field => field.includes(token)))
+        )).sort((left, right) => (
+            safeStr(left._dataopsMasterSearchCode).localeCompare(safeStr(right._dataopsMasterSearchCode), 'ko', { numeric: true, sensitivity: 'base' })
+            || safeStr(left.품목명).localeCompare(safeStr(right.품목명), 'ko', { sensitivity: 'base' })
+        ));
+        const exactCode = matches.find(item => (
+            DATAOPS_INVENTORY_MASTER_ADD_MODULE.normalizeSearchText(item._dataopsMasterSearchCode) === normalizedWholeQuery
+        )) || null;
+        const mode = exactCode || matches.length === 1
+            ? 'immediate'
+            : (matches.length > 1 ? 'choose' : 'register');
+        return { query: safeStr(query), tokens, matches, exactCode, selected: exactCode || (matches.length === 1 ? matches[0] : null), mode };
+    },
+    isSalesStopped(item = {}) {
+        return String(item.판매여부 === undefined || item.판매여부 === null ? '' : item.판매여부).trim() === '0';
+    },
+    findExistingRow(productData = [], code = '') {
+        const target = DATAOPS_INVENTORY_MASTER_ADD_MODULE.normalizeCode(code);
+        if (!target) return null;
+        return (productData || []).find(row => DATAOPS_INVENTORY_MASTER_ADD_MODULE.normalizeCode(row && row.코드) === target) || null;
+    },
+    buildInventoryRow(masterItem = {}, options = {}) {
+        const code = DATAOPS_INVENTORY_MASTER_ADD_MODULE.getMasterCode(masterItem);
+        if (!code) throw new Error('추가할 마스터 상품의 품목코드가 없습니다.');
+        const name = safeStr(masterItem.품목명 || masterItem.상품명);
+        const spec = safeStr(masterItem.규격);
+        const unit = safeStr(masterItem.단위);
+        const batchKey = safeStr(options.batchKey) || `DATAOPS_MASTER_ADD|${code}|${Date.now()}|${Math.random().toString(36).slice(2)}`;
+        const wasStopped = DATAOPS_INVENTORY_MASTER_ADD_MODULE.isSalesStopped(masterItem);
+        return {
+            batchKey,
+            코드: code,
+            품명: name,
+            규격: spec,
+            단위: unit,
+            단가: 0,
+            행사가: '',
+            일자: safeStr(options.targetDateStr),
+            거래처: '목록 외 실사발견',
+            기초: 0,
+            입고: 0,
+            출고: 0,
+            대체입고: 0,
+            대체출고: 0,
+            전산잔량: 0,
+            실사: '',
+            로스: 0,
+            매출액: 0,
+            매출원가: 0,
+            메모: '목록 외 실사발견',
+            상태: '목록 외 실사발견',
+            이슈: ['목록 외 실사발견', ...(wasStopped ? ['판매중단 · 양수 실사 시 재개대상'] : [])],
+            출고내역: {},
+            _orig: { 기초: 0, 입고: 0, 출고: 0, 단가: 0 },
+            _raw: { 품목코드: code, 품명: name, 상품명: name, 규격: spec, 단위: unit, 상태: '목록 외 실사발견' },
+            isDummy: false,
+            수기확인완료: false,
+            _inventoryMasterAdded: true,
+            _inventoryMasterWasStopped: wasStopped,
+            _inventoryMasterResumeRequired: false,
+            _inventoryMasterResumeState: wasStopped ? 'awaiting-positive-actual' : '',
+            _manualDisplayAfterBatchKey: safeStr(options.anchorBatchKey)
+        };
+    },
+    applyActual(row = {}, value) {
+        const actual = value === '' || value === null || value === undefined ? '' : Number(value);
+        if (actual !== '' && (!Number.isFinite(actual) || actual < 0)) {
+            throw new Error('실사수량은 0 이상의 숫자로 입력하세요.');
+        }
+        if (actual === 0) return { action: 'exclude', row: null };
+        const positive = actual !== '' && actual > 0;
+        const resumeRequired = !!row._inventoryMasterWasStopped && positive;
+        const issues = (Array.isArray(row.이슈) ? row.이슈 : [])
+            .filter(message => !safeStr(message).includes('판매재개 대상'));
+        if (resumeRequired) issues.push('판매재개 대상');
+        return {
+            action: 'update',
+            row: {
+                ...row,
+                실사: actual,
+                로스: actual === '' ? 0 : actual,
+                상태: '목록 외 실사발견',
+                이슈: DATAOPS_ISSUE_HELPER.unique(issues),
+                _inventoryMasterResumeRequired: resumeRequired,
+                _inventoryMasterResumeState: resumeRequired ? 'awaiting-close' : ''
+            }
+        };
+    },
+    pinAddedRows(rows = []) {
+        const source = Array.isArray(rows) ? rows.slice() : [];
+        const pinned = source.filter(row => row && row._inventoryMasterAdded && safeStr(row._manualDisplayAfterBatchKey));
+        if (pinned.length === 0) return source;
+        const pinnedKeys = new Set(pinned.map(row => safeStr(row.batchKey)));
+        const result = source.filter(row => !pinnedKeys.has(safeStr(row && row.batchKey)));
+        const unresolved = pinned.slice();
+        let guard = unresolved.length + 1;
+        while (unresolved.length > 0 && guard-- > 0) {
+            let progressed = false;
+            for (let index = 0; index < unresolved.length;) {
+                const row = unresolved[index];
+                const anchorKey = safeStr(row._manualDisplayAfterBatchKey);
+                const anchorIndex = result.findIndex(candidate => safeStr(candidate && candidate.batchKey) === anchorKey);
+                if (anchorIndex < 0) {
+                    index++;
+                    continue;
+                }
+                let insertIndex = anchorIndex + 1;
+                while (insertIndex < result.length && safeStr(result[insertIndex] && result[insertIndex]._manualDisplayAfterBatchKey) === anchorKey) insertIndex++;
+                result.splice(insertIndex, 0, row);
+                unresolved.splice(index, 1);
+                progressed = true;
+            }
+            if (!progressed) break;
+        }
+        unresolved.forEach(row => result.push(row));
+        return result;
+    },
+    readRetryRecords(localStorageRef = window.localStorage) {
+        try {
+            const parsed = JSON.parse(localStorageRef.getItem(DATAOPS_INVENTORY_MASTER_ADD_MODULE.RETRY_STORAGE_KEY) || '{}');
+            return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+        } catch (error) {
+            return {};
+        }
+    },
+    writeRetryRecords(records = {}, localStorageRef = window.localStorage) {
+        const normalized = records && typeof records === 'object' && !Array.isArray(records) ? records : {};
+        const serialized = JSON.stringify(normalized);
+        localStorageRef.setItem(DATAOPS_INVENTORY_MASTER_ADD_MODULE.RETRY_STORAGE_KEY, serialized);
+        if (localStorageRef.getItem(DATAOPS_INVENTORY_MASTER_ADD_MODULE.RETRY_STORAGE_KEY) !== serialized) {
+            throw new Error('판매재개 재시도 상태 저장 검증에 실패했습니다.');
+        }
+        return normalized;
+    },
+    markRetry(records = {}, { codes = [], closingRevision = '', state = 'pending', error = '' } = {}) {
+        const next = { ...(records || {}) };
+        const now = new Date().toISOString();
+        Array.from(new Set((codes || []).map(DATAOPS_INVENTORY_MASTER_ADD_MODULE.normalizeCode).filter(Boolean))).forEach(code => {
+            next[code] = {
+                ...(next[code] || {}),
+                code,
+                closingRevision: safeStr(closingRevision || (next[code] && next[code].closingRevision)),
+                state,
+                error: safeStr(error),
+                updatedAt: now
+            };
+        });
+        return next;
+    },
+    clearRetry(records = {}, codes = []) {
+        const next = { ...(records || {}) };
+        (codes || []).map(DATAOPS_INVENTORY_MASTER_ADD_MODULE.normalizeCode).filter(Boolean).forEach(code => delete next[code]);
+        return next;
+    },
+    getRetryCodes(records = {}) {
+        return Object.values(records || {})
+            .filter(record => record && ['pending', 'failed'].includes(record.state))
+            .map(record => DATAOPS_INVENTORY_MASTER_ADD_MODULE.normalizeCode(record.code))
+            .filter(Boolean);
+    }
+});
+window.DATAOPS_INVENTORY_MASTER_ADD_MODULE = DATAOPS_INVENTORY_MASTER_ADD_MODULE;
 
 /* =======================================================================
    1-C. V1.a22.12 Merch Master Ledger Link
@@ -7829,7 +8044,18 @@ const DATAOPS_DRAG_EVENT_MODULE = Object.freeze({
         return !!(currentTarget && relatedTarget && typeof currentTarget.contains === 'function' && currentTarget.contains(relatedTarget));
     }
 });
-const ProductRow = React.memo(({ item, idx, isLinked, isActiveMulti, isMultiGroupItem, splitLotMemo, targetDateStr, onStockChange, onSpacebar, onFocusInput, onBaseDataChange, onPromoChange, onOpenMemo, onSalesMove, onVendorChipDelete, onVendorChipEdit, onViewLayerEditBlocked, internalLotMapping, isGroupStart, isNewCategory, isMergeGroupStart, isMergeGroupEnd, isLotReviewMode, isLotReviewCandidate, isLotReviewGroupStart, isLotReviewGroupEnd, isActiveLotReviewGroup, normalizeDisplayIssues, onPurchaseLotAdjust, onToggleCodeMerge }) => {
+const InventoryMasterAddDraftRow = ({ draft, onQueryChange, onSearch, onCancel }) => (React.createElement("tr", { "data-inventory-master-add-draft": "true", className: "bg-blue-50 border-y-2 border-blue-300" },
+    React.createElement("td", { colSpan: "10", className: "p-3" },
+        React.createElement("form", { onSubmit: (event) => { event.preventDefault(); onSearch(); }, className: "flex flex-col md:flex-row md:items-center gap-2" },
+            React.createElement("div", { className: "flex items-center gap-2 shrink-0 text-blue-800 font-black text-[12px]" },
+                React.createElement("i", { className: "fas fa-box-open" }),
+                "상품추가"),
+            React.createElement("input", { id: "inventory-master-add-search", type: "search", autoComplete: "off", value: draft.query, onChange: event => onQueryChange(event.target.value), placeholder: "품목코드·상품명·규격·검색어등록 검색", className: "flex-1 min-w-0 rounded-md border border-blue-300 bg-white px-3 py-2 text-[12px] font-bold text-slate-800 outline-none focus:ring-2 focus:ring-blue-400", disabled: draft.isSearching }),
+            React.createElement("button", { type: "submit", disabled: draft.isSearching || !safeStr(draft.query), className: "px-3 py-2 rounded-md bg-blue-600 text-white text-[11px] font-black disabled:bg-slate-300" }, draft.isSearching ? "검색 중..." : "검색"),
+            React.createElement("button", { type: "button", onClick: onCancel, className: "px-3 py-2 rounded-md border border-slate-300 bg-white text-slate-600 text-[11px] font-bold" }, "취소")),
+        draft.error && React.createElement("div", { className: "mt-2 text-[11px] font-bold text-rose-700" }, draft.error))));
+
+const ProductRow = React.memo(({ item, idx, isLinked, isActiveMulti, isInventoryMasterSelected, isMultiGroupItem, splitLotMemo, targetDateStr, onStockChange, onSpacebar, onFocusInput, onBaseDataChange, onPromoChange, onOpenMemo, onSalesMove, onVendorChipDelete, onVendorChipEdit, onViewLayerEditBlocked, internalLotMapping, isGroupStart, isNewCategory, isMergeGroupStart, isMergeGroupEnd, isLotReviewMode, isLotReviewCandidate, isLotReviewGroupStart, isLotReviewGroupEnd, isActiveLotReviewGroup, normalizeDisplayIssues, onPurchaseLotAdjust, onToggleCodeMerge }) => {
     const [isDragOver, setIsDragOver] = useState(false);
     let displayIssues = item.이슈 ? [...item.이슈] : [];
     displayIssues = displayIssues.filter(msg => !msg.includes('매입내역 없음') && !msg.includes('전산 재고 부족') && !msg.includes('재고 부족'));
@@ -8239,7 +8465,7 @@ const ProductRow = React.memo(({ item, idx, isLinked, isActiveMulti, isMultiGrou
                 }
             }
             catch (err) { }
-        }, className: `transition duration-200 ${isActiveMulti ? 'bg-blue-50/60 outline outline-2 outline-blue-500 z-20 relative shadow-md' : (isLinked ? 'bg-slate-50 ring-1 ring-blue-400 shadow-md relative z-10 scale-[1.01]' : 'border-b border-slate-100 hover:bg-slate-50')} ${isDragOver ? 'bg-blue-50 outline outline-2 outline-blue-400 scale-[1.01] z-20 shadow-md' : ''} ${!isActiveMulti && item.isDummy && item.단가 === 0 ? 'bg-rose-50/30' : ''} ${mergeBoxRowClass} ${isActiveLotReviewGroup ? 'bg-amber-100/50 relative z-20' : ''}` },
+        }, className: `transition duration-200 ${isInventoryMasterSelected ? 'bg-blue-50 outline outline-2 outline-blue-500 relative z-20 shadow-md' : ''} ${isActiveMulti ? 'bg-blue-50/60 outline outline-2 outline-blue-500 z-20 relative shadow-md' : (isLinked ? 'bg-slate-50 ring-1 ring-blue-400 shadow-md relative z-10 scale-[1.01]' : 'border-b border-slate-100 hover:bg-slate-50')} ${isDragOver ? 'bg-blue-50 outline outline-2 outline-blue-400 scale-[1.01] z-20 shadow-md' : ''} ${!isActiveMulti && item.isDummy && item.단가 === 0 ? 'bg-rose-50/30' : ''} ${mergeBoxRowClass} ${isActiveLotReviewGroup ? 'bg-amber-100/50 relative z-20' : ''}` },
         React.createElement("td", { className: `py-2 px-3 sticky left-0 z-10 ${lotReviewPointClass} ${isLinked ? 'border-l-4 border-l-blue-600' : ''} ${productRemarkSurfaceClass} ${topBorderClass} ${mergeHorizontalCellBoxClass} ${mergeFirstCellBoxClass} ${lotReviewHorizontalCellBoxClass} ${lotReviewFirstCellBoxClass}` },
             React.createElement("div", { className: "flex items-center justify-between w-full" },
                 React.createElement("div", { className: "flex flex-col justify-center flex-1 overflow-hidden max-w-[250px]" },
@@ -8408,6 +8634,13 @@ function App() {
     const [memoModal, setMemoModal] = useState({ isOpen: false, batchKey: null, text: '' });
     const [guideModalOpen, setGuideModalOpen] = useState(false);
     const [splitModal, setSplitModal] = useState({ isOpen: false, payload: null });
+    const [inventoryMasterDraft, setInventoryMasterDraft] = useState({ isOpen: false, anchorBatchKey: '', query: '', isSearching: false, error: '' });
+    const [inventoryMasterChoice, setInventoryMasterChoice] = useState({ isOpen: false, matches: [] });
+    const [inventoryMasterRegister, setInventoryMasterRegister] = useState({ isOpen: false, values: { 품목코드: '', 품목명: '', 규격: '', 단위: '' }, expectedRevision: undefined, isSaving: false, error: '' });
+    const [selectedInventoryMasterBatchKey, setSelectedInventoryMasterBatchKey] = useState('');
+    const [inventoryMasterResumeRecords, setInventoryMasterResumeRecords] = useState(() => DATAOPS_INVENTORY_MASTER_ADD_MODULE.readRetryRecords());
+    const inventoryMasterSnapshotRef = useRef(null);
+    const inventoryMasterRetryCodes = DATAOPS_INVENTORY_MASTER_ADD_MODULE.getRetryCodes(inventoryMasterResumeRecords);
     const [systemUiCollapsed, setSystemUiCollapsed] = useState(false);
     // 🌟 렌더링 안정성 강화: React 앱이 완전히 켜진 직후에만 초기 로딩 화면을 제거하도록 수정
     useEffect(() => {
@@ -8594,6 +8827,248 @@ function App() {
     const { productData, setProductData, analysisPeriod, setAnalysisPeriod, targetDateStr, setTargetDateStr, substHistory, setSubstHistory, ackMultiCodes, setAckMultiCodes, hasSavedWork, savedWorkMeta, autoSaveStatus, resetEngine, restoreWorkState, handleBaseDataChange, handlePromoChange, handleManualStockChange, executeImmediateSubstitution, handlePurchaseLotManualAdjust, executeMasterSubstitutionCandidates, handleSalesMove, executeAnalysis, runAnalysis, runCostExtraction } = useInventoryEngine({ mappings, grouping, viewMode, setViewMode, mergeOverrideVersion, setMergeOverrideVersion, setAlertMsg, setToastMsg, setConfirmModal, setIsProcessing, setAppStep, onClosingWorkbookDetected: handleClosingWorkbookDetected });
     const productDataRef = useRef(productData);
     productDataRef.current = productData;
+    const focusInventoryMasterRow = (batchKey, options = {}) => {
+        const focus = () => {
+            const safeBatch = window.CSS && CSS.escape ? CSS.escape(batchKey) : String(batchKey).replace(/"/g, '\\"');
+            const row = document.querySelector(`tr[data-batch="${safeBatch}"]`);
+            if (!row) return false;
+            row.scrollIntoView({ behavior: 'auto', block: 'nearest' });
+            const input = row.querySelector('input[data-field="actual-input"]');
+            if (input) {
+                input.focus({ preventScroll: true });
+                input.select();
+            }
+            return true;
+        };
+        setTimeout(() => {
+            if (focus()) return;
+            if (options.offerFilterReset !== false && window.confirm('같은 품목코드가 전체 실사 데이터에 이미 있습니다. 현재 필터를 초기화하고 기존 행으로 이동할까요?')) {
+                setFilters(getDefaultFilters());
+                setSearchInputVal('');
+                setPromoOnly(false);
+                setTimeout(focus, 120);
+            } else {
+                setAlertMsg('같은 품목코드가 전체 실사 데이터에 이미 있습니다. 필터로 숨겨진 경우 필터 초기화 후 기존 행에서 수량을 입력하세요.');
+            }
+        }, 80);
+    };
+    const loadInventoryMasterSnapshot = async () => {
+        const storage = window.ONEAPP && window.ONEAPP.STORAGE;
+        if (!storage || typeof storage.readMasterSnapshotState !== 'function') {
+            throw new Error('공통 로컬 마스터 저장 엔진을 불러오지 못했습니다. 페이지를 새로고침하세요.');
+        }
+        const state = await storage.readMasterSnapshotState();
+        if (!state || !state.masterMap || Object.keys(state.masterMap).length === 0) {
+            throw new Error('확정 저장된 로컬 마스터가 없습니다. Master 앱에서 마스터를 먼저 확인하세요.');
+        }
+        inventoryMasterSnapshotRef.current = state;
+        return state;
+    };
+    const handleOpenInventoryMasterAdd = async () => {
+        if (inventoryMasterDraft.isOpen) {
+            const input = document.getElementById('inventory-master-add-search');
+            if (input) {
+                input.focus();
+                input.select();
+            }
+            return;
+        }
+        const focusedKey = safeStr(focusedInputRef.current && focusedInputRef.current.key);
+        const activeRow = document.activeElement && document.activeElement.closest ? document.activeElement.closest('tr[data-batch]') : null;
+        const anchorBatchKey = focusedKey
+            || safeStr(activeRow && activeRow.getAttribute('data-batch'))
+            || safeStr((filteredProductDataRef.current[0] || productDataRef.current[0] || {}).batchKey);
+        if (!anchorBatchKey) {
+            setAlertMsg('상품을 추가할 실사 행이 없습니다. 먼저 재고실사 자료를 불러오세요.');
+            return;
+        }
+        setInventoryMasterDraft({ isOpen: true, anchorBatchKey, query: '', isSearching: true, error: '' });
+        setTimeout(() => document.getElementById('inventory-master-add-search')?.focus(), 50);
+        try {
+            await loadInventoryMasterSnapshot();
+            setInventoryMasterDraft(prev => ({ ...prev, isSearching: false, error: '' }));
+        } catch (error) {
+            setInventoryMasterDraft(prev => ({ ...prev, isSearching: false, error: error.message }));
+        }
+    };
+    const closeInventoryMasterAdd = () => {
+        setInventoryMasterDraft({ isOpen: false, anchorBatchKey: '', query: '', isSearching: false, error: '' });
+        setInventoryMasterChoice({ isOpen: false, matches: [] });
+    };
+    const handleSelectInventoryMasterItem = (masterItem) => {
+        const code = DATAOPS_INVENTORY_MASTER_ADD_MODULE.getMasterCode(masterItem);
+        const existing = DATAOPS_INVENTORY_MASTER_ADD_MODULE.findExistingRow(productDataRef.current, code);
+        if (existing) {
+            closeInventoryMasterAdd();
+            setInventoryMasterRegister(prev => ({ ...prev, isOpen: false, isSaving: false, error: '' }));
+            setSelectedInventoryMasterBatchKey(safeStr(existing.batchKey));
+            setToastMsg(`품목코드 ${code}는 전체 실사 데이터에 이미 있어 중복 행을 만들지 않았습니다.`);
+            focusInventoryMasterRow(safeStr(existing.batchKey), { offerFilterReset: true });
+            return false;
+        }
+        const anchorBatchKey = safeStr(inventoryMasterDraft.anchorBatchKey);
+        const nextRow = DATAOPS_INVENTORY_MASTER_ADD_MODULE.buildInventoryRow(masterItem, { anchorBatchKey, targetDateStr });
+        setProductData(prev => {
+            const duplicate = DATAOPS_INVENTORY_MASTER_ADD_MODULE.findExistingRow(prev, code);
+            return duplicate ? prev : [...prev, nextRow];
+        });
+        closeInventoryMasterAdd();
+        setInventoryMasterRegister(prev => ({ ...prev, isOpen: false, isSaving: false, error: '' }));
+        setSelectedInventoryMasterBatchKey(nextRow.batchKey);
+        setToastMsg(DATAOPS_INVENTORY_MASTER_ADD_MODULE.isSalesStopped(masterItem)
+            ? `${code} 판매중단 상품을 추가했습니다. 양수 실사수량이면 마감 후 판매재개합니다.`
+            : `${code} 상품을 현재 위치에 추가했습니다.`);
+        focusInventoryMasterRow(nextRow.batchKey, { offerFilterReset: false });
+        return true;
+    };
+    const handleSearchInventoryMaster = async () => {
+        const query = safeStr(inventoryMasterDraft.query);
+        if (!query) {
+            setInventoryMasterDraft(prev => ({ ...prev, error: '검색어를 입력하세요.' }));
+            return;
+        }
+        setInventoryMasterDraft(prev => ({ ...prev, isSearching: true, error: '' }));
+        try {
+            const state = inventoryMasterSnapshotRef.current || await loadInventoryMasterSnapshot();
+            const result = DATAOPS_INVENTORY_MASTER_ADD_MODULE.search(state.masterMap, query);
+            if (result.mode === 'immediate') {
+                handleSelectInventoryMasterItem(result.selected);
+                return;
+            }
+            if (result.mode === 'choose') {
+                setInventoryMasterChoice({ isOpen: true, matches: result.matches });
+                setInventoryMasterDraft(prev => ({ ...prev, isSearching: false }));
+                return;
+            }
+            const suggestedCode = result.tokens.length === 1 ? query.replace(/\s/g, '') : '';
+            setInventoryMasterRegister({
+                isOpen: true,
+                values: { 품목코드: suggestedCode, 품목명: '', 규격: '', 단위: '' },
+                expectedRevision: state.revision,
+                isSaving: false,
+                error: ''
+            });
+            setInventoryMasterDraft(prev => ({ ...prev, isSearching: false }));
+        } catch (error) {
+            setInventoryMasterDraft(prev => ({ ...prev, isSearching: false, error: error.message }));
+        }
+    };
+    const handleRegisterInventoryMaster = async () => {
+        const api = window.ONEAPP_MASTER_ADD_UPDATE;
+        if (!api || typeof api.commitSingleProductRegistration !== 'function') {
+            setInventoryMasterRegister(prev => ({ ...prev, error: '공용 마스터 단건 등록 API를 불러오지 못했습니다.' }));
+            return;
+        }
+        setInventoryMasterRegister(prev => ({ ...prev, isSaving: true, error: '' }));
+        try {
+            const result = await api.commitSingleProductRegistration({
+                item: inventoryMasterRegister.values,
+                expectedRevision: inventoryMasterRegister.expectedRevision,
+                storage: window.ONEAPP && window.ONEAPP.STORAGE,
+                historyApi: window.ONEAPP && window.ONEAPP.HISTORY,
+                localStorageRef: window.localStorage,
+                actor: null
+            });
+            inventoryMasterSnapshotRef.current = { masterMap: result.masterMap, revision: result.revision };
+            handleSelectInventoryMasterItem(result.item);
+        } catch (error) {
+            if (error && error.code === 'MERCH_MASTER_REVISION_CONFLICT') {
+                try {
+                    const latest = await loadInventoryMasterSnapshot();
+                    setInventoryMasterRegister(prev => ({
+                        ...prev,
+                        expectedRevision: latest.revision,
+                        isSaving: false,
+                        error: `${error.message} 최신 revision을 다시 읽었습니다. 품목코드와 입력값을 확인한 뒤 다시 등록하세요.`
+                    }));
+                    return;
+                } catch (reloadError) {
+                    error.message = `${error.message} / 최신 master 재조회 실패: ${reloadError.message}`;
+                }
+            }
+            setInventoryMasterRegister(prev => ({ ...prev, isSaving: false, error: error.message }));
+        }
+    };
+    const handleInventoryMasterStockChange = (batchKey, value) => {
+        const current = (productDataRef.current || []).find(row => safeStr(row.batchKey) === safeStr(batchKey));
+        if (!current || !current._inventoryMasterAdded) {
+            handleManualStockChange(batchKey, value);
+            return;
+        }
+        try {
+            const result = DATAOPS_INVENTORY_MASTER_ADD_MODULE.applyActual(current, value);
+            if (result.action === 'exclude') {
+                setProductData(prev => prev.filter(row => safeStr(row.batchKey) !== safeStr(batchKey)));
+                if (selectedInventoryMasterBatchKey === batchKey) setSelectedInventoryMasterBatchKey('');
+                setToastMsg(`${safeStr(current.코드)} 실사수량 0 · 재고 목록과 마감 대상에서 제외했습니다.`);
+                return;
+            }
+            setProductData(prev => prev.map(row => safeStr(row.batchKey) === safeStr(batchKey) ? result.row : row));
+            setSelectedInventoryMasterBatchKey(safeStr(batchKey));
+        } catch (error) {
+            setAlertMsg(error.message);
+        }
+    };
+    const persistInventoryMasterResumeRecords = (nextRecords) => {
+        DATAOPS_INVENTORY_MASTER_ADD_MODULE.writeRetryRecords(nextRecords);
+        setInventoryMasterResumeRecords(nextRecords);
+        return nextRecords;
+    };
+    const executeInventoryMasterSalesResume = async (codes, closingRevision = '') => {
+        const cleanCodes = Array.from(new Set((codes || []).map(DATAOPS_INVENTORY_MASTER_ADD_MODULE.normalizeCode).filter(Boolean)));
+        if (cleanCodes.length === 0) return { status: 'noop', processedCodes: [] };
+        const api = window.ONEAPP_MASTER_ADD_UPDATE;
+        if (!api || typeof api.commitSalesStatusChanges !== 'function') {
+            throw new Error('공용 마스터 판매상태 변경 API를 불러오지 못했습니다.');
+        }
+        const state = await loadInventoryMasterSnapshot();
+        try {
+            const result = await api.commitSalesStatusChanges({
+                codes: cleanCodes,
+                expectedRevision: state.revision,
+                storage: window.ONEAPP && window.ONEAPP.STORAGE,
+                historyApi: window.ONEAPP && window.ONEAPP.HISTORY,
+                localStorageRef: window.localStorage,
+                actor: null,
+                reason: '재고실사 양수 재고 발견'
+            });
+            inventoryMasterSnapshotRef.current = { masterMap: result.masterMap, revision: result.revision };
+            const cleared = DATAOPS_INVENTORY_MASTER_ADD_MODULE.clearRetry(DATAOPS_INVENTORY_MASTER_ADD_MODULE.readRetryRecords(), cleanCodes);
+            persistInventoryMasterResumeRecords(cleared);
+            setProductData(prev => prev.map(row => cleanCodes.includes(DATAOPS_INVENTORY_MASTER_ADD_MODULE.normalizeCode(row.코드))
+                ? { ...row, _inventoryMasterResumeRequired: false, _inventoryMasterResumeState: 'completed', _inventoryMasterResumeError: '', _inventoryClosingRevision: closingRevision || row._inventoryClosingRevision }
+                : row));
+            return result;
+        } catch (error) {
+            const failed = DATAOPS_INVENTORY_MASTER_ADD_MODULE.markRetry(
+                DATAOPS_INVENTORY_MASTER_ADD_MODULE.readRetryRecords(),
+                { codes: cleanCodes, closingRevision, state: 'failed', error: error.message }
+            );
+            persistInventoryMasterResumeRecords(failed);
+            setProductData(prev => prev.map(row => cleanCodes.includes(DATAOPS_INVENTORY_MASTER_ADD_MODULE.normalizeCode(row.코드))
+                ? { ...row, _inventoryMasterResumeRequired: true, _inventoryMasterResumeState: 'failed', _inventoryMasterResumeError: error.message, _inventoryClosingRevision: closingRevision || row._inventoryClosingRevision }
+                : row));
+            throw error;
+        }
+    };
+    const handleRetryInventoryMasterSalesResume = async () => {
+        if (isProcessing) return;
+        const records = DATAOPS_INVENTORY_MASTER_ADD_MODULE.readRetryRecords();
+        const codes = DATAOPS_INVENTORY_MASTER_ADD_MODULE.getRetryCodes(records);
+        if (codes.length === 0) {
+            setToastMsg('판매재개 재시도 대상이 없습니다.');
+            return;
+        }
+        setIsProcessing(true);
+        try {
+            await executeInventoryMasterSalesResume(codes);
+            setToastMsg(`판매재개 재시도 완료 · ${codes.length}건`);
+        } catch (error) {
+            setAlertMsg(`판매재개 재시도에 실패했습니다. 재고 마감은 이미 보존되어 다시 마감하지 않습니다. · ${error.message}`);
+        } finally {
+            setIsProcessing(false);
+        }
+    };
     const isCostExtractionMode = !files.prev && files.in && !files.out && files.end;
     const hasEndFile = !!files.end;
     // V1.a22.12: 실행 버튼은 업로드된 파일 역할에 맞는 것만 노출한다.
@@ -8668,6 +9143,10 @@ function App() {
         DATAOPS_CODE_MERGE_OVERRIDE_MODULE.clear();
         setMergeOverrideVersion(v => v + 1);
         setSearchInputVal('');
+        setInventoryMasterDraft({ isOpen: false, anchorBatchKey: '', query: '', isSearching: false, error: '' });
+        setInventoryMasterChoice({ isOpen: false, matches: [] });
+        setInventoryMasterRegister(prev => ({ ...prev, isOpen: false, isSaving: false, error: '' }));
+        setSelectedInventoryMasterBatchKey('');
         setLinkSourceKey(null);
         setActiveIssueMode(null);
         setActiveMultiCode(null);
@@ -9450,6 +9929,10 @@ function App() {
         setMergeOverrideVersion(v => v + 1);
         setFilters(getDefaultFilters());
         setSearchInputVal('');
+        setInventoryMasterDraft({ isOpen: false, anchorBatchKey: '', query: '', isSearching: false, error: '' });
+        setInventoryMasterChoice({ isOpen: false, matches: [] });
+        setInventoryMasterRegister(prev => ({ ...prev, isOpen: false, isSaving: false, error: '' }));
+        setSelectedInventoryMasterBatchKey('');
         setActiveIssueMode(null);
         setActiveMultiCode(null);
         currentIssueIdxRef.current = -1;
@@ -11646,7 +12129,8 @@ ${balanceText}
                 activeElement.__dataopsFlushNow();
                 await new Promise(resolve => setTimeout(resolve, 0));
             }
-            const closingProductData = productDataRef.current || productData;
+            const closingProductData = (productDataRef.current || productData)
+                .filter(row => !row._inventoryMasterAdded || STOCK_ENGINE_MODULE.getActualQty(row) > 0);
             // 필터는 전달자료에서 제외하고, 관리자 통합/분리 결과만 반영한다.
             // 기존 전체재고 adapter가 만든 10열 셀과 행 순서를 그대로 사용하고 행사가만 11열로 붙인다.
             const closingViewRows = DATAOPS_VIEW_LAYER_MODULE.buildViewRows(closingProductData, { viewMode })
@@ -11678,19 +12162,47 @@ ${balanceText}
             setIsProcessing(false);
             return;
         }
+        let closingCommitResult = null;
         try {
             const envelope = await DATAOPS_PROMO_SNAPSHOT_MODULE.buildEnvelope({ rows: closingRows, basisDate: targetDateStr });
-            const result = await DATAOPS_PROMO_SNAPSHOT_MODULE.commit(envelope);
-            setToastMsg(`실사 마감 저장 완료 · Excel + 클라우드 ${result.revision}`);
+            closingCommitResult = await DATAOPS_PROMO_SNAPSHOT_MODULE.commit(envelope);
+            setToastMsg(`실사 마감 저장 완료 · Excel + 클라우드 ${closingCommitResult.revision}`);
         }
         catch (err) {
             console.error('DataOps 클라우드 저장 오류:', err);
             setAlertMsg(`Excel 다운로드는 완료되었지만 클라우드 저장에 실패했습니다. 이전 확정자료는 유지됩니다.${err && err.message ? ` · ${err.message}` : ''}`);
         }
-        finally {
-            setIsProcessing(false);
+        if (closingCommitResult) {
+            const resumeCodes = Array.from(new Set((productDataRef.current || productData)
+                .filter(row => row && row._inventoryMasterResumeRequired && STOCK_ENGINE_MODULE.getActualQty(row) > 0)
+                .map(row => DATAOPS_INVENTORY_MASTER_ADD_MODULE.normalizeCode(row.코드))
+                .filter(Boolean)));
+            if (resumeCodes.length > 0) {
+                let retryRecordError = null;
+                try {
+                    const pending = DATAOPS_INVENTORY_MASTER_ADD_MODULE.markRetry(
+                        DATAOPS_INVENTORY_MASTER_ADD_MODULE.readRetryRecords(),
+                        { codes: resumeCodes, closingRevision: closingCommitResult.revision, state: 'pending' }
+                    );
+                    persistInventoryMasterResumeRecords(pending);
+                } catch (error) {
+                    retryRecordError = error;
+                }
+                setProductData(prev => prev.map(row => resumeCodes.includes(DATAOPS_INVENTORY_MASTER_ADD_MODULE.normalizeCode(row.코드))
+                    ? { ...row, _inventoryMasterResumeState: 'pending', _inventoryClosingRevision: closingCommitResult.revision }
+                    : row));
+                try {
+                    await executeInventoryMasterSalesResume(resumeCodes, closingCommitResult.revision);
+                    setToastMsg(`실사 마감 저장 완료 · 판매재개 ${resumeCodes.length}건 반영`);
+                } catch (error) {
+                    console.error('DataOps 판매재개 반영 오류:', error);
+                    const retryDetail = retryRecordError ? ` / 재시도 상태 저장 오류: ${retryRecordError.message}` : '';
+                    setAlertMsg(`재고 마감은 ${closingCommitResult.revision}으로 보존했지만 판매재개 ${resumeCodes.length}건 반영에 실패했습니다. [판매재개 재시도]로 마감 재실행 없이 다시 처리하세요. · ${error.message}${retryDetail}`);
+                }
+            }
         }
-    }, [isClosingOutputBlocked, productData, analysisPeriod, targetDateStr, closingStats, viewMode, setAlertMsg, setToastMsg, setIsProcessing]);
+        setIsProcessing(false);
+    }, [isClosingOutputBlocked, productData, analysisPeriod, targetDateStr, closingStats, viewMode, setAlertMsg, setToastMsg, setIsProcessing, executeInventoryMasterSalesResume]);
     const handlePrintOutput = useCallback(() => {
         if (isClosingOutputBlocked) {
             setAlertMsg("분석이 완료되기 전에는 출력할 수 없습니다.");
@@ -11750,9 +12262,9 @@ ${balanceText}
         return true;
     }, [handleManualStockChange, handleBaseDataChange, productData]);
     // 🌟 성능 최적화: 전역 이벤트 리스너의 잦은 재생성을 막기 위한 콜백 참조 저장
-    const latestHandlers = useRef({ handleIssueJump, handleRunAnalysis, handleRunTransferCheck, handleCombinedExport, handlePrintOutput, flushFocusedTableEdit, moveMergeCandidate });
+    const latestHandlers = useRef({ handleIssueJump, handleRunAnalysis, handleRunTransferCheck, handleCombinedExport, handlePrintOutput, handleOpenInventoryMasterAdd, flushFocusedTableEdit, moveMergeCandidate });
     useEffect(() => {
-        latestHandlers.current = { handleIssueJump, handleRunAnalysis, handleRunTransferCheck, handleCombinedExport, handlePrintOutput, flushFocusedTableEdit, moveMergeCandidate };
+        latestHandlers.current = { handleIssueJump, handleRunAnalysis, handleRunTransferCheck, handleCombinedExport, handlePrintOutput, handleOpenInventoryMasterAdd, flushFocusedTableEdit, moveMergeCandidate };
     });
     useEffect(() => {
         const handleGlobalEnter = (e) => {
@@ -11798,6 +12310,10 @@ ${balanceText}
                     searchInput.focus();
                     searchInput.select();
                 }
+            }
+            if (e.key === 'F6') {
+                e.preventDefault();
+                latestHandlers.current.handleOpenInventoryMasterAdd();
             }
             if (e.key === 'F9') {
                 e.preventDefault();
@@ -11915,6 +12431,14 @@ ${balanceText}
         let sourceRows = productData;
         if (!filters.showHiddenMoveRows)
             sourceRows = sourceRows.filter(p => !p._hiddenBySalesMove);
+        const finalizeInventoryMasterRows = (rows = []) => {
+            let nextRows = Array.isArray(rows) ? rows.slice() : [];
+            const selectedAddedRow = (productData || []).find(row => safeStr(row.batchKey) === safeStr(selectedInventoryMasterBatchKey) && row._inventoryMasterAdded);
+            if (selectedAddedRow && !nextRows.some(row => safeStr(row.batchKey) === safeStr(selectedAddedRow.batchKey))) {
+                nextRows.push(selectedAddedRow);
+            }
+            return DATAOPS_INVENTORY_MASTER_ADD_MODULE.pinAddedRows(nextRows);
+        };
         // V1.a22.69: 구매잔량/기타상품 필터는 원본 Lot 행 기준으로 먼저 적용한 뒤 보기 계층을 만든다.
         // 코드통합형을 먼저 만들면 구매잔량 Lot과 기타상품 Lot이 한 행으로 섞여 필터 결과가 틀어진다.
         let data = filters.reviewType === 'substitution' ? sourceRows : DATAOPS_VIEW_LAYER_MODULE.buildViewRows(sourceRows, { viewMode });
@@ -11973,7 +12497,7 @@ ${balanceText}
         if (promoOnly)
             data = data.filter(d => safeNum(d.행사가) > 0);
         if (filters.reviewType === 'stockLot')
-            return [...data].sort((a, b) => {
+            return finalizeInventoryMasterRows([...data].sort((a, b) => {
                 const codeCompare = FILTER_SORT_MODULE.getCodeSortValue(a).localeCompare(FILTER_SORT_MODULE.getCodeSortValue(b), 'ko', { numeric: false, sensitivity: 'base' });
                 if (codeCompare) return codeCompare;
                 const getLotProductRank = (row) => {
@@ -11984,19 +12508,19 @@ ${balanceText}
                 };
                 return getLotProductRank(a) - getLotProductRank(b)
                     || FILTER_SORT_MODULE.compareByCodeThenName(a, b);
-            });
+            }));
         if (filters.reviewType === 'substitution') {
-            return [...data].sort((a, b) => {
+            return finalizeInventoryMasterRows([...data].sort((a, b) => {
                 const ma = substitutionPreviewView.metaByBatchKey[a.batchKey] || {};
                 const mb = substitutionPreviewView.metaByBatchKey[b.batchKey] || {};
                 return safeNum(ma.groupOrder) - safeNum(mb.groupOrder)
                     || safeNum(ma.roleOrder) - safeNum(mb.roleOrder)
                     || safeNum(ma.lotOrder) - safeNum(mb.lotOrder)
                     || FILTER_SORT_MODULE.compareByCodeThenName(a, b);
-            });
+            }));
         }
-        return FILTER_SORT_MODULE.sortRows(data, filters.sortMode, filters.sortDesc);
-    }, [productData, viewMode, mergeOverrideVersion, filters, promoOnly, multiPriceCodes, mappings, hasQtyIssueTotal, hasLotIssueTotal, substitutionCandidateCodeSet, substitutionPreviewView, lotReviewCandidateCodeSet, stockLotIssueGroupCodeSet, stockLotStandaloneIssueKeySet, stabilizeViewRows]);
+        return finalizeInventoryMasterRows(FILTER_SORT_MODULE.sortRows(data, filters.sortMode, filters.sortDesc));
+    }, [productData, viewMode, mergeOverrideVersion, filters, promoOnly, multiPriceCodes, mappings, hasQtyIssueTotal, hasLotIssueTotal, substitutionCandidateCodeSet, substitutionPreviewView, lotReviewCandidateCodeSet, stockLotIssueGroupCodeSet, stockLotStandaloneIssueKeySet, stabilizeViewRows, selectedInventoryMasterBatchKey]);
     const splitLotMemoMap = useMemo(() => {
         const counts = {};
         filteredProductData.forEach(row => {
@@ -12034,7 +12558,14 @@ ${balanceText}
                     (autoSaveStatus || savedWorkMeta) && React.createElement("div", { className: "hidden lg:flex flex-col items-end leading-tight max-w-[230px]", title: savedWorkMeta ? `${safeStr(savedWorkMeta.workMeta && savedWorkMeta.workMeta.sourceFileName, '원본 파일 미복원')} / 기준일 ${safeStr(savedWorkMeta.targetDateStr, '미상')} / 상품 ${safeNum(savedWorkMeta.productCount)}건` : '' },
                         React.createElement("span", { className: `text-[10px] font-bold ${autoSaveStatus === '자동 저장 실패' ? 'text-rose-600' : 'text-emerald-700'}` }, autoSaveStatus),
                         savedWorkMeta && React.createElement("span", { className: "text-[9px] text-slate-400 truncate w-full text-right" }, `${safeStr(savedWorkMeta.workMeta && savedWorkMeta.workMeta.sourceFileName, '원본 파일 미복원')} · ${safeStr(savedWorkMeta.targetDateStr, '기준일 미상')} · ${safeNum(savedWorkMeta.productCount)}건`)),
+                    inventoryMasterRetryCodes.length > 0 && React.createElement("button", { onClick: handleRetryInventoryMasterSalesResume, disabled: isProcessing, className: "px-3 py-1.5 rounded text-[12px] font-bold transition flex items-center border bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100 shadow-sm disabled:opacity-40", title: "이미 보존된 재고 마감은 다시 실행하지 않고 판매재개만 재시도" },
+                        React.createElement("i", { className: "fas fa-rotate mr-1.5" }),
+                        "판매재개 재시도 ", inventoryMasterRetryCodes.length),
                     productData.length > 0 && (React.createElement(React.Fragment, null,
+                        React.createElement("button", { onClick: handleOpenInventoryMasterAdd, disabled: isProcessing, className: "px-3 py-1.5 rounded text-[12px] font-bold transition flex items-center border bg-blue-600 text-white border-blue-700 hover:bg-blue-700 shadow-sm disabled:opacity-40", title: "선택 행 아래에서 로컬 Master 상품 검색/신규등록" },
+                            React.createElement("i", { className: "fas fa-plus mr-1.5" }),
+                            "상품추가",
+                            React.createElement("span", { className: "ml-1.5 px-1 py-[1px] rounded text-[9px] font-mono border-b-2 border-blue-300 bg-blue-500 text-white shadow-sm font-black" }, "F6")),
                         React.createElement("button", { onClick: () => setGuideModalOpen(true), className: "px-3 py-1.5 rounded text-[12px] font-bold transition flex items-center border bg-white text-slate-700 border-slate-300 hover:bg-slate-50 shadow-sm mr-1" }, "\uC774\uC288 \uAC00\uC774\uB4DC"),
                         React.createElement("div", { className: "w-px h-5 bg-slate-300 mx-1 hidden md:block" }),
                         React.createElement("button", { onClick: handleCombinedExport, disabled: isClosingOutputBlocked, className: `px-3 py-1.5 rounded text-[12px] font-bold shadow-sm transition items-center border hidden md:flex ${isClosingOutputBlocked ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed' : 'bg-white text-slate-700 hover:bg-slate-50 border-slate-300'}` },
@@ -12525,8 +13056,43 @@ ${balanceText}
                                                     "\u2500\u2500\u2500\u2500 ",
                                                     currGroupLabel || '미지정',
                                                     " \u2500\u2500\u2500\u2500")))),
-                                            React.createElement(ProductRow, { key: item.batchKey, item: item, idx: idx, isLinked: linkSourceKey === item.batchKey || (Array.isArray(item._viewSourceKeys) && item._viewSourceKeys.includes(linkSourceKey)), isActiveMulti: activeMultiCode === item.코드, isMultiGroupItem: multiPriceCodeSet.has(item.코드), splitLotMemo: splitLotMemoMap[item.batchKey] || '', targetDateStr: targetDateStr, onStockChange: handleManualStockChange, onSpacebar: handleSpacebarLink, onFocusInput: handleFocusInput, onBaseDataChange: handleBaseDataChange, onPromoChange: handlePromoChange, onOpenMemo: handleOpenMemo, onSalesMove: handleChipDropRequest, onVendorChipDelete: handleVendorChipDelete, onVendorChipEdit: handleVendorChipEdit, onViewLayerEditBlocked: handleViewLayerEditBlocked, internalLotMapping: mappings.internalLot, isGroupStart: isGroupStart, isNewCategory: isNewCategory, isMergeGroupStart: isMergeGroupStart, isMergeGroupEnd: isMergeGroupEnd, isLotReviewMode: viewMode === 'LOT_DETAIL', isLotReviewCandidate: isLotReviewCandidate, isLotReviewGroupStart: isLotReviewGroupStart, isLotReviewGroupEnd: isLotReviewGroupEnd, isActiveLotReviewGroup: isActiveLotReviewGroup, normalizeDisplayIssues: normalizeDisplayIssues, onPurchaseLotAdjust: handlePurchaseLotManualAdjust, onToggleCodeMerge: handleToggleCodeMerge })));
+                                            React.createElement(ProductRow, { key: item.batchKey, item: item, idx: idx, isLinked: linkSourceKey === item.batchKey || (Array.isArray(item._viewSourceKeys) && item._viewSourceKeys.includes(linkSourceKey)), isActiveMulti: activeMultiCode === item.코드, isInventoryMasterSelected: safeStr(selectedInventoryMasterBatchKey) === safeStr(item.batchKey), isMultiGroupItem: multiPriceCodeSet.has(item.코드), splitLotMemo: splitLotMemoMap[item.batchKey] || '', targetDateStr: targetDateStr, onStockChange: handleInventoryMasterStockChange, onSpacebar: handleSpacebarLink, onFocusInput: handleFocusInput, onBaseDataChange: handleBaseDataChange, onPromoChange: handlePromoChange, onOpenMemo: handleOpenMemo, onSalesMove: handleChipDropRequest, onVendorChipDelete: handleVendorChipDelete, onVendorChipEdit: handleVendorChipEdit, onViewLayerEditBlocked: handleViewLayerEditBlocked, internalLotMapping: mappings.internalLot, isGroupStart: isGroupStart, isNewCategory: isNewCategory, isMergeGroupStart: isMergeGroupStart, isMergeGroupEnd: isMergeGroupEnd, isLotReviewMode: viewMode === 'LOT_DETAIL', isLotReviewCandidate: isLotReviewCandidate, isLotReviewGroupStart: isLotReviewGroupStart, isLotReviewGroupEnd: isLotReviewGroupEnd, isActiveLotReviewGroup: isActiveLotReviewGroup, normalizeDisplayIssues: normalizeDisplayIssues, onPurchaseLotAdjust: handlePurchaseLotManualAdjust, onToggleCodeMerge: handleToggleCodeMerge }),
+                                            inventoryMasterDraft.isOpen && safeStr(inventoryMasterDraft.anchorBatchKey) === safeStr(item.batchKey) && React.createElement(InventoryMasterAddDraftRow, {
+                                                key: `inventory-master-add-${item.batchKey}`,
+                                                draft: inventoryMasterDraft,
+                                                onQueryChange: query => setInventoryMasterDraft(prev => ({ ...prev, query, error: '' })),
+                                                onSearch: handleSearchInventoryMaster,
+                                                onCancel: closeInventoryMasterAdd
+                                            })));
                                     })))))))))),
+        inventoryMasterChoice.isOpen && React.createElement("div", { className: "fixed inset-0 z-[420] bg-slate-900/70 flex items-center justify-center p-4", onClick: () => setInventoryMasterChoice({ isOpen: false, matches: [] }) },
+            React.createElement("div", { className: "bg-white w-full max-w-3xl max-h-[80vh] rounded-xl shadow-2xl border border-slate-200 flex flex-col modal-bounce", onClick: event => event.stopPropagation() },
+                React.createElement("div", { className: "p-4 border-b border-slate-200 flex items-center justify-between" },
+                    React.createElement("div", null,
+                        React.createElement("h3", { className: "font-black text-slate-900" }, "마스터 상품 선택"),
+                        React.createElement("p", { className: "text-[11px] text-slate-500 mt-1" }, "복수 검색 결과 중 실사할 상품을 선택하세요.")),
+                    React.createElement("button", { onClick: () => setInventoryMasterChoice({ isOpen: false, matches: [] }), className: "text-slate-400 hover:text-slate-700" }, React.createElement("i", { className: "fas fa-times" }))),
+                React.createElement("div", { className: "overflow-y-auto divide-y divide-slate-100" }, inventoryMasterChoice.matches.map(item => {
+                    const code = DATAOPS_INVENTORY_MASTER_ADD_MODULE.getMasterCode(item);
+                    const stopped = DATAOPS_INVENTORY_MASTER_ADD_MODULE.isSalesStopped(item);
+                    return React.createElement("button", { key: code, type: "button", onClick: () => handleSelectInventoryMasterItem(item), className: "w-full text-left p-4 hover:bg-blue-50 transition flex items-center justify-between gap-3" },
+                        React.createElement("div", { className: "min-w-0" },
+                            React.createElement("div", { className: "font-black text-slate-900 truncate" }, safeStr(item.품목명, '-')),
+                            React.createElement("div", { className: "text-[11px] text-slate-500 mt-1 truncate" }, code, " · ", safeStr(item.규격, '-'), " · ", safeStr(item.단위, '-'))),
+                        stopped && React.createElement("span", { className: "shrink-0 rounded-full bg-rose-100 text-rose-700 px-2 py-1 text-[10px] font-black" }, "판매중단"));
+                })))),
+        inventoryMasterRegister.isOpen && React.createElement("div", { className: "fixed inset-0 z-[430] bg-slate-900/70 flex items-center justify-center p-4", onClick: () => setInventoryMasterRegister(prev => ({ ...prev, isOpen: false, isSaving: false })) },
+            React.createElement("form", { onSubmit: event => { event.preventDefault(); handleRegisterInventoryMaster(); }, className: "bg-white w-full max-w-lg rounded-xl shadow-2xl border border-slate-200 modal-bounce", onClick: event => event.stopPropagation() },
+                React.createElement("div", { className: "p-5 border-b border-slate-200" },
+                    React.createElement("h3", { className: "font-black text-slate-900" }, "마스터 신규등록"),
+                    React.createElement("p", { className: "text-[11px] text-slate-500 mt-1" }, "검색 결과가 없습니다. 네 필수값을 확인하면 master와 변경 이력을 함께 저장합니다.")),
+                React.createElement("div", { className: "p-5 grid grid-cols-1 md:grid-cols-2 gap-3" }, ['품목코드', '품목명', '규격', '단위'].map((field, index) => React.createElement("label", { key: field, className: "flex flex-col gap-1 text-[11px] font-black text-slate-700" },
+                    field === '품목코드' ? 'ERP 품목코드' : (field === '품목명' ? '상품명' : field),
+                    React.createElement("input", { autoFocus: index === 0, value: inventoryMasterRegister.values[field], onChange: event => setInventoryMasterRegister(prev => ({ ...prev, values: { ...prev.values, [field]: event.target.value }, error: '' })), disabled: inventoryMasterRegister.isSaving, className: "rounded-md border border-slate-300 px-3 py-2 text-[12px] font-bold outline-none focus:ring-2 focus:ring-blue-400" }))),
+                    inventoryMasterRegister.error && React.createElement("div", { className: "md:col-span-2 rounded-md bg-rose-50 border border-rose-200 p-3 text-[11px] font-bold text-rose-700 whitespace-pre-line" }, inventoryMasterRegister.error)),
+                React.createElement("div", { className: "p-4 border-t border-slate-200 flex justify-end gap-2" },
+                    React.createElement("button", { type: "button", onClick: () => setInventoryMasterRegister(prev => ({ ...prev, isOpen: false, isSaving: false })), disabled: inventoryMasterRegister.isSaving, className: "px-4 py-2 rounded-md border border-slate-300 bg-white text-slate-600 text-[12px] font-bold" }, "취소"),
+                    React.createElement("button", { type: "submit", disabled: inventoryMasterRegister.isSaving, className: "px-4 py-2 rounded-md bg-blue-600 text-white text-[12px] font-black disabled:bg-slate-300" }, inventoryMasterRegister.isSaving ? "저장·검증 중..." : "신규등록 후 실사 계속")))),
         splitModal.isOpen && (React.createElement("div", { className: "fixed inset-0 z-[400] bg-slate-900 bg-opacity-60 flex items-center justify-center p-4" },
             React.createElement("div", { className: "bg-white rounded-xl shadow-2xl p-6 w-full max-w-xs modal-bounce" },
                 React.createElement("h3", { className: "font-bold text-slate-800 mb-3 text-lg" },
