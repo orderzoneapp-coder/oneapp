@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="google" content="notranslate">
-  <title>ONEAPP Shipping Management</title>
+  <title>ONEAPP orders</title>
   <link rel="preconnect" href="https://cdn.jsdelivr.net">
   <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
   <script src="orderFulfillmentEngine.js"></script>
@@ -1102,21 +1102,41 @@
       }
     }
 
+  
+    /* orders v1.0 */
+    .header-actions { display:flex; align-items:center; gap:7px; }
+    .header-action-button { appearance:none; cursor:pointer; }
+    .source-selector-heading { cursor:pointer; }
+    .source-selector-heading:hover,
+    .source-selector-heading.dragover { border-color:#5eead4; background:#115e59; }
+    .source-selector-heading:focus-visible { outline:2px solid #67e8f9; outline-offset:2px; }
+    .workspace-storage.is-open { display:block !important; }
+
+    @media (max-width:680px) {
+      .header-actions { gap:5px; }
+      .header-action-button span:last-child { display:none; }
+    }
+
   </style>
 </head>
 <body>
   <header class="global-header">
-    <div class="brand" aria-label="ONEAPP NEXUS Shipping Management">
+    <div class="brand" aria-label="ONEAPP NEXUS orders">
       <div class="brand-mark">ONEAPP</div>
       <div class="brand-divider" aria-hidden="true"></div>
       <div class="brand-stack">
-        <div class="brand-suite">NEXUS <span class="brand-badge">PILOT</span></div>
-        <div class="brand-product">Shipping Management</div>
+        <div class="brand-suite">NEXUS <span class="brand-badge">v1.0</span></div>
+        <div class="brand-product">orders</div>
       </div>
     </div>
-    <a class="header-link" href="dashboard.html" aria-label="NEXUS 대시보드로 이동">
-      <span aria-hidden="true">←</span><span>NEXUS 대시보드</span>
-    </a>
+    <div class="header-actions">
+      <button class="header-link header-action-button" id="headerRestoreButton" type="button" aria-label="이전 작업 복구">
+        <span aria-hidden="true">↻</span><span>작업 복구</span>
+      </button>
+      <button class="header-link header-action-button" id="headerSettingsButton" type="button" aria-expanded="false" aria-controls="workspaceStorage">
+        <span aria-hidden="true">⚙</span><span>환경설정</span>
+      </button>
+    </div>
   </header>
 
   <main class="page-shell">
@@ -1132,32 +1152,34 @@
 
       <section class="panel input-panel" aria-label="입력 파일">
         <div class="source-selector">
-          <div class="source-selector-heading">
+          <div class="source-selector-heading" id="bundleDrop" tabindex="0" role="button"
+            aria-label="주문현황과 창고별재고 Excel 두 파일을 함께 선택">
             <span class="source-selector-index">2×</span>
             <div>
-              <strong>두 파일 함께 선택</strong>
-              <span>순서 무관 · 파일명으로 자동 구분 · 정확히 2개</span>
+              <strong>묶음 파일 선택</strong>
+              <span id="bundleFileStatus">두 Excel을 한 번에 선택하거나 드래그하세요.</span>
             </div>
           </div>
+          <input class="hidden" id="bundleInput" type="file" accept=".xlsx,.xls" multiple>
 
           <div class="upload-grid">
             <article class="upload-card" id="ordersCard">
-              <div class="drop-zone" id="ordersDrop" tabindex="0" role="button" aria-label="주문현황 Excel 선택">
+              <div class="drop-zone compact-file-slot" id="ordersDrop" tabindex="0" role="button" aria-label="주문현황 Excel 개별 선택">
                 <div class="file-icon" aria-hidden="true">1</div>
                 <div class="file-copy">
                   <p class="drop-title">주문현황 Excel</p>
-                  <p class="drop-help" id="ordersFileName">파일 선택 · .xlsx / .xls</p>
+                  <p class="drop-help" id="ordersFileName">묶음 파일에서 자동 배정</p>
                 </div>
               </div>
               <input class="hidden" id="ordersInput" type="file" accept=".xlsx,.xls">
             </article>
 
             <article class="upload-card" id="inventoryCard">
-              <div class="drop-zone" id="inventoryDrop" tabindex="0" role="button" aria-label="창고별재고 Excel 선택">
+              <div class="drop-zone compact-file-slot" id="inventoryDrop" tabindex="0" role="button" aria-label="창고별재고 Excel 개별 선택">
                 <div class="file-icon" aria-hidden="true">2</div>
                 <div class="file-copy">
                   <p class="drop-title">창고별재고 Excel</p>
-                  <p class="drop-help" id="inventoryFileName">파일 선택 · .xlsx / .xls</p>
+                  <p class="drop-help" id="inventoryFileName">묶음 파일에서 자동 배정</p>
                 </div>
               </div>
               <input class="hidden" id="inventoryInput" type="file" accept=".xlsx,.xls">
@@ -1172,19 +1194,19 @@
 
           <div class="validation-box" id="validationBox" role="status" aria-live="polite">
             <p class="validation-title"><span aria-hidden="true">○</span>두 파일을 선택하면 검증을 시작합니다.</p>
-            <p class="validation-detail">필수 열, 수량, 상품코드 중복을 확인합니다.</p>
+            <p class="validation-detail">묶음 파일은 구조를 판별해 주문현황과 창고별재고로 자동 배정합니다.</p>
           </div>
         </div>
 
         <aside class="operator-note" aria-label="처리 기준과 전달사항">
           <div class="operator-note-title">처리 기준 · 전달사항</div>
-          <p>미매칭 상품은 <strong>재고정보 없음</strong>으로 유지하며 구매수량을 자동 확정하지 않습니다.</p>
-          <p><strong>적요·적요1</strong>은 발주관리로 통합하되 우선순위를 추론하지 않습니다.</p>
-          <p>분석 후 결과 탭에서 원본과 계산값을 확인한 뒤 Excel을 내려받으세요.</p>
+          <p>묶음 파일은 주문현황 1개와 창고별재고 1개를 자동으로 구분합니다.</p>
+          <p>파일 검증 완료 후 <strong>Enter</strong> 또는 출고 분석 버튼으로 실행합니다.</p>
+          <p>미매칭 상품은 <strong>재고정보 없음</strong>으로 유지합니다.</p>
         </aside>
       </section>
 
-      <section class="workspace-storage" aria-label="발주계획 저장과 복구">
+      <section class="workspace-storage hidden" id="workspaceStorage" aria-label="발주계획 저장과 복구">
         <div class="recovery-banner hidden" id="recoveryBanner">
           <span id="recoveryMessage">복구 가능한 로컬 발주계획이 있습니다.</span>
           <button type="button" id="restoreButton">복구</button>
@@ -1227,14 +1249,14 @@
     </section>
 
     <footer class="page-footer">
-      <span>Shipping Management v2.0.0 · workspace shipping-workspace/v2 · cloud plan v1</span>
+      <span>orders v1.0 · workspace shipping-workspace/v2 · cloud plan v1</span>
       <a href="SHIPPING_MANAGEMENT_GUIDANCE.md">개발·운영 기준 보기</a>
     </footer>
   </main>
 
   <div class="toast hidden" id="toast" role="status" aria-live="polite"></div>
 
-  <noscript>Shipping Management를 사용하려면 JavaScript를 활성화해야 합니다.</noscript>
+  <noscript>orders를 사용하려면 JavaScript를 활성화해야 합니다.</noscript>
 
   <script>
     (function () {
@@ -1263,6 +1285,9 @@
       };
 
       const elements = {
+        bundleInput: document.getElementById("bundleInput"),
+        bundleDrop: document.getElementById("bundleDrop"),
+        bundleFileStatus: document.getElementById("bundleFileStatus"),
         ordersInput: document.getElementById("ordersInput"),
         inventoryInput: document.getElementById("inventoryInput"),
         ordersDrop: document.getElementById("ordersDrop"),
@@ -1296,6 +1321,9 @@
         cloudRevisionSelect: document.getElementById("cloudRevisionSelect"),
         cloudLoadButton: document.getElementById("cloudLoadButton"),
         systemMessage: document.getElementById("systemMessage"),
+        workspaceStorage: document.getElementById("workspaceStorage"),
+        headerRestoreButton: document.getElementById("headerRestoreButton"),
+        headerSettingsButton: document.getElementById("headerSettingsButton"),
         toast: document.getElementById("toast"),
       };
 
@@ -1571,6 +1599,114 @@
         return best;
       }
 
+
+      async function classifyBundleFile(file) {
+        if (!isSupportedFile(file)) {
+          throw new Error(`${file.name}: .xlsx 또는 .xls 파일만 선택할 수 있습니다.`);
+        }
+        if (file.size > MAX_FILE_SIZE) {
+          throw new Error(`${file.name}: 파일 크기는 25MB 이하여야 합니다.`);
+        }
+
+        const [asOrders, asInventory] = await Promise.all([
+          parseExcelFile(file, "orders"),
+          parseExcelFile(file, "inventory"),
+        ]);
+        const orderScore = parsedScore(asOrders);
+        const inventoryScore = parsedScore(asInventory);
+
+        if (orderScore === inventoryScore) {
+          const name = String(file.name || "").toLowerCase();
+          if (/주문|미판매|order/.test(name)) return { kind: "orders", parsed: asOrders };
+          if (/재고|창고|inventory|stock/.test(name)) return { kind: "inventory", parsed: asInventory };
+          throw new Error(`${file.name}: 파일 종류를 자동 판별하지 못했습니다.`);
+        }
+
+        return orderScore < inventoryScore
+          ? { kind: "orders", parsed: asOrders }
+          : { kind: "inventory", parsed: asInventory };
+      }
+
+      async function handleBundleFiles(fileList) {
+        const files = Array.from(fileList || []).filter(Boolean);
+        if (files.length !== 2) {
+          showToast("주문현황과 창고별재고 Excel을 정확히 2개 선택하세요.", true);
+          return;
+        }
+
+        resetResults();
+        elements.analyzeButton.disabled = true;
+        elements.bundleFileStatus.textContent = "두 파일의 구조를 판별하는 중...";
+        setSystemMessage("classifying bundled data_blocks...");
+
+        try {
+          const classified = await Promise.all(files.map(classifyBundleFile));
+          const orders = classified.filter((item) => item.kind === "orders");
+          const inventories = classified.filter((item) => item.kind === "inventory");
+
+          if (orders.length !== 1 || inventories.length !== 1) {
+            throw new Error("주문현황 1개와 창고별재고 1개를 선택해야 합니다.");
+          }
+
+          state.orders = orders[0].parsed;
+          state.inventory = inventories[0].parsed;
+          refreshInputState();
+
+          if (state.validation?.canAnalyze) {
+            setSystemMessage("data_blocks ready... (Enter 또는 출고 분석)");
+            showToast("두 파일을 자동 배정했습니다. Enter를 누르면 분석합니다.");
+          }
+        } catch (error) {
+          state.orders = null;
+          state.inventory = null;
+          refreshInputState();
+          showToast(error.message || "묶음 파일을 처리하지 못했습니다.", true);
+        }
+      }
+
+      function bindBundleDropZone() {
+        const drop = elements.bundleDrop;
+        const input = elements.bundleInput;
+
+        drop.addEventListener("click", () => input.click());
+        drop.addEventListener("keydown", (event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            input.click();
+          }
+        });
+
+        ["dragenter", "dragover"].forEach((eventName) => {
+          drop.addEventListener(eventName, (event) => {
+            event.preventDefault();
+            drop.classList.add("dragover");
+          });
+        });
+
+        ["dragleave", "drop"].forEach((eventName) => {
+          drop.addEventListener(eventName, (event) => {
+            event.preventDefault();
+            drop.classList.remove("dragover");
+          });
+        });
+
+        drop.addEventListener("drop", (event) => handleBundleFiles(event.dataTransfer.files));
+        input.addEventListener("change", () => {
+          handleBundleFiles(input.files);
+          input.value = "";
+        });
+      }
+
+      function toggleWorkspaceStorage(forceOpen) {
+        const open = forceOpen === undefined
+          ? elements.workspaceStorage.classList.contains("hidden")
+          : Boolean(forceOpen);
+        elements.workspaceStorage.classList.toggle("hidden", !open);
+        elements.workspaceStorage.classList.toggle("is-open", open);
+        elements.headerSettingsButton.setAttribute("aria-expanded", String(open));
+        if (open) elements.workspaceStorage.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      }
+
       function setLoading(kind, loading) {
         state.loading[kind] = loading;
         const fileName = elements[kind + "FileName"];
@@ -1674,6 +1810,13 @@
         elements.replaceRecoveryButton.disabled = !state.validation?.canAnalyze;
         const bothSelected = Boolean(state.orders && state.inventory);
         const selectedCount = Number(Boolean(state.orders)) + Number(Boolean(state.inventory));
+        if (bothSelected) {
+          elements.bundleFileStatus.textContent = `${state.orders.fileName} / ${state.inventory.fileName}`;
+        } else if (selectedCount === 0) {
+          elements.bundleFileStatus.textContent = "두 Excel을 한 번에 선택하거나 드래그하세요.";
+        } else {
+          elements.bundleFileStatus.textContent = `파일 ${selectedCount}/2 선택 · 나머지 파일을 선택하세요.`;
+        }
         if (!bothSelected) {
           setSystemMessage(`waiting for data_blocks... (${selectedCount}/2 파일 선택)`);
         } else if (state.validation?.canAnalyze) {
@@ -2136,6 +2279,34 @@
         });
       }
 
+      elements.headerSettingsButton.addEventListener("click", () => {
+        toggleWorkspaceStorage();
+      });
+
+      elements.headerRestoreButton.addEventListener("click", () => {
+        toggleWorkspaceStorage(true);
+        if (state.recoveryRecord) {
+          elements.recoveryBanner.classList.remove("hidden");
+          elements.restoreButton.focus();
+          showToast("저장된 이전 작업을 확인한 뒤 복구를 누르세요.");
+        } else {
+          showToast("현재 브라우저에 복구할 이전 작업이 없습니다.", true);
+        }
+      });
+
+      document.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter" || event.isComposing || event.repeat) return;
+        const target = event.target;
+        if (target instanceof HTMLInputElement ||
+            target instanceof HTMLTextAreaElement ||
+            target instanceof HTMLSelectElement ||
+            target instanceof HTMLButtonElement ||
+            target?.isContentEditable) return;
+        if (!state.validation?.canAnalyze || state.workspace || elements.analyzeButton.disabled) return;
+        event.preventDefault();
+        runAnalysis();
+      });
+
       elements.analyzeButton.addEventListener("click", runAnalysis);
       elements.downloadButton.addEventListener("click", downloadResult);
       elements.purchaseUploadButton.addEventListener("click", downloadPurchaseUpload);
@@ -2184,6 +2355,7 @@
       [elements.cloudUrlInput, elements.cloudTokenInput, elements.cloudSavedByInput].forEach((input) => {
         input.addEventListener("input", scheduleLocalSave);
       });
+      bindBundleDropZone();
       bindDropZone("orders");
       bindDropZone("inventory");
 
