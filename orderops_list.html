@@ -1,0 +1,2383 @@
+<!DOCTYPE html>
+<html lang="ko" translate="no">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="google" content="notranslate">
+  <title>ONEAPP orderops</title>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net">
+  <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
+  <script src="orderFulfillmentEngine.js"></script>
+  <script src="orderFulfillmentWorkbook.js"></script>
+  <style>
+    :root {
+      color-scheme: light;
+      --navy-950: #07101f;
+      --navy-900: #0b162a;
+      --navy-800: #153b55;
+      --slate-900: #0f172a;
+      --slate-700: #334155;
+      --slate-600: #475569;
+      --slate-500: #64748b;
+      --slate-400: #94a3b8;
+      --slate-300: #cbd5e1;
+      --slate-200: #e2e8f0;
+      --slate-100: #f1f5f9;
+      --slate-50: #f8fafc;
+      --white: #ffffff;
+      --teal-700: #0f766e;
+      --teal-600: #0d9488;
+      --teal-100: #ccfbf1;
+      --blue-700: #1d4ed8;
+      --blue-100: #dbeafe;
+      --amber-700: #b45309;
+      --amber-100: #fef3c7;
+      --red-700: #b91c1c;
+      --red-100: #fee2e2;
+      --green-700: #15803d;
+      --green-100: #dcfce7;
+      --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.05);
+      --shadow-md: 0 16px 40px rgba(15, 23, 42, 0.08);
+    }
+
+    * { box-sizing: border-box; }
+    html { min-width: 320px; background: var(--slate-50); }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Pretendard, "Noto Sans KR", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--slate-900);
+      background:
+        radial-gradient(circle at top right, rgba(13, 148, 136, 0.08), transparent 32rem),
+        var(--slate-50);
+    }
+    button, input { font: inherit; }
+    button { cursor: pointer; }
+    button:disabled { cursor: not-allowed; }
+    .hidden { display: none !important; }
+
+    .global-header {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      height: 72px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 28px;
+      color: var(--white);
+      background: var(--navy-950);
+      border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+      box-shadow: 0 8px 28px rgba(7, 16, 31, 0.22);
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      min-width: 0;
+      gap: 16px;
+    }
+    .brand-mark {
+      font-size: 23px;
+      line-height: 1;
+      font-weight: 900;
+      letter-spacing: 0.08em;
+    }
+    .brand-divider { width: 2px; height: 34px; background: #334155; }
+    .brand-stack { min-width: 0; }
+    .brand-suite {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: #5eead4;
+      font-size: 12px;
+      font-weight: 900;
+      letter-spacing: 0.18em;
+    }
+    .brand-badge {
+      padding: 2px 6px;
+      border: 1px solid rgba(94, 234, 212, 0.35);
+      border-radius: 5px;
+      color: #5eead4;
+      background: rgba(13, 148, 136, 0.12);
+      font-size: 9px;
+      letter-spacing: 0.08em;
+    }
+    .brand-product {
+      overflow: hidden;
+      margin-top: 3px;
+      color: var(--slate-300);
+      font-size: 12px;
+      font-weight: 700;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .header-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 38px;
+      padding: 0 14px;
+      border: 1px solid rgba(148, 163, 184, 0.3);
+      border-radius: 9px;
+      color: var(--slate-200);
+      background: rgba(255, 255, 255, 0.03);
+      font-size: 13px;
+      font-weight: 800;
+      text-decoration: none;
+      transition: 0.16s ease;
+    }
+    .header-link:hover { border-color: #5eead4; color: #5eead4; }
+
+    .page-shell {
+      width: min(1480px, calc(100% - 40px));
+      margin: 0 auto;
+      padding: 34px 0 56px;
+    }
+
+    .panel {
+      border: 1px solid var(--slate-200);
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.96);
+      box-shadow: var(--shadow-md);
+    }
+    .input-panel { padding: 22px; }
+
+    .upload-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+    .upload-card {
+      min-width: 0;
+      border: 1px solid var(--slate-200);
+      border-radius: 14px;
+      background: var(--slate-50);
+      transition: 0.16s ease;
+    }
+    .upload-card.has-file { border-color: #99f6e4; background: #f0fdfa; }
+    .upload-card.has-error { border-color: #fecaca; background: #fff7f7; }
+    .drop-zone {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      align-items: center;
+      gap: 14px;
+      min-height: 122px;
+      padding: 18px;
+      border: 2px dashed transparent;
+      border-radius: 14px;
+      outline: none;
+    }
+    .drop-zone:focus-visible { border-color: var(--teal-600); }
+    .drop-zone.dragover { border-color: var(--teal-600); background: var(--teal-100); }
+    .file-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 46px;
+      height: 46px;
+      border-radius: 12px;
+      color: var(--teal-700);
+      background: var(--teal-100);
+      font-size: 20px;
+      font-weight: 900;
+    }
+    .drop-title {
+      margin: 0;
+      font-size: 14px;
+      font-weight: 900;
+    }
+    .drop-help {
+      overflow: hidden;
+      margin: 5px 0 0;
+      color: var(--slate-500);
+      font-size: 12px;
+      line-height: 1.5;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .validation-box {
+      margin-top: 16px;
+      padding: 14px 16px;
+      border: 1px solid var(--slate-200);
+      border-radius: 12px;
+      background: var(--slate-50);
+    }
+    .validation-box.good { border-color: #bbf7d0; background: #f0fdf4; }
+    .validation-box.bad { border-color: #fecaca; background: #fff7f7; }
+    .validation-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 0;
+      font-size: 13px;
+      font-weight: 900;
+    }
+    .validation-detail {
+      margin: 6px 0 0;
+      color: var(--slate-600);
+      font-size: 12px;
+      line-height: 1.6;
+    }
+    .validation-list { margin: 8px 0 0; padding-left: 18px; color: var(--red-700); }
+    .validation-list li { margin: 3px 0; font-size: 12px; line-height: 1.45; }
+
+    .action-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-top: 18px;
+      padding-top: 18px;
+      border-top: 1px solid var(--slate-200);
+    }
+    .action-note {
+      color: var(--slate-500);
+      font-size: 12px;
+      line-height: 1.55;
+    }
+    .primary-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 9px;
+      min-width: 168px;
+      min-height: 46px;
+      padding: 0 20px;
+      border: 0;
+      border-radius: 11px;
+      color: var(--white);
+      background: var(--teal-700);
+      box-shadow: 0 9px 22px rgba(15, 118, 110, 0.22);
+      font-size: 14px;
+      font-weight: 900;
+      transition: 0.16s ease;
+    }
+    .primary-button:hover:not(:disabled) { background: #115e59; transform: translateY(-1px); }
+    .primary-button:disabled {
+      color: var(--slate-400);
+      background: var(--slate-200);
+      box-shadow: none;
+    }
+
+    .results-panel { margin-top: 20px; overflow: hidden; }
+    .results-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      padding: 20px 22px;
+      color: var(--white);
+      background: var(--navy-800);
+    }
+    .results-header h2 { margin: 0; font-size: 18px; }
+    .results-header p { margin: 5px 0 0; color: #cbd5e1; font-size: 12px; }
+    .download-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 9px;
+      min-height: 44px;
+      padding: 0 18px;
+      border: 0;
+      border-radius: 10px;
+      color: var(--navy-900);
+      background: #5eead4;
+      font-size: 13px;
+      font-weight: 900;
+      box-shadow: 0 8px 18px rgba(15, 23, 42, 0.18);
+    }
+    .download-button:hover { background: #99f6e4; }
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 1px;
+      background: var(--slate-200);
+      border-bottom: 1px solid var(--slate-200);
+    }
+    .summary-card {
+      min-width: 0;
+      padding: 17px 18px;
+      background: var(--white);
+    }
+    .summary-label {
+      color: var(--slate-500);
+      font-size: 10px;
+      font-weight: 900;
+      letter-spacing: 0.04em;
+    }
+    .summary-value {
+      margin-top: 7px;
+      font-size: 23px;
+      font-weight: 900;
+      letter-spacing: -0.04em;
+    }
+    .summary-value.warn { color: var(--amber-700); }
+    .summary-value.bad { color: var(--red-700); }
+    .purchase-upload-notice {
+      padding: 10px 18px;
+      border-bottom: 1px solid var(--slate-200);
+      color: var(--slate-600);
+      background: #fff7ed;
+      font-size: 11px;
+      line-height: 1.55;
+    }
+    .purchase-upload-notice.bad { color: var(--red-700); background: var(--red-100); }
+
+    .preview-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 14px 18px 0;
+      background: var(--white);
+    }
+    .preview-tabs {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      overflow-x: auto;
+      padding-bottom: 10px;
+      scrollbar-width: thin;
+    }
+    .tab-button {
+      flex: 0 0 auto;
+      min-height: 35px;
+      padding: 0 12px;
+      border: 1px solid var(--slate-200);
+      border-radius: 8px;
+      color: var(--slate-600);
+      background: var(--white);
+      font-size: 11px;
+      font-weight: 900;
+    }
+    .tab-button.active { border-color: var(--teal-700); color: var(--white); background: var(--teal-700); }
+    .preview-count {
+      flex: 0 0 auto;
+      padding-bottom: 10px;
+      color: var(--slate-500);
+      font-size: 11px;
+      font-weight: 800;
+    }
+    .table-wrap {
+      overflow: auto;
+      max-height: 520px;
+      border-top: 1px solid var(--slate-200);
+      background: var(--white);
+    }
+    table {
+      width: 100%;
+      min-width: 980px;
+      border-collapse: separate;
+      border-spacing: 0;
+      font-size: 11px;
+    }
+    th {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      padding: 10px 11px;
+      color: var(--white);
+      background: var(--slate-700);
+      border-right: 1px solid rgba(255, 255, 255, 0.12);
+      text-align: left;
+      white-space: nowrap;
+    }
+    td {
+      max-width: 300px;
+      padding: 9px 11px;
+      color: var(--slate-700);
+      background: var(--white);
+      border-right: 1px solid var(--slate-100);
+      border-bottom: 1px solid var(--slate-200);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    tbody tr:nth-child(even) td { background: var(--slate-50); }
+    td.number { text-align: right; font-variant-numeric: tabular-nums; }
+    td.status { font-weight: 900; }
+    td.status[data-tone="good"] { color: var(--green-700); }
+    td.status[data-tone="warn"] { color: var(--amber-700); }
+    td.status[data-tone="bad"] { color: var(--red-700); }
+    .empty-state {
+      padding: 44px 20px;
+      color: var(--slate-500);
+      text-align: center;
+      font-size: 13px;
+    }
+    .result-footnote {
+      padding: 14px 18px 18px;
+      color: var(--slate-500);
+      background: var(--white);
+      font-size: 11px;
+      line-height: 1.6;
+    }
+    .workspace-storage {
+      padding: 10px 12px 12px;
+      border-top: 1px solid #334155;
+      color: var(--slate-200);
+      background: #172033;
+    }
+    .recovery-banner {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+      padding: 8px 10px;
+      border: 1px solid #0d9488;
+      border-radius: 6px;
+      color: #ccfbf1;
+      background: #12352f;
+      font-size: 11px;
+    }
+    .recovery-banner span { flex: 1 1 auto; }
+    .recovery-banner button,
+    .cloud-grid button,
+    .cloud-grid select,
+    .cloud-grid input {
+      min-height: 31px;
+      border: 1px solid #475569;
+      border-radius: 5px;
+      color: var(--slate-100);
+      background: #0f172a;
+      font-size: 10px;
+    }
+    .recovery-banner button,
+    .cloud-grid button { padding: 0 10px; font-weight: 900; }
+    .cloud-grid button:hover:not(:disabled) { border-color: #5eead4; color: #5eead4; }
+    .cloud-grid button:disabled { color: var(--slate-500); cursor: not-allowed; }
+    .cloud-grid {
+      display: grid;
+      grid-template-columns: minmax(220px, 2fr) minmax(150px, 1fr) minmax(130px, 1fr) auto auto minmax(210px, 1.5fr) auto auto;
+      align-items: end;
+      gap: 7px;
+    }
+    .cloud-grid label {
+      display: grid;
+      gap: 3px;
+      color: var(--slate-400);
+      font-size: 9px;
+      font-weight: 800;
+    }
+    .cloud-grid input,
+    .cloud-grid select { width: 100%; padding: 0 8px; }
+    .storage-note { margin: 7px 0 0; color: var(--slate-400); font-size: 9px; }
+    .result-actions { display: flex; align-items: center; gap: 8px; }
+    .secondary-download { color: var(--white); background: #2563eb; }
+    .secondary-download:hover { background: #3b82f6; }
+    .purchase-input {
+      width: 100%;
+      min-width: 100px;
+      height: 27px;
+      padding: 2px 7px;
+      border: 1px solid #94a3b8;
+      border-radius: 4px;
+      color: var(--slate-900);
+      background: rgba(255, 255, 255, 0.9);
+      font-size: 11px;
+    }
+    tr.reference-row td { color: var(--slate-600); font-style: italic; }
+    td.inventory-value { background: var(--green-100) !important; }
+    td.warning-value { color: var(--red-700) !important; background: var(--red-100) !important; font-weight: 900; }
+
+    .page-footer {
+      display: flex;
+      justify-content: space-between;
+      gap: 18px;
+      margin-top: 18px;
+      color: var(--slate-500);
+      font-size: 11px;
+    }
+    .page-footer a { color: var(--teal-700); font-weight: 800; }
+    .toast {
+      position: fixed;
+      right: 22px;
+      bottom: 22px;
+      z-index: 100;
+      max-width: min(420px, calc(100% - 44px));
+      padding: 13px 16px;
+      border-radius: 10px;
+      color: var(--white);
+      background: var(--navy-900);
+      box-shadow: 0 18px 42px rgba(15, 23, 42, 0.28);
+      font-size: 12px;
+      font-weight: 800;
+      line-height: 1.5;
+    }
+    .toast.error { background: var(--red-700); }
+
+    @media (max-width: 1050px) {
+      .summary-grid { grid-template-columns: repeat(3, 1fr); }
+      .upload-grid { grid-template-columns: 1fr; }
+      .cloud-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    @media (max-width: 680px) {
+      .global-header { height: 64px; padding: 0 16px; }
+      .brand-mark { font-size: 18px; }
+      .brand-divider { height: 28px; }
+      .brand-product { display: none; }
+      .header-link span { display: none; }
+      .page-shell { width: min(100% - 24px, 1480px); padding-top: 24px; }
+      .input-panel { padding: 16px; }
+      .drop-zone { grid-template-columns: auto minmax(0, 1fr); }
+      .action-bar, .results-header { align-items: stretch; flex-direction: column; }
+      .primary-button, .download-button { width: 100%; }
+      .summary-grid { grid-template-columns: repeat(2, 1fr); }
+      .preview-toolbar { align-items: stretch; flex-direction: column; }
+      .preview-count { padding: 0 0 10px; }
+      .page-footer { flex-direction: column; }
+      .result-actions { align-items: stretch; flex-direction: column; }
+    }
+
+    /* ONEAPP common workbench: DataOps-aligned System.IO shell */
+    body {
+      background: #f8fafc;
+    }
+    .global-header {
+      position: relative;
+      height: 58px;
+      padding: 0 max(20px, calc((100% - 1240px) / 2));
+      color: var(--slate-900);
+      background: var(--white);
+      border-bottom: 1px solid var(--slate-200);
+      box-shadow: var(--shadow-sm);
+    }
+    .brand { gap: 9px; }
+    .brand-mark {
+      color: #2563eb;
+      font-size: 19px;
+      letter-spacing: -0.04em;
+    }
+    .brand-divider { display: none; }
+    .brand-stack {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+    }
+    .brand-suite {
+      color: var(--slate-900);
+      font-size: 17px;
+      letter-spacing: -0.025em;
+    }
+    .brand-badge {
+      border-color: var(--slate-200);
+      color: var(--slate-500);
+      background: var(--slate-100);
+      box-shadow: var(--shadow-sm);
+    }
+    .brand-product {
+      margin: 0;
+      color: var(--slate-500);
+      font-size: 11px;
+      font-weight: 700;
+    }
+    .header-link {
+      min-height: 34px;
+      border-color: var(--slate-300);
+      border-radius: 5px;
+      color: var(--slate-700);
+      background: var(--white);
+      font-size: 12px;
+      box-shadow: var(--shadow-sm);
+    }
+    .header-link:hover {
+      border-color: var(--blue-700);
+      color: var(--blue-700);
+      background: #eff6ff;
+    }
+    .page-shell {
+      width: min(1240px, calc(100% - 32px));
+      padding: 0 0 40px;
+    }
+    .system-workbench {
+      overflow: hidden;
+      margin-top: 2px;
+      border: 1px solid #1e293b;
+      border-radius: 0 0 16px 16px;
+      background: var(--navy-900);
+      box-shadow: 0 14px 34px rgba(15, 23, 42, 0.13);
+    }
+    .system-topbar {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      min-height: 62px;
+      padding: 12px 18px;
+      border-bottom: 1px solid #334155;
+      background: #0f172a;
+    }
+    .system-name {
+      flex: 0 0 auto;
+      color: var(--slate-200);
+      font-size: 16px;
+      font-weight: 900;
+      letter-spacing: -0.02em;
+    }
+    .system-console {
+      display: flex;
+      align-items: center;
+      width: min(560px, 100%);
+      min-width: 0;
+      min-height: 34px;
+      padding: 6px 11px;
+      border: 1px solid #475569;
+      border-radius: 5px;
+      color: #34d399;
+      background: #020617;
+      box-shadow: inset 0 1px 5px rgba(0, 0, 0, 0.45);
+      font: 700 12px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+    .system-message {
+      flex: 1 1 auto;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .system-cursor {
+      flex: 0 0 auto;
+      width: 6px;
+      height: 15px;
+      margin-left: 8px;
+      background: #34d399;
+      animation: system-cursor 1.1s steps(1) infinite;
+    }
+    @keyframes system-cursor { 50% { opacity: 0.25; } }
+    @media (prefers-reduced-motion: reduce) {
+      .system-cursor { animation: none; }
+    }
+    .system-mode {
+      flex: 0 0 auto;
+      margin-left: auto;
+      color: var(--slate-300);
+      font-size: 11px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+    .system-mode strong { color: #5eead4; }
+    .input-panel {
+      display: grid;
+      grid-template-areas:
+        "uploads uploads analyze"
+        "validation note note";
+      grid-template-columns: minmax(0, 1fr) minmax(245px, 300px) 120px;
+      gap: 8px;
+      padding: 10px 12px 12px;
+      border: 0;
+      border-radius: 0;
+      color: var(--slate-200);
+      background: #1e293b;
+      box-shadow: none;
+    }
+    .upload-grid {
+      grid-area: uploads;
+      gap: 8px;
+    }
+    .upload-card {
+      display: block;
+      overflow: hidden;
+      border-color: #475569;
+      border-radius: 6px;
+      background: #273449;
+    }
+    .upload-card.has-file { border-color: #2dd4bf; background: #15383b; }
+    .upload-card.has-error { border-color: #fb7185; background: #3f2533; }
+    .drop-zone {
+      min-height: 60px;
+      padding: 8px 12px;
+      border-radius: 6px;
+    }
+    .drop-zone:focus-visible { border-color: #67e8f9; }
+    .drop-zone.dragover { border-color: #2dd4bf; background: rgba(13, 148, 136, 0.2); }
+    .file-icon {
+      width: 30px;
+      height: 30px;
+      border-radius: 5px;
+      color: #99f6e4;
+      background: rgba(13, 148, 136, 0.26);
+      font-size: 13px;
+    }
+    .drop-title { color: var(--white); font-size: 12px; }
+    .drop-help { margin-top: 2px; color: var(--slate-400); font-size: 10px; }
+    .validation-box {
+      grid-area: validation;
+      min-width: 0;
+      margin: 0;
+      padding: 7px 10px;
+      border-color: #475569;
+      border-radius: 7px;
+      background: #172033;
+    }
+    .validation-box.good { border-color: #059669; background: #12352f; }
+    .validation-box.bad { border-color: #e11d48; background: #3b1f2c; }
+    .validation-title { color: var(--slate-100); font-size: 11px; }
+    .validation-detail { margin-top: 2px; color: var(--slate-400); font-size: 10px; line-height: 1.35; }
+    .validation-list { color: #fda4af; }
+    .action-bar {
+      grid-area: analyze;
+      align-self: stretch;
+      margin: 0;
+      padding: 0;
+      border: 0;
+    }
+    .action-note {
+      grid-area: note;
+      align-self: center;
+      max-width: none;
+      color: var(--slate-400);
+      font-size: 9px;
+      line-height: 1.35;
+    }
+    .primary-button {
+      width: 120px;
+      min-width: 120px;
+      min-height: 60px;
+      height: 100%;
+      padding: 0 12px;
+      border-radius: 6px;
+      color: #0f172a;
+      background: #5eead4;
+      box-shadow: 0 8px 18px rgba(15, 23, 42, 0.3);
+      font-size: 12px;
+    }
+    .primary-button:hover:not(:disabled) { background: #99f6e4; }
+    .primary-button:disabled { color: var(--slate-500); background: #334155; }
+    .results-panel {
+      margin-top: 8px;
+      border-radius: 8px;
+      box-shadow: var(--shadow-sm);
+    }
+    .results-header { padding: 9px 12px; background: #173d56; }
+    .results-header h2 { font-size: 14px; }
+    .results-header p { margin-top: 2px; font-size: 10px; }
+    .download-button { min-height: 32px; padding: 0 12px; border-radius: 5px; font-size: 11px; }
+    .summary-card { padding: 8px 10px; }
+    .summary-value { margin-top: 2px; font-size: 18px; }
+    .preview-toolbar { padding: 7px 10px 0; }
+    .preview-tabs { padding-bottom: 5px; }
+    .tab-button { min-height: 29px; padding: 0 9px; }
+    .preview-count { padding-bottom: 5px; }
+    .table-wrap { max-height: calc(100vh - 330px); }
+    th { padding: 7px 9px; }
+    td { padding: 6px 9px; }
+    .result-footnote { padding: 8px 10px 10px; font-size: 10px; }
+
+    @media (max-width: 760px) {
+      .global-header { height: 58px; padding: 0 16px; }
+      .brand-product { display: none; }
+      .header-link { width: 34px; padding: 0; justify-content: center; }
+      .header-link span:first-child { display: inline; }
+      .page-shell { width: min(100% - 20px, 1240px); padding-top: 0; }
+      .system-topbar { align-items: flex-start; flex-wrap: wrap; gap: 8px 12px; padding: 12px; }
+      .system-console { order: 3; width: 100%; max-width: none; }
+      .system-mode { margin-left: auto; }
+      .input-panel {
+        grid-template-areas:
+          "uploads"
+          "analyze"
+          "validation"
+          "note";
+        grid-template-columns: 1fr;
+        padding: 8px;
+      }
+      .upload-grid { grid-template-columns: 1fr; }
+      .drop-zone { grid-template-columns: auto minmax(0, 1fr); }
+      .action-bar { align-items: stretch; }
+      .primary-button { width: 100%; min-height: 36px; }
+      .action-note { max-width: none; }
+      .results-header { align-items: stretch; flex-direction: column; }
+    }
+  
+    /* Shipping Management compact DataOps-aligned layout */
+    .system-workbench {
+      border-radius: 0 0 12px 12px;
+    }
+
+    .system-topbar {
+      min-height: 58px;
+      padding: 10px 16px;
+    }
+
+    .input-panel {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 250px;
+      gap: 10px;
+      padding: 10px;
+      background: #1e293b;
+    }
+
+    .source-selector {
+      display: grid;
+      grid-template-columns: 180px minmax(0, 1fr) 112px;
+      grid-template-areas:
+        "heading uploads analyze"
+        "validation validation analyze";
+      align-items: stretch;
+      gap: 7px;
+      min-width: 0;
+    }
+
+    .source-selector-heading {
+      grid-area: heading;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      min-width: 0;
+      min-height: 54px;
+      padding: 8px 10px;
+      border: 1px solid #0f766e;
+      border-radius: 6px;
+      color: #f8fafc;
+      background: #134e4a;
+    }
+
+    .source-selector-index {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex: 0 0 auto;
+      width: 30px;
+      height: 30px;
+      border-radius: 5px;
+      color: #99f6e4;
+      background: rgba(13, 148, 136, 0.28);
+      font-size: 12px;
+      font-weight: 900;
+    }
+
+    .source-selector-heading strong {
+      display: block;
+      font-size: 11px;
+      line-height: 1.25;
+    }
+
+    .source-selector-heading span:last-child {
+      display: block;
+      overflow: hidden;
+      margin-top: 3px;
+      color: #94a3b8;
+      font-size: 9px;
+      line-height: 1.3;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .upload-grid {
+      grid-area: uploads;
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 7px;
+      min-width: 0;
+    }
+
+    .upload-card {
+      min-width: 0;
+      border: 1px solid #0d9488;
+      border-radius: 6px;
+      background: #153b3b;
+    }
+
+    .upload-card.has-file {
+      border-color: #2dd4bf;
+      background: #134e4a;
+    }
+
+    .upload-card.has-error {
+      border-color: #fb7185;
+      background: #3f2533;
+    }
+
+    .drop-zone {
+      grid-template-columns: 30px minmax(0, 1fr);
+      gap: 9px;
+      min-height: 54px;
+      padding: 7px 10px;
+      border-width: 1px;
+    }
+
+    .file-copy {
+      min-width: 0;
+    }
+
+    .file-icon {
+      width: 30px;
+      height: 30px;
+    }
+
+    .drop-title {
+      font-size: 11px;
+    }
+
+    .drop-help {
+      margin-top: 2px;
+      font-size: 9px;
+    }
+
+    .action-bar {
+      grid-area: analyze;
+      min-width: 0;
+    }
+
+    .primary-button {
+      width: 112px;
+      min-width: 112px;
+      min-height: 54px;
+      height: 100%;
+      padding: 0 9px;
+      font-size: 11px;
+    }
+
+    .validation-box {
+      grid-area: validation;
+      min-width: 0;
+      min-height: 35px;
+      padding: 6px 9px;
+      border-radius: 6px;
+    }
+
+    .validation-title {
+      font-size: 10px;
+    }
+
+    .validation-detail {
+      margin-top: 1px;
+      font-size: 9px;
+    }
+
+    .validation-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 3px 14px;
+      margin: 4px 0 0;
+      padding-left: 16px;
+    }
+
+    .validation-list li {
+      margin: 0;
+      font-size: 9px;
+    }
+
+    .operator-note {
+      min-width: 0;
+      padding: 8px 10px;
+      border-left: 1px solid #475569;
+      color: #cbd5e1;
+      background: #172033;
+    }
+
+    .operator-note-title {
+      margin-bottom: 5px;
+      color: #5eead4;
+      font-size: 10px;
+      font-weight: 900;
+    }
+
+    .operator-note p {
+      margin: 0 0 4px;
+      color: #94a3b8;
+      font-size: 9px;
+      line-height: 1.45;
+    }
+
+    .operator-note p:last-child {
+      margin-bottom: 0;
+    }
+
+    .operator-note strong {
+      color: #e2e8f0;
+    }
+
+    .results-panel {
+      margin-top: 8px;
+      border: 1px solid #cbd5e1;
+      border-radius: 7px;
+      box-shadow: none;
+    }
+
+    .preview-toolbar {
+      min-height: 42px;
+      padding: 6px 9px 0;
+      border-bottom: 1px solid #cbd5e1;
+    }
+
+    .preview-tabs {
+      min-width: 0;
+      padding-bottom: 6px;
+    }
+
+    .preview-actions {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 6px;
+      min-width: 0;
+      padding-bottom: 6px;
+    }
+
+    .preview-count {
+      padding: 0 4px 0 0;
+      white-space: nowrap;
+    }
+
+    .download-button {
+      min-height: 30px;
+      padding: 0 10px;
+      border-radius: 5px;
+      font-size: 10px;
+      white-space: nowrap;
+    }
+
+    .table-wrap {
+      max-height: calc(100vh - 255px);
+      border-top: 0;
+    }
+
+    .workspace-storage {
+      padding: 7px 9px 9px;
+    }
+
+    .cloud-grid {
+      grid-template-columns: minmax(190px, 2fr) minmax(130px, 1fr) minmax(110px, 1fr) auto auto minmax(180px, 1.4fr) auto auto;
+      gap: 5px;
+    }
+
+    .storage-note {
+      margin-top: 5px;
+    }
+
+    @media (max-width: 980px) {
+      .input-panel {
+        grid-template-columns: 1fr;
+      }
+
+      .operator-note {
+        border-top: 1px solid #475569;
+        border-left: 0;
+      }
+
+      .source-selector {
+        grid-template-columns: 160px minmax(0, 1fr) 108px;
+      }
+
+      .primary-button {
+        width: 108px;
+        min-width: 108px;
+      }
+
+      .preview-toolbar {
+        align-items: stretch;
+        flex-direction: column;
+      }
+
+      .preview-actions {
+        justify-content: flex-start;
+      }
+    }
+
+    @media (max-width: 700px) {
+      .source-selector {
+        grid-template-columns: 1fr;
+        grid-template-areas:
+          "heading"
+          "uploads"
+          "analyze"
+          "validation";
+      }
+
+      .upload-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .primary-button {
+        width: 100%;
+        min-height: 38px;
+      }
+
+      .preview-actions {
+        flex-wrap: wrap;
+      }
+
+      .download-button {
+        flex: 1 1 150px;
+      }
+    }
+
+  
+    /* orderops v1.2 */
+    .header-actions { display:flex; align-items:center; gap:7px; }
+    .header-action-button { appearance:none; cursor:pointer; }
+    .source-selector-heading { cursor:pointer; }
+    .source-selector-heading:hover,
+    .source-selector-heading.dragover { border-color:#5eead4; background:#115e59; }
+    .source-selector-heading:focus-visible { outline:2px solid #67e8f9; outline-offset:2px; }
+    .workspace-storage.is-open { display:block !important; }
+
+    @media (max-width:680px) {
+      .header-actions { gap:5px; }
+      .header-action-button span:last-child { display:none; }
+    }
+
+  </style>
+</head>
+<body>
+  <header class="global-header">
+    <div class="brand" aria-label="ONEAPP NEXUS orderops">
+      <div class="brand-mark">ONEAPP</div>
+      <div class="brand-divider" aria-hidden="true"></div>
+      <div class="brand-stack">
+        <div class="brand-suite">NEXUS <span class="brand-badge">v1.2</span></div>
+        <div class="brand-product">orderops</div>
+      </div>
+    </div>
+    <div class="header-actions">
+      <button class="header-link header-action-button" id="headerRestoreButton" type="button" aria-label="이전 작업 복구">
+        <span aria-hidden="true">↻</span><span>작업 복구</span>
+      </button>
+      <button class="header-link header-action-button" id="headerSettingsButton" type="button" aria-expanded="false" aria-controls="workspaceStorage">
+        <span aria-hidden="true">⚙</span><span>환경설정</span>
+      </button>
+    </div>
+  </header>
+
+  <main class="page-shell">
+    <section class="system-workbench" aria-label="주문관리 파일 작업영역">
+      <div class="system-topbar">
+        <div class="system-name">System.IO</div>
+        <div class="system-console" role="status" aria-live="polite">
+          <span class="system-message" id="systemMessage">waiting for data_blocks... (두 Excel을 업로드하세요)</span>
+          <span class="system-cursor" aria-hidden="true"></span>
+        </div>
+        <div class="system-mode"><strong>LOCAL AUTO SAVE</strong> · cloud explicit</div>
+      </div>
+
+      <section class="panel input-panel" aria-label="입력 파일">
+        <div class="source-selector">
+          <div class="source-selector-heading" id="bundleDrop" tabindex="0" role="button"
+            aria-label="주문현황과 창고별재고 Excel 두 파일을 함께 선택">
+            <span class="source-selector-index">2×</span>
+            <div>
+              <strong>묶음 파일 선택</strong>
+              <span id="bundleFileStatus">두 Excel을 한 번에 선택하거나 드래그하세요.</span>
+            </div>
+          </div>
+          <input class="hidden" id="bundleInput" type="file" accept=".xlsx,.xls" multiple>
+
+          <div class="upload-grid">
+            <article class="upload-card" id="ordersCard">
+              <div class="drop-zone compact-file-slot" id="ordersDrop" tabindex="0" role="button" aria-label="주문현황 Excel 개별 선택">
+                <div class="file-icon" aria-hidden="true">1</div>
+                <div class="file-copy">
+                  <p class="drop-title">주문현황 Excel</p>
+                  <p class="drop-help" id="ordersFileName">묶음 파일에서 자동 배정</p>
+                </div>
+              </div>
+              <input class="hidden" id="ordersInput" type="file" accept=".xlsx,.xls">
+            </article>
+
+            <article class="upload-card" id="inventoryCard">
+              <div class="drop-zone compact-file-slot" id="inventoryDrop" tabindex="0" role="button" aria-label="창고별재고 Excel 개별 선택">
+                <div class="file-icon" aria-hidden="true">2</div>
+                <div class="file-copy">
+                  <p class="drop-title">창고별재고 Excel</p>
+                  <p class="drop-help" id="inventoryFileName">묶음 파일에서 자동 배정</p>
+                </div>
+              </div>
+              <input class="hidden" id="inventoryInput" type="file" accept=".xlsx,.xls">
+            </article>
+          </div>
+
+          <div class="action-bar">
+            <button class="primary-button" id="analyzeButton" type="button" disabled>
+              <span aria-hidden="true">▸</span> 출고 분석
+            </button>
+          </div>
+
+          <div class="validation-box" id="validationBox" role="status" aria-live="polite">
+            <p class="validation-title"><span aria-hidden="true">○</span>두 파일을 선택하면 검증을 시작합니다.</p>
+            <p class="validation-detail">묶음 파일은 구조를 판별해 주문현황과 창고별재고로 자동 배정합니다.</p>
+          </div>
+        </div>
+
+        <aside class="operator-note" aria-label="처리 기준과 전달사항">
+          <div class="operator-note-title">처리 기준 · 전달사항</div>
+          <p>묶음 파일은 주문현황 1개와 창고별재고 1개를 자동으로 구분합니다.</p>
+          <p>파일 검증 완료 후 <strong>Enter</strong> 또는 출고 분석 버튼으로 실행합니다.</p>
+          <p>미매칭 상품은 <strong>재고정보 없음</strong>으로 유지합니다.</p>
+        </aside>
+      </section>
+
+      <section class="workspace-storage hidden" id="workspaceStorage" aria-label="발주계획 저장과 복구">
+        <div class="recovery-banner hidden" id="recoveryBanner">
+          <span id="recoveryMessage">복구 가능한 로컬 발주계획이 있습니다.</span>
+          <button type="button" id="restoreButton">복구</button>
+          <button type="button" id="replaceRecoveryButton" disabled>현재 파일로 교체</button>
+          <button type="button" id="discardRecoveryButton">초기화</button>
+        </div>
+        <div class="cloud-grid">
+          <label>Cloud URL<input id="cloudUrlInput" type="url" autocomplete="off" placeholder="Apps Script /exec URL"></label>
+          <label>전용 Token<input id="cloudTokenInput" type="password" autocomplete="off" placeholder="Shipping 전용 토큰"></label>
+          <label>저장자/담당<input id="cloudSavedByInput" type="text" autocomplete="off" placeholder="이름 또는 담당"></label>
+          <button type="button" id="cloudListButton">Cloud 목록</button>
+          <button type="button" id="cloudSaveButton" disabled>Cloud 저장</button>
+          <select id="cloudRevisionSelect" aria-label="클라우드 발주계획 revision"><option value="">저장 이력 선택</option></select>
+          <button type="button" id="cloudLoadButton" disabled>선택 불러오기</button>
+          <button type="button" id="localResetButton">로컬 초기화</button>
+        </div>
+        <p class="storage-note">로컬 자동저장은 IndexedDB 복구용이며 클라우드로 자동 전송하지 않습니다. Cloud 저장 버튼을 눌러 확정한 revision만 다른 PC에서 조회됩니다.</p>
+      </section>
+    </section>
+
+    <section class="panel results-panel hidden" id="resultsPanel" aria-label="분석 결과 상세">
+      <h2 class="hidden" id="resultsHeading">분석 결과 상세</h2>
+      <p class="hidden" id="resultSubtitle"></p>
+      <div class="hidden" id="summaryGrid"></div>
+      <div class="hidden" id="purchaseUploadNotice"></div>
+
+      <div class="preview-toolbar">
+        <div class="preview-tabs" id="previewTabs" role="tablist" aria-label="결과 미리보기"></div>
+        <div class="preview-actions">
+          <div class="preview-count" id="previewCount"></div>
+          <button class="download-button" id="purchaseUploadButton" type="button">
+            <span aria-hidden="true">↓</span> 구매업로드 Excel
+          </button>
+          <button class="download-button secondary-download" id="downloadButton" type="button">
+            <span aria-hidden="true">↓</span> 미출고현황 Excel
+          </button>
+        </div>
+      </div>
+      <div class="table-wrap" id="previewTable" role="tabpanel"></div>
+    </section>
+
+    <footer class="page-footer">
+      <span>orderops v1.2 · workspace shipping-workspace/v2 · cloud plan v1</span>
+      <a href="SHIPPING_MANAGEMENT_GUIDANCE.md">개발·운영 기준 보기</a>
+    </footer>
+  </main>
+
+  <div class="toast hidden" id="toast" role="status" aria-live="polite"></div>
+
+  <noscript>orderops를 사용하려면 JavaScript를 활성화해야 합니다.</noscript>
+
+  <script>
+    (function () {
+      "use strict";
+
+      const engine = window.ShippingManagementEngine;
+      const workbookTools = window.ShippingManagementWorkbook;
+      const MAX_FILE_SIZE = 25 * 1024 * 1024;
+      const LOCAL_DB_NAME = "ONEAPPShippingManagementDB";
+      const LOCAL_DB_VERSION = 1;
+      const LOCAL_STORE_NAME = "workspaces";
+      const LOCAL_POINTER_KEY = "oneapp.shipping.recovery.pointer.v1";
+      const LOCAL_META_KEY = "oneapp.shipping.recovery.meta.v1";
+      const CLOUD_PLAN_SCHEMA = "ONEAPP_SHIPPING_PURCHASE_PLAN_V1";
+      const state = {
+        orders: null,
+        inventory: null,
+        validation: null,
+        workspace: null,
+        activePreview: "purchases",
+        loading: { orders: false, inventory: false },
+        db: null,
+        recoveryRecord: null,
+        recoveryCorruptionDetected: false,
+        cloudRevisions: [],
+      };
+
+      const elements = {
+        bundleInput: document.getElementById("bundleInput"),
+        bundleDrop: document.getElementById("bundleDrop"),
+        bundleFileStatus: document.getElementById("bundleFileStatus"),
+        ordersInput: document.getElementById("ordersInput"),
+        inventoryInput: document.getElementById("inventoryInput"),
+        ordersDrop: document.getElementById("ordersDrop"),
+        inventoryDrop: document.getElementById("inventoryDrop"),
+        ordersCard: document.getElementById("ordersCard"),
+        inventoryCard: document.getElementById("inventoryCard"),
+        ordersFileName: document.getElementById("ordersFileName"),
+        inventoryFileName: document.getElementById("inventoryFileName"),
+        validationBox: document.getElementById("validationBox"),
+        analyzeButton: document.getElementById("analyzeButton"),
+        resultsPanel: document.getElementById("resultsPanel"),
+        resultSubtitle: document.getElementById("resultSubtitle"),
+        summaryGrid: document.getElementById("summaryGrid"),
+        purchaseUploadNotice: document.getElementById("purchaseUploadNotice"),
+        previewTabs: document.getElementById("previewTabs"),
+        previewCount: document.getElementById("previewCount"),
+        previewTable: document.getElementById("previewTable"),
+        downloadButton: document.getElementById("downloadButton"),
+        purchaseUploadButton: document.getElementById("purchaseUploadButton"),
+        recoveryBanner: document.getElementById("recoveryBanner"),
+        recoveryMessage: document.getElementById("recoveryMessage"),
+        restoreButton: document.getElementById("restoreButton"),
+        replaceRecoveryButton: document.getElementById("replaceRecoveryButton"),
+        discardRecoveryButton: document.getElementById("discardRecoveryButton"),
+        localResetButton: document.getElementById("localResetButton"),
+        cloudUrlInput: document.getElementById("cloudUrlInput"),
+        cloudTokenInput: document.getElementById("cloudTokenInput"),
+        cloudSavedByInput: document.getElementById("cloudSavedByInput"),
+        cloudListButton: document.getElementById("cloudListButton"),
+        cloudSaveButton: document.getElementById("cloudSaveButton"),
+        cloudRevisionSelect: document.getElementById("cloudRevisionSelect"),
+        cloudLoadButton: document.getElementById("cloudLoadButton"),
+        systemMessage: document.getElementById("systemMessage"),
+        workspaceStorage: document.getElementById("workspaceStorage"),
+        headerRestoreButton: document.getElementById("headerRestoreButton"),
+        headerSettingsButton: document.getElementById("headerSettingsButton"),
+        toast: document.getElementById("toast"),
+      };
+
+      function escapeHtml(value) {
+        return String(value ?? "")
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;")
+          .replace(/'/g, "&#039;");
+      }
+
+      function formatNumber(value) {
+        if (value === null || value === undefined || value === "") return "";
+        const number = Number(value);
+        return Number.isFinite(number)
+          ? new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 3 }).format(number)
+          : String(value);
+      }
+
+      function showToast(message, isError) {
+        elements.toast.textContent = message;
+        elements.toast.classList.toggle("error", Boolean(isError));
+        elements.toast.classList.remove("hidden");
+        window.clearTimeout(showToast.timer);
+        showToast.timer = window.setTimeout(() => elements.toast.classList.add("hidden"), 3600);
+      }
+
+      function setSystemMessage(message) {
+        elements.systemMessage.textContent = message;
+      }
+
+      async function sha256Hex(value) {
+        if (!window.crypto?.subtle) throw new Error("이 브라우저에서는 SHA-256 무결성 검사를 사용할 수 없습니다.");
+        const bytes = value instanceof ArrayBuffer || ArrayBuffer.isView(value)
+          ? value
+          : new TextEncoder().encode(String(value));
+        const source = bytes instanceof ArrayBuffer
+          ? bytes
+          : bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+        const digest = await window.crypto.subtle.digest("SHA-256", source);
+        return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+      }
+
+      function countScalarCells(value) {
+        if (value === null || value === undefined) return 1;
+        if (Array.isArray(value)) return value.reduce((sum, item) => sum + countScalarCells(item), 0);
+        if (typeof value === "object") {
+          return Object.keys(value).reduce((sum, key) => sum + countScalarCells(value[key]), 0);
+        }
+        return 1;
+      }
+
+      function countPlanRows(canonical) {
+        const workspace = canonical?.workspace || {};
+        return [
+          workspace.allocations,
+          workspace.productSummaries,
+          workspace.purchaseManagement,
+          workspace.sourceFiles?.orders?.matrix,
+          workspace.sourceFiles?.inventory?.matrix,
+        ].reduce((sum, rows) => sum + (Array.isArray(rows) ? rows.length : 0), 0);
+      }
+
+      function openLocalDatabase() {
+        return new Promise((resolve, reject) => {
+          if (!window.indexedDB) return reject(new Error("IndexedDB를 사용할 수 없습니다."));
+          const request = window.indexedDB.open(LOCAL_DB_NAME, LOCAL_DB_VERSION);
+          request.onupgradeneeded = () => {
+            const db = request.result;
+            if (!db.objectStoreNames.contains(LOCAL_STORE_NAME)) {
+              const store = db.createObjectStore(LOCAL_STORE_NAME, { keyPath: "sourceFingerprint" });
+              store.createIndex("updatedAt", "updatedAt", { unique: false });
+            }
+          };
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error || new Error("IndexedDB를 열지 못했습니다."));
+        });
+      }
+
+      function idbRequest(request) {
+        return new Promise((resolve, reject) => {
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error || new Error("IndexedDB 요청에 실패했습니다."));
+        });
+      }
+
+      function validRecoveryRecord(record) {
+        return Boolean(
+          record &&
+          record.schemaVersion === "shipping-local-recovery/v1" &&
+          /^[a-f0-9]{64}$/.test(String(record.sourceFingerprint || "")) &&
+          record.workspace?.schemaVersion === engine.WORKSPACE_SCHEMA_VERSION &&
+          record.workspace.sourceFingerprint === record.sourceFingerprint,
+        );
+      }
+
+      async function findRecoveryRecord() {
+        if (!state.db) return null;
+        state.recoveryCorruptionDetected = false;
+        const pointer = localStorage.getItem(LOCAL_POINTER_KEY) || "";
+        if (pointer) {
+          const pointed = await idbRequest(
+            state.db.transaction(LOCAL_STORE_NAME, "readonly").objectStore(LOCAL_STORE_NAME).get(pointer),
+          );
+          if (validRecoveryRecord(pointed)) return pointed;
+          state.recoveryCorruptionDetected = true;
+        }
+        const records = await idbRequest(
+          state.db.transaction(LOCAL_STORE_NAME, "readonly").objectStore(LOCAL_STORE_NAME).getAll(),
+        );
+        return records
+          .filter(validRecoveryRecord)
+          .sort((left, right) => String(right.updatedAt).localeCompare(String(left.updatedAt)))[0] || null;
+      }
+
+      function renderRecoveryBanner(record) {
+        state.recoveryRecord = record || null;
+        elements.recoveryBanner.classList.toggle("hidden", !record);
+        if (!record) return;
+        const fileNames = [record.workspace?.sourceFiles?.orders?.fileName, record.workspace?.sourceFiles?.inventory?.fileName]
+          .filter(Boolean)
+          .join(" / ");
+        elements.recoveryMessage.textContent =
+          `로컬 복구 가능 · ${record.workspace?.basisDate || "기준일 없음"} · ${fileNames || "원본 메타 없음"} · ${record.updatedAt}`;
+      }
+
+      async function initializeLocalRecovery() {
+        try {
+          state.db = await openLocalDatabase();
+          const record = await findRecoveryRecord();
+          if (state.recoveryCorruptionDetected) {
+            localStorage.removeItem(LOCAL_POINTER_KEY);
+            localStorage.setItem(LOCAL_META_KEY, JSON.stringify({
+              status: record ? "fallback" : "corrupt",
+              sourceFingerprint: record?.sourceFingerprint || "",
+              checkedAt: new Date().toISOString(),
+            }));
+            setSystemMessage(record
+              ? "local recovery fallback ready... (손상 포인터 제외)"
+              : "local recovery corrupt... (새 분석은 계속 가능)");
+          }
+          renderRecoveryBanner(record);
+        } catch (error) {
+          state.db = null;
+          localStorage.removeItem(LOCAL_POINTER_KEY);
+          localStorage.setItem(LOCAL_META_KEY, JSON.stringify({ status: "unavailable", message: String(error.message || error) }));
+          setSystemMessage("local recovery unavailable... (메모리 작업은 계속 가능)");
+        }
+      }
+
+      async function persistLocalWorkspace() {
+        if (!state.db || !state.workspace?.sourceFingerprint) return;
+        const record = {
+          schemaVersion: "shipping-local-recovery/v1",
+          sourceFingerprint: state.workspace.sourceFingerprint,
+          workspaceSchemaVersion: state.workspace.schemaVersion,
+          updatedAt: new Date().toISOString(),
+          workspace: state.workspace,
+          ui: { activePreview: state.activePreview },
+          settings: {
+            cloudUrl: elements.cloudUrlInput.value.trim(),
+            cloudToken: elements.cloudTokenInput.value,
+            savedBy: elements.cloudSavedByInput.value.trim(),
+          },
+        };
+        const transaction = state.db.transaction(LOCAL_STORE_NAME, "readwrite");
+        await idbRequest(transaction.objectStore(LOCAL_STORE_NAME).put(record));
+        localStorage.setItem(LOCAL_POINTER_KEY, record.sourceFingerprint);
+        localStorage.setItem(LOCAL_META_KEY, JSON.stringify({
+          schemaVersion: record.schemaVersion,
+          sourceFingerprint: record.sourceFingerprint,
+          planId: state.workspace.planId,
+          basisDate: state.workspace.basisDate,
+          updatedAt: record.updatedAt,
+        }));
+        renderRecoveryBanner(null);
+      }
+
+      function scheduleLocalSave() {
+        window.clearTimeout(scheduleLocalSave.timer);
+        scheduleLocalSave.timer = window.setTimeout(() => {
+          persistLocalWorkspace().catch((error) => {
+            setSystemMessage("local autosave failed... (현재 화면은 유지됨)");
+            showToast(error.message || "로컬 자동저장에 실패했습니다.", true);
+          });
+        }, 180);
+      }
+
+      function restoreLocalRecord(record) {
+        if (!validRecoveryRecord(record)) throw new Error("복구 자료의 schemaVersion 또는 source fingerprint가 올바르지 않습니다.");
+        state.workspace = record.workspace;
+        state.activePreview = record.ui?.activePreview || "purchases";
+        elements.cloudUrlInput.value = record.settings?.cloudUrl || "";
+        elements.cloudTokenInput.value = record.settings?.cloudToken || "";
+        elements.cloudSavedByInput.value = record.settings?.savedBy || "";
+        renderRecoveryBanner(null);
+        renderResults();
+        showToast("로컬 발주계획을 복구했습니다.");
+      }
+
+      async function clearLocalRecovery(showNotice = true) {
+        if (state.db) {
+          const transaction = state.db.transaction(LOCAL_STORE_NAME, "readwrite");
+          await idbRequest(transaction.objectStore(LOCAL_STORE_NAME).clear());
+        }
+        localStorage.removeItem(LOCAL_POINTER_KEY);
+        localStorage.removeItem(LOCAL_META_KEY);
+        state.recoveryRecord = null;
+        renderRecoveryBanner(null);
+        if (showNotice) showToast("로컬 복구 자료를 초기화했습니다.");
+      }
+
+      async function replaceRecoveryWithCurrentFiles() {
+        if (!state.validation?.canAnalyze) {
+          throw new Error("교체할 주문현황·창고별재고 파일을 먼저 선택하세요.");
+        }
+        await clearLocalRecovery(false);
+        runAnalysis();
+      }
+
+      function normalizeCloudUrl(value) {
+        const text = String(value || "").trim();
+        if (!/^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec(?:\?.*)?$/i.test(text)) {
+          throw new Error("Apps Script /exec Cloud URL을 확인하세요.");
+        }
+        return text;
+      }
+
+      function isSupportedFile(file) {
+        return Boolean(file && /\.(xlsx|xls)$/i.test(file.name));
+      }
+
+      function parsedScore(parsed) {
+        return (parsed.missingColumns?.length || 0) * 1000 +
+          (parsed.errors?.length || 0) * 100 +
+          (parsed.rowCount > 0 ? 0 : 10);
+      }
+
+      async function parseExcelFile(file, kind) {
+        if (!window.XLSX) throw new Error("Excel 라이브러리를 불러오지 못했습니다. 네트워크 연결 후 다시 시도하세요.");
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        const fileHash = await sha256Hex(bytes);
+        const workbook = window.XLSX.read(bytes, {
+          type: "array",
+          cellDates: false,
+          cellNF: true,
+          cellText: true,
+        });
+        if (!workbook.SheetNames.length) throw new Error("Excel에 읽을 수 있는 시트가 없습니다.");
+
+        let best = null;
+        workbook.SheetNames.forEach((sheetName) => {
+          const sheet = workbook.Sheets[sheetName];
+          const rawMatrix = window.XLSX.utils.sheet_to_json(sheet, {
+            header: 1,
+            raw: true,
+            defval: null,
+            blankrows: true,
+          });
+          const displayMatrix = window.XLSX.utils.sheet_to_json(sheet, {
+            header: 1,
+            raw: false,
+            defval: "",
+            blankrows: true,
+          });
+          const parsed = kind === "orders"
+            ? engine.parseOrderWorkbook({ fileName: file.name, sheetName, rawMatrix, displayMatrix })
+            : engine.parseInventoryWorkbook({ fileName: file.name, sheetName, rawMatrix, displayMatrix });
+          if (!best || parsedScore(parsed) < parsedScore(best)) best = parsed;
+        });
+        best.fileHash = fileHash;
+        return best;
+      }
+
+
+      async function classifyBundleFile(file) {
+        if (!isSupportedFile(file)) {
+          throw new Error(`${file.name}: .xlsx 또는 .xls 파일만 선택할 수 있습니다.`);
+        }
+        if (file.size > MAX_FILE_SIZE) {
+          throw new Error(`${file.name}: 파일 크기는 25MB 이하여야 합니다.`);
+        }
+
+        const [asOrders, asInventory] = await Promise.all([
+          parseExcelFile(file, "orders"),
+          parseExcelFile(file, "inventory"),
+        ]);
+        const orderScore = parsedScore(asOrders);
+        const inventoryScore = parsedScore(asInventory);
+
+        if (orderScore === inventoryScore) {
+          const name = String(file.name || "").toLowerCase();
+          if (/주문|미판매|order/.test(name)) return { kind: "orders", parsed: asOrders };
+          if (/재고|창고|inventory|stock/.test(name)) return { kind: "inventory", parsed: asInventory };
+          throw new Error(`${file.name}: 파일 종류를 자동 판별하지 못했습니다.`);
+        }
+
+        return orderScore < inventoryScore
+          ? { kind: "orders", parsed: asOrders }
+          : { kind: "inventory", parsed: asInventory };
+      }
+
+      async function handleBundleFiles(fileList) {
+        const files = Array.from(fileList || []).filter(Boolean);
+        if (files.length !== 2) {
+          showToast("주문현황과 창고별재고 Excel을 정확히 2개 선택하세요.", true);
+          return;
+        }
+
+        resetResults();
+        elements.analyzeButton.disabled = true;
+        elements.bundleFileStatus.textContent = "두 파일의 구조를 판별하는 중...";
+        setSystemMessage("classifying bundled data_blocks...");
+
+        try {
+          const classified = await Promise.all(files.map(classifyBundleFile));
+          const orders = classified.filter((item) => item.kind === "orders");
+          const inventories = classified.filter((item) => item.kind === "inventory");
+
+          if (orders.length !== 1 || inventories.length !== 1) {
+            throw new Error("주문현황 1개와 창고별재고 1개를 선택해야 합니다.");
+          }
+
+          state.orders = orders[0].parsed;
+          state.inventory = inventories[0].parsed;
+          refreshInputState();
+
+          if (state.validation?.canAnalyze) {
+            setSystemMessage("data_blocks ready... (Enter 또는 출고 분석)");
+            showToast("두 파일을 자동 배정했습니다. Enter를 누르면 분석합니다.");
+          }
+        } catch (error) {
+          state.orders = null;
+          state.inventory = null;
+          refreshInputState();
+          showToast(error.message || "묶음 파일을 처리하지 못했습니다.", true);
+        }
+      }
+
+      function bindBundleDropZone() {
+        const drop = elements.bundleDrop;
+        const input = elements.bundleInput;
+
+        drop.addEventListener("click", () => input.click());
+        drop.addEventListener("keydown", (event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            input.click();
+          }
+        });
+
+        ["dragenter", "dragover"].forEach((eventName) => {
+          drop.addEventListener(eventName, (event) => {
+            event.preventDefault();
+            drop.classList.add("dragover");
+          });
+        });
+
+        ["dragleave", "drop"].forEach((eventName) => {
+          drop.addEventListener(eventName, (event) => {
+            event.preventDefault();
+            drop.classList.remove("dragover");
+          });
+        });
+
+        drop.addEventListener("drop", (event) => handleBundleFiles(event.dataTransfer.files));
+        input.addEventListener("change", () => {
+          handleBundleFiles(input.files);
+          input.value = "";
+        });
+      }
+
+      function toggleWorkspaceStorage(forceOpen) {
+        const open = forceOpen === undefined
+          ? elements.workspaceStorage.classList.contains("hidden")
+          : Boolean(forceOpen);
+        elements.workspaceStorage.classList.toggle("hidden", !open);
+        elements.workspaceStorage.classList.toggle("is-open", open);
+        elements.headerSettingsButton.setAttribute("aria-expanded", String(open));
+        if (open) elements.workspaceStorage.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      }
+
+      function setLoading(kind, loading) {
+        state.loading[kind] = loading;
+        const fileName = elements[kind + "FileName"];
+        if (loading) {
+          fileName.textContent = "Excel 구조를 확인하는 중...";
+          setSystemMessage(`reading ${kind}_data_block...`);
+        }
+        elements.analyzeButton.disabled = true;
+      }
+
+      function resetResults() {
+        state.workspace = null;
+        elements.resultsPanel.classList.add("hidden");
+        elements.cloudSaveButton.disabled = true;
+      }
+
+      async function handleFile(kind, file) {
+        if (!file) return;
+        if (!isSupportedFile(file)) {
+          showToast(".xlsx 또는 .xls 파일만 선택할 수 있습니다.", true);
+          return;
+        }
+        if (file.size > MAX_FILE_SIZE) {
+          showToast("파일 크기는 25MB 이하여야 합니다.", true);
+          return;
+        }
+
+        resetResults();
+        setLoading(kind, true);
+        try {
+          state[kind] = await parseExcelFile(file, kind);
+          showToast(`${file.name} 파일을 읽었습니다.`);
+        } catch (error) {
+          state[kind] = null;
+          showToast(error.message || "Excel 파일을 읽지 못했습니다.", true);
+        } finally {
+          setLoading(kind, false);
+          refreshInputState();
+        }
+      }
+
+      function renderFileCard(kind) {
+        const parsed = state[kind];
+        const card = elements[kind + "Card"];
+        const name = elements[kind + "FileName"];
+        const loading = state.loading[kind];
+        card.classList.toggle("has-file", Boolean(parsed));
+        card.classList.toggle("has-error", Boolean(parsed?.errors?.length));
+        if (loading) return;
+
+        if (!parsed) {
+          name.textContent = "클릭하거나 파일을 드래그하세요 · .xlsx / .xls";
+          return;
+        }
+
+        name.textContent = parsed.fileName;
+      }
+
+      function renderValidation() {
+        const bothReady = Boolean(state.orders && state.inventory);
+        if (!bothReady) {
+          elements.validationBox.className = "validation-box";
+          elements.validationBox.innerHTML = `
+            <p class="validation-title"><span aria-hidden="true">○</span>두 파일을 선택하면 차단 검증을 시작합니다.</p>
+            <p class="validation-detail">필수 열, 수량, 재고 상품코드 중복을 확인한 뒤 분석 버튼을 활성화합니다.</p>
+          `;
+          return;
+        }
+
+        const validation = state.validation;
+        if (validation.canAnalyze) {
+          const matchSummary = validation.unmatchedCount > 0
+            ? `재고정보 없음 ${formatNumber(validation.unmatchedCount)}개 상품`
+            : "재고 매칭 이상 없음";
+          elements.validationBox.className = "validation-box good";
+          elements.validationBox.innerHTML = `
+            <p class="validation-title"><span aria-hidden="true">✓</span>차단 검증을 통과했습니다.</p>
+            <p class="validation-detail">${matchSummary}</p>
+          `;
+        } else {
+          elements.validationBox.className = "validation-box bad";
+          elements.validationBox.innerHTML = `
+            <p class="validation-title"><span aria-hidden="true">!</span>분석을 시작할 수 없습니다.</p>
+            <p class="validation-detail">원본 Excel에서 아래 항목을 수정한 뒤 다시 선택하세요.</p>
+            <ul class="validation-list">
+              ${validation.errors.slice(0, 10).map((issue) => `<li>${escapeHtml(issue.message)}</li>`).join("")}
+              ${validation.errors.length > 10 ? `<li>그 외 ${validation.errors.length - 10}건</li>` : ""}
+            </ul>
+          `;
+        }
+      }
+
+      function refreshInputState() {
+        state.validation = state.orders && state.inventory
+          ? engine.validateInputs(state.orders, state.inventory)
+          : null;
+        renderFileCard("orders");
+        renderFileCard("inventory");
+        renderValidation();
+        elements.analyzeButton.disabled = !state.validation?.canAnalyze;
+        elements.replaceRecoveryButton.disabled = !state.validation?.canAnalyze;
+        const bothSelected = Boolean(state.orders && state.inventory);
+        const selectedCount = Number(Boolean(state.orders)) + Number(Boolean(state.inventory));
+        if (bothSelected) {
+          elements.bundleFileStatus.textContent = `${state.orders.fileName} / ${state.inventory.fileName}`;
+        } else if (selectedCount === 0) {
+          elements.bundleFileStatus.textContent = "두 Excel을 한 번에 선택하거나 드래그하세요.";
+        } else {
+          elements.bundleFileStatus.textContent = `파일 ${selectedCount}/2 선택 · 나머지 파일을 선택하세요.`;
+        }
+        if (!bothSelected) {
+          setSystemMessage(`waiting for data_blocks... (${selectedCount}/2 파일 선택)`);
+        } else if (state.validation?.canAnalyze) {
+          setSystemMessage("data_blocks ready... (출고 분석을 실행하세요)");
+        } else {
+          setSystemMessage("validation blocked... (입력 파일을 확인하세요)");
+        }
+      }
+
+      function getPreviewDefinitions(workspace) {
+        return {
+          purchases: {
+            label: "창고별 재고",
+            headers: ["상품코드", "품목명", "규격", "구매", "전체 주문", "전재고", "서울 잔량", "추가 구매", "담당", "거래처(단가)", "적요", "적요1", "그룹"],
+            numeric: [4, 5, 6, 7],
+            inventory: [5, 6],
+            purchase: 3,
+            purchaseEditable: true,
+            status: -1,
+            sourceRows: workspace.purchaseManagement,
+            rows: workspace.purchaseManagement.map((row) => [
+              row.productCode,
+              row.rowType === "reference" ? `[참고] ${row.productName}` : row.productName,
+              row.specification || row.spec || "",
+              row.rowType === "reference" ? "" : row.purchase,
+              row.rowType === "reference" ? "" : row.totalOrderQuantity,
+              row.inventoryMatched ? row.wholeStockRaw : "",
+              row.inventoryMatched ? row.seoulFirstPurchaseRemaining : "",
+              row.rowType === "reference" ? "" : row.purchaseNeed,
+              row.manager,
+              row.suppliers,
+              row.notes,
+              row.notes1,
+              row.groups,
+            ]),
+          },
+          allocations: {
+            label: "미출고현황",
+            headers: ["상품코드", "품목명", "규격", "주문수량", "전재고", "서울 잔량", "전재고 배정", "서울 배정", "추가 구매", "구매", "출고판정", "거래처(단가)", "담당", "그룹"],
+            numeric: [3, 4, 5, 6, 7, 8],
+            inventory: [4, 5],
+            purchase: 9,
+            purchaseEditable: false,
+            status: 10,
+            sourceRows: workspace.allocations,
+            rows: workspace.allocations.map((row) => [
+              row.productCode,
+              row.productName,
+              row.specification || row.spec || "",
+              row.quantity,
+              row.inventoryMatched ? row.wholeStockRaw : "",
+              row.inventoryMatched ? row.seoulFirstPurchaseRemaining : "",
+              row.wholeAllocation,
+              row.seoulAllocation,
+              row.purchaseNeed,
+              row.purchase,
+              row.status,
+              row.supplierDisplay,
+              row.manager,
+              row.group,
+            ]),
+          },
+          summaries: {
+            label: "상품별요약",
+            headers: ["상품코드", "품목명", "전체 주문", "전재고", "서울 잔량", "전재고 배정", "서울 배정", "추가 구매", "구매", "출고판정", "주문건수", "담당", "거래처(단가)"],
+            numeric: [2, 3, 4, 5, 6, 7, 10],
+            inventory: [3, 4],
+            purchase: 8,
+            purchaseEditable: false,
+            status: 9,
+            sourceRows: workspace.productSummaries,
+            rows: workspace.productSummaries.map((row) => [
+              row.productCode,
+              row.productName,
+              row.totalOrderQuantity,
+              row.inventoryMatched ? row.wholeStockRaw : "",
+              row.inventoryMatched ? row.seoulFirstPurchaseRemaining : "",
+              row.wholeAllocation,
+              row.seoulAllocation,
+              row.purchaseNeed,
+              row.purchase,
+              row.status,
+              row.orderCount,
+              row.manager,
+              row.suppliers,
+            ]),
+          },
+          validation: {
+            label: "검증결과",
+            headers: ["검증 항목", "계산 결과", "정상 기준", "판정", "설명"],
+            numeric: [1, 2],
+            inventory: [],
+            purchase: -1,
+            purchaseEditable: false,
+            status: 3,
+            sourceRows: workspace.validationResults,
+            rows: workspace.validationResults.map((row) => [
+              row.item,
+              row.result,
+              row.expected,
+              row.status,
+              row.description,
+            ]),
+          },
+        };
+      }
+
+      function statusTone(value) {
+        const text = String(value || "");
+        if (text.includes("오류") || text.includes("재고정보") || text.includes("추가 구매") || text.includes("발주 필요")) return "bad";
+        if (text.includes("확인") || text.includes("부분출고")) return "warn";
+        return text ? "good" : "";
+      }
+
+      function previewRowFill(previewId, sourceRow) {
+        if (!sourceRow || previewId === "validation") return "";
+        if (sourceRow.rowType === "reference") return "#f1f5f9";
+        const strong = typeof sourceRow.purchaseNeed === "number" && sourceRow.purchaseNeed > 0;
+        const color = strong ? sourceRow.managerColors?.strong : sourceRow.managerColors?.base;
+        return color ? `#${color}` : "";
+      }
+
+      function renderPreview() {
+        const definitions = getPreviewDefinitions(state.workspace);
+        if (!definitions[state.activePreview]) state.activePreview = "purchases";
+        elements.previewTabs.innerHTML = Object.entries(definitions).map(([id, definition]) => `
+          <button class="tab-button ${id === state.activePreview ? "active" : ""}" type="button" role="tab"
+            aria-selected="${id === state.activePreview}" data-preview="${id}">
+            ${escapeHtml(definition.label)}
+          </button>
+        `).join("");
+
+        const preview = definitions[state.activePreview];
+        elements.previewCount.textContent = `${formatNumber(preview.rows.length)}행`;
+        if (!preview.rows.length) {
+          elements.previewTable.innerHTML = `<div class="empty-state">표시할 항목이 없습니다.</div>`;
+          return;
+        }
+        elements.previewTable.innerHTML = `
+          <table>
+            <thead><tr>${preview.headers.map((header) => `<th>${escapeHtml(header)}</th>`).join("")}</tr></thead>
+            <tbody>
+              ${preview.rows.map((row, rowIndex) => {
+                const sourceRow = preview.sourceRows[rowIndex];
+                const referenceRow = sourceRow?.rowType === "reference";
+                const rowFill = previewRowFill(state.activePreview, sourceRow);
+                return `
+                <tr class="${referenceRow ? "reference-row" : ""}">
+                  ${preview.headers.map((_, index) => {
+                    const value = row[index];
+                    const isNumber = preview.numeric.includes(index) && value !== "";
+                    const isStatus = preview.status === index;
+                    const isInventory = !referenceRow && preview.inventory?.includes(index) && typeof value === "number" && value !== 0;
+                    const isWarning = (typeof value === "number" && value < 0) || (isStatus && statusTone(value) === "bad" && String(value).includes("오류"));
+                    const classes = [isNumber ? "number" : "", isStatus ? "status" : "", isInventory ? "inventory-value" : "", isWarning ? "warning-value" : ""].filter(Boolean).join(" ");
+                    const editablePurchase = preview.purchaseEditable === true && preview.purchase === index && !referenceRow;
+                    const content = editablePurchase
+                      ? `<input class="purchase-input" data-purchase-code="${escapeHtml(sourceRow.productCode)}" value="${escapeHtml(value)}" aria-label="${escapeHtml(sourceRow.productCode)} 구매">`
+                      : escapeHtml(isNumber ? formatNumber(value) : value);
+                    return `<td class="${classes}" style="${rowFill ? `background:#${rowFill.replace(/^#/, "")}` : ""}"
+                      ${isStatus ? `data-tone="${statusTone(value)}"` : ""}
+                      title="${escapeHtml(value)}">${content}</td>`;
+                  }).join("")}
+                </tr>
+              `;}).join("")}
+            </tbody>
+          </table>
+        `;
+      }
+
+      function renderResults() {
+        const stats = state.workspace.stats;
+        const purchaseUpload = engine.getPurchaseUploadSelection(state.workspace);
+        const summaryItems = [
+          { label: "주문행", value: stats.orderRowCount },
+          { label: "상품", value: stats.productCount },
+          { label: "총 주문수량", value: stats.totalOrderQuantity },
+          { label: "추가 구매 필요", value: stats.totalPurchaseNeed, tone: stats.totalPurchaseNeed > 0 ? "warn" : "" },
+          { label: "구매업로드 대상", value: purchaseUpload.included.length },
+          { label: "기준일", value: state.workspace.basisDate || "확인 필요", tone: state.workspace.basisDateStatus === "valid" ? "" : "bad" },
+        ];
+        elements.summaryGrid.innerHTML = summaryItems.map((item) => `
+          <div class="summary-card">
+            <div class="summary-label">${escapeHtml(item.label)}</div>
+            <div class="summary-value ${item.tone || ""}">${escapeHtml(formatNumber(item.value))}</div>
+          </div>
+        `).join("");
+        const excludedCounts = purchaseUpload.excluded.reduce((counts, row) => {
+          counts[row.reason] = (counts[row.reason] || 0) + 1;
+          return counts;
+        }, {});
+        const exclusionText = Object.entries(excludedCounts)
+          .map(([reason, count]) => `${reason} ${formatNumber(count)}행`)
+          .join(" · ");
+        const uploadBlocked = state.workspace.basisDateStatus !== "valid";
+        elements.purchaseUploadNotice.classList.toggle("bad", uploadBlocked);
+        elements.purchaseUploadNotice.textContent = uploadBlocked
+          ? `구매업로드 차단: 일자-No.의 기준일을 하나의 YYYYMMDD로 확정할 수 없습니다. 제외: ${exclusionText || "없음"}`
+          : `구매업로드 ${formatNumber(purchaseUpload.included.length)}행 · 제외: ${exclusionText || "없음"}`;
+        elements.resultSubtitle.textContent = stats.unmatchedCount > 0
+          ? `재고정보 없음 ${formatNumber(stats.unmatchedCount)}개 상품`
+          : "재고 매칭 이상 없음";
+        renderPreview();
+        elements.resultsPanel.classList.remove("hidden");
+        elements.purchaseUploadButton.disabled = state.workspace.basisDateStatus !== "valid";
+        elements.cloudSaveButton.disabled = !state.workspace.planId || state.workspace.basisDateStatus !== "valid";
+        setSystemMessage("analysis complete... (Excel 다운로드 준비 완료)");
+      }
+
+      function runAnalysis() {
+        if (!state.validation?.canAnalyze) return;
+        elements.analyzeButton.disabled = true;
+        elements.analyzeButton.textContent = "분석 중...";
+        setSystemMessage("processing data_blocks...");
+        window.setTimeout(async () => {
+          try {
+            const sourceFingerprint = await sha256Hex(JSON.stringify({
+              schemaVersion: engine.WORKSPACE_SCHEMA_VERSION,
+              orders: {
+                sha256: state.orders.fileHash,
+                fileName: state.orders.fileName,
+                sheetName: state.orders.sheetName,
+                rowCount: state.orders.rowCount,
+              },
+              inventory: {
+                sha256: state.inventory.fileHash,
+                fileName: state.inventory.fileName,
+                sheetName: state.inventory.sheetName,
+                rowCount: state.inventory.rowCount,
+              },
+            }));
+            state.workspace = engine.analyze(state.orders, state.inventory, { sourceFingerprint });
+            state.activePreview = "purchases";
+            renderResults();
+            scheduleLocalSave();
+            elements.resultsPanel.scrollIntoView({ behavior: "smooth", block: "start" });
+            showToast("출고 배정과 검증이 완료되었습니다.");
+          } catch (error) {
+            setSystemMessage("analysis failed... (오류 내용을 확인하세요)");
+            showToast(error.message || "분석 중 오류가 발생했습니다.", true);
+          } finally {
+            elements.analyzeButton.innerHTML = '<span aria-hidden="true">▸</span> 출고 분석';
+            elements.analyzeButton.disabled = !state.validation?.canAnalyze;
+          }
+        }, 20);
+      }
+
+      function downloadResult() {
+        if (!state.workspace) return;
+        try {
+          const fileName = workbookTools.getOutputFileName(state.workspace.createdAt);
+          workbookTools.downloadWorkbook(state.workspace, window.XLSX, fileName);
+          setSystemMessage("workbook saved... (작업 완료)");
+          showToast(`${fileName} 다운로드를 시작했습니다.`);
+        } catch (error) {
+          showToast(error.message || "Excel을 생성하지 못했습니다.", true);
+        }
+      }
+
+      function downloadPurchaseUpload() {
+        if (!state.workspace) return;
+        try {
+          const fileName = workbookTools.getPurchaseUploadFileName(state.workspace);
+          workbookTools.downloadPurchaseUploadWorkbook(state.workspace, window.XLSX, fileName);
+          const selection = engine.getPurchaseUploadSelection(state.workspace);
+          setSystemMessage(`purchase upload saved... (${selection.included.length}행)`);
+          showToast(`${fileName} 다운로드를 시작했습니다. 제외 ${selection.excluded.length}행은 발주관리에서 확인하세요.`);
+        } catch (error) {
+          setSystemMessage("purchase upload blocked... (기준일·제외 사유 확인)");
+          showToast(error.message || "구매업로드 Excel을 생성하지 못했습니다.", true);
+        }
+      }
+
+      async function buildCloudEnvelope() {
+        if (!state.workspace?.planId || state.workspace.basisDateStatus !== "valid") {
+          throw new Error("단일 기준일과 source fingerprint가 확인된 발주계획만 Cloud 저장할 수 있습니다.");
+        }
+        const purchaseSelection = engine.getPurchaseUploadSelection(state.workspace);
+        const sourceFileName = [state.workspace.sourceFiles.orders.fileName, state.workspace.sourceFiles.inventory.fileName]
+          .filter(Boolean)
+          .join(" / ");
+        const canonical = {
+          schemaVersion: CLOUD_PLAN_SCHEMA,
+          planId: state.workspace.planId,
+          basisDate: state.workspace.basisDate,
+          sourceFingerprint: state.workspace.sourceFingerprint,
+          sourceFileName,
+          sourceFiles: {
+            orders: {
+              fileName: state.workspace.sourceFiles.orders.fileName,
+              sheetName: state.workspace.sourceFiles.orders.sheetName,
+              rowCount: state.workspace.sourceFiles.orders.rowCount,
+              sha256: state.workspace.sourceFiles.orders.sha256,
+            },
+            inventory: {
+              fileName: state.workspace.sourceFiles.inventory.fileName,
+              sheetName: state.workspace.sourceFiles.inventory.sheetName,
+              rowCount: state.workspace.sourceFiles.inventory.rowCount,
+              sha256: state.workspace.sourceFiles.inventory.sha256,
+            },
+          },
+          savedBy: elements.cloudSavedByInput.value.trim(),
+          productRowCount: state.workspace.productSummaries.length,
+          purchaseUploadRowCount: purchaseSelection.included.length,
+          purchaseInputs: engine.getPurchaseInputs(state.workspace),
+          activePreview: state.activePreview,
+          workspace: state.workspace,
+        };
+        const canonicalJson = JSON.stringify(canonical);
+        return {
+          schemaVersion: CLOUD_PLAN_SCHEMA,
+          planId: canonical.planId,
+          hashAlgorithm: "SHA-256",
+          hash: await sha256Hex(canonicalJson),
+          rowCount: countPlanRows(canonical),
+          cellCount: countScalarCells(canonical),
+          canonicalJson,
+        };
+      }
+
+      async function postCloudAction(action, body) {
+        const url = normalizeCloudUrl(elements.cloudUrlInput.value);
+        const token = elements.cloudTokenInput.value;
+        if (!token) throw new Error("Shipping 전용 Cloud token을 입력하세요.");
+        const response = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body: JSON.stringify({ action, token, ...(body || {}) }),
+        });
+        if (!response.ok) throw new Error(`Cloud 요청 실패: HTTP ${response.status}`);
+        const json = await response.json();
+        if (!json || json.status !== "success") {
+          throw new Error(json?.message || "Cloud 요청이 실패했습니다.");
+        }
+        return json.data;
+      }
+
+      function renderCloudRevisions(revisions) {
+        state.cloudRevisions = Array.isArray(revisions) ? revisions : [];
+        elements.cloudRevisionSelect.innerHTML = '<option value="">저장 이력 선택</option>' +
+          state.cloudRevisions.map((item, index) => `
+            <option value="${index}">${escapeHtml(item.basisDate)} · ${escapeHtml(item.savedAt)} · ${escapeHtml(item.sourceFileName)} · r${escapeHtml(item.revision)}</option>
+          `).join("");
+        if (state.cloudRevisions.length > 0) elements.cloudRevisionSelect.value = "0";
+        elements.cloudLoadButton.disabled = state.cloudRevisions.length === 0;
+      }
+
+      async function listCloudPlans() {
+        elements.cloudListButton.disabled = true;
+        setSystemMessage("loading cloud revisions...");
+        try {
+          const revisions = await postCloudAction("shipping_plan_list", { limit: 100 });
+          renderCloudRevisions(revisions);
+          scheduleLocalSave();
+          setSystemMessage(`cloud revisions ready... (${state.cloudRevisions.length}건)`);
+          showToast(`Cloud 발주계획 ${state.cloudRevisions.length}개 revision을 불러왔습니다.`);
+        } catch (error) {
+          setSystemMessage("cloud list failed...");
+          showToast(error.message || "Cloud 목록을 불러오지 못했습니다.", true);
+        } finally {
+          elements.cloudListButton.disabled = false;
+        }
+      }
+
+      async function saveCloudPlan() {
+        elements.cloudSaveButton.disabled = true;
+        setSystemMessage("saving immutable cloud revision...");
+        try {
+          const snapshot = await buildCloudEnvelope();
+          const saved = await postCloudAction("shipping_plan_save", { snapshot });
+          if (
+            saved.planId !== snapshot.planId ||
+            saved.hash !== snapshot.hash ||
+            Number(saved.rowCount) !== snapshot.rowCount ||
+            Number(saved.cellCount) !== snapshot.cellCount
+          ) {
+            throw new Error("Cloud 저장 검산 결과가 일치하지 않습니다.");
+          }
+          scheduleLocalSave();
+          setSystemMessage(`cloud revision committed... (${saved.revision})`);
+          showToast(`Cloud revision ${saved.revision} 저장을 확정했습니다.`);
+          await listCloudPlans();
+        } catch (error) {
+          setSystemMessage("cloud save failed... (이전 확정 revision 유지)");
+          showToast(error.message || "Cloud 저장에 실패했습니다.", true);
+        } finally {
+          elements.cloudSaveButton.disabled = !state.workspace?.planId || state.workspace?.basisDateStatus !== "valid";
+        }
+      }
+
+      async function loadCloudPlan() {
+        const selectedIndex = Number(elements.cloudRevisionSelect.value);
+        const selected = state.cloudRevisions[selectedIndex];
+        if (!selected) return;
+        elements.cloudLoadButton.disabled = true;
+        setSystemMessage("loading verified cloud revision...");
+        try {
+          const result = await postCloudAction("shipping_plan_get", {
+            planId: selected.planId,
+            revision: selected.revision,
+          });
+          const plan = result?.plan;
+          const metadata = result?.metadata;
+          if (
+            !plan ||
+            !metadata ||
+            plan.schemaVersion !== CLOUD_PLAN_SCHEMA ||
+            plan.workspace?.schemaVersion !== engine.WORKSPACE_SCHEMA_VERSION ||
+            plan.planId !== selected.planId ||
+            plan.workspace.sourceFingerprint !== plan.sourceFingerprint ||
+            metadata.revision !== selected.revision ||
+            metadata.hash !== selected.hash ||
+            Number(metadata.rowCount) !== Number(selected.rowCount) ||
+            Number(metadata.cellCount) !== Number(selected.cellCount)
+          ) {
+            throw new Error("Cloud 발주계획 계약 또는 fingerprint가 올바르지 않습니다.");
+          }
+          state.workspace = plan.workspace;
+          engine.applyPurchaseInputs(state.workspace, plan.purchaseInputs);
+          state.activePreview = plan.activePreview || "purchases";
+          renderResults();
+          scheduleLocalSave();
+          setSystemMessage(`cloud revision loaded... (${selected.revision})`);
+          showToast("검증된 Cloud 발주계획을 불러왔습니다.");
+        } catch (error) {
+          setSystemMessage("cloud load failed...");
+          showToast(error.message || "Cloud 발주계획을 불러오지 못했습니다.", true);
+        } finally {
+          elements.cloudLoadButton.disabled = !elements.cloudRevisionSelect.value;
+        }
+      }
+
+      function bindDropZone(kind) {
+        const drop = elements[kind + "Drop"];
+        const input = elements[kind + "Input"];
+        drop.addEventListener("click", (event) => {
+          if (!event.target.closest("button")) input.click();
+        });
+        drop.addEventListener("keydown", (event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            input.click();
+          }
+        });
+        ["dragenter", "dragover"].forEach((eventName) => {
+          drop.addEventListener(eventName, (event) => {
+            event.preventDefault();
+            drop.classList.add("dragover");
+          });
+        });
+        ["dragleave", "drop"].forEach((eventName) => {
+          drop.addEventListener(eventName, (event) => {
+            event.preventDefault();
+            drop.classList.remove("dragover");
+          });
+        });
+        drop.addEventListener("drop", (event) => handleFile(kind, event.dataTransfer.files[0]));
+        input.addEventListener("change", () => {
+          handleFile(kind, input.files[0]);
+          input.value = "";
+        });
+      }
+
+      elements.headerSettingsButton.addEventListener("click", () => {
+        toggleWorkspaceStorage();
+      });
+
+      elements.headerRestoreButton.addEventListener("click", () => {
+        toggleWorkspaceStorage(true);
+        if (state.recoveryRecord) {
+          elements.recoveryBanner.classList.remove("hidden");
+          elements.restoreButton.focus();
+          showToast("저장된 이전 작업을 확인한 뒤 복구를 누르세요.");
+        } else {
+          showToast("현재 브라우저에 복구할 이전 작업이 없습니다.", true);
+        }
+      });
+
+      document.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter" || event.isComposing || event.repeat) return;
+        const target = event.target;
+        if (target instanceof HTMLInputElement ||
+            target instanceof HTMLTextAreaElement ||
+            target instanceof HTMLSelectElement ||
+            target instanceof HTMLButtonElement ||
+            target?.isContentEditable) return;
+        if (!state.validation?.canAnalyze || state.workspace || elements.analyzeButton.disabled) return;
+        event.preventDefault();
+        runAnalysis();
+      });
+
+      elements.analyzeButton.addEventListener("click", runAnalysis);
+      elements.downloadButton.addEventListener("click", downloadResult);
+      elements.purchaseUploadButton.addEventListener("click", downloadPurchaseUpload);
+      elements.previewTabs.addEventListener("click", (event) => {
+        const button = event.target.closest("[data-preview]");
+        if (!button || !state.workspace) return;
+        state.activePreview = button.dataset.preview;
+        renderPreview();
+        scheduleLocalSave();
+      });
+      elements.previewTable.addEventListener("input", (event) => {
+        const input = event.target.closest("[data-purchase-code]");
+        if (!input || !state.workspace || state.activePreview !== "purchases") return;
+        engine.setPurchaseValue(state.workspace, input.dataset.purchaseCode, input.value);
+        scheduleLocalSave();
+      });
+      elements.previewTable.addEventListener("change", (event) => {
+        const input = event.target.closest("[data-purchase-code]");
+        if (!input || !state.workspace || state.activePreview !== "purchases") return;
+        renderResults();
+      });
+      elements.restoreButton.addEventListener("click", () => {
+        try { restoreLocalRecord(state.recoveryRecord); }
+        catch (error) {
+          renderRecoveryBanner(null);
+          showToast(error.message || "로컬 복구 자료를 사용할 수 없습니다.", true);
+        }
+      });
+      elements.replaceRecoveryButton.addEventListener("click", () => {
+        replaceRecoveryWithCurrentFiles().catch((error) => {
+          showToast(error.message || "현재 파일로 복구 자료를 교체하지 못했습니다.", true);
+        });
+      });
+      elements.discardRecoveryButton.addEventListener("click", () => {
+        clearLocalRecovery().catch((error) => showToast(error.message || "로컬 복구 자료를 초기화하지 못했습니다.", true));
+      });
+      elements.localResetButton.addEventListener("click", () => {
+        clearLocalRecovery().catch((error) => showToast(error.message || "로컬 복구 자료를 초기화하지 못했습니다.", true));
+      });
+      elements.cloudListButton.addEventListener("click", listCloudPlans);
+      elements.cloudSaveButton.addEventListener("click", saveCloudPlan);
+      elements.cloudLoadButton.addEventListener("click", loadCloudPlan);
+      elements.cloudRevisionSelect.addEventListener("change", () => {
+        elements.cloudLoadButton.disabled = !elements.cloudRevisionSelect.value;
+      });
+      [elements.cloudUrlInput, elements.cloudTokenInput, elements.cloudSavedByInput].forEach((input) => {
+        input.addEventListener("input", scheduleLocalSave);
+      });
+      bindBundleDropZone();
+      bindDropZone("orders");
+      bindDropZone("inventory");
+
+      try {
+        elements.cloudUrlInput.value = localStorage.getItem("oneapp_cloud_sync_url_v1") || "";
+      } catch (error) {}
+
+      if (!engine || !workbookTools || !window.XLSX) {
+        setSystemMessage("system unavailable... (실행 라이브러리 로딩 실패)");
+        elements.validationBox.className = "validation-box bad";
+        elements.validationBox.innerHTML = `
+          <p class="validation-title"><span aria-hidden="true">!</span>실행 라이브러리 로딩 실패</p>
+          <p class="validation-detail">네트워크 연결을 확인하고 페이지를 새로고침하세요.</p>
+        `;
+        document.querySelectorAll("button").forEach((button) => {
+          if (!button.closest(".global-header")) button.disabled = true;
+        });
+      } else {
+        initializeLocalRecovery();
+      }
+    })();
+  </script>
+</body>
+</html>
