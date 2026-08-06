@@ -1103,7 +1103,7 @@
     }
 
   
-    /* orderops v1.2 */
+    /* orderops v1.3 */
     .header-actions { display:flex; align-items:center; gap:7px; }
     .header-action-button { appearance:none; cursor:pointer; }
     .source-selector-heading { cursor:pointer; }
@@ -1117,6 +1117,404 @@
       .header-action-button span:last-child { display:none; }
     }
 
+    /* orderops v1.3 compact uploader: left multi-entry upload / right essential notes */
+    .global-header {
+      height: 50px;
+      padding: 0 max(16px, calc((100% - 1480px) / 2));
+    }
+    .page-shell {
+      width: min(1480px, calc(100% - 24px));
+      padding-bottom: 24px;
+    }
+    .system-topbar {
+      min-height: 42px;
+      padding: 6px 12px;
+      gap: 10px;
+    }
+    .system-name { font-size: 14px; }
+    .system-console {
+      min-height: 28px;
+      padding: 4px 9px;
+      font-size: 11px;
+    }
+    .system-mode { font-size: 10px; }
+
+    .input-panel {
+      grid-template-columns: minmax(0, 1fr) 230px;
+      gap: 6px;
+      padding: 6px;
+    }
+    .source-selector {
+      grid-template-columns: 132px minmax(0, 1fr) 94px;
+      grid-template-areas:
+        "heading uploads analyze"
+        "validation validation validation";
+      gap: 5px;
+    }
+    .source-selector-heading {
+      min-height: 42px;
+      padding: 5px 7px;
+      gap: 6px;
+    }
+    .source-selector-index {
+      width: 24px;
+      height: 24px;
+      font-size: 11px;
+    }
+    .source-selector-heading strong { font-size: 10px; }
+    .source-selector-heading span:last-child {
+      margin-top: 1px;
+      font-size: 8px;
+    }
+    .upload-grid { gap: 5px; }
+    .drop-zone {
+      grid-template-columns: 24px minmax(0, 1fr);
+      gap: 6px;
+      min-height: 42px;
+      padding: 5px 7px;
+    }
+    .file-icon {
+      width: 24px;
+      height: 24px;
+      font-size: 11px;
+    }
+    .drop-title { font-size: 10px; }
+    .drop-help {
+      margin-top: 1px;
+      font-size: 8px;
+      line-height: 1.2;
+    }
+    .primary-button {
+      width: 94px;
+      min-width: 94px;
+      min-height: 42px;
+      padding: 0 7px;
+      font-size: 10px;
+    }
+    .validation-box {
+      min-height: 24px;
+      padding: 4px 7px;
+    }
+    .validation-title {
+      margin: 0;
+      font-size: 9px;
+      line-height: 1.25;
+    }
+    .validation-detail { font-size: 8px; }
+    .validation-list {
+      gap: 2px 12px;
+      margin-top: 3px;
+    }
+    .validation-list li { font-size: 8px; }
+
+    .operator-note {
+      padding: 6px 8px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+    .operator-note-title {
+      margin-bottom: 3px;
+      font-size: 9px;
+    }
+    .operator-note p {
+      margin-bottom: 2px;
+      font-size: 8px;
+      line-height: 1.35;
+    }
+
+    .results-panel { margin-top: 5px; }
+    .preview-toolbar {
+      min-height: 34px;
+      padding: 4px 7px 0;
+    }
+    .preview-tabs { padding-bottom: 4px; }
+    .tab-button {
+      min-height: 25px;
+      padding: 0 7px;
+      font-size: 10px;
+    }
+    .preview-actions {
+      gap: 4px;
+      padding-bottom: 4px;
+    }
+    .download-button {
+      min-height: 26px;
+      padding: 0 8px;
+      font-size: 9px;
+    }
+    .table-wrap { max-height: calc(100vh - 190px); }
+    table { font-size: 10px; }
+    th { padding: 5px 7px; }
+    td { padding: 4px 7px; }
+
+    @media (max-width: 980px) {
+      .input-panel { grid-template-columns: 1fr; }
+      .operator-note {
+        border-top: 1px solid #475569;
+        border-left: 0;
+      }
+      .source-selector {
+        grid-template-columns: 120px minmax(0, 1fr) 90px;
+      }
+      .primary-button {
+        width: 90px;
+        min-width: 90px;
+      }
+      .table-wrap { max-height: calc(100vh - 220px); }
+    }
+
+    @media (max-width: 700px) {
+      .global-header { height: 48px; }
+      .source-selector {
+        grid-template-columns: 1fr;
+        grid-template-areas:
+          "heading"
+          "uploads"
+          "analyze"
+          "validation";
+      }
+      .upload-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .primary-button {
+        width: 100%;
+        min-height: 34px;
+      }
+      .operator-note { display: none; }
+      .table-wrap { max-height: calc(100vh - 255px); }
+    }
+
+
+    /* orderops v1.4: left-aligned one-row work controls / right execution notes */
+    .global-header {
+      height: 44px;
+      padding: 0 max(12px, calc((100% - 1480px) / 2));
+    }
+    .brand-mark { font-size: 17px; }
+    .brand-suite { font-size: 15px; }
+    .brand-product { font-size: 9px; }
+    .header-link { min-height: 28px; padding: 0 9px; font-size: 10px; }
+
+    .system-workbench { margin-top: 0; border-radius: 0 0 8px 8px; }
+    .system-topbar {
+      min-height: 30px;
+      padding: 3px 8px;
+      gap: 7px;
+    }
+    .system-name { font-size: 11px; }
+    .system-console {
+      width: min(500px, 100%);
+      min-height: 22px;
+      padding: 2px 7px;
+      font-size: 9px;
+      line-height: 1.2;
+    }
+    .system-cursor { height: 11px; }
+    .system-mode { font-size: 8px; }
+
+    .input-panel {
+      display: grid;
+      grid-template-columns: minmax(560px, 650px) minmax(360px, 1fr);
+      align-items: stretch;
+      gap: 6px;
+      padding: 4px 6px;
+    }
+    .source-selector {
+      display: flex;
+      align-items: stretch;
+      justify-content: flex-start;
+      gap: 4px;
+      width: 100%;
+      min-width: 0;
+    }
+    .source-selector-heading {
+      flex: 0 0 118px;
+      min-width: 118px;
+      min-height: 34px;
+      padding: 3px 6px;
+      gap: 5px;
+    }
+    .source-selector-index {
+      width: 20px;
+      height: 20px;
+      font-size: 9px;
+    }
+    .source-selector-heading strong {
+      font-size: 9px;
+      line-height: 1.05;
+      white-space: nowrap;
+    }
+    .source-selector-heading span:last-child {
+      max-width: 82px;
+      margin-top: 1px;
+      font-size: 7px;
+      line-height: 1.05;
+    }
+
+    .upload-grid {
+      flex: 1 1 auto;
+      display: grid;
+      grid-template-columns: repeat(2, minmax(150px, 1fr));
+      gap: 4px;
+      min-width: 0;
+    }
+    .upload-card { border-radius: 4px; }
+    .drop-zone {
+      grid-template-columns: 20px minmax(0, 1fr);
+      gap: 5px;
+      min-height: 34px;
+      padding: 3px 6px;
+      border-radius: 4px;
+    }
+    .file-icon {
+      width: 20px;
+      height: 20px;
+      border-radius: 4px;
+      font-size: 9px;
+    }
+    .drop-title { font-size: 9px; line-height: 1.05; }
+    .drop-help {
+      margin-top: 1px;
+      font-size: 7px;
+      line-height: 1.05;
+    }
+
+    .action-bar {
+      flex: 0 0 84px;
+      display: flex;
+      align-items: stretch;
+      justify-content: flex-start;
+      min-width: 84px;
+      margin: 0;
+      padding: 0;
+    }
+    .primary-button {
+      width: 84px;
+      min-width: 84px;
+      min-height: 34px;
+      height: 100%;
+      padding: 0 5px;
+      border-radius: 4px;
+      font-size: 9px;
+      box-shadow: none;
+    }
+
+    .operator-note {
+      min-width: 0;
+      display: grid;
+      grid-template-columns: minmax(210px, .9fr) minmax(220px, 1.1fr);
+      align-items: center;
+      gap: 7px;
+      padding: 3px 7px;
+      border-left: 1px solid #475569;
+      background: #172033;
+    }
+    .validation-box {
+      display: flex;
+      align-items: center;
+      align-content: center;
+      flex-wrap: wrap;
+      gap: 0 6px;
+      min-height: 28px;
+      margin: 0;
+      padding: 3px 6px;
+      border-radius: 4px;
+    }
+    .validation-title {
+      margin: 0;
+      font-size: 8px;
+      line-height: 1.15;
+      white-space: nowrap;
+    }
+    .validation-detail {
+      margin: 0;
+      font-size: 7px;
+      line-height: 1.15;
+    }
+    .validation-list {
+      flex: 1 0 100%;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1px 10px;
+      max-height: 34px;
+      overflow: auto;
+      margin: 2px 0 0;
+      padding-left: 13px;
+    }
+    .validation-list li { font-size: 7px; line-height: 1.15; }
+    .operator-note-copy { min-width: 0; }
+    .operator-note-title {
+      margin: 0 0 1px;
+      font-size: 8px;
+      line-height: 1.1;
+    }
+    .operator-note p {
+      overflow: hidden;
+      margin: 0;
+      font-size: 7px;
+      line-height: 1.25;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .results-panel { margin-top: 4px; }
+    .preview-toolbar {
+      min-height: 28px;
+      padding: 3px 6px 0;
+    }
+    .preview-tabs { gap: 3px; padding-bottom: 3px; }
+    .tab-button {
+      min-height: 22px;
+      padding: 0 6px;
+      border-radius: 4px;
+      font-size: 9px;
+    }
+    .preview-actions { gap: 3px; padding-bottom: 3px; }
+    .preview-count { font-size: 9px; }
+    .download-button {
+      min-height: 23px;
+      padding: 0 7px;
+      border-radius: 4px;
+      font-size: 8px;
+    }
+    .table-wrap { max-height: calc(100vh - 128px); }
+    table { font-size: 9px; }
+    th { padding: 4px 6px; }
+    td { padding: 3px 6px; }
+    .purchase-input { height: 22px; font-size: 9px; }
+
+    @media (max-width: 1080px) {
+      .input-panel { grid-template-columns: minmax(520px, 620px) 1fr; }
+      .operator-note { grid-template-columns: 1fr; gap: 3px; }
+      .operator-note-copy p:last-child { display: none; }
+    }
+
+    @media (max-width: 820px) {
+      .input-panel { grid-template-columns: 1fr; }
+      .source-selector { width: 100%; }
+      .operator-note {
+        grid-template-columns: minmax(200px, .8fr) minmax(0, 1.2fr);
+        border-top: 1px solid #475569;
+        border-left: 0;
+      }
+      .table-wrap { max-height: calc(100vh - 170px); }
+    }
+
+    @media (max-width: 620px) {
+      .system-mode { display: none; }
+      .source-selector {
+        display: grid;
+        grid-template-columns: 108px minmax(0, 1fr) 78px;
+        gap: 3px;
+      }
+      .source-selector-heading { min-width: 0; }
+      .upload-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 3px; }
+      .action-bar { min-width: 0; }
+      .primary-button { width: 100%; min-width: 0; }
+      .operator-note { grid-template-columns: 1fr; }
+      .operator-note-copy { display: none; }
+      .table-wrap { max-height: calc(100vh - 190px); }
+    }
+
   </style>
 </head>
 <body>
@@ -1125,7 +1523,7 @@
       <div class="brand-mark">ONEAPP</div>
       <div class="brand-divider" aria-hidden="true"></div>
       <div class="brand-stack">
-        <div class="brand-suite">NEXUS <span class="brand-badge">v1.2</span></div>
+        <div class="brand-suite">NEXUS <span class="brand-badge">v1.4</span></div>
         <div class="brand-product">orderops</div>
       </div>
     </div>
@@ -1144,7 +1542,7 @@
       <div class="system-topbar">
         <div class="system-name">System.IO</div>
         <div class="system-console" role="status" aria-live="polite">
-          <span class="system-message" id="systemMessage">waiting for data_blocks... (두 Excel을 업로드하세요)</span>
+          <span class="system-message" id="systemMessage">waiting for data_blocks... (주문/재고 Excel을 선택하세요)</span>
           <span class="system-cursor" aria-hidden="true"></span>
         </div>
         <div class="system-mode"><strong>LOCAL AUTO SAVE</strong> · cloud explicit</div>
@@ -1153,11 +1551,11 @@
       <section class="panel input-panel" aria-label="입력 파일">
         <div class="source-selector">
           <div class="source-selector-heading" id="bundleDrop" tabindex="0" role="button"
-            aria-label="주문현황과 창고별재고 Excel 두 파일을 함께 선택">
-            <span class="source-selector-index">2×</span>
+            aria-label="주문현황과 창고별재고 Excel 범위 선택. 두 파일 선택 시 자동 분산">
+            <span class="source-selector-index">↑</span>
             <div>
-              <strong>묶음 파일 선택</strong>
-              <span id="bundleFileStatus">두 Excel을 한 번에 선택하거나 드래그하세요.</span>
+              <strong>파일 범위선택</strong>
+              <span id="bundleFileStatus">2개 선택 → 자동분산</span>
             </div>
           </div>
           <input class="hidden" id="bundleInput" type="file" accept=".xlsx,.xls" multiple>
@@ -1167,22 +1565,22 @@
               <div class="drop-zone compact-file-slot" id="ordersDrop" tabindex="0" role="button" aria-label="주문현황 Excel 개별 선택">
                 <div class="file-icon" aria-hidden="true">1</div>
                 <div class="file-copy">
-                  <p class="drop-title">주문현황 Excel</p>
-                  <p class="drop-help" id="ordersFileName">묶음 파일에서 자동 배정</p>
+                  <p class="drop-title">주문현황</p>
+                  <p class="drop-help" id="ordersFileName">개별 선택 / 교체</p>
                 </div>
               </div>
-              <input class="hidden" id="ordersInput" type="file" accept=".xlsx,.xls">
+              <input class="hidden" id="ordersInput" type="file" accept=".xlsx,.xls" multiple>
             </article>
 
             <article class="upload-card" id="inventoryCard">
               <div class="drop-zone compact-file-slot" id="inventoryDrop" tabindex="0" role="button" aria-label="창고별재고 Excel 개별 선택">
                 <div class="file-icon" aria-hidden="true">2</div>
                 <div class="file-copy">
-                  <p class="drop-title">창고별재고 Excel</p>
-                  <p class="drop-help" id="inventoryFileName">묶음 파일에서 자동 배정</p>
+                  <p class="drop-title">창고재고</p>
+                  <p class="drop-help" id="inventoryFileName">개별 선택 / 교체</p>
                 </div>
               </div>
-              <input class="hidden" id="inventoryInput" type="file" accept=".xlsx,.xls">
+              <input class="hidden" id="inventoryInput" type="file" accept=".xlsx,.xls" multiple>
             </article>
           </div>
 
@@ -1192,17 +1590,18 @@
             </button>
           </div>
 
-          <div class="validation-box" id="validationBox" role="status" aria-live="polite">
-            <p class="validation-title"><span aria-hidden="true">○</span>두 파일을 선택하면 검증을 시작합니다.</p>
-            <p class="validation-detail">묶음 파일은 구조를 판별해 주문현황과 창고별재고로 자동 배정합니다.</p>
-          </div>
         </div>
 
-        <aside class="operator-note" aria-label="처리 기준과 전달사항">
-          <div class="operator-note-title">처리 기준 · 전달사항</div>
-          <p>묶음 파일은 주문현황 1개와 창고별재고 1개를 자동으로 구분합니다.</p>
-          <p>파일 검증 완료 후 <strong>Enter</strong> 또는 출고 분석 버튼으로 실행합니다.</p>
-          <p>미매칭 상품은 <strong>재고정보 없음</strong>으로 유지합니다.</p>
+        <aside class="operator-note" aria-label="실행 설명과 필수 처리 기준">
+          <div class="validation-box" id="validationBox" role="status" aria-live="polite">
+            <p class="validation-title"><span aria-hidden="true">○</span>파일 선택 대기</p>
+            <p class="validation-detail">2개 선택 시 구조 판별 후 자동분산합니다.</p>
+          </div>
+          <div class="operator-note-copy">
+            <div class="operator-note-title">실행 · 필수 기준</div>
+            <p><strong>2개 선택</strong> → 주문현황 / 창고재고 자동분산 · <strong>Enter</strong> 또는 출고 분석 실행</p>
+            <p>미매칭 상품은 <strong>재고정보 없음</strong>으로 유지</p>
+          </div>
         </aside>
       </section>
 
@@ -1249,7 +1648,7 @@
     </section>
 
     <footer class="page-footer">
-      <span>orderops v1.2 · workspace shipping-workspace/v2 · cloud plan v1</span>
+      <span>orderops v1.4 · workspace shipping-workspace/v2 · cloud plan v1</span>
       <a href="SHIPPING_MANAGEMENT_GUIDANCE.md">개발·운영 기준 보기</a>
     </footer>
   </main>
@@ -1657,10 +2056,9 @@
             showToast("두 파일을 자동 배정했습니다. Enter를 누르면 분석합니다.");
           }
         } catch (error) {
-          state.orders = null;
-          state.inventory = null;
           refreshInputState();
-          showToast(error.message || "묶음 파일을 처리하지 못했습니다.", true);
+          setSystemMessage("bundle classification failed... (기존 선택 유지)");
+          showToast(`${error.message || "묶음 파일을 처리하지 못했습니다."} · 기존 선택은 유지됩니다.`, true);
         }
       }
 
@@ -1770,8 +2168,7 @@
         if (!bothReady) {
           elements.validationBox.className = "validation-box";
           elements.validationBox.innerHTML = `
-            <p class="validation-title"><span aria-hidden="true">○</span>두 파일을 선택하면 차단 검증을 시작합니다.</p>
-            <p class="validation-detail">필수 열, 수량, 재고 상품코드 중복을 확인한 뒤 분석 버튼을 활성화합니다.</p>
+            <p class="validation-title"><span aria-hidden="true">○</span>파일 선택 대기 · 필수 열/수량/중복코드 자동검증</p>
           `;
           return;
         }
@@ -1783,8 +2180,7 @@
             : "재고 매칭 이상 없음";
           elements.validationBox.className = "validation-box good";
           elements.validationBox.innerHTML = `
-            <p class="validation-title"><span aria-hidden="true">✓</span>차단 검증을 통과했습니다.</p>
-            <p class="validation-detail">${matchSummary}</p>
+            <p class="validation-title"><span aria-hidden="true">✓</span>검증 완료 · ${matchSummary}</p>
           `;
         } else {
           elements.validationBox.className = "validation-box bad";
@@ -1813,9 +2209,9 @@
         if (bothSelected) {
           elements.bundleFileStatus.textContent = `${state.orders.fileName} / ${state.inventory.fileName}`;
         } else if (selectedCount === 0) {
-          elements.bundleFileStatus.textContent = "두 Excel을 한 번에 선택하거나 드래그하세요.";
+          elements.bundleFileStatus.textContent = "2개 선택 시 주문/재고 자동분산";
         } else {
-          elements.bundleFileStatus.textContent = `파일 ${selectedCount}/2 선택 · 나머지 파일을 선택하세요.`;
+          elements.bundleFileStatus.textContent = `파일 ${selectedCount}/2 · 나머지 파일 선택`;
         }
         if (!bothSelected) {
           setSystemMessage(`waiting for data_blocks... (${selectedCount}/2 파일 선택)`);
@@ -2273,9 +2669,15 @@
             drop.classList.remove("dragover");
           });
         });
-        drop.addEventListener("drop", (event) => handleFile(kind, event.dataTransfer.files[0]));
+        drop.addEventListener("drop", (event) => {
+          const files = Array.from(event.dataTransfer.files || []).filter(Boolean);
+          if (files.length > 1) handleBundleFiles(files);
+          else handleFile(kind, files[0]);
+        });
         input.addEventListener("change", () => {
-          handleFile(kind, input.files[0]);
+          const files = Array.from(input.files || []).filter(Boolean);
+          if (files.length > 1) handleBundleFiles(files);
+          else handleFile(kind, files[0]);
           input.value = "";
         });
       }
