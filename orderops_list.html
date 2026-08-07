@@ -2137,6 +2137,327 @@
       }
     }
 
+
+    /* =========================================================
+       orderops v1.6 feature restoration
+       - search / specification filter / print
+       - column visibility / column resize + saved widths
+       - product-code ordered display
+       ========================================================= */
+    .view-controls {
+      display: grid;
+      grid-template-columns: minmax(280px, 1fr) auto auto;
+      align-items: end;
+      gap: 10px;
+      padding: 9px 10px;
+      border-bottom: 1px solid #d9e1ea;
+      background: #f8fafc;
+    }
+
+    .search-field {
+      display: grid;
+      gap: 4px;
+      min-width: 0;
+    }
+
+    .search-field span,
+    .spec-filter legend {
+      color: #64748b;
+      font-size: 11px;
+      font-weight: 900;
+    }
+
+    .search-field input {
+      width: 100%;
+      min-height: 34px;
+      padding: 0 10px;
+      border: 1px solid #cbd5e1;
+      border-radius: 7px;
+      color: #0f172a;
+      background: #fff;
+      font-size: 12px;
+      outline: none;
+    }
+
+    .search-field input:focus {
+      border-color: #0d9488;
+      box-shadow: 0 0 0 2px rgba(13, 148, 136, .12);
+    }
+
+    .spec-filter {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      min-width: 0;
+      margin: 0;
+      padding: 0;
+      border: 0;
+    }
+
+    .spec-filter legend {
+      float: left;
+      margin-right: 3px;
+    }
+
+    .spec-filter label {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      min-height: 34px;
+      padding: 0 8px;
+      border: 1px solid #cbd5e1;
+      border-radius: 7px;
+      color: #334155;
+      background: #fff;
+      font-size: 11px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .spec-filter:disabled {
+      opacity: .42;
+    }
+
+    .table-view-tools {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 5px;
+      min-width: 0;
+    }
+
+    .table-tool-button {
+      min-height: 34px;
+      padding: 0 9px;
+      border: 1px solid #cbd5e1;
+      border-radius: 7px;
+      color: #334155;
+      background: #fff;
+      font-size: 11px;
+      font-weight: 900;
+      white-space: nowrap;
+      transition: .14s ease;
+    }
+
+    .table-tool-button:hover {
+      border-color: #0f766e;
+      color: #0f766e;
+      background: #f0fdfa;
+    }
+
+    .table-tool-button.dirty {
+      border-color: #4f46e5;
+      color: #fff;
+      background: #4f46e5;
+    }
+
+    .column-visibility {
+      position: relative;
+    }
+
+    .column-visibility-menu {
+      position: absolute;
+      top: calc(100% + 6px);
+      right: 0;
+      z-index: 30;
+      width: 230px;
+      max-height: min(420px, 60vh);
+      overflow: auto;
+      padding: 8px;
+      border: 1px solid #cbd5e1;
+      border-radius: 9px;
+      background: #fff;
+      box-shadow: 0 16px 36px rgba(15, 23, 42, .16);
+    }
+
+    .column-menu-title {
+      padding: 5px 7px 7px;
+      color: #475569;
+      font-size: 11px;
+      font-weight: 900;
+    }
+
+    .column-menu-item {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      min-height: 31px;
+      padding: 4px 7px;
+      border-radius: 6px;
+      color: #334155;
+      font-size: 11px;
+      cursor: pointer;
+    }
+
+    .column-menu-item:hover {
+      background: #f1f5f9;
+    }
+
+    .column-menu-reset {
+      width: 100%;
+      min-height: 32px;
+      margin-top: 6px;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      color: #0f766e;
+      background: #f8fafc;
+      font-size: 11px;
+      font-weight: 900;
+    }
+
+    table.column-width-managed {
+      width: max-content;
+      min-width: 100%;
+      table-layout: fixed;
+    }
+
+    table.column-width-managed td {
+      max-width: none;
+    }
+
+    th.column-resizable {
+      padding-right: 16px;
+    }
+
+    .column-resize-handle {
+      position: absolute;
+      top: 0;
+      right: -4px;
+      bottom: 0;
+      z-index: 4;
+      width: 9px;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      cursor: col-resize;
+      touch-action: none;
+    }
+
+    .column-resize-handle::after {
+      position: absolute;
+      top: 18%;
+      right: 4px;
+      bottom: 18%;
+      width: 1px;
+      background: rgba(255, 255, 255, .46);
+      content: "";
+    }
+
+    .column-resize-handle:hover::after,
+    .column-resize-handle:focus-visible::after {
+      width: 2px;
+      background: #5eead4;
+    }
+
+    .column-resize-handle:focus-visible {
+      outline: 2px solid #5eead4;
+      outline-offset: -2px;
+    }
+
+    html.orderops-column-resizing,
+    html.orderops-column-resizing * {
+      cursor: col-resize !important;
+      user-select: none !important;
+    }
+
+    .empty-table-cell {
+      padding: 34px 18px !important;
+      color: #64748b;
+      text-align: center;
+    }
+
+    .print-area {
+      display: none;
+    }
+
+    @page {
+      size: A4 landscape;
+      margin: 8mm;
+    }
+
+    @media print {
+      body.printing-table {
+        min-height: 0;
+        background: #fff;
+      }
+
+      body.printing-table > * {
+        display: none !important;
+      }
+
+      body.printing-table .print-area {
+        display: block !important;
+        padding: 0;
+      }
+
+      body.printing-table .print-area h1 {
+        margin: 0 0 8px;
+        font-size: 16px;
+      }
+
+      body.printing-table .print-area table {
+        width: 100% !important;
+        min-width: 0 !important;
+        table-layout: auto !important;
+        font-size: 8px;
+      }
+
+      body.printing-table .print-area th,
+      body.printing-table .print-area td {
+        padding: 4px 5px;
+      }
+    }
+
+    @media (max-width: 980px) {
+      .view-controls {
+        grid-template-columns: minmax(220px, 1fr) auto;
+      }
+
+      .table-view-tools {
+        grid-column: 1 / -1;
+        justify-content: flex-start;
+        flex-wrap: wrap;
+      }
+    }
+
+    @media (max-width: 700px) {
+      .view-controls {
+        grid-template-columns: 1fr;
+      }
+
+      .spec-filter {
+        flex-wrap: wrap;
+      }
+
+      .table-view-tools {
+        grid-column: auto;
+      }
+
+      .table-tool-button {
+        flex: 1 1 auto;
+      }
+
+      .column-visibility {
+        flex: 1 1 auto;
+      }
+
+      .column-visibility > .table-tool-button {
+        width: 100%;
+      }
+    }
+
+  
+    /* v1.6 restored operational warning semantics */
+    tr.unit-alert-row td,
+    tr.unit-alert-row .purchase-input {
+      color: #b91c1c !important;
+    }
+    td.inventory-negative {
+      color: #b91c1c !important;
+      background: #fff200 !important;
+      font-weight: 900;
+    }
+
   </style>
 </head>
 <body>
@@ -2145,7 +2466,7 @@
       <div class="brand-mark">ONEAPP</div>
       <div class="brand-divider" aria-hidden="true"></div>
       <div class="brand-stack">
-        <div class="brand-suite">NEXUS <span class="brand-badge">v1.5</span></div>
+        <div class="brand-suite">NEXUS <span class="brand-badge">v1.6</span></div>
         <div class="brand-product">orderops</div>
       </div>
     </div>
@@ -2254,6 +2575,31 @@
       <div class="hidden" id="summaryGrid"></div>
       <div class="hidden" id="purchaseUploadNotice"></div>
 
+      <div class="view-controls" aria-label="현재 탭 검색, 필터, 열 설정">
+        <label class="search-field">
+          <span>통합 검색</span>
+          <input id="tableSearchInput" type="search" autocomplete="off"
+            placeholder="상품코드·상품명·규격·적요·담당·거래처 검색">
+        </label>
+        <fieldset class="spec-filter" id="specFilterGroup">
+          <legend>규격</legend>
+          <label><input type="checkbox" value="BOX">BOX</label>
+          <label><input type="checkbox" value="EA">EA</label>
+          <label><input type="checkbox" value="소분">소분</label>
+        </fieldset>
+        <div class="table-view-tools">
+          <div class="column-visibility">
+            <button class="table-tool-button" id="columnVisibilityButton" type="button"
+              aria-haspopup="menu" aria-expanded="false">열 표시</button>
+            <div class="column-visibility-menu hidden" id="columnVisibilityMenu" role="menu"
+              aria-label="표시할 열 선택"></div>
+          </div>
+          <button class="table-tool-button" id="columnWidthSaveButton" type="button">열폭 저장</button>
+          <button class="table-tool-button" id="columnWidthResetButton" type="button">열폭 초기화</button>
+          <button class="table-tool-button" id="printButton" type="button">화면 인쇄</button>
+        </div>
+      </div>
+
       <div class="preview-toolbar">
         <div class="preview-tabs" id="previewTabs" role="tablist" aria-label="결과 미리보기"></div>
         <div class="preview-actions">
@@ -2270,12 +2616,13 @@
     </section>
 
     <footer class="page-footer">
-      <span>orderops v1.5 · workspace shipping-workspace/v2 · cloud plan v1</span>
+      <span>orderops v1.6 · workspace shipping-workspace/v2 · cloud plan v1</span>
       <a href="SHIPPING_MANAGEMENT_GUIDANCE.md">개발·운영 기준 보기</a>
     </footer>
   </main>
 
   <div class="toast hidden" id="toast" role="status" aria-live="polite"></div>
+  <div class="print-area" id="printArea" aria-hidden="true"></div>
 
   <noscript>orderops를 사용하려면 JavaScript를 활성화해야 합니다.</noscript>
 
@@ -2291,6 +2638,13 @@
       const LOCAL_STORE_NAME = "workspaces";
       const LOCAL_POINTER_KEY = "oneapp.shipping.recovery.pointer.v1";
       const LOCAL_META_KEY = "oneapp.shipping.recovery.meta.v1";
+      const TABLE_WIDTHS_KEY = "oneapp.shipping.table-widths.v1";
+      const TABLE_WIDTHS_SCHEMA = "shipping-table-widths/v1";
+      const HIDDEN_COLUMNS_KEY = "oneapp.orderops.hidden-columns.v1";
+      const HIDDEN_COLUMNS_SCHEMA = "orderops-hidden-columns/v1";
+      const TABLE_WIDTH_MIN = 48;
+      const TABLE_WIDTH_MAX = 720;
+      const TABLE_WIDTH_TABS = new Set(["purchases", "allocations", "summaries", "inventory", "validation"]);
       const CLOUD_PLAN_SCHEMA = "ONEAPP_SHIPPING_PURCHASE_PLAN_V1";
       const state = {
         orders: null,
@@ -2298,11 +2652,18 @@
         validation: null,
         workspace: null,
         activePreview: "purchases",
+        searchQuery: "",
+        specificationFilters: new Set(),
         loading: { orders: false, inventory: false },
         db: null,
         recoveryRecord: null,
         recoveryCorruptionDetected: false,
         cloudRevisions: [],
+        columnWidthSettings: { schemaVersion: TABLE_WIDTHS_SCHEMA, tabs: Object.create(null) },
+        columnWidthDrafts: Object.create(null),
+        columnWidthDirtyTabs: new Set(),
+        activeColumnResize: null,
+        hiddenColumnSettings: { schemaVersion: HIDDEN_COLUMNS_SCHEMA, tabs: Object.create(null) },
       };
 
       const elements = {
@@ -2323,6 +2684,14 @@
         resultSubtitle: document.getElementById("resultSubtitle"),
         summaryGrid: document.getElementById("summaryGrid"),
         purchaseUploadNotice: document.getElementById("purchaseUploadNotice"),
+        tableSearchInput: document.getElementById("tableSearchInput"),
+        specFilterGroup: document.getElementById("specFilterGroup"),
+        columnVisibilityButton: document.getElementById("columnVisibilityButton"),
+        columnVisibilityMenu: document.getElementById("columnVisibilityMenu"),
+        columnWidthSaveButton: document.getElementById("columnWidthSaveButton"),
+        columnWidthResetButton: document.getElementById("columnWidthResetButton"),
+        printButton: document.getElementById("printButton"),
+        printArea: document.getElementById("printArea"),
         previewTabs: document.getElementById("previewTabs"),
         previewCount: document.getElementById("previewCount"),
         previewTable: document.getElementById("previewTable"),
@@ -2538,6 +2907,12 @@
         if (!validRecoveryRecord(record)) throw new Error("복구 자료의 schemaVersion 또는 source fingerprint가 올바르지 않습니다.");
         state.workspace = record.workspace;
         state.activePreview = record.ui?.activePreview || "purchases";
+        state.searchQuery = "";
+        state.specificationFilters.clear();
+        elements.tableSearchInput.value = "";
+        elements.specFilterGroup.querySelectorAll("input[type='checkbox']").forEach((input) => {
+          input.checked = false;
+        });
         elements.cloudUrlInput.value = record.settings?.cloudUrl || "";
         elements.cloudTokenInput.value = record.settings?.cloudToken || "";
         elements.cloudSavedByInput.value = record.settings?.savedBy || "";
@@ -2633,19 +3008,36 @@
           parseExcelFile(file, "orders"),
           parseExcelFile(file, "inventory"),
         ]);
+
+        const orderMapped = new Set(
+          (asOrders.headerMapping?.columns || []).map((column) => String(column.canonical || "").trim()),
+        );
+        const orderSignatureFields = ["품목코드", "품목명", "규격", "수량", "적요", "적요1", "거래처", "그룹"];
+        const orderSignature = orderSignatureFields.every((field) => orderMapped.has(field)) &&
+          (asOrders.missingColumns?.length || 0) === 0;
+
+        const inventoryWarehouseColumns = (asInventory.columns || []).filter(
+          (column) => column?.role === "warehouseQuantity",
+        );
+        const inventorySignature = (asInventory.missingColumns?.length || 0) === 0 &&
+          inventoryWarehouseColumns.length > 0;
+
+        if (orderSignature && !inventorySignature) return { kind: "orders", parsed: asOrders };
+        if (inventorySignature && !orderSignature) return { kind: "inventory", parsed: asInventory };
+
+        const name = String(file.name || "").toLocaleLowerCase("ko-KR");
+        if (orderSignature && /주문|미판매|order/.test(name)) return { kind: "orders", parsed: asOrders };
+        if (inventorySignature && /재고|창고|inventory|stock/.test(name)) return { kind: "inventory", parsed: asInventory };
+
         const orderScore = parsedScore(asOrders);
         const inventoryScore = parsedScore(asInventory);
+        if (orderScore < inventoryScore) return { kind: "orders", parsed: asOrders };
+        if (inventoryScore < orderScore) return { kind: "inventory", parsed: asInventory };
 
-        if (orderScore === inventoryScore) {
-          const name = String(file.name || "").toLowerCase();
-          if (/주문|미판매|order/.test(name)) return { kind: "orders", parsed: asOrders };
-          if (/재고|창고|inventory|stock/.test(name)) return { kind: "inventory", parsed: asInventory };
-          throw new Error(`${file.name}: 파일 종류를 자동 판별하지 못했습니다.`);
-        }
-
-        return orderScore < inventoryScore
-          ? { kind: "orders", parsed: asOrders }
-          : { kind: "inventory", parsed: asInventory };
+        throw new Error(
+          `${file.name}: 주문현황/창고재고를 자동 판별하지 못했습니다. ` +
+          `주문 필수열 또는 창고 수량열을 확인하세요.`,
+        );
       }
 
       async function handleBundleFiles(fileList) {
@@ -2844,102 +3236,476 @@
         }
       }
 
-      function getPreviewDefinitions(workspace) {
-        return {
-          purchases: {
-            label: "창고별 재고",
-            headers: ["상품코드", "품목명", "규격", "구매", "전체 주문", "전재고", "서울 잔량", "추가 구매", "담당", "거래처(단가)", "적요", "적요1", "그룹"],
-            numeric: [4, 5, 6, 7],
-            inventory: [5, 6],
-            purchase: 3,
-            purchaseEditable: true,
-            status: -1,
-            sourceRows: workspace.purchaseManagement,
-            rows: workspace.purchaseManagement.map((row) => [
-              row.productCode,
-              row.rowType === "reference" ? `[참고] ${row.productName}` : row.productName,
-              row.specification || row.spec || "",
-              row.rowType === "reference" ? "" : row.purchase,
-              row.rowType === "reference" ? "" : row.totalOrderQuantity,
-              row.inventoryMatched ? row.wholeStockRaw : "",
-              row.inventoryMatched ? row.seoulFirstPurchaseRemaining : "",
-              row.rowType === "reference" ? "" : row.purchaseNeed,
-              row.manager,
-              row.suppliers,
-              row.notes,
-              row.notes1,
-              row.groups,
-            ]),
-          },
-          allocations: {
-            label: "미출고현황",
-            headers: ["상품코드", "품목명", "규격", "주문수량", "전재고", "서울 잔량", "전재고 배정", "서울 배정", "추가 구매", "구매", "출고판정", "거래처(단가)", "담당", "그룹"],
-            numeric: [3, 4, 5, 6, 7, 8],
-            inventory: [4, 5],
-            purchase: 9,
-            purchaseEditable: false,
-            status: 10,
-            sourceRows: workspace.allocations,
-            rows: workspace.allocations.map((row) => [
-              row.productCode,
-              row.productName,
-              row.specification || row.spec || "",
-              row.quantity,
-              row.inventoryMatched ? row.wholeStockRaw : "",
-              row.inventoryMatched ? row.seoulFirstPurchaseRemaining : "",
-              row.wholeAllocation,
-              row.seoulAllocation,
-              row.purchaseNeed,
-              row.purchase,
-              row.status,
-              row.supplierDisplay,
-              row.manager,
-              row.group,
-            ]),
-          },
-          summaries: {
-            label: "상품별요약",
-            headers: ["상품코드", "품목명", "전체 주문", "전재고", "서울 잔량", "전재고 배정", "서울 배정", "추가 구매", "구매", "출고판정", "주문건수", "담당", "거래처(단가)"],
-            numeric: [2, 3, 4, 5, 6, 7, 10],
-            inventory: [3, 4],
-            purchase: 8,
-            purchaseEditable: false,
-            status: 9,
-            sourceRows: workspace.productSummaries,
-            rows: workspace.productSummaries.map((row) => [
-              row.productCode,
-              row.productName,
-              row.totalOrderQuantity,
-              row.inventoryMatched ? row.wholeStockRaw : "",
-              row.inventoryMatched ? row.seoulFirstPurchaseRemaining : "",
-              row.wholeAllocation,
-              row.seoulAllocation,
-              row.purchaseNeed,
-              row.purchase,
-              row.status,
-              row.orderCount,
-              row.manager,
-              row.suppliers,
-            ]),
-          },
-          validation: {
-            label: "검증결과",
-            headers: ["검증 항목", "계산 결과", "정상 기준", "판정", "설명"],
-            numeric: [1, 2],
-            inventory: [],
-            purchase: -1,
-            purchaseEditable: false,
-            status: 3,
-            sourceRows: workspace.validationResults,
-            rows: workspace.validationResults.map((row) => [
-              row.item,
-              row.result,
-              row.expected,
-              row.status,
-              row.description,
-            ]),
-          },
+      function isPlainRecord(value) {
+        return Boolean(value && typeof value === "object" && !Array.isArray(value));
+      }
+
+      function isSafeColumnKey(value) {
+        const text = String(value || "");
+        return Boolean(text && text.length <= 240 && !["__proto__", "prototype", "constructor"].includes(text));
+      }
+
+      function defaultColumnWidth(column) {
+        const header = String(column?.header || "").trim();
+        if (/상품코드|품목코드|코드/.test(header)) return 124;
+        if (/상품명|품목명/.test(header)) return 220;
+        if (/설명/.test(header)) return 260;
+        if (/거래처|적요/.test(header)) return 180;
+        if (/규격|담당|구매/.test(header)) return 116;
+        if (column?.numeric) return 90;
+        return 108;
+      }
+
+      function createPreviewColumns(previewId, headers, numericIndexes = []) {
+        const numeric = new Set(numericIndexes);
+        return headers.map((header, index) => ({
+          key: `shipping:${previewId}:${index}:${encodeURIComponent(String(header).trim())}`,
+          header,
+          numeric: numeric.has(index),
+        }));
+      }
+
+      function loadColumnWidthSettings() {
+        const fallback = { schemaVersion: TABLE_WIDTHS_SCHEMA, tabs: Object.create(null) };
+        try {
+          const parsed = JSON.parse(localStorage.getItem(TABLE_WIDTHS_KEY) || "null");
+          if (!isPlainRecord(parsed) || parsed.schemaVersion !== TABLE_WIDTHS_SCHEMA || !isPlainRecord(parsed.tabs)) {
+            return fallback;
+          }
+          const tabs = Object.create(null);
+          Object.entries(parsed.tabs).forEach(([tabId, widths]) => {
+            if (!TABLE_WIDTH_TABS.has(tabId) || !isPlainRecord(widths)) return;
+            const safeWidths = Object.create(null);
+            Object.entries(widths).forEach(([columnKey, width]) => {
+              if (!isSafeColumnKey(columnKey) || !Number.isFinite(width)) return;
+              if (width < TABLE_WIDTH_MIN || width > TABLE_WIDTH_MAX) return;
+              safeWidths[columnKey] = Math.round(width);
+            });
+            if (Object.keys(safeWidths).length > 0) tabs[tabId] = safeWidths;
+          });
+          return { schemaVersion: TABLE_WIDTHS_SCHEMA, tabs };
+        } catch (error) {
+          return fallback;
+        }
+      }
+
+      function saveColumnWidthSettings(settings) {
+        const tabs = {};
+        TABLE_WIDTH_TABS.forEach((tabId) => {
+          const widths = settings.tabs?.[tabId];
+          if (!isPlainRecord(widths) || Object.keys(widths).length === 0) return;
+          tabs[tabId] = { ...widths };
+        });
+        localStorage.setItem(TABLE_WIDTHS_KEY, JSON.stringify({
+          schemaVersion: TABLE_WIDTHS_SCHEMA,
+          tabs,
+        }));
+      }
+
+      function getColumnWidthDraft(tabId) {
+        if (!Object.prototype.hasOwnProperty.call(state.columnWidthDrafts, tabId)) {
+          const draft = Object.create(null);
+          const saved = state.columnWidthSettings.tabs?.[tabId];
+          if (isPlainRecord(saved)) {
+            Object.entries(saved).forEach(([key, width]) => {
+              if (isSafeColumnKey(key) && Number.isFinite(width) &&
+                  width >= TABLE_WIDTH_MIN && width <= TABLE_WIDTH_MAX) {
+                draft[key] = Math.round(width);
+              }
+            });
+          }
+          state.columnWidthDrafts[tabId] = draft;
+        }
+        return state.columnWidthDrafts[tabId];
+      }
+
+      function currentColumnWidth(tabId, column) {
+        const width = getColumnWidthDraft(tabId)[column.key];
+        return Number.isFinite(width) ? width : defaultColumnWidth(column);
+      }
+
+      function setColumnWidthDraft(tabId, columnKey, width) {
+        if (!TABLE_WIDTH_TABS.has(tabId) || !isSafeColumnKey(columnKey)) return;
+        getColumnWidthDraft(tabId)[columnKey] = Math.max(
+          TABLE_WIDTH_MIN,
+          Math.min(TABLE_WIDTH_MAX, Math.round(width)),
+        );
+        state.columnWidthDirtyTabs.add(tabId);
+        updateColumnWidthToolbar();
+      }
+
+      function updateColumnWidthToolbar() {
+        const dirty = state.columnWidthDirtyTabs.has(state.activePreview);
+        elements.columnWidthSaveButton.classList.toggle("dirty", dirty);
+        elements.columnWidthSaveButton.textContent = dirty ? "열폭 저장*" : "열폭 저장";
+      }
+
+      function persistActiveColumnWidths() {
+        if (!state.workspace || !TABLE_WIDTH_TABS.has(state.activePreview)) return;
+        const definitions = getPreviewDefinitions(state.workspace);
+        const preview = definitions[state.activePreview];
+        if (!preview) return;
+
+        const draft = getColumnWidthDraft(state.activePreview);
+        const nextTabs = Object.create(null);
+        TABLE_WIDTH_TABS.forEach((tabId) => {
+          const existing = state.columnWidthSettings.tabs?.[tabId];
+          if (isPlainRecord(existing) && Object.keys(existing).length > 0) {
+            nextTabs[tabId] = { ...existing };
+          }
+        });
+
+        const activeWidths = Object.create(null);
+        preview.columns.forEach((column) => {
+          const width = draft[column.key];
+          if (Number.isFinite(width) && width >= TABLE_WIDTH_MIN && width <= TABLE_WIDTH_MAX &&
+              width !== defaultColumnWidth(column)) {
+            activeWidths[column.key] = Math.round(width);
+          }
+        });
+
+        if (Object.keys(activeWidths).length > 0) nextTabs[state.activePreview] = activeWidths;
+        else delete nextTabs[state.activePreview];
+
+        state.columnWidthSettings = { schemaVersion: TABLE_WIDTHS_SCHEMA, tabs: nextTabs };
+        saveColumnWidthSettings(state.columnWidthSettings);
+        state.columnWidthDrafts[state.activePreview] = Object.assign(Object.create(null), activeWidths);
+        state.columnWidthDirtyTabs.delete(state.activePreview);
+        updateColumnWidthToolbar();
+        showToast("현재 탭의 열폭을 저장했습니다.");
+      }
+
+      function resetActiveColumnWidths() {
+        if (!state.workspace || !TABLE_WIDTH_TABS.has(state.activePreview)) return;
+        const nextTabs = Object.create(null);
+        TABLE_WIDTH_TABS.forEach((tabId) => {
+          if (tabId === state.activePreview) return;
+          const existing = state.columnWidthSettings.tabs?.[tabId];
+          if (isPlainRecord(existing) && Object.keys(existing).length > 0) {
+            nextTabs[tabId] = { ...existing };
+          }
+        });
+        state.columnWidthSettings = { schemaVersion: TABLE_WIDTHS_SCHEMA, tabs: nextTabs };
+        state.columnWidthDrafts[state.activePreview] = Object.create(null);
+        state.columnWidthDirtyTabs.delete(state.activePreview);
+        saveColumnWidthSettings(state.columnWidthSettings);
+        renderPreview();
+        showToast("현재 탭의 열폭을 기본값으로 초기화했습니다.");
+      }
+
+      function loadHiddenColumnSettings() {
+        const fallback = { schemaVersion: HIDDEN_COLUMNS_SCHEMA, tabs: Object.create(null) };
+        try {
+          const parsed = JSON.parse(localStorage.getItem(HIDDEN_COLUMNS_KEY) || "null");
+          if (!isPlainRecord(parsed) || parsed.schemaVersion !== HIDDEN_COLUMNS_SCHEMA || !isPlainRecord(parsed.tabs)) {
+            return fallback;
+          }
+          const tabs = Object.create(null);
+          Object.entries(parsed.tabs).forEach(([tabId, keys]) => {
+            if (!TABLE_WIDTH_TABS.has(tabId) || !Array.isArray(keys)) return;
+            tabs[tabId] = [...new Set(keys.filter(isSafeColumnKey))];
+          });
+          return { schemaVersion: HIDDEN_COLUMNS_SCHEMA, tabs };
+        } catch (error) {
+          return fallback;
+        }
+      }
+
+      function saveHiddenColumnSettings() {
+        const tabs = {};
+        TABLE_WIDTH_TABS.forEach((tabId) => {
+          const keys = state.hiddenColumnSettings.tabs?.[tabId];
+          if (Array.isArray(keys) && keys.length > 0) tabs[tabId] = [...keys];
+        });
+        localStorage.setItem(HIDDEN_COLUMNS_KEY, JSON.stringify({
+          schemaVersion: HIDDEN_COLUMNS_SCHEMA,
+          tabs,
+        }));
+      }
+
+      function hiddenColumnSet(tabId) {
+        return new Set(
+          Array.isArray(state.hiddenColumnSettings.tabs?.[tabId])
+            ? state.hiddenColumnSettings.tabs[tabId]
+            : [],
+        );
+      }
+
+      function setColumnVisible(tabId, columnKey, visible) {
+        if (!TABLE_WIDTH_TABS.has(tabId) || !isSafeColumnKey(columnKey)) return;
+        const hidden = hiddenColumnSet(tabId);
+        if (visible) hidden.delete(columnKey);
+        else hidden.add(columnKey);
+        state.hiddenColumnSettings.tabs[tabId] = [...hidden];
+        saveHiddenColumnSettings();
+      }
+
+      function showAllColumns() {
+        if (!TABLE_WIDTH_TABS.has(state.activePreview)) return;
+        delete state.hiddenColumnSettings.tabs[state.activePreview];
+        saveHiddenColumnSettings();
+        renderPreview();
+        showToast("현재 탭의 모든 열을 표시합니다.");
+      }
+
+      function renderColumnVisibilityMenu(preview) {
+        const hidden = hiddenColumnSet(state.activePreview);
+        const visibleCount = preview.columns.filter((column) => !hidden.has(column.key)).length;
+        elements.columnVisibilityMenu.innerHTML = `
+          <div class="column-menu-title">표시할 열</div>
+          ${preview.columns.map((column) => `
+            <label class="column-menu-item">
+              <input type="checkbox" data-column-visible="${escapeHtml(column.key)}"
+                ${hidden.has(column.key) ? "" : "checked"}>
+              <span>${escapeHtml(column.header)}</span>
+            </label>
+          `).join("")}
+          <button class="column-menu-reset" type="button" data-show-all-columns>모든 열 표시</button>
+        `;
+        elements.columnVisibilityButton.textContent =
+          visibleCount === preview.columns.length ? "열 표시" : `열 표시 ${visibleCount}/${preview.columns.length}`;
+      }
+
+      function updateRenderedColumnWidth(columnKey, width) {
+        elements.previewTable.querySelectorAll("[data-column-key]").forEach((element) => {
+          if (element.dataset.columnKey !== columnKey) return;
+          if (element.tagName === "COL") element.style.width = `${width}px`;
+          if (element.classList.contains("column-resize-handle")) {
+            element.setAttribute("aria-valuenow", String(width));
+          }
+        });
+      }
+
+      function handleColumnPointerMove(event) {
+        const resize = state.activeColumnResize;
+        if (!resize || event.pointerId !== resize.pointerId) return;
+        event.preventDefault();
+        const width = Math.max(
+          TABLE_WIDTH_MIN,
+          Math.min(TABLE_WIDTH_MAX, resize.startWidth + event.clientX - resize.startX),
+        );
+        setColumnWidthDraft(resize.tabId, resize.columnKey, width);
+        updateRenderedColumnWidth(resize.columnKey, Math.round(width));
+      }
+
+      function finishColumnResize(event) {
+        const resize = state.activeColumnResize;
+        if (!resize || (event?.pointerId !== undefined && event.pointerId !== resize.pointerId)) return;
+        try {
+          if (resize.handle.hasPointerCapture?.(resize.pointerId)) resize.handle.releasePointerCapture(resize.pointerId);
+        } catch (error) {}
+        document.removeEventListener("pointermove", handleColumnPointerMove);
+        document.removeEventListener("pointerup", finishColumnResize);
+        document.removeEventListener("pointercancel", finishColumnResize);
+        window.removeEventListener("blur", finishColumnResize);
+        document.documentElement.classList.remove("orderops-column-resizing");
+        state.activeColumnResize = null;
+      }
+
+      function beginColumnResize(event) {
+        const handle = event.target.closest(".column-resize-handle");
+        if (!handle || !state.workspace || (event.pointerType === "mouse" && event.button !== 0)) return;
+        const definitions = getPreviewDefinitions(state.workspace);
+        const preview = definitions[state.activePreview];
+        const column = preview?.columns.find((candidate) => candidate.key === handle.dataset.columnKey);
+        if (!column) return;
+        event.preventDefault();
+        const startWidth = currentColumnWidth(state.activePreview, column);
+        state.activeColumnResize = {
+          tabId: state.activePreview,
+          columnKey: column.key,
+          pointerId: event.pointerId,
+          startX: event.clientX,
+          startWidth,
+          handle,
         };
+        try { handle.setPointerCapture?.(event.pointerId); } catch (error) {}
+        document.documentElement.classList.add("orderops-column-resizing");
+        document.addEventListener("pointermove", handleColumnPointerMove, { passive: false });
+        document.addEventListener("pointerup", finishColumnResize);
+        document.addEventListener("pointercancel", finishColumnResize);
+        window.addEventListener("blur", finishColumnResize);
+      }
+
+      function handleColumnResizeKeydown(event) {
+        const handle = event.target.closest(".column-resize-handle");
+        if (!handle || !["ArrowLeft", "ArrowRight"].includes(event.key) || !state.workspace) return;
+        const definitions = getPreviewDefinitions(state.workspace);
+        const preview = definitions[state.activePreview];
+        const column = preview?.columns.find((candidate) => candidate.key === handle.dataset.columnKey);
+        if (!column) return;
+        event.preventDefault();
+        const direction = event.key === "ArrowRight" ? 1 : -1;
+        const step = event.shiftKey ? 24 : 8;
+        const width = Math.max(
+          TABLE_WIDTH_MIN,
+          Math.min(TABLE_WIDTH_MAX, currentColumnWidth(state.activePreview, column) + direction * step),
+        );
+        setColumnWidthDraft(state.activePreview, column.key, width);
+        updateRenderedColumnWidth(column.key, width);
+      }
+
+      function buildInventoryPreview(workspace) {
+        if (typeof engine.getInventoryViewRows !== "function") return null;
+        const inventoryView = engine.getInventoryViewRows(workspace);
+        if (!inventoryView || !Array.isArray(inventoryView.columns) || !Array.isArray(inventoryView.rows)) return null;
+
+        const baseColumns = inventoryView.columns.map((column, index) => ({
+          key: isSafeColumnKey(column?.key)
+            ? column.key
+            : `shipping:inventory:${index}:${encodeURIComponent(String(column?.header || index))}`,
+          header: String(column?.header || ""),
+          numeric: Boolean(column?.numeric),
+          role: column?.role || "",
+        }));
+
+        let purchaseIndex = baseColumns.findIndex((column) => String(column.header).trim() === "규격");
+        purchaseIndex = purchaseIndex >= 0 ? purchaseIndex + 1 : Math.min(3, baseColumns.length);
+        const columns = [...baseColumns];
+        columns.splice(purchaseIndex, 0, {
+          key: "shipping:inventory:purchase",
+          header: "구매",
+          numeric: false,
+          role: "purchase",
+        });
+
+        const rows = inventoryView.rows.map((row) => {
+          const values = Array.isArray(row?.values) ? [...row.values] : [];
+          values.splice(purchaseIndex, 0, row?.purchase ?? "");
+          return values;
+        });
+
+        return {
+          label: "창고별 재고",
+          columns,
+          headers: columns.map((column) => column.header),
+          numeric: columns.map((column, index) => column.numeric ? index : -1).filter((index) => index >= 0),
+          inventory: columns.map((column, index) => column.role === "warehouseQuantity" ? index : -1)
+            .filter((index) => index >= 0),
+          purchase: purchaseIndex,
+          purchaseEditable: true,
+          status: -1,
+          sourceRows: inventoryView.rows,
+          rows,
+          sortByProductCode: true,
+        };
+      }
+
+      function getPreviewDefinitions(workspace) {
+        const purchaseRows = (workspace.purchaseManagement || []).filter(
+          (row) => row?.inventoryShadow !== true,
+        );
+        const purchases = {
+          label: "발주관리",
+          headers: ["상품코드", "품목명", "규격", "구매", "전체 주문", "전재고", "서울 잔량", "추가 구매", "담당", "거래처(단가)", "적요", "적요1", "그룹"],
+          numeric: [4, 5, 6, 7],
+          inventory: [5, 6],
+          purchase: 3,
+          purchaseEditable: true,
+          status: -1,
+          sourceRows: purchaseRows,
+          rows: purchaseRows.map((row) => [
+            row.productCode,
+            row.rowType === "reference" ? `[참고] ${row.productName}` : row.productName,
+            row.specification || row.spec || "",
+            row.rowType === "reference" ? "" : row.purchase,
+            row.rowType === "reference" ? "" : row.totalOrderQuantity,
+            row.inventoryMatched ? row.wholeStockRaw : "",
+            row.inventoryMatched ? row.seoulFirstPurchaseRemaining : "",
+            row.rowType === "reference" ? "" : row.purchaseNeed,
+            row.manager,
+            row.suppliers,
+            row.notes,
+            row.notes1,
+            row.groups,
+          ]),
+          sortByProductCode: true,
+          keepReferenceBlocks: true,
+        };
+        purchases.columns = createPreviewColumns("purchases", purchases.headers, purchases.numeric);
+
+        const allocations = {
+          label: "미출고현황",
+          headers: ["상품코드", "품목명", "규격", "주문수량", "전재고", "서울 잔량", "전재고 배정", "서울 배정", "추가 구매", "구매", "출고판정", "거래처(단가)", "담당", "그룹"],
+          numeric: [3, 4, 5, 6, 7, 8],
+          inventory: [4, 5],
+          purchase: 9,
+          purchaseEditable: false,
+          status: 10,
+          sourceRows: workspace.allocations,
+          rows: workspace.allocations.map((row) => [
+            row.productCode,
+            row.productName,
+            row.specification || row.spec || "",
+            row.quantity,
+            row.inventoryMatched ? row.wholeStockRaw : "",
+            row.inventoryMatched ? row.seoulFirstPurchaseRemaining : "",
+            row.wholeAllocation,
+            row.seoulAllocation,
+            row.purchaseNeed,
+            row.purchase,
+            row.status,
+            row.supplierDisplay,
+            row.manager,
+            row.group,
+          ]),
+          sortByProductCode: true,
+        };
+        allocations.columns = createPreviewColumns("allocations", allocations.headers, allocations.numeric);
+
+        const summaries = {
+          label: "상품별요약",
+          headers: ["상품코드", "품목명", "전체 주문", "전재고", "서울 잔량", "전재고 배정", "서울 배정", "추가 구매", "구매", "출고판정", "주문건수", "담당", "거래처(단가)"],
+          numeric: [2, 3, 4, 5, 6, 7, 10],
+          inventory: [3, 4],
+          purchase: 8,
+          purchaseEditable: false,
+          status: 9,
+          sourceRows: workspace.productSummaries,
+          rows: workspace.productSummaries.map((row) => [
+            row.productCode,
+            row.productName,
+            row.totalOrderQuantity,
+            row.inventoryMatched ? row.wholeStockRaw : "",
+            row.inventoryMatched ? row.seoulFirstPurchaseRemaining : "",
+            row.wholeAllocation,
+            row.seoulAllocation,
+            row.purchaseNeed,
+            row.purchase,
+            row.status,
+            row.orderCount,
+            row.manager,
+            row.suppliers,
+          ]),
+          sortByProductCode: true,
+        };
+        summaries.columns = createPreviewColumns("summaries", summaries.headers, summaries.numeric);
+
+        const validation = {
+          label: "검증결과",
+          headers: ["검증 항목", "계산 결과", "정상 기준", "판정", "설명"],
+          numeric: [1, 2],
+          inventory: [],
+          purchase: -1,
+          purchaseEditable: false,
+          status: 3,
+          sourceRows: workspace.validationResults,
+          rows: workspace.validationResults.map((row) => [
+            row.item,
+            row.result,
+            row.expected,
+            row.status,
+            row.description,
+          ]),
+          sortByProductCode: false,
+        };
+        validation.columns = createPreviewColumns("validation", validation.headers, validation.numeric);
+
+        const definitions = { purchases, allocations, summaries };
+        const inventory = buildInventoryPreview(workspace);
+        if (inventory) definitions.inventory = inventory;
+        definitions.validation = validation;
+        return definitions;
       }
 
       function statusTone(value) {
@@ -2949,12 +3715,162 @@
         return text ? "good" : "";
       }
 
+      function exactWarningUnit(sourceRow) {
+        const specification = String(sourceRow?.specification || sourceRow?.spec || "").trim();
+        return specification === "EA" || specification === "소분";
+      }
+
       function previewRowFill(previewId, sourceRow) {
-        if (!sourceRow || previewId === "validation") return "";
+        if (!sourceRow || previewId === "validation" || previewId === "inventory") return "";
         if (sourceRow.rowType === "reference") return "#f1f5f9";
         const strong = typeof sourceRow.purchaseNeed === "number" && sourceRow.purchaseNeed > 0;
         const color = strong ? sourceRow.managerColors?.strong : sourceRow.managerColors?.base;
         return color ? `#${color}` : "";
+      }
+
+      function previewSearchCorpus(sourceRow, displayRow) {
+        const sourceValues = sourceRow && typeof sourceRow === "object"
+          ? Object.values(sourceRow).filter((value) => ["string", "number"].includes(typeof value))
+          : [];
+        return [
+          ...sourceValues,
+          ...(Array.isArray(displayRow) ? displayRow : []),
+        ].map((value) => String(value ?? "").trim().toLocaleLowerCase("ko-KR"))
+          .filter(Boolean)
+          .join(" ");
+      }
+
+      function rowMatchesView(previewId, pair) {
+        const query = state.searchQuery.trim().toLocaleLowerCase("ko-KR");
+        const queryMatches = !query || previewSearchCorpus(pair.sourceRow, pair.row).includes(query);
+        if (!queryMatches) return false;
+        if (previewId === "validation" || state.specificationFilters.size === 0) return true;
+        const specification = String(
+          pair.sourceRow?.specification ?? pair.sourceRow?.spec ?? pair.row?.[2] ?? "",
+        ).trim();
+        return state.specificationFilters.has(specification);
+      }
+
+      function compareProductCodes(left, right) {
+        const leftCode = String(left?.sourceRow?.productCode ?? left?.row?.[0] ?? "").trim();
+        const rightCode = String(right?.sourceRow?.productCode ?? right?.row?.[0] ?? "").trim();
+        const compared = leftCode.localeCompare(rightCode, "ko-KR", { sensitivity: "base" });
+        return compared || left.index - right.index;
+      }
+
+      function filteredSortedPreviewPairs(previewId, preview) {
+        const pairs = preview.rows.map((row, index) => ({
+          row,
+          sourceRow: preview.sourceRows[index],
+          index,
+        }));
+
+        if (preview.keepReferenceBlocks) {
+          const blocks = [];
+          let activeBlock = null;
+          pairs.forEach((pair) => {
+            const isReference = pair.sourceRow?.rowType === "reference";
+            if (!isReference || !activeBlock) {
+              activeBlock = { main: pair, pairs: [pair] };
+              blocks.push(activeBlock);
+            } else {
+              activeBlock.pairs.push(pair);
+            }
+          });
+          blocks.sort((left, right) => compareProductCodes(left.main, right.main));
+
+          return blocks.flatMap((block) => {
+            if (!state.searchQuery.trim() && state.specificationFilters.size === 0) return block.pairs;
+            const matching = block.pairs.filter((pair) => rowMatchesView(previewId, pair));
+            if (matching.length === 0) return [];
+            if (matching.includes(block.main)) return block.pairs;
+            return [block.main, ...matching.filter((pair) => pair !== block.main)];
+          });
+        }
+
+        const filtered = pairs.filter((pair) => rowMatchesView(previewId, pair));
+        if (preview.sortByProductCode) filtered.sort(compareProductCodes);
+        return filtered;
+      }
+
+      function visibleColumnEntries(preview) {
+        const hidden = hiddenColumnSet(state.activePreview);
+        let entries = preview.columns.map((column, index) => ({ column, index }))
+          .filter(({ column }) => !hidden.has(column.key));
+        if (entries.length === 0 && preview.columns.length > 0) {
+          entries = [{ column: preview.columns[0], index: 0 }];
+        }
+        return entries;
+      }
+
+      function renderTableMarkup(preview, pairs, options = {}) {
+        const editable = options.editable !== false;
+        const resizable = options.resizable !== false;
+        const visibleEntries = visibleColumnEntries(preview);
+        const colgroup = `<colgroup>${visibleEntries.map(({ column }) => {
+          const width = currentColumnWidth(state.activePreview, column);
+          return `<col data-column-key="${escapeHtml(column.key)}" style="width:${width}px">`;
+        }).join("")}</colgroup>`;
+
+        const headers = visibleEntries.map(({ column }) => {
+          const width = currentColumnWidth(state.activePreview, column);
+          const handle = resizable
+            ? `<span class="column-resize-handle" role="separator" tabindex="0"
+                aria-label="${escapeHtml(column.header)} 열폭 조절" aria-orientation="vertical"
+                aria-valuemin="${TABLE_WIDTH_MIN}" aria-valuemax="${TABLE_WIDTH_MAX}" aria-valuenow="${width}"
+                data-column-key="${escapeHtml(column.key)}"></span>`
+            : "";
+          return `<th class="${resizable ? "column-resizable" : ""}">${escapeHtml(column.header)}${handle}</th>`;
+        }).join("");
+
+        const body = pairs.length
+          ? pairs.map(({ row, sourceRow }) => {
+              const referenceRow = sourceRow?.rowType === "reference";
+              const rowFill = previewRowFill(state.activePreview, sourceRow);
+              const rowClasses = [
+                referenceRow ? "reference-row" : "",
+                exactWarningUnit(sourceRow) ? "unit-alert-row" : "",
+              ].filter(Boolean).join(" ");
+              return `
+                <tr class="${rowClasses}">
+                  ${visibleEntries.map(({ column, index }) => {
+                    const value = row[index];
+                    const isNumber = Boolean(column.numeric) && value !== "";
+                    const isStatus = preview.status === index;
+                    const isInventory = !referenceRow && preview.inventory?.includes(index) &&
+                      typeof value === "number" && value !== 0;
+                    const inventoryNegative = state.activePreview === "inventory" &&
+                      isNumber && typeof value === "number" && value < 0;
+                    const isWarning = inventoryNegative ||
+                      (isStatus && statusTone(value) === "bad" && String(value).includes("오류"));
+                    const classes = [
+                      isNumber ? "number" : "",
+                      isStatus ? "status" : "",
+                      isInventory ? "inventory-value" : "",
+                      inventoryNegative ? "inventory-negative" : "",
+                      isWarning ? "warning-value" : "",
+                    ].filter(Boolean).join(" ");
+                    const editablePurchase = editable && preview.purchaseEditable === true &&
+                      preview.purchase === index && !referenceRow;
+                    const content = editablePurchase
+                      ? `<input class="purchase-input" data-purchase-code="${escapeHtml(sourceRow?.productCode || "")}"
+                          value="${escapeHtml(value)}" aria-label="${escapeHtml(sourceRow?.productCode || "")} 구매">`
+                      : escapeHtml(isNumber ? formatNumber(value) : value);
+                    return `<td class="${classes}" style="${rowFill ? `background:#${rowFill.replace(/^#/, "")}` : ""}"
+                      ${isStatus ? `data-tone="${statusTone(value)}"` : ""}
+                      title="${escapeHtml(value)}">${content}</td>`;
+                  }).join("")}
+                </tr>`;
+            }).join("")
+          : `<tr><td colspan="${Math.max(1, visibleEntries.length)}" class="empty-table-cell">표시할 항목이 없습니다.</td></tr>`;
+
+        return `
+          <table class="preview-${state.activePreview} column-width-managed">
+            ${colgroup}
+            <thead><tr>${headers}</tr></thead>
+            <tbody>${body}</tbody>
+          </table>
+        `;
       }
 
       function renderPreview() {
@@ -2968,41 +3884,34 @@
         `).join("");
 
         const preview = definitions[state.activePreview];
-        elements.previewCount.textContent = `${formatNumber(preview.rows.length)}행`;
-        if (!preview.rows.length) {
-          elements.previewTable.innerHTML = `<div class="empty-state">표시할 항목이 없습니다.</div>`;
-          return;
-        }
-        elements.previewTable.innerHTML = `
-          <table>
-            <thead><tr>${preview.headers.map((header) => `<th>${escapeHtml(header)}</th>`).join("")}</tr></thead>
-            <tbody>
-              ${preview.rows.map((row, rowIndex) => {
-                const sourceRow = preview.sourceRows[rowIndex];
-                const referenceRow = sourceRow?.rowType === "reference";
-                const rowFill = previewRowFill(state.activePreview, sourceRow);
-                return `
-                <tr class="${referenceRow ? "reference-row" : ""}">
-                  ${preview.headers.map((_, index) => {
-                    const value = row[index];
-                    const isNumber = preview.numeric.includes(index) && value !== "";
-                    const isStatus = preview.status === index;
-                    const isInventory = !referenceRow && preview.inventory?.includes(index) && typeof value === "number" && value !== 0;
-                    const isWarning = (typeof value === "number" && value < 0) || (isStatus && statusTone(value) === "bad" && String(value).includes("오류"));
-                    const classes = [isNumber ? "number" : "", isStatus ? "status" : "", isInventory ? "inventory-value" : "", isWarning ? "warning-value" : ""].filter(Boolean).join(" ");
-                    const editablePurchase = preview.purchaseEditable === true && preview.purchase === index && !referenceRow;
-                    const content = editablePurchase
-                      ? `<input class="purchase-input" data-purchase-code="${escapeHtml(sourceRow.productCode)}" value="${escapeHtml(value)}" aria-label="${escapeHtml(sourceRow.productCode)} 구매">`
-                      : escapeHtml(isNumber ? formatNumber(value) : value);
-                    return `<td class="${classes}" style="${rowFill ? `background:#${rowFill.replace(/^#/, "")}` : ""}"
-                      ${isStatus ? `data-tone="${statusTone(value)}"` : ""}
-                      title="${escapeHtml(value)}">${content}</td>`;
-                  }).join("")}
-                </tr>
-              `;}).join("")}
-            </tbody>
-          </table>
+        const pairs = filteredSortedPreviewPairs(state.activePreview, preview);
+        elements.previewCount.textContent = preview.sortByProductCode
+          ? `${formatNumber(pairs.length)}/${formatNumber(preview.rows.length)}행 · 품목코드↑`
+          : `${formatNumber(pairs.length)}/${formatNumber(preview.rows.length)}행`;
+
+        elements.specFilterGroup.disabled = state.activePreview === "validation";
+        renderColumnVisibilityMenu(preview);
+        elements.previewTable.innerHTML = renderTableMarkup(preview, pairs, { editable: true, resizable: true });
+        updateColumnWidthToolbar();
+      }
+
+      function printActiveTable() {
+        if (!state.workspace) return;
+        const definitions = getPreviewDefinitions(state.workspace);
+        const preview = definitions[state.activePreview] || definitions.purchases;
+        const pairs = filteredSortedPreviewPairs(state.activePreview, preview);
+        elements.printArea.innerHTML = `
+          <h1>orderops · ${escapeHtml(preview.label)}</h1>
+          ${renderTableMarkup(preview, pairs, { editable: false, resizable: false })}
         `;
+        document.body.classList.add("printing-table");
+        const cleanup = () => {
+          document.body.classList.remove("printing-table");
+          window.removeEventListener("afterprint", cleanup);
+        };
+        window.addEventListener("afterprint", cleanup);
+        window.print();
+        window.setTimeout(cleanup, 1200);
       }
 
       function renderResults() {
@@ -3068,6 +3977,12 @@
             }));
             state.workspace = engine.analyze(state.orders, state.inventory, { sourceFingerprint });
             state.activePreview = "purchases";
+            state.searchQuery = "";
+            state.specificationFilters.clear();
+            elements.tableSearchInput.value = "";
+            elements.specFilterGroup.querySelectorAll("input[type='checkbox']").forEach((input) => {
+              input.checked = false;
+            });
             renderResults();
             scheduleLocalSave();
             elements.resultsPanel.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -3255,6 +4170,12 @@
           state.workspace = plan.workspace;
           engine.applyPurchaseInputs(state.workspace, plan.purchaseInputs);
           state.activePreview = plan.activePreview || "purchases";
+          state.searchQuery = "";
+          state.specificationFilters.clear();
+          elements.tableSearchInput.value = "";
+          elements.specFilterGroup.querySelectorAll("input[type='checkbox']").forEach((input) => {
+            input.checked = false;
+          });
           renderResults();
           scheduleLocalSave();
           setSystemMessage(`cloud revision loaded... (${selected.revision})`);
@@ -3332,9 +4253,67 @@
         runAnalysis();
       });
 
+      state.columnWidthSettings = loadColumnWidthSettings();
+      state.hiddenColumnSettings = loadHiddenColumnSettings();
+
       elements.analyzeButton.addEventListener("click", runAnalysis);
       elements.downloadButton.addEventListener("click", downloadResult);
       elements.purchaseUploadButton.addEventListener("click", downloadPurchaseUpload);
+      elements.printButton.addEventListener("click", printActiveTable);
+      elements.columnWidthSaveButton.addEventListener("click", persistActiveColumnWidths);
+      elements.columnWidthResetButton.addEventListener("click", resetActiveColumnWidths);
+      elements.tableSearchInput.addEventListener("input", () => {
+        state.searchQuery = elements.tableSearchInput.value;
+        if (state.workspace) renderPreview();
+      });
+      elements.specFilterGroup.addEventListener("change", (event) => {
+        const input = event.target.closest("input[type='checkbox']");
+        if (!input) return;
+        if (input.checked) state.specificationFilters.add(input.value);
+        else state.specificationFilters.delete(input.value);
+        if (state.workspace) renderPreview();
+      });
+      elements.columnVisibilityButton.addEventListener("click", () => {
+        const open = elements.columnVisibilityMenu.classList.contains("hidden");
+        elements.columnVisibilityMenu.classList.toggle("hidden", !open);
+        elements.columnVisibilityButton.setAttribute("aria-expanded", String(open));
+      });
+      elements.columnVisibilityMenu.addEventListener("change", (event) => {
+        const input = event.target.closest("[data-column-visible]");
+        if (!input || !state.workspace) return;
+        const definitions = getPreviewDefinitions(state.workspace);
+        const preview = definitions[state.activePreview];
+        if (!preview) return;
+        const hidden = hiddenColumnSet(state.activePreview);
+        const visibleCount = preview.columns.filter((column) => !hidden.has(column.key)).length;
+        if (!input.checked && visibleCount <= 1) {
+          input.checked = true;
+          showToast("최소 한 개의 열은 표시해야 합니다.", true);
+          return;
+        }
+        setColumnVisible(state.activePreview, input.dataset.columnVisible, input.checked);
+        renderPreview();
+        elements.columnVisibilityMenu.classList.remove("hidden");
+        elements.columnVisibilityButton.setAttribute("aria-expanded", "true");
+      });
+      elements.columnVisibilityMenu.addEventListener("click", (event) => {
+        const button = event.target.closest("[data-show-all-columns]");
+        if (!button) return;
+        showAllColumns();
+        elements.columnVisibilityMenu.classList.remove("hidden");
+        elements.columnVisibilityButton.setAttribute("aria-expanded", "true");
+      });
+      document.addEventListener("click", (event) => {
+        if (event.target.closest(".column-visibility")) return;
+        elements.columnVisibilityMenu.classList.add("hidden");
+        elements.columnVisibilityButton.setAttribute("aria-expanded", "false");
+      });
+      document.addEventListener("keydown", (event) => {
+        if (event.key !== "Escape") return;
+        elements.columnVisibilityMenu.classList.add("hidden");
+        elements.columnVisibilityButton.setAttribute("aria-expanded", "false");
+      });
+
       elements.previewTabs.addEventListener("click", (event) => {
         const button = event.target.closest("[data-preview]");
         if (!button || !state.workspace) return;
@@ -3344,15 +4323,17 @@
       });
       elements.previewTable.addEventListener("input", (event) => {
         const input = event.target.closest("[data-purchase-code]");
-        if (!input || !state.workspace || state.activePreview !== "purchases") return;
+        if (!input || !state.workspace || !["purchases", "inventory"].includes(state.activePreview)) return;
         engine.setPurchaseValue(state.workspace, input.dataset.purchaseCode, input.value);
         scheduleLocalSave();
       });
       elements.previewTable.addEventListener("change", (event) => {
         const input = event.target.closest("[data-purchase-code]");
-        if (!input || !state.workspace || state.activePreview !== "purchases") return;
+        if (!input || !state.workspace || !["purchases", "inventory"].includes(state.activePreview)) return;
         renderResults();
       });
+      elements.previewTable.addEventListener("pointerdown", beginColumnResize);
+      elements.previewTable.addEventListener("keydown", handleColumnResizeKeydown);
       elements.restoreButton.addEventListener("click", () => {
         try { restoreLocalRecord(state.recoveryRecord); }
         catch (error) {
