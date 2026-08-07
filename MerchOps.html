@@ -4,12 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.175R2_PreviousPromoApplyMVP]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.175R2.1_InventoryF8ScopedValidationFix]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script>
+    // v2.1.175R2.1: 재고 F8 범위검증 수정 - 필터/제외/선택 후 출력은 현재 출력대상만 검증하며 전체 DataOps 원본 누락으로 차단하지 않는다.
     // v2.1.175R2: 전행사적용 MVP - 마스터 전행사상품 모아보기, 오늘 행사가 공란에만 승계, 오늘 견적/수기값 보호, 해제 시 값 유지·전체보기 복귀.
     // [M-BOOT-GUARD-01] 흰 화면 방지: 외부 런타임 또는 초기화 오류를 빈 화면 대신 진단 패널로 표시한다.
     (function installMerchOpsBootGuard(global) {
@@ -3511,6 +3512,7 @@
         // ============================================================
         // [M-INVENTORY-F8-01] DataOps 재고 원본 보존 및 F8 코드단위 투영
         // 역할: Lot 원본행은 그대로 보존하고 F8 출력에서만 상품코드별 재고수량을 합산한다.
+        // 검증기준은 전체 원본이 아니라 필터·제외·선택이 반영된 '현재 출력대상'이다.
         // 단가/원가는 합산하지 않으며 DataOps 기본 대표단가 기준과 같은 latest 대표 Lot을 사용한다.
         // ============================================================
         window.MERCH_INVENTORY_F8_MODULE = window.MERCH_INVENTORY_F8_MODULE || (() => {
@@ -3669,7 +3671,7 @@
             const formatValidationMessage = (result = {}) => {
                 const lines = [
                     '재고 F8 생성이 차단되었습니다.',
-                    `원본 ${result.expectedRowCount || 0}행 / ${result.expectedCodeCount || 0}코드 / 재고합계 ${parseNumber(result.expectedStockTotal).toLocaleString()}`,
+                    `출력대상 원본 ${result.expectedRowCount || 0}행 / ${result.expectedCodeCount || 0}코드 / 재고합계 ${parseNumber(result.expectedStockTotal).toLocaleString()}`,
                     `출력예정 ${result.outputRowCount || 0}행 / ${result.outputCodeCount || 0}코드 / 재고합계 ${parseNumber(result.actualStockTotal).toLocaleString()}`
                 ];
                 if (result.missingCodes?.length) lines.push(`누락 ${result.missingCodes.length}코드: ${formatCodeList(result.missingCodes)}`);
@@ -3680,7 +3682,7 @@
                     lines.push(`재고합계 차이 ${sign}${parseNumber(result.stockDifference).toLocaleString()} (출력-원본)`);
                 }
                 if (result.orderMatches === false) lines.push('쇼핑몰업로드/ERP업데이트 상품코드 집합 또는 순서가 일치하지 않습니다.');
-                lines.push('DataOps 원본과 작업 결과를 확인한 뒤 다시 생성하세요.');
+                lines.push('현재 출력대상과 생성 결과를 확인한 뒤 다시 생성하세요.');
                 return lines.join('\n');
             };
             return Object.freeze({
@@ -8713,15 +8715,17 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
         }
         let inventoryF8SourceSnapshot = null;
         if (inventoryTargetCount === targetRows.length && inventoryF8Module) {
-            const managedInventoryRows = Object.values(data.managedItems || {}).filter(row => inventoryF8Module.isInventoryRow(row));
-            inventoryF8SourceSnapshot = window.__MERCHOPS_INVENTORY_F8_SOURCE_SNAPSHOT
-                || inventoryF8Module.captureSourceSnapshot(managedInventoryRows.length > 0 ? managedInventoryRows : targetRows);
+            // [M-INVENTORY-F8-SCOPE-01] F8은 '현재 출력대상'을 검증한다.
+            // 재고 원본 전체 스냅샷과 비교하면 사용자가 행사상품 필터·제외·선택으로 의도적으로 줄인 출력도
+            // 대량 누락/재고합계 차이로 오판정되어 차단된다.
+            // 따라서 필터/제외/선택이 모두 반영된 targetRows를 검증 기준으로 고정한 뒤 코드단위로 집계한다.
+            inventoryF8SourceSnapshot = inventoryF8Module.captureSourceSnapshot(targetRows);
             // Lot 원본행과 source는 그대로 두고 이번 F8 출력 배열에서만 코드단위 단일행으로 투영한다.
             targetRows = inventoryF8Module.aggregateRows(targetRows);
         }
         const workflowText = activeWorkflowSteps.map(step => step.label || window.MERCH_EXECUTION_ACTION_LABELS?.[step.operation] || step.operation).filter(Boolean).join(' + ');
         const targetText = inventoryF8SourceSnapshot
-            ? 'DataOps 재고 원본의 상품코드 집계'
+            ? '현재 재고 출력범위의 상품코드 집계'
             : (hasWorkflowOutput ? '양식 실행 결과 전체' : (ui.selectedRows.size > 0 ? '선택상품' : '현재 화면 전체'));
         // 쇼핑몰 정보출력은 실제 원본행을 가진 상품만 허용한다.
         // sources.info 빈 객체나 현재 역할만 info인 마스터 행은 출력대상에서 제외해 대량 빈 행 생성을 방지한다.
@@ -13324,7 +13328,7 @@ const WelcomeGuide = ({ onUpload, onCloudSync }) => (React.createElement("div", 
         React.createElement("i", { className: "fas fa-box-open" }),
         React.createElement("div", { className: "absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm" },
             React.createElement("i", { className: "fas fa-check" }))),
-    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.175R2_PreviousPromoApplyMVP]"),
+    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.175R2.1_InventoryF8ScopedValidationFix]"),
     React.createElement("p", { className: "text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold" },
         "\uD604\uC7AC \uB4F1\uB85D\uB41C ",
         React.createElement("span", { className: "text-indigo-500" }, "\uB9C8\uC2A4\uD130 \uC0C1\uD488 \uB370\uC774\uD130"),
@@ -13975,7 +13979,7 @@ const App = () => {
                                 React.createElement("div", { className: "flex flex-col border-l-2 border-slate-700 pl-3" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "MerchOps"),
-                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.175R2_PreviousPromoApplyMVP")),
+                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.175R2.1_InventoryF8ScopedValidationFix")),
                                     React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "MAIN WORKSPACE"))),
                             React.createElement(SystemConsole, { itemCount: Object.keys(data.masterProducts).length, isProcessing: ui.isProcessing, processMsg: ui.processMsg, estimateCount: Object.keys(data.managedItems).length, filteredCount: fullDisplayRows.length, activeTags: ui.activeTags, masterLookupMode: data.masterLookupMode }),
                             React.createElement("nav", { className: "flex gap-1.5 text-[14px] shrink-0 items-center" },
