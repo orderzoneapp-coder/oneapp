@@ -12,1704 +12,443 @@
   <style>
     :root {
       color-scheme: light;
-      --navy-950: #07101f;
-      --navy-900: #0b162a;
-      --navy-800: #153b55;
-      --slate-900: #0f172a;
-      --slate-700: #334155;
-      --slate-600: #475569;
-      --slate-500: #64748b;
-      --slate-400: #94a3b8;
-      --slate-300: #cbd5e1;
-      --slate-200: #e2e8f0;
-      --slate-100: #f1f5f9;
       --slate-50: #f8fafc;
+      --slate-100: #f1f5f9;
+      --slate-200: #e2e8f0;
+      --slate-300: #cbd5e1;
+      --slate-400: #94a3b8;
+      --slate-500: #64748b;
+      --slate-600: #475569;
+      --slate-700: #334155;
+      --slate-800: #1e293b;
+      --slate-900: #0f172a;
+      --blue-600: #2563eb;
+      --teal-500: #14b8a6;
+      --teal-400: #2dd4bf;
       --white: #ffffff;
-      --teal-700: #0f766e;
-      --teal-600: #0d9488;
-      --teal-100: #ccfbf1;
-      --blue-700: #1d4ed8;
-      --blue-100: #dbeafe;
-      --amber-700: #b45309;
-      --amber-100: #fef3c7;
-      --red-700: #b91c1c;
-      --red-100: #fee2e2;
-      --green-700: #15803d;
-      --green-100: #dcfce7;
-      --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.05);
-      --shadow-md: 0 16px 40px rgba(15, 23, 42, 0.08);
+      --panel-bg: #1c2331; /* DataOps Dark Theme */
+      --panel-border: #2a3441;
     }
 
     * { box-sizing: border-box; }
-    html { min-width: 320px; background: var(--slate-50); }
+    html { min-width: 320px; background: var(--white); }
     body {
       margin: 0;
       min-height: 100vh;
-      font-family: Pretendard, "Noto Sans KR", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-family: Pretendard, "Noto Sans KR", -apple-system, sans-serif;
       color: var(--slate-900);
-      background:
-        radial-gradient(circle at top right, rgba(13, 148, 136, 0.08), transparent 32rem),
-        var(--slate-50);
+      background: var(--white);
     }
     button, input { font: inherit; }
     button { cursor: pointer; }
     button:disabled { cursor: not-allowed; }
     .hidden { display: none !important; }
 
+    /* Header matching the image */
     .global-header {
-      position: sticky;
-      top: 0;
-      z-index: 50;
-      height: 72px;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 0 28px;
-      color: var(--white);
-      background: var(--navy-950);
-      border-bottom: 1px solid rgba(148, 163, 184, 0.2);
-      box-shadow: 0 8px 28px rgba(7, 16, 31, 0.22);
+      height: 60px;
+      padding: 0 24px;
+      background: var(--white);
+      border-bottom: 1px solid var(--slate-200);
     }
     .brand {
       display: flex;
       align-items: center;
-      min-width: 0;
-      gap: 16px;
+      gap: 8px;
     }
     .brand-mark {
-      font-size: 23px;
-      line-height: 1;
-      font-weight: 900;
-      letter-spacing: 0.08em;
-    }
-    .brand-divider { width: 2px; height: 34px; background: #334155; }
-    .brand-stack { min-width: 0; }
-    .brand-suite {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      color: #5eead4;
-      font-size: 12px;
-      font-weight: 900;
-      letter-spacing: 0.18em;
-    }
-    .brand-badge {
-      padding: 2px 6px;
-      border: 1px solid rgba(94, 234, 212, 0.35);
-      border-radius: 5px;
-      color: #5eead4;
-      background: rgba(13, 148, 136, 0.12);
-      font-size: 9px;
-      letter-spacing: 0.08em;
-    }
-    .brand-product {
-      overflow: hidden;
-      margin-top: 3px;
-      color: var(--slate-300);
-      font-size: 12px;
-      font-weight: 700;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-    .header-link {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      min-height: 38px;
-      padding: 0 14px;
-      border: 1px solid rgba(148, 163, 184, 0.3);
-      border-radius: 9px;
-      color: var(--slate-200);
-      background: rgba(255, 255, 255, 0.03);
-      font-size: 13px;
-      font-weight: 800;
-      text-decoration: none;
-      transition: 0.16s ease;
-    }
-    .header-link:hover { border-color: #5eead4; color: #5eead4; }
-
-    .page-shell {
-      width: min(1480px, calc(100% - 40px));
-      margin: 0 auto;
-      padding: 34px 0 56px;
-    }
-
-    .panel {
-      border: 1px solid var(--slate-200);
-      border-radius: 16px;
-      background: rgba(255, 255, 255, 0.96);
-      box-shadow: var(--shadow-md);
-    }
-    .input-panel { padding: 22px; }
-
-    .upload-grid {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 16px;
-    }
-    .upload-card {
-      min-width: 0;
-      border: 1px solid var(--slate-200);
-      border-radius: 14px;
-      background: var(--slate-50);
-      transition: 0.16s ease;
-    }
-    .upload-card.has-file { border-color: #99f6e4; background: #f0fdfa; }
-    .upload-card.has-error { border-color: #fecaca; background: #fff7f7; }
-    .drop-zone {
-      display: grid;
-      grid-template-columns: auto minmax(0, 1fr);
-      align-items: center;
-      gap: 14px;
-      min-height: 122px;
-      padding: 18px;
-      border: 2px dashed transparent;
-      border-radius: 14px;
-      outline: none;
-    }
-    .drop-zone:focus-visible { border-color: var(--teal-600); }
-    .drop-zone.dragover { border-color: var(--teal-600); background: var(--teal-100); }
-    .file-icon {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      width: 46px;
-      height: 46px;
-      border-radius: 12px;
-      color: var(--teal-700);
-      background: var(--teal-100);
+      color: var(--blue-600);
       font-size: 20px;
-      font-weight: 900;
-    }
-    .drop-title {
-      margin: 0;
-      font-size: 14px;
-      font-weight: 900;
-    }
-    .drop-help {
-      overflow: hidden;
-      margin: 5px 0 0;
-      color: var(--slate-500);
-      font-size: 12px;
-      line-height: 1.5;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-    .validation-box {
-      margin-top: 16px;
-      padding: 14px 16px;
-      border: 1px solid var(--slate-200);
-      border-radius: 12px;
-      background: var(--slate-50);
-    }
-    .validation-box.good { border-color: #bbf7d0; background: #f0fdf4; }
-    .validation-box.bad { border-color: #fecaca; background: #fff7f7; }
-    .validation-title {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin: 0;
-      font-size: 13px;
-      font-weight: 900;
-    }
-    .validation-detail {
-      margin: 6px 0 0;
-      color: var(--slate-600);
-      font-size: 12px;
-      line-height: 1.6;
-    }
-    .validation-list { margin: 8px 0 0; padding-left: 18px; color: var(--red-700); }
-    .validation-list li { margin: 3px 0; font-size: 12px; line-height: 1.45; }
-
-    .action-bar {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 16px;
-      margin-top: 18px;
-      padding-top: 18px;
-      border-top: 1px solid var(--slate-200);
-    }
-    .action-note {
-      color: var(--slate-500);
-      font-size: 12px;
-      line-height: 1.55;
-    }
-    .primary-button {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 9px;
-      min-width: 168px;
-      min-height: 46px;
-      padding: 0 20px;
-      border: 0;
-      border-radius: 11px;
-      color: var(--white);
-      background: var(--teal-700);
-      box-shadow: 0 9px 22px rgba(15, 118, 110, 0.22);
-      font-size: 14px;
-      font-weight: 900;
-      transition: 0.16s ease;
-    }
-    .primary-button:hover:not(:disabled) { background: #115e59; transform: translateY(-1px); }
-    .primary-button:disabled {
-      color: var(--slate-400);
-      background: var(--slate-200);
-      box-shadow: none;
-    }
-
-    .results-panel { margin-top: 20px; overflow: hidden; }
-    .results-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 18px;
-      padding: 20px 22px;
-      color: var(--white);
-      background: var(--navy-800);
-    }
-    .results-header h2 { margin: 0; font-size: 18px; }
-    .results-header p { margin: 5px 0 0; color: #cbd5e1; font-size: 12px; }
-    .download-button {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 9px;
-      min-height: 44px;
-      padding: 0 18px;
-      border: 0;
-      border-radius: 10px;
-      color: var(--navy-900);
-      background: #5eead4;
-      font-size: 13px;
-      font-weight: 900;
-      box-shadow: 0 8px 18px rgba(15, 23, 42, 0.18);
-    }
-    .download-button:hover { background: #99f6e4; }
-    .summary-grid {
-      display: grid;
-      grid-template-columns: repeat(6, minmax(0, 1fr));
-      gap: 1px;
-      background: var(--slate-200);
-      border-bottom: 1px solid var(--slate-200);
-    }
-    .summary-card {
-      min-width: 0;
-      padding: 17px 18px;
-      background: var(--white);
-    }
-    .summary-label {
-      color: var(--slate-500);
-      font-size: 10px;
-      font-weight: 900;
-      letter-spacing: 0.04em;
-    }
-    .summary-value {
-      margin-top: 7px;
-      font-size: 23px;
-      font-weight: 900;
-      letter-spacing: -0.04em;
-    }
-    .summary-value.warn { color: var(--amber-700); }
-    .summary-value.bad { color: var(--red-700); }
-    .purchase-upload-notice {
-      padding: 10px 18px;
-      border-bottom: 1px solid var(--slate-200);
-      color: var(--slate-600);
-      background: #fff7ed;
-      font-size: 11px;
-      line-height: 1.55;
-    }
-    .purchase-upload-notice.bad { color: var(--red-700); background: var(--red-100); }
-
-    .preview-toolbar {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 14px;
-      padding: 14px 18px 0;
-      background: var(--white);
-    }
-    .preview-tabs {
-      display: flex;
-      align-items: center;
-      gap: 5px;
-      overflow-x: auto;
-      padding-bottom: 10px;
-      scrollbar-width: thin;
-    }
-    .tab-button {
-      flex: 0 0 auto;
-      min-height: 35px;
-      padding: 0 12px;
-      border: 1px solid var(--slate-200);
-      border-radius: 8px;
-      color: var(--slate-600);
-      background: var(--white);
-      font-size: 11px;
-      font-weight: 900;
-    }
-    .tab-button.active { border-color: var(--teal-700); color: var(--white); background: var(--teal-700); }
-    .preview-count {
-      flex: 0 0 auto;
-      padding-bottom: 10px;
-      color: var(--slate-500);
-      font-size: 11px;
-      font-weight: 800;
-    }
-    .table-wrap {
-      overflow: auto;
-      max-height: 520px;
-      border-top: 1px solid var(--slate-200);
-      background: var(--white);
-    }
-    table {
-      width: 100%;
-      min-width: 980px;
-      border-collapse: separate;
-      border-spacing: 0;
-      font-size: 11px;
-    }
-    th {
-      position: sticky;
-      top: 0;
-      z-index: 2;
-      padding: 10px 11px;
-      color: var(--white);
-      background: var(--slate-700);
-      border-right: 1px solid rgba(255, 255, 255, 0.12);
-      text-align: left;
-      white-space: nowrap;
-    }
-    td {
-      max-width: 300px;
-      padding: 9px 11px;
-      color: var(--slate-700);
-      background: var(--white);
-      border-right: 1px solid var(--slate-100);
-      border-bottom: 1px solid var(--slate-200);
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-    tbody tr:nth-child(even) td { background: var(--slate-50); }
-    td.number { text-align: right; font-variant-numeric: tabular-nums; }
-    td.status { font-weight: 900; }
-    td.status[data-tone="good"] { color: var(--green-700); }
-    td.status[data-tone="warn"] { color: var(--amber-700); }
-    td.status[data-tone="bad"] { color: var(--red-700); }
-    .empty-state {
-      padding: 44px 20px;
-      color: var(--slate-500);
-      text-align: center;
-      font-size: 13px;
-    }
-    .result-footnote {
-      padding: 14px 18px 18px;
-      color: var(--slate-500);
-      background: var(--white);
-      font-size: 11px;
-      line-height: 1.6;
-    }
-    .workspace-storage {
-      padding: 10px 12px 12px;
-      border-top: 1px solid #334155;
-      color: var(--slate-200);
-      background: #172033;
-    }
-    .recovery-banner {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin-bottom: 8px;
-      padding: 8px 10px;
-      border: 1px solid #0d9488;
-      border-radius: 6px;
-      color: #ccfbf1;
-      background: #12352f;
-      font-size: 11px;
-    }
-    .recovery-banner span { flex: 1 1 auto; }
-    .recovery-banner button,
-    .cloud-grid button,
-    .cloud-grid select,
-    .cloud-grid input {
-      min-height: 31px;
-      border: 1px solid #475569;
-      border-radius: 5px;
-      color: var(--slate-100);
-      background: #0f172a;
-      font-size: 10px;
-    }
-    .recovery-banner button,
-    .cloud-grid button { padding: 0 10px; font-weight: 900; }
-    .cloud-grid button:hover:not(:disabled) { border-color: #5eead4; color: #5eead4; }
-    .cloud-grid button:disabled { color: var(--slate-500); cursor: not-allowed; }
-    .cloud-grid {
-      display: grid;
-      grid-template-columns: minmax(220px, 2fr) minmax(150px, 1fr) minmax(130px, 1fr) auto auto minmax(210px, 1.5fr) auto auto;
-      align-items: end;
-      gap: 7px;
-    }
-    .cloud-grid label {
-      display: grid;
-      gap: 3px;
-      color: var(--slate-400);
-      font-size: 9px;
-      font-weight: 800;
-    }
-    .cloud-grid input,
-    .cloud-grid select { width: 100%; padding: 0 8px; }
-    .storage-note { margin: 7px 0 0; color: var(--slate-400); font-size: 9px; }
-    .result-actions { display: flex; align-items: center; gap: 8px; }
-    .secondary-download { color: var(--white); background: #2563eb; }
-    .secondary-download:hover { background: #3b82f6; }
-    .purchase-input {
-      width: 100%;
-      min-width: 100px;
-      height: 27px;
-      padding: 2px 7px;
-      border: 1px solid #94a3b8;
-      border-radius: 4px;
-      color: var(--slate-900);
-      background: rgba(255, 255, 255, 0.9);
-      font-size: 11px;
-    }
-    tr.reference-row td { color: var(--slate-600); font-style: italic; }
-    td.inventory-value { background: var(--green-100) !important; }
-    td.warning-value { color: var(--red-700) !important; background: var(--red-100) !important; font-weight: 900; }
-
-    .page-footer {
-      display: flex;
-      justify-content: space-between;
-      gap: 18px;
-      margin-top: 18px;
-      color: var(--slate-500);
-      font-size: 11px;
-    }
-    .page-footer a { color: var(--teal-700); font-weight: 800; }
-    .toast {
-      position: fixed;
-      right: 22px;
-      bottom: 22px;
-      z-index: 100;
-      max-width: min(420px, calc(100% - 44px));
-      padding: 13px 16px;
-      border-radius: 10px;
-      color: var(--white);
-      background: var(--navy-900);
-      box-shadow: 0 18px 42px rgba(15, 23, 42, 0.28);
-      font-size: 12px;
-      font-weight: 800;
-      line-height: 1.5;
-    }
-    .toast.error { background: var(--red-700); }
-
-    @media (max-width: 1050px) {
-      .summary-grid { grid-template-columns: repeat(3, 1fr); }
-      .upload-grid { grid-template-columns: 1fr; }
-      .cloud-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    }
-    @media (max-width: 680px) {
-      .global-header { height: 64px; padding: 0 16px; }
-      .brand-mark { font-size: 18px; }
-      .brand-divider { height: 28px; }
-      .brand-product { display: none; }
-      .header-link span { display: none; }
-      .page-shell { width: min(100% - 24px, 1480px); padding-top: 24px; }
-      .input-panel { padding: 16px; }
-      .drop-zone { grid-template-columns: auto minmax(0, 1fr); }
-      .action-bar, .results-header { align-items: stretch; flex-direction: column; }
-      .primary-button, .download-button { width: 100%; }
-      .summary-grid { grid-template-columns: repeat(2, 1fr); }
-      .preview-toolbar { align-items: stretch; flex-direction: column; }
-      .preview-count { padding: 0 0 10px; }
-      .page-footer { flex-direction: column; }
-      .result-actions { align-items: stretch; flex-direction: column; }
-    }
-
-    /* ONEAPP common workbench: DataOps-aligned System.IO shell */
-    body {
-      background: #f8fafc;
-    }
-    .global-header {
-      position: relative;
-      height: 58px;
-      padding: 0 max(20px, calc((100% - 1240px) / 2));
-      color: var(--slate-900);
-      background: var(--white);
-      border-bottom: 1px solid var(--slate-200);
-      box-shadow: var(--shadow-sm);
-    }
-    .brand { gap: 9px; }
-    .brand-mark {
-      color: #2563eb;
-      font-size: 19px;
-      letter-spacing: -0.04em;
-    }
-    .brand-divider { display: none; }
-    .brand-stack {
-      display: flex;
-      align-items: center;
-      gap: 9px;
-    }
-    .brand-suite {
-      color: var(--slate-900);
-      font-size: 17px;
-      letter-spacing: -0.025em;
-    }
-    .brand-badge {
-      border-color: var(--slate-200);
-      color: var(--slate-500);
-      background: var(--slate-100);
-      box-shadow: var(--shadow-sm);
-    }
-    .brand-product {
-      margin: 0;
-      color: var(--slate-500);
-      font-size: 11px;
-      font-weight: 700;
-    }
-    .header-link {
-      min-height: 34px;
-      border-color: var(--slate-300);
-      border-radius: 5px;
-      color: var(--slate-700);
-      background: var(--white);
-      font-size: 12px;
-      box-shadow: var(--shadow-sm);
-    }
-    .header-link:hover {
-      border-color: var(--blue-700);
-      color: var(--blue-700);
-      background: #eff6ff;
-    }
-    .page-shell {
-      width: min(1240px, calc(100% - 32px));
-      padding: 0 0 40px;
-    }
-    .system-workbench {
-      overflow: hidden;
-      margin-top: 2px;
-      border: 1px solid #1e293b;
-      border-radius: 0 0 16px 16px;
-      background: var(--navy-900);
-      box-shadow: 0 14px 34px rgba(15, 23, 42, 0.13);
-    }
-    .system-topbar {
-      display: flex;
-      align-items: center;
-      gap: 16px;
-      min-height: 62px;
-      padding: 12px 18px;
-      border-bottom: 1px solid #334155;
-      background: #0f172a;
-    }
-    .system-name {
-      flex: 0 0 auto;
-      color: var(--slate-200);
-      font-size: 16px;
       font-weight: 900;
       letter-spacing: -0.02em;
     }
-    .system-console {
-      display: flex;
-      align-items: center;
-      width: min(560px, 100%);
-      min-width: 0;
-      min-height: 34px;
-      padding: 6px 11px;
-      border: 1px solid #475569;
-      border-radius: 5px;
-      color: #34d399;
-      background: #020617;
-      box-shadow: inset 0 1px 5px rgba(0, 0, 0, 0.45);
-      font: 700 12px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    .brand-suite {
+      color: var(--slate-900);
+      font-size: 18px;
+      font-weight: 700;
     }
-    .system-message {
-      flex: 1 1 auto;
-      min-width: 0;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-    .system-cursor {
-      flex: 0 0 auto;
-      width: 6px;
-      height: 15px;
-      margin-left: 8px;
-      background: #34d399;
-      animation: system-cursor 1.1s steps(1) infinite;
-    }
-    @keyframes system-cursor { 50% { opacity: 0.25; } }
-    @media (prefers-reduced-motion: reduce) {
-      .system-cursor { animation: none; }
-    }
-    .system-mode {
-      flex: 0 0 auto;
-      margin-left: auto;
-      color: var(--slate-300);
+    .brand-badge {
+      margin-left: 6px;
+      padding: 2px 8px;
+      border: 1px solid var(--slate-200);
+      border-radius: 12px;
+      color: var(--slate-500);
       font-size: 11px;
-      font-weight: 800;
-      white-space: nowrap;
+      font-weight: 600;
     }
-    .system-mode strong { color: #5eead4; }
-    .input-panel {
-      display: grid;
-      grid-template-areas:
-        "uploads uploads analyze"
-        "validation note note";
-      grid-template-columns: minmax(0, 1fr) minmax(245px, 300px) 120px;
-      gap: 8px;
-      padding: 10px 12px 12px;
-      border: 0;
-      border-radius: 0;
-      color: var(--slate-200);
-      background: #1e293b;
-      box-shadow: none;
-    }
-    .upload-grid {
-      grid-area: uploads;
-      gap: 8px;
-    }
-    .upload-card {
-      display: block;
-      overflow: hidden;
-      border-color: #475569;
-      border-radius: 6px;
-      background: #273449;
-    }
-    .upload-card.has-file { border-color: #2dd4bf; background: #15383b; }
-    .upload-card.has-error { border-color: #fb7185; background: #3f2533; }
-    .drop-zone {
-      min-height: 60px;
-      padding: 8px 12px;
-      border-radius: 6px;
-    }
-    .drop-zone:focus-visible { border-color: #67e8f9; }
-    .drop-zone.dragover { border-color: #2dd4bf; background: rgba(13, 148, 136, 0.2); }
-    .file-icon {
-      width: 30px;
-      height: 30px;
-      border-radius: 5px;
-      color: #99f6e4;
-      background: rgba(13, 148, 136, 0.26);
-      font-size: 13px;
-    }
-    .drop-title { color: var(--white); font-size: 12px; }
-    .drop-help { margin-top: 2px; color: var(--slate-400); font-size: 10px; }
-    .validation-box {
-      grid-area: validation;
-      min-width: 0;
-      margin: 0;
-      padding: 7px 10px;
-      border-color: #475569;
-      border-radius: 7px;
-      background: #172033;
-    }
-    .validation-box.good { border-color: #059669; background: #12352f; }
-    .validation-box.bad { border-color: #e11d48; background: #3b1f2c; }
-    .validation-title { color: var(--slate-100); font-size: 11px; }
-    .validation-detail { margin-top: 2px; color: var(--slate-400); font-size: 10px; line-height: 1.35; }
-    .validation-list { color: #fda4af; }
-    .action-bar {
-      grid-area: analyze;
-      align-self: stretch;
-      margin: 0;
-      padding: 0;
-      border: 0;
-    }
-    .action-note {
-      grid-area: note;
-      align-self: center;
-      max-width: none;
-      color: var(--slate-400);
-      font-size: 9px;
-      line-height: 1.35;
-    }
-    .primary-button {
-      width: 120px;
-      min-width: 120px;
-      min-height: 60px;
-      height: 100%;
-      padding: 0 12px;
-      border-radius: 6px;
-      color: #0f172a;
-      background: #5eead4;
-      box-shadow: 0 8px 18px rgba(15, 23, 42, 0.3);
-      font-size: 12px;
-    }
-    .primary-button:hover:not(:disabled) { background: #99f6e4; }
-    .primary-button:disabled { color: var(--slate-500); background: #334155; }
-    .results-panel {
-      margin-top: 8px;
-      border-radius: 8px;
-      box-shadow: var(--shadow-sm);
-    }
-    .results-header { padding: 9px 12px; background: #173d56; }
-    .results-header h2 { font-size: 14px; }
-    .results-header p { margin-top: 2px; font-size: 10px; }
-    .download-button { min-height: 32px; padding: 0 12px; border-radius: 5px; font-size: 11px; }
-    .summary-card { padding: 8px 10px; }
-    .summary-value { margin-top: 2px; font-size: 18px; }
-    .preview-toolbar { padding: 7px 10px 0; }
-    .preview-tabs { padding-bottom: 5px; }
-    .tab-button { min-height: 29px; padding: 0 9px; }
-    .preview-count { padding-bottom: 5px; }
-    .table-wrap { max-height: calc(100vh - 330px); }
-    th { padding: 7px 9px; }
-    td { padding: 6px 9px; }
-    .result-footnote { padding: 8px 10px 10px; font-size: 10px; }
-
-    @media (max-width: 760px) {
-      .global-header { height: 58px; padding: 0 16px; }
-      .brand-product { display: none; }
-      .header-link { width: 34px; padding: 0; justify-content: center; }
-      .header-link span:first-child { display: inline; }
-      .page-shell { width: min(100% - 20px, 1240px); padding-top: 0; }
-      .system-topbar { align-items: flex-start; flex-wrap: wrap; gap: 8px 12px; padding: 12px; }
-      .system-console { order: 3; width: 100%; max-width: none; }
-      .system-mode { margin-left: auto; }
-      .input-panel {
-        grid-template-areas:
-          "uploads"
-          "analyze"
-          "validation"
-          "note";
-        grid-template-columns: 1fr;
-        padding: 8px;
-      }
-      .upload-grid { grid-template-columns: 1fr; }
-      .drop-zone { grid-template-columns: auto minmax(0, 1fr); }
-      .action-bar { align-items: stretch; }
-      .primary-button { width: 100%; min-height: 36px; }
-      .action-note { max-width: none; }
-      .results-header { align-items: stretch; flex-direction: column; }
-    }
-  
-    /* Shipping Management compact DataOps-aligned layout */
-    .system-workbench {
-      border-radius: 0 0 12px 12px;
-    }
-
-    .system-topbar {
-      min-height: 58px;
-      padding: 10px 16px;
-    }
-
-    .input-panel {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) 250px;
-      gap: 10px;
-      padding: 10px;
-      background: #1e293b;
-    }
-
-    .source-selector {
-      display: grid;
-      grid-template-columns: 180px minmax(0, 1fr) 112px;
-      grid-template-areas:
-        "heading uploads analyze"
-        "validation validation analyze";
-      align-items: stretch;
-      gap: 7px;
-      min-width: 0;
-    }
-
-    .source-selector-heading {
-      grid-area: heading;
+    .header-actions {
       display: flex;
-      align-items: center;
-      gap: 9px;
-      min-width: 0;
-      min-height: 54px;
-      padding: 8px 10px;
-      border: 1px solid #0f766e;
-      border-radius: 6px;
-      color: #f8fafc;
-      background: #134e4a;
+      gap: 8px;
     }
-
-    .source-selector-index {
+    .header-link {
       display: inline-flex;
       align-items: center;
-      justify-content: center;
-      flex: 0 0 auto;
-      width: 30px;
-      height: 30px;
-      border-radius: 5px;
-      color: #99f6e4;
-      background: rgba(13, 148, 136, 0.28);
-      font-size: 12px;
-      font-weight: 900;
+      height: 32px;
+      padding: 0 16px;
+      border: 1px solid var(--slate-300);
+      border-radius: 4px;
+      background: var(--white);
+      color: var(--slate-700);
+      font-size: 13px;
+      font-weight: 600;
+      text-decoration: none;
+    }
+    .header-link:hover { background: var(--slate-50); border-color: var(--slate-400); }
+
+    .page-shell {
+      padding: 24px;
+      max-width: 1600px;
+      margin: 0 auto;
     }
 
-    .source-selector-heading strong {
-      display: block;
-      font-size: 11px;
-      line-height: 1.25;
-    }
-
-    .source-selector-heading span:last-child {
-      display: block;
+    /* System.IO DataOps Dark Panel */
+    .system-workbench {
+      background: var(--panel-bg);
+      border-radius: 8px;
       overflow: hidden;
-      margin-top: 3px;
-      color: #94a3b8;
-      font-size: 9px;
-      line-height: 1.3;
-      text-overflow: ellipsis;
-      white-space: nowrap;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
     }
 
-    .upload-grid {
-      grid-area: uploads;
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 7px;
-      min-width: 0;
-    }
-
-    .upload-card {
-      min-width: 0;
-      border: 1px solid #0d9488;
-      border-radius: 6px;
-      background: #153b3b;
-    }
-
-    .upload-card.has-file {
-      border-color: #2dd4bf;
-      background: #134e4a;
-    }
-
-    .upload-card.has-error {
-      border-color: #fb7185;
-      background: #3f2533;
-    }
-
-    .drop-zone {
-      grid-template-columns: 30px minmax(0, 1fr);
-      gap: 9px;
-      min-height: 54px;
-      padding: 7px 10px;
-      border-width: 1px;
-    }
-
-    .file-copy {
-      min-width: 0;
-    }
-
-    .file-icon {
-      width: 30px;
-      height: 30px;
-    }
-
-    .drop-title {
-      font-size: 11px;
-    }
-
-    .drop-help {
-      margin-top: 2px;
-      font-size: 9px;
-    }
-
-    .action-bar {
-      grid-area: analyze;
-      min-width: 0;
-    }
-
-    .primary-button {
-      width: 112px;
-      min-width: 112px;
-      min-height: 54px;
-      height: 100%;
-      padding: 0 9px;
-      font-size: 11px;
-    }
-
-    .validation-box {
-      grid-area: validation;
-      min-width: 0;
-      min-height: 35px;
-      padding: 6px 9px;
-      border-radius: 6px;
-    }
-
-    .validation-title {
-      font-size: 10px;
-    }
-
-    .validation-detail {
-      margin-top: 1px;
-      font-size: 9px;
-    }
-
-    .validation-list {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 3px 14px;
-      margin: 4px 0 0;
-      padding-left: 16px;
-    }
-
-    .validation-list li {
-      margin: 0;
-      font-size: 9px;
-    }
-
-    .operator-note {
-      min-width: 0;
-      padding: 8px 10px;
-      border-left: 1px solid #475569;
-      color: #cbd5e1;
-      background: #172033;
-    }
-
-    .operator-note-title {
-      margin-bottom: 5px;
-      color: #5eead4;
-      font-size: 10px;
-      font-weight: 900;
-    }
-
-    .operator-note p {
-      margin: 0 0 4px;
-      color: #94a3b8;
-      font-size: 9px;
-      line-height: 1.45;
-    }
-
-    .operator-note p:last-child {
-      margin-bottom: 0;
-    }
-
-    .operator-note strong {
-      color: #e2e8f0;
-    }
-
-    .results-panel {
-      margin-top: 8px;
-      border: 1px solid #cbd5e1;
-      border-radius: 7px;
-      box-shadow: none;
-    }
-
-    .preview-toolbar {
-      min-height: 42px;
-      padding: 6px 9px 0;
-      border-bottom: 1px solid #cbd5e1;
-    }
-
-    .preview-tabs {
-      min-width: 0;
-      padding-bottom: 6px;
-    }
-
-    .preview-actions {
+    /* Top Row */
+    .system-topbar {
       display: flex;
       align-items: center;
-      justify-content: flex-end;
-      gap: 6px;
-      min-width: 0;
-      padding-bottom: 6px;
+      gap: 16px;
+      height: 64px;
+      padding: 0 20px;
+      border-bottom: 1px solid var(--panel-border);
     }
-
-    .preview-count {
-      padding: 0 4px 0 0;
-      white-space: nowrap;
+    .system-name {
+      color: var(--white);
+      font-size: 16px;
+      font-weight: 800;
     }
-
-    .download-button {
-      min-height: 30px;
-      padding: 0 10px;
-      border-radius: 5px;
-      font-size: 10px;
-      white-space: nowrap;
-    }
-
-    .table-wrap {
-      max-height: calc(100vh - 255px);
-      border-top: 0;
-    }
-
-    .workspace-storage {
-      padding: 7px 9px 9px;
-    }
-
-    .cloud-grid {
-      grid-template-columns: minmax(190px, 2fr) minmax(130px, 1fr) minmax(110px, 1fr) auto auto minmax(180px, 1.4fr) auto auto;
-      gap: 5px;
-    }
-
-    .storage-note {
-      margin-top: 5px;
-    }
-
-    @media (max-width: 980px) {
-      .input-panel {
-        grid-template-columns: 1fr;
-      }
-
-      .operator-note {
-        border-top: 1px solid #475569;
-        border-left: 0;
-      }
-
-      .source-selector {
-        grid-template-columns: 160px minmax(0, 1fr) 108px;
-      }
-
-      .primary-button {
-        width: 108px;
-        min-width: 108px;
-      }
-
-      .preview-toolbar {
-        align-items: stretch;
-        flex-direction: column;
-      }
-
-      .preview-actions {
-        justify-content: flex-start;
-      }
-    }
-
-    @media (max-width: 700px) {
-      .source-selector {
-        grid-template-columns: 1fr;
-        grid-template-areas:
-          "heading"
-          "uploads"
-          "analyze"
-          "validation";
-      }
-
-      .upload-grid {
-        grid-template-columns: 1fr;
-      }
-
-      .primary-button {
-        width: 100%;
-        min-height: 38px;
-      }
-
-      .preview-actions {
-        flex-wrap: wrap;
-      }
-
-      .download-button {
-        flex: 1 1 150px;
-      }
-    }
-
-  
-    /* orderops v1.3 */
-    .header-actions { display:flex; align-items:center; gap:7px; }
-    .header-action-button { appearance:none; cursor:pointer; }
-    .source-selector-heading { cursor:pointer; }
-    .source-selector-heading:hover,
-    .source-selector-heading.dragover { border-color:#5eead4; background:#115e59; }
-    .source-selector-heading:focus-visible { outline:2px solid #67e8f9; outline-offset:2px; }
-    .workspace-storage.is-open { display:block !important; }
-
-    @media (max-width:680px) {
-      .header-actions { gap:5px; }
-      .header-action-button span:last-child { display:none; }
-    }
-
-    /* orderops v1.3 compact uploader: left multi-entry upload / right essential notes */
-    .global-header {
-      height: 50px;
-      padding: 0 max(16px, calc((100% - 1480px) / 2));
-    }
-    .page-shell {
-      width: min(1480px, calc(100% - 24px));
-      padding-bottom: 24px;
-    }
-    .system-topbar {
-      min-height: 42px;
-      padding: 6px 12px;
-      gap: 10px;
-    }
-    .system-name { font-size: 14px; }
     .system-console {
-      min-height: 28px;
-      padding: 4px 9px;
-      font-size: 11px;
+      display: flex;
+      align-items: center;
+      flex: 1;
+      max-width: 600px;
+      height: 36px;
+      padding: 0 16px;
+      background: #000000;
+      border: 1px solid #334155;
+      border-radius: 4px;
+      color: #22c55e;
+      font-family: ui-monospace, monospace;
+      font-size: 13px;
     }
-    .system-mode { font-size: 10px; }
+    .system-cursor {
+      width: 8px;
+      height: 16px;
+      margin-left: 8px;
+      background: #22c55e;
+      animation: blink 1s steps(1) infinite;
+    }
+    @keyframes blink { 50% { opacity: 0; } }
 
-    .input-panel {
-      grid-template-columns: minmax(0, 1fr) 230px;
+    .topbar-actions {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .period-button {
+      display: flex;
+      align-items: center;
       gap: 6px;
-      padding: 6px;
-    }
-    .source-selector {
-      grid-template-columns: 132px minmax(0, 1fr) 94px;
-      grid-template-areas:
-        "heading uploads analyze"
-        "validation validation validation";
-      gap: 5px;
-    }
-    .source-selector-heading {
-      min-height: 42px;
-      padding: 5px 7px;
-      gap: 6px;
-    }
-    .source-selector-index {
-      width: 24px;
-      height: 24px;
-      font-size: 11px;
-    }
-    .source-selector-heading strong { font-size: 10px; }
-    .source-selector-heading span:last-child {
-      margin-top: 1px;
-      font-size: 8px;
-    }
-    .upload-grid { gap: 5px; }
-    .drop-zone {
-      grid-template-columns: 24px minmax(0, 1fr);
-      gap: 6px;
-      min-height: 42px;
-      padding: 5px 7px;
-    }
-    .file-icon {
-      width: 24px;
-      height: 24px;
-      font-size: 11px;
-    }
-    .drop-title { font-size: 10px; }
-    .drop-help {
-      margin-top: 1px;
-      font-size: 8px;
-      line-height: 1.2;
+      color: var(--slate-300);
+      background: transparent;
+      border: 1px solid var(--slate-600);
+      padding: 6px 12px;
+      border-radius: 4px;
+      font-size: 13px;
     }
     .primary-button {
-      width: 94px;
-      min-width: 94px;
-      min-height: 42px;
-      padding: 0 7px;
-      font-size: 10px;
+      height: 36px;
+      padding: 0 20px;
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 4px;
+      color: var(--slate-400);
+      font-size: 13px;
+      font-weight: 600;
     }
-    .validation-box {
-      min-height: 24px;
-      padding: 4px 7px;
+    .primary-button:not(:disabled) {
+      background: var(--blue-600);
+      color: var(--white);
+      border-color: var(--blue-600);
     }
-    .validation-title {
-      margin: 0;
-      font-size: 9px;
-      line-height: 1.25;
-    }
-    .validation-detail { font-size: 8px; }
-    .validation-list {
-      gap: 2px 12px;
-      margin-top: 3px;
-    }
-    .validation-list li { font-size: 8px; }
 
-    .operator-note {
-      padding: 6px 8px;
+    /* Bottom Row (Data Sources) */
+    .source-bar {
+      display: flex;
+      align-items: center;
+      height: 64px;
+      padding: 0 20px;
+      background: #222a38; /* Slightly lighter dark */
+    }
+    .source-label {
+      color: var(--slate-400);
+      font-size: 13px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-right: 24px;
+    }
+    
+    .upload-grid {
+      display: flex;
+      align-items: center;
+    }
+    .upload-card { margin: 0; }
+    .drop-zone {
       display: flex;
       flex-direction: column;
       justify-content: center;
-    }
-    .operator-note-title {
-      margin-bottom: 3px;
-      font-size: 9px;
-    }
-    .operator-note p {
-      margin-bottom: 2px;
-      font-size: 8px;
-      line-height: 1.35;
-    }
-
-    .results-panel { margin-top: 5px; }
-    .preview-toolbar {
-      min-height: 34px;
-      padding: 4px 7px 0;
-    }
-    .preview-tabs { padding-bottom: 4px; }
-    .tab-button {
-      min-height: 25px;
-      padding: 0 7px;
-      font-size: 10px;
-    }
-    .preview-actions {
-      gap: 4px;
-      padding-bottom: 4px;
-    }
-    .download-button {
-      min-height: 26px;
-      padding: 0 8px;
-      font-size: 9px;
-    }
-    .table-wrap { max-height: calc(100vh - 190px); }
-    table { font-size: 10px; }
-    th { padding: 5px 7px; }
-    td { padding: 4px 7px; }
-
-    @media (max-width: 980px) {
-      .input-panel { grid-template-columns: 1fr; }
-      .operator-note {
-        border-top: 1px solid #475569;
-        border-left: 0;
-      }
-      .source-selector {
-        grid-template-columns: 120px minmax(0, 1fr) 90px;
-      }
-      .primary-button {
-        width: 90px;
-        min-width: 90px;
-      }
-      .table-wrap { max-height: calc(100vh - 220px); }
-    }
-
-    @media (max-width: 700px) {
-      .global-header { height: 48px; }
-      .source-selector {
-        grid-template-columns: 1fr;
-        grid-template-areas:
-          "heading"
-          "uploads"
-          "analyze"
-          "validation";
-      }
-      .upload-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      .primary-button {
-        width: 100%;
-        min-height: 34px;
-      }
-      .operator-note { display: none; }
-      .table-wrap { max-height: calc(100vh - 255px); }
-    }
-
-
-    /* orderops v1.4: left-aligned one-row work controls / right execution notes */
-    .global-header {
-      height: 44px;
-      padding: 0 max(12px, calc((100% - 1480px) / 2));
-    }
-    .brand-mark { font-size: 17px; }
-    .brand-suite { font-size: 15px; }
-    .brand-product { font-size: 9px; }
-    .header-link { min-height: 28px; padding: 0 9px; font-size: 10px; }
-
-    .system-workbench { margin-top: 0; border-radius: 0 0 8px 8px; }
-    .system-topbar {
-      min-height: 30px;
-      padding: 3px 8px;
-      gap: 7px;
-    }
-    .system-name { font-size: 11px; }
-    .system-console {
-      width: min(500px, 100%);
-      min-height: 22px;
-      padding: 2px 7px;
-      font-size: 9px;
-      line-height: 1.2;
-    }
-    .system-cursor { height: 11px; }
-    .system-mode { font-size: 8px; }
-
-    .input-panel {
-      display: grid;
-      grid-template-columns: minmax(560px, 650px) minmax(360px, 1fr);
-      align-items: stretch;
-      gap: 6px;
-      padding: 4px 6px;
-    }
-    .source-selector {
-      display: flex;
-      align-items: stretch;
-      justify-content: flex-start;
-      gap: 4px;
-      width: 100%;
-      min-width: 0;
-    }
-    .source-selector-heading {
-      flex: 0 0 118px;
-      min-width: 118px;
-      min-height: 34px;
-      padding: 3px 6px;
-      gap: 5px;
-    }
-    .source-selector-index {
-      width: 20px;
-      height: 20px;
-      font-size: 9px;
-    }
-    .source-selector-heading strong {
-      font-size: 9px;
-      line-height: 1.05;
-      white-space: nowrap;
-    }
-    .source-selector-heading span:last-child {
-      max-width: 82px;
-      margin-top: 1px;
-      font-size: 7px;
-      line-height: 1.05;
-    }
-
-    .upload-grid {
-      flex: 1 1 auto;
-      display: grid;
-      grid-template-columns: repeat(2, minmax(150px, 1fr));
-      gap: 4px;
-      min-width: 0;
-    }
-    .upload-card { border-radius: 4px; }
-    .drop-zone {
-      grid-template-columns: 20px minmax(0, 1fr);
-      gap: 5px;
-      min-height: 34px;
-      padding: 3px 6px;
-      border-radius: 4px;
-    }
-    .file-icon {
-      width: 20px;
-      height: 20px;
-      border-radius: 4px;
-      font-size: 9px;
-    }
-    .drop-title { font-size: 9px; line-height: 1.05; }
-    .drop-help {
-      margin-top: 1px;
-      font-size: 7px;
-      line-height: 1.05;
-    }
-
-    .action-bar {
-      flex: 0 0 84px;
-      display: flex;
-      align-items: stretch;
-      justify-content: flex-start;
-      min-width: 84px;
-      margin: 0;
-      padding: 0;
-    }
-    .primary-button {
-      width: 84px;
-      min-width: 84px;
-      min-height: 34px;
-      height: 100%;
-      padding: 0 5px;
-      border-radius: 4px;
-      font-size: 9px;
-      box-shadow: none;
-    }
-
-    .operator-note {
-      min-width: 0;
-      display: grid;
-      grid-template-columns: minmax(210px, .9fr) minmax(220px, 1.1fr);
-      align-items: center;
-      gap: 7px;
-      padding: 3px 7px;
-      border-left: 1px solid #475569;
-      background: #172033;
-    }
-    .validation-box {
-      display: flex;
-      align-items: center;
-      align-content: center;
-      flex-wrap: wrap;
-      gap: 0 6px;
-      min-height: 28px;
-      margin: 0;
-      padding: 3px 6px;
-      border-radius: 4px;
-    }
-    .validation-title {
-      margin: 0;
-      font-size: 8px;
-      line-height: 1.15;
-      white-space: nowrap;
-    }
-    .validation-detail {
-      margin: 0;
-      font-size: 7px;
-      line-height: 1.15;
-    }
-    .validation-list {
-      flex: 1 0 100%;
-      display: flex;
-      flex-wrap: wrap;
-      gap: 1px 10px;
-      max-height: 34px;
-      overflow: auto;
-      margin: 2px 0 0;
-      padding-left: 13px;
-    }
-    .validation-list li { font-size: 7px; line-height: 1.15; }
-    .operator-note-copy { min-width: 0; }
-    .operator-note-title {
-      margin: 0 0 1px;
-      font-size: 8px;
-      line-height: 1.1;
-    }
-    .operator-note p {
-      overflow: hidden;
-      margin: 0;
-      font-size: 7px;
-      line-height: 1.25;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
-    .results-panel { margin-top: 4px; }
-    .preview-toolbar {
-      min-height: 28px;
-      padding: 3px 6px 0;
-    }
-    .preview-tabs { gap: 3px; padding-bottom: 3px; }
-    .tab-button {
-      min-height: 22px;
-      padding: 0 6px;
-      border-radius: 4px;
-      font-size: 9px;
-    }
-    .preview-actions { gap: 3px; padding-bottom: 3px; }
-    .preview-count { font-size: 9px; }
-    .download-button {
-      min-height: 23px;
-      padding: 0 7px;
-      border-radius: 4px;
-      font-size: 8px;
-    }
-    .table-wrap { max-height: calc(100vh - 128px); }
-    table { font-size: 9px; }
-    th { padding: 4px 6px; }
-    td { padding: 3px 6px; }
-    .purchase-input { height: 22px; font-size: 9px; }
-
-    @media (max-width: 1080px) {
-      .input-panel { grid-template-columns: minmax(520px, 620px) 1fr; }
-      .operator-note { grid-template-columns: 1fr; gap: 3px; }
-      .operator-note-copy p:last-child { display: none; }
-    }
-
-    @media (max-width: 820px) {
-      .input-panel { grid-template-columns: 1fr; }
-      .source-selector { width: 100%; }
-      .operator-note {
-        grid-template-columns: minmax(200px, .8fr) minmax(0, 1.2fr);
-        border-top: 1px solid #475569;
-        border-left: 0;
-      }
-      .table-wrap { max-height: calc(100vh - 170px); }
-    }
-
-    @media (max-width: 620px) {
-      .system-mode { display: none; }
-      .source-selector {
-        display: grid;
-        grid-template-columns: 108px minmax(0, 1fr) 78px;
-        gap: 3px;
-      }
-      .source-selector-heading { min-width: 0; }
-      .upload-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 3px; }
-      .action-bar { min-width: 0; }
-      .primary-button { width: 100%; min-width: 0; }
-      .operator-note { grid-template-columns: 1fr; }
-      .operator-note-copy { display: none; }
-      .table-wrap { max-height: calc(100vh - 190px); }
-    }
-
-    /* =========================================
-       UI 개선: 데이터 영역 가시성 확보 및 압축
-       ========================================= */
-    .summary-grid {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      padding: 12px 18px 0;
+      height: 40px;
+      padding: 0 16px;
       background: transparent;
-      border: none;
+      border: 1px solid var(--slate-600);
+      border-radius: 4px;
+      color: var(--slate-400);
+      cursor: pointer;
+      min-width: 140px;
     }
-    .summary-card {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      padding: 6px 12px;
-      background: var(--slate-100);
-      border: 1px solid var(--slate-200);
-      border-radius: 16px;
-      min-width: auto;
+    .drop-zone:hover, .drop-zone.dragover {
+      border-color: var(--slate-400);
+      background: rgba(255,255,255,0.05);
     }
-    .summary-label {
-      font-size: 11px;
-      color: var(--slate-500);
+    .upload-card.has-file .drop-zone {
+      border-color: var(--teal-500);
+      color: var(--teal-400);
     }
-    .summary-value {
-      font-size: 13px;
-      font-weight: 800;
-      margin-top: 0;
+    .upload-card.has-error .drop-zone {
+      border-color: #ef4444;
+      color: #fca5a5;
+    }
+    
+    .drop-title {
+      font-size: 12px;
+      font-weight: 600;
+      margin: 0;
+    }
+    .drop-help {
+      font-size: 10px;
+      margin-top: 2px;
+      color: inherit;
+      opacity: 0.7;
+    }
+    .separator {
+      color: var(--slate-600);
+      margin: 0 12px;
+      font-size: 12px;
     }
 
-    /* System.IO 입력부 라이트 톤 전환 */
-    .input-panel {
+    /* Hidden Bundle Drop (Kept for JS functionality) */
+    #bundleDrop { display: none; }
+
+    /* Results Panel */
+    .results-panel { margin-top: 24px; }
+    .preview-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--slate-200);
+      padding-bottom: 12px;
+      margin-bottom: 12px;
+    }
+    .preview-tabs { display: flex; gap: 8px; }
+    .tab-button {
+      padding: 8px 16px;
+      border: 1px solid var(--slate-200);
+      background: var(--white);
+      border-radius: 4px;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--slate-600);
+    }
+    .tab-button.active {
+      border-color: var(--slate-900);
+      color: var(--slate-900);
+    }
+    
+    .preview-actions { display: flex; align-items: center; gap: 12px; }
+    .preview-count { font-size: 13px; color: var(--slate-500); }
+    .download-button {
+      padding: 6px 12px;
+      border: 1px solid var(--slate-300);
+      border-radius: 4px;
+      background: var(--white);
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .download-button:hover { background: var(--slate-50); }
+    
+    /* Table styling to match the clean UI */
+    .table-wrap {
+      overflow: auto;
+      max-height: 600px;
+      border: 1px solid var(--slate-200);
+    }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    th {
+      position: sticky; top: 0;
       background: var(--slate-50);
-      border-top: 1px solid var(--slate-200);
+      color: var(--slate-700);
+      font-weight: 600;
+      text-align: center;
+      padding: 10px;
+      border-bottom: 1px solid var(--slate-200);
+      border-right: 1px solid var(--slate-200);
     }
-    .source-selector-heading {
-      background: var(--white);
-      border-color: var(--slate-300);
+    td {
+      padding: 10px;
+      border-bottom: 1px solid var(--slate-200);
+      border-right: 1px solid var(--slate-200);
+      text-align: center;
+      color: var(--slate-700);
     }
-    .source-selector-heading strong { color: var(--slate-900); }
-    .upload-card {
-      background: var(--white);
-      border-color: var(--slate-300);
+    td.number { text-align: right; }
+
+    /* Empty State (Matches Image exactly) */
+    .empty-state-wrapper {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 100px 0;
+      color: var(--slate-400);
     }
-    .drop-title { color: var(--slate-800); }
-    .operator-note {
-      background: var(--slate-100);
-      border-left-color: var(--slate-300);
+    .empty-state-icon {
+      font-size: 40px;
+      margin-bottom: 16px;
+      opacity: 0.5;
     }
-    .operator-note-title { color: var(--teal-700); }
-    .operator-note p { color: var(--slate-600); }
-    .operator-note strong { color: var(--slate-900); }
-    .validation-box {
-      background: var(--white);
-      border-color: var(--slate-300);
+    .empty-state-text {
+      font-size: 14px;
+      font-weight: 500;
     }
-    .validation-title { color: var(--slate-800); }
+
+    .workspace-storage { display: none; }
+    .toast {
+      position: fixed; right: 24px; bottom: 24px; z-index: 100;
+      padding: 16px 24px; border-radius: 8px;
+      background: var(--slate-900); color: var(--white);
+      font-size: 14px; font-weight: 600;
+      box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1);
+    }
+    .toast.error { background: #ef4444; }
 
   </style>
 </head>
 <body>
   <header class="global-header">
-    <div class="brand" aria-label="ONEAPP NEXUS orderops">
+    <div class="brand">
       <div class="brand-mark">ONEAPP</div>
-      <div class="brand-divider" aria-hidden="true"></div>
-      <div class="brand-stack">
-        <div class="brand-suite">NEXUS <span class="brand-badge">v1.4</span></div>
-        <div class="brand-product">orderops</div>
-      </div>
+      <div class="brand-suite">DataOps</div>
+      <div class="brand-badge">V1.4.orderops</div>
     </div>
     <div class="header-actions">
-      <button class="header-link header-action-button" id="headerRestoreButton" type="button" aria-label="이전 작업 복구">
-        <span aria-hidden="true">↻</span><span>작업 복구</span>
-      </button>
-      <button class="header-link header-action-button" id="headerSettingsButton" type="button" aria-expanded="false" aria-controls="workspaceStorage">
-        <span aria-hidden="true">⚙</span><span>환경설정</span>
-      </button>
+      <button class="header-link" id="headerRestoreButton" type="button">작업 복구</button>
+      <button class="header-link" id="headerSettingsButton" type="button">매핑설정</button>
     </div>
   </header>
 
   <main class="page-shell">
-    <section class="system-workbench" aria-label="주문관리 파일 작업영역">
+    <section class="system-workbench">
+      <!-- Top Row -->
       <div class="system-topbar">
         <div class="system-name">System.IO</div>
-        <div class="system-console" role="status" aria-live="polite">
-          <span class="system-message" id="systemMessage">waiting for data_blocks... (주문/재고 Excel을 선택하세요)</span>
-          <span class="system-cursor" aria-hidden="true"></span>
+        <div class="system-console">
+          <span id="systemMessage">waiting for data_blocks... (파일을 업로드하세요)</span>
+          <span class="system-cursor"></span>
         </div>
-        <div class="system-mode"><strong>LOCAL AUTO SAVE</strong> · cloud explicit</div>
+        <div class="topbar-actions">
+          <button class="period-button" type="button"><span>📅</span> 전체 기간</button>
+          <button class="primary-button" id="analyzeButton" type="button" disabled>
+            파일 업로드 후 실행 버튼 표시
+          </button>
+        </div>
       </div>
 
-      <section class="panel input-panel" aria-label="입력 파일">
-        <div class="source-selector">
-          <div class="source-selector-heading" id="bundleDrop" tabindex="0" role="button"
-            aria-label="주문현황과 창고별재고 Excel 범위 선택. 두 파일 선택 시 자동 분산">
-            <span class="source-selector-index">↑</span>
-            <div>
-              <strong>파일 범위선택</strong>
-              <span id="bundleFileStatus">2개 선택 → 자동분산</span>
+      <!-- Bottom Row -->
+      <div class="source-bar">
+        <div class="source-label"><span>📄</span> 데이터 소스:</div>
+        
+        <!-- Hidden Bundle Input for JS -->
+        <div id="bundleDrop"><span id="bundleFileStatus"></span></div>
+        <input class="hidden" id="bundleInput" type="file" accept=".xlsx,.xls" multiple>
+
+        <div class="upload-grid">
+          <article class="upload-card" id="ordersCard">
+            <div class="drop-zone" id="ordersDrop" tabindex="0" role="button">
+              <p class="drop-title">1. 주문현황</p>
+              <p class="drop-help" id="ordersFileName">클릭하여 변경</p>
             </div>
-          </div>
-          <input class="hidden" id="bundleInput" type="file" accept=".xlsx,.xls" multiple>
+            <input class="hidden" id="ordersInput" type="file" accept=".xlsx,.xls" multiple>
+          </article>
 
-          <div class="upload-grid">
-            <article class="upload-card" id="ordersCard">
-              <div class="drop-zone compact-file-slot" id="ordersDrop" tabindex="0" role="button" aria-label="주문현황 Excel 개별 선택">
-                <div class="file-icon" aria-hidden="true">1</div>
-                <div class="file-copy">
-                  <p class="drop-title">주문현황</p>
-                  <p class="drop-help" id="ordersFileName">개별 선택 / 교체</p>
-                </div>
-              </div>
-              <input class="hidden" id="ordersInput" type="file" accept=".xlsx,.xls" multiple>
-            </article>
+          <span class="separator">></span>
 
-            <article class="upload-card" id="inventoryCard">
-              <div class="drop-zone compact-file-slot" id="inventoryDrop" tabindex="0" role="button" aria-label="창고별재고 Excel 개별 선택">
-                <div class="file-icon" aria-hidden="true">2</div>
-                <div class="file-copy">
-                  <p class="drop-title">창고재고</p>
-                  <p class="drop-help" id="inventoryFileName">개별 선택 / 교체</p>
-                </div>
-              </div>
-              <input class="hidden" id="inventoryInput" type="file" accept=".xlsx,.xls" multiple>
-            </article>
-          </div>
-
-          <div class="action-bar">
-            <button class="primary-button" id="analyzeButton" type="button" disabled>
-              <span aria-hidden="true">▸</span> 출고 분석
-            </button>
-          </div>
-
+          <article class="upload-card" id="inventoryCard">
+            <div class="drop-zone" id="inventoryDrop" tabindex="0" role="button">
+              <p class="drop-title">2. 창고재고</p>
+              <p class="drop-help" id="inventoryFileName">클릭하여 변경</p>
+            </div>
+            <input class="hidden" id="inventoryInput" type="file" accept=".xlsx,.xls" multiple>
+          </article>
         </div>
-
-        <aside class="operator-note" aria-label="실행 설명과 필수 처리 기준">
-          <div class="validation-box" id="validationBox" role="status" aria-live="polite">
-            <p class="validation-title"><span aria-hidden="true">○</span>파일 선택 대기</p>
-            <p class="validation-detail">2개 선택 시 구조 판별 후 자동분산합니다.</p>
-          </div>
-          <div class="operator-note-copy">
-            <div class="operator-note-title">실행 · 필수 기준</div>
-            <p><strong>2개 선택</strong> → 주문현황 / 창고재고 자동분산 · <strong>Enter</strong> 또는 출고 분석 실행</p>
-            <p>미매칭 상품은 <strong>재고정보 없음</strong>으로 유지</p>
-          </div>
-        </aside>
-      </section>
-
-      <section class="workspace-storage hidden" id="workspaceStorage" aria-label="발주계획 저장과 복구">
-        <div class="recovery-banner hidden" id="recoveryBanner">
-          <span id="recoveryMessage">복구 가능한 로컬 발주계획이 있습니다.</span>
-          <button type="button" id="restoreButton">복구</button>
-          <button type="button" id="replaceRecoveryButton" disabled>현재 파일로 교체</button>
-          <button type="button" id="discardRecoveryButton" title="초기화">🗑️</button>
-        </div>
-        <div class="cloud-grid">
-          <label>Cloud URL<input id="cloudUrlInput" type="url" autocomplete="off" placeholder="Apps Script /exec URL"></label>
-          <label>전용 Token<input id="cloudTokenInput" type="password" autocomplete="off" placeholder="Shipping 전용 토큰"></label>
-          <label>저장자/담당<input id="cloudSavedByInput" type="text" autocomplete="off" placeholder="이름 또는 담당"></label>
-          <button type="button" id="cloudListButton">Cloud 목록</button>
-          <button type="button" id="cloudSaveButton" disabled>Cloud 저장</button>
-          <select id="cloudRevisionSelect" aria-label="클라우드 발주계획 revision"><option value="">저장 이력 선택</option></select>
-          <button type="button" id="cloudLoadButton" disabled>선택 불러오기</button>
-          <button type="button" id="localResetButton" title="로컬 초기화">🔄</button>
-        </div>
-        <p class="storage-note">로컬 자동저장은 IndexedDB 복구용이며 클라우드로 자동 전송하지 않습니다. Cloud 저장 버튼을 눌러 확정한 revision만 다른 PC에서 조회됩니다.</p>
-      </section>
+      </div>
     </section>
 
-    <section class="panel results-panel hidden" id="resultsPanel" aria-label="분석 결과 상세">
+    <!-- Essential Validation Box (Hidden visually but kept in DOM for JS) -->
+    <div class="hidden" id="validationBox"></div>
+
+    <!-- Empty State (Shown when results are hidden) -->
+    <div class="empty-state-wrapper" id="emptyStateWrapper">
+      <div class="empty-state-icon">📦</div>
+      <div class="empty-state-text">상단 '데이터 소스'에 파일을 업로드하고 [분석 실행]을 눌러주세요.</div>
+    </div>
+
+    <!-- Results Panel -->
+    <section class="results-panel hidden" id="resultsPanel">
       <h2 class="hidden" id="resultsHeading">분석 결과 상세</h2>
       <p class="hidden" id="resultSubtitle"></p>
       <div class="hidden" id="summaryGrid"></div>
       <div class="hidden" id="purchaseUploadNotice"></div>
 
       <div class="preview-toolbar">
-        <div class="preview-tabs" id="previewTabs" role="tablist" aria-label="결과 미리보기"></div>
+        <div class="preview-tabs" id="previewTabs" role="tablist"></div>
         <div class="preview-actions">
           <div class="preview-count" id="previewCount"></div>
-          <button class="download-button" id="purchaseUploadButton" type="button" title="구매업로드 Excel">
-            <span aria-hidden="true">📊</span>
-          </button>
-          <button class="download-button secondary-download" id="downloadButton" type="button" title="미출고현황 Excel">
-            <span aria-hidden="true">📉</span>
-          </button>
+          <button class="download-button" id="purchaseUploadButton" type="button">구매업로드 Excel</button>
+          <button class="download-button" id="downloadButton" type="button">미출고현황 Excel</button>
         </div>
       </div>
       <div class="table-wrap" id="previewTable" role="tabpanel"></div>
     </section>
 
-    <footer class="page-footer">
-      <span>orderops v1.4 · workspace shipping-workspace/v2 · cloud plan v1</span>
-      <a href="SHIPPING_MANAGEMENT_GUIDANCE.md">개발·운영 기준 보기</a>
-    </footer>
+    <!-- Hidden Storage Section -->
+    <section class="workspace-storage hidden" id="workspaceStorage">
+      <div class="recovery-banner hidden" id="recoveryBanner">
+        <span id="recoveryMessage"></span>
+        <button type="button" id="restoreButton">복구</button>
+        <button type="button" id="replaceRecoveryButton">교체</button>
+        <button type="button" id="discardRecoveryButton">초기화</button>
+      </div>
+      <input id="cloudUrlInput" type="hidden">
+      <input id="cloudTokenInput" type="hidden">
+      <input id="cloudSavedByInput" type="hidden">
+      <button type="button" id="cloudListButton" class="hidden"></button>
+      <button type="button" id="cloudSaveButton" class="hidden"></button>
+      <select id="cloudRevisionSelect" class="hidden"></select>
+      <button type="button" id="cloudLoadButton" class="hidden"></button>
+      <button type="button" id="localResetButton" class="hidden"></button>
+    </section>
+
   </main>
 
   <div class="toast hidden" id="toast" role="status" aria-live="polite"></div>
@@ -1783,6 +522,7 @@
         headerRestoreButton: document.getElementById("headerRestoreButton"),
         headerSettingsButton: document.getElementById("headerSettingsButton"),
         toast: document.getElementById("toast"),
+        emptyStateWrapper: document.getElementById("emptyStateWrapper") // Added for empty state toggle
       };
 
       function escapeHtml(value) {
@@ -2094,7 +834,6 @@
 
         resetResults();
         elements.analyzeButton.disabled = true;
-        elements.bundleFileStatus.textContent = "두 파일의 구조를 판별하는 중...";
         setSystemMessage("classifying bundled data_blocks...");
 
         try {
@@ -2111,7 +850,7 @@
           refreshInputState();
 
           if (state.validation?.canAnalyze) {
-            setSystemMessage("data_blocks ready... (Enter 또는 출고 분석)");
+            setSystemMessage("data_blocks ready... (Enter 또는 분석 실행)");
             showToast("두 파일을 자동 배정했습니다. Enter를 누르면 분석합니다.");
           }
         } catch (error) {
@@ -2159,8 +898,6 @@
           ? elements.workspaceStorage.classList.contains("hidden")
           : Boolean(forceOpen);
         elements.workspaceStorage.classList.toggle("hidden", !open);
-        elements.workspaceStorage.classList.toggle("is-open", open);
-        elements.headerSettingsButton.setAttribute("aria-expanded", String(open));
         if (open) elements.workspaceStorage.scrollIntoView({ behavior: "smooth", block: "nearest" });
       }
 
@@ -2168,7 +905,7 @@
         state.loading[kind] = loading;
         const fileName = elements[kind + "FileName"];
         if (loading) {
-          fileName.textContent = "Excel 구조를 확인하는 중...";
+          fileName.textContent = "확인 중...";
           setSystemMessage(`reading ${kind}_data_block...`);
         }
         elements.analyzeButton.disabled = true;
@@ -2177,7 +914,7 @@
       function resetResults() {
         state.workspace = null;
         elements.resultsPanel.classList.add("hidden");
-        elements.cloudSaveButton.disabled = true;
+        elements.emptyStateWrapper.classList.remove("hidden");
       }
 
       async function handleFile(kind, file) {
@@ -2215,7 +952,7 @@
         if (loading) return;
 
         if (!parsed) {
-          name.textContent = "클릭하거나 파일을 드래그하세요 · .xlsx / .xls";
+          name.textContent = "클릭하여 변경";
           return;
         }
 
@@ -2223,35 +960,8 @@
       }
 
       function renderValidation() {
-        const bothReady = Boolean(state.orders && state.inventory);
-        if (!bothReady) {
-          elements.validationBox.className = "validation-box";
-          elements.validationBox.innerHTML = `
-            <p class="validation-title"><span aria-hidden="true">○</span>파일 선택 대기 · 필수 열/수량/중복코드 자동검증</p>
-          `;
-          return;
-        }
-
-        const validation = state.validation;
-        if (validation.canAnalyze) {
-          const matchSummary = validation.unmatchedCount > 0
-            ? `재고정보 없음 ${formatNumber(validation.unmatchedCount)}개 상품`
-            : "재고 매칭 이상 없음";
-          elements.validationBox.className = "validation-box good";
-          elements.validationBox.innerHTML = `
-            <p class="validation-title"><span aria-hidden="true">✓</span>검증 완료 · ${matchSummary}</p>
-          `;
-        } else {
-          elements.validationBox.className = "validation-box bad";
-          elements.validationBox.innerHTML = `
-            <p class="validation-title"><span aria-hidden="true">!</span>분석을 시작할 수 없습니다.</p>
-            <p class="validation-detail">원본 Excel에서 아래 항목을 수정한 뒤 다시 선택하세요.</p>
-            <ul class="validation-list">
-              ${validation.errors.slice(0, 10).map((issue) => `<li>${escapeHtml(issue.message)}</li>`).join("")}
-              ${validation.errors.length > 10 ? `<li>그 외 ${validation.errors.length - 10}건</li>` : ""}
-            </ul>
-          `;
-        }
+        // Validation logic maintained internally, visual box is hidden in DataOps UI.
+        // We only control the Analyze button state.
       }
 
       function refreshInputState() {
@@ -2261,21 +971,19 @@
         renderFileCard("orders");
         renderFileCard("inventory");
         renderValidation();
-        elements.analyzeButton.disabled = !state.validation?.canAnalyze;
-        elements.replaceRecoveryButton.disabled = !state.validation?.canAnalyze;
+        
+        const canAnalyze = state.validation?.canAnalyze;
+        elements.analyzeButton.disabled = !canAnalyze;
+        elements.analyzeButton.textContent = canAnalyze ? "분석 실행" : "파일 업로드 후 실행 버튼 표시";
+        
+        elements.replaceRecoveryButton.disabled = !canAnalyze;
         const bothSelected = Boolean(state.orders && state.inventory);
         const selectedCount = Number(Boolean(state.orders)) + Number(Boolean(state.inventory));
-        if (bothSelected) {
-          elements.bundleFileStatus.textContent = `${state.orders.fileName} / ${state.inventory.fileName}`;
-        } else if (selectedCount === 0) {
-          elements.bundleFileStatus.textContent = "2개 선택 시 주문/재고 자동분산";
-        } else {
-          elements.bundleFileStatus.textContent = `파일 ${selectedCount}/2 · 나머지 파일 선택`;
-        }
+        
         if (!bothSelected) {
-          setSystemMessage(`waiting for data_blocks... (${selectedCount}/2 파일 선택)`);
-        } else if (state.validation?.canAnalyze) {
-          setSystemMessage("data_blocks ready... (출고 분석을 실행하세요)");
+          setSystemMessage(`waiting for data_blocks... (파일을 업로드하세요)`);
+        } else if (canAnalyze) {
+          setSystemMessage("data_blocks ready... (분석 실행 버튼을 누르세요)");
         } else {
           setSystemMessage("validation blocked... (입력 파일을 확인하세요)");
         }
@@ -2379,21 +1087,6 @@
         };
       }
 
-      function statusTone(value) {
-        const text = String(value || "");
-        if (text.includes("오류") || text.includes("재고정보") || text.includes("추가 구매") || text.includes("발주 필요")) return "bad";
-        if (text.includes("확인") || text.includes("부분출고")) return "warn";
-        return text ? "good" : "";
-      }
-
-      function previewRowFill(previewId, sourceRow) {
-        if (!sourceRow || previewId === "validation") return "";
-        if (sourceRow.rowType === "reference") return "#f1f5f9";
-        const strong = typeof sourceRow.purchaseNeed === "number" && sourceRow.purchaseNeed > 0;
-        const color = strong ? sourceRow.managerColors?.strong : sourceRow.managerColors?.base;
-        return color ? `#${color}` : "";
-      }
-
       function renderPreview() {
         const definitions = getPreviewDefinitions(state.workspace);
         if (!definitions[state.activePreview]) state.activePreview = "purchases";
@@ -2406,10 +1099,7 @@
 
         const preview = definitions[state.activePreview];
         elements.previewCount.textContent = `${formatNumber(preview.rows.length)}행`;
-        if (!preview.rows.length) {
-          elements.previewTable.innerHTML = `<div class="empty-state">표시할 항목이 없습니다.</div>`;
-          return;
-        }
+        
         elements.previewTable.innerHTML = `
           <table>
             <thead><tr>${preview.headers.map((header) => `<th>${escapeHtml(header)}</th>`).join("")}</tr></thead>
@@ -2417,23 +1107,14 @@
               ${preview.rows.map((row, rowIndex) => {
                 const sourceRow = preview.sourceRows[rowIndex];
                 const referenceRow = sourceRow?.rowType === "reference";
-                const rowFill = previewRowFill(state.activePreview, sourceRow);
                 return `
                 <tr class="${referenceRow ? "reference-row" : ""}">
                   ${preview.headers.map((_, index) => {
                     const value = row[index];
                     const isNumber = preview.numeric.includes(index) && value !== "";
-                    const isStatus = preview.status === index;
-                    const isInventory = !referenceRow && preview.inventory?.includes(index) && typeof value === "number" && value !== 0;
-                    const isWarning = (typeof value === "number" && value < 0) || (isStatus && statusTone(value) === "bad" && String(value).includes("오류"));
-                    const classes = [isNumber ? "number" : "", isStatus ? "status" : "", isInventory ? "inventory-value" : "", isWarning ? "warning-value" : ""].filter(Boolean).join(" ");
-                    const editablePurchase = preview.purchaseEditable === true && preview.purchase === index && !referenceRow;
-                    const content = editablePurchase
-                      ? `<input class="purchase-input" data-purchase-code="${escapeHtml(sourceRow.productCode)}" value="${escapeHtml(value)}" aria-label="${escapeHtml(sourceRow.productCode)} 구매">`
-                      : escapeHtml(isNumber ? formatNumber(value) : value);
-                    return `<td class="${classes}" style="${rowFill ? `background:#${rowFill.replace(/^#/, "")}` : ""}"
-                      ${isStatus ? `data-tone="${statusTone(value)}"` : ""}
-                      title="${escapeHtml(value)}">${content}</td>`;
+                    const classes = [isNumber ? "number" : ""].filter(Boolean).join(" ");
+                    const content = escapeHtml(isNumber ? formatNumber(value) : value);
+                    return `<td class="${classes}" title="${escapeHtml(value)}">${content}</td>`;
                   }).join("")}
                 </tr>
               `;}).join("")}
@@ -2444,41 +1125,11 @@
 
       function renderResults() {
         const stats = state.workspace.stats;
-        const purchaseUpload = engine.getPurchaseUploadSelection(state.workspace);
-        const summaryItems = [
-          { label: "주문행", value: stats.orderRowCount },
-          { label: "상품", value: stats.productCount },
-          { label: "총 주문수량", value: stats.totalOrderQuantity },
-          { label: "추가 구매 필요", value: stats.totalPurchaseNeed, tone: stats.totalPurchaseNeed > 0 ? "warn" : "" },
-          { label: "구매업로드 대상", value: purchaseUpload.included.length },
-          { label: "기준일", value: state.workspace.basisDate || "확인 필요", tone: state.workspace.basisDateStatus === "valid" ? "" : "bad" },
-        ];
-        elements.summaryGrid.innerHTML = summaryItems.map((item) => `
-          <div class="summary-card">
-            <div class="summary-label">${escapeHtml(item.label)}</div>
-            <div class="summary-value ${item.tone || ""}">${escapeHtml(formatNumber(item.value))}</div>
-          </div>
-        `).join("");
-        const excludedCounts = purchaseUpload.excluded.reduce((counts, row) => {
-          counts[row.reason] = (counts[row.reason] || 0) + 1;
-          return counts;
-        }, {});
-        const exclusionText = Object.entries(excludedCounts)
-          .map(([reason, count]) => `${reason} ${formatNumber(count)}행`)
-          .join(" · ");
-        const uploadBlocked = state.workspace.basisDateStatus !== "valid";
-        elements.purchaseUploadNotice.classList.toggle("bad", uploadBlocked);
-        elements.purchaseUploadNotice.textContent = uploadBlocked
-          ? `구매업로드 차단: 일자-No.의 기준일을 하나의 YYYYMMDD로 확정할 수 없습니다. 제외: ${exclusionText || "없음"}`
-          : `구매업로드 ${formatNumber(purchaseUpload.included.length)}행 · 제외: ${exclusionText || "없음"}`;
-        elements.resultSubtitle.textContent = stats.unmatchedCount > 0
-          ? `재고정보 없음 ${formatNumber(stats.unmatchedCount)}개 상품`
-          : "재고 매칭 이상 없음";
         renderPreview();
+        elements.emptyStateWrapper.classList.add("hidden");
         elements.resultsPanel.classList.remove("hidden");
         elements.purchaseUploadButton.disabled = state.workspace.basisDateStatus !== "valid";
-        elements.cloudSaveButton.disabled = !state.workspace.planId || state.workspace.basisDateStatus !== "valid";
-        setSystemMessage("analysis complete... (Excel 다운로드 준비 완료)");
+        setSystemMessage("analysis complete... (결과 확인)");
       }
 
       function runAnalysis() {
@@ -2507,13 +1158,11 @@
             state.activePreview = "purchases";
             renderResults();
             scheduleLocalSave();
-            elements.resultsPanel.scrollIntoView({ behavior: "smooth", block: "start" });
-            showToast("출고 배정과 검증이 완료되었습니다.");
           } catch (error) {
             setSystemMessage("analysis failed... (오류 내용을 확인하세요)");
             showToast(error.message || "분석 중 오류가 발생했습니다.", true);
           } finally {
-            elements.analyzeButton.innerHTML = '<span aria-hidden="true">▸</span> 출고 분석';
+            elements.analyzeButton.textContent = '분석 실행';
             elements.analyzeButton.disabled = !state.validation?.canAnalyze;
           }
         }, 20);
@@ -2524,7 +1173,6 @@
         try {
           const fileName = workbookTools.getOutputFileName(state.workspace.createdAt);
           workbookTools.downloadWorkbook(state.workspace, window.XLSX, fileName);
-          setSystemMessage("workbook saved... (작업 완료)");
           showToast(`${fileName} 다운로드를 시작했습니다.`);
         } catch (error) {
           showToast(error.message || "Excel을 생성하지 못했습니다.", true);
@@ -2536,171 +1184,9 @@
         try {
           const fileName = workbookTools.getPurchaseUploadFileName(state.workspace);
           workbookTools.downloadPurchaseUploadWorkbook(state.workspace, window.XLSX, fileName);
-          const selection = engine.getPurchaseUploadSelection(state.workspace);
-          setSystemMessage(`purchase upload saved... (${selection.included.length}행)`);
-          showToast(`${fileName} 다운로드를 시작했습니다. 제외 ${selection.excluded.length}행은 발주관리에서 확인하세요.`);
+          showToast(`${fileName} 다운로드를 시작했습니다.`);
         } catch (error) {
-          setSystemMessage("purchase upload blocked... (기준일·제외 사유 확인)");
           showToast(error.message || "구매업로드 Excel을 생성하지 못했습니다.", true);
-        }
-      }
-
-      async function buildCloudEnvelope() {
-        if (!state.workspace?.planId || state.workspace.basisDateStatus !== "valid") {
-          throw new Error("단일 기준일과 source fingerprint가 확인된 발주계획만 Cloud 저장할 수 있습니다.");
-        }
-        const purchaseSelection = engine.getPurchaseUploadSelection(state.workspace);
-        const sourceFileName = [state.workspace.sourceFiles.orders.fileName, state.workspace.sourceFiles.inventory.fileName]
-          .filter(Boolean)
-          .join(" / ");
-        const canonical = {
-          schemaVersion: CLOUD_PLAN_SCHEMA,
-          planId: state.workspace.planId,
-          basisDate: state.workspace.basisDate,
-          sourceFingerprint: state.workspace.sourceFingerprint,
-          sourceFileName,
-          sourceFiles: {
-            orders: {
-              fileName: state.workspace.sourceFiles.orders.fileName,
-              sheetName: state.workspace.sourceFiles.orders.sheetName,
-              rowCount: state.workspace.sourceFiles.orders.rowCount,
-              sha256: state.workspace.sourceFiles.orders.sha256,
-            },
-            inventory: {
-              fileName: state.workspace.sourceFiles.inventory.fileName,
-              sheetName: state.workspace.sourceFiles.inventory.sheetName,
-              rowCount: state.workspace.sourceFiles.inventory.rowCount,
-              sha256: state.workspace.sourceFiles.inventory.sha256,
-            },
-          },
-          savedBy: elements.cloudSavedByInput.value.trim(),
-          productRowCount: state.workspace.productSummaries.length,
-          purchaseUploadRowCount: purchaseSelection.included.length,
-          purchaseInputs: engine.getPurchaseInputs(state.workspace),
-          activePreview: state.activePreview,
-          workspace: state.workspace,
-        };
-        const canonicalJson = JSON.stringify(canonical);
-        return {
-          schemaVersion: CLOUD_PLAN_SCHEMA,
-          planId: canonical.planId,
-          hashAlgorithm: "SHA-256",
-          hash: await sha256Hex(canonicalJson),
-          rowCount: countPlanRows(canonical),
-          cellCount: countScalarCells(canonical),
-          canonicalJson,
-        };
-      }
-
-      async function postCloudAction(action, body) {
-        const url = normalizeCloudUrl(elements.cloudUrlInput.value);
-        const token = elements.cloudTokenInput.value;
-        if (!token) throw new Error("Shipping 전용 Cloud token을 입력하세요.");
-        const response = await fetch(url, {
-          method: "POST",
-          headers: { "Content-Type": "text/plain;charset=utf-8" },
-          body: JSON.stringify({ action, token, ...(body || {}) }),
-        });
-        if (!response.ok) throw new Error(`Cloud 요청 실패: HTTP ${response.status}`);
-        const json = await response.json();
-        if (!json || json.status !== "success") {
-          throw new Error(json?.message || "Cloud 요청이 실패했습니다.");
-        }
-        return json.data;
-      }
-
-      function renderCloudRevisions(revisions) {
-        state.cloudRevisions = Array.isArray(revisions) ? revisions : [];
-        elements.cloudRevisionSelect.innerHTML = '<option value="">저장 이력 선택</option>' +
-          state.cloudRevisions.map((item, index) => `
-            <option value="${index}">${escapeHtml(item.basisDate)} · ${escapeHtml(item.savedAt)} · ${escapeHtml(item.sourceFileName)} · r${escapeHtml(item.revision)}</option>
-          `).join("");
-        if (state.cloudRevisions.length > 0) elements.cloudRevisionSelect.value = "0";
-        elements.cloudLoadButton.disabled = state.cloudRevisions.length === 0;
-      }
-
-      async function listCloudPlans() {
-        elements.cloudListButton.disabled = true;
-        setSystemMessage("loading cloud revisions...");
-        try {
-          const revisions = await postCloudAction("shipping_plan_list", { limit: 100 });
-          renderCloudRevisions(revisions);
-          scheduleLocalSave();
-          setSystemMessage(`cloud revisions ready... (${state.cloudRevisions.length}건)`);
-          showToast(`Cloud 발주계획 ${state.cloudRevisions.length}개 revision을 불러왔습니다.`);
-        } catch (error) {
-          setSystemMessage("cloud list failed...");
-          showToast(error.message || "Cloud 목록을 불러오지 못했습니다.", true);
-        } finally {
-          elements.cloudListButton.disabled = false;
-        }
-      }
-
-      async function saveCloudPlan() {
-        elements.cloudSaveButton.disabled = true;
-        setSystemMessage("saving immutable cloud revision...");
-        try {
-          const snapshot = await buildCloudEnvelope();
-          const saved = await postCloudAction("shipping_plan_save", { snapshot });
-          if (
-            saved.planId !== snapshot.planId ||
-            saved.hash !== snapshot.hash ||
-            Number(saved.rowCount) !== snapshot.rowCount ||
-            Number(saved.cellCount) !== snapshot.cellCount
-          ) {
-            throw new Error("Cloud 저장 검산 결과가 일치하지 않습니다.");
-          }
-          scheduleLocalSave();
-          setSystemMessage(`cloud revision committed... (${saved.revision})`);
-          showToast(`Cloud revision ${saved.revision} 저장을 확정했습니다.`);
-          await listCloudPlans();
-        } catch (error) {
-          setSystemMessage("cloud save failed... (이전 확정 revision 유지)");
-          showToast(error.message || "Cloud 저장에 실패했습니다.", true);
-        } finally {
-          elements.cloudSaveButton.disabled = !state.workspace?.planId || state.workspace?.basisDateStatus !== "valid";
-        }
-      }
-
-      async function loadCloudPlan() {
-        const selectedIndex = Number(elements.cloudRevisionSelect.value);
-        const selected = state.cloudRevisions[selectedIndex];
-        if (!selected) return;
-        elements.cloudLoadButton.disabled = true;
-        setSystemMessage("loading verified cloud revision...");
-        try {
-          const result = await postCloudAction("shipping_plan_get", {
-            planId: selected.planId,
-            revision: selected.revision,
-          });
-          const plan = result?.plan;
-          const metadata = result?.metadata;
-          if (
-            !plan ||
-            !metadata ||
-            plan.schemaVersion !== CLOUD_PLAN_SCHEMA ||
-            plan.workspace?.schemaVersion !== engine.WORKSPACE_SCHEMA_VERSION ||
-            plan.planId !== selected.planId ||
-            plan.workspace.sourceFingerprint !== plan.sourceFingerprint ||
-            metadata.revision !== selected.revision ||
-            metadata.hash !== selected.hash ||
-            Number(metadata.rowCount) !== Number(selected.rowCount) ||
-            Number(metadata.cellCount) !== Number(selected.cellCount)
-          ) {
-            throw new Error("Cloud 발주계획 계약 또는 fingerprint가 올바르지 않습니다.");
-          }
-          state.workspace = plan.workspace;
-          engine.applyPurchaseInputs(state.workspace, plan.purchaseInputs);
-          state.activePreview = plan.activePreview || "purchases";
-          renderResults();
-          scheduleLocalSave();
-          setSystemMessage(`cloud revision loaded... (${selected.revision})`);
-          showToast("검증된 Cloud 발주계획을 불러왔습니다.");
-        } catch (error) {
-          setSystemMessage("cloud load failed...");
-          showToast(error.message || "Cloud 발주계획을 불러오지 못했습니다.", true);
-        } finally {
-          elements.cloudLoadButton.disabled = !elements.cloudRevisionSelect.value;
         }
       }
 
@@ -2742,15 +1228,14 @@
       }
 
       elements.headerSettingsButton.addEventListener("click", () => {
-        toggleWorkspaceStorage();
+        showToast("매핑 설정은 현재 준비 중입니다.");
       });
 
       elements.headerRestoreButton.addEventListener("click", () => {
         toggleWorkspaceStorage(true);
         if (state.recoveryRecord) {
           elements.recoveryBanner.classList.remove("hidden");
-          elements.restoreButton.focus();
-          showToast("저장된 이전 작업을 확인한 뒤 복구를 누르세요.");
+          showToast("저장된 이전 작업을 복구할 수 있습니다.");
         } else {
           showToast("현재 브라우저에 복구할 이전 작업이 없습니다.", true);
         }
@@ -2779,62 +1264,23 @@
         renderPreview();
         scheduleLocalSave();
       });
-      elements.previewTable.addEventListener("input", (event) => {
-        const input = event.target.closest("[data-purchase-code]");
-        if (!input || !state.workspace || state.activePreview !== "purchases") return;
-        engine.setPurchaseValue(state.workspace, input.dataset.purchaseCode, input.value);
-        scheduleLocalSave();
-      });
-      elements.previewTable.addEventListener("change", (event) => {
-        const input = event.target.closest("[data-purchase-code]");
-        if (!input || !state.workspace || state.activePreview !== "purchases") return;
-        renderResults();
-      });
       elements.restoreButton.addEventListener("click", () => {
         try { restoreLocalRecord(state.recoveryRecord); }
-        catch (error) {
-          renderRecoveryBanner(null);
-          showToast(error.message || "로컬 복구 자료를 사용할 수 없습니다.", true);
-        }
+        catch (error) { showToast(error.message || "복구 불가", true); }
       });
       elements.replaceRecoveryButton.addEventListener("click", () => {
-        replaceRecoveryWithCurrentFiles().catch((error) => {
-          showToast(error.message || "현재 파일로 복구 자료를 교체하지 못했습니다.", true);
-        });
+        replaceRecoveryWithCurrentFiles().catch((error) => showToast(error.message, true));
       });
       elements.discardRecoveryButton.addEventListener("click", () => {
-        clearLocalRecovery().catch((error) => showToast(error.message || "로컬 복구 자료를 초기화하지 못했습니다.", true));
+        clearLocalRecovery().catch((error) => showToast(error.message, true));
       });
-      elements.localResetButton.addEventListener("click", () => {
-        clearLocalRecovery().catch((error) => showToast(error.message || "로컬 복구 자료를 초기화하지 못했습니다.", true));
-      });
-      elements.cloudListButton.addEventListener("click", listCloudPlans);
-      elements.cloudSaveButton.addEventListener("click", saveCloudPlan);
-      elements.cloudLoadButton.addEventListener("click", loadCloudPlan);
-      elements.cloudRevisionSelect.addEventListener("change", () => {
-        elements.cloudLoadButton.disabled = !elements.cloudRevisionSelect.value;
-      });
-      [elements.cloudUrlInput, elements.cloudTokenInput, elements.cloudSavedByInput].forEach((input) => {
-        input.addEventListener("input", scheduleLocalSave);
-      });
+      
       bindBundleDropZone();
       bindDropZone("orders");
       bindDropZone("inventory");
 
-      try {
-        elements.cloudUrlInput.value = localStorage.getItem("oneapp_cloud_sync_url_v1") || "";
-      } catch (error) {}
-
       if (!engine || !workbookTools || !window.XLSX) {
-        setSystemMessage("system unavailable... (실행 라이브러 로딩 실패)");
-        elements.validationBox.className = "validation-box bad";
-        elements.validationBox.innerHTML = `
-          <p class="validation-title"><span aria-hidden="true">!</span>실행 라이브러리 로딩 실패</p>
-          <p class="validation-detail">네트워크 연결을 확인하고 페이지를 새로고침하세요.</p>
-        `;
-        document.querySelectorAll("button").forEach((button) => {
-          if (!button.closest(".global-header")) button.disabled = true;
-        });
+        setSystemMessage("system unavailable... (실행 라이브러리 로딩 실패)");
       } else {
         initializeLocalRecovery();
       }
