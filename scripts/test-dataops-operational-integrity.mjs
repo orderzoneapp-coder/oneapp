@@ -195,7 +195,16 @@ assert.match(
 );
 assert.match(parseAndAnalysis, /sale\._salesPurchaseAmount\s*=\s*qty\s*\*\s*purchaseUnitCost/);
 assert.match(parseAndAnalysis, /item\.전산잔량\s*=\s*item\.기초\s*\+\s*item\.입고\s*-\s*item\.출고/);
-assert.match(parseAndAnalysis, /if\s*\(remainingQty < 0\)[\s\S]*deductFromBucket\([^;]+remainingQty[^;]*'RETURN'\)/);
+assert.match(
+  parseAndAnalysis,
+  /const applySalesReturn = \(\) =>[\s\S]*saleAllocationHistoryByCode[\s\S]*SALE_RETURN_(?:REVERSAL|FALLBACK|UNRESOLVED)/,
+  "sales returns must reverse the original allocation first and preserve explicit fallback states",
+);
+assert.match(
+  parseAndAnalysis,
+  /if \(qtyToDeduct < 0\) \{\s*applySalesReturn\(\);\s*return;\s*\}/,
+  "negative sales quantities must use the dedicated return path instead of normal FIFO deduction",
+);
 assert.doesNotMatch(
   parseAndAnalysis,
   /Math\.abs\(\s*(?:sale\.)?(?:수량|_computedQty|_salesPurchaseAmount)\s*\)/,
