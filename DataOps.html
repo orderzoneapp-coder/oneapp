@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP DataOps - 핵심 수불부 관리 (V1.a22.110_WorkSaveCloudInventorySync)</title>
+    <title>ONEAPP DataOps - 핵심 수불부 관리 (V1.a22.111_F9FrozenClosingRows)</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         body { font-family: 'Pretendard', -apple-system, sans-serif; background-color: #f8fafc; overflow: hidden; }
@@ -46,7 +46,7 @@
     <!-- 초기 로딩 스크린 -->
     <div id="initial-loader">
         <div class="spinner"></div>
-        <div class="loader-text">ONEAPP DataOps V1.a22.110_WorkSaveCloudInventorySync.....</div>
+        <div class="loader-text">ONEAPP DataOps V1.a22.111_F9FrozenClosingRows.....</div>
         <div style="font-size: 11px; color: #94a3b8; margin-top: 8px;">앱 환경을 구성하고 있습니다</div>
     </div>
 
@@ -130,6 +130,100 @@ const parseNumber = (val) => {
     return isNaN(num) ? 0 : num;
 };
 const formatMoney = (num) => { const n = Number(num); return isNaN(n) ? '0' : Math.round(n).toLocaleString(); };
+// 병합 LOT의 표시용 가중평균. 대표 단가·저장·출력값은 변경하지 않는다.
+const calculatePositiveLotWeightedAveragePrice = (rows = [], getQty = (row) => safeNum(row && row.실사)) => {
+    let totalQty = 0;
+    let totalCost = 0;
+    (rows || []).forEach(row => {
+        const qty = safeNum(getQty(row || {}));
+        if (qty <= 0) return;
+        const price = row && row.단가 !== undefined && row.단가 !== null && row.단가 !== ''
+            ? safeNum(row.단가)
+            : safeNum(row && (row.구매가 || row._purchasePrice));
+        totalQty += qty;
+        totalCost += price * qty;
+    });
+    return totalQty > 0 ? Math.round(totalCost / totalQty) : null;
+};
+const collectDataOpsSourceLedgerRows = (row = {}) => {
+    const collected = [];
+    const seen = new Set();
+    const visit = (current) => {
+        if (!current || typeof current !== 'object' || seen.has(current)) return;
+        seen.add(current);
+        const nested = Array.isArray(current._sourceLedgerRows) ? current._sourceLedgerRows.filter(Boolean) : [];
+        if (nested.length) {
+            nested.forEach(visit);
+            return;
+        }
+        collected.push(current);
+    };
+    visit(row);
+    return collected.length ? collected : [row];
+};
+const buildDataOpsPurchaseRemarkView = (rows = [], representativeRow = null) => {
+    const sourceRows = [];
+    (rows || []).forEach(row => collectDataOpsSourceLedgerRows(row).forEach(sourceRow => sourceRows.push(sourceRow)));
+    const remarks = sourceRows.map(row => safeStr(row && row._purchaseRemark, '')).filter(Boolean);
+    const representativeRemark = safeStr(representativeRow && representativeRow._purchaseRemark, '');
+    const primaryRemark = representativeRemark || remarks[0] || '';
+    const orderedRemarks = [...remarks];
+    if (representativeRemark) {
+        const representativeIndex = orderedRemarks.indexOf(representativeRemark);
+        if (representativeIndex > 0) {
+            orderedRemarks.splice(representativeIndex, 1);
+            orderedRemarks.unshift(representativeRemark);
+        }
+    }
+    return {
+        summary: remarks.length <= 1 ? primaryRemark : `${primaryRemark} 외 ${remarks.length - 1}건`,
+        fullText: orderedRemarks.join('\n'),
+        count: remarks.length
+    };
+};
+const getDataOpsDisplayPurchaseVendor = (row = {}) => safeStr(
+    row._displayPurchaseVendor || row._purchaseLotVendor || row._confirmedPurchaseVendor ||
+    ((row._uploadRole === 'out' || row._fromSalesConfirmedPurchase) ? '' : row.거래처) || '미지정',
+    '미지정'
+);
+const matchesDataOpsTableSearch = (row = {}, query = '') => {
+    const normalizedQuery = safeStr(query, '').toLowerCase();
+    if (!normalizedQuery) return true;
+    const candidates = [];
+    const add = (value) => {
+        const text = safeStr(value, '');
+        if (text) candidates.push(text.toLowerCase());
+    };
+    const addPrice = (value) => {
+        if (value === null || value === undefined || (typeof value === 'string' && value.trim() === '')) return;
+        const numeric = Number(value);
+        if (!Number.isFinite(numeric)) return;
+        add(String(numeric));
+        add(formatMoney(numeric));
+    };
+    const sourceRows = collectDataOpsSourceLedgerRows(row);
+    [row, ...sourceRows].forEach(sourceRow => {
+        add(sourceRow.품명 || sourceRow.name);
+        add(sourceRow.코드 || sourceRow.code);
+        add(sourceRow._purchaseRemark);
+        add(sourceRow._purchaseRemarkFull);
+        add(sourceRow.일자);
+        add(sourceRow._stockRecordDate);
+        add(sourceRow._purchaseDate);
+        add(sourceRow._dateDisplayMemo);
+        add(getDataOpsDisplayPurchaseVendor(sourceRow));
+        add(sourceRow._displayPurchaseVendor);
+        add(sourceRow._purchaseLotVendor);
+        add(sourceRow._confirmedPurchaseVendor);
+        add(sourceRow._purchaseVendor);
+        add(sourceRow._purchaseGroupVendor);
+        add(sourceRow._stockTrade);
+        addPrice(sourceRow.단가);
+        addPrice(sourceRow.구매가);
+        addPrice(sourceRow._purchasePrice);
+    });
+    return candidates.some(value => value.includes(normalizedQuery));
+};
 // V1.a22.12: 수량은 정수 반올림하지 않는다. 0.5, 2.3 같은 소수 수량을 그대로 표시한다.
 const formatQty = (num, maxDigits = 3) => {
     const n = Number(num);
@@ -912,7 +1006,7 @@ const clearTableSortPreference = () => {
    - 주의: 물리적 파일 분리는 하지 않는다. 단일 HTML 실행 구조를 유지한다.
    ======================================================================= */
 const CONFIG_MODULE = Object.freeze({
-    version: 'V1.a22.110_WorkSaveCloudInventorySync',
+    version: 'V1.a22.111_F9FrozenClosingRows',
     categoryMap: Object.freeze({
         '10': '채소.과일',
         '20': '수산.축산',
@@ -3141,7 +3235,8 @@ const EXPORT_MODULE = Object.freeze({
             '구매가': Math.round(safeNum(item.단가)),
             // V1.a22.69: 전체재고는 앞으로 재고현황 입력 시트로 사용하므로 원본 재고현황의 기본값을 그대로 보존한다.
             '기본': getBasicDisplayValue(item),
-            '적요': EXPORT_MODULE.sanitizeStockRemark(raw['적요'] || raw['비고'] || raw['메모'] || '')
+            '적요': EXPORT_MODULE.sanitizeStockRemark(raw['적요'] || raw['비고'] || raw['메모'] || ''),
+            '행사가': item.행사가 === undefined || item.행사가 === null ? '' : item.행사가
         };
     }),
     // V1.a22.69: 엑셀 다운로드 1번 시트는 현재 화면 보기모드 그대로 출력한다.
@@ -3162,7 +3257,8 @@ const EXPORT_MODULE = Object.freeze({
             '거래': EXPORT_MODULE.sanitizeLedgerTradeValue(item.거래처),
             '구매가': Math.round(safeNum(item.단가)),
             '기본': getBasicDisplayValue(item),
-            '적요': EXPORT_MODULE.sanitizeStockRemark(raw['적요'] || raw['비고'] || raw['메모'] || '')
+            '적요': EXPORT_MODULE.sanitizeStockRemark(raw['적요'] || raw['비고'] || raw['메모'] || ''),
+            '행사가': item.행사가 === undefined || item.행사가 === null ? '' : item.행사가
         };
     }),
     buildNextBaseStockSheet: ({ productData = [], rows = null, targetDateStr = '' }) => {
@@ -3170,18 +3266,18 @@ const EXPORT_MODULE = Object.freeze({
         const displayDate = safeStr(targetDateStr, '').replace(/-/g, '/');
         const title = `회사명 : 원앱 / 1창고 / ${displayDate || '기준일미상'} / 전체재고`;
         // V1.a22.69: 전체재고는 재고현황 입력으로 계속 사용할 시트다.
-        // 양식은 단위/품목코드/품명/규격/재고/기록/거래/구매가/기본/적요 순서로 고정한다.
-        const headers = ['단위', '품목코드', '품명', '규격', '재고', '기록', '거래', '구매가', '기본', '적요'];
+        // 기존 10열 순서를 유지하고 DataOps 확정 행사가를 마지막 11번째 열로만 추가한다.
+        const headers = ['단위', '품목코드', '품명', '규격', '재고', '기록', '거래', '구매가', '기본', '적요', '행사가'];
         const aoa = [
-            [title, '', '', '', '', '', '', '', '', ''],
+            [title, '', '', '', '', '', '', '', '', '', ''],
             headers,
             ...rowsToUse.map(row => headers.map(h => { var _a; return (_a = row[h]) !== null && _a !== void 0 ? _a : ''; }))
         ];
         const ws = XLSX.utils.aoa_to_sheet(aoa);
         EXPORT_MODULE.forceTextColumnsByHeader(ws, 1);
-        ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 9 } }];
-        ws['!cols'] = [10, 14, 34, 10, 10, 12, 14, 14, 12, 18].map(wch => ({ wch }));
-        ws['!autofilter'] = { ref: `A2:J${Math.max(2, aoa.length)}` };
+        ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 10 } }];
+        ws['!cols'] = [10, 14, 34, 10, 10, 12, 14, 14, 12, 18, 14].map(wch => ({ wch }));
+        ws['!autofilter'] = { ref: `A2:K${Math.max(2, aoa.length)}` };
         return ws;
     },
     // V1.a22.69: 전체재고는 실사양식/코드통합형 집계가 아니라 구매잔량 + 기타상품을 합친 현황이다.
@@ -3788,7 +3884,7 @@ const EXPORT_MODULE = Object.freeze({
         w.document.close();
         return true;
     },
-    createCombinedWorkbook: ({ productData = [], analysisPeriod = '', targetDateStr = '', closingStats = {} }) => {
+    createCombinedWorkbook: ({ productData = [], analysisPeriod = '', targetDateStr = '', closingStats = {}, wholeStockRows: suppliedWholeStockRows = null }) => {
         const exportFileNameDate = targetDateStr ? targetDateStr.replace(/-/g, '') : (() => { const today = new Date(); return `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`; })();
         // V1.a22.30: 운영 출력은 코드통합형을 기본으로 한다. Lot/일자/구매처 상세는 분석원장에만 보존한다.
         const operationalProductData = DATAOPS_VIEW_LAYER_MODULE.buildCodeSummaryRows(productData || []).sort((a, b) => FILTER_SORT_MODULE.compareByCodeThenName(a, b));
@@ -3804,7 +3900,9 @@ const EXPORT_MODULE = Object.freeze({
         const otherStockRows = EXPORT_MODULE.buildOtherStockRows({ productData, targetDateStr });
         // F9 전체재고는 전체 원본에서 만든 관리자 통합/해제 결과를 기준으로 하며 화면 필터·검색·숨김 상태와 무관하다.
         // 내일 기초재고로 넘길 통합 잔량 > 0 조건은 buildNextBaseStockRows에서만 적용한다.
-        const wholeStockRows = EXPORT_MODULE.buildNextBaseStockRows({ productData: operationalProductData, targetDateStr });
+        const wholeStockRows = Array.isArray(suppliedWholeStockRows)
+            ? suppliedWholeStockRows
+            : EXPORT_MODULE.buildNextBaseStockRows({ productData: operationalProductData, targetDateStr });
         const checkRequestRows = EXPORT_MODULE.buildManagementIssueRows({ productData: operationalProductData });
         const wb = XLSX.utils.book_new();
         // V1.a22.69: 수불마감 기본 보고서는 전체재고 / 구매잔량 / 기타상품 3단계로 분리한다.
@@ -3845,11 +3943,11 @@ const EXPORT_MODULE = Object.freeze({
     }
 });
 /* =======================================================================
-   2-G. V1.a22.110 DataOps 작업저장 → MerchOps 재고 클라우드 동기화
+   2-G. V1.a22.111 DataOps 작업저장/F9 → MerchOps 재고 클라우드 동기화
    - 수동 [작업 저장]만 클라우드 확정재고를 갱신한다. 600ms 자동저장은 로컬 복구용으로 유지한다.
    - MerchOps가 읽는 ONEAPP_DATAOPS_SNAPSHOT_V1 계약을 그대로 생성하고 dataops_snapshot_commit으로 전송한다.
-   - 재고행은 F9 전체재고와 동일하게 코드통합형 + 실제잔량 > 0 기준을 사용한다.
-   - DataOps는 행사가를 판단하지 않으므로 snapshot 행사가 셀은 공란으로 전달한다.
+   - F9는 한 번 동결한 전체재고 행을 Excel과 snapshot에 함께 전달하고, 작업저장은 코드통합형 양수 잔량을 생성한다.
+   - 행사가가 있으면 11번째 셀로 보존하고 없으면 공란으로 전달한다.
    ======================================================================= */
 const DATAOPS_MERCH_STOCK_SYNC_MODULE = Object.freeze({
     schemaVersion: 'ONEAPP_DATAOPS_SNAPSHOT_V1',
@@ -3880,22 +3978,24 @@ const DATAOPS_MERCH_STOCK_SYNC_MODULE = Object.freeze({
             return value;
         return String(value);
     },
-    buildRows: ({ productData = [], targetDateStr = '' } = {}) => {
+    buildRows: ({ productData = [], wholeStockRows: suppliedWholeStockRows = null, targetDateStr = '' } = {}) => {
         const operationalProductData = DATAOPS_VIEW_LAYER_MODULE
             .buildCodeSummaryRows(productData || [])
             .sort((a, b) => FILTER_SORT_MODULE.compareByCodeThenName(a, b));
-        const wholeStockRows = EXPORT_MODULE.buildNextBaseStockRows({
-            productData: operationalProductData,
-            targetDateStr
-        });
+        const wholeStockRows = Array.isArray(suppliedWholeStockRows)
+            ? suppliedWholeStockRows
+            : EXPORT_MODULE.buildNextBaseStockRows({
+                productData: operationalProductData,
+                targetDateStr
+            });
         return wholeStockRows.map(row => [
             row['단위'], row['품목코드'], row['품명'], row['규격'], row['재고'],
-            row['기록'], row['거래'], row['구매가'], row['기본'], row['적요'], ''
+            row['기록'], row['거래'], row['구매가'], row['기본'], row['적요'], row['행사가']
         ].map(DATAOPS_MERCH_STOCK_SYNC_MODULE.toScalarCell));
     },
-    buildSnapshot: async ({ productData = [], targetDateStr = '' } = {}) => {
+    buildSnapshot: async ({ productData = [], wholeStockRows = null, targetDateStr = '' } = {}) => {
         const basisDate = DATAOPS_MERCH_STOCK_SYNC_MODULE.normalizeBasisDate(targetDateStr);
-        const rows = DATAOPS_MERCH_STOCK_SYNC_MODULE.buildRows({ productData, targetDateStr: basisDate });
+        const rows = DATAOPS_MERCH_STOCK_SYNC_MODULE.buildRows({ productData, wholeStockRows, targetDateStr: basisDate });
         const columns = Array.from(DATAOPS_MERCH_STOCK_SYNC_MODULE.columns);
         const canonicalJson = JSON.stringify({
             schemaVersion: DATAOPS_MERCH_STOCK_SYNC_MODULE.schemaVersion,
@@ -3925,8 +4025,8 @@ const DATAOPS_MERCH_STOCK_SYNC_MODULE = Object.freeze({
             return `DataOps 재고 스냅샷 검증 실패: ${detail}`;
         return detail || '클라우드 재고 저장에 실패했습니다.';
     },
-    commit: async ({ productData = [], targetDateStr = '', url = '' } = {}) => {
-        const snapshot = await DATAOPS_MERCH_STOCK_SYNC_MODULE.buildSnapshot({ productData, targetDateStr });
+    commit: async ({ productData = [], wholeStockRows = null, targetDateStr = '', url = '' } = {}) => {
+        const snapshot = await DATAOPS_MERCH_STOCK_SYNC_MODULE.buildSnapshot({ productData, wholeStockRows, targetDateStr });
         const targetUrl = DATAOPS_CLOUD_MODULE.normalizeUrl(url || DATAOPS_CLOUD_MODULE.getCloudUrl());
         if (!targetUrl)
             throw new Error('클라우드 URL이 비어 있습니다.');
@@ -4067,25 +4167,103 @@ const DATAOPS_WORK_STATE_MODULE = Object.freeze({
         }
     }
 });
-// V1.a22.108: 입력 파일마다 Web Worker를 만들고 외부 CDN에서 XLSX를 다시 불러오던 구조를 제거한다.
-// 화면에서 이미 로드된 XLSX 라이브러리만 사용하며, 같은 File 객체는 한 번 읽은 Workbook 결과를 재사용한다.
-// 기존 참조 호환을 위해 모듈명은 유지하지만 모든 처리는 현재 화면 스레드에서 즉시 수행한다.
+// 대용량 XLSX 읽기/쓰기는 Worker에서 실행하고 실패 시 호출부의 메인 스레드 경로로 복구한다.
+// 같은 File 객체의 Worker 결과는 아래 입력 캐시에서 재사용한다.
 const DATAOPS_XLSX_WORKER_MODULE = Object.freeze({
+    XLSX_URL: 'https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js',
+    createWorker: () => {
+        if (typeof Worker === 'undefined' || typeof Blob === 'undefined' || typeof URL === 'undefined')
+            throw new Error('Web Worker를 사용할 수 없습니다.');
+        const source = `
+            self.onmessage = function(event) {
+                try {
+                    importScripts(${JSON.stringify('https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js')});
+                    var payload = event.data || {};
+                    if (payload.action === 'read') {
+                        var workbook = XLSX.read(new Uint8Array(payload.buffer), { type: 'array' });
+                        var sheetRows = {};
+                        (workbook.SheetNames || []).forEach(function(name) {
+                            sheetRows[name] = XLSX.utils.sheet_to_json(workbook.Sheets[name], { header: 1, defval: '' });
+                        });
+                        self.postMessage({ ok: true, sheetNames: workbook.SheetNames || [], sheetRows: sheetRows });
+                        return;
+                    }
+                    if (payload.action === 'write') {
+                        var output = XLSX.write(payload.workbook, { bookType: 'xlsx', type: 'array' });
+                        var outputBuffer = output instanceof ArrayBuffer
+                            ? output
+                            : output.buffer.slice(output.byteOffset || 0, (output.byteOffset || 0) + output.byteLength);
+                        self.postMessage({ ok: true, buffer: outputBuffer }, [outputBuffer]);
+                        return;
+                    }
+                    throw new Error('지원하지 않는 Worker 작업입니다.');
+                } catch (error) {
+                    self.postMessage({ ok: false, error: error && error.message ? error.message : String(error) });
+                }
+            };
+        `;
+        const url = URL.createObjectURL(new Blob([source], { type: 'text/javascript' }));
+        return { worker: new Worker(url), url };
+    },
+    run: (action, payload = {}, transfer = []) => new Promise((resolve, reject) => {
+        let workerInfo;
+        try {
+            workerInfo = DATAOPS_XLSX_WORKER_MODULE.createWorker();
+        }
+        catch (error) {
+            reject(error);
+            return;
+        }
+        const { worker, url } = workerInfo;
+        let settled = false;
+        let timeoutId = null;
+        const cleanup = () => {
+            if (timeoutId !== null)
+                clearTimeout(timeoutId);
+            worker.terminate();
+            URL.revokeObjectURL(url);
+        };
+        worker.onmessage = (event) => {
+            if (settled)
+                return;
+            settled = true;
+            const result = event.data || {};
+            cleanup();
+            if (result.ok)
+                resolve(result);
+            else
+                reject(new Error(result.error || 'XLSX Worker 처리 실패'));
+        };
+        worker.onerror = (event) => {
+            if (settled)
+                return;
+            settled = true;
+            cleanup();
+            reject(new Error(event.message || 'XLSX Worker 실행 실패'));
+        };
+        timeoutId = setTimeout(() => {
+            if (settled)
+                return;
+            settled = true;
+            cleanup();
+            reject(new Error('XLSX Worker 응답 시간 초과'));
+        }, 30000);
+        try {
+            worker.postMessage({ action, ...payload }, transfer);
+        }
+        catch (error) {
+            settled = true;
+            cleanup();
+            reject(error);
+        }
+    }),
     readWorkbookRows: async (arrayBuffer) => {
-        if (!window.XLSX)
-            throw new Error('XLSX 라이브러리를 사용할 수 없습니다.');
-        const bytes = arrayBuffer instanceof Uint8Array ? arrayBuffer : new Uint8Array(arrayBuffer);
-        const workbook = XLSX.read(bytes, { type: 'array' });
-        const sheetRows = {};
-        (workbook.SheetNames || []).forEach(name => {
-            sheetRows[name] = XLSX.utils.sheet_to_json(workbook.Sheets[name], { header: 1, defval: '' });
-        });
-        return { sheetNames: workbook.SheetNames || [], sheetRows };
+        const transferable = arrayBuffer.slice(0);
+        return DATAOPS_XLSX_WORKER_MODULE.run('read', { buffer: transferable }, [transferable]);
     },
     writeWorkbook: async (workbook) => {
-        if (!window.XLSX)
-            throw new Error('XLSX 라이브러리를 사용할 수 없습니다.');
-        return XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+        const result = await DATAOPS_XLSX_WORKER_MODULE.run('write', { workbook });
+        return result.buffer;
     }
 });
 const DATAOPS_XLSX_INPUT_CACHE = new WeakMap();
@@ -4107,7 +4285,21 @@ const readDataOpsInputWorkbook = (file) => {
         return cached;
     const pending = (async () => {
         const arrayBuffer = await readDataOpsFileAsArrayBuffer(file);
-        const workbookRows = await DATAOPS_XLSX_WORKER_MODULE.readWorkbookRows(arrayBuffer);
+        let workbookRows;
+        try {
+            workbookRows = await DATAOPS_XLSX_WORKER_MODULE.readWorkbookRows(arrayBuffer);
+        }
+        catch (workerError) {
+            console.warn('XLSX Worker 파싱 실패, 메인 스레드 경로로 복구합니다.', workerError);
+            if (!window.XLSX)
+                throw workerError;
+            const workbook = XLSX.read(new Uint8Array(arrayBuffer), { type: 'array' });
+            const sheetRows = {};
+            (workbook.SheetNames || []).forEach(name => {
+                sheetRows[name] = XLSX.utils.sheet_to_json(workbook.Sheets[name], { header: 1, defval: '' });
+            });
+            workbookRows = { sheetNames: workbook.SheetNames || [], sheetRows };
+        }
         return { ...workbookRows, arrayBuffer };
     })().catch(error => {
         DATAOPS_XLSX_INPUT_CACHE.delete(file);
@@ -11410,8 +11602,23 @@ ${balanceText}
             return;
         }
         setIsProcessing(true);
+        let closingRows = [];
+        let exportFileNameDate = '';
         try {
-            const { wb, exportFileNameDate } = EXPORT_MODULE.createCombinedWorkbook({ productData, analysisPeriod, targetDateStr, closingStats });
+            const activeElement = document.activeElement;
+            if (activeElement && typeof activeElement.__dataopsFlushNow === 'function') {
+                activeElement.__dataopsFlushNow();
+                await new Promise(resolve => setTimeout(resolve, 0));
+            }
+            const closingProductData = (productDataRef.current || productData)
+                .filter(row => !row._inventoryMasterAdded || STOCK_ENGINE_MODULE.getActualQty(row) > 0);
+            // 화면 검색·카테고리·숨김 필터는 마감자료에 적용하지 않고 관리자 통합/분리 결과만 동결한다.
+            const closingViewRows = DATAOPS_VIEW_LAYER_MODULE.buildViewRows(closingProductData, { viewMode })
+                .filter(item => STOCK_ENGINE_MODULE.getActualQty(item) > 0);
+            closingRows = EXPORT_MODULE.buildScreenStockRows({ productData: closingViewRows, targetDateStr });
+            const workbookResult = EXPORT_MODULE.createCombinedWorkbook({ productData: closingProductData, analysisPeriod, targetDateStr, closingStats, wholeStockRows: closingRows });
+            const wb = workbookResult.wb;
+            exportFileNameDate = workbookResult.exportFileNameDate;
             let excelBuffer;
             try {
                 excelBuffer = await DATAOPS_XLSX_WORKER_MODULE.writeWorkbook(wb);
@@ -11429,16 +11636,35 @@ ${balanceText}
             a.click();
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
-            setTimeout(() => { setAlertMsg("✅ 수불부 마감 데이터가 엑셀로 다운로드되었습니다.\n\n[포함 시트]\n1. 전체재고\n2. 구매잔량\n3. 기타상품\n4. 실사양식(ERP 업로드용 기존 양식 유지)\n5. 확인요청\n6. 재고수불_마감\n7. 수불마감_분석원장\n8. 소분치환_후보\n9. 마스터_확인필요\n10. 보고서"); }, 500);
         }
         catch (err) {
             console.error('엑셀 생성 중 오류:', err);
-            setAlertMsg("엑셀 파일 생성 중 오류가 발생했습니다.");
+            setAlertMsg(`Excel 파일 생성 또는 다운로드에 실패했습니다. 클라우드에는 저장하지 않았습니다.${err && err.message ? ` · ${err.message}` : ''}`);
+            setIsProcessing(false);
+            return;
+        }
+        try {
+            const cloudResult = await DATAOPS_MERCH_STOCK_SYNC_MODULE.commit({
+                wholeStockRows: closingRows,
+                targetDateStr
+            });
+            const saved = cloudResult.saved || {};
+            setAlertMsg(
+                `✅ 수불부 마감 완료 · Excel 다운로드 + 클라우드 확정\n\n` +
+                `파일: 수불마감_${exportFileNameDate}.xlsx\n` +
+                `재고 기준일: ${saved.basisDate || targetDateStr || '-'}\n` +
+                `재고 행수: ${safeNum(saved.rowCount).toLocaleString()}행\n` +
+                `Revision: ${saved.revision || '-'}`
+            );
+        }
+        catch (err) {
+            console.error('DataOps 클라우드 저장 오류:', err);
+            setAlertMsg(`Excel 다운로드는 완료되었지만 클라우드 저장에 실패했습니다. 이전 확정자료는 유지됩니다.${err && err.message ? ` · ${err.message}` : ''}`);
         }
         finally {
             setIsProcessing(false);
         }
-    }, [isClosingOutputBlocked, productData, analysisPeriod, targetDateStr, closingStats, setAlertMsg, setIsProcessing]);
+    }, [isClosingOutputBlocked, productData, analysisPeriod, targetDateStr, closingStats, viewMode, setAlertMsg, setIsProcessing]);
     const handlePrintOutput = useCallback(() => {
         if (isClosingOutputBlocked) {
             setAlertMsg("분석이 완료되기 전에는 출력할 수 없습니다.");
