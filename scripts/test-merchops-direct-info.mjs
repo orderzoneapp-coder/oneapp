@@ -105,15 +105,21 @@ for (const removed of [
 }
 assert.ok(!merch.includes("if (e.key === 'merchMaster_sync_trigger')"), "MerchOps must not hot-reload an open worktable");
 
+const loadTools = merch.indexOf('title: "마스터·파서·카탈로그·작업정보"');
+const tableView = merch.indexOf("showTableViewSelect && displayTableViewList.length > 0", loadTools);
+const autoRule = merch.indexOf('"aria-label": "파일 불러오기 시 출고가 자동적용"', tableView);
+const manualRule = merch.indexOf("onClick: handleForceApplyMarginRules", autoRule);
+const mainReset = merch.indexOf('title: "메인 작업 초기화"', manualRule);
+assert.ok(loadTools >= 0 && tableView > loadTools && autoRule > tableView && manualRule > autoRule && mainReset > manualRule,
+  "The persisted auto-rule option and manual out-price action must stay beside the catalog table view");
 const fixedTools = merch.indexOf('title: "기본 판매가·필터 초기화·검색"');
-const fixedRule = merch.indexOf("onClick: handleForceApplyMarginRules", fixedTools);
 const filterReset = merch.indexOf("onClick: handleFilterResetOnly", fixedTools);
 const searchBar = merch.indexOf("React.createElement(SearchBar", fixedTools);
-assert.ok(fixedTools >= 0 && fixedRule > fixedTools && filterReset > fixedRule && searchBar > filterReset,
-  "Rule apply must be fixed immediately left of filter reset and search");
+assert.ok(fixedTools >= 0 && filterReset > fixedTools && searchBar > filterReset,
+  "Filter reset must remain immediately left of search");
 assert.equal((merch.match(/onClick: handleForceApplyMarginRules/g) || []).length, 1,
   "Rule apply must appear once and must not remain in the promotion workbench");
-assert.match(merch, /기본 판매가\(출고가\).*행사작업과 독립된 가격 작업/);
+assert.match(merch, /출고가: 선택행 또는 현재 화면에 기존 마진룰을 수동 적용합니다/);
 
 for (const removed of [
   "merchInfoChangeQueue_v1",
