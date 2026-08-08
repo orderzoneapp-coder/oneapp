@@ -209,6 +209,85 @@
   const isBlankValue = (v) => v === undefined || v === null || String(v).trim() === '';
   const getExplicitValue = (obj = {}, field = '', fallback = '') => hasOwnField(obj, field) ? (obj[field] ?? '') : fallback;
 
+  // ============================================================
+  // MERCHOPS WORKING FIELD CONTRACT
+  // - master values are comparison references unless the row is an explicit master lookup.
+  // - owned source blanks, numeric zero, string "0", and boolean false are working values.
+  // - direct edits and explicit rule results take precedence over the source cell.
+  // ============================================================
+  const MERCH = ONEAPP.MERCH = ONEAPP.MERCH || {};
+  const MERCH_SOURCE_ROLES = ['catalog', 'estimate', 'purchase', 'sales', 'inventory', 'info', 'parser'];
+  const uniqueFields = (fields = []) => [...new Set(fields.map(field => String(field || '').trim()).filter(Boolean))];
+  const findOwnedField = (obj = {}, fields = []) => {
+    for (const field of fields) {
+      if (hasOwnField(obj, field)) return { found: true, field, value: obj[field] };
+    }
+    return { found: false, field: '', value: undefined };
+  };
+  const hasMerchSourceData = (source = {}) => !!(source && typeof source === 'object'
+    && Object.keys(source).some(field => !String(field || '').startsWith('_')));
+
+  MERCH.getWorkingSourceRole = (sources = {}, fallback = '') => {
+    const explicit = String(sources?._activeRole || sources?._lastUploadRole || sources?.activeRole || sources?.sourceRole || fallback || '').trim();
+    if (MERCH_SOURCE_ROLES.includes(explicit) && hasMerchSourceData(sources?.[explicit])) return explicit;
+    return MERCH_SOURCE_ROLES.find(role => hasMerchSourceData(sources?.[role])) || '';
+  };
+
+  MERCH.resolveWorkingField = (row = {}, master = {}, field = '', options = {}) => {
+    const fields = uniqueFields([field, ...(Array.isArray(options.aliases) ? options.aliases : [])]);
+    const canonicalField = String(field || fields[0] || '');
+    const finalData = row?.finalData || {};
+    const sources = row?.sources || {};
+    const sourceRole = MERCH.getWorkingSourceRole(sources, row?._lastUploadRole || '');
+    const source = sourceRole ? (sources?.[sourceRole] || {}) : {};
+    const directMarkers = { ...(finalData?._editedFields || {}), ...(finalData?._bulkEditedFields || {}) };
+    const generatedMarkers = finalData?._generatedFields || {};
+    const finalCell = findOwnedField(finalData, fields);
+    const direct = fields.some(name => directMarkers[name] === true);
+    const promoActionGenerated = finalData?._promoResetRequested === true
+      && fields.some(name => ['행사가', '행사테마', '테마', 'promoTheme', '_theme', '테마1', '테마2', '테마3', '테마4', '테마5'].includes(name));
+    const previousPromoGenerated = finalData?._previousPromoApplied === true && fields.includes('행사가');
+    const explicitGenerated = fields.some(name => generatedMarkers[name] === true)
+      || options.generated === true
+      || promoActionGenerated
+      || previousPromoGenerated
+      || (canonicalField === '출고가' && !!(finalData?._ruleAppliedAt || finalData?._isRuleApplied));
+    const result = (value, origin, isWorkingValue, isExplicitBlank, resolvedField = canonicalField, resolvedRole = '') => ({
+      value,
+      origin,
+      isWorkingValue,
+      isExplicitBlank,
+      field: resolvedField || canonicalField,
+      sourceRole: resolvedRole
+    });
+
+    if (direct) {
+      const value = finalCell.found ? finalCell.value : '';
+      return result(value ?? '', 'direct', true, isBlankValue(value), finalCell.field || canonicalField, sourceRole);
+    }
+    if (explicitGenerated && finalCell.found) {
+      return result(finalCell.value ?? '', 'generated', true, isBlankValue(finalCell.value), finalCell.field, sourceRole);
+    }
+
+    const sourceCell = findOwnedField(source, fields);
+    if (sourceCell.found) {
+      return result(sourceCell.value ?? '', 'source', true, isBlankValue(sourceCell.value), sourceCell.field, sourceRole);
+    }
+
+    const masterLookupOnly = options.masterLookupOnly === true
+      || row?._masterLookupOnly === true
+      || String(row?._lastUploadRole || '') === 'masterLookup';
+    const masterCell = findOwnedField(master, fields);
+    if (masterLookupOnly) {
+      const value = masterCell.found ? (masterCell.value ?? '') : '';
+      return result(value, 'master-lookup', true, masterCell.found && isBlankValue(masterCell.value), masterCell.field || canonicalField, '');
+    }
+
+    return result(masterCell.found ? (masterCell.value ?? '') : '', 'master-reference', false, false, masterCell.field || canonicalField, '');
+  };
+
+  global.resolveMerchWorkingField = MERCH.resolveWorkingField;
+
   const safeJSONParseRaw = (raw, defaultVal) => {
     try {
       if (!raw || raw === 'undefined' || raw === 'null') return defaultVal;
@@ -1580,76 +1659,129 @@
   // ============================================================
   const EXPORT = ONEAPP.EXPORT = ONEAPP.EXPORT || {};
 
-  const getValueFromRow = (row = {}, master = {}, key, defaultValue = '') => {
-    const finalData = row.finalData || {};
-    const sources = row.sources || {};
-    const inventory = sources.inventory || {};
-    const estimate = sources.estimate || {};
-    const purchase = sources.purchase || {};
-    const sales = sources.sales || {};
+  const MERCH_EXPORT_FIELD_DEFINITIONS = [
+    { field: '품목명', aliases: ['품목명', '상품명'], type: 'string' },
+    { field: '규격', aliases: ['규격'], type: 'string' },
+    { field: '브랜드', aliases: ['브랜드'], type: 'string' },
+    { field: '간단설명', aliases: ['간단설명', '기본설명'], type: 'string' },
+    { field: '창고', aliases: ['창고'], type: 'string' },
+    { field: '단위', aliases: ['단위'], type: 'string' },
+    { field: '_calcWarehouse', aliases: ['_calcWarehouse'], type: 'string' },
+    { field: '_calcWarehouseReason', aliases: ['_calcWarehouseReason'], type: 'string' },
+    { field: '입고가', aliases: ['입고가'], type: 'number' },
+    { field: '출고가', aliases: ['출고가', '판매가', '판매가격'], type: 'number' },
+    { field: '행사가', aliases: ['행사가'], type: 'number' },
+    { field: '도매A', aliases: ['도매A', 'A판매', 'A판매가'], type: 'number' },
+    { field: '도매B', aliases: ['도매B', 'B판매', 'B도매', 'B도매가'], type: 'number' },
+    { field: 'B판매가', aliases: ['B판매가', 'B 판매가'], type: 'number' },
+    { field: 'B도매가', aliases: ['B도매가', 'B 도매가'], type: 'number' },
+    { field: '최종전송', aliases: ['최종전송', '최종(전송)', '최종입고'], type: 'number' },
+    { field: '시중가', aliases: ['시중가', '시중가격'], type: 'number' },
+    { field: '입고B', aliases: ['입고B'], type: 'number' },
+    { field: '판매여부', aliases: ['판매여부', '판매'], type: 'raw' },
+    { field: '1종코드', aliases: ['1종코드'], type: 'string' },
+    { field: '1종규격', aliases: ['1종규격'], type: 'string' },
+    { field: '1종연산', aliases: ['1종연산'], type: 'number' },
+    { field: '1당수량', aliases: ['1당수량'], type: 'number' },
+    { field: '경비', aliases: ['경비'], type: 'number' },
+    { field: '외주비', aliases: ['외주비'], type: 'number' },
+    { field: '노무비', aliases: ['노무비'], type: 'number' },
+    { field: '재고수량', aliases: ['재고수량', '재고', '수량'], type: 'number' },
+    { field: '기본', aliases: ['기본', '구분(기본)', '기본여부', '관리구분'], type: 'string' },
+    { field: '카테고리', aliases: ['견적서', '카테고리'], type: 'string' },
+    { field: '검색어등록', aliases: ['검색어등록', '상품태그'], type: 'string' }
+  ];
 
-    if (finalData[key] !== undefined && finalData[key] !== '') return finalData[key];
-    if (inventory[key] !== undefined && inventory[key] !== '') return inventory[key];
-    if (estimate[key] !== undefined && estimate[key] !== '') return estimate[key];
-    if (purchase[key] !== undefined && purchase[key] !== '') return purchase[key];
-    if (sales[key] !== undefined && sales[key] !== '') return sales[key];
-    if (master[key] !== undefined && master[key] !== '') return master[key];
-    return defaultValue;
+  const normalizeWorkingPayloadValue = (state, type = 'raw') => {
+    if (state.isExplicitBlank) return '';
+    if (type === 'number') return parseNum(state.value);
+    if (type === 'string') return state.value === undefined || state.value === null ? '' : String(state.value);
+    return state.value;
   };
 
   EXPORT.buildWorkingPayload = (row = {}, master = {}) => {
     const finalData = row.finalData || {};
-    const getValue = (key, defaultValue = '') => getValueFromRow(row, master, key, defaultValue);
-    const getNum = (key, defaultValue = 0) => parseNum(getValue(key, defaultValue));
-    const getStr = (key, defaultValue = '') => {
-      const val = getValue(key, defaultValue);
-      return val !== undefined && val !== null ? String(val) : defaultValue;
-    };
+    const working = { _fieldStates: {} };
+    MERCH_EXPORT_FIELD_DEFINITIONS.forEach(definition => {
+      const state = MERCH.resolveWorkingField(row, master, definition.field, { aliases: definition.aliases });
+      working._fieldStates[definition.field] = { ...state };
+      if (!state.isWorkingValue) return;
+      working[definition.field] = normalizeWorkingPayloadValue(state, definition.type);
+    });
 
-    const inventory = row.sources?.inventory || {};
-    const estimate = row.sources?.estimate || {};
-    const purchase = row.sources?.purchase || {};
-    const sales = row.sources?.sales || {};
-    const info = row.sources?.info || {};
-    const stockRaw = finalData['재고수량'] ?? info['재고수량'] ?? info['재고'] ?? inventory['재고수량'] ?? inventory['안전재고'] ?? estimate['재고수량'];
-    const stockQty = stockRaw !== undefined && stockRaw !== null && stockRaw !== '' ? parseNum(stockRaw) : 999;
-    const promoThemeCodes = parsePromotionThemeCodes(finalData, info, inventory, estimate, purchase, sales, master);
-    const hasPromoTheme = (n) => promoThemeCodes.includes(String(n));
+    const fixedAliases = new Set(MERCH_EXPORT_FIELD_DEFINITIONS.flatMap(definition => [definition.field, ...definition.aliases]));
+    const activeRole = MERCH.getWorkingSourceRole(row?.sources || {}, row?._lastUploadRole || '');
+    const activeSource = activeRole ? (row?.sources?.[activeRole] || {}) : {};
+    const dynamicFields = new Set([
+      ...Object.keys(activeSource),
+      ...Object.keys(finalData),
+      ...Object.keys(master || {})
+    ]);
+    dynamicFields.forEach(field => {
+      if (!field || String(field).startsWith('_') || fixedAliases.has(field) || ['코드', '품목코드', '상품코드'].includes(field)) return;
+      const state = MERCH.resolveWorkingField(row, master, field, { aliases: [field] });
+      working._fieldStates[field] = { ...state };
+      if (!state.isWorkingValue) return;
+      working[field] = state.isExplicitBlank ? '' : (state.value ?? '');
+    });
 
-    return {
-      품목명: getStr('품목명'),
-      규격: getStr('규격'),
-      브랜드: getStr('브랜드'),
-      간단설명: getStr('간단설명'),
-      창고: getStr('창고'),
-      단위: getStr('단위'),
-      _calcWarehouse: getStr('_calcWarehouse'),
-      _calcWarehouseReason: getStr('_calcWarehouseReason'),
-      입고가: getNum('입고가'),
-      출고가: getNum('출고가'),
-      행사가: getNum('행사가'),
-      도매A: getNum('도매A'),
-      도매B: getNum('도매B'),
-      시중가: getNum('시중가'),
-      입고B: getNum('입고B'),
-      판매여부: finalData._salesStopRequested === true ? 0 : (finalData['판매여부'] !== undefined ? finalData['판매여부'] : ''),
-      '1종코드': getStr('1종코드'),
-      '1종규격': getStr('1종규격'),
-      '1종연산': getNum('1종연산'),
-      '1당수량': getNum('1당수량'),
-      '경비': getNum('경비'),
-      '외주비': getNum('외주비'),
-      '노무비': getNum('노무비'),
-      재고수량: stockQty,
-      행사테마: promoThemeCodes.join(','),
-      테마1: hasPromoTheme(1) ? '1' : '',
-      테마2: hasPromoTheme(2) ? '1' : '',
-      테마3: hasPromoTheme(3) ? '1' : '',
-      테마4: hasPromoTheme(4) ? '1' : '',
-      테마5: hasPromoTheme(5) ? '1' : '',
-      카테고리: getStr('견적서') || getStr('카테고리'),
-      검색어등록: getStr('검색어등록')
-    };
+    const themeState = MERCH.resolveWorkingField(row, master, '행사테마', {
+      aliases: ['행사테마', '테마', 'promoTheme', '_theme', '테마1', '테마2', '테마3', '테마4', '테마5']
+    });
+    if (themeState.isWorkingValue) {
+      const themeSource = themeState.origin === 'source' && themeState.sourceRole
+        ? (row.sources?.[themeState.sourceRole] || {})
+        : finalData;
+      const promoThemeCodes = parsePromotionThemeCodes(
+        hasOwnField(finalData, '행사테마') ? { 행사테마: finalData.행사테마 } : themeSource
+      );
+      working.행사테마 = promoThemeCodes.join(',');
+      working._fieldStates.행사테마 = {
+        ...themeState,
+        value: working.행사테마,
+        isExplicitBlank: working.행사테마 === ''
+      };
+      [1, 2, 3, 4, 5].forEach(n => {
+        working[`테마${n}`] = promoThemeCodes.includes(String(n)) ? '1' : '';
+      });
+    }
+    else {
+      working._fieldStates.행사테마 = { ...themeState };
+    }
+    if (finalData._salesStopRequested === true || finalData._salesResumeRequested === true) {
+      const saleValue = finalData._salesStopRequested === true ? 0 : 1;
+      working.판매여부 = saleValue;
+      working._salesStopRequested = finalData._salesStopRequested === true;
+      working._salesResumeRequested = finalData._salesResumeRequested === true;
+      working._fieldStates.판매여부 = {
+        value: saleValue,
+        origin: 'direct',
+        isWorkingValue: true,
+        isExplicitBlank: false,
+        field: '판매여부',
+        sourceRole: ''
+      };
+    }
+    return working;
+  };
+
+  EXPORT.buildMasterReference = (master = {}) => {
+    const reference = {};
+    MERCH_EXPORT_FIELD_DEFINITIONS.forEach(definition => {
+      const cell = findOwnedField(master, definition.aliases);
+      if (!cell.found) return;
+      reference[definition.field] = cell.value ?? '';
+    });
+    Object.keys(master || {}).forEach(field => {
+      if (!field || String(field).startsWith('_') || ['코드', '품목코드', '상품코드'].includes(field) || hasOwnField(reference, field)) return;
+      reference[field] = master[field] ?? '';
+    });
+    const themeCodes = parsePromotionThemeCodes(master);
+    if (hasOwnField(master, '행사테마') || [1, 2, 3, 4, 5].some(n => hasOwnField(master, `테마${n}`))) {
+      reference.행사테마 = themeCodes.join(',');
+      [1, 2, 3, 4, 5].forEach(n => { reference[`테마${n}`] = themeCodes.includes(String(n)) ? '1' : ''; });
+    }
+    return reference;
   };
 
   EXPORT.buildBaselineSnapshot = (master = {}) => {
@@ -1678,6 +1810,7 @@
       hasEstimate: Object.keys(estimate).length > 0,
       hasPurchase: Object.keys(purchase).length > 0,
       hasSales: Object.keys(sales).length > 0,
+      isMasterLookup: row?._masterLookupOnly === true || String(row?._lastUploadRole || '') === 'masterLookup',
       tags,
       sourceType: tags.join(', '),
       inventoryKeys: Object.keys(inventory),
@@ -1698,6 +1831,7 @@
           코드: code,
           working: EXPORT.buildWorkingPayload(row, master),
           baselineSnapshot: EXPORT.buildBaselineSnapshot(master),
+          masterReference: EXPORT.buildMasterReference(master),
           source: EXPORT.buildSourceSummary(row)
         };
       });
@@ -3858,34 +3992,36 @@
             const finalData = row.finalData || {};
             if (finalData._salesStopRequested === true) return { hasValue: true, code: '0', raw: 0, field: '_salesStopRequested', origin: 'action' };
             if (finalData._salesResumeRequested === true) return { hasValue: true, code: '1', raw: 1, field: '_salesResumeRequested', origin: 'action' };
-            const saleFields = ['판매여부', '판매', '판매상태'];
-            const inspect = (obj = {}, origin = '') => {
+            const state = window.resolveMerchWorkingField
+                ? window.resolveMerchWorkingField(row, {}, '판매여부', { aliases: ['판매여부', '판매', '판매상태'] })
+                : { isWorkingValue: false, value: '', origin: '', field: '' };
+            if (state.isWorkingValue && state.isExplicitBlank) {
+                return { hasValue: true, code: '', raw: state.value, field: state.field, origin: state.origin, isExplicitBlank: true };
+            }
+            if (state.isWorkingValue && !state.isExplicitBlank) {
+                const code = window.normalizeMerchSaleAvailability(state.value);
+                if (code !== '') return { hasValue: true, code, raw: state.value, field: state.field, origin: state.origin };
+            }
+            if (!window.resolveMerchWorkingField) {
+                const saleFields = ['판매여부', '판매', '판매상태'];
+                const editedFields = { ...(finalData._editedFields || {}), ...(finalData._bulkEditedFields || {}) };
                 for (const field of saleFields) {
-                    if (!obj || !Object.prototype.hasOwnProperty.call(obj, field)) continue;
-                    const raw = obj[field];
-                    const code = window.normalizeMerchSaleAvailability(raw);
-                    if (code !== '') return { hasValue: true, code, raw, field, origin };
+                    if (!editedFields[field] || !window.hasOwnField(finalData, field)) continue;
+                    if (window.isBlankCell(finalData[field])) return { hasValue: true, code: '', raw: finalData[field], field, origin: 'direct', isExplicitBlank: true };
+                    const code = window.normalizeMerchSaleAvailability(finalData[field]);
+                    if (code !== '') return { hasValue: true, code, raw: finalData[field], field, origin: 'direct' };
                 }
-                return null;
-            };
-            const editedFields = finalData._editedFields || {};
-            for (const field of saleFields) {
-                if (!editedFields[field] || !Object.prototype.hasOwnProperty.call(finalData, field)) continue;
-                const code = window.normalizeMerchSaleAvailability(finalData[field]);
-                if (code !== '') return { hasValue: true, code, raw: finalData[field], field, origin: 'edited' };
-            }
-            const sources = row.sources || {};
-            const activeRole = window.getCurrentMerchSourceRole
-                ? window.getCurrentMerchSourceRole(sources, row._lastUploadRole || '')
-                : String(sources._activeRole || row._lastUploadRole || '').trim();
-            const roles = [activeRole, 'info', 'estimate', 'purchase', 'sales', 'inventory', 'catalog', 'parser'].filter(Boolean);
-            for (const role of [...new Set(roles)]) {
-                const found = inspect(sources[role] || {}, `source:${role}`);
-                if (found) return found;
-            }
-            if (window.hasAnyUploadSource && window.hasAnyUploadSource(sources)) {
-                const found = inspect(finalData, 'working');
-                if (found) return found;
+                const sources = row.sources || {};
+                const activeRole = window.getCurrentMerchSourceRole
+                    ? window.getCurrentMerchSourceRole(sources, row._lastUploadRole || '')
+                    : String(sources._activeRole || row._lastUploadRole || '').trim();
+                const activeSource = activeRole ? (sources[activeRole] || {}) : {};
+                for (const field of saleFields) {
+                    if (!window.hasOwnField(activeSource, field)) continue;
+                    if (window.isBlankCell(activeSource[field])) return { hasValue: true, code: '', raw: activeSource[field], field, origin: `source:${activeRole}`, isExplicitBlank: true };
+                    const code = window.normalizeMerchSaleAvailability(activeSource[field]);
+                    if (code !== '') return { hasValue: true, code, raw: activeSource[field], field, origin: `source:${activeRole}` };
+                }
             }
             return { hasValue: false, code: '', raw: '', field: '', origin: '' };
         });
@@ -8984,17 +9120,11 @@ ${targetText} ${targetRows.length}건을 엑셀로 생성합니다.${workflowTex
             return active && sources[active] ? sources[active] : {};
         };
         const readQuickSourceValue = (row = {}, aliases = [], defaultValue = '') => {
-            const source = getQuickSource(row, isEstimateQuickRow(row) ? 'estimate' : '');
-            const finalData = row.finalData || {};
             const keys = Array.isArray(aliases) ? aliases : [aliases];
-            // 수기 수정값과 현재 source는 공란/0도 명시적 작업값으로 인정한다.
-            for (const key of keys) {
-                if (window.hasOwnField(finalData, key)) return finalData[key] ?? '';
-            }
-            for (const key of keys) {
-                if (window.hasOwnField(source, key)) return source[key] ?? '';
-            }
-            return defaultValue;
+            const state = window.resolveMerchWorkingField
+                ? window.resolveMerchWorkingField(row, getMasterForQuickRow(row), keys[0] || '', { aliases: keys })
+                : { isWorkingValue: false, value: defaultValue };
+            return state.isWorkingValue ? (state.value ?? '') : defaultValue;
         };
         const readQuickSourceNum = (row = {}, aliases = [], defaultValue = 0) => {
             const value = readQuickSourceValue(row, aliases, defaultValue);
@@ -9006,39 +9136,20 @@ ${targetText} ${targetRows.length}건을 엑셀로 생성합니다.${workflowTex
         };
         const isPromoResetQuickRow = (row = {}) => !!((row.finalData || {})._promoResetRequested === true);
         const isMasterThemeResetQuickRow = (row = {}) => isPromoResetQuickRow(row) && (window.isMerchMasterAddedRow ? window.isMerchMasterAddedRow(row) : !!(row && (row._isMasterConditionAdded || row._isMasterAdded || row._fileMissing)));
-        const getBestValue = (row, key, defaultValue = '') => window.getTableValueFromRow(row, key, defaultValue);
-        const getBestValueByAliases = (row, aliases, defaultValue = '') => window.getTableValueByAliases(row, aliases, defaultValue);
+        const getBestValue = (row, key, defaultValue = '') => getOutputValueByAliases(row, [key], defaultValue);
+        const getBestValueByAliases = (row, aliases, defaultValue = '') => getOutputValueByAliases(row, aliases, defaultValue);
         const getOutputValueByAliases = (row, aliases, defaultValue = '') => {
             const keys = Array.isArray(aliases) ? aliases : [aliases];
             const master = getMasterForQuickRow(row);
-            const resetWriteFields = new Set(['행사가', '행사테마', '테마1', '테마2', '테마3', '테마4', '테마5']);
-            const isResetWriteField = keys.some(key => resetWriteFields.has(key));
-            // 마스터 테마 초기화 행은 쇼핑몰 업데이트 필수 정보가 비면 안 된다.
-            // 단, 행사가/행사테마/테마1~5는 초기화 작업값을 우선 사용한다.
-            if (isMasterThemeResetQuickRow(row) && !isResetWriteField) {
-                for (const key of keys) {
-                    if (window.hasOwnField(master, key) && !window.isBlankCell(master[key])) return master[key];
-                }
-            }
-            const finalData = row.finalData || {};
-            const sources = row.sources || {};
-            for (const key of keys) {
-                if (window.hasOwnField(finalData, key)) return finalData[key] ?? '';
-            }
-            for (const role of window.getWorkingSourcePriority(sources)) {
-                const src = sources?.[role] || {};
-                for (const key of keys) {
-                    if (window.hasOwnField(src, key)) return src[key] ?? '';
-                }
-            }
-            for (const key of keys) {
-                if (window.hasOwnField(master, key) && !window.isBlankCell(master[key])) return master[key];
-            }
-            return defaultValue;
+            const state = window.resolveMerchWorkingField
+                ? window.resolveMerchWorkingField(row, master, keys[0] || '', {
+                    aliases: keys,
+                    masterLookupOnly: isMasterThemeResetQuickRow(row)
+                })
+                : { isWorkingValue: false, value: defaultValue };
+            return state.isWorkingValue ? (state.value ?? '') : defaultValue;
         };
         const getBestNum = (row, key, defaultValue = '') => {
-            if (key === '행사가')
-                return getEffectivePromoPriceForMargin(row, getMasterForQuickRow(row));
             const value = getOutputValueByAliases(row, [key], defaultValue);
             return window.isBlankCell(value) ? '' : window.parseNum(value);
         };
@@ -9059,13 +9170,11 @@ ${targetText} ${targetRows.length}건을 엑셀로 생성합니다.${workflowTex
             return s && s !== '0' && s !== '00' && s !== '-' && s.toLowerCase() !== 'undefined' && s.toLowerCase() !== 'null';
         };
         const buildThemeFlags = (row) => {
-            const finalData = row.finalData || {};
-            const sources = row.sources || {};
             const master = getMasterForQuickRow(row);
-            const themeState = window.resolvePromotionThemeState
-                ? window.resolvePromotionThemeState(finalData, sources, master || {})
-                : { handled: false, value: window.normalizePromotionThemeValue ? window.normalizePromotionThemeValue(finalData) : '' };
-            const codes = String(themeState?.value || '').split(/[,\s]+/).map(s => s.trim()).filter(s => ['1', '2', '3', '4', '5'].includes(s));
+            const working = window.ONEAPP?.EXPORT?.buildWorkingPayload
+                ? window.ONEAPP.EXPORT.buildWorkingPayload(row, master || {})
+                : {};
+            const codes = String(working.행사테마 || '').split(/[,\s]+/).map(s => s.trim()).filter(s => ['1', '2', '3', '4', '5'].includes(s));
             return [1, 2, 3, 4, 5].map(n => codes.includes(String(n)) ? '1' : '');
         };
         const getSaleCode = (row) => {
@@ -9075,16 +9184,9 @@ ${targetText} ${targetRows.length}건을 엑셀로 생성합니다.${workflowTex
             const explicitSale = window.getMerchExplicitSaleAvailability
                 ? window.getMerchExplicitSaleAvailability(row)
                 : { hasValue: false, code: '' };
+            if (explicitSale.hasValue && explicitSale.isExplicitBlank) return '';
             if (explicitSale.hasValue) return explicitSale.code;
-            // 견적서에 판매여부 열이 없을 때만 기존 기본정책(판매 1)을 사용한다.
-            if (isEstimateQuickRow(row)) return '1';
-            const resolvedSale = window.resolveMerchSaleAvailability
-                ? window.resolveMerchSaleAvailability(row, getMasterForQuickRow(row))
-                : { hasValue: false, code: '' };
-            if (resolvedSale.hasValue) return resolvedSale.code;
-            const out = getBestNum(row, '출고가');
-            const promo = getBestNum(row, '행사가');
-            return (out > 0 || promo > 0) ? '1' : '0';
+            return '';
         };
         const getShopSalePrice = (row) => {
             const promo = getBestNum(row, '행사가');
@@ -9134,20 +9236,19 @@ ${targetText} ${targetRows.length}건을 엑셀로 생성합니다.${workflowTex
                 // 3) 판매가가 없으면 재고수량은 0.
                 // 4) 입고가가 없으면 시중가는 0.
                 // 5) 도매A는 견적서 엑셀 단가를 우선 사용하며, 없으면 0.
-                inPrice = readQuickSourceNum(row, ['입고가'], 0);
-                erpOutPrice = readQuickSourceNum(row, ['출고가', '판매가'], 0);
-                promoPrice = readQuickSourceNum(row, ['행사가'], 0);
+                inPrice = readQuickSourceNum(row, ['입고가'], '');
+                erpOutPrice = readQuickSourceNum(row, ['출고가', '판매가'], '');
+                promoPrice = readQuickSourceNum(row, ['행사가'], '');
                 shopSalePrice = promoPrice > 0 ? promoPrice : erpOutPrice;
-                inPriceB = readQuickSourceNum(row, ['입고B'], 0);
-                erpASale = readQuickSourceNum(row, ['도매A', 'A판매', 'A판매가'], 0);
-                erpBSale = readQuickSourceNum(row, ['도매B', 'B도매', 'B도매가'], 0);
-                const explicitMarket = readQuickSourceNum(row, ['시중가', '시중단가'], 0);
-                pMarket = inPrice > 0 ? (explicitMarket > 0 ? explicitMarket : shopSalePrice) : 0;
-                shopBPrice = readQuickSourceNum(row, ['B판매가', 'B 판매가'], 0);
+                inPriceB = readQuickSourceNum(row, ['입고B'], '');
+                erpASale = readQuickSourceNum(row, ['도매A', 'A판매', 'A판매가'], '');
+                erpBSale = readQuickSourceNum(row, ['도매B', 'B도매', 'B도매가'], '');
+                pMarket = readQuickSourceNum(row, ['시중가', '시중단가'], '');
+                shopBPrice = readQuickSourceNum(row, ['B판매가', 'B 판매가'], '');
                 shopBWholesale = erpBSale;
-                finalTransmission = readQuickSourceNum(row, ['최종전송', '최종(전송)', '최종입고'], inPrice);
+                finalTransmission = readQuickSourceNum(row, ['최종전송', '최종(전송)', '최종입고'], '');
                 const stockCandidate = readQuickSourceValue(row, ['재고수량'], '');
-                shopUploadStock = shopSalePrice > 0 ? (!window.isBlankCell(stockCandidate) ? window.parseNum(stockCandidate) : 999) : 0;
+                shopUploadStock = !window.isBlankCell(stockCandidate) ? window.parseNum(stockCandidate) : '';
                 name = readQuickSourceStr(row, ['품목명', '상품명'], '');
                 spec = readQuickSourceStr(row, ['규격', '단위'], '');
                 brand = readQuickSourceStr(row, ['브랜드'], '');
@@ -9161,21 +9262,16 @@ ${targetText} ${targetRows.length}건을 엑셀로 생성합니다.${workflowTex
                 inPriceB = getBestNum(row, '입고B');
                 erpASale = getBestNum(row, '도매A');
                 erpBSale = getBestNum(row, '도매B');
-                // 구매/재고 작업의 시중가는 작업 원가로 재계산하지 않고 마스터 기존 시중가를 출력 기준으로 사용한다.
-                const activeRoleForMarket = getQuickActiveRole(row);
-                const masterForMarket = getMasterForQuickRow(row);
-                pMarket = (window.shouldUseMasterMarketPriceForRole && window.shouldUseMasterMarketPriceForRole(activeRoleForMarket))
-                    ? window.parseNum(masterForMarket['시중가'])
-                    : getBestNum(row, '시중가');
+                pMarket = getBestNum(row, '시중가');
                 shopBPrice = getBestNumByAliases(row, ['B판매가', 'B 판매가']);
                 shopBWholesale = getBestNum(row, '도매B');
-                finalTransmission = getBestNumByAliases(row, ['최종전송', '최종(전송)', '최종입고'], inPrice);
+                finalTransmission = getBestNumByAliases(row, ['최종전송', '최종(전송)', '최종입고'], '');
                 const finalStockRaw = getBestValue(row, '재고수량', '');
                 // F8 쇼핑몰업로드 재고 정책:
-                // - 쇼핑몰 업로드 양식의 재고수량은 기본 999로 출력한다.
-                // - 단, 엑셀/작업값에 명시 재고가 있으면 그 값을 그대로 보존한다.
+                // - 엑셀/작업값에 명시 재고가 있으면 0을 포함해 그대로 보존한다.
+                // - 재고 컬럼이 없으면 자동 기본값을 만들지 않고 공란으로 출력한다.
                 // - ERP업데이트 시트에는 재고수량을 쓰지 않으므로 영향 없다.
-                shopUploadStock = !window.isBlankCell(finalStockRaw) ? window.parseNum(finalStockRaw) : 999;
+                shopUploadStock = !window.isBlankCell(finalStockRaw) ? window.parseNum(finalStockRaw) : '';
                 name = getBestStrByAliases(row, ['품목명', '상품명']);
                 spec = getBestStr(row, '규격');
                 brand = getBestStr(row, '브랜드');
@@ -9192,10 +9288,9 @@ ${targetText} ${targetRows.length}건을 엑셀로 생성합니다.${workflowTex
             // inventory F8은 DataOps 실제 재고만 출력한다. 소분 가격행 생성은 견적·구매 등 기존 역할에서만 유지한다.
             const subInfo = (isInventoryRow || isMasterThemeResetQuickRow(row)) ? null : calculateSubInfo(row);
             if (subInfo) {
-                const subMaster = data.masterProducts[subInfo.code] || {};
                 const subErpBasicFlag = subInfo.subIn > 0 ? '1' : '';
                 erpData.push([subInfo.code, subInfo.subIn, '0', subInfo.subOut, '0', '', 'n', '', 'n', '', 'n', subInfo.subIn, 'n', '', 'n', subErpBasicFlag]);
-                shopData.push([subInfo.code, subMaster['품목명'] || `${name} (소분)`, subMaster['규격'] || subInfo.spec || '', subInfo.subOut, subInfo.subOut, subInfo.subOut, '', '', 0, 0, 0, 0, subMaster['브랜드'] || brand, subMaster['간단설명'] || description, saleCode, shopUploadStock, ...themeFlags, subMaster['검색어등록'] || tag]);
+                shopData.push([subInfo.code, `${name} (소분)`, subInfo.spec || '', subInfo.subOut, subInfo.subOut, subInfo.subOut, '', '', 0, 0, 0, 0, brand, description, saleCode, shopUploadStock, ...themeFlags, tag]);
                 subOutputCount++;
             }
         });
@@ -9391,17 +9486,23 @@ ${targetModeText} ${targets.size}건을 MerchOps 마스터에 저장합니다. �
                 if (['행사테마', '테마1', '테마2', '테마3', '테마4', '테마5'].includes(field)) return;
                 const linked = links[field] || ((window.MASTER_HEADERS || []).includes(field) ? field : null);
                 if (!linked) return;
-                const hasFinal = hasOwn(finalData, field);
-                const hasSource = hasOwn(source, field);
-                const rawValue = hasFinal ? finalData[field] : (hasSource ? source[field] : undefined);
-                const explicitEdit = !!editedFields[field] || !!editedFields[linked];
-                writeField(linked, rawValue, field, explicitEdit);
+                const fieldState = window.resolveMerchWorkingField
+                    ? window.resolveMerchWorkingField(item, oldItem, linked, { aliases: [field, linked] })
+                    : { isWorkingValue: false, value: undefined, origin: '' };
+                if (!fieldState.isWorkingValue) return;
+                const explicitEdit = fieldState.origin === 'direct' || fieldState.isExplicitBlank;
+                writeField(linked, fieldState.value, field, explicitEdit);
             });
 
+            const themeWorkingState = window.resolveMerchWorkingField
+                ? window.resolveMerchWorkingField(item, oldItem, '행사테마', {
+                    aliases: ['행사테마', '테마', 'promoTheme', '_theme', '테마1', '테마2', '테마3', '테마4', '테마5']
+                })
+                : { isWorkingValue: false };
             const themeState = window.resolvePromotionThemeState
                 ? window.resolvePromotionThemeState(finalData || {}, item.sources || {}, oldItem || {})
                 : { handled: false, value: '' };
-            if (themeState.handled) {
+            if (themeWorkingState.isWorkingValue && themeState.handled) {
                 const themeValue = String(themeState.value || '');
                 const themeSet = new Set(themeValue.split(',').filter(Boolean));
                 // info는 공란도 현재 파일의 명시 결과이므로 F7에서 마스터 테마를 정확히 비운다.
@@ -9552,7 +9653,8 @@ ${targetModeText} ${targets.size}건을 MerchOps 마스터에 저장합니다. �
                     : { hasValue: false, code: '' };
                 if (explicitSale.hasValue) {
                     const oldStatus = window.normalizeMerchSaleAvailability ? window.normalizeMerchSaleAvailability(oldItem['판매여부']) : String(oldItem['판매여부'] ?? '');
-                    if (oldStatus !== explicitSale.code) {
+                    const nextStatus = explicitSale.isExplicitBlank ? '' : explicitSale.code;
+                    if (oldStatus !== nextStatus) {
                         localLogs.push({
                             id: window.generateUUID(),
                             timestamp: nowStr,
@@ -9561,33 +9663,40 @@ ${targetModeText} ${targets.size}건을 MerchOps 마스터에 저장합니다. �
                             spec: oldItem.규격 || item.finalData?.규격 || '',
                             field: '판매여부',
                             oldVal: oldStatus === '' ? '공백' : oldStatus,
-                            newVal: explicitSale.code,
+                            newVal: nextStatus === '' ? '공백' : nextStatus,
                             diff: 0,
                             actionType: item.finalData?._bulkEditedFields?.['판매여부'] ? '공통 일괄입력' : '엑셀 판매여부 반영',
                             source: item.finalData?._bulkEditedFields?.['판매여부'] ? 'MerchOps bulk' : `MerchOps ${explicitSale.origin || 'working'}`
                         });
                     }
-                    newMaster[item.코드]['판매여부'] = Number(explicitSale.code);
+                    newMaster[item.코드]['판매여부'] = explicitSale.isExplicitBlank ? '' : Number(explicitSale.code);
                 }
                 if (!promoResetRequested) {
                     const recordedFieldChangeLogs = new Set();
-                    Object.keys(item.finalData).forEach(field => {
+                    const activeSourceForCommit = item.sources?.[activeRoleForCommit] || {};
+                    const commitCandidateFields = new Set([...Object.keys(activeSourceForCommit), ...Object.keys(item.finalData)]);
+                    commitCandidateFields.forEach(field => {
                         var _a, _b, _c, _d, _e, _f, _g, _h, _j;
-                        if (field.startsWith('_') || field === '판매여부')
+                        if (field.startsWith('_') || field === '판매여부' || ['행사테마', '테마1', '테마2', '테마3', '테마4', '테마5'].includes(field))
                             return;
                         const roleLinks = (config.masterLinks || {})[activeRoleForCommit] || {};
                         const linked = roleLinks[field] || (((config.masterLinks || {}).estimate || {})[field]) || (window.MASTER_HEADERS.includes(field) ? field : null);
                         if (linked && item.finalData[field] !== undefined && item.finalData[field] !== '오류') {
-                            // 견적서 원본 공란은 공란 상태로 표시만 하고 마스터 기존값을 0/공란으로 덮어쓰지 않는다.
-                            // 룰적용으로 생성된 출고가는 비공란이므로 정상 반영된다.
-                            if (activeRoleForCommit === 'estimate' && window.isBlankCell(item.finalData[field])) return;
+                            const fieldState = window.resolveMerchWorkingField
+                                ? window.resolveMerchWorkingField(item, oldItem, linked, { aliases: [field, linked] })
+                                : { isWorkingValue: false, value: undefined, isExplicitBlank: false };
+                            // source 소유값/명시 공란, 직접수정, 명시 룰 생성값만 F7 저장 대상으로 인정한다.
+                            if (!fieldState.isWorkingValue) return;
+                            if (fieldState.value === '오류') return;
                             // DataOps revision이 있으면 active role과 무관하게 finalData effective/override를 master로 평탄화하지 않는다.
                             // active estimate의 명시적 양수 source 행사가는 위 resolveF7MasterPromoCommit에서만 확정한다.
                             if (linked === '행사가' && (dataOpsPromoCommit.handled || activeRoleForCommit === 'inventory')) return;
                             // 구매/재고 작업의 시중가는 마스터 참고값이다. 작업 원가나 룰적용 결과로 마스터 시중가를 갱신하지 않는다.
                             if (linked === '시중가' && window.shouldUseMasterMarketPriceForRole && window.shouldUseMasterMarketPriceForRole(activeRoleForCommit))
                                 return;
-                            const newVal = window.NUMERIC_HEADERS.includes(linked) ? window.parseNum(item.finalData[field]) : item.finalData[field];
+                            const newVal = fieldState.isExplicitBlank
+                                ? ''
+                                : (window.NUMERIC_HEADERS.includes(linked) ? window.parseNum(fieldState.value) : fieldState.value);
                             const oldRaw = Object.prototype.hasOwnProperty.call(oldItem, linked) ? oldItem[linked] : '';
                             const oldVal = window.NUMERIC_HEADERS.includes(linked) ? window.parseNum(oldRaw) : oldRaw;
                             if (oldVal !== newVal) {
@@ -10039,7 +10148,7 @@ ${targetModeText} ${targets.size}건을 MerchOps 마스터에 저장합니다. �
     // 출력센터 이동: 현재 탭 이동 방식으로 새창 누적을 방지한다.
     // ============================================================
     const handleOpenExportCenter = useCallback(() => {
-        if (Object.keys(data.managedItems).length === 0 && ui.activeTags.length === 0) {
+        if (Object.keys(data.managedItems).length === 0 && ui.activeTags.length === 0 && !data.masterLookupMode) {
             ui.showToast('⚠️ 작업 중인 데이터가 없습니다. 출력검증센터로 넘길 수 없습니다.');
             return;
         }
@@ -10059,111 +10168,28 @@ ${targetModeText} ${targets.size}건을 MerchOps 마스터에 저장합니다. �
                 return;
         }
         const exportDraft = targetRows.map(row => {
-            var _a, _b, _c, _d, _e;
             const code = row.코드;
-            const finalData = row.finalData || {};
-            const sources = row.sources || {};
-            const inventory = sources.inventory || {};
-            const estimate = sources.estimate || {};
-            const purchase = sources.purchase || {};
-            const sales = sources.sales || {};
             const master = data.masterProducts[code] || {};
-            const tags = row._tags ? Array.from(row._tags) : [];
-            const sourcePriority = window.getWorkingSourcePriority ? window.getWorkingSourcePriority(sources) : ['inventory', 'estimate', 'purchase', 'sales'];
-            const getValue = (key, defaultValue = '') => {
-                if (window.hasOwnField(finalData, key)) return finalData[key] ?? '';
-                for (const role of sourcePriority) {
-                    const source = sources?.[role] || {};
-                    if (window.hasOwnField(source, key)) return source[key] ?? '';
-                }
-                if (window.hasOwnField(master, key)) return master[key] ?? '';
-                return defaultValue;
-            };
-            const getNum = (key, defaultValue = 0) => window.parseNum(getValue(key, defaultValue));
-            const getStr = (key, defaultValue = '') => {
-                const val = getValue(key, defaultValue);
-                return val !== undefined && val !== null ? String(val) : defaultValue;
-            };
+            const working = window.ONEAPP.EXPORT.buildWorkingPayload(row, master);
             // 재고수량 전달 정책:
             // - 안전재고는 재고수량이 아니다. 안전재고를 재고 fallback으로 쓰면 전 상품 0/품절 사고가 난다.
             // - 출력검증센터가 기본여부 그룹 기준으로 999/실재고를 판정할 수 있도록 실제 재고가 있을 때만 전달한다.
             // - 재고가 미전달된 상품은 재고수량을 강제로 999로 넣지 않고 _hasActualStock=false로 넘긴다.
-            const stockKeys = ['재고수량', '재고', '수량'];
-            const stockSources = [finalData, ...sourcePriority.map(role => sources?.[role] || {})];
-            let stockFieldFound = false;
-            let actualStockRaw = undefined;
-            stockSearch:
-            for (const source of stockSources) {
-                for (const key of stockKeys) {
-                    if (!window.hasOwnField(source, key)) continue;
-                    stockFieldFound = true;
-                    actualStockRaw = source[key];
-                    break stockSearch;
-                }
-            }
-            const hasActualStock = stockFieldFound && actualStockRaw !== undefined && actualStockRaw !== null && String(actualStockRaw).trim() !== '';
-            const actualStockQty = hasActualStock ? window.parseNum(actualStockRaw) : '';
-            const stockWorkingFields = hasActualStock
-                ? { 재고수량: actualStockQty, _actualStockQty: actualStockQty, _hasActualStock: true }
-                : { _actualStockQty: '', _hasActualStock: false };
+            const stockState = window.resolveMerchWorkingField(row, master, '재고수량', { aliases: ['재고수량', '재고', '수량'] });
+            const hasActualStock = stockState.isWorkingValue && !stockState.isExplicitBlank;
+            working._actualStockQty = hasActualStock ? window.parseNum(stockState.value) : '';
+            working._hasActualStock = hasActualStock;
+            if (hasActualStock) working.재고수량 = window.parseNum(stockState.value);
             const masterSalesState = window.getMasterSalesState(master);
-            const promoThemeState = window.resolvePromotionThemeState
-                ? window.resolvePromotionThemeState(finalData, sources, master || {})
-                : { value: window.normalizePromotionThemeValue ? window.normalizePromotionThemeValue(finalData) : '' };
-            const promoThemeCodes = String(promoThemeState?.value || '').split(',').filter(Boolean);
-            const hasPromoTheme = (n) => promoThemeCodes.includes(String(n));
-            const effectivePromoPrice = getEffectivePromoPriceForMargin(row, master);
+            if (window.hasOwnField(working, '기본')) working['구분(기본)'] = working.기본;
+            const source = window.ONEAPP.EXPORT.buildSourceSummary(row);
             return {
                 코드: code,
-                working: {
-                    품목명: getStr('품목명'),
-                    규격: getStr('규격'),
-                    브랜드: getStr('브랜드'),
-                    간단설명: getStr('간단설명'),
-                    창고: getStr('창고'),
-                    단위: getStr('단위'),
-                    _calcWarehouse: getStr('_calcWarehouse'),
-                    _calcWarehouseReason: getStr('_calcWarehouseReason'),
-                    입고가: getNum('입고가'),
-                    출고가: getNum('출고가'),
-                    행사가: effectivePromoPrice,
-                    도매A: getNum('도매A'),
-                    도매B: getNum('도매B'),
-                    시중가: getNum('시중가'),
-                    입고B: getNum('입고B'),
-                    // 명시적 정지 요청 여부를 출력검증센터까지 전달한다.
-                    // 기존 마스터가 정지(0)였더라도 이번 작업에서 출고가가 산출되면 판매여부는 1로 복구되어야 한다.
-                    // 단, 사용자가 '판매정지' 액션을 명시한 경우에는 _salesStopRequested=true로 정지 상태를 유지한다.
-                    판매여부: finalData._salesStopRequested === true ? 0 : (finalData['판매여부'] !== undefined ? finalData['판매여부'] : ''),
-                    _salesStopRequested: finalData._salesStopRequested === true,
-                    // 소분가 생성을 위한 원물-소분 매칭 정보
-                    '1종코드': getStr('1종코드'),
-                    '1종규격': getStr('1종규격'),
-                    '1종연산': getNum('1종연산'),
-                    '경비': getNum('경비'),
-                    '외주비': getNum('외주비'),
-                    '노무비': getNum('노무비'),
-                    기본: getStr('기본') || getStr('구분(기본)') || getStr('기본여부') || getStr('관리구분'),
-                    '구분(기본)': getStr('구분(기본)') || getStr('기본') || getStr('기본여부') || getStr('관리구분'),
-                    ...stockWorkingFields,
-                    행사테마: promoThemeCodes.join(','),
-                    테마1: hasPromoTheme(1) ? '1' : '',
-                    테마2: hasPromoTheme(2) ? '1' : '',
-                    테마3: hasPromoTheme(3) ? '1' : '',
-                    테마4: hasPromoTheme(4) ? '1' : '',
-                    테마5: hasPromoTheme(5) ? '1' : '',
-                    카테고리: getStr('견적서') || getStr('카테고리'),
-                    검색어등록: getStr('검색어등록')
-                },
-                source: {
-                    hasInventory: Object.keys(inventory).length > 0,
-                    hasEstimate: Object.keys(estimate).length > 0,
-                    hasPurchase: Object.keys(purchase).length > 0,
-                    hasSales: Object.keys(sales).length > 0,
-                    sourceType: Object.keys(inventory).length > 0 ? 'inventory' : (Object.keys(estimate).length > 0 ? 'estimate' : (Object.keys(purchase).length > 0 ? 'purchase' : (Object.keys(sales).length > 0 ? 'sales' : 'master'))),
-                    tags
-                },
+                working,
+                source,
+                masterReference: window.ONEAPP.EXPORT.buildMasterReference(master),
                 baselineSnapshot: {
+                    ...window.ONEAPP.EXPORT.buildBaselineSnapshot(master),
                     기준입고가: window.parseNum(master['입고가']),
                     기준출고가: window.parseNum(master['출고가']),
                     기준시중가: window.parseNum(master['시중가']),
@@ -10193,7 +10219,7 @@ ${targetModeText} ${targets.size}건을 MerchOps 마스터에 저장합니다. �
                 ui.setProcessMsg('');
             }
         }, 100);
-    }, [fullDisplayRows, ui.selectedRows, ui.activeTags, data.managedItems, data.masterProducts, ui]);
+    }, [fullDisplayRows, ui.selectedRows, ui.activeTags, data.managedItems, data.masterProducts, data.masterLookupMode, ui]);
     useEffect(() => {
         window.getIDB('merchops_session').then(state => {
             if (state) {
@@ -12530,19 +12556,28 @@ const EditableCell = React.memo(({ row, field, linkedMasterField, mVal, config, 
     var _a, _b, _c;
     const isComparePrice = ((_b = (_a = config.uploadColumnMeta) === null || _a === void 0 ? void 0 : _a[field]) === null || _b === void 0 ? void 0 : _b.type) === 'comparePrice';
     const isNumeric = isComparePrice || window.NUMERIC_HEADERS.includes(linkedMasterField) || window.NUMERIC_HEADERS.includes(field);
-    const hasFinalField = !!(row.finalData && Object.prototype.hasOwnProperty.call(row.finalData, field));
-    const hasUploadSourceForOriginal = typeof window.hasAnyUploadSource === 'function' ? window.hasAnyUploadSource(row.sources || {}) : !!(row.sources && Object.keys(row.sources || {}).length > 0);
-    // 엑셀 원본 우선 정책: 업로드 자료에 규격이 없거나 공란이면 마스터 규격으로 대체하지 않는다.
-    const initialVal = hasFinalField ? row.finalData[field] : ((field === '규격' && hasUploadSourceForOriginal) ? '' : (mVal !== undefined ? mVal : ''));
+    const masterForCell = window.getMerchMasterItemForRow
+        ? (window.getMerchMasterItemForRow(data.masterProducts || {}, row) || {})
+        : ((data.masterProducts || {})[row.코드] || {});
+    const cellState = window.resolveMerchWorkingField
+        ? window.resolveMerchWorkingField(row, masterForCell, field, { aliases: [field, linkedMasterField].filter(Boolean) })
+        : { value: mVal !== undefined ? mVal : '', origin: 'master-reference', isWorkingValue: false };
+    const isMasterReferenceCell = cellState.origin === 'master-reference' && cellState.isWorkingValue !== true;
+    const hasFinalField = cellState.isWorkingValue === true && Object.prototype.hasOwnProperty.call(row.finalData || {}, field);
+    const initialVal = hasFinalField ? row.finalData[field]
+        : (cellState.value !== undefined && cellState.value !== null ? cellState.value : '');
     const [localVal, setLocalVal] = useState(initialVal);
-    useEffect(() => { setLocalVal(initialVal); }, [initialVal]);
+    const userEditedRef = useRef(false);
+    useEffect(() => { setLocalVal(initialVal); userEditedRef.current = false; }, [initialVal]);
     const isDiff = linkedMasterField && mVal !== undefined && localVal !== '' && String(mVal) !== String(localVal) && isNumeric;
     const isHighlightCol = ['입고가', '출고가', '행사가'].includes(field);
     const isSuspicious = isNumeric && localVal !== '' && localVal !== undefined && isNaN(Number(String(localVal).replace(/,/g, '')));
     const isMasterAddedRow = !!(row && (row._isMasterConditionAdded || row._isMasterAdded || row._fileMissing));
-    let baseBg = isMasterAddedRow ? 'bg-amber-50/80' : 'bg-white';
-    let textClass = isNumeric ? (isMasterAddedRow ? 'text-right font-bold text-amber-900' : 'text-right font-bold text-slate-700') : (isMasterAddedRow ? 'text-center text-amber-900' : 'text-center text-slate-700');
-    if (isHighlightCol && !isMasterAddedRow)
+    let baseBg = isMasterReferenceCell ? 'bg-slate-100/80' : (isMasterAddedRow ? 'bg-amber-50/80' : 'bg-white');
+    let textClass = isNumeric
+        ? (isMasterReferenceCell ? 'text-right font-bold text-slate-400' : (isMasterAddedRow ? 'text-right font-bold text-amber-900' : 'text-right font-bold text-slate-700'))
+        : (isMasterReferenceCell ? 'text-center text-slate-400' : (isMasterAddedRow ? 'text-center text-amber-900' : 'text-center text-slate-700'));
+    if (isHighlightCol && !isMasterAddedRow && !isMasterReferenceCell)
         baseBg = 'bg-white';
     if (isDiff) {
         baseBg = 'bg-amber-50';
@@ -12553,7 +12588,9 @@ const EditableCell = React.memo(({ row, field, linkedMasterField, mVal, config, 
         textClass = isNumeric ? 'text-right font-black !text-rose-800' : 'text-center font-black !text-rose-800';
     }
     const commitChange = (v) => {
-        if (String(v) === String(initialVal))
+        const userEdited = userEditedRef.current;
+        userEditedRef.current = false;
+        if (String(v) === String(initialVal) && !(isMasterReferenceCell && userEdited))
             return;
         data.setManagedItems(prev => {
             var _a, _b, _c, _d, _e, _f, _g, _h, _j;
@@ -12711,7 +12748,7 @@ const EditableCell = React.memo(({ row, field, linkedMasterField, mVal, config, 
     return (React.createElement("td", { className: `px-1 py-1 border-r border-slate-200 ${extraClass} ${getCellWidthClass(linkedMasterField || field)} ${baseBg} ${isSel ? '!bg-indigo-100/70' : 'group-hover:!bg-slate-50'} transition-colors relative`, style: cellStyle },
         React.createElement("div", { className: "flex flex-col justify-center h-full" },
             React.createElement("div", { className: `flex items-center w-full ${isNumeric ? 'justify-end' : 'justify-center'}` },
-                React.createElement("input", { type: "text", className: `w-full bg-transparent hover:bg-white/60 focus:bg-white focus:ring-1 focus:ring-indigo-300 rounded px-1.5 outline-none ${textClass} text-[12px] py-1`, value: localVal, placeholder: mVal || '', onChange: (e) => setLocalVal(e.target.value), onBlur: (e) => commitChange(e.target.value), onKeyDown: handleKeyDown, onClick: (e) => e.target.select() })))));
+                React.createElement("input", { type: "text", className: `w-full bg-transparent hover:bg-white/60 focus:bg-white focus:ring-1 focus:ring-indigo-300 rounded px-1.5 outline-none ${textClass} text-[12px] py-1`, value: localVal, placeholder: mVal || '', onChange: (e) => { userEditedRef.current = true; setLocalVal(e.target.value); }, onBlur: (e) => commitChange(e.target.value), onKeyDown: handleKeyDown, onClick: (e) => e.target.select() })))));
 });
 const EMPTY_MERCH_MASTER_ITEM = Object.freeze({});
 const MemoizedTableRow = React.memo(({ row, idx, state, actions, isSel, mItem }) => {

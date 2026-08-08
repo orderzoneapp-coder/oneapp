@@ -28,6 +28,43 @@
     <script>
 const { useState, useEffect, useMemo, useCallback } = React;
 const parseNum = (v) => (!v ? 0 : Number(String(v).replace(/,/g, '').replace(/[^\d.-]/g, '')) || 0);
+const hasOwn = (obj = {}, field = '') => !!obj && Object.prototype.hasOwnProperty.call(obj, field);
+const isExplicitBlank = (value) => value === undefined || value === null || String(value).trim() === '';
+const readWorkingValue = (working = {}, aliases = [], defaultValue = '') => {
+    for (const field of aliases) {
+        if (hasOwn(working, field)) return working[field] ?? '';
+    }
+    return defaultValue;
+};
+const readWorkingNumber = (working = {}, aliases = [], defaultValue = '') => {
+    const value = readWorkingValue(working, aliases, defaultValue);
+    return isExplicitBlank(value) ? '' : parseNum(value);
+};
+const markReviewWorkingField = (row = {}, field = '', value = '', origin = 'direct') => ({
+    ...row,
+    _fieldStates: {
+        ...(row._fieldStates || {}),
+        [field]: {
+            value,
+            origin,
+            isWorkingValue: true,
+            isExplicitBlank: isExplicitBlank(value),
+            field,
+            sourceRole: ''
+        }
+    }
+});
+const isReviewWorkingField = (row = {}, field = '') => row?._fieldStates?.[field]?.isWorkingValue === true;
+const readReviewWorkingRaw = (row = {}, stateField = '', valueField = stateField) => {
+    const state = row?._fieldStates?.[stateField];
+    if (state?.isWorkingValue !== true || state.isExplicitBlank === true) return '';
+    if (hasOwn(row, valueField)) return row[valueField] ?? '';
+    return state.value ?? '';
+};
+const readReviewWorkingNumber = (row = {}, stateField = '', valueField = stateField) => {
+    const value = readReviewWorkingRaw(row, stateField, valueField);
+    return isExplicitBlank(value) ? '' : parseNum(value);
+};
 const fmt = (v) => parseNum(v).toLocaleString('ko-KR');
 // ============================================================
 // [E-NAV-01] MerchOps 복귀 라우팅 보정
@@ -242,7 +279,7 @@ const normalizeStockQty = (v, fallback = DEFAULT_EXPORT_STOCK_QTY) => {
     const n = parseNum(v);
     return Number.isFinite(n) ? n : fallback;
 };
-const getReviewStockQty = (row = {}, fallback = DEFAULT_EXPORT_STOCK_QTY) => normalizeStockQty(row.재고수량, fallback);
+const getReviewStockQty = (row = {}, fallback = '') => normalizeStockQty(row.재고수량, fallback);
 
 // ============================================================
 // [E-STOCK-02] 기본여부/물류유형 기반 재고 적용 정책
@@ -286,17 +323,16 @@ const getActualStockMeta = (working = {}, source = {}) => {
     const sourceHasInventory = source?.hasInventory === true || source?.sourceType === 'inventory';
     // 재고파일에서 F9로 넘어온 값은 999라도 실제 재고일 수 있으므로 실제재고로 인정한다.
     // 단, 재고파일이 아닌 구버전 기본값 999는 실제재고로 보지 않는다.
-    const explicit = working._hasActualStock === true || manual || sourceHasInventory || (hasStockValue(raw) && parseNum(raw) !== DEFAULT_EXPORT_STOCK_QTY);
+    const explicit = working._hasActualStock === true || manual || sourceHasInventory || source?.isMasterLookup === true
+        || (hasStockValue(raw) && parseNum(raw) !== DEFAULT_EXPORT_STOCK_QTY);
     return { hasActualStock: explicit && hasStockValue(raw), actualStockQty: explicit && hasStockValue(raw) ? normalizeStockQty(raw, 0) : 0 };
 };
 const resolveInitialReviewStock = (working = {}, source = {}, actualStockMeta = {}) => {
     if (actualStockMeta.hasActualStock === true) return normalizeStockQty(actualStockMeta.actualStockQty, 0);
-    // 재고파일로 넘어온 상품인데 수량값이 없으면 실제재고 미확인으로 보고 0 처리한다.
-    // 기본그룹 999는 자동 적용하지 않고 [기본 불러오기] 액션에서만 적용한다.
-    if (source?.hasInventory === true || source?.sourceType === 'inventory') return 0;
-    // 견적/구매 등 재고값이 없는 작업은 기존처럼 품절 사고 방지를 위해 999 기본값을 사용한다.
-    if (!hasStockValue(working.재고수량)) return DEFAULT_EXPORT_STOCK_QTY;
-    return normalizeStockQty(working.재고수량, DEFAULT_EXPORT_STOCK_QTY);
+    // source에 재고 컬럼이 없으면 F9 working에 값을 만들지 않는다.
+    // 기본그룹 999는 [기본 불러오기]를 실행한 경우에만 generated 작업값으로 적용한다.
+    if (!hasStockValue(working.재고수량)) return '';
+    return normalizeStockQty(working.재고수량, '');
 };
 const resolveStockByBasicPolicy = (row = {}, directGroups = DEFAULT_DIRECT_BASIC_GROUPS) => {
     if (isDirectPurchaseBasicGroup(row.기본, directGroups)) return DEFAULT_EXPORT_STOCK_QTY;
@@ -310,26 +346,28 @@ const applyBasicStockPolicyToRow = (row = {}, directGroups = DEFAULT_DIRECT_BASI
     _stockPolicyApplied: true
 });
 
-// 출력검증센터의 행사가 값은 저장/출력 적용 예정값이다.
-// 판매상태 정책:
-// - 기존 마스터 판매여부가 0(정지)이더라도, 이번 작업에서 출고가/행사가가 산출되면 판매여부는 1로 복구한다.
-// - 단, 사용자가 MerchOps에서 판매정지 액션을 명시한 경우(_salesStopRequested=true)만 정지 0을 유지한다.
-// - 재고수량 0은 직접입력/실제재고 기준일 때만 품절 상태로 본다.
+// 출력검증센터의 판매여부는 working의 명시 source/공란/직접수정/generated 상태만 적용한다.
+// 기준 마스터와 가격 존재 여부는 비교·표시에만 사용하며 판매여부 작업값을 새로 만들지 않는다.
 const getSaleState = (row) => {
     const explicitStop = (row === null || row === void 0 ? void 0 : row._salesStopRequested) === true || (row === null || row === void 0 ? void 0 : row._explicitStopRequested) === true;
     if (explicitStop)
         return { code: '0', label: '정지', text: '정지', cls: 'bg-rose-50 text-rose-700 border-rose-200' };
-    const out = parseNum(row.출고가);
-    const promo = parseNum(row.행사가);
-    const stock = getReviewStockQty(row);
-    const hasSalePrice = out > 0 || promo > 0;
-    if (!hasSalePrice)
-        return { code: '0', label: '정지', text: '정지', cls: 'bg-rose-50 text-rose-700 border-rose-200' };
-    if (stock === 0)
-        return { code: '1', label: '품절', text: '품절', cls: 'bg-orange-50 text-orange-700 border-orange-200' };
-    if (promo > 0)
-        return { code: '1', label: '행사', text: '행사', cls: 'bg-purple-50 text-purple-700 border-purple-200' };
-    return { code: '1', label: '판매', text: '판매', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
+    if (isReviewWorkingField(row, '판매여부')) {
+        const rawSale = row?.판매여부;
+        if (isExplicitBlank(rawSale))
+            return { code: '', label: '미지정', text: '미지정', cls: 'bg-slate-50 text-slate-500 border-slate-200' };
+        const normalizedSale = rawSale === false || String(rawSale).trim().toLowerCase() === 'false' || String(rawSale).trim() === '0' ? '0'
+            : (rawSale === true || String(rawSale).trim().toLowerCase() === 'true' || String(rawSale).trim() === '1' ? '1' : String(rawSale).trim());
+        if (normalizedSale === '0')
+            return { code: '0', label: '정지', text: '정지', cls: 'bg-rose-50 text-rose-700 border-rose-200' };
+        if (normalizedSale === '1') {
+            const explicitStock = getReviewStockQty(row);
+            if (explicitStock === 0) return { code: '1', label: '품절', text: '품절', cls: 'bg-orange-50 text-orange-700 border-orange-200' };
+            if (parseNum(row?.행사가) > 0) return { code: '1', label: '행사', text: '행사', cls: 'bg-purple-50 text-purple-700 border-purple-200' };
+            return { code: '1', label: '판매', text: '판매', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
+        }
+    }
+    return { code: '', label: '미지정', text: '미지정', cls: 'bg-slate-50 text-slate-500 border-slate-200' };
 };
 const isMarginWarning = (row) => {
     const sale = getSaleState(row);
@@ -397,18 +435,17 @@ const calculateSubPriceInfo = (row) => {
 // ============================================================
 // [E-OUTPUT-01] 소분품목 쇼핑몰 행 생성
 // 역할: 1종코드가 있는 경우 ERP뿐 아니라 쇼핑몰업로드 시트에도 별도 출력 행을 추가한다.
-// 주의: masterProducts[1종코드]가 있으면 상품명/규격을 우선 사용하고, 없으면 원물명 기반 보조명을 사용한다.
+// 주의: 소분 출력도 이번 작업값만 사용하며 마스터 참조값으로 실제 출력값을 재생성하지 않는다.
 // ============================================================
-const buildSubShopRow = (parentRow, subInfo, masterProducts, sale) => {
+const buildSubShopRow = (parentRow, subInfo, sale) => {
     if (!subInfo)
         return null;
-    const subMaster = masterProducts[subInfo.code] || {};
-    const subName = subMaster['품목명'] || `${parentRow.품목명 || ''} (소분)`;
-    const subSpec = subMaster['규격'] || subInfo.spec || parentRow['1종규격'] || '';
-    const subBrand = subMaster['브랜드'] || parentRow.브랜드 || '';
-    const subDesc = subMaster['간단설명'] || parentRow.간단설명 || '';
-    const subTags = subMaster['검색어등록'] || parentRow.검색어등록 || '';
-    const subStock = getReviewStockQty(parentRow);
+    const subName = `${readReviewWorkingRaw(parentRow, '품목명') || ''} (소분)`;
+    const subSpec = subInfo.spec || readReviewWorkingRaw(parentRow, '1종규격') || '';
+    const subBrand = readReviewWorkingRaw(parentRow, '브랜드');
+    const subDesc = readReviewWorkingRaw(parentRow, '간단설명');
+    const subTags = readReviewWorkingRaw(parentRow, '검색어등록');
+    const subStock = isReviewWorkingField(parentRow, '재고수량') ? getReviewStockQty(parentRow) : '';
     return [
         subInfo.code,
         subName,
@@ -421,10 +458,79 @@ const buildSubShopRow = (parentRow, subInfo, masterProducts, sale) => {
         subDesc,
         sale.code,
         subStock,
-        ...buildThemeFlags(parentRow),
+        ...(isReviewWorkingField(parentRow, '행사테마') ? buildThemeFlags(parentRow) : ['', '', '', '', '']),
         subTags
     ];
 };
+
+// F9 실제 출력 조립은 working의 상태 계약만 소비한다.
+// baseline/masterReference는 화면 비교용이며 ERP/쇼핑몰 출력값의 fallback으로 사용하지 않는다.
+const buildMerchIntegratedUploadData = (rows = []) => {
+    const erpData = [['품목코드', '입고가', '0', '출고가', '0', '입고B', 'n', 'A판매', 'n', 'B판매', 'n', '최종(전송)', 'n', '행사', 'n', '1']];
+    const shopData = [['상품코드\n코드', '상품명', '규격', '출고가', '도매A', '시중가', 'B판매가', 'B도매가', 'C 판매가', 'C 도매가', 'D 판매가', 'D 도매가', '브랜드', '기본설명', '판매여부', '재고수량', '테마1', '테마2', '테마3', '테마4', '테마5', '상품태그']];
+    let subOutputCount = 0;
+    rows.forEach(item => {
+        const sale = getSaleState(item);
+        const inPrice = readReviewWorkingNumber(item, '입고가');
+        const outPrice = readReviewWorkingNumber(item, '출고가');
+        const promoPrice = readReviewWorkingNumber(item, '행사가');
+        const finalOut = promoPrice !== '' && promoPrice > 0 ? promoPrice : outPrice;
+        const inPriceB = readReviewWorkingNumber(item, '입고B');
+        const erpASale = readReviewWorkingNumber(item, '도매A');
+        const erpBSale = readReviewWorkingNumber(item, '도매B');
+        const shopBPrice = readReviewWorkingNumber(item, 'B판매가');
+        const shopBWholesale = readReviewWorkingNumber(item, 'B도매가');
+        const marketPrice = readReviewWorkingNumber(item, '시중가');
+        const finalTransmission = readReviewWorkingNumber(item, '최종전송');
+        const finalStock = isReviewWorkingField(item, '재고수량') ? getReviewStockQty(item) : '';
+        const code = item.코드 ?? '';
+        erpData.push([code, inPrice, '0', finalOut, '0', inPriceB, 'n', erpASale, 'n', erpBSale, 'n', finalTransmission, 'n', promoPrice, 'n', sale.code]);
+        const themeFlags = isReviewWorkingField(item, '행사테마') ? buildThemeFlags(item) : ['', '', '', '', ''];
+        shopData.push([
+            code,
+            readReviewWorkingRaw(item, '품목명'),
+            readReviewWorkingRaw(item, '규격'),
+            finalOut,
+            erpASale,
+            marketPrice,
+            shopBPrice,
+            shopBWholesale,
+            0, 0, 0, 0,
+            readReviewWorkingRaw(item, '브랜드'),
+            readReviewWorkingRaw(item, '간단설명'),
+            sale.code,
+            finalStock,
+            ...themeFlags,
+            readReviewWorkingRaw(item, '검색어등록')
+        ]);
+        const subInfo = isReviewWorkingField(item, '1종코드') && isReviewWorkingField(item, '1종연산')
+            ? calculateSubPriceInfo({
+                ...item,
+                입고가: inPrice,
+                출고가: outPrice,
+                외주비: readReviewWorkingNumber(item, '외주비'),
+                경비: readReviewWorkingNumber(item, '경비')
+            })
+            : null;
+        if (subInfo) {
+            erpData.push([subInfo.code, subInfo.subIn, '0', subInfo.subOut, '0', '', 'n', '', 'n', '', 'n', subInfo.subIn, 'n', '', 'n', sale.code]);
+            const subShopRow = buildSubShopRow(item, subInfo, sale);
+            if (subShopRow) shopData.push(subShopRow);
+            subOutputCount++;
+        }
+    });
+    return { erpData, shopData, subOutputCount };
+};
+const buildMerchIntegratedUploadWorkbook = (rows = []) => {
+    if (!window.XLSX) throw new Error('엑셀 라이브러리 없음');
+    const { erpData, shopData, subOutputCount } = buildMerchIntegratedUploadData(rows);
+    const wb = window.XLSX.utils.book_new();
+    window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(shopData), '쇼핑몰업로드');
+    window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(erpData), 'ERP업데이트');
+    return { wb, subOutputCount, erpData, shopData };
+};
+window.buildMerchIntegratedUploadData = buildMerchIntegratedUploadData;
+window.buildMerchIntegratedUploadWorkbook = buildMerchIntegratedUploadWorkbook;
 const safeJSONParse = (key, defaultVal) => {
     try {
         const raw = localStorage.getItem(key);
@@ -609,37 +715,39 @@ const ExportApp = () => {
                     // MerchOps v2.0.2부터 purchase/sales source가 전달된다.
                     // 출력센터는 sources 전체를 작업대상으로 쓰지 않고, working 값과 source 메타만 참조한다.
                     const master = masterDict[code] || {};
+                    const masterReference = draft.masterReference || master;
                     const 기준입고가 = parseNum((_b = (_a = master['입고가']) !== null && _a !== void 0 ? _a : baseline.기준입고가) !== null && _b !== void 0 ? _b : 0);
                     const 기준출고가 = parseNum((_d = (_c = master['출고가']) !== null && _c !== void 0 ? _c : baseline.기준출고가) !== null && _d !== void 0 ? _d : 0);
                     const 기준시중가 = parseNum((_f = (_e = master['시중가']) !== null && _e !== void 0 ? _e : baseline.기준시중가) !== null && _f !== void 0 ? _f : 0);
                     const 기준판매여부 = String((_h = (_g = master['판매여부']) !== null && _g !== void 0 ? _g : baseline.기준판매여부) !== null && _h !== void 0 ? _h : '-');
-                    const 입고가 = parseNum(working.입고가);
-                    const 불러온출고가 = parseNum(working.출고가);
-                    const 산출출고가 = calculateReviewOutPrice(입고가, { ...master, ...working }, marginRules);
-                    const 출고가 = 불러온출고가 > 0 ? 불러온출고가 : 산출출고가;
-                    const 행사가 = parseNum(working.행사가);
-                    const calcWarehouse = working._calcWarehouse || '';
-                    const calcWarehouseReason = working._calcWarehouseReason || '';
-                    const basicGroup = getBasicGroupValue(working, master, baseline);
+                    const 입고가 = readWorkingNumber(working, ['입고가']);
+                    const 출고가 = readWorkingNumber(working, ['출고가']);
+                    const 행사가 = readWorkingNumber(working, ['행사가']);
+                    const calcWarehouse = readWorkingValue(working, ['_calcWarehouse']);
+                    const calcWarehouseReason = readWorkingValue(working, ['_calcWarehouseReason']);
+                    const basicGroup = getBasicGroupValue(working);
                     const actualStockMeta = getActualStockMeta(working, source);
                     const 재고수량 = resolveInitialReviewStock(working, source, actualStockMeta);
+                    const workingTheme = hasOwn(working, '행사테마') ? getPromotionThemeString(working) : '';
+                    const dynamicWorking = Object.fromEntries(Object.entries(working).filter(([field]) => !String(field).startsWith('_')));
                     return {
+                        ...dynamicWorking,
                         코드: code,
-                        품목명: working.품목명 || master['품목명'] || '',
-                        규격: working.규격 || master['규격'] || '',
-                        브랜드: working.브랜드 || master['브랜드'] || '',
-                        간단설명: working.간단설명 || master['간단설명'] || '',
-                        카테고리: working.카테고리 || master['견적서'] || master['카테고리'] || '일반 상품목록',
-                        검색어등록: working.검색어등록 || master['검색어등록'] || '',
+                        품목명: readWorkingValue(working, ['품목명']),
+                        규격: readWorkingValue(working, ['규격']),
+                        브랜드: readWorkingValue(working, ['브랜드']),
+                        간단설명: readWorkingValue(working, ['간단설명']),
+                        카테고리: readWorkingValue(working, ['카테고리']),
+                        검색어등록: readWorkingValue(working, ['검색어등록']),
                         기준입고가,
                         기준출고가,
                         기준시중가,
                         기준판매여부,
                         // 기준판매여부는 참고값이다. 최종 판매여부는 getSaleState()에서 출고가/행사가 기준으로 다시 판정한다.
-                        판매여부: working.판매여부 !== undefined && working.판매여부 !== '' ? working.판매여부 : 기준판매여부,
+                        판매여부: hasOwn(working, '판매여부') ? working.판매여부 : '',
                         _salesStopRequested: working._salesStopRequested === true,
-                        창고: working.창고 || master['창고'] || '',
-                        단위: working.단위 || master['단위'] || '',
+                        창고: readWorkingValue(working, ['창고']),
+                        단위: readWorkingValue(working, ['단위']),
                         _calcWarehouse: calcWarehouse,
                         _calcWarehouseReason: calcWarehouseReason,
                         입고가,
@@ -647,28 +755,30 @@ const ExportApp = () => {
                         행사가,
                         // ERP 단가: 기존 내부 필드 도매A/도매B는 ERP 출력 시 A판매/B판매로 명칭만 변경한다.
                         // 값은 견적서 원본값을 그대로 보존하고, 쇼핑몰 B판매가/B도매가와 혼용하지 않는다.
-                        A판매: parseNum((_m = (_l = (_k = (_j = working.A판매) !== null && _j !== void 0 ? _j : working['A판매']) !== null && _k !== void 0 ? _k : working.도매A) !== null && _l !== void 0 ? _l : master['A판매']) !== null && _m !== void 0 ? _m : master['도매A']),
-                        B판매: parseNum((_r = (_q = (_p = (_o = working.B판매) !== null && _o !== void 0 ? _o : working['B판매']) !== null && _p !== void 0 ? _p : working.도매B) !== null && _q !== void 0 ? _q : master['B판매']) !== null && _r !== void 0 ? _r : master['도매B']),
-                        도매A: parseNum((_u = (_t = (_s = working.도매A) !== null && _s !== void 0 ? _s : working.A판매) !== null && _t !== void 0 ? _t : master['도매A']) !== null && _u !== void 0 ? _u : master['A판매']),
-                        도매B: parseNum((_x = (_w = (_v = working.도매B) !== null && _v !== void 0 ? _v : working.B판매) !== null && _w !== void 0 ? _w : master['도매B']) !== null && _x !== void 0 ? _x : master['B판매']),
+                        A판매: readWorkingNumber(working, ['A판매', '도매A']),
+                        B판매: readWorkingNumber(working, ['B판매', '도매B']),
+                        도매A: readWorkingNumber(working, ['도매A', 'A판매']),
+                        도매B: readWorkingNumber(working, ['도매B', 'B판매']),
                         // 쇼핑몰 단가: 일반유저용 B판매가와 유통사용 B도매가는 별도 필드로 관리한다.
-                        B판매가: parseNum((_1 = (_0 = (_z = (_y = working.B판매가) !== null && _y !== void 0 ? _y : working['B판매가']) !== null && _z !== void 0 ? _z : working['B 판매가']) !== null && _0 !== void 0 ? _0 : master['B판매가']) !== null && _1 !== void 0 ? _1 : master['B 판매가']),
-                        B도매가: parseNum((_5 = (_4 = (_3 = (_2 = working.B도매가) !== null && _2 !== void 0 ? _2 : working['B도매가']) !== null && _3 !== void 0 ? _3 : working['B 도매가']) !== null && _4 !== void 0 ? _4 : master['B도매가']) !== null && _5 !== void 0 ? _5 : master['B 도매가']),
-                        시중가: parseNum(working.시중가 || 기준시중가),
-                        입고B: parseNum(working.입고B),
-                        '1종코드': working['1종코드'] || master['1종코드'] || '',
-                        '1종규격': working['1종규격'] || master['1종규격'] || '',
-                        '1종연산': parseNum((_6 = working['1종연산']) !== null && _6 !== void 0 ? _6 : master['1종연산']),
-                        '경비': parseNum((_7 = working['경비']) !== null && _7 !== void 0 ? _7 : master['경비']),
-                        '외주비': parseNum((_8 = working['외주비']) !== null && _8 !== void 0 ? _8 : master['외주비']),
-                        '노무비': parseNum((_9 = working['노무비']) !== null && _9 !== void 0 ? _9 : master['노무비']),
+                        B판매가: readWorkingNumber(working, ['B판매가', 'B 판매가']),
+                        B도매가: readWorkingNumber(working, ['B도매가', 'B 도매가']),
+                        시중가: readWorkingNumber(working, ['시중가']),
+                        입고B: readWorkingNumber(working, ['입고B']),
+                        '1종코드': readWorkingValue(working, ['1종코드']),
+                        '1종규격': readWorkingValue(working, ['1종규격']),
+                        '1종연산': readWorkingNumber(working, ['1종연산']),
+                        '경비': readWorkingNumber(working, ['경비']),
+                        '외주비': readWorkingNumber(working, ['외주비']),
+                        '노무비': readWorkingNumber(working, ['노무비']),
                         기본: basicGroup,
                         _hasActualStock: actualStockMeta.hasActualStock,
                         _actualStockQty: actualStockMeta.actualStockQty,
                         _stockPolicyGroups: '',
                         _stockPolicyApplied: false,
                         재고수량,
-                        ...applyThemeStringToRow({}, getPromotionThemeString(working) || getPromotionThemeString(master)),
+                        ...applyThemeStringToRow({}, workingTheme),
+                        _fieldStates: { ...(working._fieldStates || {}) },
+                        _masterReference: { ...masterReference },
                         source
                     };
                 }).filter(row => row.코드);
@@ -693,18 +803,22 @@ const ExportApp = () => {
         setReviewRows(prev => prev.map(row => {
             if (row.코드 !== code)
                 return row;
-            let next = { ...row, [field]: value };
+            let next = markReviewWorkingField({ ...row, [field]: value }, field, value, 'direct');
             if (field === '입고가' || field === '외주비' || field === '노무비') {
-                const numericValue = parseNum(value);
+                const numericValue = isExplicitBlank(value) ? '' : parseNum(value);
                 next[field] = numericValue;
+                next = markReviewWorkingField(next, field, numericValue, 'direct');
                 const calcContext = { ...row, ...next };
                 next.출고가 = calculateReviewOutPrice(parseNum(next.입고가), calcContext, marginRules);
+                next = markReviewWorkingField(next, '출고가', next.출고가, 'generated');
             }
             else if (field === '행사가') {
-                next.행사가 = parseNum(value);
+                next.행사가 = isExplicitBlank(value) ? '' : parseNum(value);
+                next = markReviewWorkingField(next, '행사가', next.행사가, 'direct');
             }
             else if (field === '출고가') {
-                next.출고가 = parseNum(value);
+                next.출고가 = isExplicitBlank(value) ? '' : parseNum(value);
+                next = markReviewWorkingField(next, '출고가', next.출고가, 'direct');
             }
             else if (field === '재고수량') {
                 const stockValue = normalizeStockQty(value, 0);
@@ -712,9 +826,11 @@ const ExportApp = () => {
                 next._actualStockQty = stockValue;
                 next._hasActualStock = true;
                 next._stockManuallyEdited = true;
+                next = markReviewWorkingField(next, '재고수량', stockValue, 'direct');
             }
             else if (field === '행사테마') {
                 next = applyThemeStringToRow(next, value);
+                next = markReviewWorkingField(next, '행사테마', next.행사테마, 'direct');
             }
             return next;
         }));
@@ -722,7 +838,8 @@ const ExportApp = () => {
     const handleRowThemeToggle = useCallback((code, themeNo) => {
         setReviewRows(prev => prev.map(row => {
             if (row.코드 !== code) return row;
-            return applyThemeStringToRow(row, toggleThemeString(row.행사테마, themeNo));
+            const next = applyThemeStringToRow(row, toggleThemeString(row.행사테마, themeNo));
+            return markReviewWorkingField(next, '행사테마', next.행사테마, 'direct');
         }));
     }, []);
     const handleBulkThemeToggle = useCallback((themeNo) => {
@@ -854,7 +971,8 @@ const ExportApp = () => {
             if (!targetCodes.has(row.코드))
                 return row;
             appliedCount++;
-            return applyThemeStringToRow(row, themeString);
+            const next = applyThemeStringToRow(row, themeString);
+            return markReviewWorkingField(next, '행사테마', next.행사테마, 'direct');
         }));
         showToast(`✅ 현재 표시 ${appliedCount.toLocaleString()}건에 행사테마 ${themeString} 지정 완료`);
     }, [bulkThemeSet, filteredRows, showToast]);
@@ -875,7 +993,7 @@ const ExportApp = () => {
             if (!targetCodes.has(row.코드))
                 return row;
             appliedCount++;
-            return { ...row, 재고수량: stockValue, _actualStockQty: stockValue, _hasActualStock: true, _stockManuallyEdited: true, _stockBulkApplied: true };
+            return markReviewWorkingField({ ...row, 재고수량: stockValue, _actualStockQty: stockValue, _hasActualStock: true, _stockManuallyEdited: true, _stockBulkApplied: true }, '재고수량', stockValue, 'direct');
         }));
         showToast(`✅ 현재 표시 ${appliedCount.toLocaleString()}건에 재고수량 ${stockValue.toLocaleString()} 일괄 적용 완료`);
     }, [bulkStockInput, filteredRows, showToast]);
@@ -895,7 +1013,7 @@ const ExportApp = () => {
             const next = applyBasicStockPolicyToRow(row, groups);
             if (isDirectPurchaseBasicGroup(row.기본, groups)) directCount++;
             else actualOnlyCount++;
-            return next;
+            return markReviewWorkingField(next, '재고수량', next.재고수량, 'generated');
         }));
         showToast(`✅ 기본 ${groups} 그룹만 표시 · 해당 그룹 재고 999 적용 / 그 외는 실제재고만 적용`);
     }, [basicGroupInput, showToast]);
@@ -904,44 +1022,7 @@ const ExportApp = () => {
     // 역할: 쇼핑몰업로드/ERP업데이트 시트를 생성한다.
     // 정책: 마스터 반영 출력과 마스터 미반영 출력이 같은 엑셀 구조를 사용한다.
     // ============================================================
-    const buildIntegratedUploadWorkbook = useCallback((rows, masterRef = {}) => {
-        if (!window.XLSX)
-            throw new Error('엑셀 라이브러리 없음');
-        const wb = window.XLSX.utils.book_new();
-        // ERP와 쇼핑몰은 거래대상이 다르므로 단가 컬럼명을 분리한다.
-        // ERP: 기존 도매A/도매B 원본값을 A판매/B판매로 출력한다.
-        // 쇼핑몰: 중복 도매B 컬럼을 B판매가(일반유저) / B도매가(유통사)로 출력한다.
-        const erpData = [['품목코드', '입고가', '0', '출고가', '0', '입고B', 'n', 'A판매', 'n', 'B판매', 'n', '최종(전송)', 'n', '행사', 'n', '1']];
-        const shopData = [['상품코드\n코드', '상품명', '규격', '출고가', '도매A', '시중가', 'B판매가', 'B도매가', 'C 판매가', 'C 도매가', 'D 판매가', 'D 도매가', '브랜드', '기본설명', '판매여부', '재고수량', '테마1', '테마2', '테마3', '테마4', '테마5', '상품태그']];
-        let subOutputCount = 0;
-        rows.forEach(item => {
-            var _a, _b;
-            const sale = getSaleState(item);
-            const inPrice = parseNum(item.입고가);
-            const finalOut = getAppliedPrice(item);
-            const erpASale = parseNum((_a = item.A판매) !== null && _a !== void 0 ? _a : item.도매A);
-            const erpBSale = parseNum((_b = item.B판매) !== null && _b !== void 0 ? _b : item.도매B);
-            const shopBPrice = parseNum(item.B판매가);
-            const shopBWholesale = parseNum(item.B도매가);
-            const pMarket = parseNum(item.시중가);
-            const finalStock = getReviewStockQty(item);
-            erpData.push([item.코드, inPrice, '0', finalOut, '0', parseNum(item.입고B) || '', 'n', erpASale || '', 'n', erpBSale || '', 'n', inPrice, 'n', parseNum(item.행사가) || '', 'n', sale.code]);
-            const themeFlags = buildThemeFlags(item);
-            shopData.push([item.코드, item.품목명, item.규격, finalOut, (erpASale > 0 ? erpASale : finalOut), (pMarket > 0 ? pMarket : finalOut), shopBPrice || '', shopBWholesale || '', 0, 0, 0, 0, item.브랜드 || '', item.간단설명 || '', sale.code, finalStock, ...themeFlags, item.검색어등록 || '']);
-            const subInfo = calculateSubPriceInfo(item);
-            if (subInfo) {
-                // 소분품목은 원물 행과 별도 출력물로 취급한다. ERP와 쇼핑몰업로드 모두 행 수가 증가해야 한다.
-                erpData.push([subInfo.code, subInfo.subIn, '0', subInfo.subOut, '0', '', 'n', '', 'n', '', 'n', subInfo.subIn, 'n', '', 'n', sale.code]);
-                const subShopRow = buildSubShopRow(item, subInfo, masterRef, sale);
-                if (subShopRow)
-                    shopData.push(subShopRow);
-                subOutputCount++;
-            }
-        });
-        window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(shopData), '쇼핑몰업로드');
-        window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(erpData), 'ERP업데이트');
-        return { wb, subOutputCount };
-    }, []);
+    const buildIntegratedUploadWorkbook = useCallback((rows) => window.buildMerchIntegratedUploadWorkbook(rows), []);
     // ============================================================
     // [E-OUTPUT-02A] 최종 마스터 반영 + 통합 엑셀 출력
     // 역할: reviewRows를 기준으로 마스터를 갱신하고 쇼핑몰업로드/ERP업데이트 시트를 생성한다.
@@ -964,42 +1045,45 @@ const ExportApp = () => {
                     const code = item.코드;
                     const sale = getSaleState(item);
                     const mItem = { ...(newMaster[code] || { 코드: code }) };
-                    mItem['품목명'] = item.품목명;
-                    mItem['규격'] = item.규격;
-                    mItem['입고가'] = parseNum(item.입고가);
-                    mItem['출고가'] = parseNum(item.출고가);
-                    mItem['행사가'] = parseNum(item.행사가);
-                    mItem['입고B'] = parseNum(item.입고B);
-                    mItem['1종코드'] = item['1종코드'] || mItem['1종코드'] || '';
-                    mItem['1종규격'] = item['1종규격'] || mItem['1종규격'] || '';
-                    mItem['1종연산'] = parseNum(item['1종연산']);
-                    mItem['경비'] = parseNum(item['경비']);
-                    mItem['외주비'] = parseNum(item['외주비']);
-                    mItem['노무비'] = parseNum(item['노무비']);
-                    // ERP A판매/B판매은 기존 도매A/도매B 원본값과 호환 저장한다.
-                    mItem['A판매'] = parseNum((_a = item.A판매) !== null && _a !== void 0 ? _a : item.도매A);
-                    mItem['B판매'] = parseNum((_b = item.B판매) !== null && _b !== void 0 ? _b : item.도매B);
-                    mItem['도매A'] = parseNum((_c = item.도매A) !== null && _c !== void 0 ? _c : item.A판매);
-                    mItem['도매B'] = parseNum((_d = item.도매B) !== null && _d !== void 0 ? _d : item.B판매);
-                    // 쇼핑몰 B단가는 일반유저/유통사용 필드로 분리한다.
-                    mItem['B판매가'] = parseNum(item.B판매가);
-                    mItem['B도매가'] = parseNum(item.B도매가);
-                    mItem['시중가'] = parseNum(item.시중가);
-                    mItem['재고수량'] = getReviewStockQty(item);
-                    mItem['기본'] = item.기본 || mItem['기본'] || '';
-                    mItem['구분(기본)'] = item.기본 || mItem['구분(기본)'] || '';
-                    mItem['판매여부'] = sale.code;
-                    mItem['브랜드'] = item.브랜드 || '';
-                    mItem['간단설명'] = item.간단설명 || '';
-                    mItem['검색어등록'] = item.검색어등록 || '';
-                    mItem['행사테마'] = normalizePromotionThemeString(item.행사테마);
-                    const themeFlags = buildThemeFlags(item);
-                    mItem['테마1'] = themeFlags[0];
-                    mItem['테마2'] = themeFlags[1];
-                    mItem['테마3'] = themeFlags[2];
-                    mItem['테마4'] = themeFlags[3];
-                    mItem['테마5'] = themeFlags[4];
-                    mItem['견적서'] = item.카테고리 || mItem['견적서'] || mItem['카테고리'] || '';
+                    const writeRaw = (stateField, targetField = stateField, valueField = stateField) => {
+                        if (!isReviewWorkingField(item, stateField)) return;
+                        mItem[targetField] = item[valueField] ?? '';
+                    };
+                    const writeNumber = (stateField, targetField = stateField, valueField = stateField) => {
+                        if (!isReviewWorkingField(item, stateField)) return;
+                        const state = item._fieldStates?.[stateField] || {};
+                        mItem[targetField] = state.isExplicitBlank ? '' : parseNum(item[valueField]);
+                    };
+                    ['품목명', '규격', '브랜드', '간단설명', '검색어등록', '창고', '단위', '1종코드', '1종규격'].forEach(field => writeRaw(field));
+                    ['입고가', '출고가', '행사가', '입고B', '1종연산', '경비', '외주비', '노무비', 'B판매가', 'B도매가', '시중가'].forEach(field => writeNumber(field));
+                    if (isReviewWorkingField(item, '도매A')) {
+                        const value = item._fieldStates?.도매A?.isExplicitBlank ? '' : parseNum(item.도매A);
+                        mItem['A판매'] = value;
+                        mItem['도매A'] = value;
+                    }
+                    if (isReviewWorkingField(item, '도매B')) {
+                        const value = item._fieldStates?.도매B?.isExplicitBlank ? '' : parseNum(item.도매B);
+                        mItem['B판매'] = value;
+                        mItem['도매B'] = value;
+                    }
+                    if (isReviewWorkingField(item, '재고수량')) mItem['재고수량'] = getReviewStockQty(item);
+                    if (isReviewWorkingField(item, '기본')) {
+                        mItem['기본'] = item.기본 ?? '';
+                        mItem['구분(기본)'] = item.기본 ?? '';
+                    }
+                    if (isReviewWorkingField(item, '판매여부')) {
+                        mItem['판매여부'] = item._fieldStates?.판매여부?.isExplicitBlank ? '' : sale.code;
+                    }
+                    if (isReviewWorkingField(item, '행사테마')) {
+                        mItem['행사테마'] = normalizePromotionThemeString(item.행사테마);
+                        const themeFlags = buildThemeFlags(item);
+                        mItem['테마1'] = themeFlags[0];
+                        mItem['테마2'] = themeFlags[1];
+                        mItem['테마3'] = themeFlags[2];
+                        mItem['테마4'] = themeFlags[3];
+                        mItem['테마5'] = themeFlags[4];
+                    }
+                    if (isReviewWorkingField(item, '카테고리')) mItem['견적서'] = item.카테고리 ?? '';
                     newMaster[code] = mItem;
                 });
                 const commonStorage = window.ONEAPP?.STORAGE;
@@ -1242,7 +1326,7 @@ const ExportApp = () => {
                                 React.createElement("td", { className: "px-2 py-1 text-center bg-sky-50/30", title: `기본값 ${item.기본 || '-'} · ${basicDirect ? '기본그룹 재고 999 적용' : '실재고만 적용'}` },
                                     React.createElement("span", { className: `inline-flex min-w-[34px] justify-center rounded-md border px-1.5 py-0.5 text-[11px] font-black ${basicDirect ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-50 text-slate-500 border-slate-200'}` }, item.기본 || '-')),
                                 React.createElement("td", { className: "px-2 py-1 bg-slate-50/50" },
-                                    React.createElement("input", { type: "text", value: getReviewStockQty(item), onChange: (e) => handleEdit(item.코드, '재고수량', e.target.value), title: "0이면 품절, 공란/미전달은 기본 999로 처리됩니다.", className: "w-full bg-transparent border-b border-transparent focus:border-indigo-400 hover:border-slate-300 px-1 py-1 text-center font-bold text-slate-600 outline-none" })),
+                                    React.createElement("input", { type: "text", value: getReviewStockQty(item), onChange: (e) => handleEdit(item.코드, '재고수량', e.target.value), title: "0이면 품절, 공란/미전달은 출력값에 적용하지 않습니다.", className: "w-full bg-transparent border-b border-transparent focus:border-indigo-400 hover:border-slate-300 px-1 py-1 text-center font-bold text-slate-600 outline-none" })),
                                 React.createElement("td", { className: "px-2 py-1 text-center min-w-[210px]" },
                                     React.createElement(ThemeToggleButtons, { value: item.행사테마, onToggle: (themeNo) => handleRowThemeToggle(item.코드, themeNo), compact: true })),
                                 React.createElement("td", { className: "px-2 py-1 text-center" },

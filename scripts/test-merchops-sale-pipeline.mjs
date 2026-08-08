@@ -99,11 +99,12 @@ const f8Start = html.indexOf("const getSaleCode = (row) => {");
 const f8End = html.indexOf("const getShopSalePrice", f8Start);
 assert.ok(f8Start >= 0 && f8End > f8Start, "Quick F8 sale resolver was not found");
 const f8Block = html.slice(f8Start, f8End);
-assert.ok(
-  f8Block.indexOf("if (explicitSale.hasValue) return explicitSale.code;") <
-    f8Block.indexOf("if (isEstimateQuickRow(row)) return '1';"),
-  "Quick F8 must honor an explicit Excel sale value before the estimate default",
+assert.match(
+  f8Block,
+  /if \(explicitSale\.hasValue && explicitSale\.isExplicitBlank\) return '';\s*if \(explicitSale\.hasValue\) return explicitSale\.code;\s*return '';/,
+  "Quick F8 must preserve explicit sale blanks and leave missing sale columns blank",
 );
+assert.doesNotMatch(f8Block, /if \(isEstimateQuickRow\(row\)\) return '1'/);
 
 assert.match(html, /\? '공통 일괄입력' : '엑셀 판매여부 반영'/);
 assert.match(html, /판매여부: mItem\['판매여부'\] \?\? ''/);
