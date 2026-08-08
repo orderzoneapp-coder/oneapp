@@ -95,8 +95,8 @@ jobs:
       - name: Test MerchOps Excel codes, bulk edit, and price filters
         run: node scripts/test-merchops-spot-price.mjs
 
-      - name: Test Shipping Management allocation and workbook contracts
+      - name: Test OrderOps allocation and workbook contracts
         run: node scripts/test-shipping-management.mjs
 
-      - name: Test Shipping purchase-plan cloud failure safety
+      - name: Test OrderOps purchase-plan cloud failure safety
         run: node scripts/test-shipping-purchase-plan-cloud.mjs
