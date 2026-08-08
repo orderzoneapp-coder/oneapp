@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="ko" translate="no">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="google" content="notranslate">
+  <title>ONEAPP Order Input</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --navy-950: #07101f;
+      --navy-900: #0b162a;
+      --navy-800: #153b55;
+      --slate-900: #0f172a;
+      --slate-700: #334155;
+      --slate-600: #475569;
+      --slate-500: #64748b;
+      --slate-400: #94a3b8;
+      --slate-300: #cbd5e1;
+      --slate-200: #e2e8f0;
+      --slate-100: #f1f5f9;
+      --slate-50: #f8fafc;
+      --white: #ffffff;
+      --teal-700: #0f766e;
+      --teal-600: #0d9488;
+      --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.05);
+    }
+
+    * { box-sizing: border-box; }
+    html { min-width: 320px; background: var(--slate-50); }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Pretendard, "Noto Sans KR", -apple-system, BlinkMacSystemFont, sans-serif;
+      color: var(--slate-900);
+      background: #f8fafc;
+    }
+    button, input, select { font: inherit; }
+    button { cursor: pointer; }
+    button:disabled { cursor: not-allowed; }
+
+    /* System.IO Dark Header */
+    .system-workbench {
+      width: min(1240px, calc(100% - 32px));
+      margin: 20px auto 0;
+      border: 1px solid #1e293b;
+      border-radius: 12px 12px 0 0;
+      background: var(--navy-900);
+      box-shadow: 0 14px 34px rgba(15, 23, 42, 0.13);
+      overflow: hidden;
+    }
+    .system-topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      min-height: 52px;
+      padding: 10px 18px;
+      background: #0f172a;
+    }
+    .brand-area { display: flex; align-items: center; gap: 12px; }
+    .brand-mark { color: #34d399; font-size: 18px; font-weight: 900; letter-spacing: -0.02em; }
+    .brand-suite { color: var(--slate-300); font-size: 13px; font-weight: 700; }
+    .brand-badge {
+      padding: 2px 6px; border: 1px solid rgba(94, 234, 212, 0.35); border-radius: 5px;
+      color: #5eead4; background: rgba(13, 148, 136, 0.12); font-size: 10px; font-weight: 800;
+    }
+    
+    .system-console {
+      flex: 1; display: flex; align-items: center; max-width: 480px; min-height: 32px;
+      padding: 4px 12px; border: 1px solid #475569; border-radius: 5px; color: #cbd5e1;
+      background: #020617; font: 700 12px/1.4 ui-monospace, SFMono-Regular, monospace;
+    }
+    .system-console span.highlight { color: #5eead4; margin-right: 6px; }
+
+    .header-actions { display: flex; align-items: center; gap: 6px; }
+    .btn-dark {
+      display: inline-flex; align-items: center; justify-content: center; height: 32px;
+      padding: 0 12px; background: #1e293b; color: var(--slate-200); border: 1px solid #334155;
+      border-radius: 6px; font-size: 12px; font-weight: 800;
+    }
+    .btn-dark:hover { background: #334155; color: var(--white); }
+    .btn-dark.primary { background: #4f46e5; border-color: #4338ca; color: white; }
+    .btn-dark.primary:hover { background: #4338ca; }
+    .btn-icon { width: 32px; padding: 0; }
+
+    /* Layout */
+    .page-shell { width: min(1240px, calc(100% - 32px)); margin: 0 auto 40px; }
+    .panel {
+      border: 1px solid var(--slate-200); border-top: none; border-radius: 0 0 12px 12px;
+      background: var(--white); box-shadow: var(--shadow-sm);
+    }
+    
+    /* Top Form Box */
+    .form-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px 32px; padding: 20px; }
+    .form-group { display: grid; grid-template-columns: 80px 1fr; align-items: center; gap: 12px; }
+    .form-label { font-size: 13px; font-weight: 700; color: var(--slate-700); }
+    .form-control { display: flex; gap: 6px; align-items: center; }
+    .input-field {
+      flex: 1; height: 32px; padding: 0 10px; border: 1px solid var(--slate-300);
+      border-radius: 6px; font-size: 13px;
+    }
+    .input-field:focus { outline: 2px solid var(--teal-600); outline-offset: -1px; border-color: transparent; }
+    
+    .search-input-wrap { display: flex; flex: 1; }
+    .search-input-wrap .input-field { border-top-right-radius: 0; border-bottom-right-radius: 0; border-right: none; }
+    .search-btn {
+      width: 32px; height: 32px; background: var(--slate-50); border: 1px solid var(--slate-300);
+      border-top-right-radius: 6px; border-bottom-right-radius: 6px; color: var(--slate-500);
+      display: grid; place-items: center;
+    }
+    .search-btn:hover { background: var(--slate-200); color: var(--slate-900); }
+
+    /* Date Inputs */
+    .date-inputs { display: flex; align-items: center; gap: 4px; }
+    .date-inputs select, .date-inputs input {
+      height: 32px; border: 1px solid var(--slate-300); border-radius: 6px; padding: 0 8px; font-size: 13px;
+    }
+    .date-sep { color: var(--slate-400); font-weight: bold; }
+    
+    /* Toolbar Middle */
+    .action-toolbar {
+      display: flex; flex-wrap: wrap; gap: 6px; padding: 12px 20px;
+      background: var(--white); border-top: 1px solid var(--slate-200);
+    }
+    .btn-sm {
+      height: 28px; padding: 0 10px; border: 1px solid var(--slate-300); border-radius: 4px;
+      background: var(--white); color: var(--slate-700); font-size: 12px; font-weight: 700;
+    }
+    .btn-sm:hover { background: var(--slate-50); border-color: var(--slate-400); }
+
+    /* Grid Table */
+    .table-wrap { overflow-x: auto; border-top: 1px solid var(--slate-200); }
+    table { width: 100%; min-width: 900px; border-collapse: collapse; font-size: 12px; }
+    th {
+      background: #f1f5f9; color: var(--slate-700); font-weight: 800;
+      padding: 8px 10px; border: 1px solid var(--slate-200); text-align: center; white-space: nowrap;
+    }
+    td { border: 1px solid var(--slate-200); padding: 0; height: 34px; background: var(--white); }
+    .cell-center { text-align: center; padding: 0 8px; }
+    .grid-input { width: 100%; height: 100%; border: none; background: transparent; padding: 0 10px; font-size: 12px; outline: none; }
+    .grid-input:focus { background: #f0fdfa; }
+    .grid-input.number { text-align: right; }
+    
+    /* 통합된 체크박스 + 일련번호 디자인 */
+    .row-check-wrap {
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      height: 100%;
+      cursor: pointer;
+    }
+    .row-check-wrap input[type="checkbox"] {
+      position: absolute;
+      opacity: 0;
+      width: 100%;
+      height: 100%;
+      cursor: pointer;
+      margin: 0;
+      z-index: 1;
+    }
+    .row-num-display {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 24px;
+      height: 24px;
+      border: 1px solid var(--slate-200);
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 800;
+      color: var(--slate-400); /* 연한색 일련번호 */
+      background: var(--slate-50);
+      transition: all 0.1s ease;
+    }
+    /* 터치(체크) 되었을 때의 상태 변화 */
+    .row-check-wrap input[type="checkbox"]:checked + .row-num-display {
+      background: #eff6ff;
+      border-color: #3b82f6;
+      color: #1d4ed8; /* 체크 시 파란색으로 활성화 */
+    }
+
+    tfoot td { background: #f8fafc; font-weight: 900; padding: 8px 10px; text-align: right; }
+
+    /* Bottom Actions */
+    .bottom-actions { display: flex; gap: 8px; padding: 16px 20px; background: var(--white); border-top: 1px solid var(--slate-200); }
+    .btn-primary {
+      height: 36px; padding: 0 16px; background: #1d4ed8; color: white; border: none; border-radius: 6px;
+      font-size: 13px; font-weight: 800; box-shadow: 0 2px 4px rgba(29, 78, 216, 0.2);
+    }
+    .btn-primary:hover { background: #1e40af; }
+    .btn-default {
+      height: 36px; padding: 0 16px; background: var(--white); color: var(--slate-700);
+      border: 1px solid var(--slate-300); border-radius: 6px; font-size: 13px; font-weight: 800;
+    }
+    .btn-default:hover { background: var(--slate-50); }
+  </style>
+</head>
+<body>
+
+  <!-- 다크모드 System.IO 헤더 영역 -->
+  <section class="system-workbench">
+    <div class="system-topbar">
+      <div class="brand-area">
+        <div class="brand-mark">ONEAPP</div>
+        <div class="brand-suite">OrderOps <span class="brand-badge">v2.1</span></div>
+      </div>
+      
+      <div class="system-console" id="systemMessage">
+        <span class="highlight">&gt;</span> [ 주문서 입력 대기 ] 시스템이 준비되었습니다.
+      </div>
+
+      <div class="header-actions">
+        <button class="btn-dark primary">F7 저장/전표</button>
+        <button class="btn-dark primary">F8 저장</button>
+        <button class="btn-dark btn-icon" title="환경설정(옵션)">⚙️</button>
+        <button class="btn-dark btn-icon" title="도움말">❓</button>
+      </div>
+    </div>
+  </section>
+
+  <main class="page-shell">
+    <div class="panel">
+      <!-- 폼 영역 -->
+      <div class="form-grid">
+        <div style="display: flex; flex-direction: column; gap: 16px;">
+          <div class="form-group">
+            <div class="form-label">일자</div>
+            <div class="form-control date-inputs">
+              <select><option>2026</option></select> <span class="date-sep">/</span>
+              <select><option>08</option></select> <span class="date-sep">/</span>
+              <input type="text" value="04" style="width: 40px; text-align: center;">
+              <button class="btn-default" style="height: 32px; padding: 0 8px;">📅</button>
+            </div>
+          </div>
+          <div class="form-group">
+            <div class="form-label">출하창고</div>
+            <div class="form-control">
+              <div class="search-input-wrap">
+                <input type="text" id="warehouseInput" class="input-field" placeholder="출하창고 (입력시 자동저장)" list="warehouseList">
+                <datalist id="warehouseList"></datalist>
+                <button class="search-btn" id="btnSaveWarehouse" title="목록에 추가">➕</button>
+              </div>
+            </div>
+          </div>
+          <div class="form-group">
+            <div class="form-label">전하실말씀</div>
+            <div class="form-control">
+              <input type="text" class="input-field" placeholder="전하실말씀">
+            </div>
+          </div>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 16px;">
+          <div class="form-group">
+            <div class="form-label">거래처</div>
+            <div class="form-control">
+              <div class="search-input-wrap">
+                <input type="text" id="clientInput" class="input-field" placeholder="거래처 (입력시 자동저장)" list="clientList">
+                <datalist id="clientList"></datalist>
+                <button class="search-btn" id="btnSaveClient" title="목록에 추가">➕</button>
+              </div>
+            </div>
+          </div>
+          <div class="form-group">
+            <div class="form-label">거래유형</div>
+            <div class="form-control">
+              <select class="input-field">
+                <option>기타</option>
+                <option>카드</option>
+                <option>현금</option>
+                <option>현금영수증</option>
+                <option>사내사용</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 툴바 영역 (요청 버튼 삭제됨) -->
+      <div class="action-toolbar">
+        <button class="btn-sm">찾기(F3)</button>
+        <button class="btn-sm">정렬</button>
+        <button class="btn-sm">거래내역보기(주문) ▼</button>
+        <button class="btn-sm">My품목 ▼</button>
+        <button class="btn-sm">견적</button>
+        <button class="btn-sm">할인</button>
+        <button class="btn-sm">재고불러오기</button>
+      </div>
+
+      <!-- 입력 그리드 영역 -->
+      <div class="table-wrap">
+        <table id="orderTable">
+          <colgroup>
+            <col style="width: 46px;"> <!-- 통합된 체크박스 컬럼 -->
+            <col style="width: 120px;">
+            <col style="width: 200px;">
+            <col style="width: 100px;">
+            <col style="width: 80px;">
+            <col style="width: 100px;">
+            <col style="width: 100px;">
+            <col style="width: 150px;">
+            <col style="width: 100px;">
+            <col style="width: 100px;">
+          </colgroup>
+          <thead>
+            <tr>
+              <th><input type="checkbox" title="전체 선택"></th>
+              <th>품목코드</th>
+              <th>품목명</th>
+              <th>규격</th>
+              <th>수량</th>
+              <th>단가</th>
+              <th>공급가액</th>
+              <th>메모</th>
+              <th>적요(직원)</th>
+              <th>공지단가</th>
+            </tr>
+          </thead>
+          <tbody id="orderTbody">
+            <!-- 기본 3개 행 -->
+            <tr>
+              <td>
+                <label class="row-check-wrap">
+                  <input type="checkbox">
+                  <span class="row-num-display">1</span>
+                </label>
+              </td>
+              <td><input type="text" class="grid-input" placeholder="코드"></td>
+              <td><input type="text" class="grid-input" placeholder="품목명 검색"></td>
+              <td><input type="text" class="grid-input"></td>
+              <td><input type="number" class="grid-input number qty-input" value=""></td>
+              <td><input type="number" class="grid-input number price-input" value=""></td>
+              <td><input type="text" class="grid-input number supply-price" readonly tabindex="-1"></td>
+              <td><input type="text" class="grid-input"></td>
+              <td><input type="text" class="grid-input"></td>
+              <td><input type="number" class="grid-input number"></td>
+            </tr>
+            <tr>
+              <td>
+                <label class="row-check-wrap">
+                  <input type="checkbox">
+                  <span class="row-num-display">2</span>
+                </label>
+              </td>
+              <td><input type="text" class="grid-input" placeholder="코드"></td>
+              <td><input type="text" class="grid-input" placeholder="품목명 검색"></td>
+              <td><input type="text" class="grid-input"></td>
+              <td><input type="number" class="grid-input number qty-input" value=""></td>
+              <td><input type="number" class="grid-input number price-input" value=""></td>
+              <td><input type="text" class="grid-input number supply-price" readonly tabindex="-1"></td>
+              <td><input type="text" class="grid-input"></td>
+              <td><input type="text" class="grid-input"></td>
+              <td><input type="number" class="grid-input number"></td>
+            </tr>
+            <tr>
+              <td>
+                <label class="row-check-wrap">
+                  <input type="checkbox">
+                  <span class="row-num-display">3</span>
+                </label>
+              </td>
+              <td><input type="text" class="grid-input" placeholder="코드"></td>
+              <td><input type="text" class="grid-input" placeholder="품목명 검색"></td>
+              <td><input type="text" class="grid-input"></td>
+              <td><input type="number" class="grid-input number qty-input" value=""></td>
+              <td><input type="number" class="grid-input number price-input" value=""></td>
+              <td><input type="text" class="grid-input number supply-price" readonly tabindex="-1"></td>
+              <td><input type="text" class="grid-input"></td>
+              <td><input type="text" class="grid-input"></td>
+              <td><input type="number" class="grid-input number"></td>
+            </tr>
+          </tbody>
+          <tfoot>
+            <tr>
+              <!-- 열 통합으로 인한 colspan 5 -> 4 변경 -->
+              <td colspan="4" style="text-align: center; color: var(--slate-500); font-weight: 700;">합계</td>
+              <td id="totalQty">0</td>
+              <td></td>
+              <td id="totalSupply">0</td>
+              <td colspan="2"></td>
+              <td id="totalNotice">0</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+
+      <!-- 하단 버튼 영역 -->
+      <div class="bottom-actions">
+        <button class="btn-default" style="padding: 0 10px;">✉</button>
+        <button class="btn-primary">저장(F8) ▼</button>
+        <button class="btn-default">저장/전표(F7)</button>
+        <button class="btn-default">다시 작성</button>
+        <button class="btn-default">리스트</button>
+        <button class="btn-default">웹자료올리기</button>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    // --- 1. 창고/거래처 로컬 저장 및 자동완성 ---
+    const STORAGE_KEY_WH = 'oneapp_saved_warehouses';
+    const STORAGE_KEY_CLIENT = 'oneapp_saved_clients';
+
+    function loadDatalist(key, dataListId) {
+      const dataList = document.getElementById(dataListId);
+      const savedData = JSON.parse(localStorage.getItem(key) || '[]');
+      dataList.innerHTML = savedData.map(val => `<option value="${val}"></option>`).join('');
+    }
+
+    function saveToDatalist(key, dataListId, inputId, label) {
+      const inputEl = document.getElementById(inputId);
+      const val = inputEl.value.trim();
+      if (!val) return;
+
+      const savedData = JSON.parse(localStorage.getItem(key) || '[]');
+      if (!savedData.includes(val)) {
+        savedData.push(val);
+        localStorage.setItem(key, JSON.stringify(savedData));
+        loadDatalist(key, dataListId);
+        updateSystemMessage(`[${label}] '${val}' 등록 및 저장 완료`);
+      } else {
+        updateSystemMessage(`[${label}] 이미 등록된 항목입니다.`);
+      }
+    }
+
+    function updateSystemMessage(msg) {
+      document.getElementById('systemMessage').innerHTML = `<span class="highlight">&gt;</span> [알림] ${msg}`;
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      loadDatalist(STORAGE_KEY_WH, 'warehouseList');
+      loadDatalist(STORAGE_KEY_CLIENT, 'clientList');
+    });
+
+    document.getElementById('btnSaveWarehouse').addEventListener('click', () => {
+      saveToDatalist(STORAGE_KEY_WH, 'warehouseList', 'warehouseInput', '출하창고');
+    });
+    document.getElementById('btnSaveClient').addEventListener('click', () => {
+      saveToDatalist(STORAGE_KEY_CLIENT, 'clientList', 'clientInput', '거래처');
+    });
+
+    document.getElementById('warehouseInput').addEventListener('keydown', (e) => {
+      if(e.key === 'Enter') saveToDatalist(STORAGE_KEY_WH, 'warehouseList', 'warehouseInput', '출하창고');
+    });
+    document.getElementById('clientInput').addEventListener('keydown', (e) => {
+      if(e.key === 'Enter') saveToDatalist(STORAGE_KEY_CLIENT, 'clientList', 'clientInput', '거래처');
+    });
+
+
+    // --- 2. 수량 * 단가 자동 합계 계산 ---
+    document.getElementById('orderTbody').addEventListener('input', function(e) {
+      if (e.target.classList.contains('qty-input') || e.target.classList.contains('price-input')) {
+        const row = e.target.closest('tr');
+        const qty = Number(row.querySelector('.qty-input').value) || 0;
+        const price = Number(row.querySelector('.price-input').value) || 0;
+        const supplyInput = row.querySelector('.supply-price');
+        
+        supplyInput.value = (qty * price) > 0 ? (qty * price).toLocaleString() : '';
+        calculateTotals();
+      }
+    });
+
+    function calculateTotals() {
+      let tQty = 0, tSupply = 0;
+      document.querySelectorAll('#orderTbody tr').forEach(row => {
+        const qty = Number(row.querySelector('.qty-input').value) || 0;
+        const price = Number(row.querySelector('.price-input').value) || 0;
+        tQty += qty;
+        tSupply += (qty * price);
+      });
+      document.getElementById('totalQty').textContent = tQty.toLocaleString();
+      document.getElementById('totalSupply').textContent = tSupply.toLocaleString();
+    }
+  </script>
+</body>
+</html>
