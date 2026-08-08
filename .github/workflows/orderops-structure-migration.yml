@@ -1,0 +1,112 @@
+name: OrderOps structure migration
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/orderops-structure-migration.yml
+
+permissions:
+  contents: write
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Apply approved OrderOps structure migration
+        shell: python
+        run: |
+          from pathlib import Path
+
+          def replace_required(path, old, new):
+              p = Path(path)
+              text = p.read_text(encoding="utf-8")
+              if old not in text:
+                  raise SystemExit(f"{path}: required source text not found: {old!r}")
+              p.write_text(text.replace(old, new), encoding="utf-8")
+
+          # Machine-readable app registration: application identity/path moves to OrderOps.
+          replace_required("app-manifest.json", '"updatedAt": "2026-08-05"', '"updatedAt": "2026-08-08"')
+          replace_required("app-manifest.json", '"id": "shipping-management"', '"id": "orderops"')
+          replace_required("app-manifest.json", '"name": "Shipping Management"', '"name": "OrderOps"')
+          replace_required("app-manifest.json", '"path": "orders.html"', '"path": "orderops/list.html"')
+          replace_required("app-manifest.json", '"owner": "shipping-management"', '"owner": "orderops"')
+          replace_required("app-manifest.json", '"orders.html"', '"orderops/list.html"')
+
+          # Human-readable architecture: remove obsolete application name/route only.
+          replace_required("APP_ARCHITECTURE.md", "- Last reviewed: 2026-08-05", "- Last reviewed: 2026-08-08")
+          replace_required("APP_ARCHITECTURE.md", "Shipping Management", "OrderOps")
+          replace_required("APP_ARCHITECTURE.md", "`orders.html`", "`orderops/list.html`")
+
+          # Current OrderOps page lives one directory below the shared JS files.
+          replace_required("orderops/list.html", '<title>ONEAPP orderops</title>', '<title>ONEAPP OrderOps</title>')
+          replace_required("orderops/list.html", '<script src="orderFulfillmentEngine.js"></script>', '<script src="../orderFulfillmentEngine.js"></script>')
+          replace_required("orderops/list.html", '<script src="orderFulfillmentWorkbook.js"></script>', '<script src="../orderFulfillmentWorkbook.js"></script>')
+          replace_required("orderops/list.html", 'aria-label="ONEAPP NEXUS orderops"', 'aria-label="ONEAPP NEXUS OrderOps"')
+          replace_required("orderops/list.html", '<div class="brand-product">orderops</div>', '<div class="brand-product">OrderOps</div>')
+          replace_required("orderops/input.html", '<title>ONEAPP Order Input</title>', '<title>ONEAPP OrderOps Input</title>')
+
+          # Point the functional regression test at the real page and keep UI checks aligned
+          # with the current resizable/sticky-table implementation rather than the retired page.
+          replace_required("scripts/test-shipping-management.mjs", "orders.html", "orderops/list.html")
+          replace_required("scripts/test-shipping-management.mjs", "Shipping Management", "OrderOps")
+          old_css_check = r'''assert.match(
+            combinedCss,
+            /(?:^|})\s*th\s*\{[^{}]*\boverflow\s*:\s*hidden\s*;/m,
+            "the standalone th rule must contain overflow: hidden",
+          );'''
+          new_css_check = r'''assert.match(
+            combinedCss,
+            /(?:^|})\s*th\s*\{[^{}]*\bposition\s*:\s*sticky\s*;/m,
+            "the standalone th rule must keep sticky headers",
+          );'''
+          replace_required("scripts/test-shipping-management.mjs", old_css_check, new_css_check)
+
+          # GitHub Actions display names use the current application name; technical
+          # shipping_* action names and schemas intentionally remain unchanged.
+          replace_required(
+              ".github/workflows/repository-validation.yml",
+              "- name: Test Shipping Management allocation and workbook contracts",
+              "- name: Test OrderOps allocation and workbook contracts",
+          )
+          replace_required(
+              ".github/workflows/repository-validation.yml",
+              "- name: Test Shipping purchase-plan cloud failure safety",
+              "- name: Test OrderOps purchase-plan cloud failure safety",
+          )
+
+      - name: Confirm obsolete route registration is gone
+        shell: bash
+        run: |
+          ! grep -n '"id": "shipping-management"' app-manifest.json
+          ! grep -n '"path": "orders.html"' app-manifest.json
+          ! grep -n '"owner": "shipping-management"' app-manifest.json
+          ! grep -n '"orders.html"' app-manifest.json
+          ! grep -n '`orders.html`' APP_ARCHITECTURE.md
+          grep -n '"id": "orderops"' app-manifest.json
+          grep -n '"path": "orderops/list.html"' app-manifest.json
+          grep -n '"owner": "orderops"' app-manifest.json
+
+      - name: Validate repository contracts
+        run: node scripts/validate-repository.mjs
+
+      - name: Validate OrderOps allocation and workbook contracts
+        run: node scripts/test-shipping-management.mjs
+
+      - name: Validate OrderOps cloud failure safety
+        run: node scripts/test-shipping-purchase-plan-cloud.mjs
+
+      - name: Commit approved OrderOps migration
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app-manifest.json APP_ARCHITECTURE.md orderops/list.html orderops/input.html scripts/test-shipping-management.mjs .github/workflows/repository-validation.yml
+          git diff --cached --check
+          git commit -m "fix: align repository contracts with OrderOps structure"
+          git push origin HEAD:main
