@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.3.0",
-  "updatedAt": "2026-08-05",
+  "updatedAt": "2026-08-08",
   "repository": {
     "fullName": "orderzoneapp-coder/oneapp",
     "defaultBranch": "main",
@@ -196,9 +196,9 @@
       "integrationNote": "Settings explicitly loads this library. Other production pages still contain overlapping local implementations and require compatibility validation before consolidation."
     },
     {
-      "id": "shipping-management",
-      "name": "Shipping Management",
-      "path": "orders.html",
+      "id": "orderops",
+      "name": "OrderOps",
+      "path": "orderops/list.html",
       "kind": "web-entry",
       "status": "pilot",
       "purpose": "Analyze order and aggregate warehouse inventory files, manage purchase plans with recoverable local state and explicit revisioned cloud saves, and generate reviewed unshipped-status and purchase-upload workbooks.",
@@ -253,9 +253,9 @@
   "sharedDataContracts": [
     {
       "id": "shipping-purchase-plan",
-      "owner": "shipping-management",
+      "owner": "orderops",
       "consumers": [
-        "orders.html"
+        "orderops/list.html"
       ],
       "schemaVersion": "ONEAPP_SHIPPING_PURCHASE_PLAN_V1",
       "workspaceSchemaVersion": "shipping-workspace/v2",

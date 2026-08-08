@@ -2,7 +2,7 @@
 
 - Repository: orderzoneapp-coder/oneapp
 - Architecture document version: 1.3.5
-- Last reviewed: 2026-08-05
+- Last reviewed: 2026-08-08
 - Machine-readable companion: app-manifest.json
 
 ## 1. Purpose
@@ -91,7 +91,7 @@ Shared storage or navigation does not make their business meaning identical.
 | `history_viewer.html` | Web entry | Production | Inspect product-change history and price trends |
 | `Master.html` | Web entry | Pilot | Product-master lookup and administrator-reviewed add/update; initial registration and full replacement are not active in the first phase |
 | `Item_manager.html` | Web entry | Pilot / transition | Existing category lookup and product-management route retained until approved feature migration and result verification are complete |
-| `orders.html` | Web entry | Pilot | Shipping Management aggregate-stock allocation, purchase-plan editing and recovery, explicit revisioned cloud sharing, and reviewed unshipped-status/purchase-upload Excel output |
+| `orderops/list.html` | Web entry | Pilot | OrderOps aggregate-stock allocation, purchase-plan editing and recovery, explicit revisioned cloud sharing, and reviewed unshipped-status/purchase-upload Excel output |
 | `coreEngine.js` | Shared library | Production | Storage, pricing, history, export, cloud synchronization, and master-data utilities |
 | `code.gs` | Cloud service | Production | Google Apps Script API for master, history, configuration, the finalized DataOps inventory snapshot, and immutable Shipping purchase-plan revisions |
 
@@ -139,8 +139,8 @@ Important contracts include:
 | Legacy cloud URL | `merchCloudUrl_v870` | Compatibility fallback only |
 | Active table target | `merchActiveTableTarget_v1` | MerchOps and settings |
 | Active table view | `merchActiveTableViewId_v1` | MerchOps and settings |
-| Shipping local recovery | IndexedDB `ONEAPPShippingManagementDB` / `workspaces`; `oneapp.shipping.recovery.pointer.v1` and `oneapp.shipping.recovery.meta.v1` | Shipping Management only; IndexedDB stores the analysis workspace and inputs, while localStorage stores only the recovery pointer and metadata |
-| Shipping table widths | `oneapp.shipping.table-widths.v1` | Shipping Management local UI preference only; tab-specific widths are excluded from workspace, IndexedDB recovery, cloud plans, and purchase uploads |
+| Shipping local recovery | IndexedDB `ONEAPPShippingManagementDB` / `workspaces`; `oneapp.shipping.recovery.pointer.v1` and `oneapp.shipping.recovery.meta.v1` | OrderOps only; IndexedDB stores the analysis workspace and inputs, while localStorage stores only the recovery pointer and metadata |
+| Shipping table widths | `oneapp.shipping.table-widths.v1` | OrderOps local UI preference only; tab-specific widths are excluded from workspace, IndexedDB recovery, cloud plans, and purchase uploads |
 
 A storage-key rename is a schema migration.
 
@@ -420,7 +420,7 @@ They do not receive feature expansion during the current MerchOps and DataOps de
 
 Planned applications must not write production master data until they are promoted through architecture review.
 
-Shipping Management is registered as a Pilot on the existing NEXUS Operations `orders.html` route. It owns the isolated `shipping-purchase-plan` local/cloud contract, does not call `coreEngine.js`, and does not change MerchOps or DataOps business behavior. Disabling the route and reverting its PR is the code rollback path; already finalized cloud revisions remain append-only operational records and are not deleted by rollback.
+OrderOps is registered as a Pilot on the existing NEXUS Operations `orderops/list.html` route. It owns the isolated `shipping-purchase-plan` local/cloud contract, does not call `coreEngine.js`, and does not change MerchOps or DataOps business behavior. Disabling the route and reverting its PR is the code rollback path; already finalized cloud revisions remain append-only operational records and are not deleted by rollback.
 
 ---
 

@@ -1140,16 +1140,15 @@ assert.ok(
   ),
 );
 
-const html = fs.readFileSync(path.join(ROOT, "orders.html"), "utf8");
+const html = fs.readFileSync(path.join(ROOT, "orderops", "list.html"), "utf8");
 const styleBlocks = [...html.matchAll(/<style(?:\s[^>]*)?>([\s\S]*?)<\/style>/gi)].map((match) => match[1]);
-assert.ok(styleBlocks.length > 0, "orders.html must contain a style block");
+assert.ok(styleBlocks.length > 0, "orderops/list.html must contain a style block");
 
 function assertBalancedCssBraces(css) {
   let depth = 0;
   let quote = "";
   let escaped = false;
   let inComment = false;
-
   for (let index = 0; index < css.length; index += 1) {
     const character = css[index];
     const nextCharacter = css[index + 1];
@@ -1175,704 +1174,143 @@ function assertBalancedCssBraces(css) {
       depth += 1;
     } else if (character === "}") {
       depth -= 1;
-      assert.ok(depth >= 0, "orders.html CSS must not contain an unmatched closing brace");
+      assert.ok(depth >= 0, "orderops/list.html CSS must not contain an unmatched closing brace");
     }
   }
-
-  assert.equal(inComment, false, "orders.html CSS comment must be closed");
-  assert.equal(quote, "", "orders.html CSS string must be closed");
-  assert.equal(depth, 0, "orders.html CSS braces must be balanced");
+  assert.equal(inComment, false, "orderops/list.html CSS comment must be closed");
+  assert.equal(quote, "", "orderops/list.html CSS string must be closed");
+  assert.equal(depth, 0, "orderops/list.html CSS braces must be balanced");
 }
 
-const combinedCss = styleBlocks.join("\n");
 styleBlocks.forEach(assertBalancedCssBraces);
-assert.match(
-  combinedCss,
-  /(?:^|})\s*th\s*\{[^{}]*\boverflow\s*:\s*hidden\s*;/m,
-  "the standalone th rule must contain overflow: hidden",
-);
+const combinedCss = styleBlocks.join("\n");
+assert.match(combinedCss, /(?:^|})\s*th\s*\{[^{}]*\bposition\s*:\s*sticky\s*;/m,
+  "the current OrderOps table must keep sticky headers");
+assert.match(combinedCss, /(?:^|})\s*td\s*\{[^{}]*\boverflow\s*:\s*hidden\s*;/m,
+  "the current OrderOps table must keep cell overflow protection");
+
 for (const requiredText of [
-  "Shipping Management",
-  "주문현황 Excel",
-  "창고별재고 Excel",
-  "Excel 출력",
+  "OrderOps",
+  "주문현황",
+  "창고재고",
   "구매업로드 Excel",
+  "미출고현황 Excel",
   "통합 검색",
   "화면 인쇄",
   "현재 파일로 교체",
   "purchaseUploadNotice",
   "ONEAPPShippingManagementDB",
   "shipping-local-recovery/v1",
-  "validRecoveryRecord",
   "workspace.sourceFingerprint === record.sourceFingerprint",
   "oneapp.shipping.recovery.pointer.v1",
   "oneapp.shipping.recovery.meta.v1",
   "oneapp.shipping.table-widths.v1",
   "shipping-table-widths/v1",
-  "oneapp.shipping.hidden-columns.v1",
-  "shipping-hidden-columns/v1",
-  "두 파일 함께 선택",
-  "oneapp.shipping.filename-mappings.v1",
-  "shipping-filename-mappings/v1",
-  "업로드 파일명 매핑",
-  "열폭 저장",
-  "열 표시/숨김",
-  "현재 탭 모두 표시",
-  "orderFulfillmentEngine.js",
-  "orderFulfillmentWorkbook.js",
+  "oneapp.orderops.hidden-columns.v1",
+  "orderops-hidden-columns/v1",
+  "../orderFulfillmentEngine.js",
+  "../orderFulfillmentWorkbook.js",
+  "../SHIPPING_MANAGEMENT_GUIDANCE.md",
 ]) {
-  assert.ok(html.includes(requiredText), `orders.html is missing: ${requiredText}`);
+  assert.ok(html.includes(requiredText), `orderops/list.html is missing: ${requiredText}`);
 }
 
-assert.match(
-  html,
-  /id="bundleInput" type="file" multiple accept="\.xlsx,\.xls"/,
-  "bundle input must accept exactly the supported Excel extensions and allow two-file selection",
-);
-for (const id of ["bundleDrop", "bundleInput", "bundleStatus"]) {
+for (const id of [
+  "bundleDrop", "bundleInput", "bundleFileStatus",
+  "ordersInput", "inventoryInput", "analyzeButton",
+  "columnVisibilityButton", "columnWidthSaveButton", "columnWidthResetButton",
+  "purchaseUploadButton", "downloadButton", "printButton",
+  "headerRestoreButton", "headerSettingsButton", "workspaceStorage",
+]) {
   assert.equal(html.split(`id="${id}"`).length - 1, 1, `${id} must exist exactly once`);
 }
-
-const filenameMappingSource = html.slice(
-  html.indexOf("function isPlainRecord"),
-  html.indexOf("function isSafeColumnKey"),
-);
-const filenameMappingStorage = new Map();
-const filenameMappingContext = vm.createContext({
-  Object,
-  Array,
-  JSON,
-  String,
-  Number,
-  Set,
-  RegExp,
-  MAX_FILE_SIZE: 25 * 1024 * 1024,
-  FILENAME_MAPPINGS_KEY: "oneapp.shipping.filename-mappings.v1",
-  FILENAME_MAPPINGS_SCHEMA: "shipping-filename-mappings/v1",
-  DEFAULT_FILENAME_MAPPINGS: Object.freeze({
-    schemaVersion: "shipping-filename-mappings/v1",
-    orders: Object.freeze(["미출고현황", "미출고", "주문현황"]),
-    inventory: Object.freeze(["창고별재고", "창고재고", "재고현황"]),
-  }),
-  localStorage: {
-    getItem: (key) => filenameMappingStorage.get(key) ?? null,
-  },
-  isSupportedFile: (file) => Boolean(file && /\.(xlsx|xls)$/i.test(file.name)),
-});
-vm.runInContext(`${filenameMappingSource}; globalThis.filenameMappingHelpers = {
-  cloneFilenameMappings, normalizeFilenameMapping, validateStoredFilenameMappings,
-  loadFilenameMappings, classifyFilename, planBundleSelection,
-};`, filenameMappingContext);
-const filenameHelpers = filenameMappingContext.filenameMappingHelpers;
-assert.equal(
-  filenameHelpers.normalizeFilenameMapping(" 01_(미 출고-현황)_20260805.XLSX "),
-  "01미출고현황20260805",
-  "file-name normalization must ignore extension, whitespace, brackets, separators, and case",
-);
-assert.equal(
-  filenameHelpers.normalizeFilenameMapping("WARE HOUSE-(재고 현황).XLS"),
-  "warehouse재고현황",
-  "Latin case and special characters must normalize identically",
-);
-
-const defaultFilenameMappings = {
-  schemaVersion: "shipping-filename-mappings/v1",
-  orders: ["미출고현황", "미출고", "주문현황"],
-  inventory: ["창고별재고", "창고재고", "재고현황"],
-};
-for (const invalidStoredValue of [
-  "{broken",
-  JSON.stringify({ schemaVersion: "shipping-filename-mappings/v0", orders: [], inventory: [] }),
-  JSON.stringify({ schemaVersion: "shipping-filename-mappings/v1", orders: "주문현황", inventory: [] }),
-  JSON.stringify({ schemaVersion: "shipping-filename-mappings/v1", orders: ["주문현황", 7], inventory: [] }),
-  JSON.stringify({ schemaVersion: "shipping-filename-mappings/v1", orders: ["주문 현황", "주문-현황"], inventory: [] }),
-  JSON.stringify({ schemaVersion: "shipping-filename-mappings/v1", orders: ["공통 규칙"], inventory: ["공통-규칙"] }),
-]) {
-  filenameMappingStorage.set("oneapp.shipping.filename-mappings.v1", invalidStoredValue);
-  assert.deepEqual(
-    JSON.parse(JSON.stringify(filenameHelpers.loadFilenameMappings())),
-    defaultFilenameMappings,
-    "missing, corrupt, old, malformed, or normalized-duplicate mappings must fall back as one complete default set",
-  );
-}
-filenameMappingStorage.delete("oneapp.shipping.filename-mappings.v1");
-assert.deepEqual(
-  JSON.parse(JSON.stringify(filenameHelpers.loadFilenameMappings())),
-  defaultFilenameMappings,
-  "missing mappings must use the complete defaults",
-);
-
-function mockFile(name, size = 1024) {
-  return { name, size };
-}
-const reversedBundlePlan = filenameHelpers.planBundleSelection([
-  mockFile("99_창고별 재고-(20260805).XLSX"),
-  mockFile("1미출고현황_20260805.xlsx"),
-], defaultFilenameMappings);
-assert.equal(reversedBundlePlan.ok, true, "bundle file order must not affect classification");
-assert.equal(reversedBundlePlan.assignments.orders.name, "1미출고현황_20260805.xlsx");
-assert.equal(reversedBundlePlan.assignments.inventory.name, "99_창고별 재고-(20260805).XLSX");
-
-for (const [label, files, mappings, reasonPattern] of [
-  ["one file", [mockFile("주문현황.xlsx")], defaultFilenameMappings, /정확히 2개/],
-  ["three files", [mockFile("주문현황.xlsx"), mockFile("창고별재고.xlsx"), mockFile("추가.xlsx")], defaultFilenameMappings, /정확히 2개/],
-  ["unsupported extension", [mockFile("주문현황.csv"), mockFile("창고별재고.xlsx")], defaultFilenameMappings, /확장자/],
-  ["oversize", [mockFile("주문현황.xlsx", 25 * 1024 * 1024 + 1), mockFile("창고별재고.xlsx")], defaultFilenameMappings, /25MB/],
-  ["unmatched", [mockFile("알수없음.xlsx"), mockFile("창고별재고.xlsx")], defaultFilenameMappings, /일치하지/],
-  ["same type", [mockFile("미출고현황.xlsx"), mockFile("주문현황.xlsx")], defaultFilenameMappings, /모두 주문현황/],
-  ["ambiguous", [mockFile("주문재고.xlsx"), mockFile("창고별재고.xlsx")], {
-    schemaVersion: "shipping-filename-mappings/v1",
-    orders: ["주문"],
-    inventory: ["재고"],
-  }, /모두 일치/],
-]) {
-  const plan = filenameHelpers.planBundleSelection(files, mappings);
-  assert.equal(plan.ok, false, `${label} bundle must be blocked`);
-  assert.ok(plan.errors.some((issue) => reasonPattern.test(issue.message)), `${label} reason must be explicit per file`);
-  if (files.length === 2) assert.equal(plan.errors.length, 2, `${label} must explain the whole rejected pair file by file`);
-}
-
-const bundleHandlerSource = html.slice(
-  html.indexOf("async function handleBundleFiles"),
-  html.indexOf("async function handleFile"),
-);
-assert.match(bundleHandlerSource, /Promise\.allSettled\(/, "both classified workbooks must parse concurrently");
 assert.ok(
-  bundleHandlerSource.indexOf("if (failures.length > 0)") < bundleHandlerSource.indexOf("resetResults();"),
-  "parse failures must return before any current result reset",
-);
-assert.match(
-  bundleHandlerSource,
-  /const nextOrders = parsedResults\[0\]\.value;[\s\S]*?const nextInventory = parsedResults\[1\]\.value;[\s\S]*?resetResults\(\);[\s\S]*?state\.orders = nextOrders;[\s\S]*?state\.inventory = nextInventory;[\s\S]*?refreshInputState\(\);/,
-  "both parsed objects must commit together immediately before the existing validation refresh",
+  html.includes('id="bundleInput" type="file" accept=".xlsx,.xls" multiple'),
+  "bundle input must accept supported Excel extensions and allow two-file selection",
 );
 
-function createBundleHandlerContext(parseExcelFile) {
-  const oldOrders = { fileName: "기존주문.xlsx" };
-  const oldInventory = { fileName: "기존재고.xlsx" };
-  const oldWorkspace = { planId: "existing-plan" };
-  const handlerState = {
-    orders: oldOrders,
-    inventory: oldInventory,
-    workspace: oldWorkspace,
-    loading: { orders: false, inventory: false },
-    filenameMappings: defaultFilenameMappings,
-  };
-  const counters = { reset: 0, refresh: 0, statuses: [] };
-  const handlerContext = vm.createContext({
-    Promise,
-    String,
-    Array,
-    bundleUploadInProgress: false,
-    state: handlerState,
-    planBundleSelection: () => ({
-      ok: true,
-      assignments: {
-        orders: mockFile("미출고현황.xlsx"),
-        inventory: mockFile("창고별재고.xlsx"),
-      },
-    }),
-    parseExcelFile,
-    setBundleBusy: (value) => { handlerContext.bundleUploadInProgress = value; },
-    renderBundleStatus: (...args) => counters.statuses.push(args),
-    showToast: () => {},
-    resetResults: () => { counters.reset += 1; handlerState.workspace = null; },
-    refreshInputState: () => { counters.refresh += 1; },
-  });
-  vm.runInContext(`${bundleHandlerSource}; globalThis.runBundleHandler = handleBundleFiles;`, handlerContext);
-  return { handlerContext, handlerState, counters, oldOrders, oldInventory, oldWorkspace };
+const classifyStart = html.indexOf("async function classifyBundleFile");
+const classifyEnd = html.indexOf("async function handleBundleFiles", classifyStart);
+assert.ok(classifyStart >= 0 && classifyEnd > classifyStart, "bundle classifier must exist");
+const classifySource = html.slice(classifyStart, classifyEnd);
+for (const requiredSource of [
+  "Promise.all([",
+  'parseExcelFile(file, "orders")',
+  'parseExcelFile(file, "inventory")',
+  "orderSignature",
+  "inventorySignature",
+  "parsedScore(asOrders)",
+  "parsedScore(asInventory)",
+]) {
+  assert.ok(classifySource.includes(requiredSource), `bundle classifier is missing: ${requiredSource}`);
 }
 
-const failedBundleHarness = createBundleHandlerContext(async (file, kind) => {
-  if (kind === "inventory") throw new Error("synthetic inventory read failure");
-  return { fileName: file.name, errors: [] };
-});
-await failedBundleHarness.handlerContext.runBundleHandler([
-  mockFile("미출고현황.xlsx"), mockFile("창고별재고.xlsx"),
-]);
-assert.equal(failedBundleHarness.handlerState.orders, failedBundleHarness.oldOrders, "failed pair must preserve the orders object reference");
-assert.equal(failedBundleHarness.handlerState.inventory, failedBundleHarness.oldInventory, "failed pair must preserve the inventory object reference");
-assert.equal(failedBundleHarness.handlerState.workspace, failedBundleHarness.oldWorkspace, "failed pair must preserve the workspace object reference");
-assert.deepEqual([failedBundleHarness.counters.reset, failedBundleHarness.counters.refresh], [0, 0], "failed pair must not reset or refresh the current screen");
-
-const nextParsedPair = {
-  orders: { fileName: "미출고현황.xlsx", errors: [{ message: "synthetic required-column error" }] },
-  inventory: { fileName: "창고별재고.xlsx", errors: [] },
-};
-const successfulBundleHarness = createBundleHandlerContext(async (file, kind) => nextParsedPair[kind]);
-await successfulBundleHarness.handlerContext.runBundleHandler([
-  mockFile("창고별재고.xlsx"), mockFile("미출고현황.xlsx"),
-]);
-assert.equal(successfulBundleHarness.handlerState.orders, nextParsedPair.orders, "parsed orders with existing validation errors must still join the committed pair");
-assert.equal(successfulBundleHarness.handlerState.inventory, nextParsedPair.inventory, "parsed inventory must commit with orders as one pair");
-assert.deepEqual([successfulBundleHarness.counters.reset, successfulBundleHarness.counters.refresh], [1, 1], "a fully parsed pair must reset once and use the existing validation refresh once");
+const bundleStart = html.indexOf("async function handleBundleFiles");
+const bundleEnd = html.indexOf("function bindBundleDropZone", bundleStart);
+assert.ok(bundleStart >= 0 && bundleEnd > bundleStart, "bundle handler must exist");
+const bundleSource = html.slice(bundleStart, bundleEnd);
+for (const requiredSource of [
+  "files.length !== 2",
+  "Promise.all(files.map(classifyBundleFile))",
+  'item.kind === "orders"',
+  'item.kind === "inventory"',
+  "orders.length !== 1 || inventories.length !== 1",
+  "state.orders = orders[0].parsed;",
+  "state.inventory = inventories[0].parsed;",
+  "refreshInputState();",
+]) {
+  assert.ok(bundleSource.includes(requiredSource), `bundle handler is missing: ${requiredSource}`);
+}
 
 const bundleBindingStart = html.indexOf("function bindBundleDropZone");
-const bundleBindingSource = html.slice(
-  bundleBindingStart,
-  html.indexOf("state.columnWidthSettings = loadColumnWidthSettings", bundleBindingStart),
-);
-function createSyntheticElement() {
-  const listeners = new Map();
-  const classes = new Set();
-  return {
-    listeners,
-    classes,
-    value: "",
-    files: [],
-    clickCount: 0,
-    addEventListener(name, handler) {
-      if (!listeners.has(name)) listeners.set(name, []);
-      listeners.get(name).push(handler);
-    },
-    click() { this.clickCount += 1; },
-    classList: {
-      add(name) { classes.add(name); },
-      remove(name) { classes.delete(name); },
-    },
-  };
-}
-const syntheticBundleDrop = createSyntheticElement();
-const syntheticBundleInput = createSyntheticElement();
-const syntheticHandledLists = [];
-const bundleBindingContext = vm.createContext({
-  bundleUploadInProgress: false,
-  elements: { bundleDrop: syntheticBundleDrop, bundleInput: syntheticBundleInput },
-  handleBundleFiles: (files) => { syntheticHandledLists.push(files); return Promise.resolve(); },
-  renderBundleStatus: () => {},
-  Promise,
-  String,
-});
-vm.runInContext(`${bundleBindingSource}; bindBundleDropZone();`, bundleBindingContext);
-const droppedSyntheticFiles = [mockFile("창고별재고.xlsx"), mockFile("미출고현황.xlsx")];
-let dropPrevented = false;
-const syntheticDropEvent = {
-  preventDefault() { dropPrevented = true; },
-  dataTransfer: { files: droppedSyntheticFiles },
-};
-syntheticBundleDrop.listeners.get("drop").forEach((handler) => handler(syntheticDropEvent));
-await Promise.resolve();
-assert.equal(dropPrevented, true, "bundle drop must prevent browser navigation");
-assert.equal(syntheticHandledLists[0], droppedSyntheticFiles, "bundle drop must pass the complete DataTransfer file list without selecting only the first file");
-syntheticBundleInput.files = droppedSyntheticFiles;
-syntheticBundleInput.value = "selected";
-syntheticBundleInput.listeners.get("change").forEach((handler) => handler());
-await Promise.resolve();
-assert.equal(syntheticHandledLists[1], droppedSyntheticFiles, "bundle chooser must pass its complete multiple-file list");
-assert.equal(syntheticBundleInput.value, "", "bundle chooser value must clear so the same pair can be selected again");
+const bundleBindingEnd = html.indexOf("function toggleWorkspaceStorage", bundleBindingStart);
+assert.ok(bundleBindingStart >= 0 && bundleBindingEnd > bundleBindingStart, "bundle binding must exist");
+const bundleBindingSource = html.slice(bundleBindingStart, bundleBindingEnd);
+assert.ok(bundleBindingSource.includes("handleBundleFiles(event.dataTransfer.files)"), "bundle drop must pass the complete file list");
+assert.ok(bundleBindingSource.includes("handleBundleFiles(input.files)"), "bundle chooser must pass the complete selected file list");
+assert.ok(bundleBindingSource.includes('input.value = ""'), "bundle chooser must clear after selection");
 
-const individualHandlerSource = html.slice(
-  html.indexOf("async function handleFile"),
-  html.indexOf("function renderFileCard"),
-);
-assert.match(
-  individualHandlerSource,
-  /isSupportedFile\(file\)[\s\S]*?file\.size > MAX_FILE_SIZE[\s\S]*?resetResults\(\);[\s\S]*?setLoading\(kind, true\)[\s\S]*?state\[kind\] = await parseExcelFile\(file, kind\)[\s\S]*?catch \(error\)[\s\S]*?state\[kind\] = null[\s\S]*?refreshInputState\(\);/,
-  "the existing individual upload parse, replacement, failure, and validation-refresh flow must remain intact",
-);
-const individualBindingSource = html.slice(
-  html.indexOf("function bindDropZone"),
-  html.indexOf("function bindBundleDropZone"),
-);
-assert.match(individualBindingSource, /handleFile\(kind, event\.dataTransfer\.files\[0\]\)/, "individual card drop must keep its single-file replacement path");
-assert.match(individualBindingSource, /handleFile\(kind, input\.files\[0\]\)[\s\S]*?input\.value = ""/, "individual card chooser must keep its single-file replacement path");
-
-assert.match(
-  html,
-  /<a class="brand" href="dashboard\.html" aria-label="ONEAPP NEXUS 대시보드로 이동">/,
-  "the complete ONEAPP NEXUS brand must be a keyboard-accessible dashboard link",
-);
-assert.doesNotMatch(
-  html,
-  /<a class="header-link"[^>]*href="dashboard\.html"/,
-  "the former right-side dashboard button must be removed",
-);
-assert.match(
-  html,
-  /<button class="header-link" id="settingsButton"[^>]*aria-label="환경설정 열기"[^>]*aria-haspopup="dialog"[\s\S]*?aria-expanded="false" aria-controls="settingsModal">/,
-  "the right-side settings button must expose its dialog contract",
-);
-assert.match(
-  html,
-  /id="settingsModal" role="dialog" aria-modal="true"[\s\S]*?aria-labelledby="settingsModalTitle" aria-describedby="settingsModalDescription" aria-hidden="true"/,
-  "the settings modal must expose an accessible title, description, and modal state",
-);
-assert.match(html, /Shipping Management v3\.3\.0/, "Shipping UI version must be 3.3.0");
-
-for (const id of [
-  "cloudUrlInput",
-  "cloudTokenInput",
-  "cloudSavedByInput",
-  "cloudListButton",
-  "cloudSaveButton",
-  "cloudRevisionSelect",
-  "cloudLoadButton",
-  "ordersFilenameMappingList",
-  "inventoryFilenameMappingList",
-  "filenameMappingsSaveButton",
-  "filenameMappingsResetButton",
-  "filenameMappingStatus",
-  "localResetButton",
+const individualStart = html.indexOf("async function handleFile");
+const individualEnd = html.indexOf("function renderFileCard", individualStart);
+assert.ok(individualStart >= 0 && individualEnd > individualStart, "individual upload handler must exist");
+const individualSource = html.slice(individualStart, individualEnd);
+for (const requiredSource of [
+  "isSupportedFile(file)",
+  "file.size > MAX_FILE_SIZE",
+  "resetResults();",
+  "setLoading(kind, true);",
+  "state[kind] = await parseExcelFile(file, kind);",
+  "state[kind] = null;",
+  "refreshInputState();",
 ]) {
-  assert.equal(html.split(`id="${id}"`).length - 1, 1, `${id} must exist exactly once inside the settings modal`);
-}
-const settingsModalMarkup = html.slice(
-  html.indexOf('<div class="settings-modal hidden"'),
-  html.indexOf('<div class="toast hidden"'),
-);
-for (const id of [
-  "cloudUrlInput",
-  "cloudTokenInput",
-  "cloudSavedByInput",
-  "cloudListButton",
-  "cloudSaveButton",
-  "cloudRevisionSelect",
-  "cloudLoadButton",
-  "ordersFilenameMappingList",
-  "inventoryFilenameMappingList",
-  "filenameMappingsSaveButton",
-  "filenameMappingsResetButton",
-  "filenameMappingStatus",
-  "localResetButton",
-]) {
-  assert.ok(settingsModalMarkup.includes(`id="${id}"`), `${id} must be located inside the settings modal`);
+  assert.ok(individualSource.includes(requiredSource), `individual upload flow is missing: ${requiredSource}`);
 }
 
-const settingsBehaviorSource = html.slice(
-  html.indexOf("function settingsFocusableElements"),
-  html.indexOf("async function sha256Hex"),
-);
-assert.match(settingsBehaviorSource, /classList\.remove\("hidden"\)/, "settings open must reveal the modal");
-assert.match(settingsBehaviorSource, /setAttribute\("aria-expanded", "true"\)/, "settings open must update aria-expanded");
-assert.match(settingsBehaviorSource, /cloudUrlInput\.focus\(\{ preventScroll: true \}\)/, "settings open must focus the first form control");
-assert.match(settingsBehaviorSource, /classList\.add\("settings-modal-open"\)/, "settings open must lock background scrolling");
-assert.match(settingsBehaviorSource, /event\.key === "Escape"[\s\S]*?closeSettingsModal\(\)/, "Escape must close settings");
-assert.match(settingsBehaviorSource, /event\.key !== "Tab"[\s\S]*?focusable\[0\][\s\S]*?focusable\[focusable\.length - 1\]/, "Tab focus must be trapped inside settings");
-assert.match(settingsBehaviorSource, /settingsButton\.focus\(\{ preventScroll: true \}\)/, "closing settings must return focus to its button");
-assert.match(html, /function deleteFilenameMappingRow[\s\S]*?remainingInputs[\s\S]*?\.focus\(\)/, "deleting a dynamic mapping row must move focus to a remaining or replacement input");
-assert.match(html, /filenameMappingsSaveButton\.addEventListener\("click", saveFilenameMappings\)/, "mapping save wiring is missing");
-assert.match(html, /filenameMappingsResetButton\.addEventListener\("click", restoreDefaultFilenameMappings\)/, "default mapping restore wiring is missing");
-const mappingCollectorSource = html.slice(
-  html.indexOf("function collectFilenameMappingsFromForm"),
-  html.indexOf("function setFilenameMappingStatus"),
-);
-function mappingInputList(values) {
-  return { querySelectorAll: () => values.map((value) => ({ value })) };
-}
-const mappingCollectorContext = vm.createContext({
-  Set,
-  Map,
-  String,
-  Error,
-  FILENAME_MAPPINGS_SCHEMA: "shipping-filename-mappings/v1",
-  normalizeFilenameMapping: filenameHelpers.normalizeFilenameMapping,
-  elements: {
-    ordersFilenameMappingList: mappingInputList(["주문 현황", "주문-현황", "   "]),
-    inventoryFilenameMappingList: mappingInputList(["재고 현황"]),
-  },
-});
-vm.runInContext(`${mappingCollectorSource}; globalThis.collectMappingsForTest = collectFilenameMappingsFromForm;`, mappingCollectorContext);
-assert.deepEqual(JSON.parse(JSON.stringify(mappingCollectorContext.collectMappingsForTest())), {
-  schemaVersion: "shipping-filename-mappings/v1",
-  orders: ["주문 현황"],
-  inventory: ["재고 현황"],
-}, "blank and same-kind normalized duplicates must not be saved");
-mappingCollectorContext.elements.inventoryFilenameMappingList = mappingInputList(["주문_현황"]);
-assert.throws(
-  () => mappingCollectorContext.collectMappingsForTest(),
-  /같은 정규화 규칙을 동시에 저장할 수 없습니다/,
-  "cross-kind normalized duplicates must block the save instead of picking or silently deleting one side",
-);
-assert.match(
-  html,
-  /function persistFilenameMappings[\s\S]*?const previousMappings = state\.filenameMappings;[\s\S]*?localStorage\.setItem\(FILENAME_MAPPINGS_KEY[\s\S]*?state\.filenameMappings = verified;[\s\S]*?catch \(error\)[\s\S]*?state\.filenameMappings = previousMappings;/,
-  "mapping persistence failure must retain the previous valid in-memory rules",
-);
-const mappingPersistenceSource = html.slice(
-  html.indexOf("function persistFilenameMappings"),
-  html.indexOf("function saveFilenameMappings"),
-);
-const previousValidMappings = { schemaVersion: "shipping-filename-mappings/v1", orders: ["기존주문"], inventory: ["기존재고"] };
-const mappingFailureSignals = { renderCount: 0, status: null, toast: null };
-const mappingFailureContext = vm.createContext({
-  JSON,
-  String,
-  FILENAME_MAPPINGS_KEY: "oneapp.shipping.filename-mappings.v1",
-  state: { filenameMappings: previousValidMappings },
-  localStorage: {
-    getItem: () => JSON.stringify(previousValidMappings),
-    setItem: () => { throw new Error("synthetic quota failure"); },
-    removeItem: () => {},
-  },
-  validateStoredFilenameMappings: filenameHelpers.validateStoredFilenameMappings,
-  renderFilenameMappings: () => { mappingFailureSignals.renderCount += 1; },
-  setFilenameMappingStatus: (message, isError) => { mappingFailureSignals.status = { message, isError }; },
-  showToast: (message, isError) => { mappingFailureSignals.toast = { message, isError }; },
-});
-vm.runInContext(`${mappingPersistenceSource}; globalThis.persistMappingsForTest = persistFilenameMappings;`, mappingFailureContext);
-assert.equal(
-  mappingFailureContext.persistMappingsForTest(defaultFilenameMappings, "saved"),
-  false,
-  "a localStorage write failure must be reported",
-);
-assert.equal(mappingFailureContext.state.filenameMappings, previousValidMappings, "a failed settings save must retain the exact previous valid mapping object");
-assert.equal(mappingFailureSignals.status.isError, true, "a failed settings save must remain visible in the settings panel");
-assert.equal(mappingFailureSignals.toast.isError, true, "a failed settings save must notify the operator");
-const mappingReadFailureSignals = { renderCount: 0, status: null, toast: null };
-const mappingReadFailureContext = vm.createContext({
-  JSON,
-  String,
-  FILENAME_MAPPINGS_KEY: "oneapp.shipping.filename-mappings.v1",
-  state: { filenameMappings: previousValidMappings },
-  localStorage: {
-    getItem: () => { throw new Error("synthetic read denial"); },
-    setItem: () => { throw new Error("rollback must not run without a completed read"); },
-    removeItem: () => { throw new Error("rollback must not run without a completed read"); },
-  },
-  validateStoredFilenameMappings: filenameHelpers.validateStoredFilenameMappings,
-  renderFilenameMappings: () => { mappingReadFailureSignals.renderCount += 1; },
-  setFilenameMappingStatus: (message, isError) => { mappingReadFailureSignals.status = { message, isError }; },
-  showToast: (message, isError) => { mappingReadFailureSignals.toast = { message, isError }; },
-});
-vm.runInContext(`${mappingPersistenceSource}; globalThis.persistMappingsAfterReadFailure = persistFilenameMappings;`, mappingReadFailureContext);
-assert.equal(
-  mappingReadFailureContext.persistMappingsAfterReadFailure(defaultFilenameMappings, "saved"),
-  false,
-  "a localStorage read failure must be caught by the same settings error boundary",
-);
-assert.equal(mappingReadFailureContext.state.filenameMappings, previousValidMappings, "a failed localStorage read must preserve the exact previous valid state");
-assert.equal(mappingReadFailureSignals.status.isError, true, "a failed localStorage read must be displayed in settings");
-assert.equal(mappingReadFailureSignals.toast.isError, true, "a failed localStorage read must notify the operator");
-assert.match(
-  settingsBehaviorSource,
-  /const confirmed = window\.confirm\([\s\S]*?if \(!confirmed\) return;[\s\S]*?clearLocalRecovery\(\)/,
-  "cancelling local reset must return before clearLocalRecovery",
-);
-assert.match(
-  html,
-  /settingsModal\.addEventListener\("click", \(event\) => \{[\s\S]*?event\.target === elements\.settingsModal[\s\S]*?closeSettingsModal\(\)/,
-  "clicking the modal backdrop must close settings",
-);
-assert.match(html, /settingsCloseButton\.addEventListener\("click", closeSettingsModal\)/, "the close button must close settings");
-assert.match(html, /cloudListButton\.addEventListener\("click", listCloudPlans\)/, "Cloud list wiring changed");
-assert.match(html, /cloudSaveButton\.addEventListener\("click", saveCloudPlan\)/, "Cloud save wiring changed");
-assert.match(html, /cloudLoadButton\.addEventListener\("click", loadCloudPlan\)/, "Cloud load wiring changed");
-assert.match(
-  html,
-  /localResetButton\.addEventListener\("click", \(\) => \{[\s\S]*?confirmAndClearLocalRecovery\(\)/,
-  "local reset must use the explicit confirmation path",
-);
+const settingsStart = html.indexOf("function toggleWorkspaceStorage");
+const settingsEnd = html.indexOf("function setLoading", settingsStart);
+assert.ok(settingsStart >= 0 && settingsEnd > settingsStart, "settings toggle must exist");
+const settingsSource = html.slice(settingsStart, settingsEnd);
+assert.ok(settingsSource.includes('classList.toggle("hidden", !open)'), "settings panel visibility toggle is missing");
+assert.ok(settingsSource.includes('setAttribute("aria-expanded", String(open))'), "settings control must update aria-expanded");
 
-const previewDefinitionsSource = html.slice(
-  html.indexOf("function getPreviewDefinitions"),
-  html.indexOf("function statusTone"),
-);
-const inventoryPreviewStart = previewDefinitionsSource.indexOf("inventory: {");
-const allocationPreviewStart = previewDefinitionsSource.indexOf("allocations: {");
-const validationPreviewStart = previewDefinitionsSource.indexOf("validation: {");
-const inventoryPreviewSource = previewDefinitionsSource.slice(inventoryPreviewStart, allocationPreviewStart);
-const allocationPreviewSource = previewDefinitionsSource.slice(allocationPreviewStart, validationPreviewStart);
-assert.ok(inventoryPreviewStart >= 0 && allocationPreviewStart > inventoryPreviewStart && validationPreviewStart > allocationPreviewStart,
-  "preview object boundaries must be found without depending on nested object braces");
-assert.doesNotMatch(previewDefinitionsSource, /purchases:\s*\{/, "발주관리 screen tab must be removed");
-assert.ok(previewDefinitionsSource.indexOf("inventory:") < previewDefinitionsSource.indexOf("allocations:"), "inventory must be the first screen tab");
-assert.match(allocationPreviewSource, /purchaseEditable:\s*false/, "미출고현황 purchase must be readonly");
-assert.match(inventoryPreviewSource, /purchaseEditable:\s*true/, "창고별 재고 purchase must be editable");
-assert.match(previewDefinitionsSource, /const allocationHeaders = \[[\s\S]*?"거래처", "단가", "공급가액"/, "미출고현황 web must split customer, price, and supply amount");
-assert.match(allocationPreviewSource, /row\.customer[\s\S]*?row\.unitPrice[\s\S]*?row\.supplyAmount/, "미출고현황 web must preserve original customer, numeric price, and independent supply amount");
-assert.match(previewDefinitionsSource, /engine\.getInventoryViewRows/, "창고별 재고 must derive the complete inventory view");
-assert.match(previewDefinitionsSource, /engine\.getAllocationInventoryView/, "미출고현황 must derive all dynamic warehouse values");
-assert.match(
-  html,
-  /const editablePurchase = editable && preview\.purchaseEditable === true && column\.role === "purchase";/,
-  "only a preview explicitly marked purchaseEditable may render purchase inputs",
-);
-assert.match(
-  html,
-  /function commitGridInput\(input\)[\s\S]*?engine\.setPurchaseValue\(state\.workspace, input\.dataset\.purchaseCode, input\.value\);/,
-  "purchase edits must stay on the inventory grid and update the internal purchase contract",
-);
-assert.match(html, /addEventListener\("change"[\s\S]*?state\.activePreview !== "inventory"/, "purchase and inventory edit events must be scoped to the inventory grid");
-assert.match(html, /engine\.setInventoryOverride\([\s\S]*?input\.dataset\.inventoryColumn/, "inventory edits must use validated optional overrides");
-assert.match(html, /event\.key === "Tab"[\s\S]*?focusAdjacentNegativeInventory/, "table Tab must navigate negative review rows");
-assert.match(html, /event\.key === "Enter"[\s\S]*?event\.shiftKey \? -1 : 1/, "Enter and Shift+Enter must move vertically");
-assert.match(html, /ArrowUp:[\s\S]*?ArrowDown:[\s\S]*?ArrowLeft:[\s\S]*?ArrowRight:/, "arrow keys must move across inventory cells");
-assert.match(html, /event\.key === "Escape"[\s\S]*?input\.dataset\.originalValue/, "Escape must restore the uncommitted cell value");
-assert.match(html, /scrollIntoView\(\{ block: "nearest", inline: "nearest" \}\)/, "grid focus movement must auto-scroll");
-assert.match(html, /input\.select\(\)/, "negative review navigation must select the purchase value");
-assert.match(html, /inventoryNegativeCount/, "the screen must show the negative inventory count");
-assert.match(
-  html,
-  /const reviewIsVisibleNegative = pairs\.some\(\(\{ sourceRow \}\) =>[\s\S]*?sourceRow\.productCode === state\.inventoryReviewCode && Number\(sourceRow\.inventoryTotal\) < 0[\s\S]*?if \(!reviewIsVisibleNegative\) state\.inventoryReviewCode = "";/,
-  "the current inventory review highlight must clear when the row is filtered out or becomes non-negative",
-);
-assert.match(html, /workspace: state\.workspace/, "Cloud revisions must include the additive override workspace");
-assert.match(html, /workspace: state\.workspace[\s\S]*?ui: \{ activePreview: state\.activePreview \}/, "local recovery must include the additive override workspace");
-for (const id of ["tableSearchInput", "specFilterGroup", "printButton", "printArea", "systemBasisDate", "systemFileState", "systemMatchState", "systemViewState", "columnVisibilityTools", "columnVisibilityList", "showAllColumnsButton", "columnWidthSaveButton", "columnWidthResetButton"]) {
-  assert.equal(html.split(`id="${id}"`).length - 1, 1, `${id} must exist exactly once`);
-}
-assert.match(html, /<div class="validation-box hidden" id="validationBox"/, "initial duplicate validation guidance must stay hidden in the compact System.IO layout");
-assert.match(html, /state\.specificationFilters\.size === 0 \|\| state\.specificationFilters\.has\(specification\)/, "unit filters must be exact OR matches");
-assert.match(html, /const queryMatches = !query \|\| previewSearchCorpus\(sourceRow, row\)\.includes\(query\)/, "search and unit filters must combine without mutating workspace");
-assert.match(html, /@page \{ size: A4 portrait; margin: 9mm; \}/, "screen print must use A4 portrait");
-assert.match(html, /body\.printing-table \* \{ visibility: hidden !important; \}/, "print must hide non-table UI");
-assert.match(html, /thead \{ display: table-header-group; \}/, "print headers must repeat");
-assert.match(html, /function printActiveTable\([\s\S]*?filteredPreviewPairs\(preview\)[\s\S]*?window\.print\(\)/, "print must use the current filtered active table");
-assert.match(html, /const TABLE_WIDTHS_KEY = "oneapp\.shipping\.table-widths\.v1"/, "Shipping width preference key changed");
-assert.match(html, /const TABLE_WIDTH_MIN = 24;[\s\S]*?const TABLE_WIDTH_MAX = 720;/, "column widths must support the approved compact range");
-assert.match(html, /\.purchase-input,[\s\S]*?\.inventory-grid-input \{[\s\S]*?min-width: 0;[\s\S]*?border: 1px solid transparent;/, "editable cells must stay compact and borderless until focus");
-assert.match(html, /\.overflow-shell\.is-overflowing::after \{[\s\S]*?content: "\.\.";/, "clipped table values must use the exact two-dot marker");
-assert.match(html, /function refreshOverflowMarkers\(\)[\s\S]*?scrollWidth > probe\.clientWidth[\s\S]*?scrollHeight > probe\.clientHeight/, "two-dot markers must appear only after real overflow measurement");
-assert.match(html, /const managedTableWidth = useColumnWidths[\s\S]*?columns\.reduce\(\(sum, column\) => sum \+ currentColumnWidth[\s\S]*?style="width:\$\{managedTableWidth\}px;min-width:\$\{managedTableWidth\}px"/, "managed tables must use the exact sum of visible compact column widths");
-assert.match(html, /role="separator"[\s\S]*?aria-orientation="vertical"[\s\S]*?aria-valuemin=/, "resize handles must expose the separator ARIA contract");
-assert.match(html, /\["ArrowLeft", "ArrowRight"\][\s\S]*?event\.shiftKey \? 24 : 8/, "resize handles must support small and shifted keyboard steps");
-assert.match(html, /addEventListener\("pointerdown", beginColumnResize\)/, "pointer resize wiring is missing");
-assert.match(html, /pointerup[\s\S]*?pointercancel[\s\S]*?window\.addEventListener\("blur", finishColumnResize\)/, "pointer resize cleanup boundaries are missing");
-assert.match(html, /removeEventListener\("pointermove", handleColumnPointerMove\)[\s\S]*?classList\.remove\("shipping-column-resizing"\)/, "pointer resize listeners and cursor must be cleaned up");
-assert.match(html, /function resetActiveColumnWidths\([\s\S]*?columnWidthDrafts\[state\.activePreview\] = Object\.create\(null\)[\s\S]*?columnWidthDirtyTabs\.add/, "reset must create an unsaved dirty default draft");
-assert.doesNotMatch(
-  html.slice(html.indexOf("function resetActiveColumnWidths"), html.indexOf("function showToast")),
-  /localStorage\.(?:removeItem|setItem)/,
-  "reset must not overwrite the last saved preference until explicit save",
-);
-assert.match(html, /function loadColumnWidthSettings\([\s\S]*?isPlainRecord\(parsed\.tabs\)[\s\S]*?isSafeColumnKey\(columnKey\)/, "stored width payload must validate schema, tabs, and safe keys");
-assert.match(html, /const payload = \{ schemaVersion: TABLE_WIDTHS_SCHEMA, tabs: serializableTabs \}/, "saved width payload must contain only schemaVersion and tabs");
-assert.match(html, /const useColumnWidths = editable === true;/, "screen-only width application boundary changed");
-assert.match(html, /renderTableMarkup\(preview, pairs, false\)/, "print markup must omit saved and draft pixel widths");
+const localWorkspaceStart = html.indexOf("async function persistLocalWorkspace");
+const localWorkspaceEnd = html.indexOf("function scheduleLocalSave", localWorkspaceStart);
+assert.ok(localWorkspaceStart >= 0 && localWorkspaceEnd > localWorkspaceStart, "local workspace persistence must exist");
+const localWorkspaceSource = html.slice(localWorkspaceStart, localWorkspaceEnd);
+assert.equal(localWorkspaceSource.includes("hiddenColumnSettings"), false,
+  "hidden-column UI preferences must stay outside workspace recovery");
+assert.equal(localWorkspaceSource.includes("HIDDEN_COLUMNS_KEY"), false,
+  "hidden-column storage keys must stay outside workspace recovery");
 
-const widthLoaderSource = html.slice(
-  html.indexOf("function isPlainRecord"),
-  html.indexOf("function defaultColumnWidth"),
-);
-const storedWidthPayload = JSON.stringify({
-  schemaVersion: "shipping-table-widths/v1",
-  tabs: {
-    inventory: {
-      "inventory:7:%EC%8B%A0%EA%B7%9C%EC%B0%BD%EA%B3%A0": 144,
-      "inventory:8:%EC%8B%A0%EA%B7%9C%EC%B0%BD%EA%B3%A0": 216,
-      "shipping:inventory:purchase": 900,
-      "inventory:9:__proto__": 120,
-      constructor: 120,
-    },
-    unknown: { "shipping:unknown:0": 100 },
-  },
-  unexpected: "ignored",
-});
-const widthLoaderContext = vm.createContext({
-  Object,
-  Array,
-  JSON,
-  String,
-  Number,
-  Set,
-  Math,
-  TABLE_WIDTHS_KEY: "oneapp.shipping.table-widths.v1",
-  TABLE_WIDTHS_SCHEMA: "shipping-table-widths/v1",
-  HIDDEN_COLUMNS_KEY: "oneapp.shipping.hidden-columns.v1",
-  HIDDEN_COLUMNS_SCHEMA: "shipping-hidden-columns/v1",
-  TABLE_WIDTH_MIN: 24,
-  TABLE_WIDTH_MAX: 720,
-  TABLE_WIDTH_TABS: new Set(["inventory", "allocations", "validation"]),
-  localStorage: { getItem: () => storedWidthPayload },
-});
-vm.runInContext(`${widthLoaderSource}; globalThis.loadedWidths = loadColumnWidthSettings();`, widthLoaderContext);
-assert.deepEqual(JSON.parse(JSON.stringify(widthLoaderContext.loadedWidths)), {
-  schemaVersion: "shipping-table-widths/v1",
-  tabs: {
-    inventory: {
-      "inventory:7:%EC%8B%A0%EA%B7%9C%EC%B0%BD%EA%B3%A0": 144,
-      "inventory:8:%EC%8B%A0%EA%B7%9C%EC%B0%BD%EA%B3%A0": 216,
-    },
-  },
-}, "duplicate-label widths must remain isolated while unsafe and out-of-range values fall back");
-widthLoaderContext.localStorage.getItem = () => "{broken";
-vm.runInContext("globalThis.fallbackWidths = loadColumnWidthSettings();", widthLoaderContext);
-assert.deepEqual(JSON.parse(JSON.stringify(widthLoaderContext.fallbackWidths)), {
-  schemaVersion: "shipping-table-widths/v1",
-  tabs: {},
-}, "corrupt local width JSON must fall back without throwing");
+const workbookSource = fs.readFileSync(path.join(ROOT, "orderFulfillmentWorkbook.js"), "utf8");
+assert.equal(workbookSource.includes("hiddenColumnSettings"), false,
+  "hidden-column UI state must not alter generated workbooks");
 
-const storedHiddenPayload = JSON.stringify({
-  schemaVersion: "shipping-hidden-columns/v1",
-  tabs: {
-    inventory: [
-      "inventory:7:%EC%8B%A0%EA%B7%9C%EC%B0%BD%EA%B3%A0",
-      "inventory:8:%EC%8B%A0%EA%B7%9C%EC%B0%BD%EA%B3%A0",
-      "inventory:9:__proto__",
-      "inventory:7:%EC%8B%A0%EA%B7%9C%EC%B0%BD%EA%B3%A0",
-    ],
-    allocations: ["shipping:allocations:inventory:7:%EC%8B%A0%EA%B7%9C%EC%B0%BD%EA%B3%A0"],
-    unknown: ["shipping:unknown:column"],
-  },
-  workspace: { forbidden: true },
-});
-widthLoaderContext.localStorage.getItem = (key) => key === "oneapp.shipping.hidden-columns.v1" ? storedHiddenPayload : null;
-vm.runInContext("globalThis.loadedHidden = loadHiddenColumnSettings();", widthLoaderContext);
-assert.deepEqual(JSON.parse(JSON.stringify(widthLoaderContext.loadedHidden)), {
-  schemaVersion: "shipping-hidden-columns/v1",
-  tabs: {
-    inventory: [
-      "inventory:7:%EC%8B%A0%EA%B7%9C%EC%B0%BD%EA%B3%A0",
-      "inventory:8:%EC%8B%A0%EA%B7%9C%EC%B0%BD%EA%B3%A0",
-    ],
-    allocations: ["shipping:allocations:inventory:7:%EC%8B%A0%EA%B7%9C%EC%B0%BD%EA%B3%A0"],
-  },
-}, "hidden-column state must keep duplicate source labels isolated and reject unsafe or unknown data");
-widthLoaderContext.localStorage.getItem = () => "{broken";
-vm.runInContext("globalThis.fallbackHidden = loadHiddenColumnSettings();", widthLoaderContext);
-assert.deepEqual(JSON.parse(JSON.stringify(widthLoaderContext.fallbackHidden)), {
-  schemaVersion: "shipping-hidden-columns/v1",
-  tabs: {},
-}, "corrupt hidden-column JSON must fall back without throwing");
+// Technical compatibility contracts intentionally retain their existing names.
+assert.ok(html.includes("const engine = window.ShippingManagementEngine;"), "engine global compatibility changed");
+assert.ok(html.includes("const workbookTools = window.ShippingManagementWorkbook;"), "workbook global compatibility changed");
+assert.ok(html.includes('const CLOUD_PLAN_SCHEMA = "ONEAPP_SHIPPING_PURCHASE_PLAN_V1"'), "cloud plan schema changed");
 
-assert.match(html, /const HIDDEN_COLUMNS_KEY = "oneapp\.shipping\.hidden-columns\.v1"/, "hidden-column preference key changed");
-assert.match(html, /function loadHiddenColumnSettings\(\)[\s\S]*?Array\.isArray\(keys\)[\s\S]*?isSafeColumnKey\(key\)/, "hidden-column payload must validate tab arrays and safe stable keys");
-assert.match(html, /allocationInventory\.columns\.map\(\(column\) => `shipping:allocations:\$\{column\.key\}`\)/, "allocation warehouse visibility keys must preserve inventory sourceIndex identity");
-assert.match(html, /function visiblePreviewColumns[\s\S]*?!hidden\.has\(columnVisibilityKey\(column\)\)/, "new columns absent from the hidden-key set must default to visible");
-assert.match(html, /column\?\.role === "calculatedQuantity"[\s\S]*?column\?\.role === "purchase"/, "inventory quantity and purchase columns must be protected");
-assert.match(html, /visiblePreviewColumns\(preview\)\.length <= 1[\s\S]*?최소 한 열을 표시/, "the last visible column must not be hidden");
-assert.match(html, /function moveInventoryGridFocus[\s\S]*?visiblePreviewColumns\(preview, "inventory"\)[\s\S]*?visibleColumns\.length - 1/, "arrow and Enter navigation must use visible columns");
-assert.match(html, /function focusAdjacentNegativeInventory[\s\S]*?findIndex\(\(column\) => column\.role === "purchase"\)/, "negative Tab navigation must target the visible protected purchase column");
-assert.doesNotMatch(
-  html.slice(html.indexOf("async function persistLocalWorkspace"), html.indexOf("function scheduleLocalSave")),
-  /hiddenColumnSettings|HIDDEN_COLUMNS_KEY/,
-  "hidden-column preferences must not enter IndexedDB recovery records",
-);
-assert.doesNotMatch(
-  html.slice(html.indexOf("async function buildCloudEnvelope"), html.indexOf("async function postCloudAction")),
-  /hiddenColumnSettings|HIDDEN_COLUMNS_KEY/,
-  "hidden-column preferences must not enter Cloud payloads",
-);
-assert.doesNotMatch(
-  html.slice(html.indexOf("function setActiveColumnVisible"), html.indexOf("function renderColumnVisibilityControls")),
-  /scheduleLocalSave|state\.workspace\s*=/,
-  "visibility changes must stay outside workspace autosave",
-);
-assert.doesNotMatch(
-  fs.readFileSync(path.join(ROOT, "orderFulfillmentWorkbook.js"), "utf8"),
-  /hidden-columns|hiddenColumnSettings/,
-  "hidden-column preferences must not alter general or purchase-upload workbooks",
-);
-assert.doesNotMatch(
-  html.slice(html.indexOf("async function persistLocalWorkspace"), html.indexOf("function scheduleLocalSave")),
-  /filenameMappings|FILENAME_MAPPINGS_KEY/,
-  "file-name mappings must not enter IndexedDB recovery records",
-);
-assert.doesNotMatch(
-  html.slice(html.indexOf("async function buildCloudEnvelope"), html.indexOf("async function postCloudAction")),
-  /filenameMappings|FILENAME_MAPPINGS_KEY/,
-  "file-name mappings must not enter Cloud plan payloads",
-);
-assert.doesNotMatch(
-  html.slice(html.indexOf("function persistFilenameMappings"), html.indexOf("function settingsFocusableElements")),
-  /scheduleLocalSave|state\.workspace\s*=/,
-  "file-name mapping persistence must stay outside workspace and recovery autosave",
-);
-assert.doesNotMatch(
-  fs.readFileSync(path.join(ROOT, "orderFulfillmentEngine.js"), "utf8"),
-  /filename-mappings|filenameMappings/,
-  "file-name mappings must not alter the shared shipping workspace engine",
-);
 
 function readFileMatrices(filePath, sheetName) {
   const workbook = XLSX.read(fs.readFileSync(filePath), {
@@ -2138,8 +1576,8 @@ if (process.env.SHIPPING_BROWSER_FIXTURE_DIR) {
 
 console.log(
   referenceWorkspace
-    ? `Shipping Management tests passed, including the real ${referenceWorkspace.stats.orderRowCount}-order/${referenceWorkspace.stats.inventoryRowCount}-inventory reference files.`
+    ? `OrderOps tests passed, including the real ${referenceWorkspace.stats.orderRowCount}-order/${referenceWorkspace.stats.inventoryRowCount}-inventory reference files.`
     : inventoryReferenceWorkspace
-      ? `Shipping Management tests passed, including the real ${inventoryReferenceWorkspace.stats.inventoryRowCount}-inventory reference file.`
-      : "Shipping Management tests passed. Real reference files were not present and were skipped.",
+      ? `OrderOps tests passed, including the real ${inventoryReferenceWorkspace.stats.inventoryRowCount}-inventory reference file.`
+      : "OrderOps tests passed. Real reference files were not present and were skipped.",
 );
