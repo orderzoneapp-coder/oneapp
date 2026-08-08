@@ -1,0 +1,120 @@
+name: OrderOps structure migration
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/orderops-structure-migration.yml
+
+permissions:
+  contents: write
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Apply OrderOps path and naming migration
+        shell: python
+        run: |
+          from pathlib import Path
+
+          def replace_exact(path, old, new, expected=1):
+              p = Path(path)
+              text = p.read_text(encoding="utf-8")
+              actual = text.count(old)
+              if actual != expected:
+                  raise SystemExit(f"{path}: expected {expected} occurrence(s), found {actual}: {old!r}")
+              p.write_text(text.replace(old, new), encoding="utf-8")
+
+          replace_exact("app-manifest.json", '"id": "shipping-management"', '"id": "orderops"')
+          replace_exact("app-manifest.json", '"name": "Shipping Management"', '"name": "OrderOps"')
+          replace_exact("app-manifest.json", '"path": "orders.html"', '"path": "orderops/list.html"')
+          replace_exact("app-manifest.json", '"owner": "shipping-management"', '"owner": "orderops"')
+          replace_exact("app-manifest.json", '        "orders.html"', '        "orderops/list.html"')
+
+          replace_exact(
+              "APP_ARCHITECTURE.md",
+              '| `orders.html` | Web entry | Pilot | Shipping Management aggregate-stock allocation, purchase-plan editing and recovery, explicit revisioned cloud sharing, and reviewed unshipped-status/purchase-upload Excel output |',
+              '| `orderops/list.html` | Web entry | Pilot | OrderOps aggregate-stock allocation, purchase-plan editing and recovery, explicit revisioned cloud sharing, and reviewed unshipped-status/purchase-upload Excel output |',
+          )
+          replace_exact("APP_ARCHITECTURE.md", '| Shipping Management only; IndexedDB stores the analysis workspace and inputs, while localStorage stores only the recovery pointer and metadata |', '| OrderOps only; IndexedDB stores the analysis workspace and inputs, while localStorage stores only the recovery pointer and metadata |')
+          replace_exact("APP_ARCHITECTURE.md", '| Shipping Management local UI preference only; tab-specific widths are excluded from workspace, IndexedDB recovery, cloud plans, and purchase uploads |', '| OrderOps local UI preference only; tab-specific widths are excluded from workspace, IndexedDB recovery, cloud plans, and purchase uploads |')
+          replace_exact(
+              "APP_ARCHITECTURE.md",
+              'Shipping Management is registered as a Pilot on the existing NEXUS Operations `orders.html` route.',
+              'OrderOps is registered as a Pilot on the current `orderops/list.html` route.',
+          )
+
+          replace_exact(
+              "scripts/test-shipping-management.mjs",
+              'const html = fs.readFileSync(path.join(ROOT, "orders.html"), "utf8");',
+              'const html = fs.readFileSync(path.join(ROOT, "orderops", "list.html"), "utf8");',
+          )
+          replace_exact("scripts/test-shipping-management.mjs", '"orders.html must contain a style block"', '"orderops/list.html must contain a style block"')
+          replace_exact("scripts/test-shipping-management.mjs", '"orders.html CSS must not contain an unmatched closing brace"', '"orderops/list.html CSS must not contain an unmatched closing brace"')
+          replace_exact("scripts/test-shipping-management.mjs", '"orders.html CSS comment must be closed"', '"orderops/list.html CSS comment must be closed"')
+          replace_exact("scripts/test-shipping-management.mjs", '"orders.html CSS string must be closed"', '"orderops/list.html CSS string must be closed"')
+          replace_exact("scripts/test-shipping-management.mjs", '"orders.html CSS braces must be balanced"', '"orderops/list.html CSS braces must be balanced"')
+          replace_exact("scripts/test-shipping-management.mjs", '`orders.html is missing: ${requiredText}`', '`orderops/list.html is missing: ${requiredText}`')
+
+          replace_exact(
+              ".github/workflows/repository-validation.yml",
+              "- name: Test Shipping Management allocation and workbook contracts",
+              "- name: Test OrderOps allocation and workbook contracts",
+          )
+
+          replace_exact("orderops/list.html", '<script src="orderFulfillmentEngine.js"></script>', '<script src="../orderFulfillmentEngine.js"></script>')
+          replace_exact("orderops/list.html", '<script src="orderFulfillmentWorkbook.js"></script>', '<script src="../orderFulfillmentWorkbook.js"></script>')
+
+      - name: Validate repository contracts
+        run: node scripts/validate-repository.mjs
+
+      - name: Validate OrderOps allocation and workbook contracts
+        run: node scripts/test-shipping-management.mjs
+
+      - name: Validate OrderOps cloud failure safety
+        run: node scripts/test-shipping-purchase-plan-cloud.mjs
+
+      - name: Build complete OrderOps source bundle
+        shell: bash
+        run: |
+          out="OrderOps_full_source_20260808.txt"
+          : > "$out"
+          for file in \
+            orderops/list.html \
+            orderops/input.html \
+            orderFulfillmentEngine.js \
+            orderFulfillmentWorkbook.js \
+            app-manifest.json \
+            APP_ARCHITECTURE.md \
+            scripts/test-shipping-management.mjs \
+            scripts/test-shipping-purchase-plan-cloud.mjs \
+            .github/workflows/repository-validation.yml \
+            code.gs
+          do
+            printf '\n\n===== FILE: %s =====\n\n' "$file" >> "$out"
+            cat "$file" >> "$out"
+          done
+
+      - name: Upload complete OrderOps source bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: OrderOps-full-source-20260808
+          path: OrderOps_full_source_20260808.txt
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Commit OrderOps migration
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app-manifest.json APP_ARCHITECTURE.md scripts/test-shipping-management.mjs .github/workflows/repository-validation.yml orderops/list.html
+          git diff --cached --check
+          git commit -m "fix: align repository contracts with OrderOps structure"
+          git push origin HEAD:main
