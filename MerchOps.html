@@ -4,12 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.176_AutoOutPriceImport]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.177_AutoOutPricePersistAndToolbar]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script>
+    // v2.1.177: 출고가 옵션 위치를 카탈로그 양식 옆으로 이동하고, 체크상태를 재접속 후에도 유지하며, 자동 룰적용 결과를 불러오기 완료 메시지에 표시한다.
     // v2.1.176: 출고가 자동적용 옵션 - 체크 시 엑셀 불러오기 직후 기존 마진룰로 출고가를 계산하고, 미체크 시 엑셀 출고가 원본값을 유지한다.
     // v2.1.175R2.1: 재고 F8 범위검증 수정 - 필터/제외/선택 후 출력은 현재 출력대상만 검증하며 전체 DataOps 원본 누락으로 차단하지 않는다.
     // v2.1.175R2: 전행사적용 MVP - 마스터 전행사상품 모아보기, 오늘 행사가 공란에만 승계, 오늘 견적/수기값 보호, 해제 시 값 유지·전체보기 복귀.
@@ -7015,7 +7016,18 @@ const readMerchStoppedProductsForProtection = () => {
 };
 const useMerchUI = () => {
     const [selectedRows, setSelectedRows] = useState(new Set());
-    const [autoApplyOutPriceRule, setAutoApplyOutPriceRule] = useState(false);
+    const [autoApplyOutPriceRule, setAutoApplyOutPriceRule] = useState(() => {
+        try {
+            return localStorage.getItem('merchAutoApplyOutPriceRule_v1') === '1';
+        } catch (e) {
+            return false;
+        }
+    });
+    useEffect(() => {
+        try {
+            localStorage.setItem('merchAutoApplyOutPriceRule_v1', autoApplyOutPriceRule ? '1' : '0');
+        } catch (e) { }
+    }, [autoApplyOutPriceRule]);
     const [promoCompareOpen, setPromoCompareOpen] = useState(false);
     const [promoCompareSession, setPromoCompareSession] = useState(null);
     const [promoComparePurpose, setPromoComparePurpose] = useState('전체');
@@ -7513,6 +7525,9 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
                 retainedPromoStateByCode = fullReplace.retainedPromoStateByCode;
             }
             let totalCount = 0;
+            let autoOutPriceAppliedCount = 0;
+            let autoOutPriceChangedCount = 0;
+            let autoOutPriceUnchangedCount = 0;
             const workScope = window.buildMerchWorkScope ? window.buildMerchWorkScope(newMaster, ui.activeTags || []) : { mode: 'all', catalogNames: [], codeSet: new Set(Object.keys(newMaster || {})), scopeCount: Object.keys(newMaster || {}).length, masterCount: Object.keys(newMaster || {}).length };
             const selectedCompareCatalogs = role === 'estimate' && workScope.mode === 'catalog' ? [...workScope.catalogNames] : [];
             const uploadedEstimateCodes = new Set();
@@ -7882,6 +7897,20 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
                         window.sanitizeMerchMarginRules(config.marginRules),
                         !!ui.autoApplyOutPriceRule
                     );
+                    if (ui.autoApplyOutPriceRule && role !== 'info' && mItem.finalData?._ruleAppliedAt) {
+                        const sourceOutPriceOwned = window.hasOwnField
+                            ? window.hasOwnField(mItem.sources?.[role] || {}, '출고가')
+                            : Object.prototype.hasOwnProperty.call(mItem.sources?.[role] || {}, '출고가');
+                        const beforeOutRaw = sourceOutPriceOwned ? mItem.sources[role]['출고가'] : '';
+                        const beforeOutBlank = window.isBlankCell
+                            ? window.isBlankCell(beforeOutRaw)
+                            : (beforeOutRaw === undefined || beforeOutRaw === null || String(beforeOutRaw).trim() === '');
+                        const beforeOut = beforeOutBlank ? null : window.parseNum(beforeOutRaw);
+                        const afterOut = window.parseNum(mItem.finalData['출고가']);
+                        autoOutPriceAppliedCount++;
+                        if (beforeOut === null || beforeOut !== afterOut) autoOutPriceChangedCount++;
+                        else autoOutPriceUnchangedCount++;
+                    }
                     if (!newMaster[cleanCode]) {
                         const registrationDraft = window.buildMerchRegistrationDraft
                             ? window.buildMerchRegistrationDraft(mItem, role)
@@ -8038,12 +8067,19 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
             });
             if (totalCount > 0) {
                 const templateMsg = autoAppliedTemplate ? ` / 테이블: ${autoAppliedTemplate.name}` : '';
+                const autoOutPriceMsg = ui.autoApplyOutPriceRule
+                    ? (autoOutPriceAppliedCount > 0
+                        ? (autoOutPriceChangedCount > 0
+                            ? ` / ✅ 자동 룰적용으로 출고가가 변경되었습니다 · 변경 ${autoOutPriceChangedCount.toLocaleString()}건${autoOutPriceUnchangedCount > 0 ? ` · 동일 ${autoOutPriceUnchangedCount.toLocaleString()}건` : ''}`
+                            : ` / ✅ 출고가 자동 룰적용 완료 · 변경 없음 · 동일 ${autoOutPriceUnchangedCount.toLocaleString()}건`)
+                        : ' / ⚠️ 출고가 자동적용이 선택되어 있으나 적용 가능한 상품이 없습니다.')
+                    : '';
                 if (estimateCompareSummary) {
-                    ui.showToast(`✅ [${estimateCompareSummary.catalogs.join(', ')}] 견적 비교 완료 / 추가 ${estimateCompareSummary.add} · 누락 ${estimateCompareSummary.missing} · 동일 ${estimateCompareSummary.maintain}${templateMsg}`);
+                    ui.showToast(`✅ [${estimateCompareSummary.catalogs.join(', ')}] 견적 비교 완료 / 추가 ${estimateCompareSummary.add} · 누락 ${estimateCompareSummary.missing} · 동일 ${estimateCompareSummary.maintain}${templateMsg}${autoOutPriceMsg}`);
                 } else {
                     const scopeMsg = workScope.mode === 'catalog' ? ` / 작업범위 ${workScope.catalogName} ${workScope.scopeCount}건` : ' / 작업범위 전체 마스터';
                     const excludedMsg = (workScopeExcludedCount + workScopeUnregisteredCount) > 0 ? ` / 범위외 제외 ${workScopeExcludedCount + workScopeUnregisteredCount}건` : '';
-                    ui.showToast(`✅ [${roleMeta.label}] 데이터 로드 완료 (${totalCount}건)${scopeMsg}${excludedMsg}${templateMsg}`);
+                    ui.showToast(`✅ [${roleMeta.label}] 데이터 로드 완료 (${totalCount}건)${scopeMsg}${excludedMsg}${templateMsg}${autoOutPriceMsg}`);
                 }
             } else if ((workScopeExcludedCount + workScopeUnregisteredCount) > 0) {
                 ui.showToast(`⚠️ [${roleMeta.label}] 선택 카탈로그 범위에 해당하는 행이 없습니다. 범위외 ${workScopeExcludedCount + workScopeUnregisteredCount}건 제외`);
@@ -11084,7 +11120,12 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
                     React.createElement("input", { type: "file", className: "hidden", multiple: true, onChange: (e) => handleFileUpload(e, 'info'), accept: ".xlsx, .xls, .csv", disabled: state.isProcessing })),
                 (showTableViewSelect && displayTableViewList.length > 0 && React.createElement("div", { className: "w-[176px] max-w-[176px] flex items-center rounded-lg border border-indigo-200 bg-indigo-50 px-2 py-1 shadow-sm shrink-0 overflow-hidden", title: activeBriefText || activeBriefTags.join(' · ') || '보기 양식' },
                     React.createElement("select", { value: activeTableViewSelectValue, onChange: handleTableViewSelect, className: "h-7 w-full rounded-md border border-slate-200 bg-white px-2 text-[12px] font-black text-slate-700 outline-none focus:border-indigo-400 shrink-0", title: `${displayTableTargetLabel} 작업에 적용할 보기 양식을 선택합니다.` },
-                        displayTableViewList.map(view => React.createElement("option", { key: view.fallback ? '__fallback' : (view.id || view.name), value: view.fallback ? '__fallback' : (view.id || '') }, `양식: ${view.name}`))))))),
+                        displayTableViewList.map(view => React.createElement("option", { key: view.fallback ? '__fallback' : (view.id || view.name), value: view.fallback ? '__fallback' : (view.id || '') }, `양식: ${view.name}`)))))),
+                React.createElement("label", { className: `h-8 px-2 rounded-lg border shadow-sm flex items-center justify-center shrink-0 cursor-pointer transition-all ${autoApplyOutPriceRule ? 'bg-amber-100 border-amber-300' : 'bg-white border-slate-300 hover:bg-amber-50'}`, title: "출고가 자동적용: 체크하면 엑셀 불러오기 시 기존 마진룰로 출고가를 자동 계산합니다. 체크상태는 다음 접속에도 유지됩니다." },
+                    React.createElement("input", { type: "checkbox", checked: !!autoApplyOutPriceRule, onChange: (e) => setAutoApplyOutPriceRule?.(e.target.checked), className: "w-4 h-4 accent-amber-600 cursor-pointer", "aria-label": "파일 불러오기 시 출고가 자동적용" })),
+                React.createElement("button", { onClick: handleForceApplyMarginRules, disabled: fullDisplayRows.length === 0, className: `h-8 px-2.5 rounded-lg text-[11px] font-black shadow-sm flex items-center border transition-all whitespace-nowrap shrink-0 ${fullDisplayRows.length > 0 ? 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100' : 'bg-slate-100 text-slate-300 border-slate-200 cursor-not-allowed'}`, title: "출고가: 선택행 또는 현재 화면에 기존 마진룰을 수동 적용합니다. 왼쪽 체크박스는 엑셀 불러오기 시 자동 적용 여부입니다." },
+                    React.createElement("i", { className: "fas fa-magic mr-1.5 text-[12px]" }),
+                    "출고가")),
             ),
             React.createElement("div", { className: "absolute top-[14px] right-5 z-30 flex items-center shrink-0 pl-2 bg-slate-50", title: "메인 작업 초기화" },
                 React.createElement("div", { className: "w-px h-6 bg-rose-200 mr-2 shrink-0" }),
@@ -11128,11 +11169,6 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
                         React.createElement("span", { className: "ml-1.5 text-[10px] font-black px-1.5 py-0.5 rounded-full bg-white/80 text-slate-700 border border-slate-200" }, Object.keys(sessionExcludedItems || {}).length)),
                     React.createElement("span", { className: "sr-only" }, `SmartParser 전용 품절/정지 관리 · MerchOps는 정지상태 ${Object.keys(stoppedProducts || {}).length}건을 읽기 보호에만 사용`)),
                 React.createElement("div", { className: "ml-auto sticky right-0 z-20 flex items-center justify-end gap-1 shrink-0 order-last bg-white pl-3", title: "기본 판매가·필터 초기화·검색" },
-                    React.createElement("label", { className: `h-9 px-2 rounded-lg border shadow-sm flex items-center justify-center shrink-0 cursor-pointer transition-all ${autoApplyOutPriceRule ? 'bg-amber-100 border-amber-300' : 'bg-white border-slate-300 hover:bg-amber-50'}`, title: "출고가 자동적용: 체크하면 파일 불러오기 시 기존 마진룰로 출고가를 자동 계산합니다. 미체크하면 엑셀 출고가 원본값을 유지합니다." },
-                        React.createElement("input", { type: "checkbox", checked: !!autoApplyOutPriceRule, onChange: (e) => setAutoApplyOutPriceRule?.(e.target.checked), className: "w-4 h-4 accent-amber-600 cursor-pointer", "aria-label": "파일 불러오기 시 출고가 자동적용" })),
-                    React.createElement("button", { onClick: handleForceApplyMarginRules, disabled: fullDisplayRows.length === 0, className: `h-9 px-3 rounded-lg text-[11px] font-black shadow-sm flex items-center border transition-all whitespace-nowrap shrink-0 ${fullDisplayRows.length > 0 ? 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100' : 'bg-slate-100 text-slate-300 border-slate-200 cursor-not-allowed'}`, title: "출고가: 선택행 또는 현재 화면에 기존 마진룰을 수동 적용합니다. 체크박스는 파일 불러오기 시 자동 적용 여부입니다." },
-                        React.createElement("i", { className: "fas fa-magic mr-1.5 text-[12px]" }),
-                        "출고가"),
                     React.createElement("button", { onClick: handleFilterResetOnly, className: "h-9 w-9 rounded-lg bg-indigo-50 text-indigo-700 border border-indigo-200 shadow-sm hover:bg-indigo-100 hover:border-indigo-300 flex items-center justify-center shrink-0", title: "필터 초기화", "aria-label": "필터 초기화" },
                         React.createElement("i", { className: "fas fa-filter-circle-xmark text-[13px]" })),
                     React.createElement(SearchBar, { value: globalSearch, onChange: setGlobalSearch }))),
@@ -13340,7 +13376,7 @@ const WelcomeGuide = ({ onUpload, onCloudSync }) => (React.createElement("div", 
         React.createElement("i", { className: "fas fa-box-open" }),
         React.createElement("div", { className: "absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm" },
             React.createElement("i", { className: "fas fa-check" }))),
-    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.176_AutoOutPriceImport]"),
+    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.177_AutoOutPricePersistAndToolbar]"),
     React.createElement("p", { className: "text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold" },
         "\uD604\uC7AC \uB4F1\uB85D\uB41C ",
         React.createElement("span", { className: "text-indigo-500" }, "\uB9C8\uC2A4\uD130 \uC0C1\uD488 \uB370\uC774\uD130"),
@@ -13991,7 +14027,7 @@ const App = () => {
                                 React.createElement("div", { className: "flex flex-col border-l-2 border-slate-700 pl-3" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "MerchOps"),
-                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.176_AutoOutPriceImport")),
+                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.177_AutoOutPricePersistAndToolbar")),
                                     React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "MAIN WORKSPACE"))),
                             React.createElement(SystemConsole, { itemCount: Object.keys(data.masterProducts).length, isProcessing: ui.isProcessing, processMsg: ui.processMsg, estimateCount: Object.keys(data.managedItems).length, filteredCount: fullDisplayRows.length, activeTags: ui.activeTags, masterLookupMode: data.masterLookupMode }),
                             React.createElement("nav", { className: "flex gap-1.5 text-[14px] shrink-0 items-center" },
