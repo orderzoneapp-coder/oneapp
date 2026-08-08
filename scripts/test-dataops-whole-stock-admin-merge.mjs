@@ -578,7 +578,7 @@ assert.deepEqual(
   [100, -100],
 );
 
-const expectedVersion = "V1.a22.106_CodePrimaryNameMerge";
+const expectedVersion = "V1.a22.111_F9FrozenClosingRows";
 assert.equal(
   (source.match(new RegExp(expectedVersion, "g")) || []).length,
   3,
