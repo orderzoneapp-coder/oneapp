@@ -158,6 +158,85 @@
   const isBlankValue = (v) => v === undefined || v === null || String(v).trim() === '';
   const getExplicitValue = (obj = {}, field = '', fallback = '') => hasOwnField(obj, field) ? (obj[field] ?? '') : fallback;
 
+  // ============================================================
+  // MERCHOPS WORKING FIELD CONTRACT
+  // - master values are comparison references unless the row is an explicit master lookup.
+  // - owned source blanks, numeric zero, string "0", and boolean false are working values.
+  // - direct edits and explicit rule results take precedence over the source cell.
+  // ============================================================
+  const MERCH = ONEAPP.MERCH = ONEAPP.MERCH || {};
+  const MERCH_SOURCE_ROLES = ['catalog', 'estimate', 'purchase', 'sales', 'inventory', 'info', 'parser'];
+  const uniqueFields = (fields = []) => [...new Set(fields.map(field => String(field || '').trim()).filter(Boolean))];
+  const findOwnedField = (obj = {}, fields = []) => {
+    for (const field of fields) {
+      if (hasOwnField(obj, field)) return { found: true, field, value: obj[field] };
+    }
+    return { found: false, field: '', value: undefined };
+  };
+  const hasMerchSourceData = (source = {}) => !!(source && typeof source === 'object'
+    && Object.keys(source).some(field => !String(field || '').startsWith('_')));
+
+  MERCH.getWorkingSourceRole = (sources = {}, fallback = '') => {
+    const explicit = String(sources?._activeRole || sources?._lastUploadRole || sources?.activeRole || sources?.sourceRole || fallback || '').trim();
+    if (MERCH_SOURCE_ROLES.includes(explicit) && hasMerchSourceData(sources?.[explicit])) return explicit;
+    return MERCH_SOURCE_ROLES.find(role => hasMerchSourceData(sources?.[role])) || '';
+  };
+
+  MERCH.resolveWorkingField = (row = {}, master = {}, field = '', options = {}) => {
+    const fields = uniqueFields([field, ...(Array.isArray(options.aliases) ? options.aliases : [])]);
+    const canonicalField = String(field || fields[0] || '');
+    const finalData = row?.finalData || {};
+    const sources = row?.sources || {};
+    const sourceRole = MERCH.getWorkingSourceRole(sources, row?._lastUploadRole || '');
+    const source = sourceRole ? (sources?.[sourceRole] || {}) : {};
+    const directMarkers = { ...(finalData?._editedFields || {}), ...(finalData?._bulkEditedFields || {}) };
+    const generatedMarkers = finalData?._generatedFields || {};
+    const finalCell = findOwnedField(finalData, fields);
+    const direct = fields.some(name => directMarkers[name] === true);
+    const promoActionGenerated = finalData?._promoResetRequested === true
+      && fields.some(name => ['행사가', '행사테마', '테마', 'promoTheme', '_theme', '테마1', '테마2', '테마3', '테마4', '테마5'].includes(name));
+    const previousPromoGenerated = finalData?._previousPromoApplied === true && fields.includes('행사가');
+    const explicitGenerated = fields.some(name => generatedMarkers[name] === true)
+      || options.generated === true
+      || promoActionGenerated
+      || previousPromoGenerated
+      || (canonicalField === '출고가' && !!(finalData?._ruleAppliedAt || finalData?._isRuleApplied));
+    const result = (value, origin, isWorkingValue, isExplicitBlank, resolvedField = canonicalField, resolvedRole = '') => ({
+      value,
+      origin,
+      isWorkingValue,
+      isExplicitBlank,
+      field: resolvedField || canonicalField,
+      sourceRole: resolvedRole
+    });
+
+    if (direct) {
+      const value = finalCell.found ? finalCell.value : '';
+      return result(value ?? '', 'direct', true, isBlankValue(value), finalCell.field || canonicalField, sourceRole);
+    }
+    if (explicitGenerated && finalCell.found) {
+      return result(finalCell.value ?? '', 'generated', true, isBlankValue(finalCell.value), finalCell.field, sourceRole);
+    }
+
+    const sourceCell = findOwnedField(source, fields);
+    if (sourceCell.found) {
+      return result(sourceCell.value ?? '', 'source', true, isBlankValue(sourceCell.value), sourceCell.field, sourceRole);
+    }
+
+    const masterLookupOnly = options.masterLookupOnly === true
+      || row?._masterLookupOnly === true
+      || String(row?._lastUploadRole || '') === 'masterLookup';
+    const masterCell = findOwnedField(master, fields);
+    if (masterLookupOnly) {
+      const value = masterCell.found ? (masterCell.value ?? '') : '';
+      return result(value, 'master-lookup', true, masterCell.found && isBlankValue(masterCell.value), masterCell.field || canonicalField, '');
+    }
+
+    return result(masterCell.found ? (masterCell.value ?? '') : '', 'master-reference', false, false, masterCell.field || canonicalField, '');
+  };
+
+  global.resolveMerchWorkingField = MERCH.resolveWorkingField;
+
   const safeJSONParseRaw = (raw, defaultVal) => {
     try {
       if (!raw || raw === 'undefined' || raw === 'null') return defaultVal;
@@ -1529,76 +1608,108 @@
   // ============================================================
   const EXPORT = ONEAPP.EXPORT = ONEAPP.EXPORT || {};
 
-  const getValueFromRow = (row = {}, master = {}, key, defaultValue = '') => {
-    const finalData = row.finalData || {};
-    const sources = row.sources || {};
-    const inventory = sources.inventory || {};
-    const estimate = sources.estimate || {};
-    const purchase = sources.purchase || {};
-    const sales = sources.sales || {};
+  const MERCH_EXPORT_FIELD_DEFINITIONS = [
+    { field: '품목명', aliases: ['품목명', '상품명'], type: 'string' },
+    { field: '규격', aliases: ['규격'], type: 'string' },
+    { field: '브랜드', aliases: ['브랜드'], type: 'string' },
+    { field: '간단설명', aliases: ['간단설명', '기본설명'], type: 'string' },
+    { field: '창고', aliases: ['창고'], type: 'string' },
+    { field: '단위', aliases: ['단위'], type: 'string' },
+    { field: '_calcWarehouse', aliases: ['_calcWarehouse'], type: 'string' },
+    { field: '_calcWarehouseReason', aliases: ['_calcWarehouseReason'], type: 'string' },
+    { field: '입고가', aliases: ['입고가'], type: 'number' },
+    { field: '출고가', aliases: ['출고가', '판매가', '판매가격'], type: 'number' },
+    { field: '행사가', aliases: ['행사가'], type: 'number' },
+    { field: '도매A', aliases: ['도매A', 'A판매', 'A판매가'], type: 'number' },
+    { field: '도매B', aliases: ['도매B', 'B판매', 'B도매', 'B도매가'], type: 'number' },
+    { field: 'B판매가', aliases: ['B판매가', 'B 판매가'], type: 'number' },
+    { field: 'B도매가', aliases: ['B도매가', 'B 도매가'], type: 'number' },
+    { field: '시중가', aliases: ['시중가', '시중가격'], type: 'number' },
+    { field: '입고B', aliases: ['입고B'], type: 'number' },
+    { field: '판매여부', aliases: ['판매여부', '판매'], type: 'raw' },
+    { field: '1종코드', aliases: ['1종코드'], type: 'string' },
+    { field: '1종규격', aliases: ['1종규격'], type: 'string' },
+    { field: '1종연산', aliases: ['1종연산'], type: 'number' },
+    { field: '1당수량', aliases: ['1당수량'], type: 'number' },
+    { field: '경비', aliases: ['경비'], type: 'number' },
+    { field: '외주비', aliases: ['외주비'], type: 'number' },
+    { field: '노무비', aliases: ['노무비'], type: 'number' },
+    { field: '재고수량', aliases: ['재고수량', '재고', '수량'], type: 'number' },
+    { field: '기본', aliases: ['기본', '구분(기본)', '기본여부', '관리구분'], type: 'string' },
+    { field: '카테고리', aliases: ['견적서', '카테고리'], type: 'string' },
+    { field: '검색어등록', aliases: ['검색어등록', '상품태그'], type: 'string' }
+  ];
 
-    if (finalData[key] !== undefined && finalData[key] !== '') return finalData[key];
-    if (inventory[key] !== undefined && inventory[key] !== '') return inventory[key];
-    if (estimate[key] !== undefined && estimate[key] !== '') return estimate[key];
-    if (purchase[key] !== undefined && purchase[key] !== '') return purchase[key];
-    if (sales[key] !== undefined && sales[key] !== '') return sales[key];
-    if (master[key] !== undefined && master[key] !== '') return master[key];
-    return defaultValue;
+  const normalizeWorkingPayloadValue = (state, type = 'raw') => {
+    if (state.isExplicitBlank) return '';
+    if (type === 'number') return parseNum(state.value);
+    if (type === 'string') return state.value === undefined || state.value === null ? '' : String(state.value);
+    return state.value;
   };
 
   EXPORT.buildWorkingPayload = (row = {}, master = {}) => {
     const finalData = row.finalData || {};
-    const getValue = (key, defaultValue = '') => getValueFromRow(row, master, key, defaultValue);
-    const getNum = (key, defaultValue = 0) => parseNum(getValue(key, defaultValue));
-    const getStr = (key, defaultValue = '') => {
-      const val = getValue(key, defaultValue);
-      return val !== undefined && val !== null ? String(val) : defaultValue;
-    };
+    const working = { _fieldStates: {} };
+    MERCH_EXPORT_FIELD_DEFINITIONS.forEach(definition => {
+      const state = MERCH.resolveWorkingField(row, master, definition.field, { aliases: definition.aliases });
+      working._fieldStates[definition.field] = { ...state };
+      if (!state.isWorkingValue) return;
+      working[definition.field] = normalizeWorkingPayloadValue(state, definition.type);
+    });
 
-    const inventory = row.sources?.inventory || {};
-    const estimate = row.sources?.estimate || {};
-    const purchase = row.sources?.purchase || {};
-    const sales = row.sources?.sales || {};
-    const info = row.sources?.info || {};
-    const stockRaw = finalData['재고수량'] ?? info['재고수량'] ?? info['재고'] ?? inventory['재고수량'] ?? inventory['안전재고'] ?? estimate['재고수량'];
-    const stockQty = stockRaw !== undefined && stockRaw !== null && stockRaw !== '' ? parseNum(stockRaw) : 999;
-    const promoThemeCodes = parsePromotionThemeCodes(finalData, info, inventory, estimate, purchase, sales, master);
-    const hasPromoTheme = (n) => promoThemeCodes.includes(String(n));
+    const themeState = MERCH.resolveWorkingField(row, master, '행사테마', {
+      aliases: ['행사테마', '테마', 'promoTheme', '_theme', '테마1', '테마2', '테마3', '테마4', '테마5']
+    });
+    if (themeState.isWorkingValue) {
+      const themeSource = themeState.origin === 'source' && themeState.sourceRole
+        ? (row.sources?.[themeState.sourceRole] || {})
+        : finalData;
+      const promoThemeCodes = parsePromotionThemeCodes(
+        hasOwnField(finalData, '행사테마') ? { 행사테마: finalData.행사테마 } : themeSource
+      );
+      working.행사테마 = promoThemeCodes.join(',');
+      working._fieldStates.행사테마 = {
+        ...themeState,
+        value: working.행사테마,
+        isExplicitBlank: working.행사테마 === ''
+      };
+      [1, 2, 3, 4, 5].forEach(n => {
+        working[`테마${n}`] = promoThemeCodes.includes(String(n)) ? '1' : '';
+      });
+    }
+    else {
+      working._fieldStates.행사테마 = { ...themeState };
+    }
+    if (finalData._salesStopRequested === true || finalData._salesResumeRequested === true) {
+      const saleValue = finalData._salesStopRequested === true ? 0 : 1;
+      working.판매여부 = saleValue;
+      working._salesStopRequested = finalData._salesStopRequested === true;
+      working._salesResumeRequested = finalData._salesResumeRequested === true;
+      working._fieldStates.판매여부 = {
+        value: saleValue,
+        origin: 'direct',
+        isWorkingValue: true,
+        isExplicitBlank: false,
+        field: '판매여부',
+        sourceRole: ''
+      };
+    }
+    return working;
+  };
 
-    return {
-      품목명: getStr('품목명'),
-      규격: getStr('규격'),
-      브랜드: getStr('브랜드'),
-      간단설명: getStr('간단설명'),
-      창고: getStr('창고'),
-      단위: getStr('단위'),
-      _calcWarehouse: getStr('_calcWarehouse'),
-      _calcWarehouseReason: getStr('_calcWarehouseReason'),
-      입고가: getNum('입고가'),
-      출고가: getNum('출고가'),
-      행사가: getNum('행사가'),
-      도매A: getNum('도매A'),
-      도매B: getNum('도매B'),
-      시중가: getNum('시중가'),
-      입고B: getNum('입고B'),
-      판매여부: finalData._salesStopRequested === true ? 0 : (finalData['판매여부'] !== undefined ? finalData['판매여부'] : ''),
-      '1종코드': getStr('1종코드'),
-      '1종규격': getStr('1종규격'),
-      '1종연산': getNum('1종연산'),
-      '1당수량': getNum('1당수량'),
-      '경비': getNum('경비'),
-      '외주비': getNum('외주비'),
-      '노무비': getNum('노무비'),
-      재고수량: stockQty,
-      행사테마: promoThemeCodes.join(','),
-      테마1: hasPromoTheme(1) ? '1' : '',
-      테마2: hasPromoTheme(2) ? '1' : '',
-      테마3: hasPromoTheme(3) ? '1' : '',
-      테마4: hasPromoTheme(4) ? '1' : '',
-      테마5: hasPromoTheme(5) ? '1' : '',
-      카테고리: getStr('견적서') || getStr('카테고리'),
-      검색어등록: getStr('검색어등록')
-    };
+  EXPORT.buildMasterReference = (master = {}) => {
+    const reference = {};
+    MERCH_EXPORT_FIELD_DEFINITIONS.forEach(definition => {
+      const cell = findOwnedField(master, definition.aliases);
+      if (!cell.found) return;
+      reference[definition.field] = cell.value ?? '';
+    });
+    const themeCodes = parsePromotionThemeCodes(master);
+    if (hasOwnField(master, '행사테마') || [1, 2, 3, 4, 5].some(n => hasOwnField(master, `테마${n}`))) {
+      reference.행사테마 = themeCodes.join(',');
+      [1, 2, 3, 4, 5].forEach(n => { reference[`테마${n}`] = themeCodes.includes(String(n)) ? '1' : ''; });
+    }
+    return reference;
   };
 
   EXPORT.buildBaselineSnapshot = (master = {}) => {
@@ -1627,6 +1738,7 @@
       hasEstimate: Object.keys(estimate).length > 0,
       hasPurchase: Object.keys(purchase).length > 0,
       hasSales: Object.keys(sales).length > 0,
+      isMasterLookup: row?._masterLookupOnly === true || String(row?._lastUploadRole || '') === 'masterLookup',
       tags,
       sourceType: tags.join(', '),
       inventoryKeys: Object.keys(inventory),
@@ -1647,6 +1759,7 @@
           코드: code,
           working: EXPORT.buildWorkingPayload(row, master),
           baselineSnapshot: EXPORT.buildBaselineSnapshot(master),
+          masterReference: EXPORT.buildMasterReference(master),
           source: EXPORT.buildSourceSummary(row)
         };
       });

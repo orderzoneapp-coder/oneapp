@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const html = fs.readFileSync(path.join(ROOT, "MerchOps.html"), "utf8");
+const coreSource = fs.readFileSync(path.join(ROOT, "coreEngine.js"), "utf8");
 const F8_START = "    const handleQuickExcelExport = useCallback(() => {";
 const F8_END = "    // [M-MASTER-COMMIT-01] F7 마스터 적용";
 const INVENTORY_MODULE_START = "        window.MERCH_INVENTORY_F8_MODULE = window.MERCH_INVENTORY_F8_MODULE || (() => {";
@@ -71,6 +72,7 @@ const makeContext = (scenarioName) => {
   context.window = context;
   context.self = context;
   context.globalThis = context;
+  vm.runInContext(coreSource, context, { filename: "coreEngine.js" });
   vm.runInContext(sheetJsSource.toString("utf8"), context, { filename: "xlsx.full.min.js" });
   assert.ok(context.XLSX?.utils, "SheetJS did not initialize");
 

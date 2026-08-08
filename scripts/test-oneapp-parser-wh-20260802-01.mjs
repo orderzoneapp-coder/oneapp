@@ -389,7 +389,7 @@ assert.match(smartSource, /fieldName === '단위'/);
 assert.match(smartSource, /\['품목명', '규격', '단위'\]/);
 assert.match(smartSource, /removeTag\(oldCatalogTags, catalog\)/);
 assert.doesNotMatch(smartSource, /nextItem\['창고'\]\s*=/);
-assert.match(merchSource, /v2\.1\.174_CoreWarehouseUnitPricing/);
+assert.match(merchSource, /v2\.1\.178_CIBaselineContractRestore/);
 assert.match(merchSource, /supply_new: '신규상품'/);
 assert.match(merchSource, /"F7"/);
 assert.match(merchSource, /"F8"/);
