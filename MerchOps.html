@@ -4,12 +4,15 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.177_AutoOutPricePersistAndToolbar]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.178_CIBaselineContractRestore]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="coreEngine.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <script>
+    // v2.1.178: 외부 Core 계약과 동일본 fallback을 함께 유지하고 CI가 실행하는 helper script 경계를 복구한다.
     // v2.1.177: 출고가 옵션 위치를 카탈로그 양식 옆으로 이동하고, 체크상태를 재접속 후에도 유지하며, 자동 룰적용 결과를 불러오기 완료 메시지에 표시한다.
     // v2.1.176: 출고가 자동적용 옵션 - 체크 시 엑셀 불러오기 직후 기존 마진룰로 출고가를 계산하고, 미체크 시 엑셀 출고가 원본값을 유지한다.
     // v2.1.175R2.1: 재고 F8 범위검증 수정 - 필터/제외/선택 후 출력은 현재 출력대상만 검증하며 전체 DataOps 원본 누락으로 차단하지 않는다.
@@ -28,17 +31,20 @@
                 '<pre style="white-space:pre-wrap;background:#f8fafc;padding:12px;border-radius:8px;font-size:12px">' +
                 String(message || '초기 렌더링이 완료되지 않았습니다.').replace(/[&<>]/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[s])) + '</pre></div>';
         };
-        global.addEventListener('error', (event) => remember(event?.error?.message || event?.message || 'JavaScript error'));
-        global.addEventListener('unhandledrejection', (event) => remember(event?.reason?.message || event?.reason || 'Promise rejection'));
-        document.addEventListener('DOMContentLoaded', () => {
-            global.setTimeout(() => {
-                const root = document.getElementById('root');
-                if (!root || root.childElementCount === 0) renderFallback(firstError);
-            }, 2500);
-        }, { once: true });
+        if (typeof global.addEventListener === 'function') {
+            global.addEventListener('error', (event) => remember(event?.error?.message || event?.message || 'JavaScript error'));
+            global.addEventListener('unhandledrejection', (event) => remember(event?.reason?.message || event?.reason || 'Promise rejection'));
+        }
+        if (typeof document.addEventListener === 'function') {
+            document.addEventListener('DOMContentLoaded', () => {
+                global.setTimeout(() => {
+                    const root = document.getElementById('root');
+                    if (!root || root.childElementCount === 0) renderFallback(firstError);
+                }, 2500);
+            }, { once: true });
+        }
     })(window);
-    </script>
-    <script>
+    if (!(window.ONEAPP && window.ONEAPP.STORAGE) && typeof window.addEventListener === 'function') {
 /* ============================================================
  * [BUNDLED CORE ENGINE] coreEngine.js v1.3.0
  * v2.1.175R1 technical patch: v2.1.175 업무정책을 유지하며 전체파일 단독 실행을 위해 내장.
@@ -2665,11 +2671,8 @@
   global.restoreMasterBackup = global.restoreMasterBackup || MASTER.restoreMasterBackup;
 
 })(window);
+    }
 
-    </script>
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
-    
-    <script>
         window.MASTER_HEADERS = ["창고","1코드","1그룹명","2코드","2그룹명","3코드","3그룹명","오더즈","구매처","브랜드","품목코드","품목명","규격","안전재고","간단설명","카탈로그","견적서","출고가","입고가","판매가","입고B","도매A","도매B","상장가","최종전송","최종입고","단가H","단가I","시중가","행사가","행사테마","테마1","테마2","테마3","테마4","테마5","판매여부","1종코드","1종규격","1종연산","2종코드","2종규격","2종연산","외주비","노무비","경비","비과세","과세","기본","연동","단가연동","싯가","싯가판매여부","단위","준비기간","재입고 준비기간","마감시간","주문마감시간","검색어등록","유통사코드","찜적용안함","재고수량","재고","최소구매수","최대구매수"];
         window.NUMERIC_HEADERS = ["안전재고","출고가","입고가","판매가","입고B","도매A","도매B","상장가","최종전송","최종입고","단가H","단가I","시중가","행사가","1종연산","2종연산","외주비","노무비","경비","1구매","1출고","2구매","2출고","1입고","2입고","재고수량","재고","최신단가","준비기간","재입고 준비기간","최소구매수","최대구매수"];
         window.getMerchMasterSalePriceInfo = window.getMerchMasterSalePriceInfo || ((item = {}) => {
@@ -13376,7 +13379,7 @@ const WelcomeGuide = ({ onUpload, onCloudSync }) => (React.createElement("div", 
         React.createElement("i", { className: "fas fa-box-open" }),
         React.createElement("div", { className: "absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm" },
             React.createElement("i", { className: "fas fa-check" }))),
-    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.177_AutoOutPricePersistAndToolbar]"),
+    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.178_CIBaselineContractRestore]"),
     React.createElement("p", { className: "text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold" },
         "\uD604\uC7AC \uB4F1\uB85D\uB41C ",
         React.createElement("span", { className: "text-indigo-500" }, "\uB9C8\uC2A4\uD130 \uC0C1\uD488 \uB370\uC774\uD130"),
@@ -14027,7 +14030,7 @@ const App = () => {
                                 React.createElement("div", { className: "flex flex-col border-l-2 border-slate-700 pl-3" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "MerchOps"),
-                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.177_AutoOutPricePersistAndToolbar")),
+                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.178_CIBaselineContractRestore")),
                                     React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "MAIN WORKSPACE"))),
                             React.createElement(SystemConsole, { itemCount: Object.keys(data.masterProducts).length, isProcessing: ui.isProcessing, processMsg: ui.processMsg, estimateCount: Object.keys(data.managedItems).length, filteredCount: fullDisplayRows.length, activeTags: ui.activeTags, masterLookupMode: data.masterLookupMode }),
                             React.createElement("nav", { className: "flex gap-1.5 text-[14px] shrink-0 items-center" },
