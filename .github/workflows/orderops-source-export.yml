@@ -1,0 +1,53 @@
+name: OrderOps source export
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/orderops-source-export.yml
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Build complete OrderOps source text
+        shell: bash
+        run: |
+          out="OrderOps_full_source_20260808.txt"
+          {
+            printf 'ONEAPP OrderOps full source bundle\n'
+            printf 'Repository: orderzoneapp-coder/oneapp\n'
+            printf 'Commit: %s\n' "$(git rev-parse HEAD)"
+            printf 'Generated: 2026-08-08\n'
+          } > "$out"
+          for file in \
+            orderops/list.html \
+            orderops/input.html \
+            orderFulfillmentEngine.js \
+            orderFulfillmentWorkbook.js \
+            app-manifest.json \
+            APP_ARCHITECTURE.md \
+            scripts/test-shipping-management.mjs \
+            scripts/test-shipping-purchase-plan-cloud.mjs \
+            .github/workflows/repository-validation.yml \
+            code.gs
+          do
+            printf '\n\n===== FILE: %s =====\n\n' "$file" >> "$out"
+            cat "$file" >> "$out"
+          done
+
+      - name: Upload source text
+        uses: actions/upload-artifact@v4
+        with:
+          name: OrderOps-full-source-20260808
+          path: OrderOps_full_source_20260808.txt
+          if-no-files-found: error
+          retention-days: 1
