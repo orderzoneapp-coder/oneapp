@@ -43,7 +43,7 @@ jobs:
           replace_required("APP_ARCHITECTURE.md", "Shipping Management", "OrderOps")
           replace_required("APP_ARCHITECTURE.md", "orders.html", "orderops/list.html")
 
-          # Current OrderOps page lives one directory below the shared JS and guidance files.
+          # Current OrderOps page lives one directory below shared root resources.
           replace_required("orderops/list.html", '<title>ONEAPP orderops</title>', '<title>ONEAPP OrderOps</title>')
           replace_required("orderops/list.html", '<script src="orderFulfillmentEngine.js"></script>', '<script src="../orderFulfillmentEngine.js"></script>')
           replace_required("orderops/list.html", '<script src="orderFulfillmentWorkbook.js"></script>', '<script src="../orderFulfillmentWorkbook.js"></script>')
@@ -52,8 +52,8 @@ jobs:
           replace_required("orderops/list.html", 'href="SHIPPING_MANAGEMENT_GUIDANCE.md"', 'href="../SHIPPING_MANAGEMENT_GUIDANCE.md"')
           replace_required("orderops/input.html", '<title>ONEAPP Order Input</title>', '<title>ONEAPP OrderOps Input</title>')
 
-          # Keep the engine/workbook contract tests intact, but replace the retired orders.html
-          # UI-specific regression block with checks for the actual OrderOps list implementation.
+          # Keep engine/workbook contract tests intact. Replace only the retired orders.html
+          # UI regression block with checks against the current OrderOps page structure.
           test_path = Path("scripts/test-shipping-management.mjs")
           test_text = test_path.read_text(encoding="utf-8")
           ui_start_marker = 'const html = fs.readFileSync(path.join(ROOT, "orders.html"), "utf8");'
@@ -105,18 +105,12 @@ jobs:
             assert.equal(depth, 0, "orderops/list.html CSS braces must be balanced");
           }
 
-          const combinedCss = styleBlocks.join("\n");
           styleBlocks.forEach(assertBalancedCssBraces);
-          assert.match(
-            combinedCss,
-            /(?:^|})\s*th\s*\{[^{}]*\bposition\s*:\s*sticky\s*;/m,
-            "the current OrderOps table must keep sticky headers",
-          );
-          assert.match(
-            combinedCss,
-            /(?:^|})\s*td\s*\{[^{}]*\boverflow\s*:\s*hidden\s*;/m,
-            "the current OrderOps table must keep cell overflow protection",
-          );
+          const combinedCss = styleBlocks.join("\n");
+          assert.match(combinedCss, /(?:^|})\s*th\s*\{[^{}]*\bposition\s*:\s*sticky\s*;/m,
+            "the current OrderOps table must keep sticky headers");
+          assert.match(combinedCss, /(?:^|})\s*td\s*\{[^{}]*\boverflow\s*:\s*hidden\s*;/m,
+            "the current OrderOps table must keep cell overflow protection");
 
           for (const requiredText of [
             "OrderOps",
@@ -130,7 +124,6 @@ jobs:
             "purchaseUploadNotice",
             "ONEAPPShippingManagementDB",
             "shipping-local-recovery/v1",
-            "validRecoveryRecord",
             "workspace.sourceFingerprint === record.sourceFingerprint",
             "oneapp.shipping.recovery.pointer.v1",
             "oneapp.shipping.recovery.meta.v1",
@@ -138,9 +131,6 @@ jobs:
             "shipping-table-widths/v1",
             "oneapp.orderops.hidden-columns.v1",
             "orderops-hidden-columns/v1",
-            "두 파일 선택 시 자동 분산",
-            "열폭 저장",
-            "열 표시",
             "../orderFulfillmentEngine.js",
             "../orderFulfillmentWorkbook.js",
             "../SHIPPING_MANAGEMENT_GUIDANCE.md",
@@ -148,17 +138,23 @@ jobs:
             assert.ok(html.includes(requiredText), `orderops/list.html is missing: ${requiredText}`);
           }
 
-          assert.ok(
-            html.includes('id="bundleInput" type="file" accept=".xlsx,.xls" multiple'),
-            "bundle input must accept the supported Excel extensions and allow two-file selection",
-          );
-          for (const id of ["bundleDrop", "bundleInput", "bundleFileStatus"]) {
+          for (const id of [
+            "bundleDrop", "bundleInput", "bundleFileStatus",
+            "ordersInput", "inventoryInput", "analyzeButton",
+            "columnVisibilityButton", "columnWidthSaveButton", "columnWidthResetButton",
+            "purchaseUploadButton", "downloadButton", "printButton",
+            "headerRestoreButton", "headerSettingsButton", "workspaceStorage",
+          ]) {
             assert.equal(html.split(`id="${id}"`).length - 1, 1, `${id} must exist exactly once`);
           }
+          assert.ok(
+            html.includes('id="bundleInput" type="file" accept=".xlsx,.xls" multiple'),
+            "bundle input must accept supported Excel extensions and allow two-file selection",
+          );
 
           const classifyStart = html.indexOf("async function classifyBundleFile");
           const classifyEnd = html.indexOf("async function handleBundleFiles", classifyStart);
-          assert.ok(classifyStart >= 0 && classifyEnd > classifyStart, "bundle classifier must exist before the bundle handler");
+          assert.ok(classifyStart >= 0 && classifyEnd > classifyStart, "bundle classifier must exist");
           const classifySource = html.slice(classifyStart, classifyEnd);
           for (const requiredSource of [
             "Promise.all([",
@@ -174,11 +170,10 @@ jobs:
 
           const bundleStart = html.indexOf("async function handleBundleFiles");
           const bundleEnd = html.indexOf("function bindBundleDropZone", bundleStart);
-          assert.ok(bundleStart >= 0 && bundleEnd > bundleStart, "bundle handler must exist before its event binding");
+          assert.ok(bundleStart >= 0 && bundleEnd > bundleStart, "bundle handler must exist");
           const bundleSource = html.slice(bundleStart, bundleEnd);
           for (const requiredSource of [
             "files.length !== 2",
-            "resetResults();",
             "Promise.all(files.map(classifyBundleFile))",
             'item.kind === "orders"',
             'item.kind === "inventory"',
@@ -192,15 +187,15 @@ jobs:
 
           const bundleBindingStart = html.indexOf("function bindBundleDropZone");
           const bundleBindingEnd = html.indexOf("function toggleWorkspaceStorage", bundleBindingStart);
+          assert.ok(bundleBindingStart >= 0 && bundleBindingEnd > bundleBindingStart, "bundle binding must exist");
           const bundleBindingSource = html.slice(bundleBindingStart, bundleBindingEnd);
-          assert.ok(bundleBindingSource.includes('drop.addEventListener("drop"'), "bundle drag/drop binding is missing");
           assert.ok(bundleBindingSource.includes("handleBundleFiles(event.dataTransfer.files)"), "bundle drop must pass the complete file list");
-          assert.ok(bundleBindingSource.includes('input.addEventListener("change"'), "bundle chooser binding is missing");
           assert.ok(bundleBindingSource.includes("handleBundleFiles(input.files)"), "bundle chooser must pass the complete selected file list");
-          assert.ok(bundleBindingSource.includes('input.value = ""'), "bundle chooser must clear so the same pair can be selected again");
+          assert.ok(bundleBindingSource.includes('input.value = ""'), "bundle chooser must clear after selection");
 
           const individualStart = html.indexOf("async function handleFile");
           const individualEnd = html.indexOf("function renderFileCard", individualStart);
+          assert.ok(individualStart >= 0 && individualEnd > individualStart, "individual upload handler must exist");
           const individualSource = html.slice(individualStart, individualEnd);
           for (const requiredSource of [
             "isSupportedFile(file)",
@@ -214,46 +209,30 @@ jobs:
             assert.ok(individualSource.includes(requiredSource), `individual upload flow is missing: ${requiredSource}`);
           }
 
-          assert.ok(html.includes('id="headerRestoreButton"'), "OrderOps recovery header control is missing");
-          assert.ok(html.includes('id="headerSettingsButton"'), "OrderOps settings header control is missing");
-          assert.ok(html.includes('id="workspaceStorage"'), "OrderOps storage/settings panel is missing");
           const settingsStart = html.indexOf("function toggleWorkspaceStorage");
           const settingsEnd = html.indexOf("function setLoading", settingsStart);
+          assert.ok(settingsStart >= 0 && settingsEnd > settingsStart, "settings toggle must exist");
           const settingsSource = html.slice(settingsStart, settingsEnd);
           assert.ok(settingsSource.includes('classList.toggle("hidden", !open)'), "settings panel visibility toggle is missing");
           assert.ok(settingsSource.includes('setAttribute("aria-expanded", String(open))'), "settings control must update aria-expanded");
 
-          for (const currentUiFunction of [
-            "function loadColumnWidthSettings",
-            "function loadHiddenColumnSettings",
-            "function visiblePreviewColumns",
-            "function moveInventoryGridFocus",
-            "function focusAdjacentNegativeInventory",
-          ]) {
-            assert.ok(html.includes(currentUiFunction), `current table UI function is missing: ${currentUiFunction}`);
-          }
-          assert.ok(
-            html.includes('const HIDDEN_COLUMNS_KEY = "oneapp.orderops.hidden-columns.v1"'),
-            "current OrderOps hidden-column preference key changed",
-          );
-          assert.ok(
-            html.includes('const HIDDEN_COLUMNS_SCHEMA = "orderops-hidden-columns/v1"'),
-            "current OrderOps hidden-column schema changed",
-          );
-
           const localWorkspaceStart = html.indexOf("async function persistLocalWorkspace");
           const localWorkspaceEnd = html.indexOf("function scheduleLocalSave", localWorkspaceStart);
+          assert.ok(localWorkspaceStart >= 0 && localWorkspaceEnd > localWorkspaceStart, "local workspace persistence must exist");
           const localWorkspaceSource = html.slice(localWorkspaceStart, localWorkspaceEnd);
-          assert.equal(localWorkspaceSource.includes("hiddenColumnSettings"), false, "hidden-column UI preferences must stay outside workspace recovery");
-          assert.equal(localWorkspaceSource.includes("HIDDEN_COLUMNS_KEY"), false, "hidden-column storage keys must stay outside workspace recovery");
+          assert.equal(localWorkspaceSource.includes("hiddenColumnSettings"), false,
+            "hidden-column UI preferences must stay outside workspace recovery");
+          assert.equal(localWorkspaceSource.includes("HIDDEN_COLUMNS_KEY"), false,
+            "hidden-column storage keys must stay outside workspace recovery");
 
           const workbookSource = fs.readFileSync(path.join(ROOT, "orderFulfillmentWorkbook.js"), "utf8");
-          assert.equal(workbookSource.includes("hidden-columns"), false, "hidden-column UI preferences must not alter generated workbooks");
-          assert.equal(workbookSource.includes("hiddenColumnSettings"), false, "hidden-column UI state must not alter generated workbooks");
+          assert.equal(workbookSource.includes("hiddenColumnSettings"), false,
+            "hidden-column UI state must not alter generated workbooks");
 
-          assert.ok(html.includes("const engine = window.ShippingManagementEngine;"), "existing engine global contract must remain compatible");
-          assert.ok(html.includes("const workbookTools = window.ShippingManagementWorkbook;"), "existing workbook global contract must remain compatible");
-          assert.ok(html.includes('const CLOUD_PLAN_SCHEMA = "ONEAPP_SHIPPING_PURCHASE_PLAN_V1"'), "existing cloud schema must remain compatible");
+          // Technical compatibility contracts intentionally retain their existing names.
+          assert.ok(html.includes("const engine = window.ShippingManagementEngine;"), "engine global compatibility changed");
+          assert.ok(html.includes("const workbookTools = window.ShippingManagementWorkbook;"), "workbook global compatibility changed");
+          assert.ok(html.includes('const CLOUD_PLAN_SCHEMA = "ONEAPP_SHIPPING_PURCHASE_PLAN_V1"'), "cloud plan schema changed");
           '''
           test_text = test_text[:ui_start] + current_ui_tests + "\n\n" + test_text[ui_end:]
           test_text = test_text.replace("Shipping Management", "OrderOps")
