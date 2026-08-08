@@ -1624,6 +1624,7 @@
     { field: '도매B', aliases: ['도매B', 'B판매', 'B도매', 'B도매가'], type: 'number' },
     { field: 'B판매가', aliases: ['B판매가', 'B 판매가'], type: 'number' },
     { field: 'B도매가', aliases: ['B도매가', 'B 도매가'], type: 'number' },
+    { field: '최종전송', aliases: ['최종전송', '최종(전송)', '최종입고'], type: 'number' },
     { field: '시중가', aliases: ['시중가', '시중가격'], type: 'number' },
     { field: '입고B', aliases: ['입고B'], type: 'number' },
     { field: '판매여부', aliases: ['판매여부', '판매'], type: 'raw' },
@@ -1655,6 +1656,22 @@
       working._fieldStates[definition.field] = { ...state };
       if (!state.isWorkingValue) return;
       working[definition.field] = normalizeWorkingPayloadValue(state, definition.type);
+    });
+
+    const fixedAliases = new Set(MERCH_EXPORT_FIELD_DEFINITIONS.flatMap(definition => [definition.field, ...definition.aliases]));
+    const activeRole = MERCH.getWorkingSourceRole(row?.sources || {}, row?._lastUploadRole || '');
+    const activeSource = activeRole ? (row?.sources?.[activeRole] || {}) : {};
+    const dynamicFields = new Set([
+      ...Object.keys(activeSource),
+      ...Object.keys(finalData),
+      ...Object.keys(master || {})
+    ]);
+    dynamicFields.forEach(field => {
+      if (!field || String(field).startsWith('_') || fixedAliases.has(field) || ['코드', '품목코드', '상품코드'].includes(field)) return;
+      const state = MERCH.resolveWorkingField(row, master, field, { aliases: [field] });
+      working._fieldStates[field] = { ...state };
+      if (!state.isWorkingValue) return;
+      working[field] = state.isExplicitBlank ? '' : (state.value ?? '');
     });
 
     const themeState = MERCH.resolveWorkingField(row, master, '행사테마', {
@@ -1703,6 +1720,10 @@
       const cell = findOwnedField(master, definition.aliases);
       if (!cell.found) return;
       reference[definition.field] = cell.value ?? '';
+    });
+    Object.keys(master || {}).forEach(field => {
+      if (!field || String(field).startsWith('_') || ['코드', '품목코드', '상품코드'].includes(field) || hasOwnField(reference, field)) return;
+      reference[field] = master[field] ?? '';
     });
     const themeCodes = parsePromotionThemeCodes(master);
     if (hasOwnField(master, '행사테마') || [1, 2, 3, 4, 5].some(n => hasOwnField(master, `테마${n}`))) {

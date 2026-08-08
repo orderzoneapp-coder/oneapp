@@ -55,6 +55,16 @@ const markReviewWorkingField = (row = {}, field = '', value = '', origin = 'dire
     }
 });
 const isReviewWorkingField = (row = {}, field = '') => row?._fieldStates?.[field]?.isWorkingValue === true;
+const readReviewWorkingRaw = (row = {}, stateField = '', valueField = stateField) => {
+    const state = row?._fieldStates?.[stateField];
+    if (state?.isWorkingValue !== true || state.isExplicitBlank === true) return '';
+    if (hasOwn(row, valueField)) return row[valueField] ?? '';
+    return state.value ?? '';
+};
+const readReviewWorkingNumber = (row = {}, stateField = '', valueField = stateField) => {
+    const value = readReviewWorkingRaw(row, stateField, valueField);
+    return isExplicitBlank(value) ? '' : parseNum(value);
+};
 const fmt = (v) => parseNum(v).toLocaleString('ko-KR');
 // ============================================================
 // [E-NAV-01] MerchOps 복귀 라우팅 보정
@@ -425,18 +435,17 @@ const calculateSubPriceInfo = (row) => {
 // ============================================================
 // [E-OUTPUT-01] 소분품목 쇼핑몰 행 생성
 // 역할: 1종코드가 있는 경우 ERP뿐 아니라 쇼핑몰업로드 시트에도 별도 출력 행을 추가한다.
-// 주의: masterProducts[1종코드]가 있으면 상품명/규격을 우선 사용하고, 없으면 원물명 기반 보조명을 사용한다.
+// 주의: 소분 출력도 이번 작업값만 사용하며 마스터 참조값으로 실제 출력값을 재생성하지 않는다.
 // ============================================================
-const buildSubShopRow = (parentRow, subInfo, masterProducts, sale) => {
+const buildSubShopRow = (parentRow, subInfo, sale) => {
     if (!subInfo)
         return null;
-    const subMaster = masterProducts[subInfo.code] || {};
-    const subName = subMaster['품목명'] || `${parentRow.품목명 || ''} (소분)`;
-    const subSpec = subMaster['규격'] || subInfo.spec || parentRow['1종규격'] || '';
-    const subBrand = subMaster['브랜드'] || parentRow.브랜드 || '';
-    const subDesc = subMaster['간단설명'] || parentRow.간단설명 || '';
-    const subTags = subMaster['검색어등록'] || parentRow.검색어등록 || '';
-    const subStock = getReviewStockQty(parentRow);
+    const subName = `${readReviewWorkingRaw(parentRow, '품목명') || ''} (소분)`;
+    const subSpec = subInfo.spec || readReviewWorkingRaw(parentRow, '1종규격') || '';
+    const subBrand = readReviewWorkingRaw(parentRow, '브랜드');
+    const subDesc = readReviewWorkingRaw(parentRow, '간단설명');
+    const subTags = readReviewWorkingRaw(parentRow, '검색어등록');
+    const subStock = isReviewWorkingField(parentRow, '재고수량') ? getReviewStockQty(parentRow) : '';
     return [
         subInfo.code,
         subName,
@@ -449,10 +458,79 @@ const buildSubShopRow = (parentRow, subInfo, masterProducts, sale) => {
         subDesc,
         sale.code,
         subStock,
-        ...buildThemeFlags(parentRow),
+        ...(isReviewWorkingField(parentRow, '행사테마') ? buildThemeFlags(parentRow) : ['', '', '', '', '']),
         subTags
     ];
 };
+
+// F9 실제 출력 조립은 working의 상태 계약만 소비한다.
+// baseline/masterReference는 화면 비교용이며 ERP/쇼핑몰 출력값의 fallback으로 사용하지 않는다.
+const buildMerchIntegratedUploadData = (rows = []) => {
+    const erpData = [['품목코드', '입고가', '0', '출고가', '0', '입고B', 'n', 'A판매', 'n', 'B판매', 'n', '최종(전송)', 'n', '행사', 'n', '1']];
+    const shopData = [['상품코드\n코드', '상품명', '규격', '출고가', '도매A', '시중가', 'B판매가', 'B도매가', 'C 판매가', 'C 도매가', 'D 판매가', 'D 도매가', '브랜드', '기본설명', '판매여부', '재고수량', '테마1', '테마2', '테마3', '테마4', '테마5', '상품태그']];
+    let subOutputCount = 0;
+    rows.forEach(item => {
+        const sale = getSaleState(item);
+        const inPrice = readReviewWorkingNumber(item, '입고가');
+        const outPrice = readReviewWorkingNumber(item, '출고가');
+        const promoPrice = readReviewWorkingNumber(item, '행사가');
+        const finalOut = promoPrice !== '' && promoPrice > 0 ? promoPrice : outPrice;
+        const inPriceB = readReviewWorkingNumber(item, '입고B');
+        const erpASale = readReviewWorkingNumber(item, '도매A');
+        const erpBSale = readReviewWorkingNumber(item, '도매B');
+        const shopBPrice = readReviewWorkingNumber(item, 'B판매가');
+        const shopBWholesale = readReviewWorkingNumber(item, 'B도매가');
+        const marketPrice = readReviewWorkingNumber(item, '시중가');
+        const finalTransmission = readReviewWorkingNumber(item, '최종전송');
+        const finalStock = isReviewWorkingField(item, '재고수량') ? getReviewStockQty(item) : '';
+        const code = item.코드 ?? '';
+        erpData.push([code, inPrice, '0', finalOut, '0', inPriceB, 'n', erpASale, 'n', erpBSale, 'n', finalTransmission, 'n', promoPrice, 'n', sale.code]);
+        const themeFlags = isReviewWorkingField(item, '행사테마') ? buildThemeFlags(item) : ['', '', '', '', ''];
+        shopData.push([
+            code,
+            readReviewWorkingRaw(item, '품목명'),
+            readReviewWorkingRaw(item, '규격'),
+            finalOut,
+            erpASale,
+            marketPrice,
+            shopBPrice,
+            shopBWholesale,
+            0, 0, 0, 0,
+            readReviewWorkingRaw(item, '브랜드'),
+            readReviewWorkingRaw(item, '간단설명'),
+            sale.code,
+            finalStock,
+            ...themeFlags,
+            readReviewWorkingRaw(item, '검색어등록')
+        ]);
+        const subInfo = isReviewWorkingField(item, '1종코드') && isReviewWorkingField(item, '1종연산')
+            ? calculateSubPriceInfo({
+                ...item,
+                입고가: inPrice,
+                출고가: outPrice,
+                외주비: readReviewWorkingNumber(item, '외주비'),
+                경비: readReviewWorkingNumber(item, '경비')
+            })
+            : null;
+        if (subInfo) {
+            erpData.push([subInfo.code, subInfo.subIn, '0', subInfo.subOut, '0', '', 'n', '', 'n', '', 'n', subInfo.subIn, 'n', '', 'n', sale.code]);
+            const subShopRow = buildSubShopRow(item, subInfo, sale);
+            if (subShopRow) shopData.push(subShopRow);
+            subOutputCount++;
+        }
+    });
+    return { erpData, shopData, subOutputCount };
+};
+const buildMerchIntegratedUploadWorkbook = (rows = []) => {
+    if (!window.XLSX) throw new Error('엑셀 라이브러리 없음');
+    const { erpData, shopData, subOutputCount } = buildMerchIntegratedUploadData(rows);
+    const wb = window.XLSX.utils.book_new();
+    window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(shopData), '쇼핑몰업로드');
+    window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(erpData), 'ERP업데이트');
+    return { wb, subOutputCount, erpData, shopData };
+};
+window.buildMerchIntegratedUploadData = buildMerchIntegratedUploadData;
+window.buildMerchIntegratedUploadWorkbook = buildMerchIntegratedUploadWorkbook;
 const safeJSONParse = (key, defaultVal) => {
     try {
         const raw = localStorage.getItem(key);
@@ -651,7 +729,9 @@ const ExportApp = () => {
                     const actualStockMeta = getActualStockMeta(working, source);
                     const 재고수량 = resolveInitialReviewStock(working, source, actualStockMeta);
                     const workingTheme = hasOwn(working, '행사테마') ? getPromotionThemeString(working) : '';
+                    const dynamicWorking = Object.fromEntries(Object.entries(working).filter(([field]) => !String(field).startsWith('_')));
                     return {
+                        ...dynamicWorking,
                         코드: code,
                         품목명: readWorkingValue(working, ['품목명']),
                         규격: readWorkingValue(working, ['규격']),
@@ -942,44 +1022,7 @@ const ExportApp = () => {
     // 역할: 쇼핑몰업로드/ERP업데이트 시트를 생성한다.
     // 정책: 마스터 반영 출력과 마스터 미반영 출력이 같은 엑셀 구조를 사용한다.
     // ============================================================
-    const buildIntegratedUploadWorkbook = useCallback((rows, masterRef = {}) => {
-        if (!window.XLSX)
-            throw new Error('엑셀 라이브러리 없음');
-        const wb = window.XLSX.utils.book_new();
-        // ERP와 쇼핑몰은 거래대상이 다르므로 단가 컬럼명을 분리한다.
-        // ERP: 기존 도매A/도매B 원본값을 A판매/B판매로 출력한다.
-        // 쇼핑몰: 중복 도매B 컬럼을 B판매가(일반유저) / B도매가(유통사)로 출력한다.
-        const erpData = [['품목코드', '입고가', '0', '출고가', '0', '입고B', 'n', 'A판매', 'n', 'B판매', 'n', '최종(전송)', 'n', '행사', 'n', '1']];
-        const shopData = [['상품코드\n코드', '상품명', '규격', '출고가', '도매A', '시중가', 'B판매가', 'B도매가', 'C 판매가', 'C 도매가', 'D 판매가', 'D 도매가', '브랜드', '기본설명', '판매여부', '재고수량', '테마1', '테마2', '테마3', '테마4', '테마5', '상품태그']];
-        let subOutputCount = 0;
-        rows.forEach(item => {
-            var _a, _b;
-            const sale = getSaleState(item);
-            const inPrice = parseNum(item.입고가);
-            const finalOut = getAppliedPrice(item);
-            const erpASale = parseNum((_a = item.A판매) !== null && _a !== void 0 ? _a : item.도매A);
-            const erpBSale = parseNum((_b = item.B판매) !== null && _b !== void 0 ? _b : item.도매B);
-            const shopBPrice = parseNum(item.B판매가);
-            const shopBWholesale = parseNum(item.B도매가);
-            const pMarket = parseNum(item.시중가);
-            const finalStock = getReviewStockQty(item);
-            erpData.push([item.코드, inPrice, '0', finalOut, '0', parseNum(item.입고B) || '', 'n', erpASale || '', 'n', erpBSale || '', 'n', inPrice, 'n', parseNum(item.행사가) || '', 'n', sale.code]);
-            const themeFlags = buildThemeFlags(item);
-            shopData.push([item.코드, item.품목명, item.규격, finalOut, (erpASale > 0 ? erpASale : finalOut), (pMarket > 0 ? pMarket : finalOut), shopBPrice || '', shopBWholesale || '', 0, 0, 0, 0, item.브랜드 || '', item.간단설명 || '', sale.code, finalStock, ...themeFlags, item.검색어등록 || '']);
-            const subInfo = calculateSubPriceInfo(item);
-            if (subInfo) {
-                // 소분품목은 원물 행과 별도 출력물로 취급한다. ERP와 쇼핑몰업로드 모두 행 수가 증가해야 한다.
-                erpData.push([subInfo.code, subInfo.subIn, '0', subInfo.subOut, '0', '', 'n', '', 'n', '', 'n', subInfo.subIn, 'n', '', 'n', sale.code]);
-                const subShopRow = buildSubShopRow(item, subInfo, masterRef, sale);
-                if (subShopRow)
-                    shopData.push(subShopRow);
-                subOutputCount++;
-            }
-        });
-        window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(shopData), '쇼핑몰업로드');
-        window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(erpData), 'ERP업데이트');
-        return { wb, subOutputCount };
-    }, []);
+    const buildIntegratedUploadWorkbook = useCallback((rows) => window.buildMerchIntegratedUploadWorkbook(rows), []);
     // ============================================================
     // [E-OUTPUT-02A] 최종 마스터 반영 + 통합 엑셀 출력
     // 역할: reviewRows를 기준으로 마스터를 갱신하고 쇼핑몰업로드/ERP업데이트 시트를 생성한다.

@@ -67,6 +67,7 @@ const master = {
   입고가: 9000,
   판매여부: 1,
   재고수량: 999,
+  마스터전용신규필드: "MASTER-ONLY",
 };
 const sourceRow = {
   코드: "A001",
@@ -77,6 +78,7 @@ const sourceRow = {
       브랜드: "",
       입고가: 0,
       판매여부: false,
+      미래등록필드: false,
     },
   },
   finalData: {
@@ -84,6 +86,7 @@ const sourceRow = {
     브랜드: "",
     입고가: 0,
     판매여부: false,
+    미래등록필드: false,
   },
 };
 
@@ -141,6 +144,10 @@ assert.equal(working.품목명, "엑셀 상품");
 assert.equal(working.브랜드, "");
 assert.equal(working.입고가, 0);
 assert.equal(working.판매여부, false);
+assert.equal(working.미래등록필드, false, "future source-owned fields must enter F9 working without a fixed registry entry");
+assert.equal(working._fieldStates.미래등록필드.origin, "source");
+assert.equal(Object.prototype.hasOwnProperty.call(working, "마스터전용신규필드"), false, "future master-only fields must stay out of F9 working");
+assert.equal(working._fieldStates.마스터전용신규필드.origin, "master-reference");
 assert.equal(Object.prototype.hasOwnProperty.call(working, "규격"), false, "reference-only fields must not enter F9 working");
 assert.equal(Object.prototype.hasOwnProperty.call(working, "재고수량"), false, "missing stock columns must not receive a generated default");
 assert.equal(working._fieldStates.브랜드.isExplicitBlank, true);
@@ -158,11 +165,27 @@ for (const field of ["입고가", "판매여부", "재고수량", "시중가"]) 
 const lookupWorking = browser.ONEAPP.EXPORT.buildWorkingPayload(masterLookupRow, master);
 assert.equal(lookupWorking.규격, "MASTER-SPEC", "master-only lookup F9 output must remain available");
 assert.equal(lookupWorking.재고수량, 999, "explicit master-only lookup must preserve master stock values including 999");
+assert.equal(lookupWorking.마스터전용신규필드, "MASTER-ONLY", "explicit master lookup must include future master fields as actual working values");
+
+const dynamicMarkers = browser.ONEAPP.EXPORT.buildWorkingPayload({
+  코드: "A004",
+  sources: { _activeRole: "info", info: { 준비기간: "당일", 단가연동: 0 } },
+  finalData: {
+    준비기간: "당일",
+    단가연동: 0,
+    _editedFields: { 준비기간: true },
+    _generatedFields: { 단가연동: true },
+  },
+}, {});
+assert.equal(dynamicMarkers._fieldStates.준비기간.origin, "direct", "dynamic direct markers must be preserved");
+assert.equal(dynamicMarkers._fieldStates.단가연동.origin, "generated", "dynamic generated markers must be preserved");
+assert.equal(dynamicMarkers.단가연동, 0);
 
 const [draft] = browser.ONEAPP.EXPORT.buildExportDraft({ targetRows: [sourceRow], masterProducts: { A001: master } });
 assert.equal(draft.working.품목명, "엑셀 상품");
 assert.equal(Object.prototype.hasOwnProperty.call(draft.working, "규격"), false);
 assert.equal(draft.masterReference.규격, "MASTER-SPEC");
+assert.equal(draft.masterReference.마스터전용신규필드, "MASTER-ONLY", "future master fields must remain available in the separate reference payload");
 assert.equal(draft.baselineSnapshot.기준입고가, 9000);
 
 const f8Start = merchSource.indexOf("const handleQuickExcelExport = useCallback(() => {");
@@ -187,7 +210,8 @@ assert.doesNotMatch(exportSource, /saleIsGenerated/, "F9 must not generate sale 
 assert.match(exportSource, /'검색어등록', '창고', '단위', '1종코드'/, "F9 must preserve actual warehouse and unit working values");
 assert.doesNotMatch(exportSource, /if \(!hasStockValue\(working\.재고수량\)\) return DEFAULT_EXPORT_STOCK_QTY/, "F9 must not generate stock 999 when the source column is missing");
 assert.doesNotMatch(merchSource.slice(f8Start, f8End), /shopUploadStock = !window\.isBlankCell\(finalStockRaw\) \? window\.parseNum\(finalStockRaw\) : 999/, "F8 must not generate stock 999 when the source column is missing");
-assert.doesNotMatch(merchSource.slice(f8Start, f8End), /finalTransmission = readQuickSourceNum\([^\n]+, inPrice\)/, "F8 must not copy inbound price into a missing final-transmission column");
+assert.match(merchSource.slice(f8Start, f8End), /finalTransmission = getBestNumByAliases\(row, \['최종전송', '최종\(전송\)', '최종입고'\], ''\)/, "F8 missing final-transmission must use an explicit blank default");
+assert.doesNotMatch(merchSource.slice(f8Start, f8End), /finalTransmission = getBestNumByAliases\(row, \['최종전송', '최종\(전송\)', '최종입고'\], inPrice\)/, "F8 must not copy inbound price into a missing final-transmission column");
 assert.doesNotMatch(merchSource.slice(f8Start, f8End), /subMaster\['품목명'\]/, "F8 subdivision rows must not use master metadata as working fallback");
 assert.doesNotMatch(dataOpsSource, /merch_export_draft/, "DataOps is not a consumer of the MerchOps F9 draft contract");
 

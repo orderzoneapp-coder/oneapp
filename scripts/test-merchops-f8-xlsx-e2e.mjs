@@ -276,9 +276,24 @@ try {
   assert.ok(estimateResult.writtenFile && fs.statSync(estimateResult.writtenFile).size > 1000);
   assert.deepEqual(Array.from(estimateResult.reopened.SheetNames), ["쇼핑몰업로드", "ERP업데이트"]);
   const estimateShop = estimateResult.context.XLSX.utils.sheet_to_json(estimateResult.reopened.Sheets["쇼핑몰업로드"], { header: 1, raw: true });
+  const estimateErp = estimateResult.context.XLSX.utils.sheet_to_json(estimateResult.reopened.Sheets["ERP업데이트"], { header: 1, raw: true, defval: "" });
   assert.equal(estimateShop.length - 1, 2, "estimate F8 subdivision row must remain");
   assert.equal(estimateShop[2][0], "20010002");
   assert.equal(estimateShop[2][15], 0);
+  assert.equal(estimateErp[1][11], "", "missing final-transmission must stay blank instead of copying inbound price");
+
+  const transmissionResult = runF8Scenario({
+    name: "final-transmission-state",
+    rows: [
+      makeRow({ code: "FT0", role: "estimate", source: { 품목명: "명시 0", 입고가: 9000, 출고가: 11000, 최종전송: 0 } }),
+      makeRow({ code: "FTB", role: "estimate", source: { 품목명: "명시 공란", 입고가: 9000, 출고가: 11000, 최종전송: "" } }),
+      makeRow({ code: "FTM", role: "estimate", source: { 품목명: "컬럼 누락", 입고가: 9000, 출고가: 11000 } }),
+    ],
+  });
+  const transmissionErp = transmissionResult.context.XLSX.utils.sheet_to_json(transmissionResult.reopened.Sheets["ERP업데이트"], { header: 1, raw: true, defval: "" });
+  assert.equal(transmissionErp[1][11], 0, "explicit zero final-transmission must survive F8 XLSX generation");
+  assert.equal(transmissionErp[2][11], "", "explicit blank final-transmission must survive F8 XLSX generation");
+  assert.equal(transmissionErp[3][11], "", "missing final-transmission must survive F8 XLSX generation without fallback");
 
   const purchaseRow = makeRow({
     code: "30010001",
@@ -427,3 +442,9 @@ try {
   assert.ok(resolvedTempDir.startsWith(allowedTempPrefix), `refusing to remove unexpected temp directory: ${resolvedTempDir}`);
   fs.rmSync(tempDir, { recursive: true, force: true });
 }
+
+// The repository Actions already execute this real-XLSX suite. Keep the shared
+// resolver and F9 consumer regressions on that same CI path without widening
+// the workflow-file change scope for this task.
+await import("./test-merchops-master-reference-isolation.mjs");
+await import("./test-export-center-working-xlsx.mjs");
