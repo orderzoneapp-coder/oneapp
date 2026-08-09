@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.179_F8SubPriceGuard]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.180_F8SubCodeUpsert]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -12,6 +12,7 @@
     <script src="coreEngine.js"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <script>
+    // v2.1.180: F8 소분코드가 기존 출력상품이면 품명 등 상품정보는 유지하고 가격만 갱신하며, 코드 중복·복수 원물 가격충돌·미등록 소분코드는 출력을 차단한다.
     // v2.1.179: F8 소분행은 계산된 소분 입고가와 판매가가 모두 0보다 클 때만 생성해 0원 소분상품 업로드를 차단한다.
     // v2.1.178: 외부 Core 계약과 동일본 fallback을 함께 유지하고 CI가 실행하는 helper script 경계를 복구한다.
     // v2.1.177: 출고가 옵션 위치를 카탈로그 양식 옆으로 이동하고, 체크상태를 재접속 후에도 유지하며, 자동 룰적용 결과를 불러오기 완료 메시지에 표시한다.
@@ -9226,6 +9227,8 @@ ${targetText} ${targetRows.length}건을 엑셀로 생성합니다.${workflowTex
         const confirmData = [['확인구분', '상품코드', '상품명', '규격', '기준입고항목', '기준입고가', '도매항목', '도매가', '차이', '확인요청']];
         wholesaleBelowCostWarnings.forEach(w => confirmData.push(['매칭 도매가 낮음', w.code, w.name, w.spec, w.baseField, w.basePrice, w.wholesaleField, w.wholesalePrice, w.diff, w.message]));
         let subOutputCount = 0;
+        const pendingSubByCode = new Map();
+        const conflictingSubCodes = new Set();
         targetRows.forEach(row => {
             const isEstimateRow = isEstimateQuickRow(row);
             const isInventoryRow = !!(inventoryF8Module && inventoryF8Module.isInventoryRow(row));
@@ -9292,12 +9295,119 @@ ${targetText} ${targetRows.length}건을 엑셀로 생성합니다.${workflowTex
             // inventory F8은 DataOps 실제 재고만 출력한다. 소분 가격행 생성은 견적·구매 등 기존 역할에서만 유지한다.
             const subInfo = (isInventoryRow || isMasterThemeResetQuickRow(row)) ? null : calculateSubInfo(row);
             if (subInfo) {
-                const subErpBasicFlag = subInfo.subIn > 0 ? '1' : '';
-                erpData.push([subInfo.code, subInfo.subIn, '0', subInfo.subOut, '0', '', 'n', '', 'n', '', 'n', subInfo.subIn, 'n', '', 'n', subErpBasicFlag]);
-                shopData.push([subInfo.code, `${name} (소분)`, subInfo.spec || '', subInfo.subOut, subInfo.subOut, subInfo.subOut, '', '', 0, 0, 0, 0, brand, description, saleCode, shopUploadStock, ...themeFlags, tag]);
-                subOutputCount++;
+                const subCode = window.normalizeProductCodeText(subInfo.code);
+                const pending = {
+                    ...subInfo,
+                    code: subCode,
+                    parentCode: code,
+                    saleCode,
+                    shopUploadStock,
+                    themeFlags
+                };
+                const previous = pendingSubByCode.get(subCode);
+                if (previous && (previous.subIn !== pending.subIn || previous.subOut !== pending.subOut)) {
+                    // 같은 소분코드를 여러 원물이 서로 다른 가격으로 계산하면 임의 선택하지 않는다.
+                    conflictingSubCodes.add(subCode);
+                } else if (!previous) {
+                    pendingSubByCode.set(subCode, pending);
+                }
             }
         });
+        const formatQuickCodeList = (codes = [], max = 20) => {
+            const list = Array.from(codes).filter(Boolean);
+            return `${list.slice(0, max).join(', ')}${list.length > max ? ` 외 ${list.length - max}건` : ''}`;
+        };
+        const blockQuickF8 = (title, codes = []) => {
+            const codeText = formatQuickCodeList(codes);
+            const message = `${title}${codeText ? `: ${codeText}` : ''}`;
+            ui.setAlertMsg?.(`❌ ${message}`);
+            ui.showToast(`⚠️ ${message}`);
+        };
+        if (conflictingSubCodes.size > 0) {
+            blockQuickF8('같은 소분코드에 서로 다른 계산가격이 발생해 F8 출력을 차단했습니다', conflictingSubCodes);
+            return;
+        }
+        const indexOutputRowsByCode = (rows = []) => {
+            const indexMap = new Map();
+            rows.slice(1).forEach((outputRow, offset) => {
+                const outputCode = window.normalizeProductCodeText(outputRow?.[0]);
+                if (!outputCode) return;
+                if (!indexMap.has(outputCode)) indexMap.set(outputCode, []);
+                indexMap.get(outputCode).push(offset + 1);
+            });
+            return indexMap;
+        };
+        const shopIndexesByCode = indexOutputRowsByCode(shopData);
+        const erpIndexesByCode = indexOutputRowsByCode(erpData);
+        const missingSubCodes = new Set();
+        pendingSubByCode.forEach(subInfo => {
+            const shopIndexes = shopIndexesByCode.get(subInfo.code) || [];
+            const erpIndexes = erpIndexesByCode.get(subInfo.code) || [];
+            if (shopIndexes.length > 1 || erpIndexes.length > 1) return;
+
+            const subErpBasicFlag = subInfo.subIn > 0 ? '1' : '';
+            if (shopIndexes.length === 1 && erpIndexes.length === 1) {
+                // 소분품목이 이미 리스트에 있으면 한 행을 유지하고 계산된 가격만 갱신한다.
+                // 품명·규격·브랜드·설명·판매여부·재고·테마·태그는 기존 소분품목 값을 보존한다.
+                const shopRow = shopData[shopIndexes[0]];
+                shopRow[3] = subInfo.subOut;
+                shopRow[4] = subInfo.subOut;
+                shopRow[5] = subInfo.subOut;
+                const erpRow = erpData[erpIndexes[0]];
+                erpRow[1] = subInfo.subIn;
+                erpRow[3] = subInfo.subOut;
+                erpRow[11] = subInfo.subIn;
+                erpRow[15] = subErpBasicFlag;
+                subOutputCount++;
+                return;
+            }
+
+            // 리스트에 없는 소분품목은 마스터에 등록된 상품정보가 있을 때만 한 번 추가한다.
+            // 마스터에도 없으면 원상품명에 '(소분)'을 임의로 붙이지 않고 출력을 차단한다.
+            const subMaster = data.masterProducts[subInfo.code] || {};
+            const subName = String(subMaster['품목명'] || subMaster['상품명'] || '').trim();
+            if (!subName || shopIndexes.length !== erpIndexes.length) {
+                missingSubCodes.add(subInfo.code);
+                return;
+            }
+            erpData.push([subInfo.code, subInfo.subIn, '0', subInfo.subOut, '0', '', 'n', '', 'n', '', 'n', subInfo.subIn, 'n', '', 'n', subErpBasicFlag]);
+            shopData.push([
+                subInfo.code,
+                subName,
+                subMaster['규격'] || subInfo.spec || '',
+                subInfo.subOut,
+                subInfo.subOut,
+                subInfo.subOut,
+                '', '', 0, 0, 0, 0,
+                subMaster['브랜드'] || '',
+                subMaster['간단설명'] || subMaster['기본설명'] || '',
+                subInfo.saleCode,
+                subInfo.shopUploadStock,
+                ...subInfo.themeFlags,
+                subMaster['검색어등록'] || subMaster['상품태그'] || ''
+            ]);
+            subOutputCount++;
+        });
+        if (missingSubCodes.size > 0) {
+            blockQuickF8('리스트와 마스터에서 소분상품을 확인할 수 없어 F8 출력을 차단했습니다', missingSubCodes);
+            return;
+        }
+        const collectDuplicateOutputCodes = (rows = []) => {
+            const counts = new Map();
+            rows.slice(1).forEach(outputRow => {
+                const outputCode = window.normalizeProductCodeText(outputRow?.[0]);
+                if (outputCode) counts.set(outputCode, (counts.get(outputCode) || 0) + 1);
+            });
+            return Array.from(counts.entries()).filter(([, count]) => count > 1).map(([outputCode]) => outputCode);
+        };
+        const duplicateOutputCodes = new Set([
+            ...collectDuplicateOutputCodes(shopData),
+            ...collectDuplicateOutputCodes(erpData)
+        ]);
+        if (duplicateOutputCodes.size > 0) {
+            blockQuickF8('동일 상품코드가 중복되어 F8 출력을 차단했습니다', duplicateOutputCodes);
+            return;
+        }
         if (inventoryF8SourceSnapshot && inventoryF8Module) {
             const inventoryValidation = inventoryF8Module.validateOutput(inventoryF8SourceSnapshot, shopData.slice(1), erpData.slice(1));
             if (!inventoryValidation.ok) {
@@ -9315,7 +9425,7 @@ ${targetText} ${targetRows.length}건을 엑셀로 생성합니다.${workflowTex
         window.XLSX.writeFile(wb, `통합업로드용_QuickF8_${window.getMerchLocalDateStamp ? window.getMerchLocalDateStamp() : new Date().toLocaleDateString('sv-SE')}.xlsx`);
         quickExcelReadyRef.current = { ready: false, at: 0, count: 0, codes: [], rows: [] };
         window.__MERCHOPS_QUICK_MASTER_OVERRIDE = null;
-        ui.showToast(`✅ F8 엑셀 출력 완료: 원물 ${targetRows.length}건 + 소분 ${subOutputCount}건${confirmData.length > 1 ? ` / 확인요청 ${confirmData.length - 1}건` : ''}`);
+        ui.showToast(`✅ F8 엑셀 출력 완료: 원물 ${targetRows.length}건 / 소분가격 반영 ${subOutputCount}건${confirmData.length > 1 ? ` / 확인요청 ${confirmData.length - 1}건` : ''}`);
     }, [fullDisplayRows, ui.selectedRows, data.masterProducts, data.managedItems, ui, collectWholesaleBelowCostWarnings]);
     // ============================================================
     // [M-MASTER-COMMIT-01] F7 마스터 적용
@@ -13420,7 +13530,7 @@ const WelcomeGuide = ({ onUpload, onCloudSync }) => (React.createElement("div", 
         React.createElement("i", { className: "fas fa-box-open" }),
         React.createElement("div", { className: "absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm" },
             React.createElement("i", { className: "fas fa-check" }))),
-    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.179_F8SubPriceGuard]"),
+    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.180_F8SubCodeUpsert]"),
     React.createElement("p", { className: "text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold" },
         "\uD604\uC7AC \uB4F1\uB85D\uB41C ",
         React.createElement("span", { className: "text-indigo-500" }, "\uB9C8\uC2A4\uD130 \uC0C1\uD488 \uB370\uC774\uD130"),
@@ -14071,7 +14181,7 @@ const App = () => {
                                 React.createElement("div", { className: "flex flex-col border-l-2 border-slate-700 pl-3" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "MerchOps"),
-                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.179_F8SubPriceGuard")),
+                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.180_F8SubCodeUpsert")),
                                     React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "MAIN WORKSPACE"))),
                             React.createElement(SystemConsole, { itemCount: Object.keys(data.masterProducts).length, isProcessing: ui.isProcessing, processMsg: ui.processMsg, estimateCount: Object.keys(data.managedItems).length, filteredCount: fullDisplayRows.length, activeTags: ui.activeTags, masterLookupMode: data.masterLookupMode }),
                             React.createElement("nav", { className: "flex gap-1.5 text-[14px] shrink-0 items-center" },
