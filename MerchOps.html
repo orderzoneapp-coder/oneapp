@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.178_CIBaselineContractRestore]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.179_F8SubPriceGuard]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -12,6 +12,7 @@
     <script src="coreEngine.js"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <script>
+    // v2.1.179: F8 소분행은 계산된 소분 입고가와 판매가가 모두 0보다 클 때만 생성해 0원 소분상품 업로드를 차단한다.
     // v2.1.178: 외부 Core 계약과 동일본 fallback을 함께 유지하고 CI가 실행하는 helper script 경계를 복구한다.
     // v2.1.177: 출고가 옵션 위치를 카탈로그 양식 옆으로 이동하고, 체크상태를 재접속 후에도 유지하며, 자동 룰적용 결과를 불러오기 완료 메시지에 표시한다.
     // v2.1.176: 출고가 자동적용 옵션 - 체크 시 엑셀 불러오기 직후 기존 마진룰로 출고가를 계산하고, 미체크 시 엑셀 출고가 원본값을 유지한다.
@@ -9214,6 +9215,9 @@ ${targetText} ${targetRows.length}건을 엑셀로 생성합니다.${workflowTex
             const subIn = inPrice > 0 ? Math.round(((inPrice + outsrc) / div1) / ROUND_UNIT) * ROUND_UNIT : 0;
             const rawSubOut = outPrice > 0 ? (outPrice / div1) + extraCost : 0;
             const subOut = roundSubSalePrice(rawSubOut);
+            // 1종코드·1종연산이 있어도 소분 입고가 또는 판매가가 0이면 업로드행을 생성하지 않는다.
+            if (subIn <= 0 || subOut <= 0)
+                return null;
             return { code: subCode, spec: getBestStr(row, '1종규격'), subIn, subOut };
         };
         const wb = window.XLSX.utils.book_new();
@@ -14104,3 +14108,4 @@ root.render(React.createElement(App, null));
     </script>
 </body>
 </html>
+
