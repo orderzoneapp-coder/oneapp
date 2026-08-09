@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.181_F8SubCodeLatestPrice]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.182_F8SubSourceSelect]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -12,6 +12,7 @@
     <script src="coreEngine.js"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <script>
+    // v2.1.182: 하나의 소분상품에 복수 원물이 연결되면 F8을 자동 진행하지 않고, 소분상품명을 먼저 보여준 뒤 원물명·원물가·소분가를 비교해 원물을 직접 선택하도록 한다.
     // v2.1.181: 동일 소분코드가 반복 계산되면 소분품목은 한 행만 유지하고 나중에 새로 산출된 소분가격을 최종 출고가로 적용한다.
     // v2.1.180: F8 소분코드가 기존 출력상품이면 품명 등 상품정보는 유지하고 가격만 갱신하며, 코드 중복·복수 원물 가격충돌·미등록 소분코드는 출력을 차단한다.
     // v2.1.179: F8 소분행은 계산된 소분 입고가와 판매가가 모두 0보다 클 때만 생성해 0원 소분상품 업로드를 차단한다.
@@ -3021,6 +3022,209 @@
                 overlay.appendChild(box);
                 document.body.appendChild(overlay);
                 okBtn.focus();
+            });
+        });
+
+        // ============================================================
+        // [M-F8-SUB-SOURCE-SELECT-01] 소분상품 원물 선택 모달
+        // 사용자 사고순서: 소분상품 인지 → 원물명·원물가·소분가 비교 → 원물 선택 → F8 재개
+        // 정책: 기본 선택 없음, 취소 시 F8 중단, 코드보다 상품명을 우선 표시한다.
+        // ============================================================
+        window.showMerchopsSubSourceSelector = window.showMerchopsSubSourceSelector || ((options = {}) => {
+            const {
+                subProduct = {},
+                candidates = [],
+                currentIndex = 1,
+                totalCount = 1
+            } = options;
+            return new Promise(resolve => {
+                if (typeof window.__MERCHOPS_SUB_SOURCE_SELECTOR_CLOSE === 'function') {
+                    window.__MERCHOPS_SUB_SOURCE_SELECTOR_CLOSE(null);
+                }
+                const old = document.getElementById('merchops-sub-source-selector-modal');
+                if (old) old.remove();
+
+                const overlay = document.createElement('div');
+                overlay.id = 'merchops-sub-source-selector-modal';
+                overlay.setAttribute('role', 'dialog');
+                overlay.setAttribute('aria-modal', 'true');
+                overlay.setAttribute('aria-label', '소분상품의 원물을 선택하세요');
+                overlay.style.cssText = [
+                    'position:fixed', 'inset:0', 'z-index:1000000',
+                    'background:rgba(15,23,42,.62)', 'display:flex',
+                    'align-items:center', 'justify-content:center', 'padding:24px'
+                ].join(';');
+
+                const box = document.createElement('div');
+                box.style.cssText = [
+                    'width:min(760px,96vw)', 'max-height:90vh', 'background:#fff',
+                    'border-radius:20px', 'box-shadow:0 28px 90px rgba(15,23,42,.38)',
+                    'border:1px solid #cbd5e1', 'overflow:hidden',
+                    'font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif',
+                    'color:#0f172a'
+                ].join(';');
+
+                const titleBar = document.createElement('div');
+                titleBar.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:15px 22px;border-bottom:1px solid #e2e8f0;background:#f8fafc;';
+                const title = document.createElement('div');
+                title.textContent = '소분상품의 원물을 선택하세요';
+                title.style.cssText = 'font-size:15px;font-weight:900;color:#334155;';
+                const progress = document.createElement('div');
+                progress.textContent = Number(totalCount) > 1 ? `${currentIndex} / ${totalCount}` : '';
+                progress.style.cssText = 'font-size:12px;font-weight:900;color:#64748b;';
+                titleBar.append(title, progress);
+
+                const productHeader = document.createElement('div');
+                productHeader.style.cssText = 'padding:22px 24px 18px;background:linear-gradient(135deg,#eef2ff 0%,#ffffff 65%);border-bottom:1px solid #e0e7ff;';
+                const productName = document.createElement('div');
+                productName.textContent = String(subProduct.name || '소분상품');
+                productName.style.cssText = 'font-size:24px;font-weight:950;line-height:1.3;color:#111827;letter-spacing:-.02em;';
+                const productCode = document.createElement('div');
+                productCode.textContent = String(subProduct.code || '');
+                productCode.style.cssText = 'margin-top:6px;font-size:12px;font-weight:800;color:#64748b;letter-spacing:.04em;';
+                productHeader.append(productName, productCode);
+
+                const content = document.createElement('div');
+                content.style.cssText = 'padding:18px 22px 20px;max-height:56vh;overflow:auto;background:#fff;';
+                const question = document.createElement('div');
+                question.textContent = '어떤 원물로 소분합니까?';
+                question.style.cssText = 'margin-bottom:12px;font-size:15px;font-weight:900;color:#334155;';
+                content.appendChild(question);
+
+                const tableWrap = document.createElement('div');
+                tableWrap.style.cssText = 'border:1px solid #cbd5e1;border-radius:14px;overflow:hidden;background:#fff;';
+                const table = document.createElement('table');
+                table.style.cssText = 'width:100%;border-collapse:collapse;table-layout:fixed;';
+                const thead = document.createElement('thead');
+                const headerRow = document.createElement('tr');
+                headerRow.style.cssText = 'background:#f8fafc;color:#475569;';
+                [
+                    ['선택 원물', '58%','left'],
+                    ['원물가', '21%','right'],
+                    ['소분가', '21%','right']
+                ].forEach(([label, width, align]) => {
+                    const th = document.createElement('th');
+                    th.textContent = label;
+                    th.style.cssText = `width:${width};text-align:${align};padding:11px 14px;border-bottom:1px solid #cbd5e1;font-size:12px;font-weight:900;`;
+                    headerRow.appendChild(th);
+                });
+                thead.appendChild(headerRow);
+                const tbody = document.createElement('tbody');
+                table.append(thead, tbody);
+
+                let selectedIndex = -1;
+                const rowControls = [];
+                const fmt = value => `${Number(value || 0).toLocaleString('ko-KR')}원`;
+                const okBtn = document.createElement('button');
+                const paintSelection = () => {
+                    rowControls.forEach(({ row, radio }, idx) => {
+                        const selected = idx === selectedIndex;
+                        radio.checked = selected;
+                        row.style.background = selected ? '#eef2ff' : '#fff';
+                        row.style.boxShadow = selected ? 'inset 4px 0 0 #4f46e5' : 'none';
+                    });
+                    const enabled = selectedIndex >= 0;
+                    okBtn.disabled = !enabled;
+                    okBtn.style.background = enabled ? '#4f46e5' : '#e2e8f0';
+                    okBtn.style.borderColor = enabled ? '#4338ca' : '#cbd5e1';
+                    okBtn.style.color = enabled ? '#fff' : '#94a3b8';
+                    okBtn.style.cursor = enabled ? 'pointer' : 'not-allowed';
+                };
+
+                (Array.isArray(candidates) ? candidates : []).forEach((candidate, idx) => {
+                    const row = document.createElement('tr');
+                    row.tabIndex = 0;
+                    row.style.cssText = `cursor:pointer;background:#fff;${idx > 0 ? 'border-top:1px solid #e2e8f0;' : ''}`;
+                    const sourceCell = document.createElement('td');
+                    sourceCell.style.cssText = 'padding:14px;vertical-align:middle;';
+                    const sourceWrap = document.createElement('div');
+                    sourceWrap.style.cssText = 'display:flex;align-items:flex-start;gap:11px;min-width:0;';
+                    const radio = document.createElement('input');
+                    radio.type = 'radio';
+                    radio.name = 'merchops-sub-source';
+                    radio.tabIndex = -1;
+                    radio.style.cssText = 'width:18px;height:18px;margin-top:3px;accent-color:#4f46e5;flex:0 0 auto;pointer-events:none;';
+                    const textWrap = document.createElement('div');
+                    textWrap.style.cssText = 'min-width:0;';
+                    const sourceName = document.createElement('div');
+                    sourceName.textContent = String(candidate.parentName || '원물상품');
+                    sourceName.style.cssText = 'font-size:16px;font-weight:950;line-height:1.35;color:#111827;overflow-wrap:anywhere;';
+                    const sourceCode = document.createElement('div');
+                    sourceCode.textContent = String(candidate.parentCode || '');
+                    sourceCode.style.cssText = 'margin-top:4px;font-size:11px;font-weight:800;color:#64748b;letter-spacing:.03em;';
+                    textWrap.append(sourceName, sourceCode);
+                    sourceWrap.append(radio, textWrap);
+                    sourceCell.appendChild(sourceWrap);
+
+                    const parentPriceCell = document.createElement('td');
+                    parentPriceCell.textContent = fmt(candidate.parentInPrice);
+                    parentPriceCell.style.cssText = 'padding:14px;text-align:right;vertical-align:middle;font-size:14px;font-weight:850;color:#475569;white-space:nowrap;';
+                    const subPriceCell = document.createElement('td');
+                    subPriceCell.textContent = fmt(candidate.subOut);
+                    subPriceCell.style.cssText = 'padding:14px;text-align:right;vertical-align:middle;font-size:17px;font-weight:950;color:#4f46e5;white-space:nowrap;';
+                    row.append(sourceCell, parentPriceCell, subPriceCell);
+
+                    const select = () => {
+                        selectedIndex = idx;
+                        paintSelection();
+                    };
+                    row.onclick = select;
+                    row.onkeydown = event => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault();
+                            select();
+                        }
+                    };
+                    rowControls.push({ row, radio });
+                    tbody.appendChild(row);
+                });
+                tableWrap.appendChild(table);
+                content.appendChild(tableWrap);
+
+                const footer = document.createElement('div');
+                footer.style.cssText = 'display:flex;justify-content:flex-end;gap:10px;padding:15px 22px;border-top:1px solid #e2e8f0;background:#f8fafc;';
+                const cancelBtn = document.createElement('button');
+                cancelBtn.type = 'button';
+                cancelBtn.textContent = '취소';
+                cancelBtn.style.cssText = 'height:42px;padding:0 19px;border-radius:10px;border:1px solid #cbd5e1;background:#fff;color:#334155;font-size:13px;font-weight:900;cursor:pointer;';
+                okBtn.type = 'button';
+                okBtn.textContent = '선택 완료';
+                okBtn.disabled = true;
+                okBtn.style.cssText = 'height:42px;padding:0 21px;border-radius:10px;border:1px solid #cbd5e1;background:#e2e8f0;color:#94a3b8;font-size:13px;font-weight:900;cursor:not-allowed;';
+
+                let settled = false;
+                const onKeyDown = event => {
+                    if (event.key === 'Escape') close(null);
+                };
+                const close = result => {
+                    if (settled) return;
+                    settled = true;
+                    document.removeEventListener('keydown', onKeyDown);
+                    overlay.remove();
+                    if (window.__MERCHOPS_SUB_SOURCE_SELECTOR_CLOSE === close) {
+                        window.__MERCHOPS_SUB_SOURCE_SELECTOR_CLOSE = null;
+                    }
+                    resolve(result);
+                };
+                window.__MERCHOPS_SUB_SOURCE_SELECTOR_CLOSE = close;
+                document.addEventListener('keydown', onKeyDown);
+                cancelBtn.onclick = () => close(null);
+                okBtn.onclick = () => {
+                    if (selectedIndex < 0) return;
+                    close(candidates[selectedIndex] || null);
+                };
+                overlay.addEventListener('click', event => {
+                    if (event.target === overlay) close(null);
+                });
+
+                footer.append(cancelBtn, okBtn);
+                box.append(titleBar, productHeader, content, footer);
+                overlay.appendChild(box);
+                document.body.appendChild(overlay);
+                paintSelection();
+                const firstRow = rowControls[0]?.row;
+                if (firstRow) firstRow.focus();
+                else cancelBtn.focus();
             });
         });
 
@@ -7450,6 +7654,7 @@ window.isMerchUnmodifiedMasterLookupRow = (row = {}) => {
 
 const useMerchActions = (config, data, ui, fullDisplayRows) => {
     const quickExcelReadyRef = useRef({ ready: false, at: 0, count: 0, codes: [], rows: [] });
+    const quickExcelInFlightRef = useRef(false);
     const masterCommitInFlightRef = useRef(false);
     const handleMasterLookup = useCallback((categoryValues = []) => {
         if (Object.keys(data.managedItems || {}).length > 0) return false;
@@ -8869,7 +9074,13 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
     // 역할: 현재 작업테이블 결과를 외부 업로드용 엑셀로만 생성한다.
     // 정책: F8은 마스터·히스토리를 변경하지 않는다. 중요 결과 검증은 F9 출력검증센터에서 수행한다.
     // ============================================================
-    const handleQuickExcelExport = useCallback(() => {
+    const handleQuickExcelExport = useCallback(async () => {
+        if (quickExcelInFlightRef.current || ui.isProcessing) {
+            ui.showToast('⚠️ 다른 출력 또는 작업이 진행 중입니다. 완료 후 다시 실행하세요.');
+            return;
+        }
+        quickExcelInFlightRef.current = true;
+        try {
         if (!window.XLSX)
             return ui.showToast('⚠️ 엑셀 라이브러리 로드 대기 중입니다.');
         if (!fullDisplayRows || fullDisplayRows.length === 0)
@@ -9220,7 +9431,7 @@ ${targetText} ${targetRows.length}건을 엑셀로 생성합니다.${workflowTex
             // 1종코드·1종연산이 있어도 소분 입고가 또는 판매가가 0이면 업로드행을 생성하지 않는다.
             if (subIn <= 0 || subOut <= 0)
                 return null;
-            return { code: subCode, spec: getBestStr(row, '1종규격'), subIn, subOut };
+            return { code: subCode, spec: getBestStr(row, '1종규격'), parentInPrice: inPrice, subIn, subOut };
         };
         const wb = window.XLSX.utils.book_new();
         const erpData = [['품목코드', '입고가', '0', '출고가', '0', '입고B', 'n', '도매A', 'n', '도매B', 'n', '최종(전송)', 'n', '행사', 'n', '1']];
@@ -9228,8 +9439,8 @@ ${targetText} ${targetRows.length}건을 엑셀로 생성합니다.${workflowTex
         const confirmData = [['확인구분', '상품코드', '상품명', '규격', '기준입고항목', '기준입고가', '도매항목', '도매가', '차이', '확인요청']];
         wholesaleBelowCostWarnings.forEach(w => confirmData.push(['매칭 도매가 낮음', w.code, w.name, w.spec, w.baseField, w.basePrice, w.wholesaleField, w.wholesalePrice, w.diff, w.message]));
         let subOutputCount = 0;
-        const pendingSubByCode = new Map();
-        const overwrittenSubCodes = new Set();
+        let subSourceSelectionCount = 0;
+        const pendingSubCandidatesByCode = new Map();
         targetRows.forEach(row => {
             const isEstimateRow = isEstimateQuickRow(row);
             const isInventoryRow = !!(inventoryF8Module && inventoryF8Module.isInventoryRow(row));
@@ -9301,17 +9512,14 @@ ${targetText} ${targetRows.length}건을 엑셀로 생성합니다.${workflowTex
                     ...subInfo,
                     code: subCode,
                     parentCode: code,
+                    parentName: name || data.masterProducts[code]?.['품목명'] || data.masterProducts[code]?.['상품명'] || '',
                     saleCode,
                     shopUploadStock,
                     themeFlags
                 };
-                const previous = pendingSubByCode.get(subCode);
-                if (previous && (previous.subIn !== pending.subIn || previous.subOut !== pending.subOut)) {
-                    overwrittenSubCodes.add(subCode);
-                }
-                // 동일 소분코드가 다시 계산되면 목록의 나중 원물에서 새로 산출된 가격을 최종값으로 사용한다.
-                // 소분품목 행은 코드당 하나만 생성하거나 기존 행을 갱신한다.
-                pendingSubByCode.set(subCode, pending);
+                const candidates = pendingSubCandidatesByCode.get(subCode) || [];
+                candidates.push(pending);
+                pendingSubCandidatesByCode.set(subCode, candidates);
             }
         });
         const formatQuickCodeList = (codes = [], max = 20) => {
@@ -9324,6 +9532,71 @@ ${targetText} ${targetRows.length}건을 엑셀로 생성합니다.${workflowTex
             ui.setAlertMsg?.(`❌ ${message}`);
             ui.showToast(`⚠️ ${message}`);
         };
+        const selectedSubByCode = new Map();
+        const duplicateParentPriceCodes = new Set();
+        const subSourceConflicts = [];
+        pendingSubCandidatesByCode.forEach((rawCandidates, subCode) => {
+            const candidateByParentCode = new Map();
+            (rawCandidates || []).forEach(candidate => {
+                const parentCode = window.normalizeProductCodeText(candidate.parentCode);
+                const normalizedCandidate = { ...candidate, parentCode };
+                const previous = candidateByParentCode.get(parentCode);
+                if (previous && (previous.subIn !== normalizedCandidate.subIn || previous.subOut !== normalizedCandidate.subOut || previous.parentInPrice !== normalizedCandidate.parentInPrice)) {
+                    duplicateParentPriceCodes.add(subCode);
+                    return;
+                }
+                if (!previous) candidateByParentCode.set(parentCode, normalizedCandidate);
+            });
+            const candidates = Array.from(candidateByParentCode.values());
+            if (candidates.length === 1) {
+                selectedSubByCode.set(subCode, candidates[0]);
+            }
+            else if (candidates.length > 1) {
+                subSourceConflicts.push({ subCode, candidates });
+            }
+        });
+        if (duplicateParentPriceCodes.size > 0) {
+            blockQuickF8('동일 원물코드에서 서로 다른 소분가격이 산출되어 F8 출력을 차단했습니다', duplicateParentPriceCodes);
+            return;
+        }
+        const resolveSubProductMeta = subCode => {
+            const normalizedCode = window.normalizeProductCodeText(subCode);
+            const existingShopRow = shopData.slice(1).find(outputRow => window.normalizeProductCodeText(outputRow?.[0]) === normalizedCode);
+            const master = data.masterProducts[normalizedCode] || {};
+            return {
+                code: normalizedCode,
+                name: String(existingShopRow?.[1] || master['품목명'] || master['상품명'] || '').trim()
+            };
+        };
+        const unnamedConflictSubCodes = new Set(
+            subSourceConflicts
+                .map(conflict => resolveSubProductMeta(conflict.subCode))
+                .filter(meta => !meta.name)
+                .map(meta => meta.code)
+        );
+        if (unnamedConflictSubCodes.size > 0) {
+            blockQuickF8('소분상품명을 확인할 수 없어 원물 선택을 진행할 수 없습니다', unnamedConflictSubCodes);
+            return;
+        }
+        if (subSourceConflicts.length > 0 && typeof window.showMerchopsSubSourceSelector !== 'function') {
+            blockQuickF8('소분상품 원물 선택창을 불러올 수 없어 F8 출력을 차단했습니다', subSourceConflicts.map(conflict => conflict.subCode));
+            return;
+        }
+        for (let conflictIndex = 0; conflictIndex < subSourceConflicts.length; conflictIndex++) {
+            const conflict = subSourceConflicts[conflictIndex];
+            const selected = await window.showMerchopsSubSourceSelector({
+                subProduct: resolveSubProductMeta(conflict.subCode),
+                candidates: conflict.candidates,
+                currentIndex: conflictIndex + 1,
+                totalCount: subSourceConflicts.length
+            });
+            if (!selected) {
+                ui.showToast('⚠️ 원물 선택이 취소되어 F8 엑셀 출력을 중단했습니다.');
+                return;
+            }
+            selectedSubByCode.set(conflict.subCode, selected);
+            subSourceSelectionCount++;
+        }
         const indexOutputRowsByCode = (rows = []) => {
             const indexMap = new Map();
             rows.slice(1).forEach((outputRow, offset) => {
@@ -9337,7 +9610,7 @@ ${targetText} ${targetRows.length}건을 엑셀로 생성합니다.${workflowTex
         const shopIndexesByCode = indexOutputRowsByCode(shopData);
         const erpIndexesByCode = indexOutputRowsByCode(erpData);
         const missingSubCodes = new Set();
-        pendingSubByCode.forEach(subInfo => {
+        selectedSubByCode.forEach(subInfo => {
             const shopIndexes = shopIndexesByCode.get(subInfo.code) || [];
             const erpIndexes = erpIndexesByCode.get(subInfo.code) || [];
             if (shopIndexes.length > 1 || erpIndexes.length > 1) return;
@@ -9422,7 +9695,11 @@ ${targetText} ${targetRows.length}건을 엑셀로 생성합니다.${workflowTex
         window.XLSX.writeFile(wb, `통합업로드용_QuickF8_${window.getMerchLocalDateStamp ? window.getMerchLocalDateStamp() : new Date().toLocaleDateString('sv-SE')}.xlsx`);
         quickExcelReadyRef.current = { ready: false, at: 0, count: 0, codes: [], rows: [] };
         window.__MERCHOPS_QUICK_MASTER_OVERRIDE = null;
-        ui.showToast(`✅ F8 엑셀 출력 완료: 원물 ${targetRows.length}건 / 소분가격 반영 ${subOutputCount}건${overwrittenSubCodes.size > 0 ? ` / 중복 소분코드 최신 산출가 적용 ${overwrittenSubCodes.size}건` : ''}${confirmData.length > 1 ? ` / 확인요청 ${confirmData.length - 1}건` : ''}`);
+        ui.showToast(`✅ F8 엑셀 출력 완료: 원물 ${targetRows.length}건 / 소분가격 반영 ${subOutputCount}건${subSourceSelectionCount > 0 ? ` / 원물 선택 ${subSourceSelectionCount}건` : ''}${confirmData.length > 1 ? ` / 확인요청 ${confirmData.length - 1}건` : ''}`);
+        }
+        finally {
+            quickExcelInFlightRef.current = false;
+        }
     }, [fullDisplayRows, ui.selectedRows, data.masterProducts, data.managedItems, ui, collectWholesaleBelowCostWarnings]);
     // ============================================================
     // [M-MASTER-COMMIT-01] F7 마스터 적용
@@ -13527,7 +13804,7 @@ const WelcomeGuide = ({ onUpload, onCloudSync }) => (React.createElement("div", 
         React.createElement("i", { className: "fas fa-box-open" }),
         React.createElement("div", { className: "absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm" },
             React.createElement("i", { className: "fas fa-check" }))),
-    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.181_F8SubCodeLatestPrice]"),
+    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.182_F8SubSourceSelect]"),
     React.createElement("p", { className: "text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold" },
         "\uD604\uC7AC \uB4F1\uB85D\uB41C ",
         React.createElement("span", { className: "text-indigo-500" }, "\uB9C8\uC2A4\uD130 \uC0C1\uD488 \uB370\uC774\uD130"),
@@ -14127,6 +14404,10 @@ const App = () => {
             }
             else if (e.key === 'F8') {
                 e.preventDefault();
+                if (hasModal) {
+                    appActions.showToast('⚠️ 선택창을 먼저 완료하거나 취소하세요.');
+                    return;
+                }
                 if (isInput)
                     activeEl.blur();
                 if (!appState.isProcessing && appState.fullDisplayRows.length > 0) {
@@ -14137,6 +14418,10 @@ const App = () => {
             }
             else if (e.key === 'F9') {
                 e.preventDefault();
+                if (hasModal) {
+                    appActions.showToast('⚠️ 선택창을 먼저 완료하거나 취소하세요.');
+                    return;
+                }
                 if (isInput)
                     activeEl.blur();
                 if (!appState.isProcessing)
@@ -14178,7 +14463,7 @@ const App = () => {
                                 React.createElement("div", { className: "flex flex-col border-l-2 border-slate-700 pl-3" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "MerchOps"),
-                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.181_F8SubCodeLatestPrice")),
+                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.182_F8SubSourceSelect")),
                                     React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "MAIN WORKSPACE"))),
                             React.createElement(SystemConsole, { itemCount: Object.keys(data.masterProducts).length, isProcessing: ui.isProcessing, processMsg: ui.processMsg, estimateCount: Object.keys(data.managedItems).length, filteredCount: fullDisplayRows.length, activeTags: ui.activeTags, masterLookupMode: data.masterLookupMode }),
                             React.createElement("nav", { className: "flex gap-1.5 text-[14px] shrink-0 items-center" },
