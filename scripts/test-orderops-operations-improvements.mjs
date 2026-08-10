@@ -10,6 +10,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const require = createRequire(import.meta.url);
 const engine = require(path.join(ROOT, "orderFulfillmentEngine.js"));
 const html = fs.readFileSync(path.join(ROOT, "orderops", "list.html"), "utf8");
+const workbookSource = fs.readFileSync(path.join(ROOT, "orderFulfillmentWorkbook.js"), "utf8");
 const inlineScripts = [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi)];
 assert.ok(inlineScripts.length > 0, "OrderOps inline script를 찾을 수 없습니다.");
 inlineScripts.forEach((match, index) => new vm.Script(match[1], { filename: `orderops/list.html:inline-${index + 1}` }));
@@ -224,5 +225,15 @@ assert.match(html, /label: `전달사항 \$\{workspace\.notices\.length\}/);
 assert.match(html, /data-open-notice-id/);
 assert.match(html, /data-notice-acknowledgement/);
 assert.doesNotMatch(html, /item:\s*"적요 확인"|정상기준 0/);
+assert.doesNotMatch(
+  workbookSource,
+  /확인 필요 항목은 원본 상품코드·수량·적요를 관리자가 비교합니다/,
+  "검증결과 안내에서 전달사항을 확인 필요 대상으로 다시 분류하지 않아야 합니다.",
+);
+assert.match(
+  workbookSource,
+  /적요·적요1은 기능을 차단하지 않는 참고 전달사항입니다/,
+  "검증결과 안내는 전달사항의 비차단 참고 정책을 명시해야 합니다.",
+);
 
 console.log("OrderOps recovery, date, settings-modal, and delivery-notice tests passed.");
