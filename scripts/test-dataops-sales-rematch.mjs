@@ -219,6 +219,132 @@ const projected = salesRematch.applyCorrectedDetailsToViewRows({
 });
 assert.equal(projected.filter((row) => Object.keys(row._correctedSalesDetails).length > 0).length, 1, "current sales chip must have one manipulation anchor");
 
+const exactLotSourceData = [
+  {
+    batchKey: "SAME-LOT-1", 코드: "SAME", 품명: "동일상품", 단위: "BOX",
+    출고내역: { 거래처1: { qty: 2, rev: 200, cogs: 100, displayVendor: "거래처1" } },
+    _sourceEntries: [{ id: "SAME-SRC-1", role: "out", qty: 2, rev: 200, vendor: "거래처1", sourceRaw: { 전표번호: "SAME-1" } }],
+  },
+  {
+    batchKey: "SAME-LOT-2", 코드: "SAME", 품명: "동일상품", 단위: "BOX",
+    출고내역: { 거래처1: { qty: 3, rev: 330, cogs: 180, displayVendor: "거래처1" } },
+    _sourceEntries: [{ id: "SAME-SRC-2", role: "out", qty: 3, rev: 330, vendor: "거래처1", sourceRaw: { 전표번호: "SAME-2" } }],
+  },
+];
+const exactSecondLotAllocation = salesRematch.allocateSourceLedgerForMove({
+  productData: exactLotSourceData,
+  substHistory: [],
+  sourceCode: "SAME",
+  sourceKey: "SAME-LOT-2",
+  vendor: "거래처1",
+  sourceQty: 1,
+});
+assert.deepEqual(
+  Array.from(exactSecondLotAllocation, ({ sourceEntryId, qty, revenue }) => ({ sourceEntryId, qty, revenue })),
+  [{ sourceEntryId: "SAME-SRC-2", qty: 1, revenue: 110 }],
+  "same-code drag must allocate only the source Lot's original sales row",
+);
+
+const projectionSourceEntry = { id: "PROJ-SRC-1", role: "out", qty: 2, rev: 200, vendor: "거래처1", sourceRaw: { 전표번호: "PROJ-1" } };
+const projectionBaseData = [
+  { batchKey: "PROJ-A1", 코드: "PROJ-A", 품명: "원본상품", 단위: "BOX", 카테고리: "채소", 출고내역: { 거래처1: { qty: 2, rev: 200, cogs: 100, displayVendor: "거래처1" } }, _sourceEntries: [projectionSourceEntry] },
+  { batchKey: "PROJ-A2", 코드: "PROJ-A", 품명: "동일상품 다른 Lot", 단위: "BOX", 카테고리: "채소", 출고내역: {}, _sourceEntries: [] },
+  { batchKey: "PROJ-B1", 코드: "PROJ-B", 품명: "다른상품", 단위: "BOX", 카테고리: "과일", 출고내역: {}, _sourceEntries: [] },
+  { batchKey: "PROJ-C1", 코드: "PROJ-C", 품명: "Ctrl 대상", 단위: "EA", 카테고리: "가공식품", 출고내역: {}, _sourceEntries: [] },
+];
+const projectionFirstMove = {
+  id: "PROJ-H1", type: "SALES_REMATCH", isSalesRematch: true, status: "active",
+  sourceKey: "PROJ-A1", targetKey: "PROJ-A2", sourceCode: "PROJ-A", targetCode: "PROJ-A",
+  sourceName: "원본상품", targetName: "동일상품 다른 Lot", vendor: "거래처1",
+  sourceQty: 1, targetQty: 1, revenue: 100,
+  sourceLedgerEntryIds: ["PROJ-SRC-1"],
+  sourceLedgerAllocations: [{ sourceEntryId: "PROJ-SRC-1", qty: 1, revenue: 100 }],
+};
+const projectionAfterFirst = projectionBaseData.map((row) => {
+  if (row.batchKey === "PROJ-A1") return { ...row, 출고내역: { 거래처1: { qty: 1, rev: 100, cogs: 50, displayVendor: "거래처1" } } };
+  if (row.batchKey === "PROJ-A2") return { ...row, 출고내역: { 거래처1: { qty: 1, rev: 100, cogs: 60, displayVendor: "거래처1" } } };
+  return { ...row };
+});
+const lotProjection = salesRematch.applyCorrectedDetailsToViewRows({
+  viewRows: projectionAfterFirst.map((row) => ({ ...row, _viewMode: "LOT_DETAIL", _viewSourceKeys: [row.batchKey] })),
+  productData: projectionAfterFirst,
+  substHistory: [projectionFirstMove],
+  viewMode: "LOT_DETAIL",
+});
+assert.equal(lotProjection.find((row) => row.batchKey === "PROJ-A1")._correctedSalesDetails.거래처1.qty, 1);
+assert.equal(lotProjection.find((row) => row.batchKey === "PROJ-A2")._correctedSalesDetails.거래처1.qty, 1, "same-code rematch chip must follow targetKey Lot");
+const codeProjection = salesRematch.applyCorrectedDetailsToViewRows({
+  viewRows: [{ ...projectionAfterFirst[0], batchKey: "VIEW_CODE|PROJ-A", _viewMode: "CODE_SUMMARY", _viewSourceKeys: ["PROJ-A1", "PROJ-A2"] }],
+  productData: projectionAfterFirst,
+  substHistory: [projectionFirstMove],
+  viewMode: "CODE_SUMMARY",
+});
+assert.equal(codeProjection[0]._correctedSalesDetails.거래처1.qty, 2, "code summary must keep code-level aggregation");
+
+const projectionSecondAllocations = salesRematch.allocateSourceLedgerForMove({
+  productData: projectionAfterFirst,
+  substHistory: [projectionFirstMove],
+  sourceCode: "PROJ-A",
+  sourceKey: "PROJ-A2",
+  vendor: "거래처1",
+  sourceQty: 1,
+});
+assert.deepEqual(Array.from(projectionSecondAllocations, (item) => item.sourceEntryId), ["PROJ-SRC-1"]);
+const projectionSecondMove = {
+  id: "PROJ-H2", type: "SALES_REMATCH", isSalesRematch: true, status: "active",
+  sourceKey: "PROJ-A2", targetKey: "PROJ-B1", sourceCode: "PROJ-A", targetCode: "PROJ-B",
+  sourceName: "동일상품 다른 Lot", targetName: "다른상품", vendor: "거래처1",
+  sourceQty: 1, targetQty: 1, revenue: 100,
+  sourceLedgerEntryIds: ["PROJ-SRC-1"], sourceLedgerAllocations: projectionSecondAllocations,
+};
+const projectionAfterSecond = projectionAfterFirst.map((row) => {
+  if (row.batchKey === "PROJ-A2") return { ...row, 출고내역: {} };
+  if (row.batchKey === "PROJ-B1") return { ...row, 출고내역: { 거래처1: { qty: 1, rev: 100, cogs: 70, displayVendor: "거래처1" } } };
+  return { ...row };
+});
+const chainedLotProjection = salesRematch.applyCorrectedDetailsToViewRows({
+  viewRows: projectionAfterSecond.map((row) => ({ ...row, _viewMode: "LOT_DETAIL", _viewSourceKeys: [row.batchKey] })),
+  productData: projectionAfterSecond,
+  substHistory: [projectionFirstMove, projectionSecondMove],
+  viewMode: "LOT_DETAIL",
+});
+assert.equal(Object.keys(chainedLotProjection.find((row) => row.batchKey === "PROJ-A2")._correctedSalesDetails).length, 0);
+assert.equal(chainedLotProjection.find((row) => row.batchKey === "PROJ-B1")._correctedSalesDetails.거래처1.qty, 1, "consecutive rematch chip must follow the latest targetKey");
+
+const restoredHistory = salesRematch.normalizeHistory(JSON.parse(JSON.stringify([projectionFirstMove, { ...projectionSecondMove, status: "cancelled" }])));
+const restoredLotProjection = salesRematch.applyCorrectedDetailsToViewRows({
+  viewRows: projectionAfterFirst.map((row) => ({ ...row, _viewMode: "LOT_DETAIL", _viewSourceKeys: [row.batchKey] })),
+  productData: projectionAfterFirst,
+  substHistory: restoredHistory,
+  viewMode: "LOT_DETAIL",
+});
+assert.equal(restoredLotProjection.find((row) => row.batchKey === "PROJ-A2")._correctedSalesDetails.거래처1.qty, 1, "cancel and work restore must return the chip to the previous Lot");
+
+const projectionCtrlMove = { ...projectionSecondMove, id: "PROJ-H2-CTRL", targetKey: "PROJ-C1", targetCode: "PROJ-C", targetName: "Ctrl 대상", targetQty: 2 };
+const projectionAfterCtrl = projectionAfterFirst.map((row) => {
+  if (row.batchKey === "PROJ-A2") return { ...row, 출고내역: {} };
+  if (row.batchKey === "PROJ-C1") return { ...row, 출고내역: { 거래처1: { qty: 2, rev: 100, cogs: 50, displayVendor: "거래처1" } } };
+  return { ...row };
+});
+const ctrlLotProjection = salesRematch.applyCorrectedDetailsToViewRows({
+  viewRows: projectionAfterCtrl.map((row) => ({ ...row, _viewMode: "LOT_DETAIL", _viewSourceKeys: [row.batchKey] })),
+  productData: projectionAfterCtrl,
+  substHistory: [projectionFirstMove, projectionCtrlMove],
+  viewMode: "LOT_DETAIL",
+});
+assert.equal(ctrlLotProjection.find((row) => row.batchKey === "PROJ-C1")._correctedSalesDetails.거래처1.qty, 2, "Ctrl conversion must keep targetKey projection across unrelated categories");
+assert.equal(ctrlLotProjection.find((row) => row.batchKey === "PROJ-C1").카테고리, "가공식품", "category must not block rematch projection");
+
+const legacyProjectionMove = { ...projectionFirstMove };
+delete legacyProjectionMove.targetKey;
+const legacyLotProjection = salesRematch.applyCorrectedDetailsToViewRows({
+  viewRows: projectionAfterFirst.map((row) => ({ ...row, _viewMode: "LOT_DETAIL", _viewSourceKeys: [row.batchKey] })),
+  productData: projectionAfterFirst,
+  substHistory: [legacyProjectionMove],
+  viewMode: "LOT_DETAIL",
+});
+assert.equal(legacyLotProjection.filter((row) => Object.keys(row._correctedSalesDetails).length > 0).length, 1, "history without targetKey must keep a safe single-anchor fallback");
+
 const mainScriptMarker = '<script type="text/javascript">';
 const mainScriptStart = source.indexOf(mainScriptMarker);
 const mainScriptEnd = source.lastIndexOf("</script>");
@@ -278,6 +404,22 @@ const frozenLedgerEntries = Object.freeze([
   Object.freeze({ id: "SRC_2", role: "out", qty: 2, rev: 200, vendor: "거래처1", sourceRaw: Object.freeze({ 전표번호: "IMMUTABLE-2" }) }),
 ]);
 const frozenLedgerBefore = JSON.stringify(frozenLedgerEntries);
+const makeSameCodeInventoryRows = () => [
+  {
+    batchKey: "RUNTIME-SAME-1", 코드: "RUNTIME-SAME", 품명: "동일상품", 단위: "BOX", 단가: 50,
+    기초: 5, 입고: 0, 출고: 1, 대체입고: 0, 대체출고: 0, 전산잔량: 4, 실사: 4, 로스: 0,
+    매출액: 100, 매출원가: 50, 이슈: [], 메모: "",
+    출고내역: { 거래처1: { qty: 1, rev: 100, cogs: 50, displayVendor: "거래처1" } },
+    _sourceEntries: [{ id: "RUNTIME-SRC-1", role: "out", qty: 1, rev: 100, vendor: "거래처1", sourceRaw: { 전표번호: "RUNTIME-1" } }],
+  },
+  {
+    batchKey: "RUNTIME-SAME-2", 코드: "RUNTIME-SAME", 품명: "동일상품", 단위: "BOX", 단가: 60,
+    기초: 5, 입고: 0, 출고: 2, 대체입고: 0, 대체출고: 0, 전산잔량: 3, 실사: 3, 로스: 0,
+    매출액: 220, 매출원가: 120, 이슈: [], 메모: "",
+    출고내역: { 거래처1: { qty: 2, rev: 220, cogs: 120, displayVendor: "거래처1" } },
+    _sourceEntries: [{ id: "RUNTIME-SRC-2", role: "out", qty: 2, rev: 220, vendor: "거래처1", sourceRaw: { 전표번호: "RUNTIME-2" } }],
+  },
+];
 const makeInventoryRows = () => [
   {
     batchKey: "A1", 코드: "A", 품명: "원본상품", 단위: "BOX", 단가: 100,
@@ -293,6 +435,7 @@ const makeInventoryRows = () => [
   },
   {
     batchKey: "C1", 코드: "C", 품명: "묶음상품", 단위: "EA", 단가: 25,
+    카테고리: "가공식품",
     기초: 10, 입고: 0, 출고: 0, 대체입고: 0, 대체출고: 0, 전산잔량: 10, 실사: 10, 로스: 0,
     매출액: 0, 매출원가: 0, 이슈: [], 메모: "", 출고내역: {}, _sourceEntries: [],
   },
@@ -302,7 +445,21 @@ const makeInventoryRows = () => [
     매출액: 0, 매출원가: 0, 이슈: [], 메모: "", 출고내역: {}, _sourceEntries: [],
   },
 ];
+inventoryEngine.setProductData(makeSameCodeInventoryRows());
+inventoryEngine.setSubstHistory([]);
+inventoryEngine.handleSalesMove("RUNTIME-SAME-2", "RUNTIME-SAME-1", "거래처1", 1, { maxQty: 2, sourceDeductQty: 1, targetQty: 1 });
+assert.equal(hookState[0].find((row) => row.batchKey === "RUNTIME-SAME-2").출고, 1);
+assert.equal(hookState[0].find((row) => row.batchKey === "RUNTIME-SAME-1").출고, 2);
+assert.deepEqual(
+  Array.from(hookState[3][0].sourceLedgerAllocations, (allocation) => allocation.sourceEntryId),
+  ["RUNTIME-SRC-2"],
+  "actual same-code drag must record only the source Lot's original slip row",
+);
+assert.equal(hookState[3][0].sourceKey, "RUNTIME-SAME-2");
+assert.equal(hookState[3][0].targetKey, "RUNTIME-SAME-1");
+
 inventoryEngine.setProductData(makeInventoryRows());
+inventoryEngine.setSubstHistory([]);
 inventoryEngine.handleSalesMove("A1", "B1", "거래처1", 2, { maxQty: 5, sourceDeductQty: 2, targetQty: 2 });
 const partialSource = hookState[0].find((row) => row.batchKey === "A1");
 const partialTarget = hookState[0].find((row) => row.batchKey === "B1");
@@ -368,6 +525,7 @@ assert.equal(hookState[0].find((row) => row.batchKey === "C1").출고, 4);
 assert.equal(hookState[0].find((row) => row.batchKey === "C1").매출액, 200, "Ctrl target must preserve source supply amount");
 assert.equal(hookState[3][0].targetQty, 4);
 assert.equal(hookState[3][0].revenue, 200);
+assert.equal(hookState[0].find((row) => row.batchKey === "C1").카테고리, "가공식품", "unrelated category must remain allowed as a drag target");
 
 const marginSource = section("const DATAOPS_MARGIN_REVIEW_MODULE", "window.DATAOPS_MARGIN_REVIEW_MODULE");
 const marginContext = vm.createContext({

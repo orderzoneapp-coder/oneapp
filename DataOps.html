@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP DataOps - 핵심 수불부 관리 (V1.a22.112_SalesRematch)</title>
+    <title>ONEAPP DataOps - 핵심 수불부 관리 (V1.a22.113_LotChipTarget)</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         body { font-family: 'Pretendard', -apple-system, sans-serif; background-color: #f8fafc; overflow: hidden; }
@@ -46,7 +46,7 @@
     <!-- 초기 로딩 스크린 -->
     <div id="initial-loader">
         <div class="spinner"></div>
-        <div class="loader-text">ONEAPP DataOps V1.a22.112_SalesRematch.....</div>
+        <div class="loader-text">ONEAPP DataOps V1.a22.113_LotChipTarget.....</div>
         <div style="font-size: 11px; color: #94a3b8; margin-top: 8px;">앱 환경을 구성하고 있습니다</div>
     </div>
 
@@ -912,7 +912,7 @@ const clearTableSortPreference = () => {
    - 주의: 물리적 파일 분리는 하지 않는다. 단일 HTML 실행 구조를 유지한다.
    ======================================================================= */
 const CONFIG_MODULE = Object.freeze({
-    version: 'V1.a22.112_SalesRematch',
+    version: 'V1.a22.113_LotChipTarget',
     categoryMap: Object.freeze({
         '10': '채소.과일',
         '20': '수산.축산',
@@ -2158,6 +2158,7 @@ const DATAOPS_SALES_REMATCH_MODULE = Object.freeze({
                     const sourceRaw = entry.sourceRaw || {};
                     rows.push({
                         sourceEntryId,
+                        currentKey: safeStr(item.batchKey, ''),
                         originalIdentifier: DATAOPS_SALES_REMATCH_MODULE.getRawIdentifier(sourceRaw) || sourceEntryId,
                         sourceFile: safeStr(entry.sourceFile, ''),
                         sourceSheet: safeStr(entry.sourceSheet, ''),
@@ -2212,6 +2213,17 @@ const DATAOPS_SALES_REMATCH_MODULE = Object.freeze({
             let targetQtyMoved = 0;
             let targetRevenueMoved = 0;
             const nextRows = [];
+            const eventSourceKey = safeStr(event.sourceKey, '');
+            const deterministicSourceIds = deterministicAllocations
+                ? new Set(deterministicAllocations.map(allocation => allocation.sourceEntryId))
+                : null;
+            const hasExactSourceRows = !!eventSourceKey && rows.some(row =>
+                safeStr(row && row.currentKey, '') === eventSourceKey &&
+                row.currentCode === sourceCode &&
+                safeStr(row.vendor, '미지정') === vendor &&
+                Math.abs(safeNum(row.qty)) > 0.0000001 &&
+                (!deterministicSourceIds || deterministicSourceIds.has(safeStr(row.sourceEntryId, '')))
+            );
             rows.forEach(row => {
                 const rowQtyAbs = Math.abs(safeNum(row.qty));
                 const vendorMatches = safeStr(row.vendor, '미지정') === vendor;
@@ -2219,7 +2231,7 @@ const DATAOPS_SALES_REMATCH_MODULE = Object.freeze({
                     ? deterministicAllocations.find(candidate => candidate.sourceEntryId === safeStr(row.sourceEntryId, '') && candidate.remainingQty > 0.0000001)
                     : null;
                 const canUseLegacyMatch = deterministicAllocations === null;
-                if (remaining <= 0 || row.currentCode !== sourceCode || !vendorMatches || rowQtyAbs <= 0 || (!canUseLegacyMatch && !allocation)) {
+                if (remaining <= 0 || row.currentCode !== sourceCode || !vendorMatches || rowQtyAbs <= 0 || (hasExactSourceRows && safeStr(row.currentKey, '') !== eventSourceKey) || (!canUseLegacyMatch && !allocation)) {
                     nextRows.push(row);
                     return;
                 }
@@ -2258,6 +2270,9 @@ const DATAOPS_SALES_REMATCH_MODULE = Object.freeze({
                     const movedQty = movedQtyAbs * sign;
                     nextRows.push({
                         ...row,
+                        // 신규 판매 재매칭은 기존 이력의 targetKey로 최종 Lot을 투영한다.
+                        // targetKey가 없는 레거시 이력은 빈 값으로 남겨 기존 코드 대표행 표시로 fallback한다.
+                        currentKey: safeStr(event.targetKey, ''),
                         currentCode: targetCode,
                         currentName: safeStr(event.targetName, row.currentName),
                         currentUnit: safeStr(event.targetUnit, row.currentUnit),
@@ -2276,16 +2291,27 @@ const DATAOPS_SALES_REMATCH_MODULE = Object.freeze({
         });
         return rows.filter(row => Math.abs(safeNum(row.qty)) > 0.0000001 || Math.abs(safeNum(row.supplyAmount)) > 0.0000001);
     },
-    allocateSourceLedgerForMove: ({ productData = [], substHistory = [], sourceCode = '', vendor = '', sourceQty = 0 } = {}) => {
+    allocateSourceLedgerForMove: ({ productData = [], substHistory = [], sourceCode = '', sourceKey = '', vendor = '', sourceQty = 0 } = {}) => {
         const targetCode = DATAOPS_SALES_REMATCH_MODULE.normalizeCode(sourceCode);
+        const targetSourceKey = safeStr(sourceKey, '');
         const targetVendor = safeStr(vendor, '미지정');
         let remaining = Math.abs(safeNum(sourceQty));
         const allocations = [];
-        DATAOPS_SALES_REMATCH_MODULE.buildCorrectedLedgerRows({ productData, substHistory }).forEach(row => {
+        const ledgerRows = DATAOPS_SALES_REMATCH_MODULE.buildCorrectedLedgerRows({ productData, substHistory });
+        const hasExactSourceRows = !!targetSourceKey && ledgerRows.some(row =>
+            safeStr(row && row.currentKey, '') === targetSourceKey &&
+            DATAOPS_SALES_REMATCH_MODULE.normalizeCode(row && row.currentCode) === targetCode &&
+            safeStr(row && row.vendor, '미지정') === targetVendor &&
+            Math.abs(safeNum(row && row.qty)) > 0.0000001
+        );
+        ledgerRows.forEach(row => {
             const rowQty = Math.abs(safeNum(row && row.qty));
             if (remaining <= 0.0000001 || rowQty <= 0.0000001) return;
             if (DATAOPS_SALES_REMATCH_MODULE.normalizeCode(row && row.currentCode) !== targetCode) return;
             if (safeStr(row && row.vendor, '미지정') !== targetVendor) return;
+            // 신규 이력은 드래그한 실제 Lot의 currentKey만 사용한다.
+            // targetKey/currentKey가 없는 레거시 이력은 기존 code+vendor 순서로 안전하게 fallback한다.
+            if (hasExactSourceRows && safeStr(row && row.currentKey, '') !== targetSourceKey) return;
             const takeQty = Math.min(rowQty, remaining);
             const takeRevenue = safeNum(row && row.supplyAmount) * (takeQty / rowQty);
             const sourceEntryId = safeStr(row && row.sourceEntryId, '');
@@ -2302,12 +2328,14 @@ const DATAOPS_SALES_REMATCH_MODULE = Object.freeze({
         });
         return allocations;
     },
-    buildSourceAllocations: ({ productData = [], code = '', vendor = '' } = {}) => {
+    buildSourceAllocations: ({ productData = [], code = '', vendor = '', batchKeys = [] } = {}) => {
         const targetCode = DATAOPS_SALES_REMATCH_MODULE.normalizeCode(code);
         const targetVendor = safeStr(vendor, '미지정');
+        const targetBatchKeys = new Set((Array.isArray(batchKeys) ? batchKeys : [batchKeys]).map(key => safeStr(key)).filter(Boolean));
         const allocations = [];
         (productData || []).forEach(item => {
             if (DATAOPS_SALES_REMATCH_MODULE.normalizeCode(item && item.코드) !== targetCode) return;
+            if (targetBatchKeys.size > 0 && !targetBatchKeys.has(safeStr(item && item.batchKey))) return;
             const details = DATAOPS_VENDOR_CHIP_MODULE.aggregateDetails((item && item.출고내역) || {});
             const detail = details[targetVendor] || Object.values(details).find(value => safeStr(value && value.displayVendor, '미지정') === targetVendor);
             if (!detail || safeNum(detail.qty) <= 0) return;
@@ -2323,6 +2351,27 @@ const DATAOPS_SALES_REMATCH_MODULE = Object.freeze({
             });
         });
         return allocations;
+    },
+    mergeCorrectedDetails: (detailMaps = []) => {
+        const result = {};
+        (detailMaps || []).forEach(details => {
+            Object.entries(details || {}).forEach(([vendor, detail]) => {
+                if (!result[vendor]) {
+                    result[vendor] = {
+                        ...(detail || {}),
+                        qty: 0,
+                        rev: 0,
+                        cogs: 0,
+                        _sourceAllocations: []
+                    };
+                }
+                result[vendor].qty += safeNum(detail && detail.qty);
+                result[vendor].rev += safeNum(detail && detail.rev);
+                result[vendor].cogs += safeNum(detail && detail.cogs);
+                result[vendor]._sourceAllocations.push(...((detail && detail._sourceAllocations) || []));
+            });
+        });
+        return result;
     },
     buildCorrectedDetailsByCode: ({ productData = [], substHistory = [] } = {}) => {
         const result = {};
@@ -2348,26 +2397,98 @@ const DATAOPS_SALES_REMATCH_MODULE = Object.freeze({
         });
         return result;
     },
-    applyCorrectedDetailsToViewRows: ({ viewRows = [], productData = [], substHistory = [] } = {}) => {
-        const detailsByCode = DATAOPS_SALES_REMATCH_MODULE.buildCorrectedDetailsByCode({ productData, substHistory });
-        const anchorIndexByCode = {};
+    buildCorrectedDetailsByTargetKey: ({ productData = [], substHistory = [] } = {}) => {
+        const byTargetKey = {};
+        const unanchoredByCode = {};
+        const productByKey = new Map();
+        (productData || []).forEach(item => {
+            const key = safeStr(item && item.batchKey);
+            if (key) productByKey.set(key, item);
+        });
+        const addRow = (container, bucketKey, row, allocationBatchKeys = []) => {
+            const code = DATAOPS_SALES_REMATCH_MODULE.normalizeCode(row.currentCode);
+            const vendor = safeStr(row.vendor, '미지정');
+            if (!container[bucketKey]) container[bucketKey] = {};
+            if (!container[bucketKey][vendor]) {
+                container[bucketKey][vendor] = {
+                    qty: 0,
+                    rev: 0,
+                    cogs: 0,
+                    displayVendor: vendor,
+                    isPerfectMatch: false,
+                    isLifo: false,
+                    matchMode: 'CORRECTED_SALES',
+                    correctedSales: true,
+                    _sourceAllocations: DATAOPS_SALES_REMATCH_MODULE.buildSourceAllocations({
+                        productData,
+                        code,
+                        vendor,
+                        batchKeys: allocationBatchKeys
+                    })
+                };
+            }
+            container[bucketKey][vendor].qty += safeNum(row.qty);
+            container[bucketKey][vendor].rev += safeNum(row.supplyAmount);
+        };
+        DATAOPS_SALES_REMATCH_MODULE.buildCorrectedLedgerRows({ productData, substHistory }).forEach(row => {
+            const code = DATAOPS_SALES_REMATCH_MODULE.normalizeCode(row.currentCode);
+            const targetKey = safeStr(row.currentKey, '');
+            const targetItem = targetKey ? productByKey.get(targetKey) : null;
+            const targetMatchesCode = !!targetItem && DATAOPS_SALES_REMATCH_MODULE.normalizeCode(targetItem.코드) === code;
+            if (targetMatchesCode) addRow(byTargetKey, targetKey, row, [targetKey]);
+            else addRow(unanchoredByCode, code, row);
+        });
+        return { byTargetKey, unanchoredByCode };
+    },
+    applyCorrectedDetailsToViewRows: ({ viewRows = [], productData = [], substHistory = [], viewMode = '' } = {}) => {
+        // 호출자가 보기 모드를 넘기지 않는 레거시 경로/계약 테스트는 기존 코드 대표행 집계를 유지한다.
+        if (viewMode !== 'LOT_DETAIL') {
+            const detailsByCode = DATAOPS_SALES_REMATCH_MODULE.buildCorrectedDetailsByCode({ productData, substHistory });
+            const anchorIndexByCode = {};
+            (viewRows || []).forEach((row, index) => {
+                const code = DATAOPS_SALES_REMATCH_MODULE.normalizeCode(row && row.코드);
+                if (!detailsByCode[code] || anchorIndexByCode[code] !== undefined) return;
+                const allocations = Object.values(detailsByCode[code]).flatMap(detail => detail._sourceAllocations || []);
+                const sourceKeys = new Set([safeStr(row.batchKey), ...((row._viewSourceKeys || []).map(key => safeStr(key)))]);
+                if (allocations.some(allocation => sourceKeys.has(safeStr(allocation.sourceKey)))) anchorIndexByCode[code] = index;
+            });
+            (viewRows || []).forEach((row, index) => {
+                const code = DATAOPS_SALES_REMATCH_MODULE.normalizeCode(row && row.코드);
+                if (detailsByCode[code] && anchorIndexByCode[code] === undefined) anchorIndexByCode[code] = index;
+            });
+            return (viewRows || []).map((row, index) => {
+                const code = DATAOPS_SALES_REMATCH_MODULE.normalizeCode(row && row.코드);
+                return {
+                    ...row,
+                    _correctedSalesDetails: anchorIndexByCode[code] === index ? (detailsByCode[code] || {}) : {},
+                    _correctedSalesAnchor: anchorIndexByCode[code] === index
+                };
+            });
+        }
+        const { byTargetKey, unanchoredByCode } = DATAOPS_SALES_REMATCH_MODULE.buildCorrectedDetailsByTargetKey({ productData, substHistory });
+        const rowTargetDetails = [];
+        const legacyAnchorIndexByCode = {};
         (viewRows || []).forEach((row, index) => {
             const code = DATAOPS_SALES_REMATCH_MODULE.normalizeCode(row && row.코드);
-            if (!detailsByCode[code] || anchorIndexByCode[code] !== undefined) return;
-            const allocations = Object.values(detailsByCode[code]).flatMap(detail => detail._sourceAllocations || []);
-            const sourceKeys = new Set([safeStr(row.batchKey), ...((row._viewSourceKeys || []).map(key => safeStr(key)))]);
-            if (allocations.some(allocation => sourceKeys.has(safeStr(allocation.sourceKey)))) anchorIndexByCode[code] = index;
+            const sourceKeys = [...new Set([safeStr(row.batchKey), ...((row._viewSourceKeys || []).map(key => safeStr(key)))].filter(Boolean))];
+            rowTargetDetails[index] = DATAOPS_SALES_REMATCH_MODULE.mergeCorrectedDetails(sourceKeys.map(key => byTargetKey[key]));
+            if (!unanchoredByCode[code] || legacyAnchorIndexByCode[code] !== undefined) return;
+            const allocations = Object.values(unanchoredByCode[code]).flatMap(detail => detail._sourceAllocations || []);
+            if (allocations.some(allocation => sourceKeys.includes(safeStr(allocation.sourceKey)))) legacyAnchorIndexByCode[code] = index;
         });
         (viewRows || []).forEach((row, index) => {
             const code = DATAOPS_SALES_REMATCH_MODULE.normalizeCode(row && row.코드);
-            if (detailsByCode[code] && anchorIndexByCode[code] === undefined) anchorIndexByCode[code] = index;
+            if (unanchoredByCode[code] && legacyAnchorIndexByCode[code] === undefined) legacyAnchorIndexByCode[code] = index;
         });
         return (viewRows || []).map((row, index) => {
             const code = DATAOPS_SALES_REMATCH_MODULE.normalizeCode(row && row.코드);
+            const exactDetails = rowTargetDetails[index] || {};
+            const legacyDetails = legacyAnchorIndexByCode[code] === index ? (unanchoredByCode[code] || {}) : {};
+            const correctedDetails = DATAOPS_SALES_REMATCH_MODULE.mergeCorrectedDetails([exactDetails, legacyDetails]);
             return {
                 ...row,
-                _correctedSalesDetails: anchorIndexByCode[code] === index ? (detailsByCode[code] || {}) : {},
-                _correctedSalesAnchor: anchorIndexByCode[code] === index
+                _correctedSalesDetails: correctedDetails,
+                _correctedSalesAnchor: Object.keys(correctedDetails).length > 0
             };
         });
     },
@@ -5971,6 +6092,7 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                     productData: prevP,
                     substHistory: normalizedHistory,
                     sourceCode: sourceItemRef.코드,
+                    sourceKey,
                     vendor: cleanVendorNameGlobal,
                     sourceQty: sourceDeductQty
                 });
@@ -11785,6 +11907,7 @@ ${balanceText}
                     productData: prev,
                     substHistory: normalizedHistory,
                     sourceCode: item.코드,
+                    sourceKey: batchKey,
                     vendor: label,
                     sourceQty
                 });
@@ -11850,6 +11973,7 @@ ${balanceText}
                     productData: prev,
                     substHistory: normalizedHistory,
                     sourceCode: item.코드,
+                    sourceKey: batchKey,
                     vendor: label,
                     sourceQty: Math.abs(currentQty)
                 });
@@ -12381,7 +12505,7 @@ ${balanceText}
         if (filters.reviewType !== 'substitution')
             data = stabilizeViewRows(data, sourceRows);
         if (filters.reviewType !== 'substitution')
-            data = DATAOPS_SALES_REMATCH_MODULE.applyCorrectedDetailsToViewRows({ viewRows: data, productData, substHistory });
+            data = DATAOPS_SALES_REMATCH_MODULE.applyCorrectedDetailsToViewRows({ viewRows: data, productData, substHistory, viewMode });
         // V1.a22.84: 재고/Lot 이슈카드는 탐색 전용이다.
         // 카드 선택 또는 Tab 이동 시 전체 상품을 그대로 유지하며, 검출대상 목록은 handleIssueJump에서만 사용한다.
         // 과거 상태값으로 reviewType=stockLot이 들어와도 행 필터링은 하지 않는다.
