@@ -1203,14 +1203,16 @@
       const engine = window.ShippingManagementEngine;
       const workbookTools = window.ShippingManagementWorkbook;
       const MAX_FILE_SIZE = 25 * 1024 * 1024;
-      const LOCAL_DB_NAME = "ONEAPPShippingManagementDB";
-      const LOCAL_DB_VERSION = 2;
+      const LOCAL_DB_NAME = "ONEAPPShippingRecoveryDB";
+      const LOCAL_DB_VERSION = 1;
       const LOCAL_STORE_NAME = "recoveryRecords";
+      const LEGACY_LOCAL_DB_NAME = "ONEAPPShippingManagementDB";
       const LEGACY_LOCAL_STORE_NAME = "workspaces";
       const LOCAL_RECOVERY_SCHEMA = "shipping-local-recovery/v2";
       const LOCAL_RECOVERY_LIMIT = 10;
       const LOCAL_POINTER_KEY = "oneapp.shipping.recovery.pointer.v1";
       const LOCAL_META_KEY = "oneapp.shipping.recovery.meta.v1";
+      const LEGACY_MIGRATION_KEY = "oneapp.shipping.recovery.legacy-migrated.v2";
       const TABLE_WIDTHS_KEY = "oneapp.shipping.table-widths.v1";
       const TABLE_WIDTHS_SCHEMA = "shipping-table-widths/v1";
       const HIDDEN_COLUMNS_KEY = "oneapp.orderops.hidden-columns.v1";
@@ -1229,6 +1231,7 @@
         specificationFilters: new Set(),
         loading: { orders: false, inventory: false },
         db: null,
+        legacyDb: null,
         recoveryRecord: null,
         recoveryRecords: [],
         selectedRecoveryId: "",
@@ -1390,6 +1393,22 @@
         });
       }
 
+      function openLegacyLocalDatabase() {
+        return new Promise((resolve, reject) => {
+          if (!window.indexedDB) return reject(new Error("IndexedDB를 사용할 수 없습니다."));
+          const request = window.indexedDB.open(LEGACY_LOCAL_DB_NAME);
+          request.onupgradeneeded = () => {
+            const db = request.result;
+            if (!db.objectStoreNames.contains(LEGACY_LOCAL_STORE_NAME)) {
+              const store = db.createObjectStore(LEGACY_LOCAL_STORE_NAME, { keyPath: "sourceFingerprint" });
+              store.createIndex("updatedAt", "updatedAt", { unique: false });
+            }
+          };
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error || new Error("기존 IndexedDB를 열지 못했습니다."));
+        });
+      }
+
       function createRecoveryRecordId(sourceFingerprint, updatedAt) {
         const suffix = window.crypto?.randomUUID
           ? window.crypto.randomUUID()
@@ -1479,18 +1498,40 @@
         await completed;
       }
 
+      function loadLegacyMigrationState() {
+        try {
+          const parsed = JSON.parse(localStorage.getItem(LEGACY_MIGRATION_KEY) || "{}");
+          return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+        } catch (error) {
+          return {};
+        }
+      }
+
+      function legacyRecordSignature(record) {
+        return `${record?.updatedAt || ""}:${record?.payloadSha256 || "legacy"}`;
+      }
+
+      function markLegacyMigration(record) {
+        const sourceFingerprint = String(record?.sourceFingerprint || "");
+        if (!sourceFingerprint) return;
+        const migrationState = loadLegacyMigrationState();
+        migrationState[sourceFingerprint] = legacyRecordSignature(record);
+        localStorage.setItem(LEGACY_MIGRATION_KEY, JSON.stringify(migrationState));
+      }
+
       async function migrateLegacyRecoveryRecords() {
-        if (!state.db?.objectStoreNames.contains(LEGACY_LOCAL_STORE_NAME)) return;
+        if (!state.legacyDb?.objectStoreNames.contains(LEGACY_LOCAL_STORE_NAME)) return;
         const legacyRecords = await idbRequest(
-          state.db.transaction(LEGACY_LOCAL_STORE_NAME, "readonly").objectStore(LEGACY_LOCAL_STORE_NAME).getAll(),
+          state.legacyDb.transaction(LEGACY_LOCAL_STORE_NAME, "readonly").objectStore(LEGACY_LOCAL_STORE_NAME).getAll(),
         );
         if (!legacyRecords.length) return;
+        const migrationState = loadLegacyMigrationState();
         const legacyPointer = localStorage.getItem(LOCAL_POINTER_KEY) || "";
         let migratedPointer = "";
         for (const legacySource of legacyRecords) {
           const legacy = engine.sanitizeCloudTokenKeys(legacySource);
           if (engine.containsCloudTokenKey(legacySource)) {
-            const sanitizeTransaction = state.db.transaction(LEGACY_LOCAL_STORE_NAME, "readwrite");
+            const sanitizeTransaction = state.legacyDb.transaction(LEGACY_LOCAL_STORE_NAME, "readwrite");
             const sanitized = idbTransactionDone(sanitizeTransaction);
             sanitizeTransaction.objectStore(LEGACY_LOCAL_STORE_NAME).put(legacy);
             await sanitized;
@@ -1504,6 +1545,7 @@
             state.recoveryCorruptionDetected = true;
             continue;
           }
+          if (migrationState[legacy.sourceFingerprint] === legacyRecordSignature(legacy)) continue;
           const migrated = await buildRecoveryRecord(workspace, {
             updatedAt: legacy.updatedAt,
             activePreview: legacy.ui?.activePreview,
@@ -1515,11 +1557,8 @@
           const reread = await readRecoveryRecord(migrated.recordId);
           const verification = await verifyRecoveryRecord(reread);
           if (!verification.valid) throw new Error(`기존 복구자료 이관 검산 실패: ${verification.reason}`);
+          await persistLegacyCompatibilityRecord(migrated);
           if (legacyPointer === legacy.sourceFingerprint) migratedPointer = migrated.recordId;
-          const transaction = state.db.transaction(LEGACY_LOCAL_STORE_NAME, "readwrite");
-          const completed = idbTransactionDone(transaction);
-          transaction.objectStore(LEGACY_LOCAL_STORE_NAME).delete(legacy.sourceFingerprint);
-          await completed;
         }
         if (migratedPointer) localStorage.setItem(LOCAL_POINTER_KEY, migratedPointer);
       }
@@ -1594,6 +1633,7 @@
       async function initializeLocalRecovery() {
         try {
           state.db = await openLocalDatabase();
+          state.legacyDb = await openLegacyLocalDatabase();
           const record = await refreshRecoveryRecords();
           if (state.recoveryCorruptionDetected || state.recoveryPointerOutdated) {
             localStorage.setItem(LOCAL_META_KEY, JSON.stringify({
@@ -1608,6 +1648,7 @@
           }
         } catch (error) {
           state.db = null;
+          state.legacyDb = null;
           localStorage.setItem(LOCAL_META_KEY, JSON.stringify({ status: "unavailable", message: String(error.message || error) }));
           elements.localSaveStatus.textContent = "LOCAL AUTO SAVE · 사용 불가";
           setSystemMessage("local recovery unavailable... (메모리 작업은 계속 가능)");
@@ -1619,10 +1660,54 @@
         const candidates = await Promise.all(records.map(verifyRecoveryRecord));
         const valid = candidates.filter((candidate) => candidate.valid)
           .sort((left, right) => recoveryTimestamp(right) - recoveryTimestamp(left));
-        const excessIds = valid.slice(LOCAL_RECOVERY_LIMIT)
+        const retained = valid.slice(0, LOCAL_RECOVERY_LIMIT);
+        const excess = valid.slice(LOCAL_RECOVERY_LIMIT);
+        const excessIds = excess
           .map((candidate) => candidate.record.recordId)
           .filter((recordId) => recordId !== activeRecordId);
         await deleteRecoveryRecordIds(excessIds);
+        const retainedSources = new Set(retained.map((candidate) => candidate.record.sourceFingerprint));
+        const prunedSources = [...new Set(excess
+          .map((candidate) => candidate.record.sourceFingerprint)
+          .filter((sourceFingerprint) => sourceFingerprint && !retainedSources.has(sourceFingerprint)))];
+        for (const sourceFingerprint of prunedSources) await deleteLegacyCompatibility(sourceFingerprint);
+      }
+
+      async function persistLegacyCompatibilityRecord(record) {
+        if (!state.legacyDb || !record?.payload?.workspace) return;
+        const compatibility = {
+          schemaVersion: "shipping-local-recovery/v1",
+          sourceFingerprint: record.sourceFingerprint,
+          workspaceSchemaVersion: record.payload.workspaceSchemaVersion,
+          updatedAt: record.updatedAt,
+          workspace: record.payload.workspace,
+          ui: record.payload.ui,
+          settings: record.payload.settings,
+          hashAlgorithm: record.hashAlgorithm,
+          payloadSha256: record.payloadSha256,
+          payload: record.payload,
+        };
+        if (engine.containsCloudTokenKey(compatibility)) {
+          throw new Error("구버전 호환 복구자료에는 Cloud token을 저장할 수 없습니다.");
+        }
+        const transaction = state.legacyDb.transaction(LEGACY_LOCAL_STORE_NAME, "readwrite");
+        const completed = idbTransactionDone(transaction);
+        await idbRequest(transaction.objectStore(LEGACY_LOCAL_STORE_NAME).put(compatibility));
+        await completed;
+        const reread = await idbRequest(
+          state.legacyDb.transaction(LEGACY_LOCAL_STORE_NAME, "readonly")
+            .objectStore(LEGACY_LOCAL_STORE_NAME).get(record.sourceFingerprint),
+        );
+        const actualHash = await sha256Hex(engine.canonicalStringify(reread?.payload));
+        if (
+          reread?.workspace?.sourceFingerprint !== record.sourceFingerprint ||
+          reread?.payloadSha256 !== record.payloadSha256 ||
+          actualHash !== record.payloadSha256 ||
+          engine.containsCloudTokenKey(reread)
+        ) {
+          throw new Error("구버전 호환 복구자료 검산에 실패했습니다.");
+        }
+        markLegacyMigration(reread);
       }
 
       async function persistLocalWorkspace(workspace = state.workspace, options = {}) {
@@ -1658,6 +1743,11 @@
             else localStorage.setItem(LOCAL_META_KEY, previousMeta);
           },
         });
+        try {
+          await persistLegacyCompatibilityRecord(record);
+        } catch (error) {
+          setSystemMessage("local recovery saved... (구버전 롤백 호환본 저장 실패)");
+        }
         await enforceRecoveryRetention(record.recordId);
         state.selectedRecoveryId = record.recordId;
         await refreshRecoveryRecords();
@@ -1699,15 +1789,20 @@
 
       async function clearLocalRecovery(showNotice = true) {
         if (state.db) {
-          const storeNames = [LOCAL_STORE_NAME, LEGACY_LOCAL_STORE_NAME]
-            .filter((storeName) => state.db.objectStoreNames.contains(storeName));
-          const transaction = state.db.transaction(storeNames, "readwrite");
+          const transaction = state.db.transaction(LOCAL_STORE_NAME, "readwrite");
           const completed = idbTransactionDone(transaction);
-          storeNames.forEach((storeName) => transaction.objectStore(storeName).clear());
+          transaction.objectStore(LOCAL_STORE_NAME).clear();
+          await completed;
+        }
+        if (state.legacyDb?.objectStoreNames.contains(LEGACY_LOCAL_STORE_NAME)) {
+          const transaction = state.legacyDb.transaction(LEGACY_LOCAL_STORE_NAME, "readwrite");
+          const completed = idbTransactionDone(transaction);
+          transaction.objectStore(LEGACY_LOCAL_STORE_NAME).clear();
           await completed;
         }
         localStorage.removeItem(LOCAL_POINTER_KEY);
         localStorage.removeItem(LOCAL_META_KEY);
+        localStorage.removeItem(LEGACY_MIGRATION_KEY);
         state.recoveryRecord = null;
         state.recoveryRecords = [];
         state.selectedRecoveryId = "";
@@ -1715,10 +1810,24 @@
         if (showNotice) showToast("로컬 복구 자료를 초기화했습니다.");
       }
 
+      async function deleteLegacyCompatibility(sourceFingerprint) {
+        if (!state.legacyDb?.objectStoreNames.contains(LEGACY_LOCAL_STORE_NAME) || !sourceFingerprint) return;
+        const transaction = state.legacyDb.transaction(LEGACY_LOCAL_STORE_NAME, "readwrite");
+        const completed = idbTransactionDone(transaction);
+        transaction.objectStore(LEGACY_LOCAL_STORE_NAME).delete(sourceFingerprint);
+        await completed;
+        const migrationState = loadLegacyMigrationState();
+        delete migrationState[sourceFingerprint];
+        localStorage.setItem(LEGACY_MIGRATION_KEY, JSON.stringify(migrationState));
+      }
+
       async function deleteSelectedRecovery() {
         const candidate = selectedRecoveryCandidate();
         if (!candidate?.record?.recordId) return;
         await deleteRecoveryRecordIds([candidate.record.recordId]);
+        if (candidate.record.recordId.startsWith("legacy:")) {
+          await deleteLegacyCompatibility(candidate.record.sourceFingerprint);
+        }
         state.selectedRecoveryId = "";
         await refreshRecoveryRecords();
         showToast("선택한 로컬 복구자료를 삭제했습니다.");
