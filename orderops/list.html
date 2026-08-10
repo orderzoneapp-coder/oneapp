@@ -454,15 +454,56 @@
     }
 
     /* =========================================================
-       Recovery / cloud settings
+       Recovery / cloud settings modal
        ========================================================= */
+    body.settings-modal-open { overflow: hidden; }
+    .settings-modal {
+      position: fixed;
+      inset: 0;
+      z-index: 80;
+      display: grid;
+      place-items: center;
+      padding: 18px;
+      background: rgba(2, 6, 23, .72);
+    }
+    .settings-modal.hidden { display: none; }
     .workspace-storage {
-      padding: 9px 11px 11px;
-      border-top: 1px solid #334155;
+      width: min(920px, 100%);
+      max-height: min(760px, calc(100vh - 36px));
+      overflow: auto;
+      border: 1px solid #475569;
+      border-radius: 8px;
       color: var(--slate-200);
       background: #172033;
+      box-shadow: 0 24px 64px rgba(2, 6, 23, .5);
     }
-    .workspace-storage.is-open { display: block !important; }
+    .settings-modal-header {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px 14px;
+      border-bottom: 1px solid #334155;
+      background: #111827;
+    }
+    .settings-modal-header h2 { margin: 0; font-size: 15px; }
+    .settings-close-button {
+      min-width: 34px;
+      min-height: 30px;
+      border: 1px solid #475569;
+      border-radius: 4px;
+      color: #e2e8f0;
+      background: #0f172a;
+      font-weight: 900;
+    }
+    .settings-section { padding: 12px 14px; border-bottom: 1px solid #334155; }
+    .settings-section:last-child { border-bottom: 0; }
+    .settings-section h3 { margin: 0 0 8px; font-size: 12px; }
+    .storage-status-inline { display: inline-flex; align-items: center; gap: 6px; }
+    .storage-status-divider { color: #64748b; }
     .recovery-banner {
       display: flex;
       align-items: center;
@@ -493,7 +534,7 @@
     .cloud-grid button:disabled { color: #64748b; cursor: not-allowed; }
     .cloud-grid {
       display: grid;
-      grid-template-columns: minmax(220px, 1.6fr) minmax(150px, 1fr) minmax(130px, .8fr) auto auto minmax(190px, 1.2fr) auto auto;
+      grid-template-columns: minmax(260px, 1.7fr) minmax(180px, 1fr) minmax(160px, .8fr);
       align-items: end;
       gap: 6px;
     }
@@ -506,7 +547,39 @@
     }
     .cloud-grid input,
     .cloud-grid select { width: 100%; padding: 0 7px; }
+    .cloud-actions { display: flex; flex-wrap: wrap; gap: 6px; grid-column: 1 / -1; }
+    .cloud-actions button { min-width: 110px; }
+    .cloud-revision-field { grid-column: 1 / span 2; }
+    .recovery-record-list { display: grid; gap: 6px; margin-top: 8px; }
+    .recovery-record-item {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      align-items: center;
+      gap: 8px;
+      padding: 8px;
+      border: 1px solid #334155;
+      border-radius: 5px;
+      background: #0f172a;
+      font-size: 10px;
+    }
+    .recovery-record-item.is-corrupt { border-color: #b91c1c; color: #fecaca; }
+    .recovery-record-item small { color: #94a3b8; }
+    .recovery-record-status { font-weight: 900; }
     .storage-note { margin: 6px 0 0; color: #94a3b8; font-size: 9px; line-height: 1.4; }
+    .notice-link {
+      width: 100%;
+      padding: 0;
+      border: 0;
+      color: #0f766e;
+      background: transparent;
+      text-align: left;
+      white-space: pre-wrap;
+      cursor: pointer;
+    }
+    .notice-link:hover { text-decoration: underline; }
+    .notice-text { white-space: pre-wrap; }
+    .notice-acknowledgement { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+    tr.notice-target td { outline: 2px solid #14b8a6; outline-offset: -2px; }
 
     /* =========================================================
        Results / table tools - current v1.7 features retained
@@ -861,7 +934,8 @@
       .data-source-label { flex-basis: 78px; }
       .source-selector-heading { flex-basis: 98px; min-width: 98px; }
       .operator-note-copy p:last-child { display: none; }
-      .cloud-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+      .cloud-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .cloud-revision-field { grid-column: auto; }
     }
     @media (max-width: 900px) {
       .input-panel {
@@ -908,6 +982,12 @@
       .download-button { flex: 1 1 150px; }
       .table-wrap { max-height: calc(100vh - 350px); }
       .page-footer { flex-direction: column; gap: 4px; }
+      .settings-modal { padding: 8px; }
+      .workspace-storage { max-height: calc(100vh - 16px); }
+      .cloud-grid { grid-template-columns: 1fr; }
+      .cloud-revision-field, .cloud-actions { grid-column: auto; }
+      .recovery-record-item { grid-template-columns: auto 1fr; }
+      .recovery-record-status { grid-column: 2; }
     }
   </style>
 </head>
@@ -928,7 +1008,7 @@
       <button class="header-link" id="headerRestoreButton" type="button" aria-label="이전 작업 복구">
         <span aria-hidden="true">↻</span><span>작업 복구</span>
       </button>
-      <button class="header-link" id="headerSettingsButton" type="button" aria-expanded="false" aria-controls="workspaceStorage">
+      <button class="header-link" id="headerSettingsButton" type="button" aria-expanded="false" aria-controls="settingsModal">
         <span aria-hidden="true">⚙</span><span>환경설정</span>
       </button>
     </div>
@@ -942,7 +1022,11 @@
           <span class="system-message" id="systemMessage">waiting for data_blocks... (주문/재고 Excel을 선택하세요)</span>
           <span class="system-cursor" aria-hidden="true"></span>
         </div>
-        <div class="system-mode"><strong>LOCAL AUTO SAVE</strong> · cloud explicit</div>
+        <div class="system-mode storage-status-inline">
+          <strong id="localSaveStatus">LOCAL AUTO SAVE 준비</strong>
+          <span class="storage-status-divider">·</span>
+          <span id="cloudStatus">Cloud 수동 확정 · 미연결</span>
+        </div>
       </div>
 
       <section class="panel input-panel" aria-label="입력 파일">
@@ -1005,25 +1089,6 @@
         </div>
       </section>
 
-      <section class="workspace-storage hidden" id="workspaceStorage" aria-label="발주계획 저장과 복구">
-        <div class="recovery-banner hidden" id="recoveryBanner">
-          <span id="recoveryMessage">복구 가능한 로컬 발주계획이 있습니다.</span>
-          <button type="button" id="restoreButton">복구</button>
-          <button type="button" id="replaceRecoveryButton" disabled>현재 파일로 교체</button>
-          <button type="button" id="discardRecoveryButton">초기화</button>
-        </div>
-        <div class="cloud-grid">
-          <label>Cloud URL<input id="cloudUrlInput" type="url" autocomplete="off" placeholder="Apps Script /exec URL"></label>
-          <label>전용 Token<input id="cloudTokenInput" type="password" autocomplete="off" placeholder="Shipping 전용 토큰"></label>
-          <label>저장자/담당<input id="cloudSavedByInput" type="text" autocomplete="off" placeholder="이름 또는 담당"></label>
-          <button type="button" id="cloudListButton">Cloud 목록</button>
-          <button type="button" id="cloudSaveButton" disabled>Cloud 저장</button>
-          <select id="cloudRevisionSelect" aria-label="클라우드 발주계획 revision"><option value="">저장 이력 선택</option></select>
-          <button type="button" id="cloudLoadButton" disabled>선택 불러오기</button>
-          <button type="button" id="localResetButton">로컬 초기화</button>
-        </div>
-        <p class="storage-note">로컬 자동저장은 IndexedDB 복구용이며 클라우드로 자동 전송하지 않습니다. Cloud 저장 버튼을 눌러 확정한 revision만 다른 PC에서 조회됩니다.</p>
-      </section>
     </section>
 
     <section class="panel results-panel hidden" id="resultsPanel" aria-label="분석 결과 상세">
@@ -1078,6 +1143,54 @@
     </footer>
   </main>
 
+  <div class="settings-modal hidden" id="settingsModal" role="presentation">
+    <section class="workspace-storage" id="workspaceStorage" role="dialog" aria-modal="true"
+      aria-labelledby="settingsModalTitle" aria-describedby="settingsModalDescription">
+      <header class="settings-modal-header">
+        <div>
+          <h2 id="settingsModalTitle">OrderOps 환경설정</h2>
+          <p class="storage-note" id="settingsModalDescription">저장·복구와 Cloud 수동 revision을 관리합니다.</p>
+        </div>
+        <button class="settings-close-button" id="settingsCloseButton" type="button" aria-label="환경설정 닫기">×</button>
+      </header>
+
+      <section class="settings-section" data-settings-section="recovery">
+        <h3>로컬 자동저장·복구</h3>
+        <div class="recovery-banner hidden" id="recoveryBanner">
+          <span id="recoveryMessage">복구 가능한 로컬 발주계획이 있습니다.</span>
+          <button type="button" id="restoreButton">선택 복구</button>
+          <button type="button" id="replaceRecoveryButton" disabled>현재 파일로 교체</button>
+        </div>
+        <div class="recovery-record-list" id="recoveryRecordList" aria-label="로컬 복구 자료 목록"></div>
+        <div class="cloud-actions">
+          <button type="button" id="discardRecoveryButton" disabled>선택 삭제</button>
+          <button type="button" id="localResetButton">전체 초기화</button>
+        </div>
+        <p class="storage-note" id="recoveryPolicyText">정상 복구자료는 최근 10개까지 보관합니다. 새 자료의 저장·재읽기·SHA-256 검산과 포인터 전환이 끝난 뒤에만 오래된 정상본을 정리합니다.</p>
+      </section>
+
+      <section class="settings-section" data-settings-section="cloud">
+        <h3>Cloud 수동 확정 revision</h3>
+        <div class="cloud-grid">
+          <label>Cloud URL<input id="cloudUrlInput" type="url" autocomplete="off" placeholder="Apps Script /exec URL"></label>
+          <label>전용 Token<input id="cloudTokenInput" type="password" autocomplete="off" placeholder="Shipping 전용 토큰"></label>
+          <label>저장자/담당<input id="cloudSavedByInput" type="text" autocomplete="off" placeholder="이름 또는 담당"></label>
+          <label class="cloud-revision-field">Cloud revision
+            <select id="cloudRevisionSelect" aria-label="클라우드 발주계획 revision"><option value="">저장 이력 선택</option></select>
+          </label>
+          <div class="cloud-actions">
+            <button type="button" id="cloudListButton">Cloud 목록</button>
+            <button type="button" id="cloudSaveButton" disabled>Cloud 수동 저장</button>
+            <button type="button" id="cloudLoadButton" disabled>선택 revision 불러오기</button>
+          </div>
+        </div>
+        <p class="storage-note">Cloud는 관리자 수동 확정본만 저장하며 자동 전송하지 않습니다. Token은 메모리에만 유지되고 로컬 복구자료·workspace·Cloud revision payload에 직렬화되지 않습니다.</p>
+      </section>
+
+      <div id="settingsExtensionSlot" hidden data-settings-extension-slot="future"></div>
+    </section>
+  </div>
+
   <div class="toast hidden" id="toast" role="status" aria-live="polite"></div>
   <div class="print-area" id="printArea" aria-hidden="true"></div>
 
@@ -1090,18 +1203,23 @@
       const engine = window.ShippingManagementEngine;
       const workbookTools = window.ShippingManagementWorkbook;
       const MAX_FILE_SIZE = 25 * 1024 * 1024;
-      const LOCAL_DB_NAME = "ONEAPPShippingManagementDB";
+      const LOCAL_DB_NAME = "ONEAPPShippingRecoveryDB";
       const LOCAL_DB_VERSION = 1;
-      const LOCAL_STORE_NAME = "workspaces";
+      const LOCAL_STORE_NAME = "recoveryRecords";
+      const LEGACY_LOCAL_DB_NAME = "ONEAPPShippingManagementDB";
+      const LEGACY_LOCAL_STORE_NAME = "workspaces";
+      const LOCAL_RECOVERY_SCHEMA = "shipping-local-recovery/v2";
+      const LOCAL_RECOVERY_LIMIT = 10;
       const LOCAL_POINTER_KEY = "oneapp.shipping.recovery.pointer.v1";
       const LOCAL_META_KEY = "oneapp.shipping.recovery.meta.v1";
+      const LEGACY_MIGRATION_KEY = "oneapp.shipping.recovery.legacy-migrated.v2";
       const TABLE_WIDTHS_KEY = "oneapp.shipping.table-widths.v1";
       const TABLE_WIDTHS_SCHEMA = "shipping-table-widths/v1";
       const HIDDEN_COLUMNS_KEY = "oneapp.orderops.hidden-columns.v1";
       const HIDDEN_COLUMNS_SCHEMA = "orderops-hidden-columns/v1";
       const TABLE_WIDTH_MIN = 48;
       const TABLE_WIDTH_MAX = 720;
-      const TABLE_WIDTH_TABS = new Set(["validation", "inventory", "allocations"]);
+      const TABLE_WIDTH_TABS = new Set(["validation", "inventory", "allocations", "notices"]);
       const CLOUD_PLAN_SCHEMA = "ONEAPP_SHIPPING_PURCHASE_PLAN_V1";
       const state = {
         orders: null,
@@ -1113,8 +1231,12 @@
         specificationFilters: new Set(),
         loading: { orders: false, inventory: false },
         db: null,
+        legacyDb: null,
         recoveryRecord: null,
+        recoveryRecords: [],
+        selectedRecoveryId: "",
         recoveryCorruptionDetected: false,
+        recoveryPointerOutdated: false,
         cloudRevisions: [],
         columnWidthSettings: { schemaVersion: TABLE_WIDTHS_SCHEMA, tabs: Object.create(null) },
         columnWidthDrafts: Object.create(null),
@@ -1156,6 +1278,7 @@
         purchaseUploadButton: document.getElementById("purchaseUploadButton"),
         recoveryBanner: document.getElementById("recoveryBanner"),
         recoveryMessage: document.getElementById("recoveryMessage"),
+        recoveryRecordList: document.getElementById("recoveryRecordList"),
         restoreButton: document.getElementById("restoreButton"),
         replaceRecoveryButton: document.getElementById("replaceRecoveryButton"),
         discardRecoveryButton: document.getElementById("discardRecoveryButton"),
@@ -1168,6 +1291,10 @@
         cloudRevisionSelect: document.getElementById("cloudRevisionSelect"),
         cloudLoadButton: document.getElementById("cloudLoadButton"),
         systemMessage: document.getElementById("systemMessage"),
+        localSaveStatus: document.getElementById("localSaveStatus"),
+        cloudStatus: document.getElementById("cloudStatus"),
+        settingsModal: document.getElementById("settingsModal"),
+        settingsCloseButton: document.getElementById("settingsCloseButton"),
         workspaceStorage: document.getElementById("workspaceStorage"),
         headerRestoreButton: document.getElementById("headerRestoreButton"),
         headerSettingsButton: document.getElementById("headerSettingsButton"),
@@ -1242,7 +1369,7 @@
           request.onupgradeneeded = () => {
             const db = request.result;
             if (!db.objectStoreNames.contains(LOCAL_STORE_NAME)) {
-              const store = db.createObjectStore(LOCAL_STORE_NAME, { keyPath: "sourceFingerprint" });
+              const store = db.createObjectStore(LOCAL_STORE_NAME, { keyPath: "recordId" });
               store.createIndex("updatedAt", "updatedAt", { unique: false });
             }
           };
@@ -1258,122 +1385,404 @@
         });
       }
 
-      function validRecoveryRecord(record) {
-        return Boolean(
-          record &&
-          record.schemaVersion === "shipping-local-recovery/v1" &&
-          /^[a-f0-9]{64}$/.test(String(record.sourceFingerprint || "")) &&
-          record.workspace?.schemaVersion === engine.WORKSPACE_SCHEMA_VERSION &&
-          record.workspace.sourceFingerprint === record.sourceFingerprint,
+      function idbTransactionDone(transaction) {
+        return new Promise((resolve, reject) => {
+          transaction.oncomplete = () => resolve();
+          transaction.onerror = () => reject(transaction.error || new Error("IndexedDB transaction에 실패했습니다."));
+          transaction.onabort = () => reject(transaction.error || new Error("IndexedDB transaction이 중단되었습니다."));
+        });
+      }
+
+      function openLegacyLocalDatabase() {
+        return new Promise((resolve, reject) => {
+          if (!window.indexedDB) return reject(new Error("IndexedDB를 사용할 수 없습니다."));
+          const request = window.indexedDB.open(LEGACY_LOCAL_DB_NAME);
+          request.onupgradeneeded = () => {
+            const db = request.result;
+            if (!db.objectStoreNames.contains(LEGACY_LOCAL_STORE_NAME)) {
+              const store = db.createObjectStore(LEGACY_LOCAL_STORE_NAME, { keyPath: "sourceFingerprint" });
+              store.createIndex("updatedAt", "updatedAt", { unique: false });
+            }
+          };
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error || new Error("기존 IndexedDB를 열지 못했습니다."));
+        });
+      }
+
+      function createRecoveryRecordId(sourceFingerprint, updatedAt) {
+        const suffix = window.crypto?.randomUUID
+          ? window.crypto.randomUUID()
+          : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+        return `${sourceFingerprint}:${String(updatedAt).replace(/[^0-9]/g, "")}:${suffix}`;
+      }
+
+      async function buildRecoveryRecord(workspace, options = {}) {
+        const updatedAt = options.updatedAt || new Date().toISOString();
+        const payload = engine.buildLocalRecoveryPayload(
+          workspace,
+          { activePreview: options.activePreview || state.activePreview },
+          {
+            cloudUrl: options.cloudUrl ?? elements.cloudUrlInput.value,
+            savedBy: options.savedBy ?? elements.cloudSavedByInput.value,
+          },
+          updatedAt,
         );
+        const canonicalJson = engine.canonicalStringify(payload);
+        return {
+          schemaVersion: LOCAL_RECOVERY_SCHEMA,
+          recordId: createRecoveryRecordId(payload.sourceFingerprint, payload.updatedAt),
+          sourceFingerprint: payload.sourceFingerprint,
+          updatedAt: payload.updatedAt,
+          hashAlgorithm: "SHA-256",
+          payloadSha256: await sha256Hex(canonicalJson),
+          payload,
+        };
+      }
+
+      async function verifyRecoveryRecord(record) {
+        try {
+          if (
+            !record ||
+            record.schemaVersion !== LOCAL_RECOVERY_SCHEMA ||
+            !record.recordId ||
+            record.hashAlgorithm !== "SHA-256" ||
+            !/^[a-f0-9]{64}$/.test(String(record.sourceFingerprint || "")) ||
+            !/^[a-f0-9]{64}$/.test(String(record.payloadSha256 || "")) ||
+            record.payload?.schemaVersion !== "shipping-local-recovery-payload/v2" ||
+            record.payload?.workspace?.schemaVersion !== engine.WORKSPACE_SCHEMA_VERSION ||
+            record.payload.sourceFingerprint !== record.sourceFingerprint ||
+            record.payload.workspace.sourceFingerprint !== record.sourceFingerprint ||
+            record.payload.updatedAt !== record.updatedAt ||
+            engine.containsCloudTokenKey(record)
+          ) {
+            throw new Error("복구자료 구조 또는 token 비저장 계약이 올바르지 않습니다.");
+          }
+          const actualHash = await sha256Hex(engine.canonicalStringify(record.payload));
+          if (actualHash !== record.payloadSha256) {
+            throw new Error("복구자료 SHA-256이 일치하지 않습니다.");
+          }
+          return { valid: true, record, reason: "" };
+        } catch (error) {
+          return { valid: false, record, reason: String(error.message || error) };
+        }
+      }
+
+      async function putRecoveryRecord(record) {
+        const transaction = state.db.transaction(LOCAL_STORE_NAME, "readwrite");
+        const completed = idbTransactionDone(transaction);
+        await idbRequest(transaction.objectStore(LOCAL_STORE_NAME).put(record));
+        await completed;
+      }
+
+      async function readRecoveryRecord(recordId) {
+        if (!state.db || !recordId) return null;
+        return idbRequest(
+          state.db.transaction(LOCAL_STORE_NAME, "readonly").objectStore(LOCAL_STORE_NAME).get(recordId),
+        );
+      }
+
+      async function getAllRecoveryRecords() {
+        if (!state.db) return [];
+        return idbRequest(
+          state.db.transaction(LOCAL_STORE_NAME, "readonly").objectStore(LOCAL_STORE_NAME).getAll(),
+        );
+      }
+
+      async function deleteRecoveryRecordIds(recordIds) {
+        const ids = [...new Set((recordIds || []).filter(Boolean))];
+        if (!state.db || ids.length === 0) return;
+        const transaction = state.db.transaction(LOCAL_STORE_NAME, "readwrite");
+        const completed = idbTransactionDone(transaction);
+        const store = transaction.objectStore(LOCAL_STORE_NAME);
+        ids.forEach((recordId) => store.delete(recordId));
+        await completed;
+      }
+
+      function loadLegacyMigrationState() {
+        try {
+          const parsed = JSON.parse(localStorage.getItem(LEGACY_MIGRATION_KEY) || "{}");
+          return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+        } catch (error) {
+          return {};
+        }
+      }
+
+      function legacyRecordSignature(record) {
+        return `${record?.updatedAt || ""}:${record?.payloadSha256 || "legacy"}`;
+      }
+
+      function markLegacyMigration(record) {
+        const sourceFingerprint = String(record?.sourceFingerprint || "");
+        if (!sourceFingerprint) return;
+        const migrationState = loadLegacyMigrationState();
+        migrationState[sourceFingerprint] = legacyRecordSignature(record);
+        localStorage.setItem(LEGACY_MIGRATION_KEY, JSON.stringify(migrationState));
+      }
+
+      async function migrateLegacyRecoveryRecords() {
+        if (!state.legacyDb?.objectStoreNames.contains(LEGACY_LOCAL_STORE_NAME)) return;
+        const legacyRecords = await idbRequest(
+          state.legacyDb.transaction(LEGACY_LOCAL_STORE_NAME, "readonly").objectStore(LEGACY_LOCAL_STORE_NAME).getAll(),
+        );
+        if (!legacyRecords.length) return;
+        const migrationState = loadLegacyMigrationState();
+        const legacyPointer = localStorage.getItem(LOCAL_POINTER_KEY) || "";
+        let migratedPointer = "";
+        for (const legacySource of legacyRecords) {
+          const legacy = engine.sanitizeCloudTokenKeys(legacySource);
+          if (engine.containsCloudTokenKey(legacySource)) {
+            const sanitizeTransaction = state.legacyDb.transaction(LEGACY_LOCAL_STORE_NAME, "readwrite");
+            const sanitized = idbTransactionDone(sanitizeTransaction);
+            sanitizeTransaction.objectStore(LEGACY_LOCAL_STORE_NAME).put(legacy);
+            await sanitized;
+          }
+          const workspace = legacy?.workspace;
+          if (
+            legacy?.schemaVersion !== "shipping-local-recovery/v1" ||
+            workspace?.schemaVersion !== engine.WORKSPACE_SCHEMA_VERSION ||
+            workspace?.sourceFingerprint !== legacy?.sourceFingerprint
+          ) {
+            state.recoveryCorruptionDetected = true;
+            continue;
+          }
+          if (migrationState[legacy.sourceFingerprint] === legacyRecordSignature(legacy)) continue;
+          const migrated = await buildRecoveryRecord(workspace, {
+            updatedAt: legacy.updatedAt,
+            activePreview: legacy.ui?.activePreview,
+            cloudUrl: legacy.settings?.cloudUrl,
+            savedBy: legacy.settings?.savedBy,
+          });
+          migrated.recordId = `legacy:${migrated.sourceFingerprint}:${String(migrated.updatedAt).replace(/[^0-9]/g, "")}`;
+          await putRecoveryRecord(migrated);
+          const reread = await readRecoveryRecord(migrated.recordId);
+          const verification = await verifyRecoveryRecord(reread);
+          if (!verification.valid) throw new Error(`기존 복구자료 이관 검산 실패: ${verification.reason}`);
+          await persistLegacyCompatibilityRecord(migrated);
+          if (legacyPointer === legacy.sourceFingerprint) migratedPointer = migrated.recordId;
+        }
+        if (migratedPointer) localStorage.setItem(LOCAL_POINTER_KEY, migratedPointer);
+      }
+
+      function recoveryTimestamp(candidate) {
+        const timestamp = Date.parse(candidate?.record?.updatedAt || "");
+        return Number.isFinite(timestamp) ? timestamp : 0;
       }
 
       async function findRecoveryRecord() {
         if (!state.db) return null;
         state.recoveryCorruptionDetected = false;
+        state.recoveryPointerOutdated = false;
+        await migrateLegacyRecoveryRecords();
+        const legacyCorruptionDetected = state.recoveryCorruptionDetected;
+        const records = await getAllRecoveryRecords();
+        const candidates = await Promise.all(records.map(verifyRecoveryRecord));
         const pointer = localStorage.getItem(LOCAL_POINTER_KEY) || "";
-        if (pointer) {
-          const pointed = await idbRequest(
-            state.db.transaction(LOCAL_STORE_NAME, "readonly").objectStore(LOCAL_STORE_NAME).get(pointer),
-          );
-          if (validRecoveryRecord(pointed)) return pointed;
-          state.recoveryCorruptionDetected = true;
-        }
-        const records = await idbRequest(
-          state.db.transaction(LOCAL_STORE_NAME, "readonly").objectStore(LOCAL_STORE_NAME).getAll(),
-        );
-        return records
-          .filter(validRecoveryRecord)
-          .sort((left, right) => String(right.updatedAt).localeCompare(String(left.updatedAt)))[0] || null;
+        const selection = engine.selectLatestVerifiedRecovery(candidates, pointer);
+        state.recoveryCorruptionDetected = legacyCorruptionDetected || selection.corruptionDetected;
+        state.recoveryPointerOutdated = selection.pointerOutdated;
+        state.recoveryRecords = selection.candidates;
+        return selection.selected;
+      }
+
+      function selectedRecoveryCandidate() {
+        return state.recoveryRecords.find((candidate) => candidate.record?.recordId === state.selectedRecoveryId) || null;
       }
 
       function renderRecoveryBanner(record) {
         state.recoveryRecord = record || null;
+        if (!state.selectedRecoveryId || !state.recoveryRecords.some((candidate) => candidate.record?.recordId === state.selectedRecoveryId)) {
+          state.selectedRecoveryId = record?.recordId || state.recoveryRecords[0]?.record?.recordId || "";
+        }
+        const selected = selectedRecoveryCandidate();
         elements.recoveryBanner.classList.toggle("hidden", !record);
-        if (!record) return;
-        const fileNames = [record.workspace?.sourceFiles?.orders?.fileName, record.workspace?.sourceFiles?.inventory?.fileName]
-          .filter(Boolean)
-          .join(" / ");
-        elements.recoveryMessage.textContent =
-          `로컬 복구 가능 · ${record.workspace?.basisDate || "기준일 없음"} · ${fileNames || "원본 메타 없음"} · ${record.updatedAt}`;
+        if (record) {
+          const workspace = record.payload?.workspace;
+          const fileNames = [workspace?.sourceFiles?.orders?.fileName, workspace?.sourceFiles?.inventory?.fileName]
+            .filter(Boolean)
+            .join(" / ");
+          elements.recoveryMessage.textContent =
+            `최신 정상본 · ${workspace?.basisDate || "기준일 없음"} · ${fileNames || "원본 메타 없음"} · ${record.updatedAt}`;
+        }
+        elements.recoveryRecordList.innerHTML = state.recoveryRecords.length
+          ? state.recoveryRecords.map((candidate) => {
+              const item = candidate.record || {};
+              const workspace = item.payload?.workspace;
+              const label = [workspace?.basisDate || "기준일 없음", workspace?.sourceFiles?.orders?.fileName || "원본 없음", item.updatedAt || "시각 없음"].join(" · ");
+              return `<label class="recovery-record-item ${candidate.valid ? "" : "is-corrupt"}">
+                <input type="radio" name="recoveryRecord" value="${escapeHtml(item.recordId || "")}" ${item.recordId === state.selectedRecoveryId ? "checked" : ""}>
+                <span>${escapeHtml(label)}<br><small>${escapeHtml(item.recordId || "식별자 없음")}</small></span>
+                <span class="recovery-record-status">${candidate.valid ? "정상" : `차단 · ${escapeHtml(candidate.reason)}`}</span>
+              </label>`;
+            }).join("")
+          : '<p class="storage-note">보관된 로컬 복구자료가 없습니다.</p>';
+        elements.restoreButton.disabled = !selected?.valid;
+        elements.discardRecoveryButton.disabled = !selected?.record?.recordId;
+        elements.localSaveStatus.textContent = record
+          ? `LOCAL AUTO SAVE · ${new Date(record.updatedAt).toLocaleString("ko-KR")}`
+          : "LOCAL AUTO SAVE · 정상본 없음";
+      }
+
+      async function refreshRecoveryRecords() {
+        const record = await findRecoveryRecord();
+        if (record) localStorage.setItem(LOCAL_POINTER_KEY, record.recordId);
+        else localStorage.removeItem(LOCAL_POINTER_KEY);
+        renderRecoveryBanner(record);
+        return record;
       }
 
       async function initializeLocalRecovery() {
         try {
           state.db = await openLocalDatabase();
-          const record = await findRecoveryRecord();
-          if (state.recoveryCorruptionDetected) {
-            localStorage.removeItem(LOCAL_POINTER_KEY);
+          state.legacyDb = await openLegacyLocalDatabase();
+          const record = await refreshRecoveryRecords();
+          if (state.recoveryCorruptionDetected || state.recoveryPointerOutdated) {
             localStorage.setItem(LOCAL_META_KEY, JSON.stringify({
               status: record ? "fallback" : "corrupt",
+              recordId: record?.recordId || "",
               sourceFingerprint: record?.sourceFingerprint || "",
               checkedAt: new Date().toISOString(),
             }));
             setSystemMessage(record
-              ? "local recovery fallback ready... (손상 포인터 제외)"
+              ? "local recovery fallback ready... (최신 정상 SHA-256 선택)"
               : "local recovery corrupt... (새 분석은 계속 가능)");
           }
-          renderRecoveryBanner(record);
         } catch (error) {
           state.db = null;
-          localStorage.removeItem(LOCAL_POINTER_KEY);
+          state.legacyDb = null;
           localStorage.setItem(LOCAL_META_KEY, JSON.stringify({ status: "unavailable", message: String(error.message || error) }));
+          elements.localSaveStatus.textContent = "LOCAL AUTO SAVE · 사용 불가";
           setSystemMessage("local recovery unavailable... (메모리 작업은 계속 가능)");
         }
       }
 
-      async function persistLocalWorkspace() {
-        if (!state.db || !state.workspace?.sourceFingerprint) return;
-        const record = {
+      async function enforceRecoveryRetention(activeRecordId) {
+        const records = await getAllRecoveryRecords();
+        const candidates = await Promise.all(records.map(verifyRecoveryRecord));
+        const valid = candidates.filter((candidate) => candidate.valid)
+          .sort((left, right) => recoveryTimestamp(right) - recoveryTimestamp(left));
+        const retained = valid.slice(0, LOCAL_RECOVERY_LIMIT);
+        const excess = valid.slice(LOCAL_RECOVERY_LIMIT);
+        const excessIds = excess
+          .map((candidate) => candidate.record.recordId)
+          .filter((recordId) => recordId !== activeRecordId);
+        await deleteRecoveryRecordIds(excessIds);
+        const retainedSources = new Set(retained.map((candidate) => candidate.record.sourceFingerprint));
+        const prunedSources = [...new Set(excess
+          .map((candidate) => candidate.record.sourceFingerprint)
+          .filter((sourceFingerprint) => sourceFingerprint && !retainedSources.has(sourceFingerprint)))];
+        for (const sourceFingerprint of prunedSources) await deleteLegacyCompatibility(sourceFingerprint);
+      }
+
+      async function persistLegacyCompatibilityRecord(record) {
+        if (!state.legacyDb || !record?.payload?.workspace) return;
+        const compatibility = {
           schemaVersion: "shipping-local-recovery/v1",
-          sourceFingerprint: state.workspace.sourceFingerprint,
-          workspaceSchemaVersion: state.workspace.schemaVersion,
-          updatedAt: new Date().toISOString(),
-          workspace: state.workspace,
-          ui: { activePreview: state.activePreview },
-          settings: {
-            cloudUrl: elements.cloudUrlInput.value.trim(),
-            cloudToken: elements.cloudTokenInput.value,
-            savedBy: elements.cloudSavedByInput.value.trim(),
-          },
-        };
-        const transaction = state.db.transaction(LOCAL_STORE_NAME, "readwrite");
-        await idbRequest(transaction.objectStore(LOCAL_STORE_NAME).put(record));
-        localStorage.setItem(LOCAL_POINTER_KEY, record.sourceFingerprint);
-        localStorage.setItem(LOCAL_META_KEY, JSON.stringify({
-          schemaVersion: record.schemaVersion,
           sourceFingerprint: record.sourceFingerprint,
-          planId: state.workspace.planId,
-          basisDate: state.workspace.basisDate,
+          workspaceSchemaVersion: record.payload.workspaceSchemaVersion,
           updatedAt: record.updatedAt,
-        }));
-        renderRecoveryBanner(null);
+          workspace: record.payload.workspace,
+          ui: record.payload.ui,
+          settings: record.payload.settings,
+          hashAlgorithm: record.hashAlgorithm,
+          payloadSha256: record.payloadSha256,
+          payload: record.payload,
+        };
+        if (engine.containsCloudTokenKey(compatibility)) {
+          throw new Error("구버전 호환 복구자료에는 Cloud token을 저장할 수 없습니다.");
+        }
+        const transaction = state.legacyDb.transaction(LEGACY_LOCAL_STORE_NAME, "readwrite");
+        const completed = idbTransactionDone(transaction);
+        await idbRequest(transaction.objectStore(LEGACY_LOCAL_STORE_NAME).put(compatibility));
+        await completed;
+        const reread = await idbRequest(
+          state.legacyDb.transaction(LEGACY_LOCAL_STORE_NAME, "readonly")
+            .objectStore(LEGACY_LOCAL_STORE_NAME).get(record.sourceFingerprint),
+        );
+        const actualHash = await sha256Hex(engine.canonicalStringify(reread?.payload));
+        if (
+          reread?.workspace?.sourceFingerprint !== record.sourceFingerprint ||
+          reread?.payloadSha256 !== record.payloadSha256 ||
+          actualHash !== record.payloadSha256 ||
+          engine.containsCloudTokenKey(reread)
+        ) {
+          throw new Error("구버전 호환 복구자료 검산에 실패했습니다.");
+        }
+        markLegacyMigration(reread);
+      }
+
+      async function persistLocalWorkspace(workspace = state.workspace, options = {}) {
+        if (!state.db || !workspace?.sourceFingerprint) return null;
+        const previousMeta = localStorage.getItem(LOCAL_META_KEY);
+        const record = await buildRecoveryRecord(workspace, options);
+        await engine.commitVerifiedRecoveryRecord(record, {
+          getPointer: () => localStorage.getItem(LOCAL_POINTER_KEY) || "",
+          putRecord: putRecoveryRecord,
+          readRecord: readRecoveryRecord,
+          verifyRecord: verifyRecoveryRecord,
+          deleteRecord: (recordId) => deleteRecoveryRecordIds([recordId]),
+          setPointer: (recordId) => {
+            localStorage.setItem(LOCAL_POINTER_KEY, recordId);
+            localStorage.setItem(LOCAL_META_KEY, JSON.stringify({
+              schemaVersion: record.schemaVersion,
+              recordId: record.recordId,
+              sourceFingerprint: record.sourceFingerprint,
+              planId: workspace.planId,
+              basisDate: workspace.basisDate,
+              updatedAt: record.updatedAt,
+              payloadSha256: record.payloadSha256,
+            }));
+          },
+          clearPointer: () => {
+            localStorage.removeItem(LOCAL_POINTER_KEY);
+            localStorage.removeItem(LOCAL_META_KEY);
+          },
+          restorePointer: (recordId) => {
+            if (recordId) localStorage.setItem(LOCAL_POINTER_KEY, recordId);
+            else localStorage.removeItem(LOCAL_POINTER_KEY);
+            if (previousMeta === null) localStorage.removeItem(LOCAL_META_KEY);
+            else localStorage.setItem(LOCAL_META_KEY, previousMeta);
+          },
+        });
+        try {
+          await persistLegacyCompatibilityRecord(record);
+        } catch (error) {
+          setSystemMessage("local recovery saved... (구버전 롤백 호환본 저장 실패)");
+        }
+        await enforceRecoveryRetention(record.recordId);
+        state.selectedRecoveryId = record.recordId;
+        await refreshRecoveryRecords();
+        return record;
       }
 
       function scheduleLocalSave() {
         window.clearTimeout(scheduleLocalSave.timer);
+        if (state.workspace) elements.localSaveStatus.textContent = "LOCAL AUTO SAVE · 저장 대기";
         scheduleLocalSave.timer = window.setTimeout(() => {
           persistLocalWorkspace().catch((error) => {
+            elements.localSaveStatus.textContent = "LOCAL AUTO SAVE · 실패";
             setSystemMessage("local autosave failed... (현재 화면은 유지됨)");
             showToast(error.message || "로컬 자동저장에 실패했습니다.", true);
           });
         }, 180);
       }
 
-      function restoreLocalRecord(record) {
-        if (!validRecoveryRecord(record)) throw new Error("복구 자료의 schemaVersion 또는 source fingerprint가 올바르지 않습니다.");
-        state.workspace = record.workspace;
-        state.activePreview = record.ui?.activePreview || "validation";
+      async function restoreLocalRecord(record) {
+        const verification = await verifyRecoveryRecord(record);
+        if (!verification.valid) throw new Error(`복구자료가 차단되었습니다: ${verification.reason}`);
+        const payload = verification.record.payload;
+        state.workspace = payload.workspace;
+        engine.ensureNoticeState(state.workspace);
+        state.activePreview = payload.ui?.activePreview || "validation";
         state.searchQuery = "";
         state.specificationFilters.clear();
         elements.tableSearchInput.value = "";
         elements.specFilterGroup.querySelectorAll("input[type='checkbox']").forEach((input) => {
           input.checked = false;
         });
-        elements.cloudUrlInput.value = record.settings?.cloudUrl || "";
-        elements.cloudTokenInput.value = record.settings?.cloudToken || "";
-        elements.cloudSavedByInput.value = record.settings?.savedBy || "";
-        renderRecoveryBanner(null);
+        elements.cloudUrlInput.value = payload.settings?.cloudUrl || "";
+        elements.cloudSavedByInput.value = payload.settings?.savedBy || "";
+        localStorage.setItem(LOCAL_POINTER_KEY, record.recordId);
+        state.selectedRecoveryId = record.recordId;
         renderResults();
         showToast("로컬 발주계획을 복구했습니다.");
       }
@@ -1381,21 +1790,60 @@
       async function clearLocalRecovery(showNotice = true) {
         if (state.db) {
           const transaction = state.db.transaction(LOCAL_STORE_NAME, "readwrite");
-          await idbRequest(transaction.objectStore(LOCAL_STORE_NAME).clear());
+          const completed = idbTransactionDone(transaction);
+          transaction.objectStore(LOCAL_STORE_NAME).clear();
+          await completed;
+        }
+        if (state.legacyDb?.objectStoreNames.contains(LEGACY_LOCAL_STORE_NAME)) {
+          const transaction = state.legacyDb.transaction(LEGACY_LOCAL_STORE_NAME, "readwrite");
+          const completed = idbTransactionDone(transaction);
+          transaction.objectStore(LEGACY_LOCAL_STORE_NAME).clear();
+          await completed;
         }
         localStorage.removeItem(LOCAL_POINTER_KEY);
         localStorage.removeItem(LOCAL_META_KEY);
+        localStorage.removeItem(LEGACY_MIGRATION_KEY);
         state.recoveryRecord = null;
+        state.recoveryRecords = [];
+        state.selectedRecoveryId = "";
         renderRecoveryBanner(null);
         if (showNotice) showToast("로컬 복구 자료를 초기화했습니다.");
+      }
+
+      async function deleteLegacyCompatibility(sourceFingerprint) {
+        if (!state.legacyDb?.objectStoreNames.contains(LEGACY_LOCAL_STORE_NAME) || !sourceFingerprint) return;
+        const transaction = state.legacyDb.transaction(LEGACY_LOCAL_STORE_NAME, "readwrite");
+        const completed = idbTransactionDone(transaction);
+        transaction.objectStore(LEGACY_LOCAL_STORE_NAME).delete(sourceFingerprint);
+        await completed;
+        const migrationState = loadLegacyMigrationState();
+        delete migrationState[sourceFingerprint];
+        localStorage.setItem(LEGACY_MIGRATION_KEY, JSON.stringify(migrationState));
+      }
+
+      async function deleteSelectedRecovery() {
+        const candidate = selectedRecoveryCandidate();
+        if (!candidate?.record?.recordId) return;
+        await deleteRecoveryRecordIds([candidate.record.recordId]);
+        if (candidate.record.recordId.startsWith("legacy:")) {
+          await deleteLegacyCompatibility(candidate.record.sourceFingerprint);
+        }
+        state.selectedRecoveryId = "";
+        await refreshRecoveryRecords();
+        showToast("선택한 로컬 복구자료를 삭제했습니다.");
       }
 
       async function replaceRecoveryWithCurrentFiles() {
         if (!state.validation?.canAnalyze) {
           throw new Error("교체할 주문현황·창고별재고 파일을 먼저 선택하세요.");
         }
-        await clearLocalRecovery(false);
-        runAnalysis();
+        const candidateWorkspace = await analyzeCurrentInputs();
+        await persistLocalWorkspace(candidateWorkspace, { activePreview: "validation" });
+        state.workspace = candidateWorkspace;
+        state.activePreview = "validation";
+        resetResultViewFilters();
+        renderResults();
+        showToast("새 분석·저장·재읽기·SHA-256 검산 후 복구 포인터를 안전하게 교체했습니다.");
       }
 
       function normalizeCloudUrl(value) {
@@ -1586,12 +2034,14 @@
 
       function toggleWorkspaceStorage(forceOpen) {
         const open = forceOpen === undefined
-          ? elements.workspaceStorage.classList.contains("hidden")
+          ? elements.settingsModal.classList.contains("hidden")
           : Boolean(forceOpen);
-        elements.workspaceStorage.classList.toggle("hidden", !open);
-        elements.workspaceStorage.classList.toggle("is-open", open);
+        if (open) toggleWorkspaceStorage.previousFocus = document.activeElement;
+        elements.settingsModal.classList.toggle("hidden", !open);
+        document.body.classList.toggle("settings-modal-open", open);
         elements.headerSettingsButton.setAttribute("aria-expanded", String(open));
-        if (open) elements.workspaceStorage.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        if (open) elements.settingsCloseButton.focus();
+        else if (toggleWorkspaceStorage.previousFocus?.focus) toggleWorkspaceStorage.previousFocus.focus();
       }
 
       function setLoading(kind, loading) {
@@ -2071,7 +2521,16 @@
         return typeof value === "number" && Math.abs(value) < 1e-12 ? "" : (value ?? "");
       }
 
+      function formatDeliveryNotice(row) {
+        const values = [row?.noteOriginal ?? row?.note, row?.note1Original ?? row?.note1]
+          .map((value) => String(value ?? ""))
+          .filter((value) => value !== "");
+        return values.join("\n");
+      }
+
       function getPreviewDefinitions(workspace) {
+        const acknowledgementState = engine.ensureNoticeState(workspace);
+        const acknowledgedIds = new Set(acknowledgementState.acknowledgedIds);
         const validation = {
           label: "검증요약",
           headers: ["검증 항목", "계산 결과", "정상 기준", "판정", "설명"],
@@ -2090,7 +2549,7 @@
 
         const allocations = {
           label: "미출고현황",
-          headers: ["상품코드", "구매", "품목명", "규격", "주문수량", "1창고", "3서울", "4전송", "적요", "단가", "거래처", "담당자"],
+          headers: ["상품코드", "구매", "품목명", "규격", "주문수량", "1창고", "3서울", "4전송", "전달사항", "단가", "거래처", "담당자"],
           numeric: [4, 5, 6, 7, 9],
           inventory: [],
           purchase: 1,
@@ -2106,19 +2565,46 @@
             row.inventoryMatched ? blankZero(row.wholeStockRaw) : "",
             row.inventoryMatched ? blankZero(row.seoulFirstPurchaseRaw) : "",
             row.inventoryMatched ? blankZero(row.firstTransferRaw) : "",
-            row.note || "",
+            formatDeliveryNotice(row),
             typeof row.unitPrice === "number" && Number.isFinite(row.unitPrice) ? row.unitPrice : "",
             row.customer || "",
             row.manager || "",
           ]),
           sortByProductCode: true,
+          notice: 8,
         };
         allocations.columns = createPreviewColumns("allocations", allocations.headers, allocations.numeric);
         [94, 68, 160, 52, 62, 56, 56, 56, 88, 72, 128, 92].forEach((width, index) => {
           if (allocations.columns[index]) allocations.columns[index].defaultWidth = width;
         });
 
-        const definitions = { validation };
+        const notices = {
+          label: `전달사항 ${workspace.notices.length}${workspace.notices.length > acknowledgedIds.size ? ` · 미확인 ${workspace.notices.length - acknowledgedIds.size}` : ""}`,
+          headers: ["담당", "거래처", "상품명", "전달사항", "상품코드", "확인"],
+          numeric: [],
+          inventory: [],
+          purchase: -1,
+          purchaseEditable: false,
+          status: -1,
+          sourceRows: workspace.notices,
+          rows: workspace.notices.map((notice) => [
+            notice.manager || "",
+            notice.customer || "",
+            notice.productName || "",
+            formatDeliveryNotice(notice),
+            notice.productCode || "",
+            acknowledgedIds.has(notice.noticeId) ? "확인함" : "미확인",
+          ]),
+          sortByProductCode: false,
+          noticeText: 3,
+          acknowledgement: 5,
+        };
+        notices.columns = createPreviewColumns("notices", notices.headers, notices.numeric);
+        [90, 150, 180, 300, 100, 72].forEach((width, index) => {
+          if (notices.columns[index]) notices.columns[index].defaultWidth = width;
+        });
+
+        const definitions = { validation, notices };
         const inventory = buildInventoryPreview(workspace);
         if (inventory) definitions.inventory = inventory;
         definitions.allocations = allocations;
@@ -2161,7 +2647,7 @@
         const query = state.searchQuery.trim().toLocaleLowerCase("ko-KR");
         const queryMatches = !query || previewSearchCorpus(pair.sourceRow, pair.row).includes(query);
         if (!queryMatches) return false;
-        if (previewId === "validation" || state.specificationFilters.size === 0) return true;
+        if (previewId === "validation" || previewId === "notices" || state.specificationFilters.size === 0) return true;
         const specification = String(
           pair.sourceRow?.specification ?? pair.sourceRow?.spec ?? pair.row?.[2] ?? "",
         ).trim();
@@ -2252,7 +2738,7 @@
                 exactWarningUnit(sourceRow) ? "unit-alert-row" : "",
               ].filter(Boolean).join(" ");
               return `
-                <tr class="${rowClasses}">
+                <tr class="${rowClasses}" ${sourceRow?.noticeId ? `data-notice-id="${escapeHtml(sourceRow.noticeId)}"` : ""}>
                   ${visibleEntries.map(({ column, index }) => {
                     const value = row[index];
                     const isNumber = Boolean(column.numeric) && value !== "";
@@ -2272,6 +2758,9 @@
                     ].filter(Boolean).join(" ");
                     const editablePurchase = editable && preview.purchaseEditable === true &&
                       preview.purchase === index && !referenceRow;
+                    const noticeLink = preview.notice === index && sourceRow?.noticeId;
+                    const noticeText = preview.noticeText === index;
+                    const acknowledgement = editable && preview.acknowledgement === index && sourceRow?.noticeId;
                     const negativeBalance = previewId === "inventory" && (
                       (typeof sourceRow?.inventoryTotal === "number" && sourceRow.inventoryTotal < 0) ||
                       (preview.inventory || []).some((inventoryIndex) =>
@@ -2282,7 +2771,11 @@
                       ? `<input class="purchase-input" data-purchase-code="${escapeHtml(sourceRow?.productCode || "")}"
                           data-negative-balance="${negativeBalance ? "true" : "false"}" autocomplete="off"
                           value="${escapeHtml(value)}" aria-label="${escapeHtml(sourceRow?.productCode || "")} 구매처">`
-                      : escapeHtml(isNumber ? formatNumber(value) : value);
+                      : noticeLink
+                        ? `<button class="notice-link" type="button" data-open-notice-id="${escapeHtml(sourceRow.noticeId)}">${escapeHtml(value)}</button>`
+                        : acknowledgement
+                          ? `<label class="notice-acknowledgement"><input type="checkbox" data-notice-acknowledgement="${escapeHtml(sourceRow.noticeId)}" ${engine.isNoticeAcknowledged(state.workspace, sourceRow.noticeId) ? "checked" : ""}>확인</label>`
+                          : `<span class="${noticeText ? "notice-text" : ""}">${escapeHtml(isNumber ? formatNumber(value) : value)}</span>`;
                     return `<td class="${classes}" style="${rowFill ? `background:#${rowFill.replace(/^#/, "")}` : ""}"
                       ${isStatus ? `data-tone="${statusTone(value)}"` : ""}
                       title="${escapeHtml(value)}">${content}</td>`;
@@ -2316,7 +2809,7 @@
           ? `${formatNumber(pairs.length)}/${formatNumber(preview.rows.length)}행 · 품목코드↑`
           : `${formatNumber(pairs.length)}/${formatNumber(preview.rows.length)}행`;
 
-        elements.specFilterGroup.disabled = state.activePreview === "validation";
+        elements.specFilterGroup.disabled = state.activePreview === "validation" || state.activePreview === "notices";
         renderColumnVisibilityMenu(preview);
         elements.previewTable.innerHTML = renderTableMarkup(preview, pairs, { editable: true, resizable: true });
         updateColumnWidthToolbar();
@@ -2354,6 +2847,7 @@
       }
 
       function renderResults() {
+        engine.ensureNoticeState(state.workspace);
         const stats = state.workspace.stats;
         const purchaseUpload = engine.getPurchaseUploadSelection(state.workspace);
         const summaryItems = [
@@ -2380,7 +2874,7 @@
         const uploadBlocked = state.workspace.basisDateStatus !== "valid";
         elements.purchaseUploadNotice.classList.toggle("bad", uploadBlocked);
         elements.purchaseUploadNotice.textContent = uploadBlocked
-          ? `구매업로드 차단: 일자-No.의 기준일을 하나의 YYYYMMDD로 확정할 수 없습니다. 제외: ${exclusionText || "없음"}`
+          ? `구매업로드 차단: 일자-No.·일자·주문일자에서 유효한 단일 기준일을 확정할 수 없습니다. 제외: ${exclusionText || "없음"}`
           : `구매업로드 ${formatNumber(purchaseUpload.included.length)}행 · 제외: ${exclusionText || "없음"}`;
         elements.resultSubtitle.textContent = stats.unmatchedCount > 0
           ? `재고정보 없음 ${formatNumber(stats.unmatchedCount)}개 상품`
@@ -2392,48 +2886,56 @@
         setSystemMessage("analysis complete... (Excel 다운로드 준비 완료)");
       }
 
-      function runAnalysis() {
+      function resetResultViewFilters() {
+        state.searchQuery = "";
+        state.specificationFilters.clear();
+        elements.tableSearchInput.value = "";
+        elements.specFilterGroup.querySelectorAll("input[type='checkbox']").forEach((input) => {
+          input.checked = false;
+        });
+      }
+
+      async function analyzeCurrentInputs() {
+        if (!state.validation?.canAnalyze) throw new Error("분석 가능한 주문현황·창고별재고 파일을 먼저 선택하세요.");
+        const sourceFingerprint = await sha256Hex(JSON.stringify({
+          schemaVersion: engine.WORKSPACE_SCHEMA_VERSION,
+          orders: {
+            sha256: state.orders.fileHash,
+            fileName: state.orders.fileName,
+            sheetName: state.orders.sheetName,
+            rowCount: state.orders.rowCount,
+          },
+          inventory: {
+            sha256: state.inventory.fileHash,
+            fileName: state.inventory.fileName,
+            sheetName: state.inventory.sheetName,
+            rowCount: state.inventory.rowCount,
+          },
+        }));
+        return engine.analyze(state.orders, state.inventory, { sourceFingerprint });
+      }
+
+      async function runAnalysis() {
         if (!state.validation?.canAnalyze) return;
         elements.analyzeButton.disabled = true;
         elements.analyzeButton.textContent = "분석 중...";
         setSystemMessage("processing data_blocks...");
-        window.setTimeout(async () => {
-          try {
-            const sourceFingerprint = await sha256Hex(JSON.stringify({
-              schemaVersion: engine.WORKSPACE_SCHEMA_VERSION,
-              orders: {
-                sha256: state.orders.fileHash,
-                fileName: state.orders.fileName,
-                sheetName: state.orders.sheetName,
-                rowCount: state.orders.rowCount,
-              },
-              inventory: {
-                sha256: state.inventory.fileHash,
-                fileName: state.inventory.fileName,
-                sheetName: state.inventory.sheetName,
-                rowCount: state.inventory.rowCount,
-              },
-            }));
-            state.workspace = engine.analyze(state.orders, state.inventory, { sourceFingerprint });
-            state.activePreview = "validation";
-            state.searchQuery = "";
-            state.specificationFilters.clear();
-            elements.tableSearchInput.value = "";
-            elements.specFilterGroup.querySelectorAll("input[type='checkbox']").forEach((input) => {
-              input.checked = false;
-            });
-            renderResults();
-            scheduleLocalSave();
-            elements.resultsPanel.scrollIntoView({ behavior: "smooth", block: "start" });
-            showToast("출고 배정과 검증이 완료되었습니다.");
-          } catch (error) {
-            setSystemMessage("analysis failed... (오류 내용을 확인하세요)");
-            showToast(error.message || "분석 중 오류가 발생했습니다.", true);
-          } finally {
-            elements.analyzeButton.innerHTML = '<span aria-hidden="true">▸</span> 출고 분석';
-            elements.analyzeButton.disabled = !state.validation?.canAnalyze;
-          }
-        }, 20);
+        try {
+          await new Promise((resolve) => window.setTimeout(resolve, 20));
+          state.workspace = await analyzeCurrentInputs();
+          state.activePreview = "validation";
+          resetResultViewFilters();
+          renderResults();
+          scheduleLocalSave();
+          elements.resultsPanel.scrollIntoView({ behavior: "smooth", block: "start" });
+          showToast("출고 배정과 검증이 완료되었습니다.");
+        } catch (error) {
+          setSystemMessage("analysis failed... (오류 내용을 확인하세요)");
+          showToast(error.message || "분석 중 오류가 발생했습니다.", true);
+        } finally {
+          elements.analyzeButton.innerHTML = '<span aria-hidden="true">▸</span> 출고 분석';
+          elements.analyzeButton.disabled = !state.validation?.canAnalyze;
+        }
       }
 
       function unfulfilledWorkbookFileName() {
@@ -2560,6 +3062,9 @@
           activePreview: state.activePreview,
           workspace: state.workspace,
         };
+        if (engine.containsCloudTokenKey(canonical)) {
+          throw new Error("Cloud revision payload에는 Cloud token을 포함할 수 없습니다.");
+        }
         const canonicalJson = JSON.stringify(canonical);
         return {
           schemaVersion: CLOUD_PLAN_SCHEMA,
@@ -2597,6 +3102,9 @@
           `).join("");
         if (state.cloudRevisions.length > 0) elements.cloudRevisionSelect.value = "0";
         elements.cloudLoadButton.disabled = state.cloudRevisions.length === 0;
+        elements.cloudStatus.textContent = state.cloudRevisions.length > 0
+          ? `Cloud 수동 확정 · 최근 ${state.cloudRevisions[0].savedAt || "시각 없음"}`
+          : "Cloud 수동 확정 · 저장본 없음";
       }
 
       async function listCloudPlans() {
@@ -2632,6 +3140,7 @@
           }
           scheduleLocalSave();
           setSystemMessage(`cloud revision committed... (${saved.revision})`);
+          elements.cloudStatus.textContent = `Cloud 수동 확정 · revision ${saved.revision}`;
           showToast(`Cloud revision ${saved.revision} 저장을 확정했습니다.`);
           await listCloudPlans();
         } catch (error) {
@@ -2670,6 +3179,7 @@
             throw new Error("Cloud 발주계획 계약 또는 fingerprint가 올바르지 않습니다.");
           }
           state.workspace = plan.workspace;
+          engine.ensureNoticeState(state.workspace);
           engine.applyPurchaseInputs(state.workspace, plan.purchaseInputs);
           state.activePreview = plan.activePreview || "validation";
           state.searchQuery = "";
@@ -2730,6 +3240,10 @@
       elements.headerSettingsButton.addEventListener("click", () => {
         toggleWorkspaceStorage();
       });
+      elements.settingsCloseButton.addEventListener("click", () => toggleWorkspaceStorage(false));
+      elements.settingsModal.addEventListener("click", (event) => {
+        if (event.target === elements.settingsModal) toggleWorkspaceStorage(false);
+      });
 
       elements.headerRestoreButton.addEventListener("click", () => {
         toggleWorkspaceStorage(true);
@@ -2743,6 +3257,11 @@
       });
 
       document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && !elements.settingsModal.classList.contains("hidden")) {
+          event.preventDefault();
+          toggleWorkspaceStorage(false);
+          return;
+        }
         if (event.key !== "Enter" || event.isComposing || event.repeat) return;
         const target = event.target;
         if (target instanceof HTMLInputElement ||
@@ -2862,6 +3381,22 @@
         renderPreview();
         scheduleLocalSave();
       });
+      elements.previewTable.addEventListener("click", (event) => {
+        const button = event.target.closest("[data-open-notice-id]");
+        if (!button || !state.workspace) return;
+        const noticeId = button.dataset.openNoticeId;
+        state.activePreview = "notices";
+        renderPreview();
+        window.requestAnimationFrame(() => {
+          const row = Array.from(elements.previewTable.querySelectorAll("[data-notice-id]"))
+            .find((candidate) => candidate.dataset.noticeId === noticeId);
+          if (!row) return;
+          row.classList.add("notice-target");
+          row.scrollIntoView({ behavior: "smooth", block: "center" });
+          window.setTimeout(() => row.classList.remove("notice-target"), 2200);
+        });
+        scheduleLocalSave();
+      });
       elements.previewTable.addEventListener("input", (event) => {
         const input = event.target.closest("[data-purchase-code]");
         if (!input || !state.workspace || state.activePreview !== "inventory") return;
@@ -2869,6 +3404,17 @@
         scheduleLocalSave();
       });
       elements.previewTable.addEventListener("change", (event) => {
+        const acknowledgement = event.target.closest("[data-notice-acknowledgement]");
+        if (acknowledgement && state.workspace) {
+          engine.setNoticeAcknowledged(
+            state.workspace,
+            acknowledgement.dataset.noticeAcknowledgement,
+            acknowledgement.checked,
+          );
+          renderPreview();
+          scheduleLocalSave();
+          return;
+        }
         const input = event.target.closest("[data-purchase-code]");
         if (!input || !state.workspace || state.activePreview !== "inventory") return;
         scheduleLocalSave();
@@ -2876,12 +3422,17 @@
       elements.previewTable.addEventListener("pointerdown", beginColumnResize);
       elements.previewTable.addEventListener("keydown", handleInventoryPurchaseNavigation);
       elements.previewTable.addEventListener("keydown", handleColumnResizeKeydown);
+      elements.recoveryRecordList.addEventListener("change", (event) => {
+        const input = event.target.closest("input[name='recoveryRecord']");
+        if (!input) return;
+        state.selectedRecoveryId = input.value;
+        renderRecoveryBanner(state.recoveryRecord);
+      });
       elements.restoreButton.addEventListener("click", () => {
-        try { restoreLocalRecord(state.recoveryRecord); }
-        catch (error) {
-          renderRecoveryBanner(null);
+        const candidate = selectedRecoveryCandidate();
+        restoreLocalRecord(candidate?.record).catch((error) => {
           showToast(error.message || "로컬 복구 자료를 사용할 수 없습니다.", true);
-        }
+        });
       });
       elements.replaceRecoveryButton.addEventListener("click", () => {
         replaceRecoveryWithCurrentFiles().catch((error) => {
@@ -2889,7 +3440,7 @@
         });
       });
       elements.discardRecoveryButton.addEventListener("click", () => {
-        clearLocalRecovery().catch((error) => showToast(error.message || "로컬 복구 자료를 초기화하지 못했습니다.", true));
+        deleteSelectedRecovery().catch((error) => showToast(error.message || "선택한 로컬 복구 자료를 삭제하지 못했습니다.", true));
       });
       elements.localResetButton.addEventListener("click", () => {
         clearLocalRecovery().catch((error) => showToast(error.message || "로컬 복구 자료를 초기화하지 못했습니다.", true));
@@ -2900,8 +3451,14 @@
       elements.cloudRevisionSelect.addEventListener("change", () => {
         elements.cloudLoadButton.disabled = !elements.cloudRevisionSelect.value;
       });
-      [elements.cloudUrlInput, elements.cloudTokenInput, elements.cloudSavedByInput].forEach((input) => {
+      [elements.cloudUrlInput, elements.cloudSavedByInput].forEach((input) => {
         input.addEventListener("input", scheduleLocalSave);
+      });
+      [elements.cloudUrlInput, elements.cloudTokenInput].forEach((input) => {
+        input.addEventListener("input", () => {
+          const ready = elements.cloudUrlInput.value.trim() && elements.cloudTokenInput.value;
+          elements.cloudStatus.textContent = ready ? "Cloud 수동 확정 · 연결 정보 입력됨" : "Cloud 수동 확정 · 미연결";
+        });
       });
       bindBundleDropZone();
       bindDropZone("orders");

@@ -481,7 +481,7 @@
     const sheet = buildTableSheet(XLSX, {
       title: "검증결과",
       subtitle:
-        "오류가 있으면 출력값을 운영 판단에 사용하지 마십시오. 확인 필요 항목은 원본 상품코드·수량·적요를 관리자가 비교합니다.",
+        "오류가 있으면 출력값을 운영 판단에 사용하지 마십시오. 오류 검산은 원본 상품코드·수량을 기준으로 수행하며, 적요·적요1은 기능을 차단하지 않는 참고 전달사항입니다.",
       headers,
       rows,
       widths: [28, 16, 16, 14, 52],
@@ -939,8 +939,8 @@
       const dates = Array.isArray(workspace.basisDates) ? workspace.basisDates.join(", ") : "";
       throw new Error(
         dates
-          ? `구매업로드 기준일이 서로 다르거나 올바르지 않습니다: ${dates}`
-          : "구매업로드 기준일을 일자-No.에서 확인할 수 없습니다.",
+          ? `구매업로드 기준일 날짜 후보가 서로 다르거나 올바르지 않습니다: ${dates}`
+          : "구매업로드 기준일을 일자-No.·일자·주문일자에서 확인할 수 없습니다.",
       );
     }
   }
