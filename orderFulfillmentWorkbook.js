@@ -939,8 +939,8 @@
       const dates = Array.isArray(workspace.basisDates) ? workspace.basisDates.join(", ") : "";
       throw new Error(
         dates
-          ? `구매업로드 기준일이 서로 다르거나 올바르지 않습니다: ${dates}`
-          : "구매업로드 기준일을 일자-No.에서 확인할 수 없습니다.",
+          ? `구매업로드 기준일 날짜 후보가 서로 다르거나 올바르지 않습니다: ${dates}`
+          : "구매업로드 기준일을 일자-No.·일자·주문일자에서 확인할 수 없습니다.",
       );
     }
   }

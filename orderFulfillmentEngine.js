@@ -7,7 +7,7 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  const ENGINE_VERSION = "3.3.0";
+  const ENGINE_VERSION = "3.4.0";
   const WORKSPACE_SCHEMA_VERSION = "shipping-workspace/v2";
   const INVENTORY_OVERRIDE_SCHEMA_VERSION = "shipping-inventory-overrides/v1";
   const HEADER_SCAN_LIMIT = 30;
@@ -34,8 +34,10 @@
 
   const INVENTORY_REQUIRED_COLUMNS = Object.freeze(["품목코드", "품목명", "규격"]);
 
+  const ORDER_DATE_COLUMNS = Object.freeze(["일자-No.", "일자", "주문일자"]);
+
   const ORDER_OPTIONAL_COLUMNS = Object.freeze([
-    "일자-No.",
+    ...ORDER_DATE_COLUMNS,
     "담당",
     "단위",
     "재고",
@@ -45,6 +47,8 @@
 
   const ORDER_CANONICAL_ALIASES = Object.freeze({
     "일자-No.": Object.freeze(["일자-No."]),
+    "일자": Object.freeze(["일자"]),
+    "주문일자": Object.freeze(["주문일자"]),
     "담당": Object.freeze(["담당"]),
     "단위": Object.freeze(["단위"]),
     "품목코드": Object.freeze(["품목코드", "상품코드", "코드"]),
@@ -77,6 +81,10 @@
 
   function cleanText(value) {
     return isBlank(value) ? "" : String(value).trim();
+  }
+
+  function originalText(value) {
+    return isBlank(value) ? "" : String(value);
   }
 
   function normalizeHeader(value) {
@@ -116,6 +124,16 @@
       hash = (hash * 31 + text.charCodeAt(index)) >>> 0;
     }
     return MANAGER_PALETTE[hash % MANAGER_PALETTE.length];
+  }
+
+  function stableTextHash(value) {
+    const text = String(value ?? "");
+    let hash = 2166136261;
+    for (let index = 0; index < text.length; index += 1) {
+      hash ^= text.charCodeAt(index);
+      hash = Math.imul(hash, 16777619) >>> 0;
+    }
+    return hash.toString(16).padStart(8, "0");
   }
 
   function validIsoDate(year, month, day) {
@@ -489,11 +507,33 @@
         const supplyAmountCell = getField(row, columnMap, "공급가액");
         const supplyAmount = parseNumericCell(supplyAmountCell);
         const orderNumberValue = getField(row, columnMap, "일자-No.");
+        const basisDateCandidates = ORDER_DATE_COLUMNS.map((field) => {
+          const value = getField(row, columnMap, field);
+          const text = cleanText(value);
+          return {
+            field,
+            value: text,
+            basisDate: text ? parseOrderBasisDate(value) : "",
+          };
+        }).filter((candidate) => candidate.value);
+        const rowBasisDates = uniqueTextValues(
+          basisDateCandidates.map((candidate) => candidate.basisDate),
+        );
+        const invalidDateCandidates = basisDateCandidates.filter((candidate) => !candidate.basisDate);
+        const rowBasisDateStatus = invalidDateCandidates.length > 0
+          ? "invalid"
+          : rowBasisDates.length > 1
+            ? "conflict"
+            : rowBasisDates.length === 1
+              ? "valid"
+              : "missing";
         rows.push({
           inputOrder: rows.length + 1,
           sourceRowNumber: rowIndex + 1,
           orderNumber: cleanText(orderNumberValue),
-          basisDate: parseOrderBasisDate(orderNumberValue),
+          basisDate: rowBasisDateStatus === "valid" ? rowBasisDates[0] : "",
+          basisDateStatus: rowBasisDateStatus,
+          basisDateCandidates,
           manager: cleanText(getField(row, columnMap, "담당")),
           sourceUnit: cleanText(getField(row, columnMap, "단위")),
           productCode: code,
@@ -509,6 +549,8 @@
               : cleanText(supplyAmountCell),
           note: cleanText(getField(row, columnMap, "적요")),
           note1: cleanText(getField(row, columnMap, "적요1")),
+          noteOriginal: originalText(getField(row, columnMap, "적요")),
+          note1Original: originalText(getField(row, columnMap, "적요1")),
           customer: cleanText(getField(row, columnMap, "거래처")),
           group: cleanText(getField(row, columnMap, "그룹")),
         });
@@ -733,19 +775,182 @@
     };
   }
 
-  function collectMemoIssues(orderRows) {
+  function buildNoticeId(row) {
+    const sourceRowNumber = Number(row?.sourceRowNumber) || 0;
+    const fingerprint = stableTextHash([
+      sourceRowNumber,
+      Number(row?.inputOrder) || 0,
+      normalizeProductCode(row?.productCode),
+      cleanText(row?.manager),
+      cleanText(row?.customer),
+      originalText(row?.noteOriginal ?? row?.note),
+      originalText(row?.note1Original ?? row?.note1),
+    ].join("\u001f"));
+    return `notice-${sourceRowNumber}-${fingerprint}`;
+  }
+
+  function canonicalizeJsonValue(value) {
+    if (Array.isArray(value)) return value.map(canonicalizeJsonValue);
+    if (value && typeof value === "object") {
+      return Object.keys(value).sort().reduce((result, key) => {
+        const item = value[key];
+        if (item !== undefined) result[key] = canonicalizeJsonValue(item);
+        return result;
+      }, {});
+    }
+    return value;
+  }
+
+  function canonicalStringify(value) {
+    return JSON.stringify(canonicalizeJsonValue(value));
+  }
+
+  function containsCloudTokenKey(value) {
+    if (!value || typeof value !== "object") return false;
+    if (Array.isArray(value)) return value.some(containsCloudTokenKey);
+    return Object.entries(value).some(([key, item]) =>
+      /cloud.?token|token/i.test(key) || containsCloudTokenKey(item),
+    );
+  }
+
+  function sanitizeCloudTokenKeys(value) {
+    if (Array.isArray(value)) return value.map(sanitizeCloudTokenKeys);
+    if (value && typeof value === "object") {
+      return Object.entries(value).reduce((result, [key, item]) => {
+        if (!/cloud.?token|token/i.test(key)) result[key] = sanitizeCloudTokenKeys(item);
+        return result;
+      }, {});
+    }
+    return value;
+  }
+
+  function buildLocalRecoveryPayload(workspace, ui = {}, settings = {}, updatedAt) {
+    if (!workspace || workspace.schemaVersion !== WORKSPACE_SCHEMA_VERSION) {
+      throw new Error("지원하지 않는 Shipping Management 작업공간입니다.");
+    }
+    const payload = {
+      schemaVersion: "shipping-local-recovery-payload/v2",
+      sourceFingerprint: cleanText(workspace.sourceFingerprint),
+      workspaceSchemaVersion: workspace.schemaVersion,
+      updatedAt: cleanText(updatedAt) || new Date().toISOString(),
+      workspace,
+      ui: { activePreview: cleanText(ui.activePreview) || "validation" },
+      settings: {
+        cloudUrl: cleanText(settings.cloudUrl),
+        savedBy: cleanText(settings.savedBy),
+      },
+    };
+    if (!/^[a-f0-9]{64}$/.test(payload.sourceFingerprint)) {
+      throw new Error("로컬 복구 payload의 source fingerprint가 올바르지 않습니다.");
+    }
+    const serialized = JSON.parse(JSON.stringify(payload));
+    if (containsCloudTokenKey(serialized)) {
+      throw new Error("로컬 복구 payload에는 Cloud token을 저장할 수 없습니다.");
+    }
+    return serialized;
+  }
+
+  async function commitVerifiedRecoveryRecord(record, adapter = {}) {
+    const required = ["getPointer", "setPointer", "clearPointer", "putRecord", "readRecord", "verifyRecord"];
+    if (required.some((name) => typeof adapter[name] !== "function")) {
+      throw new Error("로컬 복구 저장 adapter가 올바르지 않습니다.");
+    }
+    const previousPointer = await adapter.getPointer();
+    await adapter.putRecord(record);
+    const reread = await adapter.readRecord(record.recordId);
+    const verification = await adapter.verifyRecord(reread);
+    const verified = verification === true || verification?.valid === true;
+    if (!verified) {
+      if (typeof adapter.deleteRecord === "function") {
+        try { await adapter.deleteRecord(record.recordId); } catch (error) {}
+      }
+      const reason = verification?.reason ? `: ${verification.reason}` : "";
+      throw new Error(`새 복구자료 검산 실패${reason}`);
+    }
+    try {
+      await adapter.setPointer(record.recordId);
+    } catch (error) {
+      if (typeof adapter.restorePointer === "function") await adapter.restorePointer(previousPointer);
+      else if (previousPointer) await adapter.setPointer(previousPointer);
+      else await adapter.clearPointer();
+      if (typeof adapter.deleteRecord === "function") {
+        try { await adapter.deleteRecord(record.recordId); } catch (cleanupError) {}
+      }
+      throw error;
+    }
+    return reread;
+  }
+
+  function selectLatestVerifiedRecovery(candidates, pointer = "") {
+    const list = Array.isArray(candidates) ? [...candidates] : [];
+    const timestamp = (candidate) => {
+      const parsed = Date.parse(candidate?.record?.updatedAt || "");
+      return Number.isFinite(parsed) ? parsed : 0;
+    };
+    list.sort((left, right) => timestamp(right) - timestamp(left));
+    const valid = list.filter((candidate) => candidate?.valid === true);
+    const selected = valid[0]?.record || null;
+    const pointed = list.find((candidate) => candidate?.record?.recordId === pointer);
+    return {
+      candidates: list,
+      selected,
+      corruptionDetected: list.some((candidate) => candidate?.valid !== true) || Boolean(pointer && !pointed?.valid),
+      pointerOutdated: Boolean(selected && pointed?.valid && selected.recordId !== pointed.record.recordId),
+    };
+  }
+
+  function collectNotices(orderRows) {
     return orderRows
       .filter((row) => row.note || row.note1)
       .map((row) => ({
+        noticeId: buildNoticeId(row),
         inputOrder: row.inputOrder,
         sourceRowNumber: row.sourceRowNumber,
         productCode: row.productCode,
         productName: row.productName,
-        note: row.note,
-        note1: row.note1,
+        note: originalText(row.noteOriginal ?? row.note),
+        note1: originalText(row.note1Original ?? row.note1),
+        manager: row.manager,
         customer: row.customer,
         group: row.group,
       }));
+  }
+
+  function ensureNoticeState(workspace) {
+    if (!workspace || workspace.schemaVersion !== WORKSPACE_SCHEMA_VERSION) {
+      throw new Error("지원하지 않는 Shipping Management 작업공간입니다.");
+    }
+    if (!Array.isArray(workspace.notices)) {
+      workspace.notices = collectNotices(Array.isArray(workspace.orders) ? workspace.orders : []);
+    }
+    const existing = workspace.noticeAcknowledgements;
+    const acknowledgedIds = Array.isArray(existing?.acknowledgedIds)
+      ? uniqueTextValues(existing.acknowledgedIds)
+      : [];
+    const validIds = new Set(workspace.notices.map((notice) => cleanText(notice.noticeId)).filter(Boolean));
+    workspace.noticeAcknowledgements = {
+      schemaVersion: "shipping-notice-acknowledgements/v1",
+      acknowledgedIds: acknowledgedIds.filter((noticeId) => validIds.has(noticeId)),
+    };
+    return workspace.noticeAcknowledgements;
+  }
+
+  function isNoticeAcknowledged(workspace, noticeId) {
+    const state = ensureNoticeState(workspace);
+    return state.acknowledgedIds.includes(cleanText(noticeId));
+  }
+
+  function setNoticeAcknowledged(workspace, noticeId, acknowledged) {
+    const state = ensureNoticeState(workspace);
+    const normalizedId = cleanText(noticeId);
+    if (!normalizedId || !workspace.notices.some((notice) => notice.noticeId === normalizedId)) {
+      throw new Error("전달사항 항목을 찾을 수 없습니다.");
+    }
+    const ids = new Set(state.acknowledgedIds);
+    if (acknowledged) ids.add(normalizedId);
+    else ids.delete(normalizedId);
+    state.acknowledgedIds = [...ids];
+    return state;
   }
 
   function validateInputs(ordersParsed, inventoryParsed) {
@@ -769,7 +974,7 @@
           .filter((code) => code && !inventoryCodes.has(code)),
       ),
     ];
-    const memoIssues = collectMemoIssues(ordersParsed?.rows || []);
+    const notices = collectNotices(ordersParsed?.rows || []);
     const duplicateCodes = inventoryParsed?.duplicateCodes || [];
 
     return {
@@ -781,8 +986,10 @@
       unmatchedCount: unmatchedCodes.length,
       duplicateCodes,
       duplicateCount: duplicateCodes.length,
-      memoIssues,
-      memoCount: memoIssues.length,
+      notices,
+      noticeCount: notices.length,
+      memoIssues: notices,
+      memoCount: notices.length,
     };
   }
 
@@ -1152,6 +1359,7 @@
         : null;
       allocations.push({
         ...order,
+        noticeId: order.note || order.note1 ? buildNoticeId(order) : "",
         inventoryMatched: matched,
         inventoryProductName: inventory?.productName || "",
         wholeStockRaw: matched ? inventory.wholeStockRaw : null,
@@ -1387,25 +1595,35 @@
       result[row.status] = (result[row.status] || 0) + 1;
       return result;
     }, {});
-    const basisDates = uniqueTextValues(ordersParsed.rows.map((row) => row.basisDate));
+    const basisDates = uniqueTextValues(ordersParsed.rows.flatMap((row) =>
+      Array.isArray(row.basisDateCandidates)
+        ? row.basisDateCandidates.map((candidate) => candidate.basisDate)
+        : [row.basisDate],
+    ));
     const invalidDateRows = ordersParsed.rows
-      .filter((row) => row.orderNumber && !row.basisDate)
+      .filter((row) => row.basisDateStatus === "invalid")
       .map((row) => row.sourceRowNumber);
-    const basisDate = basisDates.length === 1 && invalidDateRows.length === 0
+    const conflictingDateRows = ordersParsed.rows
+      .filter((row) => row.basisDateStatus === "conflict")
+      .map((row) => row.sourceRowNumber);
+    const missingDateRows = ordersParsed.rows
+      .filter((row) => row.basisDateStatus === "missing")
+      .map((row) => row.sourceRowNumber);
+    const basisDate = basisDates.length === 1 && invalidDateRows.length === 0 && conflictingDateRows.length === 0
       ? basisDates[0]
       : "";
-    const basisDateStatus = basisDates.length > 1
+    const basisDateStatus = invalidDateRows.length > 0
+      ? "invalid"
+      : conflictingDateRows.length > 0 || basisDates.length > 1
       ? "conflict"
-      : invalidDateRows.length > 0
-        ? "invalid"
-        : basisDates.length === 0
-          ? "missing"
-          : "valid";
+      : basisDates.length === 0
+        ? "missing"
+        : "valid";
     const uploadDate = basisDate ? basisDate.replace(/-/g, "") : "";
     const sourceFingerprint = cleanText(options.sourceFingerprint);
     const planId = buildPlanId(basisDate, sourceFingerprint);
 
-    const memoIssues = collectMemoIssues(ordersParsed.rows);
+    const notices = collectNotices(ordersParsed.rows);
     const validationResults = [
       {
         item: "주문 필수 열",
@@ -1469,19 +1687,12 @@
         expected: "단일 YYYY-MM-DD",
         status: basisDateStatus === "valid" ? "정상" : "오류",
         description: basisDateStatus === "conflict"
-          ? "일자-No.에서 서로 다른 기준일이 확인되어 구매업로드·클라우드 저장을 차단합니다."
+          ? `날짜 후보 열에서 서로 다른 기준일이 확인되었습니다${conflictingDateRows.length ? ` (원본행 ${conflictingDateRows.join(", ")})` : ""}.`
           : basisDateStatus === "invalid"
-            ? `일자-No.를 날짜로 해석할 수 없는 원본행: ${invalidDateRows.join(", ")}`
+            ? `날짜 후보 값을 해석할 수 없는 원본행: ${invalidDateRows.join(", ")}`
             : basisDateStatus === "missing"
-              ? "일자-No.에서 기준일을 찾지 못했습니다."
-              : "일자-No.의 일련번호를 제외한 단일 기준일",
-      },
-      {
-        item: "적요 확인",
-        result: memoIssues.length,
-        expected: 0,
-        status: memoIssues.length === 0 ? "정상" : "확인 필요",
-        description: "적요·적요1이 있는 주문행 수",
+              ? "일자-No.·일자·주문일자에서 기준일을 찾지 못했습니다."
+              : "날짜 후보 열 전체가 일치하는 단일 기준일",
       },
     ];
 
@@ -1496,6 +1707,8 @@
       basisDateStatus,
       basisDates,
       invalidDateRows,
+      conflictingDateRows,
+      missingDateRows,
       sourceFiles: {
         orders: {
           fileName: ordersParsed.fileName,
@@ -1528,7 +1741,12 @@
       allocations,
       productSummaries,
       purchaseManagement,
-      memoIssues,
+      notices,
+      noticeAcknowledgements: {
+        schemaVersion: "shipping-notice-acknowledgements/v1",
+        acknowledgedIds: [],
+      },
+      memoIssues: notices,
       validationResults,
       stats: {
         orderRowCount: allocations.length,
@@ -1538,7 +1756,8 @@
         totalPurchaseNeed,
         unmatchedCount: inputValidation.unmatchedCount,
         duplicateCount: inputValidation.duplicateCount,
-        memoCount: memoIssues.length,
+        noticeCount: notices.length,
+        memoCount: notices.length,
         allocationDifference,
         productQuantityDifference,
         negativePurchaseCount,
@@ -1625,12 +1844,19 @@
     INVENTORY_OVERRIDE_SCHEMA_VERSION,
     ORDER_REQUIRED_COLUMNS,
     INVENTORY_REQUIRED_COLUMNS,
+    ORDER_DATE_COLUMNS,
     ORDER_OPTIONAL_COLUMNS,
     ORDER_CANONICAL_ALIASES,
     INVENTORY_OPTIONAL_COLUMNS,
     normalizeProductCode,
     normalizeOrderHeader,
     normalizeCategoryCode,
+    canonicalStringify,
+    containsCloudTokenKey,
+    sanitizeCloudTokenKeys,
+    buildLocalRecoveryPayload,
+    commitVerifiedRecoveryRecord,
+    selectLatestVerifiedRecovery,
     parseOrderBasisDate,
     managerColors,
     buildPlanId,
@@ -1640,6 +1866,10 @@
     parseOrderWorkbook,
     parseInventoryWorkbook,
     validateInputs,
+    collectNotices,
+    ensureNoticeState,
+    isNoticeAcknowledged,
+    setNoticeAcknowledged,
     analyze,
     setPurchaseValue,
     applyPurchaseInputs,

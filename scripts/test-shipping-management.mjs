@@ -340,7 +340,7 @@ const edgeWorkspace = engine.analyze(edgeOrders, edgeInventory, {
   createdAt: "2026-07-30T00:00:00.000Z",
   sourceFingerprint: "a".repeat(64),
 });
-assert.equal(engine.ENGINE_VERSION, "3.3.0");
+assert.equal(engine.ENGINE_VERSION, "3.4.0");
 assert.equal(workbookTools.WORKBOOK_VERSION, "3.3.0");
 assert.equal(edgeWorkspace.schemaVersion, "shipping-workspace/v2");
 assert.equal(edgeWorkspace.basisDate, "2026-08-04");
@@ -1200,8 +1200,8 @@ for (const requiredText of [
   "현재 파일로 교체",
   "purchaseUploadNotice",
   "ONEAPPShippingManagementDB",
-  "shipping-local-recovery/v1",
-  "workspace.sourceFingerprint === record.sourceFingerprint",
+  "shipping-local-recovery/v2",
+  "record.payload.workspace.sourceFingerprint !== record.sourceFingerprint",
   "oneapp.shipping.recovery.pointer.v1",
   "oneapp.shipping.recovery.meta.v1",
   "oneapp.shipping.table-widths.v1",
