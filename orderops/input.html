@@ -4,7 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="google" content="notranslate">
-  <title>ONEAPP OrderOps Input</title>
+  <title>ONEAPP OrderOps Input v2.2 SmartParser</title>
+  <link rel="stylesheet" href="./orderops-smartparser.css">
   <style>
     :root {
       color-scheme: light;
@@ -65,7 +66,7 @@
       padding: 2px 6px; border: 1px solid rgba(94, 234, 212, 0.35); border-radius: 5px;
       color: #5eead4; background: rgba(13, 148, 136, 0.12); font-size: 10px; font-weight: 800;
     }
-    
+
     .system-console {
       flex: 1; display: flex; align-items: center; max-width: 480px; min-height: 32px;
       padding: 4px 12px; border: 1px solid #475569; border-radius: 5px; color: #cbd5e1;
@@ -90,7 +91,7 @@
       border: 1px solid var(--slate-200); border-top: none; border-radius: 0 0 12px 12px;
       background: var(--white); box-shadow: var(--shadow-sm);
     }
-    
+
     /* Top Form Box */
     .form-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px 32px; padding: 20px; }
     .form-group { display: grid; grid-template-columns: 80px 1fr; align-items: center; gap: 12px; }
@@ -101,7 +102,7 @@
       border-radius: 6px; font-size: 13px;
     }
     .input-field:focus { outline: 2px solid var(--teal-600); outline-offset: -1px; border-color: transparent; }
-    
+
     .search-input-wrap { display: flex; flex: 1; }
     .search-input-wrap .input-field { border-top-right-radius: 0; border-bottom-right-radius: 0; border-right: none; }
     .search-btn {
@@ -117,7 +118,7 @@
       height: 32px; border: 1px solid var(--slate-300); border-radius: 6px; padding: 0 8px; font-size: 13px;
     }
     .date-sep { color: var(--slate-400); font-weight: bold; }
-    
+
     /* Toolbar Middle */
     .action-toolbar {
       display: flex; flex-wrap: wrap; gap: 6px; padding: 12px 20px;
@@ -141,7 +142,7 @@
     .grid-input { width: 100%; height: 100%; border: none; background: transparent; padding: 0 10px; font-size: 12px; outline: none; }
     .grid-input:focus { background: #f0fdfa; }
     .grid-input.number { text-align: right; }
-    
+
     /* 통합된 체크박스 + 일련번호 디자인 */
     .row-check-wrap {
       position: relative;
@@ -171,15 +172,14 @@
       border-radius: 4px;
       font-size: 11px;
       font-weight: 800;
-      color: var(--slate-400); /* 연한색 일련번호 */
+      color: var(--slate-400);
       background: var(--slate-50);
       transition: all 0.1s ease;
     }
-    /* 터치(체크) 되었을 때의 상태 변화 */
     .row-check-wrap input[type="checkbox"]:checked + .row-num-display {
       background: #eff6ff;
       border-color: #3b82f6;
-      color: #1d4ed8; /* 체크 시 파란색으로 활성화 */
+      color: #1d4ed8;
     }
 
     tfoot td { background: #f8fafc; font-weight: 900; padding: 8px 10px; text-align: right; }
@@ -200,14 +200,13 @@
 </head>
 <body>
 
-  <!-- 다크모드 System.IO 헤더 영역 -->
   <section class="system-workbench">
     <div class="system-topbar">
       <div class="brand-area">
         <div class="brand-mark">ONEAPP</div>
-        <div class="brand-suite">OrderOps <span class="brand-badge">v2.1</span></div>
+        <div class="brand-suite">OrderOps <span class="brand-badge">v2.2 SmartParser</span></div>
       </div>
-      
+
       <div class="system-console" id="systemMessage">
         <span class="highlight">&gt;</span> [ 주문서 입력 대기 ] 시스템이 준비되었습니다.
       </div>
@@ -223,15 +222,14 @@
 
   <main class="page-shell">
     <div class="panel">
-      <!-- 폼 영역 -->
       <div class="form-grid">
         <div style="display: flex; flex-direction: column; gap: 16px;">
           <div class="form-group">
             <div class="form-label">일자</div>
             <div class="form-control date-inputs">
-              <select><option>2026</option></select> <span class="date-sep">/</span>
-              <select><option>08</option></select> <span class="date-sep">/</span>
-              <input type="text" value="04" style="width: 40px; text-align: center;">
+              <select id="orderYearInput"><option>2026</option></select> <span class="date-sep">/</span>
+              <select id="orderMonthInput"><option>08</option></select> <span class="date-sep">/</span>
+              <input id="orderDayInput" type="text" value="04" style="width: 40px; text-align: center;">
               <button class="btn-default" style="height: 32px; padding: 0 8px;">📅</button>
             </div>
           </div>
@@ -248,7 +246,7 @@
           <div class="form-group">
             <div class="form-label">전하실말씀</div>
             <div class="form-control">
-              <input type="text" class="input-field" placeholder="전하실말씀">
+              <input type="text" id="orderMessageInput" class="input-field" placeholder="전하실말씀">
             </div>
           </div>
         </div>
@@ -267,7 +265,7 @@
           <div class="form-group">
             <div class="form-label">거래유형</div>
             <div class="form-control">
-              <select class="input-field">
+              <select id="transactionTypeInput" class="input-field">
                 <option>기타</option>
                 <option>카드</option>
                 <option>현금</option>
@@ -279,8 +277,8 @@
         </div>
       </div>
 
-      <!-- 툴바 영역 (요청 버튼 삭제됨) -->
       <div class="action-toolbar">
+        <button type="button" id="btnSmartParser" class="btn-sm btn-smart-parser"><span class="btn-smart-parser-mark">✦</span>SmartParser</button>
         <button class="btn-sm">찾기(F3)</button>
         <button class="btn-sm">정렬</button>
         <button class="btn-sm">거래내역보기(주문) ▼</button>
@@ -290,11 +288,10 @@
         <button class="btn-sm">재고불러오기</button>
       </div>
 
-      <!-- 입력 그리드 영역 -->
       <div class="table-wrap">
         <table id="orderTable">
           <colgroup>
-            <col style="width: 46px;"> <!-- 통합된 체크박스 컬럼 -->
+            <col style="width: 46px;">
             <col style="width: 120px;">
             <col style="width: 200px;">
             <col style="width: 100px;">
@@ -320,62 +317,45 @@
             </tr>
           </thead>
           <tbody id="orderTbody">
-            <!-- 기본 3개 행 -->
             <tr>
-              <td>
-                <label class="row-check-wrap">
-                  <input type="checkbox">
-                  <span class="row-num-display">1</span>
-                </label>
-              </td>
-              <td><input type="text" class="grid-input" placeholder="코드"></td>
-              <td><input type="text" class="grid-input" placeholder="품목명 검색"></td>
-              <td><input type="text" class="grid-input"></td>
-              <td><input type="number" class="grid-input number qty-input" value=""></td>
-              <td><input type="number" class="grid-input number price-input" value=""></td>
-              <td><input type="text" class="grid-input number supply-price" readonly tabindex="-1"></td>
-              <td><input type="text" class="grid-input"></td>
-              <td><input type="text" class="grid-input"></td>
-              <td><input type="number" class="grid-input number"></td>
+              <td><label class="row-check-wrap"><input type="checkbox"><span class="row-num-display">1</span></label></td>
+              <td><input type="text" class="grid-input" data-field="itemCode" placeholder="코드"></td>
+              <td><input type="text" class="grid-input" data-field="itemName" placeholder="품목명 검색"></td>
+              <td><input type="text" class="grid-input" data-field="specification"></td>
+              <td><input type="number" class="grid-input number qty-input" data-field="quantity" value=""></td>
+              <td><input type="number" class="grid-input number price-input" data-field="price" value=""></td>
+              <td><input type="text" class="grid-input number supply-price" data-field="supplyAmount" readonly tabindex="-1"></td>
+              <td><input type="text" class="grid-input" data-field="memo"></td>
+              <td><input type="text" class="grid-input" data-field="description"></td>
+              <td><input type="number" class="grid-input number" data-field="noticePrice"></td>
             </tr>
             <tr>
-              <td>
-                <label class="row-check-wrap">
-                  <input type="checkbox">
-                  <span class="row-num-display">2</span>
-                </label>
-              </td>
-              <td><input type="text" class="grid-input" placeholder="코드"></td>
-              <td><input type="text" class="grid-input" placeholder="품목명 검색"></td>
-              <td><input type="text" class="grid-input"></td>
-              <td><input type="number" class="grid-input number qty-input" value=""></td>
-              <td><input type="number" class="grid-input number price-input" value=""></td>
-              <td><input type="text" class="grid-input number supply-price" readonly tabindex="-1"></td>
-              <td><input type="text" class="grid-input"></td>
-              <td><input type="text" class="grid-input"></td>
-              <td><input type="number" class="grid-input number"></td>
+              <td><label class="row-check-wrap"><input type="checkbox"><span class="row-num-display">2</span></label></td>
+              <td><input type="text" class="grid-input" data-field="itemCode" placeholder="코드"></td>
+              <td><input type="text" class="grid-input" data-field="itemName" placeholder="품목명 검색"></td>
+              <td><input type="text" class="grid-input" data-field="specification"></td>
+              <td><input type="number" class="grid-input number qty-input" data-field="quantity" value=""></td>
+              <td><input type="number" class="grid-input number price-input" data-field="price" value=""></td>
+              <td><input type="text" class="grid-input number supply-price" data-field="supplyAmount" readonly tabindex="-1"></td>
+              <td><input type="text" class="grid-input" data-field="memo"></td>
+              <td><input type="text" class="grid-input" data-field="description"></td>
+              <td><input type="number" class="grid-input number" data-field="noticePrice"></td>
             </tr>
             <tr>
-              <td>
-                <label class="row-check-wrap">
-                  <input type="checkbox">
-                  <span class="row-num-display">3</span>
-                </label>
-              </td>
-              <td><input type="text" class="grid-input" placeholder="코드"></td>
-              <td><input type="text" class="grid-input" placeholder="품목명 검색"></td>
-              <td><input type="text" class="grid-input"></td>
-              <td><input type="number" class="grid-input number qty-input" value=""></td>
-              <td><input type="number" class="grid-input number price-input" value=""></td>
-              <td><input type="text" class="grid-input number supply-price" readonly tabindex="-1"></td>
-              <td><input type="text" class="grid-input"></td>
-              <td><input type="text" class="grid-input"></td>
-              <td><input type="number" class="grid-input number"></td>
+              <td><label class="row-check-wrap"><input type="checkbox"><span class="row-num-display">3</span></label></td>
+              <td><input type="text" class="grid-input" data-field="itemCode" placeholder="코드"></td>
+              <td><input type="text" class="grid-input" data-field="itemName" placeholder="품목명 검색"></td>
+              <td><input type="text" class="grid-input" data-field="specification"></td>
+              <td><input type="number" class="grid-input number qty-input" data-field="quantity" value=""></td>
+              <td><input type="number" class="grid-input number price-input" data-field="price" value=""></td>
+              <td><input type="text" class="grid-input number supply-price" data-field="supplyAmount" readonly tabindex="-1"></td>
+              <td><input type="text" class="grid-input" data-field="memo"></td>
+              <td><input type="text" class="grid-input" data-field="description"></td>
+              <td><input type="number" class="grid-input number" data-field="noticePrice"></td>
             </tr>
           </tbody>
           <tfoot>
             <tr>
-              <!-- 열 통합으로 인한 colspan 5 -> 4 변경 -->
               <td colspan="4" style="text-align: center; color: var(--slate-500); font-weight: 700;">합계</td>
               <td id="totalQty">0</td>
               <td></td>
@@ -387,7 +367,6 @@
         </table>
       </div>
 
-      <!-- 하단 버튼 영역 -->
       <div class="bottom-actions">
         <button class="btn-default" style="padding: 0 10px;">✉</button>
         <button class="btn-primary">저장(F8) ▼</button>
@@ -399,8 +378,9 @@
     </div>
   </main>
 
+  <div id="orderOpsSmartParserRoot"></div>
+
   <script>
-    // --- 1. 창고/거래처 로컬 저장 및 자동완성 ---
     const STORAGE_KEY_WH = 'oneapp_saved_warehouses';
     const STORAGE_KEY_CLIENT = 'oneapp_saved_clients';
 
@@ -438,42 +418,53 @@
     document.getElementById('btnSaveWarehouse').addEventListener('click', () => {
       saveToDatalist(STORAGE_KEY_WH, 'warehouseList', 'warehouseInput', '출하창고');
     });
+
     document.getElementById('btnSaveClient').addEventListener('click', () => {
       saveToDatalist(STORAGE_KEY_CLIENT, 'clientList', 'clientInput', '거래처');
     });
 
-    document.getElementById('warehouseInput').addEventListener('keydown', (e) => {
-      if(e.key === 'Enter') saveToDatalist(STORAGE_KEY_WH, 'warehouseList', 'warehouseInput', '출하창고');
-    });
-    document.getElementById('clientInput').addEventListener('keydown', (e) => {
-      if(e.key === 'Enter') saveToDatalist(STORAGE_KEY_CLIENT, 'clientList', 'clientInput', '거래처');
+    document.getElementById('warehouseInput').addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') saveToDatalist(STORAGE_KEY_WH, 'warehouseList', 'warehouseInput', '출하창고');
     });
 
+    document.getElementById('clientInput').addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') saveToDatalist(STORAGE_KEY_CLIENT, 'clientList', 'clientInput', '거래처');
+    });
 
-    // --- 2. 수량 * 단가 자동 합계 계산 ---
-    document.getElementById('orderTbody').addEventListener('input', function(e) {
-      if (e.target.classList.contains('qty-input') || e.target.classList.contains('price-input')) {
-        const row = e.target.closest('tr');
+    document.getElementById('orderTbody').addEventListener('input', function (event) {
+      if (event.target.classList.contains('qty-input') || event.target.classList.contains('price-input')) {
+        const row = event.target.closest('tr');
         const qty = Number(row.querySelector('.qty-input').value) || 0;
         const price = Number(row.querySelector('.price-input').value) || 0;
         const supplyInput = row.querySelector('.supply-price');
-        
+
         supplyInput.value = (qty * price) > 0 ? (qty * price).toLocaleString() : '';
         calculateTotals();
       }
     });
 
     function calculateTotals() {
-      let tQty = 0, tSupply = 0;
+      let totalQty = 0;
+      let totalSupply = 0;
       document.querySelectorAll('#orderTbody tr').forEach(row => {
-        const qty = Number(row.querySelector('.qty-input').value) || 0;
-        const price = Number(row.querySelector('.price-input').value) || 0;
-        tQty += qty;
-        tSupply += (qty * price);
+        const qtyInput = row.querySelector('.qty-input');
+        const priceInput = row.querySelector('.price-input');
+        const supplyInput = row.querySelector('.supply-price');
+        const qty = qtyInput ? Number(qtyInput.value) || 0 : 0;
+        const price = priceInput ? Number(priceInput.value) || 0 : 0;
+        const supply = qty * price;
+        if (supplyInput) supplyInput.value = supply > 0 ? supply.toLocaleString() : '';
+        totalQty += qty;
+        totalSupply += supply;
       });
-      document.getElementById('totalQty').textContent = tQty.toLocaleString();
-      document.getElementById('totalSupply').textContent = tSupply.toLocaleString();
+      document.getElementById('totalQty').textContent = totalQty.toLocaleString();
+      document.getElementById('totalSupply').textContent = totalSupply.toLocaleString();
     }
+
+    window.updateSystemMessage = updateSystemMessage;
+    window.calculateTotals = calculateTotals;
   </script>
+  <script src="./orderops-smartparser-core.js"></script>
+  <script src="./orderops-smartparser.js"></script>
 </body>
 </html>
