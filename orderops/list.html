@@ -900,7 +900,7 @@
     .toast.error { background: var(--red-700); }
 
     .print-area { display: none; }
-    @page { size: A4 landscape; margin: 8mm; }
+    @page { size: A4 portrait; margin: 8mm; }
     @media print {
       body.printing-table { min-height: 0; background: #fff; }
       body.printing-table > * { display: none !important; }
@@ -913,8 +913,15 @@
       body.printing-table .print-area table {
         width: 100% !important;
         min-width: 0 !important;
-        table-layout: auto !important;
-        font-size: 8px;
+        table-layout: fixed !important;
+        font-size: 7px;
+      }
+      body.printing-table .print-area col { width: auto !important; }
+      body.printing-table .print-area thead { display: table-header-group; }
+      body.printing-table .print-area tbody { display: table-row-group; }
+      body.printing-table .print-area tr {
+        break-inside: avoid;
+        page-break-inside: avoid;
       }
       body.printing-table .print-area table.preview-allocations {
         font-family: "Malgun Gothic", sans-serif;
@@ -926,7 +933,11 @@
         text-align: center;
       }
       body.printing-table .print-area th,
-      body.printing-table .print-area td { padding: 4px 5px; }
+      body.printing-table .print-area td {
+        padding: 2px 3px;
+        overflow-wrap: anywhere;
+        word-break: break-word;
+      }
     }
 
     @media (max-width: 1180px) {
@@ -1126,11 +1137,8 @@
         <div class="preview-tabs" id="previewTabs" role="tablist" aria-label="결과 미리보기"></div>
         <div class="preview-actions">
           <div class="preview-count" id="previewCount"></div>
-          <button class="download-button" id="purchaseUploadButton" type="button">
-            <span aria-hidden="true">↓</span> 구매업로드 Excel
-          </button>
-          <button class="download-button secondary-download" id="downloadButton" type="button">
-            <span aria-hidden="true">↓</span> 미출고현황 Excel
+          <button class="download-button secondary-download" id="downloadButton" type="button" disabled>
+            <span aria-hidden="true">↓</span> Excel 출력
           </button>
         </div>
       </div>
@@ -1275,7 +1283,6 @@
         previewCount: document.getElementById("previewCount"),
         previewTable: document.getElementById("previewTable"),
         downloadButton: document.getElementById("downloadButton"),
-        purchaseUploadButton: document.getElementById("purchaseUploadButton"),
         recoveryBanner: document.getElementById("recoveryBanner"),
         recoveryMessage: document.getElementById("recoveryMessage"),
         recoveryRecordList: document.getElementById("recoveryRecordList"),
@@ -2490,19 +2497,35 @@
         const columns = [...baseColumns];
         columns.splice(purchaseIndex, 0, {
           key: "shipping:inventory:purchase",
-          header: "구매처",
+          header: "구매처명",
           numeric: false,
           role: "purchase",
           defaultWidth: 88,
+        });
+        columns.push({
+          key: "shipping:inventory:suppliers",
+          header: "거래처(단가)",
+          numeric: false,
+          role: "suppliers",
+          defaultWidth: 180,
+        });
+        columns.push({
+          key: "shipping:inventory:order-customers",
+          header: "주문거래처명(수량)",
+          numeric: false,
+          role: "orderCustomers",
+          defaultWidth: 200,
         });
 
         const rows = inventoryView.rows.map((row) => {
           const values = Array.isArray(row?.values) ? [...row.values] : [];
           values.splice(purchaseIndex, 0, row?.purchase ?? "");
+          values.push(row?.suppliers ?? "");
+          values.push(row?.orderCustomers ?? "");
           return values;
         });
         return {
-          label: "창고별 재고",
+          label: "창고별재고",
           columns,
           headers: columns.map((column) => column.header),
           numeric: columns.map((column, index) => column.numeric ? index : -1).filter((index) => index >= 0),
@@ -2761,15 +2784,12 @@
                     const noticeLink = preview.notice === index && sourceRow?.noticeId;
                     const noticeText = preview.noticeText === index;
                     const acknowledgement = editable && preview.acknowledgement === index && sourceRow?.noticeId;
-                    const negativeBalance = previewId === "inventory" && (
-                      (typeof sourceRow?.inventoryTotal === "number" && sourceRow.inventoryTotal < 0) ||
-                      (preview.inventory || []).some((inventoryIndex) =>
-                        typeof row[inventoryIndex] === "number" && row[inventoryIndex] < 0
-                      )
-                    );
+                    const negativeBalance = previewId === "inventory" &&
+                      typeof sourceRow?.inventoryTotal === "number" && sourceRow.inventoryTotal < 0;
                     const content = editablePurchase
                       ? `<input class="purchase-input" data-purchase-code="${escapeHtml(sourceRow?.productCode || "")}"
                           data-negative-balance="${negativeBalance ? "true" : "false"}" autocomplete="off"
+                          tabindex="${negativeBalance ? "0" : "-1"}"
                           value="${escapeHtml(value)}" aria-label="${escapeHtml(sourceRow?.productCode || "")} 구매처">`
                       : noticeLink
                         ? `<button class="notice-link" type="button" data-open-notice-id="${escapeHtml(sourceRow.noticeId)}">${escapeHtml(value)}</button>`
@@ -2852,6 +2872,8 @@
         const purchaseUpload = engine.getPurchaseUploadSelection(state.workspace);
         const summaryItems = [
           { label: "주문행", value: stats.orderRowCount },
+          { label: "0 수량", value: stats.zeroOrderQuantityCount || 0, tone: stats.zeroOrderQuantityCount > 0 ? "warn" : "" },
+          { label: "음수 수량", value: stats.negativeOrderQuantityCount || 0, tone: stats.negativeOrderQuantityCount > 0 ? "warn" : "" },
           { label: "상품", value: stats.productCount },
           { label: "총 주문수량", value: stats.totalOrderQuantity },
           { label: "추가 구매 필요", value: stats.totalPurchaseNeed, tone: stats.totalPurchaseNeed > 0 ? "warn" : "" },
@@ -2881,7 +2903,7 @@
           : "재고 매칭 이상 없음";
         renderPreview();
         elements.resultsPanel.classList.remove("hidden");
-        elements.purchaseUploadButton.disabled = state.workspace.basisDateStatus !== "valid";
+        elements.downloadButton.disabled = state.workspace.basisDateStatus !== "valid";
         elements.cloudSaveButton.disabled = !state.workspace.planId || state.workspace.basisDateStatus !== "valid";
         setSystemMessage("analysis complete... (Excel 다운로드 준비 완료)");
       }
@@ -2938,92 +2960,17 @@
         }
       }
 
-      function unfulfilledWorkbookFileName() {
-        const date = String(state.workspace?.basisDate || "").replace(/[^0-9]/g, "");
-        return `미출고현황_${date || new Date().toISOString().slice(0, 10).replace(/-/g, "")}.xlsx`;
-      }
-
       function downloadResult() {
-        if (!state.workspace || !window.XLSX) return;
+        if (!state.workspace || !window.XLSX || elements.downloadButton.disabled) return;
         try {
-          const definitions = getPreviewDefinitions(state.workspace);
-          const preview = definitions.allocations;
-          const pairs = fullSortedPreviewPairs("allocations", preview);
-          const matrix = [preview.headers, ...pairs.map((pair) => pair.row)];
-          const ws = window.XLSX.utils.aoa_to_sheet(matrix);
-          const wb = window.XLSX.utils.book_new();
-          const lastRow = Math.max(1, matrix.length);
-          const lastColumn = preview.headers.length - 1;
-          const border = {
-            top: { style: "thin", color: { rgb: "B8C5CC" } },
-            bottom: { style: "thin", color: { rgb: "B8C5CC" } },
-            left: { style: "thin", color: { rgb: "B8C5CC" } },
-            right: { style: "thin", color: { rgb: "B8C5CC" } },
-          };
-          ws["!cols"] = [
-            { wch: 12 }, { wch: 9 }, { wch: 25 }, { wch: 8 }, { wch: 10 }, { wch: 8 },
-            { wch: 8 }, { wch: 8 }, { wch: 14 }, { wch: 11 }, { wch: 21 }, { wch: 14 },
-          ];
-          ws["!rows"] = Array.from({ length: lastRow }, (_, index) => ({ hpt: index === 0 ? 23 : 18 }));
-          ws["!autofilter"] = { ref: `A1:${window.XLSX.utils.encode_col(lastColumn)}${lastRow}` };
-
-          for (let c = 0; c <= lastColumn; c += 1) {
-            const addr = window.XLSX.utils.encode_cell({ r: 0, c });
-            const cell = ws[addr];
-            if (!cell) continue;
-            cell.s = {
-              font: { name: "맑은 고딕", sz: 10, bold: true, color: { rgb: "FFFFFF" } },
-              fill: { patternType: "solid", fgColor: { rgb: "147F75" } },
-              alignment: { horizontal: "center", vertical: "center" },
-              border,
-            };
-          }
-
-          pairs.forEach((pair, pairIndex) => {
-            const r = pairIndex + 1;
-            const sourceRow = pair.sourceRow || {};
-            const fill = String(previewRowFill("allocations", sourceRow) || "#FFFFFF")
-              .replace(/^#/, "").toUpperCase();
-            const warnUnit = exactWarningUnit(sourceRow);
-            pair.row.forEach((value, c) => {
-              const addr = window.XLSX.utils.encode_cell({ r, c });
-              const cell = ws[addr] || (ws[addr] = { t: "s", v: "" });
-              const numeric = preview.numeric.includes(c) && typeof value === "number" && Number.isFinite(value);
-              cell.s = {
-                font: { name: "맑은 고딕", sz: 9, color: { rgb: warnUnit ? "EF2B2D" : "1F2937" } },
-                fill: { patternType: "solid", fgColor: { rgb: fill || "FFFFFF" } },
-                alignment: {
-                  horizontal: numeric ? "right" : ([1, 3].includes(c) ? "center" : "left"),
-                  vertical: "center",
-                },
-                border,
-              };
-              if (numeric) cell.z = "#,##0.###";
-              if (c === 9 && numeric) cell.z = "#,##0";
-            });
-          });
-
-          window.XLSX.utils.book_append_sheet(wb, ws, "미출고현황");
-          const fileName = unfulfilledWorkbookFileName();
-          window.XLSX.writeFile(wb, fileName, { compression: true });
-          setSystemMessage("unfulfilled workbook saved... (미출고현황)");
-          showToast(`${fileName} 다운로드를 시작했습니다.`);
-        } catch (error) {
-          showToast(error.message || "미출고현황 Excel을 생성하지 못했습니다.", true);
-        }
-      }
-
-      function downloadPurchaseUpload() {
-        if (!state.workspace) return;
-        try {
-          const fileName = workbookTools.getPurchaseUploadFileName(state.workspace);
-          workbookTools.downloadPurchaseUploadWorkbook(state.workspace, window.XLSX, fileName);
+          const fileName = workbookTools.getOutputFileName(state.workspace.createdAt);
+          workbookTools.downloadWorkbook(state.workspace, window.XLSX, fileName);
           const selection = engine.getPurchaseUploadSelection(state.workspace);
-          setSystemMessage(`purchase upload saved... (${selection.included.length}행)`);
-          showToast(`${fileName} 다운로드를 시작했습니다. 제외 ${selection.excluded.length}행은 구매업로드 대상에서 제외됩니다.`);
+          setSystemMessage(`unified workbook saved... (4 sheets, 구매업로드 ${selection.included.length}행)`);
+          showToast(`${fileName} 한 파일 다운로드를 시작했습니다.`);
         } catch (error) {
-          setSystemMessage("purchase upload blocked... (기준일·제외 사유 확인)");
-          showToast(error.message || "구매업로드 Excel을 생성하지 못했습니다.", true);
+          setSystemMessage("unified workbook blocked... (기준일·출력 오류 확인)");
+          showToast(error.message || "통합 Excel을 생성하지 못했습니다.", true);
         }
       }
 
@@ -3281,23 +3228,61 @@
         window.requestAnimationFrame(() => input.select());
       }
 
+      function commitPurchaseInput(input) {
+        engine.setPurchaseValue(state.workspace, input.dataset.purchaseCode, input.value);
+        scheduleLocalSave();
+      }
+
+      function focusOutsideInventoryTable(direction) {
+        const selector = [
+          "a[href]", "button:not([disabled])", "input:not([disabled]):not(.purchase-input)",
+          "select:not([disabled])", "textarea:not([disabled])", "[tabindex]:not([tabindex='-1'])",
+        ].join(",");
+        const focusable = Array.from(document.querySelectorAll(selector))
+          .filter((element) =>
+            element.getClientRects().length > 0 &&
+            !element.closest("[inert]") &&
+            !element.closest("#previewTable"),
+          );
+        const following = focusable.filter((element) =>
+          Boolean(elements.previewTable.compareDocumentPosition(element) & Node.DOCUMENT_POSITION_FOLLOWING),
+        );
+        const preceding = focusable.filter((element) =>
+          Boolean(elements.previewTable.compareDocumentPosition(element) & Node.DOCUMENT_POSITION_PRECEDING),
+        );
+        const target = direction > 0 ? following[0] : preceding[preceding.length - 1];
+        if (!target) return false;
+        target.focus({ preventScroll: true });
+        target.scrollIntoView({ block: "nearest", inline: "nearest" });
+        return true;
+      }
+
       function handleInventoryPurchaseNavigation(event) {
         const input = event.target.closest?.(".purchase-input[data-purchase-code]");
-        if (!input || !state.workspace || state.activePreview !== "inventory" || event.isComposing) return;
+        if (!input || !state.workspace || state.activePreview !== "inventory") return;
+        if (event.isComposing || event.keyCode === 229 || input.dataset.composing === "true") return;
         const inputs = Array.from(elements.previewTable.querySelectorAll(".purchase-input[data-purchase-code]"));
         const currentIndex = inputs.indexOf(input);
         if (currentIndex < 0) return;
 
-        if (event.key === "Enter") {
+        if (["Enter", "ArrowDown", "ArrowUp"].includes(event.key)) {
           event.preventDefault();
-          const next = inputs[Math.min(inputs.length - 1, currentIndex + 1)];
+          commitPurchaseInput(input);
+          const direction = event.key === "ArrowUp" || (event.key === "Enter" && event.shiftKey) ? -1 : 1;
+          const nextIndex = Math.max(0, Math.min(inputs.length - 1, currentIndex + direction));
+          const next = inputs[nextIndex];
           if (next && next !== input) focusPurchaseInput(next);
           return;
         }
 
         if (event.key !== "Tab") return;
+        commitPurchaseInput(input);
         const negatives = inputs.filter((candidate) => candidate.dataset.negativeBalance === "true");
-        if (negatives.length === 0) return;
+        if (negatives.length === 0) {
+          event.preventDefault();
+          focusOutsideInventoryTable(event.shiftKey ? -1 : 1);
+          return;
+        }
         event.preventDefault();
         const direction = event.shiftKey ? -1 : 1;
         const negativeIndex = negatives.indexOf(input);
@@ -3318,7 +3303,6 @@
 
       elements.analyzeButton.addEventListener("click", runAnalysis);
       elements.downloadButton.addEventListener("click", downloadResult);
-      elements.purchaseUploadButton.addEventListener("click", downloadPurchaseUpload);
       elements.printButton.addEventListener("click", printActiveTable);
       elements.columnWidthSaveButton.addEventListener("click", persistActiveColumnWidths);
       elements.columnWidthResetButton.addEventListener("click", resetActiveColumnWidths);
@@ -3402,6 +3386,16 @@
         if (!input || !state.workspace || state.activePreview !== "inventory") return;
         engine.setPurchaseValue(state.workspace, input.dataset.purchaseCode, input.value);
         scheduleLocalSave();
+      });
+      elements.previewTable.addEventListener("compositionstart", (event) => {
+        const input = event.target.closest?.(".purchase-input[data-purchase-code]");
+        if (input) input.dataset.composing = "true";
+      });
+      elements.previewTable.addEventListener("compositionend", (event) => {
+        const input = event.target.closest?.(".purchase-input[data-purchase-code]");
+        if (!input || !state.workspace || state.activePreview !== "inventory") return;
+        input.dataset.composing = "false";
+        commitPurchaseInput(input);
       });
       elements.previewTable.addEventListener("change", (event) => {
         const acknowledgement = event.target.closest("[data-notice-acknowledgement]");

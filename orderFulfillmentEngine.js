@@ -7,7 +7,7 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  const ENGINE_VERSION = "3.4.0";
+  const ENGINE_VERSION = "3.5.0";
   const WORKSPACE_SCHEMA_VERSION = "shipping-workspace/v2";
   const INVENTORY_OVERRIDE_SCHEMA_VERSION = "shipping-inventory-overrides/v1";
   const HEADER_SCAN_LIMIT = 30;
@@ -492,11 +492,11 @@
 
         const quantityCell = getField(row, columnMap, "수량");
         const quantity = parseNumericCell(quantityCell);
-        if (!quantity.ok || quantity.value < 0) {
+        if (!quantity.ok || quantity.blank) {
           errors.push(
             createIssue(
               "ORDER_QUANTITY_INVALID",
-              `${rowIndex + 1}행 주문수량은 0 이상의 숫자여야 합니다.`,
+              `${rowIndex + 1}행 주문수량은 빈값이 아닌 유한한 숫자여야 합니다.`,
               { rowNumber: rowIndex + 1, productCode: code, value: quantityCell },
             ),
           );
@@ -566,6 +566,17 @@
         ? -1
         : columnMap[normalizeHeader("품목코드")];
     const memoCount = rows.filter((row) => row.note || row.note1).length;
+    const zeroQuantityCount = rows.filter((row) => row.quantity === 0).length;
+    const negativeQuantityCount = rows.filter((row) => row.quantity < 0).length;
+    if (zeroQuantityCount > 0 || negativeQuantityCount > 0) {
+      warnings.push(
+        createIssue(
+          "ORDER_NON_POSITIVE_QUANTITY",
+          `주문수량 0 ${zeroQuantityCount}행, 음수 ${negativeQuantityCount}행을 원 부호 그대로 분석합니다.`,
+          { zeroQuantityCount, negativeQuantityCount },
+        ),
+      );
+    }
 
     return {
       kind: "orders",
@@ -581,6 +592,8 @@
       rows,
       rowCount: rows.length,
       memoCount,
+      zeroQuantityCount,
+      negativeQuantityCount,
       errors,
       warnings,
       headerMapping: {
@@ -1225,6 +1238,14 @@
     return String(summary?.suppliers || "");
   }
 
+  function orderCustomerQuantityDisplay(workspace, productCode) {
+    const code = normalizeProductCode(productCode);
+    return (Array.isArray(workspace?.orders) ? workspace.orders : [])
+      .filter((row) => normalizeProductCode(row?.productCode) === code)
+      .map((row) => `${cleanText(row.customer)}(${formatPlainNumber(row.quantity)})`)
+      .join("\n");
+  }
+
   function getInventoryViewRows(workspace) {
     ensureInventoryPurchaseRows(workspace);
     const columns = getInventoryColumnDescriptors(workspace);
@@ -1247,6 +1268,7 @@
         inventoryTotal,
         purchase: String(purchaseInputs[productCode] || ""),
         suppliers: inventorySupplierDisplay(workspace, productCode),
+        orderCustomers: orderCustomerQuantityDisplay(workspace, productCode),
       };
     });
     const negativeCount = rows.filter((row) => row.inventoryTotal < 0).length;
@@ -1586,6 +1608,8 @@
     const negativePurchaseCount = allocations.filter(
       (row) => typeof row.purchaseNeed === "number" && row.purchaseNeed < 0,
     ).length;
+    const zeroOrderQuantityCount = allocations.filter((row) => row.quantity === 0).length;
+    const negativeOrderQuantityCount = allocations.filter((row) => row.quantity < 0).length;
     const reconciliationErrorCount = allocations.filter(
       (row) =>
         row.inventoryMatched &&
@@ -1761,6 +1785,8 @@
         allocationDifference,
         productQuantityDifference,
         negativePurchaseCount,
+        zeroOrderQuantityCount,
+        negativeOrderQuantityCount,
         reconciliationErrorCount,
         statusCounts,
         inventoryNegativeCount: inventoryParsed.rows.filter(
