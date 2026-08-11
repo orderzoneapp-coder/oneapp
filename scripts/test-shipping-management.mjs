@@ -281,7 +281,7 @@ const edgeOrders = parseOrders(
 );
 const edgeInventory = parseInventory(
   buildInventoryMatrix([
-    { code: "000100", whole: 5, seoul: 4, transfer: -1 },
+    { code: "000100", whole: 5, transfer2: -10, seoul: 4, transfer: -1 },
     { code: "000100-A", name: "대체 참고상품", whole: 7, seoul: 0, transfer: 0 },
   ]),
 );
@@ -502,7 +502,7 @@ assert.equal(shadowWorkspace.purchaseManagement.filter((row) => row.inventorySha
 engine.setPurchaseValue(shadowWorkspace, "000002", "재고전용거래처");
 assert.equal(engine.getPurchaseInputs(shadowWorkspace)["000002"], "재고전용거래처");
 assert.equal(engine.getPurchaseUploadSelection(shadowWorkspace).included.some((row) => row.productCode === "000002"), false);
-assert.equal(engine.getPurchaseUploadSelection(shadowWorkspace).excluded.some((row) => row.productCode === "000002"), false);
+assert.equal(engine.getPurchaseUploadSelection(shadowWorkspace).excluded.some((row) => row.productCode === "000002"), true);
 assert.deepEqual(
   {
     totalOrderQuantity: shadowWorkspace.stats.totalOrderQuantity,
@@ -585,14 +585,22 @@ assert.deepEqual(
   {
     allocations: dynamicWorkspace.allocations,
     validation: dynamicWorkspace.validationResults,
-    upload: engine.getPurchaseUploadSelection(dynamicWorkspace),
   },
   {
     allocations: baseDynamicWorkspace.allocations,
     validation: baseDynamicWorkspace.validationResults,
-    upload: engine.getPurchaseUploadSelection(baseDynamicWorkspace),
   },
-  "dynamic inspection columns must not alter legacy allocation, validation, or purchase-upload selection",
+  "dynamic inspection columns must not alter legacy allocation or validation",
+);
+assert.deepEqual(
+  engine.getPurchaseUploadSelection(dynamicWorkspace).included.map((row) => [row.productCode, row.purchaseNeed]),
+  [["000010", 7]],
+  "negative warehouse total must become a positive purchase-upload quantity",
+);
+assert.equal(
+  engine.getPurchaseUploadSelection(baseDynamicWorkspace).included.length,
+  0,
+  "nonnegative warehouse totals must not enter purchase upload",
 );
 assert.equal(dynamicWorkspace.stats.inventoryNegativeCount, 1);
 assert.equal(baseDynamicWorkspace.stats.inventoryNegativeCount, 0);
@@ -671,6 +679,13 @@ assert.equal(overriddenRow.values[columnByHeader.get("기본").sourceIndex], "�
 assert.equal(overriddenRow.values[columnByHeader.get("전송").sourceIndex], "검수전송");
 assert.equal(overriddenRow.values[columnByHeader.get("창고").sourceIndex], 4321);
 assert.equal(overriddenRow.purchase, "검수구매");
+assert.deepEqual(
+  engine.getPurchaseUploadSelection(overrideWorkspace).included
+    .filter((row) => row.productCode === "000100")
+    .map((row) => row.purchaseNeed),
+  [12],
+  "edited warehouse shortage -12 must export as positive purchase quantity 12",
+);
 assert.equal(JSON.stringify(overrideWorkspace.sourceFiles.inventory.matrix), overrideSourceBefore, "source inventory matrix must remain byte-shape immutable");
 assert.equal(
   legacyCalculationSnapshot(overrideWorkspace),
@@ -690,7 +705,7 @@ corruptOverrideWorkspace.inventoryOverrides = {
 };
 assert.equal(
   engine.getInventoryViewRows(corruptOverrideWorkspace).rows.find((row) => row.productCode === "000100").inventoryTotal,
-  8,
+  -2,
   "corrupt numeric overrides must fall back to the original signed warehouse values",
 );
 assert.throws(
