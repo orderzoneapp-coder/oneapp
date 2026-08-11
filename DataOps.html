@@ -358,6 +358,36 @@ const DATAOPS_VENDOR_CHIP_MODULE = Object.freeze({
         const code = DATAOPS_VENDOR_CHIP_MODULE.normalizeCode(item.코드 || item.code);
         return code && code !== 'NO_CODE' ? code : `NO_CODE|${safeStr(item.품명 || item.name, '이름없음')}`;
     },
+    getExactOriginalCell: (raw = {}, names = []) => {
+        const normalizeHeader = (value) => safeStr(value, '').replace(/\s/g, '').replace(/[()（）]/g, '').toLowerCase();
+        const keys = Object.keys(raw || {});
+        for (const name of names) {
+            const target = normalizeHeader(name);
+            const found = keys.find(key => normalizeHeader(key) === target);
+            if (found !== undefined && raw[found] !== undefined && raw[found] !== null && String(raw[found]).trim() !== '') return raw[found];
+        }
+        return null;
+    },
+    buildSalesSourceEvidence: ({ sale = {}, sourceId = '', code = '', name = '', vendor = '', qty = 0, calculatedAmount = 0 } = {}) => {
+        const raw = sale._raw || {};
+        const rawUnitPrice = DATAOPS_VENDOR_CHIP_MODULE.getExactOriginalCell(raw, ['판매단가', '출고단가', '출고가', '출고가(공지)', '출고가 (공지)', '판매가', '단가']);
+        const rawAmount = DATAOPS_VENDOR_CHIP_MODULE.getExactOriginalCell(raw, ['공급가액', '최종공급가액', '최종공급가액(할인적용)', '판매금액', '출고금액', '매출금액', '공급가', '금액', '합계', '총액']);
+        return {
+            sourceId,
+            originalCode: code === 'NO_CODE' ? '' : code,
+            name: safeStr(name, '이름없음'),
+            vendor: safeStr(vendor, '미지정'),
+            qty: safeNum(qty),
+            unitPrice: rawUnitPrice === null ? '' : parseNumber(rawUnitPrice),
+            amount: rawAmount === null ? '' : parseNumber(rawAmount),
+            calculatedAmount: safeNum(calculatedAmount),
+            fileName: safeStr(sale._sourceFileName),
+            sheetName: safeStr(sale._sourceSheet),
+            rowNumber: sale._sourceRowNumber !== undefined ? sale._sourceRowNumber : '',
+            isReturn: safeNum(qty) < 0,
+            purchaseVendor: safeStr(sale.매입처매칭, '미지정')
+        };
+    },
     aggregateDetails: (details = {}) => {
         const aggregated = {};
         Object.entries(details || {}).forEach(([key, data]) => {
@@ -438,15 +468,16 @@ const DATAOPS_VENDOR_CHIP_MODULE = Object.freeze({
             const sourcesByVendor = new Map();
             group.sources.forEach(source => {
                 const vendor = safeStr(source.currentVendor || source.vendor, '미지정');
-                if (!sourcesByVendor.has(vendor)) sourcesByVendor.set(vendor, { qty: 0, amount: 0, rows: [] });
+                if (!sourcesByVendor.has(vendor)) sourcesByVendor.set(vendor, { qty: 0, amount: 0, amountComplete: true, rows: [] });
                 const sourceGroup = sourcesByVendor.get(vendor);
                 sourceGroup.qty += safeNum(source.qty);
-                sourceGroup.amount += safeNum(source.amount);
+                if (source.amount === '' || source.amount === null || source.amount === undefined) sourceGroup.amountComplete = false;
+                else sourceGroup.amount += safeNum(source.amount);
                 sourceGroup.rows.push(source);
             });
             const vendors = new Set([...sourcesByVendor.keys(), ...group.chipsByVendor.keys()]);
             vendors.forEach(vendor => {
-                const source = sourcesByVendor.get(vendor) || { qty: 0, amount: 0, rows: [] };
+                const source = sourcesByVendor.get(vendor) || { qty: 0, amount: 0, amountComplete: true, rows: [] };
                 const chip = group.chipsByVendor.get(vendor) || { qty: 0, rev: 0, cogs: 0, rows: [] };
                 const difference = safeNum(source.qty) - safeNum(chip.qty);
                 if (Math.abs(difference) <= DATAOPS_VENDOR_CHIP_MODULE.QTY_TOLERANCE) return;
@@ -464,7 +495,7 @@ const DATAOPS_VENDOR_CHIP_MODULE = Object.freeze({
                     sourceQty: safeNum(source.qty),
                     calculatedQty: safeNum(chip.qty),
                     differenceQty: difference,
-                    sourceAmount: safeNum(source.amount),
+                    sourceAmount: source.amountComplete ? safeNum(source.amount) : '',
                     calculatedAmount: safeNum(chip.rev),
                     calculatedCost: safeNum(chip.cogs),
                     fileName: safeStr(sourceRow.fileName),
@@ -565,6 +596,7 @@ const DATAOPS_F9_PREFLIGHT_MODULE = Object.freeze({
         WAREHOUSE_02_MISMATCH: '02창고 오차',
         UNIT_CONVERSION_FAILURE: '단위 변환 실패'
     }),
+    numberOrBlank: (value) => value === '' || value === null || value === undefined ? '' : safeNum(value),
     getSourceEvidence: (item = {}, preferredRoles = []) => {
         const salesSources = Array.isArray(item._salesSourceEvidence) ? item._salesSourceEvidence : [];
         const otherSources = Array.isArray(item._sourceEvidence) ? item._sourceEvidence : [];
@@ -600,6 +632,7 @@ const DATAOPS_F9_PREFLIGHT_MODULE = Object.freeze({
             differenceQty: '',
             sourcePrice: '',
             calculatedCost: '',
+            calculatedAmount: '',
             differenceAmount: '',
             fileName: location.fileName,
             sheetName: location.sheetName,
@@ -621,7 +654,8 @@ const DATAOPS_F9_PREFLIGHT_MODULE = Object.freeze({
                 calculatedQty: error.calculatedQty,
                 differenceQty: error.differenceQty,
                 calculatedCost: error.calculatedCost,
-                differenceAmount: safeNum(error.sourceAmount) - safeNum(error.calculatedAmount),
+                calculatedAmount: error.calculatedAmount,
+                differenceAmount: error.sourceAmount === '' ? '' : safeNum(error.sourceAmount) - safeNum(error.calculatedAmount),
                 fileName: error.fileName,
                 sheetName: error.sheetName,
                 rowNumber: error.rowNumber,
@@ -683,7 +717,7 @@ const DATAOPS_F9_PREFLIGHT_MODULE = Object.freeze({
                     sourceQty: safeNum(warehouseError.purchaseQty),
                     calculatedQty: safeNum(warehouseError.salesQty),
                     differenceQty: safeNum(warehouseError.balance),
-                    sourcePrice: safeNum(firstDetail.price),
+                    sourcePrice: DATAOPS_F9_PREFLIGHT_MODULE.numberOrBlank(firstDetail.price),
                     reason: `02창고 구매 ${safeNum(warehouseError.purchaseQty)} / 판매 ${safeNum(warehouseError.salesQty)} / 오차 ${safeNum(warehouseError.balance)}`,
                     action: '02창고 구매·판매 원본을 확인하세요.'
                 }));
@@ -695,8 +729,8 @@ const DATAOPS_F9_PREFLIGHT_MODULE = Object.freeze({
                 || /단위\s*(변환|환산).*실패|환산율.*(없음|오류)|변환실패/.test(issueText);
             if (hasUnitConversionFailure) {
                 issues.push(DATAOPS_F9_PREFLIGHT_MODULE.buildItemIssue('UNIT_CONVERSION_FAILURE', item, {
-                    sourceQty: safeNum(item._operationSourceQty || item._sourceQty),
-                    calculatedQty: safeNum(item._operationTargetQty || item._targetQty),
+                    sourceQty: DATAOPS_F9_PREFLIGHT_MODULE.numberOrBlank(item._operationSourceQty !== undefined ? item._operationSourceQty : item._sourceQty),
+                    calculatedQty: DATAOPS_F9_PREFLIGHT_MODULE.numberOrBlank(item._operationTargetQty !== undefined ? item._operationTargetQty : item._targetQty),
                     reason: conversionReason || '단위 변환에 필요한 환산값을 확정할 수 없습니다.',
                     action: '마스터 단위와 환산율을 확인하세요.'
                 }));
@@ -713,7 +747,7 @@ const DATAOPS_F9_PREFLIGHT_MODULE = Object.freeze({
                     sourceQty: safeNum(row.purchaseQty),
                     calculatedQty: safeNum(row.salesQty),
                     differenceQty: safeNum(row.balance),
-                    sourcePrice: safeNum(firstDetail.price),
+                    sourcePrice: DATAOPS_F9_PREFLIGHT_MODULE.numberOrBlank(firstDetail.price),
                     reason: `02창고 구매 ${safeNum(row.purchaseQty)} / 판매 ${safeNum(row.salesQty)} / 오차 ${safeNum(row.balance)}`,
                     action: '02창고 구매·판매 원본을 확인하세요.'
                 }));
@@ -3233,7 +3267,7 @@ const DATAOPS_EVIDENCE_REPORT_MODULE = Object.freeze({
             const item = itemByKey.get(safeStr(issue.batchKey)) || {};
             const source = (Array.isArray(issue.sourceRows) && issue.sourceRows[0]) || DATAOPS_F9_PREFLIGHT_MODULE.getSourceEvidence(item);
             const calculatedQty = DATAOPS_EVIDENCE_REPORT_MODULE.numberOrBlank(issue.calculatedQty);
-            const calculatedAmount = DATAOPS_EVIDENCE_REPORT_MODULE.numberOrBlank(issue.calculatedCost);
+            const calculatedAmount = DATAOPS_EVIDENCE_REPORT_MODULE.numberOrBlank(issue.calculatedAmount === '' || issue.calculatedAmount === undefined ? issue.calculatedCost : issue.calculatedAmount);
             rows.push(DATAOPS_EVIDENCE_REPORT_MODULE.makeRow({
                 '상태': '오류',
                 '오류·변경 유형': safeStr(issue.typeLabel, issue.type),
@@ -6231,20 +6265,10 @@ ${quantityBlockReason || '실제 오차수량을 확정할 수 없습니다.'}
             };
             let pData = {};
             let originalSourceEvidenceSequence = 0;
-            const getExactOriginalCell = (raw = {}, names = []) => {
-                const normalizeHeader = (value) => safeStr(value, '').replace(/\s/g, '').replace(/[()（）]/g, '').toLowerCase();
-                const keys = Object.keys(raw || {});
-                for (const name of names) {
-                    const target = normalizeHeader(name);
-                    const found = keys.find(key => normalizeHeader(key) === target);
-                    if (found !== undefined && raw[found] !== undefined && raw[found] !== null && String(raw[found]).trim() !== '') return raw[found];
-                }
-                return null;
-            };
             const buildOriginalSourceEvidence = (item = {}, role = '', qty = '') => {
                 const raw = item._raw || {};
-                const rawUnitPrice = getExactOriginalCell(raw, ['판매단가', '입고단가', '구매가', '매입단가(원가)', '매입단가', '단가', '원가']);
-                const rawAmount = getExactOriginalCell(raw, ['공급가액', '판매금액', '입고금액', '구매금액', '매입금액', '금액']);
+                const rawUnitPrice = DATAOPS_VENDOR_CHIP_MODULE.getExactOriginalCell(raw, ['판매단가', '입고단가', '구매가', '매입단가(원가)', '매입단가', '단가', '원가']);
+                const rawAmount = DATAOPS_VENDOR_CHIP_MODULE.getExactOriginalCell(raw, ['공급가액', '판매금액', '입고금액', '구매금액', '매입금액', '금액']);
                 const rowNumber = item._sourceRowNumber !== undefined ? item._sourceRowNumber : '';
                 return {
                     sourceId: `${safeStr(item._sourceFileName, '원본')}|${safeStr(item._sourceSheet, role || '원본')}|${rowNumber || ++originalSourceEvidenceSequence}`,
@@ -6631,20 +6655,15 @@ ${quantityBlockReason || '실제 오차수량을 확정할 수 없습니다.'}
                     ? evidenceCode
                     : `NO_CODE|${safeStr(evidenceName, '이름없음')}`;
                 const evidenceRowNumber = sale._sourceRowNumber !== undefined ? sale._sourceRowNumber : '';
-                const evidence = {
+                const evidence = DATAOPS_VENDOR_CHIP_MODULE.buildSalesSourceEvidence({
+                    sale,
                     sourceId: `${safeStr(sale._sourceFileName, '판매원본')}|${safeStr(sale._sourceSheet, '판매현황')}|${evidenceRowNumber || ++salesSourceEvidenceSequence}`,
-                    originalCode: evidenceCode === 'NO_CODE' ? '' : evidenceCode,
-                    name: safeStr(evidenceName, '이름없음'),
+                    code: evidenceCode,
+                    name: evidenceName,
                     vendor: vendorKey,
-                    qty: safeNum(qty),
-                    unitPrice: safeNum(sale.단가),
-                    amount: safeNum(rev),
-                    fileName: safeStr(sale._sourceFileName),
-                    sheetName: safeStr(sale._sourceSheet),
-                    rowNumber: evidenceRowNumber,
-                    isReturn: safeNum(qty) < 0,
-                    purchaseVendor: matchKey
-                };
+                    qty,
+                    calculatedAmount: rev
+                });
                 if (!salesSourceEvidenceByProductKey.has(evidenceProductKey)) salesSourceEvidenceByProductKey.set(evidenceProductKey, []);
                 salesSourceEvidenceByProductKey.get(evidenceProductKey).push(evidence);
                 // V1.a22.29: 판매전표에 구매처+구매단가가 있으면 두 값을 함께 확정키로 본다.

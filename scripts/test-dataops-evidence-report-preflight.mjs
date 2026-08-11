@@ -37,6 +37,7 @@ const context = vm.createContext({
   Date,
   safeNum,
   safeStr,
+  parseNumber: safeNum,
   formatQty: (value) => String(value),
 });
 context.window = context;
@@ -45,6 +46,24 @@ new vm.Script(
   `${vendorSource}\nglobalThis.vendorChipModule = DATAOPS_VENDOR_CHIP_MODULE;\nglobalThis.preflightModule = DATAOPS_F9_PREFLIGHT_MODULE;`,
   { filename: "DataOps.vendor-chip.js" },
 ).runInContext(context);
+
+for (const testCase of fixture.salesSourceEvidenceCases) {
+  const evidence = context.vendorChipModule.buildSalesSourceEvidence({
+    sale: testCase.sale,
+    sourceId: `${testCase.sale._sourceFileName}|${testCase.sale._sourceSheet}|${testCase.sale._sourceRowNumber}`,
+    code: "SALE-RAW",
+    name: testCase.name,
+    vendor: "거래처A",
+    qty: testCase.qty,
+    calculatedAmount: testCase.calculatedAmount,
+  });
+  assert.equal(evidence.unitPrice, testCase.expectedUnitPrice, `${testCase.name}: 원본 단가`);
+  assert.equal(evidence.amount, testCase.expectedAmount, `${testCase.name}: 원본 금액`);
+  assert.equal(evidence.calculatedAmount, testCase.expectedCalculatedAmount, `${testCase.name}: 계산 금액 분리`);
+  assert.equal(evidence.fileName, testCase.sale._sourceFileName);
+  assert.equal(evidence.sheetName, testCase.sale._sourceSheet);
+  assert.equal(evidence.rowNumber, testCase.sale._sourceRowNumber);
+}
 
 for (const testCase of fixture.vendorChipCases) {
   const reconciled = context.vendorChipModule.reconcileItem(testCase.item);
@@ -73,6 +92,7 @@ for (const testCase of fixture.vendorChipCases) {
     assert.ok(vendorErrors[0].name, `${testCase.name}: 상품명`);
     assert.ok(vendorErrors[0].reason, `${testCase.name}: 오류 사유`);
     assert.ok(vendorErrors[0].action, `${testCase.name}: 확인 조치`);
+    assert.equal(vendorErrors[0].differenceAmount, testCase.expectedDifferenceAmount, `${testCase.name}: 차이금액 공란 보존`);
     assert.equal(vendorErrors[0].fileName, "판매.xlsx");
     assert.ok(vendorErrors[0].rowNumber);
   }
@@ -154,6 +174,15 @@ assert.equal(missingCostIssue.sheetName, "구매현황");
 assert.equal(missingCostIssue.rowNumber, 22);
 assert.equal(missingCostIssue.sourcePrice, "", "비어 있는 원본 단가를 0으로 추정하면 안 됩니다");
 assert.equal(missingCostIssue.calculatedCost, 0);
+const unitConversionIssue = preflight.issues.find(
+  (issue) => issue.type === "UNIT_CONVERSION_FAILURE",
+);
+assert.equal(unitConversionIssue.sourceQty, "", "단위변환 원본 수량 근거가 없으면 공란이어야 합니다");
+assert.equal(unitConversionIssue.calculatedQty, "", "단위변환 계산 수량 근거가 없으면 공란이어야 합니다");
+const warehouseIssue = preflight.issues.find(
+  (issue) => issue.type === "WAREHOUSE_02_MISMATCH",
+);
+assert.equal(warehouseIssue.sourcePrice, "", "02창고 원본 단가 근거가 없으면 공란이어야 합니다");
 
 const exportHandler = section(
   "const handleCombinedExport = useCallback",
