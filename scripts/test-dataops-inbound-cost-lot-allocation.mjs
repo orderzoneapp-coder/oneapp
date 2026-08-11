@@ -86,6 +86,141 @@ const inventoryEngine = runtimeContext.actualUseInventoryEngine({
 });
 
 assert.equal(inventoryEngine.executeAnalysis(fixture), true, "fixture analysis must complete");
+
+const makeIsolatedFixture = ({ parsedPrev = [], parsedIn = [], parsedOut = [] } = {}) => ({
+  ...fixture,
+  parsedPrev,
+  parsedIn,
+  parsedOut,
+  parsedEnd: [],
+  endFileProvided: false,
+});
+const makeClassificationPurchase = (testCase, purchase, index) => ({
+  코드: testCase.code,
+  품명: `분류_${testCase.name}`,
+  단위: "BOX",
+  수량: purchase.qty,
+  단가: purchase.cost,
+  거래처: purchase.vendor,
+  일자: fixture.periodStr,
+  _transactionVendor: purchase.vendor,
+  _purchaseTargetVendor: purchase.targetVendor,
+  _purchaseLotVendor: purchase.vendor,
+  _displayPurchaseVendor: purchase.vendor,
+  _uploadRole: "in",
+  _fileType: "RAW_DATA",
+  _sourceFileName: "구매_분류fixture.xlsx",
+  _sourceSheet: "구매현황",
+  _raw: {
+    전표번호: `${testCase.code}-IN-${index + 1}`,
+    거래처명: purchase.vendor,
+    구매처: purchase.targetVendor,
+    품목코드: testCase.code,
+    품목명: `분류_${testCase.name}`,
+    수량: purchase.qty,
+    단가: purchase.cost,
+  },
+});
+const makeClassificationSale = (testCase, sale, index) => ({
+  코드: testCase.code,
+  품명: `분류_${testCase.name}`,
+  단위: "BOX",
+  수량: sale.qty,
+  단가: sale.cost * 2,
+  거래처: sale.vendor,
+  매입처매칭: sale.purchaseVendor,
+  일자: fixture.periodStr,
+  _transactionVendor: sale.vendor,
+  _salesVendor: sale.vendor,
+  _salesDisplayVendor: sale.vendor,
+  _salesGroupVendor: sale.vendor,
+  _confirmedPurchaseVendor: sale.purchaseVendor,
+  _salesConfirmedPurchaseVendor: sale.purchaseVendor,
+  _hasSalesConfirmedPurchase: true,
+  _salesPurchaseUnitCost: sale.cost,
+  _uploadRole: "out",
+  _fileType: "RAW_DATA",
+  _sourceFileName: "판매_분류fixture.xlsx",
+  _sourceSheet: "판매현황",
+  _raw: {
+    전표번호: `${testCase.code}-OUT-${index + 1}`,
+    거래처명: sale.vendor,
+    구매처: sale.purchaseVendor,
+    구매단가: sale.cost,
+    품목코드: testCase.code,
+    품목명: `분류_${testCase.name}`,
+    수량: sale.qty,
+    단가: sale.cost * 2,
+  },
+});
+const sourceEntriesForRole = (testRows, role) => testRows.flatMap((row) => row._sourceEntries || [])
+  .filter((entry) => entry.role === role);
+const chipQty = (row) => Object.values(row?.출고내역 || {}).reduce(
+  (sum, detail) => sum + Number(detail?.qty || 0),
+  0,
+);
+
+const exclusionViolations = [];
+for (const testCase of fixture.internalPurchaseExclusionRegression.classificationCases) {
+  const caseFixture = makeIsolatedFixture({
+    parsedIn: testCase.purchases.map((purchase, index) => makeClassificationPurchase(testCase, purchase, index)),
+    parsedOut: testCase.sales.map((sale, index) => makeClassificationSale(testCase, sale, index)),
+  });
+  assert.equal(inventoryEngine.executeAnalysis(caseFixture), true, `${testCase.name} analysis must complete`);
+  const caseRows = hookState[0].filter((row) => String(row.코드) === testCase.code);
+  const expectedRow = caseRows.find((row) => String(row.거래처) === testCase.expectedVendor);
+  if (caseRows.length !== 1) {
+    exclusionViolations.push(
+      `${testCase.name}: expected one retained purchase Lot, got ${caseRows.length} (${caseRows.map((row) => `${row.거래처}:${row._purchaseFlowKind}`).join(", ")})`,
+    );
+  }
+  if (!expectedRow || expectedRow._purchaseFlowKind !== testCase.expectedKind) {
+    exclusionViolations.push(
+      `${testCase.name}: expected ${testCase.expectedVendor}:${testCase.expectedKind}, got ${expectedRow?._purchaseFlowKind || "missing"}`,
+    );
+  }
+  const excludedInEntries = sourceEntriesForRole(caseRows, "in")
+    .filter((entry) => ["우리농산", "3우리", "1전송"].includes(String(entry.vendor)));
+  if (testCase.name !== "excluded-without-source-kept-for-confirmed-demand" && excludedInEntries.length !== 0) {
+    exclusionViolations.push(`${testCase.name}: excluded purchase Source Ledger entries=${excludedInEntries.length}`);
+  }
+}
+
+const greenOnionFixture = makeIsolatedFixture(fixture.internalPurchaseExclusionRegression);
+assert.equal(inventoryEngine.executeAnalysis(greenOnionFixture), true, "green-onion actual-structure analysis must complete");
+const greenOnionRows = hookState[0].filter((row) => String(row.코드) === "101020114");
+const greenOnionPrevious = greenOnionRows.find((row) => Number(row.기초) === 13);
+const greenOnionExternal = greenOnionRows.find((row) => String(row.거래처) === "가락(태수농산)");
+const greenOnionInternalRows = greenOnionRows.filter((row) => ["우리농산", "3우리"].includes(String(row.거래처)));
+const greenOnionInEntries = sourceEntriesForRole(greenOnionRows, "in");
+const greenOnionInternalInEntries = greenOnionInEntries.filter((entry) => ["우리농산", "3우리"].includes(String(entry.vendor)));
+if (greenOnionRows.length !== 2) exclusionViolations.push(`green-onion: expected 2 Lots, got ${greenOnionRows.length}`);
+if (greenOnionInternalRows.length !== 0) exclusionViolations.push(`green-onion: internal Lots retained=${greenOnionInternalRows.map((row) => row.거래처).join(",")}`);
+if (greenOnionInternalInEntries.length !== 0) exclusionViolations.push(`green-onion: internal in-ledger entries=${greenOnionInternalInEntries.length}`);
+if (greenOnionInEntries.reduce((sum, entry) => sum + Number(entry.qty || 0), 0) !== 600) {
+  exclusionViolations.push(`green-onion: retained inbound ledger qty=${greenOnionInEntries.reduce((sum, entry) => sum + Number(entry.qty || 0), 0)}`);
+}
+if (!greenOnionPrevious || Number(greenOnionPrevious.출고) !== 13) exclusionViolations.push(`green-onion: previous outbound=${greenOnionPrevious?.출고 ?? "missing"}`);
+if (!greenOnionExternal || greenOnionExternal._purchaseFlowKind !== "STANDARD") exclusionViolations.push(`green-onion: external kind=${greenOnionExternal?._purchaseFlowKind || "missing"}`);
+if (!greenOnionExternal || Number(greenOnionExternal.입고) !== 600 || Number(greenOnionExternal.출고) !== 504 || Number(greenOnionExternal.전산잔량) !== 96) {
+  exclusionViolations.push(`green-onion: external in/out/remain=${greenOnionExternal?.입고 ?? "missing"}/${greenOnionExternal?.출고 ?? "missing"}/${greenOnionExternal?.전산잔량 ?? "missing"}`);
+}
+if (greenOnionRows.reduce((sum, row) => sum + Number(row.출고 || 0), 0) !== 517) {
+  exclusionViolations.push(`green-onion: external-sale outbound=${greenOnionRows.reduce((sum, row) => sum + Number(row.출고 || 0), 0)}`);
+}
+if (greenOnionRows.reduce((sum, row) => sum + chipQty(row), 0) !== 517) {
+  exclusionViolations.push(`green-onion: customer-chip qty=${greenOnionRows.reduce((sum, row) => sum + chipQty(row), 0)}`);
+}
+const greenOnionInvariant = runtimeContext.actualLotInvariantModule.validateRows(greenOnionRows);
+if (greenOnionInvariant.mismatchCount !== 0) exclusionViolations.push(`green-onion: allocation mismatches=${greenOnionInvariant.mismatchCount}`);
+
+assert.deepEqual(
+  exclusionViolations,
+  [],
+  "excluded purchase rows must be completely absent while confirmed external demand without an external source remains",
+);
+
+assert.equal(inventoryEngine.executeAnalysis(fixture), true, "fixture analysis must still complete after isolated classification checks");
 const returnFixture = {
   ...fixture,
   parsedPrev: [...fixture.parsedPrev, ...fixture.returnRegression.parsedPrev],
@@ -101,25 +236,22 @@ assert.ok(Array.isArray(rows), "analysis must publish product rows");
 
 const bokChoyRows = rows.filter((row) => String(row.코드) === "104574110");
 const rowByPrice = (price) => bokChoyRows.find((row) => Number(row.단가) === price);
-const chipQty = (row) => Object.values(row?.출고내역 || {}).reduce(
-  (sum, detail) => sum + Number(detail?.qty || 0),
-  0,
-);
 
-assert.equal(bokChoyRows.length, 4, "previous, Garak, Woori, and 3-Woori Lot rows must all remain");
+assert.equal(bokChoyRows.length, 4, "previous, allocated Garak/Woori, and unallocated external 9,500 Lots must remain");
 
 const previousLot = rowByPrice(14000);
 const garakLot = rowByPrice(9000);
 const wooriLot = rowByPrice(6500);
-const internalMoveLot = rowByPrice(9500);
+const external9500Lot = rowByPrice(9500);
 assert.ok(previousLot, "previous closing Lot must remain at 14,000");
 assert.ok(garakLot, "Garak Lot must remain at 9,000");
 assert.ok(wooriLot, "Woori external-sale Lot must remain at 6,500");
-assert.ok(internalMoveLot, "3-Woori internal-move Lot must remain at 9,500");
+assert.ok(external9500Lot, "non-excluded Garak external-source Lot must remain at 9,500");
+assert.equal(external9500Lot.거래처, "가락(고창)");
+assert.equal(external9500Lot._purchaseFlowKind, "STANDARD");
+assert.equal(bokChoyRows.some((row) => String(row.거래처) === "3우리"), false, "3-Woori internal-move Lot must be completely excluded from purchases");
 assert.equal(wooriLot._purchaseFlowKind, "CONFIRMED_EXTERNAL");
 assert.equal(wooriLot._externalSalesCostEligible, true);
-assert.equal(internalMoveLot._purchaseFlowKind, "INTERNAL_MOVEMENT");
-assert.equal(internalMoveLot._externalSalesCostEligible, false);
 assert.equal(runtimeContext.actualPurchaseFlowModule.isExactStockInstruction("재고"), true);
 assert.equal(runtimeContext.actualPurchaseFlowModule.isExactStockInstruction("재고 확인"), false);
 
@@ -128,14 +260,19 @@ assert.equal(previousLot.단가, 14000, "previous closing Lot cost must not be o
 assert.equal(previousLot.출고, 1, "exact stock instruction must consume previous FIFO stock");
 assert.equal(garakLot.출고, 9, "Garak confirmed purchase must allocate 9");
 assert.equal(wooriLot.출고, 130, "Woori confirmed purchase must allocate 130 even though the name is internal-looking");
-assert.equal(internalMoveLot.출고, 0, "3-Woori internal-move Lot must not receive external sales cost allocation");
+assert.equal(external9500Lot.출고, 0, "unallocated external 9,500 Lot must not receive the 6,500 confirmed sale");
 
 assert.equal(chipQty(previousLot), 1);
 assert.equal(chipQty(garakLot), 9);
 assert.equal(chipQty(wooriLot), 130);
-assert.equal(chipQty(internalMoveLot), 0);
+assert.equal(chipQty(external9500Lot), 0);
 assert.equal(bokChoyRows.reduce((sum, row) => sum + Number(row.출고 || 0), 0), 140);
 assert.equal(bokChoyRows.reduce((sum, row) => sum + chipQty(row), 0), 140);
+assert.equal(
+  sourceEntriesForRole(bokChoyRows, "in").some((entry) => String(entry.vendor) === "3우리"),
+  false,
+  "excluded 3-Woori 9,500 purchase must not survive in the inbound Source Ledger",
+);
 
 const invariant = runtimeContext.actualLotInvariantModule.validateRows(bokChoyRows);
 assert.equal(invariant.mismatchCount, 0);
