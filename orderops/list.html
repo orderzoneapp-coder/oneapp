@@ -126,6 +126,17 @@
       color: var(--blue-700);
       background: #eff6ff;
     }
+    .header-link:disabled { opacity: 0.45; cursor: not-allowed; }
+    .header-save-button {
+      border-color: #2563eb;
+      color: var(--white);
+      background: #2563eb;
+    }
+    .header-save-button:hover:not(:disabled) {
+      border-color: #1d4ed8;
+      color: var(--white);
+      background: #1d4ed8;
+    }
     .order-input-link {
       border-color: #93c5fd;
       color: #1d4ed8;
@@ -582,7 +593,7 @@
     tr.notice-target td { outline: 2px solid #14b8a6; outline-offset: -2px; }
 
     /* =========================================================
-       Results / table tools - current v1.7 features retained
+       Results / table tools - current v1.10 features retained
        ========================================================= */
     .results-panel {
       margin-top: 8px;
@@ -1008,7 +1019,7 @@
       <div class="brand-mark">ONEAPP</div>
       <div class="brand-divider" aria-hidden="true"></div>
       <div class="brand-stack">
-        <div class="brand-suite">NEXUS <span class="brand-badge">v1.7</span></div>
+        <div class="brand-suite">NEXUS <span class="brand-badge">v1.10</span></div>
         <div class="brand-product">OrderOps</div>
       </div>
     </div>
@@ -1016,8 +1027,14 @@
       <a class="header-link order-input-link" href="input.html" aria-label="주문서 입력 화면 열기">
         <span aria-hidden="true">✎</span><span>주문서 입력</span>
       </a>
-      <button class="header-link" id="headerRestoreButton" type="button" aria-label="이전 작업 복구">
-        <span aria-hidden="true">↻</span><span>작업 복구</span>
+      <button class="header-link" id="headerCloudLoadButton" type="button" aria-label="클라우드 확정본 불러오기">
+        <span aria-hidden="true">⇩</span><span>불러오기</span>
+      </button>
+      <button class="header-link header-save-button" id="headerCloudSaveButton" type="button" aria-label="작업 완료 후 클라우드 저장" disabled>
+        <span aria-hidden="true">✓</span><span>저장</span>
+      </button>
+      <button class="header-link" id="headerRestoreButton" type="button" aria-label="임시 작업 복구">
+        <span aria-hidden="true">↻</span><span>임시복구</span>
       </button>
       <button class="header-link" id="headerSettingsButton" type="button" aria-expanded="false" aria-controls="settingsModal">
         <span aria-hidden="true">⚙</span><span>환경설정</span>
@@ -1034,9 +1051,9 @@
           <span class="system-cursor" aria-hidden="true"></span>
         </div>
         <div class="system-mode storage-status-inline">
-          <strong id="localSaveStatus">LOCAL AUTO SAVE 준비</strong>
+          <strong id="localSaveStatus">임시저장 준비</strong>
           <span class="storage-status-divider">·</span>
-          <span id="cloudStatus">Cloud 수동 확정 · 미연결</span>
+          <span id="cloudStatus">완료본 저장 · 미연결</span>
         </div>
       </div>
 
@@ -1146,7 +1163,7 @@
     </section>
 
     <footer class="page-footer">
-      <span>orderops v1.7 · workspace shipping-workspace/v2 · cloud plan v1</span>
+      <span>orderops v1.10 · workspace shipping-workspace/v2 · cloud plan v1</span>
       <a href="../SHIPPING_MANAGEMENT_GUIDANCE.md">개발·운영 기준 보기</a>
     </footer>
   </main>
@@ -1157,13 +1174,13 @@
       <header class="settings-modal-header">
         <div>
           <h2 id="settingsModalTitle">OrderOps 환경설정</h2>
-          <p class="storage-note" id="settingsModalDescription">저장·복구와 Cloud 수동 revision을 관리합니다.</p>
+          <p class="storage-note" id="settingsModalDescription">이 컴퓨터의 임시저장과 클라우드 완료본을 관리합니다.</p>
         </div>
         <button class="settings-close-button" id="settingsCloseButton" type="button" aria-label="환경설정 닫기">×</button>
       </header>
 
       <section class="settings-section" data-settings-section="recovery">
-        <h3>로컬 자동저장·복구</h3>
+        <h3>이 컴퓨터 임시저장·복구</h3>
         <div class="recovery-banner hidden" id="recoveryBanner">
           <span id="recoveryMessage">복구 가능한 로컬 발주계획이 있습니다.</span>
           <button type="button" id="restoreButton">선택 복구</button>
@@ -1178,7 +1195,7 @@
       </section>
 
       <section class="settings-section" data-settings-section="cloud">
-        <h3>Cloud 수동 확정 revision</h3>
+        <h3>클라우드 완료본</h3>
         <div class="cloud-grid">
           <label>Cloud URL<input id="cloudUrlInput" type="url" autocomplete="off" placeholder="Apps Script /exec URL"></label>
           <label>전용 Token<input id="cloudTokenInput" type="password" autocomplete="off" placeholder="Shipping 전용 토큰"></label>
@@ -1187,12 +1204,12 @@
             <select id="cloudRevisionSelect" aria-label="클라우드 발주계획 revision"><option value="">저장 이력 선택</option></select>
           </label>
           <div class="cloud-actions">
-            <button type="button" id="cloudListButton">Cloud 목록</button>
-            <button type="button" id="cloudSaveButton" disabled>Cloud 수동 저장</button>
-            <button type="button" id="cloudLoadButton" disabled>선택 revision 불러오기</button>
+            <button type="button" id="cloudListButton">저장목록</button>
+            <button type="button" id="cloudSaveButton" disabled>새 버전 저장</button>
+            <button type="button" id="cloudLoadButton" disabled>불러오기</button>
           </div>
         </div>
-        <p class="storage-note">Cloud는 관리자 수동 확정본만 저장하며 자동 전송하지 않습니다. Token은 메모리에만 유지되고 로컬 복구자료·workspace·Cloud revision payload에 직렬화되지 않습니다.</p>
+        <p class="storage-note">작업 중 변경은 이 컴퓨터에 임시저장되며 자동 전송되지 않습니다. 완료 후 저장 버튼을 누른 확정본만 다른 컴퓨터에서 조회·불러오기 할 수 있습니다. Token은 복구자료와 Cloud 저장내용에 포함되지 않습니다.</p>
       </section>
 
       <div id="settingsExtensionSlot" hidden data-settings-extension-slot="future"></div>
@@ -1303,6 +1320,8 @@
         settingsModal: document.getElementById("settingsModal"),
         settingsCloseButton: document.getElementById("settingsCloseButton"),
         workspaceStorage: document.getElementById("workspaceStorage"),
+        headerCloudLoadButton: document.getElementById("headerCloudLoadButton"),
+        headerCloudSaveButton: document.getElementById("headerCloudSaveButton"),
         headerRestoreButton: document.getElementById("headerRestoreButton"),
         headerSettingsButton: document.getElementById("headerSettingsButton"),
         toast: document.getElementById("toast"),
@@ -1625,8 +1644,8 @@
         elements.restoreButton.disabled = !selected?.valid;
         elements.discardRecoveryButton.disabled = !selected?.record?.recordId;
         elements.localSaveStatus.textContent = record
-          ? `LOCAL AUTO SAVE · ${new Date(record.updatedAt).toLocaleString("ko-KR")}`
-          : "LOCAL AUTO SAVE · 정상본 없음";
+          ? `임시저장 · ${new Date(record.updatedAt).toLocaleString("ko-KR")}`
+          : "임시저장 · 정상본 없음";
       }
 
       async function refreshRecoveryRecords() {
@@ -1657,7 +1676,7 @@
           state.db = null;
           state.legacyDb = null;
           localStorage.setItem(LOCAL_META_KEY, JSON.stringify({ status: "unavailable", message: String(error.message || error) }));
-          elements.localSaveStatus.textContent = "LOCAL AUTO SAVE · 사용 불가";
+          elements.localSaveStatus.textContent = "임시저장 · 사용 불가";
           setSystemMessage("local recovery unavailable... (메모리 작업은 계속 가능)");
         }
       }
@@ -1763,12 +1782,12 @@
 
       function scheduleLocalSave() {
         window.clearTimeout(scheduleLocalSave.timer);
-        if (state.workspace) elements.localSaveStatus.textContent = "LOCAL AUTO SAVE · 저장 대기";
+        if (state.workspace) elements.localSaveStatus.textContent = "임시저장 · 저장 대기";
         scheduleLocalSave.timer = window.setTimeout(() => {
           persistLocalWorkspace().catch((error) => {
-            elements.localSaveStatus.textContent = "LOCAL AUTO SAVE · 실패";
+            elements.localSaveStatus.textContent = "임시저장 · 실패";
             setSystemMessage("local autosave failed... (현재 화면은 유지됨)");
-            showToast(error.message || "로컬 자동저장에 실패했습니다.", true);
+            showToast(error.message || "임시저장에 실패했습니다.", true);
           });
         }, 180);
       }
@@ -2065,6 +2084,7 @@
         state.workspace = null;
         elements.resultsPanel.classList.add("hidden");
         elements.cloudSaveButton.disabled = true;
+        elements.headerCloudSaveButton.disabled = true;
       }
 
       async function handleFile(kind, file) {
@@ -2904,7 +2924,9 @@
         renderPreview();
         elements.resultsPanel.classList.remove("hidden");
         elements.downloadButton.disabled = state.workspace.basisDateStatus !== "valid";
-        elements.cloudSaveButton.disabled = !state.workspace.planId || state.workspace.basisDateStatus !== "valid";
+        const cloudSaveDisabled = !state.workspace.planId || state.workspace.basisDateStatus !== "valid";
+        elements.cloudSaveButton.disabled = cloudSaveDisabled;
+        elements.headerCloudSaveButton.disabled = cloudSaveDisabled;
         setSystemMessage("analysis complete... (Excel 다운로드 준비 완료)");
       }
 
@@ -3050,8 +3072,8 @@
         if (state.cloudRevisions.length > 0) elements.cloudRevisionSelect.value = "0";
         elements.cloudLoadButton.disabled = state.cloudRevisions.length === 0;
         elements.cloudStatus.textContent = state.cloudRevisions.length > 0
-          ? `Cloud 수동 확정 · 최근 ${state.cloudRevisions[0].savedAt || "시각 없음"}`
-          : "Cloud 수동 확정 · 저장본 없음";
+          ? `완료본 저장 · 최근 ${state.cloudRevisions[0].savedAt || "시각 없음"}`
+          : "완료본 저장 · 저장본 없음";
       }
 
       async function listCloudPlans() {
@@ -3073,6 +3095,7 @@
 
       async function saveCloudPlan() {
         elements.cloudSaveButton.disabled = true;
+        elements.headerCloudSaveButton.disabled = true;
         setSystemMessage("saving immutable cloud revision...");
         try {
           const snapshot = await buildCloudEnvelope();
@@ -3087,15 +3110,39 @@
           }
           scheduleLocalSave();
           setSystemMessage(`cloud revision committed... (${saved.revision})`);
-          elements.cloudStatus.textContent = `Cloud 수동 확정 · revision ${saved.revision}`;
+          elements.cloudStatus.textContent = `완료본 저장 · revision ${saved.revision}`;
           showToast(`Cloud revision ${saved.revision} 저장을 확정했습니다.`);
           await listCloudPlans();
         } catch (error) {
           setSystemMessage("cloud save failed... (이전 확정 revision 유지)");
           showToast(error.message || "Cloud 저장에 실패했습니다.", true);
         } finally {
-          elements.cloudSaveButton.disabled = !state.workspace?.planId || state.workspace?.basisDateStatus !== "valid";
+          const cloudSaveDisabled = !state.workspace?.planId || state.workspace?.basisDateStatus !== "valid";
+          elements.cloudSaveButton.disabled = cloudSaveDisabled;
+          elements.headerCloudSaveButton.disabled = cloudSaveDisabled;
         }
+      }
+
+      function ensureCloudConfiguration() {
+        const hasUrl = Boolean(elements.cloudUrlInput.value.trim());
+        const hasToken = Boolean(elements.cloudTokenInput.value);
+        if (hasUrl && hasToken) return true;
+        toggleWorkspaceStorage(true);
+        const missingInput = hasUrl ? elements.cloudTokenInput : elements.cloudUrlInput;
+        missingInput.focus();
+        showToast("처음 한 번 Cloud URL과 전용 Token을 설정하세요.", true);
+        return false;
+      }
+
+      async function openCloudPlansFromHeader() {
+        toggleWorkspaceStorage(true);
+        if (!ensureCloudConfiguration()) return;
+        await listCloudPlans();
+      }
+
+      async function saveCloudPlanFromHeader() {
+        if (!ensureCloudConfiguration()) return;
+        await saveCloudPlan();
       }
 
       async function loadCloudPlan() {
@@ -3186,6 +3233,12 @@
 
       elements.headerSettingsButton.addEventListener("click", () => {
         toggleWorkspaceStorage();
+      });
+      elements.headerCloudLoadButton.addEventListener("click", () => {
+        openCloudPlansFromHeader();
+      });
+      elements.headerCloudSaveButton.addEventListener("click", () => {
+        saveCloudPlanFromHeader();
       });
       elements.settingsCloseButton.addEventListener("click", () => toggleWorkspaceStorage(false));
       elements.settingsModal.addEventListener("click", (event) => {
@@ -3451,7 +3504,7 @@
       [elements.cloudUrlInput, elements.cloudTokenInput].forEach((input) => {
         input.addEventListener("input", () => {
           const ready = elements.cloudUrlInput.value.trim() && elements.cloudTokenInput.value;
-          elements.cloudStatus.textContent = ready ? "Cloud 수동 확정 · 연결 정보 입력됨" : "Cloud 수동 확정 · 미연결";
+          elements.cloudStatus.textContent = ready ? "완료본 저장 · 연결 정보 입력됨" : "완료본 저장 · 미연결";
         });
       });
       bindBundleDropZone();
