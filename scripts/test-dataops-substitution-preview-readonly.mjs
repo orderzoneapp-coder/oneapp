@@ -195,21 +195,23 @@ const previewFilter = section(
   "data = FILTER_SORT_MODULE.applyFilters",
 );
 assert.match(previewFilter, /STOCK_ENGINE_MODULE\.calculateStock\(p\)/);
+assert.match(previewFilter, /\.map\(p => \{/);
+assert.match(previewFilter, /return \{\s*\.\.\.p,/);
+assert.match(previewFilter, /_substitutionPreviewMeta:\s*meta/);
+assert.doesNotMatch(previewFilter, /\bp\.[\p{L}_$][\p{L}\p{N}_$]*\s*=/u);
 assert.doesNotMatch(previewFilter, /setProductData|executeMasterSubstitutionCandidates/);
 
-const previewButton = section(
-  'React.createElement("div", { onClick: () => { setActiveIssueMode(null); setActiveMultiCode(null); setFilters({ ...filters, reviewType:',
-  'React.createElement("div", { onClick: () => { if (activeIssueMode !== \'stockLot\')',
+const explicitSubstitutionExecution = section(
+  "const executeMasterSubstitutionCandidates = useCallback",
+  "const handleSalesMove = useCallback",
 );
-const previewToggleHandler = previewButton.match(
-  /onClick:\s*\(\)\s*=>\s*\{([\s\S]*?)\},\s*className:/,
-);
-assert.ok(previewToggleHandler, "missing substitution preview toggle handler");
-assert.match(previewToggleHandler[1], /setFilters/);
+assert.match(explicitSubstitutionExecution, /window\.confirm\(confirmMsg\)/);
+assert.match(explicitSubstitutionExecution, /setProductData\(prev => \{/);
+const sourceOutsideExplicitExecution = source.replace(explicitSubstitutionExecution, "");
 assert.doesNotMatch(
-  previewToggleHandler[1],
-  /setProductData|executeMasterSubstitutionCandidates/,
+  sourceOutsideExplicitExecution,
+  /executeMasterSubstitutionCandidates\s*\(\s*\)/,
+  "automatic substitution must not execute outside its explicit confirmed callback",
 );
-assert.match(previewButton, /e\.stopPropagation\(\);\s*executeMasterSubstitutionCandidates\(\)/);
 
 console.log("DataOps substitution preview read-only contract passed.");
