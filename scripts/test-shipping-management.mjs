@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const require = createRequire(import.meta.url);
 const orderOpsHtml = fs.readFileSync(path.join(ROOT, "orderops_list.html"), "utf8");
-assert.match(orderOpsHtml, /brand-badge">v1\.9</, "OrderOps visible version must be v1.9");
+assert.match(orderOpsHtml, /brand-badge">v1\.10</, "OrderOps visible version must be v1.10");
 assert.match(orderOpsHtml, /workbookTools\.downloadWorkbook\(state\.workspace, window\.XLSX, fileName\)/,
   "the single Excel output must use the integrated workbook");
 assert.doesNotMatch(orderOpsHtml, /id="purchaseUploadButton"/,
@@ -1298,6 +1298,7 @@ for (const id of [
   "ordersInput", "inventoryInput", "analyzeButton",
   "columnVisibilityButton", "columnWidthSaveButton", "columnWidthResetButton",
   "downloadButton", "printButton",
+  "headerCloudLoadButton", "headerCloudSaveButton",
   "headerRestoreButton", "headerSettingsButton", "workspaceStorage",
 ]) {
   assert.equal(html.split(`id="${id}"`).length - 1, 1, `${id} must exist exactly once`);
@@ -1388,6 +1389,18 @@ assert.equal(workbookSource.includes("hiddenColumnSettings"), false,
 assert.ok(html.includes("const engine = window.ShippingManagementEngine;"), "engine global compatibility changed");
 assert.ok(html.includes("const workbookTools = window.ShippingManagementWorkbook;"), "workbook global compatibility changed");
 assert.ok(html.includes('const CLOUD_PLAN_SCHEMA = "ONEAPP_SHIPPING_PURCHASE_PLAN_V1"'), "cloud plan schema changed");
+assert.ok(orderOpsHtml.includes("<strong>임시저장</strong> · 완료 후 저장"),
+  "the public OrderOps local autosave must be described as temporary work storage");
+assert.ok(html.includes('id="localSaveStatus">임시저장 준비'),
+  "the canonical OrderOps local autosave must be described as temporary work storage");
+assert.ok(html.includes('postCloudAction("shipping_plan_save"'),
+  "the explicit save button must commit a cloud revision");
+assert.ok(html.includes('postCloudAction("shipping_plan_list"'),
+  "another computer must be able to list cloud revisions");
+assert.ok(html.includes('postCloudAction("shipping_plan_get"'),
+  "another computer must be able to load a verified cloud revision");
+assert.ok(html.includes("headerCloudSaveButton.disabled = cloudSaveDisabled"),
+  "header and settings cloud-save controls must share the same availability");
 
 
 function readFileMatrices(filePath, sheetName) {
