@@ -2520,6 +2520,33 @@
       }
     }
 
+
+    table.preview-inventory td.inventory-editable {
+      padding: 2px 4px;
+    }
+    table.preview-inventory .inventory-input {
+      width: 100%;
+      min-width: 68px;
+      height: 28px;
+      padding: 3px 7px;
+      border: 1px solid #94a3b8;
+      border-radius: 4px;
+      color: var(--slate-900);
+      background: #ffffff;
+      font-size: 11px;
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+    table.preview-inventory .inventory-input:focus {
+      border-color: var(--teal-600);
+      outline: 2px solid rgba(13, 148, 136, 0.18);
+      outline-offset: 0;
+    }
+    table.preview-inventory td.information-value {
+      min-width: 190px;
+      white-space: pre-line;
+      line-height: 1.45;
+    }
   </style>
 </head>
 <body>
@@ -3651,10 +3678,18 @@
           role: "purchase",
           defaultWidth: 88,
         });
+        columns.push({
+          key: "shipping:inventory:information",
+          header: "정보",
+          numeric: false,
+          role: "information",
+          defaultWidth: 190,
+        });
 
         const rows = inventoryView.rows.map((row) => {
           const values = Array.isArray(row?.values) ? [...row.values] : [];
           values.splice(purchaseIndex, 0, row?.purchase ?? "");
+          values.push(row?.inventoryTotal < 0 ? (row?.orderCustomers ?? "") : "");
           return values;
         });
 
@@ -3859,7 +3894,7 @@
                 exactWarningUnit(sourceRow) ? "unit-alert-row" : "",
               ].filter(Boolean).join(" ");
               return `
-                <tr class="${rowClasses}">
+                <tr class="${rowClasses}" data-product-code="${escapeHtml(sourceRow?.productCode || "")}">
                   ${visibleEntries.map(({ column, index }) => {
                     const value = row[index];
                     const isNumber = Boolean(column.numeric) && value !== "";
@@ -3870,15 +3905,19 @@
                       isNumber && typeof value === "number" && value < 0;
                     const isWarning = inventoryNegative ||
                       (isStatus && statusTone(value) === "bad" && String(value).includes("오류"));
+                    const editablePurchase = editable && preview.purchaseEditable === true &&
+                      preview.purchase === index && !referenceRow;
+                    const editableInventory = editable && previewId === "inventory" &&
+                      column.role === "warehouseQuantity" && !referenceRow;
                     const classes = [
                       isNumber ? "number" : "",
                       isStatus ? "status" : "",
                       isInventory ? "inventory-value" : "",
                       inventoryNegative ? "inventory-negative" : "",
                       isWarning ? "warning-value" : "",
+                      editableInventory ? "inventory-editable" : "",
+                      column.role === "information" ? "information-value" : "",
                     ].filter(Boolean).join(" ");
-                    const editablePurchase = editable && preview.purchaseEditable === true &&
-                      preview.purchase === index && !referenceRow;
                     const negativeBalance = previewId === "inventory" &&
                       typeof sourceRow?.inventoryTotal === "number" &&
                       sourceRow.inventoryTotal < 0;
@@ -3886,7 +3925,12 @@
                       ? `<input class="purchase-input" data-purchase-code="${escapeHtml(sourceRow?.productCode || "")}"
                           data-negative-balance="${negativeBalance ? "true" : "false"}" autocomplete="off"
                           value="${escapeHtml(value)}" aria-label="${escapeHtml(sourceRow?.productCode || "")} 구매처">`
-                      : escapeHtml(isNumber ? formatNumber(value) : value);
+                      : editableInventory
+                        ? `<input class="inventory-input" data-inventory-code="${escapeHtml(sourceRow?.productCode || "")}"
+                            data-inventory-column="${escapeHtml(column.key)}" inputmode="decimal" autocomplete="off"
+                            value="${escapeHtml(value)}"
+                            aria-label="${escapeHtml(sourceRow?.productCode || "")} ${escapeHtml(column.header)} 재고수량">`
+                        : escapeHtml(isNumber ? formatNumber(value) : value);
                     return `<td class="${classes}" style="${rowFill ? `background:#${rowFill.replace(/^#/, "")}` : ""}"
                       ${isStatus ? `data-tone="${statusTone(value)}"` : ""}
                       title="${escapeHtml(value)}">${content}</td>`;
@@ -4362,8 +4406,55 @@
       function focusPurchaseInput(input) {
         if (!input) return;
         input.focus({ preventScroll: true });
+        input.scrollIntoView({ block: "center", inline: "nearest" });
+        window.requestAnimationFrame(() => input.select());
+      }
+
+      function focusInventoryInput(input) {
+        if (!input) return;
+        input.focus({ preventScroll: true });
         input.scrollIntoView({ block: "nearest", inline: "nearest" });
         window.requestAnimationFrame(() => input.select());
+      }
+
+      function commitInventoryInput(input, { render = true } = {}) {
+        if (!input || !state.workspace || state.activePreview !== "inventory") return false;
+        try {
+          engine.setInventoryOverride(
+            state.workspace,
+            input.dataset.inventoryCode,
+            input.dataset.inventoryColumn,
+            input.value,
+          );
+          scheduleLocalSave();
+          if (render) renderPreview();
+          return true;
+        } catch (error) {
+          showToast(error.message || "창고별 재고 수량을 수정하지 못했습니다.", true);
+          renderPreview();
+          return false;
+        }
+      }
+
+      function handleInventoryQuantityNavigation(event) {
+        const input = event.target.closest?.(".inventory-input[data-inventory-code][data-inventory-column]");
+        if (!input || !state.workspace || state.activePreview !== "inventory" || event.isComposing) return;
+        if (!["Enter", "Tab"].includes(event.key)) return;
+        event.preventDefault();
+
+        const inputs = Array.from(elements.previewTable.querySelectorAll(
+          ".inventory-input[data-inventory-code][data-inventory-column]",
+        ));
+        const currentIndex = inputs.indexOf(input);
+        if (currentIndex < 0 || !commitInventoryInput(input, { render: false })) return;
+
+        const direction = event.shiftKey ? -1 : 1;
+        const targetIndex = (currentIndex + direction + inputs.length) % inputs.length;
+        renderPreview();
+        const refreshed = Array.from(elements.previewTable.querySelectorAll(
+          ".inventory-input[data-inventory-code][data-inventory-column]",
+        ));
+        focusInventoryInput(refreshed[targetIndex]);
       }
 
       function handleInventoryPurchaseNavigation(event) {
@@ -4459,11 +4550,50 @@
         elements.columnVisibilityButton.setAttribute("aria-expanded", "false");
       });
 
+      function currentInventoryViewAnchor() {
+        const containerRect = elements.previewTable.getBoundingClientRect();
+        const rows = Array.from(elements.previewTable.querySelectorAll(
+          "tbody tr[data-product-code]",
+        )).filter((row) => row.dataset.productCode);
+        const visibleRows = rows.filter((row) => {
+          const rect = row.getBoundingClientRect();
+          return rect.bottom > containerRect.top && rect.top < containerRect.bottom;
+        });
+        if (visibleRows.length === 0) return null;
+        const row = visibleRows.reduce((best, candidate) => {
+          const bestDistance = Math.abs(best.getBoundingClientRect().top - containerRect.top);
+          const candidateDistance = Math.abs(candidate.getBoundingClientRect().top - containerRect.top);
+          return candidateDistance < bestDistance ? candidate : best;
+        });
+        return {
+          productCode: row.dataset.productCode,
+          offsetTop: row.getBoundingClientRect().top - containerRect.top,
+        };
+      }
+
+      function restoreProductCodeAnchor(anchor) {
+        if (!anchor?.productCode) return;
+        window.requestAnimationFrame(() => {
+          const row = Array.from(elements.previewTable.querySelectorAll(
+            "tbody tr[data-product-code]",
+          )).find((candidate) => candidate.dataset.productCode === anchor.productCode);
+          if (!row) return;
+          const containerRect = elements.previewTable.getBoundingClientRect();
+          const currentOffset = row.getBoundingClientRect().top - containerRect.top;
+          elements.previewTable.scrollTop += currentOffset - anchor.offsetTop;
+        });
+      }
+
       elements.previewTabs.addEventListener("click", (event) => {
         const button = event.target.closest("[data-preview]");
         if (!button || !state.workspace) return;
-        state.activePreview = button.dataset.preview;
+        const nextPreview = button.dataset.preview;
+        const anchor = state.activePreview === "inventory" && nextPreview === "allocations"
+          ? currentInventoryViewAnchor()
+          : null;
+        state.activePreview = nextPreview;
         renderPreview();
+        restoreProductCodeAnchor(anchor);
         scheduleLocalSave();
       });
       elements.previewTable.addEventListener("input", (event) => {
@@ -4473,11 +4603,19 @@
         scheduleLocalSave();
       });
       elements.previewTable.addEventListener("change", (event) => {
+        const inventoryInput = event.target.closest(
+          ".inventory-input[data-inventory-code][data-inventory-column]",
+        );
+        if (inventoryInput) {
+          commitInventoryInput(inventoryInput);
+          return;
+        }
         const input = event.target.closest("[data-purchase-code]");
         if (!input || !state.workspace || state.activePreview !== "inventory") return;
         scheduleLocalSave();
       });
       elements.previewTable.addEventListener("pointerdown", beginColumnResize);
+      elements.previewTable.addEventListener("keydown", handleInventoryQuantityNavigation);
       elements.previewTable.addEventListener("keydown", handleInventoryPurchaseNavigation);
       elements.previewTable.addEventListener("keydown", handleColumnResizeKeydown);
       elements.restoreButton.addEventListener("click", () => {

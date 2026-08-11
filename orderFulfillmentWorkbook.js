@@ -679,7 +679,7 @@
     layout.push({ key: "shipping:inventory:suppliers", header: "거래처(단가)", sourceIndex: null, suppliers: true });
     layout.push({
       key: "shipping:inventory:order-customers",
-      header: "주문거래처명(수량)",
+      header: "정보",
       sourceIndex: null,
       orderCustomers: true,
     });
@@ -688,7 +688,7 @@
       ...inventory.values,
       inventory.purchase,
       inventory.suppliers,
-      inventory.orderCustomers,
+      inventory.inventoryTotal < 0 ? inventory.orderCustomers : "",
     ]);
     const headers = layout.map((column) => safeValue(column.header));
     const sheet = XLSX.utils.aoa_to_sheet([headers, ...dataRows]);
@@ -705,7 +705,7 @@
       if (normalized === "규격") return { wch: 13 };
       if (normalized === "구매") return { wch: 11 };
       if (normalized === "거래처(단가)") return { wch: 34 };
-      if (normalized === "주문거래처명(수량)") return { wch: 34 };
+      if (normalized === "정보") return { wch: 34 };
       return { wch: isWarehouseQuantityHeader(header) ? 11 : 13 };
     });
     sheet["!rows"] = [{ hpt: 27 }, ...dataRows.map((row) => ({

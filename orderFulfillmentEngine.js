@@ -1839,27 +1839,35 @@
     if (!workspace || workspace.schemaVersion !== WORKSPACE_SCHEMA_VERSION) {
       throw new Error("지원하지 않는 Shipping Management 작업공간입니다.");
     }
+    ensureInventoryPurchaseRows(workspace);
+    const purchaseNeedByCode = new Map(
+      getInventoryViewRows(workspace).rows.map((inventory) => [
+        normalizeProductCode(inventory.productCode),
+        inventory.inventoryTotal < 0 ? roundQuantity(Math.abs(inventory.inventoryTotal)) : 0,
+      ]),
+    );
     const included = [];
     const excluded = [];
     (workspace.purchaseManagement || []).forEach((row) => {
-      if (row.inventoryShadow === true) return;
       if (row.rowType === "reference") {
         excluded.push({ productCode: row.productCode, reason: "카테고리 대체 참고행" });
         return;
       }
-      if (!row.inventoryMatched || typeof row.purchaseNeed !== "number") {
+      const productCode = normalizeProductCode(row.productCode);
+      if (!purchaseNeedByCode.has(productCode)) {
         excluded.push({ productCode: row.productCode, reason: "재고정보 없음·구매수량 근거 없음" });
         return;
       }
-      if (!(row.purchaseNeed > 0)) {
-        excluded.push({ productCode: row.productCode, reason: "추가 구매 필요 수량 없음" });
+      const purchaseNeed = purchaseNeedByCode.get(productCode);
+      if (!(purchaseNeed > 0)) {
+        excluded.push({ productCode: row.productCode, reason: "창고별재고 부족 수량 없음" });
         return;
       }
       if (isPurchaseUploadExcluded(row.purchase)) {
         excluded.push({ productCode: row.productCode, reason: `구매값 ${row.purchase}` });
         return;
       }
-      included.push(row);
+      included.push({ ...row, purchaseNeed });
     });
     return { included, excluded };
   }
