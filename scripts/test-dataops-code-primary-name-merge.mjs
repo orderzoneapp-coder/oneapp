@@ -507,7 +507,7 @@ assert.match(
   /Object\.values\(pData\)\.forEach\(applyRepresentativeProductName\)/,
 );
 assert.equal(
-  (source.match(/V1\.a22\.111_F9FrozenClosingRows/g) || []).length,
+  (source.match(/V1\.a22\.114_FilterActions/g) || []).length,
   3,
 );
 

@@ -1,0 +1,170 @@
+{
+  "conversion": {
+    "sourceQty": 1,
+    "targetQty": 9,
+    "sourceUnitCost": 12000,
+    "existingTargetUnitCost": 12000,
+    "expectedDisplayUnitCost": 1300,
+    "expectedTotalCost": 12000
+  },
+  "excludedConfirmedPurchase": {
+    "periodStr": "2026-08-11",
+    "targetDateStrFromData": "2026-08-11",
+    "endFileProvided": false,
+    "parsedPrev": [],
+    "parsedEnd": [],
+    "parsedIn": [
+      {
+        "코드": "DOPS-EXCLUDED-001",
+        "품명": "제외거래처 확정수요",
+        "단위": "BOX",
+        "수량": 130,
+        "단가": 6500,
+        "거래처": "우리농산",
+        "일자": "2026-08-11",
+        "_transactionVendor": "우리농산",
+        "_purchaseLotVendor": "우리농산",
+        "_displayPurchaseVendor": "우리농산",
+        "_uploadRole": "in",
+        "_fileType": "RAW_DATA",
+        "_sourceFileName": "2.매입_제외fixture.xlsx",
+        "_sourceSheet": "구매현황",
+        "_raw": {
+          "전표번호": "EXCLUDED-IN-001",
+          "거래처명": "우리농산",
+          "품목코드": "DOPS-EXCLUDED-001",
+          "품목명": "제외거래처 확정수요",
+          "수량": 130,
+          "단가": 6500
+        }
+      }
+    ],
+    "parsedOut": [
+      {
+        "코드": "DOPS-EXCLUDED-001",
+        "품명": "제외거래처 확정수요",
+        "단위": "BOX",
+        "수량": 130,
+        "단가": 10000,
+        "거래처": "외부판매처",
+        "매입처매칭": "우리농산",
+        "일자": "2026-08-11",
+        "_transactionVendor": "외부판매처",
+        "_salesVendor": "외부판매처",
+        "_salesDisplayVendor": "외부판매처",
+        "_salesGroupVendor": "외부판매처",
+        "_confirmedPurchaseVendor": "우리농산",
+        "_salesConfirmedPurchaseVendor": "우리농산",
+        "_hasSalesConfirmedPurchase": true,
+        "_salesPurchaseUnitCost": 6500,
+        "_shipmentInstruction": "",
+        "_uploadRole": "out",
+        "_fileType": "RAW_DATA",
+        "_sourceFileName": "3.매출_확정fixture.xlsx",
+        "_sourceSheet": "판매현황",
+        "_raw": {
+          "전표번호": "EXCLUDED-OUT-001",
+          "거래처명": "외부판매처",
+          "구매처": "우리농산",
+          "구매단가": 6500,
+          "품목코드": "DOPS-EXCLUDED-001",
+          "품목명": "제외거래처 확정수요",
+          "수량": 130,
+          "단가": 10000
+        }
+      }
+    ]
+  },
+  "excludedOnlyPurchase": {
+    "periodStr": "2026-08-11",
+    "targetDateStrFromData": "2026-08-11",
+    "endFileProvided": false,
+    "parsedPrev": [],
+    "parsedEnd": [],
+    "parsedOut": [],
+    "parsedIn": [
+      {
+        "코드": "DOPS-EXCLUDED-ONLY-001",
+        "품명": "제외거래처 단독감사",
+        "단위": "BOX",
+        "수량": 1,
+        "단가": 6500,
+        "거래처": "우리농산",
+        "일자": "2026-08-11",
+        "_transactionVendor": "우리농산",
+        "_purchaseLotVendor": "우리농산",
+        "_displayPurchaseVendor": "우리농산",
+        "_uploadRole": "in",
+        "_fileType": "RAW_DATA",
+        "_sourceFileName": "2.매입_제외only_fixture.xlsx",
+        "_sourceSheet": "구매현황",
+        "_raw": {
+          "전표번호": "EXCLUDED-ONLY-IN-001",
+          "거래처명": "우리농산",
+          "품목코드": "DOPS-EXCLUDED-ONLY-001",
+          "품목명": "제외거래처 단독감사",
+          "수량": 1,
+          "단가": 6500
+        }
+      }
+    ]
+  },
+  "warehouse02": {
+    "periodStr": "2026-08-11",
+    "targetDateStrFromData": "2026-08-11",
+    "endFileProvided": false,
+    "parsedPrev": [],
+    "parsedEnd": [],
+    "parsedIn": [
+      {
+        "코드": "DOPS-W02-001",
+        "품명": "02창고 오차",
+        "단위": "BOX",
+        "수량": 2,
+        "단가": 5000,
+        "거래처": "가락외부",
+        "일자": "2026-08-11",
+        "_transactionVendor": "가락외부",
+        "_purchaseLotVendor": "가락외부",
+        "_displayPurchaseVendor": "가락외부",
+        "_uploadRole": "in",
+        "_fileType": "RAW_DATA",
+        "_sourceFileName": "02창고_구매fixture.xlsx",
+        "_sourceSheet": "구매현황",
+        "_raw": {
+          "창고코드": "02",
+          "거래처명": "가락외부",
+          "품목코드": "DOPS-W02-001",
+          "품목명": "02창고 오차",
+          "수량": 2,
+          "단가": 5000
+        }
+      }
+    ],
+    "parsedOut": [
+      {
+        "코드": "DOPS-W02-001",
+        "품명": "02창고 오차",
+        "단위": "BOX",
+        "수량": 1,
+        "단가": 8000,
+        "거래처": "외부판매처",
+        "일자": "2026-08-11",
+        "_transactionVendor": "외부판매처",
+        "_salesVendor": "외부판매처",
+        "_uploadRole": "out",
+        "_fileType": "RAW_DATA",
+        "_sourceFileName": "02창고_판매fixture.xlsx",
+        "_sourceSheet": "판매현황",
+        "_raw": {
+          "창고코드": "02",
+          "거래처명": "외부판매처",
+          "품목코드": "DOPS-W02-001",
+          "품목명": "02창고 오차",
+          "수량": 1,
+          "단가": 8000
+        }
+      }
+    ]
+  }
+}

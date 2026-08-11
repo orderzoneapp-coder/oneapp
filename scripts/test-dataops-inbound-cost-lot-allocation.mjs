@@ -154,7 +154,7 @@ const makeClassificationSale = (testCase, sale, index) => ({
   },
 });
 const sourceEntriesForRole = (testRows, role) => testRows.flatMap((row) => row._sourceEntries || [])
-  .filter((entry) => entry.role === role);
+  .filter((entry, index, entries) => entry.role === role && entries.findIndex((candidate) => candidate.id === entry.id) === index);
 const chipQty = (row) => Object.values(row?.출고내역 || {}).reduce(
   (sum, detail) => sum + Number(detail?.qty || 0),
   0,
@@ -168,21 +168,28 @@ for (const testCase of fixture.internalPurchaseExclusionRegression.classificatio
   });
   assert.equal(inventoryEngine.executeAnalysis(caseFixture), true, `${testCase.name} analysis must complete`);
   const caseRows = hookState[0].filter((row) => String(row.코드) === testCase.code);
-  const expectedRow = caseRows.find((row) => String(row.거래처) === testCase.expectedVendor);
-  if (caseRows.length !== 1) {
+  const calculatedPurchaseRows = caseRows.filter((row) => Number(row.입고 || 0) !== 0);
+  const expectedRow = testCase.expectedVendor ? calculatedPurchaseRows.find((row) => String(row.거래처) === testCase.expectedVendor) : null;
+  if (calculatedPurchaseRows.length !== testCase.expectedCalculatedPurchaseRows) {
     exclusionViolations.push(
-      `${testCase.name}: expected one retained purchase Lot, got ${caseRows.length} (${caseRows.map((row) => `${row.거래처}:${row._purchaseFlowKind}`).join(", ")})`,
+      `${testCase.name}: expected ${testCase.expectedCalculatedPurchaseRows} calculated purchase Lot(s), got ${calculatedPurchaseRows.length} (${calculatedPurchaseRows.map((row) => `${row.거래처}:${row._purchaseFlowKind}`).join(", ")})`,
     );
   }
-  if (!expectedRow || expectedRow._purchaseFlowKind !== testCase.expectedKind) {
+  if (testCase.expectedKind && (!expectedRow || expectedRow._purchaseFlowKind !== testCase.expectedKind)) {
     exclusionViolations.push(
       `${testCase.name}: expected ${testCase.expectedVendor}:${testCase.expectedKind}, got ${expectedRow?._purchaseFlowKind || "missing"}`,
     );
   }
   const excludedInEntries = sourceEntriesForRole(caseRows, "in")
     .filter((entry) => ["우리농산", "3우리", "1전송"].includes(String(entry.vendor)));
-  if (testCase.name !== "excluded-without-source-kept-for-confirmed-demand" && excludedInEntries.length !== 0) {
-    exclusionViolations.push(`${testCase.name}: excluded purchase Source Ledger entries=${excludedInEntries.length}`);
+  if (excludedInEntries.length !== testCase.expectedAuditExcludedCount || excludedInEntries.some((entry) => entry.calculationExcluded !== true)) {
+    exclusionViolations.push(`${testCase.name}: expected ${testCase.expectedAuditExcludedCount} calculation-excluded audit entry, got ${excludedInEntries.length}`);
+  }
+  const calculatedInboundQty = sourceEntriesForRole(caseRows, "in")
+    .filter((entry) => entry.calculationExcluded !== true)
+    .reduce((sum, entry) => sum + Number(entry.qty || 0), 0);
+  if (calculatedInboundQty !== testCase.expectedCalculatedInboundQty) {
+    exclusionViolations.push(`${testCase.name}: calculated inbound ledger qty=${calculatedInboundQty}`);
   }
 }
 
@@ -196,9 +203,10 @@ const greenOnionInEntries = sourceEntriesForRole(greenOnionRows, "in");
 const greenOnionInternalInEntries = greenOnionInEntries.filter((entry) => ["우리농산", "3우리"].includes(String(entry.vendor)));
 if (greenOnionRows.length !== 2) exclusionViolations.push(`green-onion: expected 2 Lots, got ${greenOnionRows.length}`);
 if (greenOnionInternalRows.length !== 0) exclusionViolations.push(`green-onion: internal Lots retained=${greenOnionInternalRows.map((row) => row.거래처).join(",")}`);
-if (greenOnionInternalInEntries.length !== 0) exclusionViolations.push(`green-onion: internal in-ledger entries=${greenOnionInternalInEntries.length}`);
-if (greenOnionInEntries.reduce((sum, entry) => sum + Number(entry.qty || 0), 0) !== 600) {
-  exclusionViolations.push(`green-onion: retained inbound ledger qty=${greenOnionInEntries.reduce((sum, entry) => sum + Number(entry.qty || 0), 0)}`);
+if (greenOnionInternalInEntries.length === 0 || greenOnionInternalInEntries.some((entry) => entry.calculationExcluded !== true)) exclusionViolations.push(`green-onion: excluded audit entries invalid=${greenOnionInternalInEntries.length}`);
+const greenOnionCalculatedInboundQty = greenOnionInEntries.filter((entry) => entry.calculationExcluded !== true).reduce((sum, entry) => sum + Number(entry.qty || 0), 0);
+if (greenOnionCalculatedInboundQty !== 600) {
+  exclusionViolations.push(`green-onion: calculated inbound ledger qty=${greenOnionCalculatedInboundQty}`);
 }
 if (!greenOnionPrevious || Number(greenOnionPrevious.출고) !== 13) exclusionViolations.push(`green-onion: previous outbound=${greenOnionPrevious?.출고 ?? "missing"}`);
 if (!greenOnionExternal || greenOnionExternal._purchaseFlowKind !== "STANDARD") exclusionViolations.push(`green-onion: external kind=${greenOnionExternal?._purchaseFlowKind || "missing"}`);
@@ -217,7 +225,7 @@ if (greenOnionInvariant.mismatchCount !== 0) exclusionViolations.push(`green-oni
 assert.deepEqual(
   exclusionViolations,
   [],
-  "excluded purchase rows must be completely absent while confirmed external demand without an external source remains",
+  "excluded purchase rows must stay audit-only while calculated purchase Lots remain external-source only",
 );
 
 assert.equal(inventoryEngine.executeAnalysis(fixture), true, "fixture analysis must still complete after isolated classification checks");
@@ -237,42 +245,36 @@ assert.ok(Array.isArray(rows), "analysis must publish product rows");
 const bokChoyRows = rows.filter((row) => String(row.코드) === "104574110");
 const rowByPrice = (price) => bokChoyRows.find((row) => Number(row.단가) === price);
 
-assert.equal(bokChoyRows.length, 4, "previous, allocated Garak/Woori, and unallocated external 9,500 Lots must remain");
+assert.equal(bokChoyRows.length, 3, "previous and the two calculated Garak Lots must remain without an excluded Woori purchase Lot");
 
 const previousLot = rowByPrice(14000);
 const garakLot = rowByPrice(9000);
-const wooriLot = rowByPrice(6500);
 const external9500Lot = rowByPrice(9500);
 assert.ok(previousLot, "previous closing Lot must remain at 14,000");
 assert.ok(garakLot, "Garak Lot must remain at 9,000");
-assert.ok(wooriLot, "Woori external-sale Lot must remain at 6,500");
+assert.equal(rowByPrice(6500), undefined, "excluded Woori purchase must not create a calculated 6,500 Lot");
 assert.ok(external9500Lot, "non-excluded Garak external-source Lot must remain at 9,500");
 assert.equal(external9500Lot.거래처, "가락(고창)");
 assert.equal(external9500Lot._purchaseFlowKind, "STANDARD");
 assert.equal(bokChoyRows.some((row) => String(row.거래처) === "3우리"), false, "3-Woori internal-move Lot must be completely excluded from purchases");
-assert.equal(wooriLot._purchaseFlowKind, "CONFIRMED_EXTERNAL");
-assert.equal(wooriLot._externalSalesCostEligible, true);
 assert.equal(runtimeContext.actualPurchaseFlowModule.isExactStockInstruction("재고"), true);
 assert.equal(runtimeContext.actualPurchaseFlowModule.isExactStockInstruction("재고 확인"), false);
 
 assert.equal(previousLot.기초, 1);
 assert.equal(previousLot.단가, 14000, "previous closing Lot cost must not be overwritten");
 assert.equal(previousLot.출고, 1, "exact stock instruction must consume previous FIFO stock");
-assert.equal(garakLot.출고, 9, "Garak confirmed purchase must allocate 9");
-assert.equal(wooriLot.출고, 130, "Woori confirmed purchase must allocate 130 even though the name is internal-looking");
-assert.equal(external9500Lot.출고, 0, "unallocated external 9,500 Lot must not receive the 6,500 confirmed sale");
+assert.equal(garakLot.출고, 18, "Garak confirmed purchase and FIFO fallback must allocate 18 in total");
+assert.equal(external9500Lot.출고, 121, "the excluded-purchase confirmed sale must fall back to calculated external FIFO Lots");
 
 assert.equal(chipQty(previousLot), 1);
-assert.equal(chipQty(garakLot), 9);
-assert.equal(chipQty(wooriLot), 130);
-assert.equal(chipQty(external9500Lot), 0);
+assert.equal(chipQty(garakLot), 18);
+assert.equal(chipQty(external9500Lot), 121);
 assert.equal(bokChoyRows.reduce((sum, row) => sum + Number(row.출고 || 0), 0), 140);
 assert.equal(bokChoyRows.reduce((sum, row) => sum + chipQty(row), 0), 140);
-assert.equal(
-  sourceEntriesForRole(bokChoyRows, "in").some((entry) => String(entry.vendor) === "3우리"),
-  false,
-  "excluded 3-Woori 9,500 purchase must not survive in the inbound Source Ledger",
-);
+const excludedBokChoyAuditEntries = sourceEntriesForRole(bokChoyRows, "in")
+  .filter((entry) => ["우리농산", "3우리"].includes(String(entry.vendor)));
+assert.ok(excludedBokChoyAuditEntries.length >= 2, "excluded purchases must survive in the audit Source Ledger");
+assert.ok(excludedBokChoyAuditEntries.every((entry) => entry.calculationExcluded === true));
 
 const invariant = runtimeContext.actualLotInvariantModule.validateRows(bokChoyRows);
 assert.equal(invariant.mismatchCount, 0);
@@ -325,22 +327,26 @@ const correctedLedger = runtimeContext.DATAOPS_SALES_REMATCH_MODULE.buildCorrect
   productData: rows,
   substHistory: [],
 });
-const ledgerByIdentifier = new Map(correctedLedger.map((row) => [row.originalIdentifier, row]));
-assert.equal(ledgerByIdentifier.get("SALE-STOCK-001")?.currentKey, previousLot.batchKey);
-assert.equal(ledgerByIdentifier.get("SALE-GARAK-009")?.currentKey, garakLot.batchKey);
-assert.equal(ledgerByIdentifier.get("SALE-WOORI-130")?.currentKey, wooriLot.batchKey);
-assert.equal(ledgerByIdentifier.get("SALE-WOORI-130")?.qty, 130);
-assert.equal(ledgerByIdentifier.get("SALE-WOORI-130")?.unitPrice, 10000);
-const stockAllocation = previousLot._salesLotAllocations?.[0];
+const ledgerAllocations = (identifier) => correctedLedger.filter((row) => row.originalIdentifier === identifier);
+const stockLedgerAllocations = ledgerAllocations("SALE-STOCK-001");
+const garakLedgerAllocations = ledgerAllocations("SALE-GARAK-009");
+const wooriLedgerAllocations = ledgerAllocations("SALE-WOORI-130");
+assert.equal(stockLedgerAllocations.length, 1);
+assert.equal(stockLedgerAllocations[0].currentKey, external9500Lot.batchKey);
+assert.equal(garakLedgerAllocations.length, 1);
+assert.equal(garakLedgerAllocations[0].currentKey, garakLot.batchKey);
+assert.equal(wooriLedgerAllocations.reduce((sum, row) => sum + Number(row.qty || 0), 0), 130);
+assert.ok(wooriLedgerAllocations.every((row) => row.unitPrice === 10000));
+assert.equal(wooriLedgerAllocations.some((row) => Number(row.unitCost) === 6500), false, "excluded Woori purchase cost must not enter corrected-ledger FIFO allocations");
+const stockAllocation = external9500Lot._salesLotAllocations?.find((allocation) => allocation.originalIdentifier === "SALE-STOCK-001");
 assert.equal(stockAllocation?.originalIdentifier, "SALE-STOCK-001");
 assert.equal(stockAllocation?.sourceEntryId.startsWith("SRC_"), true);
-assert.equal(stockAllocation?.batchKey, previousLot.batchKey);
+assert.equal(stockAllocation?.batchKey, external9500Lot.batchKey);
 assert.equal(stockAllocation?.salesVendor, "재고판매처");
 assert.equal(stockAllocation?.qty, 1);
 assert.equal(stockAllocation?.revenue, 20000);
 assert.equal(stockAllocation?.unitPrice, 20000);
-assert.equal(previousLot._sourceEntries?.filter((entry) => entry.role === "out").length, 1);
-assert.equal(previousLot._sourceEntries?.find((entry) => entry.role === "out")?.sourceRaw?.전표번호, "SALE-STOCK-001");
+assert.equal(external9500Lot._sourceEntries?.some((entry) => entry.role === "out" && entry.sourceRaw?.전표번호 === "SALE-STOCK-001"), true);
 
 const detailRows = runtimeContext.DATAOPS_SALES_REMATCH_MODULE.applyCorrectedDetailsToViewRows({
   viewRows: rows.map((row) => ({ ...row, _isViewRow: true, _viewMode: "LOT_DETAIL", _viewSourceKeys: [row.batchKey] })),

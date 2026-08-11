@@ -503,6 +503,9 @@
         "code": "990003001",
         "expectedVendor": "가락(외부원천A)",
         "expectedKind": "STANDARD",
+        "expectedCalculatedPurchaseRows": 1,
+        "expectedCalculatedInboundQty": 5,
+        "expectedAuditExcludedCount": 1,
         "purchases": [
           { "vendor": "가락(외부원천A)", "targetVendor": "3우리", "qty": 5, "cost": 1000 },
           { "vendor": "3우리", "targetVendor": "가락(외부원천A)", "qty": 5, "cost": 1000 }
@@ -512,10 +515,13 @@
         ]
       },
       {
-        "name": "excluded-without-source-kept-for-confirmed-demand",
+        "name": "excluded-without-source-stays-audit-only-despite-confirmed-demand",
         "code": "990003002",
-        "expectedVendor": "우리농산",
-        "expectedKind": "CONFIRMED_EXTERNAL",
+        "expectedVendor": "",
+        "expectedKind": "",
+        "expectedCalculatedPurchaseRows": 0,
+        "expectedCalculatedInboundQty": 0,
+        "expectedAuditExcludedCount": 1,
         "purchases": [
           { "vendor": "우리농산", "targetVendor": "", "qty": 7, "cost": 2000 }
         ],
@@ -528,6 +534,9 @@
         "code": "990003003",
         "expectedVendor": "가락(외부원천B)",
         "expectedKind": "STANDARD",
+        "expectedCalculatedPurchaseRows": 1,
+        "expectedCalculatedInboundQty": 9,
+        "expectedAuditExcludedCount": 1,
         "purchases": [
           { "vendor": "가락(외부원천B)", "targetVendor": "3우리", "qty": 9, "cost": 3000 },
           { "vendor": "3우리", "targetVendor": "가락(외부원천B)", "qty": 9, "cost": 3000 }
