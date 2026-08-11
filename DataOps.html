@@ -3985,28 +3985,6 @@ const enqueueDataOpsWorkStateWrite = (task) => {
     dataOpsWorkStateWriteQueue = queuedWrite.catch(() => undefined);
     return queuedWrite;
 };
-// DOPS-20260811-01 GUARD:MODULE_START
-// 상위 버전 전용 감사/계산제외 구조는 V1.a22.110에서 의미를 보존해 복원할 수 없다.
-// 확정 식별자만 재귀 확인하며, 감지한 snapshot은 읽기 외 put/delete/migration 없이 세션 동안 그대로 보호한다.
-const DATAOPS_WORK_STATE_COMPAT_MODULE = Object.freeze({
-    BLOCK_MESSAGE: '상위 버전 저장작업이므로 원본 파일로 다시 분석해야 합니다',
-    hasUnsupportedMarker: (value, seen = new WeakSet()) => {
-        if (!value || typeof value !== 'object')
-            return false;
-        if (seen.has(value))
-            return false;
-        seen.add(value);
-        if (value._auditOnly === true || value.calculationExcluded === true)
-            return true;
-        if (Array.isArray(value))
-            return value.some(item => DATAOPS_WORK_STATE_COMPAT_MODULE.hasUnsupportedMarker(item, seen));
-        return Object.keys(value).some(key => DATAOPS_WORK_STATE_COMPAT_MODULE.hasUnsupportedMarker(value[key], seen));
-    },
-    isUnsupportedSnapshot: (snapshot = {}) => Array.isArray(snapshot.productData)
-        && snapshot.productData.some(item => DATAOPS_WORK_STATE_COMPAT_MODULE.hasUnsupportedMarker(item))
-});
-window.DATAOPS_WORK_STATE_COMPAT_MODULE = DATAOPS_WORK_STATE_COMPAT_MODULE;
-// DOPS-20260811-01 GUARD:MODULE_END
 const DATAOPS_WORK_STATE_MODULE = Object.freeze({
     DB_NAME: 'oneapp_dataops_work_v1',
     STORE_NAME: 'workspaces',
@@ -4572,25 +4550,11 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
     const [substHistory, setSubstHistory] = useState([]);
     const [ackMultiCodes, setAckMultiCodes] = useState(new Set());
     const [workStateHydrated, setWorkStateHydrated] = useState(false);
-    // DOPS-20260811-01 GUARD:SESSION_STATE_START
-    const incompatibleWorkStateRef = useRef(false);
-    const incompatibleWorkStateNoticeShownRef = useRef(false);
-    // DOPS-20260811-01 GUARD:SESSION_STATE_END
     const restoreWorkState = useCallback(async ({ silent = false } = {}) => {
         try {
             const snapshot = await DATAOPS_WORK_STATE_MODULE.load();
             if (!snapshot || !Array.isArray(snapshot.productData) || snapshot.productData.length === 0)
                 return false;
-            // DOPS-20260811-01 GUARD:RESTORE_START
-            if (DATAOPS_WORK_STATE_COMPAT_MODULE.isUnsupportedSnapshot(snapshot)) {
-                incompatibleWorkStateRef.current = true;
-                if (!incompatibleWorkStateNoticeShownRef.current) {
-                    incompatibleWorkStateNoticeShownRef.current = true;
-                    setAlertMsg(DATAOPS_WORK_STATE_COMPAT_MODULE.BLOCK_MESSAGE);
-                }
-                return false;
-            }
-            // DOPS-20260811-01 GUARD:RESTORE_END
             const restoredProductData = snapshot.productData.map(item => {
                 const systemQty = safeNum(item.기초) + safeNum(item.입고) + safeNum(item.대체입고) - safeNum(item.출고) - safeNum(item.대체출고);
                 const issueText = (Array.isArray(item.이슈) ? item.이슈 : []).map(v => safeStr(v)).join(' ');
@@ -4641,17 +4605,9 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
         return () => { active = false; };
     }, [restoreWorkState]);
     useEffect(() => {
-        // DOPS-20260811-01 GUARD:AUTO_SAVE_START
-        if (incompatibleWorkStateRef.current)
-            return;
-        // DOPS-20260811-01 GUARD:AUTO_SAVE_END
         if (!workStateHydrated || productData.length === 0)
             return;
         const timer = setTimeout(() => {
-            // DOPS-20260811-01 GUARD:TIMER_RACE_START
-            if (incompatibleWorkStateRef.current)
-                return;
-            // DOPS-20260811-01 GUARD:TIMER_RACE_END
             DATAOPS_WORK_STATE_MODULE.save({
                 productData,
                 substHistory,
@@ -4663,10 +4619,6 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
         return () => clearTimeout(timer);
     }, [workStateHydrated, productData, substHistory, ackMultiCodes, analysisPeriod, targetDateStr]);
     const saveWorkState = useCallback(async () => {
-        // DOPS-20260811-01 GUARD:MANUAL_SAVE_START
-        if (incompatibleWorkStateRef.current)
-            return false;
-        // DOPS-20260811-01 GUARD:MANUAL_SAVE_END
         let localSnapshot = null;
         setIsProcessing(true);
         try {
