@@ -1,0 +1,213 @@
+{
+  "vendorChipCases": [
+    {
+      "name": "원본 판매 4, 거래처 칩 3",
+      "item": {
+        "batchKey": "LOT-MISMATCH",
+        "코드": "SALE-001",
+        "품명": "판매칩 불일치",
+        "출고": 4,
+        "매출액": 4000,
+        "매출원가": 2400,
+        "출고내역": {
+          "거래처A": {
+            "qty": 3,
+            "rev": 3000,
+            "cogs": 1800,
+            "displayVendor": "거래처A"
+          }
+        },
+        "_salesSourceEvidence": [
+          {
+            "sourceId": "판매.xlsx|판매현황|12",
+            "vendor": "거래처A",
+            "qty": 4,
+            "unitPrice": 1000,
+            "amount": 4000,
+            "fileName": "판매.xlsx",
+            "sheetName": "판매현황",
+            "rowNumber": 12
+          }
+        ],
+        "이슈": []
+      },
+      "expectedChipQty": 3,
+      "expectedDifference": 1,
+      "expectedDifferenceAmount": 1000,
+      "blocking": true
+    },
+    {
+      "name": "원본 판매 4, 거래처 칩 없음",
+      "item": {
+        "batchKey": "LOT-NO-CHIP",
+        "코드": "SALE-002",
+        "품명": "판매칩 누락",
+        "출고": 4,
+        "출고내역": {},
+        "_salesSourceEvidence": [
+          {
+            "sourceId": "판매.xlsx|판매현황|13",
+            "vendor": "거래처B",
+            "qty": 4,
+            "unitPrice": 900,
+            "amount": 3600,
+            "fileName": "판매.xlsx",
+            "sheetName": "판매현황",
+            "rowNumber": 13
+          }
+        ],
+        "이슈": []
+      },
+      "expectedChipQty": 0,
+      "expectedDifference": 4,
+      "expectedDifferenceAmount": 3600,
+      "blocking": true
+    },
+    {
+      "name": "판매원본 금액 공란, 거래처 칩 수량 불일치",
+      "item": {
+        "batchKey": "LOT-BLANK-AMOUNT",
+        "코드": "SALE-007",
+        "품명": "판매금액 공란",
+        "출고": 2,
+        "출고내역": {
+          "거래처E": { "qty": 1, "rev": 1000, "cogs": 600, "displayVendor": "거래처E" }
+        },
+        "_salesSourceEvidence": [
+          {
+            "sourceId": "판매.xlsx|판매현황|19",
+            "vendor": "거래처E",
+            "qty": 2,
+            "unitPrice": "",
+            "amount": "",
+            "calculatedAmount": 2000,
+            "fileName": "판매.xlsx",
+            "sheetName": "판매현황",
+            "rowNumber": 19
+          }
+        ],
+        "이슈": []
+      },
+      "expectedChipQty": 1,
+      "expectedDifference": 1,
+      "expectedDifferenceAmount": "",
+      "blocking": true
+    },
+    {
+      "name": "복수 거래처 칩 합계 일치",
+      "item": {
+        "batchKey": "LOT-MULTI-OK",
+        "코드": "SALE-003",
+        "품명": "복수 거래처 정상",
+        "출고": 4,
+        "출고내역": {
+          "거래처A": { "qty": 1, "rev": 1000, "cogs": 600, "displayVendor": "거래처A" },
+          "거래처B": { "qty": 3, "rev": 3000, "cogs": 1800, "displayVendor": "거래처B" }
+        },
+        "_salesSourceEvidence": [
+          { "sourceId": "판매.xlsx|판매현황|14", "vendor": "거래처A", "qty": 1, "fileName": "판매.xlsx", "sheetName": "판매현황", "rowNumber": 14 },
+          { "sourceId": "판매.xlsx|판매현황|15", "vendor": "거래처B", "qty": 3, "fileName": "판매.xlsx", "sheetName": "판매현황", "rowNumber": 15 }
+        ],
+        "이슈": []
+      },
+      "expectedChipQty": 4,
+      "expectedDifference": 0,
+      "blocking": false
+    },
+    {
+      "name": "같은 표시 거래처 복수 원본",
+      "item": {
+        "batchKey": "LOT-DUP-VENDOR",
+        "코드": "SALE-004",
+        "품명": "동일 거래처 복수 원본",
+        "출고": 4,
+        "출고내역": {
+          "거래처C": { "qty": 4, "rev": 4000, "cogs": 2400, "displayVendor": "거래처C" }
+        },
+        "_salesSourceEvidence": [
+          { "sourceId": "판매.xlsx|판매현황|16", "vendor": "거래처C", "qty": 1, "fileName": "판매.xlsx", "sheetName": "판매현황", "rowNumber": 16 },
+          { "sourceId": "판매.xlsx|판매현황|17", "vendor": "거래처C", "qty": 3, "fileName": "판매.xlsx", "sheetName": "판매현황", "rowNumber": 17 }
+        ],
+        "이슈": []
+      },
+      "expectedChipQty": 4,
+      "expectedDifference": 0,
+      "blocking": false
+    },
+    {
+      "name": "판매반품 서명 수량 일치",
+      "item": {
+        "batchKey": "LOT-RETURN",
+        "코드": "SALE-005",
+        "품명": "판매반품",
+        "출고": -1,
+        "출고내역": {
+          "거래처D_return": { "qty": -1, "rev": -1000, "cogs": -600, "displayVendor": "거래처D" }
+        },
+        "_salesSourceEvidence": [
+          { "sourceId": "판매.xlsx|판매현황|18", "vendor": "거래처D", "qty": -1, "fileName": "판매.xlsx", "sheetName": "판매현황", "rowNumber": 18, "isReturn": true }
+        ],
+        "이슈": []
+      },
+      "expectedChipQty": -1,
+      "expectedDifference": 0,
+      "blocking": false
+    },
+    {
+      "name": "제외 거래처는 비교 제외",
+      "item": {
+        "batchKey": "LOT-EXCLUDED",
+        "코드": "SALE-006",
+        "품명": "제외 거래처",
+        "출고": 0,
+        "출고내역": {},
+        "_salesSourceEvidence": [],
+        "이슈": []
+      },
+      "expectedChipQty": 0,
+      "expectedDifference": 0,
+      "blocking": false
+    }
+  ],
+  "salesSourceEvidenceCases": [
+    {
+      "name": "판매원본 단가와 금액 공란 보존",
+      "sale": {
+        "단가": 1500,
+        "매입처매칭": "구매처A",
+        "_raw": { "판매단가": "", "판매금액": "" },
+        "_sourceFileName": "판매공란.xlsx",
+        "_sourceSheet": "판매현황",
+        "_sourceRowNumber": 31
+      },
+      "qty": 2,
+      "calculatedAmount": 3000,
+      "expectedUnitPrice": "",
+      "expectedAmount": "",
+      "expectedCalculatedAmount": 3000
+    },
+    {
+      "name": "판매원본 금액이 계산금액과 다른 값 보존",
+      "sale": {
+        "단가": 1200,
+        "매입처매칭": "구매처B",
+        "_raw": { "판매단가": 1200, "판매금액": 7777 },
+        "_sourceFileName": "판매차이.xlsx",
+        "_sourceSheet": "판매현황",
+        "_sourceRowNumber": 32
+      },
+      "qty": 3,
+      "calculatedAmount": 3600,
+      "expectedUnitPrice": 1200,
+      "expectedAmount": 7777,
+      "expectedCalculatedAmount": 3600
+    }
+  ],
+  "preflightCases": [
+    { "type": "UNALLOCATED_LOT", "batchKey": "LOT-UNALLOCATED", "code": "P-LOT", "name": "미귀속 LOT", "issue": "🚨Lot매치실패" },
+    { "type": "MISSING_INBOUND_COST", "batchKey": "LOT-NO-COST", "code": "P-COST", "name": "입고단가 누락", "inQty": 2, "unitCost": 0 },
+    { "type": "TOTAL_COST_MISMATCH", "batchKey": "LOT-COST-DIFF", "code": "P-TOTAL", "name": "총원가 불일치", "salesCost": 500, "chipCost": 450 },
+    { "type": "WAREHOUSE_02_MISMATCH", "batchKey": "LOT-W02", "code": "P-W02", "name": "02창고 오차", "purchaseQty": 5, "salesQty": 4 },
+    { "type": "UNIT_CONVERSION_FAILURE", "batchKey": "LOT-UNIT", "code": "P-UNIT", "name": "단위 변환 실패", "conversionError": "환산율 없음" }
+  ]
+}

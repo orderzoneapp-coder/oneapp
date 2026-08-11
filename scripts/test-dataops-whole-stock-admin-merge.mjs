@@ -21,12 +21,17 @@ const v110ConfigVersion = "V1.a22.110_WorkSaveCloudInventorySync";
 const datedV111Version =
   "V1.a22.111_WorkSaveCloudInventorySync · 2026-08-08 KST";
 const v111ConfigVersion = "V1.a22.111_WorkSaveCloudInventorySync";
-const isCompatibleV110OrV111 =
+const datedV112Version =
+  "V1.a22.112_EvidenceReportPreflight · 2026-08-12 KST";
+const v112ConfigVersion = "V1.a22.112_EvidenceReportPreflight";
+const isCompatibleV110ThroughV112 =
   (source.split(datedV110Version).length - 1 === 3 &&
     new RegExp(`version:\\s*'${v110ConfigVersion}'`).test(source)) ||
   (source.split(datedV111Version).length - 1 === 3 &&
-    new RegExp(`version:\\s*'${v111ConfigVersion}'`).test(source));
-if (isCompatibleV110OrV111) {
+    new RegExp(`version:\\s*'${v111ConfigVersion}'`).test(source)) ||
+  (source.split(datedV112Version).length - 1 === 3 &&
+    new RegExp(`version:\\s*'${v112ConfigVersion}'`).test(source));
+if (isCompatibleV110ThroughV112) {
   const workbook = section("createCombinedWorkbook:", "const STORAGE_MODULE");
   const viewLayer = section(
     "const DATAOPS_VIEW_LAYER_MODULE",
