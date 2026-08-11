@@ -2133,7 +2133,9 @@ const DATAOPS_PURCHASE_FLOW_MODULE = Object.freeze({
     },
     isExactStockInstruction: (value = '') => safeStr(value, '').replace(/\s/g, '') === '재고',
     buildLotKey: (code = '', vendor = '', unitCost = 0) => `${safeStr(code, 'NO_CODE')}|${DATAOPS_PURCHASE_FLOW_MODULE.normalizeVendor(vendor)}|${Math.round(safeNum(unitCost) * 1000000) / 1000000}`,
-    buildContext: ({ purchases = [], sales = [] } = {}) => {
+    buildCodeCostKey: (code = '', unitCost = 0) => `${safeStr(code, 'NO_CODE')}|${Math.round(safeNum(unitCost) * 1000000) / 1000000}`,
+    buildContext: ({ purchases = [], sales = [], isExcludedPurchase = () => false } = {}) => {
+        const excludedPurchasePredicate = typeof isExcludedPurchase === 'function' ? isExcludedPurchase : () => false;
         const confirmedDemandKeys = new Set();
         (sales || []).forEach(sale => {
             if (safeNum(sale && (sale._computedQty !== undefined ? sale._computedQty : sale.수량)) <= 0)
@@ -2146,31 +2148,38 @@ const DATAOPS_PURCHASE_FLOW_MODULE = Object.freeze({
                 return;
             confirmedDemandKeys.add(DATAOPS_PURCHASE_FLOW_MODULE.buildLotKey(DATAOPS_PURCHASE_FLOW_MODULE.normalizeCode(sale), vendor, unitCost));
         });
-        return { purchases: purchases || [], confirmedDemandKeys };
+        const externalSourceKeys = new Set();
+        (purchases || []).forEach(purchase => {
+            if (!purchase || excludedPurchasePredicate(purchase) || safeNum(purchase.수량) <= 0)
+                return;
+            externalSourceKeys.add(DATAOPS_PURCHASE_FLOW_MODULE.buildCodeCostKey(
+                DATAOPS_PURCHASE_FLOW_MODULE.normalizeCode(purchase),
+                safeNum(purchase.단가)
+            ));
+        });
+        return { purchases: purchases || [], confirmedDemandKeys, externalSourceKeys, isExcludedPurchase: excludedPurchasePredicate };
     },
     classifyPurchase: (purchase = {}, context = {}) => {
         const code = DATAOPS_PURCHASE_FLOW_MODULE.normalizeCode(purchase);
         const transactionVendor = DATAOPS_PURCHASE_FLOW_MODULE.getTransactionVendor(purchase);
         const targetVendor = DATAOPS_PURCHASE_FLOW_MODULE.getTargetVendor(purchase);
-        const normalizedTransactionVendor = DATAOPS_PURCHASE_FLOW_MODULE.normalizeVendor(transactionVendor);
-        const normalizedTargetVendor = DATAOPS_PURCHASE_FLOW_MODULE.normalizeVendor(targetVendor);
         const unitCost = safeNum(purchase && purchase.단가);
+        const isExcluded = typeof context.isExcludedPurchase === 'function' && context.isExcludedPurchase(purchase);
+        // 비제외 거래처 구매는 대응 확정수요나 왕복 표기보다 먼저 외부 원천으로 확정한다.
+        if (!isExcluded) {
+            return { kind: 'STANDARD', externalSalesCostEligible: true, excludeFromPurchases: false, transactionVendor, targetVendor };
+        }
+        // 같은 코드·단가의 비제외 구매 원천이 있으면 제외 거래처 행은 내부 이동으로 보고 원장 생성 전 완전 제외한다.
+        const externalSourceKey = DATAOPS_PURCHASE_FLOW_MODULE.buildCodeCostKey(code, unitCost);
+        if (context.externalSourceKeys && context.externalSourceKeys.has(externalSourceKey)) {
+            return { kind: 'INTERNAL_MOVEMENT', externalSalesCostEligible: false, excludeFromPurchases: true, transactionVendor, targetVendor };
+        }
+        // 외부 원천이 없을 때만 판매전표의 구매처·구매단가 확정 수요가 제외 거래처 구매를 외부 원천으로 보존할 수 있다.
         const demandKey = DATAOPS_PURCHASE_FLOW_MODULE.buildLotKey(code, transactionVendor, unitCost);
         if (context.confirmedDemandKeys && context.confirmedDemandKeys.has(demandKey)) {
-            return { kind: 'CONFIRMED_EXTERNAL', externalSalesCostEligible: true, preserveWhenExcluded: true, transactionVendor, targetVendor };
+            return { kind: 'CONFIRMED_EXTERNAL', externalSalesCostEligible: true, excludeFromPurchases: false, transactionVendor, targetVendor };
         }
-        const purchaseQty = Math.abs(safeNum(purchase && purchase.수량));
-        const hasDirectionalCounterpart = !!normalizedTargetVendor && normalizedTargetVendor !== normalizedTransactionVendor && (context.purchases || []).some(other => {
-            if (!other || other === purchase)
-                return false;
-            return DATAOPS_PURCHASE_FLOW_MODULE.normalizeCode(other) === code &&
-                DATAOPS_PURCHASE_FLOW_MODULE.normalizeVendor(DATAOPS_PURCHASE_FLOW_MODULE.getTransactionVendor(other)) === normalizedTargetVendor &&
-                Math.abs(Math.abs(safeNum(other.수량)) - purchaseQty) <= 0.0000001;
-        });
-        if (hasDirectionalCounterpart) {
-            return { kind: 'INTERNAL_MOVEMENT', externalSalesCostEligible: false, preserveWhenExcluded: true, transactionVendor, targetVendor };
-        }
-        return { kind: 'STANDARD', externalSalesCostEligible: true, preserveWhenExcluded: false, transactionVendor, targetVendor };
+        return { kind: 'INTERNAL_MOVEMENT', externalSalesCostEligible: false, excludeFromPurchases: true, transactionVendor, targetVendor };
     }
 });
 
@@ -6727,7 +6736,8 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
             const isExcludedTransactionRow = (row = {}, role = '') => !!getExcludedVendorHit(row, role);
             const purchaseFlowContext = DATAOPS_PURCHASE_FLOW_MODULE.buildContext({
                 purchases: inItems,
-                sales: outItems.filter(sale => !isExcludedTransactionRow(sale, 'out'))
+                sales: outItems.filter(sale => !isExcludedTransactionRow(sale, 'out')),
+                isExcludedPurchase: purchase => isExcludedTransactionRow(purchase, 'in')
             });
             const normalizeLotNameForMatch = (val) => safeStr(val, '')
                 .replace(/\s/g, '')
@@ -6751,12 +6761,12 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                 var _a, _b, _c, _d, _e;
                 // 분석 입력은 0·마이너스 행을 그대로 유지한다.
                 // 양수 잔량만 남기는 정책은 내일 기초재고 생성(buildNextBaseStockRows) 단계에서만 적용한다.
-                // 제외거래처 구매행도 대응 외부판매 Lot 또는 거래방향이 확인되는 내부이동 Lot이면 원장에 보존한다.
-                // 내부이동 Lot은 보존하되 외부판매 원가 후보에서는 제외한다.
+                // 제외거래처 내부이동 구매행은 pData/stockPool/Source Ledger를 만들기 전에 완전 제외한다.
+                // 단, 같은 코드·단가의 비제외 외부 원천이 없고 판매 확정수요가 있는 행만 외부 원천으로 보존한다.
                 const purchaseFlow = type === 'in'
                     ? DATAOPS_PURCHASE_FLOW_MODULE.classifyPurchase(item, purchaseFlowContext)
-                    : { kind: type === 'prev' ? 'PREVIOUS_STOCK' : 'STANDARD', externalSalesCostEligible: true, preserveWhenExcluded: true };
-                if (type === 'in' && isExcludedTransactionRow(item, 'in') && !purchaseFlow.preserveWhenExcluded)
+                    : { kind: type === 'prev' ? 'PREVIOUS_STOCK' : 'STANDARD', externalSalesCostEligible: true, excludeFromPurchases: false };
+                if (type === 'in' && purchaseFlow.excludeFromPurchases)
                     return;
                 const code = String(item.코드 || 'NO_CODE');
                 const price = parseNumber(item.단가);
