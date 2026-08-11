@@ -3894,7 +3894,7 @@
                 exactWarningUnit(sourceRow) ? "unit-alert-row" : "",
               ].filter(Boolean).join(" ");
               return `
-                <tr class="${rowClasses}">
+                <tr class="${rowClasses}" data-product-code="${escapeHtml(sourceRow?.productCode || "")}">
                   ${visibleEntries.map(({ column, index }) => {
                     const value = row[index];
                     const isNumber = Boolean(column.numeric) && value !== "";
@@ -4550,11 +4550,50 @@
         elements.columnVisibilityButton.setAttribute("aria-expanded", "false");
       });
 
+      function currentInventoryViewAnchor() {
+        const containerRect = elements.previewTable.getBoundingClientRect();
+        const rows = Array.from(elements.previewTable.querySelectorAll(
+          "tbody tr[data-product-code]",
+        )).filter((row) => row.dataset.productCode);
+        const visibleRows = rows.filter((row) => {
+          const rect = row.getBoundingClientRect();
+          return rect.bottom > containerRect.top && rect.top < containerRect.bottom;
+        });
+        if (visibleRows.length === 0) return null;
+        const row = visibleRows.reduce((best, candidate) => {
+          const bestDistance = Math.abs(best.getBoundingClientRect().top - containerRect.top);
+          const candidateDistance = Math.abs(candidate.getBoundingClientRect().top - containerRect.top);
+          return candidateDistance < bestDistance ? candidate : best;
+        });
+        return {
+          productCode: row.dataset.productCode,
+          offsetTop: row.getBoundingClientRect().top - containerRect.top,
+        };
+      }
+
+      function restoreProductCodeAnchor(anchor) {
+        if (!anchor?.productCode) return;
+        window.requestAnimationFrame(() => {
+          const row = Array.from(elements.previewTable.querySelectorAll(
+            "tbody tr[data-product-code]",
+          )).find((candidate) => candidate.dataset.productCode === anchor.productCode);
+          if (!row) return;
+          const containerRect = elements.previewTable.getBoundingClientRect();
+          const currentOffset = row.getBoundingClientRect().top - containerRect.top;
+          elements.previewTable.scrollTop += currentOffset - anchor.offsetTop;
+        });
+      }
+
       elements.previewTabs.addEventListener("click", (event) => {
         const button = event.target.closest("[data-preview]");
         if (!button || !state.workspace) return;
-        state.activePreview = button.dataset.preview;
+        const nextPreview = button.dataset.preview;
+        const anchor = state.activePreview === "inventory" && nextPreview === "allocations"
+          ? currentInventoryViewAnchor()
+          : null;
+        state.activePreview = nextPreview;
         renderPreview();
+        restoreProductCodeAnchor(anchor);
         scheduleLocalSave();
       });
       elements.previewTable.addEventListener("input", (event) => {
