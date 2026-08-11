@@ -394,10 +394,11 @@ assert.equal(signedNoticeSheet.G5.s.fill.fgColor.rgb, "FFFFFF");
 assert.equal(signedNoticeSheet.G5.s.alignment.wrapText, true);
 const signedInventorySheet = signedWorkbook.Sheets["창고별재고"];
 const signedInventoryHeaders = XLSX.utils.sheet_to_json(signedInventorySheet, { header: 1, raw: true })[0];
-assert.equal(signedInventoryHeaders.at(-1), "주문거래처명(수량)");
+assert.equal(signedInventoryHeaders.at(-1), "정보");
 assert.equal(
   signedInventorySheet[XLSX.utils.encode_cell({ r: 1, c: signedInventoryHeaders.length - 1 })].v,
-  "제로거래처(0)\n중복거래처(-1)\n중복거래처(2)",
+  "",
+  "nonnegative inventory totals must leave shortage information blank",
 );
 assert.equal(sheetCellByHeader(signedWorkbook.Sheets["미출고현황"], "주문수량", 3).v, -1);
 assert.equal(XLSX.utils.decode_range(signedWorkbook.Sheets["구매업로드"]["!ref"]).e.c, 19);
@@ -709,7 +710,7 @@ const dynamicWorkbook = workbookTools.buildWorkbook(dynamicWorkspace, XLSX);
 const dynamicInventorySheet = dynamicWorkbook.Sheets["창고별재고"];
 assert.deepEqual(
   Array.from(XLSX.utils.sheet_to_json(dynamicInventorySheet, { header: 1, raw: true, range: "A1:M1" })[0]),
-  [...dynamicView.headers, "구매", "거래처(단가)", "주문거래처명(수량)"],
+  [...dynamicView.headers, "구매", "거래처(단가)", "정보"],
 );
 assert.equal(dynamicInventorySheet["B1"].v, "품목명");
 assert.equal(dynamicInventorySheet["H1"].v, "신규창고");
@@ -723,7 +724,9 @@ assert.equal(dynamicInventorySheet["I2"].s.numFmt, "@");
 assert.notEqual(dynamicInventorySheet["I2"].s.fill.fgColor.rgb, "FFF200");
 assert.equal(dynamicInventorySheet["K1"].v, "구매", "reserved purchase descriptor must be appended exactly once after source columns");
 assert.equal(dynamicInventorySheet["L1"].v, "거래처(단가)", "supplier pairs must precede order customers");
-assert.equal(dynamicInventorySheet["M1"].v, "주문거래처명(수량)");
+assert.equal(dynamicInventorySheet["M1"].v, "정보");
+assert.equal(dynamicInventorySheet["M2"].v, "거래처 1(2)\n반복거래처(1)", "negative inventory must show order customer quantities");
+assert.equal(dynamicInventorySheet["M3"].v, "", "nonnegative inventory must leave shortage information blank");
 assert.equal(dynamicInventorySheet["!ref"], "A1:M3", "inventory rows must remain one row per inventory product despite repeated orders");
 const overrideInventorySheet = workbookTools.buildWorkbook(overrideWorkspace, XLSX).Sheets["창고별재고"];
 assert.deepEqual(
@@ -1035,7 +1038,7 @@ assert.deepEqual(
   Array.from(
     XLSX.utils.sheet_to_json(inventorySheet, { header: 1, raw: true, range: "A1:Q1" })[0],
   ),
-  [...INVENTORY_HEADERS, "구매", "거래처(단가)", "주문거래처명(수량)"],
+  [...INVENTORY_HEADERS, "구매", "거래처(단가)", "정보"],
 );
 for (let row = 2; row <= 6; row += 1) {
   assert.equal(inventorySheet[`O${row}`].v, "", "purchase column must default to blank text");
@@ -1059,7 +1062,7 @@ const inventoryHeaderRow = Array.from(
 assert.equal(inventoryHeaderRow.includes("2전송"), true, "all nonblank source inventory headers must be retained");
 assert.equal(inventoryHeaderRow.at(-3), "구매", "purchase must follow all dynamic source inventory columns");
 assert.equal(inventoryHeaderRow.at(-2), "거래처(단가)", "supplier pairs must remain before order customers");
-assert.equal(inventoryHeaderRow.at(-1), "주문거래처명(수량)", "order customer quantities must be the rightmost inventory column");
+assert.equal(inventoryHeaderRow.at(-1), "정보", "order customer quantities must be the rightmost inventory column");
 for (let row = 1; row <= 6; row += 1) {
   for (let column = 0; column < inventoryHeaderRow.length; column += 1) {
     const cell = inventorySheet[XLSX.utils.encode_cell({ r: row - 1, c: column })];
@@ -1560,7 +1563,7 @@ try {
   });
   assert.deepEqual(
     Array.from(XLSX.utils.sheet_to_json(reopenedDynamic.Sheets["창고별재고"], { header: 1, raw: true, range: "A1:M1" })[0]),
-    [...dynamicView.headers, "구매", "거래처(단가)", "주문거래처명(수량)"],
+    [...dynamicView.headers, "구매", "거래처(단가)", "정보"],
   );
   assert.deepEqual(
     [reopenedDynamic.Sheets["창고별재고"].H2.t, reopenedDynamic.Sheets["창고별재고"].H2.v],
