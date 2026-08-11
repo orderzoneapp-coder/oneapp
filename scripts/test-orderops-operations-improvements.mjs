@@ -235,5 +235,24 @@ assert.match(
   /적요·적요1은 기능을 차단하지 않는 참고 전달사항입니다/,
   "검증결과 안내는 전달사항의 비차단 참고 정책을 명시해야 합니다.",
 );
+assert.equal((html.match(/id="downloadButton"/g) || []).length, 1, "Excel 출력 버튼은 하나여야 합니다.");
+assert.match(html, /id="downloadButton"[^>]*disabled[^>]*>[\s\S]*?Excel 출력/);
+assert.doesNotMatch(html, /구매업로드 Excel|미출고현황 Excel|id="purchaseUploadButton"/);
+assert.match(html, /@page\s*\{\s*size:\s*A4 portrait;\s*margin:\s*8mm;/);
+assert.match(html, /\.print-area thead\s*\{\s*display:\s*table-header-group;/);
+assert.match(html, /page-break-inside:\s*avoid/);
+assert.match(html, /\["Enter", "ArrowDown", "ArrowUp"\]/);
+assert.match(html, /event\.isComposing \|\| event\.keyCode === 229 \|\| input\.dataset\.composing === "true"/);
+assert.match(html, /typeof sourceRow\?\.inventoryTotal === "number" && sourceRow\.inventoryTotal < 0/);
+assert.doesNotMatch(html, /negativeBalance[\s\S]{0,240}preview\.inventory/);
+assert.match(html, /tabindex="\$\{negativeBalance \? "0" : "-1"\}"/);
+assert.match(html, /workbookTools\.downloadWorkbook\(state\.workspace, window\.XLSX, fileName\)/);
+assert.doesNotMatch(html, /window\.XLSX\.writeFile/);
+assert.deepEqual(
+  [...workbookSource.matchAll(/^\s+"(전달사항\(적요보기\)|창고별재고|미출고현황|구매업로드)",?$/gm)]
+    .slice(0, 4)
+    .map((match) => match[1]),
+  ["전달사항(적요보기)", "창고별재고", "미출고현황", "구매업로드"],
+);
 
 console.log("OrderOps recovery, date, settings-modal, and delivery-notice tests passed.");

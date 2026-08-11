@@ -10,13 +10,12 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function (engine) {
   "use strict";
 
-  const WORKBOOK_VERSION = "3.3.0";
+  const WORKBOOK_VERSION = "4.0.0";
   const REQUIRED_SHEETS = Object.freeze([
-    "발주관리",
+    "전달사항(적요보기)",
+    "창고별재고",
     "미출고현황",
-    "창고별 재고",
-    "검증결과",
-    "주문원본",
+    "구매업로드",
   ]);
   const PURCHASE_UPLOAD_SCHEMA_VERSION = "shipping-purchase-upload/v1";
   const PURCHASE_UPLOAD_HEADERS = Object.freeze([
@@ -276,6 +275,63 @@
       }
     }
 
+    return sheet;
+  }
+
+  function buildDeliveryNoticeSheet(workspace, XLSX) {
+    const acknowledgementState = engine?.ensureNoticeState?.(workspace) || { acknowledgedIds: [] };
+    const acknowledgedIds = new Set(acknowledgementState.acknowledgedIds || []);
+    const orderByNoticeId = new Map(
+      (workspace.orders || [])
+        .filter((row) => row.noticeId || row.note || row.note1)
+        .map((row) => [row.noticeId || `${row.sourceRowNumber}`, row]),
+    );
+    const headers = [
+      "담당", "거래처", "품목코드", "품목명", "규격", "주문수량", "적요", "적요1", "그룹", "확인상태",
+    ];
+    const noticeRows = (workspace.notices || []).map((notice) => {
+      const order = orderByNoticeId.get(notice.noticeId) ||
+        (workspace.orders || []).find((row) => row.sourceRowNumber === notice.sourceRowNumber) || {};
+      return [
+        notice.manager || order.manager || "",
+        notice.customer || order.customer || "",
+        notice.productCode || order.productCode || "",
+        notice.productName || order.productName || "",
+        order.specification || "",
+        typeof order.quantity === "number" ? order.quantity : "",
+        notice.note ?? order.noteOriginal ?? order.note ?? "",
+        notice.note1 ?? order.note1Original ?? order.note1 ?? "",
+        notice.group || order.group || "",
+        acknowledgedIds.has(notice.noticeId) ? "확인함" : "미확인",
+      ];
+    });
+    const sheet = buildTableSheet(XLSX, {
+      title: "전달사항(적요보기)",
+      subtitle: "원 주문행 순서와 적요·적요1 원문을 유지합니다. 확인상태는 선택적 운영 기록입니다.",
+      headers,
+      rows: noticeRows,
+      widths: [13, 22, 15, 31, 13, 12, 28, 28, 14, 11],
+      numericColumns: [5],
+      textColumns: [2],
+    });
+    sheet["!rows"] = [
+      { hpt: 27 }, { hpt: 28 }, { hpt: 8 }, { hpt: 27 },
+      ...noticeRows.map((row) => ({
+        hpt: Math.min(120, Math.max(22, Math.max(
+          String(row[6] || "").split(/\r?\n/).length,
+          String(row[7] || "").split(/\r?\n/).length,
+        ) * 18)),
+      })),
+    ];
+    noticeRows.forEach((_, rowIndex) => {
+      [6, 7].forEach((column) => {
+        const cell = ensureCell(sheet, XLSX, rowIndex + 4, column);
+        cell.s = {
+          ...(cell.s || {}),
+          alignment: { vertical: "top", horizontal: "left", wrapText: true },
+        };
+      });
+    });
     return sheet;
   }
 
@@ -621,17 +677,25 @@
     const layout = inventoryView.columns.map((column) => ({ ...column }));
     layout.push({ key: "shipping:inventory:purchase", header: "구매", sourceIndex: null, purchase: true });
     layout.push({ key: "shipping:inventory:suppliers", header: "거래처(단가)", sourceIndex: null, suppliers: true });
+    layout.push({
+      key: "shipping:inventory:order-customers",
+      header: "주문거래처명(수량)",
+      sourceIndex: null,
+      orderCustomers: true,
+    });
 
     const dataRows = inventoryView.rows.map((inventory) => [
       ...inventory.values,
       inventory.purchase,
       inventory.suppliers,
+      inventory.orderCustomers,
     ]);
     const headers = layout.map((column) => safeValue(column.header));
     const sheet = XLSX.utils.aoa_to_sheet([headers, ...dataRows]);
     const codeColumn = layout.findIndex((column) => column.role === "productCode");
     const specificationColumn = headers.findIndex((header) => normalizedHeader(header) === "규격");
     const supplierColumn = layout.findIndex((column) => column.suppliers === true);
+    const orderCustomerColumn = layout.findIndex((column) => column.orderCustomers === true);
     const lastColumn = columnName(Math.max(0, headers.length - 1));
     const lastRow = Math.max(1, dataRows.length + 1);
     sheet["!cols"] = headers.map((header) => {
@@ -641,9 +705,15 @@
       if (normalized === "규격") return { wch: 13 };
       if (normalized === "구매") return { wch: 11 };
       if (normalized === "거래처(단가)") return { wch: 34 };
+      if (normalized === "주문거래처명(수량)") return { wch: 34 };
       return { wch: isWarehouseQuantityHeader(header) ? 11 : 13 };
     });
-    sheet["!rows"] = [{ hpt: 27 }, ...dataRows.map(() => ({ hpt: 32 }))];
+    sheet["!rows"] = [{ hpt: 27 }, ...dataRows.map((row) => ({
+      hpt: Math.min(120, Math.max(32, Math.max(
+        String(row[supplierColumn] || "").split(/\r?\n/).length,
+        String(row[orderCustomerColumn] || "").split(/\r?\n/).length,
+      ) * 18)),
+    }))];
     sheet["!freeze"] = { xSplit: 0, ySplit: 1 };
     sheet["!autofilter"] = { ref: `A1:${lastColumn}${lastRow}` };
     sheet["!views"] = [{ showGridLines: false }];
@@ -695,7 +765,7 @@
           cell.w = cell.v;
           style.numFmt = "@";
         }
-        if (column === supplierColumn) {
+        if (column === supplierColumn || column === orderCustomerColumn) {
           style.alignment = { vertical: "top", horizontal: "left", wrapText: true };
         }
         applyCellStyle(cell, style);
@@ -945,7 +1015,7 @@
     }
   }
 
-  function buildPurchaseUploadWorkbook(workspace, XLSX) {
+  function buildPurchaseUploadSheet(workspace, XLSX) {
     requireXlsx(XLSX);
     requirePurchaseUploadReady(workspace);
     const sourceRows = getPurchaseUploadRows(workspace);
@@ -1023,6 +1093,11 @@
       }
     }
 
+    return sheet;
+  }
+
+  function buildPurchaseUploadWorkbook(workspace, XLSX) {
+    const sheet = buildPurchaseUploadSheet(workspace, XLSX);
     const workbook = XLSX.utils.book_new();
     workbook.Props = {
       Title: "구매업로드",
@@ -1066,10 +1141,11 @@
       throw new Error("지원하지 않는 Shipping Management 작업공간입니다.");
     }
 
+    requirePurchaseUploadReady(workspace);
     const workbook = XLSX.utils.book_new();
     workbook.Props = {
-      Title: "Shipping Management 발주·미출고 계획",
-      Subject: "동적 창고재고 검수·미출고 배정·구매 계획",
+      Title: "OrderOps 통합 출력",
+      Subject: "전달사항·창고별재고·미출고현황·구매업로드",
       Author: "ONEAPP Shipping Management",
       Company: "ONEAPP",
       Comments: `workspace=${workspace.schemaVersion}; workbook=${WORKBOOK_VERSION}`,
@@ -1077,21 +1153,20 @@
     };
     XLSX.utils.book_append_sheet(
       workbook,
-      buildPurchaseManagementSheet(workspace, XLSX),
-      "발주관리",
+      buildDeliveryNoticeSheet(workspace, XLSX),
+      "전달사항(적요보기)",
+    );
+    XLSX.utils.book_append_sheet(
+      workbook,
+      buildWarehouseInventorySheet(workspace, XLSX),
+      "창고별재고",
     );
     const allocationSheet = buildAllocationSheet(workspace, XLSX);
     XLSX.utils.book_append_sheet(workbook, allocationSheet, "미출고현황");
     XLSX.utils.book_append_sheet(
       workbook,
-      buildWarehouseInventorySheet(workspace, XLSX),
-      "창고별 재고",
-    );
-    XLSX.utils.book_append_sheet(workbook, buildValidationSheet(workspace, XLSX), "검증결과");
-    XLSX.utils.book_append_sheet(
-      workbook,
-      buildSourceSheet(workspace.sourceFiles.orders, XLSX),
-      "주문원본",
+      buildPurchaseUploadSheet(workspace, XLSX),
+      "구매업로드",
     );
     const allocationLastColumn = columnName(
       XLSX.utils.decode_range(allocationSheet["!ref"]).e.c,
@@ -1106,7 +1181,7 @@
   }
 
   function getOutputFileName(createdAt) {
-    return `Shipping_업무표_${localDateStamp(createdAt)}.xlsx`;
+    return `OrderOps_통합출력_${localDateStamp(createdAt)}.xlsx`;
   }
 
   function downloadWorkbook(workspace, XLSX, fileName) {
@@ -1128,6 +1203,8 @@
     getPurchaseUploadRows,
     getPurchaseUploadFileName,
     buildWorkbook,
+    buildDeliveryNoticeSheet,
+    buildPurchaseUploadSheet,
     buildPurchaseUploadWorkbook,
     writeWorkbook,
     writeStandardWorkbook,
