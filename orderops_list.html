@@ -2459,7 +2459,7 @@
     }
 
 
-    /* orderops v1.8 */
+    /* orderops v1.9 */
     table.preview-allocations {
       font-family: "Malgun Gothic", Pretendard, "Noto Sans KR", sans-serif;
       font-size: 11px;
@@ -2555,7 +2555,7 @@
       <div class="brand-mark">ONEAPP</div>
       <div class="brand-divider" aria-hidden="true"></div>
       <div class="brand-stack">
-        <div class="brand-suite">NEXUS <span class="brand-badge">v1.8</span></div>
+        <div class="brand-suite">NEXUS <span class="brand-badge">v1.9</span></div>
         <div class="brand-product">orderops</div>
       </div>
     </div>
@@ -2693,11 +2693,8 @@
         <div class="preview-tabs" id="previewTabs" role="tablist" aria-label="결과 미리보기"></div>
         <div class="preview-actions">
           <div class="preview-count" id="previewCount"></div>
-          <button class="download-button" id="purchaseUploadButton" type="button">
-            <span aria-hidden="true">↓</span> 구매업로드 Excel
-          </button>
           <button class="download-button secondary-download" id="downloadButton" type="button">
-            <span aria-hidden="true">↓</span> 미출고현황 Excel
+            <span aria-hidden="true">↓</span> 엑셀출력
           </button>
         </div>
       </div>
@@ -2705,7 +2702,7 @@
     </section>
 
     <footer class="page-footer">
-      <span>orderops v1.8 · workspace shipping-workspace/v2 · cloud plan v1</span>
+      <span>orderops v1.9 · workspace shipping-workspace/v2 · cloud plan v1</span>
       <a href="SHIPPING_MANAGEMENT_GUIDANCE.md">개발·운영 기준 보기</a>
     </footer>
   </main>
@@ -2785,7 +2782,6 @@
         previewCount: document.getElementById("previewCount"),
         previewTable: document.getElementById("previewTable"),
         downloadButton: document.getElementById("downloadButton"),
-        purchaseUploadButton: document.getElementById("purchaseUploadButton"),
         recoveryBanner: document.getElementById("recoveryBanner"),
         recoveryMessage: document.getElementById("recoveryMessage"),
         restoreButton: document.getElementById("restoreButton"),
@@ -4035,7 +4031,7 @@
           : "재고 매칭 이상 없음";
         renderPreview();
         elements.resultsPanel.classList.remove("hidden");
-        elements.purchaseUploadButton.disabled = state.workspace.basisDateStatus !== "valid";
+        elements.downloadButton.disabled = state.workspace.basisDateStatus !== "valid";
         elements.cloudSaveButton.disabled = !state.workspace.planId || state.workspace.basisDateStatus !== "valid";
         setSystemMessage("analysis complete... (Excel 다운로드 준비 완료)");
       }
@@ -4084,92 +4080,19 @@
         }, 20);
       }
 
-      function unfulfilledWorkbookFileName() {
-        const date = String(state.workspace?.basisDate || "").replace(/[^0-9]/g, "");
-        return `미출고현황_${date || new Date().toISOString().slice(0, 10).replace(/-/g, "")}.xlsx`;
-      }
-
       function downloadResult() {
         if (!state.workspace || !window.XLSX) return;
         try {
-          const definitions = getPreviewDefinitions(state.workspace);
-          const preview = definitions.allocations;
-          const pairs = fullSortedPreviewPairs("allocations", preview);
-          const matrix = [preview.headers, ...pairs.map((pair) => pair.row)];
-          const ws = window.XLSX.utils.aoa_to_sheet(matrix);
-          const wb = window.XLSX.utils.book_new();
-          const lastRow = Math.max(1, matrix.length);
-          const lastColumn = preview.headers.length - 1;
-          const border = {
-            top: { style: "thin", color: { rgb: "B8C5CC" } },
-            bottom: { style: "thin", color: { rgb: "B8C5CC" } },
-            left: { style: "thin", color: { rgb: "B8C5CC" } },
-            right: { style: "thin", color: { rgb: "B8C5CC" } },
-          };
-          ws["!cols"] = [
-            { wch: 12 }, { wch: 9 }, { wch: 25 }, { wch: 8 }, { wch: 10 }, { wch: 8 },
-            { wch: 8 }, { wch: 8 }, { wch: 14 }, { wch: 11 }, { wch: 21 }, { wch: 14 },
-          ];
-          ws["!rows"] = Array.from({ length: lastRow }, (_, index) => ({ hpt: index === 0 ? 23 : 18 }));
-          ws["!autofilter"] = { ref: `A1:${window.XLSX.utils.encode_col(lastColumn)}${lastRow}` };
-
-          for (let c = 0; c <= lastColumn; c += 1) {
-            const addr = window.XLSX.utils.encode_cell({ r: 0, c });
-            const cell = ws[addr];
-            if (!cell) continue;
-            cell.s = {
-              font: { name: "맑은 고딕", sz: 10, bold: true, color: { rgb: "FFFFFF" } },
-              fill: { patternType: "solid", fgColor: { rgb: "147F75" } },
-              alignment: { horizontal: "center", vertical: "center" },
-              border,
-            };
-          }
-
-          pairs.forEach((pair, pairIndex) => {
-            const r = pairIndex + 1;
-            const sourceRow = pair.sourceRow || {};
-            const fill = String(previewRowFill("allocations", sourceRow) || "#FFFFFF")
-              .replace(/^#/, "").toUpperCase();
-            const warnUnit = exactWarningUnit(sourceRow);
-            pair.row.forEach((value, c) => {
-              const addr = window.XLSX.utils.encode_cell({ r, c });
-              const cell = ws[addr] || (ws[addr] = { t: "s", v: "" });
-              const numeric = preview.numeric.includes(c) && typeof value === "number" && Number.isFinite(value);
-              cell.s = {
-                font: { name: "맑은 고딕", sz: 9, color: { rgb: warnUnit ? "EF2B2D" : "1F2937" } },
-                fill: { patternType: "solid", fgColor: { rgb: fill || "FFFFFF" } },
-                alignment: {
-                  horizontal: numeric ? "right" : ([1, 3].includes(c) ? "center" : "left"),
-                  vertical: "center",
-                },
-                border,
-              };
-              if (numeric) cell.z = "#,##0.###";
-              if (c === 9 && numeric) cell.z = "#,##0";
-            });
-          });
-
-          window.XLSX.utils.book_append_sheet(wb, ws, "미출고현황");
-          const fileName = unfulfilledWorkbookFileName();
-          window.XLSX.writeFile(wb, fileName, { compression: true });
-          setSystemMessage("unfulfilled workbook saved... (미출고현황)");
-          showToast(`${fileName} 다운로드를 시작했습니다.`);
-        } catch (error) {
-          showToast(error.message || "미출고현황 Excel을 생성하지 못했습니다.", true);
-        }
-      }
-
-      function downloadPurchaseUpload() {
-        if (!state.workspace) return;
-        try {
-          const fileName = workbookTools.getPurchaseUploadFileName(state.workspace);
-          workbookTools.downloadPurchaseUploadWorkbook(state.workspace, window.XLSX, fileName);
+          const fileName = workbookTools.getOutputFileName(state.workspace.createdAt);
+          workbookTools.downloadWorkbook(state.workspace, window.XLSX, fileName);
           const selection = engine.getPurchaseUploadSelection(state.workspace);
-          setSystemMessage(`purchase upload saved... (${selection.included.length}행)`);
-          showToast(`${fileName} 다운로드를 시작했습니다. 제외 ${selection.excluded.length}행은 구매업로드 대상에서 제외됩니다.`);
+          setSystemMessage(`integrated workbook saved... (${selection.included.length}개 구매업로드)`);
+          showToast(
+            `${fileName} 다운로드를 시작했습니다. 창고별재고·미출고현황·구매업로드 시트가 포함됩니다.`,
+          );
         } catch (error) {
-          setSystemMessage("purchase upload blocked... (기준일·제외 사유 확인)");
-          showToast(error.message || "구매업로드 Excel을 생성하지 못했습니다.", true);
+          setSystemMessage("integrated workbook blocked... (기준일·제외 사유 확인)");
+          showToast(error.message || "통합 Excel을 생성하지 못했습니다.", true);
         }
       }
 
@@ -4494,7 +4417,6 @@
 
       elements.analyzeButton.addEventListener("click", runAnalysis);
       elements.downloadButton.addEventListener("click", downloadResult);
-      elements.purchaseUploadButton.addEventListener("click", downloadPurchaseUpload);
       elements.printButton.addEventListener("click", printActiveTable);
       elements.columnWidthSaveButton.addEventListener("click", persistActiveColumnWidths);
       elements.columnWidthResetButton.addEventListener("click", resetActiveColumnWidths);
