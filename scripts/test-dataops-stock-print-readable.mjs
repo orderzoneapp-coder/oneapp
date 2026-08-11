@@ -210,11 +210,13 @@ assert.match(renderedHtml, /negative-final/);
 assert.match(renderedHtml, /category-break/);
 assert.match(renderedHtml, /window\.print\(\)/);
 
-const expectedVersion = "V1.a22.114_FilterActions";
+const expectedDisplayVersion =
+  "V1.a22.110_WorkSaveCloudInventorySync · 2026-08-08 KST";
 assert.equal(
-  (source.match(new RegExp(expectedVersion, "g")) || []).length,
+  source.split(expectedDisplayVersion).length - 1,
   3,
-  "DataOps title, loader, and CONFIG_MODULE version must match",
+  "dated V110 version must appear at title, loader, and header",
 );
+assert.match(source, /version:\s*'V1\.a22\.110_WorkSaveCloudInventorySync'/);
 
 console.log("DataOps stock print readability contract passed.");

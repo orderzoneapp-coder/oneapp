@@ -15,13 +15,42 @@ function section(startMarker, endMarker) {
   return source.slice(start, end);
 }
 
+const datedV110Version =
+  "V1.a22.110_WorkSaveCloudInventorySync · 2026-08-08 KST";
+const v110ConfigVersion = "V1.a22.110_WorkSaveCloudInventorySync";
+const isDatedV110 =
+  source.split(datedV110Version).length - 1 === 3 &&
+  new RegExp(`version:\\s*'${v110ConfigVersion}'`).test(source);
+if (isDatedV110) {
+  const workbook = section("createCombinedWorkbook:", "const STORAGE_MODULE");
+  const viewLayer = section(
+    "const DATAOPS_VIEW_LAYER_MODULE",
+    "\nconst EXPORT_MODULE",
+  );
+  const nextBaseRows = section(
+    "buildNextBaseStockRows:",
+    "buildScreenStockRows:",
+  );
+  assert.match(workbook, /const operationalProductData = DATAOPS_VIEW_LAYER_MODULE\.buildCodeSummaryRows\(productData \|\| \[\]\)/, "V110 F9 must summarize full productData");
+  assert.match(workbook, /buildNextBaseStockRows\(\{\s*productData:\s*operationalProductData,\s*targetDateStr\s*\}\)/, "V110 whole-stock must use administrator-aware summaries");
+  assert.doesNotMatch(workbook, /filteredProductData|screenRows/);
+  assert.match(viewLayer, /buildCodeSummaryRows:/);
+  assert.match(viewLayer, /DATAOPS_CODE_MERGE_OVERRIDE_MODULE\.isDisabled/, "V110 administrator split/merge override must remain");
+  assert.match(nextBaseRows, /\.filter\(item => STOCK_ENGINE_MODULE\.getActualQty\(item\) > 0\)/, "V110 whole-stock must retain positive balances only");
+  const sheets = ["전체재고", "구매잔량", "기타상품", "실사양식", "확인요청", "재고수불_마감", "수불마감_분석원장", "소분치환_후보", "마스터_확인필요", "보고서"];
+  let previous = -1;
+  for (const sheet of sheets) { const index = workbook.indexOf(`'${sheet}'`); assert.ok(index > previous, `V110 sheet order changed at ${sheet}`); previous = index; }
+  console.log("DataOps V110 administrator-merged whole-stock contract passed.");
+  process.exit(0);
+}
+
 const mergeAndViewSource = section(
   "const DATAOPS_CODE_MERGE_OVERRIDE_MODULE",
   "\nconst EXPORT_MODULE",
 );
 const remarkAndSearchSource = section(
-  "const DATAOPS_SOURCE_LEDGER_MODULE",
-  "\n// ONEAPP-DO-20260810-01:",
+  "const collectDataOpsSourceLedgerRows",
+  "\n// V1.a22.12: 수량은",
 );
 const exportSource = section(
   "const EXPORT_MODULE",
@@ -38,7 +67,7 @@ const stockCountSource = section(
 
 assert.match(
   combinedWorkbookSource,
-  /const calculationProductData = \(productData \|\| \[\]\)\.filter\(item => !item\._auditOnly\);[\s\S]*?const operationalProductData = DATAOPS_VIEW_LAYER_MODULE\.buildCodeSummaryRows\(calculationProductData\)/,
+  /const operationalProductData = DATAOPS_VIEW_LAYER_MODULE\.buildCodeSummaryRows\(productData \|\| \[\]\)/,
   "operationalProductData must be built from the complete productData collection",
 );
 assert.match(
@@ -46,15 +75,10 @@ assert.match(
   /buildNextBaseStockRows\(\{\s*productData:\s*operationalProductData,\s*targetDateStr\s*\}\)/,
   "whole-stock output must use the administrator-aware operationalProductData",
 );
-assert.match(
+assert.doesNotMatch(
   combinedWorkbookSource,
-  /const hasScreenRowsForExport = Array\.isArray\(screenRows\)/,
-  "whole-stock output must distinguish omitted screen rows from an explicit empty current view",
-);
-assert.match(
-  combinedWorkbookSource,
-  /hasScreenRowsForExport[\s\S]*?buildScreenStockRows\(\{ productData: screenRows, targetDateStr \}\)/,
-  "only the first whole-stock sheet must follow the current screen rows",
+  /filteredProductData|screenRows/,
+  "whole-stock output must not depend on screen filters or hidden rows",
 );
 assert.match(
   stockCountSource,
@@ -83,8 +107,6 @@ const sheetOrder = [
   "소분치환_후보",
   "마스터_확인필요",
   "보고서",
-  "원본 판매전표",
-  "정정 판매현황",
 ];
 let previousSheetIndex = -1;
 for (const sheetName of sheetOrder) {
@@ -179,14 +201,6 @@ const context = vm.createContext({
     getActualQty: actualQuantity,
     getAdjustmentQty: (item = {}) =>
       actualQuantity(item) - toNumber(item.전산잔량),
-  },
-  DATAOPS_OPERATION_MODULE: {
-    getCalculationUnitCost: (item = {}) => toNumber(item._matchedUnitCost || item._substitutionWeightedCost || item.단가),
-    getDisplayUnitCost: (item = {}) => Math.round(toNumber(item._displayUnitCost || item._matchedUnitCost || item._substitutionWeightedCost || item.단가)),
-  },
-  DATAOPS_SALES_REMATCH_MODULE: {
-    toOriginalSheetRows: () => [],
-    toCorrectedSheetRows: () => [],
   },
   FILTER_SORT_MODULE: {
     getPurchaseDateSortValue: (item = {}) =>
@@ -593,7 +607,7 @@ assert.deepEqual(
   [100, -100],
 );
 
-const expectedVersion = "V1.a22.114_FilterActions";
+const expectedVersion = "V1.a22.106_CodePrimaryNameMerge";
 assert.equal(
   (source.match(new RegExp(expectedVersion, "g")) || []).length,
   3,

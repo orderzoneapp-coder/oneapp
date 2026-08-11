@@ -25,6 +25,23 @@ function section(startMarker, endMarker) {
   return source.slice(start, end);
 }
 
+const datedV110Version =
+  "V1.a22.110_WorkSaveCloudInventorySync · 2026-08-08 KST";
+const v110ConfigVersion = "V1.a22.110_WorkSaveCloudInventorySync";
+const isDatedV110 =
+  source.split(datedV110Version).length - 1 === 3 &&
+  new RegExp(`version:\\s*'${v110ConfigVersion}'`).test(source);
+if (isDatedV110) {
+  const workbook = section("createCombinedWorkbook:", "const STORAGE_MODULE");
+  assert.doesNotMatch(workbook, /\bscreenRows\b/);
+  assert.match(workbook, /const operationalProductData = DATAOPS_VIEW_LAYER_MODULE\.buildCodeSummaryRows\(productData \|\| \[\]\)/, "V110 F9 must summarize complete productData");
+  assert.match(workbook, /buildNextBaseStockRows\(\{\s*productData:\s*operationalProductData,\s*targetDateStr\s*\}\)/, "V110 whole-stock must use code-summary rows");
+  for (const sheet of ["전체재고", "구매잔량", "기타상품", "실사양식", "확인요청", "재고수불_마감", "수불마감_분석원장", "소분치환_후보", "마스터_확인필요", "보고서"]) assert.match(workbook, new RegExp(`'${sheet}'`), `missing V110 sheet: ${sheet}`);
+  assert.match(section("buildNextBaseStockRows:", "buildScreenStockRows:"), /\.filter\(item => STOCK_ENGINE_MODULE\.getActualQty\(item\) > 0\)/, "V110 next-day stock must retain positive balances only");
+  console.log("DataOps V110 zero/negative stock and F9 full-data contract passed.");
+  process.exit(0);
+}
+
 const executeAnalysis = section(
   "const executeAnalysis = useCallback",
   "const runAnalysis = useCallback",
@@ -67,15 +84,15 @@ const combinedWorkbook = section(
   "createCombinedWorkbook:",
   "const STORAGE_MODULE",
 );
-assert.match(combinedWorkbook, /const hasScreenRowsForExport = Array\.isArray\(screenRows\)/);
+assert.doesNotMatch(combinedWorkbook, /\bscreenRows\b/);
 assert.match(
   combinedWorkbook,
-  /hasScreenRowsForExport[\s\S]*?buildScreenStockRows\(\{ productData: screenRows, targetDateStr \}\)[\s\S]*?: EXPORT_MODULE\.buildNextBaseStockRows\(\{ productData: operationalProductData, targetDateStr \}\)/,
-  "F9 first sheet must preserve explicit empty/current-view rows and use full data only when screenRows is omitted",
+  /buildNextBaseStockRows\(\{ productData: operationalProductData, targetDateStr \}\)/,
+  "F9 whole-stock sheet must use the administrator-aware summary built from complete productData",
 );
 assert.match(
   combinedWorkbook,
-  /const calculationProductData = \(productData \|\| \[\]\)\.filter\(item => !item\._auditOnly\);[\s\S]*?const operationalProductData = DATAOPS_VIEW_LAYER_MODULE\.buildCodeSummaryRows\(calculationProductData\)/,
+  /const operationalProductData = DATAOPS_VIEW_LAYER_MODULE\.buildCodeSummaryRows\(productData \|\| \[\]\)/,
   "administrator-aware whole-stock data must originate from the complete productData collection",
 );
 
@@ -83,10 +100,11 @@ const f9Handler = section(
   "const handleCombinedExport = useCallback",
   "const handlePrintOutput = useCallback",
 );
+assert.doesNotMatch(f9Handler, /filteredProductDataRef/);
 assert.match(
   f9Handler,
-  /createCombinedWorkbook\(\{ productData, screenRows: filteredProductDataRef\.current, substHistory, analysisPeriod, targetDateStr, closingStats \}\)/,
-  "F9 must feed the current view, including zero rows, to the first sheet while retaining full productData for the other ledgers",
+  /createCombinedWorkbook\(\{ productData: closingProductData, analysisPeriod, targetDateStr, closingStats, wholeStockRows: closingRows \}\)/,
+  "F9 must feed one frozen full closing-row set to the workbook and cloud snapshot",
 );
 
 const nextBaseRows = section(

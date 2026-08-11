@@ -566,21 +566,24 @@ assert.deepEqual(Array.from(emptyPreviewGrid[0]), previewColumns);
 assert.equal(emptyPreviewGrid.length, 1);
 assert.equal(emptyPreviewSheet["!merges"], undefined);
 
-const expectedVersion = "V1.a22.114_FilterActions";
-assert.match(
-  source,
-  new RegExp(
-    `<title>ONEAPP DataOps - 핵심 수불부 관리 \\(${expectedVersion}\\)</title>`,
+const expectedDisplayVersion =
+  "V1.a22.110_WorkSaveCloudInventorySync · 2026-08-08 KST";
+assert.ok(
+  source.includes(
+    `<title>ONEAPP DataOps - 핵심 수불부 관리 (${expectedDisplayVersion})</title>`,
   ),
 );
-assert.match(
-  source,
-  new RegExp(`loader-text">ONEAPP DataOps ${expectedVersion}\\.\\.\\.\\.\\.</div>`),
+assert.ok(
+  source.includes(
+    `loader-text">ONEAPP DataOps ${expectedDisplayVersion}.....</div>`,
+  ),
 );
-assert.match(
-  source,
-  new RegExp(`version:\\s*'${expectedVersion}'`),
+assert.equal(
+  source.split(expectedDisplayVersion).length - 1,
+  3,
+  "dated V110 version must appear at title, loader, and header",
 );
+assert.match(source, /version:\s*'V1\.a22\.110_WorkSaveCloudInventorySync'/);
 
 console.log(
   "DataOps 판매업로드 시트별 열 계약과 실제 XLSX 재오픈 검증이 통과했습니다.",
