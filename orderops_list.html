@@ -1106,6 +1106,17 @@
     /* orderops v1.3 */
     .header-actions { display:flex; align-items:center; gap:7px; }
     .header-action-button { appearance:none; cursor:pointer; }
+    .header-action-button:disabled { opacity:0.45; cursor:not-allowed; }
+    .header-save-button {
+      border-color:#2563eb;
+      color:#fff;
+      background:#2563eb;
+    }
+    .header-save-button:hover:not(:disabled) {
+      border-color:#1d4ed8;
+      color:#fff;
+      background:#1d4ed8;
+    }
     .source-selector-heading { cursor:pointer; }
     .source-selector-heading:hover,
     .source-selector-heading.dragover { border-color:#5eead4; background:#115e59; }
@@ -2459,7 +2470,7 @@
     }
 
 
-    /* orderops v1.9 */
+    /* orderops v1.10 */
     table.preview-allocations {
       font-family: "Malgun Gothic", Pretendard, "Noto Sans KR", sans-serif;
       font-size: 11px;
@@ -2555,13 +2566,19 @@
       <div class="brand-mark">ONEAPP</div>
       <div class="brand-divider" aria-hidden="true"></div>
       <div class="brand-stack">
-        <div class="brand-suite">NEXUS <span class="brand-badge">v1.9</span></div>
+        <div class="brand-suite">NEXUS <span class="brand-badge">v1.10</span></div>
         <div class="brand-product">orderops</div>
       </div>
     </div>
     <div class="header-actions">
-      <button class="header-link header-action-button" id="headerRestoreButton" type="button" aria-label="이전 작업 복구">
-        <span aria-hidden="true">↻</span><span>작업 복구</span>
+      <button class="header-link header-action-button" id="headerCloudLoadButton" type="button" aria-label="클라우드 확정본 불러오기">
+        <span aria-hidden="true">⇩</span><span>불러오기</span>
+      </button>
+      <button class="header-link header-action-button header-save-button" id="headerCloudSaveButton" type="button" aria-label="작업 완료 후 클라우드 저장" disabled>
+        <span aria-hidden="true">✓</span><span>저장</span>
+      </button>
+      <button class="header-link header-action-button" id="headerRestoreButton" type="button" aria-label="임시 작업 복구">
+        <span aria-hidden="true">↻</span><span>임시복구</span>
       </button>
       <button class="header-link header-action-button" id="headerSettingsButton" type="button" aria-expanded="false" aria-controls="workspaceStorage">
         <span aria-hidden="true">⚙</span><span>환경설정</span>
@@ -2577,7 +2594,7 @@
           <span class="system-message" id="systemMessage">waiting for data_blocks... (주문/재고 Excel을 선택하세요)</span>
           <span class="system-cursor" aria-hidden="true"></span>
         </div>
-        <div class="system-mode"><strong>LOCAL AUTO SAVE</strong> · cloud explicit</div>
+        <div class="system-mode"><strong>임시저장</strong> · 완료 후 저장</div>
       </div>
 
       <section class="panel input-panel" aria-label="입력 파일">
@@ -2648,13 +2665,13 @@
           <label>Cloud URL<input id="cloudUrlInput" type="url" autocomplete="off" placeholder="Apps Script /exec URL"></label>
           <label>전용 Token<input id="cloudTokenInput" type="password" autocomplete="off" placeholder="Shipping 전용 토큰"></label>
           <label>저장자/담당<input id="cloudSavedByInput" type="text" autocomplete="off" placeholder="이름 또는 담당"></label>
-          <button type="button" id="cloudListButton">Cloud 목록</button>
-          <button type="button" id="cloudSaveButton" disabled>Cloud 저장</button>
+          <button type="button" id="cloudListButton">저장목록</button>
+          <button type="button" id="cloudSaveButton" disabled>새 버전 저장</button>
           <select id="cloudRevisionSelect" aria-label="클라우드 발주계획 revision"><option value="">저장 이력 선택</option></select>
-          <button type="button" id="cloudLoadButton" disabled>선택 불러오기</button>
-          <button type="button" id="localResetButton">로컬 초기화</button>
+          <button type="button" id="cloudLoadButton" disabled>불러오기</button>
+          <button type="button" id="localResetButton">임시저장 초기화</button>
         </div>
-        <p class="storage-note">로컬 자동저장은 IndexedDB 복구용이며 클라우드로 자동 전송하지 않습니다. Cloud 저장 버튼을 눌러 확정한 revision만 다른 PC에서 조회됩니다.</p>
+        <p class="storage-note">작업 중 변경은 이 컴퓨터에 임시저장되며 클라우드로 자동 전송되지 않습니다. 완료 후 저장 버튼을 누른 확정본만 다른 컴퓨터에서 조회·불러오기 할 수 있습니다.</p>
       </section>
     </section>
 
@@ -2702,7 +2719,7 @@
     </section>
 
     <footer class="page-footer">
-      <span>orderops v1.9 · workspace shipping-workspace/v2 · cloud plan v1</span>
+      <span>orderops v1.10 · workspace shipping-workspace/v2 · cloud plan v1</span>
       <a href="SHIPPING_MANAGEMENT_GUIDANCE.md">개발·운영 기준 보기</a>
     </footer>
   </main>
@@ -2797,6 +2814,8 @@
         cloudLoadButton: document.getElementById("cloudLoadButton"),
         systemMessage: document.getElementById("systemMessage"),
         workspaceStorage: document.getElementById("workspaceStorage"),
+        headerCloudLoadButton: document.getElementById("headerCloudLoadButton"),
+        headerCloudSaveButton: document.getElementById("headerCloudSaveButton"),
         headerRestoreButton: document.getElementById("headerRestoreButton"),
         headerSettingsButton: document.getElementById("headerSettingsButton"),
         toast: document.getElementById("toast"),
@@ -3237,6 +3256,7 @@
         state.workspace = null;
         elements.resultsPanel.classList.add("hidden");
         elements.cloudSaveButton.disabled = true;
+        elements.headerCloudSaveButton.disabled = true;
       }
 
       async function handleFile(kind, file) {
@@ -4032,7 +4052,9 @@
         renderPreview();
         elements.resultsPanel.classList.remove("hidden");
         elements.downloadButton.disabled = state.workspace.basisDateStatus !== "valid";
-        elements.cloudSaveButton.disabled = !state.workspace.planId || state.workspace.basisDateStatus !== "valid";
+        const cloudSaveDisabled = !state.workspace.planId || state.workspace.basisDateStatus !== "valid";
+        elements.cloudSaveButton.disabled = cloudSaveDisabled;
+        elements.headerCloudSaveButton.disabled = cloudSaveDisabled;
         setSystemMessage("analysis complete... (Excel 다운로드 준비 완료)");
       }
 
@@ -4189,6 +4211,7 @@
 
       async function saveCloudPlan() {
         elements.cloudSaveButton.disabled = true;
+        elements.headerCloudSaveButton.disabled = true;
         setSystemMessage("saving immutable cloud revision...");
         try {
           const snapshot = await buildCloudEnvelope();
@@ -4209,8 +4232,32 @@
           setSystemMessage("cloud save failed... (이전 확정 revision 유지)");
           showToast(error.message || "Cloud 저장에 실패했습니다.", true);
         } finally {
-          elements.cloudSaveButton.disabled = !state.workspace?.planId || state.workspace?.basisDateStatus !== "valid";
+          const cloudSaveDisabled = !state.workspace?.planId || state.workspace?.basisDateStatus !== "valid";
+          elements.cloudSaveButton.disabled = cloudSaveDisabled;
+          elements.headerCloudSaveButton.disabled = cloudSaveDisabled;
         }
+      }
+
+      function ensureCloudConfiguration() {
+        const hasUrl = Boolean(elements.cloudUrlInput.value.trim());
+        const hasToken = Boolean(elements.cloudTokenInput.value);
+        if (hasUrl && hasToken) return true;
+        toggleWorkspaceStorage(true);
+        const missingInput = hasUrl ? elements.cloudTokenInput : elements.cloudUrlInput;
+        missingInput.focus();
+        showToast("처음 한 번 Cloud URL과 전용 Token을 설정하세요.", true);
+        return false;
+      }
+
+      async function openCloudPlansFromHeader() {
+        toggleWorkspaceStorage(true);
+        if (!ensureCloudConfiguration()) return;
+        await listCloudPlans();
+      }
+
+      async function saveCloudPlanFromHeader() {
+        if (!ensureCloudConfiguration()) return;
+        await saveCloudPlan();
       }
 
       async function loadCloudPlan() {
@@ -4300,6 +4347,14 @@
 
       elements.headerSettingsButton.addEventListener("click", () => {
         toggleWorkspaceStorage();
+      });
+
+      elements.headerCloudLoadButton.addEventListener("click", () => {
+        openCloudPlansFromHeader();
+      });
+
+      elements.headerCloudSaveButton.addEventListener("click", () => {
+        saveCloudPlanFromHeader();
       });
 
       elements.headerRestoreButton.addEventListener("click", () => {
