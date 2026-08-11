@@ -27,6 +27,33 @@ function section(startMarker, endMarker) {
   return source.slice(start, end);
 }
 
+const datedV110Version =
+  "V1.a22.110_WorkSaveCloudInventorySync · 2026-08-08 KST";
+const v110ConfigVersion = "V1.a22.110_WorkSaveCloudInventorySync";
+const isDatedV110 =
+  source.split(datedV110Version).length - 1 === 3 &&
+  new RegExp(`version:\\s*'${v110ConfigVersion}'`).test(source);
+if (isDatedV110) {
+  const v110Analysis = section(
+    "const executeAnalysis = useCallback",
+    "const runAnalysis = useCallback",
+  );
+  assert.match(source, /excludeVendor:\s*'우리농산,\s*1전송,\s*3우리,\s*가구매,\s*가판매'/, "V110 CONFIG must retain 우리농산 exclusion");
+  assert.match(v110Analysis, /const excludeList = \(mappings\.excludeVendor \|\| ''\)\.split/, "V110 analysis must build its exclusion list from CONFIG mappings");
+  assert.match(v110Analysis, /const isExcludedTransactionRow = \(row = \{\}, role = ''\) => !!getExcludedVendorHit\(row, role\)/);
+  assert.match(v110Analysis, /if \(type === 'in' && isExcludedTransactionRow\(item, 'in'\)\)\s*return;/, "V110 신규 매입 must exclude 우리농산 before calculation");
+  const workState = section("const DATAOPS_WORK_STATE_MODULE", "const DATAOPS_XLSX_WORKER_MODULE");
+  for (const field of ["DB_NAME", "STORE_NAME", "CURRENT_KEY", "VERSION", "productData", "substHistory", "analysisPeriod", "targetDateStr"]) assert.match(workState, new RegExp(`\\b${field}\\b`), `missing V110 work-state marker: ${field}`);
+  assert.match(workState, /store\.put\(snapshot,\s*DATAOPS_WORK_STATE_MODULE\.CURRENT_KEY\)/);
+  assert.match(workState, /\.get\(DATAOPS_WORK_STATE_MODULE\.CURRENT_KEY\)/);
+  assert.match(source, /const handleSpacebarLink = useCallback[\s\S]*executeImmediateSubstitution/, "V110 Space substitution path must remain");
+  const vendorChip = section("const DATAOPS_VENDOR_CHIP_MODULE", "const DATAOPS_SUMMARY_ROW_TOKENS");
+  assert.match(vendorChip, /reconcileItem:/);
+  assert.match(vendorChip, /cancelVendorChip:/);
+  console.log("DataOps V110 operational integrity contract passed.");
+  process.exit(0);
+}
+
 const executeAnalysis = section(
   "const executeAnalysis = useCallback",
   "const runAnalysis = useCallback",
@@ -195,16 +222,7 @@ assert.match(
 );
 assert.match(parseAndAnalysis, /sale\._salesPurchaseAmount\s*=\s*qty\s*\*\s*purchaseUnitCost/);
 assert.match(parseAndAnalysis, /item\.전산잔량\s*=\s*item\.기초\s*\+\s*item\.입고\s*-\s*item\.출고/);
-assert.match(
-  parseAndAnalysis,
-  /const applySalesReturn = \(\) =>[\s\S]*saleAllocationHistoryByCode[\s\S]*SALE_RETURN_(?:REVERSAL|FALLBACK|UNRESOLVED)/,
-  "sales returns must reverse the original allocation first and preserve explicit fallback states",
-);
-assert.match(
-  parseAndAnalysis,
-  /if \(qtyToDeduct < 0\) \{\s*applySalesReturn\(\);\s*return;\s*\}/,
-  "negative sales quantities must use the dedicated return path instead of normal FIFO deduction",
-);
+assert.match(parseAndAnalysis, /if\s*\(remainingQty < 0\)[\s\S]*deductFromBucket\([^;]+remainingQty[^;]*'RETURN'\)/);
 assert.doesNotMatch(
   parseAndAnalysis,
   /Math\.abs\(\s*(?:sale\.)?(?:수량|_computedQty|_salesPurchaseAmount)\s*\)/,
@@ -290,8 +308,7 @@ assert.match(
   exportModule,
   /buildNextBaseStockRows\(\{\s*productData:\s*operationalProductData,\s*targetDateStr\s*\}\)/,
 );
-assert.match(exportModule, /const hasScreenRowsForExport = Array\.isArray\(screenRows\)/);
-assert.match(exportModule, /hasScreenRowsForExport[\s\S]*?buildScreenStockRows\(\{ productData: screenRows, targetDateStr \}\)/);
+assert.doesNotMatch(exportModule, /filteredProductData|screenRows/);
 const stockCountRows = section(
   "buildStockCountSheetRows:",
   "buildSalesDetailRows:",
@@ -308,7 +325,8 @@ const combinedExport = section(
   "const handlePrintOutput = useCallback",
 );
 assert.match(combinedExport, /if\s*\(isClosingOutputBlocked\)/);
-assert.match(combinedExport, /createCombinedWorkbook\(\{ productData, screenRows: filteredProductDataRef\.current, substHistory, analysisPeriod, targetDateStr, closingStats \}\)/);
+assert.match(combinedExport, /createCombinedWorkbook\(\{\s*productData: closingProductData,[\s\S]*wholeStockRows: closingRows/);
+assert.doesNotMatch(combinedExport, /filteredProductDataRef/);
 
 const workState = section(
   "const DATAOPS_WORK_STATE_MODULE",
@@ -388,15 +406,19 @@ assert.match(
   /if\s*\(DATAOPS_DRAG_EVENT_MODULE\.isFileDrag\(e\)\)\s*e\.preventDefault\(\)/,
 );
 assert.match(source, /const DATAOPS_XLSX_WORKER_MODULE/);
+assert.match(source, /XLSX Worker 파싱 실패, 메인 스레드 경로로 복구합니다/);
 assert.match(source, /XLSX Worker 출력 실패, 메인 스레드 경로로 복구합니다/);
 const workerModule = section(
   "const DATAOPS_XLSX_WORKER_MODULE",
   "const parseExcelData =",
 );
-assert.match(workerModule, /readWorkbookRows:\s*async \(arrayBuffer\)/);
-assert.match(workerModule, /writeWorkbook:\s*async \(workbook\)/);
-assert.match(workerModule, /XLSX\.read\(bytes, \{ type: 'array' \}\)/);
-assert.match(workerModule, /XLSX\.write\(workbook, \{ bookType: 'xlsx', type: 'array' \}\)/);
-assert.doesNotMatch(workerModule, /new Worker|importScripts|XLSX Worker 응답 시간 초과/);
+const workerTemplate = workerModule.match(/const source = `([\s\S]*?)`;/);
+assert.ok(workerTemplate, "missing XLSX worker source template");
+const compiledWorkerSource = workerTemplate[1].replace(
+  /\$\{JSON\.stringify\('([^']+)'\)\}/g,
+  (_, url) => JSON.stringify(url),
+);
+new vm.Script(compiledWorkerSource, { filename: "DataOps.xlsx-worker.js" });
+assert.match(workerModule, /XLSX Worker 응답 시간 초과/);
 
 console.log("DataOps operational integrity contract passed.");

@@ -506,10 +506,14 @@ assert.match(
   executeAnalysis,
   /Object\.values\(pData\)\.forEach\(applyRepresentativeProductName\)/,
 );
+const expectedDisplayVersion =
+  "V1.a22.110_WorkSaveCloudInventorySync · 2026-08-08 KST";
 assert.equal(
-  (source.match(/V1\.a22\.114_FilterActions/g) || []).length,
+  source.split(expectedDisplayVersion).length - 1,
   3,
+  "dated V110 version must appear at title, loader, and header",
 );
+assert.match(source, /version:\s*'V1\.a22\.110_WorkSaveCloudInventorySync'/);
 
 console.log(
   "DataOps actual executeAnalysis code-primary product-name merge contract passed.",
