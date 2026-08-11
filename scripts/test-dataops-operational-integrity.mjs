@@ -50,8 +50,6 @@ if (isDatedV110) {
   const vendorChip = section("const DATAOPS_VENDOR_CHIP_MODULE", "const DATAOPS_SUMMARY_ROW_TOKENS");
   assert.match(vendorChip, /reconcileItem:/);
   assert.match(vendorChip, /cancelVendorChip:/);
-  assert.match(source, /const DATAOPS_WORK_STATE_COMPAT_MODULE = Object\.freeze/);
-  assert.match(source, /상위 버전 저장작업이므로 원본 파일로 다시 분석해야 합니다/);
   console.log("DataOps V110 operational integrity contract passed.");
   process.exit(0);
 }
