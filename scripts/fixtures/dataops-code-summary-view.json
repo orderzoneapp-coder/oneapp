@@ -1,0 +1,59 @@
+{
+  "fixtureId": "DOPS-20260811-01-code-summary-view",
+  "lots": [
+    {
+      "batchKey": "GREEN-ONION-PREV",
+      "\uCF54\uB4DC": "101020114",
+      "\uD488\uBA85": "\uB300\uD30C",
+      "\uAE30\uCD08": 13,
+      "\uC785\uACE0": 0,
+      "\uCD9C\uACE0": 13,
+      "\uB300\uCCB4\uC785\uACE0": 0,
+      "\uB300\uCCB4\uCD9C\uACE0": 0,
+      "\uC804\uC0B0\uC794\uB7C9": 0,
+      "\uC2E4\uC0AC": 0,
+      "\uB85C\uC2A4": 0,
+      "\uB2E8\uAC00": 1600,
+      "\uC77C\uC790": "2026-08-10",
+      "\uAC70\uB798\uCC98": "\uAC00\uB77D",
+      "\uB9E4\uCD9C\uC561": 20800,
+      "\uB9E4\uCD9C\uC6D0\uAC00": 20800,
+      "\uCD9C\uACE0\uB0B4\uC5ED": {
+        "VENDOR-A": { "displayVendor": "\uAC70\uB798\uCC98A", "qty": 13, "rev": 20800, "cogs": 20800, "isPerfectMatch": true }
+      },
+      "\uC774\uC288": [],
+      "\uBA54\uBAA8": "",
+      "_sourceEntries": [
+        { "id": "PREV-13", "role": "prev", "qty": 13 },
+        { "id": "OUT-13", "role": "out", "qty": 13, "vendor": "\uAC70\uB798\uCC98A", "rev": 20800 }
+      ]
+    },
+    {
+      "batchKey": "GREEN-ONION-IN",
+      "\uCF54\uB4DC": "101020114",
+      "\uD488\uBA85": "\uB300\uD30C",
+      "\uAE30\uCD08": 0,
+      "\uC785\uACE0": 600,
+      "\uCD9C\uACE0": 504,
+      "\uB300\uCCB4\uC785\uACE0": 0,
+      "\uB300\uCCB4\uCD9C\uACE0": 0,
+      "\uC804\uC0B0\uC794\uB7C9": 96,
+      "\uC2E4\uC0AC": 96,
+      "\uB85C\uC2A4": 0,
+      "\uB2E8\uAC00": 1600,
+      "\uC77C\uC790": "2026-08-11",
+      "\uAC70\uB798\uCC98": "\uAC00\uB77D(\uD0DC\uC218\uB18D\uC0B0)",
+      "\uB9E4\uCD9C\uC561": 806400,
+      "\uB9E4\uCD9C\uC6D0\uAC00": 806400,
+      "\uCD9C\uACE0\uB0B4\uC5ED": {
+        "VENDOR-B": { "displayVendor": "\uAC70\uB798\uCC98B", "qty": 504, "rev": 806400, "cogs": 806400, "isPerfectMatch": true }
+      },
+      "\uC774\uC288": [],
+      "\uBA54\uBAA8": "",
+      "_sourceEntries": [
+        { "id": "IN-600", "role": "in", "qty": 600 },
+        { "id": "OUT-504", "role": "out", "qty": 504, "vendor": "\uAC70\uB798\uCC98B", "rev": 806400 }
+      ]
+    }
+  ]
+}
