@@ -210,5 +210,173 @@
       }
     }
   ],
-  "parsedEnd": []
+  "parsedEnd": [],
+  "returnRegression": {
+    "parsedPrev": [
+      {
+        "코드": "990001001",
+        "품명": "반품구조_동일판매처",
+        "단위": "BOX",
+        "수량": 2,
+        "단가": 5000,
+        "거래처": "가락(구매A)",
+        "일자": "2026-08-10",
+        "_purchaseLotVendor": "가락(구매A)",
+        "_displayPurchaseVendor": "가락(구매A)",
+        "_uploadRole": "prev",
+        "_fileType": "CLOSING_RESTORE",
+        "_sourceFileName": "전일마감_구조fixture.xlsx",
+        "_sourceSheet": "전체재고",
+        "_raw": {
+          "품목코드": "990001001",
+          "품목명(규격)": "반품구조_동일판매처",
+          "재고": 2,
+          "구매가": 5000,
+          "구매처": "가락(구매A)",
+          "기록": "2026-08-10"
+        }
+      },
+      {
+        "코드": "990001002",
+        "품명": "반품구조_판매처불일치",
+        "단위": "BOX",
+        "수량": 2,
+        "단가": 7000,
+        "거래처": "가락(구매B)",
+        "일자": "2026-08-10",
+        "_purchaseLotVendor": "가락(구매B)",
+        "_displayPurchaseVendor": "가락(구매B)",
+        "_uploadRole": "prev",
+        "_fileType": "CLOSING_RESTORE",
+        "_sourceFileName": "전일마감_구조fixture.xlsx",
+        "_sourceSheet": "전체재고",
+        "_raw": {
+          "품목코드": "990001002",
+          "품목명(규격)": "반품구조_판매처불일치",
+          "재고": 2,
+          "구매가": 7000,
+          "구매처": "가락(구매B)",
+          "기록": "2026-08-10"
+        }
+      }
+    ],
+    "parsedOut": [
+      {
+        "코드": "990001001",
+        "품명": "반품구조_동일판매처",
+        "단위": "BOX",
+        "수량": 1,
+        "단가": 10000,
+        "거래처": "판매처A",
+        "일자": "2026-08-11",
+        "_transactionVendor": "판매처A",
+        "_salesVendor": "판매처A",
+        "_salesDisplayVendor": "판매처A",
+        "_salesGroupVendor": "판매처A",
+        "_uploadRole": "out",
+        "_fileType": "RAW_DATA",
+        "_sourceFileName": "판매_구조fixture.xlsx",
+        "_sourceSheet": "판매현황",
+        "_raw": {
+          "전표번호": "RETURN-MATCH-SALE",
+          "거래처명": "판매처A",
+          "품목코드": "990001001",
+          "품목명": "반품구조_동일판매처",
+          "수량": 1,
+          "단가": 10000,
+          "공급가": 10000
+        }
+      },
+      {
+        "코드": "990001001",
+        "품명": "반품구조_동일판매처",
+        "단위": "BOX",
+        "수량": -1,
+        "단가": 10000,
+        "거래처": "판매처A",
+        "매입처매칭": "가락(구매A)",
+        "일자": "2026-08-11",
+        "_transactionVendor": "판매처A",
+        "_salesVendor": "판매처A",
+        "_salesDisplayVendor": "판매처A",
+        "_salesGroupVendor": "판매처A",
+        "_salesConfirmedPurchaseVendor": "가락(구매A)",
+        "_salesPurchaseUnitCost": 5000,
+        "_uploadRole": "out",
+        "_fileType": "RAW_DATA",
+        "_sourceFileName": "판매_구조fixture.xlsx",
+        "_sourceSheet": "판매현황",
+        "_raw": {
+          "전표번호": "RETURN-MATCH-RETURN",
+          "거래처명": "판매처A",
+          "구매처": "가락(구매A)",
+          "구매단가": 5000,
+          "품목코드": "990001001",
+          "품목명": "반품구조_동일판매처",
+          "수량": -1,
+          "단가": 10000,
+          "공급가": -10000,
+          "적요": "반품"
+        }
+      },
+      {
+        "코드": "990001002",
+        "품명": "반품구조_판매처불일치",
+        "단위": "BOX",
+        "수량": 1,
+        "단가": 12000,
+        "거래처": "판매처A",
+        "일자": "2026-08-11",
+        "_transactionVendor": "판매처A",
+        "_salesVendor": "판매처A",
+        "_salesDisplayVendor": "판매처A",
+        "_salesGroupVendor": "판매처A",
+        "_uploadRole": "out",
+        "_fileType": "RAW_DATA",
+        "_sourceFileName": "판매_구조fixture.xlsx",
+        "_sourceSheet": "판매현황",
+        "_raw": {
+          "전표번호": "RETURN-MISMATCH-SALE",
+          "거래처명": "판매처A",
+          "품목코드": "990001002",
+          "품목명": "반품구조_판매처불일치",
+          "수량": 1,
+          "단가": 12000,
+          "공급가": 12000
+        }
+      },
+      {
+        "코드": "990001002",
+        "품명": "반품구조_판매처불일치",
+        "단위": "BOX",
+        "수량": -1,
+        "단가": 12000,
+        "거래처": "판매처B",
+        "매입처매칭": "가락(구매B)",
+        "일자": "2026-08-11",
+        "_transactionVendor": "판매처B",
+        "_salesVendor": "판매처B",
+        "_salesDisplayVendor": "판매처B",
+        "_salesGroupVendor": "판매처B",
+        "_salesConfirmedPurchaseVendor": "가락(구매B)",
+        "_salesPurchaseUnitCost": 7000,
+        "_uploadRole": "out",
+        "_fileType": "RAW_DATA",
+        "_sourceFileName": "판매_구조fixture.xlsx",
+        "_sourceSheet": "판매현황",
+        "_raw": {
+          "전표번호": "RETURN-MISMATCH-RETURN",
+          "거래처명": "판매처B",
+          "구매처": "가락(구매B)",
+          "구매단가": 7000,
+          "품목코드": "990001002",
+          "품목명": "반품구조_판매처불일치",
+          "수량": -1,
+          "단가": 12000,
+          "공급가": -12000,
+          "적요": "반품"
+        }
+      }
+    ]
+  }
 }

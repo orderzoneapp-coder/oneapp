@@ -7310,7 +7310,11 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                     const histories = saleAllocationHistoryByCode.get(code) || [];
                     const requestedPurchaseVendor = safeStr(salesPurchaseVendorRaw, '');
                     const normalizedRequestedPurchase = normalizeLotNameForMatch(requestedPurchaseVendor);
-                    const sameVendor = (a, b) => normalizeVendorIdentity(a) && normalizeVendorIdentity(a) === normalizeVendorIdentity(b);
+                    const normalizeSalesVendorIdentity = (value) => normalizeLotNameForMatch(value);
+                    const sameVendor = (a, b) => {
+                        const normalizedA = normalizeSalesVendorIdentity(a);
+                        return !!normalizedA && normalizedA === normalizeSalesVendorIdentity(b);
+                    };
                     let totalRestoredQty = 0;
 
                     const reverseHistoryAllocation = (allocation, state, takeQty) => {
@@ -7372,7 +7376,7 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                                 }
                                 return safeNum(b.seq) - safeNum(a.seq);
                             });
-                        const hasExplicitReturnVendor = !!normalizeVendorIdentity(state.vendor) && safeStr(state.vendor, '') !== '미지정';
+                        const hasExplicitReturnVendor = !!normalizeSalesVendorIdentity(state.vendor) && safeStr(state.vendor, '') !== '미지정';
                         const sameVendorCandidates = candidates.filter(candidate => safeNum(candidate.returnableQty) > 0 && sameVendor(candidate.salesVendor, state.vendor));
                         // 판매처가 명시된 반품은 다른 판매처 원판매를 임의로 역처리하지 않는다. 동일 판매처 이력이 없으면 아래 Lot fallback에서 확인이슈를 남긴다.
                         const historyCandidates = hasExplicitReturnVendor ? sameVendorCandidates : candidates;
