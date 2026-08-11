@@ -87,10 +87,11 @@ assert.ok(groupingStart >= 0 && groupingEnd > groupingStart, "grouping normaliza
 const groupingContext = { localStorage: { getItem: () => null } };
 vm.runInNewContext(`${groupingPrefix}\n${source.slice(groupingStart, groupingEnd)}\nthis.result = { defaults: DATAOPS_DEFAULT_GROUPING, normalize: normalizeDataOpsGrouping };`, groupingContext);
 assert.equal(groupingContext.result.defaults.manageMode, "LOT_DETAIL");
-assert.equal(groupingContext.result.normalize({ manageMode: "CODE_SUMMARY", priceMode: "average" }).manageMode, "LOT_DETAIL");
+assert.equal(groupingContext.result.normalize({ manageMode: "CODE_SUMMARY", priceMode: "average" }).manageMode, "CODE_SUMMARY");
 assert.equal(groupingContext.result.normalize({ manageMode: "CODE_SUMMARY", priceMode: "average" }).priceMode, "average", "internal F9 price basis compatibility must be preserved");
-assert.match(source, /const manageMode = 'LOT_DETAIL';/);
-assert.match(source, /getSavedViewMode: \(\) => 'LOT_DETAIL'/);
+assert.match(source, /const manageMode = explicitMode \|\| \(legacySeparate \? 'LOT_DETAIL' : DATAOPS_DEFAULT_GROUPING\.manageMode\);/);
+assert.match(source, /getSavedViewMode: \(\) => \{[\s\S]*?CODE_SUMMARY[\s\S]*?LOT_DETAIL[\s\S]*?\}/);
+assert.match(source, /saveViewMode: \(mode = 'LOT_DETAIL'\) => \{[\s\S]*?localStorage\.setItem\(DATAOPS_VIEW_LAYER_MODULE\.STORAGE_KEY, safeMode\)/);
 assert.match(source, /defaultUnitFilter: Object\.freeze\(\{ BOX: false, EA: false, SPLIT: false \}\)/);
 
 const unitFilterSource = source.slice(
@@ -101,8 +102,8 @@ assert.match(unitFilterSource, /DATAOPS_UNIT_FILTER_MODULE\.matches\(unitType, u
 assert.doesNotMatch(unitFilterSource, /diffQty|finalQty|systemQty/, "SPLIT error/negative rows must not bypass the selected units");
 
 assert.doesNotMatch(source, /stockListType/, "removed purchase-balance/other-stock filter state must not remain");
-assert.doesNotMatch(source, /onToggleCodeMerge|handleToggleCodeMerge|moveMergeCandidate|jumpToFirstMergeCandidate/, "merge/split UI entry points must not remain");
-assert.doesNotMatch(source, /\[\['CODE_SUMMARY', '코드 통합형'\], \['LOT_DETAIL', 'Lot 상세형'\]\]/, "global view toggle must not remain");
+assert.match(source, /onToggleCodeMerge:\s*handleToggleCodeMerge/, "per-product CODE_SUMMARY/LOT_DETAIL controls must remain connected");
+assert.match(source, /\[\['CODE_SUMMARY', '코드 통합형'\], \['LOT_DETAIL', 'Lot 상세형'\]\]/, "the current CODE_SUMMARY/LOT_DETAIL view toggle must remain");
 assert.doesNotMatch(source, /\[\['PURCHASE_BALANCE', '구매잔량'\], \['OTHER_STOCK', '기타상품'\]\]/, "removed stock list buttons must not remain");
 assert.match(source, /if \(categoryCode === 'ALL'\) return \{ \.\.\.f, category: \[\], favoriteVendorOnly: false, unit: \{ \.\.\.CONFIG_MODULE\.defaultUnitFilter \} \};/);
 assert.match(source, /setFilters\(getDefaultFilters\(\)\)/, "new analysis/re-upload must restore the all-units default");

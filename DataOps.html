@@ -1588,13 +1588,34 @@ const DATAOPS_OPERATION_MODULE = Object.freeze({
         const sQty = Math.abs(safeNum(sourceQty));
         const tQty = Math.abs(safeNum(targetQty));
         if (unitCost <= 0 || sQty <= 0 || tQty <= 0) return 0;
-        // V1.a22.69: 수량 단위가 바뀌면 출처 총원가를 대상 생성수량으로 나눠 단가를 환산한다.
-        // 반올림 기준: 1,000원 이상은 100원 단위, 1,000원 미만은 10원 단위.
-        // 예: 12,000원 10kg 2박스 → 20kg 1박스 = 24,000원.
-        // 예: 11,000원 1kg 1박스 → 100g 9EA = 1,222.22원 → 1,200원.
-        const rawUnitCost = (unitCost * sQty) / tQty;
+        // DOPS-20260811-01: 계산단가는 출처 총원가를 정확히 보존하는 정밀값이다.
+        // 화면/엑셀 표시는 기존 100원/10원 단위 정책으로만 반올림하며 계산값에 역반영하지 않는다.
+        return (unitCost * sQty) / tQty;
+    },
+    roundConvertedUnitCostForDisplay: (unitCost = 0) => {
+        const rawUnitCost = safeNum(unitCost);
+        if (rawUnitCost <= 0) return 0;
         const roundUnit = rawUnitCost >= 1000 ? 100 : 10;
         return Math.round(rawUnitCost / roundUnit) * roundUnit;
+    },
+    getCalculationUnitCost: (item = {}) => {
+        const matched = safeNum(item._matchedUnitCost);
+        if (matched > 0) return matched;
+        const substituted = safeNum(item._substitutionWeightedCost);
+        if (substituted > 0) return substituted;
+        const layers = Array.isArray(item._costLayers) ? item._costLayers : [];
+        const layerQty = layers.reduce((sum, layer) => sum + Math.abs(safeNum(layer && layer.targetQty)), 0);
+        const layerCost = layers.reduce((sum, layer) => sum + safeNum(layer && layer.costAmount), 0);
+        if ((item._convertedUnitCostApplied || item._autoSubstitutionInQty) && layerQty > 0 && layerCost > 0)
+            return layerCost / layerQty;
+        return safeNum(item.단가);
+    },
+    getDisplayUnitCost: (item = {}) => {
+        const calculationUnitCost = DATAOPS_OPERATION_MODULE.getCalculationUnitCost(item);
+        const isConverted = !!(item._convertedUnitCostApplied || item._manualSubPriceApplied || item._autoSubstitutionInQty || safeNum(item._matchedUnitCost) > 0 || safeNum(item._substitutionWeightedCost) > 0);
+        return isConverted
+            ? DATAOPS_OPERATION_MODULE.roundConvertedUnitCostForDisplay(calculationUnitCost)
+            : Math.round(safeNum(item.단가));
     },
     extractUnitKg: (item = {}) => {
         const text = `${safeStr(item.품명 || '')} ${safeStr(item.규격 || '')} ${safeStr(item.name || '')}`.toLowerCase();
@@ -1623,13 +1644,14 @@ const DATAOPS_OPERATION_MODULE = Object.freeze({
         if (aQty <= 0) {
             aQty = DATAOPS_OPERATION_MODULE.inferEquivalentTargetQty({ sourceItem: salesItem, targetItem: actualItem, sourceQty: sQty });
         }
-        const actualUnitCost = safeNum(actualItem.단가);
+        const actualUnitCost = DATAOPS_OPERATION_MODULE.getCalculationUnitCost(actualItem);
         const salesUnitCost = DATAOPS_OPERATION_MODULE.calcConvertedUnitCost({
             sourceUnitCost: actualUnitCost,
             sourceQty: aQty,
             targetQty: sQty
         }) || actualUnitCost;
-        const costAmount = safeNum(salesUnitCost) * sQty;
+        // 환산 후 곱셈값이 아니라 실제 출처 원가를 총원가 단일 기준으로 사용한다.
+        const costAmount = actualUnitCost * aQty;
         const operationType = type || DATAOPS_OPERATION_MODULE.TYPES.MANUAL_ASSIST;
         const costLayer = DATAOPS_OPERATION_MODULE.buildCostLayer({
             type: operationType,
@@ -1639,6 +1661,7 @@ const DATAOPS_OPERATION_MODULE = Object.freeze({
             sourceQty: aQty,
             targetQty: sQty,
             unitCost: salesUnitCost,
+            costAmount,
             revenue
         });
         return {
@@ -1647,6 +1670,7 @@ const DATAOPS_OPERATION_MODULE = Object.freeze({
             actualQty: aQty,
             actualUnitCost,
             salesUnitCost,
+            displayUnitCost: DATAOPS_OPERATION_MODULE.roundConvertedUnitCostForDisplay(salesUnitCost),
             costAmount,
             formula: `${formatMoney(actualUnitCost)} × ${formatQty(aQty)} ÷ ${formatQty(sQty)}`,
             costLayer,
@@ -1666,7 +1690,7 @@ const DATAOPS_OPERATION_MODULE = Object.freeze({
             : Math.min(maxQty > 0 ? maxQty : targetQty, targetQty);
         return { sourceDeductQty: safeNum(sourceDeductQty), targetQty };
     },
-    buildCostLayer: ({ type = 'NORMAL', sourceItem = {}, targetItem = {}, vendorName = '', sourceQty = 0, targetQty = 0, unitCost = 0, revenue = 0 } = {}) => ({
+    buildCostLayer: ({ type = 'NORMAL', sourceItem = {}, targetItem = {}, vendorName = '', sourceQty = 0, targetQty = 0, unitCost = 0, costAmount = null, revenue = 0 } = {}) => ({
         id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
         type,
         typeLabel: DATAOPS_OPERATION_MODULE.getOperationLabel(type),
@@ -1680,7 +1704,10 @@ const DATAOPS_OPERATION_MODULE = Object.freeze({
         sourceQty: safeNum(sourceQty),
         targetQty: safeNum(targetQty),
         unitCost: safeNum(unitCost),
-        costAmount: safeNum(targetQty) * safeNum(unitCost),
+        displayUnitCost: DATAOPS_OPERATION_MODULE.roundConvertedUnitCostForDisplay(unitCost),
+        costAmount: costAmount === null || costAmount === undefined
+            ? safeNum(targetQty) * safeNum(unitCost)
+            : safeNum(costAmount),
         revenueAmount: safeNum(revenue),
         createdAt: new Date().toISOString()
     }),
@@ -1697,12 +1724,14 @@ const DATAOPS_OPERATION_MODULE = Object.freeze({
         const merged = {};
         (Array.isArray(layers) ? layers : []).forEach(layer => {
             if (!layer) return;
+            const hasExplicitCostAmount = layer.costAmount !== undefined && layer.costAmount !== null && Number.isFinite(Number(layer.costAmount));
             const normalizedLayer = {
                 ...layer,
                 sourceQty: safeNum(layer.sourceQty),
                 targetQty: safeNum(layer.targetQty),
                 unitCost: safeNum(layer.unitCost),
-                costAmount: safeNum(layer.costAmount) || safeNum(layer.targetQty) * safeNum(layer.unitCost),
+                displayUnitCost: DATAOPS_OPERATION_MODULE.roundConvertedUnitCostForDisplay(layer.unitCost),
+                costAmount: hasExplicitCostAmount ? safeNum(layer.costAmount) : safeNum(layer.targetQty) * safeNum(layer.unitCost),
                 revenueAmount: safeNum(layer.revenueAmount)
             };
             const key = DATAOPS_OPERATION_MODULE.buildCostLayerKey(normalizedLayer);
@@ -2167,21 +2196,26 @@ const DATAOPS_PURCHASE_FLOW_MODULE = Object.freeze({
         const targetVendor = DATAOPS_PURCHASE_FLOW_MODULE.getTargetVendor(purchase);
         const unitCost = safeNum(purchase && purchase.단가);
         const isExcluded = typeof context.isExcludedPurchase === 'function' && context.isExcludedPurchase(purchase);
-        // 비제외 거래처 구매는 대응 확정수요나 왕복 표기보다 먼저 외부 원천으로 확정한다.
-        if (!isExcluded) {
-            return { kind: 'STANDARD', externalSalesCostEligible: true, excludeFromPurchases: false, transactionVendor, targetVendor };
-        }
-        // 같은 코드·단가의 비제외 구매 원천이 있으면 제외 거래처 행은 내부 이동으로 보고 원장 생성 전 완전 제외한다.
         const externalSourceKey = DATAOPS_PURCHASE_FLOW_MODULE.buildCodeCostKey(code, unitCost);
-        if (context.externalSourceKeys && context.externalSourceKeys.has(externalSourceKey)) {
-            return { kind: 'INTERNAL_MOVEMENT', externalSalesCostEligible: false, excludeFromPurchases: true, transactionVendor, targetVendor };
-        }
-        // 외부 원천이 없을 때만 판매전표의 구매처·구매단가 확정 수요가 제외 거래처 구매를 외부 원천으로 보존할 수 있다.
         const demandKey = DATAOPS_PURCHASE_FLOW_MODULE.buildLotKey(code, transactionVendor, unitCost);
-        if (context.confirmedDemandKeys && context.confirmedDemandKeys.has(demandKey)) {
-            return { kind: 'CONFIRMED_EXTERNAL', externalSalesCostEligible: true, excludeFromPurchases: false, transactionVendor, targetVendor };
+        const hasExternalSource = !!(context.externalSourceKeys && context.externalSourceKeys.has(externalSourceKey));
+        const hasConfirmedDemand = !!(context.confirmedDemandKeys && context.confirmedDemandKeys.has(demandKey));
+        // DOPS-20260811-01: 전표 거래처명이 제외 대상이면 외부원천/확정수요 조건과 무관하게 계산에서 제외한다.
+        // 구매처·원구매처는 이 판정에 들어오지 않으며, 원본은 계산제외 Source Ledger로 별도 보존한다.
+        if (isExcluded) {
+            return {
+                kind: 'INTERNAL_MOVEMENT',
+                externalSalesCostEligible: false,
+                excludeFromPurchases: true,
+                preserveAuditSource: true,
+                conditionalPreserveMatched: !hasExternalSource && hasConfirmedDemand,
+                hasExternalSource,
+                hasConfirmedDemand,
+                transactionVendor,
+                targetVendor
+            };
         }
-        return { kind: 'INTERNAL_MOVEMENT', externalSalesCostEligible: false, excludeFromPurchases: true, transactionVendor, targetVendor };
+        return { kind: 'STANDARD', externalSalesCostEligible: true, excludeFromPurchases: false, transactionVendor, targetVendor, hasExternalSource, hasConfirmedDemand };
     }
 });
 
@@ -2189,6 +2223,7 @@ const DATAOPS_PURCHASE_FLOW_MODULE = Object.freeze({
 // 불러온 prev/in/out 원본은 _sourceEntries에 별도 보존하고, FIFO/Lot 배정은 기존 계산필드와 분리한다.
 // 화면 요약은 Source Ledger + 관리자 작업 delta를 사용하며, 원본 판매수량/판매가는 FIFO 분할값으로 덮어쓰지 않는다.
 const DATAOPS_SOURCE_LEDGER_MODULE = Object.freeze({
+    isCalculationEntry: (entry = {}) => entry && entry.calculationExcluded !== true,
     collectEntries: (rows = []) => {
         const result = [];
         const seen = new Set();
@@ -2204,10 +2239,10 @@ const DATAOPS_SOURCE_LEDGER_MODULE = Object.freeze({
         return result;
     },
     sumRole: (rows = [], role = '') => DATAOPS_SOURCE_LEDGER_MODULE.collectEntries(rows)
-        .filter(entry => safeStr(entry.role) === safeStr(role))
+        .filter(entry => DATAOPS_SOURCE_LEDGER_MODULE.isCalculationEntry(entry) && safeStr(entry.role) === safeStr(role))
         .reduce((sum, entry) => sum + safeNum(entry.qty), 0),
     hasRole: (rows = [], role = '') => DATAOPS_SOURCE_LEDGER_MODULE.collectEntries(rows)
-        .some(entry => safeStr(entry.role) === safeStr(role)),
+        .some(entry => DATAOPS_SOURCE_LEDGER_MODULE.isCalculationEntry(entry) && safeStr(entry.role) === safeStr(role)),
     resolveDisplayQty: (rows = [], role = '') => {
         const map = {
             prev: { field: '기초', baseline: '_initialBaseQty' },
@@ -2230,7 +2265,7 @@ const DATAOPS_SOURCE_LEDGER_MODULE = Object.freeze({
     mergeSalesDetails: (rows = []) => {
         const merged = {};
         DATAOPS_SOURCE_LEDGER_MODULE.collectEntries(rows)
-            .filter(entry => safeStr(entry.role) === 'out')
+            .filter(entry => DATAOPS_SOURCE_LEDGER_MODULE.isCalculationEntry(entry) && safeStr(entry.role) === 'out')
             .forEach(entry => {
                 const vendor = safeStr(entry.vendor, '미지정');
                 const qty = safeNum(entry.qty);
@@ -2878,6 +2913,7 @@ const DATA_MODEL_MODULE = Object.freeze({
         const masterUnitValue = item._masterLink ? normalizeDataOpsMasterUnit(item._masterLink.masterUnit) : '';
         const rawUnitValue = masterUnitValue;
         const finalQty = item.실사 === '' || item.실사 === null || item.실사 === undefined ? 0 : safeNum(item.실사);
+        const calculationUnitCost = DATAOPS_OPERATION_MODULE.getCalculationUnitCost(item);
         const standard = {
             id: item.batchKey || `${code}|${safeStr(item.품명)}|${safeStr(item.거래처)}`,
             batchKey: item.batchKey || '',
@@ -2899,12 +2935,12 @@ const DATA_MODEL_MODULE = Object.freeze({
             inQty: safeNum(item.입고),
             outQty: safeNum(item.출고),
             finalQty,
-            price: safeNum(item.단가),
+            price: calculationUnitCost,
             systemQty: safeNum(item.전산잔량),
             diffQty: safeNum(item.로스),
             salesAmount: safeNum(item.매출액),
             cogsAmount: safeNum(item.매출원가),
-            stockAmount: finalQty * safeNum(item.단가),
+            stockAmount: finalQty * calculationUnitCost,
             issues: Array.isArray(item.이슈) ? item.이슈 : [],
             memo: safeStr(item.메모, ''),
             sourceType: item._fromFile4 ? 'CLOSING_RESTORE' : 'ANALYZED',
@@ -3824,7 +3860,7 @@ const EXPORT_MODULE = Object.freeze({
         const negativeRows = productData.filter(item => STOCK_ENGINE_MODULE.getActualQty(item) < 0 || safeNum(item.전산잔량) < 0).length;
         const zeroPriceRows = productData.filter(item => safeNum(item.단가) <= 0).length;
         const totalActualQty = productData.reduce((sum, item) => sum + STOCK_ENGINE_MODULE.getActualQty(item), 0);
-        const totalStockAmount = productData.reduce((sum, item) => sum + (STOCK_ENGINE_MODULE.getActualQty(item) * safeNum(item.단가)), 0);
+        const totalStockAmount = productData.reduce((sum, item) => sum + (STOCK_ENGINE_MODULE.getActualQty(item) * DATAOPS_OPERATION_MODULE.getCalculationUnitCost(item)), 0);
         return [
             { '항목': '마감일자', '값': targetDateStr || '-' },
             { '항목': '분석기간', '값': analysisPeriod || '-' },
@@ -3901,7 +3937,7 @@ const EXPORT_MODULE = Object.freeze({
             '재고': qty,
             '기록': EXPORT_MODULE.sanitizeLedgerRecordValue(item.일자),
             '거래': EXPORT_MODULE.sanitizeLedgerTradeValue(item.거래처),
-            '구매가': Math.round(safeNum(item.단가)),
+            '구매가': DATAOPS_OPERATION_MODULE.getDisplayUnitCost(item),
             // V1.a22.69: 전체재고는 앞으로 재고현황 입력 시트로 사용하므로 원본 재고현황의 기본값을 그대로 보존한다.
             '기본': getBasicDisplayValue(item),
             '적요': EXPORT_MODULE.sanitizeStockRemark(raw['적요'] || raw['비고'] || raw['메모'] || '')
@@ -3923,7 +3959,7 @@ const EXPORT_MODULE = Object.freeze({
             '재고': qty,
             '기록': EXPORT_MODULE.sanitizeLedgerRecordValue(item.일자),
             '거래': EXPORT_MODULE.sanitizeLedgerTradeValue(item.거래처),
-            '구매가': Math.round(safeNum(item.단가)),
+            '구매가': DATAOPS_OPERATION_MODULE.getDisplayUnitCost(item),
             '기본': getBasicDisplayValue(item),
             '적요': EXPORT_MODULE.sanitizeStockRemark(raw['적요'] || raw['비고'] || raw['메모'] || '')
         };
@@ -4072,7 +4108,8 @@ const EXPORT_MODULE = Object.freeze({
         const unit = safeStr(item.단위 || raw['단위'] || raw['규격단위'] || raw['포장단위'], '');
         const spec = safeStr(raw['규격'] || item.규격 || unit, '');
         const qty = STOCK_ENGINE_MODULE.getActualQty(item);
-        const price = Math.round(safeNum(item.단가));
+        const calculationPrice = DATAOPS_OPERATION_MODULE.getCalculationUnitCost(item);
+        const price = DATAOPS_OPERATION_MODULE.getDisplayUnitCost(item);
         return {
             '관리구분': getStockManageGroup(item),
             '기본': getBasicDisplayValue(item),
@@ -4084,7 +4121,7 @@ const EXPORT_MODULE = Object.freeze({
             '구매일': safeStr(item.일자, ''),
             '구매처': safeStr(item.거래처, ''),
             '원가': price,
-            '재고금액': qty * price,
+            '재고금액': qty * calculationPrice,
             '기준일': safeStr(targetDateStr, ''),
             '확인내용': (item.이슈 || []).join(', ')
         };
@@ -4092,7 +4129,7 @@ const EXPORT_MODULE = Object.freeze({
     buildManagementBriefingRows: ({ productData = [], targetDateStr = '', analysisPeriod = '', closingStats = {} }) => {
         const rows = [
             { '구분': '마감일자', '상품수': targetDateStr || '-', '재고수량': '', '재고금액': '', '단가0': '', '구매Lot미확정': '', '마이너스': '', '비고': analysisPeriod || '' },
-            { '구분': '전체', '상품수': productData.length, '재고수량': productData.reduce((s, i) => s + STOCK_ENGINE_MODULE.getActualQty(i), 0), '재고금액': Math.round(productData.reduce((s, i) => s + STOCK_ENGINE_MODULE.getActualQty(i) * safeNum(i.단가), 0)), '단가0': productData.filter(i => safeNum(i.단가) <= 0).length, '구매Lot미확정': productData.filter(i => safeStr(i.일자).includes('미확정') || (i.이슈 || []).some(msg => safeStr(msg).includes('Lot'))).length, '마이너스': productData.filter(i => STOCK_ENGINE_MODULE.getActualQty(i) < 0 || safeNum(i.전산잔량) < 0).length, '비고': '전체 재고 기준' }
+            { '구분': '전체', '상품수': productData.length, '재고수량': productData.reduce((s, i) => s + STOCK_ENGINE_MODULE.getActualQty(i), 0), '재고금액': Math.round(productData.reduce((s, i) => s + STOCK_ENGINE_MODULE.getActualQty(i) * DATAOPS_OPERATION_MODULE.getCalculationUnitCost(i), 0)), '단가0': productData.filter(i => DATAOPS_OPERATION_MODULE.getCalculationUnitCost(i) <= 0).length, '구매Lot미확정': productData.filter(i => safeStr(i.일자).includes('미확정') || (i.이슈 || []).some(msg => safeStr(msg).includes('Lot'))).length, '마이너스': productData.filter(i => STOCK_ENGINE_MODULE.getActualQty(i) < 0 || safeNum(i.전산잔량) < 0).length, '비고': '전체 재고 기준' }
         ];
         ['농산류', '식자재', '기타'].forEach(group => {
             const items = productData.filter(i => getStockManageGroup(i) === group);
@@ -4100,8 +4137,8 @@ const EXPORT_MODULE = Object.freeze({
                 '구분': group,
                 '상품수': items.length,
                 '재고수량': items.reduce((s, i) => s + STOCK_ENGINE_MODULE.getActualQty(i), 0),
-                '재고금액': Math.round(items.reduce((s, i) => s + STOCK_ENGINE_MODULE.getActualQty(i) * safeNum(i.단가), 0)),
-                '단가0': items.filter(i => safeNum(i.단가) <= 0).length,
+                '재고금액': Math.round(items.reduce((s, i) => s + STOCK_ENGINE_MODULE.getActualQty(i) * DATAOPS_OPERATION_MODULE.getCalculationUnitCost(i), 0)),
+                '단가0': items.filter(i => DATAOPS_OPERATION_MODULE.getCalculationUnitCost(i) <= 0).length,
                 '구매Lot미확정': items.filter(i => safeStr(i.일자).includes('미확정') || (i.이슈 || []).some(msg => safeStr(msg).includes('Lot'))).length,
                 '마이너스': items.filter(i => STOCK_ENGINE_MODULE.getActualQty(i) < 0 || safeNum(i.전산잔량) < 0).length,
                 '비고': group === '농산류' ? '기본=1' : (group === '식자재' ? '기본=2 이상(3·5·7 등)' : '기본=0 또는 공백')
@@ -4110,7 +4147,7 @@ const EXPORT_MODULE = Object.freeze({
         return rows;
     },
     buildManagementIssueRows: ({ productData = [] }) => productData
-        .filter(item => safeNum(item.단가) <= 0 || STOCK_ENGINE_MODULE.getActualQty(item) < 0 || safeNum(item.전산잔량) < 0 || safeStr(item.일자).includes('미확정') || (item.이슈 || []).length > 0)
+        .filter(item => DATAOPS_OPERATION_MODULE.getCalculationUnitCost(item) <= 0 || STOCK_ENGINE_MODULE.getActualQty(item) < 0 || safeNum(item.전산잔량) < 0 || safeStr(item.일자).includes('미확정') || (item.이슈 || []).length > 0)
         .map(item => ({
         '관리구분': getStockManageGroup(item),
         '기본': getBasicDisplayValue(item),
@@ -4121,16 +4158,17 @@ const EXPORT_MODULE = Object.freeze({
         '출고': safeNum(item.출고),
         '잔량': STOCK_ENGINE_MODULE.getActualQty(item),
         '오차': STOCK_ENGINE_MODULE.getAdjustmentQty(item),
-        '원가': safeNum(item.단가),
+        '원가': DATAOPS_OPERATION_MODULE.getDisplayUnitCost(item),
         '구매일': safeStr(item.일자, ''),
         '구매처': safeStr(item.거래처, ''),
-        '확인내용': (item.이슈 || []).join(', ') || (safeNum(item.단가) <= 0 ? '단가 0원' : '확인필요')
+        '확인내용': (item.이슈 || []).join(', ') || (DATAOPS_OPERATION_MODULE.getCalculationUnitCost(item) <= 0 ? '단가 0원' : '확인필요')
     })),
     buildClosingAnalysisLedgerRows: ({ productData = [], targetDateStr = '' }) => productData.filter(item => item.품명 || item.코드).map(item => {
         var _a, _b, _c;
         const qty = STOCK_ENGINE_MODULE.getActualQty(item);
         const adjust = STOCK_ENGINE_MODULE.getAdjustmentQty(item);
-        const price = safeNum(item.단가) || 0;
+        const calculationPrice = DATAOPS_OPERATION_MODULE.getCalculationUnitCost(item);
+        const displayPrice = DATAOPS_OPERATION_MODULE.getDisplayUnitCost(item);
         const raw = item._raw || {};
         const masterCols = DATAOPS_MASTER_LINK_MODULE.buildOutputColumns(item);
         return {
@@ -4147,8 +4185,8 @@ const EXPORT_MODULE = Object.freeze({
             '계산잔량': safeNum(item.전산잔량),
             '마감잔량': qty,
             '오차': adjust,
-            '매입단가(원가)': price,
-            '기말재고액(자산가치)': qty * price,
+            '매입단가(원가)': displayPrice,
+            '기말재고액(자산가치)': qty * calculationPrice,
             '기본': getBasicDisplayValue(item),
             '관리구분': getStockManageGroup(item),
             ...masterCols,
@@ -4210,8 +4248,9 @@ const EXPORT_MODULE = Object.freeze({
         }
         const qty = STOCK_ENGINE_MODULE.getActualQty(item);
         const adjust = STOCK_ENGINE_MODULE.getAdjustmentQty(item);
-        const price = safeNum(item.단가) || 0;
-        return { '결산일자': targetDateStr, '매입처(Lot)': safeStr(item.거래처, '미지정'), '상품코드': item.코드 === 'NO_CODE' ? '' : safeStr(item.코드, '').replace(/\.0$/, '').trim(), '상품명(규격)': item.품명, '단위': safeStr(item.단위 || ((_a = item._raw) === null || _a === void 0 ? void 0 : _a['단위']) || ((_b = item._raw) === null || _b === void 0 ? void 0 : _b['규격단위']) || ((_c = item._raw) === null || _c === void 0 ? void 0 : _c['포장단위']), ''), '기초수량': safeNum(item.기초), '입고수량': safeNum(item.입고), '출고량': safeNum(item.출고), '기말실사(이월수량)': qty, '매입단가(원가)': price, '기말재고액(자산가치)': qty * price, '로스/조정수량': adjust, '기본': getBasicDisplayValue(item), '관리구분': getStockManageGroup(item), '이슈/결과': [...displayIssues, ...vendorStrs].join(', '), '수기메모': item.메모 || '', '관리자확인완료': '', '관리자확인시각': '' };
+        const calculationPrice = DATAOPS_OPERATION_MODULE.getCalculationUnitCost(item);
+        const displayPrice = DATAOPS_OPERATION_MODULE.getDisplayUnitCost(item);
+        return { '결산일자': targetDateStr, '매입처(Lot)': safeStr(item.거래처, '미지정'), '상품코드': item.코드 === 'NO_CODE' ? '' : safeStr(item.코드, '').replace(/\.0$/, '').trim(), '상품명(규격)': item.품명, '단위': safeStr(item.단위 || ((_a = item._raw) === null || _a === void 0 ? void 0 : _a['단위']) || ((_b = item._raw) === null || _b === void 0 ? void 0 : _b['규격단위']) || ((_c = item._raw) === null || _c === void 0 ? void 0 : _c['포장단위']), ''), '기초수량': safeNum(item.기초), '입고수량': safeNum(item.입고), '출고량': safeNum(item.출고), '기말실사(이월수량)': qty, '매입단가(원가)': displayPrice, '기말재고액(자산가치)': qty * calculationPrice, '로스/조정수량': adjust, '기본': getBasicDisplayValue(item), '관리구분': getStockManageGroup(item), '이슈/결과': [...displayIssues, ...vendorStrs].join(', '), '수기메모': item.메모 || '', '관리자확인완료': '', '관리자확인시각': '' };
     }),
     buildStockCountSheetRows: ({ productData = [], targetDateStr = '' }) => {
         const stockCountDate = targetDateStr;
@@ -4551,28 +4590,30 @@ const EXPORT_MODULE = Object.freeze({
         w.document.close();
         return true;
     },
-    createCombinedWorkbook: ({ productData = [], screenRows = [], substHistory = [], analysisPeriod = '', targetDateStr = '', closingStats = {} }) => {
+    createCombinedWorkbook: ({ productData = [], screenRows, substHistory = [], analysisPeriod = '', targetDateStr = '', closingStats = {} }) => {
         const exportFileNameDate = targetDateStr ? targetDateStr.replace(/-/g, '') : (() => { const today = new Date(); return `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`; })();
+        const calculationProductData = (productData || []).filter(item => !item._auditOnly);
         // V1.a22.30: 운영 출력은 코드통합형을 기본으로 한다. Lot/일자/구매처 상세는 분석원장에만 보존한다.
-        const operationalProductData = DATAOPS_VIEW_LAYER_MODULE.buildCodeSummaryRows(productData || []).sort((a, b) => FILTER_SORT_MODULE.compareByCodeThenName(a, b));
+        const operationalProductData = DATAOPS_VIEW_LAYER_MODULE.buildCodeSummaryRows(calculationProductData).sort((a, b) => FILTER_SORT_MODULE.compareByCodeThenName(a, b));
         const exportData1 = EXPORT_MODULE.buildClosingSheetRows({ productData: operationalProductData, targetDateStr });
-        const analysisLedgerRows = EXPORT_MODULE.buildClosingAnalysisLedgerRows({ productData, targetDateStr });
-        const masterCheckRows = EXPORT_MODULE.buildMasterCheckRows({ productData, targetDateStr });
-        const substitutionCandidateRows = EXPORT_MODULE.buildSubstitutionCandidateRows({ productData, targetDateStr });
+        const analysisLedgerRows = EXPORT_MODULE.buildClosingAnalysisLedgerRows({ productData: calculationProductData, targetDateStr });
+        const masterCheckRows = EXPORT_MODULE.buildMasterCheckRows({ productData: calculationProductData, targetDateStr });
+        const substitutionCandidateRows = EXPORT_MODULE.buildSubstitutionCandidateRows({ productData: calculationProductData, targetDateStr });
         const exportData2 = EXPORT_MODULE.buildStockCountSheetRows({ productData: operationalProductData, targetDateStr });
         // V1.a22.69: 구매잔량은 현황/원가 근거 시트이므로 코드통합형 데이터가 아니라 원본 Lot 행(productData) 기준으로 만든다.
         // 같은 품목이라도 구매일·구매처·구매가가 다르면 반드시 별도 행으로 분리한다.
         // 코드통합형 operationalProductData를 쓰면 2개 구매처/2개 단가 Lot이 1행으로 합쳐져 구매잔량 개념이 깨진다.
-        const purchaseBalanceRows = EXPORT_MODULE.buildPurchaseBalanceRows({ productData, targetDateStr });
-        const otherStockRows = EXPORT_MODULE.buildOtherStockRows({ productData, targetDateStr });
-        const screenRowsForExport = Array.isArray(screenRows) && screenRows.length ? screenRows : null;
+        const purchaseBalanceRows = EXPORT_MODULE.buildPurchaseBalanceRows({ productData: calculationProductData, targetDateStr });
+        const otherStockRows = EXPORT_MODULE.buildOtherStockRows({ productData: calculationProductData, targetDateStr });
+        const hasScreenRowsForExport = Array.isArray(screenRows);
         // F9 첫 전체재고 시트만 현재 보기모드·필터 행을 사용하고, 나머지 11개 시트는 기존 원장을 유지한다.
-        const wholeStockRows = screenRowsForExport
-            ? EXPORT_MODULE.buildScreenStockRows({ productData: screenRowsForExport, targetDateStr })
+        // 빈 배열도 "현재 화면 결과 0행"이라는 명시값이며, screenRows 미전달만 전체 데이터 호환 경로로 처리한다.
+        const wholeStockRows = hasScreenRowsForExport
+            ? EXPORT_MODULE.buildScreenStockRows({ productData: screenRows, targetDateStr })
             : EXPORT_MODULE.buildNextBaseStockRows({ productData: operationalProductData, targetDateStr });
         const checkRequestRows = EXPORT_MODULE.buildManagementIssueRows({ productData: operationalProductData });
-        const originalSalesStatementRows = DATAOPS_SALES_REMATCH_MODULE.toOriginalSheetRows({ productData, targetDateStr });
-        const correctedSalesStatementRows = DATAOPS_SALES_REMATCH_MODULE.toCorrectedSheetRows({ productData, substHistory, targetDateStr });
+        const originalSalesStatementRows = DATAOPS_SALES_REMATCH_MODULE.toOriginalSheetRows({ productData: calculationProductData, targetDateStr });
+        const correctedSalesStatementRows = DATAOPS_SALES_REMATCH_MODULE.toCorrectedSheetRows({ productData: calculationProductData, substHistory, targetDateStr });
         const wb = XLSX.utils.book_new();
         // V1.a22.69: 수불마감 기본 보고서는 전체재고 / 구매잔량 / 기타상품 3단계로 분리한다.
         // 전체재고는 productData 전체에서 만든 관리자 통합/해제 결과로 다음날 재고현황의 양수 잔량만 만든다.
@@ -5311,7 +5352,7 @@ const parseExcelData = (file, currentMappings, uploadRole = '') => {
 /* =======================================================================
    3. 비즈니스 로직 훅 (useInventoryEngine)
    ======================================================================= */
-const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, setIsProcessing, setAppStep }) => {
+const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setTransferClosingAlert = () => {}, setConfirmModal, setIsProcessing, setAppStep }) => {
     const [productData, setProductData] = useState([]);
     const productDataRef = useRef(productData);
     productDataRef.current = productData;
@@ -5459,6 +5500,12 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
             var _a, _b, _c;
             let nextItem = { ...currentItem, [field]: numVal };
             if (field === '단가') {
+                // 표시용 환산단가를 실제 사용자가 수정한 경우에는 정밀 계산단가도 새 입력값으로 전환한다.
+                // 포커스 이동만으로 표시값(예: 1,300원)이 정밀값을 덮어쓰는 것은 ProductRow에서 차단한다.
+                nextItem._matchedUnitCost = 0;
+                nextItem._substitutionWeightedCost = 0;
+                nextItem._convertedUnitCostApplied = false;
+                nextItem._displayUnitCost = numVal;
                 nextItem.이슈 = DATAOPS_ISSUE_HELPER.syncPriceIssues(nextItem, nextItem.이슈 || []).filter(msg => msg !== '매입내역 없음');
             }
             else {
@@ -5925,9 +5972,9 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                 const manualCostLayer = manualMatch.costLayer ? {
                     ...manualMatch.costLayer,
                     unitCost: manualTargetUnitCost,
-                    costAmount: manualTargetUnitCost * targetLossQty
+                    displayUnitCost: DATAOPS_OPERATION_MODULE.roundConvertedUnitCostForDisplay(manualTargetUnitCost),
+                    costAmount: manualAppliedCostAmount
                 } : null;
-                manualAppliedCostAmount = manualTargetUnitCost * targetLossQty;
                 // 대상 판매행 전체가 아니라 이번 치환수량의 기존 원가만 교체한다.
                 // 나머지 판매수량과 거래처별 원가는 그대로 유지한다.
                 const targetSalesQty = safeNum(targetAfter.출고);
@@ -5957,6 +6004,7 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                     // 표시 단가(입고가)와 원가레이어에 함께 기록한다.
                     단가: safeNum(targetItem.단가) > 0 ? safeNum(targetItem.단가) : manualTargetUnitCost,
                     _matchedUnitCost: manualTargetUnitCost,
+                    _displayUnitCost: DATAOPS_OPERATION_MODULE.roundConvertedUnitCostForDisplay(manualTargetUnitCost),
                     _matchedCostAmount: manualAppliedCostAmount,
                     _manualReplacementPriceApplied: safeNum(targetItem.단가) <= 0,
                     _convertedUnitCostApplied: safeNum(targetItem.단가) <= 0 || safeNum(sourceLossQty) !== safeNum(targetLossQty),
@@ -5967,7 +6015,7 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                     _manualCostSourceName: safeStr(sourceAfter.품명, '출처상품')
                 };
                 sourceAfter._operationOutLayers = DATAOPS_OPERATION_MODULE.normalizeCostLayers(Array.isArray(sourceAfter._operationOutLayers) ? [...sourceAfter._operationOutLayers, manualCostLayer] : [manualCostLayer]);
-                const costMemo = `[수기치환원가] ${safeStr(sourceAfter.품명, '출처상품')} ${formatQty(sourceLossQty)} → ${safeStr(targetAfter.품명, '대상상품')} ${formatQty(targetLossQty)} / 원가 ${formatMoney(manualTargetUnitCost)}`;
+                const costMemo = `[수기치환원가] ${safeStr(sourceAfter.품명, '출처상품')} ${formatQty(sourceLossQty)} → ${safeStr(targetAfter.품명, '대상상품')} ${formatQty(targetLossQty)} / 원가 ${formatMoney(DATAOPS_OPERATION_MODULE.roundConvertedUnitCostForDisplay(manualTargetUnitCost))}`;
                 if (!safeStr(targetAfter.메모, '').includes(costMemo))
                     targetAfter.메모 = `${safeStr(targetAfter.메모, '')}${safeStr(targetAfter.메모, '') ? ' ' : ''}${costMemo}`;
             }
@@ -6000,7 +6048,7 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                     targetName: targetAfter.품명,
                     sQty: sourceLossQty,
                     tQty: targetLossQty,
-                    transferredCost: manualAppliedCostAmount || (sourceLossQty * safeNum(sourceItem.단가)),
+                    transferredCost: manualAppliedCostAmount || (sourceLossQty * DATAOPS_OPERATION_MODULE.getCalculationUnitCost(sourceItem)),
                     sourceItemPrev: sourceItem.batchKey === item1Orig.batchKey ? item1Orig : item2Orig,
                     targetItemPrev: targetItem.batchKey === item2Orig.batchKey ? item2Orig : item1Orig,
                     createdAt: new Date().toISOString()
@@ -6047,7 +6095,7 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                     const rawPrev = { ...nextData[alloc.index], 이슈: [...(nextData[alloc.index].이슈 || [])], 출고내역: nextData[alloc.index].출고내역 ? JSON.parse(JSON.stringify(nextData[alloc.index].출고내역)) : {} };
                     sourceLotsPrev.push(rawPrev);
                     let rawItem = { ...nextData[alloc.index] };
-                    const rawUnitCost = safeNum(rawItem.단가);
+                    const rawUnitCost = DATAOPS_OPERATION_MODULE.getCalculationUnitCost(rawItem);
                     totalRawCost += safeNum(alloc.takeQty) * rawUnitCost;
                     // V1.a22.12: 자동치환은 화면 표시만 보정하지 않고 원물 Lot 잔량을 실제 감소시킨다.
                     // Lot 감소는 대체출고에 반영되어 전산잔량/실사잔량이 함께 재계산된다.
@@ -6062,7 +6110,7 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                     if (lotIdx === 0) firstRawAfter = rawItem;
                 });
                 let subItem = { ...nextData[subIdx] };
-                const subUnitCost = totalRawCost > 0 && requiredRawQty > 0 && conversionRate > 0 ? Math.round((totalRawCost / (requiredRawQty * conversionRate)) * 100) / 100 : safeNum(subItem.단가);
+                const subUnitCost = totalRawCost > 0 && generatedSubQty > 0 ? totalRawCost / generatedSubQty : safeNum(subItem.단가);
                 subItem.대체입고 = safeNum(subItem.대체입고) + generatedSubQty;
                 subItem._autoSubstitutionInQty = safeNum(subItem._autoSubstitutionInQty) + generatedSubQty;
                 subItem._autoSubstitutionRawQty = safeNum(subItem._autoSubstitutionRawQty) + requiredRawQty;
@@ -6078,6 +6126,7 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                         sourceQty: requiredRawQty,
                         targetQty: generatedSubQty,
                         unitCost: subUnitCost,
+                        costAmount: totalRawCost,
                         revenue: 0
                     });
                     const withLayer = DATAOPS_OPERATION_MODULE.appendCostLayer(subItem, substitutionLayer);
@@ -6089,10 +6138,13 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                     subItem.일자 = safeStr(firstRawAfter.일자, subItem.일자 || '');
                     subItem._substitutionSourceVendor = safeStr(firstRawAfter.거래처, '');
                     subItem._substitutionSourceDate = safeStr(firstRawAfter.일자, '');
-                    subItem._substitutionSourcePrice = safeNum(firstRawAfter.단가);
+                    subItem._substitutionSourcePrice = DATAOPS_OPERATION_MODULE.getDisplayUnitCost(firstRawAfter);
                 }
                 subItem._substitutionSourceLotCount = allocation.allocations.length;
                 subItem._substitutionWeightedCost = subUnitCost;
+                subItem._matchedUnitCost = subUnitCost;
+                subItem._displayUnitCost = DATAOPS_OPERATION_MODULE.roundConvertedUnitCostForDisplay(subUnitCost);
+                subItem._convertedUnitCostApplied = true;
                 subItem = DATAOPS_SUBSTITUTION_CANDIDATE_MODULE.recalcLegacyItem(subItem, { syncActual: true });
                 if (safeNum(subItem.단가) > 0) {
                     // V1.a22.12: 자동치환으로 소분단가가 생성되면 단가검증 카운트에서도 즉시 빠져야 한다.
@@ -6138,7 +6190,7 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
             prevP.forEach(p => {
                 if (p.batchKey === sourceKey) {
                     sourceItemRef = p;
-                    sPrice = safeNum(p.단가);
+                    sPrice = DATAOPS_OPERATION_MODULE.getCalculationUnitCost(p) || safeNum(p.단가);
                     if (p.출고내역 && p.출고내역[vendorName] && p.출고내역[vendorName].qty > 0)
                         sRevUnit = p.출고내역[vendorName].rev / p.출고내역[vendorName].qty;
                     else
@@ -6146,7 +6198,7 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                 }
                 if (p.batchKey === targetKey) {
                     targetItemRef = p;
-                    tPrice = safeNum(p.단가);
+                    tPrice = DATAOPS_OPERATION_MODULE.getCalculationUnitCost(p) || safeNum(p.단가);
                 }
             });
             const sourceDeductQty = safeNum(moveMeta.sourceDeductQty !== undefined ? moveMeta.sourceDeductQty : qtyToMove);
@@ -6168,13 +6220,15 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
             const isBundleConvert = operationType === DATAOPS_OPERATION_MODULE.TYPES.BUNDLE_CONVERT;
             const sourceRevenueMoved = sourceDeductQty * sRevUnit;
             const convertedUnitCost = DATAOPS_OPERATION_MODULE.calcConvertedUnitCost({ sourceUnitCost: sPrice, sourceQty: sourceDeductQty, targetQty: targetAddQty });
-            // 실제 출고상품 재매칭에서는 대상 Lot의 원가가 현재고/매출원가 기준이다.
-            // Ctrl 묶음은 대상수량이 달라도 판매 공급가액은 sourceRevenueMoved로 그대로 보존한다.
-            const targetUnitCost = tPrice > 0
-                ? tPrice
-                : (operationType !== DATAOPS_OPERATION_MODULE.TYPES.NORMAL && convertedUnitCost > 0 ? convertedUnitCost : sPrice);
-            const targetCostMoved = targetAddQty * safeNum(targetUnitCost);
             const sourceCostMoved = sourceDeductQty * sPrice;
+            // DOPS-20260811-01: 묶음환산만 대상의 과거 표시단가보다 출처 총원가를 우선한다.
+            // 일반 대체판매는 기존대로 대상 Lot 단가를 유지한다.
+            const targetUnitCost = isBundleConvert && convertedUnitCost > 0
+                ? convertedUnitCost
+                : (tPrice > 0 ? tPrice : sPrice);
+            const targetCostMoved = isBundleConvert
+                ? sourceCostMoved
+                : targetAddQty * safeNum(targetUnitCost);
             const cleanVendorNameGlobal = safeStr(vendorName).replace('_perfect', '');
             const costLayer = DATAOPS_OPERATION_MODULE.buildCostLayer({
                 type: operationType,
@@ -6184,6 +6238,7 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                 sourceQty: sourceDeductQty,
                 targetQty: targetAddQty,
                 unitCost: targetUnitCost,
+                costAmount: targetCostMoved,
                 revenue: sourceRevenueMoved
             });
             // 과거 Ctrl 전용 분기는 판매전표 상품을 원본 행에 남겨 정정 판매현황 재수정을 막았다.
@@ -6243,6 +6298,7 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                             // 행 단가는 원본 그대로 두고 대체수량 원가는 별도 원가레이어에만 기록한다.
                             const previousUnitCost = safeNum(np.단가);
                             np._matchedUnitCost = replacementUnitCost;
+                            np._displayUnitCost = DATAOPS_OPERATION_MODULE.roundConvertedUnitCostForDisplay(replacementUnitCost);
                             np._matchedCostAmount = replacementCostAmount;
                             np._manualReplacementPriceApplied = false;
                             np._convertedUnitCostApplied = previousUnitCost !== safeNum(replacementUnitCost) || safeNum(sourceDeductQty) !== safeNum(targetAddQty);
@@ -6254,7 +6310,7 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                         np._costLayers = withLayer._costLayers;
                         np._lotCostResolved = withLayer._lotCostResolved;
                         const opLabel = DATAOPS_OPERATION_MODULE.getOperationLabel(operationType);
-                        const memoText = `[${opLabel}] 실제출고 ${safeStr(targetItemRef && targetItemRef.품명, '대체상품')} ${formatQty(targetAddQty)} / 원가 ${formatMoney(replacementUnitCost)}`;
+                        const memoText = `[${opLabel}] 실제출고 ${safeStr(targetItemRef && targetItemRef.품명, '대체상품')} ${formatQty(targetAddQty)} / 원가 ${formatMoney(DATAOPS_OPERATION_MODULE.roundConvertedUnitCostForDisplay(replacementUnitCost))}`;
                         if (!safeStr(np.메모, '').includes(memoText))
                             np.메모 = `${safeStr(np.메모, '')}${safeStr(np.메모, '') ? ' ' : ''}${memoText}`;
                         np.이슈 = DATAOPS_ISSUE_HELPER.unique(DATAOPS_ISSUE_HELPER.stripPriceIssues([...(np.이슈 || []), `✅${opLabel}`]));
@@ -6419,6 +6475,8 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                     np.매출액 = safeNum(np.매출액) + sourceRevenueMoved;
                     if (operationType !== DATAOPS_OPERATION_MODULE.TYPES.NORMAL && safeNum(targetUnitCost) > 0) {
                         const previousUnitCost = safeNum(np.단가);
+                        np._matchedUnitCost = targetUnitCost;
+                        np._displayUnitCost = DATAOPS_OPERATION_MODULE.roundConvertedUnitCostForDisplay(targetUnitCost);
                         np._convertedUnitCostApplied = safeNum(sourceDeductQty) !== safeNum(targetAddQty) || previousUnitCost !== safeNum(targetUnitCost);
                         np._convertedUnitCostFormula = `${formatMoney(sPrice)} × ${formatQty(sourceDeductQty)} ÷ ${formatQty(targetAddQty)}`;
                     }
@@ -6439,7 +6497,7 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                     }
                     if (operationType !== DATAOPS_OPERATION_MODULE.TYPES.NORMAL) {
                         const opLabel = DATAOPS_OPERATION_MODULE.getOperationLabel(operationType);
-                        const memoText = `[${opLabel}] ${safeStr(sourceItemRef && sourceItemRef.품명, '출처상품')} ${formatQty(sourceDeductQty)}→${formatQty(targetAddQty)} / 원가 ${formatMoney(targetUnitCost)}`;
+                        const memoText = `[${opLabel}] ${safeStr(sourceItemRef && sourceItemRef.품명, '출처상품')} ${formatQty(sourceDeductQty)}→${formatQty(targetAddQty)} / 원가 ${formatMoney(DATAOPS_OPERATION_MODULE.roundConvertedUnitCostForDisplay(targetUnitCost))}`;
                         if (!safeStr(np.메모, '').includes(memoText))
                             np.메모 = `${safeStr(np.메모, '')}${safeStr(np.메모, '') ? ' ' : ''}${memoText}`;
                     }
@@ -6638,14 +6696,17 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
             const isStockShipmentInstructionValue = (val = '') => DATAOPS_PURCHASE_FLOW_MODULE.isExactStockInstruction(val);
             let pData = {};
             let sourceLedgerSequence = 0;
-            const buildSourceLedgerEntry = ({ role = '', item = {}, qty = 0, price = 0, date = '', vendor = '', rev = 0 } = {}) => ({
+            const buildSourceLedgerEntry = ({ role = '', item = {}, qty = 0, price = 0, date = '', vendor = '', rev = 0, calculationExcluded = false, exclusionReason = '' } = {}) => ({
                 id: `SRC_${++sourceLedgerSequence}`,
                 role,
+                productCode: safeStr(item && item.코드, 'NO_CODE').replace(/\.0$/, '').trim(),
                 qty: safeNum(qty),
                 price: safeNum(price),
                 date: safeStr(date, ''),
                 vendor: safeStr(vendor, '미지정'),
                 rev: safeNum(rev),
+                calculationExcluded: calculationExcluded === true,
+                exclusionReason: safeStr(exclusionReason, ''),
                 sourceFile: safeStr(item && item._sourceFileName, ''),
                 sourceSheet: safeStr(item && item._sourceSheet, ''),
                 sourceRole: safeStr(item && item._uploadRole, role),
@@ -6655,8 +6716,9 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                 if (!row || !entry) return;
                 if (!Array.isArray(row._sourceEntries)) row._sourceEntries = [];
                 row._sourceEntries.push(entry);
-                if (entry.role === 'in' && safeStr(entry.date) === safeStr(targetDateStrFromData)) row._hasTodayPurchase = true;
+                if (entry.role === 'in' && entry.calculationExcluded !== true && safeStr(entry.date) === safeStr(targetDateStrFromData)) row._hasTodayPurchase = true;
             };
+            const excludedPurchaseAuditEntries = [];
             const autoAckCodes = new Set();
             if (hasClosingEnd) {
                 closingEndItems.forEach(item => {
@@ -6824,13 +6886,25 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                 var _a, _b, _c, _d, _e;
                 // 분석 입력은 0·마이너스 행을 그대로 유지한다.
                 // 양수 잔량만 남기는 정책은 내일 기초재고 생성(buildNextBaseStockRows) 단계에서만 적용한다.
-                // 제외거래처 내부이동 구매행은 pData/stockPool/Source Ledger를 만들기 전에 완전 제외한다.
-                // 단, 같은 코드·단가의 비제외 외부 원천이 없고 판매 확정수요가 있는 행만 외부 원천으로 보존한다.
+                // 제외 거래처 구매행은 계산 pData/stockPool/FIFO에서는 완전 제외하고 감사 Source Ledger만 보존한다.
                 const purchaseFlow = type === 'in'
                     ? DATAOPS_PURCHASE_FLOW_MODULE.classifyPurchase(item, purchaseFlowContext)
                     : { kind: type === 'prev' ? 'PREVIOUS_STOCK' : 'STANDARD', externalSalesCostEligible: true, excludeFromPurchases: false };
-                if (type === 'in' && purchaseFlow.excludeFromPurchases)
+                if (type === 'in' && purchaseFlow.excludeFromPurchases) {
+                    excludedPurchaseAuditEntries.push(buildSourceLedgerEntry({
+                        role: 'in',
+                        item,
+                        qty: qtyToApply,
+                        price: parseNumber(item.단가),
+                        date: String(item.일자 || ''),
+                        vendor: item.거래처 || '미지정',
+                        calculationExcluded: true,
+                        exclusionReason: purchaseFlow.conditionalPreserveMatched
+                            ? '거래처명 제외(확정수요 조건과 무관)'
+                            : '거래처명 제외'
+                    }));
                     return;
+                }
                 const code = String(item.코드 || 'NO_CODE');
                 const price = parseNumber(item.단가);
                 const date = String(item.일자 || '');
@@ -8000,6 +8074,14 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                 if (hasBlockingIssue)
                     item.수기확인완료 = false;
             });
+            // 계산에서 제외한 구매 원본은 같은 코드의 계산행에 감사 전용으로 1회 연결한다.
+            // calculationExcluded 항목은 Source Ledger 합계·화면수량·FIFO에 영향을 주지 않는다.
+            const unattachedExcludedPurchaseAuditEntries = [];
+            excludedPurchaseAuditEntries.forEach(entry => {
+                const host = Object.values(pData).find(item => safeStr(item.코드, 'NO_CODE').replace(/\.0$/, '').trim() === safeStr(entry.productCode, 'NO_CODE'));
+                if (host) appendSourceLedgerEntry(host, entry);
+                else unattachedExcludedPurchaseAuditEntries.push(entry);
+            });
             Object.values(pData).forEach(applyRepresentativeProductName);
             const finalProductData = Object.values(pData)
                 .map(item => DATAOPS_VENDOR_CHIP_MODULE.reconcileItem(item))
@@ -8028,6 +8110,19 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                     return stockQty;
                 return safeStr(a.품명).localeCompare(safeStr(b.품명), 'ko', { numeric: false, sensitivity: 'base' });
             });
+            if (unattachedExcludedPurchaseAuditEntries.length > 0) {
+                finalProductData.push({
+                    batchKey: `AUDIT_EXCLUDED_PURCHASE|${safeStr(targetDateStrFromData || periodStr, 'NO_DATE')}`,
+                    코드: '', 품명: '', 단위: '', 단가: 0, 일자: safeStr(targetDateStrFromData || periodStr, ''), 거래처: '',
+                    기초: 0, 입고: 0, 출고: 0, 대체입고: 0, 대체출고: 0, 전산잔량: 0, 실사: 0, 로스: 0,
+                    매출액: 0, 매출원가: 0, 메모: '', 이슈: [], 출고내역: {},
+                    _orig: { 기초: 0, 입고: 0, 출고: 0, 단가: 0 },
+                    _auditOnly: true,
+                    _sourceEntries: unattachedExcludedPurchaseAuditEntries,
+                    isDummy: true,
+                    수기확인완료: false
+                });
+            }
             // V1.a22.74: 02창고(2전송)는 일마감 후 품목별 잔량이 반드시 0이어야 한다.
             // 구매현황 02 입고수량 - 판매현황 02 출고수량을 품목코드별로 비교하고,
             // 잔량 또는 마이너스가 있으면 마감 완료 즉시 팝업으로 건수와 구매/판매 집계를 안내한다.
@@ -8726,8 +8821,13 @@ const ProductRow = React.memo(({ item, idx, isLinked, isActiveMulti, isMultiGrou
         return true;
     };
     // 🌟 랙(Lag) 방지를 위한 입력 필드 로컬 상태 & 디바운싱(Debouncing) 처리
-    const [localPrice, setLocalPrice] = useState(item.단가 === 0 ? '' : Math.round(item.단가));
-    useEffect(() => setLocalPrice(item.단가 === 0 ? '' : Math.round(item.단가)), [item.단가]);
+    const getDisplayedItemPrice = () => item.단가 === 0 ? '' : DATAOPS_OPERATION_MODULE.getDisplayUnitCost(item);
+    const [localPrice, setLocalPrice] = useState(getDisplayedItemPrice());
+    const priceEditedRef = useRef(false);
+    useEffect(() => {
+        priceEditedRef.current = false;
+        setLocalPrice(getDisplayedItemPrice());
+    }, [item.단가, item._matchedUnitCost, item._substitutionWeightedCost, item._convertedUnitCostApplied]);
     const priceTimeout = useRef(null);
     const [localPrev, setLocalPrev] = useState(item.기초 === 0 ? '' : item.기초);
     useEffect(() => setLocalPrev(item.기초 === 0 ? '' : item.기초), [item.기초]);
@@ -8757,6 +8857,7 @@ const ProductRow = React.memo(({ item, idx, isLinked, isActiveMulti, isMultiGrou
     }, []);
     const handlePriceChange = (e) => {
         const val = e.target.value;
+        priceEditedRef.current = true;
         setLocalPrice(val);
         if (priceTimeout.current)
             clearTimeout(priceTimeout.current);
@@ -8769,7 +8870,8 @@ const ProductRow = React.memo(({ item, idx, isLinked, isActiveMulti, isMultiGrou
                 : item.batchKey);
         if ((isMergedViewRow && !isDirectEditableCodeSummaryRow) && (!editBatchKey || DATAOPS_VIEW_LAYER_MODULE.isViewRowKey(editBatchKey))) {
             if (onViewLayerEditBlocked) onViewLayerEditBlocked(item);
-            setLocalPrice(item.단가 === 0 ? '' : Math.round(item.단가));
+            priceEditedRef.current = false;
+            setLocalPrice(getDisplayedItemPrice());
             return;
         }
         priceTimeout.current = setTimeout(() => onBaseDataChange(editBatchKey, '단가', val), 250);
@@ -8830,12 +8932,15 @@ const ProductRow = React.memo(({ item, idx, isLinked, isActiveMulti, isMultiGrou
     const flushPendingEdit = (type) => {
         clearPendingEditTimer(type);
         if (type === 'price-input') {
+            if (!priceEditedRef.current)
+                return false;
             const editBatchKey = getPriceEditBatchKey();
             if (!editBatchKey || DATAOPS_VIEW_LAYER_MODULE.isViewRowKey(editBatchKey))
                 return false;
             const nextValue = localPrice === '' ? 0 : Number(localPrice);
             if (safeNum(item.단가) === safeNum(nextValue))
                 return false;
+            priceEditedRef.current = false;
             onBaseDataChange(editBatchKey, '단가', nextValue);
             return true;
         }
@@ -9331,7 +9436,7 @@ function App() {
         return true;
     }, [viewMode, getVisibleMergeCandidateRows, focusMergeCandidateAt, setAlertMsg]);
     // 비즈니스 로직 엔진 연결
-    const { productData, setProductData, analysisPeriod, setAnalysisPeriod, targetDateStr, setTargetDateStr, substHistory, setSubstHistory, ackMultiCodes, setAckMultiCodes, resetEngine, saveWorkState, restoreWorkState, handleBaseDataChange, handleManualStockChange, executeImmediateSubstitution, handlePurchaseLotManualAdjust, executeMasterSubstitutionCandidates, handleSalesMove, executeAnalysis, runAnalysis, runCostExtraction } = useInventoryEngine({ mappings, grouping, setAlertMsg, setConfirmModal, setIsProcessing, setAppStep });
+    const { productData, setProductData, analysisPeriod, setAnalysisPeriod, targetDateStr, setTargetDateStr, substHistory, setSubstHistory, ackMultiCodes, setAckMultiCodes, resetEngine, saveWorkState, restoreWorkState, handleBaseDataChange, handleManualStockChange, executeImmediateSubstitution, handlePurchaseLotManualAdjust, executeMasterSubstitutionCandidates, handleSalesMove, executeAnalysis, runAnalysis, runCostExtraction } = useInventoryEngine({ mappings, grouping, setAlertMsg, setTransferClosingAlert, setConfirmModal, setIsProcessing, setAppStep });
     const allocationInvariantSummary = useMemo(() => DATAOPS_LOT_ALLOCATION_INVARIANT_MODULE.validateRows(productData), [productData]);
     const isClosingOutputBusy = isProcessing || ['processing', 'blocked', 'awaiting-confirmation'].includes(analysisMeta.status);
     const isClosingOutputBlocked = isClosingOutputBusy || !allocationInvariantSummary.ok;
@@ -10094,7 +10199,7 @@ function App() {
             }
             totalRevenue += (Number(p.매출액) || 0);
             const actualQty = p.실사 === '' || p.실사 === null ? 0 : Number(p.실사);
-            const price = Number(p.단가) || 0;
+            const price = DATAOPS_OPERATION_MODULE.getCalculationUnitCost(p);
             totalInventoryAsset += (actualQty * price);
             if (p.로스 !== 0) totalLossValue += Math.abs(Number(p.로스) * price);
             if (DATAOPS_MARGIN_REVIEW_MODULE.isReverseMargin(p)) reverseMarginCount++;
@@ -12770,7 +12875,7 @@ ${balanceText}
         return stableRows;
     }, []);
     const filteredProductData = useMemo(() => {
-        let sourceRows = productData;
+        let sourceRows = productData.filter(p => !p._auditOnly);
         if (!filters.showHiddenMoveRows)
             sourceRows = sourceRows.filter(p => !p._hiddenBySalesMove);
         let data = filters.reviewType === 'substitution' ? sourceRows : DATAOPS_VIEW_LAYER_MODULE.buildViewRows(sourceRows, { viewMode });

@@ -290,7 +290,8 @@ assert.match(
   exportModule,
   /buildNextBaseStockRows\(\{\s*productData:\s*operationalProductData,\s*targetDateStr\s*\}\)/,
 );
-assert.doesNotMatch(exportModule, /filteredProductData|screenRows/);
+assert.match(exportModule, /const hasScreenRowsForExport = Array\.isArray\(screenRows\)/);
+assert.match(exportModule, /hasScreenRowsForExport[\s\S]*?buildScreenStockRows\(\{ productData: screenRows, targetDateStr \}\)/);
 const stockCountRows = section(
   "buildStockCountSheetRows:",
   "buildSalesDetailRows:",
@@ -307,8 +308,7 @@ const combinedExport = section(
   "const handlePrintOutput = useCallback",
 );
 assert.match(combinedExport, /if\s*\(isClosingOutputBlocked\)/);
-assert.match(combinedExport, /createCombinedWorkbook\(\{\s*productData: closingProductData,[\s\S]*wholeStockRows: closingRows/);
-assert.doesNotMatch(combinedExport, /filteredProductDataRef/);
+assert.match(combinedExport, /createCombinedWorkbook\(\{ productData, screenRows: filteredProductDataRef\.current, substHistory, analysisPeriod, targetDateStr, closingStats \}\)/);
 
 const workState = section(
   "const DATAOPS_WORK_STATE_MODULE",
@@ -388,19 +388,15 @@ assert.match(
   /if\s*\(DATAOPS_DRAG_EVENT_MODULE\.isFileDrag\(e\)\)\s*e\.preventDefault\(\)/,
 );
 assert.match(source, /const DATAOPS_XLSX_WORKER_MODULE/);
-assert.match(source, /XLSX Worker 파싱 실패, 메인 스레드 경로로 복구합니다/);
 assert.match(source, /XLSX Worker 출력 실패, 메인 스레드 경로로 복구합니다/);
 const workerModule = section(
   "const DATAOPS_XLSX_WORKER_MODULE",
   "const parseExcelData =",
 );
-const workerTemplate = workerModule.match(/const source = `([\s\S]*?)`;/);
-assert.ok(workerTemplate, "missing XLSX worker source template");
-const compiledWorkerSource = workerTemplate[1].replace(
-  /\$\{JSON\.stringify\('([^']+)'\)\}/g,
-  (_, url) => JSON.stringify(url),
-);
-new vm.Script(compiledWorkerSource, { filename: "DataOps.xlsx-worker.js" });
-assert.match(workerModule, /XLSX Worker 응답 시간 초과/);
+assert.match(workerModule, /readWorkbookRows:\s*async \(arrayBuffer\)/);
+assert.match(workerModule, /writeWorkbook:\s*async \(workbook\)/);
+assert.match(workerModule, /XLSX\.read\(bytes, \{ type: 'array' \}\)/);
+assert.match(workerModule, /XLSX\.write\(workbook, \{ bookType: 'xlsx', type: 'array' \}\)/);
+assert.doesNotMatch(workerModule, /new Worker|importScripts|XLSX Worker 응답 시간 초과/);
 
 console.log("DataOps operational integrity contract passed.");

@@ -67,15 +67,15 @@ const combinedWorkbook = section(
   "createCombinedWorkbook:",
   "const STORAGE_MODULE",
 );
-assert.doesNotMatch(combinedWorkbook, /\bscreenRows\b/);
+assert.match(combinedWorkbook, /const hasScreenRowsForExport = Array\.isArray\(screenRows\)/);
 assert.match(
   combinedWorkbook,
-  /buildNextBaseStockRows\(\{ productData: operationalProductData, targetDateStr \}\)/,
-  "F9 whole-stock sheet must use the administrator-aware summary built from complete productData",
+  /hasScreenRowsForExport[\s\S]*?buildScreenStockRows\(\{ productData: screenRows, targetDateStr \}\)[\s\S]*?: EXPORT_MODULE\.buildNextBaseStockRows\(\{ productData: operationalProductData, targetDateStr \}\)/,
+  "F9 first sheet must preserve explicit empty/current-view rows and use full data only when screenRows is omitted",
 );
 assert.match(
   combinedWorkbook,
-  /const operationalProductData = DATAOPS_VIEW_LAYER_MODULE\.buildCodeSummaryRows\(productData \|\| \[\]\)/,
+  /const calculationProductData = \(productData \|\| \[\]\)\.filter\(item => !item\._auditOnly\);[\s\S]*?const operationalProductData = DATAOPS_VIEW_LAYER_MODULE\.buildCodeSummaryRows\(calculationProductData\)/,
   "administrator-aware whole-stock data must originate from the complete productData collection",
 );
 
@@ -83,11 +83,10 @@ const f9Handler = section(
   "const handleCombinedExport = useCallback",
   "const handlePrintOutput = useCallback",
 );
-assert.doesNotMatch(f9Handler, /filteredProductDataRef/);
 assert.match(
   f9Handler,
-  /createCombinedWorkbook\(\{ productData: closingProductData, analysisPeriod, targetDateStr, closingStats, wholeStockRows: closingRows \}\)/,
-  "F9 must feed one frozen full closing-row set to the workbook and cloud snapshot",
+  /createCombinedWorkbook\(\{ productData, screenRows: filteredProductDataRef\.current, substHistory, analysisPeriod, targetDateStr, closingStats \}\)/,
+  "F9 must feed the current view, including zero rows, to the first sheet while retaining full productData for the other ledgers",
 );
 
 const nextBaseRows = section(
