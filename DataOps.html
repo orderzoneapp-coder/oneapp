@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP DataOps - 핵심 수불부 관리 (V1.a22.111_WorkSaveCloudInventorySync · 2026-08-08 KST)</title>
+    <title>ONEAPP DataOps - 핵심 수불부 관리 (V1.a22.112_EvidenceReportPreflight · 2026-08-12 KST)</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         body { font-family: 'Pretendard', -apple-system, sans-serif; background-color: #f8fafc; overflow: hidden; }
@@ -46,7 +46,7 @@
     <!-- 초기 로딩 스크린 -->
     <div id="initial-loader">
         <div class="spinner"></div>
-        <div class="loader-text">ONEAPP DataOps V1.a22.111_WorkSaveCloudInventorySync · 2026-08-08 KST.....</div>
+        <div class="loader-text">ONEAPP DataOps V1.a22.112_EvidenceReportPreflight · 2026-08-12 KST.....</div>
         <div style="font-size: 11px; color: #94a3b8; margin-top: 8px;">앱 환경을 구성하고 있습니다</div>
     </div>
 
@@ -351,7 +351,13 @@ const parseIssuesAndVendors = (str, price) => {
    - 칩 삭제/부분수정은 해당 상품행의 해당 거래처 배정만 취소하며 원본 판매파일은 보존한다.
    ======================================================================= */
 const DATAOPS_VENDOR_CHIP_MODULE = Object.freeze({
+    QTY_TOLERANCE: 0.0000001,
     normalizeDisplayVendor: (key = '', data = {}) => safeStr((data && data.displayVendor) || safeStr(key, '').replace(/_perfect$/, ''), '미지정'),
+    normalizeCode: (value = '') => safeStr(value, '').replace(/\.0$/, '').trim(),
+    getProductKey: (item = {}) => {
+        const code = DATAOPS_VENDOR_CHIP_MODULE.normalizeCode(item.코드 || item.code);
+        return code && code !== 'NO_CODE' ? code : `NO_CODE|${safeStr(item.품명 || item.name, '이름없음')}`;
+    },
     aggregateDetails: (details = {}) => {
         const aggregated = {};
         Object.entries(details || {}).forEach(([key, data]) => {
@@ -392,11 +398,90 @@ const DATAOPS_VENDOR_CHIP_MODULE = Object.freeze({
         });
         return aggregated;
     },
+    buildIntegrityErrors: ({ productData = [] } = {}) => {
+        const groups = new Map();
+        (productData || []).forEach(item => {
+            if (!item) return;
+            const productKey = DATAOPS_VENDOR_CHIP_MODULE.getProductKey(item);
+            if (!groups.has(productKey)) {
+                groups.set(productKey, {
+                    productKey,
+                    code: DATAOPS_VENDOR_CHIP_MODULE.normalizeCode(item.코드 || item.code),
+                    name: safeStr(item.품명 || item.name, '이름없음'),
+                    rows: [],
+                    sources: new Map(),
+                    chipsByVendor: new Map()
+                });
+            }
+            const group = groups.get(productKey);
+            group.rows.push(item);
+            if (!group.code || group.code === 'NO_CODE') group.code = DATAOPS_VENDOR_CHIP_MODULE.normalizeCode(item.코드 || item.code);
+            if (!group.name || group.name === '이름없음') group.name = safeStr(item.품명 || item.name, '이름없음');
+            (Array.isArray(item._salesSourceEvidence) ? item._salesSourceEvidence : []).forEach((source, sourceIndex) => {
+                if (!source) return;
+                const sourceId = safeStr(source.sourceId, `${productKey}|${safeStr(source.fileName)}|${safeStr(source.sheetName)}|${safeStr(source.rowNumber)}|${sourceIndex}`);
+                if (!group.sources.has(sourceId)) group.sources.set(sourceId, { ...source, sourceId });
+            });
+            Object.entries(DATAOPS_VENDOR_CHIP_MODULE.aggregateDetails(item.출고내역 || {})).forEach(([vendorKey, detail]) => {
+                const vendor = DATAOPS_VENDOR_CHIP_MODULE.normalizeDisplayVendor(vendorKey, detail);
+                if (!group.chipsByVendor.has(vendor)) group.chipsByVendor.set(vendor, { qty: 0, rev: 0, cogs: 0, rows: [] });
+                const chip = group.chipsByVendor.get(vendor);
+                chip.qty += safeNum(detail.qty);
+                chip.rev += safeNum(detail.rev);
+                chip.cogs += safeNum(detail.cogs);
+                chip.rows.push({ batchKey: item.batchKey, detailKey: vendorKey, detail });
+            });
+        });
+        const errors = [];
+        groups.forEach(group => {
+            if (group.sources.size === 0) return;
+            const sourcesByVendor = new Map();
+            group.sources.forEach(source => {
+                const vendor = safeStr(source.currentVendor || source.vendor, '미지정');
+                if (!sourcesByVendor.has(vendor)) sourcesByVendor.set(vendor, { qty: 0, amount: 0, rows: [] });
+                const sourceGroup = sourcesByVendor.get(vendor);
+                sourceGroup.qty += safeNum(source.qty);
+                sourceGroup.amount += safeNum(source.amount);
+                sourceGroup.rows.push(source);
+            });
+            const vendors = new Set([...sourcesByVendor.keys(), ...group.chipsByVendor.keys()]);
+            vendors.forEach(vendor => {
+                const source = sourcesByVendor.get(vendor) || { qty: 0, amount: 0, rows: [] };
+                const chip = group.chipsByVendor.get(vendor) || { qty: 0, rev: 0, cogs: 0, rows: [] };
+                const difference = safeNum(source.qty) - safeNum(chip.qty);
+                if (Math.abs(difference) <= DATAOPS_VENDOR_CHIP_MODULE.QTY_TOLERANCE) return;
+                const sourceRow = source.rows[0] || {};
+                const productRow = group.rows.find(row => safeStr(row.batchKey) === safeStr((chip.rows[0] || {}).batchKey)) || group.rows[0] || {};
+                errors.push({
+                    id: `VENDOR_CHIP|${group.productKey}|${vendor}`,
+                    type: 'VENDOR_CHIP_MISMATCH',
+                    typeLabel: '판매원본-거래처칩 수량불일치',
+                    productKey: group.productKey,
+                    batchKey: safeStr(productRow.batchKey),
+                    code: group.code === 'NO_CODE' ? '' : group.code,
+                    name: group.name,
+                    vendor,
+                    sourceQty: safeNum(source.qty),
+                    calculatedQty: safeNum(chip.qty),
+                    differenceQty: difference,
+                    sourceAmount: safeNum(source.amount),
+                    calculatedAmount: safeNum(chip.rev),
+                    calculatedCost: safeNum(chip.cogs),
+                    fileName: safeStr(sourceRow.fileName),
+                    sheetName: safeStr(sourceRow.sheetName),
+                    rowNumber: sourceRow.rowNumber === undefined ? '' : sourceRow.rowNumber,
+                    sourceRows: source.rows,
+                    reason: `판매원본 ${safeNum(source.qty)} / 거래처칩 ${safeNum(chip.qty)} / 차이 ${difference}`,
+                    action: '판매원본과 거래처칩 배정 상태를 확인하세요.'
+                });
+            });
+        });
+        return errors;
+    },
     reconcileItem: (item = {}) => {
         if (!item || !item.출고내역) return item;
-        const outQty = safeNum(item.출고);
         const aggregated = DATAOPS_VENDOR_CHIP_MODULE.aggregateDetails(item.출고내역 || {});
-        let reconciledDetails = {};
+        const reconciledDetails = {};
         Object.entries(aggregated).forEach(([displayVendor, data]) => {
             const isEmptyDetail = Math.abs(safeNum(data.qty)) < 0.0000001 &&
                 Math.abs(safeNum(data.rev)) < 0.0000001 &&
@@ -409,26 +494,11 @@ const DATAOPS_VENDOR_CHIP_MODULE = Object.freeze({
                 cogs: safeNum(data.cogs),
                 isLifo: !!data.isLifo,
                 isPerfectMatch: !!data.isPerfectMatch,
-                displayVendor
+                displayVendor,
+                _sourceAllocations: Array.isArray(data._sourceAllocations) ? data._sourceAllocations.map(allocation => ({ ...allocation })) : [],
+                _sourceKeys: Array.isArray(data._sourceKeys) ? [...data._sourceKeys] : []
             };
         });
-        const chipSum = Object.values(reconciledDetails).reduce((sum, data) => sum + safeNum(data.qty), 0);
-        const delta = outQty - chipSum;
-        // 출고가 있는데 거래처칩 합계가 부족하면 대표 칩에 차이를 보정한다.
-        // 이 보정은 같은 표시 거래처 중복행이 덮어쓰기/누락된 경우를 방어하기 위한 것이다.
-        if (Math.abs(delta) > 0.0000001) {
-            const firstKey = Object.keys(reconciledDetails)[0] || '미지정';
-            if (!reconciledDetails[firstKey]) {
-                reconciledDetails[firstKey] = { qty: 0, rev: 0, cogs: 0, isLifo: false, isPerfectMatch: false, displayVendor: firstKey, matchMode: 'RECONCILED' };
-            }
-            const base = reconciledDetails[firstKey];
-            const unitRev = safeNum(base.qty) !== 0 ? safeNum(base.rev) / safeNum(base.qty) : safeNum(item.단가);
-            const unitCogs = safeNum(base.qty) !== 0 ? safeNum(base.cogs) / safeNum(base.qty) : safeNum(item.단가);
-            base.qty += delta;
-            base.rev += delta * unitRev;
-            base.cogs += delta * unitCogs;
-            base._reconciledDelta = delta;
-        }
         return { ...item, 출고내역: reconciledDetails };
     },
     cancelVendorChip: (item = {}, displayVendor = '', nextQty = null) => {
@@ -480,6 +550,189 @@ const DATAOPS_VENDOR_CHIP_MODULE = Object.freeze({
         return DATAOPS_VENDOR_CHIP_MODULE.reconcileItem(nextItem);
     }
 });
+
+/* =======================================================================
+   V1.a22.112 F9 실행 전 계산·판매칩 사전점검
+   - 원본 판매근거와 현재 거래처칩은 분리 보존하고 차이를 자동 귀속하지 않는다.
+   - 적용 가능한 핵심 오류만 상세 근거와 상품 이동키를 포함해 반환한다.
+   ======================================================================= */
+const DATAOPS_F9_PREFLIGHT_MODULE = Object.freeze({
+    TYPE_LABELS: Object.freeze({
+        VENDOR_CHIP_MISMATCH: '판매원본-거래처칩 수량불일치',
+        UNALLOCATED_LOT: '미귀속 LOT',
+        MISSING_INBOUND_COST: '입고단가 누락',
+        TOTAL_COST_MISMATCH: '총원가 불일치',
+        WAREHOUSE_02_MISMATCH: '02창고 오차',
+        UNIT_CONVERSION_FAILURE: '단위 변환 실패'
+    }),
+    getSourceEvidence: (item = {}, preferredRoles = []) => {
+        const salesSources = Array.isArray(item._salesSourceEvidence) ? item._salesSourceEvidence : [];
+        const otherSources = Array.isArray(item._sourceEvidence) ? item._sourceEvidence : [];
+        const sources = [...salesSources, ...otherSources];
+        if (preferredRoles.length > 0) {
+            const preferred = sources.find(source => preferredRoles.includes(safeStr(source && source.role)));
+            if (preferred) return preferred;
+        }
+        return sources[0] || {};
+    },
+    getSourceLocation: (item = {}, type = '') => {
+        const preferredRoles = type === 'MISSING_INBOUND_COST' ? ['in'] : (type === 'WAREHOUSE_02_MISMATCH' ? ['in', 'out'] : ['out']);
+        const source = DATAOPS_F9_PREFLIGHT_MODULE.getSourceEvidence(item, preferredRoles);
+        return {
+            fileName: safeStr(source.fileName || item._sourceFileName),
+            sheetName: safeStr(source.sheetName || item._sourceSheet),
+            rowNumber: source.rowNumber !== undefined ? source.rowNumber : (item._sourceRowNumber !== undefined ? item._sourceRowNumber : '')
+        };
+    },
+    buildItemIssue: (type, item = {}, overrides = {}) => {
+        const location = DATAOPS_F9_PREFLIGHT_MODULE.getSourceLocation(item, type);
+        const code = DATAOPS_VENDOR_CHIP_MODULE.normalizeCode(item.코드 || item.code);
+        return {
+            id: `${type}|${safeStr(item.batchKey, code || safeStr(item.품명))}`,
+            type,
+            typeLabel: DATAOPS_F9_PREFLIGHT_MODULE.TYPE_LABELS[type] || type,
+            batchKey: safeStr(item.batchKey),
+            code: code === 'NO_CODE' ? '' : code,
+            name: safeStr(item.품명 || item.name, '이름없음'),
+            vendorOrLot: safeStr(item._purchaseLotVendor || item._displayPurchaseVendor || item.거래처, '미지정'),
+            sourceQty: '',
+            calculatedQty: '',
+            differenceQty: '',
+            sourcePrice: '',
+            calculatedCost: '',
+            differenceAmount: '',
+            fileName: location.fileName,
+            sheetName: location.sheetName,
+            rowNumber: location.rowNumber,
+            reason: DATAOPS_F9_PREFLIGHT_MODULE.TYPE_LABELS[type] || type,
+            action: '해당 상품의 원본과 계산 상태를 확인하세요.',
+            ...overrides
+        };
+    },
+    run: ({ productData = [], transferClosingCheck = null } = {}) => {
+        const issues = DATAOPS_VENDOR_CHIP_MODULE.buildIntegrityErrors({ productData }).map(error => ({
+            ...DATAOPS_F9_PREFLIGHT_MODULE.buildItemIssue('VENDOR_CHIP_MISMATCH', (productData || []).find(item => safeStr(item.batchKey) === safeStr(error.batchKey)) || {}, {
+                id: error.id,
+                batchKey: error.batchKey,
+                code: error.code,
+                name: error.name,
+                vendorOrLot: error.vendor,
+                sourceQty: error.sourceQty,
+                calculatedQty: error.calculatedQty,
+                differenceQty: error.differenceQty,
+                calculatedCost: error.calculatedCost,
+                differenceAmount: safeNum(error.sourceAmount) - safeNum(error.calculatedAmount),
+                fileName: error.fileName,
+                sheetName: error.sheetName,
+                rowNumber: error.rowNumber,
+                reason: error.reason,
+                action: error.action,
+                sourceRows: error.sourceRows
+            })
+        }));
+        (productData || []).forEach(item => {
+            if (!item) return;
+            const issueText = (Array.isArray(item.이슈) ? item.이슈 : []).map(value => safeStr(value)).join(' ');
+            const hasUnallocatedLot = item._lotAllocationStatus === 'UNALLOCATED'
+                || item._unallocatedLot === true
+                || /미귀속\s*LOT|Lot매치실패|Lot확인필요|Lot매치확인|매입처없음|수량부족/.test(issueText);
+            if (hasUnallocatedLot) {
+                const originalSource = DATAOPS_F9_PREFLIGHT_MODULE.getSourceEvidence(item, ['out']);
+                issues.push(DATAOPS_F9_PREFLIGHT_MODULE.buildItemIssue('UNALLOCATED_LOT', item, {
+                    sourceQty: originalSource.qty === undefined ? '' : originalSource.qty,
+                    calculatedQty: Object.values(item.출고내역 || {}).reduce((sum, detail) => sum + safeNum(detail && detail.qty), 0),
+                    reason: issueText.match(/🚨[^,/]*/)?.[0] || '판매수량을 귀속할 LOT이 확정되지 않았습니다.',
+                    action: '구매 LOT과 판매 귀속을 확인하세요.'
+                }));
+            }
+            const activeQty = Math.abs(safeNum(item.입고)) + Math.abs(safeNum(item.출고)) + Math.abs(safeNum(item.기초)) + Math.abs(safeNum(item.전산잔량));
+            const missingInboundCost = activeQty > DATAOPS_VENDOR_CHIP_MODULE.QTY_TOLERANCE
+                && safeNum(item.단가) <= 0
+                && !item._salesReturnFullyReversedNoPurchase;
+            if (missingInboundCost) {
+                const originalSource = DATAOPS_F9_PREFLIGHT_MODULE.getSourceEvidence(item, ['in', 'prev']);
+                issues.push(DATAOPS_F9_PREFLIGHT_MODULE.buildItemIssue('MISSING_INBOUND_COST', item, {
+                    sourceQty: originalSource.qty === undefined ? '' : originalSource.qty,
+                    sourcePrice: originalSource.unitPrice === undefined ? '' : originalSource.unitPrice,
+                    calculatedCost: safeNum(item.단가),
+                    reason: '입고·재고·판매 계산에 필요한 원가가 0이거나 비어 있습니다.',
+                    action: '원본 입고단가 또는 확정 LOT 원가를 입력하세요.'
+                }));
+            }
+            const chipDetails = Object.values(item.출고내역 || {});
+            const chipQty = chipDetails.reduce((sum, detail) => sum + safeNum(detail && detail.qty), 0);
+            const chipCost = chipDetails.reduce((sum, detail) => sum + safeNum(detail && detail.cogs), 0);
+            const salesCost = safeNum(item.매출원가);
+            const costDifference = salesCost - chipCost;
+            if (Math.abs(chipQty) > DATAOPS_VENDOR_CHIP_MODULE.QTY_TOLERANCE && Math.abs(costDifference) > 0.01) {
+                const originalSource = DATAOPS_F9_PREFLIGHT_MODULE.getSourceEvidence(item, ['out']);
+                issues.push(DATAOPS_F9_PREFLIGHT_MODULE.buildItemIssue('TOTAL_COST_MISMATCH', item, {
+                    sourceQty: originalSource.qty === undefined ? '' : originalSource.qty,
+                    calculatedQty: chipQty,
+                    calculatedCost: chipCost,
+                    differenceAmount: costDifference,
+                    reason: `상품 총원가 ${salesCost} / 거래처칩 원가합계 ${chipCost} / 차이 ${costDifference}`,
+                    action: 'LOT 원가배정과 거래처칩 원가를 확인하세요.'
+                }));
+            }
+            const warehouseError = item._transferWarehouseClosingError;
+            if (warehouseError) {
+                const firstDetail = (warehouseError.purchaseDetails || [])[0] || (warehouseError.salesDetails || [])[0] || {};
+                issues.push(DATAOPS_F9_PREFLIGHT_MODULE.buildItemIssue('WAREHOUSE_02_MISMATCH', item, {
+                    id: `WAREHOUSE_02_MISMATCH|${safeStr(warehouseError.code || item.코드)}`,
+                    sourceQty: safeNum(warehouseError.purchaseQty),
+                    calculatedQty: safeNum(warehouseError.salesQty),
+                    differenceQty: safeNum(warehouseError.balance),
+                    sourcePrice: safeNum(firstDetail.price),
+                    reason: `02창고 구매 ${safeNum(warehouseError.purchaseQty)} / 판매 ${safeNum(warehouseError.salesQty)} / 오차 ${safeNum(warehouseError.balance)}`,
+                    action: '02창고 구매·판매 원본을 확인하세요.'
+                }));
+            }
+            const conversionReason = safeStr(item._conversionError || item._unitConversionError, '');
+            const hasUnitConversionFailure = item._unitConversionFailed === true
+                || item._conversionFailed === true
+                || !!conversionReason
+                || /단위\s*(변환|환산).*실패|환산율.*(없음|오류)|변환실패/.test(issueText);
+            if (hasUnitConversionFailure) {
+                issues.push(DATAOPS_F9_PREFLIGHT_MODULE.buildItemIssue('UNIT_CONVERSION_FAILURE', item, {
+                    sourceQty: safeNum(item._operationSourceQty || item._sourceQty),
+                    calculatedQty: safeNum(item._operationTargetQty || item._targetQty),
+                    reason: conversionReason || '단위 변환에 필요한 환산값을 확정할 수 없습니다.',
+                    action: '마스터 단위와 환산율을 확인하세요.'
+                }));
+            }
+        });
+        if (transferClosingCheck && Array.isArray(transferClosingCheck.errors)) {
+            transferClosingCheck.errors.forEach(row => {
+                const targetItem = (productData || []).find(item => DATAOPS_VENDOR_CHIP_MODULE.normalizeCode(item.코드) === DATAOPS_VENDOR_CHIP_MODULE.normalizeCode(row.code)) || {};
+                const firstDetail = (row.purchaseDetails || [])[0] || (row.salesDetails || [])[0] || {};
+                issues.push(DATAOPS_F9_PREFLIGHT_MODULE.buildItemIssue('WAREHOUSE_02_MISMATCH', targetItem, {
+                    id: `WAREHOUSE_02_MISMATCH|${safeStr(row.code)}`,
+                    code: safeStr(row.code),
+                    name: safeStr(row.name, safeStr(targetItem.품명, '이름없음')),
+                    sourceQty: safeNum(row.purchaseQty),
+                    calculatedQty: safeNum(row.salesQty),
+                    differenceQty: safeNum(row.balance),
+                    sourcePrice: safeNum(firstDetail.price),
+                    reason: `02창고 구매 ${safeNum(row.purchaseQty)} / 판매 ${safeNum(row.salesQty)} / 오차 ${safeNum(row.balance)}`,
+                    action: '02창고 구매·판매 원본을 확인하세요.'
+                }));
+            });
+        }
+        const deduped = [];
+        const seen = new Set();
+        issues.forEach(issue => {
+            const key = safeStr(issue.id, `${issue.type}|${issue.batchKey}|${issue.code}|${issue.vendorOrLot}`);
+            if (seen.has(key)) return;
+            seen.add(key);
+            deduped.push(issue);
+        });
+        const counts = {};
+        deduped.forEach(issue => { counts[issue.type] = safeNum(counts[issue.type]) + 1; });
+        return { ok: deduped.length === 0, issues: deduped, counts, generatedAt: new Date().toISOString() };
+    }
+});
+window.DATAOPS_F9_PREFLIGHT_MODULE = DATAOPS_F9_PREFLIGHT_MODULE;
 
 // V1.a22.34: ERP 출력물의 소계/합계/총합계 요약행 방어막.
 // 중요: 메모성 필드(간단설명/적요/출고지시/전달사항/비고)에 '합계 확인', '재고 확인' 같은 문구가 있어도 정상 상품행이다.
@@ -912,7 +1165,7 @@ const clearTableSortPreference = () => {
    - 주의: 물리적 파일 분리는 하지 않는다. 단일 HTML 실행 구조를 유지한다.
    ======================================================================= */
 const CONFIG_MODULE = Object.freeze({
-    version: 'V1.a22.111_WorkSaveCloudInventorySync',
+    version: 'V1.a22.112_EvidenceReportPreflight',
     categoryMap: Object.freeze({
         '10': '채소.과일',
         '20': '수산.축산',
@@ -2937,6 +3190,151 @@ const DATAOPS_VIEW_LAYER_MODULE = Object.freeze({
 });
 window.DATAOPS_VIEW_LAYER_MODULE = DATAOPS_VIEW_LAYER_MODULE;
 
+const DATAOPS_EVIDENCE_REPORT_MODULE = Object.freeze({
+    COLUMNS: Object.freeze([
+        '상태', '오류·변경 유형', '상품코드', '상품명', 'LOT 또는 작업행 식별값',
+        '원본 파일명', '원본 시트명', '원본 행번호', '원본 거래처', '원본 수량', '원본 단가', '원본 금액',
+        '계산 수량', '계산 단가', '계산 금액', '관리자 작업 유형', '관리자 작업 전 값', '관리자 작업 후 값',
+        '수량 차이', '원가 차이', '차이·변경 사유', '확인 필요 내용'
+    ]),
+    numberOrBlank: (value) => value === '' || value === null || value === undefined ? '' : safeNum(value),
+    summarizeItem: (item = {}) => JSON.stringify({
+        batchKey: safeStr(item.batchKey),
+        코드: safeStr(item.코드),
+        품명: safeStr(item.품명),
+        출고: DATAOPS_EVIDENCE_REPORT_MODULE.numberOrBlank(item.출고),
+        단가: DATAOPS_EVIDENCE_REPORT_MODULE.numberOrBlank(item.단가),
+        매출액: DATAOPS_EVIDENCE_REPORT_MODULE.numberOrBlank(item.매출액),
+        매출원가: DATAOPS_EVIDENCE_REPORT_MODULE.numberOrBlank(item.매출원가),
+        실사: DATAOPS_EVIDENCE_REPORT_MODULE.numberOrBlank(item.실사)
+    }),
+    makeRow: (values = {}) => {
+        const row = {};
+        DATAOPS_EVIDENCE_REPORT_MODULE.COLUMNS.forEach(column => { row[column] = values[column] !== undefined ? values[column] : ''; });
+        return row;
+    },
+    getOperationLabel: (history = {}) => {
+        const type = safeStr(history.type, '관리자 작업');
+        const labels = {
+            MANUAL_LOSS_LINK: '수기치환',
+            AUTO_MASTER_SUBSTITUTION: '자동 소분치환',
+            CTRL_DRAG_REPLACEMENT: '거래처 칩 대체이동',
+            VENDOR_CHIP_MOVE: '거래처 칩 이동',
+            VENDOR_CHIP_EDIT: '거래처 칩 수정',
+            VENDOR_CHIP_CANCEL: '거래처 칩 취소'
+        };
+        return labels[type] || safeStr(history.operationLabel, type);
+    },
+    buildRows: ({ productData = [], preflightResult = null, substHistory = [] } = {}) => {
+        const rows = [];
+        const itemByKey = new Map((productData || []).map(item => [safeStr(item.batchKey), item]));
+        const preflight = preflightResult || DATAOPS_F9_PREFLIGHT_MODULE.run({ productData });
+        (preflight.issues || []).forEach(issue => {
+            const item = itemByKey.get(safeStr(issue.batchKey)) || {};
+            const source = (Array.isArray(issue.sourceRows) && issue.sourceRows[0]) || DATAOPS_F9_PREFLIGHT_MODULE.getSourceEvidence(item);
+            const calculatedQty = DATAOPS_EVIDENCE_REPORT_MODULE.numberOrBlank(issue.calculatedQty);
+            const calculatedAmount = DATAOPS_EVIDENCE_REPORT_MODULE.numberOrBlank(issue.calculatedCost);
+            rows.push(DATAOPS_EVIDENCE_REPORT_MODULE.makeRow({
+                '상태': '오류',
+                '오류·변경 유형': safeStr(issue.typeLabel, issue.type),
+                '상품코드': safeStr(issue.code || item.코드),
+                '상품명': safeStr(issue.name || item.품명),
+                'LOT 또는 작업행 식별값': safeStr(issue.batchKey || item.batchKey),
+                '원본 파일명': safeStr(issue.fileName || source.fileName),
+                '원본 시트명': safeStr(issue.sheetName || source.sheetName),
+                '원본 행번호': issue.rowNumber !== '' && issue.rowNumber !== undefined ? issue.rowNumber : (source.rowNumber || ''),
+                '원본 거래처': safeStr(source.vendor || issue.vendorOrLot),
+                '원본 수량': DATAOPS_EVIDENCE_REPORT_MODULE.numberOrBlank(issue.sourceQty === '' ? source.qty : issue.sourceQty),
+                '원본 단가': DATAOPS_EVIDENCE_REPORT_MODULE.numberOrBlank(issue.sourcePrice === '' ? source.unitPrice : issue.sourcePrice),
+                '원본 금액': DATAOPS_EVIDENCE_REPORT_MODULE.numberOrBlank(source.amount),
+                '계산 수량': calculatedQty,
+                '계산 단가': calculatedQty !== '' && calculatedQty !== 0 && calculatedAmount !== '' ? calculatedAmount / calculatedQty : '',
+                '계산 금액': calculatedAmount,
+                '수량 차이': DATAOPS_EVIDENCE_REPORT_MODULE.numberOrBlank(issue.differenceQty),
+                '원가 차이': DATAOPS_EVIDENCE_REPORT_MODULE.numberOrBlank(issue.differenceAmount),
+                '차이·변경 사유': safeStr(issue.reason),
+                '확인 필요 내용': safeStr(issue.action)
+            }));
+        });
+        (substHistory || []).forEach(history => {
+            if (!history) return;
+            const sourceBefore = history.sourceItemPrev || history.before || {};
+            const targetBefore = history.targetItemPrev || {};
+            const current = itemByKey.get(safeStr(history.targetKey)) || itemByKey.get(safeStr(history.sourceKey)) || {};
+            const sourceEvidence = DATAOPS_F9_PREFLIGHT_MODULE.getSourceEvidence(current);
+            const operationLabel = DATAOPS_EVIDENCE_REPORT_MODULE.getOperationLabel(history);
+            const hasBeforeEvidence = Object.keys(sourceBefore).length > 0 || Object.keys(targetBefore).length > 0;
+            rows.push(DATAOPS_EVIDENCE_REPORT_MODULE.makeRow({
+                '상태': '변경',
+                '오류·변경 유형': operationLabel,
+                '상품코드': safeStr(current.코드 || sourceBefore.코드 || targetBefore.코드),
+                '상품명': safeStr(current.품명 || history.targetName || history.sourceName),
+                'LOT 또는 작업행 식별값': [history.sourceKey, history.targetKey].filter(Boolean).join(' → '),
+                '원본 파일명': safeStr(sourceEvidence.fileName),
+                '원본 시트명': safeStr(sourceEvidence.sheetName),
+                '원본 행번호': sourceEvidence.rowNumber || '',
+                '원본 거래처': safeStr(sourceEvidence.vendor),
+                '원본 수량': DATAOPS_EVIDENCE_REPORT_MODULE.numberOrBlank(history.sQty !== undefined ? history.sQty : sourceEvidence.qty),
+                '원본 단가': DATAOPS_EVIDENCE_REPORT_MODULE.numberOrBlank(sourceBefore.단가 !== undefined ? sourceBefore.단가 : sourceEvidence.unitPrice),
+                '원본 금액': DATAOPS_EVIDENCE_REPORT_MODULE.numberOrBlank(sourceEvidence.amount),
+                '계산 수량': DATAOPS_EVIDENCE_REPORT_MODULE.numberOrBlank(history.tQty !== undefined ? history.tQty : current.출고),
+                '계산 단가': DATAOPS_EVIDENCE_REPORT_MODULE.numberOrBlank(current.단가),
+                '계산 금액': DATAOPS_EVIDENCE_REPORT_MODULE.numberOrBlank(history.transferredCost !== undefined ? history.transferredCost : current.매출원가),
+                '관리자 작업 유형': operationLabel,
+                '관리자 작업 전 값': history.beforeSummary || `${DATAOPS_EVIDENCE_REPORT_MODULE.summarizeItem(sourceBefore)}${Object.keys(targetBefore).length ? ' / ' + DATAOPS_EVIDENCE_REPORT_MODULE.summarizeItem(targetBefore) : ''}`,
+                '관리자 작업 후 값': history.afterSummary || DATAOPS_EVIDENCE_REPORT_MODULE.summarizeItem(current),
+                '수량 차이': history.tQty === undefined || history.sQty === undefined ? '' : safeNum(history.tQty) - safeNum(history.sQty),
+                '원가 차이': DATAOPS_EVIDENCE_REPORT_MODULE.numberOrBlank(history.transferredCost),
+                '차이·변경 사유': safeStr(history.reason || history.operationLabel, operationLabel),
+                '확인 필요 내용': Object.keys(sourceEvidence).length || hasBeforeEvidence ? '' : '기존 저장본·작업이력 없음'
+            }));
+        });
+        const historyKeys = new Set((substHistory || []).flatMap(history => [safeStr(history && history.sourceKey), safeStr(history && history.targetKey)]).filter(Boolean));
+        (productData || []).forEach(item => {
+            if (!item || historyKeys.has(safeStr(item.batchKey))) return;
+            const original = item._orig || {};
+            const sourceEvidence = DATAOPS_F9_PREFLIGHT_MODULE.getSourceEvidence(item);
+            const hasOriginalQty = Object.prototype.hasOwnProperty.call(original, '출고') || sourceEvidence.qty !== undefined;
+            const hasOriginalPrice = Object.prototype.hasOwnProperty.call(original, '단가') || sourceEvidence.unitPrice !== undefined;
+            const originalQty = hasOriginalQty ? safeNum(Object.prototype.hasOwnProperty.call(original, '출고') ? original.출고 : sourceEvidence.qty) : '';
+            const originalPrice = hasOriginalPrice ? safeNum(Object.prototype.hasOwnProperty.call(original, '단가') ? original.단가 : sourceEvidence.unitPrice) : '';
+            const qtyChanged = hasOriginalQty && Math.abs(originalQty - safeNum(item.출고)) > DATAOPS_VENDOR_CHIP_MODULE.QTY_TOLERANCE;
+            const priceChanged = hasOriginalPrice && Math.abs(originalPrice - safeNum(item.단가)) > 0.01;
+            const hasAdminChange = qtyChanged || priceChanged || item._manualActualEdited || item._manualLotOverrideApplied || item._manualSubstitutionResolved || item._operationType || item._convertedUnitCostApplied || /판매취소|판매수정|매칭변경|수기치환|관리자/.test(safeStr(item.메모));
+            if (!hasAdminChange) return;
+            const operationLabel = item._manualLotOverrideApplied ? '관리자 LOT 확정'
+                : (item._manualSubstitutionResolved ? '수기치환'
+                    : (item._operationType ? safeStr(item._operationType) : (qtyChanged || priceChanged ? '관리자 값 변경' : '관리자 작업')));
+            rows.push(DATAOPS_EVIDENCE_REPORT_MODULE.makeRow({
+                '상태': '변경',
+                '오류·변경 유형': operationLabel,
+                '상품코드': item.코드 === 'NO_CODE' ? '' : safeStr(item.코드),
+                '상품명': safeStr(item.품명),
+                'LOT 또는 작업행 식별값': safeStr(item.batchKey),
+                '원본 파일명': safeStr(sourceEvidence.fileName || item._sourceFileName),
+                '원본 시트명': safeStr(sourceEvidence.sheetName || item._sourceSheet),
+                '원본 행번호': sourceEvidence.rowNumber || item._sourceRowNumber || '',
+                '원본 거래처': safeStr(sourceEvidence.vendor || item.거래처),
+                '원본 수량': originalQty,
+                '원본 단가': originalPrice,
+                '원본 금액': DATAOPS_EVIDENCE_REPORT_MODULE.numberOrBlank(sourceEvidence.amount),
+                '계산 수량': safeNum(item.출고),
+                '계산 단가': safeNum(item.단가),
+                '계산 금액': safeNum(item.매출원가),
+                '관리자 작업 유형': operationLabel,
+                '관리자 작업 전 값': hasOriginalQty || hasOriginalPrice ? DATAOPS_EVIDENCE_REPORT_MODULE.summarizeItem({ ...item, 출고: originalQty, 단가: originalPrice }) : '기존 저장본·작업이력 없음',
+                '관리자 작업 후 값': DATAOPS_EVIDENCE_REPORT_MODULE.summarizeItem(item),
+                '수량 차이': hasOriginalQty ? safeNum(item.출고) - originalQty : '',
+                '원가 차이': hasOriginalQty && hasOriginalPrice ? safeNum(item.매출원가) - (originalQty * originalPrice) : '',
+                '차이·변경 사유': safeStr(item.메모, operationLabel),
+                '확인 필요 내용': Object.keys(sourceEvidence).length || item._sourceFileName ? '' : '기존 저장본·작업이력 없음'
+            }));
+        });
+        return rows;
+    }
+});
+window.DATAOPS_EVIDENCE_REPORT_MODULE = DATAOPS_EVIDENCE_REPORT_MODULE;
+
 const EXPORT_MODULE = Object.freeze({
     escapeHtml: (value) => safeStr(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'),
     sanitizeLedgerRecordValue: (value = '') => {
@@ -3591,35 +3989,14 @@ const EXPORT_MODULE = Object.freeze({
             };
         });
     },
-    buildClosingReportSheet: ({ productData = [], targetDateStr = '', analysisPeriod = '', closingStats = {} }) => {
-        const unresolvedRows = EXPORT_MODULE.buildUnresolvedReportRows({ productData });
-        const customerRows = EXPORT_MODULE.buildCustomerProfitRows({ productData, targetDateStr });
-        const totalRevenue = customerRows.reduce((s, r) => s + safeNum(r['매출']), 0);
-        const totalCogs = customerRows.reduce((s, r) => s + safeNum(r['원가']), 0);
-        const totalProfit = totalRevenue - totalCogs;
-        const totalMargin = totalRevenue !== 0 ? (totalProfit / totalRevenue) * 100 : 0;
-        const aoa = [];
-        aoa.push(['보고서', '', '', '', '', '', '', '']);
-        aoa.push(['결산일자', targetDateStr || '', '분석기간', analysisPeriod || '', '총매출', Math.round(totalRevenue), '총이익', Math.round(totalProfit)]);
-        aoa.push(['총원가', Math.round(totalCogs), '이익률(%)', totalMargin.toFixed(1) + '%', '미해결확인', unresolvedRows.length, '', '']);
-        aoa.push([]);
-        aoa.push(['미해결 확인필요']);
-        aoa.push(['구분', '거래처', '품목코드', '품명', '수량', '확인사항']);
-        if (unresolvedRows.length)
-            unresolvedRows.forEach(r => aoa.push([r['구분'], r['거래처'], r['품목코드'], r['품명'], r['수량'], r['확인사항']]));
-        else
-            aoa.push(['', '미해결 항목 없음', '', '', '', '', '']);
-        aoa.push([]);
-        aoa.push(['거래처별 매출/이익/이익률']);
-        aoa.push(['결산일자', '거래처', '상세거래처', '판매수량', '매출', '원가', '이익', '이익률(%)']);
-        if (customerRows.length)
-            customerRows.forEach(r => aoa.push([r['결산일자'], r['거래처'], r['상세거래처'], r['판매수량'], r['매출'], r['원가'], r['이익'], r['이익률(%)']]));
-        else
-            aoa.push([targetDateStr || '', '판매내역 없음', '', '', '', '', '', '']);
+    buildClosingReportSheet: ({ productData = [], preflightResult = null, substHistory = [] }) => {
+        const reportRows = DATAOPS_EVIDENCE_REPORT_MODULE.buildRows({ productData, preflightResult, substHistory });
+        const columns = Array.from(DATAOPS_EVIDENCE_REPORT_MODULE.COLUMNS);
+        const aoa = [columns];
+        reportRows.forEach(row => aoa.push(columns.map(column => row[column] !== undefined ? row[column] : '')));
         const ws = XLSX.utils.aoa_to_sheet(aoa);
-        ws['!cols'] = [12, 18, 18, 16, 34, 12, 14, 14, 12].map(wch => ({ wch }));
-        if (ws['!ref'])
-            ws['!autofilter'] = { ref: ws['!ref'] };
+        ws['!cols'] = [10, 24, 14, 32, 24, 22, 18, 12, 18, 12, 12, 14, 12, 12, 14, 20, 42, 42, 12, 14, 44, 36].map(wch => ({ wch }));
+        if (ws['!ref']) ws['!autofilter'] = { ref: ws['!ref'] };
         return ws;
     },
     buildPrintRows: ({ productData = [], targetDateStr = '' }) => {
@@ -3788,7 +4165,7 @@ const EXPORT_MODULE = Object.freeze({
         w.document.close();
         return true;
     },
-    createCombinedWorkbook: ({ productData = [], analysisPeriod = '', targetDateStr = '', closingStats = {} }) => {
+    createCombinedWorkbook: ({ productData = [], analysisPeriod = '', targetDateStr = '', closingStats = {}, preflightResult = null, substHistory = [] }) => {
         const exportFileNameDate = targetDateStr ? targetDateStr.replace(/-/g, '') : (() => { const today = new Date(); return `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`; })();
         // V1.a22.30: 운영 출력은 코드통합형을 기본으로 한다. Lot/일자/구매처 상세는 분석원장에만 보존한다.
         const operationalProductData = DATAOPS_VIEW_LAYER_MODULE.buildCodeSummaryRows(productData || []).sort((a, b) => FILTER_SORT_MODULE.compareByCodeThenName(a, b));
@@ -3840,7 +4217,7 @@ const EXPORT_MODULE = Object.freeze({
         XLSX.utils.book_append_sheet(wb, EXPORT_MODULE.jsonSheet(analysisLedgerRows, [12, 14, 34, 10, 18, 10, 10, 10, 10, 10, 10, 10, 10, 14, 14, 12, 16, 20, 14, 24, 10, 24, 12, 10, 24, 12, 10, 10, 20, 14, 14, 14, 14, 14, 14, 42, 32, 12, 22], { emptyMessage: '수불마감 분석원장 데이터가 없습니다.' }), '수불마감_분석원장');
         XLSX.utils.book_append_sheet(wb, EXPORT_MODULE.jsonSheet(substitutionCandidateRows, [12, 12, 14, 34, 14, 10, 12, 12, 12, 14, 24, 14, 10, 10, 12, 14, 12, 12, 14, 14, 24, 42], { emptyMessage: '소분치환 후보가 없습니다.' }), '소분치환_후보');
         XLSX.utils.book_append_sheet(wb, EXPORT_MODULE.jsonSheet(masterCheckRows, [12, 16, 14, 34, 16, 14, 24, 14, 10, 12, 14, 14, 10, 42], { emptyMessage: '마스터 확인필요 항목이 없습니다.' }), '마스터_확인필요');
-        XLSX.utils.book_append_sheet(wb, EXPORT_MODULE.buildClosingReportSheet({ productData: operationalProductData, targetDateStr, analysisPeriod, closingStats }), '보고서');
+        XLSX.utils.book_append_sheet(wb, EXPORT_MODULE.buildClosingReportSheet({ productData, preflightResult, substHistory }), '보고서');
         return { wb, exportFileNameDate };
     }
 });
@@ -4401,7 +4778,7 @@ const parseExcelData = (file, currentMappings, uploadRole = '') => {
                         거래처: safeStr(getValByKeywords(rowObj, keywords.vendor), '미지정'), 매입처매칭: safeStr(getValByKeywords(rowObj, keywords.matchVendor), ''),
                         일자: safeStr(dateCell.value, ''), _dateSource: safeStr(dateCell.key, ''), 기본: safeStr(basicCell.value, ''), _basicSource: safeStr(basicCell.key, ''), 메모: '', _raw: rowObj,
                         _transactionVendor: '', _purchaseGroupVendor: '', _purchaseLotVendor: '', _displayPurchaseVendor: '', _salesVendor: '', _salesDisplayVendor: '', _salesGroupVendor: '', _confirmedPurchaseVendor: '',
-                        _sourceSheet: sheetName || '', _sourceFileName: file.name || '', _sourceTitleText: sourceTitleText, _uploadRole: role, _fileType: isClosingRestoreRow ? 'CLOSING_RESTORE' : 'RAW_DATA',
+                        _sourceSheet: sheetName || '', _sourceFileName: file.name || '', _sourceRowNumber: i + 1, _sourceTitleText: sourceTitleText, _uploadRole: role, _fileType: isClosingRestoreRow ? 'CLOSING_RESTORE' : 'RAW_DATA',
                         _sheetBasisDate: sheetBasisDate.dateNum || 0, _sheetBasisDateSource: sheetBasisDate.source || '', _sheetBasisDateRaw: sheetBasisDate.raw || ''
                     };
                     // V1.a22.12: 수불마감/시스템누적을 기초재고 슬롯에서 읽을 때는 전용 해석을 강제한다.
@@ -5530,7 +5907,7 @@ ${quantityBlockReason || '실제 오차수량을 확정할 수 없습니다.'}
                     return p;
                 });
             }
-            return prevP.map(p => {
+            const nextRows = prevP.map(p => {
                 if (p.batchKey === sourceKey) {
                     const cleanVendorName = cleanVendorNameGlobal;
                     const np = { ...p, 출고내역: JSON.parse(JSON.stringify(p.출고내역 || {})), 이슈: [...(p.이슈 || [])] };
@@ -5646,6 +6023,29 @@ ${quantityBlockReason || '실제 오차수량을 확정할 수 없습니다.'}
                 }
                 return p;
             });
+            const sourceAfter = nextRows.find(item => item.batchKey === sourceKey) || {};
+            const targetAfter = nextRows.find(item => item.batchKey === targetKey) || {};
+            const operationLabel = DATAOPS_OPERATION_MODULE.getOperationLabel(operationType) || '거래처 칩 이동';
+            setSubstHistory(history => [...history, {
+                    id: Date.now() + Math.random(),
+                    type: 'VENDOR_CHIP_MOVE',
+                    operationType,
+                    operationLabel,
+                    sourceKey,
+                    targetKey,
+                    sourceName: safeStr(sourceItemRef && sourceItemRef.품명),
+                    targetName: safeStr(targetItemRef && targetItemRef.품명),
+                    vendor: cleanVendorNameGlobal,
+                    sQty: sourceDeductQty,
+                    tQty: targetAddQty,
+                    transferredCost: targetCostMoved,
+                    sourceItemPrev: sourceItemRef ? JSON.parse(JSON.stringify(sourceItemRef)) : null,
+                    targetItemPrev: targetItemRef ? JSON.parse(JSON.stringify(targetItemRef)) : null,
+                    afterSummary: `${DATAOPS_EVIDENCE_REPORT_MODULE.summarizeItem(sourceAfter)} / ${DATAOPS_EVIDENCE_REPORT_MODULE.summarizeItem(targetAfter)}`,
+                    reason: `${cleanVendorNameGlobal} 거래처 칩 ${safeStr(sourceItemRef && sourceItemRef.품명)} → ${safeStr(targetItemRef && targetItemRef.품명)}`,
+                    createdAt: new Date().toISOString()
+                }]);
+            return nextRows;
         });
     }, []);
     const executeAnalysis = useCallback((payload) => {
@@ -5830,6 +6230,42 @@ ${quantityBlockReason || '실제 오차수량을 확정할 수 없습니다.'}
                 return !!compact && compact.includes('재고');
             };
             let pData = {};
+            let originalSourceEvidenceSequence = 0;
+            const getExactOriginalCell = (raw = {}, names = []) => {
+                const normalizeHeader = (value) => safeStr(value, '').replace(/\s/g, '').replace(/[()（）]/g, '').toLowerCase();
+                const keys = Object.keys(raw || {});
+                for (const name of names) {
+                    const target = normalizeHeader(name);
+                    const found = keys.find(key => normalizeHeader(key) === target);
+                    if (found !== undefined && raw[found] !== undefined && raw[found] !== null && String(raw[found]).trim() !== '') return raw[found];
+                }
+                return null;
+            };
+            const buildOriginalSourceEvidence = (item = {}, role = '', qty = '') => {
+                const raw = item._raw || {};
+                const rawUnitPrice = getExactOriginalCell(raw, ['판매단가', '입고단가', '구매가', '매입단가(원가)', '매입단가', '단가', '원가']);
+                const rawAmount = getExactOriginalCell(raw, ['공급가액', '판매금액', '입고금액', '구매금액', '매입금액', '금액']);
+                const rowNumber = item._sourceRowNumber !== undefined ? item._sourceRowNumber : '';
+                return {
+                    sourceId: `${safeStr(item._sourceFileName, '원본')}|${safeStr(item._sourceSheet, role || '원본')}|${rowNumber || ++originalSourceEvidenceSequence}`,
+                    role,
+                    originalCode: DATAOPS_VENDOR_CHIP_MODULE.normalizeCode(item.코드) === 'NO_CODE' ? '' : DATAOPS_VENDOR_CHIP_MODULE.normalizeCode(item.코드),
+                    name: safeStr(item.품명, '이름없음'),
+                    vendor: safeStr(item.거래처, '미지정'),
+                    qty: qty === '' || qty === null || qty === undefined ? '' : safeNum(qty),
+                    unitPrice: rawUnitPrice === null || rawUnitPrice === undefined || rawUnitPrice === '' ? '' : parseNumber(rawUnitPrice),
+                    amount: rawAmount === null || rawAmount === undefined || rawAmount === '' ? '' : parseNumber(rawAmount),
+                    fileName: safeStr(item._sourceFileName),
+                    sheetName: safeStr(item._sourceSheet),
+                    rowNumber
+                };
+            };
+            const appendOriginalSourceEvidence = (target = {}, evidence = {}) => {
+                target._sourceEvidence = Array.isArray(target._sourceEvidence) ? target._sourceEvidence : [];
+                if (!target._sourceEvidence.some(row => safeStr(row && row.sourceId) === safeStr(evidence.sourceId))) {
+                    target._sourceEvidence.push(evidence);
+                }
+            };
             const autoAckCodes = new Set();
             if (hasClosingEnd) {
                 closingEndItems.forEach(item => {
@@ -5864,6 +6300,7 @@ ${quantityBlockReason || '실제 오차수량을 확정할 수 없습니다.'}
                             매출액: tRev, 매출원가: tCogs, 메모: item._raw['수기메모'] || '',
                             이슈: DATAOPS_ISSUE_HELPER.unique(issues),
                             출고내역: vendors, _orig: { 기초: baseQty, 입고: inQty, 출고: outQty, 단가: price },
+                            _sourceEvidence: [],
                             isDummy: (!code || code === 'NO_CODE'), 수기확인완료: false, _adminCompletedAt: '', _adminCompletionSource: '', _legacyAdminComplete: restoredAdminComplete, _legacyAdminCompletedAt: restoredAdminCompletedAt, _fromFile4: true, 기본: getBasicRawValue(item),
                             _totalCostForAvg: price * (baseQty + inQty), _latestDateNum: extractDateNum(date), _lotSortDate: getLotDateNum(date), _lotSourceRank: 0, _dateDisplayMemo: getDateDisplayMemo(item, 'prev')
                         };
@@ -5911,6 +6348,7 @@ ${quantityBlockReason || '실제 오차수량을 확정할 수 없습니다.'}
                         if (!pData[batchKey]._legacyAdminCompletedAt && restoredAdminCompletedAt)
                             pData[batchKey]._legacyAdminCompletedAt = restoredAdminCompletedAt;
                     }
+                    appendOriginalSourceEvidence(pData[batchKey], buildOriginalSourceEvidence(item, 'prev', actualQty));
                 });
             }
             const stockPool = {};
@@ -6016,6 +6454,7 @@ ${quantityBlockReason || '실제 오차수량을 확정할 수 없습니다.'}
                         _transactionVendor: safeStr(item._transactionVendor, ''), _purchaseGroupVendor: safeStr(item._purchaseGroupVendor, ''), _purchaseLotVendor: safeStr(item._purchaseLotVendor || vendor, ''), _displayPurchaseVendor: safeStr(item._displayPurchaseVendor || item._purchaseLotVendor || vendor, '미지정'), _salesVendor: safeStr(item._salesVendor, ''), _salesDisplayVendor: safeStr(item._salesDisplayVendor, ''), _salesGroupVendor: safeStr(item._salesGroupVendor, ''), _confirmedPurchaseVendor: safeStr(item._confirmedPurchaseVendor || item._salesConfirmedPurchaseVendor || '', ''), _uploadRole: type,
                         기초: 0, 입고: 0, 출고: 0, 대체입고: 0, 대체출고: 0, 전산잔량: 0, 실사: null, 로스: 0,
                         매출액: 0, 매출원가: 0, 메모: '', 이슈: [], 출고내역: {}, _orig: { 기초: 0, 입고: 0, 출고: 0, 단가: price },
+                        _sourceEvidence: [],
                         isDummy: (!code || code === 'NO_CODE'), 수기확인완료: false, _fromClosingBase: (type === 'prev' && isClosingItem(item)), 기본: getBasicRawValue(item), _totalCostForAvg: qtyToApply * price, _latestDateNum: extractDateNum(date), _lotSortDate: getLotDateNum(date), _lotSourceRank: getLotSourceRank(type, item), _dateDisplayMemo: getDateDisplayMemo(item, type)
                     };
                     if (code === 'NO_CODE')
@@ -6043,6 +6482,7 @@ ${quantityBlockReason || '실제 오차수량을 확정할 수 없습니다.'}
                 pData[batchKey]._salesDisplayVendor = pData[batchKey]._salesDisplayVendor || safeStr(item._salesDisplayVendor, '');
                 pData[batchKey]._salesGroupVendor = pData[batchKey]._salesGroupVendor || safeStr(item._salesGroupVendor, '');
                 pData[batchKey]._confirmedPurchaseVendor = pData[batchKey]._confirmedPurchaseVendor || safeStr(item._confirmedPurchaseVendor || item._salesConfirmedPurchaseVendor || '', '');
+                appendOriginalSourceEvidence(pData[batchKey], buildOriginalSourceEvidence(item, type, qtyToApply));
                 pData[batchKey].기초 += type === 'prev' ? qtyToApply : 0;
                 pData[batchKey].입고 += type === 'in' ? qtyToApply : 0;
                 const lotDateNum = getLotDateNum(date);
@@ -6172,6 +6612,8 @@ ${quantityBlockReason || '실제 오차수량을 확정할 수 없습니다.'}
             // 원가 배정 기준은 판매처가 아니라 "상품코드 + 품명 + 판매현황 구매처(Lot)"이다.
             // 예: 쌈추_1kg_BOX가 1마산/2중앙으로 나뉘어도 구매처가 같으면 먼저 합산해 같은 Lot에서 차감한다.
             // 판매처별 수량/매출은 _salesVendorDetails에 보존하고, 출고내역 표시 단계에서 다시 분리한다.
+            const salesSourceEvidenceByProductKey = new Map();
+            let salesSourceEvidenceSequence = 0;
             const aggregatedSales = {};
             outItems.forEach(sale => {
                 const code = String(sale.코드 || 'NO_CODE');
@@ -6183,6 +6625,28 @@ ${quantityBlockReason || '실제 오차수량을 확정할 수 없습니다.'}
                 const matchKey = safeStr(sale.매입처매칭, '미지정');
                 const qty = sale._computedQty || 0;
                 const rev = sale._finalRevenue || 0;
+                const evidenceCode = DATAOPS_VENDOR_CHIP_MODULE.normalizeCode(code) || 'NO_CODE';
+                const evidenceName = getRepresentativeProductName(code, sale.품명);
+                const evidenceProductKey = evidenceCode !== 'NO_CODE'
+                    ? evidenceCode
+                    : `NO_CODE|${safeStr(evidenceName, '이름없음')}`;
+                const evidenceRowNumber = sale._sourceRowNumber !== undefined ? sale._sourceRowNumber : '';
+                const evidence = {
+                    sourceId: `${safeStr(sale._sourceFileName, '판매원본')}|${safeStr(sale._sourceSheet, '판매현황')}|${evidenceRowNumber || ++salesSourceEvidenceSequence}`,
+                    originalCode: evidenceCode === 'NO_CODE' ? '' : evidenceCode,
+                    name: safeStr(evidenceName, '이름없음'),
+                    vendor: vendorKey,
+                    qty: safeNum(qty),
+                    unitPrice: safeNum(sale.단가),
+                    amount: safeNum(rev),
+                    fileName: safeStr(sale._sourceFileName),
+                    sheetName: safeStr(sale._sourceSheet),
+                    rowNumber: evidenceRowNumber,
+                    isReturn: safeNum(qty) < 0,
+                    purchaseVendor: matchKey
+                };
+                if (!salesSourceEvidenceByProductKey.has(evidenceProductKey)) salesSourceEvidenceByProductKey.set(evidenceProductKey, []);
+                salesSourceEvidenceByProductKey.get(evidenceProductKey).push(evidence);
                 // V1.a22.29: 판매전표에 구매처+구매단가가 있으면 두 값을 함께 확정키로 본다.
                 // 같은 구매처라도 구매단가가 다르면 다른 Lot이므로 병합하면 안 된다.
                 // V1.a22.109: 반품은 판매단가/구매단가 값으로 별도 Lot을 만들지 않고 RETURN 그룹으로 먼저 분리한 뒤 원판매를 역처리한다.
@@ -7084,6 +7548,29 @@ ${quantityBlockReason || '실제 오차수량을 확정할 수 없습니다.'}
                     return stockQty;
                 return safeStr(a.품명).localeCompare(safeStr(b.품명), 'ko', { numeric: false, sensitivity: 'base' });
             });
+            const evidenceAttachedProductKeys = new Set();
+            finalProductData.forEach(item => {
+                const productKey = DATAOPS_VENDOR_CHIP_MODULE.getProductKey(item);
+                const evidenceRows = salesSourceEvidenceByProductKey.get(productKey) || [];
+                if (!evidenceRows.length || evidenceAttachedProductKeys.has(productKey)) return;
+                item._salesSourceEvidence = evidenceRows.map(row => ({ ...row }));
+                evidenceAttachedProductKeys.add(productKey);
+            });
+            const vendorChipIntegrityErrors = DATAOPS_VENDOR_CHIP_MODULE.buildIntegrityErrors({ productData: finalProductData });
+            const integrityErrorsByCode = new Map();
+            vendorChipIntegrityErrors.forEach(error => {
+                const code = DATAOPS_VENDOR_CHIP_MODULE.normalizeCode(error.code) || error.productKey;
+                if (!integrityErrorsByCode.has(code)) integrityErrorsByCode.set(code, []);
+                integrityErrorsByCode.get(code).push(error);
+            });
+            finalProductData.forEach(item => {
+                const code = DATAOPS_VENDOR_CHIP_MODULE.normalizeCode(item.코드) || DATAOPS_VENDOR_CHIP_MODULE.getProductKey(item);
+                const errors = integrityErrorsByCode.get(code) || [];
+                if (!errors.length) return;
+                item._vendorChipIntegrityErrors = errors.map(error => ({ ...error }));
+                item.이슈 = DATAOPS_ISSUE_HELPER.unique([...(item.이슈 || []), '🚨판매원본-거래처칩 수량불일치']);
+                item.수기확인완료 = false;
+            });
             // V1.a22.74: 02창고(2전송)는 일마감 후 품목별 잔량이 반드시 0이어야 한다.
             // 구매현황 02 입고수량 - 판매현황 02 출고수량을 품목코드별로 비교하고,
             // 잔량 또는 마이너스가 있으면 마감 완료 즉시 팝업으로 건수와 구매/판매 집계를 안내한다.
@@ -7162,6 +7649,12 @@ ${quantityBlockReason || '실제 오차수량을 확정할 수 없습니다.'}
                 };
             };
             const transferWarehouseClosingCheck = buildTransferWarehouseClosingCheck();
+            if (transferWarehouseClosingCheck && Array.isArray(transferWarehouseClosingCheck.errors)) {
+                transferWarehouseClosingCheck.errors.forEach(row => {
+                    const target = finalProductData.find(item => DATAOPS_VENDOR_CHIP_MODULE.normalizeCode(item.코드) === DATAOPS_VENDOR_CHIP_MODULE.normalizeCode(row.code));
+                    if (target) target._transferWarehouseClosingError = { ...row };
+                });
+            }
             setProductData(DATAOPS_MASTER_LINK_MODULE.applyMasterLinksToRows(finalProductData));
             setAckMultiCodes(autoAckCodes);
             setAppStep('closing');
@@ -8195,6 +8688,7 @@ function App() {
     const [alertMsg, setAlertMsg] = useState('');
     // V1.a22.74: 02창고 마감오차는 일반 문장 팝업이 아니라 구매/판매 상세 박스 전용 팝업으로 표시한다.
     const [transferClosingAlert, setTransferClosingAlert] = useState(null);
+    const [f9PreflightResult, setF9PreflightResult] = useState(null);
     const [confirmModal, setConfirmModal] = useState({ isOpen: false, warnings: [], payload: null });
     const [showSettings, setShowSettings] = useState(false);
     const [undoUi, setUndoUi] = useState({ state: 'closed' });
@@ -11150,17 +11644,30 @@ ${balanceText}
     const handleVendorChipDelete = useCallback((batchKey, displayVendor, qty) => {
         const label = safeStr(displayVendor, '미지정');
         if (!window.confirm(`${label}(${formatQty(qty)}) 판매칩을 삭제할까요?\n해당 상품 행에 매칭된 이 거래처 출고배정만 취소됩니다.`)) return;
-        setProductData(prev => prev.map(item => {
-            if (item.batchKey !== batchKey) return item;
-            let next = DATAOPS_VENDOR_CHIP_MODULE.cancelVendorChip(item, label, 0);
-            next.이슈 = DATAOPS_ISSUE_HELPER.syncQuantityIssues(next, next.이슈 || []);
-            next = DATAOPS_OPERATION_MODULE.syncSplitLossInsight(next);
-            next.수기확인완료 = false;
-            next._adminCompletedAt = '';
-            next._adminCompletionSource = '';
-            return next;
-        }));
-    }, [setProductData]);
+        const current = (productDataRef.current || []).find(item => item.batchKey === batchKey);
+        if (!current) return;
+        let next = DATAOPS_VENDOR_CHIP_MODULE.cancelVendorChip(current, label, 0);
+        next.이슈 = DATAOPS_ISSUE_HELPER.syncQuantityIssues(next, next.이슈 || []);
+        next = DATAOPS_OPERATION_MODULE.syncSplitLossInsight(next);
+        next.수기확인완료 = false;
+        next._adminCompletedAt = '';
+        next._adminCompletionSource = '';
+        setProductData(prev => prev.map(item => item.batchKey === batchKey ? next : item));
+        setSubstHistory(history => [...history, {
+                id: Date.now() + Math.random(),
+                type: 'VENDOR_CHIP_CANCEL',
+                operationLabel: '거래처 칩 취소',
+                sourceKey: batchKey,
+                sourceName: safeStr(current.품명),
+                vendor: label,
+                sQty: safeNum(qty),
+                tQty: 0,
+                sourceItemPrev: JSON.parse(JSON.stringify(current)),
+                afterSummary: DATAOPS_EVIDENCE_REPORT_MODULE.summarizeItem(next),
+                reason: `${label} 거래처 칩 취소`,
+                createdAt: new Date().toISOString()
+            }]);
+    }, [setProductData, setSubstHistory]);
     const handleVendorChipEdit = useCallback((batchKey, displayVendor, qty) => {
         const label = safeStr(displayVendor, '미지정');
         const input = window.prompt(`${label} 거래처칩 수량 수정`, formatQty(qty));
@@ -11171,17 +11678,30 @@ ${balanceText}
             setAlertMsg('반품/출고 부호는 변경할 수 없습니다. 원본과 같은 부호 또는 0을 입력하세요.');
             return;
         }
-        setProductData(prev => prev.map(item => {
-            if (item.batchKey !== batchKey) return item;
-            let next = DATAOPS_VENDOR_CHIP_MODULE.cancelVendorChip(item, label, nextQty);
-            next.이슈 = DATAOPS_ISSUE_HELPER.syncQuantityIssues(next, next.이슈 || []);
-            next = DATAOPS_OPERATION_MODULE.syncSplitLossInsight(next);
-            next.수기확인완료 = false;
-            next._adminCompletedAt = '';
-            next._adminCompletionSource = '';
-            return next;
-        }));
-    }, [setProductData, setAlertMsg]);
+        const current = (productDataRef.current || []).find(item => item.batchKey === batchKey);
+        if (!current) return;
+        let next = DATAOPS_VENDOR_CHIP_MODULE.cancelVendorChip(current, label, nextQty);
+        next.이슈 = DATAOPS_ISSUE_HELPER.syncQuantityIssues(next, next.이슈 || []);
+        next = DATAOPS_OPERATION_MODULE.syncSplitLossInsight(next);
+        next.수기확인완료 = false;
+        next._adminCompletedAt = '';
+        next._adminCompletionSource = '';
+        setProductData(prev => prev.map(item => item.batchKey === batchKey ? next : item));
+        setSubstHistory(history => [...history, {
+                id: Date.now() + Math.random(),
+                type: 'VENDOR_CHIP_EDIT',
+                operationLabel: '거래처 칩 수정',
+                sourceKey: batchKey,
+                sourceName: safeStr(current.품명),
+                vendor: label,
+                sQty: safeNum(qty),
+                tQty: safeNum(nextQty),
+                sourceItemPrev: JSON.parse(JSON.stringify(current)),
+                afterSummary: DATAOPS_EVIDENCE_REPORT_MODULE.summarizeItem(next),
+                reason: `${label} 거래처 칩 ${formatQty(qty)} → ${formatQty(nextQty)}`,
+                createdAt: new Date().toISOString()
+            }]);
+    }, [setProductData, setSubstHistory, setAlertMsg]);
     // V1.a22.84: 이슈카드 이동은 카드 선택 시 만든 고정 큐와 방문경로 커서로 관리한다.
     // - Tab: 현재 항목을 확인 처리하고 큐의 다음 미완료 항목으로 이동한다.
     // - Shift+Tab/<: 실제 방문경로의 직전 항목으로 복귀하며 확인상태는 변경하지 않는다.
@@ -11416,9 +11936,23 @@ ${balanceText}
             setAlertMsg("다운로드할 데이터가 없습니다.");
             return;
         }
+        const flushed = latestHandlers.current && typeof latestHandlers.current.flushFocusedTableEdit === 'function'
+            ? latestHandlers.current.flushFocusedTableEdit()
+            : false;
+        if (flushed) await new Promise(resolve => setTimeout(resolve, 0));
+        const latestProductData = productDataRef.current || productData;
+        const preflightResult = DATAOPS_F9_PREFLIGHT_MODULE.run({
+            productData: latestProductData,
+            transferClosingCheck: transferClosingAlert
+        });
+        if (!preflightResult.ok) {
+            setF9PreflightResult(preflightResult);
+            return;
+        }
+        setF9PreflightResult(null);
         setIsProcessing(true);
         try {
-            const { wb, exportFileNameDate } = EXPORT_MODULE.createCombinedWorkbook({ productData, analysisPeriod, targetDateStr, closingStats });
+            const { wb, exportFileNameDate } = EXPORT_MODULE.createCombinedWorkbook({ productData: latestProductData, analysisPeriod, targetDateStr, closingStats, preflightResult, substHistory });
             let excelBuffer;
             try {
                 excelBuffer = await DATAOPS_XLSX_WORKER_MODULE.writeWorkbook(wb);
@@ -11445,7 +11979,7 @@ ${balanceText}
         finally {
             setIsProcessing(false);
         }
-    }, [isClosingOutputBlocked, productData, analysisPeriod, targetDateStr, closingStats, setAlertMsg, setIsProcessing]);
+    }, [isClosingOutputBlocked, productData, analysisPeriod, targetDateStr, closingStats, substHistory, transferClosingAlert, setAlertMsg, setIsProcessing]);
     const handlePrintOutput = useCallback(() => {
         if (isClosingOutputBlocked) {
             setAlertMsg("분석이 완료되기 전에는 출력할 수 없습니다.");
@@ -11504,6 +12038,57 @@ ${balanceText}
         handleBaseDataChange(batchKey, baseField, normalizedValue);
         return true;
     }, [handleManualStockChange, handleBaseDataChange, productData]);
+    const focusF9PreflightIssue = useCallback((issue = {}) => {
+        setViewMode('LOT_DETAIL');
+        setActiveIssueMode(null);
+        activeIssueModeRef.current = null;
+        setFilters(prev => ({
+            ...prev,
+            issuesOnly: false,
+            excludeZeroActual: false,
+            search: '',
+            reviewType: null,
+            category: [],
+            stockListType: 'ALL',
+            favoriteVendorOnly: false,
+            showHiddenMoveRows: true,
+            unit: { ...CONFIG_MODULE.defaultUnitFilter }
+        }));
+        const focusTarget = (attempt = 0) => {
+            const batchKey = safeStr(issue.batchKey);
+            const code = safeStr(issue.code);
+            const safeBatch = window.CSS && CSS.escape ? CSS.escape(batchKey) : batchKey.replace(/"/g, '\\"');
+            const safeCode = window.CSS && CSS.escape ? CSS.escape(code) : code.replace(/"/g, '\\"');
+            const row = (batchKey && document.querySelector(`tr[data-batch="${safeBatch}"]`))
+                || (code && document.querySelector(`tr[data-code="${safeCode}"]`));
+            if (!row) {
+                if (attempt < 10) setTimeout(() => focusTarget(attempt + 1), 70);
+                return;
+            }
+            const input = row.querySelector('input[data-field="actual-input"]') || row.querySelector('input');
+            scrollIssueRowIntoWorkCenter(row, input, 'f9Preflight');
+            row.classList.add('bg-rose-50');
+            setTimeout(() => row.classList.remove('bg-rose-50'), 1400);
+        };
+        setF9PreflightResult(null);
+        setTimeout(() => focusTarget(0), 0);
+    }, [scrollIssueRowIntoWorkCenter]);
+    const handleF9PreflightRecheck = useCallback(async () => {
+        const flushed = latestHandlers.current && typeof latestHandlers.current.flushFocusedTableEdit === 'function'
+            ? latestHandlers.current.flushFocusedTableEdit()
+            : false;
+        if (flushed) await new Promise(resolve => setTimeout(resolve, 0));
+        const result = DATAOPS_F9_PREFLIGHT_MODULE.run({
+            productData: productDataRef.current || productData,
+            transferClosingCheck: transferClosingAlert
+        });
+        if (result.ok) {
+            setF9PreflightResult(null);
+            setAlertMsg('✅ F9 사전점검 오류가 없습니다. F9를 다시 실행하면 workbook을 생성합니다.');
+            return;
+        }
+        setF9PreflightResult(result);
+    }, [productData, transferClosingAlert, setAlertMsg]);
     // 🌟 성능 최적화: 전역 이벤트 리스너의 잦은 재생성을 막기 위한 콜백 참조 저장
     const latestHandlers = useRef({ handleIssueJump, handleRunAnalysis, handleRunTransferCheck, handleCombinedExport, handlePrintOutput, flushFocusedTableEdit, moveMergeCandidate });
     useEffect(() => {
@@ -11780,7 +12365,7 @@ ${balanceText}
                     React.createElement("h1", { className: "text-xl md:text-xl font-black leading-none text-slate-800 tracking-tight flex items-center cursor-pointer hover:opacity-80 transition", onClick: () => { var _a; return (_a = document.getElementById('main-scroll-container')) === null || _a === void 0 ? void 0 : _a.scrollTo({ top: 0, behavior: 'smooth' }); }, title: "\uD074\uB9AD\uC2DC \uCD5C\uC0C1\uB2E8 \uC774\uB3D9" },
                         React.createElement("span", { className: "text-blue-600 mr-2" }, "ONEAPP"),
                         " DataOps",
-                        React.createElement("span", { className: "text-slate-500 text-[10px] px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3" }, "V1.a22.111_WorkSaveCloudInventorySync · 2026-08-08 KST"))),
+                        React.createElement("span", { className: "text-slate-500 text-[10px] px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3" }, "V1.a22.112_EvidenceReportPreflight · 2026-08-12 KST"))),
                 React.createElement("div", { className: "flex items-center gap-2 shrink-0" },
                     productData.length > 0 && (React.createElement(React.Fragment, null,
                         React.createElement("button", { onClick: () => setGuideModalOpen(true), className: "px-3 py-1.5 rounded text-[12px] font-bold transition flex items-center border bg-white text-slate-700 border-slate-300 hover:bg-slate-50 shadow-sm mr-1" }, "\uC774\uC288 \uAC00\uC774\uB4DC"),
@@ -12010,6 +12595,31 @@ ${balanceText}
                                             React.createElement("div", null, `수량 ${formatQty(detail.qty)}${detail.price ? ` / 단가 ${formatMoney(detail.price)}` : ''}${detail.note ? ` / ${detail.note}` : ''}`)))
                                             : React.createElement("div", { className: "px-3 py-3 text-xs text-slate-400" }, "판매내역 없음")))))))),
                 React.createElement("button", { id: "transfer-closing-alert-confirm-btn", autoFocus: true, onClick: () => setTransferClosingAlert(null), className: "mt-5 px-6 py-2.5 bg-slate-800 text-white rounded-lg text-sm font-bold hover:bg-slate-900 transition shadow-md w-full" }, "확인")))),
+        f9PreflightResult && !confirmModal.isOpen && (React.createElement("div", { className: "fixed inset-0 z-[370] bg-slate-900 bg-opacity-70 flex items-center justify-center p-4" },
+            React.createElement("div", { className: "bg-white rounded-xl shadow-2xl w-full max-w-5xl modal-bounce overflow-hidden" },
+                React.createElement("div", { className: "px-6 py-4 bg-rose-600 text-white flex flex-wrap items-center justify-between gap-3" },
+                    React.createElement("div", null,
+                        React.createElement("h3", { className: "text-lg font-black" }, `F9 사전점검 오류 ${f9PreflightResult.issues.length}건`),
+                        React.createElement("p", { className: "text-xs text-rose-100 mt-1" }, "오류를 해결하기 전에는 workbook을 생성하지 않습니다.")),
+                    React.createElement("div", { className: "flex flex-wrap gap-1.5 justify-end" }, Object.entries(f9PreflightResult.counts || {}).map(([type, count]) => React.createElement("span", { key: type, className: "px-2 py-1 rounded bg-white/15 border border-white/25 text-[11px] font-bold" }, `${DATAOPS_F9_PREFLIGHT_MODULE.TYPE_LABELS[type] || type} ${count}`)))),
+                React.createElement("div", { className: "max-h-[65vh] overflow-y-auto divide-y divide-slate-200" },
+                    f9PreflightResult.issues.map((issue, issueIndex) => React.createElement("div", { key: issue.id || issueIndex, className: "p-4 bg-white hover:bg-slate-50" },
+                        React.createElement("div", { className: "flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3" },
+                            React.createElement("div", { className: "min-w-0 flex-1" },
+                                React.createElement("div", { className: "flex flex-wrap items-center gap-2" },
+                                    React.createElement("span", { className: "px-2 py-0.5 rounded bg-rose-100 text-rose-700 text-[11px] font-black" }, issue.typeLabel),
+                                    React.createElement("span", { className: "font-black text-slate-900" }, `${issue.code || '코드없음'}  ${issue.name || ''}`),
+                                    issue.vendorOrLot && React.createElement("span", { className: "text-xs text-slate-500" }, issue.vendorOrLot)),
+                                React.createElement("div", { className: "grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-2 mt-3 text-xs" },
+                                    React.createElement("div", { className: "bg-slate-100 rounded px-2.5 py-2" }, React.createElement("span", { className: "font-bold text-slate-500" }, "수량  "), `${issue.sourceQty === '' ? '-' : formatQty(issue.sourceQty)} → ${issue.calculatedQty === '' ? '-' : formatQty(issue.calculatedQty)}${issue.differenceQty === '' ? '' : ` / 차이 ${formatQty(issue.differenceQty)}`}`),
+                                    React.createElement("div", { className: "bg-slate-100 rounded px-2.5 py-2" }, React.createElement("span", { className: "font-bold text-slate-500" }, "원가  "), `${issue.sourcePrice === '' ? '-' : formatMoney(issue.sourcePrice)} → ${issue.calculatedCost === '' ? '-' : formatMoney(issue.calculatedCost)}${issue.differenceAmount === '' ? '' : ` / 차이 ${formatMoney(issue.differenceAmount)}`}`),
+                                    React.createElement("div", { className: "bg-slate-100 rounded px-2.5 py-2 md:col-span-2" }, React.createElement("span", { className: "font-bold text-slate-500" }, "원본  "), [issue.fileName, issue.sheetName, issue.rowNumber ? `${issue.rowNumber}행` : ''].filter(Boolean).join(' / ') || '기존 저장본·작업이력 없음')),
+                                React.createElement("p", { className: "mt-2 text-sm font-bold text-slate-700" }, issue.reason),
+                                React.createElement("p", { className: "mt-1 text-xs text-rose-600" }, issue.action)),
+                            React.createElement("button", { type: "button", onClick: () => focusF9PreflightIssue(issue), className: "shrink-0 px-3 py-2 rounded-lg bg-slate-800 text-white text-xs font-black hover:bg-slate-900" }, "해당 상품으로 이동"))))),
+                React.createElement("div", { className: "px-6 py-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-2" },
+                    React.createElement("button", { type: "button", onClick: () => setF9PreflightResult(null), className: "px-4 py-2 rounded-lg bg-white border border-slate-300 text-slate-600 text-sm font-bold hover:bg-slate-100" }, "닫기"),
+                    React.createElement("button", { id: "f9-preflight-recheck-btn", type: "button", onClick: handleF9PreflightRecheck, className: "px-5 py-2 rounded-lg bg-rose-600 text-white text-sm font-black hover:bg-rose-700 shadow-sm" }, "다시 점검"))))),
         alertMsg && !confirmModal.isOpen && (React.createElement("div", { className: "fixed inset-0 z-[300] bg-slate-900 bg-opacity-60 flex items-center justify-center p-4" },
             React.createElement("div", { className: "bg-white rounded-xl shadow-2xl p-6 w-full max-w-sm modal-bounce text-center" },
                 React.createElement("i", { className: "fas fa-exclamation-triangle text-blue-500 text-4xl mb-4" }),

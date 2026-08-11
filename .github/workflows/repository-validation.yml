@@ -44,6 +44,9 @@ jobs:
       - name: Test DataOps manual substitution actual-error quantity
         run: node scripts/test-dataops-manual-substitution-actual-error.mjs
 
+      - name: Test DataOps evidence report and F9 preflight
+        run: node scripts/test-dataops-evidence-report-preflight.mjs
+
       - name: Test DataOps sales and Lot policy regressions
         run: node scripts/test-dataops-sales-lot-policy.mjs
 
