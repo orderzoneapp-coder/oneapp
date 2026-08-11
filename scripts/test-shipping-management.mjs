@@ -8,6 +8,13 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const require = createRequire(import.meta.url);
+const orderOpsHtml = fs.readFileSync(path.join(ROOT, "orderops_list.html"), "utf8");
+assert.match(orderOpsHtml, /brand-badge">v1\.9</, "OrderOps visible version must be v1.9");
+assert.match(orderOpsHtml, /workbookTools\.downloadWorkbook\(state\.workspace, window\.XLSX, fileName\)/,
+  "the single Excel output must use the integrated workbook");
+assert.doesNotMatch(orderOpsHtml, /id="purchaseUploadButton"/,
+  "a separate purchase-upload button must not remain");
+assert.match(orderOpsHtml, />\s*엑셀출력\s*</, "the integrated Excel output button must remain visible");
 const engine = require(path.join(ROOT, "orderFulfillmentEngine.js"));
 const workbookTools = require(path.join(ROOT, "orderFulfillmentWorkbook.js"));
 const PURCHASE_TEMPLATE_PATH = "C:\\Users\\USER\\Desktop\\구매업로드.xlsx";
