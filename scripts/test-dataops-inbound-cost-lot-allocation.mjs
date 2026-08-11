@@ -86,6 +86,16 @@ const inventoryEngine = runtimeContext.actualUseInventoryEngine({
 });
 
 assert.equal(inventoryEngine.executeAnalysis(fixture), true, "fixture analysis must complete");
+const returnFixture = {
+  ...fixture,
+  parsedPrev: [...fixture.parsedPrev, ...fixture.returnRegression.parsedPrev],
+  parsedOut: [...fixture.parsedOut, ...fixture.returnRegression.parsedOut],
+};
+assert.equal(
+  inventoryEngine.executeAnalysis(returnFixture),
+  true,
+  "actual sales-sheet negative quantity/return structure must complete without a runtime ReferenceError",
+);
 const rows = hookState[0];
 assert.ok(Array.isArray(rows), "analysis must publish product rows");
 
@@ -131,6 +141,48 @@ const invariant = runtimeContext.actualLotInvariantModule.validateRows(bokChoyRo
 assert.equal(invariant.mismatchCount, 0);
 assert.equal(invariant.unallocatedQty, 0);
 assert.equal(invariant.overallocatedQty, 0);
+
+const matchedReturnRows = rows.filter((row) => String(row.코드) === "990001001");
+assert.equal(matchedReturnRows.length, 1, "same-vendor return fixture must stay on its source Lot");
+assert.equal(matchedReturnRows[0].출고, 0, "same-vendor return must reverse the original sale quantity");
+assert.equal(chipQty(matchedReturnRows[0]), 0, "same-vendor return must reverse the original sales chip quantity");
+assert.equal(matchedReturnRows[0].매출액, 0, "same-vendor return must reverse the original sale revenue");
+assert.equal(matchedReturnRows[0].매출원가, 0, "same-vendor return must reverse the original sale COGS");
+assert.match(matchedReturnRows[0].메모, /원판매Lot복원/, "same-vendor return must use the original sale-allocation reversal path");
+assert.doesNotMatch(matchedReturnRows[0].메모, /원판매미확정/, "same-vendor return must not use guarded fallback");
+assert.equal(
+  (matchedReturnRows[0].이슈 || []).some((issue) => String(issue).includes("반품원판매매칭확인")),
+  false,
+  "same-vendor return must not be reported as a vendor mismatch",
+);
+
+const mismatchedReturnRows = rows.filter((row) => String(row.코드) === "990001002");
+assert.equal(mismatchedReturnRows.length, 1, "mismatched-vendor return fixture must remain auditable on one Lot");
+assert.equal(mismatchedReturnRows[0].출고, 0, "mismatched-vendor return may restore stock through guarded fallback");
+assert.equal(mismatchedReturnRows[0]._salesLotAllocations?.[0]?.returnableQty, 1, "mismatched return must not consume another customer's sale allocation");
+assert.equal(mismatchedReturnRows[0].출고내역?.판매처A?.qty, 1, "original customer sale chip must remain auditable");
+assert.equal(mismatchedReturnRows[0].출고내역?.판매처B?.qty, -1, "mismatched return chip must remain a separate guarded fallback entry");
+assert.equal(
+  (mismatchedReturnRows[0].이슈 || []).some((issue) => String(issue).includes("반품원판매매칭확인")),
+  true,
+  "explicitly mismatched return vendor must not silently reverse another customer's sale history",
+);
+
+const salesReturnSource = source.slice(
+  source.indexOf("const applySalesReturn = () =>"),
+  source.indexOf("if (qtyToDeduct < 0)", source.indexOf("const applySalesReturn = () =>")),
+);
+assert.doesNotMatch(salesReturnSource, /normalizeVendorIdentity/, "sales return path must not reference the removed internal-vendor helper");
+assert.match(
+  salesReturnSource,
+  /normalizeSalesVendorIdentity\s*=\s*\(value\)\s*=>\s*normalizeLotNameForMatch\(value\)/,
+  "sales return vendor equality must reuse the neutral Lot/vendor normalizer",
+);
+assert.match(
+  salesReturnSource,
+  /const hasExplicitReturnVendor = !!normalizeSalesVendorIdentity\(state\.vendor\)/,
+  "explicit return-vendor defense must use the same neutral identity helper",
+);
 
 const correctedLedger = runtimeContext.DATAOPS_SALES_REMATCH_MODULE.buildCorrectedLedgerRows({
   productData: rows,
