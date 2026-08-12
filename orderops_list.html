@@ -696,7 +696,7 @@
       white-space: nowrap;
     }
     .spec-filter:disabled { opacity: .42; }
-    /* ORDER Q v1.26: operator-facing shipment-management branding */
+    /* ORDER Q v1.27: operator-facing shipment-management branding */
     .header-output-button { border-color: #99f6e4; color: #0f766e; background: #f0fdfa; }
     .header-output-button:hover:not(:disabled) { background: #ccfbf1; }
     .results-panel .table-wrap { max-height: calc(100vh - 200px); }
@@ -768,6 +768,17 @@
       font-weight: 1000;
       text-shadow: 0 1px 1px rgba(255,255,255,.9);
     }
+    .color-swatch.cancel-color::after {
+      content: "×";
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      color: #64748b;
+      font-size: 15px;
+      font-weight: 1000;
+    }
+    .color-swatch.cancel-color.selected::after { content: "✓"; color: #0f172a; font-size: 11px; }
     .vivid-color-toggle {
       min-height: 28px;
       padding: 0 7px;
@@ -1178,7 +1189,7 @@
       .recovery-record-item { grid-template-columns: auto 1fr; }
       .recovery-record-status { grid-column: 2; }
     }
-    /* ORDER Q v1.26: Excel-like grids, clearer controls, and revised workflow shortcuts */
+    /* ORDER Q v1.27: Excel-like grids, clearer controls, and revised workflow shortcuts */
     .input-panel { grid-template-columns: minmax(0, 1fr) 330px; gap: 12px; }
     .upload-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
     .source-selector {
@@ -1301,7 +1312,7 @@
       <div class="brand-mark">ONEAPP</div>
       <div class="brand-divider" aria-hidden="true"></div>
       <span class="brand-logo-frame" aria-hidden="true"><img class="brand-logo" src="assets/order-q-logo.png" alt=""></span>
-      <span class="brand-badge">v1.26</span>
+      <span class="brand-badge">v1.27</span>
       <span class="brand-product">출고관리</span>
     </div>
     <div class="header-actions">
@@ -1456,12 +1467,12 @@
         <section class="color-assignment-panel" id="colorAssignmentPanel" aria-label="별도 배색 지정">
           <span class="warehouse-color-title">색 지정</span>
           <select class="color-target-select" id="colorTargetSelect" aria-label="색을 지정할 대상"></select>
-          <div class="color-palette" id="pastelColorPalette" aria-label="파스텔 색상 10개"></div>
+          <div class="color-palette" id="pastelColorPalette" aria-label="흰색 배색 취소와 파스텔 색상 10개"></div>
           <button class="vivid-color-toggle" id="vividColorToggle" type="button" aria-expanded="false"
             aria-controls="vividColorPalette">원색 더보기</button>
           <div class="color-palette hidden" id="vividColorPalette" aria-label="원색 색상 10개"></div>
         </section>
-        <span class="warehouse-color-guide">색 선택 즉시 저장·적용</span>
+        <span class="warehouse-color-guide">흰색 ×는 선택 배색 취소 · 색 선택 즉시 저장·적용</span>
         <button class="warehouse-color-reset" id="warehouseColorResetButton" type="button">전체 다시보기</button>
       </div>
 
@@ -1469,7 +1480,7 @@
     </section>
 
     <footer class="page-footer">
-      <span>ORDER Q v1.26 · 출고관리 · workspace shipping-workspace/v2 · cloud plan v1</span>
+      <span>ORDER Q v1.27 · 출고관리 · workspace shipping-workspace/v2 · cloud plan v1</span>
       <a href="SHIPPING_MANAGEMENT_GUIDANCE.md">개발·운영 기준 보기</a>
     </footer>
   </main>
@@ -1593,6 +1604,7 @@
         "#06b6d4", "#3b82f6", "#8b5cf6", "#d946ef", "#ec4899",
       ]);
       const WAREHOUSE_COLOR_PALETTE = PASTEL_COLOR_PALETTE;
+      const COLOR_CANCEL_COLOR = "#ffffff";
       const TABLE_WIDTH_MIN = 32;
       const TABLE_WIDTH_MAX = 720;
       const TABLE_WIDTH_TABS = new Set(["validation", "inventory", "allocations", "notices", "ledger"]);
@@ -2839,11 +2851,16 @@
       }
 
       function colorSwatchMarkup(colors, selectedColor, toneLabel) {
-        return colors.map((color, index) => `
-          <button class="color-swatch ${color === selectedColor ? "selected" : ""}" type="button"
+        return colors.map((color, index) => {
+          const cancel = color === COLOR_CANCEL_COLOR;
+          const number = index + (colors[0] === COLOR_CANCEL_COLOR ? 0 : 1);
+          const label = cancel ? "흰색 · 선택 배색 취소" : `${toneLabel} ${number}`;
+          return `
+          <button class="color-swatch ${cancel ? "cancel-color" : ""} ${color === selectedColor ? "selected" : ""}" type="button"
             data-palette-color="${color}" style="--swatch-color:${color}"
-            aria-label="${toneLabel} ${index + 1}" aria-pressed="${color === selectedColor}"></button>
-        `).join("");
+            aria-label="${label}" title="${label}" aria-pressed="${color === selectedColor}"></button>
+        `;
+        }).join("");
       }
 
       function renderWarehouseColorBar(definitions) {
@@ -2883,7 +2900,7 @@
           : '<option value="">대상 없음</option>';
         elements.colorTargetSelect.disabled = targets.length === 0;
         elements.colorAssignmentPanel.classList.toggle("hidden", !targetType);
-        elements.pastelColorPalette.innerHTML = colorSwatchMarkup(PASTEL_COLOR_PALETTE, selectedColor, "파스텔 색상");
+        elements.pastelColorPalette.innerHTML = colorSwatchMarkup([COLOR_CANCEL_COLOR, ...PASTEL_COLOR_PALETTE], selectedColor, "파스텔 색상");
         elements.vividColorPalette.innerHTML = colorSwatchMarkup(VIVID_COLOR_PALETTE, selectedColor, "원색");
         elements.vividColorPalette.classList.toggle("hidden", !state.vividPaletteExpanded);
         elements.vividColorToggle.classList.toggle("active", state.vividPaletteExpanded);
@@ -4013,7 +4030,8 @@
           const fileName = workbookTools.getOutputFileName(state.workspace.createdAt);
           workbookTools.downloadWorkbook(state.workspace, window.XLSX, fileName);
           const selection = engine.getPurchaseUploadSelection(state.workspace);
-          setSystemMessage(`엑셀출력 완료 · 통합 5개 시트·구매업로드 ${selection.included.length}행`);
+          const salesRows = workbookTools.getSalesUploadRows(state.workspace);
+          setSystemMessage(`엑셀출력 완료 · 통합 6개 시트·구매업로드 ${selection.included.length}행·판매업로드 ${salesRows.length}행`);
           showToast(`${fileName} 한 파일 다운로드를 시작했습니다.`);
         } catch (error) {
           setSystemMessage("엑셀출력 실패 · 기준일과 출력 오류를 확인하세요");
@@ -4585,7 +4603,9 @@
           return;
         }
         renderPreview();
-        showToast(`${target.label} 배색을 저장·적용했습니다.`);
+        showToast(color === COLOR_CANCEL_COLOR
+          ? `${target.label} 배색을 흰색으로 해제했습니다.`
+          : `${target.label} 배색을 저장·적용했습니다.`);
       });
       elements.warehouseColorResetButton.addEventListener("click", () => {
         state.managerFilters.clear();
