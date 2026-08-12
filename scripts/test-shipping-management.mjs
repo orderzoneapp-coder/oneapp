@@ -9,9 +9,9 @@ import { fileURLToPath } from "node:url";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const require = createRequire(import.meta.url);
 const orderOpsHtml = fs.readFileSync(path.join(ROOT, "orderops_list.html"), "utf8");
-assert.match(orderOpsHtml, /brand-badge">v1\.15</, "OrderOps visible version must be v1.15");
+assert.match(orderOpsHtml, /brand-badge">v1\.16</, "OrderOps visible version must be v1.16");
 assert.ok(orderOpsHtml.includes('grid-template-areas: "uploads analyze"'),
-  "the public v1.15 execution area must reserve visible space for analyze and refresh controls");
+  "the public v1.16 execution area must reserve visible space for analyze and refresh controls");
 assert.ok(orderOpsHtml.includes("function resetResultViewFilters()"),
   "the public refresh control must reset result filters without a runtime reference error");
 const compactSystemIoStart = orderOpsHtml.indexOf("/* orderops v1.11: compact System.IO border strip */");
@@ -67,7 +67,7 @@ for (const requiredInteractionContract of [
   'getAllocationInventoryView(workspace)',
 ]) {
   assert.ok(orderOpsHtml.includes(requiredInteractionContract),
-    `public OrderOps v1.15 interaction contract is missing: ${requiredInteractionContract}`);
+    `public OrderOps v1.16 interaction contract is missing: ${requiredInteractionContract}`);
 }
 assert.match(orderOpsHtml, /@page\s*\{\s*size:\s*A4 portrait;/,
   "public OrderOps screen print must use A4 portrait");
@@ -77,6 +77,15 @@ assert.match(orderOpsHtml, /purchase-input\[data-negative-balance="true"\][^{]*\
   "negative inventory totals must color the purchase editor inside its border");
 assert.match(orderOpsHtml, /workbookTools\.downloadWorkbook\(state\.workspace, window\.XLSX, fileName\)/,
   "the single Excel output must use the integrated workbook");
+assert.doesNotMatch(orderOpsHtml, /<datalist[^>]+purchaseSupplierHistory|list="purchaseSupplierHistory"|title="\$\{escapeHtml\(value\)\}"/,
+  "public purchase entry and data cells must not open cell-obscuring bubbles");
+for (const firstViewContract of [
+  'class="validation-notice-summary"',
+  'id="validationNoticeHeading">전달사항(적요보기)',
+  'state.activePreview === "validation"',
+]) {
+  assert.ok(orderOpsHtml.includes(firstViewContract), `public OrderOps first-view notice contract is missing: ${firstViewContract}`);
+}
 assert.doesNotMatch(orderOpsHtml, /id="purchaseUploadButton"/,
   "a separate purchase-upload button must not remain");
 assert.match(orderOpsHtml, />엑셀출력 F8</, "the integrated Excel output button must remain visible in the header");
@@ -1292,7 +1301,7 @@ assert.ok(
 );
 
 const html = fs.readFileSync(path.join(ROOT, "orderops", "list.html"), "utf8");
-assert.match(html, /brand-badge">v1\.15</, "canonical OrderOps visible version must be v1.15");
+assert.match(html, /brand-badge">v1\.16</, "canonical OrderOps visible version must be v1.16");
 const styleBlocks = [...html.matchAll(/<style(?:\s[^>]*)?>([\s\S]*?)<\/style>/gi)].map((match) => match[1]);
 assert.ok(styleBlocks.length > 0, "orderops/list.html must contain a style block");
 
@@ -1370,7 +1379,7 @@ for (const requiredInteractionContract of [
   'getAllocationInventoryView(workspace)',
 ]) {
   assert.ok(html.includes(requiredInteractionContract),
-    `canonical OrderOps v1.15 interaction contract is missing: ${requiredInteractionContract}`);
+    `canonical OrderOps v1.16 interaction contract is missing: ${requiredInteractionContract}`);
 }
 assert.match(combinedCss, /(?:^|})\s*th\s*\{[^{}]*\bposition\s*:\s*sticky\s*;/m,
   "the current OrderOps table must keep sticky headers");
@@ -1414,7 +1423,7 @@ for (const id of [
   "downloadButton", "printButton",
   "headerCloudLoadButton", "headerCloudSaveButton",
   "headerRestoreButton", "headerSettingsButton", "settingsModal", "workspaceStorage",
-  "excelMappingEditor", "mappingSaveButton", "mappingResetButton", "purchaseSupplierHistory",
+  "excelMappingEditor", "mappingSaveButton", "mappingResetButton",
 ]) {
   assert.equal(html.split(`id="${id}"`).length - 1, 1, `${id} must exist exactly once`);
 }
@@ -1523,8 +1532,18 @@ for (const contract of [
   "handleInventoryGridArrowNavigation", "autocompletePurchaseInput", "rememberPurchaseName",
   "function resetResultViewFilters()", 'grid-template-areas: "uploads analyze"',
 ]) {
-  assert.ok(html.includes(contract), `OrderOps v1.15 contract is missing: ${contract}`);
+  assert.ok(html.includes(contract), `OrderOps v1.16 contract is missing: ${contract}`);
 }
+
+for (const firstViewContract of [
+  'class="validation-notice-summary"',
+  'id="validationNoticeHeading">전달사항(적요보기)',
+  'state.activePreview === "validation"',
+]) {
+  assert.ok(html.includes(firstViewContract), `OrderOps first-view notice contract is missing: ${firstViewContract}`);
+}
+assert.doesNotMatch(html, /<datalist[^>]+purchaseSupplierHistory|list="purchaseSupplierHistory"|title="\$\{escapeHtml\(value\)\}"/,
+  "purchase entry and data cells must not open cell-obscuring bubbles");
 
 const localWorkspaceStart = html.indexOf("async function persistLocalWorkspace");
 const localWorkspaceEnd = html.indexOf("function scheduleLocalSave", localWorkspaceStart);
