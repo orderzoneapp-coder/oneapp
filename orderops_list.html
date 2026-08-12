@@ -2317,12 +2317,14 @@
     }
 
     table.column-width-managed {
-      width: max-content;
-      min-width: 100%;
+      width: auto;
+      min-width: 0;
       table-layout: fixed;
     }
 
+    table.column-width-managed th,
     table.column-width-managed td {
+      min-width: 0;
       max-width: none;
     }
 
@@ -2495,7 +2497,7 @@
     table.preview-allocations td.number { text-align: right; font-variant-numeric: tabular-nums; }
     table.preview-allocations tr.unit-alert-row td { color: #ef2b2d !important; }
     table.preview-inventory .purchase-input {
-      min-width: 72px;
+      min-width: 0;
       height: 24px;
       padding: 1px 6px;
       border-radius: 2px;
@@ -2537,7 +2539,7 @@
     }
     table.preview-inventory .inventory-input {
       width: 100%;
-      min-width: 68px;
+      min-width: 0;
       height: 28px;
       padding: 3px 7px;
       border: 1px solid #94a3b8;
@@ -2554,7 +2556,7 @@
       outline-offset: 0;
     }
     table.preview-inventory td.information-value {
-      min-width: 190px;
+      min-width: 0;
       white-space: pre-line;
       line-height: 1.45;
     }
@@ -2721,7 +2723,7 @@
       <div class="brand-mark">ONEAPP</div>
       <div class="brand-divider" aria-hidden="true"></div>
       <div class="brand-stack">
-        <div class="brand-suite">NEXUS <span class="brand-badge">v1.11</span></div>
+        <div class="brand-suite">NEXUS <span class="brand-badge">v1.12</span></div>
         <div class="brand-product">orderops</div>
       </div>
     </div>
@@ -2874,7 +2876,7 @@
     </section>
 
     <footer class="page-footer">
-      <span>orderops v1.11 · workspace shipping-workspace/v2 · cloud plan v1</span>
+      <span>orderops v1.12 · workspace shipping-workspace/v2 · cloud plan v1</span>
       <a href="SHIPPING_MANAGEMENT_GUIDANCE.md">개발·운영 기준 보기</a>
     </footer>
   </main>
@@ -2900,7 +2902,7 @@
       const TABLE_WIDTHS_SCHEMA = "shipping-table-widths/v1";
       const HIDDEN_COLUMNS_KEY = "oneapp.orderops.hidden-columns.v1";
       const HIDDEN_COLUMNS_SCHEMA = "orderops-hidden-columns/v1";
-      const TABLE_WIDTH_MIN = 48;
+      const TABLE_WIDTH_MIN = 32;
       const TABLE_WIDTH_MAX = 720;
       const TABLE_WIDTH_TABS = new Set(["validation", "inventory", "allocations"]);
       const CLOUD_PLAN_SCHEMA = "ONEAPP_SHIPPING_PURCHASE_PLAN_V1";
@@ -3754,6 +3756,12 @@
             element.setAttribute("aria-valuenow", String(width));
           }
         });
+        const table = elements.previewTable.querySelector("table.column-width-managed");
+        if (table) {
+          const renderedWidth = Array.from(table.querySelectorAll("col[data-column-key]"))
+            .reduce((total, column) => total + (Number.parseFloat(column.style.width) || 0), 0);
+          table.style.width = `${renderedWidth}px`;
+        }
       }
 
       function handleColumnPointerMove(event) {
@@ -4040,6 +4048,10 @@
         const resizable = options.resizable !== false;
         const previewId = options.previewId || state.activePreview;
         const visibleEntries = visibleColumnEntries(preview, previewId, options);
+        const tableWidth = visibleEntries.reduce(
+          (total, { column }) => total + currentColumnWidth(previewId, column),
+          0,
+        );
         const colgroup = `<colgroup>${visibleEntries.map(({ column }) => {
           const width = currentColumnWidth(previewId, column);
           return `<col data-column-key="${escapeHtml(column.key)}" style="width:${width}px">`;
@@ -4111,7 +4123,7 @@
           : `<tr><td colspan="${Math.max(1, visibleEntries.length)}" class="empty-table-cell">표시할 항목이 없습니다.</td></tr>`;
 
         return `
-          <table class="preview-${previewId} column-width-managed">
+          <table class="preview-${previewId} column-width-managed" style="width:${tableWidth}px">
             ${colgroup}
             <thead><tr>${headers}</tr></thead>
             <tbody>${body}</tbody>
@@ -4802,3 +4814,4 @@
   </script>
 </body>
 </html>
+

@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const require = createRequire(import.meta.url);
 const orderOpsHtml = fs.readFileSync(path.join(ROOT, "orderops_list.html"), "utf8");
-assert.match(orderOpsHtml, /brand-badge">v1\.11</, "OrderOps visible version must be v1.11");
+assert.match(orderOpsHtml, /brand-badge">v1\.12</, "OrderOps visible version must be v1.12");
 const compactSystemIoStart = orderOpsHtml.indexOf("/* orderops v1.11: compact System.IO border strip */");
 const compactSystemIoEnd = orderOpsHtml.indexOf("</style>", compactSystemIoStart);
 assert.ok(compactSystemIoStart >= 0 && compactSystemIoEnd > compactSystemIoStart,
@@ -24,6 +24,20 @@ for (const requiredStyle of [
 ]) {
   assert.ok(compactSystemIoStyle.includes(requiredStyle), `compact System.IO is missing: ${requiredStyle}`);
 }
+assert.match(orderOpsHtml, /table\.column-width-managed\s*\{[^}]*min-width:\s*0;/,
+  "the public OrderOps table must allow unused space on the right");
+assert.doesNotMatch(orderOpsHtml, /table\.column-width-managed\s*\{[^}]*min-width:\s*100%;/,
+  "the public OrderOps table must not stretch to the full viewport width");
+assert.match(orderOpsHtml, /const TABLE_WIDTH_MIN = 32;/,
+  "the public OrderOps columns must support compact manual widths");
+assert.match(orderOpsHtml, /const tableWidth = visibleEntries\.reduce\(/,
+  "the public OrderOps table width must equal the sum of visible column widths");
+assert.match(orderOpsHtml, /table\.style\.width = `\$\{renderedWidth\}px`;/,
+  "the public OrderOps table must shrink with a resized column");
+assert.match(orderOpsHtml, /table\.preview-inventory \.inventory-input\s*\{[^}]*min-width:\s*0;/,
+  "inventory editors must not force their columns wider");
+assert.match(orderOpsHtml, /table\.preview-inventory td\.information-value\s*\{[^}]*min-width:\s*0;/,
+  "the information column must remain freely resizable");
 assert.match(orderOpsHtml, /workbookTools\.downloadWorkbook\(state\.workspace, window\.XLSX, fileName\)/,
   "the single Excel output must use the integrated workbook");
 assert.doesNotMatch(orderOpsHtml, /id="purchaseUploadButton"/,
@@ -1234,7 +1248,7 @@ assert.ok(
 );
 
 const html = fs.readFileSync(path.join(ROOT, "orderops", "list.html"), "utf8");
-assert.match(html, /brand-badge">v1\.11</, "canonical OrderOps visible version must be v1.11");
+assert.match(html, /brand-badge">v1\.12</, "canonical OrderOps visible version must be v1.12");
 const styleBlocks = [...html.matchAll(/<style(?:\s[^>]*)?>([\s\S]*?)<\/style>/gi)].map((match) => match[1]);
 assert.ok(styleBlocks.length > 0, "orderops/list.html must contain a style block");
 
@@ -1278,6 +1292,16 @@ function assertBalancedCssBraces(css) {
 
 styleBlocks.forEach(assertBalancedCssBraces);
 const combinedCss = styleBlocks.join("\n");
+assert.match(combinedCss, /table\.column-width-managed\s*\{[^}]*min-width:\s*0;/,
+  "the canonical OrderOps table must allow unused space on the right");
+assert.doesNotMatch(combinedCss, /table\.column-width-managed\s*\{[^}]*min-width:\s*100%;/,
+  "the canonical OrderOps table must not stretch to the full viewport width");
+assert.match(html, /const TABLE_WIDTH_MIN = 32;/,
+  "the canonical OrderOps columns must support compact manual widths");
+assert.match(html, /const tableWidth = visibleEntries\.reduce\(/,
+  "the canonical OrderOps table width must equal the sum of visible column widths");
+assert.match(html, /table\.style\.width = `\$\{renderedWidth\}px`;/,
+  "the canonical OrderOps table must shrink with a resized column");
 assert.match(combinedCss, /(?:^|})\s*th\s*\{[^{}]*\bposition\s*:\s*sticky\s*;/m,
   "the current OrderOps table must keep sticky headers");
 assert.match(combinedCss, /(?:^|})\s*td\s*\{[^{}]*\boverflow\s*:\s*hidden\s*;/m,
@@ -1688,3 +1712,4 @@ console.log(
       ? `OrderOps tests passed, including the real ${inventoryReferenceWorkspace.stats.inventoryRowCount}-inventory reference file.`
       : "OrderOps tests passed. Real reference files were not present and were skipped.",
 );
+
