@@ -13,14 +13,16 @@ assert.doesNotMatch(orderOpsHtml, /tokens truncated|…\d+ tokens truncated…/,
   "the public OrderOps mirror must not contain a truncated source fragment");
 assert.match(orderOpsHtml, /<body>[\s\S]*<\/body>\s*<\/html>/,
   "the public OrderOps mirror must remain a complete HTML document");
-assert.match(orderOpsHtml, /brand-badge">v1\.25</, "ORDER Q visible version must be v1.25");
+assert.match(orderOpsHtml, /brand-badge">v1\.26</, "ORDER Q visible version must be v1.26");
 assert.match(orderOpsHtml, /<title>ONEAPP ORDER Q · 출고관리<\/title>/,
   "the public page title must establish ORDER Q as shipment management");
 assert.match(orderOpsHtml, /aria-label="ONEAPP ORDER Q 출고관리"/,
   "the public brand must identify ONEAPP ORDER Q shipment management");
 assert.match(orderOpsHtml, /class="brand-logo" src="assets\/order-q-logo\.png"/,
   "the public header must use the approved ORDER Q logo asset");
-assert.match(orderOpsHtml, /ORDER Q v1\.25 · 출고관리/,
+assert.match(orderOpsHtml, /\.brand-logo-frame\s*\{[\s\S]*?width:\s*120px;[\s\S]*?height:\s*20px;/,
+  "the public ORDER Q logo must match the ONEAPP wordmark height");
+assert.match(orderOpsHtml, /ORDER Q v1\.26 · 출고관리/,
   "the public footer must use the ORDER Q product concept");
 assert.doesNotMatch(
   orderOpsHtml.slice(orderOpsHtml.indexOf('<header class="global-header">'), orderOpsHtml.indexOf('</header>')),
@@ -35,7 +37,7 @@ assert.equal(
   "the repository logo must be the unmodified approved source image",
 );
 assert.ok(orderOpsHtml.includes('class="execution-panel"'),
-  "the public v1.25 execution controls must be separate from the upload strip");
+  "the public v1.26 execution controls must be separate from the upload strip");
 assert.match(orderOpsHtml, /\.execution-panel\s*\{[^}]*grid-template-columns:\s*repeat\(3,/,
   "the public execution controls must use three visible segments");
 assert.ok(orderOpsHtml.includes("function resetResultViewFilters()"),
@@ -91,7 +93,7 @@ for (const requiredInteractionContract of [
   'getAllocationInventoryView(workspace)',
 ]) {
   assert.ok(orderOpsHtml.includes(requiredInteractionContract),
-    `public ORDER Q v1.25 interaction contract is missing: ${requiredInteractionContract}`);
+    `public ORDER Q v1.26 interaction contract is missing: ${requiredInteractionContract}`);
 }
 assert.doesNotMatch(orderOpsHtml, /<input[^>]+type="color"|data-warehouse-color|data-manager-color/,
   "the public OrderOps filter strip must not use a native color picker inside filter options");
@@ -1456,7 +1458,7 @@ assert.ok(
 );
 
 const html = fs.readFileSync(path.join(ROOT, "orderops", "list.html"), "utf8");
-assert.match(html, /brand-badge">v1\.25</, "canonical ORDER Q visible version must be v1.25");
+assert.match(html, /brand-badge">v1\.26</, "canonical ORDER Q visible version must be v1.26");
 assert.match(html, /class="brand-logo" src="\.\.\/assets\/order-q-logo\.png"/,
   "the canonical header must use the shared ORDER Q logo asset");
 assert.match(html, /<h2 id="settingsModalTitle">ORDER Q 환경설정<\/h2>/,
@@ -1561,7 +1563,7 @@ for (const requiredInteractionContract of [
   'getAllocationInventoryView(workspace)',
 ]) {
   assert.ok(html.includes(requiredInteractionContract),
-    `canonical ORDER Q v1.25 interaction contract is missing: ${requiredInteractionContract}`);
+    `canonical ORDER Q v1.26 interaction contract is missing: ${requiredInteractionContract}`);
 }
 assert.doesNotMatch(html, /<input[^>]+type="color"|data-warehouse-color|data-manager-color/,
   "canonical OrderOps filter options must remain separate from color assignment");
@@ -1750,7 +1752,7 @@ for (const contract of [
   "handleInventoryGridArrowNavigation", "autocompletePurchaseInput", "rememberPurchaseName",
   "function resetResultViewFilters()", 'grid-template-columns: repeat(3, minmax(0, 1fr))',
 ]) {
-  assert.ok(html.includes(contract), `ORDER Q v1.25 contract is missing: ${contract}`);
+  assert.ok(html.includes(contract), `ORDER Q v1.26 contract is missing: ${contract}`);
 }
 assert.ok(html.includes('id="warehouseColorResetButton" type="button">전체 다시보기</button>'),
   "filter reset must be presented as returning to the full view");

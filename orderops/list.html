@@ -85,17 +85,17 @@
     }
     .brand-logo-frame {
       position: relative;
-      width: 174px;
-      height: 30px;
+      width: 120px;
+      height: 20px;
       overflow: hidden;
       flex: 0 0 auto;
     }
     .brand-logo {
       position: absolute;
-      left: -31px;
-      top: -22px;
+      left: -21px;
+      top: -15px;
       display: block;
-      width: 230px;
+      width: 158px;
       max-width: none;
       height: auto;
     }
@@ -696,7 +696,7 @@
       white-space: nowrap;
     }
     .spec-filter:disabled { opacity: .42; }
-    /* ORDER Q v1.25: operator-facing shipment-management branding */
+    /* ORDER Q v1.26: operator-facing shipment-management branding */
     .header-output-button { border-color: #99f6e4; color: #0f766e; background: #f0fdfa; }
     .header-output-button:hover:not(:disabled) { background: #ccfbf1; }
     .results-panel .table-wrap { max-height: calc(100vh - 200px); }
@@ -1138,8 +1138,8 @@
     @media (max-width: 700px) {
       .global-header { height: auto; min-height: 50px; padding: 7px 10px; gap: 8px; }
       .brand-product { display: none; }
-      .brand-logo-frame { width: 142px; height: 25px; }
-      .brand-logo { width: 190px; left: -26px; top: -19px; }
+      .brand-logo-frame { width: 120px; height: 20px; }
+      .brand-logo { width: 158px; left: -21px; top: -15px; }
       .header-actions { flex-wrap: wrap; justify-content: flex-end; }
       .header-link { min-height: 28px; padding: 0 8px; }
       .page-shell { width: min(100% - 18px, 1480px); padding-top: 10px; }
@@ -1178,7 +1178,7 @@
       .recovery-record-item { grid-template-columns: auto 1fr; }
       .recovery-record-status { grid-column: 2; }
     }
-    /* ORDER Q v1.25: Excel-like grids, clearer controls, and revised workflow shortcuts */
+    /* ORDER Q v1.26: Excel-like grids, clearer controls, and revised workflow shortcuts */
     .input-panel { grid-template-columns: minmax(0, 1fr) 330px; gap: 12px; }
     .upload-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
     .source-selector {
@@ -1301,7 +1301,7 @@
       <div class="brand-mark">ONEAPP</div>
       <div class="brand-divider" aria-hidden="true"></div>
       <span class="brand-logo-frame" aria-hidden="true"><img class="brand-logo" src="../assets/order-q-logo.png" alt=""></span>
-      <span class="brand-badge">v1.25</span>
+      <span class="brand-badge">v1.26</span>
       <span class="brand-product">출고관리</span>
     </div>
     <div class="header-actions">
@@ -1469,7 +1469,7 @@
     </section>
 
     <footer class="page-footer">
-      <span>ORDER Q v1.25 · 출고관리 · workspace shipping-workspace/v2 · cloud plan v1</span>
+      <span>ORDER Q v1.26 · 출고관리 · workspace shipping-workspace/v2 · cloud plan v1</span>
       <a href="../SHIPPING_MANAGEMENT_GUIDANCE.md">개발·운영 기준 보기</a>
     </footer>
   </main>
