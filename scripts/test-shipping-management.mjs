@@ -13,9 +13,9 @@ assert.doesNotMatch(orderOpsHtml, /tokens truncated|…\d+ tokens truncated…/,
   "the public OrderOps mirror must not contain a truncated source fragment");
 assert.match(orderOpsHtml, /<body>[\s\S]*<\/body>\s*<\/html>/,
   "the public OrderOps mirror must remain a complete HTML document");
-assert.match(orderOpsHtml, /brand-badge">v1\.19</, "OrderOps visible version must be v1.19");
+assert.match(orderOpsHtml, /brand-badge">v1\.20</, "OrderOps visible version must be v1.20");
 assert.ok(orderOpsHtml.includes('class="execution-panel"'),
-  "the public v1.19 execution controls must be separate from the upload strip");
+  "the public v1.20 execution controls must be separate from the upload strip");
 assert.match(orderOpsHtml, /\.execution-panel\s*\{[^}]*grid-template-columns:\s*repeat\(3,/,
   "the public execution controls must use three visible segments");
 assert.ok(orderOpsHtml.includes("function resetResultViewFilters()"),
@@ -63,13 +63,37 @@ for (const requiredInteractionContract of [
   'data-column-drag-key',
   'analysisEnterLocked',
   'event.stopImmediatePropagation()',
-  '["F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "F12"]',
+  '["F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10"]',
   'filteredSortedPreviewPairs(state.activePreview, preview)',
   'getAllocationInventoryView(workspace)',
 ]) {
   assert.ok(orderOpsHtml.includes(requiredInteractionContract),
-    `public OrderOps v1.19 interaction contract is missing: ${requiredInteractionContract}`);
+    `public OrderOps v1.20 interaction contract is missing: ${requiredInteractionContract}`);
 }
+for (const shortcutContract of [
+  'shortcut: "F5"',
+  'shortcut: "F6"',
+  'inventory.shortcut = "F7"',
+  '저장 F8',
+  'activatePreview("allocations")',
+  'activatePreview("ledger")',
+  'activatePreview("inventory")',
+]) {
+  assert.ok(orderOpsHtml.includes(shortcutContract), `public OrderOps shortcut contract is missing: ${shortcutContract}`);
+}
+assert.doesNotMatch(orderOpsHtml, /F12|새로고침 F5|aria-keyshortcuts="F5"[^>]*refreshButton/,
+  "retired F12 and refresh-F5 shortcuts must not remain");
+assert.ok(orderOpsHtml.includes(
+  'headers: ["창고", "거래처", "담당자", "상품코드", "품명", "규격", "주문", "단가", ...allocationWarehouseHeaders, "전달사항", "구매"]',
+), "the public order table must use the approved default column sequence");
+assert.doesNotMatch(orderOpsHtml, /allocations\.columns\[0\]\.orderField\s*=\s*"warehouse"/,
+  "the order warehouse column must remain read-only");
+assert.match(orderOpsHtml, /table\s*\{[^}]*border-collapse:\s*collapse;[^}]*border:\s*1px solid #d9e2ec;/,
+  "public preview tables must use a light Excel-like grid");
+assert.match(orderOpsHtml, /\.order-edit-input\s*\{[^}]*border:\s*0;/,
+  "public editable cells must not draw an inner input border");
+assert.match(orderOpsHtml, /\.table-wrap td:focus-within\s*\{[^}]*background:\s*#edf9f7 !important;/,
+  "public editable cells must show a light focus fill");
 assert.doesNotMatch(orderOpsHtml, /id="bundleDrop"|id="bundleInput"|Excel 묶음파일을 여기에 크게 던지기/,
   "the compact source strip must not retain a permanent bundle panel");
 assert.match(orderOpsHtml, /function setActiveFilterPanel\(panelName = ""\)/,
@@ -1347,7 +1371,7 @@ assert.ok(
 );
 
 const html = fs.readFileSync(path.join(ROOT, "orderops", "list.html"), "utf8");
-assert.match(html, /brand-badge">v1\.19</, "canonical OrderOps visible version must be v1.19");
+assert.match(html, /brand-badge">v1\.20</, "canonical OrderOps visible version must be v1.20");
 const styleBlocks = [...html.matchAll(/<style(?:\s[^>]*)?>([\s\S]*?)<\/style>/gi)].map((match) => match[1]);
 assert.ok(styleBlocks.length > 0, "orderops/list.html must contain a style block");
 
@@ -1427,13 +1451,24 @@ for (const requiredInteractionContract of [
   'data-column-drag-key',
   'analysisEnterLocked',
   'event.stopImmediatePropagation()',
-  '["F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "F12"]',
+  '["F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10"]',
   'filteredSortedPreviewPairs(state.activePreview, preview)',
   'getAllocationInventoryView(workspace)',
 ]) {
   assert.ok(html.includes(requiredInteractionContract),
-    `canonical OrderOps v1.19 interaction contract is missing: ${requiredInteractionContract}`);
+    `canonical OrderOps v1.20 interaction contract is missing: ${requiredInteractionContract}`);
 }
+assert.ok(html.includes(
+  'headers: ["창고", "거래처", "담당자", "상품코드", "품명", "규격", "주문", "단가", ...allocationWarehouseHeaders, "전달사항", "구매"]',
+), "the canonical order table must use the approved default column sequence");
+assert.doesNotMatch(html, /allocations\.columns\[0\]\.orderField\s*=\s*"warehouse"/,
+  "the canonical order warehouse column must remain read-only");
+assert.match(combinedCss, /\.purchase-input\s*\{[^}]*border:\s*0;/,
+  "canonical purchase editors must not draw an inner input border");
+assert.match(combinedCss, /table\.preview-inventory \.inventory-input\s*\{[^}]*border:\s*0;/,
+  "canonical inventory editors must not draw an inner input border");
+assert.match(combinedCss, /\.table-wrap td:focus-within\s*\{[^}]*background:\s*#edf9f7 !important;/,
+  "canonical editable cells must show a light focus fill");
 assert.doesNotMatch(html, /id="bundleDrop"|id="bundleInput"|Excel 묶음파일을 여기에 크게 던지기/,
   "canonical compact source strip must not retain a permanent bundle panel");
 assert.match(html, /function setActiveFilterPanel\(panelName = ""\)/,
@@ -1597,7 +1632,7 @@ for (const contract of [
   "handleInventoryGridArrowNavigation", "autocompletePurchaseInput", "rememberPurchaseName",
   "function resetResultViewFilters()", 'grid-template-columns: repeat(3, minmax(0, 1fr))',
 ]) {
-  assert.ok(html.includes(contract), `OrderOps v1.19 contract is missing: ${contract}`);
+  assert.ok(html.includes(contract), `OrderOps v1.20 contract is missing: ${contract}`);
 }
 
 for (const firstViewContract of [
