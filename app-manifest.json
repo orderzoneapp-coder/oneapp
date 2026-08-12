@@ -678,6 +678,11 @@
         "F8": "Unassigned.",
         "F9": "Create the combined workbook, finalize the DataOps inventory snapshot, then independently resume stopped master products with positive counted inventory.",
         "F10": "Open the print output workflow."
+      },
+      "orderops": {
+        "F3": "Focus the integrated search field and keep the text caret ready for immediate input.",
+        "F7": "Print the current visible OrderOps tab, filters, rows, column visibility, and column order on A4 portrait.",
+        "F8": "Create the complete integrated OrderOps workbook independently of current screen filters, hidden columns, or column order."
       }
     }
   },

@@ -7,20 +7,10 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  const ENGINE_VERSION = "3.6.0";
+  const ENGINE_VERSION = "3.7.0";
   const WORKSPACE_SCHEMA_VERSION = "shipping-workspace/v2";
   const INVENTORY_OVERRIDE_SCHEMA_VERSION = "shipping-inventory-overrides/v1";
   const HEADER_SCAN_LIMIT = 30;
-  const MANAGER_PALETTE = Object.freeze([
-    Object.freeze({ base: "FCE7D6", strong: "FDBA74" }),
-    Object.freeze({ base: "DDEBF7", strong: "93C5FD" }),
-    Object.freeze({ base: "E2F0D9", strong: "86EFAC" }),
-    Object.freeze({ base: "EDE9FE", strong: "C4B5FD" }),
-    Object.freeze({ base: "FEF3C7", strong: "FCD34D" }),
-    Object.freeze({ base: "FCE7F3", strong: "F9A8D4" }),
-    Object.freeze({ base: "CCFBF1", strong: "5EEAD4" }),
-  ]);
-
   const ORDER_REQUIRED_COLUMNS = Object.freeze([
     "품목코드",
     "품목명",
@@ -115,15 +105,6 @@
 
   function normalizeCategoryCode(value) {
     return normalizeProductCode(value).replace(/\s+/g, "").toUpperCase();
-  }
-
-  function managerColors(manager) {
-    const text = cleanText(manager);
-    let hash = 0;
-    for (let index = 0; index < text.length; index += 1) {
-      hash = (hash * 31 + text.charCodeAt(index)) >>> 0;
-    }
-    return MANAGER_PALETTE[hash % MANAGER_PALETTE.length];
   }
 
   function stableTextHash(value) {
@@ -1090,7 +1071,6 @@
       groups: "",
       managers: "",
       manager: "",
-      managerColors: { base: "FFFFFF", strong: "FFFFFF" },
       noteValues: [],
       note1Values: [],
       notes: "",
@@ -1413,7 +1393,6 @@
         matchStatus: matched ? "매칭완료" : "재고정보 없음",
         purchase: "",
         supplierDisplay: uniqueSupplierPairs([order])[0]?.display || "",
-        managerColors: managerColors(order.manager),
       });
     }
 
@@ -1489,7 +1468,6 @@
         groups: uniqueJoined(summary.groups),
         managers: managerValues.join(", "),
         manager: primaryManager,
-        managerColors: managerColors(primaryManager),
         noteValues,
         note1Values,
         notes: noteValues.join("\n"),
@@ -1556,7 +1534,6 @@
               groups: "",
               managers: "",
               manager: "",
-              managerColors: { base: "F1F5F9", strong: "E2E8F0" },
               noteValues: [],
               note1Values: [],
               notes: "",
@@ -1899,7 +1876,6 @@
     commitVerifiedRecoveryRecord,
     selectLatestVerifiedRecovery,
     parseOrderBasisDate,
-    managerColors,
     buildPlanId,
     isPurchaseUploadExcluded,
     parseNumericCell,

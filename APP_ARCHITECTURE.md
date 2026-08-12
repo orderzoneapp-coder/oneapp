@@ -824,6 +824,12 @@ Roadmap work is delivered as separate pull requests and verified after each merg
 - F8 is currently unassigned.
 - F8 remains reserved until a separate requirement is approved.
 
+#### OrderOps
+
+- F3 focuses the integrated search field and keeps the caret ready for immediate input.
+- F7 prints only the current visible tab state, including active filters, rows, column visibility and column order, on A4 portrait.
+- F8 downloads the complete integrated workbook regardless of current screen filters, hidden columns or column order.
+
 Function keys are application-owned behavior.
 
 They may share:
