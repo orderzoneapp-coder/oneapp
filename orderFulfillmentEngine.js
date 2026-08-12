@@ -7,7 +7,7 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  const ENGINE_VERSION = "3.12.0";
+  const ENGINE_VERSION = "3.13.0";
   const WORKSPACE_SCHEMA_VERSION = "shipping-workspace/v2";
   const INVENTORY_OVERRIDE_SCHEMA_VERSION = "shipping-inventory-overrides/v1";
   const HEADER_SCAN_LIMIT = 30;
@@ -60,9 +60,10 @@
     "사용": Object.freeze(["사용"]),
     "단위": Object.freeze(["단위"]),
     "품목코드": Object.freeze(["품목코드", "상품코드", "제품코드", "코드"]),
-    "품목명": Object.freeze(["품목명", "상품명", "제품명"]),
+    "품목명": Object.freeze(["품목명", "품명", "상품명", "제품명"]),
     "규격": Object.freeze(["규격", "사양"]),
     "수량": Object.freeze(["수량", "재고수량", "합계수량"]),
+    "재고": Object.freeze(["재고", "현재고", "기말재고"]),
     "기본": Object.freeze(["기본"]),
     "전송": Object.freeze(["전송"]),
     "창고": Object.freeze(["창고"]),
@@ -72,6 +73,7 @@
     "사용",
     "단위",
     "수량",
+    "재고",
     "2전송",
     "7진영",
     "기본",
@@ -192,6 +194,9 @@
     const aliasLookup = createAliasLookup(INVENTORY_CANONICAL_ALIASES, headerAliases);
     const canonicals = headers.map((header) => aliasLookup.get(normalizeOrderHeader(header)) || "");
     const quantityIndex = canonicals.indexOf("수량");
+    const stockIndex = canonicals.indexOf("재고");
+    const warehouseIndex = canonicals.indexOf("창고");
+    const rowBasedStockLayout = stockIndex >= 0 && quantityIndex < 0 && warehouseIndex >= 0;
     let quantityBoundary = headers.length;
     if (quantityIndex >= 0) {
       for (let index = quantityIndex + 1; index < normalized.length; index += 1) {
@@ -214,6 +219,8 @@
       let role = "value";
       if (canonical === "품목코드") role = "productCode";
       else if (canonical === "수량") role = "calculatedQuantity";
+      else if (canonical === "재고" && rowBasedStockLayout) role = "warehouseQuantity";
+      else if (canonical === "창고" && rowBasedStockLayout) role = "value";
       else if (canonical === "창고" || /^(?:창고|창고단가)$/.test(normalizedLabel) || /창고.*(?:단가|가격|금액|원가)/.test(normalizedLabel)) {
         role = "warehousePrice";
       } else if (["기본", "전송"].includes(canonical) || /^(?:기본|전송)$/.test(normalizedLabel)) {
@@ -270,6 +277,15 @@
       if (warehousePriceIndex >= 0) {
         const [warehousePrice] = result.splice(warehousePriceIndex, 1);
         result.splice(Math.min(usageIndex, result.length), 0, warehousePrice);
+      }
+    }
+    if (rowBasedStockLayout) {
+      const warehouseCodeIndex = result.findIndex(
+        (column) => normalizeHeader(column.header) === "창고" && column.role === "value",
+      );
+      if (warehouseCodeIndex > 0) {
+        const [warehouseCode] = result.splice(warehouseCodeIndex, 1);
+        result.unshift(warehouseCode);
       }
     }
     return result;

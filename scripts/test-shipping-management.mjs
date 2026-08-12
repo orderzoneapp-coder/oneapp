@@ -13,9 +13,9 @@ assert.doesNotMatch(orderOpsHtml, /tokens truncated|…\d+ tokens truncated…/,
   "the public OrderOps mirror must not contain a truncated source fragment");
 assert.match(orderOpsHtml, /<body>[\s\S]*<\/body>\s*<\/html>/,
   "the public OrderOps mirror must remain a complete HTML document");
-assert.match(orderOpsHtml, /brand-badge">v1\.23</, "OrderOps visible version must be v1.23");
+assert.match(orderOpsHtml, /brand-badge">v1\.24</, "OrderOps visible version must be v1.24");
 assert.ok(orderOpsHtml.includes('class="execution-panel"'),
-  "the public v1.23 execution controls must be separate from the upload strip");
+  "the public v1.24 execution controls must be separate from the upload strip");
 assert.match(orderOpsHtml, /\.execution-panel\s*\{[^}]*grid-template-columns:\s*repeat\(3,/,
   "the public execution controls must use three visible segments");
 assert.ok(orderOpsHtml.includes("function resetResultViewFilters()"),
@@ -71,7 +71,7 @@ for (const requiredInteractionContract of [
   'getAllocationInventoryView(workspace)',
 ]) {
   assert.ok(orderOpsHtml.includes(requiredInteractionContract),
-    `public OrderOps v1.23 interaction contract is missing: ${requiredInteractionContract}`);
+    `public OrderOps v1.24 interaction contract is missing: ${requiredInteractionContract}`);
 }
 assert.doesNotMatch(orderOpsHtml, /<input[^>]+type="color"|data-warehouse-color|data-manager-color/,
   "the public OrderOps filter strip must not use a native color picker inside filter options");
@@ -427,6 +427,30 @@ const edgeInventory = parseInventory(
     { code: "000100-A", name: "대체 참고상품", whole: 7, seoul: 0, transfer: 0 },
   ]),
 );
+const stockCloseInventory = parseInventory([
+  ["회사명 : 원앱 / 1창고 / 2026/08/10 / 전체재고"],
+  ["단위", "창고", "품목코드", "품명", "규격", "재고", "기록", "거래", "구매가", "기본", "적요"],
+  ["BOX", "01", "CLOSE-001", "수불마감 상품 1", "BOX", 4, "2026-08-10", "거창", 16000, "1", ""],
+  ["EA", "01", "CLOSE-002", "수불마감 상품 2", "EA", -1.5, "2026-08-10", "경매", 9000, "1", "확인"],
+], "수불마감_20260810.xlsx");
+assert.equal(stockCloseInventory.errors.length, 0, JSON.stringify(stockCloseInventory.errors, null, 2));
+assert.equal(stockCloseInventory.rowCount, 2, "row-based whole-stock input must preserve every source product");
+assert.deepEqual(
+  stockCloseInventory.rows.map((row) => [row.productCode, row.productName, row.inventoryTotal]),
+  [["CLOSE-001", "수불마감 상품 1", 4], ["CLOSE-002", "수불마감 상품 2", -1.5]],
+  "품명 and signed 재고 values must map without source-value correction",
+);
+assert.equal(
+  stockCloseInventory.columns.find((column) => column.header === "재고")?.role,
+  "warehouseQuantity",
+  "row-based 재고 must satisfy the warehouse-inventory structure signature",
+);
+assert.equal(
+  stockCloseInventory.columns.find((column) => column.header === "창고")?.editable,
+  false,
+  "row-based warehouse codes must remain read-only",
+);
+assert.equal(stockCloseInventory.columns[0]?.header, "창고", "row-based warehouse code must be the leading column");
 const unknownHeaderInventory = parseInventory(buildInventoryMatrix([
   { code: "ALIAS-001", whole: 3, seoul: 0, transfer: 0 },
 ]));
@@ -482,7 +506,7 @@ const edgeWorkspace = engine.analyze(edgeOrders, edgeInventory, {
   createdAt: "2026-07-30T00:00:00.000Z",
   sourceFingerprint: "a".repeat(64),
 });
-assert.equal(engine.ENGINE_VERSION, "3.12.0");
+assert.equal(engine.ENGINE_VERSION, "3.13.0");
 assert.equal(workbookTools.WORKBOOK_VERSION, "4.4.0");
 assert.equal(edgeWorkspace.schemaVersion, "shipping-workspace/v2");
 
@@ -1412,7 +1436,7 @@ assert.ok(
 );
 
 const html = fs.readFileSync(path.join(ROOT, "orderops", "list.html"), "utf8");
-assert.match(html, /brand-badge">v1\.23</, "canonical OrderOps visible version must be v1.23");
+assert.match(html, /brand-badge">v1\.24</, "canonical OrderOps visible version must be v1.24");
 assert.match(
   html,
   /"품목명": \["품목명", "품명", "상품명", "제품명"\]/,
@@ -1513,7 +1537,7 @@ for (const requiredInteractionContract of [
   'getAllocationInventoryView(workspace)',
 ]) {
   assert.ok(html.includes(requiredInteractionContract),
-    `canonical OrderOps v1.23 interaction contract is missing: ${requiredInteractionContract}`);
+    `canonical OrderOps v1.24 interaction contract is missing: ${requiredInteractionContract}`);
 }
 assert.doesNotMatch(html, /<input[^>]+type="color"|data-warehouse-color|data-manager-color/,
   "canonical OrderOps filter options must remain separate from color assignment");
@@ -1702,7 +1726,7 @@ for (const contract of [
   "handleInventoryGridArrowNavigation", "autocompletePurchaseInput", "rememberPurchaseName",
   "function resetResultViewFilters()", 'grid-template-columns: repeat(3, minmax(0, 1fr))',
 ]) {
-  assert.ok(html.includes(contract), `OrderOps v1.23 contract is missing: ${contract}`);
+  assert.ok(html.includes(contract), `OrderOps v1.24 contract is missing: ${contract}`);
 }
 assert.ok(html.includes('id="warehouseColorResetButton" type="button">전체 다시보기</button>'),
   "filter reset must be presented as returning to the full view");
@@ -1800,9 +1824,30 @@ function readFileMatrices(filePath, sheetName) {
 
 const referenceOrdersPath = "C:\\Users\\USER\\Desktop\\미출고현황.xlsx";
 const referenceInventoryPath = "C:\\Users\\USER\\Desktop\\창고별재고.xlsx";
+const referenceStockClosePath = "C:\\Users\\USER\\Desktop\\수불마감_20260810.xlsx";
 const referenceFilesEnabled = process.env.SHIPPING_SKIP_REFERENCE_FILES !== "1";
 let referenceWorkspace = null;
 let inventoryReferenceWorkspace = null;
+if (referenceFilesEnabled && fs.existsSync(referenceStockClosePath)) {
+  const stockCloseInput = readFileMatrices(referenceStockClosePath, "전체재고");
+  const stockCloseInventory = engine.parseInventoryWorkbook({
+    fileName: path.basename(referenceStockClosePath),
+    ...stockCloseInput,
+  });
+  assert.equal(stockCloseInventory.errors.length, 0, JSON.stringify(stockCloseInventory.errors, null, 2));
+  assert.equal(stockCloseInventory.rowCount, 261, "수불마감 전체재고 must preserve all operational rows");
+  assert.equal(
+    stockCloseInventory.rows.reduce((sum, row) => sum + row.inventoryTotal, 0),
+    1946.2,
+    "수불마감 전체재고 must preserve the signed stock total",
+  );
+  const stockColumn = stockCloseInventory.columns.find((column) => column.header === "재고");
+  const warehouseColumn = stockCloseInventory.columns.find((column) => column.header === "창고");
+  assert.equal(stockColumn?.role, "warehouseQuantity", "수불마감 재고 must be a warehouse quantity");
+  assert.equal(stockColumn?.editable, true, "수불마감 재고 must remain administrator-editable");
+  assert.equal(warehouseColumn?.role, "value", "수불마감 창고 code must remain a read-only source value");
+  assert.equal(warehouseColumn?.editable, false, "수불마감 창고 code must not become a price editor");
+}
 if (referenceFilesEnabled && fs.existsSync(referenceInventoryPath)) {
   const inventoryInput = readFileMatrices(referenceInventoryPath, "재고현황");
   const referenceInventoryOnly = engine.parseInventoryWorkbook({
