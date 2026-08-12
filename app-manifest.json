@@ -197,11 +197,11 @@
     },
     {
       "id": "orderops",
-      "name": "OrderOps",
+      "name": "ORDER Q",
       "path": "orderops/list.html",
       "kind": "web-entry",
       "status": "pilot",
-      "purpose": "Classify order, warehouse inventory, purchase, and sales workbooks by structure; calculate order-aware inventory balances and a purchase-informed stock ledger; manage purchase plans with recoverable local state and explicit revisioned cloud saves; and generate reviewed unshipped-status and purchase-upload workbooks.",
+      "purpose": "Manage the shipment workflow from customer order through available inventory, purchasing, staged shipment completion, and reviewed outbound workbooks.",
       "owner": "shipping-operations",
       "productionWrites": true,
       "services": [

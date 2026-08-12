@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="google" content="notranslate">
-  <title>ONEAPP OrderOps</title>
+  <title>ONEAPP ORDER Q · 출고관리</title>
   <link rel="preconnect" href="https://cdn.jsdelivr.net">
   <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
   <script src="../orderFulfillmentEngine.js"></script>
@@ -73,21 +73,31 @@
     }
     .brand-mark {
       color: #2563eb;
-      font-size: 19px;
+      font-size: 15px;
       line-height: 1;
       font-weight: 900;
       letter-spacing: -0.04em;
     }
-    .brand-divider { display: none; }
-    .brand-stack { display: flex; align-items: center; gap: 9px; min-width: 0; }
-    .brand-suite {
-      display: flex;
-      align-items: center;
-      gap: 7px;
-      color: var(--slate-900);
-      font-size: 17px;
-      font-weight: 900;
-      letter-spacing: -0.02em;
+    .brand-divider {
+      width: 1px;
+      height: 18px;
+      background: var(--slate-200);
+    }
+    .brand-logo-frame {
+      position: relative;
+      width: 174px;
+      height: 30px;
+      overflow: hidden;
+      flex: 0 0 auto;
+    }
+    .brand-logo {
+      position: absolute;
+      left: -31px;
+      top: -22px;
+      display: block;
+      width: 230px;
+      max-width: none;
+      height: auto;
     }
     .brand-badge {
       padding: 2px 7px;
@@ -99,9 +109,9 @@
       font-weight: 800;
     }
     .brand-product {
-      color: var(--slate-500);
+      color: #0f766e;
       font-size: 11px;
-      font-weight: 700;
+      font-weight: 800;
       white-space: nowrap;
     }
     .header-actions { display: flex; align-items: center; gap: 7px; }
@@ -686,7 +696,7 @@
       white-space: nowrap;
     }
     .spec-filter:disabled { opacity: .42; }
-    /* orderops v1.24: stock-closing whole-stock sheets are accepted as warehouse inventory */
+    /* ORDER Q v1.25: operator-facing shipment-management branding */
     .header-output-button { border-color: #99f6e4; color: #0f766e; background: #f0fdfa; }
     .header-output-button:hover:not(:disabled) { background: #ccfbf1; }
     .results-panel .table-wrap { max-height: calc(100vh - 200px); }
@@ -1128,6 +1138,8 @@
     @media (max-width: 700px) {
       .global-header { height: auto; min-height: 50px; padding: 7px 10px; gap: 8px; }
       .brand-product { display: none; }
+      .brand-logo-frame { width: 142px; height: 25px; }
+      .brand-logo { width: 190px; left: -26px; top: -19px; }
       .header-actions { flex-wrap: wrap; justify-content: flex-end; }
       .header-link { min-height: 28px; padding: 0 8px; }
       .page-shell { width: min(100% - 18px, 1480px); padding-top: 10px; }
@@ -1166,7 +1178,7 @@
       .recovery-record-item { grid-template-columns: auto 1fr; }
       .recovery-record-status { grid-column: 2; }
     }
-    /* orderops v1.24: Excel-like grids, clearer controls, and revised workflow shortcuts */
+    /* ORDER Q v1.25: Excel-like grids, clearer controls, and revised workflow shortcuts */
     .input-panel { grid-template-columns: minmax(0, 1fr) 330px; gap: 12px; }
     .upload-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
     .source-selector {
@@ -1285,13 +1297,12 @@
 </head>
 <body>
   <header class="global-header">
-    <div class="brand" aria-label="ONEAPP NEXUS OrderOps">
+    <div class="brand" aria-label="ONEAPP ORDER Q 출고관리">
       <div class="brand-mark">ONEAPP</div>
       <div class="brand-divider" aria-hidden="true"></div>
-      <div class="brand-stack">
-        <div class="brand-suite">NEXUS <span class="brand-badge">v1.24</span></div>
-        <div class="brand-product">OrderOps</div>
-      </div>
+      <span class="brand-logo-frame" aria-hidden="true"><img class="brand-logo" src="../assets/order-q-logo.png" alt=""></span>
+      <span class="brand-badge">v1.25</span>
+      <span class="brand-product">출고관리</span>
     </div>
     <div class="header-actions">
       <button class="header-link header-output-button" id="printButton" type="button"
@@ -1458,7 +1469,7 @@
     </section>
 
     <footer class="page-footer">
-      <span>orderops v1.24 · workspace shipping-workspace/v2 · cloud plan v1</span>
+      <span>ORDER Q v1.25 · 출고관리 · workspace shipping-workspace/v2 · cloud plan v1</span>
       <a href="../SHIPPING_MANAGEMENT_GUIDANCE.md">개발·운영 기준 보기</a>
     </footer>
   </main>
@@ -1468,7 +1479,7 @@
       aria-labelledby="settingsModalTitle" aria-describedby="settingsModalDescription">
       <header class="settings-modal-header">
         <div>
-          <h2 id="settingsModalTitle">OrderOps 환경설정</h2>
+          <h2 id="settingsModalTitle">ORDER Q 환경설정</h2>
           <p class="storage-note" id="settingsModalDescription">이 컴퓨터의 임시저장과 클라우드 완료본을 관리합니다.</p>
         </div>
         <button class="settings-close-button" id="settingsCloseButton" type="button" aria-label="환경설정 닫기">×</button>

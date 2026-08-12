@@ -1,7 +1,7 @@
 # ONEAPP Application Architecture
 
 - Repository: orderzoneapp-coder/oneapp
-- Architecture document version: 1.3.9
+- Architecture document version: 1.4.0
 - Last reviewed: 2026-08-13
 - Machine-readable companion: app-manifest.json
 
@@ -91,7 +91,7 @@ Shared storage or navigation does not make their business meaning identical.
 | `history_viewer.html` | Web entry | Production | Inspect product-change history and price trends |
 | `Master.html` | Web entry | Pilot | Product-master lookup and administrator-reviewed add/update; initial registration and full replacement are not active in the first phase |
 | `Item_manager.html` | Web entry | Pilot / transition | Existing category lookup and product-management route retained until approved feature migration and result verification are complete |
-| `orderops/list.html` | Web entry | Pilot | OrderOps four-way structure-first Excel intake, editable order-status and order-aware inventory balance/stock-ledger review, purchase-plan editing and recovery, explicit revisioned cloud sharing, and integrated Excel output |
+| `orderops/list.html` | Web entry | Pilot | ORDER Q shipment management: four-way structure-first Excel intake, editable order status and order-aware inventory balance/stock-ledger review, purchase-plan editing and recovery, explicit revisioned cloud sharing, and integrated Excel output |
 | `coreEngine.js` | Shared library | Production | Storage, pricing, history, export, cloud synchronization, and master-data utilities |
 | `code.gs` | Cloud service | Production | Google Apps Script API for master, history, configuration, the finalized DataOps inventory snapshot, and immutable Shipping purchase-plan revisions |
 
@@ -334,7 +334,7 @@ Equivalent safety controls must be preserved when another application writes the
 19. `Item_manager.html` remains available during the transition.
 20. `Item_manager.html` is not removed by this phase.
 
-### 6.6 OrderOps smart file intake
+### 6.6 ORDER Q smart file intake
 
 1. The input workbench exposes order, warehouse inventory, purchase, and sales file slots.
 2. The existing four-slot source strip is one full drag surface that accepts one to four files and classifies every dropped file by worksheet structure and column names first; touching a named slot opens its single-file picker without adding a separate visible bundle target.
@@ -346,8 +346,9 @@ Equivalent safety controls must be preserved when another application writes the
 8. Order-status edits to order quantity, purchase place, warehouse, delivery note, and unit price remain inside the existing `shipping-workspace/v2` optional row fields and are recalculated before local recovery, explicit cloud save, stock-ledger display, purchase selection, and integrated workbook output.
 9. Warehouse and manager color assignments are local persistent display preferences. Changing a color saves and applies it immediately, while `전체 다시보기` clears only active warehouse and manager filters and never resets saved colors.
 10. The settings modal initially exposes the five most recent local recovery records and reveals the remaining retained records through an explicit `더보기` control; record retention and verification still follow the ten-record recovery contract.
-11. System.IO status text states the current operator action in Korean. OrderOps uses F2 to clear only result search/specification/warehouse/manager view filters, while preserving analyzed data and saved warehouse/manager colors. Filter buttons sit after the column tools, and color assignment is a separate target selector with ten visible pastel choices plus an explicit vivid-color expansion; native color inputs are not embedded in filter buttons.
+11. System.IO status text states the current operator action in Korean. ORDER Q uses F2 to clear only result search/specification/warehouse/manager view filters, while preserving analyzed data and saved warehouse/manager colors. Filter buttons sit after the column tools, and color assignment is a separate target selector with ten visible pastel choices plus an explicit vivid-color expansion; native color inputs are not embedded in filter buttons.
 12. Warehouse inventory accepts both the existing wide warehouse-column layout and the row-based whole-stock layout used by stock-closing workbooks. In the row-based layout, `품명` maps to the product name, `재고` is the editable warehouse quantity only when `수량` is absent and `창고` is present, and the source warehouse code remains read-only; signed quantities and source rows are preserved without changing order, purchase, or sales calculations.
+13. The operator-facing product brand is `ORDER Q`, owned by ONEAPP, and its stated purpose is shipment management (`출고관리`). The approved ORDER Q image asset is the visible header identity. Existing `orderops` routes, source filenames, storage keys, workspace schemas, cloud actions, and internal compatibility labels remain unchanged until a separately approved internal rename or migration.
 
 ---
 
@@ -438,7 +439,7 @@ They do not receive feature expansion during the current MerchOps and DataOps de
 
 Planned applications must not write production master data until they are promoted through architecture review.
 
-OrderOps is registered as a Pilot on the existing NEXUS Operations `orderops/list.html` route. It owns the isolated `shipping-purchase-plan` local/cloud contract, does not call `coreEngine.js`, and does not change MerchOps or DataOps business behavior. Disabling the route and reverting its PR is the code rollback path; already finalized cloud revisions remain append-only operational records and are not deleted by rollback.
+ORDER Q is registered as a Pilot on the existing `orderops/list.html` compatibility route. It owns the isolated `shipping-purchase-plan` local/cloud contract, does not call `coreEngine.js`, and does not change MerchOps or DataOps business behavior. Disabling the route and reverting its PR is the code rollback path; already finalized cloud revisions remain append-only operational records and are not deleted by rollback.
 
 ---
 
@@ -842,7 +843,7 @@ Roadmap work is delivered as separate pull requests and verified after each merg
 - F8 is currently unassigned.
 - F8 remains reserved until a separate requirement is approved.
 
-#### OrderOps
+#### ORDER Q
 
 - F3 focuses the integrated search field and keeps the caret ready for immediate input.
 - F4 opens Smart Input, Enter starts shipment analysis, and a successful multi-file drop captures Enter for analysis so an earlier focused control is not reactivated; refresh remains an explicit button action without a function-key shortcut.
