@@ -91,7 +91,7 @@ Shared storage or navigation does not make their business meaning identical.
 | `history_viewer.html` | Web entry | Production | Inspect product-change history and price trends |
 | `Master.html` | Web entry | Pilot | Product-master lookup and administrator-reviewed add/update; initial registration and full replacement are not active in the first phase |
 | `Item_manager.html` | Web entry | Pilot / transition | Existing category lookup and product-management route retained until approved feature migration and result verification are complete |
-| `orderops/list.html` | Web entry | Pilot | OrderOps four-way structure-first Excel intake, aggregate-stock allocation, purchase-plan editing and recovery, explicit revisioned cloud sharing, and reviewed unshipped-status/purchase-upload Excel output |
+| `orderops/list.html` | Web entry | Pilot | OrderOps four-way structure-first Excel intake, order-aware inventory balance and stock-ledger review, purchase-plan editing and recovery, explicit revisioned cloud sharing, and reviewed unshipped-status/purchase-upload Excel output |
 | `coreEngine.js` | Shared library | Production | Storage, pricing, history, export, cloud synchronization, and master-data utilities |
 | `code.gs` | Cloud service | Production | Google Apps Script API for master, history, configuration, the finalized DataOps inventory snapshot, and immutable Shipping purchase-plan revisions |
 
@@ -337,11 +337,11 @@ Equivalent safety controls must be preserved when another application writes the
 ### 6.6 OrderOps smart file intake
 
 1. The input workbench exposes order, warehouse inventory, purchase, and sales file slots.
-2. Selecting multiple files through any slot classifies every file by worksheet structure and column names first.
+2. The large bundle target accepts two to four files and classifies every file by worksheet structure and column names first; each named slot accepts exactly one manually selected file.
 3. Configured sheet-name aliases are used only when structural candidates tie; filename aliases are the final tie-breaker.
 4. Administrator column aliases are passed to the real order and inventory parsers without renaming source headers.
-5. Order and warehouse inventory remain the required inputs for the current allocation analysis. Purchase and sales files are classified and retained for future phases without changing the current calculation or workbook contract.
-6. Mapping aliases and purchase-place input history remain local UI preferences and are never included in local workspace recovery, explicit cloud saves, or integrated Excel output.
+5. Order and warehouse inventory remain required. Inventory balance is the warehouse-stock sum minus order quantity; purchase rows populate the stock-ledger inbound display but do not change that balance, and sales rows remain a retained future-phase source.
+6. Mapping aliases and purchase-place input history remain local UI preferences. Parsed optional-source rows travel with the analyzed workspace so local recovery and explicit cloud loading reproduce the same stock-ledger view.
 
 ---
 
@@ -841,8 +841,8 @@ Roadmap work is delivered as separate pull requests and verified after each merg
 - F3 focuses the integrated search field and keeps the caret ready for immediate input.
 - F7 prints only the current visible tab state, including active filters, rows, column visibility and column order, on A4 portrait.
 - F8 downloads the complete integrated workbook regardless of current screen filters, hidden columns or column order.
-- The four input slots accept bundled files and classify by columns and sheet structure before sheet-name and filename aliases.
-- Purchase and sales inputs remain future-phase sources and do not alter the current order/inventory calculation unless a separate requirement promotes them into analysis.
+- The large bundle target classifies two to four files by columns and sheet structure before sheet-name and filename aliases; the four named slots are single-file selectors.
+- Purchase input supplies the stock-ledger inbound display only. The inventory balance remains warehouse stock minus unshipped order quantity, while sales input remains reserved for a later phase.
 
 Function keys are application-owned behavior.
 

@@ -241,9 +241,9 @@ assert.doesNotMatch(html, /구매업로드 Excel|미출고현황 Excel|id="purch
 assert.match(html, /@page\s*\{\s*size:\s*A4 portrait;\s*margin:\s*8mm;/);
 assert.match(html, /\.print-area thead\s*\{\s*display:\s*table-header-group;/);
 assert.match(html, /page-break-inside:\s*avoid/);
-assert.match(html, /\["Enter", "ArrowDown", "ArrowUp"\]/);
+assert.match(html, /\["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"\]/);
 assert.match(html, /event\.isComposing \|\| event\.keyCode === 229 \|\| input\.dataset\.composing === "true"/);
-assert.match(html, /typeof sourceRow\?\.inventoryTotal === "number" && sourceRow\.inventoryTotal < 0/);
+assert.match(html, /typeof sourceRow\?\.displayRemainingQuantity === "number" && sourceRow\.displayRemainingQuantity < 0/);
 assert.doesNotMatch(html, /negativeBalance[\s\S]{0,240}preview\.inventory/);
 assert.match(html, /tabindex="\$\{negativeBalance \? "0" : "-1"\}"/);
 assert.match(html, /workbookTools\.downloadWorkbook\(state\.workspace, window\.XLSX, fileName\)/);

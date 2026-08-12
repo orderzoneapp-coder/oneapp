@@ -609,7 +609,7 @@
     .validation-notice-table table { margin: 0; }
 
     /* =========================================================
-       Results / table tools - current v1.16 features retained
+       Results / table tools - current v1.17 features retained
        ========================================================= */
     .results-panel {
       margin-top: 8px;
@@ -673,7 +673,7 @@
       white-space: nowrap;
     }
     .spec-filter:disabled { opacity: .42; }
-    /* orderops v1.16: first-view delivery notices, compact toolbar, context filters, column drag, and portrait print */
+    /* orderops v1.17: first-view delivery notices, compact toolbar, fixed filters, column drag, and portrait print */
     .header-output-button { border-color: #99f6e4; color: #0f766e; background: #f0fdfa; }
     .header-output-button:hover:not(:disabled) { background: #ccfbf1; }
     .results-panel .table-wrap { max-height: calc(100vh - 200px); }
@@ -1086,13 +1086,60 @@
       .recovery-record-item { grid-template-columns: auto 1fr; }
       .recovery-record-status { grid-column: 2; }
     }
-    /* orderops v1.16: four-way smart file intake, mapping aliases, grid navigation, and unobscured purchase entry */
-    .upload-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    /* orderops v1.17: large bundle intake, fixed filters, order-aware balance, and stock ledger */
+    .input-panel { grid-template-columns: minmax(0, 1fr) minmax(190px, 240px) 137px; }
+    .upload-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
     .source-selector {
-      grid-template-areas: "uploads analyze";
-      grid-template-columns: minmax(0, 1fr) 137px;
+      display: grid;
+      grid-template-areas: "bundle" "uploads";
+      grid-template-columns: minmax(0, 1fr);
+      gap: 6px;
     }
     .source-selector-heading { display: none; }
+    .bundle-drop-zone {
+      grid-area: bundle;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      min-height: 54px;
+      padding: 8px 14px;
+      border: 2px dashed #2dd4bf;
+      border-radius: 7px;
+      color: #ccfbf1;
+      background: rgba(13,148,136,.18);
+      cursor: pointer;
+      text-align: center;
+    }
+    .bundle-drop-zone:hover,
+    .bundle-drop-zone.dragover,
+    .bundle-drop-zone:focus-visible { border-color: #facc15; background: rgba(20,184,166,.3); outline: none; }
+    .bundle-drop-zone strong { display: block; font-size: 12px; }
+    .bundle-drop-zone span { color: #99f6e4; font-size: 10px; }
+    .upload-card { min-width: 0; }
+    .smart-input-panel { display: flex; align-items: stretch; padding: 0; }
+    .smart-input-panel .order-input-link {
+      display: flex;
+      flex: 1;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      min-height: 100%;
+      border: 1px solid #5eead4;
+      border-radius: 6px;
+      color: #ccfbf1;
+      background: #134e4a;
+      font-weight: 900;
+      text-decoration: none;
+    }
+    .system-topbar .validation-box { flex: 0 1 auto; min-width: 190px; padding: 2px 8px; border: 0; background: transparent; }
+    .system-topbar .validation-box p { margin: 0; white-space: nowrap; font-size: 9px; }
+    .results-panel, .view-controls { overflow: visible; }
+    .column-visibility-menu { z-index: 200; }
+    .warehouse-color-bar { display: grid; grid-template-columns: 1fr 1fr auto; align-items: start; gap: 8px; }
+    .fixed-filter-group { display: flex; align-items: center; gap: 6px; min-width: 0; }
+    .fixed-filter-group .warehouse-color-title { flex: 0 0 auto; }
+    .fixed-filter-group .warehouse-color-options { display: flex; flex-wrap: wrap; gap: 4px; }
     .action-bar { display: flex; flex-direction: row; gap: 5px; align-items: stretch; width: 137px; min-width: 137px; }
     .refresh-button { width: 36px; min-width: 36px; border: 1px solid #64748b; border-radius: 5px; color: #dbeafe; background: #1e293b; cursor: pointer; }
     .refresh-button:hover { color: #fff; border-color: #5eead4; background: #0f766e; }
@@ -1108,7 +1155,16 @@
     table.preview-inventory .inventory-input[data-negative-value="true"] { color: #b91c1c; font-weight: 900; }
     table.preview-inventory .inventory-input:focus { border-color: #0d9488; outline: 2px solid rgba(13,148,136,.18); }
     table.preview-inventory td.inventory-total-cell { padding: 2px 4px; }
-    @media (max-width: 900px) { .upload-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+    table.preview-inventory td.information-value { min-width: 0; }
+    @media (max-width: 1100px) {
+      .input-panel { grid-template-columns: minmax(0, 1fr) 170px 137px; }
+      .warehouse-color-bar { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 900px) {
+      .input-panel { grid-template-columns: 1fr; }
+      .upload-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .smart-input-panel { min-height: 42px; }
+    }
   </style>
 </head>
 <body>
@@ -1117,14 +1173,11 @@
       <div class="brand-mark">ONEAPP</div>
       <div class="brand-divider" aria-hidden="true"></div>
       <div class="brand-stack">
-        <div class="brand-suite">NEXUS <span class="brand-badge">v1.16</span></div>
+        <div class="brand-suite">NEXUS <span class="brand-badge">v1.17</span></div>
         <div class="brand-product">OrderOps</div>
       </div>
     </div>
     <div class="header-actions">
-      <a class="header-link order-input-link" href="input.html" aria-label="스마트 전표입력 화면 열기">
-        <span aria-hidden="true">✎</span><span>스마트입력</span>
-      </a>
       <button class="header-link header-output-button" id="printButton" type="button"
         aria-label="현재 보이는 화면 인쇄 F7" disabled>
         <span aria-hidden="true">▣</span><span>화면인쇄 F7</span>
@@ -1156,7 +1209,12 @@
           <span class="system-message" id="systemMessage">waiting for data_blocks... (주문/재고 Excel을 선택하세요)</span>
           <span class="system-cursor" aria-hidden="true"></span>
         </div>
+        <div class="validation-box" id="validationBox" role="status" aria-live="polite">
+          <p class="validation-title"><span aria-hidden="true">○</span>필수 파일 선택 대기</p>
+        </div>
         <div class="system-mode storage-status-inline">
+          <span class="storage-status-guide"><strong>임시저장</strong> · 완료 후 저장</span>
+          <span class="storage-status-divider">·</span>
           <strong id="localSaveStatus">임시저장 준비</strong>
           <span class="storage-status-divider">·</span>
           <span id="cloudStatus">완료본 저장 · 미연결</span>
@@ -1167,16 +1225,23 @@
         <div class="source-selector">
           <div class="data-source-label"><span aria-hidden="true">▣</span> 데이터 소스:</div>
 
+          <div class="bundle-drop-zone" id="bundleDrop" tabindex="0" role="button"
+            aria-label="Excel 묶음파일 2개에서 4개 자동 분류 업로드">
+            <strong>Excel 묶음파일을 여기에 크게 던지기</strong>
+            <span>2~4개 파일 · 시트 구조와 열 이름으로 자동 배치</span>
+          </div>
+          <input class="hidden" id="bundleInput" type="file" accept=".xlsx,.xls" multiple>
+
           <div class="upload-grid">
             <article class="upload-card" id="ordersCard">
               <div class="drop-zone" id="ordersDrop" tabindex="0" role="button" aria-label="주문현황 Excel 개별 선택">
                 <div class="file-icon" aria-hidden="true">1</div>
                 <div class="file-copy">
                   <p class="drop-title">주문현황</p>
-                  <p class="drop-help" id="ordersFileName">파일 선택 · 묶음 자동배치</p>
+                  <p class="drop-help" id="ordersFileName">터치하여 파일 1개 선택</p>
                 </div>
               </div>
-              <input class="hidden" id="ordersInput" type="file" accept=".xlsx,.xls" multiple>
+              <input class="hidden" id="ordersInput" type="file" accept=".xlsx,.xls">
             </article>
 
             <article class="upload-card" id="inventoryCard">
@@ -1184,38 +1249,32 @@
                 <div class="file-icon" aria-hidden="true">2</div>
                 <div class="file-copy">
                   <p class="drop-title">창고재고</p>
-                  <p class="drop-help" id="inventoryFileName">파일 선택 · 묶음 자동배치</p>
+                  <p class="drop-help" id="inventoryFileName">터치하여 파일 1개 선택</p>
                 </div>
               </div>
-              <input class="hidden" id="inventoryInput" type="file" accept=".xlsx,.xls" multiple>
+              <input class="hidden" id="inventoryInput" type="file" accept=".xlsx,.xls">
             </article>
             <article class="upload-card" id="purchasesCard">
               <div class="drop-zone" id="purchasesDrop" tabindex="0" role="button" aria-label="구매현황 Excel 선택">
                 <div class="file-icon" aria-hidden="true">3</div>
-                <div class="file-copy"><p class="drop-title">구매현황</p><p class="drop-help" id="purchasesFileName">파일 선택 · 묶음 자동배치</p></div>
+                <div class="file-copy"><p class="drop-title">구매현황</p><p class="drop-help" id="purchasesFileName">터치하여 파일 1개 선택</p></div>
               </div>
-              <input class="hidden" id="purchasesInput" type="file" accept=".xlsx,.xls" multiple>
+              <input class="hidden" id="purchasesInput" type="file" accept=".xlsx,.xls">
             </article>
             <article class="upload-card" id="salesCard">
               <div class="drop-zone" id="salesDrop" tabindex="0" role="button" aria-label="판매현황 Excel 선택">
                 <div class="file-icon" aria-hidden="true">4</div>
-                <div class="file-copy"><p class="drop-title">판매현황</p><p class="drop-help" id="salesFileName">파일 선택 · 묶음 자동배치</p></div>
+                <div class="file-copy"><p class="drop-title">판매현황</p><p class="drop-help" id="salesFileName">터치하여 파일 1개 선택</p></div>
               </div>
-              <input class="hidden" id="salesInput" type="file" accept=".xlsx,.xls" multiple>
+              <input class="hidden" id="salesInput" type="file" accept=".xlsx,.xls">
             </article>
           </div>
         </div>
 
-        <aside class="operator-note" aria-label="실행 설명과 검증 상태">
-          <div class="validation-box" id="validationBox" role="status" aria-live="polite">
-            <p class="validation-title"><span aria-hidden="true">○</span>파일 선택 대기</p>
-            <p class="validation-detail">주문현황과 창고재고를 선택하면 구조를 자동 검증합니다.</p>
-          </div>
-          <div class="operator-note-copy">
-            <div class="operator-note-title">실행 안내</div>
-            <p><strong>여러 파일</strong> → 열 구조 우선 판별 후 4개 항목 자동배치 · <strong>Enter</strong> 또는 출고 분석 실행</p>
-            <p>미매칭 상품은 <strong>재고정보 없음</strong>으로 유지 · 분석 로직은 기존과 동일</p>
-          </div>
+        <aside class="operator-note smart-input-panel" aria-label="스마트 전표입력">
+          <a class="order-input-link" href="input.html" aria-label="스마트 전표입력 화면 열기">
+            <span aria-hidden="true">✎</span><span>스마트입력</span>
+          </a>
         </aside>
 
         <div class="action-bar">
@@ -1256,15 +1315,19 @@
           </div>
           <button class="table-tool-button" id="columnWidthSaveButton" type="button">열폭 저장</button>
           <button class="table-tool-button" id="columnWidthResetButton" type="button">열폭 초기화</button>
-          <button class="table-tool-button hidden" id="filterToggleButton" type="button"
-            aria-expanded="false" aria-controls="warehouseColorBar">창고필터</button>
         </div>
         <div class="preview-count" id="previewCount"></div>
       </div>
 
-      <div class="warehouse-color-bar hidden" id="warehouseColorBar" aria-label="창고명 필터와 셀 내부 배색">
-        <span class="warehouse-color-title">창고 필터·셀 배색</span>
-        <div class="warehouse-color-options" id="warehouseColorOptions"></div>
+      <div class="warehouse-color-bar" id="warehouseColorBar" aria-label="창고와 담당자 고정 필터 및 배색">
+        <section class="fixed-filter-group" aria-label="창고 필터와 셀 내부 배색">
+          <span class="warehouse-color-title">창고 필터·셀 배색</span>
+          <div class="warehouse-color-options" id="warehouseColorOptions"></div>
+        </section>
+        <section class="fixed-filter-group" aria-label="담당자 필터와 행 내부 배색">
+          <span class="warehouse-color-title">담당자 필터·배색</span>
+          <div class="warehouse-color-options" id="managerColorOptions"></div>
+        </section>
         <button class="warehouse-color-reset" id="warehouseColorResetButton" type="button">필터·배색 초기화</button>
       </div>
 
@@ -1272,7 +1335,7 @@
     </section>
 
     <footer class="page-footer">
-      <span>orderops v1.16 · workspace shipping-workspace/v2 · cloud plan v1</span>
+      <span>orderops v1.17 · workspace shipping-workspace/v2 · cloud plan v1</span>
       <a href="../SHIPPING_MANAGEMENT_GUIDANCE.md">개발·운영 기준 보기</a>
     </footer>
   </main>
@@ -1363,7 +1426,7 @@
       const HIDDEN_COLUMNS_SCHEMA = "orderops-hidden-columns/v1";
       const COLUMN_ORDER_KEY = "oneapp.orderops.column-order.v1";
       const COLUMN_ORDER_SCHEMA = "orderops-column-order/v1";
-      const COLUMN_ORDER_TABS = new Set(["inventory", "allocations"]);
+      const COLUMN_ORDER_TABS = new Set(["inventory", "allocations", "ledger"]);
       const WAREHOUSE_COLORS_KEY = "oneapp.orderops.warehouse-colors.v1";
       const WAREHOUSE_COLORS_SCHEMA = "orderops-warehouse-colors/v1";
       const MANAGER_COLORS_KEY = "oneapp.orderops.manager-colors.v1";
@@ -1390,7 +1453,7 @@
       ]);
       const TABLE_WIDTH_MIN = 32;
       const TABLE_WIDTH_MAX = 720;
-      const TABLE_WIDTH_TABS = new Set(["validation", "inventory", "allocations", "notices"]);
+      const TABLE_WIDTH_TABS = new Set(["validation", "inventory", "allocations", "notices", "ledger"]);
       const CLOUD_PLAN_SCHEMA = "ONEAPP_SHIPPING_PURCHASE_PLAN_V1";
       const state = {
         orders: null,
@@ -1421,13 +1484,14 @@
         warehouseFilters: new Set(),
         managerColorSettings: { schemaVersion: MANAGER_COLORS_SCHEMA, colors: Object.create(null) },
         managerFilters: new Set(),
-        filterBarOpen: false,
         activeColumnDrag: null,
         excelMappings: null,
         purchaseHistory: [],
       };
 
       const elements = {
+        bundleInput: document.getElementById("bundleInput"),
+        bundleDrop: document.getElementById("bundleDrop"),
         ordersInput: document.getElementById("ordersInput"),
         inventoryInput: document.getElementById("inventoryInput"),
         purchasesInput: document.getElementById("purchasesInput"),
@@ -1455,8 +1519,8 @@
         specFilterGroup: document.getElementById("specFilterGroup"),
         warehouseColorBar: document.getElementById("warehouseColorBar"),
         warehouseColorOptions: document.getElementById("warehouseColorOptions"),
+        managerColorOptions: document.getElementById("managerColorOptions"),
         warehouseColorResetButton: document.getElementById("warehouseColorResetButton"),
-        filterToggleButton: document.getElementById("filterToggleButton"),
         columnVisibilityButton: document.getElementById("columnVisibilityButton"),
         columnVisibilityMenu: document.getElementById("columnVisibilityMenu"),
         columnWidthSaveButton: document.getElementById("columnWidthSaveButton"),
@@ -2062,7 +2126,6 @@
         state.specificationFilters.clear();
         state.warehouseFilters.clear();
         state.managerFilters.clear();
-        state.filterBarOpen = false;
         elements.tableSearchInput.value = "";
         elements.specFilterGroup.querySelectorAll("input[type='checkbox']").forEach((input) => {
           input.checked = false;
@@ -2231,16 +2294,35 @@
         workbook.SheetNames.forEach((sheetName) => {
           const matrix = window.XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, raw: false, defval: "", blankrows: true });
           for (let rowIndex = 0; rowIndex < Math.min(matrix.length, 30); rowIndex += 1) {
-            const mapped = new Set((matrix[rowIndex] || []).map((header) => lookup.get(normalizeMappingText(header))).filter(Boolean));
+            const canonicalHeaders = (matrix[rowIndex] || []).map((header) => lookup.get(normalizeMappingText(header)) || "");
+            const mapped = new Set(canonicalHeaders.filter(Boolean));
             const requiredCount = required.filter((canonical) => mapped.has(canonical)).length;
             const candidate = { kind, fileName: file.name, sheetName, fileHash, headerRowIndex: rowIndex,
               headers: (matrix[rowIndex] || []).map((value) => String(value || "").trim()), rowCount: Math.max(0, matrix.length - rowIndex - 1),
-              missingColumns: required.filter((canonical) => !mapped.has(canonical)), errors: [], warnings: [], structureScore: requiredCount * 100 + mapped.size };
+              canonicalHeaders, matrix, missingColumns: required.filter((canonical) => !mapped.has(canonical)), errors: [], warnings: [], structureScore: requiredCount * 100 + mapped.size };
             if (!best || candidate.structureScore > best.structureScore) best = candidate;
           }
         });
         if (!best) throw new Error(`${file.name}: 읽을 수 있는 시트 구조가 없습니다.`);
         if (best.missingColumns.length) best.errors.push({ code: `${kind.toUpperCase()}_REQUIRED_COLUMNS`, message: `${FILE_KIND_LABELS[kind]} 필수 열이 없습니다: ${best.missingColumns.join(", ")}` });
+        const columnIndex = (canonical) => best.canonicalHeaders.indexOf(canonical);
+        const partnerCanonical = kind === "purchases" ? "구매처" : "거래처";
+        best.rows = best.matrix.slice(best.headerRowIndex + 1).map((cells, offset) => {
+          const productCode = engine.normalizeProductCode(cells[columnIndex("품목코드")]);
+          const quantityCell = cells[columnIndex("수량")];
+          const parsedQuantity = engine.parseNumericCell(quantityCell);
+          if (!productCode || !parsedQuantity.ok) return null;
+          return {
+            productCode,
+            productName: String(cells[columnIndex("품목명")] || "").trim(),
+            quantity: parsedQuantity.value,
+            partner: String(cells[columnIndex(partnerCanonical)] || "").trim(),
+            sourceRowNumber: best.headerRowIndex + offset + 2,
+          };
+        }).filter(Boolean);
+        best.rowCount = best.rows.length;
+        delete best.matrix;
+        delete best.canonicalHeaders;
         return best;
       }
 
@@ -2393,7 +2475,7 @@
         if (loading) return;
 
         if (!parsed) {
-          name.textContent = "파일 선택 · 묶음 자동배치";
+          name.textContent = "터치하여 파일 1개 선택";
           return;
         }
 
@@ -2550,41 +2632,11 @@
         return isSafeHexColor(color) ? color : "#ffffff";
       }
 
-      function renderWarehouseColorBar(preview) {
-        const inventoryActive = state.activePreview === "inventory";
-        const allocationsActive = state.activePreview === "allocations";
-        const filterAvailable = inventoryActive || allocationsActive;
-        elements.filterToggleButton.classList.toggle("hidden", !filterAvailable);
-        elements.filterToggleButton.textContent = allocationsActive ? "담당자필터" : "창고필터";
-        elements.filterToggleButton.classList.toggle("active", filterAvailable && state.filterBarOpen);
-        elements.filterToggleButton.setAttribute("aria-expanded", String(filterAvailable && state.filterBarOpen));
-        elements.warehouseColorBar.classList.toggle("hidden", !filterAvailable || !state.filterBarOpen);
-        if (!filterAvailable || !state.filterBarOpen) {
-          elements.warehouseColorOptions.innerHTML = "";
-          return;
-        }
-        if (allocationsActive) {
-          elements.warehouseColorBar.setAttribute("aria-label", "담당자 필터와 행 내부 배색");
-          elements.warehouseColorBar.querySelector(".warehouse-color-title").textContent = "담당자 필터·배색";
-          elements.warehouseColorOptions.innerHTML = managerNames(preview).map((manager) => {
-            const color = managerColorFor(manager);
-            const checked = state.managerFilters.has(manager);
-            return `
-              <div class="warehouse-color-option">
-                <label title="${escapeHtml(manager)} 담당 행만 표시">
-                  <input type="checkbox" data-manager-filter="${escapeHtml(manager)}" ${checked ? "checked" : ""}>
-                  <span>${escapeHtml(manager)}</span>
-                </label>
-                <input type="color" value="${escapeHtml(color)}" data-manager-color="${escapeHtml(manager)}"
-                  aria-label="${escapeHtml(manager)} 담당자 행 배색">
-              </div>`;
-          }).join("");
-          return;
-        }
-        elements.warehouseColorBar.setAttribute("aria-label", "창고명 필터와 셀 내부 배색");
-        elements.warehouseColorBar.querySelector(".warehouse-color-title").textContent = "창고 필터·셀 배색";
-        elements.warehouseColorOptions.innerHTML = warehouseColumns(preview).map((column) => {
-          const color = warehouseColorFor(preview, column);
+      function renderWarehouseColorBar(definitions) {
+        const inventoryPreview = definitions?.inventory;
+        const allocationsPreview = definitions?.allocations;
+        elements.warehouseColorOptions.innerHTML = warehouseColumns(inventoryPreview).map((column) => {
+          const color = warehouseColorFor(inventoryPreview, column);
           const checked = state.warehouseFilters.has(column.key);
           return `
             <div class="warehouse-color-option">
@@ -2594,6 +2646,19 @@
               </label>
               <input type="color" value="${escapeHtml(color)}" data-warehouse-color="${escapeHtml(column.key)}"
                 aria-label="${escapeHtml(column.header)} 셀 내부 배색">
+            </div>`;
+        }).join("");
+        elements.managerColorOptions.innerHTML = managerNames(allocationsPreview).map((manager) => {
+          const color = managerColorFor(manager);
+          const checked = state.managerFilters.has(manager);
+          return `
+            <div class="warehouse-color-option">
+              <label title="${escapeHtml(manager)} 담당 행만 표시">
+                <input type="checkbox" data-manager-filter="${escapeHtml(manager)}" ${checked ? "checked" : ""}>
+                <span>${escapeHtml(manager)}</span>
+              </label>
+              <input type="color" value="${escapeHtml(color)}" data-manager-color="${escapeHtml(manager)}"
+                aria-label="${escapeHtml(manager)} 담당자 행 배색">
             </div>`;
         }).join("");
       }
@@ -3037,7 +3102,9 @@
           key: isSafeColumnKey(column?.key)
             ? column.key
             : `shipping:inventory:${index}:${encodeURIComponent(String(column?.header || index))}`,
-          header: String(column?.header || ""),
+          header: column?.role === "calculatedQuantity" && state.warehouseFilters.size > 0
+            ? "선택창고 잔량"
+            : String(column?.header || ""),
           numeric: Boolean(column?.numeric),
           role: column?.role || "",
         }));
@@ -3067,8 +3134,22 @@
           defaultWidth: 200,
         });
 
-        const rows = inventoryView.rows.map((row) => {
+        const sourceRows = inventoryView.rows.map((row) => ({
+          ...row,
+          displayRemainingQuantity: row?.remainingQuantity,
+        }));
+        const rows = sourceRows.map((row) => {
           const values = Array.isArray(row?.values) ? [...row.values] : [];
+          if (state.warehouseFilters.size > 0) {
+            const selectedStock = baseColumns.reduce((sum, column, index) => {
+              if (column.role !== "warehouseQuantity" || !state.warehouseFilters.has(column.key)) return sum;
+              const parsed = engine.parseNumericCell(values[index]);
+              return sum + (parsed.ok ? parsed.value : 0);
+            }, 0);
+            const remainingIndex = baseColumns.findIndex((column) => column.role === "calculatedQuantity");
+            row.displayRemainingQuantity = selectedStock - Number(row?.orderQuantity || 0);
+            if (remainingIndex >= 0) values[remainingIndex] = row.displayRemainingQuantity;
+          }
           values.splice(purchaseIndex, 0, row?.purchase ?? "");
           values.push(row?.suppliers ?? "");
           values.push(row?.orderCustomers ?? "");
@@ -3084,7 +3165,7 @@
           purchase: purchaseIndex,
           purchaseEditable: true,
           status: -1,
-          sourceRows: inventoryView.rows,
+          sourceRows,
           rows,
           sortByProductCode: true,
         };
@@ -3196,10 +3277,27 @@
           if (notices.columns[index]) notices.columns[index].defaultWidth = width;
         });
 
-        const definitions = { validation, notices };
+        validation.noticesPreview = notices;
+        const definitions = { validation };
         const inventory = buildInventoryPreview(workspace);
         if (inventory) definitions.inventory = inventory;
         definitions.allocations = allocations;
+        if (typeof engine.getStockLedgerView === "function") {
+          const ledgerView = engine.getStockLedgerView(workspace);
+          definitions.ledger = {
+            label: "재고수불부",
+            columns: ledgerView.columns.map((column) => ({ ...column, defaultWidth: column.numeric ? 90 : 140 })),
+            headers: ledgerView.headers,
+            numeric: ledgerView.columns.map((column, index) => column.numeric ? index : -1).filter((index) => index >= 0),
+            inventory: [],
+            purchase: -1,
+            purchaseEditable: false,
+            status: -1,
+            sourceRows: ledgerView.rows,
+            rows: ledgerView.rows.map((row) => row.values),
+            sortByProductCode: true,
+          };
+        }
         return definitions;
       }
 
@@ -3306,6 +3404,10 @@
         let entries = orderedColumns(preview, previewId)
           .map((column) => ({ column, index: preview.columns.findIndex((candidate) => candidate.key === column.key) }))
           .filter(({ column }) => !hidden.has(column.key) && !excludedHeaders.has(String(column.header || "")));
+        if (previewId === "inventory" && state.warehouseFilters.size > 0) {
+          entries = entries.filter(({ column }) =>
+            column.role !== "warehouseQuantity" || state.warehouseFilters.has(column.key));
+        }
         if (entries.length === 0 && preview.columns.length > 0 && excludedHeaders.size === 0) {
           entries = [{ column: preview.columns[0], index: 0 }];
         }
@@ -3358,6 +3460,8 @@
                       column.role === "warehouseQuantity" && !referenceRow;
                     const calculatedQuantity = previewId === "inventory" &&
                       column.role === "calculatedQuantity" && !referenceRow;
+                    const orderQuantity = previewId === "inventory" &&
+                      column.role === "orderQuantity" && !referenceRow;
                     const negativeNumericValue = isNonblankNumericValue(value) && Number(String(value).replace(/,/g, "")) < 0;
                     const warehouseFill = warehouseQuantity && isNonblankNumericValue(value)
                       ? warehouseColorFor(preview, column)
@@ -3368,7 +3472,7 @@
                       isNumber ? "number" : "",
                       isStatus ? "status" : "",
                       isWarning ? "warning-value" : "",
-                      warehouseQuantity || calculatedQuantity ? "inventory-framed-cell" : "",
+                      warehouseQuantity || orderQuantity || calculatedQuantity ? "inventory-framed-cell" : "",
                       editableInventory ? "inventory-editable" : "",
                       calculatedQuantity ? "inventory-total-cell" : "",
                     ].filter(Boolean).join(" ");
@@ -3378,7 +3482,7 @@
                     const noticeText = preview.noticeText === index;
                     const acknowledgement = editable && preview.acknowledgement === index && sourceRow?.noticeId;
                     const negativeBalance = previewId === "inventory" &&
-                      typeof sourceRow?.inventoryTotal === "number" && sourceRow.inventoryTotal < 0;
+                      typeof sourceRow?.displayRemainingQuantity === "number" && sourceRow.displayRemainingQuantity < 0;
                     const content = editablePurchase
                       ? `<input class="purchase-input" data-purchase-code="${escapeHtml(sourceRow?.productCode || "")}"
                           data-grid-column="shipping:inventory:purchase" data-negative-balance="${negativeBalance ? "true" : "false"}"
@@ -3395,7 +3499,7 @@
                                 inputmode="decimal" autocomplete="off" data-negative-value="${negativeNumericValue ? "true" : "false"}"
                                 style="${warehouseFill ? `background-color:${warehouseFill}` : ""}" value="${escapeHtml(value)}"
                                 aria-label="${escapeHtml(sourceRow?.productCode || "")} ${escapeHtml(column.header)} 재고수량">`
-                            : calculatedQuantity
+                            : orderQuantity || calculatedQuantity
                               ? `<span class="inventory-total-frame" data-negative-value="${negativeNumericValue ? "true" : "false"}">${escapeHtml(isNumber ? formatNumber(value) : value)}</span>`
                               : `<span class="${noticeText ? "notice-text" : ""}">${escapeHtml(isNumber ? formatNumber(value) : value)}</span>`;
                     return `<td class="${classes}" style="${rowFill ? `background:#${rowFill.replace(/^#/, "")}` : ""}"
@@ -3425,7 +3529,7 @@
         `).join("");
 
         const preview = definitions[state.activePreview];
-        renderWarehouseColorBar(preview);
+        renderWarehouseColorBar(definitions);
         const pairs = filteredSortedPreviewPairs(state.activePreview, preview);
         elements.previewCount.textContent = preview.sortByProductCode
           ? `${formatNumber(pairs.length)}/${formatNumber(preview.rows.length)}행 · 품목코드↑`
@@ -3435,7 +3539,7 @@
         renderColumnVisibilityMenu(preview);
         const previewMarkup = renderTableMarkup(preview, pairs, { editable: true, resizable: true });
         if (state.activePreview === "validation") {
-          const noticePreview = definitions.notices;
+          const noticePreview = preview.noticesPreview;
           const noticePairs = fullSortedPreviewPairs("notices", noticePreview);
           const unacknowledgedCount = noticePreview.sourceRows.filter((notice) =>
             !engine.isNoticeAcknowledged(state.workspace, notice.noticeId)).length;
@@ -3541,7 +3645,6 @@
         state.specificationFilters.clear();
         state.warehouseFilters.clear();
         state.managerFilters.clear();
-        state.filterBarOpen = false;
         elements.tableSearchInput.value = "";
         elements.specFilterGroup.querySelectorAll("input[type='checkbox']").forEach((input) => {
           input.checked = false;
@@ -3564,8 +3667,36 @@
             sheetName: state.inventory.sheetName,
             rowCount: state.inventory.rowCount,
           },
+          purchases: state.purchases ? {
+            sha256: state.purchases.fileHash,
+            fileName: state.purchases.fileName,
+            sheetName: state.purchases.sheetName,
+            rowCount: state.purchases.rowCount,
+          } : null,
+          sales: state.sales ? {
+            sha256: state.sales.fileHash,
+            fileName: state.sales.fileName,
+            sheetName: state.sales.sheetName,
+            rowCount: state.sales.rowCount,
+          } : null,
         }));
-        return engine.analyze(state.orders, state.inventory, { sourceFingerprint });
+        const workspace = engine.analyze(state.orders, state.inventory, { sourceFingerprint });
+        workspace.orderOpsInputs = {
+          schemaVersion: "orderops-analysis-inputs/v1",
+          purchases: state.purchases ? {
+            fileName: state.purchases.fileName,
+            sheetName: state.purchases.sheetName,
+            fileHash: state.purchases.fileHash,
+            rows: state.purchases.rows || [],
+          } : null,
+          sales: state.sales ? {
+            fileName: state.sales.fileName,
+            sheetName: state.sales.sheetName,
+            fileHash: state.sales.fileHash,
+            rows: state.sales.rows || [],
+          } : null,
+        };
+        return workspace;
       }
 
       async function runAnalysis() {
@@ -3789,7 +3920,6 @@
           state.specificationFilters.clear();
           state.warehouseFilters.clear();
           state.managerFilters.clear();
-          state.filterBarOpen = false;
           elements.tableSearchInput.value = "";
           elements.specFilterGroup.querySelectorAll("input[type='checkbox']").forEach((input) => {
             input.checked = false;
@@ -3832,13 +3962,44 @@
         });
         drop.addEventListener("drop", (event) => {
           const files = Array.from(event.dataTransfer.files || []).filter(Boolean);
-          if (files.length > 1) handleBundleFiles(files);
-          else handleFile(kind, files[0]);
+          if (files.length > 1) {
+            showToast("개별 항목에는 파일 1개만 넣을 수 있습니다. 여러 파일은 위의 큰 묶음 투입구에 넣어주세요.", true);
+            return;
+          }
+          handleFile(kind, files[0]);
         });
         input.addEventListener("change", () => {
           const files = Array.from(input.files || []).filter(Boolean);
-          if (files.length > 1) handleBundleFiles(files);
-          else handleFile(kind, files[0]);
+          handleFile(kind, files[0]);
+          input.value = "";
+        });
+      }
+
+      function bindBundleDropZone() {
+        const drop = elements.bundleDrop;
+        const input = elements.bundleInput;
+        const openPicker = () => input.click();
+        drop.addEventListener("click", openPicker);
+        drop.addEventListener("keydown", (event) => {
+          if (!["Enter", " "].includes(event.key)) return;
+          event.preventDefault();
+          openPicker();
+        });
+        ["dragenter", "dragover"].forEach((eventName) => {
+          drop.addEventListener(eventName, (event) => {
+            event.preventDefault();
+            drop.classList.add("dragover");
+          });
+        });
+        ["dragleave", "drop"].forEach((eventName) => {
+          drop.addEventListener(eventName, (event) => {
+            event.preventDefault();
+            drop.classList.remove("dragover");
+          });
+        });
+        drop.addEventListener("drop", (event) => handleBundleFiles(event.dataTransfer.files));
+        input.addEventListener("change", () => {
+          handleBundleFiles(input.files);
           input.value = "";
         });
       }
@@ -4085,12 +4246,7 @@
         else state.specificationFilters.delete(input.value);
         if (state.workspace) renderPreview();
       });
-      elements.filterToggleButton.addEventListener("click", () => {
-        if (!state.workspace || !["inventory", "allocations"].includes(state.activePreview)) return;
-        state.filterBarOpen = !state.filterBarOpen;
-        renderPreview();
-      });
-      elements.warehouseColorOptions.addEventListener("change", (event) => {
+      function handleFixedFilterChange(event) {
         const filter = event.target.closest("[data-warehouse-filter]");
         if (filter) {
           if (filter.checked) state.warehouseFilters.add(filter.dataset.warehouseFilter);
@@ -4117,27 +4273,25 @@
         state.warehouseColorSettings.colors[color.dataset.warehouseColor] = color.value.toLowerCase();
         saveWarehouseColorSettings();
         if (state.workspace) renderPreview();
+      }
+      [elements.warehouseColorOptions, elements.managerColorOptions].forEach((container) => {
+        container.addEventListener("change", handleFixedFilterChange);
       });
       elements.warehouseColorResetButton.addEventListener("click", () => {
-        if (state.activePreview === "allocations") {
-          state.managerFilters.clear();
-          state.managerColorSettings = {
-            schemaVersion: MANAGER_COLORS_SCHEMA,
-            colors: Object.create(null),
-          };
-          saveManagerColorSettings();
-        } else {
-          state.warehouseFilters.clear();
-          state.warehouseColorSettings = {
-            schemaVersion: WAREHOUSE_COLORS_SCHEMA,
-            colors: Object.create(null),
-          };
-          saveWarehouseColorSettings();
-        }
+        state.managerFilters.clear();
+        state.warehouseFilters.clear();
+        state.managerColorSettings = {
+          schemaVersion: MANAGER_COLORS_SCHEMA,
+          colors: Object.create(null),
+        };
+        state.warehouseColorSettings = {
+          schemaVersion: WAREHOUSE_COLORS_SCHEMA,
+          colors: Object.create(null),
+        };
+        saveManagerColorSettings();
+        saveWarehouseColorSettings();
         if (state.workspace) renderPreview();
-        showToast(state.activePreview === "allocations"
-          ? "담당자 필터와 배색을 초기화했습니다."
-          : "창고 필터와 셀 배색을 기본값으로 초기화했습니다.");
+        showToast("창고·담당자 필터와 배색을 초기화했습니다.");
       });
       elements.columnVisibilityButton.addEventListener("click", () => {
         const open = elements.columnVisibilityMenu.classList.contains("hidden");
@@ -4214,7 +4368,7 @@
         const button = event.target.closest("[data-open-notice-id]");
         if (!button || !state.workspace) return;
         const noticeId = button.dataset.openNoticeId;
-        state.activePreview = "notices";
+        state.activePreview = "validation";
         renderPreview();
         window.requestAnimationFrame(() => {
           const row = Array.from(elements.previewTable.querySelectorAll("[data-notice-id]"))
@@ -4311,6 +4465,7 @@
         });
       });
       FILE_KINDS.forEach(bindDropZone);
+      bindBundleDropZone();
 
       try {
         elements.cloudUrlInput.value = localStorage.getItem("oneapp_cloud_sync_url_v1") || "";
