@@ -593,7 +593,7 @@
     tr.notice-target td { outline: 2px solid #14b8a6; outline-offset: -2px; }
 
     /* =========================================================
-       Results / table tools - current v1.14 features retained
+       Results / table tools - current v1.15 features retained
        ========================================================= */
     .results-panel {
       margin-top: 8px;
@@ -657,7 +657,7 @@
       white-space: nowrap;
     }
     .spec-filter:disabled { opacity: .42; }
-    /* orderops v1.14: compact toolbar, context filters, column drag, and portrait print */
+    /* orderops v1.15: compact toolbar, context filters, column drag, and portrait print */
     .header-output-button { border-color: #99f6e4; color: #0f766e; background: #f0fdfa; }
     .header-output-button:hover:not(:disabled) { background: #ccfbf1; }
     .results-panel .table-wrap { max-height: calc(100vh - 200px); }
@@ -1070,6 +1070,29 @@
       .recovery-record-item { grid-template-columns: auto 1fr; }
       .recovery-record-status { grid-column: 2; }
     }
+    /* orderops v1.15: four-way smart file intake, mapping aliases, and grid navigation */
+    .upload-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .source-selector {
+      grid-template-areas: "uploads analyze";
+      grid-template-columns: minmax(0, 1fr) 137px;
+    }
+    .source-selector-heading { display: none; }
+    .action-bar { display: flex; flex-direction: row; gap: 5px; align-items: stretch; width: 137px; min-width: 137px; }
+    .refresh-button { width: 36px; min-width: 36px; border: 1px solid #64748b; border-radius: 5px; color: #dbeafe; background: #1e293b; cursor: pointer; }
+    .refresh-button:hover { color: #fff; border-color: #5eead4; background: #0f766e; }
+    .mapping-help { margin: 0 0 8px; color: #94a3b8; font-size: 11px; }
+    .mapping-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+    .mapping-table th, .mapping-table td { padding: 5px; border: 1px solid #334155; vertical-align: top; }
+    .mapping-table th { color: #cbd5e1; background: #1e293b; font-size: 10px; }
+    .mapping-table input { width: 100%; min-width: 0; padding: 6px; border: 1px solid #475569; border-radius: 4px; color: #f8fafc; background: #020617; }
+    .mapping-actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 8px; }
+    .mapping-actions button { padding: 7px 10px; border: 1px solid #64748b; border-radius: 5px; cursor: pointer; }
+    table.preview-inventory td.inventory-editable { padding: 2px 4px; }
+    table.preview-inventory .inventory-input { width: 100%; min-width: 0; height: 28px; padding: 3px 7px; border: 1px solid #94a3b8; border-radius: 4px; color: #0f172a; background: #fff; text-align: right; font-variant-numeric: tabular-nums; }
+    table.preview-inventory .inventory-input[data-negative-value="true"] { color: #b91c1c; font-weight: 900; }
+    table.preview-inventory .inventory-input:focus { border-color: #0d9488; outline: 2px solid rgba(13,148,136,.18); }
+    table.preview-inventory td.inventory-total-cell { padding: 2px 4px; }
+    @media (max-width: 900px) { .upload-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   </style>
 </head>
 <body>
@@ -1078,13 +1101,13 @@
       <div class="brand-mark">ONEAPP</div>
       <div class="brand-divider" aria-hidden="true"></div>
       <div class="brand-stack">
-        <div class="brand-suite">NEXUS <span class="brand-badge">v1.14</span></div>
+        <div class="brand-suite">NEXUS <span class="brand-badge">v1.15</span></div>
         <div class="brand-product">OrderOps</div>
       </div>
     </div>
     <div class="header-actions">
-      <a class="header-link order-input-link" href="input.html" aria-label="주문서 입력 화면 열기">
-        <span aria-hidden="true">✎</span><span>주문서 입력</span>
+      <a class="header-link order-input-link" href="input.html" aria-label="스마트 전표입력 화면 열기">
+        <span aria-hidden="true">✎</span><span>스마트입력</span>
       </a>
       <button class="header-link header-output-button" id="printButton" type="button"
         aria-label="현재 보이는 화면 인쇄 F7" disabled>
@@ -1128,39 +1151,41 @@
         <div class="source-selector">
           <div class="data-source-label"><span aria-hidden="true">▣</span> 데이터 소스:</div>
 
-          <div class="source-selector-heading" id="bundleDrop" tabindex="0" role="button"
-            aria-label="주문현황과 창고별재고 Excel 범위 선택. 두 파일 선택 시 자동 분산">
-            <span class="source-selector-index">↑</span>
-            <div>
-              <strong>범위선택</strong>
-              <span id="bundleFileStatus">2개 선택 → 자동분산</span>
-            </div>
-          </div>
-          <input class="hidden" id="bundleInput" type="file" accept=".xlsx,.xls" multiple>
-
           <div class="upload-grid">
             <article class="upload-card" id="ordersCard">
               <div class="drop-zone" id="ordersDrop" tabindex="0" role="button" aria-label="주문현황 Excel 개별 선택">
                 <div class="file-icon" aria-hidden="true">1</div>
                 <div class="file-copy">
                   <p class="drop-title">주문현황</p>
-                  <p class="drop-help" id="ordersFileName">개별 선택 / 교체</p>
+                  <p class="drop-help" id="ordersFileName">파일 선택 · 묶음 자동배치</p>
                 </div>
               </div>
               <input class="hidden" id="ordersInput" type="file" accept=".xlsx,.xls" multiple>
             </article>
-
-            <span class="source-separator" aria-hidden="true">&gt;</span>
 
             <article class="upload-card" id="inventoryCard">
               <div class="drop-zone" id="inventoryDrop" tabindex="0" role="button" aria-label="창고별재고 Excel 개별 선택">
                 <div class="file-icon" aria-hidden="true">2</div>
                 <div class="file-copy">
                   <p class="drop-title">창고재고</p>
-                  <p class="drop-help" id="inventoryFileName">개별 선택 / 교체</p>
+                  <p class="drop-help" id="inventoryFileName">파일 선택 · 묶음 자동배치</p>
                 </div>
               </div>
               <input class="hidden" id="inventoryInput" type="file" accept=".xlsx,.xls" multiple>
+            </article>
+            <article class="upload-card" id="purchasesCard">
+              <div class="drop-zone" id="purchasesDrop" tabindex="0" role="button" aria-label="구매현황 Excel 선택">
+                <div class="file-icon" aria-hidden="true">3</div>
+                <div class="file-copy"><p class="drop-title">구매현황</p><p class="drop-help" id="purchasesFileName">파일 선택 · 묶음 자동배치</p></div>
+              </div>
+              <input class="hidden" id="purchasesInput" type="file" accept=".xlsx,.xls" multiple>
+            </article>
+            <article class="upload-card" id="salesCard">
+              <div class="drop-zone" id="salesDrop" tabindex="0" role="button" aria-label="판매현황 Excel 선택">
+                <div class="file-icon" aria-hidden="true">4</div>
+                <div class="file-copy"><p class="drop-title">판매현황</p><p class="drop-help" id="salesFileName">파일 선택 · 묶음 자동배치</p></div>
+              </div>
+              <input class="hidden" id="salesInput" type="file" accept=".xlsx,.xls" multiple>
             </article>
           </div>
         </div>
@@ -1172,7 +1197,7 @@
           </div>
           <div class="operator-note-copy">
             <div class="operator-note-title">실행 안내</div>
-            <p><strong>2개 파일 준비</strong> → <strong>Enter</strong> 또는 출고 분석 실행</p>
+            <p><strong>여러 파일</strong> → 열 구조 우선 판별 후 4개 항목 자동배치 · <strong>Enter</strong> 또는 출고 분석 실행</p>
             <p>미매칭 상품은 <strong>재고정보 없음</strong>으로 유지 · 분석 로직은 기존과 동일</p>
           </div>
         </aside>
@@ -1181,6 +1206,7 @@
           <button class="primary-button" id="analyzeButton" type="button" disabled>
             <span aria-hidden="true">▸</span> 출고 분석
           </button>
+          <button class="refresh-button" id="refreshButton" type="button" aria-label="현재 파일과 분석 결과 새로고침" title="현재 파일 새로고침">↻</button>
         </div>
       </section>
 
@@ -1230,7 +1256,7 @@
     </section>
 
     <footer class="page-footer">
-      <span>orderops v1.14 · workspace shipping-workspace/v2 · cloud plan v1</span>
+      <span>orderops v1.15 · workspace shipping-workspace/v2 · cloud plan v1</span>
       <a href="../SHIPPING_MANAGEMENT_GUIDANCE.md">개발·운영 기준 보기</a>
     </footer>
   </main>
@@ -1279,9 +1305,21 @@
         <p class="storage-note">작업 중 변경은 이 컴퓨터에 임시저장되며 자동 전송되지 않습니다. 완료 후 저장 버튼을 누른 확정본만 다른 컴퓨터에서 조회·불러오기 할 수 있습니다. Token은 복구자료와 Cloud 저장내용에 포함되지 않습니다.</p>
       </section>
 
+      <section class="settings-section" data-settings-section="excel-mapping">
+        <h3>Excel 매핑 별칭</h3>
+        <p class="mapping-help">열 구조를 가장 먼저 판별하며, 구조가 같은 경우 시트명과 파일명 별칭을 보조 기준으로 사용합니다. 여러 별칭은 쉼표로 구분합니다.</p>
+        <div id="excelMappingEditor"></div>
+        <div class="mapping-actions">
+          <button type="button" id="mappingResetButton">기본값</button>
+          <button type="button" id="mappingSaveButton">매핑 저장</button>
+        </div>
+      </section>
+
       <div id="settingsExtensionSlot" hidden data-settings-extension-slot="future"></div>
     </section>
   </div>
+
+  <datalist id="purchaseSupplierHistory"></datalist>
 
   <div class="toast hidden" id="toast" role="status" aria-live="polite"></div>
   <div class="print-area" id="printArea" aria-hidden="true"></div>
@@ -1316,6 +1354,23 @@
       const WAREHOUSE_COLORS_SCHEMA = "orderops-warehouse-colors/v1";
       const MANAGER_COLORS_KEY = "oneapp.orderops.manager-colors.v1";
       const MANAGER_COLORS_SCHEMA = "orderops-manager-colors/v1";
+      const EXCEL_MAPPING_KEY = "oneapp.orderops.excel-mappings.v1";
+      const EXCEL_MAPPING_SCHEMA = "orderops-excel-mappings/v1";
+      const PURCHASE_HISTORY_KEY = "oneapp.orderops.purchase-history.v1";
+      const FILE_KINDS = Object.freeze(["orders", "inventory", "purchases", "sales"]);
+      const FILE_KIND_LABELS = Object.freeze({ orders: "주문현황", inventory: "창고재고", purchases: "구매현황", sales: "판매현황" });
+      const DEFAULT_EXCEL_MAPPINGS = Object.freeze({
+        orders: { fileAliases: ["주문", "미출고", "order"], sheetAliases: ["주문", "미출고"], columns: {} },
+        inventory: { fileAliases: ["재고", "창고", "inventory", "stock"], sheetAliases: ["재고", "창고"], columns: {} },
+        purchases: { fileAliases: ["구매", "매입", "purchase"], sheetAliases: ["구매", "매입"], columns: {
+          "품목코드": ["품목코드", "상품코드", "제품코드", "코드"], "품목명": ["품목명", "상품명", "제품명"],
+          "수량": ["구매수량", "매입수량", "입고수량"], "구매처": ["구매처", "매입처", "공급처"],
+        } },
+        sales: { fileAliases: ["판매", "매출", "sales"], sheetAliases: ["판매", "매출"], columns: {
+          "품목코드": ["품목코드", "상품코드", "제품코드", "코드"], "품목명": ["품목명", "상품명", "제품명"],
+          "수량": ["판매수량", "매출수량", "출고수량"], "거래처": ["거래처", "거래처명", "판매처", "고객명"],
+        } },
+      });
       const WAREHOUSE_COLOR_PALETTE = Object.freeze([
         "#dbeafe", "#dcfce7", "#fef3c7", "#fce7f3", "#ede9fe", "#ccfbf1", "#ffedd5",
       ]);
@@ -1326,12 +1381,14 @@
       const state = {
         orders: null,
         inventory: null,
+        purchases: null,
+        sales: null,
         validation: null,
         workspace: null,
         activePreview: "validation",
         searchQuery: "",
         specificationFilters: new Set(),
-        loading: { orders: false, inventory: false },
+        loading: { orders: false, inventory: false, purchases: false, sales: false },
         db: null,
         legacyDb: null,
         recoveryRecord: null,
@@ -1352,22 +1409,30 @@
         managerFilters: new Set(),
         filterBarOpen: false,
         activeColumnDrag: null,
+        excelMappings: null,
+        purchaseHistory: [],
       };
 
       const elements = {
-        bundleInput: document.getElementById("bundleInput"),
-        bundleDrop: document.getElementById("bundleDrop"),
-        bundleFileStatus: document.getElementById("bundleFileStatus"),
         ordersInput: document.getElementById("ordersInput"),
         inventoryInput: document.getElementById("inventoryInput"),
+        purchasesInput: document.getElementById("purchasesInput"),
+        salesInput: document.getElementById("salesInput"),
         ordersDrop: document.getElementById("ordersDrop"),
         inventoryDrop: document.getElementById("inventoryDrop"),
+        purchasesDrop: document.getElementById("purchasesDrop"),
+        salesDrop: document.getElementById("salesDrop"),
         ordersCard: document.getElementById("ordersCard"),
         inventoryCard: document.getElementById("inventoryCard"),
+        purchasesCard: document.getElementById("purchasesCard"),
+        salesCard: document.getElementById("salesCard"),
         ordersFileName: document.getElementById("ordersFileName"),
         inventoryFileName: document.getElementById("inventoryFileName"),
+        purchasesFileName: document.getElementById("purchasesFileName"),
+        salesFileName: document.getElementById("salesFileName"),
         validationBox: document.getElementById("validationBox"),
         analyzeButton: document.getElementById("analyzeButton"),
+        refreshButton: document.getElementById("refreshButton"),
         resultsPanel: document.getElementById("resultsPanel"),
         resultSubtitle: document.getElementById("resultSubtitle"),
         summaryGrid: document.getElementById("summaryGrid"),
@@ -1407,6 +1472,10 @@
         cloudStatus: document.getElementById("cloudStatus"),
         settingsModal: document.getElementById("settingsModal"),
         settingsCloseButton: document.getElementById("settingsCloseButton"),
+        excelMappingEditor: document.getElementById("excelMappingEditor"),
+        mappingSaveButton: document.getElementById("mappingSaveButton"),
+        mappingResetButton: document.getElementById("mappingResetButton"),
+        purchaseSupplierHistory: document.getElementById("purchaseSupplierHistory"),
         workspaceStorage: document.getElementById("workspaceStorage"),
         headerCloudLoadButton: document.getElementById("headerCloudLoadButton"),
         headerCloudSaveButton: document.getElementById("headerCloudSaveButton"),
@@ -1430,6 +1499,100 @@
         return Number.isFinite(number)
           ? new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 3 }).format(number)
           : String(value);
+      }
+
+      function splitAliases(value) {
+        return [...new Set(String(value || "").split(/[,|\n]/).map((item) => item.trim()).filter(Boolean))];
+      }
+
+      function normalizeExcelMappingRecord(value) {
+        const result = {};
+        FILE_KINDS.forEach((kind) => {
+          const base = DEFAULT_EXCEL_MAPPINGS[kind];
+          const source = value?.[kind] || {};
+          const columns = {};
+          Object.entries({ ...base.columns, ...(source.columns || {}) }).forEach(([canonical, aliases]) => {
+            const cleaned = splitAliases(Array.isArray(aliases) ? aliases.join(",") : aliases);
+            if (cleaned.length) columns[canonical] = cleaned;
+          });
+          result[kind] = {
+            fileAliases: splitAliases((source.fileAliases || base.fileAliases).join?.(",") || source.fileAliases),
+            sheetAliases: splitAliases((source.sheetAliases || base.sheetAliases).join?.(",") || source.sheetAliases),
+            columns,
+          };
+        });
+        return result;
+      }
+
+      function loadExcelMappings() {
+        try {
+          const parsed = JSON.parse(localStorage.getItem(EXCEL_MAPPING_KEY) || "null");
+          return parsed?.schemaVersion === EXCEL_MAPPING_SCHEMA
+            ? normalizeExcelMappingRecord(parsed.types)
+            : normalizeExcelMappingRecord(null);
+        } catch (error) { return normalizeExcelMappingRecord(null); }
+      }
+
+      function serializeColumnAliases(columns) {
+        return Object.entries(columns || {}).map(([canonical, aliases]) => `${canonical}=${(aliases || []).join("|")}`).join("; ");
+      }
+
+      function parseColumnAliases(value) {
+        const columns = {};
+        String(value || "").split(";").forEach((entry) => {
+          const separator = entry.indexOf("=");
+          if (separator <= 0) return;
+          const canonical = entry.slice(0, separator).trim();
+          const aliases = splitAliases(entry.slice(separator + 1));
+          if (canonical && aliases.length) columns[canonical] = aliases;
+        });
+        return columns;
+      }
+
+      function renderExcelMappingEditor() {
+        elements.excelMappingEditor.innerHTML = `<table class="mapping-table">
+          <thead><tr><th style="width:84px">데이터</th><th>파일명 별칭</th><th>시트명 별칭</th><th>열 별칭 · 표준명=별칭|별칭</th></tr></thead>
+          <tbody>${FILE_KINDS.map((kind) => {
+            const mapping = state.excelMappings[kind];
+            return `<tr data-mapping-kind="${kind}"><th>${FILE_KIND_LABELS[kind]}</th>
+              <td><input data-mapping-files value="${escapeHtml(mapping.fileAliases.join(", "))}"></td>
+              <td><input data-mapping-sheets value="${escapeHtml(mapping.sheetAliases.join(", "))}"></td>
+              <td><input data-mapping-columns value="${escapeHtml(serializeColumnAliases(mapping.columns))}"></td></tr>`;
+          }).join("")}</tbody></table>`;
+      }
+
+      function saveExcelMappingsFromEditor() {
+        const types = {};
+        elements.excelMappingEditor.querySelectorAll("[data-mapping-kind]").forEach((row) => {
+          types[row.dataset.mappingKind] = {
+            fileAliases: splitAliases(row.querySelector("[data-mapping-files]").value),
+            sheetAliases: splitAliases(row.querySelector("[data-mapping-sheets]").value),
+            columns: parseColumnAliases(row.querySelector("[data-mapping-columns]").value),
+          };
+        });
+        state.excelMappings = normalizeExcelMappingRecord(types);
+        localStorage.setItem(EXCEL_MAPPING_KEY, JSON.stringify({ schemaVersion: EXCEL_MAPPING_SCHEMA, updatedAt: new Date().toISOString(), types: state.excelMappings }));
+        renderExcelMappingEditor();
+        showToast("Excel 별칭 매핑을 저장했습니다. 선택된 파일은 다시 올리면 새 매핑으로 판별됩니다.");
+      }
+
+      function loadPurchaseHistory() {
+        try {
+          const parsed = JSON.parse(localStorage.getItem(PURCHASE_HISTORY_KEY) || "[]");
+          return Array.isArray(parsed) ? parsed.map((item) => String(item || "").trim()).filter(Boolean).slice(0, 30) : [];
+        } catch (error) { return []; }
+      }
+
+      function renderPurchaseHistory() {
+        elements.purchaseSupplierHistory.innerHTML = state.purchaseHistory.map((name) => `<option value="${escapeHtml(name)}"></option>`).join("");
+      }
+
+      function rememberPurchaseName(value) {
+        const name = String(value || "").trim();
+        if (!name) return;
+        state.purchaseHistory = [name, ...state.purchaseHistory.filter((item) => item !== name)].slice(0, 30);
+        localStorage.setItem(PURCHASE_HISTORY_KEY, JSON.stringify(state.purchaseHistory));
+        renderPurchaseHistory();
       }
 
       function showToast(message, isError) {
@@ -2027,12 +2190,49 @@
             blankrows: true,
           });
           const orderDisplayMatrix = kind === "orders" ? normalizeOrderDateMatrix(displayMatrix) : displayMatrix;
+          const headerAliases = state.excelMappings?.[kind]?.columns || {};
           const parsed = kind === "orders"
-            ? engine.parseOrderWorkbook({ fileName: file.name, sheetName, rawMatrix, displayMatrix: orderDisplayMatrix })
-            : engine.parseInventoryWorkbook({ fileName: file.name, sheetName, rawMatrix, displayMatrix });
+            ? engine.parseOrderWorkbook({ fileName: file.name, sheetName, rawMatrix, displayMatrix: orderDisplayMatrix, headerAliases })
+            : engine.parseInventoryWorkbook({ fileName: file.name, sheetName, rawMatrix, displayMatrix, headerAliases });
           if (!best || parsedScore(parsed) < parsedScore(best)) best = parsed;
         });
         best.fileHash = fileHash;
+        return best;
+      }
+
+      function normalizeMappingText(value) {
+        return String(value || "").replace(/[^\p{L}\p{N}]+/gu, "").toLocaleLowerCase("ko-KR");
+      }
+
+      function aliasMatches(value, aliases) {
+        const target = normalizeMappingText(value);
+        return (aliases || []).some((alias) => target.includes(normalizeMappingText(alias)));
+      }
+
+      async function parseGenericExcelFile(file, kind) {
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        const fileHash = await sha256Hex(bytes);
+        const workbook = window.XLSX.read(bytes, { type: "array", cellDates: false, cellNF: true, cellText: true });
+        const mapping = state.excelMappings[kind];
+        const required = kind === "purchases" ? ["품목코드", "품목명", "수량", "구매처"] : ["품목코드", "품목명", "수량", "거래처"];
+        const lookup = new Map();
+        Object.entries(mapping.columns || {}).forEach(([canonical, aliases]) => {
+          [canonical, ...(aliases || [])].forEach((alias) => lookup.set(normalizeMappingText(alias), canonical));
+        });
+        let best = null;
+        workbook.SheetNames.forEach((sheetName) => {
+          const matrix = window.XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, raw: false, defval: "", blankrows: true });
+          for (let rowIndex = 0; rowIndex < Math.min(matrix.length, 30); rowIndex += 1) {
+            const mapped = new Set((matrix[rowIndex] || []).map((header) => lookup.get(normalizeMappingText(header))).filter(Boolean));
+            const requiredCount = required.filter((canonical) => mapped.has(canonical)).length;
+            const candidate = { kind, fileName: file.name, sheetName, fileHash, headerRowIndex: rowIndex,
+              headers: (matrix[rowIndex] || []).map((value) => String(value || "").trim()), rowCount: Math.max(0, matrix.length - rowIndex - 1),
+              missingColumns: required.filter((canonical) => !mapped.has(canonical)), errors: [], warnings: [], structureScore: requiredCount * 100 + mapped.size };
+            if (!best || candidate.structureScore > best.structureScore) best = candidate;
+          }
+        });
+        if (!best) throw new Error(`${file.name}: 읽을 수 있는 시트 구조가 없습니다.`);
+        if (best.missingColumns.length) best.errors.push({ code: `${kind.toUpperCase()}_REQUIRED_COLUMNS`, message: `${FILE_KIND_LABELS[kind]} 필수 열이 없습니다: ${best.missingColumns.join(", ")}` });
         return best;
       }
 
@@ -2044,9 +2244,11 @@
           throw new Error(`${file.name}: 파일 크기는 25MB 이하여야 합니다.`);
         }
 
-        const [asOrders, asInventory] = await Promise.all([
+        const [asOrders, asInventory, asPurchases, asSales] = await Promise.all([
           parseExcelFile(file, "orders"),
           parseExcelFile(file, "inventory"),
+          parseGenericExcelFile(file, "purchases"),
+          parseGenericExcelFile(file, "sales"),
         ]);
 
         const orderMapped = new Set(
@@ -2062,91 +2264,57 @@
         const inventorySignature = (asInventory.missingColumns?.length || 0) === 0 &&
           inventoryWarehouseColumns.length > 0;
 
-        if (orderSignature && !inventorySignature) return { kind: "orders", parsed: asOrders };
-        if (inventorySignature && !orderSignature) return { kind: "inventory", parsed: asInventory };
-
-        const name = String(file.name || "").toLocaleLowerCase("ko-KR");
-        if (orderSignature && /주문|미판매|order/.test(name)) return { kind: "orders", parsed: asOrders };
-        if (inventorySignature && /재고|창고|inventory|stock/.test(name)) return { kind: "inventory", parsed: asInventory };
-
-        const orderScore = parsedScore(asOrders);
-        const inventoryScore = parsedScore(asInventory);
-        if (orderScore < inventoryScore) return { kind: "orders", parsed: asOrders };
-        if (inventoryScore < orderScore) return { kind: "inventory", parsed: asInventory };
-
-        throw new Error(
-          `${file.name}: 주문현황/창고재고를 자동 판별하지 못했습니다. ` +
-          `주문 필수열 또는 창고 수량열을 확인하세요.`,
-        );
+        const candidates = [
+          { kind: "orders", parsed: asOrders, structureScore: orderSignature ? 1008 : 0 },
+          { kind: "inventory", parsed: asInventory, structureScore: inventorySignature ? 1000 + inventoryWarehouseColumns.length : 0 },
+          { kind: "purchases", parsed: asPurchases, structureScore: asPurchases.missingColumns.length === 0 ? 704 : 0 },
+          { kind: "sales", parsed: asSales, structureScore: asSales.missingColumns.length === 0 ? 704 : 0 },
+        ].filter((candidate) => candidate.structureScore > 0);
+        if (!candidates.length) throw new Error(`${file.name}: 시트 구조와 열 이름으로 데이터 종류를 판별하지 못했습니다. 환경설정의 Excel 매핑 별칭을 확인하세요.`);
+        const topStructureScore = Math.max(...candidates.map((candidate) => candidate.structureScore));
+        let finalists = candidates.filter((candidate) => candidate.structureScore === topStructureScore);
+        if (finalists.length === 1) return finalists[0];
+        const bestSheetHint = Math.max(...finalists.map((candidate) => aliasMatches(candidate.parsed.sheetName, state.excelMappings[candidate.kind].sheetAliases) ? 1 : 0));
+        if (bestSheetHint > 0) finalists = finalists.filter((candidate) => aliasMatches(candidate.parsed.sheetName, state.excelMappings[candidate.kind].sheetAliases));
+        if (finalists.length === 1) return finalists[0];
+        const bestFileHint = Math.max(...finalists.map((candidate) => aliasMatches(file.name, state.excelMappings[candidate.kind].fileAliases) ? 1 : 0));
+        if (bestFileHint > 0) finalists = finalists.filter((candidate) => aliasMatches(file.name, state.excelMappings[candidate.kind].fileAliases));
+        if (finalists.length === 1) return finalists[0];
+        throw new Error(`${file.name}: 구조가 같은 데이터 종류가 둘 이상입니다. 시트명 또는 파일명 별칭을 등록하세요.`);
       }
 
       async function handleBundleFiles(fileList) {
         const files = Array.from(fileList || []).filter(Boolean);
-        if (files.length !== 2) {
-          showToast("주문현황과 창고별재고 Excel을 정확히 2개 선택하세요.", true);
+        if (files.length < 2 || files.length > 4) {
+          showToast("묶음 업로드는 2~4개 Excel 파일을 선택하세요.", true);
           return;
         }
 
         resetResults();
         elements.analyzeButton.disabled = true;
-        elements.bundleFileStatus.textContent = "두 파일의 구조를 판별하는 중...";
         setSystemMessage("classifying bundled data_blocks...");
 
         try {
           const classified = await Promise.all(files.map(classifyBundleFile));
-          const orders = classified.filter((item) => item.kind === "orders");
-          const inventories = classified.filter((item) => item.kind === "inventory");
-
-          if (orders.length !== 1 || inventories.length !== 1) {
-            throw new Error("주문현황 1개와 창고별재고 1개를 선택해야 합니다.");
-          }
-
-          state.orders = orders[0].parsed;
-          state.inventory = inventories[0].parsed;
+          const byKind = new Map();
+          classified.forEach((item) => {
+            if (byKind.has(item.kind)) throw new Error(`${FILE_KIND_LABELS[item.kind]} 파일이 둘 이상 판별되었습니다.`);
+            byKind.set(item.kind, item.parsed);
+          });
+          byKind.forEach((parsed, kind) => { state[kind] = parsed; });
           refreshInputState();
 
           if (state.validation?.canAnalyze) {
             setSystemMessage("data_blocks ready... (Enter 또는 출고 분석)");
-            showToast("두 파일을 자동 배정했습니다. Enter를 누르면 분석합니다.");
+            showToast(`${classified.length}개 파일을 구조 기준으로 자동 배정했습니다.`);
+          } else {
+            showToast(`${classified.length}개 파일을 자동 배정했습니다. 주문현황과 창고재고가 준비되면 분석할 수 있습니다.`);
           }
         } catch (error) {
           refreshInputState();
           setSystemMessage("bundle classification failed... (기존 선택 유지)");
           showToast(`${error.message || "묶음 파일을 처리하지 못했습니다."} · 기존 선택은 유지됩니다.`, true);
         }
-      }
-
-      function bindBundleDropZone() {
-        const drop = elements.bundleDrop;
-        const input = elements.bundleInput;
-
-        drop.addEventListener("click", () => input.click());
-        drop.addEventListener("keydown", (event) => {
-          if (event.key === "Enter" || event.key === " ") {
-            event.preventDefault();
-            input.click();
-          }
-        });
-
-        ["dragenter", "dragover"].forEach((eventName) => {
-          drop.addEventListener(eventName, (event) => {
-            event.preventDefault();
-            drop.classList.add("dragover");
-          });
-        });
-
-        ["dragleave", "drop"].forEach((eventName) => {
-          drop.addEventListener(eventName, (event) => {
-            event.preventDefault();
-            drop.classList.remove("dragover");
-          });
-        });
-
-        drop.addEventListener("drop", (event) => handleBundleFiles(event.dataTransfer.files));
-        input.addEventListener("change", () => {
-          handleBundleFiles(input.files);
-          input.value = "";
-        });
       }
 
       function toggleWorkspaceStorage(forceOpen) {
@@ -2194,7 +2362,9 @@
         resetResults();
         setLoading(kind, true);
         try {
-          state[kind] = await parseExcelFile(file, kind);
+          state[kind] = ["orders", "inventory"].includes(kind)
+            ? await parseExcelFile(file, kind)
+            : await parseGenericExcelFile(file, kind);
           showToast(`${file.name} 파일을 읽었습니다.`);
         } catch (error) {
           state[kind] = null;
@@ -2215,7 +2385,7 @@
         if (loading) return;
 
         if (!parsed) {
-          name.textContent = "클릭하거나 파일을 드래그하세요 · .xlsx / .xls";
+          name.textContent = "파일 선택 · 묶음 자동배치";
           return;
         }
 
@@ -2258,22 +2428,14 @@
         state.validation = state.orders && state.inventory
           ? engine.validateInputs(state.orders, state.inventory)
           : null;
-        renderFileCard("orders");
-        renderFileCard("inventory");
+        FILE_KINDS.forEach(renderFileCard);
         renderValidation();
         elements.analyzeButton.disabled = !state.validation?.canAnalyze;
         elements.replaceRecoveryButton.disabled = !state.validation?.canAnalyze;
         const bothSelected = Boolean(state.orders && state.inventory);
-        const selectedCount = Number(Boolean(state.orders)) + Number(Boolean(state.inventory));
-        if (bothSelected) {
-          elements.bundleFileStatus.textContent = `${state.orders.fileName} / ${state.inventory.fileName}`;
-        } else if (selectedCount === 0) {
-          elements.bundleFileStatus.textContent = "2개 선택 시 주문/재고 자동분산";
-        } else {
-          elements.bundleFileStatus.textContent = `파일 ${selectedCount}/2 · 나머지 파일 선택`;
-        }
+        const selectedCount = FILE_KINDS.filter((kind) => Boolean(state[kind])).length;
         if (!bothSelected) {
-          setSystemMessage(`waiting for data_blocks... (${selectedCount}/2 파일 선택)`);
+          setSystemMessage(`waiting for required data_blocks... (${selectedCount}/4 파일 선택 · 주문/재고 필수)`);
         } else if (state.validation?.canAnalyze) {
           setSystemMessage("data_blocks ready... (출고 분석을 실행하세요)");
         } else {
@@ -3179,7 +3341,7 @@
                 exactWarningUnit(sourceRow) ? "unit-alert-row" : "",
               ].filter(Boolean).join(" ");
               return `
-                <tr class="${rowClasses}" ${sourceRow?.noticeId ? `data-notice-id="${escapeHtml(sourceRow.noticeId)}"` : ""}>
+                <tr class="${rowClasses}" data-product-code="${escapeHtml(sourceRow?.productCode || "")}" ${sourceRow?.noticeId ? `data-notice-id="${escapeHtml(sourceRow.noticeId)}"` : ""}>
                   ${visibleEntries.map(({ column, index }) => {
                     const value = row[index];
                     const isNumber = Boolean(column.numeric) && value !== "";
@@ -3193,11 +3355,14 @@
                       ? warehouseColorFor(preview, column)
                       : "";
                     const isWarning = isStatus && statusTone(value) === "bad" && String(value).includes("오류");
+                    const editableInventory = editable && warehouseQuantity;
                     const classes = [
                       isNumber ? "number" : "",
                       isStatus ? "status" : "",
                       isWarning ? "warning-value" : "",
                       warehouseQuantity || calculatedQuantity ? "inventory-framed-cell" : "",
+                      editableInventory ? "inventory-editable" : "",
+                      calculatedQuantity ? "inventory-total-cell" : "",
                     ].filter(Boolean).join(" ");
                     const editablePurchase = editable && preview.purchaseEditable === true &&
                       preview.purchase === index && !referenceRow;
@@ -3208,15 +3373,20 @@
                       typeof sourceRow?.inventoryTotal === "number" && sourceRow.inventoryTotal < 0;
                     const content = editablePurchase
                       ? `<input class="purchase-input" data-purchase-code="${escapeHtml(sourceRow?.productCode || "")}"
-                          data-negative-balance="${negativeBalance ? "true" : "false"}" autocomplete="off"
+                          data-grid-column="shipping:inventory:purchase" data-negative-balance="${negativeBalance ? "true" : "false"}"
+                          autocomplete="off" list="purchaseSupplierHistory"
                           tabindex="${negativeBalance ? "0" : "-1"}"
                           value="${escapeHtml(value)}" aria-label="${escapeHtml(sourceRow?.productCode || "")} 구매처">`
                       : noticeLink
                         ? `<button class="notice-link" type="button" data-open-notice-id="${escapeHtml(sourceRow.noticeId)}">${escapeHtml(value)}</button>`
                         : acknowledgement
                           ? `<label class="notice-acknowledgement"><input type="checkbox" data-notice-acknowledgement="${escapeHtml(sourceRow.noticeId)}" ${engine.isNoticeAcknowledged(state.workspace, sourceRow.noticeId) ? "checked" : ""}>확인</label>`
-                          : warehouseQuantity
-                            ? `<span class="inventory-value-frame" data-negative-value="${negativeNumericValue ? "true" : "false"}" style="${warehouseFill ? `background-color:${warehouseFill}` : ""}">${escapeHtml(isNumber ? formatNumber(value) : value)}</span>`
+                          : editableInventory
+                            ? `<input class="inventory-input" data-inventory-code="${escapeHtml(sourceRow?.productCode || "")}"
+                                data-inventory-column="${escapeHtml(column.key)}" data-grid-column="${escapeHtml(column.key)}"
+                                inputmode="decimal" autocomplete="off" data-negative-value="${negativeNumericValue ? "true" : "false"}"
+                                style="${warehouseFill ? `background-color:${warehouseFill}` : ""}" value="${escapeHtml(value)}"
+                                aria-label="${escapeHtml(sourceRow?.productCode || "")} ${escapeHtml(column.header)} 재고수량">`
                             : calculatedQuantity
                               ? `<span class="inventory-total-frame" data-negative-value="${negativeNumericValue ? "true" : "false"}">${escapeHtml(isNumber ? formatNumber(value) : value)}</span>`
                               : `<span class="${noticeText ? "notice-text" : ""}">${escapeHtml(isNumber ? formatNumber(value) : value)}</span>`;
@@ -3655,7 +3825,13 @@
       elements.settingsModal.addEventListener("click", (event) => {
         if (event.target === elements.settingsModal) toggleWorkspaceStorage(false);
       });
-
+      elements.mappingSaveButton.addEventListener("click", saveExcelMappingsFromEditor);
+      elements.mappingResetButton.addEventListener("click", () => {
+        localStorage.removeItem(EXCEL_MAPPING_KEY);
+        state.excelMappings = normalizeExcelMappingRecord(null);
+        renderExcelMappingEditor();
+        showToast("Excel 별칭 매핑을 기본값으로 되돌렸습니다.");
+      });
       elements.headerRestoreButton.addEventListener("click", () => {
         toggleWorkspaceStorage(true);
         if (state.recoveryRecord) {
@@ -3694,7 +3870,40 @@
 
       function commitPurchaseInput(input) {
         engine.setPurchaseValue(state.workspace, input.dataset.purchaseCode, input.value);
+        rememberPurchaseName(input.value);
         scheduleLocalSave();
+      }
+
+      function autocompletePurchaseInput(input) {
+        const prefix = String(input.value || "").trim().toLocaleLowerCase("ko-KR");
+        const match = state.purchaseHistory.find((name) => !prefix || name.toLocaleLowerCase("ko-KR").startsWith(prefix));
+        if (!match) return false;
+        input.value = match;
+        commitPurchaseInput(input);
+        input.setSelectionRange(match.length, match.length);
+        showToast(`구매처명 ${match} 자동입력`);
+        return true;
+      }
+
+      function focusInventoryInput(input) {
+        if (!input) return;
+        input.focus({ preventScroll: true });
+        input.scrollIntoView({ block: "nearest", inline: "nearest" });
+        window.requestAnimationFrame(() => input.select());
+      }
+
+      function commitInventoryInput(input, { render = true } = {}) {
+        if (!input || !state.workspace || state.activePreview !== "inventory") return false;
+        try {
+          engine.setInventoryOverride(state.workspace, input.dataset.inventoryCode, input.dataset.inventoryColumn, input.value);
+          scheduleLocalSave();
+          if (render) renderPreview();
+          return true;
+        } catch (error) {
+          showToast(error.message || "창고별 재고 수량을 수정하지 못했습니다.", true);
+          renderPreview();
+          return false;
+        }
       }
 
       function focusOutsideInventoryTable(direction) {
@@ -3729,10 +3938,15 @@
         const currentIndex = inputs.indexOf(input);
         if (currentIndex < 0) return;
 
-        if (["Enter", "ArrowDown", "ArrowUp"].includes(event.key)) {
+        if (event.key === " " && !event.ctrlKey && !event.altKey && !event.metaKey) {
+          if (autocompletePurchaseInput(input)) event.preventDefault();
+          return;
+        }
+
+        if (event.key === "Enter") {
           event.preventDefault();
           commitPurchaseInput(input);
-          const direction = event.key === "ArrowUp" || (event.key === "Enter" && event.shiftKey) ? -1 : 1;
+          const direction = event.shiftKey ? -1 : 1;
           const nextIndex = Math.max(0, Math.min(inputs.length - 1, currentIndex + direction));
           const next = inputs[nextIndex];
           if (next && next !== input) focusPurchaseInput(next);
@@ -3762,6 +3976,62 @@
         focusPurchaseInput(target);
       }
 
+      function handleInventoryGridArrowNavigation(event) {
+        const input = event.target.closest?.(".purchase-input[data-grid-column], .inventory-input[data-grid-column]");
+        if (!input || !state.workspace || state.activePreview !== "inventory" || event.isComposing) return;
+        if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) return;
+        const rows = Array.from(elements.previewTable.querySelectorAll("tbody tr[data-product-code]"));
+        const row = input.closest("tr[data-product-code]");
+        const rowIndex = rows.indexOf(row);
+        const rowInputs = Array.from(row.querySelectorAll("[data-grid-column]"));
+        const columnIndex = rowInputs.indexOf(input);
+        if (rowIndex < 0 || columnIndex < 0) return;
+        event.preventDefault();
+        if (input.classList.contains("purchase-input")) commitPurchaseInput(input);
+        else if (!commitInventoryInput(input, { render: false })) return;
+        const nextRowIndex = event.key === "ArrowUp" ? Math.max(0, rowIndex - 1)
+          : event.key === "ArrowDown" ? Math.min(rows.length - 1, rowIndex + 1) : rowIndex;
+        const nextColumnIndex = event.key === "ArrowLeft" ? Math.max(0, columnIndex - 1)
+          : event.key === "ArrowRight" ? Math.min(rowInputs.length - 1, columnIndex + 1) : columnIndex;
+        const targetProductCode = rows[nextRowIndex]?.dataset.productCode || "";
+        const targetColumn = ["ArrowUp", "ArrowDown"].includes(event.key) ? input.dataset.gridColumn : rowInputs[nextColumnIndex]?.dataset.gridColumn;
+        if (input.classList.contains("inventory-input")) renderPreview();
+        const targetRow = Array.from(elements.previewTable.querySelectorAll("tbody tr[data-product-code]"))
+          .find((candidate) => candidate.dataset.productCode === targetProductCode);
+        const target = Array.from(targetRow?.querySelectorAll("[data-grid-column]") || [])
+          .find((candidate) => candidate.dataset.gridColumn === targetColumn);
+        if (target?.classList.contains("purchase-input")) focusPurchaseInput(target);
+        else focusInventoryInput(target);
+      }
+
+      function handleInventoryQuantityNavigation(event) {
+        const input = event.target.closest?.(".inventory-input[data-inventory-code][data-inventory-column]");
+        if (!input || !state.workspace || state.activePreview !== "inventory" || event.isComposing) return;
+        if (!["Enter", "Tab"].includes(event.key)) return;
+        event.preventDefault();
+        const inputs = Array.from(elements.previewTable.querySelectorAll(".inventory-input[data-inventory-code][data-inventory-column]"));
+        const currentIndex = inputs.indexOf(input);
+        if (currentIndex < 0 || !commitInventoryInput(input, { render: false })) return;
+        const direction = event.shiftKey ? -1 : 1;
+        const targetIndex = (currentIndex + direction + inputs.length) % inputs.length;
+        renderPreview();
+        const refreshed = Array.from(elements.previewTable.querySelectorAll(".inventory-input[data-inventory-code][data-inventory-column]"));
+        focusInventoryInput(refreshed[targetIndex]);
+      }
+
+      function refreshCurrentSession() {
+        FILE_KINDS.forEach((kind) => { state[kind] = null; state.loading[kind] = false; });
+        state.validation = null;
+        resetResults();
+        resetResultViewFilters();
+        refreshInputState();
+        showToast("현재 선택 파일과 화면 분석 결과를 초기화했습니다.");
+      }
+
+      state.excelMappings = loadExcelMappings();
+      state.purchaseHistory = loadPurchaseHistory();
+      renderExcelMappingEditor();
+      renderPurchaseHistory();
       state.columnWidthSettings = loadColumnWidthSettings();
       state.hiddenColumnSettings = loadHiddenColumnSettings();
       state.columnOrderSettings = loadColumnOrderSettings();
@@ -3769,6 +4039,7 @@
       state.managerColorSettings = loadManagerColorSettings();
 
       elements.analyzeButton.addEventListener("click", runAnalysis);
+      elements.refreshButton.addEventListener("click", refreshCurrentSession);
       elements.downloadButton.addEventListener("click", downloadResult);
       elements.printButton.addEventListener("click", printActiveTable);
       elements.columnWidthSaveButton.addEventListener("click", persistActiveColumnWidths);
@@ -3942,6 +4213,11 @@
         commitPurchaseInput(input);
       });
       elements.previewTable.addEventListener("change", (event) => {
+        const inventoryInput = event.target.closest(".inventory-input[data-inventory-code][data-inventory-column]");
+        if (inventoryInput) {
+          commitInventoryInput(inventoryInput);
+          return;
+        }
         const acknowledgement = event.target.closest("[data-notice-acknowledgement]");
         if (acknowledgement && state.workspace) {
           engine.setNoticeAcknowledged(
@@ -3962,6 +4238,8 @@
       elements.previewTable.addEventListener("dragover", handleColumnDragOver);
       elements.previewTable.addEventListener("drop", handleColumnDrop);
       elements.previewTable.addEventListener("dragend", handleColumnDragEnd);
+      elements.previewTable.addEventListener("keydown", handleInventoryGridArrowNavigation);
+      elements.previewTable.addEventListener("keydown", handleInventoryQuantityNavigation);
       elements.previewTable.addEventListener("keydown", handleInventoryPurchaseNavigation);
       elements.previewTable.addEventListener("keydown", handleColumnResizeKeydown);
       elements.recoveryRecordList.addEventListener("change", (event) => {
@@ -4002,9 +4280,7 @@
           elements.cloudStatus.textContent = ready ? "완료본 저장 · 연결 정보 입력됨" : "완료본 저장 · 미연결";
         });
       });
-      bindBundleDropZone();
-      bindDropZone("orders");
-      bindDropZone("inventory");
+      FILE_KINDS.forEach(bindDropZone);
 
       try {
         elements.cloudUrlInput.value = localStorage.getItem("oneapp_cloud_sync_url_v1") || "";

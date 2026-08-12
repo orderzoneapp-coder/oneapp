@@ -9,7 +9,11 @@ import { fileURLToPath } from "node:url";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const require = createRequire(import.meta.url);
 const orderOpsHtml = fs.readFileSync(path.join(ROOT, "orderops_list.html"), "utf8");
-assert.match(orderOpsHtml, /brand-badge">v1\.14</, "OrderOps visible version must be v1.14");
+assert.match(orderOpsHtml, /brand-badge">v1\.15</, "OrderOps visible version must be v1.15");
+assert.ok(orderOpsHtml.includes('grid-template-areas: "uploads analyze"'),
+  "the public v1.15 execution area must reserve visible space for analyze and refresh controls");
+assert.ok(orderOpsHtml.includes("function resetResultViewFilters()"),
+  "the public refresh control must reset result filters without a runtime reference error");
 const compactSystemIoStart = orderOpsHtml.indexOf("/* orderops v1.11: compact System.IO border strip */");
 const compactSystemIoEnd = orderOpsHtml.indexOf("</style>", compactSystemIoStart);
 assert.ok(compactSystemIoStart >= 0 && compactSystemIoEnd > compactSystemIoStart,
@@ -63,7 +67,7 @@ for (const requiredInteractionContract of [
   'getAllocationInventoryView(workspace)',
 ]) {
   assert.ok(orderOpsHtml.includes(requiredInteractionContract),
-    `public OrderOps v1.14 interaction contract is missing: ${requiredInteractionContract}`);
+    `public OrderOps v1.15 interaction contract is missing: ${requiredInteractionContract}`);
 }
 assert.match(orderOpsHtml, /@page\s*\{\s*size:\s*A4 portrait;/,
   "public OrderOps screen print must use A4 portrait");
@@ -409,7 +413,7 @@ const edgeWorkspace = engine.analyze(edgeOrders, edgeInventory, {
   createdAt: "2026-07-30T00:00:00.000Z",
   sourceFingerprint: "a".repeat(64),
 });
-assert.equal(engine.ENGINE_VERSION, "3.7.0");
+assert.equal(engine.ENGINE_VERSION, "3.8.0");
 assert.equal(workbookTools.WORKBOOK_VERSION, "4.1.0");
 assert.equal(edgeWorkspace.schemaVersion, "shipping-workspace/v2");
 
@@ -1288,7 +1292,7 @@ assert.ok(
 );
 
 const html = fs.readFileSync(path.join(ROOT, "orderops", "list.html"), "utf8");
-assert.match(html, /brand-badge">v1\.14</, "canonical OrderOps visible version must be v1.14");
+assert.match(html, /brand-badge">v1\.15</, "canonical OrderOps visible version must be v1.15");
 const styleBlocks = [...html.matchAll(/<style(?:\s[^>]*)?>([\s\S]*?)<\/style>/gi)].map((match) => match[1]);
 assert.ok(styleBlocks.length > 0, "orderops/list.html must contain a style block");
 
@@ -1348,7 +1352,7 @@ for (const requiredWarehouseColorContract of [
   'oneapp.orderops.warehouse-colors.v1',
   'data-warehouse-filter',
   'data-warehouse-color',
-  'class="inventory-value-frame"',
+  'class="inventory-input"',
   'class="inventory-total-frame"',
 ]) {
   assert.ok(html.includes(requiredWarehouseColorContract),
@@ -1366,7 +1370,7 @@ for (const requiredInteractionContract of [
   'getAllocationInventoryView(workspace)',
 ]) {
   assert.ok(html.includes(requiredInteractionContract),
-    `canonical OrderOps v1.14 interaction contract is missing: ${requiredInteractionContract}`);
+    `canonical OrderOps v1.15 interaction contract is missing: ${requiredInteractionContract}`);
 }
 assert.match(combinedCss, /(?:^|})\s*th\s*\{[^{}]*\bposition\s*:\s*sticky\s*;/m,
   "the current OrderOps table must keep sticky headers");
@@ -1380,6 +1384,12 @@ for (const requiredText of [
   "엑셀출력 F8",
   "통합 검색",
   "화면인쇄 F7",
+  "스마트입력",
+  "구매현황",
+  "판매현황",
+  "Excel 매핑 별칭",
+  "oneapp.orderops.excel-mappings.v1",
+  "oneapp.orderops.purchase-history.v1",
   "현재 파일로 교체",
   "purchaseUploadNotice",
   "ONEAPPShippingManagementDB",
@@ -1399,19 +1409,50 @@ for (const requiredText of [
 }
 
 for (const id of [
-  "bundleDrop", "bundleInput", "bundleFileStatus",
-  "ordersInput", "inventoryInput", "analyzeButton",
+  "ordersInput", "inventoryInput", "purchasesInput", "salesInput", "analyzeButton", "refreshButton",
   "columnVisibilityButton", "columnWidthSaveButton", "columnWidthResetButton",
   "downloadButton", "printButton",
   "headerCloudLoadButton", "headerCloudSaveButton",
-  "headerRestoreButton", "headerSettingsButton", "workspaceStorage",
+  "headerRestoreButton", "headerSettingsButton", "settingsModal", "workspaceStorage",
+  "excelMappingEditor", "mappingSaveButton", "mappingResetButton", "purchaseSupplierHistory",
 ]) {
   assert.equal(html.split(`id="${id}"`).length - 1, 1, `${id} must exist exactly once`);
 }
-assert.ok(
-  html.includes('id="bundleInput" type="file" accept=".xlsx,.xls" multiple'),
-  "bundle input must accept supported Excel extensions and allow two-file selection",
-);
+assert.doesNotMatch(html, /id="bundle(?:Drop|Input|FileStatus)"/, "the legacy range-selection control must be removed");
+for (const kind of ["orders", "inventory", "purchases", "sales"]) {
+  assert.ok(html.includes(`id="${kind}Input" type="file" accept=".xlsx,.xls" multiple`),
+    `${kind} input must accept multiple supported Excel files`);
+}
+
+const administratorAliasMatrix = buildCanonicalOrderMatrix({
+  replacements: {
+    "품목코드": "관리SKU", "품목명": "관리상품", "규격": "관리사양", "수량": "관리Qty",
+    "적요": "관리메모", "적요1": "관리보조", "거래처": "관리고객", "그룹": "관리분류",
+  },
+});
+const administratorAliasOrders = engine.parseOrderWorkbook({
+  fileName: "관리주문.xlsx", sheetName: "사용자시트",
+  rawMatrix: administratorAliasMatrix, displayMatrix: administratorAliasMatrix,
+  headerAliases: {
+    "품목코드": ["관리SKU"], "품목명": ["관리상품"], "규격": ["관리사양"], "수량": ["관리Qty"],
+    "적요": ["관리메모"], "적요1": ["관리보조"], "거래처": ["관리고객"], "그룹": ["관리분류"],
+  },
+});
+assert.equal(administratorAliasOrders.errors.length, 0, "administrator order column aliases must reach the real parser");
+assert.equal(administratorAliasOrders.rows[0].productCode, "ALIAS-001");
+assert.equal(administratorAliasOrders.headers.includes("관리SKU"), true, "administrator aliases must not rename source headers");
+
+const administratorInventoryMatrix = [
+  ["관리SKU", "관리상품", "관리사양", "관리합계", "A보관"],
+  ["ALIAS-001", "별칭 상품", "EA", 4, 4],
+];
+const administratorAliasInventory = engine.parseInventoryWorkbook({
+  fileName: "관리재고.xlsx", sheetName: "사용자재고",
+  rawMatrix: administratorInventoryMatrix, displayMatrix: administratorInventoryMatrix,
+  headerAliases: { "품목코드": ["관리SKU"], "품목명": ["관리상품"], "규격": ["관리사양"], "수량": ["관리합계"] },
+});
+assert.equal(administratorAliasInventory.errors.length, 0, "administrator inventory aliases must reach the real parser");
+assert.equal(administratorAliasInventory.rows[0].inventoryTotal, 4);
 
 const classifyStart = html.indexOf("async function classifyBundleFile");
 const classifyEnd = html.indexOf("async function handleBundleFiles", classifyStart);
@@ -1421,38 +1462,37 @@ for (const requiredSource of [
   "Promise.all([",
   'parseExcelFile(file, "orders")',
   'parseExcelFile(file, "inventory")',
+  'parseGenericExcelFile(file, "purchases")',
+  'parseGenericExcelFile(file, "sales")',
   "orderSignature",
   "inventorySignature",
-  "parsedScore(asOrders)",
-  "parsedScore(asInventory)",
+  "topStructureScore",
+  "bestSheetHint",
+  "bestFileHint",
 ]) {
   assert.ok(classifySource.includes(requiredSource), `bundle classifier is missing: ${requiredSource}`);
 }
 
 const bundleStart = html.indexOf("async function handleBundleFiles");
-const bundleEnd = html.indexOf("function bindBundleDropZone", bundleStart);
+const bundleEnd = html.indexOf("function toggleWorkspaceStorage", bundleStart);
 assert.ok(bundleStart >= 0 && bundleEnd > bundleStart, "bundle handler must exist");
 const bundleSource = html.slice(bundleStart, bundleEnd);
 for (const requiredSource of [
-  "files.length !== 2",
+  "files.length < 2 || files.length > 4",
   "Promise.all(files.map(classifyBundleFile))",
-  'item.kind === "orders"',
-  'item.kind === "inventory"',
-  "orders.length !== 1 || inventories.length !== 1",
-  "state.orders = orders[0].parsed;",
-  "state.inventory = inventories[0].parsed;",
+  "const byKind = new Map();",
+  "byKind.has(item.kind)",
+  "byKind.forEach((parsed, kind) => { state[kind] = parsed; });",
   "refreshInputState();",
 ]) {
   assert.ok(bundleSource.includes(requiredSource), `bundle handler is missing: ${requiredSource}`);
 }
 
-const bundleBindingStart = html.indexOf("function bindBundleDropZone");
-const bundleBindingEnd = html.indexOf("function toggleWorkspaceStorage", bundleBindingStart);
-assert.ok(bundleBindingStart >= 0 && bundleBindingEnd > bundleBindingStart, "bundle binding must exist");
-const bundleBindingSource = html.slice(bundleBindingStart, bundleBindingEnd);
-assert.ok(bundleBindingSource.includes("handleBundleFiles(event.dataTransfer.files)"), "bundle drop must pass the complete file list");
-assert.ok(bundleBindingSource.includes("handleBundleFiles(input.files)"), "bundle chooser must pass the complete selected file list");
-assert.ok(bundleBindingSource.includes('input.value = ""'), "bundle chooser must clear after selection");
+const dropBindingStart = html.indexOf("function bindDropZone");
+assert.ok(dropBindingStart >= 0, "four-way drop binding must exist");
+const dropBindingSource = html.slice(dropBindingStart, html.indexOf("elements.headerSettingsButton", dropBindingStart));
+assert.ok(dropBindingSource.includes("if (files.length > 1) handleBundleFiles(files)"), "every file slot must support bundled upload");
+assert.ok(html.includes("FILE_KINDS.forEach(bindDropZone)"), "all four file slots must use the same bundle-capable binding");
 
 const individualStart = html.indexOf("async function handleFile");
 const individualEnd = html.indexOf("function renderFileCard", individualStart);
@@ -1463,7 +1503,8 @@ for (const requiredSource of [
   "file.size > MAX_FILE_SIZE",
   "resetResults();",
   "setLoading(kind, true);",
-  "state[kind] = await parseExcelFile(file, kind);",
+  '["orders", "inventory"].includes(kind)',
+  "await parseGenericExcelFile(file, kind)",
   "state[kind] = null;",
   "refreshInputState();",
 ]) {
@@ -1476,6 +1517,14 @@ assert.ok(settingsStart >= 0 && settingsEnd > settingsStart, "settings toggle mu
 const settingsSource = html.slice(settingsStart, settingsEnd);
 assert.ok(settingsSource.includes('classList.toggle("hidden", !open)'), "settings panel visibility toggle is missing");
 assert.ok(settingsSource.includes('setAttribute("aria-expanded", String(open))'), "settings control must update aria-expanded");
+assert.match(html, /id="settingsModal"[\s\S]*role="dialog" aria-modal="true"/, "settings must open as a modal dialog");
+for (const contract of [
+  "normalizeExcelMappingRecord", "saveExcelMappingsFromEditor", "headerAliases",
+  "handleInventoryGridArrowNavigation", "autocompletePurchaseInput", "rememberPurchaseName",
+  "function resetResultViewFilters()", 'grid-template-areas: "uploads analyze"',
+]) {
+  assert.ok(html.includes(contract), `OrderOps v1.15 contract is missing: ${contract}`);
+}
 
 const localWorkspaceStart = html.indexOf("async function persistLocalWorkspace");
 const localWorkspaceEnd = html.indexOf("function scheduleLocalSave", localWorkspaceStart);
