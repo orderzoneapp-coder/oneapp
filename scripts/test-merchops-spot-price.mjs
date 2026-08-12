@@ -206,7 +206,7 @@ assert.match(html, /source: 'MerchOps bulk'/);
 
 assert.match(html, /MERCH_DETAIL_FILTER_VALUES = \['noInboundPrice'/);
 assert.match(html, /noInboundPrice: '입고가없음'/);
-assert.match(html, /\['noInboundPrice', '입고가없음'\]/);
+assert.match(html, /toggleDetailFilter\('noInboundPrice'\)[\s\S]*"입고가없음"/);
 assert.match(html, /has\('noInboundPrice'\)/);
 assert.match(html, /changed: '가격변동', priceCheck: '가격변동'/);
 assert.match(html, /}, "가격변동"\)/);
