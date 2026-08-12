@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const require = createRequire(import.meta.url);
 const orderOpsHtml = fs.readFileSync(path.join(ROOT, "orderops_list.html"), "utf8");
-assert.match(orderOpsHtml, /brand-badge">v1\.12</, "OrderOps visible version must be v1.12");
+assert.match(orderOpsHtml, /brand-badge">v1\.13</, "OrderOps visible version must be v1.13");
 const compactSystemIoStart = orderOpsHtml.indexOf("/* orderops v1.11: compact System.IO border strip */");
 const compactSystemIoEnd = orderOpsHtml.indexOf("</style>", compactSystemIoStart);
 assert.ok(compactSystemIoStart >= 0 && compactSystemIoEnd > compactSystemIoStart,
@@ -38,6 +38,21 @@ assert.match(orderOpsHtml, /table\.preview-inventory \.inventory-input\s*\{[^}]*
   "inventory editors must not force their columns wider");
 assert.match(orderOpsHtml, /table\.preview-inventory td\.information-value\s*\{[^}]*min-width:\s*0;/,
   "the information column must remain freely resizable");
+for (const requiredWarehouseColorContract of [
+  'id="warehouseColorBar"',
+  'id="warehouseColorOptions"',
+  'oneapp.orderops.warehouse-colors.v1',
+  'data-warehouse-filter',
+  'data-warehouse-color',
+  'isNonblankNumericValue(value)',
+  'background-color:${warehouseFill}',
+  'class="inventory-total-frame"',
+]) {
+  assert.ok(orderOpsHtml.includes(requiredWarehouseColorContract),
+    `public OrderOps warehouse color contract is missing: ${requiredWarehouseColorContract}`);
+}
+assert.match(orderOpsHtml, /purchase-input\[data-negative-balance="true"\][^{]*\{[^}]*background:\s*#fff200;/,
+  "negative inventory totals must color the purchase editor inside its border");
 assert.match(orderOpsHtml, /workbookTools\.downloadWorkbook\(state\.workspace, window\.XLSX, fileName\)/,
   "the single Excel output must use the integrated workbook");
 assert.doesNotMatch(orderOpsHtml, /id="purchaseUploadButton"/,
@@ -375,8 +390,8 @@ const edgeWorkspace = engine.analyze(edgeOrders, edgeInventory, {
   createdAt: "2026-07-30T00:00:00.000Z",
   sourceFingerprint: "a".repeat(64),
 });
-assert.equal(engine.ENGINE_VERSION, "3.5.0");
-assert.equal(workbookTools.WORKBOOK_VERSION, "4.0.0");
+assert.equal(engine.ENGINE_VERSION, "3.6.0");
+assert.equal(workbookTools.WORKBOOK_VERSION, "4.1.0");
 assert.equal(edgeWorkspace.schemaVersion, "shipping-workspace/v2");
 
 const signedOrders = parseOrders(buildOrderMatrix([
@@ -413,7 +428,7 @@ assert.deepEqual(
 const signedInventoryView = engine.getInventoryViewRows(signedWorkspace);
 assert.equal(
   signedInventoryView.rows[0].orderCustomers,
-  "제로거래처(0)\n중복거래처(-1)\n중복거래처(2)",
+  "제로거래처(0) 0 수량 전달\n중복거래처(-1) 음수 전달\n중복거래처(2)",
   "order customer quantities must preserve original row order and duplicates",
 );
 const signedWorkbook = workbookTools.buildWorkbook(signedWorkspace, XLSX);
@@ -586,7 +601,7 @@ const dynamicInventoryMatrix = [
   ["동적 창고열 테스트"],
   dynamicInventoryHeaders,
   ["000010", "동적상품", "EA", 0, "숨김값", 0, 0, -130, "00123", "A동", "", ""],
-  ["000011", "텍스트상품", "BOX", 2, "숨김값2", 0, 0, "-4", "00007", "B동", "", ""],
+  ["000011", "텍스트상품", "BOX", 2, "숨김값2", "", 0, "-4", "00007", "B동", "", ""],
 ];
 const baseInventoryMatrix = dynamicInventoryMatrix.map((row, rowIndex) => {
   const copy = row.slice();
@@ -595,8 +610,8 @@ const baseInventoryMatrix = dynamicInventoryMatrix.map((row, rowIndex) => {
   return copy;
 });
 const dynamicOrders = parseOrders(buildOrderMatrix([
-  { code: "000010", quantity: 2, spec: "EA" },
-  { code: "000010", quantity: 1, spec: "EA", customer: "반복거래처" },
+  { code: "000010", quantity: 2, spec: "EA", note: "긴급출고" },
+  { code: "000010", quantity: 1, spec: "EA", customer: "반복거래처", note1: "오전배송" },
   { code: "000011", quantity: 1, spec: "BOX" },
 ]));
 const dynamicWorkspace = engine.analyze(dynamicOrders, parseInventory(dynamicInventoryMatrix), {
@@ -616,6 +631,12 @@ assert.deepEqual(dynamicView.rows[0].values, ["000010", "동적상품", "EA", -7
 assert.equal(dynamicView.rows[0].values.includes("숨김값"), false, "interior blank-header data must not shift into visible columns");
 assert.equal(dynamicView.rows[0].inventoryTotal, -7, "all dynamic warehouse columns must retain signs in the arithmetic total");
 assert.equal(dynamicView.rows[1].inventoryTotal, 5, "numeric text warehouse values must participate without changing source display");
+assert.equal(dynamicView.rows[1].values[5], "", "blank warehouse cells must remain blank for UI color filtering");
+assert.equal(
+  dynamicView.rows[0].orderCustomers,
+  "거래처 1(2) 긴급출고\n반복거래처(1) 오전배송",
+  "shortage information must combine customer, quantity, and each order memo",
+);
 assert.deepEqual(
   {
     allocations: dynamicWorkspace.allocations,
@@ -775,7 +796,7 @@ assert.notEqual(dynamicInventorySheet["I2"].s.fill.fgColor.rgb, "FFF200");
 assert.equal(dynamicInventorySheet["K1"].v, "구매", "reserved purchase descriptor must be appended exactly once after source columns");
 assert.equal(dynamicInventorySheet["L1"].v, "거래처(단가)", "supplier pairs must precede order customers");
 assert.equal(dynamicInventorySheet["M1"].v, "정보");
-assert.equal(dynamicInventorySheet["M2"].v, "거래처 1(2)\n반복거래처(1)", "negative inventory must show order customer quantities");
+assert.equal(dynamicInventorySheet["M2"].v, "거래처 1(2) 긴급출고\n반복거래처(1) 오전배송", "negative inventory must show order customer quantities and order memos");
 assert.equal(dynamicInventorySheet["M3"].v, "", "nonnegative inventory must leave shortage information blank");
 assert.equal(dynamicInventorySheet["!ref"], "A1:M3", "inventory rows must remain one row per inventory product despite repeated orders");
 const overrideInventorySheet = workbookTools.buildWorkbook(overrideWorkspace, XLSX).Sheets["창고별재고"];
@@ -874,7 +895,7 @@ assert.deepEqual(
 assert.equal(sheetCellByHeader(linkedPurchaseWorkbook.Sheets["미출고현황"], "구매", 2).v, "거래처A");
 assert.equal(linkedPurchaseWorkbook.Sheets["창고별재고"].O2.v, "거래처A");
 assert.equal(linkedPurchaseWorkbook.Sheets["창고별재고"].P2.v, "같은거래처(1000)\n같은거래처(1200)\n거래처 3(1000)");
-assert.equal(linkedPurchaseWorkbook.Sheets["창고별재고"].Q2.v, "같은거래처(4)\n같은거래처(4)\n거래처 3(2)");
+assert.equal(linkedPurchaseWorkbook.Sheets["창고별재고"].Q2.v, "같은거래처(4) 원문 적요\n같은거래처(4) 원문 적요 / 원문 적요1\n거래처 3(2)");
 
 const purchaseUploadWorkbook = workbookTools.buildPurchaseUploadWorkbook(edgeWorkspace, XLSX);
 assert.deepEqual(Array.from(purchaseUploadWorkbook.SheetNames), ["구매입력"]);
@@ -1248,7 +1269,7 @@ assert.ok(
 );
 
 const html = fs.readFileSync(path.join(ROOT, "orderops", "list.html"), "utf8");
-assert.match(html, /brand-badge">v1\.12</, "canonical OrderOps visible version must be v1.12");
+assert.match(html, /brand-badge">v1\.13</, "canonical OrderOps visible version must be v1.13");
 const styleBlocks = [...html.matchAll(/<style(?:\s[^>]*)?>([\s\S]*?)<\/style>/gi)].map((match) => match[1]);
 assert.ok(styleBlocks.length > 0, "orderops/list.html must contain a style block");
 
@@ -1302,6 +1323,18 @@ assert.match(html, /const tableWidth = visibleEntries\.reduce\(/,
   "the canonical OrderOps table width must equal the sum of visible column widths");
 assert.match(html, /table\.style\.width = `\$\{renderedWidth\}px`;/,
   "the canonical OrderOps table must shrink with a resized column");
+for (const requiredWarehouseColorContract of [
+  'id="warehouseColorBar"',
+  'id="warehouseColorOptions"',
+  'oneapp.orderops.warehouse-colors.v1',
+  'data-warehouse-filter',
+  'data-warehouse-color',
+  'class="inventory-value-frame"',
+  'class="inventory-total-frame"',
+]) {
+  assert.ok(html.includes(requiredWarehouseColorContract),
+    `canonical OrderOps warehouse color contract is missing: ${requiredWarehouseColorContract}`);
+}
 assert.match(combinedCss, /(?:^|})\s*th\s*\{[^{}]*\bposition\s*:\s*sticky\s*;/m,
   "the current OrderOps table must keep sticky headers");
 assert.match(combinedCss, /(?:^|})\s*td\s*\{[^{}]*\boverflow\s*:\s*hidden\s*;/m,

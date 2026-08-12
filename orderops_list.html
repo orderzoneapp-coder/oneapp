@@ -2229,6 +2229,79 @@
       opacity: .42;
     }
 
+    /* orderops v1.13: warehouse filters and color inside bordered numeric cells */
+    .warehouse-color-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 42px;
+      padding: 6px 10px;
+      border-bottom: 1px solid #d9e1ea;
+      background: #fff;
+    }
+
+    .warehouse-color-title {
+      flex: 0 0 auto;
+      color: #475569;
+      font-size: 11px;
+      font-weight: 900;
+      white-space: nowrap;
+    }
+
+    .warehouse-color-options {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      min-width: 0;
+      overflow-x: auto;
+      padding: 1px 0;
+    }
+
+    .warehouse-color-option {
+      display: inline-flex;
+      flex: 0 0 auto;
+      align-items: center;
+      gap: 5px;
+      min-height: 30px;
+      padding: 3px 6px;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      background: #f8fafc;
+    }
+
+    .warehouse-color-option label {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      color: #334155;
+      font-size: 10px;
+      font-weight: 900;
+      white-space: nowrap;
+    }
+
+    .warehouse-color-option input[type="color"] {
+      width: 25px;
+      height: 22px;
+      padding: 1px;
+      border: 1px solid #94a3b8;
+      border-radius: 4px;
+      background: #fff;
+      cursor: pointer;
+    }
+
+    .warehouse-color-reset {
+      flex: 0 0 auto;
+      min-height: 30px;
+      padding: 0 8px;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      color: #475569;
+      background: #fff;
+      font-size: 10px;
+      font-weight: 900;
+      white-space: nowrap;
+    }
+
     .table-view-tools {
       display: flex;
       align-items: center;
@@ -2446,6 +2519,16 @@
         grid-column: auto;
       }
 
+      .warehouse-color-bar {
+        align-items: flex-start;
+        flex-wrap: wrap;
+      }
+
+      .warehouse-color-options {
+        order: 3;
+        width: 100%;
+      }
+
       .table-tool-button {
         flex: 1 1 auto;
       }
@@ -2505,6 +2588,7 @@
     }
     table.preview-inventory .purchase-input[data-negative-balance="true"] {
       border-color: #dc2626;
+      background: #fff200;
       box-shadow: inset 0 0 0 1px rgba(220, 38, 38, .18);
     }
     table.preview-inventory .purchase-input:focus {
@@ -2512,6 +2596,9 @@
       outline: 2px solid rgba(15, 118, 110, .22);
       outline-offset: 0;
       background: #fff;
+    }
+    table.preview-inventory .purchase-input[data-negative-balance="true"]:focus {
+      background: #fff200;
     }
     @media print {
       body.printing-table .print-area {
@@ -2550,10 +2637,33 @@
       text-align: right;
       font-variant-numeric: tabular-nums;
     }
+    table.preview-inventory .inventory-input[data-negative-value="true"] {
+      color: #b91c1c;
+      font-weight: 900;
+    }
     table.preview-inventory .inventory-input:focus {
       border-color: var(--teal-600);
       outline: 2px solid rgba(13, 148, 136, 0.18);
       outline-offset: 0;
+    }
+    table.preview-inventory td.inventory-total-cell {
+      padding: 2px 4px;
+    }
+    table.preview-inventory .inventory-total-frame {
+      display: block;
+      width: 100%;
+      min-height: 28px;
+      padding: 4px 7px;
+      border: 1px solid #94a3b8;
+      border-radius: 4px;
+      color: var(--slate-900);
+      background: #fff;
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+    table.preview-inventory .inventory-total-frame[data-negative-value="true"] {
+      color: #b91c1c;
+      font-weight: 900;
     }
     table.preview-inventory td.information-value {
       min-width: 0;
@@ -2723,7 +2833,7 @@
       <div class="brand-mark">ONEAPP</div>
       <div class="brand-divider" aria-hidden="true"></div>
       <div class="brand-stack">
-        <div class="brand-suite">NEXUS <span class="brand-badge">v1.12</span></div>
+        <div class="brand-suite">NEXUS <span class="brand-badge">v1.13</span></div>
         <div class="brand-product">orderops</div>
       </div>
     </div>
@@ -2863,6 +2973,12 @@
         </div>
       </div>
 
+      <div class="warehouse-color-bar hidden" id="warehouseColorBar" aria-label="창고명 필터와 셀 내부 배색">
+        <span class="warehouse-color-title">창고 필터·셀 배색</span>
+        <div class="warehouse-color-options" id="warehouseColorOptions"></div>
+        <button class="warehouse-color-reset" id="warehouseColorResetButton" type="button">필터·배색 초기화</button>
+      </div>
+
       <div class="preview-toolbar">
         <div class="preview-tabs" id="previewTabs" role="tablist" aria-label="결과 미리보기"></div>
         <div class="preview-actions">
@@ -2876,7 +2992,7 @@
     </section>
 
     <footer class="page-footer">
-      <span>orderops v1.12 · workspace shipping-workspace/v2 · cloud plan v1</span>
+      <span>orderops v1.13 · workspace shipping-workspace/v2 · cloud plan v1</span>
       <a href="SHIPPING_MANAGEMENT_GUIDANCE.md">개발·운영 기준 보기</a>
     </footer>
   </main>
@@ -2902,6 +3018,11 @@
       const TABLE_WIDTHS_SCHEMA = "shipping-table-widths/v1";
       const HIDDEN_COLUMNS_KEY = "oneapp.orderops.hidden-columns.v1";
       const HIDDEN_COLUMNS_SCHEMA = "orderops-hidden-columns/v1";
+      const WAREHOUSE_COLORS_KEY = "oneapp.orderops.warehouse-colors.v1";
+      const WAREHOUSE_COLORS_SCHEMA = "orderops-warehouse-colors/v1";
+      const WAREHOUSE_COLOR_PALETTE = Object.freeze([
+        "#dbeafe", "#dcfce7", "#fef3c7", "#fce7f3", "#ede9fe", "#ccfbf1", "#ffedd5",
+      ]);
       const TABLE_WIDTH_MIN = 32;
       const TABLE_WIDTH_MAX = 720;
       const TABLE_WIDTH_TABS = new Set(["validation", "inventory", "allocations"]);
@@ -2924,6 +3045,8 @@
         columnWidthDirtyTabs: new Set(),
         activeColumnResize: null,
         hiddenColumnSettings: { schemaVersion: HIDDEN_COLUMNS_SCHEMA, tabs: Object.create(null) },
+        warehouseColorSettings: { schemaVersion: WAREHOUSE_COLORS_SCHEMA, colors: Object.create(null) },
+        warehouseFilters: new Set(),
       };
 
       const elements = {
@@ -2946,6 +3069,9 @@
         purchaseUploadNotice: document.getElementById("purchaseUploadNotice"),
         tableSearchInput: document.getElementById("tableSearchInput"),
         specFilterGroup: document.getElementById("specFilterGroup"),
+        warehouseColorBar: document.getElementById("warehouseColorBar"),
+        warehouseColorOptions: document.getElementById("warehouseColorOptions"),
+        warehouseColorResetButton: document.getElementById("warehouseColorResetButton"),
         columnVisibilityButton: document.getElementById("columnVisibilityButton"),
         columnVisibilityMenu: document.getElementById("columnVisibilityMenu"),
         columnWidthSaveButton: document.getElementById("columnWidthSaveButton"),
@@ -3170,6 +3296,7 @@
         state.activePreview = record.ui?.activePreview || "validation";
         state.searchQuery = "";
         state.specificationFilters.clear();
+        state.warehouseFilters.clear();
         elements.tableSearchInput.value = "";
         elements.specFilterGroup.querySelectorAll("input[type='checkbox']").forEach((input) => {
           input.checked = false;
@@ -3524,6 +3651,75 @@
       function isSafeColumnKey(value) {
         const text = String(value || "");
         return Boolean(text && text.length <= 240 && !["__proto__", "prototype", "constructor"].includes(text));
+      }
+
+      function isSafeHexColor(value) {
+        return /^#[0-9a-f]{6}$/i.test(String(value || ""));
+      }
+
+      function isNonblankNumericValue(value) {
+        if (typeof value === "number") return Number.isFinite(value);
+        const normalized = String(value ?? "").trim().replace(/,/g, "");
+        return normalized !== "" && Number.isFinite(Number(normalized));
+      }
+
+      function loadWarehouseColorSettings() {
+        const fallback = { schemaVersion: WAREHOUSE_COLORS_SCHEMA, colors: Object.create(null) };
+        try {
+          const parsed = JSON.parse(localStorage.getItem(WAREHOUSE_COLORS_KEY) || "null");
+          if (!isPlainRecord(parsed) || parsed.schemaVersion !== WAREHOUSE_COLORS_SCHEMA || !isPlainRecord(parsed.colors)) {
+            return fallback;
+          }
+          const colors = Object.create(null);
+          Object.entries(parsed.colors).forEach(([columnKey, color]) => {
+            if (isSafeColumnKey(columnKey) && isSafeHexColor(color)) colors[columnKey] = color.toLowerCase();
+          });
+          return { schemaVersion: WAREHOUSE_COLORS_SCHEMA, colors };
+        } catch (error) {
+          return fallback;
+        }
+      }
+
+      function saveWarehouseColorSettings() {
+        try {
+          localStorage.setItem(WAREHOUSE_COLORS_KEY, JSON.stringify({
+            schemaVersion: WAREHOUSE_COLORS_SCHEMA,
+            colors: { ...state.warehouseColorSettings.colors },
+          }));
+        } catch (error) {}
+      }
+
+      function warehouseColumns(preview) {
+        return (preview?.columns || []).filter((column) => column.role === "warehouseQuantity");
+      }
+
+      function warehouseColorFor(preview, column) {
+        const columns = warehouseColumns(preview);
+        const index = Math.max(0, columns.findIndex((candidate) => candidate.key === column?.key));
+        return state.warehouseColorSettings.colors[column?.key]
+          || WAREHOUSE_COLOR_PALETTE[index % WAREHOUSE_COLOR_PALETTE.length];
+      }
+
+      function renderWarehouseColorBar(preview) {
+        const active = state.activePreview === "inventory";
+        elements.warehouseColorBar.classList.toggle("hidden", !active);
+        if (!active) {
+          elements.warehouseColorOptions.innerHTML = "";
+          return;
+        }
+        elements.warehouseColorOptions.innerHTML = warehouseColumns(preview).map((column) => {
+          const color = warehouseColorFor(preview, column);
+          const checked = state.warehouseFilters.has(column.key);
+          return `
+            <div class="warehouse-color-option">
+              <label title="${escapeHtml(column.header)}에 숫자가 있는 행만 표시">
+                <input type="checkbox" data-warehouse-filter="${escapeHtml(column.key)}" ${checked ? "checked" : ""}>
+                <span>${escapeHtml(column.header)}</span>
+              </label>
+              <input type="color" value="${escapeHtml(color)}" data-warehouse-color="${escapeHtml(column.key)}"
+                aria-label="${escapeHtml(column.header)} 셀 내부 배색">
+            </div>`;
+        }).join("");
       }
 
       function defaultColumnWidth(column) {
@@ -3978,10 +4174,17 @@
           .join(" ");
       }
 
-      function rowMatchesView(previewId, pair) {
+      function rowMatchesView(previewId, pair, preview) {
         const query = state.searchQuery.trim().toLocaleLowerCase("ko-KR");
         const queryMatches = !query || previewSearchCorpus(pair.sourceRow, pair.row).includes(query);
         if (!queryMatches) return false;
+        if (previewId === "inventory" && state.warehouseFilters.size > 0) {
+          const warehouseMatch = [...state.warehouseFilters].some((columnKey) => {
+            const index = preview?.columns?.findIndex((column) => column.key === columnKey) ?? -1;
+            return index >= 0 && isNonblankNumericValue(pair.row?.[index]);
+          });
+          if (!warehouseMatch) return false;
+        }
         if (previewId === "validation" || state.specificationFilters.size === 0) return true;
         const specification = String(
           pair.sourceRow?.specification ?? pair.sourceRow?.spec ?? pair.row?.[2] ?? "",
@@ -4019,14 +4222,14 @@
 
           return blocks.flatMap((block) => {
             if (!state.searchQuery.trim() && state.specificationFilters.size === 0) return block.pairs;
-            const matching = block.pairs.filter((pair) => rowMatchesView(previewId, pair));
+            const matching = block.pairs.filter((pair) => rowMatchesView(previewId, pair, preview));
             if (matching.length === 0) return [];
             if (matching.includes(block.main)) return block.pairs;
             return [block.main, ...matching.filter((pair) => pair !== block.main)];
           });
         }
 
-        const filtered = pairs.filter((pair) => rowMatchesView(previewId, pair));
+        const filtered = pairs.filter((pair) => rowMatchesView(previewId, pair, preview));
         if (preview.sortByProductCode) filtered.sort(compareProductCodes);
         return filtered;
       }
@@ -4082,23 +4285,24 @@
                     const value = row[index];
                     const isNumber = Boolean(column.numeric) && value !== "";
                     const isStatus = preview.status === index;
-                    const isInventory = !referenceRow && preview.inventory?.includes(index) &&
-                      typeof value === "number" && value !== 0;
-                    const inventoryNegative = previewId === "inventory" &&
-                      isNumber && typeof value === "number" && value < 0;
-                    const isWarning = inventoryNegative ||
-                      (isStatus && statusTone(value) === "bad" && String(value).includes("오류"));
+                    const warehouseQuantity = previewId === "inventory" &&
+                      column.role === "warehouseQuantity" && !referenceRow;
+                    const calculatedQuantity = previewId === "inventory" &&
+                      column.role === "calculatedQuantity" && !referenceRow;
+                    const negativeNumericValue = isNonblankNumericValue(value) && Number(String(value).replace(/,/g, "")) < 0;
+                    const warehouseFill = warehouseQuantity && isNonblankNumericValue(value)
+                      ? warehouseColorFor(preview, column)
+                      : "";
+                    const isWarning = isStatus && statusTone(value) === "bad" && String(value).includes("오류");
                     const editablePurchase = editable && preview.purchaseEditable === true &&
                       preview.purchase === index && !referenceRow;
-                    const editableInventory = editable && previewId === "inventory" &&
-                      column.role === "warehouseQuantity" && !referenceRow;
+                    const editableInventory = editable && warehouseQuantity;
                     const classes = [
                       isNumber ? "number" : "",
                       isStatus ? "status" : "",
-                      isInventory ? "inventory-value" : "",
-                      inventoryNegative ? "inventory-negative" : "",
                       isWarning ? "warning-value" : "",
                       editableInventory ? "inventory-editable" : "",
+                      calculatedQuantity ? "inventory-total-cell" : "",
                       column.role === "information" ? "information-value" : "",
                     ].filter(Boolean).join(" ");
                     const negativeBalance = previewId === "inventory" &&
@@ -4111,9 +4315,13 @@
                       : editableInventory
                         ? `<input class="inventory-input" data-inventory-code="${escapeHtml(sourceRow?.productCode || "")}"
                             data-inventory-column="${escapeHtml(column.key)}" inputmode="decimal" autocomplete="off"
+                            data-negative-value="${negativeNumericValue ? "true" : "false"}"
+                            style="${warehouseFill ? `background-color:${warehouseFill}` : ""}"
                             value="${escapeHtml(value)}"
                             aria-label="${escapeHtml(sourceRow?.productCode || "")} ${escapeHtml(column.header)} 재고수량">`
-                        : escapeHtml(isNumber ? formatNumber(value) : value);
+                        : calculatedQuantity
+                          ? `<span class="inventory-total-frame" data-negative-value="${negativeNumericValue ? "true" : "false"}">${escapeHtml(isNumber ? formatNumber(value) : value)}</span>`
+                          : escapeHtml(isNumber ? formatNumber(value) : value);
                     return `<td class="${classes}" style="${rowFill ? `background:#${rowFill.replace(/^#/, "")}` : ""}"
                       ${isStatus ? `data-tone="${statusTone(value)}"` : ""}
                       title="${escapeHtml(value)}">${content}</td>`;
@@ -4142,6 +4350,7 @@
         `).join("");
 
         const preview = definitions[state.activePreview];
+        renderWarehouseColorBar(preview);
         const pairs = filteredSortedPreviewPairs(state.activePreview, preview);
         elements.previewCount.textContent = preview.sortByProductCode
           ? `${formatNumber(pairs.length)}/${formatNumber(preview.rows.length)}행 · 품목코드↑`
@@ -4251,6 +4460,7 @@
             state.activePreview = "validation";
             state.searchQuery = "";
             state.specificationFilters.clear();
+            state.warehouseFilters.clear();
             elements.tableSearchInput.value = "";
             elements.specFilterGroup.querySelectorAll("input[type='checkbox']").forEach((input) => {
               input.checked = false;
@@ -4459,6 +4669,7 @@
           state.activePreview = plan.activePreview || "validation";
           state.searchQuery = "";
           state.specificationFilters.clear();
+          state.warehouseFilters.clear();
           elements.tableSearchInput.value = "";
           elements.specFilterGroup.querySelectorAll("input[type='checkbox']").forEach((input) => {
             input.checked = false;
@@ -4636,6 +4847,7 @@
 
       state.columnWidthSettings = loadColumnWidthSettings();
       state.hiddenColumnSettings = loadHiddenColumnSettings();
+      state.warehouseColorSettings = loadWarehouseColorSettings();
 
       elements.analyzeButton.addEventListener("click", runAnalysis);
       elements.downloadButton.addEventListener("click", downloadResult);
@@ -4652,6 +4864,30 @@
         if (input.checked) state.specificationFilters.add(input.value);
         else state.specificationFilters.delete(input.value);
         if (state.workspace) renderPreview();
+      });
+      elements.warehouseColorOptions.addEventListener("change", (event) => {
+        const filter = event.target.closest("[data-warehouse-filter]");
+        if (filter) {
+          if (filter.checked) state.warehouseFilters.add(filter.dataset.warehouseFilter);
+          else state.warehouseFilters.delete(filter.dataset.warehouseFilter);
+          if (state.workspace) renderPreview();
+          return;
+        }
+        const color = event.target.closest("[data-warehouse-color]");
+        if (!color || !isSafeHexColor(color.value)) return;
+        state.warehouseColorSettings.colors[color.dataset.warehouseColor] = color.value.toLowerCase();
+        saveWarehouseColorSettings();
+        if (state.workspace) renderPreview();
+      });
+      elements.warehouseColorResetButton.addEventListener("click", () => {
+        state.warehouseFilters.clear();
+        state.warehouseColorSettings = {
+          schemaVersion: WAREHOUSE_COLORS_SCHEMA,
+          colors: Object.create(null),
+        };
+        saveWarehouseColorSettings();
+        if (state.workspace) renderPreview();
+        showToast("창고 필터와 셀 배색을 기본값으로 초기화했습니다.");
       });
       elements.columnVisibilityButton.addEventListener("click", () => {
         const open = elements.columnVisibilityMenu.classList.contains("hidden");

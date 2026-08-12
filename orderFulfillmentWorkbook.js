@@ -10,7 +10,7 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function (engine) {
   "use strict";
 
-  const WORKBOOK_VERSION = "4.0.0";
+  const WORKBOOK_VERSION = "4.1.0";
   const REQUIRED_SHEETS = Object.freeze([
     "전달사항(적요보기)",
     "창고별재고",
