@@ -1,8 +1,8 @@
 # ONEAPP Application Architecture
 
 - Repository: orderzoneapp-coder/oneapp
-- Architecture document version: 1.3.7
-- Last reviewed: 2026-08-12
+- Architecture document version: 1.3.8
+- Last reviewed: 2026-08-13
 - Machine-readable companion: app-manifest.json
 
 ## 1. Purpose
@@ -340,7 +340,7 @@ Equivalent safety controls must be preserved when another application writes the
 2. The existing four-slot source strip is one full drag surface that accepts one to four files and classifies every dropped file by worksheet structure and column names first; touching a named slot opens its single-file picker without adding a separate visible bundle target.
 3. Configured sheet-name aliases are used only when structural candidates tie; filename aliases are the final tie-breaker.
 4. Administrator column aliases are passed to the real order and inventory parsers without renaming source headers.
-5. Order and warehouse inventory remain required. Inventory balance is the warehouse-stock sum minus the current editable order quantity. Purchase rows populate stock-ledger inbound and purchase-place displays, while sales rows populate the stock-ledger sales display; neither optional source changes the existing inventory-balance formula.
+5. Order and warehouse inventory remain required. Inventory balance is the warehouse-stock sum minus the current editable order quantity. Purchase rows populate stock-ledger inbound and purchase-place displays, while sales rows populate the stock-ledger `출고수량` display. Sales-only product codes remain visible as zero-stock stock-ledger rows so uploaded outbound history is not omitted; neither optional source changes the existing inventory-balance formula.
 6. Mapping aliases and purchase-place input history remain local UI preferences. Parsed optional-source rows travel with the analyzed workspace so local recovery and explicit cloud loading reproduce the same stock-ledger view.
 7. The warehouse-inventory view and workbook expose order information as `거래처(수량)단가` in `정보`, while original `적요` and `적요1` text is preserved separately in `적요`. The source `사용` column is omitted and the existing source `창고` column is moved to that leading position.
 8. Order-status edits to order quantity, purchase place, warehouse, delivery note, and unit price remain inside the existing `shipping-workspace/v2` optional row fields and are recalculated before local recovery, explicit cloud save, stock-ledger display, purchase selection, and integrated workbook output.
@@ -853,7 +853,7 @@ Roadmap work is delivered as separate pull requests and verified after each merg
 - Result tables use a light Excel-style cell grid. Editors do not draw a second border inside the table cell, and the active editable cell receives a light focus fill.
 - The default Order Status sequence is warehouse, customer, manager, product code, product name, specification, order, unit price, all warehouse-inventory columns, notice, and purchase. Warehouse is read-only; order, unit price, notice, and purchase remain editable.
 - Warehouse inventory shows `정보` as `거래처(수량)단가`, preserves order notes in a separate `적요` column, omits `사용`, and moves the existing `창고` source column to the leading position on screen and in the integrated workbook.
-- Purchase input supplies stock-ledger inbound/purchase-place displays and sales input supplies the sales display. The inventory balance remains warehouse stock minus the current order quantity.
+- Purchase input supplies stock-ledger inbound/purchase-place displays and sales input supplies the `출고수량` display, including zero-stock rows for product codes absent from the current inventory file. The inventory balance remains warehouse stock minus the current order quantity.
 
 Function keys are application-owned behavior.
 

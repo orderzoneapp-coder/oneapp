@@ -7,7 +7,7 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  const ENGINE_VERSION = "3.11.0";
+  const ENGINE_VERSION = "3.12.0";
   const WORKSPACE_SCHEMA_VERSION = "shipping-workspace/v2";
   const INVENTORY_OVERRIDE_SCHEMA_VERSION = "shipping-inventory-overrides/v1";
   const HEADER_SCAN_LIMIT = 30;
@@ -1402,6 +1402,7 @@
       }
     });
     const salesByCode = new Map();
+    const salesMetadataByCode = new Map();
     const salesRows = workspace?.orderOpsInputs?.sales?.rows;
     (Array.isArray(salesRows) ? salesRows : []).forEach((row) => {
       const productCode = normalizeProductCode(row?.productCode);
@@ -1411,6 +1412,11 @@
         productCode,
         roundQuantity((salesByCode.get(productCode) || 0) + parsed.value),
       );
+      if (!salesMetadataByCode.has(productCode)) {
+        salesMetadataByCode.set(productCode, {
+          productName: cleanText(row?.productName),
+        });
+      }
     });
     const columns = [
       { key: "ledger:product-code", header: "품목코드", role: "productCode", numeric: false },
@@ -1420,7 +1426,7 @@
       { key: "ledger:stock", header: "재고", role: "stockQuantity", numeric: true },
       { key: "ledger:inbound", header: "입고", role: "inboundQuantity", numeric: true },
       { key: "ledger:outbound", header: "주문", role: "orderQuantity", numeric: true },
-      { key: "ledger:sales", header: "판매", role: "salesQuantity", numeric: true },
+      { key: "ledger:sales", header: "출고수량", role: "salesQuantity", numeric: true },
       { key: "ledger:remaining", header: "잔량", role: "calculatedQuantity", numeric: true },
       { key: "ledger:purchase-place", header: "구매처", role: "purchasePlace", numeric: false },
     ];
@@ -1442,6 +1448,51 @@
         inventory.purchase || [...(purchasePartnersByCode.get(inventory.productCode) || [])].join(", "),
       ];
       return { ...inventory, sourceRow: source, values };
+    });
+    const inventoryCodes = new Set(rows.map((row) => normalizeProductCode(row.productCode)));
+    const purchaseInputs = getPurchaseInputs(workspace);
+    salesByCode.forEach((salesQuantity, productCode) => {
+      if (inventoryCodes.has(productCode)) return;
+      const orderQuantity = roundQuantity(
+        (Array.isArray(workspace?.orders) ? workspace.orders : [])
+          .filter((order) => normalizeProductCode(order?.productCode) === productCode)
+          .reduce((sum, order) => {
+            const parsed = parseNumericCell(order?.quantity);
+            return sum + (parsed.ok ? parsed.value : 0);
+          }, 0),
+      );
+      const remainingQuantity = roundQuantity(0 - orderQuantity);
+      const purchase = String(
+        purchaseInputs[productCode] || [...(purchasePartnersByCode.get(productCode) || [])].join(", "),
+      );
+      const productName = salesMetadataByCode.get(productCode)?.productName || "";
+      rows.push({
+        productCode,
+        productName,
+        specification: "",
+        sourceRow: null,
+        values: [
+          productCode,
+          productName,
+          "",
+          "",
+          0,
+          inboundByCode.get(productCode) || 0,
+          orderQuantity,
+          salesQuantity,
+          remainingQuantity,
+          purchase,
+        ],
+        inventoryTotal: 0,
+        stockTotal: 0,
+        orderQuantity,
+        remainingQuantity,
+        purchase,
+        suppliers: "",
+        orderInformation: orderInformationDisplay(workspace, productCode),
+        orderNotes: orderNoteDisplay(workspace, productCode),
+        salesOnly: true,
+      });
     });
     return { columns, headers: columns.map((column) => column.header), rows };
   }

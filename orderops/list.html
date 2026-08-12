@@ -686,7 +686,7 @@
       white-space: nowrap;
     }
     .spec-filter:disabled { opacity: .42; }
-    /* orderops v1.22: clearer status, F2 view reset, and separate accessible color palettes */
+    /* orderops v1.23: actual sales Excel is exposed as outbound quantity */
     .header-output-button { border-color: #99f6e4; color: #0f766e; background: #f0fdfa; }
     .header-output-button:hover:not(:disabled) { background: #ccfbf1; }
     .results-panel .table-wrap { max-height: calc(100vh - 200px); }
@@ -1166,7 +1166,7 @@
       .recovery-record-item { grid-template-columns: auto 1fr; }
       .recovery-record-status { grid-column: 2; }
     }
-    /* orderops v1.22: Excel-like grids, clearer controls, and revised workflow shortcuts */
+    /* orderops v1.23: Excel-like grids, clearer controls, and revised workflow shortcuts */
     .input-panel { grid-template-columns: minmax(0, 1fr) 330px; gap: 12px; }
     .upload-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
     .source-selector {
@@ -1289,7 +1289,7 @@
       <div class="brand-mark">ONEAPP</div>
       <div class="brand-divider" aria-hidden="true"></div>
       <div class="brand-stack">
-        <div class="brand-suite">NEXUS <span class="brand-badge">v1.22</span></div>
+        <div class="brand-suite">NEXUS <span class="brand-badge">v1.23</span></div>
         <div class="brand-product">OrderOps</div>
       </div>
     </div>
@@ -1458,7 +1458,7 @@
     </section>
 
     <footer class="page-footer">
-      <span>orderops v1.22 · workspace shipping-workspace/v2 · cloud plan v1</span>
+      <span>orderops v1.23 · workspace shipping-workspace/v2 · cloud plan v1</span>
       <a href="../SHIPPING_MANAGEMENT_GUIDANCE.md">개발·운영 기준 보기</a>
     </footer>
   </main>
@@ -1565,11 +1565,11 @@
         orders: { fileAliases: ["주문", "미출고", "order"], sheetAliases: ["주문", "미출고"], columns: {} },
         inventory: { fileAliases: ["재고", "창고", "inventory", "stock"], sheetAliases: ["재고", "창고"], columns: {} },
         purchases: { fileAliases: ["구매", "매입", "purchase"], sheetAliases: ["구매", "매입"], columns: {
-          "품목코드": ["품목코드", "상품코드", "제품코드", "코드"], "품목명": ["품목명", "상품명", "제품명"],
+          "품목코드": ["품목코드", "상품코드", "제품코드", "코드"], "품목명": ["품목명", "품명", "상품명", "제품명"],
           "수량": ["구매수량", "매입수량", "입고수량"], "구매처": ["구매처", "매입처", "공급처"],
         } },
         sales: { fileAliases: ["판매", "매출", "sales"], sheetAliases: ["판매", "매출"], columns: {
-          "품목코드": ["품목코드", "상품코드", "제품코드", "코드"], "품목명": ["품목명", "상품명", "제품명"],
+          "품목코드": ["품목코드", "상품코드", "제품코드", "코드"], "품목명": ["품목명", "품명", "상품명", "제품명"],
           "수량": ["판매수량", "매출수량", "출고수량"], "거래처": ["거래처", "거래처명", "판매처", "고객명"],
         } },
       });
@@ -2445,7 +2445,9 @@
         const required = kind === "purchases" ? ["품목코드", "품목명", "수량", "구매처"] : ["품목코드", "품목명", "수량", "거래처"];
         const lookup = new Map();
         Object.entries(mapping.columns || {}).forEach(([canonical, aliases]) => {
-          [canonical, ...(aliases || [])].forEach((alias) => lookup.set(normalizeMappingText(alias), canonical));
+          const defaultAliases = DEFAULT_EXCEL_MAPPINGS[kind]?.columns?.[canonical] || [];
+          [canonical, ...defaultAliases, ...(aliases || [])]
+            .forEach((alias) => lookup.set(normalizeMappingText(alias), canonical));
         });
         let best = null;
         workbook.SheetNames.forEach((sheetName) => {
@@ -2466,14 +2468,16 @@
         const partnerCanonical = kind === "purchases" ? "구매처" : "거래처";
         best.rows = best.matrix.slice(best.headerRowIndex + 1).map((cells, offset) => {
           const productCode = engine.normalizeProductCode(cells[columnIndex("품목코드")]);
+          const productName = String(cells[columnIndex("품목명")] || "").trim();
+          const partner = String(cells[columnIndex(partnerCanonical)] || "").trim();
           const quantityCell = cells[columnIndex("수량")];
           const parsedQuantity = engine.parseNumericCell(quantityCell);
-          if (!productCode || !parsedQuantity.ok) return null;
+          if (!productCode || !parsedQuantity.ok || (!productName && !partner)) return null;
           return {
             productCode,
-            productName: String(cells[columnIndex("품목명")] || "").trim(),
+            productName,
             quantity: parsedQuantity.value,
-            partner: String(cells[columnIndex(partnerCanonical)] || "").trim(),
+            partner,
             sourceRowNumber: best.headerRowIndex + offset + 2,
           };
         }).filter(Boolean);
