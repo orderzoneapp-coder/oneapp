@@ -13,9 +13,9 @@ assert.doesNotMatch(orderOpsHtml, /tokens truncated|…\d+ tokens truncated…/,
   "the public OrderOps mirror must not contain a truncated source fragment");
 assert.match(orderOpsHtml, /<body>[\s\S]*<\/body>\s*<\/html>/,
   "the public OrderOps mirror must remain a complete HTML document");
-assert.match(orderOpsHtml, /brand-badge">v1\.21</, "OrderOps visible version must be v1.21");
+assert.match(orderOpsHtml, /brand-badge">v1\.22</, "OrderOps visible version must be v1.22");
 assert.ok(orderOpsHtml.includes('class="execution-panel"'),
-  "the public v1.21 execution controls must be separate from the upload strip");
+  "the public v1.22 execution controls must be separate from the upload strip");
 assert.match(orderOpsHtml, /\.execution-panel\s*\{[^}]*grid-template-columns:\s*repeat\(3,/,
   "the public execution controls must use three visible segments");
 assert.ok(orderOpsHtml.includes("function resetResultViewFilters()"),
@@ -39,9 +39,12 @@ assert.match(orderOpsHtml, /table\.preview-inventory td\.information-value\s*\{[
 for (const requiredWarehouseColorContract of [
   'id="warehouseColorBar"',
   'id="warehouseColorOptions"',
+  'id="colorTargetSelect"',
+  'id="pastelColorPalette"',
+  'id="vividColorPalette"',
   'oneapp.orderops.warehouse-colors.v1',
   'data-warehouse-filter',
-  'data-warehouse-color',
+  'data-palette-color',
   'isNonblankNumericValue(value)',
   'background-color:${warehouseFill}',
   'class="inventory-total-frame"',
@@ -59,17 +62,45 @@ for (const requiredInteractionContract of [
   'oneapp.orderops.manager-colors.v1',
   'oneapp.orderops.column-order.v1',
   'data-manager-filter',
-  'data-manager-color',
+  'id="resultFilterResetButton"',
   'data-column-drag-key',
   'analysisEnterLocked',
   'event.stopImmediatePropagation()',
-  '["F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10"]',
+  '["F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10"]',
   'filteredSortedPreviewPairs(state.activePreview, preview)',
   'getAllocationInventoryView(workspace)',
 ]) {
   assert.ok(orderOpsHtml.includes(requiredInteractionContract),
-    `public OrderOps v1.21 interaction contract is missing: ${requiredInteractionContract}`);
+    `public OrderOps v1.22 interaction contract is missing: ${requiredInteractionContract}`);
 }
+assert.doesNotMatch(orderOpsHtml, /<input[^>]+type="color"|data-warehouse-color|data-manager-color/,
+  "the public OrderOps filter strip must not use a native color picker inside filter options");
+const publicPastelSource = orderOpsHtml.slice(
+  orderOpsHtml.indexOf("const PASTEL_COLOR_PALETTE"),
+  orderOpsHtml.indexOf("const VIVID_COLOR_PALETTE"),
+);
+const publicVividSource = orderOpsHtml.slice(
+  orderOpsHtml.indexOf("const VIVID_COLOR_PALETTE"),
+  orderOpsHtml.indexOf("const WAREHOUSE_COLOR_PALETTE"),
+);
+assert.equal(publicPastelSource.match(/#[0-9a-f]{6}/gi)?.length, 10,
+  "the public palette must expose ten pastel choices immediately");
+assert.equal(publicVividSource.match(/#[0-9a-f]{6}/gi)?.length, 10,
+  "the public palette must retain ten vivid choices behind the more control");
+const publicViewControls = orderOpsHtml.slice(
+  orderOpsHtml.indexOf('<div class="view-controls"'),
+  orderOpsHtml.indexOf('<div class="warehouse-color-bar"'),
+);
+assert.ok(publicViewControls.indexOf('id="columnWidthResetButton"') < publicViewControls.indexOf('id="warehouseFilterToggle"'),
+  "warehouse and manager filter buttons must sit at the far right after column-width reset");
+assert.ok(publicViewControls.indexOf('id="tableSearchInput"') < publicViewControls.indexOf('id="resultFilterResetButton"'),
+  "F2 filter reset must remain beside the integrated search");
+assert.ok(orderOpsHtml.includes("function runResultFilterReset()") && orderOpsHtml.includes('event.key === "F2"'),
+  "F2 must clear the result view through the dedicated reset path");
+assert.match(orderOpsHtml, /body\s*\{[^}]*font-size:\s*14px;/,
+  "the public OrderOps base text must increase by one pixel");
+assert.ok(orderOpsHtml.includes("필수 파일 대기 · 주문현황과 창고재고를 선택하세요"),
+  "the public System.IO console must explain the required operator action in Korean");
 for (const shortcutContract of [
   'shortcut: "F5"',
   'shortcut: "F6"',
@@ -1371,7 +1402,7 @@ assert.ok(
 );
 
 const html = fs.readFileSync(path.join(ROOT, "orderops", "list.html"), "utf8");
-assert.match(html, /brand-badge">v1\.21</, "canonical OrderOps visible version must be v1.21");
+assert.match(html, /brand-badge">v1\.22</, "canonical OrderOps visible version must be v1.22");
 const styleBlocks = [...html.matchAll(/<style(?:\s[^>]*)?>([\s\S]*?)<\/style>/gi)].map((match) => match[1]);
 assert.ok(styleBlocks.length > 0, "orderops/list.html must contain a style block");
 
@@ -1428,9 +1459,12 @@ assert.match(html, /table\.style\.width = `\$\{renderedWidth\}px`;/,
 for (const requiredWarehouseColorContract of [
   'id="warehouseColorBar"',
   'id="warehouseColorOptions"',
+  'id="colorTargetSelect"',
+  'id="pastelColorPalette"',
+  'id="vividColorPalette"',
   'oneapp.orderops.warehouse-colors.v1',
   'data-warehouse-filter',
-  'data-warehouse-color',
+  'data-palette-color',
   'class="inventory-input"',
   'class="inventory-total-frame"',
 ]) {
@@ -1447,17 +1481,29 @@ for (const requiredInteractionContract of [
   'oneapp.orderops.manager-colors.v1',
   'oneapp.orderops.column-order.v1',
   'data-manager-filter',
-  'data-manager-color',
+  'id="resultFilterResetButton"',
   'data-column-drag-key',
   'analysisEnterLocked',
   'event.stopImmediatePropagation()',
-  '["F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10"]',
+  '["F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10"]',
   'filteredSortedPreviewPairs(state.activePreview, preview)',
   'getAllocationInventoryView(workspace)',
 ]) {
   assert.ok(html.includes(requiredInteractionContract),
-    `canonical OrderOps v1.21 interaction contract is missing: ${requiredInteractionContract}`);
+    `canonical OrderOps v1.22 interaction contract is missing: ${requiredInteractionContract}`);
 }
+assert.doesNotMatch(html, /<input[^>]+type="color"|data-warehouse-color|data-manager-color/,
+  "canonical OrderOps filter options must remain separate from color assignment");
+const canonicalViewControls = html.slice(
+  html.indexOf('<div class="view-controls"'),
+  html.indexOf('<div class="warehouse-color-bar"'),
+);
+assert.ok(canonicalViewControls.indexOf('id="columnWidthResetButton"') < canonicalViewControls.indexOf('id="warehouseFilterToggle"'),
+  "canonical filter buttons must remain at the right edge after the column tools");
+assert.match(combinedCss, /body\s*\{[^}]*font-size:\s*14px;/,
+  "canonical OrderOps base text must increase by one pixel");
+assert.match(combinedCss, /\.system-console\s*\{[^}]*font:\s*700 11px\/1\.3/,
+  "System.IO status text must increase by one pixel");
 assert.ok(html.includes(
   'headers: ["창고", "거래처", "담당자", "상품코드", "품명", "규격", "주문", "단가", ...allocationWarehouseHeaders, "전달사항", "구매"]',
 ), "the canonical order table must use the approved default column sequence");
@@ -1511,7 +1557,8 @@ for (const requiredText of [
 
 for (const id of [
   "sourceSelector", "ordersInput", "inventoryInput", "purchasesInput", "salesInput", "analyzeButton", "refreshButton",
-  "warehouseFilterToggle", "managerFilterToggle", "warehouseFilterPanel", "managerFilterPanel",
+  "resultFilterResetButton", "warehouseFilterToggle", "managerFilterToggle", "warehouseFilterPanel", "managerFilterPanel",
+  "colorAssignmentPanel", "colorTargetSelect", "pastelColorPalette", "vividColorPalette", "vividColorToggle",
   "columnVisibilityButton", "columnWidthSaveButton", "columnWidthResetButton",
   "downloadButton", "printButton",
   "headerCloudLoadButton", "headerCloudSaveButton",
@@ -1632,12 +1679,22 @@ for (const contract of [
   "handleInventoryGridArrowNavigation", "autocompletePurchaseInput", "rememberPurchaseName",
   "function resetResultViewFilters()", 'grid-template-columns: repeat(3, minmax(0, 1fr))',
 ]) {
-  assert.ok(html.includes(contract), `OrderOps v1.21 contract is missing: ${contract}`);
+  assert.ok(html.includes(contract), `OrderOps v1.22 contract is missing: ${contract}`);
 }
 assert.ok(html.includes('id="warehouseColorResetButton" type="button">전체 다시보기</button>'),
   "filter reset must be presented as returning to the full view");
-assert.ok(html.includes("색상 변경 즉시 이 컴퓨터에 자동 저장·적용"),
+assert.ok(html.includes("색 선택 즉시 저장·적용"),
   "filter color persistence and immediate application must be visible to operators");
+const resultResetStart = html.indexOf("function runResultFilterReset()");
+const resultResetEnd = html.indexOf("async function analyzeCurrentInputs", resultResetStart);
+assert.ok(resultResetStart >= 0 && resultResetEnd > resultResetStart, "F2 result-filter reset handler must exist");
+const resultResetSource = html.slice(resultResetStart, resultResetEnd);
+assert.ok(resultResetSource.includes("resetResultViewFilters()") && resultResetSource.includes("renderPreview()"),
+  "F2 must clear search and every view filter, then redraw the table");
+assert.equal(resultResetSource.includes("saveManagerColorSettings"), false,
+  "F2 reset must preserve saved manager colors");
+assert.equal(resultResetSource.includes("saveWarehouseColorSettings"), false,
+  "F2 reset must preserve saved warehouse colors");
 const colorResetStart = html.indexOf('elements.warehouseColorResetButton.addEventListener("click"');
 const colorResetEnd = html.indexOf("elements.columnVisibilityButton.addEventListener", colorResetStart);
 assert.ok(colorResetStart >= 0 && colorResetEnd > colorResetStart, "filter reset handler must exist");
