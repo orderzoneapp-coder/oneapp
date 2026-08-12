@@ -84,6 +84,9 @@ assert.doesNotMatch(excelGroup, /handleFileUpload\(e, 'inventory'\)/,
   "the common Excel button must not force every file through inventory logic");
 assert.doesNotMatch(toolbar.slice(parserGroupAt, operationGroupAt), /justify-around/,
   "buttons inside toolbar groups must not be distributed independently");
+assert.match(toolbar,
+  /commonExcelTableViewOptions\.map\([\s\S]*?`양식: \$\{view\.targetLabel\} · \$\{view\.name\}`\)\)\)\)\)\),\s*React\.createElement\("div", \{ "data-merch-toolbar-group": "operations"/,
+  "parser/catalog, Excel, and operations must remain siblings in the same top-level grid");
 
 assert.match(toolbar, /\['estimate', 'purchase', 'inventory', 'info'\]/,
   "the common template selector must aggregate all four individual Excel roles");
@@ -97,8 +100,13 @@ assert.ok(mainFilterAt >= 0 && searchAt > mainFilterAt && registrationToolsAt > 
   "registration actions must render in a subordinate row after the main filter row");
 assert.doesNotMatch(toolbar.slice(mainFilterAt, searchAt), /신규등록용 양식|선택 마스터 적용|이전 양식/,
   "registration actions must not remain inside the main filter row");
+assert.match(toolbar,
+  /React\.createElement\(SearchBar, \{ value: globalSearch, onChange: setGlobalSearch \}\)\)\),\s*registrationMode && React\.createElement/,
+  "the main filter row must remain a child of the always-rendered toolbar container");
+assert.match(toolbar.trimEnd(), /"적용"\)\)\)\)\)\)\)\);\s*\}\);$/,
+  "MainToolbar must return its root element instead of the final detail-filter condition");
 
-const versions = [...html.matchAll(/v2\.1\.184_CommonExcelRouting/g)].length;
-assert.ok(versions >= 3, "all MerchOps version labels must use v2.1.184");
+const versions = [...html.matchAll(/v2\.1\.185_ToolbarRenderRestore/g)].length;
+assert.ok(versions >= 3, "all MerchOps version labels must use v2.1.185");
 
 console.log("MerchOps common Excel routing, toolbar grouping, template aggregation, and registration sub-toolbar contracts passed.");
