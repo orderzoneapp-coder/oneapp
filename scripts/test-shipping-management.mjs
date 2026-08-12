@@ -13,7 +13,7 @@ assert.doesNotMatch(orderOpsHtml, /tokens truncated|…\d+ tokens truncated…/,
   "the public OrderOps mirror must not contain a truncated source fragment");
 assert.match(orderOpsHtml, /<body>[\s\S]*<\/body>\s*<\/html>/,
   "the public OrderOps mirror must remain a complete HTML document");
-assert.match(orderOpsHtml, /brand-badge">v1\.27</, "ORDER Q visible version must be v1.27");
+assert.match(orderOpsHtml, /brand-badge">v1\.28</, "ORDER Q visible version must be v1.28");
 assert.match(orderOpsHtml, /<title>ONEAPP ORDER Q · 출고관리<\/title>/,
   "the public page title must establish ORDER Q as shipment management");
 assert.match(orderOpsHtml, /aria-label="ONEAPP ORDER Q 출고관리"/,
@@ -22,7 +22,7 @@ assert.match(orderOpsHtml, /class="brand-logo" src="assets\/order-q-logo\.png"/,
   "the public header must use the approved ORDER Q logo asset");
 assert.match(orderOpsHtml, /\.brand-logo-frame\s*\{[\s\S]*?width:\s*120px;[\s\S]*?height:\s*20px;/,
   "the public ORDER Q logo must match the ONEAPP wordmark height");
-assert.match(orderOpsHtml, /ORDER Q v1\.27 · 출고관리/,
+assert.match(orderOpsHtml, /ORDER Q v1\.28 · 출고관리/,
   "the public footer must use the ORDER Q product concept");
 assert.doesNotMatch(
   orderOpsHtml.slice(orderOpsHtml.indexOf('<header class="global-header">'), orderOpsHtml.indexOf('</header>')),
@@ -37,7 +37,7 @@ assert.equal(
   "the repository logo must be the unmodified approved source image",
 );
 assert.ok(orderOpsHtml.includes('class="execution-panel"'),
-  "the public v1.27 execution controls must be separate from the upload strip");
+  "the public v1.28 execution controls must be separate from the upload strip");
 assert.match(orderOpsHtml, /\.execution-panel\s*\{[^}]*grid-template-columns:\s*repeat\(3,/,
   "the public execution controls must use three visible segments");
 assert.ok(orderOpsHtml.includes("function resetResultViewFilters()"),
@@ -54,6 +54,15 @@ assert.match(orderOpsHtml, /const tableWidth = visibleEntries\.reduce\(/,
   "the public OrderOps table width must equal the sum of visible column widths");
 assert.match(orderOpsHtml, /table\.style\.width = `\$\{renderedWidth\}px`;/,
   "the public OrderOps table must shrink with a resized column");
+assert.doesNotMatch(orderOpsHtml, /\.print-area col\s*\{[^}]*width:\s*auto\s*!important/,
+  "screen print must not discard saved column-width proportions");
+for (const printWidthContract of [
+  "function savedColumnWidth", 'widthSource: "saved"', "fitWidth: true", "sortable: false",
+  'data-width-source="${options.widthSource || "draft"}"', 'data-saved-width="${width}"',
+]) {
+  assert.ok(orderOpsHtml.includes(printWidthContract),
+    `public saved-width print contract is missing: ${printWidthContract}`);
+}
 assert.match(orderOpsHtml, /table\.preview-inventory \.inventory-input\s*\{[^}]*min-width:\s*0;/,
   "inventory editors must not force their columns wider");
 assert.match(orderOpsHtml, /table\.preview-inventory td\.information-value\s*\{[^}]*min-width:\s*0;/,
@@ -85,6 +94,14 @@ for (const requiredInteractionContract of [
   'oneapp.orderops.column-order.v1',
   'data-manager-filter',
   'id="resultFilterResetButton"',
+  'id="columnSortMenu"',
+  'data-sort-direction="asc"',
+  'data-sort-direction="desc"',
+  'data-column-condition="excludeBlank"',
+  'data-column-condition="excludeZero"',
+  'function rowMatchesColumnFilters',
+  'function comparePreviewPairs',
+  'await restoreLocalRecord(candidate.record)',
   'data-column-drag-key',
   'analysisEnterLocked',
   'event.stopImmediatePropagation()',
@@ -93,7 +110,7 @@ for (const requiredInteractionContract of [
   'getAllocationInventoryView(workspace)',
 ]) {
   assert.ok(orderOpsHtml.includes(requiredInteractionContract),
-    `public ORDER Q v1.27 interaction contract is missing: ${requiredInteractionContract}`);
+    `public ORDER Q v1.28 interaction contract is missing: ${requiredInteractionContract}`);
 }
 assert.doesNotMatch(orderOpsHtml, /<input[^>]+type="color"|data-warehouse-color|data-manager-color/,
   "the public OrderOps filter strip must not use a native color picker inside filter options");
@@ -1520,7 +1537,7 @@ assert.ok(
 );
 
 const html = fs.readFileSync(path.join(ROOT, "orderops", "list.html"), "utf8");
-assert.match(html, /brand-badge">v1\.27</, "canonical ORDER Q visible version must be v1.27");
+assert.match(html, /brand-badge">v1\.28</, "canonical ORDER Q visible version must be v1.28");
 assert.match(html, /class="brand-logo" src="\.\.\/assets\/order-q-logo\.png"/,
   "the canonical header must use the shared ORDER Q logo asset");
 assert.match(html, /<h2 id="settingsModalTitle">ORDER Q 환경설정<\/h2>/,
@@ -1591,6 +1608,15 @@ assert.match(html, /const tableWidth = visibleEntries\.reduce\(/,
   "the canonical OrderOps table width must equal the sum of visible column widths");
 assert.match(html, /table\.style\.width = `\$\{renderedWidth\}px`;/,
   "the canonical OrderOps table must shrink with a resized column");
+assert.doesNotMatch(combinedCss, /\.print-area col\s*\{[^}]*width:\s*auto\s*!important/,
+  "canonical screen print must preserve saved column-width proportions");
+for (const printWidthContract of [
+  "function savedColumnWidth", 'widthSource: "saved"', "fitWidth: true", "sortable: false",
+  'overflow: visible !important', 'white-space: normal !important',
+]) {
+  assert.ok(html.includes(printWidthContract),
+    `canonical saved-width print contract is missing: ${printWidthContract}`);
+}
 for (const requiredWarehouseColorContract of [
   'id="warehouseColorBar"',
   'id="warehouseColorOptions"',
@@ -1617,6 +1643,13 @@ for (const requiredInteractionContract of [
   'oneapp.orderops.column-order.v1',
   'data-manager-filter',
   'id="resultFilterResetButton"',
+  'id="columnSortMenu"',
+  'data-sort-direction="default"',
+  'data-column-condition="excludeBlank"',
+  'data-column-condition="excludeZero"',
+  'state.sortSettings = Object.create(null)',
+  'state.columnFilters = Object.create(null)',
+  'await restoreLocalRecord(candidate.record)',
   'data-column-drag-key',
   'analysisEnterLocked',
   'event.stopImmediatePropagation()',
@@ -1625,7 +1658,7 @@ for (const requiredInteractionContract of [
   'getAllocationInventoryView(workspace)',
 ]) {
   assert.ok(html.includes(requiredInteractionContract),
-    `canonical ORDER Q v1.27 interaction contract is missing: ${requiredInteractionContract}`);
+    `canonical ORDER Q v1.28 interaction contract is missing: ${requiredInteractionContract}`);
 }
 assert.doesNotMatch(html, /<input[^>]+type="color"|data-warehouse-color|data-manager-color/,
   "canonical OrderOps filter options must remain separate from color assignment");
@@ -1814,7 +1847,7 @@ for (const contract of [
   "handleInventoryGridArrowNavigation", "autocompletePurchaseInput", "rememberPurchaseName",
   "function resetResultViewFilters()", 'grid-template-columns: repeat(3, minmax(0, 1fr))',
 ]) {
-  assert.ok(html.includes(contract), `ORDER Q v1.27 contract is missing: ${contract}`);
+  assert.ok(html.includes(contract), `ORDER Q v1.28 contract is missing: ${contract}`);
 }
 assert.ok(html.includes('id="warehouseColorResetButton" type="button">전체 다시보기</button>'),
   "filter reset must be presented as returning to the full view");

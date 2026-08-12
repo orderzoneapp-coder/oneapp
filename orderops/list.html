@@ -696,7 +696,7 @@
       white-space: nowrap;
     }
     .spec-filter:disabled { opacity: .42; }
-    /* ORDER Q v1.27: operator-facing shipment-management branding */
+    /* ORDER Q v1.28: operator-facing shipment-management branding */
     .header-output-button { border-color: #99f6e4; color: #0f766e; background: #f0fdfa; }
     .header-output-button:hover:not(:disabled) { background: #ccfbf1; }
     .results-panel .table-wrap { max-height: calc(100vh - 200px); }
@@ -1007,6 +1007,88 @@
     table.preview-inventory [data-negative-value="true"] { color: #b91c1c; font-weight: 900; }
 
     th.column-resizable { padding-right: 16px; }
+    .column-header-content {
+      display: flex;
+      min-width: 0;
+      align-items: center;
+      justify-content: space-between;
+      gap: 4px;
+    }
+    .column-header-label {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .column-sort-trigger {
+      display: inline-flex;
+      flex: 0 0 auto;
+      width: 19px;
+      height: 20px;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      border: 1px solid transparent;
+      border-radius: 3px;
+      color: #64748b;
+      background: transparent;
+      font-size: 10px;
+      line-height: 1;
+      cursor: pointer;
+    }
+    .column-sort-trigger:hover,
+    .column-sort-trigger.active {
+      border-color: #94a3b8;
+      color: #0f766e;
+      background: #fff;
+    }
+    .column-sort-menu {
+      position: fixed;
+      z-index: 500;
+      width: 230px;
+      padding: 8px;
+      border: 1px solid #94a3b8;
+      border-radius: 7px;
+      color: #334155;
+      background: #fff;
+      box-shadow: 0 16px 36px rgba(15,23,42,.22);
+      font-size: 12px;
+    }
+    .column-sort-menu-title {
+      padding: 3px 5px 8px;
+      overflow: hidden;
+      color: #0f172a;
+      font-weight: 900;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .column-sort-menu-section {
+      display: grid;
+      gap: 3px;
+      padding: 6px 0;
+      border-top: 1px solid #e2e8f0;
+    }
+    .column-sort-menu button,
+    .column-sort-condition {
+      display: flex;
+      width: 100%;
+      min-height: 31px;
+      align-items: center;
+      gap: 7px;
+      padding: 5px 7px;
+      border: 0;
+      border-radius: 4px;
+      color: #334155;
+      background: transparent;
+      font: inherit;
+      text-align: left;
+    }
+    .column-sort-menu button { cursor: pointer; }
+    .column-sort-menu button:hover,
+    .column-sort-menu button.active,
+    .column-sort-condition:hover { color: #0f766e; background: #f0fdfa; }
+    .column-sort-condition input { width: 15px; height: 15px; margin: 0; accent-color: #0f766e; }
+    .column-sort-menu .column-sort-clear { color: #475569; font-weight: 800; }
     th.column-draggable { cursor: grab; }
     th.column-draggable:active { cursor: grabbing; }
     th.column-dragging { opacity: .45; }
@@ -1102,7 +1184,6 @@
         table-layout: fixed !important;
         font-size: 8px;
       }
-      body.printing-table .print-area col { width: auto !important; }
       body.printing-table .print-area thead { display: table-header-group; }
       body.printing-table .print-area tbody { display: table-row-group; }
       body.printing-table .print-area tr {
@@ -1121,9 +1202,14 @@
       body.printing-table .print-area th,
       body.printing-table .print-area td {
         padding: 2px 3px;
+        overflow: visible !important;
+        text-overflow: clip !important;
+        white-space: normal !important;
         overflow-wrap: anywhere;
         word-break: break-word;
       }
+      body.printing-table .print-area .column-header-content { display: block; }
+      body.printing-table .print-area .column-header-label { white-space: normal; }
     }
 
     @media (max-width: 1180px) {
@@ -1189,7 +1275,7 @@
       .recovery-record-item { grid-template-columns: auto 1fr; }
       .recovery-record-status { grid-column: 2; }
     }
-    /* ORDER Q v1.27: Excel-like grids, clearer controls, and revised workflow shortcuts */
+    /* ORDER Q v1.28: saved-width print layout and Excel-like column sort/filter menus */
     .input-panel { grid-template-columns: minmax(0, 1fr) 330px; gap: 12px; }
     .upload-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
     .source-selector {
@@ -1312,7 +1398,7 @@
       <div class="brand-mark">ONEAPP</div>
       <div class="brand-divider" aria-hidden="true"></div>
       <span class="brand-logo-frame" aria-hidden="true"><img class="brand-logo" src="../assets/order-q-logo.png" alt=""></span>
-      <span class="brand-badge">v1.27</span>
+      <span class="brand-badge">v1.28</span>
       <span class="brand-product">출고관리</span>
     </div>
     <div class="header-actions">
@@ -1330,8 +1416,8 @@
       <button class="header-link header-save-button" id="headerCloudSaveButton" type="button" aria-label="작업 완료 후 클라우드 저장 F8" aria-keyshortcuts="F8" disabled>
         <span aria-hidden="true">✓</span><span>저장 F8</span>
       </button>
-      <button class="header-link" id="headerRestoreButton" type="button" aria-label="임시 작업 복구">
-        <span aria-hidden="true">↻</span><span>임시복구</span>
+      <button class="header-link" id="headerRestoreButton" type="button" aria-label="최신 정상 임시저장 바로 복구">
+        <span aria-hidden="true">↻</span><span>이전복구</span>
       </button>
       <button class="header-link" id="headerSettingsButton" type="button" aria-expanded="false" aria-controls="settingsModal">
         <span aria-hidden="true">⚙</span><span>환경설정</span>
@@ -1480,7 +1566,7 @@
     </section>
 
     <footer class="page-footer">
-      <span>ORDER Q v1.27 · 출고관리 · workspace shipping-workspace/v2 · cloud plan v1</span>
+      <span>ORDER Q v1.28 · 출고관리 · workspace shipping-workspace/v2 · cloud plan v1</span>
       <a href="../SHIPPING_MANAGEMENT_GUIDANCE.md">개발·운영 기준 보기</a>
     </footer>
   </main>
@@ -1544,6 +1630,21 @@
     </section>
   </div>
 
+  <div class="column-sort-menu hidden" id="columnSortMenu" role="menu" aria-label="열 정렬 및 조건 필터">
+    <div class="column-sort-menu-title" id="columnSortMenuTitle">열 정렬 및 필터</div>
+    <div class="column-sort-menu-section">
+      <button type="button" data-sort-direction="asc" role="menuitem">↑ 오름차순</button>
+      <button type="button" data-sort-direction="desc" role="menuitem">↓ 내림차순</button>
+      <button type="button" data-sort-direction="default" role="menuitem">↕ 기본순서</button>
+    </div>
+    <div class="column-sort-menu-section" aria-label="열 조건">
+      <label class="column-sort-condition"><input type="checkbox" data-column-condition="excludeBlank">공백 제외</label>
+      <label class="column-sort-condition"><input type="checkbox" data-column-condition="excludeZero">0 제외</label>
+    </div>
+    <div class="column-sort-menu-section">
+      <button class="column-sort-clear" type="button" data-clear-column-filter role="menuitem">이 열 정렬·조건 초기화</button>
+    </div>
+  </div>
   <div class="toast hidden" id="toast" role="status" aria-live="polite"></div>
   <div class="print-area" id="printArea" aria-hidden="true"></div>
 
@@ -1639,6 +1740,9 @@
         warehouseFilters: new Set(),
         managerColorSettings: { schemaVersion: MANAGER_COLORS_SCHEMA, colors: Object.create(null) },
         managerFilters: new Set(),
+        sortSettings: Object.create(null),
+        columnFilters: Object.create(null),
+        activeColumnMenu: null,
         activeFilterPanel: "",
         colorTargetKeys: { warehouse: "", manager: "" },
         vividPaletteExpanded: false,
@@ -1700,6 +1804,8 @@
         previewTabs: document.getElementById("previewTabs"),
         previewCount: document.getElementById("previewCount"),
         previewTable: document.getElementById("previewTable"),
+        columnSortMenu: document.getElementById("columnSortMenu"),
+        columnSortMenuTitle: document.getElementById("columnSortMenuTitle"),
         downloadButton: document.getElementById("downloadButton"),
         recoveryBanner: document.getElementById("recoveryBanner"),
         recoveryMessage: document.getElementById("recoveryMessage"),
@@ -2306,6 +2412,9 @@
         state.specificationFilters.clear();
         state.warehouseFilters.clear();
         state.managerFilters.clear();
+        state.sortSettings = Object.create(null);
+        state.columnFilters = Object.create(null);
+        closeColumnSortMenu();
         elements.tableSearchInput.value = "";
         elements.specFilterGroup.querySelectorAll("input[type='checkbox']").forEach((input) => {
           input.checked = false;
@@ -2315,7 +2424,7 @@
         localStorage.setItem(LOCAL_POINTER_KEY, record.recordId);
         state.selectedRecoveryId = record.recordId;
         renderResults();
-        showToast("로컬 발주계획을 복구했습니다.");
+        showToast("바로 이전 정상 임시저장 파일을 복구했습니다.");
       }
 
       async function clearLocalRecovery(showNotice = true) {
@@ -3002,6 +3111,13 @@
         return Number.isFinite(width) ? width : defaultColumnWidth(column);
       }
 
+      function savedColumnWidth(tabId, column) {
+        const width = state.columnWidthSettings.tabs?.[tabId]?.[column.key];
+        return Number.isFinite(width) && width >= TABLE_WIDTH_MIN && width <= TABLE_WIDTH_MAX
+          ? Math.round(width)
+          : defaultColumnWidth(column);
+      }
+
       function setColumnWidthDraft(tabId, columnKey, width) {
         if (!TABLE_WIDTH_TABS.has(tabId) || !isSafeColumnKey(columnKey)) return;
         getColumnWidthDraft(tabId)[columnKey] = Math.max(
@@ -3297,7 +3413,7 @@
 
       function handleColumnDragStart(event) {
         const header = event.target.closest("th[data-column-drag-key]");
-        if (!header || event.target.closest(".column-resize-handle") || !COLUMN_ORDER_TABS.has(state.activePreview)) {
+        if (!header || event.target.closest(".column-resize-handle, .column-sort-trigger") || !COLUMN_ORDER_TABS.has(state.activePreview)) {
           event.preventDefault();
           return;
         }
@@ -3631,17 +3747,83 @@
           const manager = String(pair.sourceRow?.manager || "").trim();
           if (!state.managerFilters.has(manager)) return false;
         }
-        if (previewId === "validation" || previewId === "notices" || state.specificationFilters.size === 0) return true;
-        const specification = String(
-          pair.sourceRow?.specification ?? pair.sourceRow?.spec ?? pair.row?.[2] ?? "",
-        ).trim();
-        return state.specificationFilters.has(specification);
+        if (previewId !== "validation" && previewId !== "notices" && state.specificationFilters.size > 0) {
+          const specification = String(
+            pair.sourceRow?.specification ?? pair.sourceRow?.spec ?? pair.row?.[2] ?? "",
+          ).trim();
+          if (!state.specificationFilters.has(specification)) return false;
+        }
+        return rowMatchesColumnFilters(previewId, pair, preview);
       }
 
       function compareProductCodes(left, right) {
         const leftCode = String(left?.sourceRow?.productCode ?? left?.row?.[0] ?? "").trim();
         const rightCode = String(right?.sourceRow?.productCode ?? right?.row?.[0] ?? "").trim();
         const compared = leftCode.localeCompare(rightCode, "ko-KR", { sensitivity: "base" });
+        return compared || left.index - right.index;
+      }
+
+      function columnSortSetting(previewId, preview) {
+        const setting = state.sortSettings[previewId];
+        if (!setting || !["asc", "desc"].includes(setting.direction) ||
+            !preview?.columns?.some((column) => column.key === setting.columnKey)) return null;
+        return setting;
+      }
+
+      function columnFilterSetting(previewId, columnKey) {
+        return state.columnFilters[previewId]?.[columnKey] || null;
+      }
+
+      function hasColumnFilters(previewId) {
+        return Object.values(state.columnFilters[previewId] || {}).some((setting) =>
+          Boolean(setting?.excludeBlank || setting?.excludeZero));
+      }
+
+      function isBlankCell(value) {
+        return value === null || value === undefined || String(value).trim() === "";
+      }
+
+      function isZeroCell(value) {
+        if (isBlankCell(value)) return false;
+        const numeric = Number(String(value).replace(/,/g, "").trim());
+        return Number.isFinite(numeric) && numeric === 0;
+      }
+
+      function rowMatchesColumnFilters(previewId, pair, preview) {
+        const filters = state.columnFilters[previewId] || {};
+        return Object.entries(filters).every(([columnKey, setting]) => {
+          const index = preview?.columns?.findIndex((column) => column.key === columnKey) ?? -1;
+          if (index < 0) return true;
+          const value = pair.row?.[index];
+          if (setting?.excludeBlank && isBlankCell(value)) return false;
+          if (setting?.excludeZero && isZeroCell(value)) return false;
+          return true;
+        });
+      }
+
+      function compareColumnValues(leftValue, rightValue, direction) {
+        const leftBlank = isBlankCell(leftValue);
+        const rightBlank = isBlankCell(rightValue);
+        if (leftBlank || rightBlank) {
+          if (leftBlank && rightBlank) return 0;
+          return leftBlank ? 1 : -1;
+        }
+        const leftNumeric = Number(String(leftValue).replace(/,/g, "").trim());
+        const rightNumeric = Number(String(rightValue).replace(/,/g, "").trim());
+        const compared = Number.isFinite(leftNumeric) && Number.isFinite(rightNumeric)
+          ? leftNumeric - rightNumeric
+          : String(leftValue).localeCompare(String(rightValue), "ko-KR", {
+              sensitivity: "base",
+              numeric: true,
+            });
+        return direction === "desc" ? -compared : compared;
+      }
+
+      function comparePreviewPairs(previewId, preview, left, right) {
+        const setting = columnSortSetting(previewId, preview);
+        if (!setting) return preview.sortByProductCode ? compareProductCodes(left, right) : left.index - right.index;
+        const columnIndex = preview.columns.findIndex((column) => column.key === setting.columnKey);
+        const compared = compareColumnValues(left.row?.[columnIndex], right.row?.[columnIndex], setting.direction);
         return compared || left.index - right.index;
       }
 
@@ -3664,10 +3846,10 @@
               activeBlock.pairs.push(pair);
             }
           });
-          blocks.sort((left, right) => compareProductCodes(left.main, right.main));
+          blocks.sort((left, right) => comparePreviewPairs(previewId, preview, left.main, right.main));
 
           return blocks.flatMap((block) => {
-            if (!state.searchQuery.trim() && state.specificationFilters.size === 0) return block.pairs;
+            if (!state.searchQuery.trim() && state.specificationFilters.size === 0 && !hasColumnFilters(previewId)) return block.pairs;
             const matching = block.pairs.filter((pair) => rowMatchesView(previewId, pair, preview));
             if (matching.length === 0) return [];
             if (matching.includes(block.main)) return block.pairs;
@@ -3676,8 +3858,75 @@
         }
 
         const filtered = pairs.filter((pair) => rowMatchesView(previewId, pair, preview));
-        if (preview.sortByProductCode) filtered.sort(compareProductCodes);
+        if (columnSortSetting(previewId, preview) || preview.sortByProductCode) {
+          filtered.sort((left, right) => comparePreviewPairs(previewId, preview, left, right));
+        }
         return filtered;
+      }
+
+      function previewDefinitionById(previewId) {
+        if (!state.workspace) return null;
+        const definitions = getPreviewDefinitions(state.workspace);
+        return previewId === "notices" ? definitions.validation?.noticesPreview : definitions[previewId];
+      }
+
+      function closeColumnSortMenu() {
+        elements.columnSortMenu.classList.add("hidden");
+        elements.previewTable.querySelectorAll(".column-sort-trigger[aria-expanded='true']")
+          .forEach((button) => button.setAttribute("aria-expanded", "false"));
+        state.activeColumnMenu = null;
+      }
+
+      function refreshColumnSortMenu() {
+        const context = state.activeColumnMenu;
+        const preview = context ? previewDefinitionById(context.previewId) : null;
+        const column = preview?.columns?.find((candidate) => candidate.key === context?.columnKey);
+        if (!context || !column) {
+          closeColumnSortMenu();
+          return;
+        }
+        const sort = columnSortSetting(context.previewId, preview);
+        const filter = columnFilterSetting(context.previewId, context.columnKey);
+        elements.columnSortMenuTitle.textContent = `${column.header} · 정렬 및 조건`;
+        elements.columnSortMenu.querySelectorAll("[data-sort-direction]").forEach((button) => {
+          const direction = button.dataset.sortDirection;
+          const active = direction === "default"
+            ? !sort
+            : sort?.columnKey === context.columnKey && sort.direction === direction;
+          button.classList.toggle("active", active);
+        });
+        elements.columnSortMenu.querySelectorAll("[data-column-condition]").forEach((input) => {
+          input.checked = Boolean(filter?.[input.dataset.columnCondition]);
+        });
+      }
+
+      function openColumnSortMenu(trigger) {
+        const previewId = trigger.dataset.sortPreviewId;
+        const columnKey = trigger.dataset.sortColumnKey;
+        if (!previewDefinitionById(previewId)?.columns?.some((column) => column.key === columnKey)) return;
+        closeColumnSortMenu();
+        state.activeColumnMenu = { previewId, columnKey };
+        trigger.setAttribute("aria-expanded", "true");
+        refreshColumnSortMenu();
+        elements.columnSortMenu.classList.remove("hidden");
+        const triggerRect = trigger.getBoundingClientRect();
+        const menuRect = elements.columnSortMenu.getBoundingClientRect();
+        const left = Math.max(8, Math.min(window.innerWidth - menuRect.width - 8, triggerRect.right - menuRect.width));
+        const topBelow = triggerRect.bottom + 5;
+        const top = topBelow + menuRect.height <= window.innerHeight - 8
+          ? topBelow
+          : Math.max(8, triggerRect.top - menuRect.height - 5);
+        elements.columnSortMenu.style.left = `${Math.round(left)}px`;
+        elements.columnSortMenu.style.top = `${Math.round(top)}px`;
+        elements.columnSortMenu.querySelector("[data-sort-direction]")?.focus();
+      }
+
+      function setColumnCondition(previewId, columnKey, condition, enabled) {
+        if (!state.columnFilters[previewId]) state.columnFilters[previewId] = Object.create(null);
+        const next = { ...(state.columnFilters[previewId][columnKey] || {}), [condition]: enabled };
+        if (!next.excludeBlank && !next.excludeZero) delete state.columnFilters[previewId][columnKey];
+        else state.columnFilters[previewId][columnKey] = next;
+        if (Object.keys(state.columnFilters[previewId]).length === 0) delete state.columnFilters[previewId];
       }
 
       function visibleColumnEntries(preview, previewId = state.activePreview, options = {}) {
@@ -3700,20 +3949,39 @@
       function renderTableMarkup(preview, pairs, options = {}) {
         const editable = options.editable !== false;
         const resizable = options.resizable !== false;
+        const sortable = options.sortable !== false;
         const previewId = options.previewId || state.activePreview;
         const visibleEntries = visibleColumnEntries(preview, previewId, options);
+        const widthFor = options.widthSource === "saved"
+          ? (column) => savedColumnWidth(previewId, column)
+          : (column) => currentColumnWidth(previewId, column);
         const tableWidth = visibleEntries.reduce(
-          (total, { column }) => total + currentColumnWidth(previewId, column),
+          (total, { column }) => total + widthFor(column),
           0,
         );
         const colgroup = `<colgroup>${visibleEntries.map(({ column }) => {
-          const width = currentColumnWidth(previewId, column);
-          return `<col data-column-key="${escapeHtml(column.key)}" style="width:${width}px">`;
+          const width = widthFor(column);
+          const renderedWidth = options.fitWidth && tableWidth > 0
+            ? `${(width / tableWidth * 100).toFixed(4)}%`
+            : `${width}px`;
+          return `<col data-column-key="${escapeHtml(column.key)}" data-saved-width="${width}" style="width:${renderedWidth}">`;
         }).join("")}</colgroup>`;
 
         const headers = visibleEntries.map(({ column }) => {
-          const width = currentColumnWidth(previewId, column);
+          const width = widthFor(column);
           const draggable = resizable && COLUMN_ORDER_TABS.has(previewId);
+          const sort = columnSortSetting(previewId, preview);
+          const filter = columnFilterSetting(previewId, column.key);
+          const isSorted = sort?.columnKey === column.key;
+          const hasFilter = Boolean(filter?.excludeBlank || filter?.excludeZero);
+          const ariaSort = isSorted ? (sort.direction === "asc" ? "ascending" : "descending") : "none";
+          const sortControl = sortable
+            ? `<button class="column-sort-trigger ${isSorted || hasFilter ? "active" : ""}" type="button"
+                aria-label="${escapeHtml(column.header)} 정렬 및 조건 필터" aria-haspopup="menu" aria-expanded="false"
+                data-sort-preview-id="${escapeHtml(previewId)}" data-sort-column-key="${escapeHtml(column.key)}">
+                ${isSorted ? (sort.direction === "asc" ? "▲" : "▼") : "▾"}${hasFilter ? "•" : ""}
+              </button>`
+            : "";
           const handle = resizable
             ? `<span class="column-resize-handle" role="separator" tabindex="0"
                 aria-label="${escapeHtml(column.header)} 열폭 조절" aria-orientation="vertical"
@@ -3721,8 +3989,8 @@
                 data-column-key="${escapeHtml(column.key)}"></span>`
             : "";
           return `<th class="${resizable ? "column-resizable" : ""} ${draggable ? "column-draggable" : ""}"
-            ${draggable ? `draggable="true" data-column-drag-key="${escapeHtml(column.key)}"` : ""}>
-            ${escapeHtml(column.header)}${handle}</th>`;
+            aria-sort="${ariaSort}" ${draggable ? `draggable="true" data-column-drag-key="${escapeHtml(column.key)}"` : ""}>
+            <span class="column-header-content"><span class="column-header-label">${escapeHtml(column.header)}</span>${sortControl}</span>${handle}</th>`;
         }).join("");
 
         const body = pairs.length
@@ -3802,7 +4070,8 @@
           : `<tr><td colspan="${Math.max(1, visibleEntries.length)}" class="empty-table-cell">표시할 항목이 없습니다.</td></tr>`;
 
         return `
-          <table class="preview-${previewId} column-width-managed" style="width:${tableWidth}px">
+          <table class="preview-${previewId} column-width-managed" data-width-source="${options.widthSource || "draft"}"
+            style="width:${options.fitWidth ? "100%" : `${tableWidth}px`}">
             ${colgroup}
             <thead><tr>${headers}</tr></thead>
             <tbody>${body}</tbody>
@@ -3823,16 +4092,24 @@
         const preview = definitions[state.activePreview];
         renderWarehouseColorBar(definitions);
         const pairs = filteredSortedPreviewPairs(state.activePreview, preview);
-        elements.previewCount.textContent = preview.sortByProductCode
-          ? `${formatNumber(pairs.length)}/${formatNumber(preview.rows.length)}행 · 품목코드↑`
-          : `${formatNumber(pairs.length)}/${formatNumber(preview.rows.length)}행`;
+        const activeSort = columnSortSetting(state.activePreview, preview);
+        const sortColumn = activeSort
+          ? preview.columns.find((column) => column.key === activeSort.columnKey)
+          : null;
+        const filterCount = Object.values(state.columnFilters[state.activePreview] || {})
+          .filter((setting) => setting?.excludeBlank || setting?.excludeZero).length;
+        const viewNotes = [];
+        if (sortColumn) viewNotes.push(`${sortColumn.header}${activeSort.direction === "asc" ? "↑" : "↓"}`);
+        else if (preview.sortByProductCode) viewNotes.push("품목코드↑");
+        if (filterCount > 0) viewNotes.push(`열조건 ${filterCount}`);
+        elements.previewCount.textContent = `${formatNumber(pairs.length)}/${formatNumber(preview.rows.length)}행${viewNotes.length ? ` · ${viewNotes.join(" · ")}` : ""}`;
 
         elements.specFilterGroup.disabled = state.activePreview === "validation" || state.activePreview === "notices";
         renderColumnVisibilityMenu(preview);
         const previewMarkup = renderTableMarkup(preview, pairs, { editable: true, resizable: true });
         if (state.activePreview === "validation") {
           const noticePreview = preview.noticesPreview;
-          const noticePairs = fullSortedPreviewPairs("notices", noticePreview);
+          const noticePairs = filteredSortedPreviewPairs("notices", noticePreview);
           const unacknowledgedCount = noticePreview.sourceRows.filter((notice) =>
             !engine.isNoticeAcknowledged(state.workspace, notice.noticeId)).length;
           elements.previewTable.innerHTML = `
@@ -3876,6 +4153,9 @@
           resizable: false,
           previewId: state.activePreview,
           useVisibility: true,
+          widthSource: "saved",
+          fitWidth: true,
+          sortable: false,
         });
         document.body.classList.add("printing-table");
         const cleanup = () => {
@@ -3937,6 +4217,9 @@
         state.specificationFilters.clear();
         state.warehouseFilters.clear();
         state.managerFilters.clear();
+        state.sortSettings = Object.create(null);
+        state.columnFilters = Object.create(null);
+        closeColumnSortMenu();
         elements.tableSearchInput.value = "";
         elements.specFilterGroup.querySelectorAll("input[type='checkbox']").forEach((input) => {
           input.checked = false;
@@ -3948,7 +4231,7 @@
         if (!state.workspace) return;
         resetResultViewFilters();
         renderPreview();
-        showToast("검색어와 모든 보기 필터를 초기화했습니다. 지정 배색은 유지됩니다.");
+        showToast("검색어·정렬·열 조건과 모든 보기 필터를 초기화했습니다. 지정 배색은 유지됩니다.");
       }
 
       async function analyzeCurrentInputs() {
@@ -4302,18 +4585,32 @@
         renderExcelMappingEditor();
         showToast("Excel 별칭 매핑을 기본값으로 되돌렸습니다.");
       });
-      elements.headerRestoreButton.addEventListener("click", () => {
-        toggleWorkspaceStorage(true);
-        if (state.recoveryRecord) {
-          elements.recoveryBanner.classList.remove("hidden");
-          elements.restoreButton.focus();
-          showToast("저장된 이전 작업을 확인한 뒤 복구를 누르세요.");
-        } else {
-          showToast("현재 브라우저에 복구할 이전 작업이 없습니다.", true);
+      elements.headerRestoreButton.addEventListener("click", async () => {
+        const candidate = state.recoveryRecords.find((item) =>
+          item.valid && item.record?.recordId === state.recoveryRecord?.recordId)
+          || state.recoveryRecords.find((item) => item.valid);
+        if (!candidate?.record) {
+          showToast("현재 브라우저에 복구할 이전 정상 작업이 없습니다.", true);
+          return;
+        }
+        elements.headerRestoreButton.disabled = true;
+        try {
+          await restoreLocalRecord(candidate.record);
+          toggleWorkspaceStorage(false);
+          setSystemMessage(`이전 파일 복구 완료 · ${candidate.record.payload?.workspace?.basisDate || "기준일 없음"}`);
+        } catch (error) {
+          showToast(error.message || "이전 작업을 복구할 수 없습니다.", true);
+        } finally {
+          elements.headerRestoreButton.disabled = false;
         }
       });
 
       document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && !elements.columnSortMenu.classList.contains("hidden")) {
+          event.preventDefault();
+          closeColumnSortMenu();
+          return;
+        }
         if (event.key === "Escape" && !elements.settingsModal.classList.contains("hidden")) {
           event.preventDefault();
           toggleWorkspaceStorage(false);
@@ -4719,6 +5016,55 @@
         if (!button || !state.workspace) return;
         activatePreview(button.dataset.preview);
       });
+      elements.previewTable.addEventListener("click", (event) => {
+        const trigger = event.target.closest(".column-sort-trigger[data-sort-preview-id][data-sort-column-key]");
+        if (!trigger || !state.workspace) return;
+        event.preventDefault();
+        event.stopPropagation();
+        const sameMenu = !elements.columnSortMenu.classList.contains("hidden") &&
+          state.activeColumnMenu?.previewId === trigger.dataset.sortPreviewId &&
+          state.activeColumnMenu?.columnKey === trigger.dataset.sortColumnKey;
+        if (sameMenu) closeColumnSortMenu();
+        else openColumnSortMenu(trigger);
+      });
+      elements.columnSortMenu.addEventListener("click", (event) => {
+        const context = state.activeColumnMenu;
+        if (!context || !state.workspace) return;
+        const sortButton = event.target.closest("[data-sort-direction]");
+        if (sortButton) {
+          const direction = sortButton.dataset.sortDirection;
+          if (direction === "default") delete state.sortSettings[context.previewId];
+          else state.sortSettings[context.previewId] = { columnKey: context.columnKey, direction };
+          closeColumnSortMenu();
+          renderPreview();
+          return;
+        }
+        if (event.target.closest("[data-clear-column-filter]")) {
+          if (state.sortSettings[context.previewId]?.columnKey === context.columnKey) {
+            delete state.sortSettings[context.previewId];
+          }
+          if (state.columnFilters[context.previewId]) {
+            delete state.columnFilters[context.previewId][context.columnKey];
+            if (Object.keys(state.columnFilters[context.previewId]).length === 0) delete state.columnFilters[context.previewId];
+          }
+          closeColumnSortMenu();
+          renderPreview();
+        }
+      });
+      elements.columnSortMenu.addEventListener("change", (event) => {
+        const input = event.target.closest("[data-column-condition]");
+        const context = state.activeColumnMenu;
+        if (!input || !context || !state.workspace) return;
+        setColumnCondition(context.previewId, context.columnKey, input.dataset.columnCondition, input.checked);
+        renderPreview();
+        refreshColumnSortMenu();
+      });
+      document.addEventListener("click", (event) => {
+        if (elements.columnSortMenu.classList.contains("hidden") ||
+            event.target.closest("#columnSortMenu, .column-sort-trigger")) return;
+        closeColumnSortMenu();
+      });
+      elements.previewTable.addEventListener("scroll", closeColumnSortMenu, { passive: true });
       elements.previewTable.addEventListener("click", (event) => {
         const button = event.target.closest("[data-open-notice-id]");
         if (!button || !state.workspace) return;
