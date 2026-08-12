@@ -10,7 +10,7 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function (engine) {
   "use strict";
 
-  const WORKBOOK_VERSION = "4.5.0";
+  const WORKBOOK_VERSION = "4.6.0";
   const REQUIRED_SHEETS = Object.freeze([
     "전달사항(적요보기)",
     "주문현황",
@@ -1055,28 +1055,33 @@
   }
 
   function getSalesUploadRows(workspace) {
-    return (workspace?.allocations || []).filter(
-      (row) =>
-        String(row?.productCode || "").trim() &&
-        typeof row?.quantity === "number" &&
-        Number.isFinite(row.quantity) &&
-        row.quantity !== 0,
-    );
-  }
-
-  function salesUploadSequence(row, index) {
-    const orderNumber = String(row?.orderNumber || "").trim();
-    const trailingNumber = orderNumber.match(/(\d+)\s*$/)?.[1] || "";
-    const fallback = String(Number(row?.inputOrder) || index + 1);
-    return (trailingNumber || fallback).slice(-4);
+    return (workspace?.allocations || [])
+      .map((row, sourceIndex) => ({ row, sourceIndex }))
+      .filter(
+        ({ row }) =>
+          String(row?.productCode || "").trim() &&
+          typeof row?.quantity === "number" &&
+          Number.isFinite(row.quantity) &&
+          row.quantity !== 0,
+      )
+      .sort((left, right) => {
+        const customerOrder = String(left.row?.customer || "").localeCompare(
+          String(right.row?.customer || ""),
+          "ko-KR",
+          { numeric: true, sensitivity: "base" },
+        );
+        return customerOrder || left.sourceIndex - right.sourceIndex;
+      })
+      .map(({ row }) => row);
   }
 
   function salesUploadSupplyAmount(row) {
     if (typeof row?.supplyAmount === "number" && Number.isFinite(row.supplyAmount)) {
       return row.supplyAmount;
     }
+    if (typeof row?.unitPrice !== "number" || !Number.isFinite(row.unitPrice)) return "";
     const quantity = typeof row?.quantity === "number" && Number.isFinite(row.quantity) ? row.quantity : 0;
-    const unitPrice = typeof row?.unitPrice === "number" && Number.isFinite(row.unitPrice) ? row.unitPrice : 0;
+    const unitPrice = row.unitPrice;
     return Number((quantity * unitPrice).toFixed(9));
   }
 
@@ -1084,9 +1089,9 @@
     requireXlsx(XLSX);
     requirePurchaseUploadReady(workspace);
     const sourceRows = getSalesUploadRows(workspace);
-    const rows = sourceRows.map((row, index) => [
+    const rows = sourceRows.map((row) => [
       workspace.uploadDate,
-      salesUploadSequence(row, index),
+      "",
       "",
       String(row.customer || ""),
       String(row.warehouse || ""),
@@ -1097,7 +1102,7 @@
       String(row.productName || ""),
       String(row.specification || ""),
       row.quantity,
-      typeof row.unitPrice === "number" && Number.isFinite(row.unitPrice) ? row.unitPrice : 0,
+      typeof row.unitPrice === "number" && Number.isFinite(row.unitPrice) ? row.unitPrice : "",
       "",
       salesUploadSupplyAmount(row),
       String(row.note1Original ?? row.note1 ?? ""),
