@@ -151,29 +151,29 @@
     .panel { background: var(--white); }
 
     /* =========================================================
-       OrderOps v1.11 System.IO compact border strip
-       top: slim console / bottom: one-line sources + note + run
+       System.IO workbench - approved compact layout concept
+       top: console only / bottom: sources + gray note + fixed run
        ========================================================= */
     .system-workbench {
       overflow: hidden;
       border: 1px solid #263449;
-      border-radius: 6px;
+      border-radius: 8px;
       background: #1c2331;
-      box-shadow: 0 3px 7px rgba(15, 23, 42, .09);
+      box-shadow: 0 4px 8px rgba(15, 23, 42, .10);
     }
     .system-topbar {
       display: flex;
       align-items: center;
-      gap: 10px;
-      min-height: 40px;
-      padding: 4px 12px;
+      gap: 14px;
+      min-height: 54px;
+      padding: 8px 18px;
       border-bottom: 1px solid #2a3441;
       background: #1c2331;
     }
     .system-name {
       flex: 0 0 auto;
       color: var(--white);
-      font-size: 12px;
+      font-size: 14px;
       font-weight: 900;
       letter-spacing: -0.02em;
     }
@@ -182,13 +182,13 @@
       align-items: center;
       width: min(600px, 100%);
       min-width: 0;
-      min-height: 26px;
-      padding: 3px 9px;
+      min-height: 32px;
+      padding: 5px 12px;
       border: 1px solid #334155;
       border-radius: 4px;
       color: #22c55e;
       background: #000;
-      font: 700 10px/1.3 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font: 700 11px/1.35 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     }
     .system-message {
       flex: 1 1 auto;
@@ -199,9 +199,9 @@
     }
     .system-cursor {
       flex: 0 0 auto;
-      width: 6px;
-      height: 12px;
-      margin-left: 6px;
+      width: 7px;
+      height: 14px;
+      margin-left: 7px;
       background: #22c55e;
       animation: system-cursor 1.05s steps(1) infinite;
     }
@@ -210,7 +210,7 @@
     .system-mode {
       margin-left: auto;
       color: var(--slate-400);
-      font-size: 8px;
+      font-size: 9px;
       font-weight: 800;
       white-space: nowrap;
     }
@@ -218,10 +218,10 @@
 
     .input-panel {
       display: grid;
-      grid-template-columns: minmax(560px, 660px) minmax(250px, 1fr) 90px;
+      grid-template-columns: minmax(590px, 680px) minmax(260px, 1fr) 96px;
       align-items: stretch;
-      gap: 6px;
-      padding: 6px 10px;
+      gap: 8px;
+      padding: 10px 14px;
       color: var(--slate-200);
       background: #222a38;
     }
@@ -230,28 +230,28 @@
     .source-selector {
       display: flex;
       align-items: stretch;
-      gap: 4px;
+      gap: 5px;
       min-width: 0;
     }
     .data-source-label {
       display: flex;
       align-items: center;
-      flex: 0 0 84px;
+      flex: 0 0 92px;
       gap: 5px;
       padding: 0 4px;
       color: var(--slate-400);
-      font-size: 9px;
+      font-size: 10px;
       font-weight: 700;
       white-space: nowrap;
     }
     .source-selector-heading {
       display: flex;
       align-items: center;
-      flex: 0 0 104px;
-      min-width: 104px;
-      gap: 5px;
-      min-height: 36px;
-      padding: 3px 6px;
+      flex: 0 0 112px;
+      min-width: 112px;
+      gap: 6px;
+      min-height: 40px;
+      padding: 5px 7px;
       border: 1px solid #475569;
       border-radius: 4px;
       color: var(--slate-300);
@@ -271,8 +271,8 @@
       align-items: center;
       justify-content: center;
       flex: 0 0 auto;
-      width: 19px;
-      height: 19px;
+      width: 21px;
+      height: 21px;
       border-radius: 4px;
       color: #99f6e4;
       background: rgba(13, 148, 136, .22);
@@ -289,8 +289,8 @@
     .source-selector-heading span:last-child {
       display: block;
       overflow: hidden;
-      max-width: 72px;
-      margin-top: 1px;
+      max-width: 78px;
+      margin-top: 2px;
       color: #94a3b8;
       font-size: 7px;
       line-height: 1.1;
@@ -303,7 +303,7 @@
     }
     .upload-card {
       flex: 1 1 0;
-      min-width: 128px;
+      min-width: 135px;
       overflow: hidden;
       border: 1px solid #475569;
       border-radius: 4px;
@@ -313,11 +313,11 @@
     .upload-card.has-error { border-color: #ef4444; background: #3f2533; }
     .drop-zone {
       display: grid;
-      grid-template-columns: 20px minmax(0, 1fr);
+      grid-template-columns: 22px minmax(0, 1fr);
       align-items: center;
-      gap: 5px;
-      min-height: 36px;
-      padding: 3px 6px;
+      gap: 6px;
+      min-height: 40px;
+      padding: 4px 7px;
       border: 1px solid transparent;
       border-radius: 4px;
       outline: none;
@@ -330,8 +330,8 @@
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      width: 20px;
-      height: 20px;
+      width: 22px;
+      height: 22px;
       border-radius: 4px;
       color: #99f6e4;
       background: rgba(13, 148, 136, .20);
@@ -359,7 +359,7 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      flex: 0 0 10px;
+      flex: 0 0 12px;
       color: #64748b;
       font-size: 9px;
     }
@@ -369,8 +369,8 @@
       display: flex;
       align-items: center;
       min-width: 0;
-      gap: 6px;
-      padding: 3px 7px;
+      gap: 8px;
+      padding: 5px 9px;
       border: 1px solid #475569;
       border-radius: 3px;
       color: #cbd5e1;
@@ -444,9 +444,9 @@
       padding: 0;
     }
     .primary-button {
-      width: 90px;
-      min-width: 90px;
-      min-height: 36px;
+      width: 96px;
+      min-width: 96px;
+      min-height: 40px;
       height: 100%;
       padding: 0 8px;
       border: 1px solid #334155;
@@ -454,7 +454,7 @@
       color: #fff;
       background: #2563eb;
       box-shadow: none;
-      font-size: 9px;
+      font-size: 10px;
       font-weight: 900;
     }
     .primary-button:hover:not(:disabled) { background: #1d4ed8; }
@@ -782,8 +782,9 @@
       border-spacing: 0;
       font-size: 11px;
     }
-    table.column-width-managed { width: max-content; min-width: 100%; table-layout: fixed; }
-    table.column-width-managed td { max-width: none; }
+    table.column-width-managed { width: auto; min-width: 0; table-layout: fixed; }
+    table.column-width-managed th,
+    table.column-width-managed td { min-width: 0; max-width: none; }
     th {
       position: sticky;
       top: 0;
@@ -822,7 +823,7 @@
 
     .purchase-input {
       width: 100%;
-      min-width: 72px;
+      min-width: 0;
       height: 25px;
       padding: 1px 6px;
       border: 1px solid #94a3b8;
@@ -1242,7 +1243,7 @@
       const TABLE_WIDTHS_SCHEMA = "shipping-table-widths/v1";
       const HIDDEN_COLUMNS_KEY = "oneapp.orderops.hidden-columns.v1";
       const HIDDEN_COLUMNS_SCHEMA = "orderops-hidden-columns/v1";
-      const TABLE_WIDTH_MIN = 48;
+      const TABLE_WIDTH_MIN = 32;
       const TABLE_WIDTH_MAX = 720;
       const TABLE_WIDTH_TABS = new Set(["validation", "inventory", "allocations", "notices"]);
       const CLOUD_PLAN_SCHEMA = "ONEAPP_SHIPPING_PURCHASE_PLAN_V1";
@@ -2427,6 +2428,12 @@
             element.setAttribute("aria-valuenow", String(width));
           }
         });
+        const table = elements.previewTable.querySelector("table.column-width-managed");
+        if (table) {
+          const renderedWidth = Array.from(table.querySelectorAll("col[data-column-key]"))
+            .reduce((total, column) => total + (Number.parseFloat(column.style.width) || 0), 0);
+          table.style.width = `${renderedWidth}px`;
+        }
       }
 
       function handleColumnPointerMove(event) {
@@ -2756,6 +2763,10 @@
         const resizable = options.resizable !== false;
         const previewId = options.previewId || state.activePreview;
         const visibleEntries = visibleColumnEntries(preview, previewId, options);
+        const tableWidth = visibleEntries.reduce(
+          (total, { column }) => total + currentColumnWidth(previewId, column),
+          0,
+        );
         const colgroup = `<colgroup>${visibleEntries.map(({ column }) => {
           const width = currentColumnWidth(previewId, column);
           return `<col data-column-key="${escapeHtml(column.key)}" style="width:${width}px">`;
@@ -2825,7 +2836,7 @@
           : `<tr><td colspan="${Math.max(1, visibleEntries.length)}" class="empty-table-cell">표시할 항목이 없습니다.</td></tr>`;
 
         return `
-          <table class="preview-${previewId} column-width-managed">
+          <table class="preview-${previewId} column-width-managed" style="width:${tableWidth}px">
             ${colgroup}
             <thead><tr>${headers}</tr></thead>
             <tbody>${body}</tbody>
