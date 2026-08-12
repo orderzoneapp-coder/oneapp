@@ -493,7 +493,7 @@
     const remainingColumn = ledger.columns.findIndex((column) => column.role === "calculatedQuantity");
     const sheet = buildTableSheet(XLSX, {
       title: "재고수불부",
-      subtitle: "재고·입고·주문·판매 정보를 함께 표시합니다. 잔량은 기존 기준인 재고 합계−주문수량이며 음수는 노란색으로 표시합니다.",
+      subtitle: "재고·입고·주문·출고수량 정보를 함께 표시합니다. 잔량은 기존 기준인 재고 합계−주문수량이며 음수는 노란색으로 표시합니다.",
       headers,
       rows,
       widths: headers.map((header) => header === "품목명" ? 31 : header === "구매처" ? 22 : 13),

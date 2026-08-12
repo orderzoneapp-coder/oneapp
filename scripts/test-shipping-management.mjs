@@ -13,9 +13,9 @@ assert.doesNotMatch(orderOpsHtml, /tokens truncated|…\d+ tokens truncated…/,
   "the public OrderOps mirror must not contain a truncated source fragment");
 assert.match(orderOpsHtml, /<body>[\s\S]*<\/body>\s*<\/html>/,
   "the public OrderOps mirror must remain a complete HTML document");
-assert.match(orderOpsHtml, /brand-badge">v1\.22</, "OrderOps visible version must be v1.22");
+assert.match(orderOpsHtml, /brand-badge">v1\.23</, "OrderOps visible version must be v1.23");
 assert.ok(orderOpsHtml.includes('class="execution-panel"'),
-  "the public v1.22 execution controls must be separate from the upload strip");
+  "the public v1.23 execution controls must be separate from the upload strip");
 assert.match(orderOpsHtml, /\.execution-panel\s*\{[^}]*grid-template-columns:\s*repeat\(3,/,
   "the public execution controls must use three visible segments");
 assert.ok(orderOpsHtml.includes("function resetResultViewFilters()"),
@@ -71,7 +71,7 @@ for (const requiredInteractionContract of [
   'getAllocationInventoryView(workspace)',
 ]) {
   assert.ok(orderOpsHtml.includes(requiredInteractionContract),
-    `public OrderOps v1.22 interaction contract is missing: ${requiredInteractionContract}`);
+    `public OrderOps v1.23 interaction contract is missing: ${requiredInteractionContract}`);
 }
 assert.doesNotMatch(orderOpsHtml, /<input[^>]+type="color"|data-warehouse-color|data-manager-color/,
   "the public OrderOps filter strip must not use a native color picker inside filter options");
@@ -482,7 +482,7 @@ const edgeWorkspace = engine.analyze(edgeOrders, edgeInventory, {
   createdAt: "2026-07-30T00:00:00.000Z",
   sourceFingerprint: "a".repeat(64),
 });
-assert.equal(engine.ENGINE_VERSION, "3.11.0");
+assert.equal(engine.ENGINE_VERSION, "3.12.0");
 assert.equal(workbookTools.WORKBOOK_VERSION, "4.4.0");
 assert.equal(edgeWorkspace.schemaVersion, "shipping-workspace/v2");
 
@@ -728,11 +728,21 @@ assert.equal(dynamicView.rows[1].values[6], "", "blank warehouse cells must rema
 dynamicWorkspace.orderOpsInputs = {
   schemaVersion: "orderops-analysis-inputs/v1",
   purchases: { rows: [{ productCode: "000010", quantity: 5, partner: "구매처A" }] },
-  sales: { rows: [{ productCode: "000010", quantity: 4, partner: "판매처A" }] },
+  sales: { rows: [
+    { productCode: "000010", productName: "동적상품", quantity: 4, partner: "판매처A" },
+    { productCode: "SALE-ONLY", productName: "재고목록 외 출고상품", quantity: 6, partner: "판매처B" },
+  ] },
 };
 const dynamicLedger = engine.getStockLedgerView(dynamicWorkspace);
-assert.deepEqual(dynamicLedger.headers, ["품목코드", "품목명", "규격", "단위", "재고", "입고", "주문", "판매", "잔량", "구매처"]);
+assert.deepEqual(dynamicLedger.headers, ["품목코드", "품목명", "규격", "단위", "재고", "입고", "주문", "출고수량", "잔량", "구매처"]);
 assert.deepEqual(dynamicLedger.rows[0].values, ["000010", "동적상품", "EA", "", -7, 5, 3, 4, -10, "구매처A"]);
+const salesOnlyLedgerRow = dynamicLedger.rows.find((row) => row.productCode === "SALE-ONLY");
+assert.deepEqual(
+  salesOnlyLedgerRow?.values,
+  ["SALE-ONLY", "재고목록 외 출고상품", "", "", 0, 0, 0, 6, 0, ""],
+  "sales-only product codes must remain visible instead of losing outbound quantities",
+);
+assert.equal(salesOnlyLedgerRow?.salesOnly, true);
 
 const editableWorkspace = engine.analyze(
   parseOrders(buildOrderMatrix([{ code: "EDIT-001", quantity: 2, price: 1000, note: "기존 전달" }])),
@@ -1402,7 +1412,20 @@ assert.ok(
 );
 
 const html = fs.readFileSync(path.join(ROOT, "orderops", "list.html"), "utf8");
-assert.match(html, /brand-badge">v1\.22</, "canonical OrderOps visible version must be v1.22");
+assert.match(html, /brand-badge">v1\.23</, "canonical OrderOps visible version must be v1.23");
+assert.match(
+  html,
+  /"품목명": \["품목명", "품명", "상품명", "제품명"\]/,
+  "purchase and sales mappings must recognize the operational 품명 header",
+);
+assert.ok(
+  html.includes("(!productName && !partner)"),
+  "generic purchase and sales parsing must exclude workbook summary rows without row identity",
+);
+assert.ok(
+  html.includes("const defaultAliases = DEFAULT_EXCEL_MAPPINGS[kind]?.columns?.[canonical] || []"),
+  "new operational defaults must remain active when a browser still has older saved aliases",
+);
 const styleBlocks = [...html.matchAll(/<style(?:\s[^>]*)?>([\s\S]*?)<\/style>/gi)].map((match) => match[1]);
 assert.ok(styleBlocks.length > 0, "orderops/list.html must contain a style block");
 
@@ -1490,7 +1513,7 @@ for (const requiredInteractionContract of [
   'getAllocationInventoryView(workspace)',
 ]) {
   assert.ok(html.includes(requiredInteractionContract),
-    `canonical OrderOps v1.22 interaction contract is missing: ${requiredInteractionContract}`);
+    `canonical OrderOps v1.23 interaction contract is missing: ${requiredInteractionContract}`);
 }
 assert.doesNotMatch(html, /<input[^>]+type="color"|data-warehouse-color|data-manager-color/,
   "canonical OrderOps filter options must remain separate from color assignment");
@@ -1679,7 +1702,7 @@ for (const contract of [
   "handleInventoryGridArrowNavigation", "autocompletePurchaseInput", "rememberPurchaseName",
   "function resetResultViewFilters()", 'grid-template-columns: repeat(3, minmax(0, 1fr))',
 ]) {
-  assert.ok(html.includes(contract), `OrderOps v1.22 contract is missing: ${contract}`);
+  assert.ok(html.includes(contract), `OrderOps v1.23 contract is missing: ${contract}`);
 }
 assert.ok(html.includes('id="warehouseColorResetButton" type="button">전체 다시보기</button>'),
   "filter reset must be presented as returning to the full view");
