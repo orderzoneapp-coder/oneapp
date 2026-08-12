@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.183_MasterThemeFilterLayout]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.184_CommonExcelRouting]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -12,7 +12,7 @@
     <script src="coreEngine.js"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <script>
-    // v2.1.183: 카테고리·테마·핵심 가격필터를 하단 필터줄에 고정하고, 테마1~5는 작업값이 아닌 마스터 행사테마만 기준으로 판정한다.
+    // v2.1.184: 상단을 파서/카탈로그·공통 Excel·조작기능 3개 그룹으로 분리하고, 공통 Excel은 헤더로 역할을 판별해 잘못된 상품 인식을 차단한다.
     // v2.1.182: 하나의 소분상품에 복수 원물이 연결되면 F8을 자동 진행하지 않고, 소분상품명을 먼저 보여준 뒤 원물명·원물가·소분가를 비교해 원물을 직접 선택하도록 한다.
     // v2.1.181: 동일 소분코드가 반복 계산되면 소분품목은 한 행만 유지하고 나중에 새로 산출된 소분가격을 최종 출고가로 적용한다.
     // v2.1.180: F8 소분코드가 기존 출력상품이면 품명 등 상품정보는 유지하고 가격만 갱신하며, 코드 중복·복수 원물 가격충돌·미등록 소분코드는 출력을 차단한다.
@@ -6234,6 +6234,79 @@ const createHeaderMap = (actualHeaders, mappingConfig) => {
     });
     return headerMap;
 };
+window.findMerchExcelHeaderRow = (rows = [], maxRows = 25) => {
+    const clean = (value) => window.cleanHeaderKey
+        ? window.cleanHeaderKey(value)
+        : String(value ?? '').toLowerCase().replace(/\s/g, '');
+    const codeHeaders = new Set(['품목코드', '상품코드', '바코드', '상품번호', '코드']);
+    const nameHeaders = new Set(['품목명', '상품명', '품명', '상품이름']);
+    const supportHeaders = new Set([
+        '규격', '규격명', '단위', '일자', '기준일자', '창고', '창고코드', '거래처명', '구매처',
+        '수량', '재고', '재고수량', '입고가', '출고가', '단가', '판매가격', '시중가격', '최종(창고)'
+    ]);
+    const searchCount = Math.min(Math.max(0, Number(maxRows) || 25), Array.isArray(rows) ? rows.length : 0);
+    for (let index = 0; index < searchCount; index++) {
+        const headers = (Array.isArray(rows[index]) ? rows[index] : []).map(clean).filter(Boolean);
+        const headerSet = new Set(headers);
+        const hasCode = headers.some(header => codeHeaders.has(header));
+        const hasSpecificCode = headers.some(header => ['품목코드', '상품코드', '바코드', '상품번호'].includes(header));
+        const hasName = headers.some(header => nameHeaders.has(header));
+        const supportCount = headers.filter(header => supportHeaders.has(header)).length;
+        // 1종코드·2종코드 같은 파생상품 열은 품목코드 헤더로 인정하지 않는다.
+        // 실제 코드 헤더와 품명/업무열이 함께 있는 행만 데이터 헤더로 선택한다.
+        if ((hasSpecificCode && hasName) ||
+            (headerSet.has('코드') && hasName && supportCount >= 1) ||
+            (hasCode && (headerSet.has('규격') || headerSet.has('규격명')) && supportCount >= 2))
+            return index;
+    }
+    return -1;
+};
+window.detectMerchExcelRoleFromHeaders = (headers = [], context = {}) => {
+    const clean = (value) => window.cleanHeaderKey
+        ? window.cleanHeaderKey(value)
+        : String(value ?? '').toLowerCase().replace(/\s/g, '');
+    const normalized = (Array.isArray(headers) ? headers : []).map(clean).filter(Boolean);
+    const headerSet = new Set(normalized);
+    const sourceText = clean(`${context.fileName || ''} ${context.sheetName || ''} ${context.titleText || ''}`);
+    const codeHeaders = ['품목코드', '상품코드', '바코드', '상품번호', '코드'];
+    const hasCode = codeHeaders.some(header => headerSet.has(header));
+    if (!hasCode) {
+        return { role: '', confidence: 0, reason: '품목코드·상품코드·코드 헤더를 찾지 못했습니다.' };
+    }
+
+    const scores = { estimate: 0, purchase: 0, inventory: 0, info: 0 };
+    const add = (role, points, condition) => { if (condition) scores[role] += points; };
+    const sourceHas = (...keywords) => keywords.some(keyword => sourceText.includes(clean(keyword)));
+    const has = (...keywords) => keywords.some(keyword => headerSet.has(clean(keyword)));
+
+    add('estimate', 7, sourceHas('견적', '시세'));
+    add('estimate', 5, has('입고가') && has('출고가'));
+    add('estimate', 3, has('도매A', '도매B', '입고B'));
+    add('estimate', 2, has('행사가', '외주비', '노무비'));
+
+    add('purchase', 7, sourceHas('구매현황', '구매', '매입현황', '매입'));
+    add('purchase', 5, has('수량', '구매수량', '입고수량') && has('단가', '구매단가', '매입단가'));
+    add('purchase', 2, has('합계') && has('일자', '구매일자', '입고일자'));
+    add('purchase', 2, has('구매처', '매입처'));
+
+    add('inventory', 8, sourceHas('재고현황', '전체재고', '재고'));
+    add('inventory', 7, has('최종(창고)', '최종창고', '기말실사(이월수량)'));
+    add('inventory', 4, has('기록') && has('재고', '재고수량', '현재고', '잔량'));
+    add('inventory', 2, has('구분(기본)', '적재위치'));
+
+    add('info', 8, sourceHas('상품정보', '정보수정', '쇼핑몰'));
+    add('info', 7, has('상품코드') && has('판매가격', '시중가격'));
+    add('info', 4, has('상품태그', '단가연동', '찜적용안함'));
+    add('info', 3, has('테마1', '테마2', '테마3', '테마4', '테마5'));
+
+    const ranked = Object.entries(scores).sort((a, b) => b[1] - a[1]);
+    const [bestRole, bestScore] = ranked[0];
+    const secondScore = ranked[1]?.[1] || 0;
+    if (bestScore < 5 || (bestScore - secondScore) < 2) {
+        return { role: '', confidence: bestScore, scores, reason: '파일 유형을 안전하게 구분할 수 없습니다.' };
+    }
+    return { role: bestRole, confidence: bestScore - secondScore, scores, reason: '' };
+};
 const parseExcelRobust = (file) => {
     return new Promise((resolve, reject) => {
         if (!window.XLSX)
@@ -6248,26 +6321,14 @@ const parseExcelRobust = (file) => {
                 const jsonAllRaw = window.XLSX.utils.sheet_to_json(ws, { header: 1, defval: "", raw: true });
                 if (jsonAll.length === 0)
                     return [];
-                let headerRowIdx = -1;
-                const maxSearch = Math.min(25, jsonAll.length);
-                for (let i = 0; i < maxSearch; i++) {
-                    const rowArr = jsonAll[i] || [];
-                    const rowStr = rowArr.join('').replace(/\s/g, '');
-                    if (rowStr.includes('품목코드') ||
-                        rowStr.includes('상품코드') ||
-                        rowStr.includes('바코드') ||
-                        (rowStr.includes('코드') && (rowStr.includes('품명') || rowStr.includes('상품명') || rowStr.includes('규격'))) ||
-                        (rowStr.includes('품명') && (rowStr.includes('규격') || rowStr.includes('단가')))) {
-                        headerRowIdx = i;
-                        break;
-                    }
-                }
+                const headerRowIdx = window.findMerchExcelHeaderRow(jsonAll, 25);
                 if (headerRowIdx === -1)
                     return null;
-                const sheetMeta = window.extractInventorySheetMeta
+                const baseSheetMeta = window.extractInventorySheetMeta
                     ? window.extractInventorySheetMeta(jsonAll, headerRowIdx, wb.SheetNames[0])
                     : {};
                 const headers = jsonAll[headerRowIdx] || [];
+                const sheetMeta = { ...baseSheetMeta, sheetName: wb.SheetNames[0], headerRowIdx, headers: [...headers] };
                 let endIdx = jsonAll.length - 1;
                 while (endIdx > headerRowIdx) {
                     const rowArr = jsonAll[endIdx];
@@ -6288,7 +6349,7 @@ const parseExcelRobust = (file) => {
                         endIdx--;
                         continue;
                     }
-                    if ((rawStr.includes('출력') || rawStr.includes('시간') || rawStr.includes('합계') || rawStr.includes('총계')) && filledCount <= 4) {
+                    if ((rawStr.includes('출력') || rawStr.includes('시간') || rawStr.includes('합계') || rawStr.includes('총계') || rawStr.includes('오전') || rawStr.includes('오후')) && filledCount <= 4) {
                         endIdx--;
                     }
                     else {
@@ -8449,6 +8510,57 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
             ui.setProcessMsg('');
         }
     }, [data.masterProducts, data.managedItems, config.mappings, config.masterLinks, config.uploadColumnMeta, config.marginRules, config.tableViewPresets, config.setVisibleUploadCols, ui]);
+    const handleCommonExcelUpload = useCallback(async (e) => {
+        const files = Array.from(e?.target?.files || []);
+        const targetInput = e?.target;
+        if (files.length === 0)
+            return false;
+        if (!window.XLSX) {
+            ui.setAlertMsg('엑셀 파서 로드 대기중입니다.');
+            if (targetInput) targetInput.value = '';
+            return false;
+        }
+        const roleLabels = { estimate: '견적', purchase: '구매', inventory: '재고', info: '정보' };
+        ui.setIsProcessing(true);
+        ui.setProcessMsg('[공통 Excel] 파일 유형 판별 중...');
+        try {
+            const detectedFiles = [];
+            for (const file of files) {
+                const excelData = await parseExcelRobust(file);
+                if (!excelData || excelData.length === 0) {
+                    throw new Error(`[${file.name}] 품목코드와 품목명이 있는 헤더를 찾지 못했습니다.`);
+                }
+                const sheetMeta = excelData._sheetMeta || {};
+                const detection = window.detectMerchExcelRoleFromHeaders(Object.keys(excelData[0]), {
+                    fileName: file.name,
+                    sheetName: sheetMeta.sheetName,
+                    titleText: sheetMeta.titleText
+                });
+                if (!detection.role) {
+                    throw new Error(`[${file.name}] ${detection.reason || '파일 유형을 판별하지 못했습니다.'}\n견적·구매·재고·정보 중 해당 개별 버튼으로 확인해 주세요.`);
+                }
+                detectedFiles.push({ file, role: detection.role });
+            }
+            const detectedRoles = [...new Set(detectedFiles.map(item => item.role))];
+            if (detectedRoles.length !== 1) {
+                const detail = detectedFiles.map(item => `${item.file.name}: ${roleLabels[item.role] || item.role}`).join('\n');
+                throw new Error(`서로 다른 유형의 파일은 한 번에 처리하지 않습니다.\n${detail}\n유형별로 나누어 불러와 주세요.`);
+            }
+            const detectedRole = detectedRoles[0];
+            ui.showToast(`🔎 공통 Excel 판별: ${roleLabels[detectedRole]} 자료`);
+            return await handleFileUpload({ target: { files, value: '' } }, detectedRole, { commonExcel: true });
+        }
+        catch (error) {
+            console.error('MerchOps common Excel detection failed', error);
+            ui.setAlertMsg(`❌ 공통 Excel 불러오기 중단\n${error?.message || error}`);
+            return false;
+        }
+        finally {
+            if (targetInput) targetInput.value = '';
+            ui.setIsProcessing(false);
+            ui.setProcessMsg('');
+        }
+    }, [handleFileUpload, ui]);
     const handleLoadDataOpsSnapshot = useCallback(async () => {
         ui.setIsProcessing(true);
         ui.setProcessMsg('최신 DataOps 확정자료 수신 및 검산 중...');
@@ -10953,8 +11065,8 @@ ${targetModeText} ${targets.size}건을 MerchOps 마스터에 저장합니다. �
         }
     }, [data.masterProducts, data.setMasterProducts, data.addHistoryLogs, ui]);
     return useMemo(() => ({
-        handleMasterLookup, handleCloudSync, cleanUpGarbageTags, handleFileUpload, handleLoadDataOpsSnapshot, handleLoadFilter, handleRemoveFilter, handleExcludeSelectedFromUpdate, handleRestoreExcludedItems, handleApplyBulkFields, handleSaveAsCategory, handleSaveAsCatalog, handleDeleteTag, handleCommitEstimate, handleQuickExcelExport, toggleAllRows, handleReset, handleForceApplyMarginRules, handleApplyScreenPercent, handleResetPromoValues, handleOpenExportCenter, handleRegisterUnregisteredItems, handleExitRegistrationMode, handleApplyPreviousPromo, handleOpenPromoCompare, handleApplyPromoCompare
-    }), [handleMasterLookup, handleCloudSync, cleanUpGarbageTags, handleFileUpload, handleLoadDataOpsSnapshot, handleLoadFilter, handleRemoveFilter, handleExcludeSelectedFromUpdate, handleRestoreExcludedItems, handleApplyBulkFields, handleSaveAsCategory, handleSaveAsCatalog, handleDeleteTag, handleCommitEstimate, handleQuickExcelExport, toggleAllRows, handleReset, handleForceApplyMarginRules, handleApplyScreenPercent, handleResetPromoValues, handleOpenExportCenter, handleRegisterUnregisteredItems, handleExitRegistrationMode, handleApplyPreviousPromo, handleOpenPromoCompare, handleApplyPromoCompare]);
+        handleMasterLookup, handleCloudSync, cleanUpGarbageTags, handleFileUpload, handleCommonExcelUpload, handleLoadDataOpsSnapshot, handleLoadFilter, handleRemoveFilter, handleExcludeSelectedFromUpdate, handleRestoreExcludedItems, handleApplyBulkFields, handleSaveAsCategory, handleSaveAsCatalog, handleDeleteTag, handleCommitEstimate, handleQuickExcelExport, toggleAllRows, handleReset, handleForceApplyMarginRules, handleApplyScreenPercent, handleResetPromoValues, handleOpenExportCenter, handleRegisterUnregisteredItems, handleExitRegistrationMode, handleApplyPreviousPromo, handleOpenPromoCompare, handleApplyPromoCompare
+    }), [handleMasterLookup, handleCloudSync, cleanUpGarbageTags, handleFileUpload, handleCommonExcelUpload, handleLoadDataOpsSnapshot, handleLoadFilter, handleRemoveFilter, handleExcludeSelectedFromUpdate, handleRestoreExcludedItems, handleApplyBulkFields, handleSaveAsCategory, handleSaveAsCatalog, handleDeleteTag, handleCommitEstimate, handleQuickExcelExport, toggleAllRows, handleReset, handleForceApplyMarginRules, handleApplyScreenPercent, handleResetPromoValues, handleOpenExportCenter, handleRegisterUnregisteredItems, handleExitRegistrationMode, handleApplyPreviousPromo, handleOpenPromoCompare, handleApplyPromoCompare]);
 };
 // --- UI Components ---
 const SystemConsole = ({ itemCount, isProcessing, processMsg, estimateCount, filteredCount, activeTags, masterLookupMode }) => {
@@ -11057,7 +11169,7 @@ const SearchBar = ({ value, onChange, placeholder }) => {
 };
 const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCategories }) => {
     const { activeTags, selectedRows, autoApplyOutPriceRule = false, globalSearch, priceFilter, detailFilters = [], categoryFilters = [], basicSearch, filterSteps = [], disabledFilterStepIds = [], pendingFilterAction = 'include', hideMasterAddedRows = false, fullDisplayRows, config, registrationMode, data, sessionExcludedItems = {}, showExcludedPanel = false, stoppedProducts = {} } = state;
-    const { handleMasterLookup, handleExcludeSelectedFromUpdate, handleApplyBulkFields, setGlobalSearch, handleReset, handleFileUpload, handleLoadDataOpsSnapshot, handleLoadFilter, handleForceApplyMarginRules, handleApplyScreenPercent, handleResetPromoValues, setPriceFilter, setDetailFilters, setCategoryFilters, setSelectedRows, setAutoApplyOutPriceRule, setBasicSearch, setFilterSteps, setDisabledFilterStepIds, setPendingFilterAction, setShowCatalogModal, handleOpenExportCenter, handleCommitEstimate, handleRegisterUnregisteredItems, handleExitRegistrationMode, setShowExcludedPanel, handleApplyPreviousPromo, handleOpenPromoCompare } = actions;
+    const { handleMasterLookup, handleExcludeSelectedFromUpdate, handleApplyBulkFields, setGlobalSearch, handleReset, handleFileUpload, handleCommonExcelUpload, handleLoadDataOpsSnapshot, handleLoadFilter, handleForceApplyMarginRules, handleApplyScreenPercent, handleResetPromoValues, setPriceFilter, setDetailFilters, setCategoryFilters, setSelectedRows, setAutoApplyOutPriceRule, setBasicSearch, setFilterSteps, setDisabledFilterStepIds, setPendingFilterAction, setShowCatalogModal, handleOpenExportCenter, handleCommitEstimate, handleRegisterUnregisteredItems, handleExitRegistrationMode, setShowExcludedPanel, handleApplyPreviousPromo, handleOpenPromoCompare } = actions;
     const [filterPanelOpen, setFilterPanelOpen] = useState(false);
     const [bulkInputs, setBulkInputs] = useState(() => window.createMerchEmptyBulkInputs());
     const [bulkFocus, setBulkFocus] = useState('');
@@ -11076,7 +11188,7 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
     };
     // [M-FILTER-ROWS-01] 정렬필터 재배치
     // 카테고리·테마 그룹은 각각 전체 버튼을 제공하고, 나머지 필터는 같은 버튼을 다시 누르면 해제되어 전체 상태로 복귀한다.
-    // v2.1.183 레이아웃: 카테고리·테마·역마진·가격변동·입고가없음을 하단 필터줄에 고정하고, 상단은 파서·작업정보 영역이 남은 폭을 나눠 쓴다.
+    // v2.1.184 레이아웃: 상단은 파서/카탈로그·공통 Excel·조작기능의 독립된 3개 그룹으로 공간을 나눠 쓴다.
     // 카테고리·테마는 기본 단일선택, Ctrl/⌘ 클릭 시 다중선택이며, 하단 작업줄은 룰적용/행사가/제외·정지 액션과 필터 중심으로 둔다.
     // 2단 상세필터: 판매중/정지&품절/안전(-)/BOX/EA/소분. 기본상품/기본제외는 하단 알약형 필터로 고정한다.
     const [promoWorkbenchOpen, setPromoWorkbenchOpen] = useState(false);
@@ -11106,13 +11218,28 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
     const activeTableViewId = (config === null || config === void 0 ? void 0 : config.activeTableViewId) || '';
     const activeTableTargetLabel = ((TABLE_VIEW_TARGETS.find(t => t.id === activeTableTarget) || {}).label) || '견적';
     const isParserListTableModeForToolbar = (activeTags || []).some(t => String(t?.type || '') === 'catalog');
-    const displayTableTargetLabel = activeTableTargetLabel;
     const tableViewList = useMemo(() => (activeTableTarget && window.getMerchTableViewsForTarget)
         ? window.getMerchTableViewsForTarget(config === null || config === void 0 ? void 0 : config.tableViewPresets, activeTableTarget)
         : [], [config === null || config === void 0 ? void 0 : config.tableViewPresets, activeTableTarget]);
     const displayTableViewList = tableViewList.length > 0
         ? tableViewList
         : [{ id: '', name: `${activeTableTargetLabel} 기본양식`, fallback: true, masterColumns: getInitialVisibleMasterCols()[activeTableTarget] || ['입고가'], workColumns: getInitialVisibleUploadCols()[activeTableTarget] || [] }];
+    const commonExcelTableTargets = useMemo(() => ['estimate', 'purchase', 'inventory', 'info'], []);
+    const commonExcelTableViewOptions = useMemo(() => commonExcelTableTargets.flatMap(target => {
+        const targetLabel = ((TABLE_VIEW_TARGETS.find(item => item.id === target) || {}).label) || target;
+        const targetViews = window.getMerchTableViewsForTarget
+            ? window.getMerchTableViewsForTarget(config?.tableViewPresets, target)
+            : [];
+        const views = targetViews.length > 0
+            ? targetViews
+            : [{ id: '', name: '기본양식', fallback: true, masterColumns: getInitialVisibleMasterCols()[target] || ['입고가'], workColumns: getInitialVisibleUploadCols()[target] || [] }];
+        return views.map(view => ({
+            ...view,
+            target,
+            targetLabel,
+            optionKey: `${target}::${view.fallback ? '__fallback' : (view.id || '')}`
+        }));
+    }), [config?.tableViewPresets, commonExcelTableTargets]);
     const activeBriefView = displayTableViewList.find(v => v.fallback ? !activeTableViewId : activeTableViewId === v.id) || displayTableViewList[0] || null;
     const activeBriefTags = activeBriefView && window.getMerchFilterStepTags ? window.getMerchFilterStepTags(activeBriefView.filterSteps || [], 5) : [];
     const activeBriefMemo = String((activeBriefView && activeBriefView.filterMemo) || '').trim();
@@ -11134,7 +11261,6 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
     const isEstimateLoaded = currentExcelRole === 'estimate';
     const isEstimateCompareMode = activeTableTarget === 'estimate' && (fullDisplayRows || []).some(row => !!window.getMerchEstimateCompareStatus?.(row));
     const isPurchaseLoaded = currentExcelRole === 'purchase';
-    const isSalesLoaded = currentExcelRole === 'sales';
     const isInventoryLoaded = currentExcelRole === 'inventory';
     // 양식선택은 하단 작업줄에 항상 노출한다. 상단 4분할에서 빼서 레이아웃 폭을 확보한다.
     const showTableViewSelect = true;
@@ -11177,12 +11303,12 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
         window.addEventListener('storage', onStorage);
         return () => window.removeEventListener('storage', onStorage);
     }, [config]);
-    const applyTableShortcut = (view) => {
+    const applyTableShortcut = (view, target = activeTableTarget) => {
         var _a;
         if (!view)
             return;
         const applied = window.applyMerchTableView
-            ? window.applyMerchTableView(config, activeTableTarget, view.fallback ? '' : view.id, { manual: true })
+            ? window.applyMerchTableView(config, normalizeMerchTableTarget(target), view.fallback ? '' : view.id, { manual: true })
             : null;
         const filterApplied = window.applyMerchFilterPresetToState
             ? window.applyMerchFilterPresetToState(applied || view, { setPriceFilter, setCategoryFilters, setDetailFilters, setBasicSearch, setGlobalSearch, setSelectedRows, setFilterSteps, setDisabledFilterStepIds, setPendingFilterAction })
@@ -11201,11 +11327,13 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
         setSelectedRows(new Set());
         (_a = actions.showToast) === null || _a === void 0 ? void 0 : _a.call(actions, `✅ [${(applied === null || applied === void 0 ? void 0 : applied.name) || view.name || '양식'}] 테이블 양식 적용${filterApplied ? ' / 필터조건 적용' : ''}`);
     };
-    const activeTableViewSelectValue = activeBriefView ? (activeBriefView.fallback ? '__fallback' : (activeBriefView.id || '')) : '';
+    const activeTableViewSelectValue = activeBriefView
+        ? `${activeTableTarget}::${activeBriefView.fallback ? '__fallback' : (activeBriefView.id || '')}`
+        : '';
     const handleTableViewSelect = (e) => {
-        const selectedId = e.target.value;
-        const view = displayTableViewList.find(v => (v.fallback ? '__fallback' : (v.id || '')) === selectedId) || displayTableViewList[0];
-        if (view) applyTableShortcut(view);
+        const selectedKey = e.target.value;
+        const view = commonExcelTableViewOptions.find(item => item.optionKey === selectedKey);
+        if (view) applyTableShortcut(view, view.target);
     };
     const activeViewFilterSignature = useMemo(() => {
         if (!activeBriefView || activeBriefView.fallback) return '';
@@ -11478,9 +11606,9 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
         resetBulkInputs();
     };
     return (React.createElement("div", { className: "flex flex-col w-full border-b border-slate-200 bg-white pb-2 shadow-sm relative z-10" },
-        React.createElement("div", { className: "pl-5 pr-[128px] py-2 bg-slate-50 border-b border-slate-200 flex items-center gap-2 flex-nowrap w-full whitespace-nowrap" },
-            React.createElement("div", { className: "flex items-center gap-1 min-w-0 flex-1 overflow-hidden pr-1", title: "마스터·파서·카탈로그·작업정보" },
-            React.createElement("div", { className: "flex items-center justify-around gap-1 min-w-max flex-1 rounded-xl border border-indigo-100 bg-white/90 px-1.5 py-1 shadow-sm", title: "파서·마스터 범위 작업" },
+        React.createElement("div", { className: "px-5 py-2 bg-slate-50 border-b border-slate-200 w-full whitespace-nowrap overflow-x-auto" },
+            React.createElement("div", { className: "grid grid-cols-[minmax(410px,1fr)_minmax(590px,1.45fr)_minmax(205px,0.55fr)] gap-1.5 min-w-[1220px] w-full" },
+            React.createElement("div", { "data-merch-toolbar-group": "parser-catalog", className: "flex items-center justify-start gap-1 min-w-0 rounded-xl border border-indigo-100 bg-white/90 px-1.5 py-1 shadow-sm", title: "파서·카탈로그 그룹" },
                 React.createElement("button", { onClick: () => window.location.href = 'SmartParser.html', className: `h-8 px-2.5 rounded-lg flex items-center justify-center shadow-sm transition-all border font-black text-[11px] whitespace-nowrap shrink-0 ${state.isProcessing ? 'opacity-40 pointer-events-none bg-slate-100 text-slate-400 border-slate-200' : 'bg-white text-indigo-700 border-indigo-200 hover:bg-indigo-50 hover:border-indigo-300'}`, title: "스마트파서 웹 화면으로 이동" },
                     React.createElement("i", { className: "fas fa-magic mr-1.5 text-[12px]" }),
                     "스마트파서"),
@@ -11509,7 +11637,11 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
                 React.createElement("button", { onClick: () => setShowCatalogModal(true), disabled: fullDisplayRows.length === 0, className: `h-8 px-2.5 rounded-lg text-[11px] font-black shadow-sm flex items-center shrink-0 ${fullDisplayRows.length > 0 ? 'bg-white text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 border border-slate-300 hover:border-indigo-200' : 'bg-slate-100 text-slate-300 border border-slate-200 cursor-not-allowed'}`, title: "현재 화면 또는 선택된 작업목록 기준으로 새 카탈로그를 생성합니다. 삭제/이름변경은 환경설정에서 관리합니다." },
                     React.createElement("i", { className: "fas fa-plus-circle mr-1.5 text-[13px]" }),
                     " 생성")),
-            React.createElement("div", { className: "flex items-center justify-around gap-1 min-w-max flex-[2] rounded-xl border border-slate-200 bg-white/90 px-1.5 py-1 shadow-sm", title: "작업정보: 견적/구매/재고/정보/양식보기" },
+            React.createElement("div", { "data-merch-toolbar-group": "excel", className: "flex items-center justify-start gap-1 min-w-0 rounded-xl border border-emerald-200 bg-white/90 px-1.5 py-1 shadow-sm", title: "공통 Excel 그룹: Excel/견적/구매/재고/정보/양식" },
+                React.createElement("label", { className: "cursor-pointer h-8 px-3 rounded-lg text-[11px] font-black transition-all flex items-center justify-center shadow-md border shrink-0 bg-indigo-600 text-white border-indigo-700 hover:bg-indigo-700 ring-1 ring-indigo-200", title: "공통 Excel: 견적·구매·재고·정보 파일의 헤더를 판별하여 해당 불러오기 알고리즘을 자동 적용합니다." },
+                    React.createElement("i", { className: "fas fa-file-excel mr-1.5 text-[14px]" }),
+                    "Excel",
+                    React.createElement("input", { type: "file", className: "hidden", multiple: true, onChange: handleCommonExcelUpload, accept: ".xlsx, .xls, .csv", disabled: state.isProcessing })),
                 React.createElement("label", { className: getLoadButtonClass(isEstimateLoaded, 'blue'), title: "공급사 견적/시세 엑셀을 업로드합니다." },
                     React.createElement("i", { className: "fas fa-file-excel mr-1.5 text-[14px]" }),
                     "견적",
@@ -11521,41 +11653,27 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
                 React.createElement("button", { type: "button", onClick: handleLoadDataOpsSnapshot, disabled: state.isProcessing, className: `cursor-pointer h-8 px-2.5 rounded-lg text-[11px] font-bold transition-all flex items-center justify-center shadow-sm border shrink-0 disabled:opacity-40 ${isInventoryLoaded ? 'bg-slate-100 text-slate-800 border-slate-400 ring-1 ring-slate-200' : 'bg-white text-slate-600 hover:bg-slate-50 border-slate-300'}`, title: "최신 DataOps 확정 재고를 클라우드에서 불러옵니다." },
                     React.createElement("i", { className: "fas fa-box mr-1.5 text-[14px]" }),
                     "재고"),
-                React.createElement("label", { className: "cursor-pointer h-8 px-2 rounded-lg text-[10px] font-bold transition-all flex items-center justify-center shadow-sm border shrink-0 bg-white text-slate-500 hover:bg-slate-50 border-slate-300", title: "보조 경로: DataOps 전체재고 Excel을 같은 재고 import adapter로 불러옵니다." },
-                    "Excel",
-                    React.createElement("input", { type: "file", className: "hidden", multiple: true, onChange: (e) => handleFileUpload(e, 'inventory'), accept: ".xlsx, .xls, .csv", disabled: state.isProcessing })),
                 React.createElement("label", { className: getLoadButtonClass((state.activeTags || []).some(t => String(t?.name || '').includes('정보')), 'purple'), title: "쇼핑몰/ERP 상품정보 엑셀을 업로드합니다." },
                     React.createElement("i", { className: "fas fa-circle-info mr-1.5 text-[14px]" }),
                     "정보",
                     React.createElement("input", { type: "file", className: "hidden", multiple: true, onChange: (e) => handleFileUpload(e, 'info'), accept: ".xlsx, .xls, .csv", disabled: state.isProcessing })),
-                (showTableViewSelect && displayTableViewList.length > 0 && React.createElement("div", { className: "w-[176px] max-w-[176px] flex items-center rounded-lg border border-indigo-200 bg-indigo-50 px-2 py-1 shadow-sm shrink-0 overflow-hidden", title: activeBriefText || activeBriefTags.join(' · ') || '보기 양식' },
-                    React.createElement("select", { value: activeTableViewSelectValue, onChange: handleTableViewSelect, className: "h-7 w-full rounded-md border border-slate-200 bg-white px-2 text-[12px] font-black text-slate-700 outline-none focus:border-indigo-400 shrink-0", title: `${displayTableTargetLabel} 작업에 적용할 보기 양식을 선택합니다.` },
-                        displayTableViewList.map(view => React.createElement("option", { key: view.fallback ? '__fallback' : (view.id || view.name), value: view.fallback ? '__fallback' : (view.id || '') }, `양식: ${view.name}`)))))),
+                (showTableViewSelect && commonExcelTableViewOptions.length > 0 && React.createElement("div", { className: "w-[190px] max-w-[190px] flex items-center rounded-lg border border-indigo-200 bg-indigo-50 px-2 py-1 shadow-sm shrink-0 overflow-hidden", title: activeBriefText || activeBriefTags.join(' · ') || '견적·구매·재고·정보 전체 양식' },
+                    React.createElement("select", { value: commonExcelTableViewOptions.some(item => item.optionKey === activeTableViewSelectValue) ? activeTableViewSelectValue : '', onChange: handleTableViewSelect, className: "h-7 w-full rounded-md border border-slate-200 bg-white px-2 text-[11px] font-black text-slate-700 outline-none focus:border-indigo-400 shrink-0", title: "견적·구매·재고·정보에 저장된 모든 보기 양식 중 하나를 선택합니다." },
+                        React.createElement("option", { value: "", disabled: true }, "양식 선택"),
+                        commonExcelTableViewOptions.map(view => React.createElement("option", { key: view.optionKey, value: view.optionKey }, `양식: ${view.targetLabel} · ${view.name}`))))))),
+            React.createElement("div", { "data-merch-toolbar-group": "operations", className: "flex items-center justify-start gap-1 min-w-0 rounded-xl border border-amber-200 bg-white/90 px-1.5 py-1 shadow-sm", title: "조작기능 그룹" },
                 React.createElement("label", { className: `h-8 px-2 rounded-lg border shadow-sm flex items-center justify-center shrink-0 cursor-pointer transition-all ${autoApplyOutPriceRule ? 'bg-amber-100 border-amber-300' : 'bg-white border-slate-300 hover:bg-amber-50'}`, title: "출고가 자동적용: 체크하면 엑셀 불러오기 시 기존 마진룰로 출고가를 자동 계산합니다. 체크상태는 다음 접속에도 유지됩니다." },
                     React.createElement("input", { type: "checkbox", checked: !!autoApplyOutPriceRule, onChange: (e) => setAutoApplyOutPriceRule?.(e.target.checked), className: "w-4 h-4 accent-amber-600 cursor-pointer", "aria-label": "파일 불러오기 시 출고가 자동적용" })),
                 React.createElement("button", { onClick: handleForceApplyMarginRules, disabled: fullDisplayRows.length === 0, className: `h-8 px-2.5 rounded-lg text-[11px] font-black shadow-sm flex items-center border transition-all whitespace-nowrap shrink-0 ${fullDisplayRows.length > 0 ? 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100' : 'bg-slate-100 text-slate-300 border-slate-200 cursor-not-allowed'}`, title: "출고가: 선택행 또는 현재 화면에 기존 마진룰을 수동 적용합니다. 왼쪽 체크박스는 엑셀 불러오기 시 자동 적용 여부입니다." },
                     React.createElement("i", { className: "fas fa-magic mr-1.5 text-[12px]" }),
-                    "출고가")),
-            ),
-            React.createElement("div", { className: "absolute top-[14px] right-5 z-30 flex items-center shrink-0 pl-2 bg-slate-50", title: "메인 작업 초기화" },
-                React.createElement("div", { className: "w-px h-6 bg-rose-200 mr-2 shrink-0" }),
-                React.createElement("button", { onClick: handleReset, className: "h-8 px-4 rounded-lg flex items-center text-[11px] font-black text-white bg-rose-600 border border-rose-700 shadow-md hover:bg-rose-700 hover:border-rose-800 hover:shadow-lg active:scale-[0.98] transition-all shrink-0 ring-1 ring-rose-200", title: "메인 작업 초기화: 불러온 작업자료와 현재 작업화면을 초기화합니다." },
+                    "출고가"),
+                React.createElement("div", { className: "w-px h-6 bg-rose-200 mx-1 shrink-0" }),
+                React.createElement("button", { onClick: handleReset, className: "h-8 px-3 rounded-lg flex items-center text-[11px] font-black text-white bg-rose-600 border border-rose-700 shadow-md hover:bg-rose-700 hover:border-rose-800 hover:shadow-lg active:scale-[0.98] transition-all shrink-0 ring-1 ring-rose-200", title: "메인 작업 초기화: 불러온 작업자료와 현재 작업화면을 초기화합니다." },
                     React.createElement("i", { className: "fas fa-rotate-left mr-1.5 text-[13px]" }),
-                    "초기화")),
+                    "초기화")))),
         React.createElement("div", { className: "px-6 pt-3 pb-2 flex flex-col gap-2 w-full" },
             React.createElement("div", { className: "rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm flex items-center gap-2 flex-nowrap w-full overflow-x-auto overflow-y-hidden" },
                 React.createElement("div", { className: "flex items-center justify-start gap-1.5 min-w-max flex-nowrap", title: "필터·조회: 조건을 선택한 뒤 우측 액션을 실행합니다." },
-                    registrationMode && (React.createElement(React.Fragment, null,
-                        React.createElement("span", { className: "h-8 px-2.5 rounded-lg text-[11px] font-black bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center shadow-sm" },
-                            React.createElement("i", { className: "fas fa-user-plus mr-1.5 text-[13px]" }),
-                            " 신규등록용 양식"),
-                        React.createElement("button", { onClick: handleRegisterUnregisteredItems, className: "h-8 px-2.5 rounded-lg text-[11px] font-black shadow-sm flex items-center bg-emerald-600 text-white border border-emerald-700 hover:bg-emerald-700", title: "필수항목이 입력된 미등록 상품을 마스터에 적용" },
-                            React.createElement("i", { className: "fas fa-database mr-1.5 text-[13px]" }),
-                            " 선택 마스터 적용"),
-                        React.createElement("button", { onClick: handleExitRegistrationMode, className: "h-8 px-2.5 rounded-lg text-[11px] font-bold shadow-sm flex items-center bg-white text-slate-700 border border-slate-300 hover:bg-slate-50", title: "기존 테이블 양식으로 복귀" },
-                            React.createElement("i", { className: "fas fa-arrow-left mr-1.5 text-[13px]" }),
-                            " 이전 양식"),
-                        React.createElement("div", { className: "w-px h-5 bg-slate-300 mx-1" }))),
                     React.createElement("div", { className: "flex h-9 items-center gap-1 rounded-xl border border-blue-200 bg-blue-50/60 px-1 shadow-sm shrink-0 select-none", title: "카테고리: 클릭 단일선택, Ctrl/⌘ 클릭 다중선택, 마우스 드래그 연속선택" },
                         React.createElement("button", { onClick: handleAllCategoryClick, className: `h-7 px-2.5 rounded-lg text-[11px] font-black border transition-all whitespace-nowrap shrink-0 ${(!Array.isArray(categoryFilters) || categoryFilters.length === 0) ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-blue-700 border-blue-200 hover:bg-blue-100'} ${isAllMasterLookupActive ? 'ring-2 ring-blue-300 ring-offset-1' : ''}`, title: isAllMasterLookupActive ? "전체 마스터 조회 실행 중" : "카테고리 전체 · 작업테이블이 비어 있으면 전체 마스터 조회" },
                             "전체",
@@ -11604,7 +11722,17 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
                 React.createElement("div", { className: "ml-auto sticky right-0 z-20 flex items-center justify-end gap-1 shrink-0 order-last bg-white pl-3", title: "기본 판매가·필터 초기화·검색" },
                     React.createElement("button", { onClick: handleFilterResetOnly, className: "h-9 w-9 rounded-lg bg-indigo-50 text-indigo-700 border border-indigo-200 shadow-sm hover:bg-indigo-100 hover:border-indigo-300 flex items-center justify-center shrink-0", title: "필터 초기화", "aria-label": "필터 초기화" },
                         React.createElement("i", { className: "fas fa-filter-circle-xmark text-[13px]" })),
-                    React.createElement(SearchBar, { value: globalSearch, onChange: setGlobalSearch }))),
+                    React.createElement(SearchBar, { value: globalSearch, onChange: setGlobalSearch })))),
+            registrationMode && React.createElement("div", { "data-merch-registration-tools": "subordinate", className: "rounded-xl border border-emerald-200 bg-emerald-50/60 px-3 py-2 shadow-inner flex items-center justify-start gap-1.5 flex-wrap", title: "신규등록 전용 하위 작업필드" },
+                React.createElement("span", { className: "h-8 px-2.5 rounded-lg text-[11px] font-black bg-white text-emerald-700 border border-emerald-200 flex items-center shadow-sm" },
+                    React.createElement("i", { className: "fas fa-user-plus mr-1.5 text-[13px]" }),
+                    "신규등록용 양식"),
+                React.createElement("button", { onClick: handleRegisterUnregisteredItems, className: "h-8 px-2.5 rounded-lg text-[11px] font-black shadow-sm flex items-center bg-emerald-600 text-white border border-emerald-700 hover:bg-emerald-700", title: "필수항목이 입력된 미등록 상품을 마스터에 적용" },
+                    React.createElement("i", { className: "fas fa-database mr-1.5 text-[13px]" }),
+                    "선택 마스터 적용"),
+                React.createElement("button", { onClick: handleExitRegistrationMode, className: "h-8 px-2.5 rounded-lg text-[11px] font-bold shadow-sm flex items-center bg-white text-slate-700 border border-slate-300 hover:bg-slate-50", title: "기존 테이블 양식으로 복귀" },
+                    React.createElement("i", { className: "fas fa-arrow-left mr-1.5 text-[13px]" }),
+                    "이전 양식")),
             promoWorkbenchOpen && (React.createElement("div", { className: "rounded-xl border border-rose-200 bg-gradient-to-r from-purple-50/80 via-white to-rose-50/80 px-3 py-2 shadow-inner flex items-center gap-2 flex-wrap select-none", title: "현재 마스터/카탈로그 작업범위를 그대로 사용하는 행사 전용 작업대" },
                 React.createElement("span", { className: "h-8 px-1 text-rose-700 text-[12px] font-black flex items-center shrink-0" },
                     React.createElement("i", { className: "fas fa-tags mr-1.5 text-[12px]" }),
@@ -11695,7 +11823,7 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
                         title: selectedRows.size > 0 ? `선택상품 ${selectedRows.size}건에 입력된 항목만 한 번에 적용` : `선택이 없어 현재 작업테이블 전체 ${fullDisplayRows.length}건에 입력된 항목만 한 번에 적용`
                     },
                         React.createElement("i", { className: "fas fa-layer-group mr-1.5 text-[12px]" }),
-                        "적용"))))))));
+                        "적용"))))));
 });
 
 const SessionExcludedPanel = ({ items = {}, onClose, onRestore }) => {
@@ -13809,7 +13937,7 @@ const WelcomeGuide = ({ onUpload, onCloudSync }) => (React.createElement("div", 
         React.createElement("i", { className: "fas fa-box-open" }),
         React.createElement("div", { className: "absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm" },
             React.createElement("i", { className: "fas fa-check" }))),
-    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.183_MasterThemeFilterLayout]"),
+    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.184_CommonExcelRouting]"),
     React.createElement("p", { className: "text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold" },
         "\uD604\uC7AC \uB4F1\uB85D\uB41C ",
         React.createElement("span", { className: "text-indigo-500" }, "\uB9C8\uC2A4\uD130 \uC0C1\uD488 \uB370\uC774\uD130"),
@@ -14468,7 +14596,7 @@ const App = () => {
                                 React.createElement("div", { className: "flex flex-col border-l-2 border-slate-700 pl-3" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "MerchOps"),
-                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.183_MasterThemeFilterLayout")),
+                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.184_CommonExcelRouting")),
                                     React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "MAIN WORKSPACE"))),
                             React.createElement(SystemConsole, { itemCount: Object.keys(data.masterProducts).length, isProcessing: ui.isProcessing, processMsg: ui.processMsg, estimateCount: Object.keys(data.managedItems).length, filteredCount: fullDisplayRows.length, activeTags: ui.activeTags, masterLookupMode: data.masterLookupMode }),
                             React.createElement("nav", { className: "flex gap-1.5 text-[14px] shrink-0 items-center" },

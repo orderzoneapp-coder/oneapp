@@ -105,13 +105,15 @@ for (const removed of [
 }
 assert.ok(!merch.includes("if (e.key === 'merchMaster_sync_trigger')"), "MerchOps must not hot-reload an open worktable");
 
-const loadTools = merch.indexOf('title: "마스터·파서·카탈로그·작업정보"');
-const tableView = merch.indexOf("showTableViewSelect && displayTableViewList.length > 0", loadTools);
-const autoRule = merch.indexOf('"aria-label": "파일 불러오기 시 출고가 자동적용"', tableView);
+const loadTools = merch.indexOf('data-merch-toolbar-group": "parser-catalog"');
+const excelTools = merch.indexOf('data-merch-toolbar-group": "excel"', loadTools);
+const tableView = merch.indexOf("showTableViewSelect && commonExcelTableViewOptions.length > 0", excelTools);
+const operationTools = merch.indexOf('data-merch-toolbar-group": "operations"', tableView);
+const autoRule = merch.indexOf('"aria-label": "파일 불러오기 시 출고가 자동적용"', operationTools);
 const manualRule = merch.indexOf("onClick: handleForceApplyMarginRules", autoRule);
-const mainReset = merch.indexOf('title: "메인 작업 초기화"', manualRule);
-assert.ok(loadTools >= 0 && tableView > loadTools && autoRule > tableView && manualRule > autoRule && mainReset > manualRule,
-  "The persisted auto-rule option and manual out-price action must stay beside the catalog table view");
+const mainReset = merch.indexOf('title: "메인 작업 초기화:', manualRule);
+assert.ok(loadTools >= 0 && excelTools > loadTools && tableView > excelTools && operationTools > tableView && autoRule > operationTools && manualRule > autoRule && mainReset > manualRule,
+  "The table view must stay in the Excel group while auto-rule, manual out-price, and reset stay in the operation group");
 const fixedTools = merch.indexOf('title: "기본 판매가·필터 초기화·검색"');
 const filterReset = merch.indexOf("onClick: handleFilterResetOnly", fixedTools);
 const searchBar = merch.indexOf("React.createElement(SearchBar", fixedTools);
