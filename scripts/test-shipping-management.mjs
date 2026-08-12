@@ -13,7 +13,7 @@ assert.doesNotMatch(orderOpsHtml, /tokens truncated|…\d+ tokens truncated…/,
   "the public OrderOps mirror must not contain a truncated source fragment");
 assert.match(orderOpsHtml, /<body>[\s\S]*<\/body>\s*<\/html>/,
   "the public OrderOps mirror must remain a complete HTML document");
-assert.match(orderOpsHtml, /brand-badge">v1\.28</, "ORDER Q visible version must be v1.28");
+assert.match(orderOpsHtml, /brand-badge">v1\.29</, "ORDER Q visible version must be v1.29");
 assert.match(orderOpsHtml, /<title>ONEAPP ORDER Q · 출고관리<\/title>/,
   "the public page title must establish ORDER Q as shipment management");
 assert.match(orderOpsHtml, /aria-label="ONEAPP ORDER Q 출고관리"/,
@@ -22,7 +22,7 @@ assert.match(orderOpsHtml, /class="brand-logo" src="assets\/order-q-logo\.png"/,
   "the public header must use the approved ORDER Q logo asset");
 assert.match(orderOpsHtml, /\.brand-logo-frame\s*\{[\s\S]*?width:\s*120px;[\s\S]*?height:\s*20px;/,
   "the public ORDER Q logo must match the ONEAPP wordmark height");
-assert.match(orderOpsHtml, /ORDER Q v1\.28 · 출고관리/,
+assert.match(orderOpsHtml, /ORDER Q v1\.29 · 출고관리/,
   "the public footer must use the ORDER Q product concept");
 assert.doesNotMatch(
   orderOpsHtml.slice(orderOpsHtml.indexOf('<header class="global-header">'), orderOpsHtml.indexOf('</header>')),
@@ -37,7 +37,7 @@ assert.equal(
   "the repository logo must be the unmodified approved source image",
 );
 assert.ok(orderOpsHtml.includes('class="execution-panel"'),
-  "the public v1.28 execution controls must be separate from the upload strip");
+  "the public v1.29 execution controls must be separate from the upload strip");
 assert.match(orderOpsHtml, /\.execution-panel\s*\{[^}]*grid-template-columns:\s*repeat\(3,/,
   "the public execution controls must use three visible segments");
 assert.ok(orderOpsHtml.includes("function resetResultViewFilters()"),
@@ -110,7 +110,7 @@ for (const requiredInteractionContract of [
   'getAllocationInventoryView(workspace)',
 ]) {
   assert.ok(orderOpsHtml.includes(requiredInteractionContract),
-    `public ORDER Q v1.28 interaction contract is missing: ${requiredInteractionContract}`);
+    `public ORDER Q v1.29 interaction contract is missing: ${requiredInteractionContract}`);
 }
 assert.doesNotMatch(orderOpsHtml, /<input[^>]+type="color"|data-warehouse-color|data-manager-color/,
   "the public OrderOps filter strip must not use a native color picker inside filter options");
@@ -556,7 +556,7 @@ const edgeWorkspace = engine.analyze(edgeOrders, edgeInventory, {
   sourceFingerprint: "a".repeat(64),
 });
 assert.equal(engine.ENGINE_VERSION, "3.13.0");
-assert.equal(workbookTools.WORKBOOK_VERSION, "4.5.0");
+assert.equal(workbookTools.WORKBOOK_VERSION, "4.6.0");
 assert.equal(edgeWorkspace.schemaVersion, "shipping-workspace/v2");
 
 const signedOrders = parseOrders(buildOrderMatrix([
@@ -1144,7 +1144,7 @@ assert.equal(workbookTools.getPurchaseUploadFileName(edgeWorkspace), "구매업�
 const salesUploadWorkspace = JSON.parse(JSON.stringify(edgeWorkspace));
 Object.assign(salesUploadWorkspace.allocations[0], {
   orderNumber: "2026-08-04-17",
-  customer: "판매거래처",
+  customer: "가거래처",
   warehouse: "01",
   unitPrice: 2500,
   supplyAmount: 10000,
@@ -1154,11 +1154,22 @@ Object.assign(salesUploadWorkspace.allocations[0], {
   purchaseNeed: 2,
 });
 salesUploadWorkspace.allocations[1].quantity = 0;
+salesUploadWorkspace.allocations[2].customer = "나거래처";
+Object.assign(salesUploadWorkspace.allocations[3], {
+  customer: "가거래처",
+  unitPrice: null,
+  supplyAmount: null,
+});
 salesUploadWorkspace.sourceFiles.sales = { rows: [{ productCode: "HISTORY-ONLY", quantity: 99 }] };
 const salesUploadRows = workbookTools.getSalesUploadRows(salesUploadWorkspace);
 assert.equal(salesUploadRows.length, 3, "sales upload must contain only current nonzero allocation rows");
 assert.equal(salesUploadRows.some((row) => row.productCode === "HISTORY-ONLY"), false,
   "historical sales evidence must not be re-exported as a new sales voucher");
+assert.deepEqual(
+  salesUploadRows.map((row) => row.customer),
+  ["가거래처", "가거래처", "나거래처"],
+  "sales upload rows must be grouped in ascending customer order while retaining source order inside each customer",
+);
 const salesUploadSheet = workbookTools.buildSalesUploadSheet(salesUploadWorkspace, XLSX);
 assert.deepEqual(
   Array.from(XLSX.utils.sheet_to_json(salesUploadSheet, { header: 1, raw: true, range: "A1:V1" })[0]),
@@ -1173,10 +1184,20 @@ assert.deepEqual(
   ["A2", "B2", "C2", "D2", "E2", "H2", "I2", "J2", "K2", "P2", "S2", "T2"]
     .map((address) => [salesUploadSheet[address].t, salesUploadSheet[address].v]),
   [
-    ["s", "20260804"], ["s", "17"], ["s", ""], ["s", "판매거래처"], ["s", "01"],
+    ["s", "20260804"], ["s", ""], ["s", ""], ["s", "가거래처"], ["s", "01"],
     ["s", "출고 전달"], ["s", "000100"], ["s", "상품 000100"], ["s", "EA"],
     ["s", "판매 적요"], ["s", "매입처A"], ["s", "20260804"],
   ],
+);
+assert.deepEqual(
+  ["B2", "B3", "B4"].map((address) => [salesUploadSheet[address].t, salesUploadSheet[address].v]),
+  [["s", ""], ["s", ""], ["s", ""]],
+  "sales upload sequence cells must remain blank",
+);
+assert.deepEqual(
+  [salesUploadSheet.M3.t, salesUploadSheet.M3.v, salesUploadSheet.O3.t, salesUploadSheet.O3.v],
+  ["s", "", "s", ""],
+  "blank source unit price and amount must stay blank instead of becoming zero",
 );
 assert.deepEqual(
   ["L2", "M2", "O2", "U2"].map((address) => [salesUploadSheet[address].t, salesUploadSheet[address].v]),
@@ -1537,7 +1558,7 @@ assert.ok(
 );
 
 const html = fs.readFileSync(path.join(ROOT, "orderops", "list.html"), "utf8");
-assert.match(html, /brand-badge">v1\.28</, "canonical ORDER Q visible version must be v1.28");
+assert.match(html, /brand-badge">v1\.29</, "canonical ORDER Q visible version must be v1.29");
 assert.match(html, /class="brand-logo" src="\.\.\/assets\/order-q-logo\.png"/,
   "the canonical header must use the shared ORDER Q logo asset");
 assert.match(html, /<h2 id="settingsModalTitle">ORDER Q 환경설정<\/h2>/,
@@ -1658,7 +1679,7 @@ for (const requiredInteractionContract of [
   'getAllocationInventoryView(workspace)',
 ]) {
   assert.ok(html.includes(requiredInteractionContract),
-    `canonical ORDER Q v1.28 interaction contract is missing: ${requiredInteractionContract}`);
+    `canonical ORDER Q v1.29 interaction contract is missing: ${requiredInteractionContract}`);
 }
 assert.doesNotMatch(html, /<input[^>]+type="color"|data-warehouse-color|data-manager-color/,
   "canonical OrderOps filter options must remain separate from color assignment");
@@ -1847,7 +1868,7 @@ for (const contract of [
   "handleInventoryGridArrowNavigation", "autocompletePurchaseInput", "rememberPurchaseName",
   "function resetResultViewFilters()", 'grid-template-columns: repeat(3, minmax(0, 1fr))',
 ]) {
-  assert.ok(html.includes(contract), `ORDER Q v1.28 contract is missing: ${contract}`);
+  assert.ok(html.includes(contract), `ORDER Q v1.29 contract is missing: ${contract}`);
 }
 assert.ok(html.includes('id="warehouseColorResetButton" type="button">전체 다시보기</button>'),
   "filter reset must be presented as returning to the full view");
