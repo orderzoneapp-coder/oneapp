@@ -322,6 +322,22 @@
       line-height: 1.55;
     }
     .purchase-upload-notice.bad { color: var(--red-700); background: var(--red-100); }
+    .validation-notice-summary {
+      padding: 10px;
+      border-bottom: 2px solid #f59e0b;
+      background: #fffbeb;
+    }
+    .validation-notice-heading {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin: 0 0 8px;
+    }
+    .validation-notice-heading h3 { margin: 0; color: #92400e; font-size: 12px; }
+    .validation-notice-heading span { color: #92400e; font-size: 10px; font-weight: 800; }
+    .validation-notice-table { max-height: 220px; overflow: auto; border: 1px solid #fcd34d; background: #fff; }
+    .validation-notice-table table { margin: 0; }
 
     .preview-toolbar {
       display: flex;
@@ -2244,7 +2260,7 @@
       opacity: .42;
     }
 
-    /* orderops v1.15: compact toolbar, context filters, column drag, and portrait print */
+    /* orderops v1.16: first-view delivery notices, compact toolbar, context filters, column drag, and portrait print */
     .header-output-button {
       border-color: #99f6e4;
       color: #0f766e;
@@ -2854,7 +2870,7 @@
       text-overflow: ellipsis;
       white-space: nowrap;
     }
-    /* orderops v1.15: four-way smart file intake, modal settings, and grid navigation */
+    /* orderops v1.16: four-way smart file intake, modal settings, grid navigation, and unobscured purchase entry */
     .header-smart-input { text-decoration: none; }
     .upload-grid { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; }
     .source-selector {
@@ -2916,7 +2932,7 @@
       <div class="brand-mark">ONEAPP</div>
       <div class="brand-divider" aria-hidden="true"></div>
       <div class="brand-stack">
-        <div class="brand-suite">NEXUS <span class="brand-badge">v1.15</span></div>
+        <div class="brand-suite">NEXUS <span class="brand-badge">v1.16</span></div>
         <div class="brand-product">orderops</div>
       </div>
     </div>
@@ -3072,7 +3088,7 @@
     </section>
 
     <footer class="page-footer">
-      <span>orderops v1.15 · workspace shipping-workspace/v2 · cloud plan v1</span>
+      <span>orderops v1.16 · workspace shipping-workspace/v2 · cloud plan v1</span>
       <a href="SHIPPING_MANAGEMENT_GUIDANCE.md">개발·운영 기준 보기</a>
     </footer>
   </main>
@@ -3122,7 +3138,6 @@
     </section>
   </div>
 
-  <datalist id="purchaseSupplierHistory"></datalist>
   <div class="toast hidden" id="toast" role="status" aria-live="polite"></div>
   <div class="print-area" id="printArea" aria-hidden="true"></div>
 
@@ -3181,7 +3196,7 @@
       ]);
       const TABLE_WIDTH_MIN = 32;
       const TABLE_WIDTH_MAX = 720;
-      const TABLE_WIDTH_TABS = new Set(["validation", "inventory", "allocations"]);
+      const TABLE_WIDTH_TABS = new Set(["validation", "inventory", "allocations", "notices"]);
       const CLOUD_PLAN_SCHEMA = "ONEAPP_SHIPPING_PURCHASE_PLAN_V1";
       const state = {
         orders: null,
@@ -3274,7 +3289,6 @@
         excelMappingEditor: document.getElementById("excelMappingEditor"),
         mappingSaveButton: document.getElementById("mappingSaveButton"),
         mappingResetButton: document.getElementById("mappingResetButton"),
-        purchaseSupplierHistory: document.getElementById("purchaseSupplierHistory"),
         headerCloudLoadButton: document.getElementById("headerCloudLoadButton"),
         headerCloudSaveButton: document.getElementById("headerCloudSaveButton"),
         headerRestoreButton: document.getElementById("headerRestoreButton"),
@@ -3395,17 +3409,11 @@
         }
       }
 
-      function renderPurchaseHistory() {
-        elements.purchaseSupplierHistory.innerHTML = state.purchaseHistory
-          .map((name) => `<option value="${escapeHtml(name)}"></option>`).join("");
-      }
-
       function rememberPurchaseName(value) {
         const name = String(value || "").trim();
         if (!name) return;
         state.purchaseHistory = [name, ...state.purchaseHistory.filter((item) => item !== name)].slice(0, 30);
         localStorage.setItem(PURCHASE_HISTORY_KEY, JSON.stringify(state.purchaseHistory));
-        renderPurchaseHistory();
       }
 
       function showToast(message, isError) {
@@ -4590,7 +4598,15 @@
         return typeof value === "number" && Math.abs(value) < 1e-12 ? "" : (value ?? "");
       }
 
+      function formatDeliveryNotice(row) {
+        const values = [row?.noteOriginal ?? row?.note, row?.note1Original ?? row?.note1]
+          .map((value) => String(value ?? ""))
+          .filter((value) => value !== "");
+        return values.join("\n");
+      }
+
       function getPreviewDefinitions(workspace) {
+        const noticeRows = Array.isArray(workspace.notices) ? workspace.notices : [];
         const validation = {
           label: "검증요약",
           headers: ["검증 항목", "계산 결과", "정상 기준", "판정", "설명"],
@@ -4656,7 +4672,30 @@
           if (column) column.defaultWidth = width;
         });
 
-        const definitions = { validation };
+        const notices = {
+          label: `전달사항 ${noticeRows.length}`,
+          headers: ["담당", "거래처", "상품명", "전달사항", "상품코드"],
+          numeric: [],
+          inventory: [],
+          purchase: -1,
+          purchaseEditable: false,
+          status: -1,
+          sourceRows: noticeRows,
+          rows: noticeRows.map((notice) => [
+            notice.manager || "",
+            notice.customer || "",
+            notice.productName || "",
+            formatDeliveryNotice(notice),
+            notice.productCode || "",
+          ]),
+          sortByProductCode: false,
+        };
+        notices.columns = createPreviewColumns("notices", notices.headers, notices.numeric);
+        [90, 150, 180, 300, 100].forEach((width, index) => {
+          if (notices.columns[index]) notices.columns[index].defaultWidth = width;
+        });
+
+        const definitions = { validation, notices };
         const inventory = buildInventoryPreview(workspace);
         if (inventory) definitions.inventory = inventory;
         definitions.allocations = allocations;
@@ -4840,7 +4879,7 @@
                     const content = editablePurchase
                       ? `<input class="purchase-input" data-purchase-code="${escapeHtml(sourceRow?.productCode || "")}"
                           data-grid-column="shipping:inventory:purchase" data-negative-balance="${negativeBalance ? "true" : "false"}"
-                          autocomplete="off" list="purchaseSupplierHistory"
+                          autocomplete="off"
                           value="${escapeHtml(value)}" aria-label="${escapeHtml(sourceRow?.productCode || "")} 구매처">`
                       : editableInventory
                         ? `<input class="inventory-input" data-inventory-code="${escapeHtml(sourceRow?.productCode || "")}"
@@ -4853,8 +4892,7 @@
                           ? `<span class="inventory-total-frame" data-negative-value="${negativeNumericValue ? "true" : "false"}">${escapeHtml(isNumber ? formatNumber(value) : value)}</span>`
                           : escapeHtml(isNumber ? formatNumber(value) : value);
                     return `<td class="${classes}" style="${rowFill ? `background:#${rowFill.replace(/^#/, "")}` : ""}"
-                      ${isStatus ? `data-tone="${statusTone(value)}"` : ""}
-                      title="${escapeHtml(value)}">${content}</td>`;
+                      ${isStatus ? `data-tone="${statusTone(value)}"` : ""}>${content}</td>`;
                   }).join("")}
                 </tr>`;
             }).join("")
@@ -4886,9 +4924,31 @@
           ? `${formatNumber(pairs.length)}/${formatNumber(preview.rows.length)}행 · 품목코드↑`
           : `${formatNumber(pairs.length)}/${formatNumber(preview.rows.length)}행`;
 
-        elements.specFilterGroup.disabled = state.activePreview === "validation";
+        elements.specFilterGroup.disabled = state.activePreview === "validation" || state.activePreview === "notices";
         renderColumnVisibilityMenu(preview);
-        elements.previewTable.innerHTML = renderTableMarkup(preview, pairs, { editable: true, resizable: true });
+        const previewMarkup = renderTableMarkup(preview, pairs, { editable: true, resizable: true });
+        if (state.activePreview === "validation") {
+          const noticePreview = definitions.notices;
+          const noticePairs = fullSortedPreviewPairs("notices", noticePreview);
+          elements.previewTable.innerHTML = `
+            <section class="validation-notice-summary" aria-labelledby="validationNoticeHeading">
+              <div class="validation-notice-heading">
+                <h3 id="validationNoticeHeading">전달사항(적요보기)</h3>
+                <span>전체 ${formatNumber(noticePairs.length)}건</span>
+              </div>
+              <div class="validation-notice-table">
+                ${renderTableMarkup(noticePreview, noticePairs, {
+                  editable: false,
+                  resizable: false,
+                  previewId: "notices",
+                  useVisibility: false,
+                })}
+              </div>
+            </section>
+            ${previewMarkup}`;
+        } else {
+          elements.previewTable.innerHTML = previewMarkup;
+        }
         updateColumnWidthToolbar();
       }
 
@@ -5478,7 +5538,6 @@
       state.excelMappings = loadExcelMappings();
       state.purchaseHistory = loadPurchaseHistory();
       renderExcelMappingEditor();
-      renderPurchaseHistory();
       state.columnWidthSettings = loadColumnWidthSettings();
       state.hiddenColumnSettings = loadHiddenColumnSettings();
       state.columnOrderSettings = loadColumnOrderSettings();

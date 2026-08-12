@@ -591,9 +591,25 @@
     .notice-text { white-space: pre-wrap; }
     .notice-acknowledgement { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
     tr.notice-target td { outline: 2px solid #14b8a6; outline-offset: -2px; }
+    .validation-notice-summary {
+      padding: 10px;
+      border-bottom: 2px solid #f59e0b;
+      background: #fffbeb;
+    }
+    .validation-notice-heading {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin: 0 0 8px;
+    }
+    .validation-notice-heading h3 { margin: 0; color: #92400e; font-size: 12px; }
+    .validation-notice-heading span { color: #92400e; font-size: 10px; font-weight: 800; }
+    .validation-notice-table { max-height: 220px; overflow: auto; border: 1px solid #fcd34d; background: #fff; }
+    .validation-notice-table table { margin: 0; }
 
     /* =========================================================
-       Results / table tools - current v1.15 features retained
+       Results / table tools - current v1.16 features retained
        ========================================================= */
     .results-panel {
       margin-top: 8px;
@@ -657,7 +673,7 @@
       white-space: nowrap;
     }
     .spec-filter:disabled { opacity: .42; }
-    /* orderops v1.15: compact toolbar, context filters, column drag, and portrait print */
+    /* orderops v1.16: first-view delivery notices, compact toolbar, context filters, column drag, and portrait print */
     .header-output-button { border-color: #99f6e4; color: #0f766e; background: #f0fdfa; }
     .header-output-button:hover:not(:disabled) { background: #ccfbf1; }
     .results-panel .table-wrap { max-height: calc(100vh - 200px); }
@@ -1070,7 +1086,7 @@
       .recovery-record-item { grid-template-columns: auto 1fr; }
       .recovery-record-status { grid-column: 2; }
     }
-    /* orderops v1.15: four-way smart file intake, mapping aliases, and grid navigation */
+    /* orderops v1.16: four-way smart file intake, mapping aliases, grid navigation, and unobscured purchase entry */
     .upload-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
     .source-selector {
       grid-template-areas: "uploads analyze";
@@ -1101,7 +1117,7 @@
       <div class="brand-mark">ONEAPP</div>
       <div class="brand-divider" aria-hidden="true"></div>
       <div class="brand-stack">
-        <div class="brand-suite">NEXUS <span class="brand-badge">v1.15</span></div>
+        <div class="brand-suite">NEXUS <span class="brand-badge">v1.16</span></div>
         <div class="brand-product">OrderOps</div>
       </div>
     </div>
@@ -1256,7 +1272,7 @@
     </section>
 
     <footer class="page-footer">
-      <span>orderops v1.15 · workspace shipping-workspace/v2 · cloud plan v1</span>
+      <span>orderops v1.16 · workspace shipping-workspace/v2 · cloud plan v1</span>
       <a href="../SHIPPING_MANAGEMENT_GUIDANCE.md">개발·운영 기준 보기</a>
     </footer>
   </main>
@@ -1318,8 +1334,6 @@
       <div id="settingsExtensionSlot" hidden data-settings-extension-slot="future"></div>
     </section>
   </div>
-
-  <datalist id="purchaseSupplierHistory"></datalist>
 
   <div class="toast hidden" id="toast" role="status" aria-live="polite"></div>
   <div class="print-area" id="printArea" aria-hidden="true"></div>
@@ -1475,7 +1489,6 @@
         excelMappingEditor: document.getElementById("excelMappingEditor"),
         mappingSaveButton: document.getElementById("mappingSaveButton"),
         mappingResetButton: document.getElementById("mappingResetButton"),
-        purchaseSupplierHistory: document.getElementById("purchaseSupplierHistory"),
         workspaceStorage: document.getElementById("workspaceStorage"),
         headerCloudLoadButton: document.getElementById("headerCloudLoadButton"),
         headerCloudSaveButton: document.getElementById("headerCloudSaveButton"),
@@ -1583,16 +1596,11 @@
         } catch (error) { return []; }
       }
 
-      function renderPurchaseHistory() {
-        elements.purchaseSupplierHistory.innerHTML = state.purchaseHistory.map((name) => `<option value="${escapeHtml(name)}"></option>`).join("");
-      }
-
       function rememberPurchaseName(value) {
         const name = String(value || "").trim();
         if (!name) return;
         state.purchaseHistory = [name, ...state.purchaseHistory.filter((item) => item !== name)].slice(0, 30);
         localStorage.setItem(PURCHASE_HISTORY_KEY, JSON.stringify(state.purchaseHistory));
-        renderPurchaseHistory();
       }
 
       function showToast(message, isError) {
@@ -3374,7 +3382,7 @@
                     const content = editablePurchase
                       ? `<input class="purchase-input" data-purchase-code="${escapeHtml(sourceRow?.productCode || "")}"
                           data-grid-column="shipping:inventory:purchase" data-negative-balance="${negativeBalance ? "true" : "false"}"
-                          autocomplete="off" list="purchaseSupplierHistory"
+                          autocomplete="off"
                           tabindex="${negativeBalance ? "0" : "-1"}"
                           value="${escapeHtml(value)}" aria-label="${escapeHtml(sourceRow?.productCode || "")} 구매처">`
                       : noticeLink
@@ -3391,8 +3399,7 @@
                               ? `<span class="inventory-total-frame" data-negative-value="${negativeNumericValue ? "true" : "false"}">${escapeHtml(isNumber ? formatNumber(value) : value)}</span>`
                               : `<span class="${noticeText ? "notice-text" : ""}">${escapeHtml(isNumber ? formatNumber(value) : value)}</span>`;
                     return `<td class="${classes}" style="${rowFill ? `background:#${rowFill.replace(/^#/, "")}` : ""}"
-                      ${isStatus ? `data-tone="${statusTone(value)}"` : ""}
-                      title="${escapeHtml(value)}">${content}</td>`;
+                      ${isStatus ? `data-tone="${statusTone(value)}"` : ""}>${content}</td>`;
                   }).join("")}
                 </tr>`;
             }).join("")
@@ -3426,7 +3433,31 @@
 
         elements.specFilterGroup.disabled = state.activePreview === "validation" || state.activePreview === "notices";
         renderColumnVisibilityMenu(preview);
-        elements.previewTable.innerHTML = renderTableMarkup(preview, pairs, { editable: true, resizable: true });
+        const previewMarkup = renderTableMarkup(preview, pairs, { editable: true, resizable: true });
+        if (state.activePreview === "validation") {
+          const noticePreview = definitions.notices;
+          const noticePairs = fullSortedPreviewPairs("notices", noticePreview);
+          const unacknowledgedCount = noticePreview.sourceRows.filter((notice) =>
+            !engine.isNoticeAcknowledged(state.workspace, notice.noticeId)).length;
+          elements.previewTable.innerHTML = `
+            <section class="validation-notice-summary" aria-labelledby="validationNoticeHeading">
+              <div class="validation-notice-heading">
+                <h3 id="validationNoticeHeading">전달사항(적요보기)</h3>
+                <span>전체 ${formatNumber(noticePairs.length)}건 · 미확인 ${formatNumber(unacknowledgedCount)}건</span>
+              </div>
+              <div class="validation-notice-table">
+                ${renderTableMarkup(noticePreview, noticePairs, {
+                  editable: true,
+                  resizable: false,
+                  previewId: "notices",
+                  useVisibility: false,
+                })}
+              </div>
+            </section>
+            ${previewMarkup}`;
+        } else {
+          elements.previewTable.innerHTML = previewMarkup;
+        }
         updateColumnWidthToolbar();
       }
 
@@ -4031,7 +4062,6 @@
       state.excelMappings = loadExcelMappings();
       state.purchaseHistory = loadPurchaseHistory();
       renderExcelMappingEditor();
-      renderPurchaseHistory();
       state.columnWidthSettings = loadColumnWidthSettings();
       state.hiddenColumnSettings = loadHiddenColumnSettings();
       state.columnOrderSettings = loadColumnOrderSettings();
