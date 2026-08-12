@@ -9,7 +9,21 @@ import { fileURLToPath } from "node:url";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const require = createRequire(import.meta.url);
 const orderOpsHtml = fs.readFileSync(path.join(ROOT, "orderops_list.html"), "utf8");
-assert.match(orderOpsHtml, /brand-badge">v1\.11</, "OrderOps visible version must be v1.11");
+assert.match(orderOpsHtml, /brand-badge">v1\.12</, "OrderOps visible version must be v1.12");
+const compactSystemIoStart = orderOpsHtml.indexOf("/* orderops v1.11: compact System.IO border strip */");
+const compactSystemIoEnd = orderOpsHtml.indexOf("</style>", compactSystemIoStart);
+assert.ok(compactSystemIoStart >= 0 && compactSystemIoEnd > compactSystemIoStart,
+  "the compact System.IO style contract must exist");
+const compactSystemIoStyle = orderOpsHtml.slice(compactSystemIoStart, compactSystemIoEnd);
+for (const requiredStyle of [
+  "min-height: 40px;",
+  "grid-template-columns: minmax(0, 1fr) 300px;",
+  "min-height: 44px;",
+  "display: flex;",
+  "white-space: nowrap;",
+]) {
+  assert.ok(compactSystemIoStyle.includes(requiredStyle), `compact System.IO is missing: ${requiredStyle}`);
+}
 assert.match(orderOpsHtml, /table\.column-width-managed\s*\{[^}]*min-width:\s*0;/,
   "the public OrderOps table must allow unused space on the right");
 assert.doesNotMatch(orderOpsHtml, /table\.column-width-managed\s*\{[^}]*min-width:\s*100%;/,
@@ -1234,6 +1248,7 @@ assert.ok(
 );
 
 const html = fs.readFileSync(path.join(ROOT, "orderops", "list.html"), "utf8");
+assert.match(html, /brand-badge">v1\.12</, "canonical OrderOps visible version must be v1.12");
 const styleBlocks = [...html.matchAll(/<style(?:\s[^>]*)?>([\s\S]*?)<\/style>/gi)].map((match) => match[1]);
 assert.ok(styleBlocks.length > 0, "orderops/list.html must contain a style block");
 
@@ -1697,3 +1712,4 @@ console.log(
       ? `OrderOps tests passed, including the real ${inventoryReferenceWorkspace.stats.inventoryRowCount}-inventory reference file.`
       : "OrderOps tests passed. Real reference files were not present and were skipped.",
 );
+
