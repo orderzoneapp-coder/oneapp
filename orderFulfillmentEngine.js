@@ -7,7 +7,7 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  const ENGINE_VERSION = "3.8.0";
+  const ENGINE_VERSION = "3.9.0";
   const WORKSPACE_SCHEMA_VERSION = "shipping-workspace/v2";
   const INVENTORY_OVERRIDE_SCHEMA_VERSION = "shipping-inventory-overrides/v1";
   const HEADER_SCAN_LIMIT = 30;
@@ -228,27 +228,37 @@
       }
       return {
         key: `inventory:${sourceIndex}:${encodeURIComponent(normalizedLabel)}`,
-        header,
+        header: role === "calculatedQuantity" ? "잔량" : header,
         sourceIndex,
         role,
         editable: ["warehouseQuantity", "warehousePrice", "editableText"].includes(role),
         numeric: ["warehouseQuantity", "warehousePrice", "calculatedQuantity"].includes(role),
       };
     }).filter(Boolean);
-    if (!result.some((column) => column.role === "calculatedQuantity")) {
+    let calculatedIndex = result.findIndex((column) => column.role === "calculatedQuantity");
+    if (calculatedIndex < 0) {
       const firstWarehouseIndex = result.findIndex(
         (column) => column.role === "warehouseQuantity",
       );
       const insertIndex = firstWarehouseIndex >= 0 ? firstWarehouseIndex : result.length;
       result.splice(insertIndex, 0, {
         key: "shipping:inventory:calculated-quantity",
-        header: "수량",
+        header: "잔량",
         sourceIndex: null,
         role: "calculatedQuantity",
         editable: false,
         numeric: true,
       });
+      calculatedIndex = insertIndex;
     }
+    result.splice(calculatedIndex, 0, {
+      key: "shipping:inventory:order-quantity",
+      header: "주문수량",
+      sourceIndex: null,
+      role: "orderQuantity",
+      editable: false,
+      numeric: true,
+    });
     return result;
   }
 
@@ -1299,28 +1309,86 @@
     const purchaseInputs = getPurchaseInputs(workspace);
     const rows = (Array.isArray(workspace.inventory) ? workspace.inventory : []).map((inventory) => {
       const productCode = normalizeProductCode(inventory.productCode);
+      const stockTotal = calculateInventoryTotal(workspace, inventory, columns, overrideMap);
+      const orderQuantity = roundQuantity(
+        (Array.isArray(workspace?.orders) ? workspace.orders : [])
+          .filter((order) => normalizeProductCode(order?.productCode) === productCode)
+          .reduce((sum, order) => {
+            const parsed = parseNumericCell(order?.quantity);
+            return sum + (parsed.ok ? parsed.value : 0);
+          }, 0),
+      );
+      const remainingQuantity = roundQuantity(stockTotal - orderQuantity);
       const values = columns.map((column) => {
+        if (column.role === "orderQuantity") return orderQuantity;
         if (column.role === "calculatedQuantity") {
-          return calculateInventoryTotal(workspace, inventory, columns, overrideMap);
+          return remainingQuantity;
         }
         return getEffectiveInventoryCell(workspace, inventory, column, overrideMap);
       });
-      const inventoryTotal = calculateInventoryTotal(workspace, inventory, columns, overrideMap);
       return {
         productCode,
         productName: cleanText(inventory.productName),
         specification: cleanText(inventory.specification),
         values,
-        inventoryTotal,
+        inventoryTotal: stockTotal,
+        stockTotal,
+        orderQuantity,
+        remainingQuantity,
         purchase: String(purchaseInputs[productCode] || ""),
         suppliers: inventorySupplierDisplay(workspace, productCode),
         orderCustomers: orderCustomerQuantityDisplay(workspace, productCode),
       };
     });
-    const negativeCount = rows.filter((row) => row.inventoryTotal < 0).length;
+    const negativeCount = rows.filter((row) => row.remainingQuantity < 0).length;
     if (workspace.stats && typeof workspace.stats === "object") {
       workspace.stats.inventoryNegativeCount = negativeCount;
     }
+    return { columns, headers: columns.map((column) => column.header), rows };
+  }
+
+  function getStockLedgerView(workspace) {
+    if (!workspace || workspace.schemaVersion !== WORKSPACE_SCHEMA_VERSION) {
+      throw new Error("지원하지 않는 Shipping Management 작업공간입니다.");
+    }
+    const inboundByCode = new Map();
+    const purchaseRows = workspace?.orderOpsInputs?.purchases?.rows;
+    (Array.isArray(purchaseRows) ? purchaseRows : []).forEach((row) => {
+      const productCode = normalizeProductCode(row?.productCode);
+      const parsed = parseNumericCell(row?.quantity);
+      if (!productCode || !parsed.ok) return;
+      inboundByCode.set(
+        productCode,
+        roundQuantity((inboundByCode.get(productCode) || 0) + parsed.value),
+      );
+    });
+    const columns = [
+      { key: "ledger:product-code", header: "품목코드", role: "productCode", numeric: false },
+      { key: "ledger:product-name", header: "품목명", role: "productName", numeric: false },
+      { key: "ledger:specification", header: "규격", role: "specification", numeric: false },
+      { key: "ledger:unit", header: "단위", role: "unit", numeric: false },
+      { key: "ledger:stock", header: "재고", role: "stockQuantity", numeric: true },
+      { key: "ledger:inbound", header: "입고", role: "inboundQuantity", numeric: true },
+      { key: "ledger:outbound", header: "출고(주문)", role: "orderQuantity", numeric: true },
+      { key: "ledger:remaining", header: "잔량", role: "calculatedQuantity", numeric: true },
+    ];
+    const inventoryView = getInventoryViewRows(workspace);
+    const rows = inventoryView.rows.map((inventory) => {
+      const source = (workspace.inventory || []).find(
+        (candidate) => normalizeProductCode(candidate?.productCode) === inventory.productCode,
+      ) || {};
+      const values = [
+        inventory.productCode,
+        inventory.productName,
+        inventory.specification,
+        cleanText(source.unit),
+        inventory.stockTotal,
+        inboundByCode.get(inventory.productCode) || 0,
+        inventory.orderQuantity,
+        inventory.remainingQuantity,
+      ];
+      return { ...inventory, sourceRow: source, values };
+    });
     return { columns, headers: columns.map((column) => column.header), rows };
   }
 
@@ -1886,7 +1954,7 @@
     const purchaseNeedByCode = new Map(
       getInventoryViewRows(workspace).rows.map((inventory) => [
         normalizeProductCode(inventory.productCode),
-        inventory.inventoryTotal < 0 ? roundQuantity(Math.abs(inventory.inventoryTotal)) : 0,
+        inventory.remainingQuantity < 0 ? roundQuantity(Math.abs(inventory.remainingQuantity)) : 0,
       ]),
     );
     const included = [];
@@ -1954,6 +2022,7 @@
     ensureInventoryPurchaseRows,
     getInventoryColumnDescriptors,
     getInventoryViewRows,
+    getStockLedgerView,
     setInventoryOverride,
     getAllocationInventoryView,
   });

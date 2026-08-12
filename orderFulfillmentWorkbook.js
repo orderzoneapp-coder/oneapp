@@ -10,7 +10,7 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function (engine) {
   "use strict";
 
-  const WORKBOOK_VERSION = "4.1.0";
+  const WORKBOOK_VERSION = "4.2.0";
   const REQUIRED_SHEETS = Object.freeze([
     "전달사항(적요보기)",
     "창고별재고",
@@ -688,7 +688,7 @@
       ...inventory.values,
       inventory.purchase,
       inventory.suppliers,
-      inventory.inventoryTotal < 0 ? inventory.orderCustomers : "",
+      inventory.remainingQuantity < 0 ? inventory.orderCustomers : "",
     ]);
     const headers = layout.map((column) => safeValue(column.header));
     const sheet = XLSX.utils.aoa_to_sheet([headers, ...dataRows]);
@@ -755,7 +755,7 @@
           typeof cell.v === "number" &&
           Number.isFinite(cell.v) &&
           cell.v < 0 &&
-          ["warehouseQuantity", "calculatedQuantity"].includes(layout[column]?.role)
+          ["warehouseQuantity", "orderQuantity", "calculatedQuantity"].includes(layout[column]?.role)
         ) {
           style.fill = { fgColor: { rgb: "FFF200" } };
         }
