@@ -13,9 +13,9 @@ assert.doesNotMatch(orderOpsHtml, /tokens truncated|…\d+ tokens truncated…/,
   "the public OrderOps mirror must not contain a truncated source fragment");
 assert.match(orderOpsHtml, /<body>[\s\S]*<\/body>\s*<\/html>/,
   "the public OrderOps mirror must remain a complete HTML document");
-assert.match(orderOpsHtml, /brand-badge">v1\.20</, "OrderOps visible version must be v1.20");
+assert.match(orderOpsHtml, /brand-badge">v1\.21</, "OrderOps visible version must be v1.21");
 assert.ok(orderOpsHtml.includes('class="execution-panel"'),
-  "the public v1.20 execution controls must be separate from the upload strip");
+  "the public v1.21 execution controls must be separate from the upload strip");
 assert.match(orderOpsHtml, /\.execution-panel\s*\{[^}]*grid-template-columns:\s*repeat\(3,/,
   "the public execution controls must use three visible segments");
 assert.ok(orderOpsHtml.includes("function resetResultViewFilters()"),
@@ -68,7 +68,7 @@ for (const requiredInteractionContract of [
   'getAllocationInventoryView(workspace)',
 ]) {
   assert.ok(orderOpsHtml.includes(requiredInteractionContract),
-    `public OrderOps v1.20 interaction contract is missing: ${requiredInteractionContract}`);
+    `public OrderOps v1.21 interaction contract is missing: ${requiredInteractionContract}`);
 }
 for (const shortcutContract of [
   'shortcut: "F5"',
@@ -1371,7 +1371,7 @@ assert.ok(
 );
 
 const html = fs.readFileSync(path.join(ROOT, "orderops", "list.html"), "utf8");
-assert.match(html, /brand-badge">v1\.20</, "canonical OrderOps visible version must be v1.20");
+assert.match(html, /brand-badge">v1\.21</, "canonical OrderOps visible version must be v1.21");
 const styleBlocks = [...html.matchAll(/<style(?:\s[^>]*)?>([\s\S]*?)<\/style>/gi)].map((match) => match[1]);
 assert.ok(styleBlocks.length > 0, "orderops/list.html must contain a style block");
 
@@ -1456,7 +1456,7 @@ for (const requiredInteractionContract of [
   'getAllocationInventoryView(workspace)',
 ]) {
   assert.ok(html.includes(requiredInteractionContract),
-    `canonical OrderOps v1.20 interaction contract is missing: ${requiredInteractionContract}`);
+    `canonical OrderOps v1.21 interaction contract is missing: ${requiredInteractionContract}`);
 }
 assert.ok(html.includes(
   'headers: ["창고", "거래처", "담당자", "상품코드", "품명", "규격", "주문", "단가", ...allocationWarehouseHeaders, "전달사항", "구매"]',
@@ -1632,8 +1632,22 @@ for (const contract of [
   "handleInventoryGridArrowNavigation", "autocompletePurchaseInput", "rememberPurchaseName",
   "function resetResultViewFilters()", 'grid-template-columns: repeat(3, minmax(0, 1fr))',
 ]) {
-  assert.ok(html.includes(contract), `OrderOps v1.20 contract is missing: ${contract}`);
+  assert.ok(html.includes(contract), `OrderOps v1.21 contract is missing: ${contract}`);
 }
+assert.ok(html.includes('id="warehouseColorResetButton" type="button">전체 다시보기</button>'),
+  "filter reset must be presented as returning to the full view");
+assert.ok(html.includes("색상 변경 즉시 이 컴퓨터에 자동 저장·적용"),
+  "filter color persistence and immediate application must be visible to operators");
+const colorResetStart = html.indexOf('elements.warehouseColorResetButton.addEventListener("click"');
+const colorResetEnd = html.indexOf("elements.columnVisibilityButton.addEventListener", colorResetStart);
+assert.ok(colorResetStart >= 0 && colorResetEnd > colorResetStart, "filter reset handler must exist");
+const colorResetSource = html.slice(colorResetStart, colorResetEnd);
+assert.ok(colorResetSource.includes("state.managerFilters.clear()") && colorResetSource.includes("state.warehouseFilters.clear()"),
+  "full view must clear warehouse and manager filters");
+assert.equal(colorResetSource.includes("saveManagerColorSettings"), false,
+  "full view must preserve saved manager colors");
+assert.equal(colorResetSource.includes("saveWarehouseColorSettings"), false,
+  "full view must preserve saved warehouse colors");
 
 for (const firstViewContract of [
   'class="validation-notice-summary"',

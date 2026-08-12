@@ -479,9 +479,10 @@
     }
     .settings-modal.hidden { display: none; }
     .workspace-storage {
-      width: min(920px, 100%);
-      max-height: min(760px, calc(100vh - 36px));
-      overflow: auto;
+      width: min(1180px, 100%);
+      max-height: min(840px, calc(100vh - 36px));
+      overflow-x: hidden;
+      overflow-y: auto;
       border: 1px solid #475569;
       border-radius: 8px;
       color: var(--slate-200);
@@ -576,6 +577,18 @@
     .recovery-record-item.is-corrupt { border-color: #b91c1c; color: #fecaca; }
     .recovery-record-item small { color: #94a3b8; }
     .recovery-record-status { font-weight: 900; }
+    .recovery-more-button {
+      width: 100%;
+      min-height: 30px;
+      margin-top: 6px;
+      border: 1px solid #475569;
+      border-radius: 5px;
+      color: #cbd5e1;
+      background: #0f172a;
+      font-size: 10px;
+      font-weight: 900;
+    }
+    .recovery-more-button:hover { border-color: #5eead4; color: #5eead4; }
     .storage-note { margin: 6px 0 0; color: #94a3b8; font-size: 9px; line-height: 1.4; }
     .notice-link {
       width: 100%;
@@ -673,7 +686,7 @@
       white-space: nowrap;
     }
     .spec-filter:disabled { opacity: .42; }
-    /* orderops v1.20: editable order workflow, stock ledger sales, and keyboard operations */
+    /* orderops v1.21: expanded settings, compact recovery history, and persistent filter colors */
     .header-output-button { border-color: #99f6e4; color: #0f766e; background: #f0fdfa; }
     .header-output-button:hover:not(:disabled) { background: #ccfbf1; }
     .results-panel .table-wrap { max-height: calc(100vh - 200px); }
@@ -687,6 +700,7 @@
       background: var(--white);
     }
     .warehouse-color-title { color: var(--slate-600); font-size: 10px; font-weight: 900; white-space: nowrap; }
+    .warehouse-color-guide { color: var(--slate-500); font-size: 9px; font-weight: 800; white-space: nowrap; }
     .warehouse-color-options { display: flex; align-items: center; gap: 4px; min-width: 0; overflow-x: auto; }
     .warehouse-color-option {
       display: inline-flex;
@@ -1095,7 +1109,7 @@
       .recovery-record-item { grid-template-columns: auto 1fr; }
       .recovery-record-status { grid-column: 2; }
     }
-    /* orderops v1.20: Excel-like grids, borderless cell editors, and revised workflow shortcuts */
+    /* orderops v1.21: Excel-like grids, borderless cell editors, and revised workflow shortcuts */
     .input-panel { grid-template-columns: minmax(0, 1fr) 330px; gap: 12px; }
     .upload-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
     .source-selector {
@@ -1212,7 +1226,7 @@
       <div class="brand-mark">ONEAPP</div>
       <div class="brand-divider" aria-hidden="true"></div>
       <div class="brand-stack">
-        <div class="brand-suite">NEXUS <span class="brand-badge">v1.20</span></div>
+        <div class="brand-suite">NEXUS <span class="brand-badge">v1.21</span></div>
         <div class="brand-product">OrderOps</div>
       </div>
     </div>
@@ -1363,14 +1377,15 @@
           <span class="warehouse-color-title">담당자 필터·배색</span>
           <div class="warehouse-color-options" id="managerColorOptions"></div>
         </section>
-        <button class="warehouse-color-reset" id="warehouseColorResetButton" type="button">필터·배색 초기화</button>
+        <span class="warehouse-color-guide">색상 변경 즉시 이 컴퓨터에 자동 저장·적용</span>
+        <button class="warehouse-color-reset" id="warehouseColorResetButton" type="button">전체 다시보기</button>
       </div>
 
       <div class="table-wrap" id="previewTable" role="tabpanel"></div>
     </section>
 
     <footer class="page-footer">
-      <span>orderops v1.20 · workspace shipping-workspace/v2 · cloud plan v1</span>
+      <span>orderops v1.21 · workspace shipping-workspace/v2 · cloud plan v1</span>
       <a href="../SHIPPING_MANAGEMENT_GUIDANCE.md">개발·운영 기준 보기</a>
     </footer>
   </main>
@@ -1394,11 +1409,12 @@
           <button type="button" id="replaceRecoveryButton" disabled>현재 파일로 교체</button>
         </div>
         <div class="recovery-record-list" id="recoveryRecordList" aria-label="로컬 복구 자료 목록"></div>
+        <button class="recovery-more-button hidden" id="recoveryMoreButton" type="button" aria-expanded="false">더보기</button>
         <div class="cloud-actions">
           <button type="button" id="discardRecoveryButton" disabled>선택 삭제</button>
           <button type="button" id="localResetButton">전체 초기화</button>
         </div>
-        <p class="storage-note" id="recoveryPolicyText">정상 복구자료는 최근 10개까지 보관합니다. 새 자료의 저장·재읽기·SHA-256 검산과 포인터 전환이 끝난 뒤에만 오래된 정상본을 정리합니다.</p>
+        <p class="storage-note" id="recoveryPolicyText">정상 복구자료는 최근 10개까지 보관하며, 목록에는 최근 5개를 먼저 표시합니다. 새 자료의 저장·재읽기·SHA-256 검산과 포인터 전환이 끝난 뒤에만 오래된 정상본을 정리합니다.</p>
       </section>
 
       <section class="settings-section" data-settings-section="cloud">
@@ -1452,6 +1468,7 @@
       const LEGACY_LOCAL_STORE_NAME = "workspaces";
       const LOCAL_RECOVERY_SCHEMA = "shipping-local-recovery/v2";
       const LOCAL_RECOVERY_LIMIT = 10;
+      const RECOVERY_INITIAL_VISIBLE = 5;
       const LOCAL_POINTER_KEY = "oneapp.shipping.recovery.pointer.v1";
       const LOCAL_META_KEY = "oneapp.shipping.recovery.meta.v1";
       const LEGACY_MIGRATION_KEY = "oneapp.shipping.recovery.legacy-migrated.v2";
@@ -1505,6 +1522,7 @@
         legacyDb: null,
         recoveryRecord: null,
         recoveryRecords: [],
+        recoveryRecordsExpanded: false,
         selectedRecoveryId: "",
         recoveryCorruptionDetected: false,
         recoveryPointerOutdated: false,
@@ -1576,6 +1594,7 @@
         recoveryBanner: document.getElementById("recoveryBanner"),
         recoveryMessage: document.getElementById("recoveryMessage"),
         recoveryRecordList: document.getElementById("recoveryRecordList"),
+        recoveryMoreButton: document.getElementById("recoveryMoreButton"),
         restoreButton: document.getElementById("restoreButton"),
         replaceRecoveryButton: document.getElementById("replaceRecoveryButton"),
         discardRecoveryButton: document.getElementById("discardRecoveryButton"),
@@ -1994,8 +2013,11 @@
           elements.recoveryMessage.textContent =
             `최신 정상본 · ${workspace?.basisDate || "기준일 없음"} · ${fileNames || "원본 메타 없음"} · ${record.updatedAt}`;
         }
-        elements.recoveryRecordList.innerHTML = state.recoveryRecords.length
-          ? state.recoveryRecords.map((candidate) => {
+        const visibleRecoveryRecords = state.recoveryRecordsExpanded
+          ? state.recoveryRecords
+          : state.recoveryRecords.slice(0, RECOVERY_INITIAL_VISIBLE);
+        elements.recoveryRecordList.innerHTML = visibleRecoveryRecords.length
+          ? visibleRecoveryRecords.map((candidate) => {
               const item = candidate.record || {};
               const workspace = item.payload?.workspace;
               const label = [workspace?.basisDate || "기준일 없음", workspace?.sourceFiles?.orders?.fileName || "원본 없음", item.updatedAt || "시각 없음"].join(" · ");
@@ -2006,6 +2028,12 @@
               </label>`;
             }).join("")
           : '<p class="storage-note">보관된 로컬 복구자료가 없습니다.</p>';
+        const hiddenRecoveryCount = Math.max(0, state.recoveryRecords.length - RECOVERY_INITIAL_VISIBLE);
+        elements.recoveryMoreButton.classList.toggle("hidden", hiddenRecoveryCount === 0);
+        elements.recoveryMoreButton.textContent = state.recoveryRecordsExpanded
+          ? "접기"
+          : `더보기 (${hiddenRecoveryCount}개)`;
+        elements.recoveryMoreButton.setAttribute("aria-expanded", String(state.recoveryRecordsExpanded));
         elements.restoreButton.disabled = !selected?.valid;
         elements.discardRecoveryButton.disabled = !selected?.record?.recordId;
         elements.localSaveStatus.textContent = record
@@ -4394,18 +4422,8 @@
       elements.warehouseColorResetButton.addEventListener("click", () => {
         state.managerFilters.clear();
         state.warehouseFilters.clear();
-        state.managerColorSettings = {
-          schemaVersion: MANAGER_COLORS_SCHEMA,
-          colors: Object.create(null),
-        };
-        state.warehouseColorSettings = {
-          schemaVersion: WAREHOUSE_COLORS_SCHEMA,
-          colors: Object.create(null),
-        };
-        saveManagerColorSettings();
-        saveWarehouseColorSettings();
         if (state.workspace) renderPreview();
-        showToast("창고·담당자 필터와 배색을 초기화했습니다.");
+        showToast("창고·담당자 필터를 해제했습니다. 저장된 배색은 유지됩니다.");
       });
       elements.columnVisibilityButton.addEventListener("click", () => {
         const open = elements.columnVisibilityMenu.classList.contains("hidden");
@@ -4586,6 +4604,10 @@
         const input = event.target.closest("input[name='recoveryRecord']");
         if (!input) return;
         state.selectedRecoveryId = input.value;
+        renderRecoveryBanner(state.recoveryRecord);
+      });
+      elements.recoveryMoreButton.addEventListener("click", () => {
+        state.recoveryRecordsExpanded = !state.recoveryRecordsExpanded;
         renderRecoveryBanner(state.recoveryRecord);
       });
       elements.restoreButton.addEventListener("click", () => {
