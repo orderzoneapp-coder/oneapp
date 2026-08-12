@@ -91,7 +91,7 @@ Shared storage or navigation does not make their business meaning identical.
 | `history_viewer.html` | Web entry | Production | Inspect product-change history and price trends |
 | `Master.html` | Web entry | Pilot | Product-master lookup and administrator-reviewed add/update; initial registration and full replacement are not active in the first phase |
 | `Item_manager.html` | Web entry | Pilot / transition | Existing category lookup and product-management route retained until approved feature migration and result verification are complete |
-| `orderops/list.html` | Web entry | Pilot | OrderOps aggregate-stock allocation, purchase-plan editing and recovery, explicit revisioned cloud sharing, and reviewed unshipped-status/purchase-upload Excel output |
+| `orderops/list.html` | Web entry | Pilot | OrderOps four-way structure-first Excel intake, aggregate-stock allocation, purchase-plan editing and recovery, explicit revisioned cloud sharing, and reviewed unshipped-status/purchase-upload Excel output |
 | `coreEngine.js` | Shared library | Production | Storage, pricing, history, export, cloud synchronization, and master-data utilities |
 | `code.gs` | Cloud service | Production | Google Apps Script API for master, history, configuration, the finalized DataOps inventory snapshot, and immutable Shipping purchase-plan revisions |
 
@@ -141,6 +141,8 @@ Important contracts include:
 | Active table view | `merchActiveTableViewId_v1` | MerchOps and settings |
 | Shipping local recovery | IndexedDB `ONEAPPShippingManagementDB` / `workspaces`; `oneapp.shipping.recovery.pointer.v1` and `oneapp.shipping.recovery.meta.v1` | OrderOps only; IndexedDB stores the analysis workspace and inputs, while localStorage stores only the recovery pointer and metadata |
 | Shipping table widths | `oneapp.shipping.table-widths.v1` | OrderOps local UI preference only; tab-specific widths are excluded from workspace, IndexedDB recovery, cloud plans, and purchase uploads |
+| OrderOps Excel aliases | `oneapp.orderops.excel-mappings.v1` | OrderOps local parser preference only; administrator filename, sheet, and column aliases are excluded from workspace recovery and cloud plans |
+| OrderOps purchase-name history | `oneapp.orderops.purchase-history.v1` | OrderOps local input convenience only; up to 30 recent nonblank purchase-place names are excluded from workspace recovery and cloud plans |
 
 A storage-key rename is a schema migration.
 
@@ -332,6 +334,15 @@ Equivalent safety controls must be preserved when another application writes the
 19. `Item_manager.html` remains available during the transition.
 20. `Item_manager.html` is not removed by this phase.
 
+### 6.6 OrderOps smart file intake
+
+1. The input workbench exposes order, warehouse inventory, purchase, and sales file slots.
+2. Selecting multiple files through any slot classifies every file by worksheet structure and column names first.
+3. Configured sheet-name aliases are used only when structural candidates tie; filename aliases are the final tie-breaker.
+4. Administrator column aliases are passed to the real order and inventory parsers without renaming source headers.
+5. Order and warehouse inventory remain the required inputs for the current allocation analysis. Purchase and sales files are classified and retained for future phases without changing the current calculation or workbook contract.
+6. Mapping aliases and purchase-place input history remain local UI preferences and are never included in local workspace recovery, explicit cloud saves, or integrated Excel output.
+
 ---
 
 ## 7. Change-impact rules
@@ -350,6 +361,7 @@ Equivalent safety controls must be preserved when another application writes the
 | Master add/update or master writer | Master, coreEngine, MerchOps refresh, DataOps synchronization, SmartParser, history, backup and rollback |
 | DataOps out-of-list inventory master add or post-close sale resume | DataOps F6 location/search/duplicate/zero rules, masterAddUpdate single-product API, coreEngine revision and rollback, Master/SmartParser canonical `판매여부`, stop-management linked state, history, finalized snapshot boundary, and retry idempotency |
 | DataOps file classification or parsing | DataOps required/optional file policy, parsing errors, representative operational files, generated workbook, and regression tests |
+| OrderOps file classification or parsing | OrderOps four-way structural classification, administrator aliases, required order/inventory validation, current allocation calculations, local recovery exclusion, and integrated workbook regression tests |
 | Planned app promotion to production | Manifest update, architecture review, navigation review, and PR validation |
 | Function-key behavior | Review only the owning application's workflow; do not assume the same function key has the same meaning in another application |
 | Shared approval or audit rule | Every writer and reader of the affected data and history contract |
@@ -829,6 +841,8 @@ Roadmap work is delivered as separate pull requests and verified after each merg
 - F3 focuses the integrated search field and keeps the caret ready for immediate input.
 - F7 prints only the current visible tab state, including active filters, rows, column visibility and column order, on A4 portrait.
 - F8 downloads the complete integrated workbook regardless of current screen filters, hidden columns or column order.
+- The four input slots accept bundled files and classify by columns and sheet structure before sheet-name and filename aliases.
+- Purchase and sales inputs remain future-phase sources and do not alter the current order/inventory calculation unless a separate requirement promotes them into analysis.
 
 Function keys are application-owned behavior.
 

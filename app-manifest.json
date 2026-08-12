@@ -201,7 +201,7 @@
       "path": "orderops/list.html",
       "kind": "web-entry",
       "status": "pilot",
-      "purpose": "Analyze order and aggregate warehouse inventory files, manage purchase plans with recoverable local state and explicit revisioned cloud saves, and generate reviewed unshipped-status and purchase-upload workbooks.",
+      "purpose": "Classify order, warehouse inventory, purchase, and sales workbooks by structure; analyze the required order and warehouse inventory inputs; manage purchase plans with recoverable local state and explicit revisioned cloud saves; and generate reviewed unshipped-status and purchase-upload workbooks.",
       "owner": "shipping-operations",
       "productionWrites": true,
       "services": [

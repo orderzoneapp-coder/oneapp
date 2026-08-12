@@ -7,7 +7,7 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  const ENGINE_VERSION = "3.7.0";
+  const ENGINE_VERSION = "3.8.0";
   const WORKSPACE_SCHEMA_VERSION = "shipping-workspace/v2";
   const INVENTORY_OVERRIDE_SCHEMA_VERSION = "shipping-inventory-overrides/v1";
   const HEADER_SCAN_LIMIT = 30;
@@ -54,6 +54,18 @@
     "그룹": Object.freeze(["그룹"]),
   });
 
+  const INVENTORY_CANONICAL_ALIASES = Object.freeze({
+    "사용": Object.freeze(["사용"]),
+    "단위": Object.freeze(["단위"]),
+    "품목코드": Object.freeze(["품목코드", "상품코드", "제품코드", "코드"]),
+    "품목명": Object.freeze(["품목명", "상품명", "제품명"]),
+    "규격": Object.freeze(["규격", "사양"]),
+    "수량": Object.freeze(["수량", "재고수량", "합계수량"]),
+    "기본": Object.freeze(["기본"]),
+    "전송": Object.freeze(["전송"]),
+    "창고": Object.freeze(["창고"]),
+  });
+
   const INVENTORY_OPTIONAL_COLUMNS = Object.freeze([
     "사용",
     "단위",
@@ -87,13 +99,21 @@
       .toLocaleLowerCase("ko-KR");
   }
 
-  const ORDER_ALIAS_LOOKUP = (() => {
+  function createAliasLookup(defaultAliases, customAliases = {}) {
     const lookup = new Map();
-    Object.entries(ORDER_CANONICAL_ALIASES).forEach(([canonical, aliases]) => {
-      aliases.forEach((alias) => lookup.set(normalizeOrderHeader(alias), canonical));
+    Object.entries(defaultAliases).forEach(([canonical, aliases]) => {
+      [canonical, ...aliases].forEach((alias) => lookup.set(normalizeOrderHeader(alias), canonical));
     });
+    Object.entries(customAliases && typeof customAliases === "object" ? customAliases : {})
+      .forEach(([canonical, aliases]) => {
+        if (!Object.prototype.hasOwnProperty.call(defaultAliases, canonical)) return;
+        (Array.isArray(aliases) ? aliases : [aliases]).forEach((alias) => {
+          const normalized = normalizeOrderHeader(alias);
+          if (normalized) lookup.set(normalized, canonical);
+        });
+      });
     return lookup;
-  })();
+  }
 
   function normalizeProductCode(value) {
     if (isBlank(value)) return "";
@@ -164,10 +184,12 @@
     };
   }
 
-  function describeInventoryColumns(headerRow) {
+  function describeInventoryColumns(headerRow, headerAliases = {}) {
     const headers = Array.isArray(headerRow) ? headerRow : [];
     const normalized = headers.map(normalizeHeader);
-    const quantityIndex = normalized.indexOf(normalizeHeader("수량"));
+    const aliasLookup = createAliasLookup(INVENTORY_CANONICAL_ALIASES, headerAliases);
+    const canonicals = headers.map((header) => aliasLookup.get(normalizeOrderHeader(header)) || "");
+    const quantityIndex = canonicals.indexOf("수량");
     let quantityBoundary = headers.length;
     if (quantityIndex >= 0) {
       for (let index = quantityIndex + 1; index < normalized.length; index += 1) {
@@ -185,13 +207,14 @@
     const result = headers.map((value, sourceIndex) => {
       const header = cleanText(value);
       const normalizedLabel = normalizeHeader(header);
+      const canonical = canonicals[sourceIndex];
       if (!normalizedLabel) return null;
       let role = "value";
-      if (normalizedLabel === normalizeHeader("품목코드")) role = "productCode";
-      else if (normalizedLabel === normalizeHeader("수량")) role = "calculatedQuantity";
-      else if (/^(?:창고|창고단가)$/.test(normalizedLabel) || /창고.*(?:단가|가격|금액|원가)/.test(normalizedLabel)) {
+      if (canonical === "품목코드") role = "productCode";
+      else if (canonical === "수량") role = "calculatedQuantity";
+      else if (canonical === "창고" || /^(?:창고|창고단가)$/.test(normalizedLabel) || /창고.*(?:단가|가격|금액|원가)/.test(normalizedLabel)) {
         role = "warehousePrice";
-      } else if (/^(?:기본|전송)$/.test(normalizedLabel)) {
+      } else if (["기본", "전송"].includes(canonical) || /^(?:기본|전송)$/.test(normalizedLabel)) {
         role = "editableText";
       } else if (
         !/단가|가격|금액|원가|메모|비고|적요/.test(normalizedLabel) &&
@@ -265,7 +288,8 @@
     return result;
   }
 
-  function resolveOrderHeaders(headerRow) {
+  function resolveOrderHeaders(headerRow, headerAliases = {}) {
+    const aliasLookup = createAliasLookup(ORDER_CANONICAL_ALIASES, headerAliases);
     const matches = Object.create(null);
     const mappedColumns = [];
     const unmatchedHeaders = [];
@@ -273,7 +297,7 @@
       const header = cleanText(value);
       if (!header) return;
       const normalized = normalizeOrderHeader(header);
-      const canonical = ORDER_ALIAS_LOOKUP.get(normalized);
+      const canonical = aliasLookup.get(normalized);
       const metadata = {
         header,
         normalized,
@@ -306,12 +330,30 @@
     };
   }
 
-  function findBestOrderHeaderRow(matrix) {
+  function resolveInventoryHeaders(headerRow, headerAliases = {}) {
+    const lookup = createAliasLookup(INVENTORY_CANONICAL_ALIASES, headerAliases);
+    const columnMap = Object.create(null);
+    const matches = Object.create(null);
+    (Array.isArray(headerRow) ? headerRow : []).forEach((value, columnIndex) => {
+      const sourceHeader = normalizeHeader(value);
+      if (sourceHeader && columnMap[sourceHeader] === undefined) columnMap[sourceHeader] = columnIndex;
+      const canonical = lookup.get(normalizeOrderHeader(value));
+      if (!canonical) return;
+      if (!matches[canonical]) matches[canonical] = [];
+      matches[canonical].push({ header: cleanText(value), canonical, columnIndex, columnNumber: columnIndex + 1 });
+    });
+    Object.entries(matches).forEach(([canonical, columns]) => {
+      if (columns.length === 1) columnMap[normalizeHeader(canonical)] = columns[0].columnIndex;
+    });
+    return { columnMap, matches };
+  }
+
+  function findBestOrderHeaderRow(matrix, headerAliases = {}) {
     let best = { rowIndex: -1, requiredCount: -1, mappedCount: -1 };
     let completeWithConflict = -1;
     const limit = Math.min(Array.isArray(matrix) ? matrix.length : 0, HEADER_SCAN_LIMIT);
     for (let rowIndex = 0; rowIndex < limit; rowIndex += 1) {
-      const resolution = resolveOrderHeaders(matrix[rowIndex]);
+      const resolution = resolveOrderHeaders(matrix[rowIndex], headerAliases);
       const requiredCount = ORDER_REQUIRED_COLUMNS.filter(
         (canonical) => Array.isArray(resolution.matches[canonical]) && resolution.matches[canonical].length > 0,
       ).length;
@@ -328,6 +370,20 @@
       }
     }
     return completeWithConflict >= 0 ? completeWithConflict : best.rowIndex;
+  }
+
+  function findBestInventoryHeaderRow(matrix, headerAliases = {}) {
+    let best = { rowIndex: -1, count: -1 };
+    const limit = Math.min(Array.isArray(matrix) ? matrix.length : 0, HEADER_SCAN_LIMIT);
+    for (let rowIndex = 0; rowIndex < limit; rowIndex += 1) {
+      const resolution = resolveInventoryHeaders(matrix[rowIndex], headerAliases);
+      const count = INVENTORY_REQUIRED_COLUMNS.filter(
+        (canonical) => Array.isArray(resolution.matches[canonical]) && resolution.matches[canonical].length === 1,
+      ).length;
+      if (count === INVENTORY_REQUIRED_COLUMNS.length) return rowIndex;
+      if (count > best.count) best = { rowIndex, count };
+    }
+    return best.rowIndex;
   }
 
   function findHeaderRow(matrix, requiredColumns) {
@@ -395,9 +451,10 @@
   function parseOrderWorkbook(input = {}) {
     const displayMatrix = cloneMatrix(input.displayMatrix || input.rawMatrix || []);
     const rawMatrix = cloneMatrix(input.rawMatrix || input.displayMatrix || []);
-    const headerRowIndex = findBestOrderHeaderRow(displayMatrix);
+    const headerAliases = input.headerAliases || {};
+    const headerRowIndex = findBestOrderHeaderRow(displayMatrix, headerAliases);
     const headerRow = headerRowIndex >= 0 ? displayMatrix[headerRowIndex] || [] : [];
-    const headerResolution = resolveOrderHeaders(headerRow);
+    const headerResolution = resolveOrderHeaders(headerRow, headerAliases);
     const columnMap = headerResolution.columnMap;
     const missingColumns = ORDER_REQUIRED_COLUMNS.filter(
       (column) => !Array.isArray(headerResolution.matches[column]) || headerResolution.matches[column].length === 0,
@@ -597,10 +654,12 @@
   function parseInventoryWorkbook(input = {}) {
     const displayMatrix = cloneMatrix(input.displayMatrix || input.rawMatrix || []);
     const rawMatrix = cloneMatrix(input.rawMatrix || input.displayMatrix || []);
-    const headerRowIndex = findBestHeaderRow(displayMatrix, INVENTORY_REQUIRED_COLUMNS);
+    const headerAliases = input.headerAliases || {};
+    const headerRowIndex = findBestInventoryHeaderRow(displayMatrix, headerAliases);
     const headerRow = headerRowIndex >= 0 ? displayMatrix[headerRowIndex] || [] : [];
-    const columnMap = createColumnMap(headerRow);
-    const columns = describeInventoryColumns(headerRow);
+    const headerResolution = resolveInventoryHeaders(headerRow, headerAliases);
+    const columnMap = headerResolution.columnMap;
+    const columns = describeInventoryColumns(headerRow, headerAliases);
     const warehouseColumns = columns.filter((column) => column.role === "warehouseQuantity");
     const missingColumns = INVENTORY_REQUIRED_COLUMNS.filter(
       (column) => columnMap[normalizeHeader(column)] === undefined,
