@@ -96,6 +96,17 @@ assert.match(toolbar, /양식: \$\{view\.targetLabel\} · \$\{view\.name\}/,
 const mainFilterAt = toolbar.indexOf('title: "필터·조회: 조건을 선택한 뒤 우측 액션을 실행합니다."');
 const searchAt = toolbar.indexOf("React.createElement(SearchBar", mainFilterAt);
 const registrationToolsAt = toolbar.indexOf('data-merch-registration-tools": "subordinate"');
+const excludeActionAt = toolbar.indexOf('data-merch-exclude-action": "operations"', operationGroupAt);
+const excludedItemsAt = toolbar.indexOf('data-merch-excluded-items": "left"', mainFilterAt);
+const categoryGroupAt = toolbar.indexOf('title: "카테고리: 클릭 단일선택', mainFilterAt);
+assert.ok(excludeActionAt > operationGroupAt && excludeActionAt < mainFilterAt,
+  "the exclude action must render in the top-right operations group");
+assert.ok(excludedItemsAt > mainFilterAt && excludedItemsAt < categoryGroupAt,
+  "the dynamic excluded-items button must render at the far left before category filters");
+assert.match(toolbar.slice(mainFilterAt, categoryGroupAt), /Object\.keys\(sessionExcludedItems \|\| \{\}\)\.length > 0/,
+  "the excluded-items button must remain hidden until excluded items exist");
+assert.doesNotMatch(toolbar.slice(mainFilterAt, searchAt), /handleExcludeSelectedFromUpdate/,
+  "the exclude action must not remain in the filter row");
 assert.ok(mainFilterAt >= 0 && searchAt > mainFilterAt && registrationToolsAt > searchAt,
   "registration actions must render in a subordinate row after the main filter row");
 assert.doesNotMatch(toolbar.slice(mainFilterAt, searchAt), /신규등록용 양식|선택 마스터 적용|이전 양식/,
@@ -106,7 +117,7 @@ assert.match(toolbar,
 assert.match(toolbar.trimEnd(), /"적용"\)\)\)\)\)\)\)\);\s*\}\);$/,
   "MainToolbar must return its root element instead of the final detail-filter condition");
 
-const versions = [...html.matchAll(/v2\.1\.185_ToolbarRenderRestore/g)].length;
-assert.ok(versions >= 3, "all MerchOps version labels must use v2.1.185");
+const versions = [...html.matchAll(/v2\.1\.186_ExcludeActionLayout/g)].length;
+assert.ok(versions >= 3, "all MerchOps version labels must use v2.1.186");
 
 console.log("MerchOps common Excel routing, toolbar grouping, template aggregation, and registration sub-toolbar contracts passed.");

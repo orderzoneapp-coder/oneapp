@@ -88,7 +88,7 @@ assert.match(compositeSource, /themeFilters\.some\(v => matchPromotionThemeFilte
 assert.match(compositeSource, /if \(has\('margin'\)\)[\s\S]*if \(themeFilters\.length > 0/,
   "core filters and theme filters must remain combined as sequential AND conditions");
 
-const versionMatches = [...html.matchAll(/v2\.1\.185_ToolbarRenderRestore/g)];
-assert.ok(versionMatches.length >= 3, "all MerchOps version labels must use v2.1.185");
+const versionMatches = [...html.matchAll(/v2\.1\.186_ExcludeActionLayout/g)];
+assert.ok(versionMatches.length >= 3, "all MerchOps version labels must use v2.1.186");
 
 console.log("MerchOps master-theme filter and fixed-layout contracts passed.");
