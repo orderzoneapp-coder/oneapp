@@ -236,7 +236,7 @@ assert.match(
   "검증결과 안내는 전달사항의 비차단 참고 정책을 명시해야 합니다.",
 );
 assert.equal((html.match(/id="downloadButton"/g) || []).length, 1, "Excel 출력 버튼은 하나여야 합니다.");
-assert.match(html, /id="downloadButton"[^>]*disabled[^>]*>[\s\S]*?Excel 출력/);
+assert.match(html, /id="downloadButton"[^>]*disabled[^>]*>[\s\S]*?엑셀출력 F8/);
 assert.doesNotMatch(html, /구매업로드 Excel|미출고현황 Excel|id="purchaseUploadButton"/);
 assert.match(html, /@page\s*\{\s*size:\s*A4 portrait;\s*margin:\s*8mm;/);
 assert.match(html, /\.print-area thead\s*\{\s*display:\s*table-header-group;/);

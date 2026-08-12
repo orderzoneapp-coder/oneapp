@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const require = createRequire(import.meta.url);
 const orderOpsHtml = fs.readFileSync(path.join(ROOT, "orderops_list.html"), "utf8");
-assert.match(orderOpsHtml, /brand-badge">v1\.13</, "OrderOps visible version must be v1.13");
+assert.match(orderOpsHtml, /brand-badge">v1\.14</, "OrderOps visible version must be v1.14");
 const compactSystemIoStart = orderOpsHtml.indexOf("/* orderops v1.11: compact System.IO border strip */");
 const compactSystemIoEnd = orderOpsHtml.indexOf("</style>", compactSystemIoStart);
 assert.ok(compactSystemIoStart >= 0 && compactSystemIoEnd > compactSystemIoStart,
@@ -51,15 +51,34 @@ for (const requiredWarehouseColorContract of [
   assert.ok(orderOpsHtml.includes(requiredWarehouseColorContract),
     `public OrderOps warehouse color contract is missing: ${requiredWarehouseColorContract}`);
 }
+for (const requiredInteractionContract of [
+  'id="filterToggleButton"',
+  'oneapp.orderops.manager-colors.v1',
+  'oneapp.orderops.column-order.v1',
+  'data-manager-filter',
+  'data-manager-color',
+  'data-column-drag-key',
+  '["F3", "F7", "F8"]',
+  'filteredSortedPreviewPairs(state.activePreview, preview)',
+  'getAllocationInventoryView(workspace)',
+]) {
+  assert.ok(orderOpsHtml.includes(requiredInteractionContract),
+    `public OrderOps v1.14 interaction contract is missing: ${requiredInteractionContract}`);
+}
+assert.match(orderOpsHtml, /@page\s*\{\s*size:\s*A4 portrait;/,
+  "public OrderOps screen print must use A4 portrait");
+assert.doesNotMatch(orderOpsHtml, /sourceRow\.managerColors/,
+  "public OrderOps must not retain automatic manager hash colors");
 assert.match(orderOpsHtml, /purchase-input\[data-negative-balance="true"\][^{]*\{[^}]*background:\s*#fff200;/,
   "negative inventory totals must color the purchase editor inside its border");
 assert.match(orderOpsHtml, /workbookTools\.downloadWorkbook\(state\.workspace, window\.XLSX, fileName\)/,
   "the single Excel output must use the integrated workbook");
 assert.doesNotMatch(orderOpsHtml, /id="purchaseUploadButton"/,
   "a separate purchase-upload button must not remain");
-assert.match(orderOpsHtml, />\s*엑셀출력\s*</, "the integrated Excel output button must remain visible");
+assert.match(orderOpsHtml, />엑셀출력 F8</, "the integrated Excel output button must remain visible in the header");
 const engine = require(path.join(ROOT, "orderFulfillmentEngine.js"));
 const workbookTools = require(path.join(ROOT, "orderFulfillmentWorkbook.js"));
+assert.equal("managerColors" in engine, false, "automatic manager hash color API must be removed");
 const PURCHASE_TEMPLATE_PATH = "C:\\Users\\USER\\Desktop\\구매업로드.xlsx";
 const purchaseTemplateBaseline = fs.existsSync(PURCHASE_TEMPLATE_PATH)
   ? {
@@ -390,7 +409,7 @@ const edgeWorkspace = engine.analyze(edgeOrders, edgeInventory, {
   createdAt: "2026-07-30T00:00:00.000Z",
   sourceFingerprint: "a".repeat(64),
 });
-assert.equal(engine.ENGINE_VERSION, "3.6.0");
+assert.equal(engine.ENGINE_VERSION, "3.7.0");
 assert.equal(workbookTools.WORKBOOK_VERSION, "4.1.0");
 assert.equal(edgeWorkspace.schemaVersion, "shipping-workspace/v2");
 
@@ -1269,7 +1288,7 @@ assert.ok(
 );
 
 const html = fs.readFileSync(path.join(ROOT, "orderops", "list.html"), "utf8");
-assert.match(html, /brand-badge">v1\.13</, "canonical OrderOps visible version must be v1.13");
+assert.match(html, /brand-badge">v1\.14</, "canonical OrderOps visible version must be v1.14");
 const styleBlocks = [...html.matchAll(/<style(?:\s[^>]*)?>([\s\S]*?)<\/style>/gi)].map((match) => match[1]);
 assert.ok(styleBlocks.length > 0, "orderops/list.html must contain a style block");
 
@@ -1335,6 +1354,20 @@ for (const requiredWarehouseColorContract of [
   assert.ok(html.includes(requiredWarehouseColorContract),
     `canonical OrderOps warehouse color contract is missing: ${requiredWarehouseColorContract}`);
 }
+for (const requiredInteractionContract of [
+  'id="filterToggleButton"',
+  'oneapp.orderops.manager-colors.v1',
+  'oneapp.orderops.column-order.v1',
+  'data-manager-filter',
+  'data-manager-color',
+  'data-column-drag-key',
+  '["F3", "F7", "F8"]',
+  'filteredSortedPreviewPairs(state.activePreview, preview)',
+  'getAllocationInventoryView(workspace)',
+]) {
+  assert.ok(html.includes(requiredInteractionContract),
+    `canonical OrderOps v1.14 interaction contract is missing: ${requiredInteractionContract}`);
+}
 assert.match(combinedCss, /(?:^|})\s*th\s*\{[^{}]*\bposition\s*:\s*sticky\s*;/m,
   "the current OrderOps table must keep sticky headers");
 assert.match(combinedCss, /(?:^|})\s*td\s*\{[^{}]*\boverflow\s*:\s*hidden\s*;/m,
@@ -1344,9 +1377,9 @@ for (const requiredText of [
   "OrderOps",
   "주문현황",
   "창고재고",
-  "Excel 출력",
+  "엑셀출력 F8",
   "통합 검색",
-  "화면 인쇄",
+  "화면인쇄 F7",
   "현재 파일로 교체",
   "purchaseUploadNotice",
   "ONEAPPShippingManagementDB",

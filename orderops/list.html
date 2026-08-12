@@ -593,7 +593,7 @@
     tr.notice-target td { outline: 2px solid #14b8a6; outline-offset: -2px; }
 
     /* =========================================================
-       Results / table tools - current v1.13 features retained
+       Results / table tools - current v1.14 features retained
        ========================================================= */
     .results-panel {
       margin-top: 8px;
@@ -604,16 +604,16 @@
       box-shadow: var(--shadow-sm);
     }
     .view-controls {
-      display: grid;
-      grid-template-columns: minmax(280px, 1fr) auto auto;
-      align-items: end;
-      gap: 8px;
-      padding: 8px 9px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 5px 9px;
       border-bottom: 1px solid var(--slate-200);
       background: var(--slate-50);
+      overflow-x: auto;
     }
-    .search-field { display: grid; gap: 3px; min-width: 0; }
-    .search-field span,
+    .search-field { display: block; flex: 1 1 360px; min-width: 260px; }
+    .search-field span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
     .spec-filter legend { color: var(--slate-500); font-size: 10px; font-weight: 900; }
     .search-field input {
       width: 100%;
@@ -627,6 +627,11 @@
       outline: none;
     }
     .search-field input:focus { border-color: var(--teal-600); box-shadow: 0 0 0 2px rgba(13,148,136,.12); }
+    .view-controls .preview-tabs,
+    .view-controls .spec-filter,
+    .view-controls .preview-count { flex: 0 0 auto; }
+    .view-controls .preview-tabs { padding: 0; }
+    .view-controls .preview-count { white-space: nowrap; }
     .spec-filter {
       display: flex;
       align-items: center;
@@ -652,7 +657,10 @@
       white-space: nowrap;
     }
     .spec-filter:disabled { opacity: .42; }
-    /* orderops v1.13: warehouse filters and color inside bordered numeric cells */
+    /* orderops v1.14: compact toolbar, context filters, column drag, and portrait print */
+    .header-output-button { border-color: #99f6e4; color: #0f766e; background: #f0fdfa; }
+    .header-output-button:hover:not(:disabled) { background: #ccfbf1; }
+    .results-panel .table-wrap { max-height: calc(100vh - 200px); }
     .warehouse-color-bar {
       display: flex;
       align-items: center;
@@ -680,6 +688,7 @@
     .warehouse-color-reset { min-height: 28px; padding: 0 7px; border: 1px solid var(--slate-300); border-radius: 5px; color: var(--slate-600); background: #fff; font-size: 9px; font-weight: 900; white-space: nowrap; }
     .table-view-tools {
       display: flex;
+      flex: 0 0 auto;
       align-items: center;
       justify-content: flex-end;
       gap: 4px;
@@ -698,6 +707,7 @@
     }
     .table-tool-button:hover { border-color: var(--teal-700); color: var(--teal-700); background: #f0fdfa; }
     .table-tool-button.dirty { border-color: #4f46e5; color: #fff; background: #4f46e5; }
+    .table-tool-button.active { border-color: var(--teal-700); color: #fff; background: var(--teal-700); }
     .column-visibility { position: relative; }
     .column-visibility-menu {
       position: absolute;
@@ -878,6 +888,11 @@
     table.preview-inventory [data-negative-value="true"] { color: #b91c1c; font-weight: 900; }
 
     th.column-resizable { padding-right: 16px; }
+    th.column-draggable { cursor: grab; }
+    th.column-draggable:active { cursor: grabbing; }
+    th.column-dragging { opacity: .45; }
+    th.column-drop-before { box-shadow: inset 3px 0 0 #5eead4; }
+    th.column-drop-after { box-shadow: inset -3px 0 0 #5eead4; }
     .column-resize-handle {
       position: absolute;
       top: 0;
@@ -1012,8 +1027,7 @@
       .source-selector { grid-area: sources; }
       .operator-note { grid-area: note; }
       .action-bar { grid-area: run; }
-      .view-controls { grid-template-columns: minmax(220px, 1fr) auto; }
-      .table-view-tools { grid-column: 1 / -1; justify-content: flex-start; flex-wrap: wrap; }
+      .view-controls { align-items: center; }
     }
     @media (max-width: 700px) {
       .global-header { height: auto; min-height: 50px; padding: 7px 10px; gap: 8px; }
@@ -1039,9 +1053,9 @@
       .source-separator { display: none; }
       .operator-note { min-height: 42px; }
       .primary-button { width: 100%; min-width: 0; min-height: 36px; }
-      .view-controls { grid-template-columns: 1fr; }
+      .view-controls { align-items: center; }
       .spec-filter { flex-wrap: wrap; }
-      .table-view-tools { grid-column: auto; }
+      .table-view-tools { flex-wrap: nowrap; }
       .warehouse-color-bar { align-items: flex-start; flex-wrap: wrap; }
       .warehouse-color-options { order: 3; width: 100%; }
       .preview-toolbar { align-items: stretch; flex-direction: column; }
@@ -1064,7 +1078,7 @@
       <div class="brand-mark">ONEAPP</div>
       <div class="brand-divider" aria-hidden="true"></div>
       <div class="brand-stack">
-        <div class="brand-suite">NEXUS <span class="brand-badge">v1.13</span></div>
+        <div class="brand-suite">NEXUS <span class="brand-badge">v1.14</span></div>
         <div class="brand-product">OrderOps</div>
       </div>
     </div>
@@ -1072,6 +1086,14 @@
       <a class="header-link order-input-link" href="input.html" aria-label="주문서 입력 화면 열기">
         <span aria-hidden="true">✎</span><span>주문서 입력</span>
       </a>
+      <button class="header-link header-output-button" id="printButton" type="button"
+        aria-label="현재 보이는 화면 인쇄 F7" disabled>
+        <span aria-hidden="true">▣</span><span>화면인쇄 F7</span>
+      </button>
+      <button class="header-link header-output-button" id="downloadButton" type="button"
+        aria-label="전체 통합 Excel 출력 F8" disabled>
+        <span aria-hidden="true">↓</span><span>엑셀출력 F8</span>
+      </button>
       <button class="header-link" id="headerCloudLoadButton" type="button" aria-label="클라우드 확정본 불러오기">
         <span aria-hidden="true">⇩</span><span>불러오기</span>
       </button>
@@ -1172,10 +1194,11 @@
 
       <div class="view-controls" aria-label="현재 탭 검색, 필터, 열 설정">
         <label class="search-field">
-          <span>통합 검색</span>
+          <span>통합 검색 F3</span>
           <input id="tableSearchInput" type="search" autocomplete="off"
-            placeholder="상품코드·상품명·규격·적요·담당·거래처 검색">
+            aria-label="통합 검색 F3" placeholder="통합검색 F3 · 상품코드·상품명·규격·적요·담당·거래처">
         </label>
+        <div class="preview-tabs" id="previewTabs" role="tablist" aria-label="결과 미리보기"></div>
         <fieldset class="spec-filter" id="specFilterGroup">
           <legend>규격</legend>
           <label><input type="checkbox" value="BOX">BOX</label>
@@ -1191,8 +1214,10 @@
           </div>
           <button class="table-tool-button" id="columnWidthSaveButton" type="button">열폭 저장</button>
           <button class="table-tool-button" id="columnWidthResetButton" type="button">열폭 초기화</button>
-          <button class="table-tool-button" id="printButton" type="button">화면 인쇄</button>
+          <button class="table-tool-button hidden" id="filterToggleButton" type="button"
+            aria-expanded="false" aria-controls="warehouseColorBar">창고필터</button>
         </div>
+        <div class="preview-count" id="previewCount"></div>
       </div>
 
       <div class="warehouse-color-bar hidden" id="warehouseColorBar" aria-label="창고명 필터와 셀 내부 배색">
@@ -1201,20 +1226,11 @@
         <button class="warehouse-color-reset" id="warehouseColorResetButton" type="button">필터·배색 초기화</button>
       </div>
 
-      <div class="preview-toolbar">
-        <div class="preview-tabs" id="previewTabs" role="tablist" aria-label="결과 미리보기"></div>
-        <div class="preview-actions">
-          <div class="preview-count" id="previewCount"></div>
-          <button class="download-button secondary-download" id="downloadButton" type="button" disabled>
-            <span aria-hidden="true">↓</span> Excel 출력
-          </button>
-        </div>
-      </div>
       <div class="table-wrap" id="previewTable" role="tabpanel"></div>
     </section>
 
     <footer class="page-footer">
-      <span>orderops v1.13 · workspace shipping-workspace/v2 · cloud plan v1</span>
+      <span>orderops v1.14 · workspace shipping-workspace/v2 · cloud plan v1</span>
       <a href="../SHIPPING_MANAGEMENT_GUIDANCE.md">개발·운영 기준 보기</a>
     </footer>
   </main>
@@ -1293,8 +1309,13 @@
       const TABLE_WIDTHS_SCHEMA = "shipping-table-widths/v1";
       const HIDDEN_COLUMNS_KEY = "oneapp.orderops.hidden-columns.v1";
       const HIDDEN_COLUMNS_SCHEMA = "orderops-hidden-columns/v1";
+      const COLUMN_ORDER_KEY = "oneapp.orderops.column-order.v1";
+      const COLUMN_ORDER_SCHEMA = "orderops-column-order/v1";
+      const COLUMN_ORDER_TABS = new Set(["inventory", "allocations"]);
       const WAREHOUSE_COLORS_KEY = "oneapp.orderops.warehouse-colors.v1";
       const WAREHOUSE_COLORS_SCHEMA = "orderops-warehouse-colors/v1";
+      const MANAGER_COLORS_KEY = "oneapp.orderops.manager-colors.v1";
+      const MANAGER_COLORS_SCHEMA = "orderops-manager-colors/v1";
       const WAREHOUSE_COLOR_PALETTE = Object.freeze([
         "#dbeafe", "#dcfce7", "#fef3c7", "#fce7f3", "#ede9fe", "#ccfbf1", "#ffedd5",
       ]);
@@ -1324,8 +1345,13 @@
         columnWidthDirtyTabs: new Set(),
         activeColumnResize: null,
         hiddenColumnSettings: { schemaVersion: HIDDEN_COLUMNS_SCHEMA, tabs: Object.create(null) },
+        columnOrderSettings: { schemaVersion: COLUMN_ORDER_SCHEMA, tabs: Object.create(null) },
         warehouseColorSettings: { schemaVersion: WAREHOUSE_COLORS_SCHEMA, colors: Object.create(null) },
         warehouseFilters: new Set(),
+        managerColorSettings: { schemaVersion: MANAGER_COLORS_SCHEMA, colors: Object.create(null) },
+        managerFilters: new Set(),
+        filterBarOpen: false,
+        activeColumnDrag: null,
       };
 
       const elements = {
@@ -1351,6 +1377,7 @@
         warehouseColorBar: document.getElementById("warehouseColorBar"),
         warehouseColorOptions: document.getElementById("warehouseColorOptions"),
         warehouseColorResetButton: document.getElementById("warehouseColorResetButton"),
+        filterToggleButton: document.getElementById("filterToggleButton"),
         columnVisibilityButton: document.getElementById("columnVisibilityButton"),
         columnVisibilityMenu: document.getElementById("columnVisibilityMenu"),
         columnWidthSaveButton: document.getElementById("columnWidthSaveButton"),
@@ -1863,6 +1890,8 @@
         state.searchQuery = "";
         state.specificationFilters.clear();
         state.warehouseFilters.clear();
+        state.managerFilters.clear();
+        state.filterBarOpen = false;
         elements.tableSearchInput.value = "";
         elements.specFilterGroup.querySelectorAll("input[type='checkbox']").forEach((input) => {
           input.checked = false;
@@ -2145,6 +2174,8 @@
       function resetResults() {
         state.workspace = null;
         elements.resultsPanel.classList.add("hidden");
+        elements.printButton.disabled = true;
+        elements.downloadButton.disabled = true;
         elements.cloudSaveButton.disabled = true;
         elements.headerCloudSaveButton.disabled = true;
       }
@@ -2295,6 +2326,37 @@
         } catch (error) {}
       }
 
+      function isSafeManagerName(value) {
+        const text = String(value || "").trim();
+        return Boolean(text && text.length <= 120 && !["__proto__", "prototype", "constructor"].includes(text));
+      }
+
+      function loadManagerColorSettings() {
+        const fallback = { schemaVersion: MANAGER_COLORS_SCHEMA, colors: Object.create(null) };
+        try {
+          const parsed = JSON.parse(localStorage.getItem(MANAGER_COLORS_KEY) || "null");
+          if (!isPlainRecord(parsed) || parsed.schemaVersion !== MANAGER_COLORS_SCHEMA || !isPlainRecord(parsed.colors)) {
+            return fallback;
+          }
+          const colors = Object.create(null);
+          Object.entries(parsed.colors).forEach(([manager, color]) => {
+            if (isSafeManagerName(manager) && isSafeHexColor(color)) colors[manager] = color.toLowerCase();
+          });
+          return { schemaVersion: MANAGER_COLORS_SCHEMA, colors };
+        } catch (error) {
+          return fallback;
+        }
+      }
+
+      function saveManagerColorSettings() {
+        try {
+          localStorage.setItem(MANAGER_COLORS_KEY, JSON.stringify({
+            schemaVersion: MANAGER_COLORS_SCHEMA,
+            colors: { ...state.managerColorSettings.colors },
+          }));
+        } catch (error) {}
+      }
+
       function warehouseColumns(preview) {
         return (preview?.columns || []).filter((column) => column.role === "warehouseQuantity");
       }
@@ -2306,13 +2368,51 @@
           || WAREHOUSE_COLOR_PALETTE[index % WAREHOUSE_COLOR_PALETTE.length];
       }
 
+      function managerNames(preview) {
+        return [...new Set((preview?.sourceRows || [])
+          .map((row) => String(row?.manager || "").trim())
+          .filter(isSafeManagerName))]
+          .sort((left, right) => left.localeCompare(right, "ko-KR", { sensitivity: "base" }));
+      }
+
+      function managerColorFor(manager) {
+        const color = state.managerColorSettings.colors[manager];
+        return isSafeHexColor(color) ? color : "#ffffff";
+      }
+
       function renderWarehouseColorBar(preview) {
-        const active = state.activePreview === "inventory";
-        elements.warehouseColorBar.classList.toggle("hidden", !active);
-        if (!active) {
+        const inventoryActive = state.activePreview === "inventory";
+        const allocationsActive = state.activePreview === "allocations";
+        const filterAvailable = inventoryActive || allocationsActive;
+        elements.filterToggleButton.classList.toggle("hidden", !filterAvailable);
+        elements.filterToggleButton.textContent = allocationsActive ? "담당자필터" : "창고필터";
+        elements.filterToggleButton.classList.toggle("active", filterAvailable && state.filterBarOpen);
+        elements.filterToggleButton.setAttribute("aria-expanded", String(filterAvailable && state.filterBarOpen));
+        elements.warehouseColorBar.classList.toggle("hidden", !filterAvailable || !state.filterBarOpen);
+        if (!filterAvailable || !state.filterBarOpen) {
           elements.warehouseColorOptions.innerHTML = "";
           return;
         }
+        if (allocationsActive) {
+          elements.warehouseColorBar.setAttribute("aria-label", "담당자 필터와 행 내부 배색");
+          elements.warehouseColorBar.querySelector(".warehouse-color-title").textContent = "담당자 필터·배색";
+          elements.warehouseColorOptions.innerHTML = managerNames(preview).map((manager) => {
+            const color = managerColorFor(manager);
+            const checked = state.managerFilters.has(manager);
+            return `
+              <div class="warehouse-color-option">
+                <label title="${escapeHtml(manager)} 담당 행만 표시">
+                  <input type="checkbox" data-manager-filter="${escapeHtml(manager)}" ${checked ? "checked" : ""}>
+                  <span>${escapeHtml(manager)}</span>
+                </label>
+                <input type="color" value="${escapeHtml(color)}" data-manager-color="${escapeHtml(manager)}"
+                  aria-label="${escapeHtml(manager)} 담당자 행 배색">
+              </div>`;
+          }).join("");
+          return;
+        }
+        elements.warehouseColorBar.setAttribute("aria-label", "창고명 필터와 셀 내부 배색");
+        elements.warehouseColorBar.querySelector(".warehouse-color-title").textContent = "창고 필터·셀 배색";
         elements.warehouseColorOptions.innerHTML = warehouseColumns(preview).map((column) => {
           const color = warehouseColorFor(preview, column);
           const checked = state.warehouseFilters.has(column.key);
@@ -2507,6 +2607,63 @@
         }));
       }
 
+      function loadColumnOrderSettings() {
+        const fallback = { schemaVersion: COLUMN_ORDER_SCHEMA, tabs: Object.create(null) };
+        try {
+          const parsed = JSON.parse(localStorage.getItem(COLUMN_ORDER_KEY) || "null");
+          if (!isPlainRecord(parsed) || parsed.schemaVersion !== COLUMN_ORDER_SCHEMA || !isPlainRecord(parsed.tabs)) {
+            return fallback;
+          }
+          const tabs = Object.create(null);
+          Object.entries(parsed.tabs).forEach(([tabId, keys]) => {
+            if (!COLUMN_ORDER_TABS.has(tabId) || !Array.isArray(keys)) return;
+            tabs[tabId] = [...new Set(keys.filter(isSafeColumnKey))];
+          });
+          return { schemaVersion: COLUMN_ORDER_SCHEMA, tabs };
+        } catch (error) {
+          return fallback;
+        }
+      }
+
+      function saveColumnOrderSettings() {
+        const tabs = {};
+        COLUMN_ORDER_TABS.forEach((tabId) => {
+          const keys = state.columnOrderSettings.tabs?.[tabId];
+          if (Array.isArray(keys) && keys.length > 0) tabs[tabId] = [...keys];
+        });
+        localStorage.setItem(COLUMN_ORDER_KEY, JSON.stringify({
+          schemaVersion: COLUMN_ORDER_SCHEMA,
+          tabs,
+        }));
+      }
+
+      function orderedColumns(preview, tabId = state.activePreview) {
+        const saved = COLUMN_ORDER_TABS.has(tabId) && Array.isArray(state.columnOrderSettings.tabs?.[tabId])
+          ? state.columnOrderSettings.tabs[tabId]
+          : [];
+        const byKey = new Map(preview.columns.map((column) => [column.key, column]));
+        const ordered = saved.map((key) => byKey.get(key)).filter(Boolean);
+        const included = new Set(ordered.map((column) => column.key));
+        preview.columns.forEach((column) => {
+          if (!included.has(column.key)) ordered.push(column);
+        });
+        return ordered;
+      }
+
+      function setColumnOrder(tabId, orderedKeys) {
+        if (!COLUMN_ORDER_TABS.has(tabId)) return;
+        state.columnOrderSettings.tabs[tabId] = [...new Set(orderedKeys.filter(isSafeColumnKey))];
+        saveColumnOrderSettings();
+      }
+
+      function resetActiveColumnOrder() {
+        if (!COLUMN_ORDER_TABS.has(state.activePreview)) return;
+        delete state.columnOrderSettings.tabs[state.activePreview];
+        saveColumnOrderSettings();
+        renderPreview();
+        showToast("현재 탭의 열 순서를 기본값으로 초기화했습니다.");
+      }
+
       function hiddenColumnSet(tabId) {
         return new Set(
           Array.isArray(state.hiddenColumnSettings.tabs?.[tabId])
@@ -2535,9 +2692,10 @@
       function renderColumnVisibilityMenu(preview) {
         const hidden = hiddenColumnSet(state.activePreview);
         const visibleCount = preview.columns.filter((column) => !hidden.has(column.key)).length;
+        const columns = orderedColumns(preview, state.activePreview);
         elements.columnVisibilityMenu.innerHTML = `
-          <div class="column-menu-title">표시할 열</div>
-          ${preview.columns.map((column) => `
+          <div class="column-menu-title">표시할 열 · 현재 순서</div>
+          ${columns.map((column) => `
             <label class="column-menu-item">
               <input type="checkbox" data-column-visible="${escapeHtml(column.key)}"
                 ${hidden.has(column.key) ? "" : "checked"}>
@@ -2545,6 +2703,9 @@
             </label>
           `).join("")}
           <button class="column-menu-reset" type="button" data-show-all-columns>모든 열 표시</button>
+          ${COLUMN_ORDER_TABS.has(state.activePreview)
+            ? '<button class="column-menu-reset" type="button" data-reset-column-order>열 순서 초기화</button>'
+            : ""}
         `;
         elements.columnVisibilityButton.textContent =
           visibleCount === preview.columns.length ? "열 표시" : `열 표시 ${visibleCount}/${preview.columns.length}`;
@@ -2633,6 +2794,68 @@
         );
         setColumnWidthDraft(state.activePreview, column.key, width);
         updateRenderedColumnWidth(column.key, width);
+      }
+
+      function clearColumnDropMarkers() {
+        elements.previewTable.querySelectorAll(".column-drop-before, .column-drop-after, .column-dragging")
+          .forEach((header) => header.classList.remove("column-drop-before", "column-drop-after", "column-dragging"));
+      }
+
+      function handleColumnDragStart(event) {
+        const header = event.target.closest("th[data-column-drag-key]");
+        if (!header || event.target.closest(".column-resize-handle") || !COLUMN_ORDER_TABS.has(state.activePreview)) {
+          event.preventDefault();
+          return;
+        }
+        state.activeColumnDrag = { tabId: state.activePreview, columnKey: header.dataset.columnDragKey };
+        header.classList.add("column-dragging");
+        event.dataTransfer.effectAllowed = "move";
+        event.dataTransfer.setData("text/plain", header.dataset.columnDragKey);
+      }
+
+      function handleColumnDragOver(event) {
+        const header = event.target.closest("th[data-column-drag-key]");
+        if (!header || !state.activeColumnDrag || state.activeColumnDrag.tabId !== state.activePreview) return;
+        event.preventDefault();
+        elements.previewTable.querySelectorAll(".column-drop-before, .column-drop-after")
+          .forEach((candidate) => candidate.classList.remove("column-drop-before", "column-drop-after"));
+        const after = event.clientX >= header.getBoundingClientRect().left + header.getBoundingClientRect().width / 2;
+        header.classList.add(after ? "column-drop-after" : "column-drop-before");
+        event.dataTransfer.dropEffect = "move";
+      }
+
+      function handleColumnDrop(event) {
+        const target = event.target.closest("th[data-column-drag-key]");
+        const drag = state.activeColumnDrag;
+        if (!target || !drag || drag.tabId !== state.activePreview) return;
+        event.preventDefault();
+        const definitions = getPreviewDefinitions(state.workspace);
+        const preview = definitions[state.activePreview];
+        if (!preview) return;
+        const sourceKey = drag.columnKey;
+        const targetKey = target.dataset.columnDragKey;
+        if (sourceKey === targetKey) {
+          handleColumnDragEnd();
+          return;
+        }
+        const keys = orderedColumns(preview, state.activePreview).map((column) => column.key);
+        const sourceIndex = keys.indexOf(sourceKey);
+        const targetIndex = keys.indexOf(targetKey);
+        if (sourceIndex < 0 || targetIndex < 0) return;
+        keys.splice(sourceIndex, 1);
+        const after = event.clientX >= target.getBoundingClientRect().left + target.getBoundingClientRect().width / 2;
+        let insertIndex = keys.indexOf(targetKey) + (after ? 1 : 0);
+        insertIndex = Math.max(0, Math.min(keys.length, insertIndex));
+        keys.splice(insertIndex, 0, sourceKey);
+        setColumnOrder(state.activePreview, keys);
+        state.activeColumnDrag = null;
+        renderPreview();
+        showToast("열 순서를 변경했습니다.");
+      }
+
+      function handleColumnDragEnd() {
+        clearColumnDropMarkers();
+        state.activeColumnDrag = null;
       }
 
       function buildInventoryPreview(workspace) {
@@ -2727,35 +2950,54 @@
         };
         validation.columns = createPreviewColumns("validation", validation.headers, validation.numeric);
 
+        const allocationInventoryView = typeof engine.getAllocationInventoryView === "function"
+          ? engine.getAllocationInventoryView(workspace)
+          : { columns: [], rows: [] };
+        const allocationWarehouseHeaders = allocationInventoryView.columns.map((column) => column.header);
+        const allocationWarehouseStart = 5;
+        const allocationTailStart = allocationWarehouseStart + allocationWarehouseHeaders.length;
         const allocations = {
           label: "미출고현황",
-          headers: ["상품코드", "구매", "품목명", "규격", "주문수량", "1창고", "3서울", "4전송", "전달사항", "단가", "거래처", "담당자"],
-          numeric: [4, 5, 6, 7, 9],
+          headers: ["상품코드", "구매", "품목명", "규격", "주문수량", ...allocationWarehouseHeaders, "전달사항", "단가", "거래처", "담당자"],
+          numeric: [
+            4,
+            ...allocationWarehouseHeaders.map((_, index) => allocationWarehouseStart + index),
+            allocationTailStart + 1,
+          ],
           inventory: [],
           purchase: 1,
           purchaseEditable: false,
           status: -1,
           sourceRows: workspace.allocations,
-          rows: workspace.allocations.map((row) => [
+          rows: workspace.allocations.map((row, index) => [
             row.productCode,
             row.purchase || "",
             row.productName,
             row.specification || row.spec || "",
             row.quantity,
-            row.inventoryMatched ? blankZero(row.wholeStockRaw) : "",
-            row.inventoryMatched ? blankZero(row.seoulFirstPurchaseRaw) : "",
-            row.inventoryMatched ? blankZero(row.firstTransferRaw) : "",
+            ...(allocationInventoryView.rows[index]?.warehouseValues || []).map(blankZero),
             formatDeliveryNotice(row),
             typeof row.unitPrice === "number" && Number.isFinite(row.unitPrice) ? row.unitPrice : "",
             row.customer || "",
             row.manager || "",
           ]),
           sortByProductCode: true,
-          notice: 8,
+          notice: allocationTailStart,
         };
         allocations.columns = createPreviewColumns("allocations", allocations.headers, allocations.numeric);
-        [94, 68, 160, 52, 62, 56, 56, 56, 88, 72, 128, 92].forEach((width, index) => {
+        [94, 68, 160, 52, 62].forEach((width, index) => {
           if (allocations.columns[index]) allocations.columns[index].defaultWidth = width;
+        });
+        allocationWarehouseHeaders.forEach((_, index) => {
+          const column = allocations.columns[allocationWarehouseStart + index];
+          if (column) {
+            column.defaultWidth = 56;
+            column.role = "warehouseQuantity";
+          }
+        });
+        [88, 72, 128, 92].forEach((width, index) => {
+          const column = allocations.columns[allocationTailStart + index];
+          if (column) column.defaultWidth = width;
         });
 
         const notices = {
@@ -2806,9 +3048,9 @@
       function previewRowFill(previewId, sourceRow) {
         if (!sourceRow || previewId === "validation" || previewId === "inventory") return "";
         if (sourceRow.rowType === "reference") return "#f1f5f9";
-        const strong = typeof sourceRow.purchaseNeed === "number" && sourceRow.purchaseNeed > 0;
-        const color = strong ? sourceRow.managerColors?.strong : sourceRow.managerColors?.base;
-        return color ? `#${color}` : "";
+        const manager = String(sourceRow.manager || "").trim();
+        const color = state.managerColorSettings.colors[manager];
+        return isSafeManagerName(manager) && isSafeHexColor(color) ? color : "";
       }
 
       function previewSearchCorpus(sourceRow, displayRow) {
@@ -2833,6 +3075,10 @@
             return index >= 0 && isNonblankNumericValue(pair.row?.[index]);
           });
           if (!warehouseMatch) return false;
+        }
+        if (previewId === "allocations" && state.managerFilters.size > 0) {
+          const manager = String(pair.sourceRow?.manager || "").trim();
+          if (!state.managerFilters.has(manager)) return false;
         }
         if (previewId === "validation" || previewId === "notices" || state.specificationFilters.size === 0) return true;
         const specification = String(
@@ -2887,7 +3133,8 @@
         const useVisibility = options.useVisibility !== false;
         const hidden = useVisibility ? hiddenColumnSet(previewId) : new Set();
         const excludedHeaders = new Set(options.excludeHeaders || []);
-        let entries = preview.columns.map((column, index) => ({ column, index }))
+        let entries = orderedColumns(preview, previewId)
+          .map((column) => ({ column, index: preview.columns.findIndex((candidate) => candidate.key === column.key) }))
           .filter(({ column }) => !hidden.has(column.key) && !excludedHeaders.has(String(column.header || "")));
         if (entries.length === 0 && preview.columns.length > 0 && excludedHeaders.size === 0) {
           entries = [{ column: preview.columns[0], index: 0 }];
@@ -2911,13 +3158,16 @@
 
         const headers = visibleEntries.map(({ column }) => {
           const width = currentColumnWidth(previewId, column);
+          const draggable = resizable && COLUMN_ORDER_TABS.has(previewId);
           const handle = resizable
             ? `<span class="column-resize-handle" role="separator" tabindex="0"
                 aria-label="${escapeHtml(column.header)} 열폭 조절" aria-orientation="vertical"
                 aria-valuemin="${TABLE_WIDTH_MIN}" aria-valuemax="${TABLE_WIDTH_MAX}" aria-valuenow="${width}"
                 data-column-key="${escapeHtml(column.key)}"></span>`
             : "";
-          return `<th class="${resizable ? "column-resizable" : ""}">${escapeHtml(column.header)}${handle}</th>`;
+          return `<th class="${resizable ? "column-resizable" : ""} ${draggable ? "column-draggable" : ""}"
+            ${draggable ? `draggable="true" data-column-drag-key="${escapeHtml(column.key)}"` : ""}>
+            ${escapeHtml(column.header)}${handle}</th>`;
         }).join("");
 
         const body = pairs.length
@@ -3021,15 +3271,14 @@
       function printActiveTable() {
         if (!state.workspace) return;
         const definitions = getPreviewDefinitions(state.workspace);
-        const preview = definitions.allocations;
+        const preview = definitions[state.activePreview];
         if (!preview) return;
-        const pairs = fullSortedPreviewPairs("allocations", preview);
+        const pairs = filteredSortedPreviewPairs(state.activePreview, preview);
         elements.printArea.innerHTML = renderTableMarkup(preview, pairs, {
           editable: false,
           resizable: false,
-          previewId: "allocations",
-          useVisibility: false,
-          excludeHeaders: ["상품코드"],
+          previewId: state.activePreview,
+          useVisibility: true,
         });
         document.body.classList.add("printing-table");
         const cleanup = () => {
@@ -3078,6 +3327,7 @@
           : "재고 매칭 이상 없음";
         renderPreview();
         elements.resultsPanel.classList.remove("hidden");
+        elements.printButton.disabled = false;
         elements.downloadButton.disabled = state.workspace.basisDateStatus !== "valid";
         const cloudSaveDisabled = !state.workspace.planId || state.workspace.basisDateStatus !== "valid";
         elements.cloudSaveButton.disabled = cloudSaveDisabled;
@@ -3089,6 +3339,8 @@
         state.searchQuery = "";
         state.specificationFilters.clear();
         state.warehouseFilters.clear();
+        state.managerFilters.clear();
+        state.filterBarOpen = false;
         elements.tableSearchInput.value = "";
         elements.specFilterGroup.querySelectorAll("input[type='checkbox']").forEach((input) => {
           input.checked = false;
@@ -3335,6 +3587,8 @@
           state.searchQuery = "";
           state.specificationFilters.clear();
           state.warehouseFilters.clear();
+          state.managerFilters.clear();
+          state.filterBarOpen = false;
           elements.tableSearchInput.value = "";
           elements.specFilterGroup.querySelectorAll("input[type='checkbox']").forEach((input) => {
             input.checked = false;
@@ -3510,7 +3764,9 @@
 
       state.columnWidthSettings = loadColumnWidthSettings();
       state.hiddenColumnSettings = loadHiddenColumnSettings();
+      state.columnOrderSettings = loadColumnOrderSettings();
       state.warehouseColorSettings = loadWarehouseColorSettings();
+      state.managerColorSettings = loadManagerColorSettings();
 
       elements.analyzeButton.addEventListener("click", runAnalysis);
       elements.downloadButton.addEventListener("click", downloadResult);
@@ -3528,11 +3784,30 @@
         else state.specificationFilters.delete(input.value);
         if (state.workspace) renderPreview();
       });
+      elements.filterToggleButton.addEventListener("click", () => {
+        if (!state.workspace || !["inventory", "allocations"].includes(state.activePreview)) return;
+        state.filterBarOpen = !state.filterBarOpen;
+        renderPreview();
+      });
       elements.warehouseColorOptions.addEventListener("change", (event) => {
         const filter = event.target.closest("[data-warehouse-filter]");
         if (filter) {
           if (filter.checked) state.warehouseFilters.add(filter.dataset.warehouseFilter);
           else state.warehouseFilters.delete(filter.dataset.warehouseFilter);
+          if (state.workspace) renderPreview();
+          return;
+        }
+        const managerFilter = event.target.closest("[data-manager-filter]");
+        if (managerFilter) {
+          if (managerFilter.checked) state.managerFilters.add(managerFilter.dataset.managerFilter);
+          else state.managerFilters.delete(managerFilter.dataset.managerFilter);
+          if (state.workspace) renderPreview();
+          return;
+        }
+        const managerColor = event.target.closest("[data-manager-color]");
+        if (managerColor && isSafeManagerName(managerColor.dataset.managerColor) && isSafeHexColor(managerColor.value)) {
+          state.managerColorSettings.colors[managerColor.dataset.managerColor] = managerColor.value.toLowerCase();
+          saveManagerColorSettings();
           if (state.workspace) renderPreview();
           return;
         }
@@ -3543,14 +3818,25 @@
         if (state.workspace) renderPreview();
       });
       elements.warehouseColorResetButton.addEventListener("click", () => {
-        state.warehouseFilters.clear();
-        state.warehouseColorSettings = {
-          schemaVersion: WAREHOUSE_COLORS_SCHEMA,
-          colors: Object.create(null),
-        };
-        saveWarehouseColorSettings();
+        if (state.activePreview === "allocations") {
+          state.managerFilters.clear();
+          state.managerColorSettings = {
+            schemaVersion: MANAGER_COLORS_SCHEMA,
+            colors: Object.create(null),
+          };
+          saveManagerColorSettings();
+        } else {
+          state.warehouseFilters.clear();
+          state.warehouseColorSettings = {
+            schemaVersion: WAREHOUSE_COLORS_SCHEMA,
+            colors: Object.create(null),
+          };
+          saveWarehouseColorSettings();
+        }
         if (state.workspace) renderPreview();
-        showToast("창고 필터와 셀 배색을 기본값으로 초기화했습니다.");
+        showToast(state.activePreview === "allocations"
+          ? "담당자 필터와 배색을 초기화했습니다."
+          : "창고 필터와 셀 배색을 기본값으로 초기화했습니다.");
       });
       elements.columnVisibilityButton.addEventListener("click", () => {
         const open = elements.columnVisibilityMenu.classList.contains("hidden");
@@ -3576,6 +3862,13 @@
         elements.columnVisibilityButton.setAttribute("aria-expanded", "true");
       });
       elements.columnVisibilityMenu.addEventListener("click", (event) => {
+        const resetOrderButton = event.target.closest("[data-reset-column-order]");
+        if (resetOrderButton) {
+          resetActiveColumnOrder();
+          elements.columnVisibilityMenu.classList.remove("hidden");
+          elements.columnVisibilityButton.setAttribute("aria-expanded", "true");
+          return;
+        }
         const button = event.target.closest("[data-show-all-columns]");
         if (!button) return;
         showAllColumns();
@@ -3591,6 +3884,22 @@
         if (event.key !== "Escape") return;
         elements.columnVisibilityMenu.classList.add("hidden");
         elements.columnVisibilityButton.setAttribute("aria-expanded", "false");
+      });
+      document.addEventListener("keydown", (event) => {
+        if (!["F3", "F7", "F8"].includes(event.key)) return;
+        event.preventDefault();
+        if (event.key === "F3") {
+          if (!state.workspace) return;
+          elements.tableSearchInput.focus({ preventScroll: true });
+          const caret = elements.tableSearchInput.value.length;
+          elements.tableSearchInput.setSelectionRange(caret, caret);
+          return;
+        }
+        if (event.key === "F7") {
+          if (!elements.printButton.disabled) printActiveTable();
+          return;
+        }
+        if (!elements.downloadButton.disabled) downloadResult();
       });
 
       elements.previewTabs.addEventListener("click", (event) => {
@@ -3649,6 +3958,10 @@
         scheduleLocalSave();
       });
       elements.previewTable.addEventListener("pointerdown", beginColumnResize);
+      elements.previewTable.addEventListener("dragstart", handleColumnDragStart);
+      elements.previewTable.addEventListener("dragover", handleColumnDragOver);
+      elements.previewTable.addEventListener("drop", handleColumnDrop);
+      elements.previewTable.addEventListener("dragend", handleColumnDragEnd);
       elements.previewTable.addEventListener("keydown", handleInventoryPurchaseNavigation);
       elements.previewTable.addEventListener("keydown", handleColumnResizeKeydown);
       elements.recoveryRecordList.addEventListener("change", (event) => {
