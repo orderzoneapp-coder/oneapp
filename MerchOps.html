@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.184_CommonExcelRouting]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.185_ToolbarRenderRestore]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -12,7 +12,7 @@
     <script src="coreEngine.js"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <script>
-    // v2.1.184: 상단을 파서/카탈로그·공통 Excel·조작기능 3개 그룹으로 분리하고, 공통 Excel은 헤더로 역할을 판별해 잘못된 상품 인식을 차단한다.
+    // v2.1.185: 상단 3개 그룹과 필터행을 하나의 MainToolbar 루트로 복구해 상세필터가 닫힌 기본 상태에서도 전체 기능버튼을 항상 렌더링한다.
     // v2.1.182: 하나의 소분상품에 복수 원물이 연결되면 F8을 자동 진행하지 않고, 소분상품명을 먼저 보여준 뒤 원물명·원물가·소분가를 비교해 원물을 직접 선택하도록 한다.
     // v2.1.181: 동일 소분코드가 반복 계산되면 소분품목은 한 행만 유지하고 나중에 새로 산출된 소분가격을 최종 출고가로 적용한다.
     // v2.1.180: F8 소분코드가 기존 출력상품이면 품명 등 상품정보는 유지하고 가격만 갱신하며, 코드 중복·복수 원물 가격충돌·미등록 소분코드는 출력을 차단한다.
@@ -11660,7 +11660,7 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
                 (showTableViewSelect && commonExcelTableViewOptions.length > 0 && React.createElement("div", { className: "w-[190px] max-w-[190px] flex items-center rounded-lg border border-indigo-200 bg-indigo-50 px-2 py-1 shadow-sm shrink-0 overflow-hidden", title: activeBriefText || activeBriefTags.join(' · ') || '견적·구매·재고·정보 전체 양식' },
                     React.createElement("select", { value: commonExcelTableViewOptions.some(item => item.optionKey === activeTableViewSelectValue) ? activeTableViewSelectValue : '', onChange: handleTableViewSelect, className: "h-7 w-full rounded-md border border-slate-200 bg-white px-2 text-[11px] font-black text-slate-700 outline-none focus:border-indigo-400 shrink-0", title: "견적·구매·재고·정보에 저장된 모든 보기 양식 중 하나를 선택합니다." },
                         React.createElement("option", { value: "", disabled: true }, "양식 선택"),
-                        commonExcelTableViewOptions.map(view => React.createElement("option", { key: view.optionKey, value: view.optionKey }, `양식: ${view.targetLabel} · ${view.name}`))))))),
+                        commonExcelTableViewOptions.map(view => React.createElement("option", { key: view.optionKey, value: view.optionKey }, `양식: ${view.targetLabel} · ${view.name}`)))))),
             React.createElement("div", { "data-merch-toolbar-group": "operations", className: "flex items-center justify-start gap-1 min-w-0 rounded-xl border border-amber-200 bg-white/90 px-1.5 py-1 shadow-sm", title: "조작기능 그룹" },
                 React.createElement("label", { className: `h-8 px-2 rounded-lg border shadow-sm flex items-center justify-center shrink-0 cursor-pointer transition-all ${autoApplyOutPriceRule ? 'bg-amber-100 border-amber-300' : 'bg-white border-slate-300 hover:bg-amber-50'}`, title: "출고가 자동적용: 체크하면 엑셀 불러오기 시 기존 마진룰로 출고가를 자동 계산합니다. 체크상태는 다음 접속에도 유지됩니다." },
                     React.createElement("input", { type: "checkbox", checked: !!autoApplyOutPriceRule, onChange: (e) => setAutoApplyOutPriceRule?.(e.target.checked), className: "w-4 h-4 accent-amber-600 cursor-pointer", "aria-label": "파일 불러오기 시 출고가 자동적용" })),
@@ -11722,7 +11722,7 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
                 React.createElement("div", { className: "ml-auto sticky right-0 z-20 flex items-center justify-end gap-1 shrink-0 order-last bg-white pl-3", title: "기본 판매가·필터 초기화·검색" },
                     React.createElement("button", { onClick: handleFilterResetOnly, className: "h-9 w-9 rounded-lg bg-indigo-50 text-indigo-700 border border-indigo-200 shadow-sm hover:bg-indigo-100 hover:border-indigo-300 flex items-center justify-center shrink-0", title: "필터 초기화", "aria-label": "필터 초기화" },
                         React.createElement("i", { className: "fas fa-filter-circle-xmark text-[13px]" })),
-                    React.createElement(SearchBar, { value: globalSearch, onChange: setGlobalSearch })))),
+                    React.createElement(SearchBar, { value: globalSearch, onChange: setGlobalSearch }))),
             registrationMode && React.createElement("div", { "data-merch-registration-tools": "subordinate", className: "rounded-xl border border-emerald-200 bg-emerald-50/60 px-3 py-2 shadow-inner flex items-center justify-start gap-1.5 flex-wrap", title: "신규등록 전용 하위 작업필드" },
                 React.createElement("span", { className: "h-8 px-2.5 rounded-lg text-[11px] font-black bg-white text-emerald-700 border border-emerald-200 flex items-center shadow-sm" },
                     React.createElement("i", { className: "fas fa-user-plus mr-1.5 text-[13px]" }),
@@ -11823,7 +11823,7 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
                         title: selectedRows.size > 0 ? `선택상품 ${selectedRows.size}건에 입력된 항목만 한 번에 적용` : `선택이 없어 현재 작업테이블 전체 ${fullDisplayRows.length}건에 입력된 항목만 한 번에 적용`
                     },
                         React.createElement("i", { className: "fas fa-layer-group mr-1.5 text-[12px]" }),
-                        "적용"))))));
+                        "적용"))))))));
 });
 
 const SessionExcludedPanel = ({ items = {}, onClose, onRestore }) => {
@@ -13937,7 +13937,7 @@ const WelcomeGuide = ({ onUpload, onCloudSync }) => (React.createElement("div", 
         React.createElement("i", { className: "fas fa-box-open" }),
         React.createElement("div", { className: "absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm" },
             React.createElement("i", { className: "fas fa-check" }))),
-    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.184_CommonExcelRouting]"),
+    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.185_ToolbarRenderRestore]"),
     React.createElement("p", { className: "text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold" },
         "\uD604\uC7AC \uB4F1\uB85D\uB41C ",
         React.createElement("span", { className: "text-indigo-500" }, "\uB9C8\uC2A4\uD130 \uC0C1\uD488 \uB370\uC774\uD130"),
@@ -14596,7 +14596,7 @@ const App = () => {
                                 React.createElement("div", { className: "flex flex-col border-l-2 border-slate-700 pl-3" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "MerchOps"),
-                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.184_CommonExcelRouting")),
+                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.185_ToolbarRenderRestore")),
                                     React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "MAIN WORKSPACE"))),
                             React.createElement(SystemConsole, { itemCount: Object.keys(data.masterProducts).length, isProcessing: ui.isProcessing, processMsg: ui.processMsg, estimateCount: Object.keys(data.managedItems).length, filteredCount: fullDisplayRows.length, activeTags: ui.activeTags, masterLookupMode: data.masterLookupMode }),
                             React.createElement("nav", { className: "flex gap-1.5 text-[14px] shrink-0 items-center" },
