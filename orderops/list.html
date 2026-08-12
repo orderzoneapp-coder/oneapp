@@ -609,7 +609,7 @@
     .validation-notice-table table { margin: 0; }
 
     /* =========================================================
-       Results / table tools - current v1.17 features retained
+       Results / table tools - current v1.18 features retained
        ========================================================= */
     .results-panel {
       margin-top: 8px;
@@ -673,7 +673,7 @@
       white-space: nowrap;
     }
     .spec-filter:disabled { opacity: .42; }
-    /* orderops v1.17: first-view delivery notices, compact toolbar, fixed filters, column drag, and portrait print */
+    /* orderops v1.18: first-view notices, compact toolbar, toggle filters, column drag, and portrait print */
     .header-output-button { border-color: #99f6e4; color: #0f766e; background: #f0fdfa; }
     .header-output-button:hover:not(:disabled) { background: #ccfbf1; }
     .results-panel .table-wrap { max-height: calc(100vh - 200px); }
@@ -1086,63 +1086,87 @@
       .recovery-record-item { grid-template-columns: auto 1fr; }
       .recovery-record-status { grid-column: 2; }
     }
-    /* orderops v1.17: large bundle intake, fixed filters, order-aware balance, and stock ledger */
-    .input-panel { grid-template-columns: minmax(0, 1fr) minmax(190px, 240px) 137px; }
+    /* orderops v1.18: compact auto-routing intake, separate three-way execution, and toggle filters */
+    .input-panel { grid-template-columns: minmax(0, 1fr) 330px; gap: 12px; }
     .upload-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
     .source-selector {
       display: grid;
-      grid-template-areas: "bundle" "uploads";
-      grid-template-columns: minmax(0, 1fr);
+      position: relative;
+      grid-template-columns: 84px minmax(0, 1fr);
+      align-items: stretch;
       gap: 6px;
     }
     .source-selector-heading { display: none; }
-    .bundle-drop-zone {
-      grid-area: bundle;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 10px;
-      min-height: 54px;
-      padding: 8px 14px;
+    .source-selector.bundle-dragover::after {
+      content: "파일 구조를 읽어 알맞은 항목으로 자동 배치";
+      position: absolute;
+      inset: -3px;
+      z-index: 10;
+      display: grid;
+      place-items: center;
       border: 2px dashed #2dd4bf;
       border-radius: 7px;
       color: #ccfbf1;
-      background: rgba(13,148,136,.18);
-      cursor: pointer;
+      background: rgba(15, 76, 78, .96);
+      box-shadow: 0 0 0 3px rgba(45, 212, 191, .16);
+      font-size: 12px;
+      font-weight: 900;
+      pointer-events: none;
       text-align: center;
     }
-    .bundle-drop-zone:hover,
-    .bundle-drop-zone.dragover,
-    .bundle-drop-zone:focus-visible { border-color: #facc15; background: rgba(20,184,166,.3); outline: none; }
-    .bundle-drop-zone strong { display: block; font-size: 12px; }
-    .bundle-drop-zone span { color: #99f6e4; font-size: 10px; }
+    .source-selector.bundle-dragover .upload-card { border-color: #2dd4bf; }
     .upload-card { min-width: 0; }
-    .smart-input-panel { display: flex; align-items: stretch; padding: 0; }
-    .smart-input-panel .order-input-link {
+    .execution-panel {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      align-items: stretch;
+      gap: 4px;
+      min-width: 0;
+      padding: 4px;
+      border: 1px solid #475569;
+      border-radius: 7px;
+      background: #0f172a;
+    }
+    .execution-button {
       display: flex;
-      flex: 1;
       align-items: center;
       justify-content: center;
-      gap: 8px;
-      min-height: 100%;
-      border: 1px solid #5eead4;
+      gap: 5px;
+      min-width: 0;
+      min-height: 42px;
+      height: 100%;
+      padding: 0 7px;
+      border: 1px solid #64748b;
       border-radius: 6px;
+      box-shadow: none;
+      font-size: 10px;
       color: #ccfbf1;
-      background: #134e4a;
       font-weight: 900;
       text-decoration: none;
+      white-space: nowrap;
     }
+    .execution-button.smart-input { border-color: #5eead4; background: #134e4a; }
+    .execution-button.smart-input:hover { background: #115e59; }
+    .execution-button.analysis-run { border-color: #3b82f6; color: #fff; background: #2563eb; }
+    .execution-button.analysis-run:hover:not(:disabled) { background: #1d4ed8; }
+    .execution-button.analysis-run:disabled { border-color: #475569; color: #94a3b8; background: #334155; }
+    .execution-button.session-refresh { color: #dbeafe; background: #1e293b; }
+    .execution-button.session-refresh:hover { border-color: #5eead4; color: #fff; background: #0f766e; }
     .system-topbar .validation-box { flex: 0 1 auto; min-width: 190px; padding: 2px 8px; border: 0; background: transparent; }
     .system-topbar .validation-box p { margin: 0; white-space: nowrap; font-size: 9px; }
     .results-panel, .view-controls { overflow: visible; }
     .column-visibility-menu { z-index: 200; }
-    .warehouse-color-bar { display: grid; grid-template-columns: 1fr 1fr auto; align-items: start; gap: 8px; }
+    .search-field { flex: 0 0 240px; min-width: 220px; max-width: 260px; }
+    .view-controls .preview-tabs { display: grid; grid-template-columns: repeat(4, minmax(90px, 1fr)); flex: 0 0 376px; overflow: visible; }
+    .view-controls .tab-button { min-height: 34px; padding: 0 13px; font-size: 11px; }
+    .filter-toggle-button { min-height: 31px; padding: 0 9px; border: 1px solid var(--slate-300); border-radius: 5px; color: var(--slate-700); background: #fff; font-size: 10px; font-weight: 900; white-space: nowrap; }
+    .filter-toggle-button:hover { border-color: var(--teal-700); color: var(--teal-700); background: #f0fdfa; }
+    .filter-toggle-button.active { border-color: var(--teal-700); color: #fff; background: var(--teal-700); }
+    .warehouse-color-bar { display: flex; align-items: flex-start; gap: 8px; }
     .fixed-filter-group { display: flex; align-items: center; gap: 6px; min-width: 0; }
+    .fixed-filter-group.hidden { display: none; }
     .fixed-filter-group .warehouse-color-title { flex: 0 0 auto; }
     .fixed-filter-group .warehouse-color-options { display: flex; flex-wrap: wrap; gap: 4px; }
-    .action-bar { display: flex; flex-direction: row; gap: 5px; align-items: stretch; width: 137px; min-width: 137px; }
-    .refresh-button { width: 36px; min-width: 36px; border: 1px solid #64748b; border-radius: 5px; color: #dbeafe; background: #1e293b; cursor: pointer; }
-    .refresh-button:hover { color: #fff; border-color: #5eead4; background: #0f766e; }
     .mapping-help { margin: 0 0 8px; color: #94a3b8; font-size: 11px; }
     .mapping-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
     .mapping-table th, .mapping-table td { padding: 5px; border: 1px solid #334155; vertical-align: top; }
@@ -1157,13 +1181,18 @@
     table.preview-inventory td.inventory-total-cell { padding: 2px 4px; }
     table.preview-inventory td.information-value { min-width: 0; }
     @media (max-width: 1100px) {
-      .input-panel { grid-template-columns: minmax(0, 1fr) 170px 137px; }
-      .warehouse-color-bar { grid-template-columns: 1fr; }
+      .input-panel { grid-template-columns: minmax(0, 1fr) 285px; }
+      .search-field { flex-basis: 220px; }
+      .view-controls .preview-tabs { grid-template-columns: repeat(4, minmax(80px, 1fr)); flex-basis: 340px; }
+      .view-controls .tab-button { padding: 0 8px; }
     }
     @media (max-width: 900px) {
       .input-panel { grid-template-columns: 1fr; }
       .upload-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      .smart-input-panel { min-height: 42px; }
+      .execution-panel { min-height: 44px; }
+      .source-selector { grid-template-columns: 1fr; }
+      .data-source-label { min-height: 22px; }
+      .view-controls .preview-tabs { display: flex; }
     }
   </style>
 </head>
@@ -1173,7 +1202,7 @@
       <div class="brand-mark">ONEAPP</div>
       <div class="brand-divider" aria-hidden="true"></div>
       <div class="brand-stack">
-        <div class="brand-suite">NEXUS <span class="brand-badge">v1.17</span></div>
+        <div class="brand-suite">NEXUS <span class="brand-badge">v1.18</span></div>
         <div class="brand-product">OrderOps</div>
       </div>
     </div>
@@ -1221,16 +1250,9 @@
         </div>
       </div>
 
-      <section class="panel input-panel" aria-label="입력 파일">
-        <div class="source-selector">
+      <section class="panel input-panel" aria-label="입력 파일과 실행">
+        <div class="source-selector" id="sourceSelector" aria-label="Excel 파일 선택 및 자동분류 드롭 영역">
           <div class="data-source-label"><span aria-hidden="true">▣</span> 데이터 소스:</div>
-
-          <div class="bundle-drop-zone" id="bundleDrop" tabindex="0" role="button"
-            aria-label="Excel 묶음파일 2개에서 4개 자동 분류 업로드">
-            <strong>Excel 묶음파일을 여기에 크게 던지기</strong>
-            <span>2~4개 파일 · 시트 구조와 열 이름으로 자동 배치</span>
-          </div>
-          <input class="hidden" id="bundleInput" type="file" accept=".xlsx,.xls" multiple>
 
           <div class="upload-grid">
             <article class="upload-card" id="ordersCard">
@@ -1271,17 +1293,16 @@
           </div>
         </div>
 
-        <aside class="operator-note smart-input-panel" aria-label="스마트 전표입력">
-          <a class="order-input-link" href="input.html" aria-label="스마트 전표입력 화면 열기">
+        <div class="execution-panel" aria-label="실행 기능">
+          <a class="execution-button smart-input" href="input.html" aria-label="스마트 전표입력 화면 열기">
             <span aria-hidden="true">✎</span><span>스마트입력</span>
           </a>
-        </aside>
-
-        <div class="action-bar">
-          <button class="primary-button" id="analyzeButton" type="button" disabled>
-            <span aria-hidden="true">▸</span> 출고 분석
+          <button class="execution-button analysis-run" id="analyzeButton" type="button" disabled>
+            <span aria-hidden="true">▸</span><span>출고분석</span>
           </button>
-          <button class="refresh-button" id="refreshButton" type="button" aria-label="현재 파일과 분석 결과 새로고침" title="현재 파일 새로고침">↻</button>
+          <button class="execution-button session-refresh" id="refreshButton" type="button" aria-label="현재 파일과 분석 결과 새로고침">
+            <span aria-hidden="true">↻</span><span>새로고침</span>
+          </button>
         </div>
       </section>
 
@@ -1300,6 +1321,10 @@
             aria-label="통합 검색 F3" placeholder="통합검색 F3 · 상품코드·상품명·규격·적요·담당·거래처">
         </label>
         <div class="preview-tabs" id="previewTabs" role="tablist" aria-label="결과 미리보기"></div>
+        <button class="filter-toggle-button" id="warehouseFilterToggle" type="button"
+          aria-expanded="false" aria-controls="warehouseColorBar">창고필터</button>
+        <button class="filter-toggle-button" id="managerFilterToggle" type="button"
+          aria-expanded="false" aria-controls="warehouseColorBar">담당자필터</button>
         <fieldset class="spec-filter" id="specFilterGroup">
           <legend>규격</legend>
           <label><input type="checkbox" value="BOX">BOX</label>
@@ -1319,12 +1344,12 @@
         <div class="preview-count" id="previewCount"></div>
       </div>
 
-      <div class="warehouse-color-bar" id="warehouseColorBar" aria-label="창고와 담당자 고정 필터 및 배색">
-        <section class="fixed-filter-group" aria-label="창고 필터와 셀 내부 배색">
+      <div class="warehouse-color-bar hidden" id="warehouseColorBar" aria-label="선택한 필터 및 배색">
+        <section class="fixed-filter-group hidden" id="warehouseFilterPanel" aria-label="창고 필터와 셀 내부 배색">
           <span class="warehouse-color-title">창고 필터·셀 배색</span>
           <div class="warehouse-color-options" id="warehouseColorOptions"></div>
         </section>
-        <section class="fixed-filter-group" aria-label="담당자 필터와 행 내부 배색">
+        <section class="fixed-filter-group hidden" id="managerFilterPanel" aria-label="담당자 필터와 행 내부 배색">
           <span class="warehouse-color-title">담당자 필터·배색</span>
           <div class="warehouse-color-options" id="managerColorOptions"></div>
         </section>
@@ -1335,7 +1360,7 @@
     </section>
 
     <footer class="page-footer">
-      <span>orderops v1.17 · workspace shipping-workspace/v2 · cloud plan v1</span>
+      <span>orderops v1.18 · workspace shipping-workspace/v2 · cloud plan v1</span>
       <a href="../SHIPPING_MANAGEMENT_GUIDANCE.md">개발·운영 기준 보기</a>
     </footer>
   </main>
@@ -1484,14 +1509,14 @@
         warehouseFilters: new Set(),
         managerColorSettings: { schemaVersion: MANAGER_COLORS_SCHEMA, colors: Object.create(null) },
         managerFilters: new Set(),
+        activeFilterPanel: "",
         activeColumnDrag: null,
         excelMappings: null,
         purchaseHistory: [],
       };
 
       const elements = {
-        bundleInput: document.getElementById("bundleInput"),
-        bundleDrop: document.getElementById("bundleDrop"),
+        sourceSelector: document.getElementById("sourceSelector"),
         ordersInput: document.getElementById("ordersInput"),
         inventoryInput: document.getElementById("inventoryInput"),
         purchasesInput: document.getElementById("purchasesInput"),
@@ -1518,6 +1543,10 @@
         tableSearchInput: document.getElementById("tableSearchInput"),
         specFilterGroup: document.getElementById("specFilterGroup"),
         warehouseColorBar: document.getElementById("warehouseColorBar"),
+        warehouseFilterToggle: document.getElementById("warehouseFilterToggle"),
+        managerFilterToggle: document.getElementById("managerFilterToggle"),
+        warehouseFilterPanel: document.getElementById("warehouseFilterPanel"),
+        managerFilterPanel: document.getElementById("managerFilterPanel"),
         warehouseColorOptions: document.getElementById("warehouseColorOptions"),
         managerColorOptions: document.getElementById("managerColorOptions"),
         warehouseColorResetButton: document.getElementById("warehouseColorResetButton"),
@@ -2375,8 +2404,8 @@
 
       async function handleBundleFiles(fileList) {
         const files = Array.from(fileList || []).filter(Boolean);
-        if (files.length < 2 || files.length > 4) {
-          showToast("묶음 업로드는 2~4개 Excel 파일을 선택하세요.", true);
+        if (files.length < 1 || files.length > 4) {
+          showToast("자동분류 드롭은 1~4개 Excel 파일을 넣어주세요.", true);
           return;
         }
 
@@ -2661,6 +2690,20 @@
                 aria-label="${escapeHtml(manager)} 담당자 행 배색">
             </div>`;
         }).join("");
+      }
+
+      function setActiveFilterPanel(panelName = "") {
+        const nextPanel = ["warehouse", "manager"].includes(panelName) ? panelName : "";
+        state.activeFilterPanel = nextPanel;
+        const showWarehouse = nextPanel === "warehouse";
+        const showManager = nextPanel === "manager";
+        elements.warehouseColorBar.classList.toggle("hidden", !nextPanel);
+        elements.warehouseFilterPanel.classList.toggle("hidden", !showWarehouse);
+        elements.managerFilterPanel.classList.toggle("hidden", !showManager);
+        elements.warehouseFilterToggle.classList.toggle("active", showWarehouse);
+        elements.managerFilterToggle.classList.toggle("active", showManager);
+        elements.warehouseFilterToggle.setAttribute("aria-expanded", String(showWarehouse));
+        elements.managerFilterToggle.setAttribute("aria-expanded", String(showManager));
       }
 
       function defaultColumnWidth(column) {
@@ -3120,18 +3163,18 @@
           defaultWidth: 88,
         });
         columns.push({
-          key: "shipping:inventory:suppliers",
-          header: "거래처(단가)",
+          key: "shipping:inventory:order-information",
+          header: "정보",
           numeric: false,
-          role: "suppliers",
-          defaultWidth: 180,
+          role: "orderInformation",
+          defaultWidth: 210,
         });
         columns.push({
-          key: "shipping:inventory:order-customers",
-          header: "주문거래처명(수량)",
+          key: "shipping:inventory:order-notes",
+          header: "적요",
           numeric: false,
-          role: "orderCustomers",
-          defaultWidth: 200,
+          role: "orderNotes",
+          defaultWidth: 220,
         });
 
         const sourceRows = inventoryView.rows.map((row) => ({
@@ -3151,8 +3194,8 @@
             if (remainingIndex >= 0) values[remainingIndex] = row.displayRemainingQuantity;
           }
           values.splice(purchaseIndex, 0, row?.purchase ?? "");
-          values.push(row?.suppliers ?? "");
-          values.push(row?.orderCustomers ?? "");
+          values.push(row?.orderInformation ?? "");
+          values.push(row?.orderNotes ?? "");
           return values;
         });
         return {
@@ -3649,6 +3692,7 @@
         elements.specFilterGroup.querySelectorAll("input[type='checkbox']").forEach((input) => {
           input.checked = false;
         });
+        setActiveFilterPanel("");
       }
 
       async function analyzeCurrentInputs() {
@@ -3948,26 +3992,6 @@
             input.click();
           }
         });
-        ["dragenter", "dragover"].forEach((eventName) => {
-          drop.addEventListener(eventName, (event) => {
-            event.preventDefault();
-            drop.classList.add("dragover");
-          });
-        });
-        ["dragleave", "drop"].forEach((eventName) => {
-          drop.addEventListener(eventName, (event) => {
-            event.preventDefault();
-            drop.classList.remove("dragover");
-          });
-        });
-        drop.addEventListener("drop", (event) => {
-          const files = Array.from(event.dataTransfer.files || []).filter(Boolean);
-          if (files.length > 1) {
-            showToast("개별 항목에는 파일 1개만 넣을 수 있습니다. 여러 파일은 위의 큰 묶음 투입구에 넣어주세요.", true);
-            return;
-          }
-          handleFile(kind, files[0]);
-        });
         input.addEventListener("change", () => {
           const files = Array.from(input.files || []).filter(Boolean);
           handleFile(kind, files[0]);
@@ -3975,32 +3999,27 @@
         });
       }
 
-      function bindBundleDropZone() {
-        const drop = elements.bundleDrop;
-        const input = elements.bundleInput;
-        const openPicker = () => input.click();
-        drop.addEventListener("click", openPicker);
-        drop.addEventListener("keydown", (event) => {
-          if (!["Enter", " "].includes(event.key)) return;
-          event.preventDefault();
-          openPicker();
-        });
+      function bindBundleDropSurface() {
+        const drop = elements.sourceSelector;
+        let dragDepth = 0;
         ["dragenter", "dragover"].forEach((eventName) => {
           drop.addEventListener(eventName, (event) => {
             event.preventDefault();
-            drop.classList.add("dragover");
+            if (eventName === "dragenter") dragDepth += 1;
+            if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+            drop.classList.add("bundle-dragover");
           });
         });
-        ["dragleave", "drop"].forEach((eventName) => {
-          drop.addEventListener(eventName, (event) => {
-            event.preventDefault();
-            drop.classList.remove("dragover");
-          });
+        drop.addEventListener("dragleave", (event) => {
+          event.preventDefault();
+          dragDepth = Math.max(0, dragDepth - 1);
+          if (dragDepth === 0) drop.classList.remove("bundle-dragover");
         });
-        drop.addEventListener("drop", (event) => handleBundleFiles(event.dataTransfer.files));
-        input.addEventListener("change", () => {
-          handleBundleFiles(input.files);
-          input.value = "";
+        drop.addEventListener("drop", (event) => {
+          event.preventDefault();
+          dragDepth = 0;
+          drop.classList.remove("bundle-dragover");
+          handleBundleFiles(event.dataTransfer.files);
         });
       }
 
@@ -4246,6 +4265,12 @@
         else state.specificationFilters.delete(input.value);
         if (state.workspace) renderPreview();
       });
+      elements.warehouseFilterToggle.addEventListener("click", () => {
+        setActiveFilterPanel(state.activeFilterPanel === "warehouse" ? "" : "warehouse");
+      });
+      elements.managerFilterToggle.addEventListener("click", () => {
+        setActiveFilterPanel(state.activeFilterPanel === "manager" ? "" : "manager");
+      });
       function handleFixedFilterChange(event) {
         const filter = event.target.closest("[data-warehouse-filter]");
         if (filter) {
@@ -4465,7 +4490,7 @@
         });
       });
       FILE_KINDS.forEach(bindDropZone);
-      bindBundleDropZone();
+      bindBundleDropSurface();
 
       try {
         elements.cloudUrlInput.value = localStorage.getItem("oneapp_cloud_sync_url_v1") || "";

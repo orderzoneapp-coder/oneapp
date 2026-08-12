@@ -10,7 +10,7 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function (engine) {
   "use strict";
 
-  const WORKBOOK_VERSION = "4.2.0";
+  const WORKBOOK_VERSION = "4.3.0";
   const REQUIRED_SHEETS = Object.freeze([
     "전달사항(적요보기)",
     "창고별재고",
@@ -676,26 +676,31 @@
     const inventoryView = engine.getInventoryViewRows(workspace);
     const layout = inventoryView.columns.map((column) => ({ ...column }));
     layout.push({ key: "shipping:inventory:purchase", header: "구매", sourceIndex: null, purchase: true });
-    layout.push({ key: "shipping:inventory:suppliers", header: "거래처(단가)", sourceIndex: null, suppliers: true });
     layout.push({
-      key: "shipping:inventory:order-customers",
+      key: "shipping:inventory:order-information",
       header: "정보",
       sourceIndex: null,
-      orderCustomers: true,
+      orderInformation: true,
+    });
+    layout.push({
+      key: "shipping:inventory:order-notes",
+      header: "적요",
+      sourceIndex: null,
+      orderNotes: true,
     });
 
     const dataRows = inventoryView.rows.map((inventory) => [
       ...inventory.values,
       inventory.purchase,
-      inventory.suppliers,
-      inventory.remainingQuantity < 0 ? inventory.orderCustomers : "",
+      inventory.orderInformation,
+      inventory.orderNotes,
     ]);
     const headers = layout.map((column) => safeValue(column.header));
     const sheet = XLSX.utils.aoa_to_sheet([headers, ...dataRows]);
     const codeColumn = layout.findIndex((column) => column.role === "productCode");
     const specificationColumn = headers.findIndex((header) => normalizedHeader(header) === "규격");
-    const supplierColumn = layout.findIndex((column) => column.suppliers === true);
-    const orderCustomerColumn = layout.findIndex((column) => column.orderCustomers === true);
+    const informationColumn = layout.findIndex((column) => column.orderInformation === true);
+    const notesColumn = layout.findIndex((column) => column.orderNotes === true);
     const lastColumn = columnName(Math.max(0, headers.length - 1));
     const lastRow = Math.max(1, dataRows.length + 1);
     sheet["!cols"] = headers.map((header) => {
@@ -704,14 +709,14 @@
       if (normalized === "품목명") return { wch: 31 };
       if (normalized === "규격") return { wch: 13 };
       if (normalized === "구매") return { wch: 11 };
-      if (normalized === "거래처(단가)") return { wch: 34 };
       if (normalized === "정보") return { wch: 34 };
+      if (normalized === "적요") return { wch: 38 };
       return { wch: isWarehouseQuantityHeader(header) ? 11 : 13 };
     });
     sheet["!rows"] = [{ hpt: 27 }, ...dataRows.map((row) => ({
       hpt: Math.min(120, Math.max(32, Math.max(
-        String(row[supplierColumn] || "").split(/\r?\n/).length,
-        String(row[orderCustomerColumn] || "").split(/\r?\n/).length,
+        String(row[informationColumn] || "").split(/\r?\n/).length,
+        String(row[notesColumn] || "").split(/\r?\n/).length,
       ) * 18)),
     }))];
     sheet["!freeze"] = { xSplit: 0, ySplit: 1 };
@@ -765,7 +770,7 @@
           cell.w = cell.v;
           style.numFmt = "@";
         }
-        if (column === supplierColumn || column === orderCustomerColumn) {
+        if (column === informationColumn || column === notesColumn) {
           style.alignment = { vertical: "top", horizontal: "left", wrapText: true };
         }
         applyCellStyle(cell, style);
