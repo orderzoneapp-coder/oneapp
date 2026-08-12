@@ -673,7 +673,7 @@
       white-space: nowrap;
     }
     .spec-filter:disabled { opacity: .42; }
-    /* orderops v1.18: first-view notices, compact toolbar, toggle filters, column drag, and portrait print */
+    /* orderops v1.19: editable order workflow, stock ledger sales, and keyboard operations */
     .header-output-button { border-color: #99f6e4; color: #0f766e; background: #f0fdfa; }
     .header-output-button:hover:not(:disabled) { background: #ccfbf1; }
     .results-panel .table-wrap { max-height: calc(100vh - 200px); }
@@ -887,6 +887,14 @@
     .purchase-input[data-negative-balance="true"] { border-color: #dc2626; background: #fff200; box-shadow: inset 0 0 0 1px rgba(220,38,38,.18); }
     .purchase-input:focus { border-color: var(--teal-700); outline: 2px solid rgba(15,118,110,.22); outline-offset: 0; background: #fff; }
     .purchase-input[data-negative-balance="true"]:focus { background: #fff200; }
+    .order-edit-input {
+      width: 100%; min-width: 0; height: 25px; padding: 1px 6px;
+      border: 1px solid #94a3b8; border-radius: 3px; color: var(--slate-900);
+      background: #fff; font-size: 11px;
+    }
+    .order-edit-input:focus { border-color: var(--teal-700); outline: 2px solid rgba(15,118,110,.22); outline-offset: 0; }
+    td.ledger-negative-cell { color: #b91c1c !important; background: #fff200 !important; font-weight: 900; }
+    .tab-shortcut { margin-left: 4px; color: inherit; font-size: 8px; opacity: .78; }
     table.preview-inventory td.inventory-framed-cell { padding: 2px 4px; }
     table.preview-inventory .inventory-value-frame,
     table.preview-inventory .inventory-total-frame {
@@ -1086,7 +1094,7 @@
       .recovery-record-item { grid-template-columns: auto 1fr; }
       .recovery-record-status { grid-column: 2; }
     }
-    /* orderops v1.18: compact auto-routing intake, separate three-way execution, and toggle filters */
+    /* orderops v1.19: compact auto-routing intake, separate three-way execution, and toggle filters */
     .input-panel { grid-template-columns: minmax(0, 1fr) 330px; gap: 12px; }
     .upload-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
     .source-selector {
@@ -1149,6 +1157,7 @@
     .execution-button.smart-input:hover { background: #115e59; }
     .execution-button.analysis-run { border-color: #3b82f6; color: #fff; background: #2563eb; }
     .execution-button.analysis-run:hover:not(:disabled) { background: #1d4ed8; }
+    .execution-button.analysis-run.enter-ready { border-color: #facc15; box-shadow: inset 0 0 0 2px rgba(250,204,21,.55); }
     .execution-button.analysis-run:disabled { border-color: #475569; color: #94a3b8; background: #334155; }
     .execution-button.session-refresh { color: #dbeafe; background: #1e293b; }
     .execution-button.session-refresh:hover { border-color: #5eead4; color: #fff; background: #0f766e; }
@@ -1202,24 +1211,24 @@
       <div class="brand-mark">ONEAPP</div>
       <div class="brand-divider" aria-hidden="true"></div>
       <div class="brand-stack">
-        <div class="brand-suite">NEXUS <span class="brand-badge">v1.18</span></div>
+        <div class="brand-suite">NEXUS <span class="brand-badge">v1.19</span></div>
         <div class="brand-product">OrderOps</div>
       </div>
     </div>
     <div class="header-actions">
       <button class="header-link header-output-button" id="printButton" type="button"
-        aria-label="현재 보이는 화면 인쇄 F7" disabled>
-        <span aria-hidden="true">▣</span><span>화면인쇄 F7</span>
+        aria-label="현재 보이는 화면 인쇄 F9" aria-keyshortcuts="F9" disabled>
+        <span aria-hidden="true">▣</span><span>화면인쇄 F9</span>
       </button>
       <button class="header-link header-output-button" id="downloadButton" type="button"
-        aria-label="전체 통합 Excel 출력 F8" disabled>
-        <span aria-hidden="true">↓</span><span>엑셀출력 F8</span>
+        aria-label="전체 통합 Excel 출력 F10" aria-keyshortcuts="F10" disabled>
+        <span aria-hidden="true">↓</span><span>엑셀출력 F10</span>
       </button>
       <button class="header-link" id="headerCloudLoadButton" type="button" aria-label="클라우드 확정본 불러오기">
         <span aria-hidden="true">⇩</span><span>불러오기</span>
       </button>
-      <button class="header-link header-save-button" id="headerCloudSaveButton" type="button" aria-label="작업 완료 후 클라우드 저장" disabled>
-        <span aria-hidden="true">✓</span><span>저장</span>
+      <button class="header-link header-save-button" id="headerCloudSaveButton" type="button" aria-label="작업 완료 후 클라우드 저장 F12" aria-keyshortcuts="F12" disabled>
+        <span aria-hidden="true">✓</span><span>저장 F12</span>
       </button>
       <button class="header-link" id="headerRestoreButton" type="button" aria-label="임시 작업 복구">
         <span aria-hidden="true">↻</span><span>임시복구</span>
@@ -1294,14 +1303,14 @@
         </div>
 
         <div class="execution-panel" aria-label="실행 기능">
-          <a class="execution-button smart-input" href="orderops/input.html" aria-label="스마트 전표입력 화면 열기">
-            <span aria-hidden="true">✎</span><span>스마트입력</span>
+          <a class="execution-button smart-input" id="smartInputButton" href="orderops/input.html" aria-label="스마트 전표입력 화면 열기 F4" aria-keyshortcuts="F4">
+            <span aria-hidden="true">✎</span><span>스마트입력 F4</span>
           </a>
-          <button class="execution-button analysis-run" id="analyzeButton" type="button" disabled>
-            <span aria-hidden="true">▸</span><span>출고분석</span>
+          <button class="execution-button analysis-run" id="analyzeButton" type="button" aria-keyshortcuts="Enter" disabled>
+            <span aria-hidden="true">▸</span><span>출고분석 Enter</span>
           </button>
-          <button class="execution-button session-refresh" id="refreshButton" type="button" aria-label="현재 파일과 분석 결과 새로고침">
-            <span aria-hidden="true">↻</span><span>새로고침</span>
+          <button class="execution-button session-refresh" id="refreshButton" type="button" aria-label="현재 파일과 분석 결과 새로고침 F5" aria-keyshortcuts="F5">
+            <span aria-hidden="true">↻</span><span>새로고침 F5</span>
           </button>
         </div>
       </section>
@@ -1360,7 +1369,7 @@
     </section>
 
     <footer class="page-footer">
-      <span>orderops v1.18 · workspace shipping-workspace/v2 · cloud plan v1</span>
+      <span>orderops v1.19 · workspace shipping-workspace/v2 · cloud plan v1</span>
       <a href="SHIPPING_MANAGEMENT_GUIDANCE.md">개발·운영 기준 보기</a>
     </footer>
   </main>
@@ -1513,6 +1522,8 @@
         activeColumnDrag: null,
         excelMappings: null,
         purchaseHistory: [],
+        analysisEnterReady: false,
+        analysisEnterLocked: false,
       };
 
       const elements = {
@@ -1534,6 +1545,7 @@
         purchasesFileName: document.getElementById("purchasesFileName"),
         salesFileName: document.getElementById("salesFileName"),
         validationBox: document.getElementById("validationBox"),
+        smartInputButton: document.getElementById("smartInputButton"),
         analyzeButton: document.getElementById("analyzeButton"),
         refreshButton: document.getElementById("refreshButton"),
         resultsPanel: document.getElementById("resultsPanel"),
@@ -2410,6 +2422,8 @@
         }
 
         resetResults();
+        state.analysisEnterLocked = true;
+        if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
         elements.analyzeButton.disabled = true;
         setSystemMessage("classifying bundled data_blocks...");
 
@@ -2424,12 +2438,15 @@
           refreshInputState();
 
           if (state.validation?.canAnalyze) {
-            setSystemMessage("data_blocks ready... (Enter 또는 출고 분석)");
+            setAnalysisEnterReady(true);
+            setSystemMessage("data_blocks ready... (Enter 출고분석 대기)");
             showToast(`${classified.length}개 파일을 구조 기준으로 자동 배정했습니다.`);
           } else {
+            state.analysisEnterLocked = false;
             showToast(`${classified.length}개 파일을 자동 배정했습니다. 주문현황과 창고재고가 준비되면 분석할 수 있습니다.`);
           }
         } catch (error) {
+          state.analysisEnterLocked = false;
           refreshInputState();
           setSystemMessage("bundle classification failed... (기존 선택 유지)");
           showToast(`${error.message || "묶음 파일을 처리하지 못했습니다."} · 기존 선택은 유지됩니다.`, true);
@@ -2458,7 +2475,18 @@
         elements.analyzeButton.disabled = true;
       }
 
+      function setAnalysisEnterReady(ready) {
+        state.analysisEnterReady = Boolean(ready && state.validation?.canAnalyze);
+        elements.analyzeButton.classList.toggle("enter-ready", state.analysisEnterReady);
+        elements.analyzeButton.setAttribute("aria-pressed", String(state.analysisEnterReady));
+        if (state.analysisEnterReady) {
+          elements.analyzeButton.focus({ preventScroll: true });
+        }
+      }
+
       function resetResults() {
+        setAnalysisEnterReady(false);
+        state.analysisEnterLocked = false;
         state.workspace = null;
         elements.resultsPanel.classList.add("hidden");
         elements.printButton.disabled = true;
@@ -3248,27 +3276,29 @@
           ? engine.getAllocationInventoryView(workspace)
           : { columns: [], rows: [] };
         const allocationWarehouseHeaders = allocationInventoryView.columns.map((column) => column.header);
-        const allocationWarehouseStart = 5;
+        const allocationWarehouseStart = 6;
         const allocationTailStart = allocationWarehouseStart + allocationWarehouseHeaders.length;
         const allocations = {
-          label: "미출고현황",
-          headers: ["상품코드", "구매", "품목명", "규격", "주문수량", ...allocationWarehouseHeaders, "전달사항", "단가", "거래처", "담당자"],
+          label: "주문현황",
+          shortcut: "F6",
+          headers: ["창고", "상품코드", "품목명", "규격", "주문수량", "구매", ...allocationWarehouseHeaders, "전달사항", "단가", "거래처", "담당자"],
           numeric: [
             4,
             ...allocationWarehouseHeaders.map((_, index) => allocationWarehouseStart + index),
             allocationTailStart + 1,
           ],
           inventory: [],
-          purchase: 1,
-          purchaseEditable: false,
+          purchase: 5,
+          purchaseEditable: true,
           status: -1,
           sourceRows: workspace.allocations,
           rows: workspace.allocations.map((row, index) => [
+            row.warehouse || "",
             row.productCode,
-            row.purchase || "",
             row.productName,
             row.specification || row.spec || "",
             row.quantity,
+            row.purchase || "",
             ...(allocationInventoryView.rows[index]?.warehouseValues || []).map(blankZero),
             formatDeliveryNotice(row),
             typeof row.unitPrice === "number" && Number.isFinite(row.unitPrice) ? row.unitPrice : "",
@@ -3279,9 +3309,11 @@
           notice: allocationTailStart,
         };
         allocations.columns = createPreviewColumns("allocations", allocations.headers, allocations.numeric);
-        [94, 68, 160, 52, 62].forEach((width, index) => {
+        [76, 94, 160, 52, 62, 86].forEach((width, index) => {
           if (allocations.columns[index]) allocations.columns[index].defaultWidth = width;
         });
+        allocations.columns[0].orderField = "warehouse";
+        allocations.columns[4].orderField = "quantity";
         allocationWarehouseHeaders.forEach((_, index) => {
           const column = allocations.columns[allocationWarehouseStart + index];
           if (column) {
@@ -3293,42 +3325,50 @@
           const column = allocations.columns[allocationTailStart + index];
           if (column) column.defaultWidth = width;
         });
+        allocations.columns[allocationTailStart].orderField = "note";
+        allocations.columns[allocationTailStart + 1].orderField = "unitPrice";
 
         const notices = {
           label: `전달사항 ${workspace.notices.length}${workspace.notices.length > acknowledgedIds.size ? ` · 미확인 ${workspace.notices.length - acknowledgedIds.size}` : ""}`,
-          headers: ["담당", "거래처", "상품명", "전달사항", "상품코드", "확인"],
-          numeric: [],
+          headers: ["창고", "담당", "거래처", "상품명", "규격", "수량", "단가", "합계", "전달사항", "확인"],
+          numeric: [5, 6, 7],
           inventory: [],
           purchase: -1,
           purchaseEditable: false,
           status: -1,
           sourceRows: workspace.notices,
           rows: workspace.notices.map((notice) => [
+            notice.warehouse || "",
             notice.manager || "",
             notice.customer || "",
             notice.productName || "",
+            notice.specification || "",
+            typeof notice.quantity === "number" ? notice.quantity : "",
+            typeof notice.unitPrice === "number" ? notice.unitPrice : "",
+            typeof notice.supplyAmount === "number"
+              ? notice.supplyAmount
+              : typeof notice.unitPrice === "number" && typeof notice.quantity === "number"
+                ? notice.unitPrice * notice.quantity
+                : "",
             formatDeliveryNotice(notice),
-            notice.productCode || "",
             acknowledgedIds.has(notice.noticeId) ? "확인함" : "미확인",
           ]),
           sortByProductCode: false,
-          noticeText: 3,
-          acknowledgement: 5,
+          noticeText: 8,
+          acknowledgement: 9,
         };
         notices.columns = createPreviewColumns("notices", notices.headers, notices.numeric);
-        [90, 150, 180, 300, 100, 72].forEach((width, index) => {
+        [80, 90, 150, 180, 80, 70, 90, 100, 300, 72].forEach((width, index) => {
           if (notices.columns[index]) notices.columns[index].defaultWidth = width;
         });
 
         validation.noticesPreview = notices;
-        const definitions = { validation };
-        const inventory = buildInventoryPreview(workspace);
-        if (inventory) definitions.inventory = inventory;
-        definitions.allocations = allocations;
+        const definitions = { validation, allocations };
         if (typeof engine.getStockLedgerView === "function") {
           const ledgerView = engine.getStockLedgerView(workspace);
           definitions.ledger = {
             label: "재고수불부",
+            shortcut: "F7",
             columns: ledgerView.columns.map((column) => ({ ...column, defaultWidth: column.numeric ? 90 : 140 })),
             headers: ledgerView.headers,
             numeric: ledgerView.columns.map((column, index) => column.numeric ? index : -1).filter((index) => index >= 0),
@@ -3340,6 +3380,11 @@
             rows: ledgerView.rows.map((row) => row.values),
             sortByProductCode: true,
           };
+        }
+        const inventory = buildInventoryPreview(workspace);
+        if (inventory) {
+          inventory.shortcut = "F8";
+          definitions.inventory = inventory;
         }
         return definitions;
       }
@@ -3506,6 +3551,7 @@
                     const orderQuantity = previewId === "inventory" &&
                       column.role === "orderQuantity" && !referenceRow;
                     const negativeNumericValue = isNonblankNumericValue(value) && Number(String(value).replace(/,/g, "")) < 0;
+                    const ledgerNegative = previewId === "ledger" && column.role === "calculatedQuantity" && negativeNumericValue;
                     const warehouseFill = warehouseQuantity && isNonblankNumericValue(value)
                       ? warehouseColorFor(preview, column)
                       : "";
@@ -3518,20 +3564,28 @@
                       warehouseQuantity || orderQuantity || calculatedQuantity ? "inventory-framed-cell" : "",
                       editableInventory ? "inventory-editable" : "",
                       calculatedQuantity ? "inventory-total-cell" : "",
+                      ledgerNegative ? "ledger-negative-cell" : "",
                     ].filter(Boolean).join(" ");
                     const editablePurchase = editable && preview.purchaseEditable === true &&
                       preview.purchase === index && !referenceRow;
                     const noticeLink = preview.notice === index && sourceRow?.noticeId;
                     const noticeText = preview.noticeText === index;
                     const acknowledgement = editable && preview.acknowledgement === index && sourceRow?.noticeId;
+                    const editableOrder = editable && previewId === "allocations" && column.orderField && sourceRow?.sourceRowNumber;
                     const negativeBalance = previewId === "inventory" &&
                       typeof sourceRow?.displayRemainingQuantity === "number" && sourceRow.displayRemainingQuantity < 0;
                     const content = editablePurchase
                       ? `<input class="purchase-input" data-purchase-code="${escapeHtml(sourceRow?.productCode || "")}"
                           data-grid-column="shipping:inventory:purchase" data-negative-balance="${negativeBalance ? "true" : "false"}"
                           autocomplete="off"
-                          tabindex="${negativeBalance ? "0" : "-1"}"
+                          tabindex="${negativeBalance || previewId === "allocations" ? "0" : "-1"}"
                           value="${escapeHtml(value)}" aria-label="${escapeHtml(sourceRow?.productCode || "")} 구매처">`
+                      : editableOrder
+                        ? `<input class="order-edit-input" data-order-row="${escapeHtml(sourceRow.sourceRowNumber)}"
+                            data-order-field="${escapeHtml(column.orderField)}"
+                            ${["quantity", "unitPrice"].includes(column.orderField) ? 'inputmode="decimal"' : ""}
+                            autocomplete="off" value="${escapeHtml(value)}"
+                            aria-label="${escapeHtml(sourceRow?.productCode || "")} ${escapeHtml(column.header)} 수정">`
                       : noticeLink
                         ? `<button class="notice-link" type="button" data-open-notice-id="${escapeHtml(sourceRow.noticeId)}">${escapeHtml(value)}</button>`
                         : acknowledgement
@@ -3566,8 +3620,8 @@
         if (!definitions[state.activePreview]) state.activePreview = "validation";
         elements.previewTabs.innerHTML = Object.entries(definitions).map(([id, definition]) => `
           <button class="tab-button ${id === state.activePreview ? "active" : ""}" type="button" role="tab"
-            aria-selected="${id === state.activePreview}" data-preview="${id}">
-            ${escapeHtml(definition.label)}
+            aria-selected="${id === state.activePreview}" ${definition.shortcut ? `aria-keyshortcuts="${definition.shortcut}"` : ""} data-preview="${id}">
+            ${escapeHtml(definition.label)}${definition.shortcut ? `<span class="tab-shortcut">${definition.shortcut}</span>` : ""}
           </button>
         `).join("");
 
@@ -3745,6 +3799,8 @@
 
       async function runAnalysis() {
         if (!state.validation?.canAnalyze) return;
+        state.analysisEnterLocked = false;
+        setAnalysisEnterReady(false);
         elements.analyzeButton.disabled = true;
         elements.analyzeButton.textContent = "분석 중...";
         setSystemMessage("processing data_blocks...");
@@ -3761,7 +3817,7 @@
           setSystemMessage("analysis failed... (오류 내용을 확인하세요)");
           showToast(error.message || "분석 중 오류가 발생했습니다.", true);
         } finally {
-          elements.analyzeButton.innerHTML = '<span aria-hidden="true">▸</span> 출고 분석';
+          elements.analyzeButton.innerHTML = '<span aria-hidden="true">▸</span><span>출고분석 Enter</span>';
           elements.analyzeButton.disabled = !state.validation?.canAnalyze;
         }
       }
@@ -3772,7 +3828,7 @@
           const fileName = workbookTools.getOutputFileName(state.workspace.createdAt);
           workbookTools.downloadWorkbook(state.workspace, window.XLSX, fileName);
           const selection = engine.getPurchaseUploadSelection(state.workspace);
-          setSystemMessage(`unified workbook saved... (4 sheets, 구매업로드 ${selection.included.length}행)`);
+          setSystemMessage(`unified workbook saved... (5 sheets, 구매업로드 ${selection.included.length}행)`);
           showToast(`${fileName} 한 파일 다운로드를 시작했습니다.`);
         } catch (error) {
           setSystemMessage("unified workbook blocked... (기준일·출력 오류 확인)");
@@ -4062,6 +4118,12 @@
         }
         if (event.key !== "Enter" || event.isComposing || event.repeat) return;
         const target = event.target;
+        if (state.analysisEnterLocked) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          if (state.analysisEnterReady && state.validation?.canAnalyze) runAnalysis();
+          return;
+        }
         if (target instanceof HTMLInputElement ||
             target instanceof HTMLTextAreaElement ||
             target instanceof HTMLSelectElement ||
@@ -4070,7 +4132,7 @@
         if (!state.validation?.canAnalyze || state.workspace || elements.analyzeButton.disabled) return;
         event.preventDefault();
         runAnalysis();
-      });
+      }, true);
 
       function focusPurchaseInput(input) {
         if (!input) return;
@@ -4083,6 +4145,25 @@
         engine.setPurchaseValue(state.workspace, input.dataset.purchaseCode, input.value);
         rememberPurchaseName(input.value);
         scheduleLocalSave();
+      }
+
+      function commitOrderInput(input) {
+        if (!input || !state.workspace || state.activePreview !== "allocations") return false;
+        try {
+          engine.setOrderValue(
+            state.workspace,
+            input.dataset.orderRow,
+            input.dataset.orderField,
+            input.value,
+          );
+          renderResults();
+          scheduleLocalSave();
+          return true;
+        } catch (error) {
+          showToast(error.message || "주문현황 수정값을 반영하지 못했습니다.", true);
+          renderPreview();
+          return false;
+        }
       }
 
       function autocompletePurchaseInput(input) {
@@ -4365,9 +4446,27 @@
         elements.columnVisibilityMenu.classList.add("hidden");
         elements.columnVisibilityButton.setAttribute("aria-expanded", "false");
       });
+      function activatePreview(previewId) {
+        if (!state.workspace) return false;
+        const definitions = getPreviewDefinitions(state.workspace);
+        if (!definitions[previewId]) return false;
+        state.activePreview = previewId;
+        renderPreview();
+        scheduleLocalSave();
+        return true;
+      }
+
       document.addEventListener("keydown", (event) => {
-        if (!["F3", "F7", "F8"].includes(event.key)) return;
+        if (!["F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "F12"].includes(event.key)) return;
         event.preventDefault();
+        if (event.key === "F4") {
+          elements.smartInputButton.click();
+          return;
+        }
+        if (event.key === "F5") {
+          refreshCurrentSession();
+          return;
+        }
         if (event.key === "F3") {
           if (!state.workspace) return;
           elements.tableSearchInput.focus({ preventScroll: true });
@@ -4375,19 +4474,33 @@
           elements.tableSearchInput.setSelectionRange(caret, caret);
           return;
         }
+        if (event.key === "F6") {
+          activatePreview("allocations");
+          return;
+        }
         if (event.key === "F7") {
+          activatePreview("ledger");
+          return;
+        }
+        if (event.key === "F8") {
+          activatePreview("inventory");
+          return;
+        }
+        if (event.key === "F9") {
           if (!elements.printButton.disabled) printActiveTable();
           return;
         }
-        if (!elements.downloadButton.disabled) downloadResult();
+        if (event.key === "F10") {
+          if (!elements.downloadButton.disabled) downloadResult();
+          return;
+        }
+        if (!elements.headerCloudSaveButton.disabled) saveCloudPlanFromHeader();
       });
 
       elements.previewTabs.addEventListener("click", (event) => {
         const button = event.target.closest("[data-preview]");
         if (!button || !state.workspace) return;
-        state.activePreview = button.dataset.preview;
-        renderPreview();
-        scheduleLocalSave();
+        activatePreview(button.dataset.preview);
       });
       elements.previewTable.addEventListener("click", (event) => {
         const button = event.target.closest("[data-open-notice-id]");
@@ -4407,7 +4520,7 @@
       });
       elements.previewTable.addEventListener("input", (event) => {
         const input = event.target.closest("[data-purchase-code]");
-        if (!input || !state.workspace || state.activePreview !== "inventory") return;
+        if (!input || !state.workspace || !["inventory", "allocations"].includes(state.activePreview)) return;
         engine.setPurchaseValue(state.workspace, input.dataset.purchaseCode, input.value);
         scheduleLocalSave();
       });
@@ -4417,11 +4530,16 @@
       });
       elements.previewTable.addEventListener("compositionend", (event) => {
         const input = event.target.closest?.(".purchase-input[data-purchase-code]");
-        if (!input || !state.workspace || state.activePreview !== "inventory") return;
+        if (!input || !state.workspace || !["inventory", "allocations"].includes(state.activePreview)) return;
         input.dataset.composing = "false";
         commitPurchaseInput(input);
       });
       elements.previewTable.addEventListener("change", (event) => {
+        const orderInput = event.target.closest(".order-edit-input[data-order-row][data-order-field]");
+        if (orderInput) {
+          commitOrderInput(orderInput);
+          return;
+        }
         const inventoryInput = event.target.closest(".inventory-input[data-inventory-code][data-inventory-column]");
         if (inventoryInput) {
           commitInventoryInput(inventoryInput);
@@ -4439,8 +4557,14 @@
           return;
         }
         const input = event.target.closest("[data-purchase-code]");
-        if (!input || !state.workspace || state.activePreview !== "inventory") return;
+        if (!input || !state.workspace || !["inventory", "allocations"].includes(state.activePreview)) return;
         scheduleLocalSave();
+      });
+      elements.previewTable.addEventListener("keydown", (event) => {
+        const input = event.target.closest?.(".order-edit-input[data-order-row][data-order-field]");
+        if (!input || event.key !== "Enter" || event.isComposing) return;
+        event.preventDefault();
+        input.blur();
       });
       elements.previewTable.addEventListener("pointerdown", beginColumnResize);
       elements.previewTable.addEventListener("dragstart", handleColumnDragStart);

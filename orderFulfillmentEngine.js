@@ -7,7 +7,7 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  const ENGINE_VERSION = "3.10.0";
+  const ENGINE_VERSION = "3.11.0";
   const WORKSPACE_SCHEMA_VERSION = "shipping-workspace/v2";
   const INVENTORY_OVERRIDE_SCHEMA_VERSION = "shipping-inventory-overrides/v1";
   const HEADER_SCAN_LIMIT = 30;
@@ -29,6 +29,7 @@
   const ORDER_OPTIONAL_COLUMNS = Object.freeze([
     ...ORDER_DATE_COLUMNS,
     "담당",
+    "창고",
     "단위",
     "재고",
     "단가",
@@ -40,6 +41,7 @@
     "일자": Object.freeze(["일자"]),
     "주문일자": Object.freeze(["주문일자"]),
     "담당": Object.freeze(["담당"]),
+    "창고": Object.freeze(["창고", "출고창고"]),
     "단위": Object.freeze(["단위"]),
     "품목코드": Object.freeze(["품목코드", "상품코드", "코드"]),
     "품목명": Object.freeze(["품목명", "상품명", "제품명"]),
@@ -259,6 +261,17 @@
       editable: false,
       numeric: true,
     });
+    const usageIndex = result.findIndex((column) => normalizeHeader(column.header) === "사용");
+    if (usageIndex >= 0) {
+      result.splice(usageIndex, 1);
+      const warehousePriceIndex = result.findIndex(
+        (column) => normalizeHeader(column.header) === "창고" && column.role === "warehousePrice",
+      );
+      if (warehousePriceIndex >= 0) {
+        const [warehousePrice] = result.splice(warehousePriceIndex, 1);
+        result.splice(Math.min(usageIndex, result.length), 0, warehousePrice);
+      }
+    }
     return result;
   }
 
@@ -583,6 +596,7 @@
           basisDateStatus: rowBasisDateStatus,
           basisDateCandidates,
           manager: cleanText(getField(row, columnMap, "담당")),
+          warehouse: cleanText(getField(row, columnMap, "창고")),
           sourceUnit: cleanText(getField(row, columnMap, "단위")),
           productCode: code,
           productName: cleanText(getField(row, columnMap, "품목명")),
@@ -971,6 +985,11 @@
         sourceRowNumber: row.sourceRowNumber,
         productCode: row.productCode,
         productName: row.productName,
+        specification: row.specification,
+        warehouse: row.warehouse,
+        quantity: row.quantity,
+        unitPrice: row.unitPrice,
+        supplyAmount: row.supplyAmount,
         note: originalText(row.noteOriginal ?? row.note),
         note1: originalText(row.note1Original ?? row.note1),
         manager: row.manager,
@@ -1366,6 +1385,7 @@
       throw new Error("지원하지 않는 Shipping Management 작업공간입니다.");
     }
     const inboundByCode = new Map();
+    const purchasePartnersByCode = new Map();
     const purchaseRows = workspace?.orderOpsInputs?.purchases?.rows;
     (Array.isArray(purchaseRows) ? purchaseRows : []).forEach((row) => {
       const productCode = normalizeProductCode(row?.productCode);
@@ -1375,6 +1395,22 @@
         productCode,
         roundQuantity((inboundByCode.get(productCode) || 0) + parsed.value),
       );
+      const partner = cleanText(row?.partner);
+      if (partner) {
+        if (!purchasePartnersByCode.has(productCode)) purchasePartnersByCode.set(productCode, new Set());
+        purchasePartnersByCode.get(productCode).add(partner);
+      }
+    });
+    const salesByCode = new Map();
+    const salesRows = workspace?.orderOpsInputs?.sales?.rows;
+    (Array.isArray(salesRows) ? salesRows : []).forEach((row) => {
+      const productCode = normalizeProductCode(row?.productCode);
+      const parsed = parseNumericCell(row?.quantity);
+      if (!productCode || !parsed.ok) return;
+      salesByCode.set(
+        productCode,
+        roundQuantity((salesByCode.get(productCode) || 0) + parsed.value),
+      );
     });
     const columns = [
       { key: "ledger:product-code", header: "품목코드", role: "productCode", numeric: false },
@@ -1383,8 +1419,10 @@
       { key: "ledger:unit", header: "단위", role: "unit", numeric: false },
       { key: "ledger:stock", header: "재고", role: "stockQuantity", numeric: true },
       { key: "ledger:inbound", header: "입고", role: "inboundQuantity", numeric: true },
-      { key: "ledger:outbound", header: "출고(주문)", role: "orderQuantity", numeric: true },
+      { key: "ledger:outbound", header: "주문", role: "orderQuantity", numeric: true },
+      { key: "ledger:sales", header: "판매", role: "salesQuantity", numeric: true },
       { key: "ledger:remaining", header: "잔량", role: "calculatedQuantity", numeric: true },
+      { key: "ledger:purchase-place", header: "구매처", role: "purchasePlace", numeric: false },
     ];
     const inventoryView = getInventoryViewRows(workspace);
     const rows = inventoryView.rows.map((inventory) => {
@@ -1399,7 +1437,9 @@
         inventory.stockTotal,
         inboundByCode.get(inventory.productCode) || 0,
         inventory.orderQuantity,
+        salesByCode.get(inventory.productCode) || 0,
         inventory.remainingQuantity,
+        inventory.purchase || [...(purchasePartnersByCode.get(inventory.productCode) || [])].join(", "),
       ];
       return { ...inventory, sourceRow: source, values };
     });
@@ -1450,6 +1490,92 @@
       };
     });
     return { columns: warehouseColumns, rows };
+  }
+
+  function rebuildWorkspaceFromOrders(workspace) {
+    const purchaseInputs = getPurchaseInputs(workspace);
+    const inventoryOverrides = JSON.parse(JSON.stringify(
+      workspace.inventoryOverrides || { schemaVersion: INVENTORY_OVERRIDE_SCHEMA_VERSION, cells: [] },
+    ));
+    const orderOpsInputs = JSON.parse(JSON.stringify(workspace.orderOpsInputs || null));
+    const acknowledgedIds = [...ensureNoticeState(workspace).acknowledgedIds];
+    const orderSource = workspace.sourceFiles?.orders || {};
+    const inventorySource = workspace.sourceFiles?.inventory || {};
+    const parsedOrders = {
+      fileName: orderSource.fileName,
+      sheetName: orderSource.sheetName,
+      fileHash: orderSource.sha256,
+      headerRowIndex: orderSource.headerRowIndex,
+      rowCount: workspace.orders.length,
+      rows: workspace.orders.map((row) => ({ ...row })),
+      missingColumns: [],
+      errors: [],
+      warnings: [],
+      sourceMatrix: orderSource.matrix,
+      productCodeColumnIndex: orderSource.productCodeColumnIndex,
+      headerMapping: orderSource.headerMapping,
+    };
+    const parsedInventory = {
+      fileName: inventorySource.fileName,
+      sheetName: inventorySource.sheetName,
+      fileHash: inventorySource.sha256,
+      headerRowIndex: inventorySource.headerRowIndex,
+      rowCount: workspace.inventory.length,
+      rows: workspace.inventory.map((row) => ({ ...row })),
+      columns: inventorySource.columns || [],
+      missingColumns: [],
+      duplicateCodes: [],
+      errors: [],
+      warnings: [],
+      sourceMatrix: inventorySource.matrix,
+      productCodeColumnIndex: inventorySource.productCodeColumnIndex,
+    };
+    const rebuilt = analyze(parsedOrders, parsedInventory, {
+      sourceFingerprint: workspace.sourceFingerprint,
+      createdAt: workspace.createdAt,
+    });
+    rebuilt.inventoryOverrides = inventoryOverrides;
+    if (orderOpsInputs) rebuilt.orderOpsInputs = orderOpsInputs;
+    Object.keys(workspace).forEach((key) => { delete workspace[key]; });
+    Object.assign(workspace, rebuilt);
+    applyPurchaseInputs(workspace, purchaseInputs);
+    const noticeState = ensureNoticeState(workspace);
+    const validNoticeIds = new Set(workspace.notices.map((notice) => notice.noticeId));
+    noticeState.acknowledgedIds = acknowledgedIds.filter((noticeId) => validNoticeIds.has(noticeId));
+    getInventoryViewRows(workspace);
+    return workspace;
+  }
+
+  function setOrderValue(workspace, sourceRowNumber, field, value) {
+    if (!workspace || workspace.schemaVersion !== WORKSPACE_SCHEMA_VERSION) {
+      throw new Error("지원하지 않는 Shipping Management 작업공간입니다.");
+    }
+    const rowNumber = Number(sourceRowNumber);
+    const order = (workspace.orders || []).find((row) => Number(row?.sourceRowNumber) === rowNumber);
+    if (!order) throw new Error("수정할 주문행을 찾지 못했습니다.");
+    if (field === "purchase") return setPurchaseValue(workspace, order.productCode, value);
+    if (field === "quantity") {
+      const parsed = parseNumericCell(value);
+      if (!parsed.ok || parsed.blank) throw new Error("주문수량은 빈값이 아닌 숫자여야 합니다.");
+      order.quantity = parsed.value;
+    } else if (field === "unitPrice") {
+      const parsed = parseNumericCell(value);
+      if (!parsed.ok) throw new Error("단가는 숫자 또는 빈칸이어야 합니다.");
+      order.unitPrice = parsed.blank ? null : parsed.value;
+    } else if (field === "warehouse") {
+      order.warehouse = cleanText(value);
+    } else if (field === "note") {
+      order.noteOriginal = originalText(value);
+      order.note = cleanText(value);
+    } else {
+      throw new Error("수정할 수 없는 주문 항목입니다.");
+    }
+    if (["quantity", "unitPrice"].includes(field)) {
+      order.supplyAmount = typeof order.unitPrice === "number"
+        ? roundQuantity(order.quantity * order.unitPrice)
+        : null;
+    }
+    return rebuildWorkspaceFromOrders(workspace);
   }
 
   function analyze(ordersParsed, inventoryParsed, options = {}) {
@@ -2037,6 +2163,7 @@
     getInventoryColumnDescriptors,
     getInventoryViewRows,
     getStockLedgerView,
+    setOrderValue,
     setInventoryOverride,
     getAllocationInventoryView,
   });

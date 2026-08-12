@@ -10,11 +10,12 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function (engine) {
   "use strict";
 
-  const WORKBOOK_VERSION = "4.3.0";
+  const WORKBOOK_VERSION = "4.4.0";
   const REQUIRED_SHEETS = Object.freeze([
     "전달사항(적요보기)",
+    "주문현황",
+    "재고수불부",
     "창고별재고",
-    "미출고현황",
     "구매업로드",
   ]);
   const PURCHASE_UPLOAD_SCHEMA_VERSION = "shipping-purchase-upload/v1";
@@ -287,44 +288,45 @@
         .map((row) => [row.noticeId || `${row.sourceRowNumber}`, row]),
     );
     const headers = [
-      "담당", "거래처", "품목코드", "품목명", "규격", "주문수량", "적요", "적요1", "그룹", "확인상태",
+      "창고", "담당", "거래처", "상품명", "규격", "수량", "단가", "합계", "전달사항", "확인",
     ];
     const noticeRows = (workspace.notices || []).map((notice) => {
       const order = orderByNoticeId.get(notice.noticeId) ||
         (workspace.orders || []).find((row) => row.sourceRowNumber === notice.sourceRowNumber) || {};
       return [
+        notice.warehouse || order.warehouse || "",
         notice.manager || order.manager || "",
         notice.customer || order.customer || "",
-        notice.productCode || order.productCode || "",
         notice.productName || order.productName || "",
         order.specification || "",
         typeof order.quantity === "number" ? order.quantity : "",
-        notice.note ?? order.noteOriginal ?? order.note ?? "",
-        notice.note1 ?? order.note1Original ?? order.note1 ?? "",
-        notice.group || order.group || "",
+        typeof order.unitPrice === "number" ? order.unitPrice : "",
+        typeof order.supplyAmount === "number"
+          ? order.supplyAmount
+          : typeof order.unitPrice === "number" && typeof order.quantity === "number"
+            ? order.unitPrice * order.quantity
+            : "",
+        [notice.note ?? order.noteOriginal ?? order.note ?? "", notice.note1 ?? order.note1Original ?? order.note1 ?? ""]
+          .filter((value) => String(value).trim() !== "").join("\n"),
         acknowledgedIds.has(notice.noticeId) ? "확인함" : "미확인",
       ];
     });
     const sheet = buildTableSheet(XLSX, {
       title: "전달사항(적요보기)",
-      subtitle: "원 주문행 순서와 적요·적요1 원문을 유지합니다. 확인상태는 선택적 운영 기록입니다.",
+      subtitle: "창고·주문금액·전달사항을 원 주문행 순서로 확인합니다. 확인은 선택적 운영 기록입니다.",
       headers,
       rows: noticeRows,
-      widths: [13, 22, 15, 31, 13, 12, 28, 28, 14, 11],
-      numericColumns: [5],
-      textColumns: [2],
+      widths: [13, 13, 22, 31, 13, 12, 13, 15, 42, 11],
+      numericColumns: [5, 6, 7],
     });
     sheet["!rows"] = [
       { hpt: 27 }, { hpt: 28 }, { hpt: 8 }, { hpt: 27 },
       ...noticeRows.map((row) => ({
-        hpt: Math.min(120, Math.max(22, Math.max(
-          String(row[6] || "").split(/\r?\n/).length,
-          String(row[7] || "").split(/\r?\n/).length,
-        ) * 18)),
+        hpt: Math.min(120, Math.max(22, String(row[8] || "").split(/\r?\n/).length * 18)),
       })),
     ];
     noticeRows.forEach((_, rowIndex) => {
-      [6, 7].forEach((column) => {
+      [8].forEach((column) => {
         const cell = ensureCell(sheet, XLSX, rowIndex + 4, column);
         cell.s = {
           ...(cell.s || {}),
@@ -342,6 +344,7 @@
     const inventoryView = engine.getAllocationInventoryView(workspace);
     const warehouseHeaders = inventoryView.columns.map((column) => column.header);
     const headers = [
+      "창고",
       "상품코드",
       "품목명",
       "규격",
@@ -359,6 +362,7 @@
       "담당자",
     ];
     const rows = workspace.allocations.map((row, index) => [
+      row.warehouse || "",
       row.productCode,
       row.productName,
       row.specification,
@@ -375,7 +379,7 @@
       row.note1,
       row.manager,
     ]);
-    const warehouseStart = 3;
+    const warehouseStart = 4;
     const orderQuantityColumn = warehouseStart + warehouseHeaders.length;
     const purchaseColumn = orderQuantityColumn + 4;
     const priceColumn = purchaseColumn + 2;
@@ -394,9 +398,10 @@
     const lastRow = Math.max(1, rows.length + 1);
     const lastColumn = columnName(headers.length - 1);
     sheet["!cols"] = headers.map((header, index) => {
-      if (index === 0) return { wch: 15 };
-      if (index === 1) return { wch: 31 };
-      if (index === 2) return { wch: 13 };
+      if (index === 0) return { wch: 13 };
+      if (index === 1) return { wch: 15 };
+      if (index === 2) return { wch: 31 };
+      if (index === 3) return { wch: 13 };
       if (index >= warehouseStart && index < orderQuantityColumn) return { wch: 11 };
       if (header === "거래처") return { wch: 22 };
       if (header === "적요" || header === "적요1") return { wch: 24 };
@@ -462,7 +467,7 @@
           style.fill = { fgColor: { rgb: COLORS.redSoft } };
           style.font = { ...BASE_FONT, color: { rgb: COLORS.red }, bold: true };
         }
-        if (column === 0) {
+        if (column === 1) {
           cell.t = "s";
           cell.v = String(cell.v ?? "");
           cell.w = cell.v;
@@ -470,6 +475,40 @@
         }
         applyCellStyle(cell, style);
       });
+    });
+    return sheet;
+  }
+
+  function buildStockLedgerSheet(workspace, XLSX) {
+    if (!engine?.getStockLedgerView) {
+      throw new Error("Shipping Management 재고수불부 엔진을 불러오지 못했습니다.");
+    }
+    const ledger = engine.getStockLedgerView(workspace);
+    const headers = ledger.headers;
+    const rows = ledger.rows.map((row) => row.values);
+    const numericColumns = ledger.columns
+      .map((column, index) => column.numeric ? index : -1)
+      .filter((index) => index >= 0);
+    const codeColumn = ledger.columns.findIndex((column) => column.role === "productCode");
+    const remainingColumn = ledger.columns.findIndex((column) => column.role === "calculatedQuantity");
+    const sheet = buildTableSheet(XLSX, {
+      title: "재고수불부",
+      subtitle: "재고·입고·주문·판매 정보를 함께 표시합니다. 잔량은 기존 기준인 재고 합계−주문수량이며 음수는 노란색으로 표시합니다.",
+      headers,
+      rows,
+      widths: headers.map((header) => header === "품목명" ? 31 : header === "구매처" ? 22 : 13),
+      headerFill: COLORS.slate,
+      numericColumns,
+      textColumns: codeColumn >= 0 ? [codeColumn] : [],
+    });
+    rows.forEach((row, index) => {
+      if (!(Number(row[remainingColumn]) < 0)) return;
+      const cell = ensureCell(sheet, XLSX, index + 4, remainingColumn);
+      cell.s = {
+        ...(cell.s || {}),
+        fill: { fgColor: { rgb: "FFF200" } },
+        font: { ...BASE_FONT, color: { rgb: COLORS.red }, bold: true },
+      };
     });
     return sheet;
   }
@@ -962,7 +1001,7 @@
       cellStyles: true,
     });
     const entries = readStoredZip(new Uint8Array(raw));
-    const sheetNumber = workbook.SheetNames.indexOf("미출고현황") + 1;
+    const sheetNumber = workbook.SheetNames.indexOf("주문현황") + 1;
     const targetName = `xl/worksheets/sheet${sheetNumber}.xml`;
     const encoder = new TextEncoder();
     const decoder = new TextDecoder("utf-8");
@@ -972,7 +1011,7 @@
       entry.content = encoder.encode(addPageSetupXml(decoder.decode(entry.content)));
       updated = true;
     });
-    if (!updated) throw new Error("미출고현황 인쇄 설정 대상 시트를 찾지 못했습니다.");
+    if (!updated) throw new Error("주문현황 인쇄 설정 대상 시트를 찾지 못했습니다.");
     return writeStoredZip(entries);
   }
 
@@ -1150,7 +1189,7 @@
     const workbook = XLSX.utils.book_new();
     workbook.Props = {
       Title: "OrderOps 통합 출력",
-      Subject: "전달사항·창고별재고·미출고현황·구매업로드",
+      Subject: "전달사항·주문현황·재고수불부·창고별재고·구매업로드",
       Author: "ONEAPP Shipping Management",
       Company: "ONEAPP",
       Comments: `workspace=${workspace.schemaVersion}; workbook=${WORKBOOK_VERSION}`,
@@ -1161,13 +1200,18 @@
       buildDeliveryNoticeSheet(workspace, XLSX),
       "전달사항(적요보기)",
     );
+    const allocationSheet = buildAllocationSheet(workspace, XLSX);
+    XLSX.utils.book_append_sheet(workbook, allocationSheet, "주문현황");
+    XLSX.utils.book_append_sheet(
+      workbook,
+      buildStockLedgerSheet(workspace, XLSX),
+      "재고수불부",
+    );
     XLSX.utils.book_append_sheet(
       workbook,
       buildWarehouseInventorySheet(workspace, XLSX),
       "창고별재고",
     );
-    const allocationSheet = buildAllocationSheet(workspace, XLSX);
-    XLSX.utils.book_append_sheet(workbook, allocationSheet, "미출고현황");
     XLSX.utils.book_append_sheet(
       workbook,
       buildPurchaseUploadSheet(workspace, XLSX),
@@ -1178,7 +1222,7 @@
     );
     addPrintNames(
       workbook,
-      "미출고현황",
+      "주문현황",
       Math.max(1, workspace.allocations.length + 1),
       allocationLastColumn,
     );

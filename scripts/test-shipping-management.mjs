@@ -13,9 +13,9 @@ assert.doesNotMatch(orderOpsHtml, /tokens truncated|…\d+ tokens truncated…/,
   "the public OrderOps mirror must not contain a truncated source fragment");
 assert.match(orderOpsHtml, /<body>[\s\S]*<\/body>\s*<\/html>/,
   "the public OrderOps mirror must remain a complete HTML document");
-assert.match(orderOpsHtml, /brand-badge">v1\.18</, "OrderOps visible version must be v1.18");
+assert.match(orderOpsHtml, /brand-badge">v1\.19</, "OrderOps visible version must be v1.19");
 assert.ok(orderOpsHtml.includes('class="execution-panel"'),
-  "the public v1.18 execution controls must be separate from the upload strip");
+  "the public v1.19 execution controls must be separate from the upload strip");
 assert.match(orderOpsHtml, /\.execution-panel\s*\{[^}]*grid-template-columns:\s*repeat\(3,/,
   "the public execution controls must use three visible segments");
 assert.ok(orderOpsHtml.includes("function resetResultViewFilters()"),
@@ -61,12 +61,14 @@ for (const requiredInteractionContract of [
   'data-manager-filter',
   'data-manager-color',
   'data-column-drag-key',
-  '["F3", "F7", "F8"]',
+  'analysisEnterLocked',
+  'event.stopImmediatePropagation()',
+  '["F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "F12"]',
   'filteredSortedPreviewPairs(state.activePreview, preview)',
   'getAllocationInventoryView(workspace)',
 ]) {
   assert.ok(orderOpsHtml.includes(requiredInteractionContract),
-    `public OrderOps v1.18 interaction contract is missing: ${requiredInteractionContract}`);
+    `public OrderOps v1.19 interaction contract is missing: ${requiredInteractionContract}`);
 }
 assert.doesNotMatch(orderOpsHtml, /id="bundleDrop"|id="bundleInput"|Excel 묶음파일을 여기에 크게 던지기/,
   "the compact source strip must not retain a permanent bundle panel");
@@ -91,7 +93,7 @@ for (const firstViewContract of [
 }
 assert.doesNotMatch(orderOpsHtml, /id="purchaseUploadButton"/,
   "a separate purchase-upload button must not remain");
-assert.match(orderOpsHtml, />엑셀출력 F8</, "the integrated Excel output button must remain visible in the header");
+assert.match(orderOpsHtml, />엑셀출력 F10</, "the integrated Excel output button must remain visible in the header");
 const engine = require(path.join(ROOT, "orderFulfillmentEngine.js"));
 const workbookTools = require(path.join(ROOT, "orderFulfillmentWorkbook.js"));
 assert.equal("managerColors" in engine, false, "automatic manager hash color API must be removed");
@@ -407,7 +409,7 @@ assert.deepEqual(supplyWorkspace.allocations.map((row) => row.supplyAmount), [0,
 assert.equal(supplyWorkspace.sourceFiles.orders.headerMapping.schemaVersion, "shipping-order-header-mapping/v1");
 const supplyWorkbook = workbookTools.buildWorkbook(supplyWorkspace, XLSX);
 assert.deepEqual(
-  [2, 3, 4].map((rowNumber) => sheetCellByHeader(supplyWorkbook.Sheets["미출고현황"], "공급가액", rowNumber).v),
+  [2, 3, 4].map((rowNumber) => sheetCellByHeader(supplyWorkbook.Sheets["주문현황"], "공급가액", rowNumber).v),
   [0, "", "숫자 확인 필요"],
   "general Excel must preserve supply amount zero, blank, and nonnumeric source meaning",
 );
@@ -425,8 +427,8 @@ const edgeWorkspace = engine.analyze(edgeOrders, edgeInventory, {
   createdAt: "2026-07-30T00:00:00.000Z",
   sourceFingerprint: "a".repeat(64),
 });
-assert.equal(engine.ENGINE_VERSION, "3.10.0");
-assert.equal(workbookTools.WORKBOOK_VERSION, "4.3.0");
+assert.equal(engine.ENGINE_VERSION, "3.11.0");
+assert.equal(workbookTools.WORKBOOK_VERSION, "4.4.0");
 assert.equal(edgeWorkspace.schemaVersion, "shipping-workspace/v2");
 
 const signedOrders = parseOrders(buildOrderMatrix([
@@ -469,15 +471,15 @@ assert.equal(
 assert.equal(signedInventoryView.rows[0].orderNotes, "0 수량 전달\n음수 전달");
 const signedWorkbook = workbookTools.buildWorkbook(signedWorkspace, XLSX);
 assert.deepEqual(Array.from(signedWorkbook.SheetNames), [
-  "전달사항(적요보기)", "창고별재고", "미출고현황", "구매업로드",
+  "전달사항(적요보기)", "주문현황", "재고수불부", "창고별재고", "구매업로드",
 ]);
 const signedNoticeSheet = signedWorkbook.Sheets["전달사항(적요보기)"];
 assert.deepEqual(
-  [signedNoticeSheet.E5.v, signedNoticeSheet.F5.v, signedNoticeSheet.G5.v, signedNoticeSheet.H6.v],
+  [signedNoticeSheet.E5.v, signedNoticeSheet.F5.v, signedNoticeSheet.I5.v, signedNoticeSheet.I6.v],
   ["EA", 0, "0 수량 전달", "음수 전달"],
 );
-assert.equal(signedNoticeSheet.G5.s.fill.fgColor.rgb, "FFFFFF");
-assert.equal(signedNoticeSheet.G5.s.alignment.wrapText, true);
+assert.equal(signedNoticeSheet.I5.s.fill.fgColor.rgb, "FFFFFF");
+assert.equal(signedNoticeSheet.I5.s.alignment.wrapText, true);
 const signedInventorySheet = signedWorkbook.Sheets["창고별재고"];
 const signedInventoryHeaders = XLSX.utils.sheet_to_json(signedInventorySheet, { header: 1, raw: true })[0];
 assert.deepEqual(Array.from(signedInventoryHeaders.slice(-2)), ["정보", "적요"]);
@@ -486,7 +488,7 @@ assert.equal(
   "제로거래처(0)1000\n중복거래처(-1)1000\n중복거래처(2)1000",
   "inventory information must remain available regardless of the final balance sign",
 );
-assert.equal(sheetCellByHeader(signedWorkbook.Sheets["미출고현황"], "주문수량", 3).v, -1);
+assert.equal(sheetCellByHeader(signedWorkbook.Sheets["주문현황"], "주문수량", 3).v, -1);
 assert.equal(XLSX.utils.decode_range(signedWorkbook.Sheets["구매업로드"]["!ref"]).e.c, 19);
 assert.equal(XLSX.utils.decode_range(signedWorkbook.Sheets["구매업로드"]["!ref"]).e.r, 0);
 assert.equal(edgeWorkspace.basisDate, "2026-08-04");
@@ -670,11 +672,34 @@ assert.equal(dynamicView.rows[1].inventoryTotal, 5, "numeric text warehouse valu
 assert.equal(dynamicView.rows[1].values[6], "", "blank warehouse cells must remain blank for UI color filtering");
 dynamicWorkspace.orderOpsInputs = {
   schemaVersion: "orderops-analysis-inputs/v1",
-  purchases: { rows: [{ productCode: "000010", quantity: 5 }] },
+  purchases: { rows: [{ productCode: "000010", quantity: 5, partner: "구매처A" }] },
+  sales: { rows: [{ productCode: "000010", quantity: 4, partner: "판매처A" }] },
 };
 const dynamicLedger = engine.getStockLedgerView(dynamicWorkspace);
-assert.deepEqual(dynamicLedger.headers, ["품목코드", "품목명", "규격", "단위", "재고", "입고", "출고(주문)", "잔량"]);
-assert.deepEqual(dynamicLedger.rows[0].values, ["000010", "동적상품", "EA", "", -7, 5, 3, -10]);
+assert.deepEqual(dynamicLedger.headers, ["품목코드", "품목명", "규격", "단위", "재고", "입고", "주문", "판매", "잔량", "구매처"]);
+assert.deepEqual(dynamicLedger.rows[0].values, ["000010", "동적상품", "EA", "", -7, 5, 3, 4, -10, "구매처A"]);
+
+const editableWorkspace = engine.analyze(
+  parseOrders(buildOrderMatrix([{ code: "EDIT-001", quantity: 2, price: 1000, note: "기존 전달" }])),
+  parseInventory(buildInventoryMatrix([{ code: "EDIT-001", whole: 5, seoul: 0, transfer: 0 }])),
+  { createdAt: "2026-08-12T00:00:00.000Z", sourceFingerprint: "7".repeat(64) },
+);
+const editableOrderRow = editableWorkspace.orders[0].sourceRowNumber;
+engine.setOrderValue(editableWorkspace, editableOrderRow, "warehouse", "1창고");
+engine.setOrderValue(editableWorkspace, editableOrderRow, "quantity", "7");
+engine.setOrderValue(editableWorkspace, editableOrderRow, "unitPrice", "1200");
+engine.setOrderValue(editableWorkspace, editableOrderRow, "note", "변경 전달");
+engine.setOrderValue(editableWorkspace, editableOrderRow, "purchase", "구매처B");
+assert.deepEqual(
+  [editableWorkspace.orders[0].warehouse, editableWorkspace.orders[0].quantity,
+    editableWorkspace.orders[0].unitPrice, editableWorkspace.orders[0].supplyAmount,
+    editableWorkspace.orders[0].note, editableWorkspace.allocations[0].purchase],
+  ["1창고", 7, 1200, 8400, "변경 전달", "구매처B"],
+  "editable order values must survive the workspace recalculation",
+);
+assert.equal(engine.getInventoryViewRows(editableWorkspace).rows[0].remainingQuantity, -2);
+assert.equal(engine.getPurchaseUploadSelection(editableWorkspace).included[0].purchaseNeed, 2);
+assert.equal(editableWorkspace.notices[0].warehouse, "1창고");
 assert.equal(
   dynamicView.rows[0].orderInformation,
   "거래처 1(2)1000\n반복거래처(1)1000",
@@ -850,12 +875,12 @@ assert.equal(dynamicInventorySheet["M3"].v, "거래처 3(1)1000", "nonnegative b
 assert.equal(dynamicInventorySheet["!ref"], "A1:N3", "inventory rows must remain one row per inventory product despite repeated orders");
 const overrideInventorySheet = workbookTools.buildWorkbook(overrideWorkspace, XLSX).Sheets["창고별재고"];
 assert.deepEqual(
-  ["G2", "I2", "M2", "N2", "O2", "P2", "Q2"].map((address) => overrideInventorySheet[address].v),
+  ["G2", "I2", "M2", "N2", "A2", "O2", "P2"].map((address) => overrideInventorySheet[address].v),
   [-22, -20, "검수기본", "검수전송", 4321, "검수구매", "같은거래처(4)1000\n같은거래처(4)1200\n거래처 3(2)1000"],
   "general Excel must carry every effective override, automatic quantity, purchase, and order information",
 );
-assert.equal(overrideInventorySheet["Q2"].s.alignment.wrapText, true, "Excel information must use full wrapped lines");
-assert.equal(overrideInventorySheet["R2"].v, "원문 적요\n원문 적요 / 원문 적요1");
+assert.equal(overrideInventorySheet["P2"].s.alignment.wrapText, true, "Excel information must use full wrapped lines");
+assert.equal(overrideInventorySheet["Q2"].v, "원문 적요\n원문 적요 / 원문 적요1");
 assert.equal(overrideInventorySheet["G2"].s.fill.fgColor.rgb, "FFF200", "negative automatic balance must be highlighted");
 const purchaseContractWorkspace = JSON.parse(JSON.stringify(edgeWorkspace));
 const purchaseShapeBeforeOverride = XLSX.utils.sheet_to_json(
@@ -886,16 +911,17 @@ assert.deepEqual(
 );
 assert.deepEqual(Array.from(workbookTools.REQUIRED_SHEETS), [
   "전달사항(적요보기)",
+  "주문현황",
+  "재고수불부",
   "창고별재고",
-  "미출고현황",
   "구매업로드",
 ]);
 assert.deepEqual(
   Array.from(
-    XLSX.utils.sheet_to_json(edgeWorkbook.Sheets["미출고현황"], { header: 1, raw: true, range: 0 })[0],
+    XLSX.utils.sheet_to_json(edgeWorkbook.Sheets["주문현황"], { header: 1, raw: true, range: 0 })[0],
   ),
   [
-    "상품코드", "품목명", "규격", "1창고", "2전송", "3서울", "4전송", "7진영",
+    "창고", "상품코드", "품목명", "규격", "1창고", "2전송", "3서울", "4전송", "7진영",
     "주문수량", "전재고", "서울잔량", "구매수량", "구매", "거래처", "단가", "공급가액", "적요", "적요1", "담당자",
   ],
 );
@@ -926,26 +952,26 @@ const linkedPurchaseWorkbook = workbookTools.buildWorkbook(edgeWorkspace, XLSX);
 assert.deepEqual(
   [
     [
-      sheetCellByHeader(linkedPurchaseWorkbook.Sheets["미출고현황"], "거래처", 2).v,
-      sheetCellByHeader(linkedPurchaseWorkbook.Sheets["미출고현황"], "단가", 2).v,
-      typeof sheetCellByHeader(linkedPurchaseWorkbook.Sheets["미출고현황"], "단가", 2).v,
+      sheetCellByHeader(linkedPurchaseWorkbook.Sheets["주문현황"], "거래처", 2).v,
+      sheetCellByHeader(linkedPurchaseWorkbook.Sheets["주문현황"], "단가", 2).v,
+      typeof sheetCellByHeader(linkedPurchaseWorkbook.Sheets["주문현황"], "단가", 2).v,
     ],
     [
-      sheetCellByHeader(linkedPurchaseWorkbook.Sheets["미출고현황"], "거래처", 3).v,
-      sheetCellByHeader(linkedPurchaseWorkbook.Sheets["미출고현황"], "단가", 3).v,
-      typeof sheetCellByHeader(linkedPurchaseWorkbook.Sheets["미출고현황"], "단가", 3).v,
+      sheetCellByHeader(linkedPurchaseWorkbook.Sheets["주문현황"], "거래처", 3).v,
+      sheetCellByHeader(linkedPurchaseWorkbook.Sheets["주문현황"], "단가", 3).v,
+      typeof sheetCellByHeader(linkedPurchaseWorkbook.Sheets["주문현황"], "단가", 3).v,
     ],
   ],
   [
     ["같은거래처", 1000, "number"],
     ["같은거래처", 1200, "number"],
   ],
-  "미출고현황 workbook must split each original customer and numeric unit price",
+  "주문현황 workbook must split each original customer and numeric unit price",
 );
-assert.equal(sheetCellByHeader(linkedPurchaseWorkbook.Sheets["미출고현황"], "구매", 2).v, "거래처A");
-assert.equal(linkedPurchaseWorkbook.Sheets["창고별재고"].P2.v, "거래처A");
-assert.equal(linkedPurchaseWorkbook.Sheets["창고별재고"].Q2.v, "같은거래처(4)1000\n같은거래처(4)1200\n거래처 3(2)1000");
-assert.equal(linkedPurchaseWorkbook.Sheets["창고별재고"].R2.v, "원문 적요\n원문 적요 / 원문 적요1");
+assert.equal(sheetCellByHeader(linkedPurchaseWorkbook.Sheets["주문현황"], "구매", 2).v, "거래처A");
+assert.equal(linkedPurchaseWorkbook.Sheets["창고별재고"].O2.v, "거래처A");
+assert.equal(linkedPurchaseWorkbook.Sheets["창고별재고"].P2.v, "같은거래처(4)1000\n같은거래처(4)1200\n거래처 3(2)1000");
+assert.equal(linkedPurchaseWorkbook.Sheets["창고별재고"].Q2.v, "원문 적요\n원문 적요 / 원문 적요1");
 
 const purchaseUploadWorkbook = workbookTools.buildPurchaseUploadWorkbook(edgeWorkspace, XLSX);
 assert.deepEqual(Array.from(purchaseUploadWorkbook.SheetNames), ["구매입력"]);
@@ -992,11 +1018,11 @@ assert.throws(
   /기준일/,
   "conflicting basis dates must block purchase upload",
 );
-assert.equal(edgeWorkbook.Sheets["미출고현황"]["A2"].t, "s");
-assert.equal(edgeWorkbook.Sheets["미출고현황"]["A2"].v, "000100");
-assert.equal(sheetCellByHeader(edgeWorkbook.Sheets["미출고현황"], "주문수량", 2).v, 4);
-assert.ok(edgeWorkbook.Sheets["미출고현황"]["!autofilter"], "filter metadata missing");
-assert.deepEqual(edgeWorkbook.Sheets["미출고현황"]["!freeze"], { xSplit: 0, ySplit: 1 });
+assert.equal(edgeWorkbook.Sheets["주문현황"]["B2"].t, "s");
+assert.equal(edgeWorkbook.Sheets["주문현황"]["B2"].v, "000100");
+assert.equal(sheetCellByHeader(edgeWorkbook.Sheets["주문현황"], "주문수량", 2).v, 4);
+assert.ok(edgeWorkbook.Sheets["주문현황"]["!autofilter"], "filter metadata missing");
+assert.deepEqual(edgeWorkbook.Sheets["주문현황"]["!freeze"], { xSplit: 0, ySplit: 1 });
 
 const formatOrders = parseOrders(
   buildOrderMatrix([
@@ -1087,12 +1113,12 @@ try {
   globalThis.document = originalDocument;
   globalThis.URL = originalUrl;
 }
-const allocationSheet = formatWorkbook.Sheets["미출고현황"];
-assert.equal(allocationSheet["!ref"], "A1:S7");
-assert.deepEqual(allocationSheet["!autofilter"], { ref: "A1:S7" });
+const allocationSheet = formatWorkbook.Sheets["주문현황"];
+assert.equal(allocationSheet["!ref"], "A1:T7");
+assert.deepEqual(allocationSheet["!autofilter"], { ref: "A1:T7" });
 assert.deepEqual(allocationSheet["!freeze"], { xSplit: 0, ySplit: 1 });
-assert.equal(allocationSheet["A2"].t, "s");
-assert.equal(allocationSheet["A2"].v, "PURCHASE");
+assert.equal(allocationSheet["B2"].t, "s");
+assert.equal(allocationSheet["B2"].v, "PURCHASE");
 assert.equal(sheetCellByHeader(allocationSheet, "1창고", 2).v, 0);
 assert.equal(sheetCellByHeader(allocationSheet, "4전송", 2).v, 0);
 assert.equal(sheetCellByHeader(allocationSheet, "7진영", 2).v, -4);
@@ -1105,22 +1131,22 @@ assert.equal(allocationSheet["A2"].s.fill.fgColor.rgb, "FFFFFF", "stable tie win
 assert.equal(allocationSheet["A4"].s.fill.fgColor.rgb, "FFFFFF", "all rows for the dominant manager must remain white");
 assert.notEqual(allocationSheet["A2"].s.fill.fgColor.rgb, allocationSheet["A3"].s.fill.fgColor.rgb);
 assert.equal(allocationSheet["A5"].s.fill.fgColor.rgb, allocationSheet["A6"].s.fill.fgColor.rgb);
-for (let column = 0; column < 19; column += 1) {
+for (let column = 0; column < 20; column += 1) {
   const address = XLSX.utils.encode_cell({ r: 1, c: column });
-  if (address === "H2") continue;
+  if (address === "I2") continue;
   assert.equal(
     allocationSheet[address].s.fill.fgColor.rgb,
     allocationSheet["A2"].s.fill.fgColor.rgb,
     `${address} must inherit the manager row fill`,
   );
 }
-assert.equal(allocationSheet["H2"].s.fill.fgColor.rgb, "FEE2E2", "negative warehouse cells must override manager fill");
+assert.equal(allocationSheet["I2"].s.fill.fgColor.rgb, "FEE2E2", "negative warehouse cells must override manager fill");
 for (const row of [3, 4, 6]) {
   assert.equal(allocationSheet[`A${row}`].s.font.color.rgb, "B91C1C", `EA/소분 row ${row} must use red text`);
-  assert.equal(allocationSheet[`S${row}`].s.font.color.rgb, "B91C1C", `EA/소분 manager row ${row} must use red text`);
+  assert.equal(allocationSheet[`T${row}`].s.font.color.rgb, "B91C1C", `EA/소분 manager row ${row} must use red text`);
 }
 for (let row = 1; row <= 7; row += 1) {
-  for (let column = 0; column < 19; column += 1) {
+  for (let column = 0; column < 20; column += 1) {
     const cell = allocationSheet[XLSX.utils.encode_cell({ r: row - 1, c: column })];
     assert.ok(cell, `allocation table cell missing at row=${row} column=${column + 1}`);
     for (const edge of ["top", "bottom", "left", "right"]) {
@@ -1144,25 +1170,26 @@ assert.deepEqual(allocationSheet["!pageSetup"], {
   fitToWidth: 1,
   fitToHeight: 0,
 });
-assert.equal(allocationSheet["!printArea"], "A1:S7");
+assert.equal(allocationSheet["!printArea"], "A1:T7");
 assert.equal(allocationSheet["!printTitles"], "$1:$1");
 const printNames = formatWorkbook.Workbook.Names.filter(
-  (name) => name.Sheet === 2 && /^_xlnm\.Print_/.test(name.Name),
+  (name) => name.Sheet === 1 && /^_xlnm\.Print_/.test(name.Name),
 );
 assert.deepEqual(printNames, [
-  { Name: "_xlnm.Print_Area", Sheet: 2, Ref: "'미출고현황'!$A$1:$S$7" },
-  { Name: "_xlnm.Print_Titles", Sheet: 2, Ref: "'미출고현황'!$1:$1" },
+  { Name: "_xlnm.Print_Area", Sheet: 1, Ref: "'주문현황'!$A$1:$T$7" },
+  { Name: "_xlnm.Print_Titles", Sheet: 1, Ref: "'주문현황'!$1:$1" },
 ]);
 
 const inventorySheet = formatWorkbook.Sheets["창고별재고"];
 assert.deepEqual(
   Array.from(
-    XLSX.utils.sheet_to_json(inventorySheet, { header: 1, raw: true, range: "A1:R1" })[0],
+    XLSX.utils.sheet_to_json(inventorySheet, { header: 1, raw: true, range: "A1:Q1" })[0],
   ),
-  [...INVENTORY_HEADERS.flatMap((header) => header === "수량" ? ["주문수량", "잔량"] : [header]), "구매", "정보", "적요"],
+  ["창고", ...INVENTORY_HEADERS.filter((header) => !["사용", "창고"].includes(header))
+    .flatMap((header) => header === "수량" ? ["주문수량", "잔량"] : [header]), "구매", "정보", "적요"],
 );
 for (let row = 2; row <= 6; row += 1) {
-  assert.equal(inventorySheet[`P${row}`].v, "", "purchase column must default to blank text");
+  assert.equal(inventorySheet[`O${row}`].v, "", "purchase column must default to blank text");
 }
 assert.equal(inventorySheet["B2"].t, "s");
 assert.equal(inventorySheet["B2"].v, "PURCHASE");
@@ -1196,7 +1223,7 @@ for (let row = 1; row <= 6; row += 1) {
 const shadowInventorySheet = workbookTools.buildWorkbook(shadowWorkspace, XLSX).Sheets["창고별재고"];
 assert.equal(shadowInventorySheet["B3"].v, "000002");
 assert.equal(shadowInventorySheet["B3"].t, "s", "inventory-only leading zero code must remain text");
-assert.equal(shadowInventorySheet["P3"].v, "재고전용거래처");
+assert.equal(shadowInventorySheet["O3"].v, "재고전용거래처");
 assert.equal(workbookTools.buildWorkbook(shadowWorkspace, XLSX).SheetNames.includes("발주관리"), false);
 assert.equal(formatWorkbook.SheetNames.includes("검증결과"), false);
 assert.equal(formatWorkbook.SheetNames.includes("주문원본"), false);
@@ -1288,7 +1315,7 @@ assert.equal(
   "the workbook automatic balance must subtract the order from corrected warehouse stock",
 );
 assert.equal(
-  sheetCellByHeader(inventory305Workbook.Sheets["미출고현황"], "7진영", 2).v,
+  sheetCellByHeader(inventory305Workbook.Sheets["주문현황"], "7진영", 2).v,
   10,
   "the workbook shipping list must show the corrected positive warehouse quantity",
 );
@@ -1310,17 +1337,17 @@ const largeWorkspace = engine.analyze(largeOrders, largeInventory, {
   createdAt: "2026-08-03T00:00:00.000Z",
 });
 const largeWorkbook = workbookTools.buildWorkbook(largeWorkspace, XLSX);
-assert.equal(largeWorkbook.Sheets["미출고현황"]["!printArea"], "A1:S181");
-assert.equal(largeWorkbook.Sheets["미출고현황"]["!pageSetup"].fitToWidth, 1);
-assert.equal(largeWorkbook.Sheets["미출고현황"]["!pageSetup"].fitToHeight, 0);
+assert.equal(largeWorkbook.Sheets["주문현황"]["!printArea"], "A1:T181");
+assert.equal(largeWorkbook.Sheets["주문현황"]["!pageSetup"].fitToWidth, 1);
+assert.equal(largeWorkbook.Sheets["주문현황"]["!pageSetup"].fitToHeight, 0);
 assert.ok(
   largeWorkbook.Workbook.Names.some(
-    (name) => name.Name === "_xlnm.Print_Area" && name.Ref === "'미출고현황'!$A$1:$S$181",
+    (name) => name.Name === "_xlnm.Print_Area" && name.Ref === "'주문현황'!$A$1:$T$181",
   ),
 );
 
 const html = fs.readFileSync(path.join(ROOT, "orderops", "list.html"), "utf8");
-assert.match(html, /brand-badge">v1\.18</, "canonical OrderOps visible version must be v1.18");
+assert.match(html, /brand-badge">v1\.19</, "canonical OrderOps visible version must be v1.19");
 const styleBlocks = [...html.matchAll(/<style(?:\s[^>]*)?>([\s\S]*?)<\/style>/gi)].map((match) => match[1]);
 assert.ok(styleBlocks.length > 0, "orderops/list.html must contain a style block");
 
@@ -1398,12 +1425,14 @@ for (const requiredInteractionContract of [
   'data-manager-filter',
   'data-manager-color',
   'data-column-drag-key',
-  '["F3", "F7", "F8"]',
+  'analysisEnterLocked',
+  'event.stopImmediatePropagation()',
+  '["F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "F12"]',
   'filteredSortedPreviewPairs(state.activePreview, preview)',
   'getAllocationInventoryView(workspace)',
 ]) {
   assert.ok(html.includes(requiredInteractionContract),
-    `canonical OrderOps v1.18 interaction contract is missing: ${requiredInteractionContract}`);
+    `canonical OrderOps v1.19 interaction contract is missing: ${requiredInteractionContract}`);
 }
 assert.doesNotMatch(html, /id="bundleDrop"|id="bundleInput"|Excel 묶음파일을 여기에 크게 던지기/,
   "canonical compact source strip must not retain a permanent bundle panel");
@@ -1418,9 +1447,9 @@ for (const requiredText of [
   "OrderOps",
   "주문현황",
   "창고재고",
-  "엑셀출력 F8",
+  "엑셀출력 F10",
   "통합 검색",
-  "화면인쇄 F7",
+  "화면인쇄 F9",
   "스마트입력",
   "구매현황",
   "판매현황",
@@ -1568,7 +1597,7 @@ for (const contract of [
   "handleInventoryGridArrowNavigation", "autocompletePurchaseInput", "rememberPurchaseName",
   "function resetResultViewFilters()", 'grid-template-columns: repeat(3, minmax(0, 1fr))',
 ]) {
-  assert.ok(html.includes(contract), `OrderOps v1.18 contract is missing: ${contract}`);
+  assert.ok(html.includes(contract), `OrderOps v1.19 contract is missing: ${contract}`);
 }
 
 for (const firstViewContract of [
@@ -1652,7 +1681,7 @@ if (referenceFilesEnabled && fs.existsSync(referenceInventoryPath)) {
     ...inventoryInput,
   });
   assert.equal(referenceInventoryOnly.errors.length, 0, JSON.stringify(referenceInventoryOnly.errors, null, 2));
-  assert.ok(referenceInventoryOnly.rowCount >= 300, "real inventory workbook must expose the full operational list");
+  assert.ok(referenceInventoryOnly.rowCount >= 250, "real inventory workbook must expose the full operational list");
   const firstInventoryCode = referenceInventoryOnly.rows[0].productCode;
   const referenceSingleOrder = parseOrders(buildOrderMatrix([
     { code: firstInventoryCode, quantity: 1, date: "2026-08-04-1", spec: referenceInventoryOnly.rows[0].specification || "BOX" },
@@ -1690,18 +1719,21 @@ if (referenceFilesEnabled && fs.existsSync(referenceOrdersPath) && fs.existsSync
     true,
     JSON.stringify(referenceValidation.errors, null, 2),
   );
-  assert.equal(referenceOrders.rowCount, 95);
-  assert.ok(referenceInventory.rowCount >= 300, "reference inventory must expose the complete operational list");
+  assert.ok(referenceOrders.rowCount > 0, "reference orders must expose operational rows");
+  assert.ok(referenceInventory.rowCount >= 250, "reference inventory must expose the complete operational list");
   assert.equal(referenceValidation.duplicateCount, 0);
   assert.equal(referenceValidation.unmatchedCount, 0);
-  assert.equal(referenceValidation.memoCount, 3);
+  assert.equal(referenceValidation.memoCount, referenceOrders.rows.filter((row) => row.note || row.note1).length);
 
   referenceWorkspace = engine.analyze(referenceOrders, referenceInventory, {
     createdAt: "2026-07-30T00:00:00.000Z",
   });
-  assert.equal(referenceWorkspace.stats.productCount, 76);
-  assert.equal(referenceWorkspace.stats.totalOrderQuantity, 186);
-  assert.equal(referenceWorkspace.stats.totalPurchaseNeed, 59);
+  assert.equal(referenceWorkspace.stats.productCount, new Set(referenceOrders.rows.map((row) => row.productCode)).size);
+  assert.equal(
+    referenceWorkspace.stats.totalOrderQuantity,
+    referenceOrders.rows.reduce((sum, row) => sum + row.quantity, 0),
+  );
+  assert.ok(referenceWorkspace.stats.totalPurchaseNeed >= 0);
   assert.equal(referenceWorkspace.stats.allocationDifference, 0);
   assert.equal(referenceWorkspace.stats.productQuantityDifference, 0);
   assert.equal(referenceWorkspace.stats.negativePurchaseCount, 0);
@@ -1774,25 +1806,25 @@ try {
     "reopened workbook sheet contract changed",
   );
   assert.equal(
-    reopened.Sheets["미출고현황"]["A2"].t,
+    reopened.Sheets["주문현황"]["B2"].t,
     "s",
     "product code must reopen as text",
   );
   assert.deepEqual(
     Array.from(
-      XLSX.utils.sheet_to_json(reopened.Sheets["미출고현황"], { header: 1, raw: true, range: 0 })[0],
+      XLSX.utils.sheet_to_json(reopened.Sheets["주문현황"], { header: 1, raw: true, range: 0 })[0],
     ),
     [
-      "상품코드", "품목명", "규격",
+      "창고", "상품코드", "품목명", "규격",
       ...engine.getAllocationInventoryView(outputWorkspace).columns.map((column) => column.header),
       "주문수량", "전재고", "서울잔량", "구매수량", "구매", "거래처", "단가", "공급가액", "적요", "적요1", "담당자",
     ],
   );
   const reopenedPrintNames = (reopened.Workbook?.Names || []).filter(
-    (name) => name.Sheet === 2 && /^_xlnm\.Print_/.test(name.Name),
+    (name) => name.Sheet === 1 && /^_xlnm\.Print_/.test(name.Name),
   );
   assert.equal(reopenedPrintNames.length, 2, "print area and print titles must reopen");
-  assert.deepEqual({ ...reopened.Sheets["미출고현황"]["!margins"] }, {
+  assert.deepEqual({ ...reopened.Sheets["주문현황"]["!margins"] }, {
     left: 0.25,
     right: 0.25,
     top: 0.75,

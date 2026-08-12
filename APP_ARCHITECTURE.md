@@ -1,8 +1,8 @@
 # ONEAPP Application Architecture
 
 - Repository: orderzoneapp-coder/oneapp
-- Architecture document version: 1.3.5
-- Last reviewed: 2026-08-08
+- Architecture document version: 1.3.6
+- Last reviewed: 2026-08-12
 - Machine-readable companion: app-manifest.json
 
 ## 1. Purpose
@@ -91,7 +91,7 @@ Shared storage or navigation does not make their business meaning identical.
 | `history_viewer.html` | Web entry | Production | Inspect product-change history and price trends |
 | `Master.html` | Web entry | Pilot | Product-master lookup and administrator-reviewed add/update; initial registration and full replacement are not active in the first phase |
 | `Item_manager.html` | Web entry | Pilot / transition | Existing category lookup and product-management route retained until approved feature migration and result verification are complete |
-| `orderops/list.html` | Web entry | Pilot | OrderOps four-way structure-first Excel intake, order-aware inventory balance and stock-ledger review, purchase-plan editing and recovery, explicit revisioned cloud sharing, and reviewed unshipped-status/purchase-upload Excel output |
+| `orderops/list.html` | Web entry | Pilot | OrderOps four-way structure-first Excel intake, editable order-status and order-aware inventory balance/stock-ledger review, purchase-plan editing and recovery, explicit revisioned cloud sharing, and integrated Excel output |
 | `coreEngine.js` | Shared library | Production | Storage, pricing, history, export, cloud synchronization, and master-data utilities |
 | `code.gs` | Cloud service | Production | Google Apps Script API for master, history, configuration, the finalized DataOps inventory snapshot, and immutable Shipping purchase-plan revisions |
 
@@ -340,9 +340,10 @@ Equivalent safety controls must be preserved when another application writes the
 2. The existing four-slot source strip is one full drag surface that accepts one to four files and classifies every dropped file by worksheet structure and column names first; touching a named slot opens its single-file picker without adding a separate visible bundle target.
 3. Configured sheet-name aliases are used only when structural candidates tie; filename aliases are the final tie-breaker.
 4. Administrator column aliases are passed to the real order and inventory parsers without renaming source headers.
-5. Order and warehouse inventory remain required. Inventory balance is the warehouse-stock sum minus order quantity; purchase rows populate the stock-ledger inbound display but do not change that balance, and sales rows remain a retained future-phase source.
+5. Order and warehouse inventory remain required. Inventory balance is the warehouse-stock sum minus the current editable order quantity. Purchase rows populate stock-ledger inbound and purchase-place displays, while sales rows populate the stock-ledger sales display; neither optional source changes the existing inventory-balance formula.
 6. Mapping aliases and purchase-place input history remain local UI preferences. Parsed optional-source rows travel with the analyzed workspace so local recovery and explicit cloud loading reproduce the same stock-ledger view.
-7. The warehouse-inventory view and workbook expose order information as `거래처(수량)단가` in `정보`, while original `적요` and `적요1` text is preserved separately in `적요`.
+7. The warehouse-inventory view and workbook expose order information as `거래처(수량)단가` in `정보`, while original `적요` and `적요1` text is preserved separately in `적요`. The source `사용` column is omitted and the existing source `창고` column is moved to that leading position.
+8. Order-status edits to order quantity, purchase place, warehouse, delivery note, and unit price remain inside the existing `shipping-workspace/v2` optional row fields and are recalculated before local recovery, explicit cloud save, stock-ledger display, purchase selection, and integrated workbook output.
 
 ---
 
@@ -840,11 +841,14 @@ Roadmap work is delivered as separate pull requests and verified after each merg
 #### OrderOps
 
 - F3 focuses the integrated search field and keeps the caret ready for immediate input.
-- F7 prints only the current visible tab state, including active filters, rows, column visibility and column order, on A4 portrait.
-- F8 downloads the complete integrated workbook regardless of current screen filters, hidden columns or column order.
+- F4 opens Smart Input, F5 refreshes the current session, Enter starts shipment analysis, and a successful multi-file drop captures Enter for analysis so an earlier focused control is not reactivated.
+- F6 opens Order Status, F7 opens the Stock Ledger, and F8 opens Warehouse Inventory.
+- F9 prints only the current visible tab state, including active filters, rows, column visibility and column order, on A4 portrait.
+- F10 downloads the complete integrated workbook regardless of current screen filters, hidden columns or column order, and F12 saves the reviewed cloud revision.
 - The existing four-file source strip classifies one to four dropped files by columns and sheet structure before sheet-name and filename aliases; each named slot remains a single-file touch selector, and no persistent bundle panel is added.
-- Warehouse inventory shows `정보` as `거래처(수량)단가` and preserves order notes in a separate `적요` column on screen and in the integrated workbook.
-- Purchase input supplies the stock-ledger inbound display only. The inventory balance remains warehouse stock minus unshipped order quantity, while sales input remains reserved for a later phase.
+- The result tabs are ordered Validation Summary, Order Status, Stock Ledger, and Warehouse Inventory; the former Unshipped Status label is Order Status.
+- Warehouse inventory shows `정보` as `거래처(수량)단가`, preserves order notes in a separate `적요` column, omits `사용`, and moves the existing `창고` source column to the leading position on screen and in the integrated workbook.
+- Purchase input supplies stock-ledger inbound/purchase-place displays and sales input supplies the sales display. The inventory balance remains warehouse stock minus the current order quantity.
 
 Function keys are application-owned behavior.
 
