@@ -13,9 +13,29 @@ assert.doesNotMatch(orderOpsHtml, /tokens truncated|…\d+ tokens truncated…/,
   "the public OrderOps mirror must not contain a truncated source fragment");
 assert.match(orderOpsHtml, /<body>[\s\S]*<\/body>\s*<\/html>/,
   "the public OrderOps mirror must remain a complete HTML document");
-assert.match(orderOpsHtml, /brand-badge">v1\.24</, "OrderOps visible version must be v1.24");
+assert.match(orderOpsHtml, /brand-badge">v1\.25</, "ORDER Q visible version must be v1.25");
+assert.match(orderOpsHtml, /<title>ONEAPP ORDER Q · 출고관리<\/title>/,
+  "the public page title must establish ORDER Q as shipment management");
+assert.match(orderOpsHtml, /aria-label="ONEAPP ORDER Q 출고관리"/,
+  "the public brand must identify ONEAPP ORDER Q shipment management");
+assert.match(orderOpsHtml, /class="brand-logo" src="assets\/order-q-logo\.png"/,
+  "the public header must use the approved ORDER Q logo asset");
+assert.match(orderOpsHtml, /ORDER Q v1\.25 · 출고관리/,
+  "the public footer must use the ORDER Q product concept");
+assert.doesNotMatch(
+  orderOpsHtml.slice(orderOpsHtml.indexOf('<header class="global-header">'), orderOpsHtml.indexOf('</header>')),
+  /NEXUS|OrderOps/,
+  "legacy NEXUS and OrderOps labels must not remain in the public header",
+);
+const orderQLogoPath = path.join(ROOT, "assets", "order-q-logo.png");
+assert.equal(fs.existsSync(orderQLogoPath), true, "the approved ORDER Q logo asset must exist");
+assert.equal(
+  crypto.createHash("sha256").update(fs.readFileSync(orderQLogoPath)).digest("hex"),
+  "411a798c3afefe8840fb614cc1b14eb24e5a069460006e782b96678ad970f588",
+  "the repository logo must be the unmodified approved source image",
+);
 assert.ok(orderOpsHtml.includes('class="execution-panel"'),
-  "the public v1.24 execution controls must be separate from the upload strip");
+  "the public v1.25 execution controls must be separate from the upload strip");
 assert.match(orderOpsHtml, /\.execution-panel\s*\{[^}]*grid-template-columns:\s*repeat\(3,/,
   "the public execution controls must use three visible segments");
 assert.ok(orderOpsHtml.includes("function resetResultViewFilters()"),
@@ -71,7 +91,7 @@ for (const requiredInteractionContract of [
   'getAllocationInventoryView(workspace)',
 ]) {
   assert.ok(orderOpsHtml.includes(requiredInteractionContract),
-    `public OrderOps v1.24 interaction contract is missing: ${requiredInteractionContract}`);
+    `public ORDER Q v1.25 interaction contract is missing: ${requiredInteractionContract}`);
 }
 assert.doesNotMatch(orderOpsHtml, /<input[^>]+type="color"|data-warehouse-color|data-manager-color/,
   "the public OrderOps filter strip must not use a native color picker inside filter options");
@@ -1436,7 +1456,11 @@ assert.ok(
 );
 
 const html = fs.readFileSync(path.join(ROOT, "orderops", "list.html"), "utf8");
-assert.match(html, /brand-badge">v1\.24</, "canonical OrderOps visible version must be v1.24");
+assert.match(html, /brand-badge">v1\.25</, "canonical ORDER Q visible version must be v1.25");
+assert.match(html, /class="brand-logo" src="\.\.\/assets\/order-q-logo\.png"/,
+  "the canonical header must use the shared ORDER Q logo asset");
+assert.match(html, /<h2 id="settingsModalTitle">ORDER Q 환경설정<\/h2>/,
+  "the settings title must use the ORDER Q brand");
 assert.match(
   html,
   /"품목명": \["품목명", "품명", "상품명", "제품명"\]/,
@@ -1537,7 +1561,7 @@ for (const requiredInteractionContract of [
   'getAllocationInventoryView(workspace)',
 ]) {
   assert.ok(html.includes(requiredInteractionContract),
-    `canonical OrderOps v1.24 interaction contract is missing: ${requiredInteractionContract}`);
+    `canonical ORDER Q v1.25 interaction contract is missing: ${requiredInteractionContract}`);
 }
 assert.doesNotMatch(html, /<input[^>]+type="color"|data-warehouse-color|data-manager-color/,
   "canonical OrderOps filter options must remain separate from color assignment");
@@ -1726,7 +1750,7 @@ for (const contract of [
   "handleInventoryGridArrowNavigation", "autocompletePurchaseInput", "rememberPurchaseName",
   "function resetResultViewFilters()", 'grid-template-columns: repeat(3, minmax(0, 1fr))',
 ]) {
-  assert.ok(html.includes(contract), `OrderOps v1.24 contract is missing: ${contract}`);
+  assert.ok(html.includes(contract), `ORDER Q v1.25 contract is missing: ${contract}`);
 }
 assert.ok(html.includes('id="warehouseColorResetButton" type="button">전체 다시보기</button>'),
   "filter reset must be presented as returning to the full view");

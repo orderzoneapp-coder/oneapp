@@ -13,7 +13,13 @@ function testSmartParserEntryAndAssets() {
   assert.match(entry, /^<!DOCTYPE html>/i);
   assert.doesNotMatch(entry, /FILE START:|전체 소스코드/);
   assert.match(entry, /window\.location\.replace\('\.\/input\.html'\)/);
+  assert.match(entry, /ONEAPP ORDER Q · 스마트입력/);
+  assert.match(entry, /ORDER Q 스마트입력 열기/);
   assert.match(input, /id="btnSmartParser"/);
+  assert.match(input, /<title>ONEAPP ORDER Q · 스마트입력<\/title>/);
+  assert.match(input, /aria-label="ONEAPP ORDER Q 스마트입력"/);
+  assert.match(input, /\.\.\/assets\/order-q-logo\.png/);
+  assert.doesNotMatch(input, />OrderOps\s*</);
   assert.match(input, /\.\/orderops-smartparser\.css/);
   assert.match(input, /\.\/orderops-smartparser-core\.js/);
   assert.match(input, /\.\/orderops-smartparser\.js/);
