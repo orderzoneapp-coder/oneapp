@@ -346,6 +346,7 @@ Equivalent safety controls must be preserved when another application writes the
 8. Order-status edits to order quantity, purchase place, warehouse, delivery note, and unit price remain inside the existing `shipping-workspace/v2` optional row fields and are recalculated before local recovery, explicit cloud save, stock-ledger display, purchase selection, and integrated workbook output.
 9. Warehouse and manager color assignments are local persistent display preferences. Changing a color saves and applies it immediately, while `전체 다시보기` clears only active warehouse and manager filters and never resets saved colors.
 10. The settings modal initially exposes the five most recent local recovery records and reveals the remaining retained records through an explicit `더보기` control; record retention and verification still follow the ten-record recovery contract.
+11. System.IO status text states the current operator action in Korean. OrderOps uses F2 to clear only result search/specification/warehouse/manager view filters, while preserving analyzed data and saved warehouse/manager colors. Filter buttons sit after the column tools, and color assignment is a separate target selector with ten visible pastel choices plus an explicit vivid-color expansion; native color inputs are not embedded in filter buttons.
 
 ---
 
