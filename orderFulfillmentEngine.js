@@ -7,7 +7,7 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  const ENGINE_VERSION = "3.5.0";
+  const ENGINE_VERSION = "3.6.0";
   const WORKSPACE_SCHEMA_VERSION = "shipping-workspace/v2";
   const INVENTORY_OVERRIDE_SCHEMA_VERSION = "shipping-inventory-overrides/v1";
   const HEADER_SCAN_LIMIT = 30;
@@ -1242,7 +1242,14 @@
     const code = normalizeProductCode(productCode);
     return (Array.isArray(workspace?.orders) ? workspace.orders : [])
       .filter((row) => normalizeProductCode(row?.productCode) === code)
-      .map((row) => `${cleanText(row.customer)}(${formatPlainNumber(row.quantity)})`)
+      .map((row) => {
+        const customerQuantity = `${cleanText(row.customer)}(${formatPlainNumber(row.quantity)})`;
+        const notice = [
+          originalText(row.noteOriginal ?? row.note),
+          originalText(row.note1Original ?? row.note1),
+        ].filter((value) => String(value).trim() !== "").join(" / ");
+        return notice ? `${customerQuantity} ${notice}` : customerQuantity;
+      })
       .join("\n");
   }
 
