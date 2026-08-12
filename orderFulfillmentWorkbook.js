@@ -10,13 +10,14 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function (engine) {
   "use strict";
 
-  const WORKBOOK_VERSION = "4.4.0";
+  const WORKBOOK_VERSION = "4.5.0";
   const REQUIRED_SHEETS = Object.freeze([
     "전달사항(적요보기)",
     "주문현황",
     "재고수불부",
     "창고별재고",
     "구매업로드",
+    "판매업로드",
   ]);
   const PURCHASE_UPLOAD_SCHEMA_VERSION = "shipping-purchase-upload/v1";
   const PURCHASE_UPLOAD_HEADERS = Object.freeze([
@@ -25,6 +26,14 @@
     "지시사항", "출고가 (공지)", "판매", "no.",
   ]);
   const PURCHASE_UPLOAD_REQUIRED_HEADER_INDEXES = Object.freeze([0, 4, 5, 8, 9, 11]);
+  const SALES_UPLOAD_SCHEMA_VERSION = "shipping-sales-upload/v1";
+  const SALES_UPLOAD_HEADERS = Object.freeze([
+    "일자", "순번", "거래처코드", "거래처명", "출하창고", "거래유형", "전잔액", "전달사항",
+    "품목코드", "품목명", "규격", "수량", "단가", "외화금액", "공급가액", "적요",
+    "출고지시", "공지", "구매처", "날짜", "구매", "생산전표생성",
+  ]);
+  const SALES_UPLOAD_BOLD_HEADER_INDEXES = Object.freeze([0, 4, 5, 8, 9, 11, 12, 14, 15]);
+  const SALES_UPLOAD_REQUIRED_COLUMN_INDEXES = Object.freeze([4, 8, 9, 11, 12, 14, 15]);
 
   const COLORS = Object.freeze({
     navy: "153B55",
@@ -1045,6 +1054,116 @@
     );
   }
 
+  function getSalesUploadRows(workspace) {
+    return (workspace?.allocations || []).filter(
+      (row) =>
+        String(row?.productCode || "").trim() &&
+        typeof row?.quantity === "number" &&
+        Number.isFinite(row.quantity) &&
+        row.quantity !== 0,
+    );
+  }
+
+  function salesUploadSequence(row, index) {
+    const orderNumber = String(row?.orderNumber || "").trim();
+    const trailingNumber = orderNumber.match(/(\d+)\s*$/)?.[1] || "";
+    const fallback = String(Number(row?.inputOrder) || index + 1);
+    return (trailingNumber || fallback).slice(-4);
+  }
+
+  function salesUploadSupplyAmount(row) {
+    if (typeof row?.supplyAmount === "number" && Number.isFinite(row.supplyAmount)) {
+      return row.supplyAmount;
+    }
+    const quantity = typeof row?.quantity === "number" && Number.isFinite(row.quantity) ? row.quantity : 0;
+    const unitPrice = typeof row?.unitPrice === "number" && Number.isFinite(row.unitPrice) ? row.unitPrice : 0;
+    return Number((quantity * unitPrice).toFixed(9));
+  }
+
+  function buildSalesUploadSheet(workspace, XLSX) {
+    requireXlsx(XLSX);
+    requirePurchaseUploadReady(workspace);
+    const sourceRows = getSalesUploadRows(workspace);
+    const rows = sourceRows.map((row, index) => [
+      workspace.uploadDate,
+      salesUploadSequence(row, index),
+      "",
+      String(row.customer || ""),
+      String(row.warehouse || ""),
+      "",
+      "",
+      String(row.noteOriginal ?? row.note ?? ""),
+      String(row.productCode || ""),
+      String(row.productName || ""),
+      String(row.specification || ""),
+      row.quantity,
+      typeof row.unitPrice === "number" && Number.isFinite(row.unitPrice) ? row.unitPrice : 0,
+      "",
+      salesUploadSupplyAmount(row),
+      String(row.note1Original ?? row.note1 ?? ""),
+      "",
+      "",
+      String(row.purchase || ""),
+      String(row.basisDate || workspace.uploadDate || "").replace(/-/g, ""),
+      typeof row.purchaseNeed === "number" && Number.isFinite(row.purchaseNeed) ? row.purchaseNeed : "",
+      "",
+    ]);
+    const sheet = XLSX.utils.aoa_to_sheet([[...SALES_UPLOAD_HEADERS], ...rows]);
+    const lastRow = Math.max(1, rows.length + 1);
+    sheet["!ref"] = `A1:V${lastRow}`;
+    sheet["!cols"] = SALES_UPLOAD_HEADERS.map(() => ({ wch: 10.25 }));
+    sheet["!rows"] = Array.from({ length: lastRow }, () => ({ hpt: 16.5 }));
+
+    SALES_UPLOAD_HEADERS.forEach((header, column) => {
+      const cell = ensureCell(sheet, XLSX, 0, column);
+      const required = SALES_UPLOAD_REQUIRED_COLUMN_INDEXES.includes(column);
+      cell.t = "s";
+      cell.v = header;
+      cell.w = header;
+      applyCellStyle(cell, {
+        fill: { fgColor: { rgb: required ? "FFFF00" : "FFFFFF" } },
+        font: {
+          name: "Arial",
+          sz: SALES_UPLOAD_BOLD_HEADER_INDEXES.includes(column) ? 11 : 10,
+          color: { rgb: "000000" },
+          ...(SALES_UPLOAD_BOLD_HEADER_INDEXES.includes(column) ? { bold: true } : {}),
+        },
+        alignment: { horizontal: "left", vertical: "center", wrapText: false },
+        border: {
+          top: { style: "thin", color: { rgb: "000000" } },
+          bottom: { style: "thin", color: { rgb: "000000" } },
+          left: { style: "thin", color: { rgb: "000000" } },
+          right: { style: "thin", color: { rgb: "000000" } },
+        },
+        protection: { locked: false },
+      });
+    });
+
+    for (let row = 1; row < lastRow; row += 1) {
+      for (let column = 0; column < SALES_UPLOAD_HEADERS.length; column += 1) {
+        const cell = ensureCell(sheet, XLSX, row, column);
+        const numeric = column === 11 || column === 12 || column === 14 || column === 20;
+        if (numeric && cell.v !== "") {
+          cell.t = "n";
+          cell.v = Number(cell.v);
+        } else {
+          cell.t = "s";
+          cell.v = String(cell.v ?? "");
+          cell.w = cell.v;
+        }
+        applyCellStyle(cell, {
+          fill: { fgColor: { rgb: SALES_UPLOAD_REQUIRED_COLUMN_INDEXES.includes(column) ? "FFFF00" : "FFFFFF" } },
+          font: { name: "맑은 고딕", sz: 11, color: { rgb: "000000" } },
+          alignment: { horizontal: "left", vertical: "center", wrapText: false },
+          protection: { locked: false },
+          numFmt: numeric && cell.t === "n" ? numberFormatForValue(cell.v) : "@",
+        });
+      }
+    }
+
+    return sheet;
+  }
+
   function requirePurchaseUploadReady(workspace) {
     if (!workspace || workspace.schemaVersion !== "shipping-workspace/v2") {
       throw new Error("지원하지 않는 Shipping Management 작업공간입니다.");
@@ -1188,9 +1307,9 @@
     requirePurchaseUploadReady(workspace);
     const workbook = XLSX.utils.book_new();
     workbook.Props = {
-      Title: "OrderOps 통합 출력",
-      Subject: "전달사항·주문현황·재고수불부·창고별재고·구매업로드",
-      Author: "ONEAPP Shipping Management",
+      Title: "ORDER Q 통합 출력",
+      Subject: "전달사항·주문현황·재고수불부·창고별재고·구매업로드·판매업로드",
+      Author: "ONEAPP ORDER Q",
       Company: "ONEAPP",
       Comments: `workspace=${workspace.schemaVersion}; workbook=${WORKBOOK_VERSION}`,
       CreatedDate: new Date(workspace.createdAt),
@@ -1216,6 +1335,11 @@
       workbook,
       buildPurchaseUploadSheet(workspace, XLSX),
       "구매업로드",
+    );
+    XLSX.utils.book_append_sheet(
+      workbook,
+      buildSalesUploadSheet(workspace, XLSX),
+      "판매업로드",
     );
     const allocationLastColumn = columnName(
       XLSX.utils.decode_range(allocationSheet["!ref"]).e.c,
@@ -1248,13 +1372,17 @@
     REQUIRED_SHEETS,
     PURCHASE_UPLOAD_SCHEMA_VERSION,
     PURCHASE_UPLOAD_HEADERS,
+    SALES_UPLOAD_SCHEMA_VERSION,
+    SALES_UPLOAD_HEADERS,
     getOutputFileName,
     getPurchaseUploadRows,
+    getSalesUploadRows,
     getPurchaseUploadFileName,
     buildWorkbook,
     buildDeliveryNoticeSheet,
     buildPurchaseUploadSheet,
     buildPurchaseUploadWorkbook,
+    buildSalesUploadSheet,
     writeWorkbook,
     writeStandardWorkbook,
     downloadWorkbook,
