@@ -74,6 +74,9 @@ jobs:
       - name: Test MerchOps master-theme filters and fixed toolbar layout
         run: node scripts/test-merchops-master-theme-filter-layout.mjs
 
+      - name: Test MerchOps common Excel routing and subordinate registration tools
+        run: node scripts/test-merchops-common-excel-routing.mjs
+
       - name: Test MerchOps column resize performance contract
         run: node scripts/test-merchops-column-resize-performance.mjs
 
