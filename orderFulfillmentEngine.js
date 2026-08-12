@@ -7,7 +7,7 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  const ENGINE_VERSION = "3.9.0";
+  const ENGINE_VERSION = "3.10.0";
   const WORKSPACE_SCHEMA_VERSION = "shipping-workspace/v2";
   const INVENTORY_OVERRIDE_SCHEMA_VERSION = "shipping-inventory-overrides/v1";
   const HEADER_SCAN_LIMIT = 30;
@@ -1287,18 +1287,31 @@
     return String(summary?.suppliers || "");
   }
 
-  function orderCustomerQuantityDisplay(workspace, productCode) {
+  function orderInformationDisplay(workspace, productCode) {
     const code = normalizeProductCode(productCode);
     return (Array.isArray(workspace?.orders) ? workspace.orders : [])
       .filter((row) => normalizeProductCode(row?.productCode) === code)
       .map((row) => {
-        const customerQuantity = `${cleanText(row.customer)}(${formatPlainNumber(row.quantity)})`;
-        const notice = [
+        const customer = cleanText(row.customer);
+        const quantity = formatPlainNumber(row.quantity);
+        const unitPrice = typeof row.unitPrice === "number" && Number.isFinite(row.unitPrice)
+          ? formatPlainNumber(row.unitPrice)
+          : "";
+        return `${customer}${quantity ? `(${quantity})` : ""}${unitPrice}`;
+      })
+      .filter(Boolean)
+      .join("\n");
+  }
+
+  function orderNoteDisplay(workspace, productCode) {
+    const code = normalizeProductCode(productCode);
+    return (Array.isArray(workspace?.orders) ? workspace.orders : [])
+      .filter((row) => normalizeProductCode(row?.productCode) === code)
+      .map((row) => [
           originalText(row.noteOriginal ?? row.note),
           originalText(row.note1Original ?? row.note1),
-        ].filter((value) => String(value).trim() !== "").join(" / ");
-        return notice ? `${customerQuantity} ${notice}` : customerQuantity;
-      })
+        ].filter((value) => String(value).trim() !== "").join(" / "))
+      .filter(Boolean)
       .join("\n");
   }
 
@@ -1337,7 +1350,8 @@
         remainingQuantity,
         purchase: String(purchaseInputs[productCode] || ""),
         suppliers: inventorySupplierDisplay(workspace, productCode),
-        orderCustomers: orderCustomerQuantityDisplay(workspace, productCode),
+        orderInformation: orderInformationDisplay(workspace, productCode),
+        orderNotes: orderNoteDisplay(workspace, productCode),
       };
     });
     const negativeCount = rows.filter((row) => row.remainingQuantity < 0).length;

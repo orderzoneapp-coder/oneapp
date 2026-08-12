@@ -337,11 +337,12 @@ Equivalent safety controls must be preserved when another application writes the
 ### 6.6 OrderOps smart file intake
 
 1. The input workbench exposes order, warehouse inventory, purchase, and sales file slots.
-2. The large bundle target accepts two to four files and classifies every file by worksheet structure and column names first; each named slot accepts exactly one manually selected file.
+2. The existing four-slot source strip is one full drag surface that accepts one to four files and classifies every dropped file by worksheet structure and column names first; touching a named slot opens its single-file picker without adding a separate visible bundle target.
 3. Configured sheet-name aliases are used only when structural candidates tie; filename aliases are the final tie-breaker.
 4. Administrator column aliases are passed to the real order and inventory parsers without renaming source headers.
 5. Order and warehouse inventory remain required. Inventory balance is the warehouse-stock sum minus order quantity; purchase rows populate the stock-ledger inbound display but do not change that balance, and sales rows remain a retained future-phase source.
 6. Mapping aliases and purchase-place input history remain local UI preferences. Parsed optional-source rows travel with the analyzed workspace so local recovery and explicit cloud loading reproduce the same stock-ledger view.
+7. The warehouse-inventory view and workbook expose order information as `거래처(수량)단가` in `정보`, while original `적요` and `적요1` text is preserved separately in `적요`.
 
 ---
 
@@ -841,7 +842,8 @@ Roadmap work is delivered as separate pull requests and verified after each merg
 - F3 focuses the integrated search field and keeps the caret ready for immediate input.
 - F7 prints only the current visible tab state, including active filters, rows, column visibility and column order, on A4 portrait.
 - F8 downloads the complete integrated workbook regardless of current screen filters, hidden columns or column order.
-- The large bundle target classifies two to four files by columns and sheet structure before sheet-name and filename aliases; the four named slots are single-file selectors.
+- The existing four-file source strip classifies one to four dropped files by columns and sheet structure before sheet-name and filename aliases; each named slot remains a single-file touch selector, and no persistent bundle panel is added.
+- Warehouse inventory shows `정보` as `거래처(수량)단가` and preserves order notes in a separate `적요` column on screen and in the integrated workbook.
 - Purchase input supplies the stock-ledger inbound display only. The inventory balance remains warehouse stock minus unshipped order quantity, while sales input remains reserved for a later phase.
 
 Function keys are application-owned behavior.
