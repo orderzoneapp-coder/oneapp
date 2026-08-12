@@ -19,6 +19,7 @@ function testSmartParserEntryAndAssets() {
   assert.match(input, /<title>ONEAPP ORDER Q · 스마트입력<\/title>/);
   assert.match(input, /aria-label="ONEAPP ORDER Q 스마트입력"/);
   assert.match(input, /\.\.\/assets\/order-q-logo\.png/);
+  assert.match(input, /\.brand-logo-frame\s*\{[^}]*width:\s*120px;\s*height:\s*20px;/);
   assert.doesNotMatch(input, />OrderOps\s*</);
   assert.match(input, /\.\/orderops-smartparser\.css/);
   assert.match(input, /\.\/orderops-smartparser-core\.js/);

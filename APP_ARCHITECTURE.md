@@ -1,7 +1,7 @@
 # ONEAPP Application Architecture
 
 - Repository: orderzoneapp-coder/oneapp
-- Architecture document version: 1.4.0
+- Architecture document version: 1.4.1
 - Last reviewed: 2026-08-13
 - Machine-readable companion: app-manifest.json
 
@@ -348,7 +348,7 @@ Equivalent safety controls must be preserved when another application writes the
 10. The settings modal initially exposes the five most recent local recovery records and reveals the remaining retained records through an explicit `더보기` control; record retention and verification still follow the ten-record recovery contract.
 11. System.IO status text states the current operator action in Korean. ORDER Q uses F2 to clear only result search/specification/warehouse/manager view filters, while preserving analyzed data and saved warehouse/manager colors. Filter buttons sit after the column tools, and color assignment is a separate target selector with ten visible pastel choices plus an explicit vivid-color expansion; native color inputs are not embedded in filter buttons.
 12. Warehouse inventory accepts both the existing wide warehouse-column layout and the row-based whole-stock layout used by stock-closing workbooks. In the row-based layout, `품명` maps to the product name, `재고` is the editable warehouse quantity only when `수량` is absent and `창고` is present, and the source warehouse code remains read-only; signed quantities and source rows are preserved without changing order, purchase, or sales calculations.
-13. The operator-facing product brand is `ORDER Q`, owned by ONEAPP, and its stated purpose is shipment management (`출고관리`). The approved ORDER Q image asset is the visible header identity. Existing `orderops` routes, source filenames, storage keys, workspace schemas, cloud actions, and internal compatibility labels remain unchanged until a separately approved internal rename or migration.
+13. The operator-facing product brand is `ORDER Q`, owned by ONEAPP, and its stated purpose is shipment management (`출고관리`). The approved ORDER Q image asset is the visible header identity and is displayed at the same apparent cap height as the ONEAPP wordmark. Existing `orderops` routes, source filenames, storage keys, workspace schemas, cloud actions, and internal compatibility labels remain unchanged until a separately approved internal rename or migration.
 
 ---
 
