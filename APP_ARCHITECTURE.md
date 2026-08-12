@@ -1,7 +1,7 @@
 # ONEAPP Application Architecture
 
 - Repository: orderzoneapp-coder/oneapp
-- Architecture document version: 1.3.6
+- Architecture document version: 1.3.7
 - Last reviewed: 2026-08-12
 - Machine-readable companion: app-manifest.json
 
@@ -841,12 +841,14 @@ Roadmap work is delivered as separate pull requests and verified after each merg
 #### OrderOps
 
 - F3 focuses the integrated search field and keeps the caret ready for immediate input.
-- F4 opens Smart Input, F5 refreshes the current session, Enter starts shipment analysis, and a successful multi-file drop captures Enter for analysis so an earlier focused control is not reactivated.
-- F6 opens Order Status, F7 opens the Stock Ledger, and F8 opens Warehouse Inventory.
+- F4 opens Smart Input, Enter starts shipment analysis, and a successful multi-file drop captures Enter for analysis so an earlier focused control is not reactivated; refresh remains an explicit button action without a function-key shortcut.
+- F5 opens Order Status, F6 opens the Stock Ledger, F7 opens Warehouse Inventory, and F8 saves the reviewed cloud revision.
 - F9 prints only the current visible tab state, including active filters, rows, column visibility and column order, on A4 portrait.
-- F10 downloads the complete integrated workbook regardless of current screen filters, hidden columns or column order, and F12 saves the reviewed cloud revision.
+- F10 downloads the complete integrated workbook regardless of current screen filters, hidden columns or column order.
 - The existing four-file source strip classifies one to four dropped files by columns and sheet structure before sheet-name and filename aliases; each named slot remains a single-file touch selector, and no persistent bundle panel is added.
 - The result tabs are ordered Validation Summary, Order Status, Stock Ledger, and Warehouse Inventory; the former Unshipped Status label is Order Status.
+- Result tables use a light Excel-style cell grid. Editors do not draw a second border inside the table cell, and the active editable cell receives a light focus fill.
+- The default Order Status sequence is warehouse, customer, manager, product code, product name, specification, order, unit price, all warehouse-inventory columns, notice, and purchase. Warehouse is read-only; order, unit price, notice, and purchase remain editable.
 - Warehouse inventory shows `정보` as `거래처(수량)단가`, preserves order notes in a separate `적요` column, omits `사용`, and moves the existing `창고` source column to the leading position on screen and in the integrated workbook.
 - Purchase input supplies stock-ledger inbound/purchase-place displays and sales input supplies the sales display. The inventory balance remains warehouse stock minus the current order quantity.
 

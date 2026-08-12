@@ -673,7 +673,7 @@
       white-space: nowrap;
     }
     .spec-filter:disabled { opacity: .42; }
-    /* orderops v1.19: editable order workflow, stock ledger sales, and keyboard operations */
+    /* orderops v1.20: editable order workflow, stock ledger sales, and keyboard operations */
     .header-output-button { border-color: #99f6e4; color: #0f766e; background: #f0fdfa; }
     .header-output-button:hover:not(:disabled) { background: #ccfbf1; }
     .results-panel .table-wrap { max-height: calc(100vh - 200px); }
@@ -830,8 +830,8 @@
     table {
       width: 100%;
       min-width: 980px;
-      border-collapse: separate;
-      border-spacing: 0;
+      border-collapse: collapse;
+      border: 1px solid #d9e2ec;
       font-size: 11px;
     }
     table.column-width-managed { width: auto; min-width: 0; table-layout: fixed; }
@@ -842,9 +842,9 @@
       top: 0;
       z-index: 2;
       padding: 7px 8px;
-      color: #fff;
-      background: #334155;
-      border-right: 1px solid rgba(255,255,255,.12);
+      color: #334155;
+      background: #eef3f8;
+      border: 1px solid #d9e2ec;
       text-align: left;
       white-space: nowrap;
     }
@@ -853,8 +853,7 @@
       padding: 6px 8px;
       color: var(--slate-700);
       background: var(--white);
-      border-right: 1px solid var(--slate-100);
-      border-bottom: 1px solid var(--slate-200);
+      border: 1px solid #e3e9f0;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
@@ -878,21 +877,25 @@
       min-width: 0;
       height: 25px;
       padding: 1px 6px;
-      border: 1px solid #94a3b8;
-      border-radius: 3px;
+      border: 0;
+      border-radius: 0;
       color: var(--slate-900);
-      background: rgba(255,255,255,.95);
+      background: transparent;
       font-size: 11px;
+      outline: 0;
+      box-shadow: none;
     }
-    .purchase-input[data-negative-balance="true"] { border-color: #dc2626; background: #fff200; box-shadow: inset 0 0 0 1px rgba(220,38,38,.18); }
-    .purchase-input:focus { border-color: var(--teal-700); outline: 2px solid rgba(15,118,110,.22); outline-offset: 0; background: #fff; }
+    .purchase-input[data-negative-balance="true"] { background: #fff200; }
+    .purchase-input:focus { outline: 0; background: transparent; }
     .purchase-input[data-negative-balance="true"]:focus { background: #fff200; }
     .order-edit-input {
       width: 100%; min-width: 0; height: 25px; padding: 1px 6px;
-      border: 1px solid #94a3b8; border-radius: 3px; color: var(--slate-900);
-      background: #fff; font-size: 11px;
+      border: 0; border-radius: 0; color: var(--slate-900);
+      outline: 0; background: transparent; box-shadow: none; font-size: 11px;
     }
-    .order-edit-input:focus { border-color: var(--teal-700); outline: 2px solid rgba(15,118,110,.22); outline-offset: 0; }
+    .order-edit-input:focus { outline: 0; background: transparent; }
+    .table-wrap td:focus-within { background: #edf9f7 !important; }
+    .table-wrap td:has(.purchase-input[data-negative-balance="true"]) { background: #fff200 !important; }
     td.ledger-negative-cell { color: #b91c1c !important; background: #fff200 !important; font-weight: 900; }
     .tab-shortcut { margin-left: 4px; color: inherit; font-size: 8px; opacity: .78; }
     table.preview-inventory td.inventory-framed-cell { padding: 2px 4px; }
@@ -902,10 +905,10 @@
       width: 100%;
       min-height: 25px;
       padding: 3px 6px;
-      border: 1px solid #94a3b8;
-      border-radius: 3px;
+      border: 0;
+      border-radius: 0;
       color: var(--slate-900);
-      background: #fff;
+      background: transparent;
       text-align: right;
       font-variant-numeric: tabular-nums;
     }
@@ -936,7 +939,7 @@
       right: 4px;
       bottom: 18%;
       width: 1px;
-      background: rgba(255,255,255,.46);
+      background: #94a3b8;
       content: "";
     }
     .column-resize-handle:hover::after,
@@ -951,18 +954,16 @@
     table.preview-allocations th {
       height: 29px;
       padding: 4px 6px;
-      color: #fff;
-      background: #147f75;
-      border-right: 1px solid #aebdc5;
-      border-bottom: 1px solid #aebdc5;
+      color: #334155;
+      background: #e8eff6;
+      border: 1px solid #d7e0e9;
       font-weight: 900;
       text-align: center;
     }
     table.preview-allocations td {
       height: 22px;
       padding: 2px 5px;
-      border-right: 1px solid #c8d2d8;
-      border-bottom: 1px solid #c8d2d8;
+      border: 1px solid #e1e7ee;
       vertical-align: middle;
     }
 
@@ -1094,7 +1095,7 @@
       .recovery-record-item { grid-template-columns: auto 1fr; }
       .recovery-record-status { grid-column: 2; }
     }
-    /* orderops v1.19: compact auto-routing intake, separate three-way execution, and toggle filters */
+    /* orderops v1.20: Excel-like grids, borderless cell editors, and revised workflow shortcuts */
     .input-panel { grid-template-columns: minmax(0, 1fr) 330px; gap: 12px; }
     .upload-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
     .source-selector {
@@ -1184,9 +1185,9 @@
     .mapping-actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 8px; }
     .mapping-actions button { padding: 7px 10px; border: 1px solid #64748b; border-radius: 5px; cursor: pointer; }
     table.preview-inventory td.inventory-editable { padding: 2px 4px; }
-    table.preview-inventory .inventory-input { width: 100%; min-width: 0; height: 28px; padding: 3px 7px; border: 1px solid #94a3b8; border-radius: 4px; color: #0f172a; background: #fff; text-align: right; font-variant-numeric: tabular-nums; }
+    table.preview-inventory .inventory-input { width: 100%; min-width: 0; height: 28px; padding: 3px 7px; border: 0; border-radius: 0; outline: 0; box-shadow: none; color: #0f172a; background: transparent; text-align: right; font-variant-numeric: tabular-nums; }
     table.preview-inventory .inventory-input[data-negative-value="true"] { color: #b91c1c; font-weight: 900; }
-    table.preview-inventory .inventory-input:focus { border-color: #0d9488; outline: 2px solid rgba(13,148,136,.18); }
+    table.preview-inventory .inventory-input:focus { outline: 0; background: transparent !important; }
     table.preview-inventory td.inventory-total-cell { padding: 2px 4px; }
     table.preview-inventory td.information-value { min-width: 0; }
     @media (max-width: 1100px) {
@@ -1211,7 +1212,7 @@
       <div class="brand-mark">ONEAPP</div>
       <div class="brand-divider" aria-hidden="true"></div>
       <div class="brand-stack">
-        <div class="brand-suite">NEXUS <span class="brand-badge">v1.19</span></div>
+        <div class="brand-suite">NEXUS <span class="brand-badge">v1.20</span></div>
         <div class="brand-product">OrderOps</div>
       </div>
     </div>
@@ -1227,8 +1228,8 @@
       <button class="header-link" id="headerCloudLoadButton" type="button" aria-label="클라우드 확정본 불러오기">
         <span aria-hidden="true">⇩</span><span>불러오기</span>
       </button>
-      <button class="header-link header-save-button" id="headerCloudSaveButton" type="button" aria-label="작업 완료 후 클라우드 저장 F12" aria-keyshortcuts="F12" disabled>
-        <span aria-hidden="true">✓</span><span>저장 F12</span>
+      <button class="header-link header-save-button" id="headerCloudSaveButton" type="button" aria-label="작업 완료 후 클라우드 저장 F8" aria-keyshortcuts="F8" disabled>
+        <span aria-hidden="true">✓</span><span>저장 F8</span>
       </button>
       <button class="header-link" id="headerRestoreButton" type="button" aria-label="임시 작업 복구">
         <span aria-hidden="true">↻</span><span>임시복구</span>
@@ -1309,8 +1310,8 @@
           <button class="execution-button analysis-run" id="analyzeButton" type="button" aria-keyshortcuts="Enter" disabled>
             <span aria-hidden="true">▸</span><span>출고분석 Enter</span>
           </button>
-          <button class="execution-button session-refresh" id="refreshButton" type="button" aria-label="현재 파일과 분석 결과 새로고침 F5" aria-keyshortcuts="F5">
-            <span aria-hidden="true">↻</span><span>새로고침 F5</span>
+          <button class="execution-button session-refresh" id="refreshButton" type="button" aria-label="현재 파일과 분석 결과 새로고침">
+            <span aria-hidden="true">↻</span><span>새로고침</span>
           </button>
         </div>
       </section>
@@ -1369,7 +1370,7 @@
     </section>
 
     <footer class="page-footer">
-      <span>orderops v1.19 · workspace shipping-workspace/v2 · cloud plan v1</span>
+      <span>orderops v1.20 · workspace shipping-workspace/v2 · cloud plan v1</span>
       <a href="SHIPPING_MANAGEMENT_GUIDANCE.md">개발·운영 기준 보기</a>
     </footer>
   </main>
@@ -3175,7 +3176,11 @@
             : `shipping:inventory:${index}:${encodeURIComponent(String(column?.header || index))}`,
           header: column?.role === "calculatedQuantity" && state.warehouseFilters.size > 0
             ? "선택창고 잔량"
-            : String(column?.header || ""),
+            : String(column?.header || "") === "품목명"
+              ? "품명"
+              : String(column?.header || "") === "주문수량"
+                ? "주문"
+                : String(column?.header || ""),
           numeric: Boolean(column?.numeric),
           role: column?.role || "",
         }));
@@ -3185,7 +3190,7 @@
         const columns = [...baseColumns];
         columns.splice(purchaseIndex, 0, {
           key: "shipping:inventory:purchase",
-          header: "구매처명",
+          header: "구매",
           numeric: false,
           role: "purchase",
           defaultWidth: 88,
@@ -3276,44 +3281,44 @@
           ? engine.getAllocationInventoryView(workspace)
           : { columns: [], rows: [] };
         const allocationWarehouseHeaders = allocationInventoryView.columns.map((column) => column.header);
-        const allocationWarehouseStart = 6;
+        const allocationWarehouseStart = 8;
         const allocationTailStart = allocationWarehouseStart + allocationWarehouseHeaders.length;
         const allocations = {
           label: "주문현황",
-          shortcut: "F6",
-          headers: ["창고", "상품코드", "품목명", "규격", "주문수량", "구매", ...allocationWarehouseHeaders, "전달사항", "단가", "거래처", "담당자"],
+          shortcut: "F5",
+          headers: ["창고", "거래처", "담당자", "상품코드", "품명", "규격", "주문", "단가", ...allocationWarehouseHeaders, "전달사항", "구매"],
           numeric: [
-            4,
+            6,
+            7,
             ...allocationWarehouseHeaders.map((_, index) => allocationWarehouseStart + index),
-            allocationTailStart + 1,
           ],
           inventory: [],
-          purchase: 5,
+          purchase: allocationTailStart + 1,
           purchaseEditable: true,
           status: -1,
           sourceRows: workspace.allocations,
           rows: workspace.allocations.map((row, index) => [
             row.warehouse || "",
+            row.customer || "",
+            row.manager || "",
             row.productCode,
             row.productName,
             row.specification || row.spec || "",
             row.quantity,
-            row.purchase || "",
+            typeof row.unitPrice === "number" && Number.isFinite(row.unitPrice) ? row.unitPrice : "",
             ...(allocationInventoryView.rows[index]?.warehouseValues || []).map(blankZero),
             formatDeliveryNotice(row),
-            typeof row.unitPrice === "number" && Number.isFinite(row.unitPrice) ? row.unitPrice : "",
-            row.customer || "",
-            row.manager || "",
+            row.purchase || "",
           ]),
           sortByProductCode: true,
           notice: allocationTailStart,
         };
         allocations.columns = createPreviewColumns("allocations", allocations.headers, allocations.numeric);
-        [76, 94, 160, 52, 62, 86].forEach((width, index) => {
+        [76, 138, 92, 94, 160, 62, 62, 72].forEach((width, index) => {
           if (allocations.columns[index]) allocations.columns[index].defaultWidth = width;
         });
-        allocations.columns[0].orderField = "warehouse";
-        allocations.columns[4].orderField = "quantity";
+        allocations.columns[6].orderField = "quantity";
+        allocations.columns[7].orderField = "unitPrice";
         allocationWarehouseHeaders.forEach((_, index) => {
           const column = allocations.columns[allocationWarehouseStart + index];
           if (column) {
@@ -3321,16 +3326,15 @@
             column.role = "warehouseQuantity";
           }
         });
-        [88, 72, 128, 92].forEach((width, index) => {
+        [160, 90].forEach((width, index) => {
           const column = allocations.columns[allocationTailStart + index];
           if (column) column.defaultWidth = width;
         });
         allocations.columns[allocationTailStart].orderField = "note";
-        allocations.columns[allocationTailStart + 1].orderField = "unitPrice";
 
         const notices = {
           label: `전달사항 ${workspace.notices.length}${workspace.notices.length > acknowledgedIds.size ? ` · 미확인 ${workspace.notices.length - acknowledgedIds.size}` : ""}`,
-          headers: ["창고", "담당", "거래처", "상품명", "규격", "수량", "단가", "합계", "전달사항", "확인"],
+          headers: ["창고", "거래처", "담당", "품명", "규격", "수량", "단가", "합계", "전달사항", "확인"],
           numeric: [5, 6, 7],
           inventory: [],
           purchase: -1,
@@ -3339,8 +3343,8 @@
           sourceRows: workspace.notices,
           rows: workspace.notices.map((notice) => [
             notice.warehouse || "",
-            notice.manager || "",
             notice.customer || "",
+            notice.manager || "",
             notice.productName || "",
             notice.specification || "",
             typeof notice.quantity === "number" ? notice.quantity : "",
@@ -3358,7 +3362,7 @@
           acknowledgement: 9,
         };
         notices.columns = createPreviewColumns("notices", notices.headers, notices.numeric);
-        [80, 90, 150, 180, 80, 70, 90, 100, 300, 72].forEach((width, index) => {
+        [80, 150, 90, 180, 80, 70, 90, 100, 300, 72].forEach((width, index) => {
           if (notices.columns[index]) notices.columns[index].defaultWidth = width;
         });
 
@@ -3368,9 +3372,13 @@
           const ledgerView = engine.getStockLedgerView(workspace);
           definitions.ledger = {
             label: "재고수불부",
-            shortcut: "F7",
-            columns: ledgerView.columns.map((column) => ({ ...column, defaultWidth: column.numeric ? 90 : 140 })),
-            headers: ledgerView.headers,
+            shortcut: "F6",
+            columns: ledgerView.columns.map((column) => ({
+              ...column,
+              header: column.header === "품목명" ? "품명" : column.header,
+              defaultWidth: column.numeric ? 90 : 140,
+            })),
+            headers: ledgerView.headers.map((header) => header === "품목명" ? "품명" : header),
             numeric: ledgerView.columns.map((column, index) => column.numeric ? index : -1).filter((index) => index >= 0),
             inventory: [],
             purchase: -1,
@@ -3383,7 +3391,7 @@
         }
         const inventory = buildInventoryPreview(workspace);
         if (inventory) {
-          inventory.shortcut = "F8";
+          inventory.shortcut = "F7";
           definitions.inventory = inventory;
         }
         return definitions;
@@ -4457,14 +4465,14 @@
       }
 
       document.addEventListener("keydown", (event) => {
-        if (!["F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "F12"].includes(event.key)) return;
+        if (!["F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10"].includes(event.key)) return;
         event.preventDefault();
         if (event.key === "F4") {
           elements.smartInputButton.click();
           return;
         }
         if (event.key === "F5") {
-          refreshCurrentSession();
+          activatePreview("allocations");
           return;
         }
         if (event.key === "F3") {
@@ -4475,15 +4483,15 @@
           return;
         }
         if (event.key === "F6") {
-          activatePreview("allocations");
-          return;
-        }
-        if (event.key === "F7") {
           activatePreview("ledger");
           return;
         }
-        if (event.key === "F8") {
+        if (event.key === "F7") {
           activatePreview("inventory");
+          return;
+        }
+        if (event.key === "F8") {
+          if (!elements.headerCloudSaveButton.disabled) saveCloudPlanFromHeader();
           return;
         }
         if (event.key === "F9") {
@@ -4494,7 +4502,6 @@
           if (!elements.downloadButton.disabled) downloadResult();
           return;
         }
-        if (!elements.headerCloudSaveButton.disabled) saveCloudPlanFromHeader();
       });
 
       elements.previewTabs.addEventListener("click", (event) => {
