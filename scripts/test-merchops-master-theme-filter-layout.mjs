@@ -12,14 +12,16 @@ const filterHelperStart = html.indexOf("const getPromotionThemeCodesForFilter ="
 assert.ok(toolbarStart >= 0 && filterHelperStart > toolbarStart, "MerchOps toolbar/filter helper boundaries must exist");
 
 const toolbar = html.slice(toolbarStart, filterHelperStart);
-const topRowStart = toolbar.indexOf('className: "pl-5 pr-[128px]');
+const topRowStart = toolbar.indexOf('className: "px-5 py-2 bg-slate-50');
 const lowerRowStart = toolbar.indexOf('className: "px-6 pt-3 pb-2');
 assert.ok(topRowStart >= 0 && lowerRowStart > topRowStart, "top and lower toolbar rows must exist");
 
 const topRow = toolbar.slice(topRowStart, lowerRowStart);
 const lowerRow = toolbar.slice(lowerRowStart);
 assert.doesNotMatch(topRow, /cat-main-|handleAllCategoryClick/, "category group must be removed from the top row");
-assert.match(topRow, /justify-around[\s\S]*flex-1[\s\S]*justify-around[\s\S]*flex-\[2\]/, "remaining top groups must share the available width");
+assert.match(topRow, /data-merch-toolbar-group": "parser-catalog"[\s\S]*data-merch-toolbar-group": "excel"[\s\S]*data-merch-toolbar-group": "operations"/,
+  "top row must contain the three independent parser/catalog, Excel, and operation groups");
+assert.doesNotMatch(topRow, /justify-around/, "buttons inside each top group must remain clustered rather than spread apart");
 
 const categoryAt = lowerRow.indexOf('title: "카테고리: 클릭 단일선택');
 const themeAt = lowerRow.indexOf('title: "마스터 행사테마: 클릭 단일선택');
@@ -86,7 +88,7 @@ assert.match(compositeSource, /themeFilters\.some\(v => matchPromotionThemeFilte
 assert.match(compositeSource, /if \(has\('margin'\)\)[\s\S]*if \(themeFilters\.length > 0/,
   "core filters and theme filters must remain combined as sequential AND conditions");
 
-const versionMatches = [...html.matchAll(/v2\.1\.183_MasterThemeFilterLayout/g)];
-assert.ok(versionMatches.length >= 3, "all MerchOps version labels must use v2.1.183");
+const versionMatches = [...html.matchAll(/v2\.1\.184_CommonExcelRouting/g)];
+assert.ok(versionMatches.length >= 3, "all MerchOps version labels must use v2.1.184");
 
 console.log("MerchOps master-theme filter and fixed-layout contracts passed.");
