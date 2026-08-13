@@ -13,7 +13,7 @@
       <div class="brand">
         <strong>ONEAPP</strong>
         <span class="logo-frame" aria-hidden="true"><img src="../assets/order-q-logo.png" alt=""></span>
-        <span class="badge">vNext 0.4.2</span>
+        <span class="badge">vNext 0.4.3</span>
         <span id="pageMode">수기 주문</span>
       </div>
       <div class="top-actions">
@@ -31,10 +31,14 @@
       <section class="form-grid">
         <div class="field">
           <label for="orderDate">일자</label>
-          <input class="control" id="orderDate" type="date">
+          <div class="date-control">
+            <input class="control" id="orderDate" type="text" inputmode="numeric" maxlength="10" placeholder="YYYY-MM-DD" autocomplete="off">
+            <button class="date-picker-button" id="orderDatePickerButton" type="button" aria-label="달력에서 일자 선택">▣</button>
+            <input class="native-date-picker" id="orderDatePicker" type="date" tabindex="-1" aria-hidden="true">
+          </div>
         </div>
         <div class="field">
-          <label for="customerName">거래처</label>
+          <label for="customerName">거래처명</label>
           <input class="control" id="customerName" type="text" placeholder="거래처명" autocomplete="off">
         </div>
         <div class="field">
@@ -52,12 +56,12 @@
           </select>
         </div>
         <div class="field wide">
-          <label for="orderMessage">전하실말씀</label>
-          <input class="control" id="orderMessage" type="text" placeholder="전하실말씀">
+          <label for="orderMessage">전표 메모 <span class="field-help">주문건 전체 전달사항</span></label>
+          <input class="control" id="orderMessage" type="text" placeholder="이 주문 전체에 전달할 내용">
         </div>
         <div class="field wide">
-          <label>주문 식별정보</label>
-          <div class="control" id="orderMeta">신규 주문 · 저장 전</div>
+          <label>시스템 주문정보</label>
+          <div class="control readonly-system" id="orderMeta" title="시스템이 관리하는 주문 ID·Revision·상태입니다.">신규 주문 · 저장 전</div>
         </div>
       </section>
 
@@ -80,8 +84,8 @@
               <th style="width:82px">원단위</th>
               <th style="width:82px">업무단위</th>
               <th style="width:100px">단가</th>
-              <th>메모</th>
-              <th style="width:90px">매칭</th>
+              <th>상품별 메모(적요)</th>
+              <th style="width:90px" title="공통 상품 마스터의 productId 연결 상태">마스터 매칭</th>
             </tr>
           </thead>
           <tbody id="itemRows"></tbody>
@@ -121,6 +125,8 @@
     let activeSearchInput = null;
     let activeSuggestionIndex = 0;
     let searchTimer = null;
+    const MANUAL_DEFAULTS_KEY = 'oneapp.orderq.manual-defaults.v1';
+    const MANUAL_DEFAULTS_SCHEMA = 'orderq-manual-defaults/v1';
 
     const itemRows = document.getElementById('itemRows');
     const message = document.getElementById('message');
@@ -129,6 +135,38 @@
     const cancelButton = document.getElementById('cancelOrderBtn');
     const suggestions = document.getElementById('productSuggestions');
     const masterStatus = document.getElementById('masterStatus');
+    const orderDateInput = document.getElementById('orderDate');
+    const orderDatePicker = document.getElementById('orderDatePicker');
+    const customerNameInput = document.getElementById('customerName');
+    const warehouseInput = document.getElementById('warehouse');
+    const transactionTypeInput = document.getElementById('transactionType');
+
+    function loadManualDefaults() {
+      try {
+        const value = JSON.parse(localStorage.getItem(MANUAL_DEFAULTS_KEY) || 'null');
+        if (!value || value.schemaVersion !== MANUAL_DEFAULTS_SCHEMA) return { warehouse: '', transactionType: '기타' };
+        return {
+          warehouse: String(value.warehouse || '').trim().slice(0, 80),
+          transactionType: String(value.transactionType || '기타').trim()
+        };
+      } catch (_) {
+        return { warehouse: '', transactionType: '기타' };
+      }
+    }
+
+    const manualDefaults = loadManualDefaults();
+
+    function saveManualDefaults() {
+      manualDefaults.warehouse = warehouseInput.value.trim().slice(0, 80);
+      manualDefaults.transactionType = transactionTypeInput.value;
+      try {
+        localStorage.setItem(MANUAL_DEFAULTS_KEY, JSON.stringify({
+          schemaVersion: MANUAL_DEFAULTS_SCHEMA,
+          warehouse: manualDefaults.warehouse,
+          transactionType: manualDefaults.transactionType
+        }));
+      } catch (_) {}
+    }
 
     function showMessage(text, type = 'info') {
       message.textContent = text;
@@ -139,6 +177,13 @@
       const now = new Date();
       const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
       return local.toISOString().slice(0, 10);
+    }
+
+    function isValidOrderDate(value) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+      const [year, month, day] = value.split('-').map(Number);
+      const date = new Date(Date.UTC(year, month - 1, day));
+      return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
     }
 
     function rowTemplate(item = {}) {
@@ -156,7 +201,7 @@
         <td><input data-field="rawUnit" value=""></td>
         <td><input data-field="finalUnit" value=""></td>
         <td><input class="num" data-field="price" type="number" step="any" value=""></td>
-        <td><input data-field="memo" value=""></td>
+        <td><input data-field="memo" value="" placeholder="이 상품의 적요"></td>
         <td class="center"><span data-role="matchStatus" class="row-status failed">매칭실패</span></td>`;
       const set = (field, value) => { const el = tr.querySelector(`[data-field="${field}"]`); if (el) el.value = value ?? ''; };
       set('itemCode', item.itemCode);
@@ -281,7 +326,8 @@
           title.textContent = `${product.itemCode || '코드없음'} · ${product.itemName || '품명없음'}`;
           const detail = document.createElement('span');
           const aliases = [product.secondaryName, product.searchInfo].filter(Boolean).join(' · ');
-          detail.textContent = [product.specification, product.finalUnit, aliases].filter(Boolean).join(' · ') || '추가정보 없음';
+          const outPrice = product.outPrice == null ? '' : `출고가 ${Number(product.outPrice).toLocaleString('ko-KR')}`;
+          detail.textContent = [product.specification, product.finalUnit, outPrice, aliases].filter(Boolean).join(' · ') || '추가정보 없음';
           const source = document.createElement('em');
           source.textContent = product.source === 'COMMON_MASTER' ? '공통 마스터' : 'ORDER Q 이력';
           button.append(title, detail, source);
@@ -311,6 +357,7 @@
       row.querySelector('[data-field="specification"]').value = product.specification || '';
       row.querySelector('[data-field="finalUnit"]').value = product.finalUnit || '';
       if (!row.querySelector('[data-field="rawUnit"]').value) row.querySelector('[data-field="rawUnit"]').value = product.finalUnit || '';
+      if (product.outPrice != null) row.querySelector('[data-field="price"]').value = product.outPrice;
       closeSuggestions();
       refreshRowStatus(row);
       focusQuantity(row);
@@ -339,7 +386,11 @@
 
     async function loadEditingOrder() {
       if (!editingOrderId) {
-        document.getElementById('orderDate').value = todayLocal();
+        orderDateInput.value = todayLocal();
+        warehouseInput.value = manualDefaults.warehouse;
+        if ([...transactionTypeInput.options].some(option => option.value === manualDefaults.transactionType)) {
+          transactionTypeInput.value = manualDefaults.transactionType;
+        }
         addRow(); addRow(); addRow();
         return;
       }
@@ -353,10 +404,10 @@
       loadedCustomerId = order.customerId;
       pageMode.textContent = '주문서 수정';
       orderMeta.textContent = `${order.orderId} · Revision ${order.revision} · ${order.status}`;
-      document.getElementById('orderDate').value = order.orderDate || todayLocal();
-      document.getElementById('customerName').value = order.customerName || '';
-      document.getElementById('warehouse').value = order.warehouse || '';
-      document.getElementById('transactionType').value = order.transactionType || '기타';
+      orderDateInput.value = order.orderDate || todayLocal();
+      customerNameInput.value = order.customerName || '';
+      warehouseInput.value = order.warehouse || '';
+      transactionTypeInput.value = order.transactionType || '기타';
       document.getElementById('orderMessage').value = order.orderMessage || '';
       itemRows.innerHTML = '';
       items.forEach(addRow);
@@ -385,9 +436,12 @@
 
     async function save() {
       const payload = readPayload();
-      if (!payload.orderDate) return showMessage('주문일자를 입력하세요.', 'error');
+      if (!isValidOrderDate(payload.orderDate)) {
+        return showMessage('주문일자를 YYYY-MM-DD 형식으로 입력하세요.', 'error');
+      }
       if (!payload.customerName.trim()) return showMessage('거래처를 입력하세요.', 'error');
       if (!payload.items.length) return showMessage('주문상품을 1개 이상 입력하세요.', 'error');
+      saveManualDefaults();
       try {
         if (editingOrderId) {
           await cloudPreflight();
@@ -489,6 +543,32 @@
       }
     });
 
+    customerNameInput.addEventListener('keydown', event => {
+      if (event.key !== 'Enter' || event.isComposing) return;
+      event.preventDefault();
+      warehouseInput.focus();
+      warehouseInput.select();
+    });
+    warehouseInput.addEventListener('change', saveManualDefaults);
+    transactionTypeInput.addEventListener('change', saveManualDefaults);
+    const selectDateDay = () => {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(orderDateInput.value)) return;
+      window.setTimeout(() => orderDateInput.setSelectionRange(8, 10), 0);
+    };
+    orderDateInput.addEventListener('focus', selectDateDay);
+    orderDateInput.addEventListener('click', selectDateDay);
+    document.getElementById('orderDatePickerButton').addEventListener('click', () => {
+      if (isValidOrderDate(orderDateInput.value)) orderDatePicker.value = orderDateInput.value;
+      if (typeof orderDatePicker.showPicker === 'function') orderDatePicker.showPicker();
+      else orderDatePicker.click();
+    });
+    orderDatePicker.addEventListener('change', () => {
+      if (!orderDatePicker.value) return;
+      orderDateInput.value = orderDatePicker.value;
+      orderDateInput.focus();
+      selectDateDay();
+    });
+
     subscribeOrderChanges(change => {
       if (!editingOrderId || change.orderId !== editingOrderId) return;
       if (change.revision > (loadedRevision || 0)) {
@@ -497,6 +577,9 @@
     });
 
     Promise.all([initializeProductCatalog(), loadEditingOrder()])
+      .then(() => {
+        if (!editingOrderId) window.setTimeout(() => customerNameInput.focus(), 0);
+      })
       .catch(error => showMessage(error.message || String(error), 'error'));
   </script>
 </body>
