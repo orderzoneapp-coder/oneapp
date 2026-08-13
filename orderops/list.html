@@ -696,7 +696,7 @@
       white-space: nowrap;
     }
     .spec-filter:disabled { opacity: .42; }
-    /* ORDER Q v1.31: operator-facing shipment-management branding */
+    /* ORDER Q v1.32: operator-facing shipment-management branding */
     .header-output-button { border-color: #99f6e4; color: #0f766e; background: #f0fdfa; }
     .header-output-button:hover:not(:disabled) { background: #ccfbf1; }
     .results-panel .table-wrap { max-height: calc(100vh - 200px); }
@@ -989,6 +989,19 @@
     .table-wrap td:focus-within { background: #edf9f7 !important; }
     .table-wrap td:has(.purchase-input[data-negative-balance="true"]) { background: #fff200 !important; }
     td.ledger-negative-cell { color: #b91c1c !important; background: #fff200 !important; font-weight: 900; }
+    table.preview-ledger td.procurement-price-cell { padding: 2px 4px; }
+    table.preview-ledger .ledger-price-input {
+      width: 100%; min-width: 0; height: 28px; padding: 3px 7px;
+      border: 0; border-radius: 0; outline: 0; box-shadow: none;
+      color: #0f172a; background: transparent; text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+    .order-information-badges { display: flex; min-width: 0; flex-wrap: wrap; gap: 3px; }
+    .order-information-badge {
+      display: inline-block; max-width: 100%; padding: 2px 6px;
+      overflow: hidden; border: 1px solid #a7d7cf; border-radius: 999px;
+      color: #0f5f58; background: #edf9f7; text-overflow: ellipsis; white-space: nowrap;
+    }
     .tab-shortcut { margin-left: 4px; color: inherit; font-size: 9px; opacity: .78; }
     table.preview-inventory td.inventory-framed-cell { padding: 2px 4px; }
     table.preview-inventory .inventory-value-frame,
@@ -1007,12 +1020,14 @@
     table.preview-inventory [data-negative-value="true"] { color: #b91c1c; font-weight: 900; }
 
     th.column-resizable { padding-right: 16px; }
+    th.column-header-sortable { cursor: pointer; }
+    th.column-header-sortable.column-sorted .column-header-label,
+    th.column-header-sortable.column-filtered .column-header-label { color: #0f766e; font-weight: 900; }
     .column-header-content {
-      display: flex;
+      position: relative;
+      display: block;
+      width: 100%;
       min-width: 0;
-      align-items: center;
-      justify-content: space-between;
-      gap: 4px;
     }
     .column-header-label {
       min-width: 0;
@@ -1021,20 +1036,36 @@
       white-space: nowrap;
     }
     .column-sort-trigger {
+      position: absolute;
+      top: 50%;
+      right: 0;
       display: inline-flex;
-      flex: 0 0 auto;
-      width: 19px;
+      width: 36px;
       height: 20px;
       align-items: center;
       justify-content: center;
       padding: 0;
-      border: 1px solid transparent;
+      border: 1px solid #94a3b8;
       border-radius: 3px;
-      color: #64748b;
-      background: transparent;
-      font-size: 10px;
+      color: #0f766e;
+      background: #fff;
+      box-shadow: 0 1px 3px rgba(15,23,42,.16);
+      font-size: 9px;
+      font-weight: 900;
       line-height: 1;
       cursor: pointer;
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+      transform: translateY(-50%);
+      transition: opacity .12s ease;
+    }
+    th:hover .column-sort-trigger,
+    th:focus-within .column-sort-trigger,
+    .column-sort-trigger[aria-expanded="true"] {
+      opacity: 1;
+      visibility: visible;
+      pointer-events: auto;
     }
     .column-sort-trigger:hover,
     .column-sort-trigger.active {
@@ -1311,7 +1342,7 @@
       .recovery-record-item { grid-template-columns: auto 1fr; }
       .recovery-record-status { grid-column: 2; }
     }
-    /* ORDER Q v1.31: saved-width print layout and Excel-like column sort/filter menus */
+    /* ORDER Q v1.32: hover-only filter controls, all-value filters, and ledger purchasing */
     .input-panel { grid-template-columns: minmax(0, 1fr) 330px; gap: 12px; }
     .upload-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
     .source-selector {
@@ -1434,7 +1465,7 @@
       <div class="brand-mark">ONEAPP</div>
       <div class="brand-divider" aria-hidden="true"></div>
       <span class="brand-logo-frame" aria-hidden="true"><img class="brand-logo" src="../assets/order-q-logo.png" alt=""></span>
-      <span class="brand-badge">v1.31</span>
+      <span class="brand-badge">v1.32</span>
       <span class="brand-product">출고관리</span>
     </div>
     <div class="header-actions">
@@ -1602,7 +1633,7 @@
     </section>
 
     <footer class="page-footer">
-      <span>ORDER Q v1.31 · 출고관리 · workspace shipping-workspace/v2 · cloud plan v1</span>
+      <span>ORDER Q v1.32 · 출고관리 · workspace shipping-workspace/v2 · cloud plan v1</span>
       <a href="../SHIPPING_MANAGEMENT_GUIDANCE.md">개발·운영 기준 보기</a>
     </footer>
   </main>
@@ -1677,7 +1708,7 @@
       <label class="column-sort-condition"><input type="checkbox" data-column-condition="excludeBlank">공백 제외</label>
       <label class="column-sort-condition"><input type="checkbox" data-column-condition="excludeZero">0 제외</label>
     </div>
-    <div class="column-sort-menu-section hidden" data-text-filter-section aria-label="텍스트 값 필터">
+    <div class="column-sort-menu-section" data-text-filter-section data-value-filter-section aria-label="셀 값 선택 필터">
       <input class="column-filter-search" type="search" data-column-value-search autocomplete="off" placeholder="검색">
       <label class="column-value-option"><input type="checkbox" data-column-value-select-all><span>(모두 선택)</span></label>
       <div class="column-value-list" data-column-value-list></div>
@@ -1792,6 +1823,7 @@
         colorTargetKeys: { warehouse: "", manager: "" },
         vividPaletteExpanded: false,
         activeColumnDrag: null,
+        suppressHeaderClick: false,
         excelMappings: null,
         purchaseHistory: [],
         analysisEnterReady: false,
@@ -3462,6 +3494,7 @@
           event.preventDefault();
           return;
         }
+        state.suppressHeaderClick = true;
         state.activeColumnDrag = { tabId: state.activePreview, columnKey: header.dataset.columnDragKey };
         header.classList.add("column-dragging");
         event.dataTransfer.effectAllowed = "move";
@@ -3505,12 +3538,14 @@
         setColumnOrder(state.activePreview, keys);
         state.activeColumnDrag = null;
         renderPreview();
+        window.setTimeout(() => { state.suppressHeaderClick = false; }, 0);
         showToast("열 순서를 변경했습니다.");
       }
 
       function handleColumnDragEnd() {
         clearColumnDropMarkers();
         state.activeColumnDrag = null;
+        window.setTimeout(() => { state.suppressHeaderClick = false; }, 0);
       }
 
       function buildInventoryPreview(workspace) {
@@ -3604,6 +3639,14 @@
           .map((value) => String(value ?? ""))
           .filter((value) => value !== "");
         return values.join("\n");
+      }
+
+      function renderOrderInformationBadges(value) {
+        const entries = String(value ?? "").split(/\r?\n/).map((entry) => entry.trim()).filter(Boolean);
+        if (entries.length === 0) return "";
+        return `<span class="order-information-badges">${entries.map((entry) =>
+          `<span class="order-information-badge" title="${escapeHtml(entry)}">${escapeHtml(entry)}</span>`,
+        ).join("")}</span>`;
       }
 
       function getPreviewDefinitions(workspace) {
@@ -3718,19 +3761,25 @@
         const definitions = { validation, allocations };
         if (typeof engine.getStockLedgerView === "function") {
           const ledgerView = engine.getStockLedgerView(workspace);
+          const ledgerColumns = ledgerView.columns.map((column) => ({
+            ...column,
+            header: column.header === "품목명" ? "품명" : column.header,
+            defaultWidth: column.role === "orderInformation" ? 240
+              : column.role === "purchasePlace" ? 150
+                : column.role === "productName" ? 190
+                  : column.role === "unitPrice" ? 100
+                    : column.numeric ? 90 : 140,
+          }));
+          const ledgerPurchaseIndex = ledgerColumns.findIndex((column) => column.role === "purchasePlace");
           definitions.ledger = {
             label: "재고수불부",
             shortcut: "F6",
-            columns: ledgerView.columns.map((column) => ({
-              ...column,
-              header: column.header === "품목명" ? "품명" : column.header,
-              defaultWidth: column.numeric ? 90 : 140,
-            })),
+            columns: ledgerColumns,
             headers: ledgerView.headers.map((header) => header === "품목명" ? "품명" : header),
             numeric: ledgerView.columns.map((column, index) => column.numeric ? index : -1).filter((index) => index >= 0),
             inventory: [],
-            purchase: -1,
-            purchaseEditable: false,
+            purchase: ledgerPurchaseIndex,
+            purchaseEditable: ledgerPurchaseIndex >= 0,
             status: -1,
             sourceRows: ledgerView.rows,
             rows: ledgerView.rows.map((row) => row.values),
@@ -3977,20 +4026,17 @@
         });
         elements.columnSortMenu.querySelector("[data-numeric-filter-section]")
           .classList.toggle("hidden", !numericColumn);
-        elements.columnSortMenu.querySelector("[data-text-filter-section]")
-          .classList.toggle("hidden", numericColumn);
-        if (!numericColumn) {
-          context.textOptions = columnTextValueOptions(preview, context.columnKey);
-          if (!(context.textSelection instanceof Set)) {
-            const selected = Array.isArray(filter?.allowedValues)
-              ? filter.allowedValues
-              : context.textOptions.map((option) => option.key);
-            context.textSelection = new Set(selected);
-          }
-          const searchInput = elements.columnSortMenu.querySelector("[data-column-value-search]");
-          searchInput.value = context.textSearch || "";
-          renderColumnTextValueOptions();
+        elements.columnSortMenu.querySelector("[data-text-filter-section]").classList.remove("hidden");
+        context.textOptions = columnTextValueOptions(preview, context.columnKey);
+        if (!(context.textSelection instanceof Set)) {
+          const selected = Array.isArray(filter?.allowedValues)
+            ? filter.allowedValues
+            : context.textOptions.map((option) => option.key);
+          context.textSelection = new Set(selected);
         }
+        const searchInput = elements.columnSortMenu.querySelector("[data-column-value-search]");
+        searchInput.value = context.textSearch || "";
+        renderColumnTextValueOptions();
       }
 
       function renderColumnTextValueOptions() {
@@ -4047,6 +4093,23 @@
         if (!columnFilterIsActive(next)) delete state.columnFilters[previewId][columnKey];
         else state.columnFilters[previewId][columnKey] = next;
         if (Object.keys(state.columnFilters[previewId]).length === 0) delete state.columnFilters[previewId];
+        if (state.activeColumnMenu?.previewId === previewId && state.activeColumnMenu?.columnKey === columnKey) {
+          state.activeColumnMenu.textSelection = null;
+        }
+      }
+
+      function cycleColumnSort(previewId, columnKey) {
+        const preview = previewDefinitionById(previewId);
+        if (!preview?.columns?.some((column) => column.key === columnKey)) return;
+        const current = columnSortSetting(previewId, preview);
+        if (current?.columnKey !== columnKey) {
+          state.sortSettings[previewId] = { columnKey, direction: "asc" };
+        } else if (current.direction === "asc") {
+          state.sortSettings[previewId] = { columnKey, direction: "desc" };
+        } else {
+          delete state.sortSettings[previewId];
+        }
+        renderPreview();
       }
 
       function applyColumnTextFilter() {
@@ -4115,7 +4178,7 @@
             ? `<button class="column-sort-trigger ${isSorted || hasFilter ? "active" : ""}" type="button"
                 aria-label="${escapeHtml(column.header)} 정렬 및 조건 필터" aria-haspopup="menu" aria-expanded="false"
                 data-sort-preview-id="${escapeHtml(previewId)}" data-sort-column-key="${escapeHtml(column.key)}">
-                ${isSorted ? (sort.direction === "asc" ? "▲" : "▼") : "▾"}${hasFilter ? "•" : ""}
+                필터${isSorted || hasFilter ? " •" : ""}
               </button>`
             : "";
           const handle = resizable
@@ -4124,8 +4187,9 @@
                 aria-valuemin="${TABLE_WIDTH_MIN}" aria-valuemax="${TABLE_WIDTH_MAX}" aria-valuenow="${width}"
                 data-column-key="${escapeHtml(column.key)}"></span>`
             : "";
-          return `<th class="${resizable ? "column-resizable" : ""} ${draggable ? "column-draggable" : ""}"
-            aria-sort="${ariaSort}" ${draggable ? `draggable="true" data-column-drag-key="${escapeHtml(column.key)}"` : ""}>
+          return `<th class="${resizable ? "column-resizable" : ""} ${draggable ? "column-draggable" : ""} ${sortable ? "column-header-sortable" : ""} ${isSorted ? "column-sorted" : ""} ${hasFilter ? "column-filtered" : ""}"
+            aria-sort="${ariaSort}" ${sortable ? `data-sort-header-preview-id="${escapeHtml(previewId)}" data-sort-header-column-key="${escapeHtml(column.key)}"` : ""}
+            ${draggable ? `draggable="true" data-column-drag-key="${escapeHtml(column.key)}"` : ""}>
             <span class="column-header-content"><span class="column-header-label">${escapeHtml(column.header)}</span>${sortControl}</span>${handle}</th>`;
         }).join("");
 
@@ -4156,29 +4220,41 @@
                       : "";
                     const isWarning = isStatus && statusTone(value) === "bad" && String(value).includes("오류");
                     const editableInventory = editable && warehouseQuantity;
+                    const editableLedgerPrice = editable && previewId === "ledger" &&
+                      column.role === "unitPrice" && column.editable === true &&
+                      Boolean(column.inventoryColumnKey) && !referenceRow && !sourceRow?.salesOnly;
                     const classes = [
                       isNumber ? "number" : "",
                       isStatus ? "status" : "",
                       isWarning ? "warning-value" : "",
                       warehouseQuantity || orderQuantity || calculatedQuantity ? "inventory-framed-cell" : "",
                       editableInventory ? "inventory-editable" : "",
+                      editableLedgerPrice ? "procurement-price-cell" : "",
                       calculatedQuantity ? "inventory-total-cell" : "",
                       ledgerNegative ? "ledger-negative-cell" : "",
+                      column.role === "orderInformation" ? "information-value" : "",
                     ].filter(Boolean).join(" ");
                     const editablePurchase = editable && preview.purchaseEditable === true &&
-                      preview.purchase === index && !referenceRow;
+                      preview.purchase === index && !referenceRow && !(previewId === "ledger" && sourceRow?.salesOnly);
                     const noticeLink = preview.notice === index && sourceRow?.noticeId;
                     const noticeText = preview.noticeText === index;
                     const acknowledgement = editable && preview.acknowledgement === index && sourceRow?.noticeId;
                     const editableOrder = editable && previewId === "allocations" && column.orderField && sourceRow?.sourceRowNumber;
-                    const negativeBalance = previewId === "inventory" &&
-                      typeof sourceRow?.displayRemainingQuantity === "number" && sourceRow.displayRemainingQuantity < 0;
+                    const inventoryNegativeBalance = typeof sourceRow?.displayRemainingQuantity === "number" && sourceRow.displayRemainingQuantity < 0;
+                    const ledgerNegativeBalance = typeof sourceRow?.remainingQuantity === "number" && sourceRow.remainingQuantity < 0;
+                    const negativeBalance = (previewId === "inventory" && inventoryNegativeBalance) ||
+                      (previewId === "ledger" && ledgerNegativeBalance);
                     const content = editablePurchase
                       ? `<input class="purchase-input" data-purchase-code="${escapeHtml(sourceRow?.productCode || "")}"
-                          data-grid-column="shipping:inventory:purchase" data-negative-balance="${negativeBalance ? "true" : "false"}"
+                          data-grid-column="${escapeHtml(column.key)}" data-negative-balance="${negativeBalance ? "true" : "false"}"
                           autocomplete="off"
                           tabindex="${negativeBalance || previewId === "allocations" ? "0" : "-1"}"
                           value="${escapeHtml(value)}" aria-label="${escapeHtml(sourceRow?.productCode || "")} 구매처">`
+                      : editableLedgerPrice
+                        ? `<input class="inventory-input ledger-price-input" data-inventory-code="${escapeHtml(sourceRow?.productCode || "")}"
+                            data-inventory-column="${escapeHtml(column.inventoryColumnKey)}" data-grid-column="${escapeHtml(column.key)}"
+                            inputmode="decimal" autocomplete="off" value="${escapeHtml(value)}"
+                            aria-label="${escapeHtml(sourceRow?.productCode || "")} 발주 단가">`
                       : editableOrder
                         ? `<input class="order-edit-input" data-order-row="${escapeHtml(sourceRow.sourceRowNumber)}"
                             data-order-field="${escapeHtml(column.orderField)}"
@@ -4195,6 +4271,8 @@
                                 inputmode="decimal" autocomplete="off" data-negative-value="${negativeNumericValue ? "true" : "false"}"
                                 style="${warehouseFill ? `background-color:${warehouseFill}` : ""}" value="${escapeHtml(value)}"
                                 aria-label="${escapeHtml(sourceRow?.productCode || "")} ${escapeHtml(column.header)} 재고수량">`
+                            : column.role === "orderInformation"
+                              ? renderOrderInformationBadges(value)
                             : orderQuantity || calculatedQuantity
                               ? `<span class="inventory-total-frame" data-negative-value="${negativeNumericValue ? "true" : "false"}">${escapeHtml(isNumber ? formatNumber(value) : value)}</span>`
                               : `<span class="${noticeText ? "notice-text" : ""}">${escapeHtml(isNumber ? formatNumber(value) : value)}</span>`;
@@ -4821,14 +4899,14 @@
       }
 
       function commitInventoryInput(input, { render = true } = {}) {
-        if (!input || !state.workspace || state.activePreview !== "inventory") return false;
+        if (!input || !state.workspace || !["inventory", "ledger"].includes(state.activePreview)) return false;
         try {
           engine.setInventoryOverride(state.workspace, input.dataset.inventoryCode, input.dataset.inventoryColumn, input.value);
           scheduleLocalSave();
           if (render) renderPreview();
           return true;
         } catch (error) {
-          showToast(error.message || "창고별 재고 수량을 수정하지 못했습니다.", true);
+          showToast(error.message || "재고·발주 입력값을 수정하지 못했습니다.", true);
           renderPreview();
           return false;
         }
@@ -4860,7 +4938,7 @@
 
       function handleInventoryPurchaseNavigation(event) {
         const input = event.target.closest?.(".purchase-input[data-purchase-code]");
-        if (!input || !state.workspace || state.activePreview !== "inventory") return;
+        if (!input || !state.workspace || !["inventory", "ledger"].includes(state.activePreview)) return;
         if (event.isComposing || event.keyCode === 229 || input.dataset.composing === "true") return;
         const inputs = Array.from(elements.previewTable.querySelectorAll(".purchase-input[data-purchase-code]"));
         const currentIndex = inputs.indexOf(input);
@@ -4906,7 +4984,7 @@
 
       function handleInventoryGridArrowNavigation(event) {
         const input = event.target.closest?.(".purchase-input[data-grid-column], .inventory-input[data-grid-column]");
-        if (!input || !state.workspace || state.activePreview !== "inventory" || event.isComposing) return;
+        if (!input || !state.workspace || !["inventory", "ledger"].includes(state.activePreview) || event.isComposing) return;
         if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) return;
         const rows = Array.from(elements.previewTable.querySelectorAll("tbody tr[data-product-code]"));
         const row = input.closest("tr[data-product-code]");
@@ -4934,7 +5012,7 @@
 
       function handleInventoryQuantityNavigation(event) {
         const input = event.target.closest?.(".inventory-input[data-inventory-code][data-inventory-column]");
-        if (!input || !state.workspace || state.activePreview !== "inventory" || event.isComposing) return;
+        if (!input || !state.workspace || !["inventory", "ledger"].includes(state.activePreview) || event.isComposing) return;
         if (!["Enter", "Tab"].includes(event.key)) return;
         event.preventDefault();
         const inputs = Array.from(elements.previewTable.querySelectorAll(".inventory-input[data-inventory-code][data-inventory-column]"));
@@ -5154,14 +5232,20 @@
       });
       elements.previewTable.addEventListener("click", (event) => {
         const trigger = event.target.closest(".column-sort-trigger[data-sort-preview-id][data-sort-column-key]");
-        if (!trigger || !state.workspace) return;
+        if (trigger && state.workspace) {
+          event.preventDefault();
+          event.stopPropagation();
+          const sameMenu = !elements.columnSortMenu.classList.contains("hidden") &&
+            state.activeColumnMenu?.previewId === trigger.dataset.sortPreviewId &&
+            state.activeColumnMenu?.columnKey === trigger.dataset.sortColumnKey;
+          if (sameMenu) closeColumnSortMenu();
+          else openColumnSortMenu(trigger);
+          return;
+        }
+        const header = event.target.closest("th[data-sort-header-preview-id][data-sort-header-column-key]");
+        if (!header || !state.workspace || state.suppressHeaderClick || event.target.closest(".column-resize-handle")) return;
         event.preventDefault();
-        event.stopPropagation();
-        const sameMenu = !elements.columnSortMenu.classList.contains("hidden") &&
-          state.activeColumnMenu?.previewId === trigger.dataset.sortPreviewId &&
-          state.activeColumnMenu?.columnKey === trigger.dataset.sortColumnKey;
-        if (sameMenu) closeColumnSortMenu();
-        else openColumnSortMenu(trigger);
+        cycleColumnSort(header.dataset.sortHeaderPreviewId, header.dataset.sortHeaderColumnKey);
       });
       elements.columnSortMenu.addEventListener("click", (event) => {
         const context = state.activeColumnMenu;
@@ -5254,7 +5338,7 @@
       });
       elements.previewTable.addEventListener("input", (event) => {
         const input = event.target.closest("[data-purchase-code]");
-        if (!input || !state.workspace || !["inventory", "allocations"].includes(state.activePreview)) return;
+        if (!input || !state.workspace || !["inventory", "ledger", "allocations"].includes(state.activePreview)) return;
         engine.setPurchaseValue(state.workspace, input.dataset.purchaseCode, input.value);
         scheduleLocalSave();
       });
@@ -5264,7 +5348,7 @@
       });
       elements.previewTable.addEventListener("compositionend", (event) => {
         const input = event.target.closest?.(".purchase-input[data-purchase-code]");
-        if (!input || !state.workspace || !["inventory", "allocations"].includes(state.activePreview)) return;
+        if (!input || !state.workspace || !["inventory", "ledger", "allocations"].includes(state.activePreview)) return;
         input.dataset.composing = "false";
         commitPurchaseInput(input);
       });
@@ -5291,7 +5375,7 @@
           return;
         }
         const input = event.target.closest("[data-purchase-code]");
-        if (!input || !state.workspace || !["inventory", "allocations"].includes(state.activePreview)) return;
+        if (!input || !state.workspace || !["inventory", "ledger", "allocations"].includes(state.activePreview)) return;
         scheduleLocalSave();
       });
       elements.previewTable.addEventListener("keydown", (event) => {
