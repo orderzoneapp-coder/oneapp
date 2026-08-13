@@ -696,7 +696,7 @@
       white-space: nowrap;
     }
     .spec-filter:disabled { opacity: .42; }
-    /* ORDER Q v1.29: operator-facing shipment-management branding */
+    /* ORDER Q v1.30: operator-facing shipment-management branding */
     .header-output-button { border-color: #99f6e4; color: #0f766e; background: #f0fdfa; }
     .header-output-button:hover:not(:disabled) { background: #ccfbf1; }
     .results-panel .table-wrap { max-height: calc(100vh - 200px); }
@@ -1045,7 +1045,7 @@
     .column-sort-menu {
       position: fixed;
       z-index: 500;
-      width: 230px;
+      width: 280px;
       padding: 8px;
       border: 1px solid #94a3b8;
       border-radius: 7px;
@@ -1088,6 +1088,42 @@
     .column-sort-menu button.active,
     .column-sort-condition:hover { color: #0f766e; background: #f0fdfa; }
     .column-sort-condition input { width: 15px; height: 15px; margin: 0; accent-color: #0f766e; }
+    .column-filter-search {
+      width: 100%;
+      height: 32px;
+      padding: 5px 8px;
+      border: 1px solid #cbd5e1;
+      border-radius: 4px;
+      color: #0f172a;
+      background: #fff;
+      outline: none;
+    }
+    .column-filter-search:focus { border-color: #0d9488; box-shadow: 0 0 0 2px rgba(13,148,136,.12); }
+    .column-value-list {
+      max-height: 190px;
+      overflow: auto;
+      padding: 2px;
+      border: 1px solid #e2e8f0;
+      border-radius: 4px;
+      background: #fff;
+    }
+    .column-value-option {
+      display: flex;
+      min-height: 27px;
+      align-items: center;
+      gap: 7px;
+      padding: 4px 6px;
+      border-radius: 3px;
+      color: #334155;
+      cursor: pointer;
+    }
+    .column-value-option:hover { color: #0f766e; background: #f0fdfa; }
+    .column-value-option input { flex: 0 0 auto; width: 14px; height: 14px; margin: 0; accent-color: #0f766e; }
+    .column-value-option span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .column-value-empty { padding: 12px 7px; color: #64748b; text-align: center; }
+    .column-filter-actions { display: flex; justify-content: flex-end; gap: 6px; padding-top: 5px; }
+    .column-filter-actions button { width: auto; min-width: 58px; border: 1px solid #cbd5e1; background: #fff; }
+    .column-filter-actions [data-apply-column-values] { border-color: #0d9488; color: #fff; background: #0d9488; }
     .column-sort-menu .column-sort-clear { color: #475569; font-weight: 800; }
     th.column-draggable { cursor: grab; }
     th.column-draggable:active { cursor: grabbing; }
@@ -1275,7 +1311,7 @@
       .recovery-record-item { grid-template-columns: auto 1fr; }
       .recovery-record-status { grid-column: 2; }
     }
-    /* ORDER Q v1.29: saved-width print layout and Excel-like column sort/filter menus */
+    /* ORDER Q v1.30: saved-width print layout and Excel-like column sort/filter menus */
     .input-panel { grid-template-columns: minmax(0, 1fr) 330px; gap: 12px; }
     .upload-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
     .source-selector {
@@ -1398,7 +1434,7 @@
       <div class="brand-mark">ONEAPP</div>
       <div class="brand-divider" aria-hidden="true"></div>
       <span class="brand-logo-frame" aria-hidden="true"><img class="brand-logo" src="assets/order-q-logo.png" alt=""></span>
-      <span class="brand-badge">v1.29</span>
+      <span class="brand-badge">v1.30</span>
       <span class="brand-product">출고관리</span>
     </div>
     <div class="header-actions">
@@ -1566,7 +1602,7 @@
     </section>
 
     <footer class="page-footer">
-      <span>ORDER Q v1.29 · 출고관리 · workspace shipping-workspace/v2 · cloud plan v1</span>
+      <span>ORDER Q v1.30 · 출고관리 · workspace shipping-workspace/v2 · cloud plan v1</span>
       <a href="SHIPPING_MANAGEMENT_GUIDANCE.md">개발·운영 기준 보기</a>
     </footer>
   </main>
@@ -1633,13 +1669,22 @@
   <div class="column-sort-menu hidden" id="columnSortMenu" role="menu" aria-label="열 정렬 및 조건 필터">
     <div class="column-sort-menu-title" id="columnSortMenuTitle">열 정렬 및 필터</div>
     <div class="column-sort-menu-section">
-      <button type="button" data-sort-direction="asc" role="menuitem">↑ 오름차순</button>
-      <button type="button" data-sort-direction="desc" role="menuitem">↓ 내림차순</button>
+      <button type="button" data-sort-direction="asc" role="menuitem"><span data-sort-label="asc">↑ 오름차순</span></button>
+      <button type="button" data-sort-direction="desc" role="menuitem"><span data-sort-label="desc">↓ 내림차순</span></button>
       <button type="button" data-sort-direction="default" role="menuitem">↕ 기본순서</button>
     </div>
-    <div class="column-sort-menu-section" aria-label="열 조건">
+    <div class="column-sort-menu-section" data-numeric-filter-section aria-label="숫자 열 조건">
       <label class="column-sort-condition"><input type="checkbox" data-column-condition="excludeBlank">공백 제외</label>
       <label class="column-sort-condition"><input type="checkbox" data-column-condition="excludeZero">0 제외</label>
+    </div>
+    <div class="column-sort-menu-section hidden" data-text-filter-section aria-label="텍스트 값 필터">
+      <input class="column-filter-search" type="search" data-column-value-search autocomplete="off" placeholder="검색">
+      <label class="column-value-option"><input type="checkbox" data-column-value-select-all><span>(모두 선택)</span></label>
+      <div class="column-value-list" data-column-value-list></div>
+      <div class="column-filter-actions">
+        <button type="button" data-apply-column-values>확인</button>
+        <button type="button" data-cancel-column-values>취소</button>
+      </div>
     </div>
     <div class="column-sort-menu-section">
       <button class="column-sort-clear" type="button" data-clear-column-filter role="menuitem">이 열 정렬·조건 초기화</button>
@@ -3774,9 +3819,12 @@
         return state.columnFilters[previewId]?.[columnKey] || null;
       }
 
+      function columnFilterIsActive(setting) {
+        return Boolean(setting?.excludeBlank || setting?.excludeZero || Array.isArray(setting?.allowedValues));
+      }
+
       function hasColumnFilters(previewId) {
-        return Object.values(state.columnFilters[previewId] || {}).some((setting) =>
-          Boolean(setting?.excludeBlank || setting?.excludeZero));
+        return Object.values(state.columnFilters[previewId] || {}).some(columnFilterIsActive);
       }
 
       function isBlankCell(value) {
@@ -3789,6 +3837,29 @@
         return Number.isFinite(numeric) && numeric === 0;
       }
 
+      function textFilterValueKey(value) {
+        return isBlankCell(value) ? JSON.stringify(["blank"]) : JSON.stringify(["value", String(value)]);
+      }
+
+      function columnTextValueOptions(preview, columnKey) {
+        const columnIndex = preview?.columns?.findIndex((column) => column.key === columnKey) ?? -1;
+        if (columnIndex < 0) return [];
+        const unique = new Map();
+        preview.rows.forEach((row) => {
+          const value = row?.[columnIndex];
+          const key = textFilterValueKey(value);
+          if (!unique.has(key)) unique.set(key, {
+            key,
+            label: isBlankCell(value) ? "(공백)" : String(value),
+            blank: isBlankCell(value),
+          });
+        });
+        return [...unique.values()].sort((left, right) => {
+          if (left.blank !== right.blank) return left.blank ? 1 : -1;
+          return left.label.localeCompare(right.label, "ko-KR", { sensitivity: "base", numeric: true });
+        });
+      }
+
       function rowMatchesColumnFilters(previewId, pair, preview) {
         const filters = state.columnFilters[previewId] || {};
         return Object.entries(filters).every(([columnKey, setting]) => {
@@ -3797,6 +3868,7 @@
           const value = pair.row?.[index];
           if (setting?.excludeBlank && isBlankCell(value)) return false;
           if (setting?.excludeZero && isZeroCell(value)) return false;
+          if (Array.isArray(setting?.allowedValues) && !setting.allowedValues.includes(textFilterValueKey(value))) return false;
           return true;
         });
       }
@@ -3887,7 +3959,12 @@
         }
         const sort = columnSortSetting(context.previewId, preview);
         const filter = columnFilterSetting(context.previewId, context.columnKey);
-        elements.columnSortMenuTitle.textContent = `${column.header} · 정렬 및 조건`;
+        const numericColumn = Boolean(column.numeric);
+        elements.columnSortMenuTitle.textContent = `${column.header} · ${numericColumn ? "숫자" : "텍스트"} 정렬 및 필터`;
+        elements.columnSortMenu.querySelector('[data-sort-label="asc"]').textContent =
+          numericColumn ? "↑ 숫자 오름차순" : "↑ 텍스트 오름차순";
+        elements.columnSortMenu.querySelector('[data-sort-label="desc"]').textContent =
+          numericColumn ? "↓ 숫자 내림차순" : "↓ 텍스트 내림차순";
         elements.columnSortMenu.querySelectorAll("[data-sort-direction]").forEach((button) => {
           const direction = button.dataset.sortDirection;
           const active = direction === "default"
@@ -3898,6 +3975,48 @@
         elements.columnSortMenu.querySelectorAll("[data-column-condition]").forEach((input) => {
           input.checked = Boolean(filter?.[input.dataset.columnCondition]);
         });
+        elements.columnSortMenu.querySelector("[data-numeric-filter-section]")
+          .classList.toggle("hidden", !numericColumn);
+        elements.columnSortMenu.querySelector("[data-text-filter-section]")
+          .classList.toggle("hidden", numericColumn);
+        if (!numericColumn) {
+          context.textOptions = columnTextValueOptions(preview, context.columnKey);
+          if (!(context.textSelection instanceof Set)) {
+            const selected = Array.isArray(filter?.allowedValues)
+              ? filter.allowedValues
+              : context.textOptions.map((option) => option.key);
+            context.textSelection = new Set(selected);
+          }
+          const searchInput = elements.columnSortMenu.querySelector("[data-column-value-search]");
+          searchInput.value = context.textSearch || "";
+          renderColumnTextValueOptions();
+        }
+      }
+
+      function renderColumnTextValueOptions() {
+        const context = state.activeColumnMenu;
+        if (!context || !Array.isArray(context.textOptions) || !(context.textSelection instanceof Set)) return;
+        const query = String(context.textSearch || "").trim().toLocaleLowerCase("ko-KR");
+        const visibleOptions = context.textOptions.filter((option) =>
+          !query || option.label.toLocaleLowerCase("ko-KR").includes(query));
+        context.visibleTextValueKeys = visibleOptions.map((option) => option.key);
+        const list = elements.columnSortMenu.querySelector("[data-column-value-list]");
+        list.innerHTML = visibleOptions.length
+          ? visibleOptions.map((option) => `
+              <label class="column-value-option" title="${escapeHtml(option.label)}">
+                <input type="checkbox" data-column-value="${escapeHtml(option.key)}"
+                  ${context.textSelection.has(option.key) ? "checked" : ""}>
+                <span>${escapeHtml(option.label)}</span>
+              </label>`).join("")
+          : '<div class="column-value-empty">검색 결과가 없습니다.</div>';
+        const selectAll = elements.columnSortMenu.querySelector("[data-column-value-select-all]");
+        const selectedVisibleCount = context.visibleTextValueKeys
+          .filter((key) => context.textSelection.has(key)).length;
+        selectAll.checked = context.visibleTextValueKeys.length > 0 &&
+          selectedVisibleCount === context.visibleTextValueKeys.length;
+        selectAll.indeterminate = selectedVisibleCount > 0 &&
+          selectedVisibleCount < context.visibleTextValueKeys.length;
+        selectAll.disabled = context.visibleTextValueKeys.length === 0;
       }
 
       function openColumnSortMenu(trigger) {
@@ -3905,7 +4024,7 @@
         const columnKey = trigger.dataset.sortColumnKey;
         if (!previewDefinitionById(previewId)?.columns?.some((column) => column.key === columnKey)) return;
         closeColumnSortMenu();
-        state.activeColumnMenu = { previewId, columnKey };
+        state.activeColumnMenu = { previewId, columnKey, textSearch: "", textSelection: null };
         trigger.setAttribute("aria-expanded", "true");
         refreshColumnSortMenu();
         elements.columnSortMenu.classList.remove("hidden");
@@ -3924,9 +4043,26 @@
       function setColumnCondition(previewId, columnKey, condition, enabled) {
         if (!state.columnFilters[previewId]) state.columnFilters[previewId] = Object.create(null);
         const next = { ...(state.columnFilters[previewId][columnKey] || {}), [condition]: enabled };
-        if (!next.excludeBlank && !next.excludeZero) delete state.columnFilters[previewId][columnKey];
+        delete next.allowedValues;
+        if (!columnFilterIsActive(next)) delete state.columnFilters[previewId][columnKey];
         else state.columnFilters[previewId][columnKey] = next;
         if (Object.keys(state.columnFilters[previewId]).length === 0) delete state.columnFilters[previewId];
+      }
+
+      function applyColumnTextFilter() {
+        const context = state.activeColumnMenu;
+        if (!context || !Array.isArray(context.textOptions) || !(context.textSelection instanceof Set)) return;
+        if (!state.columnFilters[context.previewId]) state.columnFilters[context.previewId] = Object.create(null);
+        const allKeys = context.textOptions.map((option) => option.key);
+        const selectedKeys = allKeys.filter((key) => context.textSelection.has(key));
+        const next = { ...(state.columnFilters[context.previewId][context.columnKey] || {}) };
+        delete next.excludeBlank;
+        delete next.excludeZero;
+        if (selectedKeys.length === allKeys.length) delete next.allowedValues;
+        else next.allowedValues = selectedKeys;
+        if (columnFilterIsActive(next)) state.columnFilters[context.previewId][context.columnKey] = next;
+        else delete state.columnFilters[context.previewId][context.columnKey];
+        if (Object.keys(state.columnFilters[context.previewId]).length === 0) delete state.columnFilters[context.previewId];
       }
 
       function visibleColumnEntries(preview, previewId = state.activePreview, options = {}) {
@@ -3973,7 +4109,7 @@
           const sort = columnSortSetting(previewId, preview);
           const filter = columnFilterSetting(previewId, column.key);
           const isSorted = sort?.columnKey === column.key;
-          const hasFilter = Boolean(filter?.excludeBlank || filter?.excludeZero);
+          const hasFilter = columnFilterIsActive(filter);
           const ariaSort = isSorted ? (sort.direction === "asc" ? "ascending" : "descending") : "none";
           const sortControl = sortable
             ? `<button class="column-sort-trigger ${isSorted || hasFilter ? "active" : ""}" type="button"
@@ -4097,7 +4233,7 @@
           ? preview.columns.find((column) => column.key === activeSort.columnKey)
           : null;
         const filterCount = Object.values(state.columnFilters[state.activePreview] || {})
-          .filter((setting) => setting?.excludeBlank || setting?.excludeZero).length;
+          .filter(columnFilterIsActive).length;
         const viewNotes = [];
         if (sortColumn) viewNotes.push(`${sortColumn.header}${activeSort.direction === "asc" ? "↑" : "↓"}`);
         else if (preview.sortByProductCode) viewNotes.push("품목코드↑");
@@ -5030,6 +5166,16 @@
       elements.columnSortMenu.addEventListener("click", (event) => {
         const context = state.activeColumnMenu;
         if (!context || !state.workspace) return;
+        if (event.target.closest("[data-cancel-column-values]")) {
+          closeColumnSortMenu();
+          return;
+        }
+        if (event.target.closest("[data-apply-column-values]")) {
+          applyColumnTextFilter();
+          closeColumnSortMenu();
+          renderPreview();
+          return;
+        }
         const sortButton = event.target.closest("[data-sort-direction]");
         if (sortButton) {
           const direction = sortButton.dataset.sortDirection;
@@ -5052,12 +5198,37 @@
         }
       });
       elements.columnSortMenu.addEventListener("change", (event) => {
-        const input = event.target.closest("[data-column-condition]");
         const context = state.activeColumnMenu;
-        if (!input || !context || !state.workspace) return;
-        setColumnCondition(context.previewId, context.columnKey, input.dataset.columnCondition, input.checked);
+        if (!context || !state.workspace) return;
+        const selectAll = event.target.closest("[data-column-value-select-all]");
+        if (selectAll && context.textSelection instanceof Set) {
+          (context.visibleTextValueKeys || []).forEach((key) => {
+            if (selectAll.checked) context.textSelection.add(key);
+            else context.textSelection.delete(key);
+          });
+          renderColumnTextValueOptions();
+          return;
+        }
+        const valueInput = event.target.closest("[data-column-value]");
+        if (valueInput && context.textSelection instanceof Set) {
+          if (valueInput.checked) context.textSelection.add(valueInput.dataset.columnValue);
+          else context.textSelection.delete(valueInput.dataset.columnValue);
+          renderColumnTextValueOptions();
+          return;
+        }
+        const conditionInput = event.target.closest("[data-column-condition]");
+        if (!conditionInput) return;
+        setColumnCondition(context.previewId, context.columnKey,
+          conditionInput.dataset.columnCondition, conditionInput.checked);
         renderPreview();
         refreshColumnSortMenu();
+      });
+      elements.columnSortMenu.addEventListener("input", (event) => {
+        const searchInput = event.target.closest("[data-column-value-search]");
+        const context = state.activeColumnMenu;
+        if (!searchInput || !context || !state.workspace) return;
+        context.textSearch = searchInput.value;
+        renderColumnTextValueOptions();
       });
       document.addEventListener("click", (event) => {
         if (elements.columnSortMenu.classList.contains("hidden") ||
