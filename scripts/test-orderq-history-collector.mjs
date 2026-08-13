@@ -168,6 +168,6 @@ assert.match(collectorUi, /unlinkFulfillmentLink/);
 assert.match(collectorUi, /cancelParserEvidenceConfirmation/);
 const entry = await readFile(new URL('../orderq/index.html', import.meta.url), 'utf8');
 assert.match(entry, /collector\.html/);
-assert.match(entry, /vNext 0\.4\.3/);
+assert.match(entry, /vNext 0\.4\.4/);
 
 console.log('PASS: ORDER Q history collector, flexible cutoff, fulfillment and evidence contracts');

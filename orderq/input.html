@@ -9,12 +9,20 @@
 </head>
 <body>
   <div class="shell">
-    <header class="topbar">
+    <header class="topbar manual-topbar">
       <div class="brand">
         <strong>ONEAPP</strong>
         <span class="logo-frame" aria-hidden="true"><img src="../assets/order-q-logo.png" alt=""></span>
-        <span class="badge">vNext 0.4.3</span>
+        <span class="badge">vNext 0.4.4</span>
         <span id="pageMode">수기 주문</span>
+      </div>
+      <div class="top-system" aria-live="polite">
+        <div class="top-system-line">
+          <strong>System.IO</strong>
+          <span id="orderMeta" title="시스템이 관리하는 주문 ID·Revision·상태입니다.">신규 주문 · 저장 전</span>
+        </div>
+        <span class="top-system-help">품목코드·품목명 입력 후 마스터 매칭 결과를 표시합니다.</span>
+        <div id="message" class="message"></div>
       </div>
       <div class="top-actions">
         <a class="btn dark" href="./collector.html">이력수집</a>
@@ -25,9 +33,6 @@
       </div>
     </header>
     <main class="panel">
-      <p class="notice">품목코드·품목명에서 공통 상품 마스터를 검색해 선택하세요. 직접입력 상품도 미매칭 상태로 저장할 수 있습니다.</p>
-      <div id="message" class="message"></div>
-
       <section class="form-grid">
         <div class="field">
           <label for="orderDate">일자</label>
@@ -58,10 +63,6 @@
         <div class="field wide">
           <label for="orderMessage">전표 메모 <span class="field-help">주문건 전체 전달사항</span></label>
           <input class="control" id="orderMessage" type="text" placeholder="이 주문 전체에 전달할 내용">
-        </div>
-        <div class="field wide">
-          <label>시스템 주문정보</label>
-          <div class="control readonly-system" id="orderMeta" title="시스템이 관리하는 주문 ID·Revision·상태입니다.">신규 주문 · 저장 전</div>
         </div>
       </section>
 
@@ -202,7 +203,7 @@
         <td><input data-field="finalUnit" value=""></td>
         <td><input class="num" data-field="price" type="number" step="any" value=""></td>
         <td><input data-field="memo" value="" placeholder="이 상품의 적요"></td>
-        <td class="center"><span data-role="matchStatus" class="row-status failed">매칭실패</span></td>`;
+        <td class="center"><span data-role="matchStatus" class="row-status" hidden></span></td>`;
       const set = (field, value) => { const el = tr.querySelector(`[data-field="${field}"]`); if (el) el.value = value ?? ''; };
       set('itemCode', item.itemCode);
       set('itemName', item.itemName);
@@ -219,6 +220,16 @@
     function refreshRowStatus(tr) {
       const badge = tr.querySelector('[data-role="matchStatus"]');
       const matched = Boolean(tr.dataset.productId);
+      const hasProductInput = matched || ['itemCode', 'itemName'].some(field => {
+        return Boolean(tr.querySelector(`[data-field="${field}"]`)?.value.trim());
+      });
+      badge.hidden = !hasProductInput;
+      if (!hasProductInput) {
+        badge.textContent = '';
+        badge.className = 'row-status';
+        refreshSummary();
+        return;
+      }
       badge.textContent = matched ? '매칭완료' : '매칭실패';
       badge.className = `row-status ${matched ? 'matched' : 'failed'}`;
       refreshSummary();
@@ -230,10 +241,12 @@
       const rows = [...itemRows.querySelectorAll('tr')].filter(row => {
         return [...row.querySelectorAll('[data-field]')].some(el => String(el.value || '').trim());
       });
-      const matched = rows.filter(row => Boolean(row.dataset.productId)).length;
+      const attemptedRows = rows.filter(row => Boolean(row.dataset.productId)
+        || ['itemCode', 'itemName'].some(field => row.querySelector(`[data-field="${field}"]`)?.value.trim()));
+      const matched = attemptedRows.filter(row => Boolean(row.dataset.productId)).length;
       document.getElementById('totalRows').textContent = `상품 ${rows.length}건`;
       document.getElementById('matchedRows').textContent = `매칭완료 ${matched}건`;
-      document.getElementById('failedRows').textContent = `매칭실패 ${rows.length - matched}건`;
+      document.getElementById('failedRows').textContent = `매칭실패 ${attemptedRows.length - matched}건`;
     }
 
     function readItems() {

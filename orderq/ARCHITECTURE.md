@@ -1,6 +1,6 @@
 # ORDER Q vNext Architecture
 
-Version: 0.4.3
+Version: 0.4.4
 Reviewed: 2026-08-13
 
 ## 1. Scope
@@ -9,7 +9,7 @@ ORDER Q vNext is an independent pilot under `/orderq/`. Existing `orderops/` and
 
 Phase 3 adds `/orderq/parser.html`. SmartParser never writes ORDER / ORDER_ITEM directly: raw text and parse decisions are stored separately, then confirmed actions call the shared Order Intake Engine.
 
-vNext 0.4.3 makes manual order entry keyboard-first, restores the last warehouse and transaction type locally, separates order-level `orderMessage` from item-level `memo`, groups the best matching six-digit product category in code order, and copies only an explicit common-master `출고가` into the order unit price. Only an explicitly selected master product is matched. Historical imports never create operational orders. They are stored in source-preserving import batches, normalized transaction ledgers, fulfillment links, net fulfillment balances, and lifecycle-managed parser evidence.
+vNext 0.4.4 keeps untouched manual-entry rows visually neutral: matching status appears only after a product code or name is entered. It retains the 0.4.3 keyboard-first entry, local defaults, memo separation, category ordering, and explicit common-master `출고가` behavior. Only an explicitly selected master product is matched. Historical imports never create operational orders. They are stored in source-preserving import batches, normalized transaction ledgers, fulfillment links, net fulfillment balances, and lifecycle-managed parser evidence.
 
 The vNext data path is:
 
