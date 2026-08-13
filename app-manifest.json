@@ -213,12 +213,36 @@
       ]
     },
     {
+      "id": "orderq-vnext",
+      "name": "ORDER Q vNext",
+      "path": "orderq/index.html",
+      "kind": "web-entry-group",
+      "status": "pilot",
+      "purpose": "Provide manual and text order intake, source-preserving historical collection, order-to-sales fulfillment evidence, and revisioned cloud synchronization without changing the existing OrderOps compatibility route.",
+      "owner": "shipping-operations",
+      "productionWrites": true,
+      "entries": [
+        "orderq/index.html",
+        "orderq/input.html",
+        "orderq/parser.html",
+        "orderq/collector.html",
+        "orderq/cloud.html"
+      ],
+      "services": [
+        "cloud-sync"
+      ],
+      "sharedContracts": [
+        "cloud-url",
+        "orderq-vnext-sync"
+      ]
+    },
+    {
       "id": "cloud-sync",
       "name": "ONEAPP Cloud Sync",
       "path": "code.gs",
       "kind": "google-apps-script-service",
       "status": "production",
-      "purpose": "Back up and restore product master, history, shared configuration, the finalized DataOps inventory snapshot, and explicitly saved Shipping purchase-plan revisions.",
+      "purpose": "Back up and restore product master, history, shared configuration, the finalized DataOps inventory snapshot, explicitly saved Shipping purchase-plan revisions, and token-protected ORDER Q vNext incremental records.",
       "apiActions": {
         "post": [
           "initSync",
@@ -229,7 +253,10 @@
           "dataops_snapshot_get",
           "shipping_plan_save",
           "shipping_plan_list",
-          "shipping_plan_get"
+          "shipping_plan_get",
+          "orderq_sync_push",
+          "orderq_sync_pull",
+          "orderq_order_head"
         ],
         "get": [
           "full",
@@ -251,6 +278,52 @@
     }
   ],
   "sharedDataContracts": [
+    {
+      "id": "orderq-vnext-sync",
+      "owner": "orderq-vnext",
+      "consumers": [
+        "orderq/index.html",
+        "orderq/input.html",
+        "orderq/parser.html",
+        "orderq/collector.html",
+        "orderq/cloud.html"
+      ],
+      "schemaVersion": "ONEAPP_ORDERQ_SYNC_V1",
+      "localDatabase": "oneapp-orderq-vnext",
+      "accessTokenProperty": "ONEAPP_ORDERQ_ACCESS_TOKEN",
+      "compatibilityTokenProperty": "ONEAPP_SHIPPING_PLAN_ACCESS_TOKEN",
+      "resources": {
+        "cloudActions": [
+          "orderq_sync_push",
+          "orderq_sync_pull",
+          "orderq_order_head"
+        ],
+        "cloudSheets": [
+          "ORDER",
+          "ORDER_ITEM",
+          "ORDER_EVENT",
+          "CUSTOMER_MASTER",
+          "PRODUCT_MASTER_ORDERQ",
+          "IMPORT_BATCH",
+          "SOURCE_RECORD",
+          "SALES_DOCUMENT",
+          "SALES_LINE",
+          "PURCHASE_DOCUMENT",
+          "PURCHASE_LINE",
+          "LEDGER_DOCUMENT",
+          "LEDGER_LINE",
+          "INVENTORY_SNAPSHOT",
+          "INVENTORY_LINE",
+          "HISTORICAL_ORDER",
+          "HISTORICAL_ORDER_LINE",
+          "FULFILLMENT_LINK",
+          "PARSER_EVIDENCE",
+          "COLLECTOR_SETTING",
+          "ORDER_TXN_LOG",
+          "SYNC_META"
+        ]
+      }
+    },
     {
       "id": "shipping-purchase-plan",
       "owner": "orderops",

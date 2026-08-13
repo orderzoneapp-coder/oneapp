@@ -1,6 +1,6 @@
 # ORDER Q vNext Architecture
 
-Version: 0.2.0  
+Version: 0.4.0
 Reviewed: 2026-08-13
 
 ## 1. Scope
@@ -8,6 +8,8 @@ Reviewed: 2026-08-13
 ORDER Q vNext is an independent pilot under `/orderq/`. Existing `orderops/` and root `orderops_list.html` remain unchanged.
 
 Phase 3 adds `/orderq/parser.html`. SmartParser never writes ORDER / ORDER_ITEM directly: raw text and parse decisions are stored separately, then confirmed actions call the shared Order Intake Engine.
+
+vNext 0.4 adds `/orderq/collector.html`. Historical imports never create operational orders. They are stored in source-preserving import batches, normalized transaction ledgers, fulfillment links, and parser evidence.
 
 The vNext data path is:
 
@@ -21,6 +23,7 @@ Later, only the Cloud Adapter boundary is intended to change to `Server API → 
 - SmartParser immutable input: `rawInputs`; message decisions and confirmed values: `parseResults`.
 - Duplicate boundary: unique `sourceMessageKey` indexes on `parseResults` and `orders`.
 - Google Sheet cloud is a central synchronization and recovery layer, not an ERP ledger.
+- Historical sales and purchase documents are future ERP-ledger-compatible facts, while fulfillment links and parser evidence remain derived review data.
 - Future server phase: server DB becomes primary; IndexedDB becomes cache/offline storage.
 - Order business identity is `orderId`; an order line is `orderItemId`; customer identity is `customerId`.
 - Order changes are revisioned. Delete-by-overwrite is prohibited for business cancellation/history.
@@ -48,6 +51,17 @@ Purpose sheets are created on first sync and share one central workbook:
 - `UNIT_MAPPING`
 - `MAPPING_EVENT`
 - `SYNC_META`
+- `PRODUCT_MASTER_ORDERQ`
+- `IMPORT_BATCH` / `SOURCE_RECORD`
+- `SALES_DOCUMENT` / `SALES_LINE`
+- `PURCHASE_DOCUMENT` / `PURCHASE_LINE`
+- `LEDGER_DOCUMENT` / `LEDGER_LINE`
+- `INVENTORY_SNAPSHOT` / `INVENTORY_LINE`
+- `HISTORICAL_ORDER` / `HISTORICAL_ORDER_LINE`
+- `FULFILLMENT_LINK` / `PARSER_EVIDENCE` / `COLLECTOR_SETTING`
+- `ORDER_TXN_LOG`
+
+ORDER Q cloud actions require `ONEAPP_ORDERQ_ACCESS_TOKEN`; when it is not separately configured, the existing Shipping access token is the compatibility fallback. Order bundle writes use a recoverable transaction log and restore the previous bundle after a partial write.
 
 Do not create one sheet per customer. Customer-specific lookup is performed with `customerId` fields inside common tables.
 
@@ -95,6 +109,8 @@ The following are separate logical datasets even when linked by IDs:
 - future ERP customer sales ledger.
 
 The future ERP sales ledger is the authoritative transaction ledger. Mapping dictionaries are recognition memory and must not be treated as ledger facts.
+
+Historical order-to-sales matching uses the previous business day first, then same-day orders received before the configurable operating cutoff. Date-only legacy orders keep a lower-confidence `TIME_MISSING` evidence and are not silently promoted to confirmed mappings.
 
 ## 7. Deployment boundary
 

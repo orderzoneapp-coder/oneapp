@@ -13,10 +13,11 @@
       <div class="brand">
         <strong>ONEAPP</strong>
         <span class="logo-frame" aria-hidden="true"><img src="../assets/order-q-logo.png" alt=""></span>
-        <span class="badge">vNext 0.3</span>
+        <span class="badge">vNext 0.4</span>
         <span>클라우드 동기화</span>
       </div>
       <div class="top-actions">
+        <a class="btn dark" href="./collector.html">이력수집</a>
         <a class="btn dark" href="./parser.html">SmartParser</a>
         <a class="btn dark" href="./index.html">주문현황</a>
         <button class="btn primary" id="syncBtn" type="button">지금 동기화</button>
@@ -31,6 +32,10 @@
           <label for="cloudUrl">기존 ONEAPP Apps Script Web App URL</label>
           <input class="control" id="cloudUrl" type="url" placeholder="https://script.google.com/macros/s/.../exec">
         </div>
+        <div class="field wide">
+          <label for="cloudToken">ORDER Q Cloud 접근 토큰</label>
+          <input class="control" id="cloudToken" type="password" autocomplete="off" placeholder="Apps Script Property의 ORDER Q 또는 Shipping 전용 토큰">
+        </div>
         <div class="field">
           <label>Device ID</label>
           <div class="control" id="deviceId"></div>
@@ -42,7 +47,7 @@
       </section>
 
       <div class="toolbar">
-        <button class="btn" id="saveUrlBtn" type="button">URL 저장</button>
+        <button class="btn" id="saveUrlBtn" type="button">Cloud 설정 저장</button>
         <span class="status" id="stateText">상태 확인 중...</span>
         <span class="spacer"></span>
         <span class="status">시트는 첫 동기화 때 목적별로 자동 생성됩니다.</span>
@@ -91,10 +96,11 @@
   </div>
 
   <script type="module">
-    import { getCloudUrl, setCloudUrl } from './orderq-cloud-adapter.js';
+    import { getCloudUrl, setCloudUrl, getCloudAccessToken, setCloudAccessToken } from './orderq-cloud-adapter.js';
     import { getSyncState, syncNow, acceptRemoteOrder } from './orderq-sync-engine.js';
 
     const cloudUrl = document.getElementById('cloudUrl');
+    const cloudToken = document.getElementById('cloudToken');
     const message = document.getElementById('message');
     const syncBtn = document.getElementById('syncBtn');
     const conflictRows = document.getElementById('conflictRows');
@@ -109,6 +115,7 @@
     async function render() {
       const state = await getSyncState();
       cloudUrl.value = state.cloudUrl || '';
+      cloudToken.value = getCloudAccessToken();
       document.getElementById('deviceId').textContent = state.deviceId;
       document.getElementById('cursor').textContent = String(state.cursor);
       document.getElementById('stateText').textContent = `대기 ${state.pending}건 · 완료 ${state.acked}건 · 충돌 ${state.conflicts.length}건`;
@@ -129,7 +136,8 @@
     document.getElementById('saveUrlBtn').addEventListener('click', async () => {
       try {
         setCloudUrl(cloudUrl.value);
-        show('클라우드 URL을 저장했습니다.', 'info');
+        setCloudAccessToken(cloudToken.value, true);
+        show('클라우드 URL과 ORDER Q 접근 토큰을 저장했습니다.', 'info');
         await render();
       } catch (error) { show(error.message || String(error), 'error'); }
     });

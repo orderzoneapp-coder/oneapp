@@ -262,11 +262,27 @@ async function applySimple(entityType, payload) {
   if (!payload) return false;
   const mapping = {
     CUSTOMER: [STORE.CUSTOMERS, 'customerId'],
+    PRODUCT: [STORE.PRODUCTS, 'productId'],
     CUSTOMER_ALIAS: [STORE.CUSTOMER_ALIASES, 'mappingId'],
     PRODUCT_MAPPING: [STORE.PRODUCT_MAPPINGS, 'mappingId'],
     UNIT_MAPPING: [STORE.UNIT_MAPPINGS, 'mappingId'],
     MAPPING_EVENT: [STORE.MAPPING_EVENTS, 'eventId'],
-    ORDER_EVENT: [STORE.ORDER_EVENTS, 'eventId']
+    ORDER_EVENT: [STORE.ORDER_EVENTS, 'eventId'],
+    IMPORT_BATCH: [STORE.IMPORT_BATCHES, 'importBatchId'],
+    SOURCE_RECORD: [STORE.SOURCE_RECORDS, 'sourceRecordId'],
+    SALES_DOCUMENT: [STORE.SALES_DOCUMENTS, 'salesDocumentId'],
+    SALES_LINE: [STORE.SALES_LINES, 'salesLineId'],
+    PURCHASE_DOCUMENT: [STORE.PURCHASE_DOCUMENTS, 'purchaseDocumentId'],
+    PURCHASE_LINE: [STORE.PURCHASE_LINES, 'purchaseLineId'],
+    LEDGER_DOCUMENT: [STORE.LEDGER_DOCUMENTS, 'ledgerDocumentId'],
+    LEDGER_LINE: [STORE.LEDGER_LINES, 'ledgerLineId'],
+    INVENTORY_SNAPSHOT: [STORE.INVENTORY_SNAPSHOTS, 'inventorySnapshotId'],
+    INVENTORY_LINE: [STORE.INVENTORY_LINES, 'inventoryLineId'],
+    HISTORICAL_ORDER_GROUP: [STORE.HISTORICAL_ORDER_GROUPS, 'historicalOrderGroupId'],
+    HISTORICAL_ORDER_LINE: [STORE.HISTORICAL_ORDER_LINES, 'historicalOrderLineId'],
+    FULFILLMENT_LINK: [STORE.FULFILLMENT_LINKS, 'fulfillmentLinkId'],
+    PARSER_EVIDENCE: [STORE.PARSER_EVIDENCE, 'parserEvidenceId'],
+    COLLECTOR_SETTING: [STORE.COLLECTOR_SETTINGS, 'key']
   }[entityType];
   if (!mapping || !payload[mapping[1]]) return false;
   const db = await openOrderQDb();

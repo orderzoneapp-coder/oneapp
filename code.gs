@@ -1,6 +1,6 @@
 /**
  * ONEAPP MerchOps - Cloud Sync Server
- * [v2.0_OrderQSync]
+ * [v2.1_OrderQHistoryCollector]
  *
  * - MasterDB/HistoryLogs 분할 전송 유지
  * - AppConfig JSON을 45,000자 이하로 분할 저장해 Google Sheets 셀 제한 회피
@@ -8,6 +8,8 @@
  * - 기존 AppConfig B1 단일 셀 형식도 자동 호환
  * - DataOps FULL 재고는 A/B staging 검증 후 current pointer를 원자 전환
  * - ORDER Q vNext는 목적별 시트와 revision 기반 증분 동기화를 사용
+ * - ORDER Q API 접근토큰과 주문 bundle 복구 transaction log를 사용
+ * - 이력수집 원본·판매·구매·재고·주문·출고연결·파서근거를 목적별 시트에 보존
  */
 
 const SHEET_NAMES = {
@@ -34,6 +36,7 @@ const SHIPPING_PLAN_CHUNK_SIZE = 45000;
 const SHIPPING_PLAN_MAX_ROWS = 300000;
 const SHIPPING_PLAN_MAX_CELLS = 5000000;
 const SHIPPING_PLAN_ACCESS_TOKEN_PROPERTY = 'ONEAPP_SHIPPING_PLAN_ACCESS_TOKEN';
+const ORDERQ_ACCESS_TOKEN_PROPERTY = 'ONEAPP_ORDERQ_ACCESS_TOKEN';
 const SHIPPING_PLAN_INDEX_COLUMNS = [
   'format', 'planId', 'revision', 'basisDate', 'savedAt', 'sourceFileName', 'savedBy',
   'productRowCount', 'purchaseUploadRowCount', 'hash', 'rowCount', 'cellCount',
@@ -182,6 +185,20 @@ function requireShippingPlanAccess(payload) {
   const suppliedToken = String((payload && payload.token) || '');
   if (!suppliedToken || !constantTimeTextEquals(configuredToken, suppliedToken)) {
     throw new Error('SHIPPING_PLAN_ACCESS_DENIED');
+  }
+}
+
+function requireOrderQAccess(payload) {
+  const properties = PropertiesService.getScriptProperties();
+  const configuredToken = String(
+    properties.getProperty(ORDERQ_ACCESS_TOKEN_PROPERTY)
+    || properties.getProperty(SHIPPING_PLAN_ACCESS_TOKEN_PROPERTY)
+    || ''
+  );
+  if (!configuredToken) throw new Error('ORDERQ_ACCESS_NOT_CONFIGURED');
+  const suppliedToken = String((payload && payload.token) || '');
+  if (!suppliedToken || !constantTimeTextEquals(configuredToken, suppliedToken)) {
+    throw new Error('ORDERQ_ACCESS_DENIED');
   }
 }
 
@@ -659,18 +676,21 @@ function doPost(e) {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
 
     if (action === 'orderq_sync_push') {
+      requireOrderQAccess(payload);
       return withScriptLock(() => jsonResponse({
         status: 'success', action, data: orderQSyncPush(ss, payload)
       }));
     }
 
     if (action === 'orderq_sync_pull') {
+      requireOrderQAccess(payload);
       return withScriptLock(() => jsonResponse({
         status: 'success', action, data: orderQSyncPull(ss, payload)
       }));
     }
 
     if (action === 'orderq_order_head') {
+      requireOrderQAccess(payload);
       return withScriptLock(() => jsonResponse({
         status: 'success', action, data: orderQOrderHead(ss, payload)
       }));
