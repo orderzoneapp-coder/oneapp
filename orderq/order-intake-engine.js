@@ -90,6 +90,21 @@ function normalizeItem(input, orderId, previous = null) {
   };
 }
 
+function enqueue(tx, entityType, entityId, operation, revision, payload, baseRevision = 0) {
+  tx.objectStore(STORE.SYNC_QUEUE).add({
+    queueId: newId('SQ'),
+    entityType,
+    entityId,
+    operation,
+    revision,
+    baseRevision,
+    payload,
+    status: 'PENDING',
+    createdAt: nowIso(),
+    updatedAt: nowIso()
+  });
+}
+
 async function resolveCustomerInTransaction(tx, customerInput) {
   const customerName = String(customerInput.customerName ?? '').trim();
   if (!customerName) throw new Error('거래처를 입력하세요.');
@@ -119,8 +134,7 @@ async function resolveCustomerInTransaction(tx, customerInput) {
     createdAt: timestamp,
     updatedAt: timestamp
   };
-  customerStore.add(customer);
-  aliasStore.add({
+  const alias = {
     mappingId: newId('CAM'),
     rawText: customerName,
     normalizedText: normalizedName,
@@ -132,26 +146,16 @@ async function resolveCustomerInTransaction(tx, customerInput) {
     lastUsedAt: timestamp,
     createdAt: timestamp,
     updatedAt: timestamp
-  });
+  };
+  customerStore.add(customer);
+  aliasStore.add(alias);
+  enqueue(tx, 'CUSTOMER', customer.customerId, 'UPSERT', 1, customer, 0);
+  enqueue(tx, 'CUSTOMER_ALIAS', alias.mappingId, 'UPSERT', 1, alias, 0);
   return customer;
 }
 
-function enqueue(tx, entityType, entityId, operation, revision, payload) {
-  tx.objectStore(STORE.SYNC_QUEUE).add({
-    queueId: newId('SQ'),
-    entityType,
-    entityId,
-    operation,
-    revision,
-    payload,
-    status: 'PENDING',
-    createdAt: nowIso(),
-    updatedAt: nowIso()
-  });
-}
-
 function appendEvent(tx, order, eventType, detail = {}) {
-  tx.objectStore(STORE.ORDER_EVENTS).add({
+  const event = {
     eventId: newId('OE'),
     orderId: order.orderId,
     revision: order.revision,
@@ -159,7 +163,9 @@ function appendEvent(tx, order, eventType, detail = {}) {
     actor: 'LOCAL_USER',
     detail,
     createdAt: nowIso()
-  });
+  };
+  tx.objectStore(STORE.ORDER_EVENTS).add(event);
+  return event;
 }
 
 export async function createOrder(payload) {
@@ -200,8 +206,9 @@ export async function createOrder(payload) {
     tx.objectStore(STORE.ORDERS).add(order);
     const itemStore = tx.objectStore(STORE.ORDER_ITEMS);
     items.forEach(item => itemStore.add(item));
-    appendEvent(tx, order, 'ORDER_CREATED', { sourceType: order.sourceType, itemCount: items.length });
-    enqueue(tx, 'ORDER', orderId, 'UPSERT', order.revision, { order, items });
+    const event = appendEvent(tx, order, 'ORDER_CREATED', { sourceType: order.sourceType, itemCount: items.length });
+    enqueue(tx, 'ORDER', orderId, 'UPSERT', order.revision, { order, items }, 0);
+    enqueue(tx, 'ORDER_EVENT', event.eventId, 'UPSERT', event.revision, event, 0);
 
     await transactionDone(tx);
     broadcast('ORDER_CREATED', order);
@@ -253,8 +260,9 @@ export async function updateOrder(orderId, expectedRevision, payload) {
       updatedAt: nowIso()
     };
     orderStore.put(next);
-    appendEvent(tx, next, 'ORDER_UPDATED', { fromRevision: expectedRevision, itemCount: items.length });
-    enqueue(tx, 'ORDER', orderId, 'UPSERT', next.revision, { order: next, items });
+    const event = appendEvent(tx, next, 'ORDER_UPDATED', { fromRevision: expectedRevision, itemCount: items.length });
+    enqueue(tx, 'ORDER', orderId, 'UPSERT', next.revision, { order: next, items }, expectedRevision);
+    enqueue(tx, 'ORDER_EVENT', event.eventId, 'UPSERT', event.revision, event, 0);
 
     await transactionDone(tx);
     broadcast('ORDER_UPDATED', next);
@@ -283,8 +291,9 @@ export async function cancelOrder(orderId, expectedRevision) {
 
     const next = { ...existing, revision: existing.revision + 1, status: ORDER_STATUS.CANCELLED, updatedAt: timestamp };
     orderStore.put(next);
-    appendEvent(tx, next, 'ORDER_CANCELLED', { fromRevision: expectedRevision });
-    enqueue(tx, 'ORDER', orderId, 'UPSERT', next.revision, { order: next, items: cancelledItems });
+    const event = appendEvent(tx, next, 'ORDER_CANCELLED', { fromRevision: expectedRevision });
+    enqueue(tx, 'ORDER', orderId, 'UPSERT', next.revision, { order: next, items: cancelledItems }, expectedRevision);
+    enqueue(tx, 'ORDER_EVENT', event.eventId, 'UPSERT', event.revision, event, 0);
     await transactionDone(tx);
     broadcast('ORDER_CANCELLED', next);
     return { order: next, items: cancelledItems };

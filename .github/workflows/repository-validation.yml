@@ -35,6 +35,9 @@ jobs:
       - name: Test client-side import and storage safety
         run: node scripts/test-client-safety.mjs
 
+      - name: Test ORDER Q vNext cloud sync contracts
+        run: node scripts/test-orderq-vnext-cloud-contract.mjs
+
       - name: Test DataOps zero and negative stock preservation
         run: node scripts/test-dataops-zero-stock-contract.mjs
 
