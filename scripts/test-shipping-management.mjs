@@ -13,7 +13,7 @@ assert.doesNotMatch(orderOpsHtml, /tokens truncated|…\d+ tokens truncated…/,
   "the public OrderOps mirror must not contain a truncated source fragment");
 assert.match(orderOpsHtml, /<body>[\s\S]*<\/body>\s*<\/html>/,
   "the public OrderOps mirror must remain a complete HTML document");
-assert.match(orderOpsHtml, /brand-badge">v1\.32</, "ORDER Q visible version must be v1.32");
+assert.match(orderOpsHtml, /brand-badge">v1\.33</, "ORDER Q visible version must be v1.33");
 assert.match(orderOpsHtml, /<title>ONEAPP ORDER Q · 출고관리<\/title>/,
   "the public page title must establish ORDER Q as shipment management");
 assert.match(orderOpsHtml, /aria-label="ONEAPP ORDER Q 출고관리"/,
@@ -22,7 +22,7 @@ assert.match(orderOpsHtml, /class="brand-logo" src="assets\/order-q-logo\.png"/,
   "the public header must use the approved ORDER Q logo asset");
 assert.match(orderOpsHtml, /\.brand-logo-frame\s*\{[\s\S]*?width:\s*120px;[\s\S]*?height:\s*20px;/,
   "the public ORDER Q logo must match the ONEAPP wordmark height");
-assert.match(orderOpsHtml, /ORDER Q v1\.32 · 출고관리/,
+assert.match(orderOpsHtml, /ORDER Q v1\.33 · 출고관리/,
   "the public footer must use the ORDER Q product concept");
 assert.doesNotMatch(
   orderOpsHtml.slice(orderOpsHtml.indexOf('<header class="global-header">'), orderOpsHtml.indexOf('</header>')),
@@ -37,7 +37,7 @@ assert.equal(
   "the repository logo must be the unmodified approved source image",
 );
 assert.ok(orderOpsHtml.includes('class="execution-panel"'),
-  "the public v1.32 execution controls must be separate from the upload strip");
+  "the public v1.33 execution controls must be separate from the upload strip");
 assert.match(orderOpsHtml, /\.execution-panel\s*\{[^}]*grid-template-columns:\s*repeat\(3,/,
   "the public execution controls must use three visible segments");
 assert.ok(orderOpsHtml.includes("function resetResultViewFilters()"),
@@ -95,6 +95,8 @@ for (const requiredInteractionContract of [
   'data-manager-filter',
   'id="resultFilterResetButton"',
   'id="columnSortMenu"',
+  'id="purchaseAutocomplete"',
+  'id="purchaseCompletionCoachmark"',
   'data-sort-direction="asc"',
   'data-sort-direction="desc"',
   'data-column-condition="excludeBlank"',
@@ -117,7 +119,7 @@ for (const requiredInteractionContract of [
   'getAllocationInventoryView(workspace)',
 ]) {
   assert.ok(orderOpsHtml.includes(requiredInteractionContract),
-    `public ORDER Q v1.32 interaction contract is missing: ${requiredInteractionContract}`);
+    `public ORDER Q v1.33 interaction contract is missing: ${requiredInteractionContract}`);
 }
 assert.doesNotMatch(orderOpsHtml, /<input[^>]+type="color"|data-warehouse-color|data-manager-color/,
   "the public OrderOps filter strip must not use a native color picker inside filter options");
@@ -1617,7 +1619,7 @@ assert.ok(
 );
 
 const html = fs.readFileSync(path.join(ROOT, "orderops", "list.html"), "utf8");
-assert.match(html, /brand-badge">v1\.32</, "canonical ORDER Q visible version must be v1.32");
+assert.match(html, /brand-badge">v1\.33</, "canonical ORDER Q visible version must be v1.33");
 assert.match(html, /class="brand-logo" src="\.\.\/assets\/order-q-logo\.png"/,
   "the canonical header must use the shared ORDER Q logo asset");
 assert.match(html, /<h2 id="settingsModalTitle">ORDER Q 환경설정<\/h2>/,
@@ -1724,6 +1726,8 @@ for (const requiredInteractionContract of [
   'data-manager-filter',
   'id="resultFilterResetButton"',
   'id="columnSortMenu"',
+  'id="purchaseAutocomplete"',
+  'id="purchaseCompletionCoachmark"',
   'data-sort-direction="default"',
   'data-column-condition="excludeBlank"',
   'data-column-condition="excludeZero"',
@@ -1745,7 +1749,7 @@ for (const requiredInteractionContract of [
   'getAllocationInventoryView(workspace)',
 ]) {
   assert.ok(html.includes(requiredInteractionContract),
-    `canonical ORDER Q v1.32 interaction contract is missing: ${requiredInteractionContract}`);
+    `canonical ORDER Q v1.33 interaction contract is missing: ${requiredInteractionContract}`);
 }
 assert.doesNotMatch(html, /<input[^>]+type="color"|data-warehouse-color|data-manager-color/,
   "canonical OrderOps filter options must remain separate from color assignment");
@@ -1828,7 +1832,7 @@ for (const kind of ["orders", "inventory", "purchases", "sales"]) {
   assert.ok(html.includes(`id="${kind}Input" type="file" accept=".xlsx,.xls">`),
     `${kind} input must remain a single-file picker`);
 }
-for (const ledgerContract of ["재고수불부", "getStockLedgerView(workspace)", "orderops-analysis-inputs/v1"]) {
+for (const ledgerContract of ['label: "발주관리"', 'label: "출고관리"', "getStockLedgerView(workspace)", "orderops-analysis-inputs/v1"]) {
   assert.ok(html.includes(ledgerContract), `stock-ledger contract is missing: ${ledgerContract}`);
 }
 for (const ledgerPurchasingContract of [
@@ -1842,6 +1846,8 @@ assert.match(html, /\.column-sort-trigger\s*\{[\s\S]*?opacity:\s*0;[\s\S]*?visib
   "filter controls must remain hidden until the pointer reaches the header");
 assert.match(html, /th:hover \.column-sort-trigger,[\s\S]*?opacity:\s*1;/,
   "filter controls must appear on header hover");
+assert.match(html, /\.column-sort-trigger\s*\{[\s\S]*?right:\s*1px;[\s\S]*?width:\s*24px;[\s\S]*?height:\s*18px;/,
+  "filter controls must remain compact and attached to the right edge of narrow headers");
 assert.ok(html.includes('data-sort-header-preview-id=') && html.includes('function cycleColumnSort'),
   "header body clicks must sort independently from the filter box");
 assert.ok(html.includes('data-text-filter-section data-value-filter-section') &&
@@ -1948,10 +1954,33 @@ assert.match(html, /id="settingsModal"[\s\S]*role="dialog" aria-modal="true"/, "
 for (const contract of [
   "normalizeExcelMappingRecord", "saveExcelMappingsFromEditor", "headerAliases",
   "handleInventoryGridArrowNavigation", "autocompletePurchaseInput", "rememberPurchaseName",
+  "purchaseAutocompleteNames", "handlePurchaseAutocompleteKeyboard", "finishPurchaseEntry",
+  "showPurchaseCompletionCoachmark",
   "function resetResultViewFilters()", 'grid-template-columns: repeat(3, minmax(0, 1fr))',
 ]) {
-  assert.ok(html.includes(contract), `ORDER Q v1.32 contract is missing: ${contract}`);
+  assert.ok(html.includes(contract), `ORDER Q v1.33 contract is missing: ${contract}`);
 }
+const purchaseAutocompleteStart = html.indexOf("function purchaseAutocompleteNames");
+const purchaseAutocompleteEnd = html.indexOf("function closePurchaseAutocomplete", purchaseAutocompleteStart);
+assert.ok(purchaseAutocompleteStart >= 0 && purchaseAutocompleteEnd > purchaseAutocompleteStart,
+  "purchase autocomplete source must exist");
+const purchaseAutocompleteSource = html.slice(purchaseAutocompleteStart, purchaseAutocompleteEnd);
+assert.ok(purchaseAutocompleteSource.includes("state.purchaseHistory"),
+  "purchase autocomplete must use previously confirmed purchase-place names");
+assert.doesNotMatch(purchaseAutocompleteSource, /workspace\.orders|customer|거래처/,
+  "purchase autocomplete must not use order-customer names before a supplier master exists");
+const purchaseCompletionStart = html.indexOf("function finishPurchaseEntry");
+const purchaseCompletionEnd = html.indexOf("function focusInventoryInput", purchaseCompletionStart);
+assert.ok(purchaseCompletionStart >= 0 && purchaseCompletionEnd > purchaseCompletionStart,
+  "purchase completion audit must exist");
+const purchaseCompletionSource = html.slice(purchaseCompletionStart, purchaseCompletionEnd);
+assert.ok(purchaseCompletionSource.includes("requiredInputs.find") &&
+  purchaseCompletionSource.includes("focusPurchaseInput(missing)"),
+  "purchase completion must return to the first missing shortage purchase place");
+assert.ok(purchaseCompletionSource.includes("previewTable.scrollTo") &&
+  purchaseCompletionSource.includes("window.scrollTo") &&
+  purchaseCompletionSource.includes("showPurchaseCompletionCoachmark"),
+  "completed purchase entry must scroll both views to the top and show temporary guidance");
 assert.ok(html.includes('id="warehouseColorResetButton" type="button">전체 다시보기</button>'),
   "filter reset must be presented as returning to the full view");
 assert.ok(html.includes("색 선택 즉시 저장·적용"),
