@@ -110,6 +110,45 @@ async function setQueueResult(queueId, patch) {
   await transactionDone(tx);
 }
 
+async function discardLocalSourceDuplicate(localOrderId, remotePayload) {
+  if (!remotePayload?.order || !localOrderId) return '';
+  const canonicalOrderId = remotePayload.order.orderId;
+  const db = await openOrderQDb();
+  const tx = db.transaction([
+    STORE.ORDERS, STORE.ORDER_ITEMS, STORE.ORDER_EVENTS, STORE.PARSE_RESULTS, STORE.SYNC_QUEUE
+  ], 'readwrite');
+  const orderStore = tx.objectStore(STORE.ORDERS);
+  const itemStore = tx.objectStore(STORE.ORDER_ITEMS);
+  const eventStore = tx.objectStore(STORE.ORDER_EVENTS);
+  const parseStore = tx.objectStore(STORE.PARSE_RESULTS);
+  const queueStore = tx.objectStore(STORE.SYNC_QUEUE);
+  const [localItems, localEvents, parseResults, queueRows] = await Promise.all([
+    requestToPromise(itemStore.index('byOrderId').getAll(localOrderId)),
+    requestToPromise(eventStore.index('byOrderId').getAll(localOrderId)),
+    requestToPromise(parseStore.index('byOrderId').getAll(localOrderId)),
+    requestToPromise(queueStore.getAll())
+  ]);
+  localItems.forEach(item => itemStore.delete(item.orderItemId));
+  localEvents.forEach(event => eventStore.delete(event.eventId));
+  orderStore.delete(localOrderId);
+  (remotePayload.items || []).forEach(item => itemStore.put(item));
+  orderStore.put(remotePayload.order);
+  parseResults.forEach(result => parseStore.put({ ...result, orderId: canonicalOrderId, duplicateOrderId: localOrderId, updatedAt: nowIso() }));
+  queueRows.filter(row => row.status === 'PENDING' && (
+    (row.entityType === 'ORDER' && row.entityId === localOrderId)
+    || (row.entityType === 'ORDER_EVENT' && row.payload?.orderId === localOrderId)
+  )).forEach(row => queueStore.put({
+    ...row,
+    status: 'DISCARDED_DUPLICATE',
+    canonicalOrderId,
+    resolvedAt: nowIso(),
+    updatedAt: nowIso(),
+    lastError: '같은 원문으로 먼저 등록된 클라우드 주문을 적용했습니다.'
+  }));
+  await transactionDone(tx);
+  return canonicalOrderId;
+}
+
 async function pendingRows(entityId = '') {
   const rows = await all(STORE.SYNC_QUEUE);
   return rows
@@ -131,12 +170,13 @@ function toCloudChange(row) {
 }
 
 export async function pushPending(entityId = '') {
-  if (!getCloudUrl()) return { online: false, applied: 0, conflicts: 0, errors: 0 };
+  if (!getCloudUrl()) return { online: false, applied: 0, conflicts: 0, errors: 0, sourceDuplicates: [] };
   await bootstrapPhase1References();
   const rows = await pendingRows(entityId);
   let applied = 0;
   let conflicts = 0;
   let errors = 0;
+  const sourceDuplicates = [];
   for (let start = 0; start < rows.length; start += 50) {
     const batch = rows.slice(start, start + 50);
     const response = await pushCloudChanges(getDeviceId(), batch.map(toCloudChange));
@@ -160,13 +200,23 @@ export async function pushPending(entityId = '') {
           remotePayload: result.serverPayload || null,
           lastError: '다른 기기에서 먼저 저장된 변경이 있습니다.'
         });
+      } else if (result.status === 'source_duplicate' && row.entityType === 'ORDER' && result.serverPayload?.order) {
+        const canonicalOrderId = await discardLocalSourceDuplicate(row.entityId, result.serverPayload);
+        sourceDuplicates.push({ localOrderId: row.entityId, canonicalOrderId });
+      } else if (result.status === 'source_duplicate_event' && row.entityType === 'ORDER_EVENT') {
+        await setQueueResult(row.queueId, {
+          status: 'DISCARDED_DUPLICATE',
+          canonicalOrderId: result.serverOrderId || '',
+          resolvedAt: nowIso(),
+          lastError: ''
+        });
       } else {
         errors++;
         await setQueueResult(row.queueId, { lastError: result.message || '클라우드 저장 오류' });
       }
     }
   }
-  return { online: true, applied, conflicts, errors };
+  return { online: true, applied, conflicts, errors, sourceDuplicates };
 }
 
 async function orderHasUnsyncedChange(orderId) {
@@ -290,7 +340,8 @@ export async function syncAfterLocalMutation(orderId = '') {
   const conflict = rows.find(row => row.entityType === 'ORDER' && row.entityId === orderId && row.status === 'CONFLICT');
   if (conflict) throw new CloudOrderConflictError(orderId, conflict.revision, conflict.serverRevision, conflict.remotePayload || null);
   const pull = await pullRemote();
-  return { online: true, push, pull };
+  const sourceDuplicate = (push.sourceDuplicates || []).find(row => row.localOrderId === orderId) || null;
+  return { online: true, push, pull, sourceDuplicate, canonicalOrderId: sourceDuplicate?.canonicalOrderId || orderId };
 }
 
 export async function acceptRemoteOrder(orderId) {

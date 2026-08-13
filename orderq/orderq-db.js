@@ -1,5 +1,5 @@
 const DB_NAME = 'oneapp-orderq-vnext';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 export const STORE = Object.freeze({
   CUSTOMERS: 'customers',
@@ -56,11 +56,14 @@ function upgrade(db, transaction) {
 
   store = ensureStore(STORE.RAW_INPUTS, { keyPath: 'rawInputId' });
   ensureIndex(store, 'bySource', ['sourceType', 'sourceId']);
+  ensureIndex(store, 'byFingerprint', 'fingerprint', { unique: true });
   ensureIndex(store, 'byCreatedAt', 'createdAt');
 
   store = ensureStore(STORE.PARSE_RESULTS, { keyPath: 'parseResultId' });
   ensureIndex(store, 'byRawInputId', 'rawInputId');
+  ensureIndex(store, 'bySourceMessageKey', 'sourceMessageKey', { unique: true });
   ensureIndex(store, 'byOrderId', 'orderId');
+  ensureIndex(store, 'byCreatedAt', 'createdAt');
 
   store = ensureStore(STORE.MAPPING_EVENTS, { keyPath: 'eventId' });
   ensureIndex(store, 'byCustomerId', 'customerId');
@@ -69,6 +72,7 @@ function upgrade(db, transaction) {
 
   store = ensureStore(STORE.ORDERS, { keyPath: 'orderId' });
   ensureIndex(store, 'byCustomerId', 'customerId');
+  ensureIndex(store, 'bySourceMessageKey', 'sourceMessageKey', { unique: true });
   ensureIndex(store, 'byOrderDate', 'orderDate');
   ensureIndex(store, 'byUpdatedAt', 'updatedAt');
   ensureIndex(store, 'byStatus', 'status');

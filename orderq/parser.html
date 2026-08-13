@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="ko" translate="no">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="google" content="notranslate">
+  <title>ONEAPP ORDER Q vNext · SmartParser</title>
+  <link rel="stylesheet" href="./orderq.css">
+  <link rel="stylesheet" href="./parser.css">
+</head>
+<body>
+  <div class="shell parser-shell">
+    <header class="topbar">
+      <div class="brand">
+        <strong>ONEAPP</strong>
+        <span class="logo-frame" aria-hidden="true"><img src="../assets/order-q-logo.png" alt=""></span>
+        <span class="badge">vNext 0.3</span>
+        <span>SmartParser</span>
+      </div>
+      <div class="top-actions">
+        <a class="btn dark" href="./cloud.html">클라우드</a>
+        <a class="btn dark" href="./input.html">수기 주문</a>
+        <a class="btn primary" href="./index.html">주문현황</a>
+      </div>
+    </header>
+    <main class="panel">
+      <p class="notice">원문은 그대로 보존합니다. 주문 여부를 먼저 판정하고 확정 가능한 결과만 기존 Order Intake로 등록합니다.</p>
+      <div id="message" class="message"></div>
+      <section class="parser-input-grid">
+        <div class="field">
+          <label for="sourceType">입력방식</label>
+          <select class="control" id="sourceType">
+            <option value="KAKAO_TEXT">카카오 대화</option>
+            <option value="GENERAL_TEXT">일반 텍스트</option>
+          </select>
+        </div>
+        <div class="field source-field">
+          <label for="sourceId">출처 ID</label>
+          <input class="control" id="sourceId" type="text" value="KAKAO_MANUAL" placeholder="카카오방 또는 입력원 이름">
+        </div>
+        <div class="field raw-field">
+          <label for="rawText">원문 붙여넣기</label>
+          <textarea class="control raw-input" id="rawText" placeholder="[진주170] [오전 8:31] 수입양상추1"></textarea>
+        </div>
+        <div class="parser-actions">
+          <label class="check"><input id="forceReanalyze" type="checkbox"> 주문 미등록 기존결과 다시 분석</label>
+          <button class="btn primary analyze-btn" id="analyzeBtn" type="button">분석</button>
+        </div>
+      </section>
+
+      <section id="summarySection" class="parser-summary" hidden>
+        <div><strong id="sumOrders">0</strong><span>신규 주문</span></div>
+        <div><strong id="sumItems">0</strong><span>주문상품</span></div>
+        <div><strong id="sumMatched">0</strong><span>매칭완료</span></div>
+        <div class="issue"><strong id="sumFailed">0</strong><span>매칭실패</span></div>
+        <div><strong id="sumExcluded">0</strong><span>비주문 메시지</span></div>
+        <div><strong id="sumDuplicates">0</strong><span>기존 메시지</span></div>
+      </section>
+
+      <section class="result-section">
+        <div class="toolbar result-toolbar">
+          <strong>분석 결과</strong>
+          <span class="status">문제 항목 우선 · 원문은 수정되지 않습니다.</span>
+        </div>
+        <div id="resultList" class="result-list">
+          <div class="empty">카카오 대화 또는 일반 주문 텍스트를 붙여넣고 분석하세요.</div>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script type="module" src="./parser-ui.js"></script>
+</body>
+</html>
+

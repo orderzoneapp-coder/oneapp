@@ -29,16 +29,22 @@ async function post(action, body = {}) {
   const url = getCloudUrl();
   if (!url) throw new OrderQCloudError('클라우드 URL이 설정되지 않았습니다.', { code: 'CLOUD_URL_MISSING' });
   let response;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 20000);
   try {
     response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify({ action, ...body }),
       redirect: 'follow',
-      cache: 'no-store'
+      cache: 'no-store',
+      signal: controller.signal
     });
   } catch (error) {
+    if (error?.name === 'AbortError') throw new OrderQCloudError('클라우드 응답 시간이 초과되었습니다. 로컬 저장값은 유지되며 다시 동기화할 수 있습니다.', { code: 'CLOUD_TIMEOUT', cause: error });
     throw new OrderQCloudError('클라우드에 연결할 수 없습니다.', { code: 'CLOUD_NETWORK_ERROR', cause: error });
+  } finally {
+    clearTimeout(timeout);
   }
   if (!response.ok) throw new OrderQCloudError(`클라우드 응답 오류 (${response.status})`, { code: 'CLOUD_HTTP_ERROR', status: response.status });
   let data;
