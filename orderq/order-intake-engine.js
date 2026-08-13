@@ -31,6 +31,15 @@ export class OrderRevisionConflictError extends Error {
   }
 }
 
+export class DuplicateSourceMessageError extends Error {
+  constructor(existingOrder) {
+    super('이미 처리한 원문입니다. 기존 주문을 확인해 주세요.');
+    this.name = 'DuplicateSourceMessageError';
+    this.code = 'ORDER_SOURCE_MESSAGE_DUPLICATE';
+    this.existingOrder = existingOrder;
+  }
+}
+
 const channel = 'BroadcastChannel' in globalThis ? new BroadcastChannel('oneapp-orderq-orders') : null;
 
 function broadcast(type, order) {
@@ -177,6 +186,12 @@ export async function createOrder(payload) {
 
   try {
     const customer = await resolveCustomerInTransaction(tx, payload);
+    const orderStore = tx.objectStore(STORE.ORDERS);
+    const sourceMessageKey = String(payload.sourceMessageKey || '').trim();
+    if (sourceMessageKey) {
+      const existingSourceOrder = await requestToPromise(orderStore.index('bySourceMessageKey').get(sourceMessageKey));
+      if (existingSourceOrder) throw new DuplicateSourceMessageError(existingSourceOrder);
+    }
     const orderId = newId('ORD');
     const items = (payload.items || [])
       .filter(item => item.itemCode || item.itemName || item.quantity || item.rawText)
@@ -196,6 +211,7 @@ export async function createOrder(payload) {
       transactionType: String(payload.transactionType ?? '').trim(),
       sourceType: payload.sourceType || 'MANUAL',
       sourceId: payload.sourceId || '',
+      sourceMessageKey,
       status: summarizeStatus(items),
       matchedCount: items.filter(item => item.matchStatus === MATCH_STATUS.MATCHED).length,
       matchFailedCount: items.filter(item => item.matchStatus === MATCH_STATUS.MATCH_FAILED).length,
@@ -203,7 +219,7 @@ export async function createOrder(payload) {
       updatedAt: timestamp
     };
 
-    tx.objectStore(STORE.ORDERS).add(order);
+    orderStore.add(order);
     const itemStore = tx.objectStore(STORE.ORDER_ITEMS);
     items.forEach(item => itemStore.add(item));
     const event = appendEvent(tx, order, 'ORDER_CREATED', { sourceType: order.sourceType, itemCount: items.length });

@@ -7,6 +7,8 @@ Reviewed: 2026-08-13
 
 ORDER Q vNext is an independent pilot under `/orderq/`. Existing `orderops/` and root `orderops_list.html` remain unchanged.
 
+Phase 3 adds `/orderq/parser.html`. SmartParser never writes ORDER / ORDER_ITEM directly: raw text and parse decisions are stored separately, then confirmed actions call the shared Order Intake Engine.
+
 The vNext data path is:
 
 `Input / future SmartParser → Order Intake → IndexedDB → Sync Engine → Cloud Adapter → Google Apps Script / purpose sheets`
@@ -16,6 +18,8 @@ Later, only the Cloud Adapter boundary is intended to change to `Server API → 
 ## 2. Ownership and source of truth
 
 - Current phase: IndexedDB `oneapp-orderq-vnext` is the local working database.
+- SmartParser immutable input: `rawInputs`; message decisions and confirmed values: `parseResults`.
+- Duplicate boundary: unique `sourceMessageKey` indexes on `parseResults` and `orders`.
 - Google Sheet cloud is a central synchronization and recovery layer, not an ERP ledger.
 - Future server phase: server DB becomes primary; IndexedDB becomes cache/offline storage.
 - Order business identity is `orderId`; an order line is `orderItemId`; customer identity is `customerId`.

@@ -127,6 +127,21 @@ function orderQReadOrderBundle(ss, orderId) {
   return { order, items };
 }
 
+function orderQFindOrderBundleBySourceMessageKey(ss, sourceMessageKey) {
+  const key = String(sourceMessageKey || '');
+  if (!key) return null;
+  const sheet = orderQEnsureSheet(ss, 'ORDER');
+  if (sheet.getLastRow() < 2) return null;
+  const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, ORDERQ_HEADERS.ORDER.length).getValues();
+  for (let index = 0; index < rows.length; index++) {
+    try {
+      const order = JSON.parse(String(rows[index][6] || '{}'));
+      if (String(order.sourceMessageKey || '') === key) return orderQReadOrderBundle(ss, order.orderId);
+    } catch (error) {}
+  }
+  return null;
+}
+
 function orderQMetaByQueueId(ss, queueId) {
   const sheet = orderQEnsureSheet(ss, 'SYNC_META');
   const row = orderQFindDataRow(sheet, queueId); // first column is sequence, so search explicitly in B
@@ -182,6 +197,17 @@ function orderQApplyOrder(ss, change) {
   if (!Number.isInteger(revision) || revision < 1 || Number(order.revision) !== revision) throw new Error('ORDERQ_ORDER_REVISION_INVALID');
 
   const existing = orderQReadOrderBundle(ss, order.orderId);
+  if (!existing && baseRevision === 0 && order.sourceMessageKey) {
+    const sameSource = orderQFindOrderBundleBySourceMessageKey(ss, order.sourceMessageKey);
+    if (sameSource && sameSource.order && String(sameSource.order.orderId) !== String(order.orderId)) {
+      return {
+        status: 'source_duplicate',
+        serverRevision: Number(sameSource.order.revision || 0),
+        serverOrderId: String(sameSource.order.orderId || ''),
+        serverPayload: sameSource
+      };
+    }
+  }
   if (existing) {
     if (Number(existing.order.revision || 0) !== baseRevision) return orderQConflict(change, existing);
   } else if (baseRevision !== 0) {
@@ -216,6 +242,9 @@ function orderQApplySimple(ss, change) {
   if (!payload || typeof payload !== 'object') throw new Error('ORDERQ_ENTITY_PAYLOAD_INVALID');
   const id = String(payload[spec.id] || '');
   if (!id || id !== String(change.entityId || '')) throw new Error('ORDERQ_ENTITY_ID_MISMATCH');
+  if (String(change.entityType || '') === 'ORDER_EVENT' && payload.orderId && !orderQReadOrderBundle(ss, payload.orderId)) {
+    throw new Error('ORDERQ_ORDER_EVENT_ORPHAN');
+  }
   const sheet = orderQEnsureSheet(ss, spec.key);
   orderQWriteRow(sheet, id, spec.row(payload));
   return { status: 'applied', serverRevision: Number(change.revision || 0) };
@@ -236,6 +265,7 @@ function orderQSyncPush(ss, payload) {
   const changes = Array.isArray(payload.changes) ? payload.changes : [];
   if (changes.length > ORDERQ_SYNC_MAX_PUSH) throw new Error('ORDERQ_PUSH_LIMIT_EXCEEDED');
   const results = [];
+  const duplicateOrderIds = {};
 
   changes.forEach(change => {
     const queueId = String(change && change.queueId || '');
@@ -248,12 +278,31 @@ function orderQSyncPush(ss, payload) {
       results.push({ queueId, status: 'duplicate', sequence: duplicate.sequence, serverRevision: duplicate.revision });
       return;
     }
+    if (String(change.entityType || '') === 'ORDER_EVENT' && duplicateOrderIds[String(change.payload && change.payload.orderId || '')]) {
+      results.push({
+        queueId,
+        status: 'source_duplicate_event',
+        serverOrderId: duplicateOrderIds[String(change.payload.orderId)]
+      });
+      return;
+    }
     try {
       const applied = String(change.entityType || '') === 'ORDER'
         ? orderQApplyOrder(ss, change)
         : orderQApplySimple(ss, change);
       if (applied.status === 'conflict') {
         results.push(applied);
+        return;
+      }
+      if (applied.status === 'source_duplicate') {
+        duplicateOrderIds[String(change.entityId || '')] = applied.serverOrderId;
+        results.push({
+          queueId,
+          status: 'source_duplicate',
+          serverRevision: applied.serverRevision,
+          serverOrderId: applied.serverOrderId,
+          serverPayload: applied.serverPayload
+        });
         return;
       }
       const sequence = orderQAppendMeta(ss, change, deviceId);
