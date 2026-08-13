@@ -7,7 +7,7 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  const ENGINE_VERSION = "3.15.0";
+  const ENGINE_VERSION = "3.16.0";
   const WORKSPACE_SCHEMA_VERSION = "shipping-workspace/v2";
   const INVENTORY_OVERRIDE_SCHEMA_VERSION = "shipping-inventory-overrides/v1";
   const HEADER_SCAN_LIMIT = 30;
@@ -22,7 +22,7 @@
     "그룹",
   ]);
 
-  const INVENTORY_REQUIRED_COLUMNS = Object.freeze(["품목코드", "품목명", "규격"]);
+  const INVENTORY_REQUIRED_COLUMNS = Object.freeze(["품목코드", "품목명", "규격", "수량"]);
 
   const ORDER_DATE_COLUMNS = Object.freeze(["일자-No.", "일자", "주문일자"]);
 
@@ -72,7 +72,6 @@
   const INVENTORY_OPTIONAL_COLUMNS = Object.freeze([
     "사용",
     "단위",
-    "수량",
     "재고",
     "2전송",
     "7진영",
@@ -194,9 +193,6 @@
     const aliasLookup = createAliasLookup(INVENTORY_CANONICAL_ALIASES, headerAliases);
     const canonicals = headers.map((header) => aliasLookup.get(normalizeOrderHeader(header)) || "");
     const quantityIndex = canonicals.indexOf("수량");
-    const stockIndex = canonicals.indexOf("재고");
-    const warehouseIndex = canonicals.indexOf("창고");
-    const rowBasedStockLayout = stockIndex >= 0 && quantityIndex < 0 && warehouseIndex >= 0;
     let quantityBoundary = headers.length;
     if (quantityIndex >= 0) {
       for (let index = quantityIndex + 1; index < normalized.length; index += 1) {
@@ -219,8 +215,6 @@
       let role = "value";
       if (canonical === "품목코드") role = "productCode";
       else if (canonical === "수량") role = "calculatedQuantity";
-      else if (canonical === "재고" && rowBasedStockLayout) role = "warehouseQuantity";
-      else if (canonical === "창고" && rowBasedStockLayout) role = "value";
       else if (canonical === "창고" || /^(?:창고|창고단가)$/.test(normalizedLabel) || /창고.*(?:단가|가격|금액|원가)/.test(normalizedLabel)) {
         role = "warehousePrice";
       } else if (["기본", "전송"].includes(canonical) || /^(?:기본|전송)$/.test(normalizedLabel)) {
@@ -237,7 +231,11 @@
       }
       return {
         key: `inventory:${sourceIndex}:${encodeURIComponent(normalizedLabel)}`,
-        header: role === "calculatedQuantity" ? "잔량" : header,
+        header: role === "calculatedQuantity"
+          ? "잔량"
+          : role === "warehousePrice" && canonical === "창고"
+            ? "창고단가"
+            : header,
         sourceIndex,
         role,
         editable: ["warehouseQuantity", "warehousePrice", "editableText"].includes(role),
@@ -271,22 +269,6 @@
     const usageIndex = result.findIndex((column) => normalizeHeader(column.header) === "사용");
     if (usageIndex >= 0) {
       result.splice(usageIndex, 1);
-      const warehousePriceIndex = result.findIndex(
-        (column) => normalizeHeader(column.header) === "창고" && column.role === "warehousePrice",
-      );
-      if (warehousePriceIndex >= 0) {
-        const [warehousePrice] = result.splice(warehousePriceIndex, 1);
-        result.splice(Math.min(usageIndex, result.length), 0, warehousePrice);
-      }
-    }
-    if (rowBasedStockLayout) {
-      const warehouseCodeIndex = result.findIndex(
-        (column) => normalizeHeader(column.header) === "창고" && column.role === "value",
-      );
-      if (warehouseCodeIndex > 0) {
-        const [warehouseCode] = result.splice(warehouseCodeIndex, 1);
-        result.unshift(warehouseCode);
-      }
     }
     return result;
   }
@@ -716,10 +698,19 @@
         ),
       );
     }
+    if (headerRowIndex >= 0 && warehouseColumns.length === 0) {
+      errors.push(
+        createIssue(
+          "INVENTORY_WAREHOUSE_COLUMNS_REQUIRED",
+          "창고별재고에는 수량을 구성하는 창고별 수량 열이 하나 이상 있어야 합니다.",
+          { warehouseColumnCount: 0 },
+        ),
+      );
+    }
 
     const rows = [];
     const occurrences = new Map();
-    if (headerRowIndex >= 0) {
+    if (headerRowIndex >= 0 && missingColumns.length === 0 && warehouseColumns.length > 0) {
       for (let rowIndex = headerRowIndex + 1; rowIndex < displayMatrix.length; rowIndex += 1) {
         const row = displayMatrix[rowIndex] || [];
         const code = normalizeProductCode(getField(row, columnMap, "품목코드"));
@@ -750,14 +741,21 @@
         const wholeStock = parseNumericCell(wholeStockCell);
         const seoulPurchase = parseNumericCell(seoulPurchaseCell);
         const transfer = parseNumericCell(transferCell);
+        const sourceInventoryTotalCell = getField(row, columnMap, "수량");
+        const sourceInventoryTotal = parseNumericCell(sourceInventoryTotalCell);
         const parsedWarehouseValues = warehouseColumns.map((column) => [
           column,
           parseNumericCell(row[column.sourceIndex]),
           row[column.sourceIndex],
         ]);
-        const invalidFields = parsedWarehouseValues
+        const invalidFields = [
+          ...(sourceInventoryTotal.ok
+            ? []
+            : [["수량", sourceInventoryTotal, sourceInventoryTotalCell]]),
+          ...parsedWarehouseValues
           .filter(([, parsed]) => !parsed.ok)
-          .map(([column, parsed, value]) => [column.header, parsed, value]);
+          .map(([column, parsed, value]) => [column.header, parsed, value]),
+        ];
         if (invalidFields.length > 0) {
           errors.push(
             createIssue(
@@ -797,6 +795,21 @@
         const inventoryTotal = roundQuantity(
           parsedWarehouseValues.reduce((sum, [, parsed]) => sum + parsed.value, 0),
         );
+        if (sourceInventoryTotal.value !== inventoryTotal) {
+          errors.push(
+            createIssue(
+              "INVENTORY_TOTAL_MISMATCH",
+              `${rowIndex + 1}행 ${code}의 수량(${sourceInventoryTotal.value})과 창고별 수량 합계(${inventoryTotal})가 일치하지 않습니다.`,
+              {
+                rowNumber: rowIndex + 1,
+                productCode: code,
+                sourceInventoryTotal: sourceInventoryTotal.value,
+                warehouseInventoryTotal: inventoryTotal,
+              },
+            ),
+          );
+          continue;
+        }
         rows.push({
           sourceRowNumber: rowIndex + 1,
           productCode: code,
@@ -811,6 +824,7 @@
             0,
             roundQuantity(seoulPurchase.value + transfer.value),
           ),
+          sourceInventoryTotal: sourceInventoryTotal.value,
           inventoryTotal,
         });
 
@@ -1498,7 +1512,7 @@
     });
     const inventoryView = getInventoryViewRows(workspace);
     const unitPriceColumnIndex = inventoryView.columns.findIndex(
-      (column) => column.role === "warehousePrice" && normalizeHeader(column.header) === "창고",
+      (column) => column.role === "warehousePrice" && normalizeHeader(column.header) === "창고단가",
     );
     const fallbackUnitPriceColumnIndex = inventoryView.columns.findIndex(
       (column) => column.role === "warehousePrice",
