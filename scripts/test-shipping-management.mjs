@@ -13,7 +13,7 @@ assert.doesNotMatch(orderOpsHtml, /tokens truncated|…\d+ tokens truncated…/,
   "the public OrderOps mirror must not contain a truncated source fragment");
 assert.match(orderOpsHtml, /<body>[\s\S]*<\/body>\s*<\/html>/,
   "the public OrderOps mirror must remain a complete HTML document");
-assert.match(orderOpsHtml, /brand-badge">v1\.36</, "ORDER Q visible version must be v1.36");
+assert.match(orderOpsHtml, /brand-badge">v1\.37</, "ORDER Q visible version must be v1.37");
 assert.match(orderOpsHtml, /<title>ONEAPP ORDER Q · 출고관리<\/title>/,
   "the public page title must establish ORDER Q as shipment management");
 assert.match(orderOpsHtml, /aria-label="ONEAPP ORDER Q 출고관리"/,
@@ -22,7 +22,7 @@ assert.match(orderOpsHtml, /class="brand-logo" src="assets\/order-q-logo\.png"/,
   "the public header must use the approved ORDER Q logo asset");
 assert.match(orderOpsHtml, /\.brand-logo-frame\s*\{[\s\S]*?width:\s*120px;[\s\S]*?height:\s*20px;/,
   "the public ORDER Q logo must match the ONEAPP wordmark height");
-assert.match(orderOpsHtml, /ORDER Q v1\.36 · 출고관리/,
+assert.match(orderOpsHtml, /ORDER Q v1\.37 · 출고관리/,
   "the public footer must use the ORDER Q product concept");
 assert.doesNotMatch(
   orderOpsHtml.slice(orderOpsHtml.indexOf('<header class="global-header">'), orderOpsHtml.indexOf('</header>')),
@@ -37,9 +37,33 @@ assert.equal(
   "the repository logo must be the unmodified approved source image",
 );
 assert.ok(orderOpsHtml.includes('class="execution-panel"'),
-  "the public v1.36 execution controls must be separate from the upload strip");
+  "the public v1.37 execution controls must be separate from the upload strip");
 assert.match(orderOpsHtml, /\.execution-panel\s*\{[^}]*grid-template-columns:\s*repeat\(3,/,
   "the public execution controls must use three visible segments");
+assert.match(orderOpsHtml, /\.upload-grid\s*\{[^}]*grid-template-columns:\s*repeat\(5,/,
+  "the public source strip must expose five source/result cards");
+assert.ok(orderOpsHtml.includes('class="upload-grid" role="tablist" aria-label="업로드 자료 및 결과 화면"'),
+  "the five source/result cards must form one accessible tab list");
+for (const sourceCardContract of [
+  'id="ordersDrop" type="button" role="tab"',
+  'id="inventoryDrop" type="button" role="tab"',
+  'id="purchasesDrop" type="button" role="tab"',
+  'id="salesDrop" type="button" role="tab"',
+  'id="ledgerDrop" type="button" role="tab"',
+  'id="ordersFileButton"',
+  'id="inventoryFileButton"',
+  'id="purchasesFileButton"',
+  'id="salesFileButton"',
+  '<p class="drop-title">수불현황</p>',
+]) {
+  assert.ok(orderOpsHtml.includes(sourceCardContract),
+    `public source-card navigation contract is missing: ${sourceCardContract}`);
+}
+assert.ok(orderOpsHtml.includes('const FILE_KIND_PREVIEWS = Object.freeze({ orders: "allocations", inventory: "inventory", purchases: "purchases", sales: "sales" })'),
+  "each uploaded source card must map to its result view");
+assert.ok(orderOpsHtml.includes('data-preview="validation"') &&
+  !orderOpsHtml.includes('Object.entries(definitions).map(([id, definition])'),
+  "the middle toolbar must retain only 검증요약 instead of duplicate result tabs");
 assert.ok(orderOpsHtml.includes("function resetResultViewFilters()"),
   "the public refresh control must reset result filters without a runtime reference error");
 assert.match(orderOpsHtml, /\.system-topbar \.validation-box\s*\{[^}]*background:\s*transparent;/,
@@ -124,7 +148,7 @@ for (const requiredInteractionContract of [
   'function saveCurrentOrderViewPreset',
 ]) {
   assert.ok(orderOpsHtml.includes(requiredInteractionContract),
-    `public ORDER Q v1.36 interaction contract is missing: ${requiredInteractionContract}`);
+    `public ORDER Q v1.37 interaction contract is missing: ${requiredInteractionContract}`);
 }
 assert.match(orderOpsHtml, /\.print-area table\s*\{[\s\S]*?font-size:\s*10\.6px;/,
   "public screen print text must be twenty percent larger than v1.35");
@@ -1680,7 +1704,7 @@ const html = fs.readFileSync(path.join(ROOT, "orderops", "list.html"), "utf8");
 const inlineScriptMatch = html.match(/<script>\s*([\s\S]*?)<\/script>\s*<\/body>/);
 assert.ok(inlineScriptMatch, "canonical ORDER Q inline application script must exist");
 new vm.Script(inlineScriptMatch[1], { filename: "orderops/list.html:inline" });
-assert.match(html, /brand-badge">v1\.36</, "canonical ORDER Q visible version must be v1.36");
+assert.match(html, /brand-badge">v1\.37</, "canonical ORDER Q visible version must be v1.37");
 assert.match(html, /class="brand-logo" src="\.\.\/assets\/order-q-logo\.png"/,
   "the canonical header must use the shared ORDER Q logo asset");
 assert.match(html, /<h2 id="settingsModalTitle">ORDER Q 환경설정<\/h2>/,
@@ -1815,7 +1839,7 @@ for (const requiredInteractionContract of [
   'function saveCurrentOrderViewPreset',
 ]) {
   assert.ok(html.includes(requiredInteractionContract),
-    `canonical ORDER Q v1.36 interaction contract is missing: ${requiredInteractionContract}`);
+    `canonical ORDER Q v1.37 interaction contract is missing: ${requiredInteractionContract}`);
 }
 assert.doesNotMatch(html, /<input[^>]+type="color"|data-warehouse-color|data-manager-color/,
   "canonical OrderOps filter options must remain separate from color assignment");
@@ -1882,6 +1906,7 @@ for (const requiredText of [
 
 for (const id of [
   "sourceSelector", "ordersInput", "inventoryInput", "purchasesInput", "salesInput", "analyzeButton", "refreshButton",
+  "ordersFileButton", "inventoryFileButton", "purchasesFileButton", "salesFileButton", "ledgerCard", "ledgerDrop", "ledgerStatus",
   "resultFilterResetButton", "warehouseFilterToggle", "managerFilterToggle", "warehouseFilterPanel", "managerFilterPanel",
   "shortageFocusButton",
   "colorAssignmentPanel", "colorTargetSelect", "pastelColorPalette", "vividColorPalette", "vividColorToggle",
@@ -1895,12 +1920,20 @@ for (const id of [
   assert.equal(html.split(`id="${id}"`).length - 1, 1, `${id} must exist exactly once`);
 }
 assert.doesNotMatch(html, /id="bundleInput"|id="bundleDrop"/,
-  "the auto-routing drop surface must reuse the visible four-slot strip");
+  "the auto-routing drop surface must reuse the visible five-card strip");
 for (const kind of ["orders", "inventory", "purchases", "sales"]) {
   assert.ok(html.includes(`id="${kind}Input" type="file" accept=".xlsx,.xls">`),
     `${kind} input must remain a single-file picker`);
 }
-for (const ledgerContract of ['label: "재고수불부"', 'label: "창고별재고"', "getStockLedgerView(workspace)", "orderops-analysis-inputs/v1"]) {
+for (const transactionViewContract of [
+  'function buildTransactionPreview(workspace, kind)',
+  'purchases: buildTransactionPreview(workspace, "purchases")',
+  'sales: buildTransactionPreview(workspace, "sales")',
+  'headers: ["원본행", "상품코드", "품명", isPurchase ? "구매처" : "거래처", "수량"]',
+]) {
+  assert.ok(html.includes(transactionViewContract), `purchase/sales result view is missing: ${transactionViewContract}`);
+}
+for (const ledgerContract of ['label: "수불현황"', 'label: "창고별재고"', "getStockLedgerView(workspace)", "orderops-analysis-inputs/v1"]) {
   assert.ok(html.includes(ledgerContract), `stock-ledger contract is missing: ${ledgerContract}`);
 }
 for (const ledgerPurchasingContract of [
@@ -2027,6 +2060,9 @@ assert.ok(dropBindingSource.includes("function bindBundleDropSurface()"), "the e
 assert.ok(dropBindingSource.includes('drop.classList.add("bundle-dragover")'), "the source strip must show feedback only while dragging");
 assert.ok(dropBindingSource.includes("handleBundleFiles(event.dataTransfer.files)"), "the full source strip must auto-route dropped files");
 assert.ok(html.includes("FILE_KINDS.forEach(bindDropZone)"), "all four named slots must use the single-file binding");
+assert.ok(html.includes("bindLedgerViewCard();"), "the derived stock-ledger card must be initialized as a result tab");
+assert.ok(html.includes('fileButton.addEventListener("click", () => input.click())'),
+  "the small file control must remain separate from source-card navigation");
 assert.ok(html.includes("bindBundleDropSurface();"), "the compact source-strip drop target must be initialized");
 
 const individualStart = html.indexOf("async function handleFile");
@@ -2060,7 +2096,7 @@ for (const contract of [
   "showPurchaseCompletionCoachmark",
   "function resetResultViewFilters()", 'grid-template-columns: repeat(3, minmax(0, 1fr))',
 ]) {
-  assert.ok(html.includes(contract), `ORDER Q v1.36 contract is missing: ${contract}`);
+  assert.ok(html.includes(contract), `ORDER Q v1.37 contract is missing: ${contract}`);
 }
 const purchaseAutocompleteStart = html.indexOf("function purchaseAutocompleteNames");
 const purchaseAutocompleteEnd = html.indexOf("function closePurchaseAutocomplete", purchaseAutocompleteStart);

@@ -710,7 +710,7 @@
     .shortage-focus-button:hover:not(:disabled) { border-color: #fb7185; background: #ffe4e6; }
     .shortage-focus-button.active { border-color: #be123c; color: #fff; background: #be123c; }
     .shortage-focus-button:disabled { opacity: .45; cursor: default; }
-    /* ORDER Q v1.36: customer groups and clearer printed order tables */
+    /* ORDER Q v1.37: customer groups, printed tables, and source-card navigation */
     .header-output-button { border-color: #99f6e4; color: #0f766e; background: #f0fdfa; }
     .header-output-button:hover:not(:disabled) { background: #ccfbf1; }
     .results-panel .table-wrap { max-height: calc(100vh - 200px); }
@@ -1493,9 +1493,9 @@
       .recovery-record-item { grid-template-columns: auto 1fr; }
       .recovery-record-status { grid-column: 2; }
     }
-    /* ORDER Q v1.36: compact filters, customer groups, and completion guidance */
+    /* ORDER Q v1.37: uploader cards double as result tabs */
     .input-panel { grid-template-columns: minmax(0, 1fr) 330px; gap: 12px; }
-    .upload-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+    .upload-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
     .source-selector {
       display: grid;
       position: relative;
@@ -1522,7 +1522,42 @@
       text-align: center;
     }
     .source-selector.bundle-dragover .upload-card { border-color: #2dd4bf; }
-    .upload-card { min-width: 0; }
+    .upload-card {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: stretch;
+      min-width: 0;
+    }
+    .upload-card.active-view {
+      border-color: #5eead4;
+      background: #134e4a;
+      box-shadow: inset 0 -2px 0 #5eead4;
+    }
+    .upload-card .drop-zone {
+      width: 100%;
+      color: inherit;
+      background: transparent;
+      text-align: left;
+      font: inherit;
+    }
+    .file-select-button,
+    .derived-view-label {
+      align-self: stretch;
+      min-width: 34px;
+      margin: 3px 3px 3px 0;
+      padding: 0 5px;
+      border: 1px solid #64748b;
+      border-radius: 4px;
+      color: #cbd5e1;
+      background: #0f172a;
+      font-size: 9px;
+      font-weight: 900;
+      white-space: nowrap;
+    }
+    .file-select-button { cursor: pointer; }
+    .file-select-button:hover,
+    .file-select-button:focus-visible { border-color: #5eead4; color: #fff; background: #0f766e; outline: none; }
+    .derived-view-label { display: grid; place-items: center; color: #99f6e4; }
     .execution-panel {
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1565,7 +1600,7 @@
     .results-panel, .view-controls { overflow: visible; }
     .column-visibility-menu { z-index: 200; }
     .search-field { flex: 0 0 220px; min-width: 200px; max-width: 230px; }
-    .view-controls .preview-tabs { display: grid; grid-template-columns: repeat(4, minmax(86px, 1fr)); flex: 0 0 360px; overflow: visible; }
+    .view-controls .preview-tabs { display: flex; flex: 0 0 auto; overflow: visible; }
     .view-controls .tab-button { min-height: 34px; padding: 0 13px; font-size: 12px; }
     .filter-toggle-button { min-height: 31px; padding: 0 9px; border: 1px solid var(--slate-300); border-radius: 5px; color: var(--slate-700); background: #fff; font-size: 11px; font-weight: 900; white-space: nowrap; }
     .filter-toggle-button:hover { border-color: var(--teal-700); color: var(--teal-700); background: #f0fdfa; }
@@ -1590,14 +1625,14 @@
     table.preview-inventory td.information-value { min-width: 0; }
     @media (max-width: 1350px) {
       .search-field { flex-basis: 180px; min-width: 170px; max-width: 190px; }
-      .view-controls .preview-tabs { grid-template-columns: repeat(4, minmax(70px, 1fr)); flex-basis: 300px; }
+      .view-controls .preview-tabs { flex-basis: auto; }
       .view-controls .tab-button { padding-inline: 8px; }
       .preview-count { max-width: 82px; overflow: hidden; text-overflow: ellipsis; }
     }
     @media (max-width: 1100px) {
       .input-panel { grid-template-columns: minmax(0, 1fr) 285px; }
       .search-field { flex-basis: 170px; }
-      .view-controls .preview-tabs { grid-template-columns: repeat(4, minmax(66px, 1fr)); flex-basis: 280px; }
+      .view-controls .preview-tabs { flex-basis: auto; }
       .view-controls .tab-button { padding: 0 8px; }
     }
     @media (max-width: 900px) {
@@ -1616,7 +1651,7 @@
       <div class="brand-mark">ONEAPP</div>
       <div class="brand-divider" aria-hidden="true"></div>
       <span class="brand-logo-frame" aria-hidden="true"><img class="brand-logo" src="../assets/order-q-logo.png" alt=""></span>
-      <span class="brand-badge">v1.36</span>
+      <span class="brand-badge">v1.37</span>
       <span class="brand-product">출고관리</span>
     </div>
     <div class="header-actions">
@@ -1667,41 +1702,57 @@
         <div class="source-selector" id="sourceSelector" aria-label="Excel 파일 선택 및 자동분류 드롭 영역">
           <div class="data-source-label"><span aria-hidden="true">▣</span> 데이터 소스:</div>
 
-          <div class="upload-grid">
+          <div class="upload-grid" role="tablist" aria-label="업로드 자료 및 결과 화면">
             <article class="upload-card" id="ordersCard">
-              <div class="drop-zone" id="ordersDrop" tabindex="0" role="button" aria-label="주문현황 Excel 개별 선택">
+              <button class="drop-zone" id="ordersDrop" type="button" role="tab" aria-selected="false"
+                aria-controls="previewTable" aria-keyshortcuts="F5" aria-label="주문현황 화면 보기 F5">
                 <div class="file-icon" aria-hidden="true">1</div>
                 <div class="file-copy">
                   <p class="drop-title">주문현황</p>
-                  <p class="drop-help" id="ordersFileName">터치하여 파일 1개 선택</p>
+                  <p class="drop-help" id="ordersFileName">파일을 선택하세요</p>
                 </div>
-              </div>
+              </button>
+              <button class="file-select-button" id="ordersFileButton" type="button" aria-label="주문현황 Excel 파일 선택">파일</button>
               <input class="hidden" id="ordersInput" type="file" accept=".xlsx,.xls">
             </article>
 
             <article class="upload-card" id="inventoryCard">
-              <div class="drop-zone" id="inventoryDrop" tabindex="0" role="button" aria-label="창고별재고 Excel 개별 선택">
+              <button class="drop-zone" id="inventoryDrop" type="button" role="tab" aria-selected="false"
+                aria-controls="previewTable" aria-keyshortcuts="F7" aria-label="창고재고 화면 보기 F7">
                 <div class="file-icon" aria-hidden="true">2</div>
                 <div class="file-copy">
                   <p class="drop-title">창고재고</p>
-                  <p class="drop-help" id="inventoryFileName">터치하여 파일 1개 선택</p>
+                  <p class="drop-help" id="inventoryFileName">파일을 선택하세요</p>
                 </div>
-              </div>
+              </button>
+              <button class="file-select-button" id="inventoryFileButton" type="button" aria-label="창고재고 Excel 파일 선택">파일</button>
               <input class="hidden" id="inventoryInput" type="file" accept=".xlsx,.xls">
             </article>
             <article class="upload-card" id="purchasesCard">
-              <div class="drop-zone" id="purchasesDrop" tabindex="0" role="button" aria-label="구매현황 Excel 선택">
+              <button class="drop-zone" id="purchasesDrop" type="button" role="tab" aria-selected="false"
+                aria-controls="previewTable" aria-label="구매현황 화면 보기">
                 <div class="file-icon" aria-hidden="true">3</div>
-                <div class="file-copy"><p class="drop-title">구매현황</p><p class="drop-help" id="purchasesFileName">터치하여 파일 1개 선택</p></div>
-              </div>
+                <div class="file-copy"><p class="drop-title">구매현황</p><p class="drop-help" id="purchasesFileName">파일을 선택하세요</p></div>
+              </button>
+              <button class="file-select-button" id="purchasesFileButton" type="button" aria-label="구매현황 Excel 파일 선택">파일</button>
               <input class="hidden" id="purchasesInput" type="file" accept=".xlsx,.xls">
             </article>
             <article class="upload-card" id="salesCard">
-              <div class="drop-zone" id="salesDrop" tabindex="0" role="button" aria-label="판매현황 Excel 선택">
+              <button class="drop-zone" id="salesDrop" type="button" role="tab" aria-selected="false"
+                aria-controls="previewTable" aria-label="판매현황 화면 보기">
                 <div class="file-icon" aria-hidden="true">4</div>
-                <div class="file-copy"><p class="drop-title">판매현황</p><p class="drop-help" id="salesFileName">터치하여 파일 1개 선택</p></div>
-              </div>
+                <div class="file-copy"><p class="drop-title">판매현황</p><p class="drop-help" id="salesFileName">파일을 선택하세요</p></div>
+              </button>
+              <button class="file-select-button" id="salesFileButton" type="button" aria-label="판매현황 Excel 파일 선택">파일</button>
               <input class="hidden" id="salesInput" type="file" accept=".xlsx,.xls">
+            </article>
+            <article class="upload-card" id="ledgerCard">
+              <button class="drop-zone" id="ledgerDrop" type="button" role="tab" aria-selected="false"
+                aria-controls="previewTable" aria-keyshortcuts="F6" aria-label="수불현황 화면 보기 F6">
+                <div class="file-icon" aria-hidden="true">5</div>
+                <div class="file-copy"><p class="drop-title">수불현황</p><p class="drop-help" id="ledgerStatus">재고수불부 · 자동 생성</p></div>
+              </button>
+              <span class="derived-view-label" aria-hidden="true">자동</span>
             </article>
           </div>
         </div>
@@ -1794,7 +1845,7 @@
     </section>
 
     <footer class="page-footer">
-      <span>ORDER Q v1.36 · 출고관리 · workspace shipping-workspace/v2 · cloud plan v1</span>
+      <span>ORDER Q v1.37 · 출고관리 · workspace shipping-workspace/v2 · cloud plan v1</span>
       <a href="../SHIPPING_MANAGEMENT_GUIDANCE.md">개발·운영 기준 보기</a>
     </footer>
   </main>
@@ -1928,7 +1979,7 @@
       const HIDDEN_COLUMNS_SCHEMA = "orderops-hidden-columns/v1";
       const COLUMN_ORDER_KEY = "oneapp.orderops.column-order.v1";
       const COLUMN_ORDER_SCHEMA = "orderops-column-order/v1";
-      const COLUMN_ORDER_TABS = new Set(["inventory", "allocations", "ledger"]);
+      const COLUMN_ORDER_TABS = new Set(["inventory", "allocations", "ledger", "purchases", "sales"]);
       const WAREHOUSE_COLORS_KEY = "oneapp.orderops.warehouse-colors.v1";
       const WAREHOUSE_COLORS_SCHEMA = "orderops-warehouse-colors/v1";
       const MANAGER_COLORS_KEY = "oneapp.orderops.manager-colors.v1";
@@ -1941,6 +1992,8 @@
       const ORDER_VIEW_PRESET_LIMIT = 20;
       const FILE_KINDS = Object.freeze(["orders", "inventory", "purchases", "sales"]);
       const FILE_KIND_LABELS = Object.freeze({ orders: "주문현황", inventory: "창고재고", purchases: "구매현황", sales: "판매현황" });
+      const FILE_KIND_PREVIEWS = Object.freeze({ orders: "allocations", inventory: "inventory", purchases: "purchases", sales: "sales" });
+      const SOURCE_VIEW_CARDS = Object.freeze({ allocations: "orders", inventory: "inventory", purchases: "purchases", sales: "sales", ledger: "ledger" });
       const DEFAULT_EXCEL_MAPPINGS = Object.freeze({
         orders: { fileAliases: ["주문", "미출고", "order"], sheetAliases: ["주문", "미출고"], columns: {} },
         inventory: { fileAliases: ["재고", "창고", "inventory", "stock"], sheetAliases: ["재고", "창고"], columns: {} },
@@ -1965,7 +2018,7 @@
       const COLOR_CANCEL_COLOR = "#ffffff";
       const TABLE_WIDTH_MIN = 32;
       const TABLE_WIDTH_MAX = 720;
-      const TABLE_WIDTH_TABS = new Set(["validation", "inventory", "allocations", "notices", "ledger"]);
+      const TABLE_WIDTH_TABS = new Set(["validation", "inventory", "allocations", "notices", "ledger", "purchases", "sales"]);
       const CLOUD_PLAN_SCHEMA = "ONEAPP_SHIPPING_PURCHASE_PLAN_V1";
       const state = {
         orders: null,
@@ -2023,18 +2076,25 @@
         inventoryInput: document.getElementById("inventoryInput"),
         purchasesInput: document.getElementById("purchasesInput"),
         salesInput: document.getElementById("salesInput"),
+        ordersFileButton: document.getElementById("ordersFileButton"),
+        inventoryFileButton: document.getElementById("inventoryFileButton"),
+        purchasesFileButton: document.getElementById("purchasesFileButton"),
+        salesFileButton: document.getElementById("salesFileButton"),
         ordersDrop: document.getElementById("ordersDrop"),
         inventoryDrop: document.getElementById("inventoryDrop"),
         purchasesDrop: document.getElementById("purchasesDrop"),
         salesDrop: document.getElementById("salesDrop"),
+        ledgerDrop: document.getElementById("ledgerDrop"),
         ordersCard: document.getElementById("ordersCard"),
         inventoryCard: document.getElementById("inventoryCard"),
         purchasesCard: document.getElementById("purchasesCard"),
         salesCard: document.getElementById("salesCard"),
+        ledgerCard: document.getElementById("ledgerCard"),
         ordersFileName: document.getElementById("ordersFileName"),
         inventoryFileName: document.getElementById("inventoryFileName"),
         purchasesFileName: document.getElementById("purchasesFileName"),
         salesFileName: document.getElementById("salesFileName"),
+        ledgerStatus: document.getElementById("ledgerStatus"),
         validationBox: document.getElementById("validationBox"),
         smartInputButton: document.getElementById("smartInputButton"),
         analyzeButton: document.getElementById("analyzeButton"),
@@ -3014,6 +3074,7 @@
         setAnalysisEnterReady(false);
         state.analysisEnterLocked = false;
         state.workspace = null;
+        renderSourceViewCards();
         elements.resultsPanel.classList.add("hidden");
         elements.printButton.disabled = true;
         elements.downloadButton.disabled = true;
@@ -3058,7 +3119,7 @@
         if (loading) return;
 
         if (!parsed) {
-          name.textContent = "터치하여 파일 1개 선택";
+          name.textContent = "파일을 선택하세요";
           return;
         }
 
@@ -4094,6 +4155,39 @@
         ].includes(column?.role) || column?.orderField === "quantity";
       }
 
+      function buildTransactionPreview(workspace, kind) {
+        const isPurchase = kind === "purchases";
+        const sourceRows = Array.isArray(workspace.orderOpsInputs?.[kind]?.rows)
+          ? workspace.orderOpsInputs[kind].rows
+          : [];
+        const preview = {
+          label: isPurchase ? "구매현황" : "판매현황",
+          headers: ["원본행", "상품코드", "품명", isPurchase ? "구매처" : "거래처", "수량"],
+          numeric: [0, 4],
+          inventory: [],
+          purchase: -1,
+          purchaseEditable: false,
+          status: -1,
+          sourceRows,
+          rows: sourceRows.map((row) => [
+            row.sourceRowNumber || "",
+            row.productCode || "",
+            row.productName || "",
+            row.partner || "",
+            typeof row.quantity === "number" ? row.quantity : "",
+          ]),
+          sortByProductCode: true,
+        };
+        preview.columns = createPreviewColumns(kind, preview.headers, preview.numeric);
+        [72, 110, 200, 180, 90].forEach((width, index) => {
+          if (preview.columns[index]) preview.columns[index].defaultWidth = width;
+        });
+        preview.columns[1].role = "productCode";
+        preview.columns[2].role = "productName";
+        preview.columns[4].role = isPurchase ? "inboundQuantity" : "salesQuantity";
+        return preview;
+      }
+
       function getPreviewDefinitions(workspace) {
         const acknowledgementState = engine.ensureNoticeState(workspace);
         const acknowledgedIds = new Set(acknowledgementState.acknowledgedIds);
@@ -4225,7 +4319,12 @@
         });
 
         validation.noticesPreview = notices;
-        const definitions = { validation, allocations };
+        const definitions = {
+          validation,
+          allocations,
+          purchases: buildTransactionPreview(workspace, "purchases"),
+          sales: buildTransactionPreview(workspace, "sales"),
+        };
         if (typeof engine.getStockLedgerView === "function") {
           const ledgerView = engine.getStockLedgerView(workspace);
           const ledgerSourceRows = ledgerView.rows.map((row) =>
@@ -4251,7 +4350,7 @@
           });
           const ledgerPurchaseIndex = ledgerColumns.findIndex((column) => column.role === "purchasePlace");
           definitions.ledger = {
-            label: "재고수불부",
+            label: "수불현황",
             shortcut: "F6",
             columns: ledgerColumns,
             headers: ledgerColumns.map((column) => column.header),
@@ -4800,16 +4899,34 @@
         `;
       }
 
+      function renderSourceViewCards(definitions = null) {
+        const activeKind = state.workspace ? SOURCE_VIEW_CARDS[state.activePreview] : "";
+        [...FILE_KINDS, "ledger"].forEach((kind) => {
+          const card = elements[kind + "Card"];
+          const drop = elements[kind + "Drop"];
+          const active = kind === activeKind;
+          card?.classList.toggle("active-view", active);
+          drop?.setAttribute("aria-selected", String(active));
+        });
+        if (elements.ledgerStatus) {
+          const rowCount = definitions?.ledger?.rows?.length;
+          elements.ledgerStatus.textContent = Number.isInteger(rowCount)
+            ? `재고수불부 · ${formatNumber(rowCount)}개 상품`
+            : "재고수불부 · 자동 생성";
+        }
+      }
+
       function renderPreview() {
         closePurchaseAutocomplete();
         const definitions = getPreviewDefinitions(state.workspace);
         if (!definitions[state.activePreview]) state.activePreview = "validation";
-        elements.previewTabs.innerHTML = Object.entries(definitions).map(([id, definition]) => `
-          <button class="tab-button ${id === state.activePreview ? "active" : ""}" type="button" role="tab"
-            aria-selected="${id === state.activePreview}" ${definition.shortcut ? `aria-keyshortcuts="${definition.shortcut}"` : ""} data-preview="${id}">
-            ${escapeHtml(definition.label)}${definition.shortcut ? `<span class="tab-shortcut">${definition.shortcut}</span>` : ""}
-          </button>
-        `).join("");
+        const validationDefinition = definitions.validation;
+        elements.previewTabs.innerHTML = `
+          <button class="tab-button ${state.activePreview === "validation" ? "active" : ""}" type="button" role="tab"
+            aria-selected="${state.activePreview === "validation"}" data-preview="validation">
+            ${escapeHtml(validationDefinition.label)}
+          </button>`;
+        renderSourceViewCards(definitions);
 
         const preview = definitions[state.activePreview];
         renderOrderViewPresetOptions();
@@ -5262,19 +5379,23 @@
       function bindDropZone(kind) {
         const drop = elements[kind + "Drop"];
         const input = elements[kind + "Input"];
-        drop.addEventListener("click", (event) => {
-          if (!event.target.closest("button")) input.click();
+        const fileButton = elements[kind + "FileButton"];
+        drop.addEventListener("click", () => {
+          if (activatePreview(FILE_KIND_PREVIEWS[kind])) return;
+          showToast("출고분석을 완료하면 이 카드에서 해당 화면을 볼 수 있습니다.");
         });
-        drop.addEventListener("keydown", (event) => {
-          if (event.key === "Enter" || event.key === " ") {
-            event.preventDefault();
-            input.click();
-          }
-        });
+        fileButton.addEventListener("click", () => input.click());
         input.addEventListener("change", () => {
           const files = Array.from(input.files || []).filter(Boolean);
           handleFile(kind, files[0]);
           input.value = "";
+        });
+      }
+
+      function bindLedgerViewCard() {
+        elements.ledgerDrop.addEventListener("click", () => {
+          if (activatePreview("ledger")) return;
+          showToast("출고분석을 완료하면 수불현황이 자동 생성됩니다.");
         });
       }
 
@@ -6163,6 +6284,7 @@
         });
       });
       FILE_KINDS.forEach(bindDropZone);
+      bindLedgerViewCard();
       bindBundleDropSurface();
 
       try {
