@@ -7,7 +7,7 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  const ENGINE_VERSION = "3.13.0";
+  const ENGINE_VERSION = "3.14.0";
   const WORKSPACE_SCHEMA_VERSION = "shipping-workspace/v2";
   const INVENTORY_OVERRIDE_SCHEMA_VERSION = "shipping-inventory-overrides/v1";
   const HEADER_SCAN_LIMIT = 30;
@@ -1266,7 +1266,10 @@
     ) return result;
     const columnByKey = new Map(columns.map((column) => [column.key, column]));
     const validCodes = new Set(
-      (Array.isArray(workspace.inventory) ? workspace.inventory : [])
+      [
+        ...(Array.isArray(workspace.inventory) ? workspace.inventory : []),
+        ...(Array.isArray(workspace.orders) ? workspace.orders : []),
+      ]
         .map((row) => normalizeProductCode(row?.productCode))
         .filter(Boolean),
     );
@@ -1285,10 +1288,9 @@
     const source = workspace?.sourceFiles?.inventory || {};
     const matrix = Array.isArray(source.matrix) ? source.matrix : [];
     const headerRowIndex = Math.max(0, Number(source.headerRowIndex) || 0);
-    const sourceRowIndex = Math.max(
-      headerRowIndex + 1,
-      Number(inventory?.sourceRowNumber || 0) - 1,
-    );
+    const sourceRowNumber = Number(inventory?.sourceRowNumber);
+    if (!Number.isFinite(sourceRowNumber) || sourceRowNumber <= headerRowIndex + 1) return [];
+    const sourceRowIndex = sourceRowNumber - 1;
     return Array.isArray(matrix[sourceRowIndex]) ? matrix[sourceRowIndex] : [];
   }
 
@@ -1355,17 +1357,35 @@
     const columns = getInventoryColumnDescriptors(workspace);
     const overrideMap = getInventoryOverrideMap(workspace, columns);
     const purchaseInputs = getPurchaseInputs(workspace);
+    const inventoryAliasLookup = createAliasLookup(INVENTORY_CANONICAL_ALIASES);
+    const orderProducts = new Map();
+    (Array.isArray(workspace?.orders) ? workspace.orders : []).forEach((order) => {
+      const productCode = normalizeProductCode(order?.productCode);
+      if (!productCode) return;
+      if (!orderProducts.has(productCode)) {
+        orderProducts.set(productCode, {
+          productCode,
+          productName: cleanText(order?.productName),
+          specification: cleanText(order?.specification),
+          unit: cleanText(order?.sourceUnit),
+          orderQuantity: 0,
+        });
+      }
+      const product = orderProducts.get(productCode);
+      if (!product.productName) product.productName = cleanText(order?.productName);
+      if (!product.specification) product.specification = cleanText(order?.specification);
+      if (!product.unit) product.unit = cleanText(order?.sourceUnit);
+      const parsed = parseNumericCell(order?.quantity);
+      product.orderQuantity = roundQuantity(
+        product.orderQuantity + (parsed.ok ? parsed.value : 0),
+      );
+    });
+    const inventoryCodes = new Set();
     const rows = (Array.isArray(workspace.inventory) ? workspace.inventory : []).map((inventory) => {
       const productCode = normalizeProductCode(inventory.productCode);
+      inventoryCodes.add(productCode);
       const stockTotal = calculateInventoryTotal(workspace, inventory, columns, overrideMap);
-      const orderQuantity = roundQuantity(
-        (Array.isArray(workspace?.orders) ? workspace.orders : [])
-          .filter((order) => normalizeProductCode(order?.productCode) === productCode)
-          .reduce((sum, order) => {
-            const parsed = parseNumericCell(order?.quantity);
-            return sum + (parsed.ok ? parsed.value : 0);
-          }, 0),
-      );
+      const orderQuantity = orderProducts.get(productCode)?.orderQuantity || 0;
       const remainingQuantity = roundQuantity(stockTotal - orderQuantity);
       const values = columns.map((column) => {
         if (column.role === "orderQuantity") return orderQuantity;
@@ -1387,7 +1407,49 @@
         suppliers: inventorySupplierDisplay(workspace, productCode),
         orderInformation: orderInformationDisplay(workspace, productCode),
         orderNotes: orderNoteDisplay(workspace, productCode),
+        inventoryMissing: false,
       };
+    });
+    orderProducts.forEach((product, productCode) => {
+      if (inventoryCodes.has(productCode)) return;
+      const inventory = {
+        productCode,
+        productName: product.productName,
+        specification: product.specification,
+        unit: product.unit,
+        sourceRowNumber: null,
+      };
+      const stockTotal = calculateInventoryTotal(workspace, inventory, columns, overrideMap);
+      const orderQuantity = product.orderQuantity;
+      const remainingQuantity = roundQuantity(stockTotal - orderQuantity);
+      const values = columns.map((column) => {
+        if (column.role === "orderQuantity") return orderQuantity;
+        if (column.role === "calculatedQuantity") return remainingQuantity;
+        if (column.role === "productCode") return productCode;
+        const effectiveValue = getEffectiveInventoryCell(workspace, inventory, column, overrideMap);
+        if (column.editable && effectiveValue !== null) return effectiveValue;
+        if (column.role === "warehouseQuantity") return 0;
+        const canonical = inventoryAliasLookup.get(normalizeOrderHeader(column.header));
+        if (canonical === "품목명") return product.productName;
+        if (canonical === "규격") return product.specification;
+        if (canonical === "단위") return product.unit;
+        return null;
+      });
+      rows.push({
+        productCode,
+        productName: product.productName,
+        specification: product.specification,
+        values,
+        inventoryTotal: stockTotal,
+        stockTotal,
+        orderQuantity,
+        remainingQuantity,
+        purchase: String(purchaseInputs[productCode] || ""),
+        suppliers: inventorySupplierDisplay(workspace, productCode),
+        orderInformation: orderInformationDisplay(workspace, productCode),
+        orderNotes: orderNoteDisplay(workspace, productCode),
+        inventoryMissing: true,
+      });
     });
     const negativeCount = rows.filter((row) => row.remainingQuantity < 0).length;
     if (workspace.stats && typeof workspace.stats === "object") {
@@ -1521,7 +1583,10 @@
     const columns = getInventoryColumnDescriptors(workspace);
     const column = columns.find((candidate) => candidate.key === String(columnKey || ""));
     if (!code || !column?.editable) throw new Error("수정할 수 없는 재고 셀입니다.");
-    if (!(workspace.inventory || []).some((row) => normalizeProductCode(row?.productCode) === code)) {
+    if (![
+      ...(Array.isArray(workspace.inventory) ? workspace.inventory : []),
+      ...(Array.isArray(workspace.orders) ? workspace.orders : []),
+    ].some((row) => normalizeProductCode(row?.productCode) === code)) {
       throw new Error("수정할 재고 품목을 찾지 못했습니다.");
     }
     const normalized = normalizeInventoryOverrideValue(column, value);

@@ -13,7 +13,7 @@ assert.doesNotMatch(orderOpsHtml, /tokens truncated|…\d+ tokens truncated…/,
   "the public OrderOps mirror must not contain a truncated source fragment");
 assert.match(orderOpsHtml, /<body>[\s\S]*<\/body>\s*<\/html>/,
   "the public OrderOps mirror must remain a complete HTML document");
-assert.match(orderOpsHtml, /brand-badge">v1\.30</, "ORDER Q visible version must be v1.30");
+assert.match(orderOpsHtml, /brand-badge">v1\.31</, "ORDER Q visible version must be v1.31");
 assert.match(orderOpsHtml, /<title>ONEAPP ORDER Q · 출고관리<\/title>/,
   "the public page title must establish ORDER Q as shipment management");
 assert.match(orderOpsHtml, /aria-label="ONEAPP ORDER Q 출고관리"/,
@@ -22,7 +22,7 @@ assert.match(orderOpsHtml, /class="brand-logo" src="assets\/order-q-logo\.png"/,
   "the public header must use the approved ORDER Q logo asset");
 assert.match(orderOpsHtml, /\.brand-logo-frame\s*\{[\s\S]*?width:\s*120px;[\s\S]*?height:\s*20px;/,
   "the public ORDER Q logo must match the ONEAPP wordmark height");
-assert.match(orderOpsHtml, /ORDER Q v1\.30 · 출고관리/,
+assert.match(orderOpsHtml, /ORDER Q v1\.31 · 출고관리/,
   "the public footer must use the ORDER Q product concept");
 assert.doesNotMatch(
   orderOpsHtml.slice(orderOpsHtml.indexOf('<header class="global-header">'), orderOpsHtml.indexOf('</header>')),
@@ -37,7 +37,7 @@ assert.equal(
   "the repository logo must be the unmodified approved source image",
 );
 assert.ok(orderOpsHtml.includes('class="execution-panel"'),
-  "the public v1.30 execution controls must be separate from the upload strip");
+  "the public v1.31 execution controls must be separate from the upload strip");
 assert.match(orderOpsHtml, /\.execution-panel\s*\{[^}]*grid-template-columns:\s*repeat\(3,/,
   "the public execution controls must use three visible segments");
 assert.ok(orderOpsHtml.includes("function resetResultViewFilters()"),
@@ -117,7 +117,7 @@ for (const requiredInteractionContract of [
   'getAllocationInventoryView(workspace)',
 ]) {
   assert.ok(orderOpsHtml.includes(requiredInteractionContract),
-    `public ORDER Q v1.30 interaction contract is missing: ${requiredInteractionContract}`);
+    `public ORDER Q v1.31 interaction contract is missing: ${requiredInteractionContract}`);
 }
 assert.doesNotMatch(orderOpsHtml, /<input[^>]+type="color"|data-warehouse-color|data-manager-color/,
   "the public OrderOps filter strip must not use a native color picker inside filter options");
@@ -562,9 +562,48 @@ const edgeWorkspace = engine.analyze(edgeOrders, edgeInventory, {
   createdAt: "2026-07-30T00:00:00.000Z",
   sourceFingerprint: "a".repeat(64),
 });
-assert.equal(engine.ENGINE_VERSION, "3.13.0");
+assert.equal(engine.ENGINE_VERSION, "3.14.0");
 assert.equal(workbookTools.WORKBOOK_VERSION, "4.6.0");
 assert.equal(edgeWorkspace.schemaVersion, "shipping-workspace/v2");
+const edgeInventoryView = engine.getInventoryViewRows(edgeWorkspace);
+const orderOnlyInventoryRow = edgeInventoryView.rows.find((row) => row.productCode === "NO-STOCK");
+assert.equal(edgeInventoryView.rows.length, edgeInventory.rowCount + 1,
+  "inventory view must append order products that do not exist in the inventory source");
+assert.deepEqual(
+  [orderOnlyInventoryRow?.productName, orderOnlyInventoryRow?.stockTotal,
+    orderOnlyInventoryRow?.orderQuantity, orderOnlyInventoryRow?.remainingQuantity,
+    orderOnlyInventoryRow?.inventoryMissing],
+  ["상품 NO-STOCK", 0, 3, -3, true],
+  "order-only products must display source identity, zero stock, and a negative order-aware balance",
+);
+assert.deepEqual(
+  edgeInventoryView.columns
+    .map((column, index) => column.role === "warehouseQuantity" ? orderOnlyInventoryRow.values[index] : null)
+    .filter((value) => value !== null),
+  edgeInventoryView.columns.filter((column) => column.role === "warehouseQuantity").map(() => 0),
+  "every warehouse quantity cell for an order-only product must begin at numeric zero",
+);
+assert.equal(
+  engine.getPurchaseUploadSelection(edgeWorkspace).included.find((row) => row.productCode === "NO-STOCK")?.purchaseNeed,
+  3,
+  "an order-only product must become a purchase-upload target instead of being silently excluded",
+);
+const orderOnlyOverrideWorkspace = JSON.parse(JSON.stringify(edgeWorkspace));
+const firstWarehouseColumn = engine.getInventoryColumnDescriptors(orderOnlyOverrideWorkspace)
+  .find((column) => column.role === "warehouseQuantity");
+engine.setInventoryOverride(orderOnlyOverrideWorkspace, "NO-STOCK", firstWarehouseColumn.key, 1);
+assert.equal(
+  engine.getInventoryViewRows(orderOnlyOverrideWorkspace).rows
+    .find((row) => row.productCode === "NO-STOCK").remainingQuantity,
+  -2,
+  "administrators must be able to correct an order-only product warehouse quantity",
+);
+assert.equal(
+  engine.getPurchaseUploadSelection(orderOnlyOverrideWorkspace).included
+    .find((row) => row.productCode === "NO-STOCK")?.purchaseNeed,
+  2,
+  "the corrected order-only stock must immediately recalculate the purchase-upload quantity",
+);
 
 const signedOrders = parseOrders(buildOrderMatrix([
   { code: "SIGNED-001", quantity: 0, customer: "제로거래처", note: "0 수량 전달" },
@@ -1079,12 +1118,12 @@ assert.equal(engine.parseOrderBasisDate("20260804-17"), "2026-08-04");
 assert.equal(engine.parseOrderBasisDate("2026.8.4 No.17"), "2026-08-04");
 
 for (const [purchase, expectedCount] of [
-  ["대체", 0],
-  ["소분", 0],
-  ["대채", 1],
-  ["대체 예정", 1],
-  ["소분작업", 1],
-  ["", 1],
+  ["대체", 1],
+  ["소분", 1],
+  ["대채", 2],
+  ["대체 예정", 2],
+  ["소분작업", 2],
+  ["", 2],
 ]) {
   engine.setPurchaseValue(edgeWorkspace, "000100", purchase);
   assert.equal(
@@ -1565,7 +1604,7 @@ assert.ok(
 );
 
 const html = fs.readFileSync(path.join(ROOT, "orderops", "list.html"), "utf8");
-assert.match(html, /brand-badge">v1\.30</, "canonical ORDER Q visible version must be v1.30");
+assert.match(html, /brand-badge">v1\.31</, "canonical ORDER Q visible version must be v1.31");
 assert.match(html, /class="brand-logo" src="\.\.\/assets\/order-q-logo\.png"/,
   "the canonical header must use the shared ORDER Q logo asset");
 assert.match(html, /<h2 id="settingsModalTitle">ORDER Q 환경설정<\/h2>/,
@@ -1693,7 +1732,7 @@ for (const requiredInteractionContract of [
   'getAllocationInventoryView(workspace)',
 ]) {
   assert.ok(html.includes(requiredInteractionContract),
-    `canonical ORDER Q v1.30 interaction contract is missing: ${requiredInteractionContract}`);
+    `canonical ORDER Q v1.31 interaction contract is missing: ${requiredInteractionContract}`);
 }
 assert.doesNotMatch(html, /<input[^>]+type="color"|data-warehouse-color|data-manager-color/,
   "canonical OrderOps filter options must remain separate from color assignment");
@@ -1882,7 +1921,7 @@ for (const contract of [
   "handleInventoryGridArrowNavigation", "autocompletePurchaseInput", "rememberPurchaseName",
   "function resetResultViewFilters()", 'grid-template-columns: repeat(3, minmax(0, 1fr))',
 ]) {
-  assert.ok(html.includes(contract), `ORDER Q v1.30 contract is missing: ${contract}`);
+  assert.ok(html.includes(contract), `ORDER Q v1.31 contract is missing: ${contract}`);
 }
 assert.ok(html.includes('id="warehouseColorResetButton" type="button">전체 다시보기</button>'),
   "filter reset must be presented as returning to the full view");
@@ -2052,7 +2091,11 @@ if (referenceFilesEnabled && fs.existsSync(referenceOrdersPath) && fs.existsSync
   assert.ok(referenceOrders.rowCount > 0, "reference orders must expose operational rows");
   assert.ok(referenceInventory.rowCount >= 250, "reference inventory must expose the complete operational list");
   assert.equal(referenceValidation.duplicateCount, 0);
-  assert.equal(referenceValidation.unmatchedCount, 0);
+  const referenceInventoryCodes = new Set(referenceInventory.rows.map((row) => row.productCode));
+  const referenceOrderOnlyCodes = [...new Set(referenceOrders.rows
+    .map((row) => row.productCode)
+    .filter((code) => !referenceInventoryCodes.has(code)))];
+  assert.equal(referenceValidation.unmatchedCount, referenceOrderOnlyCodes.length);
   assert.equal(referenceValidation.memoCount, referenceOrders.rows.filter((row) => row.note || row.note1).length);
 
   referenceWorkspace = engine.analyze(referenceOrders, referenceInventory, {
@@ -2068,10 +2111,22 @@ if (referenceFilesEnabled && fs.existsSync(referenceOrdersPath) && fs.existsSync
   assert.equal(referenceWorkspace.stats.productQuantityDifference, 0);
   assert.equal(referenceWorkspace.stats.negativePurchaseCount, 0);
   assert.equal(referenceWorkspace.stats.reconciliationErrorCount, 0);
+  const referenceInventoryView = engine.getInventoryViewRows(referenceWorkspace);
   assert.equal(
-    engine.getInventoryViewRows(referenceWorkspace).rows.length,
-    referenceInventory.rowCount,
-    "full inventory view row count must equal the parsed source data row count",
+    referenceInventoryView.rows.length,
+    referenceInventory.rowCount + referenceOrderOnlyCodes.length,
+    "full inventory view must equal inventory products plus unique order-only products",
+  );
+  assert.ok(
+    referenceOrderOnlyCodes.every((code) => {
+      const row = referenceInventoryView.rows.find((candidate) => candidate.productCode === code);
+      const orderQuantity = referenceOrders.rows
+        .filter((order) => order.productCode === code)
+        .reduce((sum, order) => sum + order.quantity, 0);
+      return row?.inventoryMissing === true && row.stockTotal === 0 &&
+        row.orderQuantity === orderQuantity && row.remainingQuantity === -orderQuantity;
+    }),
+    "every real order-only product must display zero stock and its full negative remaining quantity",
   );
 }
 
