@@ -13,20 +13,23 @@
       <div class="brand">
         <strong>ONEAPP</strong>
         <span class="logo-frame" aria-hidden="true"><img src="../assets/order-q-logo.png" alt=""></span>
-        <span class="badge">vNext 0.1</span>
+        <span class="badge">vNext 0.2</span>
         <span>주문현황</span>
       </div>
       <div class="top-actions">
+        <a class="btn dark" href="./cloud.html">클라우드</a>
         <a class="btn primary" href="./input.html">+ 신규 주문</a>
       </div>
     </header>
     <main class="panel">
-      <p class="notice">신규 ORDER Q vNext 독립 구축 영역입니다. 기존 ORDER Q / orderops 데이터와 소스는 변경하지 않습니다.</p>
+      <p class="notice">ORDER Q vNext 독립 구축 영역입니다. Local-first 주문원장과 목적별 Google Sheet 증분 동기화를 사용하며 기존 ORDER Q / orderops는 변경하지 않습니다.</p>
+      <div id="message" class="message"></div>
       <div class="toolbar">
         <button class="btn" id="refreshBtn" type="button">새로고침</button>
+        <button class="btn" id="syncBtn" type="button">클라우드 동기화</button>
         <span class="status" id="summaryText">불러오는 중...</span>
         <span class="spacer"></span>
-        <span class="status">Local DB · Cloud Sync는 2단계 예정</span>
+        <span class="status" id="syncText">동기화 상태 확인 중...</span>
       </div>
       <div class="table-wrap">
         <table>
@@ -50,13 +53,33 @@
   </div>
   <script type="module">
     import { listOrders, subscribeOrderChanges } from './order-intake-engine.js';
+    import { syncNow, getSyncState } from './orderq-sync-engine.js';
+    import { getCloudUrl } from './orderq-cloud-adapter.js';
 
     const rows = document.getElementById('orderRows');
     const summary = document.getElementById('summaryText');
+    const syncText = document.getElementById('syncText');
+    const message = document.getElementById('message');
+    const syncButton = document.getElementById('syncBtn');
 
     const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
     const formatTime = value => value ? new Date(value).toLocaleString('ko-KR', { hour12: false }) : '';
     const statusLabel = status => ({ CONFIRMED:'완료', PARTIAL:'부분완료', MATCH_FAILED:'매칭실패', CANCELLED:'취소' }[status] || status);
+
+    function showMessage(text, type = 'info') {
+      message.textContent = text;
+      message.className = `message show ${type}`;
+    }
+
+    async function renderSyncState() {
+      const state = await getSyncState();
+      if (!state.cloudUrl) {
+        syncText.textContent = '클라우드 URL 미설정';
+        return state;
+      }
+      syncText.textContent = `대기 ${state.pending}건 · 충돌 ${state.conflicts.length}건 · Cursor ${state.cursor}`;
+      return state;
+    }
 
     async function render() {
       const orders = await listOrders();
@@ -65,6 +88,7 @@
       summary.textContent = `주문 ${active.length}건 · 매칭실패 ${failures}건 · 전체 이력 ${orders.length}건`;
       if (!orders.length) {
         rows.innerHTML = '<tr><td colspan="9" class="empty">아직 저장된 주문이 없습니다. 신규 주문부터 등록하세요.</td></tr>';
+        await renderSyncState();
         return;
       }
       rows.innerHTML = orders.map(order => `
@@ -79,11 +103,37 @@
           <td class="center">r${esc(order.revision)}</td>
           <td>${esc(formatTime(order.updatedAt))}</td>
         </tr>`).join('');
+      await renderSyncState();
+    }
+
+    async function runSync(showSuccess = true) {
+      if (!getCloudUrl()) {
+        showMessage('클라우드 URL이 없습니다. [클라우드] 화면에서 기존 ONEAPP Apps Script URL을 등록하세요.', 'warn');
+        return;
+      }
+      syncButton.disabled = true;
+      syncText.textContent = '동기화 중...';
+      try {
+        const result = await syncNow();
+        await render();
+        const conflicts = result?.push?.conflicts || result?.pull?.conflicts || 0;
+        if (conflicts) showMessage(`동기화 완료 · 충돌 ${conflicts}건이 있습니다. 클라우드 화면에서 최신본을 확인하세요.`, 'warn');
+        else if (showSuccess) showMessage('클라우드 동기화가 완료되었습니다.', 'info');
+      } catch (error) {
+        showMessage(`클라우드 동기화 실패: ${error.message || error}`, 'error');
+        await renderSyncState();
+      } finally {
+        syncButton.disabled = false;
+      }
     }
 
     document.getElementById('refreshBtn').addEventListener('click', render);
+    syncButton.addEventListener('click', () => runSync(true));
     subscribeOrderChanges(render);
-    render().catch(error => { summary.textContent = `오류: ${error.message}`; });
+
+    render().then(() => {
+      if (getCloudUrl()) runSync(false);
+    }).catch(error => { summary.textContent = `오류: ${error.message}`; });
   </script>
 </body>
 </html>
