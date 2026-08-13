@@ -284,7 +284,8 @@ export async function syncBeforeOrderMutation(orderId, expectedRevision) {
 
 export async function syncAfterLocalMutation(orderId = '') {
   if (!getCloudUrl()) return { online: false };
-  const push = await pushPending(orderId);
+  // 주문과 함께 생성되는 Customer/Alias/Event 큐도 같은 저장 단위에서 바로 전송한다.
+  const push = await pushPending();
   const rows = await all(STORE.SYNC_QUEUE);
   const conflict = rows.find(row => row.entityType === 'ORDER' && row.entityId === orderId && row.status === 'CONFLICT');
   if (conflict) throw new CloudOrderConflictError(orderId, conflict.revision, conflict.serverRevision, conflict.remotePayload || null);
