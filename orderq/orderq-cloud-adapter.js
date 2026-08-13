@@ -44,7 +44,8 @@ async function post(action, body = {}) {
   if (!url) throw new OrderQCloudError('클라우드 URL이 설정되지 않았습니다.', { code: 'CLOUD_URL_MISSING' });
   let response;
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 20000);
+  // Apps Script may need extra time on the first call while purpose sheets are created.
+  const timeout = setTimeout(() => controller.abort(), 60000);
   try {
     response = await fetch(url, {
       method: 'POST',
