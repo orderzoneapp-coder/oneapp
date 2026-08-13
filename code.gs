@@ -1,12 +1,13 @@
 /**
  * ONEAPP MerchOps - Cloud Sync Server
- * [v1.9_ShippingPurchasePlanHistory]
+ * [v2.0_OrderQSync]
  *
  * - MasterDB/HistoryLogs 분할 전송 유지
  * - AppConfig JSON을 45,000자 이하로 분할 저장해 Google Sheets 셀 제한 회피
  * - config_only / master_only 선택 복원 지원
  * - 기존 AppConfig B1 단일 셀 형식도 자동 호환
  * - DataOps FULL 재고는 A/B staging 검증 후 current pointer를 원자 전환
+ * - ORDER Q vNext는 목적별 시트와 revision 기반 증분 동기화를 사용
  */
 
 const SHEET_NAMES = {
@@ -656,6 +657,24 @@ function doPost(e) {
     const payload = JSON.parse(e.postData.contents);
     const action = String(payload.action || '');
     const ss = SpreadsheetApp.getActiveSpreadsheet();
+
+    if (action === 'orderq_sync_push') {
+      return withScriptLock(() => jsonResponse({
+        status: 'success', action, data: orderQSyncPush(ss, payload)
+      }));
+    }
+
+    if (action === 'orderq_sync_pull') {
+      return withScriptLock(() => jsonResponse({
+        status: 'success', action, data: orderQSyncPull(ss, payload)
+      }));
+    }
+
+    if (action === 'orderq_order_head') {
+      return withScriptLock(() => jsonResponse({
+        status: 'success', action, data: orderQOrderHead(ss, payload)
+      }));
+    }
 
     if (action === 'shipping_plan_save') {
       requireShippingPlanAccess(payload);
