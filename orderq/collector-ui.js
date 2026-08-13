@@ -6,7 +6,11 @@ import {
   rebuildFulfillmentEvidence,
   rollbackImportBatch,
   saveCollectorSettings,
-  confirmParserEvidence
+  confirmParserEvidence,
+  cancelParserEvidenceConfirmation,
+  confirmFulfillmentLink,
+  replaceFulfillmentLink,
+  unlinkFulfillmentLink
 } from './history-collector/history-repository.js';
 import { syncNow } from './orderq-sync-engine.js';
 import { getCloudUrl, getCloudAccessToken } from './orderq-cloud-adapter.js';
@@ -61,6 +65,26 @@ function stateBadge(status) {
   return `<span class="link-state ${esc(status)}">${esc(status)}</span>`;
 }
 
+function fulfillmentActions(link, snapshot) {
+  if (!link.historicalOrderLineId || !link.salesLineId || Number(link.allocatedQuantity || 0) < 0) return '';
+  const documentById = new Map(snapshot.salesDocuments.map(row => [row.salesDocumentId, row]));
+  const choices = snapshot.salesLines.filter(row => {
+    if (Number(row.quantity || 0) <= 0 || row.salesLineId === link.salesLineId) return false;
+    const document = documentById.get(row.salesDocumentId) || {};
+    return !link.customerName || document.customerName === link.customerName;
+  }).map(row => {
+    const document = documentById.get(row.salesDocumentId) || {};
+    const label = `${document.salesDate || row.salesDate || ''} · ${row.productName || row.productCode || '상품미상'} · ${number(row.quantity)}`;
+    return `<option value="${esc(row.salesLineId)}">${esc(label)}</option>`;
+  }).join('');
+  return `<div class="admin-actions">
+    ${link.requiresReview ? `<button class="btn primary" data-confirm-link="${esc(link.fulfillmentLinkId)}">확정</button>` : ''}
+    <select class="control link-replacement" aria-label="대체 판매행"><option value="">판매행 변경…</option>${choices}</select>
+    <button class="btn" data-replace-link="${esc(link.fulfillmentLinkId)}">변경</button>
+    <button class="btn danger" data-unlink="${esc(link.fulfillmentLinkId)}">해제</button>
+  </div>`;
+}
+
 async function renderSnapshot() {
   const snapshot = await getCollectorSnapshot();
   const activeBatches = snapshot.batches.filter(row => row.status === 'COMMITTED');
@@ -70,31 +94,43 @@ async function renderSnapshot() {
     sales: snapshot.salesLines.length,
     purchases: snapshot.purchaseLines.length,
     inventory: snapshot.inventoryLines.length,
-    linked: snapshot.links.filter(row => ['STRONG','PROBABLE','CONFIRMED'].includes(row.status)).length,
-    unlinked: snapshot.links.filter(row => row.status === 'UNLINKED').length
+    linked: snapshot.balances.filter(row => row.status === 'FULFILLED').length,
+    unlinked: snapshot.balances.filter(row => row.status === 'UNFULFILLED').length
   };
   $('#kpiStrip').innerHTML = [
     ['활성 수집', summary.batches], ['주문행', summary.orders], ['판매행', summary.sales], ['구매행', summary.purchases],
-    ['재고행', summary.inventory], ['출고연결', summary.linked], ['미연결 판매', summary.unlinked]
+    ['재고행', summary.inventory], ['출고완료', summary.linked], ['미출고 주문', summary.unlinked]
   ].map(([label, value]) => `<div class="kpi"><span>${label}</span><strong>${number(value)}</strong></div>`).join('');
 
   $('#cutoffTime').value = `${String(snapshot.settings.cutoffHour).padStart(2, '0')}:${String(snapshot.settings.cutoffMinute).padStart(2, '0')}`;
   $('#holidays').value = (snapshot.settings.holidays || []).join(', ');
 
-  const links = snapshot.links.slice().sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt))).slice(0, 300);
+  const balances = snapshot.balances.slice().sort((a, b) => Number(b.remainingQuantity) - Number(a.remainingQuantity) || String(a.customerName).localeCompare(String(b.customerName), 'ko'));
+  $('#balanceRows').innerHTML = balances.length ? balances.map(row => `
+    <tr class="${row.status === 'UNFULFILLED' ? 'balance-open' : ''}">
+      <td>${stateBadge(row.status)}</td><td>${esc(row.customerName || '')}</td><td>${esc(row.rawExpression || row.productName || row.productCode || '')}</td>
+      <td class="num">${number(row.orderedQuantity)}</td><td class="num">${number(row.grossShippedQuantity)}</td>
+      <td class="num reversal">${number(row.reversalQuantity)}</td><td class="num">${number(row.netShippedQuantity)}</td>
+      <td class="num remaining">${number(row.remainingQuantity)}</td>
+    </tr>`).join('') : '<tr><td colspan="8" class="empty">과거 주문을 수집하면 출고·미출고 잔량이 표시됩니다.</td></tr>';
+
+  const orderById = new Map(snapshot.orderLines.map(row => [row.historicalOrderLineId, row]));
+  const salesById = new Map(snapshot.salesLines.map(row => [row.salesLineId, row]));
+  const links = snapshot.links.slice().sort((a, b) => Number(b.requiresReview) - Number(a.requiresReview) || String(b.updatedAt).localeCompare(String(a.updatedAt))).slice(0, 300);
   $('#linkRows').innerHTML = links.length ? links.map(link => `
     <tr>
-      <td>${stateBadge(link.status)}</td><td>${esc(link.customerName || '')}</td><td class="center">${esc(link.orderDate || '')}</td>
-      <td class="center">${esc(link.salesDate || '')}</td><td>${esc(link.productCode || '')}</td><td class="num">${number(link.allocatedQuantity)}</td>
-      <td>${esc((link.evidence || []).join(' · '))}</td>
-    </tr>`).join('') : '<tr><td colspan="7" class="empty">주문과 판매 이력을 수집하면 연결 결과가 표시됩니다.</td></tr>';
+      <td>${stateBadge(link.status)}</td><td>${esc(link.customerName || '')}</td><td>${esc(orderById.get(link.historicalOrderLineId)?.rawExpression || '')}</td>
+      <td>${esc(salesById.get(link.salesLineId)?.productName || link.productName || link.productCode || '')}</td>
+      <td class="center">${esc(link.orderDate || '')}</td><td class="center">${esc(link.salesDate || '')}</td><td class="num">${number(link.allocatedQuantity)}</td>
+      <td>${esc((link.evidence || []).join(' · '))}</td><td>${fulfillmentActions(link, snapshot)}</td>
+    </tr>`).join('') : '<tr><td colspan="9" class="empty">주문과 판매 이력을 수집하면 연결 결과가 표시됩니다.</td></tr>';
 
   const evidence = snapshot.evidence.slice().sort((a, b) => b.distinctDateCount - a.distinctDateCount || b.supportCount - a.supportCount);
   $('#evidenceRows').innerHTML = evidence.length ? evidence.map(row => `
     <tr>
       <td>${stateBadge(row.status)}</td><td>${esc(row.customerName || row.customerId)}</td><td>${esc(row.rawExpressions?.join(' / ') || row.normalizedExpression)}</td>
       <td>${esc(row.productCode || (row.conflictingProductCodes || []).join(', '))}</td><td class="center">${number(row.distinctDateCount)}</td><td class="center">${number(row.supportCount)}</td>
-      <td class="center">${row.status === 'ADMIN_CONFIRMED' ? '확정됨' : row.status === 'READY_FOR_ADMIN_CONFIRMATION' ? `<button class="btn" data-confirm-evidence="${esc(row.parserEvidenceId)}">관리자 확정</button>` : row.status === 'CONFLICT' ? '검수 필요' : '근거 축적 중'}</td>
+      <td class="center">${row.status === 'ADMIN_CONFIRMED' ? `<button class="btn danger" data-cancel-evidence="${esc(row.parserEvidenceId)}">확정 취소</button>` : row.status === 'READY_FOR_ADMIN_CONFIRMATION' ? `<button class="btn" data-confirm-evidence="${esc(row.parserEvidenceId)}">관리자 확정</button>` : row.status === 'CONFLICT' ? '검수 필요' : '근거 축적 중'}</td>
     </tr>`).join('') : '<tr><td colspan="7" class="empty">실제 판매와 연결된 주문표현이 아직 없습니다.</td></tr>';
 
   $('#historyRows').innerHTML = snapshot.batches.length ? snapshot.batches.map(row => `
@@ -186,14 +222,48 @@ $('#historyRows').addEventListener('click', async event => {
   } catch (error) { show(error.message || String(error), 'error'); }
 });
 
-$('#evidenceRows').addEventListener('click', async event => {
-  const button = event.target.closest('[data-confirm-evidence]');
-  if (!button || !confirm('이 주문표현을 해당 거래처의 상품 매핑으로 확정할까요?')) return;
+$('#linkRows').addEventListener('click', async event => {
+  const confirmButton = event.target.closest('[data-confirm-link]');
+  const replaceButton = event.target.closest('[data-replace-link]');
+  const unlinkButton = event.target.closest('[data-unlink]');
+  if (!confirmButton && !replaceButton && !unlinkButton) return;
   try {
-    await confirmParserEvidence(button.dataset.confirmEvidence);
+    if (confirmButton) {
+      if (!confirm('이 주문·판매 후보를 출고 연결로 확정할까요?')) return;
+      await confirmFulfillmentLink(confirmButton.dataset.confirmLink);
+      show('출고 연결을 확정하고 미출고 잔량을 다시 계산했습니다.', 'info');
+    } else if (replaceButton) {
+      const select = replaceButton.closest('.admin-actions').querySelector('.link-replacement');
+      if (!select.value) throw new Error('변경할 판매행을 먼저 선택해 주세요.');
+      if (!confirm('기존 연결을 해제하고 선택한 판매행으로 변경할까요?')) return;
+      await replaceFulfillmentLink(replaceButton.dataset.replaceLink, select.value);
+      show('판매행 연결을 변경하고 미출고 잔량을 다시 계산했습니다.', 'info');
+    } else {
+      if (!confirm('이 주문·판매 연결을 해제할까요?')) return;
+      await unlinkFulfillmentLink(unlinkButton.dataset.unlink);
+      show('출고 연결을 해제하고 미출고 잔량을 다시 계산했습니다.', 'info');
+    }
     await renderSnapshot();
     await bestEffortSync();
-    show('파서근거를 고객 범위 매핑으로 확정했습니다.', 'info');
+  } catch (error) { show(error.message || String(error), 'error'); }
+});
+
+$('#evidenceRows').addEventListener('click', async event => {
+  const confirmButton = event.target.closest('[data-confirm-evidence]');
+  const cancelButton = event.target.closest('[data-cancel-evidence]');
+  if (!confirmButton && !cancelButton) return;
+  try {
+    if (confirmButton) {
+      if (!confirm('이 주문표현을 해당 거래처의 상품 매핑으로 확정할까요?')) return;
+      await confirmParserEvidence(confirmButton.dataset.confirmEvidence);
+      show('파서근거를 고객 범위 매핑으로 확정했습니다.', 'info');
+    } else {
+      if (!confirm('확정된 파서사전을 비활성화할까요? 기존 주문 원문과 감사기록은 유지됩니다.')) return;
+      await cancelParserEvidenceConfirmation(cancelButton.dataset.cancelEvidence);
+      show('파서사전 확정을 취소하고 매핑을 비활성화했습니다.', 'info');
+    }
+    await renderSnapshot();
+    await bestEffortSync();
   } catch (error) { show(error.message || String(error), 'error'); }
 });
 

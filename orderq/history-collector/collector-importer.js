@@ -148,7 +148,7 @@ export async function analyzeHistoricalText({ rawText, fileName = '카카오 이
       if (!line.quantity || line.quantity <= 0) return;
       rows.push({
         rowNo: messageIndex * 100 + lineIndex + 1,
-        rawRecord: { sender: message.senderRaw, timestamp: message.timestampRaw, message: message.rawText, line: line.rawLine },
+        rawRecord: { sender: message.senderRaw, timestamp: message.timestampRaw, message: message.rawText, line: line.rawText },
         normalizedRecord: {
           orderDate: message.orderDate || defaultDate,
           orderTime: parseTime(message.timestampRaw),
@@ -156,7 +156,8 @@ export async function analyzeHistoricalText({ rawText, fileName = '카카오 이
           sourceMessageKey,
           documentNo: sourceMessageKey,
           productName: line.productText,
-          rawExpression: line.rawLine,
+          // SmartParser의 불변 원문 계약은 rawText다. productText가 비어도 원문은 절대 잃지 않는다.
+          rawExpression: line.rawText,
           specification: line.specText,
           quantity: line.quantity,
           rawUnit: line.rawUnit,

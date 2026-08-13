@@ -10,7 +10,7 @@ const ORDERQ_SYNC_SCHEMA = 'ONEAPP_ORDERQ_SYNC_V1';
 const ORDERQ_SYNC_MAX_PUSH = 100;
 const ORDERQ_SYNC_MAX_PULL = 500;
 const ORDERQ_SHEET_SCHEMA_PROPERTY = 'ONEAPP_ORDERQ_SHEET_SCHEMA_VERSION';
-const ORDERQ_SHEET_SCHEMA_VERSION = '2';
+const ORDERQ_SHEET_SCHEMA_VERSION = '3';
 
 const ORDERQ_SHEETS = Object.freeze({
   ORDER: 'ORDER',
@@ -35,6 +35,7 @@ const ORDERQ_SHEETS = Object.freeze({
   HISTORICAL_ORDER_GROUP: 'HISTORICAL_ORDER',
   HISTORICAL_ORDER_LINE: 'HISTORICAL_ORDER_LINE',
   FULFILLMENT_LINK: 'FULFILLMENT_LINK',
+  FULFILLMENT_BALANCE: 'FULFILLMENT_BALANCE',
   PARSER_EVIDENCE: 'PARSER_EVIDENCE',
   COLLECTOR_SETTING: 'COLLECTOR_SETTING',
   ORDER_TXN_LOG: 'ORDER_TXN_LOG',
@@ -64,6 +65,7 @@ const ORDERQ_HEADERS = Object.freeze({
   HISTORICAL_ORDER_GROUP: ['historicalOrderGroupId', 'importBatchId', 'orderDate', 'updatedAt', 'payloadJson'],
   HISTORICAL_ORDER_LINE: ['historicalOrderLineId', 'historicalOrderGroupId', 'productCode', 'updatedAt', 'payloadJson'],
   FULFILLMENT_LINK: ['fulfillmentLinkId', 'historicalOrderLineId', 'salesLineId', 'updatedAt', 'payloadJson'],
+  FULFILLMENT_BALANCE: ['fulfillmentBalanceId', 'historicalOrderLineId', 'status', 'updatedAt', 'payloadJson'],
   PARSER_EVIDENCE: ['parserEvidenceId', 'customerId', 'productCode', 'updatedAt', 'payloadJson'],
   COLLECTOR_SETTING: ['key', 'cutoffTime', 'holidayCount', 'updatedAt', 'payloadJson'],
   ORDER_TXN_LOG: ['txnId', 'orderId', 'status', 'previous1', 'previous2', 'previous3', 'previous4', 'next1', 'next2', 'next3', 'next4', 'error', 'createdAt', 'updatedAt'],
@@ -415,6 +417,7 @@ function orderQSimpleSpec(entityType) {
     HISTORICAL_ORDER_GROUP: { key: 'HISTORICAL_ORDER_GROUP', id: 'historicalOrderGroupId', row: p => [p.historicalOrderGroupId, p.importBatchId || '', p.orderDate || '', p.updatedAt || '', JSON.stringify(p)] },
     HISTORICAL_ORDER_LINE: { key: 'HISTORICAL_ORDER_LINE', id: 'historicalOrderLineId', row: p => [p.historicalOrderLineId, p.historicalOrderGroupId || '', p.productCode || '', p.updatedAt || '', JSON.stringify(p)] },
     FULFILLMENT_LINK: { key: 'FULFILLMENT_LINK', id: 'fulfillmentLinkId', row: p => [p.fulfillmentLinkId, p.historicalOrderLineId || '', p.salesLineId || '', p.updatedAt || '', JSON.stringify(p)] },
+    FULFILLMENT_BALANCE: { key: 'FULFILLMENT_BALANCE', id: 'fulfillmentBalanceId', row: p => [p.fulfillmentBalanceId, p.historicalOrderLineId || '', p.status || '', p.updatedAt || '', JSON.stringify(p)] },
     PARSER_EVIDENCE: { key: 'PARSER_EVIDENCE', id: 'parserEvidenceId', row: p => [p.parserEvidenceId, p.customerId || '', p.productCode || '', p.updatedAt || '', JSON.stringify(p)] },
     COLLECTOR_SETTING: { key: 'COLLECTOR_SETTING', id: 'key', row: p => [p.key, `${String(p.cutoffHour || 0).padStart(2, '0')}:${String(p.cutoffMinute || 0).padStart(2, '0')}`, (p.holidays || []).length, p.updatedAt || '', JSON.stringify(p)] }
   }[entityType] || null;

@@ -15,7 +15,7 @@ export function buildParserEvidence({ links = [], orderLines = [], salesLines = 
   const salesById = new Map(salesLines.map(row => [row.salesLineId, row]));
   const groups = new Map();
 
-  links.filter(link => [LINK_STATUS.STRONG, LINK_STATUS.PROBABLE, LINK_STATUS.CONFIRMED].includes(link.status)).forEach(link => {
+  links.filter(link => link.requiresReview !== true && [LINK_STATUS.STRONG, LINK_STATUS.PROBABLE, LINK_STATUS.CONFIRMED].includes(link.status)).forEach(link => {
     const order = orderById.get(link.historicalOrderLineId);
     const sales = salesById.get(link.salesLineId);
     const rawExpression = String(order?.rawExpression || order?.productName || '').trim();

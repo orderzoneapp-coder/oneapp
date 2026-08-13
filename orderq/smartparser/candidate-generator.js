@@ -29,6 +29,11 @@ function productShape(product = {}, mapping = {}) {
   };
 }
 
+function mappingIsActive(mapping = {}) {
+  // v0.4 이전 매핑에는 status가 없으므로 최초 로드에서는 ACTIVE로 호환한다.
+  return (mapping.status || 'ACTIVE') === 'ACTIVE';
+}
+
 export async function generateProductCandidates({ productText, customerId = '', sourceId = '' } = {}) {
   const normalized = normalizeText(productText);
   if (!normalized) return [];
@@ -45,7 +50,7 @@ export async function generateProductCandidates({ productText, customerId = '', 
     candidates.push({ ...shape, score, source });
   };
 
-  mappings.forEach(mapping => {
+  mappings.filter(mappingIsActive).forEach(mapping => {
     if (normalizeText(mapping.normalizedText || mapping.rawText) !== normalized) return;
     const product = productById.get(mapping.productId) || {};
     if (customerId && mapping.customerId === customerId) add(productShape(product, mapping), 1, 'CUSTOMER_MAPPING');

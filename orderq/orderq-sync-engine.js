@@ -281,6 +281,7 @@ async function applySimple(entityType, payload) {
     HISTORICAL_ORDER_GROUP: [STORE.HISTORICAL_ORDER_GROUPS, 'historicalOrderGroupId'],
     HISTORICAL_ORDER_LINE: [STORE.HISTORICAL_ORDER_LINES, 'historicalOrderLineId'],
     FULFILLMENT_LINK: [STORE.FULFILLMENT_LINKS, 'fulfillmentLinkId'],
+    FULFILLMENT_BALANCE: [STORE.FULFILLMENT_BALANCES, 'fulfillmentBalanceId'],
     PARSER_EVIDENCE: [STORE.PARSER_EVIDENCE, 'parserEvidenceId'],
     COLLECTOR_SETTING: [STORE.COLLECTOR_SETTINGS, 'key']
   }[entityType];
