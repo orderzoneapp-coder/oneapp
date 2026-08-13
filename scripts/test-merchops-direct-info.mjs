@@ -111,7 +111,7 @@ const tableView = merch.indexOf("showTableViewSelect && commonExcelTableViewOpti
 const operationTools = merch.indexOf('data-merch-toolbar-group": "operations"', tableView);
 const autoRule = merch.indexOf('"aria-label": "파일 불러오기 시 출고가 자동적용"', operationTools);
 const manualRule = merch.indexOf("onClick: handleForceApplyMarginRules", autoRule);
-const mainReset = merch.indexOf('title: "메인 작업 초기화:', manualRule);
+const mainReset = merch.indexOf("onClick: handleReset", manualRule);
 assert.ok(loadTools >= 0 && excelTools > loadTools && tableView > excelTools && operationTools > tableView && autoRule > operationTools && manualRule > autoRule && mainReset > manualRule,
   "The table view must stay in the Excel group while auto-rule, manual out-price, and reset stay in the operation group");
 const fixedTools = merch.indexOf('title: "기본 판매가·필터 초기화·검색"');
