@@ -1,6 +1,6 @@
 # ORDER Q vNext 개발 로드맵
 
-Version: 0.1.0
+Version: 0.2.0
 Date: 2026-08-13
 
 ## 기본 원칙
@@ -13,7 +13,7 @@ Date: 2026-08-13
 - 주문 수정·취소는 삭제가 아니라 Revision/Event로 보존한다.
 - 로컬은 IndexedDB, 클라우드는 Sync Adapter를 거쳐 연결하고 추후 Server API/PostgreSQL로 교체 가능하게 한다.
 
-## 1단계 — 독립 기반 + 수기 주문 Vertical Slice
+## 1단계 — 독립 기반 + 수기 주문 Vertical Slice [완료]
 
 목표: 새로운 URL에서 공통 주문원장이 실제 동작하는 최소 완성 흐름을 만든다.
 
@@ -32,17 +32,25 @@ Date: 2026-08-13
 
 완료조건: 같은 브라우저에서 신규 주문 → 목록 확인 → 주문서 재접속 → 수정 → 충돌 검증 → 취소가 동작한다.
 
-## 2단계 — Google Sheet Cloud Sync
+## 2단계 — Google Sheet Cloud Sync [구현/배포 검증 단계]
 
-- 기존 ONEAPP 클라우드 방식과 분리된 ORDER Q vNext Cloud Adapter
+- 기존 ONEAPP 공통 Cloud URL을 사용하는 ORDER Q vNext Cloud Adapter 분리
 - 목적별 시트 자동 생성
 - ORDER / ORDER_ITEM / ORDER_EVENT
 - CUSTOMER_MASTER / CUSTOMER_ALIAS_MAPPING
 - PRODUCT_MAPPING / UNIT_MAPPING / MAPPING_EVENT
 - SYNC_META
-- 증분 Push/Pull
-- 기기간 `revision` 충돌 검증
-- 서버 전환을 고려한 Adapter 계약 고정
+- `ONEAPP_ORDERQ_SYNC_V1` 증분 Push/Pull 계약
+- 각 브라우저 Device ID + 서버 Sequence Cursor
+- `queueId` 기반 재전송 중복방지
+- `orderId + revision + baseRevision` 기반 기기간 충돌 검증
+- 먼저 저장된 revision 우선, 후 저장 자동 덮어쓰기/자동 병합 금지
+- 클라우드 장애/미설정 시 로컬 저장 유지 + SyncQueue 재시도
+- 충돌 시 로컬 입력 보존, 클라우드 최신본 확인/적용 후 재입력
+- 1단계 기존 로컬 Customer/Alias/Event를 최초 동기화 때 SyncQueue로 보강
+- 서버 전환을 고려한 `orderq-cloud-adapter.js` 계약 고정
+
+완료조건: Apps Script에 `code.gs`와 `orderq-cloud.gs`를 같은 배포본으로 반영한 후 A/B 기기에서 주문 생성 → 수신 → 동시수정 → 먼저 저장 성공 → 후 저장 충돌 차단 → 최신본 적용을 실제 운영 URL에서 검증한다.
 
 ## 3단계 — 카카오/일반 텍스트 SmartParser
 
