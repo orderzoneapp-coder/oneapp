@@ -233,7 +233,8 @@
       ],
       "sharedContracts": [
         "cloud-url",
-        "orderq-vnext-sync"
+        "orderq-vnext-sync",
+        "product-master"
       ]
     },
     {
@@ -402,9 +403,13 @@
     {
       "id": "product-master",
       "owner": "merchops",
+      "consumers": [
+        "orderq/input.html"
+      ],
       "resources": {
         "indexedDb": {
           "database": "MerchOpsDB",
+          "store": "master_products",
           "keys": [
             "merchMaster_v870"
           ]

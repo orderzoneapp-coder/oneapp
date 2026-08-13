@@ -94,6 +94,16 @@ const residualConfirmed = buildFulfillmentLinks({ ...residualInput, manualLinks:
 assert.equal(residualConfirmed.balances[0].netShippedQuantity, 200);
 assert.equal(residualConfirmed.balances[0].remainingQuantity, 0, 'administrator confirmation must consume the residual candidate');
 
+const codeConflict = buildFulfillmentLinks({
+  orderGroups: [{ historicalOrderGroupId: 'CG1', orderDate: '2026-08-12', customerName: '담솥', normalizedCustomerName: '담솥', status: 'ACTIVE' }],
+  orderLines: [{ historicalOrderLineId: 'CO1', historicalOrderGroupId: 'CG1', customerName: '담솥', orderDate: '2026-08-12', productCode: 'ORDER-CODE', productName: '대파', quantity: 2, rawUnit: '단' }],
+  salesDocuments: [{ salesDocumentId: 'CD1', salesDate: '2026-08-13', customerName: '담솥' }],
+  salesLines: [{ salesLineId: 'CS1', salesDocumentId: 'CD1', productCode: 'SALES-CODE', productName: '대파', quantity: 2, unit: '단' }],
+  settings: { cutoffHour: 12, cutoffMinute: 0, holidays: [] }
+});
+assert.equal(codeConflict.links.some(row => row.historicalOrderLineId === 'CO1' && row.salesLineId === 'CS1'), false, '서로 다른 상품코드는 같은 품명이어도 자동·잔여 연결하면 안 된다.');
+assert.equal(codeConflict.balances[0].remainingQuantity, 2, '상품코드 충돌은 미출고 잔량을 차감하면 안 된다.');
+
 const netResult = buildFulfillmentLinks({
   orderGroups: [{ historicalOrderGroupId: 'NG1', orderDate: '2026-08-12', customerName: '담솥', normalizedCustomerName: '담솥', status: 'ACTIVE' }],
   orderLines: [{ historicalOrderLineId: 'NO1', historicalOrderGroupId: 'NG1', customerName: '담솥', productCode: 'P1', productName: '대파', quantity: 10 }],
@@ -120,12 +130,17 @@ assert.equal(deactivateEvidenceMapping(lifecycleMapping, '2026-08-14T00:00:00.00
 
 const evidenceLinks = [1, 2, 3].map(index => ({
   fulfillmentLinkId: `F${index}`, historicalOrderLineId: `EO${index}`, salesLineId: `ES${index}`,
-  status: LINK_STATUS.STRONG, orderDate: `2026-08-${10 + index}`, customerName: '담솥', productCode: 'P1'
+  status: LINK_STATUS.STRONG, allocatedQuantity: 1, orderDate: `2026-08-${10 + index}`, customerName: '담솥', productCode: 'P1'
 }));
 const evidenceOrders = [1, 2, 3].map(index => ({ historicalOrderLineId: `EO${index}`, customerName: '담솥', rawExpression: '대파 두단', orderDate: `2026-08-${10 + index}` }));
 const evidenceSales = [1, 2, 3].map(index => ({ salesLineId: `ES${index}`, productCode: 'P1', productName: '대파' }));
 const evidence = buildParserEvidence({ links: evidenceLinks, orderLines: evidenceOrders, salesLines: evidenceSales });
 assert.equal(evidence[0].status, 'READY_FOR_ADMIN_CONFIRMATION');
+assert.equal(buildParserEvidence({
+  links: [{ ...evidenceLinks[0], fulfillmentLinkId: 'REV-1', allocatedQuantity: -1, method: 'NEGATIVE_SALES_REVERSAL' }],
+  orderLines: evidenceOrders,
+  salesLines: evidenceSales
+}).length, 0, '반품·취소 역분개는 파서사전 근거로 학습하면 안 된다.');
 
 for (const path of [
   'orderq/collector.html', 'orderq/collector-ui.js', 'orderq/history-collector/history-repository.js',
@@ -153,6 +168,6 @@ assert.match(collectorUi, /unlinkFulfillmentLink/);
 assert.match(collectorUi, /cancelParserEvidenceConfirmation/);
 const entry = await readFile(new URL('../orderq/index.html', import.meta.url), 'utf8');
 assert.match(entry, /collector\.html/);
-assert.match(entry, /vNext 0\.4\.1/);
+assert.match(entry, /vNext 0\.4\.2/);
 
 console.log('PASS: ORDER Q history collector, flexible cutoff, fulfillment and evidence contracts');

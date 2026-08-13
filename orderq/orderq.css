@@ -56,6 +56,13 @@ td input:focus, td select:focus { outline: none; background: #f0fdfa; border-col
 .row-status { display: inline-flex; padding: 3px 7px; border-radius: 999px; font-size: 10px; font-weight: 900; white-space: nowrap; }
 .row-status.matched { background: var(--green-bg); color: var(--green); }
 .row-status.failed { background: var(--amber-bg); color: var(--amber); }
+.product-suggestions { position: fixed; z-index: 1000; max-height: 280px; overflow: auto; padding: 5px; border: 1px solid #94a3b8; border-radius: 9px; background: white; box-shadow: 0 18px 38px #0f172a2a; }
+.product-suggestion { width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 3px 12px; padding: 9px 10px; border: 0; border-radius: 6px; background: white; color: var(--ink); text-align: left; }
+.product-suggestion:hover, .product-suggestion.active { background: #ecfeff; }
+.product-suggestion strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.product-suggestion span { grid-column: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 11px; }
+.product-suggestion em { grid-column: 2; grid-row: 1 / span 2; align-self: center; color: var(--teal); font-size: 10px; font-style: normal; font-weight: 800; white-space: nowrap; }
+.product-suggestion-empty { padding: 14px 12px; color: var(--amber); font-size: 11px; font-weight: 800; }
 .order-status { font-weight: 900; font-size: 11px; }
 .order-status.PARTIAL, .order-status.MATCH_FAILED { color: var(--amber); }
 .order-status.CANCELLED { color: var(--red); }

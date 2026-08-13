@@ -68,7 +68,9 @@ function normalizeItem(input, orderId, previous = null) {
   const quantity = asNumberOrNull(input.quantity);
   const rawUnit = String(input.rawUnit ?? '').trim();
   const finalUnit = String(input.finalUnit ?? rawUnit).trim();
-  const hasProductIdentity = Boolean(itemCode && itemName);
+  const requestedProductId = String(input.productId ?? '').trim();
+  const productId = requestedProductId && !requestedProductId.startsWith('CODE:') ? requestedProductId : null;
+  const hasProductIdentity = Boolean(productId && itemCode && itemName);
   const requestedStatus = input.matchStatus;
   const matchStatus = requestedStatus === MATCH_STATUS.EXCLUDED
     ? MATCH_STATUS.EXCLUDED
@@ -78,7 +80,7 @@ function normalizeItem(input, orderId, previous = null) {
     orderItemId: previous?.orderItemId || input.orderItemId || newId('OI'),
     orderId,
     lineNo: Number(input.lineNo) || 0,
-    productId: input.productId || (itemCode ? `CODE:${itemCode}` : null),
+    productId,
     itemCode,
     itemName,
     specification: String(input.specification ?? '').trim(),
@@ -93,7 +95,7 @@ function normalizeItem(input, orderId, previous = null) {
     description: String(input.description ?? '').trim(),
     noticePrice: asNumberOrNull(input.noticePrice),
     matchStatus,
-    matchSource: input.matchSource || (hasProductIdentity ? 'MANUAL' : 'UNRESOLVED'),
+    matchSource: input.matchSource || (hasProductIdentity ? 'MASTER_SELECTED' : 'UNRESOLVED'),
     updatedAt: nowIso(),
     createdAt: previous?.createdAt || nowIso()
   };

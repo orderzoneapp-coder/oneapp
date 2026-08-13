@@ -1,0 +1,191 @@
+import { STORE, getAll, normalizeText } from './orderq-db.js';
+
+const COMMON_MASTER_DB = 'MerchOpsDB';
+const COMMON_MASTER_STORE = 'master_products';
+const COMMON_MASTER_SNAPSHOT_KEYS = ['merchMaster_v870', 'master_products'];
+
+function firstValue(source, keys, fallback = '') {
+  for (const key of keys) {
+    const value = source?.[key];
+    if (value !== undefined && value !== null && String(value).trim() !== '') return String(value).trim();
+  }
+  return String(fallback || '').trim();
+}
+
+function stableProductId(code, name, specification) {
+  if (code) return `PRD-${code}`;
+  let hash = 2166136261;
+  for (const char of `${normalizeText(name)}|${normalizeText(specification)}`) {
+    hash ^= char.charCodeAt(0);
+    hash = Math.imul(hash, 16777619);
+  }
+  return `PRD-MASTER-${(hash >>> 0).toString(16).padStart(8, '0')}`;
+}
+
+export function normalizeMasterProduct(raw = {}, fallbackCode = '', source = 'COMMON_MASTER') {
+  const itemCode = firstValue(raw, ['itemCode', 'productCode', '코드', '품목코드', '상품코드'], fallbackCode);
+  const itemName = firstValue(raw, ['itemName', 'productName', '품목명', '상품명', '제품명', '품명']);
+  const specification = firstValue(raw, ['specification', 'spec', '규격', '규격명']);
+  const finalUnit = firstValue(raw, ['finalUnit', 'unit', '업무단위', '단위']);
+  const secondaryName = firstValue(raw, ['secondaryName', 'secondName', '제2품명', '제2상품명', '약칭', '별칭']);
+  const searchInfo = firstValue(raw, ['searchInfo', 'searchKeywords', '검색창정보', '검색어등록', '검색어', '간단설명']);
+  if (!itemCode && !itemName) return null;
+  return {
+    productId: firstValue(raw, ['productId']) || stableProductId(itemCode, itemName, specification),
+    itemCode,
+    itemName,
+    secondaryName,
+    searchInfo,
+    specification,
+    finalUnit,
+    status: firstValue(raw, ['status', '상태'], 'ACTIVE'),
+    source,
+    raw
+  };
+}
+
+function normalizeCollection(value, source) {
+  if (Array.isArray(value)) return value.map(item => normalizeMasterProduct(item, '', source)).filter(Boolean);
+  if (value && typeof value === 'object') {
+    return Object.entries(value).map(([key, item]) => normalizeMasterProduct(item, key, source)).filter(Boolean);
+  }
+  return [];
+}
+
+export function mergeProductCatalog(commonProducts = [], orderQProducts = []) {
+  const catalog = new Map();
+  const add = product => {
+    if (!product || String(product.status || 'ACTIVE').toUpperCase() === 'INACTIVE') return;
+    const key = normalizeText(product.itemCode) || `${normalizeText(product.itemName)}|${normalizeText(product.specification)}`;
+    if (!key || catalog.has(key)) return;
+    catalog.set(key, product);
+  };
+  commonProducts.forEach(add);
+  orderQProducts.forEach(add);
+  return [...catalog.values()];
+}
+
+function diceSimilarity(left, right) {
+  const a = normalizeText(left);
+  const b = normalizeText(right);
+  if (!a || !b) return 0;
+  if (a === b) return 1;
+  if (a.length < 2 || b.length < 2) return a.includes(b) || b.includes(a) ? 0.7 : 0;
+  const pairs = new Map();
+  for (let index = 0; index < a.length - 1; index++) {
+    const pair = a.slice(index, index + 2);
+    pairs.set(pair, (pairs.get(pair) || 0) + 1);
+  }
+  let overlap = 0;
+  for (let index = 0; index < b.length - 1; index++) {
+    const pair = b.slice(index, index + 2);
+    const count = pairs.get(pair) || 0;
+    if (!count) continue;
+    overlap += 1;
+    pairs.set(pair, count - 1);
+  }
+  return (2 * overlap) / (a.length + b.length - 2);
+}
+
+function productScore(query, product) {
+  const normalized = normalizeText(query);
+  if (!normalized) return 0;
+  const code = normalizeText(product.itemCode);
+  const name = normalizeText(product.itemName);
+  const secondary = normalizeText(product.secondaryName);
+  const info = normalizeText(product.searchInfo);
+  const specification = normalizeText(product.specification);
+  if (code === normalized) return 1000;
+  if (name === normalized) return 960;
+  if (secondary === normalized || info === normalized) return 930;
+  if (code.startsWith(normalized)) return 880 - Math.min(100, code.length - normalized.length);
+  if (name.startsWith(normalized)) return 840 - Math.min(100, name.length - normalized.length);
+  if (code.includes(normalized)) return 800;
+  if (name.includes(normalized)) return 760;
+  if (secondary.includes(normalized) || info.includes(normalized)) return 720;
+  if (specification.includes(normalized)) return 620;
+  const similarity = Math.max(
+    diceSimilarity(normalized, name),
+    diceSimilarity(normalized, secondary),
+    diceSimilarity(normalized, info)
+  );
+  return similarity >= 0.38 ? Math.round(300 + similarity * 300) : 0;
+}
+
+export function searchProductCatalog(query, catalog = [], limit = 8) {
+  return catalog
+    .map(product => ({ product, score: productScore(query, product) }))
+    .filter(row => row.score > 0)
+    .sort((left, right) => right.score - left.score
+      || String(left.product.itemCode).localeCompare(String(right.product.itemCode), 'ko'))
+    .slice(0, limit)
+    .map(row => ({ ...row.product, score: row.score }));
+}
+
+async function readCommonMasterIndexedDb() {
+  if (!globalThis.indexedDB) return [];
+  return new Promise((resolve, reject) => {
+    let createdDuringOpen = false;
+    const request = indexedDB.open(COMMON_MASTER_DB);
+    request.onupgradeneeded = event => {
+      createdDuringOpen = true;
+      try { event.target.transaction.abort(); } catch (_) {}
+    };
+    request.onerror = () => {
+      if (createdDuringOpen || request.error?.name === 'AbortError') resolve([]);
+      else reject(request.error || new Error('공통 상품 마스터를 열지 못했습니다.'));
+    };
+    request.onsuccess = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains(COMMON_MASTER_STORE)) {
+        db.close();
+        resolve([]);
+        return;
+      }
+      const transaction = db.transaction(COMMON_MASTER_STORE, 'readonly');
+      const read = transaction.objectStore(COMMON_MASTER_STORE).getAll();
+      read.onsuccess = () => {
+        db.close();
+        resolve(normalizeCollection(read.result, 'COMMON_MASTER'));
+      };
+      read.onerror = () => {
+        db.close();
+        reject(read.error || transaction.error || new Error('공통 상품 마스터 조회에 실패했습니다.'));
+      };
+    };
+  });
+}
+
+function readCommonMasterLocalStorage() {
+  if (!globalThis.localStorage) return [];
+  for (const key of COMMON_MASTER_SNAPSHOT_KEYS) {
+    try {
+      const products = normalizeCollection(JSON.parse(localStorage.getItem(key) || 'null'), 'COMMON_MASTER');
+      if (products.length) return products;
+    } catch (_) {}
+  }
+  return [];
+}
+
+export async function loadProductCatalog() {
+  const errors = [];
+  let commonProducts = [];
+  try { commonProducts = await readCommonMasterIndexedDb(); }
+  catch (error) { errors.push(error.message || String(error)); }
+  if (!commonProducts.length) commonProducts = readCommonMasterLocalStorage();
+
+  let orderQProducts = [];
+  try {
+    orderQProducts = (await getAll(STORE.PRODUCTS))
+      .map(product => normalizeMasterProduct(product, product.itemCode, 'ORDERQ_HISTORY'))
+      .filter(Boolean);
+  } catch (error) {
+    errors.push(error.message || String(error));
+  }
+  return {
+    products: mergeProductCatalog(commonProducts, orderQProducts),
+    commonCount: commonProducts.length,
+    orderQCount: orderQProducts.length,
+    errors
+  };
+}
