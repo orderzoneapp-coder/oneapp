@@ -1,0 +1,81 @@
+# ORDER Q vNext 개발 로드맵
+
+Version: 0.1.0
+Date: 2026-08-13
+
+## 기본 원칙
+
+- 기존 `orderops/` 및 루트 `orderops_list.html` 소스는 변경하지 않는다.
+- 신규 ORDER Q는 `/orderq/` 경로에서 독립 구축한다.
+- 주문 데이터의 중심키는 `customerId`, `orderId`, `orderItemId`다.
+- 원문/파서 예상/매칭 결과/관리자 확정/업무 반영값을 구분한다.
+- 매칭실패가 있어도 매칭완료 상품의 처리를 막지 않는다.
+- 주문 수정·취소는 삭제가 아니라 Revision/Event로 보존한다.
+- 로컬은 IndexedDB, 클라우드는 Sync Adapter를 거쳐 연결하고 추후 Server API/PostgreSQL로 교체 가능하게 한다.
+
+## 1단계 — 독립 기반 + 수기 주문 Vertical Slice
+
+목표: 새로운 URL에서 공통 주문원장이 실제 동작하는 최소 완성 흐름을 만든다.
+
+- `/orderq/index.html` 신규 주문현황
+- `/orderq/input.html` 신규 수기 주문서
+- IndexedDB `oneapp-orderq-vnext` 구축
+- Customer / Order / OrderItem / Event / Mapping / SyncQueue 스키마 생성
+- Order Intake Engine 구축
+- 신규 주문 저장
+- 주문서 재접속 및 수정 저장
+- 취소 처리
+- `revision` 기반 동시수정 충돌 차단
+- 매칭완료/매칭실패 상품을 같은 주문에 함께 저장
+- 매칭실패 때문에 주문 전체 저장을 차단하지 않음
+- 클라우드 동기화를 위한 `syncQueue` 적재
+
+완료조건: 같은 브라우저에서 신규 주문 → 목록 확인 → 주문서 재접속 → 수정 → 충돌 검증 → 취소가 동작한다.
+
+## 2단계 — Google Sheet Cloud Sync
+
+- 기존 ONEAPP 클라우드 방식과 분리된 ORDER Q vNext Cloud Adapter
+- 목적별 시트 자동 생성
+- ORDER / ORDER_ITEM / ORDER_EVENT
+- CUSTOMER_MASTER / CUSTOMER_ALIAS_MAPPING
+- PRODUCT_MAPPING / UNIT_MAPPING / MAPPING_EVENT
+- SYNC_META
+- 증분 Push/Pull
+- 기기간 `revision` 충돌 검증
+- 서버 전환을 고려한 Adapter 계약 고정
+
+## 3단계 — 카카오/일반 텍스트 SmartParser
+
+- 카카오 대화 복사·붙여넣기
+- 주문 여부를 상품 파싱보다 먼저 판정
+- 발신자/시간/대화 Context 보존
+- 거래처 매핑
+- 상품/규격/수량/단위 파싱
+- 거래처별 → 출처별 → 공통 순 후보 탐색
+- 높은 신뢰도 자동매칭, 낮은 신뢰도 매칭실패 저장
+
+## 4단계 — 매칭실패 집중 검수
+
+- 매칭실패 집계
+- 원문/대화 Context 유지
+- 실패 항목 터치 → 후보/최근거래/마스터 검색
+- 관리자 한 번 선택으로 매칭 완료
+- 필요 시 `[계속 적용]` 짧은 확인
+- 동일/유사 실패건 적용범위 표시 후 일괄 적용
+- 거래처 별칭·상품 표현 사전 누적
+
+## 5단계 — 주문서 이미지 OCR
+
+- 텍스트형 주문 이미지 OCR
+- 이미지 원본 보존
+- 행/영역 구조화
+- OCR 결과를 3단계 SmartParser Core에 전달
+- OCR 오독 → 관리자 수정 → 별칭/매핑사전 누적
+
+## 6단계 — ERP 거래처원장 / Transaction Intelligence
+
+- ERP 판매현황은 거래처원장 기준 별도 구축
+- 매핑DB와 ERP 원장을 Customer ID/Product ID로 연결
+- 거래처별 최근성/빈도/반복상품/단위/상품군 Profile 생성
+- 신규 거래처는 출처/유사군/공통정보를 보조 근거로 사용
+- KPI: 거래처 자동식별률, 상품 1차 매칭률, 매칭실패율, 관리자 수정률, 주문서 자동완성률

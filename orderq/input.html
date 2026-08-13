@@ -1,0 +1,316 @@
+<!doctype html>
+<html lang="ko" translate="no">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="google" content="notranslate">
+  <title>ONEAPP ORDER Q vNext · 수기 주문</title>
+  <link rel="stylesheet" href="./orderq.css">
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <div class="brand">
+        <strong>ONEAPP</strong>
+        <span class="logo-frame" aria-hidden="true"><img src="../assets/order-q-logo.png" alt=""></span>
+        <span class="badge">vNext 0.1</span>
+        <span id="pageMode">수기 주문</span>
+      </div>
+      <div class="top-actions">
+        <a class="btn dark" href="./index.html">주문현황</a>
+        <button class="btn primary" id="saveTopBtn" type="button">저장</button>
+      </div>
+    </header>
+    <main class="panel">
+      <p class="notice">1단계: 수기입력 + 공통 주문원장 + Revision 충돌관리. 품목코드와 품목명이 있으면 매칭완료, 하나라도 없으면 매칭실패로 저장합니다.</p>
+      <div id="message" class="message"></div>
+
+      <section class="form-grid">
+        <div class="field">
+          <label for="orderDate">일자</label>
+          <input class="control" id="orderDate" type="date">
+        </div>
+        <div class="field">
+          <label for="customerName">거래처</label>
+          <input class="control" id="customerName" type="text" placeholder="거래처명" autocomplete="off">
+        </div>
+        <div class="field">
+          <label for="warehouse">출하창고</label>
+          <input class="control" id="warehouse" type="text" placeholder="출하창고">
+        </div>
+        <div class="field">
+          <label for="transactionType">거래유형</label>
+          <select class="control" id="transactionType">
+            <option value="기타">기타</option>
+            <option value="카드">카드</option>
+            <option value="현금">현금</option>
+            <option value="현금영수증">현금영수증</option>
+            <option value="사내사용">사내사용</option>
+          </select>
+        </div>
+        <div class="field wide">
+          <label for="orderMessage">전하실말씀</label>
+          <input class="control" id="orderMessage" type="text" placeholder="전하실말씀">
+        </div>
+        <div class="field wide">
+          <label>주문 식별정보</label>
+          <div class="control" id="orderMeta">신규 주문 · 저장 전</div>
+        </div>
+      </section>
+
+      <div class="toolbar">
+        <button class="btn" id="addRowBtn" type="button">+ 행 추가</button>
+        <button class="btn" id="removeRowsBtn" type="button">선택행 삭제</button>
+        <span class="spacer"></span>
+        <span class="status">매칭실패도 주문과 함께 저장됩니다.</span>
+      </div>
+
+      <div class="table-wrap">
+        <table id="orderTable">
+          <thead>
+            <tr>
+              <th style="width:44px">선택</th>
+              <th>품목코드</th>
+              <th>품목명</th>
+              <th>규격</th>
+              <th style="width:88px">수량</th>
+              <th style="width:82px">원단위</th>
+              <th style="width:82px">업무단위</th>
+              <th style="width:100px">단가</th>
+              <th>메모</th>
+              <th style="width:90px">매칭</th>
+            </tr>
+          </thead>
+          <tbody id="itemRows"></tbody>
+        </table>
+      </div>
+      <div class="summary">
+        <span id="totalRows">상품 0건</span>
+        <span id="matchedRows">매칭완료 0건</span>
+        <span id="failedRows">매칭실패 0건</span>
+      </div>
+      <div class="bottom">
+        <button class="btn" id="addRowBottomBtn" type="button">+ 행 추가</button>
+        <span class="spacer"></span>
+        <button class="btn danger" id="cancelOrderBtn" type="button" hidden>주문 취소</button>
+        <button class="btn primary" id="saveBottomBtn" type="button">저장</button>
+      </div>
+    </main>
+  </div>
+
+  <script type="module">
+    import {
+      createOrder, updateOrder, cancelOrder, getOrder, subscribeOrderChanges,
+      OrderRevisionConflictError, MATCH_STATUS
+    } from './order-intake-engine.js';
+
+    const params = new URLSearchParams(location.search);
+    const editingOrderId = params.get('orderId');
+    let loadedRevision = null;
+    let loadedCustomerId = null;
+
+    const itemRows = document.getElementById('itemRows');
+    const message = document.getElementById('message');
+    const pageMode = document.getElementById('pageMode');
+    const orderMeta = document.getElementById('orderMeta');
+    const cancelButton = document.getElementById('cancelOrderBtn');
+
+    function showMessage(text, type = 'info') {
+      message.textContent = text;
+      message.className = `message show ${type}`;
+    }
+
+    function todayLocal() {
+      const now = new Date();
+      const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
+      return local.toISOString().slice(0, 10);
+    }
+
+    function rowTemplate(item = {}) {
+      const tr = document.createElement('tr');
+      if (item.orderItemId) tr.dataset.orderItemId = item.orderItemId;
+      tr.innerHTML = `
+        <td class="center"><input type="checkbox" data-role="select"></td>
+        <td><input data-field="itemCode" value=""></td>
+        <td><input data-field="itemName" value=""></td>
+        <td><input data-field="specification" value=""></td>
+        <td><input class="num" data-field="quantity" type="number" step="any" value=""></td>
+        <td><input data-field="rawUnit" value=""></td>
+        <td><input data-field="finalUnit" value=""></td>
+        <td><input class="num" data-field="price" type="number" step="any" value=""></td>
+        <td><input data-field="memo" value=""></td>
+        <td class="center"><span data-role="matchStatus" class="row-status failed">매칭실패</span></td>`;
+      const set = (field, value) => { const el = tr.querySelector(`[data-field="${field}"]`); if (el) el.value = value ?? ''; };
+      set('itemCode', item.itemCode);
+      set('itemName', item.itemName);
+      set('specification', item.specification);
+      set('quantity', item.finalQuantity ?? item.rawQuantity ?? item.quantity);
+      set('rawUnit', item.rawUnit);
+      set('finalUnit', item.finalUnit || item.rawUnit);
+      set('price', item.price);
+      set('memo', item.memo);
+      refreshRowStatus(tr);
+      return tr;
+    }
+
+    function refreshRowStatus(tr) {
+      const code = tr.querySelector('[data-field="itemCode"]').value.trim();
+      const name = tr.querySelector('[data-field="itemName"]').value.trim();
+      const badge = tr.querySelector('[data-role="matchStatus"]');
+      const matched = Boolean(code && name);
+      badge.textContent = matched ? '매칭완료' : '매칭실패';
+      badge.className = `row-status ${matched ? 'matched' : 'failed'}`;
+      refreshSummary();
+    }
+
+    function addRow(item = {}) { itemRows.appendChild(rowTemplate(item)); refreshSummary(); }
+
+    function refreshSummary() {
+      const rows = [...itemRows.querySelectorAll('tr')].filter(row => {
+        return [...row.querySelectorAll('[data-field]')].some(el => String(el.value || '').trim());
+      });
+      const matched = rows.filter(row => row.querySelector('[data-field="itemCode"]').value.trim() && row.querySelector('[data-field="itemName"]').value.trim()).length;
+      document.getElementById('totalRows').textContent = `상품 ${rows.length}건`;
+      document.getElementById('matchedRows').textContent = `매칭완료 ${matched}건`;
+      document.getElementById('failedRows').textContent = `매칭실패 ${rows.length - matched}건`;
+    }
+
+    function readItems() {
+      return [...itemRows.querySelectorAll('tr')].map((row, index) => {
+        const get = field => row.querySelector(`[data-field="${field}"]`)?.value ?? '';
+        const quantity = get('quantity');
+        const price = get('price');
+        return {
+          orderItemId: row.dataset.orderItemId || undefined,
+          lineNo: index + 1,
+          itemCode: get('itemCode'),
+          itemName: get('itemName'),
+          specification: get('specification'),
+          quantity,
+          rawQuantity: quantity,
+          finalQuantity: quantity,
+          rawUnit: get('rawUnit'),
+          finalUnit: get('finalUnit') || get('rawUnit'),
+          price,
+          supplyAmount: quantity !== '' && price !== '' ? Number(quantity) * Number(price) : null,
+          memo: get('memo'),
+          rawText: '',
+          matchStatus: get('itemCode').trim() && get('itemName').trim() ? MATCH_STATUS.MATCHED : MATCH_STATUS.MATCH_FAILED
+        };
+      }).filter(item => item.itemCode || item.itemName || item.quantity || item.rawUnit || item.memo);
+    }
+
+    function readPayload() {
+      return {
+        orderDate: document.getElementById('orderDate').value,
+        customerId: loadedCustomerId,
+        customerName: document.getElementById('customerName').value,
+        warehouse: document.getElementById('warehouse').value,
+        transactionType: document.getElementById('transactionType').value,
+        orderMessage: document.getElementById('orderMessage').value,
+        sourceType: 'MANUAL',
+        items: readItems()
+      };
+    }
+
+    async function loadEditingOrder() {
+      if (!editingOrderId) {
+        document.getElementById('orderDate').value = todayLocal();
+        addRow(); addRow(); addRow();
+        return;
+      }
+      const data = await getOrder(editingOrderId);
+      if (!data) {
+        showMessage('주문을 찾을 수 없습니다.', 'error');
+        return;
+      }
+      const { order, items } = data;
+      loadedRevision = order.revision;
+      loadedCustomerId = order.customerId;
+      pageMode.textContent = '주문서 수정';
+      orderMeta.textContent = `${order.orderId} · Revision ${order.revision} · ${order.status}`;
+      document.getElementById('orderDate').value = order.orderDate || todayLocal();
+      document.getElementById('customerName').value = order.customerName || '';
+      document.getElementById('warehouse').value = order.warehouse || '';
+      document.getElementById('transactionType').value = order.transactionType || '기타';
+      document.getElementById('orderMessage').value = order.orderMessage || '';
+      itemRows.innerHTML = '';
+      items.forEach(addRow);
+      addRow();
+      cancelButton.hidden = order.status === 'CANCELLED';
+      if (order.status === 'CANCELLED') {
+        showMessage('취소된 주문입니다. 이 주문은 수정 저장할 수 없습니다.', 'warn');
+        document.getElementById('saveTopBtn').disabled = true;
+        document.getElementById('saveBottomBtn').disabled = true;
+      }
+    }
+
+    async function save() {
+      const payload = readPayload();
+      if (!payload.orderDate) return showMessage('주문일자를 입력하세요.', 'error');
+      if (!payload.customerName.trim()) return showMessage('거래처를 입력하세요.', 'error');
+      if (!payload.items.length) return showMessage('주문상품을 1개 이상 입력하세요.', 'error');
+      try {
+        if (editingOrderId) {
+          const result = await updateOrder(editingOrderId, loadedRevision, payload);
+          loadedRevision = result.order.revision;
+          loadedCustomerId = result.order.customerId;
+          orderMeta.textContent = `${result.order.orderId} · Revision ${result.order.revision} · ${result.order.status}`;
+          showMessage(`저장 완료 · Revision ${result.order.revision}`, 'info');
+        } else {
+          const result = await createOrder(payload);
+          location.replace(`./input.html?orderId=${encodeURIComponent(result.order.orderId)}`);
+        }
+      } catch (error) {
+        if (error instanceof OrderRevisionConflictError || error.code === 'ORDER_REVISION_CONFLICT') {
+          showMessage('이 주문은 다른 곳에서 이미 수정되었습니다. 최신 내용을 확인한 후 다시 입력·저장해 주세요. 현재 입력내용은 이 화면에 그대로 유지됩니다.', 'warn');
+          orderMeta.textContent = `${editingOrderId} · 현재 화면 r${loadedRevision} / 최신 r${error.latestOrder?.revision ?? '?'}`;
+          return;
+        }
+        showMessage(error.message || String(error), 'error');
+      }
+    }
+
+    itemRows.addEventListener('input', event => {
+      const row = event.target.closest('tr');
+      if (row && (event.target.dataset.field === 'itemCode' || event.target.dataset.field === 'itemName')) refreshRowStatus(row);
+      else refreshSummary();
+    });
+    document.getElementById('addRowBtn').addEventListener('click', () => addRow());
+    document.getElementById('addRowBottomBtn').addEventListener('click', () => addRow());
+    document.getElementById('removeRowsBtn').addEventListener('click', () => {
+      [...itemRows.querySelectorAll('tr')].filter(row => row.querySelector('[data-role="select"]').checked).forEach(row => row.remove());
+      if (!itemRows.children.length) addRow();
+      refreshSummary();
+    });
+    document.getElementById('saveTopBtn').addEventListener('click', save);
+    document.getElementById('saveBottomBtn').addEventListener('click', save);
+    cancelButton.addEventListener('click', async () => {
+      if (!editingOrderId || loadedRevision == null) return;
+      if (!confirm('이 주문을 취소하시겠습니까? 주문 이력은 삭제하지 않고 취소 상태로 보존합니다.')) return;
+      try {
+        const result = await cancelOrder(editingOrderId, loadedRevision);
+        loadedRevision = result.order.revision;
+        orderMeta.textContent = `${result.order.orderId} · Revision ${result.order.revision} · CANCELLED`;
+        showMessage('주문이 취소되었습니다. 이력은 보존됩니다.', 'warn');
+        cancelButton.hidden = true;
+        document.getElementById('saveTopBtn').disabled = true;
+        document.getElementById('saveBottomBtn').disabled = true;
+      } catch (error) {
+        if (error instanceof OrderRevisionConflictError || error.code === 'ORDER_REVISION_CONFLICT') {
+          showMessage('다른 곳에서 먼저 수정되어 취소할 수 없습니다. 최신 주문을 다시 확인하세요.', 'warn');
+        } else showMessage(error.message || String(error), 'error');
+      }
+    });
+
+    subscribeOrderChanges(change => {
+      if (!editingOrderId || change.orderId !== editingOrderId) return;
+      if (change.revision > (loadedRevision || 0)) {
+        showMessage(`다른 화면에서 이 주문이 Revision ${change.revision}으로 변경되었습니다. 현재 입력내용은 유지되지만 저장 시 최신본 확인이 필요합니다.`, 'warn');
+      }
+    });
+
+    loadEditingOrder().catch(error => showMessage(error.message || String(error), 'error'));
+  </script>
+</body>
+</html>
