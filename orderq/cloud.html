@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="ko" translate="no">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="google" content="notranslate">
+  <title>ONEAPP ORDER Q vNext · 클라우드</title>
+  <link rel="stylesheet" href="./orderq.css">
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <div class="brand">
+        <strong>ONEAPP</strong>
+        <span class="logo-frame" aria-hidden="true"><img src="../assets/order-q-logo.png" alt=""></span>
+        <span class="badge">vNext 0.2</span>
+        <span>클라우드 동기화</span>
+      </div>
+      <div class="top-actions">
+        <a class="btn dark" href="./index.html">주문현황</a>
+        <button class="btn primary" id="syncBtn" type="button">지금 동기화</button>
+      </div>
+    </header>
+    <main class="panel">
+      <p class="notice">현재는 IndexedDB가 로컬 업무 DB이고 Google Sheet는 중앙 동기화 계층입니다. 서버 구축 후 Cloud Adapter만 Server API로 교체할 수 있게 분리되어 있습니다.</p>
+      <div id="message" class="message"></div>
+
+      <section class="form-grid">
+        <div class="field wide">
+          <label for="cloudUrl">기존 ONEAPP Apps Script Web App URL</label>
+          <input class="control" id="cloudUrl" type="url" placeholder="https://script.google.com/macros/s/.../exec">
+        </div>
+        <div class="field">
+          <label>Device ID</label>
+          <div class="control" id="deviceId"></div>
+        </div>
+        <div class="field">
+          <label>Cloud Cursor</label>
+          <div class="control" id="cursor"></div>
+        </div>
+      </section>
+
+      <div class="toolbar">
+        <button class="btn" id="saveUrlBtn" type="button">URL 저장</button>
+        <span class="status" id="stateText">상태 확인 중...</span>
+        <span class="spacer"></span>
+        <span class="status">시트는 첫 동기화 때 목적별로 자동 생성됩니다.</span>
+      </div>
+
+      <section class="cloud-grid">
+        <div class="cloud-card">
+          <strong>동기화 대상 시트</strong>
+          <div class="meta-lines">
+            <span>ORDER / ORDER_ITEM / ORDER_EVENT</span>
+            <span>CUSTOMER_MASTER / CUSTOMER_ALIAS_MAPPING</span>
+            <span>PRODUCT_MAPPING / UNIT_MAPPING / MAPPING_EVENT</span>
+            <span>SYNC_META</span>
+          </div>
+        </div>
+        <div class="cloud-card">
+          <strong>충돌 정책</strong>
+          <div class="meta-lines">
+            <span>orderId + revision 기준</span>
+            <span>먼저 저장된 revision 우선</span>
+            <span>후 저장은 자동 덮어쓰기 금지</span>
+            <span>최신본 적용 후 다시 입력·저장</span>
+          </div>
+        </div>
+      </section>
+
+      <div class="toolbar">
+        <strong>충돌 주문</strong>
+        <span class="status">로컬 수정값은 자동으로 삭제하지 않습니다.</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>주문ID</th>
+              <th>내 Revision</th>
+              <th>클라우드 Revision</th>
+              <th>발생시각</th>
+              <th>처리</th>
+            </tr>
+          </thead>
+          <tbody id="conflictRows"></tbody>
+        </table>
+      </div>
+    </main>
+  </div>
+
+  <script type="module">
+    import { getCloudUrl, setCloudUrl } from './orderq-cloud-adapter.js';
+    import { getSyncState, syncNow, acceptRemoteOrder } from './orderq-sync-engine.js';
+
+    const cloudUrl = document.getElementById('cloudUrl');
+    const message = document.getElementById('message');
+    const syncBtn = document.getElementById('syncBtn');
+    const conflictRows = document.getElementById('conflictRows');
+
+    const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+
+    function show(text, type = 'info') {
+      message.textContent = text;
+      message.className = `message show ${type}`;
+    }
+
+    async function render() {
+      const state = await getSyncState();
+      cloudUrl.value = state.cloudUrl || '';
+      document.getElementById('deviceId').textContent = state.deviceId;
+      document.getElementById('cursor').textContent = String(state.cursor);
+      document.getElementById('stateText').textContent = `대기 ${state.pending}건 · 완료 ${state.acked}건 · 충돌 ${state.conflicts.length}건`;
+      if (!state.conflicts.length) {
+        conflictRows.innerHTML = '<tr><td colspan="5" class="empty">현재 충돌 주문이 없습니다.</td></tr>';
+        return;
+      }
+      conflictRows.innerHTML = state.conflicts.map(row => `
+        <tr>
+          <td><a class="order-link" href="./input.html?orderId=${encodeURIComponent(row.entityId)}">${esc(row.entityId)}</a></td>
+          <td class="center">r${esc(row.revision || 0)}</td>
+          <td class="center">r${esc(row.serverRevision || 0)}</td>
+          <td>${esc(row.conflictAt ? new Date(row.conflictAt).toLocaleString('ko-KR', { hour12:false }) : '')}</td>
+          <td class="center"><button class="btn" data-remote="${esc(row.entityId)}">최신본 적용</button></td>
+        </tr>`).join('');
+    }
+
+    document.getElementById('saveUrlBtn').addEventListener('click', async () => {
+      try {
+        setCloudUrl(cloudUrl.value);
+        show('클라우드 URL을 저장했습니다.', 'info');
+        await render();
+      } catch (error) { show(error.message || String(error), 'error'); }
+    });
+
+    syncBtn.addEventListener('click', async () => {
+      if (!getCloudUrl()) return show('먼저 Apps Script Web App URL을 저장하세요.', 'warn');
+      syncBtn.disabled = true;
+      try {
+        const result = await syncNow();
+        await render();
+        const conflicts = result?.push?.conflicts || result?.pull?.conflicts || 0;
+        show(conflicts ? `동기화 완료 · 충돌 ${conflicts}건을 확인하세요.` : '동기화가 완료되었습니다.', conflicts ? 'warn' : 'info');
+      } catch (error) {
+        show(`동기화 실패: ${error.message || error}`, 'error');
+      } finally { syncBtn.disabled = false; }
+    });
+
+    conflictRows.addEventListener('click', async event => {
+      const button = event.target.closest('[data-remote]');
+      if (!button) return;
+      const orderId = button.dataset.remote;
+      if (!confirm('클라우드 최신본을 로컬 기준으로 적용하시겠습니까? 현재 충돌 로컬 저장본은 폐기 표시되고 주문 이력 자체는 클라우드에 유지됩니다.')) return;
+      try {
+        await acceptRemoteOrder(orderId);
+        show('클라우드 최신본을 적용했습니다. 주문서를 다시 열어 필요한 내용을 입력하세요.', 'info');
+        await render();
+      } catch (error) { show(error.message || String(error), 'error'); }
+    });
+
+    render().catch(error => show(error.message || String(error), 'error'));
+  </script>
+</body>
+</html>
