@@ -49,6 +49,7 @@ function productScore(orderLine, salesLine) {
   const orderCode = String(orderLine.productCode || '').trim();
   const salesCode = String(salesLine.productCode || '').trim();
   if (orderCode && salesCode && orderCode === salesCode) return { score: 60, method: 'EXACT_PRODUCT_CODE' };
+  if (orderCode && salesCode && orderCode !== salesCode) return { score: 0, method: 'PRODUCT_CODE_CONFLICT' };
   const orderName = normalizedProductName(orderLine.productName || orderLine.rawExpression);
   const salesName = normalizedProductName(salesLine.productName);
   if (orderName && salesName && orderName === salesName) return { score: 48, method: 'EXACT_NORMALIZED_NAME' };
@@ -300,7 +301,8 @@ export function buildFulfillmentLinks({ orderGroups = [], orderLines = [], sales
       (orderLinesByGroup.get(group.historicalOrderGroupId) || []).forEach(orderLine => {
         const availableOrder = remainingOrder.get(orderLine.historicalOrderLineId) || 0;
         if (availableOrder <= 0 || blockedPairs.has(pairKey(orderLine.historicalOrderLineId, salesLine.salesLineId))) return;
-        if (productScore(orderLine, salesLine).score) return;
+        const product = productScore(orderLine, salesLine);
+        if (product.score || product.method === 'PRODUCT_CODE_CONFLICT') return;
         const orderUnit = unitKey(orderLine);
         const salesUnit = unitKey(salesLine);
         if (orderUnit && salesUnit && orderUnit !== salesUnit) return;

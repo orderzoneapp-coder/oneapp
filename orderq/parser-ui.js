@@ -3,16 +3,12 @@ import { EVENT_TYPE } from './smartparser/order-event-detector.js';
 import { updateParseResult, recordProductMapping } from './smartparser/parser-repository.js';
 import {
   createOrder,
-  updateOrder,
-  cancelOrder,
-  getOrder,
   DuplicateSourceMessageError,
   MATCH_STATUS
 } from './order-intake-engine.js';
 import {
   getDeviceId,
   syncNow,
-  syncBeforeOrderMutation,
   syncAfterLocalMutation
 } from './orderq-sync-engine.js';
 import { getCloudUrl } from './orderq-cloud-adapter.js';
@@ -159,11 +155,15 @@ function readCard(result, card) {
     const get = field => row.querySelector(`[data-field="${field}"]`)?.value ?? '';
     const original = result.parsedLines[Number(row.dataset.lineIndex)] || {};
     const quantity = get('quantity');
-    const matchStatus = get('matchStatus');
+    const productId = get('productId').trim();
+    const requestedMatchStatus = get('matchStatus');
+    const matchStatus = requestedMatchStatus === MATCH_STATUS.MATCHED && !productId
+      ? MATCH_STATUS.MATCH_FAILED
+      : requestedMatchStatus;
     return {
       ...original,
-      productId: get('productId') || (get('itemCode') ? `CODE:${get('itemCode')}` : null),
-      confirmedProductId: get('productId'),
+      productId: productId || null,
+      confirmedProductId: productId,
       itemCode: get('itemCode').trim(),
       itemName: get('itemName').trim(),
       specification: get('specification').trim(),
@@ -206,12 +206,12 @@ function orderItems(lines) {
 }
 
 async function rememberMappings(result, confirmed) {
-  for (const line of confirmed.parsedLines.filter(line => line.rememberMapping && line.itemCode && line.itemName)) {
+  for (const line of confirmed.parsedLines.filter(line => line.rememberMapping && line.productId && line.itemCode && line.itemName)) {
     await recordProductMapping({
       customerId: confirmed.confirmedCustomerId,
       sourceId: result.sourceId,
       rawText: line.productText || line.rawText,
-      productId: line.productId || `CODE:${line.itemCode}`,
+      productId: line.productId,
       itemCode: line.itemCode,
       itemName: line.itemName,
       specification: line.specification,
@@ -235,6 +235,15 @@ async function processCard(parseResultId) {
   button.disabled = true;
   try {
     await updateParseResult(parseResultId, confirmed);
+    if ([EVENT_TYPE.ORDER_UPDATE, EVENT_TYPE.ORDER_CANCEL].includes(confirmed.eventType)) {
+      state.results.set(parseResultId, { ...result, ...confirmed, safetyStatus: 'MANUAL_REVIEW_REQUIRED' });
+      card.classList.remove('done', 'duplicate');
+      card.classList.add('issue');
+      button.textContent = '수기 검수 대기';
+      button.disabled = true;
+      show('변경·취소 메시지는 자동 반영하지 않습니다. 대상 주문 전체를 수기 주문 화면에서 확인한 뒤 수정·취소하세요.', 'warn');
+      return;
+    }
     if (![EVENT_TYPE.ORDER, EVENT_TYPE.ORDER_UPDATE, EVENT_TYPE.ORDER_CANCEL].includes(confirmed.eventType)) {
       state.results.set(parseResultId, { ...result, ...confirmed });
       card.classList.remove('issue', 'duplicate');
@@ -260,24 +269,6 @@ async function processCard(parseResultId) {
         sourceMessageKey: result.sourceMessageKey,
         items: orderItems(confirmed.parsedLines)
       });
-    } else {
-      if (!confirmed.targetOrderId) throw new Error('변경 또는 취소할 대상 주문ID를 입력하세요.');
-      const current = await getOrder(confirmed.targetOrderId);
-      if (!current) throw new Error('대상 주문을 찾을 수 없습니다.');
-      await syncBeforeOrderMutation(current.order.orderId, current.order.revision);
-      if (confirmed.eventType === EVENT_TYPE.ORDER_CANCEL) {
-        saved = await cancelOrder(current.order.orderId, current.order.revision);
-      } else {
-        saved = await updateOrder(current.order.orderId, current.order.revision, {
-          orderDate: current.order.orderDate,
-          customerId: confirmed.confirmedCustomerId || current.order.customerId,
-          customerName: confirmed.confirmedCustomerName || current.order.customerName,
-          warehouse: current.order.warehouse,
-          transactionType: current.order.transactionType,
-          orderMessage: result.rawText,
-          items: orderItems(confirmed.parsedLines)
-        });
-      }
     }
     await rememberMappings(result, confirmed);
     await updateParseResult(parseResultId, {

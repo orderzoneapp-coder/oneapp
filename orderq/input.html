@@ -13,7 +13,7 @@
       <div class="brand">
         <strong>ONEAPP</strong>
         <span class="logo-frame" aria-hidden="true"><img src="../assets/order-q-logo.png" alt=""></span>
-        <span class="badge">vNext 0.4.1</span>
+        <span class="badge">vNext 0.4.2</span>
         <span id="pageMode">수기 주문</span>
       </div>
       <div class="top-actions">
@@ -25,7 +25,7 @@
       </div>
     </header>
     <main class="panel">
-      <p class="notice">수기입력 + 공통 주문원장 + Revision 충돌관리. 클라우드 URL이 설정되어 있으면 저장 전에 최신 revision을 확인하고 저장 후 변경분을 즉시 동기화합니다.</p>
+      <p class="notice">품목코드·품목명에서 공통 상품 마스터를 검색해 선택하세요. 직접입력 상품도 미매칭 상태로 저장할 수 있습니다.</p>
       <div id="message" class="message"></div>
 
       <section class="form-grid">
@@ -65,7 +65,7 @@
         <button class="btn" id="addRowBtn" type="button">+ 행 추가</button>
         <button class="btn" id="removeRowsBtn" type="button">선택행 삭제</button>
         <span class="spacer"></span>
-        <span class="status">매칭실패도 주문과 함께 저장됩니다.</span>
+        <span class="status" id="masterStatus">상품 마스터 불러오는 중…</span>
       </div>
 
       <div class="table-wrap">
@@ -100,6 +100,7 @@
       </div>
     </main>
   </div>
+  <div id="productSuggestions" class="product-suggestions" role="listbox" hidden></div>
 
   <script type="module">
     import {
@@ -110,17 +111,24 @@
       syncBeforeOrderMutation, syncAfterLocalMutation, getSyncState,
       CloudOrderConflictError
     } from './orderq-sync-engine.js';
+    import { loadProductCatalog, searchProductCatalog } from './product-master-search.js';
 
     const params = new URLSearchParams(location.search);
     const editingOrderId = params.get('orderId');
     let loadedRevision = null;
     let loadedCustomerId = null;
+    let productCatalog = [];
+    let activeSearchInput = null;
+    let activeSuggestionIndex = 0;
+    let searchTimer = null;
 
     const itemRows = document.getElementById('itemRows');
     const message = document.getElementById('message');
     const pageMode = document.getElementById('pageMode');
     const orderMeta = document.getElementById('orderMeta');
     const cancelButton = document.getElementById('cancelOrderBtn');
+    const suggestions = document.getElementById('productSuggestions');
+    const masterStatus = document.getElementById('masterStatus');
 
     function showMessage(text, type = 'info') {
       message.textContent = text;
@@ -136,10 +144,13 @@
     function rowTemplate(item = {}) {
       const tr = document.createElement('tr');
       if (item.orderItemId) tr.dataset.orderItemId = item.orderItemId;
+      tr.dataset.productId = String(item.productId || '').startsWith('CODE:') ? '' : (item.productId || '');
+      tr.dataset.matchSource = tr.dataset.productId ? (item.matchSource || 'SAVED_MASTER') : 'MANUAL_UNMATCHED';
+      tr.dataset.rawText = item.rawText || item.itemName || '';
       tr.innerHTML = `
         <td class="center"><input type="checkbox" data-role="select"></td>
-        <td><input data-field="itemCode" value=""></td>
-        <td><input data-field="itemName" value=""></td>
+        <td><input data-field="itemCode" value="" placeholder="코드 검색" autocomplete="off"></td>
+        <td><input data-field="itemName" value="" placeholder="품명·약칭 검색" autocomplete="off"></td>
         <td><input data-field="specification" value=""></td>
         <td><input class="num" data-field="quantity" type="number" step="any" value=""></td>
         <td><input data-field="rawUnit" value=""></td>
@@ -161,10 +172,8 @@
     }
 
     function refreshRowStatus(tr) {
-      const code = tr.querySelector('[data-field="itemCode"]').value.trim();
-      const name = tr.querySelector('[data-field="itemName"]').value.trim();
       const badge = tr.querySelector('[data-role="matchStatus"]');
-      const matched = Boolean(code && name);
+      const matched = Boolean(tr.dataset.productId);
       badge.textContent = matched ? '매칭완료' : '매칭실패';
       badge.className = `row-status ${matched ? 'matched' : 'failed'}`;
       refreshSummary();
@@ -176,7 +185,7 @@
       const rows = [...itemRows.querySelectorAll('tr')].filter(row => {
         return [...row.querySelectorAll('[data-field]')].some(el => String(el.value || '').trim());
       });
-      const matched = rows.filter(row => row.querySelector('[data-field="itemCode"]').value.trim() && row.querySelector('[data-field="itemName"]').value.trim()).length;
+      const matched = rows.filter(row => Boolean(row.dataset.productId)).length;
       document.getElementById('totalRows').textContent = `상품 ${rows.length}건`;
       document.getElementById('matchedRows').textContent = `매칭완료 ${matched}건`;
       document.getElementById('failedRows').textContent = `매칭실패 ${rows.length - matched}건`;
@@ -189,6 +198,7 @@
         const price = get('price');
         return {
           orderItemId: row.dataset.orderItemId || undefined,
+          productId: row.dataset.productId || null,
           lineNo: index + 1,
           itemCode: get('itemCode'),
           itemName: get('itemName'),
@@ -201,8 +211,9 @@
           price,
           supplyAmount: quantity !== '' && price !== '' ? Number(quantity) * Number(price) : null,
           memo: get('memo'),
-          rawText: '',
-          matchStatus: get('itemCode').trim() && get('itemName').trim() ? MATCH_STATUS.MATCHED : MATCH_STATUS.MATCH_FAILED
+          rawText: row.dataset.rawText || get('itemName'),
+          matchSource: row.dataset.matchSource || 'MANUAL_UNMATCHED',
+          matchStatus: row.dataset.productId ? MATCH_STATUS.MATCHED : MATCH_STATUS.MATCH_FAILED
         };
       }).filter(item => item.itemCode || item.itemName || item.quantity || item.rawUnit || item.memo);
     }
@@ -218,6 +229,112 @@
         sourceType: 'MANUAL',
         items: readItems()
       };
+    }
+
+    function closeSuggestions() {
+      suggestions.hidden = true;
+      suggestions.innerHTML = '';
+      suggestions._products = [];
+      activeSearchInput = null;
+      activeSuggestionIndex = 0;
+    }
+
+    function positionSuggestions(input) {
+      const rect = input.getBoundingClientRect();
+      const width = Math.min(620, Math.max(280, window.innerWidth - 24));
+      suggestions.style.width = `${width}px`;
+      suggestions.style.left = `${Math.max(12, Math.min(rect.left, window.innerWidth - width - 12))}px`;
+      suggestions.style.top = `${Math.min(window.innerHeight - 240, rect.bottom + 4)}px`;
+    }
+
+    function markActiveSuggestion() {
+      [...suggestions.querySelectorAll('[data-suggestion-index]')].forEach((button, index) => {
+        button.classList.toggle('active', index === activeSuggestionIndex);
+        button.setAttribute('aria-selected', index === activeSuggestionIndex ? 'true' : 'false');
+      });
+    }
+
+    function showSuggestions(input) {
+      const query = input.value.trim();
+      if (!query || !productCatalog.length) {
+        closeSuggestions();
+        return;
+      }
+      const products = searchProductCatalog(query, productCatalog, 8);
+      suggestions.innerHTML = '';
+      suggestions._products = products;
+      activeSearchInput = input;
+      activeSuggestionIndex = 0;
+      if (!products.length) {
+        const empty = document.createElement('div');
+        empty.className = 'product-suggestion-empty';
+        empty.textContent = '검색 결과 없음 · 직접 입력하면 미매칭으로 저장됩니다.';
+        suggestions.appendChild(empty);
+      } else {
+        products.forEach((product, index) => {
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'product-suggestion';
+          button.dataset.suggestionIndex = String(index);
+          button.setAttribute('role', 'option');
+          const title = document.createElement('strong');
+          title.textContent = `${product.itemCode || '코드없음'} · ${product.itemName || '품명없음'}`;
+          const detail = document.createElement('span');
+          const aliases = [product.secondaryName, product.searchInfo].filter(Boolean).join(' · ');
+          detail.textContent = [product.specification, product.finalUnit, aliases].filter(Boolean).join(' · ') || '추가정보 없음';
+          const source = document.createElement('em');
+          source.textContent = product.source === 'COMMON_MASTER' ? '공통 마스터' : 'ORDER Q 이력';
+          button.append(title, detail, source);
+          suggestions.appendChild(button);
+        });
+        markActiveSuggestion();
+      }
+      positionSuggestions(input);
+      suggestions.hidden = false;
+    }
+
+    function focusQuantity(row) {
+      const quantity = row.querySelector('[data-field="quantity"]');
+      quantity?.focus();
+      quantity?.select();
+    }
+
+    function applyProduct(input, product) {
+      const row = input.closest('tr');
+      if (!row || !product) return;
+      const originalText = row.querySelector('[data-field="itemName"]').value.trim() || input.value.trim();
+      row.dataset.productId = product.productId;
+      row.dataset.matchSource = product.source === 'COMMON_MASTER' ? 'MANUAL_COMMON_MASTER' : 'MANUAL_ORDERQ_MASTER';
+      row.dataset.rawText = originalText || product.itemName;
+      row.querySelector('[data-field="itemCode"]').value = product.itemCode || '';
+      row.querySelector('[data-field="itemName"]').value = product.itemName || '';
+      row.querySelector('[data-field="specification"]').value = product.specification || '';
+      row.querySelector('[data-field="finalUnit"]').value = product.finalUnit || '';
+      if (!row.querySelector('[data-field="rawUnit"]').value) row.querySelector('[data-field="rawUnit"]').value = product.finalUnit || '';
+      closeSuggestions();
+      refreshRowStatus(row);
+      focusQuantity(row);
+    }
+
+    function clearProductMatch(row, sourceInput) {
+      if (!row) return;
+      row.dataset.productId = '';
+      row.dataset.matchSource = 'MANUAL_UNMATCHED';
+      if (sourceInput?.dataset.field === 'itemName') row.dataset.rawText = sourceInput.value.trim();
+      refreshRowStatus(row);
+    }
+
+    async function initializeProductCatalog() {
+      const result = await loadProductCatalog();
+      productCatalog = result.products;
+      if (result.commonCount) {
+        masterStatus.textContent = `공통 상품 마스터 ${result.commonCount.toLocaleString()}건 · 입력 후 후보 선택`;
+      } else if (result.orderQCount) {
+        masterStatus.textContent = `공통 마스터 없음 · ORDER Q 이력 ${result.orderQCount.toLocaleString()}건 검색`;
+      } else {
+        masterStatus.textContent = '상품 마스터 없음 · 직접입력은 미매칭으로 저장';
+      }
+      if (result.errors.length) masterStatus.title = result.errors.join('\n');
     }
 
     async function loadEditingOrder() {
@@ -301,9 +418,47 @@
 
     itemRows.addEventListener('input', event => {
       const row = event.target.closest('tr');
-      if (row && (event.target.dataset.field === 'itemCode' || event.target.dataset.field === 'itemName')) refreshRowStatus(row);
+      if (row && (event.target.dataset.field === 'itemCode' || event.target.dataset.field === 'itemName')) {
+        clearProductMatch(row, event.target);
+        clearTimeout(searchTimer);
+        searchTimer = setTimeout(() => showSuggestions(event.target), 100);
+      }
       else refreshSummary();
     });
+    itemRows.addEventListener('focusin', event => {
+      if (event.target.matches('[data-field="itemCode"], [data-field="itemName"]') && event.target.value.trim()) showSuggestions(event.target);
+    });
+    itemRows.addEventListener('keydown', event => {
+      if (!event.target.matches('[data-field="itemCode"], [data-field="itemName"]')) return;
+      const products = suggestions._products || [];
+      if (suggestions.hidden || activeSearchInput !== event.target) return;
+      if (event.key === 'ArrowDown' && products.length) {
+        event.preventDefault();
+        activeSuggestionIndex = (activeSuggestionIndex + 1) % products.length;
+        markActiveSuggestion();
+      } else if (event.key === 'ArrowUp' && products.length) {
+        event.preventDefault();
+        activeSuggestionIndex = (activeSuggestionIndex - 1 + products.length) % products.length;
+        markActiveSuggestion();
+      } else if (event.key === 'Enter' && products.length) {
+        event.preventDefault();
+        applyProduct(event.target, products[activeSuggestionIndex]);
+      } else if (event.key === 'Escape') {
+        closeSuggestions();
+      }
+    });
+    suggestions.addEventListener('pointerdown', event => {
+      const button = event.target.closest('[data-suggestion-index]');
+      if (!button || !activeSearchInput) return;
+      event.preventDefault();
+      applyProduct(activeSearchInput, suggestions._products?.[Number(button.dataset.suggestionIndex)]);
+    });
+    document.addEventListener('pointerdown', event => {
+      if (suggestions.hidden || suggestions.contains(event.target) || event.target === activeSearchInput) return;
+      closeSuggestions();
+    });
+    window.addEventListener('resize', () => { if (!suggestions.hidden && activeSearchInput) positionSuggestions(activeSearchInput); });
+    window.addEventListener('scroll', () => { if (!suggestions.hidden && activeSearchInput) positionSuggestions(activeSearchInput); }, true);
     document.getElementById('addRowBtn').addEventListener('click', () => addRow());
     document.getElementById('addRowBottomBtn').addEventListener('click', () => addRow());
     document.getElementById('removeRowsBtn').addEventListener('click', () => {
@@ -341,7 +496,8 @@
       }
     });
 
-    loadEditingOrder().catch(error => showMessage(error.message || String(error), 'error'));
+    Promise.all([initializeProductCatalog(), loadEditingOrder()])
+      .catch(error => showMessage(error.message || String(error), 'error'));
   </script>
 </body>
 </html>

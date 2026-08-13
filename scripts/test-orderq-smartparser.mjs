@@ -73,8 +73,9 @@ for (const path of [
 
 const parserUi = await readFile(new URL('../orderq/parser-ui.js', import.meta.url), 'utf8');
 assert.match(parserUi, /createOrder\(/, 'SmartParser must use Order Intake createOrder');
-assert.match(parserUi, /updateOrder\(/, 'SmartParser must use Order Intake updateOrder');
-assert.match(parserUi, /cancelOrder\(/, 'SmartParser must use Order Intake cancelOrder');
+assert.match(parserUi, /MANUAL_REVIEW_REQUIRED/, 'partial update/cancel messages must enter manual safety review');
+assert.doesNotMatch(parserUi, /await\s+updateOrder\(/, 'SmartParser must not replace a whole order from a partial update message');
+assert.doesNotMatch(parserUi, /await\s+cancelOrder\(/, 'SmartParser must not auto-cancel a whole order from a message');
 assert.match(parserUi, /syncAfterLocalMutation\(/, 'SmartParser must use Cloud Sync');
 
 const db = await readFile(new URL('../orderq/orderq-db.js', import.meta.url), 'utf8');
