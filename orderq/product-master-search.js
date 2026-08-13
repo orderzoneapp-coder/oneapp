@@ -22,6 +22,17 @@ function stableProductId(code, name, specification) {
   return `PRD-MASTER-${(hash >>> 0).toString(16).padStart(8, '0')}`;
 }
 
+function numberOrNull(source, keys) {
+  const raw = firstValue(source, keys);
+  if (raw === '') return null;
+  const value = Number(String(raw).replace(/,/g, ''));
+  return Number.isFinite(value) ? value : null;
+}
+
+export function productCategoryCode(itemCode) {
+  return String(itemCode || '').trim().slice(0, 6);
+}
+
 export function normalizeMasterProduct(raw = {}, fallbackCode = '', source = 'COMMON_MASTER') {
   const itemCode = firstValue(raw, ['itemCode', 'productCode', '코드', '품목코드', '상품코드'], fallbackCode);
   const itemName = firstValue(raw, ['itemName', 'productName', '품목명', '상품명', '제품명', '품명']);
@@ -29,6 +40,7 @@ export function normalizeMasterProduct(raw = {}, fallbackCode = '', source = 'CO
   const finalUnit = firstValue(raw, ['finalUnit', 'unit', '업무단위', '단위']);
   const secondaryName = firstValue(raw, ['secondaryName', 'secondName', '제2품명', '제2상품명', '약칭', '별칭']);
   const searchInfo = firstValue(raw, ['searchInfo', 'searchKeywords', '검색창정보', '검색어등록', '검색어', '간단설명']);
+  const outPrice = source === 'COMMON_MASTER' ? numberOrNull(raw, ['outPrice', '출고가']) : null;
   if (!itemCode && !itemName) return null;
   return {
     productId: firstValue(raw, ['productId']) || stableProductId(itemCode, itemName, specification),
@@ -38,6 +50,7 @@ export function normalizeMasterProduct(raw = {}, fallbackCode = '', source = 'CO
     searchInfo,
     specification,
     finalUnit,
+    outPrice,
     status: firstValue(raw, ['status', '상태'], 'ACTIVE'),
     source,
     raw
@@ -113,11 +126,25 @@ function productScore(query, product) {
 }
 
 export function searchProductCatalog(query, catalog = [], limit = 8) {
-  return catalog
+  const matches = catalog
     .map(product => ({ product, score: productScore(query, product) }))
-    .filter(row => row.score > 0)
-    .sort((left, right) => right.score - left.score
-      || String(left.product.itemCode).localeCompare(String(right.product.itemCode), 'ko'))
+    .filter(row => row.score > 0);
+  const anchor = [...matches].sort((left, right) => right.score - left.score
+    || String(left.product.itemCode).localeCompare(String(right.product.itemCode), 'ko', { numeric: true }))[0];
+  const anchorCategory = productCategoryCode(anchor?.product?.itemCode);
+  return matches
+    .sort((left, right) => {
+      const leftCategory = productCategoryCode(left.product.itemCode);
+      const rightCategory = productCategoryCode(right.product.itemCode);
+      const leftIsAnchorCategory = Boolean(anchorCategory && leftCategory === anchorCategory);
+      const rightIsAnchorCategory = Boolean(anchorCategory && rightCategory === anchorCategory);
+      if (leftIsAnchorCategory !== rightIsAnchorCategory) return leftIsAnchorCategory ? -1 : 1;
+      if (leftIsAnchorCategory && rightIsAnchorCategory) {
+        return String(left.product.itemCode).localeCompare(String(right.product.itemCode), 'ko', { numeric: true });
+      }
+      return right.score - left.score
+        || String(left.product.itemCode).localeCompare(String(right.product.itemCode), 'ko', { numeric: true });
+    })
     .slice(0, limit)
     .map(row => ({ ...row.product, score: row.score }));
 }

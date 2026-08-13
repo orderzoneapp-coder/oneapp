@@ -43,8 +43,15 @@ a { color: inherit; }
 .field { display: flex; flex-direction: column; gap: 5px; }
 .field.wide { grid-column: span 2; }
 .field label { font-size: 11px; font-weight: 800; color: #475569; }
+.field-help { margin-left: 5px; color: var(--muted); font-size: 10px; font-weight: 700; }
 .control { min-height: 34px; width: 100%; border: 1px solid #cbd5e1; border-radius: 7px; padding: 6px 9px; background: white; color: var(--ink); }
 .control:focus { outline: 2px solid #14b8a655; border-color: #0d9488; }
+.readonly-system { background: #f8fafc; color: var(--muted); cursor: default; }
+.date-control { position: relative; }
+.date-control .control { padding-right: 38px; }
+.date-picker-button { position: absolute; right: 3px; top: 3px; width: 30px; height: 28px; border: 0; border-radius: 5px; background: transparent; color: #334155; font-size: 12px; }
+.date-picker-button:hover { background: #f1f5f9; }
+.native-date-picker { position: absolute; right: 4px; bottom: 0; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 .table-wrap { overflow: auto; }
 table { width: 100%; border-collapse: collapse; min-width: 980px; font-size: 12px; }
 th { position: sticky; top: 0; z-index: 1; background: #f1f5f9; color: #334155; padding: 8px 7px; border: 1px solid var(--line); white-space: nowrap; }
