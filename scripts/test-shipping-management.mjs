@@ -13,7 +13,7 @@ assert.doesNotMatch(orderOpsHtml, /tokens truncated|…\d+ tokens truncated…/,
   "the public OrderOps mirror must not contain a truncated source fragment");
 assert.match(orderOpsHtml, /<body>[\s\S]*<\/body>\s*<\/html>/,
   "the public OrderOps mirror must remain a complete HTML document");
-assert.match(orderOpsHtml, /brand-badge">v1\.35</, "ORDER Q visible version must be v1.35");
+assert.match(orderOpsHtml, /brand-badge">v1\.36</, "ORDER Q visible version must be v1.36");
 assert.match(orderOpsHtml, /<title>ONEAPP ORDER Q · 출고관리<\/title>/,
   "the public page title must establish ORDER Q as shipment management");
 assert.match(orderOpsHtml, /aria-label="ONEAPP ORDER Q 출고관리"/,
@@ -22,7 +22,7 @@ assert.match(orderOpsHtml, /class="brand-logo" src="assets\/order-q-logo\.png"/,
   "the public header must use the approved ORDER Q logo asset");
 assert.match(orderOpsHtml, /\.brand-logo-frame\s*\{[\s\S]*?width:\s*120px;[\s\S]*?height:\s*20px;/,
   "the public ORDER Q logo must match the ONEAPP wordmark height");
-assert.match(orderOpsHtml, /ORDER Q v1\.35 · 출고관리/,
+assert.match(orderOpsHtml, /ORDER Q v1\.36 · 출고관리/,
   "the public footer must use the ORDER Q product concept");
 assert.doesNotMatch(
   orderOpsHtml.slice(orderOpsHtml.indexOf('<header class="global-header">'), orderOpsHtml.indexOf('</header>')),
@@ -37,7 +37,7 @@ assert.equal(
   "the repository logo must be the unmodified approved source image",
 );
 assert.ok(orderOpsHtml.includes('class="execution-panel"'),
-  "the public v1.35 execution controls must be separate from the upload strip");
+  "the public v1.36 execution controls must be separate from the upload strip");
 assert.match(orderOpsHtml, /\.execution-panel\s*\{[^}]*grid-template-columns:\s*repeat\(3,/,
   "the public execution controls must use three visible segments");
 assert.ok(orderOpsHtml.includes("function resetResultViewFilters()"),
@@ -124,10 +124,12 @@ for (const requiredInteractionContract of [
   'function saveCurrentOrderViewPreset',
 ]) {
   assert.ok(orderOpsHtml.includes(requiredInteractionContract),
-    `public ORDER Q v1.35 interaction contract is missing: ${requiredInteractionContract}`);
+    `public ORDER Q v1.36 interaction contract is missing: ${requiredInteractionContract}`);
 }
-assert.match(orderOpsHtml, /\.print-area table\s*\{[\s\S]*?font-size:\s*8\.8px;/,
-  "public screen print text must be ten percent larger");
+assert.match(orderOpsHtml, /\.print-area table\s*\{[\s\S]*?font-size:\s*10\.6px;/,
+  "public screen print text must be twenty percent larger than v1.35");
+assert.match(orderOpsHtml, /table\.preview-allocations\s*\{[\s\S]*?font-size:\s*11\.9px;/,
+  "public order-status print text must be twenty percent larger than v1.35");
 assert.doesNotMatch(orderOpsHtml, /<input[^>]+type="color"|data-warehouse-color|data-manager-color/,
   "the public OrderOps filter strip must not use a native color picker inside filter options");
 const publicPastelSource = orderOpsHtml.slice(
@@ -180,8 +182,8 @@ for (const shortcutContract of [
 assert.doesNotMatch(orderOpsHtml, /F12|새로고침 F5|aria-keyshortcuts="F5"[^>]*refreshButton/,
   "retired F12 and refresh-F5 shortcuts must not remain");
 assert.ok(orderOpsHtml.includes(
-  'headers: ["창고", "거래처", "담당자", "상품코드", "품명", "규격", "구분", "주문", "단가", ...allocationWarehouseHeaders, "전달사항", "구매"]',
-), "the public order table must use the approved default column sequence");
+  'headers: ["창고", "거래처", "그룹", "담당자", "상품코드", "품명", "규격", "구분", "주문", "단가", ...allocationWarehouseHeaders, "전달사항", "구매"]',
+), "the public order table must include the source customer group in the approved sequence");
 assert.doesNotMatch(orderOpsHtml, /allocations\.columns\[0\]\.orderField\s*=\s*"warehouse"/,
   "the order warehouse column must remain read-only");
 assert.match(orderOpsHtml, /table\s*\{[^}]*border-collapse:\s*collapse;[^}]*border:\s*1px solid #d9e2ec;/,
@@ -1178,7 +1180,7 @@ assert.deepEqual(
   ),
   [
     "창고", "상품코드", "품목명", "규격", "1창고", "2전송", "3서울", "4전송", "7진영",
-    "주문수량", "전재고", "서울잔량", "구매수량", "구매", "거래처", "단가", "공급가액", "적요", "적요1", "담당자",
+    "주문수량", "전재고", "서울잔량", "구매수량", "구매", "거래처", "그룹", "단가", "공급가액", "적요", "적요1", "담당자",
   ],
 );
 assert.equal(engine.parseOrderBasisDate("2026-08-04-17"), "2026-08-04");
@@ -1439,8 +1441,8 @@ try {
   globalThis.URL = originalUrl;
 }
 const allocationSheet = formatWorkbook.Sheets["주문현황"];
-assert.equal(allocationSheet["!ref"], "A1:T7");
-assert.deepEqual(allocationSheet["!autofilter"], { ref: "A1:T7" });
+assert.equal(allocationSheet["!ref"], "A1:U7");
+assert.deepEqual(allocationSheet["!autofilter"], { ref: "A1:U7" });
 assert.deepEqual(allocationSheet["!freeze"], { xSplit: 0, ySplit: 1 });
 assert.equal(allocationSheet["B2"].t, "s");
 assert.equal(allocationSheet["B2"].v, "PURCHASE");
@@ -1450,13 +1452,14 @@ assert.equal(sheetCellByHeader(allocationSheet, "7진영", 2).v, -4);
 assert.equal(sheetCellByHeader(allocationSheet, "주문수량", 2).v, 2);
 assert.equal(sheetCellByHeader(allocationSheet, "구매수량", 2).v, 2);
 assert.equal(sheetCellByHeader(allocationSheet, "거래처", 2).v, "거래처 1");
+assert.equal(sheetCellByHeader(allocationSheet, "그룹", 2).v, "기본그룹");
 assert.equal(sheetCellByHeader(allocationSheet, "단가", 2).v, 1000);
 assert.equal(sheetCellByHeader(allocationSheet, "담당자", 2).v, "담당A");
 assert.equal(allocationSheet["A2"].s.fill.fgColor.rgb, "FFFFFF", "stable tie winner 담당A must remain white");
 assert.equal(allocationSheet["A4"].s.fill.fgColor.rgb, "FFFFFF", "all rows for the dominant manager must remain white");
 assert.notEqual(allocationSheet["A2"].s.fill.fgColor.rgb, allocationSheet["A3"].s.fill.fgColor.rgb);
 assert.equal(allocationSheet["A5"].s.fill.fgColor.rgb, allocationSheet["A6"].s.fill.fgColor.rgb);
-for (let column = 0; column < 20; column += 1) {
+for (let column = 0; column < 21; column += 1) {
   const address = XLSX.utils.encode_cell({ r: 1, c: column });
   if (address === "I2") continue;
   assert.equal(
@@ -1468,10 +1471,10 @@ for (let column = 0; column < 20; column += 1) {
 assert.equal(allocationSheet["I2"].s.fill.fgColor.rgb, "FEE2E2", "negative warehouse cells must override manager fill");
 for (const row of [3, 4, 6]) {
   assert.equal(allocationSheet[`A${row}`].s.font.color.rgb, "B91C1C", `EA/소분 row ${row} must use red text`);
-  assert.equal(allocationSheet[`T${row}`].s.font.color.rgb, "B91C1C", `EA/소분 manager row ${row} must use red text`);
+  assert.equal(allocationSheet[`U${row}`].s.font.color.rgb, "B91C1C", `EA/소분 manager row ${row} must use red text`);
 }
 for (let row = 1; row <= 7; row += 1) {
-  for (let column = 0; column < 20; column += 1) {
+  for (let column = 0; column < 21; column += 1) {
     const cell = allocationSheet[XLSX.utils.encode_cell({ r: row - 1, c: column })];
     assert.ok(cell, `allocation table cell missing at row=${row} column=${column + 1}`);
     for (const edge of ["top", "bottom", "left", "right"]) {
@@ -1495,13 +1498,13 @@ assert.deepEqual(allocationSheet["!pageSetup"], {
   fitToWidth: 1,
   fitToHeight: 0,
 });
-assert.equal(allocationSheet["!printArea"], "A1:T7");
+assert.equal(allocationSheet["!printArea"], "A1:U7");
 assert.equal(allocationSheet["!printTitles"], "$1:$1");
 const printNames = formatWorkbook.Workbook.Names.filter(
   (name) => name.Sheet === 1 && /^_xlnm\.Print_/.test(name.Name),
 );
 assert.deepEqual(printNames, [
-  { Name: "_xlnm.Print_Area", Sheet: 1, Ref: "'주문현황'!$A$1:$T$7" },
+  { Name: "_xlnm.Print_Area", Sheet: 1, Ref: "'주문현황'!$A$1:$U$7" },
   { Name: "_xlnm.Print_Titles", Sheet: 1, Ref: "'주문현황'!$1:$1" },
 ]);
 
@@ -1664,12 +1667,12 @@ const largeWorkspace = engine.analyze(largeOrders, largeInventory, {
   createdAt: "2026-08-03T00:00:00.000Z",
 });
 const largeWorkbook = workbookTools.buildWorkbook(largeWorkspace, XLSX);
-assert.equal(largeWorkbook.Sheets["주문현황"]["!printArea"], "A1:T181");
+assert.equal(largeWorkbook.Sheets["주문현황"]["!printArea"], "A1:U181");
 assert.equal(largeWorkbook.Sheets["주문현황"]["!pageSetup"].fitToWidth, 1);
 assert.equal(largeWorkbook.Sheets["주문현황"]["!pageSetup"].fitToHeight, 0);
 assert.ok(
   largeWorkbook.Workbook.Names.some(
-    (name) => name.Name === "_xlnm.Print_Area" && name.Ref === "'주문현황'!$A$1:$T$181",
+    (name) => name.Name === "_xlnm.Print_Area" && name.Ref === "'주문현황'!$A$1:$U$181",
   ),
 );
 
@@ -1677,7 +1680,7 @@ const html = fs.readFileSync(path.join(ROOT, "orderops", "list.html"), "utf8");
 const inlineScriptMatch = html.match(/<script>\s*([\s\S]*?)<\/script>\s*<\/body>/);
 assert.ok(inlineScriptMatch, "canonical ORDER Q inline application script must exist");
 new vm.Script(inlineScriptMatch[1], { filename: "orderops/list.html:inline" });
-assert.match(html, /brand-badge">v1\.35</, "canonical ORDER Q visible version must be v1.35");
+assert.match(html, /brand-badge">v1\.36</, "canonical ORDER Q visible version must be v1.36");
 assert.match(html, /class="brand-logo" src="\.\.\/assets\/order-q-logo\.png"/,
   "the canonical header must use the shared ORDER Q logo asset");
 assert.match(html, /<h2 id="settingsModalTitle">ORDER Q 환경설정<\/h2>/,
@@ -1812,7 +1815,7 @@ for (const requiredInteractionContract of [
   'function saveCurrentOrderViewPreset',
 ]) {
   assert.ok(html.includes(requiredInteractionContract),
-    `canonical ORDER Q v1.35 interaction contract is missing: ${requiredInteractionContract}`);
+    `canonical ORDER Q v1.36 interaction contract is missing: ${requiredInteractionContract}`);
 }
 assert.doesNotMatch(html, /<input[^>]+type="color"|data-warehouse-color|data-manager-color/,
   "canonical OrderOps filter options must remain separate from color assignment");
@@ -1827,8 +1830,8 @@ assert.match(combinedCss, /body\s*\{[^}]*font-size:\s*14px;/,
 assert.match(combinedCss, /\.system-console\s*\{[^}]*font:\s*700 11px\/1\.3/,
   "System.IO status text must increase by one pixel");
 assert.ok(html.includes(
-  'headers: ["창고", "거래처", "담당자", "상품코드", "품명", "규격", "구분", "주문", "단가", ...allocationWarehouseHeaders, "전달사항", "구매"]',
-), "the canonical order table must use the approved default column sequence");
+  'headers: ["창고", "거래처", "그룹", "담당자", "상품코드", "품명", "규격", "구분", "주문", "단가", ...allocationWarehouseHeaders, "전달사항", "구매"]',
+), "the canonical order table must include the source customer group in the approved sequence");
 assert.doesNotMatch(html, /allocations\.columns\[0\]\.orderField\s*=\s*"warehouse"/,
   "the canonical order warehouse column must remain read-only");
 assert.match(combinedCss, /\.purchase-input\s*\{[^}]*border:\s*0;/,
@@ -1924,8 +1927,10 @@ assert.doesNotMatch(html, /purchase-required-badge|inventory-unavailable-value|>
   "quantity cells must not replace signed numeric results with explanatory text");
 assert.equal((html.match(/header: column(?:\?\.)?\.role === "calculatedQuantity" \? "수량"/g) || []).length >= 1, true,
   "calculated stock-ledger quantities must retain the 수량 header");
-assert.match(combinedCss, /\.print-area table\s*\{[\s\S]*?font-size:\s*8\.8px;/,
-  "canonical screen print text must be ten percent larger");
+assert.match(combinedCss, /\.print-area table\s*\{[\s\S]*?font-size:\s*10\.6px;/,
+  "canonical screen print text must be twenty percent larger than v1.35");
+assert.match(combinedCss, /table\.preview-allocations\s*\{[\s\S]*?font-size:\s*11\.9px;/,
+  "canonical order-status print text must be twenty percent larger than v1.35");
 
 const presetHelperStart = html.indexOf("function isPlainRecord");
 const presetHelperEnd = html.indexOf("function loadWarehouseColorSettings", presetHelperStart);
@@ -2055,7 +2060,7 @@ for (const contract of [
   "showPurchaseCompletionCoachmark",
   "function resetResultViewFilters()", 'grid-template-columns: repeat(3, minmax(0, 1fr))',
 ]) {
-  assert.ok(html.includes(contract), `ORDER Q v1.35 contract is missing: ${contract}`);
+  assert.ok(html.includes(contract), `ORDER Q v1.36 contract is missing: ${contract}`);
 }
 const purchaseAutocompleteStart = html.indexOf("function purchaseAutocompleteNames");
 const purchaseAutocompleteEnd = html.indexOf("function closePurchaseAutocomplete", purchaseAutocompleteStart);
@@ -2366,7 +2371,7 @@ try {
     [
       "창고", "상품코드", "품목명", "규격",
       ...engine.getAllocationInventoryView(outputWorkspace).columns.map((column) => column.header),
-      "주문수량", "전재고", "서울잔량", "구매수량", "구매", "거래처", "단가", "공급가액", "적요", "적요1", "담당자",
+      "주문수량", "전재고", "서울잔량", "구매수량", "구매", "거래처", "그룹", "단가", "공급가액", "적요", "적요1", "담당자",
     ],
   );
   const reopenedPrintNames = (reopened.Workbook?.Names || []).filter(

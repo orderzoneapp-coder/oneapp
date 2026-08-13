@@ -51,7 +51,7 @@ assert.match(input, /loadProductCatalog/);
 assert.match(input, /searchProductCatalog/);
 assert.match(input, /row\.dataset\.productId \? MATCH_STATUS\.MATCHED : MATCH_STATUS\.MATCH_FAILED/);
 assert.match(input, /productId:\s*row\.dataset\.productId \|\| null/);
-assert.match(input, /vNext 0\.4\.3/);
+assert.match(input, /vNext 0\.4\.4/);
 for (const contract of [
   "const MANUAL_DEFAULTS_KEY = 'oneapp.orderq.manual-defaults.v1'",
   "customerNameInput.addEventListener('keydown'",
@@ -63,8 +63,15 @@ for (const contract of [
   "if (product.outPrice != null) row.querySelector('[data-field=\"price\"]').value = product.outPrice",
   '전표 메모',
   '상품별 메모(적요)',
-  '시스템 주문정보'
+  'class="top-system"',
+  'id="orderMeta"',
+  'badge.hidden = !hasProductInput',
+  'attemptedRows.length - matched'
 ]) assert.ok(input.includes(contract), `수기주문 입력 계약 누락: ${contract}`);
+assert.doesNotMatch(input, /class="row-status failed">매칭실패</,
+  '빈 상품행은 매칭실패 배지를 먼저 표시하면 안 된다.');
+assert.match(input, /data-role="matchStatus" class="row-status" hidden/,
+  '빈 상품행의 마스터 매칭 상태는 숨김으로 시작해야 한다.');
 
 const intake = await readFile(new URL('../orderq/order-intake-engine.js', import.meta.url), 'utf8');
 assert.match(intake, /requestedProductId && !requestedProductId\.startsWith\('CODE:'\)/);

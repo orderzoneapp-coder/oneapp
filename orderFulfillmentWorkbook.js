@@ -364,6 +364,7 @@
       "구매수량",
       "구매",
       "거래처",
+      "그룹",
       "단가",
       "공급가액",
       "적요",
@@ -382,6 +383,7 @@
       row.inventoryMatched ? row.purchaseNeed : "",
       row.purchase,
       row.customer,
+      row.group || "",
       row.unitPrice === null || row.unitPrice === undefined ? "" : row.unitPrice,
       row.supplyAmount === null || row.supplyAmount === undefined ? "" : row.supplyAmount,
       row.note,
@@ -391,7 +393,7 @@
     const warehouseStart = 4;
     const orderQuantityColumn = warehouseStart + warehouseHeaders.length;
     const purchaseColumn = orderQuantityColumn + 4;
-    const priceColumn = purchaseColumn + 2;
+    const priceColumn = purchaseColumn + 3;
     const supplyAmountColumn = priceColumn + 1;
     const numericColumns = new Set([
       ...warehouseHeaders.map((_, index) => warehouseStart + index),
@@ -413,6 +415,7 @@
       if (index === 3) return { wch: 13 };
       if (index >= warehouseStart && index < orderQuantityColumn) return { wch: 11 };
       if (header === "거래처") return { wch: 22 };
+      if (header === "그룹") return { wch: 14 };
       if (header === "적요" || header === "적요1") return { wch: 24 };
       if (header === "담당자") return { wch: 14 };
       return { wch: 12 };
