@@ -710,7 +710,7 @@
     .shortage-focus-button:hover:not(:disabled) { border-color: #fb7185; background: #ffe4e6; }
     .shortage-focus-button.active { border-color: #be123c; color: #fff; background: #be123c; }
     .shortage-focus-button:disabled { opacity: .45; cursor: default; }
-    /* ORDER Q v1.34: shortage focus and quantity-state UX */
+    /* ORDER Q v1.35: signed quantity decisions and reusable order views */
     .header-output-button { border-color: #99f6e4; color: #0f766e; background: #f0fdfa; }
     .header-output-button:hover:not(:disabled) { background: #ccfbf1; }
     .results-panel .table-wrap { max-height: calc(100vh - 200px); }
@@ -828,6 +828,49 @@
     .table-tool-button:hover { border-color: var(--teal-700); color: var(--teal-700); background: #f0fdfa; }
     .table-tool-button.dirty { border-color: #4f46e5; color: #fff; background: #4f46e5; }
     .table-tool-button.active { border-color: var(--teal-700); color: #fff; background: var(--teal-700); }
+    .view-preset-tools { display: flex; align-items: center; gap: 4px; }
+    .view-preset-select {
+      min-width: 104px;
+      max-width: 150px;
+      min-height: 31px;
+      padding: 0 24px 0 7px;
+      border: 1px solid var(--slate-300);
+      border-radius: 5px;
+      color: var(--slate-700);
+      background: var(--white);
+      font-size: 11px;
+      font-weight: 900;
+    }
+    .view-preset-select:disabled,
+    .table-tool-button:disabled { opacity: .45; cursor: default; }
+    .view-preset-delete-button { min-width: 31px; padding: 0 7px; }
+    .view-preset-dialog {
+      width: min(360px, calc(100vw - 32px));
+      padding: 0;
+      border: 1px solid var(--slate-300);
+      border-radius: 8px;
+      color: var(--slate-900);
+      background: var(--white);
+      box-shadow: 0 20px 54px rgba(15,23,42,.24);
+    }
+    .view-preset-dialog::backdrop { background: rgba(15,23,42,.32); }
+    .view-preset-dialog form { display: grid; gap: 12px; padding: 18px; }
+    .view-preset-dialog h3 { margin: 0; font-size: 15px; }
+    .view-preset-dialog p { margin: -5px 0 0; color: var(--slate-500); font-size: 11px; line-height: 1.5; }
+    .view-preset-dialog label { display: grid; gap: 5px; color: var(--slate-700); font-size: 11px; font-weight: 900; }
+    .view-preset-dialog input {
+      min-height: 36px;
+      padding: 0 9px;
+      border: 1px solid var(--slate-300);
+      border-radius: 5px;
+      color: var(--slate-900);
+      font-size: 13px;
+      outline: 0;
+    }
+    .view-preset-dialog input:focus { border-color: var(--teal-600); box-shadow: 0 0 0 2px rgba(13,148,136,.12); }
+    .view-preset-dialog-actions { display: flex; justify-content: flex-end; gap: 6px; }
+    .view-preset-dialog-actions button { min-height: 33px; padding: 0 12px; border: 1px solid var(--slate-300); border-radius: 5px; font-weight: 900; }
+    .view-preset-dialog-actions [data-save-view-preset] { border-color: var(--teal-700); color: #fff; background: var(--teal-700); }
     .result-filter-reset-button { border-color: #cbd5e1; color: #475569; background: #f8fafc; }
     .result-filter-reset-button:hover { border-color: #0f766e; color: #0f766e; background: #f0fdfa; }
     .column-visibility { position: relative; }
@@ -1008,19 +1051,12 @@
     td.quantity-zero .order-edit-input { color: #94a3b8; }
     td.quantity-negative .inventory-input,
     td.quantity-negative .order-edit-input { color: #b91c1c; font-weight: 900; }
-    .purchase-required-badge {
-      display: inline-flex;
-      justify-content: flex-end;
-      min-width: 56px;
-      padding: 2px 7px;
-      border: 1px solid #fda4af;
-      border-radius: 999px;
-      color: #9f1239;
-      background: #fff1f2;
+    td.quantity-negative .inventory-total-frame {
+      color: #9f1239 !important;
+      background: #fff1f2 !important;
+      box-shadow: inset 3px 0 0 #fb7185;
       font-weight: 900;
-      font-variant-numeric: tabular-nums;
     }
-    .inventory-unavailable-value { color: #b45309; font-size: 10px; font-weight: 900; }
 
     .purchase-input {
       width: 100%;
@@ -1077,7 +1113,7 @@
     table.preview-inventory [data-negative-value="true"] { color: #b91c1c; font-weight: 900; }
 
     th.column-resizable { padding-right: 16px; }
-    th.column-header-sortable { cursor: pointer; }
+    th.column-header-sortable { cursor: default; }
     th.column-header-sortable.column-sorted .column-header-label,
     th.column-header-sortable.column-filtered .column-header-label { color: #0f766e; font-weight: 900; }
     .column-header-content {
@@ -1364,7 +1400,7 @@
         width: 100% !important;
         min-width: 0 !important;
         table-layout: fixed !important;
-        font-size: 8px;
+        font-size: 8.8px;
       }
       body.printing-table .print-area thead { display: table-header-group; }
       body.printing-table .print-area tbody { display: table-row-group; }
@@ -1374,7 +1410,7 @@
       }
       body.printing-table .print-area table.preview-allocations {
         font-family: "Malgun Gothic", sans-serif;
-        font-size: 9px;
+        font-size: 9.9px;
       }
       body.printing-table .print-area table.preview-allocations th {
         color: #fff !important;
@@ -1457,7 +1493,7 @@
       .recovery-record-item { grid-template-columns: auto 1fr; }
       .recovery-record-status { grid-column: 2; }
     }
-    /* ORDER Q v1.34: compact filters, purchase autocomplete, and completion guidance */
+    /* ORDER Q v1.35: compact filters, purchase autocomplete, and completion guidance */
     .input-panel { grid-template-columns: minmax(0, 1fr) 330px; gap: 12px; }
     .upload-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
     .source-selector {
@@ -1580,7 +1616,7 @@
       <div class="brand-mark">ONEAPP</div>
       <div class="brand-divider" aria-hidden="true"></div>
       <span class="brand-logo-frame" aria-hidden="true"><img class="brand-logo" src="assets/order-q-logo.png" alt=""></span>
-      <span class="brand-badge">v1.34</span>
+      <span class="brand-badge">v1.35</span>
       <span class="brand-product">출고관리</span>
     </div>
     <div class="header-actions">
@@ -1717,6 +1753,14 @@
           </div>
           <button class="table-tool-button" id="columnWidthSaveButton" type="button">열폭 저장</button>
           <button class="table-tool-button" id="columnWidthResetButton" type="button">열폭 초기화</button>
+          <div class="view-preset-tools" aria-label="주문현황 저장 양식">
+            <select class="view-preset-select" id="viewPresetSelect" aria-label="저장한 주문현황 양식 선택" disabled>
+              <option value="">저장 양식</option>
+            </select>
+            <button class="table-tool-button" id="viewPresetSaveButton" type="button" disabled>양식저장</button>
+            <button class="table-tool-button view-preset-delete-button" id="viewPresetDeleteButton" type="button"
+              aria-label="선택한 주문현황 양식 삭제" disabled>×</button>
+          </div>
         </div>
         <div class="preview-count" id="previewCount"></div>
         <button class="filter-toggle-button" id="warehouseFilterToggle" type="button"
@@ -1750,7 +1794,7 @@
     </section>
 
     <footer class="page-footer">
-      <span>ORDER Q v1.34 · 출고관리 · workspace shipping-workspace/v2 · cloud plan v1</span>
+      <span>ORDER Q v1.35 · 출고관리 · workspace shipping-workspace/v2 · cloud plan v1</span>
       <a href="SHIPPING_MANAGEMENT_GUIDANCE.md">개발·운영 기준 보기</a>
     </footer>
   </main>
@@ -1842,6 +1886,19 @@
   <div class="purchase-completion-coachmark hidden" id="purchaseCompletionCoachmark" role="status" aria-live="polite">
     <span aria-hidden="true">✓</span><strong>발주 입력 완료</strong>
   </div>
+  <dialog class="view-preset-dialog" id="viewPresetDialog" aria-labelledby="viewPresetDialogTitle">
+    <form method="dialog">
+      <h3 id="viewPresetDialogTitle">주문현황 양식 저장</h3>
+      <p>현재 검색어·재고부족·규격·담당자·열 필터·정렬 조건을 이 브라우저에 저장합니다.</p>
+      <label>양식 이름
+        <input id="viewPresetNameInput" type="text" maxlength="40" autocomplete="off" placeholder="예: 오늘 부족상품">
+      </label>
+      <div class="view-preset-dialog-actions">
+        <button type="button" data-cancel-view-preset>취소</button>
+        <button type="button" data-save-view-preset>저장</button>
+      </div>
+    </form>
+  </dialog>
   <div class="toast hidden" id="toast" role="status" aria-live="polite"></div>
   <div class="print-area" id="printArea" aria-hidden="true"></div>
 
@@ -1879,6 +1936,9 @@
       const EXCEL_MAPPING_KEY = "oneapp.orderops.excel-mappings.v1";
       const EXCEL_MAPPING_SCHEMA = "orderops-excel-mappings/v1";
       const PURCHASE_HISTORY_KEY = "oneapp.orderops.purchase-history.v1";
+      const ORDER_VIEW_PRESETS_KEY = "oneapp.orderops.order-view-presets.v1";
+      const ORDER_VIEW_PRESETS_SCHEMA = "orderops-order-view-presets/v1";
+      const ORDER_VIEW_PRESET_LIMIT = 20;
       const FILE_KINDS = Object.freeze(["orders", "inventory", "purchases", "sales"]);
       const FILE_KIND_LABELS = Object.freeze({ orders: "주문현황", inventory: "창고재고", purchases: "구매현황", sales: "판매현황" });
       const DEFAULT_EXCEL_MAPPINGS = Object.freeze({
@@ -1948,6 +2008,8 @@
         suppressHeaderClick: false,
         excelMappings: null,
         purchaseHistory: [],
+        orderViewPresets: [],
+        selectedOrderViewPresetId: "",
         purchaseAutocompleteInput: null,
         purchaseAutocompleteMatches: [],
         purchaseAutocompleteIndex: 0,
@@ -2002,6 +2064,11 @@
         columnVisibilityMenu: document.getElementById("columnVisibilityMenu"),
         columnWidthSaveButton: document.getElementById("columnWidthSaveButton"),
         columnWidthResetButton: document.getElementById("columnWidthResetButton"),
+        viewPresetSelect: document.getElementById("viewPresetSelect"),
+        viewPresetSaveButton: document.getElementById("viewPresetSaveButton"),
+        viewPresetDeleteButton: document.getElementById("viewPresetDeleteButton"),
+        viewPresetDialog: document.getElementById("viewPresetDialog"),
+        viewPresetNameInput: document.getElementById("viewPresetNameInput"),
         printButton: document.getElementById("printButton"),
         printArea: document.getElementById("printArea"),
         previewTabs: document.getElementById("previewTabs"),
@@ -2620,6 +2687,7 @@
         state.managerFilters.clear();
         state.sortSettings = Object.create(null);
         state.columnFilters = Object.create(null);
+        state.selectedOrderViewPresetId = "";
         closeColumnSortMenu();
         elements.tableSearchInput.value = "";
         elements.specFilterGroup.querySelectorAll("input[type='checkbox']").forEach((input) => {
@@ -3065,6 +3133,191 @@
         if (typeof value === "number") return Number.isFinite(value);
         const normalized = String(value ?? "").trim().replace(/,/g, "");
         return normalized !== "" && Number.isFinite(Number(normalized));
+      }
+
+      function normalizeStringList(value, limit = 100) {
+        if (!Array.isArray(value)) return [];
+        return [...new Set(value.map((item) => String(item || "").trim()).filter(Boolean))].slice(0, limit);
+      }
+
+      function normalizeStoredColumnFilters(value) {
+        if (!isPlainRecord(value)) return Object.create(null);
+        const filters = Object.create(null);
+        Object.entries(value).forEach(([columnKey, setting]) => {
+          if (!isSafeColumnKey(columnKey) || !isPlainRecord(setting)) return;
+          const next = Object.create(null);
+          if (setting.excludeBlank === true) next.excludeBlank = true;
+          if (setting.excludeZero === true) next.excludeZero = true;
+          if (Array.isArray(setting.allowedValues)) {
+            next.allowedValues = normalizeStringList(setting.allowedValues, 500);
+          }
+          if (next.excludeBlank || next.excludeZero || Array.isArray(next.allowedValues)) filters[columnKey] = next;
+        });
+        return filters;
+      }
+
+      function normalizeOrderViewPreset(value) {
+        if (!isPlainRecord(value) || !isPlainRecord(value.view)) return null;
+        const id = String(value.id || "").trim();
+        const name = String(value.name || "").trim().slice(0, 40);
+        if (!/^[a-z0-9._:-]{1,80}$/i.test(id) || !name) return null;
+        const sortSetting = isPlainRecord(value.view.sortSetting) &&
+          isSafeColumnKey(value.view.sortSetting.columnKey) &&
+          ["asc", "desc"].includes(value.view.sortSetting.direction)
+          ? { columnKey: value.view.sortSetting.columnKey, direction: value.view.sortSetting.direction }
+          : null;
+        return {
+          id,
+          name,
+          updatedAt: String(value.updatedAt || ""),
+          view: {
+            searchQuery: String(value.view.searchQuery || "").slice(0, 300),
+            shortageFocus: value.view.shortageFocus === true,
+            specificationFilters: normalizeStringList(value.view.specificationFilters, 20),
+            warehouseFilters: normalizeStringList(value.view.warehouseFilters, 100),
+            managerFilters: normalizeStringList(value.view.managerFilters, 100),
+            sortSetting,
+            columnFilters: normalizeStoredColumnFilters(value.view.columnFilters),
+          },
+        };
+      }
+
+      function loadOrderViewPresets() {
+        try {
+          const parsed = JSON.parse(localStorage.getItem(ORDER_VIEW_PRESETS_KEY) || "null");
+          if (!isPlainRecord(parsed) || parsed.schemaVersion !== ORDER_VIEW_PRESETS_SCHEMA || !Array.isArray(parsed.presets)) {
+            return [];
+          }
+          return parsed.presets.map(normalizeOrderViewPreset).filter(Boolean).slice(0, ORDER_VIEW_PRESET_LIMIT);
+        } catch (error) {
+          return [];
+        }
+      }
+
+      function persistOrderViewPresets() {
+        localStorage.setItem(ORDER_VIEW_PRESETS_KEY, JSON.stringify({
+          schemaVersion: ORDER_VIEW_PRESETS_SCHEMA,
+          presets: state.orderViewPresets.slice(0, ORDER_VIEW_PRESET_LIMIT),
+        }));
+      }
+
+      function renderOrderViewPresetOptions() {
+        const selectedId = state.orderViewPresets.some((preset) => preset.id === state.selectedOrderViewPresetId)
+          ? state.selectedOrderViewPresetId : "";
+        elements.viewPresetSelect.innerHTML = `<option value="">저장 양식</option>${state.orderViewPresets.map((preset) =>
+          `<option value="${escapeHtml(preset.id)}">${escapeHtml(preset.name)}</option>`,
+        ).join("")}`;
+        elements.viewPresetSelect.value = selectedId;
+        elements.viewPresetSelect.disabled = !state.workspace || state.orderViewPresets.length === 0;
+        elements.viewPresetSaveButton.disabled = !state.workspace || state.activePreview !== "allocations";
+        elements.viewPresetDeleteButton.disabled = !state.workspace || !selectedId;
+      }
+
+      function markOrderViewPresetCustom() {
+        if (!state.selectedOrderViewPresetId) return;
+        state.selectedOrderViewPresetId = "";
+        renderOrderViewPresetOptions();
+      }
+
+      function captureOrderViewPreset() {
+        const sortSetting = state.sortSettings.allocations;
+        return {
+          searchQuery: state.searchQuery,
+          shortageFocus: state.shortageFocus,
+          specificationFilters: [...state.specificationFilters],
+          warehouseFilters: [...state.warehouseFilters],
+          managerFilters: [...state.managerFilters],
+          sortSetting: sortSetting ? { ...sortSetting } : null,
+          columnFilters: normalizeStoredColumnFilters(state.columnFilters.allocations),
+        };
+      }
+
+      function applyOrderViewPreset(presetId) {
+        const preset = state.orderViewPresets.find((candidate) => candidate.id === presetId);
+        if (!preset || !state.workspace) return;
+        const definitions = getPreviewDefinitions(state.workspace);
+        const allocationPreview = definitions.allocations;
+        const allocationKeys = new Set(allocationPreview.columns.map((column) => column.key));
+        const warehouseKeys = new Set((definitions.inventory?.columns || [])
+          .filter((column) => column.role === "warehouseQuantity").map((column) => column.key));
+        const managerNames = new Set(allocationPreview.sourceRows.map((row) => String(row?.manager || "").trim()).filter(Boolean));
+        state.searchQuery = preset.view.searchQuery;
+        state.shortageFocus = preset.view.shortageFocus;
+        state.specificationFilters = new Set(preset.view.specificationFilters);
+        state.warehouseFilters = new Set(preset.view.warehouseFilters.filter((key) => warehouseKeys.has(key)));
+        state.managerFilters = new Set(preset.view.managerFilters.filter((name) => managerNames.has(name)));
+        if (preset.view.sortSetting && allocationKeys.has(preset.view.sortSetting.columnKey)) {
+          state.sortSettings.allocations = { ...preset.view.sortSetting };
+        } else {
+          delete state.sortSettings.allocations;
+        }
+        const allocationFilters = Object.create(null);
+        Object.entries(preset.view.columnFilters).forEach(([columnKey, setting]) => {
+          if (allocationKeys.has(columnKey)) allocationFilters[columnKey] = { ...setting };
+        });
+        if (Object.keys(allocationFilters).length > 0) state.columnFilters.allocations = allocationFilters;
+        else delete state.columnFilters.allocations;
+        state.activePreview = "allocations";
+        state.selectedOrderViewPresetId = preset.id;
+        elements.tableSearchInput.value = state.searchQuery;
+        elements.specFilterGroup.querySelectorAll("input[type='checkbox']").forEach((input) => {
+          input.checked = state.specificationFilters.has(input.value);
+        });
+        setActiveFilterPanel("");
+        renderPreview();
+        showToast(`${preset.name} 양식을 적용했습니다.`);
+      }
+
+      function openOrderViewPresetDialog() {
+        if (!state.workspace || state.activePreview !== "allocations") {
+          showToast("주문현황에서 필터 조건을 만든 뒤 양식을 저장하세요.", true);
+          return;
+        }
+        const selected = state.orderViewPresets.find((preset) => preset.id === state.selectedOrderViewPresetId);
+        elements.viewPresetNameInput.value = selected?.name || "";
+        elements.viewPresetDialog.showModal();
+        window.setTimeout(() => elements.viewPresetNameInput.focus(), 0);
+      }
+
+      function saveCurrentOrderViewPreset() {
+        const name = String(elements.viewPresetNameInput.value || "").trim().slice(0, 40);
+        if (!name) {
+          elements.viewPresetNameInput.focus();
+          showToast("양식 이름을 입력하세요.", true);
+          return;
+        }
+        const existing = state.orderViewPresets.find((preset) =>
+          preset.id === state.selectedOrderViewPresetId || preset.name === name);
+        const id = existing?.id || `view-${Date.now().toString(36)}`;
+        const next = normalizeOrderViewPreset({
+          id,
+          name,
+          updatedAt: new Date().toISOString(),
+          view: captureOrderViewPreset(),
+        });
+        if (!next) return;
+        state.orderViewPresets = [next, ...state.orderViewPresets.filter((preset) => preset.id !== id)]
+          .slice(0, ORDER_VIEW_PRESET_LIMIT);
+        try {
+          persistOrderViewPresets();
+        } catch (error) {
+          showToast("양식을 저장할 브라우저 공간이 부족합니다.", true);
+          return;
+        }
+        state.selectedOrderViewPresetId = id;
+        elements.viewPresetDialog.close();
+        renderOrderViewPresetOptions();
+        showToast(`${name} 양식을 저장했습니다.`);
+      }
+
+      function deleteSelectedOrderViewPreset() {
+        const preset = state.orderViewPresets.find((candidate) => candidate.id === state.selectedOrderViewPresetId);
+        if (!preset) return;
+        state.orderViewPresets = state.orderViewPresets.filter((candidate) => candidate.id !== preset.id);
+        state.selectedOrderViewPresetId = "";
+        persistOrderViewPresets();
+        renderOrderViewPresetOptions();
+        showToast(`${preset.name} 양식을 삭제했습니다.`);
       }
 
       function loadWarehouseColorSettings() {
@@ -3724,9 +3977,9 @@
             ? column.key
             : `shipping:inventory:${index}:${encodeURIComponent(String(column?.header || index))}`,
           header: column?.role === "calculatedQuantity" && state.warehouseFilters.size > 0
-            ? "선택창고 잔량/발주"
+            ? "수량"
             : column?.role === "calculatedQuantity"
-              ? "잔량/발주"
+              ? "수량"
             : String(column?.header || "") === "품목명"
               ? "품명"
               : String(column?.header || "") === "주문수량"
@@ -3978,7 +4231,7 @@
             decorateShortageRow(row, shortageSets, inventoryByCode));
           const ledgerColumns = ledgerView.columns.map((column) => ({
             ...column,
-            header: column.role === "calculatedQuantity" ? "잔량/발주"
+            header: column.role === "calculatedQuantity" ? "수량"
               : column.header === "품목명" ? "품명" : column.header,
             defaultWidth: column.role === "orderInformation" ? 240
               : column.role === "purchasePlace" ? 150
@@ -4349,20 +4602,6 @@
         }
       }
 
-      function cycleColumnSort(previewId, columnKey) {
-        const preview = previewDefinitionById(previewId);
-        if (!preview?.columns?.some((column) => column.key === columnKey)) return;
-        const current = columnSortSetting(previewId, preview);
-        if (current?.columnKey !== columnKey) {
-          state.sortSettings[previewId] = { columnKey, direction: "asc" };
-        } else if (current.direction === "asc") {
-          state.sortSettings[previewId] = { columnKey, direction: "desc" };
-        } else {
-          delete state.sortSettings[previewId];
-        }
-        renderPreview();
-      }
-
       function applyColumnTextFilter() {
         const context = state.activeColumnMenu;
         if (!context || !Array.isArray(context.textOptions) || !(context.textSelection instanceof Set)) return;
@@ -4439,7 +4678,7 @@
                 data-column-key="${escapeHtml(column.key)}"></span>`
             : "";
           return `<th class="${resizable ? "column-resizable" : ""} ${draggable ? "column-draggable" : ""} ${sortable ? "column-header-sortable" : ""} ${isSorted ? "column-sorted" : ""} ${hasFilter ? "column-filtered" : ""}"
-            aria-sort="${ariaSort}" ${sortable ? `data-sort-header-preview-id="${escapeHtml(previewId)}" data-sort-header-column-key="${escapeHtml(column.key)}"` : ""}
+            aria-sort="${ariaSort}"
             ${draggable ? `draggable="true" data-column-drag-key="${escapeHtml(column.key)}"` : ""}>
             <span class="column-header-content"><span class="column-header-label">${escapeHtml(column.header)}</span>${sortControl}</span>${handle}</th>`;
         }).join("");
@@ -4464,7 +4703,7 @@
                     const isStatus = preview.status === index;
                     const warehouseQuantity = previewId === "inventory" &&
                       column.role === "warehouseQuantity" && !referenceRow;
-                    const calculatedQuantity = previewId === "inventory" &&
+                    const calculatedQuantity = ["inventory", "ledger"].includes(previewId) &&
                       column.role === "calculatedQuantity" && !referenceRow;
                     const orderQuantity = previewId === "inventory" &&
                       column.role === "orderQuantity" && !referenceRow;
@@ -4509,10 +4748,6 @@
                       (previewId === "inventory" && inventoryNegativeBalance) ||
                       (previewId === "ledger" && ledgerNegativeBalance)
                     );
-                    const inventoryUnavailable = Boolean(sourceRow?.inventoryMissing || sourceRow?.salesOnly) &&
-                      ["warehouseQuantity", "stockQuantity", "calculatedQuantity"].includes(column.role);
-                    const purchaseRequired = column.role === "calculatedQuantity" &&
-                      negativeNumericValue && !inventoryUnavailable;
                     const content = editablePurchase
                       ? `<input class="purchase-input" data-purchase-code="${escapeHtml(sourceRow?.productCode || "")}"
                           data-grid-column="${escapeHtml(column.key)}" data-negative-balance="${negativeBalance ? "true" : "false"}"
@@ -4544,10 +4779,6 @@
                               ? renderRowStateBadges(value)
                             : column.role === "orderInformation"
                               ? renderOrderInformationBadges(value)
-                            : inventoryUnavailable
-                              ? '<span class="inventory-unavailable-value">정보없음</span>'
-                            : purchaseRequired
-                              ? `<span class="purchase-required-badge" title="잔량 ${escapeHtml(formatNumber(value))}">발주 ${escapeHtml(formatNumber(Math.abs(Number(value))))}</span>`
                             : orderQuantity || calculatedQuantity
                               ? `<span class="inventory-total-frame" data-negative-value="${negativeNumericValue ? "true" : "false"}">${escapeHtml(isNumber ? formatNumber(value) : value)}</span>`
                               : `<span class="${noticeText ? "notice-text" : ""}">${escapeHtml(isNumber ? formatNumber(value) : value)}</span>`;
@@ -4580,6 +4811,7 @@
         `).join("");
 
         const preview = definitions[state.activePreview];
+        renderOrderViewPresetOptions();
         renderWarehouseColorBar(definitions);
         const shortageEligible = ["allocations", "ledger", "inventory"].includes(state.activePreview);
         const shortageCount = Number(preview.shortageCount || 0);
@@ -4720,6 +4952,7 @@
         state.managerFilters.clear();
         state.sortSettings = Object.create(null);
         state.columnFilters = Object.create(null);
+        state.selectedOrderViewPresetId = "";
         closeColumnSortMenu();
         elements.tableSearchInput.value = "";
         elements.specFilterGroup.querySelectorAll("input[type='checkbox']").forEach((input) => {
@@ -4731,6 +4964,7 @@
       function runResultFilterReset() {
         if (!state.workspace) return;
         resetResultViewFilters();
+        markOrderViewPresetCustom();
         renderPreview();
         showToast("검색어·정렬·열 조건과 모든 보기 필터를 초기화했습니다. 지정 배색은 유지됩니다.");
       }
@@ -5480,6 +5714,8 @@
       state.columnOrderSettings = loadColumnOrderSettings();
       state.warehouseColorSettings = loadWarehouseColorSettings();
       state.managerColorSettings = loadManagerColorSettings();
+      state.orderViewPresets = loadOrderViewPresets();
+      renderOrderViewPresetOptions();
 
       elements.analyzeButton.addEventListener("click", runAnalysis);
       elements.refreshButton.addEventListener("click", refreshCurrentSession);
@@ -5487,10 +5723,25 @@
       elements.printButton.addEventListener("click", printActiveTable);
       elements.columnWidthSaveButton.addEventListener("click", persistActiveColumnWidths);
       elements.columnWidthResetButton.addEventListener("click", resetActiveColumnWidths);
+      elements.viewPresetSelect.addEventListener("change", () => {
+        if (elements.viewPresetSelect.value) applyOrderViewPreset(elements.viewPresetSelect.value);
+      });
+      elements.viewPresetSaveButton.addEventListener("click", openOrderViewPresetDialog);
+      elements.viewPresetDeleteButton.addEventListener("click", deleteSelectedOrderViewPreset);
+      elements.viewPresetDialog.addEventListener("click", (event) => {
+        if (event.target.closest("[data-cancel-view-preset]")) elements.viewPresetDialog.close();
+        if (event.target.closest("[data-save-view-preset]")) saveCurrentOrderViewPreset();
+      });
+      elements.viewPresetNameInput.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter" || event.isComposing) return;
+        event.preventDefault();
+        saveCurrentOrderViewPreset();
+      });
       elements.resultFilterResetButton.addEventListener("click", runResultFilterReset);
       elements.shortageFocusButton.addEventListener("click", () => {
         if (!state.workspace || elements.shortageFocusButton.disabled) return;
         state.shortageFocus = !state.shortageFocus;
+        markOrderViewPresetCustom();
         renderPreview();
         showToast(state.shortageFocus
           ? "재고부족 모아보기를 켰습니다. 재고수불부·창고별재고에는 같은 6자리 카테고리 대체후보도 표시합니다."
@@ -5498,6 +5749,7 @@
       });
       elements.tableSearchInput.addEventListener("input", () => {
         state.searchQuery = elements.tableSearchInput.value;
+        markOrderViewPresetCustom();
         if (state.workspace) renderPreview();
       });
       elements.specFilterGroup.addEventListener("change", (event) => {
@@ -5505,6 +5757,7 @@
         if (!input) return;
         if (input.checked) state.specificationFilters.add(input.value);
         else state.specificationFilters.delete(input.value);
+        markOrderViewPresetCustom();
         if (state.workspace) renderPreview();
       });
       elements.warehouseFilterToggle.addEventListener("click", () => {
@@ -5518,6 +5771,7 @@
         if (filter) {
           if (filter.checked) state.warehouseFilters.add(filter.dataset.warehouseFilter);
           else state.warehouseFilters.delete(filter.dataset.warehouseFilter);
+          markOrderViewPresetCustom();
           if (state.workspace) renderPreview();
           return;
         }
@@ -5525,6 +5779,7 @@
         if (managerFilter) {
           if (managerFilter.checked) state.managerFilters.add(managerFilter.dataset.managerFilter);
           else state.managerFilters.delete(managerFilter.dataset.managerFilter);
+          markOrderViewPresetCustom();
           if (state.workspace) renderPreview();
           return;
         }
@@ -5567,6 +5822,7 @@
       elements.warehouseColorResetButton.addEventListener("click", () => {
         state.managerFilters.clear();
         state.warehouseFilters.clear();
+        markOrderViewPresetCustom();
         if (state.workspace) renderPreview();
         showToast("창고·담당자 필터를 해제했습니다. 저장된 배색은 유지됩니다.");
       });
@@ -5686,12 +5942,7 @@
             state.activeColumnMenu?.columnKey === trigger.dataset.sortColumnKey;
           if (sameMenu) closeColumnSortMenu();
           else openColumnSortMenu(trigger);
-          return;
         }
-        const header = event.target.closest("th[data-sort-header-preview-id][data-sort-header-column-key]");
-        if (!header || !state.workspace || state.suppressHeaderClick || event.target.closest(".column-resize-handle")) return;
-        event.preventDefault();
-        cycleColumnSort(header.dataset.sortHeaderPreviewId, header.dataset.sortHeaderColumnKey);
       });
       elements.columnSortMenu.addEventListener("click", (event) => {
         const context = state.activeColumnMenu;
@@ -5702,6 +5953,7 @@
         }
         if (event.target.closest("[data-apply-column-values]")) {
           applyColumnTextFilter();
+          if (context.previewId === "allocations") markOrderViewPresetCustom();
           closeColumnSortMenu();
           renderPreview();
           return;
@@ -5711,6 +5963,7 @@
           const direction = sortButton.dataset.sortDirection;
           if (direction === "default") delete state.sortSettings[context.previewId];
           else state.sortSettings[context.previewId] = { columnKey: context.columnKey, direction };
+          if (context.previewId === "allocations") markOrderViewPresetCustom();
           closeColumnSortMenu();
           renderPreview();
           return;
@@ -5723,6 +5976,7 @@
             delete state.columnFilters[context.previewId][context.columnKey];
             if (Object.keys(state.columnFilters[context.previewId]).length === 0) delete state.columnFilters[context.previewId];
           }
+          if (context.previewId === "allocations") markOrderViewPresetCustom();
           closeColumnSortMenu();
           renderPreview();
         }
@@ -5750,6 +6004,7 @@
         if (!conditionInput) return;
         setColumnCondition(context.previewId, context.columnKey,
           conditionInput.dataset.columnCondition, conditionInput.checked);
+        if (context.previewId === "allocations") markOrderViewPresetCustom();
         renderPreview();
         refreshColumnSortMenu();
       });

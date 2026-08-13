@@ -13,7 +13,7 @@ assert.doesNotMatch(orderOpsHtml, /tokens truncated|…\d+ tokens truncated…/,
   "the public OrderOps mirror must not contain a truncated source fragment");
 assert.match(orderOpsHtml, /<body>[\s\S]*<\/body>\s*<\/html>/,
   "the public OrderOps mirror must remain a complete HTML document");
-assert.match(orderOpsHtml, /brand-badge">v1\.34</, "ORDER Q visible version must be v1.34");
+assert.match(orderOpsHtml, /brand-badge">v1\.35</, "ORDER Q visible version must be v1.35");
 assert.match(orderOpsHtml, /<title>ONEAPP ORDER Q · 출고관리<\/title>/,
   "the public page title must establish ORDER Q as shipment management");
 assert.match(orderOpsHtml, /aria-label="ONEAPP ORDER Q 출고관리"/,
@@ -22,7 +22,7 @@ assert.match(orderOpsHtml, /class="brand-logo" src="assets\/order-q-logo\.png"/,
   "the public header must use the approved ORDER Q logo asset");
 assert.match(orderOpsHtml, /\.brand-logo-frame\s*\{[\s\S]*?width:\s*120px;[\s\S]*?height:\s*20px;/,
   "the public ORDER Q logo must match the ONEAPP wordmark height");
-assert.match(orderOpsHtml, /ORDER Q v1\.34 · 출고관리/,
+assert.match(orderOpsHtml, /ORDER Q v1\.35 · 출고관리/,
   "the public footer must use the ORDER Q product concept");
 assert.doesNotMatch(
   orderOpsHtml.slice(orderOpsHtml.indexOf('<header class="global-header">'), orderOpsHtml.indexOf('</header>')),
@@ -37,7 +37,7 @@ assert.equal(
   "the repository logo must be the unmodified approved source image",
 );
 assert.ok(orderOpsHtml.includes('class="execution-panel"'),
-  "the public v1.34 execution controls must be separate from the upload strip");
+  "the public v1.35 execution controls must be separate from the upload strip");
 assert.match(orderOpsHtml, /\.execution-panel\s*\{[^}]*grid-template-columns:\s*repeat\(3,/,
   "the public execution controls must use three visible segments");
 assert.ok(orderOpsHtml.includes("function resetResultViewFilters()"),
@@ -117,10 +117,17 @@ for (const requiredInteractionContract of [
   '["F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10"]',
   'filteredSortedPreviewPairs(state.activePreview, preview)',
   'getAllocationInventoryView(workspace)',
+  'id="viewPresetSelect"',
+  'id="viewPresetSaveButton"',
+  'oneapp.orderops.order-view-presets.v1',
+  'function applyOrderViewPreset',
+  'function saveCurrentOrderViewPreset',
 ]) {
   assert.ok(orderOpsHtml.includes(requiredInteractionContract),
-    `public ORDER Q v1.34 interaction contract is missing: ${requiredInteractionContract}`);
+    `public ORDER Q v1.35 interaction contract is missing: ${requiredInteractionContract}`);
 }
+assert.match(orderOpsHtml, /\.print-area table\s*\{[\s\S]*?font-size:\s*8\.8px;/,
+  "public screen print text must be ten percent larger");
 assert.doesNotMatch(orderOpsHtml, /<input[^>]+type="color"|data-warehouse-color|data-manager-color/,
   "the public OrderOps filter strip must not use a native color picker inside filter options");
 const publicPastelSource = orderOpsHtml.slice(
@@ -1667,7 +1674,10 @@ assert.ok(
 );
 
 const html = fs.readFileSync(path.join(ROOT, "orderops", "list.html"), "utf8");
-assert.match(html, /brand-badge">v1\.34</, "canonical ORDER Q visible version must be v1.34");
+const inlineScriptMatch = html.match(/<script>\s*([\s\S]*?)<\/script>\s*<\/body>/);
+assert.ok(inlineScriptMatch, "canonical ORDER Q inline application script must exist");
+new vm.Script(inlineScriptMatch[1], { filename: "orderops/list.html:inline" });
+assert.match(html, /brand-badge">v1\.35</, "canonical ORDER Q visible version must be v1.35");
 assert.match(html, /class="brand-logo" src="\.\.\/assets\/order-q-logo\.png"/,
   "the canonical header must use the shared ORDER Q logo asset");
 assert.match(html, /<h2 id="settingsModalTitle">ORDER Q 환경설정<\/h2>/,
@@ -1795,9 +1805,14 @@ for (const requiredInteractionContract of [
   '["F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10"]',
   'filteredSortedPreviewPairs(state.activePreview, preview)',
   'getAllocationInventoryView(workspace)',
+  'id="viewPresetSelect"',
+  'id="viewPresetSaveButton"',
+  'oneapp.orderops.order-view-presets.v1',
+  'function applyOrderViewPreset',
+  'function saveCurrentOrderViewPreset',
 ]) {
   assert.ok(html.includes(requiredInteractionContract),
-    `canonical ORDER Q v1.34 interaction contract is missing: ${requiredInteractionContract}`);
+    `canonical ORDER Q v1.35 interaction contract is missing: ${requiredInteractionContract}`);
 }
 assert.doesNotMatch(html, /<input[^>]+type="color"|data-warehouse-color|data-manager-color/,
   "canonical OrderOps filter options must remain separate from color assignment");
@@ -1868,6 +1883,7 @@ for (const id of [
   "shortageFocusButton",
   "colorAssignmentPanel", "colorTargetSelect", "pastelColorPalette", "vividColorPalette", "vividColorToggle",
   "columnVisibilityButton", "columnWidthSaveButton", "columnWidthResetButton",
+  "viewPresetSelect", "viewPresetSaveButton", "viewPresetDeleteButton", "viewPresetDialog", "viewPresetNameInput",
   "downloadButton", "printButton",
   "headerCloudLoadButton", "headerCloudSaveButton",
   "headerRestoreButton", "headerSettingsButton", "settingsModal", "workspaceStorage",
@@ -1889,7 +1905,7 @@ for (const ledgerPurchasingContract of [
   'purchaseEditable: ledgerPurchaseIndex >= 0', 'renderOrderInformationBadges(value)',
   '["inventory", "ledger"].includes(state.activePreview)',
   'getShortageCategoryContext(workspace)', 'renderRowStateBadges(value)',
-  'block: "center"', 'purchase-required-badge', '재고부족 모아보기',
+  'block: "center"', 'class="inventory-total-frame"', '재고부족 모아보기',
 ]) {
   assert.ok(html.includes(ledgerPurchasingContract), `ledger purchasing contract is missing: ${ledgerPurchasingContract}`);
 }
@@ -1899,11 +1915,41 @@ assert.match(html, /th:hover \.column-sort-trigger,[\s\S]*?opacity:\s*1;/,
   "filter controls must appear on header hover");
 assert.match(html, /\.column-sort-trigger\s*\{[\s\S]*?right:\s*1px;[\s\S]*?width:\s*24px;[\s\S]*?height:\s*18px;/,
   "filter controls must remain compact and attached to the right edge of narrow headers");
-assert.ok(html.includes('data-sort-header-preview-id=') && html.includes('function cycleColumnSort'),
-  "header body clicks must sort independently from the filter box");
+assert.doesNotMatch(html, /data-sort-header-preview-id=|function cycleColumnSort/,
+  "header body clicks must not sort outside the filter control");
 assert.ok(html.includes('data-text-filter-section data-value-filter-section') &&
   html.includes('querySelector("[data-text-filter-section]").classList.remove("hidden")'),
   "numeric and text columns must both expose Excel-style cell-value selection");
+assert.doesNotMatch(html, /purchase-required-badge|inventory-unavailable-value|>발주 \$\{/,
+  "quantity cells must not replace signed numeric results with explanatory text");
+assert.equal((html.match(/header: column(?:\?\.)?\.role === "calculatedQuantity" \? "수량"/g) || []).length >= 1, true,
+  "calculated stock-ledger quantities must retain the 수량 header");
+assert.match(combinedCss, /\.print-area table\s*\{[\s\S]*?font-size:\s*8\.8px;/,
+  "canonical screen print text must be ten percent larger");
+
+const presetHelperStart = html.indexOf("function isPlainRecord");
+const presetHelperEnd = html.indexOf("function loadWarehouseColorSettings", presetHelperStart);
+assert.ok(presetHelperStart >= 0 && presetHelperEnd > presetHelperStart,
+  "order-view preset normalization helpers must exist");
+const presetContext = {};
+vm.runInNewContext(`${html.slice(presetHelperStart, presetHelperEnd)}
+  this.normalizedPreset = normalizeOrderViewPreset({
+    id: "view-test", name: "부족상품", updatedAt: "2026-08-14T00:00:00.000Z",
+    view: {
+      searchQuery: "양파", shortageFocus: true,
+      specificationFilters: ["BOX", "BOX"], managerFilters: ["담당A"], warehouseFilters: ["wh:1"],
+      sortSetting: { columnKey: "shipping:allocations:7:주문", direction: "desc" },
+      columnFilters: {
+        "shipping:allocations:7:주문": { excludeBlank: true, excludeZero: true, allowedValues: ["[\\\"value\\\",\\\"2\\\"]"] },
+        "__proto__": { excludeBlank: true }
+      }
+    }
+  });`, presetContext);
+assert.equal(presetContext.normalizedPreset.name, "부족상품");
+assert.deepEqual(Array.from(presetContext.normalizedPreset.view.specificationFilters), ["BOX"]);
+assert.equal(presetContext.normalizedPreset.view.sortSetting.direction, "desc");
+assert.equal(Object.prototype.hasOwnProperty.call(presetContext.normalizedPreset.view.columnFilters, "__proto__"), false,
+  "saved view presets must reject unsafe filter keys");
 
 const administratorAliasMatrix = buildCanonicalOrderMatrix({
   replacements: {
@@ -2009,7 +2055,7 @@ for (const contract of [
   "showPurchaseCompletionCoachmark",
   "function resetResultViewFilters()", 'grid-template-columns: repeat(3, minmax(0, 1fr))',
 ]) {
-  assert.ok(html.includes(contract), `ORDER Q v1.34 contract is missing: ${contract}`);
+  assert.ok(html.includes(contract), `ORDER Q v1.35 contract is missing: ${contract}`);
 }
 const purchaseAutocompleteStart = html.indexOf("function purchaseAutocompleteNames");
 const purchaseAutocompleteEnd = html.indexOf("function closePurchaseAutocomplete", purchaseAutocompleteStart);
