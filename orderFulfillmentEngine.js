@@ -7,7 +7,7 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  const ENGINE_VERSION = "3.14.0";
+  const ENGINE_VERSION = "3.15.0";
   const WORKSPACE_SCHEMA_VERSION = "shipping-workspace/v2";
   const INVENTORY_OVERRIDE_SCHEMA_VERSION = "shipping-inventory-overrides/v1";
   const HEADER_SCAN_LIMIT = 30;
@@ -1496,6 +1496,19 @@
         });
       }
     });
+    const inventoryView = getInventoryViewRows(workspace);
+    const unitPriceColumnIndex = inventoryView.columns.findIndex(
+      (column) => column.role === "warehousePrice" && normalizeHeader(column.header) === "창고",
+    );
+    const fallbackUnitPriceColumnIndex = inventoryView.columns.findIndex(
+      (column) => column.role === "warehousePrice",
+    );
+    const effectiveUnitPriceColumnIndex = unitPriceColumnIndex >= 0
+      ? unitPriceColumnIndex
+      : fallbackUnitPriceColumnIndex;
+    const unitPriceColumn = effectiveUnitPriceColumnIndex >= 0
+      ? inventoryView.columns[effectiveUnitPriceColumnIndex]
+      : null;
     const columns = [
       { key: "ledger:product-code", header: "품목코드", role: "productCode", numeric: false },
       { key: "ledger:product-name", header: "품목명", role: "productName", numeric: false },
@@ -1506,9 +1519,17 @@
       { key: "ledger:outbound", header: "주문", role: "orderQuantity", numeric: true },
       { key: "ledger:sales", header: "출고수량", role: "salesQuantity", numeric: true },
       { key: "ledger:remaining", header: "잔량", role: "calculatedQuantity", numeric: true },
+      {
+        key: "ledger:unit-price",
+        header: "단가",
+        role: "unitPrice",
+        numeric: true,
+        editable: Boolean(unitPriceColumn?.editable),
+        inventoryColumnKey: unitPriceColumn?.key || "",
+      },
       { key: "ledger:purchase-place", header: "구매처", role: "purchasePlace", numeric: false },
+      { key: "ledger:information", header: "정보", role: "orderInformation", numeric: false },
     ];
-    const inventoryView = getInventoryViewRows(workspace);
     const rows = inventoryView.rows.map((inventory) => {
       const source = (workspace.inventory || []).find(
         (candidate) => normalizeProductCode(candidate?.productCode) === inventory.productCode,
@@ -1523,9 +1544,16 @@
         inventory.orderQuantity,
         salesByCode.get(inventory.productCode) || 0,
         inventory.remainingQuantity,
+        effectiveUnitPriceColumnIndex >= 0 ? inventory.values[effectiveUnitPriceColumnIndex] : "",
         inventory.purchase || [...(purchasePartnersByCode.get(inventory.productCode) || [])].join(", "),
+        inventory.orderInformation || "",
       ];
-      return { ...inventory, sourceRow: source, values };
+      return {
+        ...inventory,
+        sourceRow: source,
+        unitPriceColumnKey: unitPriceColumn?.key || "",
+        values,
+      };
     });
     const inventoryCodes = new Set(rows.map((row) => normalizeProductCode(row.productCode)));
     const purchaseInputs = getPurchaseInputs(workspace);
@@ -1559,7 +1587,9 @@
           orderQuantity,
           salesQuantity,
           remainingQuantity,
+          "",
           purchase,
+          orderInformationDisplay(workspace, productCode),
         ],
         inventoryTotal: 0,
         stockTotal: 0,

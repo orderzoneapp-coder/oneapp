@@ -10,7 +10,7 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function (engine) {
   "use strict";
 
-  const WORKBOOK_VERSION = "4.6.0";
+  const WORKBOOK_VERSION = "4.7.0";
   const REQUIRED_SHEETS = Object.freeze([
     "전달사항(적요보기)",
     "주문현황",
@@ -502,10 +502,10 @@
     const remainingColumn = ledger.columns.findIndex((column) => column.role === "calculatedQuantity");
     const sheet = buildTableSheet(XLSX, {
       title: "재고수불부",
-      subtitle: "재고·입고·주문·출고수량 정보를 함께 표시합니다. 잔량은 기존 기준인 재고 합계−주문수량이며 음수는 노란색으로 표시합니다.",
+      subtitle: "재고·입고·주문·출고수량과 발주용 단가·구매처·거래처 정보를 함께 표시합니다. 잔량은 재고 합계−주문수량이며 음수는 노란색으로 표시합니다.",
       headers,
       rows,
-      widths: headers.map((header) => header === "품목명" ? 31 : header === "구매처" ? 22 : 13),
+      widths: headers.map((header) => header === "품목명" ? 31 : header === "정보" ? 34 : header === "구매처" ? 22 : 13),
       headerFill: COLORS.slate,
       numericColumns,
       textColumns: codeColumn >= 0 ? [codeColumn] : [],
