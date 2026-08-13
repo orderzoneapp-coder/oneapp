@@ -32,23 +32,40 @@ assert.ok(categoryAt >= 0, "category group must be rendered on the lower filter 
 assert.ok(categoryAt < themeAt && themeAt < marginAt && marginAt < priceAt && priceAt < noInboundAt,
   "lower row order must be category, theme, margin, price change, and no inbound price");
 assert.match(lowerRow, /handleAllThemeClick[\s\S]*\['theme1', '테마1'\][\s\S]*\['theme5', '테마5'\]/,
-  "theme group must render 전체 and 테마1~테마5");
+  "theme group must render 행사 and 테마1~테마5");
+assert.match(lowerRow, /handleAllThemeClick[\s\S]*"행사"/,
+  "the all-theme control must be named 행사");
 assert.match(toolbar, /isDetailFilterActive[\s\S]*!\['margin', 'noInboundPrice'\]\.includes\(v\)/,
   "fixed margin and no-inbound filters must not force the detail panel open");
 assert.doesNotMatch(toolbar, /showDetailFilterPanel\s*=\s*[^;]*isCategoryFilterActive/,
   "fixed category filters must not force the detail panel open");
 
 const allThemeHandler = toolbar.slice(toolbar.indexOf("const handleAllThemeClick ="), toolbar.indexOf("const toggleThemeFilter ="));
-assert.match(allThemeHandler, /filter\(v => !\/\^theme\[1-5\]\$\//, "theme 전체 must remove theme filters");
+assert.match(allThemeHandler, /filter\(v => !\/\^theme\[1-5\]\$\//, "행사 must preserve non-theme filters");
+assert.match(allThemeHandler, /return \[\.\.\.nonTheme, \.\.\.allThemeFilters\]/,
+  "행사 must select all five theme filters");
 assert.doesNotMatch(allThemeHandler, /setPriceFilter|setCategoryFilters|setBasicSearch|setGlobalSearch/,
-  "theme 전체 must preserve every non-theme filter");
+  "행사 must preserve every non-theme filter");
+assert.match(toolbar, /const isAllThemeFilterActive = allThemeFilters\.every/,
+  "행사 must become active only after all five theme filters are selected");
 
-const promoWorkbenchStart = lowerRow.indexOf("promoWorkbenchOpen &&");
+const promoWorkbenchStart = lowerRow.indexOf('title: "현재 마스터/카탈로그 작업범위를 그대로 사용하는 행사 전용 작업대"');
 const detailPanelStart = lowerRow.indexOf("showDetailFilterPanel &&");
 assert.ok(promoWorkbenchStart >= 0 && detailPanelStart > promoWorkbenchStart, "promotion workbench/detail panel boundaries must exist");
 const promoWorkbench = lowerRow.slice(promoWorkbenchStart, detailPanelStart);
 assert.doesNotMatch(promoWorkbench, /promo-work-theme-|beginThemeDrag|handleThemeClick/,
   "promotion workbench must not duplicate the fixed theme group");
+assert.doesNotMatch(toolbar, /promoWorkbenchOpen|togglePromoWorkbench|"행사작업"/,
+  "the promotion workbench must stay visible without a separate toggle button");
+assert.match(lowerRow, /React\.createElement\("div", \{ className: `rounded-xl border px-3 py-2[\s\S]*"행사 작업대"/,
+  "the promotion workbench must render unconditionally");
+
+assert.match(topRow, /getLoadButtonClass\(isExcelWorktableLoaded, 'emerald'\)/,
+  "Excel must stay neutral until an Excel worktable is loaded");
+assert.match(topRow, /hasResettableWorkSession \? 'text-white bg-rose-600[\s\S]*: 'bg-white text-slate-500/,
+  "main reset must use a neutral initial style and a strong loaded-work style");
+assert.match(lowerRow, /isAllCategoryActive \? 'bg-blue-600[\s\S]*: 'bg-white text-blue-700/,
+  "category 전체 must become strong only when the full product view is active");
 
 const detailOptionsEnd = lowerRow.indexOf("!registrationMode", detailPanelStart);
 const detailOptions = lowerRow.slice(detailPanelStart, detailOptionsEnd);
@@ -88,7 +105,7 @@ assert.match(compositeSource, /themeFilters\.some\(v => matchPromotionThemeFilte
 assert.match(compositeSource, /if \(has\('margin'\)\)[\s\S]*if \(themeFilters\.length > 0/,
   "core filters and theme filters must remain combined as sequential AND conditions");
 
-const versionMatches = [...html.matchAll(/v2\.1\.186_ExcludeActionLayout/g)];
-assert.ok(versionMatches.length >= 3, "all MerchOps version labels must use v2.1.186");
+const versionMatches = [...html.matchAll(/v2\.1\.187_PurposeDrivenInitialUI/g)];
+assert.ok(versionMatches.length >= 3, "all MerchOps version labels must use v2.1.187");
 
 console.log("MerchOps master-theme filter and fixed-layout contracts passed.");

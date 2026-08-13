@@ -80,6 +80,10 @@ const infoAt = excelGroup.indexOf("handleFileUpload(e, 'info')");
 const templatesAt = excelGroup.indexOf("commonExcelTableViewOptions.map");
 assert.ok(commonExcelAt >= 0 && commonExcelAt < estimateAt && estimateAt < purchaseAt && purchaseAt < inventoryAt && inventoryAt < infoAt && infoAt < templatesAt,
   "Excel group order must be Excel, estimate, purchase, inventory, info, templates");
+assert.match(excelGroup, /getLoadButtonClass\(isExcelWorktableLoaded, 'emerald'\)/,
+  "the classification-free Excel entry must use dynamic loaded-state styling");
+assert.match(excelGroup, /Excel: 유형을 고르지 않고 파일을 불러옵니다/,
+  "the common Excel entry must explain that users do not classify the file type");
 assert.doesNotMatch(excelGroup, /handleFileUpload\(e, 'inventory'\)/,
   "the common Excel button must not force every file through inventory logic");
 assert.doesNotMatch(toolbar.slice(parserGroupAt, operationGroupAt), /justify-around/,
@@ -117,7 +121,7 @@ assert.match(toolbar,
 assert.match(toolbar.trimEnd(), /"적용"\)\)\)\)\)\)\)\);\s*\}\);$/,
   "MainToolbar must return its root element instead of the final detail-filter condition");
 
-const versions = [...html.matchAll(/v2\.1\.186_ExcludeActionLayout/g)].length;
-assert.ok(versions >= 3, "all MerchOps version labels must use v2.1.186");
+const versions = [...html.matchAll(/v2\.1\.187_PurposeDrivenInitialUI/g)].length;
+assert.ok(versions >= 3, "all MerchOps version labels must use v2.1.187");
 
 console.log("MerchOps common Excel routing, toolbar grouping, template aggregation, and registration sub-toolbar contracts passed.");
