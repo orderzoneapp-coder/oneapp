@@ -31,34 +31,40 @@ const noInboundAt = lowerRow.indexOf("toggleDetailFilter('noInboundPrice')");
 assert.ok(categoryAt >= 0, "category group must be rendered on the lower filter row");
 assert.ok(categoryAt < themeAt && themeAt < marginAt && marginAt < priceAt && priceAt < noInboundAt,
   "lower row order must be category, theme, margin, price change, and no inbound price");
-assert.match(lowerRow, /handleAllThemeClick[\s\S]*\['theme1', '테마1'\][\s\S]*\['theme5', '테마5'\]/,
-  "theme group must render 행사 and 테마1~테마5");
+assert.match(lowerRow, /handleAllThemeClick[\s\S]*\['theme1', '테마1'\][\s\S]*\['theme5', '테마5'\][\s\S]*\['themeNone', '없음'\]/,
+  "theme group must render 행사, 테마1~테마5, and 없음");
 assert.match(lowerRow, /handleAllThemeClick[\s\S]*"행사"/,
   "the all-theme control must be named 행사");
-assert.match(toolbar, /isDetailFilterActive[\s\S]*!\['margin', 'noInboundPrice'\]\.includes\(v\)/,
-  "fixed margin and no-inbound filters must not force the detail panel open");
+assert.match(toolbar, /isDetailFilterActive[\s\S]*!isThemeFilterValue\(v\)[\s\S]*!\['margin', 'noInboundPrice'\]\.includes\(v\)/,
+  "fixed theme, margin, and no-inbound filters must not force the detail panel open");
 assert.doesNotMatch(toolbar, /showDetailFilterPanel\s*=\s*[^;]*isCategoryFilterActive/,
   "fixed category filters must not force the detail panel open");
 
 const allThemeHandler = toolbar.slice(toolbar.indexOf("const handleAllThemeClick ="), toolbar.indexOf("const toggleThemeFilter ="));
-assert.match(allThemeHandler, /filter\(v => !\/\^theme\[1-5\]\$\//, "행사 must preserve non-theme filters");
+assert.match(allThemeHandler, /filter\(v => !isThemeFilterValue\(v\)\)/, "행사 must preserve non-theme filters");
 assert.match(allThemeHandler, /return \[\.\.\.nonTheme, \.\.\.allThemeFilters\]/,
-  "행사 must select all five theme filters");
-assert.doesNotMatch(allThemeHandler, /setPriceFilter|setCategoryFilters|setBasicSearch|setGlobalSearch/,
+  "행사 must select only the five named theme filters");
+assert.doesNotMatch(allThemeHandler, /setPriceFilter|setCategoryFilters|setGlobalSearch/,
   "행사 must preserve every non-theme filter");
-assert.match(toolbar, /const isAllThemeFilterActive = allThemeFilters\.every/,
-  "행사 must become active only after all five theme filters are selected");
+assert.match(toolbar, /const isAllThemeFilterActive = allThemeFilters\.every[\s\S]*!activeThemeFilters\.includes\('themeNone'\)/,
+  "행사 must be active for all five named themes and exclude 없음");
 
 const promoWorkbenchStart = lowerRow.indexOf('title: "현재 마스터/카탈로그 작업범위를 그대로 사용하는 행사 전용 작업대"');
 const detailPanelStart = lowerRow.indexOf("showDetailFilterPanel &&");
 assert.ok(promoWorkbenchStart >= 0 && detailPanelStart > promoWorkbenchStart, "promotion workbench/detail panel boundaries must exist");
 const promoWorkbench = lowerRow.slice(promoWorkbenchStart, detailPanelStart);
+assert.match(promoWorkbench, /\['promo', '행사가'\][\s\S]*\['promoExclude', '행사가없음'\]/,
+  "promotion workbench must expose 행사가 and 행사가없음");
+assert.doesNotMatch(promoWorkbench, /promoSuggest|'행사제안'|'행사상품'|'행사제외'/,
+  "promotion workbench must remove the former suggestion and legacy labels");
 assert.doesNotMatch(promoWorkbench, /promo-work-theme-|beginThemeDrag|handleThemeClick/,
   "promotion workbench must not duplicate the fixed theme group");
 assert.doesNotMatch(toolbar, /promoWorkbenchOpen|togglePromoWorkbench|"행사작업"/,
   "the promotion workbench must stay visible without a separate toggle button");
 assert.match(lowerRow, /React\.createElement\("div", \{ className: `rounded-xl border px-3 py-2[\s\S]*"행사 작업대"/,
   "the promotion workbench must render unconditionally");
+assert.doesNotMatch(toolbar, /basic-pill-|toggleDetailFilter\('basic'\)|toggleDetailFilter\('basicExclude'\)/,
+  "basic-product controls must be removed from MerchOps");
 
 assert.match(topRow, /getLoadButtonClass\(isExcelWorktableLoaded, 'emerald'\)/,
   "Excel must stay neutral until an Excel worktable is loaded");
@@ -72,40 +78,95 @@ const detailOptions = lowerRow.slice(detailPanelStart, detailOptionsEnd);
 assert.doesNotMatch(detailOptions, /noInboundPrice|\['margin', '역마진'\]/,
   "detail panel must not duplicate the fixed margin and no-inbound filters");
 
-const helperEnd = html.indexOf("const matchPromotionThemeFilter =", filterHelperStart);
-const helperSource = html.slice(filterHelperStart, helperEnd);
-assert.doesNotMatch(helperSource, /row\.finalData|row\.sources|resolvePromotionThemeState/,
+const compositeStart = html.indexOf("const matchCompositeDetailFilters =", filterHelperStart);
+assert.ok(compositeStart > filterHelperStart, "composite filter helper must exist");
+const themeHelperSource = html.slice(filterHelperStart, compositeStart);
+assert.doesNotMatch(themeHelperSource, /row\.finalData|row\.sources|resolvePromotionThemeState/,
   "theme filter helper must not read worktable or upload-source theme values");
-assert.match(helperSource, /normalizePromotionThemeValue\(mItem \|\| \{\}\)/,
+assert.match(themeHelperSource, /normalizePromotionThemeValue\(mItem \|\| \{\}\)/,
   "theme filter helper must normalize the master item only");
 
-const context = {
+const themeContext = {
   window: {
     normalizePromotionThemeValue(item = {}) {
       return String(item['행사테마'] || '');
     },
   },
 };
-vm.createContext(context);
-vm.runInContext(`${helperSource}\nthis.getPromotionThemeCodesForFilterUnderTest = getPromotionThemeCodesForFilter;`, context);
+vm.createContext(themeContext);
+vm.runInContext(`${themeHelperSource}\nthis.getPromotionThemeCodesForFilterUnderTest = getPromotionThemeCodesForFilter;\nthis.matchPromotionThemeFilterUnderTest = matchPromotionThemeFilter;`, themeContext);
 assert.deepEqual(
-  [...context.getPromotionThemeCodesForFilterUnderTest(
+  [...themeContext.getPromotionThemeCodesForFilterUnderTest(
     { finalData: { 행사테마: "1" }, sources: { purchase: { 행사테마: "2" } } },
     { 행사테마: "3,5" },
   )],
   ["3", "5"],
   "master theme must win even when worktable and source values disagree",
 );
+assert.equal(themeContext.matchPromotionThemeFilterUnderTest({}, { 행사테마: "" }, "themeNone"), true,
+  "없음 must include a master product without a theme");
+assert.equal(themeContext.matchPromotionThemeFilterUnderTest({}, { 행사테마: "2" }, "themeNone"), false,
+  "없음 must exclude a master product with a theme");
 
-const compositeStart = html.indexOf("const matchCompositeDetailFilters =", helperEnd);
 const compositeEnd = html.indexOf("const resolveWorkingPromoPrice =", compositeStart);
 const compositeSource = html.slice(compositeStart, compositeEnd);
 assert.match(compositeSource, /themeFilters\.some\(v => matchPromotionThemeFilter/,
   "multiple theme selections must keep OR behavior");
-assert.match(compositeSource, /if \(has\('margin'\)\)[\s\S]*if \(themeFilters\.length > 0/,
-  "core filters and theme filters must remain combined as sequential AND conditions");
+assert.match(compositeSource, /\^theme\(\?:\[1-5\]\|None\)\$/,
+  "the composite matcher must include the 없음 filter");
+assert.doesNotMatch(compositeSource, /basicSearch|has\('basic'\)|has\('basicExclude'\)|matchBasicFilter/,
+  "basic-product filter matching must be removed");
 
-const versionMatches = [...html.matchAll(/v2\.1\.187_PurposeDrivenInitialUI/g)];
-assert.ok(versionMatches.length >= 3, "all MerchOps version labels must use v2.1.187");
+const filterConstantsStart = html.indexOf("window.MERCH_PRICE_FILTER_VALUES =");
+const filterConstantsEnd = html.indexOf("// [M-MGMT-CODE-01]", filterConstantsStart);
+const normalizePresetStart = html.indexOf("window.normalizeMerchFilterPreset =");
+const normalizePresetEnd = html.indexOf("window.isMerchFilterPresetEmpty =", normalizePresetStart);
+const filterContext = { window: {} };
+vm.createContext(filterContext);
+vm.runInContext(`${html.slice(filterConstantsStart, filterConstantsEnd)}\n${html.slice(normalizePresetStart, normalizePresetEnd)}`, filterContext);
+assert.equal(filterContext.window.MERCH_PRICE_FILTER_VALUES.includes("promoSuggest"), false,
+  "행사제안 must be removed from allowed price filters");
+assert.equal(filterContext.window.MERCH_DETAIL_FILTER_VALUES.includes("basic"), false,
+  "기본상품 must be removed from allowed detail filters");
+assert.equal(filterContext.window.MERCH_DETAIL_FILTER_VALUES.includes("basicExclude"), false,
+  "기본제외 must be removed from allowed detail filters");
+assert.equal(filterContext.window.MERCH_DETAIL_FILTER_VALUES.includes("themeNone"), true,
+  "없음 must be an allowed detail filter");
+assert.deepEqual(
+  JSON.parse(JSON.stringify(filterContext.window.normalizeMerchFilterPreset({ priceFilter: "promoSuggest", detailFilters: ["basic", "basicExclude", "themeNone"] }))),
+  { priceFilter: "all", categoryFilters: [], detailFilters: ["themeNone"] },
+  "legacy removed filters must be ignored while the new 없음 filter remains valid",
+);
 
-console.log("MerchOps master-theme filter and fixed-layout contracts passed.");
+const promoResolverStart = html.indexOf("const resolveWorkingPromoPrice =");
+const promoResolverEnd = html.indexOf("const isSellingItem =", promoResolverStart);
+const promoContext = {
+  window: {
+    parseNum(value) {
+      const parsed = Number(String(value ?? '').replace(/,/g, ''));
+      return Number.isFinite(parsed) ? parsed : 0;
+    },
+    MERCH_CURRENT_SOURCE_ROLES: ['inventory', 'estimate', 'purchase', 'sales', 'info', 'catalog', 'parser'],
+  },
+  getMasterPromoPrice(item = {}) {
+    const parsed = Number(item['행사가']);
+    return Number.isFinite(parsed) ? parsed : 0;
+  },
+};
+vm.createContext(promoContext);
+vm.runInContext(`${html.slice(promoResolverStart, promoResolverEnd)}\nthis.isPromoActiveUnderTest = isPromoActive;`, promoContext);
+assert.equal(promoContext.isPromoActiveUnderTest({ finalData: { 행사가: 1200 } }, { 행사가: 0 }), true,
+  "행사가는 a positive current working promo price");
+assert.equal(promoContext.isPromoActiveUnderTest({ finalData: { 행사가: 0 } }, { 행사가: 1200 }), false,
+  "행사가없음 includes an explicit current zero even when the master previously had a promo price");
+assert.equal(promoContext.isPromoActiveUnderTest({}, { 행사가: 1200 }), true,
+  "행사가는 the master promo price when no current working value overrides it");
+assert.equal(promoContext.isPromoActiveUnderTest({}, { 행사가: '' }), false,
+  "행사가없음 includes a blank effective promo price");
+assert.match(html, /if \(ui\.priceFilter === 'promo'\)[\s\S]*return isPromoActive\(item, mItem\)[\s\S]*if \(ui\.priceFilter === 'promoExclude'\)[\s\S]*return !isPromoActive\(item, mItem\)/,
+  "visible row filtering must split positive and missing promo prices without overlap");
+
+const versionMatches = [...html.matchAll(/v2\.1\.188_ThemeAndPromoFilters/g)];
+assert.ok(versionMatches.length >= 3, "all MerchOps version labels must use v2.1.188");
+
+console.log("MerchOps theme-none, promo-price, and fixed-layout contracts passed.");
