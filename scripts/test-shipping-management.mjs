@@ -13,7 +13,7 @@ assert.doesNotMatch(orderOpsHtml, /tokens truncated|…\d+ tokens truncated…/,
   "the public OrderOps mirror must not contain a truncated source fragment");
 assert.match(orderOpsHtml, /<body>[\s\S]*<\/body>\s*<\/html>/,
   "the public OrderOps mirror must remain a complete HTML document");
-assert.match(orderOpsHtml, /brand-badge">v1\.31</, "ORDER Q visible version must be v1.31");
+assert.match(orderOpsHtml, /brand-badge">v1\.32</, "ORDER Q visible version must be v1.32");
 assert.match(orderOpsHtml, /<title>ONEAPP ORDER Q · 출고관리<\/title>/,
   "the public page title must establish ORDER Q as shipment management");
 assert.match(orderOpsHtml, /aria-label="ONEAPP ORDER Q 출고관리"/,
@@ -22,7 +22,7 @@ assert.match(orderOpsHtml, /class="brand-logo" src="assets\/order-q-logo\.png"/,
   "the public header must use the approved ORDER Q logo asset");
 assert.match(orderOpsHtml, /\.brand-logo-frame\s*\{[\s\S]*?width:\s*120px;[\s\S]*?height:\s*20px;/,
   "the public ORDER Q logo must match the ONEAPP wordmark height");
-assert.match(orderOpsHtml, /ORDER Q v1\.31 · 출고관리/,
+assert.match(orderOpsHtml, /ORDER Q v1\.32 · 출고관리/,
   "the public footer must use the ORDER Q product concept");
 assert.doesNotMatch(
   orderOpsHtml.slice(orderOpsHtml.indexOf('<header class="global-header">'), orderOpsHtml.indexOf('</header>')),
@@ -37,7 +37,7 @@ assert.equal(
   "the repository logo must be the unmodified approved source image",
 );
 assert.ok(orderOpsHtml.includes('class="execution-panel"'),
-  "the public v1.31 execution controls must be separate from the upload strip");
+  "the public v1.32 execution controls must be separate from the upload strip");
 assert.match(orderOpsHtml, /\.execution-panel\s*\{[^}]*grid-template-columns:\s*repeat\(3,/,
   "the public execution controls must use three visible segments");
 assert.ok(orderOpsHtml.includes("function resetResultViewFilters()"),
@@ -117,7 +117,7 @@ for (const requiredInteractionContract of [
   'getAllocationInventoryView(workspace)',
 ]) {
   assert.ok(orderOpsHtml.includes(requiredInteractionContract),
-    `public ORDER Q v1.31 interaction contract is missing: ${requiredInteractionContract}`);
+    `public ORDER Q v1.32 interaction contract is missing: ${requiredInteractionContract}`);
 }
 assert.doesNotMatch(orderOpsHtml, /<input[^>]+type="color"|data-warehouse-color|data-manager-color/,
   "the public OrderOps filter strip must not use a native color picker inside filter options");
@@ -562,8 +562,8 @@ const edgeWorkspace = engine.analyze(edgeOrders, edgeInventory, {
   createdAt: "2026-07-30T00:00:00.000Z",
   sourceFingerprint: "a".repeat(64),
 });
-assert.equal(engine.ENGINE_VERSION, "3.14.0");
-assert.equal(workbookTools.WORKBOOK_VERSION, "4.6.0");
+assert.equal(engine.ENGINE_VERSION, "3.15.0");
+assert.equal(workbookTools.WORKBOOK_VERSION, "4.7.0");
 assert.equal(edgeWorkspace.schemaVersion, "shipping-workspace/v2");
 const edgeInventoryView = engine.getInventoryViewRows(edgeWorkspace);
 const orderOnlyInventoryRow = edgeInventoryView.rows.find((row) => row.productCode === "NO-STOCK");
@@ -856,12 +856,12 @@ dynamicWorkspace.orderOpsInputs = {
   ] },
 };
 const dynamicLedger = engine.getStockLedgerView(dynamicWorkspace);
-assert.deepEqual(dynamicLedger.headers, ["품목코드", "품목명", "규격", "단위", "재고", "입고", "주문", "출고수량", "잔량", "구매처"]);
-assert.deepEqual(dynamicLedger.rows[0].values, ["000010", "동적상품", "EA", "", -7, 5, 3, 4, -10, "구매처A"]);
+assert.deepEqual(dynamicLedger.headers, ["품목코드", "품목명", "규격", "단위", "재고", "입고", "주문", "출고수량", "잔량", "단가", "구매처", "정보"]);
+assert.deepEqual(dynamicLedger.rows[0].values, ["000010", "동적상품", "EA", "", -7, 5, 3, 4, -10, "", "구매처A", "거래처 1(2)1000\n반복거래처(1)1000"]);
 const salesOnlyLedgerRow = dynamicLedger.rows.find((row) => row.productCode === "SALE-ONLY");
 assert.deepEqual(
   salesOnlyLedgerRow?.values,
-  ["SALE-ONLY", "재고목록 외 출고상품", "", "", 0, 0, 0, 6, 0, ""],
+  ["SALE-ONLY", "재고목록 외 출고상품", "", "", 0, 0, 0, 6, 0, "", "", ""],
   "sales-only product codes must remain visible instead of losing outbound quantities",
 );
 assert.equal(salesOnlyLedgerRow?.salesOnly, true);
@@ -994,6 +994,19 @@ assert.equal(overriddenRow.values[overrideColumns.indexOf(columnByHeader.get("�
 assert.equal(overriddenRow.values[overrideColumns.indexOf(columnByHeader.get("전송"))], "검수전송");
 assert.equal(overriddenRow.values[overrideColumns.indexOf(columnByHeader.get("창고"))], 4321);
 assert.equal(overriddenRow.purchase, "검수구매");
+const overriddenLedger = engine.getStockLedgerView(overrideWorkspace);
+const ledgerUnitPriceIndex = overriddenLedger.columns.findIndex((column) => column.role === "unitPrice");
+const ledgerPurchaseIndex = overriddenLedger.columns.findIndex((column) => column.role === "purchasePlace");
+const ledgerInformationIndex = overriddenLedger.columns.findIndex((column) => column.role === "orderInformation");
+const overriddenLedgerRow = overriddenLedger.rows.find((row) => row.productCode === "000100");
+assert.equal(overriddenLedger.columns[ledgerUnitPriceIndex].inventoryColumnKey, columnByHeader.get("창고").key,
+  "ledger unit price must edit the same inventory price cell used by warehouse inventory");
+assert.deepEqual(
+  [overriddenLedgerRow.values[ledgerUnitPriceIndex], overriddenLedgerRow.values[ledgerPurchaseIndex],
+    overriddenLedgerRow.values[ledgerInformationIndex]],
+  [4321, "검수구매", overriddenRow.orderInformation],
+  "ledger purchasing must share unit price, purchase place, and customer information with inventory",
+);
 assert.deepEqual(
   engine.getPurchaseUploadSelection(overrideWorkspace).included
     .filter((row) => row.productCode === "000100")
@@ -1604,7 +1617,7 @@ assert.ok(
 );
 
 const html = fs.readFileSync(path.join(ROOT, "orderops", "list.html"), "utf8");
-assert.match(html, /brand-badge">v1\.31</, "canonical ORDER Q visible version must be v1.31");
+assert.match(html, /brand-badge">v1\.32</, "canonical ORDER Q visible version must be v1.32");
 assert.match(html, /class="brand-logo" src="\.\.\/assets\/order-q-logo\.png"/,
   "the canonical header must use the shared ORDER Q logo asset");
 assert.match(html, /<h2 id="settingsModalTitle">ORDER Q 환경설정<\/h2>/,
@@ -1732,7 +1745,7 @@ for (const requiredInteractionContract of [
   'getAllocationInventoryView(workspace)',
 ]) {
   assert.ok(html.includes(requiredInteractionContract),
-    `canonical ORDER Q v1.31 interaction contract is missing: ${requiredInteractionContract}`);
+    `canonical ORDER Q v1.32 interaction contract is missing: ${requiredInteractionContract}`);
 }
 assert.doesNotMatch(html, /<input[^>]+type="color"|data-warehouse-color|data-manager-color/,
   "canonical OrderOps filter options must remain separate from color assignment");
@@ -1818,6 +1831,22 @@ for (const kind of ["orders", "inventory", "purchases", "sales"]) {
 for (const ledgerContract of ["재고수불부", "getStockLedgerView(workspace)", "orderops-analysis-inputs/v1"]) {
   assert.ok(html.includes(ledgerContract), `stock-ledger contract is missing: ${ledgerContract}`);
 }
+for (const ledgerPurchasingContract of [
+  'column.role === "unitPrice"', 'column.role === "orderInformation"',
+  'purchaseEditable: ledgerPurchaseIndex >= 0', 'renderOrderInformationBadges(value)',
+  '["inventory", "ledger"].includes(state.activePreview)',
+]) {
+  assert.ok(html.includes(ledgerPurchasingContract), `ledger purchasing contract is missing: ${ledgerPurchasingContract}`);
+}
+assert.match(html, /\.column-sort-trigger\s*\{[\s\S]*?opacity:\s*0;[\s\S]*?visibility:\s*hidden;/,
+  "filter controls must remain hidden until the pointer reaches the header");
+assert.match(html, /th:hover \.column-sort-trigger,[\s\S]*?opacity:\s*1;/,
+  "filter controls must appear on header hover");
+assert.ok(html.includes('data-sort-header-preview-id=') && html.includes('function cycleColumnSort'),
+  "header body clicks must sort independently from the filter box");
+assert.ok(html.includes('data-text-filter-section data-value-filter-section') &&
+  html.includes('querySelector("[data-text-filter-section]").classList.remove("hidden")'),
+  "numeric and text columns must both expose Excel-style cell-value selection");
 
 const administratorAliasMatrix = buildCanonicalOrderMatrix({
   replacements: {
@@ -1921,7 +1950,7 @@ for (const contract of [
   "handleInventoryGridArrowNavigation", "autocompletePurchaseInput", "rememberPurchaseName",
   "function resetResultViewFilters()", 'grid-template-columns: repeat(3, minmax(0, 1fr))',
 ]) {
-  assert.ok(html.includes(contract), `ORDER Q v1.31 contract is missing: ${contract}`);
+  assert.ok(html.includes(contract), `ORDER Q v1.32 contract is missing: ${contract}`);
 }
 assert.ok(html.includes('id="warehouseColorResetButton" type="button">전체 다시보기</button>'),
   "filter reset must be presented as returning to the full view");
