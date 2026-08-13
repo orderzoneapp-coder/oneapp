@@ -1,6 +1,7 @@
 export const ORDERQ_SYNC_SCHEMA = 'ONEAPP_ORDERQ_SYNC_V1';
 export const CLOUD_URL_KEY = 'oneapp_cloud_sync_url_v1';
 export const LEGACY_CLOUD_URL_KEY = 'merchCloudUrl_v870';
+export const CLOUD_ACCESS_TOKEN_KEY = 'oneapp_orderq_access_token_v1';
 
 export class OrderQCloudError extends Error {
   constructor(message, details = {}) {
@@ -25,6 +26,19 @@ export function setCloudUrl(url) {
   return value;
 }
 
+export function getCloudAccessToken() {
+  return String(sessionStorage.getItem(CLOUD_ACCESS_TOKEN_KEY) || localStorage.getItem(CLOUD_ACCESS_TOKEN_KEY) || '').trim();
+}
+
+export function setCloudAccessToken(token, remember = true) {
+  const value = String(token || '').trim();
+  sessionStorage.removeItem(CLOUD_ACCESS_TOKEN_KEY);
+  localStorage.removeItem(CLOUD_ACCESS_TOKEN_KEY);
+  if (!value) return '';
+  (remember ? localStorage : sessionStorage).setItem(CLOUD_ACCESS_TOKEN_KEY, value);
+  return value;
+}
+
 async function post(action, body = {}) {
   const url = getCloudUrl();
   if (!url) throw new OrderQCloudError('클라우드 URL이 설정되지 않았습니다.', { code: 'CLOUD_URL_MISSING' });
@@ -35,7 +49,7 @@ async function post(action, body = {}) {
     response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ action, ...body }),
+      body: JSON.stringify({ action, token: getCloudAccessToken(), ...body }),
       redirect: 'follow',
       cache: 'no-store',
       signal: controller.signal

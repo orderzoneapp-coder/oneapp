@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="ko" translate="no">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="google" content="notranslate">
+  <title>ONEAPP ORDER Q · 기초데이터 수집</title>
+  <link rel="stylesheet" href="./orderq.css">
+  <link rel="stylesheet" href="./collector.css">
+  <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
+</head>
+<body>
+  <div class="shell collector-shell">
+    <header class="topbar">
+      <div class="brand">
+        <strong>ONEAPP</strong>
+        <span class="logo-frame" aria-hidden="true"><img src="../assets/order-q-logo.png" alt=""></span>
+        <span class="badge">vNext 0.4</span>
+        <span>기초데이터 수집</span>
+      </div>
+      <div class="top-actions">
+        <a class="btn dark" href="./index.html">주문현황</a>
+        <a class="btn dark" href="./parser.html">SmartParser</a>
+        <a class="btn dark" href="./cloud.html">클라우드</a>
+      </div>
+    </header>
+    <main class="panel">
+      <p class="notice">거래처원장 · 주문 · 판매 · 구매 · 재고 · 카카오 이력을 원본과 함께 수집하고 실제 판매를 출고 증거로 연결합니다.</p>
+      <div id="message" class="message"></div>
+
+      <section class="collector-hero">
+        <label class="drop-zone" id="dropZone" tabindex="0">
+          <input id="fileInput" type="file" accept=".xlsx,.xls,.txt" multiple hidden>
+          <strong>Excel·카카오 이력파일을 여기에 놓으세요</strong>
+          <span>시트 구조와 열 이름으로 주문·판매·구매·재고·거래처원장을 자동 분류합니다.</span>
+          <span class="drop-action">파일 선택</span>
+        </label>
+        <div class="operation-settings">
+          <div>
+            <strong>출고 운영 마감</strong>
+            <span>당일 새벽·오전 추가 주문 판별 기준</span>
+          </div>
+          <div class="time-row">
+            <input class="control" id="cutoffTime" type="time" value="12:00">
+            <button class="btn" id="saveSettingsBtn" type="button">기준 저장</button>
+          </div>
+          <label for="holidays">휴일 <small>쉼표 구분</small></label>
+          <input class="control" id="holidays" placeholder="2026-08-15, 2026-10-03">
+          <p>주문일 다음 영업일을 우선하되, 판매일 마감 전 추가 주문도 별도 시간근거로 평가합니다.</p>
+        </div>
+      </section>
+
+      <section class="text-collector">
+        <div class="text-head">
+          <strong>카카오/일반 텍스트 직접 수집</strong>
+          <input class="control" id="textDate" type="date" aria-label="날짜가 없는 메시지의 기본 주문일">
+          <input class="control" id="textSource" placeholder="대화방/출처명">
+          <button class="btn" id="analyzeTextBtn" type="button">텍스트 분석</button>
+        </div>
+        <textarea class="control" id="historyText" rows="4" placeholder="카카오 대화 내보내기 또는 과거 주문 텍스트를 붙여넣으세요. 이 화면에서는 운영 주문을 생성하지 않고 기초이력으로만 수집합니다."></textarea>
+      </section>
+
+      <section>
+        <div class="section-title">
+          <div><strong>수집 대기</strong><span id="preparedSummary">파일을 분석해 주세요.</span></div>
+          <button class="btn primary" id="commitBtn" type="button" disabled>분석자료 수집 확정</button>
+        </div>
+        <div class="source-cards" id="sourceCards"><div class="empty-card">대기 중인 파일이 없습니다.</div></div>
+      </section>
+
+      <section class="kpi-strip" id="kpiStrip"></section>
+
+      <nav class="collector-tabs" aria-label="수집 결과">
+        <button class="active" data-tab="links" type="button">주문↔판매 연결</button>
+        <button data-tab="evidence" type="button">파서사전 후보</button>
+        <button data-tab="history" type="button">수집이력</button>
+      </nav>
+
+      <section class="tab-panel active" data-panel="links">
+        <div class="section-title">
+          <div><strong>출고 연결 결과</strong><span>STRONG/PROBABLE은 계산 근거이며 관리자가 언제든 재검수할 수 있습니다.</span></div>
+          <button class="btn" id="rebuildBtn" type="button">연결 다시 계산</button>
+        </div>
+        <div class="table-wrap collector-table"><table>
+          <thead><tr><th>상태</th><th>거래처</th><th>주문일</th><th>판매일</th><th>상품코드</th><th>연결수량</th><th>근거</th></tr></thead>
+          <tbody id="linkRows"></tbody>
+        </table></div>
+      </section>
+
+      <section class="tab-panel" data-panel="evidence">
+        <div class="section-title"><div><strong>파서사전 근거</strong><span>서로 다른 주문일 3회 이상과 무충돌 근거부터 관리자 확정할 수 있습니다.</span></div></div>
+        <div class="table-wrap collector-table"><table>
+          <thead><tr><th>상태</th><th>거래처</th><th>주문표현</th><th>상품코드</th><th>서로 다른 날짜</th><th>근거수</th><th>처리</th></tr></thead>
+          <tbody id="evidenceRows"></tbody>
+        </table></div>
+      </section>
+
+      <section class="tab-panel" data-panel="history">
+        <div class="section-title"><div><strong>수집이력</strong><span>롤백은 원본을 삭제하지 않고 해당 배치와 파생 근거만 비활성화합니다.</span></div></div>
+        <div class="table-wrap collector-table"><table>
+          <thead><tr><th>수집시각</th><th>자료</th><th>파일/시트</th><th>행</th><th>상태</th><th>처리</th></tr></thead>
+          <tbody id="historyRows"></tbody>
+        </table></div>
+      </section>
+    </main>
+  </div>
+  <script type="module" src="./collector-ui.js"></script>
+</body>
+</html>

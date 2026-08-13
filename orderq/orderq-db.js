@@ -1,5 +1,5 @@
 const DB_NAME = 'oneapp-orderq-vnext';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 export const STORE = Object.freeze({
   CUSTOMERS: 'customers',
@@ -13,6 +13,21 @@ export const STORE = Object.freeze({
   ORDERS: 'orders',
   ORDER_ITEMS: 'orderItems',
   ORDER_EVENTS: 'orderEvents',
+  IMPORT_BATCHES: 'importBatches',
+  SOURCE_RECORDS: 'sourceRecords',
+  SALES_DOCUMENTS: 'salesDocuments',
+  SALES_LINES: 'salesLines',
+  PURCHASE_DOCUMENTS: 'purchaseDocuments',
+  PURCHASE_LINES: 'purchaseLines',
+  LEDGER_DOCUMENTS: 'ledgerDocuments',
+  LEDGER_LINES: 'ledgerLines',
+  INVENTORY_SNAPSHOTS: 'inventorySnapshots',
+  INVENTORY_LINES: 'inventoryLines',
+  HISTORICAL_ORDER_GROUPS: 'historicalOrderGroups',
+  HISTORICAL_ORDER_LINES: 'historicalOrderLines',
+  FULFILLMENT_LINKS: 'fulfillmentLinks',
+  PARSER_EVIDENCE: 'parserEvidence',
+  COLLECTOR_SETTINGS: 'collectorSettings',
   SYNC_QUEUE: 'syncQueue',
   META: 'meta'
 });
@@ -86,6 +101,79 @@ function upgrade(db, transaction) {
   ensureIndex(store, 'byOrderId', 'orderId');
   ensureIndex(store, 'byOrderRevision', ['orderId', 'revision']);
   ensureIndex(store, 'byCreatedAt', 'createdAt');
+
+  store = ensureStore(STORE.IMPORT_BATCHES, { keyPath: 'importBatchId' });
+  ensureIndex(store, 'byFileHash', 'fileHash');
+  ensureIndex(store, 'byStatusImportedAt', ['status', 'importedAt']);
+  ensureIndex(store, 'byImportedAt', 'importedAt');
+
+  store = ensureStore(STORE.SOURCE_RECORDS, { keyPath: 'sourceRecordId' });
+  ensureIndex(store, 'byBatchId', 'importBatchId');
+  ensureIndex(store, 'byFingerprint', 'rowFingerprint');
+  ensureIndex(store, 'bySourceType', 'sourceType');
+
+  store = ensureStore(STORE.SALES_DOCUMENTS, { keyPath: 'salesDocumentId' });
+  ensureIndex(store, 'byBatchId', 'importBatchId');
+  ensureIndex(store, 'bySalesDate', 'salesDate');
+  ensureIndex(store, 'byCustomerDate', ['normalizedCustomerName', 'salesDate']);
+
+  store = ensureStore(STORE.SALES_LINES, { keyPath: 'salesLineId' });
+  ensureIndex(store, 'byDocumentId', 'salesDocumentId');
+  ensureIndex(store, 'byBatchId', 'importBatchId');
+  ensureIndex(store, 'byProductCode', 'productCode');
+
+  store = ensureStore(STORE.PURCHASE_DOCUMENTS, { keyPath: 'purchaseDocumentId' });
+  ensureIndex(store, 'byBatchId', 'importBatchId');
+  ensureIndex(store, 'byPurchaseDate', 'purchaseDate');
+  ensureIndex(store, 'bySupplierDate', ['normalizedSupplierName', 'purchaseDate']);
+
+  store = ensureStore(STORE.PURCHASE_LINES, { keyPath: 'purchaseLineId' });
+  ensureIndex(store, 'byDocumentId', 'purchaseDocumentId');
+  ensureIndex(store, 'byBatchId', 'importBatchId');
+  ensureIndex(store, 'byProductCode', 'productCode');
+
+  store = ensureStore(STORE.LEDGER_DOCUMENTS, { keyPath: 'ledgerDocumentId' });
+  ensureIndex(store, 'byBatchId', 'importBatchId');
+  ensureIndex(store, 'byTransactionDate', 'transactionDate');
+  ensureIndex(store, 'byCustomerDate', ['normalizedCustomerName', 'transactionDate']);
+
+  store = ensureStore(STORE.LEDGER_LINES, { keyPath: 'ledgerLineId' });
+  ensureIndex(store, 'byDocumentId', 'ledgerDocumentId');
+  ensureIndex(store, 'byBatchId', 'importBatchId');
+  ensureIndex(store, 'byProductCode', 'productCode');
+
+  store = ensureStore(STORE.INVENTORY_SNAPSHOTS, { keyPath: 'inventorySnapshotId' });
+  ensureIndex(store, 'byBatchId', 'importBatchId');
+  ensureIndex(store, 'byBasisDate', 'basisDate');
+
+  store = ensureStore(STORE.INVENTORY_LINES, { keyPath: 'inventoryLineId' });
+  ensureIndex(store, 'bySnapshotId', 'inventorySnapshotId');
+  ensureIndex(store, 'byBatchId', 'importBatchId');
+  ensureIndex(store, 'byProductCode', 'productCode');
+
+  store = ensureStore(STORE.HISTORICAL_ORDER_GROUPS, { keyPath: 'historicalOrderGroupId' });
+  ensureIndex(store, 'byBatchId', 'importBatchId');
+  ensureIndex(store, 'byOrderDate', 'orderDate');
+  ensureIndex(store, 'byCustomerDate', ['normalizedCustomerName', 'orderDate']);
+
+  store = ensureStore(STORE.HISTORICAL_ORDER_LINES, { keyPath: 'historicalOrderLineId' });
+  ensureIndex(store, 'byGroupId', 'historicalOrderGroupId');
+  ensureIndex(store, 'byBatchId', 'importBatchId');
+  ensureIndex(store, 'byProductCode', 'productCode');
+
+  store = ensureStore(STORE.FULFILLMENT_LINKS, { keyPath: 'fulfillmentLinkId' });
+  ensureIndex(store, 'byOrderLineId', 'historicalOrderLineId');
+  ensureIndex(store, 'bySalesLineId', 'salesLineId');
+  ensureIndex(store, 'byStatus', 'status');
+  ensureIndex(store, 'byCreatedAt', 'createdAt');
+
+  store = ensureStore(STORE.PARSER_EVIDENCE, { keyPath: 'parserEvidenceId' });
+  ensureIndex(store, 'byCustomerExpression', ['customerId', 'normalizedExpression']);
+  ensureIndex(store, 'byProductCode', 'productCode');
+  ensureIndex(store, 'byStatus', 'status');
+  ensureIndex(store, 'byCreatedAt', 'createdAt');
+
+  ensureStore(STORE.COLLECTOR_SETTINGS, { keyPath: 'key' });
 
   store = ensureStore(STORE.SYNC_QUEUE, { keyPath: 'queueId' });
   ensureIndex(store, 'byStatusCreatedAt', ['status', 'createdAt']);

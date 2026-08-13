@@ -2,11 +2,12 @@
 
 신규 ORDER Q 개발 경로. 기존 `orderops/` 및 `orderops_list.html`은 변경하지 않는다.
 
-## vNext 0.3 URL
+## vNext 0.4 URL
 
 - `/orderq/` 또는 `/orderq/index.html`: 공통 주문현황
 - `/orderq/input.html`: 수기 주문서 신규/수정
 - `/orderq/parser.html`: 카카오/일반 텍스트 SmartParser
+- `/orderq/collector.html`: 과거 주문·판매·구매·재고·거래처원장·카카오 이력수집과 주문↔판매 연결
 - `/orderq/cloud.html`: Cloud Sync 설정·충돌 처리
 
 ## 데이터와 처리 원칙
@@ -19,6 +20,10 @@
 - `customerAliases`, `productMappings`, `unitMappings`
 - `rawInputs`, `parseResults`, `mappingEvents`
 - `orders`, `orderItems`, `orderEvents`
+- `importBatches`, `sourceRecords`
+- `salesDocuments`, `salesLines`, `purchaseDocuments`, `purchaseLines`
+- `ledgerDocuments`, `ledgerLines`, `inventorySnapshots`, `inventoryLines`
+- `historicalOrderGroups`, `historicalOrderLines`, `fulfillmentLinks`, `parserEvidence`
 - `syncQueue`, `meta`
 
 주문 수정은 `revision` 비교를 사용한다. 같은 주문을 두 탭에서 열고 한쪽이 먼저 저장하면, 다른 쪽의 오래된 revision 저장은 차단한다.
