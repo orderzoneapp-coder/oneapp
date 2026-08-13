@@ -696,7 +696,21 @@
       white-space: nowrap;
     }
     .spec-filter:disabled { opacity: .42; }
-    /* ORDER Q v1.33: operator-facing shipment-management branding */
+    .shortage-focus-button {
+      min-height: 31px;
+      padding: 0 10px;
+      border: 1px solid #fda4af;
+      border-radius: 5px;
+      color: #9f1239;
+      background: #fff1f2;
+      font-size: 11px;
+      font-weight: 900;
+      white-space: nowrap;
+    }
+    .shortage-focus-button:hover:not(:disabled) { border-color: #fb7185; background: #ffe4e6; }
+    .shortage-focus-button.active { border-color: #be123c; color: #fff; background: #be123c; }
+    .shortage-focus-button:disabled { opacity: .45; cursor: default; }
+    /* ORDER Q v1.34: shortage focus and quantity-state UX */
     .header-output-button { border-color: #99f6e4; color: #0f766e; background: #f0fdfa; }
     .header-output-button:hover:not(:disabled) { background: #ccfbf1; }
     .results-panel .table-wrap { max-height: calc(100vh - 200px); }
@@ -958,11 +972,55 @@
     td.status[data-tone="bad"] { color: var(--red-700); }
     td.inventory-value { background: var(--green-100) !important; }
     td.warning-value { color: var(--red-700) !important; background: var(--red-100) !important; font-weight: 900; }
-    td.inventory-negative { color: #b91c1c !important; background: #fff200 !important; font-weight: 900; }
-    tr.unit-alert-row td,
-    tr.unit-alert-row .purchase-input { color: #b91c1c !important; }
+    td.inventory-negative { color: #b91c1c !important; font-weight: 900; }
+    td.unit-alert-cell { color: #b91c1c !important; font-weight: 900; }
     tr.reference-row td { color: var(--slate-600); font-style: italic; }
+    tr.shortage-main-row td:first-child { border-left: 3px solid #e11d48; }
+    tr.shortage-candidate-row td { color: #475569; background: #f1f5f9 !important; }
+    tr.shortage-candidate-row td:first-child { border-left: 3px solid #64748b; }
+    tr.inventory-missing-row td:first-child { border-left: 3px solid #d97706; }
+    tr.no-order-row td { color: #64748b; }
     .empty-table-cell { padding: 34px 18px !important; color: var(--slate-500); text-align: center; }
+
+    .row-state-badges { display: flex; align-items: center; gap: 3px; flex-wrap: wrap; }
+    .row-state-badge {
+      display: inline-flex;
+      align-items: center;
+      min-height: 20px;
+      padding: 1px 6px;
+      border: 1px solid #cbd5e1;
+      border-radius: 999px;
+      color: #475569;
+      background: #f8fafc;
+      font-size: 10px;
+      font-weight: 900;
+      font-style: normal;
+      white-space: nowrap;
+    }
+    .row-state-badge[data-state="부족상품"] { border-color: #fda4af; color: #9f1239; background: #fff1f2; }
+    .row-state-badge[data-state="대체후보"] { border-color: #94a3b8; color: #334155; background: #f1f5f9; }
+    .row-state-badge[data-state="재고정보 없음"] { border-color: #fcd34d; color: #92400e; background: #fffbeb; }
+    .row-state-badge[data-state="재고 0"] { color: #64748b; background: #f8fafc; }
+    .row-state-badge[data-state="주문 없음"] { color: #64748b; background: #f8fafc; }
+    td.quantity-zero { color: #94a3b8 !important; }
+    td.quantity-negative { color: #b91c1c !important; font-weight: 900; }
+    td.quantity-zero .inventory-input,
+    td.quantity-zero .order-edit-input { color: #94a3b8; }
+    td.quantity-negative .inventory-input,
+    td.quantity-negative .order-edit-input { color: #b91c1c; font-weight: 900; }
+    .purchase-required-badge {
+      display: inline-flex;
+      justify-content: flex-end;
+      min-width: 56px;
+      padding: 2px 7px;
+      border: 1px solid #fda4af;
+      border-radius: 999px;
+      color: #9f1239;
+      background: #fff1f2;
+      font-weight: 900;
+      font-variant-numeric: tabular-nums;
+    }
+    .inventory-unavailable-value { color: #b45309; font-size: 10px; font-weight: 900; }
 
     .purchase-input {
       width: 100%;
@@ -977,9 +1035,9 @@
       outline: 0;
       box-shadow: none;
     }
-    .purchase-input[data-negative-balance="true"] { background: #fff200; }
+    .purchase-input[data-negative-balance="true"] { color: #9f1239; background: #fff7f7; box-shadow: inset 0 -2px 0 #fb7185; }
     .purchase-input:focus { outline: 0; background: transparent; }
-    .purchase-input[data-negative-balance="true"]:focus { background: #fff200; }
+    .purchase-input[data-negative-balance="true"]:focus { background: #fff1f2; box-shadow: inset 0 -2px 0 #e11d48; }
     .order-edit-input {
       width: 100%; min-width: 0; height: 25px; padding: 1px 6px;
       border: 0; border-radius: 0; color: var(--slate-900);
@@ -987,8 +1045,7 @@
     }
     .order-edit-input:focus { outline: 0; background: transparent; }
     .table-wrap td:focus-within { background: #edf9f7 !important; }
-    .table-wrap td:has(.purchase-input[data-negative-balance="true"]) { background: #fff200 !important; }
-    td.ledger-negative-cell { color: #b91c1c !important; background: #fff200 !important; font-weight: 900; }
+    td.ledger-negative-cell { color: #b91c1c !important; font-weight: 900; }
     table.preview-ledger td.procurement-price-cell { padding: 2px 4px; }
     table.preview-ledger .ledger-price-input {
       width: 100%; min-width: 0; height: 28px; padding: 3px 7px;
@@ -1400,7 +1457,7 @@
       .recovery-record-item { grid-template-columns: auto 1fr; }
       .recovery-record-status { grid-column: 2; }
     }
-    /* ORDER Q v1.33: compact filters, purchase autocomplete, and completion guidance */
+    /* ORDER Q v1.34: compact filters, purchase autocomplete, and completion guidance */
     .input-panel { grid-template-columns: minmax(0, 1fr) 330px; gap: 12px; }
     .upload-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
     .source-selector {
@@ -1523,7 +1580,7 @@
       <div class="brand-mark">ONEAPP</div>
       <div class="brand-divider" aria-hidden="true"></div>
       <span class="brand-logo-frame" aria-hidden="true"><img class="brand-logo" src="../assets/order-q-logo.png" alt=""></span>
-      <span class="brand-badge">v1.33</span>
+      <span class="brand-badge">v1.34</span>
       <span class="brand-product">출고관리</span>
     </div>
     <div class="header-actions">
@@ -1643,6 +1700,8 @@
         <button class="table-tool-button result-filter-reset-button" id="resultFilterResetButton" type="button"
           aria-label="검색어와 보기 필터 초기화 F2" aria-keyshortcuts="F2">필터초기화 F2</button>
         <div class="preview-tabs" id="previewTabs" role="tablist" aria-label="결과 미리보기"></div>
+        <button class="shortage-focus-button hidden" id="shortageFocusButton" type="button"
+          aria-pressed="false" aria-label="재고부족 상품 모아보기">재고부족 0</button>
         <fieldset class="spec-filter" id="specFilterGroup">
           <legend>규격</legend>
           <label><input type="checkbox" value="BOX">BOX</label>
@@ -1691,7 +1750,7 @@
     </section>
 
     <footer class="page-footer">
-      <span>ORDER Q v1.33 · 출고관리 · workspace shipping-workspace/v2 · cloud plan v1</span>
+      <span>ORDER Q v1.34 · 출고관리 · workspace shipping-workspace/v2 · cloud plan v1</span>
       <a href="../SHIPPING_MANAGEMENT_GUIDANCE.md">개발·운영 기준 보기</a>
     </footer>
   </main>
@@ -1857,6 +1916,7 @@
         workspace: null,
         activePreview: "validation",
         searchQuery: "",
+        shortageFocus: false,
         specificationFilters: new Set(),
         loading: { orders: false, inventory: false, purchases: false, sales: false },
         db: null,
@@ -1923,6 +1983,7 @@
         purchaseUploadNotice: document.getElementById("purchaseUploadNotice"),
         tableSearchInput: document.getElementById("tableSearchInput"),
         resultFilterResetButton: document.getElementById("resultFilterResetButton"),
+        shortageFocusButton: document.getElementById("shortageFocusButton"),
         specFilterGroup: document.getElementById("specFilterGroup"),
         warehouseColorBar: document.getElementById("warehouseColorBar"),
         warehouseFilterToggle: document.getElementById("warehouseFilterToggle"),
@@ -2553,6 +2614,7 @@
         engine.ensureNoticeState(state.workspace);
         state.activePreview = payload.ui?.activePreview || "validation";
         state.searchQuery = "";
+        state.shortageFocus = false;
         state.specificationFilters.clear();
         state.warehouseFilters.clear();
         state.managerFilters.clear();
@@ -3067,10 +3129,7 @@
       }
 
       function warehouseColorFor(preview, column) {
-        const columns = warehouseColumns(preview);
-        const index = Math.max(0, columns.findIndex((candidate) => candidate.key === column?.key));
-        return state.warehouseColorSettings.colors[column?.key]
-          || WAREHOUSE_COLOR_PALETTE[index % WAREHOUSE_COLOR_PALETTE.length];
+        return state.warehouseColorSettings.colors[column?.key] || COLOR_CANCEL_COLOR;
       }
 
       function managerNames(preview) {
@@ -3615,7 +3674,47 @@
         window.setTimeout(() => { state.suppressHeaderClick = false; }, 0);
       }
 
-      function buildInventoryPreview(workspace) {
+      function shortageCategoryCode(productCode) {
+        const normalized = typeof engine.normalizeCategoryCode === "function"
+          ? engine.normalizeCategoryCode(productCode)
+          : String(productCode || "").replace(/\s+/g, "").toUpperCase();
+        return normalized.length >= 6 ? normalized.slice(0, 6) : "";
+      }
+
+      function inventoryRowState(row, shortageRole) {
+        if (shortageRole === "shortage") return "부족상품";
+        if (shortageRole === "candidate" && state.shortageFocus) {
+          return Number(row?.orderQuantity || 0) === 0 ? "대체후보 · 주문 없음" : "대체후보";
+        }
+        if (row?.inventoryMissing || row?.salesOnly) return "재고정보 없음";
+        const orderQuantity = Number(row?.orderQuantity || 0);
+        const stockTotal = Number(row?.stockTotal || 0);
+        if (orderQuantity === 0 && stockTotal === 0) return "주문 없음 · 재고 0";
+        if (orderQuantity === 0) return "주문 없음";
+        if (stockTotal === 0) return "재고 0";
+        if (Number(row?.remainingQuantity) === 0) return "재고 소진";
+        return "";
+      }
+
+      function decorateShortageRow(row, shortageSets, inventoryByCode) {
+        const productCode = String(row?.productCode || "").trim();
+        const shortageFocusRole = shortageSets.shortages.has(productCode)
+          ? "shortage"
+          : shortageSets.candidates.has(productCode) ? "candidate" : "";
+        const inventoryRow = inventoryByCode.get(productCode) || row;
+        return {
+          ...row,
+          shortageFocusRole,
+          shortageCategory: shortageCategoryCode(productCode),
+          rowState: inventoryRowState(inventoryRow, shortageFocusRole),
+          inventoryMissing: Boolean(inventoryRow?.inventoryMissing || row?.inventoryMissing),
+          stockTotal: row?.stockTotal ?? inventoryRow?.stockTotal,
+          orderQuantity: row?.orderQuantity ?? inventoryRow?.orderQuantity,
+          remainingQuantity: row?.remainingQuantity ?? inventoryRow?.remainingQuantity,
+        };
+      }
+
+      function buildInventoryPreview(workspace, shortageSets, inventoryByCode) {
         if (typeof engine.getInventoryViewRows !== "function") return null;
         const inventoryView = engine.getInventoryViewRows(workspace);
         if (!inventoryView || !Array.isArray(inventoryView.columns) || !Array.isArray(inventoryView.rows)) return null;
@@ -3625,7 +3724,9 @@
             ? column.key
             : `shipping:inventory:${index}:${encodeURIComponent(String(column?.header || index))}`,
           header: column?.role === "calculatedQuantity" && state.warehouseFilters.size > 0
-            ? "선택창고 잔량"
+            ? "선택창고 잔량/발주"
+            : column?.role === "calculatedQuantity"
+              ? "잔량/발주"
             : String(column?.header || "") === "품목명"
               ? "품명"
               : String(column?.header || "") === "주문수량"
@@ -3635,9 +3736,17 @@
           role: column?.role || "",
         }));
 
-        let purchaseIndex = baseColumns.findIndex((column) => String(column.header).trim() === "규격");
-        purchaseIndex = purchaseIndex >= 0 ? purchaseIndex + 1 : Math.min(3, baseColumns.length);
+        let statusIndex = baseColumns.findIndex((column) => String(column.header).trim() === "규격");
+        statusIndex = statusIndex >= 0 ? statusIndex + 1 : Math.min(3, baseColumns.length);
         const columns = [...baseColumns];
+        columns.splice(statusIndex, 0, {
+          key: "shipping:inventory:row-state",
+          header: "구분",
+          numeric: false,
+          role: "rowState",
+          defaultWidth: 112,
+        });
+        const purchaseIndex = statusIndex + 1;
         columns.splice(purchaseIndex, 0, {
           key: "shipping:inventory:purchase",
           header: "구매",
@@ -3661,7 +3770,7 @@
         });
 
         const sourceRows = inventoryView.rows.map((row) => ({
-          ...row,
+          ...decorateShortageRow(row, shortageSets, inventoryByCode),
           displayRemainingQuantity: row?.remainingQuantity,
         }));
         const rows = sourceRows.map((row) => {
@@ -3676,13 +3785,14 @@
             row.displayRemainingQuantity = selectedStock - Number(row?.orderQuantity || 0);
             if (remainingIndex >= 0) values[remainingIndex] = row.displayRemainingQuantity;
           }
+          values.splice(statusIndex, 0, row?.rowState ?? "");
           values.splice(purchaseIndex, 0, row?.purchase ?? "");
           values.push(row?.orderInformation ?? "");
           values.push(row?.orderNotes ?? "");
           return values;
         });
         return {
-          label: "출고관리",
+          label: "창고별재고",
           columns,
           headers: columns.map((column) => column.header),
           numeric: columns.map((column, index) => column.numeric ? index : -1).filter((index) => index >= 0),
@@ -3690,7 +3800,7 @@
             .filter((index) => index >= 0),
           purchase: purchaseIndex,
           purchaseEditable: true,
-          status: -1,
+          status: statusIndex,
           sourceRows,
           rows,
           sortByProductCode: true,
@@ -3716,9 +3826,35 @@
         ).join("")}</span>`;
       }
 
+      function renderRowStateBadges(value) {
+        const states = String(value || "").split("·").map((entry) => entry.trim()).filter(Boolean);
+        if (states.length === 0) return "";
+        return `<span class="row-state-badges">${states.map((entry) =>
+          `<span class="row-state-badge" data-state="${escapeHtml(entry)}">${escapeHtml(entry)}</span>`,
+        ).join("")}</span>`;
+      }
+
+      function isQuantityColumn(column) {
+        return [
+          "warehouseQuantity", "stockQuantity", "inboundQuantity", "orderQuantity",
+          "salesQuantity", "calculatedQuantity",
+        ].includes(column?.role) || column?.orderField === "quantity";
+      }
+
       function getPreviewDefinitions(workspace) {
         const acknowledgementState = engine.ensureNoticeState(workspace);
         const acknowledgedIds = new Set(acknowledgementState.acknowledgedIds);
+        const shortageContext = typeof engine.getShortageCategoryContext === "function"
+          ? engine.getShortageCategoryContext(workspace)
+          : { shortageCount: 0, shortageProductCodes: [], candidateProductCodes: [] };
+        const shortageSets = {
+          shortages: new Set(shortageContext.shortageProductCodes || []),
+          candidates: new Set(shortageContext.candidateProductCodes || []),
+        };
+        const inventoryByCode = new Map(
+          (typeof engine.getInventoryViewRows === "function" ? engine.getInventoryViewRows(workspace).rows : [])
+            .map((row) => [String(row?.productCode || "").trim(), row]),
+        );
         const validation = {
           label: "검증요약",
           headers: ["검증 항목", "계산 결과", "정상 기준", "판정", "설명"],
@@ -3739,29 +3875,32 @@
           ? engine.getAllocationInventoryView(workspace)
           : { columns: [], rows: [] };
         const allocationWarehouseHeaders = allocationInventoryView.columns.map((column) => column.header);
-        const allocationWarehouseStart = 8;
+        const allocationWarehouseStart = 9;
         const allocationTailStart = allocationWarehouseStart + allocationWarehouseHeaders.length;
+        const allocationSourceRows = workspace.allocations.map((row) =>
+          decorateShortageRow(row, shortageSets, inventoryByCode));
         const allocations = {
           label: "주문현황",
           shortcut: "F5",
-          headers: ["창고", "거래처", "담당자", "상품코드", "품명", "규격", "주문", "단가", ...allocationWarehouseHeaders, "전달사항", "구매"],
+          headers: ["창고", "거래처", "담당자", "상품코드", "품명", "규격", "구분", "주문", "단가", ...allocationWarehouseHeaders, "전달사항", "구매"],
           numeric: [
-            6,
             7,
+            8,
             ...allocationWarehouseHeaders.map((_, index) => allocationWarehouseStart + index),
           ],
           inventory: [],
           purchase: allocationTailStart + 1,
           purchaseEditable: true,
-          status: -1,
-          sourceRows: workspace.allocations,
-          rows: workspace.allocations.map((row, index) => [
+          status: 6,
+          sourceRows: allocationSourceRows,
+          rows: allocationSourceRows.map((row, index) => [
             row.warehouse || "",
             row.customer || "",
             row.manager || "",
             row.productCode,
             row.productName,
             row.specification || row.spec || "",
+            row.rowState || "",
             row.quantity,
             typeof row.unitPrice === "number" && Number.isFinite(row.unitPrice) ? row.unitPrice : "",
             ...(allocationInventoryView.rows[index]?.warehouseValues || []).map(blankZero),
@@ -3772,11 +3911,17 @@
           notice: allocationTailStart,
         };
         allocations.columns = createPreviewColumns("allocations", allocations.headers, allocations.numeric);
-        [76, 138, 92, 94, 160, 62, 62, 72].forEach((width, index) => {
+        [76, 138, 92, 94, 160, 62, 112, 62, 72].forEach((width, index) => {
           if (allocations.columns[index]) allocations.columns[index].defaultWidth = width;
         });
-        allocations.columns[6].orderField = "quantity";
-        allocations.columns[7].orderField = "unitPrice";
+        allocations.columns[3].role = "productCode";
+        allocations.columns[4].role = "productName";
+        allocations.columns[5].role = "specification";
+        allocations.columns[6].role = "rowState";
+        allocations.columns[7].role = "orderQuantity";
+        allocations.columns[7].orderField = "quantity";
+        allocations.columns[8].role = "unitPrice";
+        allocations.columns[8].orderField = "unitPrice";
         allocationWarehouseHeaders.forEach((_, index) => {
           const column = allocations.columns[allocationWarehouseStart + index];
           if (column) {
@@ -3789,6 +3934,7 @@
           if (column) column.defaultWidth = width;
         });
         allocations.columns[allocationTailStart].orderField = "note";
+        allocations.shortageCount = shortageContext.shortageCount || 0;
 
         const notices = {
           label: `전달사항 ${workspace.notices.length}${workspace.notices.length > acknowledgedIds.size ? ` · 미확인 ${workspace.notices.length - acknowledgedIds.size}` : ""}`,
@@ -3828,34 +3974,52 @@
         const definitions = { validation, allocations };
         if (typeof engine.getStockLedgerView === "function") {
           const ledgerView = engine.getStockLedgerView(workspace);
+          const ledgerSourceRows = ledgerView.rows.map((row) =>
+            decorateShortageRow(row, shortageSets, inventoryByCode));
           const ledgerColumns = ledgerView.columns.map((column) => ({
             ...column,
-            header: column.header === "품목명" ? "품명" : column.header,
+            header: column.role === "calculatedQuantity" ? "잔량/발주"
+              : column.header === "품목명" ? "품명" : column.header,
             defaultWidth: column.role === "orderInformation" ? 240
               : column.role === "purchasePlace" ? 150
                 : column.role === "productName" ? 190
                   : column.role === "unitPrice" ? 100
                     : column.numeric ? 90 : 140,
           }));
+          let ledgerStatusIndex = ledgerColumns.findIndex((column) => column.role === "specification");
+          ledgerStatusIndex = ledgerStatusIndex >= 0 ? ledgerStatusIndex + 1 : Math.min(3, ledgerColumns.length);
+          ledgerColumns.splice(ledgerStatusIndex, 0, {
+            key: "ledger:row-state",
+            header: "구분",
+            role: "rowState",
+            numeric: false,
+            defaultWidth: 112,
+          });
           const ledgerPurchaseIndex = ledgerColumns.findIndex((column) => column.role === "purchasePlace");
           definitions.ledger = {
-            label: "발주관리",
+            label: "재고수불부",
             shortcut: "F6",
             columns: ledgerColumns,
-            headers: ledgerView.headers.map((header) => header === "품목명" ? "품명" : header),
-            numeric: ledgerView.columns.map((column, index) => column.numeric ? index : -1).filter((index) => index >= 0),
+            headers: ledgerColumns.map((column) => column.header),
+            numeric: ledgerColumns.map((column, index) => column.numeric ? index : -1).filter((index) => index >= 0),
             inventory: [],
             purchase: ledgerPurchaseIndex,
             purchaseEditable: ledgerPurchaseIndex >= 0,
-            status: -1,
-            sourceRows: ledgerView.rows,
-            rows: ledgerView.rows.map((row) => row.values),
+            status: ledgerStatusIndex,
+            sourceRows: ledgerSourceRows,
+            rows: ledgerSourceRows.map((row) => {
+              const values = [...row.values];
+              values.splice(ledgerStatusIndex, 0, row.rowState || "");
+              return values;
+            }),
             sortByProductCode: true,
+            shortageCount: shortageContext.shortageCount || 0,
           };
         }
-        const inventory = buildInventoryPreview(workspace);
+        const inventory = buildInventoryPreview(workspace, shortageSets, inventoryByCode);
         if (inventory) {
           inventory.shortcut = "F7";
+          inventory.shortageCount = shortageContext.shortageCount || 0;
           definitions.inventory = inventory;
         }
         return definitions;
@@ -3875,6 +4039,7 @@
 
       function previewRowFill(previewId, sourceRow) {
         if (!sourceRow || previewId === "validation" || previewId === "inventory") return "";
+        if (state.shortageFocus) return "";
         if (sourceRow.rowType === "reference") return "#f1f5f9";
         const manager = String(sourceRow.manager || "").trim();
         const color = state.managerColorSettings.colors[manager];
@@ -3894,6 +4059,13 @@
       }
 
       function rowMatchesView(previewId, pair, preview) {
+        if (state.shortageFocus && ["allocations", "ledger", "inventory"].includes(previewId)) {
+          const role = pair.sourceRow?.shortageFocusRole;
+          const focusMatch = previewId === "allocations"
+            ? role === "shortage"
+            : role === "shortage" || role === "candidate";
+          if (!focusMatch) return false;
+        }
         const query = state.searchQuery.trim().toLocaleLowerCase("ko-KR");
         const queryMatches = !query || previewSearchCorpus(pair.sourceRow, pair.row).includes(query);
         if (!queryMatches) return false;
@@ -4008,6 +4180,18 @@
       }
 
       function comparePreviewPairs(previewId, preview, left, right) {
+        if (state.shortageFocus && ["ledger", "inventory"].includes(previewId)) {
+          const categoryCompared = String(left.sourceRow?.shortageCategory || "")
+            .localeCompare(String(right.sourceRow?.shortageCategory || ""), "ko-KR", {
+              sensitivity: "base",
+              numeric: true,
+            });
+          if (categoryCompared) return categoryCompared;
+          const roleRank = (role) => role === "shortage" ? 0 : role === "candidate" ? 1 : 2;
+          const roleCompared = roleRank(left.sourceRow?.shortageFocusRole) -
+            roleRank(right.sourceRow?.shortageFocusRole);
+          if (roleCompared) return roleCompared;
+        }
         const setting = columnSortSetting(previewId, preview);
         if (!setting) return preview.sortByProductCode ? compareProductCodes(left, right) : left.index - right.index;
         const columnIndex = preview.columns.findIndex((column) => column.key === setting.columnKey);
@@ -4262,11 +4446,15 @@
 
         const body = pairs.length
           ? pairs.map(({ row, sourceRow }) => {
-              const referenceRow = sourceRow?.rowType === "reference";
+              const focusCandidate = state.shortageFocus && sourceRow?.shortageFocusRole === "candidate";
+              const referenceRow = sourceRow?.rowType === "reference" || focusCandidate;
               const rowFill = previewRowFill(previewId, sourceRow);
               const rowClasses = [
                 referenceRow ? "reference-row" : "",
-                exactWarningUnit(sourceRow) ? "unit-alert-row" : "",
+                sourceRow?.shortageFocusRole === "shortage" ? "shortage-main-row" : "",
+                focusCandidate ? "shortage-candidate-row" : "",
+                sourceRow?.inventoryMissing || sourceRow?.salesOnly ? "inventory-missing-row" : "",
+                Number(sourceRow?.orderQuantity || 0) === 0 ? "no-order-row" : "",
               ].filter(Boolean).join(" ");
               return `
                 <tr class="${rowClasses}" data-product-code="${escapeHtml(sourceRow?.productCode || "")}" ${sourceRow?.noticeId ? `data-notice-id="${escapeHtml(sourceRow.noticeId)}"` : ""}>
@@ -4281,6 +4469,10 @@
                     const orderQuantity = previewId === "inventory" &&
                       column.role === "orderQuantity" && !referenceRow;
                     const negativeNumericValue = isNonblankNumericValue(value) && Number(String(value).replace(/,/g, "")) < 0;
+                    const quantityColumn = isQuantityColumn(column);
+                    const numericQuantityValue = quantityColumn && isNonblankNumericValue(value)
+                      ? Number(String(value).replace(/,/g, ""))
+                      : null;
                     const ledgerNegative = previewId === "ledger" && column.role === "calculatedQuantity" && negativeNumericValue;
                     const warehouseFill = warehouseQuantity && isNonblankNumericValue(value)
                       ? warehouseColorFor(preview, column)
@@ -4299,6 +4491,10 @@
                       editableLedgerPrice ? "procurement-price-cell" : "",
                       calculatedQuantity ? "inventory-total-cell" : "",
                       ledgerNegative ? "ledger-negative-cell" : "",
+                      numericQuantityValue === 0 ? "quantity-zero" : "",
+                      numericQuantityValue < 0 ? "quantity-negative" : "",
+                      numericQuantityValue > 0 ? "quantity-positive" : "",
+                      exactWarningUnit(sourceRow) && column.role === "specification" ? "unit-alert-cell" : "",
                       column.role === "orderInformation" ? "information-value" : "",
                     ].filter(Boolean).join(" ");
                     const editablePurchase = editable && preview.purchaseEditable === true &&
@@ -4309,8 +4505,14 @@
                     const editableOrder = editable && previewId === "allocations" && column.orderField && sourceRow?.sourceRowNumber;
                     const inventoryNegativeBalance = typeof sourceRow?.displayRemainingQuantity === "number" && sourceRow.displayRemainingQuantity < 0;
                     const ledgerNegativeBalance = typeof sourceRow?.remainingQuantity === "number" && sourceRow.remainingQuantity < 0;
-                    const negativeBalance = (previewId === "inventory" && inventoryNegativeBalance) ||
-                      (previewId === "ledger" && ledgerNegativeBalance);
+                    const negativeBalance = sourceRow?.shortageFocusRole === "shortage" && (
+                      (previewId === "inventory" && inventoryNegativeBalance) ||
+                      (previewId === "ledger" && ledgerNegativeBalance)
+                    );
+                    const inventoryUnavailable = Boolean(sourceRow?.inventoryMissing || sourceRow?.salesOnly) &&
+                      ["warehouseQuantity", "stockQuantity", "calculatedQuantity"].includes(column.role);
+                    const purchaseRequired = column.role === "calculatedQuantity" &&
+                      negativeNumericValue && !inventoryUnavailable;
                     const content = editablePurchase
                       ? `<input class="purchase-input" data-purchase-code="${escapeHtml(sourceRow?.productCode || "")}"
                           data-grid-column="${escapeHtml(column.key)}" data-negative-balance="${negativeBalance ? "true" : "false"}"
@@ -4338,8 +4540,14 @@
                                 inputmode="decimal" autocomplete="off" data-negative-value="${negativeNumericValue ? "true" : "false"}"
                                 style="${warehouseFill ? `background-color:${warehouseFill}` : ""}" value="${escapeHtml(value)}"
                                 aria-label="${escapeHtml(sourceRow?.productCode || "")} ${escapeHtml(column.header)} 재고수량">`
+                            : column.role === "rowState"
+                              ? renderRowStateBadges(value)
                             : column.role === "orderInformation"
                               ? renderOrderInformationBadges(value)
+                            : inventoryUnavailable
+                              ? '<span class="inventory-unavailable-value">정보없음</span>'
+                            : purchaseRequired
+                              ? `<span class="purchase-required-badge" title="잔량 ${escapeHtml(formatNumber(value))}">발주 ${escapeHtml(formatNumber(Math.abs(Number(value))))}</span>`
                             : orderQuantity || calculatedQuantity
                               ? `<span class="inventory-total-frame" data-negative-value="${negativeNumericValue ? "true" : "false"}">${escapeHtml(isNumber ? formatNumber(value) : value)}</span>`
                               : `<span class="${noticeText ? "notice-text" : ""}">${escapeHtml(isNumber ? formatNumber(value) : value)}</span>`;
@@ -4373,6 +4581,13 @@
 
         const preview = definitions[state.activePreview];
         renderWarehouseColorBar(definitions);
+        const shortageEligible = ["allocations", "ledger", "inventory"].includes(state.activePreview);
+        const shortageCount = Number(preview.shortageCount || 0);
+        elements.shortageFocusButton.classList.toggle("hidden", !shortageEligible);
+        elements.shortageFocusButton.classList.toggle("active", shortageEligible && state.shortageFocus);
+        elements.shortageFocusButton.disabled = !shortageEligible || shortageCount === 0;
+        elements.shortageFocusButton.textContent = `재고부족 ${formatNumber(shortageCount)}`;
+        elements.shortageFocusButton.setAttribute("aria-pressed", String(shortageEligible && state.shortageFocus));
         const pairs = filteredSortedPreviewPairs(state.activePreview, preview);
         const activeSort = columnSortSetting(state.activePreview, preview);
         const sortColumn = activeSort
@@ -4384,6 +4599,9 @@
         if (sortColumn) viewNotes.push(`${sortColumn.header}${activeSort.direction === "asc" ? "↑" : "↓"}`);
         else if (preview.sortByProductCode) viewNotes.push("품목코드↑");
         if (filterCount > 0) viewNotes.push(`열조건 ${filterCount}`);
+        if (shortageEligible && state.shortageFocus) {
+          viewNotes.push(state.activePreview === "allocations" ? "실제 부족상품" : "부족·대체후보 모아보기");
+        }
         elements.previewCount.textContent = `${formatNumber(pairs.length)}/${formatNumber(preview.rows.length)}행${viewNotes.length ? ` · ${viewNotes.join(" · ")}` : ""}`;
 
         elements.specFilterGroup.disabled = state.activePreview === "validation" || state.activePreview === "notices";
@@ -4496,6 +4714,7 @@
 
       function resetResultViewFilters() {
         state.searchQuery = "";
+        state.shortageFocus = false;
         state.specificationFilters.clear();
         state.warehouseFilters.clear();
         state.managerFilters.clear();
@@ -4785,6 +5004,7 @@
           engine.applyPurchaseInputs(state.workspace, plan.purchaseInputs);
           state.activePreview = plan.activePreview || "validation";
           state.searchQuery = "";
+          state.shortageFocus = false;
           state.specificationFilters.clear();
           state.warehouseFilters.clear();
           state.managerFilters.clear();
@@ -4918,9 +5138,12 @@
 
       function focusPurchaseInput(input) {
         if (!input) return;
-        input.focus({ preventScroll: true });
-        input.scrollIntoView({ block: "nearest", inline: "nearest" });
-        window.requestAnimationFrame(() => input.select());
+        const row = input.closest("tr") || input;
+        row.scrollIntoView({ block: "center", inline: "nearest" });
+        window.requestAnimationFrame(() => {
+          input.focus({ preventScroll: true });
+          input.select();
+        });
       }
 
       function commitPurchaseInput(input) {
@@ -5265,6 +5488,14 @@
       elements.columnWidthSaveButton.addEventListener("click", persistActiveColumnWidths);
       elements.columnWidthResetButton.addEventListener("click", resetActiveColumnWidths);
       elements.resultFilterResetButton.addEventListener("click", runResultFilterReset);
+      elements.shortageFocusButton.addEventListener("click", () => {
+        if (!state.workspace || elements.shortageFocusButton.disabled) return;
+        state.shortageFocus = !state.shortageFocus;
+        renderPreview();
+        showToast(state.shortageFocus
+          ? "재고부족 모아보기를 켰습니다. 재고수불부·창고별재고에는 같은 6자리 카테고리 대체후보도 표시합니다."
+          : "재고부족 모아보기를 해제했습니다.");
+      });
       elements.tableSearchInput.addEventListener("input", () => {
         state.searchQuery = elements.tableSearchInput.value;
         if (state.workspace) renderPreview();

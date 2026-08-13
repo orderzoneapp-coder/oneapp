@@ -7,7 +7,7 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  const ENGINE_VERSION = "3.16.0";
+  const ENGINE_VERSION = "3.17.0";
   const WORKSPACE_SCHEMA_VERSION = "shipping-workspace/v2";
   const INVENTORY_OVERRIDE_SCHEMA_VERSION = "shipping-inventory-overrides/v1";
   const HEADER_SCAN_LIMIT = 30;
@@ -1130,6 +1130,16 @@
     return Number.isInteger(value) ? String(value) : String(roundQuantity(value));
   }
 
+  function formatGroupedNumber(value) {
+    const plain = formatPlainNumber(value);
+    if (!plain) return "";
+    const [integerPart, fractionPart] = plain.split(".");
+    const sign = integerPart.startsWith("-") ? "-" : "";
+    const digits = sign ? integerPart.slice(1) : integerPart;
+    const grouped = digits.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+    return `${sign}${grouped}${fractionPart === undefined ? "" : `.${fractionPart}`}`;
+  }
+
   function uniqueSupplierPairs(rows) {
     const seen = new Set();
     const result = [];
@@ -1346,7 +1356,7 @@
         const customer = cleanText(row.customer);
         const quantity = formatPlainNumber(row.quantity);
         const unitPrice = typeof row.unitPrice === "number" && Number.isFinite(row.unitPrice)
-          ? formatPlainNumber(row.unitPrice)
+          ? formatGroupedNumber(row.unitPrice)
           : "";
         return `${customer}${quantity ? `(${quantity})` : ""}${unitPrice}`;
       })
@@ -1417,6 +1427,7 @@
         stockTotal,
         orderQuantity,
         remainingQuantity,
+        purchaseNeed: remainingQuantity < 0 ? roundQuantity(Math.abs(remainingQuantity)) : 0,
         purchase: String(purchaseInputs[productCode] || ""),
         suppliers: inventorySupplierDisplay(workspace, productCode),
         orderInformation: orderInformationDisplay(workspace, productCode),
@@ -1458,6 +1469,7 @@
         stockTotal,
         orderQuantity,
         remainingQuantity,
+        purchaseNeed: null,
         purchase: String(purchaseInputs[productCode] || ""),
         suppliers: inventorySupplierDisplay(workspace, productCode),
         orderInformation: orderInformationDisplay(workspace, productCode),
@@ -1470,6 +1482,57 @@
       workspace.stats.inventoryNegativeCount = negativeCount;
     }
     return { columns, headers: columns.map((column) => column.header), rows };
+  }
+
+  function getShortageCategoryContext(workspace) {
+    const inventoryRows = getInventoryViewRows(workspace).rows;
+    const shortageRows = inventoryRows.filter((row) =>
+      !row.inventoryMissing && row.orderQuantity > 0 && row.remainingQuantity < 0,
+    );
+    const shortageCodes = new Set(shortageRows.map((row) => normalizeProductCode(row.productCode)));
+    const categories = new Map();
+
+    shortageRows.forEach((row) => {
+      const normalized = normalizeCategoryCode(row.productCode);
+      if (normalized.length < 6) return;
+      const categoryCode = normalized.slice(0, 6);
+      if (!categories.has(categoryCode)) {
+        categories.set(categoryCode, {
+          categoryCode,
+          shortageProductCodes: [],
+          candidateProductCodes: [],
+        });
+      }
+      categories.get(categoryCode).shortageProductCodes.push(row.productCode);
+    });
+
+    inventoryRows.forEach((row) => {
+      if (row.inventoryMissing) return;
+      const productCode = normalizeProductCode(row.productCode);
+      if (!productCode || shortageCodes.has(productCode)) return;
+      const normalized = normalizeCategoryCode(productCode);
+      if (normalized.length < 6) return;
+      const category = categories.get(normalized.slice(0, 6));
+      if (category) category.candidateProductCodes.push(row.productCode);
+    });
+
+    const categoryRows = [...categories.values()]
+      .map((category) => ({
+        ...category,
+        shortageProductCodes: [...new Set(category.shortageProductCodes)].sort(),
+        candidateProductCodes: [...new Set(category.candidateProductCodes)].sort(),
+      }))
+      .sort((left, right) => left.categoryCode.localeCompare(right.categoryCode, "ko"));
+    const candidateProductCodes = [...new Set(
+      categoryRows.flatMap((category) => category.candidateProductCodes),
+    )].sort();
+    const shortageProductCodes = [...shortageCodes].sort();
+    return {
+      shortageCount: shortageProductCodes.length,
+      shortageProductCodes,
+      candidateProductCodes,
+      categories: categoryRows,
+    };
   }
 
   function getStockLedgerView(workspace) {
@@ -2338,6 +2401,7 @@
     ensureInventoryPurchaseRows,
     getInventoryColumnDescriptors,
     getInventoryViewRows,
+    getShortageCategoryContext,
     getStockLedgerView,
     setOrderValue,
     setInventoryOverride,
