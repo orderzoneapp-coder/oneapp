@@ -2,7 +2,7 @@
 
 신규 ORDER Q 개발 경로. 기존 `orderops/` 및 `orderops_list.html`은 변경하지 않는다.
 
-## vNext 0.4 URL
+## vNext 0.4.1 URL
 
 - `/orderq/` 또는 `/orderq/index.html`: 공통 주문현황
 - `/orderq/input.html`: 수기 주문서 신규/수정
@@ -23,7 +23,7 @@
 - `importBatches`, `sourceRecords`
 - `salesDocuments`, `salesLines`, `purchaseDocuments`, `purchaseLines`
 - `ledgerDocuments`, `ledgerLines`, `inventorySnapshots`, `inventoryLines`
-- `historicalOrderGroups`, `historicalOrderLines`, `fulfillmentLinks`, `parserEvidence`
+- `historicalOrderGroups`, `historicalOrderLines`, `fulfillmentLinks`, `fulfillmentBalances`, `parserEvidence`
 - `syncQueue`, `meta`
 
 주문 수정은 `revision` 비교를 사용한다. 같은 주문을 두 탭에서 열고 한쪽이 먼저 저장하면, 다른 쪽의 오래된 revision 저장은 차단한다.

@@ -1,5 +1,5 @@
 const DB_NAME = 'oneapp-orderq-vnext';
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 
 export const STORE = Object.freeze({
   CUSTOMERS: 'customers',
@@ -26,6 +26,7 @@ export const STORE = Object.freeze({
   HISTORICAL_ORDER_GROUPS: 'historicalOrderGroups',
   HISTORICAL_ORDER_LINES: 'historicalOrderLines',
   FULFILLMENT_LINKS: 'fulfillmentLinks',
+  FULFILLMENT_BALANCES: 'fulfillmentBalances',
   PARSER_EVIDENCE: 'parserEvidence',
   COLLECTOR_SETTINGS: 'collectorSettings',
   SYNC_QUEUE: 'syncQueue',
@@ -166,6 +167,11 @@ function upgrade(db, transaction) {
   ensureIndex(store, 'bySalesLineId', 'salesLineId');
   ensureIndex(store, 'byStatus', 'status');
   ensureIndex(store, 'byCreatedAt', 'createdAt');
+
+  store = ensureStore(STORE.FULFILLMENT_BALANCES, { keyPath: 'fulfillmentBalanceId' });
+  ensureIndex(store, 'byOrderLineId', 'historicalOrderLineId', { unique: true });
+  ensureIndex(store, 'byStatus', 'status');
+  ensureIndex(store, 'byUpdatedAt', 'updatedAt');
 
   store = ensureStore(STORE.PARSER_EVIDENCE, { keyPath: 'parserEvidenceId' });
   ensureIndex(store, 'byCustomerExpression', ['customerId', 'normalizedExpression']);

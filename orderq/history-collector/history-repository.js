@@ -12,6 +12,7 @@ import {
 import { COLLECTOR_SOURCE } from './collector-schema.js';
 import { buildFulfillmentLinks } from './fulfillment-matcher.js';
 import { buildParserEvidence } from './parser-evidence.js';
+import { deactivateEvidenceMapping, reconcileEvidenceMappings } from './mapping-lifecycle.js';
 
 const DEFAULT_SETTINGS = Object.freeze({
   key: 'ACTIVE',
@@ -367,22 +368,41 @@ export async function saveCollectorSettings(input) {
 }
 
 export async function rebuildFulfillmentEvidence() {
-  const [orderGroups, orderLines, salesDocuments, salesLines, oldLinks, oldEvidence, settings] = await Promise.all([
+  const [orderGroups, orderLines, salesDocuments, salesLines, oldLinks, oldBalances, oldEvidence, mappings, settings] = await Promise.all([
     getAll(STORE.HISTORICAL_ORDER_GROUPS), getAll(STORE.HISTORICAL_ORDER_LINES), getAll(STORE.SALES_DOCUMENTS), getAll(STORE.SALES_LINES),
-    getAll(STORE.FULFILLMENT_LINKS), getAll(STORE.PARSER_EVIDENCE), getCollectorSettings()
+    getAll(STORE.FULFILLMENT_LINKS), getAll(STORE.FULFILLMENT_BALANCES), getAll(STORE.PARSER_EVIDENCE), getAll(STORE.PRODUCT_MAPPINGS), getCollectorSettings()
   ]);
-  const result = buildFulfillmentLinks({ orderGroups, orderLines, salesDocuments, salesLines, settings });
+  const manualLinks = oldLinks.filter(row => row.active !== false && ['CONFIRM', 'BLOCK'].includes(row.manualAction));
+  const result = buildFulfillmentLinks({ orderGroups, orderLines, salesDocuments, salesLines, settings, manualLinks });
   const createdAt = nowIso();
   result.links = result.links.map(link => ({ ...link, active: true, createdAt, updatedAt: createdAt }));
-  const evidence = buildParserEvidence({ links: result.links, orderLines, salesLines }).map(row => ({ ...row, active: true, createdAt, updatedAt: createdAt }));
+  result.balances = result.balances.map(balance => ({ ...balance, active: true, calculatedAt: createdAt, updatedAt: createdAt }));
+  const evidence = buildParserEvidence({ links: result.links, orderLines, salesLines }).map(row => {
+    const previous = row.status === 'READY_FOR_ADMIN_CONFIRMATION'
+      ? oldEvidence.find(item => item.parserEvidenceId === row.parserEvidenceId && item.status === 'ADMIN_CONFIRMED' && item.active !== false)
+      : null;
+    return previous
+      ? { ...row, status: 'ADMIN_CONFIRMED', confirmedAt: previous.confirmedAt, confirmedBy: previous.confirmedBy, active: true, createdAt: previous.createdAt || createdAt, updatedAt: createdAt }
+      : { ...row, active: true, createdAt, updatedAt: createdAt };
+  });
   const activeLinkIds = new Set(result.links.map(row => row.fulfillmentLinkId));
+  const activeBalanceIds = new Set(result.balances.map(row => row.fulfillmentBalanceId));
   const activeEvidenceIds = new Set(evidence.map(row => row.parserEvidenceId));
+  const mappingUpdates = reconcileEvidenceMappings({ mappings, evidence, timestamp: createdAt });
   const db = await openOrderQDb();
-  const tx = db.transaction([STORE.FULFILLMENT_LINKS, STORE.PARSER_EVIDENCE, STORE.SYNC_QUEUE], 'readwrite');
+  const tx = db.transaction([
+    STORE.FULFILLMENT_LINKS, STORE.FULFILLMENT_BALANCES, STORE.PARSER_EVIDENCE,
+    STORE.PRODUCT_MAPPINGS, STORE.MAPPING_EVENTS, STORE.SYNC_QUEUE
+  ], 'readwrite');
   oldLinks.filter(row => row.active !== false && !activeLinkIds.has(row.fulfillmentLinkId)).forEach(row => {
     const next = { ...row, active: false, invalidatedAt: createdAt, updatedAt: createdAt };
     tx.objectStore(STORE.FULFILLMENT_LINKS).put(next);
     tx.objectStore(STORE.SYNC_QUEUE).put(queueRow('FULFILLMENT_LINK', next.fulfillmentLinkId, next));
+  });
+  oldBalances.filter(row => row.active !== false && !activeBalanceIds.has(row.fulfillmentBalanceId)).forEach(row => {
+    const next = { ...row, active: false, invalidatedAt: createdAt, updatedAt: createdAt };
+    tx.objectStore(STORE.FULFILLMENT_BALANCES).put(next);
+    tx.objectStore(STORE.SYNC_QUEUE).put(queueRow('FULFILLMENT_BALANCE', next.fulfillmentBalanceId, next));
   });
   oldEvidence.filter(row => row.active !== false && !activeEvidenceIds.has(row.parserEvidenceId)).forEach(row => {
     const next = { ...row, active: false, invalidatedAt: createdAt, updatedAt: createdAt };
@@ -393,14 +413,98 @@ export async function rebuildFulfillmentEvidence() {
     tx.objectStore(STORE.FULFILLMENT_LINKS).put(row);
     tx.objectStore(STORE.SYNC_QUEUE).put(queueRow('FULFILLMENT_LINK', row.fulfillmentLinkId, row));
   });
+  result.balances.forEach(row => {
+    tx.objectStore(STORE.FULFILLMENT_BALANCES).put(row);
+    tx.objectStore(STORE.SYNC_QUEUE).put(queueRow('FULFILLMENT_BALANCE', row.fulfillmentBalanceId, row));
+  });
   evidence.forEach(row => {
-    const previous = oldEvidence.find(item => item.parserEvidenceId === row.parserEvidenceId && item.status === 'ADMIN_CONFIRMED');
-    const next = previous ? { ...row, status: 'ADMIN_CONFIRMED', confirmedAt: previous.confirmedAt, confirmedBy: previous.confirmedBy } : row;
-    tx.objectStore(STORE.PARSER_EVIDENCE).put(next);
-    tx.objectStore(STORE.SYNC_QUEUE).put(queueRow('PARSER_EVIDENCE', next.parserEvidenceId, next));
+    tx.objectStore(STORE.PARSER_EVIDENCE).put(row);
+    tx.objectStore(STORE.SYNC_QUEUE).put(queueRow('PARSER_EVIDENCE', row.parserEvidenceId, row));
+  });
+  mappingUpdates.forEach(mapping => {
+    tx.objectStore(STORE.PRODUCT_MAPPINGS).put(mapping);
+    tx.objectStore(STORE.SYNC_QUEUE).put(queueRow('PRODUCT_MAPPING', mapping.mappingId, mapping));
+    const event = {
+      eventId: newId('ME'), eventType: 'EVIDENCE_REVIEW_REQUIRED', customerId: mapping.customerId || '', productId: mapping.productId || '',
+      mappingId: mapping.mappingId, parserEvidenceId: mapping.evidenceId || '', before: 'ACTIVE', after: 'REVIEW_REQUIRED',
+      reason: mapping.reviewReason, createdAt, createdBy: 'system'
+    };
+    tx.objectStore(STORE.MAPPING_EVENTS).put(event);
+    tx.objectStore(STORE.SYNC_QUEUE).put(queueRow('MAPPING_EVENT', event.eventId, event));
   });
   await transactionDone(tx);
-  return { ...result, evidence };
+  return { ...result, evidence, mappingUpdates };
+}
+
+export async function confirmFulfillmentLink(fulfillmentLinkId, confirmedBy = 'administrator') {
+  const link = await getByKey(STORE.FULFILLMENT_LINKS, fulfillmentLinkId);
+  if (!link?.historicalOrderLineId || !link?.salesLineId) throw new Error('확정할 주문·판매 연결이 없습니다.');
+  const timestamp = nowIso();
+  const next = {
+    ...link,
+    status: 'CONFIRMED', manualAction: 'CONFIRM', requiresReview: false,
+    requestedQuantity: Math.abs(Number(link.allocatedQuantity || 0)), confirmedAt: timestamp, confirmedBy, active: true, updatedAt: timestamp
+  };
+  const db = await openOrderQDb();
+  const tx = db.transaction([STORE.FULFILLMENT_LINKS, STORE.SYNC_QUEUE], 'readwrite');
+  tx.objectStore(STORE.FULFILLMENT_LINKS).put(next);
+  tx.objectStore(STORE.SYNC_QUEUE).put(queueRow('FULFILLMENT_LINK', next.fulfillmentLinkId, next));
+  await transactionDone(tx);
+  return rebuildFulfillmentEvidence();
+}
+
+export async function replaceFulfillmentLink(fulfillmentLinkId, salesLineId, confirmedBy = 'administrator') {
+  const [link, salesLine] = await Promise.all([
+    getByKey(STORE.FULFILLMENT_LINKS, fulfillmentLinkId),
+    getByKey(STORE.SALES_LINES, salesLineId)
+  ]);
+  if (!link?.historicalOrderLineId || !link?.salesLineId) throw new Error('변경할 기존 연결이 없습니다.');
+  if (!salesLine || Number(salesLine.quantity || 0) <= 0) throw new Error('선택한 판매행은 양수 판매자료가 아닙니다.');
+  const orderLine = await getByKey(STORE.HISTORICAL_ORDER_LINES, link.historicalOrderLineId);
+  if (!orderLine) throw new Error('연결할 주문행이 없습니다.');
+  const timestamp = nowIso();
+  const blocked = {
+    ...link, status: 'UNLINKED', method: 'ADMIN_UNLINKED', manualAction: 'BLOCK', manualReason: 'REPLACED_BY_ADMIN',
+    requestedQuantity: 0, allocatedQuantity: 0, requiresReview: false, confirmedAt: '', confirmedBy: '', active: true, updatedAt: timestamp
+  };
+  const replacementId = stableId('FL-MANUAL', [link.historicalOrderLineId, salesLineId]);
+  const replacement = {
+    fulfillmentLinkId: replacementId,
+    historicalOrderGroupId: orderLine.historicalOrderGroupId,
+    historicalOrderLineId: link.historicalOrderLineId,
+    salesDocumentId: salesLine.salesDocumentId,
+    salesLineId,
+    allocatedQuantity: Math.min(Number(orderLine.quantity || 0), Number(salesLine.quantity || 0)),
+    requestedQuantity: Math.min(Number(orderLine.quantity || 0), Number(salesLine.quantity || 0)),
+    status: 'CONFIRMED', method: 'ADMIN_CONFIRMED', confidence: 100, evidence: ['ADMIN_CONFIRMED', 'REPLACED_BY_ADMIN'],
+    customerId: link.customerId || orderLine.customerId || '', customerName: link.customerName || orderLine.customerName || '',
+    productCode: salesLine.productCode || '', productName: salesLine.productName || '',
+    manualAction: 'CONFIRM', requiresReview: false, confirmedAt: timestamp, confirmedBy, active: true, createdAt: timestamp, updatedAt: timestamp
+  };
+  const db = await openOrderQDb();
+  const tx = db.transaction([STORE.FULFILLMENT_LINKS, STORE.SYNC_QUEUE], 'readwrite');
+  [blocked, replacement].forEach(row => {
+    tx.objectStore(STORE.FULFILLMENT_LINKS).put(row);
+    tx.objectStore(STORE.SYNC_QUEUE).put(queueRow('FULFILLMENT_LINK', row.fulfillmentLinkId, row));
+  });
+  await transactionDone(tx);
+  return rebuildFulfillmentEvidence();
+}
+
+export async function unlinkFulfillmentLink(fulfillmentLinkId, unlinkedBy = 'administrator') {
+  const link = await getByKey(STORE.FULFILLMENT_LINKS, fulfillmentLinkId);
+  if (!link?.historicalOrderLineId || !link?.salesLineId) throw new Error('해제할 주문·판매 연결이 없습니다.');
+  const timestamp = nowIso();
+  const next = {
+    ...link, status: 'UNLINKED', method: 'ADMIN_UNLINKED', manualAction: 'BLOCK', manualReason: 'UNLINKED_BY_ADMIN',
+    requestedQuantity: 0, allocatedQuantity: 0, requiresReview: false, unlinkedAt: timestamp, unlinkedBy, active: true, updatedAt: timestamp
+  };
+  const db = await openOrderQDb();
+  const tx = db.transaction([STORE.FULFILLMENT_LINKS, STORE.SYNC_QUEUE], 'readwrite');
+  tx.objectStore(STORE.FULFILLMENT_LINKS).put(next);
+  tx.objectStore(STORE.SYNC_QUEUE).put(queueRow('FULFILLMENT_LINK', next.fulfillmentLinkId, next));
+  await transactionDone(tx);
+  return rebuildFulfillmentEvidence();
 }
 
 export async function confirmParserEvidence(parserEvidenceId, confirmedBy = 'administrator') {
@@ -434,6 +538,44 @@ export async function confirmParserEvidence(parserEvidenceId, confirmedBy = 'adm
   tx.objectStore(STORE.SYNC_QUEUE).put(queueRow('MAPPING_EVENT', event.eventId, event));
   await transactionDone(tx);
   return { evidence: nextEvidence, mapping, event };
+}
+
+export async function cancelParserEvidenceConfirmation(parserEvidenceId, cancelledBy = 'administrator') {
+  const evidence = await getByKey(STORE.PARSER_EVIDENCE, parserEvidenceId);
+  if (!evidence || evidence.active === false || evidence.status !== 'ADMIN_CONFIRMED') {
+    throw new Error('확정 취소할 파서근거가 없습니다.');
+  }
+  const mappings = (await getAll(STORE.PRODUCT_MAPPINGS))
+    .filter(row => row.evidenceId === parserEvidenceId && row.evidenceType === 'ADMIN_CONFIRMED' && row.status !== 'INACTIVE');
+  const timestamp = nowIso();
+  const nextEvidence = {
+    ...evidence,
+    status: 'READY_FOR_ADMIN_CONFIRMATION',
+    confirmationCancelledAt: timestamp,
+    confirmationCancelledBy: cancelledBy,
+    confirmedAt: '',
+    confirmedBy: '',
+    updatedAt: timestamp
+  };
+  const deactivatedMappings = mappings.map(mapping => deactivateEvidenceMapping(mapping, timestamp, cancelledBy));
+  const events = deactivatedMappings.map(mapping => ({
+    eventId: newId('ME'), eventType: 'ADMIN_CONFIRMATION_CANCELLED', customerId: mapping.customerId || '', productId: mapping.productId || '',
+    mappingId: mapping.mappingId, parserEvidenceId, before: 'ACTIVE', after: 'INACTIVE', createdAt: timestamp, createdBy: cancelledBy
+  }));
+  const db = await openOrderQDb();
+  const tx = db.transaction([STORE.PARSER_EVIDENCE, STORE.PRODUCT_MAPPINGS, STORE.MAPPING_EVENTS, STORE.SYNC_QUEUE], 'readwrite');
+  tx.objectStore(STORE.PARSER_EVIDENCE).put(nextEvidence);
+  tx.objectStore(STORE.SYNC_QUEUE).put(queueRow('PARSER_EVIDENCE', parserEvidenceId, nextEvidence));
+  deactivatedMappings.forEach(mapping => {
+    tx.objectStore(STORE.PRODUCT_MAPPINGS).put(mapping);
+    tx.objectStore(STORE.SYNC_QUEUE).put(queueRow('PRODUCT_MAPPING', mapping.mappingId, mapping));
+  });
+  events.forEach(event => {
+    tx.objectStore(STORE.MAPPING_EVENTS).put(event);
+    tx.objectStore(STORE.SYNC_QUEUE).put(queueRow('MAPPING_EVENT', event.eventId, event));
+  });
+  await transactionDone(tx);
+  return { evidence: nextEvidence, mappings: deactivatedMappings, events };
 }
 
 export async function rollbackImportBatch(importBatchId, rolledBackBy = 'administrator') {
@@ -476,16 +618,16 @@ export async function rollbackImportBatch(importBatchId, rolledBackBy = 'adminis
 }
 
 export async function getCollectorSnapshot() {
-  const [batches, sourceRecords, salesDocuments, salesLines, purchaseDocuments, purchaseLines, inventorySnapshots, inventoryLines, orderGroups, orderLines, links, evidence, settings] = await Promise.all([
+  const [batches, sourceRecords, salesDocuments, salesLines, purchaseDocuments, purchaseLines, inventorySnapshots, inventoryLines, orderGroups, orderLines, links, balances, evidence, settings] = await Promise.all([
     getAll(STORE.IMPORT_BATCHES), getAll(STORE.SOURCE_RECORDS), getAll(STORE.SALES_DOCUMENTS), getAll(STORE.SALES_LINES),
     getAll(STORE.PURCHASE_DOCUMENTS), getAll(STORE.PURCHASE_LINES), getAll(STORE.INVENTORY_SNAPSHOTS), getAll(STORE.INVENTORY_LINES),
-    getAll(STORE.HISTORICAL_ORDER_GROUPS), getAll(STORE.HISTORICAL_ORDER_LINES), getAll(STORE.FULFILLMENT_LINKS), getAll(STORE.PARSER_EVIDENCE), getCollectorSettings()
+    getAll(STORE.HISTORICAL_ORDER_GROUPS), getAll(STORE.HISTORICAL_ORDER_LINES), getAll(STORE.FULFILLMENT_LINKS), getAll(STORE.FULFILLMENT_BALANCES), getAll(STORE.PARSER_EVIDENCE), getCollectorSettings()
   ]);
   const active = rows => rows.filter(row => !row.disabledAt && row.active !== false);
   return {
     batches: batches.sort((a, b) => String(b.importedAt).localeCompare(String(a.importedAt))),
     sourceRecords: active(sourceRecords), salesDocuments: active(salesDocuments), salesLines: active(salesLines),
     purchaseDocuments: active(purchaseDocuments), purchaseLines: active(purchaseLines), inventorySnapshots: active(inventorySnapshots), inventoryLines: active(inventoryLines),
-    orderGroups: active(orderGroups), orderLines: active(orderLines), links: active(links), evidence: active(evidence), settings
+    orderGroups: active(orderGroups), orderLines: active(orderLines), links: active(links), balances: active(balances), evidence: active(evidence), settings
   };
 }

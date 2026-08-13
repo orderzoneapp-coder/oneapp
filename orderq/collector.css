@@ -16,6 +16,7 @@
 .section-title > div { display: flex; flex-direction: column; gap: 3px; }
 .section-title strong { font-size: 13px; }
 .section-title span { color: var(--muted); font-size: 11px; }
+.compact-title { min-height: 42px; background: #f8fafc; }
 .source-cards { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 9px; padding: 12px 14px; border-bottom: 1px solid var(--line); background: #f8fafc; }
 .source-card { background: white; border: 1px solid var(--line); border-radius: 9px; padding: 11px; min-width: 0; }
 .source-card header { display: flex; align-items: center; gap: 7px; margin-bottom: 7px; }
@@ -41,5 +42,12 @@
 .link-state.PROBABLE, .link-state.SALES_SUPPORTED_CANDIDATE, .link-state.READY_FOR_ADMIN_CONFIRMATION { background: #eff6ff; color: #1d4ed8; }
 .link-state.AMBIGUOUS, .link-state.UNLINKED { background: var(--amber-bg); color: var(--amber); }
 .link-state.EXCLUDED, .link-state.CONFLICT, .link-state.ROLLED_BACK { background: var(--red-bg); color: var(--red); }
+.link-state.FULFILLED { background: var(--green-bg); color: var(--green); }
+.link-state.UNFULFILLED { background: #fef3c7; color: #92400e; }
+.balance-open .remaining { background: #fef3c7; color: #b45309; font-weight: 900; }
+.balance-open .reversal { color: var(--red); }
+.admin-actions { display: flex; align-items: center; justify-content: flex-end; gap: 5px; min-width: 360px; }
+.admin-actions .link-replacement { width: 190px; min-height: 30px; padding: 4px 7px; font-size: 11px; }
+.admin-actions .btn { min-height: 30px; padding: 5px 8px; white-space: nowrap; }
 @media (max-width: 1050px) { .collector-hero { grid-template-columns: 1fr; } .source-cards { grid-template-columns: repeat(2,minmax(0,1fr)); } .kpi-strip { grid-template-columns: repeat(4,minmax(0,1fr)); } }
 @media (max-width: 700px) { .text-head { grid-template-columns: 1fr; } .source-cards { grid-template-columns: 1fr; } .kpi-strip { grid-template-columns: repeat(2,minmax(0,1fr)); } }

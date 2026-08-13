@@ -153,6 +153,7 @@ export async function recordProductMapping({ customerId = '', sourceId = '', raw
       itemName,
       specification,
       finalUnit,
+      status: 'ACTIVE',
       confirmed: true,
       useCount: Number(existing?.useCount || 0) + 1,
       lastUsedAt: timestamp,

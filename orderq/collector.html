@@ -15,7 +15,7 @@
       <div class="brand">
         <strong>ONEAPP</strong>
         <span class="logo-frame" aria-hidden="true"><img src="../assets/order-q-logo.png" alt=""></span>
-        <span class="badge">vNext 0.4</span>
+        <span class="badge">vNext 0.4.1</span>
         <span>기초데이터 수집</span>
       </div>
       <div class="top-actions">
@@ -78,11 +78,18 @@
 
       <section class="tab-panel active" data-panel="links">
         <div class="section-title">
-          <div><strong>출고 연결 결과</strong><span>STRONG/PROBABLE은 계산 근거이며 관리자가 언제든 재검수할 수 있습니다.</span></div>
+          <div><strong>출고·미출고 잔량</strong><span>판매수량에서 반품·취소를 차감한 순출고를 주문수량과 비교합니다.</span></div>
           <button class="btn" id="rebuildBtn" type="button">연결 다시 계산</button>
         </div>
         <div class="table-wrap collector-table"><table>
-          <thead><tr><th>상태</th><th>거래처</th><th>주문일</th><th>판매일</th><th>상품코드</th><th>연결수량</th><th>근거</th></tr></thead>
+          <thead><tr><th>상태</th><th>거래처</th><th>주문표현</th><th>주문</th><th>출고</th><th>반품</th><th>순출고</th><th>미출고</th></tr></thead>
+          <tbody id="balanceRows"></tbody>
+        </table></div>
+        <div class="section-title compact-title">
+          <div><strong>주문·판매 연결 검수</strong><span>상품을 알 수 없는 잔여 Basket은 자동 확정하지 않고 관리자 검수 대상으로 남깁니다.</span></div>
+        </div>
+        <div class="table-wrap collector-table"><table>
+          <thead><tr><th>상태</th><th>거래처</th><th>주문표현</th><th>판매상품</th><th>주문일</th><th>판매일</th><th>연결수량</th><th>근거</th><th>관리자 처리</th></tr></thead>
           <tbody id="linkRows"></tbody>
         </table></div>
       </section>

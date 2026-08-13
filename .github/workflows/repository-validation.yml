@@ -38,6 +38,15 @@ jobs:
       - name: Test ORDER Q vNext cloud sync contracts
         run: node scripts/test-orderq-vnext-cloud-contract.mjs
 
+      - name: Test ORDER Q SmartParser contracts
+        run: node scripts/test-orderq-smartparser.mjs
+
+      - name: Test ORDER Q history collection and fulfillment stabilization
+        run: node scripts/test-orderq-history-collector.mjs
+
+      - name: Test ORDER Q cloud transaction atomicity
+        run: node scripts/test-orderq-cloud-atomicity.mjs
+
       - name: Test DataOps zero and negative stock preservation
         run: node scripts/test-dataops-zero-stock-contract.mjs
 
