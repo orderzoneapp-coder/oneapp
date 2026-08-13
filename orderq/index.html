@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="ko" translate="no">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="google" content="notranslate">
+  <title>ONEAPP ORDER Q vNext</title>
+  <link rel="stylesheet" href="./orderq.css">
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <div class="brand">
+        <strong>ONEAPP</strong>
+        <span class="logo-frame" aria-hidden="true"><img src="../assets/order-q-logo.png" alt=""></span>
+        <span class="badge">vNext 0.1</span>
+        <span>주문현황</span>
+      </div>
+      <div class="top-actions">
+        <a class="btn primary" href="./input.html">+ 신규 주문</a>
+      </div>
+    </header>
+    <main class="panel">
+      <p class="notice">신규 ORDER Q vNext 독립 구축 영역입니다. 기존 ORDER Q / orderops 데이터와 소스는 변경하지 않습니다.</p>
+      <div class="toolbar">
+        <button class="btn" id="refreshBtn" type="button">새로고침</button>
+        <span class="status" id="summaryText">불러오는 중...</span>
+        <span class="spacer"></span>
+        <span class="status">Local DB · Cloud Sync는 2단계 예정</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>주문일자</th>
+              <th>주문ID</th>
+              <th>거래처</th>
+              <th>창고</th>
+              <th>상태</th>
+              <th>매칭완료</th>
+              <th>매칭실패</th>
+              <th>Revision</th>
+              <th>최종수정</th>
+            </tr>
+          </thead>
+          <tbody id="orderRows"></tbody>
+        </table>
+      </div>
+    </main>
+  </div>
+  <script type="module">
+    import { listOrders, subscribeOrderChanges } from './order-intake-engine.js';
+
+    const rows = document.getElementById('orderRows');
+    const summary = document.getElementById('summaryText');
+
+    const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+    const formatTime = value => value ? new Date(value).toLocaleString('ko-KR', { hour12: false }) : '';
+    const statusLabel = status => ({ CONFIRMED:'완료', PARTIAL:'부분완료', MATCH_FAILED:'매칭실패', CANCELLED:'취소' }[status] || status);
+
+    async function render() {
+      const orders = await listOrders();
+      const active = orders.filter(order => order.status !== 'CANCELLED');
+      const failures = orders.reduce((sum, order) => sum + (order.matchFailedCount || 0), 0);
+      summary.textContent = `주문 ${active.length}건 · 매칭실패 ${failures}건 · 전체 이력 ${orders.length}건`;
+      if (!orders.length) {
+        rows.innerHTML = '<tr><td colspan="9" class="empty">아직 저장된 주문이 없습니다. 신규 주문부터 등록하세요.</td></tr>';
+        return;
+      }
+      rows.innerHTML = orders.map(order => `
+        <tr>
+          <td class="center">${esc(order.orderDate)}</td>
+          <td><a class="order-link" href="./input.html?orderId=${encodeURIComponent(order.orderId)}">${esc(order.orderId)}</a></td>
+          <td>${esc(order.customerName)}</td>
+          <td>${esc(order.warehouse)}</td>
+          <td class="center"><span class="order-status ${esc(order.status)}">${esc(statusLabel(order.status))}</span></td>
+          <td class="center">${esc(order.matchedCount || 0)}</td>
+          <td class="center">${esc(order.matchFailedCount || 0)}</td>
+          <td class="center">r${esc(order.revision)}</td>
+          <td>${esc(formatTime(order.updatedAt))}</td>
+        </tr>`).join('');
+    }
+
+    document.getElementById('refreshBtn').addEventListener('click', render);
+    subscribeOrderChanges(render);
+    render().catch(error => { summary.textContent = `오류: ${error.message}`; });
+  </script>
+</body>
+</html>
