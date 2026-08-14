@@ -710,7 +710,7 @@
     .shortage-focus-button:hover:not(:disabled) { border-color: #fb7185; background: #ffe4e6; }
     .shortage-focus-button.active { border-color: #be123c; color: #fff; background: #be123c; }
     .shortage-focus-button:disabled { opacity: .45; cursor: default; }
-    /* ORDER Q v1.39: multi-view layouts and category-group shortage rails */
+    /* ORDER Q v1.40: compact shortage states, multi-view layouts, and category-group rails */
     .header-output-button { border-color: #99f6e4; color: #0f766e; background: #f0fdfa; }
     .header-output-button:hover:not(:disabled) { background: #ccfbf1; }
     .results-panel .table-wrap { max-height: calc(100vh - 200px); }
@@ -1500,7 +1500,7 @@
       .recovery-record-item { grid-template-columns: auto 1fr; }
       .recovery-record-status { grid-column: 2; }
     }
-    /* ORDER Q v1.39: uploader cards double as result tabs */
+    /* ORDER Q v1.40: uploader cards double as result tabs */
     .input-panel { grid-template-columns: minmax(0, 1fr) 330px; gap: 12px; }
     .upload-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
     .source-selector {
@@ -1658,7 +1658,7 @@
       <div class="brand-mark">ONEAPP</div>
       <div class="brand-divider" aria-hidden="true"></div>
       <span class="brand-logo-frame" aria-hidden="true"><img class="brand-logo" src="assets/order-q-logo.png" alt=""></span>
-      <span class="brand-badge">v1.39</span>
+      <span class="brand-badge">v1.40</span>
       <span class="brand-product">출고관리</span>
     </div>
     <div class="header-actions">
@@ -1852,7 +1852,7 @@
     </section>
 
     <footer class="page-footer">
-      <span>ORDER Q v1.39 · 출고관리 · workspace shipping-workspace/v2 · cloud plan v1</span>
+      <span>ORDER Q v1.40 · 출고관리 · workspace shipping-workspace/v2 · cloud plan v1</span>
       <a href="SHIPPING_MANAGEMENT_GUIDANCE.md">개발·운영 기준 보기</a>
     </footer>
   </main>
@@ -4107,6 +4107,15 @@
         return "";
       }
 
+      function shortageRowStateForDisplay(value, categoryCode, seenStates) {
+        const normalized = String(value || "").trim();
+        if (!normalized || !categoryCode || !seenStates?.has || !seenStates?.add) return normalized;
+        const key = `${categoryCode}\u0000${normalized}`;
+        if (seenStates.has(key)) return "";
+        seenStates.add(key);
+        return normalized;
+      }
+
       function decorateShortageRow(row, shortageSets, inventoryByCode) {
         const productCode = String(row?.productCode || "").trim();
         const shortageFocusRole = shortageSets.shortages.has(productCode)
@@ -4880,6 +4889,7 @@
             <span class="column-header-content"><span class="column-header-label">${escapeHtml(column.header)}</span>${sortControl}</span>${handle}</th>`;
         }).join("");
 
+        const visibleShortageRowStates = new Set();
         const body = pairs.length
           ? pairs.map(({ row, sourceRow }, pairIndex) => {
               const focusCandidate = state.shortageFocus && sourceRow?.shortageFocusRole === "candidate";
@@ -4892,6 +4902,11 @@
               const shortageCategoryStart = Boolean(shortageCategory && shortageCategory !== previousShortageCategory);
               const shortageCategoryStyle = shortageCategory
                 ? `--shortage-category-color:${shortageCategoryColor(shortageCategory)}` : "";
+              const shortageRowState = shortageRowStateForDisplay(
+                preview.status >= 0 ? row[preview.status] : "",
+                shortageCategory,
+                visibleShortageRowStates,
+              );
               const rowClasses = [
                 referenceRow ? "reference-row" : "",
                 sourceRow?.shortageFocusRole === "shortage" ? "shortage-main-row" : "",
@@ -4983,7 +4998,7 @@
                                 style="${warehouseFill ? `background-color:${warehouseFill}` : ""}" value="${escapeHtml(value)}"
                                 aria-label="${escapeHtml(sourceRow?.productCode || "")} ${escapeHtml(column.header)} 재고수량">`
                             : column.role === "rowState"
-                              ? renderRowStateBadges(value)
+                              ? renderRowStateBadges(shortageCategory ? shortageRowState : value)
                             : column.role === "orderInformation"
                               ? renderOrderInformationBadges(value)
                             : orderQuantity || calculatedQuantity
