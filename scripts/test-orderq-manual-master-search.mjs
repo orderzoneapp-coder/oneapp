@@ -16,6 +16,12 @@ import {
   numberOrNull,
   shiftIsoDate
 } from '../orderq/manual-order-grid.js';
+import {
+  matchWarehouseInput,
+  normalizeWarehouseCode,
+  warehouseIdentity,
+  warehouseSnapshot
+} from '../orderq/warehouse-master.js';
 
 const common = [
   normalizeMasterProduct({
@@ -38,6 +44,18 @@ assert.equal(searchProductCatalog('한단', catalog)[0].itemCode, '101020114', '
 assert.equal(searchProductCatalog('채소', catalog)[0].itemCode, '101020114', '검색창정보 검색');
 assert.equal(searchProductCatalog('무우', catalog)[0].itemCode, '101010111', '유사 품명 검색');
 assert.equal(productCategoryCode('101010111'), '101010', '품목코드 앞 6자리는 상품 카테고리다.');
+
+assert.equal(normalizeWarehouseCode('1'), '01', '숫자 창고코드는 선행 0을 포함한 정식 코드로 정규화해야 한다.');
+assert.deepEqual(warehouseIdentity({ warehouse: '1창고' }), {
+  warehouseId: 'WH-01', warehouseCode: '01', warehouseName: '1창고', normalizedName: '1창고'
+});
+const warehouseMaster = [{ warehouseId: 'WH-01', warehouseCode: '01', warehouseName: '1창고', normalizedName: '1창고' }];
+assert.equal(matchWarehouseInput('01', warehouseMaster, []).warehouseId, 'WH-01', '창고코드로 마스터를 선택해야 한다.');
+assert.equal(matchWarehouseInput('본창고', warehouseMaster, [{ warehouseId: 'WH-01', normalizedText: '본창고' }]).warehouseId, 'WH-01',
+  '창고 별칭도 동일 핵심키로 연결해야 한다.');
+assert.deepEqual(warehouseSnapshot({ warehouse: '01' }, warehouseMaster[0]), {
+  warehouseId: 'WH-01', warehouseCode: '01', warehouseName: '1창고', warehouse: '1창고'
+});
 
 const categoryCatalog = [
   normalizeMasterProduct({ 품목코드: '101010118', 품목명: '무우 소분', 출고가: '1,900' }),
@@ -110,12 +128,16 @@ assert.match(input, /loadProductCatalog/);
 assert.match(input, /searchProductCatalog/);
 assert.match(input, /row\.dataset\.productId \? MATCH_STATUS\.MATCHED : MATCH_STATUS\.MATCH_FAILED/);
 assert.match(input, /productId:\s*row\.dataset\.productId \|\| null/);
-assert.match(input, /vNext 0\.4\.9/);
+assert.match(input, /vNext 0\.5\.0/);
 for (const contract of [
   "const MANUAL_DEFAULTS_KEY = 'oneapp.orderq.manual-defaults.v1'",
   "customerNameInput.addEventListener('keydown'",
   "warehouseInput.focus()",
   "warehouseInput.addEventListener('change', saveManualDefaults)",
+  'list="warehouseOptions"',
+  'loadWarehouseCatalog',
+  'warehouseId: matchedWarehouse?.warehouseId || selectedWarehouseId',
+  "if (!payload.warehouseName)",
   "transactionTypeInput.addEventListener('change', saveManualDefaults)",
   "orderDateInput.setSelectionRange(8, 10)",
   "shiftIsoDate(orderDateInput.value, event.key === 'ArrowUp' ? 1 : -1)",
@@ -212,5 +234,17 @@ assert.match(intake, /vatAmount: asNumberOrNull\(input\.vatAmount\)/,
   '부가세 수정값은 ORDER_ITEM에 보존해야 한다.');
 assert.match(intake, /priceType: String\(input\.priceType \?\? ''\)\.trim\(\)/,
   '선택한 단가 항목명은 ORDER_ITEM에 보존해야 한다.');
+assert.match(intake, /resolveWarehouseInTransaction/,
+  '수기주문 저장은 창고 문자열을 창고 마스터 핵심키로 해결해야 한다.');
+assert.match(intake, /warehouseSnapshot\(payload, warehouse\)/,
+  '주문에는 창고 ID·코드·명칭 스냅샷과 기존 문자열을 함께 보존해야 한다.');
+
+const dbSource = await readFile(new URL('../orderq/orderq-db.js', import.meta.url), 'utf8');
+assert.match(dbSource, /const DB_VERSION = 5/);
+assert.match(dbSource, /WAREHOUSES: 'warehouses'/);
+assert.match(dbSource, /WAREHOUSE_ALIASES: 'warehouseAliases'/);
+const warehouseSource = await readFile(new URL('../orderq/warehouse-master.js', import.meta.url), 'utf8');
+assert.match(warehouseSource, /migrateLegacyOrderWarehouses/,
+  'DB v5는 기존 주문의 warehouse 문자열을 창고 마스터 핵심키로 지연 마이그레이션해야 한다.');
 
 console.log('PASS: ORDER Q 수기입력 공통 마스터 검색·선택·미매칭 저장 계약');

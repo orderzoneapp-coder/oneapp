@@ -9,6 +9,7 @@ import {
   nowIso,
   normalizeText
 } from '../orderq-db.js';
+import { resolveWarehouseInTransaction, warehouseSnapshot } from '../warehouse-master.js';
 import { COLLECTOR_SOURCE } from './collector-schema.js';
 import { buildFulfillmentLinks } from './fulfillment-matcher.js';
 import { buildParserEvidence } from './parser-evidence.js';
@@ -51,6 +52,7 @@ function rowFingerprint(sourceType, normalized, rowNo) {
     normalized.customerName || normalized.supplierName || '',
     normalized.productCode || '',
     normalized.productName || '',
+    normalized.warehouseId || normalized.warehouseCode || normalized.warehouseName || '',
     normalized.quantity ?? normalized.inventoryQuantity ?? '',
     normalized.unitPrice ?? normalized.unitCost ?? '',
     rowNo
@@ -157,6 +159,7 @@ export async function commitPreparedImport(prepared, importedBy = 'administrator
 
   const stores = [
     STORE.IMPORT_BATCHES, STORE.SOURCE_RECORDS, STORE.CUSTOMERS, STORE.PRODUCTS,
+    STORE.WAREHOUSES, STORE.WAREHOUSE_ALIASES,
     STORE.SALES_DOCUMENTS, STORE.SALES_LINES, STORE.PURCHASE_DOCUMENTS, STORE.PURCHASE_LINES,
     STORE.LEDGER_DOCUMENTS, STORE.LEDGER_LINES, STORE.INVENTORY_SNAPSHOTS, STORE.INVENTORY_LINES,
     STORE.HISTORICAL_ORDER_GROUPS, STORE.HISTORICAL_ORDER_LINES, STORE.SYNC_QUEUE
@@ -185,13 +188,26 @@ export async function commitPreparedImport(prepared, importedBy = 'administrator
     const sourceRecord = {
       sourceRecordId, importBatchId, sourceType: prepared.sourceType,
       fileName: batch.fileName, fileHash: batch.fileHash, sheetName: batch.sheetName,
-      rowNo: sourceRow.rowNo, rowFingerprint: fingerprint,
+      rowNo: sourceRow.rowNo, sourceRowNo: sourceRow.sourceRowNo || sourceRow.rowNo,
+      warehouseColumnIndex: sourceRow.warehouseColumnIndex ?? null, rowFingerprint: fingerprint,
       rawRecord: sourceRow.rawRecord || {}, normalizedRecord: row,
       status: 'ACTIVE', importedAt: timestamp, importedBy
     };
     tx.objectStore(STORE.SOURCE_RECORDS).put(sourceRecord);
     enqueueOnce('SOURCE_RECORD', sourceRecordId, sourceRecord);
     inserted += 1;
+
+    const warehouseInput = {
+      warehouseId: row.warehouseId || '',
+      warehouseCode: row.warehouseCode || prepared.defaultWarehouseCode || '',
+      warehouseName: row.warehouseName || ((prepared.sourceType === COLLECTOR_SOURCE.ORDER) ? row.groupName : '') || '',
+      warehouse: row.warehouse || ''
+    };
+    const warehouse = await resolveWarehouseInTransaction(tx, warehouseInput, {
+      sourceType: prepared.sourceType,
+      sourceId: sourceRecordId
+    });
+    const warehouseFields = warehouse ? warehouseSnapshot(warehouseInput, warehouse) : {};
 
     if (prepared.sourceType === COLLECTOR_SOURCE.SALES) {
       const { customer, product } = await putCustomerAndProduct(tx, row, 'CUSTOMER', timestamp);
@@ -205,7 +221,7 @@ export async function commitPreparedImport(prepared, importedBy = 'administrator
           salesDate: row.salesDate || prepared.defaultDate || '', salesTime: row.salesTime || '',
           customerId: customer?.customerId || '', customerName: row.customerName || '',
           normalizedCustomerName: normalizeText(row.customerName), documentNo: row.documentNo || '',
-          warehouseCode: row.warehouseCode || '', sourceRecordIds: [], status: 'ACTIVE', createdAt: timestamp, updatedAt: timestamp
+          ...warehouseFields, sourceRecordIds: [], status: 'ACTIVE', createdAt: timestamp, updatedAt: timestamp
         };
         documentCache.set(key, document);
       }
@@ -230,7 +246,7 @@ export async function commitPreparedImport(prepared, importedBy = 'administrator
           purchaseDocumentId: stableId('PD', [importBatchId, key]), importBatchId,
           purchaseDate: row.purchaseDate || prepared.defaultDate || '', purchaseTime: row.purchaseTime || '',
           supplierId: supplier?.customerId || '', supplierName: row.supplierName || '', normalizedSupplierName: normalizeText(row.supplierName),
-          documentNo: row.documentNo || '', warehouseCode: row.warehouseCode || '', purchaseFor: row.purchaseFor || '',
+          documentNo: row.documentNo || '', ...warehouseFields, purchaseFor: row.purchaseFor || '',
           sourceRecordIds: [], status: 'ACTIVE', createdAt: timestamp, updatedAt: timestamp
         };
         documentCache.set(key, document);
@@ -249,21 +265,23 @@ export async function commitPreparedImport(prepared, importedBy = 'administrator
       const { product } = await putCustomerAndProduct(tx, row, 'SUPPLIER', timestamp);
       if (product) enqueueOnce('PRODUCT', product.productId, product);
       const basisDate = row.basisDate || prepared.defaultDate || '';
-      const key = groupKey({ basisDate, warehouseCode: row.warehouseCode || prepared.defaultWarehouseCode || '' }, ['basisDate', 'warehouseCode']);
+      const key = groupKey({ basisDate, warehouseId: warehouse?.warehouseId || '', warehouseCode: row.warehouseCode || prepared.defaultWarehouseCode || '' }, ['basisDate', 'warehouseId', 'warehouseCode']);
       let snapshot = documentCache.get(key);
       if (!snapshot) {
         snapshot = {
           inventorySnapshotId: stableId('IS', [importBatchId, key]), importBatchId, basisDate,
-          warehouseCode: row.warehouseCode || prepared.defaultWarehouseCode || '', sourceRecordIds: [], status: 'ACTIVE', createdAt: timestamp, updatedAt: timestamp
+          ...warehouseFields, sourceRecordIds: [], status: 'ACTIVE', createdAt: timestamp, updatedAt: timestamp
         };
         documentCache.set(key, snapshot);
       }
       snapshot.sourceRecordIds.push(sourceRecordId);
       tx.objectStore(STORE.INVENTORY_SNAPSHOTS).put(snapshot);
       const line = {
-        inventoryLineId: stableId('IL', [importBatchId, sourceRow.rowNo]), inventorySnapshotId: snapshot.inventorySnapshotId, importBatchId, sourceRecordId,
+        inventoryLineId: stableId('IL', [importBatchId, sourceRow.rowNo, warehouse?.warehouseId || '']), inventorySnapshotId: snapshot.inventorySnapshotId, importBatchId, sourceRecordId,
         productId: product?.productId || '', productCode: row.productCode || '', productName: row.productName || '', specification: row.specification || '', unit: row.unit || '',
-        inventoryQuantity: Number(row.inventoryQuantity || 0), recordedDate: row.recordedDate || '', supplierName: row.supplierName || '', unitCost: row.unitCost,
+        ...warehouseFields, inventoryQuantity: Number(row.inventoryQuantity || 0), inventoryTotal: row.inventoryTotal,
+        warehouseSourceHeader: row.warehouseSourceHeader || '', warehouseSourceBlank: Boolean(row.warehouseSourceBlank),
+        recordedDate: row.recordedDate || '', supplierName: row.supplierName || '', unitCost: row.unitCost,
         note: row.note || '', status: 'ACTIVE', createdAt: timestamp, updatedAt: timestamp
       };
       tx.objectStore(STORE.INVENTORY_LINES).put(line);
@@ -303,6 +321,7 @@ export async function commitPreparedImport(prepared, importedBy = 'administrator
           historicalOrderGroupId: stableId('HOG', [importBatchId, key]), importBatchId, sourceType: prepared.sourceType,
           orderDate, orderTime: row.orderTime || '', customerId: customer?.customerId || '', customerName: row.customerName || '',
           normalizedCustomerName: normalizeText(row.customerName), documentNo: row.documentNo || '', groupName: row.groupName || '',
+          ...warehouseFields,
           sourceMessageKey: row.sourceMessageKey || '', sourceRecordIds: [], status: 'ACTIVE', createdAt: row.createdAt || timestamp, updatedAt: timestamp
         };
         documentCache.set(key, group);

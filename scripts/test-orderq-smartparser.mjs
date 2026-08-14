@@ -73,6 +73,11 @@ for (const path of [
 
 const parserUi = await readFile(new URL('../orderq/parser-ui.js', import.meta.url), 'utf8');
 assert.match(parserUi, /createOrder\(/, 'SmartParser must use Order Intake createOrder');
+assert.match(parserUi, /loadWarehouseCatalog/, 'SmartParser must use the shared warehouse master');
+assert.match(parserUi, /if \(!warehouseName\) throw new Error\('출하창고를 입력하세요\.'\)/,
+  'SmartParser orders must require a warehouse before registration');
+assert.match(parserUi, /warehouseId: warehouse\?\.warehouseId \|\| ''/,
+  'SmartParser orders must store the shared warehouse key snapshot');
 assert.match(parserUi, /MANUAL_REVIEW_REQUIRED/, 'partial update/cancel messages must enter manual safety review');
 assert.doesNotMatch(parserUi, /await\s+updateOrder\(/, 'SmartParser must not replace a whole order from a partial update message');
 assert.doesNotMatch(parserUi, /await\s+cancelOrder\(/, 'SmartParser must not auto-cancel a whole order from a message');

@@ -6,6 +6,7 @@ import {
   newId,
   nowIso
 } from './orderq-db.js';
+import { resolveWarehouseInTransaction, warehouseSnapshot } from './warehouse-master.js';
 import {
   getCloudUrl,
   pushCloudChanges,
@@ -242,7 +243,7 @@ async function applyRemoteOrder(bundle) {
   if (!bundle?.order) return false;
   const orderId = bundle.order.orderId;
   const db = await openOrderQDb();
-  const tx = db.transaction([STORE.ORDERS, STORE.ORDER_ITEMS], 'readwrite');
+  const tx = db.transaction([STORE.WAREHOUSES, STORE.WAREHOUSE_ALIASES, STORE.ORDERS, STORE.ORDER_ITEMS], 'readwrite');
   const orderStore = tx.objectStore(STORE.ORDERS);
   const itemStore = tx.objectStore(STORE.ORDER_ITEMS);
   const current = await requestToPromise(orderStore.get(orderId));
@@ -253,7 +254,8 @@ async function applyRemoteOrder(bundle) {
   const oldItems = await requestToPromise(itemStore.index('byOrderId').getAll(orderId));
   oldItems.forEach(item => itemStore.delete(item.orderItemId));
   (bundle.items || []).forEach(item => itemStore.put(item));
-  orderStore.put(bundle.order);
+  const warehouse = await resolveWarehouseInTransaction(tx, bundle.order, { sourceType: 'ORDER_SYNC', sourceId: orderId });
+  orderStore.put(warehouse ? { ...bundle.order, ...warehouseSnapshot(bundle.order, warehouse) } : bundle.order);
   await transactionDone(tx);
   return true;
 }
@@ -286,9 +288,14 @@ async function applySimple(entityType, payload) {
     COLLECTOR_SETTING: [STORE.COLLECTOR_SETTINGS, 'key']
   }[entityType];
   if (!mapping || !payload[mapping[1]]) return false;
+  const hasWarehouse = Boolean(payload.warehouseId || payload.warehouseCode || payload.warehouseName || payload.warehouse);
   const db = await openOrderQDb();
-  const tx = db.transaction(mapping[0], 'readwrite');
-  tx.objectStore(mapping[0]).put(payload);
+  const stores = hasWarehouse ? [mapping[0], STORE.WAREHOUSES, STORE.WAREHOUSE_ALIASES] : [mapping[0]];
+  const tx = db.transaction(stores, 'readwrite');
+  const warehouse = hasWarehouse
+    ? await resolveWarehouseInTransaction(tx, payload, { sourceType: `${entityType}_SYNC`, sourceId: payload[mapping[1]] })
+    : null;
+  tx.objectStore(mapping[0]).put(warehouse ? { ...payload, ...warehouseSnapshot(payload, warehouse) } : payload);
   await transactionDone(tx);
   return true;
 }

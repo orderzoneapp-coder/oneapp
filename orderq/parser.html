@@ -14,7 +14,7 @@
       <div class="brand">
         <strong>ONEAPP</strong>
         <span class="logo-frame" aria-hidden="true"><img src="../assets/order-q-logo.png" alt=""></span>
-        <span class="badge">vNext 0.4.4</span>
+        <span class="badge">vNext 0.5.0</span>
         <span>SmartParser</span>
       </div>
       <div class="top-actions">
@@ -38,6 +38,11 @@
         <div class="field source-field">
           <label for="sourceId">출처 ID</label>
           <input class="control" id="sourceId" type="text" value="KAKAO_MANUAL" placeholder="카카오방 또는 입력원 이름">
+        </div>
+        <div class="field warehouse-field">
+          <label for="parserWarehouse">출하창고</label>
+          <input class="control" id="parserWarehouse" type="text" list="parserWarehouseOptions" placeholder="코드 또는 창고명" autocomplete="off">
+          <datalist id="parserWarehouseOptions"></datalist>
         </div>
         <div class="field raw-field">
           <label for="rawText">원문 붙여넣기</label>

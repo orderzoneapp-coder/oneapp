@@ -1,4 +1,10 @@
-import { classifyMatrix, mapMatrixRows, COLLECTOR_SOURCE, excelDateToIso } from './collector-schema.js';
+import {
+  classifyMatrix,
+  mapMatrixRows,
+  expandInventoryWarehouseRows,
+  COLLECTOR_SOURCE,
+  excelDateToIso
+} from './collector-schema.js';
 import { parseOrderLines } from '../smartparser/order-line-parser.js';
 import { detectOrderEvent, EVENT_TYPE } from '../smartparser/order-event-detector.js';
 import { createSourceMessageKey, normalizeSourceText } from '../smartparser/source-parser.js';
@@ -70,9 +76,13 @@ export async function analyzeExcelFile(file, XLSX) {
   candidates.sort((a, b) => (b.classification.score + b.priority) - (a.classification.score + a.priority) || b.matrix.length - a.matrix.length);
   const selected = candidates[0];
   const mapped = mapMatrixRows(selected.matrix, selected.classification);
+  const inventoryLayout = selected.classification.sourceType === COLLECTOR_SOURCE.INVENTORY
+    ? expandInventoryWarehouseRows(mapped.rows, selected.classification)
+    : { rows: mapped.rows, warehouseColumns: [], discrepancies: [] };
+  const preparedRows = inventoryLayout.rows;
   const defaultDate = matrixContextDate(selected.matrix, file.name);
   const defaultWarehouseCode = matrixContextWarehouse(selected.matrix);
-  mapped.rows.forEach(row => {
+  preparedRows.forEach(row => {
     const record = row.normalizedRecord;
     if (!record.orderDate && selected.classification.sourceType === COLLECTOR_SOURCE.ORDER) record.orderDate = defaultDate;
     if (!record.salesDate && selected.classification.sourceType === COLLECTOR_SOURCE.SALES) record.salesDate = defaultDate;
@@ -82,6 +92,12 @@ export async function analyzeExcelFile(file, XLSX) {
     if (!record.warehouseCode && defaultWarehouseCode) record.warehouseCode = defaultWarehouseCode;
   });
   const warnings = [];
+  if (inventoryLayout.warehouseColumns.length) {
+    warnings.push(`창고별재고 ${inventoryLayout.warehouseColumns.length}개 열을 품목코드별 창고 잔량으로 분리했습니다.`);
+  }
+  if (inventoryLayout.discrepancies.length) {
+    warnings.push(`총재고와 창고별 합계가 다른 품목 ${inventoryLayout.discrepancies.length}건을 확인하세요.`);
+  }
   if (!defaultDate && [COLLECTOR_SOURCE.ORDER, COLLECTOR_SOURCE.SALES, COLLECTOR_SOURCE.PURCHASE, COLLECTOR_SOURCE.INVENTORY].includes(selected.classification.sourceType)) warnings.push('기준일을 찾지 못했습니다. 날짜가 없는 행은 연결 후보에서 제외됩니다.');
   if (selected.classification.sourceType === COLLECTOR_SOURCE.ORDER && mapped.rows.some(row => !row.normalizedRecord.orderTime)) warnings.push('주문시각이 없는 행은 당일 오전 추가주문으로 자동 확정하지 않습니다.');
   if (selected.classification.sourceType === COLLECTOR_SOURCE.SALES && mapped.rows.some(row => Number(row.normalizedRecord.quantity || 0) < 0)) warnings.push('음수 판매는 반품·결품·취소 보정으로 분리합니다.');
@@ -95,7 +111,9 @@ export async function analyzeExcelFile(file, XLSX) {
     confidence: selected.classification.confidence,
     defaultDate,
     defaultWarehouseCode,
-    rows: mapped.rows,
+    warehouseColumns: inventoryLayout.warehouseColumns,
+    inventoryDiscrepancies: inventoryLayout.discrepancies,
+    rows: preparedRows,
     warnings,
     ignoredSheets: candidates.slice(1).map(row => row.sheetName)
   };
