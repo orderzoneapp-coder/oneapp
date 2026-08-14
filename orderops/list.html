@@ -1641,6 +1641,39 @@
     .execution-button.analysis-run:disabled { border-color: #475569; color: #94a3b8; background: #334155; }
     .execution-button.session-refresh { color: #dbeafe; background: #1e293b; }
     .execution-button.session-refresh:hover { border-color: #5eead4; color: #fff; background: #0f766e; }
+    /* ORDER Q v1.49: DataOps-scale System.IO and uploader tabs */
+    .system-topbar {
+      min-height: 58px;
+      padding: 10px 14px;
+    }
+    .system-console {
+      min-height: 30px;
+      padding: 5px 10px;
+    }
+    .input-panel {
+      min-height: 76px;
+      padding: 11px 12px;
+    }
+    .source-selector > .data-source-label,
+    .upload-card,
+    .execution-panel {
+      min-height: 54px;
+    }
+    .upload-card .drop-zone {
+      min-height: 52px;
+      padding: 7px 8px;
+    }
+    .upload-card .file-icon {
+      width: 24px;
+      height: 24px;
+      font-size: 11px;
+    }
+    .upload-card .drop-title { font-size: 11px; }
+    .upload-card .drop-help { margin-top: 3px; font-size: 9px; }
+    .file-select-button,
+    .derived-view-label { margin: 5px 5px 5px 0; }
+    .integrated-file-button { min-height: 28px; }
+    .execution-button { min-height: 54px; }
     .system-topbar .validation-box { flex: 0 1 auto; min-width: 190px; padding: 2px 8px; border: 0; background: transparent; }
     .system-topbar .validation-box p { margin: 0; white-space: nowrap; font-size: 10px; }
     .results-panel, .view-controls { overflow: visible; }
@@ -1721,7 +1754,7 @@
       <div class="brand-mark">ONEAPP</div>
       <div class="brand-divider" aria-hidden="true"></div>
       <span class="brand-logo-frame" aria-hidden="true"><img class="brand-logo" src="../assets/order-q-logo.png" alt=""></span>
-      <span class="brand-badge">v1.48</span>
+      <span class="brand-badge">v1.49</span>
       <span class="brand-product">출고관리</span>
     </div>
     <div class="header-actions">
@@ -1929,7 +1962,7 @@
     </section>
 
     <footer class="page-footer">
-      <span>ORDER Q v1.48 · 출고관리 · workspace shipping-workspace/v2 · cloud plan v1</span>
+      <span>ORDER Q v1.49 · 출고관리 · workspace shipping-workspace/v2 · cloud plan v1</span>
       <a href="../SHIPPING_MANAGEMENT_GUIDANCE.md">개발·운영 기준 보기</a>
     </footer>
   </main>
