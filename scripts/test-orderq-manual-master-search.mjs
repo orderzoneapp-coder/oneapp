@@ -90,6 +90,7 @@ for (const contract of [
   '박스당수량',
   '부가세',
   '합계',
+  '품목코드 입력 후 마스터 매칭 결과를 표시합니다.',
   'class="top-system"',
   'id="orderMeta"',
   'badge.hidden = !hasProductInput',
@@ -127,6 +128,8 @@ for (const manualEntryContract of [
 assert.doesNotMatch(input, /id="addRowBtn"|id="addRowBottomBtn"/, '수기주문 행추가 버튼은 노출하지 않아야 한다.');
 assert.doesNotMatch(input, /matches\('\[data-field="itemCode"\], \[data-field="itemName"\]'\)/,
   '품목명 입력에서 상품검색을 실행하면 안 된다.');
+assert.doesNotMatch(input, /품목코드·품목명 입력 후 마스터 매칭/,
+  '품목명에서도 검색된다고 오인할 수 있는 안내 문구를 표시하면 안 된다.');
 assert.doesNotMatch(input, /addRow\(\); addRow\(\)/, '초기 수기주문 행을 3개 고정 생성하면 안 된다.');
 
 const orderqCss = await readFile(new URL('../orderq/orderq.css', import.meta.url), 'utf8');
