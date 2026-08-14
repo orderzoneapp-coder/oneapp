@@ -1,18 +1,18 @@
-import { analyzeSmartText, summarizeParserResults } from './smartparser/parser-orchestrator.js';
-import { EVENT_TYPE } from './smartparser/order-event-detector.js';
-import { updateParseResult, recordProductMapping } from './smartparser/parser-repository.js';
+import { analyzeSmartText, summarizeParserResults } from './smartparser/parser-orchestrator.js?v=0.5.1';
+import { EVENT_TYPE } from './smartparser/order-event-detector.js?v=0.5.1';
+import { updateParseResult, recordProductMapping } from './smartparser/parser-repository.js?v=0.5.1';
 import {
   createOrder,
   DuplicateSourceMessageError,
   MATCH_STATUS
-} from './order-intake-engine.js';
+} from './order-intake-engine.js?v=0.5.1';
 import {
   getDeviceId,
   syncNow,
   syncAfterLocalMutation
-} from './orderq-sync-engine.js';
-import { getCloudUrl } from './orderq-cloud-adapter.js';
-import { loadWarehouseCatalog, matchWarehouseInput, warehouseDisplayName } from './warehouse-master.js';
+} from './orderq-sync-engine.js?v=0.5.1';
+import { getCloudUrl } from './orderq-cloud-adapter.js?v=0.5.1';
+import { loadWarehouseCatalog, matchWarehouseInput, warehouseDisplayName } from './warehouse-master.js?v=0.5.1';
 
 const EVENT_LABELS = Object.freeze({
   ORDER: '신규 주문',

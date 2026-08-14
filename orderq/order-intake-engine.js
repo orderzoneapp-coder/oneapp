@@ -6,8 +6,8 @@ import {
   newId,
   nowIso,
   normalizeText
-} from './orderq-db.js';
-import { resolveWarehouseInTransaction, warehouseSnapshot } from './warehouse-master.js';
+} from './orderq-db.js?v=0.5.1';
+import { resolveWarehouseInTransaction, warehouseSnapshot } from './warehouse-master.js?v=0.5.1';
 
 export const MATCH_STATUS = Object.freeze({
   MATCHED: 'MATCHED',

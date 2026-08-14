@@ -5,14 +5,14 @@ import {
   transactionDone,
   newId,
   nowIso
-} from './orderq-db.js';
-import { resolveWarehouseInTransaction, warehouseSnapshot } from './warehouse-master.js';
+} from './orderq-db.js?v=0.5.1';
+import { resolveWarehouseInTransaction, warehouseSnapshot } from './warehouse-master.js?v=0.5.1';
 import {
   getCloudUrl,
   pushCloudChanges,
   pullCloudChanges,
   getCloudOrderHead
-} from './orderq-cloud-adapter.js';
+} from './orderq-cloud-adapter.js?v=0.5.1';
 
 const DEVICE_KEY = 'oneapp.orderq.device-id.v1';
 const META_CURSOR = 'cloudCursor';
