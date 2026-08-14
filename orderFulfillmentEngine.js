@@ -1600,7 +1600,7 @@
       { key: "ledger:stock", header: "재고", role: "stockQuantity", numeric: true },
       { key: "ledger:inbound", header: "입고", role: "inboundQuantity", numeric: true },
       { key: "ledger:outbound", header: "주문", role: "orderQuantity", numeric: true },
-      { key: "ledger:sales", header: "출고수량", role: "salesQuantity", numeric: true },
+      { key: "ledger:sales", header: "출고", role: "salesQuantity", numeric: true },
       { key: "ledger:remaining", header: "잔량", role: "calculatedQuantity", numeric: true },
       {
         key: "ledger:unit-price",
