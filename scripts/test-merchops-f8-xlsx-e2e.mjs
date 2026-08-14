@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const html = fs.readFileSync(path.join(ROOT, "MerchOps.html"), "utf8");
 const coreSource = fs.readFileSync(path.join(ROOT, "coreEngine.js"), "utf8");
-const F8_START = "    const handleQuickExcelExport = useCallback(() => {";
+const F8_START = "    const handleQuickExcelExport = useCallback(async () => {";
 const F8_END = "    // [M-MASTER-COMMIT-01] F7 마스터 적용";
 const INVENTORY_MODULE_START = "        window.MERCH_INVENTORY_F8_MODULE = window.MERCH_INVENTORY_F8_MODULE || (() => {";
 const INVENTORY_MODULE_END = "        // 1재고현황 1행 메타 정책:";
@@ -171,7 +171,7 @@ const makeRow = ({ code, role, source = {}, finalData = {}, inputOrder = 0 }) =>
   finalData: { ...finalData },
 });
 
-const runF8Scenario = ({ name, rows, masterProducts = {}, snapshotRows = null, aggregateTransform = null }) => {
+const runF8Scenario = async ({ name, rows, masterProducts = {}, snapshotRows = null, aggregateTransform = null }) => {
   const { context, realXlsx, writtenFiles } = makeContext(name);
   const toasts = [];
   const alerts = [];
@@ -179,6 +179,7 @@ const runF8Scenario = ({ name, rows, masterProducts = {}, snapshotRows = null, a
   Object.assign(context, {
     useCallback: (fn) => fn,
     fullDisplayRows: rows,
+    quickExcelInFlightRef: { current: false },
     quickExcelReadyRef: { current: { ready: false, at: 0, count: 0, codes: [], rows: [] } },
     collectWholesaleBelowCostWarnings: () => [],
     data: {
@@ -206,7 +207,7 @@ const runF8Scenario = ({ name, rows, masterProducts = {}, snapshotRows = null, a
   vm.runInContext(`${f8Declaration}\nglobalThis.__runQuickF8 = handleQuickExcelExport;`, context, {
     filename: "MerchOps-F8.js",
   });
-  context.__runQuickF8();
+  await context.__runQuickF8();
   const writtenFile = writtenFiles.at(-1) || "";
   const reopened = writtenFile ? realXlsx.read(fs.readFileSync(writtenFile), { type: "buffer" }) : null;
   return { context, reopened, writtenFile, toasts, alerts };
@@ -268,7 +269,7 @@ try {
       "1종코드": "20010002", "1종규격": "100g", "1종연산": 10, 외주비: 0, 경비: 50,
     },
   });
-  const estimateResult = runF8Scenario({
+  const estimateResult = await runF8Scenario({
     name: "estimate",
     rows: [estimateRow],
     masterProducts: { "20010002": { 품목명: "견적 소분상품", 규격: "100g" } },
@@ -282,7 +283,7 @@ try {
   assert.equal(estimateShop[2][15], 0);
   assert.equal(estimateErp[1][11], "", "missing final-transmission must stay blank instead of copying inbound price");
 
-  const transmissionResult = runF8Scenario({
+  const transmissionResult = await runF8Scenario({
     name: "final-transmission-state",
     rows: [
       makeRow({ code: "FT0", role: "estimate", source: { 품목명: "명시 0", 입고가: 9000, 출고가: 11000, 최종전송: 0 } }),
@@ -303,7 +304,7 @@ try {
       "1종코드": "30010002", "1종규격": "100g", "1종연산": 10, 외주비: 0, 경비: 0,
     },
   });
-  const purchaseResult = runF8Scenario({
+  const purchaseResult = await runF8Scenario({
     name: "purchase",
     rows: [purchaseRow],
     masterProducts: { "30010002": { 품목명: "구매 소분상품", 규격: "100g" } },
@@ -320,12 +321,12 @@ try {
   ];
   const blockCases = [
     { name: "block-missing", transform: (rows) => rows.slice(1), expected: "누락 1코드: A" },
-    { name: "block-duplicate", transform: (rows) => [rows[0], rows[0], rows[1]], expected: "출력 중복 1코드: A" },
+    { name: "block-duplicate", transform: (rows) => [rows[0], rows[0], rows[1]], expected: "동일 상품코드가 중복되어 F8 출력을 차단했습니다: A" },
     { name: "block-extra", transform: (rows) => [...rows, { ...rows[0], 코드: "X", _managedKey: "X__INV_F8", sources: { ...rows[0].sources, inventory: { ...rows[0].sources.inventory, 품목코드: "X", 재고: 4, 재고수량: 4 } }, finalData: { ...rows[0].finalData, 재고: 4, 재고수량: 4 } }], expected: "원본 외 비영재고 1코드 / 수량 4: X" },
     { name: "block-total", transform: (rows) => [{ ...rows[0], sources: { ...rows[0].sources, inventory: { ...rows[0].sources.inventory, 재고: 3, 재고수량: 3 } }, finalData: { ...rows[0].finalData, 재고: 3, 재고수량: 3 } }, rows[1]], expected: "재고합계 차이 +1" },
   ];
   for (const blockCase of blockCases) {
-    const result = runF8Scenario({
+    const result = await runF8Scenario({
       name: blockCase.name,
       rows: blockerRows,
       snapshotRows: blockerRows,
@@ -396,7 +397,7 @@ try {
       masterProducts[mapping.subCode] = { ...(masterProducts[mapping.subCode] || {}), 품목명: masterProducts[mapping.subCode]?.품목명 || `소분 ${mapping.subCode}`, 규격: masterProducts[mapping.subCode]?.규격 || "소분" };
     }
 
-    const inventoryResult = runF8Scenario({
+    const inventoryResult = await runF8Scenario({
       name: "inventory-reference",
       rows: inventoryRows,
       snapshotRows: inventoryRows,

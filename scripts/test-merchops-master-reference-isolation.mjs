@@ -188,7 +188,7 @@ assert.equal(draft.masterReference.규격, "MASTER-SPEC");
 assert.equal(draft.masterReference.마스터전용신규필드, "MASTER-ONLY", "future master fields must remain available in the separate reference payload");
 assert.equal(draft.baselineSnapshot.기준입고가, 9000);
 
-const f8Start = merchSource.indexOf("const handleQuickExcelExport = useCallback(() => {");
+const f8Start = merchSource.indexOf("const handleQuickExcelExport = useCallback(async () => {");
 const f8End = merchSource.indexOf("// [M-MASTER-COMMIT-01] F7", f8Start);
 const f7Start = merchSource.indexOf("const handleCommitEstimate = useCallback(async () => {");
 const f7End = merchSource.indexOf("const toggleAllRows = useCallback", f7Start);
@@ -212,7 +212,7 @@ assert.doesNotMatch(exportSource, /if \(!hasStockValue\(working\.재고수량\)\
 assert.doesNotMatch(merchSource.slice(f8Start, f8End), /shopUploadStock = !window\.isBlankCell\(finalStockRaw\) \? window\.parseNum\(finalStockRaw\) : 999/, "F8 must not generate stock 999 when the source column is missing");
 assert.match(merchSource.slice(f8Start, f8End), /finalTransmission = getBestNumByAliases\(row, \['최종전송', '최종\(전송\)', '최종입고'\], ''\)/, "F8 missing final-transmission must use an explicit blank default");
 assert.doesNotMatch(merchSource.slice(f8Start, f8End), /finalTransmission = getBestNumByAliases\(row, \['최종전송', '최종\(전송\)', '최종입고'\], inPrice\)/, "F8 must not copy inbound price into a missing final-transmission column");
-assert.doesNotMatch(merchSource.slice(f8Start, f8End), /subMaster\['품목명'\]/, "F8 subdivision rows must not use master metadata as working fallback");
+assert.match(merchSource.slice(f8Start, f8End), /const subName = String\(subMaster\['품목명'\] \|\| subMaster\['상품명'\] \|\| ''\)\.trim\(\)/, "F8 may use registered master name metadata only when a calculated subdivision product is absent from the working list");
 assert.doesNotMatch(dataOpsSource, /merch_export_draft/, "DataOps is not a consumer of the MerchOps F9 draft contract");
 
 console.log("MerchOps master-reference isolation, explicit blank, zero/false, F7/F8/F9, and consumer contract tests passed.");
