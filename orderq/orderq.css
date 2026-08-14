@@ -96,6 +96,28 @@ td input:focus, td select:focus { outline: none; background: #f0fdfa; border-col
 .cloud-card { border: 1px solid var(--line); border-radius: 9px; padding: 12px; background: white; }
 .cloud-card strong { display: block; margin-bottom: 8px; font-size: 12px; }
 .meta-lines { display: flex; flex-direction: column; gap: 5px; font-size: 11px; color: var(--muted); }
+
+/* 수기주문은 ERP 입력 화면처럼 한눈에 열 전체를 확인할 수 있는 고정 폭을 사용한다. */
+.manual-order-page .shell { width: min(1100px, calc(100% - 28px)); }
+.manual-order-page #orderTable { table-layout: fixed; min-width: 1000px; }
+.manual-order-page #orderTable .col-select { width: 32px; }
+.manual-order-page #orderTable .col-code { width: 104px; }
+.manual-order-page #orderTable .col-name { width: 162px; }
+.manual-order-page #orderTable .col-specification { width: 150px; }
+.manual-order-page #orderTable .col-quantity { width: 68px; }
+.manual-order-page #orderTable .col-raw-unit,
+.manual-order-page #orderTable .col-final-unit { width: 66px; }
+.manual-order-page #orderTable .col-price { width: 88px; }
+.manual-order-page #orderTable .col-memo { width: 174px; }
+.manual-order-page #orderTable .col-match { width: 90px; }
+.manual-order-page #orderTable .table-groups th { top: 0; padding-top: 5px; padding-bottom: 5px; border-bottom-width: 2px; font-size: 10px; letter-spacing: .02em; }
+.manual-order-page #orderTable .table-groups .group-product { background: #ecfeff; border-bottom-color: #14b8a6; color: #115e59; }
+.manual-order-page #orderTable .table-groups .group-order { background: #eff6ff; border-bottom-color: #3b82f6; color: #1e40af; }
+.manual-order-page #orderTable .table-groups .group-check { background: #f8fafc; border-bottom-color: #94a3b8; color: #475569; }
+.manual-order-page #orderTable thead tr:last-child th { top: 25px; }
+.manual-order-page #orderTable th:first-child,
+.manual-order-page #orderTable td:first-child { padding-left: 3px; padding-right: 3px; }
+.manual-order-page #orderTable input[data-role="select"] { width: 16px; min-height: 16px; height: 16px; margin: 0; vertical-align: middle; }
 @media (max-width: 900px) {
   .form-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }
   .topbar { align-items: flex-start; }

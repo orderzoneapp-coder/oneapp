@@ -51,7 +51,7 @@ assert.match(input, /loadProductCatalog/);
 assert.match(input, /searchProductCatalog/);
 assert.match(input, /row\.dataset\.productId \? MATCH_STATUS\.MATCHED : MATCH_STATUS\.MATCH_FAILED/);
 assert.match(input, /productId:\s*row\.dataset\.productId \|\| null/);
-assert.match(input, /vNext 0\.4\.4/);
+assert.match(input, /vNext 0\.4\.5/);
 for (const contract of [
   "const MANUAL_DEFAULTS_KEY = 'oneapp.orderq.manual-defaults.v1'",
   "customerNameInput.addEventListener('keydown'",
@@ -72,6 +72,25 @@ assert.doesNotMatch(input, /class="row-status failed">매칭실패</,
   '빈 상품행은 매칭실패 배지를 먼저 표시하면 안 된다.');
 assert.match(input, /data-role="matchStatus" class="row-status" hidden/,
   '빈 상품행의 마스터 매칭 상태는 숨김으로 시작해야 한다.');
+assert.match(input, /<body class="manual-order-page">/,
+  '수기주문 전용 가로 폭을 다른 ORDER Q 화면과 분리해야 한다.');
+assert.match(input, /<col class="col-select">/,
+  '선택 체크박스 열을 포함한 수기주문 고정 열 배분이 있어야 한다.');
+for (const informationGroup of [
+  '<th class="group-product" colspan="3">상품 정보</th>',
+  '<th class="group-order" colspan="4">주문 입력</th>',
+  '<th class="group-check" colspan="2">확인</th>'
+]) assert.ok(input.includes(informationGroup), `수기주문 정보 묶음 누락: ${informationGroup}`);
+
+const orderqCss = await readFile(new URL('../orderq/orderq.css', import.meta.url), 'utf8');
+for (const compactWidthContract of [
+  '.manual-order-page .shell { width: min(1100px, calc(100% - 28px)); }',
+  '.manual-order-page #orderTable { table-layout: fixed; min-width: 1000px; }',
+  '.manual-order-page #orderTable .col-select { width: 32px; }',
+  '.manual-order-page #orderTable .table-groups .group-product',
+  '.manual-order-page #orderTable .table-groups .group-order',
+  '.manual-order-page #orderTable input[data-role="select"] { width: 16px; min-height: 16px; height: 16px;'
+]) assert.ok(orderqCss.includes(compactWidthContract), `수기주문 가로 축소 계약 누락: ${compactWidthContract}`);
 
 const intake = await readFile(new URL('../orderq/order-intake-engine.js', import.meta.url), 'utf8');
 assert.match(intake, /requestedProductId && !requestedProductId\.startsWith\('CODE:'\)/);

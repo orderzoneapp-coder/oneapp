@@ -2,7 +2,7 @@
 
 신규 ORDER Q 개발 경로. 기존 `orderops/` 및 `orderops_list.html`은 변경하지 않는다.
 
-## vNext 0.4.4 URL
+## vNext 0.4.5 URL
 
 - `/orderq/` 또는 `/orderq/index.html`: 공통 주문현황
 - `/orderq/input.html`: 수기 주문서 신규/수정
@@ -29,5 +29,7 @@
 주문 수정은 `revision` 비교를 사용한다. 같은 주문을 두 탭에서 열고 한쪽이 먼저 저장하면, 다른 쪽의 오래된 revision 저장은 차단한다.
 
 수기 주문은 같은 출처의 `MerchOpsDB/master_products`를 읽기 전용으로 검색한다. 공통 마스터 후보를 선택한 행만 매칭완료로 저장하며 직접입력 행은 미매칭 상태로 보존한다.
+
+수기 주문 화면은 ERP 입력 밀도에 맞춰 최대 1,100px 폭과 고정 열 배분을 사용한다. 열은 상품 정보·주문 입력·확인 묶음으로 구분하며 선택 열은 32px, 체크박스는 16px이다. 이 표시 규칙은 다른 ORDER Q 화면에는 적용하지 않는다.
 
 SmartParser는 원문을 `rawInputs`, 메시지별 판정·후보·관리자 확정값을 `parseResults`에 분리 저장한다. 신규 주문으로 확정할 때만 공통 `createOrder`를 호출한다. 부분 변경·취소 메시지는 주문 전체를 자동 변경하지 않고 수기 검수 대기로 남긴다. 동일 `sourceMessageKey`는 기존 결과를 다시 보여주며 신규 주문을 중복 생성하지 않는다.
