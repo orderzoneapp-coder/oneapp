@@ -136,6 +136,12 @@
       color: var(--blue-700);
       background: #eff6ff;
     }
+    .header-smart-input {
+      border-color: #5eead4;
+      color: #0f766e;
+      background: #f0fdfa;
+    }
+    .header-smart-input:hover { border-color: #0f766e; color: #fff; background: #0f766e; }
     .header-link:disabled { opacity: 0.45; cursor: not-allowed; }
     .header-save-button {
       border-color: #2563eb;
@@ -719,7 +725,7 @@
     .shortage-focus-button:hover:not(:disabled) { border-color: #fb7185; background: #ffe4e6; }
     .shortage-focus-button.active { border-color: #be123c; color: #fff; background: #be123c; }
     .shortage-focus-button:disabled { opacity: .45; cursor: default; }
-    /* ORDER Q v1.43: order product-code aggregate information */
+    /* ORDER Q v1.44: readable purchasing views and default saved layouts */
     .header-output-button { border-color: #99f6e4; color: #0f766e; background: #f0fdfa; }
     .header-output-button:hover:not(:disabled) { background: #ccfbf1; }
     .results-panel .table-wrap { max-height: calc(100vh - 200px); }
@@ -852,6 +858,11 @@
     }
     .view-preset-select:disabled,
     .table-tool-button:disabled { opacity: .45; cursor: default; }
+    .view-preset-default-button[aria-pressed="true"] {
+      border-color: #0f766e;
+      color: #0f766e;
+      background: #ccfbf1;
+    }
     .view-preset-delete-button { min-width: 31px; padding: 0 7px; }
     .view-preset-dialog {
       width: min(360px, calc(100vw - 32px));
@@ -1049,6 +1060,13 @@
       box-shadow: inset 3px 0 0 #fb7185;
       font-weight: 900;
     }
+    td.unit-alert-cell,
+    td.unit-alert-cell .inventory-input,
+    td.unit-alert-cell .order-edit-input,
+    td.unit-alert-cell .inventory-total-frame {
+      color: #b91c1c !important;
+      font-weight: 900;
+    }
 
     .purchase-input {
       width: 100%;
@@ -1063,9 +1081,9 @@
       outline: 0;
       box-shadow: none;
     }
-    .purchase-input[data-negative-balance="true"] { color: #854d0e; background: #fef9c3; box-shadow: inset 0 -2px 0 #facc15; }
+    .purchase-input[data-negative-balance="true"] { color: #854d0e; background: #fef9c3; box-shadow: none; }
     .purchase-input:focus { outline: 0; background: transparent; }
-    .purchase-input[data-negative-balance="true"]:focus { background: #fef08a; box-shadow: inset 0 -2px 0 #eab308; }
+    .purchase-input[data-negative-balance="true"]:focus { background: #fef08a; box-shadow: none; }
     .order-edit-input {
       width: 100%; min-width: 0; height: 25px; padding: 1px 6px;
       border: 0; border-radius: 0; color: var(--slate-900);
@@ -1079,8 +1097,12 @@
     td.ledger-negative-cell .inventory-total-frame {
       color: #854d0e !important;
       background: #fef9c3 !important;
-      box-shadow: inset 3px 0 0 #facc15;
+      box-shadow: none;
     }
+    td.primary-readable-cell,
+    td.primary-readable-cell .order-edit-input,
+    td.primary-readable-cell .inventory-input,
+    td.primary-readable-cell .inventory-total-frame { font-size: 13px; }
     table.preview-ledger td.procurement-price-cell { padding: 2px 4px; }
     table.preview-ledger .ledger-price-input {
       width: 100%; min-width: 0; height: 28px; padding: 3px 7px;
@@ -1094,6 +1116,8 @@
       overflow: hidden; border: 1px solid #a7d7cf; border-radius: 999px;
       color: #0f5f58; background: #edf9f7; text-overflow: ellipsis; white-space: nowrap;
     }
+    .order-information-quantity,
+    .order-information-price { font-size: 10px; }
     .tab-shortcut { margin-left: 4px; color: inherit; font-size: 9px; opacity: .78; }
     table.preview-inventory td.inventory-framed-cell { padding: 2px 4px; }
     table.preview-inventory .inventory-value-frame,
@@ -1492,9 +1516,9 @@
       .recovery-record-item { grid-template-columns: auto 1fr; }
       .recovery-record-status { grid-column: 2; }
     }
-    /* ORDER Q v1.43: uploader cards double as result tabs */
-    .input-panel { grid-template-columns: minmax(0, 1fr) 330px; gap: 12px; }
-    .upload-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+    /* ORDER Q v1.44: uploader cards double as result tabs */
+    .input-panel { grid-template-columns: minmax(0, 1fr) 230px; gap: 14px; }
+    .upload-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; }
     .source-selector {
       display: grid;
       position: relative;
@@ -1521,6 +1545,7 @@
       text-align: center;
     }
     .source-selector.bundle-dragover .upload-card { border-color: #2dd4bf; }
+    .integrated-upload-card.bundle-dragover { border-color: #2dd4bf; background: #134e4a; box-shadow: inset 0 0 0 2px #2dd4bf; }
     .upload-card {
       display: grid;
       grid-template-columns: minmax(0, 1fr) auto;
@@ -1559,14 +1584,14 @@
     .derived-view-label { display: grid; place-items: center; color: #99f6e4; }
     .execution-panel {
       display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
+      grid-template-columns: repeat(2, minmax(0, 1fr));
       align-items: stretch;
-      gap: 4px;
+      gap: 8px;
       min-width: 0;
-      padding: 4px;
-      border: 1px solid #475569;
-      border-radius: 7px;
-      background: #0f172a;
+      padding: 0;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
     }
     .execution-button {
       display: flex;
@@ -1586,8 +1611,6 @@
       text-decoration: none;
       white-space: nowrap;
     }
-    .execution-button.smart-input { border-color: #5eead4; background: #134e4a; }
-    .execution-button.smart-input:hover { background: #115e59; }
     .execution-button.analysis-run { border-color: #3b82f6; color: #fff; background: #2563eb; }
     .execution-button.analysis-run:hover:not(:disabled) { background: #1d4ed8; }
     .execution-button.analysis-run.enter-ready { border-color: #facc15; box-shadow: inset 0 0 0 2px rgba(250,204,21,.55); }
@@ -1629,7 +1652,7 @@
       .preview-count { max-width: 82px; overflow: hidden; text-overflow: ellipsis; }
     }
     @media (max-width: 1100px) {
-      .input-panel { grid-template-columns: minmax(0, 1fr) 285px; }
+      .input-panel { grid-template-columns: minmax(0, 1fr) 210px; }
       .search-field { flex-basis: 170px; }
       .view-controls .preview-tabs { flex-basis: auto; }
       .view-controls .tab-button { padding: 0 8px; }
@@ -1650,10 +1673,14 @@
       <div class="brand-mark">ONEAPP</div>
       <div class="brand-divider" aria-hidden="true"></div>
       <span class="brand-logo-frame" aria-hidden="true"><img class="brand-logo" src="../assets/order-q-logo.png" alt=""></span>
-      <span class="brand-badge">v1.43</span>
+      <span class="brand-badge">v1.44</span>
       <span class="brand-product">출고관리</span>
     </div>
     <div class="header-actions">
+      <a class="header-link header-smart-input" id="smartInputButton" href="input.html"
+        aria-label="스마트 전표입력 화면 열기 F4" aria-keyshortcuts="F4">
+        <span aria-hidden="true">✎</span><span>스마트입력 F4</span>
+      </a>
       <button class="header-link header-output-button" id="printButton" type="button"
         aria-label="현재 보이는 화면 인쇄 F9" aria-keyshortcuts="F9" disabled>
         <span aria-hidden="true">▣</span><span>화면인쇄 F9</span>
@@ -1754,13 +1781,18 @@
               </button>
               <span class="derived-view-label" aria-hidden="true">자동</span>
             </article>
+            <article class="upload-card integrated-upload-card" id="integratedCard">
+              <button class="drop-zone" id="integratedDrop" type="button" aria-label="통합 Excel 파일 선택">
+                <div class="file-icon" aria-hidden="true">6</div>
+                <div class="file-copy"><p class="drop-title">통합파일</p><p class="drop-help" id="integratedFileName">파일을 선택하세요</p></div>
+              </button>
+              <button class="file-select-button" id="integratedFileButton" type="button" aria-label="통합 Excel 파일 선택">파일</button>
+              <input class="hidden" id="integratedInput" type="file" accept=".xlsx,.xls">
+            </article>
           </div>
         </div>
 
         <div class="execution-panel" aria-label="실행 기능">
-          <a class="execution-button smart-input" id="smartInputButton" href="input.html" aria-label="스마트 전표입력 화면 열기 F4" aria-keyshortcuts="F4">
-            <span aria-hidden="true">✎</span><span>스마트입력 F4</span>
-          </a>
           <button class="execution-button analysis-run" id="analyzeButton" type="button" aria-keyshortcuts="Enter" disabled>
             <span aria-hidden="true">▸</span><span>출고분석 Enter</span>
           </button>
@@ -1809,6 +1841,8 @@
               <option value="">저장 양식</option>
             </select>
             <button class="table-tool-button" id="viewPresetSaveButton" type="button" disabled>양식저장</button>
+            <button class="table-tool-button view-preset-default-button" id="viewPresetDefaultButton" type="button"
+              aria-pressed="false" disabled>기본지정</button>
             <button class="table-tool-button view-preset-delete-button" id="viewPresetDeleteButton" type="button"
               aria-label="선택한 현재 화면 양식 삭제" disabled>×</button>
           </div>
@@ -1845,7 +1879,7 @@
     </section>
 
     <footer class="page-footer">
-      <span>ORDER Q v1.43 · 출고관리 · workspace shipping-workspace/v2 · cloud plan v1</span>
+      <span>ORDER Q v1.44 · 출고관리 · workspace shipping-workspace/v2 · cloud plan v1</span>
       <a href="../SHIPPING_MANAGEMENT_GUIDANCE.md">개발·운영 기준 보기</a>
     </footer>
   </main>
@@ -1897,7 +1931,7 @@
 
       <section class="settings-section" data-settings-section="excel-mapping">
         <h3>Excel 매핑 별칭</h3>
-        <p class="mapping-help">열 구조를 가장 먼저 판별하며, 구조가 같은 경우 시트명과 파일명 별칭을 보조 기준으로 사용합니다. 여러 별칭은 쉼표로 구분합니다.</p>
+        <p class="mapping-help">개별파일은 열 구조를 우선 판별합니다. 통합파일은 각 시트를 시트명 별칭으로 분류한 뒤 필수 열과 헤더 구조를 다시 검증합니다. 여러 별칭은 쉼표로 구분합니다.</p>
         <div id="excelMappingEditor"></div>
         <div class="mapping-actions">
           <button type="button" id="mappingResetButton">기본값</button>
@@ -1988,8 +2022,9 @@
       const EXCEL_MAPPING_SCHEMA = "orderops-excel-mappings/v1";
       const PURCHASE_HISTORY_KEY = "oneapp.orderops.purchase-history.v1";
       const ORDER_VIEW_PRESETS_KEY = "oneapp.orderops.order-view-presets.v1";
-      const ORDER_VIEW_PRESETS_SCHEMA = "orderops-order-view-presets/v2";
-      const LEGACY_ORDER_VIEW_PRESETS_SCHEMA = "orderops-order-view-presets/v1";
+      const ORDER_VIEW_PRESETS_SCHEMA = "orderops-order-view-presets/v3";
+      const LEGACY_ORDER_VIEW_PRESETS_SCHEMA = "orderops-order-view-presets/v2";
+      const ORIGINAL_ORDER_VIEW_PRESETS_SCHEMA = "orderops-order-view-presets/v1";
       const ORDER_VIEW_PRESET_LIMIT = 20;
       const VIEW_PRESET_TABS = new Set(["allocations", "ledger", "inventory", "purchases", "sales"]);
       const VIEW_PRESET_LABELS = Object.freeze({
@@ -2041,7 +2076,8 @@
         searchQuery: "",
         shortageFocus: false,
         specificationFilters: new Set(),
-        loading: { orders: false, inventory: false, purchases: false, sales: false },
+        loading: { orders: false, inventory: false, purchases: false, sales: false, integrated: false },
+        integratedFile: null,
         db: null,
         legacyDb: null,
         recoveryRecord: null,
@@ -2137,10 +2173,16 @@
         columnWidthResetButton: document.getElementById("columnWidthResetButton"),
         viewPresetSelect: document.getElementById("viewPresetSelect"),
         viewPresetSaveButton: document.getElementById("viewPresetSaveButton"),
+        viewPresetDefaultButton: document.getElementById("viewPresetDefaultButton"),
         viewPresetDeleteButton: document.getElementById("viewPresetDeleteButton"),
         viewPresetDialog: document.getElementById("viewPresetDialog"),
         viewPresetDialogTitle: document.getElementById("viewPresetDialogTitle"),
         viewPresetNameInput: document.getElementById("viewPresetNameInput"),
+        integratedCard: document.getElementById("integratedCard"),
+        integratedDrop: document.getElementById("integratedDrop"),
+        integratedFileButton: document.getElementById("integratedFileButton"),
+        integratedFileName: document.getElementById("integratedFileName"),
+        integratedInput: document.getElementById("integratedInput"),
         printButton: document.getElementById("printButton"),
         printArea: document.getElementById("printArea"),
         previewTabs: document.getElementById("previewTabs"),
@@ -2765,6 +2807,7 @@
         elements.specFilterGroup.querySelectorAll("input[type='checkbox']").forEach((input) => {
           input.checked = false;
         });
+        applyDefaultOrderViewPreset(state.activePreview, { render: false });
         elements.cloudUrlInput.value = payload.settings?.cloudUrl || "";
         elements.cloudSavedByInput.value = payload.settings?.savedBy || "";
         localStorage.setItem(LOCAL_POINTER_KEY, record.recordId);
@@ -2915,10 +2958,7 @@
         return (aliases || []).some((alias) => target.includes(normalizeMappingText(alias)));
       }
 
-      async function parseGenericExcelFile(file, kind) {
-        const bytes = new Uint8Array(await file.arrayBuffer());
-        const fileHash = await sha256Hex(bytes);
-        const workbook = window.XLSX.read(bytes, { type: "array", cellDates: false, cellNF: true, cellText: true });
+      function parseGenericWorkbookSheet({ workbook, fileName, fileHash, sheetName, kind }) {
         const mapping = state.excelMappings[kind];
         const required = kind === "purchases" ? ["품목코드", "품목명", "수량", "구매처"] : ["품목코드", "품목명", "수량", "거래처"];
         const lookup = new Map();
@@ -2927,20 +2967,18 @@
           [canonical, ...defaultAliases, ...(aliases || [])]
             .forEach((alias) => lookup.set(normalizeMappingText(alias), canonical));
         });
+        const matrix = window.XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, raw: false, defval: "", blankrows: true });
         let best = null;
-        workbook.SheetNames.forEach((sheetName) => {
-          const matrix = window.XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, raw: false, defval: "", blankrows: true });
-          for (let rowIndex = 0; rowIndex < Math.min(matrix.length, 30); rowIndex += 1) {
-            const canonicalHeaders = (matrix[rowIndex] || []).map((header) => lookup.get(normalizeMappingText(header)) || "");
-            const mapped = new Set(canonicalHeaders.filter(Boolean));
-            const requiredCount = required.filter((canonical) => mapped.has(canonical)).length;
-            const candidate = { kind, fileName: file.name, sheetName, fileHash, headerRowIndex: rowIndex,
-              headers: (matrix[rowIndex] || []).map((value) => String(value || "").trim()), rowCount: Math.max(0, matrix.length - rowIndex - 1),
-              canonicalHeaders, matrix, missingColumns: required.filter((canonical) => !mapped.has(canonical)), errors: [], warnings: [], structureScore: requiredCount * 100 + mapped.size };
-            if (!best || candidate.structureScore > best.structureScore) best = candidate;
-          }
-        });
-        if (!best) throw new Error(`${file.name}: 읽을 수 있는 시트 구조가 없습니다.`);
+        for (let rowIndex = 0; rowIndex < Math.min(matrix.length, 30); rowIndex += 1) {
+          const canonicalHeaders = (matrix[rowIndex] || []).map((header) => lookup.get(normalizeMappingText(header)) || "");
+          const mapped = new Set(canonicalHeaders.filter(Boolean));
+          const requiredCount = required.filter((canonical) => mapped.has(canonical)).length;
+          const candidate = { kind, fileName, sheetName, fileHash, headerRowIndex: rowIndex,
+            headers: (matrix[rowIndex] || []).map((value) => String(value || "").trim()), rowCount: Math.max(0, matrix.length - rowIndex - 1),
+            canonicalHeaders, matrix, missingColumns: required.filter((canonical) => !mapped.has(canonical)), errors: [], warnings: [], structureScore: requiredCount * 100 + mapped.size };
+          if (!best || candidate.structureScore > best.structureScore) best = candidate;
+        }
+        if (!best) throw new Error(`${fileName} · ${sheetName}: 읽을 수 있는 시트 구조가 없습니다.`);
         if (best.missingColumns.length) best.errors.push({ code: `${kind.toUpperCase()}_REQUIRED_COLUMNS`, message: `${FILE_KIND_LABELS[kind]} 필수 열이 없습니다: ${best.missingColumns.join(", ")}` });
         const columnIndex = (canonical) => best.canonicalHeaders.indexOf(canonical);
         const partnerCanonical = kind === "purchases" ? "구매처" : "거래처";
@@ -2963,6 +3001,98 @@
         delete best.matrix;
         delete best.canonicalHeaders;
         return best;
+      }
+
+      async function parseGenericExcelFile(file, kind) {
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        const fileHash = await sha256Hex(bytes);
+        const workbook = window.XLSX.read(bytes, { type: "array", cellDates: false, cellNF: true, cellText: true });
+        if (!workbook.SheetNames.length) throw new Error(`${file.name}: 읽을 수 있는 시트가 없습니다.`);
+        let best = null;
+        workbook.SheetNames.forEach((sheetName) => {
+          const parsed = parseGenericWorkbookSheet({ workbook, fileName: file.name, fileHash, sheetName, kind });
+          if (!best || parsed.structureScore > best.structureScore) best = parsed;
+        });
+        return best;
+      }
+
+      function parsePrimaryWorkbookSheet({ workbook, fileName, fileHash, sheetName, kind }) {
+        const sheet = workbook.Sheets[sheetName];
+        const rawMatrix = window.XLSX.utils.sheet_to_json(sheet, {
+          header: 1, raw: true, defval: null, blankrows: true,
+        });
+        const displayMatrix = window.XLSX.utils.sheet_to_json(sheet, {
+          header: 1, raw: false, defval: "", blankrows: true,
+        });
+        const headerAliases = state.excelMappings?.[kind]?.columns || {};
+        const parsed = kind === "orders"
+          ? engine.parseOrderWorkbook({
+              fileName, sheetName, rawMatrix,
+              displayMatrix: normalizeOrderDateMatrix(displayMatrix), headerAliases,
+            })
+          : engine.parseInventoryWorkbook({ fileName, sheetName, rawMatrix, displayMatrix, headerAliases });
+        parsed.fileHash = fileHash;
+        return parsed;
+      }
+
+      function integratedCandidateScore(kind, parsed) {
+        if (!parsed || (parsed.missingColumns?.length || 0) > 0 || (parsed.rowCount || 0) < 1) return 0;
+        if (kind === "orders") {
+          const mapped = new Set((parsed.headerMapping?.columns || [])
+            .map((column) => String(column.canonical || "").trim()));
+          const signature = ["품목코드", "품목명", "규격", "수량", "적요", "적요1", "거래처", "그룹"];
+          return signature.every((field) => mapped.has(field)) ? 1008 : 0;
+        }
+        if (kind === "inventory") {
+          const warehouseCount = (parsed.columns || []).filter((column) => column?.role === "warehouseQuantity").length;
+          return warehouseCount > 0 ? 1000 + warehouseCount : 0;
+        }
+        return (parsed.errors?.length || 0) === 0 ? 704 : 0;
+      }
+
+      async function parseIntegratedExcelFile(file) {
+        if (!window.XLSX) throw new Error("Excel 라이브러리를 불러오지 못했습니다. 네트워크 연결 후 다시 시도하세요.");
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        const fileHash = await sha256Hex(bytes);
+        const workbook = window.XLSX.read(bytes, { type: "array", cellDates: false, cellNF: true, cellText: true });
+        if (!workbook.SheetNames.length) throw new Error(`${file.name}: 읽을 수 있는 시트가 없습니다.`);
+        const applied = new Map();
+        const failures = [];
+        const ignored = [];
+
+        workbook.SheetNames.forEach((sheetName) => {
+          const matchedKinds = FILE_KINDS.filter((kind) =>
+            aliasMatches(sheetName, state.excelMappings?.[kind]?.sheetAliases));
+          if (matchedKinds.length === 0) {
+            ignored.push(sheetName);
+            return;
+          }
+          const candidates = matchedKinds.map((kind) => {
+            try {
+              const parsed = ["orders", "inventory"].includes(kind)
+                ? parsePrimaryWorkbookSheet({ workbook, fileName: file.name, fileHash, sheetName, kind })
+                : parseGenericWorkbookSheet({ workbook, fileName: file.name, fileHash, sheetName, kind });
+              return { kind, parsed, score: integratedCandidateScore(kind, parsed) };
+            } catch (error) {
+              return { kind, parsed: null, score: 0, error };
+            }
+          }).filter((candidate) => candidate.score > 0)
+            .sort((left, right) => right.score - left.score);
+
+          if (candidates.length === 0) {
+            failures.push({ sheetName, message: "시트명은 매칭됐지만 필수 열·헤더 구조 검증에 실패했습니다." });
+            return;
+          }
+          if (candidates.length > 1 && candidates[0].score === candidates[1].score) {
+            failures.push({ sheetName, message: "둘 이상의 데이터 종류로 판별됩니다. 시트명 별칭을 구분하세요." });
+            return;
+          }
+          const selected = candidates[0];
+          selected.parsed.integratedSource = true;
+          selected.parsed.sourceLabel = `${file.name} · ${sheetName}`;
+          applied.set(selected.kind, selected.parsed);
+        });
+        return { fileName: file.name, sheetCount: workbook.SheetNames.length, applied, failures, ignored };
       }
 
       async function classifyBundleFile(file) {
@@ -3121,6 +3251,49 @@
         }
       }
 
+      async function handleIntegratedFile(file) {
+        if (!file) return;
+        if (!isSupportedFile(file)) {
+          showToast("통합파일은 .xlsx 또는 .xls 파일만 선택할 수 있습니다.", true);
+          return;
+        }
+        if (file.size > MAX_FILE_SIZE) {
+          showToast("통합파일 크기는 25MB 이하여야 합니다.", true);
+          return;
+        }
+        state.loading.integrated = true;
+        renderIntegratedFileCard();
+        state.analysisEnterLocked = true;
+        elements.analyzeButton.disabled = true;
+        setSystemMessage("통합파일 분석 중 · 시트명 매칭 후 필수 열과 헤더를 검증합니다");
+        try {
+          const result = await parseIntegratedExcelFile(file);
+          if (result.applied.size === 0) {
+            state.integratedFile = result;
+            throw new Error("적용 가능한 시트가 없습니다. 환경설정의 시트명 별칭과 필수 열을 확인하세요.");
+          }
+          resetResults();
+          result.applied.forEach((parsed, kind) => { state[kind] = parsed; });
+          state.integratedFile = result;
+          const appliedLabels = [...result.applied.keys()].map((kind) => FILE_KIND_LABELS[kind]);
+          refreshInputState();
+          if (state.validation?.canAnalyze) setAnalysisEnterReady(true);
+          const failureText = result.failures.length > 0
+            ? ` · 오류 ${result.failures.length}개 시트는 기존 데이터 유지`
+            : "";
+          setSystemMessage(`통합파일 적용 · ${appliedLabels.join("·")} 교체${failureText}`);
+          showToast(`${file.name}: ${appliedLabels.join("·")} 시트를 적용했습니다.${failureText}`);
+        } catch (error) {
+          state.analysisEnterLocked = false;
+          refreshInputState();
+          setSystemMessage("통합파일 일부 또는 전체 실패 · 정상 활성 데이터는 유지됩니다");
+          showToast(error.message || "통합파일을 처리하지 못했습니다.", true);
+        } finally {
+          state.loading.integrated = false;
+          renderIntegratedFileCard();
+        }
+      }
+
       function renderFileCard(kind) {
         const parsed = state[kind];
         const card = elements[kind + "Card"];
@@ -3135,7 +3308,24 @@
           return;
         }
 
-        name.textContent = parsed.fileName;
+        name.textContent = parsed.sourceLabel || parsed.fileName;
+      }
+
+      function renderIntegratedFileCard() {
+        const result = state.integratedFile;
+        elements.integratedCard.classList.toggle("has-file", Boolean(result?.applied?.size));
+        elements.integratedCard.classList.toggle("has-error", Boolean(result?.failures?.length));
+        if (state.loading.integrated) {
+          elements.integratedFileName.textContent = "시트별 구조를 확인하는 중...";
+          return;
+        }
+        if (!result) {
+          elements.integratedFileName.textContent = "파일을 선택하세요";
+          return;
+        }
+        const appliedCount = result.applied?.size || 0;
+        const failureCount = result.failures?.length || 0;
+        elements.integratedFileName.textContent = `${result.fileName} · 적용 ${appliedCount}${failureCount ? ` · 오류 ${failureCount}` : ""}`;
       }
 
       function renderValidation() {
@@ -3175,6 +3365,7 @@
           ? engine.validateInputs(state.orders, state.inventory)
           : null;
         FILE_KINDS.forEach(renderFileCard);
+        renderIntegratedFileCard();
         renderValidation();
         elements.analyzeButton.disabled = !state.validation?.canAnalyze;
         elements.replaceRecoveryButton.disabled = !state.validation?.canAnalyze;
@@ -3260,6 +3451,7 @@
           id,
           name,
           previewId,
+          isDefault: value.isDefault === true,
           updatedAt: String(value.updatedAt || ""),
           view: {
             searchQuery: String(value.view.searchQuery || "").slice(0, 300),
@@ -3282,11 +3474,18 @@
         try {
           const parsed = JSON.parse(localStorage.getItem(ORDER_VIEW_PRESETS_KEY) || "null");
           const supportedSchema = parsed?.schemaVersion === ORDER_VIEW_PRESETS_SCHEMA ||
-            parsed?.schemaVersion === LEGACY_ORDER_VIEW_PRESETS_SCHEMA;
+            parsed?.schemaVersion === LEGACY_ORDER_VIEW_PRESETS_SCHEMA ||
+            parsed?.schemaVersion === ORIGINAL_ORDER_VIEW_PRESETS_SCHEMA;
           if (!isPlainRecord(parsed) || !supportedSchema || !Array.isArray(parsed.presets)) {
             return [];
           }
-          return parsed.presets.map(normalizeOrderViewPreset).filter(Boolean).slice(0, ORDER_VIEW_PRESET_LIMIT);
+          const defaultTabs = new Set();
+          return parsed.presets.map(normalizeOrderViewPreset).filter(Boolean)
+            .slice(0, ORDER_VIEW_PRESET_LIMIT).map((preset) => {
+              if (!preset.isDefault || defaultTabs.has(preset.previewId)) return { ...preset, isDefault: false };
+              defaultTabs.add(preset.previewId);
+              return preset;
+            });
         } catch (error) {
           return [];
         }
@@ -3305,12 +3504,16 @@
           : [];
         const selectedId = activePresets.some((preset) => preset.id === state.selectedOrderViewPresetId)
           ? state.selectedOrderViewPresetId : "";
+        const selectedPreset = activePresets.find((preset) => preset.id === selectedId);
         elements.viewPresetSelect.innerHTML = `<option value="">저장 양식</option>${activePresets.map((preset) =>
-          `<option value="${escapeHtml(preset.id)}">${escapeHtml(preset.name)}</option>`,
+          `<option value="${escapeHtml(preset.id)}">${preset.isDefault ? "★ " : ""}${escapeHtml(preset.name)}</option>`,
         ).join("")}`;
         elements.viewPresetSelect.value = selectedId;
         elements.viewPresetSelect.disabled = !state.workspace || activePresets.length === 0;
         elements.viewPresetSaveButton.disabled = !state.workspace || !VIEW_PRESET_TABS.has(state.activePreview);
+        elements.viewPresetDefaultButton.disabled = !state.workspace || !selectedPreset;
+        elements.viewPresetDefaultButton.textContent = selectedPreset?.isDefault ? "기본해제" : "기본지정";
+        elements.viewPresetDefaultButton.setAttribute("aria-pressed", String(selectedPreset?.isDefault === true));
         elements.viewPresetDeleteButton.disabled = !state.workspace || !selectedId;
       }
 
@@ -3343,7 +3546,7 @@
         };
       }
 
-      function applyOrderViewPreset(presetId) {
+      function applyOrderViewPreset(presetId, options = {}) {
         const preset = state.orderViewPresets.find((candidate) => candidate.id === presetId);
         if (!preset || !state.workspace) return;
         const definitions = getPreviewDefinitions(state.workspace);
@@ -3400,8 +3603,31 @@
           input.checked = state.specificationFilters.has(input.value);
         });
         setActiveFilterPanel("");
-        renderPreview();
-        showToast(`${preset.name} 양식을 적용했습니다.`);
+        if (options.render !== false) renderPreview();
+        if (options.announce !== false) showToast(`${preset.name} 양식을 적용했습니다.`);
+      }
+
+      function applyDefaultOrderViewPreset(previewId, options = {}) {
+        const preset = state.orderViewPresets.find((candidate) =>
+          candidate.previewId === previewId && candidate.isDefault === true);
+        if (!preset) return false;
+        applyOrderViewPreset(preset.id, { render: options.render, announce: false });
+        return true;
+      }
+
+      function setSelectedOrderViewPresetDefault() {
+        const selected = state.orderViewPresets.find((preset) =>
+          preset.id === state.selectedOrderViewPresetId && preset.previewId === state.activePreview);
+        if (!selected) return;
+        const nextDefault = !selected.isDefault;
+        state.orderViewPresets = state.orderViewPresets.map((preset) => preset.previewId === selected.previewId
+          ? { ...preset, isDefault: nextDefault && preset.id === selected.id }
+          : preset);
+        persistOrderViewPresets();
+        renderOrderViewPresetOptions();
+        showToast(nextDefault
+          ? `${selected.name} 양식을 기본으로 지정했습니다. 이 화면을 열 때 자동 적용됩니다.`
+          : `${selected.name} 양식의 기본 지정을 해제했습니다.`);
       }
 
       function openOrderViewPresetDialog() {
@@ -3432,6 +3658,7 @@
           id,
           name,
           previewId: state.activePreview,
+          isDefault: existing?.isDefault === true,
           updatedAt: new Date().toISOString(),
           view: captureOrderViewPreset(),
         });
@@ -4226,9 +4453,11 @@
       function renderOrderInformationBadges(value) {
         const entries = String(value ?? "").split(/\r?\n/).map((entry) => entry.trim()).filter(Boolean);
         if (entries.length === 0) return "";
-        return `<span class="order-information-badges">${entries.map((entry) =>
-          `<span class="order-information-badge" title="${escapeHtml(entry)}">${escapeHtml(entry)}</span>`,
-        ).join("")}</span>`;
+        return `<span class="order-information-badges">${entries.map((entry) => {
+          const match = entry.match(/^(.*)(\([^()]*\))([+-]?[\d,]+(?:\.\d+)?)$/);
+          if (!match) return `<span class="order-information-badge" title="${escapeHtml(entry)}">${escapeHtml(entry)}</span>`;
+          return `<span class="order-information-badge" title="${escapeHtml(entry)}"><span class="order-information-partner">${escapeHtml(match[1])}</span><span class="order-information-quantity">${escapeHtml(match[2])}</span><span class="order-information-price">${escapeHtml(match[3])}</span></span>`;
+        }).join("")}</span>`;
       }
 
       function isQuantityColumn(column) {
@@ -4945,6 +5174,10 @@
                       (previewId === "ledger" && ledgerNegativeBalance)
                     );
                     const purchaseNegative = preview.purchase === index && negativeBalance;
+                    const readablePrimary = ["productName", "specification"].includes(column.role) || quantityColumn;
+                    const warningUnitContext = exactWarningUnit(sourceRow) && (
+                      ["productName", "specification"].includes(column.role) || quantityColumn
+                    );
                     const classes = [
                       isNumber ? "number" : "",
                       isStatus ? "status" : "",
@@ -4959,7 +5192,8 @@
                       numericQuantityValue === 0 ? "quantity-zero" : "",
                       numericQuantityValue < 0 ? "quantity-negative" : "",
                       numericQuantityValue > 0 ? "quantity-positive" : "",
-                      exactWarningUnit(sourceRow) && column.role === "specification" ? "unit-alert-cell" : "",
+                      readablePrimary ? "primary-readable-cell" : "",
+                      warningUnitContext ? "unit-alert-cell" : "",
                       column.role === "orderInformation" ? "information-value" : "",
                     ].filter(Boolean).join(" ");
                     const editablePurchase = editable && preview.purchaseEditable === true &&
@@ -5486,6 +5720,8 @@
           elements.specFilterGroup.querySelectorAll("input[type='checkbox']").forEach((input) => {
             input.checked = false;
           });
+          state.selectedOrderViewPresetId = "";
+          applyDefaultOrderViewPreset(state.activePreview, { render: false });
           renderResults();
           scheduleLocalSave();
           setSystemMessage(`완료본 불러오기 완료 · revision ${selected.revision}`);
@@ -5518,6 +5754,37 @@
         elements.ledgerDrop.addEventListener("click", () => {
           if (activatePreview("ledger")) return;
           showToast("출고분석을 완료하면 수불현황이 자동 생성됩니다.");
+        });
+      }
+
+      function bindIntegratedFileCard() {
+        const openPicker = () => elements.integratedInput.click();
+        elements.integratedDrop.addEventListener("click", openPicker);
+        elements.integratedFileButton.addEventListener("click", openPicker);
+        elements.integratedInput.addEventListener("change", () => {
+          const file = Array.from(elements.integratedInput.files || []).find(Boolean);
+          handleIntegratedFile(file);
+          elements.integratedInput.value = "";
+        });
+        ["dragenter", "dragover"].forEach((eventName) => {
+          elements.integratedCard.addEventListener(eventName, (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            elements.integratedCard.classList.add("bundle-dragover");
+            if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+          });
+        });
+        elements.integratedCard.addEventListener("dragleave", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          elements.integratedCard.classList.remove("bundle-dragover");
+        });
+        elements.integratedCard.addEventListener("drop", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          elements.integratedCard.classList.remove("bundle-dragover");
+          const file = Array.from(event.dataTransfer?.files || []).find(Boolean);
+          handleIntegratedFile(file);
         });
       }
 
@@ -5943,6 +6210,8 @@
 
       function refreshCurrentSession() {
         FILE_KINDS.forEach((kind) => { state[kind] = null; state.loading[kind] = false; });
+        state.integratedFile = null;
+        state.loading.integrated = false;
         state.validation = null;
         resetResults();
         resetResultViewFilters();
@@ -5971,6 +6240,7 @@
         if (elements.viewPresetSelect.value) applyOrderViewPreset(elements.viewPresetSelect.value);
       });
       elements.viewPresetSaveButton.addEventListener("click", openOrderViewPresetDialog);
+      elements.viewPresetDefaultButton.addEventListener("click", setSelectedOrderViewPresetDefault);
       elements.viewPresetDeleteButton.addEventListener("click", deleteSelectedOrderViewPreset);
       elements.viewPresetDialog.addEventListener("click", (event) => {
         if (event.target.closest("[data-cancel-view-preset]")) elements.viewPresetDialog.close();
@@ -6124,7 +6394,7 @@
         const selectedPreset = state.orderViewPresets.find((preset) => preset.id === state.selectedOrderViewPresetId);
         if (selectedPreset?.previewId !== previewId) state.selectedOrderViewPresetId = "";
         state.activePreview = previewId;
-        renderPreview();
+        if (!applyDefaultOrderViewPreset(previewId, { render: true })) renderPreview();
         scheduleLocalSave();
         return true;
       }
@@ -6409,6 +6679,7 @@
       });
       FILE_KINDS.forEach(bindDropZone);
       bindLedgerViewCard();
+      bindIntegratedFileCard();
       bindBundleDropSurface();
 
       try {
