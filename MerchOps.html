@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.188_ThemeAndPromoFilters]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.189_QuickF8ReuploadHeaderFix]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -12,6 +12,7 @@
     <script src="coreEngine.js"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <script>
+    // v2.1.189: QuickF8 쇼핑몰업로드의 복합 상품코드 헤더를 인식하여 수정·재저장 파일도 다시 불러올 수 있게 한다.
     // v2.1.188: 테마 없음 필터를 추가하고 기본상품 분류와 행사제안을 제거하며 행사상태를 행사가/행사가없음으로 명확히 구분한다.
     // v2.1.187: 초기 강조색을 실제 작업상태에 따라 동적으로 표시하고, 테마 전체를 모든 테마 행사 보기로 전환하며 행사 작업대를 상시 노출한다.
     // v2.1.186: 실행용 제외 버튼은 상단 조작기능 그룹 우측으로 옮기고, 제외상품 복구 버튼은 항목이 있을 때만 필터행 맨 좌측에 노출한다.
@@ -4074,6 +4075,19 @@
 
         window.cleanHeaderKey = (v) => String(v ?? '').toLowerCase().replace(/\s/g, '');
 
+        // QuickF8 쇼핑몰업로드는 외부 업로드 양식을 위해 첫 헤더를 "상품코드\\n코드"로 출력한다.
+        // 헤더 판정에서는 원문을 토큰으로 분리해 상품코드/코드를 인정하되, 1종코드·2종코드 같은 파생 열은 제외한다.
+        window.isMerchProductCodeHeader = (value, specificOnly = false) => {
+            const raw = String(value ?? '').toLowerCase().trim();
+            if (!raw) return false;
+            const tokens = raw.split(/[\s/|]+/).map(token => window.cleanHeaderKey(token)).filter(Boolean);
+            const candidates = new Set([window.cleanHeaderKey(raw), ...tokens]);
+            const accepted = specificOnly
+                ? ['품목코드', '상품코드', '바코드', '상품번호']
+                : ['품목코드', '상품코드', '바코드', '상품번호', '코드'];
+            return accepted.some(header => candidates.has(header));
+        };
+
         // ERP 재고현황의 "최종(창고)"는 창고명이 아니라 해당 창고의 최신/최종 단가다.
         // 컬럼명에 창고가 포함되어도 창고 매핑 후보에서 제외하고 입고가/최신단가로만 사용한다.
         window.isInventoryLatestPriceHeader = (h) => {
@@ -6243,10 +6257,15 @@ window.findMerchExcelHeaderRow = (rows = [], maxRows = 25) => {
     ]);
     const searchCount = Math.min(Math.max(0, Number(maxRows) || 25), Array.isArray(rows) ? rows.length : 0);
     for (let index = 0; index < searchCount; index++) {
-        const headers = (Array.isArray(rows[index]) ? rows[index] : []).map(clean).filter(Boolean);
+        const rawHeaders = Array.isArray(rows[index]) ? rows[index] : [];
+        const headers = rawHeaders.map(clean).filter(Boolean);
         const headerSet = new Set(headers);
-        const hasCode = headers.some(header => codeHeaders.has(header));
-        const hasSpecificCode = headers.some(header => ['품목코드', '상품코드', '바코드', '상품번호'].includes(header));
+        const hasCode = rawHeaders.some(header => window.isMerchProductCodeHeader
+            ? window.isMerchProductCodeHeader(header)
+            : codeHeaders.has(clean(header)));
+        const hasSpecificCode = rawHeaders.some(header => window.isMerchProductCodeHeader
+            ? window.isMerchProductCodeHeader(header, true)
+            : ['품목코드', '상품코드', '바코드', '상품번호'].includes(clean(header)));
         const hasName = headers.some(header => nameHeaders.has(header));
         const supportCount = headers.filter(header => supportHeaders.has(header)).length;
         // 1종코드·2종코드 같은 파생상품 열은 품목코드 헤더로 인정하지 않는다.
@@ -6262,11 +6281,14 @@ window.detectMerchExcelRoleFromHeaders = (headers = [], context = {}) => {
     const clean = (value) => window.cleanHeaderKey
         ? window.cleanHeaderKey(value)
         : String(value ?? '').toLowerCase().replace(/\s/g, '');
-    const normalized = (Array.isArray(headers) ? headers : []).map(clean).filter(Boolean);
+    const rawHeaders = Array.isArray(headers) ? headers : [];
+    const normalized = rawHeaders.map(clean).filter(Boolean);
     const headerSet = new Set(normalized);
     const sourceText = clean(`${context.fileName || ''} ${context.sheetName || ''} ${context.titleText || ''}`);
     const codeHeaders = ['품목코드', '상품코드', '바코드', '상품번호', '코드'];
-    const hasCode = codeHeaders.some(header => headerSet.has(header));
+    const hasCode = rawHeaders.some(header => window.isMerchProductCodeHeader
+        ? window.isMerchProductCodeHeader(header)
+        : codeHeaders.some(codeHeader => clean(header) === codeHeader));
     if (!hasCode) {
         return { role: '', confidence: 0, reason: '품목코드·상품코드·코드 헤더를 찾지 못했습니다.' };
     }
