@@ -719,7 +719,7 @@
     .shortage-focus-button:hover:not(:disabled) { border-color: #fb7185; background: #ffe4e6; }
     .shortage-focus-button.active { border-color: #be123c; color: #fff; background: #be123c; }
     .shortage-focus-button:disabled { opacity: .45; cursor: default; }
-    /* ORDER Q v1.41: quiet stock-ledger emphasis and dynamic view guidance */
+    /* ORDER Q v1.42: consistent ordered-row and shortage balance emphasis */
     .header-output-button { border-color: #99f6e4; color: #0f766e; background: #f0fdfa; }
     .header-output-button:hover:not(:disabled) { background: #ccfbf1; }
     .results-panel .table-wrap { max-height: calc(100vh - 200px); }
@@ -1492,7 +1492,7 @@
       .recovery-record-item { grid-template-columns: auto 1fr; }
       .recovery-record-status { grid-column: 2; }
     }
-    /* ORDER Q v1.41: uploader cards double as result tabs */
+    /* ORDER Q v1.42: uploader cards double as result tabs */
     .input-panel { grid-template-columns: minmax(0, 1fr) 330px; gap: 12px; }
     .upload-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
     .source-selector {
@@ -1650,7 +1650,7 @@
       <div class="brand-mark">ONEAPP</div>
       <div class="brand-divider" aria-hidden="true"></div>
       <span class="brand-logo-frame" aria-hidden="true"><img class="brand-logo" src="../assets/order-q-logo.png" alt=""></span>
-      <span class="brand-badge">v1.41</span>
+      <span class="brand-badge">v1.42</span>
       <span class="brand-product">출고관리</span>
     </div>
     <div class="header-actions">
@@ -1845,7 +1845,7 @@
     </section>
 
     <footer class="page-footer">
-      <span>ORDER Q v1.41 · 출고관리 · workspace shipping-workspace/v2 · cloud plan v1</span>
+      <span>ORDER Q v1.42 · 출고관리 · workspace shipping-workspace/v2 · cloud plan v1</span>
       <a href="../SHIPPING_MANAGEMENT_GUIDANCE.md">개발·운영 기준 보기</a>
     </footer>
   </main>
@@ -4129,9 +4129,9 @@
             ? column.key
             : `shipping:inventory:${index}:${encodeURIComponent(String(column?.header || index))}`,
           header: column?.role === "calculatedQuantity" && state.warehouseFilters.size > 0
-            ? "수량"
+            ? "잔량"
             : column?.role === "calculatedQuantity"
-              ? "수량"
+              ? "잔량"
             : String(column?.header || "") === "품목명"
               ? "품명"
               : String(column?.header || "") === "주문수량"
@@ -4903,10 +4903,11 @@
                       ? Number(String(value).replace(/,/g, ""))
                       : null;
                     const displayValue = quantityColumn && numericQuantityValue === 0 ? "" : value;
-                    const ledgerNegative = previewId === "ledger" && column.role === "calculatedQuantity" && negativeNumericValue;
+                    const negativeRemaining = ["inventory", "ledger"].includes(previewId) &&
+                      column.role === "calculatedQuantity" && negativeNumericValue;
                     const orderedContext = ["ledger", "inventory"].includes(previewId) &&
                       Number(sourceRow?.orderQuantity || 0) > 0 &&
-                      ["productName", "specification", "orderQuantity"].includes(column.role);
+                      ["productCode", "productName", "specification", "orderQuantity"].includes(column.role);
                     const warehouseFill = warehouseQuantity && isNonblankNumericValue(value)
                       ? warehouseColorFor(preview, column)
                       : "";
@@ -4917,7 +4918,7 @@
                       Boolean(column.inventoryColumnKey) && !referenceRow && !sourceRow?.salesOnly;
                     const inventoryNegativeBalance = typeof sourceRow?.displayRemainingQuantity === "number" && sourceRow.displayRemainingQuantity < 0;
                     const ledgerNegativeBalance = typeof sourceRow?.remainingQuantity === "number" && sourceRow.remainingQuantity < 0;
-                    const negativeBalance = sourceRow?.shortageFocusRole === "shortage" && (
+                    const negativeBalance = (
                       (previewId === "inventory" && inventoryNegativeBalance) ||
                       (previewId === "ledger" && ledgerNegativeBalance)
                     );
@@ -4930,7 +4931,7 @@
                       editableInventory ? "inventory-editable" : "",
                       editableLedgerPrice ? "procurement-price-cell" : "",
                       calculatedQuantity ? "inventory-total-cell" : "",
-                      ledgerNegative ? "ledger-negative-cell" : "",
+                      negativeRemaining ? "ledger-negative-cell" : "",
                       purchaseNegative ? "purchase-negative-cell" : "",
                       orderedContext ? "ordered-context-cell" : "",
                       numericQuantityValue === 0 ? "quantity-zero" : "",
