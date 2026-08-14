@@ -13,7 +13,7 @@
       <div class="brand">
         <strong>ONEAPP</strong>
         <span class="logo-frame" aria-hidden="true"><img src="../assets/order-q-logo.png" alt=""></span>
-        <span class="badge">vNext 0.6.0</span>
+        <span class="badge">vNext 0.6.1</span>
         <span id="pageMode">주문서 입력</span>
       </div>
       <div class="top-system" aria-live="polite">
@@ -82,8 +82,8 @@
         <div class="field form-span-2">
           <label for="adminStatus">관리자상태</label>
           <select class="control" id="adminStatus">
-            <option value="UNCHECKED">미확인</option>
             <option value="CHECKED">확인</option>
+            <option value="UNCHECKED">미확인</option>
             <option value="HOLD">보류</option>
           </select>
         </div>
@@ -212,17 +212,17 @@
     import {
       createOrder, updateOrder, cancelOrder, getOrder, listOrders, subscribeOrderChanges,
       OrderRevisionConflictError, MATCH_STATUS
-    } from './order-intake-engine.js?v=0.6.0';
+    } from './order-intake-engine.js?v=0.6.1';
     import {
       syncBeforeOrderMutation, syncAfterLocalMutation, getSyncState,
       CloudOrderConflictError
-    } from './orderq-sync-engine.js?v=0.6.0';
-    import { loadProductCatalog, searchProductCatalog } from './product-master-search.js?v=0.6.0';
-    import { loadWarehouseCatalog, matchWarehouseInput, warehouseDisplayName } from './warehouse-master.js?v=0.6.0';
+    } from './orderq-sync-engine.js?v=0.6.1';
+    import { loadProductCatalog, searchProductCatalog } from './product-master-search.js?v=0.6.1';
+    import { loadWarehouseCatalog, matchWarehouseInput, warehouseDisplayName } from './warehouse-master.js?v=0.6.1';
     import {
       calculateLineTotal, calculateVatAmount, compareManualRows, cycleManualPriceOption, numberOrNull, shiftIsoDate
-    } from './manual-order-grid.js?v=0.6.0';
-    import { INPUT_CHANNEL_LABEL } from './order-document-model.js?v=0.6.0';
+    } from './manual-order-grid.js?v=0.6.1';
+    import { INPUT_CHANNEL_LABEL } from './order-document-model.js?v=0.6.1';
 
     const params = new URLSearchParams(location.search);
     const editingOrderId = params.get('orderId');
@@ -935,6 +935,7 @@
     async function loadEditingOrder() {
       if (!editingOrderId) {
         orderDateInput.value = todayLocal();
+        adminStatusInput.value = 'CHECKED';
         selectedWarehouseId = manualDefaults.warehouseId;
         warehouseInput.value = manualDefaults.warehouseName || manualDefaults.warehouse;
         if ([...transactionTypeInput.options].some(option => option.value === manualDefaults.transactionType)) {

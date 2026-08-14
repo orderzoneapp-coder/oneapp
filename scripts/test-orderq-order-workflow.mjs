@@ -11,6 +11,7 @@ import {
   normalizeAdminStatus,
   normalizeOpsStatus,
   inferInputChannel,
+  initialAdminStatus,
   orderDateKey,
   formatOrderNo,
   orderSequenceFromNo,
@@ -44,6 +45,9 @@ assert.equal(inferInputChannel('KAKAO_TEXT'), INPUT_CHANNEL.ORDER_IN);
 assert.equal(inferInputChannel('EXCEL_UPLOAD'), INPUT_CHANNEL.EXCEL);
 assert.equal(inferInputChannel('SHOP_ORDER'), INPUT_CHANNEL.SHOPPING_MALL);
 assert.equal(inferInputChannel('MANUAL'), INPUT_CHANNEL.DIRECT);
+assert.equal(initialAdminStatus('MANUAL', INPUT_CHANNEL.DIRECT), ADMIN_STATUS.CHECKED);
+assert.equal(initialAdminStatus('KAKAO_TEXT', INPUT_CHANNEL.ORDER_IN), ADMIN_STATUS.UNCHECKED);
+assert.equal(initialAdminStatus('EXCEL_UPLOAD', INPUT_CHANNEL.EXCEL), ADMIN_STATUS.UNCHECKED);
 
 const firstAssignee = assigneeIdentity('김관리');
 assert.match(firstAssignee.assigneeId, /^MGR-/);
@@ -80,11 +84,13 @@ assert.match(engine, /allocateOrderNoInTransaction/);
 assert.match(engine, /documentFieldChanges\(previousOrder, next\)/);
 assert.match(engine, /ORDER_CREATED/);
 assert.match(engine, /ORDER_UPDATED/);
+assert.match(engine, /initialAdminStatus\(sourceType, inputChannel\)/);
 assert.match(engine, /normalizedOrderView/);
 
 assert.match(input, /id="assigneeName"/);
 assert.match(input, /id="orderStatus"/);
 assert.match(input, /id="adminStatus"/);
+assert.match(input, /if \(!editingOrderId\)[\s\S]*adminStatusInput\.value = 'CHECKED'/);
 assert.match(input, /id="opsStatus"/);
 assert.match(input, /id="externalOrderNo"/);
 assert.match(input, /id="paymentAmount"/);

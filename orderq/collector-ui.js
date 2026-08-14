@@ -1,5 +1,5 @@
-import { analyzeExcelFile, analyzeHistoricalText } from './history-collector/collector-importer.js?v=0.6.0';
-import { SOURCE_LABEL } from './history-collector/collector-schema.js?v=0.6.0';
+import { analyzeExcelFile, analyzeHistoricalText } from './history-collector/collector-importer.js?v=0.6.1';
+import { SOURCE_LABEL } from './history-collector/collector-schema.js?v=0.6.1';
 import {
   commitPreparedImport,
   getCollectorSnapshot,
@@ -11,9 +11,9 @@ import {
   confirmFulfillmentLink,
   replaceFulfillmentLink,
   unlinkFulfillmentLink
-} from './history-collector/history-repository.js?v=0.6.0';
-import { syncNow } from './orderq-sync-engine.js?v=0.6.0';
-import { getCloudUrl, getCloudAccessToken } from './orderq-cloud-adapter.js?v=0.6.0';
+} from './history-collector/history-repository.js?v=0.6.1';
+import { syncNow } from './orderq-sync-engine.js?v=0.6.1';
+import { getCloudUrl, getCloudAccessToken } from './orderq-cloud-adapter.js?v=0.6.1';
 
 const prepared = [];
 const $ = selector => document.querySelector(selector);

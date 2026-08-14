@@ -1,6 +1,6 @@
 # ORDER Q vNext Architecture
 
-Version: 0.6.0
+Version: 0.6.1
 Reviewed: 2026-08-14
 
 ## 1. Scope
@@ -9,9 +9,9 @@ ORDER Q vNext is an independent pilot under `/orderq/`. Existing `orderops/` and
 
 Phase 3 adds `/orderq/parser.html`. ORDER IN/SmartParser never writes ORDER / ORDER_ITEM directly: raw text and parse decisions are stored separately, then confirmed actions call the shared Order Intake Engine. Direct input, ORDER IN, Excel, shopping-mall, and external adapters share that same boundary.
 
-vNext 0.6.0 defines `input → document history → operations` as separate work surfaces. IndexedDB v6 adds manager order numbers, input channel, order/admin/operations states, document assignee, shopping-mall result fields, amount summaries, and lookup indexes. Legacy `status` remains the item-matching summary for compatibility while `orderStatus`, `adminStatus`, and `opsStatus` own the new workflow. Existing orders are migrated additively and all browser modules share the 0.6.0 release query. The cloud sheet schema remains unchanged because the new values live inside the existing order `payloadJson`.
+vNext 0.6.1 defines `input → document history → operations` as separate work surfaces. IndexedDB v6 adds manager order numbers, input channel, order/admin/operations states, document assignee, shopping-mall result fields, amount summaries, and lookup indexes. Legacy `status` remains the item-matching summary for compatibility while `orderStatus`, `adminStatus`, and `opsStatus` own the new workflow. Existing orders are migrated additively and all browser modules share the 0.6.1 release query. The cloud sheet schema remains unchanged because the new values live inside the existing order `payloadJson`.
 
-Manual entry remains code-first and keyboard-driven. Product search runs only from the item-code cell; Enter follows customer → warehouse → item code → quantity → price → memo and creates a new row after the last memo. Product columns remain directly editable but are skipped by that primary entry path. `supplyAmount` and optional `vatAmount` remain editable. Price basis, saved column widths, date arrows, and warehouse master behavior remain unchanged from v0.5.1.
+Manual entry remains code-first and keyboard-driven. A newly created direct-entry document starts with administrator status `CHECKED`, while ORDER IN, Excel, shopping-mall, and external collection continue to start as `UNCHECKED`. Product search runs only from the item-code cell; Enter follows customer → warehouse → item code → quantity → price → memo and creates a new row after the last memo. Product columns remain directly editable but are skipped by that primary entry path. `supplyAmount` and optional `vatAmount` remain editable. Price basis, saved column widths, date arrows, and warehouse master behavior remain unchanged from v0.5.1.
 
 The vNext data path is:
 

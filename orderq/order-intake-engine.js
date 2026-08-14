@@ -6,14 +6,15 @@ import {
   newId,
   nowIso,
   normalizeText
-} from './orderq-db.js?v=0.6.0';
-import { resolveWarehouseInTransaction, warehouseSnapshot } from './warehouse-master.js?v=0.6.0';
+} from './orderq-db.js?v=0.6.1';
+import { resolveWarehouseInTransaction, warehouseSnapshot } from './warehouse-master.js?v=0.6.1';
 import {
   ORDER_STATUS, ADMIN_STATUS, OPS_STATUS, INPUT_CHANNEL,
   normalizeOrderStatus, normalizeAdminStatus, normalizeOpsStatus, inferInputChannel,
+  initialAdminStatus,
   orderDateKey, formatOrderNo, orderSequenceFromNo, assigneeIdentity, externalOrderSnapshot,
   normalizedOrderView, documentFieldChanges
-} from './order-document-model.js?v=0.6.0';
+} from './order-document-model.js?v=0.6.1';
 
 export { ORDER_STATUS, ADMIN_STATUS, OPS_STATUS, INPUT_CHANNEL };
 
@@ -203,13 +204,14 @@ async function allocateOrderNoInTransaction(tx, orderDate, requestedOrderNo = ''
 
 function orderWorkflowSnapshot(payload, previous = null) {
   const sourceType = String(payload.sourceType || previous?.sourceType || 'MANUAL').trim();
+  const inputChannel = inferInputChannel(sourceType, payload.inputChannel || previous?.inputChannel);
   const assignee = assigneeIdentity(payload.assigneeName, payload.assigneeId, previous);
   return {
     ...assignee,
     orderStatus: normalizeOrderStatus(payload.orderStatus, previous?.orderStatus || previous?.status),
-    adminStatus: normalizeAdminStatus(payload.adminStatus || previous?.adminStatus),
+    adminStatus: normalizeAdminStatus(payload.adminStatus || previous?.adminStatus || initialAdminStatus(sourceType, inputChannel)),
     opsStatus: normalizeOpsStatus(payload.opsStatus || previous?.opsStatus),
-    inputChannel: inferInputChannel(sourceType, payload.inputChannel || previous?.inputChannel),
+    inputChannel,
     ...externalOrderSnapshot(payload, previous || {})
   };
 }

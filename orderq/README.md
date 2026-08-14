@@ -2,7 +2,7 @@
 
 신규 ORDER Q 개발 경로. 기존 `orderops/` 및 `orderops_list.html`은 변경하지 않는다.
 
-## vNext 0.6.0 URL
+## vNext 0.6.1 URL
 
 - `/orderq/` 또는 `/orderq/index.html`: 주문현황(전표 목록·펼침·상품상세·수정·출력)
 - `/orderq/input.html`: 주문서 직접입력·수정
