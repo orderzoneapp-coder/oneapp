@@ -719,7 +719,7 @@
     .shortage-focus-button:hover:not(:disabled) { border-color: #fb7185; background: #ffe4e6; }
     .shortage-focus-button.active { border-color: #be123c; color: #fff; background: #be123c; }
     .shortage-focus-button:disabled { opacity: .45; cursor: default; }
-    /* ORDER Q v1.42: consistent ordered-row and shortage balance emphasis */
+    /* ORDER Q v1.43: order product-code aggregate information */
     .header-output-button { border-color: #99f6e4; color: #0f766e; background: #f0fdfa; }
     .header-output-button:hover:not(:disabled) { background: #ccfbf1; }
     .results-panel .table-wrap { max-height: calc(100vh - 200px); }
@@ -1492,7 +1492,7 @@
       .recovery-record-item { grid-template-columns: auto 1fr; }
       .recovery-record-status { grid-column: 2; }
     }
-    /* ORDER Q v1.42: uploader cards double as result tabs */
+    /* ORDER Q v1.43: uploader cards double as result tabs */
     .input-panel { grid-template-columns: minmax(0, 1fr) 330px; gap: 12px; }
     .upload-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
     .source-selector {
@@ -1650,7 +1650,7 @@
       <div class="brand-mark">ONEAPP</div>
       <div class="brand-divider" aria-hidden="true"></div>
       <span class="brand-logo-frame" aria-hidden="true"><img class="brand-logo" src="../assets/order-q-logo.png" alt=""></span>
-      <span class="brand-badge">v1.42</span>
+      <span class="brand-badge">v1.43</span>
       <span class="brand-product">출고관리</span>
     </div>
     <div class="header-actions">
@@ -1845,7 +1845,7 @@
     </section>
 
     <footer class="page-footer">
-      <span>ORDER Q v1.42 · 출고관리 · workspace shipping-workspace/v2 · cloud plan v1</span>
+      <span>ORDER Q v1.43 · 출고관리 · workspace shipping-workspace/v2 · cloud plan v1</span>
       <a href="../SHIPPING_MANAGEMENT_GUIDANCE.md">개발·운영 기준 보기</a>
     </footer>
   </main>
@@ -4307,13 +4307,35 @@
         const allocationWarehouseHeaders = allocationInventoryView.columns.map((column) => column.header);
         const allocationWarehouseStart = 10;
         const allocationTailStart = allocationWarehouseStart + allocationWarehouseHeaders.length;
-        const allocationSourceRows = workspace.allocations.map((row) =>
-          decorateShortageRow(row, shortageSets, inventoryByCode));
+        const allocationProductSummaries = new Map();
+        workspace.allocations.forEach((row) => {
+          const productCode = engine.normalizeProductCode(row?.productCode);
+          if (!productCode) return;
+          const parsedQuantity = engine.parseNumericCell(row?.quantity);
+          const summary = allocationProductSummaries.get(productCode) || { rowCount: 0, quantity: 0 };
+          summary.rowCount += 1;
+          summary.quantity += parsedQuantity.ok ? parsedQuantity.value : 0;
+          allocationProductSummaries.set(productCode, summary);
+        });
+        const allocationAggregateShown = new Set();
+        const allocationSourceRows = workspace.allocations.map((row) => {
+          const productCode = engine.normalizeProductCode(row?.productCode);
+          const summary = allocationProductSummaries.get(productCode);
+          const showAggregate = Boolean(productCode && summary?.rowCount > 1 && !allocationAggregateShown.has(productCode));
+          if (productCode) allocationAggregateShown.add(productCode);
+          return {
+            ...decorateShortageRow(row, shortageSets, inventoryByCode),
+            productAggregateQuantity: showAggregate
+              ? Math.round(summary.quantity * 1000000) / 1000000
+              : "",
+          };
+        });
         const allocations = {
           label: "주문현황",
           shortcut: "F5",
-          headers: ["창고", "거래처", "그룹", "담당자", "상품코드", "품명", "규격", "구분", "주문", "단가", ...allocationWarehouseHeaders, "전달사항", "구매"],
+          headers: ["창고", "거래처", "그룹", "담당자", "상품코드", "품명", "규격", "정보", "주문", "단가", ...allocationWarehouseHeaders, "전달사항", "구매"],
           numeric: [
+            7,
             8,
             9,
             ...allocationWarehouseHeaders.map((_, index) => allocationWarehouseStart + index),
@@ -4321,7 +4343,7 @@
           inventory: [],
           purchase: allocationTailStart + 1,
           purchaseEditable: true,
-          status: 7,
+          status: -1,
           sourceRows: allocationSourceRows,
           rows: allocationSourceRows.map((row, index) => [
             row.warehouse || "",
@@ -4331,7 +4353,7 @@
             row.productCode,
             row.productName,
             row.specification || row.spec || "",
-            row.rowState || "",
+            row.productAggregateQuantity,
             row.quantity,
             typeof row.unitPrice === "number" && Number.isFinite(row.unitPrice) ? row.unitPrice : "",
             ...(allocationInventoryView.rows[index]?.warehouseValues || []).map(blankZero),
@@ -4348,7 +4370,7 @@
         allocations.columns[4].role = "productCode";
         allocations.columns[5].role = "productName";
         allocations.columns[6].role = "specification";
-        allocations.columns[7].role = "rowState";
+        allocations.columns[7].role = "productAggregateQuantity";
         allocations.columns[8].role = "orderQuantity";
         allocations.columns[8].orderField = "quantity";
         allocations.columns[9].role = "unitPrice";
