@@ -1674,7 +1674,7 @@
     .derived-view-label { margin: 5px 5px 5px 0; }
     .integrated-file-button { min-height: 28px; }
     .execution-button { min-height: 54px; }
-    /* ORDER Q v1.52: align System.IO directly under the global header */
+    /* ORDER Q v1.53: align System.IO directly under the global header */
     .page-shell { padding-top: 0; }
     .system-topbar .validation-box { flex: 0 1 auto; min-width: 190px; padding: 2px 8px; border: 0; background: transparent; }
     .system-topbar .validation-box p { margin: 0; white-space: nowrap; font-size: 10px; }
@@ -1756,7 +1756,7 @@
       <div class="brand-mark">ONEAPP</div>
       <div class="brand-divider" aria-hidden="true"></div>
       <span class="brand-logo-frame" aria-hidden="true"><img class="brand-logo" src="../assets/order-q-logo.png" alt=""></span>
-      <span class="brand-badge">v1.52</span>
+      <span class="brand-badge">v1.53</span>
       <span class="brand-product">출고관리</span>
     </div>
     <div class="header-actions">
@@ -1964,7 +1964,7 @@
     </section>
 
     <footer class="page-footer">
-      <span>ORDER Q v1.52 · 출고관리 · workspace shipping-workspace/v2 · cloud plan v1</span>
+      <span>ORDER Q v1.53 · 출고관리 · workspace shipping-workspace/v2 · cloud plan v1</span>
       <a href="../SHIPPING_MANAGEMENT_GUIDANCE.md">개발·운영 기준 보기</a>
     </footer>
   </main>
@@ -2109,7 +2109,8 @@
       const EXCEL_MAPPING_SCHEMA = "orderops-excel-mappings/v1";
       const PURCHASE_HISTORY_KEY = "oneapp.orderops.purchase-history.v1";
       const ORDER_VIEW_PRESETS_KEY = "oneapp.orderops.order-view-presets.v1";
-      const ORDER_VIEW_PRESETS_SCHEMA = "orderops-order-view-presets/v3";
+      const ORDER_VIEW_PRESETS_SCHEMA = "orderops-order-view-presets/v4";
+      const PREVIOUS_ORDER_VIEW_PRESETS_SCHEMA = "orderops-order-view-presets/v3";
       const LEGACY_ORDER_VIEW_PRESETS_SCHEMA = "orderops-order-view-presets/v2";
       const ORIGINAL_ORDER_VIEW_PRESETS_SCHEMA = "orderops-order-view-presets/v1";
       const ORDER_VIEW_PRESET_LIMIT = 20;
@@ -3551,6 +3552,11 @@
         return Boolean(text && text.length <= 240 && !["__proto__", "prototype", "constructor"].includes(text));
       }
 
+      function isSafeManagerName(value) {
+        const text = String(value || "").trim();
+        return Boolean(text && text.length <= 120 && !["__proto__", "prototype", "constructor"].includes(text));
+      }
+
       function isSafeHexColor(value) {
         return /^#[0-9a-f]{6}$/i.test(String(value || ""));
       }
@@ -3598,6 +3604,15 @@
         return [...new Set(value.filter(isSafeColumnKey))];
       }
 
+      function normalizeStoredColorMap(value, keyValidator) {
+        const colors = Object.create(null);
+        if (!isPlainRecord(value) || typeof keyValidator !== "function") return colors;
+        Object.entries(value).forEach(([key, color]) => {
+          if (keyValidator(key) && isSafeHexColor(color)) colors[key] = color.toLowerCase();
+        });
+        return colors;
+      }
+
       function normalizeOrderViewPreset(value) {
         if (!isPlainRecord(value) || !isPlainRecord(value.view)) return null;
         const id = String(value.id || "").trim();
@@ -3628,6 +3643,10 @@
             columnWidths: normalizeStoredColumnWidths(value.view.columnWidths),
             columnOrder: normalizeStoredColumnOrder(value.view.columnOrder),
             hiddenColumns: normalizeStoredColumnOrder(value.view.hiddenColumns),
+            colorSettingsCaptured: value.view.colorSettingsCaptured === true ||
+              isPlainRecord(value.view.warehouseColors) || isPlainRecord(value.view.managerColors),
+            warehouseColors: normalizeStoredColorMap(value.view.warehouseColors, isSafeColumnKey),
+            managerColors: normalizeStoredColorMap(value.view.managerColors, isSafeManagerName),
           },
         };
       }
@@ -3636,6 +3655,7 @@
         try {
           const parsed = JSON.parse(localStorage.getItem(ORDER_VIEW_PRESETS_KEY) || "null");
           const supportedSchema = parsed?.schemaVersion === ORDER_VIEW_PRESETS_SCHEMA ||
+            parsed?.schemaVersion === PREVIOUS_ORDER_VIEW_PRESETS_SCHEMA ||
             parsed?.schemaVersion === LEGACY_ORDER_VIEW_PRESETS_SCHEMA ||
             parsed?.schemaVersion === ORIGINAL_ORDER_VIEW_PRESETS_SCHEMA;
           if (!isPlainRecord(parsed) || !supportedSchema || !Array.isArray(parsed.presets)) {
@@ -3705,7 +3725,28 @@
           columnWidths,
           columnOrder: orderedColumns(preview, previewId).map((column) => column.key),
           hiddenColumns: [...hiddenColumnSet(previewId)],
+          colorSettingsCaptured: true,
+          warehouseColors: normalizeStoredColorMap(state.warehouseColorSettings.colors, isSafeColumnKey),
+          managerColors: normalizeStoredColorMap(state.managerColorSettings.colors, isSafeManagerName),
         };
+      }
+
+      function persistSelectedOrderViewPresetColors() {
+        const presetId = state.selectedOrderViewPresetId;
+        if (!presetId) return;
+        const warehouseColors = normalizeStoredColorMap(state.warehouseColorSettings.colors, isSafeColumnKey);
+        const managerColors = normalizeStoredColorMap(state.managerColorSettings.colors, isSafeManagerName);
+        let updated = false;
+        state.orderViewPresets = state.orderViewPresets.map((preset) => {
+          if (preset.id !== presetId || preset.previewId !== state.activePreview) return preset;
+          updated = true;
+          return {
+            ...preset,
+            updatedAt: new Date().toISOString(),
+            view: { ...preset.view, colorSettingsCaptured: true, warehouseColors, managerColors },
+          };
+        });
+        if (updated) persistOrderViewPresets();
       }
 
       function applyOrderViewPreset(presetId, options = {}) {
@@ -3736,6 +3777,17 @@
         });
         if (Object.keys(previewFilters).length > 0) state.columnFilters[previewId] = previewFilters;
         else delete state.columnFilters[previewId];
+
+        state.warehouseColorSettings = {
+          schemaVersion: WAREHOUSE_COLORS_SCHEMA,
+          colors: Object.assign(Object.create(null), preset.view.warehouseColors),
+        };
+        state.managerColorSettings = {
+          schemaVersion: MANAGER_COLORS_SCHEMA,
+          colors: Object.assign(Object.create(null), preset.view.managerColors),
+        };
+        saveWarehouseColorSettings();
+        saveManagerColorSettings();
 
         if (preset.view.layoutCaptured) {
           const widths = Object.create(null);
@@ -3873,11 +3925,6 @@
             colors: { ...state.warehouseColorSettings.colors },
           }));
         } catch (error) {}
-      }
-
-      function isSafeManagerName(value) {
-        const text = String(value || "").trim();
-        return Boolean(text && text.length <= 120 && !["__proto__", "prototype", "constructor"].includes(text));
       }
 
       function loadManagerColorSettings() {
@@ -6474,6 +6521,7 @@
         } else {
           return;
         }
+        persistSelectedOrderViewPresetColors();
         renderPreview();
         showToast(color === COLOR_CANCEL_COLOR
           ? `${target.label} 배색을 흰색으로 해제했습니다.`
