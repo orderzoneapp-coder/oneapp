@@ -710,7 +710,7 @@
     .shortage-focus-button:hover:not(:disabled) { border-color: #fb7185; background: #ffe4e6; }
     .shortage-focus-button.active { border-color: #be123c; color: #fff; background: #be123c; }
     .shortage-focus-button:disabled { opacity: .45; cursor: default; }
-    /* ORDER Q v1.37: customer groups, printed tables, and source-card navigation */
+    /* ORDER Q v1.38: purchase-action shortage focus includes missing inventory */
     .header-output-button { border-color: #99f6e4; color: #0f766e; background: #f0fdfa; }
     .header-output-button:hover:not(:disabled) { background: #ccfbf1; }
     .results-panel .table-wrap { max-height: calc(100vh - 200px); }
@@ -1041,7 +1041,8 @@
       white-space: nowrap;
     }
     .row-state-badge[data-state="부족상품"] { border-color: #fda4af; color: #9f1239; background: #fff1f2; }
-    .row-state-badge[data-state="대체후보"] { border-color: #94a3b8; color: #334155; background: #f1f5f9; }
+    .row-state-badge[data-state="주문상품"] { border-color: #93c5fd; color: #1d4ed8; background: #eff6ff; }
+    .row-state-badge[data-state="대체상품"] { border-color: #94a3b8; color: #334155; background: #f1f5f9; }
     .row-state-badge[data-state="재고정보 없음"] { border-color: #fcd34d; color: #92400e; background: #fffbeb; }
     .row-state-badge[data-state="재고 0"] { color: #64748b; background: #f8fafc; }
     .row-state-badge[data-state="주문 없음"] { color: #64748b; background: #f8fafc; }
@@ -1493,7 +1494,7 @@
       .recovery-record-item { grid-template-columns: auto 1fr; }
       .recovery-record-status { grid-column: 2; }
     }
-    /* ORDER Q v1.37: uploader cards double as result tabs */
+    /* ORDER Q v1.38: uploader cards double as result tabs */
     .input-panel { grid-template-columns: minmax(0, 1fr) 330px; gap: 12px; }
     .upload-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
     .source-selector {
@@ -1651,7 +1652,7 @@
       <div class="brand-mark">ONEAPP</div>
       <div class="brand-divider" aria-hidden="true"></div>
       <span class="brand-logo-frame" aria-hidden="true"><img class="brand-logo" src="../assets/order-q-logo.png" alt=""></span>
-      <span class="brand-badge">v1.37</span>
+      <span class="brand-badge">v1.38</span>
       <span class="brand-product">출고관리</span>
     </div>
     <div class="header-actions">
@@ -1845,7 +1846,7 @@
     </section>
 
     <footer class="page-footer">
-      <span>ORDER Q v1.37 · 출고관리 · workspace shipping-workspace/v2 · cloud plan v1</span>
+      <span>ORDER Q v1.38 · 출고관리 · workspace shipping-workspace/v2 · cloud plan v1</span>
       <a href="../SHIPPING_MANAGEMENT_GUIDANCE.md">개발·운영 기준 보기</a>
     </footer>
   </main>
@@ -3996,11 +3997,9 @@
       }
 
       function inventoryRowState(row, shortageRole) {
-        if (shortageRole === "shortage") return "부족상품";
-        if (shortageRole === "candidate" && state.shortageFocus) {
-          return Number(row?.orderQuantity || 0) === 0 ? "대체후보 · 주문 없음" : "대체후보";
-        }
-        if (row?.inventoryMissing || row?.salesOnly) return "재고정보 없음";
+        if (shortageRole === "candidate") return "대체상품";
+        if (row?.inventoryMissing || row?.salesOnly) return "주문상품 · 재고정보 없음";
+        if (shortageRole === "shortage") return "주문상품 · 부족상품";
         const orderQuantity = Number(row?.orderQuantity || 0);
         const stockTotal = Number(row?.stockTotal || 0);
         if (orderQuantity === 0 && stockTotal === 0) return "주문 없음 · 재고 0";
@@ -4193,7 +4192,7 @@
         const acknowledgedIds = new Set(acknowledgementState.acknowledgedIds);
         const shortageContext = typeof engine.getShortageCategoryContext === "function"
           ? engine.getShortageCategoryContext(workspace)
-          : { shortageCount: 0, shortageProductCodes: [], candidateProductCodes: [] };
+          : { shortageCount: 0, shortageProductCodes: [], candidateProductCodes: [], purchaseActionCount: 0 };
         const shortageSets = {
           shortages: new Set(shortageContext.shortageProductCodes || []),
           candidates: new Set(shortageContext.candidateProductCodes || []),
@@ -4366,13 +4365,13 @@
               return values;
             }),
             sortByProductCode: true,
-            shortageCount: shortageContext.shortageCount || 0,
+            shortageCount: shortageContext.purchaseActionCount || shortageContext.shortageCount || 0,
           };
         }
         const inventory = buildInventoryPreview(workspace, shortageSets, inventoryByCode);
         if (inventory) {
           inventory.shortcut = "F7";
-          inventory.shortageCount = shortageContext.shortageCount || 0;
+          inventory.shortageCount = shortageContext.purchaseActionCount || shortageContext.shortageCount || 0;
           definitions.inventory = inventory;
         }
         return definitions;
@@ -4950,7 +4949,7 @@
         else if (preview.sortByProductCode) viewNotes.push("품목코드↑");
         if (filterCount > 0) viewNotes.push(`열조건 ${filterCount}`);
         if (shortageEligible && state.shortageFocus) {
-          viewNotes.push(state.activePreview === "allocations" ? "실제 부족상품" : "부족·대체후보 모아보기");
+          viewNotes.push(state.activePreview === "allocations" ? "발주 확인상품" : "주문상품·대체상품 모아보기");
         }
         elements.previewCount.textContent = `${formatNumber(pairs.length)}/${formatNumber(preview.rows.length)}행${viewNotes.length ? ` · ${viewNotes.join(" · ")}` : ""}`;
 
@@ -5866,7 +5865,7 @@
         markOrderViewPresetCustom();
         renderPreview();
         showToast(state.shortageFocus
-          ? "재고부족 모아보기를 켰습니다. 재고수불부·창고별재고에는 같은 6자리 카테고리 대체후보도 표시합니다."
+          ? "발주 확인상품을 모았습니다. 재고부족·재고정보 없음 주문상품과 같은 6자리 카테고리 대체상품을 함께 표시합니다."
           : "재고부족 모아보기를 해제했습니다.");
       });
       elements.tableSearchInput.addEventListener("input", () => {

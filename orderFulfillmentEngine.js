@@ -7,7 +7,7 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  const ENGINE_VERSION = "3.17.0";
+  const ENGINE_VERSION = "3.18.0";
   const WORKSPACE_SCHEMA_VERSION = "shipping-workspace/v2";
   const INVENTORY_OVERRIDE_SCHEMA_VERSION = "shipping-inventory-overrides/v1";
   const HEADER_SCAN_LIMIT = 30;
@@ -1487,7 +1487,7 @@
   function getShortageCategoryContext(workspace) {
     const inventoryRows = getInventoryViewRows(workspace).rows;
     const shortageRows = inventoryRows.filter((row) =>
-      !row.inventoryMissing && row.orderQuantity > 0 && row.remainingQuantity < 0,
+      row.orderQuantity > 0 && row.remainingQuantity < 0,
     );
     const shortageCodes = new Set(shortageRows.map((row) => normalizeProductCode(row.productCode)));
     const categories = new Map();
@@ -1527,10 +1527,16 @@
       categoryRows.flatMap((category) => category.candidateProductCodes),
     )].sort();
     const shortageProductCodes = [...shortageCodes].sort();
+    const purchaseActionProductCodes = [...new Set([
+      ...shortageProductCodes,
+      ...candidateProductCodes,
+    ])].sort();
     return {
       shortageCount: shortageProductCodes.length,
       shortageProductCodes,
       candidateProductCodes,
+      purchaseActionCount: purchaseActionProductCodes.length,
+      purchaseActionProductCodes,
       categories: categoryRows,
     };
   }

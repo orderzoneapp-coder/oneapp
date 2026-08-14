@@ -13,7 +13,7 @@ assert.doesNotMatch(orderOpsHtml, /tokens truncated|…\d+ tokens truncated…/,
   "the public OrderOps mirror must not contain a truncated source fragment");
 assert.match(orderOpsHtml, /<body>[\s\S]*<\/body>\s*<\/html>/,
   "the public OrderOps mirror must remain a complete HTML document");
-assert.match(orderOpsHtml, /brand-badge">v1\.37</, "ORDER Q visible version must be v1.37");
+assert.match(orderOpsHtml, /brand-badge">v1\.38</, "ORDER Q visible version must be v1.38");
 assert.match(orderOpsHtml, /<title>ONEAPP ORDER Q · 출고관리<\/title>/,
   "the public page title must establish ORDER Q as shipment management");
 assert.match(orderOpsHtml, /aria-label="ONEAPP ORDER Q 출고관리"/,
@@ -22,7 +22,7 @@ assert.match(orderOpsHtml, /class="brand-logo" src="assets\/order-q-logo\.png"/,
   "the public header must use the approved ORDER Q logo asset");
 assert.match(orderOpsHtml, /\.brand-logo-frame\s*\{[\s\S]*?width:\s*120px;[\s\S]*?height:\s*20px;/,
   "the public ORDER Q logo must match the ONEAPP wordmark height");
-assert.match(orderOpsHtml, /ORDER Q v1\.37 · 출고관리/,
+assert.match(orderOpsHtml, /ORDER Q v1\.38 · 출고관리/,
   "the public footer must use the ORDER Q product concept");
 assert.doesNotMatch(
   orderOpsHtml.slice(orderOpsHtml.indexOf('<header class="global-header">'), orderOpsHtml.indexOf('</header>')),
@@ -37,7 +37,7 @@ assert.equal(
   "the repository logo must be the unmodified approved source image",
 );
 assert.ok(orderOpsHtml.includes('class="execution-panel"'),
-  "the public v1.37 execution controls must be separate from the upload strip");
+  "the public v1.38 execution controls must be separate from the upload strip");
 assert.match(orderOpsHtml, /\.execution-panel\s*\{[^}]*grid-template-columns:\s*repeat\(3,/,
   "the public execution controls must use three visible segments");
 assert.match(orderOpsHtml, /\.upload-grid\s*\{[^}]*grid-template-columns:\s*repeat\(5,/,
@@ -148,7 +148,7 @@ for (const requiredInteractionContract of [
   'function saveCurrentOrderViewPreset',
 ]) {
   assert.ok(orderOpsHtml.includes(requiredInteractionContract),
-    `public ORDER Q v1.37 interaction contract is missing: ${requiredInteractionContract}`);
+    `public ORDER Q v1.38 interaction contract is missing: ${requiredInteractionContract}`);
 }
 assert.match(orderOpsHtml, /\.print-area table\s*\{[\s\S]*?font-size:\s*10\.6px;/,
   "public screen print text must be twenty percent larger than v1.35");
@@ -627,22 +627,31 @@ const edgeWorkspace = engine.analyze(edgeOrders, edgeInventory, {
   createdAt: "2026-07-30T00:00:00.000Z",
   sourceFingerprint: "a".repeat(64),
 });
-assert.equal(engine.ENGINE_VERSION, "3.17.0");
+assert.equal(engine.ENGINE_VERSION, "3.18.0");
 assert.equal(workbookTools.WORKBOOK_VERSION, "4.8.0");
 assert.equal(edgeWorkspace.schemaVersion, "shipping-workspace/v2");
 const edgeShortageContext = engine.getShortageCategoryContext(edgeWorkspace);
 assert.deepEqual(edgeShortageContext, {
-  shortageCount: 1,
-  shortageProductCodes: ["000100"],
+  shortageCount: 2,
+  shortageProductCodes: ["000100", "NO-STOCK"],
   candidateProductCodes: ["000100-A"],
-  categories: [{
-    categoryCode: "000100",
-    shortageProductCodes: ["000100"],
-    candidateProductCodes: ["000100-A"],
-  }],
-}, "actual shortages must group inventory-backed substitute candidates by the first six code characters");
-assert.equal(edgeShortageContext.shortageProductCodes.includes("NO-STOCK"), false,
-  "missing inventory information must remain distinct from a verified stock shortage");
+  purchaseActionCount: 3,
+  purchaseActionProductCodes: ["000100", "000100-A", "NO-STOCK"],
+  categories: [
+    {
+      categoryCode: "000100",
+      shortageProductCodes: ["000100"],
+      candidateProductCodes: ["000100-A"],
+    },
+    {
+      categoryCode: "NO-STO",
+      shortageProductCodes: ["NO-STOCK"],
+      candidateProductCodes: [],
+    },
+  ],
+}, "purchase-action shortages must include missing inventory and group substitute candidates by six-character category");
+assert.equal(edgeShortageContext.shortageProductCodes.includes("NO-STOCK"), true,
+  "an ordered product without inventory information must remain visible in shortage focus for purchasing action");
 const edgeInventoryView = engine.getInventoryViewRows(edgeWorkspace);
 const orderOnlyInventoryRow = edgeInventoryView.rows.find((row) => row.productCode === "NO-STOCK");
 assert.equal(edgeInventoryView.rows.length, edgeInventory.rowCount + 1,
@@ -1704,7 +1713,7 @@ const html = fs.readFileSync(path.join(ROOT, "orderops", "list.html"), "utf8");
 const inlineScriptMatch = html.match(/<script>\s*([\s\S]*?)<\/script>\s*<\/body>/);
 assert.ok(inlineScriptMatch, "canonical ORDER Q inline application script must exist");
 new vm.Script(inlineScriptMatch[1], { filename: "orderops/list.html:inline" });
-assert.match(html, /brand-badge">v1\.37</, "canonical ORDER Q visible version must be v1.37");
+assert.match(html, /brand-badge">v1\.38</, "canonical ORDER Q visible version must be v1.38");
 assert.match(html, /class="brand-logo" src="\.\.\/assets\/order-q-logo\.png"/,
   "the canonical header must use the shared ORDER Q logo asset");
 assert.match(html, /<h2 id="settingsModalTitle">ORDER Q 환경설정<\/h2>/,
@@ -1839,7 +1848,7 @@ for (const requiredInteractionContract of [
   'function saveCurrentOrderViewPreset',
 ]) {
   assert.ok(html.includes(requiredInteractionContract),
-    `canonical ORDER Q v1.37 interaction contract is missing: ${requiredInteractionContract}`);
+    `canonical ORDER Q v1.38 interaction contract is missing: ${requiredInteractionContract}`);
 }
 assert.doesNotMatch(html, /<input[^>]+type="color"|data-warehouse-color|data-manager-color/,
   "canonical OrderOps filter options must remain separate from color assignment");
@@ -1945,6 +1954,21 @@ for (const ledgerPurchasingContract of [
 ]) {
   assert.ok(html.includes(ledgerPurchasingContract), `ledger purchasing contract is missing: ${ledgerPurchasingContract}`);
 }
+const inventoryRowStateStart = html.indexOf("function inventoryRowState");
+const inventoryRowStateEnd = html.indexOf("function decorateShortageRow", inventoryRowStateStart);
+assert.ok(inventoryRowStateStart >= 0 && inventoryRowStateEnd > inventoryRowStateStart,
+  "inventory row-state renderer must exist");
+const inventoryRowStateSource = html.slice(inventoryRowStateStart, inventoryRowStateEnd);
+assert.match(inventoryRowStateSource, /return "대체상품";/,
+  "same-category reference rows must be identified as 대체상품");
+assert.match(inventoryRowStateSource, /return "주문상품 · 재고정보 없음";/,
+  "missing inventory must retain its cause while being identified as an ordered product");
+assert.match(inventoryRowStateSource, /return "주문상품 · 부족상품";/,
+  "verified shortages must be identified as ordered products");
+assert.doesNotMatch(inventoryRowStateSource, /대체후보/,
+  "the 구분 column must use 대체상품 instead of the ambiguous 대체후보 label");
+assert.match(inventoryRowStateSource, /return "주문 없음 · 재고 0";[\s\S]*return "주문 없음";/,
+  "existing 주문 없음 row-state labels must remain visible");
 assert.match(html, /\.column-sort-trigger\s*\{[\s\S]*?opacity:\s*0;[\s\S]*?visibility:\s*hidden;/,
   "filter controls must remain hidden until the pointer reaches the header");
 assert.match(html, /th:hover \.column-sort-trigger,[\s\S]*?opacity:\s*1;/,
@@ -2096,7 +2120,7 @@ for (const contract of [
   "showPurchaseCompletionCoachmark",
   "function resetResultViewFilters()", 'grid-template-columns: repeat(3, minmax(0, 1fr))',
 ]) {
-  assert.ok(html.includes(contract), `ORDER Q v1.37 contract is missing: ${contract}`);
+  assert.ok(html.includes(contract), `ORDER Q v1.38 contract is missing: ${contract}`);
 }
 const purchaseAutocompleteStart = html.indexOf("function purchaseAutocompleteNames");
 const purchaseAutocompleteEnd = html.indexOf("function closePurchaseAutocomplete", purchaseAutocompleteStart);
