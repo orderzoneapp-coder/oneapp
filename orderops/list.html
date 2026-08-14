@@ -1674,7 +1674,7 @@
     .derived-view-label { margin: 5px 5px 5px 0; }
     .integrated-file-button { min-height: 28px; }
     .execution-button { min-height: 54px; }
-    /* ORDER Q v1.53: align System.IO directly under the global header */
+    /* ORDER Q v1.54: align System.IO directly under the global header */
     .page-shell { padding-top: 0; }
     .system-topbar .validation-box { flex: 0 1 auto; min-width: 190px; padding: 2px 8px; border: 0; background: transparent; }
     .system-topbar .validation-box p { margin: 0; white-space: nowrap; font-size: 10px; }
@@ -1756,7 +1756,7 @@
       <div class="brand-mark">ONEAPP</div>
       <div class="brand-divider" aria-hidden="true"></div>
       <span class="brand-logo-frame" aria-hidden="true"><img class="brand-logo" src="../assets/order-q-logo.png" alt=""></span>
-      <span class="brand-badge">v1.53</span>
+      <span class="brand-badge">v1.54</span>
       <span class="brand-product">출고관리</span>
     </div>
     <div class="header-actions">
@@ -1964,7 +1964,7 @@
     </section>
 
     <footer class="page-footer">
-      <span>ORDER Q v1.53 · 출고관리 · workspace shipping-workspace/v2 · cloud plan v1</span>
+      <span>ORDER Q v1.54 · 출고관리 · workspace shipping-workspace/v2 · cloud plan v1</span>
       <a href="../SHIPPING_MANAGEMENT_GUIDANCE.md">개발·운영 기준 보기</a>
     </footer>
   </main>
@@ -4805,6 +4805,10 @@
         [76, 138, 82, 92, 94, 160, 62, 112, 62, 72].forEach((width, index) => {
           if (allocations.columns[index]) allocations.columns[index].defaultWidth = width;
         });
+        allocations.columns[0].role = "warehouse";
+        allocations.columns[1].role = "customer";
+        allocations.columns[2].role = "group";
+        allocations.columns[3].role = "manager";
         allocations.columns[4].role = "productCode";
         allocations.columns[5].role = "productName";
         allocations.columns[6].role = "specification";
@@ -5004,6 +5008,36 @@
         return setting;
       }
 
+      function layeredColumnSortSettings(previewId, preview) {
+        const primary = columnSortSetting(previewId, preview);
+        if (previewId !== "allocations") return primary ? [primary] : [];
+        const columnsByRole = new Map((preview?.columns || [])
+          .filter((column) => column?.role).map((column) => [column.role, column]));
+        const criteria = [];
+        const appendRole = (role, direction = "asc") => {
+          const column = columnsByRole.get(role);
+          if (!column || criteria.some((setting) => setting.columnKey === column.key)) return;
+          criteria.push({ columnKey: column.key, direction });
+        };
+        const primaryColumn = primary
+          ? preview.columns.find((column) => column.key === primary.columnKey)
+          : null;
+        if (primaryColumn?.role === "group") {
+          appendRole("group", primary.direction);
+          appendRole("customer");
+          appendRole("productCode");
+        } else if (primaryColumn?.role === "customer") {
+          appendRole("customer", primary.direction);
+          appendRole("productCode");
+        } else if (primaryColumn) {
+          criteria.push(primary);
+          appendRole("productCode");
+        } else {
+          appendRole("productCode");
+        }
+        return criteria;
+      }
+
       function columnFilterSetting(previewId, columnKey) {
         return state.columnFilters[previewId]?.[columnKey] || null;
       }
@@ -5093,11 +5127,14 @@
             roleRank(right.sourceRow?.shortageFocusRole);
           if (roleCompared) return roleCompared;
         }
-        const setting = columnSortSetting(previewId, preview);
-        if (!setting) return preview.sortByProductCode ? compareProductCodes(left, right) : left.index - right.index;
-        const columnIndex = preview.columns.findIndex((column) => column.key === setting.columnKey);
-        const compared = compareColumnValues(left.row?.[columnIndex], right.row?.[columnIndex], setting.direction);
-        return compared || left.index - right.index;
+        const settings = layeredColumnSortSettings(previewId, preview);
+        if (settings.length === 0) return preview.sortByProductCode ? compareProductCodes(left, right) : left.index - right.index;
+        for (const setting of settings) {
+          const columnIndex = preview.columns.findIndex((column) => column.key === setting.columnKey);
+          const compared = compareColumnValues(left.row?.[columnIndex], right.row?.[columnIndex], setting.direction);
+          if (compared) return compared;
+        }
+        return left.index - right.index;
       }
 
       function filteredSortedPreviewPairs(previewId, preview) {
@@ -5507,15 +5544,16 @@
         elements.shortageFocusButton.textContent = `재고부족 ${formatNumber(shortageCount)}`;
         elements.shortageFocusButton.setAttribute("aria-pressed", String(shortageEligible && state.shortageFocus));
         const pairs = filteredSortedPreviewPairs(state.activePreview, preview);
-        const activeSort = columnSortSetting(state.activePreview, preview);
-        const sortColumn = activeSort
-          ? preview.columns.find((column) => column.key === activeSort.columnKey)
-          : null;
+        const activeSorts = layeredColumnSortSettings(state.activePreview, preview);
         const filterCount = Object.values(state.columnFilters[state.activePreview] || {})
           .filter(columnFilterIsActive).length;
         const viewNotes = [preview.label];
-        if (sortColumn) viewNotes.push(`${sortColumn.header}${activeSort.direction === "asc" ? "↑" : "↓"}`);
-        else if (preview.sortByProductCode) viewNotes.push("품목코드↑");
+        if (activeSorts.length > 0) {
+          viewNotes.push(activeSorts.map((setting) => {
+            const column = preview.columns.find((candidate) => candidate.key === setting.columnKey);
+            return `${column?.header || "정렬"}${setting.direction === "asc" ? "↑" : "↓"}`;
+          }).join(" → "));
+        } else if (preview.sortByProductCode) viewNotes.push("품목코드↑");
         if (filterCount > 0) viewNotes.push(`열조건 ${filterCount}`);
         if (shortageEligible && state.shortageFocus) {
           viewNotes.push(state.activePreview === "allocations" ? "발주 확인상품" : "재고부족 · 주문상품·대체상품 모아보기");

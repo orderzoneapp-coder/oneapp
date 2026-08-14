@@ -13,7 +13,7 @@ assert.doesNotMatch(orderOpsHtml, /tokens truncated|…\d+ tokens truncated…/,
   "the public OrderOps mirror must not contain a truncated source fragment");
 assert.match(orderOpsHtml, /<body>[\s\S]*<\/body>\s*<\/html>/,
   "the public OrderOps mirror must remain a complete HTML document");
-assert.match(orderOpsHtml, /brand-badge">v1\.53</, "ORDER Q visible version must be v1.53");
+assert.match(orderOpsHtml, /brand-badge">v1\.54</, "ORDER Q visible version must be v1.54");
 assert.match(orderOpsHtml, /<title>ONEAPP ORDER Q · 출고관리<\/title>/,
   "the public page title must establish ORDER Q as shipment management");
 assert.match(orderOpsHtml, /aria-label="ONEAPP ORDER Q 출고관리"/,
@@ -22,7 +22,7 @@ assert.match(orderOpsHtml, /class="brand-logo" src="assets\/order-q-logo\.png"/,
   "the public header must use the approved ORDER Q logo asset");
 assert.match(orderOpsHtml, /\.brand-logo-frame\s*\{[\s\S]*?width:\s*120px;[\s\S]*?height:\s*20px;/,
   "the public ORDER Q logo must match the ONEAPP wordmark height");
-assert.match(orderOpsHtml, /ORDER Q v1\.53 · 출고관리/,
+assert.match(orderOpsHtml, /ORDER Q v1\.54 · 출고관리/,
   "the public footer must use the ORDER Q product concept");
 assert.doesNotMatch(
   orderOpsHtml.slice(orderOpsHtml.indexOf('<header class="global-header">'), orderOpsHtml.indexOf('</header>')),
@@ -37,7 +37,7 @@ assert.equal(
   "the repository logo must be the unmodified approved source image",
 );
 assert.ok(orderOpsHtml.includes('class="execution-panel"'),
-  "the public v1.53 execution controls must be separate from the upload strip");
+  "the public v1.54 execution controls must be separate from the upload strip");
 assert.match(orderOpsHtml, /\.execution-panel\s*\{[^}]*grid-template-columns:\s*repeat\(2,/,
   "the public execution controls must use two independent buttons");
 assert.match(orderOpsHtml, /\.execution-panel\s*\{[^}]*border:\s*0;/,
@@ -48,7 +48,7 @@ assert.match(orderOpsHtml, /\.system-topbar\s*\{[^}]*min-height:\s*58px;[^}]*pad
   "the public System.IO status row must use the DataOps-scale vertical spacing");
 assert.match(orderOpsHtml, /\.upload-card,\s*\.execution-panel\s*\{[^}]*min-height:\s*54px;/,
   "the public uploader tabs must retain the taller DataOps-scale hit area");
-assert.match(orderOpsHtml, /ORDER Q v1\.53: align System\.IO directly under the global header[\s\S]*?\.page-shell\s*\{\s*padding-top:\s*0;/,
+assert.match(orderOpsHtml, /ORDER Q v1\.54: align System\.IO directly under the global header[\s\S]*?\.page-shell\s*\{\s*padding-top:\s*0;/,
   "the public System.IO workbench must start directly below the global header");
 assert.ok(orderOpsHtml.includes('class="upload-grid" role="tablist" aria-label="업로드 자료 및 결과 화면"'),
   "the five source/result cards must form one accessible tab list");
@@ -156,6 +156,9 @@ for (const requiredInteractionContract of [
   'Array.isArray(setting?.allowedValues)',
   'function rowMatchesColumnFilters',
   'function comparePreviewPairs',
+  'function layeredColumnSortSettings',
+  'allocations.columns[1].role = "customer"',
+  'allocations.columns[2].role = "group"',
   'await restoreLocalRecord(candidate.record)',
   'data-column-drag-key',
   'analysisEnterLocked',
@@ -187,7 +190,7 @@ for (const requiredInteractionContract of [
   'function handleIntegratedFile',
 ]) {
   assert.ok(orderOpsHtml.includes(requiredInteractionContract),
-    `public ORDER Q v1.53 interaction contract is missing: ${requiredInteractionContract}`);
+    `public ORDER Q v1.54 interaction contract is missing: ${requiredInteractionContract}`);
 }
 const publicApplyColumnFilterSource = orderOpsHtml.slice(
   orderOpsHtml.indexOf("function applyColumnTextFilter"),
@@ -1772,7 +1775,7 @@ const html = fs.readFileSync(path.join(ROOT, "orderops", "list.html"), "utf8");
 const inlineScriptMatch = html.match(/<script>\s*([\s\S]*?)<\/script>\s*<\/body>/);
 assert.ok(inlineScriptMatch, "canonical ORDER Q inline application script must exist");
 new vm.Script(inlineScriptMatch[1], { filename: "orderops/list.html:inline" });
-assert.match(html, /brand-badge">v1\.53</, "canonical ORDER Q visible version must be v1.53");
+assert.match(html, /brand-badge">v1\.54</, "canonical ORDER Q visible version must be v1.54");
 assert.match(html, /class="brand-logo" src="\.\.\/assets\/order-q-logo\.png"/,
   "the canonical header must use the shared ORDER Q logo asset");
 assert.match(html, /<h2 id="settingsModalTitle">ORDER Q 환경설정<\/h2>/,
@@ -1893,6 +1896,9 @@ for (const requiredInteractionContract of [
   'Array.isArray(setting?.allowedValues)',
   'state.sortSettings = Object.create(null)',
   'state.columnFilters = Object.create(null)',
+  'function layeredColumnSortSettings',
+  'allocations.columns[1].role = "customer"',
+  'allocations.columns[2].role = "group"',
   'await restoreLocalRecord(candidate.record)',
   'data-column-drag-key',
   'analysisEnterLocked',
@@ -1924,7 +1930,7 @@ for (const requiredInteractionContract of [
   'function handleIntegratedFile',
 ]) {
   assert.ok(html.includes(requiredInteractionContract),
-    `canonical ORDER Q v1.53 interaction contract is missing: ${requiredInteractionContract}`);
+    `canonical ORDER Q v1.54 interaction contract is missing: ${requiredInteractionContract}`);
 }
 assert.doesNotMatch(html, /<input[^>]+type="color"|data-warehouse-color|data-manager-color/,
   "canonical OrderOps filter options must remain separate from color assignment");
@@ -2151,6 +2157,55 @@ assert.match(combinedCss, /\.print-area table\s*\{[\s\S]*?font-size:\s*10\.6px;/
 assert.match(combinedCss, /table\.preview-allocations\s*\{[\s\S]*?font-size:\s*11\.9px;/,
   "canonical order-status print text must be twenty percent larger than v1.35");
 
+const layeredSortHelperStart = html.indexOf("function compareProductCodes");
+const layeredSortHelperEnd = html.indexOf("function filteredSortedPreviewPairs", layeredSortHelperStart);
+assert.ok(layeredSortHelperStart >= 0 && layeredSortHelperEnd > layeredSortHelperStart,
+  "layered order sorting helpers must exist");
+const layeredSortContext = {};
+vm.runInNewContext(`
+  const state = {
+    shortageFocus: false,
+    sortSettings: { allocations: { columnKey: "group", direction: "asc" } },
+  };
+  ${html.slice(layeredSortHelperStart, layeredSortHelperEnd)}
+  const preview = {
+    sortByProductCode: true,
+    columns: [
+      { key: "warehouse", role: "warehouse" },
+      { key: "customer", role: "customer" },
+      { key: "group", role: "group" },
+      { key: "manager", role: "manager" },
+      { key: "productCode", role: "productCode" },
+    ],
+  };
+  const pairs = [
+    { index: 0, row: ["01", "거래처B", "그룹A", "담당", "200"], sourceRow: { id: "r1", productCode: "200" } },
+    { index: 1, row: ["01", "거래처A", "그룹B", "담당", "100"], sourceRow: { id: "r2", productCode: "100" } },
+    { index: 2, row: ["01", "거래처A", "그룹A", "담당", "300"], sourceRow: { id: "r3", productCode: "300" } },
+    { index: 3, row: ["01", "거래처A", "그룹A", "담당", "100"], sourceRow: { id: "r4", productCode: "100" } },
+  ];
+  this.groupCriteria = layeredColumnSortSettings("allocations", preview).map((setting) =>
+    preview.columns.find((column) => column.key === setting.columnKey).role);
+  this.groupOrder = [...pairs].sort((left, right) => comparePreviewPairs("allocations", preview, left, right))
+    .map((pair) => pair.sourceRow.id);
+  delete state.sortSettings.allocations;
+  this.defaultOrder = [...pairs].sort((left, right) => comparePreviewPairs("allocations", preview, left, right))
+    .map((pair) => pair.sourceRow.id);
+  state.sortSettings.allocations = { columnKey: "customer", direction: "desc" };
+  this.customerCriteria = layeredColumnSortSettings("allocations", preview).map((setting) =>
+    preview.columns.find((column) => column.key === setting.columnKey).role);
+  this.customerOrder = [...pairs].sort((left, right) => comparePreviewPairs("allocations", preview, left, right))
+    .map((pair) => pair.sourceRow.id);
+`, layeredSortContext);
+assert.deepEqual(Array.from(layeredSortContext.groupCriteria), ["group", "customer", "productCode"]);
+assert.deepEqual(Array.from(layeredSortContext.groupOrder), ["r4", "r3", "r1", "r2"],
+  "group sorting must nest customer and product-code sorting in that priority order");
+assert.deepEqual(Array.from(layeredSortContext.defaultOrder), ["r2", "r4", "r1", "r3"],
+  "order status must default to product-code sorting");
+assert.deepEqual(Array.from(layeredSortContext.customerCriteria), ["customer", "productCode"]);
+assert.deepEqual(Array.from(layeredSortContext.customerOrder), ["r1", "r2", "r4", "r3"],
+  "customer sorting must retain product code as its final tie-breaker");
+
 const presetHelperStart = html.indexOf("function isPlainRecord");
 const presetHelperEnd = html.indexOf("function loadWarehouseColorSettings", presetHelperStart);
 assert.ok(presetHelperStart >= 0 && presetHelperEnd > presetHelperStart,
@@ -2348,7 +2403,7 @@ for (const contract of [
   "showPurchaseCompletionCoachmark",
   "function resetResultViewFilters()", 'grid-template-columns: repeat(2, minmax(0, 1fr))',
 ]) {
-  assert.ok(html.includes(contract), `ORDER Q v1.53 contract is missing: ${contract}`);
+  assert.ok(html.includes(contract), `ORDER Q v1.54 contract is missing: ${contract}`);
 }
 const purchaseAutocompleteStart = html.indexOf("function purchaseAutocompleteNames");
 const purchaseAutocompleteEnd = html.indexOf("function closePurchaseAutocomplete", purchaseAutocompleteStart);
