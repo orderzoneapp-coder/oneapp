@@ -63,15 +63,23 @@ const priceOptions = normalizeManualPriceOptions({
   행사가: 0
 });
 assert.deepEqual(priceOptions.map(option => [option.key, option.label, option.value]), [
+  ['salePrice', '판매가', 28100],
   ['outPrice', '출고가', 28100],
   ['wholesaleA', '도매A', 27000],
   ['wholesaleB', '도매B', 26000],
   ['marketPrice', '시중가', 30000],
   ['promoPrice', '행사가', 0]
-], '공란 단가는 제외하고 명시적 0을 포함한 판매단가 후보를 순서대로 정규화해야 한다.');
+], '판매가를 첫 순서로 두고 공란 단가는 제외하며 명시적 0을 포함한 단가 후보를 정규화해야 한다.');
+assert.equal(normalizeManualPriceOptions({ 출고가: 28100, 행사가: 25900 })[0].value, 25900,
+  '판매가는 유효한 행사가를 우선 적용해야 한다.');
+assert.equal(normalizeManualPriceOptions({ 출고가: 28100, 행사가: '' })[0].value, 28100,
+  '행사가가 공란이면 판매가는 출고가를 적용해야 한다.');
+assert.equal(normalizeManualPriceOptions({ 출고가: 28100, 행사가: 0 })[0].value, 28100,
+  '행사가가 0이면 판매가는 출고가를 적용해야 한다.');
 assert.equal(cycleManualPriceOption(priceOptions, 'outPrice', 1).key, 'wholesaleA', '위 화살표는 다음 단가로 이동해야 한다.');
-assert.equal(cycleManualPriceOption(priceOptions, 'outPrice', -1).key, 'promoPrice', '아래 화살표는 이전 단가로 순환해야 한다.');
-assert.equal(cycleManualPriceOption(priceOptions, 'MANUAL', 1).key, 'outPrice', '직접입력에서 위 화살표를 누르면 첫 마스터 단가를 선택해야 한다.');
+assert.equal(cycleManualPriceOption(priceOptions, 'outPrice', -1).key, 'salePrice', '아래 화살표는 이전 단가로 순환해야 한다.');
+assert.equal(cycleManualPriceOption(priceOptions, 'MANUAL', 1).key, 'salePrice', '직접입력에서 위 화살표를 누르면 기본 판매가를 선택해야 한다.');
+assert.equal(manualPriceTypeLabel('salePrice', priceOptions, true), '판매가', '판매가 공식 항목명을 제공해야 한다.');
 assert.equal(manualPriceTypeLabel('wholesaleA', priceOptions, true), '도매A', '선택 단가의 항목명을 표시해야 한다.');
 assert.equal(manualPriceTypeLabel('MANUAL', priceOptions, true), '직접입력', '직접 수정한 단가는 직접입력으로 표시해야 한다.');
 const packedMaster = normalizeMasterProduct({ 품목코드: 'BOX-20', 품목명: '박스상품', 원단위: '20', 단위: 'EA' });
@@ -97,7 +105,7 @@ assert.match(input, /loadProductCatalog/);
 assert.match(input, /searchProductCatalog/);
 assert.match(input, /row\.dataset\.productId \? MATCH_STATUS\.MATCHED : MATCH_STATUS\.MATCH_FAILED/);
 assert.match(input, /productId:\s*row\.dataset\.productId \|\| null/);
-assert.match(input, /vNext 0\.4\.7/);
+assert.match(input, /vNext 0\.4\.8/);
 for (const contract of [
   "const MANUAL_DEFAULTS_KEY = 'oneapp.orderq.manual-defaults.v1'",
   "customerNameInput.addEventListener('keydown'",
@@ -106,7 +114,7 @@ for (const contract of [
   "transactionTypeInput.addEventListener('change', saveManualDefaults)",
   "orderDateInput.setSelectionRange(8, 10)",
   "orderDatePicker.showPicker()",
-  "const defaultPrice = product.priceOptions?.find(option => option.key === 'outPrice')",
+  'const defaultPrice = product.priceOptions?.find(option => option.key === selectedPriceType)',
   "row.querySelector('[data-field=\"boxQuantity\"]').value = product.boxQuantity ?? ''",
   '전표 메모',
   '상품별 메모(적요)',
@@ -143,6 +151,9 @@ for (const manualEntryContract of [
   "focusRowField(row, 'price')",
   "focusRowField(row, 'memo')",
   "cycleRowPrice(row, event.key === 'ArrowUp' ? 1 : -1)",
+  'priceTypeSelect.addEventListener(\'change\', () => applyPriceTypeToRows(priceTypeSelect.value))',
+  'applyPriceTypeToRows(option.key)',
+  'updatePriceTypeHeaderFromRows()',
   'data-price-step="1"',
   'data-price-step="-1"',
   "row.dataset.priceType = event.target.value.trim() ? 'MANUAL' : ''",
@@ -153,6 +164,10 @@ for (const manualEntryContract of [
   'boxQuantity: get(\'boxQuantity\')',
   "priceType: row.dataset.priceType || (price !== '' ? 'MANUAL' : '')"
 ]) assert.ok(input.includes(manualEntryContract), `수기주문 입력동선 계약 누락: ${manualEntryContract}`);
+assert.match(input, /<select id="priceTypeSelect" aria-label="단가 종류">\s*<option value="salePrice" selected>판매가<\/option>/,
+  '단가 헤더는 판매가를 기본값으로 표시하는 클릭형 드롭다운이어야 한다.');
+assert.doesNotMatch(input, /class="price-kind"|data-role="priceType"/,
+  '단가 종류는 행마다 반복하지 않고 헤더에서 한 번만 표시해야 한다.');
 assert.doesNotMatch(input, /id="addRowBtn"|id="addRowBottomBtn"/, '수기주문 행추가 버튼은 노출하지 않아야 한다.');
 assert.doesNotMatch(input, /matches\('\[data-field="itemCode"\], \[data-field="itemName"\]'\)/,
   '품목명 입력에서 상품검색을 실행하면 안 된다.');
@@ -165,7 +180,8 @@ for (const compactWidthContract of [
   '.manual-order-page .shell { width: min(1100px, calc(100% - 28px)); }',
   '.manual-order-page #orderTable { table-layout: fixed; min-width: 1000px; }',
   '.manual-order-page #orderTable .col-select { width: 30px; }',
-  '.manual-order-page #orderTable .col-price { width: 102px; }',
+  '.manual-order-page #orderTable .col-price { width: 86px; }',
+  '.manual-order-page #orderTable .price-header select',
   '.manual-order-page #orderTable .col-total { width: 88px; }',
   '.manual-order-page #orderTable .col-vat { width: 74px; }',
   '.manual-order-page #orderTable .table-groups .group-product',

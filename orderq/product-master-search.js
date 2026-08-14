@@ -5,6 +5,7 @@ const COMMON_MASTER_STORE = 'master_products';
 const COMMON_MASTER_SNAPSHOT_KEYS = ['merchMaster_v870', 'master_products'];
 
 export const MANUAL_PRICE_FIELDS = Object.freeze([
+  { key: 'salePrice', label: '판매가', aliases: [] },
   { key: 'outPrice', label: '출고가', aliases: ['outPrice', '출고가'] },
   { key: 'wholesaleA', label: '도매A', aliases: ['wholesaleA', '도매A', '도매가', 'A판매', 'A판매가'] },
   { key: 'wholesaleB', label: '도매B', aliases: ['wholesaleB', '도매B', 'B판매', 'B판매가', 'B도매', 'B도매가'] },
@@ -40,8 +41,14 @@ function numberOrNull(source, keys) {
 
 export function normalizeManualPriceOptions(raw = {}, source = 'COMMON_MASTER') {
   if (source !== 'COMMON_MASTER') return [];
+  const outPriceField = MANUAL_PRICE_FIELDS.find(field => field.key === 'outPrice');
+  const promoPriceField = MANUAL_PRICE_FIELDS.find(field => field.key === 'promoPrice');
+  const outPrice = numberOrNull(raw, outPriceField.aliases);
+  const promoPrice = numberOrNull(raw, promoPriceField.aliases);
   return MANUAL_PRICE_FIELDS.map(field => {
-    const value = numberOrNull(raw, field.aliases);
+    const value = field.key === 'salePrice'
+      ? (promoPrice !== null && promoPrice > 0 ? promoPrice : outPrice)
+      : numberOrNull(raw, field.aliases);
     return value === null ? null : { key: field.key, label: field.label, value };
   }).filter(Boolean);
 }

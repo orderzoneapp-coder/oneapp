@@ -119,16 +119,17 @@ td input:focus, td select:focus { outline: none; background: #f0fdfa; border-col
 .manual-order-page #orderTable .col-box-quantity { width: 76px; }
 .manual-order-page #orderTable .col-unit { width: 68px; }
 .manual-order-page #orderTable .col-quantity { width: 62px; }
-.manual-order-page #orderTable .col-price { width: 102px; }
+.manual-order-page #orderTable .col-price { width: 86px; }
 .manual-order-page #orderTable .col-total { width: 88px; }
 .manual-order-page #orderTable .col-vat { width: 74px; }
 .manual-order-page #orderTable .col-memo { width: 135px; }
 .manual-order-page #orderTable .col-match { width: 82px; }
 .manual-order-page #orderTable .amount-input { background: #f8fafc; font-weight: 800; }
 .manual-order-page #orderTable .price-cell { padding: 2px 3px; }
-.manual-order-page #orderTable .price-picker { display: grid; grid-template-columns: 36px minmax(0, 1fr) 16px; align-items: stretch; min-height: 30px; border-radius: 5px; }
+.manual-order-page #orderTable .price-picker { display: grid; grid-template-columns: minmax(0, 1fr) 16px; align-items: stretch; min-height: 30px; border-radius: 5px; }
 .manual-order-page #orderTable .price-picker:focus-within { background: #eff6ff; box-shadow: inset 0 0 0 1px #93c5fd; }
-.manual-order-page #orderTable .price-kind { align-self: center; overflow: hidden; padding: 0 2px; color: #1d4ed8; font-size: 9px; font-weight: 900; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
+.manual-order-page #orderTable .price-header { padding: 3px; }
+.manual-order-page #orderTable .price-header select { width: 100%; min-height: 26px; padding: 2px 18px 2px 4px; border: 1px solid #93c5fd; border-radius: 5px; background: #fff; color: #1d4ed8; font-size: 10px; font-weight: 900; }
 .manual-order-page #orderTable .price-picker input { min-width: 0; min-height: 30px; padding: 3px 2px; border-radius: 0; appearance: textfield; -moz-appearance: textfield; font-weight: 800; }
 .manual-order-page #orderTable .price-picker input::-webkit-inner-spin-button,
 .manual-order-page #orderTable .price-picker input::-webkit-outer-spin-button { margin: 0; appearance: none; -webkit-appearance: none; }
