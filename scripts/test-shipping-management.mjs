@@ -13,7 +13,7 @@ assert.doesNotMatch(orderOpsHtml, /tokens truncated|…\d+ tokens truncated…/,
   "the public OrderOps mirror must not contain a truncated source fragment");
 assert.match(orderOpsHtml, /<body>[\s\S]*<\/body>\s*<\/html>/,
   "the public OrderOps mirror must remain a complete HTML document");
-assert.match(orderOpsHtml, /brand-badge">v1\.42</, "ORDER Q visible version must be v1.42");
+assert.match(orderOpsHtml, /brand-badge">v1\.43</, "ORDER Q visible version must be v1.43");
 assert.match(orderOpsHtml, /<title>ONEAPP ORDER Q · 출고관리<\/title>/,
   "the public page title must establish ORDER Q as shipment management");
 assert.match(orderOpsHtml, /aria-label="ONEAPP ORDER Q 출고관리"/,
@@ -22,7 +22,7 @@ assert.match(orderOpsHtml, /class="brand-logo" src="assets\/order-q-logo\.png"/,
   "the public header must use the approved ORDER Q logo asset");
 assert.match(orderOpsHtml, /\.brand-logo-frame\s*\{[\s\S]*?width:\s*120px;[\s\S]*?height:\s*20px;/,
   "the public ORDER Q logo must match the ONEAPP wordmark height");
-assert.match(orderOpsHtml, /ORDER Q v1\.42 · 출고관리/,
+assert.match(orderOpsHtml, /ORDER Q v1\.43 · 출고관리/,
   "the public footer must use the ORDER Q product concept");
 assert.doesNotMatch(
   orderOpsHtml.slice(orderOpsHtml.indexOf('<header class="global-header">'), orderOpsHtml.indexOf('</header>')),
@@ -37,7 +37,7 @@ assert.equal(
   "the repository logo must be the unmodified approved source image",
 );
 assert.ok(orderOpsHtml.includes('class="execution-panel"'),
-  "the public v1.42 execution controls must be separate from the upload strip");
+  "the public v1.43 execution controls must be separate from the upload strip");
 assert.match(orderOpsHtml, /\.execution-panel\s*\{[^}]*grid-template-columns:\s*repeat\(3,/,
   "the public execution controls must use three visible segments");
 assert.match(orderOpsHtml, /\.upload-grid\s*\{[^}]*grid-template-columns:\s*repeat\(5,/,
@@ -153,7 +153,7 @@ for (const requiredInteractionContract of [
   'function saveCurrentOrderViewPreset',
 ]) {
   assert.ok(orderOpsHtml.includes(requiredInteractionContract),
-    `public ORDER Q v1.42 interaction contract is missing: ${requiredInteractionContract}`);
+    `public ORDER Q v1.43 interaction contract is missing: ${requiredInteractionContract}`);
 }
 assert.match(orderOpsHtml, /\.print-area table\s*\{[\s\S]*?font-size:\s*10\.6px;/,
   "public screen print text must be twenty percent larger than v1.35");
@@ -211,7 +211,7 @@ for (const shortcutContract of [
 assert.doesNotMatch(orderOpsHtml, /F12|새로고침 F5|aria-keyshortcuts="F5"[^>]*refreshButton/,
   "retired F12 and refresh-F5 shortcuts must not remain");
 assert.ok(orderOpsHtml.includes(
-  'headers: ["창고", "거래처", "그룹", "담당자", "상품코드", "품명", "규격", "구분", "주문", "단가", ...allocationWarehouseHeaders, "전달사항", "구매"]',
+  'headers: ["창고", "거래처", "그룹", "담당자", "상품코드", "품명", "규격", "정보", "주문", "단가", ...allocationWarehouseHeaders, "전달사항", "구매"]',
 ), "the public order table must include the source customer group in the approved sequence");
 assert.doesNotMatch(orderOpsHtml, /allocations\.columns\[0\]\.orderField\s*=\s*"warehouse"/,
   "the order warehouse column must remain read-only");
@@ -1721,7 +1721,7 @@ const html = fs.readFileSync(path.join(ROOT, "orderops", "list.html"), "utf8");
 const inlineScriptMatch = html.match(/<script>\s*([\s\S]*?)<\/script>\s*<\/body>/);
 assert.ok(inlineScriptMatch, "canonical ORDER Q inline application script must exist");
 new vm.Script(inlineScriptMatch[1], { filename: "orderops/list.html:inline" });
-assert.match(html, /brand-badge">v1\.42</, "canonical ORDER Q visible version must be v1.42");
+assert.match(html, /brand-badge">v1\.43</, "canonical ORDER Q visible version must be v1.43");
 assert.match(html, /class="brand-logo" src="\.\.\/assets\/order-q-logo\.png"/,
   "the canonical header must use the shared ORDER Q logo asset");
 assert.match(html, /<h2 id="settingsModalTitle">ORDER Q 환경설정<\/h2>/,
@@ -1861,7 +1861,7 @@ for (const requiredInteractionContract of [
   'function saveCurrentOrderViewPreset',
 ]) {
   assert.ok(html.includes(requiredInteractionContract),
-    `canonical ORDER Q v1.42 interaction contract is missing: ${requiredInteractionContract}`);
+    `canonical ORDER Q v1.43 interaction contract is missing: ${requiredInteractionContract}`);
 }
 assert.doesNotMatch(html, /<input[^>]+type="color"|data-warehouse-color|data-manager-color/,
   "canonical OrderOps filter options must remain separate from color assignment");
@@ -1876,7 +1876,7 @@ assert.match(combinedCss, /body\s*\{[^}]*font-size:\s*14px;/,
 assert.match(combinedCss, /\.system-console\s*\{[^}]*font:\s*700 11px\/1\.3/,
   "System.IO status text must increase by one pixel");
 assert.ok(html.includes(
-  'headers: ["창고", "거래처", "그룹", "담당자", "상품코드", "품명", "규격", "구분", "주문", "단가", ...allocationWarehouseHeaders, "전달사항", "구매"]',
+  'headers: ["창고", "거래처", "그룹", "담당자", "상품코드", "품명", "규격", "정보", "주문", "단가", ...allocationWarehouseHeaders, "전달사항", "구매"]',
 ), "the canonical order table must include the source customer group in the approved sequence");
 assert.doesNotMatch(html, /allocations\.columns\[0\]\.orderField\s*=\s*"warehouse"/,
   "the canonical order warehouse column must remain read-only");
@@ -2029,6 +2029,13 @@ assert.ok(html.includes('const negativeRemaining = ["inventory", "ledger"].inclu
 assert.ok(html.includes('specification === "EA" || specification === "소분"') &&
   html.includes('column.role === "specification" ? "unit-alert-cell"'),
   "exact EA and 소분 specifications must use the red alert text");
+assert.ok(html.includes("const allocationProductSummaries = new Map();") &&
+  html.includes("summary.rowCount += 1;") &&
+  html.includes("summary.quantity += parsedQuantity.ok ? parsedQuantity.value : 0;") &&
+  html.includes("summary?.rowCount > 1 && !allocationAggregateShown.has(productCode)") &&
+  html.includes('allocations.columns[7].role = "productAggregateQuantity"') &&
+  html.includes("row.productAggregateQuantity"),
+  "order information must show a product-code quantity total only once for repeated order rows");
 assert.ok(html.includes('elements.systemViewNote.textContent = viewNotes.join(" · ")') &&
   html.includes('elements.previewCount.textContent = `${formatNumber(pairs.length)}/${formatNumber(preview.rows.length)}행`;'),
   "dynamic view guidance must move to the System.IO top bar while the table toolbar keeps only the row count");
@@ -2182,7 +2189,7 @@ for (const contract of [
   "showPurchaseCompletionCoachmark",
   "function resetResultViewFilters()", 'grid-template-columns: repeat(3, minmax(0, 1fr))',
 ]) {
-  assert.ok(html.includes(contract), `ORDER Q v1.42 contract is missing: ${contract}`);
+  assert.ok(html.includes(contract), `ORDER Q v1.43 contract is missing: ${contract}`);
 }
 const purchaseAutocompleteStart = html.indexOf("function purchaseAutocompleteNames");
 const purchaseAutocompleteEnd = html.indexOf("function closePurchaseAutocomplete", purchaseAutocompleteStart);
