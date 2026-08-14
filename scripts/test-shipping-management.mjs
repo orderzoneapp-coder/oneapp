@@ -13,7 +13,7 @@ assert.doesNotMatch(orderOpsHtml, /tokens truncated|…\d+ tokens truncated…/,
   "the public OrderOps mirror must not contain a truncated source fragment");
 assert.match(orderOpsHtml, /<body>[\s\S]*<\/body>\s*<\/html>/,
   "the public OrderOps mirror must remain a complete HTML document");
-assert.match(orderOpsHtml, /brand-badge">v1\.47</, "ORDER Q visible version must be v1.47");
+assert.match(orderOpsHtml, /brand-badge">v1\.48</, "ORDER Q visible version must be v1.48");
 assert.match(orderOpsHtml, /<title>ONEAPP ORDER Q · 출고관리<\/title>/,
   "the public page title must establish ORDER Q as shipment management");
 assert.match(orderOpsHtml, /aria-label="ONEAPP ORDER Q 출고관리"/,
@@ -22,7 +22,7 @@ assert.match(orderOpsHtml, /class="brand-logo" src="assets\/order-q-logo\.png"/,
   "the public header must use the approved ORDER Q logo asset");
 assert.match(orderOpsHtml, /\.brand-logo-frame\s*\{[\s\S]*?width:\s*120px;[\s\S]*?height:\s*20px;/,
   "the public ORDER Q logo must match the ONEAPP wordmark height");
-assert.match(orderOpsHtml, /ORDER Q v1\.47 · 출고관리/,
+assert.match(orderOpsHtml, /ORDER Q v1\.48 · 출고관리/,
   "the public footer must use the ORDER Q product concept");
 assert.doesNotMatch(
   orderOpsHtml.slice(orderOpsHtml.indexOf('<header class="global-header">'), orderOpsHtml.indexOf('</header>')),
@@ -37,7 +37,7 @@ assert.equal(
   "the repository logo must be the unmodified approved source image",
 );
 assert.ok(orderOpsHtml.includes('class="execution-panel"'),
-  "the public v1.47 execution controls must be separate from the upload strip");
+  "the public v1.48 execution controls must be separate from the upload strip");
 assert.match(orderOpsHtml, /\.execution-panel\s*\{[^}]*grid-template-columns:\s*repeat\(2,/,
   "the public execution controls must use two independent buttons");
 assert.match(orderOpsHtml, /\.execution-panel\s*\{[^}]*border:\s*0;/,
@@ -61,17 +61,18 @@ for (const sourceCardContract of [
   'id="purchasesFileButton"',
   'id="salesFileButton"',
   '<p class="drop-title">수불현황</p>',
-  'class="integrated-uploader" id="integratedCard"',
-  'id="integratedDrop" type="button"',
+  'class="integrated-compact-slot" id="integratedCard"',
   'id="integratedFileButton"',
-  '<strong class="integrated-upload-title">통합 Excel 업로드</strong>',
-  '여러 시트를 주문·재고·구매·판매로 자동 분류',
+  '📁</span><span>통합</span>',
+  'aria-label="통합 Excel 파일 불러오기"',
 ]) {
   assert.ok(orderOpsHtml.includes(sourceCardContract),
     `public source-card navigation contract is missing: ${sourceCardContract}`);
 }
-assert.match(orderOpsHtml, /<\/div>\s*<article class="integrated-uploader" id="integratedCard"/,
-  "the integrated workbook uploader must sit outside the five-tab list");
+assert.doesNotMatch(orderOpsHtml, /integrated-uploader|id="integratedDrop"|id="integratedFileName"/,
+  "the large integrated workbook uploader UI must be removed");
+assert.match(orderOpsHtml, /<div class="data-source-label">[\s\S]*class="integrated-compact-slot" id="integratedCard"/,
+  "the compact integrated picker must sit beside the data-source label");
 assert.doesNotMatch(orderOpsHtml, /<div class="file-icon"[^>]*>6<\/div>/,
   "the integrated workbook uploader must not look like a sixth numbered result tab");
 assert.ok(orderOpsHtml.includes('const FILE_KIND_PREVIEWS = Object.freeze({ orders: "allocations", inventory: "inventory", purchases: "purchases", sales: "sales" })'),
@@ -173,7 +174,7 @@ for (const requiredInteractionContract of [
   'function handleIntegratedFile',
 ]) {
   assert.ok(orderOpsHtml.includes(requiredInteractionContract),
-    `public ORDER Q v1.47 interaction contract is missing: ${requiredInteractionContract}`);
+    `public ORDER Q v1.48 interaction contract is missing: ${requiredInteractionContract}`);
 }
 const publicHeaderSource = orderOpsHtml.slice(
   orderOpsHtml.indexOf('<header class="global-header">'),
@@ -1749,7 +1750,7 @@ const html = fs.readFileSync(path.join(ROOT, "orderops", "list.html"), "utf8");
 const inlineScriptMatch = html.match(/<script>\s*([\s\S]*?)<\/script>\s*<\/body>/);
 assert.ok(inlineScriptMatch, "canonical ORDER Q inline application script must exist");
 new vm.Script(inlineScriptMatch[1], { filename: "orderops/list.html:inline" });
-assert.match(html, /brand-badge">v1\.47</, "canonical ORDER Q visible version must be v1.47");
+assert.match(html, /brand-badge">v1\.48</, "canonical ORDER Q visible version must be v1.48");
 assert.match(html, /class="brand-logo" src="\.\.\/assets\/order-q-logo\.png"/,
   "the canonical header must use the shared ORDER Q logo asset");
 assert.match(html, /<h2 id="settingsModalTitle">ORDER Q 환경설정<\/h2>/,
@@ -1894,7 +1895,7 @@ for (const requiredInteractionContract of [
   'function handleIntegratedFile',
 ]) {
   assert.ok(html.includes(requiredInteractionContract),
-    `canonical ORDER Q v1.47 interaction contract is missing: ${requiredInteractionContract}`);
+    `canonical ORDER Q v1.48 interaction contract is missing: ${requiredInteractionContract}`);
 }
 assert.doesNotMatch(html, /<input[^>]+type="color"|data-warehouse-color|data-manager-color/,
   "canonical OrderOps filter options must remain separate from color assignment");
@@ -1938,7 +1939,7 @@ for (const requiredText of [
   "스마트입력",
   "구매현황",
   "판매현황",
-  "Excel 매핑 별칭",
+  "통합 Excel 시트명 매칭",
   "oneapp.orderops.excel-mappings.v1",
   "oneapp.orderops.purchase-history.v1",
   "현재 파일로 교체",
@@ -1962,7 +1963,7 @@ for (const requiredText of [
 for (const id of [
   "sourceSelector", "ordersInput", "inventoryInput", "purchasesInput", "salesInput", "analyzeButton", "refreshButton",
   "ordersFileButton", "inventoryFileButton", "purchasesFileButton", "salesFileButton", "ledgerCard", "ledgerDrop", "ledgerStatus",
-  "integratedCard", "integratedDrop", "integratedFileButton", "integratedFileName", "integratedInput",
+  "integratedCard", "integratedFileButton", "integratedInput",
   "resultFilterResetButton", "warehouseFilterToggle", "managerFilterToggle", "warehouseFilterPanel", "managerFilterPanel",
   "shortageFocusButton",
   "colorAssignmentPanel", "colorTargetSelect", "pastelColorPalette", "vividColorPalette", "vividColorToggle",
@@ -1971,7 +1972,7 @@ for (const id of [
   "downloadButton", "printButton",
   "headerCloudLoadButton", "headerCloudSaveButton",
   "headerRestoreButton", "headerSettingsButton", "settingsModal", "workspaceStorage",
-  "excelMappingEditor", "mappingSaveButton", "mappingResetButton",
+  "excelMappingEditor", "sheetAliasWarning", "mappingSaveButton", "mappingResetButton",
 ]) {
   assert.equal(html.split(`id="${id}"`).length - 1, 1, `${id} must exist exactly once`);
 }
@@ -1987,8 +1988,10 @@ assert.match(combinedCss, /\.execution-panel\s*\{[^}]*grid-template-columns:\s*r
   "canonical analysis and refresh actions must be two buttons without a shared outer border");
 assert.match(combinedCss, /\.upload-grid\s*\{[^}]*grid-template-columns:\s*repeat\(5,/,
   "canonical upload strip must contain exactly five result tabs");
-assert.match(combinedCss, /\.integrated-uploader\s*\{[^}]*border:\s*1px dashed #2dd4bf;/,
-  "canonical integrated workbook control must be visually distinct as an upload drop zone");
+assert.match(combinedCss, /\.integrated-compact-slot\s*\{[^}]*display:\s*inline-flex;/,
+  "canonical integrated workbook control must be a compact data-source picker");
+assert.doesNotMatch(combinedCss, /\.integrated-uploader\s*\{/,
+  "canonical large integrated uploader styling must be removed");
 const canonicalHeaderSource = html.slice(html.indexOf('<header class="global-header">'), html.indexOf('</header>'));
 assert.ok(canonicalHeaderSource.indexOf('id="smartInputButton"') < canonicalHeaderSource.indexOf('id="printButton"'),
   "canonical Smart input F4 must move before screen print in the global header");
@@ -2256,7 +2259,7 @@ assert.ok(integratedParseStart >= 0 && integratedParseEnd > integratedParseStart
   "integrated workbook parser must exist before the legacy multi-file classifier");
 const integratedParseSource = html.slice(integratedParseStart, integratedParseEnd);
 for (const integratedContract of [
-  "workbook.SheetNames.forEach", "aliasMatches(sheetName", "integratedCandidateScore",
+  "workbook.SheetNames.forEach", "sheetAliasMatchScore(sheetName", "integratedCandidateScore",
   "필수 열·헤더 구조 검증에 실패했습니다", "applied.set(selected.kind, selected.parsed)",
   "selected.parsed.sourceLabel", "failures", "ignored",
 ]) {
@@ -2270,6 +2273,27 @@ assert.ok(integratedHandleSource.includes("result.applied.forEach") &&
   integratedHandleSource.includes("오류 ${result.failures.length}개 시트는 기존 데이터 유지") &&
   !integratedHandleSource.includes("state[kind] = null"),
   "integrated upload must replace only successfully validated data kinds and preserve failed active data");
+for (const integratedMappingContract of [
+  'sheetAliases: ["주문", "미출고", "주문현황"]',
+  'sheetAliases: ["재고", "전체재고", "창고재고"]',
+  'sheetAliases: ["구매", "매입", "전송구매"]',
+  'sheetAliases: ["판매", "판매입력", "전송출고"]',
+  "시트명 매칭 <span>→</span> 헤더·필수열 검증 <span>→</span> 데이터 종류 확정",
+  "function sheetAliasConflicts(types)",
+  "function sheetAliasMatchScore(value, aliases)",
+  "function renderSheetAliasWarning(conflicts)",
+  'showToast("중복된 통합 시트명 별칭을 정리한 후 저장하세요.", true)',
+]) {
+  assert.ok(html.includes(integratedMappingContract),
+    `integrated workbook mapping contract is missing: ${integratedMappingContract}`);
+}
+const integratedBindStart = html.indexOf("function bindIntegratedFileCard");
+const integratedBindEnd = html.indexOf("function bindBundleDropSurface", integratedBindStart);
+const integratedBindSource = html.slice(integratedBindStart, integratedBindEnd);
+assert.ok(integratedBindSource.includes('elements.integratedFileButton.addEventListener("click", openPicker)'),
+  "the compact integrated folder button must open its workbook picker");
+assert.doesNotMatch(integratedBindSource, /integratedDrop|dragenter|dragleave|addEventListener\("drop"/,
+  "the removed large integrated drop zone must not retain event bindings");
 
 const settingsStart = html.indexOf("function toggleWorkspaceStorage");
 const settingsEnd = html.indexOf("function setLoading", settingsStart);
@@ -2285,7 +2309,7 @@ for (const contract of [
   "showPurchaseCompletionCoachmark",
   "function resetResultViewFilters()", 'grid-template-columns: repeat(2, minmax(0, 1fr))',
 ]) {
-  assert.ok(html.includes(contract), `ORDER Q v1.47 contract is missing: ${contract}`);
+  assert.ok(html.includes(contract), `ORDER Q v1.48 contract is missing: ${contract}`);
 }
 const purchaseAutocompleteStart = html.indexOf("function purchaseAutocompleteNames");
 const purchaseAutocompleteEnd = html.indexOf("function closePurchaseAutocomplete", purchaseAutocompleteStart);

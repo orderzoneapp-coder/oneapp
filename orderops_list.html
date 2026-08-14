@@ -725,7 +725,7 @@
     .shortage-focus-button:hover:not(:disabled) { border-color: #fb7185; background: #ffe4e6; }
     .shortage-focus-button.active { border-color: #be123c; color: #fff; background: #be123c; }
     .shortage-focus-button:disabled { opacity: .45; cursor: default; }
-    /* ORDER Q v1.47: unit emphasis and integrated workbook views */
+    /* ORDER Q v1.48: unit emphasis and integrated workbook views */
     .header-output-button { border-color: #99f6e4; color: #0f766e; background: #f0fdfa; }
     .header-output-button:hover:not(:disabled) { background: #ccfbf1; }
     .results-panel .table-wrap { max-height: calc(100vh - 200px); }
@@ -1517,17 +1517,17 @@
       .recovery-record-item { grid-template-columns: auto 1fr; }
       .recovery-record-status { grid-column: 2; }
     }
-    /* ORDER Q v1.47: five result tabs plus a distinct integrated-workbook uploader */
+    /* ORDER Q v1.48: five result tabs plus a compact integrated-workbook picker */
     .input-panel { grid-template-columns: minmax(0, 1fr) 230px; gap: 14px; }
-    .source-uploader-stack { display: grid; min-width: 0; gap: 6px; }
     .upload-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
     .source-selector {
       display: grid;
       position: relative;
-      grid-template-columns: 84px minmax(0, 1fr);
+      grid-template-columns: 130px minmax(0, 1fr);
       align-items: stretch;
       gap: 6px;
     }
+    .source-selector > .data-source-label { gap: 4px; padding-right: 0; }
     .source-selector-heading { display: none; }
     .source-selector.bundle-dragover::after {
       content: "파일 구조를 읽어 알맞은 항목으로 자동 배치";
@@ -1547,79 +1547,29 @@
       text-align: center;
     }
     .source-selector.bundle-dragover .upload-card { border-color: #2dd4bf; }
-    .integrated-uploader {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) auto;
-      align-items: stretch;
-      min-width: 0;
-      min-height: 31px;
-      overflow: hidden;
-      border: 1px dashed #2dd4bf;
-      border-radius: 5px;
-      background: rgba(13, 148, 136, .08);
-    }
-    .integrated-uploader.has-file { border-style: solid; background: #15383b; }
-    .integrated-uploader.has-error { border-color: #fb7185; background: #3f2533; }
-    .integrated-uploader.bundle-dragover {
-      border-style: solid;
-      border-color: #5eead4;
-      background: #134e4a;
-      box-shadow: inset 0 0 0 1px #2dd4bf;
-    }
-    .integrated-drop {
-      display: flex;
-      align-items: center;
-      gap: 7px;
-      min-width: 0;
-      padding: 3px 8px;
-      border: 0;
-      color: #ccfbf1;
-      background: transparent;
-      text-align: left;
-      cursor: pointer;
-    }
-    .integrated-drop:hover,
-    .integrated-drop:focus-visible { background: rgba(45, 212, 191, .10); outline: none; }
-    .integrated-upload-icon {
-      display: inline-grid;
-      place-items: center;
-      flex: 0 0 22px;
-      width: 22px;
-      height: 22px;
-      border-radius: 4px;
-      color: #042f2e;
-      background: #5eead4;
-      font-size: 12px;
-      font-weight: 900;
-    }
-    .integrated-upload-copy { min-width: 0; }
-    .integrated-upload-title { display: block; font-size: 10px; font-weight: 900; line-height: 1.05; }
-    .integrated-upload-help {
-      display: block;
-      overflow: hidden;
-      margin-top: 2px;
-      color: #94a3b8;
-      font-size: 8px;
-      line-height: 1.05;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
+    .integrated-compact-slot { display: inline-flex; flex: 0 0 auto; margin-left: auto; }
     .integrated-file-button {
-      align-self: stretch;
-      min-width: 66px;
-      margin: 3px;
-      padding: 0 9px;
-      border: 1px solid #2dd4bf;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 3px;
+      min-width: 47px;
+      min-height: 24px;
+      padding: 0 5px;
+      border: 1px solid #64748b;
       border-radius: 4px;
-      color: #ccfbf1;
-      background: #0f4c4e;
-      font-size: 9px;
-      font-weight: 900;
+      color: #cbd5e1;
+      background: #0f172a;
+      font-size: 8px;
+      font-weight: 800;
       white-space: nowrap;
       cursor: pointer;
     }
     .integrated-file-button:hover,
-    .integrated-file-button:focus-visible { color: #042f2e; background: #5eead4; outline: none; }
+    .integrated-file-button:focus-visible { border-color: #5eead4; color: #fff; background: #0f766e; outline: none; }
+    .integrated-compact-slot.has-file .integrated-file-button { border-color: #2dd4bf; color: #99f6e4; background: #134e4a; }
+    .integrated-compact-slot.has-error .integrated-file-button { border-color: #fb7185; color: #fecdd3; background: #3f2533; }
+    .integrated-compact-slot.is-loading .integrated-file-button { cursor: wait; opacity: .75; }
     .upload-card {
       display: grid;
       grid-template-columns: minmax(0, 1fr) auto;
@@ -1707,10 +1657,17 @@
     .fixed-filter-group .warehouse-color-title { flex: 0 0 auto; }
     .fixed-filter-group .warehouse-color-options { display: flex; flex-wrap: wrap; gap: 4px; }
     .mapping-help { margin: 0 0 8px; color: #94a3b8; font-size: 12px; }
+    .mapping-flow { display: flex; align-items: center; gap: 8px; margin: 0 0 9px; color: #ccfbf1; font-size: 11px; font-weight: 800; }
+    .mapping-flow span { color: #2dd4bf; }
+    .mapping-warning { margin: 0 0 9px; padding: 8px 10px; border: 1px solid #fb7185; border-radius: 5px; color: #fecdd3; background: #3f2533; font-size: 11px; line-height: 1.45; }
     .mapping-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
     .mapping-table th, .mapping-table td { padding: 5px; border: 1px solid #334155; vertical-align: top; }
     .mapping-table th { color: #cbd5e1; background: #1e293b; font-size: 11px; }
     .mapping-table input { width: 100%; min-width: 0; padding: 6px; border: 1px solid #475569; border-radius: 4px; color: #f8fafc; background: #020617; }
+    .mapping-table small { display: block; margin-top: 3px; color: #94a3b8; font-size: 10px; line-height: 1.3; }
+    .mapping-advanced { margin-top: 9px; border: 1px solid #334155; border-radius: 5px; }
+    .mapping-advanced summary { padding: 7px 9px; color: #cbd5e1; font-size: 11px; font-weight: 800; cursor: pointer; }
+    .mapping-advanced .mapping-table { margin: 0; }
     .mapping-actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 8px; }
     .mapping-actions button { padding: 7px 10px; border: 1px solid #64748b; border-radius: 5px; cursor: pointer; }
     table.preview-inventory td.inventory-editable { padding: 2px 4px; }
@@ -1747,7 +1704,7 @@
       <div class="brand-mark">ONEAPP</div>
       <div class="brand-divider" aria-hidden="true"></div>
       <span class="brand-logo-frame" aria-hidden="true"><img class="brand-logo" src="assets/order-q-logo.png" alt=""></span>
-      <span class="brand-badge">v1.47</span>
+      <span class="brand-badge">v1.48</span>
       <span class="brand-product">출고관리</span>
     </div>
     <div class="header-actions">
@@ -1801,10 +1758,18 @@
 
       <section class="panel input-panel" aria-label="입력 파일과 실행">
         <div class="source-selector" id="sourceSelector" aria-label="Excel 파일 선택 및 자동분류 드롭 영역">
-          <div class="data-source-label"><span aria-hidden="true">▣</span> 데이터 소스:</div>
+          <div class="data-source-label">
+            <span aria-hidden="true">▣</span><span>데이터 소스:</span>
+            <span class="integrated-compact-slot" id="integratedCard">
+              <button class="integrated-file-button" id="integratedFileButton" type="button"
+                aria-label="통합 Excel 파일 불러오기" title="통합 Excel 파일 불러오기">
+                <span aria-hidden="true">📁</span><span>통합</span>
+              </button>
+              <input class="hidden" id="integratedInput" type="file" accept=".xlsx,.xls">
+            </span>
+          </div>
 
-          <div class="source-uploader-stack">
-            <div class="upload-grid" role="tablist" aria-label="업로드 자료 및 결과 화면">
+          <div class="upload-grid" role="tablist" aria-label="업로드 자료 및 결과 화면">
               <article class="upload-card" id="ordersCard">
               <button class="drop-zone" id="ordersDrop" type="button" role="tab" aria-selected="false"
                 aria-controls="previewTable" aria-keyshortcuts="F5" aria-label="주문현황 화면 보기 F5">
@@ -1857,19 +1822,6 @@
               <button class="file-select-button" id="salesFileButton" type="button" aria-label="판매현황 Excel 파일 선택">파일</button>
               <input class="hidden" id="salesInput" type="file" accept=".xlsx,.xls">
               </article>
-            </div>
-
-            <article class="integrated-uploader" id="integratedCard" aria-label="통합 Excel 업로드 영역">
-              <button class="integrated-drop" id="integratedDrop" type="button" aria-label="통합 Excel 파일 선택">
-                <span class="integrated-upload-icon" aria-hidden="true">⇧</span>
-                <span class="integrated-upload-copy">
-                  <strong class="integrated-upload-title">통합 Excel 업로드</strong>
-                  <span class="integrated-upload-help" id="integratedFileName">여러 시트를 주문·재고·구매·판매로 자동 분류</span>
-                </span>
-              </button>
-              <button class="integrated-file-button" id="integratedFileButton" type="button" aria-label="통합 Excel 파일 선택">Excel 선택</button>
-              <input class="hidden" id="integratedInput" type="file" accept=".xlsx,.xls">
-            </article>
           </div>
         </div>
 
@@ -1960,7 +1912,7 @@
     </section>
 
     <footer class="page-footer">
-      <span>ORDER Q v1.47 · 출고관리 · workspace shipping-workspace/v2 · cloud plan v1</span>
+      <span>ORDER Q v1.48 · 출고관리 · workspace shipping-workspace/v2 · cloud plan v1</span>
       <a href="SHIPPING_MANAGEMENT_GUIDANCE.md">개발·운영 기준 보기</a>
     </footer>
   </main>
@@ -2011,8 +1963,10 @@
       </section>
 
       <section class="settings-section" data-settings-section="excel-mapping">
-        <h3>Excel 매핑 별칭</h3>
-        <p class="mapping-help">개별파일은 열 구조를 우선 판별합니다. 통합파일은 각 시트를 시트명 별칭으로 분류한 뒤 필수 열과 헤더 구조를 다시 검증합니다. 여러 별칭은 쉼표로 구분합니다.</p>
+        <h3>통합 Excel 시트명 매칭</h3>
+        <p class="mapping-help">통합파일의 시트를 자동 판별할 데이터 종류별 시트명을 지정합니다. 복수 별칭은 쉼표로 구분합니다.</p>
+        <div class="mapping-flow" aria-label="통합 Excel 판별 순서">시트명 매칭 <span>→</span> 헤더·필수열 검증 <span>→</span> 데이터 종류 확정</div>
+        <div class="mapping-warning hidden" id="sheetAliasWarning" role="alert"></div>
         <div id="excelMappingEditor"></div>
         <div class="mapping-actions">
           <button type="button" id="mappingResetButton">기본값</button>
@@ -2121,13 +2075,13 @@
       const FILE_KIND_PREVIEWS = Object.freeze({ orders: "allocations", inventory: "inventory", purchases: "purchases", sales: "sales" });
       const SOURCE_VIEW_CARDS = Object.freeze({ allocations: "orders", inventory: "inventory", purchases: "purchases", sales: "sales", ledger: "ledger" });
       const DEFAULT_EXCEL_MAPPINGS = Object.freeze({
-        orders: { fileAliases: ["주문", "미출고", "order"], sheetAliases: ["주문", "미출고"], columns: {} },
-        inventory: { fileAliases: ["재고", "창고", "inventory", "stock"], sheetAliases: ["재고", "창고"], columns: {} },
-        purchases: { fileAliases: ["구매", "매입", "purchase"], sheetAliases: ["구매", "매입"], columns: {
+        orders: { fileAliases: ["주문", "미출고", "order"], sheetAliases: ["주문", "미출고", "주문현황"], columns: {} },
+        inventory: { fileAliases: ["재고", "창고", "inventory", "stock"], sheetAliases: ["재고", "전체재고", "창고재고"], columns: {} },
+        purchases: { fileAliases: ["구매", "매입", "purchase"], sheetAliases: ["구매", "매입", "전송구매"], columns: {
           "품목코드": ["품목코드", "상품코드", "제품코드", "코드"], "품목명": ["품목명", "품명", "상품명", "제품명"],
           "수량": ["구매수량", "매입수량", "입고수량"], "구매처": ["구매처", "매입처", "공급처"],
         } },
-        sales: { fileAliases: ["판매", "매출", "sales"], sheetAliases: ["판매", "매출"], columns: {
+        sales: { fileAliases: ["판매", "매출", "sales"], sheetAliases: ["판매", "판매입력", "전송출고"], columns: {
           "품목코드": ["품목코드", "상품코드", "제품코드", "코드"], "품목명": ["품목명", "품명", "상품명", "제품명"],
           "수량": ["판매수량", "매출수량", "출고수량"], "거래처": ["거래처", "거래처명", "판매처", "고객명"],
         } },
@@ -2260,9 +2214,7 @@
         viewPresetDialogTitle: document.getElementById("viewPresetDialogTitle"),
         viewPresetNameInput: document.getElementById("viewPresetNameInput"),
         integratedCard: document.getElementById("integratedCard"),
-        integratedDrop: document.getElementById("integratedDrop"),
         integratedFileButton: document.getElementById("integratedFileButton"),
-        integratedFileName: document.getElementById("integratedFileName"),
         integratedInput: document.getElementById("integratedInput"),
         printButton: document.getElementById("printButton"),
         printArea: document.getElementById("printArea"),
@@ -2295,6 +2247,7 @@
         settingsModal: document.getElementById("settingsModal"),
         settingsCloseButton: document.getElementById("settingsCloseButton"),
         excelMappingEditor: document.getElementById("excelMappingEditor"),
+        sheetAliasWarning: document.getElementById("sheetAliasWarning"),
         mappingSaveButton: document.getElementById("mappingSaveButton"),
         mappingResetButton: document.getElementById("mappingResetButton"),
         workspaceStorage: document.getElementById("workspaceStorage"),
@@ -2371,30 +2324,80 @@
       }
 
       function renderExcelMappingEditor() {
+        const integratedLabels = { orders: "주문", inventory: "재고", purchases: "구매", sales: "판매" };
+        const integratedExamples = {
+          orders: "예: 주문, 미출고, 주문현황", inventory: "예: 재고, 전체재고, 창고재고",
+          purchases: "예: 구매, 매입, 전송구매", sales: "예: 판매, 판매입력, 전송출고",
+        };
         elements.excelMappingEditor.innerHTML = `<table class="mapping-table">
-          <thead><tr><th style="width:84px">데이터</th><th>파일명 별칭</th><th>시트명 별칭</th><th>열 별칭 · 표준명=별칭|별칭</th></tr></thead>
+          <thead><tr><th style="width:84px">데이터</th><th>통합 시트명 별칭</th></tr></thead>
           <tbody>${FILE_KINDS.map((kind) => {
             const mapping = state.excelMappings[kind];
-            return `<tr data-mapping-kind="${kind}"><th>${FILE_KIND_LABELS[kind]}</th>
-              <td><input data-mapping-files value="${escapeHtml(mapping.fileAliases.join(", "))}"></td>
-              <td><input data-mapping-sheets value="${escapeHtml(mapping.sheetAliases.join(", "))}"></td>
-              <td><input data-mapping-columns value="${escapeHtml(serializeColumnAliases(mapping.columns))}"></td></tr>`;
-          }).join("")}</tbody></table>`;
+            return `<tr><th>${integratedLabels[kind]}</th><td>
+              <input data-mapping-sheets="${kind}" value="${escapeHtml(mapping.sheetAliases.join(", "))}" aria-label="${integratedLabels[kind]} 통합 시트명 별칭">
+              <small>${integratedExamples[kind]}</small></td></tr>`;
+          }).join("")}</tbody></table>
+          <details class="mapping-advanced"><summary>개별파일·열 별칭</summary><table class="mapping-table">
+            <thead><tr><th style="width:84px">데이터</th><th>파일명 별칭</th><th>열 별칭 · 표준명=별칭|별칭</th></tr></thead>
+            <tbody>${FILE_KINDS.map((kind) => { const mapping = state.excelMappings[kind]; return `<tr><th>${FILE_KIND_LABELS[kind]}</th>
+              <td><input data-mapping-files="${kind}" value="${escapeHtml(mapping.fileAliases.join(", "))}"></td>
+              <td><input data-mapping-columns="${kind}" value="${escapeHtml(serializeColumnAliases(mapping.columns))}"></td></tr>`; }).join("")}</tbody>
+          </table></details>`;
+        elements.excelMappingEditor.querySelectorAll("[data-mapping-sheets]").forEach((input) => {
+          input.addEventListener("input", () => renderSheetAliasWarning(sheetAliasConflicts(collectExcelMappingsFromEditor())));
+        });
+        renderSheetAliasWarning(sheetAliasConflicts(state.excelMappings));
+      }
+
+      function collectExcelMappingsFromEditor() {
+        const types = {};
+        FILE_KINDS.forEach((kind) => {
+          types[kind] = {
+            fileAliases: splitAliases(elements.excelMappingEditor.querySelector(`[data-mapping-files="${kind}"]`)?.value),
+            sheetAliases: splitAliases(elements.excelMappingEditor.querySelector(`[data-mapping-sheets="${kind}"]`)?.value),
+            columns: parseColumnAliases(elements.excelMappingEditor.querySelector(`[data-mapping-columns="${kind}"]`)?.value),
+          };
+        });
+        return types;
+      }
+
+      function sheetAliasConflicts(types) {
+        const aliases = [];
+        FILE_KINDS.forEach((kind) => {
+          splitAliases((types?.[kind]?.sheetAliases || []).join?.(",") || types?.[kind]?.sheetAliases).forEach((alias) => {
+            const normalized = normalizeMappingText(alias);
+            if (normalized) aliases.push({ kind, alias, normalized });
+          });
+        });
+        const conflicts = [];
+        aliases.forEach((left, index) => aliases.slice(index + 1).forEach((right) => {
+          if (left.kind === right.kind) return;
+          if (left.normalized !== right.normalized) return;
+          const label = `${FILE_KIND_LABELS[left.kind]} "${left.alias}" ↔ ${FILE_KIND_LABELS[right.kind]} "${right.alias}"`;
+          if (!conflicts.includes(label)) conflicts.push(label);
+        }));
+        return conflicts;
+      }
+
+      function renderSheetAliasWarning(conflicts) {
+        const items = Array.isArray(conflicts) ? conflicts : [];
+        elements.sheetAliasWarning.classList.toggle("hidden", items.length === 0);
+        elements.sheetAliasWarning.textContent = items.length ? `여러 데이터 종류에 중복된 시트명 별칭이 있습니다: ${items.join(" · ")}` : "";
       }
 
       function saveExcelMappingsFromEditor() {
-        const types = {};
-        elements.excelMappingEditor.querySelectorAll("[data-mapping-kind]").forEach((row) => {
-          types[row.dataset.mappingKind] = {
-            fileAliases: splitAliases(row.querySelector("[data-mapping-files]").value),
-            sheetAliases: splitAliases(row.querySelector("[data-mapping-sheets]").value),
-            columns: parseColumnAliases(row.querySelector("[data-mapping-columns]").value),
-          };
-        });
+        const types = collectExcelMappingsFromEditor();
+        const conflicts = sheetAliasConflicts(types);
+        renderSheetAliasWarning(conflicts);
+        if (conflicts.length) {
+          showToast("중복된 통합 시트명 별칭을 정리한 후 저장하세요.", true);
+          return false;
+        }
         state.excelMappings = normalizeExcelMappingRecord(types);
         localStorage.setItem(EXCEL_MAPPING_KEY, JSON.stringify({ schemaVersion: EXCEL_MAPPING_SCHEMA, updatedAt: new Date().toISOString(), types: state.excelMappings }));
         renderExcelMappingEditor();
         showToast("Excel 별칭 매핑을 저장했습니다. 선택된 파일은 다시 올리면 새 매핑으로 판별됩니다.");
+        return true;
       }
 
       function loadPurchaseHistory() {
@@ -3039,6 +3042,14 @@
         return (aliases || []).some((alias) => target.includes(normalizeMappingText(alias)));
       }
 
+      function sheetAliasMatchScore(value, aliases) {
+        const target = normalizeMappingText(value);
+        const normalizedAliases = (aliases || []).map(normalizeMappingText).filter(Boolean);
+        if (normalizedAliases.some((alias) => target === alias)) return 2;
+        if (normalizedAliases.some((alias) => target.includes(alias))) return 1;
+        return 0;
+      }
+
       function parseGenericWorkbookSheet({ workbook, fileName, fileHash, sheetName, kind }) {
         const mapping = state.excelMappings[kind];
         const required = kind === "purchases" ? ["품목코드", "품목명", "수량", "구매처"] : ["품목코드", "품목명", "수량", "거래처"];
@@ -3142,8 +3153,9 @@
         const ignored = [];
 
         workbook.SheetNames.forEach((sheetName) => {
-          const matchedKinds = FILE_KINDS.filter((kind) =>
-            aliasMatches(sheetName, state.excelMappings?.[kind]?.sheetAliases));
+          const kindScores = FILE_KINDS.map((kind) => ({ kind, score: sheetAliasMatchScore(sheetName, state.excelMappings?.[kind]?.sheetAliases) }));
+          const bestAliasScore = Math.max(...kindScores.map((item) => item.score));
+          const matchedKinds = bestAliasScore > 0 ? kindScores.filter((item) => item.score === bestAliasScore).map((item) => item.kind) : [];
           if (matchedKinds.length === 0) {
             ignored.push(sheetName);
             return;
@@ -3210,12 +3222,12 @@
           { kind: "purchases", parsed: asPurchases, structureScore: asPurchases.missingColumns.length === 0 ? 704 : 0 },
           { kind: "sales", parsed: asSales, structureScore: asSales.missingColumns.length === 0 ? 704 : 0 },
         ].filter((candidate) => candidate.structureScore > 0);
-        if (!candidates.length) throw new Error(`${file.name}: 시트 구조와 열 이름으로 데이터 종류를 판별하지 못했습니다. 환경설정의 Excel 매핑 별칭을 확인하세요.`);
+        if (!candidates.length) throw new Error(`${file.name}: 시트 구조와 열 이름으로 데이터 종류를 판별하지 못했습니다. 환경설정의 통합 Excel 시트명 매칭을 확인하세요.`);
         const topStructureScore = Math.max(...candidates.map((candidate) => candidate.structureScore));
         let finalists = candidates.filter((candidate) => candidate.structureScore === topStructureScore);
         if (finalists.length === 1) return finalists[0];
-        const bestSheetHint = Math.max(...finalists.map((candidate) => aliasMatches(candidate.parsed.sheetName, state.excelMappings[candidate.kind].sheetAliases) ? 1 : 0));
-        if (bestSheetHint > 0) finalists = finalists.filter((candidate) => aliasMatches(candidate.parsed.sheetName, state.excelMappings[candidate.kind].sheetAliases));
+        const bestSheetHint = Math.max(...finalists.map((candidate) => sheetAliasMatchScore(candidate.parsed.sheetName, state.excelMappings[candidate.kind].sheetAliases)));
+        if (bestSheetHint > 0) finalists = finalists.filter((candidate) => sheetAliasMatchScore(candidate.parsed.sheetName, state.excelMappings[candidate.kind].sheetAliases) === bestSheetHint);
         if (finalists.length === 1) return finalists[0];
         const bestFileHint = Math.max(...finalists.map((candidate) => aliasMatches(file.name, state.excelMappings[candidate.kind].fileAliases) ? 1 : 0));
         if (bestFileHint > 0) finalists = finalists.filter((candidate) => aliasMatches(file.name, state.excelMappings[candidate.kind].fileAliases));
@@ -3396,17 +3408,16 @@
         const result = state.integratedFile;
         elements.integratedCard.classList.toggle("has-file", Boolean(result?.applied?.size));
         elements.integratedCard.classList.toggle("has-error", Boolean(result?.failures?.length));
-        if (state.loading.integrated) {
-          elements.integratedFileName.textContent = "시트별 구조를 확인하는 중...";
-          return;
+        elements.integratedCard.classList.toggle("is-loading", Boolean(state.loading.integrated));
+        let status = "통합 Excel 파일 불러오기";
+        if (state.loading.integrated) status = "통합 Excel 시트 구조 확인 중";
+        else if (result) {
+          const appliedCount = result.applied?.size || 0;
+          const failureCount = result.failures?.length || 0;
+          status = `${result.fileName} · 적용 ${appliedCount}${failureCount ? ` · 오류 ${failureCount}` : ""}`;
         }
-        if (!result) {
-          elements.integratedFileName.textContent = "여러 시트를 주문·재고·구매·판매로 자동 분류";
-          return;
-        }
-        const appliedCount = result.applied?.size || 0;
-        const failureCount = result.failures?.length || 0;
-        elements.integratedFileName.textContent = `${result.fileName} · 적용 ${appliedCount}${failureCount ? ` · 오류 ${failureCount}` : ""}`;
+        elements.integratedFileButton.title = status;
+        elements.integratedFileButton.setAttribute("aria-label", `통합 Excel 파일 불러오기 · ${status}`);
       }
 
       function renderValidation() {
@@ -5847,32 +5858,11 @@
 
       function bindIntegratedFileCard() {
         const openPicker = () => elements.integratedInput.click();
-        elements.integratedDrop.addEventListener("click", openPicker);
         elements.integratedFileButton.addEventListener("click", openPicker);
         elements.integratedInput.addEventListener("change", () => {
           const file = Array.from(elements.integratedInput.files || []).find(Boolean);
           handleIntegratedFile(file);
           elements.integratedInput.value = "";
-        });
-        ["dragenter", "dragover"].forEach((eventName) => {
-          elements.integratedCard.addEventListener(eventName, (event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            elements.integratedCard.classList.add("bundle-dragover");
-            if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
-          });
-        });
-        elements.integratedCard.addEventListener("dragleave", (event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          elements.integratedCard.classList.remove("bundle-dragover");
-        });
-        elements.integratedCard.addEventListener("drop", (event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          elements.integratedCard.classList.remove("bundle-dragover");
-          const file = Array.from(event.dataTransfer?.files || []).find(Boolean);
-          handleIntegratedFile(file);
         });
       }
 
