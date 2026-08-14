@@ -6,8 +6,16 @@ import {
   newId,
   nowIso,
   normalizeText
-} from './orderq-db.js?v=0.5.1';
-import { resolveWarehouseInTransaction, warehouseSnapshot } from './warehouse-master.js?v=0.5.1';
+} from './orderq-db.js?v=0.6.0';
+import { resolveWarehouseInTransaction, warehouseSnapshot } from './warehouse-master.js?v=0.6.0';
+import {
+  ORDER_STATUS, ADMIN_STATUS, OPS_STATUS, INPUT_CHANNEL,
+  normalizeOrderStatus, normalizeAdminStatus, normalizeOpsStatus, inferInputChannel,
+  orderDateKey, formatOrderNo, orderSequenceFromNo, assigneeIdentity, externalOrderSnapshot,
+  normalizedOrderView, documentFieldChanges
+} from './order-document-model.js?v=0.6.0';
+
+export { ORDER_STATUS, ADMIN_STATUS, OPS_STATUS, INPUT_CHANNEL };
 
 export const MATCH_STATUS = Object.freeze({
   MATCHED: 'MATCHED',
@@ -16,7 +24,7 @@ export const MATCH_STATUS = Object.freeze({
   CANCELLED: 'CANCELLED'
 });
 
-export const ORDER_STATUS = Object.freeze({
+export const MATCHING_STATUS = Object.freeze({
   CONFIRMED: 'CONFIRMED',
   PARTIAL: 'PARTIAL',
   MATCH_FAILED: 'MATCH_FAILED',
@@ -49,12 +57,12 @@ function broadcast(type, order) {
 
 function summarizeStatus(items) {
   const active = items.filter(item => item.matchStatus !== MATCH_STATUS.CANCELLED && item.matchStatus !== MATCH_STATUS.EXCLUDED);
-  if (!active.length) return ORDER_STATUS.MATCH_FAILED;
+  if (!active.length) return MATCHING_STATUS.MATCH_FAILED;
   const matched = active.filter(item => item.matchStatus === MATCH_STATUS.MATCHED).length;
   const failed = active.filter(item => item.matchStatus === MATCH_STATUS.MATCH_FAILED).length;
-  if (matched && failed) return ORDER_STATUS.PARTIAL;
-  if (failed && !matched) return ORDER_STATUS.MATCH_FAILED;
-  return ORDER_STATUS.CONFIRMED;
+  if (matched && failed) return MATCHING_STATUS.PARTIAL;
+  if (failed && !matched) return MATCHING_STATUS.MATCH_FAILED;
+  return MATCHING_STATUS.CONFIRMED;
 }
 
 function asNumberOrNull(value) {
@@ -169,13 +177,50 @@ async function resolveCustomerInTransaction(tx, customerInput) {
   return customer;
 }
 
+function summarizeAmounts(items) {
+  const supplyAmountTotal = items.reduce((sum, item) => {
+    const amount = asNumberOrNull(item.supplyAmount);
+    return sum + (amount ?? (Number(item.finalQuantity || item.rawQuantity || 0) * Number(item.price || 0)));
+  }, 0);
+  const vatAmountTotal = items.reduce((sum, item) => sum + Number(item.vatAmount || 0), 0);
+  return { supplyAmountTotal, vatAmountTotal, orderAmount: supplyAmountTotal + vatAmountTotal };
+}
+
+async function allocateOrderNoInTransaction(tx, orderDate, requestedOrderNo = '') {
+  const requested = String(requestedOrderNo || '').trim();
+  if (requested) return requested;
+  const dateKey = orderDateKey(orderDate);
+  const metaStore = tx.objectStore(STORE.META);
+  const orderStore = tx.objectStore(STORE.ORDERS);
+  const counterKey = `orderNoSequence:${dateKey}`;
+  const counter = await requestToPromise(metaStore.get(counterKey));
+  const existing = await requestToPromise(orderStore.index('byOrderNo').getAll());
+  const highestExisting = existing.reduce((highest, order) => Math.max(highest, orderSequenceFromNo(order.orderNo, dateKey)), 0);
+  const sequence = Math.max(Number(counter?.value) || 0, highestExisting) + 1;
+  metaStore.put({ key: counterKey, value: sequence, updatedAt: nowIso() });
+  return formatOrderNo(dateKey, sequence);
+}
+
+function orderWorkflowSnapshot(payload, previous = null) {
+  const sourceType = String(payload.sourceType || previous?.sourceType || 'MANUAL').trim();
+  const assignee = assigneeIdentity(payload.assigneeName, payload.assigneeId, previous);
+  return {
+    ...assignee,
+    orderStatus: normalizeOrderStatus(payload.orderStatus, previous?.orderStatus || previous?.status),
+    adminStatus: normalizeAdminStatus(payload.adminStatus || previous?.adminStatus),
+    opsStatus: normalizeOpsStatus(payload.opsStatus || previous?.opsStatus),
+    inputChannel: inferInputChannel(sourceType, payload.inputChannel || previous?.inputChannel),
+    ...externalOrderSnapshot(payload, previous || {})
+  };
+}
+
 function appendEvent(tx, order, eventType, detail = {}) {
   const event = {
     eventId: newId('OE'),
     orderId: order.orderId,
     revision: order.revision,
     eventType,
-    actor: 'LOCAL_USER',
+    actor: String(detail.actor || 'LOCAL_USER'),
     detail,
     createdAt: nowIso()
   };
@@ -187,7 +232,7 @@ export async function createOrder(payload) {
   const db = await openOrderQDb();
   const tx = db.transaction([
     STORE.CUSTOMERS, STORE.CUSTOMER_ALIASES, STORE.WAREHOUSES, STORE.WAREHOUSE_ALIASES, STORE.ORDERS, STORE.ORDER_ITEMS,
-    STORE.ORDER_EVENTS, STORE.SYNC_QUEUE
+    STORE.ORDER_EVENTS, STORE.SYNC_QUEUE, STORE.META
   ], 'readwrite');
 
   try {
@@ -200,15 +245,22 @@ export async function createOrder(payload) {
       if (existingSourceOrder) throw new DuplicateSourceMessageError(existingSourceOrder);
     }
     const orderId = newId('ORD');
-    const items = (payload.items || [])
+    const orderNo = await allocateOrderNoInTransaction(tx, payload.orderDate, payload.orderNo);
+    let items = (payload.items || [])
       .filter(item => item.itemCode || item.itemName || item.quantity || item.rawText)
       .map((item, index) => normalizeItem({ ...item, lineNo: index + 1 }, orderId));
 
     if (!items.length) throw new Error('주문상품을 1개 이상 입력하세요.');
 
     const timestamp = nowIso();
+    const workflow = orderWorkflowSnapshot(payload);
+    if (workflow.orderStatus === ORDER_STATUS.FULL_CANCEL) {
+      items = items.map(item => ({ ...item, matchStatus: MATCH_STATUS.CANCELLED, updatedAt: timestamp }));
+    }
+    const matchingStatus = workflow.orderStatus === ORDER_STATUS.FULL_CANCEL ? MATCHING_STATUS.CANCELLED : summarizeStatus(items);
     const order = {
       orderId,
+      orderNo,
       revision: 1,
       orderDate: payload.orderDate,
       customerId: customer.customerId,
@@ -218,18 +270,27 @@ export async function createOrder(payload) {
       transactionType: String(payload.transactionType ?? '').trim(),
       sourceType: payload.sourceType || 'MANUAL',
       sourceId: payload.sourceId || '',
-      sourceMessageKey,
-      status: summarizeStatus(items),
+      sourceMessageKey: sourceMessageKey || undefined,
+      ...workflow,
+      status: matchingStatus,
+      matchingStatus,
+      ...summarizeAmounts(items),
       matchedCount: items.filter(item => item.matchStatus === MATCH_STATUS.MATCHED).length,
       matchFailedCount: items.filter(item => item.matchStatus === MATCH_STATUS.MATCH_FAILED).length,
       createdAt: timestamp,
       updatedAt: timestamp
     };
 
-    orderStore.add(order);
+    await requestToPromise(orderStore.add(order));
     const itemStore = tx.objectStore(STORE.ORDER_ITEMS);
-    items.forEach(item => itemStore.add(item));
-    const event = appendEvent(tx, order, 'ORDER_CREATED', { sourceType: order.sourceType, itemCount: items.length });
+    for (const item of items) await requestToPromise(itemStore.add(item));
+    const event = appendEvent(tx, order, 'ORDER_CREATED', {
+      sourceType: order.sourceType,
+      inputChannel: order.inputChannel,
+      orderNo: order.orderNo,
+      itemCount: items.length,
+      actor: payload.actorName || 'LOCAL_USER'
+    });
     enqueue(tx, 'ORDER', orderId, 'UPSERT', order.revision, { order, items }, 0);
     enqueue(tx, 'ORDER_EVENT', event.eventId, 'UPSERT', event.revision, event, 0);
 
@@ -255,20 +316,28 @@ export async function updateOrder(orderId, expectedRevision, payload) {
     const existing = await requestToPromise(orderStore.get(orderId));
     if (!existing) throw new Error('주문을 찾을 수 없습니다.');
     if (existing.revision !== expectedRevision) throw new OrderRevisionConflictError(existing);
-    if (existing.status === ORDER_STATUS.CANCELLED) throw new Error('취소된 주문은 수정할 수 없습니다.');
+    const previousOrder = normalizedOrderView(existing);
+    if (previousOrder.orderStatus === ORDER_STATUS.FULL_CANCEL) throw new Error('전체취소된 주문은 수정할 수 없습니다.');
 
     const customer = await resolveCustomerInTransaction(tx, payload);
     const warehouse = await resolveWarehouseInTransaction(tx, payload, { sourceType: payload.sourceType || existing.sourceType || 'MANUAL', sourceId: orderId });
     const oldItems = await requestToPromise(itemStore.index('byOrderId').getAll(orderId));
     const oldById = new Map(oldItems.map(item => [item.orderItemId, item]));
-    const items = (payload.items || [])
+    let items = (payload.items || [])
       .filter(item => item.itemCode || item.itemName || item.quantity || item.rawText)
       .map((item, index) => normalizeItem({ ...item, lineNo: index + 1 }, orderId, oldById.get(item.orderItemId)));
     if (!items.length) throw new Error('주문상품을 1개 이상 입력하세요.');
 
+    const workflow = orderWorkflowSnapshot(payload, previousOrder);
+    if (workflow.orderStatus === ORDER_STATUS.FULL_CANCEL) {
+      const timestamp = nowIso();
+      items = items.map(item => ({ ...item, matchStatus: MATCH_STATUS.CANCELLED, updatedAt: timestamp }));
+    }
+
     oldItems.forEach(item => itemStore.delete(item.orderItemId));
     items.forEach(item => itemStore.put(item));
 
+    const matchingStatus = workflow.orderStatus === ORDER_STATUS.FULL_CANCEL ? MATCHING_STATUS.CANCELLED : summarizeStatus(items);
     const next = {
       ...existing,
       revision: existing.revision + 1,
@@ -278,13 +347,21 @@ export async function updateOrder(orderId, expectedRevision, payload) {
       ...warehouseSnapshot(payload, warehouse),
       orderMessage: String(payload.orderMessage ?? '').trim(),
       transactionType: String(payload.transactionType ?? '').trim(),
-      status: summarizeStatus(items),
+      ...workflow,
+      status: matchingStatus,
+      matchingStatus,
+      ...summarizeAmounts(items),
       matchedCount: items.filter(item => item.matchStatus === MATCH_STATUS.MATCHED).length,
       matchFailedCount: items.filter(item => item.matchStatus === MATCH_STATUS.MATCH_FAILED).length,
       updatedAt: nowIso()
     };
     orderStore.put(next);
-    const event = appendEvent(tx, next, 'ORDER_UPDATED', { fromRevision: expectedRevision, itemCount: items.length });
+    const event = appendEvent(tx, next, 'ORDER_UPDATED', {
+      fromRevision: expectedRevision,
+      itemCount: items.length,
+      changes: documentFieldChanges(previousOrder, next),
+      actor: payload.actorName || 'LOCAL_USER'
+    });
     enqueue(tx, 'ORDER', orderId, 'UPSERT', next.revision, { order: next, items }, expectedRevision);
     enqueue(tx, 'ORDER_EVENT', event.eventId, 'UPSERT', event.revision, event, 0);
 
@@ -306,16 +383,27 @@ export async function cancelOrder(orderId, expectedRevision) {
     const existing = await requestToPromise(orderStore.get(orderId));
     if (!existing) throw new Error('주문을 찾을 수 없습니다.');
     if (existing.revision !== expectedRevision) throw new OrderRevisionConflictError(existing);
-    if (existing.status === ORDER_STATUS.CANCELLED) return { order: existing, items: [] };
+    const previousOrder = normalizedOrderView(existing);
+    if (previousOrder.orderStatus === ORDER_STATUS.FULL_CANCEL) return { order: previousOrder, items: [] };
 
     const items = await requestToPromise(itemStore.index('byOrderId').getAll(orderId));
     const timestamp = nowIso();
     const cancelledItems = items.map(item => ({ ...item, matchStatus: MATCH_STATUS.CANCELLED, updatedAt: timestamp }));
     cancelledItems.forEach(item => itemStore.put(item));
 
-    const next = { ...existing, revision: existing.revision + 1, status: ORDER_STATUS.CANCELLED, updatedAt: timestamp };
+    const next = {
+      ...existing,
+      revision: existing.revision + 1,
+      orderStatus: ORDER_STATUS.FULL_CANCEL,
+      status: MATCHING_STATUS.CANCELLED,
+      matchingStatus: MATCHING_STATUS.CANCELLED,
+      updatedAt: timestamp
+    };
     orderStore.put(next);
-    const event = appendEvent(tx, next, 'ORDER_CANCELLED', { fromRevision: expectedRevision });
+    const event = appendEvent(tx, next, 'ORDER_CANCELLED', {
+      fromRevision: expectedRevision,
+      changes: documentFieldChanges(previousOrder, next)
+    });
     enqueue(tx, 'ORDER', orderId, 'UPSERT', next.revision, { order: next, items: cancelledItems }, expectedRevision);
     enqueue(tx, 'ORDER_EVENT', event.eventId, 'UPSERT', event.revision, event, 0);
     await transactionDone(tx);
@@ -329,16 +417,18 @@ export async function cancelOrder(orderId, expectedRevision) {
 
 export async function getOrder(orderId) {
   const db = await openOrderQDb();
-  const tx = db.transaction([STORE.ORDERS, STORE.ORDER_ITEMS], 'readonly');
+  const tx = db.transaction([STORE.ORDERS, STORE.ORDER_ITEMS, STORE.ORDER_EVENTS], 'readonly');
   const order = await requestToPromise(tx.objectStore(STORE.ORDERS).get(orderId));
   if (!order) {
     await transactionDone(tx);
     return null;
   }
   const items = await requestToPromise(tx.objectStore(STORE.ORDER_ITEMS).index('byOrderId').getAll(orderId));
+  const events = await requestToPromise(tx.objectStore(STORE.ORDER_EVENTS).index('byOrderId').getAll(orderId));
   await transactionDone(tx);
   items.sort((a, b) => (a.lineNo || 0) - (b.lineNo || 0));
-  return { order, items };
+  events.sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+  return { order: normalizedOrderView(order), items, events };
 }
 
 export async function listOrders() {
@@ -346,7 +436,9 @@ export async function listOrders() {
   const tx = db.transaction(STORE.ORDERS, 'readonly');
   const orders = await requestToPromise(tx.objectStore(STORE.ORDERS).getAll());
   await transactionDone(tx);
-  return orders.sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
+  return orders
+    .map(normalizedOrderView)
+    .sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
 }
 
 export function subscribeOrderChanges(listener) {

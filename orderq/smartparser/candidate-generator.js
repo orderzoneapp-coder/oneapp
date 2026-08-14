@@ -1,4 +1,4 @@
-import { STORE, getAll, normalizeText } from '../orderq-db.js?v=0.5.1';
+import { STORE, getAll, normalizeText } from '../orderq-db.js?v=0.6.0';
 
 function similarity(left, right) {
   const a = normalizeText(left);

@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="google" content="notranslate">
-  <title>ONEAPP ORDER Q vNext · 수기 주문</title>
+  <title>ONEAPP ORDER Q vNext · 주문서 입력</title>
   <link rel="stylesheet" href="./orderq.css">
 </head>
 <body class="manual-order-page">
@@ -13,13 +13,13 @@
       <div class="brand">
         <strong>ONEAPP</strong>
         <span class="logo-frame" aria-hidden="true"><img src="../assets/order-q-logo.png" alt=""></span>
-        <span class="badge">vNext 0.5.1</span>
-        <span id="pageMode">수기 주문</span>
+        <span class="badge">vNext 0.6.0</span>
+        <span id="pageMode">주문서 입력</span>
       </div>
       <div class="top-system" aria-live="polite">
         <div class="top-system-line">
           <strong>System.IO</strong>
-          <span id="orderMeta" title="시스템이 관리하는 주문 ID·Revision·상태입니다.">신규 주문 · 저장 전</span>
+          <span id="orderMeta" title="관리자용 주문번호와 시스템 ID·Revision입니다.">신규 주문전표 · 저장 전</span>
         </div>
         <span class="top-system-help">품목코드 입력 후 마스터 매칭 결과를 표시합니다.</span>
         <div id="message" class="message"></div>
@@ -27,14 +27,15 @@
       <div class="top-actions">
         <a class="btn dark" href="./collector.html">이력수집</a>
         <a class="btn dark" href="./cloud.html">클라우드</a>
-        <a class="btn dark" href="./parser.html">SmartParser</a>
+        <a class="btn dark" href="./parser.html">ORDER IN</a>
+        <a class="btn dark" href="../orderops/list.html">ORDER Q 운영</a>
         <a class="btn dark" href="./index.html">주문현황</a>
         <button class="btn primary" id="saveTopBtn" type="button">저장</button>
       </div>
     </header>
     <main class="panel">
       <section class="form-grid">
-        <div class="field">
+        <div class="field form-span-2">
           <label for="orderDate">일자</label>
           <div class="date-control">
             <input class="control" id="orderDate" type="text" inputmode="numeric" maxlength="10" placeholder="YYYY-MM-DD" autocomplete="off">
@@ -42,16 +43,16 @@
             <input class="native-date-picker" id="orderDatePicker" type="date" tabindex="-1" aria-hidden="true">
           </div>
         </div>
-        <div class="field">
+        <div class="field form-span-2">
           <label for="customerName">거래처명</label>
           <input class="control" id="customerName" type="text" placeholder="거래처명" autocomplete="off">
         </div>
-        <div class="field">
+        <div class="field form-span-2">
           <label for="warehouse">출하창고</label>
           <input class="control" id="warehouse" type="text" list="warehouseOptions" placeholder="코드 또는 창고명" autocomplete="off">
           <datalist id="warehouseOptions"></datalist>
         </div>
-        <div class="field">
+        <div class="field form-span-2">
           <label for="transactionType">거래유형</label>
           <select class="control" id="transactionType">
             <option value="기타">기타</option>
@@ -61,11 +62,56 @@
             <option value="사내사용">사내사용</option>
           </select>
         </div>
-        <div class="field wide">
+        <div class="field form-span-2">
+          <label for="assigneeName">담당자 <span class="field-help">이 전표의 책임 관리자</span></label>
+          <input class="control" id="assigneeName" type="text" list="assigneeOptions" placeholder="담당자" autocomplete="off">
+          <datalist id="assigneeOptions"></datalist>
+        </div>
+        <div class="field form-span-2">
+          <label for="orderStatus">주문상태</label>
+          <select class="control" id="orderStatus">
+            <option value="ORDER">주문</option>
+            <option value="PAID">입금</option>
+            <option value="PREPARING">준비</option>
+            <option value="SHIPPING">배송</option>
+            <option value="COMPLETED">완료</option>
+            <option value="FULL_CANCEL">전체취소</option>
+            <option value="PARTIAL_CANCEL">부분취소</option>
+          </select>
+        </div>
+        <div class="field form-span-2">
+          <label for="adminStatus">관리자상태</label>
+          <select class="control" id="adminStatus">
+            <option value="UNCHECKED">미확인</option>
+            <option value="CHECKED">확인</option>
+            <option value="HOLD">보류</option>
+          </select>
+        </div>
+        <div class="field form-span-2">
+          <label for="opsStatus">ORDER Q 상태</label>
+          <select class="control" id="opsStatus">
+            <option value="ACTIVE">처리중</option>
+            <option value="CLOSED">종결</option>
+          </select>
+        </div>
+        <div class="field form-span-4">
           <label for="orderMessage">전표 메모 <span class="field-help">주문건 전체 전달사항</span></label>
           <input class="control" id="orderMessage" type="text" placeholder="이 주문 전체에 전달할 내용">
         </div>
       </section>
+
+      <details class="external-order-section" id="externalOrderSection">
+        <summary>외부 주문정보 <span id="inputChannelLabel">직접입력</span></summary>
+        <div class="external-order-grid">
+          <div class="field"><label for="externalOrderNo">외부 주문번호</label><input class="control" id="externalOrderNo" type="text"></div>
+          <div class="field"><label for="externalOriginalStatus">쇼핑몰 원본상태</label><input class="control" id="externalOriginalStatus" type="text"></div>
+          <div class="field"><label for="productAmount">상품금액</label><input class="control num" id="productAmount" type="number" step="1"></div>
+          <div class="field"><label for="couponDiscount">쿠폰할인</label><input class="control num" id="couponDiscount" type="number" step="1"></div>
+          <div class="field"><label for="pointsUsed">포인트사용</label><input class="control num" id="pointsUsed" type="number" step="1"></div>
+          <div class="field"><label for="shippingFee">배송비</label><input class="control num" id="shippingFee" type="number" step="1"></div>
+          <div class="field"><label for="paymentAmount">결제금액</label><input class="control num" id="paymentAmount" type="number" step="1"></div>
+        </div>
+      </details>
 
       <div class="toolbar">
         <button class="btn" id="removeRowsBtn" type="button">선택행 삭제</button>
@@ -164,23 +210,27 @@
 
   <script type="module">
     import {
-      createOrder, updateOrder, cancelOrder, getOrder, subscribeOrderChanges,
+      createOrder, updateOrder, cancelOrder, getOrder, listOrders, subscribeOrderChanges,
       OrderRevisionConflictError, MATCH_STATUS
-    } from './order-intake-engine.js?v=0.5.1';
+    } from './order-intake-engine.js?v=0.6.0';
     import {
       syncBeforeOrderMutation, syncAfterLocalMutation, getSyncState,
       CloudOrderConflictError
-    } from './orderq-sync-engine.js?v=0.5.1';
-    import { loadProductCatalog, searchProductCatalog } from './product-master-search.js?v=0.5.1';
-    import { loadWarehouseCatalog, matchWarehouseInput, warehouseDisplayName } from './warehouse-master.js?v=0.5.1';
+    } from './orderq-sync-engine.js?v=0.6.0';
+    import { loadProductCatalog, searchProductCatalog } from './product-master-search.js?v=0.6.0';
+    import { loadWarehouseCatalog, matchWarehouseInput, warehouseDisplayName } from './warehouse-master.js?v=0.6.0';
     import {
       calculateLineTotal, calculateVatAmount, compareManualRows, cycleManualPriceOption, numberOrNull, shiftIsoDate
-    } from './manual-order-grid.js?v=0.5.1';
+    } from './manual-order-grid.js?v=0.6.0';
+    import { INPUT_CHANNEL_LABEL } from './order-document-model.js?v=0.6.0';
 
     const params = new URLSearchParams(location.search);
     const editingOrderId = params.get('orderId');
     let loadedRevision = null;
     let loadedCustomerId = null;
+    let loadedAssigneeId = '';
+    let loadedSourceType = 'MANUAL';
+    let loadedInputChannel = 'DIRECT';
     let productCatalog = [];
     let warehouseCatalog = { warehouses: [], aliases: [] };
     let selectedWarehouseId = '';
@@ -219,6 +269,10 @@
     const warehouseInput = document.getElementById('warehouse');
     const warehouseOptions = document.getElementById('warehouseOptions');
     const transactionTypeInput = document.getElementById('transactionType');
+    const assigneeNameInput = document.getElementById('assigneeName');
+    const orderStatusInput = document.getElementById('orderStatus');
+    const adminStatusInput = document.getElementById('adminStatus');
+    const opsStatusInput = document.getElementById('opsStatus');
     const columnMenuButton = document.getElementById('columnMenuBtn');
     const columnMenu = document.getElementById('columnMenu');
     const sortRowsButton = document.getElementById('sortRowsBtn');
@@ -646,7 +700,20 @@
         warehouse: warehouseName,
         transactionType: document.getElementById('transactionType').value,
         orderMessage: document.getElementById('orderMessage').value,
-        sourceType: 'MANUAL',
+        assigneeId: loadedAssigneeId,
+        assigneeName: assigneeNameInput.value,
+        orderStatus: orderStatusInput.value,
+        adminStatus: adminStatusInput.value,
+        opsStatus: opsStatusInput.value,
+        sourceType: loadedSourceType,
+        inputChannel: loadedInputChannel,
+        externalOrderNo: document.getElementById('externalOrderNo').value,
+        externalOriginalStatus: document.getElementById('externalOriginalStatus').value,
+        productAmount: numberOrNull(document.getElementById('productAmount').value),
+        couponDiscount: numberOrNull(document.getElementById('couponDiscount').value),
+        pointsUsed: numberOrNull(document.getElementById('pointsUsed').value),
+        shippingFee: numberOrNull(document.getElementById('shippingFee').value),
+        paymentAmount: numberOrNull(document.getElementById('paymentAmount').value),
         items: readItems()
       };
     }
@@ -884,19 +951,33 @@
       const { order, items } = data;
       loadedRevision = order.revision;
       loadedCustomerId = order.customerId;
+      loadedAssigneeId = order.assigneeId || '';
+      loadedSourceType = order.sourceType || 'MANUAL';
+      loadedInputChannel = order.inputChannel || 'DIRECT';
       pageMode.textContent = '주문서 수정';
-      orderMeta.textContent = `${order.orderId} · Revision ${order.revision} · ${order.status}`;
+      orderMeta.textContent = `${order.orderNo || order.orderId} · Revision ${order.revision} · ${order.orderId}`;
       orderDateInput.value = order.orderDate || todayLocal();
       customerNameInput.value = order.customerName || '';
       selectedWarehouseId = order.warehouseId || '';
       warehouseInput.value = order.warehouseName || order.warehouse || order.warehouseCode || '';
       transactionTypeInput.value = order.transactionType || '기타';
+      assigneeNameInput.value = order.assigneeName || '';
+      orderStatusInput.value = order.orderStatus || 'ORDER';
+      adminStatusInput.value = order.adminStatus || 'UNCHECKED';
+      opsStatusInput.value = order.opsStatus || 'ACTIVE';
       document.getElementById('orderMessage').value = order.orderMessage || '';
+      document.getElementById('inputChannelLabel').textContent = INPUT_CHANNEL_LABEL[loadedInputChannel] || loadedInputChannel;
+      document.getElementById('externalOrderNo').value = order.externalOrderNo || '';
+      document.getElementById('externalOriginalStatus').value = order.externalOriginalStatus || '';
+      ['productAmount', 'couponDiscount', 'pointsUsed', 'shippingFee', 'paymentAmount'].forEach(field => {
+        document.getElementById(field).value = order[field] ?? '';
+      });
+      if (loadedInputChannel !== 'DIRECT' || order.externalOrderNo) document.getElementById('externalOrderSection').open = true;
       itemRows.innerHTML = '';
       items.forEach(addRow);
       addRow();
-      cancelButton.hidden = order.status === 'CANCELLED';
-      if (order.status === 'CANCELLED') {
+      cancelButton.hidden = order.orderStatus === 'FULL_CANCEL';
+      if (order.orderStatus === 'FULL_CANCEL') {
         showMessage('취소된 주문입니다. 이 주문은 수정 저장할 수 없습니다.', 'warn');
         document.getElementById('saveTopBtn').disabled = true;
         document.getElementById('saveBottomBtn').disabled = true;
@@ -917,6 +998,22 @@
       orderMeta.textContent = `${editingOrderId} · 현재 화면 r${loadedRevision} / 최신 r${latest}`;
     }
 
+    async function initializeAssigneeOptions() {
+      const orders = await listOrders();
+      const names = [...new Set(orders.map(order => String(order.assigneeName || '').trim()).filter(Boolean))]
+        .sort((a, b) => a.localeCompare(b, 'ko'));
+      document.getElementById('assigneeOptions').innerHTML = '';
+      names.forEach(name => {
+        const option = document.createElement('option');
+        option.value = name;
+        document.getElementById('assigneeOptions').appendChild(option);
+      });
+    }
+
+    function openSavedDocument(orderId) {
+      location.replace(`./index.html?focus=${encodeURIComponent(orderId)}&saved=1`);
+    }
+
     async function save() {
       const payload = readPayload();
       if (!isValidOrderDate(payload.orderDate)) {
@@ -935,7 +1032,7 @@
           const result = await updateOrder(editingOrderId, loadedRevision, payload);
           loadedRevision = result.order.revision;
           loadedCustomerId = result.order.customerId;
-          orderMeta.textContent = `${result.order.orderId} · Revision ${result.order.revision} · ${result.order.status}`;
+          orderMeta.textContent = `${result.order.orderNo || result.order.orderId} · Revision ${result.order.revision}`;
           try {
             const sync = await syncAfterLocalMutation(result.order.orderId);
             showMessage(sync.online ? `저장 및 클라우드 동기화 완료 · Revision ${result.order.revision}` : `로컬 저장 완료 · Revision ${result.order.revision} · 클라우드 동기화 대기`, sync.online ? 'info' : 'warn');
@@ -943,10 +1040,11 @@
             if (syncError instanceof CloudOrderConflictError || syncError.code === 'ORDER_CLOUD_REVISION_CONFLICT') return showConflict(syncError);
             showMessage(`로컬 저장 완료 · Revision ${result.order.revision} · 클라우드 동기화 실패: ${syncError.message || syncError}`, 'warn');
           }
+          openSavedDocument(result.order.orderId);
         } else {
           const result = await createOrder(payload);
           try { await syncAfterLocalMutation(result.order.orderId); } catch (_) {}
-          location.replace(`./input.html?orderId=${encodeURIComponent(result.order.orderId)}`);
+          openSavedDocument(result.order.orderId);
         }
       } catch (error) {
         if (error instanceof OrderRevisionConflictError || error.code === 'ORDER_REVISION_CONFLICT' || error instanceof CloudOrderConflictError || error.code === 'ORDER_CLOUD_REVISION_CONFLICT') {
@@ -1089,7 +1187,7 @@
         await cloudPreflight();
         const result = await cancelOrder(editingOrderId, loadedRevision);
         loadedRevision = result.order.revision;
-        orderMeta.textContent = `${result.order.orderId} · Revision ${result.order.revision} · CANCELLED`;
+        orderMeta.textContent = `${result.order.orderNo || result.order.orderId} · Revision ${result.order.revision} · 전체취소`;
         try { await syncAfterLocalMutation(result.order.orderId); } catch (syncError) {
           if (syncError instanceof CloudOrderConflictError || syncError.code === 'ORDER_CLOUD_REVISION_CONFLICT') return showConflict(syncError);
         }
@@ -1160,7 +1258,7 @@
       }
     });
 
-    Promise.all([initializeProductCatalog(), initializeWarehouseCatalog(), loadEditingOrder()])
+    Promise.all([initializeProductCatalog(), initializeWarehouseCatalog(), initializeAssigneeOptions(), loadEditingOrder()])
       .then(() => {
         hydrateRowPriceOptions();
         updateColumnVisibility();

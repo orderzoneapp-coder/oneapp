@@ -1,18 +1,18 @@
-import { analyzeSmartText, summarizeParserResults } from './smartparser/parser-orchestrator.js?v=0.5.1';
-import { EVENT_TYPE } from './smartparser/order-event-detector.js?v=0.5.1';
-import { updateParseResult, recordProductMapping } from './smartparser/parser-repository.js?v=0.5.1';
+import { analyzeSmartText, summarizeParserResults } from './smartparser/parser-orchestrator.js?v=0.6.0';
+import { EVENT_TYPE } from './smartparser/order-event-detector.js?v=0.6.0';
+import { updateParseResult, recordProductMapping } from './smartparser/parser-repository.js?v=0.6.0';
 import {
   createOrder,
   DuplicateSourceMessageError,
   MATCH_STATUS
-} from './order-intake-engine.js?v=0.5.1';
+} from './order-intake-engine.js?v=0.6.0';
 import {
   getDeviceId,
   syncNow,
   syncAfterLocalMutation
-} from './orderq-sync-engine.js?v=0.5.1';
-import { getCloudUrl } from './orderq-cloud-adapter.js?v=0.5.1';
-import { loadWarehouseCatalog, matchWarehouseInput, warehouseDisplayName } from './warehouse-master.js?v=0.5.1';
+} from './orderq-sync-engine.js?v=0.6.0';
+import { getCloudUrl } from './orderq-cloud-adapter.js?v=0.6.0';
+import { loadWarehouseCatalog, matchWarehouseInput, warehouseDisplayName } from './warehouse-master.js?v=0.6.0';
 
 const EVENT_LABELS = Object.freeze({
   ORDER: '신규 주문',
@@ -116,7 +116,7 @@ function renderCard(result) {
   const customerListId = `customers-${result.parseResultId}`;
   const orderLike = [EVENT_TYPE.ORDER, EVENT_TYPE.ORDER_UPDATE].includes(result.eventType);
   const existingLink = result.orderId
-    ? `<a class="existing-order" href="./input.html?orderId=${encodeURIComponent(result.orderId)}">기존 주문 ${esc(result.orderId)}</a>`
+    ? `<a class="existing-order" href="./index.html?focus=${encodeURIComponent(result.orderId)}">기존 전표 보기</a>`
     : '';
   const table = orderLike ? `<div class="table-wrap"><table class="line-table">
     <thead><tr><th>원문</th><th>파싱 상품</th><th>후보</th><th>품목코드</th><th>확정 품명</th><th>규격</th><th>수량</th><th>단위</th><th>판정</th><th>매핑저장</th></tr></thead>
@@ -289,6 +289,7 @@ async function processCard(parseResultId) {
         transactionType: '기타',
         orderMessage: result.rawText,
         sourceType: result.sourceType,
+        inputChannel: 'ORDER_IN',
         sourceId: result.sourceId,
         sourceMessageKey: result.sourceMessageKey,
         items: orderItems(confirmed.parsedLines)
@@ -319,13 +320,13 @@ async function processCard(parseResultId) {
     card.classList.add('done');
     button.textContent = '등록 완료';
     const actionBox = card.querySelector('.card-actions');
-    actionBox.insertAdjacentHTML('afterbegin', `<a class="existing-order" href="./input.html?orderId=${encodeURIComponent(finalOrderId)}">주문 ${esc(finalOrderId)}</a>`);
+    actionBox.insertAdjacentHTML('afterbegin', `<a class="existing-order" href="./index.html?focus=${encodeURIComponent(finalOrderId)}&saved=1">주문현황에서 전표 보기</a>`);
     show(syncMessage, syncMessage.includes('완료') && !syncMessage.includes('확인') ? 'info' : 'warn');
   } catch (error) {
     if (error instanceof DuplicateSourceMessageError || error.code === 'ORDER_SOURCE_MESSAGE_DUPLICATE') {
       const orderId = error.existingOrder?.orderId || '';
       show(`이미 처리한 메시지입니다.${orderId ? ` 기존 주문 ${orderId}` : ''}`, 'warn');
-      if (orderId) card.querySelector('.card-actions').insertAdjacentHTML('afterbegin', `<a class="existing-order" href="./input.html?orderId=${encodeURIComponent(orderId)}">기존 주문 열기</a>`);
+      if (orderId) card.querySelector('.card-actions').insertAdjacentHTML('afterbegin', `<a class="existing-order" href="./index.html?focus=${encodeURIComponent(orderId)}">기존 전표 보기</a>`);
     } else {
       show(error.message || String(error), 'error');
     }

@@ -5,14 +5,15 @@ import {
   transactionDone,
   newId,
   nowIso
-} from './orderq-db.js?v=0.5.1';
-import { resolveWarehouseInTransaction, warehouseSnapshot } from './warehouse-master.js?v=0.5.1';
+} from './orderq-db.js?v=0.6.0';
+import { resolveWarehouseInTransaction, warehouseSnapshot } from './warehouse-master.js?v=0.6.0';
+import { normalizedOrderView, orderDateKey, formatOrderNo, orderSequenceFromNo } from './order-document-model.js?v=0.6.0';
 import {
   getCloudUrl,
   pushCloudChanges,
   pullCloudChanges,
   getCloudOrderHead
-} from './orderq-cloud-adapter.js?v=0.5.1';
+} from './orderq-cloud-adapter.js?v=0.6.0';
 
 const DEVICE_KEY = 'oneapp.orderq.device-id.v1';
 const META_CURSOR = 'cloudCursor';
@@ -78,6 +79,23 @@ function makeQueue(entityType, entityId, revision, payload, baseRevision = 0) {
   };
 }
 
+async function ensureOrderNoInTransaction(tx, order) {
+  const dateKey = orderDateKey(order.orderDate, new Date(order.createdAt || Date.now()));
+  const providedSequence = orderSequenceFromNo(order.orderNo, dateKey);
+  const metaStore = tx.objectStore(STORE.META);
+  const counterKey = `orderNoSequence:${dateKey}`;
+  const counter = await requestToPromise(metaStore.get(counterKey));
+  let sequence = Math.max(Number(counter?.value) || 0, providedSequence);
+  let orderNo = String(order.orderNo || '').trim();
+  if (!orderNo) {
+    const existing = await requestToPromise(tx.objectStore(STORE.ORDERS).index('byOrderNo').getAll());
+    sequence = Math.max(sequence, ...existing.map(row => orderSequenceFromNo(row.orderNo, dateKey))) + 1;
+    orderNo = formatOrderNo(dateKey, sequence);
+  }
+  metaStore.put({ key: counterKey, value: sequence, updatedAt: nowIso() });
+  return { ...order, orderNo };
+}
+
 async function bootstrapPhase1References() {
   if (await metaGet(META_BOOTSTRAP)) return;
   const [customers, aliases, events, productMappings, unitMappings, mappingEvents, queue] = await Promise.all([
@@ -116,7 +134,7 @@ async function discardLocalSourceDuplicate(localOrderId, remotePayload) {
   const canonicalOrderId = remotePayload.order.orderId;
   const db = await openOrderQDb();
   const tx = db.transaction([
-    STORE.ORDERS, STORE.ORDER_ITEMS, STORE.ORDER_EVENTS, STORE.PARSE_RESULTS, STORE.SYNC_QUEUE
+    STORE.ORDERS, STORE.ORDER_ITEMS, STORE.ORDER_EVENTS, STORE.PARSE_RESULTS, STORE.SYNC_QUEUE, STORE.META
   ], 'readwrite');
   const orderStore = tx.objectStore(STORE.ORDERS);
   const itemStore = tx.objectStore(STORE.ORDER_ITEMS);
@@ -133,7 +151,7 @@ async function discardLocalSourceDuplicate(localOrderId, remotePayload) {
   localEvents.forEach(event => eventStore.delete(event.eventId));
   orderStore.delete(localOrderId);
   (remotePayload.items || []).forEach(item => itemStore.put(item));
-  orderStore.put(remotePayload.order);
+  orderStore.put(normalizedOrderView(await ensureOrderNoInTransaction(tx, remotePayload.order)));
   parseResults.forEach(result => parseStore.put({ ...result, orderId: canonicalOrderId, duplicateOrderId: localOrderId, updatedAt: nowIso() }));
   queueRows.filter(row => row.status === 'PENDING' && (
     (row.entityType === 'ORDER' && row.entityId === localOrderId)
@@ -243,7 +261,7 @@ async function applyRemoteOrder(bundle) {
   if (!bundle?.order) return false;
   const orderId = bundle.order.orderId;
   const db = await openOrderQDb();
-  const tx = db.transaction([STORE.WAREHOUSES, STORE.WAREHOUSE_ALIASES, STORE.ORDERS, STORE.ORDER_ITEMS], 'readwrite');
+  const tx = db.transaction([STORE.WAREHOUSES, STORE.WAREHOUSE_ALIASES, STORE.ORDERS, STORE.ORDER_ITEMS, STORE.META], 'readwrite');
   const orderStore = tx.objectStore(STORE.ORDERS);
   const itemStore = tx.objectStore(STORE.ORDER_ITEMS);
   const current = await requestToPromise(orderStore.get(orderId));
@@ -255,7 +273,8 @@ async function applyRemoteOrder(bundle) {
   oldItems.forEach(item => itemStore.delete(item.orderItemId));
   (bundle.items || []).forEach(item => itemStore.put(item));
   const warehouse = await resolveWarehouseInTransaction(tx, bundle.order, { sourceType: 'ORDER_SYNC', sourceId: orderId });
-  orderStore.put(warehouse ? { ...bundle.order, ...warehouseSnapshot(bundle.order, warehouse) } : bundle.order);
+  const remoteOrder = warehouse ? { ...bundle.order, ...warehouseSnapshot(bundle.order, warehouse) } : bundle.order;
+  orderStore.put(normalizedOrderView(await ensureOrderNoInTransaction(tx, remoteOrder)));
   await transactionDone(tx);
   return true;
 }
@@ -374,14 +393,14 @@ export async function acceptRemoteOrder(orderId) {
   const remote = conflicts.map(row => row.remotePayload).find(payload => payload?.order);
   if (!remote) throw new Error('적용할 클라우드 최신본이 없습니다.');
   const db = await openOrderQDb();
-  const tx = db.transaction([STORE.ORDERS, STORE.ORDER_ITEMS, STORE.SYNC_QUEUE], 'readwrite');
+  const tx = db.transaction([STORE.ORDERS, STORE.ORDER_ITEMS, STORE.SYNC_QUEUE, STORE.META], 'readwrite');
   const orderStore = tx.objectStore(STORE.ORDERS);
   const itemStore = tx.objectStore(STORE.ORDER_ITEMS);
   const queueStore = tx.objectStore(STORE.SYNC_QUEUE);
   const oldItems = await requestToPromise(itemStore.index('byOrderId').getAll(orderId));
   oldItems.forEach(item => itemStore.delete(item.orderItemId));
   (remote.items || []).forEach(item => itemStore.put(item));
-  orderStore.put(remote.order);
+  orderStore.put(normalizedOrderView(await ensureOrderNoInTransaction(tx, remote.order)));
   conflicts.forEach(row => queueStore.put({ ...row, status: 'DISCARDED', resolvedAt: nowIso(), updatedAt: nowIso() }));
   await transactionDone(tx);
   return remote;

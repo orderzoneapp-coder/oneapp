@@ -7,7 +7,7 @@ import {
   nowIso,
   normalizeText,
   getByKey
-} from '../orderq-db.js?v=0.5.1';
+} from '../orderq-db.js?v=0.6.0';
 
 function queueRow(entityType, entityId, payload) {
   const timestamp = nowIso();
