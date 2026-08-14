@@ -38,6 +38,7 @@ export function normalizeMasterProduct(raw = {}, fallbackCode = '', source = 'CO
   const itemName = firstValue(raw, ['itemName', 'productName', '품목명', '상품명', '제품명', '품명']);
   const specification = firstValue(raw, ['specification', 'spec', '규격', '규격명']);
   const finalUnit = firstValue(raw, ['finalUnit', 'unit', '업무단위', '단위']);
+  const boxQuantity = numberOrNull(raw, ['boxQuantity', 'unitsPerBox', '박스당수량', '박스당 수량', '원단위', '입수', '기본']);
   const secondaryName = firstValue(raw, ['secondaryName', 'secondName', '제2품명', '제2상품명', '약칭', '별칭']);
   const searchInfo = firstValue(raw, ['searchInfo', 'searchKeywords', '검색창정보', '검색어등록', '검색어', '간단설명']);
   const outPrice = source === 'COMMON_MASTER' ? numberOrNull(raw, ['outPrice', '출고가']) : null;
@@ -50,6 +51,7 @@ export function normalizeMasterProduct(raw = {}, fallbackCode = '', source = 'CO
     searchInfo,
     specification,
     finalUnit,
+    boxQuantity,
     outPrice,
     status: firstValue(raw, ['status', '상태'], 'ACTIVE'),
     source,
