@@ -153,6 +153,20 @@ assert.equal(browser.isMerchNoInboundPrice({ finalData: { 입고가: 1200 }, sou
 assert.equal(browser.isMerchNoInboundPrice({ finalData: {}, sources: {} }, { 입고가: 0 }), true);
 assert.equal(browser.isMerchNoInboundPrice({ finalData: {}, sources: {} }, { 입고가: 9000 }), false);
 
+const noInboundQueue = browser.buildMerchNoInboundActionQueue("spot", [
+  { 코드: "A001", finalData: { 입고가: 0 }, sources: {} },
+  { 코드: "A001", finalData: { 입고가: "" }, sources: {} },
+  { 코드: "B002", finalData: { 입고가: "" }, sources: {} },
+  { 코드: "C003", finalData: { 입고가: 1200 }, sources: {} },
+], {});
+assert.equal(noInboundQueue.action, "spot");
+assert.deepEqual([...noInboundQueue.codes], ["A001", "B002"], "the queue must keep unique zero/blank inbound-price product codes only");
+assert.deepEqual(
+  JSON.parse(JSON.stringify(browser.applyMerchNoInboundActionToMaster({ 코드: "A001", 싯가: 0 }, "spot"))),
+  { 코드: "A001", 싯가: 1, 싯가판매여부: 1 },
+);
+assert.equal(browser.applyMerchNoInboundActionToMaster({ 코드: "B002", 판매여부: 1 }, "stop").판매여부, 0);
+
 const estimateSource = { _activeRole: "estimate", estimate: { 싯가: 1 } };
 const appliedEstimate = browser.applyMerchSpotPriceExcelPriority({ 싯가: "" }, estimateSource);
 assert.equal(appliedEstimate.싯가, 1, "estimate Excel spot-price must override a blank master value");
@@ -206,7 +220,10 @@ assert.match(html, /source: 'MerchOps bulk'/);
 
 assert.match(html, /MERCH_DETAIL_FILTER_VALUES = \['noInboundPrice'/);
 assert.match(html, /noInboundPrice: '입고가없음'/);
-assert.match(html, /toggleDetailFilter\('noInboundPrice'\)[\s\S]*"입고가없음"/);
+assert.match(html, /data-merch-issue-filter-group": "single"/);
+assert.match(html, /selectIssueFilter\('margin'\)[\s\S]*selectIssueFilter\('priceCheck'\)[\s\S]*selectIssueFilter\('noInboundPrice'\)/);
+assert.match(html, /data-merch-no-inbound-action": "touch-choice"[\s\S]*'싯가판매'[\s\S]*'판매정지'/);
+assert.match(html, /queuedNoInboundCodes[\s\S]*applyMerchNoInboundActionToMaster[\s\S]*setNoInboundActionQueue/);
 assert.match(html, /has\('noInboundPrice'\)/);
 assert.match(html, /changed: '가격변동', priceCheck: '가격변동'/);
 assert.match(html, /}, "가격변동"\)/);
