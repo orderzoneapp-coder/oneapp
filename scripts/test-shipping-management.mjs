@@ -13,7 +13,7 @@ assert.doesNotMatch(orderOpsHtml, /tokens truncated|…\d+ tokens truncated…/,
   "the public OrderOps mirror must not contain a truncated source fragment");
 assert.match(orderOpsHtml, /<body>[\s\S]*<\/body>\s*<\/html>/,
   "the public OrderOps mirror must remain a complete HTML document");
-assert.match(orderOpsHtml, /brand-badge">v1\.43</, "ORDER Q visible version must be v1.43");
+assert.match(orderOpsHtml, /brand-badge">v1\.44</, "ORDER Q visible version must be v1.44");
 assert.match(orderOpsHtml, /<title>ONEAPP ORDER Q · 출고관리<\/title>/,
   "the public page title must establish ORDER Q as shipment management");
 assert.match(orderOpsHtml, /aria-label="ONEAPP ORDER Q 출고관리"/,
@@ -22,7 +22,7 @@ assert.match(orderOpsHtml, /class="brand-logo" src="assets\/order-q-logo\.png"/,
   "the public header must use the approved ORDER Q logo asset");
 assert.match(orderOpsHtml, /\.brand-logo-frame\s*\{[\s\S]*?width:\s*120px;[\s\S]*?height:\s*20px;/,
   "the public ORDER Q logo must match the ONEAPP wordmark height");
-assert.match(orderOpsHtml, /ORDER Q v1\.43 · 출고관리/,
+assert.match(orderOpsHtml, /ORDER Q v1\.44 · 출고관리/,
   "the public footer must use the ORDER Q product concept");
 assert.doesNotMatch(
   orderOpsHtml.slice(orderOpsHtml.indexOf('<header class="global-header">'), orderOpsHtml.indexOf('</header>')),
@@ -37,11 +37,13 @@ assert.equal(
   "the repository logo must be the unmodified approved source image",
 );
 assert.ok(orderOpsHtml.includes('class="execution-panel"'),
-  "the public v1.43 execution controls must be separate from the upload strip");
-assert.match(orderOpsHtml, /\.execution-panel\s*\{[^}]*grid-template-columns:\s*repeat\(3,/,
-  "the public execution controls must use three visible segments");
-assert.match(orderOpsHtml, /\.upload-grid\s*\{[^}]*grid-template-columns:\s*repeat\(5,/,
-  "the public source strip must expose five source/result cards");
+  "the public v1.44 execution controls must be separate from the upload strip");
+assert.match(orderOpsHtml, /\.execution-panel\s*\{[^}]*grid-template-columns:\s*repeat\(2,/,
+  "the public execution controls must use two independent buttons");
+assert.match(orderOpsHtml, /\.execution-panel\s*\{[^}]*border:\s*0;/,
+  "the public execution controls must not share an outer border");
+assert.match(orderOpsHtml, /\.upload-grid\s*\{[^}]*grid-template-columns:\s*repeat\(6,/,
+  "the public source strip must expose five source/result cards and one integrated-file card");
 assert.ok(orderOpsHtml.includes('class="upload-grid" role="tablist" aria-label="업로드 자료 및 결과 화면"'),
   "the five source/result cards must form one accessible tab list");
 for (const sourceCardContract of [
@@ -55,6 +57,9 @@ for (const sourceCardContract of [
   'id="purchasesFileButton"',
   'id="salesFileButton"',
   '<p class="drop-title">수불현황</p>',
+  'id="integratedDrop" type="button"',
+  'id="integratedFileButton"',
+  '<p class="drop-title">통합파일</p>',
 ]) {
   assert.ok(orderOpsHtml.includes(sourceCardContract),
     `public source-card navigation contract is missing: ${sourceCardContract}`);
@@ -143,18 +148,31 @@ for (const requiredInteractionContract of [
   'getAllocationInventoryView(workspace)',
   'id="viewPresetSelect"',
   'id="viewPresetSaveButton"',
+  'id="viewPresetDefaultButton"',
   'oneapp.orderops.order-view-presets.v1',
-  'orderops-order-view-presets/v2',
+  'orderops-order-view-presets/v3',
   'const VIEW_PRESET_TABS = new Set(["allocations", "ledger", "inventory", "purchases", "sales"])',
   'columnWidths: normalizeStoredColumnWidths(value.view.columnWidths)',
   'columnOrder: normalizeStoredColumnOrder(value.view.columnOrder)',
   'hiddenColumns: normalizeStoredColumnOrder(value.view.hiddenColumns)',
   'function applyOrderViewPreset',
   'function saveCurrentOrderViewPreset',
+  'function setSelectedOrderViewPresetDefault',
+  'function applyDefaultOrderViewPreset',
+  'function parseIntegratedExcelFile',
+  'function handleIntegratedFile',
 ]) {
   assert.ok(orderOpsHtml.includes(requiredInteractionContract),
-    `public ORDER Q v1.43 interaction contract is missing: ${requiredInteractionContract}`);
+    `public ORDER Q v1.44 interaction contract is missing: ${requiredInteractionContract}`);
 }
+const publicHeaderSource = orderOpsHtml.slice(
+  orderOpsHtml.indexOf('<header class="global-header">'),
+  orderOpsHtml.indexOf('</header>'),
+);
+assert.ok(publicHeaderSource.indexOf('id="smartInputButton"') < publicHeaderSource.indexOf('id="printButton"'),
+  "Smart input F4 must sit immediately before screen print in the global header");
+assert.equal(orderOpsHtml.split('id="smartInputButton"').length - 1, 1,
+  "Smart input F4 must not remain duplicated inside the execution panel");
 assert.match(orderOpsHtml, /\.print-area table\s*\{[\s\S]*?font-size:\s*10\.6px;/,
   "public screen print text must be twenty percent larger than v1.35");
 assert.match(orderOpsHtml, /table\.preview-allocations\s*\{[\s\S]*?font-size:\s*11\.9px;/,
@@ -1721,7 +1739,7 @@ const html = fs.readFileSync(path.join(ROOT, "orderops", "list.html"), "utf8");
 const inlineScriptMatch = html.match(/<script>\s*([\s\S]*?)<\/script>\s*<\/body>/);
 assert.ok(inlineScriptMatch, "canonical ORDER Q inline application script must exist");
 new vm.Script(inlineScriptMatch[1], { filename: "orderops/list.html:inline" });
-assert.match(html, /brand-badge">v1\.43</, "canonical ORDER Q visible version must be v1.43");
+assert.match(html, /brand-badge">v1\.44</, "canonical ORDER Q visible version must be v1.44");
 assert.match(html, /class="brand-logo" src="\.\.\/assets\/order-q-logo\.png"/,
   "the canonical header must use the shared ORDER Q logo asset");
 assert.match(html, /<h2 id="settingsModalTitle">ORDER Q 환경설정<\/h2>/,
@@ -1851,17 +1869,22 @@ for (const requiredInteractionContract of [
   'getAllocationInventoryView(workspace)',
   'id="viewPresetSelect"',
   'id="viewPresetSaveButton"',
+  'id="viewPresetDefaultButton"',
   'oneapp.orderops.order-view-presets.v1',
-  'orderops-order-view-presets/v2',
+  'orderops-order-view-presets/v3',
   'const VIEW_PRESET_TABS = new Set(["allocations", "ledger", "inventory", "purchases", "sales"])',
   'columnWidths: normalizeStoredColumnWidths(value.view.columnWidths)',
   'columnOrder: normalizeStoredColumnOrder(value.view.columnOrder)',
   'hiddenColumns: normalizeStoredColumnOrder(value.view.hiddenColumns)',
   'function applyOrderViewPreset',
   'function saveCurrentOrderViewPreset',
+  'function setSelectedOrderViewPresetDefault',
+  'function applyDefaultOrderViewPreset',
+  'function parseIntegratedExcelFile',
+  'function handleIntegratedFile',
 ]) {
   assert.ok(html.includes(requiredInteractionContract),
-    `canonical ORDER Q v1.43 interaction contract is missing: ${requiredInteractionContract}`);
+    `canonical ORDER Q v1.44 interaction contract is missing: ${requiredInteractionContract}`);
 }
 assert.doesNotMatch(html, /<input[^>]+type="color"|data-warehouse-color|data-manager-color/,
   "canonical OrderOps filter options must remain separate from color assignment");
@@ -1929,11 +1952,12 @@ for (const requiredText of [
 for (const id of [
   "sourceSelector", "ordersInput", "inventoryInput", "purchasesInput", "salesInput", "analyzeButton", "refreshButton",
   "ordersFileButton", "inventoryFileButton", "purchasesFileButton", "salesFileButton", "ledgerCard", "ledgerDrop", "ledgerStatus",
+  "integratedCard", "integratedDrop", "integratedFileButton", "integratedFileName", "integratedInput",
   "resultFilterResetButton", "warehouseFilterToggle", "managerFilterToggle", "warehouseFilterPanel", "managerFilterPanel",
   "shortageFocusButton",
   "colorAssignmentPanel", "colorTargetSelect", "pastelColorPalette", "vividColorPalette", "vividColorToggle",
   "columnVisibilityButton", "columnWidthSaveButton", "columnWidthResetButton",
-  "viewPresetSelect", "viewPresetSaveButton", "viewPresetDeleteButton", "viewPresetDialog", "viewPresetNameInput",
+  "viewPresetSelect", "viewPresetSaveButton", "viewPresetDefaultButton", "viewPresetDeleteButton", "viewPresetDialog", "viewPresetNameInput",
   "downloadButton", "printButton",
   "headerCloudLoadButton", "headerCloudSaveButton",
   "headerRestoreButton", "headerSettingsButton", "settingsModal", "workspaceStorage",
@@ -1947,6 +1971,15 @@ for (const kind of ["orders", "inventory", "purchases", "sales"]) {
   assert.ok(html.includes(`id="${kind}Input" type="file" accept=".xlsx,.xls">`),
     `${kind} input must remain a single-file picker`);
 }
+assert.ok(html.includes('id="integratedInput" type="file" accept=".xlsx,.xls">'),
+  "integrated upload must remain a single-workbook picker");
+assert.match(combinedCss, /\.execution-panel\s*\{[^}]*grid-template-columns:\s*repeat\(2,[^}]*border:\s*0;/,
+  "canonical analysis and refresh actions must be two buttons without a shared outer border");
+assert.match(combinedCss, /\.upload-grid\s*\{[^}]*grid-template-columns:\s*repeat\(6,/,
+  "canonical upload strip must include the sixth integrated-file card");
+const canonicalHeaderSource = html.slice(html.indexOf('<header class="global-header">'), html.indexOf('</header>'));
+assert.ok(canonicalHeaderSource.indexOf('id="smartInputButton"') < canonicalHeaderSource.indexOf('id="printButton"'),
+  "canonical Smart input F4 must move before screen print in the global header");
 for (const transactionViewContract of [
   'function buildTransactionPreview(workspace, kind)',
   'purchases: buildTransactionPreview(workspace, "purchases")',
@@ -1998,6 +2031,11 @@ assert.ok(html.includes('elements.viewPresetSaveButton.disabled = !state.workspa
   html.includes('columnWidths: normalizeStoredColumnWidths(value.view.columnWidths)') &&
   html.includes('columnOrder: normalizeStoredColumnOrder(value.view.columnOrder)'),
   "all five result screens must save their filters, widths, and column positions as one layout");
+assert.ok(html.includes('isDefault: value.isDefault === true') &&
+  html.includes('preset.isDefault ? "★ " : ""') &&
+  html.includes('candidate.previewId === previewId && candidate.isDefault === true') &&
+  html.includes('if (!applyDefaultOrderViewPreset(previewId, { render: true })) renderPreview();'),
+  "one saved layout per result screen must be selectable as the automatic default");
 assert.match(html, /\.column-sort-trigger\s*\{[\s\S]*?opacity:\s*0;[\s\S]*?visibility:\s*hidden;/,
   "filter controls must remain hidden until the pointer reaches the header");
 assert.match(html, /th:hover \.column-sort-trigger,[\s\S]*?opacity:\s*1;/,
@@ -2026,9 +2064,26 @@ assert.ok(html.includes('const negativeRemaining = ["inventory", "ledger"].inclu
   html.includes('negativeRemaining ? "ledger-negative-cell"') &&
   html.includes('purchaseNegative ? "purchase-negative-cell"'),
   "negative warehouse and ledger balances must share the purchase-place highlight");
+assert.match(combinedCss, /\.purchase-input\[data-negative-balance="true"\]\s*\{[^}]*background:\s*#fef9c3;[^}]*box-shadow:\s*none;/,
+  "negative purchase cells must retain only the pale fill without an internal horizontal rule");
+assert.match(combinedCss, /td\.ledger-negative-cell \.inventory-total-frame\s*\{[^}]*background:\s*#fef9c3\s*!important;[^}]*box-shadow:\s*none;/,
+  "negative balance cells must retain only the pale fill without an internal vertical rule");
 assert.ok(html.includes('specification === "EA" || specification === "소분"') &&
-  html.includes('column.role === "specification" ? "unit-alert-cell"'),
-  "exact EA and 소분 specifications must use the red alert text");
+  html.includes('const warningUnitContext = exactWarningUnit(sourceRow)') &&
+  html.includes('["productName", "specification"].includes(column.role) || quantityColumn') &&
+  html.includes('warningUnitContext ? "unit-alert-cell"'),
+  "EA and 소분 rows must use red text for product name, specification, order, stock, and balance quantities");
+assert.match(combinedCss, /td\.unit-alert-cell \.inventory-total-frame\s*\{[^}]*color:\s*#b91c1c\s*!important;/,
+  "EA and 소분 quantity frames must keep red text even when quantity-zero styling is also present");
+assert.ok(html.includes('const readablePrimary = ["productName", "specification"].includes(column.role) || quantityColumn') &&
+  html.includes('readablePrimary ? "primary-readable-cell"'),
+  "product name, specification, and quantity text must use the larger readable table size");
+assert.match(combinedCss, /td\.primary-readable-cell,[\s\S]*?font-size:\s*13px;/,
+  "primary item and quantity text must be slightly larger than the base table text");
+assert.ok(html.includes('class="order-information-quantity"') && html.includes('class="order-information-price"'),
+  "order information badges must separate quantity and unit-price metrics");
+assert.match(combinedCss, /\.order-information-quantity,[\s\S]*?\.order-information-price\s*\{\s*font-size:\s*10px;/,
+  "order information unit price must use the same compact size as quantity");
 assert.ok(html.includes("const allocationProductSummaries = new Map();") &&
   html.includes("summary.rowCount += 1;") &&
   html.includes("summary.quantity += parsedQuantity.ok ? parsedQuantity.value : 0;") &&
@@ -2054,7 +2109,7 @@ vm.runInNewContext(`const TABLE_WIDTH_MIN = 32;
   const VIEW_PRESET_TABS = new Set(["allocations", "ledger", "inventory", "purchases", "sales"]);
   ${html.slice(presetHelperStart, presetHelperEnd)}
   this.normalizedPreset = normalizeOrderViewPreset({
-    id: "view-test", name: "부족상품", updatedAt: "2026-08-14T00:00:00.000Z",
+    id: "view-test", name: "부족상품", isDefault: true, updatedAt: "2026-08-14T00:00:00.000Z",
     previewId: "inventory",
     view: {
       searchQuery: "양파", shortageFocus: true,
@@ -2072,6 +2127,7 @@ vm.runInNewContext(`const TABLE_WIDTH_MIN = 32;
   });`, presetContext);
 assert.equal(presetContext.normalizedPreset.name, "부족상품");
 assert.equal(presetContext.normalizedPreset.previewId, "inventory");
+assert.equal(presetContext.normalizedPreset.isDefault, true);
 assert.deepEqual(Array.from(presetContext.normalizedPreset.view.specificationFilters), ["BOX"]);
 assert.equal(presetContext.normalizedPreset.view.sortSetting.direction, "desc");
 assert.equal(presetContext.normalizedPreset.view.columnWidths["shipping:inventory:1:품명"], 245);
@@ -2174,6 +2230,26 @@ for (const requiredSource of [
 ]) {
   assert.ok(individualSource.includes(requiredSource), `individual upload flow is missing: ${requiredSource}`);
 }
+const integratedParseStart = html.indexOf("async function parseIntegratedExcelFile");
+const integratedParseEnd = html.indexOf("async function classifyBundleFile", integratedParseStart);
+assert.ok(integratedParseStart >= 0 && integratedParseEnd > integratedParseStart,
+  "integrated workbook parser must exist before the legacy multi-file classifier");
+const integratedParseSource = html.slice(integratedParseStart, integratedParseEnd);
+for (const integratedContract of [
+  "workbook.SheetNames.forEach", "aliasMatches(sheetName", "integratedCandidateScore",
+  "필수 열·헤더 구조 검증에 실패했습니다", "applied.set(selected.kind, selected.parsed)",
+  "selected.parsed.sourceLabel", "failures", "ignored",
+]) {
+  assert.ok(integratedParseSource.includes(integratedContract),
+    `integrated workbook sheet contract is missing: ${integratedContract}`);
+}
+const integratedHandleStart = html.indexOf("async function handleIntegratedFile");
+const integratedHandleEnd = html.indexOf("function renderFileCard", integratedHandleStart);
+const integratedHandleSource = html.slice(integratedHandleStart, integratedHandleEnd);
+assert.ok(integratedHandleSource.includes("result.applied.forEach") &&
+  integratedHandleSource.includes("오류 ${result.failures.length}개 시트는 기존 데이터 유지") &&
+  !integratedHandleSource.includes("state[kind] = null"),
+  "integrated upload must replace only successfully validated data kinds and preserve failed active data");
 
 const settingsStart = html.indexOf("function toggleWorkspaceStorage");
 const settingsEnd = html.indexOf("function setLoading", settingsStart);
@@ -2187,9 +2263,9 @@ for (const contract of [
   "handleInventoryGridArrowNavigation", "autocompletePurchaseInput", "rememberPurchaseName",
   "purchaseAutocompleteNames", "handlePurchaseAutocompleteKeyboard", "finishPurchaseEntry",
   "showPurchaseCompletionCoachmark",
-  "function resetResultViewFilters()", 'grid-template-columns: repeat(3, minmax(0, 1fr))',
+  "function resetResultViewFilters()", 'grid-template-columns: repeat(2, minmax(0, 1fr))',
 ]) {
-  assert.ok(html.includes(contract), `ORDER Q v1.43 contract is missing: ${contract}`);
+  assert.ok(html.includes(contract), `ORDER Q v1.44 contract is missing: ${contract}`);
 }
 const purchaseAutocompleteStart = html.indexOf("function purchaseAutocompleteNames");
 const purchaseAutocompleteEnd = html.indexOf("function closePurchaseAutocomplete", purchaseAutocompleteStart);
