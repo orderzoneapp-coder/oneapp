@@ -12,6 +12,7 @@ import {
   syncAfterLocalMutation
 } from './orderq-sync-engine.js';
 import { getCloudUrl } from './orderq-cloud-adapter.js';
+import { loadWarehouseCatalog, matchWarehouseInput, warehouseDisplayName } from './warehouse-master.js';
 
 const EVENT_LABELS = Object.freeze({
   ORDER: '신규 주문',
@@ -28,12 +29,29 @@ const state = { results: new Map() };
 const resultList = document.getElementById('resultList');
 const message = document.getElementById('message');
 const analyzeButton = document.getElementById('analyzeBtn');
+const parserWarehouseInput = document.getElementById('parserWarehouse');
+const parserWarehouseOptions = document.getElementById('parserWarehouseOptions');
+let warehouseCatalog = { warehouses: [], aliases: [] };
 const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[char]));
 
 function todayLocal() {
   const now = new Date();
   const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
   return local.toISOString().slice(0, 10);
+}
+
+async function initializeWarehouseInput() {
+  warehouseCatalog = await loadWarehouseCatalog();
+  warehouseCatalog.warehouses.forEach(warehouse => {
+    const option = document.createElement('option');
+    option.value = warehouseDisplayName(warehouse);
+    option.label = [warehouse.warehouseCode, warehouse.warehouseName].filter(Boolean).join(' · ');
+    parserWarehouseOptions.appendChild(option);
+  });
+  try {
+    const defaults = JSON.parse(localStorage.getItem('oneapp.orderq.manual-defaults.v1') || 'null');
+    parserWarehouseInput.value = String(defaults?.warehouseName || defaults?.warehouse || '').trim();
+  } catch (_) {}
 }
 
 function show(text, type = 'info') {
@@ -254,6 +272,9 @@ async function processCard(parseResultId) {
       return;
     }
     if (!confirmed.confirmedCustomerName && confirmed.eventType !== EVENT_TYPE.ORDER_CANCEL) throw new Error('거래처를 확인하거나 입력하세요.');
+    const warehouseName = parserWarehouseInput.value.trim();
+    if (!warehouseName) throw new Error('출하창고를 입력하세요.');
+    const warehouse = matchWarehouseInput(warehouseName, warehouseCatalog.warehouses, warehouseCatalog.aliases);
     let saved;
     if (confirmed.eventType === EVENT_TYPE.ORDER) {
       await bestEffortPreSync();
@@ -261,7 +282,10 @@ async function processCard(parseResultId) {
         orderDate: todayLocal(),
         customerId: confirmed.confirmedCustomerId,
         customerName: confirmed.confirmedCustomerName,
-        warehouse: '',
+        warehouseId: warehouse?.warehouseId || '',
+        warehouseCode: warehouse?.warehouseCode || '',
+        warehouseName,
+        warehouse: warehouseName,
         transactionType: '기타',
         orderMessage: result.rawText,
         sourceType: result.sourceType,
@@ -368,3 +392,5 @@ resultList.addEventListener('click', event => {
   const card = button.closest('.parse-card');
   processCard(card.dataset.parseResultId);
 });
+
+initializeWarehouseInput().catch(error => show(`창고 마스터를 불러오지 못했습니다: ${error.message || error}`, 'warn'));

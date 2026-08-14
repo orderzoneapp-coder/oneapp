@@ -7,6 +7,7 @@ import {
   nowIso,
   normalizeText
 } from './orderq-db.js';
+import { resolveWarehouseInTransaction, warehouseSnapshot } from './warehouse-master.js';
 
 export const MATCH_STATUS = Object.freeze({
   MATCHED: 'MATCHED',
@@ -185,12 +186,13 @@ function appendEvent(tx, order, eventType, detail = {}) {
 export async function createOrder(payload) {
   const db = await openOrderQDb();
   const tx = db.transaction([
-    STORE.CUSTOMERS, STORE.CUSTOMER_ALIASES, STORE.ORDERS, STORE.ORDER_ITEMS,
+    STORE.CUSTOMERS, STORE.CUSTOMER_ALIASES, STORE.WAREHOUSES, STORE.WAREHOUSE_ALIASES, STORE.ORDERS, STORE.ORDER_ITEMS,
     STORE.ORDER_EVENTS, STORE.SYNC_QUEUE
   ], 'readwrite');
 
   try {
     const customer = await resolveCustomerInTransaction(tx, payload);
+    const warehouse = await resolveWarehouseInTransaction(tx, payload, { sourceType: payload.sourceType || 'MANUAL' });
     const orderStore = tx.objectStore(STORE.ORDERS);
     const sourceMessageKey = String(payload.sourceMessageKey || '').trim();
     if (sourceMessageKey) {
@@ -211,7 +213,7 @@ export async function createOrder(payload) {
       orderDate: payload.orderDate,
       customerId: customer.customerId,
       customerName: customer.customerName,
-      warehouse: String(payload.warehouse ?? '').trim(),
+      ...warehouseSnapshot(payload, warehouse),
       orderMessage: String(payload.orderMessage ?? '').trim(),
       transactionType: String(payload.transactionType ?? '').trim(),
       sourceType: payload.sourceType || 'MANUAL',
@@ -233,7 +235,7 @@ export async function createOrder(payload) {
 
     await transactionDone(tx);
     broadcast('ORDER_CREATED', order);
-    return { order, items, customer };
+    return { order, items, customer, warehouse };
   } catch (error) {
     try { tx.abort(); } catch (_) {}
     throw error;
@@ -243,7 +245,7 @@ export async function createOrder(payload) {
 export async function updateOrder(orderId, expectedRevision, payload) {
   const db = await openOrderQDb();
   const tx = db.transaction([
-    STORE.CUSTOMERS, STORE.CUSTOMER_ALIASES, STORE.ORDERS, STORE.ORDER_ITEMS,
+    STORE.CUSTOMERS, STORE.CUSTOMER_ALIASES, STORE.WAREHOUSES, STORE.WAREHOUSE_ALIASES, STORE.ORDERS, STORE.ORDER_ITEMS,
     STORE.ORDER_EVENTS, STORE.SYNC_QUEUE
   ], 'readwrite');
 
@@ -256,6 +258,7 @@ export async function updateOrder(orderId, expectedRevision, payload) {
     if (existing.status === ORDER_STATUS.CANCELLED) throw new Error('취소된 주문은 수정할 수 없습니다.');
 
     const customer = await resolveCustomerInTransaction(tx, payload);
+    const warehouse = await resolveWarehouseInTransaction(tx, payload, { sourceType: payload.sourceType || existing.sourceType || 'MANUAL', sourceId: orderId });
     const oldItems = await requestToPromise(itemStore.index('byOrderId').getAll(orderId));
     const oldById = new Map(oldItems.map(item => [item.orderItemId, item]));
     const items = (payload.items || [])
@@ -272,7 +275,7 @@ export async function updateOrder(orderId, expectedRevision, payload) {
       orderDate: payload.orderDate,
       customerId: customer.customerId,
       customerName: customer.customerName,
-      warehouse: String(payload.warehouse ?? '').trim(),
+      ...warehouseSnapshot(payload, warehouse),
       orderMessage: String(payload.orderMessage ?? '').trim(),
       transactionType: String(payload.transactionType ?? '').trim(),
       status: summarizeStatus(items),
@@ -287,7 +290,7 @@ export async function updateOrder(orderId, expectedRevision, payload) {
 
     await transactionDone(tx);
     broadcast('ORDER_UPDATED', next);
-    return { order: next, items, customer };
+    return { order: next, items, customer, warehouse };
   } catch (error) {
     try { tx.abort(); } catch (_) {}
     throw error;

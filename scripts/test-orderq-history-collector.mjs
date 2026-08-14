@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { classifyMatrix, mapMatrixRows, COLLECTOR_SOURCE } from '../orderq/history-collector/collector-schema.js';
+import {
+  classifyMatrix,
+  mapMatrixRows,
+  expandInventoryWarehouseRows,
+  COLLECTOR_SOURCE
+} from '../orderq/history-collector/collector-schema.js';
 import { analyzeHistoricalText, matrixContextDate } from '../orderq/history-collector/collector-importer.js';
 import { addBusinessDays, buildFulfillmentLinks, LINK_STATUS } from '../orderq/history-collector/fulfillment-matcher.js';
 import { buildParserEvidence } from '../orderq/history-collector/parser-evidence.js';
@@ -28,6 +33,32 @@ const inventoryMatrix = [
   ['EA', '01', '101020114', '대파_단', 'EA', 8, '2026-08-13', '거창', 1600, '']
 ];
 assert.equal(classifyMatrix(inventoryMatrix, '전체재고').sourceType, COLLECTOR_SOURCE.INVENTORY);
+
+const wideInventoryMatrix = [
+  ['회사명 : 원앱 / 2026/08/13'],
+  ['사용', '품목코드', '단위', '품목명', '규격', '수량', '1창고', '2전송', '3서울', '4전송', '기본', '전송', '창고'],
+  ['Yes', '101020114', 'EA', '대파_단', 'EA', 373, 163, -200, 510, -100, '1', 2000, 1600],
+  ['Yes', '101010111', 'BOX', '햇무우', 'BOX', 8, 8, '', '', '', '1', 13000, 16000]
+];
+const wideInventoryClass = classifyMatrix(wideInventoryMatrix, '재고현황', '창고별재고.xlsx');
+const wideInventoryRows = expandInventoryWarehouseRows(
+  mapMatrixRows(wideInventoryMatrix, wideInventoryClass).rows,
+  wideInventoryClass
+);
+assert.deepEqual(
+  wideInventoryRows.warehouseColumns.map(column => [column.warehouseCode, column.warehouseName]),
+  [['01', '1창고'], ['02', '2전송'], ['03', '3서울'], ['04', '4전송']],
+  '번호가 붙은 동적 열만 창고로 판별하고 가격 열 기본·전송·창고는 제외해야 한다.'
+);
+assert.deepEqual(
+  wideInventoryRows.rows.filter(row => row.sourceRowNo === 3).map(row => row.normalizedRecord.inventoryQuantity),
+  [163, -200, 510, -100],
+  '품목코드 한 행의 총재고를 창고별 부호 있는 잔량으로 분리해야 한다.'
+);
+assert.equal(wideInventoryRows.rows.find(row => row.sourceRowNo === 3).normalizedRecord.inventoryTotal, 373);
+assert.equal(wideInventoryRows.rows.find(row => row.sourceRowNo === 4 && row.normalizedRecord.warehouseCode === '02').normalizedRecord.warehouseSourceBlank, true,
+  '빈 창고 수량은 산술상 0이지만 원본 공란 여부를 별도로 보존해야 한다.');
+assert.equal(wideInventoryRows.discrepancies.length, 0, '총재고는 창고별 잔량 합계와 일치해야 한다.');
 assert.equal(
   matrixContextDate([['회사명 : 원앱 / 주문 / 2025/08/13 ~ 2026/08/13']], '미출고현황.xlsx'),
   '2026-08-13',
@@ -168,6 +199,6 @@ assert.match(collectorUi, /unlinkFulfillmentLink/);
 assert.match(collectorUi, /cancelParserEvidenceConfirmation/);
 const entry = await readFile(new URL('../orderq/index.html', import.meta.url), 'utf8');
 assert.match(entry, /collector\.html/);
-assert.match(entry, /vNext 0\.4\.4/);
+assert.match(entry, /vNext 0\.5\.0/);
 
 console.log('PASS: ORDER Q history collector, flexible cutoff, fulfillment and evidence contracts');

@@ -1,5 +1,5 @@
 .parser-shell { width: min(1480px, calc(100% - 28px)); }
-.parser-input-grid { display: grid; grid-template-columns: 220px minmax(260px, 1fr); gap: 12px; padding: 14px; border-bottom: 1px solid var(--line); }
+.parser-input-grid { display: grid; grid-template-columns: 180px minmax(220px, 1fr) minmax(180px, 240px); gap: 12px; padding: 14px; border-bottom: 1px solid var(--line); }
 .raw-field { grid-column: 1 / -1; }
 .raw-input { min-height: 170px; resize: vertical; line-height: 1.55; font-family: "D2Coding", Consolas, monospace; }
 .parser-actions { grid-column: 1 / -1; display: flex; align-items: center; justify-content: flex-end; gap: 12px; }
@@ -40,7 +40,7 @@
 }
 @media (max-width: 600px) {
   .parser-input-grid { grid-template-columns: 1fr; }
-  .source-field, .raw-field, .parser-actions { grid-column: 1; }
+  .source-field, .warehouse-field, .raw-field, .parser-actions { grid-column: 1; }
   .parser-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 

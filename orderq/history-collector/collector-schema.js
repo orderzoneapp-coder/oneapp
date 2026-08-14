@@ -1,4 +1,5 @@
 import { normalizeText } from '../orderq-db.js';
+import { normalizeWarehouseCode } from '../warehouse-master.js';
 
 export const COLLECTOR_SOURCE = Object.freeze({
   ORDER: 'ORDER_HISTORY',
@@ -36,7 +37,8 @@ const DEFINITIONS = Object.freeze({
       note: ['적요', '전달사항'],
       note2: ['적요1', '전달사항1'],
       customerName: ['거래처', '거래처명', '고객명'],
-      groupName: ['그룹', '창고', '배송그룹'],
+      warehouseName: ['창고', '출하창고'],
+      groupName: ['그룹', '배송그룹'],
       documentNo: ['전표번호', '주문번호', 'no.', 'no']
     }
   },
@@ -226,9 +228,73 @@ export function mapMatrixRows(matrix, classification) {
       else if (numberFields.has(field)) normalized[field] = numericValue(value);
       else normalized[field] = String(value ?? '').trim();
     });
-    rows.push({ rowNo: rowIndex + 1, rawRecord: Object.fromEntries(rawHeaders.map((header, index) => [header || `COL_${index + 1}`, sourceRow[index] ?? ''])), normalizedRecord: normalized });
+    rows.push({
+      rowNo: rowIndex + 1,
+      rawValues: [...sourceRow],
+      rawRecord: Object.fromEntries(rawHeaders.map((header, index) => [header || `COL_${index + 1}`, sourceRow[index] ?? ''])),
+      normalizedRecord: normalized
+    });
   }
   return { columns, rows };
+}
+
+export function inventoryWarehouseColumns(classification) {
+  if (classification?.sourceType !== COLLECTOR_SOURCE.INVENTORY) return [];
+  return (classification.rawHeaders || []).map((header, index) => {
+    const text = String(header ?? '').normalize('NFKC').trim();
+    const match = text.match(/^0*(\d+)\s*([^\d].*)$/);
+    if (!match) return null;
+    return {
+      index,
+      warehouseCode: normalizeWarehouseCode(match[1]),
+      warehouseName: text,
+      sourceHeader: text
+    };
+  }).filter(Boolean);
+}
+
+export function expandInventoryWarehouseRows(rows, classification) {
+  const warehouseColumns = inventoryWarehouseColumns(classification);
+  if (!warehouseColumns.length) return { rows, warehouseColumns, discrepancies: [] };
+  const expanded = [];
+  const discrepancies = [];
+  (rows || []).forEach(row => {
+    const normalized = row.normalizedRecord || {};
+    if (!String(normalized.productCode || normalized.productName || '').trim()) return;
+    const inventoryTotal = normalized.inventoryQuantity;
+    let warehouseSum = 0;
+    warehouseColumns.forEach((column, offset) => {
+      const rawValue = row.rawValues?.[column.index] ?? row.rawRecord?.[column.sourceHeader] ?? '';
+      const parsed = numericValue(rawValue);
+      const inventoryQuantity = parsed ?? 0;
+      warehouseSum += inventoryQuantity;
+      expanded.push({
+        ...row,
+        rowNo: row.rowNo * 1000 + offset + 1,
+        sourceRowNo: row.rowNo,
+        warehouseColumnIndex: column.index,
+        normalizedRecord: {
+          ...normalized,
+          warehouseCode: column.warehouseCode,
+          warehouseName: column.warehouseName,
+          inventoryTotal,
+          inventoryQuantity,
+          warehouseSourceHeader: column.sourceHeader,
+          warehouseSourceBlank: parsed === null
+        }
+      });
+    });
+    if (inventoryTotal !== null && inventoryTotal !== undefined && Number.isFinite(Number(inventoryTotal))
+      && Math.abs(Number(inventoryTotal) - warehouseSum) > 1e-9) {
+      discrepancies.push({
+        rowNo: row.rowNo,
+        productCode: String(normalized.productCode || ''),
+        inventoryTotal: Number(inventoryTotal),
+        warehouseSum
+      });
+    }
+  });
+  return { rows: expanded, warehouseColumns, discrepancies };
 }
 
 export function sourceDefinition(sourceType) {

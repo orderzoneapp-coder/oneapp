@@ -13,7 +13,7 @@
       <div class="brand">
         <strong>ONEAPP</strong>
         <span class="logo-frame" aria-hidden="true"><img src="../assets/order-q-logo.png" alt=""></span>
-        <span class="badge">vNext 0.4.4</span>
+        <span class="badge">vNext 0.5.0</span>
         <span>주문현황</span>
       </div>
       <div class="top-actions">
@@ -98,7 +98,7 @@
           <td class="center">${esc(order.orderDate)}</td>
           <td><a class="order-link" href="./input.html?orderId=${encodeURIComponent(order.orderId)}">${esc(order.orderId)}</a></td>
           <td>${esc(order.customerName)}</td>
-          <td>${esc(order.warehouse)}</td>
+          <td>${esc(order.warehouseName || order.warehouseCode || order.warehouse)}</td>
           <td class="center"><span class="order-status ${esc(order.status)}">${esc(statusLabel(order.status))}</span></td>
           <td class="center">${esc(order.matchedCount || 0)}</td>
           <td class="center">${esc(order.matchFailedCount || 0)}</td>

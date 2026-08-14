@@ -1,9 +1,11 @@
 const DB_NAME = 'oneapp-orderq-vnext';
-const DB_VERSION = 4;
+const DB_VERSION = 5;
 
 export const STORE = Object.freeze({
   CUSTOMERS: 'customers',
   PRODUCTS: 'products',
+  WAREHOUSES: 'warehouses',
+  WAREHOUSE_ALIASES: 'warehouseAliases',
   CUSTOMER_ALIASES: 'customerAliases',
   PRODUCT_MAPPINGS: 'productMappings',
   UNIT_MAPPINGS: 'unitMappings',
@@ -54,6 +56,17 @@ function upgrade(db, transaction) {
   ensureIndex(store, 'byCode', 'itemCode', { unique: false });
   ensureIndex(store, 'byName', 'normalizedName');
 
+  store = ensureStore(STORE.WAREHOUSES, { keyPath: 'warehouseId' });
+  ensureIndex(store, 'byCode', 'warehouseCode');
+  ensureIndex(store, 'byNormalizedName', 'normalizedName');
+  ensureIndex(store, 'byStatus', 'status');
+  ensureIndex(store, 'byUpdatedAt', 'updatedAt');
+
+  store = ensureStore(STORE.WAREHOUSE_ALIASES, { keyPath: 'mappingId' });
+  ensureIndex(store, 'byNormalizedText', 'normalizedText');
+  ensureIndex(store, 'byWarehouseText', ['warehouseId', 'normalizedText']);
+  ensureIndex(store, 'byWarehouseId', 'warehouseId');
+
   store = ensureStore(STORE.CUSTOMER_ALIASES, { keyPath: 'mappingId' });
   ensureIndex(store, 'byNormalizedText', 'normalizedText');
   ensureIndex(store, 'byCustomerText', ['customerId', 'normalizedText']);
@@ -88,6 +101,7 @@ function upgrade(db, transaction) {
 
   store = ensureStore(STORE.ORDERS, { keyPath: 'orderId' });
   ensureIndex(store, 'byCustomerId', 'customerId');
+  ensureIndex(store, 'byWarehouseId', 'warehouseId');
   ensureIndex(store, 'bySourceMessageKey', 'sourceMessageKey', { unique: true });
   ensureIndex(store, 'byOrderDate', 'orderDate');
   ensureIndex(store, 'byUpdatedAt', 'updatedAt');
@@ -117,6 +131,7 @@ function upgrade(db, transaction) {
   ensureIndex(store, 'byBatchId', 'importBatchId');
   ensureIndex(store, 'bySalesDate', 'salesDate');
   ensureIndex(store, 'byCustomerDate', ['normalizedCustomerName', 'salesDate']);
+  ensureIndex(store, 'byWarehouseId', 'warehouseId');
 
   store = ensureStore(STORE.SALES_LINES, { keyPath: 'salesLineId' });
   ensureIndex(store, 'byDocumentId', 'salesDocumentId');
@@ -127,6 +142,7 @@ function upgrade(db, transaction) {
   ensureIndex(store, 'byBatchId', 'importBatchId');
   ensureIndex(store, 'byPurchaseDate', 'purchaseDate');
   ensureIndex(store, 'bySupplierDate', ['normalizedSupplierName', 'purchaseDate']);
+  ensureIndex(store, 'byWarehouseId', 'warehouseId');
 
   store = ensureStore(STORE.PURCHASE_LINES, { keyPath: 'purchaseLineId' });
   ensureIndex(store, 'byDocumentId', 'purchaseDocumentId');
@@ -146,16 +162,19 @@ function upgrade(db, transaction) {
   store = ensureStore(STORE.INVENTORY_SNAPSHOTS, { keyPath: 'inventorySnapshotId' });
   ensureIndex(store, 'byBatchId', 'importBatchId');
   ensureIndex(store, 'byBasisDate', 'basisDate');
+  ensureIndex(store, 'byWarehouseId', 'warehouseId');
 
   store = ensureStore(STORE.INVENTORY_LINES, { keyPath: 'inventoryLineId' });
   ensureIndex(store, 'bySnapshotId', 'inventorySnapshotId');
   ensureIndex(store, 'byBatchId', 'importBatchId');
   ensureIndex(store, 'byProductCode', 'productCode');
+  ensureIndex(store, 'byWarehouseId', 'warehouseId');
 
   store = ensureStore(STORE.HISTORICAL_ORDER_GROUPS, { keyPath: 'historicalOrderGroupId' });
   ensureIndex(store, 'byBatchId', 'importBatchId');
   ensureIndex(store, 'byOrderDate', 'orderDate');
   ensureIndex(store, 'byCustomerDate', ['normalizedCustomerName', 'orderDate']);
+  ensureIndex(store, 'byWarehouseId', 'warehouseId');
 
   store = ensureStore(STORE.HISTORICAL_ORDER_LINES, { keyPath: 'historicalOrderLineId' });
   ensureIndex(store, 'byGroupId', 'historicalOrderGroupId');
