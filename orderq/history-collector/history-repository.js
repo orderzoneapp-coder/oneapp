@@ -8,12 +8,13 @@ import {
   newId,
   nowIso,
   normalizeText
-} from '../orderq-db.js?v=0.5.1';
-import { resolveWarehouseInTransaction, warehouseSnapshot } from '../warehouse-master.js?v=0.5.1';
-import { COLLECTOR_SOURCE } from './collector-schema.js?v=0.5.1';
-import { buildFulfillmentLinks } from './fulfillment-matcher.js?v=0.5.1';
-import { buildParserEvidence } from './parser-evidence.js?v=0.5.1';
-import { deactivateEvidenceMapping, reconcileEvidenceMappings } from './mapping-lifecycle.js?v=0.5.1';
+} from '../orderq-db.js?v=0.6.0';
+import { resolveWarehouseInTransaction, warehouseSnapshot } from '../warehouse-master.js?v=0.6.0';
+import { assigneeIdentity } from '../order-document-model.js?v=0.6.0';
+import { COLLECTOR_SOURCE } from './collector-schema.js?v=0.6.0';
+import { buildFulfillmentLinks } from './fulfillment-matcher.js?v=0.6.0';
+import { buildParserEvidence } from './parser-evidence.js?v=0.6.0';
+import { deactivateEvidenceMapping, reconcileEvidenceMappings } from './mapping-lifecycle.js?v=0.6.0';
 
 const DEFAULT_SETTINGS = Object.freeze({
   key: 'ACTIVE',
@@ -221,6 +222,7 @@ export async function commitPreparedImport(prepared, importedBy = 'administrator
           salesDate: row.salesDate || prepared.defaultDate || '', salesTime: row.salesTime || '',
           customerId: customer?.customerId || '', customerName: row.customerName || '',
           normalizedCustomerName: normalizeText(row.customerName), documentNo: row.documentNo || '',
+          ...assigneeIdentity(row.managerName || ''),
           ...warehouseFields, sourceRecordIds: [], status: 'ACTIVE', createdAt: timestamp, updatedAt: timestamp
         };
         documentCache.set(key, document);

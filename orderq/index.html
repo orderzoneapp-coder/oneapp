@@ -4,48 +4,69 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="google" content="notranslate">
-  <title>ONEAPP ORDER Q vNext</title>
+  <title>ONEAPP ORDER Q vNext · 주문현황</title>
   <link rel="stylesheet" href="./orderq.css">
 </head>
-<body>
+<body class="order-history-page">
   <div class="shell">
     <header class="topbar">
       <div class="brand">
         <strong>ONEAPP</strong>
         <span class="logo-frame" aria-hidden="true"><img src="../assets/order-q-logo.png" alt=""></span>
-        <span class="badge">vNext 0.5.1</span>
-        <span>주문현황</span>
+        <span class="badge">vNext 0.6.0</span>
+        <span>주문현황 · 전표관리</span>
       </div>
       <div class="top-actions">
         <a class="btn dark" href="./collector.html">이력수집</a>
         <a class="btn dark" href="./cloud.html">클라우드</a>
-        <a class="btn dark" href="./parser.html">SmartParser</a>
-        <a class="btn primary" href="./input.html">+ 신규 주문</a>
+        <a class="btn dark" href="./parser.html">ORDER IN</a>
+        <a class="btn dark" href="../orderops/list.html">ORDER Q 운영</a>
+        <a class="btn primary" href="./input.html">+ 주문서 입력</a>
       </div>
     </header>
     <main class="panel">
-      <p class="notice">ORDER Q vNext 독립 구축 영역입니다. 수기 주문과 SmartParser가 같은 Local-first 주문원장·Google Sheet 증분 동기화를 사용합니다.</p>
-      <div id="message" class="message"></div>
-      <div class="toolbar">
+      <p class="notice">주문전표를 펼쳐 상품·금액·변경이력을 확인하고 수정하거나 출력합니다. 재고·부족·발주·출고·미출고 처리는 ORDER Q 운영에서 진행합니다.</p>
+      <div id="message" class="message page-message"></div>
+      <div class="toolbar document-filters">
         <button class="btn" id="refreshBtn" type="button">새로고침</button>
         <button class="btn" id="syncBtn" type="button">클라우드 동기화</button>
-        <span class="status" id="summaryText">불러오는 중...</span>
+        <label>주문상태
+          <select id="orderStatusFilter">
+            <option value="">전체</option>
+            <option value="ORDER">주문</option><option value="PAID">입금</option><option value="PREPARING">준비</option>
+            <option value="SHIPPING">배송</option><option value="COMPLETED">완료</option>
+            <option value="FULL_CANCEL">전체취소</option><option value="PARTIAL_CANCEL">부분취소</option>
+          </select>
+        </label>
+        <label>관리자상태
+          <select id="adminStatusFilter"><option value="">전체</option><option value="UNCHECKED">미확인</option><option value="CHECKED">확인</option><option value="HOLD">보류</option></select>
+        </label>
+        <label>ORDER Q
+          <select id="opsStatusFilter"><option value="">전체</option><option value="ACTIVE">처리중</option><option value="CLOSED">종결</option></select>
+        </label>
+        <label>담당자
+          <select id="assigneeFilter"><option value="">전체</option></select>
+        </label>
+        <input class="history-search" id="orderSearch" type="search" placeholder="주문번호·외부번호·거래처 검색">
         <span class="spacer"></span>
+        <span class="status" id="summaryText">불러오는 중...</span>
         <span class="status" id="syncText">동기화 상태 확인 중...</span>
       </div>
-      <div class="table-wrap">
-        <table>
+      <div class="table-wrap document-list-wrap">
+        <table class="document-list">
           <thead>
             <tr>
-              <th>주문일자</th>
-              <th>주문ID</th>
+              <th class="expand-column">보기</th>
+              <th>주문번호</th>
+              <th>일자</th>
               <th>거래처</th>
-              <th>창고</th>
-              <th>상태</th>
-              <th>매칭완료</th>
-              <th>매칭실패</th>
-              <th>Revision</th>
-              <th>최종수정</th>
+              <th>담당자</th>
+              <th>주문상태</th>
+              <th>관리자상태</th>
+              <th>ORDER Q</th>
+              <th>합계</th>
+              <th>출하창고</th>
+              <th>입력경로</th>
             </tr>
           </thead>
           <tbody id="orderRows"></tbody>
@@ -54,86 +75,314 @@
     </main>
   </div>
   <script type="module">
-    import { listOrders, subscribeOrderChanges } from './order-intake-engine.js?v=0.5.1';
-    import { syncNow, getSyncState } from './orderq-sync-engine.js?v=0.5.1';
-    import { getCloudUrl } from './orderq-cloud-adapter.js?v=0.5.1';
+    import { listOrders, getOrder, subscribeOrderChanges } from './order-intake-engine.js?v=0.6.0';
+    import { syncNow, getSyncState } from './orderq-sync-engine.js?v=0.6.0';
+    import { getCloudUrl } from './orderq-cloud-adapter.js?v=0.6.0';
+    import {
+      ORDER_STATUS_LABEL, ADMIN_STATUS_LABEL, OPS_STATUS_LABEL, INPUT_CHANNEL_LABEL
+    } from './order-document-model.js?v=0.6.0';
 
     const rows = document.getElementById('orderRows');
     const summary = document.getElementById('summaryText');
     const syncText = document.getElementById('syncText');
     const message = document.getElementById('message');
     const syncButton = document.getElementById('syncBtn');
+    const filters = {
+      orderStatus: document.getElementById('orderStatusFilter'),
+      adminStatus: document.getElementById('adminStatusFilter'),
+      opsStatus: document.getElementById('opsStatusFilter'),
+      assignee: document.getElementById('assigneeFilter'),
+      search: document.getElementById('orderSearch')
+    };
+    const params = new URLSearchParams(location.search);
+    const focusedOrderId = params.get('focus') || '';
+    const detailCache = new Map();
+    const expandedOrders = new Set();
+    let allOrders = [];
 
     const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
     const formatTime = value => value ? new Date(value).toLocaleString('ko-KR', { hour12: false }) : '';
-    const statusLabel = status => ({ CONFIRMED:'완료', PARTIAL:'부분완료', MATCH_FAILED:'매칭실패', CANCELLED:'취소' }[status] || status);
+    const money = value => Number(value || 0).toLocaleString('ko-KR');
+    const lineAmount = item => item.supplyAmount != null
+      ? Number(item.supplyAmount || 0)
+      : Number(item.finalQuantity || item.rawQuantity || 0) * Number(item.price || 0);
+    const documentAmount = items => items.reduce((sum, item) => sum + lineAmount(item), 0);
+    const channelLabel = order => INPUT_CHANNEL_LABEL[order.inputChannel] || order.inputChannel || order.sourceType || '';
 
     function showMessage(text, type = 'info') {
       message.textContent = text;
-      message.className = `message show ${type}`;
+      message.className = `message page-message show ${type}`;
+    }
+
+    function statusBadge(value, labels, kind) {
+      return `<span class="document-badge ${kind}-${esc(String(value || '').toLowerCase())}">${esc(labels[value] || value || '-')}</span>`;
+    }
+
+    function populateAssignees(orders) {
+      const selected = filters.assignee.value;
+      const names = [...new Set(orders.map(order => order.assigneeName).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ko'));
+      filters.assignee.innerHTML = '<option value="">전체</option>' + names.map(name => `<option value="${esc(name)}">${esc(name)}</option>`).join('');
+      if (names.includes(selected)) filters.assignee.value = selected;
+    }
+
+    function filteredOrders() {
+      const query = filters.search.value.trim().toLowerCase();
+      return allOrders.filter(order => {
+        if (filters.orderStatus.value && order.orderStatus !== filters.orderStatus.value) return false;
+        if (filters.adminStatus.value && order.adminStatus !== filters.adminStatus.value) return false;
+        if (filters.opsStatus.value && order.opsStatus !== filters.opsStatus.value) return false;
+        if (filters.assignee.value && order.assigneeName !== filters.assignee.value) return false;
+        if (query && ![order.orderNo, order.externalOrderNo, order.customerName, order.orderId].some(value => String(value || '').toLowerCase().includes(query))) return false;
+        return true;
+      }).sort((a, b) => {
+        if (a.orderId === focusedOrderId) return -1;
+        if (b.orderId === focusedOrderId) return 1;
+        return String(b.updatedAt || '').localeCompare(String(a.updatedAt || ''));
+      });
+    }
+
+    function summaryRow(order) {
+      const amount = order.paymentAmount ?? order.supplyAmountTotal ?? order.productAmount;
+      const expanded = expandedOrders.has(order.orderId);
+      return `
+        <tr class="document-row ${order.orderId === focusedOrderId ? 'focused' : ''}" data-order-id="${esc(order.orderId)}">
+          <td class="center"><button class="expand-button" type="button" data-expand="${esc(order.orderId)}" aria-expanded="${expanded}">${expanded ? '−' : '+'}</button></td>
+          <td><button class="document-number" type="button" data-expand="${esc(order.orderId)}">${esc(order.orderNo || order.orderId)}</button>${order.externalOrderNo ? `<small>외부 ${esc(order.externalOrderNo)}</small>` : ''}</td>
+          <td class="center">${esc(order.orderDate)}</td>
+          <td>${esc(order.customerName)}</td>
+          <td>${esc(order.assigneeName || '-')}</td>
+          <td class="center">${statusBadge(order.orderStatus, ORDER_STATUS_LABEL, 'order')}</td>
+          <td class="center">${statusBadge(order.adminStatus, ADMIN_STATUS_LABEL, 'admin')}</td>
+          <td class="center">${statusBadge(order.opsStatus, OPS_STATUS_LABEL, 'ops')}</td>
+          <td class="num">${amount == null ? '-' : `${money(amount)}원`}</td>
+          <td>${esc(order.warehouseName || order.warehouseCode || order.warehouse || '')}</td>
+          <td class="center">${esc(channelLabel(order))}</td>
+        </tr>
+        <tr class="document-detail-row" data-detail-for="${esc(order.orderId)}" ${expanded ? '' : 'hidden'}><td colspan="11"><div class="document-detail" data-detail-body="${esc(order.orderId)}">불러오는 중...</div></td></tr>`;
+    }
+
+    function commerceDetail(order) {
+      const fields = [
+        ['상품금액', order.productAmount], ['쿠폰할인', order.couponDiscount], ['포인트사용', order.pointsUsed],
+        ['배송비', order.shippingFee], ['결제금액', order.paymentAmount]
+      ];
+      if (!order.externalOrderNo && !order.externalOriginalStatus && fields.every(([, value]) => value == null)) return '';
+      return `<section class="detail-section external-summary"><h3>쇼핑몰 주문 확장정보</h3><div class="external-summary-grid">
+        <span><b>외부 주문번호</b>${esc(order.externalOrderNo || '-')}</span>
+        <span><b>원본상태</b>${esc(order.externalOriginalStatus || '-')}</span>
+        ${fields.map(([label, value]) => `<span><b>${label}</b>${value == null ? '-' : `${money(value)}원`}</span>`).join('')}
+      </div></section>`;
+    }
+
+    function historyValue(field, value) {
+      if (value === null || value === undefined || value === '') return '-';
+      if (field === 'orderStatus') return ORDER_STATUS_LABEL[value] || value;
+      if (field === 'adminStatus') return ADMIN_STATUS_LABEL[value] || value;
+      if (field === 'opsStatus') return OPS_STATUS_LABEL[value] || value;
+      return value;
+    }
+
+    function historyDetail(events) {
+      if (!events.length) return '<p class="meta">변경이력이 없습니다.</p>';
+      return `<ol class="change-history">${events.slice(0, 12).map(event => {
+        const changes = Array.isArray(event.detail?.changes) && event.detail.changes.length
+          ? event.detail.changes.map(change => `${change.label}: ${historyValue(change.field, change.before)} → ${historyValue(change.field, change.after)}`).join(' · ')
+          : event.eventType === 'ORDER_CREATED' ? '주문전표 생성' : event.eventType === 'ORDER_CANCELLED' ? '주문 전체취소' : `Revision ${event.revision}`;
+        return `<li><time>${esc(formatTime(event.createdAt))}</time><b>${esc(event.actor || 'LOCAL_USER')}</b><span>${esc(changes)}</span></li>`;
+      }).join('')}</ol>`;
+    }
+
+    function detailHtml(data) {
+      const { order, items, events = [] } = data;
+      const total = documentAmount(items);
+      const vat = items.reduce((sum, item) => sum + Number(item.vatAmount || 0), 0);
+      return `
+        <div class="document-detail-head">
+          <div><strong>${esc(order.orderNo || order.orderId)}</strong><span>${esc(order.customerName)} · ${esc(order.warehouseName || order.warehouse || '')}</span></div>
+          <div class="document-actions">
+            <a class="btn" href="./input.html?orderId=${encodeURIComponent(order.orderId)}">전표 수정</a>
+            <button class="btn" type="button" data-print="${esc(order.orderId)}">일반 인쇄</button>
+            <button class="btn kakao-copy" type="button" data-kakao="${esc(order.orderId)}">카카오톡 복사</button>
+          </div>
+        </div>
+        <div class="document-meta-grid">
+          <span><b>담당자</b>${esc(order.assigneeName || '-')}</span><span><b>주문상태</b>${esc(ORDER_STATUS_LABEL[order.orderStatus] || order.orderStatus)}</span>
+          <span><b>관리자상태</b>${esc(ADMIN_STATUS_LABEL[order.adminStatus] || order.adminStatus)}</span><span><b>ORDER Q</b>${esc(OPS_STATUS_LABEL[order.opsStatus] || order.opsStatus)}</span>
+          <span><b>입력경로</b>${esc(channelLabel(order))}</span><span><b>시스템 ID</b>${esc(order.orderId)}</span>
+        </div>
+        ${order.orderMessage ? `<p class="document-memo"><b>전표 메모</b>${esc(order.orderMessage)}</p>` : ''}
+        <section class="detail-section"><h3>상품 상세</h3><div class="detail-table-wrap"><table class="detail-items"><thead><tr><th>품목코드</th><th>품명</th><th>규격</th><th>단위</th><th>수량</th><th>단가</th><th>합계</th><th>적요</th></tr></thead><tbody>
+          ${items.map(item => `<tr><td>${esc(item.itemCode)}</td><td>${esc(item.itemName)}</td><td>${esc(item.specification)}</td><td class="center">${esc(item.finalUnit || item.rawUnit)}</td><td class="num">${money(item.finalQuantity ?? item.rawQuantity)}</td><td class="num">${money(item.price)}원</td><td class="num">${money(lineAmount(item))}원</td><td>${esc(item.memo)}</td></tr>`).join('')}
+        </tbody><tfoot><tr><td colspan="6">상품 ${items.length}건${vat ? ` · 부가세 ${money(vat)}원` : ''}</td><td class="num">${money(total)}원</td><td></td></tr></tfoot></table></div></section>
+        ${commerceDetail(order)}
+        <section class="detail-section"><h3>변경이력</h3>${historyDetail(events)}</section>`;
+    }
+
+    async function expandOrder(orderId, forceOpen = false) {
+      const detailRow = rows.querySelector(`[data-detail-for="${CSS.escape(orderId)}"]`);
+      const button = rows.querySelector(`[data-expand="${CSS.escape(orderId)}"]`);
+      if (!detailRow) return;
+      const opening = forceOpen || detailRow.hidden;
+      detailRow.hidden = !opening;
+      rows.querySelectorAll(`[data-expand="${CSS.escape(orderId)}"]`).forEach(control => control.setAttribute('aria-expanded', opening ? 'true' : 'false'));
+      if (!opening) {
+        expandedOrders.delete(orderId);
+        if (button) button.textContent = '+';
+        return;
+      }
+      expandedOrders.add(orderId);
+      if (button) button.textContent = '−';
+      let data = detailCache.get(orderId);
+      if (!data) {
+        data = await getOrder(orderId);
+        if (!data) return showMessage('주문전표를 찾을 수 없습니다.', 'error');
+        detailCache.set(orderId, data);
+      }
+      detailRow.querySelector('[data-detail-body]').innerHTML = detailHtml(data);
+      detailRow.scrollIntoView({ block: 'nearest', behavior: forceOpen ? 'smooth' : 'auto' });
     }
 
     async function renderSyncState() {
       const state = await getSyncState();
-      if (!state.cloudUrl) {
-        syncText.textContent = '클라우드 URL 미설정';
-        return state;
-      }
-      syncText.textContent = `대기 ${state.pending}건 · 충돌 ${state.conflicts.length}건 · Cursor ${state.cursor}`;
+      syncText.textContent = state.cloudUrl ? `대기 ${state.pending}건 · 충돌 ${state.conflicts.length}건` : '클라우드 URL 미설정';
       return state;
     }
 
     async function render() {
-      const orders = await listOrders();
-      const active = orders.filter(order => order.status !== 'CANCELLED');
-      const failures = orders.reduce((sum, order) => sum + (order.matchFailedCount || 0), 0);
-      summary.textContent = `주문 ${active.length}건 · 매칭실패 ${failures}건 · 전체 이력 ${orders.length}건`;
-      if (!orders.length) {
-        rows.innerHTML = '<tr><td colspan="9" class="empty">아직 저장된 주문이 없습니다. 신규 주문부터 등록하세요.</td></tr>';
-        await renderSyncState();
-        return;
-      }
-      rows.innerHTML = orders.map(order => `
-        <tr>
-          <td class="center">${esc(order.orderDate)}</td>
-          <td><a class="order-link" href="./input.html?orderId=${encodeURIComponent(order.orderId)}">${esc(order.orderId)}</a></td>
-          <td>${esc(order.customerName)}</td>
-          <td>${esc(order.warehouseName || order.warehouseCode || order.warehouse)}</td>
-          <td class="center"><span class="order-status ${esc(order.status)}">${esc(statusLabel(order.status))}</span></td>
-          <td class="center">${esc(order.matchedCount || 0)}</td>
-          <td class="center">${esc(order.matchFailedCount || 0)}</td>
-          <td class="center">r${esc(order.revision)}</td>
-          <td>${esc(formatTime(order.updatedAt))}</td>
-        </tr>`).join('');
+      allOrders = await listOrders();
+      populateAssignees(allOrders);
+      const visible = filteredOrders();
+      const unchecked = allOrders.filter(order => order.adminStatus === 'UNCHECKED').length;
+      const holds = allOrders.filter(order => order.adminStatus === 'HOLD').length;
+      summary.textContent = `전표 ${visible.length}/${allOrders.length}건 · 미확인 ${unchecked}건 · 보류 ${holds}건`;
+      rows.innerHTML = visible.length ? visible.map(summaryRow).join('') : '<tr><td colspan="11" class="empty">조건에 맞는 주문전표가 없습니다.</td></tr>';
+      for (const orderId of [...expandedOrders]) if (visible.some(order => order.orderId === orderId)) await expandOrder(orderId, true);
+      if (focusedOrderId && visible.some(order => order.orderId === focusedOrderId)) await expandOrder(focusedOrderId, true);
       await renderSyncState();
     }
 
-    async function runSync(showSuccess = true) {
-      if (!getCloudUrl()) {
-        showMessage('클라우드 URL이 없습니다. [클라우드] 화면에서 기존 ONEAPP Apps Script URL을 등록하세요.', 'warn');
-        return;
+    function printableHtml(data) {
+      const { order, items } = data;
+      return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>${esc(order.orderNo || order.orderId)}</title><style>body{font-family:sans-serif;padding:24px;color:#111}h1{font-size:22px}.meta{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:16px 0}.meta span{border:1px solid #ddd;padding:8px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #bbb;padding:7px;font-size:12px}th{background:#f1f5f9}.num{text-align:right}.memo{padding:10px;background:#f8fafc}@media print{button{display:none}}</style></head><body><h1>주문전표 ${esc(order.orderNo || '')}</h1><div class="meta"><span>일자 ${esc(order.orderDate)}</span><span>거래처 ${esc(order.customerName)}</span><span>담당자 ${esc(order.assigneeName || '-')}</span><span>창고 ${esc(order.warehouseName || order.warehouse || '')}</span><span>주문상태 ${esc(ORDER_STATUS_LABEL[order.orderStatus] || order.orderStatus)}</span><span>관리자상태 ${esc(ADMIN_STATUS_LABEL[order.adminStatus] || order.adminStatus)}</span></div>${order.orderMessage ? `<p class="memo">${esc(order.orderMessage)}</p>` : ''}<table><thead><tr><th>품목코드</th><th>품명</th><th>규격</th><th>단위</th><th>수량</th><th>단가</th><th>합계</th><th>적요</th></tr></thead><tbody>${items.map(item => `<tr><td>${esc(item.itemCode)}</td><td>${esc(item.itemName)}</td><td>${esc(item.specification)}</td><td>${esc(item.finalUnit || item.rawUnit)}</td><td class="num">${money(item.finalQuantity ?? item.rawQuantity)}</td><td class="num">${money(item.price)}</td><td class="num">${money(lineAmount(item))}</td><td>${esc(item.memo)}</td></tr>`).join('')}</tbody><tfoot><tr><td colspan="6">합계</td><td class="num">${money(documentAmount(items))}원</td><td></td></tr></tfoot></table><script>addEventListener('load',()=>print())<\/script></body></html>`;
+    }
+
+    function printDocument(data) {
+      const popup = window.open('', '_blank', 'width=980,height=760');
+      if (!popup) return showMessage('인쇄창이 차단되었습니다. 팝업을 허용해 주세요.', 'warn');
+      popup.document.open();
+      popup.document.write(printableHtml(data));
+      popup.document.close();
+    }
+
+    function wrapCanvasText(context, text, maxWidth) {
+      const chars = [...String(text || '')];
+      const lines = [];
+      let line = '';
+      chars.forEach(char => {
+        const next = line + char;
+        if (line && context.measureText(next).width > maxWidth) { lines.push(line); line = char; }
+        else line = next;
+      });
+      if (line || !lines.length) lines.push(line);
+      return lines;
+    }
+
+    async function renderKakaoPng(data) {
+      await document.fonts?.ready;
+      const { order, items } = data;
+      const width = 720;
+      const measureContext = document.createElement('canvas').getContext('2d');
+      measureContext.font = '700 20px sans-serif';
+      const rowHeights = items.map(item => Math.max(82, wrapCanvasText(measureContext, `${item.itemName} ${item.specification || ''}`, 590).length * 28 + 46));
+      const height = 390 + rowHeights.reduce((sum, value) => sum + value, 0);
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, width, height);
+      ctx.fillStyle = '#0f172a'; ctx.fillRect(0, 0, width, 104);
+      ctx.fillStyle = '#ffffff'; ctx.font = '800 30px sans-serif'; ctx.fillText('ONEAPP ORDER Q', 36, 48);
+      ctx.font = '700 20px sans-serif'; ctx.fillText(`주문전표 ${order.orderNo || ''}`, 36, 82);
+      ctx.fillStyle = '#111827'; ctx.font = '700 21px sans-serif';
+      ctx.fillText(`거래처  ${order.customerName}`, 36, 142);
+      ctx.font = '18px sans-serif';
+      ctx.fillText(`일자  ${order.orderDate}     출하창고  ${order.warehouseName || order.warehouse || ''}`, 36, 178);
+      ctx.fillText(`담당자  ${order.assigneeName || '-'}     상태  ${ORDER_STATUS_LABEL[order.orderStatus] || order.orderStatus}`, 36, 210);
+      let y = 244;
+      ctx.strokeStyle = '#cbd5e1'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(36, y); ctx.lineTo(684, y); ctx.stroke();
+      items.forEach((item, index) => {
+        const rowHeight = rowHeights[index];
+        y += 28;
+        ctx.fillStyle = '#111827'; ctx.font = '700 20px sans-serif';
+        const nameLines = wrapCanvasText(ctx, `${item.itemName || item.itemCode}${item.specification ? ` · ${item.specification}` : ''}`, 580);
+        nameLines.forEach(line => { ctx.fillText(line, 38, y); y += 27; });
+        ctx.fillStyle = '#475569'; ctx.font = '17px sans-serif';
+        ctx.fillText(`${item.itemCode || ''}  |  ${money(item.finalQuantity ?? item.rawQuantity)} ${item.finalUnit || item.rawUnit || ''} × ${money(item.price)}원`, 38, y + 3);
+        ctx.fillStyle = '#0f172a'; ctx.font = '800 19px sans-serif'; ctx.textAlign = 'right'; ctx.fillText(`${money(lineAmount(item))}원`, 682, y + 3); ctx.textAlign = 'left';
+        y += Math.max(27, rowHeight - nameLines.length * 27 - 28);
+        ctx.strokeStyle = '#e2e8f0'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(36, y); ctx.lineTo(684, y); ctx.stroke();
+      });
+      y += 44; ctx.fillStyle = '#111827'; ctx.font = '800 25px sans-serif'; ctx.fillText('합계', 38, y); ctx.textAlign = 'right'; ctx.fillText(`${money(documentAmount(items))}원`, 682, y); ctx.textAlign = 'left';
+      if (order.orderMessage) { y += 42; ctx.fillStyle = '#475569'; ctx.font = '17px sans-serif'; ctx.fillText(`메모  ${order.orderMessage}`, 38, y); }
+      ctx.fillStyle = '#94a3b8'; ctx.font = '14px sans-serif'; ctx.fillText(`시스템 ID ${order.orderId}`, 38, height - 28);
+      return new Promise((resolve, reject) => canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('PNG 생성에 실패했습니다.')), 'image/png'));
+    }
+
+    function downloadPng(blob, orderNo) {
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob); link.download = `주문전표-${orderNo || 'ORDER'}.png`; link.click();
+      setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+    }
+
+    async function copyForKakao(data) {
+      const blob = await renderKakaoPng(data);
+      if (!navigator.clipboard?.write || !globalThis.ClipboardItem) {
+        downloadPng(blob, data.order.orderNo);
+        return showMessage('이미지 클립보드를 지원하지 않아 PNG로 내려받았습니다.', 'warn');
       }
-      syncButton.disabled = true;
-      syncText.textContent = '동기화 중...';
       try {
-        const result = await syncNow();
-        await render();
-        const conflicts = result?.push?.conflicts || result?.pull?.conflicts || 0;
-        if (conflicts) showMessage(`동기화 완료 · 충돌 ${conflicts}건이 있습니다. 클라우드 화면에서 최신본을 확인하세요.`, 'warn');
-        else if (showSuccess) showMessage('클라우드 동기화가 완료되었습니다.', 'info');
+        await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+        showMessage('주문전표 이미지를 복사했습니다. 카카오톡에서 Ctrl+V로 붙여넣으세요.', 'info');
       } catch (error) {
-        showMessage(`클라우드 동기화 실패: ${error.message || error}`, 'error');
-        await renderSyncState();
-      } finally {
-        syncButton.disabled = false;
+        downloadPng(blob, data.order.orderNo);
+        showMessage('클립보드 권한이 없어 PNG로 내려받았습니다.', 'warn');
       }
     }
 
-    document.getElementById('refreshBtn').addEventListener('click', render);
+    async function orderData(orderId) {
+      let data = detailCache.get(orderId);
+      if (!data) { data = await getOrder(orderId); if (data) detailCache.set(orderId, data); }
+      return data;
+    }
+
+    async function runSync(showSuccess = true) {
+      if (!getCloudUrl()) return showMessage('클라우드 URL이 없습니다. 클라우드 화면에서 등록하세요.', 'warn');
+      syncButton.disabled = true; syncText.textContent = '동기화 중...';
+      try {
+        const result = await syncNow();
+        detailCache.clear(); await render();
+        const conflicts = result?.push?.conflicts || result?.pull?.conflicts || 0;
+        if (conflicts) showMessage(`동기화 완료 · 충돌 ${conflicts}건을 확인하세요.`, 'warn');
+        else if (showSuccess) showMessage('클라우드 동기화가 완료되었습니다.', 'info');
+      } catch (error) { showMessage(`클라우드 동기화 실패: ${error.message || error}`, 'error'); await renderSyncState(); }
+      finally { syncButton.disabled = false; }
+    }
+
+    rows.addEventListener('click', async event => {
+      const expand = event.target.closest('[data-expand]');
+      if (expand) return expandOrder(expand.dataset.expand);
+      const print = event.target.closest('[data-print]');
+      if (print) { const data = await orderData(print.dataset.print); if (data) printDocument(data); return; }
+      const kakao = event.target.closest('[data-kakao]');
+      if (kakao) { kakao.disabled = true; try { const data = await orderData(kakao.dataset.kakao); if (data) await copyForKakao(data); } catch (error) { showMessage(error.message || String(error), 'error'); } finally { kakao.disabled = false; } }
+    });
+    Object.values(filters).forEach(control => control.addEventListener(control === filters.search ? 'input' : 'change', render));
+    document.getElementById('refreshBtn').addEventListener('click', () => { detailCache.clear(); render(); });
     syncButton.addEventListener('click', () => runSync(true));
-    subscribeOrderChanges(render);
+    subscribeOrderChanges(() => { detailCache.clear(); render(); });
 
     render().then(() => {
+      if (params.get('saved') === '1') showMessage('주문전표를 저장했습니다. 방금 저장한 전표를 펼쳤습니다.', 'info');
       if (getCloudUrl()) runSync(false);
     }).catch(error => { summary.textContent = `오류: ${error.message}`; });
   </script>

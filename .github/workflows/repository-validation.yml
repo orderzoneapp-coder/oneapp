@@ -38,6 +38,9 @@ jobs:
       - name: Test ORDER Q vNext cloud sync contracts
         run: node scripts/test-orderq-vnext-cloud-contract.mjs
 
+      - name: Test ORDER Q order-document workflow
+        run: node scripts/test-orderq-order-workflow.mjs
+
       - name: Test ORDER Q manual product master search
         run: node scripts/test-orderq-manual-master-search.mjs
 

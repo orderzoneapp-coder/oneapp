@@ -1,5 +1,5 @@
 const DB_NAME = 'oneapp-orderq-vnext';
-const DB_VERSION = 5;
+const DB_VERSION = 6;
 
 export const STORE = Object.freeze({
   CUSTOMERS: 'customers',
@@ -41,7 +41,7 @@ function ensureIndex(store, name, keyPath, options = {}) {
   if (!store.indexNames.contains(name)) store.createIndex(name, keyPath, options);
 }
 
-function upgrade(db, transaction) {
+function upgrade(db, transaction, oldVersion = 0) {
   const ensureStore = (name, options) => {
     if (!db.objectStoreNames.contains(name)) return db.createObjectStore(name, options);
     return transaction.objectStore(name);
@@ -102,6 +102,13 @@ function upgrade(db, transaction) {
   store = ensureStore(STORE.ORDERS, { keyPath: 'orderId' });
   ensureIndex(store, 'byCustomerId', 'customerId');
   ensureIndex(store, 'byWarehouseId', 'warehouseId');
+  ensureIndex(store, 'byOrderNo', 'orderNo');
+  ensureIndex(store, 'byExternalOrderNo', ['sourceType', 'externalOrderNo']);
+  ensureIndex(store, 'byOrderStatus', 'orderStatus');
+  ensureIndex(store, 'byAdminStatus', 'adminStatus');
+  ensureIndex(store, 'byOpsStatus', 'opsStatus');
+  ensureIndex(store, 'byAssigneeId', 'assigneeId');
+  ensureIndex(store, 'byInputChannel', 'inputChannel');
   ensureIndex(store, 'bySourceMessageKey', 'sourceMessageKey', { unique: true });
   ensureIndex(store, 'byOrderDate', 'orderDate');
   ensureIndex(store, 'byUpdatedAt', 'updatedAt');
@@ -132,6 +139,7 @@ function upgrade(db, transaction) {
   ensureIndex(store, 'bySalesDate', 'salesDate');
   ensureIndex(store, 'byCustomerDate', ['normalizedCustomerName', 'salesDate']);
   ensureIndex(store, 'byWarehouseId', 'warehouseId');
+  ensureIndex(store, 'byAssigneeId', 'assigneeId');
 
   store = ensureStore(STORE.SALES_LINES, { keyPath: 'salesLineId' });
   ensureIndex(store, 'byDocumentId', 'salesDocumentId');
@@ -204,14 +212,68 @@ function upgrade(db, transaction) {
   ensureIndex(store, 'byStatusCreatedAt', ['status', 'createdAt']);
   ensureIndex(store, 'byEntity', ['entityType', 'entityId']);
 
-  ensureStore(STORE.META, { keyPath: 'key' });
+  const metaStore = ensureStore(STORE.META, { keyPath: 'key' });
+
+  if (oldVersion < 6) {
+    const orderStore = transaction.objectStore(STORE.ORDERS);
+    const orderRequest = orderStore.getAll();
+    const itemRequest = transaction.objectStore(STORE.ORDER_ITEMS).getAll();
+    let migrationOrders = null;
+    let migrationItems = null;
+    const migrate = () => {
+      if (!migrationOrders || !migrationItems) return;
+      const counters = new Map();
+      const itemsByOrder = new Map();
+      migrationItems.forEach(item => {
+        if (!itemsByOrder.has(item.orderId)) itemsByOrder.set(item.orderId, []);
+        itemsByOrder.get(item.orderId).push(item);
+      });
+      const orders = migrationOrders.sort((a, b) => {
+        const timeOrder = String(a.createdAt || a.orderDate || '').localeCompare(String(b.createdAt || b.orderDate || ''));
+        return timeOrder || String(a.orderId || '').localeCompare(String(b.orderId || ''));
+      });
+      orders.forEach(order => {
+        const dateMatch = String(order.orderDate || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        const dateKey = dateMatch ? `${dateMatch[1]}${dateMatch[2]}${dateMatch[3]}` : String(order.createdAt || '').slice(0, 10).replace(/\D/g, '') || '00000000';
+        const existingMatch = String(order.orderNo || '').match(/^(\d{8})-(\d+)$/);
+        const current = counters.get(dateKey) || 0;
+        const sequence = existingMatch?.[1] === dateKey ? Math.max(current, Number(existingMatch[2]) || 0) : current + 1;
+        counters.set(dateKey, sequence);
+        const orderNo = order.orderNo || `${dateKey}-${String(sequence).padStart(3, '0')}`;
+        const cancelled = String(order.status || '').toUpperCase() === 'CANCELLED';
+        const orderItems = itemsByOrder.get(order.orderId) || [];
+        const supplyAmountTotal = orderItems.reduce((sum, item) => sum + (item.supplyAmount != null
+          ? Number(item.supplyAmount || 0)
+          : Number(item.finalQuantity || item.rawQuantity || 0) * Number(item.price || 0)), 0);
+        const vatAmountTotal = orderItems.reduce((sum, item) => sum + Number(item.vatAmount || 0), 0);
+        orderStore.put({
+          ...order,
+          orderNo,
+          sourceMessageKey: String(order.sourceMessageKey || '').trim() || undefined,
+          orderStatus: order.orderStatus || (cancelled ? 'FULL_CANCEL' : 'ORDER'),
+          adminStatus: order.adminStatus || 'UNCHECKED',
+          opsStatus: order.opsStatus || 'ACTIVE',
+          inputChannel: order.inputChannel || (/KAKAO|SMART|ORDER_IN/i.test(order.sourceType || '') ? 'ORDER_IN' : 'DIRECT'),
+          assigneeId: order.assigneeId || '',
+          assigneeName: order.assigneeName || '',
+          matchingStatus: order.matchingStatus || order.status || '',
+          supplyAmountTotal: order.supplyAmountTotal ?? supplyAmountTotal,
+          vatAmountTotal: order.vatAmountTotal ?? vatAmountTotal,
+          orderAmount: order.orderAmount ?? (supplyAmountTotal + vatAmountTotal)
+        });
+      });
+      counters.forEach((sequence, dateKey) => metaStore.put({ key: `orderNoSequence:${dateKey}`, value: sequence, updatedAt: new Date().toISOString() }));
+    };
+    orderRequest.onsuccess = () => { migrationOrders = orderRequest.result || []; migrate(); };
+    itemRequest.onsuccess = () => { migrationItems = itemRequest.result || []; migrate(); };
+  }
 }
 
 export function openOrderQDb() {
   if (dbPromise) return dbPromise;
   dbPromise = new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
-    request.onupgradeneeded = () => upgrade(request.result, request.transaction);
+    request.onupgradeneeded = event => upgrade(request.result, request.transaction, event.oldVersion);
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
     request.onblocked = () => reject(new Error('ORDER Q DB 업그레이드가 다른 탭에 의해 차단되었습니다. 다른 ORDER Q 탭을 닫고 다시 시도하세요.'));

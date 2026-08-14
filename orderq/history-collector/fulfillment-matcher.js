@@ -1,4 +1,4 @@
-import { normalizeText } from '../orderq-db.js?v=0.5.1';
+import { normalizeText } from '../orderq-db.js?v=0.6.0';
 
 export const LINK_STATUS = Object.freeze({
   CONFIRMED: 'CONFIRMED',

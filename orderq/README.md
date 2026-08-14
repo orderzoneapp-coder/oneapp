@@ -2,17 +2,30 @@
 
 신규 ORDER Q 개발 경로. 기존 `orderops/` 및 `orderops_list.html`은 변경하지 않는다.
 
-## vNext 0.5.1 URL
+## vNext 0.6.0 URL
 
-- `/orderq/` 또는 `/orderq/index.html`: 공통 주문현황
-- `/orderq/input.html`: 수기 주문서 신규/수정
-- `/orderq/parser.html`: 카카오/일반 텍스트 SmartParser
+- `/orderq/` 또는 `/orderq/index.html`: 주문현황(전표 목록·펼침·상품상세·수정·출력)
+- `/orderq/input.html`: 주문서 직접입력·수정
+- `/orderq/parser.html`: ORDER IN(카카오/일반 텍스트 SmartParser)
+- `/orderops/list.html`: ORDER Q 운영관리(재고·부족·발주·출고·미출고)
 - `/orderq/collector.html`: 과거 주문·판매·구매·재고·거래처원장·카카오 이력수집과 주문↔판매 연결
 - `/orderq/cloud.html`: Cloud Sync 설정·충돌 처리
 
 ## 데이터와 처리 원칙
 
-브라우저 IndexedDB `oneapp-orderq-vnext`를 로컬 업무 DB로 사용하고, Apps Script Web App을 통해 목적별 Google Sheet와 증분 동기화한다.
+브라우저 IndexedDB `oneapp-orderq-vnext` v6를 로컬 업무 DB로 사용하고, Apps Script Web App을 통해 목적별 Google Sheet와 증분 동기화한다.
+
+업무 흐름은 `주문서 입력 → 주문현황(전표관리) → ORDER Q(운영관리)`로 구분한다. 직접입력·ORDER IN·Excel·쇼핑몰·외부연동은 모두 공통 `createOrder`를 호출하며 입력경로는 `inputChannel`로 기록한다. 저장 후 주문현황으로 이동해 방금 저장한 전표를 최상단에서 자동으로 펼친다.
+
+`orderId`는 시스템 내부키, `orderNo`는 저장 시 발급하는 날짜별 관리자 주문번호(`YYYYMMDD-NNN`), `externalOrderNo`는 쇼핑몰·외부 연결키다. 기존 주문은 DB v6 전환 때 주문일 순서로 주문번호를 보완한다.
+
+주문상태(`ORDER/PAID/PREPARING/SHIPPING/COMPLETED/FULL_CANCEL/PARTIAL_CANCEL`), 관리자상태(`UNCHECKED/CHECKED/HOLD`), ORDER Q 운영상태(`ACTIVE/CLOSED`)를 서로 분리한다. `CLOSED`는 판매전표로 이관되어 운영 처리가 끝난 종결이며 주문상태 완료와 다르다.
+
+담당자는 거래처가 아니라 주문전표 속성인 `assigneeId/assigneeName`으로 보존한다. 변경은 해당 전표에만 적용되고 주문 이벤트에 변경 전·후 값이 남는다. 판매전표는 같은 담당자 필드를 사용하며 주문 이관 시 `inheritedAssigneeSnapshot`을 적용한다.
+
+주문현황의 일반 인쇄는 인쇄 전표를 열고, 카카오톡 복사는 모바일 세로형 주문전표 PNG를 생성해 이미지 클립보드에 기록한다. 브라우저가 이미지 클립보드를 지원하지 않거나 권한을 거부하면 PNG 다운로드로 전환한다.
+
+쇼핑몰 주문에는 계산 정책이 아니라 결과값만 보관한다: `productAmount`, `couponDiscount`, `pointsUsed`, `shippingFee`, `paymentAmount`, `externalOrderNo`, `externalOriginalStatus`.
 
 핵심 스토어:
 
