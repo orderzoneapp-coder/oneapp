@@ -6,15 +6,16 @@ import {
   newId,
   nowIso,
   normalizeText
-} from './orderq-db.js?v=0.6.1';
-import { resolveWarehouseInTransaction, warehouseSnapshot } from './warehouse-master.js?v=0.6.1';
+} from './orderq-db.js?v=0.7.0';
+import { resolveWarehouseInTransaction, warehouseSnapshot } from './warehouse-master.js?v=0.7.0';
 import {
   ORDER_STATUS, ADMIN_STATUS, OPS_STATUS, INPUT_CHANNEL,
   normalizeOrderStatus, normalizeAdminStatus, normalizeOpsStatus, inferInputChannel,
   initialAdminStatus,
   orderDateKey, formatOrderNo, orderSequenceFromNo, assigneeIdentity, externalOrderSnapshot,
   normalizedOrderView, documentFieldChanges
-} from './order-document-model.js?v=0.6.1';
+} from './order-document-model.js?v=0.7.0';
+import { deriveOrderLifecycle, TRANSFER_EVENT_TYPE } from './order-fulfillment-lifecycle.js?v=0.7.0';
 
 export { ORDER_STATUS, ADMIN_STATUS, OPS_STATUS, INPUT_CHANNEL };
 
@@ -230,6 +231,20 @@ function appendEvent(tx, order, eventType, detail = {}) {
   return event;
 }
 
+function appendLifecycleTransition(tx, beforeOrder, beforeItems, afterOrder, afterItems, existingEvents, causeEvent, actor) {
+  const beforeStatus = deriveOrderLifecycle(beforeOrder, beforeItems, existingEvents).operationStatus;
+  const afterStatus = deriveOrderLifecycle(afterOrder, afterItems, existingEvents).operationStatus;
+  if (beforeStatus === afterStatus) return null;
+  const closed = afterStatus === OPS_STATUS.CLOSED;
+  return appendEvent(tx, afterOrder, closed ? TRANSFER_EVENT_TYPE.CLOSED : TRANSFER_EVENT_TYPE.REOPENED, {
+    actor,
+    reason: closed ? '모든 유효 주문상품 이관 완료' : '주문·보류·취소 변경으로 미출고 재발생',
+    causeEventId: causeEvent?.eventId || '',
+    beforeStatus,
+    afterStatus
+  });
+}
+
 export async function createOrder(payload) {
   const db = await openOrderQDb();
   const tx = db.transaction([
@@ -260,7 +275,7 @@ export async function createOrder(payload) {
       items = items.map(item => ({ ...item, matchStatus: MATCH_STATUS.CANCELLED, updatedAt: timestamp }));
     }
     const matchingStatus = workflow.orderStatus === ORDER_STATUS.FULL_CANCEL ? MATCHING_STATUS.CANCELLED : summarizeStatus(items);
-    const order = {
+    let order = {
       orderId,
       orderNo,
       revision: 1,
@@ -282,6 +297,7 @@ export async function createOrder(payload) {
       createdAt: timestamp,
       updatedAt: timestamp
     };
+    order = { ...order, opsStatus: deriveOrderLifecycle(order, items, []).operationStatus };
 
     await requestToPromise(orderStore.add(order));
     const itemStore = tx.objectStore(STORE.ORDER_ITEMS);
@@ -293,8 +309,19 @@ export async function createOrder(payload) {
       itemCount: items.length,
       actor: payload.actorName || 'LOCAL_USER'
     });
+    const transition = appendLifecycleTransition(
+      tx,
+      { ...order, orderStatus: ORDER_STATUS.ORDER, adminStatus: ADMIN_STATUS.HOLD },
+      [],
+      order,
+      items,
+      [],
+      event,
+      payload.actorName || 'LOCAL_USER'
+    );
     enqueue(tx, 'ORDER', orderId, 'UPSERT', order.revision, { order, items }, 0);
     enqueue(tx, 'ORDER_EVENT', event.eventId, 'UPSERT', event.revision, event, 0);
+    if (transition) enqueue(tx, 'ORDER_EVENT', transition.eventId, 'UPSERT', transition.revision, transition, 0);
 
     await transactionDone(tx);
     broadcast('ORDER_CREATED', order);
@@ -323,7 +350,10 @@ export async function updateOrder(orderId, expectedRevision, payload) {
 
     const customer = await resolveCustomerInTransaction(tx, payload);
     const warehouse = await resolveWarehouseInTransaction(tx, payload, { sourceType: payload.sourceType || existing.sourceType || 'MANUAL', sourceId: orderId });
-    const oldItems = await requestToPromise(itemStore.index('byOrderId').getAll(orderId));
+    const [oldItems, existingEvents] = await Promise.all([
+      requestToPromise(itemStore.index('byOrderId').getAll(orderId)),
+      requestToPromise(tx.objectStore(STORE.ORDER_EVENTS).index('byOrderId').getAll(orderId))
+    ]);
     const oldById = new Map(oldItems.map(item => [item.orderItemId, item]));
     let items = (payload.items || [])
       .filter(item => item.itemCode || item.itemName || item.quantity || item.rawText)
@@ -340,7 +370,7 @@ export async function updateOrder(orderId, expectedRevision, payload) {
     items.forEach(item => itemStore.put(item));
 
     const matchingStatus = workflow.orderStatus === ORDER_STATUS.FULL_CANCEL ? MATCHING_STATUS.CANCELLED : summarizeStatus(items);
-    const next = {
+    let next = {
       ...existing,
       revision: existing.revision + 1,
       orderDate: payload.orderDate,
@@ -357,6 +387,7 @@ export async function updateOrder(orderId, expectedRevision, payload) {
       matchFailedCount: items.filter(item => item.matchStatus === MATCH_STATUS.MATCH_FAILED).length,
       updatedAt: nowIso()
     };
+    next = { ...next, opsStatus: deriveOrderLifecycle(next, items, existingEvents).operationStatus };
     orderStore.put(next);
     const event = appendEvent(tx, next, 'ORDER_UPDATED', {
       fromRevision: expectedRevision,
@@ -364,8 +395,19 @@ export async function updateOrder(orderId, expectedRevision, payload) {
       changes: documentFieldChanges(previousOrder, next),
       actor: payload.actorName || 'LOCAL_USER'
     });
+    const transition = appendLifecycleTransition(
+      tx,
+      previousOrder,
+      oldItems,
+      next,
+      items,
+      existingEvents,
+      event,
+      payload.actorName || 'LOCAL_USER'
+    );
     enqueue(tx, 'ORDER', orderId, 'UPSERT', next.revision, { order: next, items }, expectedRevision);
     enqueue(tx, 'ORDER_EVENT', event.eventId, 'UPSERT', event.revision, event, 0);
+    if (transition) enqueue(tx, 'ORDER_EVENT', transition.eventId, 'UPSERT', transition.revision, transition, 0);
 
     await transactionDone(tx);
     broadcast('ORDER_UPDATED', next);
@@ -388,12 +430,15 @@ export async function cancelOrder(orderId, expectedRevision) {
     const previousOrder = normalizedOrderView(existing);
     if (previousOrder.orderStatus === ORDER_STATUS.FULL_CANCEL) return { order: previousOrder, items: [] };
 
-    const items = await requestToPromise(itemStore.index('byOrderId').getAll(orderId));
+    const [items, existingEvents] = await Promise.all([
+      requestToPromise(itemStore.index('byOrderId').getAll(orderId)),
+      requestToPromise(tx.objectStore(STORE.ORDER_EVENTS).index('byOrderId').getAll(orderId))
+    ]);
     const timestamp = nowIso();
     const cancelledItems = items.map(item => ({ ...item, matchStatus: MATCH_STATUS.CANCELLED, updatedAt: timestamp }));
     cancelledItems.forEach(item => itemStore.put(item));
 
-    const next = {
+    let next = {
       ...existing,
       revision: existing.revision + 1,
       orderStatus: ORDER_STATUS.FULL_CANCEL,
@@ -401,13 +446,25 @@ export async function cancelOrder(orderId, expectedRevision) {
       matchingStatus: MATCHING_STATUS.CANCELLED,
       updatedAt: timestamp
     };
+    next = { ...next, opsStatus: deriveOrderLifecycle(next, cancelledItems, existingEvents).operationStatus };
     orderStore.put(next);
     const event = appendEvent(tx, next, 'ORDER_CANCELLED', {
       fromRevision: expectedRevision,
       changes: documentFieldChanges(previousOrder, next)
     });
+    const transition = appendLifecycleTransition(
+      tx,
+      previousOrder,
+      items,
+      next,
+      cancelledItems,
+      existingEvents,
+      event,
+      'LOCAL_USER'
+    );
     enqueue(tx, 'ORDER', orderId, 'UPSERT', next.revision, { order: next, items: cancelledItems }, expectedRevision);
     enqueue(tx, 'ORDER_EVENT', event.eventId, 'UPSERT', event.revision, event, 0);
+    if (transition) enqueue(tx, 'ORDER_EVENT', transition.eventId, 'UPSERT', transition.revision, transition, 0);
     await transactionDone(tx);
     broadcast('ORDER_CANCELLED', next);
     return { order: next, items: cancelledItems };
@@ -430,16 +487,30 @@ export async function getOrder(orderId) {
   await transactionDone(tx);
   items.sort((a, b) => (a.lineNo || 0) - (b.lineNo || 0));
   events.sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
-  return { order: normalizedOrderView(order), items, events };
+  const normalized = normalizedOrderView(order);
+  const lifecycle = deriveOrderLifecycle(normalized, items, events);
+  return { order: { ...normalized, opsStatus: lifecycle.operationStatus }, items, events, lifecycle };
 }
 
 export async function listOrders() {
   const db = await openOrderQDb();
-  const tx = db.transaction(STORE.ORDERS, 'readonly');
-  const orders = await requestToPromise(tx.objectStore(STORE.ORDERS).getAll());
+  const tx = db.transaction([STORE.ORDERS, STORE.ORDER_ITEMS, STORE.ORDER_EVENTS], 'readonly');
+  const [orders, items, events] = await Promise.all([
+    requestToPromise(tx.objectStore(STORE.ORDERS).getAll()),
+    requestToPromise(tx.objectStore(STORE.ORDER_ITEMS).getAll()),
+    requestToPromise(tx.objectStore(STORE.ORDER_EVENTS).getAll())
+  ]);
   await transactionDone(tx);
+  const itemsByOrder = new Map();
+  const eventsByOrder = new Map();
+  items.forEach(item => itemsByOrder.set(item.orderId, [...(itemsByOrder.get(item.orderId) || []), item]));
+  events.forEach(event => eventsByOrder.set(event.orderId, [...(eventsByOrder.get(event.orderId) || []), event]));
   return orders
-    .map(normalizedOrderView)
+    .map(source => {
+      const order = normalizedOrderView(source);
+      const lifecycle = deriveOrderLifecycle(order, itemsByOrder.get(order.orderId) || [], eventsByOrder.get(order.orderId) || []);
+      return { ...order, opsStatus: lifecycle.operationStatus, transferStatus: lifecycle.transferStatus };
+    })
     .sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
 }
 

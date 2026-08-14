@@ -2,12 +2,13 @@
 
 신규 ORDER Q 개발 경로. 기존 `orderops/` 및 `orderops_list.html`은 변경하지 않는다.
 
-## vNext 0.6.1 URL
+## vNext 0.7.0 URL
 
 - `/orderq/` 또는 `/orderq/index.html`: 주문현황(전표 목록·펼침·상품상세·수정·출력)
 - `/orderq/input.html`: 주문서 직접입력·수정
 - `/orderq/parser.html`: ORDER IN(카카오/일반 텍스트 SmartParser)
-- `/orderops/list.html`: ORDER Q 운영관리(재고·부족·발주·출고·미출고)
+- `/orderq/operations.html`: ORDER Q 운영관리(전표조건 선필터·상품집계·재고·판매이관·미출고)
+- `/orderops/list.html`: 기존 Excel 기반 출고관리(호환 유지)
 - `/orderq/collector.html`: 과거 주문·판매·구매·재고·거래처원장·카카오 이력수집과 주문↔판매 연결
 - `/orderq/cloud.html`: Cloud Sync 설정·충돌 처리
 
@@ -20,6 +21,8 @@
 `orderId`는 시스템 내부키, `orderNo`는 저장 시 발급하는 날짜별 관리자 주문번호(`YYYYMMDD-NNN`), `externalOrderNo`는 쇼핑몰·외부 연결키다. 기존 주문은 DB v6 전환 때 주문일 순서로 주문번호를 보완한다.
 
 주문상태(`ORDER/PAID/PREPARING/SHIPPING/COMPLETED/FULL_CANCEL/PARTIAL_CANCEL`), 관리자상태(`UNCHECKED/CHECKED/HOLD`), ORDER Q 운영상태(`ACTIVE/CLOSED`)를 서로 분리한다. `CLOSED`는 판매전표로 이관되어 운영 처리가 끝난 종결이며 주문상태 완료와 다르다.
+
+판매이관은 `ORDER_EVENT`의 불변 이력(`SALES_TRANSFER_ALLOCATED` / `SALES_TRANSFER_REVERSED`)으로 보존한다. 총이관수량과 미출고수량은 이력을 합산해 계산하며 주문상품에 결과값을 덮어쓰지 않는다. 미출고가 음수면 0으로 보정하지 않고 초과이관으로 표시한다. 모든 유효 주문상품의 미출고가 0이고 초과이관이 없으며 관리자상태가 보류가 아닐 때만 종결되고, 역분개로 미출고가 생기면 자동 재개 이벤트를 남긴다.
 
 담당자는 거래처가 아니라 주문전표 속성인 `assigneeId/assigneeName`으로 보존한다. 변경은 해당 전표에만 적용되고 주문 이벤트에 변경 전·후 값이 남는다. 판매전표는 같은 담당자 필드를 사용하며 주문 이관 시 `inheritedAssigneeSnapshot`을 적용한다.
 

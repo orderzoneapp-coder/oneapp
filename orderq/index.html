@@ -13,14 +13,14 @@
       <div class="brand">
         <strong>ONEAPP</strong>
         <span class="logo-frame" aria-hidden="true"><img src="../assets/order-q-logo.png" alt=""></span>
-        <span class="badge">vNext 0.6.1</span>
+        <span class="badge">vNext 0.7.0</span>
         <span>주문현황 · 전표관리</span>
       </div>
       <div class="top-actions">
         <a class="btn dark" href="./collector.html">이력수집</a>
         <a class="btn dark" href="./cloud.html">클라우드</a>
         <a class="btn dark" href="./parser.html">ORDER IN</a>
-        <a class="btn dark" href="../orderops/list.html">ORDER Q 운영</a>
+        <a class="btn dark" href="./operations.html">ORDER Q 운영</a>
         <a class="btn primary" href="./input.html">+ 주문서 입력</a>
       </div>
     </header>
@@ -75,12 +75,12 @@
     </main>
   </div>
   <script type="module">
-    import { listOrders, getOrder, subscribeOrderChanges } from './order-intake-engine.js?v=0.6.1';
-    import { syncNow, getSyncState } from './orderq-sync-engine.js?v=0.6.1';
-    import { getCloudUrl } from './orderq-cloud-adapter.js?v=0.6.1';
+    import { listOrders, getOrder, subscribeOrderChanges } from './order-intake-engine.js?v=0.7.0';
+    import { syncNow, getSyncState } from './orderq-sync-engine.js?v=0.7.0';
+    import { getCloudUrl } from './orderq-cloud-adapter.js?v=0.7.0';
     import {
       ORDER_STATUS_LABEL, ADMIN_STATUS_LABEL, OPS_STATUS_LABEL, INPUT_CHANNEL_LABEL
-    } from './order-document-model.js?v=0.6.1';
+    } from './order-document-model.js?v=0.7.0';
 
     const rows = document.getElementById('orderRows');
     const summary = document.getElementById('summaryText');

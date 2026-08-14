@@ -1,6 +1,6 @@
 # ORDER Q vNext Architecture
 
-Version: 0.6.1
+Version: 0.7.0
 Reviewed: 2026-08-14
 
 ## 1. Scope
@@ -9,7 +9,7 @@ ORDER Q vNext is an independent pilot under `/orderq/`. Existing `orderops/` and
 
 Phase 3 adds `/orderq/parser.html`. ORDER IN/SmartParser never writes ORDER / ORDER_ITEM directly: raw text and parse decisions are stored separately, then confirmed actions call the shared Order Intake Engine. Direct input, ORDER IN, Excel, shopping-mall, and external adapters share that same boundary.
 
-vNext 0.6.1 defines `input → document history → operations` as separate work surfaces. IndexedDB v6 adds manager order numbers, input channel, order/admin/operations states, document assignee, shopping-mall result fields, amount summaries, and lookup indexes. Legacy `status` remains the item-matching summary for compatibility while `orderStatus`, `adminStatus`, and `opsStatus` own the new workflow. Existing orders are migrated additively and all browser modules share the 0.6.1 release query. The cloud sheet schema remains unchanged because the new values live inside the existing order `payloadJson`.
+vNext 0.7.0 defines `input → document history → operations` as separate work surfaces. `/orderq/operations.html` filters order documents before product aggregation and never duplicates document editing. IndexedDB v6 contains manager order numbers, input channel, order/admin/operations states, document assignee, shopping-mall result fields, amount summaries, and lookup indexes. Legacy `status` remains the item-matching summary for compatibility while `orderStatus`, `adminStatus`, and derived operations status own the new workflow. Existing orders are migrated additively and all browser modules share the 0.7.0 release query. The cloud sheet schema remains unchanged because new workflow values and transfer events use existing payload JSON contracts.
 
 Manual entry remains code-first and keyboard-driven. A newly created direct-entry document starts with administrator status `CHECKED`, while ORDER IN, Excel, shopping-mall, and external collection continue to start as `UNCHECKED`. Product search runs only from the item-code cell; Enter follows customer → warehouse → item code → quantity → price → memo and creates a new row after the last memo. Product columns remain directly editable but are skipped by that primary entry path. `supplyAmount` and optional `vatAmount` remain editable. Price basis, saved column widths, date arrows, and warehouse master behavior remain unchanged from v0.5.1.
 
@@ -32,6 +32,9 @@ Later, only the Cloud Adapter boundary is intended to change to `Server API → 
 - Assignee belongs to each document, never to the customer. Order events record assignee and workflow-state changes. Sales documents use the same assignee snapshot for later inheritance and reporting.
 - IndexedDB `warehouses` and `warehouseAliases` are rebuilt lazily from order and history payload snapshots, so an older cloud backend remains compatible.
 - Order changes are revisioned. Delete-by-overwrite is prohibited for business cancellation/history. `전체` is a query filter, never a stored state.
+- Live sales transfer history is append-only inside `ORDER_EVENT`. `SALES_TRANSFER_ALLOCATED` stores one sales-document/line/order-item allocation; `SALES_TRANSFER_REVERSED` compensates it. The deterministic event identity blocks duplicate allocation for `salesDocumentId + salesLineId + orderItemId`.
+- Effective transferred quantity, remaining quantity, transfer status, and operations status are derived. Negative remaining quantity is an over-transfer error and is never clamped to zero.
+- Operations closure is derived from all valid items having zero remaining quantity, no over-transfer, and administrator status not being `HOLD`. Close/reopen events record the transition and reason; `closedAt` is only a convenience projection.
 
 ## 3. Cloud contract
 
