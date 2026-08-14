@@ -18,6 +18,7 @@ export function calculateVatAmount(total) {
 }
 
 const PRICE_TYPE_LABELS = Object.freeze({
+  salePrice: '판매가',
   outPrice: '출고가',
   wholesaleA: '도매A',
   wholesaleB: '도매B',

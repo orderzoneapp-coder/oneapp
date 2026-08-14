@@ -13,7 +13,7 @@
       <div class="brand">
         <strong>ONEAPP</strong>
         <span class="logo-frame" aria-hidden="true"><img src="../assets/order-q-logo.png" alt=""></span>
-        <span class="badge">vNext 0.4.7</span>
+        <span class="badge">vNext 0.4.8</span>
         <span id="pageMode">수기 주문</span>
       </div>
       <div class="top-system" aria-live="polite">
@@ -121,7 +121,19 @@
               <th data-column="boxQuantity" title="한 박스에 들어있는 기본 수량">박스당수량</th>
               <th data-column="unit" title="상품 마스터 기준 재고·출고 처리 단위">단위</th>
               <th>수량</th>
-              <th title="단가 셀의 ▲▼ 또는 키보드 위·아래 화살표로 마스터 판매단가를 전환합니다.">단가</th>
+              <th class="price-header" title="헤더 드롭다운 또는 단가 셀의 ▲▼로 전체 단가 기준을 전환합니다.">
+                <select id="priceTypeSelect" aria-label="단가 종류">
+                  <option value="salePrice" selected>판매가</option>
+                  <option value="outPrice">출고가</option>
+                  <option value="wholesaleA">도매A</option>
+                  <option value="wholesaleB">도매B</option>
+                  <option value="listingPrice">상장가</option>
+                  <option value="marketPrice">시중가</option>
+                  <option value="promoPrice">행사가</option>
+                  <option value="MANUAL" disabled>직접입력</option>
+                  <option value="MIXED" disabled>혼합단가</option>
+                </select>
+              </th>
               <th>합계</th>
               <th data-column="vat" title="합계의 10% 제안값이며 직접 수정할 수 있습니다." hidden>부가세</th>
               <th>상품별 메모(적요)</th>
@@ -159,8 +171,7 @@
     } from './orderq-sync-engine.js';
     import { loadProductCatalog, searchProductCatalog } from './product-master-search.js';
     import {
-      calculateLineTotal, calculateVatAmount, compareManualRows, cycleManualPriceOption,
-      manualPriceTypeLabel, numberOrNull
+      calculateLineTotal, calculateVatAmount, compareManualRows, cycleManualPriceOption, numberOrNull
     } from './manual-order-grid.js';
 
     const params = new URLSearchParams(location.search);
@@ -178,6 +189,7 @@
 
     const itemRows = document.getElementById('itemRows');
     const message = document.getElementById('message');
+    const priceTypeSelect = document.getElementById('priceTypeSelect');
     const pageMode = document.getElementById('pageMode');
     const orderMeta = document.getElementById('orderMeta');
     const cancelButton = document.getElementById('cancelOrderBtn');
@@ -256,7 +268,6 @@
         <td data-column="unit"><input data-field="finalUnit" value=""></td>
         <td><input class="num" data-field="quantity" type="number" step="any" value=""></td>
         <td class="price-cell"><div class="price-picker">
-          <span class="price-kind" data-role="priceType">단가선택</span>
           <input class="num" data-field="price" type="number" step="any" value="" aria-label="단가">
           <span class="price-stepper">
             <button type="button" data-price-step="1" aria-label="다음 단가" title="다음 단가">▲</button>
@@ -275,7 +286,6 @@
       set('quantity', item.finalQuantity ?? item.rawQuantity ?? item.quantity);
       set('finalUnit', item.finalUnit || item.rawUnit);
       set('price', item.price);
-      refreshPriceType(tr);
       const automaticTotal = calculateLineTotal(
         item.finalQuantity ?? item.rawQuantity ?? item.quantity,
         item.price
@@ -324,18 +334,6 @@
       }
     }
 
-    function refreshPriceType(row) {
-      if (!row) return;
-      const options = getRowPriceOptions(row);
-      const priceInput = row.querySelector('[data-field="price"]');
-      const label = row.querySelector('[data-role="priceType"]');
-      const hasPrice = Boolean(priceInput?.value.trim());
-      label.textContent = manualPriceTypeLabel(row.dataset.priceType, options, hasPrice);
-      label.title = options.length
-        ? options.map(option => `${option.label} ${Number(option.value).toLocaleString('ko-KR')}`).join(' · ')
-        : '상품 마스터에 선택 가능한 판매단가가 없습니다.';
-    }
-
     function setRowPriceOptions(row, options = []) {
       if (!row) return;
       const normalized = options.map(option => {
@@ -351,21 +349,54 @@
       if (!row.dataset.priceType && price !== null) {
         row.dataset.priceType = normalized.find(option => option.value === price)?.key || 'MANUAL';
       }
-      refreshPriceType(row);
     }
 
     function applyRowPriceOption(row, option) {
       if (!row || !option) return;
       row.querySelector('[data-field="price"]').value = option.value;
       row.dataset.priceType = option.key;
-      refreshPriceType(row);
       refreshRowAmounts(row);
     }
 
+    function activeMasterPriceKey() {
+      return ['salePrice', 'outPrice', 'wholesaleA', 'wholesaleB', 'listingPrice', 'marketPrice', 'promoPrice']
+        .includes(priceTypeSelect.value) ? priceTypeSelect.value : 'salePrice';
+    }
+
+    function updatePriceTypeHeaderFromRows() {
+      const types = [...itemRows.querySelectorAll('tr')].filter(row => {
+        return Boolean(row.dataset.productId
+          || row.querySelector('[data-field="itemCode"]')?.value.trim()
+          || row.querySelector('[data-field="price"]')?.value.trim());
+      }).map(row => row.dataset.priceType || (row.querySelector('[data-field="price"]')?.value.trim() ? 'MANUAL' : ''))
+        .filter(Boolean);
+      if (!types.length) priceTypeSelect.value = 'salePrice';
+      else if (types.every(type => type === types[0])) priceTypeSelect.value = types[0];
+      else priceTypeSelect.value = 'MIXED';
+    }
+
+    function applyPriceTypeToRows(priceType) {
+      [...itemRows.querySelectorAll('tr')].forEach(row => {
+        const options = getRowPriceOptions(row);
+        if (!options.length) return;
+        const option = options.find(candidate => candidate.key === priceType);
+        if (option) applyRowPriceOption(row, option);
+        else {
+          row.querySelector('[data-field="price"]').value = '';
+          row.dataset.priceType = priceType;
+          refreshRowAmounts(row);
+        }
+      });
+      priceTypeSelect.value = priceType;
+    }
+
     function cycleRowPrice(row, direction) {
-      const option = cycleManualPriceOption(getRowPriceOptions(row), row?.dataset.priceType, direction);
+      const selectedType = priceTypeSelect.value;
+      const currentType = ['salePrice', 'outPrice', 'wholesaleA', 'wholesaleB', 'listingPrice', 'marketPrice', 'promoPrice']
+        .includes(selectedType) ? selectedType : row?.dataset.priceType;
+      const option = cycleManualPriceOption(getRowPriceOptions(row), currentType, direction);
       if (!option) return false;
-      applyRowPriceOption(row, option);
+      applyPriceTypeToRows(option.key);
       return true;
     }
 
@@ -538,16 +569,16 @@
       row.querySelector('[data-field="boxQuantity"]').value = product.boxQuantity ?? '';
       row.querySelector('[data-field="finalUnit"]').value = product.finalUnit || '';
       setRowPriceOptions(row, product.priceOptions || []);
-      const defaultPrice = product.priceOptions?.find(option => option.key === 'outPrice');
+      const selectedPriceType = activeMasterPriceKey();
+      const defaultPrice = product.priceOptions?.find(option => option.key === selectedPriceType);
       if (defaultPrice) {
         row.querySelector('[data-field="price"]').value = defaultPrice.value;
         row.dataset.priceType = defaultPrice.key;
-      } else if (row.querySelector('[data-field="price"]').value.trim()) {
-        row.dataset.priceType = 'MANUAL';
       } else {
-        row.dataset.priceType = '';
+        row.querySelector('[data-field="price"]').value = '';
+        row.dataset.priceType = selectedPriceType;
       }
-      refreshPriceType(row);
+      updatePriceTypeHeaderFromRows();
       closeSuggestions();
       refreshRowStatus(row);
       refreshRowAmounts(row);
@@ -562,7 +593,7 @@
       if (sourceInput?.dataset.field === 'itemCode') {
         row.dataset.priceOptions = '[]';
         row.dataset.priceType = row.querySelector('[data-field="price"]').value.trim() ? 'MANUAL' : '';
-        refreshPriceType(row);
+        updatePriceTypeHeaderFromRows();
       }
       refreshRowStatus(row);
     }
@@ -574,8 +605,8 @@
         const product = productCatalog.find(candidate => (productId && candidate.productId === productId)
           || (itemCode && candidate.itemCode === itemCode));
         if (product) setRowPriceOptions(row, product.priceOptions || []);
-        else refreshPriceType(row);
       });
+      updatePriceTypeHeaderFromRows();
     }
 
     function isColumnVisible(column) {
@@ -768,7 +799,7 @@
       }
       else if (row && event.target.dataset.field === 'price') {
         row.dataset.priceType = event.target.value.trim() ? 'MANUAL' : '';
-        refreshPriceType(row);
+        updatePriceTypeHeaderFromRows();
         refreshRowAmounts(row);
       }
       else if (row && event.target.dataset.field === 'supplyAmount') {
@@ -852,6 +883,7 @@
       cycleRowPrice(row, Number(button.dataset.priceStep));
       focusRowField(row, 'price');
     });
+    priceTypeSelect.addEventListener('change', () => applyPriceTypeToRows(priceTypeSelect.value));
     document.addEventListener('pointerdown', event => {
       if (!suggestions.hidden && !suggestions.contains(event.target) && event.target !== activeSearchInput) closeSuggestions();
       if (!event.target.closest('.toolbar-menu')) closeToolbarMenus();
@@ -861,6 +893,7 @@
     document.getElementById('removeRowsBtn').addEventListener('click', () => {
       [...itemRows.querySelectorAll('tr')].filter(row => row.querySelector('[data-role="select"]').checked).forEach(row => row.remove());
       if (!itemRows.children.length) addRow();
+      updatePriceTypeHeaderFromRows();
       refreshSummary();
     });
     columnMenuButton.addEventListener('click', () => toggleToolbarMenu(columnMenuButton, columnMenu));
