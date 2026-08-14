@@ -13,7 +13,7 @@
       <div class="brand">
         <strong>ONEAPP</strong>
         <span class="logo-frame" aria-hidden="true"><img src="../assets/order-q-logo.png" alt=""></span>
-        <span class="badge">vNext 0.4.5</span>
+        <span class="badge">vNext 0.4.6</span>
         <span id="pageMode">수기 주문</span>
       </div>
       <div class="top-system" aria-live="polite">
@@ -67,8 +67,26 @@
       </section>
 
       <div class="toolbar">
-        <button class="btn" id="addRowBtn" type="button">+ 행 추가</button>
         <button class="btn" id="removeRowsBtn" type="button">선택행 삭제</button>
+        <div class="toolbar-menu">
+          <button class="btn" id="columnMenuBtn" type="button" aria-expanded="false" aria-controls="columnMenu">열 추가</button>
+          <div class="toolbar-popover column-menu" id="columnMenu" hidden>
+            <strong>표시할 열</strong>
+            <label><input type="checkbox" data-column-toggle="boxQuantity" checked> 박스당수량</label>
+            <label><input type="checkbox" data-column-toggle="unit" checked> 단위</label>
+            <label><input type="checkbox" data-column-toggle="vat"> 부가세</label>
+            <small>박스당수량은 1박스 입수, 단위는 마스터 기준 처리 단위입니다. 부가세는 합계의 10%로 제안되며 직접 수정할 수 있습니다.</small>
+          </div>
+        </div>
+        <div class="toolbar-menu">
+          <button class="btn" id="sortRowsBtn" type="button" aria-expanded="false" aria-controls="sortRowsMenu">정렬</button>
+          <div class="toolbar-popover sort-menu" id="sortRowsMenu" hidden>
+            <button type="button" data-sort="input">입력순</button>
+            <button type="button" data-sort="code">코드순</button>
+            <button type="button" data-sort="name">품명 가나다순</button>
+            <button type="button" data-sort="unit">단위순</button>
+          </div>
+        </div>
         <span class="spacer"></span>
         <span class="status" id="masterStatus">상품 마스터 불러오는 중…</span>
       </div>
@@ -80,28 +98,32 @@
             <col class="col-code">
             <col class="col-name">
             <col class="col-specification">
+            <col class="col-box-quantity" data-column="boxQuantity">
+            <col class="col-unit" data-column="unit">
             <col class="col-quantity">
-            <col class="col-raw-unit">
-            <col class="col-final-unit">
             <col class="col-price">
+            <col class="col-total">
+            <col class="col-vat" data-column="vat" hidden>
             <col class="col-memo">
             <col class="col-match">
           </colgroup>
           <thead>
             <tr class="table-groups">
               <th rowspan="2">선택</th>
-              <th class="group-product" colspan="3">상품 정보</th>
-              <th class="group-order" colspan="4">주문 입력</th>
+              <th class="group-product" id="productGroupHeader" colspan="5">상품 정보</th>
+              <th class="group-order" id="orderGroupHeader" colspan="3">주문 입력</th>
               <th class="group-check" colspan="2">확인</th>
             </tr>
             <tr>
               <th>품목코드</th>
               <th>품목명</th>
               <th>규격</th>
+              <th data-column="boxQuantity" title="한 박스에 들어있는 기본 수량">박스당수량</th>
+              <th data-column="unit" title="상품 마스터 기준 재고·출고 처리 단위">단위</th>
               <th>수량</th>
-              <th>원단위</th>
-              <th>업무단위</th>
               <th>단가</th>
+              <th>합계</th>
+              <th data-column="vat" title="합계의 10% 제안값이며 직접 수정할 수 있습니다." hidden>부가세</th>
               <th>상품별 메모(적요)</th>
               <th title="공통 상품 마스터의 productId 연결 상태">마스터 매칭</th>
             </tr>
@@ -113,9 +135,11 @@
         <span id="totalRows">상품 0건</span>
         <span id="matchedRows">매칭완료 0건</span>
         <span id="failedRows">매칭실패 0건</span>
+        <span class="summary-spacer"></span>
+        <span id="supplyTotal">합계 0원</span>
+        <span id="vatTotal" hidden>부가세 0원</span>
       </div>
       <div class="bottom">
-        <button class="btn" id="addRowBottomBtn" type="button">+ 행 추가</button>
         <span class="spacer"></span>
         <button class="btn danger" id="cancelOrderBtn" type="button" hidden>주문 취소</button>
         <button class="btn primary" id="saveBottomBtn" type="button">저장</button>
@@ -134,6 +158,9 @@
       CloudOrderConflictError
     } from './orderq-sync-engine.js';
     import { loadProductCatalog, searchProductCatalog } from './product-master-search.js';
+    import {
+      calculateLineTotal, calculateVatAmount, compareManualRows, numberOrNull
+    } from './manual-order-grid.js';
 
     const params = new URLSearchParams(location.search);
     const editingOrderId = params.get('orderId');
@@ -143,6 +170,8 @@
     let activeSearchInput = null;
     let activeSuggestionIndex = 0;
     let searchTimer = null;
+    let rowInputSequence = 0;
+    let vatColumnVisible = false;
     const MANUAL_DEFAULTS_KEY = 'oneapp.orderq.manual-defaults.v1';
     const MANUAL_DEFAULTS_SCHEMA = 'orderq-manual-defaults/v1';
 
@@ -158,6 +187,10 @@
     const customerNameInput = document.getElementById('customerName');
     const warehouseInput = document.getElementById('warehouse');
     const transactionTypeInput = document.getElementById('transactionType');
+    const columnMenuButton = document.getElementById('columnMenuBtn');
+    const columnMenu = document.getElementById('columnMenu');
+    const sortRowsButton = document.getElementById('sortRowsBtn');
+    const sortRowsMenu = document.getElementById('sortRowsMenu');
 
     function loadManualDefaults() {
       try {
@@ -210,25 +243,44 @@
       tr.dataset.productId = String(item.productId || '').startsWith('CODE:') ? '' : (item.productId || '');
       tr.dataset.matchSource = tr.dataset.productId ? (item.matchSource || 'SAVED_MASTER') : 'MANUAL_UNMATCHED';
       tr.dataset.rawText = item.rawText || item.itemName || '';
+      tr.dataset.inputSequence = String(++rowInputSequence);
       tr.innerHTML = `
         <td class="center"><input type="checkbox" data-role="select"></td>
         <td><input data-field="itemCode" value="" placeholder="코드 검색" autocomplete="off"></td>
-        <td><input data-field="itemName" value="" placeholder="품명·약칭 검색" autocomplete="off"></td>
+        <td><input data-field="itemName" value="" placeholder="품명" autocomplete="off"></td>
         <td><input data-field="specification" value=""></td>
+        <td data-column="boxQuantity"><input class="num" data-field="boxQuantity" type="number" step="any" value=""></td>
+        <td data-column="unit"><input data-field="finalUnit" value=""></td>
         <td><input class="num" data-field="quantity" type="number" step="any" value=""></td>
-        <td><input data-field="rawUnit" value=""></td>
-        <td><input data-field="finalUnit" value=""></td>
         <td><input class="num" data-field="price" type="number" step="any" value=""></td>
+        <td><input class="num amount-input" data-field="supplyAmount" type="number" step="any" value="" aria-label="합계"></td>
+        <td data-column="vat" hidden><input class="num amount-input" data-field="vatAmount" type="number" step="any" value="" aria-label="부가세"></td>
         <td><input data-field="memo" value="" placeholder="이 상품의 적요"></td>
         <td class="center"><span data-role="matchStatus" class="row-status" hidden></span></td>`;
       const set = (field, value) => { const el = tr.querySelector(`[data-field="${field}"]`); if (el) el.value = value ?? ''; };
       set('itemCode', item.itemCode);
       set('itemName', item.itemName);
       set('specification', item.specification);
+      set('boxQuantity', item.boxQuantity);
       set('quantity', item.finalQuantity ?? item.rawQuantity ?? item.quantity);
-      set('rawUnit', item.rawUnit);
       set('finalUnit', item.finalUnit || item.rawUnit);
       set('price', item.price);
+      const automaticTotal = calculateLineTotal(
+        item.finalQuantity ?? item.rawQuantity ?? item.quantity,
+        item.price
+      );
+      const savedTotal = numberOrNull(item.supplyAmount);
+      const displayedTotal = savedTotal ?? automaticTotal;
+      set('supplyAmount', displayedTotal);
+      if (savedTotal !== null && (automaticTotal === null || Math.abs(savedTotal - automaticTotal) > 1e-9)) {
+        tr.dataset.totalManual = 'true';
+      }
+      const automaticVat = calculateVatAmount(displayedTotal);
+      const savedVat = numberOrNull(item.vatAmount);
+      set('vatAmount', savedVat);
+      if (savedVat !== null && (automaticVat === null || Math.abs(savedVat - automaticVat) > 1e-9)) {
+        tr.dataset.vatManual = 'true';
+      }
       set('memo', item.memo);
       refreshRowStatus(tr);
       return tr;
@@ -252,18 +304,46 @@
       refreshSummary();
     }
 
-    function addRow(item = {}) { itemRows.appendChild(rowTemplate(item)); refreshSummary(); }
+    function refreshRowAmounts(row) {
+      if (!row) return;
+      const totalInput = row.querySelector('[data-field="supplyAmount"]');
+      const vatInput = row.querySelector('[data-field="vatAmount"]');
+      if (row.dataset.totalManual !== 'true') {
+        totalInput.value = calculateLineTotal(
+          row.querySelector('[data-field="quantity"]').value,
+          row.querySelector('[data-field="price"]').value
+        ) ?? '';
+      }
+      if (vatColumnVisible && row.dataset.vatManual !== 'true') {
+        vatInput.value = calculateVatAmount(totalInput.value) ?? '';
+      }
+      refreshSummary();
+    }
+
+    function addRow(item = {}) {
+      const row = rowTemplate(item);
+      itemRows.appendChild(row);
+      applyColumnVisibilityToRow(row);
+      refreshSummary();
+      return row;
+    }
+
+    function rowHasInput(row) {
+      return [...row.querySelectorAll('[data-field]')].some(el => String(el.value || '').trim());
+    }
 
     function refreshSummary() {
-      const rows = [...itemRows.querySelectorAll('tr')].filter(row => {
-        return [...row.querySelectorAll('[data-field]')].some(el => String(el.value || '').trim());
-      });
+      const rows = [...itemRows.querySelectorAll('tr')].filter(rowHasInput);
       const attemptedRows = rows.filter(row => Boolean(row.dataset.productId)
         || ['itemCode', 'itemName'].some(field => row.querySelector(`[data-field="${field}"]`)?.value.trim()));
       const matched = attemptedRows.filter(row => Boolean(row.dataset.productId)).length;
+      const supplyTotal = rows.reduce((sum, row) => sum + (numberOrNull(row.querySelector('[data-field="supplyAmount"]')?.value) || 0), 0);
+      const vatTotal = rows.reduce((sum, row) => sum + (numberOrNull(row.querySelector('[data-field="vatAmount"]')?.value) || 0), 0);
       document.getElementById('totalRows').textContent = `상품 ${rows.length}건`;
       document.getElementById('matchedRows').textContent = `매칭완료 ${matched}건`;
       document.getElementById('failedRows').textContent = `매칭실패 ${attemptedRows.length - matched}건`;
+      document.getElementById('supplyTotal').textContent = `합계 ${supplyTotal.toLocaleString('ko-KR')}원`;
+      document.getElementById('vatTotal').textContent = `부가세 ${vatTotal.toLocaleString('ko-KR')}원`;
     }
 
     function readItems() {
@@ -271,6 +351,7 @@
         const get = field => row.querySelector(`[data-field="${field}"]`)?.value ?? '';
         const quantity = get('quantity');
         const price = get('price');
+        const finalUnit = get('finalUnit');
         return {
           orderItemId: row.dataset.orderItemId || undefined,
           productId: row.dataset.productId || null,
@@ -281,16 +362,18 @@
           quantity,
           rawQuantity: quantity,
           finalQuantity: quantity,
-          rawUnit: get('rawUnit'),
-          finalUnit: get('finalUnit') || get('rawUnit'),
+          rawUnit: finalUnit,
+          finalUnit,
+          boxQuantity: get('boxQuantity'),
           price,
-          supplyAmount: quantity !== '' && price !== '' ? Number(quantity) * Number(price) : null,
+          supplyAmount: get('supplyAmount'),
+          vatAmount: get('vatAmount'),
           memo: get('memo'),
           rawText: row.dataset.rawText || get('itemName'),
           matchSource: row.dataset.matchSource || 'MANUAL_UNMATCHED',
           matchStatus: row.dataset.productId ? MATCH_STATUS.MATCHED : MATCH_STATUS.MATCH_FAILED
         };
-      }).filter(item => item.itemCode || item.itemName || item.quantity || item.rawUnit || item.memo);
+      }).filter(item => item.itemCode || item.itemName || item.quantity || item.finalUnit || item.memo || item.supplyAmount !== '');
     }
 
     function readPayload() {
@@ -357,7 +440,8 @@
           const detail = document.createElement('span');
           const aliases = [product.secondaryName, product.searchInfo].filter(Boolean).join(' · ');
           const outPrice = product.outPrice == null ? '' : `출고가 ${Number(product.outPrice).toLocaleString('ko-KR')}`;
-          detail.textContent = [product.specification, product.finalUnit, outPrice, aliases].filter(Boolean).join(' · ') || '추가정보 없음';
+          const boxQuantity = product.boxQuantity == null ? '' : `박스당 ${Number(product.boxQuantity).toLocaleString('ko-KR')}`;
+          detail.textContent = [product.specification, boxQuantity, product.finalUnit, outPrice, aliases].filter(Boolean).join(' · ') || '추가정보 없음';
           const source = document.createElement('em');
           source.textContent = product.source === 'COMMON_MASTER' ? '공통 마스터' : 'ORDER Q 이력';
           button.append(title, detail, source);
@@ -385,11 +469,12 @@
       row.querySelector('[data-field="itemCode"]').value = product.itemCode || '';
       row.querySelector('[data-field="itemName"]').value = product.itemName || '';
       row.querySelector('[data-field="specification"]').value = product.specification || '';
+      row.querySelector('[data-field="boxQuantity"]').value = product.boxQuantity ?? '';
       row.querySelector('[data-field="finalUnit"]').value = product.finalUnit || '';
-      if (!row.querySelector('[data-field="rawUnit"]').value) row.querySelector('[data-field="rawUnit"]').value = product.finalUnit || '';
       if (product.outPrice != null) row.querySelector('[data-field="price"]').value = product.outPrice;
       closeSuggestions();
       refreshRowStatus(row);
+      refreshRowAmounts(row);
       focusQuantity(row);
     }
 
@@ -399,6 +484,83 @@
       row.dataset.matchSource = 'MANUAL_UNMATCHED';
       if (sourceInput?.dataset.field === 'itemName') row.dataset.rawText = sourceInput.value.trim();
       refreshRowStatus(row);
+    }
+
+    function isColumnVisible(column) {
+      return Boolean(columnMenu.querySelector(`[data-column-toggle="${column}"]`)?.checked);
+    }
+
+    function applyColumnVisibilityToRow(row) {
+      ['boxQuantity', 'unit', 'vat'].forEach(column => {
+        row.querySelectorAll(`[data-column="${column}"]`).forEach(cell => { cell.hidden = !isColumnVisible(column); });
+      });
+    }
+
+    function updateColumnVisibility() {
+      ['boxQuantity', 'unit', 'vat'].forEach(column => {
+        const visible = isColumnVisible(column);
+        document.querySelectorAll(`#orderTable [data-column="${column}"]`).forEach(element => { element.hidden = !visible; });
+      });
+      vatColumnVisible = isColumnVisible('vat');
+      document.getElementById('productGroupHeader').colSpan = 3
+        + Number(isColumnVisible('boxQuantity'))
+        + Number(isColumnVisible('unit'));
+      document.getElementById('orderGroupHeader').colSpan = 3 + Number(vatColumnVisible);
+      document.getElementById('vatTotal').hidden = !vatColumnVisible;
+      if (vatColumnVisible) [...itemRows.querySelectorAll('tr')].forEach(refreshRowAmounts);
+      else refreshSummary();
+    }
+
+    function closeToolbarMenus(except = null) {
+      [[columnMenuButton, columnMenu], [sortRowsButton, sortRowsMenu]].forEach(([button, menu]) => {
+        if (menu === except) return;
+        menu.hidden = true;
+        button.setAttribute('aria-expanded', 'false');
+      });
+    }
+
+    function toggleToolbarMenu(button, menu) {
+      const opening = menu.hidden;
+      closeToolbarMenus(opening ? menu : null);
+      menu.hidden = !opening;
+      button.setAttribute('aria-expanded', opening ? 'true' : 'false');
+    }
+
+    function focusRowField(row, field) {
+      const input = row?.querySelector(`[data-field="${field}"]`);
+      input?.focus();
+      input?.select();
+    }
+
+    function focusFirstItemCode() {
+      const row = itemRows.querySelector('tr') || addRow();
+      focusRowField(row, 'itemCode');
+    }
+
+    function advanceFromMemo(row) {
+      const nextRow = row.nextElementSibling || addRow();
+      focusRowField(nextRow, 'itemCode');
+    }
+
+    function rowSortValue(row) {
+      const value = field => row.querySelector(`[data-field="${field}"]`)?.value || '';
+      return {
+        row,
+        empty: !rowHasInput(row),
+        itemCode: value('itemCode'),
+        itemName: value('itemName'),
+        finalUnit: value('finalUnit'),
+        inputSequence: Number(row.dataset.inputSequence || 0)
+      };
+    }
+
+    function sortRows(sortKey, label) {
+      const rows = [...itemRows.querySelectorAll('tr')].map(rowSortValue);
+      rows.sort((left, right) => compareManualRows(left, right, sortKey));
+      rows.forEach(({ row }) => itemRows.appendChild(row));
+      sortRowsButton.textContent = `정렬 · ${label}`;
+      closeToolbarMenus();
+      refreshSummary();
     }
 
     async function initializeProductCatalog() {
@@ -421,7 +583,7 @@
         if ([...transactionTypeInput.options].some(option => option.value === manualDefaults.transactionType)) {
           transactionTypeInput.value = manualDefaults.transactionType;
         }
-        addRow(); addRow(); addRow();
+        addRow();
         return;
       }
       const data = await getOrder(editingOrderId);
@@ -504,31 +666,74 @@
       const row = event.target.closest('tr');
       if (row && (event.target.dataset.field === 'itemCode' || event.target.dataset.field === 'itemName')) {
         clearProductMatch(row, event.target);
-        clearTimeout(searchTimer);
-        searchTimer = setTimeout(() => showSuggestions(event.target), 100);
+        if (event.target.dataset.field === 'itemCode') {
+          clearTimeout(searchTimer);
+          searchTimer = setTimeout(() => showSuggestions(event.target), 100);
+        }
+      }
+      else if (row && (event.target.dataset.field === 'quantity' || event.target.dataset.field === 'price')) {
+        refreshRowAmounts(row);
+      }
+      else if (row && event.target.dataset.field === 'supplyAmount') {
+        row.dataset.totalManual = event.target.value.trim() ? 'true' : '';
+        refreshRowAmounts(row);
+      }
+      else if (row && event.target.dataset.field === 'vatAmount') {
+        row.dataset.vatManual = event.target.value.trim() ? 'true' : '';
+        refreshRowAmounts(row);
       }
       else refreshSummary();
     });
     itemRows.addEventListener('focusin', event => {
-      if (event.target.matches('[data-field="itemCode"], [data-field="itemName"]') && event.target.value.trim()) showSuggestions(event.target);
+      if (event.target.matches('[data-field="itemCode"]') && event.target.value.trim()) showSuggestions(event.target);
     });
     itemRows.addEventListener('keydown', event => {
-      if (!event.target.matches('[data-field="itemCode"], [data-field="itemName"]')) return;
-      const products = suggestions._products || [];
-      if (suggestions.hidden || activeSearchInput !== event.target) return;
-      if (event.key === 'ArrowDown' && products.length) {
+      if (event.isComposing) return;
+      const row = event.target.closest('tr');
+      const field = event.target.dataset.field;
+      if (field === 'itemCode') {
+        const products = suggestions._products || [];
+        const suggestionsActive = !suggestions.hidden && activeSearchInput === event.target;
+        if (suggestionsActive && event.key === 'ArrowDown' && products.length) {
+          event.preventDefault();
+          activeSuggestionIndex = (activeSuggestionIndex + 1) % products.length;
+          markActiveSuggestion();
+          return;
+        }
+        if (suggestionsActive && event.key === 'ArrowUp' && products.length) {
+          event.preventDefault();
+          activeSuggestionIndex = (activeSuggestionIndex - 1 + products.length) % products.length;
+          markActiveSuggestion();
+          return;
+        }
+        if (event.key === 'Escape') {
+          closeSuggestions();
+          return;
+        }
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          clearTimeout(searchTimer);
+          const enterProducts = suggestionsActive
+            ? products
+            : searchProductCatalog(event.target.value.trim(), productCatalog, 8);
+          if (enterProducts.length) applyProduct(event.target, enterProducts[suggestionsActive ? activeSuggestionIndex : 0]);
+          else {
+            closeSuggestions();
+            focusRowField(row, 'quantity');
+          }
+          return;
+        }
+      }
+      if (event.key !== 'Enter') return;
+      if (field === 'quantity') {
         event.preventDefault();
-        activeSuggestionIndex = (activeSuggestionIndex + 1) % products.length;
-        markActiveSuggestion();
-      } else if (event.key === 'ArrowUp' && products.length) {
+        focusRowField(row, 'price');
+      } else if (field === 'price') {
         event.preventDefault();
-        activeSuggestionIndex = (activeSuggestionIndex - 1 + products.length) % products.length;
-        markActiveSuggestion();
-      } else if (event.key === 'Enter' && products.length) {
+        focusRowField(row, 'memo');
+      } else if (field === 'memo') {
         event.preventDefault();
-        applyProduct(event.target, products[activeSuggestionIndex]);
-      } else if (event.key === 'Escape') {
-        closeSuggestions();
+        advanceFromMemo(row);
       }
     });
     suggestions.addEventListener('pointerdown', event => {
@@ -538,17 +743,26 @@
       applyProduct(activeSearchInput, suggestions._products?.[Number(button.dataset.suggestionIndex)]);
     });
     document.addEventListener('pointerdown', event => {
-      if (suggestions.hidden || suggestions.contains(event.target) || event.target === activeSearchInput) return;
-      closeSuggestions();
+      if (!suggestions.hidden && !suggestions.contains(event.target) && event.target !== activeSearchInput) closeSuggestions();
+      if (!event.target.closest('.toolbar-menu')) closeToolbarMenus();
     });
     window.addEventListener('resize', () => { if (!suggestions.hidden && activeSearchInput) positionSuggestions(activeSearchInput); });
     window.addEventListener('scroll', () => { if (!suggestions.hidden && activeSearchInput) positionSuggestions(activeSearchInput); }, true);
-    document.getElementById('addRowBtn').addEventListener('click', () => addRow());
-    document.getElementById('addRowBottomBtn').addEventListener('click', () => addRow());
     document.getElementById('removeRowsBtn').addEventListener('click', () => {
       [...itemRows.querySelectorAll('tr')].filter(row => row.querySelector('[data-role="select"]').checked).forEach(row => row.remove());
       if (!itemRows.children.length) addRow();
       refreshSummary();
+    });
+    columnMenuButton.addEventListener('click', () => toggleToolbarMenu(columnMenuButton, columnMenu));
+    columnMenu.addEventListener('change', event => {
+      if (!event.target.matches('[data-column-toggle]')) return;
+      updateColumnVisibility();
+    });
+    sortRowsButton.addEventListener('click', () => toggleToolbarMenu(sortRowsButton, sortRowsMenu));
+    sortRowsMenu.addEventListener('click', event => {
+      const button = event.target.closest('[data-sort]');
+      if (!button) return;
+      sortRows(button.dataset.sort, button.textContent.trim());
     });
     document.getElementById('saveTopBtn').addEventListener('click', save);
     document.getElementById('saveBottomBtn').addEventListener('click', save);
@@ -576,8 +790,22 @@
     customerNameInput.addEventListener('keydown', event => {
       if (event.key !== 'Enter' || event.isComposing) return;
       event.preventDefault();
-      warehouseInput.focus();
-      warehouseInput.select();
+      if (warehouseInput.value.trim() && transactionTypeInput.value) focusFirstItemCode();
+      else {
+        warehouseInput.focus();
+        warehouseInput.select();
+      }
+    });
+    warehouseInput.addEventListener('keydown', event => {
+      if (event.key !== 'Enter' || event.isComposing) return;
+      event.preventDefault();
+      if (transactionTypeInput.value) focusFirstItemCode();
+      else transactionTypeInput.focus();
+    });
+    transactionTypeInput.addEventListener('keydown', event => {
+      if (event.key !== 'Enter' || event.isComposing) return;
+      event.preventDefault();
+      focusFirstItemCode();
     });
     warehouseInput.addEventListener('change', saveManualDefaults);
     transactionTypeInput.addEventListener('change', saveManualDefaults);
@@ -608,6 +836,7 @@
 
     Promise.all([initializeProductCatalog(), loadEditingOrder()])
       .then(() => {
+        updateColumnVisibility();
         if (!editingOrderId) window.setTimeout(() => customerNameInput.focus(), 0);
       })
       .catch(error => showMessage(error.message || String(error), 'error'));
