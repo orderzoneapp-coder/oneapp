@@ -1,5 +1,5 @@
-import { normalizeText } from '../orderq-db.js?v=0.6.0';
-import { normalizeWarehouseCode } from '../warehouse-master.js?v=0.6.0';
+import { normalizeText } from '../orderq-db.js?v=0.6.1';
+import { normalizeWarehouseCode } from '../warehouse-master.js?v=0.6.1';
 
 export const COLLECTOR_SOURCE = Object.freeze({
   ORDER: 'ORDER_HISTORY',

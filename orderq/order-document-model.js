@@ -88,6 +88,12 @@ export function inferInputChannel(sourceType = '', requested = '') {
   return INPUT_CHANNEL.DIRECT;
 }
 
+export function initialAdminStatus(sourceType = '', requestedInputChannel = '') {
+  return inferInputChannel(sourceType, requestedInputChannel) === INPUT_CHANNEL.DIRECT
+    ? ADMIN_STATUS.CHECKED
+    : ADMIN_STATUS.UNCHECKED;
+}
+
 export function orderDateKey(value, fallback = new Date()) {
   const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (match) return `${match[1]}${match[2]}${match[3]}`;
