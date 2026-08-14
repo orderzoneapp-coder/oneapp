@@ -725,7 +725,7 @@
     .shortage-focus-button:hover:not(:disabled) { border-color: #fb7185; background: #ffe4e6; }
     .shortage-focus-button.active { border-color: #be123c; color: #fff; background: #be123c; }
     .shortage-focus-button:disabled { opacity: .45; cursor: default; }
-    /* ORDER Q v1.44: readable purchasing views and default saved layouts */
+    /* ORDER Q v1.45: unit emphasis and integrated workbook views */
     .header-output-button { border-color: #99f6e4; color: #0f766e; background: #f0fdfa; }
     .header-output-button:hover:not(:disabled) { background: #ccfbf1; }
     .results-panel .table-wrap { max-height: calc(100vh - 200px); }
@@ -1036,7 +1036,8 @@
     td.inventory-value { background: var(--green-100) !important; }
     td.warning-value { color: var(--red-700) !important; background: var(--red-100) !important; font-weight: 900; }
     td.inventory-negative { color: #b91c1c !important; font-weight: 900; }
-    td.unit-alert-cell { color: #b91c1c !important; font-weight: 900; }
+    td.unit-alert-cell { color: #b91c1c !important; font-weight: 400; }
+    td.box-unit-cell { color: #0f172a !important; font-weight: 900; }
     tr.reference-row td { color: var(--slate-600); font-style: italic; }
     tr.shortage-main-row td:first-child { border-left: 3px solid #fda4af; }
     tr.shortage-candidate-row td { color: #475569; background: #f1f5f9 !important; }
@@ -1065,7 +1066,7 @@
     td.unit-alert-cell .order-edit-input,
     td.unit-alert-cell .inventory-total-frame {
       color: #b91c1c !important;
-      font-weight: 900;
+      font-weight: 400 !important;
     }
 
     .purchase-input {
@@ -1516,7 +1517,7 @@
       .recovery-record-item { grid-template-columns: auto 1fr; }
       .recovery-record-status { grid-column: 2; }
     }
-    /* ORDER Q v1.44: uploader cards double as result tabs */
+    /* ORDER Q v1.45: uploader cards double as result tabs */
     .input-panel { grid-template-columns: minmax(0, 1fr) 230px; gap: 14px; }
     .upload-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; }
     .source-selector {
@@ -1673,7 +1674,7 @@
       <div class="brand-mark">ONEAPP</div>
       <div class="brand-divider" aria-hidden="true"></div>
       <span class="brand-logo-frame" aria-hidden="true"><img class="brand-logo" src="assets/order-q-logo.png" alt=""></span>
-      <span class="brand-badge">v1.44</span>
+      <span class="brand-badge">v1.45</span>
       <span class="brand-product">출고관리</span>
     </div>
     <div class="header-actions">
@@ -1879,7 +1880,7 @@
     </section>
 
     <footer class="page-footer">
-      <span>ORDER Q v1.44 · 출고관리 · workspace shipping-workspace/v2 · cloud plan v1</span>
+      <span>ORDER Q v1.45 · 출고관리 · workspace shipping-workspace/v2 · cloud plan v1</span>
       <a href="SHIPPING_MANAGEMENT_GUIDANCE.md">개발·운영 기준 보기</a>
     </footer>
   </main>
@@ -4725,6 +4726,10 @@
         return specification === "EA" || specification === "소분";
       }
 
+      function exactBoxUnit(sourceRow) {
+        return String(sourceRow?.specification || sourceRow?.spec || "").trim() === "BOX";
+      }
+
       function previewRowFill(previewId, sourceRow) {
         if (!sourceRow || previewId === "validation" || previewId === "inventory") return "";
         if (state.shortageFocus) return "";
@@ -5178,6 +5183,7 @@
                     const warningUnitContext = exactWarningUnit(sourceRow) && (
                       ["productName", "specification"].includes(column.role) || quantityColumn
                     );
+                    const boxUnitContext = exactBoxUnit(sourceRow) && column.role === "specification";
                     const classes = [
                       isNumber ? "number" : "",
                       isStatus ? "status" : "",
@@ -5194,6 +5200,7 @@
                       numericQuantityValue > 0 ? "quantity-positive" : "",
                       readablePrimary ? "primary-readable-cell" : "",
                       warningUnitContext ? "unit-alert-cell" : "",
+                      boxUnitContext ? "box-unit-cell" : "",
                       column.role === "orderInformation" ? "information-value" : "",
                     ].filter(Boolean).join(" ");
                     const editablePurchase = editable && preview.purchaseEditable === true &&
