@@ -5,8 +5,8 @@ import {
   transactionDone,
   newId,
   nowIso
-} from './orderq-db.js?v=0.7.0';
-import { normalizedOrderView, inheritedAssigneeSnapshot } from './order-document-model.js?v=0.7.0';
+} from './orderq-db.js?v=0.7.1';
+import { normalizedOrderView, inheritedAssigneeSnapshot } from './order-document-model.js?v=0.7.1';
 import {
   TRANSFER_EVENT_TYPE,
   createAllocationEvent,
@@ -14,7 +14,7 @@ import {
   deriveOrderLifecycle,
   filterOrderBundles,
   aggregateOperationsByProduct
-} from './order-fulfillment-lifecycle.js?v=0.7.0';
+} from './order-fulfillment-lifecycle.js?v=0.7.1';
 
 const channel = 'BroadcastChannel' in globalThis ? new BroadcastChannel('oneapp-orderq-orders') : null;
 

@@ -8,13 +8,13 @@ import {
   newId,
   nowIso,
   normalizeText
-} from '../orderq-db.js?v=0.7.0';
-import { resolveWarehouseInTransaction, warehouseSnapshot } from '../warehouse-master.js?v=0.7.0';
-import { assigneeIdentity } from '../order-document-model.js?v=0.7.0';
-import { COLLECTOR_SOURCE } from './collector-schema.js?v=0.7.0';
-import { buildFulfillmentLinks } from './fulfillment-matcher.js?v=0.7.0';
-import { buildParserEvidence } from './parser-evidence.js?v=0.7.0';
-import { deactivateEvidenceMapping, reconcileEvidenceMappings } from './mapping-lifecycle.js?v=0.7.0';
+} from '../orderq-db.js?v=0.7.1';
+import { resolveWarehouseInTransaction, warehouseSnapshot } from '../warehouse-master.js?v=0.7.1';
+import { assigneeIdentity } from '../order-document-model.js?v=0.7.1';
+import { COLLECTOR_SOURCE } from './collector-schema.js?v=0.7.1';
+import { buildFulfillmentLinks } from './fulfillment-matcher.js?v=0.7.1';
+import { buildParserEvidence } from './parser-evidence.js?v=0.7.1';
+import { deactivateEvidenceMapping, reconcileEvidenceMappings } from './mapping-lifecycle.js?v=0.7.1';
 
 const DEFAULT_SETTINGS = Object.freeze({
   key: 'ACTIVE',

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="google" content="notranslate">
   <title>ONEAPP ORDER Q vNext · 주문서 입력</title>
-  <link rel="stylesheet" href="./orderq.css">
+  <link rel="stylesheet" href="./orderq.css?v=0.7.1">
 </head>
 <body class="manual-order-page">
   <div class="shell">
@@ -13,7 +13,7 @@
       <div class="brand">
         <strong>ONEAPP</strong>
         <span class="logo-frame" aria-hidden="true"><img src="../assets/order-q-logo.png" alt=""></span>
-        <span class="badge">vNext 0.7.0</span>
+        <span class="badge">vNext 0.7.1</span>
         <span id="pageMode">주문서 입력</span>
       </div>
       <div class="top-system" aria-live="polite">
@@ -93,6 +93,10 @@
             <option value="ACTIVE">처리중</option>
             <option value="CLOSED">종결</option>
           </select>
+        </div>
+        <div class="field form-span-2">
+          <label for="deliveryExpectedDate">배송예정일</label>
+          <input class="control" id="deliveryExpectedDate" type="date">
         </div>
         <div class="field form-span-4">
           <label for="orderMessage">전표 메모 <span class="field-help">주문건 전체 전달사항</span></label>
@@ -212,17 +216,17 @@
     import {
       createOrder, updateOrder, cancelOrder, getOrder, listOrders, subscribeOrderChanges,
       OrderRevisionConflictError, MATCH_STATUS
-    } from './order-intake-engine.js?v=0.7.0';
+    } from './order-intake-engine.js?v=0.7.1';
     import {
       syncBeforeOrderMutation, syncAfterLocalMutation, getSyncState,
       CloudOrderConflictError
-    } from './orderq-sync-engine.js?v=0.7.0';
-    import { loadProductCatalog, searchProductCatalog } from './product-master-search.js?v=0.7.0';
-    import { loadWarehouseCatalog, matchWarehouseInput, warehouseDisplayName } from './warehouse-master.js?v=0.7.0';
+    } from './orderq-sync-engine.js?v=0.7.1';
+    import { loadProductCatalog, searchProductCatalog } from './product-master-search.js?v=0.7.1';
+    import { loadWarehouseCatalog, matchWarehouseInput, warehouseDisplayName } from './warehouse-master.js?v=0.7.1';
     import {
       calculateLineTotal, calculateVatAmount, compareManualRows, cycleManualPriceOption, numberOrNull, shiftIsoDate
-    } from './manual-order-grid.js?v=0.7.0';
-    import { INPUT_CHANNEL_LABEL } from './order-document-model.js?v=0.7.0';
+    } from './manual-order-grid.js?v=0.7.1';
+    import { INPUT_CHANNEL_LABEL } from './order-document-model.js?v=0.7.1';
 
     const params = new URLSearchParams(location.search);
     const editingOrderId = params.get('orderId');
@@ -705,6 +709,7 @@
         orderStatus: orderStatusInput.value,
         adminStatus: adminStatusInput.value,
         opsStatus: opsStatusInput.value,
+        deliveryExpectedDate: document.getElementById('deliveryExpectedDate').value,
         sourceType: loadedSourceType,
         inputChannel: loadedInputChannel,
         externalOrderNo: document.getElementById('externalOrderNo').value,
@@ -966,6 +971,7 @@
       orderStatusInput.value = order.orderStatus || 'ORDER';
       adminStatusInput.value = order.adminStatus || 'UNCHECKED';
       opsStatusInput.value = order.opsStatus || 'ACTIVE';
+      document.getElementById('deliveryExpectedDate').value = order.deliveryExpectedDate || '';
       document.getElementById('orderMessage').value = order.orderMessage || '';
       document.getElementById('inputChannelLabel').textContent = INPUT_CHANNEL_LABEL[loadedInputChannel] || loadedInputChannel;
       document.getElementById('externalOrderNo').value = order.externalOrderNo || '';

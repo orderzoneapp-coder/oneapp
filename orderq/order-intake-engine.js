@@ -6,16 +6,16 @@ import {
   newId,
   nowIso,
   normalizeText
-} from './orderq-db.js?v=0.7.0';
-import { resolveWarehouseInTransaction, warehouseSnapshot } from './warehouse-master.js?v=0.7.0';
+} from './orderq-db.js?v=0.7.1';
+import { resolveWarehouseInTransaction, warehouseSnapshot } from './warehouse-master.js?v=0.7.1';
 import {
   ORDER_STATUS, ADMIN_STATUS, OPS_STATUS, INPUT_CHANNEL,
   normalizeOrderStatus, normalizeAdminStatus, normalizeOpsStatus, inferInputChannel,
   initialAdminStatus,
   orderDateKey, formatOrderNo, orderSequenceFromNo, assigneeIdentity, externalOrderSnapshot,
-  normalizedOrderView, documentFieldChanges
-} from './order-document-model.js?v=0.7.0';
-import { deriveOrderLifecycle, TRANSFER_EVENT_TYPE } from './order-fulfillment-lifecycle.js?v=0.7.0';
+  normalizedOrderView, documentFieldChanges, orderItemChanges
+} from './order-document-model.js?v=0.7.1';
+import { deriveOrderLifecycle, TRANSFER_EVENT_TYPE } from './order-fulfillment-lifecycle.js?v=0.7.1';
 
 export { ORDER_STATUS, ADMIN_STATUS, OPS_STATUS, INPUT_CHANNEL };
 
@@ -188,6 +188,17 @@ function summarizeAmounts(items) {
   return { supplyAmountTotal, vatAmountTotal, orderAmount: supplyAmountTotal + vatAmountTotal };
 }
 
+function summarizeDocumentItems(items = []) {
+  const visibleItems = items
+    .filter(item => item.matchStatus !== MATCH_STATUS.EXCLUDED)
+    .sort((left, right) => Number(left.lineNo || 0) - Number(right.lineNo || 0));
+  return {
+    itemCount: visibleItems.length,
+    representativeItemName: String(visibleItems[0]?.itemName || visibleItems[0]?.itemCode || '').trim(),
+    totalQuantity: visibleItems.reduce((sum, item) => sum + Number(item.finalQuantity ?? item.rawQuantity ?? 0), 0)
+  };
+}
+
 async function allocateOrderNoInTransaction(tx, orderDate, requestedOrderNo = '') {
   const requested = String(requestedOrderNo || '').trim();
   if (requested) return requested;
@@ -213,6 +224,9 @@ function orderWorkflowSnapshot(payload, previous = null) {
     adminStatus: normalizeAdminStatus(payload.adminStatus || previous?.adminStatus || initialAdminStatus(sourceType, inputChannel)),
     opsStatus: normalizeOpsStatus(payload.opsStatus || previous?.opsStatus),
     inputChannel,
+    deliveryExpectedDate: Object.prototype.hasOwnProperty.call(payload, 'deliveryExpectedDate')
+      ? String(payload.deliveryExpectedDate || '').trim()
+      : String(previous?.deliveryExpectedDate || '').trim(),
     ...externalOrderSnapshot(payload, previous || {})
   };
 }
@@ -346,7 +360,6 @@ export async function updateOrder(orderId, expectedRevision, payload) {
     if (!existing) throw new Error('주문을 찾을 수 없습니다.');
     if (existing.revision !== expectedRevision) throw new OrderRevisionConflictError(existing);
     const previousOrder = normalizedOrderView(existing);
-    if (previousOrder.orderStatus === ORDER_STATUS.FULL_CANCEL) throw new Error('전체취소된 주문은 수정할 수 없습니다.');
 
     const customer = await resolveCustomerInTransaction(tx, payload);
     const warehouse = await resolveWarehouseInTransaction(tx, payload, { sourceType: payload.sourceType || existing.sourceType || 'MANUAL', sourceId: orderId });
@@ -388,11 +401,23 @@ export async function updateOrder(orderId, expectedRevision, payload) {
       updatedAt: nowIso()
     };
     next = { ...next, opsStatus: deriveOrderLifecycle(next, items, existingEvents).operationStatus };
+    const documentChanges = documentFieldChanges(previousOrder, next);
+    const itemChanges = orderItemChanges(oldItems, items);
+    if (previousOrder.orderStatus === ORDER_STATUS.FULL_CANCEL) {
+      const allowedCancelledFields = new Set(['assigneeName', 'adminStatus']);
+      const prohibitedChanges = documentChanges.filter(change => !allowedCancelledFields.has(change.field));
+      if (next.orderStatus !== ORDER_STATUS.FULL_CANCEL || prohibitedChanges.length || itemChanges.length) {
+        throw new Error('전체취소된 주문은 담당자와 관리자상태만 변경할 수 있습니다.');
+      }
+    }
     orderStore.put(next);
-    const event = appendEvent(tx, next, 'ORDER_UPDATED', {
+    const eventType = previousOrder.orderStatus !== ORDER_STATUS.FULL_CANCEL && next.orderStatus === ORDER_STATUS.FULL_CANCEL
+      ? 'ORDER_CANCELLED'
+      : 'ORDER_UPDATED';
+    const event = appendEvent(tx, next, eventType, {
       fromRevision: expectedRevision,
       itemCount: items.length,
-      changes: documentFieldChanges(previousOrder, next),
+      changes: [...documentChanges, ...itemChanges],
       actor: payload.actorName || 'LOCAL_USER'
     });
     const transition = appendLifecycleTransition(
@@ -418,7 +443,7 @@ export async function updateOrder(orderId, expectedRevision, payload) {
   }
 }
 
-export async function cancelOrder(orderId, expectedRevision) {
+export async function cancelOrder(orderId, expectedRevision, actorName = 'LOCAL_USER') {
   const db = await openOrderQDb();
   const tx = db.transaction([STORE.ORDERS, STORE.ORDER_ITEMS, STORE.ORDER_EVENTS, STORE.SYNC_QUEUE], 'readwrite');
   try {
@@ -450,7 +475,8 @@ export async function cancelOrder(orderId, expectedRevision) {
     orderStore.put(next);
     const event = appendEvent(tx, next, 'ORDER_CANCELLED', {
       fromRevision: expectedRevision,
-      changes: documentFieldChanges(previousOrder, next)
+      changes: documentFieldChanges(previousOrder, next),
+      actor: actorName || 'LOCAL_USER'
     });
     const transition = appendLifecycleTransition(
       tx,
@@ -460,7 +486,7 @@ export async function cancelOrder(orderId, expectedRevision) {
       cancelledItems,
       existingEvents,
       event,
-      'LOCAL_USER'
+      actorName || 'LOCAL_USER'
     );
     enqueue(tx, 'ORDER', orderId, 'UPSERT', next.revision, { order: next, items: cancelledItems }, expectedRevision);
     enqueue(tx, 'ORDER_EVENT', event.eventId, 'UPSERT', event.revision, event, 0);
@@ -508,8 +534,14 @@ export async function listOrders() {
   return orders
     .map(source => {
       const order = normalizedOrderView(source);
-      const lifecycle = deriveOrderLifecycle(order, itemsByOrder.get(order.orderId) || [], eventsByOrder.get(order.orderId) || []);
-      return { ...order, opsStatus: lifecycle.operationStatus, transferStatus: lifecycle.transferStatus };
+      const orderItems = itemsByOrder.get(order.orderId) || [];
+      const lifecycle = deriveOrderLifecycle(order, orderItems, eventsByOrder.get(order.orderId) || []);
+      return {
+        ...order,
+        ...summarizeDocumentItems(orderItems),
+        opsStatus: lifecycle.operationStatus,
+        transferStatus: lifecycle.transferStatus
+      };
     })
     .sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
 }
