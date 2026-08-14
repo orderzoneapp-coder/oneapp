@@ -13,7 +13,8 @@ import {
   compareManualRows,
   cycleManualPriceOption,
   manualPriceTypeLabel,
-  numberOrNull
+  numberOrNull,
+  shiftIsoDate
 } from '../orderq/manual-order-grid.js';
 
 const common = [
@@ -90,6 +91,10 @@ assert.equal(numberOrNull('1,900'), 1900, '쉼표가 있는 금액도 숫자로 
 assert.equal(calculateLineTotal(3, 28100), 84300, '합계 기본값은 수량×단가다.');
 assert.equal(calculateVatAmount(84300), 8430, '부가세 제안값은 합계의 10%다.');
 assert.equal(calculateVatAmount(15), 2, '부가세 제안값은 원 단위로 반올림한다.');
+assert.equal(shiftIsoDate('2026-08-14', 1), '2026-08-15', '위 화살표는 일자를 하루 증가시켜야 한다.');
+assert.equal(shiftIsoDate('2026-08-14', -1), '2026-08-13', '아래 화살표는 일자를 하루 감소시켜야 한다.');
+assert.equal(shiftIsoDate('2026-08-31', 1), '2026-09-01', '일자 증감은 월 경계를 올바르게 넘어야 한다.');
+assert.equal(shiftIsoDate('2026-02-29', 1), '', '유효하지 않은 일자는 증감하지 않아야 한다.');
 const sortableRows = [
   { itemCode: '20', itemName: '나', finalUnit: 'BOX', inputSequence: 1 },
   { itemCode: '3', itemName: '가', finalUnit: 'EA', inputSequence: 2 },
@@ -105,7 +110,7 @@ assert.match(input, /loadProductCatalog/);
 assert.match(input, /searchProductCatalog/);
 assert.match(input, /row\.dataset\.productId \? MATCH_STATUS\.MATCHED : MATCH_STATUS\.MATCH_FAILED/);
 assert.match(input, /productId:\s*row\.dataset\.productId \|\| null/);
-assert.match(input, /vNext 0\.4\.8/);
+assert.match(input, /vNext 0\.4\.9/);
 for (const contract of [
   "const MANUAL_DEFAULTS_KEY = 'oneapp.orderq.manual-defaults.v1'",
   "customerNameInput.addEventListener('keydown'",
@@ -113,6 +118,7 @@ for (const contract of [
   "warehouseInput.addEventListener('change', saveManualDefaults)",
   "transactionTypeInput.addEventListener('change', saveManualDefaults)",
   "orderDateInput.setSelectionRange(8, 10)",
+  "shiftIsoDate(orderDateInput.value, event.key === 'ArrowUp' ? 1 : -1)",
   "orderDatePicker.showPicker()",
   'const defaultPrice = product.priceOptions?.find(option => option.key === selectedPriceType)',
   "row.querySelector('[data-field=\"boxQuantity\"]').value = product.boxQuantity ?? ''",
@@ -133,7 +139,7 @@ assert.match(input, /data-role="matchStatus" class="row-status" hidden/,
   '빈 상품행의 마스터 매칭 상태는 숨김으로 시작해야 한다.');
 assert.match(input, /<body class="manual-order-page">/,
   '수기주문 전용 가로 폭을 다른 ORDER Q 화면과 분리해야 한다.');
-assert.match(input, /<col class="col-select">/,
+assert.match(input, /<col class="col-select" data-col-key="select">/,
   '선택 체크박스 열을 포함한 수기주문 고정 열 배분이 있어야 한다.');
 for (const informationGroup of [
   '<th class="group-product" id="productGroupHeader" colspan="5">상품 정보</th>',
@@ -154,6 +160,12 @@ for (const manualEntryContract of [
   'priceTypeSelect.addEventListener(\'change\', () => applyPriceTypeToRows(priceTypeSelect.value))',
   'applyPriceTypeToRows(option.key)',
   'updatePriceTypeHeaderFromRows()',
+  "const COLUMN_WIDTHS_KEY = 'oneapp.orderq.manual-column-widths.v1'",
+  'data-col-key="name"',
+  'data-resize-col="name"',
+  "handle.className = 'column-resize-handle'",
+  'saveColumnWidthsButton.hidden = false',
+  'saveColumnWidthsButton.addEventListener(\'click\', saveColumnWidths)',
   'data-price-step="1"',
   'data-price-step="-1"',
   "row.dataset.priceType = event.target.value.trim() ? 'MANUAL' : ''",
@@ -182,6 +194,8 @@ for (const compactWidthContract of [
   '.manual-order-page #orderTable .col-select { width: 30px; }',
   '.manual-order-page #orderTable .col-price { width: 86px; }',
   '.manual-order-page #orderTable .price-header select',
+  '.manual-order-page #orderTable .column-resize-handle',
+  '.column-width-save[hidden] { display: none; }',
   '.manual-order-page #orderTable .col-total { width: 88px; }',
   '.manual-order-page #orderTable .col-vat { width: 74px; }',
   '.manual-order-page #orderTable .table-groups .group-product',

@@ -13,7 +13,7 @@
       <div class="brand">
         <strong>ONEAPP</strong>
         <span class="logo-frame" aria-hidden="true"><img src="../assets/order-q-logo.png" alt=""></span>
-        <span class="badge">vNext 0.4.8</span>
+        <span class="badge">vNext 0.4.9</span>
         <span id="pageMode">수기 주문</span>
       </div>
       <div class="top-system" aria-live="polite">
@@ -87,6 +87,7 @@
             <button type="button" data-sort="unit">단위순</button>
           </div>
         </div>
+        <button class="btn column-width-save" id="saveColumnWidthsBtn" type="button" hidden>열너비 저장</button>
         <span class="spacer"></span>
         <span class="status" id="masterStatus">상품 마스터 불러오는 중…</span>
       </div>
@@ -94,34 +95,34 @@
       <div class="table-wrap">
         <table id="orderTable">
           <colgroup>
-            <col class="col-select">
-            <col class="col-code">
-            <col class="col-name">
-            <col class="col-specification">
-            <col class="col-box-quantity" data-column="boxQuantity">
-            <col class="col-unit" data-column="unit">
-            <col class="col-quantity">
-            <col class="col-price">
-            <col class="col-total">
-            <col class="col-vat" data-column="vat" hidden>
-            <col class="col-memo">
-            <col class="col-match">
+            <col class="col-select" data-col-key="select">
+            <col class="col-code" data-col-key="code">
+            <col class="col-name" data-col-key="name">
+            <col class="col-specification" data-col-key="specification">
+            <col class="col-box-quantity" data-column="boxQuantity" data-col-key="boxQuantity">
+            <col class="col-unit" data-column="unit" data-col-key="unit">
+            <col class="col-quantity" data-col-key="quantity">
+            <col class="col-price" data-col-key="price">
+            <col class="col-total" data-col-key="total">
+            <col class="col-vat" data-column="vat" data-col-key="vat" hidden>
+            <col class="col-memo" data-col-key="memo">
+            <col class="col-match" data-col-key="match">
           </colgroup>
           <thead>
             <tr class="table-groups">
-              <th rowspan="2">선택</th>
+              <th rowspan="2" data-resize-col="select">선택</th>
               <th class="group-product" id="productGroupHeader" colspan="5">상품 정보</th>
               <th class="group-order" id="orderGroupHeader" colspan="3">주문 입력</th>
               <th class="group-check" colspan="2">확인</th>
             </tr>
             <tr>
-              <th>품목코드</th>
-              <th>품목명</th>
-              <th>규격</th>
-              <th data-column="boxQuantity" title="한 박스에 들어있는 기본 수량">박스당수량</th>
-              <th data-column="unit" title="상품 마스터 기준 재고·출고 처리 단위">단위</th>
-              <th>수량</th>
-              <th class="price-header" title="헤더 드롭다운 또는 단가 셀의 ▲▼로 전체 단가 기준을 전환합니다.">
+              <th data-resize-col="code">품목코드</th>
+              <th data-resize-col="name">품목명</th>
+              <th data-resize-col="specification">규격</th>
+              <th data-column="boxQuantity" data-resize-col="boxQuantity" title="한 박스에 들어있는 기본 수량">박스당수량</th>
+              <th data-column="unit" data-resize-col="unit" title="상품 마스터 기준 재고·출고 처리 단위">단위</th>
+              <th data-resize-col="quantity">수량</th>
+              <th class="price-header" data-resize-col="price" title="헤더 드롭다운 또는 단가 셀의 ▲▼로 전체 단가 기준을 전환합니다.">
                 <select id="priceTypeSelect" aria-label="단가 종류">
                   <option value="salePrice" selected>판매가</option>
                   <option value="outPrice">출고가</option>
@@ -134,10 +135,10 @@
                   <option value="MIXED" disabled>혼합단가</option>
                 </select>
               </th>
-              <th>합계</th>
-              <th data-column="vat" title="합계의 10% 제안값이며 직접 수정할 수 있습니다." hidden>부가세</th>
-              <th>상품별 메모(적요)</th>
-              <th title="공통 상품 마스터의 productId 연결 상태">마스터 매칭</th>
+              <th data-resize-col="total">합계</th>
+              <th data-column="vat" data-resize-col="vat" title="합계의 10% 제안값이며 직접 수정할 수 있습니다." hidden>부가세</th>
+              <th data-resize-col="memo">상품별 메모(적요)</th>
+              <th data-resize-col="match" title="공통 상품 마스터의 productId 연결 상태">마스터 매칭</th>
             </tr>
           </thead>
           <tbody id="itemRows"></tbody>
@@ -171,7 +172,7 @@
     } from './orderq-sync-engine.js';
     import { loadProductCatalog, searchProductCatalog } from './product-master-search.js';
     import {
-      calculateLineTotal, calculateVatAmount, compareManualRows, cycleManualPriceOption, numberOrNull
+      calculateLineTotal, calculateVatAmount, compareManualRows, cycleManualPriceOption, numberOrNull, shiftIsoDate
     } from './manual-order-grid.js';
 
     const params = new URLSearchParams(location.search);
@@ -186,10 +187,23 @@
     let vatColumnVisible = false;
     const MANUAL_DEFAULTS_KEY = 'oneapp.orderq.manual-defaults.v1';
     const MANUAL_DEFAULTS_SCHEMA = 'orderq-manual-defaults/v1';
+    const COLUMN_WIDTHS_KEY = 'oneapp.orderq.manual-column-widths.v1';
+    const COLUMN_WIDTHS_SCHEMA = 'orderq-manual-column-widths/v1';
+    const COLUMN_MIN_WIDTHS = Object.freeze({
+      select: 28, code: 64, name: 84, specification: 70, boxQuantity: 62, unit: 54,
+      quantity: 54, price: 78, total: 70, vat: 66, memo: 90, match: 72
+    });
+    const COLUMN_DEFAULT_WIDTHS = Object.freeze({
+      select: 30, code: 86, name: 138, specification: 120, boxQuantity: 76, unit: 68,
+      quantity: 62, price: 86, total: 88, vat: 74, memo: 135, match: 82
+    });
+    let columnWidthsActive = false;
 
     const itemRows = document.getElementById('itemRows');
     const message = document.getElementById('message');
     const priceTypeSelect = document.getElementById('priceTypeSelect');
+    const orderTable = document.getElementById('orderTable');
+    const saveColumnWidthsButton = document.getElementById('saveColumnWidthsBtn');
     const pageMode = document.getElementById('pageMode');
     const orderMeta = document.getElementById('orderMeta');
     const cancelButton = document.getElementById('cancelOrderBtn');
@@ -323,6 +337,114 @@
       badge.textContent = matched ? '매칭완료' : '매칭실패';
       badge.className = `row-status ${matched ? 'matched' : 'failed'}`;
       refreshSummary();
+    }
+
+    function resizableColumns() {
+      return [...orderTable.querySelectorAll('col[data-col-key]')];
+    }
+
+    function normalizedColumnWidth(key, value) {
+      const number = Number(value);
+      if (!Number.isFinite(number)) return COLUMN_DEFAULT_WIDTHS[key] || 80;
+      return Math.min(480, Math.max(COLUMN_MIN_WIDTHS[key] || 48, Math.round(number)));
+    }
+
+    function syncResizableTableWidth() {
+      if (!columnWidthsActive) return;
+      const visibleWidth = resizableColumns().filter(column => !column.hidden).reduce((sum, column) => {
+        const key = column.dataset.colKey;
+        const width = parseFloat(column.style.width) || COLUMN_DEFAULT_WIDTHS[key] || 80;
+        return sum + width;
+      }, 0);
+      orderTable.style.width = `${Math.max(1000, Math.round(visibleWidth))}px`;
+    }
+
+    function loadColumnWidths() {
+      try {
+        const stored = JSON.parse(localStorage.getItem(COLUMN_WIDTHS_KEY) || 'null');
+        if (!stored || stored.schemaVersion !== COLUMN_WIDTHS_SCHEMA || !stored.widths) return;
+        resizableColumns().forEach(column => {
+          const key = column.dataset.colKey;
+          if (stored.widths[key] == null) return;
+          column.style.width = `${normalizedColumnWidth(key, stored.widths[key])}px`;
+        });
+        columnWidthsActive = true;
+        syncResizableTableWidth();
+      } catch (_) {}
+    }
+
+    function freezeVisibleColumnWidths() {
+      const measuredColumns = resizableColumns().filter(column => !column.hidden).map(column => ({
+        column,
+        width: column.getBoundingClientRect().width
+      }));
+      measuredColumns.forEach(({ column, width }) => {
+        if (width > 0) column.style.width = `${normalizedColumnWidth(column.dataset.colKey, width)}px`;
+      });
+      columnWidthsActive = true;
+      syncResizableTableWidth();
+    }
+
+    function saveColumnWidths() {
+      const widths = {};
+      resizableColumns().forEach(column => {
+        const key = column.dataset.colKey;
+        widths[key] = normalizedColumnWidth(key, parseFloat(column.style.width) || COLUMN_DEFAULT_WIDTHS[key]);
+      });
+      try {
+        localStorage.setItem(COLUMN_WIDTHS_KEY, JSON.stringify({
+          schemaVersion: COLUMN_WIDTHS_SCHEMA,
+          widths
+        }));
+        saveColumnWidthsButton.hidden = true;
+        showMessage('열 너비를 저장했습니다. 다음 접속에도 유지됩니다.', 'info');
+      } catch (_) {
+        showMessage('열 너비를 저장하지 못했습니다.', 'error');
+      }
+    }
+
+    function initializeColumnResizing() {
+      orderTable.querySelectorAll('th[data-resize-col]').forEach(header => {
+        const handle = document.createElement('span');
+        handle.className = 'column-resize-handle';
+        handle.title = '끌어서 열 너비 변경';
+        handle.setAttribute('aria-hidden', 'true');
+        handle.addEventListener('pointerdown', event => {
+          if (event.button !== 0) return;
+          event.preventDefault();
+          event.stopPropagation();
+          freezeVisibleColumnWidths();
+          const key = header.dataset.resizeCol;
+          const column = orderTable.querySelector(`col[data-col-key="${key}"]`);
+          if (!column || column.hidden) return;
+          const startX = event.clientX;
+          const startWidth = parseFloat(column.style.width) || column.getBoundingClientRect().width;
+          let changed = false;
+          handle.classList.add('active');
+          document.body.classList.add('column-resizing');
+          const move = moveEvent => {
+            if (moveEvent.pointerId !== event.pointerId) return;
+            const nextWidth = normalizedColumnWidth(key, startWidth + moveEvent.clientX - startX);
+            if (Math.abs(nextWidth - startWidth) < 1) return;
+            column.style.width = `${nextWidth}px`;
+            changed = true;
+            syncResizableTableWidth();
+          };
+          const finish = finishEvent => {
+            if (finishEvent.pointerId !== event.pointerId) return;
+            window.removeEventListener('pointermove', move);
+            window.removeEventListener('pointerup', finish);
+            window.removeEventListener('pointercancel', finish);
+            handle.classList.remove('active');
+            document.body.classList.remove('column-resizing');
+            if (changed) saveColumnWidthsButton.hidden = false;
+          };
+          window.addEventListener('pointermove', move);
+          window.addEventListener('pointerup', finish);
+          window.addEventListener('pointercancel', finish);
+        });
+        header.appendChild(handle);
+      });
     }
 
     function getRowPriceOptions(row) {
@@ -630,6 +752,7 @@
         + Number(isColumnVisible('unit'));
       document.getElementById('orderGroupHeader').colSpan = 3 + Number(vatColumnVisible);
       document.getElementById('vatTotal').hidden = !vatColumnVisible;
+      syncResizableTableWidth();
       if (vatColumnVisible) [...itemRows.querySelectorAll('tr')].forEach(refreshRowAmounts);
       else refreshSummary();
     }
@@ -907,6 +1030,7 @@
       if (!button) return;
       sortRows(button.dataset.sort, button.textContent.trim());
     });
+    saveColumnWidthsButton.addEventListener('click', saveColumnWidths);
     document.getElementById('saveTopBtn').addEventListener('click', save);
     document.getElementById('saveBottomBtn').addEventListener('click', save);
     cancelButton.addEventListener('click', async () => {
@@ -958,6 +1082,15 @@
     };
     orderDateInput.addEventListener('focus', selectDateDay);
     orderDateInput.addEventListener('click', selectDateDay);
+    orderDateInput.addEventListener('keydown', event => {
+      if (event.isComposing || (event.key !== 'ArrowUp' && event.key !== 'ArrowDown')) return;
+      const shifted = shiftIsoDate(orderDateInput.value, event.key === 'ArrowUp' ? 1 : -1);
+      if (!shifted) return;
+      event.preventDefault();
+      orderDateInput.value = shifted;
+      orderDatePicker.value = shifted;
+      selectDateDay();
+    });
     document.getElementById('orderDatePickerButton').addEventListener('click', () => {
       if (isValidOrderDate(orderDateInput.value)) orderDatePicker.value = orderDateInput.value;
       if (typeof orderDatePicker.showPicker === 'function') orderDatePicker.showPicker();
@@ -981,6 +1114,8 @@
       .then(() => {
         hydrateRowPriceOptions();
         updateColumnVisibility();
+        initializeColumnResizing();
+        loadColumnWidths();
         if (!editingOrderId) window.setTimeout(() => customerNameInput.focus(), 0);
       })
       .catch(error => showMessage(error.message || String(error), 'error'));

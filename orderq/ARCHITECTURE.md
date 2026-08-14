@@ -1,6 +1,6 @@
 # ORDER Q vNext Architecture
 
-Version: 0.4.8
+Version: 0.4.9
 Reviewed: 2026-08-14
 
 ## 1. Scope
@@ -9,7 +9,7 @@ ORDER Q vNext is an independent pilot under `/orderq/`. Existing `orderops/` and
 
 Phase 3 adds `/orderq/parser.html`. SmartParser never writes ORDER / ORDER_ITEM directly: raw text and parse decisions are stored separately, then confirmed actions call the shared Order Intake Engine.
 
-vNext 0.4.8 makes manual entry code-first and keyboard-driven. Product search runs only from the item-code cell; Enter follows customer → warehouse → item code → quantity → price → memo and creates a new row after the last memo. Product columns remain directly editable but are skipped by that primary entry path. The official manual-entry fields are `boxQuantity` (박스당수량) and `finalUnit` (단위). `supplyAmount` is proposed from quantity×price but remains editable, and optional `vatAmount` is proposed at 10% when the VAT column is shown. The price header is a column-wide selector whose default derived `salePrice` uses a positive promotion price and otherwise falls back to the outbound price. The header selector and price-cell arrows change the whole column's basis, while a direct row edit uses `MANUAL`; mixed saved transaction prices remain unchanged on load and are shown as `MIXED`. The selected key is stored as additive `priceType`. These additive values remain inside the existing `ORDER_ITEM.payloadJson`, so the `ONEAPP_ORDERQ_SYNC_V1` sheet headers and synchronization boundary do not change. SmartParser's existing `rawUnit` keeps its source-evidence meaning and is not repurposed.
+vNext 0.4.9 makes manual entry code-first and keyboard-driven. Product search runs only from the item-code cell; Enter follows customer → warehouse → item code → quantity → price → memo and creates a new row after the last memo. Product columns remain directly editable but are skipped by that primary entry path. The official manual-entry fields are `boxQuantity` (박스당수량) and `finalUnit` (단위). `supplyAmount` is proposed from quantity×price but remains editable, and optional `vatAmount` is proposed at 10% when the VAT column is shown. The price header is a column-wide selector whose default derived `salePrice` uses a positive promotion price and otherwise falls back to the outbound price. The header selector and price-cell arrows change the whole column's basis, while a direct row edit uses `MANUAL`; mixed saved transaction prices remain unchanged on load and are shown as `MIXED`. The selected key is stored as additive `priceType`. Manual column widths are a presentation-only preference in localStorage, separate from order payloads; they become persistent only through the explicit width-save action. The text date control selects its day segment and shifts valid ISO dates by one day on ArrowUp/ArrowDown. These additive values remain inside the existing `ORDER_ITEM.payloadJson`, so the `ONEAPP_ORDERQ_SYNC_V1` sheet headers and synchronization boundary do not change. SmartParser's existing `rawUnit` keeps its source-evidence meaning and is not repurposed.
 
 The vNext data path is:
 
