@@ -19,7 +19,8 @@ import {
   inheritedAssigneeSnapshot,
   externalOrderSnapshot,
   normalizedOrderView,
-  documentFieldChanges
+  documentFieldChanges,
+  orderItemChanges
 } from '../orderq/order-document-model.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -74,6 +75,19 @@ assert.equal(legacy.matchingStatus, 'CONFIRMED');
 
 const changes = documentFieldChanges({ assigneeName: 'A', adminStatus: 'UNCHECKED' }, { assigneeName: 'B', adminStatus: 'CHECKED' });
 assert.deepEqual(changes.map(change => change.field), ['assigneeName', 'adminStatus']);
+assert.deepEqual(
+  documentFieldChanges({ deliveryExpectedDate: '' }, { deliveryExpectedDate: '2026-08-20' }).map(change => change.field),
+  ['deliveryExpectedDate']
+);
+const itemChanges = orderItemChanges(
+  [{ orderItemId: 'OI-1', lineNo: 1, itemCode: 'A', itemName: '사과', finalQuantity: 2, price: 1000 }],
+  [
+    { orderItemId: 'OI-1', lineNo: 1, itemCode: 'A', itemName: '사과', finalQuantity: 3, price: 1200 },
+    { orderItemId: 'OI-2', lineNo: 2, itemCode: 'B', itemName: '배', finalQuantity: 1, price: 900 }
+  ]
+);
+assert.deepEqual(itemChanges.map(change => change.itemField), ['finalQuantity', 'price', 'added']);
+assert.equal(orderItemChanges([{ orderItemId: 'OI-1', itemName: '사과' }], [])[0].itemField, 'removed');
 
 assert.match(db, /const DB_VERSION = 6/);
 for (const index of ['byOrderNo', 'byExternalOrderNo', 'byOrderStatus', 'byAdminStatus', 'byOpsStatus', 'byAssigneeId', 'byInputChannel']) {
@@ -82,6 +96,7 @@ for (const index of ['byOrderNo', 'byExternalOrderNo', 'byOrderStatus', 'byAdmin
 assert.match(db, /orderNoSequence:/);
 assert.match(engine, /allocateOrderNoInTransaction/);
 assert.match(engine, /documentFieldChanges\(previousOrder, next\)/);
+assert.match(engine, /orderItemChanges\(oldItems, items\)/);
 assert.match(engine, /ORDER_CREATED/);
 assert.match(engine, /ORDER_UPDATED/);
 assert.match(engine, /initialAdminStatus\(sourceType, inputChannel\)/);
@@ -90,6 +105,7 @@ assert.match(engine, /normalizedOrderView/);
 assert.match(input, /id="assigneeName"/);
 assert.match(input, /id="orderStatus"/);
 assert.match(input, /id="adminStatus"/);
+assert.match(input, /id="deliveryExpectedDate"/);
 assert.match(input, /if \(!editingOrderId\)[\s\S]*adminStatusInput\.value = 'CHECKED'/);
 assert.match(input, /id="opsStatus"/);
 assert.match(input, /id="externalOrderNo"/);
@@ -98,7 +114,12 @@ assert.match(input, /\.\/index\.html\?focus=/, 'save must return to order docume
 
 assert.match(history, /주문현황 · 전표관리/);
 assert.match(history, /data-detail-for=/);
-assert.match(history, /전표 수정/);
+assert.match(history, /펼침영역 수정/);
+assert.match(history, /data-edit-form=/);
+assert.match(history, /data-save-inline=/);
+assert.match(history, /updateOrder/);
+assert.match(history, /deliveryExpectedDate/);
+assert.match(history, /대표품목/);
 assert.match(history, /일반 인쇄/);
 assert.match(history, /카카오톡 복사/);
 assert.match(history, /ClipboardItem/);

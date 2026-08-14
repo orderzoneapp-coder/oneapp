@@ -167,6 +167,7 @@ export function normalizedOrderView(order = {}) {
     inputChannel: inferInputChannel(sourceType, order.inputChannel),
     assigneeId: String(order.assigneeId || '').trim(),
     assigneeName: String(order.assigneeName || '').trim(),
+    deliveryExpectedDate: String(order.deliveryExpectedDate || '').trim(),
     matchingStatus: String(order.matchingStatus || order.status || '').trim(),
     ...externalOrderSnapshot(order, order)
   };
@@ -176,7 +177,7 @@ export function documentFieldChanges(before = {}, after = {}) {
   const labels = {
     orderDate: '주문일자', customerName: '거래처', warehouseName: '출하창고', transactionType: '거래유형',
     assigneeName: '담당자', orderStatus: '주문상태', adminStatus: '관리자상태', opsStatus: '운영상태',
-    orderMessage: '전표메모', externalOrderNo: '외부주문번호', externalOriginalStatus: '쇼핑몰 원본상태',
+    deliveryExpectedDate: '배송예정일', orderMessage: '전표메모', externalOrderNo: '외부주문번호', externalOriginalStatus: '쇼핑몰 원본상태',
     productAmount: '상품금액', couponDiscount: '쿠폰할인', pointsUsed: '포인트사용', shippingFee: '배송비', paymentAmount: '결제금액'
   };
   return Object.entries(labels).flatMap(([field, label]) => {
@@ -184,4 +185,76 @@ export function documentFieldChanges(before = {}, after = {}) {
     const newValue = after[field] ?? '';
     return String(oldValue) === String(newValue) ? [] : [{ field, label, before: oldValue, after: newValue }];
   });
+}
+
+const ITEM_CHANGE_FIELDS = Object.freeze({
+  itemCode: '품목코드',
+  itemName: '상품',
+  specification: '규격',
+  finalUnit: '단위',
+  finalQuantity: '수량',
+  price: '판매가',
+  supplyAmount: '합계',
+  memo: '메모'
+});
+
+function itemChangeValue(item, field) {
+  if (field === 'finalQuantity') return item.finalQuantity ?? item.rawQuantity ?? '';
+  if (field === 'finalUnit') return item.finalUnit ?? item.rawUnit ?? '';
+  return item[field] ?? '';
+}
+
+function itemChangeLabel(item = {}) {
+  const identity = String(item.itemName || item.itemCode || '').trim() || `상품 ${Number(item.lineNo || 0) || ''}`.trim();
+  return Number(item.lineNo) ? `${Number(item.lineNo)}행 ${identity}` : identity;
+}
+
+export function orderItemChanges(beforeItems = [], afterItems = []) {
+  const beforeById = new Map(beforeItems.map(item => [String(item.orderItemId || ''), item]));
+  const afterById = new Map(afterItems.map(item => [String(item.orderItemId || ''), item]));
+  const itemIds = [...new Set([...beforeById.keys(), ...afterById.keys()])].filter(Boolean);
+  const changes = [];
+
+  itemIds.forEach(orderItemId => {
+    const before = beforeById.get(orderItemId);
+    const after = afterById.get(orderItemId);
+    if (!before && after) {
+      changes.push({
+        field: 'orderItems',
+        itemField: 'added',
+        orderItemId,
+        label: `상품 추가 · ${itemChangeLabel(after)}`,
+        before: '',
+        after: `${after.itemCode || '-'} / ${after.itemName || '-'} / ${itemChangeValue(after, 'finalQuantity') || 0}`
+      });
+      return;
+    }
+    if (before && !after) {
+      changes.push({
+        field: 'orderItems',
+        itemField: 'removed',
+        orderItemId,
+        label: `상품 삭제 · ${itemChangeLabel(before)}`,
+        before: `${before.itemCode || '-'} / ${before.itemName || '-'} / ${itemChangeValue(before, 'finalQuantity') || 0}`,
+        after: ''
+      });
+      return;
+    }
+
+    Object.entries(ITEM_CHANGE_FIELDS).forEach(([field, label]) => {
+      const oldValue = itemChangeValue(before, field);
+      const newValue = itemChangeValue(after, field);
+      if (String(oldValue) === String(newValue)) return;
+      changes.push({
+        field: `orderItems.${field}`,
+        itemField: field,
+        orderItemId,
+        label: `${itemChangeLabel(after || before)} · ${label}`,
+        before: oldValue,
+        after: newValue
+      });
+    });
+  });
+
+  return changes;
 }

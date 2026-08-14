@@ -1,6 +1,6 @@
 # ORDER Q vNext 개발 로드맵
 
-Version: 0.7.0
+Version: 0.7.1
 Date: 2026-08-14
 
 ## 기본 원칙

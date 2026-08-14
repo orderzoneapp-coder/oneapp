@@ -1,6 +1,6 @@
 # ORDER Q vNext Architecture
 
-Version: 0.7.0
+Version: 0.7.1
 Reviewed: 2026-08-14
 
 ## 1. Scope
@@ -9,7 +9,9 @@ ORDER Q vNext is an independent pilot under `/orderq/`. Existing `orderops/` and
 
 Phase 3 adds `/orderq/parser.html`. ORDER IN/SmartParser never writes ORDER / ORDER_ITEM directly: raw text and parse decisions are stored separately, then confirmed actions call the shared Order Intake Engine. Direct input, ORDER IN, Excel, shopping-mall, and external adapters share that same boundary.
 
-vNext 0.7.0 defines `input → document history → operations` as separate work surfaces. `/orderq/operations.html` filters order documents before product aggregation and never duplicates document editing. IndexedDB v6 contains manager order numbers, input channel, order/admin/operations states, document assignee, shopping-mall result fields, amount summaries, and lookup indexes. Legacy `status` remains the item-matching summary for compatibility while `orderStatus`, `adminStatus`, and derived operations status own the new workflow. Existing orders are migrated additively and all browser modules share the 0.7.0 release query. The cloud sheet schema remains unchanged because new workflow values and transfer events use existing payload JSON contracts.
+vNext 0.7.1 keeps `input → document history → operations` as separate work surfaces and makes document history the primary order-document lookup and inline editing surface. The document list derives representative product and total quantity without storing duplicate summary fields. Expanded documents edit customer, warehouse, assignee, delivery date, workflow states, memo, products, quantities, and prices with the existing optimistic-revision boundary. Item additions, removals, and field changes are appended to the existing `ORDER_EVENT` detail payload. A fully cancelled document remains immutable except for assignee and administrator state, including `CHECKED → UNCHECKED`.
+
+`/orderq/operations.html` still filters order documents before product aggregation and never duplicates document editing. IndexedDB v6 remains unchanged: `deliveryExpectedDate` is an optional order JSON field, and item-change entries use the existing event detail JSON. Legacy `status` remains the item-matching summary for compatibility while `orderStatus`, `adminStatus`, and derived operations status own the workflow. Existing orders need no migration and all browser modules share the 0.7.1 release query. The cloud sheet schema and action names remain unchanged because order and event payloads already use JSON contracts.
 
 Manual entry remains code-first and keyboard-driven. A newly created direct-entry document starts with administrator status `CHECKED`, while ORDER IN, Excel, shopping-mall, and external collection continue to start as `UNCHECKED`. Product search runs only from the item-code cell; Enter follows customer → warehouse → item code → quantity → price → memo and creates a new row after the last memo. Product columns remain directly editable but are skipped by that primary entry path. `supplyAmount` and optional `vatAmount` remain editable. Price basis, saved column widths, date arrows, and warehouse master behavior remain unchanged from v0.5.1.
 

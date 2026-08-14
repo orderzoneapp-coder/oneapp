@@ -5,15 +5,15 @@ import {
   transactionDone,
   newId,
   nowIso
-} from './orderq-db.js?v=0.7.0';
-import { resolveWarehouseInTransaction, warehouseSnapshot } from './warehouse-master.js?v=0.7.0';
-import { normalizedOrderView, orderDateKey, formatOrderNo, orderSequenceFromNo } from './order-document-model.js?v=0.7.0';
+} from './orderq-db.js?v=0.7.1';
+import { resolveWarehouseInTransaction, warehouseSnapshot } from './warehouse-master.js?v=0.7.1';
+import { normalizedOrderView, orderDateKey, formatOrderNo, orderSequenceFromNo } from './order-document-model.js?v=0.7.1';
 import {
   getCloudUrl,
   pushCloudChanges,
   pullCloudChanges,
   getCloudOrderHead
-} from './orderq-cloud-adapter.js?v=0.7.0';
+} from './orderq-cloud-adapter.js?v=0.7.1';
 
 const DEVICE_KEY = 'oneapp.orderq.device-id.v1';
 const META_CURSOR = 'cloudCursor';

@@ -1,10 +1,10 @@
-import { parseSourceInput } from './source-parser.js?v=0.7.0';
-import { EVENT_TYPE, detectOrderEvent } from './order-event-detector.js?v=0.7.0';
-import { resolveCustomer } from './customer-resolver.js?v=0.7.0';
-import { parseOrderLines } from './order-line-parser.js?v=0.7.0';
-import { generateProductCandidates } from './candidate-generator.js?v=0.7.0';
-import { matchParsedLine } from './matching-engine.js?v=0.7.0';
-import { persistAnalysis } from './parser-repository.js?v=0.7.0';
+import { parseSourceInput } from './source-parser.js?v=0.7.1';
+import { EVENT_TYPE, detectOrderEvent } from './order-event-detector.js?v=0.7.1';
+import { resolveCustomer } from './customer-resolver.js?v=0.7.1';
+import { parseOrderLines } from './order-line-parser.js?v=0.7.1';
+import { generateProductCandidates } from './candidate-generator.js?v=0.7.1';
+import { matchParsedLine } from './matching-engine.js?v=0.7.1';
+import { persistAnalysis } from './parser-repository.js?v=0.7.1';
 
 const ORDER_LIKE = new Set([EVENT_TYPE.ORDER, EVENT_TYPE.ORDER_UPDATE]);
 
