@@ -214,6 +214,9 @@
       if (!normalizedLabel) return null;
       let role = "value";
       if (canonical === "품목코드") role = "productCode";
+      else if (canonical === "품목명") role = "productName";
+      else if (canonical === "규격") role = "specification";
+      else if (canonical === "단위") role = "unit";
       else if (canonical === "수량") role = "calculatedQuantity";
       else if (canonical === "창고" || /^(?:창고|창고단가)$/.test(normalizedLabel) || /창고.*(?:단가|가격|금액|원가)/.test(normalizedLabel)) {
         role = "warehousePrice";
