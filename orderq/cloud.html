@@ -13,7 +13,7 @@
       <div class="brand">
         <strong>ONEAPP</strong>
         <span class="logo-frame" aria-hidden="true"><img src="../assets/order-q-logo.png" alt=""></span>
-        <span class="badge">vNext 0.5.0</span>
+        <span class="badge">vNext 0.5.1</span>
         <span>클라우드 동기화</span>
       </div>
       <div class="top-actions">
@@ -99,8 +99,8 @@
   </div>
 
   <script type="module">
-    import { getCloudUrl, setCloudUrl, getCloudAccessToken, setCloudAccessToken } from './orderq-cloud-adapter.js';
-    import { getSyncState, syncNow, acceptRemoteOrder } from './orderq-sync-engine.js';
+    import { getCloudUrl, setCloudUrl, getCloudAccessToken, setCloudAccessToken } from './orderq-cloud-adapter.js?v=0.5.1';
+    import { getSyncState, syncNow, acceptRemoteOrder } from './orderq-sync-engine.js?v=0.5.1';
 
     const cloudUrl = document.getElementById('cloudUrl');
     const cloudToken = document.getElementById('cloudToken');

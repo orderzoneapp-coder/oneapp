@@ -1,5 +1,5 @@
-import { normalizeText } from '../orderq-db.js';
-import { LINK_STATUS } from './fulfillment-matcher.js';
+import { normalizeText } from '../orderq-db.js?v=0.5.1';
+import { LINK_STATUS } from './fulfillment-matcher.js?v=0.5.1';
 
 function stableId(parts) {
   let hash = 2166136261;

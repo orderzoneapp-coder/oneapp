@@ -6,7 +6,7 @@ import {
   nowIso,
   requestToPromise,
   transactionDone
-} from './orderq-db.js';
+} from './orderq-db.js?v=0.5.1';
 
 function stableHash(value) {
   let hash = 2166136261;

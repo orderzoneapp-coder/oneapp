@@ -13,7 +13,7 @@
       <div class="brand">
         <strong>ONEAPP</strong>
         <span class="logo-frame" aria-hidden="true"><img src="../assets/order-q-logo.png" alt=""></span>
-        <span class="badge">vNext 0.5.0</span>
+        <span class="badge">vNext 0.5.1</span>
         <span id="pageMode">수기 주문</span>
       </div>
       <div class="top-system" aria-live="polite">
@@ -166,16 +166,16 @@
     import {
       createOrder, updateOrder, cancelOrder, getOrder, subscribeOrderChanges,
       OrderRevisionConflictError, MATCH_STATUS
-    } from './order-intake-engine.js';
+    } from './order-intake-engine.js?v=0.5.1';
     import {
       syncBeforeOrderMutation, syncAfterLocalMutation, getSyncState,
       CloudOrderConflictError
-    } from './orderq-sync-engine.js';
-    import { loadProductCatalog, searchProductCatalog } from './product-master-search.js';
-    import { loadWarehouseCatalog, matchWarehouseInput, warehouseDisplayName } from './warehouse-master.js';
+    } from './orderq-sync-engine.js?v=0.5.1';
+    import { loadProductCatalog, searchProductCatalog } from './product-master-search.js?v=0.5.1';
+    import { loadWarehouseCatalog, matchWarehouseInput, warehouseDisplayName } from './warehouse-master.js?v=0.5.1';
     import {
       calculateLineTotal, calculateVatAmount, compareManualRows, cycleManualPriceOption, numberOrNull, shiftIsoDate
-    } from './manual-order-grid.js';
+    } from './manual-order-grid.js?v=0.5.1';
 
     const params = new URLSearchParams(location.search);
     const editingOrderId = params.get('orderId');

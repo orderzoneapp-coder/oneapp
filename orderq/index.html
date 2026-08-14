@@ -13,7 +13,7 @@
       <div class="brand">
         <strong>ONEAPP</strong>
         <span class="logo-frame" aria-hidden="true"><img src="../assets/order-q-logo.png" alt=""></span>
-        <span class="badge">vNext 0.5.0</span>
+        <span class="badge">vNext 0.5.1</span>
         <span>주문현황</span>
       </div>
       <div class="top-actions">
@@ -54,9 +54,9 @@
     </main>
   </div>
   <script type="module">
-    import { listOrders, subscribeOrderChanges } from './order-intake-engine.js';
-    import { syncNow, getSyncState } from './orderq-sync-engine.js';
-    import { getCloudUrl } from './orderq-cloud-adapter.js';
+    import { listOrders, subscribeOrderChanges } from './order-intake-engine.js?v=0.5.1';
+    import { syncNow, getSyncState } from './orderq-sync-engine.js?v=0.5.1';
+    import { getCloudUrl } from './orderq-cloud-adapter.js?v=0.5.1';
 
     const rows = document.getElementById('orderRows');
     const summary = document.getElementById('summaryText');
