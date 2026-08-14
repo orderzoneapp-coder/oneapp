@@ -725,7 +725,7 @@
     .shortage-focus-button:hover:not(:disabled) { border-color: #fb7185; background: #ffe4e6; }
     .shortage-focus-button.active { border-color: #be123c; color: #fff; background: #be123c; }
     .shortage-focus-button:disabled { opacity: .45; cursor: default; }
-    /* ORDER Q v1.45: unit emphasis and integrated workbook views */
+    /* ORDER Q v1.46: unit emphasis and integrated workbook views */
     .header-output-button { border-color: #99f6e4; color: #0f766e; background: #f0fdfa; }
     .header-output-button:hover:not(:disabled) { background: #ccfbf1; }
     .results-panel .table-wrap { max-height: calc(100vh - 200px); }
@@ -1517,7 +1517,7 @@
       .recovery-record-item { grid-template-columns: auto 1fr; }
       .recovery-record-status { grid-column: 2; }
     }
-    /* ORDER Q v1.45: uploader cards double as result tabs */
+    /* ORDER Q v1.46: uploader cards double as result tabs */
     .input-panel { grid-template-columns: minmax(0, 1fr) 230px; gap: 14px; }
     .upload-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; }
     .source-selector {
@@ -1674,7 +1674,7 @@
       <div class="brand-mark">ONEAPP</div>
       <div class="brand-divider" aria-hidden="true"></div>
       <span class="brand-logo-frame" aria-hidden="true"><img class="brand-logo" src="../assets/order-q-logo.png" alt=""></span>
-      <span class="brand-badge">v1.45</span>
+      <span class="brand-badge">v1.46</span>
       <span class="brand-product">출고관리</span>
     </div>
     <div class="header-actions">
@@ -1880,7 +1880,7 @@
     </section>
 
     <footer class="page-footer">
-      <span>ORDER Q v1.45 · 출고관리 · workspace shipping-workspace/v2 · cloud plan v1</span>
+      <span>ORDER Q v1.46 · 출고관리 · workspace shipping-workspace/v2 · cloud plan v1</span>
       <a href="../SHIPPING_MANAGEMENT_GUIDANCE.md">개발·운영 기준 보기</a>
     </footer>
   </main>
@@ -5183,7 +5183,8 @@
                     const warningUnitContext = exactWarningUnit(sourceRow) && (
                       ["productName", "specification"].includes(column.role) || quantityColumn
                     );
-                    const boxUnitContext = exactBoxUnit(sourceRow) && column.role === "specification";
+                    const boxUnitContext = exactBoxUnit(sourceRow) &&
+                      ["productName", "specification"].includes(column.role);
                     const classes = [
                       isNumber ? "number" : "",
                       isStatus ? "status" : "",
