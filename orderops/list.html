@@ -725,7 +725,7 @@
     .shortage-focus-button:hover:not(:disabled) { border-color: #fb7185; background: #ffe4e6; }
     .shortage-focus-button.active { border-color: #be123c; color: #fff; background: #be123c; }
     .shortage-focus-button:disabled { opacity: .45; cursor: default; }
-    /* ORDER Q v1.46: unit emphasis and integrated workbook views */
+    /* ORDER Q v1.47: unit emphasis and integrated workbook views */
     .header-output-button { border-color: #99f6e4; color: #0f766e; background: #f0fdfa; }
     .header-output-button:hover:not(:disabled) { background: #ccfbf1; }
     .results-panel .table-wrap { max-height: calc(100vh - 200px); }
@@ -1517,9 +1517,10 @@
       .recovery-record-item { grid-template-columns: auto 1fr; }
       .recovery-record-status { grid-column: 2; }
     }
-    /* ORDER Q v1.46: uploader cards double as result tabs */
+    /* ORDER Q v1.47: five result tabs plus a distinct integrated-workbook uploader */
     .input-panel { grid-template-columns: minmax(0, 1fr) 230px; gap: 14px; }
-    .upload-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; }
+    .source-uploader-stack { display: grid; min-width: 0; gap: 6px; }
+    .upload-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
     .source-selector {
       display: grid;
       position: relative;
@@ -1546,7 +1547,79 @@
       text-align: center;
     }
     .source-selector.bundle-dragover .upload-card { border-color: #2dd4bf; }
-    .integrated-upload-card.bundle-dragover { border-color: #2dd4bf; background: #134e4a; box-shadow: inset 0 0 0 2px #2dd4bf; }
+    .integrated-uploader {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: stretch;
+      min-width: 0;
+      min-height: 31px;
+      overflow: hidden;
+      border: 1px dashed #2dd4bf;
+      border-radius: 5px;
+      background: rgba(13, 148, 136, .08);
+    }
+    .integrated-uploader.has-file { border-style: solid; background: #15383b; }
+    .integrated-uploader.has-error { border-color: #fb7185; background: #3f2533; }
+    .integrated-uploader.bundle-dragover {
+      border-style: solid;
+      border-color: #5eead4;
+      background: #134e4a;
+      box-shadow: inset 0 0 0 1px #2dd4bf;
+    }
+    .integrated-drop {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      min-width: 0;
+      padding: 3px 8px;
+      border: 0;
+      color: #ccfbf1;
+      background: transparent;
+      text-align: left;
+      cursor: pointer;
+    }
+    .integrated-drop:hover,
+    .integrated-drop:focus-visible { background: rgba(45, 212, 191, .10); outline: none; }
+    .integrated-upload-icon {
+      display: inline-grid;
+      place-items: center;
+      flex: 0 0 22px;
+      width: 22px;
+      height: 22px;
+      border-radius: 4px;
+      color: #042f2e;
+      background: #5eead4;
+      font-size: 12px;
+      font-weight: 900;
+    }
+    .integrated-upload-copy { min-width: 0; }
+    .integrated-upload-title { display: block; font-size: 10px; font-weight: 900; line-height: 1.05; }
+    .integrated-upload-help {
+      display: block;
+      overflow: hidden;
+      margin-top: 2px;
+      color: #94a3b8;
+      font-size: 8px;
+      line-height: 1.05;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .integrated-file-button {
+      align-self: stretch;
+      min-width: 66px;
+      margin: 3px;
+      padding: 0 9px;
+      border: 1px solid #2dd4bf;
+      border-radius: 4px;
+      color: #ccfbf1;
+      background: #0f4c4e;
+      font-size: 9px;
+      font-weight: 900;
+      white-space: nowrap;
+      cursor: pointer;
+    }
+    .integrated-file-button:hover,
+    .integrated-file-button:focus-visible { color: #042f2e; background: #5eead4; outline: none; }
     .upload-card {
       display: grid;
       grid-template-columns: minmax(0, 1fr) auto;
@@ -1674,7 +1747,7 @@
       <div class="brand-mark">ONEAPP</div>
       <div class="brand-divider" aria-hidden="true"></div>
       <span class="brand-logo-frame" aria-hidden="true"><img class="brand-logo" src="../assets/order-q-logo.png" alt=""></span>
-      <span class="brand-badge">v1.46</span>
+      <span class="brand-badge">v1.47</span>
       <span class="brand-product">출고관리</span>
     </div>
     <div class="header-actions">
@@ -1730,8 +1803,9 @@
         <div class="source-selector" id="sourceSelector" aria-label="Excel 파일 선택 및 자동분류 드롭 영역">
           <div class="data-source-label"><span aria-hidden="true">▣</span> 데이터 소스:</div>
 
-          <div class="upload-grid" role="tablist" aria-label="업로드 자료 및 결과 화면">
-            <article class="upload-card" id="ordersCard">
+          <div class="source-uploader-stack">
+            <div class="upload-grid" role="tablist" aria-label="업로드 자료 및 결과 화면">
+              <article class="upload-card" id="ordersCard">
               <button class="drop-zone" id="ordersDrop" type="button" role="tab" aria-selected="false"
                 aria-controls="previewTable" aria-keyshortcuts="F5" aria-label="주문현황 화면 보기 F5">
                 <div class="file-icon" aria-hidden="true">1</div>
@@ -1742,12 +1816,21 @@
               </button>
               <button class="file-select-button" id="ordersFileButton" type="button" aria-label="주문현황 Excel 파일 선택">파일</button>
               <input class="hidden" id="ordersInput" type="file" accept=".xlsx,.xls">
-            </article>
+              </article>
 
-            <article class="upload-card" id="inventoryCard">
+              <article class="upload-card" id="ledgerCard">
+                <button class="drop-zone" id="ledgerDrop" type="button" role="tab" aria-selected="false"
+                  aria-controls="previewTable" aria-keyshortcuts="F6" aria-label="수불현황 화면 보기 F6">
+                  <div class="file-icon" aria-hidden="true">2</div>
+                  <div class="file-copy"><p class="drop-title">수불현황</p><p class="drop-help" id="ledgerStatus">재고수불부 · 자동 생성</p></div>
+                </button>
+                <span class="derived-view-label" aria-hidden="true">자동</span>
+              </article>
+
+              <article class="upload-card" id="inventoryCard">
               <button class="drop-zone" id="inventoryDrop" type="button" role="tab" aria-selected="false"
                 aria-controls="previewTable" aria-keyshortcuts="F7" aria-label="창고재고 화면 보기 F7">
-                <div class="file-icon" aria-hidden="true">2</div>
+                <div class="file-icon" aria-hidden="true">3</div>
                 <div class="file-copy">
                   <p class="drop-title">창고재고</p>
                   <p class="drop-help" id="inventoryFileName">파일을 선택하세요</p>
@@ -1755,39 +1838,36 @@
               </button>
               <button class="file-select-button" id="inventoryFileButton" type="button" aria-label="창고재고 Excel 파일 선택">파일</button>
               <input class="hidden" id="inventoryInput" type="file" accept=".xlsx,.xls">
-            </article>
-            <article class="upload-card" id="purchasesCard">
+              </article>
+              <article class="upload-card" id="purchasesCard">
               <button class="drop-zone" id="purchasesDrop" type="button" role="tab" aria-selected="false"
                 aria-controls="previewTable" aria-label="구매현황 화면 보기">
-                <div class="file-icon" aria-hidden="true">3</div>
+                <div class="file-icon" aria-hidden="true">4</div>
                 <div class="file-copy"><p class="drop-title">구매현황</p><p class="drop-help" id="purchasesFileName">파일을 선택하세요</p></div>
               </button>
               <button class="file-select-button" id="purchasesFileButton" type="button" aria-label="구매현황 Excel 파일 선택">파일</button>
               <input class="hidden" id="purchasesInput" type="file" accept=".xlsx,.xls">
-            </article>
-            <article class="upload-card" id="salesCard">
+              </article>
+              <article class="upload-card" id="salesCard">
               <button class="drop-zone" id="salesDrop" type="button" role="tab" aria-selected="false"
                 aria-controls="previewTable" aria-label="판매현황 화면 보기">
-                <div class="file-icon" aria-hidden="true">4</div>
+                <div class="file-icon" aria-hidden="true">5</div>
                 <div class="file-copy"><p class="drop-title">판매현황</p><p class="drop-help" id="salesFileName">파일을 선택하세요</p></div>
               </button>
               <button class="file-select-button" id="salesFileButton" type="button" aria-label="판매현황 Excel 파일 선택">파일</button>
               <input class="hidden" id="salesInput" type="file" accept=".xlsx,.xls">
-            </article>
-            <article class="upload-card" id="ledgerCard">
-              <button class="drop-zone" id="ledgerDrop" type="button" role="tab" aria-selected="false"
-                aria-controls="previewTable" aria-keyshortcuts="F6" aria-label="수불현황 화면 보기 F6">
-                <div class="file-icon" aria-hidden="true">5</div>
-                <div class="file-copy"><p class="drop-title">수불현황</p><p class="drop-help" id="ledgerStatus">재고수불부 · 자동 생성</p></div>
+              </article>
+            </div>
+
+            <article class="integrated-uploader" id="integratedCard" aria-label="통합 Excel 업로드 영역">
+              <button class="integrated-drop" id="integratedDrop" type="button" aria-label="통합 Excel 파일 선택">
+                <span class="integrated-upload-icon" aria-hidden="true">⇧</span>
+                <span class="integrated-upload-copy">
+                  <strong class="integrated-upload-title">통합 Excel 업로드</strong>
+                  <span class="integrated-upload-help" id="integratedFileName">여러 시트를 주문·재고·구매·판매로 자동 분류</span>
+                </span>
               </button>
-              <span class="derived-view-label" aria-hidden="true">자동</span>
-            </article>
-            <article class="upload-card integrated-upload-card" id="integratedCard">
-              <button class="drop-zone" id="integratedDrop" type="button" aria-label="통합 Excel 파일 선택">
-                <div class="file-icon" aria-hidden="true">6</div>
-                <div class="file-copy"><p class="drop-title">통합파일</p><p class="drop-help" id="integratedFileName">파일을 선택하세요</p></div>
-              </button>
-              <button class="file-select-button" id="integratedFileButton" type="button" aria-label="통합 Excel 파일 선택">파일</button>
+              <button class="integrated-file-button" id="integratedFileButton" type="button" aria-label="통합 Excel 파일 선택">Excel 선택</button>
               <input class="hidden" id="integratedInput" type="file" accept=".xlsx,.xls">
             </article>
           </div>
@@ -1880,7 +1960,7 @@
     </section>
 
     <footer class="page-footer">
-      <span>ORDER Q v1.46 · 출고관리 · workspace shipping-workspace/v2 · cloud plan v1</span>
+      <span>ORDER Q v1.47 · 출고관리 · workspace shipping-workspace/v2 · cloud plan v1</span>
       <a href="../SHIPPING_MANAGEMENT_GUIDANCE.md">개발·운영 기준 보기</a>
     </footer>
   </main>
@@ -3321,7 +3401,7 @@
           return;
         }
         if (!result) {
-          elements.integratedFileName.textContent = "파일을 선택하세요";
+          elements.integratedFileName.textContent = "여러 시트를 주문·재고·구매·판매로 자동 분류";
           return;
         }
         const appliedCount = result.applied?.size || 0;

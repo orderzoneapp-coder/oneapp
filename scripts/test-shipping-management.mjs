@@ -13,7 +13,7 @@ assert.doesNotMatch(orderOpsHtml, /tokens truncated|…\d+ tokens truncated…/,
   "the public OrderOps mirror must not contain a truncated source fragment");
 assert.match(orderOpsHtml, /<body>[\s\S]*<\/body>\s*<\/html>/,
   "the public OrderOps mirror must remain a complete HTML document");
-assert.match(orderOpsHtml, /brand-badge">v1\.46</, "ORDER Q visible version must be v1.46");
+assert.match(orderOpsHtml, /brand-badge">v1\.47</, "ORDER Q visible version must be v1.47");
 assert.match(orderOpsHtml, /<title>ONEAPP ORDER Q · 출고관리<\/title>/,
   "the public page title must establish ORDER Q as shipment management");
 assert.match(orderOpsHtml, /aria-label="ONEAPP ORDER Q 출고관리"/,
@@ -22,7 +22,7 @@ assert.match(orderOpsHtml, /class="brand-logo" src="assets\/order-q-logo\.png"/,
   "the public header must use the approved ORDER Q logo asset");
 assert.match(orderOpsHtml, /\.brand-logo-frame\s*\{[\s\S]*?width:\s*120px;[\s\S]*?height:\s*20px;/,
   "the public ORDER Q logo must match the ONEAPP wordmark height");
-assert.match(orderOpsHtml, /ORDER Q v1\.46 · 출고관리/,
+assert.match(orderOpsHtml, /ORDER Q v1\.47 · 출고관리/,
   "the public footer must use the ORDER Q product concept");
 assert.doesNotMatch(
   orderOpsHtml.slice(orderOpsHtml.indexOf('<header class="global-header">'), orderOpsHtml.indexOf('</header>')),
@@ -37,15 +37,19 @@ assert.equal(
   "the repository logo must be the unmodified approved source image",
 );
 assert.ok(orderOpsHtml.includes('class="execution-panel"'),
-  "the public v1.46 execution controls must be separate from the upload strip");
+  "the public v1.47 execution controls must be separate from the upload strip");
 assert.match(orderOpsHtml, /\.execution-panel\s*\{[^}]*grid-template-columns:\s*repeat\(2,/,
   "the public execution controls must use two independent buttons");
 assert.match(orderOpsHtml, /\.execution-panel\s*\{[^}]*border:\s*0;/,
   "the public execution controls must not share an outer border");
-assert.match(orderOpsHtml, /\.upload-grid\s*\{[^}]*grid-template-columns:\s*repeat\(6,/,
-  "the public source strip must expose five source/result cards and one integrated-file card");
+assert.match(orderOpsHtml, /\.upload-grid\s*\{[^}]*grid-template-columns:\s*repeat\(5,/,
+  "the public source strip must expose exactly five source/result tabs");
 assert.ok(orderOpsHtml.includes('class="upload-grid" role="tablist" aria-label="업로드 자료 및 결과 화면"'),
   "the five source/result cards must form one accessible tab list");
+const publicSourceTabOrder = ["ordersCard", "ledgerCard", "inventoryCard", "purchasesCard", "salesCard"]
+  .map((id) => orderOpsHtml.indexOf(`id="${id}"`));
+assert.ok(publicSourceTabOrder.every((position, index) => position >= 0 && (index === 0 || position > publicSourceTabOrder[index - 1])),
+  "the source tabs must be ordered as order, stock ledger, inventory, purchase, and sales");
 for (const sourceCardContract of [
   'id="ordersDrop" type="button" role="tab"',
   'id="inventoryDrop" type="button" role="tab"',
@@ -57,13 +61,19 @@ for (const sourceCardContract of [
   'id="purchasesFileButton"',
   'id="salesFileButton"',
   '<p class="drop-title">수불현황</p>',
+  'class="integrated-uploader" id="integratedCard"',
   'id="integratedDrop" type="button"',
   'id="integratedFileButton"',
-  '<p class="drop-title">통합파일</p>',
+  '<strong class="integrated-upload-title">통합 Excel 업로드</strong>',
+  '여러 시트를 주문·재고·구매·판매로 자동 분류',
 ]) {
   assert.ok(orderOpsHtml.includes(sourceCardContract),
     `public source-card navigation contract is missing: ${sourceCardContract}`);
 }
+assert.match(orderOpsHtml, /<\/div>\s*<article class="integrated-uploader" id="integratedCard"/,
+  "the integrated workbook uploader must sit outside the five-tab list");
+assert.doesNotMatch(orderOpsHtml, /<div class="file-icon"[^>]*>6<\/div>/,
+  "the integrated workbook uploader must not look like a sixth numbered result tab");
 assert.ok(orderOpsHtml.includes('const FILE_KIND_PREVIEWS = Object.freeze({ orders: "allocations", inventory: "inventory", purchases: "purchases", sales: "sales" })'),
   "each uploaded source card must map to its result view");
 assert.ok(orderOpsHtml.includes('data-preview="validation"') &&
@@ -163,7 +173,7 @@ for (const requiredInteractionContract of [
   'function handleIntegratedFile',
 ]) {
   assert.ok(orderOpsHtml.includes(requiredInteractionContract),
-    `public ORDER Q v1.46 interaction contract is missing: ${requiredInteractionContract}`);
+    `public ORDER Q v1.47 interaction contract is missing: ${requiredInteractionContract}`);
 }
 const publicHeaderSource = orderOpsHtml.slice(
   orderOpsHtml.indexOf('<header class="global-header">'),
@@ -1739,7 +1749,7 @@ const html = fs.readFileSync(path.join(ROOT, "orderops", "list.html"), "utf8");
 const inlineScriptMatch = html.match(/<script>\s*([\s\S]*?)<\/script>\s*<\/body>/);
 assert.ok(inlineScriptMatch, "canonical ORDER Q inline application script must exist");
 new vm.Script(inlineScriptMatch[1], { filename: "orderops/list.html:inline" });
-assert.match(html, /brand-badge">v1\.46</, "canonical ORDER Q visible version must be v1.46");
+assert.match(html, /brand-badge">v1\.47</, "canonical ORDER Q visible version must be v1.47");
 assert.match(html, /class="brand-logo" src="\.\.\/assets\/order-q-logo\.png"/,
   "the canonical header must use the shared ORDER Q logo asset");
 assert.match(html, /<h2 id="settingsModalTitle">ORDER Q 환경설정<\/h2>/,
@@ -1884,7 +1894,7 @@ for (const requiredInteractionContract of [
   'function handleIntegratedFile',
 ]) {
   assert.ok(html.includes(requiredInteractionContract),
-    `canonical ORDER Q v1.46 interaction contract is missing: ${requiredInteractionContract}`);
+    `canonical ORDER Q v1.47 interaction contract is missing: ${requiredInteractionContract}`);
 }
 assert.doesNotMatch(html, /<input[^>]+type="color"|data-warehouse-color|data-manager-color/,
   "canonical OrderOps filter options must remain separate from color assignment");
@@ -1975,8 +1985,10 @@ assert.ok(html.includes('id="integratedInput" type="file" accept=".xlsx,.xls">')
   "integrated upload must remain a single-workbook picker");
 assert.match(combinedCss, /\.execution-panel\s*\{[^}]*grid-template-columns:\s*repeat\(2,[^}]*border:\s*0;/,
   "canonical analysis and refresh actions must be two buttons without a shared outer border");
-assert.match(combinedCss, /\.upload-grid\s*\{[^}]*grid-template-columns:\s*repeat\(6,/,
-  "canonical upload strip must include the sixth integrated-file card");
+assert.match(combinedCss, /\.upload-grid\s*\{[^}]*grid-template-columns:\s*repeat\(5,/,
+  "canonical upload strip must contain exactly five result tabs");
+assert.match(combinedCss, /\.integrated-uploader\s*\{[^}]*border:\s*1px dashed #2dd4bf;/,
+  "canonical integrated workbook control must be visually distinct as an upload drop zone");
 const canonicalHeaderSource = html.slice(html.indexOf('<header class="global-header">'), html.indexOf('</header>'));
 assert.ok(canonicalHeaderSource.indexOf('id="smartInputButton"') < canonicalHeaderSource.indexOf('id="printButton"'),
   "canonical Smart input F4 must move before screen print in the global header");
@@ -2273,7 +2285,7 @@ for (const contract of [
   "showPurchaseCompletionCoachmark",
   "function resetResultViewFilters()", 'grid-template-columns: repeat(2, minmax(0, 1fr))',
 ]) {
-  assert.ok(html.includes(contract), `ORDER Q v1.46 contract is missing: ${contract}`);
+  assert.ok(html.includes(contract), `ORDER Q v1.47 contract is missing: ${contract}`);
 }
 const purchaseAutocompleteStart = html.indexOf("function purchaseAutocompleteNames");
 const purchaseAutocompleteEnd = html.indexOf("function closePurchaseAutocomplete", purchaseAutocompleteStart);
