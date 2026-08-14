@@ -1,6 +1,6 @@
 # ORDER Q vNext Architecture
 
-Version: 0.4.6
+Version: 0.4.7
 Reviewed: 2026-08-14
 
 ## 1. Scope
@@ -9,7 +9,7 @@ ORDER Q vNext is an independent pilot under `/orderq/`. Existing `orderops/` and
 
 Phase 3 adds `/orderq/parser.html`. SmartParser never writes ORDER / ORDER_ITEM directly: raw text and parse decisions are stored separately, then confirmed actions call the shared Order Intake Engine.
 
-vNext 0.4.6 makes manual entry code-first and keyboard-driven. Product search runs only from the item-code cell; Enter follows customer → warehouse → item code → quantity → price → memo and creates a new row after the last memo. Product columns remain directly editable but are skipped by that primary entry path. The official manual-entry fields are `boxQuantity` (박스당수량) and `finalUnit` (단위). `supplyAmount` is proposed from quantity×price but remains editable, and optional `vatAmount` is proposed at 10% when the VAT column is shown. These additive values remain inside the existing `ORDER_ITEM.payloadJson`, so the `ONEAPP_ORDERQ_SYNC_V1` sheet headers and synchronization boundary do not change. SmartParser's existing `rawUnit` keeps its source-evidence meaning and is not repurposed.
+vNext 0.4.7 makes manual entry code-first and keyboard-driven. Product search runs only from the item-code cell; Enter follows customer → warehouse → item code → quantity → price → memo and creates a new row after the last memo. Product columns remain directly editable but are skipped by that primary entry path. The official manual-entry fields are `boxQuantity` (박스당수량) and `finalUnit` (단위). `supplyAmount` is proposed from quantity×price but remains editable, and optional `vatAmount` is proposed at 10% when the VAT column is shown. The price cell replaces native one-won stepping with a bounded cycle over the selected common-master product's available sales-price fields; the selected key is stored as additive `priceType`, while direct edits use `MANUAL`. These additive values remain inside the existing `ORDER_ITEM.payloadJson`, so the `ONEAPP_ORDERQ_SYNC_V1` sheet headers and synchronization boundary do not change. SmartParser's existing `rawUnit` keeps its source-evidence meaning and is not repurposed.
 
 The vNext data path is:
 

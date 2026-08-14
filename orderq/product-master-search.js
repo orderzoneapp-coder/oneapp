@@ -4,6 +4,15 @@ const COMMON_MASTER_DB = 'MerchOpsDB';
 const COMMON_MASTER_STORE = 'master_products';
 const COMMON_MASTER_SNAPSHOT_KEYS = ['merchMaster_v870', 'master_products'];
 
+export const MANUAL_PRICE_FIELDS = Object.freeze([
+  { key: 'outPrice', label: '출고가', aliases: ['outPrice', '출고가'] },
+  { key: 'wholesaleA', label: '도매A', aliases: ['wholesaleA', '도매A', '도매가', 'A판매', 'A판매가'] },
+  { key: 'wholesaleB', label: '도매B', aliases: ['wholesaleB', '도매B', 'B판매', 'B판매가', 'B도매', 'B도매가'] },
+  { key: 'listingPrice', label: '상장가', aliases: ['listingPrice', '상장가'] },
+  { key: 'marketPrice', label: '시중가', aliases: ['marketPrice', '시중가', '시중가격'] },
+  { key: 'promoPrice', label: '행사가', aliases: ['promoPrice', '행사가', '특가'] }
+]);
+
 function firstValue(source, keys, fallback = '') {
   for (const key of keys) {
     const value = source?.[key];
@@ -29,6 +38,14 @@ function numberOrNull(source, keys) {
   return Number.isFinite(value) ? value : null;
 }
 
+export function normalizeManualPriceOptions(raw = {}, source = 'COMMON_MASTER') {
+  if (source !== 'COMMON_MASTER') return [];
+  return MANUAL_PRICE_FIELDS.map(field => {
+    const value = numberOrNull(raw, field.aliases);
+    return value === null ? null : { key: field.key, label: field.label, value };
+  }).filter(Boolean);
+}
+
 export function productCategoryCode(itemCode) {
   return String(itemCode || '').trim().slice(0, 6);
 }
@@ -41,7 +58,8 @@ export function normalizeMasterProduct(raw = {}, fallbackCode = '', source = 'CO
   const boxQuantity = numberOrNull(raw, ['boxQuantity', 'unitsPerBox', '박스당수량', '박스당 수량', '원단위', '입수', '기본']);
   const secondaryName = firstValue(raw, ['secondaryName', 'secondName', '제2품명', '제2상품명', '약칭', '별칭']);
   const searchInfo = firstValue(raw, ['searchInfo', 'searchKeywords', '검색창정보', '검색어등록', '검색어', '간단설명']);
-  const outPrice = source === 'COMMON_MASTER' ? numberOrNull(raw, ['outPrice', '출고가']) : null;
+  const priceOptions = normalizeManualPriceOptions(raw, source);
+  const outPrice = priceOptions.find(option => option.key === 'outPrice')?.value ?? null;
   if (!itemCode && !itemName) return null;
   return {
     productId: firstValue(raw, ['productId']) || stableProductId(itemCode, itemName, specification),
@@ -53,6 +71,7 @@ export function normalizeMasterProduct(raw = {}, fallbackCode = '', source = 'CO
     finalUnit,
     boxQuantity,
     outPrice,
+    priceOptions,
     status: firstValue(raw, ['status', '상태'], 'ACTIVE'),
     source,
     raw

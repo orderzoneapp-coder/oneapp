@@ -91,6 +91,7 @@ function normalizeItem(input, orderId, previous = null) {
     finalUnit,
     boxQuantity: asNumberOrNull(input.boxQuantity),
     price: asNumberOrNull(input.price),
+    priceType: String(input.priceType ?? '').trim(),
     supplyAmount: asNumberOrNull(input.supplyAmount),
     vatAmount: asNumberOrNull(input.vatAmount),
     memo: String(input.memo ?? '').trim(),
