@@ -225,6 +225,15 @@
       white-space: nowrap;
     }
     .system-mode strong { color: #5eead4; }
+    .system-view-note {
+      min-width: 0;
+      overflow: hidden;
+      color: #cbd5e1;
+      font-size: 9px;
+      font-weight: 800;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
 
     .input-panel {
       display: grid;
@@ -710,7 +719,7 @@
     .shortage-focus-button:hover:not(:disabled) { border-color: #fb7185; background: #ffe4e6; }
     .shortage-focus-button.active { border-color: #be123c; color: #fff; background: #be123c; }
     .shortage-focus-button:disabled { opacity: .45; cursor: default; }
-    /* ORDER Q v1.40: compact shortage states, multi-view layouts, and category-group rails */
+    /* ORDER Q v1.41: quiet stock-ledger emphasis and dynamic view guidance */
     .header-output-button { border-color: #99f6e4; color: #0f766e; background: #f0fdfa; }
     .header-output-button:hover:not(:disabled) { background: #ccfbf1; }
     .results-panel .table-wrap { max-height: calc(100vh - 200px); }
@@ -1018,40 +1027,16 @@
     td.inventory-negative { color: #b91c1c !important; font-weight: 900; }
     td.unit-alert-cell { color: #b91c1c !important; font-weight: 900; }
     tr.reference-row td { color: var(--slate-600); font-style: italic; }
-    tr.shortage-main-row td:first-child { border-left: 3px solid #e11d48; }
+    tr.shortage-main-row td:first-child { border-left: 3px solid #fda4af; }
     tr.shortage-candidate-row td { color: #475569; background: #f1f5f9 !important; }
-    tr.shortage-candidate-row td:first-child { border-left: 3px solid #64748b; }
+    tr.shortage-candidate-row td:first-child { border-left: 3px solid #cbd5e1; }
     tr.shortage-category-row td:first-child {
-      box-shadow: inset 4px 0 0 var(--shortage-category-color, #64748b);
+      box-shadow: inset 3px 0 0 var(--shortage-category-color, #cbd5e1);
     }
-    tr.shortage-category-start td {
-      border-top: 3px solid var(--shortage-category-color, #64748b) !important;
-    }
-    tr.inventory-missing-row td:first-child { border-left: 3px solid #d97706; }
+    tr.inventory-missing-row td:first-child { border-left: 3px solid #fcd34d; }
     tr.no-order-row td { color: #64748b; }
     .empty-table-cell { padding: 34px 18px !important; color: var(--slate-500); text-align: center; }
 
-    .row-state-badges { display: flex; align-items: center; gap: 3px; flex-wrap: wrap; }
-    .row-state-badge {
-      display: inline-flex;
-      align-items: center;
-      min-height: 20px;
-      padding: 1px 6px;
-      border: 1px solid #cbd5e1;
-      border-radius: 999px;
-      color: #475569;
-      background: #f8fafc;
-      font-size: 10px;
-      font-weight: 900;
-      font-style: normal;
-      white-space: nowrap;
-    }
-    .row-state-badge[data-state="부족상품"] { border-color: #fda4af; color: #9f1239; background: #fff1f2; }
-    .row-state-badge[data-state="주문상품"] { border-color: #93c5fd; color: #1d4ed8; background: #eff6ff; }
-    .row-state-badge[data-state="대체상품"] { border-color: #94a3b8; color: #334155; background: #f1f5f9; }
-    .row-state-badge[data-state="재고정보 없음"] { border-color: #fcd34d; color: #92400e; background: #fffbeb; }
-    .row-state-badge[data-state="재고 0"] { color: #64748b; background: #f8fafc; }
-    .row-state-badge[data-state="주문 없음"] { color: #64748b; background: #f8fafc; }
     td.quantity-zero { color: #94a3b8 !important; }
     td.quantity-negative { color: #b91c1c !important; font-weight: 900; }
     td.quantity-zero .inventory-input,
@@ -1078,9 +1063,9 @@
       outline: 0;
       box-shadow: none;
     }
-    .purchase-input[data-negative-balance="true"] { color: #9f1239; background: #fff7f7; box-shadow: inset 0 -2px 0 #fb7185; }
+    .purchase-input[data-negative-balance="true"] { color: #854d0e; background: #fef9c3; box-shadow: inset 0 -2px 0 #facc15; }
     .purchase-input:focus { outline: 0; background: transparent; }
-    .purchase-input[data-negative-balance="true"]:focus { background: #fff1f2; box-shadow: inset 0 -2px 0 #e11d48; }
+    .purchase-input[data-negative-balance="true"]:focus { background: #fef08a; box-shadow: inset 0 -2px 0 #eab308; }
     .order-edit-input {
       width: 100%; min-width: 0; height: 25px; padding: 1px 6px;
       border: 0; border-radius: 0; color: var(--slate-900);
@@ -1088,7 +1073,14 @@
     }
     .order-edit-input:focus { outline: 0; background: transparent; }
     .table-wrap td:focus-within { background: #edf9f7 !important; }
-    td.ledger-negative-cell { color: #b91c1c !important; font-weight: 900; }
+    tr td.ordered-context-cell { background: #eff6ff !important; }
+    td.ledger-negative-cell,
+    td.purchase-negative-cell { color: #854d0e !important; background: #fef9c3 !important; font-weight: 900; }
+    td.ledger-negative-cell .inventory-total-frame {
+      color: #854d0e !important;
+      background: #fef9c3 !important;
+      box-shadow: inset 3px 0 0 #facc15;
+    }
     table.preview-ledger td.procurement-price-cell { padding: 2px 4px; }
     table.preview-ledger .ledger-price-input {
       width: 100%; min-width: 0; height: 28px; padding: 3px 7px;
@@ -1500,7 +1492,7 @@
       .recovery-record-item { grid-template-columns: auto 1fr; }
       .recovery-record-status { grid-column: 2; }
     }
-    /* ORDER Q v1.40: uploader cards double as result tabs */
+    /* ORDER Q v1.41: uploader cards double as result tabs */
     .input-panel { grid-template-columns: minmax(0, 1fr) 330px; gap: 12px; }
     .upload-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
     .source-selector {
@@ -1658,7 +1650,7 @@
       <div class="brand-mark">ONEAPP</div>
       <div class="brand-divider" aria-hidden="true"></div>
       <span class="brand-logo-frame" aria-hidden="true"><img class="brand-logo" src="assets/order-q-logo.png" alt=""></span>
-      <span class="brand-badge">v1.40</span>
+      <span class="brand-badge">v1.41</span>
       <span class="brand-product">출고관리</span>
     </div>
     <div class="header-actions">
@@ -1696,6 +1688,7 @@
         <div class="validation-box" id="validationBox" role="status" aria-live="polite">
           <p class="validation-title"><span aria-hidden="true">○</span>필수 파일 선택 대기</p>
         </div>
+        <div class="system-view-note hidden" id="systemViewNote" aria-live="polite"></div>
         <div class="system-mode storage-status-inline">
           <span class="storage-status-guide"><strong>임시저장</strong> · 완료 후 저장</span>
           <span class="storage-status-divider">·</span>
@@ -1852,7 +1845,7 @@
     </section>
 
     <footer class="page-footer">
-      <span>ORDER Q v1.40 · 출고관리 · workspace shipping-workspace/v2 · cloud plan v1</span>
+      <span>ORDER Q v1.41 · 출고관리 · workspace shipping-workspace/v2 · cloud plan v1</span>
       <a href="SHIPPING_MANAGEMENT_GUIDANCE.md">개발·운영 기준 보기</a>
     </footer>
   </main>
@@ -2004,8 +1997,8 @@
         purchases: "구매현황", sales: "판매현황",
       });
       const SHORTAGE_CATEGORY_COLORS = Object.freeze([
-        "#e11d48", "#ea580c", "#ca8a04", "#16a34a",
-        "#0d9488", "#0284c7", "#4f46e5", "#9333ea",
+        "#fda4af", "#fdba74", "#fde047", "#86efac",
+        "#5eead4", "#7dd3fc", "#a5b4fc", "#d8b4fe",
       ]);
       const FILE_KINDS = Object.freeze(["orders", "inventory", "purchases", "sales"]);
       const FILE_KIND_LABELS = Object.freeze({ orders: "주문현황", inventory: "창고재고", purchases: "구매현황", sales: "판매현황" });
@@ -2113,6 +2106,7 @@
         salesFileName: document.getElementById("salesFileName"),
         ledgerStatus: document.getElementById("ledgerStatus"),
         validationBox: document.getElementById("validationBox"),
+        systemViewNote: document.getElementById("systemViewNote"),
         smartInputButton: document.getElementById("smartInputButton"),
         analyzeButton: document.getElementById("analyzeButton"),
         refreshButton: document.getElementById("refreshButton"),
@@ -4107,15 +4101,6 @@
         return "";
       }
 
-      function shortageRowStateForDisplay(value, categoryCode, seenStates) {
-        const normalized = String(value || "").trim();
-        if (!normalized || !categoryCode || !seenStates?.has || !seenStates?.add) return normalized;
-        const key = `${categoryCode}\u0000${normalized}`;
-        if (seenStates.has(key)) return "";
-        seenStates.add(key);
-        return normalized;
-      }
-
       function decorateShortageRow(row, shortageSets, inventoryByCode) {
         const productCode = String(row?.productCode || "").trim();
         const shortageFocusRole = shortageSets.shortages.has(productCode)
@@ -4243,14 +4228,6 @@
         if (entries.length === 0) return "";
         return `<span class="order-information-badges">${entries.map((entry) =>
           `<span class="order-information-badge" title="${escapeHtml(entry)}">${escapeHtml(entry)}</span>`,
-        ).join("")}</span>`;
-      }
-
-      function renderRowStateBadges(value) {
-        const states = String(value || "").split("·").map((entry) => entry.trim()).filter(Boolean);
-        if (states.length === 0) return "";
-        return `<span class="row-state-badges">${states.map((entry) =>
-          `<span class="row-state-badge" data-state="${escapeHtml(entry)}">${escapeHtml(entry)}</span>`,
         ).join("")}</span>`;
       }
 
@@ -4437,8 +4414,9 @@
             decorateShortageRow(row, shortageSets, inventoryByCode));
           const ledgerColumns = ledgerView.columns.map((column) => ({
             ...column,
-            header: column.role === "calculatedQuantity" ? "수량"
-              : column.header === "품목명" ? "품명" : column.header,
+            header: column.role === "salesQuantity" ? "출고"
+              : column.role === "calculatedQuantity" ? "잔량"
+                : column.header === "품목명" ? "품명" : column.header,
             defaultWidth: column.role === "orderInformation" ? 240
               : column.role === "purchasePlace" ? 150
                 : column.role === "productName" ? 190
@@ -4889,7 +4867,6 @@
             <span class="column-header-content"><span class="column-header-label">${escapeHtml(column.header)}</span>${sortControl}</span>${handle}</th>`;
         }).join("");
 
-        const visibleShortageRowStates = new Set();
         const body = pairs.length
           ? pairs.map(({ row, sourceRow }, pairIndex) => {
               const focusCandidate = state.shortageFocus && sourceRow?.shortageFocusRole === "candidate";
@@ -4897,22 +4874,13 @@
               const rowFill = previewRowFill(previewId, sourceRow);
               const shortageCategory = state.shortageFocus && ["allocations", "ledger", "inventory"].includes(previewId)
                 ? String(sourceRow?.shortageCategory || "") : "";
-              const previousShortageCategory = pairIndex > 0
-                ? String(pairs[pairIndex - 1]?.sourceRow?.shortageCategory || "") : "";
-              const shortageCategoryStart = Boolean(shortageCategory && shortageCategory !== previousShortageCategory);
               const shortageCategoryStyle = shortageCategory
                 ? `--shortage-category-color:${shortageCategoryColor(shortageCategory)}` : "";
-              const shortageRowState = shortageRowStateForDisplay(
-                preview.status >= 0 ? row[preview.status] : "",
-                shortageCategory,
-                visibleShortageRowStates,
-              );
               const rowClasses = [
                 referenceRow ? "reference-row" : "",
                 sourceRow?.shortageFocusRole === "shortage" ? "shortage-main-row" : "",
                 focusCandidate ? "shortage-candidate-row" : "",
                 shortageCategory ? "shortage-category-row" : "",
-                shortageCategoryStart ? "shortage-category-start" : "",
                 sourceRow?.inventoryMissing || sourceRow?.salesOnly ? "inventory-missing-row" : "",
                 Number(sourceRow?.orderQuantity || 0) === 0 ? "no-order-row" : "",
               ].filter(Boolean).join(" ");
@@ -4934,7 +4902,11 @@
                     const numericQuantityValue = quantityColumn && isNonblankNumericValue(value)
                       ? Number(String(value).replace(/,/g, ""))
                       : null;
+                    const displayValue = quantityColumn && numericQuantityValue === 0 ? "" : value;
                     const ledgerNegative = previewId === "ledger" && column.role === "calculatedQuantity" && negativeNumericValue;
+                    const orderedContext = ["ledger", "inventory"].includes(previewId) &&
+                      Number(sourceRow?.orderQuantity || 0) > 0 &&
+                      ["productName", "specification", "orderQuantity"].includes(column.role);
                     const warehouseFill = warehouseQuantity && isNonblankNumericValue(value)
                       ? warehouseColorFor(preview, column)
                       : "";
@@ -4943,6 +4915,13 @@
                     const editableLedgerPrice = editable && previewId === "ledger" &&
                       column.role === "unitPrice" && column.editable === true &&
                       Boolean(column.inventoryColumnKey) && !referenceRow && !sourceRow?.salesOnly;
+                    const inventoryNegativeBalance = typeof sourceRow?.displayRemainingQuantity === "number" && sourceRow.displayRemainingQuantity < 0;
+                    const ledgerNegativeBalance = typeof sourceRow?.remainingQuantity === "number" && sourceRow.remainingQuantity < 0;
+                    const negativeBalance = sourceRow?.shortageFocusRole === "shortage" && (
+                      (previewId === "inventory" && inventoryNegativeBalance) ||
+                      (previewId === "ledger" && ledgerNegativeBalance)
+                    );
+                    const purchaseNegative = preview.purchase === index && negativeBalance;
                     const classes = [
                       isNumber ? "number" : "",
                       isStatus ? "status" : "",
@@ -4952,6 +4931,8 @@
                       editableLedgerPrice ? "procurement-price-cell" : "",
                       calculatedQuantity ? "inventory-total-cell" : "",
                       ledgerNegative ? "ledger-negative-cell" : "",
+                      purchaseNegative ? "purchase-negative-cell" : "",
+                      orderedContext ? "ordered-context-cell" : "",
                       numericQuantityValue === 0 ? "quantity-zero" : "",
                       numericQuantityValue < 0 ? "quantity-negative" : "",
                       numericQuantityValue > 0 ? "quantity-positive" : "",
@@ -4964,28 +4945,22 @@
                     const noticeText = preview.noticeText === index;
                     const acknowledgement = editable && preview.acknowledgement === index && sourceRow?.noticeId;
                     const editableOrder = editable && previewId === "allocations" && column.orderField && sourceRow?.sourceRowNumber;
-                    const inventoryNegativeBalance = typeof sourceRow?.displayRemainingQuantity === "number" && sourceRow.displayRemainingQuantity < 0;
-                    const ledgerNegativeBalance = typeof sourceRow?.remainingQuantity === "number" && sourceRow.remainingQuantity < 0;
-                    const negativeBalance = sourceRow?.shortageFocusRole === "shortage" && (
-                      (previewId === "inventory" && inventoryNegativeBalance) ||
-                      (previewId === "ledger" && ledgerNegativeBalance)
-                    );
                     const content = editablePurchase
                       ? `<input class="purchase-input" data-purchase-code="${escapeHtml(sourceRow?.productCode || "")}"
                           data-grid-column="${escapeHtml(column.key)}" data-negative-balance="${negativeBalance ? "true" : "false"}"
                           autocomplete="off"
                           tabindex="${negativeBalance || previewId === "allocations" ? "0" : "-1"}"
-                          value="${escapeHtml(value)}" aria-label="${escapeHtml(sourceRow?.productCode || "")} 구매처">`
+                          value="${escapeHtml(displayValue)}" aria-label="${escapeHtml(sourceRow?.productCode || "")} 구매처">`
                       : editableLedgerPrice
                         ? `<input class="inventory-input ledger-price-input" data-inventory-code="${escapeHtml(sourceRow?.productCode || "")}"
                             data-inventory-column="${escapeHtml(column.inventoryColumnKey)}" data-grid-column="${escapeHtml(column.key)}"
-                            inputmode="decimal" autocomplete="off" value="${escapeHtml(value)}"
+                            inputmode="decimal" autocomplete="off" value="${escapeHtml(displayValue)}"
                             aria-label="${escapeHtml(sourceRow?.productCode || "")} 발주 단가">`
                       : editableOrder
                         ? `<input class="order-edit-input" data-order-row="${escapeHtml(sourceRow.sourceRowNumber)}"
                             data-order-field="${escapeHtml(column.orderField)}"
                             ${["quantity", "unitPrice"].includes(column.orderField) ? 'inputmode="decimal"' : ""}
-                            autocomplete="off" value="${escapeHtml(value)}"
+                            autocomplete="off" value="${escapeHtml(displayValue)}"
                             aria-label="${escapeHtml(sourceRow?.productCode || "")} ${escapeHtml(column.header)} 수정">`
                       : noticeLink
                         ? `<button class="notice-link" type="button" data-open-notice-id="${escapeHtml(sourceRow.noticeId)}">${escapeHtml(value)}</button>`
@@ -4995,15 +4970,15 @@
                             ? `<input class="inventory-input" data-inventory-code="${escapeHtml(sourceRow?.productCode || "")}"
                                 data-inventory-column="${escapeHtml(column.key)}" data-grid-column="${escapeHtml(column.key)}"
                                 inputmode="decimal" autocomplete="off" data-negative-value="${negativeNumericValue ? "true" : "false"}"
-                                style="${warehouseFill ? `background-color:${warehouseFill}` : ""}" value="${escapeHtml(value)}"
+                                style="${warehouseFill ? `background-color:${warehouseFill}` : ""}" value="${escapeHtml(displayValue)}"
                                 aria-label="${escapeHtml(sourceRow?.productCode || "")} ${escapeHtml(column.header)} 재고수량">`
                             : column.role === "rowState"
-                              ? renderRowStateBadges(shortageCategory ? shortageRowState : value)
+                              ? ""
                             : column.role === "orderInformation"
-                              ? renderOrderInformationBadges(value)
+                              ? renderOrderInformationBadges(displayValue)
                             : orderQuantity || calculatedQuantity
-                              ? `<span class="inventory-total-frame" data-negative-value="${negativeNumericValue ? "true" : "false"}">${escapeHtml(isNumber ? formatNumber(value) : value)}</span>`
-                              : `<span class="${noticeText ? "notice-text" : ""}">${escapeHtml(isNumber ? formatNumber(value) : value)}</span>`;
+                              ? `<span class="inventory-total-frame" data-negative-value="${negativeNumericValue ? "true" : "false"}">${escapeHtml(displayValue === "" ? "" : isNumber ? formatNumber(displayValue) : displayValue)}</span>`
+                              : `<span class="${noticeText ? "notice-text" : ""}">${escapeHtml(displayValue === "" ? "" : isNumber ? formatNumber(displayValue) : displayValue)}</span>`;
                     return `<td class="${classes}" style="${rowFill ? `background:#${rowFill.replace(/^#/, "")}` : ""}"
                       ${isStatus ? `data-tone="${statusTone(value)}"` : ""}>${content}</td>`;
                   }).join("")}
@@ -5067,14 +5042,16 @@
           : null;
         const filterCount = Object.values(state.columnFilters[state.activePreview] || {})
           .filter(columnFilterIsActive).length;
-        const viewNotes = [];
+        const viewNotes = [preview.label];
         if (sortColumn) viewNotes.push(`${sortColumn.header}${activeSort.direction === "asc" ? "↑" : "↓"}`);
         else if (preview.sortByProductCode) viewNotes.push("품목코드↑");
         if (filterCount > 0) viewNotes.push(`열조건 ${filterCount}`);
         if (shortageEligible && state.shortageFocus) {
-          viewNotes.push(state.activePreview === "allocations" ? "발주 확인상품" : "주문상품·대체상품 모아보기");
+          viewNotes.push(state.activePreview === "allocations" ? "발주 확인상품" : "재고부족 · 주문상품·대체상품 모아보기");
         }
-        elements.previewCount.textContent = `${formatNumber(pairs.length)}/${formatNumber(preview.rows.length)}행${viewNotes.length ? ` · ${viewNotes.join(" · ")}` : ""}`;
+        elements.systemViewNote.textContent = viewNotes.join(" · ");
+        elements.systemViewNote.classList.toggle("hidden", viewNotes.length === 0);
+        elements.previewCount.textContent = `${formatNumber(pairs.length)}/${formatNumber(preview.rows.length)}행`;
 
         elements.specFilterGroup.disabled = state.activePreview === "validation" || state.activePreview === "notices";
         renderColumnVisibilityMenu(preview);
