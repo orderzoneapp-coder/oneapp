@@ -710,7 +710,7 @@
     .shortage-focus-button:hover:not(:disabled) { border-color: #fb7185; background: #ffe4e6; }
     .shortage-focus-button.active { border-color: #be123c; color: #fff; background: #be123c; }
     .shortage-focus-button:disabled { opacity: .45; cursor: default; }
-    /* ORDER Q v1.38: purchase-action shortage focus includes missing inventory */
+    /* ORDER Q v1.39: multi-view layouts and category-group shortage rails */
     .header-output-button { border-color: #99f6e4; color: #0f766e; background: #f0fdfa; }
     .header-output-button:hover:not(:disabled) { background: #ccfbf1; }
     .results-panel .table-wrap { max-height: calc(100vh - 200px); }
@@ -1021,6 +1021,12 @@
     tr.shortage-main-row td:first-child { border-left: 3px solid #e11d48; }
     tr.shortage-candidate-row td { color: #475569; background: #f1f5f9 !important; }
     tr.shortage-candidate-row td:first-child { border-left: 3px solid #64748b; }
+    tr.shortage-category-row td:first-child {
+      box-shadow: inset 4px 0 0 var(--shortage-category-color, #64748b);
+    }
+    tr.shortage-category-start td {
+      border-top: 3px solid var(--shortage-category-color, #64748b) !important;
+    }
     tr.inventory-missing-row td:first-child { border-left: 3px solid #d97706; }
     tr.no-order-row td { color: #64748b; }
     .empty-table-cell { padding: 34px 18px !important; color: var(--slate-500); text-align: center; }
@@ -1494,7 +1500,7 @@
       .recovery-record-item { grid-template-columns: auto 1fr; }
       .recovery-record-status { grid-column: 2; }
     }
-    /* ORDER Q v1.38: uploader cards double as result tabs */
+    /* ORDER Q v1.39: uploader cards double as result tabs */
     .input-panel { grid-template-columns: minmax(0, 1fr) 330px; gap: 12px; }
     .upload-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
     .source-selector {
@@ -1652,7 +1658,7 @@
       <div class="brand-mark">ONEAPP</div>
       <div class="brand-divider" aria-hidden="true"></div>
       <span class="brand-logo-frame" aria-hidden="true"><img class="brand-logo" src="../assets/order-q-logo.png" alt=""></span>
-      <span class="brand-badge">v1.38</span>
+      <span class="brand-badge">v1.39</span>
       <span class="brand-product">출고관리</span>
     </div>
     <div class="header-actions">
@@ -1805,13 +1811,13 @@
           </div>
           <button class="table-tool-button" id="columnWidthSaveButton" type="button">열폭 저장</button>
           <button class="table-tool-button" id="columnWidthResetButton" type="button">열폭 초기화</button>
-          <div class="view-preset-tools" aria-label="주문현황 저장 양식">
-            <select class="view-preset-select" id="viewPresetSelect" aria-label="저장한 주문현황 양식 선택" disabled>
+          <div class="view-preset-tools" aria-label="현재 화면 저장 양식">
+            <select class="view-preset-select" id="viewPresetSelect" aria-label="저장한 현재 화면 양식 선택" disabled>
               <option value="">저장 양식</option>
             </select>
             <button class="table-tool-button" id="viewPresetSaveButton" type="button" disabled>양식저장</button>
             <button class="table-tool-button view-preset-delete-button" id="viewPresetDeleteButton" type="button"
-              aria-label="선택한 주문현황 양식 삭제" disabled>×</button>
+              aria-label="선택한 현재 화면 양식 삭제" disabled>×</button>
           </div>
         </div>
         <div class="preview-count" id="previewCount"></div>
@@ -1846,7 +1852,7 @@
     </section>
 
     <footer class="page-footer">
-      <span>ORDER Q v1.38 · 출고관리 · workspace shipping-workspace/v2 · cloud plan v1</span>
+      <span>ORDER Q v1.39 · 출고관리 · workspace shipping-workspace/v2 · cloud plan v1</span>
       <a href="../SHIPPING_MANAGEMENT_GUIDANCE.md">개발·운영 기준 보기</a>
     </footer>
   </main>
@@ -1940,8 +1946,8 @@
   </div>
   <dialog class="view-preset-dialog" id="viewPresetDialog" aria-labelledby="viewPresetDialogTitle">
     <form method="dialog">
-      <h3 id="viewPresetDialogTitle">주문현황 양식 저장</h3>
-      <p>현재 검색어·재고부족·규격·담당자·열 필터·정렬 조건을 이 브라우저에 저장합니다.</p>
+      <h3 id="viewPresetDialogTitle">현재 화면 양식 저장</h3>
+      <p>현재 검색·필터·정렬과 표시 열·열폭·열 위치를 한 양식으로 이 브라우저에 저장합니다.</p>
       <label>양식 이름
         <input id="viewPresetNameInput" type="text" maxlength="40" autocomplete="off" placeholder="예: 오늘 부족상품">
       </label>
@@ -1989,8 +1995,18 @@
       const EXCEL_MAPPING_SCHEMA = "orderops-excel-mappings/v1";
       const PURCHASE_HISTORY_KEY = "oneapp.orderops.purchase-history.v1";
       const ORDER_VIEW_PRESETS_KEY = "oneapp.orderops.order-view-presets.v1";
-      const ORDER_VIEW_PRESETS_SCHEMA = "orderops-order-view-presets/v1";
+      const ORDER_VIEW_PRESETS_SCHEMA = "orderops-order-view-presets/v2";
+      const LEGACY_ORDER_VIEW_PRESETS_SCHEMA = "orderops-order-view-presets/v1";
       const ORDER_VIEW_PRESET_LIMIT = 20;
+      const VIEW_PRESET_TABS = new Set(["allocations", "ledger", "inventory", "purchases", "sales"]);
+      const VIEW_PRESET_LABELS = Object.freeze({
+        allocations: "주문현황", ledger: "수불현황", inventory: "창고재고",
+        purchases: "구매현황", sales: "판매현황",
+      });
+      const SHORTAGE_CATEGORY_COLORS = Object.freeze([
+        "#e11d48", "#ea580c", "#ca8a04", "#16a34a",
+        "#0d9488", "#0284c7", "#4f46e5", "#9333ea",
+      ]);
       const FILE_KINDS = Object.freeze(["orders", "inventory", "purchases", "sales"]);
       const FILE_KIND_LABELS = Object.freeze({ orders: "주문현황", inventory: "창고재고", purchases: "구매현황", sales: "판매현황" });
       const FILE_KIND_PREVIEWS = Object.freeze({ orders: "allocations", inventory: "inventory", purchases: "purchases", sales: "sales" });
@@ -2129,6 +2145,7 @@
         viewPresetSaveButton: document.getElementById("viewPresetSaveButton"),
         viewPresetDeleteButton: document.getElementById("viewPresetDeleteButton"),
         viewPresetDialog: document.getElementById("viewPresetDialog"),
+        viewPresetDialogTitle: document.getElementById("viewPresetDialogTitle"),
         viewPresetNameInput: document.getElementById("viewPresetNameInput"),
         printButton: document.getElementById("printButton"),
         printArea: document.getElementById("printArea"),
@@ -3218,11 +3235,28 @@
         return filters;
       }
 
+      function normalizeStoredColumnWidths(value) {
+        if (!isPlainRecord(value)) return Object.create(null);
+        const widths = Object.create(null);
+        Object.entries(value).forEach(([columnKey, width]) => {
+          if (!isSafeColumnKey(columnKey) || !Number.isFinite(width)) return;
+          if (width < TABLE_WIDTH_MIN || width > TABLE_WIDTH_MAX) return;
+          widths[columnKey] = Math.round(width);
+        });
+        return widths;
+      }
+
+      function normalizeStoredColumnOrder(value) {
+        if (!Array.isArray(value)) return [];
+        return [...new Set(value.filter(isSafeColumnKey))];
+      }
+
       function normalizeOrderViewPreset(value) {
         if (!isPlainRecord(value) || !isPlainRecord(value.view)) return null;
         const id = String(value.id || "").trim();
         const name = String(value.name || "").trim().slice(0, 40);
         if (!/^[a-z0-9._:-]{1,80}$/i.test(id) || !name) return null;
+        const previewId = VIEW_PRESET_TABS.has(value.previewId) ? value.previewId : "allocations";
         const sortSetting = isPlainRecord(value.view.sortSetting) &&
           isSafeColumnKey(value.view.sortSetting.columnKey) &&
           ["asc", "desc"].includes(value.view.sortSetting.direction)
@@ -3231,6 +3265,7 @@
         return {
           id,
           name,
+          previewId,
           updatedAt: String(value.updatedAt || ""),
           view: {
             searchQuery: String(value.view.searchQuery || "").slice(0, 300),
@@ -3240,6 +3275,11 @@
             managerFilters: normalizeStringList(value.view.managerFilters, 100),
             sortSetting,
             columnFilters: normalizeStoredColumnFilters(value.view.columnFilters),
+            layoutCaptured: value.view.layoutCaptured === true ||
+              isPlainRecord(value.view.columnWidths) || Array.isArray(value.view.columnOrder),
+            columnWidths: normalizeStoredColumnWidths(value.view.columnWidths),
+            columnOrder: normalizeStoredColumnOrder(value.view.columnOrder),
+            hiddenColumns: normalizeStoredColumnOrder(value.view.hiddenColumns),
           },
         };
       }
@@ -3247,7 +3287,9 @@
       function loadOrderViewPresets() {
         try {
           const parsed = JSON.parse(localStorage.getItem(ORDER_VIEW_PRESETS_KEY) || "null");
-          if (!isPlainRecord(parsed) || parsed.schemaVersion !== ORDER_VIEW_PRESETS_SCHEMA || !Array.isArray(parsed.presets)) {
+          const supportedSchema = parsed?.schemaVersion === ORDER_VIEW_PRESETS_SCHEMA ||
+            parsed?.schemaVersion === LEGACY_ORDER_VIEW_PRESETS_SCHEMA;
+          if (!isPlainRecord(parsed) || !supportedSchema || !Array.isArray(parsed.presets)) {
             return [];
           }
           return parsed.presets.map(normalizeOrderViewPreset).filter(Boolean).slice(0, ORDER_VIEW_PRESET_LIMIT);
@@ -3264,14 +3306,17 @@
       }
 
       function renderOrderViewPresetOptions() {
-        const selectedId = state.orderViewPresets.some((preset) => preset.id === state.selectedOrderViewPresetId)
+        const activePresets = VIEW_PRESET_TABS.has(state.activePreview)
+          ? state.orderViewPresets.filter((preset) => preset.previewId === state.activePreview)
+          : [];
+        const selectedId = activePresets.some((preset) => preset.id === state.selectedOrderViewPresetId)
           ? state.selectedOrderViewPresetId : "";
-        elements.viewPresetSelect.innerHTML = `<option value="">저장 양식</option>${state.orderViewPresets.map((preset) =>
+        elements.viewPresetSelect.innerHTML = `<option value="">저장 양식</option>${activePresets.map((preset) =>
           `<option value="${escapeHtml(preset.id)}">${escapeHtml(preset.name)}</option>`,
         ).join("")}`;
         elements.viewPresetSelect.value = selectedId;
-        elements.viewPresetSelect.disabled = !state.workspace || state.orderViewPresets.length === 0;
-        elements.viewPresetSaveButton.disabled = !state.workspace || state.activePreview !== "allocations";
+        elements.viewPresetSelect.disabled = !state.workspace || activePresets.length === 0;
+        elements.viewPresetSaveButton.disabled = !state.workspace || !VIEW_PRESET_TABS.has(state.activePreview);
         elements.viewPresetDeleteButton.disabled = !state.workspace || !selectedId;
       }
 
@@ -3282,7 +3327,13 @@
       }
 
       function captureOrderViewPreset() {
-        const sortSetting = state.sortSettings.allocations;
+        const previewId = state.activePreview;
+        const preview = getPreviewDefinitions(state.workspace)[previewId];
+        const sortSetting = state.sortSettings[previewId];
+        const columnWidths = Object.create(null);
+        preview.columns.forEach((column) => {
+          columnWidths[column.key] = currentColumnWidth(previewId, column);
+        });
         return {
           searchQuery: state.searchQuery,
           shortageFocus: state.shortageFocus,
@@ -3290,7 +3341,11 @@
           warehouseFilters: [...state.warehouseFilters],
           managerFilters: [...state.managerFilters],
           sortSetting: sortSetting ? { ...sortSetting } : null,
-          columnFilters: normalizeStoredColumnFilters(state.columnFilters.allocations),
+          columnFilters: normalizeStoredColumnFilters(state.columnFilters[previewId]),
+          layoutCaptured: true,
+          columnWidths,
+          columnOrder: orderedColumns(preview, previewId).map((column) => column.key),
+          hiddenColumns: [...hiddenColumnSet(previewId)],
         };
       }
 
@@ -3298,28 +3353,53 @@
         const preset = state.orderViewPresets.find((candidate) => candidate.id === presetId);
         if (!preset || !state.workspace) return;
         const definitions = getPreviewDefinitions(state.workspace);
-        const allocationPreview = definitions.allocations;
-        const allocationKeys = new Set(allocationPreview.columns.map((column) => column.key));
+        const previewId = preset.previewId;
+        const preview = definitions[previewId];
+        if (!VIEW_PRESET_TABS.has(previewId) || !preview) return;
+        const previewKeys = new Set(preview.columns.map((column) => column.key));
         const warehouseKeys = new Set((definitions.inventory?.columns || [])
           .filter((column) => column.role === "warehouseQuantity").map((column) => column.key));
-        const managerNames = new Set(allocationPreview.sourceRows.map((row) => String(row?.manager || "").trim()).filter(Boolean));
+        const managerNames = new Set((definitions.allocations?.sourceRows || [])
+          .map((row) => String(row?.manager || "").trim()).filter(Boolean));
         state.searchQuery = preset.view.searchQuery;
-        state.shortageFocus = preset.view.shortageFocus;
+        state.shortageFocus = ["allocations", "ledger", "inventory"].includes(previewId) && preset.view.shortageFocus;
         state.specificationFilters = new Set(preset.view.specificationFilters);
         state.warehouseFilters = new Set(preset.view.warehouseFilters.filter((key) => warehouseKeys.has(key)));
         state.managerFilters = new Set(preset.view.managerFilters.filter((name) => managerNames.has(name)));
-        if (preset.view.sortSetting && allocationKeys.has(preset.view.sortSetting.columnKey)) {
-          state.sortSettings.allocations = { ...preset.view.sortSetting };
+        if (preset.view.sortSetting && previewKeys.has(preset.view.sortSetting.columnKey)) {
+          state.sortSettings[previewId] = { ...preset.view.sortSetting };
         } else {
-          delete state.sortSettings.allocations;
+          delete state.sortSettings[previewId];
         }
-        const allocationFilters = Object.create(null);
+        const previewFilters = Object.create(null);
         Object.entries(preset.view.columnFilters).forEach(([columnKey, setting]) => {
-          if (allocationKeys.has(columnKey)) allocationFilters[columnKey] = { ...setting };
+          if (previewKeys.has(columnKey)) previewFilters[columnKey] = { ...setting };
         });
-        if (Object.keys(allocationFilters).length > 0) state.columnFilters.allocations = allocationFilters;
-        else delete state.columnFilters.allocations;
-        state.activePreview = "allocations";
+        if (Object.keys(previewFilters).length > 0) state.columnFilters[previewId] = previewFilters;
+        else delete state.columnFilters[previewId];
+
+        if (preset.view.layoutCaptured) {
+          const widths = Object.create(null);
+          Object.entries(preset.view.columnWidths).forEach(([columnKey, width]) => {
+            if (previewKeys.has(columnKey)) widths[columnKey] = width;
+          });
+          state.columnWidthSettings.tabs[previewId] = { ...widths };
+          state.columnWidthDrafts[previewId] = Object.assign(Object.create(null), widths);
+          state.columnWidthDirtyTabs.delete(previewId);
+          saveColumnWidthSettings(state.columnWidthSettings);
+
+          const columnOrder = preset.view.columnOrder.filter((columnKey) => previewKeys.has(columnKey));
+          if (columnOrder.length > 0) state.columnOrderSettings.tabs[previewId] = columnOrder;
+          else delete state.columnOrderSettings.tabs[previewId];
+          saveColumnOrderSettings();
+
+          const hiddenColumns = preset.view.hiddenColumns.filter((columnKey) => previewKeys.has(columnKey));
+          if (hiddenColumns.length > 0) state.hiddenColumnSettings.tabs[previewId] = hiddenColumns;
+          else delete state.hiddenColumnSettings.tabs[previewId];
+          saveHiddenColumnSettings();
+        }
+
+        state.activePreview = previewId;
         state.selectedOrderViewPresetId = preset.id;
         elements.tableSearchInput.value = state.searchQuery;
         elements.specFilterGroup.querySelectorAll("input[type='checkbox']").forEach((input) => {
@@ -3331,11 +3411,14 @@
       }
 
       function openOrderViewPresetDialog() {
-        if (!state.workspace || state.activePreview !== "allocations") {
-          showToast("주문현황에서 필터 조건을 만든 뒤 양식을 저장하세요.", true);
+        if (!state.workspace || !VIEW_PRESET_TABS.has(state.activePreview)) {
+          showToast("결과 화면을 연 뒤 양식을 저장하세요.", true);
           return;
         }
-        const selected = state.orderViewPresets.find((preset) => preset.id === state.selectedOrderViewPresetId);
+        const selected = state.orderViewPresets.find((preset) =>
+          preset.id === state.selectedOrderViewPresetId && preset.previewId === state.activePreview);
+        elements.viewPresetDialogTitle.textContent = `${VIEW_PRESET_LABELS[state.activePreview]} 양식 저장`;
+        elements.viewPresetNameInput.placeholder = `예: ${VIEW_PRESET_LABELS[state.activePreview]} 기본 양식`;
         elements.viewPresetNameInput.value = selected?.name || "";
         elements.viewPresetDialog.showModal();
         window.setTimeout(() => elements.viewPresetNameInput.focus(), 0);
@@ -3348,12 +3431,13 @@
           showToast("양식 이름을 입력하세요.", true);
           return;
         }
-        const existing = state.orderViewPresets.find((preset) =>
-          preset.id === state.selectedOrderViewPresetId || preset.name === name);
-        const id = existing?.id || `view-${Date.now().toString(36)}`;
+        const existing = state.orderViewPresets.find((preset) => preset.previewId === state.activePreview &&
+          (preset.id === state.selectedOrderViewPresetId || preset.name === name));
+        const id = existing?.id || `${state.activePreview}-${Date.now().toString(36)}`;
         const next = normalizeOrderViewPreset({
           id,
           name,
+          previewId: state.activePreview,
           updatedAt: new Date().toISOString(),
           view: captureOrderViewPreset(),
         });
@@ -3643,6 +3727,7 @@
           Math.min(TABLE_WIDTH_MAX, Math.round(width)),
         );
         state.columnWidthDirtyTabs.add(tabId);
+        markOrderViewPresetCustom();
         updateColumnWidthToolbar();
       }
 
@@ -3701,6 +3786,7 @@
         state.columnWidthDrafts[state.activePreview] = Object.create(null);
         state.columnWidthDirtyTabs.delete(state.activePreview);
         saveColumnWidthSettings(state.columnWidthSettings);
+        markOrderViewPresetCustom();
         renderPreview();
         showToast("현재 탭의 열폭을 기본값으로 초기화했습니다.");
       }
@@ -3782,12 +3868,14 @@
         if (!COLUMN_ORDER_TABS.has(tabId)) return;
         state.columnOrderSettings.tabs[tabId] = [...new Set(orderedKeys.filter(isSafeColumnKey))];
         saveColumnOrderSettings();
+        markOrderViewPresetCustom();
       }
 
       function resetActiveColumnOrder() {
         if (!COLUMN_ORDER_TABS.has(state.activePreview)) return;
         delete state.columnOrderSettings.tabs[state.activePreview];
         saveColumnOrderSettings();
+        markOrderViewPresetCustom();
         renderPreview();
         showToast("현재 탭의 열 순서를 기본값으로 초기화했습니다.");
       }
@@ -3807,12 +3895,14 @@
         else hidden.add(columnKey);
         state.hiddenColumnSettings.tabs[tabId] = [...hidden];
         saveHiddenColumnSettings();
+        markOrderViewPresetCustom();
       }
 
       function showAllColumns() {
         if (!TABLE_WIDTH_TABS.has(state.activePreview)) return;
         delete state.hiddenColumnSettings.tabs[state.activePreview];
         saveHiddenColumnSettings();
+        markOrderViewPresetCustom();
         renderPreview();
         showToast("현재 탭의 모든 열을 표시합니다.");
       }
@@ -3996,10 +4086,18 @@
         return normalized.length >= 6 ? normalized.slice(0, 6) : "";
       }
 
+      function shortageCategoryColor(categoryCode) {
+        const hash = String(categoryCode || "").split("").reduce(
+          (total, character) => ((total * 31) + character.charCodeAt(0)) >>> 0,
+          0,
+        );
+        return SHORTAGE_CATEGORY_COLORS[hash % SHORTAGE_CATEGORY_COLORS.length];
+      }
+
       function inventoryRowState(row, shortageRole) {
         if (shortageRole === "candidate") return "대체상품";
-        if (row?.inventoryMissing || row?.salesOnly) return "주문상품 · 재고정보 없음";
-        if (shortageRole === "shortage") return "주문상품 · 부족상품";
+        if (row?.inventoryMissing || row?.salesOnly) return "재고정보 없음";
+        if (shortageRole === "shortage") return "부족상품";
         const orderQuantity = Number(row?.orderQuantity || 0);
         const stockTotal = Number(row?.stockTotal || 0);
         if (orderQuantity === 0 && stockTotal === 0) return "주문 없음 · 재고 0";
@@ -4532,7 +4630,7 @@
       }
 
       function comparePreviewPairs(previewId, preview, left, right) {
-        if (state.shortageFocus && ["ledger", "inventory"].includes(previewId)) {
+        if (state.shortageFocus && ["allocations", "ledger", "inventory"].includes(previewId)) {
           const categoryCompared = String(left.sourceRow?.shortageCategory || "")
             .localeCompare(String(right.sourceRow?.shortageCategory || ""), "ko-KR", {
               sensitivity: "base",
@@ -4783,19 +4881,29 @@
         }).join("");
 
         const body = pairs.length
-          ? pairs.map(({ row, sourceRow }) => {
+          ? pairs.map(({ row, sourceRow }, pairIndex) => {
               const focusCandidate = state.shortageFocus && sourceRow?.shortageFocusRole === "candidate";
               const referenceRow = sourceRow?.rowType === "reference" || focusCandidate;
               const rowFill = previewRowFill(previewId, sourceRow);
+              const shortageCategory = state.shortageFocus && ["allocations", "ledger", "inventory"].includes(previewId)
+                ? String(sourceRow?.shortageCategory || "") : "";
+              const previousShortageCategory = pairIndex > 0
+                ? String(pairs[pairIndex - 1]?.sourceRow?.shortageCategory || "") : "";
+              const shortageCategoryStart = Boolean(shortageCategory && shortageCategory !== previousShortageCategory);
+              const shortageCategoryStyle = shortageCategory
+                ? `--shortage-category-color:${shortageCategoryColor(shortageCategory)}` : "";
               const rowClasses = [
                 referenceRow ? "reference-row" : "",
                 sourceRow?.shortageFocusRole === "shortage" ? "shortage-main-row" : "",
                 focusCandidate ? "shortage-candidate-row" : "",
+                shortageCategory ? "shortage-category-row" : "",
+                shortageCategoryStart ? "shortage-category-start" : "",
                 sourceRow?.inventoryMissing || sourceRow?.salesOnly ? "inventory-missing-row" : "",
                 Number(sourceRow?.orderQuantity || 0) === 0 ? "no-order-row" : "",
               ].filter(Boolean).join(" ");
               return `
-                <tr class="${rowClasses}" data-product-code="${escapeHtml(sourceRow?.productCode || "")}" ${sourceRow?.noticeId ? `data-notice-id="${escapeHtml(sourceRow.noticeId)}"` : ""}>
+                <tr class="${rowClasses}" data-product-code="${escapeHtml(sourceRow?.productCode || "")}" data-shortage-category="${escapeHtml(shortageCategory)}"
+                  style="${shortageCategoryStyle}" ${sourceRow?.noticeId ? `data-notice-id="${escapeHtml(sourceRow.noticeId)}"` : ""}>
                   ${visibleEntries.map(({ column, index }) => {
                     const value = row[index];
                     const isNumber = Boolean(column.numeric) && value !== "";
@@ -5998,6 +6106,8 @@
         if (!state.workspace) return false;
         const definitions = getPreviewDefinitions(state.workspace);
         if (!definitions[previewId]) return false;
+        const selectedPreset = state.orderViewPresets.find((preset) => preset.id === state.selectedOrderViewPresetId);
+        if (selectedPreset?.previewId !== previewId) state.selectedOrderViewPresetId = "";
         state.activePreview = previewId;
         renderPreview();
         scheduleLocalSave();
@@ -6074,7 +6184,7 @@
         }
         if (event.target.closest("[data-apply-column-values]")) {
           applyColumnTextFilter();
-          if (context.previewId === "allocations") markOrderViewPresetCustom();
+          if (VIEW_PRESET_TABS.has(context.previewId)) markOrderViewPresetCustom();
           closeColumnSortMenu();
           renderPreview();
           return;
@@ -6084,7 +6194,7 @@
           const direction = sortButton.dataset.sortDirection;
           if (direction === "default") delete state.sortSettings[context.previewId];
           else state.sortSettings[context.previewId] = { columnKey: context.columnKey, direction };
-          if (context.previewId === "allocations") markOrderViewPresetCustom();
+          if (VIEW_PRESET_TABS.has(context.previewId)) markOrderViewPresetCustom();
           closeColumnSortMenu();
           renderPreview();
           return;
@@ -6097,7 +6207,7 @@
             delete state.columnFilters[context.previewId][context.columnKey];
             if (Object.keys(state.columnFilters[context.previewId]).length === 0) delete state.columnFilters[context.previewId];
           }
-          if (context.previewId === "allocations") markOrderViewPresetCustom();
+          if (VIEW_PRESET_TABS.has(context.previewId)) markOrderViewPresetCustom();
           closeColumnSortMenu();
           renderPreview();
         }
@@ -6125,7 +6235,7 @@
         if (!conditionInput) return;
         setColumnCondition(context.previewId, context.columnKey,
           conditionInput.dataset.columnCondition, conditionInput.checked);
-        if (context.previewId === "allocations") markOrderViewPresetCustom();
+        if (VIEW_PRESET_TABS.has(context.previewId)) markOrderViewPresetCustom();
         renderPreview();
         refreshColumnSortMenu();
       });
