@@ -434,6 +434,26 @@ function orderQApplySimple(ss, change) {
     throw new Error('ORDERQ_ORDER_EVENT_ORPHAN');
   }
   const sheet = orderQEnsureSheet(ss, spec.key);
+  if (String(change.entityType || '') === 'ORDER_EVENT' && /^SALES_TRANSFER_(ALLOCATED|REVERSED)$/.test(String(payload.eventType || ''))) {
+    const existing = orderQReadPayloadById(sheet, id);
+    if (existing) {
+      const signature = event => JSON.stringify({
+        orderId: String(event.orderId || ''),
+        eventType: String(event.eventType || ''),
+        detail: {
+          transferBusinessKey: String(event.detail && event.detail.transferBusinessKey || ''),
+          allocationEventId: String(event.detail && event.detail.allocationEventId || ''),
+          idempotencyKey: String(event.detail && event.detail.idempotencyKey || ''),
+          orderItemId: String(event.detail && event.detail.orderItemId || ''),
+          salesDocumentId: String(event.detail && event.detail.salesDocumentId || ''),
+          salesLineId: String(event.detail && event.detail.salesLineId || ''),
+          transferredQty: Number(event.detail && event.detail.transferredQty || 0)
+        }
+      });
+      if (signature(existing) !== signature(payload)) throw new Error('ORDERQ_TRANSFER_EVENT_IMMUTABLE');
+      return { status: 'duplicate', serverRevision: Number(change.revision || 0) };
+    }
+  }
   orderQWriteRow(sheet, id, spec.row(payload));
   return { status: 'applied', serverRevision: Number(change.revision || 0) };
 }
@@ -481,6 +501,10 @@ function orderQSyncPush(ss, payload) {
         : orderQApplySimple(ss, change);
       if (applied.status === 'conflict') {
         results.push(applied);
+        return;
+      }
+      if (applied.status === 'duplicate') {
+        results.push({ queueId, status: 'duplicate', serverRevision: applied.serverRevision });
         return;
       }
       if (applied.status === 'source_duplicate') {

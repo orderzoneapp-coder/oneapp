@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="ko" translate="no">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="google" content="notranslate">
+  <title>ONEAPP ORDER Q vNext · 출고 운영</title>
+  <link rel="stylesheet" href="./orderq.css?v=0.7.0">
+</head>
+<body class="operations-page">
+  <div class="shell">
+    <header class="topbar">
+      <div class="brand">
+        <strong>ONEAPP</strong>
+        <span class="logo-frame" aria-hidden="true"><img src="../assets/order-q-logo.png" alt=""></span>
+        <span class="badge">vNext 0.7.0</span>
+        <span>ORDER Q · 출고 운영</span>
+      </div>
+      <div class="top-actions">
+        <a class="btn dark" href="./">주문현황</a>
+        <a class="btn dark" href="./collector.html">이력수집</a>
+        <a class="btn dark" href="./cloud.html">클라우드</a>
+        <a class="btn primary" href="./input.html">+ 주문서 입력</a>
+      </div>
+    </header>
+    <main class="panel">
+      <p class="notice">전표 조건을 먼저 적용한 뒤 상품코드별 주문·판매이관·미출고를 집계합니다. 전표 수정은 주문번호를 눌러 주문현황에서 진행합니다.</p>
+      <div id="message" class="message page-message"></div>
+      <div class="toolbar document-filters operations-filters">
+        <button class="btn" id="refreshBtn" type="button">새로고침</button>
+        <button class="btn" id="syncBtn" type="button">클라우드 동기화</button>
+        <label>주문상태
+          <select id="orderStatusFilter">
+            <option value="">전체</option><option value="ORDER">주문</option><option value="PAID">입금</option>
+            <option value="PREPARING">준비</option><option value="SHIPPING">배송</option><option value="COMPLETED">완료</option>
+            <option value="FULL_CANCEL">전체취소</option><option value="PARTIAL_CANCEL">부분취소</option>
+          </select>
+        </label>
+        <label>관리자상태
+          <select id="adminStatusFilter"><option value="">전체</option><option value="UNCHECKED">미확인</option><option value="CHECKED">확인</option><option value="HOLD">보류</option></select>
+        </label>
+        <label>이관상태
+          <select id="transferStatusFilter"><option value="">전체</option><option value="UNTRANSFERRED">미이관</option><option value="PARTIAL">부분이관</option><option value="TRANSFERRED">이관완료</option><option value="OVER_TRANSFERRED">초과이관</option></select>
+        </label>
+        <label>업무상태
+          <select id="operationStatusFilter"><option value="">전체</option><option value="ACTIVE">운영중</option><option value="CLOSED">종결</option></select>
+        </label>
+        <label>담당자
+          <select id="assigneeFilter"><option value="">전체</option></select>
+        </label>
+        <button class="btn" id="myOrdersBtn" type="button">내 담당</button>
+        <input class="history-search" id="productSearch" type="search" placeholder="품목코드·품명 검색">
+        <span class="spacer"></span>
+        <span class="status" id="summaryText">불러오는 중...</span>
+      </div>
+      <div class="operations-alerts" id="alertSummary"></div>
+      <div class="table-wrap operations-table-wrap">
+        <table class="operations-table">
+          <thead><tr>
+            <th>품목코드</th><th>품명</th><th>규격</th><th>단위</th>
+            <th>유효주문</th><th>이관</th><th>미출고</th><th>재고</th><th>재고-미출고</th>
+            <th>이관상태</th><th>담당자</th><th>주문번호</th>
+          </tr></thead>
+          <tbody id="operationRows"></tbody>
+        </table>
+      </div>
+    </main>
+  </div>
+  <script type="module">
+    import { getOperationsSnapshot } from './order-operations-repository.js?v=0.7.0';
+    import { TRANSFER_STATUS_LABEL } from './order-fulfillment-lifecycle.js?v=0.7.0';
+    import { syncNow } from './orderq-sync-engine.js?v=0.7.0';
+    import { getCloudUrl } from './orderq-cloud-adapter.js?v=0.7.0';
+
+    const CURRENT_ASSIGNEE_KEY = 'oneapp.orderq.current-assignee.v1';
+    const rows = document.getElementById('operationRows');
+    const summary = document.getElementById('summaryText');
+    const alertSummary = document.getElementById('alertSummary');
+    const message = document.getElementById('message');
+    const filters = {
+      orderStatus: document.getElementById('orderStatusFilter'),
+      adminStatus: document.getElementById('adminStatusFilter'),
+      transferStatus: document.getElementById('transferStatusFilter'),
+      operationStatus: document.getElementById('operationStatusFilter'),
+      assignee: document.getElementById('assigneeFilter'),
+      search: document.getElementById('productSearch')
+    };
+    let latestSnapshot = null;
+
+    const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+    const qty = value => Number(value || 0).toLocaleString('ko-KR', { maximumFractionDigits: 3 });
+
+    function showMessage(text, type = 'info') {
+      message.textContent = text;
+      message.className = `message page-message show ${type}`;
+    }
+
+    function currentFilters() {
+      return {
+        orderStatus: filters.orderStatus.value,
+        adminStatus: filters.adminStatus.value,
+        transferStatus: filters.transferStatus.value,
+        operationStatus: filters.operationStatus.value,
+        assigneeId: filters.assignee.value
+      };
+    }
+
+    function populateAssignees(bundles) {
+      const selected = filters.assignee.value;
+      const assignees = new Map();
+      bundles.forEach(({ order }) => {
+        if (order.assigneeId && order.assigneeName) assignees.set(order.assigneeId, order.assigneeName);
+      });
+      filters.assignee.innerHTML = '<option value="">전체</option>' + [...assignees]
+        .sort((a, b) => a[1].localeCompare(b[1], 'ko'))
+        .map(([id, name]) => `<option value="${esc(id)}">${esc(name)}</option>`).join('');
+      if (assignees.has(selected)) filters.assignee.value = selected;
+    }
+
+    function transferBadge(status) {
+      return `<span class="document-badge transfer-${esc(String(status).toLowerCase())}">${esc(TRANSFER_STATUS_LABEL[status] || status)}</span>`;
+    }
+
+    function rowHtml(row) {
+      const shortage = row.availableAfterOrders < 0;
+      const over = row.hasOverTransfer;
+      const refs = row.orderRefs.map(ref => `<a class="order-link" href="./?focus=${encodeURIComponent(ref.orderId)}" title="${esc(ref.assigneeName || '담당자 없음')} · 미출고 ${qty(ref.remainingQty)}">${esc(ref.orderNo)}(${qty(ref.quantity)})</a>`).join(' ');
+      return `<tr class="${over ? 'over-transfer-row' : shortage ? 'shortage-row' : ''}">
+        <td>${esc(row.productCode)}</td><td>${esc(row.productName)}</td><td>${esc(row.specification)}</td><td class="center">${esc(row.unit)}</td>
+        <td class="num">${qty(row.orderQty)}</td><td class="num">${qty(row.transferredQty)}</td><td class="num strong-number">${qty(row.remainingQty)}</td>
+        <td class="num">${qty(row.inventoryQty)}</td><td class="num ${shortage ? 'negative-number' : ''}">${qty(row.availableAfterOrders)}</td>
+        <td class="center">${transferBadge(row.transferStatus)}</td><td>${row.assignees.map(esc).join(', ') || '-'}</td><td class="order-reference-list">${refs}</td>
+      </tr>`;
+    }
+
+    async function render() {
+      latestSnapshot = await getOperationsSnapshot(currentFilters());
+      populateAssignees(latestSnapshot.bundles);
+      if (filters.assignee.value !== currentFilters().assigneeId) latestSnapshot = await getOperationsSnapshot(currentFilters());
+      const query = filters.search.value.trim().toLowerCase();
+      const visible = latestSnapshot.rows.filter(row => !query || [row.productCode, row.productName, row.specification].some(value => String(value || '').toLowerCase().includes(query)));
+      const unchecked = latestSnapshot.filteredBundles.filter(bundle => bundle.order.adminStatus === 'UNCHECKED').length;
+      const holds = latestSnapshot.filteredBundles.filter(bundle => bundle.order.adminStatus === 'HOLD').length;
+      const over = visible.filter(row => row.hasOverTransfer).length;
+      const shortages = visible.filter(row => row.availableAfterOrders < 0).length;
+      summary.textContent = `전표 ${latestSnapshot.filteredBundles.length}/${latestSnapshot.bundles.length}건 · 상품 ${visible.length}개`;
+      alertSummary.innerHTML = `<span>미확인 <b>${unchecked}</b></span><span>보류 <b>${holds}</b></span><span class="${over ? 'danger' : ''}">초과이관 <b>${over}</b></span><span class="${shortages ? 'warn' : ''}">재고부족 <b>${shortages}</b></span>`;
+      rows.innerHTML = visible.length ? visible.map(rowHtml).join('') : '<tr><td colspan="12" class="empty">조건에 맞는 운영 상품이 없습니다.</td></tr>';
+    }
+
+    Object.values(filters).forEach(control => control.addEventListener(control === filters.search ? 'input' : 'change', () => {
+      if (control === filters.assignee && control.value) {
+        const option = control.selectedOptions[0];
+        localStorage.setItem(CURRENT_ASSIGNEE_KEY, JSON.stringify({ assigneeId: control.value, assigneeName: option?.textContent || '' }));
+      }
+      render().catch(error => showMessage(error.message || String(error), 'error'));
+    }));
+    document.getElementById('myOrdersBtn').addEventListener('click', () => {
+      let mine = null;
+      try { mine = JSON.parse(localStorage.getItem(CURRENT_ASSIGNEE_KEY) || 'null'); } catch (_) {}
+      if (!mine?.assigneeId || ![...filters.assignee.options].some(option => option.value === mine.assigneeId)) {
+        return showMessage('담당자 필터에서 본인을 한 번 선택하면 내 담당으로 기억합니다.', 'warn');
+      }
+      filters.assignee.value = mine.assigneeId;
+      render().catch(error => showMessage(error.message || String(error), 'error'));
+    });
+    document.getElementById('refreshBtn').addEventListener('click', () => render().catch(error => showMessage(error.message || String(error), 'error')));
+    document.getElementById('syncBtn').addEventListener('click', async event => {
+      if (!getCloudUrl()) return showMessage('클라우드 URL을 먼저 설정하세요.', 'warn');
+      event.currentTarget.disabled = true;
+      try { await syncNow(); await render(); showMessage('클라우드 동기화를 완료했습니다.'); }
+      catch (error) { showMessage(`동기화 실패: ${error.message || error}`, 'error'); }
+      finally { event.currentTarget.disabled = false; }
+    });
+
+    render().catch(error => { summary.textContent = `오류: ${error.message}`; showMessage(error.message || String(error), 'error'); });
+  </script>
+</body>
+</html>

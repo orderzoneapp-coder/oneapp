@@ -13,7 +13,7 @@
       <div class="brand">
         <strong>ONEAPP</strong>
         <span class="logo-frame" aria-hidden="true"><img src="../assets/order-q-logo.png" alt=""></span>
-        <span class="badge">vNext 0.6.1</span>
+        <span class="badge">vNext 0.7.0</span>
         <span id="pageMode">주문서 입력</span>
       </div>
       <div class="top-system" aria-live="polite">
@@ -28,7 +28,7 @@
         <a class="btn dark" href="./collector.html">이력수집</a>
         <a class="btn dark" href="./cloud.html">클라우드</a>
         <a class="btn dark" href="./parser.html">ORDER IN</a>
-        <a class="btn dark" href="../orderops/list.html">ORDER Q 운영</a>
+        <a class="btn dark" href="./operations.html">ORDER Q 운영</a>
         <a class="btn dark" href="./index.html">주문현황</a>
         <button class="btn primary" id="saveTopBtn" type="button">저장</button>
       </div>
@@ -88,8 +88,8 @@
           </select>
         </div>
         <div class="field form-span-2">
-          <label for="opsStatus">ORDER Q 상태</label>
-          <select class="control" id="opsStatus">
+          <label for="opsStatus">ORDER Q 상태 <span class="field-help">판매이관 결과로 자동 계산</span></label>
+          <select class="control" id="opsStatus" disabled>
             <option value="ACTIVE">처리중</option>
             <option value="CLOSED">종결</option>
           </select>
@@ -212,17 +212,17 @@
     import {
       createOrder, updateOrder, cancelOrder, getOrder, listOrders, subscribeOrderChanges,
       OrderRevisionConflictError, MATCH_STATUS
-    } from './order-intake-engine.js?v=0.6.1';
+    } from './order-intake-engine.js?v=0.7.0';
     import {
       syncBeforeOrderMutation, syncAfterLocalMutation, getSyncState,
       CloudOrderConflictError
-    } from './orderq-sync-engine.js?v=0.6.1';
-    import { loadProductCatalog, searchProductCatalog } from './product-master-search.js?v=0.6.1';
-    import { loadWarehouseCatalog, matchWarehouseInput, warehouseDisplayName } from './warehouse-master.js?v=0.6.1';
+    } from './orderq-sync-engine.js?v=0.7.0';
+    import { loadProductCatalog, searchProductCatalog } from './product-master-search.js?v=0.7.0';
+    import { loadWarehouseCatalog, matchWarehouseInput, warehouseDisplayName } from './warehouse-master.js?v=0.7.0';
     import {
       calculateLineTotal, calculateVatAmount, compareManualRows, cycleManualPriceOption, numberOrNull, shiftIsoDate
-    } from './manual-order-grid.js?v=0.6.1';
-    import { INPUT_CHANNEL_LABEL } from './order-document-model.js?v=0.6.1';
+    } from './manual-order-grid.js?v=0.7.0';
+    import { INPUT_CHANNEL_LABEL } from './order-document-model.js?v=0.7.0';
 
     const params = new URLSearchParams(location.search);
     const editingOrderId = params.get('orderId');

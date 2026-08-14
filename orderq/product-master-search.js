@@ -1,4 +1,4 @@
-import { STORE, getAll, normalizeText } from './orderq-db.js?v=0.6.1';
+import { STORE, getAll, normalizeText } from './orderq-db.js?v=0.7.0';
 
 const COMMON_MASTER_DB = 'MerchOpsDB';
 const COMMON_MASTER_STORE = 'master_products';
