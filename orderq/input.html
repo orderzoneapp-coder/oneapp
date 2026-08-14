@@ -13,7 +13,7 @@
       <div class="brand">
         <strong>ONEAPP</strong>
         <span class="logo-frame" aria-hidden="true"><img src="../assets/order-q-logo.png" alt=""></span>
-        <span class="badge">vNext 0.4.6</span>
+        <span class="badge">vNext 0.4.7</span>
         <span id="pageMode">수기 주문</span>
       </div>
       <div class="top-system" aria-live="polite">
@@ -121,7 +121,7 @@
               <th data-column="boxQuantity" title="한 박스에 들어있는 기본 수량">박스당수량</th>
               <th data-column="unit" title="상품 마스터 기준 재고·출고 처리 단위">단위</th>
               <th>수량</th>
-              <th>단가</th>
+              <th title="단가 셀의 ▲▼ 또는 키보드 위·아래 화살표로 마스터 판매단가를 전환합니다.">단가</th>
               <th>합계</th>
               <th data-column="vat" title="합계의 10% 제안값이며 직접 수정할 수 있습니다." hidden>부가세</th>
               <th>상품별 메모(적요)</th>
@@ -159,7 +159,8 @@
     } from './orderq-sync-engine.js';
     import { loadProductCatalog, searchProductCatalog } from './product-master-search.js';
     import {
-      calculateLineTotal, calculateVatAmount, compareManualRows, numberOrNull
+      calculateLineTotal, calculateVatAmount, compareManualRows, cycleManualPriceOption,
+      manualPriceTypeLabel, numberOrNull
     } from './manual-order-grid.js';
 
     const params = new URLSearchParams(location.search);
@@ -244,6 +245,8 @@
       tr.dataset.matchSource = tr.dataset.productId ? (item.matchSource || 'SAVED_MASTER') : 'MANUAL_UNMATCHED';
       tr.dataset.rawText = item.rawText || item.itemName || '';
       tr.dataset.inputSequence = String(++rowInputSequence);
+      tr.dataset.priceOptions = JSON.stringify(Array.isArray(item.priceOptions) ? item.priceOptions : []);
+      tr.dataset.priceType = String(item.priceType || '');
       tr.innerHTML = `
         <td class="center"><input type="checkbox" data-role="select"></td>
         <td><input data-field="itemCode" value="" placeholder="코드 검색" autocomplete="off"></td>
@@ -252,7 +255,14 @@
         <td data-column="boxQuantity"><input class="num" data-field="boxQuantity" type="number" step="any" value=""></td>
         <td data-column="unit"><input data-field="finalUnit" value=""></td>
         <td><input class="num" data-field="quantity" type="number" step="any" value=""></td>
-        <td><input class="num" data-field="price" type="number" step="any" value=""></td>
+        <td class="price-cell"><div class="price-picker">
+          <span class="price-kind" data-role="priceType">단가선택</span>
+          <input class="num" data-field="price" type="number" step="any" value="" aria-label="단가">
+          <span class="price-stepper">
+            <button type="button" data-price-step="1" aria-label="다음 단가" title="다음 단가">▲</button>
+            <button type="button" data-price-step="-1" aria-label="이전 단가" title="이전 단가">▼</button>
+          </span>
+        </div></td>
         <td><input class="num amount-input" data-field="supplyAmount" type="number" step="any" value="" aria-label="합계"></td>
         <td data-column="vat" hidden><input class="num amount-input" data-field="vatAmount" type="number" step="any" value="" aria-label="부가세"></td>
         <td><input data-field="memo" value="" placeholder="이 상품의 적요"></td>
@@ -265,6 +275,7 @@
       set('quantity', item.finalQuantity ?? item.rawQuantity ?? item.quantity);
       set('finalUnit', item.finalUnit || item.rawUnit);
       set('price', item.price);
+      refreshPriceType(tr);
       const automaticTotal = calculateLineTotal(
         item.finalQuantity ?? item.rawQuantity ?? item.quantity,
         item.price
@@ -302,6 +313,60 @@
       badge.textContent = matched ? '매칭완료' : '매칭실패';
       badge.className = `row-status ${matched ? 'matched' : 'failed'}`;
       refreshSummary();
+    }
+
+    function getRowPriceOptions(row) {
+      try {
+        const options = JSON.parse(row?.dataset.priceOptions || '[]');
+        return Array.isArray(options) ? options : [];
+      } catch (_) {
+        return [];
+      }
+    }
+
+    function refreshPriceType(row) {
+      if (!row) return;
+      const options = getRowPriceOptions(row);
+      const priceInput = row.querySelector('[data-field="price"]');
+      const label = row.querySelector('[data-role="priceType"]');
+      const hasPrice = Boolean(priceInput?.value.trim());
+      label.textContent = manualPriceTypeLabel(row.dataset.priceType, options, hasPrice);
+      label.title = options.length
+        ? options.map(option => `${option.label} ${Number(option.value).toLocaleString('ko-KR')}`).join(' · ')
+        : '상품 마스터에 선택 가능한 판매단가가 없습니다.';
+    }
+
+    function setRowPriceOptions(row, options = []) {
+      if (!row) return;
+      const normalized = options.map(option => {
+        const value = numberOrNull(option?.value);
+        return value === null || !option?.key ? null : {
+          key: String(option.key),
+          label: String(option.label || option.key),
+          value
+        };
+      }).filter(Boolean);
+      row.dataset.priceOptions = JSON.stringify(normalized);
+      const price = numberOrNull(row.querySelector('[data-field="price"]')?.value);
+      if (!row.dataset.priceType && price !== null) {
+        row.dataset.priceType = normalized.find(option => option.value === price)?.key || 'MANUAL';
+      }
+      refreshPriceType(row);
+    }
+
+    function applyRowPriceOption(row, option) {
+      if (!row || !option) return;
+      row.querySelector('[data-field="price"]').value = option.value;
+      row.dataset.priceType = option.key;
+      refreshPriceType(row);
+      refreshRowAmounts(row);
+    }
+
+    function cycleRowPrice(row, direction) {
+      const option = cycleManualPriceOption(getRowPriceOptions(row), row?.dataset.priceType, direction);
+      if (!option) return false;
+      applyRowPriceOption(row, option);
+      return true;
     }
 
     function refreshRowAmounts(row) {
@@ -366,6 +431,7 @@
           finalUnit,
           boxQuantity: get('boxQuantity'),
           price,
+          priceType: row.dataset.priceType || (price !== '' ? 'MANUAL' : ''),
           supplyAmount: get('supplyAmount'),
           vatAmount: get('vatAmount'),
           memo: get('memo'),
@@ -471,7 +537,17 @@
       row.querySelector('[data-field="specification"]').value = product.specification || '';
       row.querySelector('[data-field="boxQuantity"]').value = product.boxQuantity ?? '';
       row.querySelector('[data-field="finalUnit"]').value = product.finalUnit || '';
-      if (product.outPrice != null) row.querySelector('[data-field="price"]').value = product.outPrice;
+      setRowPriceOptions(row, product.priceOptions || []);
+      const defaultPrice = product.priceOptions?.find(option => option.key === 'outPrice');
+      if (defaultPrice) {
+        row.querySelector('[data-field="price"]').value = defaultPrice.value;
+        row.dataset.priceType = defaultPrice.key;
+      } else if (row.querySelector('[data-field="price"]').value.trim()) {
+        row.dataset.priceType = 'MANUAL';
+      } else {
+        row.dataset.priceType = '';
+      }
+      refreshPriceType(row);
       closeSuggestions();
       refreshRowStatus(row);
       refreshRowAmounts(row);
@@ -483,7 +559,23 @@
       row.dataset.productId = '';
       row.dataset.matchSource = 'MANUAL_UNMATCHED';
       if (sourceInput?.dataset.field === 'itemName') row.dataset.rawText = sourceInput.value.trim();
+      if (sourceInput?.dataset.field === 'itemCode') {
+        row.dataset.priceOptions = '[]';
+        row.dataset.priceType = row.querySelector('[data-field="price"]').value.trim() ? 'MANUAL' : '';
+        refreshPriceType(row);
+      }
       refreshRowStatus(row);
+    }
+
+    function hydrateRowPriceOptions() {
+      [...itemRows.querySelectorAll('tr')].forEach(row => {
+        const productId = row.dataset.productId;
+        const itemCode = row.querySelector('[data-field="itemCode"]')?.value.trim();
+        const product = productCatalog.find(candidate => (productId && candidate.productId === productId)
+          || (itemCode && candidate.itemCode === itemCode));
+        if (product) setRowPriceOptions(row, product.priceOptions || []);
+        else refreshPriceType(row);
+      });
     }
 
     function isColumnVisible(column) {
@@ -671,7 +763,12 @@
           searchTimer = setTimeout(() => showSuggestions(event.target), 100);
         }
       }
-      else if (row && (event.target.dataset.field === 'quantity' || event.target.dataset.field === 'price')) {
+      else if (row && event.target.dataset.field === 'quantity') {
+        refreshRowAmounts(row);
+      }
+      else if (row && event.target.dataset.field === 'price') {
+        row.dataset.priceType = event.target.value.trim() ? 'MANUAL' : '';
+        refreshPriceType(row);
         refreshRowAmounts(row);
       }
       else if (row && event.target.dataset.field === 'supplyAmount') {
@@ -724,6 +821,11 @@
           return;
         }
       }
+      if (field === 'price' && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
+        event.preventDefault();
+        cycleRowPrice(row, event.key === 'ArrowUp' ? 1 : -1);
+        return;
+      }
       if (event.key !== 'Enter') return;
       if (field === 'quantity') {
         event.preventDefault();
@@ -741,6 +843,14 @@
       if (!button || !activeSearchInput) return;
       event.preventDefault();
       applyProduct(activeSearchInput, suggestions._products?.[Number(button.dataset.suggestionIndex)]);
+    });
+    itemRows.addEventListener('click', event => {
+      const button = event.target.closest('[data-price-step]');
+      if (!button) return;
+      event.preventDefault();
+      const row = button.closest('tr');
+      cycleRowPrice(row, Number(button.dataset.priceStep));
+      focusRowField(row, 'price');
     });
     document.addEventListener('pointerdown', event => {
       if (!suggestions.hidden && !suggestions.contains(event.target) && event.target !== activeSearchInput) closeSuggestions();
@@ -836,6 +946,7 @@
 
     Promise.all([initializeProductCatalog(), loadEditingOrder()])
       .then(() => {
+        hydrateRowPriceOptions();
         updateColumnVisibility();
         if (!editingOrderId) window.setTimeout(() => customerNameInput.focus(), 0);
       })

@@ -119,12 +119,23 @@ td input:focus, td select:focus { outline: none; background: #f0fdfa; border-col
 .manual-order-page #orderTable .col-box-quantity { width: 76px; }
 .manual-order-page #orderTable .col-unit { width: 68px; }
 .manual-order-page #orderTable .col-quantity { width: 62px; }
-.manual-order-page #orderTable .col-price { width: 78px; }
+.manual-order-page #orderTable .col-price { width: 102px; }
 .manual-order-page #orderTable .col-total { width: 88px; }
 .manual-order-page #orderTable .col-vat { width: 74px; }
 .manual-order-page #orderTable .col-memo { width: 135px; }
 .manual-order-page #orderTable .col-match { width: 82px; }
 .manual-order-page #orderTable .amount-input { background: #f8fafc; font-weight: 800; }
+.manual-order-page #orderTable .price-cell { padding: 2px 3px; }
+.manual-order-page #orderTable .price-picker { display: grid; grid-template-columns: 36px minmax(0, 1fr) 16px; align-items: stretch; min-height: 30px; border-radius: 5px; }
+.manual-order-page #orderTable .price-picker:focus-within { background: #eff6ff; box-shadow: inset 0 0 0 1px #93c5fd; }
+.manual-order-page #orderTable .price-kind { align-self: center; overflow: hidden; padding: 0 2px; color: #1d4ed8; font-size: 9px; font-weight: 900; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
+.manual-order-page #orderTable .price-picker input { min-width: 0; min-height: 30px; padding: 3px 2px; border-radius: 0; appearance: textfield; -moz-appearance: textfield; font-weight: 800; }
+.manual-order-page #orderTable .price-picker input::-webkit-inner-spin-button,
+.manual-order-page #orderTable .price-picker input::-webkit-outer-spin-button { margin: 0; appearance: none; -webkit-appearance: none; }
+.manual-order-page #orderTable .price-stepper { display: grid; grid-template-rows: repeat(2, 15px); align-self: center; overflow: hidden; border: 1px solid #cbd5e1; border-radius: 4px; }
+.manual-order-page #orderTable .price-stepper button { width: 14px; height: 14px; padding: 0; border: 0; background: #f8fafc; color: #334155; font-size: 7px; line-height: 14px; }
+.manual-order-page #orderTable .price-stepper button + button { border-top: 1px solid #cbd5e1; }
+.manual-order-page #orderTable .price-stepper button:hover { background: #dbeafe; color: #1d4ed8; }
 .manual-order-page #orderTable .table-groups th { top: 0; padding-top: 5px; padding-bottom: 5px; border-bottom-width: 2px; font-size: 10px; letter-spacing: .02em; }
 .manual-order-page #orderTable .table-groups .group-product { background: #ecfeff; border-bottom-color: #14b8a6; color: #115e59; }
 .manual-order-page #orderTable .table-groups .group-order { background: #eff6ff; border-bottom-color: #3b82f6; color: #1e40af; }

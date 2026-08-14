@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import {
   mergeProductCatalog,
+  normalizeManualPriceOptions,
   normalizeMasterProduct,
   productCategoryCode,
   searchProductCatalog
@@ -10,6 +11,8 @@ import {
   calculateLineTotal,
   calculateVatAmount,
   compareManualRows,
+  cycleManualPriceOption,
+  manualPriceTypeLabel,
   numberOrNull
 } from '../orderq/manual-order-grid.js';
 
@@ -51,6 +54,26 @@ assert.equal(categoryCatalog[2].outPrice, 0, '출고가 0도 공란과 구분해
 assert.equal(categoryCatalog[3].outPrice, null, '출고가 공란은 임의로 0으로 바꾸지 않는다.');
 assert.equal(normalizeMasterProduct({ itemCode: 'H1', itemName: '이력상품', 출고가: 9999 }, '', 'ORDERQ_HISTORY').outPrice, null,
   'ORDER Q 주문이력의 가격을 공통 마스터 출고가로 오인하지 않는다.');
+const priceOptions = normalizeManualPriceOptions({
+  출고가: 28100,
+  도매A: 27000,
+  도매B: 26000,
+  상장가: '',
+  시중가: 30000,
+  행사가: 0
+});
+assert.deepEqual(priceOptions.map(option => [option.key, option.label, option.value]), [
+  ['outPrice', '출고가', 28100],
+  ['wholesaleA', '도매A', 27000],
+  ['wholesaleB', '도매B', 26000],
+  ['marketPrice', '시중가', 30000],
+  ['promoPrice', '행사가', 0]
+], '공란 단가는 제외하고 명시적 0을 포함한 판매단가 후보를 순서대로 정규화해야 한다.');
+assert.equal(cycleManualPriceOption(priceOptions, 'outPrice', 1).key, 'wholesaleA', '위 화살표는 다음 단가로 이동해야 한다.');
+assert.equal(cycleManualPriceOption(priceOptions, 'outPrice', -1).key, 'promoPrice', '아래 화살표는 이전 단가로 순환해야 한다.');
+assert.equal(cycleManualPriceOption(priceOptions, 'MANUAL', 1).key, 'outPrice', '직접입력에서 위 화살표를 누르면 첫 마스터 단가를 선택해야 한다.');
+assert.equal(manualPriceTypeLabel('wholesaleA', priceOptions, true), '도매A', '선택 단가의 항목명을 표시해야 한다.');
+assert.equal(manualPriceTypeLabel('MANUAL', priceOptions, true), '직접입력', '직접 수정한 단가는 직접입력으로 표시해야 한다.');
 const packedMaster = normalizeMasterProduct({ 품목코드: 'BOX-20', 품목명: '박스상품', 원단위: '20', 단위: 'EA' });
 assert.equal(packedMaster.boxQuantity, 20, '공통 마스터 원단위는 수기주문의 박스당수량으로 읽는다.');
 assert.equal(packedMaster.finalUnit, 'EA', '공통 마스터 단위는 수기주문의 단위로 읽는다.');
@@ -74,7 +97,7 @@ assert.match(input, /loadProductCatalog/);
 assert.match(input, /searchProductCatalog/);
 assert.match(input, /row\.dataset\.productId \? MATCH_STATUS\.MATCHED : MATCH_STATUS\.MATCH_FAILED/);
 assert.match(input, /productId:\s*row\.dataset\.productId \|\| null/);
-assert.match(input, /vNext 0\.4\.6/);
+assert.match(input, /vNext 0\.4\.7/);
 for (const contract of [
   "const MANUAL_DEFAULTS_KEY = 'oneapp.orderq.manual-defaults.v1'",
   "customerNameInput.addEventListener('keydown'",
@@ -83,7 +106,7 @@ for (const contract of [
   "transactionTypeInput.addEventListener('change', saveManualDefaults)",
   "orderDateInput.setSelectionRange(8, 10)",
   "orderDatePicker.showPicker()",
-  "if (product.outPrice != null) row.querySelector('[data-field=\"price\"]').value = product.outPrice",
+  "const defaultPrice = product.priceOptions?.find(option => option.key === 'outPrice')",
   "row.querySelector('[data-field=\"boxQuantity\"]').value = product.boxQuantity ?? ''",
   '전표 메모',
   '상품별 메모(적요)',
@@ -119,11 +142,16 @@ for (const manualEntryContract of [
   "focusRowField(row, 'quantity')",
   "focusRowField(row, 'price')",
   "focusRowField(row, 'memo')",
+  "cycleRowPrice(row, event.key === 'ArrowUp' ? 1 : -1)",
+  'data-price-step="1"',
+  'data-price-step="-1"',
+  "row.dataset.priceType = event.target.value.trim() ? 'MANUAL' : ''",
   'const nextRow = row.nextElementSibling || addRow()',
   "row.dataset.totalManual = event.target.value.trim() ? 'true' : ''",
   'supplyAmount: get(\'supplyAmount\')',
   'vatAmount: get(\'vatAmount\')',
-  'boxQuantity: get(\'boxQuantity\')'
+  'boxQuantity: get(\'boxQuantity\')',
+  "priceType: row.dataset.priceType || (price !== '' ? 'MANUAL' : '')"
 ]) assert.ok(input.includes(manualEntryContract), `수기주문 입력동선 계약 누락: ${manualEntryContract}`);
 assert.doesNotMatch(input, /id="addRowBtn"|id="addRowBottomBtn"/, '수기주문 행추가 버튼은 노출하지 않아야 한다.');
 assert.doesNotMatch(input, /matches\('\[data-field="itemCode"\], \[data-field="itemName"\]'\)/,
@@ -137,6 +165,7 @@ for (const compactWidthContract of [
   '.manual-order-page .shell { width: min(1100px, calc(100% - 28px)); }',
   '.manual-order-page #orderTable { table-layout: fixed; min-width: 1000px; }',
   '.manual-order-page #orderTable .col-select { width: 30px; }',
+  '.manual-order-page #orderTable .col-price { width: 102px; }',
   '.manual-order-page #orderTable .col-total { width: 88px; }',
   '.manual-order-page #orderTable .col-vat { width: 74px; }',
   '.manual-order-page #orderTable .table-groups .group-product',
@@ -151,5 +180,7 @@ assert.match(intake, /boxQuantity: asNumberOrNull\(input\.boxQuantity\)/,
   '박스당수량은 ORDER_ITEM의 별도 숫자 필드로 저장해야 한다.');
 assert.match(intake, /vatAmount: asNumberOrNull\(input\.vatAmount\)/,
   '부가세 수정값은 ORDER_ITEM에 보존해야 한다.');
+assert.match(intake, /priceType: String\(input\.priceType \?\? ''\)\.trim\(\)/,
+  '선택한 단가 항목명은 ORDER_ITEM에 보존해야 한다.');
 
 console.log('PASS: ORDER Q 수기입력 공통 마스터 검색·선택·미매칭 저장 계약');
