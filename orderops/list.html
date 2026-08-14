@@ -1674,7 +1674,7 @@
     .derived-view-label { margin: 5px 5px 5px 0; }
     .integrated-file-button { min-height: 28px; }
     .execution-button { min-height: 54px; }
-    /* ORDER Q v1.50: align System.IO directly under the global header */
+    /* ORDER Q v1.51: align System.IO directly under the global header */
     .page-shell { padding-top: 0; }
     .system-topbar .validation-box { flex: 0 1 auto; min-width: 190px; padding: 2px 8px; border: 0; background: transparent; }
     .system-topbar .validation-box p { margin: 0; white-space: nowrap; font-size: 10px; }
@@ -1756,7 +1756,7 @@
       <div class="brand-mark">ONEAPP</div>
       <div class="brand-divider" aria-hidden="true"></div>
       <span class="brand-logo-frame" aria-hidden="true"><img class="brand-logo" src="../assets/order-q-logo.png" alt=""></span>
-      <span class="brand-badge">v1.50</span>
+      <span class="brand-badge">v1.51</span>
       <span class="brand-product">출고관리</span>
     </div>
     <div class="header-actions">
@@ -1964,7 +1964,7 @@
     </section>
 
     <footer class="page-footer">
-      <span>ORDER Q v1.50 · 출고관리 · workspace shipping-workspace/v2 · cloud plan v1</span>
+      <span>ORDER Q v1.51 · 출고관리 · workspace shipping-workspace/v2 · cloud plan v1</span>
       <a href="../SHIPPING_MANAGEMENT_GUIDANCE.md">개발·운영 기준 보기</a>
     </footer>
   </main>
@@ -5210,8 +5210,6 @@
         const allKeys = context.textOptions.map((option) => option.key);
         const selectedKeys = allKeys.filter((key) => context.textSelection.has(key));
         const next = { ...(state.columnFilters[context.previewId][context.columnKey] || {}) };
-        delete next.excludeBlank;
-        delete next.excludeZero;
         if (selectedKeys.length === allKeys.length) delete next.allowedValues;
         else next.allowedValues = selectedKeys;
         if (columnFilterIsActive(next)) state.columnFilters[context.previewId][context.columnKey] = next;
