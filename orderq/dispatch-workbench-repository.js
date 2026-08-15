@@ -140,7 +140,7 @@ export async function getDispatchProposals({ businessDate = '', dispatchStageCod
   ]);
   const inventoryProjection = calculateInventoryShadowProjection({ snapshots, inventoryLines, movements, reservations, warehouses });
   const plannedOrderIds = new Set(decisions
-    .filter(row => [DISPATCH_STATUS.DRAFT, DISPATCH_STATUS.RELEASED].includes(row.status))
+    .filter(row => [DISPATCH_STATUS.DRAFT, DISPATCH_STATUS.RELEASED, DISPATCH_STATUS.READY_TO_CONFIRM].includes(row.status))
     .flatMap(row => Array.isArray(row.sourceOrderIds) ? row.sourceOrderIds : []));
   return proposeNormalDispatchDrafts({
     orders: orders.filter(row => !plannedOrderIds.has(row.orderId)),
@@ -313,15 +313,16 @@ export async function releaseDispatch(dispatchId, expectedRevision, actor = 'ADM
 
 export async function recallDispatch(dispatchId, expectedRevision, actor = 'ADMIN') {
   const context = requireCapability(actor, CAPABILITY.DISPATCH_RELEASE);
-  const stores = [STORE.DISPATCH_DECISIONS, STORE.DISPATCH_STOCK_ALLOCATIONS, STORE.INVENTORY_RESERVATIONS, STORE.SYNC_QUEUE];
+  const stores = [STORE.DISPATCH_DECISIONS, STORE.DISPATCH_LINES, STORE.DISPATCH_STOCK_ALLOCATIONS, STORE.INVENTORY_RESERVATIONS, STORE.SYNC_QUEUE];
   const db = await openOrderQDb();
   const tx = db.transaction(stores, 'readwrite');
   try {
     const decisionStore = tx.objectStore(STORE.DISPATCH_DECISIONS);
     const decision = await requestToPromise(decisionStore.get(dispatchId));
-    if (!decision || decision.status !== DISPATCH_STATUS.RELEASED) throw new Error('ORDERQ_DISPATCH_RECALL_STATE_INVALID');
+    if (!decision || ![DISPATCH_STATUS.RELEASED, DISPATCH_STATUS.READY_TO_CONFIRM].includes(decision.status)) throw new Error('ORDERQ_DISPATCH_RECALL_STATE_INVALID');
     if (Number(expectedRevision) !== Number(decision.revision || 0)) throw new Error(`ORDERQ_DISPATCH_REVISION_CONFLICT:${decision.revision}`);
-    const [reservations, allocations] = await Promise.all([
+    const [lines, reservations, allocations] = await Promise.all([
+      getAllFrom(tx, STORE.DISPATCH_LINES, 'byDispatchId', dispatchId),
       getAllFrom(tx, STORE.INVENTORY_RESERVATIONS, 'byDispatchId', dispatchId),
       getAllFrom(tx, STORE.DISPATCH_STOCK_ALLOCATIONS, 'byDispatchId', dispatchId)
     ]);
@@ -331,14 +332,27 @@ export async function recallDispatch(dispatchId, expectedRevision, actor = 'ADMI
       tx.objectStore(STORE.INVENTORY_RESERVATIONS).put(nextReservation);
       queueEntity(tx, 'INVENTORY_RESERVATION', row.reservationId, nextReservation, decision.revision + 1, decision.revision);
     });
+    lines.forEach(row => {
+      const nextLine = {
+        ...row, actualQuantity: null, actualBaseQuantity: null, recognizedOrderQuantity: null,
+        executionStatus: 'PLANNED', actualRecordedAt: '', actualRecordedBy: '',
+        updatedAt: timestamp, updatedBy: context.actorId
+      };
+      tx.objectStore(STORE.DISPATCH_LINES).put(nextLine);
+      queueEntity(tx, 'DISPATCH_LINE', row.dispatchLineId, nextLine, decision.revision + 1, decision.revision);
+    });
     allocations.forEach(row => {
-      const nextAllocation = { ...row, status: 'PLANNED', reservationId: '', updatedAt: timestamp, updatedBy: context.actorId };
+      const nextAllocation = {
+        ...row, status: 'PLANNED', reservationId: '', actualBaseQuantity: null,
+        actualRecordedAt: '', actualRecordedBy: '', updatedAt: timestamp, updatedBy: context.actorId
+      };
       tx.objectStore(STORE.DISPATCH_STOCK_ALLOCATIONS).put(nextAllocation);
       queueEntity(tx, 'DISPATCH_STOCK_ALLOCATION', row.allocationId, nextAllocation, decision.revision + 1, decision.revision);
     });
     const next = withHistory({
       ...decision, status: DISPATCH_STATUS.DRAFT, revision: Number(decision.revision || 0) + 1,
       baseRevision: Number(decision.revision || 0), needsActionCodes: [], reservationExpiresAt: '',
+      readyAt: '', actualRecordedAt: '', actualRecordedBy: '',
       recalledAt: timestamp, recalledBy: context.actorId, updatedAt: timestamp, updatedBy: context.actorId
     }, historyEvent('RECALLED', context, { releasedReservationCount: reservations.filter(row => row.status === RESERVATION_STATUS.ACTIVE).length }));
     decisionStore.put(next);
@@ -353,7 +367,7 @@ export async function recallDispatch(dispatchId, expectedRevision, actor = 'ADMI
 
 export async function expireDispatchReservations(asOf = nowIso(), actor = 'ADMIN') {
   const context = requireCapability(actor, CAPABILITY.DISPATCH_RELEASE);
-  const stores = [STORE.DISPATCH_DECISIONS, STORE.DISPATCH_STOCK_ALLOCATIONS, STORE.INVENTORY_RESERVATIONS, STORE.SYNC_QUEUE];
+  const stores = [STORE.DISPATCH_DECISIONS, STORE.DISPATCH_LINES, STORE.DISPATCH_STOCK_ALLOCATIONS, STORE.INVENTORY_RESERVATIONS, STORE.SYNC_QUEUE];
   const db = await openOrderQDb();
   const tx = db.transaction(stores, 'readwrite');
   try {
@@ -365,31 +379,60 @@ export async function expireDispatchReservations(asOf = nowIso(), actor = 'ADMIN
       list.push(row);
       byDispatch.set(row.dispatchId, list);
     });
+    const processedDispatchIds = [];
+    let expiredCount = 0;
     for (const [dispatchId, rows] of byDispatch) {
       const decision = await requestToPromise(tx.objectStore(STORE.DISPATCH_DECISIONS).get(dispatchId));
-      if (!decision || decision.status !== DISPATCH_STATUS.RELEASED) continue;
-      const allocations = await getAllFrom(tx, STORE.DISPATCH_STOCK_ALLOCATIONS, 'byDispatchId', dispatchId);
+      if (!decision || ![DISPATCH_STATUS.RELEASED, DISPATCH_STATUS.READY_TO_CONFIRM].includes(decision.status)) continue;
+      const [lines, allocations, dispatchReservations] = await Promise.all([
+        getAllFrom(tx, STORE.DISPATCH_LINES, 'byDispatchId', dispatchId),
+        getAllFrom(tx, STORE.DISPATCH_STOCK_ALLOCATIONS, 'byDispatchId', dispatchId),
+        getAllFrom(tx, STORE.INVENTORY_RESERVATIONS, 'byDispatchId', dispatchId)
+      ]);
       const expiredIds = new Set(rows.map(row => row.reservationId));
-      rows.forEach(row => {
-        const nextReservation = { ...row, status: RESERVATION_STATUS.EXPIRED, expiredAt: asOf, expiredBy: context.actorId, updatedAt: asOf, updatedBy: context.actorId };
+      dispatchReservations.filter(row => row.status === RESERVATION_STATUS.ACTIVE).forEach(row => {
+        const isExpired = expiredIds.has(row.reservationId);
+        const nextReservation = {
+          ...row, status: isExpired ? RESERVATION_STATUS.EXPIRED : RESERVATION_STATUS.RELEASED,
+          ...(isExpired
+            ? { expiredAt: asOf, expiredBy: context.actorId }
+            : { releasedAt: asOf, releasedBy: context.actorId }),
+          updatedAt: asOf, updatedBy: context.actorId
+        };
         tx.objectStore(STORE.INVENTORY_RESERVATIONS).put(nextReservation);
         queueEntity(tx, 'INVENTORY_RESERVATION', row.reservationId, nextReservation, decision.revision + 1, decision.revision);
       });
-      allocations.filter(row => expiredIds.has(row.reservationId)).forEach(row => {
-        const nextAllocation = { ...row, status: 'PLANNED', reservationId: '', updatedAt: asOf, updatedBy: context.actorId };
+      lines.forEach(row => {
+        const nextLine = {
+          ...row, actualQuantity: null, actualBaseQuantity: null, recognizedOrderQuantity: null,
+          executionStatus: 'PLANNED', actualRecordedAt: '', actualRecordedBy: '',
+          updatedAt: asOf, updatedBy: context.actorId
+        };
+        tx.objectStore(STORE.DISPATCH_LINES).put(nextLine);
+        queueEntity(tx, 'DISPATCH_LINE', row.dispatchLineId, nextLine, decision.revision + 1, decision.revision);
+      });
+      allocations.forEach(row => {
+        const nextAllocation = {
+          ...row, status: 'PLANNED', reservationId: '', actualBaseQuantity: null,
+          actualRecordedAt: '', actualRecordedBy: '', updatedAt: asOf, updatedBy: context.actorId
+        };
         tx.objectStore(STORE.DISPATCH_STOCK_ALLOCATIONS).put(nextAllocation);
         queueEntity(tx, 'DISPATCH_STOCK_ALLOCATION', row.allocationId, nextAllocation, decision.revision + 1, decision.revision);
       });
       const next = withHistory({
-        ...decision, revision: Number(decision.revision || 0) + 1, baseRevision: Number(decision.revision || 0),
+        ...decision, status: DISPATCH_STATUS.DRAFT,
+        revision: Number(decision.revision || 0) + 1, baseRevision: Number(decision.revision || 0),
         needsActionCodes: [NEEDS_ACTION_CODE.RESERVATION_EXPIRED], reservationExpiresAt: '',
+        readyAt: '', actualRecordedAt: '', actualRecordedBy: '',
         updatedAt: asOf, updatedBy: context.actorId
       }, historyEvent('RESERVATION_EXPIRED', context, { reservationIds: [...expiredIds] }));
       tx.objectStore(STORE.DISPATCH_DECISIONS).put(next);
       queueEntity(tx, 'DISPATCH_DECISION', dispatchId, next, next.revision, decision.revision);
+      processedDispatchIds.push(dispatchId);
+      expiredCount += rows.length;
     }
     await transactionDone(tx);
-    return { expiredCount: expired.length, dispatchIds: [...byDispatch.keys()] };
+    return { expiredCount, dispatchIds: processedDispatchIds };
   } catch (error) {
     try { tx.abort(); } catch {}
     throw error;

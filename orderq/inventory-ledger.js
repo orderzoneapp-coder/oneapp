@@ -165,8 +165,13 @@ export function validateInventoryReversal(original, reversal) {
   if (normalized.productId !== text(original.productId) || normalized.warehouseId !== text(original.warehouseId)) {
     throw new Error('ORDERQ_REVERSAL_INVENTORY_KEY_MISMATCH');
   }
-  if (normalized.signedBaseQuantity !== -Number(original.signedBaseQuantity)) {
+  const originalQuantity = Number(original.signedBaseQuantity);
+  const reversalQuantity = Number(normalized.signedBaseQuantity);
+  if (!originalQuantity || !reversalQuantity || Math.sign(reversalQuantity) === Math.sign(originalQuantity)) {
     throw new Error('ORDERQ_REVERSAL_QUANTITY_MUST_BE_OPPOSITE');
+  }
+  if (Math.abs(reversalQuantity) > Math.abs(originalQuantity) + 1e-9) {
+    throw new Error('ORDERQ_REVERSAL_QUANTITY_EXCEEDS_ORIGINAL');
   }
   return normalized;
 }

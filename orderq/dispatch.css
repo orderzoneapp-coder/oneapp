@@ -51,6 +51,8 @@
 .dq-table input[type=number] { width:86px; }
 .allocation-row td { background:#fafbfe; color:#536078; }
 .allocation-indent { padding-left:22px !important; }
+.confirm-field { display:inline-flex; align-items:center; gap:5px; margin-top:5px; color:#0f766e; font-size:12px; font-weight:700; }
+.confirm-field input { width:86px; border-color:#5eead4; background:#f0fdfa; }
 .history-strip { margin-top:12px; padding:9px; border:1px solid var(--dq-border); border-radius:6px; background:#fafbfe; color:#596579; font-size:11px; }
 .worker-layout { display:grid; grid-template-columns:minmax(0,0.9fr) minmax(0,1.1fr); gap:10px; padding-top:10px; }
 .worker-panel { min-width:0; background:#fff; border:1px solid var(--dq-border); border-radius:8px; overflow:hidden; }

@@ -1,0 +1,459 @@
+<!doctype html>
+<html lang="ko">
+<meta charset="utf-8">
+<title>ORDER Q M4 Dispatch Confirmation Browser Test</title>
+<body>
+  <h1>ORDER Q M4 Dispatch Confirmation Browser Test</h1>
+  <pre id="result">RUNNING</pre>
+  <script type="module">
+    import { DB_NAME, STORE, closeOrderQDb, openOrderQDb, requestToPromise, transactionDone } from '../orderq/orderq-db.js?v=0.8.0';
+    import { DISPATCH_CONFIRMATION_STEP, buildDispatchConfirmationKey, buildDispatchReversalKey } from '../orderq/dispatch-confirmation.js?v=0.8.0';
+    import { confirmDispatch, confirmDispatchBatch, recordDispatchActual, reverseDispatch } from '../orderq/dispatch-confirmation-repository.js?v=0.8.0';
+    import { expireDispatchReservations, getDispatchProposals, loadDispatchAggregate, recallDispatch, recordDispatchWorkFact, releaseDispatch, saveDispatchDraft } from '../orderq/dispatch-workbench-repository.js?v=0.8.0';
+    import { getInventoryLedgerSequence, getInventoryShadowProjection } from '../orderq/inventory-ledger-repository.js?v=0.8.0';
+
+    const output = document.querySelector('#result');
+    const assert = (condition, message) => { if (!condition) throw new Error(message); };
+    const delay = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
+    const deleteDatabase = () => new Promise((resolve, reject) => {
+      const request = indexedDB.deleteDatabase(DB_NAME);
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+      request.onblocked = () => reject(new Error('test database delete blocked'));
+    });
+    const readAll = async storeName => {
+      const db = await openOrderQDb();
+      const tx = db.transaction(storeName, 'readonly');
+      const rows = await requestToPromise(tx.objectStore(storeName).getAll());
+      await transactionDone(tx);
+      return rows;
+    };
+    const counts = async () => Object.fromEntries(await Promise.all([
+      STORE.SALES_DOCUMENTS, STORE.SALES_LINES, STORE.INVENTORY_MOVEMENTS, STORE.ORDER_EVENTS,
+      STORE.DISPATCH_RECONCILIATIONS, STORE.SYNC_QUEUE
+    ].map(async name => [name, (await readAll(name)).length])));
+    const waitUntil = async (predicate, message, attempts = 50) => {
+      for (let index = 0; index < attempts; index++) {
+        if (await predicate()) return;
+        await delay(100);
+      }
+      throw new Error(message);
+    };
+
+    async function seed() {
+      const db = await openOrderQDb();
+      const stores = [STORE.CUSTOMERS, STORE.PRODUCTS, STORE.WAREHOUSES, STORE.ORDERS, STORE.ORDER_ITEMS, STORE.INVENTORY_SNAPSHOTS, STORE.INVENTORY_LINES];
+      const tx = db.transaction(stores, 'readwrite');
+      tx.objectStore(STORE.CUSTOMERS).put({ customerId: 'C-1', customerName: '테스트 고객', normalizedName: '테스트고객', status: 'ACTIVE' });
+      tx.objectStore(STORE.PRODUCTS).put({ productId: 'P-10', itemCode: '10', itemName: '테스트 상품', normalizedName: '테스트상품', status: 'ACTIVE' });
+      for (const [warehouseId, warehouseCode, quantity] of [['W-01', '01', 4], ['W-02', '02', 3]]) {
+        tx.objectStore(STORE.WAREHOUSES).put({
+          warehouseId, warehouseCode, warehouseName: `${warehouseCode}창고`, normalizedName: `${warehouseCode}창고`,
+          countsInOnHand: true, countsInAvailable: true, status: 'ACTIVE'
+        });
+        tx.objectStore(STORE.INVENTORY_SNAPSHOTS).put({
+          inventorySnapshotId: `IS-${warehouseCode}`, importBatchId: 'B-M4', basisDate: '2026-08-15', warehouseId,
+          snapshotLastSequence: 0, status: 'ACTIVE', createdAt: '2026-08-15T00:00:00.000Z'
+        });
+        tx.objectStore(STORE.INVENTORY_LINES).put({
+          inventoryLineId: `IL-${warehouseCode}`, inventorySnapshotId: `IS-${warehouseCode}`, importBatchId: 'B-M4',
+          productId: 'P-10', productCode: '10', warehouseId, inventoryQuantity: quantity, status: 'ACTIVE'
+        });
+      }
+      for (const [orderId, orderItemId, quantity, price, vatAmount] of [
+        ['O-1', 'OI-1', 10, 1000, 1000],
+        ['O-2', 'OI-2', 4, 1000, 400],
+        ['O-3', 'OI-3', 4, 1000, 400],
+        ['O-4', 'OI-4', 2, 1000, 200],
+        ['O-5', 'OI-5', 3, 2 / 3, 2]
+      ]) {
+        tx.objectStore(STORE.ORDERS).put({
+          orderId, orderNo: `20260815-${orderId.slice(-1).padStart(3, '0')}`, customerId: 'C-1', customerName: '테스트 고객',
+          orderDate: '2026-08-15', orderStatus: 'ORDER', adminStatus: 'CHECKED', opsStatus: 'ACTIVE', revision: 1
+        });
+        tx.objectStore(STORE.ORDER_ITEMS).put({
+          orderItemId, orderId, productId: 'P-10', itemCode: '10', itemName: '테스트 상품',
+          finalQuantity: quantity, finalUnit: 'EA', price, vatAmount, matchStatus: 'MATCHED'
+        });
+      }
+      await transactionDone(tx);
+    }
+
+    async function createReleased({ dispatchId, orderId, orderItemId, quantity, allocations, reservationMinutes = 60 }) {
+      const draft = await saveDispatchDraft({
+        decision: { dispatchId, customerId: 'C-1', customerName: '테스트 고객', businessDate: '2026-08-15', status: 'DRAFT' },
+        lines: [{
+          dispatchLineId: `DL-${dispatchId}`, orderId, orderItemId,
+          requestedProductId: 'P-10', requestedProductCode: '10', requestedProductName: '테스트 상품',
+          actualProductId: 'P-10', actualProductCode: '10', actualProductName: '테스트 상품',
+          fulfillmentType: 'NORMAL', plannedActualQuantity: quantity, plannedBaseQuantity: quantity,
+          actualUnit: 'EA', measurementRequired: false
+        }],
+        allocations: allocations.map(([allocationId, warehouseId, plannedBaseQuantity]) => ({
+          allocationId, dispatchLineId: `DL-${dispatchId}`, warehouseId, plannedBaseQuantity
+        })),
+        expectedRevision: 0
+      }, 'ADMIN');
+      return releaseDispatch(dispatchId, draft.decision.revision, 'ADMIN', { reservationMinutes });
+    }
+
+    async function run() {
+      closeOrderQDb();
+      await deleteDatabase();
+      await openOrderQDb();
+      localStorage.clear();
+      await seed();
+
+      const released = await createReleased({
+        dispatchId: 'D-1', orderId: 'O-1', orderItemId: 'OI-1', quantity: 10,
+        allocations: [['DA-1', 'W-01', 4], ['DA-2', 'W-02', 6]]
+      });
+      const work = await recordDispatchWorkFact({
+        dispatchId: 'D-1', dispatchLineId: 'DL-D-1', expectedRevision: released.decision.revision,
+        workerReportedProductId: 'P-10', workerReportedQuantity: 8,
+        workerExceptionCode: 'QUANTITY_SHORT', workerExceptionMemo: '2개 부분출고'
+      }, 'ADMIN');
+      const releasedCounts = await counts();
+      const releasedCommand = {
+        dispatchId: 'D-1', expectedRevision: work.decision.revision,
+        idempotencyKey: buildDispatchConfirmationKey('D-1', work.decision.revision)
+      };
+      let releasedConfirmError = '';
+      try { await confirmDispatch(releasedCommand, 'ADMIN'); } catch (error) { releasedConfirmError = error.message; }
+      assert(releasedConfirmError.includes('CONFIRM_STATE_INVALID'), 'RELEASED without saved actuals was confirmable');
+      const releasedBatch = await confirmDispatchBatch([releasedCommand], 'ADMIN');
+      assert(releasedBatch.succeeded === 0 && releasedBatch.failed === 1, 'batch accepted RELEASED without saved actuals');
+      assert(JSON.stringify(await counts()) === JSON.stringify(releasedCounts), 'rejected RELEASED confirmation changed a store');
+      assert((await loadDispatchAggregate('D-1')).decision.status === 'RELEASED', 'rejected RELEASED confirmation changed state');
+
+      const frame = document.createElement('iframe');
+      frame.style.width = '1200px';
+      frame.style.height = '500px';
+      document.body.append(frame);
+      await new Promise((resolve, reject) => {
+        frame.onload = resolve;
+        frame.onerror = () => reject(new Error('dispatch workbench iframe load failed'));
+        frame.src = `../orderq/dispatch.html?m4-browser=${Date.now()}`;
+      });
+      await waitUntil(() => frame.contentDocument.querySelector('[data-action="record-actual"]'), 'M4 actual-record action did not render');
+      const frameDocument = frame.contentDocument;
+      frameDocument.querySelector('.confirm-line-qty').value = '8';
+      const allocationInputs = [...frameDocument.querySelectorAll('.confirm-allocation-qty')];
+      assert(allocationInputs.length === 2, 'warehouse actual quantity inputs were not rendered');
+      allocationInputs[0].value = '3';
+      allocationInputs[1].value = '5';
+      frameDocument.querySelector('[data-action="record-actual"]').click();
+      await waitUntil(async () => (await loadDispatchAggregate('D-1')).decision.status === 'READY_TO_CONFIRM', 'actual values did not enter READY_TO_CONFIRM');
+      assert(frameDocument.querySelector('#message').textContent.includes('실제결과 저장 완료'), 'UI did not report actual-result save');
+      const readyAggregate = await loadDispatchAggregate('D-1');
+      assert(readyAggregate.lines[0].actualQuantity === 8, 'saved line actual quantity is incorrect');
+      assert(readyAggregate.allocations.reduce((sum, row) => sum + row.actualBaseQuantity, 0) === 8, 'saved allocation actual quantities are incorrect');
+      const command = {
+        dispatchId: 'D-1', expectedRevision: readyAggregate.decision.revision,
+        idempotencyKey: buildDispatchConfirmationKey('D-1', readyAggregate.decision.revision)
+      };
+      const beforeFailureCounts = await counts();
+      let injectedFailure = '';
+      try {
+        await confirmDispatch(command, 'ADMIN', { failureAt: DISPATCH_CONFIRMATION_STEP.MOVEMENTS_WRITTEN });
+      } catch (error) { injectedFailure = error.message; }
+      assert(injectedFailure.includes('FAILURE_INJECTED:MOVEMENTS_WRITTEN'), 'movement-stage failure was not injected');
+      const afterFailureCounts = await counts();
+      assert(JSON.stringify(afterFailureCounts) === JSON.stringify(beforeFailureCounts), 'failure injection left partial sales, movement, fulfillment, reconciliation, or outbox rows');
+      assert(await getInventoryLedgerSequence() === 0, 'failed transaction consumed ledger sequence');
+      const afterFailureAggregate = await loadDispatchAggregate('D-1');
+      assert(afterFailureAggregate.decision.status === 'READY_TO_CONFIRM' && afterFailureAggregate.decision.revision === readyAggregate.decision.revision, 'failed transaction changed ready state');
+      assert(afterFailureAggregate.reservations.every(row => row.status === 'ACTIVE'), 'failed transaction consumed a reservation');
+      await waitUntil(() => frameDocument.querySelector('[data-action="confirm"]'), 'M4 confirm action did not render after actual save');
+      frameDocument.querySelector('[data-action="confirm"]').click();
+      await waitUntil(async () => (await readAll(STORE.SALES_DOCUMENTS)).length === 1, 'UI confirmation did not complete');
+      await waitUntil(async () => (await loadDispatchAggregate('D-1')).decision.status === 'CONFIRMED', 'UI did not refresh confirmed decision');
+      assert(frameDocument.querySelector('#message').textContent.includes('출고확정 완료'), 'UI did not report confirmation result');
+      frame.remove();
+
+      const result = await confirmDispatch(command, 'ADMIN');
+      assert(result.duplicate === true, 'identical idempotency retry did not return the existing result');
+      assert(result.salesDocument.erpPostingStatus === 'READY', 'M4 confirmation posted ERP instead of leaving READY');
+      assert(result.salesLines.length === 1 && result.salesLines[0].actualQuantity === 8, 'sales fact did not preserve partial actual quantity');
+      assert(result.movements.length === 2 && result.movements.reduce((sum, row) => sum + row.signedBaseQuantity, 0) === -8, 'inventory issue movements do not match confirmed quantity');
+      assert(result.reservations.every(row => row.status === 'CONSUMED'), 'reservations were not consumed');
+      assert(result.orderEvents.filter(row => row.eventType === 'SALES_TRANSFER_ALLOCATED').length === 1, 'normal order fulfillment was not created');
+      assert(result.reconciliations.length === 1 && result.reconciliations[0].detail.onHandAfter === -2, 'negative inventory warning did not preserve the raw value');
+      assert(result.outbox.length > 0 && result.outbox.every(row => row.status === 'LOCAL_ONLY' && row.localOnly === true), 'M4 outbox escaped the pre-M9 local boundary');
+      const countsAfterSuccess = await counts();
+      const sequenceAfterSuccess = await getInventoryLedgerSequence();
+      const retryAgain = await confirmDispatch(command, 'ADMIN');
+      assert(retryAgain.duplicate === true, 'second retry was not idempotent');
+      assert(JSON.stringify(await counts()) === JSON.stringify(countsAfterSuccess), 'idempotency retry duplicated business rows');
+      assert(await getInventoryLedgerSequence() === sequenceAfterSuccess, 'idempotency retry consumed ledger sequence');
+
+      let idempotencyConflict = '';
+      try {
+        await confirmDispatch({ ...command, lines: [{ dispatchLineId: 'DL-D-1', actualQuantity: 7, recognizedOrderQuantity: 7, allocations: [] }] }, 'ADMIN');
+      } catch (error) { idempotencyConflict = error.message; }
+      assert(idempotencyConflict.includes('IDEMPOTENCY_CONFLICT'), 'same idempotency key with changed content was accepted');
+      assert(JSON.stringify(await counts()) === JSON.stringify(countsAfterSuccess), 'idempotency conflict changed business rows');
+
+      const projection = await getInventoryShadowProjection();
+      assert(projection.totals.onHandQuantity === -1, 'negative total was clamped or calculated incorrectly');
+      const negativeRow = projection.rows.find(row => row.productId === 'P-10' && row.warehouseId === 'W-02');
+      assert(negativeRow.onHandQuantity === -2 && negativeRow.negativeOnHand === true, 'warehouse negative raw value/warning was lost');
+      const proposals = await getDispatchProposals({ businessDate: '2026-08-15' });
+      const remainder = proposals.find(row => row.lines.some(line => line.orderId === 'O-1'));
+      assert(remainder?.lines[0]?.plannedBaseQuantity === 2, 'partial dispatch remainder was not available for a new proposal');
+
+      const releasedReadyRecovery = await createReleased({
+        dispatchId: 'D-4', orderId: 'O-4', orderItemId: 'OI-4', quantity: 2,
+        allocations: [['DA-5', 'W-01', 2]]
+      });
+      const firstReadyRecovery = await recordDispatchActual({
+        dispatchId: 'D-4', expectedRevision: releasedReadyRecovery.decision.revision,
+        lines: [{ dispatchLineId: 'DL-D-4', actualQuantity: 2, recognizedOrderQuantity: 2, allocations: [{ allocationId: 'DA-5', actualBaseQuantity: 2 }] }]
+      }, 'ADMIN');
+      const recoveryFrame = document.createElement('iframe');
+      recoveryFrame.style.width = '1200px';
+      recoveryFrame.style.height = '500px';
+      document.body.append(recoveryFrame);
+      await new Promise((resolve, reject) => {
+        recoveryFrame.onload = resolve;
+        recoveryFrame.onerror = () => reject(new Error('READY recovery workbench iframe load failed'));
+        recoveryFrame.src = `../orderq/dispatch.html?m4-ready-recovery=${Date.now()}`;
+      });
+      const recoveryDocument = recoveryFrame.contentDocument;
+      await waitUntil(() => recoveryDocument.querySelector('[data-action="select"][data-id="D-4"]'), 'READY recovery dispatch did not render');
+      recoveryDocument.querySelector('[data-action="select"][data-id="D-4"]').click();
+      await waitUntil(() => recoveryDocument.querySelector('[data-action="recall"]'), 'READY_TO_CONFIRM administrator recall action did not render');
+      recoveryDocument.querySelector('[data-action="recall"]').click();
+      await waitUntil(async () => (await loadDispatchAggregate('D-4')).decision.status === 'DRAFT', 'READY_TO_CONFIRM UI recall did not return to DRAFT');
+      const recalledReadyAggregate = await loadDispatchAggregate('D-4');
+      assert(recalledReadyAggregate.reservations.every(row => row.status !== 'ACTIVE'), 'READY recall retained an active reservation');
+      assert(recalledReadyAggregate.lines.every(row => row.actualQuantity == null && row.actualBaseQuantity == null && row.recognizedOrderQuantity == null), 'READY recall retained line actuals');
+      assert(recalledReadyAggregate.allocations.every(row => row.actualBaseQuantity == null && !row.reservationId), 'READY recall retained allocation actuals or reservation links');
+      recoveryFrame.remove();
+
+      const releasedReadyExpiry = await releaseDispatch('D-4', recalledReadyAggregate.decision.revision, 'ADMIN', { reservationMinutes: 60 });
+      const secondReadyRecovery = await recordDispatchActual({
+        dispatchId: 'D-4', expectedRevision: releasedReadyExpiry.decision.revision,
+        lines: [{ dispatchLineId: 'DL-D-4', actualQuantity: 2, recognizedOrderQuantity: 2, allocations: [{ allocationId: 'DA-5', actualBaseQuantity: 2 }] }]
+      }, 'ADMIN');
+      const expiredReadyCommand = {
+        dispatchId: 'D-4', expectedRevision: secondReadyRecovery.decision.revision,
+        idempotencyKey: buildDispatchConfirmationKey('D-4', secondReadyRecovery.decision.revision)
+      };
+      const readyExpiry = await expireDispatchReservations(new Date(Date.now() + 120 * 60_000).toISOString(), 'ADMIN');
+      const expiredReadyAggregate = await loadDispatchAggregate('D-4');
+      assert(readyExpiry.dispatchIds.includes('D-4') && readyExpiry.expiredCount === 1, 'READY reservation expiry was not processed');
+      assert(expiredReadyAggregate.decision.status === 'DRAFT', 'expired READY decision did not return to editable DRAFT');
+      assert(expiredReadyAggregate.reservations.every(row => row.status !== 'ACTIVE'), 'expired READY decision retained an active reservation');
+      assert(expiredReadyAggregate.lines.every(row => row.actualQuantity == null && row.actualBaseQuantity == null && row.recognizedOrderQuantity == null), 'expired READY decision retained line actuals');
+      assert(expiredReadyAggregate.allocations.every(row => row.actualBaseQuantity == null && !row.reservationId), 'expired READY decision retained allocation actuals or reservation links');
+      const projectionAfterReadyExpiry = await getInventoryShadowProjection();
+      assert(projectionAfterReadyExpiry.totals.availableQuantity === projectionAfterReadyExpiry.totals.onHandQuantity, 'READY expiry did not restore available inventory');
+      let expiredReadyConfirmError = '';
+      try { await confirmDispatch(expiredReadyCommand, 'ADMIN'); } catch (error) { expiredReadyConfirmError = error.message; }
+      assert(expiredReadyConfirmError.includes('CONFIRM_STATE_INVALID'), 'expired READY decision remained confirmable');
+      const editedAfterReadyExpiry = await saveDispatchDraft({
+        decision: expiredReadyAggregate.decision,
+        lines: expiredReadyAggregate.lines,
+        allocations: expiredReadyAggregate.allocations,
+        expectedRevision: expiredReadyAggregate.decision.revision
+      }, 'ADMIN');
+      const redeployedAfterReadyExpiry = await releaseDispatch('D-4', editedAfterReadyExpiry.decision.revision, 'ADMIN');
+      assert(redeployedAfterReadyExpiry.decision.status === 'RELEASED', 'expired READY decision could not be edited and redeployed');
+      await recallDispatch('D-4', redeployedAfterReadyExpiry.decision.revision, 'ADMIN');
+
+      const released2 = await createReleased({ dispatchId: 'D-2', orderId: 'O-2', orderItemId: 'OI-2', quantity: 4, allocations: [['DA-3', 'W-01', 4]] });
+      const released3 = await createReleased({ dispatchId: 'D-3', orderId: 'O-3', orderItemId: 'OI-3', quantity: 4, allocations: [['DA-4', 'W-01', 4]] });
+      const beforeUnsafeBatch = await counts();
+      const unsafeBatch = await confirmDispatchBatch([
+        { dispatchId: 'D-2', expectedRevision: released2.decision.revision, idempotencyKey: buildDispatchConfirmationKey('D-2', released2.decision.revision) },
+        { dispatchId: 'D-3', expectedRevision: released3.decision.revision, idempotencyKey: buildDispatchConfirmationKey('D-3', released3.decision.revision) }
+      ], 'ADMIN');
+      assert(unsafeBatch.succeeded === 0 && unsafeBatch.failed === 2, 'batch confirmed RELEASED plans without saved actuals');
+      assert(JSON.stringify(await counts()) === JSON.stringify(beforeUnsafeBatch), 'rejected unsafe batch changed a store');
+      const ready2 = await recordDispatchActual({
+        dispatchId: 'D-2', expectedRevision: released2.decision.revision,
+        lines: [{ dispatchLineId: 'DL-D-2', actualQuantity: 4, recognizedOrderQuantity: 4, allocations: [{ allocationId: 'DA-3', actualBaseQuantity: 4 }] }]
+      }, 'ADMIN');
+      const ready3 = await recordDispatchActual({
+        dispatchId: 'D-3', expectedRevision: released3.decision.revision,
+        lines: [{ dispatchLineId: 'DL-D-3', actualQuantity: 4, recognizedOrderQuantity: 4, allocations: [{ allocationId: 'DA-4', actualBaseQuantity: 4 }] }]
+      }, 'ADMIN');
+      const batch = await confirmDispatchBatch([
+        { dispatchId: 'D-2', expectedRevision: ready2.decision.revision, idempotencyKey: buildDispatchConfirmationKey('D-2', ready2.decision.revision) },
+        { dispatchId: 'D-3', expectedRevision: ready3.decision.revision - 1, idempotencyKey: buildDispatchConfirmationKey('D-3', ready3.decision.revision - 1) }
+      ], 'ADMIN');
+      assert(batch.succeeded === 1 && batch.failed === 1, 'batch confirmation did not isolate success and failure by DispatchDecision');
+      assert((await loadDispatchAggregate('D-2')).decision.status === 'CONFIRMED', 'batch success was not committed');
+      assert((await loadDispatchAggregate('D-3')).decision.status === 'READY_TO_CONFIRM', 'batch failure partially committed');
+      const d2Events = (await readAll(STORE.ORDER_EVENTS)).filter(row => row.orderId === 'O-2');
+      assert(d2Events.some(row => row.eventType === 'SALES_TRANSFER_ALLOCATED') && d2Events.some(row => row.eventType === 'ORDER_OPERATIONS_CLOSED'), 'normal full dispatch did not complete order fulfillment lifecycle');
+      const d2Movements = (await readAll(STORE.INVENTORY_MOVEMENTS)).filter(row => row.dispatchId === 'D-2');
+      assert(d2Movements.length === 1 && d2Movements[0].signedBaseQuantity === -4, 'normal full dispatch movement does not match sales fact');
+      const d2DocumentCount = (await readAll(STORE.SALES_DOCUMENTS)).filter(row => row.dispatchId === 'D-2').length;
+      const retryFailed = await confirmDispatchBatch([{
+        dispatchId: 'D-3', expectedRevision: ready3.decision.revision,
+        idempotencyKey: buildDispatchConfirmationKey('D-3', ready3.decision.revision)
+      }], 'ADMIN');
+      assert(retryFailed.succeeded === 1 && retryFailed.failed === 0, 'failed batch item could not be retried independently');
+      assert((await readAll(STORE.SALES_DOCUMENTS)).filter(row => row.dispatchId === 'D-2').length === d2DocumentCount, 'retrying a failed batch item duplicated a prior success');
+
+      const originalD1 = await loadDispatchAggregate('D-1');
+      const partialReverseCommand = {
+        dispatchId: 'D-1', expectedRevision: originalD1.decision.revision,
+        idempotencyKey: buildDispatchReversalKey('D-1', originalD1.decision.revision, 'PART-1'),
+        reason: '부분 오출고 3개 정정',
+        lines: [{
+          dispatchLineId: 'DL-D-1', quantity: 3,
+          allocations: [{ allocationId: 'DA-1', quantity: 1 }, { allocationId: 'DA-2', quantity: 2 }]
+        }]
+      };
+      const partialReverse = await reverseDispatch(partialReverseCommand, 'ADMIN');
+      assert(partialReverse.salesLines.length === 1 && partialReverse.salesLines[0].actualQuantity === -3, 'partial reversal sales quantity is incorrect');
+      assert(partialReverse.movements.reduce((sum, row) => sum + row.signedBaseQuantity, 0) === 3, 'partial reversal inventory quantity is incorrect');
+      assert(partialReverse.orderEvents.filter(row => row.eventType === 'SALES_TRANSFER_REVERSED').reduce((sum, row) => sum + row.detail.transferredQty, 0) === 3, 'partial reversal fulfillment is incorrect');
+      const originalAfterPartialReverse = await loadDispatchAggregate('D-1');
+      assert(originalAfterPartialReverse.decision.status === 'CONFIRMED' && originalAfterPartialReverse.lines[0].actualQuantity === 8, 'partial reversal overwrote original confirmed facts');
+      const reversalCounts = await counts();
+      const partialReverseRetry = await reverseDispatch(partialReverseCommand, 'ADMIN');
+      assert(partialReverseRetry.duplicate === true && JSON.stringify(await counts()) === JSON.stringify(reversalCounts), 'partial reversal idempotency retry duplicated rows');
+      let reversalConflict = '';
+      try { await reverseDispatch({ ...partialReverseCommand, reason: '변경된 사유' }, 'ADMIN'); } catch (error) { reversalConflict = error.message; }
+      assert(reversalConflict.includes('IDEMPOTENCY_CONFLICT'), 'same reversal key with changed content was accepted');
+      let overReversal = '';
+      try {
+        await reverseDispatch({
+          dispatchId: 'D-1', expectedRevision: originalD1.decision.revision,
+          idempotencyKey: buildDispatchReversalKey('D-1', originalD1.decision.revision, 'OVER'), reason: '초과 역분개 차단',
+          lines: [{ dispatchLineId: 'DL-D-1', quantity: 6, allocations: [{ allocationId: 'DA-1', quantity: 2 }, { allocationId: 'DA-2', quantity: 4 }] }]
+        }, 'ADMIN');
+      } catch (error) { overReversal = error.message; }
+      assert(overReversal.includes('EXCEEDS_ORIGINAL'), 'cumulative reversal exceeded original confirmation');
+      const remainingReverse = await reverseDispatch({
+        dispatchId: 'D-1', expectedRevision: originalD1.decision.revision,
+        idempotencyKey: buildDispatchReversalKey('D-1', originalD1.decision.revision, 'REMAINING'), reason: '나머지 전체 역분개'
+      }, 'ADMIN');
+      assert(remainingReverse.salesLines[0].actualQuantity === -5 && remainingReverse.movements.reduce((sum, row) => sum + row.signedBaseQuantity, 0) === 5, 'remaining full reversal is incorrect');
+      const reopenedProposal = (await getDispatchProposals({ businessDate: '2026-08-15' })).find(row => row.lines.some(line => line.orderId === 'O-1'));
+      assert(reopenedProposal?.lines[0]?.plannedBaseQuantity === 10, 'full cumulative reversal did not reopen the original order quantity');
+
+      const confirmedD2 = await loadDispatchAggregate('D-2');
+      const fullReverseD2 = await reverseDispatch({
+        dispatchId: 'D-2', expectedRevision: confirmedD2.decision.revision,
+        idempotencyKey: buildDispatchReversalKey('D-2', confirmedD2.decision.revision, 'FULL'), reason: '전체 출고 정정'
+      }, 'ADMIN');
+      assert(fullReverseD2.salesLines[0].actualQuantity === -4, 'full reversal sales quantity is incorrect');
+      assert(fullReverseD2.orderEvents.some(row => row.eventType === 'ORDER_OPERATIONS_REOPENED'), 'full reversal did not reopen a closed order');
+
+      const confirmedD3 = await loadDispatchAggregate('D-3');
+      const beforeReverseFailure = await counts();
+      let reverseFailure = '';
+      try {
+        await reverseDispatch({
+          dispatchId: 'D-3', expectedRevision: confirmedD3.decision.revision,
+          idempotencyKey: buildDispatchReversalKey('D-3', confirmedD3.decision.revision, 'FAIL'), reason: '역분개 실패주입'
+        }, 'ADMIN', { failureAt: DISPATCH_CONFIRMATION_STEP.MOVEMENTS_WRITTEN });
+      } catch (error) { reverseFailure = error.message; }
+      assert(reverseFailure.includes('FAILURE_INJECTED:MOVEMENTS_WRITTEN'), 'reversal movement failure was not injected');
+      assert(JSON.stringify(await counts()) === JSON.stringify(beforeReverseFailure), 'failed reversal left partial rows');
+      assert((await loadDispatchAggregate('D-3')).decision.status === 'CONFIRMED', 'failed reversal changed original confirmation');
+
+      const releasedMoney = await createReleased({
+        dispatchId: 'D-5', orderId: 'O-5', orderItemId: 'OI-5', quantity: 3,
+        allocations: [['DA-6', 'W-01', 3]]
+      });
+      const readyMoney = await recordDispatchActual({
+        dispatchId: 'D-5', expectedRevision: releasedMoney.decision.revision,
+        lines: [{ dispatchLineId: 'DL-D-5', actualQuantity: 3, recognizedOrderQuantity: 3, allocations: [{ allocationId: 'DA-6', actualBaseQuantity: 3 }] }]
+      }, 'ADMIN');
+      const confirmedMoney = await confirmDispatch({
+        dispatchId: 'D-5', expectedRevision: readyMoney.decision.revision,
+        idempotencyKey: buildDispatchConfirmationKey('D-5', readyMoney.decision.revision)
+      }, 'ADMIN');
+      const originalMoneyLine = confirmedMoney.salesLines[0];
+      assert(originalMoneyLine.supplyAmountWon === 2 && originalMoneyLine.vatAmountWon === 2 && originalMoneyLine.totalAmountWon === 4, 'rounding fixture did not create the intended original amounts');
+      const confirmedMoneyAggregate = await loadDispatchAggregate('D-5');
+      const splitMoneyReversals = [];
+      for (let index = 1; index <= 3; index++) {
+        const splitCommand = {
+          dispatchId: 'D-5', expectedRevision: confirmedMoneyAggregate.decision.revision,
+          idempotencyKey: buildDispatchReversalKey('D-5', confirmedMoneyAggregate.decision.revision, `MONEY-${index}`),
+          reason: `반올림 부분 역분개 ${index}`,
+          lines: [{ dispatchLineId: 'DL-D-5', quantity: 1, allocations: [{ allocationId: 'DA-6', quantity: 1 }] }]
+        };
+        const splitResult = await reverseDispatch(splitCommand, 'ADMIN');
+        splitMoneyReversals.push(splitResult.salesLines[0]);
+        if (index === 1) {
+          const moneyCounts = await counts();
+          const splitRetry = await reverseDispatch(splitCommand, 'ADMIN');
+          assert(splitRetry.duplicate === true && JSON.stringify(await counts()) === JSON.stringify(moneyCounts), 'rounded partial reversal idempotency retry duplicated rows');
+        }
+      }
+      const reversedMoneyTotals = splitMoneyReversals.reduce((sum, row) => ({
+        quantity: sum.quantity + row.actualQuantity,
+        supplyAmountWon: sum.supplyAmountWon + row.supplyAmountWon,
+        vatAmountWon: sum.vatAmountWon + row.vatAmountWon,
+        totalAmountWon: sum.totalAmountWon + row.totalAmountWon
+      }), { quantity: 0, supplyAmountWon: 0, vatAmountWon: 0, totalAmountWon: 0 });
+      assert(reversedMoneyTotals.quantity === -3, 'split reversal quantity did not exactly reverse the original');
+      assert(reversedMoneyTotals.supplyAmountWon === -originalMoneyLine.supplyAmountWon, 'split reversal supply amount exceeded or missed the original');
+      assert(reversedMoneyTotals.vatAmountWon === -originalMoneyLine.vatAmountWon, 'split reversal VAT exceeded or missed the original');
+      assert(reversedMoneyTotals.totalAmountWon === -originalMoneyLine.totalAmountWon, 'split reversal total exceeded or missed the original');
+
+      return {
+        ok: true,
+        databaseVersion: (await openOrderQDb()).version,
+        readyBoundary: { releasedConfirmError, unsafeBatchFailed: unsafeBatch.failed, savedStatus: readyAggregate.decision.status, savedActual: readyAggregate.lines[0].actualQuantity },
+        atomicRollback: { injectedFailure, beforeFailureCounts, afterFailureCounts },
+        partialConfirmation: {
+          actualQuantity: result.salesLines[0].actualQuantity,
+          movementTotal: result.movements.reduce((sum, row) => sum + row.signedBaseQuantity, 0),
+          remainingProposal: remainder.lines[0].plannedBaseQuantity
+        },
+        inventory: { totalOnHand: projection.totals.onHandQuantity, warehouse02: negativeRow.onHandQuantity, warning: negativeRow.negativeOnHand },
+        idempotency: { duplicate: result.duplicate, sequenceAfterSuccess, conflict: idempotencyConflict },
+        reservationStatuses: result.reservations.map(row => ({ id: row.reservationId, status: row.status, consumed: row.consumedBaseQuantity, released: row.releasedBaseQuantity })),
+        erpPostingStatus: result.salesDocument.erpPostingStatus,
+        fulfillmentEvents: result.orderEvents.map(row => row.eventType),
+        outboxTypes: [...new Set(result.outbox.map(row => row.entityType))],
+        batch: { succeeded: batch.succeeded, failed: batch.failed, failedRetrySucceeded: retryFailed.succeeded, normalFullEvents: d2Events.map(row => row.eventType) },
+        reversal: {
+          partialSalesQuantity: partialReverse.salesLines[0].actualQuantity,
+          partialMovementQuantity: partialReverse.movements.reduce((sum, row) => sum + row.signedBaseQuantity, 0),
+          retryDuplicate: partialReverseRetry.duplicate,
+          conflict: reversalConflict,
+          overReversal,
+          remainingSalesQuantity: remainingReverse.salesLines[0].actualQuantity,
+          reopenedOrderQuantity: reopenedProposal.lines[0].plannedBaseQuantity,
+          fullReopenEvents: fullReverseD2.orderEvents.map(row => row.eventType),
+          failureRollback: reverseFailure,
+          splitMoneyLines: splitMoneyReversals.map(row => ({
+            supplyAmountWon: row.supplyAmountWon,
+            vatAmountWon: row.vatAmountWon,
+            totalAmountWon: row.totalAmountWon
+          })),
+          splitMoneyTotals: reversedMoneyTotals
+        },
+        readyRecovery: {
+          recalledStatus: recalledReadyAggregate.decision.status,
+          expiredStatus: expiredReadyAggregate.decision.status,
+          activeAfterExpiry: expiredReadyAggregate.reservations.filter(row => row.status === 'ACTIVE').length,
+          availableAfterExpiry: projectionAfterReadyExpiry.totals.availableQuantity,
+          onHandAfterExpiry: projectionAfterReadyExpiry.totals.onHandQuantity,
+          expiredConfirmError: expiredReadyConfirmError,
+          redeployedStatus: redeployedAfterReadyExpiry.decision.status
+        }
+      };
+    }
+
+    run().then(result => {
+      output.textContent = `PASS\n${JSON.stringify(result, null, 2)}`;
+      document.title = 'PASS ORDER Q M4 Browser Test';
+    }).catch(error => {
+      console.error(error);
+      output.textContent = `FAIL\n${error.stack || error.message || error}`;
+      document.title = 'FAIL ORDER Q M4 Browser Test';
+    });
+  </script>
+</body>
+</html>
