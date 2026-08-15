@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="ko">
+<meta charset="utf-8">
+<title>ORDER Q M2 Inventory Ledger Browser Test</title>
+<body>
+  <h1>ORDER Q M2 Inventory Ledger Browser Test</h1>
+  <pre id="result">RUNNING</pre>
+  <script type="module">
+    import {
+      DB_NAME,
+      STORE,
+      closeOrderQDb,
+      openOrderQDb,
+      requestToPromise,
+      transactionDone
+    } from '../orderq/orderq-db.js?v=0.8.0';
+    import { commitPreparedImport } from '../orderq/history-collector/history-repository.js?v=0.8.0';
+    import {
+      appendInventoryMovement,
+      appendInventoryTransfer,
+      getInventoryLedgerSequence,
+      getInventoryShadowProjection,
+      reverseInventoryMovement
+    } from '../orderq/inventory-ledger-repository.js?v=0.8.0';
+
+    const output = document.querySelector('#result');
+    const assert = (condition, message) => {
+      if (!condition) throw new Error(message);
+    };
+    const deleteDatabase = () => new Promise((resolve, reject) => {
+      const request = indexedDB.deleteDatabase(DB_NAME);
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+      request.onblocked = () => reject(new Error('test database delete blocked'));
+    });
+    const readAll = async storeName => {
+      const db = await openOrderQDb();
+      const tx = db.transaction(storeName, 'readonly');
+      const rows = await requestToPromise(tx.objectStore(storeName).getAll());
+      await transactionDone(tx);
+      return rows;
+    };
+
+    const movement = (overrides = {}) => ({
+      productId: 'PRD-10',
+      productCode: '10',
+      warehouseId: 'WH-01',
+      signedBaseQuantity: 0,
+      baseUnit: 'EA',
+      movementType: 'ADJUSTMENT',
+      sourceDocumentType: 'BROWSER_TEST',
+      sourceDocumentId: 'DOC-0',
+      sourceLineId: 'LINE-0',
+      ...overrides
+    });
+
+    async function seedLegacySnapshot() {
+      const db = await openOrderQDb();
+      const tx = db.transaction([STORE.PRODUCTS, STORE.WAREHOUSES, STORE.INVENTORY_SNAPSHOTS, STORE.INVENTORY_LINES], 'readwrite');
+      tx.objectStore(STORE.PRODUCTS).put({ productId: 'PRD-10', itemCode: '10', itemName: '테스트상품', normalizedName: '테스트상품' });
+      tx.objectStore(STORE.WAREHOUSES).put({
+        warehouseId: 'WH-01', warehouseCode: '01', warehouseName: '첫째창고', normalizedName: '첫째창고',
+        countsInOnHand: true, countsInAvailable: true, status: 'ACTIVE'
+      });
+      tx.objectStore(STORE.WAREHOUSES).put({
+        warehouseId: 'WH-02', warehouseCode: '02', warehouseName: '둘째창고', normalizedName: '둘째창고',
+        countsInOnHand: true, countsInAvailable: true, status: 'ACTIVE'
+      });
+      tx.objectStore(STORE.INVENTORY_SNAPSHOTS).put({
+        inventorySnapshotId: 'IS-OLD-W1', importBatchId: 'B-OLD', basisDate: '2026-08-14', warehouseId: 'WH-01',
+        snapshotLastSequence: 0, status: 'ACTIVE', createdAt: '2026-08-14T00:00:00.000Z'
+      });
+      tx.objectStore(STORE.INVENTORY_SNAPSHOTS).put({
+        inventorySnapshotId: 'IS-OLD-W2', importBatchId: 'B-OLD', basisDate: '2026-08-14', warehouseId: 'WH-02',
+        snapshotLastSequence: 0, status: 'ACTIVE', createdAt: '2026-08-14T00:00:00.000Z'
+      });
+      tx.objectStore(STORE.INVENTORY_LINES).put({
+        inventoryLineId: 'IL-OLD-W1', inventorySnapshotId: 'IS-OLD-W1', importBatchId: 'B-OLD',
+        productId: 'PRD-10', productCode: '10', warehouseId: 'WH-01', inventoryQuantity: 0, status: 'ACTIVE'
+      });
+      tx.objectStore(STORE.INVENTORY_LINES).put({
+        inventoryLineId: 'IL-OLD-W2', inventorySnapshotId: 'IS-OLD-W2', importBatchId: 'B-OLD',
+        productId: 'PRD-10', productCode: '10', warehouseId: 'WH-02', inventoryQuantity: 0, status: 'ACTIVE'
+      });
+      await transactionDone(tx);
+    }
+
+    async function run() {
+      closeOrderQDb();
+      await deleteDatabase();
+      await openOrderQDb();
+      await seedLegacySnapshot();
+
+      const purchase = await appendInventoryMovement(movement({
+        signedBaseQuantity: 8,
+        movementType: 'PURCHASE_RECEIPT',
+        sourceDocumentType: 'PURCHASE',
+        sourceDocumentId: 'PD-1',
+        sourceLineId: 'PL-1'
+      }), 'ADMIN');
+      const saleDraft = movement({
+        signedBaseQuantity: -10,
+        movementType: 'SALE_ISSUE',
+        sourceDocumentType: 'SALES',
+        sourceDocumentId: 'SD-1',
+        sourceLineId: 'SL-1'
+      });
+      const sale = await appendInventoryMovement(saleDraft, 'ADMIN');
+      assert(purchase.movement.signedBaseQuantity === 8, 'purchase sign was not stored as positive');
+      assert(sale.movement.signedBaseQuantity === -10, 'sale sign was not stored as negative');
+      assert(purchase.movement.ledgerSequence === 1 && sale.movement.ledgerSequence === 2, 'ledger sequence did not advance monotonically');
+
+      const negativeProjection = await getInventoryShadowProjection();
+      const negativeRow = negativeProjection.rows.find(row => row.productId === 'PRD-10' && row.warehouseId === 'WH-01');
+      assert(negativeRow.onHandQuantity === -2, 'negative on-hand was clamped or calculated incorrectly');
+      assert(negativeProjection.warnings.some(row => row.onHandQuantity === -2), 'negative warning did not preserve the raw value');
+      assert(negativeProjection.totals.onHandQuantity === -2, 'negative total did not preserve the raw value');
+
+      const duplicateSale = await appendInventoryMovement(saleDraft, 'ADMIN');
+      assert(duplicateSale.duplicate === true && duplicateSale.movement.movementId === sale.movement.movementId, 'same command did not return the existing movement');
+      assert(await getInventoryLedgerSequence() === 2, 'duplicate command consumed a ledger sequence');
+      assert((await readAll(STORE.INVENTORY_MOVEMENTS)).length === 2, 'duplicate command created another movement');
+
+      let conflictRejected = false;
+      try { await appendInventoryMovement({ ...saleDraft, signedBaseQuantity: -9 }, 'ADMIN'); } catch (error) {
+        conflictRejected = /IDEMPOTENCY_CONFLICT/.test(String(error));
+      }
+      assert(conflictRejected, 'same idempotency key with different content was not rejected');
+      assert((await readAll(STORE.INVENTORY_MOVEMENTS)).length === 2, 'idempotency conflict changed the ledger');
+
+      const transfer = await appendInventoryTransfer({
+        transferId: 'T-1', productId: 'PRD-10', productCode: '10', fromWarehouseId: 'WH-01', toWarehouseId: 'WH-02',
+        baseQuantity: 3, baseUnit: 'EA', sourceDocumentId: 'T-1'
+      }, 'ADMIN');
+      assert(transfer.length === 2, 'warehouse transfer did not create both movements');
+      assert(transfer.reduce((sum, result) => sum + result.movement.signedBaseQuantity, 0) === 0, 'warehouse transfer did not net to zero');
+      assert(transfer[0].movement.ledgerSequence === 3 && transfer[1].movement.ledgerSequence === 4, 'transfer sequences are not consecutive');
+      const duplicateTransfer = await appendInventoryTransfer({
+        transferId: 'T-1', productId: 'PRD-10', productCode: '10', fromWarehouseId: 'WH-01', toWarehouseId: 'WH-02',
+        baseQuantity: 3, baseUnit: 'EA', sourceDocumentId: 'T-1'
+      }, 'ADMIN');
+      assert(duplicateTransfer.every(result => result.duplicate), 'transfer retry created new movement rows');
+      assert(await getInventoryLedgerSequence() === 4, 'transfer retry consumed ledger sequences');
+
+      const beforeInvalidTransfer = (await readAll(STORE.INVENTORY_MOVEMENTS)).length;
+      let invalidTransferRejected = false;
+      try {
+        await appendInventoryTransfer({
+          transferId: 'T-BAD', productId: 'PRD-10', fromWarehouseId: 'WH-01', toWarehouseId: 'WH-01',
+          baseQuantity: 1, sourceDocumentId: 'T-BAD'
+        }, 'ADMIN');
+      } catch (error) { invalidTransferRejected = /WAREHOUSE_MUST_DIFFER/.test(String(error)); }
+      assert(invalidTransferRejected, 'invalid same-warehouse transfer was not rejected');
+      assert((await readAll(STORE.INVENTORY_MOVEMENTS)).length === beforeInvalidTransfer, 'failed transfer wrote a partial movement');
+
+      const reversal = await reverseInventoryMovement(sale.movement.movementId, { reason: '판매 취소' }, 'ADMIN');
+      assert(reversal.movement.signedBaseQuantity === 10, 'reversal did not store the exact opposite sign');
+      assert(reversal.movement.reversalOf === sale.movement.movementId, 'reversal source was not linked');
+      assert(reversal.movement.ledgerSequence === 5, 'reversal sequence is incorrect');
+      const duplicateReversal = await reverseInventoryMovement(sale.movement.movementId, { reason: '판매 취소' }, 'ADMIN');
+      assert(duplicateReversal.duplicate === true, 'reversal retry did not return the existing reversal');
+      assert(await getInventoryLedgerSequence() === 5, 'reversal retry consumed a ledger sequence');
+
+      const beforeSnapshot = await getInventoryShadowProjection();
+      const beforeW1 = beforeSnapshot.rows.find(row => row.productId === 'PRD-10' && row.warehouseId === 'WH-01');
+      const beforeW2 = beforeSnapshot.rows.find(row => row.productId === 'PRD-10' && row.warehouseId === 'WH-02');
+      assert(beforeW1.onHandQuantity === 5 && beforeW2.onHandQuantity === 3, 'movement ledger did not calculate the pre-snapshot balance');
+
+      const imported = await commitPreparedImport({
+        sourceType: 'INVENTORY_HISTORY',
+        fileHash: 'm2-browser-inventory-snapshot',
+        fileName: 'm2-inventory.xlsx',
+        fileSize: 0,
+        sheetName: '재고현황',
+        headerRowNo: 1,
+        defaultDate: '2026-08-15',
+        rows: [
+          { rowNo: 2, normalizedRecord: { basisDate: '2026-08-15', warehouseCode: '01', warehouseName: '첫째창고', productCode: '10', productName: '테스트상품', inventoryQuantity: 5, unit: 'EA' } },
+          { rowNo: 3, normalizedRecord: { basisDate: '2026-08-15', warehouseCode: '02', warehouseName: '둘째창고', productCode: '10', productName: '테스트상품', inventoryQuantity: 3, unit: 'EA' } }
+        ],
+        warnings: []
+      }, 'ADMIN');
+      assert(imported.duplicate === false, 'inventory snapshot import unexpectedly became a duplicate');
+      const allSnapshots = await readAll(STORE.INVENTORY_SNAPSHOTS);
+      const importedSnapshots = allSnapshots.filter(row => row.importBatchId === imported.importBatch.importBatchId);
+      assert(importedSnapshots.length === 2, `inventory import did not create both warehouse snapshots: ${JSON.stringify({ imported, allSnapshots })}`);
+      assert(importedSnapshots.every(row => row.snapshotLastSequence === 5), 'snapshot did not capture the current ledger watermark');
+
+      const backdated = await appendInventoryMovement(movement({
+        signedBaseQuantity: 2,
+        movementType: 'PURCHASE_RECEIPT',
+        sourceDocumentType: 'PURCHASE',
+        sourceDocumentId: 'PD-BACKDATED',
+        sourceLineId: 'PL-BACKDATED',
+        occurredAt: '2026-08-14T09:00:00.000Z'
+      }), 'ADMIN');
+      assert(backdated.movement.ledgerSequence === 6, 'backdated transaction did not receive the latest ledger sequence');
+      const projection = await getInventoryShadowProjection();
+      const w1 = projection.rows.find(row => row.productId === 'PRD-10' && row.warehouseId === 'WH-01');
+      const w2 = projection.rows.find(row => row.productId === 'PRD-10' && row.warehouseId === 'WH-02');
+      assert(projection.basis.snapshotLastSequence === 5, 'projection did not use the imported snapshot watermark');
+      assert(w1.snapshotQuantity === 5 && w1.movementQuantity === 2 && w1.onHandQuantity === 7, 'backdated movement was not applied after the watermark');
+      assert(w2.snapshotQuantity === 3 && w2.movementQuantity === 0 && w2.onHandQuantity === 3, 'pre-watermark transfer was counted twice');
+      assert(w1.movementEvidence.length === 1 && w1.movementEvidence[0].movementId === backdated.movement.movementId, 'difference evidence does not identify the applied movement');
+      assert(w1.differenceQuantity === 2, 'snapshot difference quantity is incorrect');
+      assert(projection.backdatedMovementIds.includes(backdated.movement.movementId), 'backdated movement was not marked for report regeneration');
+
+      return {
+        ok: true,
+        databaseVersion: (await openOrderQDb()).version,
+        ledgerSequence: await getInventoryLedgerSequence(),
+        movementCount: (await readAll(STORE.INVENTORY_MOVEMENTS)).length,
+        signs: {
+          purchase: purchase.movement.signedBaseQuantity,
+          sale: sale.movement.signedBaseQuantity,
+          transferOut: transfer[0].movement.signedBaseQuantity,
+          transferIn: transfer[1].movement.signedBaseQuantity,
+          transferNet: transfer.reduce((sum, result) => sum + result.movement.signedBaseQuantity, 0),
+          reversal: reversal.movement.signedBaseQuantity
+        },
+        negativeProjection: {
+          onHandQuantity: negativeRow.onHandQuantity,
+          totalOnHandQuantity: negativeProjection.totals.onHandQuantity,
+          warningQuantity: negativeProjection.warnings[0].onHandQuantity
+        },
+        idempotency: {
+          saleDuplicate: duplicateSale.duplicate,
+          transferDuplicate: duplicateTransfer.every(result => result.duplicate),
+          reversalDuplicate: duplicateReversal.duplicate,
+          conflictRejected
+        },
+        transferAtomicity: { invalidTransferRejected, movementCountUnchanged: (await readAll(STORE.INVENTORY_MOVEMENTS)).length === 6 },
+        snapshot: {
+          importedSnapshotIds: importedSnapshots.map(row => row.inventorySnapshotId),
+          snapshotLastSequence: projection.basis.snapshotLastSequence,
+          backdatedLedgerSequence: backdated.movement.ledgerSequence
+        },
+        shadowDifference: {
+          snapshotQuantity: w1.snapshotQuantity,
+          movementQuantity: w1.movementQuantity,
+          projectedOnHandQuantity: w1.onHandQuantity,
+          movementEvidence: w1.movementEvidence
+        },
+        totals: projection.totals
+      };
+    }
+
+    run().then(result => {
+      output.textContent = JSON.stringify(result, null, 2);
+      output.dataset.status = 'PASS';
+    }).catch(error => {
+      output.textContent = `${error.stack || error}`;
+      output.dataset.status = 'FAIL';
+    });
+  </script>
+</body>
+</html>
