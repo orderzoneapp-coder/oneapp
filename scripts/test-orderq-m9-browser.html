@@ -40,7 +40,16 @@
       else if(body.action==='orderq_m9_command_prepare') data=prepareCentralCommand(gatewayState,body);
       else if(body.action==='orderq_m9_command_commit'){
         if(heldCommitKeys.has(body.idempotencyKey)) await new Promise(resolve=>heldCommits.set(body.idempotencyKey,resolve));
-        data=commitCentralCommand(gatewayState,body,body.testFailureAt?{failureAt:body.testFailureAt}:{});
+        let commitBody=body;
+        if(body.idempotencyKey==='GW-COMPLETE-DUPLICATE-ENTITY'){
+          const mutations=JSON.parse(JSON.stringify(body.mutations||[]));
+          const movementIndexes=mutations.map((row,index)=>row.entityType==='INVENTORY_MOVEMENT'?index:-1).filter(index=>index>=0);
+          assert(movementIndexes.length===2,'duplicate entity gateway fixture requires two movements');
+          const first=mutations[movementIndexes[0]],second=mutations[movementIndexes[1]];
+          second.entityId=first.entityId; second.payload.movementId=first.payload.movementId;
+          commitBody={...body,mutations};
+        }
+        data=commitCentralCommand(gatewayState,commitBody,body.testFailureAt?{failureAt:body.testFailureAt}:{});
       } else if(body.action==='orderq_m9_command_abort') data={aborted:abortCentralCommand(gatewayState,body)};
       else if(body.action==='orderq_m9_pull') data=pullCentralChanges(gatewayState,body.afterSequence,body.limit);
       else data={schemaVersion:'ONEAPP_ORDERQ_CENTRAL_V1',online:true};
@@ -102,6 +111,21 @@
 
     await clientRequest('B','release',{dispatchId:'GW-D3',idempotencyKey:'GW-COMPLETE-REL'});
     await clientRequest('B','update',{dispatchId:'GW-D3',idempotencyKey:'GW-COMPLETE-ACTUAL'});
+    let duplicateEntityError='';
+    try{await clientRequest('B','confirm',{dispatchId:'GW-D3',idempotencyKey:'GW-COMPLETE-DUPLICATE-ENTITY'});}catch(error){duplicateEntityError=error.message;}
+    assert(duplicateEntityError.includes('MUTATION_ENTITY_DUPLICATE:INVENTORY_MOVEMENT'),'duplicate movement entity key was accepted by actual gateway');
+    const afterDuplicateB=await clientRequest('B','dump');
+    const duplicateDecision=afterDuplicateB.stores.dispatchDecisions.find(row=>row.dispatchId==='GW-D3');
+    assert(duplicateDecision?.status==='READY_TO_CONFIRM'
+      &&afterDuplicateB.stores.inventoryMovements.every(row=>row.dispatchId!=='GW-D3')
+      &&afterDuplicateB.stores.orderEvents.every(row=>!String(row.eventId||'').startsWith('GW-OE-3'))
+      &&afterDuplicateB.stores.inventoryReservations.filter(row=>row.dispatchId==='GW-D3'&&row.status==='ACTIVE').length===2,
+    'duplicate movement entity rejection left local confirmation facts');
+    const centralAfterDuplicate=Object.values(gatewayState.entities);
+    assert(centralAfterDuplicate.find(row=>row.entityType==='DISPATCH_DECISION'&&row.entityId==='GW-D3')?.payload?.status==='READY_TO_CONFIRM'
+      &&centralAfterDuplicate.every(row=>!(row.entityType==='INVENTORY_MOVEMENT'&&row.payload.dispatchId==='GW-D3'))
+      &&centralAfterDuplicate.filter(row=>row.entityType==='INVENTORY_RESERVATION'&&row.payload.dispatchId==='GW-D3'&&row.payload.status==='ACTIVE').length===2,
+    'duplicate movement entity rejection changed central confirmation facts');
     let partialConfirmError='';
     try{await clientRequest('B','partialConfirm',{dispatchId:'GW-D3',idempotencyKey:'GW-COMPLETE-PARTIAL'});}catch(error){partialConfirmError=error.message;}
     assert(partialConfirmError.includes('LINE_SET_MISMATCH')||partialConfirmError.includes('LINE_STATE_SET_MISMATCH'),'partial two-line gateway confirmation was accepted');
@@ -142,7 +166,7 @@
     assert(decisionDigest(finalA)===decisionDigest(finalB),'actual gateway clients did not converge after lease reacquisition');
     const offline=await clientRequest('B','offline');
     assert(offline.unchanged&&!offline.operationRan&&offline.error.includes('OFFLINE_OFFICIAL_COMMAND_BLOCKED'),'actual isolated gateway offline command changed local cache');
-    return {released,confirmed,retry,partialConfirmError,completeConfirm,reacquired,lockConflict,staleConflict,expiredError,finalA,finalB,offline};
+    return {released,confirmed,retry,duplicateEntityError,partialConfirmError,completeConfirm,reacquired,lockConflict,staleConflict,expiredError,finalA,finalB,offline};
   }
 
   async function run(){
@@ -269,7 +293,7 @@
     const correction=transitionErpPostingStatus(reconciled,'CORRECTION_REQUIRED',{erpDocumentNo:'ERP-S-77'});
     assert(correction.originalErpDocumentNo==='ERP-S-77'&&!correction.erpAutoCancelRequested&&!correction.erpAutoRetransmitRequested,'ERP correction boundary lost original document or requested automation');
     assert(warnings.length===0&&errors.length===0,`console errors: ${[...warnings,...errors].join(' / ')}`);
-    return {ok:true,clients:[gatewayEvidence.finalA.databaseName,gatewayEvidence.finalB.databaseName],gateway:{lease:gatewayEvidence.lockConflict,staleRevision:gatewayEvidence.staleConflict,expired:gatewayEvidence.expiredError,retryDuplicate:gatewayEvidence.retry.duplicate,partialConfirmRejected:gatewayEvidence.partialConfirmError,completeTwoLine:true,ledgerSequence:gatewayState.ledgerSequence},conflict:{lease:concurrentConflict,staleRevision:staleRevisionConflict},release:{revision:release.serverRevision,available:4},confirmation:{ledgerSequence:confirmed.ledgerSequence,retryDuplicate:retry.duplicate,outboxCursorUnchangedOnRetry:retryOutboxUnchanged},purchase:{ledgerSequence:purchase.ledgerSequence,occurredAt:'2026-08-13'},offline:{...offline,actualGatewayError,actualGatewayOperationRan},erp:{xlsxRows:reopened.length,exact:exact[0].status,ambiguous:review[0].status,completeDocument:exactDocument.status,missingDocument:missingDocument.status,duplicateDocument:duplicateDocument.status,status:correction.erpPostingStatus,originalDocumentNo:correction.originalErpDocumentNo},server:{commands:Object.keys(state.commands).length,cursor:state.syncSequence},console:{warnings:warnings.length,errors:errors.length}};
+    return {ok:true,clients:[gatewayEvidence.finalA.databaseName,gatewayEvidence.finalB.databaseName],gateway:{lease:gatewayEvidence.lockConflict,staleRevision:gatewayEvidence.staleConflict,expired:gatewayEvidence.expiredError,retryDuplicate:gatewayEvidence.retry.duplicate,duplicateEntityRejected:gatewayEvidence.duplicateEntityError,partialConfirmRejected:gatewayEvidence.partialConfirmError,completeTwoLine:true,ledgerSequence:gatewayState.ledgerSequence},conflict:{lease:concurrentConflict,staleRevision:staleRevisionConflict},release:{revision:release.serverRevision,available:4},confirmation:{ledgerSequence:confirmed.ledgerSequence,retryDuplicate:retry.duplicate,outboxCursorUnchangedOnRetry:retryOutboxUnchanged},purchase:{ledgerSequence:purchase.ledgerSequence,occurredAt:'2026-08-13'},offline:{...offline,actualGatewayError,actualGatewayOperationRan},erp:{xlsxRows:reopened.length,exact:exact[0].status,ambiguous:review[0].status,completeDocument:exactDocument.status,missingDocument:missingDocument.status,duplicateDocument:duplicateDocument.status,status:correction.erpPostingStatus,originalDocumentNo:correction.originalErpDocumentNo},server:{commands:Object.keys(state.commands).length,cursor:state.syncSequence},console:{warnings:warnings.length,errors:errors.length}};
   }
   run().then(value=>{output.textContent=`PASS\n${JSON.stringify(value,null,2)}`;document.title='PASS ORDER Q M9 Browser Test';}).catch(error=>{console.error(error);output.textContent=`FAIL\n${error.stack||error}`;document.title='FAIL ORDER Q M9 Browser Test';});
 </script></body></html>

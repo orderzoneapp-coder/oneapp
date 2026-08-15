@@ -299,6 +299,16 @@ function requireSameNumber(left, right, code, detail = '') {
   if (!sameNumber(left, right)) commandError(code, detail);
 }
 
+function validateMutationEntityKeys(mutations) {
+  const keys = new Set();
+  for (const row of mutations) {
+    const key = entityKey(row.entityType, row.entityId);
+    if (!text(row.entityType) || !text(row.entityId)) commandError('ORDERQ_CENTRAL_MUTATION_INVALID', `${row.entityType}:${row.entityId}`);
+    if (keys.has(key)) commandError('ORDERQ_CENTRAL_MUTATION_ENTITY_DUPLICATE', `${row.entityType}:${row.entityId}`);
+    keys.add(key);
+  }
+}
+
 function requireExactIds(actualValues, expectedValues, code) {
   const actual = actualValues.map(text);
   const expected = expectedValues.map(text);
@@ -620,6 +630,7 @@ export function commitCentralCommand(state, source = {}, options = {}) {
     }
     return rowFromEntity(entityType, entityId, input.payload, input.revision);
   });
+  validateMutationEntityKeys(mutations);
   const mutationFingerprint = stableJson(mutations.map(row => ({
     entityType:row.entityType, entityId:row.entityId, revision:row.revision, payload:row.payload
   })).sort((left, right) => entityKey(left.entityType, left.entityId).localeCompare(entityKey(right.entityType, right.entityId))));

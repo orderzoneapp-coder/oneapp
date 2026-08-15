@@ -930,6 +930,16 @@ function orderQM9RequireSameNumber(left, right, code, detail) {
   if (!orderQM9SameNumber(left, right)) throw new Error(`${code}${detail ? `:${detail}` : ''}`);
 }
 
+function orderQM9ValidateMutationEntityKeys(mutations) {
+  const keys = new Set();
+  mutations.forEach(row => {
+    const key = orderQM9EntityKey(row.entityType, row.entityId);
+    if (!orderQM9Text(row.entityType) || !orderQM9Text(row.entityId)) throw new Error(`ORDERQ_CENTRAL_MUTATION_INVALID:${row.entityType}:${row.entityId}`);
+    if (keys.has(key)) throw new Error(`ORDERQ_CENTRAL_MUTATION_ENTITY_DUPLICATE:${row.entityType}:${row.entityId}`);
+    keys.add(key);
+  });
+}
+
 function orderQM9RequireExactIds(actualValues, expectedValues, code) {
   const actual = actualValues.map(orderQM9Text);
   const expected = expectedValues.map(orderQM9Text);
@@ -1248,6 +1258,7 @@ function orderQM9Commit(ss, payload) {
       throw new Error(`ORDERQ_CENTRAL_MUTATION_INVALID:${row.entityType}:${row.entityId}`);
     }
   });
+  orderQM9ValidateMutationEntityKeys(mutations);
   const mutationFingerprint = orderQM9StableJson(mutations.map(row => ({
     entityType: row.entityType, entityId: row.entityId, revision: row.revision, payload: row.payload
   })).sort((a, b) => orderQM9EntityKey(a.entityType, a.entityId).localeCompare(orderQM9EntityKey(b.entityType, b.entityId))));

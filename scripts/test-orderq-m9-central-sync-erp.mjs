@@ -180,7 +180,9 @@ for (const [label, malformed, expectedError] of [
   ['duplicate-line', [...completeDispatchMutations, { ...completeDispatchMutations.find(row => row.entityId === 'SL-C1'), entityId:'SL-C-DUP', payload:{ ...completeDispatchMutations.find(row => row.entityId === 'SL-C1').payload, salesLineId:'SL-C-DUP' } }], /CONFIRM_LINE_SET_MISMATCH/],
   ['duplicate-movement', [...completeDispatchMutations, { ...completeDispatchMutations.find(row => row.entityId === 'IM-C1'), entityId:'IM-C-DUP', payload:{ ...completeDispatchMutations.find(row => row.entityId === 'IM-C1').payload, movementId:'IM-C-DUP' } }], /CONFIRM_ALLOCATION_MOVEMENT_SET_MISMATCH/],
   ['duplicate-event', [...completeDispatchMutations, { ...completeDispatchMutations.find(row => row.entityId === 'OE-C1'), entityId:'OE-C-DUP', payload:{ ...completeDispatchMutations.find(row => row.entityId === 'OE-C1').payload, eventId:'OE-C-DUP' } }], /CONFIRM_FULFILLMENT_SET_MISMATCH/],
-  ['duplicate-reservation', [...completeDispatchMutations, { ...completeDispatchMutations.find(row => row.entityId === 'IR-C1'), entityId:'IR-C-DUP', payload:{ ...completeDispatchMutations.find(row => row.entityId === 'IR-C1').payload, reservationId:'IR-C-DUP' } }], /CONFIRM_RESERVATION_SET_MISMATCH/]
+  ['duplicate-reservation', [...completeDispatchMutations, { ...completeDispatchMutations.find(row => row.entityId === 'IR-C1'), entityId:'IR-C-DUP', payload:{ ...completeDispatchMutations.find(row => row.entityId === 'IR-C1').payload, reservationId:'IR-C-DUP' } }], /CONFIRM_RESERVATION_SET_MISMATCH/],
+  ['duplicate-movement-entity-key', completeDispatchMutations.map(row => row.entityId === 'IM-C2' ? { ...row, entityId:'IM-C1', payload:{ ...row.payload, movementId:'IM-C1' } } : row), /MUTATION_ENTITY_DUPLICATE:INVENTORY_MOVEMENT:IM-C1/],
+  ['duplicate-event-entity-key', completeDispatchMutations.map(row => row.entityId === 'OE-C2' ? { ...row, entityId:'OE-C1', payload:{ ...row.payload, eventId:'OE-C1' } } : row), /MUTATION_ENTITY_DUPLICATE:ORDER_EVENT:OE-C1/]
 ]) {
   const before = JSON.stringify(completeDispatchState);
   assert.throws(() => commitCentralCommand(completeDispatchState, {
@@ -207,7 +209,8 @@ const completePurchaseMutations = [
 ];
 for (const [label, malformed, expectedError] of [
   ['missing-purchase-line', completePurchaseMutations.filter(row => !['PL-C2','PIM-C2'].includes(row.entityId)), /PURCHASE_LINE_SET_MISMATCH/],
-  ['duplicate-purchase-movement', [...completePurchaseMutations, { ...completePurchaseMutations.find(row => row.entityId === 'PIM-C1'), entityId:'PIM-C-DUP', payload:{ ...completePurchaseMutations.find(row => row.entityId === 'PIM-C1').payload, movementId:'PIM-C-DUP' } }], /PURCHASE_RESULT_INVALID|PURCHASE_MOVEMENT_SET_MISMATCH/]
+  ['duplicate-purchase-movement', [...completePurchaseMutations, { ...completePurchaseMutations.find(row => row.entityId === 'PIM-C1'), entityId:'PIM-C-DUP', payload:{ ...completePurchaseMutations.find(row => row.entityId === 'PIM-C1').payload, movementId:'PIM-C-DUP' } }], /PURCHASE_RESULT_INVALID|PURCHASE_MOVEMENT_SET_MISMATCH/],
+  ['duplicate-purchase-movement-entity-key', completePurchaseMutations.map(row => row.entityId === 'PIM-C2' ? { ...row, entityId:'PIM-C1', payload:{ ...row.payload, movementId:'PIM-C1' } } : row), /MUTATION_ENTITY_DUPLICATE:INVENTORY_MOVEMENT:PIM-C1/]
 ]) {
   const before = JSON.stringify(completePurchaseState);
   assert.throws(() => commitCentralCommand(completePurchaseState, {

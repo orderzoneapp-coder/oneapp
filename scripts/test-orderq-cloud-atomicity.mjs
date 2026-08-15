@@ -638,6 +638,8 @@ for (const [label, malformed, pattern] of [
   ["duplicate-dispatch-movement", [...completeConfirmMutations, { ...completeConfirmMutations.find(row => row.entityId === "M9-IMC1"), entityId:"M9-IMC-DUP", payload:{ ...completeConfirmMutations.find(row => row.entityId === "M9-IMC1").payload, movementId:"M9-IMC-DUP" } }], /CONFIRM_ALLOCATION_MOVEMENT_SET_MISMATCH/],
   ["duplicate-dispatch-event", [...completeConfirmMutations, { ...completeConfirmMutations.find(row => row.entityId === "M9-OEC1"), entityId:"M9-OEC-DUP", payload:{ ...completeConfirmMutations.find(row => row.entityId === "M9-OEC1").payload, eventId:"M9-OEC-DUP" } }], /CONFIRM_FULFILLMENT_SET_MISMATCH/],
   ["duplicate-dispatch-reservation", [...completeConfirmMutations, { ...completeConfirmMutations.find(row => row.entityId === "M9-IRC1"), entityId:"M9-IRC-DUP", payload:{ ...completeConfirmMutations.find(row => row.entityId === "M9-IRC1").payload, reservationId:"M9-IRC-DUP" } }], /CONFIRM_RESERVATION_SET_MISMATCH/],
+  ["duplicate-dispatch-movement-entity-key", completeConfirmMutations.map(row => row.entityId === "M9-IMC2" ? { ...row, entityId:"M9-IMC1", payload:{ ...row.payload, movementId:"M9-IMC1" } } : row), /MUTATION_ENTITY_DUPLICATE:INVENTORY_MOVEMENT:M9-IMC1/],
+  ["duplicate-dispatch-event-entity-key", completeConfirmMutations.map(row => row.entityId === "M9-OEC2" ? { ...row, entityId:"M9-OEC1", payload:{ ...row.payload, eventId:"M9-OEC1" } } : row), /MUTATION_ENTITY_DUPLICATE:ORDER_EVENT:M9-OEC1/],
 ]) {
   const before = m9SpreadsheetDigest();
   const rejected = m9("orderq_m9_command_commit", {
@@ -669,6 +671,7 @@ const completePurchaseMutations = [
 for (const [label, malformed, pattern] of [
   ["missing-purchase-line", completePurchaseMutations.filter(row => !["M9-PLC2", "M9-PIMC2"].includes(row.entityId)), /PURCHASE_LINE_SET_MISMATCH/],
   ["duplicate-purchase-movement", [...completePurchaseMutations, { ...completePurchaseMutations.find(row => row.entityId === "M9-PIMC1"), entityId:"M9-PIMC-DUP", payload:{ ...completePurchaseMutations.find(row => row.entityId === "M9-PIMC1").payload, movementId:"M9-PIMC-DUP" } }], /PURCHASE_RESULT_INVALID|PURCHASE_MOVEMENT_SET_MISMATCH/],
+  ["duplicate-purchase-movement-entity-key", completePurchaseMutations.map(row => row.entityId === "M9-PIMC2" ? { ...row, entityId:"M9-PIMC1", payload:{ ...row.payload, movementId:"M9-PIMC1" } } : row), /MUTATION_ENTITY_DUPLICATE:INVENTORY_MOVEMENT:M9-PIMC1/],
 ]) {
   const before = m9SpreadsheetDigest();
   const rejected = m9("orderq_m9_command_commit", {
