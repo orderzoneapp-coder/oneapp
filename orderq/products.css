@@ -1,0 +1,48 @@
+.product-page { margin: 0; background: #f4f7fb; color: #172033; font-family: "Noto Sans KR", system-ui, sans-serif; }
+.product-shell { padding: 14px; }
+.product-notice { padding: 12px 14px; border: 1px solid #bad8cb; border-radius: 10px; background: #edf9f3; color: #175b3c; }
+.product-notice strong { margin-right: 8px; }
+.product-message { min-height: 22px; margin: 8px 0; color: #2b4a68; }
+.product-message.error { color: #b42318; }
+.product-message.success { color: #087443; }
+.quick-create { display: grid; grid-template-columns: 220px 1fr; gap: 16px; padding: 14px; margin-bottom: 12px; border: 1px solid #d8e0ea; border-radius: 10px; background: #fff; }
+.quick-create h2, .quick-create p { margin: 0; }
+.quick-create p { margin-top: 6px; color: #667085; font-size: 12px; }
+.quick-create-form { display: grid; grid-template-columns: repeat(3, minmax(120px, 1fr)); gap: 9px; align-items: end; }
+.quick-create-form label, .product-form label { display: grid; gap: 5px; color: #475467; font-size: 12px; }
+.quick-create-form input, .product-form input, .product-form textarea { border: 1px solid #cbd5e1; border-radius: 7px; padding: 8px; background: #fff; }
+.quick-create-form .wide { grid-column: span 2; }
+.product-layout { display: grid; grid-template-columns: minmax(290px, 34%) 1fr; gap: 12px; min-height: 540px; }
+.product-list-panel, .product-detail-panel { border: 1px solid #d8e0ea; border-radius: 10px; background: #fff; overflow: auto; }
+.panel-heading { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border-bottom: 1px solid #e5eaf0; }
+.panel-heading h2 { margin: 0; font-size: 16px; }
+.panel-heading span { color: #667085; font-size: 12px; }
+.product-card { width: 100%; padding: 12px 14px; border: 0; border-bottom: 1px solid #edf0f4; background: #fff; text-align: left; cursor: pointer; }
+.product-card:hover, .product-card.selected { background: #eef7ff; }
+.product-card strong, .product-card small { display: block; }
+.product-card small { margin-top: 4px; color: #667085; }
+.product-status { display: inline-block; margin-left: 6px; padding: 2px 6px; border-radius: 999px; background: #e7eef7; color: #344054; font-size: 11px; }
+.product-status.linked { background: #e8f7ef; color: #087443; }
+.product-detail-panel { padding: 16px; }
+.empty-state { padding: 40px; color: #778498; text-align: center; }
+.product-form { display: grid; gap: 14px; }
+.product-title { display: flex; align-items: start; justify-content: space-between; gap: 12px; }
+.product-title h2, .product-form h3 { margin: 0; }
+.product-title p { margin: 5px 0 0; color: #667085; font-size: 12px; }
+.product-summary { display: grid; grid-template-columns: repeat(3, minmax(130px, 1fr)); gap: 8px; }
+.product-summary div { padding: 10px; border-radius: 8px; background: #f5f7fa; }
+.product-summary small, .product-summary strong { display: block; }
+.product-summary small { color: #667085; }
+.master-results { display: grid; gap: 6px; max-height: 190px; overflow: auto; }
+.master-result { padding: 9px; border: 1px solid #d8e0ea; border-radius: 8px; background: #fff; text-align: left; cursor: pointer; }
+.master-result.selected { border-color: #147d5d; background: #edf9f3; }
+.product-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.product-btn { border: 1px solid #b8c5d4; border-radius: 7px; padding: 8px 11px; background: #fff; color: #233044; cursor: pointer; font-weight: 700; }
+.product-btn.primary { border-color: #126b4f; background: #126b4f; color: #fff; }
+.product-btn.danger { border-color: #d92d20; color: #b42318; }
+.history-list { display: grid; gap: 7px; margin: 0; padding: 0; list-style: none; }
+.history-list li { padding: 9px; border-left: 3px solid #91a4b7; background: #f5f7fa; font-size: 12px; }
+.history-list strong, .history-list span { display: block; }
+.history-list span { margin-top: 3px; color: #667085; }
+@media (max-width: 900px) { .quick-create { grid-template-columns: 1fr; } .product-layout { grid-template-columns: 1fr; } }
+@media (max-width: 620px) { .quick-create-form, .product-summary { grid-template-columns: 1fr; } .quick-create-form .wide { grid-column: auto; } }

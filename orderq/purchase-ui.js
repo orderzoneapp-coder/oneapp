@@ -11,6 +11,10 @@ import {
   reversePurchase,
   savePurchaseDraft
 } from './purchase-decision-repository.js?v=0.8.0';
+import { loadProductCatalog } from './product-master-search.js?v=0.8.0';
+import {
+  PRODUCT_LINE_CONTEXT, applyProductSelection, editProductLine, searchLineProducts
+} from './product-line-common.js?v=0.8.0';
 
 const listElement = document.querySelector('#purchaseList');
 const detailElement = document.querySelector('#purchaseDetail');
@@ -22,6 +26,7 @@ const params = new URLSearchParams(location.search);
 let selectedId = params.get('focus') || '';
 let documents = [];
 let current = null;
+let productCatalog = [];
 let busy = false;
 
 function text(value) {
@@ -79,8 +84,8 @@ function lineEditor(line, index, editable) {
   return `<section class="purchase-line" data-line-index="${index}" data-line-id="${esc(line.purchaseLineId)}">
     <div class="purchase-form-grid">
       <label>상품 내부 ID<input class="line-product-id" value="${esc(line.productId)}" ${editable ? '' : 'readonly'}></label>
-      <label>상품코드<input class="line-product-code" value="${esc(line.productCode)}" ${editable ? '' : 'readonly'}></label>
-      <label>상품명<input class="line-product-name" value="${esc(line.productName)}" ${editable ? '' : 'readonly'}></label>
+      <label>상품코드<input class="line-product-code" list="purchaseProductOptions" value="${esc(line.productCode)}" ${editable ? '' : 'readonly'}></label>
+      <label>상품명<input class="line-product-name" list="purchaseProductOptions" value="${esc(line.productName)}" ${editable ? '' : 'readonly'}></label>
       <label>입고 재고구분 ID<input class="line-warehouse-id" value="${esc(line.warehouseId)}" ${editable ? '' : 'readonly'}></label>
       <label>재고구분 코드<input class="line-warehouse-code" value="${esc(line.warehouseCode)}" ${editable ? '' : 'readonly'}></label>
       <label>재고구분명<input class="line-warehouse-name" value="${esc(line.warehouseName)}" ${editable ? '' : 'readonly'}></label>
@@ -155,25 +160,60 @@ function collectDraft() {
       backdateReason: text(document.querySelector('#backdateReason')?.value),
       memo: text(document.querySelector('#purchaseMemo')?.value)
     },
-    lines: lineRows.map(row => ({
-      purchaseLineId: text(row.dataset.lineId) || newId('PL'),
-      productId: text(row.querySelector('.line-product-id').value),
-      productCode: text(row.querySelector('.line-product-code').value),
-      productName: text(row.querySelector('.line-product-name').value),
-      warehouseId: text(row.querySelector('.line-warehouse-id').value),
-      warehouseCode: text(row.querySelector('.line-warehouse-code').value),
-      warehouseName: text(row.querySelector('.line-warehouse-name').value),
-      quantity: number(row.querySelector('.line-quantity').value),
-      unit: text(row.querySelector('.line-unit').value),
-      baseQuantity: number(row.querySelector('.line-base-quantity').value),
-      baseUnit: text(row.querySelector('.line-base-unit').value),
-      unitCostWon: number(row.querySelector('.line-unit-cost').value),
-      sourceOrderItemId: text(row.querySelector('.line-order-item').value),
-      sourceDispatchId: text(row.querySelector('.line-dispatch-id').value),
-      sourceDispatchLineId: text(row.querySelector('.line-dispatch-line').value)
-    })),
+    lines: lineRows.map(row => {
+      const currentLine = current.lines.find(line => line.purchaseLineId === row.dataset.lineId) || {};
+      const productId = text(row.querySelector('.line-product-id').value);
+      const product = productCatalog.find(candidate => candidate.productId === productId) || {
+        productId,
+        itemCode: text(row.querySelector('.line-product-code').value),
+        itemName: text(row.querySelector('.line-product-name').value),
+        finalUnit: text(row.querySelector('.line-unit').value)
+      };
+      const selected = productId
+        ? applyProductSelection(PRODUCT_LINE_CONTEXT.PURCHASE, currentLine, product)
+        : currentLine;
+      return {
+        purchaseLineId: text(row.dataset.lineId) || newId('PL'),
+        ...editProductLine(PRODUCT_LINE_CONTEXT.PURCHASE, currentLine, {
+          ...selected,
+          productId,
+          productCode: text(row.querySelector('.line-product-code').value),
+          productName: text(row.querySelector('.line-product-name').value),
+          warehouseId: text(row.querySelector('.line-warehouse-id').value),
+          warehouseCode: text(row.querySelector('.line-warehouse-code').value),
+          warehouseName: text(row.querySelector('.line-warehouse-name').value),
+          quantity: number(row.querySelector('.line-quantity').value),
+          unit: text(row.querySelector('.line-unit').value),
+          baseQuantity: number(row.querySelector('.line-base-quantity').value),
+          baseUnit: text(row.querySelector('.line-base-unit').value),
+          unitCostWon: number(row.querySelector('.line-unit-cost').value),
+          sourceOrderItemId: text(row.querySelector('.line-order-item').value),
+          sourceDispatchId: text(row.querySelector('.line-dispatch-id').value),
+          sourceDispatchLineId: text(row.querySelector('.line-dispatch-line').value)
+        })
+      };
+    }),
     expectedRevision: Number(current.document.revision || 0)
   };
+}
+
+function renderProductOptions() {
+  const options = document.querySelector('#purchaseProductOptions');
+  options.innerHTML = productCatalog.map(product => `<option value="${esc(product.itemCode || product.itemName)}">${esc(product.itemName || product.itemCode)}</option>`).join('');
+}
+
+function applyPurchaseProduct(row, query) {
+  const candidates = searchLineProducts(query, productCatalog, 8);
+  const normalizedQuery = text(query).toLowerCase();
+  const product = candidates.find(candidate => text(candidate.itemCode).toLowerCase() === normalizedQuery
+    || text(candidate.itemName).toLowerCase() === normalizedQuery);
+  if (!product) return;
+  const selected = applyProductSelection(PRODUCT_LINE_CONTEXT.PURCHASE, {}, product);
+  row.querySelector('.line-product-id').value = selected.productId;
+  row.querySelector('.line-product-code').value = selected.productCode;
+  row.querySelector('.line-product-name').value = selected.productName;
+  if (!row.querySelector('.line-unit').value) row.querySelector('.line-unit').value = selected.unit || '';
+  if (!row.querySelector('.line-base-unit').value) row.querySelector('.line-base-unit').value = selected.baseUnit || '';
 }
 
 async function reload(selectId = selectedId) {
@@ -299,8 +339,15 @@ document.querySelector('#newDraftBtn').addEventListener('click', () => {
 document.querySelector('#refreshBtn').addEventListener('click', () => execute(() => reload()));
 statusFilter.addEventListener('change', () => execute(() => reload()));
 searchFilter.addEventListener('input', () => execute(() => reload()));
+detailElement.addEventListener('change', event => {
+  if (!event.target.matches('.line-product-code, .line-product-name')) return;
+  applyPurchaseProduct(event.target.closest('.purchase-line'), event.target.value);
+});
 
 execute(async () => {
+  const catalog = await loadProductCatalog();
+  productCatalog = catalog.products;
+  renderProductOptions();
   await reload();
   if (selectedId) {
     current = await loadPurchaseAggregate(selectedId);
