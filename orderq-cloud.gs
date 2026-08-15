@@ -930,6 +930,18 @@ function orderQM9RequireSameNumber(left, right, code, detail) {
   if (!orderQM9SameNumber(left, right)) throw new Error(`${code}${detail ? `:${detail}` : ''}`);
 }
 
+function orderQM9RequireExactIds(actualValues, expectedValues, code) {
+  const actual = actualValues.map(orderQM9Text);
+  const expected = expectedValues.map(orderQM9Text);
+  const actualSet = new Set(actual);
+  const expectedSet = new Set(expected);
+  if (actual.some(value => !value) || expected.some(value => !value)
+    || actualSet.size !== actual.length || expectedSet.size !== expected.length
+    || actualSet.size !== expectedSet.size || [...expectedSet].some(value => !actualSet.has(value))) {
+    throw new Error(code);
+  }
+}
+
 function orderQM9ValidateDispatchConfirmation(existingRows, command, mutations) {
   const rows = type => mutations.filter(row => row.entityType === type);
   const all = type => orderQM9RowsWithMutations(existingRows, mutations, type);
@@ -938,8 +950,30 @@ function orderQM9ValidateDispatchConfirmation(existingRows, command, mutations) 
   const movements = rows('INVENTORY_MOVEMENT');
   const events = rows('ORDER_EVENT').filter(row => orderQM9Text(row.payload.eventType).toUpperCase() === 'SALES_TRANSFER_ALLOCATED');
   const reservations = rows('INVENTORY_RESERVATION');
+  const existingDispatchLines = existingRows.filter(row => row.entityType === 'DISPATCH_LINE'
+    && orderQM9Text(row.payload.dispatchId) === command.aggregateId);
+  const targetLineIds = existingDispatchLines.map(row => row.entityId);
+  const targetLineIdSet = new Set(targetLineIds);
+  const existingAllocations = existingRows.filter(row => row.entityType === 'DISPATCH_STOCK_ALLOCATION'
+    && (orderQM9Text(row.payload.dispatchId) === command.aggregateId || targetLineIdSet.has(orderQM9Text(row.payload.dispatchLineId))));
+  const targetAllocationIds = existingAllocations.map(row => row.entityId);
+  const targetAllocationIdSet = new Set(targetAllocationIds);
+  const changedDispatchLines = rows('DISPATCH_LINE').filter(row => orderQM9Text(row.payload.dispatchId) === command.aggregateId);
+  const changedAllocations = rows('DISPATCH_STOCK_ALLOCATION').filter(row => orderQM9Text(row.payload.dispatchId) === command.aggregateId
+    || targetAllocationIdSet.has(row.entityId));
   if (documents.length !== 1 || !salesLines.length || !movements.length || !events.length || !reservations.length) {
     throw new Error('ORDERQ_CENTRAL_CONFIRM_RESULT_INCOMPLETE');
+  }
+  if (!targetLineIds.length || !targetAllocationIds.length) throw new Error('ORDERQ_CENTRAL_CONFIRM_TARGET_INCOMPLETE');
+  orderQM9RequireExactIds(salesLines.map(row => row.payload.dispatchLineId), targetLineIds, 'ORDERQ_CENTRAL_CONFIRM_LINE_SET_MISMATCH');
+  orderQM9RequireExactIds(changedDispatchLines.map(row => row.entityId), targetLineIds, 'ORDERQ_CENTRAL_CONFIRM_LINE_STATE_SET_MISMATCH');
+  orderQM9RequireExactIds(movements.map(row => row.payload.sourceLineId), targetAllocationIds, 'ORDERQ_CENTRAL_CONFIRM_ALLOCATION_MOVEMENT_SET_MISMATCH');
+  orderQM9RequireExactIds(changedAllocations.map(row => row.entityId), targetAllocationIds, 'ORDERQ_CENTRAL_CONFIRM_ALLOCATION_STATE_SET_MISMATCH');
+  orderQM9RequireExactIds(reservations.map(row => row.payload.allocationId), targetAllocationIds, 'ORDERQ_CENTRAL_CONFIRM_RESERVATION_SET_MISMATCH');
+  orderQM9RequireExactIds(events.map(row => row.payload.detail && row.payload.detail.salesLineId), salesLines.map(row => row.entityId), 'ORDERQ_CENTRAL_CONFIRM_FULFILLMENT_SET_MISMATCH');
+  if (changedDispatchLines.some(row => orderQM9Text(row.payload.status).toUpperCase() !== 'CONFIRMED')
+    || changedAllocations.some(row => orderQM9Text(row.payload.status).toUpperCase() !== 'CONFIRMED')) {
+    throw new Error('ORDERQ_CENTRAL_CONFIRM_TARGET_STATE_INVALID');
   }
   const document = documents[0].payload;
   if (orderQM9Text(document.dispatchId) !== command.aggregateId || orderQM9Text(document.erpPostingStatus).toUpperCase() !== 'READY') {
@@ -989,19 +1023,36 @@ function orderQM9ValidateDispatchConfirmation(existingRows, command, mutations) 
     || events.some(row => !salesLineIds.has(orderQM9Text(row.payload.detail && row.payload.detail.salesLineId)))) {
     throw new Error('ORDERQ_CENTRAL_CONFIRM_ORPHAN_RESULT');
   }
+  const postDispatchLines = all('DISPATCH_LINE').filter(row => targetLineIdSet.has(row.entityId));
+  const postAllocations = all('DISPATCH_STOCK_ALLOCATION').filter(row => targetAllocationIdSet.has(row.entityId));
+  const postReservations = all('INVENTORY_RESERVATION').filter(row => orderQM9Text(row.payload.dispatchId) === command.aggregateId
+    || targetAllocationIdSet.has(orderQM9Text(row.payload.allocationId)));
+  if (postDispatchLines.length !== targetLineIds.length || postDispatchLines.some(row => orderQM9Text(row.payload.status).toUpperCase() !== 'CONFIRMED')
+    || postAllocations.length !== targetAllocationIds.length || postAllocations.some(row => orderQM9Text(row.payload.status).toUpperCase() !== 'CONFIRMED')
+    || postReservations.some(row => orderQM9Text(row.payload.status).toUpperCase() === 'ACTIVE')) {
+    throw new Error('ORDERQ_CENTRAL_CONFIRM_POST_STATE_INCOMPLETE');
+  }
   orderQM9RequireSameNumber(document.supplyAmountWon, salesLines.reduce((sum, row) => sum + Number(row.payload.supplyAmountWon || 0), 0), 'ORDERQ_CENTRAL_CONFIRM_SUPPLY_AMOUNT_MISMATCH');
   orderQM9RequireSameNumber(document.vatAmountWon, salesLines.reduce((sum, row) => sum + Number(row.payload.vatAmountWon || 0), 0), 'ORDERQ_CENTRAL_CONFIRM_VAT_AMOUNT_MISMATCH');
   orderQM9RequireSameNumber(document.totalAmountWon, salesLines.reduce((sum, row) => sum + Number(row.payload.totalAmountWon || 0), 0), 'ORDERQ_CENTRAL_CONFIRM_TOTAL_AMOUNT_MISMATCH');
 }
 
-function orderQM9ValidatePurchaseConfirmation(command, mutations) {
+function orderQM9ValidatePurchaseConfirmation(existingRows, command, mutations) {
   const rows = type => mutations.filter(row => row.entityType === type);
+  const all = type => orderQM9RowsWithMutations(existingRows, mutations, type);
   const purchase = rows('PURCHASE_DOCUMENT').find(row => row.entityId === command.aggregateId);
   const lines = rows('PURCHASE_LINE').filter(row => orderQM9Text(row.payload.purchaseDocumentId) === command.aggregateId);
   const movements = rows('INVENTORY_MOVEMENT');
+  const existingLines = existingRows.filter(row => row.entityType === 'PURCHASE_LINE'
+    && orderQM9Text(row.payload.purchaseDocumentId) === command.aggregateId);
+  const targetLineIds = existingLines.map(row => row.entityId);
   if (!purchase || orderQM9Text(purchase.payload.status).toUpperCase() !== 'CONFIRMED'
     || orderQM9Text(purchase.payload.erpPostingStatus).toUpperCase() !== 'READY'
     || !lines.length || movements.length !== lines.length) throw new Error('ORDERQ_CENTRAL_PURCHASE_RESULT_INVALID');
+  if (!targetLineIds.length) throw new Error('ORDERQ_CENTRAL_PURCHASE_TARGET_INCOMPLETE');
+  orderQM9RequireExactIds(lines.map(row => row.entityId), targetLineIds, 'ORDERQ_CENTRAL_PURCHASE_LINE_SET_MISMATCH');
+  orderQM9RequireExactIds(movements.map(row => row.payload.sourceLineId), targetLineIds, 'ORDERQ_CENTRAL_PURCHASE_MOVEMENT_SET_MISMATCH');
+  if (lines.some(row => orderQM9Text(row.payload.status).toUpperCase() !== 'CONFIRMED')) throw new Error('ORDERQ_CENTRAL_PURCHASE_LINE_STATE_INVALID');
   const movementByLine = new Map(movements.map(row => [orderQM9Text(row.payload.sourceLineId), row]));
   lines.forEach(lineRow => {
     const line = lineRow.payload;
@@ -1017,6 +1068,11 @@ function orderQM9ValidatePurchaseConfirmation(command, mutations) {
     }
     orderQM9RequireSameNumber(movement.signedBaseQuantity, line.baseQuantity, 'ORDERQ_CENTRAL_PURCHASE_QUANTITY_MISMATCH', lineRow.entityId);
   });
+  const targetLineIdSet = new Set(targetLineIds);
+  const postLines = all('PURCHASE_LINE').filter(row => targetLineIdSet.has(row.entityId));
+  if (postLines.length !== targetLineIds.length || postLines.some(row => orderQM9Text(row.payload.status).toUpperCase() !== 'CONFIRMED')) {
+    throw new Error('ORDERQ_CENTRAL_PURCHASE_POST_STATE_INCOMPLETE');
+  }
   orderQM9RequireSameNumber(purchase.payload.amountWon, lines.reduce((sum, row) => sum + Number(row.payload.amountWon || 0), 0), 'ORDERQ_CENTRAL_PURCHASE_AMOUNT_MISMATCH');
 }
 
@@ -1134,7 +1190,7 @@ function orderQM9ValidateCommit(ss, command, mutations) {
       || orderQM9Text(purchase.payload.erpPostingStatus).toUpperCase() !== 'READY'
       || !movements.length || movements.some(row => row.payload.movementType !== 'PURCHASE_RECEIPT'
         || Number(row.payload.signedBaseQuantity || 0) < 0)) throw new Error('ORDERQ_CENTRAL_PURCHASE_RESULT_INVALID');
-    orderQM9ValidatePurchaseConfirmation(command, mutations);
+    orderQM9ValidatePurchaseConfirmation(existingRows, command, mutations);
   }
   if (command.commandType === 'REVERSE_DISPATCH') {
     const reversalDecision = rows('DISPATCH_DECISION').find(row => row.payload.reversalOf === command.aggregateId);

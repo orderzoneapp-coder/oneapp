@@ -119,6 +119,8 @@ const confirmSource = { commandType:OFFICIAL_COMMAND_TYPE.CONFIRM_DISPATCH, aggr
 const confirmLease = prepareCentralCommand(state, confirmSource);
 const confirmMutations = [
   { entityType:'DISPATCH_DECISION', entityId:'D-1', revision:4, payload:{ dispatchId:'D-1', status:'CONFIRMED', revision:4, localOnly:true } },
+  { entityType:'DISPATCH_LINE', entityId:'DL-1', revision:4, payload:{ dispatchLineId:'DL-1', dispatchId:'D-1', orderItemId:'OI-1', actualProductId:'P-1', actualQuantity:6, actualBaseQuantity:6, recognizedOrderQuantity:6, status:'CONFIRMED', localOnly:true } },
+  { entityType:'DISPATCH_STOCK_ALLOCATION', entityId:'DA-1', revision:4, payload:{ allocationId:'DA-1', dispatchId:'D-1', dispatchLineId:'DL-1', warehouseId:'W-1', reservationId:'IR-1', actualBaseQuantity:6, movementId:'IM-1', status:'CONFIRMED', localOnly:true } },
   { entityType:'SALES_DOCUMENT', entityId:'SD-1', revision:4, payload:{ salesDocumentId:'SD-1', dispatchId:'D-1', status:'CONFIRMED', erpPostingStatus:'READY', localOnly:true } },
   { entityType:'SALES_LINE', entityId:'SL-1', revision:4, payload:{ salesLineId:'SL-1', salesDocumentId:'SD-1', dispatchLineId:'DL-1', orderItemId:'OI-1', productId:'P-1', warehouseId:'W-1', actualQuantity:6, actualBaseQuantity:6, recognizedOrderQuantity:6, supplyAmountWon:0, vatAmountWon:'', localOnly:true } },
   { entityType:'INVENTORY_MOVEMENT', entityId:'IM-1', revision:4, payload:{ movementId:'IM-1', dispatchId:'D-1', dispatchLineId:'DL-1', sourceLineId:'DA-1', productId:'P-1', warehouseId:'W-1', movementType:'SALE_ISSUE', signedBaseQuantity:-6, ledgerSequence:999, occurredAt:'2026-08-14', localOnly:true } },
@@ -152,6 +154,72 @@ assert.throws(() => commitCentralCommand(state, {
     : row)
 }), /MUTATION_IDEMPOTENCY_CONFLICT/);
 assert.equal(state.ledgerSequence, 1);
+
+const completeDispatchState = createCentralAuthorityState({ entities:Object.fromEntries([
+  { entityType:'DISPATCH_DECISION', entityId:'D-COMPLETE', revision:3, payload:{ dispatchId:'D-COMPLETE', status:'READY_TO_CONFIRM', revision:3 } },
+  ...[1, 2].map(index => ({ entityType:'DISPATCH_LINE', entityId:`DL-C${index}`, revision:3, payload:{ dispatchLineId:`DL-C${index}`, dispatchId:'D-COMPLETE', orderId:'O-C', orderItemId:`OI-C${index}`, actualProductId:'P-C', actualQuantity:5, actualBaseQuantity:5, recognizedOrderQuantity:5, status:'ACTUAL_RECORDED' } })),
+  ...[1, 2].map(index => ({ entityType:'DISPATCH_STOCK_ALLOCATION', entityId:`DA-C${index}`, revision:3, payload:{ allocationId:`DA-C${index}`, dispatchId:'D-COMPLETE', dispatchLineId:`DL-C${index}`, warehouseId:'W-C', reservationId:`IR-C${index}`, actualBaseQuantity:5, status:'ACTUAL_RECORDED' } })),
+  ...[1, 2].map(index => ({ entityType:'INVENTORY_RESERVATION', entityId:`IR-C${index}`, revision:3, payload:{ reservationId:`IR-C${index}`, dispatchId:'D-COMPLETE', allocationId:`DA-C${index}`, productId:'P-C', warehouseId:'W-C', reservedBaseQuantity:5, status:'ACTIVE' } }))
+].map(row => [key(row.entityType, row.entityId), row])) });
+const completeDispatchCommand = { commandType:OFFICIAL_COMMAND_TYPE.CONFIRM_DISPATCH, aggregateId:'D-COMPLETE', expectedRevision:3, idempotencyKey:'CONFIRM-COMPLETE', deviceId:'PC-A' };
+const completeDispatchLease = prepareCentralCommand(completeDispatchState, completeDispatchCommand);
+const completeDispatchMutations = [
+  { entityType:'DISPATCH_DECISION', entityId:'D-COMPLETE', revision:4, payload:{ dispatchId:'D-COMPLETE', status:'CONFIRMED', revision:4 } },
+  ...[1, 2].map(index => ({ entityType:'DISPATCH_LINE', entityId:`DL-C${index}`, revision:4, payload:{ dispatchLineId:`DL-C${index}`, dispatchId:'D-COMPLETE', orderId:'O-C', orderItemId:`OI-C${index}`, actualProductId:'P-C', actualQuantity:5, actualBaseQuantity:5, recognizedOrderQuantity:5, status:'CONFIRMED' } })),
+  ...[1, 2].map(index => ({ entityType:'DISPATCH_STOCK_ALLOCATION', entityId:`DA-C${index}`, revision:4, payload:{ allocationId:`DA-C${index}`, dispatchId:'D-COMPLETE', dispatchLineId:`DL-C${index}`, warehouseId:'W-C', reservationId:`IR-C${index}`, actualBaseQuantity:5, movementId:`IM-C${index}`, status:'CONFIRMED' } })),
+  { entityType:'SALES_DOCUMENT', entityId:'SD-C', revision:4, payload:{ salesDocumentId:'SD-C', dispatchId:'D-COMPLETE', status:'CONFIRMED', erpPostingStatus:'READY', supplyAmountWon:0, vatAmountWon:0, totalAmountWon:0 } },
+  ...[1, 2].map(index => ({ entityType:'SALES_LINE', entityId:`SL-C${index}`, revision:4, payload:{ salesLineId:`SL-C${index}`, salesDocumentId:'SD-C', dispatchLineId:`DL-C${index}`, orderItemId:`OI-C${index}`, productId:'P-C', warehouseId:'W-C', actualQuantity:5, actualBaseQuantity:5, recognizedOrderQuantity:5, supplyAmountWon:0, vatAmountWon:0, totalAmountWon:0 } })),
+  ...[1, 2].map(index => ({ entityType:'INVENTORY_MOVEMENT', entityId:`IM-C${index}`, revision:4, payload:{ movementId:`IM-C${index}`, dispatchId:'D-COMPLETE', dispatchLineId:`DL-C${index}`, sourceLineId:`DA-C${index}`, productId:'P-C', warehouseId:'W-C', movementType:'SALE_ISSUE', signedBaseQuantity:-5 } })),
+  ...[1, 2].map(index => ({ entityType:'ORDER_EVENT', entityId:`OE-C${index}`, revision:4, payload:{ eventId:`OE-C${index}`, orderId:'O-C', eventType:'SALES_TRANSFER_ALLOCATED', detail:{ orderItemId:`OI-C${index}`, salesLineId:`SL-C${index}`, transferredQty:5 } } })),
+  ...[1, 2].map(index => ({ entityType:'INVENTORY_RESERVATION', entityId:`IR-C${index}`, revision:4, payload:{ reservationId:`IR-C${index}`, dispatchId:'D-COMPLETE', allocationId:`DA-C${index}`, productId:'P-C', warehouseId:'W-C', reservedBaseQuantity:5, consumedBaseQuantity:5, status:'CONSUMED' } }))
+];
+for (const [label, malformed, expectedError] of [
+  ['missing-line', completeDispatchMutations.filter(row => !['DL-C2','SL-C2','OE-C2'].includes(row.entityId)), /CONFIRM_LINE_SET_MISMATCH|CONFIRM_LINE_STATE_SET_MISMATCH/],
+  ['missing-allocation-movement', completeDispatchMutations.filter(row => row.entityId !== 'IM-C2'), /CONFIRM_ALLOCATION_MOVEMENT_SET_MISMATCH/],
+  ['missing-reservation', completeDispatchMutations.filter(row => row.entityId !== 'IR-C2'), /CONFIRM_RESERVATION_SET_MISMATCH/],
+  ['duplicate-line', [...completeDispatchMutations, { ...completeDispatchMutations.find(row => row.entityId === 'SL-C1'), entityId:'SL-C-DUP', payload:{ ...completeDispatchMutations.find(row => row.entityId === 'SL-C1').payload, salesLineId:'SL-C-DUP' } }], /CONFIRM_LINE_SET_MISMATCH/],
+  ['duplicate-movement', [...completeDispatchMutations, { ...completeDispatchMutations.find(row => row.entityId === 'IM-C1'), entityId:'IM-C-DUP', payload:{ ...completeDispatchMutations.find(row => row.entityId === 'IM-C1').payload, movementId:'IM-C-DUP' } }], /CONFIRM_ALLOCATION_MOVEMENT_SET_MISMATCH/],
+  ['duplicate-event', [...completeDispatchMutations, { ...completeDispatchMutations.find(row => row.entityId === 'OE-C1'), entityId:'OE-C-DUP', payload:{ ...completeDispatchMutations.find(row => row.entityId === 'OE-C1').payload, eventId:'OE-C-DUP' } }], /CONFIRM_FULFILLMENT_SET_MISMATCH/],
+  ['duplicate-reservation', [...completeDispatchMutations, { ...completeDispatchMutations.find(row => row.entityId === 'IR-C1'), entityId:'IR-C-DUP', payload:{ ...completeDispatchMutations.find(row => row.entityId === 'IR-C1').payload, reservationId:'IR-C-DUP' } }], /CONFIRM_RESERVATION_SET_MISMATCH/]
+]) {
+  const before = JSON.stringify(completeDispatchState);
+  assert.throws(() => commitCentralCommand(completeDispatchState, {
+    idempotencyKey:'CONFIRM-COMPLETE', leaseToken:completeDispatchLease.leaseToken, fingerprint:completeDispatchLease.fingerprint, mutations:malformed
+  }), expectedError, label);
+  assert.equal(JSON.stringify(completeDispatchState), before, `${label} changed central state`);
+}
+const completeDispatch = commitCentralCommand(completeDispatchState, {
+  idempotencyKey:'CONFIRM-COMPLETE', leaseToken:completeDispatchLease.leaseToken, fingerprint:completeDispatchLease.fingerprint, mutations:completeDispatchMutations
+});
+assert.equal(completeDispatch.ledgerSequence, 2);
+assert.equal(Object.values(completeDispatchState.entities).filter(row => row.entityType === 'INVENTORY_RESERVATION' && row.payload.status === 'ACTIVE').length, 0);
+
+const completePurchaseState = createCentralAuthorityState({ entities:Object.fromEntries([
+  { entityType:'PURCHASE_DOCUMENT', entityId:'PD-C', revision:1, payload:{ purchaseDocumentId:'PD-C', status:'DRAFT', revision:1 } },
+  ...[1, 2].map((index) => ({ entityType:'PURCHASE_LINE', entityId:`PL-C${index}`, revision:1, payload:{ purchaseLineId:`PL-C${index}`, purchaseDocumentId:'PD-C', productId:'P-C', warehouseId:'W-C', quantity:index === 1 ? 5 : 7, baseQuantity:index === 1 ? 5 : 7, amountWon:0, status:'DRAFT' } }))
+].map(row => [key(row.entityType, row.entityId), row])) });
+const completePurchaseCommand = { commandType:OFFICIAL_COMMAND_TYPE.CONFIRM_PURCHASE, aggregateId:'PD-C', expectedRevision:1, idempotencyKey:'PURCHASE-COMPLETE', deviceId:'PC-B' };
+const completePurchaseLease = prepareCentralCommand(completePurchaseState, completePurchaseCommand);
+const completePurchaseMutations = [
+  { entityType:'PURCHASE_DOCUMENT', entityId:'PD-C', revision:2, payload:{ purchaseDocumentId:'PD-C', status:'CONFIRMED', revision:2, erpPostingStatus:'READY', amountWon:0 } },
+  ...[1, 2].map(index => ({ entityType:'PURCHASE_LINE', entityId:`PL-C${index}`, revision:2, payload:{ purchaseLineId:`PL-C${index}`, purchaseDocumentId:'PD-C', productId:'P-C', warehouseId:'W-C', quantity:index === 1 ? 5 : 7, baseQuantity:index === 1 ? 5 : 7, amountWon:0, movementId:`PIM-C${index}`, status:'CONFIRMED' } })),
+  ...[1, 2].map(index => ({ entityType:'INVENTORY_MOVEMENT', entityId:`PIM-C${index}`, revision:2, payload:{ movementId:`PIM-C${index}`, sourceDocumentId:'PD-C', sourceLineId:`PL-C${index}`, productId:'P-C', warehouseId:'W-C', movementType:'PURCHASE_RECEIPT', signedBaseQuantity:index === 1 ? 5 : 7 } }))
+];
+for (const [label, malformed, expectedError] of [
+  ['missing-purchase-line', completePurchaseMutations.filter(row => !['PL-C2','PIM-C2'].includes(row.entityId)), /PURCHASE_LINE_SET_MISMATCH/],
+  ['duplicate-purchase-movement', [...completePurchaseMutations, { ...completePurchaseMutations.find(row => row.entityId === 'PIM-C1'), entityId:'PIM-C-DUP', payload:{ ...completePurchaseMutations.find(row => row.entityId === 'PIM-C1').payload, movementId:'PIM-C-DUP' } }], /PURCHASE_RESULT_INVALID|PURCHASE_MOVEMENT_SET_MISMATCH/]
+]) {
+  const before = JSON.stringify(completePurchaseState);
+  assert.throws(() => commitCentralCommand(completePurchaseState, {
+    idempotencyKey:'PURCHASE-COMPLETE', leaseToken:completePurchaseLease.leaseToken, fingerprint:completePurchaseLease.fingerprint, mutations:malformed
+  }), expectedError, label);
+  assert.equal(JSON.stringify(completePurchaseState), before, `${label} changed central state`);
+}
+const completePurchase = commitCentralCommand(completePurchaseState, {
+  idempotencyKey:'PURCHASE-COMPLETE', leaseToken:completePurchaseLease.leaseToken, fingerprint:completePurchaseLease.fingerprint, mutations:completePurchaseMutations
+});
+assert.equal(completePurchase.ledgerSequence, 2);
+assert.equal(Object.values(completePurchaseState.entities).filter(row => row.entityType === 'PURCHASE_LINE' && row.payload.status === 'DRAFT').length, 0);
 
 const dispatchReverseState = createCentralAuthorityState(state);
 const dispatchReverseLease = prepareCentralCommand(dispatchReverseState, {

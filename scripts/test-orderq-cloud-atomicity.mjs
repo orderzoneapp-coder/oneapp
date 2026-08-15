@@ -337,6 +337,7 @@ const m9 = (action, body = {}) => post({
   schemaVersion: "ONEAPP_ORDERQ_CENTRAL_V1",
   ...body,
 });
+const m9SpreadsheetDigest = () => JSON.stringify([...spreadsheet.sheets.entries()].map(([name, sheet]) => [name, sheet.cells]));
 
 const m9Migration = m9("orderq_m9_migrate", {
   idempotencyKey: "M9-MIGRATE-D1",
@@ -452,6 +453,8 @@ const m9PrepareConfirm = m9("orderq_m9_command_prepare", {
 });
 const m9ConfirmMutations = [
   { entityType:"DISPATCH_DECISION", entityId:"M9-D1", revision:4, payload:{ dispatchId:"M9-D1", status:"CONFIRMED", revision:4, localOnly:true } },
+  { entityType:"DISPATCH_LINE", entityId:"M9-DL1", revision:4, payload:{ dispatchLineId:"M9-DL1", dispatchId:"M9-D1", orderItemId:"M9-OI1", actualProductId:"M9-P1", actualQuantity:6, actualBaseQuantity:6, recognizedOrderQuantity:6, status:"CONFIRMED", localOnly:true } },
+  { entityType:"DISPATCH_STOCK_ALLOCATION", entityId:"M9-DA1", revision:4, payload:{ allocationId:"M9-DA1", dispatchId:"M9-D1", dispatchLineId:"M9-DL1", warehouseId:"M9-W1", reservationId:"M9-IR1", actualBaseQuantity:6, movementId:"M9-IM1", status:"CONFIRMED", localOnly:true } },
   { entityType:"SALES_DOCUMENT", entityId:"M9-SD1", revision:4, payload:{ salesDocumentId:"M9-SD1", dispatchId:"M9-D1", status:"CONFIRMED", erpPostingStatus:"READY", localOnly:true } },
   { entityType:"SALES_LINE", entityId:"M9-SL1", revision:4, payload:{ salesLineId:"M9-SL1", salesDocumentId:"M9-SD1", dispatchLineId:"M9-DL1", orderItemId:"M9-OI1", productId:"M9-P1", warehouseId:"M9-W1", actualQuantity:6, actualBaseQuantity:6, recognizedOrderQuantity:6, localOnly:true } },
   { entityType:"INVENTORY_MOVEMENT", entityId:"M9-IM1", revision:4, payload:{ movementId:"M9-IM1", dispatchId:"M9-D1", dispatchLineId:"M9-DL1", sourceLineId:"M9-DA1", productId:"M9-P1", warehouseId:"M9-W1", movementType:"SALE_ISSUE", signedBaseQuantity:-6, ledgerSequence:999, localOnly:true } },
@@ -585,6 +588,100 @@ const badPurchaseReverse = m9("orderq_m9_command_commit", {
 assert.equal(badPurchaseReverse.status, "error");
 assert.match(badPurchaseReverse.message, /PURCHASE_REVERSAL_EXCEEDS_ORIGINAL|PURCHASE_REVERSAL_MOVEMENT_EXCEEDS_ORIGINAL/);
 assert.equal(context.orderQM9MetaNumber(spreadsheet, "ledgerSequence"), goodPurchase.data.ledgerSequence);
+
+assert.equal(m9("orderq_m9_migrate", {
+  idempotencyKey:"M9-MIGRATE-COMPLETE-D", deviceId:"PC-A", entities:[
+    { entityType:"DISPATCH_DECISION", entityId:"M9-DC", revision:1, payload:{ dispatchId:"M9-DC", status:"DRAFT", revision:1, localOnly:true } },
+    ...[1, 2].map(index => ({ entityType:"DISPATCH_LINE", entityId:`M9-DLC${index}`, revision:1, payload:{ dispatchLineId:`M9-DLC${index}`, dispatchId:"M9-DC", orderId:"M9-OC", orderItemId:`M9-OIC${index}`, actualProductId:"M9-P1", plannedBaseQuantity:5, localOnly:true } })),
+    ...[1, 2].map(index => ({ entityType:"DISPATCH_STOCK_ALLOCATION", entityId:`M9-DAC${index}`, revision:1, payload:{ allocationId:`M9-DAC${index}`, dispatchId:"M9-DC", dispatchLineId:`M9-DLC${index}`, warehouseId:"M9-W1", plannedBaseQuantity:5, localOnly:true } })),
+  ],
+}).status, "success");
+const completeReleasePrepare = m9("orderq_m9_command_prepare", {
+  commandType:"RELEASE_DISPATCH", aggregateId:"M9-DC", expectedRevision:1, idempotencyKey:"M9-COMPLETE-REL", deviceId:"PC-A",
+});
+assert.equal(m9("orderq_m9_command_commit", {
+  idempotencyKey:"M9-COMPLETE-REL", leaseToken:completeReleasePrepare.data.leaseToken, fingerprint:completeReleasePrepare.data.fingerprint,
+  mutations:[
+    { entityType:"DISPATCH_DECISION", entityId:"M9-DC", revision:2, payload:{ dispatchId:"M9-DC", status:"RELEASED", revision:2 } },
+    ...[1, 2].map(index => ({ entityType:"INVENTORY_RESERVATION", entityId:`M9-IRC${index}`, revision:2, payload:{ reservationId:`M9-IRC${index}`, dispatchId:"M9-DC", allocationId:`M9-DAC${index}`, productId:"M9-P1", warehouseId:"M9-W1", reservedBaseQuantity:5, status:"ACTIVE" } })),
+  ],
+}).status, "success");
+const completeActualPrepare = m9("orderq_m9_command_prepare", {
+  commandType:"UPDATE_DISPATCH", aggregateId:"M9-DC", expectedRevision:2, idempotencyKey:"M9-COMPLETE-ACTUAL", deviceId:"PC-A",
+});
+assert.equal(m9("orderq_m9_command_commit", {
+  idempotencyKey:"M9-COMPLETE-ACTUAL", leaseToken:completeActualPrepare.data.leaseToken, fingerprint:completeActualPrepare.data.fingerprint,
+  mutations:[
+    { entityType:"DISPATCH_DECISION", entityId:"M9-DC", revision:3, payload:{ dispatchId:"M9-DC", status:"READY_TO_CONFIRM", revision:3 } },
+    ...[1, 2].map(index => ({ entityType:"DISPATCH_LINE", entityId:`M9-DLC${index}`, revision:3, payload:{ dispatchLineId:`M9-DLC${index}`, dispatchId:"M9-DC", orderId:"M9-OC", orderItemId:`M9-OIC${index}`, actualProductId:"M9-P1", actualQuantity:5, actualBaseQuantity:5, recognizedOrderQuantity:5, status:"ACTUAL_RECORDED" } })),
+    ...[1, 2].map(index => ({ entityType:"DISPATCH_STOCK_ALLOCATION", entityId:`M9-DAC${index}`, revision:3, payload:{ allocationId:`M9-DAC${index}`, dispatchId:"M9-DC", dispatchLineId:`M9-DLC${index}`, warehouseId:"M9-W1", reservationId:`M9-IRC${index}`, actualBaseQuantity:5, status:"ACTUAL_RECORDED" } })),
+  ],
+}).status, "success");
+const completeConfirmPrepare = m9("orderq_m9_command_prepare", {
+  commandType:"CONFIRM_DISPATCH", aggregateId:"M9-DC", expectedRevision:3, idempotencyKey:"M9-COMPLETE-CONFIRM", deviceId:"PC-A",
+});
+const completeConfirmMutations = [
+  { entityType:"DISPATCH_DECISION", entityId:"M9-DC", revision:4, payload:{ dispatchId:"M9-DC", status:"CONFIRMED", revision:4 } },
+  ...[1, 2].map(index => ({ entityType:"DISPATCH_LINE", entityId:`M9-DLC${index}`, revision:4, payload:{ dispatchLineId:`M9-DLC${index}`, dispatchId:"M9-DC", orderId:"M9-OC", orderItemId:`M9-OIC${index}`, actualProductId:"M9-P1", actualQuantity:5, actualBaseQuantity:5, recognizedOrderQuantity:5, status:"CONFIRMED" } })),
+  ...[1, 2].map(index => ({ entityType:"DISPATCH_STOCK_ALLOCATION", entityId:`M9-DAC${index}`, revision:4, payload:{ allocationId:`M9-DAC${index}`, dispatchId:"M9-DC", dispatchLineId:`M9-DLC${index}`, warehouseId:"M9-W1", reservationId:`M9-IRC${index}`, actualBaseQuantity:5, movementId:`M9-IMC${index}`, status:"CONFIRMED" } })),
+  { entityType:"SALES_DOCUMENT", entityId:"M9-SDC", revision:4, payload:{ salesDocumentId:"M9-SDC", dispatchId:"M9-DC", status:"CONFIRMED", erpPostingStatus:"READY", supplyAmountWon:0, vatAmountWon:0, totalAmountWon:0 } },
+  ...[1, 2].map(index => ({ entityType:"SALES_LINE", entityId:`M9-SLC${index}`, revision:4, payload:{ salesLineId:`M9-SLC${index}`, salesDocumentId:"M9-SDC", dispatchLineId:`M9-DLC${index}`, orderItemId:`M9-OIC${index}`, productId:"M9-P1", warehouseId:"M9-W1", actualQuantity:5, actualBaseQuantity:5, recognizedOrderQuantity:5, supplyAmountWon:0, vatAmountWon:0, totalAmountWon:0 } })),
+  ...[1, 2].map(index => ({ entityType:"INVENTORY_MOVEMENT", entityId:`M9-IMC${index}`, revision:4, payload:{ movementId:`M9-IMC${index}`, dispatchId:"M9-DC", dispatchLineId:`M9-DLC${index}`, sourceLineId:`M9-DAC${index}`, productId:"M9-P1", warehouseId:"M9-W1", movementType:"SALE_ISSUE", signedBaseQuantity:-5 } })),
+  ...[1, 2].map(index => ({ entityType:"ORDER_EVENT", entityId:`M9-OEC${index}`, revision:4, payload:{ eventId:`M9-OEC${index}`, orderId:"M9-OC", eventType:"SALES_TRANSFER_ALLOCATED", detail:{ orderItemId:`M9-OIC${index}`, salesLineId:`M9-SLC${index}`, transferredQty:5 } } })),
+  ...[1, 2].map(index => ({ entityType:"INVENTORY_RESERVATION", entityId:`M9-IRC${index}`, revision:4, payload:{ reservationId:`M9-IRC${index}`, dispatchId:"M9-DC", allocationId:`M9-DAC${index}`, productId:"M9-P1", warehouseId:"M9-W1", reservedBaseQuantity:5, consumedBaseQuantity:5, status:"CONSUMED" } })),
+];
+for (const [label, malformed, pattern] of [
+  ["missing-dispatch-line", completeConfirmMutations.filter(row => !["M9-DLC2", "M9-SLC2", "M9-OEC2"].includes(row.entityId)), /CONFIRM_LINE_SET_MISMATCH|CONFIRM_LINE_STATE_SET_MISMATCH/],
+  ["missing-allocation", completeConfirmMutations.filter(row => row.entityId !== "M9-IMC2"), /CONFIRM_ALLOCATION_MOVEMENT_SET_MISMATCH/],
+  ["missing-reservation", completeConfirmMutations.filter(row => row.entityId !== "M9-IRC2"), /CONFIRM_RESERVATION_SET_MISMATCH/],
+  ["duplicate-dispatch-line", [...completeConfirmMutations, { ...completeConfirmMutations.find(row => row.entityId === "M9-SLC1"), entityId:"M9-SLC-DUP", payload:{ ...completeConfirmMutations.find(row => row.entityId === "M9-SLC1").payload, salesLineId:"M9-SLC-DUP" } }], /CONFIRM_LINE_SET_MISMATCH/],
+  ["duplicate-dispatch-movement", [...completeConfirmMutations, { ...completeConfirmMutations.find(row => row.entityId === "M9-IMC1"), entityId:"M9-IMC-DUP", payload:{ ...completeConfirmMutations.find(row => row.entityId === "M9-IMC1").payload, movementId:"M9-IMC-DUP" } }], /CONFIRM_ALLOCATION_MOVEMENT_SET_MISMATCH/],
+  ["duplicate-dispatch-event", [...completeConfirmMutations, { ...completeConfirmMutations.find(row => row.entityId === "M9-OEC1"), entityId:"M9-OEC-DUP", payload:{ ...completeConfirmMutations.find(row => row.entityId === "M9-OEC1").payload, eventId:"M9-OEC-DUP" } }], /CONFIRM_FULFILLMENT_SET_MISMATCH/],
+  ["duplicate-dispatch-reservation", [...completeConfirmMutations, { ...completeConfirmMutations.find(row => row.entityId === "M9-IRC1"), entityId:"M9-IRC-DUP", payload:{ ...completeConfirmMutations.find(row => row.entityId === "M9-IRC1").payload, reservationId:"M9-IRC-DUP" } }], /CONFIRM_RESERVATION_SET_MISMATCH/],
+]) {
+  const before = m9SpreadsheetDigest();
+  const rejected = m9("orderq_m9_command_commit", {
+    idempotencyKey:"M9-COMPLETE-CONFIRM", leaseToken:completeConfirmPrepare.data.leaseToken, fingerprint:completeConfirmPrepare.data.fingerprint, mutations:malformed,
+  });
+  assert.equal(rejected.status, "error", label);
+  assert.match(rejected.message, pattern, label);
+  assert.equal(m9SpreadsheetDigest(), before, `${label} changed Apps Script state`);
+}
+assert.equal(m9("orderq_m9_command_commit", {
+  idempotencyKey:"M9-COMPLETE-CONFIRM", leaseToken:completeConfirmPrepare.data.leaseToken, fingerprint:completeConfirmPrepare.data.fingerprint, mutations:completeConfirmMutations,
+}).status, "success");
+assert.equal(context.orderQM9ReadAllEntities(spreadsheet).filter(row => row.entityType === "INVENTORY_RESERVATION" && row.payload.dispatchId === "M9-DC" && row.payload.status === "ACTIVE").length, 0);
+
+assert.equal(m9("orderq_m9_migrate", {
+  idempotencyKey:"M9-MIGRATE-COMPLETE-P", deviceId:"PC-B", entities:[
+    { entityType:"PURCHASE_DOCUMENT", entityId:"M9-PDC", revision:1, payload:{ purchaseDocumentId:"M9-PDC", status:"DRAFT", revision:1, localOnly:true } },
+    ...[1, 2].map(index => ({ entityType:"PURCHASE_LINE", entityId:`M9-PLC${index}`, revision:1, payload:{ purchaseLineId:`M9-PLC${index}`, purchaseDocumentId:"M9-PDC", productId:"M9-P1", warehouseId:"M9-W1", quantity:index === 1 ? 5 : 7, baseQuantity:index === 1 ? 5 : 7, amountWon:0, status:"DRAFT", localOnly:true } })),
+  ],
+}).status, "success");
+const completePurchasePrepare = m9("orderq_m9_command_prepare", {
+  commandType:"CONFIRM_PURCHASE", aggregateId:"M9-PDC", expectedRevision:1, idempotencyKey:"M9-COMPLETE-PURCHASE", deviceId:"PC-B",
+});
+const completePurchaseMutations = [
+  { entityType:"PURCHASE_DOCUMENT", entityId:"M9-PDC", revision:2, payload:{ purchaseDocumentId:"M9-PDC", status:"CONFIRMED", revision:2, erpPostingStatus:"READY", amountWon:0 } },
+  ...[1, 2].map(index => ({ entityType:"PURCHASE_LINE", entityId:`M9-PLC${index}`, revision:2, payload:{ purchaseLineId:`M9-PLC${index}`, purchaseDocumentId:"M9-PDC", productId:"M9-P1", warehouseId:"M9-W1", quantity:index === 1 ? 5 : 7, baseQuantity:index === 1 ? 5 : 7, amountWon:0, movementId:`M9-PIMC${index}`, status:"CONFIRMED" } })),
+  ...[1, 2].map(index => ({ entityType:"INVENTORY_MOVEMENT", entityId:`M9-PIMC${index}`, revision:2, payload:{ movementId:`M9-PIMC${index}`, sourceDocumentId:"M9-PDC", sourceLineId:`M9-PLC${index}`, productId:"M9-P1", warehouseId:"M9-W1", movementType:"PURCHASE_RECEIPT", signedBaseQuantity:index === 1 ? 5 : 7 } })),
+];
+for (const [label, malformed, pattern] of [
+  ["missing-purchase-line", completePurchaseMutations.filter(row => !["M9-PLC2", "M9-PIMC2"].includes(row.entityId)), /PURCHASE_LINE_SET_MISMATCH/],
+  ["duplicate-purchase-movement", [...completePurchaseMutations, { ...completePurchaseMutations.find(row => row.entityId === "M9-PIMC1"), entityId:"M9-PIMC-DUP", payload:{ ...completePurchaseMutations.find(row => row.entityId === "M9-PIMC1").payload, movementId:"M9-PIMC-DUP" } }], /PURCHASE_RESULT_INVALID|PURCHASE_MOVEMENT_SET_MISMATCH/],
+]) {
+  const before = m9SpreadsheetDigest();
+  const rejected = m9("orderq_m9_command_commit", {
+    idempotencyKey:"M9-COMPLETE-PURCHASE", leaseToken:completePurchasePrepare.data.leaseToken, fingerprint:completePurchasePrepare.data.fingerprint, mutations:malformed,
+  });
+  assert.equal(rejected.status, "error", label);
+  assert.match(rejected.message, pattern, label);
+  assert.equal(m9SpreadsheetDigest(), before, `${label} changed Apps Script state`);
+}
+assert.equal(m9("orderq_m9_command_commit", {
+  idempotencyKey:"M9-COMPLETE-PURCHASE", leaseToken:completePurchasePrepare.data.leaseToken, fingerprint:completePurchasePrepare.data.fingerprint, mutations:completePurchaseMutations,
+}).status, "success");
+assert.equal(context.orderQM9ReadAllEntities(spreadsheet).filter(row => row.entityType === "PURCHASE_LINE" && row.payload.purchaseDocumentId === "M9-PDC" && row.payload.status === "DRAFT").length, 0);
 const m9Pulled = m9("orderq_m9_pull", { afterSequence:m9BeforeFailureCursor, limit:50 });
 assert.equal(m9Pulled.status, "success");
 assert.ok(m9Pulled.data.changes.some(row => row.entityId === "M9-IM1"));

@@ -16,11 +16,26 @@
   const clone = value => JSON.parse(JSON.stringify(value));
   async function writeRows(rowsByStore, clear = false) {
     const db = await openOrderQDb();
-    const stores = clear ? [...db.objectStoreNames] : Object.keys(rowsByStore);
+    if (clear) {
+      const clearStores = [...db.objectStoreNames];
+      const clearTx = db.transaction(clearStores, 'readwrite');
+      clearStores.forEach(name => clearTx.objectStore(name).clear());
+      await transactionDone(clearTx);
+      for (const [storeName, rows] of Object.entries(rowsByStore)) {
+        try { await writeRows({ [storeName]:rows }); }
+        catch (error) { throw new Error(`SEED_STORE_FAILED:${storeName}:${error.message}`); }
+      }
+      return;
+    }
+    const stores = Object.keys(rowsByStore);
     const tx = db.transaction(stores, 'readwrite');
-    if (clear) stores.forEach(name => tx.objectStore(name).clear());
-    Object.entries(rowsByStore).forEach(([storeName, rows]) => rows.forEach(row => tx.objectStore(storeName).put(clone(row))));
-    await transactionDone(tx);
+    let failedWrite = '';
+    Object.entries(rowsByStore).forEach(([storeName, rows]) => rows.forEach(row => {
+      const request = tx.objectStore(storeName).put(clone(row));
+      request.onerror = () => { failedWrite = `${storeName}:${request.error?.name || 'UNKNOWN'}:${request.error?.message || ''}`; };
+    }));
+    try { await transactionDone(tx); }
+    catch (error) { throw new Error(`WRITE_ROWS_FAILED:${failedWrite || stores.join(',')}:${error.message}`); }
   }
 
   function aggregateFixture(dispatchId, suffix, quantity) {
@@ -31,67 +46,74 @@
     };
   }
 
+  function aggregateParts(dispatchId) {
+    if (dispatchId === 'GW-D3') return [{ suffix:'3A', quantity:5 }, { suffix:'3B', quantity:5 }];
+    return dispatchId.endsWith('2') ? [{ suffix:'2', quantity:2 }] : [{ suffix:'1', quantity:6 }];
+  }
+
   async function seed() {
     const first = aggregateFixture('GW-D1', '1', 6);
     const second = aggregateFixture('GW-D2', '2', 2);
+    const thirdParts = aggregateParts('GW-D3').map(part => aggregateFixture('GW-D3', part.suffix, part.quantity));
     await writeRows({
       [STORE.ORDERS]:[{ orderId:'GW-O', revision:1, localOnly:true }],
       [STORE.ORDER_ITEMS]:[
         { orderItemId:'GW-OI-1', orderId:'GW-O', productId:'GW-P', finalQuantity:6, revision:1, localOnly:true },
-        { orderItemId:'GW-OI-2', orderId:'GW-O', productId:'GW-P', finalQuantity:2, revision:1, localOnly:true }
+        { orderItemId:'GW-OI-2', orderId:'GW-O', productId:'GW-P', finalQuantity:2, revision:1, localOnly:true },
+        ...thirdParts.map(part => ({ orderItemId:part.line.orderItemId, orderId:'GW-O', productId:'GW-P', finalQuantity:part.line.plannedRecognizedOrderQuantity, revision:1, localOnly:true }))
       ],
       [STORE.PRODUCTS]:[{ productId:'GW-P', revision:1, localOnly:true }],
       [STORE.WAREHOUSES]:[{ warehouseId:'GW-W', revision:1, status:'ACTIVE', localOnly:true }],
       [STORE.INVENTORY_SNAPSHOTS]:[{ inventorySnapshotId:'GW-IS', importBatchId:'GW-IB', basisDate:'2026-08-15', snapshotLastSequence:0, status:'ACTIVE', localOnly:true }],
       [STORE.INVENTORY_LINES]:[{ inventoryLineId:'GW-IL', inventorySnapshotId:'GW-IS', productId:'GW-P', warehouseId:'GW-W', inventoryQuantity:20, status:'ACTIVE', localOnly:true }],
-      [STORE.DISPATCH_DECISIONS]:[first.decision, second.decision],
-      [STORE.DISPATCH_LINES]:[first.line, second.line],
-      [STORE.DISPATCH_STOCK_ALLOCATIONS]:[first.allocation, second.allocation]
+      [STORE.DISPATCH_DECISIONS]:[first.decision, second.decision, thirdParts[0].decision],
+      [STORE.DISPATCH_LINES]:[first.line, second.line, ...thirdParts.map(part => part.line)],
+      [STORE.DISPATCH_STOCK_ALLOCATIONS]:[first.allocation, second.allocation, ...thirdParts.map(part => part.allocation)]
     }, true);
     return dump();
   }
 
   async function gatewayRelease(input) {
-    const suffix = input.dispatchId.endsWith('2') ? '2' : '1';
-    const quantity = suffix === '2' ? 2 : 6;
+    const parts = aggregateParts(input.dispatchId);
     return runCentralOfficialCommand({
       commandType:'RELEASE_DISPATCH', aggregateId:input.dispatchId, expectedRevision:1,
       idempotencyKey:input.idempotencyKey
     }, async () => {
       await writeRows({
         [STORE.DISPATCH_DECISIONS]:[{ dispatchId:input.dispatchId, status:'RELEASED', revision:2, customerId:'GW-C', businessDate:'2026-08-15', localOnly:true }],
-        [STORE.INVENTORY_RESERVATIONS]:[{ reservationId:`GW-IR-${suffix}`, dispatchId:input.dispatchId, allocationId:`GW-DA-${suffix}`, productId:'GW-P', warehouseId:'GW-W', reservedBaseQuantity:quantity, status:'ACTIVE', revision:2, localOnly:true }]
+        [STORE.INVENTORY_RESERVATIONS]:parts.map(({ suffix, quantity }) => ({ reservationId:`GW-IR-${suffix}`, dispatchId:input.dispatchId, allocationId:`GW-DA-${suffix}`, productId:'GW-P', warehouseId:'GW-W', reservedBaseQuantity:quantity, status:'ACTIVE', revision:2, localOnly:true }))
       });
       return { localCommand:'RELEASE', dispatchId:input.dispatchId };
     });
   }
 
   async function gatewayUpdate(input) {
-    const suffix = input.dispatchId.endsWith('2') ? '2' : '1';
-    const quantity = suffix === '2' ? 2 : 6;
+    const parts = aggregateParts(input.dispatchId);
     return runCentralOfficialCommand({ commandType:'UPDATE_DISPATCH', aggregateId:input.dispatchId, expectedRevision:2, idempotencyKey:input.idempotencyKey }, async () => {
       await writeRows({
         [STORE.DISPATCH_DECISIONS]:[{ dispatchId:input.dispatchId, status:'READY_TO_CONFIRM', revision:3, customerId:'GW-C', businessDate:'2026-08-15', localOnly:true }],
-        [STORE.DISPATCH_LINES]:[{ dispatchLineId:`GW-DL-${suffix}`, dispatchId:input.dispatchId, orderId:'GW-O', orderItemId:`GW-OI-${suffix}`, actualProductId:'GW-P', actualQuantity:quantity, actualBaseQuantity:quantity, recognizedOrderQuantity:quantity, revision:3, localOnly:true }],
-        [STORE.DISPATCH_STOCK_ALLOCATIONS]:[{ allocationId:`GW-DA-${suffix}`, dispatchId:input.dispatchId, dispatchLineId:`GW-DL-${suffix}`, warehouseId:'GW-W', reservationId:`GW-IR-${suffix}`, actualBaseQuantity:quantity, revision:3, localOnly:true }]
+        [STORE.DISPATCH_LINES]:parts.map(({ suffix, quantity }) => ({ dispatchLineId:`GW-DL-${suffix}`, dispatchId:input.dispatchId, orderId:'GW-O', orderItemId:`GW-OI-${suffix}`, actualProductId:'GW-P', actualQuantity:quantity, actualBaseQuantity:quantity, recognizedOrderQuantity:quantity, status:'ACTUAL_RECORDED', revision:3, localOnly:true })),
+        [STORE.DISPATCH_STOCK_ALLOCATIONS]:parts.map(({ suffix, quantity }) => ({ allocationId:`GW-DA-${suffix}`, dispatchId:input.dispatchId, dispatchLineId:`GW-DL-${suffix}`, warehouseId:'GW-W', reservationId:`GW-IR-${suffix}`, actualBaseQuantity:quantity, status:'ACTUAL_RECORDED', revision:3, localOnly:true }))
       });
       return { localCommand:'UPDATE', dispatchId:input.dispatchId };
     });
   }
 
   async function gatewayConfirm(input) {
-    const suffix = input.dispatchId.endsWith('2') ? '2' : '1';
-    const quantity = suffix === '2' ? 2 : 6;
+    const allParts = aggregateParts(input.dispatchId);
+    const parts = input.partial ? allParts.slice(0, 1) : allParts;
     return runCentralOfficialCommand({ commandType:'CONFIRM_DISPATCH', aggregateId:input.dispatchId, expectedRevision:3, idempotencyKey:input.idempotencyKey }, async () => {
-      const salesDocumentId = `GW-SD-${suffix}`;
-      const salesLineId = `GW-SL-${suffix}`;
+      const documentSuffix = input.dispatchId.replace('GW-D', '');
+      const salesDocumentId = `GW-SD-${documentSuffix}`;
       await writeRows({
         [STORE.DISPATCH_DECISIONS]:[{ dispatchId:input.dispatchId, status:'CONFIRMED', revision:4, salesDocumentId, localOnly:true }],
+        [STORE.DISPATCH_LINES]:parts.map(({ suffix, quantity }) => ({ dispatchLineId:`GW-DL-${suffix}`, dispatchId:input.dispatchId, orderId:'GW-O', orderItemId:`GW-OI-${suffix}`, actualProductId:'GW-P', actualQuantity:quantity, actualBaseQuantity:quantity, recognizedOrderQuantity:quantity, status:'CONFIRMED', revision:4, localOnly:true })),
+        [STORE.DISPATCH_STOCK_ALLOCATIONS]:parts.map(({ suffix, quantity }) => ({ allocationId:`GW-DA-${suffix}`, dispatchId:input.dispatchId, dispatchLineId:`GW-DL-${suffix}`, warehouseId:'GW-W', reservationId:`GW-IR-${suffix}`, actualBaseQuantity:quantity, movementId:`GW-IM-${suffix}`, status:'CONFIRMED', revision:4, localOnly:true })),
         [STORE.SALES_DOCUMENTS]:[{ salesDocumentId, dispatchId:input.dispatchId, status:'CONFIRMED', erpPostingStatus:'READY', supplyAmountWon:0, vatAmountWon:0, totalAmountWon:0, revision:4, localOnly:true }],
-        [STORE.SALES_LINES]:[{ salesLineId, salesDocumentId, dispatchLineId:`GW-DL-${suffix}`, orderItemId:`GW-OI-${suffix}`, productId:'GW-P', warehouseId:'GW-W', actualQuantity:quantity, actualBaseQuantity:quantity, recognizedOrderQuantity:quantity, supplyAmountWon:0, vatAmountWon:0, totalAmountWon:0, revision:4, localOnly:true }],
-        [STORE.INVENTORY_MOVEMENTS]:[{ movementId:`GW-IM-${suffix}`, dispatchId:input.dispatchId, dispatchLineId:`GW-DL-${suffix}`, sourceLineId:`GW-DA-${suffix}`, productId:'GW-P', warehouseId:'GW-W', movementType:'SALE_ISSUE', signedBaseQuantity:-quantity, ledgerSequence:999, revision:4, localOnly:true }],
-        [STORE.ORDER_EVENTS]:[{ eventId:`GW-OE-${suffix}`, orderId:'GW-O', eventType:'SALES_TRANSFER_ALLOCATED', detail:{ orderItemId:`GW-OI-${suffix}`, salesLineId, transferredQty:quantity }, revision:4, localOnly:true }],
-        [STORE.INVENTORY_RESERVATIONS]:[{ reservationId:`GW-IR-${suffix}`, dispatchId:input.dispatchId, allocationId:`GW-DA-${suffix}`, productId:'GW-P', warehouseId:'GW-W', reservedBaseQuantity:quantity, consumedBaseQuantity:quantity, status:'CONSUMED', revision:4, localOnly:true }]
+        [STORE.SALES_LINES]:parts.map(({ suffix, quantity }) => ({ salesLineId:`GW-SL-${suffix}`, salesDocumentId, dispatchLineId:`GW-DL-${suffix}`, orderItemId:`GW-OI-${suffix}`, productId:'GW-P', warehouseId:'GW-W', actualQuantity:quantity, actualBaseQuantity:quantity, recognizedOrderQuantity:quantity, supplyAmountWon:0, vatAmountWon:0, totalAmountWon:0, revision:4, localOnly:true })),
+        [STORE.INVENTORY_MOVEMENTS]:parts.map(({ suffix, quantity }, index) => ({ movementId:`GW-IM-${suffix}`, dispatchId:input.dispatchId, dispatchLineId:`GW-DL-${suffix}`, sourceLineId:`GW-DA-${suffix}`, productId:'GW-P', warehouseId:'GW-W', movementType:'SALE_ISSUE', signedBaseQuantity:-quantity, ledgerSequence:990 + (Number(documentSuffix) * 10) + index, revision:4, localOnly:true })),
+        [STORE.ORDER_EVENTS]:parts.map(({ suffix, quantity }) => ({ eventId:`GW-OE-${suffix}`, orderId:'GW-O', eventType:'SALES_TRANSFER_ALLOCATED', detail:{ orderItemId:`GW-OI-${suffix}`, salesLineId:`GW-SL-${suffix}`, transferredQty:quantity }, revision:4, localOnly:true })),
+        [STORE.INVENTORY_RESERVATIONS]:parts.map(({ suffix, quantity }) => ({ reservationId:`GW-IR-${suffix}`, dispatchId:input.dispatchId, allocationId:`GW-DA-${suffix}`, productId:'GW-P', warehouseId:'GW-W', reservedBaseQuantity:quantity, consumedBaseQuantity:quantity, status:'CONSUMED', revision:4, localOnly:true }))
       });
       return { localCommand:'CONFIRM', dispatchId:input.dispatchId };
     });
@@ -120,7 +142,7 @@
     return { error, operationRan, unchanged:JSON.stringify(await dump()) === before };
   }
 
-  const actions = { seed, dump, pull:pullCentralOfficialState, release:gatewayRelease, update:gatewayUpdate, confirm:gatewayConfirm, offline:offlineAttempt };
+  const actions = { seed, dump, pull:pullCentralOfficialState, release:gatewayRelease, update:gatewayUpdate, confirm:gatewayConfirm, partialConfirm:message => gatewayConfirm({ ...message, partial:true }), offline:offlineAttempt };
   window.addEventListener('message', async event => {
     const message = event.data || {};
     if (message.type !== 'M9_CLIENT_REQUEST') return;
@@ -129,7 +151,7 @@
       const value = await handler(message);
       event.source.postMessage({ type:'M9_CLIENT_RESPONSE', requestId:message.requestId, ok:true, value }, '*');
     } catch (error) {
-      event.source.postMessage({ type:'M9_CLIENT_RESPONSE', requestId:message.requestId, ok:false, error:error.message || String(error) }, '*');
+      event.source.postMessage({ type:'M9_CLIENT_RESPONSE', requestId:message.requestId, ok:false, error:`${message.action}:${error.message || String(error)}` }, '*');
     }
   });
   document.querySelector('#result').textContent=`READY ${databaseName}`;

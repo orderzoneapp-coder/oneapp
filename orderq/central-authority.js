@@ -299,6 +299,18 @@ function requireSameNumber(left, right, code, detail = '') {
   if (!sameNumber(left, right)) commandError(code, detail);
 }
 
+function requireExactIds(actualValues, expectedValues, code) {
+  const actual = actualValues.map(text);
+  const expected = expectedValues.map(text);
+  const actualSet = new Set(actual);
+  const expectedSet = new Set(expected);
+  if (actual.some(value => !value) || expected.some(value => !value)
+    || actualSet.size !== actual.length || expectedSet.size !== expected.length
+    || actualSet.size !== expectedSet.size || [...expectedSet].some(value => !actualSet.has(value))) {
+    commandError(code);
+  }
+}
+
 function validateDispatchConfirmationLedger(state, command, mutations) {
   const rows = type => mutations.filter(row => row.entityType === type);
   const all = type => rowsWithMutations(state, mutations, type);
@@ -307,8 +319,30 @@ function validateDispatchConfirmationLedger(state, command, mutations) {
   const movements = rows('INVENTORY_MOVEMENT');
   const events = rows('ORDER_EVENT').filter(row => text(row.payload.eventType).toUpperCase() === 'SALES_TRANSFER_ALLOCATED');
   const reservations = rows('INVENTORY_RESERVATION');
+  const existingDispatchLines = Object.values(state.entities || {}).filter(row => row.entityType === 'DISPATCH_LINE'
+    && text(row.payload.dispatchId) === command.aggregateId);
+  const targetLineIds = existingDispatchLines.map(row => row.entityId);
+  const targetLineIdSet = new Set(targetLineIds);
+  const existingAllocations = Object.values(state.entities || {}).filter(row => row.entityType === 'DISPATCH_STOCK_ALLOCATION'
+    && (text(row.payload.dispatchId) === command.aggregateId || targetLineIdSet.has(text(row.payload.dispatchLineId))));
+  const targetAllocationIds = existingAllocations.map(row => row.entityId);
+  const targetAllocationIdSet = new Set(targetAllocationIds);
+  const changedDispatchLines = rows('DISPATCH_LINE').filter(row => text(row.payload.dispatchId) === command.aggregateId);
+  const changedAllocations = rows('DISPATCH_STOCK_ALLOCATION').filter(row => text(row.payload.dispatchId) === command.aggregateId
+    || targetAllocationIdSet.has(row.entityId));
   if (documents.length !== 1 || !salesLines.length || !movements.length || !events.length || !reservations.length) {
     commandError('ORDERQ_CENTRAL_CONFIRM_RESULT_INCOMPLETE');
+  }
+  if (!targetLineIds.length || !targetAllocationIds.length) commandError('ORDERQ_CENTRAL_CONFIRM_TARGET_INCOMPLETE');
+  requireExactIds(salesLines.map(row => row.payload.dispatchLineId), targetLineIds, 'ORDERQ_CENTRAL_CONFIRM_LINE_SET_MISMATCH');
+  requireExactIds(changedDispatchLines.map(row => row.entityId), targetLineIds, 'ORDERQ_CENTRAL_CONFIRM_LINE_STATE_SET_MISMATCH');
+  requireExactIds(movements.map(row => row.payload.sourceLineId), targetAllocationIds, 'ORDERQ_CENTRAL_CONFIRM_ALLOCATION_MOVEMENT_SET_MISMATCH');
+  requireExactIds(changedAllocations.map(row => row.entityId), targetAllocationIds, 'ORDERQ_CENTRAL_CONFIRM_ALLOCATION_STATE_SET_MISMATCH');
+  requireExactIds(reservations.map(row => row.payload.allocationId), targetAllocationIds, 'ORDERQ_CENTRAL_CONFIRM_RESERVATION_SET_MISMATCH');
+  requireExactIds(events.map(row => row.payload.detail?.salesLineId), salesLines.map(row => row.entityId), 'ORDERQ_CENTRAL_CONFIRM_FULFILLMENT_SET_MISMATCH');
+  if (changedDispatchLines.some(row => entityStatus(row) !== 'CONFIRMED')
+    || changedAllocations.some(row => entityStatus(row) !== 'CONFIRMED')) {
+    commandError('ORDERQ_CENTRAL_CONFIRM_TARGET_STATE_INVALID');
   }
   const document = documents[0].payload;
   if (text(document.dispatchId) !== command.aggregateId || text(document.erpPostingStatus).toUpperCase() !== 'READY') {
@@ -359,6 +393,15 @@ function validateDispatchConfirmationLedger(state, command, mutations) {
     || events.some(row => !salesLineIds.has(text(row.payload.detail?.salesLineId)))) {
     commandError('ORDERQ_CENTRAL_CONFIRM_ORPHAN_RESULT');
   }
+  const postDispatchLines = all('DISPATCH_LINE').filter(row => targetLineIdSet.has(row.entityId));
+  const postAllocations = all('DISPATCH_STOCK_ALLOCATION').filter(row => targetAllocationIdSet.has(row.entityId));
+  const postReservations = all('INVENTORY_RESERVATION').filter(row => text(row.payload.dispatchId) === command.aggregateId
+    || targetAllocationIdSet.has(text(row.payload.allocationId)));
+  if (postDispatchLines.length !== targetLineIds.length || postDispatchLines.some(row => entityStatus(row) !== 'CONFIRMED')
+    || postAllocations.length !== targetAllocationIds.length || postAllocations.some(row => entityStatus(row) !== 'CONFIRMED')
+    || postReservations.some(row => entityStatus(row) === 'ACTIVE')) {
+    commandError('ORDERQ_CENTRAL_CONFIRM_POST_STATE_INCOMPLETE');
+  }
   requireSameNumber(document.supplyAmountWon, salesLines.reduce((sum, row) => sum + finite(row.payload.supplyAmountWon), 0), 'ORDERQ_CENTRAL_CONFIRM_SUPPLY_AMOUNT_MISMATCH');
   requireSameNumber(document.vatAmountWon, salesLines.reduce((sum, row) => sum + finite(row.payload.vatAmountWon), 0), 'ORDERQ_CENTRAL_CONFIRM_VAT_AMOUNT_MISMATCH');
   requireSameNumber(document.totalAmountWon, salesLines.reduce((sum, row) => sum + finite(row.payload.totalAmountWon), 0), 'ORDERQ_CENTRAL_CONFIRM_TOTAL_AMOUNT_MISMATCH');
@@ -366,11 +409,19 @@ function validateDispatchConfirmationLedger(state, command, mutations) {
 
 function validatePurchaseConfirmationLedger(state, command, mutations) {
   const rows = type => mutations.filter(row => row.entityType === type);
+  const all = type => rowsWithMutations(state, mutations, type);
   const purchase = rows('PURCHASE_DOCUMENT').find(row => row.entityId === command.aggregateId);
   const lines = rows('PURCHASE_LINE').filter(row => text(row.payload.purchaseDocumentId) === command.aggregateId);
   const movements = rows('INVENTORY_MOVEMENT');
+  const existingLines = Object.values(state.entities || {}).filter(row => row.entityType === 'PURCHASE_LINE'
+    && text(row.payload.purchaseDocumentId) === command.aggregateId);
+  const targetLineIds = existingLines.map(row => row.entityId);
   if (!purchase || entityStatus(purchase) !== 'CONFIRMED' || text(purchase.payload.erpPostingStatus).toUpperCase() !== 'READY'
     || !lines.length || movements.length !== lines.length) commandError('ORDERQ_CENTRAL_PURCHASE_RESULT_INVALID');
+  if (!targetLineIds.length) commandError('ORDERQ_CENTRAL_PURCHASE_TARGET_INCOMPLETE');
+  requireExactIds(lines.map(row => row.entityId), targetLineIds, 'ORDERQ_CENTRAL_PURCHASE_LINE_SET_MISMATCH');
+  requireExactIds(movements.map(row => row.payload.sourceLineId), targetLineIds, 'ORDERQ_CENTRAL_PURCHASE_MOVEMENT_SET_MISMATCH');
+  if (lines.some(row => entityStatus(row) !== 'CONFIRMED')) commandError('ORDERQ_CENTRAL_PURCHASE_LINE_STATE_INVALID');
   const movementByLine = new Map(movements.map(row => [text(row.payload.sourceLineId), row]));
   for (const lineRow of lines) {
     const line = lineRow.payload;
@@ -385,6 +436,11 @@ function validatePurchaseConfirmationLedger(state, command, mutations) {
       commandError('ORDERQ_CENTRAL_PURCHASE_LINE_LINK_INVALID', lineRow.entityId);
     }
     requireSameNumber(movement.signedBaseQuantity, line.baseQuantity, 'ORDERQ_CENTRAL_PURCHASE_QUANTITY_MISMATCH', lineRow.entityId);
+  }
+  const targetLineIdSet = new Set(targetLineIds);
+  const postLines = all('PURCHASE_LINE').filter(row => targetLineIdSet.has(row.entityId));
+  if (postLines.length !== targetLineIds.length || postLines.some(row => entityStatus(row) !== 'CONFIRMED')) {
+    commandError('ORDERQ_CENTRAL_PURCHASE_POST_STATE_INCOMPLETE');
   }
   requireSameNumber(purchase.payload.amountWon, lines.reduce((sum, row) => sum + finite(row.payload.amountWon), 0), 'ORDERQ_CENTRAL_PURCHASE_AMOUNT_MISMATCH');
 }

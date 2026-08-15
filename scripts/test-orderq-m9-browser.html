@@ -100,6 +100,34 @@
     assert(decisionDigest(confirmedA)===decisionDigest(confirmedB),'actual gateway clients did not converge after confirm');
     assert(retry.duplicate===true&&gatewayState.ledgerSequence===1,'actual gateway retry consumed central ledger sequence');
 
+    await clientRequest('B','release',{dispatchId:'GW-D3',idempotencyKey:'GW-COMPLETE-REL'});
+    await clientRequest('B','update',{dispatchId:'GW-D3',idempotencyKey:'GW-COMPLETE-ACTUAL'});
+    let partialConfirmError='';
+    try{await clientRequest('B','partialConfirm',{dispatchId:'GW-D3',idempotencyKey:'GW-COMPLETE-PARTIAL'});}catch(error){partialConfirmError=error.message;}
+    assert(partialConfirmError.includes('LINE_SET_MISMATCH')||partialConfirmError.includes('LINE_STATE_SET_MISMATCH'),'partial two-line gateway confirmation was accepted');
+    const afterPartialB=await clientRequest('B','dump');
+    const partialDecision=afterPartialB.stores.dispatchDecisions.find(row=>row.dispatchId==='GW-D3');
+    assert(partialDecision?.status==='READY_TO_CONFIRM','rejected partial confirmation remained in local CONFIRMED state');
+    assert(afterPartialB.stores.salesDocuments.every(row=>row.dispatchId!=='GW-D3')
+      &&afterPartialB.stores.inventoryMovements.every(row=>row.dispatchId!=='GW-D3')
+      &&afterPartialB.stores.inventoryReservations.filter(row=>row.dispatchId==='GW-D3'&&row.status==='ACTIVE').length===2,
+    'rejected partial confirmation left local sales, movement, or consumed reservation');
+    const centralPartialDecision=Object.values(gatewayState.entities).find(row=>row.entityType==='DISPATCH_DECISION'&&row.entityId==='GW-D3');
+    assert(centralPartialDecision?.payload?.status==='READY_TO_CONFIRM'
+      &&Object.values(gatewayState.entities).every(row=>!(row.entityType==='SALES_DOCUMENT'&&row.payload.dispatchId==='GW-D3'))
+      &&Object.values(gatewayState.entities).filter(row=>row.entityType==='INVENTORY_RESERVATION'&&row.payload.dispatchId==='GW-D3'&&row.payload.status==='ACTIVE').length===2,
+    'rejected partial confirmation changed central state');
+    await Promise.all([clientRequest('A','pull'),clientRequest('B','pull')]);
+    const afterPartialA=await clientRequest('A','dump'),afterPartialPulledB=await clientRequest('B','dump');
+    assert(decisionDigest(afterPartialA)===decisionDigest(afterPartialPulledB),'two clients did not converge after rejected partial confirmation');
+    const completeConfirm=await clientRequest('B','confirm',{dispatchId:'GW-D3',idempotencyKey:'GW-COMPLETE-FULL'});
+    await clientRequest('A','pull');
+    const completeA=await clientRequest('A','dump'),completeB=await clientRequest('B','dump');
+    assert(decisionDigest(completeA)===decisionDigest(completeB),'two clients did not converge after complete two-line confirmation');
+    assert(completeB.stores.salesLines.filter(row=>row.salesDocumentId==='GW-SD-3').length===2
+      &&completeB.stores.inventoryReservations.filter(row=>row.dispatchId==='GW-D3'&&row.status==='ACTIVE').length===0,
+    'complete two-line confirmation did not consume every line and reservation');
+
     heldCommitKeys.add('GW-EXP-A');
     const expiredAttempt=clientRequest('A','release',{dispatchId:'GW-D2',idempotencyKey:'GW-EXP-A'});
     await waitHeld('GW-EXP-A');
@@ -114,7 +142,7 @@
     assert(decisionDigest(finalA)===decisionDigest(finalB),'actual gateway clients did not converge after lease reacquisition');
     const offline=await clientRequest('B','offline');
     assert(offline.unchanged&&!offline.operationRan&&offline.error.includes('OFFLINE_OFFICIAL_COMMAND_BLOCKED'),'actual isolated gateway offline command changed local cache');
-    return {released,confirmed,retry,reacquired,lockConflict,staleConflict,expiredError,finalA,finalB,offline};
+    return {released,confirmed,retry,partialConfirmError,completeConfirm,reacquired,lockConflict,staleConflict,expiredError,finalA,finalB,offline};
   }
 
   async function run(){
@@ -161,6 +189,8 @@
     const preparedConfirm=prepareCentralCommand(state,confirmCommand);
     const confirmMutations=[
       {entityType:'DISPATCH_DECISION',entityId:'D-M9',revision:4,payload:{...draft,status:'CONFIRMED',revision:4,salesDocumentId:'SD-1',localOnly:true}},
+      {entityType:'DISPATCH_LINE',entityId:'DL-1',revision:4,payload:{dispatchLineId:'DL-1',dispatchId:'D-M9',orderId:'O-1',orderItemId:'OI-1',actualProductId:'P-1',actualQuantity:6,actualBaseQuantity:6,recognizedOrderQuantity:6,status:'CONFIRMED',localOnly:true}},
+      {entityType:'DISPATCH_STOCK_ALLOCATION',entityId:'DA-1',revision:4,payload:{allocationId:'DA-1',dispatchId:'D-M9',dispatchLineId:'DL-1',warehouseId:'W-1',reservationId:'IR-1',actualBaseQuantity:6,movementId:'IM-1',status:'CONFIRMED',localOnly:true}},
       {entityType:'SALES_DOCUMENT',entityId:'SD-1',revision:4,payload:{salesDocumentId:'SD-1',dispatchId:'D-M9',status:'CONFIRMED',erpPostingStatus:'READY',originTransactionId:'D-M9',localOnly:true}},
       {entityType:'SALES_LINE',entityId:'SL-1',revision:4,payload:{salesLineId:'SL-1',salesDocumentId:'SD-1',dispatchLineId:'DL-1',productId:'P-1',warehouseId:'W-1',actualQuantity:6,actualBaseQuantity:6,recognizedOrderQuantity:6,supplyAmountWon:0,vatAmountWon:'',externalLineNo:'0',sourceLineFingerprint:'0',localOnly:true}},
       {entityType:'INVENTORY_MOVEMENT',entityId:'IM-1',revision:4,payload:{movementId:'IM-1',dispatchId:'D-M9',dispatchLineId:'DL-1',sourceLineId:'DA-1',productId:'P-1',warehouseId:'W-1',movementType:'SALE_ISSUE',signedBaseQuantity:-6,ledgerSequence:999,occurredAt:'2026-08-14',localOnly:true}},
@@ -239,7 +269,7 @@
     const correction=transitionErpPostingStatus(reconciled,'CORRECTION_REQUIRED',{erpDocumentNo:'ERP-S-77'});
     assert(correction.originalErpDocumentNo==='ERP-S-77'&&!correction.erpAutoCancelRequested&&!correction.erpAutoRetransmitRequested,'ERP correction boundary lost original document or requested automation');
     assert(warnings.length===0&&errors.length===0,`console errors: ${[...warnings,...errors].join(' / ')}`);
-    return {ok:true,clients:[gatewayEvidence.finalA.databaseName,gatewayEvidence.finalB.databaseName],gateway:{lease:gatewayEvidence.lockConflict,staleRevision:gatewayEvidence.staleConflict,expired:gatewayEvidence.expiredError,retryDuplicate:gatewayEvidence.retry.duplicate,ledgerSequence:gatewayState.ledgerSequence},conflict:{lease:concurrentConflict,staleRevision:staleRevisionConflict},release:{revision:release.serverRevision,available:4},confirmation:{ledgerSequence:confirmed.ledgerSequence,retryDuplicate:retry.duplicate,outboxCursorUnchangedOnRetry:retryOutboxUnchanged},purchase:{ledgerSequence:purchase.ledgerSequence,occurredAt:'2026-08-13'},offline:{...offline,actualGatewayError,actualGatewayOperationRan},erp:{xlsxRows:reopened.length,exact:exact[0].status,ambiguous:review[0].status,completeDocument:exactDocument.status,missingDocument:missingDocument.status,duplicateDocument:duplicateDocument.status,status:correction.erpPostingStatus,originalDocumentNo:correction.originalErpDocumentNo},server:{commands:Object.keys(state.commands).length,cursor:state.syncSequence},console:{warnings:warnings.length,errors:errors.length}};
+    return {ok:true,clients:[gatewayEvidence.finalA.databaseName,gatewayEvidence.finalB.databaseName],gateway:{lease:gatewayEvidence.lockConflict,staleRevision:gatewayEvidence.staleConflict,expired:gatewayEvidence.expiredError,retryDuplicate:gatewayEvidence.retry.duplicate,partialConfirmRejected:gatewayEvidence.partialConfirmError,completeTwoLine:true,ledgerSequence:gatewayState.ledgerSequence},conflict:{lease:concurrentConflict,staleRevision:staleRevisionConflict},release:{revision:release.serverRevision,available:4},confirmation:{ledgerSequence:confirmed.ledgerSequence,retryDuplicate:retry.duplicate,outboxCursorUnchangedOnRetry:retryOutboxUnchanged},purchase:{ledgerSequence:purchase.ledgerSequence,occurredAt:'2026-08-13'},offline:{...offline,actualGatewayError,actualGatewayOperationRan},erp:{xlsxRows:reopened.length,exact:exact[0].status,ambiguous:review[0].status,completeDocument:exactDocument.status,missingDocument:missingDocument.status,duplicateDocument:duplicateDocument.status,status:correction.erpPostingStatus,originalDocumentNo:correction.originalErpDocumentNo},server:{commands:Object.keys(state.commands).length,cursor:state.syncSequence},console:{warnings:warnings.length,errors:errors.length}};
   }
   run().then(value=>{output.textContent=`PASS\n${JSON.stringify(value,null,2)}`;document.title='PASS ORDER Q M9 Browser Test';}).catch(error=>{console.error(error);output.textContent=`FAIL\n${error.stack||error}`;document.title='FAIL ORDER Q M9 Browser Test';});
 </script></body></html>
