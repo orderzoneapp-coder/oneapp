@@ -163,11 +163,25 @@ export async function commitPreparedImport(prepared, importedBy = 'administrator
     STORE.WAREHOUSES, STORE.WAREHOUSE_ALIASES,
     STORE.SALES_DOCUMENTS, STORE.SALES_LINES, STORE.PURCHASE_DOCUMENTS, STORE.PURCHASE_LINES,
     STORE.LEDGER_DOCUMENTS, STORE.LEDGER_LINES, STORE.INVENTORY_SNAPSHOTS, STORE.INVENTORY_LINES,
-    STORE.HISTORICAL_ORDER_GROUPS, STORE.HISTORICAL_ORDER_LINES, STORE.SYNC_QUEUE
+    STORE.HISTORICAL_ORDER_GROUPS, STORE.HISTORICAL_ORDER_LINES, STORE.SYNC_QUEUE,
+    STORE.INVENTORY_MOVEMENTS, STORE.META
   ];
   const db = await openOrderQDb();
   const tx = db.transaction(stores, 'readwrite');
   tx.objectStore(STORE.IMPORT_BATCHES).put(batch);
+  const inventoryLedgerMeta = prepared.sourceType === COLLECTOR_SOURCE.INVENTORY
+    ? await requestToPromise(tx.objectStore(STORE.META).get('inventoryLedgerSequence'))
+    : null;
+  const latestMovement = prepared.sourceType === COLLECTOR_SOURCE.INVENTORY
+    ? await requestToPromise(tx.objectStore(STORE.INVENTORY_MOVEMENTS).index('byLedgerSequence').openCursor(null, 'prev'))
+    : null;
+  const metaSequence = Number(inventoryLedgerMeta?.value || 0);
+  const movementSequence = Number(latestMovement?.value?.ledgerSequence || 0);
+  const snapshotLastSequence = Math.max(
+    0,
+    Number.isInteger(metaSequence) && metaSequence >= 0 ? metaSequence : 0,
+    Number.isInteger(movementSequence) && movementSequence >= 0 ? movementSequence : 0
+  );
   const existingFingerprints = new Set((await requestToPromise(tx.objectStore(STORE.SOURCE_RECORDS).getAll())).filter(row => !row.disabledAt).map(row => row.rowFingerprint));
   const documentCache = new Map();
   const queuedReferences = new Set();
@@ -272,6 +286,7 @@ export async function commitPreparedImport(prepared, importedBy = 'administrator
       if (!snapshot) {
         snapshot = {
           inventorySnapshotId: stableId('IS', [importBatchId, key]), importBatchId, basisDate,
+          snapshotLastSequence,
           ...warehouseFields, sourceRecordIds: [], status: 'ACTIVE', createdAt: timestamp, updatedAt: timestamp
         };
         documentCache.set(key, snapshot);
