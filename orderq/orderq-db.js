@@ -8,7 +8,15 @@ import {
   V7_STORE_DEFINITIONS
 } from './orderq-v7-contracts.js?v=0.8.0';
 
-export const DB_NAME = 'oneapp-orderq-vnext';
+function databaseNameForRuntime() {
+  const location = globalThis.location;
+  const testName = location && ['127.0.0.1', 'localhost'].includes(String(location.hostname || '').toLowerCase())
+    ? new URLSearchParams(location.search || '').get('orderqTestDb')
+    : '';
+  return testName && /^[a-z0-9._-]{1,100}$/i.test(testName) ? testName : 'oneapp-orderq-vnext';
+}
+
+export const DB_NAME = databaseNameForRuntime();
 export const DB_VERSION = ORDERQ_DB_VERSION;
 
 export const STORE = Object.freeze({

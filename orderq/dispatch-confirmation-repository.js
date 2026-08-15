@@ -18,6 +18,7 @@ import {
 } from './order-fulfillment-lifecycle.js?v=0.8.0';
 import { INVENTORY_MOVEMENT_TYPE, calculateInventoryShadowProjection } from './inventory-ledger.js?v=0.8.0';
 import { appendInventoryMovementsInTransaction } from './inventory-ledger-repository.js?v=0.8.0';
+import { assertOfficialCommandAuthority } from './official-command-policy.js?v=0.9.0';
 import {
   DISPATCH_APPROVAL_STATUS,
   DISPATCH_APPROVAL_TYPE,
@@ -279,6 +280,7 @@ async function inventoryProjectionInTransaction(tx) {
 }
 
 export async function recordDispatchActual(source = {}, actor = 'ADMIN') {
+  assertOfficialCommandAuthority('UPDATE_DISPATCH');
   const context = requireCapability(actor, CAPABILITY.DISPATCH_CONFIRM);
   const command = normalizeDispatchConfirmationCommand({ ...source, idempotencyKey: source.idempotencyKey || `ACTUAL_RECORD:${text(source.dispatchId)}:${Number(source.expectedRevision || 0)}` });
   if (!command.lines.length) throw new Error('ORDERQ_ACTUAL_LINE_REQUIRED');
@@ -393,6 +395,7 @@ export async function recordDispatchActual(source = {}, actor = 'ADMIN') {
 }
 
 export async function confirmDispatch(source = {}, actor = 'ADMIN', options = {}) {
+  assertOfficialCommandAuthority('CONFIRM_DISPATCH');
   const context = requireCapability(actor, CAPABILITY.DISPATCH_CONFIRM);
   const command = normalizeDispatchConfirmationCommand(source);
   const fingerprint = dispatchConfirmationFingerprint(command);
@@ -1141,6 +1144,7 @@ export async function reverseDispatchInTransaction({
 }
 
 export async function reverseDispatch(source = {}, actor = 'ADMIN', options = {}) {
+  assertOfficialCommandAuthority('REVERSE_DISPATCH');
   const db = await openOrderQDb();
   const tx = db.transaction(CONFIRMATION_STORES, 'readwrite');
   try {
@@ -1154,6 +1158,7 @@ export async function reverseDispatch(source = {}, actor = 'ADMIN', options = {}
 }
 
 export async function confirmDispatchBatch(commands = [], actor = 'ADMIN', options = {}) {
+  assertOfficialCommandAuthority('CONFIRM_DISPATCH');
   if (!Array.isArray(commands) || !commands.length) throw new Error('ORDERQ_CONFIRM_BATCH_REQUIRED');
   const results = [];
   for (const command of commands) {

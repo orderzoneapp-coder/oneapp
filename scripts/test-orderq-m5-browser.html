@@ -12,6 +12,9 @@
     import { approveOverDispatch, approveSubstitution, recordCustomerNotice, reverseSubstitutionDecision } from '../orderq/dispatch-exception-repository.js?v=0.8.0';
     import { getDispatchProposals, loadDispatchAggregate, releaseDispatch, saveDispatchDraft } from '../orderq/dispatch-workbench-repository.js?v=0.8.0';
     import { effectiveTransferredQuantity } from '../orderq/order-fulfillment-lifecycle.js?v=0.8.0';
+    import { disableCentralAuthorityModeForLegacyTest } from '../orderq/official-command-policy.js?v=0.9.0';
+
+    disableCentralAuthorityModeForLegacyTest();
 
     const output = document.querySelector('#result');
     const consoleWarnings = [];

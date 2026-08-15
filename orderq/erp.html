@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="ko" translate="no">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="google" content="notranslate">
+  <title>ONEAPP ORDER Q · ERP 자료 교환</title>
+  <link rel="stylesheet" href="./orderq.css">
+  <link rel="stylesheet" href="./erp.css">
+  <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <div class="brand"><strong>ONEAPP</strong><span class="logo-frame"><img src="../assets/order-q-logo.png" alt=""></span><span class="badge">M9</span><span>ERP 자료 교환</span></div>
+      <div class="top-actions"><a class="btn dark" href="./cloud.html">중앙 동기화</a><a class="btn dark" href="./dispatch.html">출고관리</a><a class="btn dark" href="./purchase.html">구매관리</a></div>
+    </header>
+    <main class="erp-shell">
+      <section class="erp-card">
+        <h1>ERP 입력파일 출력</h1>
+        <p>ORDER Q의 <b>READY</b> 운영 판매·구매사실만 출력합니다. ERP 자동전송이나 자동전표 생성은 하지 않습니다.</p>
+        <div id="summary" class="erp-summary"></div>
+        <button id="exportBtn" class="btn primary" type="button">READY 자료 XLSX 생성</button>
+      </section>
+      <section class="erp-card">
+        <h2>ERP 결과 재수입·대사</h2>
+        <p>ORDER Q 문서/행 ID 또는 원거래 ID가 정확히 일치할 때만 연결합니다. 유사·복수후보는 REVIEW_REQUIRED로 남습니다.</p>
+        <input id="importFile" type="file" accept=".xlsx,.xls">
+        <button id="reconcileBtn" class="btn" type="button">선택 파일 대사</button>
+      </section>
+      <div id="message" class="message"></div>
+      <section class="erp-card"><h2>대사 결과</h2><div id="results" class="erp-results">파일을 선택하세요.</div></section>
+    </main>
+  </div>
+  <script type="module" src="./erp-ui.js?v=0.9.0"></script>
+</body>
+</html>

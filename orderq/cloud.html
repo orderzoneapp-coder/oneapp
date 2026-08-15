@@ -21,11 +21,12 @@
         <a class="btn dark" href="./parser.html">ORDER IN</a>
         <a class="btn dark" href="./operations.html">ORDER Q 운영</a>
         <a class="btn dark" href="./index.html">주문현황</a>
+        <a class="btn dark" href="./erp.html">ERP 자료</a>
         <button class="btn primary" id="syncBtn" type="button">지금 동기화</button>
       </div>
     </header>
     <main class="panel">
-      <p class="notice">현재는 IndexedDB가 로컬 업무 DB이고 Google Sheet는 중앙 동기화 계층입니다. 서버 구축 후 Cloud Adapter만 Server API로 교체할 수 있게 분리되어 있습니다.</p>
+      <p class="notice">DRAFT는 로컬 작성할 수 있지만 RELEASED·READY·CONFIRMED와 구매확정·역분개·정정은 중앙 권위 명령으로 처리합니다. IndexedDB는 중앙 결과의 작업 캐시입니다.</p>
       <div id="message" class="message"></div>
 
       <section class="form-grid">
@@ -100,8 +101,9 @@
   </div>
 
   <script type="module">
-    import { getCloudUrl, setCloudUrl, getCloudAccessToken, setCloudAccessToken } from './orderq-cloud-adapter.js?v=0.8.0';
+    import { getCloudUrl, setCloudUrl, getCloudAccessToken, setCloudAccessToken } from './orderq-cloud-adapter.js?v=0.9.0';
     import { getSyncState, syncNow, acceptRemoteOrder } from './orderq-sync-engine.js?v=0.8.0';
+    import { pullCentralOfficialState } from './central-command-gateway.js?v=0.9.0';
 
     const cloudUrl = document.getElementById('cloudUrl');
     const cloudToken = document.getElementById('cloudToken');
@@ -151,9 +153,10 @@
       syncBtn.disabled = true;
       try {
         const result = await syncNow();
+        const central = await pullCentralOfficialState();
         await render();
         const conflicts = result?.push?.conflicts || result?.pull?.conflicts || 0;
-        show(conflicts ? `동기화 완료 · 충돌 ${conflicts}건을 확인하세요.` : '동기화가 완료되었습니다.', conflicts ? 'warn' : 'info');
+        show(conflicts ? `동기화 완료 · 충돌 ${conflicts}건을 확인하세요.` : `동기화 완료 · 중앙 업무사실 ${central.applied}건 적용`, conflicts ? 'warn' : 'info');
       } catch (error) {
         show(`동기화 실패: ${error.message || error}`, 'error');
       } finally { syncBtn.disabled = false; }

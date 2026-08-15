@@ -696,6 +696,36 @@ function doPost(e) {
       }));
     }
 
+    if (action === 'orderq_m9_ping') {
+      requireOrderQAccess(payload);
+      return withScriptLock(() => jsonResponse({ status: 'success', action, data: orderQM9Ping(ss, payload) }));
+    }
+
+    if (action === 'orderq_m9_migrate') {
+      requireOrderQAccess(payload);
+      return withScriptLock(() => jsonResponse({ status: 'success', action, data: orderQM9Migrate(ss, payload) }));
+    }
+
+    if (action === 'orderq_m9_command_prepare') {
+      requireOrderQAccess(payload);
+      return withScriptLock(() => jsonResponse({ status: 'success', action, data: orderQM9Prepare(ss, payload) }));
+    }
+
+    if (action === 'orderq_m9_command_commit') {
+      requireOrderQAccess(payload);
+      return withScriptLock(() => jsonResponse({ status: 'success', action, data: orderQM9Commit(ss, payload) }));
+    }
+
+    if (action === 'orderq_m9_command_abort') {
+      requireOrderQAccess(payload);
+      return withScriptLock(() => jsonResponse({ status: 'success', action, data: orderQM9Abort(ss, payload) }));
+    }
+
+    if (action === 'orderq_m9_pull') {
+      requireOrderQAccess(payload);
+      return withScriptLock(() => jsonResponse({ status: 'success', action, data: orderQM9Pull(ss, payload) }));
+    }
+
     if (action === 'shipping_plan_save') {
       requireShippingPlanAccess(payload);
       return withScriptLock(() => {

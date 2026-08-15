@@ -10,11 +10,21 @@ import {
   reconcilePurchaseExternal,
   reversePurchase,
   savePurchaseDraft
-} from './purchase-decision-repository.js?v=0.8.0';
+} from './purchase-decision-repository.js?v=0.9.0';
 import { loadProductCatalog } from './product-master-search.js?v=0.8.0';
 import {
   PRODUCT_LINE_CONTEXT, applyProductSelection, editProductLine, searchLineProducts
 } from './product-line-common.js?v=0.8.0';
+import { runCentralOfficialCommand } from './central-command-gateway.js?v=0.9.0';
+import { disableCentralAuthorityModeForLegacyTest, enableCentralAuthorityMode } from './official-command-policy.js?v=0.9.0';
+
+const legacyLocalBrowserTest = ['127.0.0.1', 'localhost'].includes(location.hostname)
+  && /[?&]m6-browser=/i.test(location.search);
+if (legacyLocalBrowserTest) disableCentralAuthorityModeForLegacyTest();
+else enableCentralAuthorityMode();
+const runOfficialCommand = (source, operation) => legacyLocalBrowserTest
+  ? operation()
+  : runCentralOfficialCommand(source, operation);
 
 const listElement = document.querySelector('#purchaseList');
 const detailElement = document.querySelector('#purchaseDetail');
@@ -270,11 +280,15 @@ detailElement.addEventListener('click', event => {
       const saved = await savePurchaseDraft(collectDraft(), 'ADMIN');
       selectedId = saved.document.purchaseDocumentId;
       if (action === 'confirm') {
-        await confirmPurchase({
+        const confirmationCommand = {
           purchaseDocumentId: selectedId,
           expectedRevision: saved.document.revision,
           idempotencyKey: buildPurchaseConfirmationKey(selectedId, saved.document.revision)
-        }, 'ADMIN');
+        };
+        await runOfficialCommand({
+          commandType:'CONFIRM_PURCHASE', aggregateId:selectedId, expectedRevision:saved.document.revision,
+          idempotencyKey:confirmationCommand.idempotencyKey
+        }, () => confirmPurchase(confirmationCommand, 'ADMIN'));
         showMessage('구매확정과 입고 Movement를 저장했습니다.', 'success');
       } else {
         showMessage('구매 DRAFT를 저장했습니다.', 'success');
@@ -292,13 +306,18 @@ detailElement.addEventListener('click', event => {
         })).filter(row => row.quantity > 0)
         : [];
       if (action === 'reverse-partial' && !lines.length) throw new Error('부분 역분개 수량을 입력하세요.');
-      await reversePurchase({
+      const reversalCommand = {
         purchaseDocumentId: current.document.purchaseDocumentId,
         expectedRevision: current.document.revision,
         idempotencyKey: buildPurchaseReversalKey(current.document.purchaseDocumentId, current.document.revision, `UI-${Date.now()}`),
         reason,
         lines
-      }, 'ADMIN');
+      };
+      await runOfficialCommand({
+        commandType:'REVERSE_PURCHASE', aggregateId:current.document.purchaseDocumentId,
+        expectedRevision:current.document.revision, idempotencyKey:reversalCommand.idempotencyKey,
+        intent:{ reason, lines }
+      }, () => reversePurchase(reversalCommand, 'ADMIN'));
       showMessage('원 구매를 유지하고 반대 구매·재고 Movement를 추가했습니다.', 'success');
       await reload(selectedId);
       return;
@@ -306,7 +325,7 @@ detailElement.addEventListener('click', event => {
     if (action === 'reconcile') {
       const externalDocumentNo = text(document.querySelector('#erpDocumentNo').value);
       if (!externalDocumentNo) throw new Error('ERP 전표번호를 입력하세요.');
-      await reconcilePurchaseExternal({
+      const reconciliationCommand = {
         idempotencyKey: `ERP_PURCHASE_RECONCILE:${current.document.purchaseDocumentId}:${externalDocumentNo}`,
         originSystem: 'ORDER_Q',
         originTransactionId: current.document.purchaseDocumentId,
@@ -323,7 +342,12 @@ detailElement.addEventListener('click', event => {
           baseQuantity: line.baseQuantity,
           unitCostWon: line.unitCostWon
         }))
-      }, 'ADMIN');
+      };
+      await runOfficialCommand({
+        commandType:'RECONCILE_PURCHASE_EXTERNAL', aggregateId:current.document.purchaseDocumentId,
+        expectedRevision:current.document.revision, idempotencyKey:reconciliationCommand.idempotencyKey,
+        intent:{ externalDocumentNo }
+      }, () => reconcilePurchaseExternal(reconciliationCommand, 'ADMIN'));
       showMessage('ERP 자료를 기존 구매와 대사했습니다. 새 구매·재고는 만들지 않았습니다.', 'success');
       await reload(selectedId);
     }

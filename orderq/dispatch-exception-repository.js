@@ -8,6 +8,7 @@ import {
 } from './orderq-db.js?v=0.8.0';
 import { CAPABILITY, requireCapability } from './orderq-v7-contracts.js?v=0.8.0';
 import { normalizedOrderView } from './order-document-model.js?v=0.8.0';
+import { assertOfficialCommandAuthority } from './official-command-policy.js?v=0.9.0';
 import {
   TRANSFER_EVENT_TYPE,
   createReversalEvent,
@@ -128,6 +129,7 @@ async function approveLine({ source, actor, capability, approvalType, buildDetai
 }
 
 export async function approveSubstitution(source = {}, actor = 'ADMIN') {
+  assertOfficialCommandAuthority('UPDATE_DISPATCH');
   return approveLine({
     source,
     actor,
@@ -143,6 +145,7 @@ export async function approveSubstitution(source = {}, actor = 'ADMIN') {
 }
 
 export async function approveOverDispatch(source = {}, actor = 'ADMIN') {
+  assertOfficialCommandAuthority('UPDATE_DISPATCH');
   return approveLine({
     source,
     actor,
@@ -185,6 +188,7 @@ export async function approveOverDispatch(source = {}, actor = 'ADMIN') {
 }
 
 export async function recordCustomerNotice(source = {}, actor = 'ADMIN') {
+  assertOfficialCommandAuthority('UPDATE_DISPATCH');
   const context = requireCapability(actor, CAPABILITY.DISPATCH_EDIT);
   const dispatchId = text(source.dispatchId);
   const dispatchLineId = text(source.dispatchLineId);
@@ -246,6 +250,7 @@ function decisionReversalFingerprint(source, line) {
 }
 
 export async function reverseSubstitutionDecision(source = {}, actor = 'ADMIN', options = {}) {
+  assertOfficialCommandAuthority('REVERSE_DISPATCH');
   const context = requireCapability(actor, CAPABILITY.SUBSTITUTE_APPROVE);
   const dispatchId = text(source.dispatchId);
   const dispatchLineId = text(source.dispatchLineId);
