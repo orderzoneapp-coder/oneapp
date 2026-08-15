@@ -8,6 +8,7 @@
 - `/orderq/input.html`: 주문서 직접입력·수정
 - `/orderq/parser.html`: ORDER IN(카카오/일반 텍스트 SmartParser)
 - `/orderq/operations.html`: ORDER Q 운영관리(전표조건 선필터·상품집계·재고·판매이관·미출고)
+- `/orderq/dispatch.html`: 출고 DRAFT 판단·다중 재고출처·동일 PC 작업목록·예약·작업사실 입력
 - `/orderops/list.html`: 기존 Excel 기반 출고관리(호환 유지)
 - `/orderq/collector.html`: 과거 주문·판매·구매·재고·거래처원장·카카오 이력수집과 주문↔판매 연결
 - `/orderq/cloud.html`: Cloud Sync 설정·충돌 처리
@@ -45,6 +46,10 @@
 - `syncQueue`, `meta`
 
 M1은 외부 거래 식별자와 ERP 반영상태를 분리하고, 최소 감사자 `actorId`를 보존한다. 브라우저 DB 업그레이드 실패는 IndexedDB 버전 트랜잭션으로 자동 롤백되며, 백업 복원은 전체 입력을 먼저 검증한 뒤 하나의 원자적 트랜잭션으로 실행한다.
+
+M2의 `inventoryMovements`는 ORDER Q 운영재고의 부호 있는 불변 원장이다. 구매는 양수, 판매는 음수, 창고이동은 출발 음수·도착 양수로 기록하며 역분개는 원거래와 반대 부호를 추가한다. 최신 스냅샷의 `snapshotLastSequence` 이후 movement만 합산하고 음수 현재고를 0으로 보정하지 않는다.
+
+M3의 출고 작업대는 `DRAFT → RELEASED`까지만 처리한다. 일반 제안수량은 원 주문 전체가 아니라 부분취소·기존 이행·이행 역분개를 반영한 현재 미출고수량이다. DRAFT에서는 실제 작업상품·수량·창고별 allocation을 반복 수정하고 revision 충돌을 차단하며, 저장 버튼 전의 편집값도 로컬 초안버퍼에서 중단복원한다. RELEASED는 동일 PC 작업목록과 `inventoryReservations`를 만들지만 on-hand를 바꾸지 않고 available만 줄인다. 예약 충돌·음수 가용재고를 그대로 표시하며 회수·만료 시 예약을 해제한다. 작업자의 수량·상품·예외 입력은 작업사실로만 보존하고 판매전표·InventoryMovement·주문이행 확정은 M4 전까지 생성하지 않는다. M3 엔티티의 SyncQueue 상태는 `LOCAL_ONLY`이며 기존 Cloud 동기화의 전송·대기건 집계에서 제외한다. 여러 PC 작업배포는 M9 이전에는 지원하지 않는다.
 
 주문 수정은 `revision` 비교를 사용한다. 같은 주문을 두 탭에서 열고 한쪽이 먼저 저장하면, 다른 쪽의 오래된 revision 저장은 차단한다.
 

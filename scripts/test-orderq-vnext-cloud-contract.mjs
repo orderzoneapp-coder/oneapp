@@ -57,6 +57,8 @@ assert.match(syncEngine, /serverRevision > localRevision/, 'cloud newer revision
 assert.match(syncEngine, /const push = await pushPending\(\);/, 'post-save sync must push related Customer\/Alias\/Event queues too');
 assert.match(syncEngine, /status:\s*'DISCARDED'/, 'accepting remote latest must explicitly discard conflicting local queue records');
 assert.match(syncEngine, /if \(!getCloudUrl\(\)\) return \{ online: false/, 'local-first operation must remain possible without cloud URL');
+assert.match(syncEngine, /row\.status === 'PENDING' && row\.localOnly !== true/, 'local-only M3 queue rows must never be pushed to the existing Cloud contract');
+assert.match(syncEngine, /pending: rows\.filter\(row => row\.status === 'PENDING' && row\.localOnly !== true\)\.length/, 'local-only M3 queue rows must not inflate the pending count');
 
 assert.match(indexHtml, /클라우드 동기화/);
 assert.match(indexHtml, /syncNow/);

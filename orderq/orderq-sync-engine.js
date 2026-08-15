@@ -171,7 +171,7 @@ async function discardLocalSourceDuplicate(localOrderId, remotePayload) {
 async function pendingRows(entityId = '') {
   const rows = await all(STORE.SYNC_QUEUE);
   return rows
-    .filter(row => row.status === 'PENDING' && (!entityId || row.entityId === entityId))
+    .filter(row => row.status === 'PENDING' && row.localOnly !== true && (!entityId || row.entityId === entityId))
     .sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
 }
 
@@ -412,7 +412,7 @@ export async function getSyncState() {
     cloudUrl: getCloudUrl(),
     deviceId: getDeviceId(),
     cursor: Number(await metaGet(META_CURSOR) || 0),
-    pending: rows.filter(row => row.status === 'PENDING').length,
+    pending: rows.filter(row => row.status === 'PENDING' && row.localOnly !== true).length,
     conflicts: rows.filter(row => row.status === 'CONFLICT'),
     acked: rows.filter(row => row.status === 'ACKED').length
   };
