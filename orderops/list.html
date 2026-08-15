@@ -1674,7 +1674,7 @@
     .derived-view-label { margin: 5px 5px 5px 0; }
     .integrated-file-button { min-height: 28px; }
     .execution-button { min-height: 54px; }
-    /* ORDER Q v1.54: align System.IO directly under the global header */
+    /* ORDER Q v1.55: align System.IO directly under the global header */
     .page-shell { padding-top: 0; }
     .system-topbar .validation-box { flex: 0 1 auto; min-width: 190px; padding: 2px 8px; border: 0; background: transparent; }
     .system-topbar .validation-box p { margin: 0; white-space: nowrap; font-size: 10px; }
@@ -1756,7 +1756,7 @@
       <div class="brand-mark">ONEAPP</div>
       <div class="brand-divider" aria-hidden="true"></div>
       <span class="brand-logo-frame" aria-hidden="true"><img class="brand-logo" src="../assets/order-q-logo.png" alt=""></span>
-      <span class="brand-badge">v1.54</span>
+      <span class="brand-badge">v1.55</span>
       <span class="brand-product">출고관리</span>
     </div>
     <div class="header-actions">
@@ -1964,7 +1964,7 @@
     </section>
 
     <footer class="page-footer">
-      <span>ORDER Q v1.54 · 출고관리 · workspace shipping-workspace/v2 · cloud plan v1</span>
+      <span>ORDER Q v1.55 · 출고관리 · workspace shipping-workspace/v2 · cloud plan v1</span>
       <a href="../SHIPPING_MANAGEMENT_GUIDANCE.md">개발·운영 기준 보기</a>
     </footer>
   </main>
@@ -5065,8 +5065,10 @@
       }
 
       function columnTextValueOptions(preview, columnKey) {
-        const columnIndex = preview?.columns?.findIndex((column) => column.key === columnKey) ?? -1;
+        const column = preview?.columns?.find((candidate) => candidate.key === columnKey);
+        const columnIndex = preview?.columns?.findIndex((candidate) => candidate.key === columnKey) ?? -1;
         if (columnIndex < 0) return [];
+        const numericColumn = Boolean(column?.numeric);
         const unique = new Map();
         preview.rows.forEach((row) => {
           const value = row?.[columnIndex];
@@ -5079,7 +5081,10 @@
         });
         return [...unique.values()].sort((left, right) => {
           if (left.blank !== right.blank) return left.blank ? 1 : -1;
-          return left.label.localeCompare(right.label, "ko-KR", { sensitivity: "base", numeric: true });
+          return left.label.localeCompare(right.label, "ko-KR", {
+            sensitivity: "base",
+            numeric: numericColumn,
+          });
         });
       }
 
@@ -5096,7 +5101,7 @@
         });
       }
 
-      function compareColumnValues(leftValue, rightValue, direction) {
+      function compareColumnValues(leftValue, rightValue, direction, numericColumn = false) {
         const leftBlank = isBlankCell(leftValue);
         const rightBlank = isBlankCell(rightValue);
         if (leftBlank || rightBlank) {
@@ -5105,11 +5110,11 @@
         }
         const leftNumeric = Number(String(leftValue).replace(/,/g, "").trim());
         const rightNumeric = Number(String(rightValue).replace(/,/g, "").trim());
-        const compared = Number.isFinite(leftNumeric) && Number.isFinite(rightNumeric)
+        const compared = numericColumn && Number.isFinite(leftNumeric) && Number.isFinite(rightNumeric)
           ? leftNumeric - rightNumeric
           : String(leftValue).localeCompare(String(rightValue), "ko-KR", {
               sensitivity: "base",
-              numeric: true,
+              numeric: numericColumn,
             });
         return direction === "desc" ? -compared : compared;
       }
@@ -5130,8 +5135,14 @@
         const settings = layeredColumnSortSettings(previewId, preview);
         if (settings.length === 0) return preview.sortByProductCode ? compareProductCodes(left, right) : left.index - right.index;
         for (const setting of settings) {
-          const columnIndex = preview.columns.findIndex((column) => column.key === setting.columnKey);
-          const compared = compareColumnValues(left.row?.[columnIndex], right.row?.[columnIndex], setting.direction);
+          const column = preview.columns.find((candidate) => candidate.key === setting.columnKey);
+          const columnIndex = preview.columns.indexOf(column);
+          const compared = compareColumnValues(
+            left.row?.[columnIndex],
+            right.row?.[columnIndex],
+            setting.direction,
+            Boolean(column?.numeric),
+          );
           if (compared) return compared;
         }
         return left.index - right.index;
