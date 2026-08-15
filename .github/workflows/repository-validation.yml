@@ -71,6 +71,9 @@ jobs:
       - name: Test ORDER Q M5 substitution and conversion contracts
         run: node scripts/test-orderq-m5-substitution-conversion.mjs
 
+      - name: Test ORDER Q M6 purchase decision and receipt contracts
+        run: node scripts/test-orderq-m6-purchase-decision.mjs
+
       - name: Test DataOps zero and negative stock preservation
         run: node scripts/test-dataops-zero-stock-contract.mjs
 
