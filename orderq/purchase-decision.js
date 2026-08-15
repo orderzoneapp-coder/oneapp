@@ -15,6 +15,17 @@ export const PURCHASE_CONFIRMATION_STEP = Object.freeze({
   BEFORE_COMMIT: 'BEFORE_COMMIT'
 });
 
+const PURCHASE_DRAFT_SYSTEM_FIELDS = Object.freeze([
+  'status', 'revision', 'baseRevision', 'amountWon',
+  'idempotencyKey', 'confirmationRequestFingerprint', 'reversalRequestFingerprint',
+  'movementId', 'reversalOf',
+  'confirmedAt', 'confirmedBy', 'reversedAt', 'reversedBy', 'postedAt', 'postedBy',
+  'erpPostingStatus', 'erpDocumentNo', 'erpReconciliationId', 'erpReconciledAt', 'erpReconciledBy',
+  'externalReconciliationId', 'externalReconciliationStatus',
+  'syncStatus', 'localOnly', 'history',
+  'createdAt', 'createdBy', 'updatedAt', 'updatedBy'
+]);
+
 function text(value) {
   return value === undefined || value === null ? '' : String(value).trim();
 }
@@ -36,6 +47,12 @@ function hasOwn(source, key) {
   return Object.prototype.hasOwnProperty.call(source || {}, key);
 }
 
+function withoutPurchaseSystemEvidence(source = {}) {
+  const normalized = { ...source };
+  for (const field of PURCHASE_DRAFT_SYSTEM_FIELDS) delete normalized[field];
+  return normalized;
+}
+
 export function normalizePurchaseLineDraft(source = {}) {
   const quantity = quantityFromUnits(quantityUnits(source.quantity ?? source.plannedQuantity ?? 0));
   const baseQuantity = quantityFromUnits(quantityUnits(source.baseQuantity ?? quantity));
@@ -43,8 +60,9 @@ export function normalizePurchaseLineDraft(source = {}) {
   const unitCostWon = optionalNumber(source.unitCostWon ?? source.unitCost ?? 0);
   if (unitCostWon !== null && unitCostWon < 0) throw new Error('ORDERQ_PURCHASE_DRAFT_COST_NEGATIVE');
   const identity = normalizeExternalIdentity(source);
+  const draftSource = withoutPurchaseSystemEvidence(source);
   return {
-    ...source,
+    ...draftSource,
     purchaseLineId: text(source.purchaseLineId),
     purchaseDocumentId: text(source.purchaseDocumentId),
     productId: text(source.productId),
@@ -70,6 +88,7 @@ export function normalizePurchaseLineDraft(source = {}) {
 
 export function normalizePurchaseDraft(source = {}) {
   const document = source.document || source;
+  const draftDocument = withoutPurchaseSystemEvidence(document);
   const lines = (Array.isArray(source.lines) ? source.lines : [])
     .map(normalizePurchaseLineDraft)
     .sort((left, right) => left.purchaseLineId.localeCompare(right.purchaseLineId));
@@ -77,7 +96,7 @@ export function normalizePurchaseDraft(source = {}) {
   if (!Number.isInteger(expectedRevision) || expectedRevision < 0) throw new Error('ORDERQ_PURCHASE_DRAFT_REVISION_REQUIRED');
   return {
     document: {
-      ...document,
+      ...draftDocument,
       purchaseDocumentId: text(document.purchaseDocumentId),
       sourceShortageKey: text(document.sourceShortageKey),
       sourceShortageQuantity: quantityFromUnits(quantityUnits(document.sourceShortageQuantity ?? 0)),

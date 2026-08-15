@@ -19,7 +19,8 @@
       createPurchaseDraftFromShortage,
       loadPurchaseAggregate,
       reconcilePurchaseExternal,
-      reversePurchase
+      reversePurchase,
+      savePurchaseDraft
     } from '../orderq/purchase-decision-repository.js?v=0.8.0';
 
     const output = document.querySelector('#result');
@@ -98,7 +99,7 @@
       await seed();
 
       const baseline = await counts();
-      const draft = await createPurchaseDraftFromShortage({
+      let draft = await createPurchaseDraftFromShortage({
         sourceShortageKey: 'SHORT:D-SHORT:DL-SHORT:5', sourceShortageQuantity: 5,
         sourceDispatchId: 'D-SHORT', sourceDispatchLineId: 'DL-SHORT', sourceOrderItemId: 'OI-1',
         productId: 'P-1', productCode: 'P001', productName: '구매상품',
@@ -109,6 +110,30 @@
       }, 'ADMIN');
       const purchaseDocumentId = draft.document.purchaseDocumentId;
       const purchaseLineId = draft.lines[0].purchaseLineId;
+      draft = await savePurchaseDraft({
+        document: {
+          ...draft.document,
+          idempotencyKey: 'FAKE-CONFIRM', confirmationRequestFingerprint: 'FAKE', reversalOf: 'PD-REAL',
+          confirmedAt: '2026-08-15T00:00:00.000Z', confirmedBy: 'FAKE', postedAt: '2026-08-15T00:00:00.000Z',
+          erpDocumentNo: 'FAKE-ERP', erpReconciliationId: 'FAKE-RECONCILIATION', history: [{ eventType: 'FAKE' }]
+        },
+        lines: [{
+          ...draft.lines[0],
+          movementId: 'IM-FAKE', reversalOf: 'PL-REAL', confirmedAt: '2026-08-15T00:00:00.000Z',
+          confirmedBy: 'FAKE', reversedAt: '2026-08-15T00:00:00.000Z', reversedBy: 'FAKE',
+          reversalRequestFingerprint: 'FAKE', externalReconciliationId: 'FAKE'
+        }],
+        expectedRevision: draft.document.revision
+      }, 'ADMIN');
+      const storedDraft = await loadPurchaseAggregate(purchaseDocumentId);
+      for (const field of ['idempotencyKey', 'confirmationRequestFingerprint', 'reversalOf', 'confirmedAt', 'confirmedBy', 'postedAt', 'erpDocumentNo', 'erpReconciliationId']) {
+        assert(!Object.hasOwn(storedDraft.document, field), `purchase DRAFT document retained system field ${field}`);
+      }
+      assert(storedDraft.document.history.every(event => event.eventType === 'PURCHASE_DRAFT_SAVED'),
+        'purchase DRAFT retained injected history evidence');
+      for (const field of ['movementId', 'reversalOf', 'confirmedAt', 'confirmedBy', 'reversedAt', 'reversedBy', 'reversalRequestFingerprint', 'externalReconciliationId']) {
+        assert(!Object.hasOwn(storedDraft.lines[0], field), `purchase DRAFT line retained system field ${field}`);
+      }
       const afterDraft = await counts();
       assert(afterDraft.inventoryMovements === baseline.inventoryMovements, 'purchase DRAFT changed inventory');
       assert(afterDraft.salesDocuments === 0 && afterDraft.salesLines === 0 && afterDraft.orderEvents === 0, 'purchase DRAFT changed sales/order fulfillment');
@@ -167,6 +192,10 @@
       'purchase receipt movement is incorrect');
       assert(confirmed.movements[0].ledgerSequence === 6 && confirmed.movements[0].occurredAt === '2026-08-10T09:00:00+09:00',
         'backdated purchase did not receive the latest ledger sequence while preserving actual time');
+      assert(confirmed.lines[0].movementId === confirmed.movements[0].movementId
+        && !Object.hasOwn(confirmed.lines[0], 'reversalOf')
+        && confirmed.lines[0].confirmedBy === 'ADMIN',
+      'purchase confirmation retained injected evidence instead of generated facts');
       const afterConfirmCounts = await counts();
       assert(afterConfirmCounts.salesDocuments === 0 && afterConfirmCounts.salesLines === 0 && afterConfirmCounts.orderEvents === 0,
         'confirmPurchase changed dispatch sales/order fulfillment');
@@ -218,6 +247,15 @@
       assert(review.matched === false && review.reconciliation.status === 'REVIEW_REQUIRED', 'similar ERP row was auto-matched instead of left for review');
       assert((await counts()).inventoryMovements === afterReconcile.inventoryMovements, 'review-only ERP row changed inventory');
 
+      const dbWithForeignLine = await openOrderQDb();
+      const foreignLineTx = dbWithForeignLine.transaction(STORE.PURCHASE_LINES, 'readwrite');
+      foreignLineTx.objectStore(STORE.PURCHASE_LINES).put({
+        purchaseLineId: 'PL-FOREIGN-FAKE', purchaseDocumentId: 'PD-FOREIGN', status: 'CONFIRMED',
+        productId: 'P-1', warehouseId: 'W-1', quantity: 9, baseQuantity: 4, amountWon: 900,
+        reversalOf: purchaseLineId, movementId: 'IM-FAKE'
+      });
+      await transactionDone(foreignLineTx);
+
       const originalBeforeReverse = await loadPurchaseAggregate(purchaseDocumentId);
       const originalRevision = originalBeforeReverse.document.revision;
       const partialReverseCommand = {
@@ -267,7 +305,7 @@
         && remainingReverse.lines[0].amountWon === -600 && remainingReverse.movements[0].signedBaseQuantity === -3,
       'remaining full purchase reversal did not consume exact balances');
       const allPurchaseLines = await readAll(STORE.PURCHASE_LINES);
-      const reversalLines = allPurchaseLines.filter(row => row.reversalOf === purchaseLineId);
+      const reversalLines = allPurchaseLines.filter(row => row.reversalOf === purchaseLineId && row.status === 'REVERSED');
       assert(reversalLines.reduce((sum, row) => sum + row.quantity, 0) === -10
         && reversalLines.reduce((sum, row) => sum + row.baseQuantity, 0) === -5
         && reversalLines.reduce((sum, row) => sum + row.amountWon, 0) === -1000,
@@ -288,7 +326,10 @@
       return {
         ok: true,
         databaseVersion: (await openOrderQDb()).version,
-        draft: { purchaseDocumentId, shortageKey: draft.document.sourceShortageKey, inventoryUnchanged: true, duplicateShortage },
+        draft: {
+          purchaseDocumentId, shortageKey: draft.document.sourceShortageKey, inventoryUnchanged: true,
+          injectedSystemEvidenceRemoved: true, duplicateShortage
+        },
         confirmation: {
           status: confirmed.document.status, erpPostingStatus: confirmed.document.erpPostingStatus,
           movement: confirmed.movements[0].signedBaseQuantity, ledgerSequence: confirmed.movements[0].ledgerSequence,
@@ -303,7 +344,7 @@
         reversal: {
           partial: [-4, -2, -400], remaining: [-6, -3, -600], cumulative: [-10, -5, -1000],
           inventoryRestored: inventoryAfterReverse.onHandQuantity, retryDuplicate: partialRetry.duplicate,
-          conflict: reverseConflict, overBlocked: overReverse
+          conflict: reverseConflict, overBlocked: overReverse, foreignConfirmedEvidenceIgnored: true
         },
         rollback: { confirmation: confirmFailure, reversal: reverseFailure },
         dispatchIndependent: { salesDocuments: 0, salesLines: 0, orderEvents: 0 },

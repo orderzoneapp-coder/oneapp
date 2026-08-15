@@ -403,15 +403,31 @@ export async function confirmPurchase(source = {}, actor = 'ADMIN', options = {}
   }
 }
 
-function buildPurchaseReversalPlan(command, originalLines, allLines) {
+function buildPurchaseReversalPlan(command, originalDocument, originalLines, allLines, allDocuments, allMovements) {
   const inputByLine = new Map(command.lines.map(row => [row.purchaseLineId, row]));
+  const documentById = new Map(allDocuments.map(row => [row.purchaseDocumentId, row]));
+  const movementById = new Map(allMovements.map(row => [row.movementId, row]));
   for (const input of command.lines) {
     if (!originalLines.some(row => row.purchaseLineId === input.purchaseLineId)) throw new Error(`ORDERQ_PURCHASE_REVERSE_LINE_UNKNOWN:${input.purchaseLineId}`);
   }
   const plan = [];
   let allRemaining = 0;
   for (const line of originalLines) {
-    const prior = allLines.filter(row => row.reversalOf === line.purchaseLineId);
+    const prior = allLines.filter(row => {
+      if (row.reversalOf !== line.purchaseLineId || text(row.status).toUpperCase() !== PURCHASE_STATUS.REVERSED) return false;
+      if (!(finite(row.quantity) < 0) || !(finite(row.baseQuantity) < 0) || finite(row.amountWon) > 0) return false;
+      const reversalDocument = documentById.get(row.purchaseDocumentId);
+      if (!reversalDocument
+        || text(reversalDocument.status).toUpperCase() !== PURCHASE_STATUS.REVERSED
+        || reversalDocument.reversalOf !== originalDocument.purchaseDocumentId) return false;
+      const movement = movementById.get(row.movementId);
+      return Boolean(movement)
+        && movement.sourceDocumentType === 'PURCHASE_REVERSAL'
+        && movement.sourceDocumentId === row.purchaseDocumentId
+        && movement.sourceLineId === row.purchaseLineId
+        && movement.reversalOf === line.movementId
+        && finite(movement.signedBaseQuantity) < 0;
+    });
     const reversedQuantity = prior.reduce((sum, row) => sum + Math.abs(finite(row.quantity)), 0);
     const reversedBaseQuantity = prior.reduce((sum, row) => sum + Math.abs(finite(row.baseQuantity)), 0);
     const reversedAmountWon = prior.reduce((sum, row) => sum + Math.abs(finite(row.amountWon)), 0);
@@ -469,11 +485,13 @@ export async function reversePurchase(source = {}, actor = 'ADMIN', options = {}
     if (![ERP_POSTING_STATUS.READY, ERP_POSTING_STATUS.NOT_READY].includes(original.erpPostingStatus)) {
       throw new Error('ORDERQ_PURCHASE_REVERSE_ERP_CORRECTION_REQUIRES_M8');
     }
-    const [originalLines, allLines] = await Promise.all([
+    const [originalLines, allLines, allDocuments, allMovements] = await Promise.all([
       allFrom(tx, STORE.PURCHASE_LINES, 'byDocumentId', command.purchaseDocumentId),
-      allFrom(tx, STORE.PURCHASE_LINES)
+      allFrom(tx, STORE.PURCHASE_LINES),
+      allFrom(tx, STORE.PURCHASE_DOCUMENTS),
+      allFrom(tx, STORE.INVENTORY_MOVEMENTS)
     ]);
-    const reversal = buildPurchaseReversalPlan(command, originalLines, allLines);
+    const reversal = buildPurchaseReversalPlan(command, original, originalLines, allLines, allDocuments, allMovements);
     const timestamp = nowIso();
     const reversalDocumentId = newId('PD-REV');
     const reversalLines = reversal.plan.map(row => ({

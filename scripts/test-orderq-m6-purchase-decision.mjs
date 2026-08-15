@@ -18,12 +18,17 @@ const draft = normalizePurchaseDraft({
   document: {
     purchaseDocumentId: 'PD-1', sourceShortageKey: 'SHORT:DL-1', sourceShortageQuantity: 10,
     supplierId: 'S-1', supplierName: '공급처', businessDate: '2026-08-15', actualTransactionAt: '2026-08-10T09:00:00+09:00',
-    backdateReason: '구매누락 소급입력'
+    backdateReason: '구매누락 소급입력',
+    idempotencyKey: 'FAKE-CONFIRM', confirmationRequestFingerprint: 'FAKE', reversalOf: 'PD-REAL',
+    confirmedAt: '2026-08-15T00:00:00.000Z', confirmedBy: 'FAKE', erpDocumentNo: 'FAKE-ERP',
+    erpReconciliationId: 'FAKE-RECONCILIATION', history: [{ eventType: 'FAKE' }]
   },
   lines: [{
     purchaseLineId: 'PL-1', purchaseDocumentId: 'PD-1', productId: 'P-1', warehouseId: 'W-1',
     quantity: 10, unit: 'BOX', baseQuantity: 5, baseUnit: 'KG', unitCostWon: 100,
-    sourceOrderItemId: 'OI-1', sourceDispatchLineId: 'DL-1', externalLineNo: 0, sourceLineFingerprint: '0'
+    sourceOrderItemId: 'OI-1', sourceDispatchLineId: 'DL-1', externalLineNo: 0, sourceLineFingerprint: '0',
+    movementId: 'IM-FAKE', reversalOf: 'PL-REAL', confirmedAt: '2026-08-15T00:00:00.000Z',
+    confirmedBy: 'FAKE', reversalRequestFingerprint: 'FAKE', externalReconciliationId: 'FAKE'
   }],
   expectedRevision: 0
 });
@@ -33,6 +38,12 @@ assert.equal(draft.lines[0].baseQuantity, 5);
 assert.equal(draft.lines[0].amountWon, 1000);
 assert.equal(draft.lines[0].externalLineNo, '0');
 assert.equal(draft.lines[0].sourceLineFingerprint, '0');
+for (const field of ['idempotencyKey', 'confirmationRequestFingerprint', 'reversalOf', 'confirmedAt', 'confirmedBy', 'erpDocumentNo', 'erpReconciliationId', 'history']) {
+  assert.equal(Object.hasOwn(draft.document, field), false, `purchase DRAFT document retained system field ${field}`);
+}
+for (const field of ['movementId', 'reversalOf', 'confirmedAt', 'confirmedBy', 'reversalRequestFingerprint', 'externalReconciliationId']) {
+  assert.equal(Object.hasOwn(draft.lines[0], field), false, `purchase DRAFT line retained system field ${field}`);
+}
 
 const firstBase = allocatePurchaseReversalDimension({
   originalQuantity: 10, reversedQuantity: 0, reversalQuantity: 4,
