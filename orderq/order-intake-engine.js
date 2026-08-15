@@ -6,16 +6,16 @@ import {
   newId,
   nowIso,
   normalizeText
-} from './orderq-db.js?v=0.7.1';
-import { resolveWarehouseInTransaction, warehouseSnapshot } from './warehouse-master.js?v=0.7.1';
+} from './orderq-db.js?v=0.8.0';
+import { resolveWarehouseInTransaction, warehouseSnapshot } from './warehouse-master.js?v=0.8.0';
 import {
   ORDER_STATUS, ADMIN_STATUS, OPS_STATUS, INPUT_CHANNEL,
   normalizeOrderStatus, normalizeAdminStatus, normalizeOpsStatus, inferInputChannel,
   initialAdminStatus,
   orderDateKey, formatOrderNo, orderSequenceFromNo, assigneeIdentity, externalOrderSnapshot,
   normalizedOrderView, documentFieldChanges, orderItemChanges
-} from './order-document-model.js?v=0.7.1';
-import { deriveOrderLifecycle, TRANSFER_EVENT_TYPE } from './order-fulfillment-lifecycle.js?v=0.7.1';
+} from './order-document-model.js?v=0.8.0';
+import { deriveOrderLifecycle, TRANSFER_EVENT_TYPE } from './order-fulfillment-lifecycle.js?v=0.8.0';
 
 export { ORDER_STATUS, ADMIN_STATUS, OPS_STATUS, INPUT_CHANNEL };
 

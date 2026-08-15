@@ -1,5 +1,15 @@
-const DB_NAME = 'oneapp-orderq-vnext';
-const DB_VERSION = 6;
+import {
+  CAPABILITY,
+  DISPATCH_STAGE_POLICY,
+  MVP_ACTOR_ID,
+  ORDERQ_DB_VERSION,
+  V7_EXISTING_STORE_INDEXES,
+  V7_STORE,
+  V7_STORE_DEFINITIONS
+} from './orderq-v7-contracts.js?v=0.8.0';
+
+export const DB_NAME = 'oneapp-orderq-vnext';
+export const DB_VERSION = ORDERQ_DB_VERSION;
 
 export const STORE = Object.freeze({
   CUSTOMERS: 'customers',
@@ -32,7 +42,8 @@ export const STORE = Object.freeze({
   PARSER_EVIDENCE: 'parserEvidence',
   COLLECTOR_SETTINGS: 'collectorSettings',
   SYNC_QUEUE: 'syncQueue',
-  META: 'meta'
+  META: 'meta',
+  ...V7_STORE
 });
 
 let dbPromise = null;
@@ -41,7 +52,7 @@ function ensureIndex(store, name, keyPath, options = {}) {
   if (!store.indexNames.contains(name)) store.createIndex(name, keyPath, options);
 }
 
-function upgrade(db, transaction, oldVersion = 0) {
+export function upgradeOrderQDbSchema(db, transaction, oldVersion = 0) {
   const ensureStore = (name, options) => {
     if (!db.objectStoreNames.contains(name)) return db.createObjectStore(name, options);
     return transaction.objectStore(name);
@@ -214,6 +225,29 @@ function upgrade(db, transaction, oldVersion = 0) {
 
   const metaStore = ensureStore(STORE.META, { keyPath: 'key' });
 
+  if (oldVersion < 7) {
+    for (const definition of V7_STORE_DEFINITIONS) {
+      const v7Store = ensureStore(definition.name, { keyPath: definition.keyPath });
+      for (const entry of definition.indexes) {
+        ensureIndex(v7Store, entry.name, entry.keyPath, entry.options);
+      }
+    }
+    for (const [storeName, indexes] of Object.entries(V7_EXISTING_STORE_INDEXES)) {
+      const existingStore = transaction.objectStore(storeName);
+      for (const entry of indexes) {
+        ensureIndex(existingStore, entry.name, entry.keyPath, entry.options);
+      }
+    }
+    const updatedAt = new Date().toISOString();
+    metaStore.put({ key: 'schemaVersion', value: ORDERQ_DB_VERSION, updatedAt });
+    metaStore.put({ key: 'dispatchStagePolicyCatalog', value: DISPATCH_STAGE_POLICY, updatedAt });
+    metaStore.put({
+      key: 'mvpActorCapabilityContract',
+      value: { defaultActorId: MVP_ACTOR_ID, capabilities: Object.values(CAPABILITY) },
+      updatedAt
+    });
+  }
+
   if (oldVersion < 6) {
     const orderStore = transaction.objectStore(STORE.ORDERS);
     const orderRequest = orderStore.getAll();
@@ -271,14 +305,24 @@ function upgrade(db, transaction, oldVersion = 0) {
 
 export function openOrderQDb() {
   if (dbPromise) return dbPromise;
-  dbPromise = new Promise((resolve, reject) => {
+  const pending = new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
-    request.onupgradeneeded = event => upgrade(request.result, request.transaction, event.oldVersion);
+    request.onupgradeneeded = event => upgradeOrderQDbSchema(request.result, request.transaction, event.oldVersion);
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
     request.onblocked = () => reject(new Error('ORDER Q DB 업그레이드가 다른 탭에 의해 차단되었습니다. 다른 ORDER Q 탭을 닫고 다시 시도하세요.'));
   });
+  dbPromise = pending.catch(error => {
+    dbPromise = null;
+    throw error;
+  });
   return dbPromise;
+}
+
+export function closeOrderQDb() {
+  if (!dbPromise) return;
+  dbPromise.then(db => db.close()).catch(() => {});
+  dbPromise = null;
 }
 
 export function requestToPromise(request) {

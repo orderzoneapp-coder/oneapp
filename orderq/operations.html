@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="google" content="notranslate">
   <title>ONEAPP ORDER Q vNext · 출고 운영</title>
-  <link rel="stylesheet" href="./orderq.css?v=0.7.1">
+  <link rel="stylesheet" href="./orderq.css?v=0.8.0">
 </head>
 <body class="operations-page">
   <div class="shell">
@@ -13,7 +13,7 @@
       <div class="brand">
         <strong>ONEAPP</strong>
         <span class="logo-frame" aria-hidden="true"><img src="../assets/order-q-logo.png" alt=""></span>
-        <span class="badge">vNext 0.7.1</span>
+        <span class="badge">vNext 0.8.0</span>
         <span>ORDER Q · 출고 운영</span>
       </div>
       <div class="top-actions">
@@ -67,10 +67,10 @@
     </main>
   </div>
   <script type="module">
-    import { getOperationsSnapshot } from './order-operations-repository.js?v=0.7.1';
-    import { TRANSFER_STATUS_LABEL } from './order-fulfillment-lifecycle.js?v=0.7.1';
-    import { syncNow } from './orderq-sync-engine.js?v=0.7.1';
-    import { getCloudUrl } from './orderq-cloud-adapter.js?v=0.7.1';
+    import { getOperationsSnapshot } from './order-operations-repository.js?v=0.8.0';
+    import { TRANSFER_STATUS_LABEL } from './order-fulfillment-lifecycle.js?v=0.8.0';
+    import { syncNow } from './orderq-sync-engine.js?v=0.8.0';
+    import { getCloudUrl } from './orderq-cloud-adapter.js?v=0.8.0';
 
     const CURRENT_ASSIGNEE_KEY = 'oneapp.orderq.current-assignee.v1';
     const rows = document.getElementById('operationRows');

@@ -2,7 +2,7 @@
 
 신규 ORDER Q 개발 경로. 기존 `orderops/` 및 `orderops_list.html`은 변경하지 않는다.
 
-## vNext 0.7.1 URL
+## vNext 0.8.0 URL
 
 - `/orderq/` 또는 `/orderq/index.html`: 주문현황(전표 목록·펼침·상품상세·수정·출력)
 - `/orderq/input.html`: 주문서 직접입력·수정
@@ -14,7 +14,7 @@
 
 ## 데이터와 처리 원칙
 
-브라우저 IndexedDB `oneapp-orderq-vnext` v6를 로컬 업무 DB로 사용하고, Apps Script Web App을 통해 목적별 Google Sheet와 증분 동기화한다.
+브라우저 IndexedDB `oneapp-orderq-vnext` v7을 로컬 업무 DB로 사용한다. 기존 v6 주문·Collector 자료는 행을 다시 쓰지 않고 그대로 읽는다. 기존 주문·이벤트는 Apps Script Web App을 통해 목적별 Google Sheet와 증분 동기화하지만, M1의 신규 v7 엔티티는 동기화 계약만 정의하고 실제 서버 동기화는 아직 수행하지 않는다.
 
 업무 흐름은 `주문서 입력 → 주문현황(전표관리) → ORDER Q(운영관리)`로 구분한다. 직접입력·ORDER IN·Excel·쇼핑몰·외부연동은 모두 공통 `createOrder`를 호출하며 입력경로는 `inputChannel`로 기록한다. 저장 후 주문현황으로 이동해 방금 저장한 전표를 최상단에서 자동으로 펼친다.
 
@@ -40,7 +40,11 @@
 - `salesDocuments`, `salesLines`, `purchaseDocuments`, `purchaseLines`
 - `ledgerDocuments`, `ledgerLines`, `inventorySnapshots`, `inventoryLines`
 - `historicalOrderGroups`, `historicalOrderLines`, `fulfillmentLinks`, `fulfillmentBalances`, `parserEvidence`
+- `dispatchDecisions`, `dispatchLines`, `dispatchStockAllocations`, `dispatchApprovals`
+- `inventoryReservations`, `inventoryMovements`, `dispatchReconciliations`
 - `syncQueue`, `meta`
+
+M1은 외부 거래 식별자와 ERP 반영상태를 분리하고, 최소 감사자 `actorId`를 보존한다. 브라우저 DB 업그레이드 실패는 IndexedDB 버전 트랜잭션으로 자동 롤백되며, 백업 복원은 전체 입력을 먼저 검증한 뒤 하나의 원자적 트랜잭션으로 실행한다.
 
 주문 수정은 `revision` 비교를 사용한다. 같은 주문을 두 탭에서 열고 한쪽이 먼저 저장하면, 다른 쪽의 오래된 revision 저장은 차단한다.
 
