@@ -49,7 +49,7 @@ function queueEntity(tx, entityType, entityId, payload, revision, baseRevision, 
   tx.objectStore(STORE.SYNC_QUEUE).add({
     queueId: newId('SQ'), entityType, entityId, operation,
     revision: Number(revision || 0), baseRevision: Number(baseRevision || 0),
-    payload: clone(payload), status: 'PENDING', localOnly: true,
+    payload: clone(payload), status: 'LOCAL_ONLY', localOnly: true,
     createdAt: timestamp, updatedAt: timestamp
   });
 }
@@ -132,8 +132,8 @@ export async function listDispatchAggregates() {
 }
 
 export async function getDispatchProposals({ businessDate = '', dispatchStageCode = 'UNSPECIFIED' } = {}) {
-  const [orders, orderItems, decisions, snapshots, inventoryLines, movements, reservations, warehouses] = await Promise.all([
-    getAll(STORE.ORDERS), getAll(STORE.ORDER_ITEMS), getAll(STORE.DISPATCH_DECISIONS),
+  const [orders, orderItems, orderEvents, decisions, snapshots, inventoryLines, movements, reservations, warehouses] = await Promise.all([
+    getAll(STORE.ORDERS), getAll(STORE.ORDER_ITEMS), getAll(STORE.ORDER_EVENTS), getAll(STORE.DISPATCH_DECISIONS),
     getAll(STORE.INVENTORY_SNAPSHOTS),
     getAll(STORE.INVENTORY_LINES), getAll(STORE.INVENTORY_MOVEMENTS),
     getAll(STORE.INVENTORY_RESERVATIONS), getAll(STORE.WAREHOUSES)
@@ -144,7 +144,7 @@ export async function getDispatchProposals({ businessDate = '', dispatchStageCod
     .flatMap(row => Array.isArray(row.sourceOrderIds) ? row.sourceOrderIds : []));
   return proposeNormalDispatchDrafts({
     orders: orders.filter(row => !plannedOrderIds.has(row.orderId)),
-    orderItems, inventoryProjection, businessDate, dispatchStageCode
+    orderItems, orderEvents, inventoryProjection, businessDate, dispatchStageCode
   });
 }
 
@@ -186,8 +186,19 @@ export async function saveDispatchDraft({ decision = {}, lines = [], allocations
     await assertReferences(tx, normalized.lines, normalized.allocations, false);
     const timestamp = nowIso();
     const dispatchNo = text(current?.dispatchNo || decision.dispatchNo) || await nextDispatchNo(tx, decision.businessDate);
+    const {
+      confirmedAt: _confirmedAt,
+      confirmedBy: _confirmedBy,
+      salesDocumentId: _salesDocumentId,
+      purchaseDocumentId: _purchaseDocumentId,
+      inventoryMovementIds: _inventoryMovementIds,
+      recognizedOrderQuantity: _recognizedOrderQuantity,
+      reversedAt: _reversedAt,
+      reversedBy: _reversedBy,
+      ...draftDecision
+    } = decision;
     const next = withHistory({
-      ...(current || {}), ...decision, dispatchId, dispatchNo,
+      ...(current || {}), ...draftDecision, dispatchId, dispatchNo,
       sourceOrderIds: [...new Set(normalized.lines.map(row => row.orderId))],
       status: DISPATCH_STATUS.DRAFT, revision: currentRevision + 1,
       baseRevision: currentRevision, localOnly: true,

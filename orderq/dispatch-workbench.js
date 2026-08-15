@@ -1,3 +1,8 @@
+import {
+  effectiveOrderQuantity,
+  effectiveTransferredQuantity
+} from './order-fulfillment-lifecycle.js?v=0.8.0';
+
 export const DISPATCH_STATUS = Object.freeze({
   DRAFT: 'DRAFT',
   RELEASED: 'RELEASED'
@@ -42,6 +47,7 @@ export const NEEDS_ACTION_CODE = Object.freeze({
 });
 
 export const DISPATCH_WORKSPACE_STORAGE_KEY = 'oneapp.orderq.dispatch-workbench.v1';
+export const DISPATCH_DRAFT_BUFFER_STORAGE_KEY = 'oneapp.orderq.dispatch-draft-buffer.v1';
 export const DISPATCH_QUANTITY_SCALE = 1_000_000;
 
 const FULFILLMENT_TYPES = new Set(Object.values(FULFILLMENT_TYPE));
@@ -83,12 +89,24 @@ export function normalizeWorkspaceState(source = {}) {
 }
 
 function normalizeLine(source = {}) {
+  const {
+    actualQuantity: _actualQuantity,
+    actualBaseQuantity: _actualBaseQuantity,
+    recognizedOrderQuantity: _recognizedOrderQuantity,
+    confirmedQuantity: _confirmedQuantity,
+    confirmedBaseQuantity: _confirmedBaseQuantity,
+    salesLineId: _salesLineId,
+    inventoryMovementId: _inventoryMovementId,
+    confirmedAt: _confirmedAt,
+    confirmedBy: _confirmedBy,
+    ...draftSource
+  } = source;
   const fulfillmentType = text(source.fulfillmentType).toUpperCase() || FULFILLMENT_TYPE.NORMAL;
   if (!FULFILLMENT_TYPES.has(fulfillmentType)) throw new Error(`ORDERQ_DISPATCH_FULFILLMENT_TYPE_INVALID:${fulfillmentType}`);
   const plannedActualQuantity = quantityFromUnits(quantityUnits(source.plannedActualQuantity));
   if (plannedActualQuantity < 0) throw new Error('ORDERQ_DISPATCH_PLANNED_QUANTITY_NEGATIVE');
   return {
-    ...source,
+    ...draftSource,
     dispatchLineId: text(source.dispatchLineId),
     dispatchId: text(source.dispatchId),
     orderId: text(source.orderId),
@@ -116,20 +134,23 @@ function normalizeLine(source = {}) {
 }
 
 function normalizeAllocation(source = {}) {
+  const {
+    actualBaseQuantity: _actualBaseQuantity,
+    movementId: _movementId,
+    confirmedAt: _confirmedAt,
+    confirmedBy: _confirmedBy,
+    ...draftSource
+  } = source;
   const plannedBaseQuantity = quantityFromUnits(quantityUnits(source.plannedBaseQuantity));
   if (plannedBaseQuantity < 0) throw new Error('ORDERQ_ALLOCATION_QUANTITY_NEGATIVE');
   return {
-    ...source,
+    ...draftSource,
     allocationId: text(source.allocationId),
     dispatchId: text(source.dispatchId),
     dispatchLineId: text(source.dispatchLineId),
     warehouseId: text(source.warehouseId),
     plannedBaseQuantity,
-    actualBaseQuantity: source.actualBaseQuantity === '' || source.actualBaseQuantity === null || source.actualBaseQuantity === undefined
-      ? null
-      : quantityFromUnits(quantityUnits(source.actualBaseQuantity)),
     reservationId: text(source.reservationId),
-    movementId: text(source.movementId),
     status: text(source.status).toUpperCase() || 'PLANNED'
   };
 }
@@ -188,11 +209,12 @@ export function deriveNeedsActionCodes({ line, allocations = [], availableByWare
   return [...codes];
 }
 
-function itemQuantity(item = {}) {
-  return quantityFromUnits(quantityUnits(item.finalQuantity ?? item.rawQuantity ?? item.quantity ?? 0));
+function itemQuantity(order = {}, item = {}, events = []) {
+  const remaining = effectiveOrderQuantity(order, item) - effectiveTransferredQuantity(item.orderItemId, events);
+  return quantityFromUnits(Math.max(0, quantityUnits(remaining)));
 }
 
-export function proposeNormalDispatchDrafts({ orders = [], orderItems = [], inventoryProjection, businessDate = '', dispatchStageCode = 'UNSPECIFIED' } = {}) {
+export function proposeNormalDispatchDrafts({ orders = [], orderItems = [], orderEvents = [], inventoryProjection, businessDate = '', dispatchStageCode = 'UNSPECIFIED' } = {}) {
   const itemsByOrder = new Map();
   for (const item of orderItems) {
     const list = itemsByOrder.get(text(item.orderId)) || [];
@@ -207,7 +229,7 @@ export function proposeNormalDispatchDrafts({ orders = [], orderItems = [], inve
     const lines = [];
     const allocations = [];
     for (const item of itemsByOrder.get(text(order.orderId)) || []) {
-      const requestedQuantity = itemQuantity(item);
+      const requestedQuantity = itemQuantity(order, item, orderEvents);
       const requestedProductId = text(item.productId);
       if (requestedQuantity <= 0) continue;
       const dispatchLineId = `DL-PROPOSAL-${text(item.orderItemId)}`;
@@ -324,7 +346,9 @@ export function buildWorkerPickViews(aggregates = [], warehouses = []) {
         actualUnit: line.actualUnit,
         workStatus: line.workStatus,
         workerReportedQuantity: line.workerReportedQuantity,
+        workerReportedProductId: line.workerReportedProductId,
         workerExceptionCode: line.workerExceptionCode,
+        workerExceptionMemo: line.workerExceptionMemo,
         allocations: sources.map(row => ({ allocationId: row.allocationId, warehouseId: row.warehouseId, plannedBaseQuantity: row.plannedBaseQuantity }))
       });
       for (const allocation of sources) {

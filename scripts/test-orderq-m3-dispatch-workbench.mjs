@@ -31,14 +31,26 @@ assert.throws(() => validateDispatchDraftPlan({
 }), /ACTUAL_PRODUCT_REQUIRED/);
 
 const multiAllocation = validateDispatchDraftPlan({
-  lines: [baseLine],
+  lines: [{
+    ...baseLine,
+    actualQuantity: 99,
+    actualBaseQuantity: 98,
+    recognizedOrderQuantity: 97,
+    salesLineId: 'SL-FORBIDDEN',
+    confirmedAt: '2026-08-15T00:00:00.000Z'
+  }],
   allocations: [
-    { allocationId: 'A-1', dispatchLineId: 'DL-1', warehouseId: 'W-1', plannedBaseQuantity: 4 },
+    { allocationId: 'A-1', dispatchLineId: 'DL-1', warehouseId: 'W-1', plannedBaseQuantity: 4, actualBaseQuantity: 4, movementId: 'IM-FORBIDDEN' },
     { allocationId: 'A-2', dispatchLineId: 'DL-1', warehouseId: 'W-2', plannedBaseQuantity: 6 }
   ],
   strict: true
 });
 assert.deepEqual(multiAllocation.allocations.map(row => row.plannedBaseQuantity), [4, 6]);
+for (const field of ['actualQuantity', 'actualBaseQuantity', 'recognizedOrderQuantity', 'salesLineId', 'confirmedAt']) {
+  assert.equal(field in multiAllocation.lines[0], false, `M4 line field must be stripped in M3: ${field}`);
+}
+assert.equal('actualBaseQuantity' in multiAllocation.allocations[0], false);
+assert.equal('movementId' in multiAllocation.allocations[0], false);
 assert.throws(() => validateDispatchDraftPlan({
   lines: [baseLine],
   allocations: [{ allocationId: 'A-1', dispatchLineId: 'DL-1', warehouseId: 'W-1', plannedBaseQuantity: 9 }],
@@ -62,6 +74,30 @@ assert.equal(proposals[0].proposalOnly, true);
 assert.equal(proposals[0].decision.status, DISPATCH_STATUS.DRAFT, 'normal proposal must never auto-release or confirm');
 assert.deepEqual(proposals[0].allocations.map(row => row.plannedBaseQuantity), [8, 2]);
 assert.deepEqual(proposals[0].lines[0].needsActionCodes, [NEEDS_ACTION_CODE.READY]);
+
+const remainingBase = {
+  orders: [{ orderId: 'O-R', customerId: 'C-1', orderStatus: 'ORDER', orderDate: '2026-08-15' }],
+  orderItems: [{
+    orderItemId: 'OI-R', orderId: 'O-R', productId: 'P-1', itemCode: '10', itemName: '테스트 상품',
+    finalQuantity: 10, cancelledQuantity: 2, finalUnit: 'EA'
+  }],
+  inventoryProjection,
+  businessDate: '2026-08-15'
+};
+const partialCancelProposal = proposeNormalDispatchDrafts(remainingBase);
+assert.equal(partialCancelProposal[0].lines[0].plannedBaseQuantity, 8, 'partial cancellation must reduce the proposal quantity');
+const allocatedEvent = {
+  eventId: 'OE-A', orderId: 'O-R', eventType: 'SALES_TRANSFER_ALLOCATED',
+  detail: { orderItemId: 'OI-R', transferredQty: 5 }
+};
+const partialTransferProposal = proposeNormalDispatchDrafts({ ...remainingBase, orderEvents: [allocatedEvent] });
+assert.equal(partialTransferProposal[0].lines[0].plannedBaseQuantity, 3, 'existing transferred quantity must reduce the proposal');
+const reversedEvent = {
+  eventId: 'OE-R', orderId: 'O-R', eventType: 'SALES_TRANSFER_REVERSED',
+  detail: { orderItemId: 'OI-R', transferredQty: 2, allocationEventId: 'OE-A' }
+};
+const reversalProposal = proposeNormalDispatchDrafts({ ...remainingBase, orderEvents: [allocatedEvent, reversedEvent] });
+assert.equal(reversalProposal[0].lines[0].plannedBaseQuantity, 5, 'transfer reversal must reopen the proposal quantity');
 
 const shortageCodes = deriveNeedsActionCodes({
   line: baseLine,
@@ -107,11 +143,16 @@ const repositorySource = await readFile(new URL('../orderq/dispatch-workbench-re
 assert.match(repositorySource, /status: DISPATCH_STATUS\.DRAFT/);
 assert.match(repositorySource, /status: DISPATCH_STATUS\.RELEASED/);
 assert.match(repositorySource, /localOnly: true/);
+assert.match(repositorySource, /status: 'LOCAL_ONLY'/);
+assert.doesNotMatch(repositorySource, /status: 'PENDING'/);
 assert.match(repositorySource, /RESERVATION_STATUS\.RELEASED/);
 assert.match(repositorySource, /RESERVATION_STATUS\.EXPIRED/);
 assert.doesNotMatch(repositorySource, /CONFIRMED/);
 assert.doesNotMatch(repositorySource, /SALES_DOCUMENTS|SALES_LINES|FULFILLMENT_LINKS|FULFILLMENT_BALANCES/);
 assert.doesNotMatch(repositorySource, /appendInventoryMovement|SALE_ISSUE/);
+
+const syncEngineSource = await readFile(new URL('../orderq/orderq-sync-engine.js', import.meta.url), 'utf8');
+assert.match(syncEngineSource, /row\.status === 'PENDING' && row\.localOnly !== true/, 'Cloud push and pending counts must exclude local-only M3 rows');
 
 console.log('ORDER Q M3 dispatch workbench contract tests passed');
 console.log(JSON.stringify({
@@ -119,6 +160,7 @@ console.log(JSON.stringify({
   strictReleaseValidation: true,
   multiAllocation: multiAllocation.allocations,
   proposal: { status: proposals[0].decision.status, proposalOnly: proposals[0].proposalOnly },
+  remainingProposal: { partialCancel: 8, partialTransfer: 3, transferReversal: 5 },
   aggregateTrace: workerViews.byLocationProduct,
   workspaceRestore: restoredWorkspace,
   workFact

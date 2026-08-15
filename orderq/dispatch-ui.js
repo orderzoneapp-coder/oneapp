@@ -1,4 +1,5 @@
 import {
+  DISPATCH_DRAFT_BUFFER_STORAGE_KEY,
   DISPATCH_WORKSPACE_STORAGE_KEY,
   WORK_EXCEPTION_CODE,
   normalizeWorkspaceState
@@ -37,21 +38,60 @@ function showMessage(value, type = '') {
   message.className = value ? `dispatch-message show ${type}` : 'dispatch-message';
 }
 
-function saveWorkspace() {
+function saveWorkspace(options = {}) {
+  const captureScroll = options?.captureScroll !== false;
   workspace = normalizeWorkspaceState({
     ...workspace,
     filters: { status: statusFilter.value, search: searchFilter.value },
-    scrollTop: document.scrollingElement?.scrollTop || 0
+    scrollTop: captureScroll ? (detail.scrollTop || document.scrollingElement?.scrollTop || 0) : workspace.scrollTop
   });
   localStorage.setItem(DISPATCH_WORKSPACE_STORAGE_KEY, JSON.stringify(workspace));
 }
 
-function setMode(mode) {
+function readDraftBuffer(decision) {
+  if (!decision || decision.status !== 'DRAFT') return null;
+  try {
+    const buffer = JSON.parse(localStorage.getItem(DISPATCH_DRAFT_BUFFER_STORAGE_KEY) || 'null');
+    if (buffer?.dispatchId !== decision.dispatchId || Number(buffer?.baseRevision) !== Number(decision.revision || 0)) return null;
+    return buffer;
+  } catch { return null; }
+}
+
+function clearDraftBuffer(dispatchId = '') {
+  const current = readDraftBuffer({ dispatchId, revision: selectedAggregate()?.decision?.revision, status: 'DRAFT' });
+  if (!dispatchId || current?.dispatchId === dispatchId) localStorage.removeItem(DISPATCH_DRAFT_BUFFER_STORAGE_KEY);
+}
+
+function saveDraftBuffer() {
+  const aggregate = selectedAggregate();
+  if (!aggregate || aggregate.decision.status !== 'DRAFT') return;
+  const draft = collectDraft(aggregate);
+  const buffer = {
+    dispatchId: aggregate.decision.dispatchId,
+    baseRevision: aggregate.decision.revision,
+    lines: draft.lines.map(row => ({
+      dispatchLineId: row.dispatchLineId,
+      plannedActualQuantity: row.plannedActualQuantity,
+      plannedBaseQuantity: row.plannedBaseQuantity
+    })),
+    allocations: draft.allocations.map(row => ({
+      allocationId: row.allocationId,
+      dispatchLineId: row.dispatchLineId,
+      warehouseId: row.warehouseId,
+      plannedBaseQuantity: row.plannedBaseQuantity
+    })),
+    updatedAt: new Date().toISOString()
+  };
+  localStorage.setItem(DISPATCH_DRAFT_BUFFER_STORAGE_KEY, JSON.stringify(buffer));
+  saveWorkspace();
+}
+
+function setMode(mode, options = {}) {
   workspace.mode = mode;
   $('#adminMode').hidden = mode !== 'ADMIN';
   $('#workerMode').hidden = mode !== 'WORKER';
   document.querySelectorAll('[data-mode]').forEach(button => button.classList.toggle('active', button.dataset.mode === mode));
-  saveWorkspace();
+  saveWorkspace(options);
 }
 
 function selectedAggregate() {
@@ -104,6 +144,9 @@ function renderDetail() {
   }
   const { decision, lines, allocations, reservations } = aggregate;
   const editable = decision.status === 'DRAFT';
+  const draftBuffer = readDraftBuffer(decision);
+  const bufferedLines = new Map((draftBuffer?.lines || []).map(row => [row.dispatchLineId, row]));
+  const bufferedAllocations = new Map((draftBuffer?.allocations || []).map(row => [row.allocationId, row]));
   const reservationsByAllocation = new Map(reservations.map(row => [row.allocationId, row]));
   const actionButtons = editable
     ? '<button class="dq-btn primary" type="button" data-action="save-draft">DRAFT 저장</button><button class="dq-btn release" type="button" data-action="release">작업목록 배포</button>'
@@ -111,23 +154,26 @@ function renderDetail() {
   const lineBody = lines.map(line => {
     const lineAllocations = allocations.filter(row => row.dispatchLineId === line.dispatchLineId);
     const allocationBody = lineAllocations.map(allocation => {
+      const buffered = bufferedAllocations.get(allocation.allocationId) || {};
       const reservation = reservationsByAllocation.get(allocation.allocationId);
       const conflict = Number(reservation?.conflictBaseQuantity || 0);
       const reservationText = reservation ? `· ${esc(reservation.status)}` : '';
       const conflictText = conflict > 0 ? `예약충돌 ${qty(conflict)}` : '-';
       return `<tr class="allocation-row" data-allocation-id="${esc(allocation.allocationId)}" data-line-id="${esc(line.dispatchLineId)}">
         <td class="allocation-indent">↳ 재고출처</td>
-        <td><select class="allocation-warehouse" ${editable ? '' : 'disabled'}>${warehouseOptions(allocation.warehouseId)}</select></td>
-        <td><input class="allocation-qty" type="number" step="any" value="${Number(allocation.plannedBaseQuantity || 0)}" ${editable ? '' : 'disabled'}> ${esc(line.actualUnit)}</td>
+        <td><select class="allocation-warehouse" ${editable ? '' : 'disabled'}>${warehouseOptions(buffered.warehouseId ?? allocation.warehouseId)}</select></td>
+        <td><input class="allocation-qty" type="number" step="any" value="${Number(buffered.plannedBaseQuantity ?? allocation.plannedBaseQuantity ?? 0)}" ${editable ? '' : 'disabled'}> ${esc(line.actualUnit)}</td>
         <td>${esc(allocation.status)} ${reservationText}</td>
         <td class="${conflict > 0 ? 'negative' : ''}">${conflictText}</td>
       </tr>`;
     }).join('');
+    const bufferedLine = bufferedLines.get(line.dispatchLineId) || {};
+    const plannedQuantity = Number(bufferedLine.plannedBaseQuantity ?? line.plannedBaseQuantity ?? 0);
     const workerResult = line.workerReportedQuantity == null ? '-' : qty(line.workerReportedQuantity);
     return `<tr class="dispatch-line-row" data-line-id="${esc(line.dispatchLineId)}">
       <td>${esc(line.requestedProductCode)} ${esc(line.requestedProductName)}</td>
       <td>${esc(line.actualProductCode)} ${esc(line.actualProductName)}<br><small>${esc(line.fulfillmentType)}</small></td>
-      <td><input class="line-qty" type="number" step="any" value="${Number(line.plannedBaseQuantity || 0)}" ${editable ? '' : 'disabled'}> ${esc(line.actualUnit)}</td>
+      <td><input class="line-qty" type="number" step="any" value="${plannedQuantity}" ${editable ? '' : 'disabled'}> ${esc(line.actualUnit)}</td>
       <td>${esc(line.workStatus || 'PENDING')}</td>
       <td>${workerResult} ${esc(line.workerExceptionCode || '')}</td>
     </tr>${allocationBody}`;
@@ -151,6 +197,18 @@ function renderDetail() {
       <tbody>${lineBody}</tbody>
     </table>
     <div class="history-strip">최근 이력: ${historyText}</div>`;
+  const restoreWorkspacePosition = () => {
+    const desiredScrollTop = workspace.scrollTop;
+    detail.scrollTop = desiredScrollTop;
+    if (workspace.focusedDispatchLineId) {
+      detail.querySelector(`[data-line-id="${CSS.escape(workspace.focusedDispatchLineId)}"] input, [data-line-id="${CSS.escape(workspace.focusedDispatchLineId)}"] select`)?.focus({ preventScroll: true });
+    }
+    detail.scrollTop = desiredScrollTop;
+  };
+  requestAnimationFrame(() => {
+    restoreWorkspacePosition();
+    setTimeout(restoreWorkspacePosition, 100);
+  });
 }
 
 function renderWorker() {
@@ -162,16 +220,18 @@ function renderWorker() {
   $('#aggregatePickList').innerHTML = aggregateRows.length
     ? `<table><thead><tr><th>창고</th><th>상품</th><th>합산수량</th><th>원 출고행</th></tr></thead><tbody>${aggregateBody}</tbody></table>`
     : '<div class="empty-state">배포된 작업목록이 없습니다.</div>';
-  const exceptionOptions = Object.values(WORK_EXCEPTION_CODE).map(code => `<option value="${esc(code)}">${esc(code || '정상')}</option>`).join('');
-  const orderBody = data.workerViews.byOrder.map(row => `
+  const orderBody = data.workerViews.byOrder.map(row => {
+    const exceptionOptions = Object.values(WORK_EXCEPTION_CODE).map(code => `<option value="${esc(code)}" ${code === (row.workerExceptionCode || '') ? 'selected' : ''}>${esc(code || '정상')}</option>`).join('');
+    return `
     <tr><td>${esc(row.dispatchNo)}<br>${esc(row.customerName)}</td><td>${esc(row.productCode)} ${esc(row.productName)}<br><b>${qty(row.plannedBaseQuantity)}</b> ${esc(row.actualUnit)}</td><td>
       <div class="work-form" data-dispatch-id="${esc(row.dispatchId)}" data-line-id="${esc(row.dispatchLineId)}">
         <input class="reported-qty" type="number" step="any" value="${row.workerReportedQuantity ?? row.plannedBaseQuantity}" aria-label="작업수량">
         <select class="exception-code" aria-label="예외">${exceptionOptions}</select>
-        <input class="exception-memo" type="text" placeholder="예외 사유" aria-label="예외 사유">
+        <input class="exception-memo" type="text" value="${esc(row.workerExceptionMemo || '')}" placeholder="예외 사유" aria-label="예외 사유">
         <button class="dq-btn" type="button" data-action="work-fact">작업사실 저장</button>
       </div>
-    </td></tr>`).join('');
+    </td></tr>`;
+  }).join('');
   $('#orderPickList').innerHTML = data.workerViews.byOrder.length
     ? `<table><thead><tr><th>출고/고객</th><th>상품·수량</th><th>작업사실 입력</th></tr></thead><tbody>${orderBody}</tbody></table>`
     : '<div class="empty-state">배포된 작업목록이 없습니다.</div>';
@@ -195,8 +255,11 @@ async function refresh({ preserveMessage = false } = {}) {
   try {
     [data, proposals] = await Promise.all([getDispatchWorkbenchData(), getDispatchProposals()]);
     if (workspace.selectedDispatchIds[0] && !data.aggregates.some(row => row.decision.dispatchId === workspace.selectedDispatchIds[0])) workspace.selectedDispatchIds = [];
-    if (!workspace.selectedDispatchIds.length && data.aggregates.length) workspace.selectedDispatchIds = [data.aggregates[0].decision.dispatchId];
-    renderLists(); renderDetail(); renderWorker(); saveWorkspace();
+    if (!workspace.selectedDispatchIds.length && data.aggregates.length) {
+      workspace.selectedDispatchIds = [data.aggregates[0].decision.dispatchId];
+      workspace.expandedDispatchIds = [...new Set([...workspace.expandedDispatchIds, data.aggregates[0].decision.dispatchId])];
+    }
+    renderLists(); renderDetail(); renderWorker(); saveWorkspace({ captureScroll: false });
     if (!preserveMessage) showMessage('');
   } catch (error) { showMessage(error.message || String(error), 'error'); }
   finally { busy = false; }
@@ -211,12 +274,20 @@ async function runAction(action, target) {
       const proposal = proposals[Number(target.dataset.index)];
       const saved = await saveDispatchDraft({ ...proposal, expectedRevision: 0 }, 'ADMIN');
       workspace.selectedDispatchIds = [saved.decision.dispatchId];
+      workspace.expandedDispatchIds = [...new Set([...workspace.expandedDispatchIds, saved.decision.dispatchId])];
       showMessage('자동 제안을 DRAFT로 저장했습니다.', 'success');
     } else if (action === 'save-draft') {
       await saveDispatchDraft(collectDraft(aggregate), 'ADMIN');
+      clearDraftBuffer(aggregate.decision.dispatchId);
       showMessage('DRAFT를 저장했습니다.', 'success');
     } else if (action === 'release') {
-      await releaseDispatch(aggregate.decision.dispatchId, aggregate.decision.revision, 'ADMIN');
+      let revision = aggregate.decision.revision;
+      if (readDraftBuffer(aggregate.decision)) {
+        const saved = await saveDispatchDraft(collectDraft(aggregate), 'ADMIN');
+        revision = saved.decision.revision;
+        clearDraftBuffer(aggregate.decision.dispatchId);
+      }
+      await releaseDispatch(aggregate.decision.dispatchId, revision, 'ADMIN');
       showMessage('동일 PC 작업목록으로 배포했습니다. 판매와 현재고는 확정되지 않았습니다.', 'success');
     } else if (action === 'recall') {
       await recallDispatch(aggregate.decision.dispatchId, aggregate.decision.revision, 'ADMIN');
@@ -243,6 +314,7 @@ document.addEventListener('click', event => {
   if (!target) return;
   if (target.dataset.action === 'select') {
     workspace.selectedDispatchIds = [target.dataset.id];
+    workspace.expandedDispatchIds = [...new Set([...workspace.expandedDispatchIds, target.dataset.id])];
     renderLists(); renderDetail(); saveWorkspace();
     return;
   }
@@ -250,10 +322,23 @@ document.addEventListener('click', event => {
 });
 $('#refreshBtn').addEventListener('click', () => refresh());
 [statusFilter, searchFilter].forEach(control => control.addEventListener('input', () => { renderLists(); saveWorkspace(); }));
+detail.addEventListener('focusin', event => {
+  const row = event.target.closest('[data-line-id]');
+  if (!row) return;
+  workspace.focusedDispatchLineId = row.dataset.lineId || '';
+  saveWorkspace();
+});
+detail.addEventListener('input', event => {
+  if (event.target.matches('.line-qty,.allocation-qty,.allocation-warehouse')) saveDraftBuffer();
+});
+detail.addEventListener('change', event => {
+  if (event.target.matches('.line-qty,.allocation-qty,.allocation-warehouse')) saveDraftBuffer();
+});
+detail.addEventListener('scroll', saveWorkspace, { passive: true });
 window.addEventListener('beforeunload', saveWorkspace);
 
 statusFilter.value = workspace.filters.status || '';
 searchFilter.value = workspace.filters.search || '';
-setMode(workspace.mode);
+setMode(workspace.mode, { captureScroll: false });
 await refresh();
 requestAnimationFrame(() => window.scrollTo(0, workspace.scrollTop));
