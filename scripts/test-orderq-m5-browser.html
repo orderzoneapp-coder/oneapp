@@ -7,8 +7,8 @@
   <pre id="result">RUNNING</pre>
   <script type="module">
     import { DB_NAME, STORE, closeOrderQDb, openOrderQDb, requestToPromise, transactionDone } from '../orderq/orderq-db.js?v=0.8.0';
-    import { DISPATCH_CONFIRMATION_STEP, buildDispatchConfirmationKey } from '../orderq/dispatch-confirmation.js?v=0.8.0';
-    import { confirmDispatch, recordDispatchActual } from '../orderq/dispatch-confirmation-repository.js?v=0.8.0';
+    import { DISPATCH_CONFIRMATION_STEP, buildDispatchConfirmationKey, buildDispatchReversalKey, isDispatchApprovalEffectivelyActive } from '../orderq/dispatch-confirmation.js?v=0.8.0';
+    import { confirmDispatch, recordDispatchActual, reverseDispatch } from '../orderq/dispatch-confirmation-repository.js?v=0.8.0';
     import { approveOverDispatch, approveSubstitution, recordCustomerNotice, reverseSubstitutionDecision } from '../orderq/dispatch-exception-repository.js?v=0.8.0';
     import { getDispatchProposals, loadDispatchAggregate, releaseDispatch, saveDispatchDraft } from '../orderq/dispatch-workbench-repository.js?v=0.8.0';
     import { effectiveTransferredQuantity } from '../orderq/order-fulfillment-lifecycle.js?v=0.8.0';
@@ -77,7 +77,9 @@
       tx.objectStore(STORE.INVENTORY_LINES).put({ inventoryLineId: 'IL-B', inventorySnapshotId: 'IS-M5', importBatchId: 'B-M5', productId: 'P-B', productCode: 'B', warehouseId: 'W-1', inventoryQuantity: 20, status: 'ACTIVE' });
       for (const [orderId, itemId, quantity, price] of [
         ['O-SUB', 'OI-SUB', 10, 1000], ['O-OVER', 'OI-OVER', 5, 1000],
-        ['O-AGREED', 'OI-AGREED', 1, 700], ['O-MANUAL', 'OI-MANUAL', 1, 800]
+        ['O-AGREED', 'OI-AGREED', 1, 700], ['O-MANUAL', 'OI-MANUAL', 1, 800],
+        ['O-REV-FULL', 'OI-REV-FULL', 10, 1000], ['O-REV-PART', 'OI-REV-PART', 10, 1000],
+        ['O-MULTI', 'OI-MULTI', 5, 1000]
       ]) {
         tx.objectStore(STORE.ORDERS).put({ orderId, orderNo: orderId, customerId: 'C-1', customerName: 'M5 고객', orderDate: '2026-08-15', orderStatus: 'ORDER', adminStatus: 'CHECKED', opsStatus: 'ACTIVE', revision: 1 });
         tx.objectStore(STORE.ORDER_ITEMS).put({ orderItemId: itemId, orderId, productId: 'P-A', itemCode: 'A', itemName: '요청상품 A', finalQuantity: quantity, finalUnit: 'EA', price, vatAmount: Math.round(price * quantity * 0.1), matchStatus: 'MATCHED' });
@@ -120,6 +122,37 @@
       }, 'ADMIN');
     }
 
+    async function createReleasedMultiLine() {
+      const dispatchId = 'D-MULTI';
+      const lines = [
+        {
+          dispatchLineId: 'DL-MULTI-NORMAL', orderId: 'O-MULTI', orderItemId: 'OI-MULTI',
+          requestedProductId: 'P-A', requestedProductCode: 'A', requestedProductName: '요청상품 A',
+          actualProductId: 'P-A', actualProductCode: 'A', actualProductName: '요청상품 A', fulfillmentType: 'NORMAL',
+          plannedActualQuantity: 4, plannedBaseQuantity: 4, plannedRecognizedOrderQuantity: 4,
+          actualUnit: 'EA', baseUnit: 'EA', conversionType: 'NONE', measurementRequired: false,
+          priceSource: 'ORDER_AGREED', customerNoticeRequired: false, customerNoticeStatus: 'NOT_REQUIRED'
+        },
+        {
+          dispatchLineId: 'DL-MULTI-SUB', orderId: 'O-MULTI', orderItemId: 'OI-MULTI',
+          requestedProductId: 'P-A', requestedProductCode: 'A', requestedProductName: '요청상품 A',
+          actualProductId: 'P-B', actualProductCode: 'B', actualProductName: '대체상품 B', fulfillmentType: 'SUBSTITUTE',
+          plannedActualQuantity: 4, plannedBaseQuantity: 4, plannedRecognizedOrderQuantity: 4,
+          actualUnit: 'EA', baseUnit: 'EA', conversionType: 'NONE', measurementRequired: false,
+          priceSource: 'ORDER_AGREED', customerNoticeRequired: false, customerNoticeStatus: 'NOT_REQUIRED'
+        }
+      ];
+      const allocations = [
+        { allocationId: 'DA-MULTI-NORMAL', dispatchLineId: 'DL-MULTI-NORMAL', warehouseId: 'W-1', plannedBaseQuantity: 4 },
+        { allocationId: 'DA-MULTI-SUB', dispatchLineId: 'DL-MULTI-SUB', warehouseId: 'W-1', plannedBaseQuantity: 4 }
+      ];
+      const draft = await saveDispatchDraft({
+        decision: { dispatchId, customerId: 'C-1', customerName: 'M5 고객', businessDate: '2026-08-15', status: 'DRAFT' },
+        lines, allocations, expectedRevision: 0
+      }, 'ADMIN');
+      return releaseDispatch(dispatchId, draft.decision.revision, 'ADMIN');
+    }
+
     async function confirmNormalPriceCase({ dispatchId, orderId, orderItemId, priceSource, manualUnitPriceWon = null, priceChangeReason = '' }) {
       const source = await createReleased({ dispatchId, orderId, orderItemId, plannedActualQuantity: 1, priceSource, manualUnitPriceWon, priceChangeReason });
       const ready = await recordActual({ ...source, actualQuantity: 1, actualBaseQuantity: 1, recognizedOrderQuantity: 1 });
@@ -137,6 +170,22 @@
         conversionRuleId: 'CR-MEASURE', conversionRuleVersion: 'v1',
         actualToBaseFactor: 0.5, actualToRecognizedFactor: 5,
         requestedUnit: 'EA', actualUnit: 'PACK', baseUnit: 'KG', description: '2 PACK → 1 KG → 주문 10 EA 인정'
+      };
+      const confirmConverted = async (dispatchId, orderId, orderItemId) => {
+        const source = await createReleased({
+          dispatchId, orderId, orderItemId,
+          actualProductId: 'P-B', actualProductCode: 'B', actualProductName: '대체상품 B', fulfillmentType: 'SUBSTITUTE',
+          plannedActualQuantity: 2, plannedBaseQuantity: 1, plannedRecognizedOrderQuantity: 10,
+          conversionType: 'CUT', conversionRuleSnapshot: conversionSnapshot, measurementRequired: false,
+          priceSource: 'ORDER_AGREED', customerNoticeRequired: false
+        });
+        const ready = await recordActual({ ...source, actualQuantity: 2, actualBaseQuantity: 1, recognizedOrderQuantity: 10 });
+        const approved = await approveSubstitution({
+          dispatchId, dispatchLineId: source.lineId, expectedRevision: ready.decision.revision,
+          reasonCode: 'CONVERSION_SUBSTITUTE', reasonNote: '환산 대체출고 승인'
+        }, 'ADMIN');
+        const confirmed = await confirmDispatch(commandFor({ decision: approved.decision }), 'ADMIN');
+        return { source, confirmed };
       };
       const substitute = await createReleased({
         dispatchId: 'D-SUB', orderId: 'O-SUB', orderItemId: 'OI-SUB',
@@ -180,10 +229,24 @@
       try { await confirmDispatch(commandFor(readySubstitute), 'ADMIN'); } catch (error) { missingSubstitutionApproval = error.message; }
       assert(missingSubstitutionApproval.includes('SUBSTITUTE_APPROVAL_REQUIRED'), 'substitute confirmed without approval');
       const approvedSubstitution = await approveSubstitution({ dispatchId: 'D-SUB', dispatchLineId: substitute.lineId, expectedRevision: readySubstitute.decision.revision, reason: '재고·고객조건 확인 후 대체 승인' }, 'ADMIN');
+      assert(approvedSubstitution.approval.reasonCode === 'MANUAL_OVERRIDE'
+        && approvedSubstitution.approval.reasonNote === approvedSubstitution.approval.reason
+        && approvedSubstitution.approval.revision === approvedSubstitution.approval.dispatchRevision,
+      'canonical approval reason/revision fields were not persisted');
       let pendingNotice = '';
       try { await confirmDispatch(commandFor({ decision: approvedSubstitution.decision }), 'ADMIN'); } catch (error) { pendingNotice = error.message; }
       assert(pendingNotice.includes('CUSTOMER_NOTICE_PENDING'), 'pending customer notice did not block confirmation');
       const noticed = await recordCustomerNotice({ dispatchId: 'D-SUB', dispatchLineId: substitute.lineId, expectedRevision: approvedSubstitution.decision.revision, customerNoticeStatus: 'NOTIFIED', memo: '고객 전화 안내 완료' }, 'ADMIN');
+      assert(noticed.line.customerNotifiedBy === 'ADMIN' && noticed.line.customerNotifiedAt
+        && noticed.line.customerNotifiedBy === noticed.line.customerNoticeActorId
+        && noticed.line.customerNotifiedAt === noticed.line.customerNoticeAt,
+      'canonical customer notice fields were not persisted');
+      const persistedNoticedLine = (await readAll(STORE.DISPATCH_LINES)).find(row => row.dispatchLineId === substitute.lineId);
+      assert(persistedNoticedLine.actualProductReferenceUnitPriceWon === 1200
+        && persistedNoticedLine.priceChangedFromOrder === true
+        && persistedNoticedLine.customerNotifiedBy === 'ADMIN'
+        && persistedNoticedLine.customerNotifiedAt,
+      'canonical price/customer notice fields are missing from IndexedDB DispatchLine');
 
       await write(STORE.UNIT_MAPPINGS, { mappingId: 'CR-MEASURE', conversionRuleId: 'CR-MEASURE', conversionRuleVersion: 'v2', actualToBaseFactor: 2, actualToRecognizedFactor: 1, status: 'ACTIVE' });
       const beforeConfirmFailure = await counts();
@@ -197,6 +260,9 @@
       assert(subSales.actualQuantity === 2 && subSales.actualBaseQuantity === 1 && subSales.recognizedOrderQuantity === 10, 'actual/base/recognized quantities were collapsed');
       assert(subSales.conversionRuleVersion === 'v1' && subSales.conversionRuleSnapshot.actualToRecognizedFactor === 5, 'master rule change altered confirmed conversion snapshot');
       assert(subSales.priceSource === 'ACTUAL_PRODUCT' && subSales.orderAgreedUnitPriceWon === 1000 && subSales.actualProductUnitPriceWon === 1200 && subSales.appliedUnitPriceWon === 1200 && subSales.priceChanged === true, 'actual-product price evidence is incorrect');
+      assert(subSales.actualProductReferenceUnitPriceWon === 1200 && subSales.priceChangedFromOrder === true
+        && subSales.customerNotifiedBy === 'ADMIN' && subSales.customerNotifiedAt,
+      'canonical price/customer notice evidence is missing from SalesLine');
       assert(subSales.priceUnitBasis === 'ACTUAL_PRODUCT' && subSales.pricingQuantity === 2 && subSales.supplyAmountWon === 2400, 'actual-product price was not applied to the actual product quantity');
       assert(confirmedSubstitute.movements.length === 1 && confirmedSubstitute.movements[0].productId === 'P-B' && confirmedSubstitute.movements[0].signedBaseQuantity === -1, 'substitute inventory issue did not use actual product/base quantity');
       const subEvents = (await readAll(STORE.ORDER_EVENTS)).filter(row => row.orderId === 'O-SUB');
@@ -219,6 +285,10 @@
       assert((await readAll(STORE.INVENTORY_MOVEMENTS)).length === movementBeforeDecisionReverse, 'substitution-decision reversal changed inventory movements');
       const subEventsAfterReverse = (await readAll(STORE.ORDER_EVENTS)).filter(row => row.orderId === 'O-SUB');
       assert(effectiveTransferredQuantity('OI-SUB', subEventsAfterReverse) === 0, 'substitution-decision reversal did not restore original order remaining quantity');
+      const substitutionApprovalsAfterReverse = (await readAll(STORE.DISPATCH_APPROVALS)).filter(row => row.dispatchId === 'D-SUB');
+      assert(decisionReverse.approval.reversalOfApprovalIds.includes(approvedSubstitution.approval.approvalId)
+        && !isDispatchApprovalEffectivelyActive(approvedSubstitution.approval, substitutionApprovalsAfterReverse),
+      'decision-only reversal left the original substitution approval effectively active');
       const reverseCounts = await counts();
       const decisionReverseRetry = await reverseSubstitutionDecision(reversalSource, 'ADMIN');
       assert(decisionReverseRetry.duplicate === true && JSON.stringify(await counts()) === JSON.stringify(reverseCounts), 'substitution-decision reversal retry duplicated rows');
@@ -227,6 +297,84 @@
       assert(reverseConflict.includes('IDEMPOTENCY_CONFLICT'), 'substitution-decision reversal content conflict was accepted');
       const reopened = (await getDispatchProposals({ businessDate: '2026-08-15' })).find(row => row.lines.some(line => line.orderId === 'O-SUB'));
       assert(reopened?.lines[0]?.plannedRecognizedOrderQuantity === 10, 'substitution-decision reversal did not reopen the requested order quantity');
+
+      const convertedFull = await confirmConverted('D-REV-FULL', 'O-REV-FULL', 'OI-REV-FULL');
+      const fullReverse = await reverseDispatch({
+        dispatchId: 'D-REV-FULL', expectedRevision: convertedFull.confirmed.decision.revision,
+        idempotencyKey: buildDispatchReversalKey('D-REV-FULL', convertedFull.confirmed.decision.revision),
+        reason: '환산 출고 전체취소'
+      }, 'ADMIN');
+      assert(fullReverse.salesLines[0].actualQuantity === -2
+        && fullReverse.salesLines[0].actualBaseQuantity === -1
+        && fullReverse.salesLines[0].recognizedOrderQuantity === -10,
+      'converted full reversal collapsed actual/base/recognized axes');
+      assert(fullReverse.movements.reduce((sum, row) => sum + row.signedBaseQuantity, 0) === 1,
+        'converted full reversal inventory did not use base quantity');
+      assert(fullReverse.orderEvents.filter(row => row.eventType === 'SALES_TRANSFER_REVERSED')
+        .reduce((sum, row) => sum + row.detail.transferredQty, 0) === 10,
+      'converted full reversal fulfillment did not use recognized quantity');
+      assert((await loadDispatchAggregate('D-REV-FULL')).lines[0].actualQuantity === 2,
+        'converted full reversal overwrote original confirmed facts');
+
+      const convertedPart = await confirmConverted('D-REV-PART', 'O-REV-PART', 'OI-REV-PART');
+      const originalPartLine = convertedPart.confirmed.salesLines[0];
+      const originalPartMovement = convertedPart.confirmed.movements[0];
+      const partRevision = convertedPart.confirmed.decision.revision;
+      const firstPartCommand = {
+        dispatchId: 'D-REV-PART', expectedRevision: partRevision,
+        idempotencyKey: buildDispatchReversalKey('D-REV-PART', partRevision, 'PART-1'),
+        reason: '환산 출고 1차 부분취소',
+        lines: [{ dispatchLineId: convertedPart.source.lineId, quantity: 1,
+          allocations: [{ allocationId: convertedPart.source.allocationId, quantity: 0.5 }] }]
+      };
+      const beforeConvertedReverseFailure = await counts();
+      let convertedReverseFailure = '';
+      try { await reverseDispatch(firstPartCommand, 'ADMIN', { failureAt: DISPATCH_CONFIRMATION_STEP.MOVEMENTS_WRITTEN }); }
+      catch (error) { convertedReverseFailure = error.message; }
+      assert(convertedReverseFailure.includes('FAILURE_INJECTED:MOVEMENTS_WRITTEN')
+        && JSON.stringify(await counts()) === JSON.stringify(beforeConvertedReverseFailure),
+      'converted partial reversal failure did not roll back atomically');
+      const firstPart = await reverseDispatch(firstPartCommand, 'ADMIN');
+      assert(firstPart.salesLines[0].actualQuantity === -1
+        && firstPart.salesLines[0].actualBaseQuantity === -0.5
+        && firstPart.salesLines[0].recognizedOrderQuantity === -5
+        && firstPart.movements[0].signedBaseQuantity === 0.5,
+      'converted partial reversal axes are incorrect');
+      const firstPartCounts = await counts();
+      const firstPartRetry = await reverseDispatch(firstPartCommand, 'ADMIN');
+      assert(firstPartRetry.duplicate === true && JSON.stringify(await counts()) === JSON.stringify(firstPartCounts),
+        'converted partial reversal retry duplicated rows');
+      let convertedReverseConflict = '';
+      try { await reverseDispatch({ ...firstPartCommand, reason: '변경된 환산 취소사유' }, 'ADMIN'); }
+      catch (error) { convertedReverseConflict = error.message; }
+      assert(convertedReverseConflict.includes('IDEMPOTENCY_CONFLICT'), 'converted reversal content conflict was accepted');
+      const finalPart = await reverseDispatch({
+        dispatchId: 'D-REV-PART', expectedRevision: partRevision,
+        idempotencyKey: buildDispatchReversalKey('D-REV-PART', partRevision, 'PART-2'),
+        reason: '환산 출고 잔량취소'
+      }, 'ADMIN');
+      assert(finalPart.salesLines[0].actualQuantity === -1
+        && finalPart.salesLines[0].actualBaseQuantity === -0.5
+        && finalPart.salesLines[0].recognizedOrderQuantity === -5,
+      'converted final remainder did not consume the exact remaining axes');
+      const convertedReversalSales = (await readAll(STORE.SALES_LINES)).filter(row => row.reversalOf === originalPartLine.salesLineId);
+      const convertedReversalMovements = (await readAll(STORE.INVENTORY_MOVEMENTS)).filter(row => row.reversalOf === originalPartMovement.movementId);
+      const reversalTotals = convertedReversalSales.reduce((sum, row) => ({
+        actual: sum.actual + row.actualQuantity,
+        base: sum.base + row.actualBaseQuantity,
+        recognized: sum.recognized + row.recognizedOrderQuantity,
+        supply: sum.supply + row.supplyAmountWon,
+        vat: sum.vat + row.vatAmountWon,
+        total: sum.total + row.totalAmountWon
+      }), { actual: 0, base: 0, recognized: 0, supply: 0, vat: 0, total: 0 });
+      assert(reversalTotals.actual === -2 && reversalTotals.base === -1 && reversalTotals.recognized === -10
+        && reversalTotals.supply === -originalPartLine.supplyAmountWon
+        && reversalTotals.vat === -originalPartLine.vatAmountWon
+        && reversalTotals.total === -originalPartLine.totalAmountWon,
+      'repeated converted reversals exceeded or missed original quantity/money axes');
+      assert(convertedReversalMovements.reduce((sum, row) => sum + row.signedBaseQuantity, 0) === 1
+        && effectiveTransferredQuantity('OI-REV-PART', (await readAll(STORE.ORDER_EVENTS)).filter(row => row.orderId === 'O-REV-PART')) === 0,
+      'repeated converted reversals did not restore inventory/order fulfillment exactly');
 
       const over = await createReleased({ dispatchId: 'D-OVER', orderId: 'O-OVER', orderItemId: 'OI-OVER', plannedActualQuantity: 6, plannedBaseQuantity: 6, plannedRecognizedOrderQuantity: 6 });
       let readyOver = await recordActual({ ...over, actualQuantity: 6, actualBaseQuantity: 6, recognizedOrderQuantity: 6 });
@@ -246,8 +394,72 @@
       assert(staleApproval.includes('OVER_DISPATCH_APPROVAL_REQUIRED'), 'stale over-dispatch approval was reused');
       const activeOverApproval = await approveOverDispatch({ dispatchId: 'D-OVER', dispatchLineId: over.lineId, expectedRevision: readyOver.decision.revision, reason: '재검토 후 고객 추가요청 1개 승인' }, 'ADMIN');
       assert(activeOverApproval.approval.effectiveOrderQuantity === 5 && activeOverApproval.approval.existingRecognizedQuantity === 0 && activeOverApproval.approval.attemptedRecognizedQuantity === 6 && activeOverApproval.approval.overQuantity === 1, 'over-dispatch approval evidence is incomplete');
+      assert(activeOverApproval.approval.currentRecognizedQuantity === 0
+        && activeOverApproval.approval.approvedOverQuantity === 1
+        && activeOverApproval.approval.reasonCode === 'MANUAL_OVERRIDE'
+        && activeOverApproval.approval.reasonNote === activeOverApproval.approval.reason
+        && activeOverApproval.approval.revision === activeOverApproval.approval.dispatchRevision,
+      'canonical over-dispatch approval fields are incomplete');
       const confirmedOver = await confirmDispatch(commandFor({ decision: activeOverApproval.decision }), 'ADMIN');
       assert(confirmedOver.salesLines[0].recognizedOrderQuantity === 6, 'approved over-dispatch raw recognized quantity was not preserved');
+
+      const releasedMulti = await createReleasedMultiLine();
+      let readyMulti = await recordDispatchActual({
+        dispatchId: 'D-MULTI', expectedRevision: releasedMulti.decision.revision,
+        lines: [
+          { dispatchLineId: 'DL-MULTI-NORMAL', actualQuantity: 3, recognizedOrderQuantity: 3, allocations: [{ allocationId: 'DA-MULTI-NORMAL', actualBaseQuantity: 3 }] },
+          { dispatchLineId: 'DL-MULTI-SUB', actualQuantity: 3, recognizedOrderQuantity: 3, allocations: [{ allocationId: 'DA-MULTI-SUB', actualBaseQuantity: 3 }] }
+        ]
+      }, 'ADMIN');
+      let multiSubApproval = await approveSubstitution({
+        dispatchId: 'D-MULTI', dispatchLineId: 'DL-MULTI-SUB', expectedRevision: readyMulti.decision.revision,
+        reasonCode: 'MULTI_SUBSTITUTE', reasonNote: '복수행 대체 승인'
+      }, 'ADMIN');
+      let multiOverBlocked = '';
+      try { await confirmDispatch(commandFor({ decision: multiSubApproval.decision }), 'ADMIN'); }
+      catch (error) { multiOverBlocked = error.message; }
+      assert(multiOverBlocked.includes('OVER_DISPATCH_APPROVAL_REQUIRED'), 'multi-line aggregate over-dispatch confirmed without approval');
+      const firstMultiOver = await approveOverDispatch({
+        dispatchId: 'D-MULTI', dispatchLineId: 'DL-MULTI-NORMAL', expectedRevision: multiSubApproval.decision.revision,
+        reasonCode: 'CUSTOMER_EXTRA', reasonNote: '두 출고행 합산 초과 1개 승인'
+      }, 'ADMIN');
+      assert(firstMultiOver.approval.participatingDispatchLineIds.join(',') === 'DL-MULTI-NORMAL,DL-MULTI-SUB'
+        && firstMultiOver.approval.participatingActualRevisions.length === 2
+        && firstMultiOver.approval.attemptedRecognizedQuantity === 6
+        && firstMultiOver.approval.approvedOverQuantity === 1,
+      'multi-line over-dispatch approval was not bound to the complete actual line set');
+      readyMulti = await recordDispatchActual({
+        dispatchId: 'D-MULTI', expectedRevision: firstMultiOver.decision.revision,
+        lines: [
+          { dispatchLineId: 'DL-MULTI-NORMAL', actualQuantity: 2, recognizedOrderQuantity: 2, allocations: [{ allocationId: 'DA-MULTI-NORMAL', actualBaseQuantity: 2 }] },
+          { dispatchLineId: 'DL-MULTI-SUB', actualQuantity: 4, recognizedOrderQuantity: 4, allocations: [{ allocationId: 'DA-MULTI-SUB', actualBaseQuantity: 4 }] }
+        ]
+      }, 'ADMIN');
+      multiSubApproval = await approveSubstitution({
+        dispatchId: 'D-MULTI', dispatchLineId: 'DL-MULTI-SUB', expectedRevision: readyMulti.decision.revision,
+        reasonCode: 'MULTI_SUBSTITUTE', reasonNote: '변경 실적 대체 재승인'
+      }, 'ADMIN');
+      let multiStaleBlocked = '';
+      try { await confirmDispatch(commandFor({ decision: multiSubApproval.decision }), 'ADMIN'); }
+      catch (error) { multiStaleBlocked = error.message; }
+      assert(multiStaleBlocked.includes('OVER_DISPATCH_APPROVAL_REQUIRED'), 'changed participating line reused stale aggregate approval');
+      const activeMultiOver = await approveOverDispatch({
+        dispatchId: 'D-MULTI', dispatchLineId: 'DL-MULTI-SUB', expectedRevision: multiSubApproval.decision.revision,
+        reasonCode: 'CUSTOMER_EXTRA', reasonNote: '변경된 전체 출고행 합산 초과 승인'
+      }, 'ADMIN');
+      assert(activeMultiOver.approval.approvedActualSetFingerprint !== firstMultiOver.approval.approvedActualSetFingerprint,
+        'aggregate approval fingerprint did not change after a participating line changed');
+      const persistedMultiApproval = (await readAll(STORE.DISPATCH_APPROVALS)).find(row => row.approvalId === activeMultiOver.approval.approvalId);
+      assert(persistedMultiApproval.currentRecognizedQuantity === 0
+        && persistedMultiApproval.approvedOverQuantity === 1
+        && persistedMultiApproval.reasonCode === 'CUSTOMER_EXTRA'
+        && persistedMultiApproval.reasonNote
+        && persistedMultiApproval.revision,
+      'canonical over-dispatch fields are missing from IndexedDB DispatchApproval');
+      const confirmedMulti = await confirmDispatch(commandFor({ decision: activeMultiOver.decision }), 'ADMIN');
+      assert(confirmedMulti.salesLines.length === 2
+        && confirmedMulti.salesLines.reduce((sum, row) => sum + row.recognizedOrderQuantity, 0) === 6,
+      'approved multi-line aggregate over-dispatch did not preserve both line facts');
 
       const agreedResult = await confirmNormalPriceCase({ dispatchId: 'D-AGREED', orderId: 'O-AGREED', orderItemId: 'OI-AGREED', priceSource: 'ORDER_AGREED' });
       const manualResult = await confirmNormalPriceCase({ dispatchId: 'D-MANUAL', orderId: 'O-MANUAL', orderItemId: 'OI-MANUAL', priceSource: 'MANUAL', manualUnitPriceWon: 650, priceChangeReason: '관리자 합의단가' });
@@ -256,6 +468,19 @@
 
       const allOutbox = await readAll(STORE.SYNC_QUEUE);
       assert(allOutbox.every(row => row.status === 'LOCAL_ONLY' && row.localOnly === true), 'M5 escaped the pre-M9 local-only boundary');
+      const canonicalSalesOutbox = allOutbox.find(row => row.entityType === 'SALES_LINE' && row.entityId === subSales.salesLineId);
+      const canonicalApprovalOutbox = allOutbox.find(row => row.entityType === 'DISPATCH_APPROVAL' && row.entityId === activeMultiOver.approval.approvalId);
+      assert(canonicalSalesOutbox?.payload?.actualProductReferenceUnitPriceWon === 1200
+        && canonicalSalesOutbox.payload.priceChangedFromOrder === true
+        && canonicalSalesOutbox.payload.customerNotifiedBy === 'ADMIN'
+        && canonicalSalesOutbox.payload.customerNotifiedAt,
+      'canonical SalesLine fields are missing from local outbox');
+      assert(canonicalApprovalOutbox?.payload?.currentRecognizedQuantity === 0
+        && canonicalApprovalOutbox.payload.approvedOverQuantity === 1
+        && canonicalApprovalOutbox.payload.reasonCode === 'CUSTOMER_EXTRA'
+        && canonicalApprovalOutbox.payload.reasonNote
+        && canonicalApprovalOutbox.payload.revision,
+      'canonical DispatchApproval fields are missing from local outbox');
       assert(confirmedSubstitute.salesDocument.erpPostingStatus === 'READY' && confirmedOver.salesDocument.erpPostingStatus === 'READY', 'M5 advanced ERP posting beyond READY');
       assert(consoleWarnings.length === 0 && consoleErrors.length === 0, `browser console issues: ${[...consoleWarnings, ...consoleErrors].join(' / ')}`);
 
@@ -274,9 +499,11 @@
         },
         measurement: { pendingConfirm, status: readySubstitute.lines[0].measurementStatus, measuredBy: readySubstitute.lines[0].measuredBy },
         conversion: { masterVersionNow: 'v2', confirmedVersion: subSales.conversionRuleVersion, confirmedFactor: subSales.conversionRuleSnapshot.actualToRecognizedFactor },
+        conversionReversal: { full: [-2, -1, -10], partialTotals: reversalTotals, movementRestored: 1, failure: convertedReverseFailure, duplicate: firstPartRetry.duplicate, conflict: convertedReverseConflict },
         prices: { orderAgreed: agreedResult.salesLines[0].appliedUnitPriceWon, actualProduct: subSales.appliedUnitPriceWon, manual: manualResult.salesLines[0].appliedUnitPriceWon },
         notice: { pendingBlocked: pendingNotice, confirmedStatus: subSales.customerNoticeStatus },
         overDispatch: { blocked: overBlocked, staleBlocked: staleApproval, approvedOverQuantity: activeOverApproval.approval.overQuantity, confirmedRecognized: confirmedOver.salesLines[0].recognizedOrderQuantity },
+        multiLineOverDispatch: { blocked: multiOverBlocked, staleBlocked: multiStaleBlocked, participants: activeMultiOver.approval.participatingDispatchLineIds, confirmedRecognized: confirmedMulti.salesLines.reduce((sum, row) => sum + row.recognizedOrderQuantity, 0) },
         capabilities: { substitution: missingCapability, overDispatch: overCapability },
         idempotency: { decisionReverseDuplicate: decisionReverseRetry.duplicate, decisionReverseConflict: reverseConflict },
         rollback: { confirmation: confirmFailure, decisionReverse: reverseFailure },

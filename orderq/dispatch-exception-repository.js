@@ -21,7 +21,9 @@ import {
   DISPATCH_CONFIRMATION_STEP,
   confirmationCheckpoint,
   dispatchActualFingerprint,
-  dispatchPriceFingerprint
+  dispatchActualSetFingerprint,
+  dispatchPriceFingerprint,
+  isDispatchApprovalEffectivelyActive
 } from './dispatch-confirmation.js?v=0.8.0';
 
 function text(value) {
@@ -64,9 +66,10 @@ async function approveLine({ source, actor, capability, approvalType, buildDetai
   const dispatchId = text(source.dispatchId);
   const dispatchLineId = text(source.dispatchLineId);
   const expectedRevision = Number(source.expectedRevision);
-  const reason = text(source.reason);
+  const reasonCode = text(source.reasonCode).toUpperCase() || 'MANUAL_OVERRIDE';
+  const reasonNote = text(source.reasonNote || source.reason);
   if (!dispatchId || !dispatchLineId || !Number.isInteger(expectedRevision) || expectedRevision < 1) throw new Error('ORDERQ_APPROVAL_SOURCE_REQUIRED');
-  if (!reason) throw new Error('ORDERQ_APPROVAL_REASON_REQUIRED');
+  if (!reasonNote) throw new Error('ORDERQ_APPROVAL_REASON_REQUIRED');
   const stores = [
     STORE.DISPATCH_DECISIONS, STORE.DISPATCH_LINES, STORE.DISPATCH_APPROVALS,
     STORE.ORDERS, STORE.ORDER_ITEMS, STORE.ORDER_EVENTS, STORE.SYNC_QUEUE
@@ -86,7 +89,10 @@ async function approveLine({ source, actor, capability, approvalType, buildDetai
     const existing = await requestToPromise(approvalStore.get(approvalId));
     const approvedActualFingerprint = dispatchActualFingerprint(line);
     if (existing) {
-      if (existing.approvedActualFingerprint !== approvedActualFingerprint || existing.reason !== reason) throw new Error(`ORDERQ_APPROVAL_IDEMPOTENCY_CONFLICT:${approvalId}`);
+      if (existing.approvedActualFingerprint !== approvedActualFingerprint
+        || existing.reasonCode !== reasonCode || existing.reasonNote !== reasonNote) {
+        throw new Error(`ORDERQ_APPROVAL_IDEMPOTENCY_CONFLICT:${approvalId}`);
+      }
       await transactionDone(tx);
       return { duplicate: true, approval: existing, decision };
     }
@@ -97,7 +103,8 @@ async function approveLine({ source, actor, capability, approvalType, buildDetai
       dispatchId, dispatchLineId, orderId: line.orderId, orderItemId: line.orderItemId,
       requestedProductId: line.requestedProductId, actualProductId: line.actualProductId,
       approvedActualRevision: Number(line.actualRevision), approvedActualFingerprint,
-      dispatchRevision: nextRevision, reason,
+      revision: nextRevision, dispatchRevision: nextRevision,
+      reasonCode, reasonNote, reason: reasonNote,
       ...detail,
       approvedAt: timestamp, approvedBy: context.actorId,
       createdAt: timestamp, createdBy: context.actorId, updatedAt: timestamp, updatedBy: context.actorId,
@@ -107,7 +114,7 @@ async function approveLine({ source, actor, capability, approvalType, buildDetai
     const nextDecision = {
       ...decision, revision: nextRevision, baseRevision: Number(decision.revision || 0),
       updatedAt: timestamp, updatedBy: context.actorId,
-      history: [...(Array.isArray(decision.history) ? decision.history : []), historyEvent(`${approvalType}_APPROVED`, context.actorId, { approvalId, dispatchLineId, reason }, timestamp)]
+      history: [...(Array.isArray(decision.history) ? decision.history : []), historyEvent(`${approvalType}_APPROVED`, context.actorId, { approvalId, dispatchLineId, reasonCode, reasonNote }, timestamp)]
     };
     decisionStore.put(nextDecision);
     queueLocalEntity(tx, { entityType: 'DISPATCH_APPROVAL', entityId: approvalId, payload: approval, revision: nextRevision, baseRevision: decision.revision });
@@ -142,23 +149,36 @@ export async function approveOverDispatch(source = {}, actor = 'ADMIN') {
     capability: CAPABILITY.OVER_DISPATCH_APPROVE,
     approvalType: DISPATCH_APPROVAL_TYPE.OVER_DISPATCH,
     buildDetail: async ({ tx, line }) => {
-      const [orderSource, item, events] = await Promise.all([
+      const [orderSource, item, events, dispatchLines] = await Promise.all([
         requestToPromise(tx.objectStore(STORE.ORDERS).get(line.orderId)),
         requestToPromise(tx.objectStore(STORE.ORDER_ITEMS).get(line.orderItemId)),
-        allFrom(tx, STORE.ORDER_EVENTS, 'byOrderId', line.orderId)
+        allFrom(tx, STORE.ORDER_EVENTS, 'byOrderId', line.orderId),
+        allFrom(tx, STORE.DISPATCH_LINES, 'byDispatchId', line.dispatchId)
       ]);
       const order = normalizedOrderView(orderSource);
       if (!orderSource || !item || item.orderId !== line.orderId) throw new Error('ORDERQ_OVER_APPROVAL_ORDER_ITEM_REQUIRED');
       const effectiveQuantity = effectiveOrderQuantity(order, item);
-      const existingRecognizedQuantity = effectiveTransferredQuantity(line.orderItemId, events);
-      const attemptedRecognizedQuantity = finite(line.recognizedOrderQuantity);
-      const overQuantity = existingRecognizedQuantity + attemptedRecognizedQuantity - effectiveQuantity;
-      if (!(overQuantity > 1e-9)) throw new Error('ORDERQ_OVER_APPROVAL_NOT_REQUIRED');
+      const currentRecognizedQuantity = effectiveTransferredQuantity(line.orderItemId, events);
+      const participatingLines = dispatchLines
+        .filter(row => row.orderItemId === line.orderItemId && Number(row.actualRevision || 0) > 0)
+        .sort((left, right) => text(left.dispatchLineId).localeCompare(text(right.dispatchLineId)));
+      if (!participatingLines.length) throw new Error('ORDERQ_OVER_APPROVAL_ACTUAL_LINE_REQUIRED');
+      const attemptedRecognizedQuantity = participatingLines.reduce((sum, row) => sum + finite(row.recognizedOrderQuantity), 0);
+      const approvedOverQuantity = currentRecognizedQuantity + attemptedRecognizedQuantity - effectiveQuantity;
+      if (!(approvedOverQuantity > 1e-9)) throw new Error('ORDERQ_OVER_APPROVAL_NOT_REQUIRED');
       return {
         effectiveOrderQuantity: effectiveQuantity,
-        existingRecognizedQuantity,
+        currentRecognizedQuantity,
+        existingRecognizedQuantity: currentRecognizedQuantity,
         attemptedRecognizedQuantity,
-        overQuantity
+        approvedOverQuantity,
+        overQuantity: approvedOverQuantity,
+        participatingDispatchLineIds: participatingLines.map(row => row.dispatchLineId),
+        participatingActualRevisions: participatingLines.map(row => ({
+          dispatchLineId: row.dispatchLineId,
+          actualRevision: Number(row.actualRevision || 0)
+        })),
+        approvedActualSetFingerprint: dispatchActualSetFingerprint(participatingLines)
       };
     }
   });
@@ -188,6 +208,8 @@ export async function recordCustomerNotice(source = {}, actor = 'ADMIN') {
     const nextLine = {
       ...line,
       customerNoticeStatus: status,
+      customerNotifiedBy: context.actorId,
+      customerNotifiedAt: timestamp,
       customerNoticeActorId: context.actorId,
       customerNoticeAt: timestamp,
       customerNoticeMemo: memo,
@@ -247,7 +269,10 @@ export async function reverseSubstitutionDecision(source = {}, actor = 'ADMIN', 
     if (!line || line.dispatchId !== dispatchId || text(line.fulfillmentType).toUpperCase() !== 'SUBSTITUTE') {
       throw new Error('ORDERQ_SUBSTITUTE_REVERSAL_LINE_REQUIRED');
     }
-    const salesLines = await allFrom(tx, STORE.SALES_LINES, 'byDispatchLineId', dispatchLineId);
+    const [salesLines, approvals] = await Promise.all([
+      allFrom(tx, STORE.SALES_LINES, 'byDispatchLineId', dispatchLineId),
+      allFrom(tx, STORE.DISPATCH_APPROVALS, 'byDispatchId', dispatchId)
+    ]);
     const salesLine = salesLines.find(row => row.status === 'CONFIRMED');
     if (!salesLine) throw new Error('ORDERQ_SUBSTITUTE_REVERSAL_SALES_LINE_REQUIRED');
     const events = await allFrom(tx, STORE.ORDER_EVENTS, 'byOrderId', line.orderId);
@@ -278,6 +303,12 @@ export async function reverseSubstitutionDecision(source = {}, actor = 'ADMIN', 
       throw new Error('ORDERQ_SUBSTITUTE_ALLOCATION_ALREADY_REVERSED');
     }
     const timestamp = nowIso();
+    const reversedApprovalIds = approvals
+      .filter(row => row.approvalType === DISPATCH_APPROVAL_TYPE.SUBSTITUTE
+        && row.dispatchLineId === dispatchLineId
+        && isDispatchApprovalEffectivelyActive(row, approvals))
+      .map(row => row.approvalId)
+      .sort();
     event.detail.reversalScope = 'SUBSTITUTE_DECISION_ONLY';
     event.detail.sourceDispatchId = dispatchId;
     event.detail.sourceDispatchLineId = dispatchLineId;
@@ -315,13 +346,18 @@ export async function reverseSubstitutionDecision(source = {}, actor = 'ADMIN', 
       approvalId: `DAP-${event.eventId}`,
       approvalType: DISPATCH_APPROVAL_TYPE.SUBSTITUTE_DECISION_REVERSAL,
       status: DISPATCH_APPROVAL_STATUS.REVERSED,
+      revision: Number(decision.revision || 0),
       dispatchId,
       dispatchLineId,
       orderId: line.orderId,
       orderItemId: line.orderItemId,
       idempotencyKey,
+      reasonCode: text(source.reasonCode).toUpperCase() || 'SUBSTITUTE_DECISION_REVERSAL',
+      reasonNote: reason,
       reason,
       sourceAllocationEventId: allocationEvent.eventId,
+      reversalOfApprovalIds: reversedApprovalIds,
+      sourceSubstitutionApprovalId: reversedApprovalIds[0] || '',
       reversalEventId: event.eventId,
       reversedAt: timestamp,
       reversedBy: context.actorId,

@@ -23,11 +23,14 @@ import {
   DISPATCH_APPROVAL_TYPE,
   DISPATCH_CONFIRMATION_STEP,
   allocateReversalAmounts,
+  allocateReversalQuantityDimension,
   confirmationCheckpoint,
   dispatchActualFingerprint,
+  dispatchActualSetFingerprint,
   dispatchConfirmationFingerprint,
   dispatchPriceFingerprint,
   dispatchReversalFingerprint,
+  isDispatchApprovalEffectivelyActive,
   normalizeDispatchConfirmationCommand,
   normalizeDispatchReversalCommand,
   resolveDispatchActuals,
@@ -224,7 +227,7 @@ async function validateBusinessReferences(tx, decision, actuals) {
 }
 
 function activeApproval(approvals, approvalType, actual) {
-  return approvals.find(row => row.status === DISPATCH_APPROVAL_STATUS.ACTIVE
+  return approvals.find(row => isDispatchApprovalEffectivelyActive(row, approvals)
     && row.approvalType === approvalType
     && row.dispatchLineId === actual.line.dispatchLineId
     && row.orderItemId === actual.line.orderItemId
@@ -241,13 +244,22 @@ function validateM5Approvals({ actuals, approvals, overages }) {
     validateCustomerNotice(actual.line);
   }
   for (const overage of overages) {
-    const actual = actuals.find(row => row.line.orderItemId === overage.orderItemId);
-    const approval = actual && activeApproval(approvals, DISPATCH_APPROVAL_TYPE.OVER_DISPATCH, actual);
+    const participatingActuals = actuals
+      .filter(row => row.line.orderItemId === overage.orderItemId)
+      .sort((left, right) => text(left.line.dispatchLineId).localeCompare(text(right.line.dispatchLineId)));
+    const participatingLines = participatingActuals.map(row => row.line);
+    const participatingDispatchLineIds = participatingLines.map(row => row.dispatchLineId);
+    const approvedActualSetFingerprint = dispatchActualSetFingerprint(participatingLines);
+    const approval = approvals.find(row => isDispatchApprovalEffectivelyActive(row, approvals)
+      && row.approvalType === DISPATCH_APPROVAL_TYPE.OVER_DISPATCH
+      && row.orderItemId === overage.orderItemId
+      && row.approvedActualSetFingerprint === approvedActualSetFingerprint
+      && JSON.stringify(row.participatingDispatchLineIds || []) === JSON.stringify(participatingDispatchLineIds));
     if (!approval
       || Math.abs(finite(approval.effectiveOrderQuantity) - overage.effectiveOrderQuantity) > 1e-9
-      || Math.abs(finite(approval.existingRecognizedQuantity) - overage.existingRecognizedQuantity) > 1e-9
+      || Math.abs(finite(approval.currentRecognizedQuantity ?? approval.existingRecognizedQuantity) - overage.existingRecognizedQuantity) > 1e-9
       || Math.abs(finite(approval.attemptedRecognizedQuantity) - overage.attemptedRecognizedQuantity) > 1e-9
-      || Math.abs(finite(approval.overQuantity) - overage.overQuantity) > 1e-9) {
+      || Math.abs(finite(approval.approvedOverQuantity ?? approval.overQuantity) - overage.overQuantity) > 1e-9) {
       throw new Error(`ORDERQ_CONFIRM_OVER_DISPATCH_APPROVAL_REQUIRED:${overage.orderItemId}`);
     }
   }
@@ -301,7 +313,9 @@ export async function recordDispatchActual(source = {}, actor = 'ADMIN') {
       const priceLine = {
         ...actual.line,
         orderAgreedUnitPriceWon: actual.line.orderAgreedUnitPriceWon ?? item?.price ?? item?.unitPriceWon ?? 0,
-        actualProductUnitPriceWon: actual.line.actualProductUnitPriceWon ?? productReferencePrice(product)
+        actualProductReferenceUnitPriceWon: actual.line.actualProductReferenceUnitPriceWon
+          ?? actual.line.actualProductUnitPriceWon
+          ?? productReferencePrice(product)
       };
       const price = resolveDispatchPrice({ item, line: priceLine });
       const next = {
@@ -475,6 +489,8 @@ export async function confirmDispatch(source = {}, actor = 'ADMIN', options = {}
         measuredBy: actual.line.measuredBy,
         customerNoticeRequired: Boolean(actual.line.customerNoticeRequired),
         customerNoticeStatus: actual.line.customerNoticeStatus,
+        customerNotifiedBy: actual.line.customerNotifiedBy || actual.line.customerNoticeActorId,
+        customerNotifiedAt: actual.line.customerNotifiedAt || actual.line.customerNoticeAt,
         customerNoticeActorId: actual.line.customerNoticeActorId,
         customerNoticeAt: actual.line.customerNoticeAt,
         customerNoticeMemo: actual.line.customerNoticeMemo,
@@ -764,7 +780,11 @@ function buildReversalPlan({ command, originalLines, originalAllocations, origin
     if (!originalSalesLine) throw new Error(`ORDERQ_REVERSE_ORIGINAL_SALES_LINE_REQUIRED:${line.dispatchLineId}`);
     const priorReversalLines = allSalesLines.filter(row => row.reversalOf === originalSalesLine.salesLineId);
     const alreadyReversed = priorReversalLines.reduce((sum, row) => sum + Math.abs(finite(row.actualQuantity ?? row.quantity)), 0);
+    const alreadyReversedBase = priorReversalLines.reduce((sum, row) => sum + Math.abs(finite(row.actualBaseQuantity ?? row.actualQuantity ?? row.quantity)), 0);
+    const alreadyReversedRecognized = priorReversalLines.reduce((sum, row) => sum + Math.abs(finite(row.recognizedOrderQuantity ?? row.actualQuantity ?? row.quantity)), 0);
     const originalQuantity = finite(originalSalesLine.actualQuantity ?? originalSalesLine.quantity);
+    const originalBaseQuantity = finite(originalSalesLine.actualBaseQuantity ?? originalQuantity);
+    const originalRecognizedQuantity = finite(originalSalesLine.recognizedOrderQuantity ?? originalQuantity);
     const remainingQuantity = originalQuantity - alreadyReversed;
     allRemainingQuantity += Math.max(0, remainingQuantity);
     const input = inputByLine.get(line.dispatchLineId);
@@ -775,6 +795,20 @@ function buildReversalPlan({ command, originalLines, originalAllocations, origin
       continue;
     }
     if (quantity > remainingQuantity + 1e-9) throw new Error(`ORDERQ_REVERSE_EXCEEDS_ORIGINAL:${line.dispatchLineId}`);
+    const baseQuantity = allocateReversalQuantityDimension({
+      originalActualQuantity: originalQuantity,
+      reversedActualQuantity: alreadyReversed,
+      reversalActualQuantity: quantity,
+      originalDimensionQuantity: originalBaseQuantity,
+      reversedDimensionQuantity: alreadyReversedBase
+    });
+    const recognizedQuantity = allocateReversalQuantityDimension({
+      originalActualQuantity: originalQuantity,
+      reversedActualQuantity: alreadyReversed,
+      reversalActualQuantity: quantity,
+      originalDimensionQuantity: originalRecognizedQuantity,
+      reversedDimensionQuantity: alreadyReversedRecognized
+    });
     const allocations = originalAllocations.filter(row => row.dispatchLineId === line.dispatchLineId);
     const allocationRemaining = allocations.map(allocation => {
       const originalMovement = movementById.get(allocation.movementId);
@@ -800,7 +834,7 @@ function buildReversalPlan({ command, originalLines, originalAllocations, origin
       if (!(row.quantity > 0) || row.quantity > row.remaining + 1e-9) throw new Error(`ORDERQ_REVERSE_ALLOCATION_EXCEEDS_ORIGINAL:${row.allocation.allocationId}`);
       return sum + row.quantity;
     }, 0);
-    if (Math.abs(allocationTotal - quantity) > 1e-9) throw new Error(`ORDERQ_REVERSE_ALLOCATION_SUM_MISMATCH:${line.dispatchLineId}`);
+    if (Math.abs(allocationTotal - baseQuantity) > 1e-9) throw new Error(`ORDERQ_REVERSE_ALLOCATION_SUM_MISMATCH:${line.dispatchLineId}`);
     const originalSupplyAmountWon = finite(originalSalesLine.supplyAmountWon);
     const originalVatAmountWon = finite(originalSalesLine.vatAmountWon);
     const originalTotalAmountWon = originalSalesLine.totalAmountWon ?? (originalSupplyAmountWon + originalVatAmountWon);
@@ -821,7 +855,7 @@ function buildReversalPlan({ command, originalLines, originalAllocations, origin
       reversedVatAmountWon,
       reversedTotalAmountWon
     });
-    plan.push({ line, originalSalesLine, quantity, allocations: reversalAllocations, amounts });
+    plan.push({ line, originalSalesLine, quantity, baseQuantity, recognizedQuantity, allocations: reversalAllocations, amounts });
   }
   if (!plan.length) throw new Error('ORDERQ_REVERSE_NOTHING_REMAINING');
   const requestedTotal = plan.reduce((sum, row) => sum + row.quantity, 0);
@@ -873,8 +907,8 @@ export async function reverseDispatch(source = {}, actor = 'ADMIN', options = {}
       dispatchLineId: newId('DL-REV'),
       quantity: -row.quantity,
       actualQuantity: -row.quantity,
-      actualBaseQuantity: -row.quantity,
-      recognizedOrderQuantity: -row.quantity,
+      actualBaseQuantity: -row.baseQuantity,
+      recognizedOrderQuantity: -row.recognizedQuantity,
       supplyAmountWon: -row.amounts.supplyAmountWon,
       vatAmountWon: -row.amounts.vatAmountWon,
       totalAmountWon: -row.amounts.totalAmountWon,
@@ -957,7 +991,7 @@ export async function reverseDispatch(source = {}, actor = 'ADMIN', options = {}
         orderItemId: row.line.orderItemId,
         salesDocumentId: reversalSalesDocumentId,
         salesLineId: reversalLine.salesLineId,
-        quantity: row.quantity,
+        quantity: row.recognizedQuantity,
         revision: allocationEvent.revision,
         actor: context.actorId,
         reason: command.reason,
@@ -988,8 +1022,8 @@ export async function reverseDispatch(source = {}, actor = 'ADMIN', options = {}
         dispatchLineId: salesLine.dispatchLineId,
         dispatchId: reversalDispatchId,
         actualQuantity: -row.quantity,
-        actualBaseQuantity: -row.quantity,
-        recognizedOrderQuantity: -row.quantity,
+        actualBaseQuantity: -row.baseQuantity,
+        recognizedOrderQuantity: -row.recognizedQuantity,
         executionStatus: 'REVERSED',
         status: 'REVERSED',
         salesLineId: salesLine.salesLineId,

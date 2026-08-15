@@ -16,8 +16,11 @@ import {
 } from '../orderq/dispatch-workbench.js';
 import {
   DISPATCH_APPROVAL_TYPE,
+  allocateReversalQuantityDimension,
   dispatchActualFingerprint,
+  dispatchActualSetFingerprint,
   dispatchPriceFingerprint,
+  isDispatchApprovalEffectivelyActive,
   resolveDispatchActuals,
   resolveDispatchPrice,
   validateCustomerNotice
@@ -104,6 +107,8 @@ const actualPrice = resolveDispatchPrice({ item, line: { ...substituteLine, pric
 const manual = resolveDispatchPrice({ item, line: { ...substituteLine, priceSource: DISPATCH_PRICE_SOURCE.MANUAL, manualUnitPriceWon: 900, priceChangeReason: '합의 할인' } });
 assert.deepEqual([agreed.appliedUnitPriceWon, actualPrice.appliedUnitPriceWon, manual.appliedUnitPriceWon], [1000, 1200, 900]);
 assert.deepEqual([agreed.priceChanged, actualPrice.priceChanged, manual.priceChanged], [false, true, true]);
+assert.deepEqual([agreed.priceChangedFromOrder, actualPrice.priceChangedFromOrder, manual.priceChangedFromOrder], [false, true, true]);
+assert.equal(actualPrice.actualProductReferenceUnitPriceWon, 1200);
 assert.deepEqual([agreed.priceUnitBasis, actualPrice.priceUnitBasis, manual.priceUnitBasis], ['RECOGNIZED_ORDER', 'ACTUAL_PRODUCT', 'ACTUAL_PRODUCT']);
 assert.throws(() => resolveDispatchPrice({ item, line: { ...substituteLine, priceSource: DISPATCH_PRICE_SOURCE.MANUAL, manualUnitPriceWon: 900 } }), /MANUAL_PRICE_REASON_REQUIRED/);
 
@@ -120,6 +125,33 @@ assert.doesNotThrow(() => validateCustomerNotice(notified));
 assert.notEqual(dispatchActualFingerprint({ ...substituteLine, actualQuantity: 2, actualBaseQuantity: 1, recognizedOrderQuantity: 10, actualRevision: 3 }),
   dispatchActualFingerprint({ ...substituteLine, actualQuantity: 2, actualBaseQuantity: 1, recognizedOrderQuantity: 10, actualRevision: 4 }),
   'approval fingerprints must become stale after a new actual revision');
+const actualSet = [
+  { ...substituteLine, dispatchLineId: 'DL-A', actualQuantity: 1, actualBaseQuantity: 0.5, recognizedOrderQuantity: 5, actualRevision: 3 },
+  { ...substituteLine, dispatchLineId: 'DL-B', actualQuantity: 1, actualBaseQuantity: 0.5, recognizedOrderQuantity: 5, actualRevision: 3 }
+];
+assert.notEqual(dispatchActualSetFingerprint(actualSet), dispatchActualSetFingerprint([{ ...actualSet[0], actualQuantity: 0.5 }, actualSet[1]]),
+  'aggregate over-dispatch approval must become stale when any participating line changes');
+const firstBaseReversal = allocateReversalQuantityDimension({
+  originalActualQuantity: 2, reversedActualQuantity: 0, reversalActualQuantity: 1,
+  originalDimensionQuantity: 1, reversedDimensionQuantity: 0
+});
+const finalBaseReversal = allocateReversalQuantityDimension({
+  originalActualQuantity: 2, reversedActualQuantity: 1, reversalActualQuantity: 1,
+  originalDimensionQuantity: 1, reversedDimensionQuantity: firstBaseReversal
+});
+const firstRecognizedReversal = allocateReversalQuantityDimension({
+  originalActualQuantity: 2, reversedActualQuantity: 0, reversalActualQuantity: 1,
+  originalDimensionQuantity: 10, reversedDimensionQuantity: 0
+});
+const finalRecognizedReversal = allocateReversalQuantityDimension({
+  originalActualQuantity: 2, reversedActualQuantity: 1, reversalActualQuantity: 1,
+  originalDimensionQuantity: 10, reversedDimensionQuantity: firstRecognizedReversal
+});
+assert.deepEqual([firstBaseReversal, finalBaseReversal, firstRecognizedReversal, finalRecognizedReversal], [0.5, 0.5, 5, 5]);
+const substitutionApproval = { approvalId: 'DAP-SUB', approvalType: 'SUBSTITUTE', status: 'ACTIVE' };
+const decisionReversalApproval = { approvalId: 'DAP-REV', status: 'REVERSED', reversalOfApprovalIds: ['DAP-SUB'] };
+assert.equal(isDispatchApprovalEffectivelyActive(substitutionApproval, [substitutionApproval]), true);
+assert.equal(isDispatchApprovalEffectivelyActive(substitutionApproval, [substitutionApproval, decisionReversalApproval]), false);
 
 assert.equal(requireCapability('ADMIN', CAPABILITY.SUBSTITUTE_APPROVE).actorId, 'ADMIN');
 assert.throws(() => requireCapability({ actorId: 'WORKER', capabilities: [] }, CAPABILITY.SUBSTITUTE_APPROVE), /CAPABILITY_REQUIRED/);
