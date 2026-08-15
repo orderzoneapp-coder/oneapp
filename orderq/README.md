@@ -45,6 +45,8 @@
 - `inventoryReservations`, `inventoryMovements`, `dispatchReconciliations`
 - `syncQueue`, `meta`
 
+M8은 DataOps에 ORDER Q 출고 대사 패널을 연결한다. 확정된 출고·판매·재고 Movement·주문이행은 화면과 저장소 모두에서 직접 덮어쓰지 않는다. 현장 확인값은 `dispatchReconciliations`에 기대값·실제값·차이수량과 원 dispatch/sales/movement/orderItem 연결로 저장하며, 정정은 `adjustDispatchAfterShipment()`의 단일 IndexedDB transaction 안에서 원 출고 전체 역분개와 수정 `DRAFT` 생성을 함께 처리한다. 수정 DRAFT는 기존 `RELEASED → READY_TO_CONFIRM → CONFIRMED` 경계를 다시 통과해야 한다. ERP `POSTED` 출고는 원 ERP 전표번호를 보존한 `CORRECTION_REQUIRED` 근거만 추가하며 ERP 전표를 자동 취소하거나 자동 재전송하지 않는다. M9 전 History와 Outbox는 계속 `LOCAL_ONLY`이다.
+
 M1은 외부 거래 식별자와 ERP 반영상태를 분리하고, 최소 감사자 `actorId`를 보존한다. 브라우저 DB 업그레이드 실패는 IndexedDB 버전 트랜잭션으로 자동 롤백되며, 백업 복원은 전체 입력을 먼저 검증한 뒤 하나의 원자적 트랜잭션으로 실행한다.
 
 M2의 `inventoryMovements`는 ORDER Q 운영재고의 부호 있는 불변 원장이다. 구매는 양수, 판매는 음수, 창고이동은 출발 음수·도착 양수로 기록하며 역분개는 원거래와 반대 부호를 추가한다. 최신 스냅샷의 `snapshotLastSequence` 이후 movement만 합산하고 음수 현재고를 0으로 보정하지 않는다.

@@ -77,6 +77,9 @@ jobs:
       - name: Test ORDER Q M7 quick product and common line contracts
         run: node scripts/test-orderq-m7-common-products.mjs
 
+      - name: Test ORDER Q M8 post-dispatch reconciliation contracts
+        run: node scripts/test-orderq-m8-post-dispatch-reconciliation.mjs
+
       - name: Test DataOps zero and negative stock preservation
         run: node scripts/test-dataops-zero-stock-contract.mjs
 

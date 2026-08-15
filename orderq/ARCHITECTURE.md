@@ -137,3 +137,9 @@ Historical order-to-sales matching uses the previous business day first, then sa
 GitHub Pages deploys `/orderq/` from repository `main` automatically.
 
 The Google Apps Script backend is a separate deployment boundary. A repository merge of `code.gs` / `orderq-cloud.gs` does not by itself prove that the live Apps Script Web App contains those versions. Phase 2 production acceptance therefore requires the bound Apps Script project to deploy both files and a two-device operational test.
+
+## 8. M8 post-dispatch reconciliation boundary
+
+DataOps exposes `/orderq/reconciliation.html` as a reconciliation work surface, but it cannot update confirmed `SalesDocument`, `SalesLine`, `InventoryMovement`, dispatch, or fulfillment facts. A `dispatchReconciliations` issue preserves the confirmed expectation, field-verified actual values, signed differences, source revision, actor/time/reason, and source dispatch/sales/movement/order-item identifiers. `adjustDispatchAfterShipment()` uses one IndexedDB transaction to append the existing full dispatch reversal and a linked corrected `DRAFT`; a failure rolls back the issue transition, reversal, draft, history, outbox, and ledger sequence together. The corrected draft must pass the existing release, actual-recording, approval, and confirmation commands.
+
+An ERP `READY` correction creates another operational `READY` fact. An ERP `POSTED` correction never changes or cancels the original ERP-linked sales document: the reversal and reconciliation issue retain the original ERP document number and use `CORRECTION_REQUIRED`, with automatic ERP cancellation and retransmission explicitly disabled. All M8 outbox rows remain `LOCAL_ONLY` until the M9 synchronization contract is implemented.
