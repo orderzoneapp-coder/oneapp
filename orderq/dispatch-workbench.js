@@ -16,6 +16,32 @@ export const FULFILLMENT_TYPE = Object.freeze({
   INDEPENDENT: 'INDEPENDENT'
 });
 
+export const CONVERSION_TYPE = Object.freeze({
+  NONE: 'NONE',
+  CUT: 'CUT',
+  PORTION: 'PORTION',
+  MEASURED: 'MEASURED'
+});
+
+export const MEASUREMENT_STATUS = Object.freeze({
+  NOT_REQUIRED: 'NOT_REQUIRED',
+  MEASURE_PENDING: 'MEASURE_PENDING',
+  MEASURED: 'MEASURED'
+});
+
+export const DISPATCH_PRICE_SOURCE = Object.freeze({
+  ORDER_AGREED: 'ORDER_AGREED',
+  ACTUAL_PRODUCT: 'ACTUAL_PRODUCT',
+  MANUAL: 'MANUAL'
+});
+
+export const CUSTOMER_NOTICE_STATUS = Object.freeze({
+  NOT_REQUIRED: 'NOT_REQUIRED',
+  PENDING: 'PENDING',
+  NOTIFIED: 'NOTIFIED',
+  WAIVED: 'WAIVED'
+});
+
 export const RESERVATION_STATUS = Object.freeze({
   ACTIVE: 'ACTIVE',
   CONSUMED: 'CONSUMED',
@@ -54,9 +80,35 @@ export const DISPATCH_QUANTITY_SCALE = 1_000_000;
 
 const FULFILLMENT_TYPES = new Set(Object.values(FULFILLMENT_TYPE));
 const WORK_EXCEPTION_CODES = new Set(Object.values(WORK_EXCEPTION_CODE));
+const CONVERSION_TYPES = new Set(Object.values(CONVERSION_TYPE));
+const PRICE_SOURCES = new Set(Object.values(DISPATCH_PRICE_SOURCE));
 
 function text(value) {
   return value === undefined || value === null ? '' : String(value).trim();
+}
+
+function optionalNumber(value) {
+  if (value === '' || value === null || value === undefined) return null;
+  const number = Number(value);
+  if (!Number.isFinite(number)) throw new Error('ORDERQ_DISPATCH_NUMBER_INVALID');
+  return number;
+}
+
+export function normalizeConversionRuleSnapshot(source = {}, line = {}) {
+  const snapshotSource = source && typeof source === 'object' ? source : {};
+  const ruleId = text(line.conversionRuleId || snapshotSource.conversionRuleId || snapshotSource.ruleId);
+  const ruleVersion = text(line.conversionRuleVersion || snapshotSource.conversionRuleVersion || snapshotSource.version);
+  if (!ruleId && !ruleVersion && !Object.keys(snapshotSource).length) return null;
+  return {
+    conversionRuleId: ruleId,
+    conversionRuleVersion: ruleVersion,
+    actualToBaseFactor: quantityFromUnits(quantityUnits(snapshotSource.actualToBaseFactor ?? 1)),
+    actualToRecognizedFactor: quantityFromUnits(quantityUnits(snapshotSource.actualToRecognizedFactor ?? 1)),
+    requestedUnit: text(snapshotSource.requestedUnit || line.requestedUnit),
+    actualUnit: text(snapshotSource.actualUnit || line.actualUnit),
+    baseUnit: text(snapshotSource.baseUnit || line.baseUnit || line.actualUnit),
+    description: text(snapshotSource.description)
+  };
 }
 
 export function quantityUnits(value, errorCode = 'ORDERQ_DISPATCH_QUANTITY_INVALID') {
@@ -101,12 +153,32 @@ function normalizeLine(source = {}) {
     inventoryMovementId: _inventoryMovementId,
     confirmedAt: _confirmedAt,
     confirmedBy: _confirmedBy,
+    measuredActualQuantity: _measuredActualQuantity,
+    measuredBaseQuantity: _measuredBaseQuantity,
+    measuredRecognizedOrderQuantity: _measuredRecognizedOrderQuantity,
+    measuredAt: _measuredAt,
+    measuredBy: _measuredBy,
+    actualRevision: _actualRevision,
+    actualRecordedAt: _actualRecordedAt,
+    actualRecordedBy: _actualRecordedBy,
+    customerNoticeActorId: _customerNoticeActorId,
+    customerNoticeAt: _customerNoticeAt,
+    customerNoticeMemo: _customerNoticeMemo,
+    customerNoticePriceFingerprint: _customerNoticePriceFingerprint,
     ...draftSource
   } = source;
   const fulfillmentType = text(source.fulfillmentType).toUpperCase() || FULFILLMENT_TYPE.NORMAL;
   if (!FULFILLMENT_TYPES.has(fulfillmentType)) throw new Error(`ORDERQ_DISPATCH_FULFILLMENT_TYPE_INVALID:${fulfillmentType}`);
   const plannedActualQuantity = quantityFromUnits(quantityUnits(source.plannedActualQuantity));
   if (plannedActualQuantity < 0) throw new Error('ORDERQ_DISPATCH_PLANNED_QUANTITY_NEGATIVE');
+  const conversionType = text(source.conversionType).toUpperCase() || CONVERSION_TYPE.NONE;
+  if (!CONVERSION_TYPES.has(conversionType)) throw new Error(`ORDERQ_DISPATCH_CONVERSION_TYPE_INVALID:${conversionType}`);
+  const conversionRuleSnapshot = normalizeConversionRuleSnapshot(source.conversionRuleSnapshot, source);
+  const measurementRequired = Boolean(source.measurementRequired) || conversionType === CONVERSION_TYPE.MEASURED;
+  const priceSource = text(source.priceSource).toUpperCase() || DISPATCH_PRICE_SOURCE.ORDER_AGREED;
+  if (!PRICE_SOURCES.has(priceSource)) throw new Error(`ORDERQ_DISPATCH_PRICE_SOURCE_INVALID:${priceSource}`);
+  const customerNoticeRequired = Boolean(source.customerNoticeRequired);
+  const customerNoticeStatus = customerNoticeRequired ? CUSTOMER_NOTICE_STATUS.PENDING : CUSTOMER_NOTICE_STATUS.NOT_REQUIRED;
   return {
     ...draftSource,
     dispatchLineId: text(source.dispatchLineId),
@@ -123,8 +195,28 @@ function normalizeLine(source = {}) {
     executionStatus: text(source.executionStatus).toUpperCase() || 'PLANNED',
     plannedActualQuantity,
     plannedBaseQuantity: quantityFromUnits(quantityUnits(source.plannedBaseQuantity ?? plannedActualQuantity)),
+    plannedRecognizedOrderQuantity: quantityFromUnits(quantityUnits(source.plannedRecognizedOrderQuantity ?? plannedActualQuantity)),
     actualUnit: source.actualUnit === undefined || source.actualUnit === null ? '' : String(source.actualUnit),
-    measurementRequired: Boolean(source.measurementRequired),
+    baseUnit: text(source.baseUnit || source.actualUnit),
+    conversionType,
+    conversionRuleId: text(source.conversionRuleId || conversionRuleSnapshot?.conversionRuleId),
+    conversionRuleVersion: text(source.conversionRuleVersion || conversionRuleSnapshot?.conversionRuleVersion),
+    conversionRuleSnapshot,
+    measurementRequired,
+    measurementStatus: measurementRequired ? MEASUREMENT_STATUS.MEASURE_PENDING : MEASUREMENT_STATUS.NOT_REQUIRED,
+    priceSource,
+    orderAgreedUnitPriceWon: optionalNumber(source.orderAgreedUnitPriceWon),
+    actualProductUnitPriceWon: optionalNumber(source.actualProductUnitPriceWon),
+    manualUnitPriceWon: optionalNumber(source.manualUnitPriceWon),
+    appliedUnitPriceWon: optionalNumber(source.appliedUnitPriceWon),
+    priceChanged: Boolean(source.priceChanged),
+    priceChangeReason: text(source.priceChangeReason),
+    customerNoticeRequired,
+    customerNoticeStatus,
+    customerNoticeActorId: '',
+    customerNoticeAt: '',
+    customerNoticeMemo: '',
+    customerNoticePriceFingerprint: '',
     workStatus: text(source.workStatus).toUpperCase() || 'PENDING',
     workerExceptionCode: text(source.workerExceptionCode).toUpperCase(),
     workerExceptionMemo: source.workerExceptionMemo === undefined || source.workerExceptionMemo === null ? '' : String(source.workerExceptionMemo),
@@ -170,6 +262,25 @@ export function validateDispatchDraftPlan({ lines = [], allocations = [], strict
     if (!line.orderId || !line.orderItemId) throw new Error(`ORDERQ_DISPATCH_ORDER_ITEM_REQUIRED:${line.dispatchLineId}`);
     if (!line.requestedProductId) throw new Error(`ORDERQ_DISPATCH_REQUESTED_PRODUCT_REQUIRED:${line.dispatchLineId}`);
     if (strict && !line.actualProductId) throw new Error(`ORDERQ_DISPATCH_ACTUAL_PRODUCT_REQUIRED:${line.dispatchLineId}`);
+    if (strict && line.fulfillmentType === FULFILLMENT_TYPE.SUBSTITUTE && line.actualProductId === line.requestedProductId) {
+      throw new Error(`ORDERQ_DISPATCH_SUBSTITUTE_PRODUCT_REQUIRED:${line.dispatchLineId}`);
+    }
+    if (strict && line.fulfillmentType !== FULFILLMENT_TYPE.SUBSTITUTE && line.actualProductId !== line.requestedProductId) {
+      throw new Error(`ORDERQ_DISPATCH_SUBSTITUTE_TYPE_REQUIRED:${line.dispatchLineId}`);
+    }
+    if (strict && line.conversionType !== CONVERSION_TYPE.NONE) {
+      const snapshot = line.conversionRuleSnapshot;
+      if (!line.conversionRuleId || !line.conversionRuleVersion || !snapshot
+        || !(snapshot.actualToBaseFactor > 0) || !(snapshot.actualToRecognizedFactor > 0)) {
+        throw new Error(`ORDERQ_DISPATCH_CONVERSION_SNAPSHOT_REQUIRED:${line.dispatchLineId}`);
+      }
+      const expectedBaseUnits = quantityUnits(line.plannedActualQuantity * snapshot.actualToBaseFactor);
+      const expectedRecognizedUnits = quantityUnits(line.plannedActualQuantity * snapshot.actualToRecognizedFactor);
+      if (quantityUnits(line.plannedBaseQuantity) !== expectedBaseUnits
+        || quantityUnits(line.plannedRecognizedOrderQuantity) !== expectedRecognizedUnits) {
+        throw new Error(`ORDERQ_DISPATCH_CONVERSION_PLAN_MISMATCH:${line.dispatchLineId}`);
+      }
+    }
   }
   const allocationIds = new Set();
   const allocationsByLine = new Map();

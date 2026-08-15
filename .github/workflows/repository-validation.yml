@@ -68,6 +68,9 @@ jobs:
       - name: Test ORDER Q M4 atomic dispatch confirmation contracts
         run: node scripts/test-orderq-m4-dispatch-confirmation.mjs
 
+      - name: Test ORDER Q M5 substitution and conversion contracts
+        run: node scripts/test-orderq-m5-substitution-conversion.mjs
+
       - name: Test DataOps zero and negative stock preservation
         run: node scripts/test-dataops-zero-stock-contract.mjs
 

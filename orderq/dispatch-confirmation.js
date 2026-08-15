@@ -1,4 +1,23 @@
-import { FULFILLMENT_TYPE, quantityFromUnits, quantityUnits } from './dispatch-workbench.js?v=0.8.0';
+import {
+  CONVERSION_TYPE,
+  CUSTOMER_NOTICE_STATUS,
+  DISPATCH_PRICE_SOURCE,
+  FULFILLMENT_TYPE,
+  MEASUREMENT_STATUS,
+  quantityFromUnits,
+  quantityUnits
+} from './dispatch-workbench.js?v=0.8.0';
+
+export const DISPATCH_APPROVAL_TYPE = Object.freeze({
+  SUBSTITUTE: 'SUBSTITUTE',
+  OVER_DISPATCH: 'OVER_DISPATCH',
+  SUBSTITUTE_DECISION_REVERSAL: 'SUBSTITUTE_DECISION_REVERSAL'
+});
+
+export const DISPATCH_APPROVAL_STATUS = Object.freeze({
+  ACTIVE: 'ACTIVE',
+  REVERSED: 'REVERSED'
+});
 
 export const DISPATCH_CONFIRMATION_STEP = Object.freeze({
   SALES_WRITTEN: 'SALES_WRITTEN',
@@ -51,7 +70,35 @@ export function dispatchConfirmationFingerprint(command = {}) {
   }));
 }
 
-export function resolveNormalDispatchActuals({ lines = [], allocations = [], command = {} } = {}) {
+export function dispatchPriceFingerprint(line = {}) {
+  return JSON.stringify(stableValue({
+    priceSource: text(line.priceSource).toUpperCase() || DISPATCH_PRICE_SOURCE.ORDER_AGREED,
+    orderAgreedUnitPriceWon: Number(line.orderAgreedUnitPriceWon ?? 0),
+    actualProductUnitPriceWon: Number(line.actualProductUnitPriceWon ?? 0),
+    manualUnitPriceWon: Number(line.manualUnitPriceWon ?? 0),
+    appliedUnitPriceWon: Number(line.appliedUnitPriceWon ?? 0),
+    priceChanged: Boolean(line.priceChanged),
+    priceChangeReason: text(line.priceChangeReason)
+  }));
+}
+
+export function dispatchActualFingerprint(line = {}) {
+  return JSON.stringify(stableValue({
+    dispatchLineId: text(line.dispatchLineId),
+    requestedProductId: text(line.requestedProductId),
+    actualProductId: text(line.actualProductId),
+    actualQuantity: Number(line.actualQuantity ?? 0),
+    actualBaseQuantity: Number(line.actualBaseQuantity ?? 0),
+    recognizedOrderQuantity: Number(line.recognizedOrderQuantity ?? 0),
+    actualRevision: Number(line.actualRevision ?? 0),
+    conversionRuleId: text(line.conversionRuleId),
+    conversionRuleVersion: text(line.conversionRuleVersion),
+    conversionRuleSnapshot: line.conversionRuleSnapshot || null,
+    priceFingerprint: dispatchPriceFingerprint(line)
+  }));
+}
+
+export function resolveDispatchActuals({ lines = [], allocations = [], command = {}, allowMeasurementCapture = false } = {}) {
   const normalizedCommand = normalizeDispatchConfirmationCommand(command);
   const inputByLine = new Map(normalizedCommand.lines.map(row => [row.dispatchLineId, row]));
   const allocationIds = new Set(allocations.map(row => text(row.allocationId)));
@@ -67,25 +114,38 @@ export function resolveNormalDispatchActuals({ lines = [], allocations = [], com
   return lines.map(line => {
     const dispatchLineId = text(line.dispatchLineId);
     const input = inputByLine.get(dispatchLineId) || {};
-    if (text(line.fulfillmentType).toUpperCase() !== FULFILLMENT_TYPE.NORMAL) {
-      throw new Error(`ORDERQ_CONFIRM_M4_NORMAL_ONLY:${dispatchLineId}`);
+    const fulfillmentType = text(line.fulfillmentType).toUpperCase() || FULFILLMENT_TYPE.NORMAL;
+    if (![FULFILLMENT_TYPE.NORMAL, FULFILLMENT_TYPE.SUBSTITUTE].includes(fulfillmentType)) {
+      throw new Error(`ORDERQ_CONFIRM_FULFILLMENT_UNSUPPORTED:${dispatchLineId}`);
     }
-    if (!text(line.actualProductId) || text(line.actualProductId) !== text(line.requestedProductId)) {
-      throw new Error(`ORDERQ_CONFIRM_M4_PRODUCT_MISMATCH:${dispatchLineId}`);
+    if (!text(line.actualProductId)) throw new Error(`ORDERQ_CONFIRM_ACTUAL_PRODUCT_REQUIRED:${dispatchLineId}`);
+    if (fulfillmentType === FULFILLMENT_TYPE.SUBSTITUTE && text(line.actualProductId) === text(line.requestedProductId)) {
+      throw new Error(`ORDERQ_CONFIRM_SUBSTITUTE_PRODUCT_REQUIRED:${dispatchLineId}`);
+    }
+    if (fulfillmentType !== FULFILLMENT_TYPE.SUBSTITUTE && text(line.actualProductId) !== text(line.requestedProductId)) {
+      throw new Error(`ORDERQ_CONFIRM_SUBSTITUTE_TYPE_REQUIRED:${dispatchLineId}`);
     }
     if (text(line.workerReportedProductId) && text(line.workerReportedProductId) !== text(line.actualProductId)) {
       throw new Error(`ORDERQ_CONFIRM_M5_WORKER_PRODUCT_MISMATCH:${dispatchLineId}`);
     }
-    if (line.measurementRequired) throw new Error(`ORDERQ_CONFIRM_M5_MEASUREMENT_REQUIRED:${dispatchLineId}`);
+    const conversionType = text(line.conversionType).toUpperCase() || CONVERSION_TYPE.NONE;
+    const snapshot = line.conversionRuleSnapshot;
+    const converted = conversionType !== CONVERSION_TYPE.NONE;
+    if (converted && (!text(line.conversionRuleId) || !text(line.conversionRuleVersion) || !snapshot
+      || !(Number(snapshot.actualToBaseFactor) > 0) || !(Number(snapshot.actualToRecognizedFactor) > 0))) {
+      throw new Error(`ORDERQ_CONFIRM_CONVERSION_SNAPSHOT_REQUIRED:${dispatchLineId}`);
+    }
+    if (line.measurementRequired && !allowMeasurementCapture
+      && (text(line.measurementStatus).toUpperCase() !== MEASUREMENT_STATUS.MEASURED || !text(line.measuredAt) || !text(line.measuredBy))) {
+      throw new Error(`ORDERQ_CONFIRM_MEASURE_PENDING:${dispatchLineId}`);
+    }
 
     const actualQuantity = hasOwn(input, 'actualQuantity') ? input.actualQuantity : line.actualQuantity;
     if (actualQuantity === '' || actualQuantity === null || actualQuantity === undefined) {
       throw new Error(`ORDERQ_CONFIRM_ACTUAL_QUANTITY_REQUIRED:${dispatchLineId}`);
     }
     const actualUnits = quantityUnits(actualQuantity);
-    const plannedUnits = quantityUnits(line.plannedBaseQuantity ?? line.plannedActualQuantity);
     if (actualUnits <= 0) throw new Error(`ORDERQ_CONFIRM_ACTUAL_QUANTITY_REQUIRED:${dispatchLineId}`);
-    if (actualUnits > plannedUnits) throw new Error(`ORDERQ_CONFIRM_OVER_DISPATCH_REQUIRES_M5:${dispatchLineId}`);
 
     const recognizedOrderQuantity = hasOwn(input, 'recognizedOrderQuantity')
       ? input.recognizedOrderQuantity
@@ -93,8 +153,10 @@ export function resolveNormalDispatchActuals({ lines = [], allocations = [], com
     if (recognizedOrderQuantity === '' || recognizedOrderQuantity === null || recognizedOrderQuantity === undefined) {
       throw new Error(`ORDERQ_CONFIRM_RECOGNIZED_QUANTITY_REQUIRED:${dispatchLineId}`);
     }
-    if (quantityUnits(recognizedOrderQuantity) !== actualUnits) {
-      throw new Error(`ORDERQ_CONFIRM_M4_RECOGNIZED_QUANTITY_MISMATCH:${dispatchLineId}`);
+    const expectedBaseUnits = quantityUnits(quantityFromUnits(actualUnits) * (converted ? Number(snapshot.actualToBaseFactor) : 1));
+    const expectedRecognizedUnits = quantityUnits(quantityFromUnits(actualUnits) * (converted ? Number(snapshot.actualToRecognizedFactor) : 1));
+    if (quantityUnits(recognizedOrderQuantity) !== expectedRecognizedUnits) {
+      throw new Error(`ORDERQ_CONFIRM_RECOGNIZED_QUANTITY_MISMATCH:${dispatchLineId}`);
     }
 
     const lineAllocations = allocations.filter(row => text(row.dispatchLineId) === dispatchLineId)
@@ -121,19 +183,84 @@ export function resolveNormalDispatchActuals({ lines = [], allocations = [], com
       }
       return sum + units;
     }, 0);
-    if (allocationUnits !== actualUnits) throw new Error(`ORDERQ_CONFIRM_ALLOCATION_SUM_MISMATCH:${dispatchLineId}`);
+    if (allocationUnits !== expectedBaseUnits) throw new Error(`ORDERQ_CONFIRM_ALLOCATION_SUM_MISMATCH:${dispatchLineId}`);
 
     return {
       line,
       actualQuantity: quantityFromUnits(actualUnits),
-      actualBaseQuantity: quantityFromUnits(allocationUnits),
-      recognizedOrderQuantity: quantityFromUnits(actualUnits),
+      actualBaseQuantity: quantityFromUnits(expectedBaseUnits),
+      recognizedOrderQuantity: quantityFromUnits(expectedRecognizedUnits),
       allocations: actualAllocations.map(allocation => ({
         allocation,
         actualBaseQuantity: quantityFromUnits(quantityUnits(allocation.actualBaseQuantity))
       }))
     };
   });
+}
+
+export function resolveNormalDispatchActuals(args = {}) {
+  for (const line of args.lines || []) {
+    if (text(line.fulfillmentType).toUpperCase() !== FULFILLMENT_TYPE.NORMAL
+      || (text(line.conversionType).toUpperCase() && text(line.conversionType).toUpperCase() !== CONVERSION_TYPE.NONE)
+      || line.measurementRequired) {
+      throw new Error(`ORDERQ_CONFIRM_M4_NORMAL_ONLY:${line.dispatchLineId}`);
+    }
+  }
+  const normalizedCommand = normalizeDispatchConfirmationCommand(args.command || {});
+  for (const input of normalizedCommand.lines) {
+    const line = (args.lines || []).find(row => text(row.dispatchLineId) === input.dispatchLineId);
+    if (line && input.actualQuantity !== undefined
+      && quantityUnits(input.actualQuantity) > quantityUnits(line.plannedActualQuantity ?? line.plannedBaseQuantity)) {
+      throw new Error(`ORDERQ_CONFIRM_OVER_DISPATCH_REQUIRES_M5:${line.dispatchLineId}`);
+    }
+  }
+  const resolved = resolveDispatchActuals(args);
+  return resolved;
+}
+
+export function resolveDispatchPrice({ item = {}, line = {} } = {}) {
+  const source = text(line.priceSource).toUpperCase() || DISPATCH_PRICE_SOURCE.ORDER_AGREED;
+  const orderAgreedUnitPriceWon = Number(line.orderAgreedUnitPriceWon ?? item.price ?? item.unitPriceWon ?? 0);
+  const actualProductPriceProvided = line.actualProductUnitPriceWon !== '' && line.actualProductUnitPriceWon !== null && line.actualProductUnitPriceWon !== undefined;
+  const manualPriceProvided = (line.manualUnitPriceWon !== '' && line.manualUnitPriceWon !== null && line.manualUnitPriceWon !== undefined)
+    || (line.appliedUnitPriceWon !== '' && line.appliedUnitPriceWon !== null && line.appliedUnitPriceWon !== undefined);
+  const actualProductUnitPriceWon = Number(actualProductPriceProvided ? line.actualProductUnitPriceWon : 0);
+  const manualUnitPriceWon = Number(line.manualUnitPriceWon ?? line.appliedUnitPriceWon ?? 0);
+  if (![orderAgreedUnitPriceWon, actualProductUnitPriceWon, manualUnitPriceWon].every(Number.isFinite)) {
+    throw new Error(`ORDERQ_CONFIRM_PRICE_INVALID:${line.dispatchLineId}`);
+  }
+  let appliedUnitPriceWon = orderAgreedUnitPriceWon;
+  if (source === DISPATCH_PRICE_SOURCE.ACTUAL_PRODUCT) {
+    if (!actualProductPriceProvided) throw new Error(`ORDERQ_CONFIRM_ACTUAL_PRODUCT_PRICE_REQUIRED:${line.dispatchLineId}`);
+    appliedUnitPriceWon = actualProductUnitPriceWon;
+  } else if (source === DISPATCH_PRICE_SOURCE.MANUAL) {
+    if (!manualPriceProvided || !text(line.priceChangeReason)) throw new Error(`ORDERQ_CONFIRM_MANUAL_PRICE_REASON_REQUIRED:${line.dispatchLineId}`);
+    appliedUnitPriceWon = manualUnitPriceWon;
+  } else if (source !== DISPATCH_PRICE_SOURCE.ORDER_AGREED) {
+    throw new Error(`ORDERQ_CONFIRM_PRICE_SOURCE_INVALID:${line.dispatchLineId}`);
+  }
+  const priceChanged = Math.abs(appliedUnitPriceWon - orderAgreedUnitPriceWon) > 1e-9;
+  return {
+    priceSource: source,
+    priceUnitBasis: source === DISPATCH_PRICE_SOURCE.ORDER_AGREED ? 'RECOGNIZED_ORDER' : 'ACTUAL_PRODUCT',
+    orderAgreedUnitPriceWon,
+    actualProductUnitPriceWon,
+    manualUnitPriceWon,
+    appliedUnitPriceWon,
+    priceChanged,
+    priceChangeReason: text(line.priceChangeReason)
+  };
+}
+
+export function validateCustomerNotice(line = {}) {
+  if (!line.customerNoticeRequired) return;
+  const status = text(line.customerNoticeStatus).toUpperCase();
+  if (status === CUSTOMER_NOTICE_STATUS.PENDING || !status) throw new Error(`ORDERQ_CONFIRM_CUSTOMER_NOTICE_PENDING:${line.dispatchLineId}`);
+  if (![CUSTOMER_NOTICE_STATUS.NOTIFIED, CUSTOMER_NOTICE_STATUS.WAIVED].includes(status)
+    || !text(line.customerNoticeActorId) || !text(line.customerNoticeAt)
+    || text(line.customerNoticePriceFingerprint) !== dispatchPriceFingerprint(line)) {
+    throw new Error(`ORDERQ_CONFIRM_CUSTOMER_NOTICE_EVIDENCE_REQUIRED:${line.dispatchLineId}`);
+  }
 }
 
 export function confirmationCheckpoint(options = {}, step) {

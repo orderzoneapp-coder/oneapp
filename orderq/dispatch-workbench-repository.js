@@ -149,12 +149,12 @@ export async function getDispatchProposals({ businessDate = '', dispatchStageCod
 }
 
 export async function getDispatchWorkbenchData() {
-  const [aggregates, warehouses, snapshots, inventoryLines, movements, reservations] = await Promise.all([
-    listDispatchAggregates(), getAll(STORE.WAREHOUSES), getAll(STORE.INVENTORY_SNAPSHOTS),
+  const [aggregates, warehouses, products, snapshots, inventoryLines, movements, reservations] = await Promise.all([
+    listDispatchAggregates(), getAll(STORE.WAREHOUSES), getAll(STORE.PRODUCTS), getAll(STORE.INVENTORY_SNAPSHOTS),
     getAll(STORE.INVENTORY_LINES), getAll(STORE.INVENTORY_MOVEMENTS), getAll(STORE.INVENTORY_RESERVATIONS)
   ]);
   const inventoryProjection = calculateInventoryShadowProjection({ snapshots, inventoryLines, movements, reservations, warehouses });
-  return { aggregates, warehouses, inventoryProjection, workerViews: buildWorkerPickViews(aggregates, warehouses) };
+  return { aggregates, warehouses, products, inventoryProjection, workerViews: buildWorkerPickViews(aggregates, warehouses) };
 }
 
 export async function saveDispatchDraft({ decision = {}, lines = [], allocations = [], expectedRevision = 0 } = {}, actor = 'ADMIN') {
@@ -335,6 +335,10 @@ export async function recallDispatch(dispatchId, expectedRevision, actor = 'ADMI
     lines.forEach(row => {
       const nextLine = {
         ...row, actualQuantity: null, actualBaseQuantity: null, recognizedOrderQuantity: null,
+        actualRevision: null,
+        measurementStatus: row.measurementRequired ? 'MEASURE_PENDING' : 'NOT_REQUIRED',
+        measuredActualQuantity: null, measuredBaseQuantity: null, measuredRecognizedOrderQuantity: null,
+        measuredAt: '', measuredBy: '',
         executionStatus: 'PLANNED', actualRecordedAt: '', actualRecordedBy: '',
         updatedAt: timestamp, updatedBy: context.actorId
       };
@@ -405,6 +409,10 @@ export async function expireDispatchReservations(asOf = nowIso(), actor = 'ADMIN
       lines.forEach(row => {
         const nextLine = {
           ...row, actualQuantity: null, actualBaseQuantity: null, recognizedOrderQuantity: null,
+          actualRevision: null,
+          measurementStatus: row.measurementRequired ? 'MEASURE_PENDING' : 'NOT_REQUIRED',
+          measuredActualQuantity: null, measuredBaseQuantity: null, measuredRecognizedOrderQuantity: null,
+          measuredAt: '', measuredBy: '',
           executionStatus: 'PLANNED', actualRecordedAt: '', actualRecordedBy: '',
           updatedAt: asOf, updatedBy: context.actorId
         };
