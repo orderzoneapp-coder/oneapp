@@ -62,6 +62,9 @@ jobs:
       - name: Test ORDER Q M2 inventory ledger and shadow projection
         run: node scripts/test-orderq-m2-inventory-ledger.mjs
 
+      - name: Test ORDER Q M3 dispatch workbench and reservation contracts
+        run: node scripts/test-orderq-m3-dispatch-workbench.mjs
+
       - name: Test DataOps zero and negative stock preservation
         run: node scripts/test-dataops-zero-stock-contract.mjs
 

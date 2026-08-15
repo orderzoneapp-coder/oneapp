@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="ko">
+<meta charset="utf-8">
+<title>ORDER Q M3 Dispatch Workbench Browser Test</title>
+<body>
+  <h1>ORDER Q M3 Dispatch Workbench Browser Test</h1>
+  <pre id="result">RUNNING</pre>
+  <script type="module">
+    import {
+      DB_NAME, STORE, closeOrderQDb, openOrderQDb, requestToPromise, transactionDone
+    } from '../orderq/orderq-db.js?v=0.8.0';
+    import {
+      DISPATCH_WORKSPACE_STORAGE_KEY, normalizeWorkspaceState
+    } from '../orderq/dispatch-workbench.js?v=0.8.0';
+    import {
+      expireDispatchReservations,
+      getDispatchProposals,
+      getDispatchWorkbenchData,
+      loadDispatchAggregate,
+      recallDispatch,
+      recordDispatchWorkFact,
+      releaseDispatch,
+      saveDispatchDraft
+    } from '../orderq/dispatch-workbench-repository.js?v=0.8.0';
+
+    const output = document.querySelector('#result');
+    const assert = (condition, message) => { if (!condition) throw new Error(message); };
+    const deleteDatabase = () => new Promise((resolve, reject) => {
+      const request = indexedDB.deleteDatabase(DB_NAME);
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+      request.onblocked = () => reject(new Error('test database delete blocked'));
+    });
+    const readAll = async storeName => {
+      const db = await openOrderQDb();
+      const tx = db.transaction(storeName, 'readonly');
+      const rows = await requestToPromise(tx.objectStore(storeName).getAll());
+      await transactionDone(tx);
+      return rows;
+    };
+    const sideEffectCounts = async () => Object.fromEntries(await Promise.all([
+      STORE.SALES_DOCUMENTS, STORE.SALES_LINES, STORE.INVENTORY_MOVEMENTS,
+      STORE.ORDER_EVENTS, STORE.FULFILLMENT_LINKS, STORE.FULFILLMENT_BALANCES
+    ].map(async name => [name, (await readAll(name)).length])));
+
+    async function seed() {
+      const db = await openOrderQDb();
+      const stores = [STORE.CUSTOMERS, STORE.PRODUCTS, STORE.WAREHOUSES, STORE.ORDERS, STORE.ORDER_ITEMS, STORE.INVENTORY_SNAPSHOTS, STORE.INVENTORY_LINES];
+      const tx = db.transaction(stores, 'readwrite');
+      tx.objectStore(STORE.CUSTOMERS).put({ customerId: 'C-1', customerName: '테스트 고객', normalizedName: '테스트고객' });
+      tx.objectStore(STORE.PRODUCTS).put({ productId: 'P-10', itemCode: '10', itemName: '테스트 상품', normalizedName: '테스트상품', status: 'ACTIVE' });
+      tx.objectStore(STORE.WAREHOUSES).put({
+        warehouseId: 'W-01', warehouseCode: '01', warehouseName: '제1창고', normalizedName: '제1창고',
+        countsInOnHand: true, countsInAvailable: true, status: 'ACTIVE'
+      });
+      tx.objectStore(STORE.WAREHOUSES).put({
+        warehouseId: 'W-02', warehouseCode: '02', warehouseName: '제2창고', normalizedName: '제2창고',
+        countsInOnHand: true, countsInAvailable: true, status: 'ACTIVE'
+      });
+      tx.objectStore(STORE.ORDERS).put({
+        orderId: 'O-1', orderNo: '20260815-001', customerId: 'C-1', customerName: '테스트 고객',
+        orderDate: '2026-08-15', orderStatus: 'ORDER', adminStatus: 'CHECKED', opsStatus: 'ACTIVE', revision: 1
+      });
+      tx.objectStore(STORE.ORDER_ITEMS).put({
+        orderItemId: 'OI-1', orderId: 'O-1', productId: 'P-10', itemCode: '10', itemName: '테스트 상품',
+        finalQuantity: 10, finalUnit: 'EA', matchStatus: 'MATCHED'
+      });
+      tx.objectStore(STORE.INVENTORY_SNAPSHOTS).put({
+        inventorySnapshotId: 'IS-01', importBatchId: 'B-M3', basisDate: '2026-08-15', warehouseId: 'W-01',
+        snapshotLastSequence: 0, status: 'ACTIVE', createdAt: '2026-08-15T00:00:00.000Z'
+      });
+      tx.objectStore(STORE.INVENTORY_SNAPSHOTS).put({
+        inventorySnapshotId: 'IS-02', importBatchId: 'B-M3', basisDate: '2026-08-15', warehouseId: 'W-02',
+        snapshotLastSequence: 0, status: 'ACTIVE', createdAt: '2026-08-15T00:00:00.000Z'
+      });
+      tx.objectStore(STORE.INVENTORY_LINES).put({
+        inventoryLineId: 'IL-01', inventorySnapshotId: 'IS-01', importBatchId: 'B-M3', productId: 'P-10', productCode: '10',
+        warehouseId: 'W-01', inventoryQuantity: 7, status: 'ACTIVE'
+      });
+      tx.objectStore(STORE.INVENTORY_LINES).put({
+        inventoryLineId: 'IL-02', inventorySnapshotId: 'IS-02', importBatchId: 'B-M3', productId: 'P-10', productCode: '10',
+        warehouseId: 'W-02', inventoryQuantity: 5, status: 'ACTIVE'
+      });
+      await transactionDone(tx);
+    }
+
+    async function run() {
+      closeOrderQDb();
+      await deleteDatabase();
+      await openOrderQDb();
+      await seed();
+
+      const initialEffects = await sideEffectCounts();
+      const proposals = await getDispatchProposals({ businessDate: '2026-08-15' });
+      assert(proposals.length === 1, 'normal dispatch proposal was not generated');
+      assert(proposals[0].decision.status === 'DRAFT' && proposals[0].proposalOnly === true, 'proposal performed an automatic release');
+
+      const draft = await saveDispatchDraft({
+        decision: { ...proposals[0].decision, memo: '브라우저 중단복원 검증' },
+        lines: [{ ...proposals[0].lines[0], dispatchLineId: 'DL-1', plannedActualQuantity: 12, plannedBaseQuantity: 12 }],
+        allocations: [
+          { allocationId: 'DA-1', dispatchLineId: 'DL-1', warehouseId: 'W-01', plannedBaseQuantity: 6 },
+          { allocationId: 'DA-2', dispatchLineId: 'DL-1', warehouseId: 'W-02', plannedBaseQuantity: 6 }
+        ],
+        expectedRevision: 0
+      }, 'ADMIN');
+      assert(draft.decision.status === 'DRAFT' && draft.decision.revision === 1, 'DRAFT was not saved at revision 1');
+      const draftEffects = await sideEffectCounts();
+      assert(JSON.stringify(draftEffects) === JSON.stringify(initialEffects), 'DRAFT changed sales, movements, or fulfillment');
+
+      let revisionConflict = false;
+      try {
+        await saveDispatchDraft({
+          decision: draft.decision, lines: draft.lines, allocations: draft.allocations, expectedRevision: 0
+        }, 'ADMIN');
+      } catch (error) { revisionConflict = /REVISION_CONFLICT:1/.test(String(error)); }
+      assert(revisionConflict, 'stale DRAFT revision was not rejected');
+
+      const released = await releaseDispatch(draft.decision.dispatchId, 1, 'ADMIN', { reservationMinutes: 60 });
+      assert(released.decision.status === 'RELEASED' && released.decision.revision === 2, 'dispatch was not released');
+      assert(released.conflicts.length === 1 && released.conflicts[0].conflictBaseQuantity === 1, 'reservation conflict was not preserved');
+      const releasedEffects = await sideEffectCounts();
+      assert(JSON.stringify(releasedEffects) === JSON.stringify(initialEffects), 'RELEASED changed sales, movements, or fulfillment');
+      let workbench = await getDispatchWorkbenchData();
+      assert(workbench.inventoryProjection.totals.onHandQuantity === 12, 'reservation changed on-hand quantity');
+      assert(workbench.inventoryProjection.totals.availableQuantity === 0, 'reservation did not reduce available quantity including raw negative');
+      const negativeAvailable = workbench.inventoryProjection.rows.find(row => row.warehouseId === 'W-02');
+      assert(negativeAvailable.availableQuantity === -1 && negativeAvailable.negativeAvailable, 'reservation conflict was clamped instead of shown');
+      assert(workbench.workerViews.byLocationProduct.length === 2, 'multi-allocation pick list was not aggregated');
+      const tracedSources = workbench.workerViews.byLocationProduct.flatMap(row => row.sources);
+      assert(tracedSources.every(row => row.dispatchLineId === 'DL-1'), 'aggregate pick row lost dispatchLineId trace');
+      assert(new Set(tracedSources.map(row => row.allocationId)).size === 2, 'aggregate pick row lost allocation trace');
+
+      const workspace = normalizeWorkspaceState({
+        mode: 'WORKER', filters: { status: 'RELEASED' }, selectedDispatchIds: [draft.decision.dispatchId],
+        expandedDispatchIds: [draft.decision.dispatchId], focusedDispatchLineId: 'DL-1', scrollTop: 144
+      });
+      localStorage.setItem(DISPATCH_WORKSPACE_STORAGE_KEY, JSON.stringify(workspace));
+      const restoredWorkspace = normalizeWorkspaceState(JSON.parse(localStorage.getItem(DISPATCH_WORKSPACE_STORAGE_KEY)));
+      assert(JSON.stringify(restoredWorkspace) === JSON.stringify(workspace), 'workspace did not survive interruption restore');
+
+      const workFact = await recordDispatchWorkFact({
+        dispatchId: draft.decision.dispatchId, dispatchLineId: 'DL-1', expectedRevision: 2,
+        workerReportedProductId: 'P-10', workerReportedQuantity: 11,
+        workerExceptionCode: 'QUANTITY_SHORT', workerExceptionMemo: '1개 부족'
+      }, 'ADMIN');
+      assert(workFact.line.workerReportedQuantity === 11 && workFact.line.workStatus === 'EXCEPTION', 'worker fact was not stored');
+      assert(workFact.line.actualBaseQuantity == null, 'M3 worker fact became a confirmed quantity');
+      assert(JSON.stringify(await sideEffectCounts()) === JSON.stringify(initialEffects), 'worker fact changed confirmed business records');
+
+      const recalled = await recallDispatch(draft.decision.dispatchId, 3, 'ADMIN');
+      assert(recalled.status === 'DRAFT' && recalled.revision === 4, 'released work list was not recalled to DRAFT');
+      workbench = await getDispatchWorkbenchData();
+      assert(workbench.inventoryProjection.totals.onHandQuantity === 12 && workbench.inventoryProjection.totals.availableQuantity === 12, 'recall did not release reservations');
+
+      const releasedForExpiry = await releaseDispatch(draft.decision.dispatchId, 4, 'ADMIN', { reservationMinutes: -1 });
+      assert(releasedForExpiry.decision.status === 'RELEASED', 'dispatch could not be re-released after recall');
+      const expiry = await expireDispatchReservations(new Date().toISOString(), 'ADMIN');
+      assert(expiry.expiredCount === 2 && expiry.dispatchIds.includes(draft.decision.dispatchId), 'expired reservations were not handled');
+      const expiredAggregate = await loadDispatchAggregate(draft.decision.dispatchId);
+      assert(expiredAggregate.decision.needsActionCodes.includes('RESERVATION_EXPIRED'), 'expired dispatch was not marked for review');
+      assert(expiredAggregate.reservations.filter(row => row.status === 'EXPIRED').length === 2, 'reservation expiry status was not stored');
+      workbench = await getDispatchWorkbenchData();
+      assert(workbench.inventoryProjection.totals.onHandQuantity === 12 && workbench.inventoryProjection.totals.availableQuantity === 12, 'expiry changed on-hand or retained available reservation');
+      assert(JSON.stringify(await sideEffectCounts()) === JSON.stringify(initialEffects), 'M3 lifecycle created an M4 side effect');
+
+      return {
+        ok: true,
+        databaseVersion: (await openOrderQDb()).version,
+        proposal: { count: proposals.length, status: proposals[0].decision.status, proposalOnly: proposals[0].proposalOnly },
+        draft: { dispatchId: draft.decision.dispatchId, revision: draft.decision.revision, multiAllocationCount: draft.allocations.length },
+        revisionConflict,
+        released: { revision: released.decision.revision, conflictBaseQuantity: released.conflicts[0].conflictBaseQuantity },
+        inventoryAfterRelease: { onHand: 12, available: 0, negativeAvailable: negativeAvailable.availableQuantity },
+        aggregateTrace: tracedSources,
+        workspaceRestore: restoredWorkspace,
+        workerFact: { reportedQuantity: workFact.line.workerReportedQuantity, confirmedQuantity: workFact.line.actualBaseQuantity ?? null },
+        recall: { revision: recalled.revision, available: 12 },
+        expiry,
+        sideEffectCounts: await sideEffectCounts()
+      };
+    }
+
+    run().then(result => {
+      output.textContent = JSON.stringify(result, null, 2);
+      output.dataset.status = 'PASS';
+    }).catch(error => {
+      output.textContent = `${error.stack || error}`;
+      output.dataset.status = 'FAIL';
+    });
+  </script>
+</body>
+</html>
