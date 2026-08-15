@@ -56,7 +56,9 @@ const reversal = validateInventoryReversal(original, {
   sourceDocumentType: 'INVENTORY_REVERSAL', sourceDocumentId: 'RV-1', sourceLineId: 'SL-1'
 });
 assert.equal(reversal.signedBaseQuantity, -original.signedBaseQuantity);
-assert.throws(() => validateInventoryReversal(original, { ...reversal, signedBaseQuantity: 2 }), /ORDERQ_REVERSAL_QUANTITY_MUST_BE_OPPOSITE/);
+assert.equal(validateInventoryReversal(original, { ...reversal, signedBaseQuantity: 2 }).signedBaseQuantity, 2, 'partial reversal must preserve the opposite sign');
+assert.throws(() => validateInventoryReversal(original, { ...reversal, signedBaseQuantity: 4 }), /ORDERQ_REVERSAL_QUANTITY_EXCEEDS_ORIGINAL/);
+assert.throws(() => validateInventoryReversal(original, { ...reversal, signedBaseQuantity: -2 }), /ORDERQ_REVERSAL_QUANTITY_MUST_BE_OPPOSITE/);
 
 const retryPersisted = { ...purchase, movementId: 'IM-1', ledgerSequence: 3, occurredAt: '2026-08-15T09:00:00.000Z', postedAt: '2026-08-15T09:00:01.000Z' };
 assert.equal(sameMovementBusinessContent(retryPersisted, purchase), true, 'generated occurredAt must not break an otherwise identical retry');

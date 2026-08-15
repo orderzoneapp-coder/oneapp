@@ -5,7 +5,9 @@ import {
 
 export const DISPATCH_STATUS = Object.freeze({
   DRAFT: 'DRAFT',
-  RELEASED: 'RELEASED'
+  RELEASED: 'RELEASED',
+  READY_TO_CONFIRM: 'READY_TO_CONFIRM',
+  CONFIRMED: 'CONFIRMED'
 });
 
 export const FULFILLMENT_TYPE = Object.freeze({

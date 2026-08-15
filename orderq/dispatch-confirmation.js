@@ -78,15 +78,21 @@ export function resolveNormalDispatchActuals({ lines = [], allocations = [], com
     }
     if (line.measurementRequired) throw new Error(`ORDERQ_CONFIRM_M5_MEASUREMENT_REQUIRED:${dispatchLineId}`);
 
-    const actualQuantity = hasOwn(input, 'actualQuantity')
-      ? input.actualQuantity
-      : (line.workerReportedQuantity ?? line.plannedActualQuantity ?? line.plannedBaseQuantity);
+    const actualQuantity = hasOwn(input, 'actualQuantity') ? input.actualQuantity : line.actualQuantity;
+    if (actualQuantity === '' || actualQuantity === null || actualQuantity === undefined) {
+      throw new Error(`ORDERQ_CONFIRM_ACTUAL_QUANTITY_REQUIRED:${dispatchLineId}`);
+    }
     const actualUnits = quantityUnits(actualQuantity);
     const plannedUnits = quantityUnits(line.plannedBaseQuantity ?? line.plannedActualQuantity);
     if (actualUnits <= 0) throw new Error(`ORDERQ_CONFIRM_ACTUAL_QUANTITY_REQUIRED:${dispatchLineId}`);
     if (actualUnits > plannedUnits) throw new Error(`ORDERQ_CONFIRM_OVER_DISPATCH_REQUIRES_M5:${dispatchLineId}`);
 
-    const recognizedOrderQuantity = hasOwn(input, 'recognizedOrderQuantity') ? input.recognizedOrderQuantity : actualQuantity;
+    const recognizedOrderQuantity = hasOwn(input, 'recognizedOrderQuantity')
+      ? input.recognizedOrderQuantity
+      : line.recognizedOrderQuantity;
+    if (recognizedOrderQuantity === '' || recognizedOrderQuantity === null || recognizedOrderQuantity === undefined) {
+      throw new Error(`ORDERQ_CONFIRM_RECOGNIZED_QUANTITY_REQUIRED:${dispatchLineId}`);
+    }
     if (quantityUnits(recognizedOrderQuantity) !== actualUnits) {
       throw new Error(`ORDERQ_CONFIRM_M4_RECOGNIZED_QUANTITY_MISMATCH:${dispatchLineId}`);
     }
@@ -102,10 +108,8 @@ export function resolveNormalDispatchActuals({ lines = [], allocations = [], com
         ...allocation,
         actualBaseQuantity: inputAllocations.get(text(allocation.allocationId))
       }));
-    } else if (actualUnits === plannedUnits) {
-      actualAllocations = lineAllocations.map(allocation => ({ ...allocation, actualBaseQuantity: allocation.plannedBaseQuantity }));
-    } else if (lineAllocations.length === 1) {
-      actualAllocations = [{ ...lineAllocations[0], actualBaseQuantity: actualQuantity }];
+    } else if (lineAllocations.every(allocation => allocation.actualBaseQuantity !== '' && allocation.actualBaseQuantity !== null && allocation.actualBaseQuantity !== undefined)) {
+      actualAllocations = lineAllocations.map(allocation => ({ ...allocation, actualBaseQuantity: allocation.actualBaseQuantity }));
     } else {
       throw new Error(`ORDERQ_CONFIRM_ALLOCATION_ACTUAL_REQUIRED:${dispatchLineId}`);
     }
@@ -144,4 +148,43 @@ export function buildDispatchConfirmationKey(dispatchId, revision) {
   const normalizedRevision = Number(revision);
   if (!id || !Number.isInteger(normalizedRevision) || normalizedRevision < 1) throw new Error('ORDERQ_CONFIRMATION_KEY_SOURCE_REQUIRED');
   return `DISPATCH_CONFIRM:${id}:${normalizedRevision}`;
+}
+
+export function normalizeDispatchReversalCommand(source = {}) {
+  const dispatchId = text(source.dispatchId);
+  const idempotencyKey = text(source.idempotencyKey);
+  const expectedRevision = Number(source.expectedRevision);
+  if (!dispatchId) throw new Error('ORDERQ_REVERSE_DISPATCH_ID_REQUIRED');
+  if (!idempotencyKey) throw new Error('ORDERQ_REVERSE_IDEMPOTENCY_KEY_REQUIRED');
+  if (!Number.isInteger(expectedRevision) || expectedRevision < 1) throw new Error('ORDERQ_REVERSE_REVISION_REQUIRED');
+  const reason = text(source.reason);
+  if (!reason) throw new Error('ORDERQ_REVERSE_REASON_REQUIRED');
+  const lines = (Array.isArray(source.lines) ? source.lines : []).map(row => ({
+    dispatchLineId: text(row.dispatchLineId),
+    quantity: quantityFromUnits(quantityUnits(row.quantity ?? row.actualQuantity)),
+    allocations: (Array.isArray(row.allocations) ? row.allocations : []).map(allocation => ({
+      allocationId: text(allocation.allocationId),
+      quantity: quantityFromUnits(quantityUnits(allocation.quantity ?? allocation.actualBaseQuantity))
+    })).sort((left, right) => left.allocationId.localeCompare(right.allocationId))
+  })).sort((left, right) => left.dispatchLineId.localeCompare(right.dispatchLineId));
+  if (lines.some(row => !row.dispatchLineId || row.quantity <= 0)) throw new Error('ORDERQ_REVERSE_LINE_INVALID');
+  return { dispatchId, expectedRevision, idempotencyKey, reason, lines };
+}
+
+export function dispatchReversalFingerprint(command = {}) {
+  const normalized = normalizeDispatchReversalCommand(command);
+  return JSON.stringify(stableValue({
+    dispatchId: normalized.dispatchId,
+    expectedRevision: normalized.expectedRevision,
+    reason: normalized.reason,
+    lines: normalized.lines
+  }));
+}
+
+export function buildDispatchReversalKey(dispatchId, revision, suffix = 'FULL') {
+  const id = text(dispatchId);
+  const normalizedRevision = Number(revision);
+  const normalizedSuffix = text(suffix) || 'FULL';
+  if (!id || !Number.isInteger(normalizedRevision) || normalizedRevision < 1) throw new Error('ORDERQ_REVERSAL_KEY_SOURCE_REQUIRED');
+  return `DISPATCH_REVERSE:${id}:${normalizedRevision}:${normalizedSuffix}`;
 }

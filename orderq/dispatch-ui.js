@@ -12,8 +12,8 @@ import {
   releaseDispatch,
   saveDispatchDraft
 } from './dispatch-workbench-repository.js?v=0.8.0';
-import { buildDispatchConfirmationKey } from './dispatch-confirmation.js?v=0.8.0';
-import { confirmDispatch, confirmDispatchBatch } from './dispatch-confirmation-repository.js?v=0.8.0';
+import { buildDispatchConfirmationKey, buildDispatchReversalKey } from './dispatch-confirmation.js?v=0.8.0';
+import { confirmDispatch, confirmDispatchBatch, recordDispatchActual, reverseDispatch } from './dispatch-confirmation-repository.js?v=0.8.0';
 
 const $ = selector => document.querySelector(selector);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[char]));
@@ -131,7 +131,7 @@ function renderLists() {
         ${action.length ? `<span class="card-meta">${action.map(code => `<span class="action-chip">${esc(code)}</span>`).join('')}</span>` : ''}
       </button>`;
   }).join('') : '<div class="empty-state">조건에 맞는 출고 판단이 없습니다.</div>';
-  $('#summaryText').textContent = `DRAFT ${data.aggregates.filter(row => row.decision.status === 'DRAFT').length} · RELEASED ${data.aggregates.filter(row => row.decision.status === 'RELEASED').length} · CONFIRMED ${data.aggregates.filter(row => row.decision.status === 'CONFIRMED').length} · 현재고 ${qty(data.inventoryProjection.totals.onHandQuantity)} · 가용 ${qty(data.inventoryProjection.totals.availableQuantity)}`;
+  $('#summaryText').textContent = `DRAFT ${data.aggregates.filter(row => row.decision.status === 'DRAFT').length} · RELEASED ${data.aggregates.filter(row => row.decision.status === 'RELEASED').length} · READY ${data.aggregates.filter(row => row.decision.status === 'READY_TO_CONFIRM').length} · CONFIRMED ${data.aggregates.filter(row => row.decision.status === 'CONFIRMED').length} · 현재고 ${qty(data.inventoryProjection.totals.onHandQuantity)} · 가용 ${qty(data.inventoryProjection.totals.availableQuantity)}`;
 }
 
 function warehouseOptions(selected) {
@@ -153,8 +153,12 @@ function renderDetail() {
   const actionButtons = editable
     ? '<button class="dq-btn primary" type="button" data-action="save-draft">DRAFT 저장</button><button class="dq-btn release" type="button" data-action="release">작업목록 배포</button>'
     : decision.status === 'RELEASED'
-      ? '<button class="dq-btn warn" type="button" data-action="recall">작업목록 회수</button><button class="dq-btn primary" type="button" data-action="confirm">출고확정</button>'
-      : '';
+      ? '<button class="dq-btn warn" type="button" data-action="recall">작업목록 회수</button><button class="dq-btn primary" type="button" data-action="record-actual">실제결과 저장</button>'
+      : decision.status === 'READY_TO_CONFIRM'
+        ? '<button class="dq-btn" type="button" data-action="record-actual">실제결과 수정</button><button class="dq-btn primary" type="button" data-action="confirm">출고확정</button>'
+        : decision.status === 'CONFIRMED' && !decision.reversalOf
+          ? '<button class="dq-btn warn" type="button" data-action="reverse-full">전체 역분개</button>'
+          : '';
   const lineBody = lines.map(line => {
     const lineAllocations = allocations.filter(row => row.dispatchLineId === line.dispatchLineId);
     const allocationBody = lineAllocations.map(allocation => {
@@ -164,7 +168,7 @@ function renderDetail() {
       const reservationText = reservation ? `· ${esc(reservation.status)}` : '';
       const conflictText = conflict > 0 ? `예약충돌 ${qty(conflict)}` : '-';
       const actualAllocation = allocation.actualBaseQuantity ?? allocation.plannedBaseQuantity ?? 0;
-      const confirmationInput = decision.status === 'RELEASED'
+      const confirmationInput = ['RELEASED', 'READY_TO_CONFIRM'].includes(decision.status)
         ? `<br><label class="confirm-field">실제 <input class="confirm-allocation-qty" type="number" step="any" value="${Number(actualAllocation)}"></label>`
         : decision.status === 'CONFIRMED' ? `<br><small>실제 ${qty(actualAllocation)}</small>` : '';
       return `<tr class="allocation-row" data-allocation-id="${esc(allocation.allocationId)}" data-line-id="${esc(line.dispatchLineId)}">
@@ -179,7 +183,7 @@ function renderDetail() {
     const plannedQuantity = Number(bufferedLine.plannedBaseQuantity ?? line.plannedBaseQuantity ?? 0);
     const workerResult = line.workerReportedQuantity == null ? '-' : qty(line.workerReportedQuantity);
     const confirmationQuantity = line.actualQuantity ?? line.workerReportedQuantity ?? plannedQuantity;
-    const confirmationInput = decision.status === 'RELEASED'
+    const confirmationInput = ['RELEASED', 'READY_TO_CONFIRM'].includes(decision.status)
       ? `<br><label class="confirm-field">실제 <input class="confirm-line-qty" type="number" step="any" value="${Number(confirmationQuantity)}"></label>`
       : decision.status === 'CONFIRMED' ? `<br><small>실제 ${qty(confirmationQuantity)}</small>` : '';
     return `<tr class="dispatch-line-row" data-line-id="${esc(line.dispatchLineId)}">
@@ -223,11 +227,10 @@ function renderDetail() {
   });
 }
 
-function collectConfirmation(aggregate) {
+function collectActual(aggregate) {
   return {
     dispatchId: aggregate.decision.dispatchId,
     expectedRevision: aggregate.decision.revision,
-    idempotencyKey: buildDispatchConfirmationKey(aggregate.decision.dispatchId, aggregate.decision.revision),
     lines: aggregate.lines.map(line => {
       const row = detail.querySelector(`.dispatch-line-row[data-line-id="${CSS.escape(line.dispatchLineId)}"]`);
       return {
@@ -240,6 +243,14 @@ function collectConfirmation(aggregate) {
         })
       };
     })
+  };
+}
+
+function collectConfirmation(aggregate) {
+  return {
+    dispatchId: aggregate.decision.dispatchId,
+    expectedRevision: aggregate.decision.revision,
+    idempotencyKey: buildDispatchConfirmationKey(aggregate.decision.dispatchId, aggregate.decision.revision)
   };
 }
 
@@ -324,11 +335,23 @@ async function runAction(action, target) {
     } else if (action === 'recall') {
       await recallDispatch(aggregate.decision.dispatchId, aggregate.decision.revision, 'ADMIN');
       showMessage('작업목록을 회수하고 예약을 해제했습니다.', 'success');
+    } else if (action === 'record-actual') {
+      const result = await recordDispatchActual(collectActual(aggregate), 'ADMIN');
+      showMessage(`실제결과 저장 완료: ${result.lines.length}행 · 출고확정 대기`, 'success');
     } else if (action === 'confirm') {
       const result = await confirmDispatch(collectConfirmation(aggregate), 'ADMIN');
       showMessage(`출고확정 완료: 판매 ${result.salesLines.length}행 · 재고 ${result.movements.length}행 · 경고 ${result.reconciliations.length}건`, 'success');
+    } else if (action === 'reverse-full') {
+      const reversalCount = data.aggregates.filter(row => row.decision.reversalOf === aggregate.decision.dispatchId).length;
+      const result = await reverseDispatch({
+        dispatchId: aggregate.decision.dispatchId,
+        expectedRevision: aggregate.decision.revision,
+        idempotencyKey: buildDispatchReversalKey(aggregate.decision.dispatchId, aggregate.decision.revision, `FULL-${reversalCount + 1}`),
+        reason: '관리자 전체 역분개'
+      }, 'ADMIN');
+      showMessage(`전체 역분개 완료: 판매 ${result.salesLines.length}행 · 재고 ${result.movements.length}행`, 'success');
     } else if (action === 'confirm-batch') {
-      const targets = filteredAggregates().filter(row => row.decision.status === 'RELEASED');
+      const targets = filteredAggregates().filter(row => row.decision.status === 'READY_TO_CONFIRM');
       if (!targets.length) throw new Error('확정대기 출고가 없습니다.');
       const result = await confirmDispatchBatch(targets.map(row => ({
         dispatchId: row.decision.dispatchId,

@@ -140,7 +140,7 @@ export async function getDispatchProposals({ businessDate = '', dispatchStageCod
   ]);
   const inventoryProjection = calculateInventoryShadowProjection({ snapshots, inventoryLines, movements, reservations, warehouses });
   const plannedOrderIds = new Set(decisions
-    .filter(row => [DISPATCH_STATUS.DRAFT, DISPATCH_STATUS.RELEASED].includes(row.status))
+    .filter(row => [DISPATCH_STATUS.DRAFT, DISPATCH_STATUS.RELEASED, DISPATCH_STATUS.READY_TO_CONFIRM].includes(row.status))
     .flatMap(row => Array.isArray(row.sourceOrderIds) ? row.sourceOrderIds : []));
   return proposeNormalDispatchDrafts({
     orders: orders.filter(row => !plannedOrderIds.has(row.orderId)),

@@ -11,6 +11,7 @@ import { inheritedAssigneeSnapshot, normalizedOrderView } from './order-document
 import {
   TRANSFER_EVENT_TYPE,
   createAllocationEvent,
+  createReversalEvent,
   deriveOrderLifecycle,
   effectiveOrderQuantity,
   effectiveTransferredQuantity
@@ -21,7 +22,9 @@ import {
   DISPATCH_CONFIRMATION_STEP,
   confirmationCheckpoint,
   dispatchConfirmationFingerprint,
+  dispatchReversalFingerprint,
   normalizeDispatchConfirmationCommand,
+  normalizeDispatchReversalCommand,
   resolveNormalDispatchActuals
 } from './dispatch-confirmation.js?v=0.8.0';
 
@@ -203,6 +206,99 @@ async function inventoryProjectionInTransaction(tx) {
   return calculateInventoryShadowProjection({ snapshots, inventoryLines, movements, reservations, warehouses });
 }
 
+export async function recordDispatchActual(source = {}, actor = 'ADMIN') {
+  const context = requireCapability(actor, CAPABILITY.DISPATCH_CONFIRM);
+  const command = normalizeDispatchConfirmationCommand({ ...source, idempotencyKey: source.idempotencyKey || `ACTUAL_RECORD:${text(source.dispatchId)}:${Number(source.expectedRevision || 0)}` });
+  if (!command.lines.length) throw new Error('ORDERQ_ACTUAL_LINE_REQUIRED');
+  const db = await openOrderQDb();
+  const tx = db.transaction(CONFIRMATION_STORES, 'readwrite');
+  try {
+    const decisionStore = tx.objectStore(STORE.DISPATCH_DECISIONS);
+    const decision = await requestToPromise(decisionStore.get(command.dispatchId));
+    if (!decision) throw new Error('ORDERQ_ACTUAL_DISPATCH_NOT_FOUND');
+    if (!['RELEASED', 'READY_TO_CONFIRM'].includes(text(decision.status).toUpperCase())) throw new Error('ORDERQ_ACTUAL_STATE_INVALID');
+    if (Number(decision.revision || 0) !== command.expectedRevision) throw new Error(`ORDERQ_DISPATCH_REVISION_CONFLICT:${decision.revision}`);
+    const [lines, allocations, reservations] = await Promise.all([
+      allFrom(tx, STORE.DISPATCH_LINES, 'byDispatchId', command.dispatchId),
+      allFrom(tx, STORE.DISPATCH_STOCK_ALLOCATIONS, 'byDispatchId', command.dispatchId),
+      allFrom(tx, STORE.INVENTORY_RESERVATIONS, 'byDispatchId', command.dispatchId)
+    ]);
+    const actuals = resolveNormalDispatchActuals({ lines, allocations, command });
+    await validateBusinessReferences(tx, decision, actuals);
+    const timestamp = nowIso();
+    const activeReservations = new Map(reservations.filter(row => row.status === 'ACTIVE').map(row => [row.reservationId, row]));
+    for (const actual of actuals) {
+      for (const entry of actual.allocations) {
+        const reservation = activeReservations.get(entry.allocation.reservationId);
+        if (!reservation || reservation.allocationId !== entry.allocation.allocationId) throw new Error(`ORDERQ_ACTUAL_ACTIVE_RESERVATION_REQUIRED:${entry.allocation.allocationId}`);
+        if (text(reservation.expiresAt) && text(reservation.expiresAt) <= timestamp) throw new Error(`ORDERQ_ACTUAL_RESERVATION_EXPIRED:${reservation.reservationId}`);
+        if (entry.actualBaseQuantity > finite(reservation.reservedBaseQuantity) + 1e-9) throw new Error(`ORDERQ_ACTUAL_RESERVATION_QUANTITY_EXCEEDED:${reservation.reservationId}`);
+      }
+    }
+    const baseRevision = Number(decision.revision || 0);
+    const nextRevision = baseRevision + 1;
+    const nextLines = actuals.map(actual => {
+      const next = {
+        ...actual.line,
+        actualQuantity: actual.actualQuantity,
+        actualBaseQuantity: actual.actualBaseQuantity,
+        recognizedOrderQuantity: actual.recognizedOrderQuantity,
+        executionStatus: 'READY_TO_CONFIRM',
+        actualRecordedAt: timestamp,
+        actualRecordedBy: context.actorId,
+        updatedAt: timestamp,
+        updatedBy: context.actorId
+      };
+      tx.objectStore(STORE.DISPATCH_LINES).put(next);
+      return next;
+    });
+    const nextAllocations = actuals.flatMap(actual => actual.allocations.map(entry => {
+      const next = {
+        ...entry.allocation,
+        actualBaseQuantity: entry.actualBaseQuantity,
+        status: 'READY_TO_CONFIRM',
+        actualRecordedAt: timestamp,
+        actualRecordedBy: context.actorId,
+        updatedAt: timestamp,
+        updatedBy: context.actorId
+      };
+      tx.objectStore(STORE.DISPATCH_STOCK_ALLOCATIONS).put(next);
+      return next;
+    }));
+    const event = historyEvent('ACTUAL_RECORDED', context.actorId, {
+      lines: actuals.map(actual => ({
+        dispatchLineId: actual.line.dispatchLineId,
+        actualQuantity: actual.actualQuantity,
+        recognizedOrderQuantity: actual.recognizedOrderQuantity,
+        allocations: actual.allocations.map(entry => ({ allocationId: entry.allocation.allocationId, actualBaseQuantity: entry.actualBaseQuantity }))
+      }))
+    }, timestamp);
+    const nextDecision = {
+      ...decision,
+      status: 'READY_TO_CONFIRM',
+      revision: nextRevision,
+      baseRevision,
+      readyAt: timestamp,
+      actualRecordedAt: timestamp,
+      actualRecordedBy: context.actorId,
+      updatedAt: timestamp,
+      updatedBy: context.actorId,
+      history: [...(Array.isArray(decision.history) ? decision.history : []), event],
+      localOnly: true
+    };
+    decisionStore.put(nextDecision);
+    const enqueue = entry => queueLocalEntity(tx, { ...entry, idempotencyKey: command.idempotencyKey });
+    nextLines.forEach(row => enqueue({ entityType: 'DISPATCH_LINE', entityId: row.dispatchLineId, payload: row, revision: nextRevision, baseRevision }));
+    nextAllocations.forEach(row => enqueue({ entityType: 'DISPATCH_STOCK_ALLOCATION', entityId: row.allocationId, payload: row, revision: nextRevision, baseRevision }));
+    enqueue({ entityType: 'DISPATCH_DECISION', entityId: nextDecision.dispatchId, payload: nextDecision, revision: nextRevision, baseRevision });
+    await transactionDone(tx);
+    return { decision: nextDecision, lines: nextLines, allocations: nextAllocations };
+  } catch (error) {
+    try { tx.abort(); } catch {}
+    throw error;
+  }
+}
+
 export async function confirmDispatch(source = {}, actor = 'ADMIN', options = {}) {
   const context = requireCapability(actor, CAPABILITY.DISPATCH_CONFIRM);
   const command = normalizeDispatchConfirmationCommand(source);
@@ -222,7 +318,7 @@ export async function confirmDispatch(source = {}, actor = 'ADMIN', options = {}
     const decisionStore = tx.objectStore(STORE.DISPATCH_DECISIONS);
     const decision = await requestToPromise(decisionStore.get(command.dispatchId));
     if (!decision) throw new Error('ORDERQ_CONFIRM_DISPATCH_NOT_FOUND');
-    if (text(decision.status).toUpperCase() !== 'RELEASED') throw new Error('ORDERQ_CONFIRM_STATE_INVALID');
+    if (text(decision.status).toUpperCase() !== 'READY_TO_CONFIRM') throw new Error('ORDERQ_CONFIRM_STATE_INVALID');
     if (Number(decision.revision || 0) !== command.expectedRevision) {
       throw new Error(`ORDERQ_DISPATCH_REVISION_CONFLICT:${decision.revision}`);
     }
@@ -233,6 +329,7 @@ export async function confirmDispatch(source = {}, actor = 'ADMIN', options = {}
       allFrom(tx, STORE.INVENTORY_RESERVATIONS, 'byDispatchId', command.dispatchId),
       inventoryProjectionInTransaction(tx)
     ]);
+    if (command.lines.length) throw new Error('ORDERQ_CONFIRM_STORED_ACTUALS_ONLY');
     const actuals = resolveNormalDispatchActuals({ lines, allocations, command });
     const { orderMap, itemMap, eventsByOrder } = await validateBusinessReferences(tx, decision, actuals);
     const timestamp = nowIso();
@@ -523,6 +620,349 @@ export async function confirmDispatch(source = {}, actor = 'ADMIN', options = {}
       reservations: nextReservations,
       orderEvents: newEvents,
       reconciliations,
+      outbox: queueRows
+    };
+  } catch (error) {
+    try { tx.abort(); } catch {}
+    throw error;
+  }
+}
+
+async function loadReversalResult(tx, salesDocument, duplicate) {
+  const decision = await requestToPromise(tx.objectStore(STORE.DISPATCH_DECISIONS).get(salesDocument.dispatchId));
+  const [salesLines, movements, outbox] = await Promise.all([
+    allFrom(tx, STORE.SALES_LINES, 'byDocumentId', salesDocument.salesDocumentId),
+    allFrom(tx, STORE.INVENTORY_MOVEMENTS, 'byDispatchId', salesDocument.dispatchId),
+    allFrom(tx, STORE.SYNC_QUEUE)
+  ]);
+  const orderEvents = [];
+  for (const orderId of decision?.sourceOrderIds || []) {
+    const rows = await allFrom(tx, STORE.ORDER_EVENTS, 'byOrderId', orderId);
+    orderEvents.push(...rows.filter(row => row.detail?.salesDocumentId === salesDocument.salesDocumentId || row.detail?.dispatchId === decision.dispatchId));
+  }
+  return {
+    duplicate,
+    decision,
+    salesDocument,
+    salesLines,
+    movements,
+    orderEvents,
+    outbox: outbox.filter(row => row.confirmationIdempotencyKey === salesDocument.idempotencyKey)
+  };
+}
+
+function buildReversalPlan({ command, originalLines, originalAllocations, originalSalesLines, allSalesLines, originalMovements, allMovements }) {
+  const inputByLine = new Map(command.lines.map(row => [row.dispatchLineId, row]));
+  for (const input of command.lines) {
+    if (!originalLines.some(row => row.dispatchLineId === input.dispatchLineId)) throw new Error(`ORDERQ_REVERSE_LINE_UNKNOWN:${input.dispatchLineId}`);
+  }
+  const movementById = new Map(originalMovements.map(row => [row.movementId, row]));
+  const salesLineByDispatchLine = new Map(originalSalesLines.map(row => [row.dispatchLineId, row]));
+  const plan = [];
+  let allRemainingQuantity = 0;
+  for (const line of originalLines) {
+    const originalSalesLine = salesLineByDispatchLine.get(line.dispatchLineId);
+    if (!originalSalesLine) throw new Error(`ORDERQ_REVERSE_ORIGINAL_SALES_LINE_REQUIRED:${line.dispatchLineId}`);
+    const alreadyReversed = allSalesLines
+      .filter(row => row.reversalOf === originalSalesLine.salesLineId)
+      .reduce((sum, row) => sum + Math.abs(finite(row.actualQuantity ?? row.quantity)), 0);
+    const remainingQuantity = finite(originalSalesLine.actualQuantity ?? originalSalesLine.quantity) - alreadyReversed;
+    allRemainingQuantity += Math.max(0, remainingQuantity);
+    const input = inputByLine.get(line.dispatchLineId);
+    if (command.lines.length && !input) continue;
+    const quantity = input ? finite(input.quantity) : remainingQuantity;
+    if (!(quantity > 0)) {
+      if (input) throw new Error(`ORDERQ_REVERSE_QUANTITY_INVALID:${line.dispatchLineId}`);
+      continue;
+    }
+    if (quantity > remainingQuantity + 1e-9) throw new Error(`ORDERQ_REVERSE_EXCEEDS_ORIGINAL:${line.dispatchLineId}`);
+    const allocations = originalAllocations.filter(row => row.dispatchLineId === line.dispatchLineId);
+    const allocationRemaining = allocations.map(allocation => {
+      const originalMovement = movementById.get(allocation.movementId);
+      if (!originalMovement) throw new Error(`ORDERQ_REVERSE_ORIGINAL_MOVEMENT_REQUIRED:${allocation.allocationId}`);
+      const reversed = allMovements
+        .filter(row => row.movementType === INVENTORY_MOVEMENT_TYPE.REVERSAL && row.reversalOf === originalMovement.movementId)
+        .reduce((sum, row) => sum + Math.abs(finite(row.signedBaseQuantity)), 0);
+      return { allocation, originalMovement, remaining: Math.abs(finite(originalMovement.signedBaseQuantity)) - reversed };
+    });
+    let reversalAllocations;
+    if (input) {
+      if (!input.allocations.length) throw new Error(`ORDERQ_REVERSE_ALLOCATION_REQUIRED:${line.dispatchLineId}`);
+      const allocationInput = new Map(input.allocations.map(row => [row.allocationId, row.quantity]));
+      reversalAllocations = allocationRemaining.filter(row => allocationInput.has(row.allocation.allocationId)).map(row => ({
+        ...row,
+        quantity: finite(allocationInput.get(row.allocation.allocationId))
+      }));
+      if (reversalAllocations.length !== allocationInput.size) throw new Error(`ORDERQ_REVERSE_ALLOCATION_UNKNOWN:${line.dispatchLineId}`);
+    } else {
+      reversalAllocations = allocationRemaining.filter(row => row.remaining > 1e-9).map(row => ({ ...row, quantity: row.remaining }));
+    }
+    const allocationTotal = reversalAllocations.reduce((sum, row) => {
+      if (!(row.quantity > 0) || row.quantity > row.remaining + 1e-9) throw new Error(`ORDERQ_REVERSE_ALLOCATION_EXCEEDS_ORIGINAL:${row.allocation.allocationId}`);
+      return sum + row.quantity;
+    }, 0);
+    if (Math.abs(allocationTotal - quantity) > 1e-9) throw new Error(`ORDERQ_REVERSE_ALLOCATION_SUM_MISMATCH:${line.dispatchLineId}`);
+    plan.push({ line, originalSalesLine, quantity, allocations: reversalAllocations });
+  }
+  if (!plan.length) throw new Error('ORDERQ_REVERSE_NOTHING_REMAINING');
+  const requestedTotal = plan.reduce((sum, row) => sum + row.quantity, 0);
+  return { plan, full: Math.abs(requestedTotal - allRemainingQuantity) <= 1e-9 };
+}
+
+export async function reverseDispatch(source = {}, actor = 'ADMIN', options = {}) {
+  const context = requireCapability(actor, CAPABILITY.DISPATCH_REVERSE);
+  const command = normalizeDispatchReversalCommand(source);
+  const fingerprint = dispatchReversalFingerprint(command);
+  const db = await openOrderQDb();
+  const tx = db.transaction(CONFIRMATION_STORES, 'readwrite');
+  try {
+    const salesDocumentStore = tx.objectStore(STORE.SALES_DOCUMENTS);
+    const existing = await requestToPromise(salesDocumentStore.index('byIdempotencyKey').get(command.idempotencyKey));
+    if (existing) {
+      if (existing.sourceDispatchId !== command.dispatchId || existing.reversalRequestFingerprint !== fingerprint) {
+        throw new Error(`ORDERQ_REVERSE_IDEMPOTENCY_CONFLICT:${command.idempotencyKey}`);
+      }
+      const result = await loadReversalResult(tx, existing, true);
+      await transactionDone(tx);
+      return result;
+    }
+    const originalDecision = await requestToPromise(tx.objectStore(STORE.DISPATCH_DECISIONS).get(command.dispatchId));
+    if (!originalDecision || originalDecision.status !== 'CONFIRMED') throw new Error('ORDERQ_REVERSE_ORIGINAL_NOT_CONFIRMED');
+    if (Number(originalDecision.revision || 0) !== command.expectedRevision) throw new Error(`ORDERQ_DISPATCH_REVISION_CONFLICT:${originalDecision.revision}`);
+    const originalSalesDocument = await requestToPromise(salesDocumentStore.get(originalDecision.salesDocumentId));
+    if (!originalSalesDocument || originalSalesDocument.status !== 'CONFIRMED') throw new Error('ORDERQ_REVERSE_ORIGINAL_SALES_DOCUMENT_REQUIRED');
+    if (![ERP_POSTING_STATUS.READY, ERP_POSTING_STATUS.NOT_READY].includes(originalSalesDocument.erpPostingStatus)) {
+      throw new Error('ORDERQ_REVERSE_ERP_CORRECTION_REQUIRES_M8');
+    }
+    const [originalLines, originalAllocations, originalSalesLines, allSalesLines, originalMovements, allMovements] = await Promise.all([
+      allFrom(tx, STORE.DISPATCH_LINES, 'byDispatchId', command.dispatchId),
+      allFrom(tx, STORE.DISPATCH_STOCK_ALLOCATIONS, 'byDispatchId', command.dispatchId),
+      allFrom(tx, STORE.SALES_LINES, 'byDocumentId', originalSalesDocument.salesDocumentId),
+      allFrom(tx, STORE.SALES_LINES),
+      allFrom(tx, STORE.INVENTORY_MOVEMENTS, 'byDispatchId', command.dispatchId),
+      allFrom(tx, STORE.INVENTORY_MOVEMENTS)
+    ]);
+    const reversal = buildReversalPlan({ command, originalLines, originalAllocations, originalSalesLines, allSalesLines, originalMovements, allMovements });
+    const timestamp = nowIso();
+    const reversalDispatchId = newId('DSP-REV');
+    const reversalSalesDocumentId = newId('SD-REV');
+    const reversalSalesLines = reversal.plan.map(row => ({
+      ...row.originalSalesLine,
+      salesLineId: newId('SL-REV'),
+      salesDocumentId: reversalSalesDocumentId,
+      dispatchId: reversalDispatchId,
+      dispatchLineId: newId('DL-REV'),
+      quantity: -row.quantity,
+      actualQuantity: -row.quantity,
+      actualBaseQuantity: -row.quantity,
+      recognizedOrderQuantity: -row.quantity,
+      supplyAmountWon: -Math.round(finite(row.originalSalesLine.unitPriceWon) * row.quantity),
+      vatAmountWon: -Math.round(Math.abs(finite(row.originalSalesLine.vatAmountWon)) * row.quantity / Math.max(finite(row.originalSalesLine.actualQuantity), 1)),
+      status: 'REVERSED',
+      reversalOf: row.originalSalesLine.salesLineId,
+      createdAt: timestamp,
+      createdBy: context.actorId,
+      updatedAt: timestamp,
+      updatedBy: context.actorId
+    }));
+    const reversalSalesDocument = {
+      salesDocumentId: reversalSalesDocumentId,
+      dispatchId: reversalDispatchId,
+      sourceDispatchId: command.dispatchId,
+      customerId: originalSalesDocument.customerId,
+      customerName: originalSalesDocument.customerName,
+      normalizedCustomerName: originalSalesDocument.normalizedCustomerName,
+      businessDate: originalSalesDocument.businessDate,
+      salesDate: originalSalesDocument.salesDate,
+      originSystem: 'ORDER_Q',
+      originTransactionId: reversalDispatchId,
+      idempotencyKey: command.idempotencyKey,
+      reversalRequestFingerprint: fingerprint,
+      status: 'REVERSED',
+      reversalOf: originalSalesDocument.salesDocumentId,
+      erpPostingStatus: ERP_POSTING_STATUS.READY,
+      syncStatus: 'LOCAL_ONLY',
+      supplyAmountWon: reversalSalesLines.reduce((sum, row) => sum + finite(row.supplyAmountWon), 0),
+      vatAmountWon: reversalSalesLines.reduce((sum, row) => sum + finite(row.vatAmountWon), 0),
+      reason: command.reason,
+      confirmedAt: timestamp,
+      confirmedBy: context.actorId,
+      createdAt: timestamp,
+      createdBy: context.actorId,
+      updatedAt: timestamp,
+      updatedBy: context.actorId
+    };
+    reversalSalesDocument.totalAmountWon = reversalSalesDocument.supplyAmountWon + reversalSalesDocument.vatAmountWon;
+    salesDocumentStore.add(reversalSalesDocument);
+    reversalSalesLines.forEach(row => tx.objectStore(STORE.SALES_LINES).add(row));
+    confirmationCheckpoint(options, DISPATCH_CONFIRMATION_STEP.SALES_WRITTEN);
+
+    const reversalLineByOriginal = new Map(reversal.plan.map((row, index) => [row.line.dispatchLineId, reversalSalesLines[index]]));
+    const movementDrafts = reversal.plan.flatMap(row => row.allocations.map(entry => {
+      const reversalLine = reversalLineByOriginal.get(row.line.dispatchLineId);
+      return {
+        productId: entry.originalMovement.productId,
+        productCode: entry.originalMovement.productCode,
+        warehouseId: entry.originalMovement.warehouseId,
+        signedBaseQuantity: entry.quantity,
+        baseUnit: entry.originalMovement.baseUnit,
+        movementType: INVENTORY_MOVEMENT_TYPE.REVERSAL,
+        sourceDocumentType: 'DISPATCH_REVERSAL',
+        sourceDocumentId: reversalSalesDocumentId,
+        sourceLineId: entry.allocation.allocationId,
+        dispatchId: reversalDispatchId,
+        dispatchLineId: reversalLine.dispatchLineId,
+        occurredAt: timestamp,
+        reason: command.reason,
+        reversalOf: entry.originalMovement.movementId,
+        idempotencyKey: `${command.idempotencyKey}:${entry.originalMovement.movementId}`
+      };
+    }));
+    const movementResults = await appendInventoryMovementsInTransaction({ tx, actor: context, drafts: movementDrafts });
+    if (movementResults.some(row => row.duplicate)) throw new Error('ORDERQ_REVERSE_PARTIAL_MOVEMENT_STATE');
+    confirmationCheckpoint(options, DISPATCH_CONFIRMATION_STEP.MOVEMENTS_WRITTEN);
+
+    const newEvents = [];
+    const eventsByOrder = new Map();
+    for (const orderId of originalDecision.sourceOrderIds || []) eventsByOrder.set(orderId, await allFrom(tx, STORE.ORDER_EVENTS, 'byOrderId', orderId));
+    for (const row of reversal.plan) {
+      const reversalLine = reversalLineByOriginal.get(row.line.dispatchLineId);
+      const existingEvents = eventsByOrder.get(row.line.orderId) || [];
+      const allocationEvent = existingEvents.find(event => event.eventType === TRANSFER_EVENT_TYPE.ALLOCATED && event.detail?.salesLineId === row.originalSalesLine.salesLineId);
+      if (!allocationEvent) throw new Error(`ORDERQ_REVERSE_ORIGINAL_FULFILLMENT_REQUIRED:${row.line.dispatchLineId}`);
+      const event = createReversalEvent({
+        allocationEventId: allocationEvent.eventId,
+        idempotencyKey: `${command.idempotencyKey}:${row.line.dispatchLineId}`,
+        orderId: row.line.orderId,
+        orderItemId: row.line.orderItemId,
+        salesDocumentId: reversalSalesDocumentId,
+        salesLineId: reversalLine.salesLineId,
+        quantity: row.quantity,
+        revision: allocationEvent.revision,
+        actor: context.actorId,
+        reason: command.reason,
+        createdAt: timestamp
+      });
+      tx.objectStore(STORE.ORDER_EVENTS).add(event);
+      newEvents.push(event);
+    }
+    for (const orderId of originalDecision.sourceOrderIds || []) {
+      const order = normalizedOrderView(await requestToPromise(tx.objectStore(STORE.ORDERS).get(orderId)));
+      const items = await allFrom(tx, STORE.ORDER_ITEMS, 'byOrderId', orderId);
+      const existingEvents = eventsByOrder.get(orderId) || [];
+      const added = newEvents.filter(row => row.orderId === orderId);
+      const before = deriveOrderLifecycle(order, items, existingEvents);
+      const after = deriveOrderLifecycle(order, items, [...existingEvents, ...added]);
+      const transition = confirmationEvent(order, before, after, added.at(-1), reversalDispatchId, context.actorId, timestamp);
+      if (transition) {
+        tx.objectStore(STORE.ORDER_EVENTS).add(transition);
+        newEvents.push(transition);
+      }
+    }
+    confirmationCheckpoint(options, DISPATCH_CONFIRMATION_STEP.FULFILLMENT_WRITTEN);
+
+    const reversalDecisionLines = reversal.plan.map((row, index) => {
+      const salesLine = reversalSalesLines[index];
+      const next = {
+        ...row.line,
+        dispatchLineId: salesLine.dispatchLineId,
+        dispatchId: reversalDispatchId,
+        actualQuantity: -row.quantity,
+        actualBaseQuantity: -row.quantity,
+        recognizedOrderQuantity: -row.quantity,
+        executionStatus: 'REVERSED',
+        status: 'REVERSED',
+        salesLineId: salesLine.salesLineId,
+        reversalOf: row.line.dispatchLineId,
+        confirmedAt: timestamp,
+        confirmedBy: context.actorId,
+        createdAt: timestamp,
+        createdBy: context.actorId,
+        updatedAt: timestamp,
+        updatedBy: context.actorId
+      };
+      tx.objectStore(STORE.DISPATCH_LINES).add(next);
+      return next;
+    });
+    const reversalAllocations = [];
+    let movementIndex = 0;
+    for (const row of reversal.plan) {
+      const reversalLine = reversalLineByOriginal.get(row.line.dispatchLineId);
+      for (const entry of row.allocations) {
+        const movement = movementResults[movementIndex++].movement;
+        const next = {
+          allocationId: newId('DA-REV'),
+          dispatchId: reversalDispatchId,
+          dispatchLineId: reversalLine.dispatchLineId,
+          warehouseId: entry.allocation.warehouseId,
+          plannedBaseQuantity: -entry.quantity,
+          actualBaseQuantity: -entry.quantity,
+          movementId: movement.movementId,
+          status: 'REVERSED',
+          reversalOf: entry.allocation.allocationId,
+          createdAt: timestamp,
+          createdBy: context.actorId,
+          updatedAt: timestamp,
+          updatedBy: context.actorId
+        };
+        tx.objectStore(STORE.DISPATCH_STOCK_ALLOCATIONS).add(next);
+        reversalAllocations.push(next);
+      }
+    }
+    const event = historyEvent('DISPATCH_REVERSED', context.actorId, {
+      sourceDispatchId: command.dispatchId,
+      reversalType: reversal.full ? 'FULL' : 'PARTIAL',
+      reason: command.reason,
+      salesDocumentId: reversalSalesDocumentId,
+      movementIds: movementResults.map(row => row.movement.movementId),
+      orderEventIds: newEvents.map(row => row.eventId)
+    }, timestamp);
+    const reversalDecision = {
+      dispatchId: reversalDispatchId,
+      dispatchNo: `${originalDecision.dispatchNo}-R-${reversalDispatchId.slice(-6)}`,
+      customerId: originalDecision.customerId,
+      customerName: originalDecision.customerName,
+      sourceOrderIds: originalDecision.sourceOrderIds,
+      dispatchStageCode: originalDecision.dispatchStageCode,
+      status: 'CONFIRMED',
+      revision: 1,
+      baseRevision: 0,
+      businessDate: originalDecision.businessDate,
+      reversalOf: command.dispatchId,
+      reversalType: reversal.full ? 'FULL' : 'PARTIAL',
+      reason: command.reason,
+      idempotencyKey: command.idempotencyKey,
+      salesDocumentId: reversalSalesDocumentId,
+      inventoryMovementIds: movementResults.map(row => row.movement.movementId),
+      fulfillmentEventIds: newEvents.map(row => row.eventId),
+      confirmedAt: timestamp,
+      confirmedBy: context.actorId,
+      createdAt: timestamp,
+      createdBy: context.actorId,
+      updatedAt: timestamp,
+      updatedBy: context.actorId,
+      history: [event],
+      localOnly: true
+    };
+    tx.objectStore(STORE.DISPATCH_DECISIONS).add(reversalDecision);
+    const queueRows = [];
+    const enqueue = entry => queueRows.push(queueLocalEntity(tx, { ...entry, idempotencyKey: command.idempotencyKey }));
+    enqueue({ entityType: 'SALES_DOCUMENT', entityId: reversalSalesDocumentId, payload: reversalSalesDocument });
+    reversalSalesLines.forEach(row => enqueue({ entityType: 'SALES_LINE', entityId: row.salesLineId, payload: row }));
+    movementResults.forEach(row => enqueue({ entityType: 'INVENTORY_MOVEMENT', entityId: row.movement.movementId, payload: row.movement }));
+    newEvents.forEach(row => enqueue({ entityType: 'ORDER_EVENT', entityId: row.eventId, payload: row, revision: row.revision }));
+    reversalDecisionLines.forEach(row => enqueue({ entityType: 'DISPATCH_LINE', entityId: row.dispatchLineId, payload: row }));
+    reversalAllocations.forEach(row => enqueue({ entityType: 'DISPATCH_STOCK_ALLOCATION', entityId: row.allocationId, payload: row }));
+    enqueue({ entityType: 'DISPATCH_DECISION', entityId: reversalDispatchId, payload: reversalDecision });
+    confirmationCheckpoint(options, DISPATCH_CONFIRMATION_STEP.BEFORE_COMMIT);
+    await transactionDone(tx);
+    return {
+      duplicate: false,
+      decision: reversalDecision,
+      salesDocument: reversalSalesDocument,
+      salesLines: reversalSalesLines,
+      movements: movementResults.map(row => row.movement),
+      orderEvents: newEvents,
       outbox: queueRows
     };
   } catch (error) {

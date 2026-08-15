@@ -47,8 +47,17 @@ export async function appendInventoryMovementsInTransaction({ tx, actor, drafts 
       const original = await requestToPromise(movementStore.get(draft.reversalOf));
       validateInventoryReversal(original, draft);
       const allRows = await requestToPromise(movementStore.getAll());
-      const existingReversal = allRows.find(row => row.movementType === INVENTORY_MOVEMENT_TYPE.REVERSAL && row.reversalOf === draft.reversalOf);
-      if (existingReversal) throw new Error(`ORDERQ_MOVEMENT_ALREADY_REVERSED:${draft.reversalOf}`);
+      const reversedQuantity = allRows
+        .filter(row => row.movementType === INVENTORY_MOVEMENT_TYPE.REVERSAL && row.reversalOf === draft.reversalOf)
+        .reduce((sum, row) => sum + Number(row.signedBaseQuantity || 0), 0);
+      const targetQuantity = -Number(original.signedBaseQuantity || 0);
+      const cumulativeQuantity = reversedQuantity + draft.signedBaseQuantity;
+      const exceedsOriginal = targetQuantity > 0
+        ? cumulativeQuantity > targetQuantity + 1e-9
+        : cumulativeQuantity < targetQuantity - 1e-9;
+      if (exceedsOriginal) {
+        throw new Error(`ORDERQ_MOVEMENT_REVERSAL_EXCEEDS_ORIGINAL:${draft.reversalOf}`);
+      }
     }
     sequence += 1;
     const timestamp = nowIso();
