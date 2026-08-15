@@ -15,16 +15,26 @@ import {
   recordDispatchWorkFact,
   releaseDispatch,
   saveDispatchDraft
-} from './dispatch-workbench-repository.js?v=0.8.0';
+} from './dispatch-workbench-repository.js?v=0.9.0';
 import { buildDispatchConfirmationKey, buildDispatchReversalKey } from './dispatch-confirmation.js?v=0.8.0';
-import { confirmDispatch, confirmDispatchBatch, recordDispatchActual, reverseDispatch } from './dispatch-confirmation-repository.js?v=0.8.0';
+import { confirmDispatch, recordDispatchActual, reverseDispatch } from './dispatch-confirmation-repository.js?v=0.9.0';
 import {
   approveOverDispatch,
   approveSubstitution,
   recordCustomerNotice,
   reverseSubstitutionDecision
-} from './dispatch-exception-repository.js?v=0.8.0';
+} from './dispatch-exception-repository.js?v=0.9.0';
 import { PRODUCT_LINE_CONTEXT, applyProductSelection, editProductLine } from './product-line-common.js?v=0.8.0';
+import { runCentralOfficialCommand } from './central-command-gateway.js?v=0.9.0';
+import { disableCentralAuthorityModeForLegacyTest, enableCentralAuthorityMode } from './official-command-policy.js?v=0.9.0';
+
+const legacyLocalBrowserTest = ['127.0.0.1', 'localhost'].includes(location.hostname)
+  && /[?&](?:m3-browser|m4-browser|m4-ready-recovery|m5-browser|m7-browser)=/i.test(location.search);
+if (legacyLocalBrowserTest) disableCentralAuthorityModeForLegacyTest();
+else enableCentralAuthorityMode();
+const runOfficialCommand = (source, operation) => legacyLocalBrowserTest
+  ? operation()
+  : runCentralOfficialCommand(source, operation);
 
 const $ = selector => document.querySelector(selector);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[char]));
@@ -444,81 +454,136 @@ async function runAction(action, target) {
         revision = saved.decision.revision;
         clearDraftBuffer(aggregate.decision.dispatchId);
       }
-      await releaseDispatch(aggregate.decision.dispatchId, revision, 'ADMIN');
-      showMessage('동일 PC 작업목록으로 배포했습니다. 판매와 현재고는 확정되지 않았습니다.', 'success');
+      await runOfficialCommand({
+        commandType:'RELEASE_DISPATCH', aggregateId:aggregate.decision.dispatchId, expectedRevision:revision,
+        idempotencyKey:`M9:RELEASE:${aggregate.decision.dispatchId}:${revision}`
+      }, () => releaseDispatch(aggregate.decision.dispatchId, revision, 'ADMIN'));
+      showMessage('중앙 작업목록으로 배포했습니다. 다른 PC에서도 동기화할 수 있습니다.', 'success');
     } else if (action === 'recall') {
-      await recallDispatch(aggregate.decision.dispatchId, aggregate.decision.revision, 'ADMIN');
+      await runOfficialCommand({
+        commandType:'RECALL_DISPATCH', aggregateId:aggregate.decision.dispatchId, expectedRevision:aggregate.decision.revision,
+        idempotencyKey:`M9:RECALL:${aggregate.decision.dispatchId}:${aggregate.decision.revision}`
+      }, () => recallDispatch(aggregate.decision.dispatchId, aggregate.decision.revision, 'ADMIN'));
       showMessage('작업목록을 회수하고 예약을 해제했습니다.', 'success');
     } else if (action === 'record-actual') {
-      const result = await recordDispatchActual(collectActual(aggregate), 'ADMIN');
+      const actualCommand = collectActual(aggregate);
+      const result = await runOfficialCommand({
+        commandType:'UPDATE_DISPATCH', aggregateId:aggregate.decision.dispatchId, expectedRevision:aggregate.decision.revision,
+        idempotencyKey:`M9:ACTUAL:${aggregate.decision.dispatchId}:${aggregate.decision.revision}`,
+        intent:actualCommand.lines
+      }, () => recordDispatchActual(actualCommand, 'ADMIN'));
       showMessage(`실제결과 저장 완료: ${result.lines.length}행 · 출고확정 대기`, 'success');
     } else if (action === 'approve-substitute') {
-      await approveSubstitution({
+      const approveCommand = {
         dispatchId: aggregate.decision.dispatchId,
         dispatchLineId: target.dataset.lineId,
         expectedRevision: aggregate.decision.revision,
         reason: '관리자 화면 대체상품 승인'
-      }, 'ADMIN');
+      };
+      await runOfficialCommand({
+        commandType:'UPDATE_DISPATCH', aggregateId:aggregate.decision.dispatchId, expectedRevision:aggregate.decision.revision,
+        idempotencyKey:`M9:SUBSTITUTE:${aggregate.decision.dispatchId}:${target.dataset.lineId}:${aggregate.decision.revision}`,
+        intent:approveCommand
+      }, () => approveSubstitution(approveCommand, 'ADMIN'));
       showMessage('대체상품 판단을 승인하고 근거를 기록했습니다.', 'success');
     } else if (action === 'approve-over') {
-      await approveOverDispatch({
+      const approveCommand = {
         dispatchId: aggregate.decision.dispatchId,
         dispatchLineId: target.dataset.lineId,
         expectedRevision: aggregate.decision.revision,
         reason: '관리자 화면 초과출고 승인'
-      }, 'ADMIN');
+      };
+      await runOfficialCommand({
+        commandType:'UPDATE_DISPATCH', aggregateId:aggregate.decision.dispatchId, expectedRevision:aggregate.decision.revision,
+        idempotencyKey:`M9:OVER:${aggregate.decision.dispatchId}:${target.dataset.lineId}:${aggregate.decision.revision}`,
+        intent:approveCommand
+      }, () => approveOverDispatch(approveCommand, 'ADMIN'));
       showMessage('초과 인정출고를 승인하고 수량 근거를 기록했습니다.', 'success');
     } else if (action === 'notice-notified' || action === 'notice-waived') {
       const noticeStatus = action === 'notice-notified' ? CUSTOMER_NOTICE_STATUS.NOTIFIED : CUSTOMER_NOTICE_STATUS.WAIVED;
-      await recordCustomerNotice({
+      const noticeCommand = {
         dispatchId: aggregate.decision.dispatchId,
         dispatchLineId: target.dataset.lineId,
         expectedRevision: aggregate.decision.revision,
         customerNoticeStatus: noticeStatus,
         memo: action === 'notice-notified' ? '관리자 화면 고객 공지 완료' : '관리자 화면 고객 공지 면제'
-      }, 'ADMIN');
+      };
+      await runOfficialCommand({
+        commandType:'UPDATE_DISPATCH', aggregateId:aggregate.decision.dispatchId, expectedRevision:aggregate.decision.revision,
+        idempotencyKey:`M9:NOTICE:${noticeStatus}:${aggregate.decision.dispatchId}:${target.dataset.lineId}:${aggregate.decision.revision}`,
+        intent:noticeCommand
+      }, () => recordCustomerNotice(noticeCommand, 'ADMIN'));
       showMessage(`고객 공지 상태를 ${noticeStatus}(으)로 기록했습니다.`, 'success');
     } else if (action === 'confirm') {
-      const result = await confirmDispatch(collectConfirmation(aggregate), 'ADMIN');
+      const confirmationCommand = collectConfirmation(aggregate);
+      const result = await runOfficialCommand({
+        commandType:'CONFIRM_DISPATCH', aggregateId:aggregate.decision.dispatchId,
+        expectedRevision:aggregate.decision.revision, idempotencyKey:confirmationCommand.idempotencyKey,
+        intent:confirmationCommand.lines
+      }, () => confirmDispatch(confirmationCommand, 'ADMIN'));
       showMessage(`출고확정 완료: 판매 ${result.salesLines.length}행 · 재고 ${result.movements.length}행 · 경고 ${result.reconciliations.length}건`, 'success');
     } else if (action === 'reverse-full') {
       const reversalCount = data.aggregates.filter(row => row.decision.reversalOf === aggregate.decision.dispatchId).length;
-      const result = await reverseDispatch({
+      const reversalCommand = {
         dispatchId: aggregate.decision.dispatchId,
         expectedRevision: aggregate.decision.revision,
         idempotencyKey: buildDispatchReversalKey(aggregate.decision.dispatchId, aggregate.decision.revision, `FULL-${reversalCount + 1}`),
         reason: '관리자 전체 역분개'
-      }, 'ADMIN');
+      };
+      const result = await runOfficialCommand({
+        commandType:'REVERSE_DISPATCH', aggregateId:aggregate.decision.dispatchId,
+        expectedRevision:aggregate.decision.revision, idempotencyKey:reversalCommand.idempotencyKey,
+        intent:{ reason:reversalCommand.reason }
+      }, () => reverseDispatch(reversalCommand, 'ADMIN'));
       showMessage(`전체 역분개 완료: 판매 ${result.salesLines.length}행 · 재고 ${result.movements.length}행`, 'success');
     } else if (action === 'reverse-substitute-decision') {
       const dispatchLineId = target.dataset.lineId;
-      const result = await reverseSubstitutionDecision({
+      const reversalCommand = {
         dispatchId: aggregate.decision.dispatchId,
         dispatchLineId,
         expectedRevision: aggregate.decision.revision,
         idempotencyKey: `SUBSTITUTE_DECISION_REVERSE:${aggregate.decision.dispatchId}:${dispatchLineId}:${aggregate.decision.revision}`,
         reason: '관리자 화면 대체판단 역분개'
-      }, 'ADMIN');
+      };
+      const result = await runOfficialCommand({
+        commandType:'REVERSE_DISPATCH', aggregateId:aggregate.decision.dispatchId,
+        expectedRevision:aggregate.decision.revision, idempotencyKey:reversalCommand.idempotencyKey,
+        intent:{ dispatchLineId }
+      }, () => reverseSubstitutionDecision(reversalCommand, 'ADMIN'));
       showMessage(`대체판단 역분개 완료: 주문 이벤트 ${result.orderEvents.length}건. 판매·재고는 유지됩니다.`, 'success');
     } else if (action === 'confirm-batch') {
       const targets = filteredAggregates().filter(row => row.decision.status === 'READY_TO_CONFIRM');
       if (!targets.length) throw new Error('확정대기 출고가 없습니다.');
-      const result = await confirmDispatchBatch(targets.map(row => ({
-        dispatchId: row.decision.dispatchId,
-        expectedRevision: row.decision.revision,
-        idempotencyKey: buildDispatchConfirmationKey(row.decision.dispatchId, row.decision.revision)
-      })), 'ADMIN');
-      const failed = result.results.filter(row => !row.ok).map(row => `${row.dispatchId}: ${row.error}`);
-      showMessage(`일괄확정 성공 ${result.succeeded}건 · 실패 ${result.failed}건${failed.length ? ` / ${failed.join(' / ')}` : ''}`, result.failed ? 'error' : 'success');
+      const results = [];
+      for (const row of targets) {
+        const command = {
+          dispatchId:row.decision.dispatchId, expectedRevision:row.decision.revision,
+          idempotencyKey:buildDispatchConfirmationKey(row.decision.dispatchId, row.decision.revision)
+        };
+        try {
+          await runOfficialCommand({
+            commandType:'CONFIRM_DISPATCH', aggregateId:row.decision.dispatchId,
+            expectedRevision:row.decision.revision, idempotencyKey:command.idempotencyKey
+          }, () => confirmDispatch(command, 'ADMIN'));
+          results.push({ dispatchId:row.decision.dispatchId, ok:true });
+        } catch (error) { results.push({ dispatchId:row.decision.dispatchId, ok:false, error:error.message || String(error) }); }
+      }
+      const failed = results.filter(row => !row.ok).map(row => `${row.dispatchId}: ${row.error}`);
+      showMessage(`일괄확정 성공 ${results.length - failed.length}건 · 실패 ${failed.length}건${failed.length ? ` / ${failed.join(' / ')}` : ''}`, failed.length ? 'error' : 'success');
     } else if (action === 'work-fact') {
       const form = target.closest('.work-form');
       const current = data.aggregates.find(row => row.decision.dispatchId === form.dataset.dispatchId);
-      await recordDispatchWorkFact({
+      const workCommand = {
         dispatchId: form.dataset.dispatchId, dispatchLineId: form.dataset.lineId, expectedRevision: current.decision.revision,
         workerReportedQuantity: form.querySelector('.reported-qty').value,
         workerExceptionCode: form.querySelector('.exception-code').value,
         workerExceptionMemo: form.querySelector('.exception-memo').value
-      }, 'ADMIN');
+      };
+      await runOfficialCommand({
+        commandType:'UPDATE_DISPATCH', aggregateId:form.dataset.dispatchId, expectedRevision:current.decision.revision,
+        idempotencyKey:`M9:WORK:${form.dataset.dispatchId}:${form.dataset.lineId}:${current.decision.revision}`,
+        intent:workCommand
+      }, () => recordDispatchWorkFact(workCommand, 'ADMIN'));
       showMessage('작업사실을 저장했습니다. 확정수량에는 반영되지 않았습니다.', 'success');
     }
   } catch (error) { showMessage(error.message || String(error), 'error'); }

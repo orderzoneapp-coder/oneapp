@@ -9,6 +9,7 @@ import {
 } from './orderq-db.js?v=0.8.0';
 import { CAPABILITY, requireCapability } from './orderq-v7-contracts.js?v=0.8.0';
 import { calculateInventoryShadowProjection } from './inventory-ledger.js?v=0.8.0';
+import { assertOfficialCommandAuthority } from './official-command-policy.js?v=0.9.0';
 import {
   DISPATCH_STATUS,
   NEEDS_ACTION_CODE,
@@ -241,6 +242,7 @@ export async function saveDispatchDraft({ decision = {}, lines = [], allocations
 }
 
 export async function releaseDispatch(dispatchId, expectedRevision, actor = 'ADMIN', { reservationMinutes = DEFAULT_RESERVATION_MINUTES } = {}) {
+  assertOfficialCommandAuthority('RELEASE_DISPATCH');
   const context = requireCapability(actor, CAPABILITY.DISPATCH_RELEASE);
   const stores = [
     STORE.DISPATCH_DECISIONS, STORE.DISPATCH_LINES, STORE.DISPATCH_STOCK_ALLOCATIONS,
@@ -312,6 +314,7 @@ export async function releaseDispatch(dispatchId, expectedRevision, actor = 'ADM
 }
 
 export async function recallDispatch(dispatchId, expectedRevision, actor = 'ADMIN') {
+  assertOfficialCommandAuthority('RECALL_DISPATCH');
   const context = requireCapability(actor, CAPABILITY.DISPATCH_RELEASE);
   const stores = [STORE.DISPATCH_DECISIONS, STORE.DISPATCH_LINES, STORE.DISPATCH_STOCK_ALLOCATIONS, STORE.INVENTORY_RESERVATIONS, STORE.SYNC_QUEUE];
   const db = await openOrderQDb();
@@ -448,6 +451,7 @@ export async function expireDispatchReservations(asOf = nowIso(), actor = 'ADMIN
 }
 
 export async function recordDispatchWorkFact({ dispatchId, dispatchLineId, expectedRevision, ...source } = {}, actor = 'ADMIN') {
+  assertOfficialCommandAuthority('UPDATE_DISPATCH');
   const context = requireCapability(actor, CAPABILITY.DISPATCH_EDIT);
   const fact = normalizeWorkerFact({ dispatchLineId, ...source });
   const stores = [STORE.DISPATCH_DECISIONS, STORE.DISPATCH_LINES, STORE.SYNC_QUEUE];

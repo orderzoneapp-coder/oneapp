@@ -14,6 +14,7 @@ import {
 } from './orderq-v7-contracts.js?v=0.8.0';
 import { INVENTORY_MOVEMENT_TYPE } from './inventory-ledger.js?v=0.8.0';
 import { appendInventoryMovementsInTransaction } from './inventory-ledger-repository.js?v=0.8.0';
+import { assertOfficialCommandAuthority } from './official-command-policy.js?v=0.9.0';
 import {
   PURCHASE_CONFIRMATION_STEP,
   PURCHASE_STATUS,
@@ -287,6 +288,7 @@ export async function createPurchaseDraftFromShortage(source = {}, actor = 'ADMI
 }
 
 export async function confirmPurchase(source = {}, actor = 'ADMIN', options = {}) {
+  assertOfficialCommandAuthority('CONFIRM_PURCHASE');
   const context = requireCapability(actor, CAPABILITY.PURCHASE_CONFIRM);
   const command = normalizePurchaseConfirmationCommand(source);
   const fingerprint = purchaseConfirmationFingerprint(command);
@@ -462,6 +464,7 @@ function buildPurchaseReversalPlan(command, originalDocument, originalLines, all
 }
 
 export async function reversePurchase(source = {}, actor = 'ADMIN', options = {}) {
+  assertOfficialCommandAuthority('REVERSE_PURCHASE');
   const context = requireCapability(actor, CAPABILITY.PURCHASE_CONFIRM);
   const command = normalizePurchaseReversalCommand(source);
   const fingerprint = purchaseReversalFingerprint(command);
@@ -590,6 +593,7 @@ export async function reversePurchase(source = {}, actor = 'ADMIN', options = {}
 }
 
 export async function reconcilePurchaseExternal(source = {}, actor = 'ADMIN') {
+  assertOfficialCommandAuthority('ERP_TRANSITION');
   const context = requireCapability(actor, CAPABILITY.PURCHASE_CONFIRM);
   const idempotencyKey = text(source.idempotencyKey);
   if (!idempotencyKey) throw new Error('ORDERQ_PURCHASE_RECONCILIATION_IDEMPOTENCY_REQUIRED');

@@ -8,6 +8,7 @@ import {
 } from './orderq-db.js?v=0.8.0';
 import { CAPABILITY, ERP_POSTING_STATUS, requireCapability } from './orderq-v7-contracts.js?v=0.8.0';
 import { DISPATCH_STATUS, validateDispatchDraftPlan } from './dispatch-workbench.js?v=0.8.0';
+import { assertOfficialCommandAuthority } from './official-command-policy.js?v=0.9.0';
 import {
   DISPATCH_CONFIRMATION_STORE_NAMES,
   reverseDispatchInTransaction
@@ -533,6 +534,7 @@ async function loadAdjustmentResult(tx, issue, duplicate) {
 }
 
 export async function adjustDispatchAfterShipment(source = {}, actor = 'ADMIN', options = {}) {
+  assertOfficialCommandAuthority('ADJUST_DISPATCH');
   const context = requireCapability(actor, CAPABILITY.DISPATCH_REVERSE);
   requireCapability(actor, CAPABILITY.DISPATCH_EDIT);
   const command = normalizeDispatchAdjustmentCommand(source);
@@ -657,6 +659,7 @@ export async function adjustDispatchAfterShipment(source = {}, actor = 'ADMIN', 
 }
 
 export async function completeDispatchReconciliation(source = {}, actor = 'ADMIN') {
+  assertOfficialCommandAuthority('ADJUST_DISPATCH');
   const context = requireCapability(actor, CAPABILITY.DISPATCH_REVERSE);
   const command = normalizeReconciliationCompletionCommand(source);
   const db = await openOrderQDb();

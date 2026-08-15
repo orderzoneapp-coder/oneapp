@@ -11,6 +11,9 @@
     import { confirmDispatch, confirmDispatchBatch, recordDispatchActual, reverseDispatch } from '../orderq/dispatch-confirmation-repository.js?v=0.8.0';
     import { expireDispatchReservations, getDispatchProposals, loadDispatchAggregate, recallDispatch, recordDispatchWorkFact, releaseDispatch, saveDispatchDraft } from '../orderq/dispatch-workbench-repository.js?v=0.8.0';
     import { getInventoryLedgerSequence, getInventoryShadowProjection } from '../orderq/inventory-ledger-repository.js?v=0.8.0';
+    import { disableCentralAuthorityModeForLegacyTest } from '../orderq/official-command-policy.js?v=0.9.0';
+
+    disableCentralAuthorityModeForLegacyTest();
 
     const output = document.querySelector('#result');
     const assert = (condition, message) => { if (!condition) throw new Error(message); };

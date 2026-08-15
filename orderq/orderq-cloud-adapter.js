@@ -93,3 +93,45 @@ export function getCloudOrderHead(orderId) {
     orderId
   });
 }
+
+export function migrateCentralDraftEntities(deviceId, idempotencyKey, entities) {
+  return post('orderq_m9_migrate', {
+    schemaVersion: 'ONEAPP_ORDERQ_CENTRAL_V1',
+    deviceId,
+    idempotencyKey,
+    entities
+  });
+}
+
+export function prepareCentralOfficialCommand(command) {
+  return post('orderq_m9_command_prepare', {
+    schemaVersion: 'ONEAPP_ORDERQ_CENTRAL_V1',
+    ...command
+  });
+}
+
+export function commitCentralOfficialCommand(command) {
+  return post('orderq_m9_command_commit', {
+    schemaVersion: 'ONEAPP_ORDERQ_CENTRAL_V1',
+    ...command
+  });
+}
+
+export function abortCentralOfficialCommand(command) {
+  return post('orderq_m9_command_abort', {
+    schemaVersion: 'ONEAPP_ORDERQ_CENTRAL_V1',
+    ...command
+  });
+}
+
+export function pullCentralOfficialChanges(afterSequence = 0, limit = 500) {
+  return post('orderq_m9_pull', {
+    schemaVersion: 'ONEAPP_ORDERQ_CENTRAL_V1',
+    afterSequence,
+    limit
+  });
+}
+
+export function pingCentralAuthority() {
+  return post('orderq_m9_ping', { schemaVersion: 'ONEAPP_ORDERQ_CENTRAL_V1' });
+}

@@ -13,6 +13,7 @@
       DISPATCH_DRAFT_BUFFER_STORAGE_KEY, DISPATCH_WORKSPACE_STORAGE_KEY, normalizeWorkspaceState
     } from '../orderq/dispatch-workbench.js?v=0.8.0';
     import { getSyncState } from '../orderq/orderq-sync-engine.js?v=0.8.0';
+    import { disableCentralAuthorityModeForLegacyTest } from '../orderq/official-command-policy.js?v=0.9.0';
     import {
       expireDispatchReservations,
       getDispatchProposals,
@@ -23,6 +24,8 @@
       releaseDispatch,
       saveDispatchDraft
     } from '../orderq/dispatch-workbench-repository.js?v=0.8.0';
+
+    disableCentralAuthorityModeForLegacyTest();
 
     const output = document.querySelector('#result');
     const assert = (condition, message) => { if (!condition) throw new Error(message); };

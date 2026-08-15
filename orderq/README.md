@@ -2,7 +2,11 @@
 
 신규 ORDER Q 개발 경로. 기존 `orderops/` 및 `orderops_list.html`은 변경하지 않는다.
 
-## vNext 0.8.0 URL
+## vNext 0.9.0 URL
+
+M9 central rule: local DRAFT editing remains available, but RELEASED/READY_TO_CONFIRM/CONFIRMED dispatch, purchase confirmation, reversal, correction, reservation, inventory movement, and ERP-state changes require the central authority endpoint. The server owns revision CAS, expiring leases, cross-ledger quantity/link validation, and global ledger sequence; an unavailable server blocks the official command before local business stores are changed. Expired and aborted lease tokens are terminal and cannot commit later.
+
+ERP remains a separate confirmed accounting system. `/orderq/erp.html` exports operational READY facts to XLSX and reconciles returned exact identifiers and complete row contents. Every expected row must match exactly once before a document advances; partial, missing, duplicate, conflicting, similar, or multiple candidates keep the whole document `REVIEW_REQUIRED`. ORDER Q never posts, cancels, or merges ERP vouchers automatically.
 
 - `/orderq/` 또는 `/orderq/index.html`: 주문현황(전표 목록·펼침·상품상세·수정·출력)
 - `/orderq/input.html`: 주문서 직접입력·수정

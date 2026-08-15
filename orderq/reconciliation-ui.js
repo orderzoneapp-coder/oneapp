@@ -3,7 +3,20 @@ import {
   completeDispatchReconciliation,
   createDispatchReconciliationIssue,
   listDispatchReconciliationWorkspace
-} from './dispatch-reconciliation-repository.js?v=0.8.0';
+} from './dispatch-reconciliation-repository.js?v=0.9.0';
+import { loadDispatchAggregate } from './dispatch-workbench-repository.js?v=0.9.0';
+import { runCentralOfficialCommand } from './central-command-gateway.js?v=0.9.0';
+import { disableCentralAuthorityModeForLegacyTest, enableCentralAuthorityMode } from './official-command-policy.js?v=0.9.0';
+
+let parentSearch = '';
+try { parentSearch = window.parent?.location?.search || ''; } catch {}
+const legacyLocalBrowserTest = ['127.0.0.1', 'localhost'].includes(location.hostname)
+  && /[?&]m8-browser=/i.test(`${location.search}&${parentSearch}`);
+if (legacyLocalBrowserTest) disableCentralAuthorityModeForLegacyTest();
+else enableCentralAuthorityMode();
+const runOfficialCommand = (source, operation) => legacyLocalBrowserTest
+  ? operation()
+  : runCentralOfficialCommand(source, operation);
 
 const state = { workspace: { candidates: [], reconciliations: [] }, selectedType: '', selectedId: '', busy: false };
 const candidateList = document.querySelector('#candidateList');
@@ -208,23 +221,34 @@ document.addEventListener('click', event => {
   });
   if (action === 'create-correction') runBusy(async () => {
     const issue = selectedIssue();
-    const result = await adjustDispatchAfterShipment({
+    const adjustmentCommand = {
       reconciliationId: issue.reconciliationId,
       expectedRevision: issue.revision,
       idempotencyKey: `DATAOPS_ADJUST:${issue.reconciliationId}:${issue.revision}`,
       reason: issue.reasonNote
-    }, 'ADMIN');
+    };
+    const result = await runOfficialCommand({
+      commandType:'ADJUST_DISPATCH', aggregateId:issue.dispatchId,
+      expectedRevision:issue.sourceDispatchRevision, idempotencyKey:adjustmentCommand.idempotencyKey,
+      intent:{ reconciliationId:issue.reconciliationId, issueRevision:issue.revision }
+    }, () => adjustDispatchAfterShipment(adjustmentCommand, 'ADMIN'));
     state.selectedId = result.reconciliation.reconciliationId;
     await refresh();
     setMessage('원 출고를 역분개하고 수정 DRAFT를 생성했습니다.', 'ok');
   });
   if (action === 'complete-issue') runBusy(async () => {
     const issue = selectedIssue();
-    const result = await completeDispatchReconciliation({
+    const completionCommand = {
       reconciliationId: issue.reconciliationId,
       expectedRevision: issue.revision,
       idempotencyKey: `DATAOPS_COMPLETE:${issue.reconciliationId}:${issue.revision}`
-    }, 'ADMIN');
+    };
+    const correction = await loadDispatchAggregate(issue.correctionDispatchId);
+    const result = await runOfficialCommand({
+      commandType:'ADJUST_DISPATCH', aggregateId:issue.correctionDispatchId,
+      expectedRevision:correction.decision.revision, idempotencyKey:completionCommand.idempotencyKey,
+      intent:{ reconciliationId:issue.reconciliationId, issueRevision:issue.revision, complete:true }
+    }, () => completeDispatchReconciliation(completionCommand, 'ADMIN'));
     state.selectedId = result.reconciliation.reconciliationId;
     await refresh();
     setMessage('재확정 결과를 대사 이슈에 연결했습니다.', 'ok');

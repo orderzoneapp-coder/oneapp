@@ -22,6 +22,9 @@
       reversePurchase,
       savePurchaseDraft
     } from '../orderq/purchase-decision-repository.js?v=0.8.0';
+    import { disableCentralAuthorityModeForLegacyTest } from '../orderq/official-command-policy.js?v=0.9.0';
+
+    disableCentralAuthorityModeForLegacyTest();
 
     const output = document.querySelector('#result');
     const consoleWarnings = [];
