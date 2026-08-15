@@ -26,8 +26,8 @@
 
     <main class="dispatch-shell">
       <section class="dispatch-notice">
-        <strong>M3 로컬 작업공간</strong>
-        DRAFT와 RELEASED는 판매·재고수불·주문이행을 확정하지 않습니다. 여러 PC 배포는 M9 이후 사용합니다.
+        <strong>M4 로컬 출고확정</strong>
+        DRAFT와 RELEASED는 판매·재고수불·주문이행에 영향이 없습니다. 관리자의 출고확정만 실제 결과를 한 번에 반영하며 여러 PC 운영은 M9 이후 사용합니다.
       </section>
       <div id="message" class="dispatch-message" role="status"></div>
       <div class="dispatch-toolbar">
@@ -36,9 +36,10 @@
           <button type="button" data-mode="WORKER">작업자 목록</button>
         </div>
         <label>상태
-          <select id="statusFilter"><option value="">전체</option><option value="DRAFT">DRAFT</option><option value="RELEASED">RELEASED</option></select>
+          <select id="statusFilter"><option value="">전체</option><option value="DRAFT">DRAFT</option><option value="RELEASED">RELEASED</option><option value="CONFIRMED">CONFIRMED</option></select>
         </label>
         <label>검색 <input id="searchFilter" type="search" placeholder="출고번호·고객·상품"></label>
+        <button class="dq-btn primary" type="button" data-action="confirm-batch">확정대기 일괄확정</button>
         <span class="dispatch-summary" id="summaryText">불러오는 중…</span>
       </div>
 

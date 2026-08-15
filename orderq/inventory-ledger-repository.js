@@ -28,7 +28,7 @@ function validStoredSequence(value) {
   return Number.isInteger(sequence) && sequence >= 0 ? sequence : 0;
 }
 
-async function appendInTransaction({ tx, actor, drafts }) {
+export async function appendInventoryMovementsInTransaction({ tx, actor, drafts }) {
   const movementStore = tx.objectStore(STORE.INVENTORY_MOVEMENTS);
   const metaStore = tx.objectStore(STORE.META);
   const meta = await requestToPromise(metaStore.get(INVENTORY_LEDGER_SEQUENCE_META_KEY));
@@ -80,7 +80,7 @@ export async function appendInventoryMovements(drafts, actor = 'ADMIN') {
   const db = await openOrderQDb();
   const tx = db.transaction([STORE.INVENTORY_MOVEMENTS, STORE.META], 'readwrite');
   try {
-    const results = await appendInTransaction({ tx, actor: context, drafts });
+    const results = await appendInventoryMovementsInTransaction({ tx, actor: context, drafts });
     await transactionDone(tx);
     return results;
   } catch (error) {

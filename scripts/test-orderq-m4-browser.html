@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="ko">
+<meta charset="utf-8">
+<title>ORDER Q M4 Dispatch Confirmation Browser Test</title>
+<body>
+  <h1>ORDER Q M4 Dispatch Confirmation Browser Test</h1>
+  <pre id="result">RUNNING</pre>
+  <script type="module">
+    import { DB_NAME, STORE, closeOrderQDb, openOrderQDb, requestToPromise, transactionDone } from '../orderq/orderq-db.js?v=0.8.0';
+    import { DISPATCH_CONFIRMATION_STEP, buildDispatchConfirmationKey } from '../orderq/dispatch-confirmation.js?v=0.8.0';
+    import { confirmDispatch, confirmDispatchBatch } from '../orderq/dispatch-confirmation-repository.js?v=0.8.0';
+    import { getDispatchProposals, loadDispatchAggregate, recordDispatchWorkFact, releaseDispatch, saveDispatchDraft } from '../orderq/dispatch-workbench-repository.js?v=0.8.0';
+    import { getInventoryLedgerSequence, getInventoryShadowProjection } from '../orderq/inventory-ledger-repository.js?v=0.8.0';
+
+    const output = document.querySelector('#result');
+    const assert = (condition, message) => { if (!condition) throw new Error(message); };
+    const delay = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
+    const deleteDatabase = () => new Promise((resolve, reject) => {
+      const request = indexedDB.deleteDatabase(DB_NAME);
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+      request.onblocked = () => reject(new Error('test database delete blocked'));
+    });
+    const readAll = async storeName => {
+      const db = await openOrderQDb();
+      const tx = db.transaction(storeName, 'readonly');
+      const rows = await requestToPromise(tx.objectStore(storeName).getAll());
+      await transactionDone(tx);
+      return rows;
+    };
+    const counts = async () => Object.fromEntries(await Promise.all([
+      STORE.SALES_DOCUMENTS, STORE.SALES_LINES, STORE.INVENTORY_MOVEMENTS, STORE.ORDER_EVENTS,
+      STORE.DISPATCH_RECONCILIATIONS, STORE.SYNC_QUEUE
+    ].map(async name => [name, (await readAll(name)).length])));
+    const waitUntil = async (predicate, message, attempts = 50) => {
+      for (let index = 0; index < attempts; index++) {
+        if (await predicate()) return;
+        await delay(100);
+      }
+      throw new Error(message);
+    };
+
+    async function seed() {
+      const db = await openOrderQDb();
+      const stores = [STORE.CUSTOMERS, STORE.PRODUCTS, STORE.WAREHOUSES, STORE.ORDERS, STORE.ORDER_ITEMS, STORE.INVENTORY_SNAPSHOTS, STORE.INVENTORY_LINES];
+      const tx = db.transaction(stores, 'readwrite');
+      tx.objectStore(STORE.CUSTOMERS).put({ customerId: 'C-1', customerName: '테스트 고객', normalizedName: '테스트고객', status: 'ACTIVE' });
+      tx.objectStore(STORE.PRODUCTS).put({ productId: 'P-10', itemCode: '10', itemName: '테스트 상품', normalizedName: '테스트상품', status: 'ACTIVE' });
+      for (const [warehouseId, warehouseCode, quantity] of [['W-01', '01', 4], ['W-02', '02', 3]]) {
+        tx.objectStore(STORE.WAREHOUSES).put({
+          warehouseId, warehouseCode, warehouseName: `${warehouseCode}창고`, normalizedName: `${warehouseCode}창고`,
+          countsInOnHand: true, countsInAvailable: true, status: 'ACTIVE'
+        });
+        tx.objectStore(STORE.INVENTORY_SNAPSHOTS).put({
+          inventorySnapshotId: `IS-${warehouseCode}`, importBatchId: 'B-M4', basisDate: '2026-08-15', warehouseId,
+          snapshotLastSequence: 0, status: 'ACTIVE', createdAt: '2026-08-15T00:00:00.000Z'
+        });
+        tx.objectStore(STORE.INVENTORY_LINES).put({
+          inventoryLineId: `IL-${warehouseCode}`, inventorySnapshotId: `IS-${warehouseCode}`, importBatchId: 'B-M4',
+          productId: 'P-10', productCode: '10', warehouseId, inventoryQuantity: quantity, status: 'ACTIVE'
+        });
+      }
+      for (const [orderId, orderItemId, quantity] of [['O-1', 'OI-1', 10], ['O-2', 'OI-2', 4], ['O-3', 'OI-3', 4]]) {
+        tx.objectStore(STORE.ORDERS).put({
+          orderId, orderNo: `20260815-${orderId.slice(-1).padStart(3, '0')}`, customerId: 'C-1', customerName: '테스트 고객',
+          orderDate: '2026-08-15', orderStatus: 'ORDER', adminStatus: 'CHECKED', opsStatus: 'ACTIVE', revision: 1
+        });
+        tx.objectStore(STORE.ORDER_ITEMS).put({
+          orderItemId, orderId, productId: 'P-10', itemCode: '10', itemName: '테스트 상품',
+          finalQuantity: quantity, finalUnit: 'EA', price: 1000, vatAmount: quantity * 100, matchStatus: 'MATCHED'
+        });
+      }
+      await transactionDone(tx);
+    }
+
+    async function createReleased({ dispatchId, orderId, orderItemId, quantity, allocations }) {
+      const draft = await saveDispatchDraft({
+        decision: { dispatchId, customerId: 'C-1', customerName: '테스트 고객', businessDate: '2026-08-15', status: 'DRAFT' },
+        lines: [{
+          dispatchLineId: `DL-${dispatchId}`, orderId, orderItemId,
+          requestedProductId: 'P-10', requestedProductCode: '10', requestedProductName: '테스트 상품',
+          actualProductId: 'P-10', actualProductCode: '10', actualProductName: '테스트 상품',
+          fulfillmentType: 'NORMAL', plannedActualQuantity: quantity, plannedBaseQuantity: quantity,
+          actualUnit: 'EA', measurementRequired: false
+        }],
+        allocations: allocations.map(([allocationId, warehouseId, plannedBaseQuantity]) => ({
+          allocationId, dispatchLineId: `DL-${dispatchId}`, warehouseId, plannedBaseQuantity
+        })),
+        expectedRevision: 0
+      }, 'ADMIN');
+      return releaseDispatch(dispatchId, draft.decision.revision, 'ADMIN', { reservationMinutes: 60 });
+    }
+
+    async function run() {
+      closeOrderQDb();
+      await deleteDatabase();
+      await openOrderQDb();
+      localStorage.clear();
+      await seed();
+
+      const released = await createReleased({
+        dispatchId: 'D-1', orderId: 'O-1', orderItemId: 'OI-1', quantity: 10,
+        allocations: [['DA-1', 'W-01', 4], ['DA-2', 'W-02', 6]]
+      });
+      const work = await recordDispatchWorkFact({
+        dispatchId: 'D-1', dispatchLineId: 'DL-D-1', expectedRevision: released.decision.revision,
+        workerReportedProductId: 'P-10', workerReportedQuantity: 8,
+        workerExceptionCode: 'QUANTITY_SHORT', workerExceptionMemo: '2개 부분출고'
+      }, 'ADMIN');
+      const command = {
+        dispatchId: 'D-1', expectedRevision: work.decision.revision,
+        idempotencyKey: buildDispatchConfirmationKey('D-1', work.decision.revision),
+        lines: [{
+          dispatchLineId: 'DL-D-1', actualQuantity: 8, recognizedOrderQuantity: 8,
+          allocations: [
+            { allocationId: 'DA-1', actualBaseQuantity: 3 },
+            { allocationId: 'DA-2', actualBaseQuantity: 5 }
+          ]
+        }]
+      };
+
+      const beforeFailureCounts = await counts();
+      const beforeFailureAggregate = await loadDispatchAggregate('D-1');
+      let injectedFailure = '';
+      try {
+        await confirmDispatch(command, 'ADMIN', { failureAt: DISPATCH_CONFIRMATION_STEP.MOVEMENTS_WRITTEN });
+      } catch (error) { injectedFailure = error.message; }
+      assert(injectedFailure.includes('FAILURE_INJECTED:MOVEMENTS_WRITTEN'), 'movement-stage failure was not injected');
+      const afterFailureCounts = await counts();
+      assert(JSON.stringify(afterFailureCounts) === JSON.stringify(beforeFailureCounts), 'failure injection left partial sales, movement, fulfillment, reconciliation, or outbox rows');
+      assert(await getInventoryLedgerSequence() === 0, 'failed transaction consumed ledger sequence');
+      const afterFailureAggregate = await loadDispatchAggregate('D-1');
+      assert(afterFailureAggregate.decision.status === 'RELEASED' && afterFailureAggregate.decision.revision === beforeFailureAggregate.decision.revision, 'failed transaction changed decision state');
+      assert(afterFailureAggregate.reservations.every(row => row.status === 'ACTIVE'), 'failed transaction consumed a reservation');
+
+      const frame = document.createElement('iframe');
+      frame.style.width = '1200px';
+      frame.style.height = '500px';
+      document.body.append(frame);
+      await new Promise((resolve, reject) => {
+        frame.onload = resolve;
+        frame.onerror = () => reject(new Error('dispatch workbench iframe load failed'));
+        frame.src = `../orderq/dispatch.html?m4-browser=${Date.now()}`;
+      });
+      await waitUntil(() => frame.contentDocument.querySelector('[data-action="confirm"]'), 'M4 confirm action did not render');
+      const frameDocument = frame.contentDocument;
+      frameDocument.querySelector('.confirm-line-qty').value = '8';
+      const allocationInputs = [...frameDocument.querySelectorAll('.confirm-allocation-qty')];
+      assert(allocationInputs.length === 2, 'warehouse actual quantity inputs were not rendered');
+      allocationInputs[0].value = '3';
+      allocationInputs[1].value = '5';
+      frameDocument.querySelector('[data-action="confirm"]').click();
+      await waitUntil(async () => (await readAll(STORE.SALES_DOCUMENTS)).length === 1, 'UI confirmation did not complete');
+      await waitUntil(async () => (await loadDispatchAggregate('D-1')).decision.status === 'CONFIRMED', 'UI did not refresh confirmed decision');
+      assert(frameDocument.querySelector('#message').textContent.includes('출고확정 완료'), 'UI did not report confirmation result');
+      frame.remove();
+
+      const result = await confirmDispatch(command, 'ADMIN');
+      assert(result.duplicate === true, 'identical idempotency retry did not return the existing result');
+      assert(result.salesDocument.erpPostingStatus === 'READY', 'M4 confirmation posted ERP instead of leaving READY');
+      assert(result.salesLines.length === 1 && result.salesLines[0].actualQuantity === 8, 'sales fact did not preserve partial actual quantity');
+      assert(result.movements.length === 2 && result.movements.reduce((sum, row) => sum + row.signedBaseQuantity, 0) === -8, 'inventory issue movements do not match confirmed quantity');
+      assert(result.reservations.every(row => row.status === 'CONSUMED'), 'reservations were not consumed');
+      assert(result.orderEvents.filter(row => row.eventType === 'SALES_TRANSFER_ALLOCATED').length === 1, 'normal order fulfillment was not created');
+      assert(result.reconciliations.length === 1 && result.reconciliations[0].detail.onHandAfter === -2, 'negative inventory warning did not preserve the raw value');
+      assert(result.outbox.length > 0 && result.outbox.every(row => row.status === 'LOCAL_ONLY' && row.localOnly === true), 'M4 outbox escaped the pre-M9 local boundary');
+      const countsAfterSuccess = await counts();
+      const sequenceAfterSuccess = await getInventoryLedgerSequence();
+      const retryAgain = await confirmDispatch(command, 'ADMIN');
+      assert(retryAgain.duplicate === true, 'second retry was not idempotent');
+      assert(JSON.stringify(await counts()) === JSON.stringify(countsAfterSuccess), 'idempotency retry duplicated business rows');
+      assert(await getInventoryLedgerSequence() === sequenceAfterSuccess, 'idempotency retry consumed ledger sequence');
+
+      let idempotencyConflict = '';
+      try {
+        await confirmDispatch({ ...command, lines: [{
+          dispatchLineId: 'DL-D-1', actualQuantity: 7, recognizedOrderQuantity: 7,
+          allocations: [{ allocationId: 'DA-1', actualBaseQuantity: 3 }, { allocationId: 'DA-2', actualBaseQuantity: 4 }]
+        }] }, 'ADMIN');
+      } catch (error) { idempotencyConflict = error.message; }
+      assert(idempotencyConflict.includes('IDEMPOTENCY_CONFLICT'), 'same idempotency key with changed content was accepted');
+      assert(JSON.stringify(await counts()) === JSON.stringify(countsAfterSuccess), 'idempotency conflict changed business rows');
+
+      const projection = await getInventoryShadowProjection();
+      assert(projection.totals.onHandQuantity === -1, 'negative total was clamped or calculated incorrectly');
+      const negativeRow = projection.rows.find(row => row.productId === 'P-10' && row.warehouseId === 'W-02');
+      assert(negativeRow.onHandQuantity === -2 && negativeRow.negativeOnHand === true, 'warehouse negative raw value/warning was lost');
+      const proposals = await getDispatchProposals({ businessDate: '2026-08-15' });
+      const remainder = proposals.find(row => row.lines.some(line => line.orderId === 'O-1'));
+      assert(remainder?.lines[0]?.plannedBaseQuantity === 2, 'partial dispatch remainder was not available for a new proposal');
+
+      const released2 = await createReleased({ dispatchId: 'D-2', orderId: 'O-2', orderItemId: 'OI-2', quantity: 4, allocations: [['DA-3', 'W-01', 4]] });
+      const released3 = await createReleased({ dispatchId: 'D-3', orderId: 'O-3', orderItemId: 'OI-3', quantity: 4, allocations: [['DA-4', 'W-01', 4]] });
+      const batch = await confirmDispatchBatch([
+        { dispatchId: 'D-2', expectedRevision: released2.decision.revision, idempotencyKey: buildDispatchConfirmationKey('D-2', released2.decision.revision) },
+        { dispatchId: 'D-3', expectedRevision: released3.decision.revision - 1, idempotencyKey: buildDispatchConfirmationKey('D-3', released3.decision.revision - 1) }
+      ], 'ADMIN');
+      assert(batch.succeeded === 1 && batch.failed === 1, 'batch confirmation did not isolate success and failure by DispatchDecision');
+      assert((await loadDispatchAggregate('D-2')).decision.status === 'CONFIRMED', 'batch success was not committed');
+      assert((await loadDispatchAggregate('D-3')).decision.status === 'RELEASED', 'batch failure partially committed');
+      const d2Events = (await readAll(STORE.ORDER_EVENTS)).filter(row => row.orderId === 'O-2');
+      assert(d2Events.some(row => row.eventType === 'SALES_TRANSFER_ALLOCATED') && d2Events.some(row => row.eventType === 'ORDER_OPERATIONS_CLOSED'), 'normal full dispatch did not complete order fulfillment lifecycle');
+      const d2Movements = (await readAll(STORE.INVENTORY_MOVEMENTS)).filter(row => row.dispatchId === 'D-2');
+      assert(d2Movements.length === 1 && d2Movements[0].signedBaseQuantity === -4, 'normal full dispatch movement does not match sales fact');
+      const d2DocumentCount = (await readAll(STORE.SALES_DOCUMENTS)).filter(row => row.dispatchId === 'D-2').length;
+      const retryFailed = await confirmDispatchBatch([{
+        dispatchId: 'D-3', expectedRevision: released3.decision.revision,
+        idempotencyKey: buildDispatchConfirmationKey('D-3', released3.decision.revision)
+      }], 'ADMIN');
+      assert(retryFailed.succeeded === 1 && retryFailed.failed === 0, 'failed batch item could not be retried independently');
+      assert((await readAll(STORE.SALES_DOCUMENTS)).filter(row => row.dispatchId === 'D-2').length === d2DocumentCount, 'retrying a failed batch item duplicated a prior success');
+
+      return {
+        ok: true,
+        databaseVersion: (await openOrderQDb()).version,
+        atomicRollback: { injectedFailure, beforeFailureCounts, afterFailureCounts },
+        partialConfirmation: {
+          actualQuantity: result.salesLines[0].actualQuantity,
+          movementTotal: result.movements.reduce((sum, row) => sum + row.signedBaseQuantity, 0),
+          remainingProposal: remainder.lines[0].plannedBaseQuantity
+        },
+        inventory: { totalOnHand: projection.totals.onHandQuantity, warehouse02: negativeRow.onHandQuantity, warning: negativeRow.negativeOnHand },
+        idempotency: { duplicate: result.duplicate, sequenceAfterSuccess, conflict: idempotencyConflict },
+        reservationStatuses: result.reservations.map(row => ({ id: row.reservationId, status: row.status, consumed: row.consumedBaseQuantity, released: row.releasedBaseQuantity })),
+        erpPostingStatus: result.salesDocument.erpPostingStatus,
+        fulfillmentEvents: result.orderEvents.map(row => row.eventType),
+        outboxTypes: [...new Set(result.outbox.map(row => row.entityType))],
+        batch: { succeeded: batch.succeeded, failed: batch.failed, failedRetrySucceeded: retryFailed.succeeded, normalFullEvents: d2Events.map(row => row.eventType) }
+      };
+    }
+
+    run().then(result => {
+      output.textContent = `PASS\n${JSON.stringify(result, null, 2)}`;
+      document.title = 'PASS ORDER Q M4 Browser Test';
+    }).catch(error => {
+      console.error(error);
+      output.textContent = `FAIL\n${error.stack || error.message || error}`;
+      document.title = 'FAIL ORDER Q M4 Browser Test';
+    });
+  </script>
+</body>
+</html>
