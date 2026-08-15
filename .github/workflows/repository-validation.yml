@@ -74,6 +74,9 @@ jobs:
       - name: Test ORDER Q M6 purchase decision and receipt contracts
         run: node scripts/test-orderq-m6-purchase-decision.mjs
 
+      - name: Test ORDER Q M7 quick product and common line contracts
+        run: node scripts/test-orderq-m7-common-products.mjs
+
       - name: Test DataOps zero and negative stock preservation
         run: node scripts/test-dataops-zero-stock-contract.mjs
 

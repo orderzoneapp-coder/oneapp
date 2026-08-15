@@ -80,6 +80,9 @@ export function normalizeMasterProduct(raw = {}, fallbackCode = '', source = 'CO
     outPrice,
     priceOptions,
     status: firstValue(raw, ['status', '상태'], 'ACTIVE'),
+    productIdentityType: firstValue(raw, ['productIdentityType']),
+    registrationStatus: firstValue(raw, ['registrationStatus']),
+    masterProductId: firstValue(raw, ['masterProductId']),
     source,
     raw
   };
@@ -97,6 +100,7 @@ export function mergeProductCatalog(commonProducts = [], orderQProducts = []) {
   const catalog = new Map();
   const add = product => {
     if (!product || String(product.status || 'ACTIVE').toUpperCase() === 'INACTIVE') return;
+    if (product.productIdentityType === 'TEMPORARY' && product.registrationStatus === 'LINKED') return;
     const key = normalizeText(product.itemCode) || `${normalizeText(product.itemName)}|${normalizeText(product.specification)}`;
     if (!key || catalog.has(key)) return;
     catalog.set(key, product);

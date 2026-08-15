@@ -24,6 +24,7 @@ import {
   recordCustomerNotice,
   reverseSubstitutionDecision
 } from './dispatch-exception-repository.js?v=0.8.0';
+import { PRODUCT_LINE_CONTEXT, applyProductSelection, editProductLine } from './product-line-common.js?v=0.8.0';
 
 const $ = selector => document.querySelector(selector);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[char]));
@@ -364,6 +365,11 @@ function collectDraft(aggregate) {
     const row = detail.querySelector(`[data-line-id="${CSS.escape(line.dispatchLineId)}"].dispatch-line-row`);
     const productId = row.querySelector('.line-actual-product').value;
     const product = data.products.find(candidate => candidate.productId === productId) || {};
+    const selectedProduct = productId
+      ? applyProductSelection(PRODUCT_LINE_CONTEXT.DISPATCH, line, product)
+      : editProductLine(PRODUCT_LINE_CONTEXT.DISPATCH, line, {
+        actualProductId: '', actualProductCode: '', actualProductName: ''
+      });
     const conversionType = row.querySelector('.line-conversion-type').value;
     const conversionRuleId = row.querySelector('.line-conversion-rule-id').value.trim();
     const conversionRuleVersion = row.querySelector('.line-conversion-rule-version').value.trim();
@@ -374,11 +380,8 @@ function collectDraft(aggregate) {
       actualToRecognizedFactor: Number(row.querySelector('.line-actual-to-recognized').value)
     };
     const customerNoticeRequired = row.querySelector('.line-notice-required').checked;
-    return {
-      ...line,
-      actualProductId: productId,
-      actualProductCode: product.itemCode || product.productCode || '',
-      actualProductName: product.itemName || product.productName || '',
+    return editProductLine(PRODUCT_LINE_CONTEXT.DISPATCH, line, {
+      ...selectedProduct,
       fulfillmentType: row.querySelector('.line-fulfillment-type').value,
       plannedActualQuantity: Number(row.querySelector('.line-qty').value),
       plannedBaseQuantity: Number(row.querySelector('.line-base-qty').value),
@@ -394,7 +397,7 @@ function collectDraft(aggregate) {
       priceChangeReason: row.querySelector('.line-price-reason').value.trim(),
       customerNoticeRequired,
       customerNoticeStatus: customerNoticeRequired ? CUSTOMER_NOTICE_STATUS.PENDING : CUSTOMER_NOTICE_STATUS.NOT_REQUIRED
-    };
+    });
   });
   const allocations = aggregate.allocations.map(allocation => {
     const row = detail.querySelector(`[data-allocation-id="${CSS.escape(allocation.allocationId)}"]`);

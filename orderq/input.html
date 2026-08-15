@@ -30,6 +30,7 @@
         <a class="btn dark" href="./parser.html">ORDER IN</a>
         <a class="btn dark" href="./operations.html">ORDER Q 운영</a>
         <a class="btn dark" href="./index.html">주문현황</a>
+        <a class="btn dark" href="./products.html">간편상품</a>
         <button class="btn primary" id="saveTopBtn" type="button">저장</button>
       </div>
     </header>
@@ -221,7 +222,10 @@
       syncBeforeOrderMutation, syncAfterLocalMutation, getSyncState,
       CloudOrderConflictError
     } from './orderq-sync-engine.js?v=0.8.0';
-    import { loadProductCatalog, searchProductCatalog } from './product-master-search.js?v=0.8.0';
+    import { loadProductCatalog } from './product-master-search.js?v=0.8.0';
+    import {
+      PRODUCT_LINE_CONTEXT, applyProductSelection, editProductLine, searchLineProducts as searchProductCatalog
+    } from './product-line-common.js?v=0.8.0';
     import { loadWarehouseCatalog, matchWarehouseInput, warehouseDisplayName } from './warehouse-master.js?v=0.8.0';
     import {
       calculateLineTotal, calculateVatAmount, compareManualRows, cycleManualPriceOption, numberOrNull, shiftIsoDate
@@ -796,15 +800,16 @@
     function applyProduct(input, product) {
       const row = input.closest('tr');
       if (!row || !product) return;
+      const selected = applyProductSelection(PRODUCT_LINE_CONTEXT.ORDER, {}, product);
       const originalText = row.querySelector('[data-field="itemName"]').value.trim() || input.value.trim();
-      row.dataset.productId = product.productId;
+      row.dataset.productId = selected.productId;
       row.dataset.matchSource = product.source === 'COMMON_MASTER' ? 'MANUAL_COMMON_MASTER' : 'MANUAL_ORDERQ_MASTER';
       row.dataset.rawText = originalText || product.itemName;
-      row.querySelector('[data-field="itemCode"]').value = product.itemCode || '';
-      row.querySelector('[data-field="itemName"]').value = product.itemName || '';
-      row.querySelector('[data-field="specification"]').value = product.specification || '';
+      row.querySelector('[data-field="itemCode"]').value = selected.itemCode || '';
+      row.querySelector('[data-field="itemName"]').value = selected.itemName || '';
+      row.querySelector('[data-field="specification"]').value = selected.specification || '';
       row.querySelector('[data-field="boxQuantity"]').value = product.boxQuantity ?? '';
-      row.querySelector('[data-field="finalUnit"]').value = product.finalUnit || '';
+      row.querySelector('[data-field="finalUnit"]').value = selected.finalUnit || '';
       setRowPriceOptions(row, product.priceOptions || []);
       const selectedPriceType = activeMasterPriceKey();
       const defaultPrice = product.priceOptions?.find(option => option.key === selectedPriceType);
