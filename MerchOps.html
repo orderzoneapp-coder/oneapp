@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.190_ConditionalWorkbenches]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.191_ManualPromoWorkbench]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -12,6 +12,7 @@
     <script src="coreEngine.js"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <script>
+    // v2.1.191: 행사테마 필터 뒤에 작업 버튼을 추가해 테마 선택 없이도 행사 작업대를 수동으로 열고 닫을 수 있게 한다.
     // v2.1.190: 이슈 필터를 단일선택으로 통일하고 행사 작업대는 상위 행사테마 선택 시에만 노출하며 입고가없음의 싯가판매/판매정지 예약을 F7 일괄 저장에 연결한다.
     // v2.1.189: QuickF8 쇼핑몰업로드의 복합 상품코드 헤더를 인식하여 수정·재저장 파일도 다시 불러올 수 있게 한다.
     // v2.1.188: 테마 없음 필터를 추가하고 기본상품 분류와 행사제안을 제거하며 행사상태를 행사가/행사가없음으로 명확히 구분한다.
@@ -11342,8 +11343,9 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
     // 카테고리·테마는 기본 단일선택, Ctrl/⌘ 클릭 시 다중선택이며, 하단 작업줄은 룰적용/행사가/제외·정지 액션과 필터 중심으로 둔다.
     // 2단 상세필터: 판매중/정지&품절/안전(-)/BOX/EA/소분.
     const [promoActionOpen, setPromoActionOpen] = useState(false);
+    const [promoWorkbenchManualOpen, setPromoWorkbenchManualOpen] = useState(false);
     // [M-PROMO-WORKBENCH-01] 행사 작업대
-    // 상단에서 행사 또는 테마1~5를 선택한 경우에만 행사상태·행사가 작업대를 노출한다.
+    // 상단 행사·테마1~5 선택 또는 작업 버튼으로 행사상태·행사가 작업대를 노출한다.
     // [M-FILTER-PRESET-ONLY-01] MerchOps에서는 필터 자동화 편집 UI를 노출하지 않는다. 저장된 양식 필터만 적용한다.
     const [filterScenarioOpen, setFilterScenarioOpen] = useState(false);
     // [M-FILTER-DETAIL-RESTORE] 상세필터 복구: 상세필터 버튼을 눌렀을 때 하단 필터줄을 다시 생성하고,
@@ -11354,14 +11356,24 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
     const activeThemeFilters = (Array.isArray(detailFilters) ? detailFilters : []).filter(isThemeFilterValue);
     const isAllThemeFilterActive = allThemeFilters.every(value => activeThemeFilters.includes(value)) && !activeThemeFilters.includes('themeNone');
     const isPromoThemeSelected = activeThemeFilters.some(value => allThemeFilters.includes(value));
+    const isPromoWorkbenchVisible = isPromoThemeSelected || promoWorkbenchManualOpen;
     const isPromoStateFilterActive = ['promo', 'promoExclude'].includes(priceFilter);
     const promoWorkbenchFilterCount = isPromoStateFilterActive ? 1 : 0;
-    const isPromoWorkbenchActive = promoWorkbenchFilterCount > 0 || promoActionOpen;
+    const isPromoWorkbenchActive = promoWorkbenchFilterCount > 0 || promoActionOpen || promoWorkbenchManualOpen;
+    const togglePromoWorkbenchManual = () => {
+        const nextOpen = !promoWorkbenchManualOpen;
+        setPromoWorkbenchManualOpen(nextOpen);
+        if (!nextOpen && !isPromoThemeSelected) {
+            setPromoActionOpen(false);
+            if (['promo', 'promoExclude', 'previousPromo'].includes(priceFilter)) setPriceFilter('all');
+        }
+        setSelectedRows(new Set());
+    };
     useEffect(() => {
-        if (isPromoThemeSelected) return;
+        if (isPromoWorkbenchVisible) return;
         if (promoActionOpen) setPromoActionOpen(false);
         if (['promo', 'promoExclude', 'previousPromo'].includes(priceFilter)) setPriceFilter('all');
-    }, [isPromoThemeSelected, promoActionOpen, priceFilter, setPriceFilter]);
+    }, [isPromoWorkbenchVisible, promoActionOpen, priceFilter, setPriceFilter]);
     const isDetailFilterActive = Array.isArray(detailFilters) && detailFilters.some(v => !isThemeFilterValue(v) && !['margin', 'noInboundPrice'].includes(v));
     const showDetailFilterPanel = filterPanelOpen || isDetailFilterActive || (selectedRows.size > 0 && !registrationMode);
     const activeTableTarget = normalizeMerchTableTarget((config === null || config === void 0 ? void 0 : config.activeTableTarget) || DEFAULT_TABLE_VIEW_TARGET);
@@ -11769,6 +11781,7 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
         setSelectedRows(new Set());
         setFilterPanelOpen(false);
         setPromoActionOpen(false);
+        setPromoWorkbenchManualOpen(false);
         setFilterScenarioOpen(false);
         resetBulkInputs();
     };
@@ -11868,7 +11881,10 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
                             ['theme4', '테마4'],
                             ['theme5', '테마5'],
                             ['themeNone', '없음']
-                        ].map(([value, label]) => React.createElement("button", { key: `main-theme-${value}`, onMouseDown: (event) => beginThemeDrag(value, event), onMouseEnter: () => continueThemeDrag(value), onClick: (event) => handleThemeClick(value, event), draggable: false, className: `h-7 px-2.5 rounded-lg text-[11px] font-black border transition-all whitespace-nowrap shrink-0 select-none ${detailFilters.includes(value) ? 'bg-purple-700 text-white border-purple-700' : 'bg-white text-purple-700 border-purple-200 hover:bg-purple-100'}`, title: `${label}: 마스터 행사테마 기준 · 클릭 단일선택 / Ctrl·⌘ 클릭 다중선택 / 드래그 연속선택` }, label))),
+                        ].map(([value, label]) => React.createElement("button", { key: `main-theme-${value}`, onMouseDown: (event) => beginThemeDrag(value, event), onMouseEnter: () => continueThemeDrag(value), onClick: (event) => handleThemeClick(value, event), draggable: false, className: `h-7 px-2.5 rounded-lg text-[11px] font-black border transition-all whitespace-nowrap shrink-0 select-none ${detailFilters.includes(value) ? 'bg-purple-700 text-white border-purple-700' : 'bg-white text-purple-700 border-purple-200 hover:bg-purple-100'}`, title: `${label}: 마스터 행사테마 기준 · 클릭 단일선택 / Ctrl·⌘ 클릭 다중선택 / 드래그 연속선택` }, label)),
+                        React.createElement("button", { type: "button", onClick: togglePromoWorkbenchManual, className: `h-7 px-2.5 rounded-lg text-[11px] font-black border transition-all whitespace-nowrap shrink-0 ${promoWorkbenchManualOpen ? 'bg-rose-600 text-white border-rose-600 shadow-sm' : 'bg-white text-rose-700 border-rose-200 hover:bg-rose-50'}`, title: promoWorkbenchManualOpen ? "테마 선택 없이 연 행사 작업대를 닫습니다." : "상품 필터를 바꾸지 않고 행사 작업대를 엽니다." },
+                            React.createElement("i", { className: "fas fa-tools mr-1.5 text-[10px]" }),
+                            "작업")),
                     React.createElement("div", { "data-merch-issue-filter-group": "single", className: "flex h-9 items-center gap-1 rounded-xl border border-slate-200 bg-slate-50/70 px-1 shadow-sm shrink-0", title: "이슈 필터는 역마진·가격변동·입고가없음 중 하나만 선택됩니다." },
                         React.createElement("button", { onClick: () => selectIssueFilter('margin'), className: `h-7 px-2.5 rounded-lg text-[12px] font-black border transition-all whitespace-nowrap shrink-0 ${detailFilters.includes('margin') ? 'bg-rose-600 text-white border-rose-600' : 'bg-white text-rose-700 border-rose-200 hover:bg-rose-50'}`, title: "역마진 상품만 표시합니다. 이슈 필터는 하나만 선택됩니다." }, "역마진"),
                         React.createElement("button", { onClick: () => selectIssueFilter('priceCheck'), className: `h-7 px-2.5 rounded-lg text-[12px] font-black border transition-all whitespace-nowrap shrink-0 ${priceFilter === 'priceCheck' ? 'bg-amber-500 text-white border-amber-500' : 'bg-white text-amber-700 border-amber-200 hover:bg-amber-50'}`, title: "가격변동 상품만 표시합니다. 이슈 필터는 하나만 선택됩니다." }, "가격변동"),
@@ -11902,7 +11918,7 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
                 React.createElement("button", { onClick: handleExitRegistrationMode, className: "h-8 px-2.5 rounded-lg text-[11px] font-bold shadow-sm flex items-center bg-white text-slate-700 border border-slate-300 hover:bg-slate-50", title: "기존 테이블 양식으로 복귀" },
                     React.createElement("i", { className: "fas fa-arrow-left mr-1.5 text-[13px]" }),
                     "이전 양식")),
-            isPromoThemeSelected && React.createElement("div", { "data-merch-promo-workbench": "theme-selected", className: `rounded-xl border px-3 py-2 shadow-inner flex items-center gap-2 flex-wrap select-none transition-colors ${isPromoWorkbenchActive ? 'border-rose-200 bg-gradient-to-r from-purple-50/80 via-white to-rose-50/80' : 'border-purple-200 bg-purple-50/50'}`, title: "상단 행사 또는 테마1~5 선택 범위에서 사용하는 행사 전용 작업대" },
+            isPromoWorkbenchVisible && React.createElement("div", { "data-merch-promo-workbench": promoWorkbenchManualOpen && !isPromoThemeSelected ? "manual-open" : "theme-selected", className: `rounded-xl border px-3 py-2 shadow-inner flex items-center gap-2 flex-wrap select-none transition-colors ${isPromoWorkbenchActive ? 'border-rose-200 bg-gradient-to-r from-purple-50/80 via-white to-rose-50/80' : 'border-purple-200 bg-purple-50/50'}`, title: "상단 행사테마 선택 또는 작업 버튼으로 여는 행사 전용 작업대" },
                 React.createElement("span", { className: "h-8 px-1 text-rose-700 text-[12px] font-black flex items-center shrink-0" },
                     React.createElement("i", { className: "fas fa-tags mr-1.5 text-[12px]" }),
                     "행사 작업대"),
@@ -11920,7 +11936,7 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
                 promoWorkbenchFilterCount > 0 && React.createElement("button", { onClick: () => { setPriceFilter('all'); setSelectedRows(new Set()); }, className: "h-8 px-2.5 rounded-lg text-[11px] font-black border border-slate-300 bg-white text-slate-600 hover:bg-slate-50 shadow-sm shrink-0", title: "행사상태 필터만 해제합니다." },
                     React.createElement("i", { className: "fas fa-filter-circle-xmark mr-1.5 text-[11px]" }),
                     "행사필터 해제")),
-            isPromoThemeSelected && promoActionOpen && (React.createElement("div", { className: "rounded-xl border border-rose-100 bg-rose-50/50 px-3 py-2 shadow-inner flex items-center gap-2 flex-wrap" },
+            isPromoWorkbenchVisible && promoActionOpen && (React.createElement("div", { className: "rounded-xl border border-rose-100 bg-rose-50/50 px-3 py-2 shadow-inner flex items-center gap-2 flex-wrap" },
                 React.createElement("span", { className: "text-[12px] font-black text-rose-700 shrink-0 mr-1" }, "행사가 설정 :"),
                 React.createElement("select", { value: screenBaseField, onChange: e => setScreenBaseField(e.target.value), className: "h-8 px-2 rounded-lg border border-slate-300 bg-white text-[12px] font-bold outline-none shrink-0", title: "행사가 산출 원가기준" },
                     ['입고가', '최종(창고)', '도매A', '도매B'].map(field => React.createElement("option", { key: field, value: field }, field))),
@@ -14022,7 +14038,7 @@ const WelcomeGuide = ({ onUpload, onCloudSync }) => (React.createElement("div", 
         React.createElement("i", { className: "fas fa-box-open" }),
         React.createElement("div", { className: "absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm" },
             React.createElement("i", { className: "fas fa-check" }))),
-    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.190_ConditionalWorkbenches]"),
+    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.191_ManualPromoWorkbench]"),
     React.createElement("p", { className: "text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold" },
         "\uD604\uC7AC \uB4F1\uB85D\uB41C ",
         React.createElement("span", { className: "text-indigo-500" }, "\uB9C8\uC2A4\uD130 \uC0C1\uD488 \uB370\uC774\uD130"),
@@ -14679,7 +14695,7 @@ const App = () => {
                                 React.createElement("div", { className: "flex flex-col border-l-2 border-slate-700 pl-3" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "MerchOps"),
-                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.190_ConditionalWorkbenches")),
+                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.191_ManualPromoWorkbench")),
                                     React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "MAIN WORKSPACE"))),
                             React.createElement(SystemConsole, { itemCount: Object.keys(data.masterProducts).length, isProcessing: ui.isProcessing, processMsg: ui.processMsg, estimateCount: Object.keys(data.managedItems).length, filteredCount: fullDisplayRows.length, activeTags: ui.activeTags, masterLookupMode: data.masterLookupMode }),
                             React.createElement("nav", { className: "flex gap-1.5 text-[14px] shrink-0 items-center" },
