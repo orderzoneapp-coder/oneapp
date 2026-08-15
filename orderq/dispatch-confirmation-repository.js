@@ -38,7 +38,7 @@ import {
   validateCustomerNotice
 } from './dispatch-confirmation.js?v=0.8.0';
 
-const CONFIRMATION_STORES = Object.freeze([
+export const DISPATCH_CONFIRMATION_STORE_NAMES = Object.freeze([
   STORE.CUSTOMERS,
   STORE.PRODUCTS,
   STORE.WAREHOUSES,
@@ -59,6 +59,8 @@ const CONFIRMATION_STORES = Object.freeze([
   STORE.META,
   STORE.SYNC_QUEUE
 ]);
+
+const CONFIRMATION_STORES = DISPATCH_CONFIRMATION_STORE_NAMES;
 
 function text(value) {
   return value === undefined || value === null ? '' : String(value).trim();
@@ -862,13 +864,17 @@ function buildReversalPlan({ command, originalLines, originalAllocations, origin
   return { plan, full: Math.abs(requestedTotal - allRemainingQuantity) <= 1e-9 };
 }
 
-export async function reverseDispatch(source = {}, actor = 'ADMIN', options = {}) {
+export async function reverseDispatchInTransaction({
+  tx,
+  source = {},
+  actor = 'ADMIN',
+  options = {},
+  erpCorrection = null
+} = {}) {
+  if (!tx) throw new Error('ORDERQ_REVERSE_TRANSACTION_REQUIRED');
   const context = requireCapability(actor, CAPABILITY.DISPATCH_REVERSE);
   const command = normalizeDispatchReversalCommand(source);
   const fingerprint = dispatchReversalFingerprint(command);
-  const db = await openOrderQDb();
-  const tx = db.transaction(CONFIRMATION_STORES, 'readwrite');
-  try {
     const salesDocumentStore = tx.objectStore(STORE.SALES_DOCUMENTS);
     const existing = await requestToPromise(salesDocumentStore.index('byIdempotencyKey').get(command.idempotencyKey));
     if (existing) {
@@ -876,7 +882,6 @@ export async function reverseDispatch(source = {}, actor = 'ADMIN', options = {}
         throw new Error(`ORDERQ_REVERSE_IDEMPOTENCY_CONFLICT:${command.idempotencyKey}`);
       }
       const result = await loadReversalResult(tx, existing, true);
-      await transactionDone(tx);
       return result;
     }
     const originalDecision = await requestToPromise(tx.objectStore(STORE.DISPATCH_DECISIONS).get(command.dispatchId));
@@ -884,7 +889,12 @@ export async function reverseDispatch(source = {}, actor = 'ADMIN', options = {}
     if (Number(originalDecision.revision || 0) !== command.expectedRevision) throw new Error(`ORDERQ_DISPATCH_REVISION_CONFLICT:${originalDecision.revision}`);
     const originalSalesDocument = await requestToPromise(salesDocumentStore.get(originalDecision.salesDocumentId));
     if (!originalSalesDocument || originalSalesDocument.status !== 'CONFIRMED') throw new Error('ORDERQ_REVERSE_ORIGINAL_SALES_DOCUMENT_REQUIRED');
-    if (![ERP_POSTING_STATUS.READY, ERP_POSTING_STATUS.NOT_READY].includes(originalSalesDocument.erpPostingStatus)) {
+    const m8PostedCorrection = erpCorrection?.mode === 'M8_POSTED_CORRECTION'
+      && erpCorrection?.allowPostedCorrection === true
+      && text(erpCorrection.originalErpPostingStatus) === text(originalSalesDocument.erpPostingStatus)
+      && text(erpCorrection.originalErpDocumentNo) === text(originalSalesDocument.erpDocumentNo);
+    if (![ERP_POSTING_STATUS.READY, ERP_POSTING_STATUS.NOT_READY].includes(originalSalesDocument.erpPostingStatus)
+      && !m8PostedCorrection) {
       throw new Error('ORDERQ_REVERSE_ERP_CORRECTION_REQUIRES_M8');
     }
     const [originalLines, originalAllocations, originalSalesLines, allSalesLines, originalMovements, allMovements] = await Promise.all([
@@ -934,7 +944,13 @@ export async function reverseDispatch(source = {}, actor = 'ADMIN', options = {}
       reversalRequestFingerprint: fingerprint,
       status: 'REVERSED',
       reversalOf: originalSalesDocument.salesDocumentId,
-      erpPostingStatus: ERP_POSTING_STATUS.READY,
+      erpPostingStatus: erpCorrection?.reversalErpPostingStatus || ERP_POSTING_STATUS.READY,
+      ...(m8PostedCorrection ? {
+        originalErpPostingStatus: erpCorrection.originalErpPostingStatus,
+        originalErpDocumentNo: erpCorrection.originalErpDocumentNo,
+        erpDocumentNo: '',
+        erpCorrectionReason: erpCorrection.reason || ''
+      } : {}),
       syncStatus: 'LOCAL_ONLY',
       supplyAmountWon: reversalSalesLines.reduce((sum, row) => sum + finite(row.supplyAmountWon), 0),
       vatAmountWon: reversalSalesLines.reduce((sum, row) => sum + finite(row.vatAmountWon), 0),
@@ -1096,6 +1112,10 @@ export async function reverseDispatch(source = {}, actor = 'ADMIN', options = {}
       updatedAt: timestamp,
       updatedBy: context.actorId,
       history: [event],
+      ...(m8PostedCorrection ? {
+        erpCorrectionRequired: true,
+        originalErpDocumentNo: erpCorrection.originalErpDocumentNo
+      } : {}),
       localOnly: true
     };
     tx.objectStore(STORE.DISPATCH_DECISIONS).add(reversalDecision);
@@ -1109,7 +1129,6 @@ export async function reverseDispatch(source = {}, actor = 'ADMIN', options = {}
     reversalAllocations.forEach(row => enqueue({ entityType: 'DISPATCH_STOCK_ALLOCATION', entityId: row.allocationId, payload: row }));
     enqueue({ entityType: 'DISPATCH_DECISION', entityId: reversalDispatchId, payload: reversalDecision });
     confirmationCheckpoint(options, DISPATCH_CONFIRMATION_STEP.BEFORE_COMMIT);
-    await transactionDone(tx);
     return {
       duplicate: false,
       decision: reversalDecision,
@@ -1119,6 +1138,15 @@ export async function reverseDispatch(source = {}, actor = 'ADMIN', options = {}
       orderEvents: newEvents,
       outbox: queueRows
     };
+}
+
+export async function reverseDispatch(source = {}, actor = 'ADMIN', options = {}) {
+  const db = await openOrderQDb();
+  const tx = db.transaction(CONFIRMATION_STORES, 'readwrite');
+  try {
+    const result = await reverseDispatchInTransaction({ tx, source, actor, options });
+    await transactionDone(tx);
+    return result;
   } catch (error) {
     try { tx.abort(); } catch {}
     throw error;

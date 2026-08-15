@@ -13024,6 +13024,9 @@ ${balanceText}
 }
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(React.createElement(App, null));
+const orderQReconciliationBridge = document.createElement('script');
+orderQReconciliationBridge.src = './DataOps_orderq_reconciliation_bridge.js?v=0.8.0-m8';
+document.body.appendChild(orderQReconciliationBridge);
 </script>
 </body>
 </html>
