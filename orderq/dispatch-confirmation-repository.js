@@ -19,14 +19,23 @@ import {
 import { INVENTORY_MOVEMENT_TYPE, calculateInventoryShadowProjection } from './inventory-ledger.js?v=0.8.0';
 import { appendInventoryMovementsInTransaction } from './inventory-ledger-repository.js?v=0.8.0';
 import {
+  DISPATCH_APPROVAL_STATUS,
+  DISPATCH_APPROVAL_TYPE,
   DISPATCH_CONFIRMATION_STEP,
   allocateReversalAmounts,
+  allocateReversalQuantityDimension,
   confirmationCheckpoint,
+  dispatchActualFingerprint,
+  dispatchActualSetFingerprint,
   dispatchConfirmationFingerprint,
+  dispatchPriceFingerprint,
   dispatchReversalFingerprint,
+  isDispatchApprovalEffectivelyActive,
   normalizeDispatchConfirmationCommand,
   normalizeDispatchReversalCommand,
-  resolveNormalDispatchActuals
+  resolveDispatchActuals,
+  resolveDispatchPrice,
+  validateCustomerNotice
 } from './dispatch-confirmation.js?v=0.8.0';
 
 const CONFIRMATION_STORES = Object.freeze([
@@ -39,6 +48,7 @@ const CONFIRMATION_STORES = Object.freeze([
   STORE.DISPATCH_DECISIONS,
   STORE.DISPATCH_LINES,
   STORE.DISPATCH_STOCK_ALLOCATIONS,
+  STORE.DISPATCH_APPROVALS,
   STORE.INVENTORY_RESERVATIONS,
   STORE.INVENTORY_SNAPSHOTS,
   STORE.INVENTORY_LINES,
@@ -126,14 +136,22 @@ function validateIdempotentResult(existing, command, fingerprint) {
   }
 }
 
-function salesAmount(item, line, actualQuantity) {
-  const unitPriceWon = finite(line.unitPriceWon ?? line.orderAgreedUnitPriceWon ?? item.price ?? item.unitPriceWon, 0);
-  const supplyAmountWon = Math.round(unitPriceWon * actualQuantity);
+function salesAmount(item, line, actualQuantity, recognizedOrderQuantity) {
+  const price = resolveDispatchPrice({ item, line });
+  const unitPriceWon = price.appliedUnitPriceWon;
+  const pricingQuantity = price.priceUnitBasis === 'RECOGNIZED_ORDER' ? recognizedOrderQuantity : actualQuantity;
+  const supplyAmountWon = Math.round(unitPriceWon * pricingQuantity);
   const orderedQuantity = finite(item.finalQuantity ?? item.rawQuantity ?? item.quantity, 0);
   const vatAmountWon = orderedQuantity > 0
-    ? Math.round(finite(item.vatAmount, 0) * actualQuantity / orderedQuantity)
+    ? Math.round(finite(item.vatAmount, 0) * recognizedOrderQuantity / orderedQuantity)
     : 0;
-  return { unitPriceWon, supplyAmountWon, vatAmountWon };
+  return { ...price, pricingQuantity, unitPriceWon, supplyAmountWon, vatAmountWon };
+}
+
+function productReferencePrice(product = {}) {
+  const candidates = [product.salePrice, product.outboundPrice, product.unitPriceWon, product.price];
+  const selected = candidates.find(value => value !== '' && value !== null && value !== undefined && Number.isFinite(Number(value)));
+  return selected === undefined ? null : Number(selected);
 }
 
 function confirmationEvent(order, before, after, causeEvent, dispatchId, actorId, timestamp) {
@@ -177,6 +195,7 @@ async function validateBusinessReferences(tx, decision, actuals) {
 
   const orderMap = new Map(orders.map(row => [row.orderId, normalizedOrderView(row)]));
   const itemMap = new Map(items.map(row => [row.orderItemId, row]));
+  const productMap = new Map(products.map(row => [row.productId, row]));
   for (const actual of actuals) {
     const item = itemMap.get(actual.line.orderItemId);
     if (item?.orderId !== actual.line.orderId) throw new Error(`ORDERQ_CONFIRM_ORDER_ITEM_MISMATCH:${actual.line.dispatchLineId}`);
@@ -187,13 +206,63 @@ async function validateBusinessReferences(tx, decision, actuals) {
   for (const actual of actuals) {
     recognizedByItem.set(actual.line.orderItemId, finite(recognizedByItem.get(actual.line.orderItemId)) + actual.recognizedOrderQuantity);
   }
+  const overages = [];
   for (const [orderItemId, recognized] of recognizedByItem) {
     const item = itemMap.get(orderItemId);
     const order = orderMap.get(item.orderId);
     const remaining = effectiveOrderQuantity(order, item) - effectiveTransferredQuantity(orderItemId, eventsByOrder.get(item.orderId));
-    if (recognized > remaining + 1e-9) throw new Error(`ORDERQ_CONFIRM_OVER_ORDER_REQUIRES_M5:${orderItemId}`);
+    if (recognized > remaining + 1e-9) {
+      overages.push({
+        orderId: item.orderId,
+        orderItemId,
+        effectiveOrderQuantity: effectiveOrderQuantity(order, item),
+        existingRecognizedQuantity: effectiveTransferredQuantity(orderItemId, eventsByOrder.get(item.orderId)),
+        attemptedRecognizedQuantity: recognized,
+        remainingQuantity: remaining,
+        overQuantity: recognized - remaining
+      });
+    }
   }
-  return { orderMap, itemMap, eventsByOrder };
+  return { orderMap, itemMap, productMap, eventsByOrder, overages };
+}
+
+function activeApproval(approvals, approvalType, actual) {
+  return approvals.find(row => isDispatchApprovalEffectivelyActive(row, approvals)
+    && row.approvalType === approvalType
+    && row.dispatchLineId === actual.line.dispatchLineId
+    && row.orderItemId === actual.line.orderItemId
+    && row.approvedActualRevision === Number(actual.line.actualRevision || 0)
+    && row.approvedActualFingerprint === dispatchActualFingerprint(actual.line));
+}
+
+function validateM5Approvals({ actuals, approvals, overages }) {
+  for (const actual of actuals) {
+    if (text(actual.line.fulfillmentType).toUpperCase() === 'SUBSTITUTE'
+      && !activeApproval(approvals, DISPATCH_APPROVAL_TYPE.SUBSTITUTE, actual)) {
+      throw new Error(`ORDERQ_CONFIRM_SUBSTITUTE_APPROVAL_REQUIRED:${actual.line.dispatchLineId}`);
+    }
+    validateCustomerNotice(actual.line);
+  }
+  for (const overage of overages) {
+    const participatingActuals = actuals
+      .filter(row => row.line.orderItemId === overage.orderItemId)
+      .sort((left, right) => text(left.line.dispatchLineId).localeCompare(text(right.line.dispatchLineId)));
+    const participatingLines = participatingActuals.map(row => row.line);
+    const participatingDispatchLineIds = participatingLines.map(row => row.dispatchLineId);
+    const approvedActualSetFingerprint = dispatchActualSetFingerprint(participatingLines);
+    const approval = approvals.find(row => isDispatchApprovalEffectivelyActive(row, approvals)
+      && row.approvalType === DISPATCH_APPROVAL_TYPE.OVER_DISPATCH
+      && row.orderItemId === overage.orderItemId
+      && row.approvedActualSetFingerprint === approvedActualSetFingerprint
+      && JSON.stringify(row.participatingDispatchLineIds || []) === JSON.stringify(participatingDispatchLineIds));
+    if (!approval
+      || Math.abs(finite(approval.effectiveOrderQuantity) - overage.effectiveOrderQuantity) > 1e-9
+      || Math.abs(finite(approval.currentRecognizedQuantity ?? approval.existingRecognizedQuantity) - overage.existingRecognizedQuantity) > 1e-9
+      || Math.abs(finite(approval.attemptedRecognizedQuantity) - overage.attemptedRecognizedQuantity) > 1e-9
+      || Math.abs(finite(approval.approvedOverQuantity ?? approval.overQuantity) - overage.overQuantity) > 1e-9) {
+      throw new Error(`ORDERQ_CONFIRM_OVER_DISPATCH_APPROVAL_REQUIRED:${overage.orderItemId}`);
+    }
+  }
 }
 
 async function inventoryProjectionInTransaction(tx) {
@@ -224,8 +293,8 @@ export async function recordDispatchActual(source = {}, actor = 'ADMIN') {
       allFrom(tx, STORE.DISPATCH_STOCK_ALLOCATIONS, 'byDispatchId', command.dispatchId),
       allFrom(tx, STORE.INVENTORY_RESERVATIONS, 'byDispatchId', command.dispatchId)
     ]);
-    const actuals = resolveNormalDispatchActuals({ lines, allocations, command });
-    await validateBusinessReferences(tx, decision, actuals);
+    const actuals = resolveDispatchActuals({ lines, allocations, command, allowMeasurementCapture: true });
+    const { itemMap, productMap } = await validateBusinessReferences(tx, decision, actuals);
     const timestamp = nowIso();
     const activeReservations = new Map(reservations.filter(row => row.status === 'ACTIVE').map(row => [row.reservationId, row]));
     for (const actual of actuals) {
@@ -239,11 +308,29 @@ export async function recordDispatchActual(source = {}, actor = 'ADMIN') {
     const baseRevision = Number(decision.revision || 0);
     const nextRevision = baseRevision + 1;
     const nextLines = actuals.map(actual => {
-      const next = {
+      const item = itemMap.get(actual.line.orderItemId);
+      const product = productMap.get(actual.line.actualProductId);
+      const priceLine = {
         ...actual.line,
+        orderAgreedUnitPriceWon: actual.line.orderAgreedUnitPriceWon ?? item?.price ?? item?.unitPriceWon ?? 0,
+        actualProductReferenceUnitPriceWon: actual.line.actualProductReferenceUnitPriceWon
+          ?? actual.line.actualProductUnitPriceWon
+          ?? productReferencePrice(product)
+      };
+      const price = resolveDispatchPrice({ item, line: priceLine });
+      const next = {
+        ...priceLine,
+        ...price,
         actualQuantity: actual.actualQuantity,
         actualBaseQuantity: actual.actualBaseQuantity,
         recognizedOrderQuantity: actual.recognizedOrderQuantity,
+        actualRevision: nextRevision,
+        measurementStatus: actual.line.measurementRequired ? 'MEASURED' : 'NOT_REQUIRED',
+        measuredActualQuantity: actual.line.measurementRequired ? actual.actualQuantity : null,
+        measuredBaseQuantity: actual.line.measurementRequired ? actual.actualBaseQuantity : null,
+        measuredRecognizedOrderQuantity: actual.line.measurementRequired ? actual.recognizedOrderQuantity : null,
+        measuredAt: actual.line.measurementRequired ? timestamp : '',
+        measuredBy: actual.line.measurementRequired ? context.actorId : '',
         executionStatus: 'READY_TO_CONFIRM',
         actualRecordedAt: timestamp,
         actualRecordedBy: context.actorId,
@@ -270,7 +357,10 @@ export async function recordDispatchActual(source = {}, actor = 'ADMIN') {
       lines: actuals.map(actual => ({
         dispatchLineId: actual.line.dispatchLineId,
         actualQuantity: actual.actualQuantity,
+        actualBaseQuantity: actual.actualBaseQuantity,
         recognizedOrderQuantity: actual.recognizedOrderQuantity,
+        actualRevision: nextRevision,
+        measurementStatus: actual.line.measurementRequired ? 'MEASURED' : 'NOT_REQUIRED',
         allocations: actual.allocations.map(entry => ({ allocationId: entry.allocation.allocationId, actualBaseQuantity: entry.actualBaseQuantity }))
       }))
     }, timestamp);
@@ -324,15 +414,17 @@ export async function confirmDispatch(source = {}, actor = 'ADMIN', options = {}
       throw new Error(`ORDERQ_DISPATCH_REVISION_CONFLICT:${decision.revision}`);
     }
 
-    const [lines, allocations, reservations, projection] = await Promise.all([
+    const [lines, allocations, reservations, approvals, projection] = await Promise.all([
       allFrom(tx, STORE.DISPATCH_LINES, 'byDispatchId', command.dispatchId),
       allFrom(tx, STORE.DISPATCH_STOCK_ALLOCATIONS, 'byDispatchId', command.dispatchId),
       allFrom(tx, STORE.INVENTORY_RESERVATIONS, 'byDispatchId', command.dispatchId),
+      allFrom(tx, STORE.DISPATCH_APPROVALS, 'byDispatchId', command.dispatchId),
       inventoryProjectionInTransaction(tx)
     ]);
     if (command.lines.length) throw new Error('ORDERQ_CONFIRM_STORED_ACTUALS_ONLY');
-    const actuals = resolveNormalDispatchActuals({ lines, allocations, command });
-    const { orderMap, itemMap, eventsByOrder } = await validateBusinessReferences(tx, decision, actuals);
+    const actuals = resolveDispatchActuals({ lines, allocations, command });
+    const { orderMap, itemMap, eventsByOrder, overages } = await validateBusinessReferences(tx, decision, actuals);
+    validateM5Approvals({ actuals, approvals, overages });
     const timestamp = nowIso();
     const activeReservations = new Map(reservations.filter(row => row.status === 'ACTIVE').map(row => [row.reservationId, row]));
     for (const actual of actuals) {
@@ -360,7 +452,7 @@ export async function confirmDispatch(source = {}, actor = 'ADMIN', options = {}
     let vatAmountWon = 0;
     for (const actual of actuals) {
       const item = itemMap.get(actual.line.orderItemId);
-      const amount = salesAmount(item, actual.line, actual.actualQuantity);
+      const amount = salesAmount(item, actual.line, actual.actualQuantity, actual.recognizedOrderQuantity);
       const allocationWarehouses = [...new Set(actual.allocations.map(entry => entry.allocation.warehouseId))];
       const salesLine = {
         salesLineId: `SL-${actual.line.dispatchLineId}`,
@@ -369,6 +461,9 @@ export async function confirmDispatch(source = {}, actor = 'ADMIN', options = {}
         dispatchLineId: actual.line.dispatchLineId,
         orderId: actual.line.orderId,
         orderItemId: actual.line.orderItemId,
+        requestedProductId: actual.line.requestedProductId,
+        requestedProductCode: actual.line.requestedProductCode || item.itemCode || '',
+        requestedProductName: actual.line.requestedProductName || item.itemName || '',
         productId: actual.line.actualProductId,
         actualProductId: actual.line.actualProductId,
         productCode: actual.line.actualProductCode || item.itemCode || '',
@@ -380,7 +475,25 @@ export async function confirmDispatch(source = {}, actor = 'ADMIN', options = {}
         actualUnit: actual.line.actualUnit || item.finalUnit || item.rawUnit || '',
         actualBaseQuantity: actual.actualBaseQuantity,
         recognizedOrderQuantity: actual.recognizedOrderQuantity,
-        priceSource: 'ORDER_AGREED',
+        fulfillmentType: actual.line.fulfillmentType,
+        conversionType: actual.line.conversionType,
+        conversionRuleId: actual.line.conversionRuleId,
+        conversionRuleVersion: actual.line.conversionRuleVersion,
+        conversionRuleSnapshot: clone(actual.line.conversionRuleSnapshot),
+        measurementRequired: Boolean(actual.line.measurementRequired),
+        measurementStatus: actual.line.measurementStatus,
+        measuredActualQuantity: actual.line.measuredActualQuantity,
+        measuredBaseQuantity: actual.line.measuredBaseQuantity,
+        measuredRecognizedOrderQuantity: actual.line.measuredRecognizedOrderQuantity,
+        measuredAt: actual.line.measuredAt,
+        measuredBy: actual.line.measuredBy,
+        customerNoticeRequired: Boolean(actual.line.customerNoticeRequired),
+        customerNoticeStatus: actual.line.customerNoticeStatus,
+        customerNotifiedBy: actual.line.customerNotifiedBy || actual.line.customerNoticeActorId,
+        customerNotifiedAt: actual.line.customerNotifiedAt || actual.line.customerNoticeAt,
+        customerNoticeActorId: actual.line.customerNoticeActorId,
+        customerNoticeAt: actual.line.customerNoticeAt,
+        customerNoticeMemo: actual.line.customerNoticeMemo,
         ...amount,
         totalAmountWon: amount.supplyAmountWon + amount.vatAmountWon,
         status: 'CONFIRMED',
@@ -432,7 +545,7 @@ export async function confirmDispatch(source = {}, actor = 'ADMIN', options = {}
       productCode: actual.line.actualProductCode || '',
       warehouseId: entry.allocation.warehouseId,
       signedBaseQuantity: -entry.actualBaseQuantity,
-      baseUnit: actual.line.actualUnit || '',
+      baseUnit: actual.line.baseUnit || actual.line.actualUnit || '',
       movementType: INVENTORY_MOVEMENT_TYPE.SALE_ISSUE,
       sourceDocumentType: 'SALES_DOCUMENT',
       sourceDocumentId: salesDocumentId,
@@ -667,7 +780,11 @@ function buildReversalPlan({ command, originalLines, originalAllocations, origin
     if (!originalSalesLine) throw new Error(`ORDERQ_REVERSE_ORIGINAL_SALES_LINE_REQUIRED:${line.dispatchLineId}`);
     const priorReversalLines = allSalesLines.filter(row => row.reversalOf === originalSalesLine.salesLineId);
     const alreadyReversed = priorReversalLines.reduce((sum, row) => sum + Math.abs(finite(row.actualQuantity ?? row.quantity)), 0);
+    const alreadyReversedBase = priorReversalLines.reduce((sum, row) => sum + Math.abs(finite(row.actualBaseQuantity ?? row.actualQuantity ?? row.quantity)), 0);
+    const alreadyReversedRecognized = priorReversalLines.reduce((sum, row) => sum + Math.abs(finite(row.recognizedOrderQuantity ?? row.actualQuantity ?? row.quantity)), 0);
     const originalQuantity = finite(originalSalesLine.actualQuantity ?? originalSalesLine.quantity);
+    const originalBaseQuantity = finite(originalSalesLine.actualBaseQuantity ?? originalQuantity);
+    const originalRecognizedQuantity = finite(originalSalesLine.recognizedOrderQuantity ?? originalQuantity);
     const remainingQuantity = originalQuantity - alreadyReversed;
     allRemainingQuantity += Math.max(0, remainingQuantity);
     const input = inputByLine.get(line.dispatchLineId);
@@ -678,6 +795,20 @@ function buildReversalPlan({ command, originalLines, originalAllocations, origin
       continue;
     }
     if (quantity > remainingQuantity + 1e-9) throw new Error(`ORDERQ_REVERSE_EXCEEDS_ORIGINAL:${line.dispatchLineId}`);
+    const baseQuantity = allocateReversalQuantityDimension({
+      originalActualQuantity: originalQuantity,
+      reversedActualQuantity: alreadyReversed,
+      reversalActualQuantity: quantity,
+      originalDimensionQuantity: originalBaseQuantity,
+      reversedDimensionQuantity: alreadyReversedBase
+    });
+    const recognizedQuantity = allocateReversalQuantityDimension({
+      originalActualQuantity: originalQuantity,
+      reversedActualQuantity: alreadyReversed,
+      reversalActualQuantity: quantity,
+      originalDimensionQuantity: originalRecognizedQuantity,
+      reversedDimensionQuantity: alreadyReversedRecognized
+    });
     const allocations = originalAllocations.filter(row => row.dispatchLineId === line.dispatchLineId);
     const allocationRemaining = allocations.map(allocation => {
       const originalMovement = movementById.get(allocation.movementId);
@@ -703,7 +834,7 @@ function buildReversalPlan({ command, originalLines, originalAllocations, origin
       if (!(row.quantity > 0) || row.quantity > row.remaining + 1e-9) throw new Error(`ORDERQ_REVERSE_ALLOCATION_EXCEEDS_ORIGINAL:${row.allocation.allocationId}`);
       return sum + row.quantity;
     }, 0);
-    if (Math.abs(allocationTotal - quantity) > 1e-9) throw new Error(`ORDERQ_REVERSE_ALLOCATION_SUM_MISMATCH:${line.dispatchLineId}`);
+    if (Math.abs(allocationTotal - baseQuantity) > 1e-9) throw new Error(`ORDERQ_REVERSE_ALLOCATION_SUM_MISMATCH:${line.dispatchLineId}`);
     const originalSupplyAmountWon = finite(originalSalesLine.supplyAmountWon);
     const originalVatAmountWon = finite(originalSalesLine.vatAmountWon);
     const originalTotalAmountWon = originalSalesLine.totalAmountWon ?? (originalSupplyAmountWon + originalVatAmountWon);
@@ -724,7 +855,7 @@ function buildReversalPlan({ command, originalLines, originalAllocations, origin
       reversedVatAmountWon,
       reversedTotalAmountWon
     });
-    plan.push({ line, originalSalesLine, quantity, allocations: reversalAllocations, amounts });
+    plan.push({ line, originalSalesLine, quantity, baseQuantity, recognizedQuantity, allocations: reversalAllocations, amounts });
   }
   if (!plan.length) throw new Error('ORDERQ_REVERSE_NOTHING_REMAINING');
   const requestedTotal = plan.reduce((sum, row) => sum + row.quantity, 0);
@@ -776,8 +907,8 @@ export async function reverseDispatch(source = {}, actor = 'ADMIN', options = {}
       dispatchLineId: newId('DL-REV'),
       quantity: -row.quantity,
       actualQuantity: -row.quantity,
-      actualBaseQuantity: -row.quantity,
-      recognizedOrderQuantity: -row.quantity,
+      actualBaseQuantity: -row.baseQuantity,
+      recognizedOrderQuantity: -row.recognizedQuantity,
       supplyAmountWon: -row.amounts.supplyAmountWon,
       vatAmountWon: -row.amounts.vatAmountWon,
       totalAmountWon: -row.amounts.totalAmountWon,
@@ -860,7 +991,7 @@ export async function reverseDispatch(source = {}, actor = 'ADMIN', options = {}
         orderItemId: row.line.orderItemId,
         salesDocumentId: reversalSalesDocumentId,
         salesLineId: reversalLine.salesLineId,
-        quantity: row.quantity,
+        quantity: row.recognizedQuantity,
         revision: allocationEvent.revision,
         actor: context.actorId,
         reason: command.reason,
@@ -891,8 +1022,8 @@ export async function reverseDispatch(source = {}, actor = 'ADMIN', options = {}
         dispatchLineId: salesLine.dispatchLineId,
         dispatchId: reversalDispatchId,
         actualQuantity: -row.quantity,
-        actualBaseQuantity: -row.quantity,
-        recognizedOrderQuantity: -row.quantity,
+        actualBaseQuantity: -row.baseQuantity,
+        recognizedOrderQuantity: -row.recognizedQuantity,
         executionStatus: 'REVERSED',
         status: 'REVERSED',
         salesLineId: salesLine.salesLineId,

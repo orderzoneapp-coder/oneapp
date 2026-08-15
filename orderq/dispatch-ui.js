@@ -1,6 +1,10 @@
 import {
+  CONVERSION_TYPE,
+  CUSTOMER_NOTICE_STATUS,
+  DISPATCH_PRICE_SOURCE,
   DISPATCH_DRAFT_BUFFER_STORAGE_KEY,
   DISPATCH_WORKSPACE_STORAGE_KEY,
+  FULFILLMENT_TYPE,
   WORK_EXCEPTION_CODE,
   normalizeWorkspaceState
 } from './dispatch-workbench.js?v=0.8.0';
@@ -14,6 +18,12 @@ import {
 } from './dispatch-workbench-repository.js?v=0.8.0';
 import { buildDispatchConfirmationKey, buildDispatchReversalKey } from './dispatch-confirmation.js?v=0.8.0';
 import { confirmDispatch, confirmDispatchBatch, recordDispatchActual, reverseDispatch } from './dispatch-confirmation-repository.js?v=0.8.0';
+import {
+  approveOverDispatch,
+  approveSubstitution,
+  recordCustomerNotice,
+  reverseSubstitutionDecision
+} from './dispatch-exception-repository.js?v=0.8.0';
 
 const $ = selector => document.querySelector(selector);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[char]));
@@ -24,7 +34,7 @@ const readWorkspace = () => {
 };
 
 let workspace = readWorkspace();
-let data = { aggregates: [], warehouses: [], inventoryProjection: { rows: [], totals: {} }, workerViews: { byOrder: [], byLocationProduct: [] } };
+let data = { aggregates: [], warehouses: [], products: [], inventoryProjection: { rows: [], totals: {} }, workerViews: { byOrder: [], byLocationProduct: [] } };
 let proposals = [];
 let busy = false;
 
@@ -74,7 +84,23 @@ function saveDraftBuffer() {
     lines: draft.lines.map(row => ({
       dispatchLineId: row.dispatchLineId,
       plannedActualQuantity: row.plannedActualQuantity,
-      plannedBaseQuantity: row.plannedBaseQuantity
+      plannedBaseQuantity: row.plannedBaseQuantity,
+      plannedRecognizedOrderQuantity: row.plannedRecognizedOrderQuantity,
+      actualProductId: row.actualProductId,
+      actualProductCode: row.actualProductCode,
+      actualProductName: row.actualProductName,
+      fulfillmentType: row.fulfillmentType,
+      conversionType: row.conversionType,
+      conversionRuleId: row.conversionRuleId,
+      conversionRuleVersion: row.conversionRuleVersion,
+      conversionRuleSnapshot: row.conversionRuleSnapshot,
+      measurementRequired: row.measurementRequired,
+      priceSource: row.priceSource,
+      actualProductUnitPriceWon: row.actualProductUnitPriceWon,
+      manualUnitPriceWon: row.manualUnitPriceWon,
+      priceChangeReason: row.priceChangeReason,
+      customerNoticeRequired: row.customerNoticeRequired,
+      customerNoticeStatus: row.customerNoticeStatus
     })),
     allocations: draft.allocations.map(row => ({
       allocationId: row.allocationId,
@@ -138,6 +164,26 @@ function warehouseOptions(selected) {
   return data.warehouses.map(row => `<option value="${esc(row.warehouseId)}" ${row.warehouseId === selected ? 'selected' : ''}>${esc(row.warehouseCode)} ${esc(row.warehouseName)}</option>`).join('');
 }
 
+function productOptions(selected) {
+  return data.products.map(row => {
+    const code = row.itemCode || row.productCode || '';
+    const name = row.itemName || row.productName || '';
+    return `<option value="${esc(row.productId)}" ${row.productId === selected ? 'selected' : ''}>${esc(code)} ${esc(name)}</option>`;
+  }).join('');
+}
+
+function selectOptions(values, selected) {
+  return values.map(value => `<option value="${esc(value)}" ${value === selected ? 'selected' : ''}>${esc(value)}</option>`).join('');
+}
+
+function inputValue(value) {
+  return value === null || value === undefined ? '' : esc(value);
+}
+
+function readOptionalNumber(control) {
+  return control?.value === '' || control?.value === undefined ? null : Number(control.value);
+}
+
 function renderDetail() {
   const aggregate = selectedAggregate();
   if (!aggregate) {
@@ -179,19 +225,49 @@ function renderDetail() {
         <td class="${conflict > 0 ? 'negative' : ''}">${conflictText}</td>
       </tr>`;
     }).join('');
-    const bufferedLine = bufferedLines.get(line.dispatchLineId) || {};
-    const plannedQuantity = Number(bufferedLine.plannedBaseQuantity ?? line.plannedBaseQuantity ?? 0);
+    const bufferedLine = { ...line, ...(bufferedLines.get(line.dispatchLineId) || {}) };
+    const plannedActualQuantity = Number(bufferedLine.plannedActualQuantity ?? line.plannedActualQuantity ?? 0);
+    const plannedBaseQuantity = Number(bufferedLine.plannedBaseQuantity ?? line.plannedBaseQuantity ?? plannedActualQuantity);
+    const plannedRecognizedQuantity = Number(bufferedLine.plannedRecognizedOrderQuantity ?? line.plannedRecognizedOrderQuantity ?? plannedActualQuantity);
     const workerResult = line.workerReportedQuantity == null ? '-' : qty(line.workerReportedQuantity);
-    const confirmationQuantity = line.actualQuantity ?? line.workerReportedQuantity ?? plannedQuantity;
+    const confirmationQuantity = line.actualQuantity ?? line.workerReportedQuantity ?? plannedActualQuantity;
     const confirmationInput = ['RELEASED', 'READY_TO_CONFIRM'].includes(decision.status)
       ? `<br><label class="confirm-field">실제 <input class="confirm-line-qty" type="number" step="any" value="${Number(confirmationQuantity)}"></label>`
       : decision.status === 'CONFIRMED' ? `<br><small>실제 ${qty(confirmationQuantity)}</small>` : '';
-    return `<tr class="dispatch-line-row" data-line-id="${esc(line.dispatchLineId)}">
+    const recognizedInput = ['RELEASED', 'READY_TO_CONFIRM'].includes(decision.status)
+      ? `<br><label class="confirm-field">주문인정 <input class="confirm-recognized-qty" type="number" step="any" value="${Number(line.recognizedOrderQuantity ?? plannedRecognizedQuantity)}"></label>`
+      : decision.status === 'CONFIRMED' ? `<br><small>주문인정 ${qty(line.recognizedOrderQuantity)}</small>` : '';
+    const productCell = editable
+      ? `<select class="line-actual-product">${productOptions(bufferedLine.actualProductId)}</select><br><select class="line-fulfillment-type">${selectOptions(Object.values(FULFILLMENT_TYPE), bufferedLine.fulfillmentType)}</select>`
+      : `${esc(line.actualProductCode)} ${esc(line.actualProductName)}<br><small>${esc(line.fulfillmentType)}</small>`;
+    const conversion = bufferedLine.conversionRuleSnapshot || {};
+    const conversionEditor = editable ? `<div class="m5-grid">
+      <label>환산 <select class="line-conversion-type">${selectOptions(Object.values(CONVERSION_TYPE), bufferedLine.conversionType || CONVERSION_TYPE.NONE)}</select></label>
+      <label>규칙 <input class="line-conversion-rule-id" value="${inputValue(bufferedLine.conversionRuleId)}"></label>
+      <label>버전 <input class="line-conversion-rule-version" value="${inputValue(bufferedLine.conversionRuleVersion)}"></label>
+      <label>실제→기준 <input class="line-actual-to-base" type="number" step="any" value="${inputValue(conversion.actualToBaseFactor ?? 1)}"></label>
+      <label>실제→인정 <input class="line-actual-to-recognized" type="number" step="any" value="${inputValue(conversion.actualToRecognizedFactor ?? 1)}"></label>
+    </div>` : `<small>${esc(line.conversionType || CONVERSION_TYPE.NONE)} ${esc(line.conversionRuleId || '')} v${esc(line.conversionRuleVersion || '-')} / ${esc(line.measurementStatus || '')}</small>`;
+    const priceEditor = editable ? `<div class="m5-grid">
+      <label>가격 <select class="line-price-source">${selectOptions(Object.values(DISPATCH_PRICE_SOURCE), bufferedLine.priceSource || DISPATCH_PRICE_SOURCE.ORDER_AGREED)}</select></label>
+      <label>대체기준가 <input class="line-actual-price" type="number" step="any" value="${inputValue(bufferedLine.actualProductUnitPriceWon)}"></label>
+      <label>수정단가 <input class="line-manual-price" type="number" step="any" value="${inputValue(bufferedLine.manualUnitPriceWon)}"></label>
+      <label>가격사유 <input class="line-price-reason" value="${inputValue(bufferedLine.priceChangeReason)}"></label>
+      <label><input class="line-notice-required" type="checkbox" ${bufferedLine.customerNoticeRequired ? 'checked' : ''}> 고객공지 필요</label>
+    </div>` : `<small>${esc(line.priceSource || DISPATCH_PRICE_SOURCE.ORDER_AGREED)} / 적용 ${qty(line.appliedUnitPriceWon)} / 공지 ${esc(line.customerNoticeStatus || CUSTOMER_NOTICE_STATUS.NOT_REQUIRED)}</small>`;
+    const lineActions = decision.status === 'READY_TO_CONFIRM'
+      ? `${line.fulfillmentType === FULFILLMENT_TYPE.SUBSTITUTE ? `<button class="dq-btn mini" type="button" data-action="approve-substitute" data-line-id="${esc(line.dispatchLineId)}">대체 승인</button>` : ''}
+         <button class="dq-btn mini" type="button" data-action="approve-over" data-line-id="${esc(line.dispatchLineId)}">초과 승인</button>
+         ${line.customerNoticeRequired ? `<button class="dq-btn mini" type="button" data-action="notice-notified" data-line-id="${esc(line.dispatchLineId)}">고객 공지완료</button><button class="dq-btn mini" type="button" data-action="notice-waived" data-line-id="${esc(line.dispatchLineId)}">공지 면제</button>` : ''}`
+      : decision.status === 'CONFIRMED' && line.fulfillmentType === FULFILLMENT_TYPE.SUBSTITUTE
+        ? `<button class="dq-btn mini warn" type="button" data-action="reverse-substitute-decision" data-line-id="${esc(line.dispatchLineId)}">대체판단만 역분개</button>`
+        : '';
+    return `<tr class="dispatch-line-row" data-line-id="${esc(line.dispatchLineId)}" data-conversion-type="${esc(line.conversionType || CONVERSION_TYPE.NONE)}">
       <td>${esc(line.requestedProductCode)} ${esc(line.requestedProductName)}</td>
-      <td>${esc(line.actualProductCode)} ${esc(line.actualProductName)}<br><small>${esc(line.fulfillmentType)}</small></td>
-      <td><input class="line-qty" type="number" step="any" value="${plannedQuantity}" ${editable ? '' : 'disabled'}> ${esc(line.actualUnit)}${confirmationInput}</td>
-      <td>${esc(line.workStatus || 'PENDING')}</td>
-      <td>${workerResult} ${esc(line.workerExceptionCode || '')}</td>
+      <td>${productCell}${conversionEditor}</td>
+      <td><label>실제계획 <input class="line-qty" type="number" step="any" value="${plannedActualQuantity}" ${editable ? '' : 'disabled'}></label><br><label>기준계획 <input class="line-base-qty" type="number" step="any" value="${plannedBaseQuantity}" ${editable ? '' : 'disabled'}></label><br><label>인정계획 <input class="line-recognized-qty" type="number" step="any" value="${plannedRecognizedQuantity}" ${editable ? '' : 'disabled'}></label> ${esc(line.actualUnit)}${confirmationInput}${recognizedInput}</td>
+      <td>${esc(line.workStatus || 'PENDING')}<br>${priceEditor}</td>
+      <td>${workerResult} ${esc(line.workerExceptionCode || '')}<div class="line-actions">${lineActions}</div></td>
     </tr>${allocationBody}`;
   }).join('');
   const historyText = (decision.history || []).slice(-5)
@@ -233,10 +309,13 @@ function collectActual(aggregate) {
     expectedRevision: aggregate.decision.revision,
     lines: aggregate.lines.map(line => {
       const row = detail.querySelector(`.dispatch-line-row[data-line-id="${CSS.escape(line.dispatchLineId)}"]`);
+      const actualQuantity = Number(row.querySelector('.confirm-line-qty').value);
       return {
         dispatchLineId: line.dispatchLineId,
-        actualQuantity: Number(row.querySelector('.confirm-line-qty').value),
-        recognizedOrderQuantity: Number(row.querySelector('.confirm-line-qty').value),
+        actualQuantity,
+        recognizedOrderQuantity: (line.conversionType || CONVERSION_TYPE.NONE) === CONVERSION_TYPE.NONE
+          ? actualQuantity
+          : Number(row.querySelector('.confirm-recognized-qty').value),
         allocations: aggregate.allocations.filter(allocation => allocation.dispatchLineId === line.dispatchLineId).map(allocation => {
           const allocationRow = detail.querySelector(`[data-allocation-id="${CSS.escape(allocation.allocationId)}"]`);
           return { allocationId: allocation.allocationId, actualBaseQuantity: Number(allocationRow.querySelector('.confirm-allocation-qty').value) };
@@ -283,7 +362,39 @@ function renderWorker() {
 function collectDraft(aggregate) {
   const lines = aggregate.lines.map(line => {
     const row = detail.querySelector(`[data-line-id="${CSS.escape(line.dispatchLineId)}"].dispatch-line-row`);
-    return { ...line, plannedActualQuantity: Number(row.querySelector('.line-qty').value), plannedBaseQuantity: Number(row.querySelector('.line-qty').value) };
+    const productId = row.querySelector('.line-actual-product').value;
+    const product = data.products.find(candidate => candidate.productId === productId) || {};
+    const conversionType = row.querySelector('.line-conversion-type').value;
+    const conversionRuleId = row.querySelector('.line-conversion-rule-id').value.trim();
+    const conversionRuleVersion = row.querySelector('.line-conversion-rule-version').value.trim();
+    const conversionRuleSnapshot = conversionType === CONVERSION_TYPE.NONE ? null : {
+      conversionRuleId,
+      conversionRuleVersion,
+      actualToBaseFactor: Number(row.querySelector('.line-actual-to-base').value),
+      actualToRecognizedFactor: Number(row.querySelector('.line-actual-to-recognized').value)
+    };
+    const customerNoticeRequired = row.querySelector('.line-notice-required').checked;
+    return {
+      ...line,
+      actualProductId: productId,
+      actualProductCode: product.itemCode || product.productCode || '',
+      actualProductName: product.itemName || product.productName || '',
+      fulfillmentType: row.querySelector('.line-fulfillment-type').value,
+      plannedActualQuantity: Number(row.querySelector('.line-qty').value),
+      plannedBaseQuantity: Number(row.querySelector('.line-base-qty').value),
+      plannedRecognizedOrderQuantity: Number(row.querySelector('.line-recognized-qty').value),
+      conversionType,
+      conversionRuleId,
+      conversionRuleVersion,
+      conversionRuleSnapshot,
+      measurementRequired: conversionType === CONVERSION_TYPE.MEASURED,
+      priceSource: row.querySelector('.line-price-source').value,
+      actualProductUnitPriceWon: readOptionalNumber(row.querySelector('.line-actual-price')),
+      manualUnitPriceWon: readOptionalNumber(row.querySelector('.line-manual-price')),
+      priceChangeReason: row.querySelector('.line-price-reason').value.trim(),
+      customerNoticeRequired,
+      customerNoticeStatus: customerNoticeRequired ? CUSTOMER_NOTICE_STATUS.PENDING : CUSTOMER_NOTICE_STATUS.NOT_REQUIRED
+    };
   });
   const allocations = aggregate.allocations.map(allocation => {
     const row = detail.querySelector(`[data-allocation-id="${CSS.escape(allocation.allocationId)}"]`);
@@ -338,6 +449,32 @@ async function runAction(action, target) {
     } else if (action === 'record-actual') {
       const result = await recordDispatchActual(collectActual(aggregate), 'ADMIN');
       showMessage(`실제결과 저장 완료: ${result.lines.length}행 · 출고확정 대기`, 'success');
+    } else if (action === 'approve-substitute') {
+      await approveSubstitution({
+        dispatchId: aggregate.decision.dispatchId,
+        dispatchLineId: target.dataset.lineId,
+        expectedRevision: aggregate.decision.revision,
+        reason: '관리자 화면 대체상품 승인'
+      }, 'ADMIN');
+      showMessage('대체상품 판단을 승인하고 근거를 기록했습니다.', 'success');
+    } else if (action === 'approve-over') {
+      await approveOverDispatch({
+        dispatchId: aggregate.decision.dispatchId,
+        dispatchLineId: target.dataset.lineId,
+        expectedRevision: aggregate.decision.revision,
+        reason: '관리자 화면 초과출고 승인'
+      }, 'ADMIN');
+      showMessage('초과 인정출고를 승인하고 수량 근거를 기록했습니다.', 'success');
+    } else if (action === 'notice-notified' || action === 'notice-waived') {
+      const noticeStatus = action === 'notice-notified' ? CUSTOMER_NOTICE_STATUS.NOTIFIED : CUSTOMER_NOTICE_STATUS.WAIVED;
+      await recordCustomerNotice({
+        dispatchId: aggregate.decision.dispatchId,
+        dispatchLineId: target.dataset.lineId,
+        expectedRevision: aggregate.decision.revision,
+        customerNoticeStatus: noticeStatus,
+        memo: action === 'notice-notified' ? '관리자 화면 고객 공지 완료' : '관리자 화면 고객 공지 면제'
+      }, 'ADMIN');
+      showMessage(`고객 공지 상태를 ${noticeStatus}(으)로 기록했습니다.`, 'success');
     } else if (action === 'confirm') {
       const result = await confirmDispatch(collectConfirmation(aggregate), 'ADMIN');
       showMessage(`출고확정 완료: 판매 ${result.salesLines.length}행 · 재고 ${result.movements.length}행 · 경고 ${result.reconciliations.length}건`, 'success');
@@ -350,6 +487,16 @@ async function runAction(action, target) {
         reason: '관리자 전체 역분개'
       }, 'ADMIN');
       showMessage(`전체 역분개 완료: 판매 ${result.salesLines.length}행 · 재고 ${result.movements.length}행`, 'success');
+    } else if (action === 'reverse-substitute-decision') {
+      const dispatchLineId = target.dataset.lineId;
+      const result = await reverseSubstitutionDecision({
+        dispatchId: aggregate.decision.dispatchId,
+        dispatchLineId,
+        expectedRevision: aggregate.decision.revision,
+        idempotencyKey: `SUBSTITUTE_DECISION_REVERSE:${aggregate.decision.dispatchId}:${dispatchLineId}:${aggregate.decision.revision}`,
+        reason: '관리자 화면 대체판단 역분개'
+      }, 'ADMIN');
+      showMessage(`대체판단 역분개 완료: 주문 이벤트 ${result.orderEvents.length}건. 판매·재고는 유지됩니다.`, 'success');
     } else if (action === 'confirm-batch') {
       const targets = filteredAggregates().filter(row => row.decision.status === 'READY_TO_CONFIRM');
       if (!targets.length) throw new Error('확정대기 출고가 없습니다.');
@@ -397,10 +544,23 @@ detail.addEventListener('focusin', event => {
   saveWorkspace();
 });
 detail.addEventListener('input', event => {
-  if (event.target.matches('.line-qty,.allocation-qty,.allocation-warehouse')) saveDraftBuffer();
+  if (event.target.matches('.line-qty')) {
+    const row = event.target.closest('.dispatch-line-row');
+    if (row?.querySelector('.line-conversion-type')?.value === CONVERSION_TYPE.NONE) {
+      row.querySelector('.line-base-qty').value = event.target.value;
+      row.querySelector('.line-recognized-qty').value = event.target.value;
+    }
+  }
+  if (event.target.matches('.confirm-line-qty')) {
+    const row = event.target.closest('.dispatch-line-row');
+    if ((row?.dataset.conversionType || CONVERSION_TYPE.NONE) === CONVERSION_TYPE.NONE) {
+      row.querySelector('.confirm-recognized-qty').value = event.target.value;
+    }
+  }
+  if (event.target.matches('.line-qty,.line-base-qty,.line-recognized-qty,.line-actual-product,.line-fulfillment-type,.line-conversion-type,.line-conversion-rule-id,.line-conversion-rule-version,.line-actual-to-base,.line-actual-to-recognized,.line-price-source,.line-actual-price,.line-manual-price,.line-price-reason,.line-notice-required,.allocation-qty,.allocation-warehouse')) saveDraftBuffer();
 });
 detail.addEventListener('change', event => {
-  if (event.target.matches('.line-qty,.allocation-qty,.allocation-warehouse')) saveDraftBuffer();
+  if (event.target.matches('.line-qty,.line-base-qty,.line-recognized-qty,.line-actual-product,.line-fulfillment-type,.line-conversion-type,.line-conversion-rule-id,.line-conversion-rule-version,.line-actual-to-base,.line-actual-to-recognized,.line-price-source,.line-actual-price,.line-manual-price,.line-price-reason,.line-notice-required,.allocation-qty,.allocation-warehouse')) saveDraftBuffer();
 });
 detail.addEventListener('scroll', saveWorkspace, { passive: true });
 window.addEventListener('beforeunload', saveWorkspace);
