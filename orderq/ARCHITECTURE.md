@@ -1,6 +1,6 @@
 # ORDER Q vNext Architecture
 
-Version: 0.7.1
+Version: 0.8.0
 Reviewed: 2026-08-14
 
 ## 1. Scope
@@ -9,9 +9,9 @@ ORDER Q vNext is an independent pilot under `/orderq/`. Existing `orderops/` and
 
 Phase 3 adds `/orderq/parser.html`. ORDER IN/SmartParser never writes ORDER / ORDER_ITEM directly: raw text and parse decisions are stored separately, then confirmed actions call the shared Order Intake Engine. Direct input, ORDER IN, Excel, shopping-mall, and external adapters share that same boundary.
 
-vNext 0.7.1 keeps `input → document history → operations` as separate work surfaces and makes document history the primary order-document lookup and inline editing surface. The document list derives representative product and total quantity without storing duplicate summary fields. Expanded documents edit customer, warehouse, assignee, delivery date, workflow states, memo, products, quantities, and prices with the existing optimistic-revision boundary. Item additions, removals, and field changes are appended to the existing `ORDER_EVENT` detail payload. A fully cancelled document remains immutable except for assignee and administrator state, including `CHECKED → UNCHECKED`.
+vNext 0.8.0 keeps `input → document history → operations` as separate work surfaces and makes document history the primary order-document lookup and inline editing surface. The document list derives representative product and total quantity without storing duplicate summary fields. Expanded documents edit customer, warehouse, assignee, delivery date, workflow states, memo, products, quantities, and prices with the existing optimistic-revision boundary. Item additions, removals, and field changes are appended to the existing `ORDER_EVENT` detail payload. A fully cancelled document remains immutable except for assignee and administrator state, including `CHECKED → UNCHECKED`.
 
-`/orderq/operations.html` still filters order documents before product aggregation and never duplicates document editing. IndexedDB v6 remains unchanged: `deliveryExpectedDate` is an optional order JSON field, and item-change entries use the existing event detail JSON. Legacy `status` remains the item-matching summary for compatibility while `orderStatus`, `adminStatus`, and derived operations status own the workflow. Existing orders need no migration and all browser modules share the 0.7.1 release query. The cloud sheet schema and action names remain unchanged because order and event payloads already use JSON contracts.
+`/orderq/operations.html` still filters order documents before product aggregation and never duplicates document editing. IndexedDB v7 adds the dispatch, allocation, approval, reservation, movement, and reconciliation stores without rewriting legacy v6 rows. `deliveryExpectedDate` remains an optional order JSON field, and item-change entries use the existing event detail JSON. Legacy `status` remains the item-matching summary for compatibility while `orderStatus`, `adminStatus`, and derived operations status own the workflow. All browser modules share the 0.8.0 release query. The cloud sheet schema and action names remain unchanged because v7 entities define only a future synchronization contract in M1; server synchronization is not enabled yet.
 
 Manual entry remains code-first and keyboard-driven. A newly created direct-entry document starts with administrator status `CHECKED`, while ORDER IN, Excel, shopping-mall, and external collection continue to start as `UNCHECKED`. Product search runs only from the item-code cell; Enter follows customer → warehouse → item code → quantity → price → memo and creates a new row after the last memo. Product columns remain directly editable but are skipped by that primary entry path. `supplyAmount` and optional `vatAmount` remain editable. Price basis, saved column widths, date arrows, and warehouse master behavior remain unchanged from v0.5.1.
 
@@ -24,6 +24,10 @@ Later, only the Cloud Adapter boundary is intended to change to `Server API → 
 ## 2. Ownership and source of truth
 
 - Current phase: IndexedDB `oneapp-orderq-vnext` is the local working database.
+- IndexedDB schema v7 is a non-destructive extension of v6. Browser upgrade transactions provide rollback on migration failure, and the M1 backup/restore repository validates a full backup before applying one atomic restore transaction.
+- Legacy Collector inventory effects preserve source quantity signs: purchase uses the stored sign and sales uses its inverse. `ACTIVE` and `REVERSAL` are interpreted without `Math.abs`, while rolled-back or disabled rows are excluded.
+- ORDER Q operational confirmation and ERP posting are separate. `erpPostingStatus` uses `NOT_READY`, `READY`, `EXPORTED`, `POSTED`, `RECONCILED`, or `CORRECTION_REQUIRED`; external transaction, document, line, batch, and fingerprint identifiers remain distinct.
+- MVP writes retain `actorId`/creator/updater audit fields with `ADMIN` as the default local actor. An explicit blank actor is invalid. Capability names are an extension contract, not a full user-management implementation.
 - SmartParser immutable input: `rawInputs`; message decisions and confirmed values: `parseResults`.
 - Duplicate boundary: unique `sourceMessageKey` indexes on `parseResults` and `orders`.
 - Google Sheet cloud is a central synchronization and recovery layer, not an ERP ledger.

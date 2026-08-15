@@ -1,4 +1,4 @@
-import { ADMIN_STATUS, OPS_STATUS, ORDER_STATUS } from './order-document-model.js?v=0.7.1';
+import { ADMIN_STATUS, OPS_STATUS, ORDER_STATUS } from './order-document-model.js?v=0.8.0';
 
 export const TRANSFER_EVENT_TYPE = Object.freeze({
   ALLOCATED: 'SALES_TRANSFER_ALLOCATED',

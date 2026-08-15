@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="ko">
+<meta charset="utf-8">
+<title>ORDER Q M1 IndexedDB 검증</title>
+<body>
+  <h1>ORDER Q M1 IndexedDB 검증</h1>
+  <pre id="result">RUNNING</pre>
+  <script type="module">
+    import {
+      DB_NAME,
+      DB_VERSION,
+      STORE,
+      closeOrderQDb,
+      openOrderQDb,
+      requestToPromise,
+      transactionDone,
+      upgradeOrderQDbSchema
+    } from '../orderq/orderq-db.js?v=0.8.0';
+    import {
+      V7_STORE_DEFINITIONS,
+      legacyInventoryEffect,
+      normalizeExternalIdentity,
+      requireActor
+    } from '../orderq/orderq-v7-contracts.js?v=0.8.0';
+    import {
+      exportOrderQBackup,
+      restoreOrderQBackup
+    } from '../orderq/orderq-v7-repository.js?v=0.8.0';
+
+    const output = document.querySelector('#result');
+    const assert = (condition, message) => {
+      if (!condition) throw new Error(message);
+    };
+    const idbRequest = request => new Promise((resolve, reject) => {
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error || new Error('IndexedDB request failed'));
+    });
+    const deleteDatabase = () => new Promise((resolve, reject) => {
+      const request = indexedDB.deleteDatabase(DB_NAME);
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+      request.onblocked = () => reject(new Error('test database delete blocked'));
+    });
+    const openCurrentVersion = () => idbRequest(indexedDB.open(DB_NAME));
+    const getAll = async (db, storeName) => {
+      const tx = db.transaction(storeName, 'readonly');
+      const rows = await idbRequest(tx.objectStore(storeName).getAll());
+      await transactionDone(tx);
+      return rows;
+    };
+
+    async function createLegacyV6() {
+      const request = indexedDB.open(DB_NAME, 6);
+      request.onupgradeneeded = () => {
+        const db = request.result;
+        const definitions = [
+          ['orders', 'orderId'], ['orderItems', 'orderItemId'],
+          ['salesDocuments', 'salesDocumentId'], ['salesLines', 'salesLineId'],
+          ['purchaseDocuments', 'purchaseDocumentId'], ['purchaseLines', 'purchaseLineId'],
+          ['collectorSettings', 'key'], ['syncQueue', 'queueId'], ['meta', 'key']
+        ];
+        for (const [name, keyPath] of definitions) db.createObjectStore(name, { keyPath });
+      };
+      const db = await idbRequest(request);
+      const tx = db.transaction([
+        'orders', 'orderItems', 'salesDocuments', 'salesLines',
+        'purchaseDocuments', 'purchaseLines', 'collectorSettings', 'meta'
+      ], 'readwrite');
+      tx.objectStore('orders').put({
+        orderId: 'LEGACY-O-0', sourceMessageKey: 'LEGACY-SOURCE-0', memo: '', totalAmount: 0,
+        warehouseCode: '01', rawQuantity: -8, untouched: { blank: '', zero: 0 }
+      });
+      tx.objectStore('orderItems').put({ orderItemId: 'LEGACY-I-0', orderId: 'LEGACY-O-0', rawUnit: '', rawQuantity: 0 });
+      tx.objectStore('salesDocuments').put({ salesDocumentId: 'LEGACY-SD-0', status: 'ACTIVE', externalDocumentNo: '0' });
+      tx.objectStore('salesLines').put({ salesLineId: 'LEGACY-SL-0', salesDocumentId: 'LEGACY-SD-0', quantity: 8 });
+      tx.objectStore('purchaseDocuments').put({ purchaseDocumentId: 'LEGACY-PD-0', status: 'REVERSAL', externalDocumentNo: '' });
+      tx.objectStore('purchaseLines').put({ purchaseLineId: 'LEGACY-PL-0', purchaseDocumentId: 'LEGACY-PD-0', quantity: -8 });
+      tx.objectStore('collectorSettings').put({ key: 'legacy-zero', value: 0, note: '' });
+      tx.objectStore('meta').put({ key: 'legacy-sentinel', value: { blank: '', zero: 0, negative: -8 } });
+      await transactionDone(tx);
+      db.close();
+    }
+
+    async function snapshotLegacy(db) {
+      const names = ['orders', 'orderItems', 'salesDocuments', 'salesLines', 'purchaseDocuments', 'purchaseLines', 'collectorSettings', 'meta'];
+      return Object.fromEntries(await Promise.all(names.map(async name => [name, await getAll(db, name)])));
+    }
+
+    function containsLegacySnapshot(actual, expected) {
+      return Object.entries(expected).every(([name, rows]) => rows.every(expectedRow => (
+        actual[name].some(actualRow => JSON.stringify(actualRow) === JSON.stringify(expectedRow))
+      )));
+    }
+
+    async function abortV7Migration() {
+      const request = indexedDB.open(DB_NAME, 7);
+      let upgradeSeen = false;
+      await new Promise((resolve, reject) => {
+        request.onupgradeneeded = event => {
+          upgradeSeen = true;
+          upgradeOrderQDbSchema(request.result, request.transaction, event.oldVersion);
+          request.transaction.abort();
+        };
+        request.onsuccess = () => reject(new Error('aborted migration unexpectedly succeeded'));
+        request.onerror = () => resolve();
+      });
+      assert(upgradeSeen, 'failed migration path was not exercised');
+    }
+
+    async function run() {
+      closeOrderQDb();
+      await deleteDatabase();
+      await createLegacyV6();
+
+      let db = await openCurrentVersion();
+      assert(db.version === 6, 'legacy database must start at v6');
+      const before = await snapshotLegacy(db);
+      db.close();
+
+      await abortV7Migration();
+      db = await openCurrentVersion();
+      const afterAbort = await snapshotLegacy(db);
+      assert(db.version === 6, 'aborted migration must leave database at v6');
+      assert(JSON.stringify(afterAbort) === JSON.stringify(before), 'aborted migration must preserve all v6 rows');
+      db.close();
+
+      db = await openOrderQDb();
+      assert(db.version === DB_VERSION && DB_VERSION === 7, 'successful retry must upgrade to v7');
+      const afterUpgrade = await snapshotLegacy(db);
+      assert(containsLegacySnapshot(afterUpgrade, before), 'v6 rows changed during v7 upgrade');
+      for (const definition of V7_STORE_DEFINITIONS) {
+        assert(db.objectStoreNames.contains(definition.name), `missing v7 store ${definition.name}`);
+        const tx = db.transaction(definition.name, 'readonly');
+        const indexNames = tx.objectStore(definition.name).indexNames;
+        for (const entry of definition.indexes) assert(indexNames.contains(entry.name), `missing index ${definition.name}.${entry.name}`);
+        await transactionDone(tx);
+      }
+
+      const backup = await exportOrderQBackup('ADMIN', ['orders', 'orderItems', 'collectorSettings']);
+      assert(backup.stores.orders[0].memo === '', 'blank string was not preserved in backup');
+      assert(backup.stores.orders[0].totalAmount === 0, 'numeric zero was not preserved in backup');
+      assert(backup.stores.orders[0].rawQuantity === -8, 'raw sign was not preserved in backup');
+
+      const invalid = structuredClone(backup);
+      invalid.stores.orders = [
+        { orderId: 'BROKEN-1', sourceMessageKey: 'DUPLICATE' },
+        { orderId: 'BROKEN-2', sourceMessageKey: 'DUPLICATE' }
+      ];
+      let restoreFailed = false;
+      try { await restoreOrderQBackup(invalid, 'ADMIN'); } catch { restoreFailed = true; }
+      assert(restoreFailed, 'constraint-breaking restore must fail');
+      assert(JSON.stringify(await getAll(db, 'orders')) === JSON.stringify(before.orders), 'failed restore must roll back atomically');
+
+      const mutation = db.transaction('orders', 'readwrite');
+      mutation.objectStore('orders').clear();
+      mutation.objectStore('orders').put({ orderId: 'TEMP', sourceMessageKey: 'TEMP' });
+      await transactionDone(mutation);
+      await restoreOrderQBackup(backup, 'ADMIN');
+      assert(JSON.stringify(await getAll(db, 'orders')) === JSON.stringify(before.orders), 'valid backup restore must recover legacy row');
+
+      const legacyCases = [
+        ['PURCHASE', 'ACTIVE', 8, 8],
+        ['PURCHASE', 'REVERSAL', -8, -8],
+        ['SALES', 'ACTIVE', 8, -8],
+        ['SALES', 'REVERSAL', -8, 8]
+      ].map(([documentType, status, quantity, expected]) => {
+        const value = legacyInventoryEffect({ documentType, status, quantity });
+        assert(value.rawQuantity === quantity && value.inventoryEffect === expected, `legacy sign mismatch ${documentType}/${status}`);
+        return value;
+      });
+      const identity = normalizeExternalIdentity({ originTransactionId: 0, externalDocumentNo: '0', externalLineNo: '' });
+      assert(identity.originTransactionId === '0' && identity.externalDocumentNo === '0' && identity.externalLineNo === '', 'external identity blank/zero loss');
+      let blankActorRejected = false;
+      try { requireActor(''); } catch { blankActorRejected = true; }
+      assert(blankActorRejected, 'explicit blank actor must be rejected');
+
+      return {
+        ok: true,
+        databaseVersion: db.version,
+        v6LosslessUpgrade: containsLegacySnapshot(afterUpgrade, before),
+        abortedMigrationRollback: JSON.stringify(afterAbort) === JSON.stringify(before),
+        failedRestoreRollback: true,
+        validRestoreRecovered: true,
+        v7Stores: V7_STORE_DEFINITIONS.map(row => row.name),
+        legacyCases,
+        preservedValues: { blank: backup.stores.orders[0].memo, zero: backup.stores.orders[0].totalAmount, rawSign: backup.stores.orders[0].rawQuantity },
+        externalIdentity: identity,
+        actorBoundary: 'explicit blank rejected'
+      };
+    }
+
+    run().then(result => {
+      output.textContent = JSON.stringify(result, null, 2);
+      output.dataset.status = 'PASS';
+    }).catch(error => {
+      output.textContent = `${error.stack || error}`;
+      output.dataset.status = 'FAIL';
+    });
+  </script>
+</body>
+</html>

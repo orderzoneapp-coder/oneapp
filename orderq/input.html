@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="google" content="notranslate">
   <title>ONEAPP ORDER Q vNext · 주문서 입력</title>
-  <link rel="stylesheet" href="./orderq.css?v=0.7.1">
+  <link rel="stylesheet" href="./orderq.css?v=0.8.0">
 </head>
 <body class="manual-order-page">
   <div class="shell">
@@ -13,7 +13,7 @@
       <div class="brand">
         <strong>ONEAPP</strong>
         <span class="logo-frame" aria-hidden="true"><img src="../assets/order-q-logo.png" alt=""></span>
-        <span class="badge">vNext 0.7.1</span>
+        <span class="badge">vNext 0.8.0</span>
         <span id="pageMode">주문서 입력</span>
       </div>
       <div class="top-system" aria-live="polite">
@@ -216,17 +216,17 @@
     import {
       createOrder, updateOrder, cancelOrder, getOrder, listOrders, subscribeOrderChanges,
       OrderRevisionConflictError, MATCH_STATUS
-    } from './order-intake-engine.js?v=0.7.1';
+    } from './order-intake-engine.js?v=0.8.0';
     import {
       syncBeforeOrderMutation, syncAfterLocalMutation, getSyncState,
       CloudOrderConflictError
-    } from './orderq-sync-engine.js?v=0.7.1';
-    import { loadProductCatalog, searchProductCatalog } from './product-master-search.js?v=0.7.1';
-    import { loadWarehouseCatalog, matchWarehouseInput, warehouseDisplayName } from './warehouse-master.js?v=0.7.1';
+    } from './orderq-sync-engine.js?v=0.8.0';
+    import { loadProductCatalog, searchProductCatalog } from './product-master-search.js?v=0.8.0';
+    import { loadWarehouseCatalog, matchWarehouseInput, warehouseDisplayName } from './warehouse-master.js?v=0.8.0';
     import {
       calculateLineTotal, calculateVatAmount, compareManualRows, cycleManualPriceOption, numberOrNull, shiftIsoDate
-    } from './manual-order-grid.js?v=0.7.1';
-    import { INPUT_CHANNEL_LABEL } from './order-document-model.js?v=0.7.1';
+    } from './manual-order-grid.js?v=0.8.0';
+    import { INPUT_CHANNEL_LABEL } from './order-document-model.js?v=0.8.0';
 
     const params = new URLSearchParams(location.search);
     const editingOrderId = params.get('orderId');

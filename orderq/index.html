@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="google" content="notranslate">
   <title>ONEAPP ORDER Q vNext · 주문현황</title>
-  <link rel="stylesheet" href="./orderq.css?v=0.7.1">
+  <link rel="stylesheet" href="./orderq.css?v=0.8.0">
 </head>
 <body class="order-history-page">
   <div class="shell">
@@ -13,7 +13,7 @@
       <div class="brand">
         <strong>ONEAPP</strong>
         <span class="logo-frame" aria-hidden="true"><img src="../assets/order-q-logo.png" alt=""></span>
-        <span class="badge">vNext 0.7.1</span>
+        <span class="badge">vNext 0.8.0</span>
         <span>주문현황 · 전표관리</span>
       </div>
       <div class="top-actions">
@@ -81,15 +81,15 @@
     import {
       listOrders, getOrder, updateOrder, cancelOrder, subscribeOrderChanges,
       OrderRevisionConflictError
-    } from './order-intake-engine.js?v=0.7.1';
+    } from './order-intake-engine.js?v=0.8.0';
     import {
       syncNow, getSyncState, syncBeforeOrderMutation, syncAfterLocalMutation,
       CloudOrderConflictError
-    } from './orderq-sync-engine.js?v=0.7.1';
-    import { getCloudUrl } from './orderq-cloud-adapter.js?v=0.7.1';
+    } from './orderq-sync-engine.js?v=0.8.0';
+    import { getCloudUrl } from './orderq-cloud-adapter.js?v=0.8.0';
     import {
       ORDER_STATUS_LABEL, ADMIN_STATUS_LABEL, OPS_STATUS_LABEL, INPUT_CHANNEL_LABEL
-    } from './order-document-model.js?v=0.7.1';
+    } from './order-document-model.js?v=0.8.0';
 
     const rows = document.getElementById('orderRows');
     const summary = document.getElementById('summaryText');
