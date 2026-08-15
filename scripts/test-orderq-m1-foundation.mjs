@@ -6,6 +6,7 @@ import {
   ORDERQ_DB_VERSION,
   DISPATCH_STAGE,
   ERP_POSTING_STATUS,
+  V7_EXISTING_STORE_INDEXES,
   V7_STORE_DEFINITIONS,
   V7_SYNC_ENTITY_CONTRACT,
   adaptLegacyInventoryLine,
@@ -28,6 +29,14 @@ import {
 assert.equal(ORDERQ_DB_VERSION, 7);
 assert.equal(V7_STORE_DEFINITIONS.length, 7);
 assert.equal(Object.keys(V7_SYNC_ENTITY_CONTRACT).length, 7);
+for (const storeName of ['salesDocuments', 'purchaseDocuments']) {
+  const indexes = V7_EXISTING_STORE_INDEXES[storeName];
+  const erpStatusIndex = indexes.find(entry => entry.name === 'byErpPostingStatus');
+  assert.ok(erpStatusIndex, `${storeName}.byErpPostingStatus is required`);
+  assert.deepEqual(erpStatusIndex.keyPath, ['erpPostingStatus', 'businessDate']);
+  assert.equal(erpStatusIndex.options.unique, undefined);
+  assert.equal(indexes.some(entry => entry.name === 'byErpPostingStatusDate'), false);
+}
 assert.equal(normalizeDispatchStageCode('first_wholesale'), DISPATCH_STAGE.FIRST_WHOLESALE);
 assert.equal(normalizeDispatchStageCode('legacy-unknown'), DISPATCH_STAGE.UNSPECIFIED);
 

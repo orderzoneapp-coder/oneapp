@@ -131,7 +131,7 @@ export const V7_EXISTING_STORE_INDEXES = Object.freeze({
     index('byOriginTransaction', ['originSystem', 'originTransactionId']),
     index('byExternalDocumentNo', ['originSystem', 'externalDocumentNo']),
     index('bySourceFingerprint', 'sourceFingerprint'),
-    index('byErpPostingStatusDate', ['erpPostingStatus', 'businessDate']),
+    index('byErpPostingStatus', ['erpPostingStatus', 'businessDate']),
     index('byErpDocumentNo', 'erpDocumentNo')
   ]),
   salesLines: Object.freeze([
@@ -144,7 +144,7 @@ export const V7_EXISTING_STORE_INDEXES = Object.freeze({
     index('byOriginTransaction', ['originSystem', 'originTransactionId']),
     index('byExternalDocumentNo', ['originSystem', 'externalDocumentNo']),
     index('bySourceFingerprint', 'sourceFingerprint'),
-    index('byErpPostingStatusDate', ['erpPostingStatus', 'businessDate']),
+    index('byErpPostingStatus', ['erpPostingStatus', 'businessDate']),
     index('byErpDocumentNo', 'erpDocumentNo')
   ]),
   purchaseLines: Object.freeze([

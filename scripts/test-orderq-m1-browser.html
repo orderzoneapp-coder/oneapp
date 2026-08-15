@@ -17,6 +17,7 @@
       upgradeOrderQDbSchema
     } from '../orderq/orderq-db.js?v=0.8.0';
     import {
+      V7_EXISTING_STORE_INDEXES,
       V7_STORE_DEFINITIONS,
       legacyInventoryEffect,
       normalizeExternalIdentity,
@@ -71,10 +72,22 @@
         warehouseCode: '01', rawQuantity: -8, untouched: { blank: '', zero: 0 }
       });
       tx.objectStore('orderItems').put({ orderItemId: 'LEGACY-I-0', orderId: 'LEGACY-O-0', rawUnit: '', rawQuantity: 0 });
-      tx.objectStore('salesDocuments').put({ salesDocumentId: 'LEGACY-SD-0', status: 'ACTIVE', externalDocumentNo: '0' });
-      tx.objectStore('salesLines').put({ salesLineId: 'LEGACY-SL-0', salesDocumentId: 'LEGACY-SD-0', quantity: 8 });
-      tx.objectStore('purchaseDocuments').put({ purchaseDocumentId: 'LEGACY-PD-0', status: 'REVERSAL', externalDocumentNo: '' });
-      tx.objectStore('purchaseLines').put({ purchaseLineId: 'LEGACY-PL-0', purchaseDocumentId: 'LEGACY-PD-0', quantity: -8 });
+      tx.objectStore('salesDocuments').put({
+        salesDocumentId: 'LEGACY-SD-0', status: 'ACTIVE', originSystem: 'ERP',
+        originTransactionId: 0, externalDocumentNo: '0', importBatchId: '', sourceFingerprint: '0'
+      });
+      tx.objectStore('salesLines').put({
+        salesLineId: 'LEGACY-SL-0', salesDocumentId: 'LEGACY-SD-0', quantity: 8,
+        externalLineNo: 0, importBatchId: '0', sourceLineFingerprint: ''
+      });
+      tx.objectStore('purchaseDocuments').put({
+        purchaseDocumentId: 'LEGACY-PD-0', status: 'REVERSAL', originSystem: '',
+        originTransactionId: '0', externalDocumentNo: 0, importBatchId: '0', sourceFingerprint: ''
+      });
+      tx.objectStore('purchaseLines').put({
+        purchaseLineId: 'LEGACY-PL-0', purchaseDocumentId: 'LEGACY-PD-0', quantity: -8,
+        externalLineNo: '0', importBatchId: '', sourceLineFingerprint: 0
+      });
       tx.objectStore('collectorSettings').put({ key: 'legacy-zero', value: 0, note: '' });
       tx.objectStore('meta').put({ key: 'legacy-sentinel', value: { blank: '', zero: 0, negative: -8 } });
       await transactionDone(tx);
@@ -136,10 +149,33 @@
         await transactionDone(tx);
       }
 
-      const backup = await exportOrderQBackup('ADMIN', ['orders', 'orderItems', 'collectorSettings']);
+      const existingStoreIndexes = {};
+      for (const [storeName, definitions] of Object.entries(V7_EXISTING_STORE_INDEXES)) {
+        const tx = db.transaction(storeName, 'readonly');
+        const store = tx.objectStore(storeName);
+        existingStoreIndexes[storeName] = [];
+        for (const definition of definitions) {
+          assert(store.indexNames.contains(definition.name), `missing index ${storeName}.${definition.name}`);
+          const actual = store.index(definition.name);
+          const actualKeyPath = Array.isArray(actual.keyPath) ? [...actual.keyPath] : actual.keyPath;
+          assert(JSON.stringify(actualKeyPath) === JSON.stringify(definition.keyPath), `keyPath mismatch ${storeName}.${definition.name}`);
+          assert(actual.unique === Boolean(definition.options.unique), `unique mismatch ${storeName}.${definition.name}`);
+          existingStoreIndexes[storeName].push({ name: actual.name, keyPath: actualKeyPath, unique: actual.unique });
+        }
+        await transactionDone(tx);
+      }
+
+      const backupStoreNames = [
+        'orders', 'orderItems', 'collectorSettings',
+        'salesDocuments', 'salesLines', 'purchaseDocuments', 'purchaseLines'
+      ];
+      const backup = await exportOrderQBackup('ADMIN', backupStoreNames);
       assert(backup.stores.orders[0].memo === '', 'blank string was not preserved in backup');
       assert(backup.stores.orders[0].totalAmount === 0, 'numeric zero was not preserved in backup');
       assert(backup.stores.orders[0].rawQuantity === -8, 'raw sign was not preserved in backup');
+      for (const name of ['salesDocuments', 'salesLines', 'purchaseDocuments', 'purchaseLines']) {
+        assert(JSON.stringify(backup.stores[name]) === JSON.stringify(before[name]), `external identity backup mismatch ${name}`);
+      }
 
       const invalid = structuredClone(backup);
       invalid.stores.orders = [
@@ -151,12 +187,18 @@
       assert(restoreFailed, 'constraint-breaking restore must fail');
       assert(JSON.stringify(await getAll(db, 'orders')) === JSON.stringify(before.orders), 'failed restore must roll back atomically');
 
-      const mutation = db.transaction('orders', 'readwrite');
+      const mutation = db.transaction(backupStoreNames, 'readwrite');
       mutation.objectStore('orders').clear();
       mutation.objectStore('orders').put({ orderId: 'TEMP', sourceMessageKey: 'TEMP' });
+      mutation.objectStore('salesDocuments').clear();
+      mutation.objectStore('salesLines').clear();
+      mutation.objectStore('purchaseDocuments').clear();
+      mutation.objectStore('purchaseLines').clear();
       await transactionDone(mutation);
       await restoreOrderQBackup(backup, 'ADMIN');
-      assert(JSON.stringify(await getAll(db, 'orders')) === JSON.stringify(before.orders), 'valid backup restore must recover legacy row');
+      for (const name of backupStoreNames) {
+        assert(JSON.stringify(await getAll(db, name)) === JSON.stringify(before[name]), `valid backup restore mismatch ${name}`);
+      }
 
       const legacyCases = [
         ['PURCHASE', 'ACTIVE', 8, 8],
@@ -181,6 +223,11 @@
         abortedMigrationRollback: JSON.stringify(afterAbort) === JSON.stringify(before),
         failedRestoreRollback: true,
         validRestoreRecovered: true,
+        externalIdentityRoundTrip: true,
+        existingStoreIndexes,
+        externalIdentitySentinels: Object.fromEntries(
+          ['salesDocuments', 'salesLines', 'purchaseDocuments', 'purchaseLines'].map(name => [name, backup.stores[name]])
+        ),
         v7Stores: V7_STORE_DEFINITIONS.map(row => row.name),
         legacyCases,
         preservedValues: { blank: backup.stores.orders[0].memo, zero: backup.stores.orders[0].totalAmount, rawSign: backup.stores.orders[0].rawQuantity },
