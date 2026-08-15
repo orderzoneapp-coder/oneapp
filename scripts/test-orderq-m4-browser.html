@@ -9,7 +9,7 @@
     import { DB_NAME, STORE, closeOrderQDb, openOrderQDb, requestToPromise, transactionDone } from '../orderq/orderq-db.js?v=0.8.0';
     import { DISPATCH_CONFIRMATION_STEP, buildDispatchConfirmationKey, buildDispatchReversalKey } from '../orderq/dispatch-confirmation.js?v=0.8.0';
     import { confirmDispatch, confirmDispatchBatch, recordDispatchActual, reverseDispatch } from '../orderq/dispatch-confirmation-repository.js?v=0.8.0';
-    import { getDispatchProposals, loadDispatchAggregate, recordDispatchWorkFact, releaseDispatch, saveDispatchDraft } from '../orderq/dispatch-workbench-repository.js?v=0.8.0';
+    import { expireDispatchReservations, getDispatchProposals, loadDispatchAggregate, recallDispatch, recordDispatchWorkFact, releaseDispatch, saveDispatchDraft } from '../orderq/dispatch-workbench-repository.js?v=0.8.0';
     import { getInventoryLedgerSequence, getInventoryShadowProjection } from '../orderq/inventory-ledger-repository.js?v=0.8.0';
 
     const output = document.querySelector('#result');
@@ -60,20 +60,26 @@
           productId: 'P-10', productCode: '10', warehouseId, inventoryQuantity: quantity, status: 'ACTIVE'
         });
       }
-      for (const [orderId, orderItemId, quantity] of [['O-1', 'OI-1', 10], ['O-2', 'OI-2', 4], ['O-3', 'OI-3', 4]]) {
+      for (const [orderId, orderItemId, quantity, price, vatAmount] of [
+        ['O-1', 'OI-1', 10, 1000, 1000],
+        ['O-2', 'OI-2', 4, 1000, 400],
+        ['O-3', 'OI-3', 4, 1000, 400],
+        ['O-4', 'OI-4', 2, 1000, 200],
+        ['O-5', 'OI-5', 3, 2 / 3, 2]
+      ]) {
         tx.objectStore(STORE.ORDERS).put({
           orderId, orderNo: `20260815-${orderId.slice(-1).padStart(3, '0')}`, customerId: 'C-1', customerName: '테스트 고객',
           orderDate: '2026-08-15', orderStatus: 'ORDER', adminStatus: 'CHECKED', opsStatus: 'ACTIVE', revision: 1
         });
         tx.objectStore(STORE.ORDER_ITEMS).put({
           orderItemId, orderId, productId: 'P-10', itemCode: '10', itemName: '테스트 상품',
-          finalQuantity: quantity, finalUnit: 'EA', price: 1000, vatAmount: quantity * 100, matchStatus: 'MATCHED'
+          finalQuantity: quantity, finalUnit: 'EA', price, vatAmount, matchStatus: 'MATCHED'
         });
       }
       await transactionDone(tx);
     }
 
-    async function createReleased({ dispatchId, orderId, orderItemId, quantity, allocations }) {
+    async function createReleased({ dispatchId, orderId, orderItemId, quantity, allocations, reservationMinutes = 60 }) {
       const draft = await saveDispatchDraft({
         decision: { dispatchId, customerId: 'C-1', customerName: '테스트 고객', businessDate: '2026-08-15', status: 'DRAFT' },
         lines: [{
@@ -88,7 +94,7 @@
         })),
         expectedRevision: 0
       }, 'ADMIN');
-      return releaseDispatch(dispatchId, draft.decision.revision, 'ADMIN', { reservationMinutes: 60 });
+      return releaseDispatch(dispatchId, draft.decision.revision, 'ADMIN', { reservationMinutes });
     }
 
     async function run() {
@@ -196,6 +202,66 @@
       const remainder = proposals.find(row => row.lines.some(line => line.orderId === 'O-1'));
       assert(remainder?.lines[0]?.plannedBaseQuantity === 2, 'partial dispatch remainder was not available for a new proposal');
 
+      const releasedReadyRecovery = await createReleased({
+        dispatchId: 'D-4', orderId: 'O-4', orderItemId: 'OI-4', quantity: 2,
+        allocations: [['DA-5', 'W-01', 2]]
+      });
+      const firstReadyRecovery = await recordDispatchActual({
+        dispatchId: 'D-4', expectedRevision: releasedReadyRecovery.decision.revision,
+        lines: [{ dispatchLineId: 'DL-D-4', actualQuantity: 2, recognizedOrderQuantity: 2, allocations: [{ allocationId: 'DA-5', actualBaseQuantity: 2 }] }]
+      }, 'ADMIN');
+      const recoveryFrame = document.createElement('iframe');
+      recoveryFrame.style.width = '1200px';
+      recoveryFrame.style.height = '500px';
+      document.body.append(recoveryFrame);
+      await new Promise((resolve, reject) => {
+        recoveryFrame.onload = resolve;
+        recoveryFrame.onerror = () => reject(new Error('READY recovery workbench iframe load failed'));
+        recoveryFrame.src = `../orderq/dispatch.html?m4-ready-recovery=${Date.now()}`;
+      });
+      const recoveryDocument = recoveryFrame.contentDocument;
+      await waitUntil(() => recoveryDocument.querySelector('[data-action="select"][data-id="D-4"]'), 'READY recovery dispatch did not render');
+      recoveryDocument.querySelector('[data-action="select"][data-id="D-4"]').click();
+      await waitUntil(() => recoveryDocument.querySelector('[data-action="recall"]'), 'READY_TO_CONFIRM administrator recall action did not render');
+      recoveryDocument.querySelector('[data-action="recall"]').click();
+      await waitUntil(async () => (await loadDispatchAggregate('D-4')).decision.status === 'DRAFT', 'READY_TO_CONFIRM UI recall did not return to DRAFT');
+      const recalledReadyAggregate = await loadDispatchAggregate('D-4');
+      assert(recalledReadyAggregate.reservations.every(row => row.status !== 'ACTIVE'), 'READY recall retained an active reservation');
+      assert(recalledReadyAggregate.lines.every(row => row.actualQuantity == null && row.actualBaseQuantity == null && row.recognizedOrderQuantity == null), 'READY recall retained line actuals');
+      assert(recalledReadyAggregate.allocations.every(row => row.actualBaseQuantity == null && !row.reservationId), 'READY recall retained allocation actuals or reservation links');
+      recoveryFrame.remove();
+
+      const releasedReadyExpiry = await releaseDispatch('D-4', recalledReadyAggregate.decision.revision, 'ADMIN', { reservationMinutes: 60 });
+      const secondReadyRecovery = await recordDispatchActual({
+        dispatchId: 'D-4', expectedRevision: releasedReadyExpiry.decision.revision,
+        lines: [{ dispatchLineId: 'DL-D-4', actualQuantity: 2, recognizedOrderQuantity: 2, allocations: [{ allocationId: 'DA-5', actualBaseQuantity: 2 }] }]
+      }, 'ADMIN');
+      const expiredReadyCommand = {
+        dispatchId: 'D-4', expectedRevision: secondReadyRecovery.decision.revision,
+        idempotencyKey: buildDispatchConfirmationKey('D-4', secondReadyRecovery.decision.revision)
+      };
+      const readyExpiry = await expireDispatchReservations(new Date(Date.now() + 120 * 60_000).toISOString(), 'ADMIN');
+      const expiredReadyAggregate = await loadDispatchAggregate('D-4');
+      assert(readyExpiry.dispatchIds.includes('D-4') && readyExpiry.expiredCount === 1, 'READY reservation expiry was not processed');
+      assert(expiredReadyAggregate.decision.status === 'DRAFT', 'expired READY decision did not return to editable DRAFT');
+      assert(expiredReadyAggregate.reservations.every(row => row.status !== 'ACTIVE'), 'expired READY decision retained an active reservation');
+      assert(expiredReadyAggregate.lines.every(row => row.actualQuantity == null && row.actualBaseQuantity == null && row.recognizedOrderQuantity == null), 'expired READY decision retained line actuals');
+      assert(expiredReadyAggregate.allocations.every(row => row.actualBaseQuantity == null && !row.reservationId), 'expired READY decision retained allocation actuals or reservation links');
+      const projectionAfterReadyExpiry = await getInventoryShadowProjection();
+      assert(projectionAfterReadyExpiry.totals.availableQuantity === projectionAfterReadyExpiry.totals.onHandQuantity, 'READY expiry did not restore available inventory');
+      let expiredReadyConfirmError = '';
+      try { await confirmDispatch(expiredReadyCommand, 'ADMIN'); } catch (error) { expiredReadyConfirmError = error.message; }
+      assert(expiredReadyConfirmError.includes('CONFIRM_STATE_INVALID'), 'expired READY decision remained confirmable');
+      const editedAfterReadyExpiry = await saveDispatchDraft({
+        decision: expiredReadyAggregate.decision,
+        lines: expiredReadyAggregate.lines,
+        allocations: expiredReadyAggregate.allocations,
+        expectedRevision: expiredReadyAggregate.decision.revision
+      }, 'ADMIN');
+      const redeployedAfterReadyExpiry = await releaseDispatch('D-4', editedAfterReadyExpiry.decision.revision, 'ADMIN');
+      assert(redeployedAfterReadyExpiry.decision.status === 'RELEASED', 'expired READY decision could not be edited and redeployed');
+      await recallDispatch('D-4', redeployedAfterReadyExpiry.decision.revision, 'ADMIN');
+
       const released2 = await createReleased({ dispatchId: 'D-2', orderId: 'O-2', orderItemId: 'OI-2', quantity: 4, allocations: [['DA-3', 'W-01', 4]] });
       const released3 = await createReleased({ dispatchId: 'D-3', orderId: 'O-3', orderItemId: 'OI-3', quantity: 4, allocations: [['DA-4', 'W-01', 4]] });
       const beforeUnsafeBatch = await counts();
@@ -292,6 +358,48 @@
       assert(JSON.stringify(await counts()) === JSON.stringify(beforeReverseFailure), 'failed reversal left partial rows');
       assert((await loadDispatchAggregate('D-3')).decision.status === 'CONFIRMED', 'failed reversal changed original confirmation');
 
+      const releasedMoney = await createReleased({
+        dispatchId: 'D-5', orderId: 'O-5', orderItemId: 'OI-5', quantity: 3,
+        allocations: [['DA-6', 'W-01', 3]]
+      });
+      const readyMoney = await recordDispatchActual({
+        dispatchId: 'D-5', expectedRevision: releasedMoney.decision.revision,
+        lines: [{ dispatchLineId: 'DL-D-5', actualQuantity: 3, recognizedOrderQuantity: 3, allocations: [{ allocationId: 'DA-6', actualBaseQuantity: 3 }] }]
+      }, 'ADMIN');
+      const confirmedMoney = await confirmDispatch({
+        dispatchId: 'D-5', expectedRevision: readyMoney.decision.revision,
+        idempotencyKey: buildDispatchConfirmationKey('D-5', readyMoney.decision.revision)
+      }, 'ADMIN');
+      const originalMoneyLine = confirmedMoney.salesLines[0];
+      assert(originalMoneyLine.supplyAmountWon === 2 && originalMoneyLine.vatAmountWon === 2 && originalMoneyLine.totalAmountWon === 4, 'rounding fixture did not create the intended original amounts');
+      const confirmedMoneyAggregate = await loadDispatchAggregate('D-5');
+      const splitMoneyReversals = [];
+      for (let index = 1; index <= 3; index++) {
+        const splitCommand = {
+          dispatchId: 'D-5', expectedRevision: confirmedMoneyAggregate.decision.revision,
+          idempotencyKey: buildDispatchReversalKey('D-5', confirmedMoneyAggregate.decision.revision, `MONEY-${index}`),
+          reason: `반올림 부분 역분개 ${index}`,
+          lines: [{ dispatchLineId: 'DL-D-5', quantity: 1, allocations: [{ allocationId: 'DA-6', quantity: 1 }] }]
+        };
+        const splitResult = await reverseDispatch(splitCommand, 'ADMIN');
+        splitMoneyReversals.push(splitResult.salesLines[0]);
+        if (index === 1) {
+          const moneyCounts = await counts();
+          const splitRetry = await reverseDispatch(splitCommand, 'ADMIN');
+          assert(splitRetry.duplicate === true && JSON.stringify(await counts()) === JSON.stringify(moneyCounts), 'rounded partial reversal idempotency retry duplicated rows');
+        }
+      }
+      const reversedMoneyTotals = splitMoneyReversals.reduce((sum, row) => ({
+        quantity: sum.quantity + row.actualQuantity,
+        supplyAmountWon: sum.supplyAmountWon + row.supplyAmountWon,
+        vatAmountWon: sum.vatAmountWon + row.vatAmountWon,
+        totalAmountWon: sum.totalAmountWon + row.totalAmountWon
+      }), { quantity: 0, supplyAmountWon: 0, vatAmountWon: 0, totalAmountWon: 0 });
+      assert(reversedMoneyTotals.quantity === -3, 'split reversal quantity did not exactly reverse the original');
+      assert(reversedMoneyTotals.supplyAmountWon === -originalMoneyLine.supplyAmountWon, 'split reversal supply amount exceeded or missed the original');
+      assert(reversedMoneyTotals.vatAmountWon === -originalMoneyLine.vatAmountWon, 'split reversal VAT exceeded or missed the original');
+      assert(reversedMoneyTotals.totalAmountWon === -originalMoneyLine.totalAmountWon, 'split reversal total exceeded or missed the original');
+
       return {
         ok: true,
         databaseVersion: (await openOrderQDb()).version,
@@ -318,7 +426,22 @@
           remainingSalesQuantity: remainingReverse.salesLines[0].actualQuantity,
           reopenedOrderQuantity: reopenedProposal.lines[0].plannedBaseQuantity,
           fullReopenEvents: fullReverseD2.orderEvents.map(row => row.eventType),
-          failureRollback: reverseFailure
+          failureRollback: reverseFailure,
+          splitMoneyLines: splitMoneyReversals.map(row => ({
+            supplyAmountWon: row.supplyAmountWon,
+            vatAmountWon: row.vatAmountWon,
+            totalAmountWon: row.totalAmountWon
+          })),
+          splitMoneyTotals: reversedMoneyTotals
+        },
+        readyRecovery: {
+          recalledStatus: recalledReadyAggregate.decision.status,
+          expiredStatus: expiredReadyAggregate.decision.status,
+          activeAfterExpiry: expiredReadyAggregate.reservations.filter(row => row.status === 'ACTIVE').length,
+          availableAfterExpiry: projectionAfterReadyExpiry.totals.availableQuantity,
+          onHandAfterExpiry: projectionAfterReadyExpiry.totals.onHandQuantity,
+          expiredConfirmError: expiredReadyConfirmError,
+          redeployedStatus: redeployedAfterReadyExpiry.decision.status
         }
       };
     }

@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import {
   DISPATCH_CONFIRMATION_STEP,
+  allocateReversalAmounts,
   buildDispatchConfirmationKey,
   buildDispatchReversalKey,
   confirmationCheckpoint,
@@ -82,6 +83,38 @@ assert.deepEqual(reversal.lines[0].allocations.map(row => row.allocationId), ['D
 assert.equal(dispatchReversalFingerprint(reversal), dispatchReversalFingerprint({ ...reversal, lines: [{ ...reversal.lines[0], allocations: [...reversal.lines[0].allocations].reverse() }] }));
 assert.throws(() => normalizeDispatchReversalCommand({ dispatchId: 'D-1', expectedRevision: 3, idempotencyKey: 'RK-2' }), /REASON_REQUIRED/);
 
+let reversedQuantity = 0;
+let reversedSupplyAmountWon = 0;
+let reversedVatAmountWon = 0;
+let reversedTotalAmountWon = 0;
+const splitAmounts = [1, 1, 1].map(reversalQuantity => {
+  const amount = allocateReversalAmounts({
+    originalQuantity: 3,
+    reversedQuantity,
+    reversalQuantity,
+    originalSupplyAmountWon: 2,
+    originalVatAmountWon: 2,
+    originalTotalAmountWon: 4,
+    reversedSupplyAmountWon,
+    reversedVatAmountWon,
+    reversedTotalAmountWon
+  });
+  reversedQuantity += reversalQuantity;
+  reversedSupplyAmountWon += amount.supplyAmountWon;
+  reversedVatAmountWon += amount.vatAmountWon;
+  reversedTotalAmountWon += amount.totalAmountWon;
+  return amount;
+});
+assert.equal(reversedSupplyAmountWon, 2, 'split reversals must not exceed original supply amount');
+assert.equal(reversedVatAmountWon, 2, 'split reversals must not exceed original VAT');
+assert.equal(reversedTotalAmountWon, 4, 'final split reversal must consume the exact remaining total');
+assert.equal(splitAmounts.at(-1).finalRemainder, true);
+assert.throws(() => allocateReversalAmounts({
+  originalQuantity: 3, reversedQuantity: 2, reversalQuantity: 1,
+  originalSupplyAmountWon: 2, originalVatAmountWon: 2, originalTotalAmountWon: 4,
+  reversedSupplyAmountWon: 3, reversedVatAmountWon: 1, reversedTotalAmountWon: 4
+}), /AMOUNT_EXCEEDS_ORIGINAL/);
+
 const repositorySource = await readFile(new URL('../orderq/dispatch-confirmation-repository.js', import.meta.url), 'utf8');
 assert.match(repositorySource, /db\.transaction\(CONFIRMATION_STORES, 'readwrite'\)/);
 for (const store of ['SALES_DOCUMENTS', 'SALES_LINES', 'INVENTORY_MOVEMENTS', 'ORDER_EVENTS', 'INVENTORY_RESERVATIONS', 'SYNC_QUEUE']) {
@@ -101,6 +134,7 @@ console.log(JSON.stringify({
   exactAllocationActuals: exact[0].allocations.map(row => row.actualBaseQuantity),
   partialAllocationActuals: partial[0].allocations.map(row => row.actualBaseQuantity),
   reversalAllocations: reversal.lines[0].allocations,
+  splitReversalAmounts: splitAmounts,
   normalOnly: true,
   failureInjectionSteps: Object.values(DISPATCH_CONFIRMATION_STEP)
 }, null, 2));

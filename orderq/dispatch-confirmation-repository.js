@@ -20,6 +20,7 @@ import { INVENTORY_MOVEMENT_TYPE, calculateInventoryShadowProjection } from './i
 import { appendInventoryMovementsInTransaction } from './inventory-ledger-repository.js?v=0.8.0';
 import {
   DISPATCH_CONFIRMATION_STEP,
+  allocateReversalAmounts,
   confirmationCheckpoint,
   dispatchConfirmationFingerprint,
   dispatchReversalFingerprint,
@@ -381,6 +382,7 @@ export async function confirmDispatch(source = {}, actor = 'ADMIN', options = {}
         recognizedOrderQuantity: actual.recognizedOrderQuantity,
         priceSource: 'ORDER_AGREED',
         ...amount,
+        totalAmountWon: amount.supplyAmountWon + amount.vatAmountWon,
         status: 'CONFIRMED',
         createdAt: timestamp,
         createdBy: context.actorId,
@@ -663,10 +665,10 @@ function buildReversalPlan({ command, originalLines, originalAllocations, origin
   for (const line of originalLines) {
     const originalSalesLine = salesLineByDispatchLine.get(line.dispatchLineId);
     if (!originalSalesLine) throw new Error(`ORDERQ_REVERSE_ORIGINAL_SALES_LINE_REQUIRED:${line.dispatchLineId}`);
-    const alreadyReversed = allSalesLines
-      .filter(row => row.reversalOf === originalSalesLine.salesLineId)
-      .reduce((sum, row) => sum + Math.abs(finite(row.actualQuantity ?? row.quantity)), 0);
-    const remainingQuantity = finite(originalSalesLine.actualQuantity ?? originalSalesLine.quantity) - alreadyReversed;
+    const priorReversalLines = allSalesLines.filter(row => row.reversalOf === originalSalesLine.salesLineId);
+    const alreadyReversed = priorReversalLines.reduce((sum, row) => sum + Math.abs(finite(row.actualQuantity ?? row.quantity)), 0);
+    const originalQuantity = finite(originalSalesLine.actualQuantity ?? originalSalesLine.quantity);
+    const remainingQuantity = originalQuantity - alreadyReversed;
     allRemainingQuantity += Math.max(0, remainingQuantity);
     const input = inputByLine.get(line.dispatchLineId);
     if (command.lines.length && !input) continue;
@@ -702,7 +704,27 @@ function buildReversalPlan({ command, originalLines, originalAllocations, origin
       return sum + row.quantity;
     }, 0);
     if (Math.abs(allocationTotal - quantity) > 1e-9) throw new Error(`ORDERQ_REVERSE_ALLOCATION_SUM_MISMATCH:${line.dispatchLineId}`);
-    plan.push({ line, originalSalesLine, quantity, allocations: reversalAllocations });
+    const originalSupplyAmountWon = finite(originalSalesLine.supplyAmountWon);
+    const originalVatAmountWon = finite(originalSalesLine.vatAmountWon);
+    const originalTotalAmountWon = originalSalesLine.totalAmountWon ?? (originalSupplyAmountWon + originalVatAmountWon);
+    const reversedSupplyAmountWon = priorReversalLines.reduce((sum, row) => sum + Math.abs(finite(row.supplyAmountWon)), 0);
+    const reversedVatAmountWon = priorReversalLines.reduce((sum, row) => sum + Math.abs(finite(row.vatAmountWon)), 0);
+    const reversedTotalAmountWon = priorReversalLines.reduce((sum, row) => {
+      const rowTotal = row.totalAmountWon ?? (finite(row.supplyAmountWon) + finite(row.vatAmountWon));
+      return sum + Math.abs(finite(rowTotal));
+    }, 0);
+    const amounts = allocateReversalAmounts({
+      originalQuantity,
+      reversedQuantity: alreadyReversed,
+      reversalQuantity: quantity,
+      originalSupplyAmountWon,
+      originalVatAmountWon,
+      originalTotalAmountWon,
+      reversedSupplyAmountWon,
+      reversedVatAmountWon,
+      reversedTotalAmountWon
+    });
+    plan.push({ line, originalSalesLine, quantity, allocations: reversalAllocations, amounts });
   }
   if (!plan.length) throw new Error('ORDERQ_REVERSE_NOTHING_REMAINING');
   const requestedTotal = plan.reduce((sum, row) => sum + row.quantity, 0);
@@ -756,8 +778,9 @@ export async function reverseDispatch(source = {}, actor = 'ADMIN', options = {}
       actualQuantity: -row.quantity,
       actualBaseQuantity: -row.quantity,
       recognizedOrderQuantity: -row.quantity,
-      supplyAmountWon: -Math.round(finite(row.originalSalesLine.unitPriceWon) * row.quantity),
-      vatAmountWon: -Math.round(Math.abs(finite(row.originalSalesLine.vatAmountWon)) * row.quantity / Math.max(finite(row.originalSalesLine.actualQuantity), 1)),
+      supplyAmountWon: -row.amounts.supplyAmountWon,
+      vatAmountWon: -row.amounts.vatAmountWon,
+      totalAmountWon: -row.amounts.totalAmountWon,
       status: 'REVERSED',
       reversalOf: row.originalSalesLine.salesLineId,
       createdAt: timestamp,

@@ -188,3 +188,57 @@ export function buildDispatchReversalKey(dispatchId, revision, suffix = 'FULL') 
   if (!id || !Number.isInteger(normalizedRevision) || normalizedRevision < 1) throw new Error('ORDERQ_REVERSAL_KEY_SOURCE_REQUIRED');
   return `DISPATCH_REVERSE:${id}:${normalizedRevision}:${normalizedSuffix}`;
 }
+
+function wonMagnitude(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.abs(Math.round(number)) : 0;
+}
+
+export function allocateReversalAmounts(source = {}) {
+  const originalQuantity = Number(source.originalQuantity);
+  const reversedQuantity = Number(source.reversedQuantity || 0);
+  const reversalQuantity = Number(source.reversalQuantity);
+  if (!(originalQuantity > 0) || reversedQuantity < 0 || !(reversalQuantity > 0)
+    || reversedQuantity + reversalQuantity > originalQuantity + 1e-9) {
+    throw new Error('ORDERQ_REVERSE_AMOUNT_QUANTITY_INVALID');
+  }
+
+  const originalSupplyAmountWon = wonMagnitude(source.originalSupplyAmountWon);
+  const originalVatAmountWon = wonMagnitude(source.originalVatAmountWon);
+  const originalTotalAmountWon = hasOwn(source, 'originalTotalAmountWon')
+    ? wonMagnitude(source.originalTotalAmountWon)
+    : originalSupplyAmountWon + originalVatAmountWon;
+  const reversedSupplyAmountWon = wonMagnitude(source.reversedSupplyAmountWon);
+  const reversedVatAmountWon = wonMagnitude(source.reversedVatAmountWon);
+  const reversedTotalAmountWon = hasOwn(source, 'reversedTotalAmountWon')
+    ? wonMagnitude(source.reversedTotalAmountWon)
+    : reversedSupplyAmountWon + reversedVatAmountWon;
+  if (originalTotalAmountWon !== originalSupplyAmountWon + originalVatAmountWon
+    || reversedTotalAmountWon !== reversedSupplyAmountWon + reversedVatAmountWon) {
+    throw new Error('ORDERQ_REVERSE_AMOUNT_COMPONENT_MISMATCH');
+  }
+  if (reversedSupplyAmountWon > originalSupplyAmountWon
+    || reversedVatAmountWon > originalVatAmountWon
+    || reversedTotalAmountWon > originalTotalAmountWon) {
+    throw new Error('ORDERQ_REVERSE_AMOUNT_EXCEEDS_ORIGINAL');
+  }
+
+  const cumulativeQuantity = reversedQuantity + reversalQuantity;
+  const finalRemainder = Math.abs(cumulativeQuantity - originalQuantity) <= 1e-9;
+  const allocate = (originalAmount, reversedAmount) => {
+    const remainingAmount = originalAmount - reversedAmount;
+    if (finalRemainder) return remainingAmount;
+    const cumulativeTarget = Math.round(originalAmount * cumulativeQuantity / originalQuantity);
+    return Math.max(0, Math.min(remainingAmount, cumulativeTarget - reversedAmount));
+  };
+  const supplyAmountWon = allocate(originalSupplyAmountWon, reversedSupplyAmountWon);
+  const vatAmountWon = allocate(originalVatAmountWon, reversedVatAmountWon);
+  const totalAmountWon = supplyAmountWon + vatAmountWon;
+  if (reversedTotalAmountWon + totalAmountWon > originalTotalAmountWon) {
+    throw new Error('ORDERQ_REVERSE_TOTAL_EXCEEDS_ORIGINAL');
+  }
+  if (finalRemainder && reversedTotalAmountWon + totalAmountWon !== originalTotalAmountWon) {
+    throw new Error('ORDERQ_REVERSE_FINAL_AMOUNT_MISMATCH');
+  }
+  return { supplyAmountWon, vatAmountWon, totalAmountWon, finalRemainder };
+}

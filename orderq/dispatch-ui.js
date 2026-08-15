@@ -155,7 +155,7 @@ function renderDetail() {
     : decision.status === 'RELEASED'
       ? '<button class="dq-btn warn" type="button" data-action="recall">작업목록 회수</button><button class="dq-btn primary" type="button" data-action="record-actual">실제결과 저장</button>'
       : decision.status === 'READY_TO_CONFIRM'
-        ? '<button class="dq-btn" type="button" data-action="record-actual">실제결과 수정</button><button class="dq-btn primary" type="button" data-action="confirm">출고확정</button>'
+        ? '<button class="dq-btn warn" type="button" data-action="recall">확정대기 회수</button><button class="dq-btn" type="button" data-action="record-actual">실제결과 수정</button><button class="dq-btn primary" type="button" data-action="confirm">출고확정</button>'
         : decision.status === 'CONFIRMED' && !decision.reversalOf
           ? '<button class="dq-btn warn" type="button" data-action="reverse-full">전체 역분개</button>'
           : '';
