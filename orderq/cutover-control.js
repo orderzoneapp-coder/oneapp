@@ -1,4 +1,7 @@
+import { runtimeStorageKey } from './admin-test-runtime.js?v=0.10.2';
+
 export const ORDERQ_CUTOVER_STORAGE_KEY = 'oneapp.orderq.cutover.control.v1';
+export const ORDERQ_ADMIN_TEST_CUTOVER_STORAGE_KEY = 'oneapp.orderq.admin-test.cutover.control.v1';
 
 export const CUTOVER_MODE = Object.freeze({
   LEGACY_PRIMARY: 'LEGACY_PRIMARY',
@@ -50,7 +53,8 @@ export function isOfficialWriteMode(value) {
 
 export function readCutoverControl(storage) {
   const target = storageOrDefault(storage);
-  const raw = target.getItem(ORDERQ_CUTOVER_STORAGE_KEY);
+  const key = runtimeStorageKey(ORDERQ_CUTOVER_STORAGE_KEY, ORDERQ_ADMIN_TEST_CUTOVER_STORAGE_KEY);
+  const raw = target.getItem(key);
   if (!raw) return defaultControl();
   try {
     const parsed = JSON.parse(raw);
@@ -77,6 +81,7 @@ export function setCutoverMode({
   changedAt = new Date().toISOString()
 } = {}) {
   const target = storageOrDefault(storage);
+  const key = runtimeStorageKey(ORDERQ_CUTOVER_STORAGE_KEY, ORDERQ_ADMIN_TEST_CUTOVER_STORAGE_KEY);
   const requestedMode = normalizeCutoverMode(mode);
   if (requestedMode !== text(mode).toUpperCase()) throw new Error(`ORDERQ_CUTOVER_MODE_INVALID:${text(mode)}`);
   const actor = text(actorId);
@@ -106,7 +111,7 @@ export function setCutoverMode({
     reasonNote: event.reasonNote,
     history: [...current.history, event].slice(-100)
   };
-  target.setItem(ORDERQ_CUTOVER_STORAGE_KEY, JSON.stringify(next));
+  target.setItem(key, JSON.stringify(next));
   return next;
 }
 

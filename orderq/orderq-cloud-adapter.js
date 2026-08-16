@@ -1,7 +1,11 @@
+import { isAdminTestRuntime } from './admin-test-runtime.js?v=0.10.2';
+
 export const ORDERQ_SYNC_SCHEMA = 'ONEAPP_ORDERQ_SYNC_V1';
 export const CLOUD_URL_KEY = 'oneapp_cloud_sync_url_v1';
 export const LEGACY_CLOUD_URL_KEY = 'merchCloudUrl_v870';
 export const CLOUD_ACCESS_TOKEN_KEY = 'oneapp_orderq_access_token_v1';
+export const ADMIN_TEST_CLOUD_URL_KEY = 'oneapp_orderq_admin_test_cloud_url_v1';
+export const ADMIN_TEST_ACCESS_TOKEN_KEY = 'oneapp_orderq_admin_test_access_token_v1';
 
 export class OrderQCloudError extends Error {
   constructor(message, details = {}) {
@@ -12,11 +16,19 @@ export class OrderQCloudError extends Error {
 }
 
 export function getCloudUrl() {
+  if (isAdminTestRuntime()) return String(sessionStorage.getItem(ADMIN_TEST_CLOUD_URL_KEY) || '').trim();
   return String(localStorage.getItem(CLOUD_URL_KEY) || localStorage.getItem(LEGACY_CLOUD_URL_KEY) || '').trim();
 }
 
-export function setCloudUrl(url) {
+export function setCloudUrl(url, remember = true) {
   const value = String(url || '').trim();
+  if (isAdminTestRuntime()) {
+    sessionStorage.removeItem(ADMIN_TEST_CLOUD_URL_KEY);
+    if (!value) return '';
+    if (!/^https:\/\//i.test(value)) throw new Error('클라우드 URL은 https:// 주소여야 합니다.');
+    sessionStorage.setItem(ADMIN_TEST_CLOUD_URL_KEY, value);
+    return value;
+  }
   if (!value) {
     localStorage.removeItem(CLOUD_URL_KEY);
     return '';
@@ -27,11 +39,17 @@ export function setCloudUrl(url) {
 }
 
 export function getCloudAccessToken() {
+  if (isAdminTestRuntime()) return String(sessionStorage.getItem(ADMIN_TEST_ACCESS_TOKEN_KEY) || '').trim();
   return String(sessionStorage.getItem(CLOUD_ACCESS_TOKEN_KEY) || localStorage.getItem(CLOUD_ACCESS_TOKEN_KEY) || '').trim();
 }
 
 export function setCloudAccessToken(token, remember = true) {
   const value = String(token || '').trim();
+  if (isAdminTestRuntime()) {
+    sessionStorage.removeItem(ADMIN_TEST_ACCESS_TOKEN_KEY);
+    if (value) sessionStorage.setItem(ADMIN_TEST_ACCESS_TOKEN_KEY, value);
+    return value;
+  }
   sessionStorage.removeItem(CLOUD_ACCESS_TOKEN_KEY);
   localStorage.removeItem(CLOUD_ACCESS_TOKEN_KEY);
   if (!value) return '';
