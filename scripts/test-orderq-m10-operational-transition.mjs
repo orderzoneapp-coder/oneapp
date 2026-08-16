@@ -1,4 +1,8 @@
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
+import path from 'node:path';
+import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
 import {
   CUTOVER_MODE,
   assertLocalOfficialWriteEnabled,
@@ -12,6 +16,66 @@ import {
   normalizeLegacyShadowRows,
   normalizeOrderQShadowRows
 } from '../orderq/shadow-comparison.js';
+import { validateAndSelectLegacyWorkspaceRows } from '../orderq/transition-repository.js';
+
+const require = createRequire(import.meta.url);
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const engine = require(path.join(ROOT, 'orderFulfillmentEngine.js'));
+
+function recoveryV2({ recordId, sourceFingerprint, updatedAt, basisDate = '2026-08-16' }) {
+  const workspace = {
+    schemaVersion: engine.WORKSPACE_SCHEMA_VERSION,
+    sourceFingerprint,
+    basisDate,
+    sourceFiles: {}, inventory: [], orders: [], orderOpsInputs: { purchases:{ rows:[] }, sales:{ rows:[] } }
+  };
+  const payload = {
+    schemaVersion: 'shipping-local-recovery-payload/v2',
+    sourceFingerprint,
+    workspaceSchemaVersion: workspace.schemaVersion,
+    updatedAt,
+    workspace,
+    ui: { activePreview:'validation' },
+    settings: { cloudUrl:'', savedBy:'ADMIN' }
+  };
+  return {
+    schemaVersion: 'shipping-local-recovery/v2', recordId, sourceFingerprint, updatedAt,
+    hashAlgorithm: 'SHA-256',
+    payloadSha256: crypto.createHash('sha256').update(engine.canonicalStringify(payload)).digest('hex'),
+    payload
+  };
+}
+
+const validRecovery = recoveryV2({
+  recordId:'RECOVERY-VALID', sourceFingerprint:'a'.repeat(64), updatedAt:'2026-08-16T08:00:00.000Z'
+});
+const corruptStructure = structuredClone(validRecovery);
+Object.assign(corruptStructure, { recordId:'RECOVERY-CORRUPT-STRUCTURE', updatedAt:'2099-03-01T00:00:00.000Z', schemaVersion:'wrong/v2' });
+corruptStructure.payload.updatedAt = corruptStructure.updatedAt;
+const corruptHash = structuredClone(validRecovery);
+Object.assign(corruptHash, { recordId:'RECOVERY-CORRUPT-HASH', updatedAt:'2099-02-01T00:00:00.000Z' });
+corruptHash.payload.updatedAt = corruptHash.updatedAt;
+corruptHash.payload.workspace.basisDate = '2099-02-01';
+const corruptFingerprint = structuredClone(validRecovery);
+Object.assign(corruptFingerprint, { recordId:'RECOVERY-CORRUPT-FINGERPRINT', sourceFingerprint:'b'.repeat(64), updatedAt:'2099-01-01T00:00:00.000Z' });
+corruptFingerprint.payload.updatedAt = corruptFingerprint.updatedAt;
+corruptFingerprint.payloadSha256 = crypto.createHash('sha256').update(engine.canonicalStringify(corruptFingerprint.payload)).digest('hex');
+const validLegacy = {
+  schemaVersion:'shipping-local-recovery/v1', sourceFingerprint:'c'.repeat(64),
+  workspaceSchemaVersion:engine.WORKSPACE_SCHEMA_VERSION, updatedAt:'2026-08-15T08:00:00.000Z',
+  workspace:{ schemaVersion:engine.WORKSPACE_SCHEMA_VERSION, sourceFingerprint:'c'.repeat(64), basisDate:'2026-08-15' }
+};
+const recoverySelection = await validateAndSelectLegacyWorkspaceRows({
+  recoveryRows:[validRecovery, corruptStructure, corruptHash, corruptFingerprint],
+  legacyRows:[validLegacy], engine
+});
+assert.equal(recoverySelection.selected.recordId, 'RECOVERY-VALID', 'latest corrupt recovery must not replace the latest valid recovery');
+assert.equal(recoverySelection.validation.corruptionCount, 3);
+assert.deepEqual(new Set(recoverySelection.validation.corruptions.map(row => row.reason)), new Set([
+  'V2_SCHEMA_INVALID', 'V2_PAYLOAD_HASH_MISMATCH', 'V2_SOURCE_FINGERPRINT_MISMATCH'
+]));
+const noValidRecovery = await validateAndSelectLegacyWorkspaceRows({ recoveryRows:[corruptHash], legacyRows:[], engine });
+assert.equal(noValidRecovery.selected, null, 'corrupt-only recovery input must fail closed');
 
 class MemoryStorage {
   constructor() { this.values = new Map(); }

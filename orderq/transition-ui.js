@@ -101,7 +101,13 @@ function axisCell(axis) {
 
 function renderShadow(result) {
   const report = result.report;
-  elements.shadowSummary.textContent = `비교 ${report.summary.total}품목 · 일치 ${report.summary.matched} · 차이 ${report.summary.differences} · 기존 ${result.legacy.basisDate || '기준일 없음'} / 신규 ${result.orderq.basis.basisDate || '기준일 없음'}`;
+  const recoveryValidation = result.legacy.recoveryValidation || {};
+  const corruptionReasons = [...new Set((recoveryValidation.corruptions || []).map(row => row.reason).filter(Boolean))];
+  const recoveryWarning = Number(recoveryValidation.corruptionCount || 0) > 0
+    ? ` · 손상 복구행 ${recoveryValidation.corruptionCount}건 제외 (${corruptionReasons.join(', ')})`
+    : '';
+  elements.shadowSummary.textContent = `비교 ${report.summary.total}품목 · 일치 ${report.summary.matched} · 차이 ${report.summary.differences} · 기존 ${result.legacy.basisDate || '기준일 없음'} / 신규 ${result.orderq.basis.basisDate || '기준일 없음'}${recoveryWarning}`;
+  elements.shadowSummary.classList.toggle('has-recovery-warning', Boolean(recoveryWarning));
   elements.shadowRows.innerHTML = report.rows.length ? report.rows.map(row => `
     <tr class="${row.matched ? '' : 'has-difference'}">
       <td><b>${esc(row.productCode || row.productKey)}</b><br><small>${esc(row.productName)}</small></td>

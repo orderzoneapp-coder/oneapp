@@ -12,6 +12,7 @@
   const clone=value=>JSON.parse(JSON.stringify(value));
   const stable=value=>Array.isArray(value)?value.map(stable):value&&typeof value==='object'?Object.keys(value).sort().reduce((out,key)=>(out[key]=stable(value[key]),out),{}):value;
   const same=(left,right)=>JSON.stringify(stable(left))===JSON.stringify(stable(right));
+  const sha256=async value=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value))),byte=>byte.toString(16).padStart(2,'0')).join('');
   const actor={actorId:'ADMIN'};
   const warnings=[]; const errors=[];
   const warn=console.warn.bind(console),errorLog=console.error.bind(console);
@@ -24,9 +25,17 @@
   async function readStores(names){const db=await openOrderQDb();const tx=db.transaction(names,'readonly');const result={};for(const name of names)result[name]=await requestToPromise(tx.objectStore(name).getAll());await transactionDone(tx);return result;}
   async function put(storeName,row){const db=await openOrderQDb();const tx=db.transaction(storeName,'readwrite');tx.objectStore(storeName).put(clone(row));await transactionDone(tx);}
   async function seedLegacyWorkspace(){
+    const sourceFingerprint=(profile==='A'?'a':'b').repeat(64);
+    const updatedAt='2026-08-16T08:00:00.000Z';
+    const workspace={schemaVersion:ShippingManagementEngine.WORKSPACE_SCHEMA_VERSION,sourceFingerprint,basisDate:'2026-08-16',sourceFiles:{inventory:{headerRowIndex:0,matrix:[['품목코드','품목명','01창고'],['10','테스트',10]]}},inventory:[{productCode:'10',productName:'테스트',sourceRowNumber:2}],orders:[{productCode:'10',productName:'테스트',quantity:4}],orderOpsInputs:{purchases:{rows:[{productCode:'10',quantity:2}]},sales:{rows:[{productCode:'10',quantity:3}]}}};
+    const payload={schemaVersion:'shipping-local-recovery-payload/v2',sourceFingerprint,workspaceSchemaVersion:workspace.schemaVersion,updatedAt,workspace,ui:{activePreview:'validation'},settings:{cloudUrl:'',savedBy:'ADMIN'}};
+    const valid={schemaVersion:'shipping-local-recovery/v2',recordId:`M10-LEGACY-VALID-${profile}`,sourceFingerprint,updatedAt,hashAlgorithm:'SHA-256',payloadSha256:await sha256(ShippingManagementEngine.canonicalStringify(payload)),payload};
+    const corruptStructure=clone(valid);Object.assign(corruptStructure,{recordId:`M10-CORRUPT-STRUCTURE-${profile}`,updatedAt:'2099-03-01T00:00:00.000Z',schemaVersion:'wrong/v2'});corruptStructure.payload.updatedAt=corruptStructure.updatedAt;
+    const corruptHash=clone(valid);Object.assign(corruptHash,{recordId:`M10-CORRUPT-HASH-${profile}`,updatedAt:'2099-02-01T00:00:00.000Z'});corruptHash.payload.updatedAt=corruptHash.updatedAt;corruptHash.payload.workspace.basisDate='2099-02-01';
+    const corruptFingerprint=clone(valid);Object.assign(corruptFingerprint,{recordId:`M10-CORRUPT-FINGERPRINT-${profile}`,sourceFingerprint:'c'.repeat(64),updatedAt:'2099-01-01T00:00:00.000Z'});corruptFingerprint.payload.updatedAt=corruptFingerprint.updatedAt;corruptFingerprint.payloadSha256=await sha256(ShippingManagementEngine.canonicalStringify(corruptFingerprint.payload));
     const db=await new Promise((resolve,reject)=>{const request=indexedDB.open('ONEAPPShippingRecoveryDB',1);request.onupgradeneeded=()=>{if(!request.result.objectStoreNames.contains('recoveryRecords'))request.result.createObjectStore('recoveryRecords',{keyPath:'recordId'});};request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);});
     const tx=db.transaction('recoveryRecords','readwrite');
-    tx.objectStore('recoveryRecords').put({recordId:`M10-LEGACY-${profile}`,sourceFingerprint:`M10-LEGACY-SOURCE-${profile}`,updatedAt:'2026-08-16T08:00:00.000Z',payload:{sourceFingerprint:`M10-LEGACY-SOURCE-${profile}`,updatedAt:'2026-08-16T08:00:00.000Z',workspace:{schemaVersion:ShippingManagementEngine.WORKSPACE_SCHEMA_VERSION,basisDate:'2026-08-16',sourceFiles:{inventory:{headerRowIndex:0,matrix:[['품목코드','품목명','01창고'],['10','테스트',10]]}},inventory:[{productCode:'10',productName:'테스트',sourceRowNumber:2}],orders:[{productCode:'10',productName:'테스트',quantity:4}],orderOpsInputs:{purchases:{rows:[{productCode:'10',quantity:2}]},sales:{rows:[{productCode:'10',quantity:3}]}}}}});
+    const store=tx.objectStore('recoveryRecords');store.clear();[valid,corruptStructure,corruptHash,corruptFingerprint].forEach(row=>store.put(row));
     await new Promise((resolve,reject)=>{tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error);});db.close();
   }
 
@@ -62,6 +71,9 @@
     await seedLegacyWorkspace();
     const shadow=await buildCurrentShadowReport();
     assert(shadow.report.summary.total===1&&shadow.report.summary.matched===1,'actual legacy/vNext shadow axes did not match');
+    assert(shadow.legacy.recordId===`M10-LEGACY-VALID-${profile}`,'newest corrupt recovery replaced the valid recovery');
+    assert(shadow.legacy.recoveryValidation.corruptionCount===3,'corrupt recovery rows were not surfaced');
+    assert(same(shadow.legacy.recoveryValidation.corruptions.map(row=>row.reason).sort(),['V2_PAYLOAD_HASH_MISMATCH','V2_SCHEMA_INVALID','V2_SOURCE_FINGERPRINT_MISMATCH']),'corruption reasons were not preserved');
     assert(shadow.report.rows[0].axes.actualSale.legacy===3&&shadow.report.rows[0].axes.actualSale.orderq===3,'actual sale axis mixed with order request');
     assert(shadow.report.rows[0].axes.orderRequestVsReservation.legacy===4&&shadow.report.rows[0].axes.orderRequestVsReservation.orderq===4,'request/reservation axis mismatch');
     const fullBackup=await exportOrderQBackup(actor);
@@ -106,7 +118,7 @@
     setCutoverMode({mode:finalMode,actorId:'ADMIN',reasonCode:`M10_PROFILE_${profile}`,expectedRevision:readCutoverControl().revision});
     assert(readCutoverControl().mode===finalMode,'profile-local final mode mismatch');
     assert(warnings.length===0&&errors.length===0,`console output: ${[...warnings,...errors].join(' / ')}`);
-    return {ok:true,profile,databaseName:DB_NAME,finalMode,shadow:{matched:shadow.report.summary.matched,actualSale:shadow.report.rows[0].axes.actualSale,requestReservation:shadow.report.rows[0].axes.orderRequestVsReservation,evidence:shadow.report.rows[0].evidenceIds},backupStoreCount:backupNames.length,backupCanonical:true,failedRestoreAtomic:true,localBlocked,centralBlocked,pullWhileBlocked,centralCursor,console:{warnings:warnings.length,errors:errors.length}};
+    return {ok:true,profile,databaseName:DB_NAME,finalMode,shadow:{matched:shadow.report.summary.matched,actualSale:shadow.report.rows[0].axes.actualSale,requestReservation:shadow.report.rows[0].axes.orderRequestVsReservation,evidence:shadow.report.rows[0].evidenceIds,selectedRecovery:shadow.legacy.recordId,corruptionCount:shadow.legacy.recoveryValidation.corruptionCount,corruptionReasons:shadow.legacy.recoveryValidation.corruptions.map(row=>row.reason)},backupStoreCount:backupNames.length,backupCanonical:true,failedRestoreAtomic:true,localBlocked,centralBlocked,pullWhileBlocked,centralCursor,console:{warnings:warnings.length,errors:errors.length}};
   }
   run().then(value=>{output.textContent=`PASS\n${JSON.stringify(value,null,2)}`;document.title=`PASS ORDER Q M10 Browser ${profile}`;parent.postMessage({type:'M10_DONE',value},'*');}).catch(error=>{console.error(error);output.textContent=`FAIL\n${error.stack||error}`;document.title=`FAIL ORDER Q M10 Browser ${profile}`;parent.postMessage({type:'M10_FAIL',error:error.stack||String(error)},'*');});
 </script></body></html>
