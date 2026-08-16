@@ -10,7 +10,7 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function (engine) {
   "use strict";
 
-  const WORKBOOK_VERSION = "4.8.0";
+  const WORKBOOK_VERSION = "4.9.0";
   const REQUIRED_SHEETS = Object.freeze([
     "전달사항(적요보기)",
     "주문현황",
@@ -728,6 +728,12 @@
     const layout = inventoryView.columns.map((column) => ({ ...column }));
     layout.push({ key: "shipping:inventory:purchase", header: "구매", sourceIndex: null, purchase: true });
     layout.push({
+      key: "shipping:inventory:purchase-quantity",
+      header: "구매수량",
+      sourceIndex: null,
+      purchaseQuantity: true,
+    });
+    layout.push({
       key: "shipping:inventory:order-information",
       header: "정보",
       sourceIndex: null,
@@ -743,6 +749,7 @@
     const dataRows = inventoryView.rows.map((inventory) => [
       ...inventory.values,
       inventory.purchase,
+      inventory.purchaseQuantityOverride ?? "",
       inventory.orderInformation,
       inventory.orderNotes,
     ]);
@@ -760,6 +767,7 @@
       if (normalized === "품목명") return { wch: 31 };
       if (normalized === "규격") return { wch: 13 };
       if (normalized === "구매") return { wch: 11 };
+      if (normalized === "구매수량") return { wch: 11 };
       if (normalized === "정보") return { wch: 34 };
       if (normalized === "적요") return { wch: 38 };
       return { wch: isWarehouseQuantityHeader(header) ? 11 : 13 };
@@ -1046,15 +1054,17 @@
   }
 
   function getPurchaseUploadRows(workspace) {
-    return (workspace?.purchaseManagement || []).filter(
-      (row) =>
-        row.rowType !== "reference" &&
-        row.inventoryMatched &&
-        typeof row.purchaseNeed === "number" &&
-        row.purchaseNeed > 0 &&
-        row.purchase !== "대체" &&
-        row.purchase !== "소분",
-    );
+    return (workspace?.purchaseManagement || []).reduce((rows, row) => {
+      const hasOverride = Object.prototype.hasOwnProperty.call(row || {}, "purchaseQuantityOverride") &&
+        typeof row.purchaseQuantityOverride === "number" && Number.isFinite(row.purchaseQuantityOverride) &&
+        row.purchaseQuantityOverride >= 0;
+      const purchaseNeed = hasOverride ? row.purchaseQuantityOverride : row.purchaseNeed;
+      if (row.rowType === "reference" || (!hasOverride && !row.inventoryMatched) ||
+          !(typeof purchaseNeed === "number" && Number.isFinite(purchaseNeed) && purchaseNeed > 0) ||
+          row.purchase === "대체" || row.purchase === "소분") return rows;
+      rows.push(hasOverride ? { ...row, purchaseNeed } : row);
+      return rows;
+    }, []);
   }
 
   function getSalesUploadRows(workspace) {

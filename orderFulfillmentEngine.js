@@ -7,7 +7,7 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  const ENGINE_VERSION = "3.18.0";
+  const ENGINE_VERSION = "3.19.0";
   const WORKSPACE_SCHEMA_VERSION = "shipping-workspace/v2";
   const INVENTORY_OVERRIDE_SCHEMA_VERSION = "shipping-inventory-overrides/v1";
   const HEADER_SCAN_LIMIT = 30;
@@ -1384,6 +1384,7 @@
     const columns = getInventoryColumnDescriptors(workspace);
     const overrideMap = getInventoryOverrideMap(workspace, columns);
     const purchaseInputs = getPurchaseInputs(workspace);
+    const purchaseQuantityInputs = getPurchaseQuantityInputs(workspace);
     const inventoryAliasLookup = createAliasLookup(INVENTORY_CANONICAL_ALIASES);
     const orderProducts = new Map();
     (Array.isArray(workspace?.orders) ? workspace.orders : []).forEach((order) => {
@@ -1431,6 +1432,9 @@
         orderQuantity,
         remainingQuantity,
         purchaseNeed: remainingQuantity < 0 ? roundQuantity(Math.abs(remainingQuantity)) : 0,
+        purchaseQuantityOverride: Object.prototype.hasOwnProperty.call(purchaseQuantityInputs, productCode)
+          ? purchaseQuantityInputs[productCode]
+          : null,
         purchase: String(purchaseInputs[productCode] || ""),
         suppliers: inventorySupplierDisplay(workspace, productCode),
         orderInformation: orderInformationDisplay(workspace, productCode),
@@ -1473,6 +1477,9 @@
         orderQuantity,
         remainingQuantity,
         purchaseNeed: null,
+        purchaseQuantityOverride: Object.prototype.hasOwnProperty.call(purchaseQuantityInputs, productCode)
+          ? purchaseQuantityInputs[productCode]
+          : null,
         purchase: String(purchaseInputs[productCode] || ""),
         suppliers: inventorySupplierDisplay(workspace, productCode),
         orderInformation: orderInformationDisplay(workspace, productCode),
@@ -1742,6 +1749,7 @@
 
   function rebuildWorkspaceFromOrders(workspace) {
     const purchaseInputs = getPurchaseInputs(workspace);
+    const purchaseQuantityInputs = getPurchaseQuantityInputs(workspace);
     const inventoryOverrides = JSON.parse(JSON.stringify(
       workspace.inventoryOverrides || { schemaVersion: INVENTORY_OVERRIDE_SCHEMA_VERSION, cells: [] },
     ));
@@ -1787,6 +1795,7 @@
     Object.keys(workspace).forEach((key) => { delete workspace[key]; });
     Object.assign(workspace, rebuilt);
     applyPurchaseInputs(workspace, purchaseInputs);
+    applyPurchaseQuantityInputs(workspace, purchaseQuantityInputs);
     const noticeState = ensureNoticeState(workspace);
     const validNoticeIds = new Set(workspace.notices.map((notice) => notice.noticeId));
     noticeState.acknowledgedIds = acknowledgedIds.filter((noticeId) => validNoticeIds.has(noticeId));
@@ -2334,6 +2343,50 @@
     return result;
   }
 
+  function setPurchaseQuantityValue(workspace, productCode, value) {
+    if (!workspace || workspace.schemaVersion !== WORKSPACE_SCHEMA_VERSION) {
+      throw new Error("지원하지 않는 Shipping Management 작업공간입니다.");
+    }
+    ensureInventoryPurchaseRows(workspace);
+    const code = normalizeProductCode(productCode);
+    const blank = value === undefined || value === null || String(value).trim() === "";
+    let quantity = null;
+    if (!blank) {
+      const parsed = parseNumericCell(value);
+      if (!parsed.ok || parsed.blank || parsed.value < 0) {
+        throw new Error("구매수량은 0 이상의 숫자이거나 빈값이어야 합니다.");
+      }
+      quantity = roundQuantity(parsed.value);
+    }
+    (workspace.purchaseManagement || []).forEach((row) => {
+      if (row.rowType !== "main" || normalizeProductCode(row.productCode) !== code) return;
+      if (quantity === null) delete row.purchaseQuantityOverride;
+      else row.purchaseQuantityOverride = quantity;
+    });
+    return quantity;
+  }
+
+  function applyPurchaseQuantityInputs(workspace, inputs) {
+    ensureInventoryPurchaseRows(workspace);
+    Object.entries(inputs && typeof inputs === "object" ? inputs : {}).forEach(([code, value]) => {
+      setPurchaseQuantityValue(workspace, code, value);
+    });
+    return workspace;
+  }
+
+  function getPurchaseQuantityInputs(workspace) {
+    ensureInventoryPurchaseRows(workspace);
+    const result = {};
+    (workspace?.purchaseManagement || []).forEach((row) => {
+      if (row.rowType !== "main" || !Object.prototype.hasOwnProperty.call(row, "purchaseQuantityOverride")) return;
+      const value = row.purchaseQuantityOverride;
+      if (typeof value === "number" && Number.isFinite(value) && value >= 0) {
+        result[normalizeProductCode(row.productCode)] = value;
+      }
+    });
+    return result;
+  }
+
   function getPurchaseUploadSelection(workspace) {
     if (!workspace || workspace.schemaVersion !== WORKSPACE_SCHEMA_VERSION) {
       throw new Error("지원하지 않는 Shipping Management 작업공간입니다.");
@@ -2353,11 +2406,14 @@
         return;
       }
       const productCode = normalizeProductCode(row.productCode);
-      if (!purchaseNeedByCode.has(productCode)) {
+      const hasOverride = Object.prototype.hasOwnProperty.call(row, "purchaseQuantityOverride") &&
+        typeof row.purchaseQuantityOverride === "number" && Number.isFinite(row.purchaseQuantityOverride) &&
+        row.purchaseQuantityOverride >= 0;
+      if (!hasOverride && !purchaseNeedByCode.has(productCode)) {
         excluded.push({ productCode: row.productCode, reason: "재고정보 없음·구매수량 근거 없음" });
         return;
       }
-      const purchaseNeed = purchaseNeedByCode.get(productCode);
+      const purchaseNeed = hasOverride ? row.purchaseQuantityOverride : purchaseNeedByCode.get(productCode);
       if (!(purchaseNeed > 0)) {
         excluded.push({ productCode: row.productCode, reason: "창고별재고 부족 수량 없음" });
         return;
@@ -2406,6 +2462,9 @@
     setPurchaseValue,
     applyPurchaseInputs,
     getPurchaseInputs,
+    setPurchaseQuantityValue,
+    applyPurchaseQuantityInputs,
+    getPurchaseQuantityInputs,
     getPurchaseUploadSelection,
     ensureInventoryPurchaseRows,
     getInventoryColumnDescriptors,

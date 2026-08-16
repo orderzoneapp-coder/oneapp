@@ -238,11 +238,14 @@ function countShippingPlanRows(canonical) {
 }
 
 function countShippingPurchaseUploadRows(workspace) {
-  return (Array.isArray(workspace && workspace.purchaseManagement) ? workspace.purchaseManagement : []).filter(row =>
-    row && row.rowType !== 'reference' && row.inventoryMatched === true &&
-    typeof row.purchaseNeed === 'number' && Number.isFinite(row.purchaseNeed) && row.purchaseNeed > 0 &&
-    row.purchase !== '대체' && row.purchase !== '소분'
-  ).length;
+  return (Array.isArray(workspace && workspace.purchaseManagement) ? workspace.purchaseManagement : []).filter(row => {
+    if (!row || row.rowType === 'reference' || row.purchase === '대체' || row.purchase === '소분') return false;
+    const hasOverride = typeof row.purchaseQuantityOverride === 'number' &&
+      Number.isFinite(row.purchaseQuantityOverride) && row.purchaseQuantityOverride >= 0;
+    const purchaseNeed = hasOverride ? row.purchaseQuantityOverride : row.purchaseNeed;
+    return (hasOverride || row.inventoryMatched === true) &&
+      typeof purchaseNeed === 'number' && Number.isFinite(purchaseNeed) && purchaseNeed > 0;
+  }).length;
 }
 
 function validateShippingPlanEnvelope(snapshot) {
