@@ -92,7 +92,7 @@ jobs:
       - name: Test DataOps average-cost initialization
         run: node scripts/test-dataops-average-cost.mjs
 
-      - name: Test DataOps manual substitution actual-error quantity
+      - name: Test DataOps administrator-directed manual substitution
         run: node scripts/test-dataops-manual-substitution-actual-error.mjs
 
       - name: Test DataOps evidence report and F9 preflight

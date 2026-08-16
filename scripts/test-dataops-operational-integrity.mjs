@@ -36,14 +36,19 @@ const v111ConfigVersion = "V1.a22.111_WorkSaveCloudInventorySync";
 const datedV112Version =
   "V1.a22.112_EvidenceReportPreflight · 2026-08-12 KST";
 const v112ConfigVersion = "V1.a22.112_EvidenceReportPreflight";
-const isCompatibleV110ThroughV112 =
+const datedV113Version =
+  "V1.a22.113_AdminDecisionReport · 2026-08-16 KST";
+const v113ConfigVersion = "V1.a22.113_AdminDecisionReport";
+const isCompatibleV110ThroughV113 =
   (source.split(datedV110Version).length - 1 === 3 &&
     new RegExp(`version:\\s*'${v110ConfigVersion}'`).test(source)) ||
   (source.split(datedV111Version).length - 1 === 3 &&
     new RegExp(`version:\\s*'${v111ConfigVersion}'`).test(source)) ||
   (source.split(datedV112Version).length - 1 === 3 &&
-    new RegExp(`version:\\s*'${v112ConfigVersion}'`).test(source));
-if (isCompatibleV110ThroughV112) {
+    new RegExp(`version:\\s*'${v112ConfigVersion}'`).test(source)) ||
+  (source.split(datedV113Version).length - 1 === 3 &&
+    new RegExp(`version:\\s*'${v113ConfigVersion}'`).test(source));
+if (isCompatibleV110ThroughV113) {
   const v110Analysis = section(
     "const executeAnalysis = useCallback",
     "const runAnalysis = useCallback",

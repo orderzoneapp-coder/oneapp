@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP DataOps - 핵심 수불부 관리 (V1.a22.112_EvidenceReportPreflight · 2026-08-12 KST)</title>
+    <title>ONEAPP DataOps - 핵심 수불부 관리 (V1.a22.113_AdminDecisionReport · 2026-08-16 KST)</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         body { font-family: 'Pretendard', -apple-system, sans-serif; background-color: #f8fafc; overflow: hidden; }
@@ -46,7 +46,7 @@
     <!-- 초기 로딩 스크린 -->
     <div id="initial-loader">
         <div class="spinner"></div>
-        <div class="loader-text">ONEAPP DataOps V1.a22.112_EvidenceReportPreflight · 2026-08-12 KST.....</div>
+        <div class="loader-text">ONEAPP DataOps V1.a22.113_AdminDecisionReport · 2026-08-16 KST.....</div>
         <div style="font-size: 11px; color: #94a3b8; margin-top: 8px;">앱 환경을 구성하고 있습니다</div>
     </div>
 
@@ -1199,7 +1199,7 @@ const clearTableSortPreference = () => {
    - 주의: 물리적 파일 분리는 하지 않는다. 단일 HTML 실행 구조를 유지한다.
    ======================================================================= */
 const CONFIG_MODULE = Object.freeze({
-    version: 'V1.a22.112_EvidenceReportPreflight',
+    version: 'V1.a22.113_AdminDecisionReport',
     categoryMap: Object.freeze({
         '10': '채소.과일',
         '20': '수산.축산',
@@ -5254,14 +5254,10 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                 safeStr(item2Orig._manualSubstitutionPartnerKey) === safeStr(item1Orig.batchKey);
             if (alreadyLinkedPair)
                 return prev;
-            let sourceItem = { ...item1Orig, 이슈: [...(item1Orig.이슈 || [])] };
-            let targetItem = { ...item2Orig, 이슈: [...(item2Orig.이슈 || [])] };
-            // V1.a22.12: 스페이스바 치환은 선택 순서가 아니라 source/target 역할 판정 기준으로 처리한다.
-            // source = 실제 출고/원가출처 Lot, target = 거래처 판매상품/부족·마이너스 보정 대상.
-            const getManualFinalQty = (item = {}) => {
-                try { return STOCK_ENGINE_MODULE.getActualQty(item); }
-                catch (e) { return safeNum(item.실사 !== '' && item.실사 !== null && item.실사 !== undefined ? item.실사 : item.전산잔량); }
-            };
+            // V1.a22.113: 수기치환의 판단권은 관리자에게 있다.
+            // 첫 번째 선택은 출처, 두 번째 선택은 대상으로 그대로 적용하며 시스템이 역할을 뒤집거나 거부하지 않는다.
+            const sourceItem = { ...item1Orig, 이슈: [...(item1Orig.이슈 || [])] };
+            const targetItem = { ...item2Orig, 이슈: [...(item2Orig.이슈 || [])] };
             const normalizeManualCode = (val) => safeStr(val, '').replace(/\.0$/, '').trim();
             // V1.a22.79: BOX 원물과 EA/소분을 스페이스로 연결할 때는 재고 부호가 아니라
             // MerchOps 마스터의 원물-소분 관계를 최우선으로 사용한다.
@@ -5298,27 +5294,6 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                 if (bUnit === 'BOX' && (aUnit === '소분' || aIsSub)) return makePair(b, a, bInfo, aInfo, 'UNIT_FALLBACK');
                 return null;
             };
-            const scoreManualSource = (item = {}) => {
-                const finalQty = getManualFinalQty(item);
-                const systemQty = safeNum(item.전산잔량);
-                let score = 0;
-                if (finalQty > 0) score += 8;
-                if (systemQty > 0) score += 5;
-                if (safeNum(item.단가) > 0) score += 4;
-                if (safeNum(item.기초) + safeNum(item.입고) + safeNum(item.대체입고) > 0) score += 2;
-                return score;
-            };
-            const scoreManualTarget = (item = {}) => {
-                let score = 0;
-                if (safeNum(item.로스) < 0) score += 10;
-                if (safeNum(item.전산잔량) < 0) score += 8;
-                if (safeNum(item.출고) > 0) score += 3;
-                if ((item.이슈 || []).some(msg => safeStr(msg).includes('수량부족') || safeStr(msg).includes('잔량') || safeStr(msg).includes('소분오차'))) score += 3;
-                return score;
-            };
-            const rawSubPair = resolveManualRawSubPair(item1Orig, item2Orig);
-            // V1.a22.88: 대체판매에서는 마스터 원물/소분 관계가 판매전표와 실제출고 역할을 뒤집을 수 있다.
-            // 단가가 있는 행과 단가 0 판매행이 연결되면, 단가 보유 행을 원가출처로 먼저 고정한다.
             const getManualOperationalCost = (item = {}) => {
                 const direct = safeNum(item.단가);
                 if (direct > 0) return direct;
@@ -5335,138 +5310,10 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                 const purchase = safeNum(item.구매가 || item._purchasePrice || item._stockPurchasePrice);
                 return purchase > 0 ? purchase : 0;
             };
-            const hasManualPriceIssue = (item = {}) => (item.이슈 || []).some(msg => /단가없음|단가확인|매입내역 없음/.test(safeStr(msg)));
-            const isClearManualSalesTarget = (item = {}) => safeNum(item.단가) <= 0 && (
-                safeNum(item.출고) > 0 || safeNum(item.전산잔량) < 0 || hasManualPriceIssue(item)
-            );
-            const item1Cost = getManualOperationalCost(item1Orig);
-            const item2Cost = getManualOperationalCost(item2Orig);
-            const item1SalesTarget = isClearManualSalesTarget(item1Orig);
-            const item2SalesTarget = isClearManualSalesTarget(item2Orig);
-            if (item1SalesTarget && item2Cost > 0) {
-                sourceItem = { ...item2Orig, 이슈: [...(item2Orig.이슈 || [])] };
-                targetItem = { ...item1Orig, 이슈: [...(item1Orig.이슈 || [])] };
-            }
-            else if (item2SalesTarget && item1Cost > 0) {
-                sourceItem = { ...item1Orig, 이슈: [...(item1Orig.이슈 || [])] };
-                targetItem = { ...item2Orig, 이슈: [...(item2Orig.이슈 || [])] };
-            }
-            else if (item1Cost > 0 && item2Cost <= 0) {
-                sourceItem = { ...item1Orig, 이슈: [...(item1Orig.이슈 || [])] };
-                targetItem = { ...item2Orig, 이슈: [...(item2Orig.이슈 || [])] };
-            }
-            else if (item2Cost > 0 && item1Cost <= 0) {
-                sourceItem = { ...item2Orig, 이슈: [...(item2Orig.이슈 || [])] };
-                targetItem = { ...item1Orig, 이슈: [...(item1Orig.이슈 || [])] };
-            }
-            else if (rawSubPair) {
-                // 판매전표 역할이 명확하지 않을 때만 마스터 원물/소분 관계를 사용한다.
-                sourceItem = { ...rawSubPair.rawItem, 이슈: [...(rawSubPair.rawItem.이슈 || [])] };
-                targetItem = { ...rawSubPair.subItem, 이슈: [...(rawSubPair.subItem.이슈 || [])] };
-            }
-            else {
-                const item1SourceScore = scoreManualSource(item1Orig);
-                const item2SourceScore = scoreManualSource(item2Orig);
-                const item1TargetScore = scoreManualTarget(item1Orig);
-                const item2TargetScore = scoreManualTarget(item2Orig);
-                if (item1SourceScore > item2SourceScore && item2TargetScore >= item1TargetScore) {
-                    sourceItem = { ...item1Orig, 이슈: [...(item1Orig.이슈 || [])] };
-                    targetItem = { ...item2Orig, 이슈: [...(item2Orig.이슈 || [])] };
-                }
-                else if (item2SourceScore > item1SourceScore && item1TargetScore >= item2TargetScore) {
-                    sourceItem = { ...item2Orig, 이슈: [...(item2Orig.이슈 || [])] };
-                    targetItem = { ...item1Orig, 이슈: [...(item1Orig.이슈 || [])] };
-                }
-                else if (safeNum(item1Orig.로스) >= 0 && safeNum(item2Orig.로스) < 0) {
-                    sourceItem = { ...item1Orig, 이슈: [...(item1Orig.이슈 || [])] };
-                    targetItem = { ...item2Orig, 이슈: [...(item2Orig.이슈 || [])] };
-                }
-                else if (safeNum(item2Orig.로스) >= 0 && safeNum(item1Orig.로스) < 0) {
-                    sourceItem = { ...item2Orig, 이슈: [...(item2Orig.이슈 || [])] };
-                    targetItem = { ...item1Orig, 이슈: [...(item1Orig.이슈 || [])] };
-                }
-                else {
-                    setAlertMsg(`수기치환 실패!
-
-출처/대상 판정이 애매합니다.
-재고/Lot/단가가 있는 행과 부족·마이너스·출고 대상 행을 하나씩 선택해야 합니다.`);
-                    return prev;
-                }
-            }
-            // V1.a22.69: 수기치환 원가환산은 출처 상품의 전체 잔량/전체 입고수량을 쓰면 안 된다.
-            // 고객 판매전표 상품(target)은 그대로 유지하고, 실제 대체 출고된 상품(source)의 사용수량만 원가로 넘긴다.
-            // 예: 판매전표 20kg 2박스, 실제출고 10kg 4박스 → 10kg 단가 × 4 ÷ 2.
-            const extractManualUnitKg = (item = {}) => {
-                const text = `${safeStr(item.품명 || '')} ${safeStr(item.규격 || '')} ${safeStr(item.name || '')}`.toLowerCase();
-                const m = text.match(/(\d+(?:\.\d+)?)\s*(kg|킬로|키로|k\b|g|그램)/i);
-                if (!m) return 0;
-                const n = safeNum(m[1]);
-                if (n <= 0) return 0;
-                const unit = safeStr(m[2]).toLowerCase();
-                return (unit === 'g' || unit === '그램') ? n / 1000 : n;
-            };
-            // V1.a22.111 / DOPS-01: 수기치환 수량은 현재 계산된 실제 오차(로스)만 사용한다.
-            // LOT 출고, targetNeedQty, 거래처 칩, 판매수량 또는 무관한 fallback은 실제 오차를 대체하지 않는다.
-            const quantityEpsilon = 0.0000001;
-            const sourceActualErrorQty = Math.abs(safeNum(sourceItem.로스));
-            const targetActualErrorQty = Math.abs(safeNum(targetItem.로스));
-            const hasSourceActualError = sourceActualErrorQty > quantityEpsilon;
-            const hasTargetActualError = targetActualErrorQty > quantityEpsilon;
-            // 코드로 확정된 원물/소분 관계만 환산 근거로 사용한다. 단위명만 맞는 UNIT_FALLBACK은 확정 관계가 아니다.
-            const hasConfirmedRelation = !!rawSubPair && rawSubPair.reason !== 'UNIT_FALLBACK';
-            const rawToSubRate = hasConfirmedRelation ? safeNum(rawSubPair.rate) : 0;
-            const relationRawKey = safeStr(rawSubPair && rawSubPair.rawItem && rawSubPair.rawItem.batchKey);
-            const relationSubKey = safeStr(rawSubPair && rawSubPair.subItem && rawSubPair.subItem.batchKey);
-            const sourceKey = safeStr(sourceItem.batchKey);
-            const targetKey = safeStr(targetItem.batchKey);
-            const masterRelationRate = rawToSubRate > 0 && sourceKey === relationRawKey && targetKey === relationSubKey
-                ? rawToSubRate
-                : (rawToSubRate > 0 && sourceKey === relationSubKey && targetKey === relationRawKey ? 1 / rawToSubRate : 0);
-            const sourceUnitKg = extractManualUnitKg(sourceItem);
-            const targetUnitKg = extractManualUnitKg(targetItem);
-            const weightRelationRate = hasConfirmedRelation && sourceUnitKg > 0 && targetUnitKg > 0
-                ? sourceUnitKg / targetUnitKg
-                : 0;
-            const relationRate = masterRelationRate > 0 ? masterRelationRate : weightRelationRate;
-            const quantitiesMatch = (left, right) => {
-                const scale = Math.max(1, Math.abs(safeNum(left)), Math.abs(safeNum(right)));
-                return Math.abs(safeNum(left) - safeNum(right)) <= quantityEpsilon * scale;
-            };
-            let sourceLossQty = 0;
-            let targetLossQty = 0;
-            let quantityBlockReason = '';
-            if (!hasSourceActualError && !hasTargetActualError) {
-                quantityBlockReason = '출처와 대상의 현재 계산 결과에서 실제 오차수량을 확정할 수 없습니다.';
-            }
-            else if (relationRate <= 0) {
-                quantityBlockReason = '출처와 대상의 실제 오차수량을 서로 설명할 수 있는 확정 환산관계가 없습니다.';
-            }
-            else if (hasSourceActualError && hasTargetActualError) {
-                const expectedTargetQty = sourceActualErrorQty * relationRate;
-                if (!quantitiesMatch(expectedTargetQty, targetActualErrorQty)) {
-                    quantityBlockReason = `양쪽 실제 오차가 확정 환산관계와 일치하지 않습니다.\n출처 오차: ${formatQty(safeNum(sourceItem.로스))}\n대상 오차: ${formatQty(safeNum(targetItem.로스))}\n환산 예상 대상수량: ${formatQty(expectedTargetQty)}`;
-                }
-                else {
-                    sourceLossQty = sourceActualErrorQty;
-                    targetLossQty = targetActualErrorQty;
-                }
-            }
-            else if (hasSourceActualError) {
-                sourceLossQty = sourceActualErrorQty;
-                targetLossQty = sourceActualErrorQty * relationRate;
-            }
-            else {
-                targetLossQty = targetActualErrorQty;
-                sourceLossQty = targetActualErrorQty / relationRate;
-            }
-            if (quantityBlockReason || sourceLossQty <= quantityEpsilon || targetLossQty <= quantityEpsilon) {
-                setAlertMsg(`수기치환 보류!
-
-${quantityBlockReason || '실제 오차수량을 확정할 수 없습니다.'}
-
-자동 치환하지 않고 관리자 확인 상태로 유지합니다.`);
-                return prev;
-            }
+            // V1.a22.113: 오차는 관리자 작업을 차단하는 조건이 아니라 적용 결과다.
+            // 양쪽 오차수량을 그대로 기록하며 마스터 관계·환산율·총량 일치 여부로 수기치환을 거부하지 않는다.
+            const sourceLossQty = Math.abs(safeNum(sourceItem.로스));
+            const targetLossQty = Math.abs(safeNum(targetItem.로스));
             const buildManualSubPricePatch = (actualSource, salesTarget, actualQty, salesQty) => {
                 // V1.a22.88: 패치 대상은 언제나 판매전표 상품이다.
                 // 마스터 원물/소분 방향으로 대상행을 다시 선택하면 대체판매 역할이 뒤집히므로 금지한다.
@@ -5541,28 +5388,23 @@ ${quantityBlockReason || '실제 오차수량을 확정할 수 없습니다.'}
             const sourceUnitCost = getManualOperationalCost(sourceItem) || safeNum(sourceCostInfo.unitCost);
             const costSourceItem = sourceUnitCost > 0 ? { ...sourceItem, 단가: sourceUnitCost } : sourceItem;
             // V1.a22.69: 수기치환도 Ctrl 드래그와 같은 원가매칭 공통 엔진을 사용한다.
-            const manualMatch = DATAOPS_OPERATION_MODULE.buildReplacementCostMatch({
-                salesItem: targetItem,
-                actualItem: costSourceItem,
-                salesQty: targetLossQty,
-                actualQty: sourceLossQty,
-                method: 'spacebar',
-                type: DATAOPS_OPERATION_MODULE.TYPES.MANUAL_ASSIST,
-                vendorName: '수기치환',
-                revenue: 0
-            });
+            const canCalculateManualCost = sourceLossQty > 0 && targetLossQty > 0 && sourceUnitCost > 0;
+            const manualMatch = canCalculateManualCost
+                ? DATAOPS_OPERATION_MODULE.buildReplacementCostMatch({
+                    salesItem: targetItem,
+                    actualItem: costSourceItem,
+                    salesQty: targetLossQty,
+                    actualQty: sourceLossQty,
+                    method: 'spacebar',
+                    type: DATAOPS_OPERATION_MODULE.TYPES.MANUAL_ASSIST,
+                    vendorName: '수기치환',
+                    revenue: 0
+                })
+                : { actualUnitCost: 0, salesUnitCost: 0, costAmount: 0, costLayer: null, formula: '' };
             const manualUnitCost = manualMatch.actualUnitCost;
-            const manualTargetUnitCost = safeNum(subPricePatch && subPricePatch.subPrice) || manualMatch.salesUnitCost || manualUnitCost;
-            // 단가 0 판매상품인데 원가를 만들지 못한 경우 수량이슈까지 확인완료로 바꾸면 안 된다.
-            if (safeNum(targetItem.단가) <= 0 && manualTargetUnitCost <= 0) {
-                setAlertMsg(`수기치환 원가 생성 실패!
-
-판매상품: ${safeStr(targetItem.품명, '대상상품')}
-실제출고 상품: ${safeStr(sourceItem.품명, '출처상품')}
-
-실제출고 상품의 입고가/Lot 원가를 확인하세요. 단가이슈는 미확인 상태로 유지됩니다.`);
-                return prev;
-            }
+            const manualTargetUnitCost = canCalculateManualCost
+                ? (safeNum(subPricePatch && subPricePatch.subPrice) || manualMatch.salesUnitCost || manualUnitCost)
+                : 0;
             let sourceAfter = makeManualIssue(sourceItem, targetItem, '-', sourceLossQty);
             let targetAfter = makeManualIssue(targetItem, sourceItem, '+', targetLossQty);
             sourceAfter = applyManualSubPricePatch(sourceAfter, subPricePatch);
@@ -5618,6 +5460,16 @@ ${quantityBlockReason || '실제 오차수량을 확정할 수 없습니다.'}
                 if (!safeStr(targetAfter.메모, '').includes(costMemo))
                     targetAfter.메모 = `${safeStr(targetAfter.메모, '')}${safeStr(targetAfter.메모, '') ? ' ' : ''}${costMemo}`;
             }
+            else {
+                // 원가 근거 부족도 차단하지 않고 관리자 적용 결과에 남긴다.
+                const unresolvedPriceIssues = (targetItem.이슈 || []).filter(msg => /단가없음|단가확인|매입내역 없음|🚨단가/.test(safeStr(msg)));
+                const unresolvedPriceIssueKeys = new Set(unresolvedPriceIssues.map(msg => safeStr(msg).replace(/[🚨✅]/g, '')));
+                const reportedIssues = (targetAfter.이슈 || []).filter(msg => !unresolvedPriceIssueKeys.has(safeStr(msg).replace(/[🚨✅]/g, '')));
+                targetAfter.이슈 = DATAOPS_ISSUE_HELPER.unique([...reportedIssues, ...unresolvedPriceIssues, '🚨수기치환원가미계산']);
+                const costPendingMemo = `[수기치환결과] 원가 계산 근거 없음`;
+                if (!safeStr(targetAfter.메모, '').includes(costPendingMemo))
+                    targetAfter.메모 = `${safeStr(targetAfter.메모, '')}${safeStr(targetAfter.메모, '') ? ' ' : ''}${costPendingMemo}`;
+            }
             // 최종 방어막:
             // 1) 원가출처 Lot/BOX의 기존 단가는 반드시 보존한다.
             // 2) 명시적인 원물→소분 관계는 소분행에만 소분단가를 반영한다.
@@ -5648,13 +5500,17 @@ ${quantityBlockReason || '실제 오차수량을 확정할 수 없습니다.'}
                     sQty: sourceLossQty,
                     tQty: targetLossQty,
                     transferredCost: manualAppliedCostAmount || (sourceLossQty * safeNum(sourceItem.단가)),
-                    sourceItemPrev: sourceItem.batchKey === item1Orig.batchKey ? item1Orig : item2Orig,
-                    targetItemPrev: targetItem.batchKey === item2Orig.batchKey ? item2Orig : item1Orig,
+                    administratorDirected: true,
+                    sourceError: safeNum(sourceItem.로스),
+                    targetError: safeNum(targetItem.로스),
+                    costStatus: manualTargetUnitCost > 0 ? 'CALCULATED' : 'UNAVAILABLE',
+                    sourceItemPrev: item1Orig,
+                    targetItemPrev: item2Orig,
                     createdAt: new Date().toISOString()
                 }]);
             const newData = [...prev];
-            newData[sourceAfter.batchKey === key1 ? idx1 : idx2] = sourceAfter;
-            newData[targetAfter.batchKey === key1 ? idx1 : idx2] = targetAfter;
+            newData[idx1] = sourceAfter;
+            newData[idx2] = targetAfter;
             // V1.a22.12: 수기치환 확정 후 자동 후보 목록이 재계산될 때 해당 품목은 후보에서 빠진다.
             return newData;
         });
@@ -12386,7 +12242,7 @@ ${balanceText}
                     React.createElement("h1", { className: "text-xl md:text-xl font-black leading-none text-slate-800 tracking-tight flex items-center cursor-pointer hover:opacity-80 transition", onClick: () => { var _a; return (_a = document.getElementById('main-scroll-container')) === null || _a === void 0 ? void 0 : _a.scrollTo({ top: 0, behavior: 'smooth' }); }, title: "\uD074\uB9AD\uC2DC \uCD5C\uC0C1\uB2E8 \uC774\uB3D9" },
                         React.createElement("span", { className: "text-blue-600 mr-2" }, "ONEAPP"),
                         " DataOps",
-                        React.createElement("span", { className: "text-slate-500 text-[10px] px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3" }, "V1.a22.112_EvidenceReportPreflight · 2026-08-12 KST"))),
+                        React.createElement("span", { className: "text-slate-500 text-[10px] px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3" }, "V1.a22.113_AdminDecisionReport · 2026-08-16 KST"))),
                 React.createElement("div", { className: "flex items-center gap-2 shrink-0" },
                     productData.length > 0 && (React.createElement(React.Fragment, null,
                         React.createElement("button", { onClick: () => setGuideModalOpen(true), className: "px-3 py-1.5 rounded text-[12px] font-bold transition flex items-center border bg-white text-slate-700 border-slate-300 hover:bg-slate-50 shadow-sm mr-1" }, "\uC774\uC288 \uAC00\uC774\uB4DC"),

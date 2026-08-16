@@ -411,7 +411,7 @@ assert.match(source, /해당 상품으로 이동/);
 assert.match(source, /다시 점검/);
 assert.match(source, /salesSourceEvidenceByProductKey/);
 assert.match(source, /NO_CODE\|\$\{safeStr\(evidenceName, '이름없음'\)\}/);
-assert.match(source, /V1\.a22\.112_EvidenceReportPreflight/);
+assert.match(source, /V1\.a22\.113_AdminDecisionReport/);
 assert.doesNotMatch(vendorSource, /RECONCILED|base\.qty \+= delta|const delta = outQty - chipSum/);
 
 console.log("DataOps 계산근거 리포트·판매칩 사전검증 계약이 통과했습니다.");
