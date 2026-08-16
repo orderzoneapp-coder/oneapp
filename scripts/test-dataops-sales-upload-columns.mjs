@@ -567,7 +567,7 @@ assert.equal(emptyPreviewGrid.length, 1);
 assert.equal(emptyPreviewSheet["!merges"], undefined);
 
 const expectedDisplayVersion =
-  "V1.a22.112_EvidenceReportPreflight · 2026-08-12 KST";
+  "V1.a22.113_AdminDecisionReport · 2026-08-16 KST";
 assert.ok(
   source.includes(
     `<title>ONEAPP DataOps - 핵심 수불부 관리 (${expectedDisplayVersion})</title>`,
@@ -581,9 +581,9 @@ assert.ok(
 assert.equal(
   source.split(expectedDisplayVersion).length - 1,
   3,
-  "dated V112 version must appear at title, loader, and header",
+  "dated V113 version must appear at title, loader, and header",
 );
-assert.match(source, /version:\s*'V1\.a22\.112_EvidenceReportPreflight'/);
+assert.match(source, /version:\s*'V1\.a22\.113_AdminDecisionReport'/);
 
 console.log(
   "DataOps 판매업로드 시트별 열 계약과 실제 XLSX 재오픈 검증이 통과했습니다.",

@@ -211,12 +211,12 @@ assert.match(renderedHtml, /category-break/);
 assert.match(renderedHtml, /window\.print\(\)/);
 
 const expectedDisplayVersion =
-  "V1.a22.112_EvidenceReportPreflight · 2026-08-12 KST";
+  "V1.a22.113_AdminDecisionReport · 2026-08-16 KST";
 assert.equal(
   source.split(expectedDisplayVersion).length - 1,
   3,
-  "dated V112 version must appear at title, loader, and header",
+  "dated V113 version must appear at title, loader, and header",
 );
-assert.match(source, /version:\s*'V1\.a22\.112_EvidenceReportPreflight'/);
+assert.match(source, /version:\s*'V1\.a22\.113_AdminDecisionReport'/);
 
 console.log("DataOps stock print readability contract passed.");
