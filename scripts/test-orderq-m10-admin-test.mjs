@@ -53,6 +53,7 @@ assert.match(source, /OPENING_QUANTITY = 10/);
 assert.match(source, /productCode:`TEST-\$\{codeSuffix\}`/);
 assert.match(source, /warehouseCode:`T-\$\{codeSuffix\}`/);
 assert.doesNotMatch(source, /itemCode:'TEST-001'|warehouseCode:'TEST'/);
+assert.match(source, /dispatchId:ids\.dispatchId, dispatchNo:ids\.orderNo/);
 assert.match(source, /commandType:'RELEASE_DISPATCH'/);
 assert.match(source, /recordDispatchActual/);
 assert.match(source, /commandType:'CONFIRM_DISPATCH'/);

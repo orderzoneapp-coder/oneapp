@@ -217,25 +217,29 @@ async function createDraft(currentState) {
   const now = new Date().toISOString();
   const existing = await get(STORE.DISPATCH_DECISIONS, ids.dispatchId);
   if (existing) return;
-  const db = await openOrderQDb();
-  const tx = db.transaction([STORE.CUSTOMERS, STORE.ORDERS, STORE.ORDER_ITEMS], 'readwrite');
-  tx.objectStore(STORE.CUSTOMERS).put({
-    customerId:ids.customerId, customerName:'TEST 고객', normalizedName:'test고객', status:'ACTIVE', adminTest:true, updatedAt:now
-  });
-  tx.objectStore(STORE.ORDERS).add({
-    orderId:ids.orderId, orderNo:ids.orderNo, customerId:ids.customerId, customerName:'TEST 고객',
-    orderDate:now.slice(0, 10), orderStatus:'ORDER', adminStatus:'CHECKED', opsStatus:'ACTIVE',
-    revision:1, localOnly:true, adminTest:true, adminTestRunId:currentState.runId
-  });
-  tx.objectStore(STORE.ORDER_ITEMS).add({
-    orderItemId:ids.orderItemId, orderId:ids.orderId, productId:ids.productId, itemCode:ids.productCode, itemName:'테스트 양파 1kg',
-    finalQuantity:TEST_QUANTITY, finalUnit:'개', price:TEST_UNIT_PRICE, vatAmount:0, matchStatus:'MATCHED',
-    revision:1, localOnly:true, adminTest:true, adminTestRunId:currentState.runId
-  });
-  await transactionDone(tx);
-  await workbench.saveDispatchDraft({
+  try {
+    const db = await openOrderQDb();
+    const tx = db.transaction([STORE.CUSTOMERS, STORE.ORDERS, STORE.ORDER_ITEMS], 'readwrite');
+    tx.objectStore(STORE.CUSTOMERS).put({
+      customerId:ids.customerId, customerName:'TEST 고객', normalizedName:'test고객', status:'ACTIVE', adminTest:true, updatedAt:now
+    });
+    tx.objectStore(STORE.ORDERS).add({
+      orderId:ids.orderId, orderNo:ids.orderNo, customerId:ids.customerId, customerName:'TEST 고객',
+      orderDate:now.slice(0, 10), orderStatus:'ORDER', adminStatus:'CHECKED', opsStatus:'ACTIVE',
+      revision:1, localOnly:true, adminTest:true, adminTestRunId:currentState.runId
+    });
+    tx.objectStore(STORE.ORDER_ITEMS).add({
+      orderItemId:ids.orderItemId, orderId:ids.orderId, productId:ids.productId, itemCode:ids.productCode, itemName:'테스트 양파 1kg',
+      finalQuantity:TEST_QUANTITY, finalUnit:'개', price:TEST_UNIT_PRICE, vatAmount:0, matchStatus:'MATCHED',
+      revision:1, localOnly:true, adminTest:true, adminTestRunId:currentState.runId
+    });
+    await transactionDone(tx);
+  } catch (error) {
+    throw new Error(`주문 원본 저장 실패: ${error?.message || error}`);
+  }
+  try { await workbench.saveDispatchDraft({
     decision:{
-      dispatchId:ids.dispatchId, orderId:ids.orderId, customerId:ids.customerId, customerName:'TEST 고객',
+      dispatchId:ids.dispatchId, dispatchNo:ids.orderNo, orderId:ids.orderId, customerId:ids.customerId, customerName:'TEST 고객',
       businessDate:now.slice(0, 10), status:'DRAFT', adminTest:true, adminTestRunId:currentState.runId
     },
     lines:[{
@@ -251,16 +255,20 @@ async function createDraft(currentState) {
       warehouseId:ids.warehouseId, plannedBaseQuantity:TEST_QUANTITY
     }],
     expectedRevision:0
-  }, 'ADMIN');
+  }, 'ADMIN'); }
+  catch (error) { throw new Error(`출고 초안 저장 실패: ${error?.message || error}`); }
 }
 
 async function startTest() {
   assertWriter();
-  await connect();
+  try { await connect(); }
+  catch (error) { throw new Error(`TEST 중앙 연결 실패: ${error?.message || error}`); }
   const runId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
   const next = { runId, ids:idsForRun(runId), step:1, startedAt:new Date().toISOString() };
-  await ensureOpening(next.ids);
-  await createDraft(next);
+  try { await ensureOpening(next.ids); }
+  catch (error) { throw new Error(`TEST 초기재고 준비 실패: ${error?.message || error}`); }
+  try { await createDraft(next); }
+  catch (error) { throw new Error(`TEST 주문 준비 실패: ${error?.message || error}`); }
   saveState(next);
   render();
 }
