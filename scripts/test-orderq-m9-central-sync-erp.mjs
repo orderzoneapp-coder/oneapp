@@ -311,21 +311,27 @@ assert.equal(rows.sales[0].externalLineNo, '');
 assert.equal(rows.sales[0].actualBaseQuantity, 6);
 assert.equal(rows.sales[0].recognizedOrderQuantity, 6);
 const zeroIdentityRows = buildErpExportRows({
-  salesDocuments:[{ ...salesDocument, salesDocumentId:'SD-ZERO', externalDocumentNo:0 }],
-  salesLines:[{ ...salesLine, salesDocumentId:'SD-ZERO', salesLineId:'SL-ZERO', externalLineNo:'0' }]
+  salesDocuments:[{ ...salesDocument, salesDocumentId:'SD-ZERO', originTransactionId:0, externalDocumentNo:0 }],
+  salesLines:[{ ...salesLine, salesDocumentId:'SD-ZERO', salesLineId:'SL-ZERO', originTransactionId:'0', externalLineNo:'0' }]
 });
+assert.equal(zeroIdentityRows.sales[0].originTransactionId, '0');
+assert.equal(zeroIdentityRows.sales[0].originLineId, '0');
 assert.equal(zeroIdentityRows.sales[0].externalDocumentNo, '0');
 assert.equal(zeroIdentityRows.sales[0].externalLineNo, '0');
 const stringZeroIdentityRows = buildErpExportRows({
-  salesDocuments:[{ ...salesDocument, salesDocumentId:'SD-STRING-ZERO', externalDocumentNo:'0' }],
-  salesLines:[{ ...salesLine, salesDocumentId:'SD-STRING-ZERO', salesLineId:'SL-STRING-ZERO', externalLineNo:0 }]
+  salesDocuments:[{ ...salesDocument, salesDocumentId:'SD-STRING-ZERO', originTransactionId:'0', externalDocumentNo:'0' }],
+  salesLines:[{ ...salesLine, salesDocumentId:'SD-STRING-ZERO', salesLineId:'SL-STRING-ZERO', originTransactionId:0, externalLineNo:0 }]
 });
+assert.equal(stringZeroIdentityRows.sales[0].originTransactionId, '0');
+assert.equal(stringZeroIdentityRows.sales[0].originLineId, '0');
 assert.equal(stringZeroIdentityRows.sales[0].externalDocumentNo, '0');
 assert.equal(stringZeroIdentityRows.sales[0].externalLineNo, '0');
 const blankIdentityRows = buildErpExportRows({
-  salesDocuments:[{ ...salesDocument, salesDocumentId:'SD-BLANK', externalDocumentNo:'' }],
-  salesLines:[{ ...salesLine, salesDocumentId:'SD-BLANK', salesLineId:'SL-BLANK', externalLineNo:'' }]
+  salesDocuments:[{ ...salesDocument, salesDocumentId:'SD-BLANK', originTransactionId:'', externalDocumentNo:'' }],
+  salesLines:[{ ...salesLine, salesDocumentId:'SD-BLANK', salesLineId:'SL-BLANK', originTransactionId:'', externalLineNo:'' }]
 });
+assert.equal(blankIdentityRows.sales[0].originTransactionId, '');
+assert.equal(blankIdentityRows.sales[0].originLineId, '');
 assert.equal(blankIdentityRows.sales[0].externalDocumentNo, '');
 assert.equal(blankIdentityRows.sales[0].externalLineNo, '');
 const workbookNames = createErpWorkbookBuffer(rows, {
