@@ -594,6 +594,10 @@ function orderQOrderHead(ss, payload) {
 const ORDERQ_M9_SCHEMA = 'ONEAPP_ORDERQ_CENTRAL_V1';
 const ORDERQ_M9_LEASE_DURATION_MS = 5 * 60 * 1000;
 const ORDERQ_M9_MIGRATION_TXN_SCHEMA = 'ORDERQ_M9_MIGRATION_TXN_V2';
+const ORDERQ_M9_OFFICIAL_TXN_SCHEMA = 'ORDERQ_M9_OFFICIAL_TXN_V1';
+const ORDERQ_M9_OFFICIAL_TXN_CHUNK_SCHEMA = 'ORDERQ_M9_OFFICIAL_TXN_CHUNK_V1';
+const ORDERQ_M9_OFFICIAL_TXN_CHUNK_SIZE = 18000;
+const ORDERQ_M9_TXN_CELL_SAFE_LIMIT = 45000;
 const ORDERQ_M9_MIGRATION_TYPES = Object.freeze([
   'ORDER', 'ORDER_ITEM', 'PRODUCT', 'WAREHOUSE', 'INVENTORY_SNAPSHOT', 'INVENTORY_LINE',
   'DISPATCH_DECISION', 'DISPATCH_LINE', 'DISPATCH_STOCK_ALLOCATION', 'PURCHASE_DOCUMENT', 'PURCHASE_LINE'
@@ -728,6 +732,135 @@ function orderQM9WriteMigrationTransaction(ss, transaction) {
   ];
   orderQWriteRow(orderQEnsureSheet(ss, 'M9_TXN_LOG'), transaction.txnId, row);
   return { ...transaction, updatedAt: timestamp };
+}
+
+function orderQM9OfficialPayloadDigest(value) {
+  return sha256Hex(JSON.stringify(value === undefined ? null : value));
+}
+
+function orderQM9OfficialMutationRows(rowsSource) {
+  return (rowsSource || []).map(row => ({
+    entityType: orderQM9Text(row.entityType).toUpperCase(),
+    entityId: orderQM9Text(row.entityId),
+    revision: Number(row.revision || 0),
+    payload: row.payload || {}
+  })).sort((a, b) => orderQM9EntityKey(a.entityType, a.entityId).localeCompare(orderQM9EntityKey(b.entityType, b.entityId)));
+}
+
+function orderQM9OfficialMutationDigest(rowsSource) {
+  return orderQM9Digest(orderQM9OfficialMutationRows(rowsSource));
+}
+
+function orderQM9OfficialMutationKeyDigest(rowsSource) {
+  return orderQM9Digest(orderQM9OfficialMutationRows(rowsSource).map(row => orderQM9EntityKey(row.entityType, row.entityId)));
+}
+
+function orderQM9BuildOfficialChunks(transactionId, idempotencyKey, kind, value) {
+  const source = JSON.stringify(value === undefined ? null : value);
+  const count = Math.max(1, Math.ceil(source.length / ORDERQ_M9_OFFICIAL_TXN_CHUNK_SIZE));
+  const rows = [];
+  const rowIds = [];
+  const timestamp = new Date().toISOString();
+  for (let index = 0; index < count; index += 1) {
+    const rowId = `${transactionId}:CHUNK:${kind}:${String(index + 1).padStart(4, '0')}`;
+    const wrapper = {
+      schemaVersion: ORDERQ_M9_OFFICIAL_TXN_CHUNK_SCHEMA,
+      transactionId,
+      kind,
+      index: index + 1,
+      count,
+      digest: sha256Hex(source),
+      data: source.slice(index * ORDERQ_M9_OFFICIAL_TXN_CHUNK_SIZE, (index + 1) * ORDERQ_M9_OFFICIAL_TXN_CHUNK_SIZE)
+    };
+    const serialized = JSON.stringify(wrapper);
+    if (serialized.length >= ORDERQ_M9_TXN_CELL_SAFE_LIMIT) {
+      throw new Error(`ORDERQ_CENTRAL_OFFICIAL_TXN_CHUNK_TOO_LARGE:${transactionId}:${kind}:${index + 1}`);
+    }
+    rowIds.push(rowId);
+    rows.push([rowId, idempotencyKey, 'CHUNK', serialized, '{}', '', timestamp]);
+  }
+  return {
+    descriptor: { kind, count, digest: sha256Hex(source) },
+    rowIds,
+    rows
+  };
+}
+
+function orderQM9WriteOfficialTransaction(ss, transaction) {
+  const previousJson = JSON.stringify(transaction.previous || {});
+  const nextJson = JSON.stringify(transaction.next || {});
+  if (previousJson.length >= ORDERQ_M9_TXN_CELL_SAFE_LIMIT || nextJson.length >= ORDERQ_M9_TXN_CELL_SAFE_LIMIT) {
+    throw new Error(`ORDERQ_CENTRAL_OFFICIAL_TXN_SUMMARY_TOO_LARGE:${transaction.txnId}`);
+  }
+  const timestamp = new Date().toISOString();
+  orderQWriteRow(orderQEnsureSheet(ss, 'M9_TXN_LOG'), transaction.txnId, [
+    transaction.txnId,
+    transaction.idempotencyKey,
+    transaction.status,
+    previousJson,
+    nextJson,
+    orderQM9Text(transaction.error),
+    timestamp
+  ]);
+  return { ...transaction, updatedAt: timestamp };
+}
+
+function orderQM9ReadOfficialTransactions(ss, statusesSource) {
+  const statuses = statusesSource ? new Set(statusesSource.map(value => orderQM9Text(value).toUpperCase())) : null;
+  const sheet = orderQEnsureSheet(ss, 'M9_TXN_LOG');
+  return orderQM9ReadRows(sheet, ORDERQ_HEADERS.M9_TXN_LOG.length).map((values, offset) => {
+    const previous = orderQM9ParseJson(values[3], `ORDERQ_CENTRAL_OFFICIAL_TXN_PREVIOUS_INVALID:${values[0]}`);
+    const next = orderQM9ParseJson(values[4], `ORDERQ_CENTRAL_OFFICIAL_TXN_NEXT_INVALID:${values[0]}`);
+    return {
+      rowNumber: offset + 2,
+      txnId: orderQM9Text(values[0]),
+      idempotencyKey: orderQM9Text(values[1]),
+      status: orderQM9Text(values[2]).toUpperCase(),
+      previous,
+      next,
+      officialTransaction: previous.schemaVersion === ORDERQ_M9_OFFICIAL_TXN_SCHEMA
+        || next.schemaVersion === ORDERQ_M9_OFFICIAL_TXN_SCHEMA,
+      error: orderQM9Text(values[5]),
+      updatedAt: orderQM9Text(values[6])
+    };
+  }).filter(row => row.officialTransaction && (!statuses || statuses.has(row.status)));
+}
+
+function orderQM9ReadOfficialChunkPayload(ss, transaction, descriptor) {
+  if (!descriptor || !descriptor.kind || !Number.isInteger(Number(descriptor.count)) || Number(descriptor.count) < 1) {
+    throw new Error(`ORDERQ_CENTRAL_OFFICIAL_TXN_CHUNK_DESCRIPTOR_INVALID:${transaction.txnId}`);
+  }
+  const count = Number(descriptor.count);
+  const prefix = `${transaction.txnId}:CHUNK:${descriptor.kind}:`;
+  const chunks = orderQM9ReadRows(orderQEnsureSheet(ss, 'M9_TXN_LOG'), ORDERQ_HEADERS.M9_TXN_LOG.length)
+    .filter(values => orderQM9Text(values[0]).indexOf(prefix) === 0)
+    .map(values => orderQM9ParseJson(values[3], `ORDERQ_CENTRAL_OFFICIAL_TXN_CHUNK_INVALID:${values[0]}`));
+  if (chunks.length !== count) throw new Error(`ORDERQ_CENTRAL_OFFICIAL_TXN_CHUNK_COUNT_MISMATCH:${transaction.txnId}:${descriptor.kind}`);
+  const indexes = new Set(chunks.map(chunk => Number(chunk.index || 0)));
+  if (indexes.size !== count || chunks.some(chunk => chunk.schemaVersion !== ORDERQ_M9_OFFICIAL_TXN_CHUNK_SCHEMA
+    || chunk.transactionId !== transaction.txnId || chunk.kind !== descriptor.kind
+    || Number(chunk.count || 0) !== count || chunk.digest !== descriptor.digest)) {
+    throw new Error(`ORDERQ_CENTRAL_OFFICIAL_TXN_CHUNK_SET_MISMATCH:${transaction.txnId}:${descriptor.kind}`);
+  }
+  const source = chunks.sort((a, b) => Number(a.index) - Number(b.index))
+    .map(chunk => chunk.data === undefined || chunk.data === null ? '' : String(chunk.data))
+    .join('');
+  if (sha256Hex(source) !== descriptor.digest) {
+    throw new Error(`ORDERQ_CENTRAL_OFFICIAL_TXN_CHUNK_DIGEST_MISMATCH:${transaction.txnId}:${descriptor.kind}`);
+  }
+  try { return JSON.parse(source); }
+  catch (error) { throw new Error(`ORDERQ_CENTRAL_OFFICIAL_TXN_CHUNK_PAYLOAD_INVALID:${transaction.txnId}:${descriptor.kind}`); }
+}
+
+function orderQM9DeleteOfficialChunks(ss, transaction) {
+  const descriptors = [transaction.previous && transaction.previous.previousChunks, transaction.next && transaction.next.mutationChunks].filter(Boolean);
+  const rowIds = [];
+  descriptors.forEach(descriptor => {
+    for (let index = 1; index <= Number(descriptor.count || 0); index += 1) {
+      rowIds.push(`${transaction.txnId}:CHUNK:${descriptor.kind}:${String(index).padStart(4, '0')}`);
+    }
+  });
+  orderQM9DeleteRowsByFirstColumn(orderQEnsureSheet(ss, 'M9_TXN_LOG'), rowIds);
 }
 
 function orderQM9ReadMigrationTransactions(ss, statusesSource) {
@@ -910,11 +1043,169 @@ function orderQM9RecoverIncompleteMigrations(ss) {
   return outcomes;
 }
 
+function orderQM9OfficialChanges(ss, idempotencyKey) {
+  return orderQM9ReadChanges(ss).rows
+    .filter(row => row.commandId === idempotencyKey)
+    .sort((a, b) => a.sequence - b.sequence);
+}
+
+function orderQM9VerifyOfficialChanges(ss, transaction) {
+  const summary = transaction.next || {};
+  if (summary.schemaVersion !== ORDERQ_M9_OFFICIAL_TXN_SCHEMA) return { complete: false, changes: [] };
+  const changes = orderQM9OfficialChanges(ss, transaction.idempotencyKey);
+  const expectedCount = Number(summary.changeCount || 0);
+  if (changes.length !== expectedCount || orderQM9ChangeDigest(changes) !== summary.changeDigest) {
+    return { complete: false, changes };
+  }
+  const startCursor = Number(summary.startCursor || 0);
+  if (changes.some((row, index) => row.sequence !== startCursor + index + 1)) return { complete: false, changes };
+  return { complete: true, changes };
+}
+
+function orderQM9VerifyOfficialAudit(ss, transaction, command) {
+  const summary = transaction && transaction.next || {};
+  if (!transaction || transaction.status !== 'COMMITTED' || summary.schemaVersion !== ORDERQ_M9_OFFICIAL_TXN_SCHEMA) {
+    return { complete: false, changes: [] };
+  }
+  const verifiedChanges = orderQM9VerifyOfficialChanges(ss, transaction);
+  const result = command && command.result || {};
+  const complete = verifiedChanges.complete
+    && command && command.status === 'COMMITTED'
+    && command.mutationFingerprint === summary.mutationFingerprint
+    && result.transactionId === transaction.txnId
+    && Number(result.changeCount || 0) === Number(summary.changeCount || 0)
+    && result.changeDigest === summary.changeDigest
+    && result.mutationKeyDigest === summary.mutationKeyDigest
+    && Number(result.cursor || 0) === Number(summary.endCursor || 0)
+    && Number(result.ledgerSequence || 0) === Number(summary.endLedgerSequence || 0)
+    && Number(orderQM9MetaNumber(ss, 'syncSequence')) >= Number(summary.endCursor || 0)
+    && Number(orderQM9MetaNumber(ss, 'ledgerSequence')) >= Number(summary.endLedgerSequence || 0);
+  return { complete: Boolean(complete), changes: verifiedChanges.changes };
+}
+
+function orderQM9VerifyOfficialCommitState(ss, transaction) {
+  const summary = transaction.next || {};
+  const mutations = orderQM9ReadOfficialChunkPayload(ss, transaction, summary.mutationChunks);
+  if (!Array.isArray(mutations) || mutations.length !== Number(summary.mutationCount || 0)
+    || orderQM9OfficialMutationDigest(mutations) !== summary.mutationDigest
+    || orderQM9OfficialMutationKeyDigest(mutations) !== summary.mutationKeyDigest) {
+    return { complete: false, changes: [] };
+  }
+  const currentRows = mutations.map(row => orderQM9ReadEntity(ss, row.entityType, row.entityId)).filter(Boolean);
+  if (currentRows.length !== mutations.length
+    || orderQM9OfficialMutationDigest(currentRows) !== summary.mutationDigest
+    || Number(orderQM9MetaNumber(ss, 'syncSequence')) !== Number(summary.endCursor || 0)
+    || Number(orderQM9MetaNumber(ss, 'ledgerSequence')) !== Number(summary.endLedgerSequence || 0)) {
+    return { complete: false, changes: [] };
+  }
+  const command = orderQM9ReadCommand(ss, transaction.idempotencyKey);
+  const audit = orderQM9VerifyOfficialAudit(ss, { ...transaction, status: 'COMMITTED' }, command);
+  return { complete: audit.complete, changes: audit.changes };
+}
+
+function orderQM9RollbackOfficialTransaction(ss, transaction, options) {
+  const previousSummary = transaction.previous || {};
+  const nextSummary = transaction.next || {};
+  if (previousSummary.schemaVersion !== ORDERQ_M9_OFFICIAL_TXN_SCHEMA
+    || nextSummary.schemaVersion !== ORDERQ_M9_OFFICIAL_TXN_SCHEMA) {
+    throw new Error(`ORDERQ_CENTRAL_OFFICIAL_RECOVERY_SCHEMA_INVALID:${transaction.txnId}`);
+  }
+  const bundle = orderQM9ReadOfficialChunkPayload(ss, transaction, previousSummary.previousChunks);
+  const previous = Array.isArray(bundle && bundle.entities) ? bundle.entities : [];
+  const previousCommand = bundle && bundle.command;
+  if (previous.length !== Number(previousSummary.previousEntityCount || 0)
+    || orderQM9OfficialMutationKeyDigest(previous.map(row => ({
+      entityType: row.entityType,
+      entityId: row.entityId,
+      revision: row.value && row.value.revision || 0,
+      payload: row.value && row.value.payload || {}
+    }))) !== previousSummary.previousEntityKeyDigest
+    || orderQM9OfficialPayloadDigest(previous) !== previousSummary.previousEntityDigest
+    || orderQM9OfficialPayloadDigest(previousCommand) !== previousSummary.previousCommandDigest) {
+    throw new Error(`ORDERQ_CENTRAL_OFFICIAL_RECOVERY_PREVIOUS_INVALID:${transaction.txnId}`);
+  }
+  previous.forEach(entry => {
+    const key = orderQM9EntityKey(entry.entityType, entry.entityId);
+    const entitySheet = orderQEnsureSheet(ss, 'M9_ENTITY');
+    if (entry.value) orderQM9WriteEntity(ss, entry.value);
+    else orderQDeleteEntityRow(entitySheet, key);
+  });
+  if (orderQM9Text(options && options.failureAt).toUpperCase() === 'ENTITIES_RESTORED') {
+    throw new Error('ORDERQ_CENTRAL_OFFICIAL_ROLLBACK_INTERRUPTED:ENTITIES_RESTORED');
+  }
+  orderQM9SetMetaNumber(ss, 'ledgerSequence', Number(previousSummary.previousLedgerSequence || 0));
+  orderQM9SetMetaNumber(ss, 'syncSequence', Number(previousSummary.previousSyncSequence || 0));
+  const changeSheet = orderQEnsureSheet(ss, 'M9_CHANGE');
+  while (changeSheet.getLastRow() > Number(previousSummary.previousChangeLastRow || 1)) {
+    changeSheet.deleteRow(changeSheet.getLastRow());
+  }
+  if (previousCommand) orderQM9WriteCommand(ss, previousCommand);
+  else orderQM9DeleteRowsByFirstColumn(orderQEnsureSheet(ss, 'M9_COMMAND'), [transaction.idempotencyKey]);
+  if (orderQM9Text(options && options.failureAt).toUpperCase() === 'STATE_RESTORED') {
+    throw new Error('ORDERQ_CENTRAL_OFFICIAL_ROLLBACK_INTERRUPTED:STATE_RESTORED');
+  }
+  orderQM9WriteOfficialTransaction(ss, {
+    ...transaction,
+    status: 'ROLLED_BACK',
+    error: orderQM9Text(options && options.error || transaction.error)
+  });
+  orderQM9DeleteOfficialChunks(ss, transaction);
+  return 'ROLLED_BACK';
+}
+
+function orderQM9RecoverIncompleteOfficialTransactions(ss) {
+  const incomplete = orderQM9ReadOfficialTransactions(ss, ['PREPARED', 'RECOVERY_REQUIRED']);
+  const outcomes = [];
+  incomplete.forEach(transaction => {
+    try {
+      const verified = orderQM9VerifyOfficialCommitState(ss, transaction);
+      if (verified.complete) {
+        orderQM9WriteOfficialTransaction(ss, { ...transaction, status: 'COMMITTED', error: '' });
+        orderQM9DeleteOfficialChunks(ss, transaction);
+        outcomes.push({ txnId: transaction.txnId, status: 'COMMITTED' });
+      } else {
+        orderQM9RollbackOfficialTransaction(ss, transaction, { error: transaction.error || 'RECOVERED_INCOMPLETE_OFFICIAL_COMMAND' });
+        outcomes.push({ txnId: transaction.txnId, status: 'ROLLED_BACK' });
+      }
+    } catch (error) {
+      try {
+        orderQM9WriteOfficialTransaction(ss, { ...transaction, status: 'RECOVERY_REQUIRED', error: String(error.message || error) });
+      } catch (ignored) {}
+      throw error;
+    }
+  });
+  return outcomes;
+}
+
+function orderQM9OfficialResultForCommand(ss, command) {
+  const transactionId = command && command.result && command.result.transactionId;
+  const transaction = orderQM9ReadOfficialTransactions(ss).find(row => row.txnId === transactionId);
+  const verified = orderQM9VerifyOfficialAudit(ss, transaction, command);
+  if (!verified.complete) throw new Error(`ORDERQ_CENTRAL_OFFICIAL_IDEMPOTENCY_STATE_MISMATCH:${command && command.idempotencyKey || ''}`);
+  return {
+    changes: verified.changes.map(row => ({
+      entityType: row.entityType,
+      entityId: row.entityId,
+      revision: row.revision,
+      payload: row.payload
+    })),
+    cursor: Number(transaction.next.endCursor || 0),
+    ledgerSequence: Number(transaction.next.endLedgerSequence || 0),
+    serverRevision: Number(command.result.serverRevision || 0)
+  };
+}
+
 function orderQM9EnforceTransactionBoundary(ss) {
-  const incomplete = orderQM9ReadMigrationTransactions(ss, ['PREPARED', 'RECOVERY_REQUIRED']);
-  if (!incomplete.length) return;
-  const outcomes = orderQM9RecoverIncompleteMigrations(ss);
-  throw new Error(`ORDERQ_CENTRAL_MIGRATION_RECOVERY_COMPLETED_RETRY:${outcomes.map(row => `${row.txnId}:${row.status}`).join(',')}`);
+  const incompleteMigrations = orderQM9ReadMigrationTransactions(ss, ['PREPARED', 'RECOVERY_REQUIRED']);
+  if (incompleteMigrations.length) {
+    const outcomes = orderQM9RecoverIncompleteMigrations(ss);
+    throw new Error(`ORDERQ_CENTRAL_MIGRATION_RECOVERY_COMPLETED_RETRY:${outcomes.map(row => `${row.txnId}:${row.status}`).join(',')}`);
+  }
+  const incompleteOfficial = orderQM9ReadOfficialTransactions(ss, ['PREPARED', 'RECOVERY_REQUIRED']);
+  if (incompleteOfficial.length) {
+    const outcomes = orderQM9RecoverIncompleteOfficialTransactions(ss);
+    throw new Error(`ORDERQ_CENTRAL_OFFICIAL_RECOVERY_COMPLETED_RETRY:${outcomes.map(row => `${row.txnId}:${row.status}`).join(',')}`);
+  }
 }
 
 function orderQM9CommandFingerprint(payload) {
@@ -1165,7 +1456,12 @@ function orderQM9Prepare(ss, payload) {
   const prior = orderQM9ReadCommand(ss, idempotencyKey);
   if (prior) {
     if (prior.fingerprint !== fingerprint) throw new Error(`ORDERQ_CENTRAL_IDEMPOTENCY_CONFLICT:${idempotencyKey}`);
-    if (prior.status === 'COMMITTED') return { duplicate: true, committed: true, result: prior.result };
+    if (prior.status === 'COMMITTED') {
+      const result = prior.result && prior.result.transactionId
+        ? orderQM9OfficialResultForCommand(ss, prior)
+        : prior.result;
+      return { duplicate: true, committed: true, result };
+    }
     if (prior.status !== 'PREPARED') throw new Error(`ORDERQ_CENTRAL_COMMAND_TERMINAL:${idempotencyKey}:${prior.status}`);
     return { duplicate: true, committed: false, leaseToken: prior.leaseToken, leaseExpiresAt: prior.leaseExpiresAt, fingerprint };
   }
@@ -1559,14 +1855,14 @@ function orderQM9Commit(ss, payload) {
     }
   });
   orderQM9ValidateMutationEntityKeys(mutations);
-  const mutationFingerprint = orderQM9StableJson(mutations.map(row => ({
+  const mutationFingerprint = orderQM9Digest(mutations.map(row => ({
     entityType: row.entityType, entityId: row.entityId, revision: row.revision, payload: row.payload
   })).sort((a, b) => orderQM9EntityKey(a.entityType, a.entityId).localeCompare(orderQM9EntityKey(b.entityType, b.entityId))));
   if (command.status === 'COMMITTED') {
     if (command.mutationFingerprint !== mutationFingerprint) {
       throw new Error(`ORDERQ_CENTRAL_MUTATION_IDEMPOTENCY_CONFLICT:${idempotencyKey}`);
     }
-    return Object.assign({ duplicate: true }, command.result || {});
+    return Object.assign({ duplicate: true }, orderQM9OfficialResultForCommand(ss, command));
   }
   if (command.status !== 'PREPARED') throw new Error(`ORDERQ_CENTRAL_COMMAND_TERMINAL:${idempotencyKey}:${command.status}`);
   if (orderQM9LeaseExpired(command, commitAtMillis)) {
@@ -1618,34 +1914,103 @@ function orderQM9Commit(ss, payload) {
   });
   const txnId = `OQM9TX-${Utilities.getUuid()}`;
   const txnSheet = orderQEnsureSheet(ss, 'M9_TXN_LOG');
-  orderQWriteRow(txnSheet, txnId, [txnId, idempotencyKey, 'PREPARED', JSON.stringify(previous), JSON.stringify(mutations), '', new Date().toISOString()]);
+  const previousBundle = { entities: previous, command: previousCommand };
+  const previousChunks = orderQM9BuildOfficialChunks(txnId, idempotencyKey, 'PREVIOUS', previousBundle);
+  const mutationChunks = orderQM9BuildOfficialChunks(txnId, idempotencyKey, 'MUTATIONS', mutations);
+  orderQM9AppendRows(txnSheet, previousChunks.rows.concat(mutationChunks.rows));
+  const previousRowsForKeys = previous.map(entry => ({
+    entityType: entry.entityType,
+    entityId: entry.entityId,
+    revision: entry.value && entry.value.revision || 0,
+    payload: entry.value && entry.value.payload || {}
+  }));
+  const expectedChanges = mutations.map((row, index) => ({
+    sequence: previousSync + index + 1,
+    deviceId: command.deviceId,
+    commandId: idempotencyKey,
+    entityType: row.entityType,
+    entityId: row.entityId,
+    revision: row.revision,
+    payload: row.payload
+  }));
+  const serverRevision = Math.max(command.expectedRevision, ...mutations.filter(row => row.entityId === command.aggregateId).map(row => row.revision));
+  const transaction = {
+    txnId,
+    idempotencyKey,
+    status: 'PREPARED',
+    previous: {
+      schemaVersion: ORDERQ_M9_OFFICIAL_TXN_SCHEMA,
+      previousEntityCount: previous.length,
+      previousEntityKeyDigest: orderQM9OfficialMutationKeyDigest(previousRowsForKeys),
+      previousEntityDigest: orderQM9OfficialPayloadDigest(previous),
+      previousCommandDigest: orderQM9OfficialPayloadDigest(previousCommand),
+      previousLedgerSequence: previousLedger,
+      previousSyncSequence: previousSync,
+      previousChangeLastRow,
+      previousChunks: previousChunks.descriptor
+    },
+    next: {
+      schemaVersion: ORDERQ_M9_OFFICIAL_TXN_SCHEMA,
+      transactionId: txnId,
+      mutationFingerprint,
+      mutationCount: mutations.length,
+      mutationKeyDigest: orderQM9OfficialMutationKeyDigest(mutations),
+      mutationDigest: orderQM9OfficialMutationDigest(mutations),
+      changeCount: expectedChanges.length,
+      changeDigest: orderQM9ChangeDigest(expectedChanges),
+      startCursor: previousSync,
+      endCursor: previousSync + expectedChanges.length,
+      startLedgerSequence: previousLedger,
+      endLedgerSequence: ledgerSequence,
+      serverRevision,
+      mutationChunks: mutationChunks.descriptor
+    },
+    error: ''
+  };
+  orderQM9WriteOfficialTransaction(ss, transaction);
   try {
     mutations.forEach(row => orderQM9WriteEntity(ss, row));
     orderQM9SetMetaNumber(ss, 'ledgerSequence', ledgerSequence);
     if (orderQM9Text(payload.testFailureAt).toUpperCase() === 'ENTITIES_WRITTEN') throw new Error('ORDERQ_CENTRAL_FAILURE_INJECTED:ENTITIES_WRITTEN');
     let cursor = orderQM9MetaNumber(ss, 'syncSequence');
     mutations.forEach(row => { cursor = orderQM9AppendChange(ss, command.deviceId, idempotencyKey, row); });
-    const result = { changes: mutations, cursor, ledgerSequence, serverRevision: Math.max(command.expectedRevision, ...mutations.filter(row => row.entityId === command.aggregateId).map(row => row.revision)) };
+    const result = { changes: mutations, cursor, ledgerSequence, serverRevision };
     command.status = 'COMMITTED';
     command.mutationFingerprint = mutationFingerprint;
     command.committedAt = new Date().toISOString();
-    command.result = result;
+    command.result = {
+      transactionId: txnId,
+      cursor,
+      ledgerSequence,
+      serverRevision,
+      changeCount: transaction.next.changeCount,
+      changeDigest: transaction.next.changeDigest,
+      mutationKeyDigest: transaction.next.mutationKeyDigest
+    };
     orderQM9WriteCommand(ss, command);
     if (orderQM9Text(payload.testFailureAt).toUpperCase() === 'COMMAND_WRITTEN') throw new Error('ORDERQ_CENTRAL_FAILURE_INJECTED:COMMAND_WRITTEN');
-    orderQWriteRow(txnSheet, txnId, [txnId, idempotencyKey, 'COMMITTED', JSON.stringify(previous), JSON.stringify(mutations), '', new Date().toISOString()]);
+    if (!orderQM9VerifyOfficialCommitState(ss, transaction).complete) {
+      throw new Error(`ORDERQ_CENTRAL_OFFICIAL_COMPLETENESS_FAILED:${idempotencyKey}`);
+    }
+    orderQM9WriteOfficialTransaction(ss, { ...transaction, status: 'COMMITTED', error: '' });
+    orderQM9DeleteOfficialChunks(ss, transaction);
     return Object.assign({ duplicate: false }, result);
   } catch (error) {
-    previous.forEach(entry => {
-      const key = orderQM9EntityKey(entry.entityType, entry.entityId);
-      const sheet = orderQEnsureSheet(ss, 'M9_ENTITY');
-      if (entry.value) orderQM9WriteEntity(ss, entry.value);
-      else orderQDeleteEntityRow(sheet, key);
-    });
-    orderQM9SetMetaNumber(ss, 'ledgerSequence', previousLedger);
-    orderQM9SetMetaNumber(ss, 'syncSequence', previousSync);
-    while (changeSheet.getLastRow() > previousChangeLastRow) changeSheet.deleteRow(changeSheet.getLastRow());
-    orderQM9WriteCommand(ss, previousCommand);
-    orderQWriteRow(txnSheet, txnId, [txnId, idempotencyKey, 'ROLLED_BACK', JSON.stringify(previous), JSON.stringify(mutations), String(error.message || error), new Date().toISOString()]);
+    if (orderQM9Text(payload.testRollbackFailureAt).toUpperCase() === 'BEFORE_ROLLBACK') throw error;
+    try {
+      orderQM9RollbackOfficialTransaction(ss, transaction, {
+        failureAt: payload.testRollbackFailureAt,
+        error: String(error.message || error)
+      });
+    } catch (rollbackError) {
+      try {
+        orderQM9WriteOfficialTransaction(ss, {
+          ...transaction,
+          status: 'RECOVERY_REQUIRED',
+          error: `${String(error.message || error)} | ${String(rollbackError.message || rollbackError)}`
+        });
+      } catch (ignored) {}
+    }
     throw error;
   }
 }

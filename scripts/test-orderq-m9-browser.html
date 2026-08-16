@@ -32,7 +32,7 @@
   const assert=(condition,message)=>{if(!condition)throw new Error(message);};
   const state=createCentralAuthorityState();
   const gatewayState=createCentralAuthorityState();
-  const heldCommitKeys=new Set(); const heldCommits=new Map();
+  const heldCommitKeys=new Set(); const heldCommits=new Map(); const lostCommitResponses=new Set();
   window.m9CentralMockRequest=async body=>{
     try{
       let data;
@@ -50,6 +50,10 @@
           commitBody={...body,mutations};
         }
         data=commitCentralCommand(gatewayState,commitBody,body.testFailureAt?{failureAt:body.testFailureAt}:{});
+        if(body.idempotencyKey==='GW-M10-RESPONSE-LOSS'&&!lostCommitResponses.has(body.idempotencyKey)){
+          lostCommitResponses.add(body.idempotencyKey);
+          return {status:'error',message:'M10_SIMULATED_RESPONSE_LOSS_AFTER_COMMIT'};
+        }
       } else if(body.action==='orderq_m9_command_abort') data={aborted:abortCentralCommand(gatewayState,body)};
       else if(body.action==='orderq_m9_pull') data=pullCentralChanges(gatewayState,body.afterSequence,body.limit);
       else data={schemaVersion:'ONEAPP_ORDERQ_CENTRAL_V1',online:true};
@@ -152,6 +156,25 @@
       &&completeB.stores.inventoryReservations.filter(row=>row.dispatchId==='GW-D3'&&row.status==='ACTIVE').length===0,
     'complete two-line confirmation did not consume every line and reservation');
 
+    await clientRequest('A','release',{dispatchId:'GW-D4',idempotencyKey:'GW-M10-REL'});
+    await clientRequest('A','update',{dispatchId:'GW-D4',idempotencyKey:'GW-M10-ACTUAL'});
+    let responseLossError='';
+    try{await clientRequest('A','confirm',{dispatchId:'GW-D4',idempotencyKey:'GW-M10-RESPONSE-LOSS'});}catch(error){responseLossError=error.message;}
+    assert(responseLossError.includes('M10_SIMULATED_RESPONSE_LOSS_AFTER_COMMIT'),'lost central response fixture did not fail the client');
+    const responseLossLocal=await clientRequest('A','dump');
+    const responseLossCentral=Object.values(gatewayState.entities);
+    assert(responseLossLocal.stores.dispatchDecisions.find(row=>row.dispatchId==='GW-D4')?.status==='READY_TO_CONFIRM'
+      &&responseLossLocal.stores.inventoryMovements.every(row=>row.dispatchId!=='GW-D4'),
+    'response loss left local official facts applied before central acknowledgement');
+    assert(responseLossCentral.find(row=>row.entityType==='DISPATCH_DECISION'&&row.entityId==='GW-D4')?.payload?.status==='CONFIRMED'
+      &&responseLossCentral.some(row=>row.entityType==='INVENTORY_MOVEMENT'&&row.payload.dispatchId==='GW-D4'),
+    'response loss fixture did not preserve the committed central result');
+    const responseLossRetry=await clientRequest('A','confirm',{dispatchId:'GW-D4',idempotencyKey:'GW-M10-RESPONSE-LOSS'});
+    assert(responseLossRetry.duplicate===true,'response loss retry did not return the committed idempotent result');
+    await clientRequest('B','pull');
+    const responseLossA=await clientRequest('A','dump'),responseLossB=await clientRequest('B','dump');
+    assert(decisionDigest(responseLossA)===decisionDigest(responseLossB),'response loss recovery did not converge both IndexedDB clients');
+
     heldCommitKeys.add('GW-EXP-A');
     const expiredAttempt=clientRequest('A','release',{dispatchId:'GW-D2',idempotencyKey:'GW-EXP-A'});
     await waitHeld('GW-EXP-A');
@@ -166,7 +189,7 @@
     assert(decisionDigest(finalA)===decisionDigest(finalB),'actual gateway clients did not converge after lease reacquisition');
     const offline=await clientRequest('B','offline');
     assert(offline.unchanged&&!offline.operationRan&&offline.error.includes('OFFLINE_OFFICIAL_COMMAND_BLOCKED'),'actual isolated gateway offline command changed local cache');
-    return {released,confirmed,retry,duplicateEntityError,partialConfirmError,completeConfirm,reacquired,lockConflict,staleConflict,expiredError,finalA,finalB,offline};
+    return {released,confirmed,retry,duplicateEntityError,partialConfirmError,completeConfirm,responseLoss:{error:responseLossError,retryDuplicate:responseLossRetry.duplicate,converged:true},reacquired,lockConflict,staleConflict,expiredError,finalA,finalB,offline};
   }
 
   async function run(){
@@ -293,7 +316,7 @@
     const correction=transitionErpPostingStatus(reconciled,'CORRECTION_REQUIRED',{erpDocumentNo:'ERP-S-77'});
     assert(correction.originalErpDocumentNo==='ERP-S-77'&&!correction.erpAutoCancelRequested&&!correction.erpAutoRetransmitRequested,'ERP correction boundary lost original document or requested automation');
     assert(warnings.length===0&&errors.length===0,`console errors: ${[...warnings,...errors].join(' / ')}`);
-    return {ok:true,clients:[gatewayEvidence.finalA.databaseName,gatewayEvidence.finalB.databaseName],gateway:{lease:gatewayEvidence.lockConflict,staleRevision:gatewayEvidence.staleConflict,expired:gatewayEvidence.expiredError,retryDuplicate:gatewayEvidence.retry.duplicate,duplicateEntityRejected:gatewayEvidence.duplicateEntityError,partialConfirmRejected:gatewayEvidence.partialConfirmError,completeTwoLine:true,ledgerSequence:gatewayState.ledgerSequence},conflict:{lease:concurrentConflict,staleRevision:staleRevisionConflict},release:{revision:release.serverRevision,available:4},confirmation:{ledgerSequence:confirmed.ledgerSequence,retryDuplicate:retry.duplicate,outboxCursorUnchangedOnRetry:retryOutboxUnchanged},purchase:{ledgerSequence:purchase.ledgerSequence,occurredAt:'2026-08-13'},offline:{...offline,actualGatewayError,actualGatewayOperationRan},erp:{xlsxRows:reopened.length,exact:exact[0].status,ambiguous:review[0].status,completeDocument:exactDocument.status,missingDocument:missingDocument.status,duplicateDocument:duplicateDocument.status,status:correction.erpPostingStatus,originalDocumentNo:correction.originalErpDocumentNo},server:{commands:Object.keys(state.commands).length,cursor:state.syncSequence},console:{warnings:warnings.length,errors:errors.length}};
+    return {ok:true,clients:[gatewayEvidence.finalA.databaseName,gatewayEvidence.finalB.databaseName],gateway:{lease:gatewayEvidence.lockConflict,staleRevision:gatewayEvidence.staleConflict,expired:gatewayEvidence.expiredError,retryDuplicate:gatewayEvidence.retry.duplicate,duplicateEntityRejected:gatewayEvidence.duplicateEntityError,partialConfirmRejected:gatewayEvidence.partialConfirmError,completeTwoLine:true,responseLoss:gatewayEvidence.responseLoss,ledgerSequence:gatewayState.ledgerSequence},conflict:{lease:concurrentConflict,staleRevision:staleRevisionConflict},release:{revision:release.serverRevision,available:4},confirmation:{ledgerSequence:confirmed.ledgerSequence,retryDuplicate:retry.duplicate,outboxCursorUnchangedOnRetry:retryOutboxUnchanged},purchase:{ledgerSequence:purchase.ledgerSequence,occurredAt:'2026-08-13'},offline:{...offline,actualGatewayError,actualGatewayOperationRan},erp:{xlsxRows:reopened.length,exact:exact[0].status,ambiguous:review[0].status,completeDocument:exactDocument.status,missingDocument:missingDocument.status,duplicateDocument:duplicateDocument.status,status:correction.erpPostingStatus,originalDocumentNo:correction.originalErpDocumentNo},server:{commands:Object.keys(state.commands).length,cursor:state.syncSequence},console:{warnings:warnings.length,errors:errors.length}};
   }
   run().then(value=>{output.textContent=`PASS\n${JSON.stringify(value,null,2)}`;document.title='PASS ORDER Q M9 Browser Test';}).catch(error=>{console.error(error);output.textContent=`FAIL\n${error.stack||error}`;document.title='FAIL ORDER Q M9 Browser Test';});
 </script></body></html>

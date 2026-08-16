@@ -195,6 +195,8 @@ All Shipping plan actions use POST bodies and the separate `ONEAPP_SHIPPING_PLAN
 
 ORDER Q vNext actions use `ONEAPP_ORDERQ_ACCESS_TOKEN`, with the existing Shipping token as a compatibility fallback when a separate ORDER Q token has not been configured. Order and order-item writes are staged in `ORDER_TXN_LOG`, verified as a bundle, and restored to the previous bundle after a partial failure. Historical import facts are synchronized in shared purpose sheets; customer-specific sheets are prohibited.
 
+M9/M10 official ORDER Q commands use `ORDERQ_M9_TXN_LOG` as a bounded recovery journal. Full before/mutation payloads are split into digest-verified chunk rows below the Google Sheets per-cell limit; the durable primary row stores only count, key-set digest, content digest, cursor, ledger, and command linkage. A non-terminal official transaction blocks pull and further official commands until complete commit verification or complete rollback. Migration V2 and official-command journals have separate schema identifiers and recovery scanners.
+
 Changing any action name, payload shape, response shape, authentication rule, or field normalization requires coordinated updates to:
 
 - `code.gs`;

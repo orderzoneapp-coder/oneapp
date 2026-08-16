@@ -352,6 +352,21 @@ const m9 = (action, body = {}) => post({
   ...body,
 });
 const m9SpreadsheetDigest = () => JSON.stringify([...spreadsheet.sheets.entries()].map(([name, sheet]) => [name, sheet.cells]));
+const m9OperationalDigest = () => {
+  const commandSheet = spreadsheet.getSheetByName("ORDERQ_M9_COMMAND");
+  const commands = (commandSheet?.cells || []).slice(1)
+    .map(row => row?.[10] ? JSON.parse(String(row[10])) : null)
+    .filter(Boolean)
+    .sort((left, right) => String(left.idempotencyKey).localeCompare(String(right.idempotencyKey)));
+  return JSON.stringify({
+    entities:context.orderQM9ReadAllEntities(spreadsheet)
+      .sort((left, right) => `${left.entityType}:${left.entityId}`.localeCompare(`${right.entityType}:${right.entityId}`)),
+    changes:context.orderQM9ReadChanges(spreadsheet).rows.map(({ rowNumber, appliedAt, ...row }) => row),
+    commands,
+    syncSequence:context.orderQM9MetaNumber(spreadsheet, "syncSequence"),
+    ledgerSequence:context.orderQM9MetaNumber(spreadsheet, "ledgerSequence"),
+  });
+};
 
 const m9Migration = m9("orderq_m9_migrate", {
   idempotencyKey: "M9-MIGRATE-D1",
@@ -565,6 +580,7 @@ const m9PrepareConfirm = m9("orderq_m9_command_prepare", {
   commandType:"CONFIRM_DISPATCH", aggregateId:"M9-D1", expectedRevision:3,
   idempotencyKey:"M9-CONFIRM-1", deviceId:"PC-A",
 });
+const m10LargeDispatchEvidence = "D".repeat(9000);
 const m9ConfirmMutations = [
   { entityType:"DISPATCH_DECISION", entityId:"M9-D1", revision:4, payload:{ dispatchId:"M9-D1", status:"CONFIRMED", revision:4, localOnly:true } },
   { entityType:"DISPATCH_LINE", entityId:"M9-DL1", revision:4, payload:{ dispatchLineId:"M9-DL1", dispatchId:"M9-D1", orderItemId:"M9-OI1", actualProductId:"M9-P1", actualQuantity:6, actualBaseQuantity:6, recognizedOrderQuantity:6, status:"CONFIRMED", localOnly:true } },
@@ -574,7 +590,8 @@ const m9ConfirmMutations = [
   { entityType:"INVENTORY_MOVEMENT", entityId:"M9-IM1", revision:4, payload:{ movementId:"M9-IM1", dispatchId:"M9-D1", dispatchLineId:"M9-DL1", sourceLineId:"M9-DA1", productId:"M9-P1", warehouseId:"M9-W1", movementType:"SALE_ISSUE", signedBaseQuantity:-6, ledgerSequence:999, localOnly:true } },
   { entityType:"ORDER_EVENT", entityId:"M9-OE1", revision:4, payload:{ eventId:"M9-OE1", orderId:"M9-O1", eventType:"SALES_TRANSFER_ALLOCATED", detail:{ orderItemId:"M9-OI1", salesLineId:"M9-SL1", transferredQty:6 }, localOnly:true } },
   { entityType:"INVENTORY_RESERVATION", entityId:"M9-IR1", revision:4, payload:{ reservationId:"M9-IR1", dispatchId:"M9-D1", allocationId:"M9-DA1", productId:"M9-P1", warehouseId:"M9-W1", reservedBaseQuantity:6, consumedBaseQuantity:6, status:"CONSUMED", localOnly:true } },
-];
+].map((row, index) => ({ ...row, payload:{ ...row.payload, m10Evidence:`${index}:${m10LargeDispatchEvidence}` } }));
+assert.ok(JSON.stringify(m9ConfirmMutations).length > 50000);
 const m9BeforeFailureCursor = context.orderQM9MetaNumber(spreadsheet, "syncSequence");
 const m9BeforeInvalidLedger = context.orderQM9MetaNumber(spreadsheet, "ledgerSequence");
 const m9BeforeInvalidCommand = JSON.stringify(context.orderQM9ReadCommand(spreadsheet, "M9-CONFIRM-1"));
@@ -661,6 +678,32 @@ assert.equal(context.orderQM9MetaNumber(spreadsheet, "ledgerSequence"), beforeBa
 assert.equal(context.orderQM9ReadEntity(spreadsheet, "INVENTORY_MOVEMENT", "M9-IM1-R"), null);
 assert.equal(m9("orderq_m9_command_abort", { idempotencyKey:"M9-REVERSE-BAD", leaseToken:reversePrepare.data.leaseToken, reason:"invalid" }).status, "success");
 
+const m10LargeReverseEvidence = "R".repeat(12000);
+const goodReverseMutations = [
+  { entityType:"DISPATCH_DECISION", entityId:"M9-D1-R", revision:1, payload:{ dispatchId:"M9-D1-R", status:"CONFIRMED", reversalOf:"M9-D1", revision:1, localOnly:true } },
+  { entityType:"SALES_DOCUMENT", entityId:"M9-SD1-R", revision:1, payload:{ salesDocumentId:"M9-SD1-R", dispatchId:"M9-D1-R", status:"REVERSED", reversalOf:"M9-SD1", erpPostingStatus:"READY", localOnly:true } },
+  { entityType:"SALES_LINE", entityId:"M9-SL1-R", revision:1, payload:{ salesLineId:"M9-SL1-R", salesDocumentId:"M9-SD1-R", dispatchLineId:"M9-DL1-R", reversalOf:"M9-SL1", actualQuantity:-6, actualBaseQuantity:-6, recognizedOrderQuantity:-6, supplyAmountWon:0, vatAmountWon:0, totalAmountWon:0, localOnly:true } },
+  { entityType:"INVENTORY_MOVEMENT", entityId:"M9-IM1-R", revision:1, payload:{ movementId:"M9-IM1-R", dispatchId:"M9-D1-R", dispatchLineId:"M9-DL1-R", productId:"M9-P1", warehouseId:"M9-W1", movementType:"REVERSAL", signedBaseQuantity:6, reversalOf:"M9-IM1", localOnly:true } },
+  { entityType:"ORDER_EVENT", entityId:"M9-OE1-R", revision:1, payload:{ eventId:"M9-OE1-R", orderId:"M9-O1", eventType:"SALES_TRANSFER_REVERSED", detail:{ orderItemId:"M9-OI1", salesLineId:"M9-SL1-R", transferredQty:6 }, localOnly:true } },
+].map((row, index) => ({ ...row, payload:{ ...row.payload, m10Evidence:`${index}:${m10LargeReverseEvidence}` } }));
+assert.ok(JSON.stringify(goodReverseMutations).length > 50000);
+const goodReversePrepare = m9("orderq_m9_command_prepare", {
+  commandType:"REVERSE_DISPATCH", aggregateId:"M9-D1", expectedRevision:4,
+  idempotencyKey:"M10-REVERSE-LARGE", deviceId:"PC-B", intent:{ quantity:6 },
+});
+const goodReverse = m9("orderq_m9_command_commit", {
+  idempotencyKey:"M10-REVERSE-LARGE", leaseToken:goodReversePrepare.data.leaseToken,
+  fingerprint:goodReversePrepare.data.fingerprint, mutations:goodReverseMutations,
+});
+assert.equal(goodReverse.status, "success");
+assert.equal(goodReverse.data.changes.length, goodReverseMutations.length);
+const goodReverseCursor = context.orderQM9MetaNumber(spreadsheet, "syncSequence");
+assert.equal(m9("orderq_m9_command_commit", {
+  idempotencyKey:"M10-REVERSE-LARGE", leaseToken:goodReversePrepare.data.leaseToken,
+  fingerprint:goodReversePrepare.data.fingerprint, mutations:goodReverseMutations,
+}).data.duplicate, true);
+assert.equal(context.orderQM9MetaNumber(spreadsheet, "syncSequence"), goodReverseCursor);
+
 assert.equal(m9("orderq_m9_migrate", {
   idempotencyKey:"M9-MIGRATE-PD", deviceId:"PC-A", entities:[
     { entityType:"PURCHASE_DOCUMENT", entityId:"M9-PD1", revision:1, payload:{ purchaseDocumentId:"M9-PD1", status:"DRAFT", revision:1, localOnly:true } },
@@ -670,11 +713,13 @@ assert.equal(m9("orderq_m9_migrate", {
 const purchasePrepare = m9("orderq_m9_command_prepare", {
   commandType:"CONFIRM_PURCHASE", aggregateId:"M9-PD1", expectedRevision:1, idempotencyKey:"M9-PURCHASE", deviceId:"PC-A",
 });
+const m10LargePurchaseEvidence = "P".repeat(18000);
 const purchaseMutations = [
   { entityType:"PURCHASE_DOCUMENT", entityId:"M9-PD1", revision:2, payload:{ purchaseDocumentId:"M9-PD1", status:"CONFIRMED", revision:2, erpPostingStatus:"READY", amountWon:500, localOnly:true } },
   { entityType:"PURCHASE_LINE", entityId:"M9-PL1", revision:2, payload:{ purchaseLineId:"M9-PL1", purchaseDocumentId:"M9-PD1", productId:"M9-P1", warehouseId:"M9-W1", quantity:5, baseQuantity:5, amountWon:500, movementId:"M9-PIM1", status:"CONFIRMED", localOnly:true } },
   { entityType:"INVENTORY_MOVEMENT", entityId:"M9-PIM1", revision:2, payload:{ movementId:"M9-PIM1", sourceDocumentId:"M9-PD1", sourceLineId:"M9-PL1", productId:"M9-P1", warehouseId:"M9-W1", movementType:"PURCHASE_RECEIPT", signedBaseQuantity:5, localOnly:true } },
-];
+].map((row, index) => ({ ...row, payload:{ ...row.payload, m10Evidence:`${index}:${m10LargePurchaseEvidence}` } }));
+assert.ok(JSON.stringify(purchaseMutations).length > 50000);
 const purchaseBefore = context.orderQM9MetaNumber(spreadsheet, "ledgerSequence");
 const badPurchase = m9("orderq_m9_command_commit", {
   idempotencyKey:"M9-PURCHASE", leaseToken:purchasePrepare.data.leaseToken, fingerprint:purchasePrepare.data.fingerprint,
@@ -702,6 +747,150 @@ const badPurchaseReverse = m9("orderq_m9_command_commit", {
 assert.equal(badPurchaseReverse.status, "error");
 assert.match(badPurchaseReverse.message, /PURCHASE_REVERSAL_EXCEEDS_ORIGINAL|PURCHASE_REVERSAL_MOVEMENT_EXCEEDS_ORIGINAL/);
 assert.equal(context.orderQM9MetaNumber(spreadsheet, "ledgerSequence"), goodPurchase.data.ledgerSequence);
+assert.equal(m9("orderq_m9_command_abort", {
+  idempotencyKey:"M9-PURCHASE-REVERSE-BAD", leaseToken:purchaseReversePrepare.data.leaseToken, reason:"invalid",
+}).status, "success");
+const m10LargePurchaseReverseEvidence = "Q".repeat(18000);
+const purchaseReverseMutations = [
+  { entityType:"PURCHASE_DOCUMENT", entityId:"M9-PD1-R", revision:1, payload:{ purchaseDocumentId:"M9-PD1-R", status:"REVERSED", reversalOf:"M9-PD1", erpPostingStatus:"READY", localOnly:true } },
+  { entityType:"PURCHASE_LINE", entityId:"M9-PL1-R", revision:1, payload:{ purchaseLineId:"M9-PL1-R", purchaseDocumentId:"M9-PD1-R", status:"REVERSED", reversalOf:"M9-PL1", productId:"M9-P1", warehouseId:"M9-W1", quantity:-5, baseQuantity:-5, amountWon:-500, movementId:"M9-PIM1-R", localOnly:true } },
+  { entityType:"INVENTORY_MOVEMENT", entityId:"M9-PIM1-R", revision:1, payload:{ movementId:"M9-PIM1-R", sourceLineId:"M9-PL1-R", productId:"M9-P1", warehouseId:"M9-W1", movementType:"REVERSAL", signedBaseQuantity:-5, reversalOf:"M9-PIM1", localOnly:true } },
+].map((row, index) => ({ ...row, payload:{ ...row.payload, m10Evidence:`${index}:${m10LargePurchaseReverseEvidence}` } }));
+assert.ok(JSON.stringify(purchaseReverseMutations).length > 50000);
+const purchaseReverseGoodPrepare = m9("orderq_m9_command_prepare", {
+  commandType:"REVERSE_PURCHASE", aggregateId:"M9-PD1", expectedRevision:2,
+  idempotencyKey:"M10-PURCHASE-REVERSE-LARGE", deviceId:"PC-A",
+});
+assert.equal(m9("orderq_m9_command_commit", {
+  idempotencyKey:"M10-PURCHASE-REVERSE-LARGE", leaseToken:purchaseReverseGoodPrepare.data.leaseToken,
+  fingerprint:purchaseReverseGoodPrepare.data.fingerprint, mutations:purchaseReverseMutations,
+}).status, "success");
+
+const m10CorrectionMutations = (prefix, evidenceCharacter) => Array.from({ length:4 }, (_, index) => ({
+  entityType:"DISPATCH_RECONCILIATION",
+  entityId:`${prefix}-${index + 1}`,
+  revision:1,
+  payload:{
+    reconciliationId:`${prefix}-${index + 1}`,
+    dispatchId:"M9-D1",
+    status:"CORRECTION_DRAFT_CREATED",
+    actualValue:{ actualQuantity:6, actualBaseQuantity:6, recognizedOrderQuantity:6 },
+    reasonCode:"M10_BOUNDED_TXN",
+    reasonNote:`${index}:${evidenceCharacter.repeat(16000)}`,
+    localOnly:true,
+  },
+}));
+const commitRecoveryMutations = m10CorrectionMutations("M10-RC-COMMIT", "C");
+assert.ok(JSON.stringify(commitRecoveryMutations).length > 50000);
+const commitRecoveryPrepare = m9("orderq_m9_command_prepare", {
+  commandType:"ADJUST_DISPATCH", aggregateId:"M9-D1", expectedRevision:4,
+  idempotencyKey:"M10-OFFICIAL-COMMIT-RECOVERY", deviceId:"PC-A",
+});
+const interruptedOfficialCommit = m9("orderq_m9_command_commit", {
+  idempotencyKey:"M10-OFFICIAL-COMMIT-RECOVERY", leaseToken:commitRecoveryPrepare.data.leaseToken,
+  fingerprint:commitRecoveryPrepare.data.fingerprint, mutations:commitRecoveryMutations,
+  testFailureAt:"COMMAND_WRITTEN", testRollbackFailureAt:"BEFORE_ROLLBACK",
+});
+assert.equal(interruptedOfficialCommit.status, "error");
+assert.match(interruptedOfficialCommit.message, /COMMAND_WRITTEN/);
+assert.equal(context.orderQM9ReadMigrationTransactions(spreadsheet, ["PREPARED"]).some(row => row.idempotencyKey === "M10-OFFICIAL-COMMIT-RECOVERY"), false);
+assert.equal(context.orderQM9ReadOfficialTransactions(spreadsheet, ["PREPARED"]).some(row => row.idempotencyKey === "M10-OFFICIAL-COMMIT-RECOVERY"), true);
+const officialCommitRecoveryBlocked = m9("orderq_m9_pull", { afterSequence:0, limit:1 });
+assert.equal(officialCommitRecoveryBlocked.status, "error");
+assert.match(officialCommitRecoveryBlocked.message, /OFFICIAL_RECOVERY_COMPLETED_RETRY/);
+assert.equal(m9("orderq_m9_pull", { afterSequence:0, limit:1 }).status, "success");
+const officialCommitCursor = context.orderQM9MetaNumber(spreadsheet, "syncSequence");
+assert.equal(m9("orderq_m9_command_commit", {
+  idempotencyKey:"M10-OFFICIAL-COMMIT-RECOVERY", leaseToken:commitRecoveryPrepare.data.leaseToken,
+  fingerprint:commitRecoveryPrepare.data.fingerprint, mutations:commitRecoveryMutations,
+}).data.duplicate, true);
+assert.equal(context.orderQM9MetaNumber(spreadsheet, "syncSequence"), officialCommitCursor);
+
+const rollbackRecoveryMutations = m10CorrectionMutations("M10-RC-ROLLBACK", "B");
+assert.ok(JSON.stringify(rollbackRecoveryMutations).length > 50000);
+const rollbackRecoveryPrepare = m9("orderq_m9_command_prepare", {
+  commandType:"ADJUST_DISPATCH", aggregateId:"M9-D1", expectedRevision:4,
+  idempotencyKey:"M10-OFFICIAL-ROLLBACK-RECOVERY", deviceId:"PC-B",
+});
+const rollbackRecoveryBefore = m9OperationalDigest();
+const interruptedOfficialRollback = m9("orderq_m9_command_commit", {
+  idempotencyKey:"M10-OFFICIAL-ROLLBACK-RECOVERY", leaseToken:rollbackRecoveryPrepare.data.leaseToken,
+  fingerprint:rollbackRecoveryPrepare.data.fingerprint, mutations:rollbackRecoveryMutations,
+  testFailureAt:"ENTITIES_WRITTEN", testRollbackFailureAt:"ENTITIES_RESTORED",
+});
+assert.equal(interruptedOfficialRollback.status, "error");
+assert.match(interruptedOfficialRollback.message, /ENTITIES_WRITTEN/);
+assert.equal(context.orderQM9ReadOfficialTransactions(spreadsheet, ["RECOVERY_REQUIRED"]).some(row => row.idempotencyKey === "M10-OFFICIAL-ROLLBACK-RECOVERY"), true);
+const officialRollbackRecoveryBlocked = m9("orderq_m9_pull", { afterSequence:0, limit:1 });
+assert.equal(officialRollbackRecoveryBlocked.status, "error");
+assert.match(officialRollbackRecoveryBlocked.message, /OFFICIAL_RECOVERY_COMPLETED_RETRY/);
+assert.equal(m9("orderq_m9_pull", { afterSequence:0, limit:1 }).status, "success");
+assert.equal(context.orderQM9ReadEntity(spreadsheet, "DISPATCH_RECONCILIATION", "M10-RC-ROLLBACK-1"), null);
+assert.equal(m9OperationalDigest(), rollbackRecoveryBefore);
+const rollbackRetry = m9("orderq_m9_command_commit", {
+  idempotencyKey:"M10-OFFICIAL-ROLLBACK-RECOVERY", leaseToken:rollbackRecoveryPrepare.data.leaseToken,
+  fingerprint:rollbackRecoveryPrepare.data.fingerprint, mutations:rollbackRecoveryMutations,
+});
+assert.equal(rollbackRetry.status, "success");
+assert.equal(m9("orderq_m9_command_commit", {
+  idempotencyKey:"M10-OFFICIAL-ROLLBACK-RECOVERY", leaseToken:rollbackRecoveryPrepare.data.leaseToken,
+  fingerprint:rollbackRecoveryPrepare.data.fingerprint,
+  mutations:rollbackRecoveryMutations.map((row, index) => index === 0
+    ? { ...row, payload:{ ...row.payload, reasonCode:"DIFFERENT" } }
+    : row),
+}).status, "error");
+
+for (const rollbackFailureAt of ["BEFORE_ROLLBACK", "STATE_RESTORED"]) {
+  const suffix = rollbackFailureAt.replaceAll("_", "-");
+  const idempotencyKey = `M10-OFFICIAL-ROLLBACK-${suffix}`;
+  const mutations = m10CorrectionMutations(`M10-RC-${suffix}`, rollbackFailureAt === "BEFORE_ROLLBACK" ? "E" : "S");
+  const prepare = m9("orderq_m9_command_prepare", {
+    commandType:"ADJUST_DISPATCH", aggregateId:"M9-D1", expectedRevision:4,
+    idempotencyKey, deviceId:"PC-A",
+  });
+  const before = m9OperationalDigest();
+  const interrupted = m9("orderq_m9_command_commit", {
+    idempotencyKey, leaseToken:prepare.data.leaseToken,
+    fingerprint:prepare.data.fingerprint, mutations,
+    testFailureAt:"ENTITIES_WRITTEN", testRollbackFailureAt:rollbackFailureAt,
+  });
+  assert.equal(interrupted.status, "error");
+  assert.match(interrupted.message, /ENTITIES_WRITTEN/);
+  assert.equal(context.orderQM9ReadOfficialTransactions(spreadsheet, ["PREPARED", "RECOVERY_REQUIRED"])
+    .some(row => row.idempotencyKey === idempotencyKey), true);
+  const blocked = m9("orderq_m9_pull", { afterSequence:0, limit:1 });
+  assert.equal(blocked.status, "error");
+  assert.match(blocked.message, /OFFICIAL_RECOVERY_COMPLETED_RETRY/);
+  assert.equal(m9("orderq_m9_pull", { afterSequence:0, limit:1 }).status, "success");
+  assert.equal(context.orderQM9ReadEntity(spreadsheet, "DISPATCH_RECONCILIATION", `M10-RC-${suffix}-1`), null);
+  assert.equal(m9OperationalDigest(), before);
+  assert.equal(m9("orderq_m9_command_commit", {
+    idempotencyKey, leaseToken:prepare.data.leaseToken,
+    fingerprint:prepare.data.fingerprint, mutations,
+  }).status, "success");
+}
+
+assert.equal(context.orderQM9ReadOfficialTransactions(spreadsheet).some(row => row.idempotencyKey === "M9-G2-OPENING-42"), false);
+const m10TxnSheet = spreadsheet.getSheetByName("ORDERQ_M9_TXN_LOG");
+const m10TxnMaxCellLength = Math.max(...m10TxnSheet.cells.flat().map(value => String(value ?? "").length));
+assert.ok(m10TxnMaxCellLength < 50000, `M10 TXN cell too large: ${m10TxnMaxCellLength}`);
+const m10TxnCellMaxForKey = (idempotencyKey) => Math.max(...m10TxnSheet.cells
+  .filter(row => String(row?.[1] || "") === idempotencyKey)
+  .flat()
+  .map(value => String(value ?? "").length));
+const m10OfficialTxnEvidence = {
+  dispatchConfirm:{ requestLength:JSON.stringify(m9ConfirmMutations).length, maxTxnCell:m10TxnCellMaxForKey("M9-CONFIRM-1") },
+  purchaseConfirm:{ requestLength:JSON.stringify(purchaseMutations).length, maxTxnCell:m10TxnCellMaxForKey("M9-PURCHASE") },
+  dispatchReversal:{ requestLength:JSON.stringify(goodReverseMutations).length, maxTxnCell:m10TxnCellMaxForKey("M10-REVERSE-LARGE") },
+  purchaseReversal:{ requestLength:JSON.stringify(purchaseReverseMutations).length, maxTxnCell:m10TxnCellMaxForKey("M10-PURCHASE-REVERSE-LARGE") },
+  correctionCommitRecovery:{ requestLength:JSON.stringify(commitRecoveryMutations).length, maxTxnCell:m10TxnCellMaxForKey("M10-OFFICIAL-COMMIT-RECOVERY") },
+  correctionRollbackRecovery:{ requestLength:JSON.stringify(rollbackRecoveryMutations).length, maxTxnCell:m10TxnCellMaxForKey("M10-OFFICIAL-ROLLBACK-RECOVERY") },
+  overallMaxTxnCell:m10TxnMaxCellLength,
+};
+Object.values(m10OfficialTxnEvidence).filter(value => value && typeof value === "object").forEach(value => {
+  assert.ok(value.requestLength > 50000);
+  assert.ok(value.maxTxnCell < 50000);
+});
 
 assert.equal(m9("orderq_m9_migrate", {
   idempotencyKey:"M9-MIGRATE-COMPLETE-D", deviceId:"PC-A", entities:[
@@ -803,4 +992,4 @@ const m9Pulled = m9("orderq_m9_pull", { afterSequence:m9BeforeFailureCursor, lim
 assert.equal(m9Pulled.status, "success");
 assert.ok(m9Pulled.data.changes.some(row => row.entityId === "M9-IM1"));
 
-console.log("ORDER Q Apps Script token/atomicity/recovery tests passed.");
+console.log(`ORDER Q Apps Script token/atomicity/recovery tests passed. ${JSON.stringify(m10OfficialTxnEvidence)}`);
