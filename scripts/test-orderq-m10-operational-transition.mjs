@@ -13,6 +13,7 @@ import {
 } from '../orderq/cutover-control.js';
 import {
   compareShadowFacts,
+  normalizeDataOpsShadowRows,
   normalizeLegacyShadowRows,
   normalizeOrderQShadowRows
 } from '../orderq/shadow-comparison.js';
@@ -126,10 +127,12 @@ assert.equal(evaluateCutoverBoundary('PILOT_WRITE', 'PILOT_WRITE').writeAllowed,
 const legacyRows = normalizeLegacyShadowRows([{
   productCode: '0001', productName: '상품 1', stockQuantity: 10,
   inboundQuantity: 2, orderQuantity: 4, salesQuantity: 2,
+  remainingQuantity: 6,
   sourceRowId: 'LEGACY-ROW-1'
 }, {
   productCode: '0002', productName: '상품 2', stockQuantity: 0,
   inboundQuantity: 0, orderQuantity: 2, salesQuantity: 1,
+  remainingQuantity: -2,
   sourceRowId: 'LEGACY-ROW-2'
 }], { basisDate: '2026-08-16', sourceFingerprint: 'LEGACY-SOURCE' });
 
@@ -153,13 +156,25 @@ const orderQRows = normalizeOrderQShadowRows({
   }]
 });
 
-const report = compareShadowFacts({ legacyRows, orderQRows });
+const dataOpsRows = normalizeDataOpsShadowRows([{
+  batchKey:'DATAOPS-ROW-1', 코드:'0001', 품명:'상품 1',
+  기초:10, 입고:2, 출고:2, 대체입고:0, 대체출고:0, 실사:10, 로스:0, 이슈:[]
+}, {
+  batchKey:'DATAOPS-ROW-2', 코드:'0002', 품명:'상품 2',
+  기초:0, 입고:0, 출고:1, 대체입고:0, 대체출고:0, 실사:-1, 로스:0, 이슈:[]
+}], { savedAt:'2026-08-16T08:00:00.000Z', sourceFingerprint:'DATAOPS-SOURCE', substHistory:[] });
+
+const report = compareShadowFacts({ legacyRows, orderQRows, dataOpsRows, requireDataOpsEvidence:true });
 const matched = report.rows.find(row => row.productKey === '0001');
 const requestDifference = report.rows.find(row => row.productKey === '0002');
 assert.equal(matched.matched, true);
 assert.deepEqual(matched.axes.actualSale, { legacy: 2, orderq: 2 });
 assert.deepEqual(matched.axes.onHand, { legacy: 10, orderq: 10 });
 assert.deepEqual(matched.axes.available, { legacy: 6, orderq: 6 });
+assert.deepEqual(matched.axes.orderOpsCurrentAvailable, { legacy: 6, orderq: 6 });
+assert.deepEqual(matched.axes.dataOpsCurrentOnHand, { legacy: 10, orderq: 10 });
+assert.deepEqual(matched.axes.adjustment, { legacy: 0, orderq: 0 });
+assert.equal(matched.evidenceIds.dataops.includes('DATAOPS-ROW-1'), true);
 assert.deepEqual(matched.evidenceIds.orderq, ['DA1', 'DL1', 'DLR1', 'IL1', 'IR1', 'IS1', 'PL1', 'PM1', 'RM1', 'SM1']);
 assert.equal(requestDifference.matched, false);
 assert.ok(requestDifference.reasonCodes.includes('REQUEST_RESERVATION_DIFFERENCE'));
@@ -170,7 +185,74 @@ assert.equal(report.summary.total, 2);
 assert.equal(report.summary.matched, 1);
 assert.equal(report.summary.differences, 1);
 
+const dataOpsOnlyRows = normalizeDataOpsShadowRows([{
+  batchKey:'DATAOPS-ONLY', 코드:'DATAOPS-ONLY', 품명:'DataOps 전용', 기초:1, 실사:1
+}], { savedAt:'2026-08-16T08:00:00.000Z', sourceFingerprint:'DATAOPS-ONLY-SOURCE' });
+const boundedPopulation = compareShadowFacts({
+  legacyRows,
+  orderQRows,
+  dataOpsRows:[...dataOpsRows, ...dataOpsOnlyRows],
+  requireDataOpsEvidence:true
+});
+assert.equal(boundedPopulation.summary.total, 2, 'DataOps-only rows must not expand the cutover population');
+assert.equal(boundedPopulation.rows.some(row => row.productKey === 'DATAOPS-ONLY'), false);
+
 const missing = compareShadowFacts({ legacyRows, orderQRows: orderQRows.slice(0, 1) });
 assert.ok(missing.rows.find(row => row.productKey === '0002').reasonCodes.includes('MAPPING_MISSING'));
+
+const legacyWithoutCurrentRemaining = normalizeLegacyShadowRows([{
+  productCode:'0001', stockQuantity:10, inboundQuantity:2, salesQuantity:2, orderQuantity:4
+}], { basisDate:'2026-08-16', sourceFingerprint:'LEGACY-NO-CURRENT' });
+const withoutCurrentReport = compareShadowFacts({
+  legacyRows:legacyWithoutCurrentRemaining,
+  orderQRows:orderQRows.slice(0, 1)
+});
+assert.equal(withoutCurrentReport.rows[0].axes.orderOpsCurrentAvailable.legacy, null);
+assert.equal(withoutCurrentReport.rows[0].reasonCodes.includes('ORDEROPS_CURRENT_AVAILABLE_DIFFERENCE'), false);
+
+const manualAdjustmentLegacy = normalizeLegacyShadowRows([{
+  productCode:'101018136', productName:'양파_kg', stockQuantity:10,
+  inboundQuantity:0, orderQuantity:0, salesQuantity:0, remainingQuantity:10,
+  sourceRowId:'ORDEROPS-101018136'
+}], { basisDate:'2026-08-14', sourceFingerprint:'ORDEROPS-ACTUAL' });
+const manualAdjustmentDataOps = normalizeDataOpsShadowRows([{
+  batchKey:'DATAOPS-LOT-101018136', 코드:'101018136', 품명:'양파_kg',
+  기초:10, 입고:0, 출고:0, 대체입고:0, 대체출고:0,
+  전산잔량:10, 실사:0, 로스:-10,
+  _manualSubstitutionResolved:true,
+  이슈:['🔄수기치환오차(-10)'], 메모:'[수기치환/오차] 실제출고 -10'
+}], {
+  savedAt:'2026-08-17T08:00:00.000Z',
+  sourceFingerprint:'DATAOPS-ACTUAL',
+  substHistory:[{
+    id:'SUB-101018136', type:'MANUAL_LOSS_LINK',
+    sourceKey:'DATAOPS-LOT-101018136', targetKey:'DATAOPS-LOT-TARGET', sQty:10, tQty:10
+  }]
+});
+const manualAdjustmentOrderQ = normalizeOrderQShadowRows({
+  basis:{ basisDate:'2026-08-16' },
+  rows:[{
+    productCode:'101018136', productId:'P-101018136', snapshotQuantity:10,
+    snapshotLastSequence:0, reservedQuantity:0, onHandQuantity:10, availableQuantity:10,
+    snapshotEvidence:[{ inventorySnapshotId:'IS-OPENING', inventoryLineId:'IL-101018136' }],
+    movementEvidence:[], reservationEvidence:[]
+  }]
+});
+const adjustmentReport = compareShadowFacts({
+  legacyRows:manualAdjustmentLegacy,
+  orderQRows:manualAdjustmentOrderQ,
+  dataOpsRows:manualAdjustmentDataOps,
+  requireDataOpsEvidence:true
+});
+const adjustmentRow = adjustmentReport.rows[0];
+assert.deepEqual(adjustmentRow.axes.dataOpsCurrentOnHand, { legacy:0, orderq:10 });
+assert.deepEqual(adjustmentRow.axes.manualSubstitution, { legacy:-10, orderq:null });
+assert.deepEqual(adjustmentRow.axes.loss, { legacy:-10, orderq:null });
+assert.ok(adjustmentRow.reasonCodes.includes('DATAOPS_CURRENT_REMAINING_DIFFERENCE'));
+assert.ok(adjustmentRow.reasonCodes.includes('MANUAL_SUBSTITUTION_ADJUSTMENT_PRESENT'));
+assert.ok(adjustmentRow.reasonCodes.includes('INVENTORY_ADJUSTMENT_PRESENT'));
+assert.ok(adjustmentRow.reasonCodes.includes('LOSS_ADJUSTMENT_PRESENT'));
+assert.ok(adjustmentRow.reasonCodes.includes('ADJUSTMENT_MOVEMENT_DIFFERENCE'));
+assert.ok(adjustmentRow.evidenceIds.dataops.includes('DATAOPS_HISTORY:SUB-101018136'));
 
 console.log('PASS ORDER Q M10 operational transition contracts');

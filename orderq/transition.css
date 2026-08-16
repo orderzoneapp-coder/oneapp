@@ -17,7 +17,7 @@
 .section-heading p { margin: 0; }
 .shadow-summary { margin: 12px 0; padding: 9px; border-radius: 8px; background: #eff6ff; color: #1e3a8a; font-size: 12px; font-weight: 800; }
 .shadow-summary.has-recovery-warning { background: #fff7ed; color: #9a3412; }
-.shadow-table { min-width: 1260px; }
+.shadow-table { min-width: 1740px; }
 .shadow-table td { border: 1px solid var(--line); padding: 7px; vertical-align: top; }
 .shadow-table tr.has-difference td { background: #fffbeb; }
 .axis-values { display: grid; grid-template-columns: auto auto; gap: 3px 7px; font-variant-numeric: tabular-nums; }

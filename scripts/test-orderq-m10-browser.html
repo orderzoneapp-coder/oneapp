@@ -27,7 +27,7 @@
   async function seedLegacyWorkspace(){
     const sourceFingerprint=(profile==='A'?'a':'b').repeat(64);
     const updatedAt='2026-08-16T08:00:00.000Z';
-    const workspace={schemaVersion:ShippingManagementEngine.WORKSPACE_SCHEMA_VERSION,sourceFingerprint,basisDate:'2026-08-16',sourceFiles:{inventory:{headerRowIndex:0,matrix:[['품목코드','품목명','01창고'],['10','테스트',10]]}},inventory:[{productCode:'10',productName:'테스트',sourceRowNumber:2}],orders:[{productCode:'10',productName:'테스트',quantity:4}],orderOpsInputs:{purchases:{rows:[{productCode:'10',quantity:2}]},sales:{rows:[{productCode:'10',quantity:3}]}}};
+    const workspace={schemaVersion:ShippingManagementEngine.WORKSPACE_SCHEMA_VERSION,sourceFingerprint,basisDate:'2026-08-16',sourceFiles:{inventory:{headerRowIndex:0,matrix:[['품목코드','품목명','01창고'],['10','테스트',10],['101018136','양파_kg',10]]}},inventory:[{productCode:'10',productName:'테스트',sourceRowNumber:2},{productCode:'101018136',productName:'양파_kg',sourceRowNumber:3}],orders:[{productCode:'10',productName:'테스트',quantity:4}],orderOpsInputs:{purchases:{rows:[{productCode:'10',quantity:2}]},sales:{rows:[{productCode:'10',quantity:2}]}}};
     const payload={schemaVersion:'shipping-local-recovery-payload/v2',sourceFingerprint,workspaceSchemaVersion:workspace.schemaVersion,updatedAt,workspace,ui:{activePreview:'validation'},settings:{cloudUrl:'',savedBy:'ADMIN'}};
     const valid={schemaVersion:'shipping-local-recovery/v2',recordId:`M10-LEGACY-VALID-${profile}`,sourceFingerprint,updatedAt,hashAlgorithm:'SHA-256',payloadSha256:await sha256(ShippingManagementEngine.canonicalStringify(payload)),payload};
     const corruptStructure=clone(valid);Object.assign(corruptStructure,{recordId:`M10-CORRUPT-STRUCTURE-${profile}`,updatedAt:'2099-03-01T00:00:00.000Z',schemaVersion:'wrong/v2'});corruptStructure.payload.updatedAt=corruptStructure.updatedAt;
@@ -36,6 +36,19 @@
     const db=await new Promise((resolve,reject)=>{const request=indexedDB.open('ONEAPPShippingRecoveryDB',1);request.onupgradeneeded=()=>{if(!request.result.objectStoreNames.contains('recoveryRecords'))request.result.createObjectStore('recoveryRecords',{keyPath:'recordId'});};request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);});
     const tx=db.transaction('recoveryRecords','readwrite');
     const store=tx.objectStore('recoveryRecords');store.clear();[valid,corruptStructure,corruptHash,corruptFingerprint].forEach(row=>store.put(row));
+    await new Promise((resolve,reject)=>{tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error);});db.close();
+  }
+  async function seedDataOpsWorkState(){
+    const db=await new Promise((resolve,reject)=>{const request=indexedDB.open('oneapp_dataops_work_v1',1);request.onupgradeneeded=()=>{if(!request.result.objectStoreNames.contains('workspaces'))request.result.createObjectStore('workspaces');};request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);});
+    const tx=db.transaction('workspaces','readwrite');
+    tx.objectStore('workspaces').put({
+      version:1,savedAt:'2026-08-16T08:00:00.000Z',
+      substHistory:[{id:`SUB-${profile}-101018136`,type:'MANUAL_LOSS_LINK',sourceKey:`DATAOPS-${profile}-101018136`,targetKey:`DATAOPS-${profile}-TARGET`,sQty:10,tQty:10}],
+      productData:[
+        {batchKey:`DATAOPS-${profile}-10`,코드:'10',품명:'테스트',기초:10,입고:2,출고:2,대체입고:0,대체출고:0,실사:10,로스:0,이슈:[]},
+        {batchKey:`DATAOPS-${profile}-101018136`,코드:'101018136',품명:'양파_kg',기초:10,입고:0,출고:0,대체입고:0,대체출고:0,전산잔량:10,실사:0,로스:-10,_manualSubstitutionResolved:true,이슈:['🔄수기치환오차(-10)'],메모:'[수기치환/오차] 실제출고 -10'}
+      ]
+    },'current');
     await new Promise((resolve,reject)=>{tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error);});db.close();
   }
 
@@ -62,20 +75,31 @@
     localStorage.setItem('oneapp.orderq.device-id.v1',`M10-${profile}`);
     await put(STORE.ORDERS,{orderId:'M10-O',revision:1,status:'ACTIVE',zero:0,blank:''});
     await put(STORE.PRODUCTS,{productId:'M10-P',itemCode:'10',itemName:'테스트',revision:1});
+    await put(STORE.PRODUCTS,{productId:'M10-P-101018136',itemCode:'101018136',itemName:'양파_kg',revision:1});
     await put(STORE.WAREHOUSES,{warehouseId:'M10-W',warehouseCode:'01',warehouseName:'01창고',status:'ACTIVE'});
     await put(STORE.INVENTORY_SNAPSHOTS,{inventorySnapshotId:'M10-IS',importBatchId:'M10-IB',basisDate:'2026-08-16',snapshotLastSequence:0,status:'ACTIVE'});
     await put(STORE.INVENTORY_LINES,{inventoryLineId:'M10-IL',inventorySnapshotId:'M10-IS',productId:'M10-P',productCode:'10',warehouseId:'M10-W',inventoryQuantity:10,status:'ACTIVE'});
+    await put(STORE.INVENTORY_LINES,{inventoryLineId:'M10-IL-101018136',inventorySnapshotId:'M10-IS',productId:'M10-P-101018136',productCode:'101018136',warehouseId:'M10-W',inventoryQuantity:10,status:'ACTIVE'});
     await put(STORE.INVENTORY_MOVEMENTS,{movementId:'M10-PM',productId:'M10-P',productCode:'10',warehouseId:'M10-W',movementType:'PURCHASE_RECEIPT',signedBaseQuantity:2,ledgerSequence:1,status:'ACTIVE'});
     await put(STORE.INVENTORY_MOVEMENTS,{movementId:'M10-SM',productId:'M10-P',productCode:'10',warehouseId:'M10-W',movementType:'SALE_ISSUE',signedBaseQuantity:-3,ledgerSequence:2,status:'ACTIVE'});
+    await put(STORE.INVENTORY_MOVEMENTS,{movementId:'M10-SR',productId:'M10-P',productCode:'10',warehouseId:'M10-W',movementType:'REVERSAL',sourceDocumentType:'DISPATCH_REVERSAL',signedBaseQuantity:1,ledgerSequence:3,status:'ACTIVE'});
     await put(STORE.INVENTORY_RESERVATIONS,{reservationId:'M10-IR',allocationId:'M10-DA',dispatchId:'M10-D0',productId:'M10-P',productCode:'10',warehouseId:'M10-W',reservedBaseQuantity:4,status:'ACTIVE'});
     await seedLegacyWorkspace();
+    await seedDataOpsWorkState();
     const shadow=await buildCurrentShadowReport();
-    assert(shadow.report.summary.total===1&&shadow.report.summary.matched===1,'actual legacy/vNext shadow axes did not match');
+    assert(shadow.report.summary.total===2&&shadow.report.summary.matched===1&&shadow.report.summary.differences===1,'actual legacy/vNext shadow axes summary is incorrect');
     assert(shadow.legacy.recordId===`M10-LEGACY-VALID-${profile}`,'newest corrupt recovery replaced the valid recovery');
     assert(shadow.legacy.recoveryValidation.corruptionCount===3,'corrupt recovery rows were not surfaced');
     assert(same(shadow.legacy.recoveryValidation.corruptions.map(row=>row.reason).sort(),['V2_PAYLOAD_HASH_MISMATCH','V2_SCHEMA_INVALID','V2_SOURCE_FINGERPRINT_MISMATCH']),'corruption reasons were not preserved');
-    assert(shadow.report.rows[0].axes.actualSale.legacy===3&&shadow.report.rows[0].axes.actualSale.orderq===3,'actual sale axis mixed with order request');
-    assert(shadow.report.rows[0].axes.orderRequestVsReservation.legacy===4&&shadow.report.rows[0].axes.orderRequestVsReservation.orderq===4,'request/reservation axis mismatch');
+    const matchedShadow=shadow.report.rows.find(row=>row.productCode==='10');
+    const adjustedShadow=shadow.report.rows.find(row=>row.productCode==='101018136');
+    assert(matchedShadow.axes.actualSale.legacy===2&&matchedShadow.axes.actualSale.orderq===2,'actual sale axis mixed with order request');
+    assert(matchedShadow.axes.orderRequestVsReservation.legacy===4&&matchedShadow.axes.orderRequestVsReservation.orderq===4,'request/reservation axis mismatch');
+    assert(shadow.dataops.available===true&&matchedShadow.axes.dataOpsCurrentOnHand.legacy===10&&matchedShadow.axes.dataOpsCurrentOnHand.orderq===10,'DataOps current on-hand axis mismatch');
+    assert(matchedShadow.axes.orderOpsCurrentAvailable.legacy===6&&matchedShadow.axes.orderOpsCurrentAvailable.orderq===6,'OrderOps current available axis mismatch');
+    assert(adjustedShadow.axes.dataOpsCurrentOnHand.legacy===0&&adjustedShadow.axes.dataOpsCurrentOnHand.orderq===10,'101018136 current remaining difference was hidden');
+    assert(adjustedShadow.axes.manualSubstitution.legacy===-10&&adjustedShadow.axes.loss.legacy===-10,'101018136 manual substitution/loss originals were not preserved');
+    for(const code of ['DATAOPS_CURRENT_REMAINING_DIFFERENCE','MANUAL_SUBSTITUTION_ADJUSTMENT_PRESENT','INVENTORY_ADJUSTMENT_PRESENT','LOSS_ADJUSTMENT_PRESENT','ADJUSTMENT_MOVEMENT_DIFFERENCE'])assert(adjustedShadow.reasonCodes.includes(code),`101018136 missing reason ${code}`);
     const fullBackup=await exportOrderQBackup(actor);
     const backupNames=Object.keys(fullBackup.stores);
     const before=await readStores(backupNames);
@@ -118,7 +142,7 @@
     setCutoverMode({mode:finalMode,actorId:'ADMIN',reasonCode:`M10_PROFILE_${profile}`,expectedRevision:readCutoverControl().revision});
     assert(readCutoverControl().mode===finalMode,'profile-local final mode mismatch');
     assert(warnings.length===0&&errors.length===0,`console output: ${[...warnings,...errors].join(' / ')}`);
-    return {ok:true,profile,databaseName:DB_NAME,finalMode,shadow:{matched:shadow.report.summary.matched,actualSale:shadow.report.rows[0].axes.actualSale,requestReservation:shadow.report.rows[0].axes.orderRequestVsReservation,evidence:shadow.report.rows[0].evidenceIds,selectedRecovery:shadow.legacy.recordId,corruptionCount:shadow.legacy.recoveryValidation.corruptionCount,corruptionReasons:shadow.legacy.recoveryValidation.corruptions.map(row=>row.reason)},backupStoreCount:backupNames.length,backupCanonical:true,failedRestoreAtomic:true,localBlocked,centralBlocked,pullWhileBlocked,centralCursor,console:{warnings:warnings.length,errors:errors.length}};
+    return {ok:true,profile,databaseName:DB_NAME,finalMode,shadow:{matched:shadow.report.summary.matched,differences:shadow.report.summary.differences,actualSale:matchedShadow.axes.actualSale,requestReservation:matchedShadow.axes.orderRequestVsReservation,orderOpsCurrentAvailable:matchedShadow.axes.orderOpsCurrentAvailable,dataOpsCurrentOnHand:matchedShadow.axes.dataOpsCurrentOnHand,adjusted101018136:{current:adjustedShadow.axes.dataOpsCurrentOnHand,manualSubstitution:adjustedShadow.axes.manualSubstitution,loss:adjustedShadow.axes.loss,reasons:adjustedShadow.reasonCodes,evidence:adjustedShadow.evidenceIds.dataops},evidence:matchedShadow.evidenceIds,selectedRecovery:shadow.legacy.recordId,corruptionCount:shadow.legacy.recoveryValidation.corruptionCount,corruptionReasons:shadow.legacy.recoveryValidation.corruptions.map(row=>row.reason)},backupStoreCount:backupNames.length,backupCanonical:true,failedRestoreAtomic:true,localBlocked,centralBlocked,pullWhileBlocked,centralCursor,console:{warnings:warnings.length,errors:errors.length}};
   }
   run().then(value=>{output.textContent=`PASS\n${JSON.stringify(value,null,2)}`;document.title=`PASS ORDER Q M10 Browser ${profile}`;parent.postMessage({type:'M10_DONE',value},'*');}).catch(error=>{console.error(error);output.textContent=`FAIL\n${error.stack||error}`;document.title=`FAIL ORDER Q M10 Browser ${profile}`;parent.postMessage({type:'M10_FAIL',error:error.stack||String(error)},'*');});
 </script></body></html>
