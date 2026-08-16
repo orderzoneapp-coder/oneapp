@@ -215,8 +215,8 @@
       {entityType:'DISPATCH_DECISION',entityId:'D-M9',revision:4,payload:{...draft,status:'CONFIRMED',revision:4,salesDocumentId:'SD-1',localOnly:true}},
       {entityType:'DISPATCH_LINE',entityId:'DL-1',revision:4,payload:{dispatchLineId:'DL-1',dispatchId:'D-M9',orderId:'O-1',orderItemId:'OI-1',actualProductId:'P-1',actualQuantity:6,actualBaseQuantity:6,recognizedOrderQuantity:6,status:'CONFIRMED',localOnly:true}},
       {entityType:'DISPATCH_STOCK_ALLOCATION',entityId:'DA-1',revision:4,payload:{allocationId:'DA-1',dispatchId:'D-M9',dispatchLineId:'DL-1',warehouseId:'W-1',reservationId:'IR-1',actualBaseQuantity:6,movementId:'IM-1',status:'CONFIRMED',localOnly:true}},
-      {entityType:'SALES_DOCUMENT',entityId:'SD-1',revision:4,payload:{salesDocumentId:'SD-1',dispatchId:'D-M9',status:'CONFIRMED',erpPostingStatus:'READY',originTransactionId:'D-M9',localOnly:true}},
-      {entityType:'SALES_LINE',entityId:'SL-1',revision:4,payload:{salesLineId:'SL-1',salesDocumentId:'SD-1',dispatchLineId:'DL-1',productId:'P-1',warehouseId:'W-1',actualQuantity:6,actualBaseQuantity:6,recognizedOrderQuantity:6,supplyAmountWon:0,vatAmountWon:'',externalLineNo:'0',sourceLineFingerprint:'0',localOnly:true}},
+      {entityType:'SALES_DOCUMENT',entityId:'SD-1',revision:4,payload:{salesDocumentId:'SD-1',dispatchId:'D-M9',status:'CONFIRMED',erpPostingStatus:'READY',originTransactionId:0,externalDocumentNo:0,localOnly:true}},
+      {entityType:'SALES_LINE',entityId:'SL-1',revision:4,payload:{salesLineId:'SL-1',salesDocumentId:'SD-1',dispatchLineId:'DL-1',originTransactionId:'0',productId:'P-1',warehouseId:'W-1',actualQuantity:6,actualBaseQuantity:6,recognizedOrderQuantity:6,supplyAmountWon:0,vatAmountWon:'',externalLineNo:'0',sourceLineFingerprint:'0',localOnly:true}},
       {entityType:'INVENTORY_MOVEMENT',entityId:'IM-1',revision:4,payload:{movementId:'IM-1',dispatchId:'D-M9',dispatchLineId:'DL-1',sourceLineId:'DA-1',productId:'P-1',warehouseId:'W-1',movementType:'SALE_ISSUE',signedBaseQuantity:-6,ledgerSequence:999,occurredAt:'2026-08-14',localOnly:true}},
       {entityType:'ORDER_EVENT',entityId:'OE-1',revision:4,payload:{eventId:'OE-1',orderId:'O-1',eventType:'SALES_TRANSFER_ALLOCATED',detail:{orderItemId:'OI-1',salesLineId:'SL-1',transferredQty:6},localOnly:true}},
       {entityType:'INVENTORY_RESERVATION',entityId:'IR-1',revision:4,payload:{reservationId:'IR-1',dispatchId:'D-M9',allocationId:'DA-1',productId:'P-1',warehouseId:'W-1',reservedBaseQuantity:6,consumedBaseQuantity:6,status:'CONSUMED',localOnly:true}}
@@ -262,14 +262,14 @@
     const salesLine2={...salesLine,salesLineId:'SL-2',dispatchLineId:'DL-2',productId:'P-2',actualQuantity:1,actualBaseQuantity:1,recognizedOrderQuantity:1,supplyAmountWon:25,vatAmountWon:2,totalAmountWon:27,externalLineNo:'1'};
     const purchaseDocument=state.entities['PURCHASE_DOCUMENT\u001fPD-1'].payload;
     const purchaseLine=state.entities['PURCHASE_LINE\u001fPL-1'].payload;
-    const reversalDocument={salesDocumentId:'SD-R',status:'CONFIRMED',erpPostingStatus:'READY',originTransactionId:'D-R',businessDate:'2026-08-15'};
-    const reversalLine={salesLineId:'SL-R',salesDocumentId:'SD-R',productId:'P-1',warehouseId:'W-1',actualQuantity:-1,actualBaseQuantity:-0.5,recognizedOrderQuantity:-5,supplyAmountWon:-100,vatAmountWon:'',externalLineNo:''};
+    const reversalDocument={salesDocumentId:'SD-R',status:'CONFIRMED',erpPostingStatus:'READY',originTransactionId:'',businessDate:'2026-08-15'};
+    const reversalLine={salesLineId:'SL-R',salesDocumentId:'SD-R',originTransactionId:'',productId:'P-1',warehouseId:'W-1',actualQuantity:-1,actualBaseQuantity:-0.5,recognizedOrderQuantity:-5,supplyAmountWon:-100,vatAmountWon:'',externalLineNo:''};
     const exportRows=buildErpExportRows({salesDocuments:[salesDocument,reversalDocument],salesLines:[salesLine,salesLine2,reversalLine],purchaseDocuments:[purchaseDocument],purchaseLines:[purchaseLine]});
     const workbookBuffer=createErpWorkbookBuffer(exportRows,window.XLSX);
     const workbook=window.XLSX.read(workbookBuffer,{type:'array',raw:true,cellDates:false});
     const reopened=workbook.SheetNames.flatMap(name=>window.XLSX.utils.sheet_to_json(workbook.Sheets[name],{defval:'',raw:true}));
-    assert(reopened.some(row=>row.quantity===6&&row.actualBaseQuantity===6&&row.recognizedOrderQuantity===6&&row.supplyAmountWon===0&&row.vatAmountWon===''&&String(row.externalLineNo)==='0'),'ERP workbook lost axes, numeric zero, string zero or blank');
-    assert(reopened.some(row=>row.quantity===-1&&row.actualBaseQuantity===-0.5&&row.recognizedOrderQuantity===-5&&row.externalLineNo===''),'ERP workbook lost negative axes or blank external identity');
+    assert(reopened.some(row=>row.quantity===6&&row.actualBaseQuantity===6&&row.recognizedOrderQuantity===6&&row.supplyAmountWon===0&&row.vatAmountWon===''&&row.originTransactionId==='0'&&row.originLineId==='0'&&row.externalDocumentNo==='0'&&String(row.externalLineNo)==='0'),'ERP workbook lost axes, numeric zero, string zero or blank');
+    assert(reopened.some(row=>row.quantity===-1&&row.actualBaseQuantity===-0.5&&row.recognizedOrderQuantity===-5&&row.originTransactionId===''&&row.originLineId===''&&row.externalLineNo===''),'ERP workbook lost negative axes or blank external identity');
     const exactImport={...exportRows.sales[0],externalDocumentNo:'ERP-S-77',externalLineNo:'0'};
     const exactCandidate={...exportRows.sales[0],externalDocumentNo:'ERP-S-77',externalLineNo:'0'};
     const exact=reconcileErpImportRows([exactImport],[exactCandidate]);
