@@ -1085,6 +1085,13 @@
     .purchase-input[data-negative-balance="true"] { color: #854d0e; background: #fef9c3; box-shadow: none; }
     .purchase-input:focus { outline: 0; background: transparent; }
     .purchase-input[data-negative-balance="true"]:focus { background: #fef08a; box-shadow: none; }
+    .purchase-quantity-input {
+      width: 100%; min-width: 0; height: 25px; padding: 1px 6px;
+      border: 0; border-radius: 0; color: var(--slate-900);
+      background: transparent; font-size: 12px; outline: 0; box-shadow: none;
+      text-align: right; font-variant-numeric: tabular-nums;
+    }
+    .purchase-quantity-input:focus { outline: 0; background: transparent; }
     .order-edit-input {
       width: 100%; min-width: 0; height: 25px; padding: 1px 6px;
       border: 0; border-radius: 0; color: var(--slate-900);
@@ -1739,7 +1746,7 @@
       <div class="brand-mark">ONEAPP</div>
       <div class="brand-divider" aria-hidden="true"></div>
       <span class="brand-logo-frame" aria-hidden="true"><img class="brand-logo" src="assets/order-q-logo.png" alt=""></span>
-      <span class="brand-badge">v1.55</span>
+      <span class="brand-badge">v1.56</span>
       <span class="brand-product">출고관리</span>
     </div>
     <div class="header-actions">
@@ -1947,7 +1954,7 @@
     </section>
 
     <footer class="page-footer">
-      <span>ORDER Q v1.55 · 출고관리 · workspace shipping-workspace/v2 · cloud plan v1</span>
+      <span>ORDER Q v1.56 · 출고관리 · workspace shipping-workspace/v2 · cloud plan v1</span>
       <a href="SHIPPING_MANAGEMENT_GUIDANCE.md">개발·운영 기준 보기</a>
     </footer>
   </main>
@@ -4256,6 +4263,13 @@
         preview.columns.forEach((column) => {
           if (!included.has(column.key)) ordered.push(column);
         });
+        const purchaseQuantityKey = "shipping:inventory:purchase-quantity";
+        if (tabId === "inventory" && byKey.has(purchaseQuantityKey) && !saved.includes(purchaseQuantityKey)) {
+          const quantityIndex = ordered.findIndex((column) => column.key === purchaseQuantityKey);
+          if (quantityIndex >= 0) ordered.splice(quantityIndex, 1);
+          const purchaseIndex = ordered.findIndex((column) => column.key === "shipping:inventory:purchase");
+          ordered.splice(purchaseIndex >= 0 ? purchaseIndex + 1 : ordered.length, 0, byKey.get(purchaseQuantityKey));
+        }
         return ordered;
       }
 
@@ -4560,6 +4574,14 @@
           role: "purchase",
           defaultWidth: 88,
         });
+        const purchaseQuantityIndex = purchaseIndex + 1;
+        columns.splice(purchaseQuantityIndex, 0, {
+          key: "shipping:inventory:purchase-quantity",
+          header: "구매수량",
+          numeric: true,
+          role: "purchaseQuantity",
+          defaultWidth: 92,
+        });
         columns.push({
           key: "shipping:inventory:order-information",
           header: "정보",
@@ -4593,6 +4615,7 @@
           }
           values.splice(statusIndex, 0, row?.rowState ?? "");
           values.splice(purchaseIndex, 0, row?.purchase ?? "");
+          values.splice(purchaseQuantityIndex, 0, row?.purchaseQuantityOverride ?? "");
           values.push(row?.orderInformation ?? "");
           values.push(row?.orderNotes ?? "");
           return values;
@@ -4606,6 +4629,8 @@
             .filter((index) => index >= 0),
           purchase: purchaseIndex,
           purchaseEditable: true,
+          purchaseQuantity: purchaseQuantityIndex,
+          purchaseQuantityEditable: true,
           status: statusIndex,
           sourceRows,
           rows,
@@ -5425,6 +5450,8 @@
                     ].filter(Boolean).join(" ");
                     const editablePurchase = editable && preview.purchaseEditable === true &&
                       preview.purchase === index && !referenceRow && !(previewId === "ledger" && sourceRow?.salesOnly);
+                    const editablePurchaseQuantity = editable && previewId === "inventory" &&
+                      preview.purchaseQuantityEditable === true && preview.purchaseQuantity === index && !referenceRow;
                     const noticeLink = preview.notice === index && sourceRow?.noticeId;
                     const noticeText = preview.noticeText === index;
                     const acknowledgement = editable && preview.acknowledgement === index && sourceRow?.noticeId;
@@ -5435,6 +5462,10 @@
                           autocomplete="off"
                           tabindex="${negativeBalance || previewId === "allocations" ? "0" : "-1"}"
                           value="${escapeHtml(displayValue)}" aria-label="${escapeHtml(sourceRow?.productCode || "")} 구매처">`
+                      : editablePurchaseQuantity
+                        ? `<input class="purchase-quantity-input" data-purchase-quantity-code="${escapeHtml(sourceRow?.productCode || "")}"
+                            data-grid-column="${escapeHtml(column.key)}" inputmode="decimal" autocomplete="off"
+                            value="${escapeHtml(displayValue)}" aria-label="${escapeHtml(sourceRow?.productCode || "")} 구매수량">`
                       : editableLedgerPrice
                         ? `<input class="inventory-input ledger-price-input" data-inventory-code="${escapeHtml(sourceRow?.productCode || "")}"
                             data-inventory-column="${escapeHtml(column.inventoryColumnKey)}" data-grid-column="${escapeHtml(column.key)}"
@@ -5463,7 +5494,8 @@
                             : orderQuantity || calculatedQuantity
                               ? `<span class="inventory-total-frame" data-negative-value="${negativeNumericValue ? "true" : "false"}">${escapeHtml(displayValue === "" ? "" : isNumber ? formatNumber(displayValue) : displayValue)}</span>`
                               : `<span class="${noticeText ? "notice-text" : ""}">${escapeHtml(displayValue === "" ? "" : isNumber ? formatNumber(displayValue) : displayValue)}</span>`;
-                    return `<td class="${classes}" style="${rowFill ? `background:#${rowFill.replace(/^#/, "")}` : ""}"
+                    const cellFill = warehouseFill || (rowFill ? `#${rowFill.replace(/^#/, "")}` : "");
+                    return `<td class="${classes}" style="${cellFill ? `background:${cellFill}` : ""}"
                       ${isStatus ? `data-tone="${statusTone(value)}"` : ""}>${content}</td>`;
                   }).join("")}
                 </tr>`;
@@ -6104,6 +6136,24 @@
         rememberPurchaseName(input.value);
         scheduleLocalSave();
         return true;
+      }
+
+      function commitPurchaseQuantityInput(input) {
+        if (!input || !state.workspace || state.activePreview !== "inventory") return false;
+        try {
+          engine.setPurchaseQuantityValue(
+            state.workspace,
+            input.dataset.purchaseQuantityCode,
+            input.value,
+          );
+          scheduleLocalSave();
+          renderPreview();
+          return true;
+        } catch (error) {
+          renderPreview();
+          showToast(error.message, true);
+          return false;
+        }
       }
 
       function commitOrderInput(input) {
@@ -6802,6 +6852,11 @@
         renderPurchaseAutocomplete(input);
       });
       elements.previewTable.addEventListener("change", (event) => {
+        const purchaseQuantityInput = event.target.closest(".purchase-quantity-input[data-purchase-quantity-code]");
+        if (purchaseQuantityInput) {
+          commitPurchaseQuantityInput(purchaseQuantityInput);
+          return;
+        }
         const orderInput = event.target.closest(".order-edit-input[data-order-row][data-order-field]");
         if (orderInput) {
           commitOrderInput(orderInput);
@@ -6828,6 +6883,12 @@
         commitPurchaseInput(input);
       });
       elements.previewTable.addEventListener("keydown", (event) => {
+        const purchaseQuantityInput = event.target.closest?.(".purchase-quantity-input[data-purchase-quantity-code]");
+        if (purchaseQuantityInput && event.key === "Enter" && !event.isComposing) {
+          event.preventDefault();
+          purchaseQuantityInput.blur();
+          return;
+        }
         const input = event.target.closest?.(".order-edit-input[data-order-row][data-order-field]");
         if (!input || event.key !== "Enter" || event.isComposing) return;
         event.preventDefault();
