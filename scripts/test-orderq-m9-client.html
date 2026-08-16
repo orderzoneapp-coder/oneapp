@@ -4,6 +4,10 @@
   const databaseName = params.get('orderqTestDb') || `oneapp-orderq-m9-gateway-${clientId}`;
   localStorage.setItem('oneapp_cloud_sync_url_v1', 'https://orderq-m9.test/central');
   localStorage.setItem('oneapp.orderq.device-id.v1', `M9-DEVICE-${clientId}`);
+  localStorage.setItem('oneapp.orderq.cutover.control.v1', JSON.stringify({
+    schemaVersion:'ORDERQ_CUTOVER_CONTROL_V1', mode:'PILOT_WRITE', revision:1,
+    updatedAt:'2026-08-16T00:00:00.000Z', updatedBy:'M9_TEST', reasonCode:'TEST', history:[]
+  }));
   window.fetch = async (_url, options = {}) => {
     const body = JSON.parse(String(options.body || '{}'));
     const response = await parent.m9CentralMockRequest(body);

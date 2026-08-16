@@ -223,6 +223,7 @@ export function calculateInventoryShadowProjection({
         snapshotLastSequence: basis.snapshotLastSequence,
         movementQuantity: 0,
         reservedQuantity: 0,
+        reservationEvidence: [],
         movementEvidence: [],
         snapshotEvidence: []
       });
@@ -284,7 +285,15 @@ export function calculateInventoryShadowProjection({
     const warehouseId = warehouseIdentity(reservation);
     if (!product.productKey || !warehouseId) continue;
     const row = ensureRow({ ...product, warehouseId });
-    row.reservedQuantity += finiteNumber(reservation.reservedBaseQuantity ?? 0, 'ORDERQ_RESERVATION_QUANTITY_INVALID');
+    const reservedBaseQuantity = finiteNumber(reservation.reservedBaseQuantity ?? 0, 'ORDERQ_RESERVATION_QUANTITY_INVALID');
+    row.reservedQuantity += reservedBaseQuantity;
+    row.reservationEvidence.push({
+      reservationId: text(reservation.reservationId),
+      allocationId: text(reservation.allocationId),
+      dispatchId: text(reservation.dispatchId),
+      dispatchLineId: text(reservation.dispatchLineId),
+      reservedBaseQuantity
+    });
   }
 
   const projectedRows = [...rows.values()].map(row => {

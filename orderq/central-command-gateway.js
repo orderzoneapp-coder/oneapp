@@ -15,6 +15,7 @@ import {
 } from './orderq-cloud-adapter.js?v=0.9.0';
 import { getDeviceId } from './orderq-sync-engine.js?v=0.8.0';
 import { withOfficialCommandAuthority } from './official-command-policy.js?v=0.9.0';
+import { assertLocalOfficialWriteEnabled } from './cutover-control.js?v=0.10.0';
 
 export const CENTRAL_CURSOR_META_KEY = 'm9CentralCursor';
 export const CENTRAL_LEDGER_META_KEY = 'inventoryLedgerSequence';
@@ -208,6 +209,10 @@ export async function runCentralOfficialCommand(source = {}, localOperation) {
     commandType, aggregateId, idempotencyKey, expectedRevision, deviceId,
     intent: clone(source.intent || null)
   };
+  // The browser profile is the first half of the two-key cutover boundary.
+  // This check is deliberately before draft migration and before the local
+  // transaction so SHADOW/rollback mode cannot pre-write either side.
+  assertLocalOfficialWriteEnabled(commandType);
   await ensureDraftMigrated(command);
   // Always refresh the local cache before asking the server for a lease. The
   // local calculation therefore starts from the same authoritative inventory,
