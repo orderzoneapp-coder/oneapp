@@ -190,7 +190,13 @@ const exportHandler = section(
 );
 assert.match(exportHandler, /flushFocusedTableEdit/);
 assert.match(exportHandler, /DATAOPS_F9_PREFLIGHT_MODULE\.run/);
-assert.match(exportHandler, /if \(!preflightResult\.ok\)/);
+assert.doesNotMatch(
+  exportHandler,
+  /if \(!preflightResult\.ok\)[\s\S]{0,300}return;/,
+  "F9 findings must never block workbook creation",
+);
+assert.match(exportHandler, /EXPORT_MODULE\.createCombinedWorkbook\(\{[\s\S]*?preflightResult/);
+assert.match(exportHandler, /setF9PreflightResult\(\{ \.\.\.preflightResult, workbookGenerated: true \}\)/);
 assert.ok(
   exportHandler.indexOf("DATAOPS_F9_PREFLIGHT_MODULE.run") <
     exportHandler.indexOf("EXPORT_MODULE.createCombinedWorkbook"),
@@ -407,11 +413,46 @@ assert.deepEqual(
   "재오픈한 F9 보고서도 계산근거 22열 계약을 유지해야 합니다",
 );
 
+const warningPreflight = {
+  ok: false,
+  counts: { MISSING_INBOUND_COST: 1 },
+  issues: [{
+    id: "MISSING_INBOUND_COST|WARN",
+    type: "MISSING_INBOUND_COST",
+    typeLabel: "입고단가 누락",
+    batchKey: "WARN",
+    code: "WARN",
+    name: "확인필요행",
+    vendorOrLot: "미지정",
+    sourceQty: 1,
+    calculatedQty: "",
+    sourcePrice: "",
+    calculatedCost: 0,
+    reason: "원가 확인 필요",
+    action: "관리자 확인",
+  }],
+};
+const warningWorkbook = context.fullExportModule.createCombinedWorkbook({
+  productData: [],
+  targetDateStr: "2026-08-12",
+  preflightResult: warningPreflight,
+  substHistory: [],
+});
+const warningReportGrid = context.XLSX.utils.sheet_to_json(
+  warningWorkbook.wb.Sheets["보고서"],
+  { header: 1, defval: "" },
+);
+assert.equal(warningReportGrid.length, 2, "F9 findings must be reported without blocking workbook creation");
+assert.equal(warningReportGrid[1][1], "입고단가 누락");
+
 assert.match(source, /해당 상품으로 이동/);
 assert.match(source, /다시 점검/);
+assert.match(source, /엑셀은 생성되었습니다\. 확인 필요 항목은 보고서 시트에도 포함했습니다\./);
+assert.match(source, /엑셀 생성을 차단하지 않습니다\./);
+assert.doesNotMatch(source, /오류를 해결하기 전에는 workbook을 생성하지 않습니다/);
 assert.match(source, /salesSourceEvidenceByProductKey/);
 assert.match(source, /NO_CODE\|\$\{safeStr\(evidenceName, '이름없음'\)\}/);
-assert.match(source, /V1\.a22\.113_AdminDecisionReport/);
+assert.match(source, /V1\.a22\.114_AdminActionRecovery/);
 assert.doesNotMatch(vendorSource, /RECONCILED|base\.qty \+= delta|const delta = outQty - chipSum/);
 
 console.log("DataOps 계산근거 리포트·판매칩 사전검증 계약이 통과했습니다.");

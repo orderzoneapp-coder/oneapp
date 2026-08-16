@@ -98,6 +98,9 @@ jobs:
       - name: Test DataOps administrator-directed manual substitution
         run: node scripts/test-dataops-manual-substitution-actual-error.mjs
 
+      - name: Test DataOps LOT merge cost choices
+        run: node scripts/test-dataops-lot-detail-layout.mjs
+
       - name: Test DataOps evidence report and F9 preflight
         run: node scripts/test-dataops-evidence-report-preflight.mjs
 

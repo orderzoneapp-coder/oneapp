@@ -41,7 +41,37 @@ assert.match(
   /onToggleCodeMerge: handleToggleCodeMerge/,
   "per-product merge and split actions must remain connected",
 );
-assert.doesNotMatch(source, /\[\['PURCHASE_BALANCE', '구매잔량'\], \['OTHER_STOCK', '기타상품'\]\]/);
-assert.doesNotMatch(source, /if \(filters\.stockListType === 'PURCHASE_BALANCE'\)/);
+assert.match(source, /getPriceMode: \(code = ''\) =>/);
+assert.match(source, /priceMode: 'selected'/);
+assert.match(source, /mergeDetailAverage: \(code = ''\) =>/);
+assert.match(source, /priceMode: 'average'/);
+assert.match(source, /const mergePriceMode = DATAOPS_CODE_MERGE_OVERRIDE_MODULE\.getPriceMode\(code\)/);
+assert.match(source, /const costBasisMode = mergePriceMode \|\| DATAOPS_VIEW_LAYER_MODULE\.getCostBasisMode\(\)/);
+assert.match(source, /Math\.round\(weightedCost \/ weightedQty\)/);
+assert.match(source, /qtyForPrice = \(row = \{\}\) => Math\.max\(0, DATAOPS_VIEW_LAYER_MODULE\.getRowStockQty\(row\)\)/);
+assert.match(source, /선택원가 통합/);
+assert.match(source, /평균가 통합/);
+assert.match(source, /detail-merge-average/);
 
+const mergeModuleStart = source.indexOf("const DATAOPS_CODE_MERGE_OVERRIDE_MODULE");
+const mergeModuleEnd = source.indexOf("const DATAOPS_VIEW_LAYER_MODULE", mergeModuleStart);
+assert.ok(mergeModuleStart >= 0 && mergeModuleEnd > mergeModuleStart);
+const sessionValues = new Map();
+const mergeContext = vm.createContext({
+  safeStr: (value, fallback = "") => value === null || value === undefined || String(value).trim() === "" ? fallback : String(value).trim(),
+  sessionStorage: {
+    getItem: (key) => sessionValues.get(key) ?? null,
+    setItem: (key, value) => sessionValues.set(key, String(value)),
+    removeItem: (key) => sessionValues.delete(key),
+  },
+});
+new vm.Script(
+  `${source.slice(mergeModuleStart, mergeModuleEnd)}\nglobalThis.mergeModule = DATAOPS_CODE_MERGE_OVERRIDE_MODULE;`,
+).runInContext(mergeContext);
+mergeContext.mergeModule.mergeDetail("CODE-A", "LOT-A");
+assert.equal(mergeContext.mergeModule.getRepresentativeKey("CODE-A"), "LOT-A");
+assert.equal(mergeContext.mergeModule.getPriceMode("CODE-A"), "selected");
+mergeContext.mergeModule.mergeDetailAverage("CODE-A");
+assert.equal(mergeContext.mergeModule.getRepresentativeKey("CODE-A"), "");
+assert.equal(mergeContext.mergeModule.getPriceMode("CODE-A"), "average");
 console.log("DataOps CODE_SUMMARY/LOT_DETAIL layout contract passed.");

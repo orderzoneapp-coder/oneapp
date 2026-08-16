@@ -37,8 +37,8 @@ assert.doesNotMatch(
 );
 assert.match(
   source,
-  /V1\.a22\.113_AdminDecisionReport/,
-  "the deployed UI version must identify the administrator-directed substitution release",
+  /V1\.a22\.114_AdminActionRecovery/,
+  "the deployed UI version must identify the administrator-action recovery release",
 );
 
 function createRuntime() {
@@ -575,5 +575,49 @@ assert.equal(
   "administrator-directed 10 to 1 substitution must calculate and report the resulting unit cost",
 );
 assert.deepEqual(tenToOneResult.alerts, []);
+
+const reverseSelectedSplit = makeRow({
+  ...tenToOneTarget,
+  batchKey: "TEST_SPLIT_SELECTED_FIRST",
+  코드: "TEST_SPLIT",
+  _masterLink: {
+    productType: "소분",
+    masterCode: "TEST_SPLIT",
+    rawCode: "TEST_RAW",
+    conversionRate: 10,
+  },
+});
+const reverseSelectedRaw = makeRow({
+  ...tenToOneSource,
+  batchKey: "TEST_RAW_SELECTED_SECOND",
+  코드: "TEST_RAW",
+  _masterLink: {
+    productType: "원물",
+    masterCode: "TEST_RAW",
+    subCode: "TEST_SPLIT",
+    conversionRate: 10,
+  },
+});
+const reverseSelectedCostResult = createRuntime().run(
+  [reverseSelectedSplit, reverseSelectedRaw],
+  reverseSelectedSplit.batchKey,
+  reverseSelectedRaw.batchKey,
+);
+const reverseSelectedSplitAfter = reverseSelectedCostResult.rows.find(
+  (row) => row.batchKey === reverseSelectedSplit.batchKey,
+);
+const reverseSelectedRawAfter = reverseSelectedCostResult.rows.find(
+  (row) => row.batchKey === reverseSelectedRaw.batchKey,
+);
+assert.equal(reverseSelectedCostResult.history[0].sourceKey, reverseSelectedSplit.batchKey);
+assert.equal(reverseSelectedCostResult.history[0].targetKey, reverseSelectedRaw.batchKey);
+assert.equal(reverseSelectedCostResult.history[0].costSourceKey, reverseSelectedRaw.batchKey);
+assert.equal(reverseSelectedCostResult.history[0].costTargetKey, reverseSelectedSplit.batchKey);
+assert.match(reverseSelectedCostResult.history[0].costDirectionReason, /^MASTER_/);
+assert.equal(reverseSelectedCostResult.history[0].costStatus, "CALCULATED");
+assert.equal(reverseSelectedSplitAfter.단가, 15000, "split cost must be restored regardless of administrator selection order");
+assert.equal(reverseSelectedRawAfter.단가, 1500, "raw-material cost must remain unchanged");
+assert.match(reverseSelectedSplitAfter.메모, /\[소분단가\]/);
+assert.deepEqual(reverseSelectedCostResult.alerts, []);
 
 console.log("DataOps administrator-directed manual substitution contract passed.");
