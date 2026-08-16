@@ -52,6 +52,9 @@ class MockRange {
   setValues(rows) {
     assert.equal(rows.length, this.rowCount);
     rows.forEach((values) => assert.equal(values.length, this.columnCount));
+    rows.forEach((values) => values.forEach((value) => {
+      if (String(value ?? '').length > 50000) throw new Error('MOCK_SHEETS_CELL_LIMIT_EXCEEDED');
+    }));
     if (
       this.sheet.spreadsheet.failItemAppendOnce
       && this.sheet.name === "ORDER_ITEM"
@@ -137,12 +140,18 @@ class MockSheet {
     this.cells.splice(row - 1, 1);
     return this;
   }
+
+  deleteRows(row, count = 1) {
+    this.cells.splice(row - 1, count);
+    return this;
+  }
 }
 
 class MockSpreadsheet {
   constructor() {
     this.sheets = new Map();
     this.failItemAppendOnce = false;
+    this.failScriptLockOnce = false;
   }
 
   getSheetByName(name) {
@@ -171,7 +180,12 @@ const context = vm.createContext({
   },
   LockService: {
     getScriptLock: () => ({
-      waitLock: () => {},
+      waitLock: () => {
+        if (spreadsheet.failScriptLockOnce) {
+          spreadsheet.failScriptLockOnce = false;
+          throw new Error('MOCK_SCRIPT_LOCK_TIMEOUT');
+        }
+      },
       releaseLock: () => {},
     }),
   },
@@ -390,6 +404,106 @@ for (const testFailureAt of ["ENTITIES_WRITTEN", "CHANGES_WRITTEN", "COMMAND_WRI
   assert.equal(recovered.status, "success");
   assert.equal(recovered.data.changes.length, 1);
 }
+
+const longOpeningEvidence = "G".repeat(1800);
+const m9LargeOpeningEntities = [
+  ...Array.from({ length:20 }, (_, index) => ({
+    entityType:"PRODUCT", entityId:`M9-G2-P${String(index + 1).padStart(2, "0")}`, revision:1,
+    payload:{ productId:`M9-G2-P${String(index + 1).padStart(2, "0")}`, itemName:`G2-${index + 1}`, evidence:longOpeningEvidence, revision:1, localOnly:true },
+  })),
+  { entityType:"WAREHOUSE", entityId:"M9-G2-W1", revision:1, payload:{ warehouseId:"M9-G2-W1", status:"ACTIVE", revision:1, localOnly:true } },
+  { entityType:"INVENTORY_SNAPSHOT", entityId:"M9-G2-IS1", revision:1, payload:{ inventorySnapshotId:"M9-G2-IS1", basisDate:"2026-08-16", snapshotLastSequence:0, status:"ACTIVE", revision:1, localOnly:true } },
+  ...Array.from({ length:20 }, (_, index) => ({
+    entityType:"INVENTORY_LINE", entityId:`M9-G2-IL${String(index + 1).padStart(2, "0")}`, revision:1,
+    payload:{ inventoryLineId:`M9-G2-IL${String(index + 1).padStart(2, "0")}`, inventorySnapshotId:"M9-G2-IS1", productId:`M9-G2-P${String(index + 1).padStart(2, "0")}`, warehouseId:"M9-G2-W1", inventoryQuantity:index - 3, evidence:longOpeningEvidence, status:"ACTIVE", revision:1, localOnly:true },
+  })),
+];
+assert.ok(JSON.stringify(m9LargeOpeningEntities).length > 50000);
+const m9LargeOpening = m9("orderq_m9_migrate", {
+  idempotencyKey:"M9-G2-OPENING-42", deviceId:"PC-A", entities:m9LargeOpeningEntities,
+});
+assert.equal(m9LargeOpening.status, "success");
+assert.equal(m9LargeOpening.data.changes.length, 42);
+const largeOpeningCursor = context.orderQM9MetaNumber(spreadsheet, "syncSequence");
+const m9LargeOpeningDuplicate = m9("orderq_m9_migrate", {
+  idempotencyKey:"M9-G2-OPENING-42", deviceId:"PC-A", entities:m9LargeOpeningEntities,
+});
+assert.equal(m9LargeOpeningDuplicate.status, "success");
+assert.equal(m9LargeOpeningDuplicate.data.duplicate, true);
+assert.equal(context.orderQM9MetaNumber(spreadsheet, "syncSequence"), largeOpeningCursor);
+const migrationTxnSheet = spreadsheet.getSheetByName("ORDERQ_M9_TXN_LOG");
+let largeOpeningTxnRow = 0;
+for (let row = 2; row <= migrationTxnSheet.getLastRow(); row += 1) {
+  if (migrationTxnSheet.getCell(row, 2) === "M9-G2-OPENING-42") largeOpeningTxnRow = row;
+}
+assert.ok(largeOpeningTxnRow > 0);
+assert.equal(migrationTxnSheet.getCell(largeOpeningTxnRow, 3), "COMMITTED");
+assert.ok(String(migrationTxnSheet.getCell(largeOpeningTxnRow, 4)).length < 50000);
+assert.ok(String(migrationTxnSheet.getCell(largeOpeningTxnRow, 5)).length < 50000);
+
+const removedLargeOpeningEntity = context.orderQM9ReadEntity(spreadsheet, "INVENTORY_LINE", "M9-G2-IL20");
+context.orderQDeleteEntityRow(spreadsheet.getSheetByName("ORDERQ_M9_ENTITY"), context.orderQM9EntityKey("INVENTORY_LINE", "M9-G2-IL20"));
+const mismatchedDuplicate = m9("orderq_m9_migrate", {
+  idempotencyKey:"M9-G2-OPENING-42", deviceId:"PC-A", entities:m9LargeOpeningEntities,
+});
+assert.equal(mismatchedDuplicate.status, "error");
+assert.match(mismatchedDuplicate.message, /IDEMPOTENCY_STATE_MISMATCH/);
+context.orderQM9WriteEntity(spreadsheet, removedLargeOpeningEntity);
+assert.equal(m9("orderq_m9_migrate", {
+  idempotencyKey:"M9-G2-OPENING-42", deviceId:"PC-A", entities:m9LargeOpeningEntities,
+}).status, "success");
+
+const commitRecoveryCursor = context.orderQM9MetaNumber(spreadsheet, "syncSequence");
+const interruptedCommit = m9("orderq_m9_migrate", {
+  idempotencyKey:"M9-MIGRATE-INTERRUPT-COMMIT", deviceId:"PC-A",
+  testFailureAt:"COMMAND_WRITTEN", testRollbackFailureAt:"BEFORE_ROLLBACK",
+  entities:[{ entityType:"ORDER", entityId:"M9-O-INTERRUPT-COMMIT", revision:1, payload:{ orderId:"M9-O-INTERRUPT-COMMIT", revision:1, localOnly:true } }],
+});
+assert.equal(interruptedCommit.status, "error");
+const commitRecoveryBlockedPull = m9("orderq_m9_pull", { afterSequence:commitRecoveryCursor, limit:50 });
+assert.equal(commitRecoveryBlockedPull.status, "error");
+assert.match(commitRecoveryBlockedPull.message, /MIGRATION_RECOVERY_COMPLETED_RETRY/);
+const commitRecoveryPull = m9("orderq_m9_pull", { afterSequence:commitRecoveryCursor, limit:50 });
+assert.equal(commitRecoveryPull.status, "success");
+assert.ok(commitRecoveryPull.data.changes.some(row => row.entityId === "M9-O-INTERRUPT-COMMIT"));
+
+const rollbackRecoveryCursor = context.orderQM9MetaNumber(spreadsheet, "syncSequence");
+const interruptedRollback = m9("orderq_m9_migrate", {
+  idempotencyKey:"M9-MIGRATE-INTERRUPT-ROLLBACK", deviceId:"PC-A",
+  testFailureAt:"CHANGES_WRITTEN", testRollbackFailureAt:"ENTITIES_RESTORED",
+  entities:[{ entityType:"ORDER", entityId:"M9-O-INTERRUPT-ROLLBACK", revision:1, payload:{ orderId:"M9-O-INTERRUPT-ROLLBACK", revision:1, localOnly:true } }],
+});
+assert.equal(interruptedRollback.status, "error");
+const officialBlockedForRecovery = m9("orderq_m9_command_prepare", {
+  commandType:"RELEASE_DISPATCH", aggregateId:"M9-D1", expectedRevision:1,
+  idempotencyKey:"M9-PREPARE-DURING-RECOVERY", deviceId:"PC-B",
+});
+assert.equal(officialBlockedForRecovery.status, "error");
+assert.match(officialBlockedForRecovery.message, /MIGRATION_RECOVERY_COMPLETED_RETRY/);
+assert.equal(context.orderQM9ReadCommand(spreadsheet, "M9-PREPARE-DURING-RECOVERY"), null);
+assert.equal(context.orderQM9ReadEntity(spreadsheet, "ORDER", "M9-O-INTERRUPT-ROLLBACK"), null);
+assert.equal(context.orderQM9MetaNumber(spreadsheet, "syncSequence"), rollbackRecoveryCursor);
+assert.equal(m9("orderq_m9_pull", { afterSequence:rollbackRecoveryCursor, limit:50 }).status, "success");
+
+const beforeLockTimeout = m9SpreadsheetDigest();
+spreadsheet.failScriptLockOnce = true;
+const migrationLockTimeout = m9("orderq_m9_migrate", {
+  idempotencyKey:"M9-MIGRATE-LOCK-TIMEOUT", deviceId:"PC-B",
+  entities:[{ entityType:"ORDER", entityId:"M9-O-LOCK-TIMEOUT", revision:1, payload:{ orderId:"M9-O-LOCK-TIMEOUT", revision:1, localOnly:true } }],
+});
+assert.equal(migrationLockTimeout.status, "error");
+assert.match(migrationLockTimeout.message, /MOCK_SCRIPT_LOCK_TIMEOUT/);
+assert.equal(m9SpreadsheetDigest(), beforeLockTimeout);
+
+migrationTxnSheet.appendRow([
+  "OQM9CMD-NON-MIGRATION-PREPARED", "M9-OFFICIAL-TXN-PREPARED", "PREPARED",
+  JSON.stringify({ entities:{} }), JSON.stringify([]), "", "2026-08-16T00:00:00.000Z",
+]);
+assert.equal(
+  context.orderQM9ReadMigrationTransactions(spreadsheet, ["PREPARED"]).some(row => row.txnId === "OQM9CMD-NON-MIGRATION-PREPARED"),
+  false,
+);
+assert.equal(m9("orderq_m9_pull", { afterSequence:rollbackRecoveryCursor, limit:50 }).status, "success");
 
 const leaseMigration = m9("orderq_m9_migrate", {
   idempotencyKey:"M9-MIGRATE-LEASE", deviceId:"PC-A",

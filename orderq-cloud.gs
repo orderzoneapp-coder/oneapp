@@ -593,6 +593,7 @@ function orderQOrderHead(ss, payload) {
 /* ORDER Q M9 central-authority command boundary. Apps Script lock is acquired by code.gs. */
 const ORDERQ_M9_SCHEMA = 'ONEAPP_ORDERQ_CENTRAL_V1';
 const ORDERQ_M9_LEASE_DURATION_MS = 5 * 60 * 1000;
+const ORDERQ_M9_MIGRATION_TXN_SCHEMA = 'ORDERQ_M9_MIGRATION_TXN_V2';
 const ORDERQ_M9_MIGRATION_TYPES = Object.freeze([
   'ORDER', 'ORDER_ITEM', 'PRODUCT', 'WAREHOUSE', 'INVENTORY_SNAPSHOT', 'INVENTORY_LINE',
   'DISPATCH_DECISION', 'DISPATCH_LINE', 'DISPATCH_STOCK_ALLOCATION', 'PURCHASE_DOCUMENT', 'PURCHASE_LINE'
@@ -619,6 +620,45 @@ function orderQM9StableJson(value) {
   return JSON.stringify(orderQM9Stable(value));
 }
 
+function orderQM9Digest(value) {
+  return sha256Hex(orderQM9StableJson(value));
+}
+
+function orderQM9ParseJson(value, errorCode) {
+  try { return JSON.parse(orderQM9Text(value) || '{}'); }
+  catch (error) { throw new Error(errorCode); }
+}
+
+function orderQM9ReadRows(sheet, columnCount) {
+  if (sheet.getLastRow() < 2) return [];
+  return sheet.getRange(2, 1, sheet.getLastRow() - 1, columnCount).getValues();
+}
+
+function orderQM9AppendRows(sheet, rows) {
+  if (!rows.length) return;
+  sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
+}
+
+function orderQM9DeleteRowsByColumn(sheet, column, keysSource) {
+  const keys = new Set((keysSource || []).map(orderQM9Text).filter(Boolean));
+  if (!keys.size || sheet.getLastRow() < 2) return 0;
+  const rows = sheet.getRange(2, column, sheet.getLastRow() - 1, 1).getValues();
+  const targets = rows.map((row, index) => keys.has(orderQM9Text(row[0])) ? index + 2 : 0).filter(Boolean);
+  if (!targets.length) return 0;
+  const groups = [];
+  targets.forEach(row => {
+    const last = groups[groups.length - 1];
+    if (last && last.start + last.count === row) last.count += 1;
+    else groups.push({ start: row, count: 1 });
+  });
+  groups.reverse().forEach(group => sheet.deleteRows(group.start, group.count));
+  return targets.length;
+}
+
+function orderQM9DeleteRowsByFirstColumn(sheet, keysSource) {
+  return orderQM9DeleteRowsByColumn(sheet, 1, keysSource);
+}
+
 function orderQM9RequireSchema(payload) {
   if (orderQM9Text(payload && payload.schemaVersion) !== ORDERQ_M9_SCHEMA) throw new Error('ORDERQ_CENTRAL_SCHEMA_INVALID');
 }
@@ -643,6 +683,72 @@ function orderQM9WriteEntity(ss, row) {
     orderQM9EntityKey(entityType, entityId), entityType, entityId, revision, status, timestamp, JSON.stringify(stored)
   ]);
   return stored;
+}
+
+function orderQM9StoredEntity(row, timestamp) {
+  const payload = row.payload || {};
+  const entityType = orderQM9Text(row.entityType).toUpperCase();
+  const entityId = orderQM9Text(row.entityId);
+  const revision = Number(row.revision || payload.revision || payload.dispatchRevision || 0);
+  const status = orderQM9Text(payload.status || payload.erpPostingStatus).toUpperCase();
+  const stored = { entityType, entityId, revision, status, payload };
+  return {
+    entityKey: orderQM9EntityKey(entityType, entityId),
+    stored,
+    values: [orderQM9EntityKey(entityType, entityId), entityType, entityId, revision, status, timestamp, JSON.stringify(stored)]
+  };
+}
+
+function orderQM9ReadEntityIndex(ss) {
+  const sheet = orderQEnsureSheet(ss, 'M9_ENTITY');
+  const rows = orderQM9ReadRows(sheet, ORDERQ_HEADERS.M9_ENTITY.length);
+  const index = new Map();
+  rows.forEach((values, offset) => {
+    const entityKey = orderQM9Text(values[0]);
+    if (!entityKey) return;
+    index.set(entityKey, {
+      rowNumber: offset + 2,
+      values,
+      stored: orderQM9ParseJson(values[6], `ORDERQ_CENTRAL_ENTITY_PAYLOAD_INVALID:${entityKey}`)
+    });
+  });
+  return { sheet, rows, index };
+}
+
+function orderQM9WriteMigrationTransaction(ss, transaction) {
+  const timestamp = new Date().toISOString();
+  const row = [
+    transaction.txnId,
+    transaction.idempotencyKey,
+    transaction.status,
+    JSON.stringify(transaction.previous || {}),
+    JSON.stringify(transaction.next || {}),
+    orderQM9Text(transaction.error),
+    timestamp
+  ];
+  orderQWriteRow(orderQEnsureSheet(ss, 'M9_TXN_LOG'), transaction.txnId, row);
+  return { ...transaction, updatedAt: timestamp };
+}
+
+function orderQM9ReadMigrationTransactions(ss, statusesSource) {
+  const statuses = statusesSource ? new Set(statusesSource.map(value => orderQM9Text(value).toUpperCase())) : null;
+  const sheet = orderQEnsureSheet(ss, 'M9_TXN_LOG');
+  return orderQM9ReadRows(sheet, ORDERQ_HEADERS.M9_TXN_LOG.length).map((values, offset) => {
+    const previous = orderQM9ParseJson(values[3], `ORDERQ_CENTRAL_TXN_PREVIOUS_INVALID:${values[0]}`);
+    const next = orderQM9ParseJson(values[4], `ORDERQ_CENTRAL_TXN_NEXT_INVALID:${values[0]}`);
+    return {
+      rowNumber: offset + 2,
+      txnId: orderQM9Text(values[0]),
+      idempotencyKey: orderQM9Text(values[1]),
+      status: orderQM9Text(values[2]).toUpperCase(),
+      previous,
+      next,
+      migrationTransaction: previous.schemaVersion === ORDERQ_M9_MIGRATION_TXN_SCHEMA
+        || next.schemaVersion === ORDERQ_M9_MIGRATION_TXN_SCHEMA,
+      error: orderQM9Text(values[5]),
+      updatedAt: orderQM9Text(values[6])
+    };
+  }).filter(row => row.migrationTransaction && (!statuses || statuses.has(row.status)));
 }
 
 function orderQM9ReadCommand(ss, idempotencyKey) {
@@ -679,6 +785,136 @@ function orderQM9AppendChange(ss, deviceId, commandId, row) {
     Number(row.revision || 0), JSON.stringify(row.payload), timestamp
   ]);
   return sequence;
+}
+
+function orderQM9EntityDigest(rowsSource) {
+  const rows = (rowsSource || []).map(row => ({
+    entityKey: orderQM9EntityKey(row.entityType, row.entityId),
+    entityType: orderQM9Text(row.entityType).toUpperCase(),
+    entityId: orderQM9Text(row.entityId),
+    revision: Number(row.revision || 0),
+    status: orderQM9Text(row.status).toUpperCase(),
+    payload: row.payload || {}
+  })).sort((a, b) => a.entityKey.localeCompare(b.entityKey));
+  return orderQM9Digest(rows);
+}
+
+function orderQM9ChangeDigest(rowsSource) {
+  const rows = (rowsSource || []).map(row => ({
+    sequence: Number(row.sequence || 0),
+    deviceId: orderQM9Text(row.deviceId),
+    commandId: orderQM9Text(row.commandId),
+    entityType: orderQM9Text(row.entityType).toUpperCase(),
+    entityId: orderQM9Text(row.entityId),
+    revision: Number(row.revision || 0),
+    payload: row.payload || {}
+  })).sort((a, b) => a.sequence - b.sequence);
+  return orderQM9Digest(rows);
+}
+
+function orderQM9ReadChanges(ss) {
+  const sheet = orderQEnsureSheet(ss, 'M9_CHANGE');
+  const rows = orderQM9ReadRows(sheet, ORDERQ_HEADERS.M9_CHANGE.length).map((values, offset) => ({
+    rowNumber: offset + 2,
+    sequence: Number(values[0] || 0),
+    deviceId: orderQM9Text(values[1]),
+    commandId: orderQM9Text(values[2]),
+    entityType: orderQM9Text(values[3]).toUpperCase(),
+    entityId: orderQM9Text(values[4]),
+    revision: Number(values[5] || 0),
+    payload: orderQM9ParseJson(values[6], `ORDERQ_CENTRAL_CHANGE_PAYLOAD_INVALID:${values[0]}`),
+    appliedAt: orderQM9Text(values[7])
+  }));
+  return { sheet, rows };
+}
+
+function orderQM9VerifyMigrationData(ss, idempotencyKey, summary) {
+  if (!summary || summary.schemaVersion !== ORDERQ_M9_MIGRATION_TXN_SCHEMA) return { complete: false, changes: [] };
+  const targetKeys = Array.isArray(summary.targetEntityKeys) ? summary.targetEntityKeys : [];
+  const entityIndex = orderQM9ReadEntityIndex(ss).index;
+  const targetRows = targetKeys.map(key => entityIndex.get(key) && entityIndex.get(key).stored).filter(Boolean);
+  if (targetRows.length !== Number(summary.targetEntityCount || 0)) return { complete: false, changes: [] };
+  if (orderQM9EntityDigest(targetRows) !== summary.targetEntityDigest) return { complete: false, changes: [] };
+
+  const allChanges = orderQM9ReadChanges(ss).rows;
+  const changes = allChanges.filter(row => row.commandId === idempotencyKey);
+  if (changes.length !== Number(summary.changeCount || 0)) return { complete: false, changes };
+  if (orderQM9ChangeDigest(changes) !== summary.changeDigest) return { complete: false, changes };
+  if (Number(orderQM9MetaNumber(ss, 'syncSequence')) < Number(summary.endCursor || 0)) return { complete: false, changes };
+
+  return { complete: true, changes };
+}
+
+function orderQM9VerifyMigrationComplete(ss, idempotencyKey, summary) {
+  const data = orderQM9VerifyMigrationData(ss, idempotencyKey, summary);
+  if (!data.complete) return data;
+  const command = orderQM9ReadCommand(ss, idempotencyKey);
+  const result = command && command.result || {};
+  const commandMatches = command
+    && command.commandType === 'MIGRATION'
+    && command.status === 'COMMITTED'
+    && command.fingerprint === summary.fingerprint
+    && result.transactionId === summary.transactionId
+    && Number(result.targetEntityCount || 0) === Number(summary.targetEntityCount || 0)
+    && result.targetEntityDigest === summary.targetEntityDigest
+    && Number(result.changeCount || 0) === Number(summary.changeCount || 0)
+    && result.changeDigest === summary.changeDigest
+    && Number(result.endCursor || 0) === Number(summary.endCursor || 0);
+  return { complete: Boolean(commandMatches), changes: data.changes };
+}
+
+function orderQM9RollbackMigration(ss, transaction, options) {
+  const previous = transaction.previous || {};
+  const summary = transaction.next || {};
+  if (previous.schemaVersion !== ORDERQ_M9_MIGRATION_TXN_SCHEMA || summary.schemaVersion !== ORDERQ_M9_MIGRATION_TXN_SCHEMA) {
+    throw new Error(`ORDERQ_CENTRAL_MIGRATION_RECOVERY_SCHEMA_INVALID:${transaction.txnId}`);
+  }
+  orderQM9DeleteRowsByFirstColumn(orderQEnsureSheet(ss, 'M9_ENTITY'), previous.pendingEntityKeys || []);
+  if (orderQM9Text(options && options.failureAt).toUpperCase() === 'ENTITIES_RESTORED') {
+    throw new Error('ORDERQ_CENTRAL_MIGRATION_ROLLBACK_INTERRUPTED:ENTITIES_RESTORED');
+  }
+  orderQM9DeleteRowsByColumn(orderQEnsureSheet(ss, 'M9_CHANGE'), 3, [transaction.idempotencyKey]);
+  orderQM9SetMetaNumber(ss, 'syncSequence', Number(previous.previousSyncSequence || 0));
+  orderQM9DeleteRowsByFirstColumn(orderQEnsureSheet(ss, 'M9_COMMAND'), [transaction.idempotencyKey]);
+  if (orderQM9Text(options && options.failureAt).toUpperCase() === 'STATE_RESTORED') {
+    throw new Error('ORDERQ_CENTRAL_MIGRATION_ROLLBACK_INTERRUPTED:STATE_RESTORED');
+  }
+  orderQM9WriteMigrationTransaction(ss, {
+    ...transaction,
+    status: 'ROLLED_BACK',
+    error: orderQM9Text(options && options.error || transaction.error)
+  });
+  return 'ROLLED_BACK';
+}
+
+function orderQM9RecoverIncompleteMigrations(ss) {
+  const incomplete = orderQM9ReadMigrationTransactions(ss, ['PREPARED', 'RECOVERY_REQUIRED']);
+  const outcomes = [];
+  incomplete.forEach(transaction => {
+    try {
+      const verified = orderQM9VerifyMigrationComplete(ss, transaction.idempotencyKey, transaction.next);
+      if (verified.complete) {
+        orderQM9WriteMigrationTransaction(ss, { ...transaction, status: 'COMMITTED', error: '' });
+        outcomes.push({ txnId: transaction.txnId, status: 'COMMITTED' });
+      } else {
+        orderQM9RollbackMigration(ss, transaction, { error: transaction.error || 'RECOVERED_INCOMPLETE_MIGRATION' });
+        outcomes.push({ txnId: transaction.txnId, status: 'ROLLED_BACK' });
+      }
+    } catch (error) {
+      try {
+        orderQM9WriteMigrationTransaction(ss, { ...transaction, status: 'RECOVERY_REQUIRED', error: String(error.message || error) });
+      } catch (ignored) {}
+      throw error;
+    }
+  });
+  return outcomes;
+}
+
+function orderQM9EnforceTransactionBoundary(ss) {
+  const incomplete = orderQM9ReadMigrationTransactions(ss, ['PREPARED', 'RECOVERY_REQUIRED']);
+  if (!incomplete.length) return;
+  const outcomes = orderQM9RecoverIncompleteMigrations(ss);
+  throw new Error(`ORDERQ_CENTRAL_MIGRATION_RECOVERY_COMPLETED_RETRY:${outcomes.map(row => `${row.txnId}:${row.status}`).join(',')}`);
 }
 
 function orderQM9CommandFingerprint(payload) {
@@ -747,22 +983,19 @@ function orderQM9InventoryResourceFingerprint(ss) {
 function orderQM9Migrate(ss, payload) {
   orderQM9RequireSchema(payload);
   orderQEnsureAllSheets(ss);
+  orderQM9EnforceTransactionBoundary(ss);
   const idempotencyKey = orderQM9Text(payload.idempotencyKey);
   const entities = Array.isArray(payload.entities) ? payload.entities : [];
   if (!idempotencyKey) throw new Error('ORDERQ_CENTRAL_MIGRATION_KEY_REQUIRED');
-  const normalized = entities.map(row => ({
-    entityType: orderQM9Text(row.entityType).toUpperCase(), entityId: orderQM9Text(row.entityId),
-    revision: Number(row.revision || 0), payload: row.payload
-  })).sort((a, b) => orderQM9EntityKey(a.entityType, a.entityId).localeCompare(orderQM9EntityKey(b.entityType, b.entityId)));
-  const fingerprint = orderQM9StableJson(normalized.map(row => ({ entityType: row.entityType, entityId: row.entityId, payload: row.payload })));
-  const prior = orderQM9ReadCommand(ss, idempotencyKey);
-  if (prior) {
-    if (prior.fingerprint !== fingerprint) throw new Error(`ORDERQ_CENTRAL_MIGRATION_IDEMPOTENCY_CONFLICT:${idempotencyKey}`);
-    return { duplicate: true, changes: prior.result && prior.result.changes || [], cursor: orderQM9MetaNumber(ss, 'syncSequence') };
-  }
-  const changes = [];
-  const pending = new Map();
-  normalized.forEach(row => {
+  const timestamp = new Date().toISOString();
+  const normalizedByKey = new Map();
+  entities.forEach(input => {
+    const row = {
+      entityType: orderQM9Text(input.entityType).toUpperCase(),
+      entityId: orderQM9Text(input.entityId),
+      revision: Number(input.revision || 0),
+      payload: input.payload && JSON.parse(JSON.stringify(input.payload))
+    };
     if (ORDERQ_M9_MIGRATION_TYPES.indexOf(row.entityType) < 0 || !row.entityId || !row.payload) {
       throw new Error(`ORDERQ_CENTRAL_MIGRATION_ENTITY_INVALID:${row.entityType}:${row.entityId}`);
     }
@@ -775,62 +1008,127 @@ function orderQM9Migrate(ss, payload) {
     if (row.payload.localOnly === false || row.payload.centralRevision || row.payload.ledgerSequence) {
       throw new Error(`ORDERQ_CENTRAL_MIGRATION_EVIDENCE_INVALID:${row.entityType}:${row.entityId}`);
     }
-    row.payload = JSON.parse(JSON.stringify(row.payload));
     row.payload.localOnly = false;
     row.payload.centralRevision = row.revision;
-    const entityKey = orderQM9EntityKey(row.entityType, row.entityId);
-    const pendingRow = pending.get(entityKey);
-    if (pendingRow) {
-      if (orderQM9StableJson(pendingRow.payload) !== orderQM9StableJson(row.payload)) {
-        throw new Error(`ORDERQ_CENTRAL_MIGRATION_CONFLICT:${row.entityType}:${row.entityId}`);
-      }
-      return;
-    }
-    const existing = orderQM9ReadEntity(ss, row.entityType, row.entityId);
-    if (existing && orderQM9StableJson(existing.payload) !== orderQM9StableJson(row.payload)) {
+    const stored = orderQM9StoredEntity(row, timestamp);
+    const existingInput = normalizedByKey.get(stored.entityKey);
+    if (existingInput && orderQM9StableJson(existingInput.stored) !== orderQM9StableJson(stored.stored)) {
       throw new Error(`ORDERQ_CENTRAL_MIGRATION_CONFLICT:${row.entityType}:${row.entityId}`);
     }
-    if (!existing) pending.set(entityKey, row);
+    normalizedByKey.set(stored.entityKey, stored);
   });
-  const previous = [...pending.values()].map(row => ({
-    entityType: row.entityType, entityId: row.entityId, value: orderQM9ReadEntity(ss, row.entityType, row.entityId)
-  }));
+  const normalized = [...normalizedByKey.values()].sort((a, b) => a.entityKey.localeCompare(b.entityKey));
+  const fingerprint = orderQM9Digest(normalized.map(row => ({
+    entityType: row.stored.entityType,
+    entityId: row.stored.entityId,
+    revision: row.stored.revision,
+    payload: row.stored.payload
+  })));
+  const prior = orderQM9ReadCommand(ss, idempotencyKey);
+  if (prior) {
+    if (prior.fingerprint !== fingerprint) throw new Error(`ORDERQ_CENTRAL_MIGRATION_IDEMPOTENCY_CONFLICT:${idempotencyKey}`);
+    const transactionId = prior.result && prior.result.transactionId;
+    const transaction = orderQM9ReadMigrationTransactions(ss).find(row => row.txnId === transactionId);
+    if (!transaction || transaction.status !== 'COMMITTED') {
+      throw new Error(`ORDERQ_CENTRAL_MIGRATION_IDEMPOTENCY_TXN_INVALID:${idempotencyKey}`);
+    }
+    const verified = orderQM9VerifyMigrationComplete(ss, idempotencyKey, transaction.next);
+    if (!verified.complete) throw new Error(`ORDERQ_CENTRAL_MIGRATION_IDEMPOTENCY_STATE_MISMATCH:${idempotencyKey}`);
+    return { duplicate: true, changes: verified.changes, cursor: orderQM9MetaNumber(ss, 'syncSequence') };
+  }
+  const entityState = orderQM9ReadEntityIndex(ss);
+  const pending = [];
+  normalized.forEach(row => {
+    const existing = entityState.index.get(row.entityKey);
+    if (existing && orderQM9StableJson(existing.stored) !== orderQM9StableJson(row.stored)) {
+      throw new Error(`ORDERQ_CENTRAL_MIGRATION_CONFLICT:${row.stored.entityType}:${row.stored.entityId}`);
+    }
+    if (!existing) pending.push(row);
+  });
+
   const previousSync = orderQM9MetaNumber(ss, 'syncSequence');
   const changeSheet = orderQEnsureSheet(ss, 'M9_CHANGE');
   const previousChangeLastRow = changeSheet.getLastRow();
-  const commandSheet = orderQEnsureSheet(ss, 'M9_COMMAND');
   const txnId = `OQM9MIG-${Utilities.getUuid()}`;
-  const txnSheet = orderQEnsureSheet(ss, 'M9_TXN_LOG');
-  orderQWriteRow(txnSheet, txnId, [txnId, idempotencyKey, 'PREPARED', JSON.stringify(previous), JSON.stringify([...pending.values()]), '', new Date().toISOString()]);
+  const changes = pending.map((row, index) => ({
+    sequence: previousSync + index + 1,
+    deviceId: orderQM9Text(payload.deviceId),
+    commandId: idempotencyKey,
+    entityType: row.stored.entityType,
+    entityId: row.stored.entityId,
+    revision: row.stored.revision,
+    payload: row.stored.payload,
+    appliedAt: timestamp
+  }));
+  const endCursor = previousSync + changes.length;
+  const summary = {
+    schemaVersion: ORDERQ_M9_MIGRATION_TXN_SCHEMA,
+    transactionId: txnId,
+    fingerprint,
+    targetEntityCount: normalized.length,
+    targetEntityKeys: normalized.map(row => row.entityKey),
+    targetEntityDigest: orderQM9EntityDigest(normalized.map(row => row.stored)),
+    changeCount: changes.length,
+    changeDigest: orderQM9ChangeDigest(changes),
+    startCursor: previousSync,
+    endCursor
+  };
+  const transaction = {
+    txnId,
+    idempotencyKey,
+    status: 'PREPARED',
+    previous: {
+      schemaVersion: ORDERQ_M9_MIGRATION_TXN_SCHEMA,
+      previousSyncSequence: previousSync,
+      previousChangeLastRow,
+      pendingEntityKeys: pending.map(row => row.entityKey)
+    },
+    next: summary,
+    error: ''
+  };
+  orderQM9WriteMigrationTransaction(ss, transaction);
   try {
-    [...pending.values()].forEach(row => changes.push(orderQM9WriteEntity(ss, row)));
+    orderQM9AppendRows(entityState.sheet, pending.map(row => row.values));
     if (orderQM9Text(payload.testFailureAt).toUpperCase() === 'ENTITIES_WRITTEN') {
       throw new Error('ORDERQ_CENTRAL_MIGRATION_FAILURE_INJECTED:ENTITIES_WRITTEN');
     }
-    changes.forEach(row => orderQM9AppendChange(ss, payload.deviceId, idempotencyKey, row));
+    orderQM9AppendRows(changeSheet, changes.map(row => [
+      row.sequence, row.deviceId, row.commandId, row.entityType, row.entityId,
+      row.revision, JSON.stringify(row.payload), row.appliedAt
+    ]));
+    orderQM9SetMetaNumber(ss, 'syncSequence', endCursor);
     if (orderQM9Text(payload.testFailureAt).toUpperCase() === 'CHANGES_WRITTEN') {
       throw new Error('ORDERQ_CENTRAL_MIGRATION_FAILURE_INJECTED:CHANGES_WRITTEN');
     }
+    if (!orderQM9VerifyMigrationData(ss, idempotencyKey, summary).complete) {
+      throw new Error(`ORDERQ_CENTRAL_MIGRATION_COMPLETENESS_FAILED:${idempotencyKey}`);
+    }
     orderQM9WriteCommand(ss, {
       idempotencyKey, commandType: 'MIGRATION', fingerprint, status: 'COMMITTED',
-      deviceId: orderQM9Text(payload.deviceId), result: { changes }
+      deviceId: orderQM9Text(payload.deviceId), result: {
+        transactionId: txnId,
+        targetEntityCount: summary.targetEntityCount,
+        targetEntityDigest: summary.targetEntityDigest,
+        changeCount: summary.changeCount,
+        changeDigest: summary.changeDigest,
+        startCursor: summary.startCursor,
+        endCursor: summary.endCursor
+      }
     });
     if (orderQM9Text(payload.testFailureAt).toUpperCase() === 'COMMAND_WRITTEN') {
       throw new Error('ORDERQ_CENTRAL_MIGRATION_FAILURE_INJECTED:COMMAND_WRITTEN');
     }
-    orderQWriteRow(txnSheet, txnId, [txnId, idempotencyKey, 'COMMITTED', JSON.stringify(previous), JSON.stringify(changes), '', new Date().toISOString()]);
-    return { duplicate: false, changes, cursor: orderQM9MetaNumber(ss, 'syncSequence') };
+    if (!orderQM9VerifyMigrationComplete(ss, idempotencyKey, summary).complete) {
+      throw new Error(`ORDERQ_CENTRAL_MIGRATION_COMMAND_COMPLETENESS_FAILED:${idempotencyKey}`);
+    }
+    orderQM9WriteMigrationTransaction(ss, { ...transaction, status: 'COMMITTED', error: '' });
+    return { duplicate: false, changes, cursor: endCursor };
   } catch (error) {
-    previous.forEach(entry => {
-      const key = orderQM9EntityKey(entry.entityType, entry.entityId);
-      const sheet = orderQEnsureSheet(ss, 'M9_ENTITY');
-      if (entry.value) orderQM9WriteEntity(ss, entry.value);
-      else orderQDeleteEntityRow(sheet, key);
+    if (orderQM9Text(payload.testRollbackFailureAt).toUpperCase() === 'BEFORE_ROLLBACK') throw error;
+    orderQM9RollbackMigration(ss, transaction, {
+      failureAt: payload.testRollbackFailureAt,
+      error: String(error.message || error)
     });
-    orderQM9SetMetaNumber(ss, 'syncSequence', previousSync);
-    while (changeSheet.getLastRow() > previousChangeLastRow) changeSheet.deleteRow(changeSheet.getLastRow());
-    orderQDeleteEntityRow(commandSheet, idempotencyKey);
-    orderQWriteRow(txnSheet, txnId, [txnId, idempotencyKey, 'ROLLED_BACK', JSON.stringify(previous), JSON.stringify(changes), String(error.message || error), new Date().toISOString()]);
     throw error;
   }
 }
@@ -859,6 +1157,7 @@ function orderQM9ExpireStaleLeases(ss, nowMillis) {
 function orderQM9Prepare(ss, payload) {
   orderQM9RequireSchema(payload);
   orderQEnsureAllSheets(ss);
+  orderQM9EnforceTransactionBoundary(ss);
   const preparedAtMillis = Date.now();
   orderQM9ExpireStaleLeases(ss, preparedAtMillis);
   const fingerprint = orderQM9CommandFingerprint(payload);
@@ -1243,6 +1542,7 @@ function orderQM9ValidateCommit(ss, command, mutations) {
 function orderQM9Commit(ss, payload) {
   orderQM9RequireSchema(payload);
   orderQEnsureAllSheets(ss);
+  orderQM9EnforceTransactionBoundary(ss);
   const idempotencyKey = orderQM9Text(payload.idempotencyKey);
   const command = orderQM9ReadCommand(ss, idempotencyKey);
   if (!command) throw new Error(`ORDERQ_CENTRAL_COMMAND_NOT_PREPARED:${idempotencyKey}`);
@@ -1352,6 +1652,8 @@ function orderQM9Commit(ss, payload) {
 
 function orderQM9Abort(ss, payload) {
   orderQM9RequireSchema(payload);
+  orderQEnsureAllSheets(ss);
+  orderQM9EnforceTransactionBoundary(ss);
   const command = orderQM9ReadCommand(ss, payload.idempotencyKey);
   if (!command || command.status === 'COMMITTED') return { aborted: false };
   if (command.leaseToken !== orderQM9Text(payload.leaseToken)) throw new Error('ORDERQ_CENTRAL_LEASE_INVALID');
@@ -1373,6 +1675,7 @@ function orderQM9Abort(ss, payload) {
 function orderQM9Pull(ss, payload) {
   orderQM9RequireSchema(payload);
   orderQEnsureAllSheets(ss);
+  orderQM9EnforceTransactionBoundary(ss);
   const after = Math.max(0, Number(payload.afterSequence || 0));
   const limit = Math.min(500, Math.max(1, Number(payload.limit || 500)));
   const sheet = orderQEnsureSheet(ss, 'M9_CHANGE');

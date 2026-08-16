@@ -85,6 +85,7 @@ export function createCentralAuthorityState(source = {}) {
     schema: CENTRAL_SCHEMA,
     entities: clone(source.entities || {}),
     commands: clone(source.commands || {}),
+    transactions: clone(source.transactions || {}),
     syncSequence: Math.max(0, Number(source.syncSequence || 0)),
     ledgerSequence: Math.max(0, Number(source.ledgerSequence || 0)),
     changes: clone(source.changes || [])
@@ -189,22 +190,87 @@ function appendChange(state, row, deviceId, commandId) {
   });
 }
 
+function migrationEntityDigest(rowsSource) {
+  return stableJson((rowsSource || []).map(row => ({
+    entityKey: entityKey(row.entityType, row.entityId),
+    entityType: text(row.entityType).toUpperCase(),
+    entityId: text(row.entityId),
+    revision: Number(row.revision || 0),
+    status: text(row.status).toUpperCase(),
+    payload: row.payload || {}
+  })).sort((left, right) => left.entityKey.localeCompare(right.entityKey)));
+}
+
+function migrationChangeDigest(rowsSource) {
+  return stableJson((rowsSource || []).map(row => ({
+    sequence: Number(row.sequence || 0),
+    deviceId: text(row.deviceId),
+    commandId: text(row.commandId),
+    entityType: text(row.entityType).toUpperCase(),
+    entityId: text(row.entityId),
+    revision: Number(row.revision || 0),
+    payload: row.payload || {}
+  })).sort((left, right) => left.sequence - right.sequence));
+}
+
+function centralMigrationComplete(state, transaction) {
+  const summary = transaction?.next || {};
+  const targetKeys = Array.isArray(summary.targetEntityKeys) ? summary.targetEntityKeys : [];
+  const rows = targetKeys.map(key => state.entities[key]).filter(Boolean);
+  if (rows.length !== Number(summary.targetEntityCount || 0)) return false;
+  if (migrationEntityDigest(rows) !== summary.targetEntityDigest) return false;
+  const changes = state.changes.filter(row => row.commandId === transaction.idempotencyKey);
+  if (changes.length !== Number(summary.changeCount || 0)) return false;
+  if (migrationChangeDigest(changes) !== summary.changeDigest) return false;
+  if (state.syncSequence < Number(summary.endCursor || 0)) return false;
+  const command = state.commands[transaction.idempotencyKey];
+  return Boolean(command
+    && command.status === 'COMMITTED'
+    && command.fingerprint === summary.fingerprint
+    && command.result?.transactionId === transaction.transactionId
+    && command.result?.targetEntityDigest === summary.targetEntityDigest
+    && command.result?.changeDigest === summary.changeDigest);
+}
+
+export function recoverPreparedCentralMigrations(stateSource) {
+  const state = stateSource;
+  const incomplete = Object.values(state?.transactions || {})
+    .filter(row => ['PREPARED', 'RECOVERY_REQUIRED'].includes(text(row.status).toUpperCase()));
+  const outcomes = [];
+  for (const transaction of incomplete) {
+    if (centralMigrationComplete(state, transaction)) {
+      transaction.status = 'COMMITTED';
+      transaction.error = '';
+      outcomes.push({ transactionId:transaction.transactionId, status:'COMMITTED' });
+      continue;
+    }
+    for (const key of transaction.previous?.pendingEntityKeys || []) delete state.entities[key];
+    state.changes = state.changes.filter(row => row.commandId !== transaction.idempotencyKey);
+    state.syncSequence = Number(transaction.previous?.previousSyncSequence || 0);
+    delete state.commands[transaction.idempotencyKey];
+    transaction.status = 'ROLLED_BACK';
+    transaction.error = transaction.error || 'RECOVERED_INCOMPLETE_MIGRATION';
+    outcomes.push({ transactionId:transaction.transactionId, status:'ROLLED_BACK' });
+  }
+  return outcomes;
+}
+
+function enforceCentralMigrationBoundary(state) {
+  const incomplete = Object.values(state?.transactions || {})
+    .filter(row => ['PREPARED', 'RECOVERY_REQUIRED'].includes(text(row.status).toUpperCase()));
+  if (!incomplete.length) return;
+  const outcomes = recoverPreparedCentralMigrations(state);
+  commandError('ORDERQ_CENTRAL_MIGRATION_RECOVERY_COMPLETED_RETRY', outcomes.map(row => `${row.transactionId}:${row.status}`).join(','));
+}
+
 export function migrateCentralDrafts(stateSource, source = {}, options = {}) {
   const state = stateSource;
   if (!state || state.schema !== CENTRAL_SCHEMA) commandError('ORDERQ_CENTRAL_STATE_INVALID');
+  enforceCentralMigrationBoundary(state);
   const idempotencyKey = text(source.idempotencyKey);
   if (!idempotencyKey) commandError('ORDERQ_CENTRAL_MIGRATION_KEY_REQUIRED');
   const entities = Array.isArray(source.entities) ? source.entities : [];
-  const fingerprint = stableJson(entities.map(row => ({
-    entityType: text(row.entityType).toUpperCase(), entityId: text(row.entityId), payload: row.payload
-  })).sort((left, right) => entityKey(left.entityType, left.entityId).localeCompare(entityKey(right.entityType, right.entityId))));
-  const prior = state.commands[idempotencyKey];
-  if (prior) {
-    if (prior.fingerprint !== fingerprint) commandError('ORDERQ_CENTRAL_MIGRATION_IDEMPOTENCY_CONFLICT', idempotencyKey);
-    return { duplicate: true, changes: clone(prior.result?.changes || []), cursor: state.syncSequence };
-  }
-  const working = createCentralAuthorityState(state);
-  const changes = [];
+  const normalizedByKey = new Map();
   for (const input of entities) {
     const type = text(input.entityType).toUpperCase();
     const id = text(input.entityId);
@@ -215,16 +281,45 @@ export function migrateCentralDrafts(stateSource, source = {}, options = {}) {
     if (payload.localOnly === false || payload.centralRevision || payload.ledgerSequence) {
       commandError('ORDERQ_CENTRAL_MIGRATION_EVIDENCE_INVALID', `${type}:${id}`);
     }
-    const key = entityKey(type, id);
     const row = rowFromEntity(type, id, payload, input.revision);
     row.payload.localOnly = false;
     row.payload.centralRevision = row.revision;
+    const key = entityKey(type, id);
+    const duplicate = normalizedByKey.get(key);
+    if (duplicate && stableJson(duplicate) !== stableJson(row)) commandError('ORDERQ_CENTRAL_MIGRATION_CONFLICT', `${type}:${id}`);
+    normalizedByKey.set(key, row);
+  }
+  const normalized = [...normalizedByKey.values()]
+    .sort((left, right) => entityKey(left.entityType, left.entityId).localeCompare(entityKey(right.entityType, right.entityId)));
+  const fingerprint = stableJson(normalized.map(row => ({
+    entityType:row.entityType, entityId:row.entityId, revision:row.revision, payload:row.payload
+  })));
+  const prior = state.commands[idempotencyKey];
+  if (prior) {
+    if (prior.fingerprint !== fingerprint) commandError('ORDERQ_CENTRAL_MIGRATION_IDEMPOTENCY_CONFLICT', idempotencyKey);
+    const transaction = state.transactions?.[prior.result?.transactionId];
+    if (!transaction || transaction.status !== 'COMMITTED' || !centralMigrationComplete(state, transaction)) {
+      commandError('ORDERQ_CENTRAL_MIGRATION_IDEMPOTENCY_STATE_MISMATCH', idempotencyKey);
+    }
+    return {
+      duplicate: true,
+      changes: clone(state.changes.filter(row => row.commandId === idempotencyKey)),
+      cursor: state.syncSequence
+    };
+  }
+  const working = createCentralAuthorityState(state);
+  const changes = [];
+  const pendingEntityKeys = [];
+  const previousSyncSequence = working.syncSequence;
+  for (const row of normalized) {
+    const key = entityKey(row.entityType, row.entityId);
     const existing = working.entities[key];
     if (existing && stableJson(existing.payload) !== stableJson(row.payload)) {
-      commandError('ORDERQ_CENTRAL_MIGRATION_CONFLICT', `${type}:${id}`);
+      commandError('ORDERQ_CENTRAL_MIGRATION_CONFLICT', `${row.entityType}:${row.entityId}`);
     }
     if (!existing) {
       working.entities[key] = row;
+      pendingEntityKeys.push(key);
       if (text(options.failureAt).toUpperCase() === 'ENTITIES_WRITTEN') {
         commandError('ORDERQ_CENTRAL_MIGRATION_FAILURE_INJECTED', 'ENTITIES_WRITTEN');
       }
@@ -235,9 +330,37 @@ export function migrateCentralDrafts(stateSource, source = {}, options = {}) {
       changes.push(clone(row));
     }
   }
-  working.commands[idempotencyKey] = { type: 'MIGRATION', fingerprint, status: 'COMMITTED', result: { changes: clone(changes) } };
+  const transactionId = text(source.transactionId) || `${idempotencyKey}:MIGRATION`;
+  const commandChanges = working.changes.filter(row => row.commandId === idempotencyKey);
+  const summary = {
+    transactionId,
+    fingerprint,
+    targetEntityCount: normalized.length,
+    targetEntityKeys: normalized.map(row => entityKey(row.entityType, row.entityId)),
+    targetEntityDigest: migrationEntityDigest(normalized),
+    changeCount: commandChanges.length,
+    changeDigest: migrationChangeDigest(commandChanges),
+    startCursor: previousSyncSequence,
+    endCursor: working.syncSequence
+  };
+  working.transactions[transactionId] = {
+    transactionId,
+    idempotencyKey,
+    status: 'PREPARED',
+    previous: { previousSyncSequence, pendingEntityKeys },
+    next: clone(summary),
+    error: ''
+  };
+  working.commands[idempotencyKey] = {
+    type: 'MIGRATION', commandType:'MIGRATION', fingerprint, status: 'COMMITTED',
+    result: clone(summary)
+  };
   if (text(options.failureAt).toUpperCase() === 'COMMAND_WRITTEN') {
     commandError('ORDERQ_CENTRAL_MIGRATION_FAILURE_INJECTED', 'COMMAND_WRITTEN');
+  }
+  working.transactions[transactionId].status = 'COMMITTED';
+  if (!centralMigrationComplete(working, working.transactions[transactionId])) {
+    commandError('ORDERQ_CENTRAL_MIGRATION_COMPLETENESS_FAILED', idempotencyKey);
   }
   Object.assign(state, working);
   return { duplicate: false, changes, cursor: state.syncSequence };
@@ -245,6 +368,7 @@ export function migrateCentralDrafts(stateSource, source = {}, options = {}) {
 
 export function prepareCentralCommand(state, source = {}) {
   if (!state || state.schema !== CENTRAL_SCHEMA) commandError('ORDERQ_CENTRAL_STATE_INVALID');
+  enforceCentralMigrationBoundary(state);
   const commandType = text(source.commandType).toUpperCase();
   const aggregateId = text(source.aggregateId);
   const idempotencyKey = text(source.idempotencyKey);
@@ -616,6 +740,7 @@ function validateCommandMutations(state, command, mutations) {
 
 export function commitCentralCommand(state, source = {}, options = {}) {
   if (!state || state.schema !== CENTRAL_SCHEMA) commandError('ORDERQ_CENTRAL_STATE_INVALID');
+  enforceCentralMigrationBoundary(state);
   const idempotencyKey = text(source.idempotencyKey);
   const command = state.commands[idempotencyKey];
   if (!command) commandError('ORDERQ_CENTRAL_COMMAND_NOT_PREPARED', idempotencyKey);
@@ -707,6 +832,7 @@ export function commitCentralCommand(state, source = {}, options = {}) {
 }
 
 export function abortCentralCommand(state, source = {}) {
+  enforceCentralMigrationBoundary(state);
   const command = state?.commands?.[text(source.idempotencyKey)];
   if (!command || command.status === 'COMMITTED') return false;
   if (command.leaseToken !== text(source.leaseToken)) commandError('ORDERQ_CENTRAL_LEASE_INVALID');
@@ -724,6 +850,7 @@ export function abortCentralCommand(state, source = {}) {
 }
 
 export function pullCentralChanges(state, afterSequence = 0, limit = 500) {
+  enforceCentralMigrationBoundary(state);
   const after = Math.max(0, Number(afterSequence || 0));
   const selected = (state?.changes || []).filter(row => Number(row.sequence || 0) > after).slice(0, limit);
   return {

@@ -9,7 +9,8 @@ import {
   createCentralAuthorityState,
   migrateCentralDrafts,
   prepareCentralCommand,
-  pullCentralChanges
+  pullCentralChanges,
+  recoverPreparedCentralMigrations
 } from '../orderq/central-authority.js';
 import {
   ERP_MATCH_STATUS,
@@ -64,6 +65,48 @@ for (const failureAt of ['ENTITIES_WRITTEN','CHANGES_WRITTEN','COMMAND_WRITTEN']
   });
   assert.equal(recovered.changes.length, 1);
 }
+
+const largeOpeningState = createCentralAuthorityState();
+const longEvidence = 'M'.repeat(1800);
+const largeOpeningEntities = [
+  ...Array.from({ length:20 }, (_, index) => ({
+    entityType:'PRODUCT', entityId:`G2-P${String(index + 1).padStart(2, '0')}`, revision:1,
+    payload:{ productId:`G2-P${String(index + 1).padStart(2, '0')}`, itemName:`상품-${index + 1}`, evidence:longEvidence, revision:1, localOnly:true }
+  })),
+  { entityType:'WAREHOUSE', entityId:'G2-W1', revision:1, payload:{ warehouseId:'G2-W1', status:'ACTIVE', revision:1, localOnly:true } },
+  { entityType:'INVENTORY_SNAPSHOT', entityId:'G2-IS1', revision:1, payload:{ inventorySnapshotId:'G2-IS1', basisDate:'2026-08-16', snapshotLastSequence:0, status:'ACTIVE', revision:1, localOnly:true } },
+  ...Array.from({ length:20 }, (_, index) => ({
+    entityType:'INVENTORY_LINE', entityId:`G2-IL${String(index + 1).padStart(2, '0')}`, revision:1,
+    payload:{ inventoryLineId:`G2-IL${String(index + 1).padStart(2, '0')}`, inventorySnapshotId:'G2-IS1', productId:`G2-P${String(index + 1).padStart(2, '0')}`, warehouseId:'G2-W1', inventoryQuantity:index - 2, evidence:longEvidence, status:'ACTIVE', revision:1, localOnly:true }
+  }))
+];
+assert.ok(JSON.stringify(largeOpeningEntities).length > 50000);
+const largeOpening = migrateCentralDrafts(largeOpeningState, {
+  idempotencyKey:'G2-OPENING-42', transactionId:'G2-TXN-42', deviceId:'PC-A', entities:largeOpeningEntities
+});
+assert.equal(largeOpening.changes.length, 42);
+assert.equal(Object.keys(largeOpeningState.entities).length, 42);
+assert.equal(largeOpeningState.transactions['G2-TXN-42'].status, 'COMMITTED');
+assert.equal(migrateCentralDrafts(largeOpeningState, {
+  idempotencyKey:'G2-OPENING-42', transactionId:'G2-TXN-42', deviceId:'PC-A', entities:largeOpeningEntities
+}).duplicate, true);
+
+const recoverCommitState = createCentralAuthorityState(largeOpeningState);
+recoverCommitState.transactions['G2-TXN-42'].status = 'PREPARED';
+assert.throws(() => pullCentralChanges(recoverCommitState), /MIGRATION_RECOVERY_COMPLETED_RETRY/);
+assert.equal(recoverCommitState.transactions['G2-TXN-42'].status, 'COMMITTED');
+assert.equal(pullCentralChanges(recoverCommitState).changes.length, 42);
+
+const recoverRollbackState = createCentralAuthorityState(largeOpeningState);
+recoverRollbackState.transactions['G2-TXN-42'].status = 'PREPARED';
+delete recoverRollbackState.entities[key('INVENTORY_LINE', 'G2-IL20')];
+assert.throws(() => pullCentralChanges(recoverRollbackState), /MIGRATION_RECOVERY_COMPLETED_RETRY/);
+assert.equal(recoverRollbackState.transactions['G2-TXN-42'].status, 'ROLLED_BACK');
+assert.equal(Object.keys(recoverRollbackState.entities).length, 0);
+assert.equal(recoverRollbackState.changes.length, 0);
+assert.equal(recoverRollbackState.syncSequence, 0);
+assert.equal(recoverRollbackState.commands['G2-OPENING-42'], undefined);
+assert.deepEqual(recoverPreparedCentralMigrations(recoverRollbackState), []);
 
 const leaseState = createCentralAuthorityState({ entities:{
   [key('DISPATCH_DECISION','D-LEASE')]:{ entityType:'DISPATCH_DECISION', entityId:'D-LEASE', revision:1, status:'DRAFT', payload:{ dispatchId:'D-LEASE', status:'DRAFT', revision:1 } }
