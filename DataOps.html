@@ -6479,7 +6479,9 @@ ${quantityBlockReason || '실제 오차수량을 확정할 수 없습니다.'}
                         기초: 0, 입고: 0, 출고: 0, 대체입고: 0, 대체출고: 0, 전산잔량: 0, 실사: null, 로스: 0,
                         매출액: 0, 매출원가: 0, 메모: '', 이슈: [], 출고내역: {}, _orig: { 기초: 0, 입고: 0, 출고: 0, 단가: price },
                         _sourceEvidence: [],
-                        isDummy: (!code || code === 'NO_CODE'), 수기확인완료: false, _fromClosingBase: (type === 'prev' && isClosingItem(item)), 기본: getBasicRawValue(item), _totalCostForAvg: qtyToApply * price, _latestDateNum: extractDateNum(date), _lotSortDate: getLotDateNum(date), _lotSourceRank: getLotSourceRank(type, item), _dateDisplayMemo: getDateDisplayMemo(item, type)
+                        // 신규 행도 아래 공통 누적 구간에서 수량·원가를 한 번 반영한다.
+                        // 여기서 먼저 원가를 넣으면 average 모드에서 최초 Lot 단가가 정확히 두 배가 된다.
+                        isDummy: (!code || code === 'NO_CODE'), 수기확인완료: false, _fromClosingBase: (type === 'prev' && isClosingItem(item)), 기본: getBasicRawValue(item), _totalCostForAvg: 0, _latestDateNum: extractDateNum(date), _lotSortDate: getLotDateNum(date), _lotSourceRank: getLotSourceRank(type, item), _dateDisplayMemo: getDateDisplayMemo(item, type)
                     };
                     if (code === 'NO_CODE')
                         pData[batchKey].이슈.push('🚨코드없음(수기확인)');
