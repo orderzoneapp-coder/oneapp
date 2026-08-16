@@ -13,7 +13,7 @@ import {
   restoreOrderQBackup,
   validateOrderQBackup
 } from './orderq-v7-repository.js?v=0.8.0';
-import { buildCurrentShadowReport } from './transition-repository.js?v=0.10.0';
+import { buildCurrentShadowReport } from './transition-repository.js?v=0.10.1';
 
 const ACTOR_STORAGE_KEY = 'oneapp.orderq.actor-name.v1';
 const elements = Object.fromEntries([
@@ -106,7 +106,10 @@ function renderShadow(result) {
   const recoveryWarning = Number(recoveryValidation.corruptionCount || 0) > 0
     ? ` · 손상 복구행 ${recoveryValidation.corruptionCount}건 제외 (${corruptionReasons.join(', ')})`
     : '';
-  elements.shadowSummary.textContent = `비교 ${report.summary.total}품목 · 일치 ${report.summary.matched} · 차이 ${report.summary.differences} · 기존 ${result.legacy.basisDate || '기준일 없음'} / 신규 ${result.orderq.basis.basisDate || '기준일 없음'}${recoveryWarning}`;
+  const dataOpsSummary = result.dataops?.available
+    ? ` · DataOps ${result.dataops.savedAt || '저장시각 없음'} / ${result.dataops.rowCount}행`
+    : ` · DataOps 근거 없음 (${result.dataops?.reasonCode || 'UNKNOWN'})`;
+  elements.shadowSummary.textContent = `비교 ${report.summary.total}품목 · 일치 ${report.summary.matched} · 차이 ${report.summary.differences} · 기존 ${result.legacy.basisDate || '기준일 없음'} / 신규 ${result.orderq.basis.basisDate || '기준일 없음'}${dataOpsSummary}${recoveryWarning}`;
   elements.shadowSummary.classList.toggle('has-recovery-warning', Boolean(recoveryWarning));
   elements.shadowRows.innerHTML = report.rows.length ? report.rows.map(row => `
     <tr class="${row.matched ? '' : 'has-difference'}">
@@ -118,9 +121,12 @@ function renderShadow(result) {
       <td>${axisCell(row.axes.orderRequestVsReservation)}</td>
       <td>${axisCell(row.axes.onHand)}</td>
       <td>${axisCell(row.axes.available)}</td>
+      <td>${axisCell(row.axes.orderOpsCurrentAvailable)}</td>
+      <td>${axisCell(row.axes.dataOpsCurrentOnHand)}</td>
+      <td>${axisCell(row.axes.adjustment)}<div class="evidence">수기치환 ${number(row.axes.manualSubstitution.legacy)} · 로스 ${number(row.axes.loss.legacy)}</div></td>
       <td>${row.reasonCodes.map(code => `<span class="reason-code ${code === 'MATCH' ? 'match' : ''}">${esc(code)}</span>`).join('')}
-        <div class="evidence">기존: ${esc(row.evidenceIds.legacy.join(', ') || '-')}<br>신규: ${esc(row.evidenceIds.orderq.join(', ') || '-')}</div></td>
-    </tr>`).join('') : '<tr><td colspan="9">비교할 상품이 없습니다.</td></tr>';
+        <div class="evidence">OrderOps: ${esc(row.evidenceIds.legacy.join(', ') || '-')}<br>DataOps: ${esc(row.evidenceIds.dataops.join(', ') || '-')}<br>ORDER Q: ${esc(row.evidenceIds.orderq.join(', ') || '-')}</div></td>
+    </tr>`).join('') : '<tr><td colspan="12">비교할 상품이 없습니다.</td></tr>';
 }
 
 elements.applyMode.addEventListener('click', () => {
