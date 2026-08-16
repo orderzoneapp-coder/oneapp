@@ -83,6 +83,9 @@ jobs:
       - name: Test ORDER Q M9 central authority and ERP boundary contracts
         run: node scripts/test-orderq-m9-central-sync-erp.mjs
 
+      - name: Test ORDER Q M10 shadow comparison and cutover contracts
+        run: node scripts/test-orderq-m10-operational-transition.mjs
+
       - name: Test DataOps zero and negative stock preservation
         run: node scripts/test-dataops-zero-stock-contract.mjs
 

@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="ko" translate="no">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="google" content="notranslate">
+  <title>ONEAPP ORDER Q · M10 전환관리</title>
+  <link rel="stylesheet" href="./orderq.css?v=0.8.0">
+  <link rel="stylesheet" href="./transition.css?v=0.10.0">
+  <script src="../orderFulfillmentEngine.js"></script>
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <div class="brand"><strong>ONEAPP</strong><span class="badge">M10</span><span>ORDER Q 병행운영·전환관리</span></div>
+      <div class="top-actions">
+        <a class="btn dark" href="../orderops/list.html">기존 OrderOps 즉시복귀</a>
+        <a class="btn dark" href="./index.html">ORDER Q</a>
+      </div>
+    </header>
+    <main class="panel transition-main">
+      <p class="notice">전환 모드는 이 브라우저 프로필과 중앙 서버가 모두 쓰기를 허용해야 효력이 있습니다. 복귀는 확정자료를 삭제하지 않습니다.</p>
+      <div id="message" class="message page-message"></div>
+
+      <section class="transition-grid">
+        <article class="transition-card">
+          <h2>1. 쓰기 경계</h2>
+          <div class="mode-status"><span>로컬</span><b id="localMode">-</b><span>중앙</span><b id="centralMode">-</b></div>
+          <label>이 프로필 모드
+            <select class="control" id="modeSelect">
+              <option value="LEGACY_PRIMARY">LEGACY_PRIMARY · 기존 화면</option>
+              <option value="SHADOW">SHADOW · 비교만</option>
+              <option value="PILOT_WRITE">PILOT_WRITE · 제한 쓰기</option>
+              <option value="VNEXT_PRIMARY">VNEXT_PRIMARY · 신규 기본</option>
+            </select>
+          </label>
+          <label>변경 사유코드<input class="control" id="reasonCode" value="M10_ADMIN_CHANGE"></label>
+          <label>메모<input class="control" id="reasonNote" placeholder="필수 판단 근거"></label>
+          <div class="card-actions">
+            <button class="btn primary" id="applyMode" type="button">모드 적용</button>
+            <button class="btn danger" id="rollbackMode" type="button">즉시복귀</button>
+            <button class="btn" id="pingCentral" type="button">중앙 확인</button>
+          </div>
+          <ol id="modeHistory" class="compact-list"></ol>
+        </article>
+
+        <article class="transition-card">
+          <h2>2. 전체 Store 백업·복원</h2>
+          <p>현재 ORDER Q IndexedDB 전체 Store를 한 파일로 보관하고, 구조를 검증한 파일만 원자적으로 복원합니다.</p>
+          <div class="card-actions">
+            <button class="btn primary" id="downloadBackup" type="button">전체 백업</button>
+            <label class="btn" for="backupFile">백업 검증</label>
+            <input id="backupFile" type="file" accept="application/json,.json" hidden>
+            <button class="btn danger" id="restoreBackup" type="button" disabled>격리 프로필 복원</button>
+          </div>
+          <pre id="backupStatus" class="compact-output">선택된 백업 없음</pre>
+        </article>
+      </section>
+
+      <section class="transition-card shadow-card">
+        <div class="section-heading"><div><h2>3. Shadow 차이</h2><p>주문요청과 실제판매를 분리하여 기준재고·구매·판매·예약을 기준시점별로 비교합니다.</p></div><button class="btn primary" id="runShadow" type="button">Shadow 비교</button></div>
+        <div id="shadowSummary" class="shadow-summary">비교 전</div>
+        <div class="table-wrap"><table class="shadow-table"><thead><tr>
+          <th>상품</th><th>기준일</th><th>기준재고</th><th>구매</th><th>실제판매</th><th>요청/예약</th><th>현재고</th><th>가용</th><th>원인·근거</th>
+        </tr></thead><tbody id="shadowRows"><tr><td colspan="9">Shadow 비교를 실행하세요.</td></tr></tbody></table></div>
+      </section>
+    </main>
+  </div>
+  <script type="module" src="./transition-ui.js?v=0.10.0"></script>
+</body>
+</html>

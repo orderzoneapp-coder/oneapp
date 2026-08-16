@@ -167,7 +167,10 @@ class MockSpreadsheet {
 }
 
 const spreadsheet = new MockSpreadsheet();
-const properties = new Map([["ONEAPP_SHIPPING_PLAN_ACCESS_TOKEN", TOKEN]]);
+const properties = new Map([
+  ["ONEAPP_SHIPPING_PLAN_ACCESS_TOKEN", TOKEN],
+  ["ONEAPP_ORDERQ_CUTOVER_MODE", "PILOT_WRITE"]
+]);
 let uuidCounter = 0;
 const context = vm.createContext({
   console,
@@ -991,5 +994,52 @@ assert.equal(context.orderQM9ReadAllEntities(spreadsheet).filter(row => row.enti
 const m9Pulled = m9("orderq_m9_pull", { afterSequence:m9BeforeFailureCursor, limit:50 });
 assert.equal(m9Pulled.status, "success");
 assert.ok(m9Pulled.data.changes.some(row => row.entityId === "M9-IM1"));
+
+// M10 cutover is a second, server-owned key. Read/Pull and already committed
+// retries remain available, but fresh migration/prepare/commit stop in SHADOW.
+properties.set("ONEAPP_ORDERQ_CUTOVER_MODE", "SHADOW");
+const shadowPing = m9("orderq_m9_ping", {});
+assert.equal(shadowPing.status, "success");
+assert.equal(shadowPing.data.cutoverMode, "SHADOW");
+assert.equal(m9("orderq_m9_pull", { afterSequence:0, limit:1 }).status, "success");
+const shadowDigest = m9SpreadsheetDigest();
+const shadowMigration = m9("orderq_m9_migrate", {
+  idempotencyKey:"M10-SHADOW-MIGRATION", deviceId:"PC-SHADOW",
+  entities:[{ entityType:"PRODUCT", entityId:"M10-SHADOW-P", revision:1, payload:{ productId:"M10-SHADOW-P", localOnly:true } }],
+});
+assert.equal(shadowMigration.status, "error");
+assert.match(shadowMigration.message, /ORDERQ_CUTOVER_CENTRAL_WRITE_BLOCKED:SHADOW:MIGRATION/);
+assert.equal(m9SpreadsheetDigest(), shadowDigest);
+const shadowPrepare = m9("orderq_m9_command_prepare", {
+  commandType:"ADJUST_DISPATCH", aggregateId:"M9-D1", expectedRevision:4,
+  idempotencyKey:"M10-SHADOW-PREPARE", deviceId:"PC-SHADOW",
+});
+assert.equal(shadowPrepare.status, "error");
+assert.match(shadowPrepare.message, /ORDERQ_CUTOVER_CENTRAL_WRITE_BLOCKED:SHADOW:ADJUST_DISPATCH/);
+assert.equal(m9SpreadsheetDigest(), shadowDigest);
+const committedRetryInShadow = m9("orderq_m9_command_prepare", {
+  commandType:"CONFIRM_DISPATCH", aggregateId:"M9-DC", expectedRevision:3,
+  idempotencyKey:"M9-COMPLETE-CONFIRM", deviceId:"PC-A",
+});
+assert.equal(committedRetryInShadow.status, "success");
+assert.equal(committedRetryInShadow.data.committed, true);
+
+properties.set("ONEAPP_ORDERQ_CUTOVER_MODE", "PILOT_WRITE");
+const rollbackPrepare = m9("orderq_m9_command_prepare", {
+  commandType:"ADJUST_DISPATCH", aggregateId:"M9-D1", expectedRevision:4,
+  idempotencyKey:"M10-CENTRAL-ROLLBACK", deviceId:"PC-A",
+});
+assert.equal(rollbackPrepare.status, "success");
+properties.set("ONEAPP_ORDERQ_CUTOVER_MODE", "LEGACY_PRIMARY");
+const blockedCommit = m9("orderq_m9_command_commit", {
+  idempotencyKey:"M10-CENTRAL-ROLLBACK", leaseToken:rollbackPrepare.data.leaseToken,
+  fingerprint:rollbackPrepare.data.fingerprint, mutations:[],
+});
+assert.equal(blockedCommit.status, "error");
+assert.match(blockedCommit.message, /ORDERQ_CUTOVER_CENTRAL_WRITE_BLOCKED:LEGACY_PRIMARY:ADJUST_DISPATCH/);
+assert.equal(m9("orderq_m9_command_abort", {
+  idempotencyKey:"M10-CENTRAL-ROLLBACK", leaseToken:rollbackPrepare.data.leaseToken, reason:"M10_ROLLBACK",
+}).data.aborted, true);
+properties.set("ONEAPP_ORDERQ_CUTOVER_MODE", "PILOT_WRITE");
 
 console.log(`ORDER Q Apps Script token/atomicity/recovery tests passed. ${JSON.stringify(m10OfficialTxnEvidence)}`);

@@ -1,0 +1,112 @@
+<!doctype html><html lang="ko"><meta charset="utf-8"><title>ORDER Q M10 Browser Test</title>
+<body><h1>ORDER Q M10 Browser Test</h1><pre id="result">RUNNING</pre><script src="../orderFulfillmentEngine.js"></script><script type="module">
+  import { DB_NAME, STORE, closeOrderQDb, openOrderQDb, requestToPromise, transactionDone } from '../orderq/orderq-db.js?v=0.10.0';
+  import { exportOrderQBackup, restoreOrderQBackup } from '../orderq/orderq-v7-repository.js?v=0.10.0';
+  import { CUTOVER_MODE, readCutoverControl, setCutoverMode } from '../orderq/cutover-control.js?v=0.10.0';
+  import { runCentralOfficialCommand, pullCentralOfficialState } from '../orderq/central-command-gateway.js?v=0.10.0';
+  import { buildCurrentShadowReport } from '../orderq/transition-repository.js?v=0.10.0';
+
+  const output=document.querySelector('#result');
+  const params=new URLSearchParams(location.search); const profile=params.get('profile')||'A';
+  const assert=(condition,message)=>{if(!condition)throw new Error(message);};
+  const clone=value=>JSON.parse(JSON.stringify(value));
+  const stable=value=>Array.isArray(value)?value.map(stable):value&&typeof value==='object'?Object.keys(value).sort().reduce((out,key)=>(out[key]=stable(value[key]),out),{}):value;
+  const same=(left,right)=>JSON.stringify(stable(left))===JSON.stringify(stable(right));
+  const actor={actorId:'ADMIN'};
+  const warnings=[]; const errors=[];
+  const warn=console.warn.bind(console),errorLog=console.error.bind(console);
+  console.warn=(...args)=>{warnings.push(args.map(String).join(' '));warn(...args);};
+  console.error=(...args)=>{errors.push(args.map(String).join(' '));errorLog(...args);};
+  addEventListener('error',event=>errors.push(event.error?.stack||event.message));
+  addEventListener('unhandledrejection',event=>errors.push(event.reason?.stack||String(event.reason)));
+
+  const deleteDb=async()=>{closeOrderQDb();await new Promise((resolve,reject)=>{const request=indexedDB.deleteDatabase(DB_NAME);request.onsuccess=resolve;request.onerror=()=>reject(request.error);request.onblocked=()=>reject(new Error('DELETE_BLOCKED'));});};
+  async function readStores(names){const db=await openOrderQDb();const tx=db.transaction(names,'readonly');const result={};for(const name of names)result[name]=await requestToPromise(tx.objectStore(name).getAll());await transactionDone(tx);return result;}
+  async function put(storeName,row){const db=await openOrderQDb();const tx=db.transaction(storeName,'readwrite');tx.objectStore(storeName).put(clone(row));await transactionDone(tx);}
+  async function seedLegacyWorkspace(){
+    const db=await new Promise((resolve,reject)=>{const request=indexedDB.open('ONEAPPShippingRecoveryDB',1);request.onupgradeneeded=()=>{if(!request.result.objectStoreNames.contains('recoveryRecords'))request.result.createObjectStore('recoveryRecords',{keyPath:'recordId'});};request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);});
+    const tx=db.transaction('recoveryRecords','readwrite');
+    tx.objectStore('recoveryRecords').put({recordId:`M10-LEGACY-${profile}`,sourceFingerprint:`M10-LEGACY-SOURCE-${profile}`,updatedAt:'2026-08-16T08:00:00.000Z',payload:{sourceFingerprint:`M10-LEGACY-SOURCE-${profile}`,updatedAt:'2026-08-16T08:00:00.000Z',workspace:{schemaVersion:ShippingManagementEngine.WORKSPACE_SCHEMA_VERSION,basisDate:'2026-08-16',sourceFiles:{inventory:{headerRowIndex:0,matrix:[['품목코드','품목명','01창고'],['10','테스트',10]]}},inventory:[{productCode:'10',productName:'테스트',sourceRowNumber:2}],orders:[{productCode:'10',productName:'테스트',quantity:4}],orderOpsInputs:{purchases:{rows:[{productCode:'10',quantity:2}]},sales:{rows:[{productCode:'10',quantity:3}]}}}}});
+    await new Promise((resolve,reject)=>{tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error);});db.close();
+  }
+
+  let centralMode='PILOT_WRITE'; let centralCursor=0; let fetchCount=0;
+  window.fetch=async(_url,options={})=>{
+    fetchCount+=1; const body=JSON.parse(String(options.body||'{}'));
+    let response;
+    if(body.action==='orderq_m9_ping')response={schemaVersion:'ONEAPP_ORDERQ_CENTRAL_V1',cutoverMode:centralMode,cursor:centralCursor,ledgerSequence:0};
+    else if(body.action==='orderq_m9_pull')response={changes:[],nextCursor:centralCursor,hasMore:false,ledgerSequence:0};
+    else if(body.action==='orderq_m9_command_prepare'){
+      if(!['PILOT_WRITE','VNEXT_PRIMARY'].includes(centralMode))return new Response(JSON.stringify({status:'error',message:`ORDERQ_CUTOVER_CENTRAL_WRITE_BLOCKED:${centralMode}:${body.commandType}`}),{status:200});
+      response={committed:false,leaseToken:`LEASE-${body.idempotencyKey}`,fingerprint:`FP-${body.idempotencyKey}`};
+    } else if(body.action==='orderq_m9_command_commit'){
+      if(!['PILOT_WRITE','VNEXT_PRIMARY'].includes(centralMode))return new Response(JSON.stringify({status:'error',message:`ORDERQ_CUTOVER_CENTRAL_WRITE_BLOCKED:${centralMode}:ADJUST_DISPATCH`}),{status:200});
+      centralCursor+=body.mutations.length;response={changes:body.mutations,cursor:centralCursor,ledgerSequence:0,serverRevision:2};
+    } else if(body.action==='orderq_m9_command_abort')response={aborted:true};
+    else response={};
+    return new Response(JSON.stringify({status:'success',data:response}),{status:200,headers:{'Content-Type':'application/json'}});
+  };
+
+  async function run(){
+    await deleteDb();
+    localStorage.setItem('oneapp_cloud_sync_url_v1','https://orderq-m10.test/central');
+    localStorage.setItem('oneapp.orderq.device-id.v1',`M10-${profile}`);
+    await put(STORE.ORDERS,{orderId:'M10-O',revision:1,status:'ACTIVE',zero:0,blank:''});
+    await put(STORE.PRODUCTS,{productId:'M10-P',itemCode:'10',itemName:'테스트',revision:1});
+    await put(STORE.WAREHOUSES,{warehouseId:'M10-W',warehouseCode:'01',warehouseName:'01창고',status:'ACTIVE'});
+    await put(STORE.INVENTORY_SNAPSHOTS,{inventorySnapshotId:'M10-IS',importBatchId:'M10-IB',basisDate:'2026-08-16',snapshotLastSequence:0,status:'ACTIVE'});
+    await put(STORE.INVENTORY_LINES,{inventoryLineId:'M10-IL',inventorySnapshotId:'M10-IS',productId:'M10-P',productCode:'10',warehouseId:'M10-W',inventoryQuantity:10,status:'ACTIVE'});
+    await put(STORE.INVENTORY_MOVEMENTS,{movementId:'M10-PM',productId:'M10-P',productCode:'10',warehouseId:'M10-W',movementType:'PURCHASE_RECEIPT',signedBaseQuantity:2,ledgerSequence:1,status:'ACTIVE'});
+    await put(STORE.INVENTORY_MOVEMENTS,{movementId:'M10-SM',productId:'M10-P',productCode:'10',warehouseId:'M10-W',movementType:'SALE_ISSUE',signedBaseQuantity:-3,ledgerSequence:2,status:'ACTIVE'});
+    await put(STORE.INVENTORY_RESERVATIONS,{reservationId:'M10-IR',allocationId:'M10-DA',dispatchId:'M10-D0',productId:'M10-P',productCode:'10',warehouseId:'M10-W',reservedBaseQuantity:4,status:'ACTIVE'});
+    await seedLegacyWorkspace();
+    const shadow=await buildCurrentShadowReport();
+    assert(shadow.report.summary.total===1&&shadow.report.summary.matched===1,'actual legacy/vNext shadow axes did not match');
+    assert(shadow.report.rows[0].axes.actualSale.legacy===3&&shadow.report.rows[0].axes.actualSale.orderq===3,'actual sale axis mixed with order request');
+    assert(shadow.report.rows[0].axes.orderRequestVsReservation.legacy===4&&shadow.report.rows[0].axes.orderRequestVsReservation.orderq===4,'request/reservation axis mismatch');
+    const fullBackup=await exportOrderQBackup(actor);
+    const backupNames=Object.keys(fullBackup.stores);
+    const before=await readStores(backupNames);
+    await put(STORE.ORDERS,{orderId:'M10-O',revision:99,status:'MUTATED'});
+    await put(STORE.PRODUCTS,{productId:'M10-X',itemCode:'99'});
+    await restoreOrderQBackup(fullBackup,actor);
+    const restored=await readStores(backupNames);
+    assert(same(before,restored),'full-store restore canonical mismatch');
+    const invalid=clone(fullBackup);invalid.stores.orders.push({revision:123,status:'INVALID_NO_KEY'});
+    const beforeFailure=await readStores(backupNames);let restoreError='';
+    try{await restoreOrderQBackup(invalid,actor);}catch(error){restoreError=error.message;}
+    const afterFailure=await readStores(backupNames);
+    assert(restoreError.includes('ORDERQ_BACKUP_RESTORE_FAILED'),'invalid restore was accepted');
+    assert(same(beforeFailure,afterFailure),'failed restore was not atomic');
+
+    setCutoverMode({mode:CUTOVER_MODE.SHADOW,actorId:'ADMIN',reasonCode:'M10_LOCAL_BLOCK',expectedRevision:readCutoverControl().revision});
+    let localRan=false;const blockBefore=await readStores([STORE.ORDERS]);const requestsBefore=fetchCount;let localBlocked='';
+    try{await runCentralOfficialCommand({commandType:'ADJUST_DISPATCH',aggregateId:'M10-D',expectedRevision:1,idempotencyKey:'M10-LOCAL-BLOCK'},async()=>{localRan=true;});}catch(error){localBlocked=error.message;}
+    assert(!localRan&&localBlocked.includes('LOCAL_WRITE_BLOCKED:SHADOW'),'SHADOW ran local mutation');
+    assert(fetchCount===requestsBefore,'SHADOW contacted central before local gate');
+    assert(same(blockBefore,await readStores([STORE.ORDERS])),'SHADOW changed local store');
+    const pullWhileBlocked=await pullCentralOfficialState();
+    assert(pullWhileBlocked.online===true,'pull stopped in SHADOW');
+
+    setCutoverMode({mode:CUTOVER_MODE.PILOT_WRITE,actorId:'ADMIN',reasonCode:'M10_LOCAL_PILOT',expectedRevision:readCutoverControl().revision});
+    centralMode='SHADOW';localRan=false;const centralBefore=await readStores([STORE.DISPATCH_RECONCILIATIONS]);let centralBlocked='';
+    try{await runCentralOfficialCommand({commandType:'ADJUST_DISPATCH',aggregateId:'M10-D',expectedRevision:1,idempotencyKey:'M10-CENTRAL-BLOCK'},async()=>{localRan=true;});}catch(error){centralBlocked=error.message;}
+    assert(!localRan&&centralBlocked.includes('CENTRAL_WRITE_BLOCKED:SHADOW'),'central SHADOW ran local mutation');
+    assert(same(centralBefore,await readStores([STORE.DISPATCH_RECONCILIATIONS])),'central SHADOW changed local store');
+
+    centralMode='PILOT_WRITE';
+    const allowed=await runCentralOfficialCommand({commandType:'ADJUST_DISPATCH',aggregateId:'M10-D',expectedRevision:1,idempotencyKey:`M10-ALLOWED-${profile}`},async()=>{
+      await put(STORE.DISPATCH_RECONCILIATIONS,{reconciliationId:`M10-R-${profile}`,dispatchId:'M10-D',status:'OPEN',revision:1,localOnly:true});
+      return {localResult:'OK'};
+    });
+    assert(allowed.central.changes.length===1,'dual-key write did not commit exactly one mutation');
+    assert((await readStores([STORE.DISPATCH_RECONCILIATIONS]))[STORE.DISPATCH_RECONCILIATIONS][0].localOnly===false,'central result did not replace local evidence');
+
+    const finalMode=profile==='A'?CUTOVER_MODE.PILOT_WRITE:CUTOVER_MODE.LEGACY_PRIMARY;
+    setCutoverMode({mode:finalMode,actorId:'ADMIN',reasonCode:`M10_PROFILE_${profile}`,expectedRevision:readCutoverControl().revision});
+    assert(readCutoverControl().mode===finalMode,'profile-local final mode mismatch');
+    assert(warnings.length===0&&errors.length===0,`console output: ${[...warnings,...errors].join(' / ')}`);
+    return {ok:true,profile,databaseName:DB_NAME,finalMode,shadow:{matched:shadow.report.summary.matched,actualSale:shadow.report.rows[0].axes.actualSale,requestReservation:shadow.report.rows[0].axes.orderRequestVsReservation,evidence:shadow.report.rows[0].evidenceIds},backupStoreCount:backupNames.length,backupCanonical:true,failedRestoreAtomic:true,localBlocked,centralBlocked,pullWhileBlocked,centralCursor,console:{warnings:warnings.length,errors:errors.length}};
+  }
+  run().then(value=>{output.textContent=`PASS\n${JSON.stringify(value,null,2)}`;document.title=`PASS ORDER Q M10 Browser ${profile}`;parent.postMessage({type:'M10_DONE',value},'*');}).catch(error=>{console.error(error);output.textContent=`FAIL\n${error.stack||error}`;document.title=`FAIL ORDER Q M10 Browser ${profile}`;parent.postMessage({type:'M10_FAIL',error:error.stack||String(error)},'*');});
+</script></body></html>

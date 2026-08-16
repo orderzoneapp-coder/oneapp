@@ -11,6 +11,24 @@ const ORDERQ_SYNC_MAX_PUSH = 100;
 const ORDERQ_SYNC_MAX_PULL = 500;
 const ORDERQ_SHEET_SCHEMA_PROPERTY = 'ONEAPP_ORDERQ_SHEET_SCHEMA_VERSION';
 const ORDERQ_SHEET_SCHEMA_VERSION = '4';
+const ORDERQ_CUTOVER_MODE_PROPERTY = 'ONEAPP_ORDERQ_CUTOVER_MODE';
+const ORDERQ_CUTOVER_SAFE_MODE = 'SHADOW';
+const ORDERQ_CUTOVER_WRITE_MODES = Object.freeze(['PILOT_WRITE', 'VNEXT_PRIMARY']);
+
+function orderQM10CutoverMode() {
+  const properties = PropertiesService.getScriptProperties();
+  const mode = String(properties.getProperty(ORDERQ_CUTOVER_MODE_PROPERTY) || ORDERQ_CUTOVER_SAFE_MODE).trim().toUpperCase();
+  return ['LEGACY_PRIMARY', 'SHADOW', 'PILOT_WRITE', 'VNEXT_PRIMARY'].indexOf(mode) >= 0
+    ? mode : ORDERQ_CUTOVER_SAFE_MODE;
+}
+
+function orderQM10AssertOfficialWriteEnabled(commandType) {
+  const mode = orderQM10CutoverMode();
+  if (ORDERQ_CUTOVER_WRITE_MODES.indexOf(mode) < 0) {
+    throw new Error(`ORDERQ_CUTOVER_CENTRAL_WRITE_BLOCKED:${mode}:${String(commandType || '').trim().toUpperCase()}`);
+  }
+  return mode;
+}
 
 const ORDERQ_SHEETS = Object.freeze({
   ORDER: 'ORDER',
@@ -1327,6 +1345,7 @@ function orderQM9Migrate(ss, payload) {
     if (!verified.complete) throw new Error(`ORDERQ_CENTRAL_MIGRATION_IDEMPOTENCY_STATE_MISMATCH:${idempotencyKey}`);
     return { duplicate: true, changes: verified.changes, cursor: orderQM9MetaNumber(ss, 'syncSequence') };
   }
+  orderQM10AssertOfficialWriteEnabled('MIGRATION');
   const entityState = orderQM9ReadEntityIndex(ss);
   const pending = [];
   normalized.forEach(row => {
@@ -1462,10 +1481,12 @@ function orderQM9Prepare(ss, payload) {
         : prior.result;
       return { duplicate: true, committed: true, result };
     }
+    orderQM10AssertOfficialWriteEnabled(prior.commandType || payload.commandType);
     if (prior.status !== 'PREPARED') throw new Error(`ORDERQ_CENTRAL_COMMAND_TERMINAL:${idempotencyKey}:${prior.status}`);
     return { duplicate: true, committed: false, leaseToken: prior.leaseToken, leaseExpiresAt: prior.leaseExpiresAt, fingerprint };
   }
   const commandType = orderQM9Text(payload.commandType).toUpperCase();
+  orderQM10AssertOfficialWriteEnabled(commandType);
   const aggregateId = orderQM9Text(payload.aggregateId);
   const expectedRevision = Number(payload.expectedRevision);
   const targetType = orderQM9TargetType(commandType);
@@ -1864,6 +1885,7 @@ function orderQM9Commit(ss, payload) {
     }
     return Object.assign({ duplicate: true }, orderQM9OfficialResultForCommand(ss, command));
   }
+  orderQM10AssertOfficialWriteEnabled(command.commandType);
   if (command.status !== 'PREPARED') throw new Error(`ORDERQ_CENTRAL_COMMAND_TERMINAL:${idempotencyKey}:${command.status}`);
   if (orderQM9LeaseExpired(command, commitAtMillis)) {
     command.status = 'EXPIRED';
@@ -2067,6 +2089,7 @@ function orderQM9Ping(ss, payload) {
   return {
     schemaVersion: ORDERQ_M9_SCHEMA,
     serverTime: new Date().toISOString(),
+    cutoverMode: orderQM10CutoverMode(),
     cursor: orderQM9MetaNumber(ss, 'syncSequence'),
     ledgerSequence: orderQM9MetaNumber(ss, 'ledgerSequence')
   };
