@@ -48,27 +48,31 @@
 
   function aggregateParts(dispatchId) {
     if (dispatchId === 'GW-D3') return [{ suffix:'3A', quantity:5 }, { suffix:'3B', quantity:5 }];
-    return dispatchId.endsWith('2') ? [{ suffix:'2', quantity:2 }] : [{ suffix:'1', quantity:6 }];
+    if (dispatchId === 'GW-D2') return [{ suffix:'2', quantity:2 }];
+    if (dispatchId === 'GW-D4') return [{ suffix:'4', quantity:4 }];
+    return [{ suffix:'1', quantity:6 }];
   }
 
   async function seed() {
     const first = aggregateFixture('GW-D1', '1', 6);
     const second = aggregateFixture('GW-D2', '2', 2);
     const thirdParts = aggregateParts('GW-D3').map(part => aggregateFixture('GW-D3', part.suffix, part.quantity));
+    const fourth = aggregateFixture('GW-D4', '4', 4);
     await writeRows({
       [STORE.ORDERS]:[{ orderId:'GW-O', revision:1, localOnly:true }],
       [STORE.ORDER_ITEMS]:[
         { orderItemId:'GW-OI-1', orderId:'GW-O', productId:'GW-P', finalQuantity:6, revision:1, localOnly:true },
         { orderItemId:'GW-OI-2', orderId:'GW-O', productId:'GW-P', finalQuantity:2, revision:1, localOnly:true },
-        ...thirdParts.map(part => ({ orderItemId:part.line.orderItemId, orderId:'GW-O', productId:'GW-P', finalQuantity:part.line.plannedRecognizedOrderQuantity, revision:1, localOnly:true }))
+        ...thirdParts.map(part => ({ orderItemId:part.line.orderItemId, orderId:'GW-O', productId:'GW-P', finalQuantity:part.line.plannedRecognizedOrderQuantity, revision:1, localOnly:true })),
+        { orderItemId:'GW-OI-4', orderId:'GW-O', productId:'GW-P', finalQuantity:4, revision:1, localOnly:true }
       ],
       [STORE.PRODUCTS]:[{ productId:'GW-P', revision:1, localOnly:true }],
       [STORE.WAREHOUSES]:[{ warehouseId:'GW-W', revision:1, status:'ACTIVE', localOnly:true }],
       [STORE.INVENTORY_SNAPSHOTS]:[{ inventorySnapshotId:'GW-IS', importBatchId:'GW-IB', basisDate:'2026-08-15', snapshotLastSequence:0, status:'ACTIVE', localOnly:true }],
       [STORE.INVENTORY_LINES]:[{ inventoryLineId:'GW-IL', inventorySnapshotId:'GW-IS', productId:'GW-P', warehouseId:'GW-W', inventoryQuantity:20, status:'ACTIVE', localOnly:true }],
-      [STORE.DISPATCH_DECISIONS]:[first.decision, second.decision, thirdParts[0].decision],
-      [STORE.DISPATCH_LINES]:[first.line, second.line, ...thirdParts.map(part => part.line)],
-      [STORE.DISPATCH_STOCK_ALLOCATIONS]:[first.allocation, second.allocation, ...thirdParts.map(part => part.allocation)]
+      [STORE.DISPATCH_DECISIONS]:[first.decision, second.decision, thirdParts[0].decision, fourth.decision],
+      [STORE.DISPATCH_LINES]:[first.line, second.line, ...thirdParts.map(part => part.line), fourth.line],
+      [STORE.DISPATCH_STOCK_ALLOCATIONS]:[first.allocation, second.allocation, ...thirdParts.map(part => part.allocation), fourth.allocation]
     }, true);
     return dump();
   }
