@@ -14,8 +14,10 @@ import {
   pullCloudChanges,
   getCloudOrderHead
 } from './orderq-cloud-adapter.js?v=0.8.0';
+import { runtimeStorageKey } from './admin-test-runtime.js?v=0.10.2';
 
 const DEVICE_KEY = 'oneapp.orderq.device-id.v1';
+const ADMIN_TEST_DEVICE_KEY = 'oneapp.orderq.admin-test.device-id.v1';
 const META_CURSOR = 'cloudCursor';
 const META_BOOTSTRAP = 'phase2BootstrapQueued';
 
@@ -32,10 +34,11 @@ export class CloudOrderConflictError extends Error {
 }
 
 export function getDeviceId() {
-  let id = String(localStorage.getItem(DEVICE_KEY) || '');
+  const key = runtimeStorageKey(DEVICE_KEY, ADMIN_TEST_DEVICE_KEY);
+  let id = String(localStorage.getItem(key) || '');
   if (!id) {
     id = `DEV-${globalThis.crypto?.randomUUID?.() || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`}`;
-    localStorage.setItem(DEVICE_KEY, id);
+    localStorage.setItem(key, id);
   }
   return id;
 }

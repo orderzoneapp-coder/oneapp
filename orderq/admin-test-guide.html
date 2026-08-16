@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>ORDER Q 관리자 테스트 안내</title>
+  <link rel="stylesheet" href="./admin-test.css?v=0.10.2">
+  <style>
+    body{background:#fff}.guide{width:min(820px,calc(100% - 36px));margin:28px auto}.guide h1{font-size:30px}.guide ol{padding-left:24px}.guide li{margin:14px 0;padding-left:6px}.guide table{width:100%;border-collapse:collapse;margin-top:20px}.guide th,.guide td{border:1px solid #dbe3ef;padding:11px;text-align:left}.guide th{background:#f4f7fb}.guide .notice{display:block}.guide button{float:right}@media print{.guide button{display:none}.guide{margin:0;width:100%}}
+  </style>
+</head>
+<body><main class="guide">
+  <button onclick="print()">인쇄</button>
+  <span class="test-badge">TEST</span>
+  <h1>ORDER Q 관리자 직접 테스트 안내</h1>
+  <p>이 화면은 실제 고객·판매·재고·ERP와 분리된 테스트 전용 환경입니다.</p>
+  <ol>
+    <li><b>테스트 시작</b>을 누르고 TEST 주문의 상품·주문수량 2개·출고 전 재고 10개를 확인합니다.</li>
+    <li><b>주문 확인 완료</b> 후 <b>출고 준비</b>를 누릅니다. 재고 2개가 출고 준비 수량으로 잡히지만 재고는 아직 줄지 않습니다.</li>
+    <li>실제 출고수량에 <b>2</b>를 입력하고 <b>실제 수량 저장</b>을 누릅니다.</li>
+    <li><b>출고 확정</b>을 누릅니다.</li>
+    <li>결과 화면에서 판매 기록 생성, 재고 10→8, 주문 완료 2/2, 오류 없음과 재시도 중복 0건을 확인합니다.</li>
+  </ol>
+  <table>
+    <tr><th>입력할 값</th><td>실제 출고수량 2</td></tr>
+    <tr><th>기대 결과</th><td>판매 2개 · 재고 차감 -2 · 주문 처리 2/2 · 오류 없음</td></tr>
+    <tr><th>다시 시작</th><td>결과 화면의 ‘다시 시작’을 누릅니다. 확정된 테스트는 원자료를 지우지 않고 반대 기록으로 안전하게 되돌립니다.</td></tr>
+  </table>
+  <p class="notice error"><b>주의:</b> TEST 배지가 없는 화면에서는 이 안내의 테스트를 실행하지 마십시오.</p>
+</main></body></html>

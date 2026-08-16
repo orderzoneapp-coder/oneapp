@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>ORDER Q 관리자 테스트</title>
+  <link rel="stylesheet" href="./admin-test.css?v=0.10.2">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <span class="test-badge">TEST</span>
+      <strong>ORDER Q 관리자 직접 테스트</strong>
+    </div>
+    <span class="isolation">실제 고객·판매·재고·ERP와 완전히 분리됨</span>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div>
+        <p class="eyebrow">정상 주문 1건</p>
+        <h1>화면 안내대로 출고를 완료해 보세요</h1>
+        <p>테스트 상품 재고 10개에서 2개를 출고합니다. 기술 설정이나 토큰 입력은 필요 없습니다.</p>
+      </div>
+      <button id="startTest" class="primary large">테스트 시작</button>
+    </section>
+
+    <section id="connectionError" class="notice error" hidden>
+      <strong>테스트 환경을 열 수 없습니다.</strong>
+      <span id="connectionErrorText"></span>
+    </section>
+
+    <nav class="steps" aria-label="테스트 진행 단계">
+      <button class="step" data-step="1" disabled><span>1</span>주문 확인</button>
+      <button class="step" data-step="2" disabled><span>2</span>출고 준비</button>
+      <button class="step" data-step="3" disabled><span>3</span>실제 출고수량 입력</button>
+      <button class="step" data-step="4" disabled><span>4</span>출고 확정</button>
+      <button class="step" data-step="5" disabled><span>5</span>결과 확인</button>
+    </nav>
+
+    <section id="workspace" class="workspace" hidden>
+      <article class="order-card">
+        <div class="card-head">
+          <div>
+            <span class="test-badge small">TEST 주문</span>
+            <h2 id="orderNo">-</h2>
+          </div>
+          <span id="businessStatus" class="status-pill">준비 중</span>
+        </div>
+        <dl class="order-details">
+          <div><dt>고객</dt><dd>TEST 고객</dd></div>
+          <div><dt>상품</dt><dd>테스트 양파 1kg</dd></div>
+          <div><dt>주문수량</dt><dd>2개</dd></div>
+          <div><dt>출고창고</dt><dd>TEST 전용 창고</dd></div>
+          <div><dt>출고 전 재고</dt><dd>10개</dd></div>
+          <div><dt>판매단가</dt><dd>5,200원</dd></div>
+        </dl>
+      </article>
+
+      <article id="stepPanel" class="action-card">
+        <p id="stepKicker" class="eyebrow">1단계</p>
+        <h2 id="stepTitle">주문 확인</h2>
+        <p id="stepDescription">주문 내용이 맞으면 다음 단계로 진행하세요.</p>
+        <label id="quantityField" class="quantity-field" hidden>
+          실제 출고수량
+          <span><input id="actualQuantity" type="number" min="0.01" step="0.01" value="2"> 개</span>
+        </label>
+        <button id="runStep" class="primary">주문 확인 완료</button>
+        <p id="busyText" class="busy" hidden>처리 중입니다. 잠시만 기다려 주세요.</p>
+      </article>
+
+      <aside class="terms">
+        <strong>화면 용어</strong>
+        <span><b>출고 준비 수량</b> = 출고할 재고를 잡아 둔 수량</span>
+        <span><b>재고 차감 기록</b> = 출고로 재고가 줄어든 기록</span>
+        <span><b>주문 처리 결과</b> = 주문수량 중 실제 처리된 수량</span>
+      </aside>
+    </section>
+
+    <section id="resultPanel" class="result-panel" hidden>
+      <div class="result-title">
+        <span class="success-mark">✓</span>
+        <div><p class="eyebrow">테스트 완료</p><h2>정상 출고가 정확하게 처리됐습니다</h2></div>
+      </div>
+      <div class="result-grid">
+        <article><span>판매 기록</span><strong id="salesResult">생성 완료</strong><small id="salesDetail">2개</small></article>
+        <article><span>재고</span><strong id="inventoryResult">10 → 8</strong><small id="movementDetail">재고 차감 기록 -2</small></article>
+        <article><span>주문</span><strong id="orderResult">완료</strong><small id="fulfillmentDetail">주문 처리 결과 2/2</small></article>
+        <article><span>시스템</span><strong id="errorResult">오류 없음</strong><small id="retryDetail">재시도 중복 0건</small></article>
+      </div>
+      <div class="result-actions">
+        <button id="verifyAgain">결과 다시 확인</button>
+        <button id="restartTest" class="primary">다시 시작</button>
+        <a href="./admin-test-guide.html" target="_blank" rel="noopener">1페이지 사용 안내</a>
+      </div>
+    </section>
+  </main>
+
+  <footer>ORDER Q 관리자 감독형 TEST 환경 · 운영 자료에는 영향을 주지 않습니다.</footer>
+  <script>
+    window.__ORDERQ_ADMIN_TEST_DIAGNOSTICS__ = [];
+    for (const level of ['warn', 'error']) {
+      const original = console[level].bind(console);
+      console[level] = (...args) => {
+        window.__ORDERQ_ADMIN_TEST_DIAGNOSTICS__.push({ level, message:args.map(String).join(' ') });
+        original(...args);
+      };
+    }
+    addEventListener('error', event => window.__ORDERQ_ADMIN_TEST_DIAGNOSTICS__.push({ level:'error', message:String(event.message || 'window error') }));
+    addEventListener('unhandledrejection', event => window.__ORDERQ_ADMIN_TEST_DIAGNOSTICS__.push({ level:'error', message:String(event.reason?.message || event.reason || 'unhandled rejection') }));
+  </script>
+  <script type="module" src="./admin-test.js?v=0.10.2"></script>
+</body>
+</html>

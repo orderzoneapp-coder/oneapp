@@ -7,13 +7,16 @@ import {
   V7_STORE,
   V7_STORE_DEFINITIONS
 } from './orderq-v7-contracts.js?v=0.8.0';
+import { adminTestDatabaseName } from './admin-test-runtime.js?v=0.10.2';
 
 function databaseNameForRuntime() {
   const location = globalThis.location;
-  const testName = location && ['127.0.0.1', 'localhost'].includes(String(location.hostname || '').toLowerCase())
+  const adminTestName = adminTestDatabaseName(location);
+  if (adminTestName) return adminTestName;
+  const localTestName = location && ['127.0.0.1', 'localhost'].includes(String(location.hostname || '').toLowerCase())
     ? new URLSearchParams(location.search || '').get('orderqTestDb')
     : '';
-  return testName && /^[a-z0-9._-]{1,100}$/i.test(testName) ? testName : 'oneapp-orderq-vnext';
+  return localTestName && /^[a-z0-9._-]{1,100}$/i.test(localTestName) ? localTestName : 'oneapp-orderq-vnext';
 }
 
 export const DB_NAME = databaseNameForRuntime();
