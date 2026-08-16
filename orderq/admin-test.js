@@ -102,10 +102,13 @@ function saveState(next) {
 
 function idsForRun(runId) {
   const env = config.environmentId.replace(/[^a-z0-9_-]/gi, '-').slice(0, 34);
+  const codeSuffix = env.slice(-16).toUpperCase();
   const suffix = `${env}-${runId}`;
   return {
     productId:`OQAT-P-${env}`,
+    productCode:`TEST-${codeSuffix}`,
     warehouseId:`OQAT-W-${env}`,
+    warehouseCode:`T-${codeSuffix}`,
     snapshotId:`OQAT-IS-${env}`,
     inventoryLineId:`OQAT-IL-${env}`,
     customerId:`OQAT-C-${env}`,
@@ -189,11 +192,11 @@ async function ensureOpening(ids) {
   const stores = [STORE.PRODUCTS, STORE.WAREHOUSES, STORE.INVENTORY_SNAPSHOTS, STORE.INVENTORY_LINES];
   const tx = db.transaction(stores, 'readwrite');
   if (!product) tx.objectStore(STORE.PRODUCTS).add({
-    productId:ids.productId, itemCode:'TEST-001', itemName:'테스트 양파 1kg', normalizedName:'테스트양파1kg',
+    productId:ids.productId, itemCode:ids.productCode, itemName:'테스트 양파 1kg', normalizedName:'테스트양파1kg',
     finalUnit:'개', status:'ACTIVE', revision:1, localOnly:true, adminTest:true, createdAt:now, updatedAt:now
   });
   if (!warehouse) tx.objectStore(STORE.WAREHOUSES).add({
-    warehouseId:ids.warehouseId, warehouseCode:'TEST', warehouseName:'TEST 전용 창고', normalizedName:'test전용창고',
+    warehouseId:ids.warehouseId, warehouseCode:ids.warehouseCode, warehouseName:'TEST 전용 창고', normalizedName:'test전용창고',
     countsInOnHand:true, countsInAvailable:true, status:'ACTIVE', revision:1, localOnly:true, adminTest:true, createdAt:now, updatedAt:now
   });
   if (!snapshot) tx.objectStore(STORE.INVENTORY_SNAPSHOTS).add({
@@ -203,7 +206,7 @@ async function ensureOpening(ids) {
   });
   if (!inventoryLine) tx.objectStore(STORE.INVENTORY_LINES).add({
     inventoryLineId:ids.inventoryLineId, inventorySnapshotId:ids.snapshotId, importBatchId:`OQAT-BATCH-${config.environmentId}`,
-    productId:ids.productId, productCode:'TEST-001', warehouseId:ids.warehouseId, inventoryQuantity:OPENING_QUANTITY,
+    productId:ids.productId, productCode:ids.productCode, warehouseId:ids.warehouseId, inventoryQuantity:OPENING_QUANTITY,
     status:'ACTIVE', revision:1, localOnly:true, adminTest:true, source:'ORDER Q 관리자 TEST'
   });
   await transactionDone(tx);
@@ -225,7 +228,7 @@ async function createDraft(currentState) {
     revision:1, localOnly:true, adminTest:true, adminTestRunId:currentState.runId
   });
   tx.objectStore(STORE.ORDER_ITEMS).add({
-    orderItemId:ids.orderItemId, orderId:ids.orderId, productId:ids.productId, itemCode:'TEST-001', itemName:'테스트 양파 1kg',
+    orderItemId:ids.orderItemId, orderId:ids.orderId, productId:ids.productId, itemCode:ids.productCode, itemName:'테스트 양파 1kg',
     finalQuantity:TEST_QUANTITY, finalUnit:'개', price:TEST_UNIT_PRICE, vatAmount:0, matchStatus:'MATCHED',
     revision:1, localOnly:true, adminTest:true, adminTestRunId:currentState.runId
   });
@@ -237,8 +240,8 @@ async function createDraft(currentState) {
     },
     lines:[{
       dispatchLineId:ids.dispatchLineId, orderId:ids.orderId, orderItemId:ids.orderItemId,
-      requestedProductId:ids.productId, requestedProductCode:'TEST-001', requestedProductName:'테스트 양파 1kg',
-      actualProductId:ids.productId, actualProductCode:'TEST-001', actualProductName:'테스트 양파 1kg',
+      requestedProductId:ids.productId, requestedProductCode:ids.productCode, requestedProductName:'테스트 양파 1kg',
+      actualProductId:ids.productId, actualProductCode:ids.productCode, actualProductName:'테스트 양파 1kg',
       fulfillmentType:'NORMAL', plannedActualQuantity:TEST_QUANTITY, plannedBaseQuantity:TEST_QUANTITY,
       plannedRecognizedOrderQuantity:TEST_QUANTITY, actualUnit:'개', measurementRequired:false,
       unitPriceWon:TEST_UNIT_PRICE, orderAgreedUnitPriceWon:TEST_UNIT_PRICE, priceSource:'ORDER_AGREED'
