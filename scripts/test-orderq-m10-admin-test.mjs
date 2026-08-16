@@ -4,9 +4,11 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   ADMIN_TEST_DB_PREFIX,
+  ADMIN_TEST_BUILD_ID,
   adminTestDatabaseName,
   isAdminTestRuntime,
-  runtimeStorageKey
+  runtimeStorageKey,
+  validateAdminTestBuildId
 } from '../orderq/admin-test-runtime.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -32,6 +34,11 @@ assert.equal(adminTestDatabaseName({ ...publicLocation, search:'?orderqTestDb=..
 assert.equal(isAdminTestRuntime({ pathname:'/orderq/dispatch.html' }), false);
 assert.equal(runtimeStorageKey('oneapp.orderq.device-id.v1', 'oneapp.orderq.admin-test.device-id.v1', publicLocation), 'oneapp.orderq.admin-test.device-id.v1');
 assert.equal(runtimeStorageKey('oneapp.orderq.device-id.v1', 'oneapp.orderq.admin-test.device-id.v1', { pathname:'/orderq/dispatch.html' }), 'oneapp.orderq.device-id.v1');
+assert.equal(ADMIN_TEST_BUILD_ID, '782d908816ca4445f2b17d45437e360ddc494537');
+assert.equal(validateAdminTestBuildId(ADMIN_TEST_BUILD_ID), ADMIN_TEST_BUILD_ID);
+assert.throws(() => validateAdminTestBuildId('477e023dc408a29a0db8a079134cfdf4a7b7cf5b'), /승인된 TEST 빌드/);
+assert.throws(() => validateAdminTestBuildId(''), /승인된 TEST 빌드/);
+assert.throws(() => validateAdminTestBuildId('different-build'), /승인된 TEST 빌드/);
 
 assert.match(page, /TEST/);
 for (const label of ['주문 확인', '출고 준비', '실제 출고수량 입력', '출고 확정', '결과 확인']) assert.match(page, new RegExp(label));
@@ -39,7 +46,8 @@ for (const label of ['판매 기록', '재고 차감 기록', '주문 처리 결
 assert.match(guide, /실제 출고수량[^\n]*2/);
 assert.match(guide, /판매 2개/);
 
-assert.match(source, /EXPECTED_MAIN_SHA = '477e023d/);
+assert.match(source, /validateAdminTestBuildId\(value\.buildId\)/);
+assert.doesNotMatch(source, /value\.mainSha|EXPECTED_MAIN_SHA/);
 assert.match(source, /TEST_QUANTITY = 2/);
 assert.match(source, /OPENING_QUANTITY = 10/);
 assert.match(source, /commandType:'RELEASE_DISPATCH'/);

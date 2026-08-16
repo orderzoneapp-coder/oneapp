@@ -13,12 +13,11 @@ import { getInventoryShadowProjection } from './inventory-ledger-repository.js?v
 import {
   CUTOVER_MODE, readCutoverControl, setCutoverMode
 } from './cutover-control.js?v=0.10.2';
-import { runtimeStorageKey } from './admin-test-runtime.js?v=0.10.2';
+import { runtimeStorageKey, validateAdminTestBuildId } from './admin-test-runtime.js?v=0.10.2';
 
-const EXPECTED_MAIN_SHA = '477e023dc408a29a0db8a079134cfdf4a7b7cf5b';
 const CONFIG_KEY = runtimeStorageKey(
   'oneapp.orderq.admin-test.config.unavailable',
-  'oneapp.orderq.admin-test.config.v1'
+  'oneapp.orderq.admin-test.config.v2'
 );
 const STATE_KEY = runtimeStorageKey(
   'oneapp.orderq.admin-test.state.unavailable',
@@ -84,9 +83,7 @@ function parseConfig() {
   if (!value || !/^https:\/\/script\.google\.com\/macros\/s\/.+\/exec$/.test(text(value.cloudUrl)) || !text(value.accessToken)) {
     throw new Error('테스트 연결정보가 없습니다. 전달받은 TEST 시작 링크를 다시 여세요.');
   }
-  if (text(value.mainSha) && text(value.mainSha) !== EXPECTED_MAIN_SHA) {
-    throw new Error('승인된 테스트 버전과 다릅니다. 최신 TEST 시작 링크를 사용하세요.');
-  }
+  validateAdminTestBuildId(value.buildId);
   const profile = text(new URLSearchParams(location.search).get('profile') || value.profile || 'A').toUpperCase();
   if (!['A', 'B'].includes(profile)) throw new Error('테스트 프로필이 올바르지 않습니다.');
   return { ...value, profile, environmentId:text(value.environmentId || 'admin-test') };
