@@ -29,6 +29,7 @@ assert.notEqual(
 const contractSource = await readFile(new URL('../orderq/history-collector/collector-contracts.js', import.meta.url), 'utf8');
 const uiSource = await readFile(new URL('../orderq/collector-ui.js', import.meta.url), 'utf8');
 const htmlSource = await readFile(new URL('../orderq/collector.html', import.meta.url), 'utf8');
+const photoOcrSource = await readFile(new URL('../orderq/photo-ocr.js', import.meta.url), 'utf8');
 
 assert.doesNotMatch(
   contractSource.slice(contractSource.indexOf('export function normalizedRowFingerprint'), contractSource.indexOf('function queueRow')),
@@ -36,7 +37,11 @@ assert.doesNotMatch(
   'row number must not participate in v2 transaction identity'
 );
 assert.match(contractSource, /fingerprintVersion:\s*FINGERPRINT_VERSION/);
-assert.match(contractSource, /if \(!MATCHING_SOURCES\.has\(batch\.sourceType\)\) return rollbackWithoutMatching/);
+assert.match(contractSource, /const result = await rollbackWithoutMatching\(importBatchId, rolledBackBy\)/);
+assert.match(contractSource, /if \(!MATCHING_SOURCES\.has\(batch\.sourceType\)\) return result/);
+assert.match(contractSource, /if \(!snapshot\.orderLines\.length \|\| !snapshot\.salesLines\.length\)/);
+assert.match(contractSource, /invalidateMatchingDerived\('MATCHING_NOT_READY'\)/);
+assert.match(contractSource, /status:'REVIEW_REQUIRED'/);
 assert.match(uiSource, /commitPreparedImportV2/);
 assert.match(uiSource, /rollbackImportBatchByContract/);
 assert.match(uiSource, /sourceRecords\.filter\(r=>r\.sourceType===COLLECTOR_SOURCE\.CUSTOMER_LEDGER\)/);
@@ -48,5 +53,10 @@ assert.match(htmlSource, /data-work-tab="inventory"/);
 assert.match(htmlSource, /data-work-tab="ledger"/);
 assert.match(htmlSource, /data-work-tab="matching"/);
 assert.match(htmlSource, /data-work-tab="history"/);
+assert.match(htmlSource, /tesseract\.js@6/);
+assert.match(htmlSource, /photo-ocr\.js\?v=0\.8\.2/);
+assert.match(photoOcrSource, /Tesseract\?\.recognize/);
+assert.match(photoOcrSource, /'kor\+eng'/);
+assert.match(photoOcrSource, /dispatchEvent\(new Event\('input'/);
 
-console.log('PASS: ORDER Q collector tab isolation, matching gate, duplicate v2 and rollback contracts');
+console.log('PASS: ORDER Q collector tabs, matching readiness, duplicate v2, rollback and photo OCR contracts');
