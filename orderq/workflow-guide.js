@@ -1,7 +1,7 @@
 const FLOW = Object.freeze([
   { key:'capture', label:'주문 받기', href:'./parser.html' },
   { key:'review', label:'주문 확인', href:'./index.html' },
-  { key:'prepare', label:'출고 준비', href:'./dispatch.html' },
+  { key:'prepare', label:'출고 준비', href:'./operations.html' },
   { key:'actual', label:'실제 수량', href:'./dispatch.html' },
   { key:'confirm', label:'출고 확정', href:'./dispatch.html' },
   { key:'erp', label:'ERP 자료', href:'./erp.html' }
@@ -11,11 +11,11 @@ const PAGE = Object.freeze({
   'parser.html': { active:['capture'], title:'주문 내용을 확인하세요', help:'카카오 대화나 일반 주문 문장을 붙여넣고 주문으로 정리합니다.', next:'review', nextText:'분석한 주문 확인' },
   'input.html': { active:['capture'], title:'주문을 저장하세요', help:'관리자가 직접 받은 주문을 입력하고 저장합니다.', next:'review', nextText:'저장한 주문 확인' },
   'index.html': { active:['review'], title:'처리할 주문을 확인하세요', help:'주문 내용과 수량을 확인한 뒤 출고 준비로 넘깁니다.', next:'prepare', nextText:'출고 준비로 이동' },
-  'operations.html': { active:['review'], title:'미출고 주문을 찾으세요', help:'주문별 남은 수량과 재고를 확인하고 출고할 대상을 선택합니다.', next:'prepare', nextText:'출고 준비 시작' },
+  'operations.html': { active:['prepare'], title:'미출고 주문을 찾으세요', help:'주문별 남은 수량과 재고를 확인하고 출고할 대상을 선택합니다.', next:'actual', nextText:'출고 작업대로 이동' },
   'dispatch.html': { active:['prepare','actual','confirm'], title:'출고를 준비하고 확정하세요', help:'출고상품·창고를 정하고 실제 수량을 저장한 뒤 관리자가 확정합니다.', next:'erp', nextText:'ERP 자료 확인' },
   'purchase.html': { active:[], title:'부족상품 구매를 기록하세요', help:'출고와 별도로 구매 내용을 확인하고 입고를 확정합니다.', next:'erp', nextText:'ERP 자료 확인' },
   'erp.html': { active:['erp'], title:'ERP 입력자료를 만드세요', help:'확정된 판매·구매 사실만 파일로 만들고 ERP 반영 결과를 대사합니다.', next:'review', nextText:'주문현황으로 돌아가기' },
-  'reconciliation.html': { active:[], title:'출고 차이를 확인하세요', help:'확정 원본은 보존하고 역분개와 수정 출고안으로 차이를 바로잡습니다.', next:'prepare', nextText:'출고 작업대로 이동' }
+  'reconciliation.html': { active:[], title:'출고 차이를 확인하세요', help:'확정 원본은 보존하고 기존 확정 취소와 수정 출고안으로 차이를 바로잡습니다.', next:'actual', nextText:'출고 작업대로 이동' }
 });
 
 function pageName() {
@@ -25,7 +25,7 @@ function pageName() {
 
 function technicalLabel(href, text) {
   if (href.includes('cloud')) return '중앙 연결 설정';
-  if (href.includes('collector')) return '변경 이력 수집';
+  if (href.includes('collector')) return '기초자료 가져오기';
   if (href.includes('transition')) return '전환·복구 설정';
   return text;
 }

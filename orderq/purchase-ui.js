@@ -125,7 +125,6 @@ function renderDetail() {
     <h2>${editable ? '구매안' : `구매 · ${esc(purchaseStatusLabel(documentRow.status))}`}</h2>
     <div class="purchase-form-grid">
       <label>구매 ID<input id="purchaseDocumentId" value="${esc(documentRow.purchaseDocumentId)}" readonly></label>
-      <label>변경번호<input id="purchaseRevision" value="${esc(documentRow.revision || 0)}" readonly></label>
       <label>ERP 진행<input value="${esc(erpStatusLabel(documentRow.erpPostingStatus || 'NOT_READY'))}" readonly></label>
       <label class="wide">부족근거 Key<input id="sourceShortageKey" value="${esc(documentRow.sourceShortageKey)}" ${editable ? '' : 'readonly'}></label>
       <label>부족수량<input id="sourceShortageQuantity" type="number" step="any" value="${esc(documentRow.sourceShortageQuantity || 0)}" ${editable ? '' : 'readonly'}></label>

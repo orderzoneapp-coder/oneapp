@@ -165,7 +165,7 @@ function renderLists() {
     return `
       <button class="dispatch-card ${selected ? 'selected' : ''}" type="button" data-action="select" data-id="${esc(decision.dispatchId)}">
         <span class="card-top"><span>${esc(decision.dispatchNo)}</span><span class="status-pill ${esc(decision.status)}">${esc(dispatchStatusLabel(decision.status))}</span></span>
-        <span class="card-meta"><span>${esc(decision.customerName || '고객 미지정')}</span><span>${row.lines.length}행</span><span>변경 ${Number(decision.revision || 0)}</span></span>
+        <span class="card-meta"><span>${esc(decision.customerName || '고객 미지정')}</span><span>${row.lines.length}행</span></span>
         ${action.length ? `<span class="card-meta">${action.map(code => `<span class="action-chip">${esc(actionCodeLabel(code))}</span>`).join('')}</span>` : ''}
       </button>`;
   }).join('') : '<div class="empty-state">조건에 맞는 출고 작업이 없습니다.</div>';
@@ -279,7 +279,7 @@ function renderDetail() {
          <button class="dq-btn mini" type="button" data-action="approve-over" data-line-id="${esc(line.dispatchLineId)}">초과 승인</button>
          ${line.customerNoticeRequired ? `<button class="dq-btn mini" type="button" data-action="notice-notified" data-line-id="${esc(line.dispatchLineId)}">고객 공지완료</button><button class="dq-btn mini" type="button" data-action="notice-waived" data-line-id="${esc(line.dispatchLineId)}">공지 면제</button>` : ''}`
       : decision.status === 'CONFIRMED' && line.fulfillmentType === FULFILLMENT_TYPE.SUBSTITUTE
-        ? `<button class="dq-btn mini warn" type="button" data-action="reverse-substitute-decision" data-line-id="${esc(line.dispatchLineId)}">대체판단만 역분개</button>`
+        ? `<button class="dq-btn mini warn" type="button" data-action="reverse-substitute-decision" data-line-id="${esc(line.dispatchLineId)}">대체 판단만 취소</button>`
         : '';
     return `<tr class="dispatch-line-row" data-line-id="${esc(line.dispatchLineId)}" data-conversion-type="${esc(line.conversionType || CONVERSION_TYPE.NONE)}">
       <td>${esc(line.requestedProductCode)} ${esc(line.requestedProductName)}</td>
@@ -294,7 +294,7 @@ function renderDetail() {
     .join(' / ') || '없음';
   detail.innerHTML = `
     <div class="detail-header">
-      <div><h1>${esc(decision.dispatchNo)}</h1><p>${esc(decision.customerName || '고객 미지정')} · 출고 작업 · 변경번호 ${Number(decision.revision || 0)}</p></div>
+      <div><h1>${esc(decision.dispatchNo)}</h1><p>${esc(decision.customerName || '고객 미지정')} · 출고 작업</p></div>
       <div class="detail-actions">${actionButtons}</div>
     </div>
     <div class="detail-facts">

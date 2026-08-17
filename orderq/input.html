@@ -19,7 +19,7 @@
       <div class="top-system" aria-live="polite">
         <div class="top-system-line">
           <strong>System.IO</strong>
-          <span id="orderMeta" title="관리자용 주문번호와 시스템 변경번호입니다.">신규 주문전표 · 저장 전</span>
+          <span id="orderMeta" title="관리자용 주문번호입니다.">신규 주문전표 · 저장 전</span>
         </div>
         <span class="top-system-help">품목코드 입력 후 마스터 매칭 결과를 표시합니다.</span>
         <div id="message" class="message"></div>
@@ -967,7 +967,7 @@
       loadedSourceType = order.sourceType || 'MANUAL';
       loadedInputChannel = order.inputChannel || 'DIRECT';
       pageMode.textContent = '주문서 수정';
-      orderMeta.textContent = `${order.orderNo || order.orderId} · 변경번호 ${order.revision} · ${order.orderId}`;
+      orderMeta.textContent = `${order.orderNo || order.orderId}`;
       orderDateInput.value = order.orderDate || todayLocal();
       customerNameInput.value = order.customerName || '';
       selectedWarehouseId = order.warehouseId || '';
@@ -1005,10 +1005,9 @@
       await syncBeforeOrderMutation(editingOrderId, loadedRevision);
     }
 
-    function showConflict(error) {
-      const latest = error.serverRevision || error.latestOrder?.revision || '?';
-      showMessage('이 주문은 다른 곳에서 이미 수정되었습니다. 현재 입력내용은 유지됩니다. [클라우드]에서 최신본을 적용한 후 주문서를 다시 열어 입력·저장하세요.', 'warn');
-      orderMeta.textContent = `${editingOrderId} · 현재 변경 ${loadedRevision} / 최신 변경 ${latest}`;
+    function showConflict() {
+      showMessage('다른 곳에서 이 주문을 먼저 수정했습니다. 현재 입력내용은 유지됩니다. 최신 내용을 불러온 뒤 다시 저장하세요.', 'warn');
+      orderMeta.textContent = `${editingOrderId} · 다른 곳에서 먼저 수정됨`;
     }
 
     async function initializeAssigneeOptions() {
@@ -1045,13 +1044,13 @@
           const result = await updateOrder(editingOrderId, loadedRevision, payload);
           loadedRevision = result.order.revision;
           loadedCustomerId = result.order.customerId;
-          orderMeta.textContent = `${result.order.orderNo || result.order.orderId} · 변경번호 ${result.order.revision}`;
+          orderMeta.textContent = `${result.order.orderNo || result.order.orderId}`;
           try {
             const sync = await syncAfterLocalMutation(result.order.orderId);
-            showMessage(sync.online ? `주문 저장 완료 · 변경번호 ${result.order.revision}` : `주문은 저장됐습니다 · 변경번호 ${result.order.revision} · 중앙 반영 대기`, sync.online ? 'info' : 'warn');
+            showMessage(sync.online ? '주문 저장 완료' : '주문은 저장됐습니다 · 중앙 반영 대기', sync.online ? 'info' : 'warn');
           } catch (syncError) {
             if (syncError instanceof CloudOrderConflictError || syncError.code === 'ORDER_CLOUD_REVISION_CONFLICT') return showConflict(syncError);
-            showMessage(`주문은 저장됐지만 중앙 반영이 지연됩니다 · 변경번호 ${result.order.revision}: ${syncError.message || syncError}`, 'warn');
+            showMessage('주문은 저장됐지만 중앙 반영이 지연됩니다. 관리자 설정에서 연결 상태를 확인하세요.', 'warn');
           }
           openSavedDocument(result.order.orderId);
         } else {
@@ -1200,11 +1199,11 @@
         await cloudPreflight();
         const result = await cancelOrder(editingOrderId, loadedRevision);
         loadedRevision = result.order.revision;
-        orderMeta.textContent = `${result.order.orderNo || result.order.orderId} · 변경번호 ${result.order.revision} · 전체취소`;
+        orderMeta.textContent = `${result.order.orderNo || result.order.orderId} · 전체취소`;
         try { await syncAfterLocalMutation(result.order.orderId); } catch (syncError) {
           if (syncError instanceof CloudOrderConflictError || syncError.code === 'ORDER_CLOUD_REVISION_CONFLICT') return showConflict(syncError);
         }
-        showMessage('주문이 취소되었습니다. 이력은 보존되며 클라우드 동기화 대상에 반영됩니다.', 'warn');
+        showMessage('주문이 취소되었습니다. 변경 이력은 보존되고 중앙 반영 대상에 포함됩니다.', 'warn');
         cancelButton.hidden = true;
         document.getElementById('saveTopBtn').disabled = true;
         document.getElementById('saveBottomBtn').disabled = true;
@@ -1267,7 +1266,7 @@
     subscribeOrderChanges(change => {
       if (!editingOrderId || change.orderId !== editingOrderId) return;
       if (change.revision > (loadedRevision || 0)) {
-        showMessage(`다른 화면에서 이 주문이 변경번호 ${change.revision}으로 바뀌었습니다. 현재 입력내용은 유지되지만 저장 전에 최신 내용을 확인하세요.`, 'warn');
+        showMessage('다른 곳에서 이 주문을 먼저 수정했습니다. 현재 입력내용은 유지되지만 저장 전에 최신 내용을 확인하세요.', 'warn');
       }
     });
 

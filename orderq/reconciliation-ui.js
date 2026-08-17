@@ -81,7 +81,7 @@ function candidateButton(row) {
 function issueButton(row) {
   return `<button type="button" data-action="select-issue" data-id="${esc(row.reconciliationId)}" class="${state.selectedType === 'issue' && state.selectedId === row.reconciliationId ? 'active' : ''}">
     <span class="list-title"><span>${esc(row.reconciliationId)}</span><span class="status-chip">${esc(issueStatusLabel(row.status))}</span></span>
-    <span class="list-meta">${esc(reasonLabel(row.reasonCode))} · ${esc(row.dispatchId)} · 변경 ${number(row.revision)}</span>
+    <span class="list-meta">${esc(reasonLabel(row.reasonCode))} · ${esc(row.dispatchId)}</span>
   </button>`;
 }
 
@@ -104,7 +104,7 @@ function candidateLineRows(candidate) {
     const allocations = line.allocations.map(allocation => {
       const movementBase = Math.abs(number(allocation.movement?.signedBaseQuantity));
       return `<tr class="allocation-row" data-allocation-row="${esc(allocation.allocationId)}" data-line-id="${esc(line.dispatchLineId)}">
-        <td colspan="2">↳ 창고 ${esc(allocation.warehouseId)} · Movement ${esc(allocation.movementId || allocation.movement?.movementId || '')}</td>
+        <td colspan="2">↳ 창고 ${esc(allocation.warehouseId)} · 재고 반영 기록 있음</td>
         <td><input readonly value="${movementBase}" aria-label="확정 창고수량"></td>
         <td><input class="verified-allocation-base" data-allocation-id="${esc(allocation.allocationId)}" type="number" min="0" step="any" value="${movementBase}" aria-label="확인 창고수량"></td>
         <td></td>
@@ -143,7 +143,7 @@ function renderIssue(issue) {
   const corrected = issue.status === 'CORRECTION_DRAFT_CREATED';
   const history = (issue.history || []).map(row => `<li>${esc(row.createdAt)} · ${esc(row.eventType)} · ${esc(row.actorId)}</li>`).join('');
   detailPanel.innerHTML = `<div class="detail-title">
-      <div><h2>출고 차이 ${esc(issue.reconciliationId)}</h2><div>${esc(issue.dispatchId)} · ${esc(reasonLabel(issue.reasonCode))} · 변경 ${number(issue.revision)}</div></div>
+      <div><h2>출고 차이 ${esc(issue.reconciliationId)}</h2><div>${esc(issue.dispatchId)} · ${esc(reasonLabel(issue.reasonCode))}</div></div>
       <span class="status-chip">${esc(issueStatusLabel(issue.status))}</span>
     </div>
     <div class="issue-evidence">
@@ -157,7 +157,7 @@ function renderIssue(issue) {
     </tbody></table>
     <p><b>사유:</b> ${esc(issue.reasonNote)}</p>
     ${corrected ? `<p><b>기존 확정 취소:</b> ${esc(issue.reversalDispatchId)} · <b>수정 출고안:</b> ${esc(issue.correctionDispatchId)}</p>` : ''}
-    <ul class="history-list">${history}</ul>
+    <details class="admin-tools"><summary>관리자 상세 이력</summary><ul class="history-list">${history}</ul></details>
     <div class="action-row">
       ${issue.status === 'REVIEW_REQUIRED' ? '<button class="rq-btn primary" data-action="create-correction" type="button">기존 확정 취소 후 수정 출고안 만들기</button>' : ''}
       ${corrected ? '<button class="rq-btn" data-action="complete-issue" type="button">재확정 완료 확인</button>' : ''}
