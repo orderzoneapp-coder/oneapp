@@ -36,7 +36,11 @@ assert.doesNotMatch(
   'row number must not participate in v2 transaction identity'
 );
 assert.match(contractSource, /fingerprintVersion:\s*FINGERPRINT_VERSION/);
-assert.match(contractSource, /if \(!MATCHING_SOURCES\.has\(batch\.sourceType\)\) return rollbackWithoutMatching/);
+assert.match(contractSource, /const result = await rollbackWithoutMatching\(importBatchId, rolledBackBy\)/);
+assert.match(contractSource, /if \(!MATCHING_SOURCES\.has\(batch\.sourceType\)\) return result/);
+assert.match(contractSource, /if \(!snapshot\.orderLines\.length \|\| !snapshot\.salesLines\.length\)/);
+assert.match(contractSource, /invalidateMatchingDerived\('MATCHING_NOT_READY'\)/);
+assert.match(contractSource, /status:'REVIEW_REQUIRED'/);
 assert.match(uiSource, /commitPreparedImportV2/);
 assert.match(uiSource, /rollbackImportBatchByContract/);
 assert.match(uiSource, /sourceRecords\.filter\(r=>r\.sourceType===COLLECTOR_SOURCE\.CUSTOMER_LEDGER\)/);
@@ -49,4 +53,4 @@ assert.match(htmlSource, /data-work-tab="ledger"/);
 assert.match(htmlSource, /data-work-tab="matching"/);
 assert.match(htmlSource, /data-work-tab="history"/);
 
-console.log('PASS: ORDER Q collector tab isolation, matching gate, duplicate v2 and rollback contracts');
+console.log('PASS: ORDER Q collector tab isolation, matching readiness, duplicate v2 and rollback contracts');
