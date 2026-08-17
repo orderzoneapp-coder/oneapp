@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="google" content="notranslate">
   <title>ONEAPP ORDER Q · 출고 작업대</title>
-  <link rel="stylesheet" href="./orderq.css?v=0.8.0">
+  <link rel="stylesheet" href="./orderq.css?v=0.11.0">
   <link rel="stylesheet" href="./dispatch.css?v=0.8.0">
 </head>
 <body class="dispatch-page">
@@ -28,8 +28,8 @@
 
     <main class="dispatch-shell">
       <section class="dispatch-notice">
-        <strong>M6 로컬 출고·구매 분리</strong>
-        DRAFT와 RELEASED는 판매·재고수불·주문이행에 영향이 없습니다. 출고확정과 구매확정은 서로 독립되며 여러 PC 운영은 M9 이후 사용합니다.
+        <strong>확정 전에는 판매와 재고가 변하지 않습니다.</strong>
+        출고상품·창고·수량을 충분히 검토하고 실제 출고수량까지 입력한 뒤 관리자가 최종 확정합니다. 구매는 별도 업무로 처리합니다.
       </section>
       <div id="message" class="dispatch-message" role="status"></div>
       <div class="dispatch-toolbar">
@@ -38,21 +38,21 @@
           <button type="button" data-mode="WORKER">작업자 목록</button>
         </div>
         <label>상태
-          <select id="statusFilter"><option value="">전체</option><option value="DRAFT">DRAFT</option><option value="RELEASED">RELEASED</option><option value="READY_TO_CONFIRM">READY_TO_CONFIRM</option><option value="CONFIRMED">CONFIRMED</option></select>
+          <select id="statusFilter"><option value="">전체</option><option value="DRAFT">검토 중</option><option value="RELEASED">출고 준비</option><option value="READY_TO_CONFIRM">확정 대기</option><option value="CONFIRMED">출고 완료</option></select>
         </label>
         <label>검색 <input id="searchFilter" type="search" placeholder="출고번호·고객·상품"></label>
-        <button class="dq-btn primary" type="button" data-action="confirm-batch">확정대기 일괄확정</button>
+        <button class="dq-btn primary" type="button" data-action="confirm-batch">확정 대기건 일괄 출고확정</button>
         <span class="dispatch-summary" id="summaryText">불러오는 중…</span>
       </div>
 
       <div id="adminMode" class="dispatch-layout">
         <aside class="dispatch-list-panel">
-          <div class="panel-heading"><h2>출고 판단</h2><span id="proposalCount"></span></div>
+          <div class="panel-heading"><h2>출고 작업</h2><span id="proposalCount"></span></div>
           <div id="proposalList" class="proposal-list"></div>
           <div id="dispatchList" class="dispatch-list"></div>
         </aside>
         <section class="dispatch-detail-panel" id="dispatchDetail">
-          <div class="empty-state">왼쪽에서 출고 판단을 선택하세요.</div>
+          <div class="empty-state">왼쪽에서 출고 작업을 선택하세요.</div>
         </section>
       </div>
 
@@ -68,6 +68,7 @@
       </div>
     </main>
   </div>
-  <script type="module" src="./dispatch-ui.js?v=0.9.0"></script>
+  <script type="module" src="./workflow-guide.js?v=0.11.0"></script>
+  <script type="module" src="./dispatch-ui.js?v=0.11.0"></script>
 </body>
 </html>

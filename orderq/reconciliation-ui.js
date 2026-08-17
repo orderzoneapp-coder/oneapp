@@ -7,6 +7,7 @@ import {
 import { loadDispatchAggregate } from './dispatch-workbench-repository.js?v=0.9.0';
 import { runCentralOfficialCommand } from './central-command-gateway.js?v=0.9.0';
 import { disableCentralAuthorityModeForLegacyTest, enableCentralAuthorityMode } from './official-command-policy.js?v=0.9.0';
+import { erpStatusLabel } from './workflow-language.js?v=0.11.0';
 
 let parentSearch = '';
 try { parentSearch = window.parent?.location?.search || ''; } catch {}
@@ -43,6 +44,23 @@ function setMessage(value = '', type = '') {
   message.className = `reconciliation-message ${type}`;
 }
 
+function issueStatusLabel(status) {
+  return ({
+    REVIEW_REQUIRED: '확인 필요',
+    CORRECTION_DRAFT_CREATED: '수정 출고안 생성',
+    CORRECTED: '수정 완료',
+    CLOSED: '확인 완료'
+  })[status] || status || '확인 필요';
+}
+
+function reasonLabel(reasonCode) {
+  return ({
+    ACTUAL_SHIPMENT_MISMATCH: '실제 출고 차이',
+    WAREHOUSE_COUNT_MISMATCH: '창고 수량 차이',
+    DATA_ENTRY_ERROR: '입력 오류'
+  })[reasonCode] || reasonCode || '차이 사유 미입력';
+}
+
 function selectedCandidate() {
   return state.workspace.candidates.find(row => row.decision.dispatchId === state.selectedId) || null;
 }
@@ -55,26 +73,26 @@ function candidateButton(row) {
   const decision = row.decision;
   const issue = state.workspace.reconciliations.find(item => item.dispatchId === decision.dispatchId && item.status === 'REVIEW_REQUIRED');
   return `<button type="button" data-action="select-candidate" data-id="${esc(decision.dispatchId)}" class="${state.selectedType === 'candidate' && state.selectedId === decision.dispatchId ? 'active' : ''}">
-    <span class="list-title"><span>${esc(decision.dispatchNo || decision.dispatchId)}</span><span class="status-chip">${esc(row.salesDocument?.erpPostingStatus || 'READY')}</span></span>
+    <span class="list-title"><span>${esc(decision.dispatchNo || decision.dispatchId)}</span><span class="status-chip">${esc(erpStatusLabel(row.salesDocument?.erpPostingStatus || 'READY'))}</span></span>
     <span class="list-meta">${esc(decision.customerName || '')} · ${esc(decision.businessDate || '')}${issue ? ' · 검토중' : ''}</span>
   </button>`;
 }
 
 function issueButton(row) {
   return `<button type="button" data-action="select-issue" data-id="${esc(row.reconciliationId)}" class="${state.selectedType === 'issue' && state.selectedId === row.reconciliationId ? 'active' : ''}">
-    <span class="list-title"><span>${esc(row.reconciliationId)}</span><span class="status-chip">${esc(row.status)}</span></span>
-    <span class="list-meta">${esc(row.reasonCode)} · ${esc(row.dispatchId)} · rev ${number(row.revision)}</span>
+    <span class="list-title"><span>${esc(row.reconciliationId)}</span><span class="status-chip">${esc(issueStatusLabel(row.status))}</span></span>
+    <span class="list-meta">${esc(reasonLabel(row.reasonCode))} · ${esc(row.dispatchId)} · 변경 ${number(row.revision)}</span>
   </button>`;
 }
 
 function renderLists() {
   candidateList.innerHTML = state.workspace.candidates.length
     ? state.workspace.candidates.map(candidateButton).join('')
-    : '<div class="empty-state">대사 가능한 확정 출고가 없습니다.</div>';
+    : '<div class="empty-state">확인할 출고 완료 자료가 없습니다.</div>';
   issueList.innerHTML = state.workspace.reconciliations.length
     ? state.workspace.reconciliations.map(issueButton).join('')
-    : '<div class="empty-state">등록된 대사 이슈가 없습니다.</div>';
-  summaryText.textContent = `확정 출고 ${state.workspace.candidates.length}건 · 대사 이슈 ${state.workspace.reconciliations.length}건`;
+    : '<div class="empty-state">등록된 출고 차이가 없습니다.</div>';
+  summaryText.textContent = `출고 완료 ${state.workspace.candidates.length}건 · 확인할 차이 ${state.workspace.reconciliations.length}건`;
 }
 
 function candidateLineRows(candidate) {
@@ -108,7 +126,7 @@ function candidateLineRows(candidate) {
 
 function renderCandidate(candidate) {
   detailPanel.innerHTML = `<div class="detail-title">
-      <div><h2>${esc(candidate.decision.dispatchNo || candidate.decision.dispatchId)}</h2><div>${esc(candidate.decision.customerName || '')} · ERP ${esc(candidate.salesDocument?.erpPostingStatus || '')} ${esc(candidate.salesDocument?.erpDocumentNo || '')}</div></div>
+      <div><h2>${esc(candidate.decision.dispatchNo || candidate.decision.dispatchId)}</h2><div>${esc(candidate.decision.customerName || '')} · ERP ${esc(erpStatusLabel(candidate.salesDocument?.erpPostingStatus || ''))} ${esc(candidate.salesDocument?.erpDocumentNo || '')}</div></div>
       <div class="readonly-banner">확정 원본 직접수정 금지</div>
     </div>
     <table class="fact-table"><thead><tr><th>상품·주문행</th><th>확정 실제</th><th>확정 기준</th><th>확정 인정</th><th>현장 확인 실제 / 기준 / 인정</th></tr></thead>
@@ -118,30 +136,30 @@ function renderCandidate(candidate) {
       <select id="reasonCode"><option value="ACTUAL_SHIPMENT_MISMATCH">실제 출고 차이</option><option value="WAREHOUSE_COUNT_MISMATCH">창고 수량 차이</option><option value="DATA_ENTRY_ERROR">입력 오류</option></select>
       <input id="reasonNote" placeholder="차이 확인 근거와 정정 사유" value="현장 출고 결과 대사">
     </div>
-    <div class="action-row"><button class="rq-btn primary" data-action="create-issue" type="button">대사 이슈 생성</button></div>`;
+    <div class="action-row"><button class="rq-btn primary" data-action="create-issue" type="button">출고 차이 등록</button></div>`;
 }
 
 function renderIssue(issue) {
   const corrected = issue.status === 'CORRECTION_DRAFT_CREATED';
   const history = (issue.history || []).map(row => `<li>${esc(row.createdAt)} · ${esc(row.eventType)} · ${esc(row.actorId)}</li>`).join('');
   detailPanel.innerHTML = `<div class="detail-title">
-      <div><h2>대사 이슈 ${esc(issue.reconciliationId)}</h2><div>${esc(issue.dispatchId)} · ${esc(issue.reasonCode)} · revision ${number(issue.revision)}</div></div>
-      <span class="status-chip">${esc(issue.status)}</span>
+      <div><h2>출고 차이 ${esc(issue.reconciliationId)}</h2><div>${esc(issue.dispatchId)} · ${esc(reasonLabel(issue.reasonCode))} · 변경 ${number(issue.revision)}</div></div>
+      <span class="status-chip">${esc(issueStatusLabel(issue.status))}</span>
     </div>
     <div class="issue-evidence">
       <div><b>확정 원값</b>${qty(issue.originalValue?.actualQuantity)} / ${qty(issue.originalValue?.actualBaseQuantity)} / ${qty(issue.originalValue?.recognizedOrderQuantity)}</div>
       <div><b>현장 확인값</b>${qty(issue.actualValue?.actualQuantity)} / ${qty(issue.actualValue?.actualBaseQuantity)} / ${qty(issue.actualValue?.recognizedOrderQuantity)}</div>
       <div><b>차이수량</b>${qty(issue.differenceQuantity?.actualQuantity)} / ${qty(issue.differenceQuantity?.actualBaseQuantity)} / ${qty(issue.differenceQuantity?.recognizedOrderQuantity)}</div>
-      <div><b>ERP</b>${esc(issue.erpPostingStatus)} · ${esc(issue.originalErpDocumentNo || issue.erpDocumentNo || '미반영')}</div>
+      <div><b>ERP</b>${esc(erpStatusLabel(issue.erpPostingStatus))} · ${esc(issue.originalErpDocumentNo || issue.erpDocumentNo || '미반영')}</div>
     </div>
     <table class="fact-table"><thead><tr><th>원 출고행</th><th>상품</th><th>확정 실제/기준/인정</th><th>확인 실제/기준/인정</th><th>차이 실제/기준/인정</th></tr></thead><tbody>
       ${(issue.lines || []).map(row => `<tr><td>${esc(row.dispatchLineId)}<br><small>${esc(row.orderItemId)}</small></td><td>${esc(row.actualProductId)}</td><td>${qty(row.expectedActualQuantity)} / ${qty(row.expectedBaseQuantity)} / ${qty(row.expectedRecognizedOrderQuantity)}</td><td>${qty(row.actualActualQuantity)} / ${qty(row.actualBaseQuantity)} / ${qty(row.actualRecognizedOrderQuantity)}</td><td>${qty(row.differenceActualQuantity)} / ${qty(row.differenceBaseQuantity)} / ${qty(row.differenceRecognizedOrderQuantity)}</td></tr>`).join('')}
     </tbody></table>
     <p><b>사유:</b> ${esc(issue.reasonNote)}</p>
-    ${corrected ? `<p><b>역분개:</b> ${esc(issue.reversalDispatchId)} · <b>수정 DRAFT:</b> ${esc(issue.correctionDispatchId)}</p>` : ''}
+    ${corrected ? `<p><b>기존 확정 취소:</b> ${esc(issue.reversalDispatchId)} · <b>수정 출고안:</b> ${esc(issue.correctionDispatchId)}</p>` : ''}
     <ul class="history-list">${history}</ul>
     <div class="action-row">
-      ${issue.status === 'REVIEW_REQUIRED' ? '<button class="rq-btn primary" data-action="create-correction" type="button">역분개 후 수정 DRAFT 생성</button>' : ''}
+      ${issue.status === 'REVIEW_REQUIRED' ? '<button class="rq-btn primary" data-action="create-correction" type="button">기존 확정 취소 후 수정 출고안 만들기</button>' : ''}
       ${corrected ? '<button class="rq-btn" data-action="complete-issue" type="button">재확정 완료 확인</button>' : ''}
     </div>`;
 }
@@ -156,7 +174,7 @@ function render() {
     const issue = selectedIssue();
     if (issue) return renderIssue(issue);
   }
-  detailPanel.innerHTML = '<div class="empty-state">왼쪽에서 확정 출고 또는 대사 이슈를 선택하세요.</div>';
+  detailPanel.innerHTML = '<div class="empty-state">왼쪽에서 출고 완료 자료 또는 확인할 차이를 선택하세요.</div>';
 }
 
 async function refresh(preserveSelection = true) {
@@ -217,7 +235,7 @@ document.addEventListener('click', event => {
     const result = await createDispatchReconciliationIssue(collectIssueCommand(selectedCandidate()), 'ADMIN');
     state.selectedType = 'issue'; state.selectedId = result.reconciliation.reconciliationId;
     await refresh();
-    setMessage(result.duplicate ? '같은 대사 이슈를 다시 불러왔습니다.' : '대사 이슈를 생성했습니다.', 'ok');
+    setMessage(result.duplicate ? '같은 출고 차이를 다시 불러왔습니다.' : '출고 차이를 등록했습니다.', 'ok');
   });
   if (action === 'create-correction') runBusy(async () => {
     const issue = selectedIssue();
@@ -234,7 +252,7 @@ document.addEventListener('click', event => {
     }, () => adjustDispatchAfterShipment(adjustmentCommand, 'ADMIN'));
     state.selectedId = result.reconciliation.reconciliationId;
     await refresh();
-    setMessage('원 출고를 역분개하고 수정 DRAFT를 생성했습니다.', 'ok');
+    setMessage('원 출고를 취소하고 수정 출고안을 만들었습니다.', 'ok');
   });
   if (action === 'complete-issue') runBusy(async () => {
     const issue = selectedIssue();
@@ -251,7 +269,7 @@ document.addEventListener('click', event => {
     }, () => completeDispatchReconciliation(completionCommand, 'ADMIN'));
     state.selectedId = result.reconciliation.reconciliationId;
     await refresh();
-    setMessage('재확정 결과를 대사 이슈에 연결했습니다.', 'ok');
+    setMessage('다시 확정한 결과를 출고 차이에 연결했습니다.', 'ok');
   });
 });
 

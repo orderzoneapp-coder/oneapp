@@ -27,6 +27,7 @@ import {
 import { PRODUCT_LINE_CONTEXT, applyProductSelection, editProductLine } from './product-line-common.js?v=0.8.0';
 import { runCentralOfficialCommand } from './central-command-gateway.js?v=0.9.0';
 import { disableCentralAuthorityModeForLegacyTest, enableCentralAuthorityMode } from './official-command-policy.js?v=0.9.0';
+import { actionCodeLabel, dispatchStatusLabel } from './workflow-language.js?v=0.11.0';
 
 const legacyLocalBrowserTest = ['127.0.0.1', 'localhost'].includes(location.hostname)
   && /[?&](?:m3-browser|m4-browser|m4-ready-recovery|m5-browser|m7-browser)=/i.test(location.search);
@@ -163,12 +164,12 @@ function renderLists() {
     const action = (decision.needsActionCodes || []).filter(code => code !== 'READY');
     return `
       <button class="dispatch-card ${selected ? 'selected' : ''}" type="button" data-action="select" data-id="${esc(decision.dispatchId)}">
-        <span class="card-top"><span>${esc(decision.dispatchNo)}</span><span class="status-pill ${esc(decision.status)}">${esc(decision.status)}</span></span>
-        <span class="card-meta"><span>${esc(decision.customerName || '고객 미지정')}</span><span>${row.lines.length}행</span><span>r${Number(decision.revision || 0)}</span></span>
-        ${action.length ? `<span class="card-meta">${action.map(code => `<span class="action-chip">${esc(code)}</span>`).join('')}</span>` : ''}
+        <span class="card-top"><span>${esc(decision.dispatchNo)}</span><span class="status-pill ${esc(decision.status)}">${esc(dispatchStatusLabel(decision.status))}</span></span>
+        <span class="card-meta"><span>${esc(decision.customerName || '고객 미지정')}</span><span>${row.lines.length}행</span><span>변경 ${Number(decision.revision || 0)}</span></span>
+        ${action.length ? `<span class="card-meta">${action.map(code => `<span class="action-chip">${esc(actionCodeLabel(code))}</span>`).join('')}</span>` : ''}
       </button>`;
-  }).join('') : '<div class="empty-state">조건에 맞는 출고 판단이 없습니다.</div>';
-  $('#summaryText').textContent = `DRAFT ${data.aggregates.filter(row => row.decision.status === 'DRAFT').length} · RELEASED ${data.aggregates.filter(row => row.decision.status === 'RELEASED').length} · READY ${data.aggregates.filter(row => row.decision.status === 'READY_TO_CONFIRM').length} · CONFIRMED ${data.aggregates.filter(row => row.decision.status === 'CONFIRMED').length} · 현재고 ${qty(data.inventoryProjection.totals.onHandQuantity)} · 가용 ${qty(data.inventoryProjection.totals.availableQuantity)}`;
+  }).join('') : '<div class="empty-state">조건에 맞는 출고 작업이 없습니다.</div>';
+  $('#summaryText').textContent = `검토 중 ${data.aggregates.filter(row => row.decision.status === 'DRAFT').length} · 출고 준비 ${data.aggregates.filter(row => row.decision.status === 'RELEASED').length} · 확정 대기 ${data.aggregates.filter(row => row.decision.status === 'READY_TO_CONFIRM').length} · 출고 완료 ${data.aggregates.filter(row => row.decision.status === 'CONFIRMED').length} · 현재고 ${qty(data.inventoryProjection.totals.onHandQuantity)} · 출고 가능 ${qty(data.inventoryProjection.totals.availableQuantity)}`;
 }
 
 function warehouseOptions(selected) {
@@ -183,9 +184,16 @@ function productOptions(selected) {
   }).join('');
 }
 
-function selectOptions(values, selected) {
-  return values.map(value => `<option value="${esc(value)}" ${value === selected ? 'selected' : ''}>${esc(value)}</option>`).join('');
+function selectOptions(values, selected, labeler = value => value) {
+  return values.map(value => `<option value="${esc(value)}" ${value === selected ? 'selected' : ''}>${esc(labeler(value))}</option>`).join('');
 }
+
+const fulfillmentTypeLabel = value => ({ NORMAL:'정상출고', SUBSTITUTE:'대체출고', INDEPENDENT:'별도출고' })[value] || value;
+const conversionTypeLabel = value => ({ NONE:'환산 없음', CUT:'절단', PORTION:'소분', MEASURED:'계량' })[value] || value;
+const priceSourceLabel = value => ({ ORDER_AGREED:'주문 합의가격', ACTUAL_PRODUCT:'실제상품 가격', MANUAL:'관리자 입력가격' })[value] || value;
+const workStatusLabel = value => ({ PENDING:'작업 대기', IN_PROGRESS:'작업 중', COMPLETED:'작업 완료' })[value] || value;
+const allocationStatusLabel = value => ({ PLANNED:'출고 예정', RESERVED:'준비 수량 확보', CONSUMED:'출고 반영', RELEASED:'준비 취소', EXPIRED:'준비 만료' })[value] || value;
+const noticeStatusLabel = value => ({ NOT_REQUIRED:'안내 불필요', PENDING:'안내 확인 필요', NOTIFIED:'안내 완료', WAIVED:'안내 면제' })[value] || value;
 
 function inputValue(value) {
   return value === null || value === undefined ? '' : esc(value);
@@ -198,7 +206,7 @@ function readOptionalNumber(control) {
 function renderDetail() {
   const aggregate = selectedAggregate();
   if (!aggregate) {
-    detail.innerHTML = '<div class="empty-state">왼쪽에서 출고 판단을 선택하세요.</div>';
+    detail.innerHTML = '<div class="empty-state">왼쪽에서 출고 작업을 선택하세요.</div>';
     return;
   }
   const { decision, lines, allocations, reservations } = aggregate;
@@ -208,13 +216,13 @@ function renderDetail() {
   const bufferedAllocations = new Map((draftBuffer?.allocations || []).map(row => [row.allocationId, row]));
   const reservationsByAllocation = new Map(reservations.map(row => [row.allocationId, row]));
   const actionButtons = editable
-    ? '<button class="dq-btn primary" type="button" data-action="save-draft">DRAFT 저장</button><button class="dq-btn release" type="button" data-action="release">작업목록 배포</button>'
+    ? '<button class="dq-btn primary" type="button" data-action="save-draft">출고안 저장</button><button class="dq-btn release" type="button" data-action="release">출고 준비 시작</button>'
     : decision.status === 'RELEASED'
-      ? '<button class="dq-btn warn" type="button" data-action="recall">작업목록 회수</button><button class="dq-btn primary" type="button" data-action="record-actual">실제결과 저장</button>'
+      ? '<button class="dq-btn warn" type="button" data-action="recall">출고 준비 취소</button><button class="dq-btn primary" type="button" data-action="record-actual">실제 수량 저장</button>'
       : decision.status === 'READY_TO_CONFIRM'
-        ? '<button class="dq-btn warn" type="button" data-action="recall">확정대기 회수</button><button class="dq-btn" type="button" data-action="record-actual">실제결과 수정</button><button class="dq-btn primary" type="button" data-action="confirm">출고확정</button>'
+        ? '<button class="dq-btn warn" type="button" data-action="recall">확정 대기 취소</button><button class="dq-btn" type="button" data-action="record-actual">실제 수량 수정</button><button class="dq-btn primary" type="button" data-action="confirm">출고 확정</button>'
         : decision.status === 'CONFIRMED' && !decision.reversalOf
-          ? '<button class="dq-btn warn" type="button" data-action="reverse-full">전체 역분개</button>'
+          ? '<button class="dq-btn warn" type="button" data-action="reverse-full">출고 전체 취소</button>'
           : '';
   const lineBody = lines.map(line => {
     const lineAllocations = allocations.filter(row => row.dispatchLineId === line.dispatchLineId);
@@ -222,7 +230,7 @@ function renderDetail() {
       const buffered = bufferedAllocations.get(allocation.allocationId) || {};
       const reservation = reservationsByAllocation.get(allocation.allocationId);
       const conflict = Number(reservation?.conflictBaseQuantity || 0);
-      const reservationText = reservation ? `· ${esc(reservation.status)}` : '';
+      const reservationText = reservation ? `· ${esc(allocationStatusLabel(reservation.status))}` : '';
       const conflictText = conflict > 0 ? `예약충돌 ${qty(conflict)}` : '-';
       const actualAllocation = allocation.actualBaseQuantity ?? allocation.plannedBaseQuantity ?? 0;
       const confirmationInput = ['RELEASED', 'READY_TO_CONFIRM'].includes(decision.status)
@@ -232,7 +240,7 @@ function renderDetail() {
         <td class="allocation-indent">↳ 재고출처</td>
         <td><select class="allocation-warehouse" ${editable ? '' : 'disabled'}>${warehouseOptions(buffered.warehouseId ?? allocation.warehouseId)}</select></td>
         <td><input class="allocation-qty" type="number" step="any" value="${Number(buffered.plannedBaseQuantity ?? allocation.plannedBaseQuantity ?? 0)}" ${editable ? '' : 'disabled'}> ${esc(line.actualUnit)}${confirmationInput}</td>
-        <td>${esc(allocation.status)} ${reservationText}</td>
+        <td>${esc(allocationStatusLabel(allocation.status))} ${reservationText}</td>
         <td class="${conflict > 0 ? 'negative' : ''}">${conflictText}</td>
       </tr>`;
     }).join('');
@@ -249,23 +257,23 @@ function renderDetail() {
       ? `<br><label class="confirm-field">주문인정 <input class="confirm-recognized-qty" type="number" step="any" value="${Number(line.recognizedOrderQuantity ?? plannedRecognizedQuantity)}"></label>`
       : decision.status === 'CONFIRMED' ? `<br><small>주문인정 ${qty(line.recognizedOrderQuantity)}</small>` : '';
     const productCell = editable
-      ? `<select class="line-actual-product">${productOptions(bufferedLine.actualProductId)}</select><br><select class="line-fulfillment-type">${selectOptions(Object.values(FULFILLMENT_TYPE), bufferedLine.fulfillmentType)}</select>`
-      : `${esc(line.actualProductCode)} ${esc(line.actualProductName)}<br><small>${esc(line.fulfillmentType)}</small>`;
+      ? `<select class="line-actual-product">${productOptions(bufferedLine.actualProductId)}</select><br><select class="line-fulfillment-type">${selectOptions(Object.values(FULFILLMENT_TYPE), bufferedLine.fulfillmentType, fulfillmentTypeLabel)}</select>`
+      : `${esc(line.actualProductCode)} ${esc(line.actualProductName)}<br><small>${esc(fulfillmentTypeLabel(line.fulfillmentType))}</small>`;
     const conversion = bufferedLine.conversionRuleSnapshot || {};
     const conversionEditor = editable ? `<div class="m5-grid">
-      <label>환산 <select class="line-conversion-type">${selectOptions(Object.values(CONVERSION_TYPE), bufferedLine.conversionType || CONVERSION_TYPE.NONE)}</select></label>
+      <label>환산 <select class="line-conversion-type">${selectOptions(Object.values(CONVERSION_TYPE), bufferedLine.conversionType || CONVERSION_TYPE.NONE, conversionTypeLabel)}</select></label>
       <label>규칙 <input class="line-conversion-rule-id" value="${inputValue(bufferedLine.conversionRuleId)}"></label>
       <label>버전 <input class="line-conversion-rule-version" value="${inputValue(bufferedLine.conversionRuleVersion)}"></label>
       <label>실제→기준 <input class="line-actual-to-base" type="number" step="any" value="${inputValue(conversion.actualToBaseFactor ?? 1)}"></label>
       <label>실제→인정 <input class="line-actual-to-recognized" type="number" step="any" value="${inputValue(conversion.actualToRecognizedFactor ?? 1)}"></label>
-    </div>` : `<small>${esc(line.conversionType || CONVERSION_TYPE.NONE)} ${esc(line.conversionRuleId || '')} v${esc(line.conversionRuleVersion || '-')} / ${esc(line.measurementStatus || '')}</small>`;
+    </div>` : `<small>${esc(conversionTypeLabel(line.conversionType || CONVERSION_TYPE.NONE))} ${esc(line.conversionRuleId || '')} v${esc(line.conversionRuleVersion || '-')} / ${esc(line.measurementStatus || '')}</small>`;
     const priceEditor = editable ? `<div class="m5-grid">
-      <label>가격 <select class="line-price-source">${selectOptions(Object.values(DISPATCH_PRICE_SOURCE), bufferedLine.priceSource || DISPATCH_PRICE_SOURCE.ORDER_AGREED)}</select></label>
+      <label>가격 <select class="line-price-source">${selectOptions(Object.values(DISPATCH_PRICE_SOURCE), bufferedLine.priceSource || DISPATCH_PRICE_SOURCE.ORDER_AGREED, priceSourceLabel)}</select></label>
       <label>대체기준가 <input class="line-actual-price" type="number" step="any" value="${inputValue(bufferedLine.actualProductUnitPriceWon)}"></label>
       <label>수정단가 <input class="line-manual-price" type="number" step="any" value="${inputValue(bufferedLine.manualUnitPriceWon)}"></label>
       <label>가격사유 <input class="line-price-reason" value="${inputValue(bufferedLine.priceChangeReason)}"></label>
       <label><input class="line-notice-required" type="checkbox" ${bufferedLine.customerNoticeRequired ? 'checked' : ''}> 고객공지 필요</label>
-    </div>` : `<small>${esc(line.priceSource || DISPATCH_PRICE_SOURCE.ORDER_AGREED)} / 적용 ${qty(line.appliedUnitPriceWon)} / 공지 ${esc(line.customerNoticeStatus || CUSTOMER_NOTICE_STATUS.NOT_REQUIRED)}</small>`;
+    </div>` : `<small>${esc(priceSourceLabel(line.priceSource || DISPATCH_PRICE_SOURCE.ORDER_AGREED))} / 적용 ${qty(line.appliedUnitPriceWon)} / 고객안내 ${esc(noticeStatusLabel(line.customerNoticeStatus || CUSTOMER_NOTICE_STATUS.NOT_REQUIRED))}</small>`;
     const lineActions = decision.status === 'READY_TO_CONFIRM'
       ? `${line.fulfillmentType === FULFILLMENT_TYPE.SUBSTITUTE ? `<button class="dq-btn mini" type="button" data-action="approve-substitute" data-line-id="${esc(line.dispatchLineId)}">대체 승인</button>` : ''}
          <button class="dq-btn mini" type="button" data-action="approve-over" data-line-id="${esc(line.dispatchLineId)}">초과 승인</button>
@@ -277,7 +285,7 @@ function renderDetail() {
       <td>${esc(line.requestedProductCode)} ${esc(line.requestedProductName)}</td>
       <td>${productCell}${conversionEditor}</td>
       <td><label>실제계획 <input class="line-qty" type="number" step="any" value="${plannedActualQuantity}" ${editable ? '' : 'disabled'}></label><br><label>기준계획 <input class="line-base-qty" type="number" step="any" value="${plannedBaseQuantity}" ${editable ? '' : 'disabled'}></label><br><label>인정계획 <input class="line-recognized-qty" type="number" step="any" value="${plannedRecognizedQuantity}" ${editable ? '' : 'disabled'}></label> ${esc(line.actualUnit)}${confirmationInput}${recognizedInput}</td>
-      <td>${esc(line.workStatus || 'PENDING')}<br>${priceEditor}</td>
+      <td>${esc(workStatusLabel(line.workStatus || 'PENDING'))}<br>${priceEditor}</td>
       <td>${workerResult} ${esc(line.workerExceptionCode || '')}<div class="line-actions">${lineActions}</div></td>
     </tr>${allocationBody}`;
   }).join('');
@@ -286,17 +294,17 @@ function renderDetail() {
     .join(' / ') || '없음';
   detail.innerHTML = `
     <div class="detail-header">
-      <div><h1>${esc(decision.dispatchNo)}</h1><p>${esc(decision.customerName || '고객 미지정')} · 로컬 작업목록 · revision ${Number(decision.revision || 0)}</p></div>
+      <div><h1>${esc(decision.dispatchNo)}</h1><p>${esc(decision.customerName || '고객 미지정')} · 출고 작업 · 변경번호 ${Number(decision.revision || 0)}</p></div>
       <div class="detail-actions">${actionButtons}</div>
     </div>
     <div class="detail-facts">
-      <div class="fact-box"><b>상태</b><span>${esc(decision.status)}</span></div>
-      <div class="fact-box"><b>출고단계</b><span>${esc(decision.dispatchStageCode || 'UNSPECIFIED')}</span></div>
+      <div class="fact-box"><b>진행 상태</b><span>${esc(dispatchStatusLabel(decision.status))}</span></div>
+      <div class="fact-box"><b>출고 차수</b><span>${esc(decision.dispatchStageCode || '미지정')}</span></div>
       <div class="fact-box"><b>예약 만료</b><span>${esc(decision.reservationExpiresAt || '-')}</span></div>
-      <div class="fact-box"><b>검토</b><span>${esc((decision.needsActionCodes || []).join(', ') || 'READY')}</span></div>
+      <div class="fact-box"><b>확인할 항목</b><span>${esc((decision.needsActionCodes || []).map(actionCodeLabel).join(', ') || '없음')}</span></div>
     </div>
     <table class="dq-table">
-      <thead><tr><th>주문상품</th><th>실제 작업상품</th><th>계획수량</th><th>작업상태</th><th>작업결과</th></tr></thead>
+      <thead><tr><th>주문상품</th><th>실제 출고상품</th><th>출고수량</th><th>진행상태</th><th>현장 입력</th></tr></thead>
       <tbody>${lineBody}</tbody>
     </table>
     <div class="history-strip">최근 이력: ${historyText}</div>`;
@@ -352,7 +360,7 @@ function renderWorker() {
   }).join('');
   $('#aggregatePickList').innerHTML = aggregateRows.length
     ? `<table><thead><tr><th>창고</th><th>상품</th><th>합산수량</th><th>원 출고행</th></tr></thead><tbody>${aggregateBody}</tbody></table>`
-    : '<div class="empty-state">배포된 작업목록이 없습니다.</div>';
+    : '<div class="empty-state">출고 준비 중인 작업이 없습니다.</div>';
   const orderBody = data.workerViews.byOrder.map(row => {
     const exceptionOptions = Object.values(WORK_EXCEPTION_CODE).map(code => `<option value="${esc(code)}" ${code === (row.workerExceptionCode || '') ? 'selected' : ''}>${esc(code || '정상')}</option>`).join('');
     return `
@@ -367,7 +375,7 @@ function renderWorker() {
   }).join('');
   $('#orderPickList').innerHTML = data.workerViews.byOrder.length
     ? `<table><thead><tr><th>출고/고객</th><th>상품·수량</th><th>작업사실 입력</th></tr></thead><tbody>${orderBody}</tbody></table>`
-    : '<div class="empty-state">배포된 작업목록이 없습니다.</div>';
+    : '<div class="empty-state">출고 준비 중인 작업이 없습니다.</div>';
 }
 
 function collectDraft(aggregate) {
@@ -442,11 +450,11 @@ async function runAction(action, target) {
       const saved = await saveDispatchDraft({ ...proposal, expectedRevision: 0 }, 'ADMIN');
       workspace.selectedDispatchIds = [saved.decision.dispatchId];
       workspace.expandedDispatchIds = [...new Set([...workspace.expandedDispatchIds, saved.decision.dispatchId])];
-      showMessage('자동 제안을 DRAFT로 저장했습니다.', 'success');
+      showMessage('자동 제안을 출고안으로 저장했습니다.', 'success');
     } else if (action === 'save-draft') {
       await saveDispatchDraft(collectDraft(aggregate), 'ADMIN');
       clearDraftBuffer(aggregate.decision.dispatchId);
-      showMessage('DRAFT를 저장했습니다.', 'success');
+      showMessage('출고안을 저장했습니다.', 'success');
     } else if (action === 'release') {
       let revision = aggregate.decision.revision;
       if (readDraftBuffer(aggregate.decision)) {
@@ -458,13 +466,13 @@ async function runAction(action, target) {
         commandType:'RELEASE_DISPATCH', aggregateId:aggregate.decision.dispatchId, expectedRevision:revision,
         idempotencyKey:`M9:RELEASE:${aggregate.decision.dispatchId}:${revision}`
       }, () => releaseDispatch(aggregate.decision.dispatchId, revision, 'ADMIN'));
-      showMessage('중앙 작업목록으로 배포했습니다. 다른 PC에서도 동기화할 수 있습니다.', 'success');
+      showMessage('출고 준비를 시작했습니다. 다른 PC에서도 같은 작업을 확인할 수 있습니다.', 'success');
     } else if (action === 'recall') {
       await runOfficialCommand({
         commandType:'RECALL_DISPATCH', aggregateId:aggregate.decision.dispatchId, expectedRevision:aggregate.decision.revision,
         idempotencyKey:`M9:RECALL:${aggregate.decision.dispatchId}:${aggregate.decision.revision}`
       }, () => recallDispatch(aggregate.decision.dispatchId, aggregate.decision.revision, 'ADMIN'));
-      showMessage('작업목록을 회수하고 예약을 해제했습니다.', 'success');
+      showMessage('출고 준비를 취소하고 준비 수량을 해제했습니다.', 'success');
     } else if (action === 'record-actual') {
       const actualCommand = collectActual(aggregate);
       const result = await runOfficialCommand({
@@ -472,7 +480,7 @@ async function runAction(action, target) {
         idempotencyKey:`M9:ACTUAL:${aggregate.decision.dispatchId}:${aggregate.decision.revision}`,
         intent:actualCommand.lines
       }, () => recordDispatchActual(actualCommand, 'ADMIN'));
-      showMessage(`실제결과 저장 완료: ${result.lines.length}행 · 출고확정 대기`, 'success');
+      showMessage(`실제 수량 저장 완료: ${result.lines.length}행 · 출고 확정 대기`, 'success');
     } else if (action === 'approve-substitute') {
       const approveCommand = {
         dispatchId: aggregate.decision.dispatchId,
@@ -528,14 +536,14 @@ async function runAction(action, target) {
         dispatchId: aggregate.decision.dispatchId,
         expectedRevision: aggregate.decision.revision,
         idempotencyKey: buildDispatchReversalKey(aggregate.decision.dispatchId, aggregate.decision.revision, `FULL-${reversalCount + 1}`),
-        reason: '관리자 전체 역분개'
+        reason: '관리자 출고 전체 취소'
       };
       const result = await runOfficialCommand({
         commandType:'REVERSE_DISPATCH', aggregateId:aggregate.decision.dispatchId,
         expectedRevision:aggregate.decision.revision, idempotencyKey:reversalCommand.idempotencyKey,
         intent:{ reason:reversalCommand.reason }
       }, () => reverseDispatch(reversalCommand, 'ADMIN'));
-      showMessage(`전체 역분개 완료: 판매 ${result.salesLines.length}행 · 재고 ${result.movements.length}행`, 'success');
+      showMessage(`출고 전체 취소 완료: 판매 취소 ${result.salesLines.length}행 · 재고 복원 ${result.movements.length}행`, 'success');
     } else if (action === 'reverse-substitute-decision') {
       const dispatchLineId = target.dataset.lineId;
       const reversalCommand = {
@@ -543,14 +551,14 @@ async function runAction(action, target) {
         dispatchLineId,
         expectedRevision: aggregate.decision.revision,
         idempotencyKey: `SUBSTITUTE_DECISION_REVERSE:${aggregate.decision.dispatchId}:${dispatchLineId}:${aggregate.decision.revision}`,
-        reason: '관리자 화면 대체판단 역분개'
+        reason: '관리자 화면 대체판단 취소'
       };
       const result = await runOfficialCommand({
         commandType:'REVERSE_DISPATCH', aggregateId:aggregate.decision.dispatchId,
         expectedRevision:aggregate.decision.revision, idempotencyKey:reversalCommand.idempotencyKey,
         intent:{ dispatchLineId }
       }, () => reverseSubstitutionDecision(reversalCommand, 'ADMIN'));
-      showMessage(`대체판단 역분개 완료: 주문 이벤트 ${result.orderEvents.length}건. 판매·재고는 유지됩니다.`, 'success');
+      showMessage(`대체판단 취소 완료: 주문 처리 기록 ${result.orderEvents.length}건. 판매·재고는 유지됩니다.`, 'success');
     } else if (action === 'confirm-batch') {
       const targets = filteredAggregates().filter(row => row.decision.status === 'READY_TO_CONFIRM');
       if (!targets.length) throw new Error('확정대기 출고가 없습니다.');

@@ -7,6 +7,7 @@ import {
 } from './erp-exchange-repository.js?v=0.9.0';
 import { runCentralOfficialCommand } from './central-command-gateway.js?v=0.9.0';
 import { enableCentralAuthorityMode } from './official-command-policy.js?v=0.9.0';
+import { erpStatusLabel } from './workflow-language.js?v=0.11.0';
 
 enableCentralAuthorityMode();
 
@@ -30,7 +31,17 @@ async function reload() {
   const all = [...workspace.salesDocuments, ...workspace.purchaseDocuments];
   const count = status => all.filter(row => row.erpPostingStatus === status).length;
   summary.innerHTML = ['READY','EXPORTED','POSTED','RECONCILED','CORRECTION_REQUIRED']
-    .map(status => `<span>${status} ${count(status)}</span>`).join('');
+    .map(status => `<span>${erpStatusLabel(status)} ${count(status)}</span>`).join('');
+}
+
+function reconciliationStatusLabel(status) {
+  return ({
+    EXACT: '정확히 연결됨',
+    CONTENT_CONFLICT: '내용이 다름',
+    REVIEW_REQUIRED: '관리자 확인 필요',
+    MISSING: '연결 자료 없음',
+    DUPLICATE: '중복 확인 필요'
+  })[status] || status || '확인 필요';
 }
 
 function download(buffer, fileName) {
@@ -45,7 +56,7 @@ document.querySelector('#exportBtn').addEventListener('click', async () => {
     await reload();
     const rows = workspace.rows;
     const documentIds = [...new Set([...rows.sales, ...rows.purchases].map(row => row.orderqDocumentId))];
-    if (!documentIds.length) throw new Error('READY 상태 ERP 출력자료가 없습니다.');
+    if (!documentIds.length) throw new Error('ERP 자료 준비가 끝난 구매·판매 기록이 없습니다.');
     const stamp = new Date().toISOString().replace(/[-:TZ.]/g, '').slice(0, 14);
     const batchId = `ERP-EXPORT-${stamp}`;
     const buffer = createErpWorkbookBuffer(rows, window.XLSX);
@@ -54,7 +65,7 @@ document.querySelector('#exportBtn').addEventListener('click', async () => {
       commandType:'ERP_TRANSITION', aggregateId:batchId, expectedRevision:1,
       idempotencyKey:`M9:ERP:EXPORT:${batchId}`, intent:{ documentIds }
     }, () => markErpDocumentsExported({ documentIds, erpExportBatchId:batchId }, 'ADMIN'));
-    show(`ERP XLSX를 생성하고 ${documentIds.length}건을 EXPORTED로 기록했습니다.`, 'success');
+    show(`ERP 입력파일을 만들고 ${documentIds.length}건을 '파일 생성 완료'로 표시했습니다.`, 'success');
     await reload();
   } catch (error) { show(error.message || String(error), 'error'); }
 });
@@ -68,7 +79,7 @@ document.querySelector('#reconcileBtn').addEventListener('click', async () => {
     const reconciliation = await reconcileErpRows(imported);
     const reconciled = reconciliation.rows;
     results.innerHTML = `<table class="erp-table"><thead><tr><th>행</th><th>판정</th><th>ERP 전표</th><th>ORDER Q</th><th>후보</th></tr></thead><tbody>${reconciled.map(row => `
-      <tr><td>${row.importIndex + 1}</td><td class="erp-status ${esc(row.status)}">${esc(row.status)}</td><td>${esc(row.imported.externalDocumentNo)} / ${esc(row.imported.externalLineNo)}</td><td>${esc(row.imported.orderqDocumentId)} / ${esc(row.imported.orderqLineId)}</td><td>${row.candidates.length}</td></tr>`).join('')}</tbody></table>`;
+      <tr><td>${row.importIndex + 1}</td><td class="erp-status ${esc(row.status)}">${esc(reconciliationStatusLabel(row.status))}</td><td>${esc(row.imported.externalDocumentNo)} / ${esc(row.imported.externalLineNo)}</td><td>${esc(row.imported.orderqDocumentId)} / ${esc(row.imported.orderqLineId)}</td><td>${row.candidates.length}</td></tr>`).join('')}</tbody></table>`;
     const exactByDocument = new Map(reconciliation.documents.filter(row => row.status === 'EXACT').map(row => [row.key, row]));
     if (exactByDocument.size) {
       const postedTransitions = [];
@@ -97,7 +108,7 @@ document.querySelector('#reconcileBtn').addEventListener('click', async () => {
     }
     const reviewCount = reconciliation.documents.filter(row => row.status !== 'EXACT').length
       + reconciled.filter(row => row.status !== 'EXACT' && !row.candidates.length).length;
-    show(`정확대사 ${exactByDocument.size}건 · 검토/불일치 ${reviewCount}건. 애매한 후보는 자동병합하지 않았습니다.`, reviewCount ? 'warn' : 'success');
+    show(`정확히 연결 ${exactByDocument.size}건 · 확인 필요 ${reviewCount}건. 애매한 자료는 자동으로 연결하지 않았습니다.`, reviewCount ? 'warn' : 'success');
     await reload();
   } catch (error) { show(error.message || String(error), 'error'); }
 });

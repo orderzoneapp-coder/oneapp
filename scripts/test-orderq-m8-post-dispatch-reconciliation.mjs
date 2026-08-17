@@ -112,7 +112,7 @@ assert.match(bridge, /orderq-reconciliation-open/);
 assert.match(bridge, /\.\/orderq\/reconciliation\.html/);
 assert.doesNotMatch(bridge, /indexedDB|openOrderQDb|objectStore/);
 assert.match(page, /확정사실은 읽기 전용입니다/);
-assert.match(page, /역분개 → 수정 DRAFT → 재확정/);
+assert.match(page, /기존 확정 취소 → 수정 출고안 → 다시 확정/);
 assert.match(ui, /createDispatchReconciliationIssue/);
 assert.match(ui, /adjustDispatchAfterShipment/);
 assert.match(ui, /completeDispatchReconciliation/);

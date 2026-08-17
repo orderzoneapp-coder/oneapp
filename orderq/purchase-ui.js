@@ -17,6 +17,7 @@ import {
 } from './product-line-common.js?v=0.8.0';
 import { runCentralOfficialCommand } from './central-command-gateway.js?v=0.9.0';
 import { disableCentralAuthorityModeForLegacyTest, enableCentralAuthorityMode } from './official-command-policy.js?v=0.9.0';
+import { erpStatusLabel, purchaseStatusLabel } from './workflow-language.js?v=0.11.0';
 
 const legacyLocalBrowserTest = ['127.0.0.1', 'localhost'].includes(location.hostname)
   && /[?&]m6-browser=/i.test(location.search);
@@ -83,10 +84,10 @@ function emptyDraft() {
 function renderList() {
   listElement.innerHTML = documents.length ? documents.map(row => `
     <button class="purchase-card ${row.purchaseDocumentId === selectedId ? 'selected' : ''}" type="button" data-select="${esc(row.purchaseDocumentId)}">
-      <strong>${esc(row.purchaseDocumentId)} <span class="purchase-status">${esc(row.status)}</span></strong>
+      <strong>${esc(row.purchaseDocumentId)} <span class="purchase-status">${esc(purchaseStatusLabel(row.status))}</span></strong>
       <span>${esc(row.supplierName || '공급처 미지정')} · ${esc(row.businessDate || row.purchaseDate || '-')}</span>
       <span>${esc(row.sourceShortageKey || '수기 구매')} · ${Number(row.amountWon || 0).toLocaleString('ko-KR')}원</span>
-    </button>`).join('') : '<div class="empty-state">구매 DRAFT가 없습니다.</div>';
+    </button>`).join('') : '<div class="empty-state">저장된 구매안이 없습니다.</div>';
   summaryElement.textContent = `구매 ${documents.length}건`;
 }
 
@@ -107,25 +108,25 @@ function lineEditor(line, index, editable) {
       <label>주문행 근거<input class="line-order-item" value="${esc(line.sourceOrderItemId)}" ${editable ? '' : 'readonly'}></label>
       <label>출고결정 근거<input class="line-dispatch-id" value="${esc(line.sourceDispatchId)}" ${editable ? '' : 'readonly'}></label>
       <label>출고행 근거<input class="line-dispatch-line" value="${esc(line.sourceDispatchLineId)}" ${editable ? '' : 'readonly'}></label>
-      ${editable ? `<label>행 관리<button class="pq-btn danger" type="button" data-action="remove-line" data-index="${index}">행 삭제</button></label>` : `<label>부분 역분개 수량<input class="line-reverse-quantity" type="number" min="0" max="${esc(Math.abs(number(line.quantity)))}" step="any" value="0"></label>`}
+      ${editable ? `<label>행 관리<button class="pq-btn danger" type="button" data-action="remove-line" data-index="${index}">행 삭제</button></label>` : `<label>일부 취소 수량<input class="line-reverse-quantity" type="number" min="0" max="${esc(Math.abs(number(line.quantity)))}" step="any" value="0"></label>`}
     </div>
-    ${line.movementId ? `<p class="purchase-evidence">Movement ${esc(line.movementId)} · 기준수량 ${esc(line.baseQuantity)} ${esc(line.baseUnit)}</p>` : ''}
+    ${line.movementId ? `<p class="purchase-evidence">재고 기록 ${esc(line.movementId)} · 기준수량 ${esc(line.baseQuantity)} ${esc(line.baseUnit)}</p>` : ''}
   </section>`;
 }
 
 function renderDetail() {
   if (!current) {
-    detailElement.innerHTML = '<div class="empty-state">왼쪽에서 구매 판단을 선택하거나 새 DRAFT를 만드세요.</div>';
+    detailElement.innerHTML = '<div class="empty-state">왼쪽에서 구매안을 선택하거나 새 구매안을 만드세요.</div>';
     return;
   }
   const documentRow = current.document;
   const editable = documentRow.status === 'DRAFT';
   detailElement.innerHTML = `<form class="purchase-form" id="purchaseForm">
-    <h2>${editable ? '구매 DRAFT' : `구매 ${esc(documentRow.status)}`}</h2>
+    <h2>${editable ? '구매안' : `구매 · ${esc(purchaseStatusLabel(documentRow.status))}`}</h2>
     <div class="purchase-form-grid">
       <label>구매 ID<input id="purchaseDocumentId" value="${esc(documentRow.purchaseDocumentId)}" readonly></label>
-      <label>Revision<input id="purchaseRevision" value="${esc(documentRow.revision || 0)}" readonly></label>
-      <label>ERP 상태<input value="${esc(documentRow.erpPostingStatus || 'NOT_READY')}" readonly></label>
+      <label>변경번호<input id="purchaseRevision" value="${esc(documentRow.revision || 0)}" readonly></label>
+      <label>ERP 진행<input value="${esc(erpStatusLabel(documentRow.erpPostingStatus || 'NOT_READY'))}" readonly></label>
       <label class="wide">부족근거 Key<input id="sourceShortageKey" value="${esc(documentRow.sourceShortageKey)}" ${editable ? '' : 'readonly'}></label>
       <label>부족수량<input id="sourceShortageQuantity" type="number" step="any" value="${esc(documentRow.sourceShortageQuantity || 0)}" ${editable ? '' : 'readonly'}></label>
       <label>공급처 ID<input id="supplierId" value="${esc(documentRow.supplierId)}" ${editable ? '' : 'readonly'}></label>
@@ -138,11 +139,11 @@ function renderDetail() {
     <h3>구매행</h3>
     <div id="purchaseLines">${current.lines.map((line, index) => lineEditor(line, index, editable)).join('')}</div>
     <div class="purchase-actions">
-      ${editable ? '<button class="pq-btn" type="button" data-action="add-line">+ 행 추가</button><button class="pq-btn primary" type="button" data-action="save">DRAFT 저장</button><button class="pq-btn primary" type="button" data-action="confirm">구매확정</button>' : ''}
-      ${documentRow.status === 'CONFIRMED' ? '<button class="pq-btn danger" type="button" data-action="reverse-partial">입력수량 부분 역분개</button><button class="pq-btn danger" type="button" data-action="reverse-full">남은 수량 전체 역분개</button>' : ''}
+      ${editable ? '<button class="pq-btn" type="button" data-action="add-line">+ 행 추가</button><button class="pq-btn primary" type="button" data-action="save">구매안 저장</button><button class="pq-btn primary" type="button" data-action="confirm">구매 확정</button>' : ''}
+      ${documentRow.status === 'CONFIRMED' ? '<button class="pq-btn danger" type="button" data-action="reverse-partial">입력 수량 일부 취소</button><button class="pq-btn danger" type="button" data-action="reverse-full">남은 수량 전체 취소</button>' : ''}
     </div>
     ${documentRow.status === 'CONFIRMED' ? `<section class="purchase-line">
-      <h3>ERP 정확식별 대사</h3>
+      <h3>ERP 자료 연결 확인</h3>
       <div class="purchase-form-grid">
         <label>ERP 전표번호<input id="erpDocumentNo" value="${esc(documentRow.erpDocumentNo || documentRow.externalDocumentNo)}"></label>
         <label>Import Batch<input id="erpImportBatchId" value="${esc(documentRow.importBatchId)}"></label>
@@ -151,7 +152,7 @@ function renderDetail() {
       <button class="pq-btn" type="button" data-action="reconcile">기존 구매와 대사</button>
       <p class="purchase-evidence">정확한 ORDER Q 구매ID·행ID·수량·단가가 모두 같을 때만 연결하며, 유사값은 검토대상으로 남깁니다.</p>
     </section>` : ''}
-    <p class="purchase-evidence">출고확정과 구매확정은 독립 명령입니다. 확정자료는 직접 수정하지 않고 역분개합니다.</p>
+    <p class="purchase-evidence">출고와 구매는 따로 확정합니다. 확정 후 수정은 원 기록을 보존하고 취소 기록을 추가합니다.</p>
   </form>`;
 }
 
@@ -289,15 +290,15 @@ detailElement.addEventListener('click', event => {
           commandType:'CONFIRM_PURCHASE', aggregateId:selectedId, expectedRevision:saved.document.revision,
           idempotencyKey:confirmationCommand.idempotencyKey
         }, () => confirmPurchase(confirmationCommand, 'ADMIN'));
-        showMessage('구매확정과 입고 Movement를 저장했습니다.', 'success');
+        showMessage('구매를 확정하고 입고 재고를 반영했습니다.', 'success');
       } else {
-        showMessage('구매 DRAFT를 저장했습니다.', 'success');
+        showMessage('구매안을 저장했습니다.', 'success');
       }
       await reload(selectedId);
       return;
     }
     if (action === 'reverse-full' || action === 'reverse-partial') {
-      const reason = prompt('구매 역분개 사유를 입력하세요.');
+      const reason = prompt('구매 취소 사유를 입력하세요.');
       if (!text(reason)) return;
       const lines = action === 'reverse-partial'
         ? [...detailElement.querySelectorAll('.purchase-line[data-line-index]')].map(row => ({
@@ -305,7 +306,7 @@ detailElement.addEventListener('click', event => {
           quantity: number(row.querySelector('.line-reverse-quantity').value)
         })).filter(row => row.quantity > 0)
         : [];
-      if (action === 'reverse-partial' && !lines.length) throw new Error('부분 역분개 수량을 입력하세요.');
+      if (action === 'reverse-partial' && !lines.length) throw new Error('일부 취소할 수량을 입력하세요.');
       const reversalCommand = {
         purchaseDocumentId: current.document.purchaseDocumentId,
         expectedRevision: current.document.revision,
@@ -318,7 +319,7 @@ detailElement.addEventListener('click', event => {
         expectedRevision:current.document.revision, idempotencyKey:reversalCommand.idempotencyKey,
         intent:{ reason, lines }
       }, () => reversePurchase(reversalCommand, 'ADMIN'));
-      showMessage('원 구매를 유지하고 반대 구매·재고 Movement를 추가했습니다.', 'success');
+      showMessage('원 구매를 보존하고 구매 취소·재고 복원 기록을 추가했습니다.', 'success');
       await reload(selectedId);
       return;
     }
@@ -348,7 +349,7 @@ detailElement.addEventListener('click', event => {
         expectedRevision:current.document.revision, idempotencyKey:reconciliationCommand.idempotencyKey,
         intent:{ externalDocumentNo }
       }, () => reconcilePurchaseExternal(reconciliationCommand, 'ADMIN'));
-      showMessage('ERP 자료를 기존 구매와 대사했습니다. 새 구매·재고는 만들지 않았습니다.', 'success');
+      showMessage('ERP 자료를 기존 구매와 연결했습니다. 새 구매·재고는 만들지 않았습니다.', 'success');
       await reload(selectedId);
     }
   });

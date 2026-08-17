@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="google" content="notranslate">
   <title>ONEAPP ORDER Q vNext · 주문현황</title>
-  <link rel="stylesheet" href="./orderq.css?v=0.8.0">
+  <link rel="stylesheet" href="./orderq.css?v=0.11.0">
 </head>
 <body class="order-history-page">
   <div class="shell">
@@ -24,12 +24,12 @@
         <a class="btn dark" href="./dispatch.html">출고 작업대</a>
         <a class="btn dark" href="./purchase.html">구매 작업대</a>
         <a class="btn dark" href="./products.html">간편상품</a>
-        <a class="btn dark" href="./transition.html">M10 전환관리</a>
+        <a class="btn dark" href="./transition.html">관리자 설정</a>
         <a class="btn primary" href="./input.html">+ 주문서 입력</a>
       </div>
     </header>
     <main class="panel">
-      <p class="notice">주문전표를 펼쳐 상품·금액·변경이력을 확인하고 수정하거나 출력합니다. 재고·부족·발주·출고·미출고 처리는 ORDER Q 운영에서 진행합니다.</p>
+      <p class="notice">처리할 주문의 상품·수량·전달사항을 확인하세요. 확인이 끝나면 위의 ‘출고 준비로 이동’을 누릅니다.</p>
       <div id="message" class="message page-message"></div>
       <div class="toolbar document-filters">
         <button class="btn" id="refreshBtn" type="button">새로고침</button>
@@ -81,7 +81,8 @@
     </main>
   </div>
   <datalist id="inlineAssigneeOptions"></datalist>
-  <script type="module">
+    <script type="module" src="./workflow-guide.js?v=0.11.0"></script>
+    <script type="module">
     import {
       listOrders, getOrder, updateOrder, cancelOrder, subscribeOrderChanges,
       OrderRevisionConflictError
@@ -216,7 +217,7 @@
       return `<ol class="change-history">${events.slice(0, 12).map(event => {
         const changes = Array.isArray(event.detail?.changes) && event.detail.changes.length
           ? event.detail.changes.map(change => `${change.label}: ${historyValue(change.field, change.before)} → ${historyValue(change.field, change.after)}`).join(' · ')
-          : event.eventType === 'ORDER_CREATED' ? '주문전표 생성' : event.eventType === 'ORDER_CANCELLED' ? '주문 전체취소' : `Revision ${event.revision}`;
+          : event.eventType === 'ORDER_CREATED' ? '주문전표 생성' : event.eventType === 'ORDER_CANCELLED' ? '주문 전체취소' : `변경 ${event.revision}`;
         return `<li><time>${esc(formatTime(event.createdAt))}</time><b>${esc(event.actor || 'LOCAL_USER')}</b><span>${esc(changes)}</span></li>`;
       }).join('')}</ol>`;
     }
@@ -276,7 +277,7 @@
       const readOnly = cancelled ? 'disabled' : '';
       return `<form class="inline-edit-form" data-edit-form="${esc(order.orderId)}">
         <div class="document-detail-head">
-          <div><strong>${esc(order.orderNo || order.orderId)} 수정</strong><span>현재 펼침 영역에서 저장하며 Revision ${esc(order.revision)}을 확인합니다.</span></div>
+          <div><strong>${esc(order.orderNo || order.orderId)} 수정</strong><span>현재 펼침 영역에서 저장하며 변경번호 ${esc(order.revision)}를 확인합니다.</span></div>
           <div class="document-actions">
             <button class="btn primary" type="button" data-save-inline="${esc(order.orderId)}">저장</button>
             <button class="btn" type="button" data-cancel-edit="${esc(order.orderId)}">편집 취소</button>
@@ -422,7 +423,7 @@
 
     function showConflict(error, orderId, revision) {
       const latest = error.serverRevision || error.latestOrder?.revision || '?';
-      showMessage(`저장되지 않았습니다. ${orderId}의 현재 화면 Revision ${revision}, 최신 Revision ${latest}입니다. 클라우드에서 최신본을 적용한 후 다시 수정하세요.`, 'warn');
+      showMessage(`저장되지 않았습니다. 이 주문이 다른 화면에서 먼저 변경됐습니다. 현재 변경번호 ${revision}, 최신 변경번호 ${latest}입니다. 최신 내용을 불러온 뒤 다시 저장하세요.`, 'warn');
     }
 
     async function saveInlineOrder(orderId, button) {
@@ -454,7 +455,7 @@
         editModeOrders.delete(orderId);
         detailCache.delete(orderId);
         await render();
-        showMessage(`주문전표를 저장했습니다. Revision ${result.order.revision}${syncMessage}`, syncMessage.includes('실패') ? 'warn' : 'info');
+        showMessage(`주문전표를 저장했습니다. 변경번호 ${result.order.revision}${syncMessage}`, syncMessage.includes('실패') ? 'warn' : 'info');
       } catch (error) {
         if (error instanceof OrderRevisionConflictError || error.code === 'ORDER_REVISION_CONFLICT'
           || error instanceof CloudOrderConflictError || error.code === 'ORDER_CLOUD_REVISION_CONFLICT') {
@@ -477,7 +478,7 @@
         editModeOrders.delete(orderId);
         detailCache.delete(orderId);
         await render();
-        showMessage(`주문을 전체취소했습니다. Revision ${result.order.revision} · 이력 보존`, 'warn');
+        showMessage(`주문을 전체취소했습니다. 변경번호 ${result.order.revision} · 이력 보존`, 'warn');
       } catch (error) {
         if (error instanceof OrderRevisionConflictError || error.code === 'ORDER_REVISION_CONFLICT'
           || error instanceof CloudOrderConflictError || error.code === 'ORDER_CLOUD_REVISION_CONFLICT') {
@@ -670,7 +671,7 @@
     syncButton.addEventListener('click', () => runSync(true));
     subscribeOrderChanges(() => {
       if (editModeOrders.size) {
-        showMessage('다른 화면에서 주문이 변경되었습니다. 현재 편집내용은 유지되며 저장 시 Revision을 다시 확인합니다.', 'warn');
+        showMessage('다른 화면에서 주문이 변경되었습니다. 현재 편집내용은 유지되며 저장할 때 최신 변경내용을 다시 확인합니다.', 'warn');
         return;
       }
       detailCache.clear();
