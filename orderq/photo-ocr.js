@@ -29,8 +29,10 @@ window.addEventListener('DOMContentLoaded', () => {
       .filter(Boolean);
     if (!files.length) return;
     event.preventDefault();
-    const images = addFiles(files);
-    window.dispatchEvent(new CustomEvent('orderq-photo-files', { detail: { files: images, source: 'paste' } }));
+    const transfer = new DataTransfer();
+    files.forEach(file => transfer.items.add(file));
+    input.files = transfer.files;
+    input.dispatchEvent(new Event('change', { bubbles: true }));
   });
 
   list.addEventListener('click', async event => {
