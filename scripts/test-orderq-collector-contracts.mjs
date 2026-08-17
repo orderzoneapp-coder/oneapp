@@ -30,6 +30,7 @@ const contractSource = await readFile(new URL('../orderq/history-collector/colle
 const uiSource = await readFile(new URL('../orderq/collector-ui.js', import.meta.url), 'utf8');
 const htmlSource = await readFile(new URL('../orderq/collector.html', import.meta.url), 'utf8');
 const photoOcrSource = await readFile(new URL('../orderq/photo-ocr.js', import.meta.url), 'utf8');
+const photoBulkSource = await readFile(new URL('../orderq/photo-bulk-actions.js', import.meta.url), 'utf8');
 
 assert.doesNotMatch(
   contractSource.slice(contractSource.indexOf('export function normalizedRowFingerprint'), contractSource.indexOf('function queueRow')),
@@ -55,6 +56,10 @@ assert.match(htmlSource, /data-work-tab="matching"/);
 assert.match(htmlSource, /data-work-tab="history"/);
 assert.match(htmlSource, /tesseract\.js@6/);
 assert.match(htmlSource, /photo-ocr\.js\?v=0\.8\.4/);
+assert.match(htmlSource, /photo-bulk-actions\.js\?v=0\.8\.6/);
+assert.match(htmlSource, /id="photoClearAllBtn"/);
+assert.match(htmlSource, /id="photoBulkCreateBtn"/);
+assert.match(htmlSource, /전체 비우기/);
 assert.match(htmlSource, /추가 즉시 OCR/);
 assert.match(htmlSource, /Ctrl\+V/);
 assert.match(photoOcrSource, /Tesseract\?\.recognize/);
@@ -68,5 +73,11 @@ assert.match(photoOcrSource, /clipboardData\?\.items/);
 assert.match(photoOcrSource, /new DataTransfer\(\)/);
 assert.match(photoOcrSource, /input\.dispatchEvent\(new Event\('change'/);
 assert.match(photoOcrSource, /dispatchEvent\(new Event\('input'/);
+assert.match(photoBulkSource, /이 사진 비우기/);
+assert.match(photoBulkSource, /excludedPhotoIndexes/);
+assert.match(photoBulkSource, /activePhotoCards\(\)/);
+assert.match(photoBulkSource, /button\.click\(\)/);
+assert.match(photoBulkSource, /cards\.some\(card => card\.querySelector\('\[data-photo-analyze\]'\)\?\.disabled\)/);
+assert.match(photoBulkSource, /cards\.some\(card => !card\.querySelector\('\[data-photo-text\]'\)\?\.value\.trim\(\)\)/);
 
-console.log('PASS: ORDER Q collector tabs, matching readiness, duplicate v2, rollback, photo auto OCR event ordering and clipboard paste contracts');
+console.log('PASS: ORDER Q collector tabs, matching readiness, duplicate v2, rollback, photo OCR, clear controls and bulk candidate contracts');
