@@ -29,6 +29,7 @@ assert.notEqual(
 const contractSource = await readFile(new URL('../orderq/history-collector/collector-contracts.js', import.meta.url), 'utf8');
 const uiSource = await readFile(new URL('../orderq/collector-ui.js', import.meta.url), 'utf8');
 const htmlSource = await readFile(new URL('../orderq/collector.html', import.meta.url), 'utf8');
+const photoOcrSource = await readFile(new URL('../orderq/photo-ocr.js', import.meta.url), 'utf8');
 
 assert.doesNotMatch(
   contractSource.slice(contractSource.indexOf('export function normalizedRowFingerprint'), contractSource.indexOf('function queueRow')),
@@ -52,5 +53,10 @@ assert.match(htmlSource, /data-work-tab="inventory"/);
 assert.match(htmlSource, /data-work-tab="ledger"/);
 assert.match(htmlSource, /data-work-tab="matching"/);
 assert.match(htmlSource, /data-work-tab="history"/);
+assert.match(htmlSource, /tesseract\.js@6/);
+assert.match(htmlSource, /photo-ocr\.js\?v=0\.8\.2/);
+assert.match(photoOcrSource, /Tesseract\?\.recognize/);
+assert.match(photoOcrSource, /'kor\+eng'/);
+assert.match(photoOcrSource, /dispatchEvent\(new Event\('input'/);
 
-console.log('PASS: ORDER Q collector tab isolation, matching readiness, duplicate v2 and rollback contracts');
+console.log('PASS: ORDER Q collector tabs, matching readiness, duplicate v2, rollback and photo OCR contracts');
