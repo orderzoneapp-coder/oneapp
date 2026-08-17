@@ -2,6 +2,15 @@ const photoFiles = [];
 
 function fileInput() { return document.querySelector('#photoInput'); }
 function candidates() { return document.querySelector('#photoCandidates'); }
+function photoPanelVisible() {
+  const panel = document.querySelector('#photoCollector');
+  return Boolean(panel && !panel.classList.contains('hidden'));
+}
+function addFiles(files) {
+  const images = [...files].filter(file => String(file.type || '').startsWith('image/'));
+  for (const file of images) photoFiles.push(file);
+  return images;
+}
 
 window.addEventListener('DOMContentLoaded', () => {
   const input = fileInput();
@@ -9,7 +18,19 @@ window.addEventListener('DOMContentLoaded', () => {
   if (!input || !list) return;
 
   input.addEventListener('change', event => {
-    for (const file of event.target.files || []) photoFiles.push(file);
+    addFiles(event.target.files || []);
+  });
+
+  document.addEventListener('paste', event => {
+    if (!photoPanelVisible()) return;
+    const files = [...(event.clipboardData?.items || [])]
+      .filter(item => item.kind === 'file' && String(item.type || '').startsWith('image/'))
+      .map(item => item.getAsFile())
+      .filter(Boolean);
+    if (!files.length) return;
+    event.preventDefault();
+    const images = addFiles(files);
+    window.dispatchEvent(new CustomEvent('orderq-photo-files', { detail: { files: images, source: 'paste' } }));
   });
 
   list.addEventListener('click', async event => {
