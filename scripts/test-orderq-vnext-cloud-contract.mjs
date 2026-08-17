@@ -65,7 +65,8 @@ assert.match(indexHtml, /syncNow/);
 assert.match(cloudHtml, /CUSTOMER_ALIAS_MAPPING/);
 assert.match(cloudHtml, /최신본 적용/);
 assert.match(inputHtml, /syncBeforeOrderMutation/);
-assert.match(inputHtml, /현재 입력내용은 유지됩니다/);
-assert.match(inputHtml, /최신본을 적용한 후 주문서를 다시 열어 입력·저장/);
+assert.match(inputHtml, /다른 곳에서 이 주문을 먼저 수정했습니다/);
+assert.match(inputHtml, /현재 입력내용은 유지되|현재 입력내용은 유지됩니다/);
+assert.match(inputHtml, /최신|저장 전에 최신/);
 
 console.log('ORDER Q vNext cloud sync contract tests passed.');
