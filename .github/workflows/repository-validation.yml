@@ -53,6 +53,9 @@ jobs:
       - name: Test ORDER Q history collection and fulfillment stabilization
         run: node scripts/test-orderq-history-collector.mjs
 
+      - name: Test ORDER Q collector tab isolation and duplicate v2 contracts
+        run: node scripts/test-orderq-collector-contracts.mjs
+
       - name: Test ORDER Q cloud transaction atomicity
         run: node scripts/test-orderq-cloud-atomicity.mjs
 
