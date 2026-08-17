@@ -55,10 +55,12 @@ window.addEventListener('DOMContentLoaded', () => {
   const list = candidates();
   if (!input || !list) return;
 
+  // collector-ui의 change 핸들러는 렌더링 후 input.value를 비운다.
+  // 캡처 단계에서 먼저 FileList를 확보해야 OCR 쪽에서 실제 이미지가 사라지지 않는다.
   input.addEventListener('change', event => {
     const { images, startIndex } = addFiles(event.target.files || []);
     if (images.length) recognizeAdded(startIndex, images.length);
-  });
+  }, true);
 
   document.addEventListener('paste', event => {
     if (!photoPanelVisible()) return;
