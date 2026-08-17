@@ -12,7 +12,6 @@ import {
 import { COLLECTOR_SOURCE } from './collector-schema.js?v=0.8.0';
 import {
   commitPreparedImport,
-  rollbackImportBatch,
   rebuildFulfillmentEvidence,
   getCollectorSnapshot
 } from './history-repository.js?v=0.8.0';
@@ -174,11 +173,54 @@ async function rollbackWithoutMatching(importBatchId, rolledBackBy = 'administra
   return { importBatch:nextBatch, rebuilt:null };
 }
 
+async function invalidateMatchingDerived(reason = 'MATCHING_NOT_READY') {
+  const timestamp = nowIso();
+  const [links, balances, evidence, mappings] = await Promise.all([
+    getAll(STORE.FULFILLMENT_LINKS),
+    getAll(STORE.FULFILLMENT_BALANCES),
+    getAll(STORE.PARSER_EVIDENCE),
+    getAll(STORE.PRODUCT_MAPPINGS)
+  ]);
+  const activeEvidenceIds = new Set(evidence.filter(row => row.active !== false).map(row => row.parserEvidenceId));
+  const db = await openOrderQDb();
+  const tx = db.transaction([
+    STORE.FULFILLMENT_LINKS, STORE.FULFILLMENT_BALANCES, STORE.PARSER_EVIDENCE,
+    STORE.PRODUCT_MAPPINGS, STORE.MAPPING_EVENTS, STORE.SYNC_QUEUE
+  ], 'readwrite');
+  const syncStore = tx.objectStore(STORE.SYNC_QUEUE);
+  links.filter(row => row.active !== false).forEach(row => {
+    const next={...row,active:false,invalidatedAt:timestamp,invalidatedReason:reason,updatedAt:timestamp};
+    tx.objectStore(STORE.FULFILLMENT_LINKS).put(next); syncStore.put(queueRow('FULFILLMENT_LINK',next.fulfillmentLinkId,next));
+  });
+  balances.filter(row => row.active !== false).forEach(row => {
+    const next={...row,active:false,invalidatedAt:timestamp,invalidatedReason:reason,updatedAt:timestamp};
+    tx.objectStore(STORE.FULFILLMENT_BALANCES).put(next); syncStore.put(queueRow('FULFILLMENT_BALANCE',next.fulfillmentBalanceId,next));
+  });
+  evidence.filter(row => row.active !== false).forEach(row => {
+    const next={...row,active:false,invalidatedAt:timestamp,invalidatedReason:reason,updatedAt:timestamp};
+    tx.objectStore(STORE.PARSER_EVIDENCE).put(next); syncStore.put(queueRow('PARSER_EVIDENCE',next.parserEvidenceId,next));
+  });
+  mappings.filter(row => row.status === 'ACTIVE' && row.evidenceId && activeEvidenceIds.has(row.evidenceId)).forEach(row => {
+    const next={...row,status:'REVIEW_REQUIRED',reviewReason:reason,updatedAt:timestamp};
+    tx.objectStore(STORE.PRODUCT_MAPPINGS).put(next); syncStore.put(queueRow('PRODUCT_MAPPING',next.mappingId,next));
+    const event={eventId:newId('ME'),eventType:'EVIDENCE_REVIEW_REQUIRED',mappingId:next.mappingId,parserEvidenceId:next.evidenceId||'',customerId:next.customerId||'',productId:next.productId||'',before:'ACTIVE',after:'REVIEW_REQUIRED',reason,createdAt:timestamp,createdBy:'system'};
+    tx.objectStore(STORE.MAPPING_EVENTS).put(event); syncStore.put(queueRow('MAPPING_EVENT',event.eventId,event));
+  });
+  await transactionDone(tx);
+  return { invalidatedLinks:links.filter(row=>row.active!==false).length, invalidatedBalances:balances.filter(row=>row.active!==false).length, invalidatedEvidence:activeEvidenceIds.size };
+}
+
 export async function rollbackImportBatchByContract(importBatchId, rolledBackBy = 'administrator') {
   const batch = await getByKey(STORE.IMPORT_BATCHES, importBatchId);
   if (!batch || batch.status !== 'COMMITTED') throw new Error('롤백할 활성 수집 배치가 없습니다.');
-  if (!MATCHING_SOURCES.has(batch.sourceType)) return rollbackWithoutMatching(importBatchId, rolledBackBy);
-  return rollbackImportBatch(importBatchId, rolledBackBy);
+  const result = await rollbackWithoutMatching(importBatchId, rolledBackBy);
+  if (!MATCHING_SOURCES.has(batch.sourceType)) return result;
+  const snapshot = await getCollectorSnapshot();
+  if (!snapshot.orderLines.length || !snapshot.salesLines.length) {
+    const invalidated = await invalidateMatchingDerived('MATCHING_NOT_READY');
+    return { ...result, matchingReady:false, invalidated };
+  }
+  return { ...result, matchingReady:true, rebuilt:await rebuildFulfillmentEvidence() };
 }
 
 export async function rebuildWhenReady() {
