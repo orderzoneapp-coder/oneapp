@@ -61,10 +61,12 @@ assert.match(photoOcrSource, /Tesseract\?\.recognize/);
 assert.match(photoOcrSource, /'kor\+eng'/);
 assert.match(photoOcrSource, /recognizeAdded\(startIndex, images\.length\)/);
 assert.match(photoOcrSource, /사진 문자 자동 추출 중/);
+assert.match(photoOcrSource, /input\.addEventListener\('change',[\s\S]*?\}, true\);/);
+assert.match(photoOcrSource, /collector-ui의 change 핸들러는 렌더링 후 input\.value를 비운다/);
 assert.match(photoOcrSource, /addEventListener\('paste'/);
 assert.match(photoOcrSource, /clipboardData\?\.items/);
 assert.match(photoOcrSource, /new DataTransfer\(\)/);
 assert.match(photoOcrSource, /input\.dispatchEvent\(new Event\('change'/);
 assert.match(photoOcrSource, /dispatchEvent\(new Event\('input'/);
 
-console.log('PASS: ORDER Q collector tabs, matching readiness, duplicate v2, rollback, photo auto OCR and clipboard paste contracts');
+console.log('PASS: ORDER Q collector tabs, matching readiness, duplicate v2, rollback, photo auto OCR event ordering and clipboard paste contracts');
