@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="google" content="notranslate">
-  <title>ONEAPP ORDER Q · 출고 대사</title>
-  <link rel="stylesheet" href="./orderq.css?v=0.8.0">
+  <title>ONEAPP ORDER Q · 출고 차이 확인</title>
+  <link rel="stylesheet" href="./orderq.css?v=0.11.0">
   <link rel="stylesheet" href="./reconciliation.css?v=0.8.0-m8">
 </head>
 <body class="reconciliation-page">
@@ -15,7 +15,7 @@
         <strong>ONEAPP</strong>
         <span class="logo-frame" aria-hidden="true"><img src="../assets/order-q-logo.png" alt=""></span>
         <span class="badge">vNext 0.8.0</span>
-        <span>DataOps · 출고 대사</span>
+        <span>출고 차이 확인</span>
       </div>
       <div class="top-actions">
         <a class="btn dark" href="./dispatch.html">출고 작업대</a>
@@ -26,7 +26,7 @@
     <main class="reconciliation-shell">
       <section class="reconciliation-notice">
         <strong>확정사실은 읽기 전용입니다.</strong>
-        차이가 있으면 대사 이슈를 만들고 <b>역분개 → 수정 DRAFT → 재확정</b> 순서로 정정합니다.
+        차이가 있으면 확인할 항목을 만들고 <b>기존 확정 취소 → 수정 출고안 → 다시 확정</b> 순서로 정정합니다.
         ERP 반영자료는 자동 취소하거나 자동 재전송하지 않습니다.
       </section>
       <div id="message" class="reconciliation-message" role="status"></div>
@@ -36,15 +36,16 @@
         <aside class="reconciliation-list-panel">
           <div class="panel-heading"><h2>확정 출고</h2></div>
           <div id="candidateList" class="reconciliation-list"></div>
-          <div class="panel-heading issue-heading"><h2>대사 이슈</h2></div>
+          <div class="panel-heading issue-heading"><h2>확인할 차이</h2></div>
           <div id="issueList" class="reconciliation-list"></div>
         </aside>
         <section id="detailPanel" class="reconciliation-detail-panel">
-          <div class="empty-state">왼쪽에서 확정 출고 또는 대사 이슈를 선택하세요.</div>
+          <div class="empty-state">왼쪽에서 출고 완료 자료 또는 확인할 차이를 선택하세요.</div>
         </section>
       </div>
     </main>
   </div>
-  <script type="module" src="./reconciliation-ui.js?v=0.9.0"></script>
+  <script type="module" src="./workflow-guide.js?v=0.11.0"></script>
+  <script type="module" src="./reconciliation-ui.js?v=0.11.0"></script>
 </body>
 </html>

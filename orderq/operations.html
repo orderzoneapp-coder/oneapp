@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="google" content="notranslate">
   <title>ONEAPP ORDER Q vNext · 출고 운영</title>
-  <link rel="stylesheet" href="./orderq.css?v=0.8.0">
+  <link rel="stylesheet" href="./orderq.css?v=0.11.0">
 </head>
 <body class="operations-page">
   <div class="shell">
@@ -25,7 +25,7 @@
       </div>
     </header>
     <main class="panel">
-      <p class="notice">전표 조건을 먼저 적용한 뒤 상품코드별 주문·판매이관·미출고를 집계합니다. 전표 수정은 주문번호를 눌러 주문현황에서 진행합니다.</p>
+      <p class="notice">아직 출고하지 않은 주문과 재고를 한눈에 확인하세요. 주문번호를 누르면 주문 내용을 다시 확인할 수 있습니다.</p>
       <div id="message" class="message page-message"></div>
       <div class="toolbar document-filters operations-filters">
         <button class="btn" id="refreshBtn" type="button">새로고침</button>
@@ -40,8 +40,8 @@
         <label>관리자상태
           <select id="adminStatusFilter"><option value="">전체</option><option value="UNCHECKED">미확인</option><option value="CHECKED">확인</option><option value="HOLD">보류</option></select>
         </label>
-        <label>이관상태
-          <select id="transferStatusFilter"><option value="">전체</option><option value="UNTRANSFERRED">미이관</option><option value="PARTIAL">부분이관</option><option value="TRANSFERRED">이관완료</option><option value="OVER_TRANSFERRED">초과이관</option></select>
+        <label>처리상태
+          <select id="transferStatusFilter"><option value="">전체</option><option value="UNTRANSFERRED">미처리</option><option value="PARTIAL">일부처리</option><option value="TRANSFERRED">처리완료</option><option value="OVER_TRANSFERRED">초과처리</option></select>
         </label>
         <label>업무상태
           <select id="operationStatusFilter"><option value="">전체</option><option value="ACTIVE">운영중</option><option value="CLOSED">종결</option></select>
@@ -59,14 +59,15 @@
         <table class="operations-table">
           <thead><tr>
             <th>품목코드</th><th>품명</th><th>규격</th><th>단위</th>
-            <th>유효주문</th><th>이관</th><th>미출고</th><th>재고</th><th>재고-미출고</th>
-            <th>이관상태</th><th>담당자</th><th>주문번호</th>
+            <th>주문수량</th><th>처리수량</th><th>미출고</th><th>재고</th><th>출고 후 예상</th>
+            <th>처리상태</th><th>담당자</th><th>주문번호</th>
           </tr></thead>
           <tbody id="operationRows"></tbody>
         </table>
       </div>
     </main>
   </div>
+  <script type="module" src="./workflow-guide.js?v=0.11.0"></script>
   <script type="module">
     import { getOperationsSnapshot } from './order-operations-repository.js?v=0.8.0';
     import { TRANSFER_STATUS_LABEL } from './order-fulfillment-lifecycle.js?v=0.8.0';
@@ -119,7 +120,8 @@
     }
 
     function transferBadge(status) {
-      return `<span class="document-badge transfer-${esc(String(status).toLowerCase())}">${esc(TRANSFER_STATUS_LABEL[status] || status)}</span>`;
+      const labels = { UNTRANSFERRED:'미처리', PARTIAL:'일부처리', TRANSFERRED:'처리완료', OVER_TRANSFERRED:'초과처리' };
+      return `<span class="document-badge transfer-${esc(String(status).toLowerCase())}">${esc(labels[status] || TRANSFER_STATUS_LABEL[status] || status)}</span>`;
     }
 
     function rowHtml(row) {
@@ -145,7 +147,7 @@
       const over = visible.filter(row => row.hasOverTransfer).length;
       const shortages = visible.filter(row => row.availableAfterOrders < 0).length;
       summary.textContent = `전표 ${latestSnapshot.filteredBundles.length}/${latestSnapshot.bundles.length}건 · 상품 ${visible.length}개`;
-      alertSummary.innerHTML = `<span>미확인 <b>${unchecked}</b></span><span>보류 <b>${holds}</b></span><span class="${over ? 'danger' : ''}">초과이관 <b>${over}</b></span><span class="${shortages ? 'warn' : ''}">재고부족 <b>${shortages}</b></span>`;
+      alertSummary.innerHTML = `<span>미확인 <b>${unchecked}</b></span><span>보류 <b>${holds}</b></span><span class="${over ? 'danger' : ''}">초과처리 <b>${over}</b></span><span class="${shortages ? 'warn' : ''}">재고부족 <b>${shortages}</b></span>`;
       rows.innerHTML = visible.length ? visible.map(rowHtml).join('') : '<tr><td colspan="12" class="empty">조건에 맞는 운영 상품이 없습니다.</td></tr>';
     }
 

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="google" content="notranslate">
   <title>ONEAPP ORDER Q · 구매 작업대</title>
-  <link rel="stylesheet" href="./orderq.css?v=0.8.0">
+  <link rel="stylesheet" href="./orderq.css?v=0.11.0">
   <link rel="stylesheet" href="./purchase.css?v=0.8.0">
 </head>
 <body class="purchase-page">
@@ -27,31 +27,32 @@
 
     <main class="purchase-shell">
       <section class="purchase-notice">
-        <strong>M6 로컬 구매결정</strong>
-        구매 DRAFT는 재고에 영향이 없습니다. 관리자가 별도로 구매확정해야 선택한 재고구분에 입고가 기록되며, 출고확정은 구매를 자동확정하지 않습니다.
+        <strong>구매는 출고와 별도로 확정합니다.</strong>
+        구매안을 작성하는 동안 재고는 변하지 않습니다. 실제 입고 내용을 확인하고 관리자가 구매확정해야 재고가 증가합니다.
       </section>
       <div id="message" class="purchase-message" role="status"></div>
       <div class="purchase-toolbar">
         <label>상태
-          <select id="statusFilter"><option value="">전체</option><option value="DRAFT">DRAFT</option><option value="CONFIRMED">CONFIRMED</option><option value="REVERSED">REVERSED</option></select>
+          <select id="statusFilter"><option value="">전체</option><option value="DRAFT">검토 중</option><option value="CONFIRMED">입고 완료</option><option value="REVERSED">구매 취소</option></select>
         </label>
         <label>검색 <input id="searchFilter" type="search" placeholder="구매ID·부족근거·공급처·상품"></label>
-        <button class="pq-btn primary" id="newDraftBtn" type="button">+ 구매 DRAFT</button>
+        <button class="pq-btn primary" id="newDraftBtn" type="button">+ 새 구매안</button>
         <span id="summaryText">불러오는 중…</span>
       </div>
 
       <div class="purchase-layout">
         <aside class="purchase-list-panel">
-          <div class="panel-heading"><h2>구매 판단</h2></div>
+          <div class="panel-heading"><h2>구매 작업</h2></div>
           <div id="purchaseList" class="purchase-list"></div>
         </aside>
         <section class="purchase-detail-panel" id="purchaseDetail">
-          <div class="empty-state">왼쪽에서 구매 판단을 선택하거나 새 DRAFT를 만드세요.</div>
+          <div class="empty-state">왼쪽에서 구매안을 선택하거나 새 구매안을 만드세요.</div>
         </section>
       </div>
     </main>
   </div>
   <datalist id="purchaseProductOptions"></datalist>
-  <script type="module" src="./purchase-ui.js?v=0.9.0"></script>
+  <script type="module" src="./workflow-guide.js?v=0.11.0"></script>
+  <script type="module" src="./purchase-ui.js?v=0.11.0"></script>
 </body>
 </html>
