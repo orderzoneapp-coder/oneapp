@@ -8,9 +8,9 @@
 
 ## 1. 목적과 범위
 
-ORDER IN은 카카오 대화, 일반 텍스트, 사진/OCR, 임의 Excel처럼 코드가 확정되지 않은 외부정보를 읽어 관리자가 확인할 수 있는 정형 전표로 만든다.
+ORDER IN은 카카오 대화, 일반 텍스트, 사진/OCR, 임의 Excel처럼 상품 식별이나 전표구조가 아직 결정되지 않은 외부정보를 읽어 관리자가 확인할 수 있는 정형 전표로 만든다.
 
-ORDER Q는 Master 코드가 확정된 전표를 주문·재고·출고·구매·판매·ERP 업무로 운영한다.
+ORDER Q는 상품 식별이 결정된 전표를 주문·재고·출고·구매·판매·ERP 업무로 운영한다. 상품 식별 결정은 `Master 상품 확정` 또는 `관리자 확정 임시상품`이다.
 
 이번 개발의 목적은 현재의 `원문 메시지 1건 = 주문 1건` 제약을 제거하고 다음 흐름을 하나의 실제 업무 화면으로 완성하는 것이다.
 
@@ -20,7 +20,7 @@ ORDER Q는 Master 코드가 확정된 전표를 주문·재고·출고·구매·
 → 전표/거래처 단위 분리
 → 상품 매칭
 → 관리자 확인
-→ 코드가 확정된 주문전표
+→ 상품 식별이 결정된 주문전표
 → 기존 ORDER Q 주문원장
 ```
 
@@ -163,7 +163,7 @@ input.html의 실제 주문 Grid
 ```text
                  ┌────────────────────────────┐
 텍스트/사진/파일 →│ IntakeSession              │
-                 │ RawInput + SourcePart      │
+                 │ Raw Evidence + SourcePart  │
                  └─────────────┬──────────────┘
                                ↓
                  SourceMessage / SourceBlock
@@ -195,7 +195,9 @@ input.html의 실제 주문 Grid
 | `sourceMode` | `CLIPBOARD`, `FILE`, `DIRECT_EXTERNAL` |
 | `sourceType` | `KAKAO_TEXT`, `GENERAL_TEXT`, `IMAGE_OCR`, `MIXED`, `EXCEL` 등 |
 | `sourceId` | 방·파일·연동 출처 식별자 |
-| `rawFingerprint` | 입력 전체의 canonical SHA-256 |
+| `sourceOccurrenceKey` | 실제 원본 발생건의 고유키, 세션 중복판정 기준 |
+| `captureOccurrenceId` | 외부 발생 ID가 없는 수동 입력에 발급하는 입력 발생 ID |
+| `rawFingerprint` | 입력 내용의 canonical SHA-256, 동일성·충돌 증거이며 전역 중복키 아님 |
 | `stage` | 현재 업무 단계 |
 | `status` | `ACTIVE`, `COMMITTED`, `EXCLUDED` |
 | `revision` | 로컬 수정 충돌 검사 |
@@ -249,7 +251,8 @@ input.html의 실제 주문 Grid
 | `candidateProducts[]` | 추천 후보와 근거 |
 | `recommendedProductId` | 시스템 추천 |
 | `productId`, `itemCode`, `itemName` | 관리자 최종값 |
-| `matchStatus` | `MATCHED`, `MATCH_FAILED`, `TEMPORARY_CONFIRMED`, `EXCLUDED` |
+| `matchStatus` | 기존 core 값 `MATCHED`, `MATCH_FAILED`, `EXCLUDED` 유지 |
+| `reviewStatus` | `PENDING`, `CONFIRMED`, `EXCLUDED` |
 | `productIdentityStatus` | `MASTER_LINKED`, `TEMPORARY_CONFIRMED`, `UNRESOLVED` |
 | `reviewReasonCodes[]` | 확인필요 이유 |
 | `revision` | 행 수정 충돌 검사 |
@@ -315,20 +318,36 @@ OCR bounding box를 직접 편집하는 도구와 임의 도형 편집기는 제
 
 | 키 | 역할 |
 | --- | --- |
-| `rawFingerprint` | 같은 전체 입력 재수집 방지 |
+| `rawFingerprint` | 원본 내용 동일성·변조 확인 증거, non-unique |
+| `sourceOccurrenceKey` | 실제 발생한 입력 1건의 IntakeSession 중복방지 |
 | `sourceMessageKey` | 원문 메시지 provenance |
 | `sourceDocumentKey` | 원문에서 파생된 전표별 주문 중복방지 |
 | `orderId` | ORDER Q 내부 주문 identity |
 | 명령 `idempotencyKey` | 중앙 공식명령 재시도 |
 
-### 9.2 `sourceDocumentKey` 생성
+### 9.2 입력 occurrence 계약
 
-자동분리 전표키는 PC별 임의값 없이 같은 원본과 같은 분리 결과에서 항상 같아야 한다. 먼저 각 자동 전표의 `stableSegmentIdentity`를 만든다.
+같은 내용이 다른 날짜·시간에 반복된 정상 주문은 서로 다른 IntakeSession이어야 한다. 따라서 내용 hash만으로 세션을 재사용하지 않는다.
+
+| 입력 | `sourceOccurrenceKey` 재료 |
+| --- | --- |
+| 카카오·메신저 | source type + 방/source ID + 플랫폼 message ID. ID가 없으면 발신자 + 원문 timestamp + 메시지 occurrence ordinal |
+| ERP·쇼핑몰·API | source system + external batch/document/message ID |
+| 식별 가능한 파일 | source system + file/batch identity + file metadata + content hash |
+| 일반 붙여넣기·사진 | 사용자가 `[새 입력]`을 시작할 때 한 번 발급한 `captureOccurrenceId` |
+
+- 같은 `sourceOccurrenceKey`와 같은 `rawFingerprint`가 다시 도착하면 기존 세션을 연다.
+- 같은 `sourceOccurrenceKey`인데 `rawFingerprint`가 다르면 `SOURCE_OCCURRENCE_CONTENT_CONFLICT`로 거부하고 두 원본을 증거로 남긴다.
+- 서로 다른 `sourceOccurrenceKey`는 `rawFingerprint`가 같아도 새 세션을 만든다.
+- 일반 붙여넣기를 A/B에서 각각 새로 시작하면 서로 다른 실제 입력으로 본다. 동일 외부 발생건으로 수렴시켜야 할 때는 원 sourceOccurrenceKey를 함께 전달해야 한다.
+
+### 9.3 `sourceDocumentKey` 생성
+
+자동분리 전표키는 같은 source occurrence와 같은 분리 결과에서 항상 같아야 한다. 먼저 각 자동 전표의 `stableSegmentIdentity`를 만든다.
 
 ```text
 stableSegmentIdentity = SHA-256(
   sourceMessageKey 목록 정렬
-  + partContentHash
   + sourceRange 시작/끝
   + 원문 내 line ordinal
   + 동일근거 occurrence ordinal
@@ -337,12 +356,12 @@ stableSegmentIdentity = SHA-256(
 sourceDocumentKey = SHA-256(
   sourceDocumentKeyVersion
   + documentType
-  + rawFingerprint
+  + sourceOccurrenceKey
   + stableSegmentIdentity
 )
 ```
 
-`sourcePartId`, 로컬 UUID, 생성시각, random nonce, 거래처·상품·수량 같은 수정 가능한 업무값은 자동 전표키 재료로 사용하지 않는다. `sourceDocumentKeyVersion`은 키 정규화 계약 버전이며 Parser/segmentation 배포 버전과 분리한다. 동일 build의 PC A/B가 같은 원문을 자동분리하면 같은 키가 나온다.
+`sourcePartId`, 생성시각, document random nonce, 거래처·상품·수량 같은 수정 가능한 업무값은 자동 전표키 재료로 사용하지 않는다. `sourceDocumentKeyVersion`은 키 정규화 계약 버전이며 Parser/segmentation 배포 버전과 분리한다. 동일 build의 PC A/B가 같은 source occurrence를 자동분리하면 같은 키가 나온다.
 
 수동 분할 child key는 다음처럼 선택된 원문근거로 결정한다.
 
@@ -352,14 +371,15 @@ SHA-256(parentSourceDocumentKey + 'SPLIT' + selectedStableEvidenceIdentity + key
 
 같은 parent에서 같은 원문행을 분할하면 A/B에서 같은 child key가 나온다. 수동 병합 결과는 `SHA-256('MERGE' + 정렬된 constituent sourceDocumentKey 목록 + keyVersion)`으로 만든다. 생성된 키는 편집 이후 재계산하지 않는다.
 
-### 9.3 동일 원문 재입력
+### 9.4 동일 occurrence·전표 재입력
 
-- `rawFingerprint`가 같은 세션은 상태와 관계없이 새로 만들지 않고 기존 세션을 연다. `EXCLUDED` 세션을 다시 쓰려면 명시적 `REACTIVATED` 이벤트를 남긴다.
+- `sourceOccurrenceKey`가 같은 세션은 상태와 관계없이 새로 만들지 않는다. `EXCLUDED` 세션을 다시 쓰려면 명시적 `REACTIVATED` 이벤트를 남긴다.
 - 같은 `sourceDocumentKey`로 `createOrder()`를 다시 호출하면 기존 주문을 반환한다.
 - 같은 키에 다른 canonical 주문내용이면 `SOURCE_DOCUMENT_CONFLICT`로 전체 거부한다.
 - 원문 1건에서 나온 서로 다른 N개의 `sourceDocumentKey`는 각각 주문을 1건씩 생성할 수 있다.
+- 다른 날짜·발생건의 동일 텍스트는 다른 `sourceOccurrenceKey`와 다른 주문을 만든다.
 
-### 9.4 Legacy 호환
+### 9.5 Legacy 호환
 
 - 기존 주문은 `sourceDocumentKey`가 없을 수 있다.
 - 마이그레이션 시 `sourceMessageKey`가 있는 주문에는 `LEGACY:<sourceMessageKey>`를 sourceDocumentKey로 채운다.
@@ -436,21 +456,40 @@ SmartParser는 주문서를 먼저 채우는 추천 도구다. `[매칭 완료]`
 productId = null
 itemCode = ''
 itemName = 관리자 직접입력값
-matchStatus = TEMPORARY_CONFIRMED
+reviewStatus = CONFIRMED
 productIdentityStatus = TEMPORARY_CONFIRMED
+matchStatus = MATCH_FAILED  # 기존 Master 연결상태 호환 projection
 ```
 
-가짜 `productId`나 가짜 상품코드를 생성하지 않는다. 관리자가 `[매칭 완료]`로 확정한 임시상품은 `createOrder()` 이후 `orderItems`와 Cloud payload에서도 `TEMPORARY_CONFIRMED`를 유지하며 `MATCH_FAILED`로 되돌리지 않는다.
+가짜 `productId`나 가짜 상품코드를 생성하지 않는다. 관리자가 `[매칭 완료]`로 확정한 임시상품은 `createOrder()` 이후 `orderItems`와 Cloud payload에서도 `reviewStatus=CONFIRMED`, `productIdentityStatus=TEMPORARY_CONFIRMED`를 유지한다.
 
-기존 `MATCH_STATUS`에는 `TEMPORARY_CONFIRMED`를 추가하고 기존 값은 그대로 유지한다. 주문 단위 매칭상태 계산은 `MATCHED`와 `TEMPORARY_CONFIRMED`를 모두 관리자 확인 완료행으로 취급하되 다음 집계는 분리한다.
+### 14.1 기존 상태 소비자 소스 점검 결과
+
+기존 core `MATCH_STATUS`에는 새 상태를 추가하지 않는다.
+
+- `order-intake-engine.js`가 `MATCHED/MATCH_FAILED/EXCLUDED/CANCELLED`로 정규화·주문상태·건수를 계산한다.
+- `input.html`, `parser-ui.js`, `collector-smartparser-review.js`, SmartParser 요약과 기존 계약 테스트가 같은 값을 직접 비교한다.
+- `order-fulfillment-lifecycle.js`는 취소상태만 별도로 보고, `dispatch-workbench.js`는 `actualProductId`가 없으면 기존 `PRODUCT_REVIEW`를 생성한다.
+
+따라서 임시상품 판단을 core match enum에 섞지 않고 관리자 검토축과 상품 identity축으로 분리한다. 기존 `matchStatus=MATCH_FAILED`는 Master 미연결이라는 legacy projection일 뿐이며 사용자 화면의 `매칭 실패` 판정으로 사용하지 않는다.
+
+### 14.2 사용자·저장·운영 계약
+
+- 사용자 화면은 `reviewStatus + productIdentityStatus`를 기준으로 `임시상품 확인완료`를 표시한다.
+- 빨간 `미매칭`은 `reviewStatus=PENDING + productIdentityStatus=UNRESOLVED`에만 표시한다.
+- 기존 `matchingStatus`, `matchedCount`, `matchFailedCount`는 M1~M10 호환을 위해 계산방식을 바꾸지 않는다.
+- 신규 사용자 집계는 다음처럼 별도 계산한다.
 
 ```text
-matchedCount                 = Master 연결 행
+reviewConfirmedCount         = 관리자 확인 완료행
+masterLinkedCount            = Master 연결 행
 temporaryConfirmedCount      = 관리자 확정 임시상품 행
-matchFailedCount             = 아직 결정하지 않은 행
+unresolvedReviewCount        = 아직 결정하지 않은 행
 ```
 
 기존 주문의 `productIdentityStatus`가 없으면 `productId + itemCode + itemName`이 모두 있을 때 `MASTER_LINKED`, 그렇지 않으면 `UNRESOLVED`로 읽는다. 이 호환 판정은 기존 행을 자동으로 임시상품 확정으로 승격하지 않는다.
+
+임시상품 주문은 ORDER Q에 정상 저장할 수 있다. 다만 재고 Movement에는 실제 Master `productId`가 필요하므로 자동 출고제안은 기존 `PRODUCT_REVIEW`를 유지하고 화면에는 `출고상품 선택 필요`로 표시한다. 관리자가 Master를 연결하거나 실제 출고상품을 선택하기 전에는 RELEASE/CONFIRM으로 자동 진행하지 않는다.
 
 숫자 0과 공란은 모든 입력·Grid·저장·동기화에서 구분한다. 단가 0을 자동으로 미정이나 오류로 바꾸지 않는다. 주문 확정 전에는 `단가 0 또는 미입력`을 보고하고, 관리자가 그대로 확정하면 0은 서비스 판매의 실제값으로 보존한다.
 
@@ -583,15 +622,17 @@ IndexedDB를 v7에서 v8로 올리는 비파괴 migration을 사용한다. 기�
 
 | Store | keyPath | 주요 Index |
 | --- | --- | --- |
-| `intakeSessions` | `intakeSessionId` | `byRawFingerprint` unique, `byStageUpdatedAt` |
+| `intakeSessions` | `intakeSessionId` | `bySourceOccurrenceKey` unique, `byRawFingerprint` non-unique, `byStageUpdatedAt` |
 | `intakeSourceParts` | `sourcePartId` | `bySession`, `bySourceMessageKey`, `byContentHash` |
 | `intakeDocuments` | `intakeDocumentId` | `bySession`, `bySourceDocumentKey` unique, `byReviewStatus`, `byOrderId` |
-| `intakeLines` | `intakeLineId` | `byDocument`, `bySourcePart`, `byMatchStatus` |
+| `intakeLines` | `intakeLineId` | `byDocument`, `bySourcePart`, `byMatchStatus`, `byReviewStatus`, `byProductIdentityStatus` |
 | `intakeEvents` | `eventId` | `bySession`, `byDocument`, `byLine`, `byOccurredAt` |
 
 ### 20.3 기존 Index 변경
 
-- `parseResults.bySourceMessageKey` unique는 유지한다. 분석 증거는 메시지당 한 건이다.
+- 기존 `rawInputs.byFingerprint` unique와 `parseResults.bySourceMessageKey` unique는 legacy SmartParser·Collector 호환을 위해 유지한다.
+- 신규 운영 ORDER IN은 두 legacy unique index를 IntakeSession 중복판정에 사용하지 않는다. 원본과 추출결과를 신규 `intakeSourceParts/intakeDocuments/intakeLines`에 저장한다.
+- 같은 텍스트의 다른 occurrence는 같은 legacy sourceMessageKey를 provenance로 가질 수 있지만 서로 다른 `sourceOccurrenceKey/sourceDocumentKey`를 갖는다.
 - `orders.bySourceMessageKey`는 unique를 제거하고 provenance 조회용 non-unique로 재생성한다.
 - `orders.bySourceDocumentKey` unique를 추가한다.
 
@@ -621,6 +662,7 @@ Cloud ORDER payload에 다음을 추가한다.
 
 ```text
 sourceDocumentKey
+sourceOccurrenceKey
 sourceMessageKey
 intakeSessionId
 intakeDocumentId
@@ -656,7 +698,9 @@ orderQFindOrderBundleBySourceDocumentKey()
 | OCR 실패 | 원본 유지, 직접수정 허용 |
 | 거래처 미확정 | 확인필요 보고, Draft 유지 |
 | 상품 미매칭 | 임시상품 또는 Master 선택을 관리자가 결정 |
-| 동일 원문 재입력 | 기존 IntakeSession 열기 |
+| 같은 occurrence·같은 내용 재입력 | 기존 IntakeSession 열기 |
+| 같은 occurrence·다른 내용 | 원본 충돌 보고, 새 세션·주문 미생성 |
+| 다른 occurrence·같은 내용 | 정상 반복입력으로 새 IntakeSession 생성 |
 | 같은 전표키 같은 내용 | 기존 주문 반환 |
 | 같은 전표키 다른 내용 | conflict, 주문·이벤트·queue 불변 |
 | N전표 일괄저장 중 일부 실패 | 전표별 격리, 성공건 유지, 실패건 Draft 유지 |
@@ -671,8 +715,9 @@ orderQFindOrderBundleBySourceDocumentKey()
 ### 23.1 신규 핵심 API
 
 ```js
-createIntakeSession({ sourceMode, sourceType, sourceId, parts, actor })
-getOrOpenIntakeSessionByFingerprint(rawFingerprint)
+createIntakeSession({ sourceMode, sourceType, sourceId, sourceOccurrenceKey, captureOccurrenceId, parts, actor })
+getOrOpenIntakeSessionByOccurrenceKey(sourceOccurrenceKey, rawFingerprint)
+findIntakeSessionsByRawFingerprint(rawFingerprint)
 extractIntakeSession(intakeSessionId, { parserVersion, actor })
 segmentIntakeDocuments(intakeSessionId, { segmentationVersion, actor })
 splitIntakeDocument({ intakeDocumentId, intakeLineIds, reasonCode, actor })
@@ -700,6 +745,7 @@ getIntakeDocumentAdapter(documentType)
 ```js
 {
   sourceDocumentKey,
+  sourceOccurrenceKey,
   sourceMessageKey,
   intakeSessionId,
   intakeDocumentId
@@ -714,6 +760,7 @@ items: [{
   itemCode,
   itemName,
   matchStatus,
+  reviewStatus,
   productIdentityStatus
 }]
 ```
@@ -722,7 +769,8 @@ items: [{
 - 기존 DIRECT/legacy 입력은 선택
 - 중복은 sourceDocumentKey 우선
 - 주문·행·이벤트·SyncQueue는 기존 한 transaction 계약 유지
-- `TEMPORARY_CONFIRMED` 행은 `orderItems`와 Cloud payload에 같은 상태로 저장하며 주문 단위 확인완료 계산에 포함
+- `reviewStatus=CONFIRMED`, `productIdentityStatus=TEMPORARY_CONFIRMED`는 `orderItems`와 Cloud payload에 보존
+- core `matchStatus`와 기존 주문 단위 `matchingStatus` 계산은 변경하지 않음
 
 ### 23.3 공통 주문 편집기
 
@@ -804,32 +852,36 @@ Collector 정리는 새 ORDER IN 실사용 검증 후 별도 단계에서 수행
 2. 카카오 원문 1건 → 서로 다른 거래처 주문 N건
 3. 발신자와 실제 거래처가 다른 경우
 4. 같은 메시지에서 생성된 N전표의 독립 sourceDocumentKey
-5. PC A/B가 같은 원문과 자동분리 결과에서 같은 sourceDocumentKey 생성
+5. PC A/B가 같은 source occurrence와 자동분리 결과에서 같은 sourceDocumentKey 생성
 6. PC A/B가 같은 원문행을 수동 분할·병합하면 같은 child/merge key 생성
-7. 동일 원문 재입력 시 새 세션·주문 중복 없음
-8. 같은 sourceDocumentKey 같은 내용 재시도는 기존 주문 반환
-9. 같은 sourceDocumentKey 다른 내용은 전체 conflict
-10. 전표 분할·병합·행이동·거래처변경 이력
-11. 추출 수정 후 영향 행만 매칭 재검증
-12. Header·가격·메모 수정은 상품매칭 유지
-13. 매칭 완료 시 Mapping Dictionary 자동 갱신
-14. 과거 빈도보다 최신 관리자 확정 우선
-15. 임시상품은 코드·productId 없음, 품명 원값과 `TEMPORARY_CONFIRMED` 보존
-16. 임시상품이 주문·Cloud·재조회 후에도 `MATCH_FAILED`로 바뀌지 않음
-17. 코드 선택은 실제 Master productId 연결
-18. 숫자 0, 문자열 `0`, 공란 보존
-19. 단가 0 경고 후 관리자 확정 시 0 보존
-20. 텍스트+이미지 혼합 붙여넣기
-21. OCR 오독 직접수정, 원이미지 불변
-22. 다전표에서 확인필요 전표 우선
-23. Master 코드가 있는 ERP·쇼핑몰은 Parser 우회
-24. 외부코드 미매핑은 ORDER IN으로 라우팅
-25. v7→v8 upgrade 후 기존 주문·이벤트·revision 불변
-26. v7 backup의 v8 복원
-27. v8 전체 Store·이미지 base64 backup round-trip
-28. Cloud sourceDocumentKey 중복과 legacy fallback
-29. 서로 다른 PC에서 같은 전표 재시도 시 한 주문만 생성
-30. runtime에 미등록된 QUOTE/PURCHASE/SALE Adapter 호출 차단
+7. 같은 occurrence·같은 내용 재입력 시 새 세션·주문 중복 없음
+8. 같은 occurrence·다른 내용은 source occurrence conflict
+9. 다른 날짜 occurrence의 동일 텍스트는 새 IntakeSession·주문 생성
+10. 같은 sourceDocumentKey 같은 내용 재시도는 기존 주문 반환
+11. 같은 sourceDocumentKey 다른 내용은 전체 conflict
+12. 전표 분할·병합·행이동·거래처변경 이력
+13. 추출 수정 후 영향 행만 매칭 재검증
+14. Header·가격·메모 수정은 상품매칭 유지
+15. 매칭 완료 시 Mapping Dictionary 자동 갱신
+16. 과거 빈도보다 최신 관리자 확정 우선
+17. 임시상품은 코드·productId 없음, 품명 원값과 `reviewStatus/productIdentityStatus` 보존
+18. 임시상품은 사용자 화면에서 미매칭 실패가 아니라 `임시상품 확인완료`로 표시
+19. 기존 core MATCH_STATUS·matchingStatus·건수 계산 회귀 없음
+20. 임시상품의 출고 제안은 기존 PRODUCT_REVIEW이며 실제상품 선택 전 자동확정 없음
+21. 코드 선택은 실제 Master productId 연결
+22. 숫자 0, 문자열 `0`, 공란 보존
+23. 단가 0 경고 후 관리자 확정 시 0 보존
+24. 텍스트+이미지 혼합 붙여넣기
+25. OCR 오독 직접수정, 원이미지 불변
+26. 다전표에서 확인필요 전표 우선
+27. Master 코드가 있는 ERP·쇼핑몰은 Parser 우회
+28. 외부코드 미매핑은 ORDER IN으로 라우팅
+29. v7→v8 upgrade 후 기존 주문·이벤트·revision 불변
+30. v7 backup의 v8 복원
+31. v8 전체 Store·이미지 base64 backup round-trip
+32. Cloud sourceDocumentKey 중복과 legacy fallback
+33. 서로 다른 PC에서 같은 source occurrence 전표 재시도 시 한 주문만 생성
+34. runtime에 미등록된 QUOTE/PURCHASE/SALE Adapter 호출 차단
 
 ### 25.2 회귀
 
@@ -858,11 +910,13 @@ Collector 정리는 새 ORDER IN 실사용 검증 후 별도 단계에서 수행
 ### 단계 1 — 계약과 DB v8
 
 - v8 Store·index·legacy backfill
+- rawFingerprint evidence와 sourceOccurrenceKey 중복계약 분리
 - sourceDocumentKey client/cloud 계약
+- reviewStatus/productIdentityStatus 추가와 기존 MATCH_STATUS 무변경
 - v7 backup/restore 호환
 - UI 변경 없음
 
-완료조건: 기존 주문 불변, 1원문→N 주문 중복계약 Node/Chromium/Cloud PASS.
+완료조건: 기존 주문 불변, 동일내용 반복 occurrence, 1원문→N 주문, 임시상품 core 상태 회귀가 Node/Chromium/Cloud에서 PASS.
 
 ### 단계 2 — 실제 주문 Grid 공통화
 
@@ -953,8 +1007,8 @@ Collector 정리는 새 ORDER IN 실사용 검증 후 별도 단계에서 수행
 
 이 명세의 최상위 기준은 다음 세 문장이다.
 
-> ORDER IN은 외부정보를 해석하여 코드가 확정된 전표로 만든다.
+> ORDER IN은 외부정보를 해석하여 Master 상품 또는 관리자 확정 임시상품으로 상품 식별이 결정된 전표를 만든다.
 
-> ORDER Q는 코드가 확정된 전표를 실제 주문·재고·출고·구매·판매·ERP 업무로 운영한다.
+> ORDER Q는 상품 식별이 결정된 전표를 실제 주문·재고·출고·구매·판매·ERP 업무로 운영한다.
 
 > 기초데이터는 ORDER IN의 초기 인식률을 만들고, 실제 사용자의 확인·수정은 ORDER IN을 계속 고도화한다.
