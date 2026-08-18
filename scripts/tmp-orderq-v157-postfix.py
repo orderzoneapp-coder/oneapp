@@ -15,18 +15,7 @@ def exact(text, old, new, label, expected=1):
 for path in HTML_FILES:
     text = path.read_text(encoding="utf-8")
 
-    restore_old = '''        state.managerFilters.clear();
-        state.managerAssignmentCustomer = "";
-        state.sortSettings = Object.create(null);
-        saveSortSettings();
-        state.columnFilters = Object.create(null);'''
-    restore_new = '''        state.managerFilters.clear();
-        state.managerAssignmentCustomer = "";
-        state.sortSettings = loadSortSettings();
-        state.columnFilters = Object.create(null);'''
-    # restoreLocalRecord has this exact reset block once after the main patch.
-    text = exact(text, restore_old, restore_new, f"{path.name}: restore saved sort")
-
+    # First distinguish the explicit filter-reset function from the restore path.
     reset_old = '''      function resetResultViewFilters() {
         state.searchQuery = "";
         state.shortageFocus = false;
@@ -50,6 +39,18 @@ for path in HTML_FILES:
         }
         state.columnFilters = Object.create(null);'''
     text = exact(text, reset_old, reset_new, f"{path.name}: reset sort policy")
+
+    # The remaining identical reset block belongs to restore/recovery and must reload saved sorting.
+    restore_old = '''        state.managerFilters.clear();
+        state.managerAssignmentCustomer = "";
+        state.sortSettings = Object.create(null);
+        saveSortSettings();
+        state.columnFilters = Object.create(null);'''
+    restore_new = '''        state.managerFilters.clear();
+        state.managerAssignmentCustomer = "";
+        state.sortSettings = loadSortSettings();
+        state.columnFilters = Object.create(null);'''
+    text = exact(text, restore_old, restore_new, f"{path.name}: restore saved sort")
 
     text = exact(
         text,
