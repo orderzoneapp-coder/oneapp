@@ -3,7 +3,7 @@ name: Temporary ORDER Q v1.57 patch
 on:
   push:
     branches:
-      - agent/orderq-v1-57-sort-manager
+      - main
 
 permissions:
   contents: write
@@ -12,31 +12,43 @@ jobs:
   patch:
     if: ${{ !contains(github.event.head_commit.message, '[patched-v1.57]') }}
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
-      - name: Check out patch branch
+      - name: Check out main
         uses: actions/checkout@v7
         with:
-          ref: agent/orderq-v1-57-sort-manager
+          ref: main
           fetch-depth: 0
 
       - name: Apply focused ORDER Q patch
-        run: python scripts/tmp-orderq-v157-patch.py
+        run: |
+          python scripts/tmp-orderq-v157-patch.py
+          python scripts/tmp-orderq-v157-postfix.py
 
       - name: Run focused shipping management regression
         run: node scripts/test-shipping-management.mjs
 
+      - name: Run repository contract validation
+        run: node scripts/validate-repository.mjs
+
+      - name: Test client-side storage safety
+        run: node scripts/test-client-safety.mjs
+
       - name: Check diff whitespace
         run: git diff --check
 
-      - name: Commit patched sources
+      - name: Remove temporary patch helpers and commit final sources
         run: |
+          rm -f .github/workflows/tmp-orderq-v157-patch.yml
+          rm -f scripts/tmp-orderq-v157-patch.py
+          rm -f scripts/tmp-orderq-v157-postfix.py
+          rm -f scripts/tmp-orderq-v157-trigger.txt
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add orderops_list.html orderops/list.html orderFulfillmentEngine.js scripts/test-shipping-management.mjs
+          git add -A
           if git diff --cached --quiet; then
             echo "No source changes to commit"
             exit 0
           fi
-          git commit -m "ORDER Q v1.57 누적정렬·담당자변경 반영 [patched-v1.57]"
-          git push origin HEAD:agent/orderq-v1-57-sort-manager
+          git commit -m "ORDER Q v1.57 누적정렬·정보집계·담당자변경 반영 [patched-v1.57]"
+          git push origin HEAD:main
