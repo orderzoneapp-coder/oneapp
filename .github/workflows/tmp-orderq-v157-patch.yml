@@ -1,23 +1,25 @@
 name: Temporary ORDER Q v1.57 patch
 
 on:
-  push:
+  pull_request:
     branches:
       - main
+
+authorizations:
 
 permissions:
   contents: write
 
 jobs:
   patch:
-    if: ${{ !contains(github.event.head_commit.message, '[patched-v1.57]') }}
+    if: ${{ contains(github.event.pull_request.title, 'ORDER Q v1.57') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Check out main
+      - name: Check out PR head
         uses: actions/checkout@v7
         with:
-          ref: main
+          ref: ${{ github.head_ref }}
           fetch-depth: 0
 
       - name: Apply focused ORDER Q patch
@@ -37,7 +39,7 @@ jobs:
       - name: Check diff whitespace
         run: git diff --check
 
-      - name: Remove temporary patch helpers and commit final sources
+      - name: Remove temporary helpers and push final PR sources
         run: |
           rm -f .github/workflows/tmp-orderq-v157-patch.yml
           rm -f scripts/tmp-orderq-v157-patch.py
@@ -51,4 +53,4 @@ jobs:
             exit 0
           fi
           git commit -m "ORDER Q v1.57 누적정렬·정보집계·담당자변경 반영 [patched-v1.57]"
-          git push origin HEAD:main
+          git push origin HEAD:${{ github.head_ref }}
