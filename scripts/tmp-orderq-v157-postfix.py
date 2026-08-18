@@ -15,7 +15,7 @@ def exact(text, old, new, label, expected=1):
 for path in HTML_FILES:
     text = path.read_text(encoding="utf-8")
 
-    # First distinguish the explicit filter-reset function from the restore path.
+    # Normal result refreshes keep saved sort state. The explicit F2 reset clears it separately.
     reset_old = '''      function resetResultViewFilters() {
         state.searchQuery = "";
         state.shortageFocus = false;
@@ -26,21 +26,17 @@ for path in HTML_FILES:
         state.sortSettings = Object.create(null);
         saveSortSettings();
         state.columnFilters = Object.create(null);'''
-    reset_new = '''      function resetResultViewFilters(options = {}) {
+    reset_new = '''      function resetResultViewFilters() {
         state.searchQuery = "";
         state.shortageFocus = false;
         state.specificationFilters.clear();
         state.warehouseFilters.clear();
         state.managerFilters.clear();
         state.managerAssignmentCustomer = "";
-        if (!options.keepSort) {
-          state.sortSettings = Object.create(null);
-          saveSortSettings();
-        }
         state.columnFilters = Object.create(null);'''
-    text = exact(text, reset_old, reset_new, f"{path.name}: reset sort policy")
+    text = exact(text, reset_old, reset_new, f"{path.name}: preserve sort on normal refresh")
 
-    # The remaining identical reset block belongs to restore/recovery and must reload saved sorting.
+    # Recovery must reload the user's saved sorting rather than erase it.
     restore_old = '''        state.managerFilters.clear();
         state.managerAssignmentCustomer = "";
         state.sortSettings = Object.create(null);
@@ -52,30 +48,16 @@ for path in HTML_FILES:
         state.columnFilters = Object.create(null);'''
     text = exact(text, restore_old, restore_new, f"{path.name}: restore saved sort")
 
-    text = exact(
-        text,
-        '''        state.workspace = candidateWorkspace;
-        state.activePreview = "validation";
-        resetResultViewFilters();
-        renderResults();''',
-        '''        state.workspace = candidateWorkspace;
-        state.activePreview = "validation";
-        resetResultViewFilters({ keepSort: true });
-        renderResults();''',
-        f"{path.name}: replacement analysis keeps sort",
-    )
-    text = exact(
-        text,
-        '''          state.workspace = await analyzeCurrentInputs();
-          state.activePreview = "validation";
-          resetResultViewFilters();
-          renderResults();''',
-        '''          state.workspace = await analyzeCurrentInputs();
-          state.activePreview = "validation";
-          resetResultViewFilters({ keepSort: true });
-          renderResults();''',
-        f"{path.name}: analysis keeps sort",
-    )
+    # F2 / explicit result-filter reset remains the intentional way to clear sorting.
+    filter_reset_old = '''      function runResultFilterReset() {
+        if (!state.workspace) return;
+        resetResultViewFilters();'''
+    filter_reset_new = '''      function runResultFilterReset() {
+        if (!state.workspace) return;
+        state.sortSettings = Object.create(null);
+        saveSortSettings();
+        resetResultViewFilters();'''
+    text = exact(text, filter_reset_old, filter_reset_new, f"{path.name}: explicit F2 clears sort")
 
     path.write_text(text, encoding="utf-8")
     print(f"postfixed: {path.relative_to(ROOT)}")
