@@ -20,11 +20,10 @@ jobs:
           ref: ${{ github.head_ref }}
           fetch-depth: 0
 
-      - name: Normalize temporary patch helpers
+      - name: Normalize temporary patch helper
         run: |
           python - <<'PY'
           from pathlib import Path
-
           patch_path = Path('scripts/tmp-orderq-v157-patch.py')
           patch_text = patch_path.read_text(encoding='utf-8')
           old = '    text = exact(text, anchor, replacement, "public sort/manager interaction test contracts")'
@@ -32,14 +31,6 @@ jobs:
           if old not in patch_text:
               raise SystemExit('temporary main helper target not found')
           patch_path.write_text(patch_text.replace(old, new, 1), encoding='utf-8')
-
-          postfix_path = Path('scripts/tmp-orderq-v157-postfix.py')
-          postfix_text = postfix_path.read_text(encoding='utf-8')
-          old = '    text = exact(text, restore_old, restore_new, f"{path.name}: restore saved sort")'
-          new = '    text = exact(text, restore_old, restore_new, f"{path.name}: restore saved sort", expected=2)'
-          if old not in postfix_text:
-              raise SystemExit('temporary postfix helper target not found')
-          postfix_path.write_text(postfix_text.replace(old, new, 1), encoding='utf-8')
           PY
 
       - name: Apply focused ORDER Q patch
