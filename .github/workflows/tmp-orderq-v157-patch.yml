@@ -20,6 +20,19 @@ jobs:
           ref: ${{ github.head_ref }}
           fetch-depth: 0
 
+      - name: Normalize temporary patch helper
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('scripts/tmp-orderq-v157-patch.py')
+          text = path.read_text(encoding='utf-8')
+          old = '    text = exact(text, anchor, replacement, "public sort/manager interaction test contracts")'
+          new = '''    if text.count(anchor) != 2:\n        raise RuntimeError(f"public sort/manager interaction test contracts: expected 2 exact matches, got {text.count(anchor)}")\n    text = text.replace(anchor, replacement)'''
+          if old not in text:
+              raise SystemExit('temporary helper target not found')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
+
       - name: Apply focused ORDER Q patch
         run: |
           python scripts/tmp-orderq-v157-patch.py
