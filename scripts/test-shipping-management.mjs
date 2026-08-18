@@ -13,7 +13,7 @@ assert.doesNotMatch(orderOpsHtml, /tokens truncated|…\d+ tokens truncated…/,
   "the public OrderOps mirror must not contain a truncated source fragment");
 assert.match(orderOpsHtml, /<body>[\s\S]*<\/body>\s*<\/html>/,
   "the public OrderOps mirror must remain a complete HTML document");
-assert.match(orderOpsHtml, /brand-badge">v1\.56</, "ORDER Q visible version must be v1.56");
+assert.match(orderOpsHtml, /brand-badge">v1\.57</, "ORDER Q visible version must be v1.57");
 assert.match(orderOpsHtml, /<title>ONEAPP ORDER Q · 출고관리<\/title>/,
   "the public page title must establish ORDER Q as shipment management");
 assert.match(orderOpsHtml, /aria-label="ONEAPP ORDER Q 출고관리"/,
@@ -22,7 +22,7 @@ assert.match(orderOpsHtml, /class="brand-logo" src="assets\/order-q-logo\.png"/,
   "the public header must use the approved ORDER Q logo asset");
 assert.match(orderOpsHtml, /\.brand-logo-frame\s*\{[\s\S]*?width:\s*120px;[\s\S]*?height:\s*20px;/,
   "the public ORDER Q logo must match the ONEAPP wordmark height");
-assert.match(orderOpsHtml, /ORDER Q v1\.56 · 출고관리/,
+assert.match(orderOpsHtml, /ORDER Q v1\.57 · 출고관리/,
   "the public footer must use the ORDER Q product concept");
 assert.doesNotMatch(
   orderOpsHtml.slice(orderOpsHtml.indexOf('<header class="global-header">'), orderOpsHtml.indexOf('</header>')),
@@ -170,6 +170,11 @@ for (const requiredInteractionContract of [
   'function rowMatchesColumnFilters',
   'function comparePreviewPairs',
   'function layeredColumnSortSettings',
+  'function setColumnSortSetting',
+  'function applyAllocationSegmentAggregates',
+  'oneapp.orderops.sort-settings.v1',
+  'data-manager-assignment-customer',
+  'data-manager-assignment',
   'allocations.columns[1].role = "customer"',
   'allocations.columns[2].role = "group"',
   'await restoreLocalRecord(candidate.record)',
@@ -183,8 +188,8 @@ for (const requiredInteractionContract of [
   'id="viewPresetSaveButton"',
   'id="viewPresetDefaultButton"',
   'oneapp.orderops.order-view-presets.v1',
-  'orderops-order-view-presets/v4',
-  'const PREVIOUS_ORDER_VIEW_PRESETS_SCHEMA = "orderops-order-view-presets/v3"',
+  'orderops-order-view-presets/v5',
+  'const PREVIOUS_ORDER_VIEW_PRESETS_SCHEMA = "orderops-order-view-presets/v4"',
   'const VIEW_PRESET_TABS = new Set(["allocations", "ledger", "inventory", "purchases", "sales"])',
   'columnWidths: normalizeStoredColumnWidths(value.view.columnWidths)',
   'columnOrder: normalizeStoredColumnOrder(value.view.columnOrder)',
@@ -699,7 +704,7 @@ const edgeWorkspace = engine.analyze(edgeOrders, edgeInventory, {
   createdAt: "2026-07-30T00:00:00.000Z",
   sourceFingerprint: "a".repeat(64),
 });
-assert.equal(engine.ENGINE_VERSION, "3.19.0");
+assert.equal(engine.ENGINE_VERSION, "3.20.0");
 assert.equal(workbookTools.WORKBOOK_VERSION, "4.9.0");
 assert.equal(edgeWorkspace.schemaVersion, "shipping-workspace/v2");
 const edgeShortageContext = engine.getShortageCategoryContext(edgeWorkspace);
@@ -1359,6 +1364,27 @@ engine.setPurchaseValue(edgeWorkspace, "000100", "거래처A");
 assert.ok(edgeWorkspace.allocations.filter((row) => row.productCode === "000100").every((row) => row.purchase === "거래처A"));
 assert.equal(edgeWorkspace.productSummaries.find((row) => row.productCode === "000100").purchase, "거래처A");
 assert.equal(edgeWorkspace.purchaseManagement.find((row) => row.productCode === "000100" && row.rowType === "main").purchase, "거래처A");
+
+const managerAssignmentWorkspace = JSON.parse(JSON.stringify(edgeWorkspace));
+const managerAssignmentCustomer = managerAssignmentWorkspace.orders[0].customer;
+const managerAssignmentRows = managerAssignmentWorkspace.orders.filter(
+  (row) => row.customer === managerAssignmentCustomer,
+);
+assert.ok(managerAssignmentRows.length >= 2, "manager assignment fixture must contain repeated customer rows");
+engine.setCustomerManager(managerAssignmentWorkspace, managerAssignmentCustomer, "담당변경");
+assert.ok(
+  managerAssignmentWorkspace.orders
+    .filter((row) => row.customer === managerAssignmentCustomer)
+    .every((row) => row.manager === "담당변경"),
+  "customer manager assignment must update every order row for the selected customer",
+);
+assert.ok(
+  managerAssignmentWorkspace.allocations
+    .filter((row) => row.customer === managerAssignmentCustomer)
+    .every((row) => row.manager === "담당변경"),
+  "customer manager assignment must rebuild allocation rows with the selected manager",
+);
+
 const linkedPurchaseWorkbook = workbookTools.buildWorkbook(edgeWorkspace, XLSX);
 assert.deepEqual(
   [
@@ -1849,7 +1875,7 @@ const html = fs.readFileSync(path.join(ROOT, "orderops", "list.html"), "utf8");
 const inlineScriptMatch = html.match(/<script>\s*([\s\S]*?)<\/script>\s*<\/body>/);
 assert.ok(inlineScriptMatch, "canonical ORDER Q inline application script must exist");
 new vm.Script(inlineScriptMatch[1], { filename: "orderops/list.html:inline" });
-assert.match(html, /brand-badge">v1\.56</, "canonical ORDER Q visible version must be v1.56");
+assert.match(html, /brand-badge">v1\.57</, "canonical ORDER Q visible version must be v1.57");
 assert.match(html, /class="brand-logo" src="\.\.\/assets\/order-q-logo\.png"/,
   "the canonical header must use the shared ORDER Q logo asset");
 assert.match(html, /<h2 id="settingsModalTitle">ORDER Q 환경설정<\/h2>/,
@@ -1971,6 +1997,11 @@ for (const requiredInteractionContract of [
   'state.sortSettings = Object.create(null)',
   'state.columnFilters = Object.create(null)',
   'function layeredColumnSortSettings',
+  'function setColumnSortSetting',
+  'function applyAllocationSegmentAggregates',
+  'oneapp.orderops.sort-settings.v1',
+  'data-manager-assignment-customer',
+  'data-manager-assignment',
   'allocations.columns[1].role = "customer"',
   'allocations.columns[2].role = "group"',
   'await restoreLocalRecord(candidate.record)',
@@ -1984,8 +2015,8 @@ for (const requiredInteractionContract of [
   'id="viewPresetSaveButton"',
   'id="viewPresetDefaultButton"',
   'oneapp.orderops.order-view-presets.v1',
-  'orderops-order-view-presets/v4',
-  'const PREVIOUS_ORDER_VIEW_PRESETS_SCHEMA = "orderops-order-view-presets/v3"',
+  'orderops-order-view-presets/v5',
+  'const PREVIOUS_ORDER_VIEW_PRESETS_SCHEMA = "orderops-order-view-presets/v4"',
   'const VIEW_PRESET_TABS = new Set(["allocations", "ledger", "inventory", "purchases", "sales"])',
   'columnWidths: normalizeStoredColumnWidths(value.view.columnWidths)',
   'columnOrder: normalizeStoredColumnOrder(value.view.columnOrder)',
