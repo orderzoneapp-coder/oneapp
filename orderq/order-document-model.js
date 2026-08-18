@@ -60,6 +60,8 @@ const VALID_ORDER_STATUS = new Set(Object.values(ORDER_STATUS));
 const VALID_ADMIN_STATUS = new Set(Object.values(ADMIN_STATUS));
 const VALID_OPS_STATUS = new Set(Object.values(OPS_STATUS));
 const VALID_INPUT_CHANNEL = new Set(Object.values(INPUT_CHANNEL));
+const VALID_REVIEW_STATUS = new Set(['PENDING', 'CONFIRMED', 'EXCLUDED']);
+const VALID_PRODUCT_IDENTITY_STATUS = new Set(['MASTER_LINKED', 'TEMPORARY_CONFIRMED', 'UNRESOLVED']);
 
 export function normalizeOrderStatus(value, legacyStatus = '') {
   const normalized = String(value || '').trim().toUpperCase();
@@ -154,6 +156,40 @@ export function externalOrderSnapshot(payload = {}, previous = {}) {
   };
 }
 
+export function orderIntakeProvenanceSnapshot(payload = {}, previous = {}) {
+  const pick = key => Object.prototype.hasOwnProperty.call(payload, key) ? payload[key] : previous[key];
+  const value = key => {
+    const source = pick(key);
+    const normalized = source === undefined || source === null ? '' : String(source).trim();
+    return normalized || undefined;
+  };
+  return {
+    intakeSessionId: value('intakeSessionId'),
+    intakeDocumentId: value('intakeDocumentId'),
+    sourceOccurrenceKey: value('sourceOccurrenceKey'),
+    sourceDocumentKey: value('sourceDocumentKey'),
+    rawFingerprint: value('rawFingerprint'),
+    intakeContractVersion: value('intakeContractVersion')
+  };
+}
+
+export function orderItemIdentitySnapshot(input = {}, hasMasterIdentity = false) {
+  const requestedReview = String(input.reviewStatus || '').trim().toUpperCase();
+  const requestedIdentity = String(input.productIdentityStatus || '').trim().toUpperCase();
+  const reviewStatus = VALID_REVIEW_STATUS.has(requestedReview)
+    ? requestedReview
+    : (hasMasterIdentity ? 'CONFIRMED' : 'PENDING');
+  const productIdentityStatus = VALID_PRODUCT_IDENTITY_STATUS.has(requestedIdentity)
+    ? requestedIdentity
+    : (hasMasterIdentity ? 'MASTER_LINKED' : 'UNRESOLVED');
+  return {
+    intakeLineId: String(input.intakeLineId || '').trim(),
+    sourceLineKey: String(input.sourceLineKey || '').trim(),
+    reviewStatus,
+    productIdentityStatus
+  };
+}
+
 export function normalizedOrderView(order = {}) {
   const orderStatus = normalizeOrderStatus(order.orderStatus, order.status);
   const sourceType = String(order.sourceType || 'MANUAL').trim();
@@ -169,7 +205,8 @@ export function normalizedOrderView(order = {}) {
     assigneeName: String(order.assigneeName || '').trim(),
     deliveryExpectedDate: String(order.deliveryExpectedDate || '').trim(),
     matchingStatus: String(order.matchingStatus || order.status || '').trim(),
-    ...externalOrderSnapshot(order, order)
+    ...externalOrderSnapshot(order, order),
+    ...orderIntakeProvenanceSnapshot(order, order)
   };
 }
 

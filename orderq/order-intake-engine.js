@@ -13,9 +13,15 @@ import {
   normalizeOrderStatus, normalizeAdminStatus, normalizeOpsStatus, inferInputChannel,
   initialAdminStatus,
   orderDateKey, formatOrderNo, orderSequenceFromNo, assigneeIdentity, externalOrderSnapshot,
-  normalizedOrderView, documentFieldChanges, orderItemChanges
+  normalizedOrderView, documentFieldChanges, orderItemChanges,
+  orderIntakeProvenanceSnapshot, orderItemIdentitySnapshot
 } from './order-document-model.js?v=0.8.0';
 import { deriveOrderLifecycle, TRANSFER_EVENT_TYPE } from './order-fulfillment-lifecycle.js?v=0.8.0';
+import { INTAKE_CONTRACT_VERSION, PRODUCT_IDENTITY_STATUS } from './orderq-v8-contracts.js?v=0.11.0';
+import {
+  buildOrderSourceDocumentCanonicalProjection,
+  canonicalStringify
+} from './intake-identity.js?v=0.11.0';
 
 export { ORDER_STATUS, ADMIN_STATUS, OPS_STATUS, INPUT_CHANNEL };
 
@@ -47,6 +53,15 @@ export class DuplicateSourceMessageError extends Error {
     super('이미 처리한 원문입니다. 기존 주문을 확인해 주세요.');
     this.name = 'DuplicateSourceMessageError';
     this.code = 'ORDER_SOURCE_MESSAGE_DUPLICATE';
+    this.existingOrder = existingOrder;
+  }
+}
+
+export class IntakeDocumentIdempotencyConflictError extends Error {
+  constructor(existingOrder) {
+    super('같은 원본 전표키에 서로 다른 주문내용이 요청되었습니다.');
+    this.name = 'IntakeDocumentIdempotencyConflictError';
+    this.code = 'ORDERQ_INTAKE_DOCUMENT_IDEMPOTENCY_CONFLICT';
     this.existingOrder = existingOrder;
   }
 }
@@ -86,6 +101,12 @@ function normalizeItem(input, orderId, previous = null) {
   const matchStatus = requestedStatus === MATCH_STATUS.EXCLUDED
     ? MATCH_STATUS.EXCLUDED
     : (hasProductIdentity ? MATCH_STATUS.MATCHED : MATCH_STATUS.MATCH_FAILED);
+  const identity = orderItemIdentitySnapshot(input, hasProductIdentity);
+  if (identity.productIdentityStatus === PRODUCT_IDENTITY_STATUS.TEMPORARY_CONFIRMED) {
+    if (!itemName) throw new Error('ORDERQ_INTAKE_TEMPORARY_NAME_REQUIRED');
+    if (productId || itemCode) throw new Error('ORDERQ_INTAKE_TEMPORARY_MASTER_IDENTITY_FORBIDDEN');
+    if (identity.reviewStatus !== 'CONFIRMED') throw new Error('ORDERQ_INTAKE_TEMPORARY_REVIEW_REQUIRED');
+  }
 
   return {
     orderItemId: previous?.orderItemId || input.orderItemId || newId('OI'),
@@ -109,6 +130,7 @@ function normalizeItem(input, orderId, previous = null) {
     description: String(input.description ?? '').trim(),
     noticePrice: asNumberOrNull(input.noticePrice),
     matchStatus,
+    ...identity,
     matchSource: input.matchSource || (hasProductIdentity ? 'MASTER_SELECTED' : 'UNRESOLVED'),
     updatedAt: nowIso(),
     createdAt: previous?.createdAt || nowIso()
@@ -271,12 +293,12 @@ export async function createOrder(payload) {
     const warehouse = await resolveWarehouseInTransaction(tx, payload, { sourceType: payload.sourceType || 'MANUAL' });
     const orderStore = tx.objectStore(STORE.ORDERS);
     const sourceMessageKey = String(payload.sourceMessageKey || '').trim();
-    if (sourceMessageKey) {
+    const sourceDocumentKey = String(payload.sourceDocumentKey || '').trim();
+    if (!sourceDocumentKey && sourceMessageKey) {
       const existingSourceOrder = await requestToPromise(orderStore.index('bySourceMessageKey').get(sourceMessageKey));
       if (existingSourceOrder) throw new DuplicateSourceMessageError(existingSourceOrder);
     }
     const orderId = newId('ORD');
-    const orderNo = await allocateOrderNoInTransaction(tx, payload.orderDate, payload.orderNo);
     let items = (payload.items || [])
       .filter(item => item.itemCode || item.itemName || item.quantity || item.rawText)
       .map((item, index) => normalizeItem({ ...item, lineNo: index + 1 }, orderId));
@@ -291,7 +313,7 @@ export async function createOrder(payload) {
     const matchingStatus = workflow.orderStatus === ORDER_STATUS.FULL_CANCEL ? MATCHING_STATUS.CANCELLED : summarizeStatus(items);
     let order = {
       orderId,
-      orderNo,
+      orderNo: String(payload.orderNo || '').trim(),
       revision: 1,
       orderDate: payload.orderDate,
       customerId: customer.customerId,
@@ -302,6 +324,11 @@ export async function createOrder(payload) {
       sourceType: payload.sourceType || 'MANUAL',
       sourceId: payload.sourceId || '',
       sourceMessageKey: sourceMessageKey || undefined,
+      ...orderIntakeProvenanceSnapshot({
+        ...payload,
+        sourceDocumentKey,
+        intakeContractVersion: payload.intakeContractVersion || (sourceDocumentKey ? INTAKE_CONTRACT_VERSION : '')
+      }),
       ...workflow,
       status: matchingStatus,
       matchingStatus,
@@ -311,6 +338,26 @@ export async function createOrder(payload) {
       createdAt: timestamp,
       updatedAt: timestamp
     };
+
+    if (sourceDocumentKey) {
+      const existingSourceOrder = await requestToPromise(orderStore.index('bySourceDocumentKey').get(sourceDocumentKey));
+      if (existingSourceOrder) {
+        const existingItems = await requestToPromise(tx.objectStore(STORE.ORDER_ITEMS).index('byOrderId').getAll(existingSourceOrder.orderId));
+        const existingCanonical = canonicalStringify(buildOrderSourceDocumentCanonicalProjection({
+          order: existingSourceOrder,
+          items: existingItems
+        }));
+        const requestedCanonical = canonicalStringify(buildOrderSourceDocumentCanonicalProjection({ order, items }));
+        if (existingCanonical !== requestedCanonical) throw new IntakeDocumentIdempotencyConflictError(existingSourceOrder);
+        await new Promise((resolve, reject) => {
+          tx.addEventListener('abort', () => resolve(), { once: true });
+          try { tx.abort(); } catch (error) { reject(error); }
+        });
+        return { order: existingSourceOrder, items: existingItems, customer, warehouse, duplicate: true };
+      }
+    }
+
+    order.orderNo = await allocateOrderNoInTransaction(tx, payload.orderDate, payload.orderNo);
     order = { ...order, opsStatus: deriveOrderLifecycle(order, items, []).operationStatus };
 
     await requestToPromise(orderStore.add(order));
@@ -339,7 +386,7 @@ export async function createOrder(payload) {
 
     await transactionDone(tx);
     broadcast('ORDER_CREATED', order);
-    return { order, items, customer, warehouse };
+    return { order, items, customer, warehouse, duplicate: false };
   } catch (error) {
     try { tx.abort(); } catch (_) {}
     throw error;

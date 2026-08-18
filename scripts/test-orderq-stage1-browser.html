@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <title>ORDER IN Stage 1 Browser Test</title>
+  <style>body{font:14px/1.5 system-ui;margin:20px}iframe{width:48%;height:260px;border:1px solid #ccd5e0;margin-right:1%}pre{white-space:pre-wrap}</style>
+</head>
+<body>
+  <h1>ORDER IN Stage 1 — IndexedDB v8 / Identity</h1>
+  <div id="clients"></div>
+  <pre id="result">RUNNING</pre>
+  <script type="module">
+    import { DB_NAME, STORE, openOrderQDb, closeOrderQDb, requestToPromise, transactionDone } from '../orderq/orderq-db.js?v=0.11.0';
+    import { V7_STORE_DEFINITIONS } from '../orderq/orderq-v7-contracts.js?v=0.8.0';
+    import { V8_STORE_DEFINITIONS } from '../orderq/orderq-v8-contracts.js?v=0.11.0';
+    import {
+      buildAutomaticSourceDocumentKey,
+      buildOrderSourceDocumentCanonicalProjection,
+      buildSourceLineKey,
+      buildSourceOccurrenceKey,
+      canonicalStringify,
+      computeOrderSourceDocumentCanonicalHash,
+      computeRawFingerprint
+    } from '../orderq/intake-identity.js?v=0.11.0';
+    import {
+      createIntakeDocument,
+      createOrOpenIntakeSession,
+      getIntakeSessionBundle,
+      replaceIntakeLines
+    } from '../orderq/intake-repository.js?v=0.11.0';
+    import { createOrder } from '../orderq/order-intake-engine.js?v=0.11.0';
+    import { exportOrderQBackup, restoreOrderQBackup } from '../orderq/orderq-v7-repository.js?v=0.11.0';
+
+    const output = document.getElementById('result');
+    const params = new URLSearchParams(location.search);
+    const profile = params.get('profile') || '';
+
+    function assert(condition, message) {
+      if (!condition) throw new Error(message);
+    }
+
+    const deleteDatabase = name => new Promise((resolve, reject) => {
+      closeOrderQDb();
+      const request = indexedDB.deleteDatabase(name);
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+      request.onblocked = () => reject(new Error(`DELETE_BLOCKED:${name}`));
+    });
+
+    function seedV7(name, profileName) {
+      return new Promise((resolve, reject) => {
+        const request = indexedDB.open(name, 7);
+        request.onupgradeneeded = () => {
+          const db = request.result;
+          const orders = db.createObjectStore('orders', { keyPath:'orderId' });
+          orders.createIndex('bySourceMessageKey', 'sourceMessageKey', { unique:true });
+          const items = db.createObjectStore('orderItems', { keyPath:'orderItemId' });
+          items.createIndex('byOrderId', 'orderId');
+          const events = db.createObjectStore('orderEvents', { keyPath:'eventId' });
+          events.createIndex('byOrderId', 'orderId');
+          db.createObjectStore('meta', { keyPath:'key' });
+          db.createObjectStore('products', { keyPath:'productId' });
+          for (const definition of V7_STORE_DEFINITIONS) {
+            const store = db.createObjectStore(definition.name, { keyPath:definition.keyPath });
+            for (const entry of definition.indexes) store.createIndex(entry.name, entry.keyPath, entry.options);
+          }
+          const legacyOrder = {
+            orderId:`LEGACY-${profileName}`, revision:1, orderNo:'20260817-000', orderDate:'2026-08-17',
+            customerId:'LEGACY-CUSTOMER', customerName:'기존 거래처', sourceType:'KAKAO_TEXT',
+            sourceMessageKey:`LEGACY-MESSAGE-${profileName}`, status:'CONFIRMED', createdAt:'2026-08-17T00:00:00.000Z', updatedAt:'2026-08-17T00:00:00.000Z'
+          };
+          orders.add(legacyOrder);
+          items.add({ orderItemId:`LEGACY-ITEM-${profileName}`, orderId:legacyOrder.orderId, lineNo:1, itemCode:'P-OLD', itemName:'기존상품', finalQuantity:0, matchStatus:'MATCHED' });
+          events.add({ eventId:`LEGACY-EVENT-${profileName}`, orderId:legacyOrder.orderId, revision:1, eventType:'ORDER_CREATED', createdAt:'2026-08-17T00:00:00.000Z' });
+        };
+        request.onsuccess = () => { request.result.close(); resolve(); };
+        request.onerror = () => reject(request.error);
+      });
+    }
+
+    async function storeRows(names) {
+      const db = await openOrderQDb();
+      const tx = db.transaction(names, 'readonly');
+      const rows = {};
+      for (const name of names) rows[name] = await requestToPromise(tx.objectStore(name).getAll());
+      await transactionDone(tx);
+      return rows;
+    }
+
+    async function runProfile(profileName) {
+      let warningCount = 0;
+      let errorCount = 0;
+      const originalWarn = console.warn.bind(console);
+      const originalError = console.error.bind(console);
+      console.warn = (...args) => { warningCount += 1; originalWarn(...args); };
+      console.error = (...args) => { errorCount += 1; originalError(...args); };
+
+      await deleteDatabase(DB_NAME);
+      await seedV7(DB_NAME, profileName);
+      const db = await openOrderQDb();
+      assert(db.version === 8, 'v7→v8 upgrade failed');
+      const storeNames = Array.from(db.objectStoreNames);
+      for (const definition of V8_STORE_DEFINITIONS) assert(storeNames.includes(definition.name), `missing store:${definition.name}`);
+      const schemaTx = db.transaction(['orders', ...V8_STORE_DEFINITIONS.map(row => row.name)], 'readonly');
+      assert(schemaTx.objectStore('orders').index('bySourceMessageKey').unique === false, 'sourceMessageKey must be non-unique');
+      assert(schemaTx.objectStore('orders').index('bySourceDocumentKey').unique === true, 'sourceDocumentKey must be unique');
+      const indexEvidence = Object.fromEntries(V8_STORE_DEFINITIONS.map(definition => {
+        const store = schemaTx.objectStore(definition.name);
+        const names = Array.from(store.indexNames);
+        for (const index of definition.indexes) assert(names.includes(index.name), `missing index:${definition.name}.${index.name}`);
+        return [definition.name, names];
+      }));
+      await transactionDone(schemaTx);
+
+      const masterTx = db.transaction(['customers'], 'readwrite');
+      masterTx.objectStore('customers').put({
+        customerId:'CUS-STAGE1', customerName:'Stage 1 거래처', normalizedName:'stage1거래처',
+        erpCustomerCode:'', status:'ACTIVE', source:'STAGE1_FIXTURE',
+        createdAt:'2026-08-17T00:00:00.000Z', updatedAt:'2026-08-17T00:00:00.000Z'
+      });
+      await transactionDone(masterTx);
+
+      const legacy = (await storeRows(['orders','orderItems','orderEvents']));
+      const legacyOrder = legacy.orders.find(row => row.orderId === `LEGACY-${profileName}`);
+      assert(legacyOrder.sourceDocumentKey === `LEGACY:LEGACY-MESSAGE-${profileName}`, 'legacy backfill failed');
+      assert(legacy.orderItems[0].finalQuantity === 0, 'legacy item zero changed');
+      assert(legacy.orderEvents[0].eventType === 'ORDER_CREATED', 'legacy event changed');
+
+      const rawFingerprint = await computeRawFingerprint({ text:'대파 2', source:'KAKAO' });
+      const sourceOccurrenceKey = await buildSourceOccurrenceKey({
+        sourceSystem:'KAKAO', sourceContainerId:'ROOM-STAGE1', sourceNativeId:'MESSAGE-STAGE1',
+        occurredAtEvidence:profileName === 'A' ? '2026-08-17T09:00:00+09:00' : '2026-08-17T00:00:00Z'
+      });
+      const sourceDocumentKey = await buildAutomaticSourceDocumentKey({
+        sourceOccurrenceKey, documentType:'ORDER', stableSegmentIdentity:{ messageId:'MESSAGE-STAGE1', range:[0,4], ordinal:1 }
+      });
+      const sourceLineKey = await buildSourceLineKey({ sourceDocumentKey, sourceRange:{ start:0, end:4, ordinal:1 } });
+      const session = await createOrOpenIntakeSession({
+        actor:'ADMIN', documentType:'ORDER', sourceMode:'DIRECT_EXTERNAL', sourceType:'KAKAO_TEXT', sourceId:'ROOM-STAGE1',
+        sourceOccurrenceKey, rawFingerprint, intakeSessionId:`SESSION-${profileName}`
+      });
+      assert(session.duplicate === false, 'first session must be new');
+      const sameSession = await createOrOpenIntakeSession({
+        actor:'ADMIN', documentType:'ORDER', sourceMode:'DIRECT_EXTERNAL', sourceType:'KAKAO_TEXT', sourceId:'ROOM-STAGE1',
+        sourceOccurrenceKey, rawFingerprint, intakeSessionId:`OTHER-${profileName}`
+      });
+      assert(sameSession.duplicate === true && sameSession.session.intakeSessionId === `SESSION-${profileName}`, 'same occurrence did not converge');
+      let occurrenceConflict = '';
+      const beforeOccurrence = canonicalStringify(await storeRows(V8_STORE_DEFINITIONS.map(row => row.name)));
+      try {
+        await createOrOpenIntakeSession({ actor:'ADMIN', sourceOccurrenceKey, rawFingerprint:'different-content', sourceType:'KAKAO_TEXT', sourceId:'ROOM-STAGE1' });
+      } catch (error) { occurrenceConflict = error.message; }
+      assert(occurrenceConflict === 'ORDERQ_INTAKE_OCCURRENCE_CONTENT_CONFLICT', 'occurrence conflict missing');
+      assert(canonicalStringify(await storeRows(V8_STORE_DEFINITIONS.map(row => row.name))) === beforeOccurrence, 'occurrence conflict changed stores');
+
+      const document = await createIntakeDocument({
+        actor:'ADMIN', intakeSessionId:`SESSION-${profileName}`, intakeDocumentId:`DOCUMENT-${profileName}`,
+        sourceDocumentKey, sourceMessageKeys:['MESSAGE-STAGE1'], documentType:'ORDER', segmentationVersion:'FIXTURE_V1'
+      });
+      const replaced = await replaceIntakeLines({
+        actor:'ADMIN', intakeDocumentId:document.document.intakeDocumentId, expectedRevision:1, nextStage:'DOCUMENT_REVIEW',
+        lines:[{
+          intakeLineId:`LINE-${profileName}`, sourceLineKey, rawExpression:'대파 2', productText:'대파', quantity:2, unit:'개',
+          productId:null, itemCode:'', itemName:'테스트 임시 대파', matchStatus:'MATCH_FAILED',
+          reviewStatus:'CONFIRMED', productIdentityStatus:'TEMPORARY_CONFIRMED'
+        }]
+      });
+      assert(replaced.lines[0].reviewStatus === 'CONFIRMED' && replaced.lines[0].productIdentityStatus === 'TEMPORARY_CONFIRMED', 'temporary identity lost');
+      const bundle = await getIntakeSessionBundle(`SESSION-${profileName}`);
+      assert(bundle.documents.length === 1 && bundle.lines.length === 1, 'intake bundle incomplete');
+
+      const orderPayload = {
+        orderId:`IGNORED-${profileName}`, orderNo:'', orderDate:'2026-08-17',
+        customerId:'CUS-STAGE1', customerName:'Stage 1 거래처',
+        warehouseId:'WH-STAGE1', warehouseName:'Stage 1 창고', warehouseCode:'S1',
+        transactionType:'SALE', deliveryExpectedDate:'', orderMessage:'',
+        sourceType:'ORDER_IN', sourceId:'ROOM-STAGE1', sourceMessageKey:'MESSAGE-STAGE1', sourceOccurrenceKey, sourceDocumentKey,
+        intakeSessionId:`SESSION-${profileName}`, intakeDocumentId:`DOCUMENT-${profileName}`, rawFingerprint,
+        items:[{
+          sourceLineKey, intakeLineId:`LINE-${profileName}`, itemCode:'', itemName:'테스트 임시 대파', quantity:2,
+          rawQuantity:2, rawUnit:'개', finalQuantity:2, finalUnit:'개', price:0, supplyAmount:0, vatAmount:null,
+          matchStatus:'MATCH_FAILED', reviewStatus:'CONFIRMED', productIdentityStatus:'TEMPORARY_CONFIRMED'
+        }]
+      };
+      const created = await createOrder(orderPayload);
+      assert(created.duplicate === false, 'first order should be new');
+      assert(created.items[0].productId === null && created.items[0].itemCode === '', 'temporary item master identity changed');
+      assert(created.items[0].reviewStatus === 'CONFIRMED' && created.items[0].productIdentityStatus === 'TEMPORARY_CONFIRMED', 'temporary order item fields lost');
+      const duplicateStores = [
+        'customers','customerAliases','warehouses','warehouseAliases',
+        'orders','orderItems','orderEvents','syncQueue'
+      ];
+      const countsBeforeDuplicate = await storeRows(duplicateStores);
+      const duplicate = await createOrder({ ...orderPayload, orderId:`DIFFERENT-${profileName}`, intakeSessionId:`LOCAL-RETRY-${profileName}` });
+      const countsAfterDuplicate = await storeRows(duplicateStores);
+      assert(duplicate.duplicate === true && duplicate.order.orderId === created.order.orderId, 'canonical duplicate did not return existing order');
+      assert(canonicalStringify(countsAfterDuplicate) === canonicalStringify(countsBeforeDuplicate), 'duplicate increased rows');
+      let documentConflict = '';
+      try { await createOrder({ ...orderPayload, items:[{ ...orderPayload.items[0], quantity:3, finalQuantity:3 }] }); }
+      catch (error) { documentConflict = error.code || error.message; }
+      assert(documentConflict === 'ORDERQ_INTAKE_DOCUMENT_IDEMPOTENCY_CONFLICT', 'document conflict missing');
+      assert(canonicalStringify(await storeRows(duplicateStores)) === canonicalStringify(countsBeforeDuplicate), 'document conflict changed rows');
+
+      const secondOccurrenceKey = await buildSourceOccurrenceKey({ sourceSystem:'PASTE', sourceContainerId:'ADMIN', captureOccurrenceId:`CAPTURE-${profileName}` });
+      const secondDocumentKey = await buildAutomaticSourceDocumentKey({
+        sourceOccurrenceKey:secondOccurrenceKey, documentType:'ORDER', stableSegmentIdentity:{ range:[0,4], ordinal:1 }
+      });
+      const secondLineKey = await buildSourceLineKey({ sourceDocumentKey:secondDocumentKey, sourceRange:{ start:0, end:4, ordinal:1 } });
+      await createOrOpenIntakeSession({ actor:'ADMIN', sourceOccurrenceKey:secondOccurrenceKey, rawFingerprint, sourceType:'PASTE', sourceId:'ADMIN' });
+      const repeated = await createOrder({
+        ...orderPayload, sourceOccurrenceKey:secondOccurrenceKey, sourceDocumentKey:secondDocumentKey,
+        intakeSessionId:`REPEAT-${profileName}`, intakeDocumentId:`REPEAT-DOC-${profileName}`,
+        items:[{ ...orderPayload.items[0], sourceLineKey:secondLineKey, intakeLineId:`REPEAT-LINE-${profileName}` }]
+      });
+      assert(repeated.duplicate === false && repeated.order.orderId !== created.order.orderId, 'same text different occurrence must create new order');
+
+      const backup = await exportOrderQBackup('ADMIN');
+      assert(V8_STORE_DEFINITIONS.every(definition => Object.hasOwn(backup.stores, definition.name)), 'v8 backup missing intake stores');
+      const v8Canonical = canonicalStringify(backup.stores);
+      await restoreOrderQBackup(backup, 'ADMIN');
+      assert(canonicalStringify((await exportOrderQBackup('ADMIN')).stores) === v8Canonical, 'v8 backup restore mismatch');
+      const v7Backup = JSON.parse(JSON.stringify(backup));
+      v7Backup.schemaVersion = 7;
+      for (const definition of V8_STORE_DEFINITIONS) {
+        delete v7Backup.stores[definition.name];
+        delete v7Backup.counts[definition.name];
+      }
+      await restoreOrderQBackup(v7Backup, 'ADMIN');
+      const afterV7Restore = await storeRows(V8_STORE_DEFINITIONS.map(row => row.name));
+      assert(Object.values(afterV7Restore).every(rows => rows.length === 0), 'v7 restore must leave v8 stores empty');
+      await restoreOrderQBackup(backup, 'ADMIN');
+      assert(canonicalStringify((await exportOrderQBackup('ADMIN')).stores) === v8Canonical, 'v8 restore after v7 compatibility mismatch');
+
+      const canonicalHash = await computeOrderSourceDocumentCanonicalHash({ order:created.order, items:created.items });
+      const canonicalProjection = canonicalStringify(buildOrderSourceDocumentCanonicalProjection({ order:created.order, items:created.items }));
+      return {
+        profile:profileName, dbName:DB_NAME, dbVersion:db.version, stores:storeNames.length, indexEvidence,
+        legacyOrderId:legacyOrder.orderId, legacyBackfill:legacyOrder.sourceDocumentKey,
+        rawFingerprint, sourceOccurrenceKey, sourceDocumentKey, sourceLineKey,
+        orderId:created.order.orderId, repeatedOrderId:repeated.order.orderId,
+        canonicalHash, canonicalProjection,
+        temporaryIdentity:{ reviewStatus:created.items[0].reviewStatus, productIdentityStatus:created.items[0].productIdentityStatus },
+        duplicateRowsUnchanged:true, conflictAtomic:true, backupRestore:true, v7BackupCompatible:true,
+        warningCount, errorCount
+      };
+    }
+
+    async function runParent() {
+      const clients = document.getElementById('clients');
+      const seed = Date.now();
+      const results = new Map();
+      for (const name of ['A','B']) {
+        const frame = document.createElement('iframe');
+        frame.src = `${location.pathname}?profile=${name}&orderqTestDb=oneapp-orderq-stage1-${name.toLowerCase()}-${seed}`;
+        clients.append(frame);
+      }
+      const value = await new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error('A/B_TIMEOUT')), 60000);
+        addEventListener('message', event => {
+          if (event.data?.type === 'STAGE1_FAIL') { clearTimeout(timeout); reject(new Error(event.data.error)); }
+          if (event.data?.type !== 'STAGE1_DONE') return;
+          results.set(event.data.value.profile, event.data.value);
+          if (results.size === 2) { clearTimeout(timeout); resolve([...results.values()].sort((a,b) => a.profile.localeCompare(b.profile))); }
+        });
+      });
+      assert(value[0].dbName !== value[1].dbName, 'A/B IndexedDB names must differ');
+      assert(value[0].sourceOccurrenceKey === value[1].sourceOccurrenceKey, 'A/B native occurrence did not converge');
+      assert(value[0].sourceDocumentKey === value[1].sourceDocumentKey, 'A/B source document did not converge');
+      assert(value[0].canonicalHash === value[1].canonicalHash, 'A/B canonical hash did not converge');
+      assert(value.every(row => row.warningCount === 0 && row.errorCount === 0), 'A/B console warning/error present');
+      return { status:'PASS', clients:value, aBConverged:true };
+    }
+
+    if (profile) {
+      runProfile(profile).then(value => {
+        output.textContent = `PASS\n${JSON.stringify(value,null,2)}`;
+        document.title = `PASS ORDER IN Stage 1 ${profile}`;
+        parent.postMessage({ type:'STAGE1_DONE', value }, '*');
+      }).catch(error => {
+        console.error(error);
+        output.textContent = `FAIL\n${error.stack || error}`;
+        document.title = `FAIL ORDER IN Stage 1 ${profile}`;
+        parent.postMessage({ type:'STAGE1_FAIL', error:error.stack || String(error) }, '*');
+      });
+    } else {
+      runParent().then(value => {
+        output.textContent = `PASS\n${JSON.stringify(value,null,2)}`;
+        document.title = 'PASS ORDER IN Stage 1 Browser';
+      }).catch(error => {
+        console.error(error);
+        output.textContent = `FAIL\n${error.stack || error}`;
+        document.title = 'FAIL ORDER IN Stage 1 Browser';
+      });
+    }
+  </script>
+</body>
+</html>
