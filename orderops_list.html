@@ -1738,6 +1738,56 @@
       .data-source-label { min-height: 22px; }
       .view-controls .preview-tabs { display: flex; }
     }
+
+    /* ORDER Q v1.57: 거래처 담당자 변경 */
+    .manager-assignment-trigger {
+      width: 100%;
+      min-height: 24px;
+      padding: 2px 5px;
+      border: 1px solid transparent;
+      border-radius: 4px;
+      color: inherit;
+      background: transparent;
+      font: inherit;
+      text-align: left;
+    }
+    .manager-assignment-trigger:hover,
+    .manager-assignment-trigger:focus-visible {
+      border-color: #0d9488;
+      color: #0f766e;
+      background: #f0fdfa;
+      outline: none;
+    }
+    .manager-assignment-guide {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+      padding: 3px 4px 6px;
+      color: #334155;
+      font-size: 11px;
+    }
+    .manager-assignment-guide strong { color: #0f766e; }
+    .manager-assignment-guide button { margin-left: auto; }
+    .manager-assignment-option {
+      width: 100%;
+      min-height: 29px;
+      padding: 4px 8px;
+      border: 1px solid #cbd5e1;
+      border-radius: 4px;
+      color: #334155;
+      background: #fff;
+      font: inherit;
+      font-weight: 800;
+      text-align: left;
+    }
+    .manager-assignment-option:hover,
+    .manager-assignment-option.active {
+      border-color: #0d9488;
+      color: #0f766e;
+      background: #f0fdfa;
+    }
+
   </style>
 </head>
 <body>
@@ -1746,7 +1796,7 @@
       <div class="brand-mark">ONEAPP</div>
       <div class="brand-divider" aria-hidden="true"></div>
       <span class="brand-logo-frame" aria-hidden="true"><img class="brand-logo" src="assets/order-q-logo.png" alt=""></span>
-      <span class="brand-badge">v1.56</span>
+      <span class="brand-badge">v1.57</span>
       <span class="brand-product">출고관리</span>
     </div>
     <div class="header-actions">
@@ -1954,7 +2004,7 @@
     </section>
 
     <footer class="page-footer">
-      <span>ORDER Q v1.56 · 출고관리 · workspace shipping-workspace/v2 · cloud plan v1</span>
+      <span>ORDER Q v1.57 · 출고관리 · workspace shipping-workspace/v2 · cloud plan v1</span>
       <a href="SHIPPING_MANAGEMENT_GUIDANCE.md">개발·운영 기준 보기</a>
     </footer>
   </main>
@@ -2098,11 +2148,14 @@
       const EXCEL_MAPPING_KEY = "oneapp.orderops.excel-mappings.v1";
       const EXCEL_MAPPING_SCHEMA = "orderops-excel-mappings/v1";
       const PURCHASE_HISTORY_KEY = "oneapp.orderops.purchase-history.v1";
+      const SORT_SETTINGS_KEY = "oneapp.orderops.sort-settings.v1";
+      const SORT_SETTINGS_SCHEMA = "orderops-sort-settings/v1";
       const ORDER_VIEW_PRESETS_KEY = "oneapp.orderops.order-view-presets.v1";
-      const ORDER_VIEW_PRESETS_SCHEMA = "orderops-order-view-presets/v4";
-      const PREVIOUS_ORDER_VIEW_PRESETS_SCHEMA = "orderops-order-view-presets/v3";
-      const LEGACY_ORDER_VIEW_PRESETS_SCHEMA = "orderops-order-view-presets/v2";
-      const ORIGINAL_ORDER_VIEW_PRESETS_SCHEMA = "orderops-order-view-presets/v1";
+      const ORDER_VIEW_PRESETS_SCHEMA = "orderops-order-view-presets/v5";
+      const PREVIOUS_ORDER_VIEW_PRESETS_SCHEMA = "orderops-order-view-presets/v4";
+      const LEGACY_ORDER_VIEW_PRESETS_SCHEMA = "orderops-order-view-presets/v3";
+      const ORIGINAL_ORDER_VIEW_PRESETS_SCHEMA = "orderops-order-view-presets/v2";
+      const FIRST_ORDER_VIEW_PRESETS_SCHEMA = "orderops-order-view-presets/v1";
       const ORDER_VIEW_PRESET_LIMIT = 20;
       const VIEW_PRESET_TABS = new Set(["allocations", "ledger", "inventory", "purchases", "sales"]);
       const VIEW_PRESET_LABELS = Object.freeze({
@@ -2143,6 +2196,36 @@
       const TABLE_WIDTH_MAX = 720;
       const TABLE_WIDTH_TABS = new Set(["validation", "inventory", "allocations", "notices", "ledger", "purchases", "sales"]);
       const CLOUD_PLAN_SCHEMA = "ONEAPP_SHIPPING_PURCHASE_PLAN_V1";
+      function loadSortSettings() {
+        const result = Object.create(null);
+        try {
+          const parsed = JSON.parse(localStorage.getItem(SORT_SETTINGS_KEY) || "null");
+          if (!isPlainRecord(parsed) || parsed.schemaVersion !== SORT_SETTINGS_SCHEMA || !isPlainRecord(parsed.tabs)) {
+            return result;
+          }
+          Object.entries(parsed.tabs).forEach(([previewId, settings]) => {
+            const normalized = (Array.isArray(settings) ? settings : [settings])
+              .filter((setting) => isPlainRecord(setting) && isSafeColumnKey(setting.columnKey) &&
+                ["asc", "desc"].includes(setting.direction))
+              .map((setting) => ({ columnKey: setting.columnKey, direction: setting.direction }));
+            if (normalized.length > 0) result[previewId] = normalized;
+          });
+        } catch (error) {}
+        return result;
+      }
+
+      function saveSortSettings() {
+        const tabs = Object.create(null);
+        Object.entries(state.sortSettings || {}).forEach(([previewId, settings]) => {
+          const normalized = (Array.isArray(settings) ? settings : [settings])
+            .filter((setting) => isPlainRecord(setting) && isSafeColumnKey(setting.columnKey) &&
+              ["asc", "desc"].includes(setting.direction))
+            .map((setting) => ({ columnKey: setting.columnKey, direction: setting.direction }));
+          if (normalized.length > 0) tabs[previewId] = normalized;
+        });
+        localStorage.setItem(SORT_SETTINGS_KEY, JSON.stringify({ schemaVersion: SORT_SETTINGS_SCHEMA, tabs }));
+      }
+
       const state = {
         orders: null,
         inventory: null,
@@ -2175,7 +2258,8 @@
         warehouseFilters: new Set(),
         managerColorSettings: { schemaVersion: MANAGER_COLORS_SCHEMA, colors: Object.create(null) },
         managerFilters: new Set(),
-        sortSettings: Object.create(null),
+        managerAssignmentCustomer: "",
+        sortSettings: loadSortSettings(),
         columnFilters: Object.create(null),
         activeColumnMenu: null,
         activeFilterPanel: "",
@@ -2926,7 +3010,8 @@
         state.specificationFilters.clear();
         state.warehouseFilters.clear();
         state.managerFilters.clear();
-        state.sortSettings = Object.create(null);
+        state.managerAssignmentCustomer = "";
+        state.sortSettings = loadSortSettings();
         state.columnFilters = Object.create(null);
         state.selectedOrderViewPresetId = "";
         closeColumnSortMenu();
@@ -3591,11 +3676,18 @@
         const name = String(value.name || "").trim().slice(0, 40);
         if (!/^[a-z0-9._:-]{1,80}$/i.test(id) || !name) return null;
         const previewId = VIEW_PRESET_TABS.has(value.previewId) ? value.previewId : "allocations";
-        const sortSetting = isPlainRecord(value.view.sortSetting) &&
-          isSafeColumnKey(value.view.sortSetting.columnKey) &&
-          ["asc", "desc"].includes(value.view.sortSetting.direction)
-          ? { columnKey: value.view.sortSetting.columnKey, direction: value.view.sortSetting.direction }
-          : null;
+        const rawSortSettings = Array.isArray(value.view.sortSettings)
+          ? value.view.sortSettings
+          : isPlainRecord(value.view.sortSetting) ? [value.view.sortSetting] : [];
+        const sortSettings = [];
+        const seenSortColumns = new Set();
+        rawSortSettings.forEach((setting) => {
+          if (!isPlainRecord(setting) || !isSafeColumnKey(setting.columnKey) ||
+              !["asc", "desc"].includes(setting.direction) || seenSortColumns.has(setting.columnKey)) return;
+          seenSortColumns.add(setting.columnKey);
+          sortSettings.push({ columnKey: setting.columnKey, direction: setting.direction });
+        });
+        const sortSetting = sortSettings[0] || null;
         return {
           id,
           name,
@@ -3609,6 +3701,7 @@
             warehouseFilters: normalizeStringList(value.view.warehouseFilters, 100),
             managerFilters: normalizeStringList(value.view.managerFilters, 100),
             sortSetting,
+            sortSettings,
             columnFilters: normalizeStoredColumnFilters(value.view.columnFilters),
             layoutCaptured: value.view.layoutCaptured === true ||
               isPlainRecord(value.view.columnWidths) || Array.isArray(value.view.columnOrder),
@@ -3629,7 +3722,8 @@
           const supportedSchema = parsed?.schemaVersion === ORDER_VIEW_PRESETS_SCHEMA ||
             parsed?.schemaVersion === PREVIOUS_ORDER_VIEW_PRESETS_SCHEMA ||
             parsed?.schemaVersion === LEGACY_ORDER_VIEW_PRESETS_SCHEMA ||
-            parsed?.schemaVersion === ORIGINAL_ORDER_VIEW_PRESETS_SCHEMA;
+            parsed?.schemaVersion === ORIGINAL_ORDER_VIEW_PRESETS_SCHEMA ||
+            parsed?.schemaVersion === FIRST_ORDER_VIEW_PRESETS_SCHEMA;
           if (!isPlainRecord(parsed) || !supportedSchema || !Array.isArray(parsed.presets)) {
             return [];
           }
@@ -3680,7 +3774,7 @@
       function captureOrderViewPreset() {
         const previewId = state.activePreview;
         const preview = getPreviewDefinitions(state.workspace)[previewId];
-        const sortSetting = state.sortSettings[previewId];
+        const sortSettings = columnSortSettings(previewId, preview);
         const columnWidths = Object.create(null);
         preview.columns.forEach((column) => {
           columnWidths[column.key] = currentColumnWidth(previewId, column);
@@ -3691,7 +3785,8 @@
           specificationFilters: [...state.specificationFilters],
           warehouseFilters: [...state.warehouseFilters],
           managerFilters: [...state.managerFilters],
-          sortSetting: sortSetting ? { ...sortSetting } : null,
+          sortSetting: sortSettings[0] ? { ...sortSettings[0] } : null,
+          sortSettings: sortSettings.map((setting) => ({ ...setting })),
           columnFilters: normalizeStoredColumnFilters(state.columnFilters[previewId]),
           layoutCaptured: true,
           columnWidths,
@@ -3738,11 +3833,17 @@
         state.specificationFilters = new Set(preset.view.specificationFilters);
         state.warehouseFilters = new Set(preset.view.warehouseFilters.filter((key) => warehouseKeys.has(key)));
         state.managerFilters = new Set(preset.view.managerFilters.filter((name) => managerNames.has(name)));
-        if (preset.view.sortSetting && previewKeys.has(preset.view.sortSetting.columnKey)) {
-          state.sortSettings[previewId] = { ...preset.view.sortSetting };
+        const presetSortSettings = (Array.isArray(preset.view.sortSettings)
+          ? preset.view.sortSettings
+          : preset.view.sortSetting ? [preset.view.sortSetting] : [])
+          .filter((setting) => previewKeys.has(setting.columnKey) && ["asc", "desc"].includes(setting.direction))
+          .map((setting) => ({ columnKey: setting.columnKey, direction: setting.direction }));
+        if (presetSortSettings.length > 0) {
+          state.sortSettings[previewId] = previewId === "allocations" ? presetSortSettings : [presetSortSettings[0]];
         } else {
           delete state.sortSettings[previewId];
         }
+        saveSortSettings();
         const previewFilters = Object.create(null);
         Object.entries(preset.view.columnFilters).forEach(([columnKey, setting]) => {
           if (previewKeys.has(columnKey)) previewFilters[columnKey] = { ...setting };
@@ -3989,16 +4090,31 @@
               </label>
             </div>`;
         }).join("");
-        elements.managerColorOptions.innerHTML = managerNames(allocationsPreview).map((manager) => {
-          const checked = state.managerFilters.has(manager);
-          return `
-            <div class="warehouse-color-option">
-              <label>
-                <input type="checkbox" data-manager-filter="${escapeHtml(manager)}" ${checked ? "checked" : ""}>
-                <span>${escapeHtml(manager)}</span>
-              </label>
-            </div>`;
-        }).join("");
+        const assignmentCustomer = String(state.managerAssignmentCustomer || "").trim();
+        const availableManagers = managerNames(allocationsPreview);
+        const assignmentRows = assignmentCustomer
+          ? (allocationsPreview?.sourceRows || []).filter((row) => String(row?.customer || "").trim() === assignmentCustomer)
+          : [];
+        const currentAssignmentManager = assignmentRows.map((row) => String(row?.manager || "").trim()).find(Boolean) || "";
+        const managerTitle = elements.managerFilterPanel.querySelector(".warehouse-color-title");
+        if (managerTitle) managerTitle.textContent = assignmentCustomer ? `담당자 변경 · ${assignmentCustomer}` : "담당자 보기";
+        elements.managerColorOptions.innerHTML = assignmentCustomer
+          ? `<div class="manager-assignment-guide"><span>거래처 <strong>${escapeHtml(assignmentCustomer)}</strong> · 담당자 선택</span><button type="button" data-manager-assignment-cancel>취소</button></div>` +
+            availableManagers.map((manager) => `
+              <div class="warehouse-color-option">
+                <button class="manager-assignment-option ${manager === currentAssignmentManager ? "active" : ""}" type="button"
+                  data-manager-assignment="${escapeHtml(manager)}" aria-pressed="${manager === currentAssignmentManager}">${escapeHtml(manager)}</button>
+              </div>`).join("")
+          : availableManagers.map((manager) => {
+              const checked = state.managerFilters.has(manager);
+              return `
+                <div class="warehouse-color-option">
+                  <label>
+                    <input type="checkbox" data-manager-filter="${escapeHtml(manager)}" ${checked ? "checked" : ""}>
+                    <span>${escapeHtml(manager)}</span>
+                  </label>
+                </div>`;
+            }).join("");
 
         const targetType = state.activeFilterPanel;
         const targets = colorTargetDefinitions(definitions, targetType);
@@ -4012,7 +4128,7 @@
           ? targets.map((target) => `<option value="${escapeHtml(target.key)}" ${target.key === currentTargetKey ? "selected" : ""}>${escapeHtml(target.label)}</option>`).join("")
           : '<option value="">대상 없음</option>';
         elements.colorTargetSelect.disabled = targets.length === 0;
-        elements.colorAssignmentPanel.classList.toggle("hidden", !targetType);
+        elements.colorAssignmentPanel.classList.toggle("hidden", !targetType || Boolean(state.managerAssignmentCustomer));
         elements.pastelColorPalette.innerHTML = colorSwatchMarkup([COLOR_CANCEL_COLOR, ...PASTEL_COLOR_PALETTE], selectedColor, "파스텔 색상");
         elements.vividColorPalette.innerHTML = colorSwatchMarkup(VIVID_COLOR_PALETTE, selectedColor, "원색");
         elements.vividColorPalette.classList.toggle("hidden", !state.vividPaletteExpanded);
@@ -4991,39 +5107,74 @@
         return compared || left.index - right.index;
       }
 
-      function columnSortSetting(previewId, preview) {
-        const setting = state.sortSettings[previewId];
-        if (!setting || !["asc", "desc"].includes(setting.direction) ||
-            !preview?.columns?.some((column) => column.key === setting.columnKey)) return null;
-        return setting;
+      function columnSortSettings(previewId, preview) {
+        const stored = state.sortSettings[previewId];
+        const rawSettings = Array.isArray(stored) ? stored : stored ? [stored] : [];
+        const validColumns = new Set((preview?.columns || []).map((column) => column.key));
+        const result = [];
+        const seen = new Set();
+        rawSettings.forEach((setting) => {
+          if (!setting || !["asc", "desc"].includes(setting.direction) ||
+              !validColumns.has(setting.columnKey) || seen.has(setting.columnKey)) return;
+          seen.add(setting.columnKey);
+          result.push({ columnKey: setting.columnKey, direction: setting.direction });
+        });
+        return result;
+      }
+
+      function columnSortSetting(previewId, preview, columnKey = "") {
+        const settings = columnSortSettings(previewId, preview);
+        return columnKey
+          ? settings.find((setting) => setting.columnKey === columnKey) || null
+          : settings[0] || null;
+      }
+
+      function setColumnSortSetting(previewId, preview, columnKey, direction) {
+        let settings = previewId === "allocations" ? columnSortSettings(previewId, preview) : [];
+        settings = settings.filter((setting) => setting.columnKey !== columnKey);
+        if (["asc", "desc"].includes(direction)) settings.push({ columnKey, direction });
+        if (settings.length > 0) state.sortSettings[previewId] = settings;
+        else delete state.sortSettings[previewId];
+        saveSortSettings();
+      }
+
+      function removeColumnSortSetting(previewId, preview, columnKey) {
+        const settings = columnSortSettings(previewId, preview)
+          .filter((setting) => setting.columnKey !== columnKey);
+        if (settings.length > 0) state.sortSettings[previewId] = settings;
+        else delete state.sortSettings[previewId];
+        saveSortSettings();
       }
 
       function layeredColumnSortSettings(previewId, preview) {
-        const primary = columnSortSetting(previewId, preview);
-        if (previewId !== "allocations") return primary ? [primary] : [];
+        const selected = columnSortSettings(previewId, preview);
+        if (previewId !== "allocations") return selected.slice(0, 1);
         const columnsByRole = new Map((preview?.columns || [])
           .filter((column) => column?.role).map((column) => [column.role, column]));
+        const selectedByRole = new Map();
+        selected.forEach((setting) => {
+          const column = preview.columns.find((candidate) => candidate.key === setting.columnKey);
+          if (column?.role) selectedByRole.set(column.role, setting);
+        });
         const criteria = [];
-        const appendRole = (role, direction = "asc") => {
-          const column = columnsByRole.get(role);
-          if (!column || criteria.some((setting) => setting.columnKey === column.key)) return;
-          criteria.push({ columnKey: column.key, direction });
+        const appendSetting = (setting) => {
+          if (!setting || criteria.some((candidate) => candidate.columnKey === setting.columnKey)) return;
+          criteria.push({ columnKey: setting.columnKey, direction: setting.direction });
         };
-        const primaryColumn = primary
-          ? preview.columns.find((column) => column.key === primary.columnKey)
-          : null;
-        if (primaryColumn?.role === "group") {
-          appendRole("group", primary.direction);
-          appendRole("customer");
-          appendRole("productCode");
-        } else if (primaryColumn?.role === "customer") {
-          appendRole("customer", primary.direction);
-          appendRole("productCode");
-        } else if (primaryColumn) {
-          criteria.push(primary);
-          appendRole("productCode");
-        } else {
-          appendRole("productCode");
+        ["manager", "group", "customer"].forEach((role) => appendSetting(selectedByRole.get(role)));
+        if (selectedByRole.has("group") && !selectedByRole.has("customer")) {
+          const customerColumn = columnsByRole.get("customer");
+          if (customerColumn) appendSetting({ columnKey: customerColumn.key, direction: "asc" });
+        }
+        selected.forEach((setting) => {
+          const column = preview.columns.find((candidate) => candidate.key === setting.columnKey);
+          if (!["manager", "group", "customer", "productCode"].includes(column?.role)) appendSetting(setting);
+        });
+        const selectedProductCode = selectedByRole.get("productCode");
+        if (selectedProductCode) appendSetting(selectedProductCode);
+        else {
+          const productCodeColumn = columnsByRole.get("productCode");
+          if (productCodeColumn) appendSetting({ columnKey: productCodeColumn.key, direction: "asc" });
         }
         return criteria;
       }
@@ -5138,6 +5289,38 @@
         return left.index - right.index;
       }
 
+      function applyAllocationSegmentAggregates(previewId, preview, pairs) {
+        if (previewId !== "allocations" || !Array.isArray(pairs) || pairs.length === 0) return pairs;
+        const informationIndex = preview.columns.findIndex((column) => column.role === "productAggregateQuantity");
+        if (informationIndex < 0) return pairs;
+        const hierarchyRoles = layeredColumnSortSettings(previewId, preview)
+          .map((setting) => preview.columns.find((column) => column.key === setting.columnKey)?.role)
+          .filter((role) => ["manager", "group", "customer"].includes(role));
+        const segmentKey = (pair) => JSON.stringify([
+          ...hierarchyRoles.map((role) => String(pair.sourceRow?.[role] || "")),
+          engine.normalizeProductCode(pair.sourceRow?.productCode),
+        ]);
+        const result = [];
+        let start = 0;
+        while (start < pairs.length) {
+          const key = segmentKey(pairs[start]);
+          let end = start + 1;
+          while (end < pairs.length && segmentKey(pairs[end]) === key) end += 1;
+          const total = Math.round(pairs.slice(start, end).reduce((sum, pair) => {
+            const parsed = engine.parseNumericCell(pair.sourceRow?.quantity);
+            return sum + (parsed.ok ? parsed.value : 0);
+          }, 0) * 1000000) / 1000000;
+          for (let index = start; index < end; index += 1) {
+            const pair = pairs[index];
+            const row = [...pair.row];
+            row[informationIndex] = index === start ? total : "";
+            result.push({ ...pair, row });
+          }
+          start = end;
+        }
+        return result;
+      }
+
       function filteredSortedPreviewPairs(previewId, preview) {
         const pairs = preview.rows.map((row, index) => ({
           row,
@@ -5169,10 +5352,10 @@
         }
 
         const filtered = pairs.filter((pair) => rowMatchesView(previewId, pair, preview));
-        if (columnSortSetting(previewId, preview) || preview.sortByProductCode) {
+        if (columnSortSettings(previewId, preview).length > 0 || preview.sortByProductCode) {
           filtered.sort((left, right) => comparePreviewPairs(previewId, preview, left, right));
         }
-        return filtered;
+        return applyAllocationSegmentAggregates(previewId, preview, filtered);
       }
 
       function previewDefinitionById(previewId) {
@@ -5196,7 +5379,7 @@
           closeColumnSortMenu();
           return;
         }
-        const sort = columnSortSetting(context.previewId, preview);
+        const sort = columnSortSetting(context.previewId, preview, context.columnKey);
         const filter = columnFilterSetting(context.previewId, context.columnKey);
         const numericColumn = Boolean(column.numeric);
         elements.columnSortMenuTitle.textContent = `${column.header} · ${numericColumn ? "숫자" : "텍스트"} 정렬 및 필터`;
@@ -5343,9 +5526,9 @@
         const headers = visibleEntries.map(({ column }) => {
           const width = widthFor(column);
           const draggable = resizable && COLUMN_ORDER_TABS.has(previewId);
-          const sort = columnSortSetting(previewId, preview);
+          const sort = columnSortSetting(previewId, preview, column.key);
           const filter = columnFilterSetting(previewId, column.key);
-          const isSorted = sort?.columnKey === column.key;
+          const isSorted = Boolean(sort);
           const hasFilter = columnFilterIsActive(filter);
           const ariaSort = isSorted ? (sort.direction === "asc" ? "ascending" : "descending") : "none";
           const sortControl = sortable
@@ -5456,6 +5639,7 @@
                     const noticeText = preview.noticeText === index;
                     const acknowledgement = editable && preview.acknowledgement === index && sourceRow?.noticeId;
                     const editableOrder = editable && previewId === "allocations" && column.orderField && sourceRow?.sourceRowNumber;
+                    const managerAssignment = editable && previewId === "allocations" && column.role === "manager" && sourceRow?.customer;
                     const content = editablePurchase
                       ? `<input class="purchase-input" data-purchase-code="${escapeHtml(sourceRow?.productCode || "")}"
                           data-grid-column="${escapeHtml(column.key)}" data-negative-balance="${negativeBalance ? "true" : "false"}"
@@ -5477,6 +5661,10 @@
                             ${["quantity", "unitPrice"].includes(column.orderField) ? 'inputmode="decimal"' : ""}
                             autocomplete="off" value="${escapeHtml(displayValue)}"
                             aria-label="${escapeHtml(sourceRow?.productCode || "")} ${escapeHtml(column.header)} 수정">`
+                      : managerAssignment
+                        ? `<button class="manager-assignment-trigger" type="button"
+                            data-manager-assignment-customer="${escapeHtml(sourceRow.customer)}"
+                            title="${escapeHtml(sourceRow.customer)} 거래처 담당자 변경">${escapeHtml(displayValue || "미지정")}</button>`
                       : noticeLink
                         ? `<button class="notice-link" type="button" data-open-notice-id="${escapeHtml(sourceRow.noticeId)}">${escapeHtml(value)}</button>`
                         : acknowledgement
@@ -5684,7 +5872,7 @@
         state.specificationFilters.clear();
         state.warehouseFilters.clear();
         state.managerFilters.clear();
-        state.sortSettings = Object.create(null);
+        state.managerAssignmentCustomer = "";
         state.columnFilters = Object.create(null);
         state.selectedOrderViewPresetId = "";
         closeColumnSortMenu();
@@ -5697,6 +5885,8 @@
 
       function runResultFilterReset() {
         if (!state.workspace) return;
+        state.sortSettings = Object.create(null);
+        saveSortSettings();
         resetResultViewFilters();
         markOrderViewPresetCustom();
         renderPreview();
@@ -5976,6 +6166,7 @@
           state.specificationFilters.clear();
           state.warehouseFilters.clear();
           state.managerFilters.clear();
+        state.managerAssignmentCustomer = "";
           elements.tableSearchInput.value = "";
           elements.specFilterGroup.querySelectorAll("input[type='checkbox']").forEach((input) => {
             input.checked = false;
@@ -6535,6 +6726,11 @@
         setActiveFilterPanel(state.activeFilterPanel === "warehouse" ? "" : "warehouse");
       });
       elements.managerFilterToggle.addEventListener("click", () => {
+        if (state.managerAssignmentCustomer) {
+          state.managerAssignmentCustomer = "";
+          setActiveFilterPanel("manager");
+          return;
+        }
         setActiveFilterPanel(state.activeFilterPanel === "manager" ? "" : "manager");
       });
       function handleFixedFilterChange(event) {
@@ -6557,6 +6753,27 @@
       }
       [elements.warehouseColorOptions, elements.managerColorOptions].forEach((container) => {
         container.addEventListener("change", handleFixedFilterChange);
+      });
+      elements.managerColorOptions.addEventListener("click", (event) => {
+        if (event.target.closest("[data-manager-assignment-cancel]")) {
+          state.managerAssignmentCustomer = "";
+          if (state.workspace) renderWarehouseColorBar(getPreviewDefinitions(state.workspace));
+          return;
+        }
+        const option = event.target.closest("[data-manager-assignment]");
+        const customer = String(state.managerAssignmentCustomer || "").trim();
+        if (!option || !customer || !state.workspace) return;
+        const manager = String(option.dataset.managerAssignment || "").trim();
+        try {
+          engine.setCustomerManager(state.workspace, customer, manager);
+          state.managerAssignmentCustomer = "";
+          setActiveFilterPanel("manager");
+          renderResults();
+          scheduleLocalSave();
+          showToast(`${customer} 담당자를 ${manager}로 변경했습니다.`);
+        } catch (error) {
+          showToast(error.message || "담당자를 변경하지 못했습니다.", true);
+        }
       });
       elements.colorTargetSelect.addEventListener("change", () => {
         if (!state.activeFilterPanel) return;
@@ -6593,6 +6810,7 @@
       });
       elements.warehouseColorResetButton.addEventListener("click", () => {
         state.managerFilters.clear();
+        state.managerAssignmentCustomer = "";
         state.warehouseFilters.clear();
         markOrderViewPresetCustom();
         if (state.workspace) renderPreview();
@@ -6707,6 +6925,15 @@
         activatePreview(button.dataset.preview);
       });
       elements.previewTable.addEventListener("click", (event) => {
+        const managerButton = event.target.closest("[data-manager-assignment-customer]");
+        if (!managerButton || !state.workspace || state.activePreview !== "allocations") return;
+        const customer = String(managerButton.dataset.managerAssignmentCustomer || "").trim();
+        if (!customer) return;
+        state.managerAssignmentCustomer = customer;
+        setActiveFilterPanel("manager");
+        showToast(`${customer} 거래처의 담당자를 선택하세요.`);
+      });
+      elements.previewTable.addEventListener("click", (event) => {
         const trigger = event.target.closest(".column-sort-trigger[data-sort-preview-id][data-sort-column-key]");
         if (trigger && state.workspace) {
           event.preventDefault();
@@ -6735,17 +6962,14 @@
         const sortButton = event.target.closest("[data-sort-direction]");
         if (sortButton) {
           const direction = sortButton.dataset.sortDirection;
-          if (direction === "default") delete state.sortSettings[context.previewId];
-          else state.sortSettings[context.previewId] = { columnKey: context.columnKey, direction };
+          setColumnSortSetting(context.previewId, previewDefinitionById(context.previewId), context.columnKey, direction);
           if (VIEW_PRESET_TABS.has(context.previewId)) markOrderViewPresetCustom();
           closeColumnSortMenu();
           renderPreview();
           return;
         }
         if (event.target.closest("[data-clear-column-filter]")) {
-          if (state.sortSettings[context.previewId]?.columnKey === context.columnKey) {
-            delete state.sortSettings[context.previewId];
-          }
+          removeColumnSortSetting(context.previewId, previewDefinitionById(context.previewId), context.columnKey);
           if (state.columnFilters[context.previewId]) {
             delete state.columnFilters[context.previewId][context.columnKey];
             if (Object.keys(state.columnFilters[context.previewId]).length === 0) delete state.columnFilters[context.previewId];

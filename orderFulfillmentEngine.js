@@ -7,7 +7,7 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  const ENGINE_VERSION = "3.19.0";
+  const ENGINE_VERSION = "3.20.0";
   const WORKSPACE_SCHEMA_VERSION = "shipping-workspace/v2";
   const INVENTORY_OVERRIDE_SCHEMA_VERSION = "shipping-inventory-overrides/v1";
   const HEADER_SCAN_LIMIT = 30;
@@ -1803,6 +1803,36 @@
     return workspace;
   }
 
+  function setCustomerManager(workspace, customer, manager) {
+    if (!workspace || workspace.schemaVersion !== WORKSPACE_SCHEMA_VERSION) {
+      throw new Error("지원하지 않는 Shipping Management 작업공간입니다.");
+    }
+    const targetCustomer = cleanText(customer);
+    const nextManager = cleanText(manager);
+    if (!targetCustomer) throw new Error("담당자를 변경할 거래처가 없습니다.");
+    if (!nextManager) throw new Error("변경할 담당자를 선택하세요.");
+    const acknowledgedIds = new Set(ensureNoticeState(workspace).acknowledgedIds);
+    const acknowledgedSourceRows = new Set(
+      (workspace.notices || [])
+        .filter((notice) => acknowledgedIds.has(notice.noticeId))
+        .map((notice) => Number(notice.sourceRowNumber))
+        .filter(Number.isFinite),
+    );
+    const targets = (workspace.orders || []).filter((row) => cleanText(row?.customer) === targetCustomer);
+    if (targets.length === 0) throw new Error("담당자를 변경할 거래처 주문을 찾지 못했습니다.");
+    targets.forEach((order) => { order.manager = nextManager; });
+    rebuildWorkspaceFromOrders(workspace);
+    if (acknowledgedSourceRows.size > 0) {
+      const noticeState = ensureNoticeState(workspace);
+      const restored = new Set(noticeState.acknowledgedIds);
+      (workspace.notices || []).forEach((notice) => {
+        if (acknowledgedSourceRows.has(Number(notice.sourceRowNumber))) restored.add(notice.noticeId);
+      });
+      noticeState.acknowledgedIds = [...restored];
+    }
+    return workspace;
+  }
+
   function setOrderValue(workspace, sourceRowNumber, field, value) {
     if (!workspace || workspace.schemaVersion !== WORKSPACE_SCHEMA_VERSION) {
       throw new Error("지원하지 않는 Shipping Management 작업공간입니다.");
@@ -2472,6 +2502,7 @@
     getShortageCategoryContext,
     getStockLedgerView,
     setOrderValue,
+    setCustomerManager,
     setInventoryOverride,
     getAllocationInventoryView,
   });
