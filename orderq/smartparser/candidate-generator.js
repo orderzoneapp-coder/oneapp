@@ -1,6 +1,6 @@
 import { STORE, getAll, normalizeText } from '../orderq-db.js?v=0.8.0';
 
-function similarity(left, right) {
+export function productTextSimilarity(left, right) {
   const a = normalizeText(left);
   const b = normalizeText(right);
   if (!a || !b) return 0;
@@ -34,6 +34,13 @@ function mappingIsActive(mapping = {}) {
   return (mapping.status || 'ACTIVE') === 'ACTIVE';
 }
 
+function fuzzyMappingScore(kind, similarityScore, useCount = 0) {
+  const usageBonus = Math.min(10, Number(useCount || 0)) * 0.002;
+  if (kind === 'CUSTOMER') return Math.min(0.97, 0.80 + similarityScore * 0.18 + usageBonus);
+  if (kind === 'SOURCE') return Math.min(0.93, 0.74 + similarityScore * 0.18 + usageBonus);
+  return Math.min(0.90, 0.70 + similarityScore * 0.18 + usageBonus);
+}
+
 export async function generateProductCandidates({ productText, customerId = '', sourceId = '' } = {}) {
   const normalized = normalizeText(productText);
   if (!normalized) return [];
@@ -45,30 +52,54 @@ export async function generateProductCandidates({ productText, customerId = '', 
   ]);
   const productById = new Map(products.map(product => [product.productId, product]));
   const candidates = [];
-  const add = (shape, score, source) => {
+  const add = (shape, score, source, evidenceText = '') => {
     if (!shape.productId && !shape.itemCode && !shape.itemName) return;
-    candidates.push({ ...shape, score, source });
+    candidates.push({ ...shape, score, source, evidenceText });
   };
 
   mappings.filter(mappingIsActive).forEach(mapping => {
-    if (normalizeText(mapping.normalizedText || mapping.rawText) !== normalized) return;
+    const mappingText = mapping.normalizedText || mapping.rawText || '';
+    const mappedNormalized = normalizeText(mappingText);
+    if (!mappedNormalized) return;
     const product = productById.get(mapping.productId) || {};
-    if (customerId && mapping.customerId === customerId) add(productShape(product, mapping), 1, 'CUSTOMER_MAPPING');
-    else if (sourceId && mapping.sourceId === sourceId) add(productShape(product, mapping), 0.98, 'SOURCE_MAPPING');
-    else if (!mapping.customerId && !mapping.sourceId) add(productShape(product, mapping), 0.96, 'COMMON_MAPPING');
+    const exact = mappedNormalized === normalized;
+    const similarityScore = exact ? 1 : productTextSimilarity(productText, mappingText);
+
+    if (exact) {
+      if (customerId && mapping.customerId === customerId) add(productShape(product, mapping), 1, 'CUSTOMER_MAPPING', mapping.rawText);
+      else if (sourceId && mapping.sourceId === sourceId) add(productShape(product, mapping), 0.98, 'SOURCE_MAPPING', mapping.rawText);
+      else if (!mapping.customerId && !mapping.sourceId) add(productShape(product, mapping), 0.96, 'COMMON_MAPPING', mapping.rawText);
+      return;
+    }
+
+    // 같은 상품에 대해 관리자가 과거에 확정한 다양한 표현 자체를 다음 주문의 유사검색 자산으로 사용한다.
+    if (similarityScore < 0.68) return;
+    if (customerId && mapping.customerId === customerId) {
+      add(productShape(product, mapping), fuzzyMappingScore('CUSTOMER', similarityScore, mapping.useCount), 'CUSTOMER_MAPPING_FUZZY', mapping.rawText);
+    } else if (sourceId && mapping.sourceId === sourceId) {
+      add(productShape(product, mapping), fuzzyMappingScore('SOURCE', similarityScore, mapping.useCount), 'SOURCE_MAPPING_FUZZY', mapping.rawText);
+    } else if (!mapping.customerId && !mapping.sourceId) {
+      add(productShape(product, mapping), fuzzyMappingScore('COMMON', similarityScore, mapping.useCount), 'COMMON_MAPPING_FUZZY', mapping.rawText);
+    }
   });
 
   if (customerId) {
     const customerOrderIds = new Set(orders.filter(order => order.customerId === customerId).map(order => order.orderId));
     items.filter(item => customerOrderIds.has(item.orderId)).forEach(item => {
-      const score = similarity(productText, item.itemName);
-      if (score >= 0.72) add(productShape(item, item), Math.min(0.94, 0.78 + score * 0.16), 'CUSTOMER_HISTORY');
+      const score = productTextSimilarity(productText, item.itemName);
+      if (score >= 0.72) add(productShape(item, item), Math.min(0.94, 0.78 + score * 0.16), 'CUSTOMER_HISTORY', item.rawText || item.itemName || '');
     });
   }
 
   products.forEach(product => {
-    const score = similarity(productText, product.itemName || product.productName);
-    if (score >= 0.58) add(productShape(product), score === 1 ? 0.94 : 0.52 + score * 0.38, score === 1 ? 'MASTER_EXACT' : 'MASTER_FUZZY');
+    const fields = [product.itemName, product.productName, product.secondName, product.alias, product.searchInfo, product.specification].filter(Boolean);
+    let score = 0;
+    let matchedField = '';
+    fields.forEach(field => {
+      const current = productTextSimilarity(productText, field);
+      if (current > score) { score = current; matchedField = field; }
+    });
+    if (score >= 0.58) add(productShape(product), score === 1 ? 0.94 : 0.52 + score * 0.38, score === 1 ? 'MASTER_EXACT' : 'MASTER_FUZZY', matchedField);
   });
 
   const byIdentity = new Map();
@@ -79,4 +110,3 @@ export async function generateProductCandidates({ productText, customerId = '', 
   });
   return [...byIdentity.values()].sort((a, b) => b.score - a.score).slice(0, 8);
 }
-

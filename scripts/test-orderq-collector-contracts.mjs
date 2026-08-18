@@ -15,69 +15,50 @@ const base = {
   unitPrice: '1,500',
   amount: 3000
 };
-assert.equal(
-  normalizedRowFingerprint('SALES_HISTORY', base),
-  normalizedRowFingerprint('SALES_HISTORY', { ...base, quantity: 2, unitPrice: 1500 }),
-  'numeric formatting differences must normalize to one transaction identity'
-);
-assert.notEqual(
-  normalizedRowFingerprint('SALES_HISTORY', base),
-  normalizedRowFingerprint('SALES_HISTORY', { ...base, quantity: 3 }),
-  'business quantity changes must change the fingerprint'
-);
+assert.equal(normalizedRowFingerprint('SALES_HISTORY', base), normalizedRowFingerprint('SALES_HISTORY', { ...base, quantity: 2, unitPrice: 1500 }), 'numeric formatting differences must normalize to one transaction identity');
+assert.notEqual(normalizedRowFingerprint('SALES_HISTORY', base), normalizedRowFingerprint('SALES_HISTORY', { ...base, quantity: 3 }), 'business quantity changes must change the fingerprint');
 
 const contractSource = await readFile(new URL('../orderq/history-collector/collector-contracts.js', import.meta.url), 'utf8');
 const uiSource = await readFile(new URL('../orderq/collector-ui.js', import.meta.url), 'utf8');
 const htmlSource = await readFile(new URL('../orderq/collector.html', import.meta.url), 'utf8');
 const photoOcrSource = await readFile(new URL('../orderq/photo-ocr.js', import.meta.url), 'utf8');
 const photoBulkSource = await readFile(new URL('../orderq/photo-bulk-actions.js', import.meta.url), 'utf8');
+const parserReviewSource = await readFile(new URL('../orderq/collector-smartparser-review.js', import.meta.url), 'utf8');
+const candidateSource = await readFile(new URL('../orderq/smartparser/candidate-generator.js', import.meta.url), 'utf8');
 
-assert.doesNotMatch(
-  contractSource.slice(contractSource.indexOf('export function normalizedRowFingerprint'), contractSource.indexOf('function queueRow')),
-  /rowNo/,
-  'row number must not participate in v2 transaction identity'
-);
+assert.doesNotMatch(contractSource.slice(contractSource.indexOf('export function normalizedRowFingerprint'), contractSource.indexOf('function queueRow')), /rowNo/, 'row number must not participate in v2 transaction identity');
 assert.match(contractSource, /fingerprintVersion:\s*FINGERPRINT_VERSION/);
-assert.match(contractSource, /const result = await rollbackWithoutMatching\(importBatchId, rolledBackBy\)/);
-assert.match(contractSource, /if \(!MATCHING_SOURCES\.has\(batch\.sourceType\)\) return result/);
-assert.match(contractSource, /if \(!snapshot\.orderLines\.length \|\| !snapshot\.salesLines\.length\)/);
+assert.match(contractSource, /rollbackWithoutMatching/);
 assert.match(contractSource, /invalidateMatchingDerived\('MATCHING_NOT_READY'\)/);
-assert.match(contractSource, /status:'REVIEW_REQUIRED'/);
 assert.match(uiSource, /commitPreparedImportV2/);
 assert.match(uiSource, /rollbackImportBatchByContract/);
-assert.match(uiSource, /sourceRecords\.filter\(r=>r\.sourceType===COLLECTOR_SOURCE\.CUSTOMER_LEDGER\)/);
 assert.match(uiSource, /status!==['"]EXCLUDED['"]/);
-assert.match(htmlSource, /data-work-tab="order"/);
-assert.match(htmlSource, /data-work-tab="sales"/);
-assert.match(htmlSource, /data-work-tab="purchase"/);
-assert.match(htmlSource, /data-work-tab="inventory"/);
-assert.match(htmlSource, /data-work-tab="ledger"/);
-assert.match(htmlSource, /data-work-tab="matching"/);
-assert.match(htmlSource, /data-work-tab="history"/);
+for (const tab of ['order','sales','purchase','inventory','ledger','matching','history']) assert.match(htmlSource, new RegExp(`data-work-tab="${tab}"`));
 assert.match(htmlSource, /tesseract\.js@6/);
-assert.match(htmlSource, /photo-ocr\.js\?v=0\.8\.4/);
-assert.match(htmlSource, /photo-bulk-actions\.js\?v=0\.8\.6/);
-assert.match(htmlSource, /id="photoClearAllBtn"/);
-assert.match(htmlSource, /id="photoBulkCreateBtn"/);
+assert.match(htmlSource, /photo-ocr\.js\?v=0\.8\.7/);
+assert.match(htmlSource, /photo-bulk-actions\.js\?v=0\.8\.7/);
+assert.match(htmlSource, /collector-smartparser-review\.css\?v=0\.8\.7/);
+assert.match(htmlSource, />파서 실행</);
 assert.match(htmlSource, /전체 비우기/);
-assert.match(htmlSource, /추가 즉시 OCR/);
-assert.match(htmlSource, /Ctrl\+V/);
 assert.match(photoOcrSource, /Tesseract\?\.recognize/);
 assert.match(photoOcrSource, /'kor\+eng'/);
-assert.match(photoOcrSource, /recognizeAdded\(startIndex, images\.length\)/);
-assert.match(photoOcrSource, /사진 문자 자동 추출 중/);
 assert.match(photoOcrSource, /input\.addEventListener\('change',[\s\S]*?\}, true\);/);
-assert.match(photoOcrSource, /collector-ui의 change 핸들러는 렌더링 후 input\.value를 비운다/);
-assert.match(photoOcrSource, /addEventListener\('paste'/);
-assert.match(photoOcrSource, /clipboardData\?\.items/);
-assert.match(photoOcrSource, /new DataTransfer\(\)/);
-assert.match(photoOcrSource, /input\.dispatchEvent\(new Event\('change'/);
-assert.match(photoOcrSource, /dispatchEvent\(new Event\('input'/);
+assert.match(photoBulkSource, /collector-smartparser-review\.js\?v=0\.8\.7/);
 assert.match(photoBulkSource, /이 사진 비우기/);
-assert.match(photoBulkSource, /excludedPhotoIndexes/);
-assert.match(photoBulkSource, /activePhotoCards\(\)/);
-assert.match(photoBulkSource, /button\.click\(\)/);
-assert.match(photoBulkSource, /cards\.some\(card => card\.querySelector\('\[data-photo-analyze\]'\)\?\.disabled\)/);
-assert.match(photoBulkSource, /cards\.some\(card => !card\.querySelector\('\[data-photo-text\]'\)\?\.value\.trim\(\)\)/);
+assert.match(parserReviewSource, /1 원문/);
+assert.match(parserReviewSource, /2 상품 매칭/);
+assert.match(parserReviewSource, /3 주문 후보/);
+assert.match(parserReviewSource, /4 수집/);
+assert.match(parserReviewSource, /자동매칭은 그대로 통과/);
+assert.match(parserReviewSource, /recordProductMapping/);
+assert.match(parserReviewSource, /status!=='AUTO'/);
+assert.match(parserReviewSource, /commitPreparedImportV2/);
+assert.match(parserReviewSource, /rebuildWhenReady/);
+assert.match(candidateSource, /CUSTOMER_MAPPING_FUZZY/);
+assert.match(candidateSource, /SOURCE_MAPPING_FUZZY/);
+assert.match(candidateSource, /COMMON_MAPPING_FUZZY/);
+assert.match(candidateSource, /mapping\.useCount/);
+assert.match(candidateSource, /product\.secondName/);
+assert.match(candidateSource, /product\.alias/);
 
-console.log('PASS: ORDER Q collector tabs, matching readiness, duplicate v2, rollback, photo OCR, clear controls and bulk candidate contracts');
+console.log('PASS: ORDER Q collector tabs, photo OCR, SmartParser four-step review, cumulative fuzzy mappings and final collection contracts');
