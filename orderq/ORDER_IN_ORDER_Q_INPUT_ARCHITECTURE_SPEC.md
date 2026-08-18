@@ -191,7 +191,7 @@ input.html의 실제 주문 Grid
 | 필드 | 계약 |
 | --- | --- |
 | `intakeSessionId` | 로컬 고유 ID |
-| `documentType` | 1차는 `ORDER`만 허용 |
+| `documentType` | 계약상 `ORDER`, `QUOTE`, `PURCHASE`, `SALE`; 1차 runtime은 `ORDER`만 등록 |
 | `sourceMode` | `CLIPBOARD`, `FILE`, `DIRECT_EXTERNAL` |
 | `sourceType` | `KAKAO_TEXT`, `GENERAL_TEXT`, `IMAGE_OCR`, `MIXED`, `EXCEL` 등 |
 | `sourceId` | 방·파일·연동 출처 식별자 |
@@ -249,7 +249,8 @@ input.html의 실제 주문 Grid
 | `candidateProducts[]` | 추천 후보와 근거 |
 | `recommendedProductId` | 시스템 추천 |
 | `productId`, `itemCode`, `itemName` | 관리자 최종값 |
-| `matchStatus` | `MATCHED`, `UNMATCHED`, `TEMPORARY`, `EXCLUDED` |
+| `matchStatus` | `MATCHED`, `MATCH_FAILED`, `TEMPORARY_CONFIRMED`, `EXCLUDED` |
+| `productIdentityStatus` | `MASTER_LINKED`, `TEMPORARY_CONFIRMED`, `UNRESOLVED` |
 | `reviewReasonCodes[]` | 확인필요 이유 |
 | `revision` | 행 수정 충돌 검사 |
 
@@ -263,6 +264,23 @@ input.html의 실제 주문 Grid
 eventId, intakeSessionId, intakeDocumentId, intakeLineId,
 eventType, before, after, reasonCode, actorId, occurredAt
 ```
+
+### 7.6 `IntakeDocumentAdapter`
+
+Intake의 추출·매칭·단계 이동은 공통 Shell로 두되, 업무 전표의 필드·검증·저장 명령은 Adapter로 분리한다.
+
+```js
+const orderAdapter = {
+  documentType: 'ORDER',
+  createHeaderDraft(context),
+  normalizeLine(intakeLine),
+  validateDocument(draft),
+  buildCanonicalPayload(draft),
+  commit(payload)
+};
+```
+
+1차 runtime registry에는 `ORDER` Adapter만 등록하며 `commit()`은 기존 `createOrder()`를 호출한다. `QUOTE`, `PURCHASE`, `SALE`은 document type 코드와 interface만 예약하고 구현하지 않는다. Adapter는 Dispatch·Purchase 확정 상태나 ERP 상태를 공통화하지 않으며, 각 업무의 기존 엔진과 transaction 경계를 그대로 호출해야 한다.
 
 ## 8. 원문→다전표 분리 계약
 
@@ -287,8 +305,8 @@ OCR bounding box를 직접 편집하는 도구와 임의 도형 편집기는 제
 
 - `sourceDocumentKey`는 최초 Draft 생성 시 발급하고 저장한다.
 - 거래처, 상품, 수량처럼 수정 가능한 업무값으로 키를 다시 계산하지 않는다.
-- 분할 시 새 전표는 새 키를 받으며 원 전표와 `SPLIT_FROM` 이벤트로 연결한다.
-- 병합 시 대표 전표 키 하나를 유지하고 흡수된 전표는 `MERGED` 상태로 종료한다.
+- 분할 시 선택된 안정 원문근거로 결정적인 child key를 만들고 원 전표와 `SPLIT_FROM` 이벤트로 연결한다.
+- 병합 시 구성 전표키의 정렬 집합으로 결정적인 merge key를 만들고 구성 전표는 `MERGED` 상태로 종료한다.
 - 주문 저장 후에는 split/merge로 원 주문을 덮어쓰지 않는다. 기존 append-only 취소 후 새 주문을 만드는 별도 업무로 처리한다.
 
 ## 9. ID·중복·멱등 계약
@@ -305,17 +323,34 @@ OCR bounding box를 직접 편집하는 도구와 임의 도형 편집기는 제
 
 ### 9.2 `sourceDocumentKey` 생성
 
-자동분리 최초 생성 시 다음 canonical 재료로 SHA-256을 만든다.
+자동분리 전표키는 PC별 임의값 없이 같은 원본과 같은 분리 결과에서 항상 같아야 한다. 먼저 각 자동 전표의 `stableSegmentIdentity`를 만든다.
 
 ```text
-rawFingerprint
-+ sourceMessageKey 목록
-+ 최초 document ordinal
-+ segmentationVersion
-+ 생성 nonce
+stableSegmentIdentity = SHA-256(
+  sourceMessageKey 목록 정렬
+  + partContentHash
+  + sourceRange 시작/끝
+  + 원문 내 line ordinal
+  + 동일근거 occurrence ordinal
+)
+
+sourceDocumentKey = SHA-256(
+  sourceDocumentKeyVersion
+  + documentType
+  + rawFingerprint
+  + stableSegmentIdentity
+)
 ```
 
-생성 nonce는 같은 세션에서 분할로 새 Draft를 만들 때만 추가한다. 생성된 키는 편집 이후 재계산하지 않는다.
+`sourcePartId`, 로컬 UUID, 생성시각, random nonce, 거래처·상품·수량 같은 수정 가능한 업무값은 자동 전표키 재료로 사용하지 않는다. `sourceDocumentKeyVersion`은 키 정규화 계약 버전이며 Parser/segmentation 배포 버전과 분리한다. 동일 build의 PC A/B가 같은 원문을 자동분리하면 같은 키가 나온다.
+
+수동 분할 child key는 다음처럼 선택된 원문근거로 결정한다.
+
+```text
+SHA-256(parentSourceDocumentKey + 'SPLIT' + selectedStableEvidenceIdentity + keyVersion)
+```
+
+같은 parent에서 같은 원문행을 분할하면 A/B에서 같은 child key가 나온다. 수동 병합 결과는 `SHA-256('MERGE' + 정렬된 constituent sourceDocumentKey 목록 + keyVersion)`으로 만든다. 생성된 키는 편집 이후 재계산하지 않는다.
 
 ### 9.3 동일 원문 재입력
 
@@ -401,10 +436,21 @@ SmartParser는 주문서를 먼저 채우는 추천 도구다. `[매칭 완료]`
 productId = null
 itemCode = ''
 itemName = 관리자 직접입력값
-matchStatus = TEMPORARY
+matchStatus = TEMPORARY_CONFIRMED
+productIdentityStatus = TEMPORARY_CONFIRMED
 ```
 
-가짜 `productId`나 가짜 상품코드를 생성하지 않는다. 기존 `createOrder()`에 넘길 때는 기존 호환을 위해 미매칭 행으로 정규화하되 Intake에는 `TEMPORARY` 판단을 별도로 보존한다.
+가짜 `productId`나 가짜 상품코드를 생성하지 않는다. 관리자가 `[매칭 완료]`로 확정한 임시상품은 `createOrder()` 이후 `orderItems`와 Cloud payload에서도 `TEMPORARY_CONFIRMED`를 유지하며 `MATCH_FAILED`로 되돌리지 않는다.
+
+기존 `MATCH_STATUS`에는 `TEMPORARY_CONFIRMED`를 추가하고 기존 값은 그대로 유지한다. 주문 단위 매칭상태 계산은 `MATCHED`와 `TEMPORARY_CONFIRMED`를 모두 관리자 확인 완료행으로 취급하되 다음 집계는 분리한다.
+
+```text
+matchedCount                 = Master 연결 행
+temporaryConfirmedCount      = 관리자 확정 임시상품 행
+matchFailedCount             = 아직 결정하지 않은 행
+```
+
+기존 주문의 `productIdentityStatus`가 없으면 `productId + itemCode + itemName`이 모두 있을 때 `MASTER_LINKED`, 그렇지 않으면 `UNRESOLVED`로 읽는다. 이 호환 판정은 기존 행을 자동으로 임시상품 확정으로 승격하지 않는다.
 
 숫자 0과 공란은 모든 입력·Grid·저장·동기화에서 구분한다. 단가 0을 자동으로 미정이나 오류로 바꾸지 않는다. 주문 확정 전에는 `단가 0 또는 미입력`을 보고하고, 관리자가 그대로 확정하면 0은 서비스 판매의 실제값으로 보존한다.
 
@@ -412,17 +458,23 @@ matchStatus = TEMPORARY
 
 ### 15.1 공통 화면
 
-상단 단계:
+처음 진행할 때의 상단 단계:
 
 ```text
-[1 추출 확인] [2 상품 확인] [3 주문 완성]
+[1 추출 확인] [2 매칭 확인] [3 주문 완성]
+```
+
+3단계에 도달한 뒤 이전 단계로 돌아가는 상단 탭:
+
+```text
+[✓ 추출 수정] [✓ 매칭 수정] [● 주문 완성]
 ```
 
 하단에는 현재 단계의 Primary Action 하나만 둔다.
 
 ```text
 [추출 확인]
-[상품 확인 완료]
+[매칭 완료]
 [주문 저장]
 ```
 
@@ -436,7 +488,7 @@ matchStatus = TEMPORARY
 - 원본은 수정값으로 덮어쓰지 않는다.
 - 이 단계의 질문은 `원문을 제대로 읽었는가?` 하나다.
 
-### 15.3 2단계: 상품 확인
+### 15.3 2단계: 매칭 확인
 
 - `input.html`과 같은 실제 주문상품 Grid를 사용한다.
 - 코드 셀은 Master 검색·선택이다.
@@ -486,8 +538,8 @@ CAPTURED
 
 ### 17.2 이전 단계 이동
 
-- 상품 확인에서 추출 확인으로 돌아가도 Header Draft를 지우지 않는다.
-- 주문 완성에서 상품 확인으로 돌아가도 창고·담당자·배송·메모를 유지한다.
+- 매칭 수정에서 추출 수정으로 돌아가도 Header Draft를 지우지 않는다.
+- 주문 완성에서 매칭 수정으로 돌아가도 창고·담당자·배송·메모를 유지한다.
 - 상품 표현, 규격, 수량, 단위 변경은 해당 행 후보를 재계산한다.
 - `productId`, `itemCode`, Master 선택 변경은 해당 행의 매칭 재확인을 요구한다.
 - 가격·전표메모만 바꾼 경우 상품 매칭을 무효화하지 않는다.
@@ -556,7 +608,7 @@ IndexedDB는 index option을 현장에서 변경할 수 없으므로 v8 `onupgra
 ### 20.5 백업·복원
 
 - upgrade 전에 v7 전체 Store 백업을 요구한다.
-- v8 전체 백업에는 신규 5개 Store와 이미지 Blob이 포함되어야 한다.
+- v8 전체 백업에는 신규 5개 Store와 이미지 `mimeType/binaryBase64/byteLength`가 포함되어야 한다.
 - v7 백업은 v8에서 복원 가능해야 하며 신규 Store는 빈 상태로 남긴다.
 - v8 백업을 v7 앱에서 복원하는 downgrade는 지원하지 않는다.
 - 복원 실패는 전체 readwrite transaction을 abort한다.
@@ -632,6 +684,15 @@ buildOrderPayloadFromIntake(intakeDocumentId)
 commitIntakeDocument({ intakeDocumentId, expectedRevision, actor })
 ```
 
+Document Adapter registry의 최소 API는 다음으로 고정한다.
+
+```js
+registerIntakeDocumentAdapter(adapter)
+getIntakeDocumentAdapter(documentType)
+```
+
+등록되지 않은 `documentType`은 `ORDERQ_INTAKE_ADAPTER_NOT_REGISTERED:<type>`으로 Draft 생성 전에 거부한다.
+
 ### 23.2 기존 API 변경
 
 `createOrder(payload)`에 다음 계약을 추가한다.
@@ -645,10 +706,23 @@ commitIntakeDocument({ intakeDocumentId, expectedRevision, actor })
 }
 ```
 
+행 payload에는 다음 identity 계약을 추가한다.
+
+```js
+items: [{
+  productId,
+  itemCode,
+  itemName,
+  matchStatus,
+  productIdentityStatus
+}]
+```
+
 - ORDER_IN 입력은 `sourceDocumentKey` 필수
 - 기존 DIRECT/legacy 입력은 선택
 - 중복은 sourceDocumentKey 우선
 - 주문·행·이벤트·SyncQueue는 기존 한 transaction 계약 유지
+- `TEMPORARY_CONFIRMED` 행은 `orderItems`와 Cloud payload에 같은 상태로 저장하며 주문 단위 확인완료 계산에 포함
 
 ### 23.3 공통 주문 편집기
 
@@ -674,6 +748,7 @@ createOrderDraftEditor({
 - `orderq/intake-repository.js`
 - `orderq/intake-engine.js`
 - `orderq/intake-segmentation.js`
+- `orderq/intake-document-adapter.js`
 - `orderq/order-draft-editor.js`
 - `orderq/intake-workbench.js`
 - `scripts/test-orderq-intake-architecture.mjs`
@@ -729,28 +804,32 @@ Collector 정리는 새 ORDER IN 실사용 검증 후 별도 단계에서 수행
 2. 카카오 원문 1건 → 서로 다른 거래처 주문 N건
 3. 발신자와 실제 거래처가 다른 경우
 4. 같은 메시지에서 생성된 N전표의 독립 sourceDocumentKey
-5. 동일 원문 재입력 시 새 세션·주문 중복 없음
-6. 같은 sourceDocumentKey 같은 내용 재시도는 기존 주문 반환
-7. 같은 sourceDocumentKey 다른 내용은 전체 conflict
-8. 전표 분할·병합·행이동·거래처변경 이력
-9. 추출 수정 후 영향 행만 매칭 재검증
-10. Header·가격·메모 수정은 상품매칭 유지
-11. 매칭 완료 시 Mapping Dictionary 자동 갱신
-12. 과거 빈도보다 최신 관리자 확정 우선
-13. 임시상품은 코드·productId 없음, 품명 원값 보존
-14. 코드 선택은 실제 Master productId 연결
-15. 숫자 0, 문자열 `0`, 공란 보존
-16. 단가 0 경고 후 관리자 확정 시 0 보존
-17. 텍스트+이미지 혼합 붙여넣기
-18. OCR 오독 직접수정, 원이미지 불변
-19. 다전표에서 확인필요 전표 우선
-20. Master 코드가 있는 ERP·쇼핑몰은 Parser 우회
-21. 외부코드 미매핑은 ORDER IN으로 라우팅
-22. v7→v8 upgrade 후 기존 주문·이벤트·revision 불변
-23. v7 backup의 v8 복원
-24. v8 전체 Store·Blob backup round-trip
-25. Cloud sourceDocumentKey 중복과 legacy fallback
-26. 서로 다른 PC에서 같은 전표 재시도 시 한 주문만 생성
+5. PC A/B가 같은 원문과 자동분리 결과에서 같은 sourceDocumentKey 생성
+6. PC A/B가 같은 원문행을 수동 분할·병합하면 같은 child/merge key 생성
+7. 동일 원문 재입력 시 새 세션·주문 중복 없음
+8. 같은 sourceDocumentKey 같은 내용 재시도는 기존 주문 반환
+9. 같은 sourceDocumentKey 다른 내용은 전체 conflict
+10. 전표 분할·병합·행이동·거래처변경 이력
+11. 추출 수정 후 영향 행만 매칭 재검증
+12. Header·가격·메모 수정은 상품매칭 유지
+13. 매칭 완료 시 Mapping Dictionary 자동 갱신
+14. 과거 빈도보다 최신 관리자 확정 우선
+15. 임시상품은 코드·productId 없음, 품명 원값과 `TEMPORARY_CONFIRMED` 보존
+16. 임시상품이 주문·Cloud·재조회 후에도 `MATCH_FAILED`로 바뀌지 않음
+17. 코드 선택은 실제 Master productId 연결
+18. 숫자 0, 문자열 `0`, 공란 보존
+19. 단가 0 경고 후 관리자 확정 시 0 보존
+20. 텍스트+이미지 혼합 붙여넣기
+21. OCR 오독 직접수정, 원이미지 불변
+22. 다전표에서 확인필요 전표 우선
+23. Master 코드가 있는 ERP·쇼핑몰은 Parser 우회
+24. 외부코드 미매핑은 ORDER IN으로 라우팅
+25. v7→v8 upgrade 후 기존 주문·이벤트·revision 불변
+26. v7 backup의 v8 복원
+27. v8 전체 Store·이미지 base64 backup round-trip
+28. Cloud sourceDocumentKey 중복과 legacy fallback
+29. 서로 다른 PC에서 같은 전표 재시도 시 한 주문만 생성
+30. runtime에 미등록된 QUOTE/PURCHASE/SALE Adapter 호출 차단
 
 ### 25.2 회귀
 
@@ -774,7 +853,7 @@ Collector 정리는 새 ORDER IN 실사용 검증 후 별도 단계에서 수행
 
 ## 26. 단계별 구현계획과 승인 게이트
 
-사용자 승인은 본 명세 범위에 대해 일괄 승인된 것으로 본다. 다만 데이터 계약 변경은 단계별 증거 없이 다음 단계로 넘어가지 않는다.
+본 문서는 개발명세 확정안이며 구현 승인을 의미하지 않는다. 문서 최종 승인 후 사용자의 별도 구현 착수 지시를 받아 단계 1을 시작한다. 이후 단계 전환은 직전 단계의 완료증거와 사용자 진행 지시를 기준으로 한다.
 
 ### 단계 1 — 계약과 DB v8
 
@@ -796,7 +875,7 @@ Collector 정리는 새 ORDER IN 실사용 검증 후 별도 단계에서 수행
 ### 단계 3 — 단일전표 Vertical Slice
 
 - 통합 IntakeSession
-- 추출 확인→상품 확인→주문 완성
+- 추출 확인→매칭 확인→주문 완성
 - 기존 createOrder로 저장
 
 완료조건: 실제 사용자 한 화면에서 텍스트 주문 1건 완료.
@@ -855,7 +934,7 @@ Collector 정리는 새 ORDER IN 실사용 검증 후 별도 단계에서 수행
 - 실제 작업자 권한관리 완성
 - ERP 자동 POSTED
 
-ORDER UX가 실사용으로 검증된 뒤에만 `Common Intake Shell + Document Adapter`로 QUOTE, PURCHASE, SALE을 확장한다.
+이번 구현에서 `Common Intake Shell + IntakeDocumentAdapter` 경계와 ORDER Adapter까지만 만든다. ORDER UX가 실사용으로 검증된 뒤에만 QUOTE, PURCHASE, SALE Adapter를 각각 별도 승인·개발한다.
 
 ## 28. 최종 완료 기준
 
@@ -868,7 +947,7 @@ ORDER UX가 실사용으로 검증된 뒤에만 `Common Intake Shell + Document 
 5. 전표별 `sourceDocumentKey`가 로컬·Cloud 중복방지를 일치시킨다.
 6. 기존 v7 주문과 M1~M10 업무사실이 변하지 않는다.
 7. Collector는 Bootstrap 역할을 유지한다.
-8. 일반 사용자는 내부 상태명 없이 `추출 확인→상품 확인→주문 완성` 흐름으로 작업한다.
+8. 일반 사용자는 내부 상태명 없이 `추출 확인→매칭 확인→주문 완성` 흐름으로 작업하며, 완료 후에는 `추출 수정 / 매칭 수정`으로 되돌아간다.
 9. 0·공란·음수·임시상품 원값을 보존한다.
 10. 전체 백업·복원, 중앙 재시도, A/B 수렴이 통과한다.
 
