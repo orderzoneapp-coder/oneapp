@@ -1,1 +1,1 @@
-trigger-finalize-contract-safe
+trigger-finalize-layered-compatible
