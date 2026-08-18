@@ -94,7 +94,12 @@ ORDER IN의 원문 발생, 세션, 전표, 행, 변경이력을 IndexedDB v8에 
 ### G.3 Identity
 
 - `rawFingerprint`: 원문 canonical bytes의 SHA-256. non-unique, 수정 불가, 내용 동일성 증거다.
-- `sourceOccurrenceKey`: `sourceSystem + sourceContainerId + sourceNativeId + occurredAtEvidence`의 canonical SHA-256. 붙여넣기는 매번 새 occurrence를 명시 생성한다.
+- `sourceOccurrenceKey`: 실제 외부 입력 발생 1건의 identity다. **플랫폼·외부시스템이 안정적인 native occurrence ID를 제공하면 그 ID를 최우선으로 사용하고 timestamp를 key 재료에 섞지 않는다.**
+  - native ID 있음: `SHA-256(sourceSystem + sourceContainerId + sourceNativeId)`.
+  - native ID 없음: `SHA-256(sourceSystem + sourceContainerId + senderEvidence + normalizedOccurredAt + occurrenceOrdinal)`.
+  - 일반 붙여넣기·사진처럼 외부 native ID가 없는 수동 입력: 사용자가 `[새 입력]`을 시작할 때 한 번 발급한 `captureOccurrenceId`를 native occurrence evidence로 사용한다.
+  - native ID가 같은데 표시 timestamp·timezone 표현만 달라진 경우에도 같은 `sourceOccurrenceKey`여야 한다. `occurredAtEvidence`는 provenance로 보존하되 native ID가 있을 때 identity 재료로 사용하지 않는다.
+  - native ID가 없는 자동수집 채널은 sender/time/ordinal 정규화 계약이 확정되지 않으면 자동 생성하지 않고 Q의 중단조건을 적용한다.
 - `sourceDocumentKey`: `sourceOccurrenceKey + documentType + stableSegmentIdentity`의 SHA-256. random nonce를 사용하지 않는다.
 - 자동분리 `stableSegmentIdentity`: parser가 원문 offset·segment signature로 재현한다.
 - 수동분할 child key: parent key + immutable split boundary identity.
@@ -122,17 +127,39 @@ legacy `matchStatus`는 사용자 경고의 단독 근거로 사용하지 않는
 
 최종 ORDER에 `intakeSessionId`, `intakeDocumentId`, `sourceOccurrenceKey`, `sourceDocumentKey`, `rawFingerprint`, `intakeContractVersion`을 선택 필드로 보존한다. ORDER ITEM에는 `intakeLineId`, `sourceLineKey`, review/product identity를 보존한다. 값은 생성 후 수정하지 않는다.
 
+### G.6 `sourceDocumentKey` 재시도용 canonical 주문내용
+
+같은 `sourceDocumentKey`의 재시도는 **생성된 시스템 메타데이터가 아니라 동일한 업무사실인지**를 비교한다. Client와 Cloud는 동일한 `ORDER_SOURCE_DOCUMENT_CANONICAL_V1` projection을 사용한다.
+
+비교에 포함하는 값:
+
+- Header: `orderDate`, 확정 `customerId`(없을 때만 normalized customer identity), 확정 `warehouseId` 또는 안정 warehouse code, `transactionType`, `deliveryExpectedDate`, `orderMessage`, 외부전표 identity, 사용자가 명시한 담당자·초기 주문/관리자 상태 등 주문 업무사실.
+- Item: `sourceLineKey` 기준으로 안정 정렬한 뒤 `productId`, `itemCode`, `itemName`, `specification`, raw/final quantity·unit, `price`, `priceType`, `supplyAmount`, `vatAmount`, `memo`, `description`, `noticePrice`, `reviewStatus`, `productIdentityStatus`, 기존 정규화된 `matchStatus` 등 주문행 업무사실.
+- 숫자는 기존 ORDER 숫자 정규화 규칙을 사용하며 `0`, 문자열 `0`, 공란/null의 기존 저장 의미를 임의로 합치지 않는다.
+
+비교에서 반드시 제외하는 값:
+
+- `orderId`, `orderNo`, `orderItemId`, `eventId`, `queueId` 같은 시스템 생성 ID.
+- `intakeSessionId`, `intakeDocumentId`, 로컬 UUID처럼 PC마다 달라질 수 있는 Draft identity.
+- `revision`, `baseRevision`, `createdAt`, `updatedAt`, actor 처리시각, sync 상태·재시도 횟수.
+- `matchingStatus`, `matchedCount`, `matchFailedCount`, 합계금액, `opsStatus` 등 위 업무값으로부터 다시 계산 가능한 파생값.
+- 고객명·창고명 같은 표시 snapshot은 안정 ID가 존재하면 비교 기준으로 사용하지 않는다.
+
+같은 `sourceDocumentKey` + 같은 canonical projection이면 duplicate success이며 ORDER·ITEM·EVENT·syncQueue를 추가하지 않는다. 같은 key + 다른 canonical projection이면 `ORDERQ_INTAKE_DOCUMENT_IDEMPOTENCY_CONFLICT`로 전체 거부한다. 비교 함수/정규화 버전은 Client와 Cloud가 동일해야 하고 fixture hash로 고정한다.
+
 ## H. 함수·API 상세
 
 신규 `orderq/intake-identity.js`:
 
 - `canonicalizeIntakeSource(input): Uint8Array`
 - `computeRawFingerprint(input): Promise<string>`
-- `buildSourceOccurrenceKey(evidence): Promise<string>`
+- `buildSourceOccurrenceKey(evidence): Promise<string>` — native ID 우선 규칙과 fallback 규칙을 G.3 그대로 적용한다.
 - `buildAutomaticSourceDocumentKey({sourceOccurrenceKey, documentType, stableSegmentIdentity})`
 - `buildSplitSourceDocumentKey({parentSourceDocumentKey, immutableBoundary})`
 - `buildMergeSourceDocumentKey(sourceDocumentKeys)`
 - `buildSourceLineKey({sourceDocumentKey, externalLineId, sourceRange})`
+- `buildOrderSourceDocumentCanonicalProjection({order, items})` — G.6의 업무필드만 deterministic object로 만든다.
+- `computeOrderSourceDocumentCanonicalHash({order, items})` — `ORDER_SOURCE_DOCUMENT_CANONICAL_V1` projection의 canonical SHA-256을 계산한다.
 
 신규 `orderq/intake-repository.js`:
 
@@ -150,8 +177,8 @@ legacy `matchStatus`는 사용자 경고의 단독 근거로 사용하지 않는
 - `upgradeOrderQDbSchema(db, transaction, oldVersion)`는 `oldVersion < 8`에서만 신규 Store/index를 생성한다.
 - v8 upgrade는 `orders.bySourceMessageKey`만 삭제 후 같은 keyPath의 non-unique index로 재생성하고 `orders.bySourceDocumentKey` unique index를 추가한다. 다른 legacy index는 변경하지 않는다.
 - 같은 upgrade transaction에서 sourceDocumentKey가 없는 legacy 주문에 `LEGACY:<sourceMessageKey>`만 backfill한다. orderId/sourceMessageKey/revision/event는 변경하지 않으며 충돌 시 upgrade 전체를 abort한다.
-- `createOrder(payload)`는 provenance와 review/product identity를 allowlist 정규화하고 같은 `sourceDocumentKey`의 기존 ORDER가 내용까지 같으면 duplicate 결과, 다르면 conflict를 반환한다.
-- Cloud ORDER 조회는 신규 `sourceDocumentKey` 우선, 없으면 legacy `sourceMessageKey` fallback을 사용한다.
+- `createOrder(payload)`는 provenance와 review/product identity를 allowlist 정규화하고, 같은 `sourceDocumentKey`가 있으면 G.6 canonical projection/hash를 비교한다. 동일하면 기존 주문 bundle을 duplicate success로 반환하고 ORDER·ITEM·EVENT·syncQueue를 추가하지 않으며, 다르면 conflict를 반환한다.
+- Cloud ORDER 조회도 같은 `ORDER_SOURCE_DOCUMENT_CANONICAL_V1` 비교 규칙을 사용하고 신규 `sourceDocumentKey` 우선, 없으면 legacy `sourceMessageKey` fallback을 사용한다.
 - `exportOrderQBackup/validateOrderQBackup/restoreOrderQBackup`은 schema v8과 신규 Store를 포함하고 실패 시 전체 rollback한다.
 
 ## I. 파일별 변경명세
@@ -186,7 +213,7 @@ Stage 1 테스트 API가 허용하는 최소 전이는 `CAPTURED → EXTRACTION_
 ## L. 오류·충돌·롤백
 
 - occurrence key 동일/content hash 다름: `ORDERQ_INTAKE_OCCURRENCE_CONTENT_CONFLICT`
-- sourceDocumentKey 동일/document canonical 다름: `ORDERQ_INTAKE_DOCUMENT_IDEMPOTENCY_CONFLICT`
+- sourceDocumentKey 동일/G.6 canonical 주문내용 다름: `ORDERQ_INTAKE_DOCUMENT_IDEMPOTENCY_CONFLICT`
 - expected revision 불일치: `ORDERQ_INTAKE_REVISION_CONFLICT`
 - temp confirmed인데 itemName 공란: `ORDERQ_INTAKE_TEMPORARY_NAME_REQUIRED`
 - unresolved line을 READY로 전환: `ORDERQ_INTAKE_REVIEW_INCOMPLETE`
@@ -196,18 +223,21 @@ Stage 1 테스트 API가 허용하는 최소 전이는 `CAPTURED → EXTRACTION_
 ## M. Given / When / Then 계약 테스트
 
 1. Given 동일 텍스트와 서로 다른 paste occurrence, When session 생성, Then session/order key가 다르고 둘 다 저장된다.
-2. Given 동일 occurrence·동일 content, When A/B가 같은 자동 segment를 생성, Then sourceDocumentKey가 같고 두 번째는 duplicate다.
-3. Given 동일 occurrence·다른 content, When 재사용, Then conflict이며 Store 전체 digest 불변이다.
-4. Given 수동 split/merge input 순서가 다름, When key 생성, Then 같은 논리 결과는 같은 key다.
-5. Given 코드 없는 품명, When 관리자가 임시상품 확정, Then review=CONFIRMED/productIdentity=TEMPORARY_CONFIRMED이며 사용자 미해결로 분류되지 않는다.
-6. Given unresolved line, When READY 요청, Then 거부되고 event/revision 불변이다.
-7. Given v7 실제 backup, When v8 upgrade/export/restore, Then 기존 모든 Store와 신규 empty Store canonical round-trip이 일치한다.
-8. Given legacy orders.bySourceMessageKey unique DB, When upgrade, Then index는 non-unique, sourceDocumentKey는 `LEGACY:*`, 기존 order/event canonical 필드는 불변이다.
-9. Given 동일 sourceDocumentKey의 final ORDER 재시도, When payload 동일/상이, Then 각각 duplicate/conflict이며 ORDER·ITEM·EVENT·syncQueue 무증가다.
-10. Given Cloud pull, When 신규 필드가 있는 ORDER를 A/B 적용, Then provenance와 temp identity가 동일하다.
-11. Given 실패주입, When Intake document+lines+event 저장 중 오류, Then 세 Store 모두 부분행 0이다.
+2. Given 동일 native message ID와 동일 content지만 PC A/B의 표시 timestamp·timezone 표현이 다름, When occurrence key 생성, Then 같은 `sourceOccurrenceKey`로 수렴한다.
+3. Given native ID가 없는 동일 container에서 sender/time/ordinal이 같은 실제 occurrence, When A/B가 key 생성, Then 같은 `sourceOccurrenceKey`로 수렴한다.
+4. Given 동일 occurrence·동일 content, When A/B가 같은 자동 segment를 생성, Then sourceDocumentKey가 같고 두 번째는 duplicate다.
+5. Given 동일 occurrence·다른 content, When 재사용, Then conflict이며 Store 전체 digest 불변이다.
+6. Given 수동 split/merge input 순서가 다름, When key 생성, Then 같은 논리 결과는 같은 key다.
+7. Given 코드 없는 품명, When 관리자가 임시상품 확정, Then review=CONFIRMED/productIdentity=TEMPORARY_CONFIRMED이며 사용자 미해결로 분류되지 않는다.
+8. Given unresolved line, When READY 요청, Then 거부되고 event/revision 불변이다.
+9. Given v7 실제 backup, When v8 upgrade/export/restore, Then 기존 모든 Store와 신규 empty Store canonical round-trip이 일치한다.
+10. Given legacy orders.bySourceMessageKey unique DB, When upgrade, Then index는 non-unique, sourceDocumentKey는 `LEGACY:*`, 기존 order/event canonical 필드는 불변이다.
+11. Given 동일 sourceDocumentKey의 final ORDER 재시도, When 업무내용은 같지만 새 `orderId/orderNo/orderItemId/createdAt/intakeSessionId`가 달라질 수 있는 A/B 입력, Then G.6 canonical hash는 같고 기존 주문을 duplicate success로 반환하며 ORDER·ITEM·EVENT·syncQueue가 증가하지 않는다.
+12. Given 동일 sourceDocumentKey의 final ORDER 재시도, When 고객·창고·수량·상품·가격 등 G.6 업무사실 하나가 다름, Then canonical hash가 달라 conflict이며 ORDER·ITEM·EVENT·syncQueue가 증가하지 않는다.
+13. Given Cloud pull, When 신규 필드가 있는 ORDER를 A/B 적용, Then provenance와 temp identity가 동일하다.
+14. Given 실패주입, When Intake document+lines+event 저장 중 오류, Then 세 Store 모두 부분행 0이다.
 
-각 테스트는 DB row count, canonical digest, event type, syncQueue 상태, duplicate/conflict 결과를 구조화 JSON으로 출력한다.
+각 테스트는 DB row count, canonical digest, canonical order hash, event type, syncQueue 상태, duplicate/conflict 결과를 구조화 JSON으로 출력한다.
 
 ## N. 회귀 테스트
 
@@ -230,6 +260,7 @@ Stage 1 테스트 API가 허용하는 최소 전이는 `CAPTURED → EXTRACTION_
 - base/HEAD/tree/merge-base, clean worktree, 변경파일·통계
 - v8 Store/index 목록과 upgrade 전후 canonical digest
 - identity 입력·출력 fixture SHA-256
+- `ORDER_SOURCE_DOCUMENT_CANONICAL_V1` fixture와 Client/Cloud canonical hash 일치 증거
 - 모든 Given/When/Then 구조화 결과
 - 실제 Chromium DB명 2개, row count, console warning/error 0
 - Cloud 신규 필드 수렴 및 legacy fallback
@@ -243,6 +274,8 @@ Stage 2는 다음이 모두 충족될 때만 착수한다.
 - Stage 1 HEAD 독립 검증 승인 및 병합
 - DB v8 backup/restore와 v7 데이터 불변
 - raw fingerprint 반복주문, source occurrence 재시도, sourceDocument conflict 계약 통과
+- native ID 우선 occurrence key와 fallback key의 A/B 결정성 통과
+- Client/Cloud `ORDER_SOURCE_DOCUMENT_CANONICAL_V1` 동일 fixture hash 통과
 - core MATCH_STATUS 무변경
 - M1~M10/Cloud 증가 실패 0
 
@@ -253,6 +286,8 @@ Stage 2는 다음이 모두 충족될 때만 착수한다.
 - Intake Draft는 1차 로컬 전용이다.
 - final ORDER만 현행 Cloud 계약으로 동기화한다.
 - `rawFingerprint`는 unique key가 아니다.
+- native occurrence ID가 있으면 timestamp는 `sourceOccurrenceKey` 재료로 사용하지 않는다.
+- 같은 `sourceDocumentKey`의 duplicate/conflict 판단은 G.6 `ORDER_SOURCE_DOCUMENT_CANONICAL_V1` 업무 projection으로만 한다.
 - temporary confirmed는 review와 Master identity를 분리한다.
 
 중단:
@@ -264,5 +299,5 @@ Stage 2는 다음이 모두 충족될 때만 착수한다.
 ## Codex 5.3 착수 명령
 
 ```text
-[개발][ORDER IN][STAGE 1 INTAKE DB CONTRACT] 최신 origin/main을 fetch하고 기준 SHA를 고정하라. orderq/ORDER_IN_ORDER_Q_INPUT_ARCHITECTURE_SPEC.md, orderq/ORDER_IN_ORDER_Q_IMPLEMENTATION_ROADMAP.md, orderq/ORDER_IN_STAGE1_INTAKE_DB_CONTRACT_SPEC.md를 전부 읽고 Stage 1만 구현한다. DB v8 additive migration, Intake 5 Store, occurrence/document identity, final ORDER provenance·review/productIdentity, 전체 Store backup/restore, legacy Cloud fallback과 지정 테스트만 허용한다. Parser UI·Grid·분할·OCR·Mapping·Import·Collector·M9 공식명령은 금지한다. 완료후보 전 병합·배포·Stage 2 착수를 하지 말고 HEAD/diff/구조화 DB·Chromium·Cloud·회귀 증거로 검증을 요청하라.
+[개발][ORDER IN][STAGE 1 INTAKE DB CONTRACT] 최신 origin/main을 fetch하고 기준 SHA를 고정하라. orderq/ORDER_IN_ORDER_Q_INPUT_ARCHITECTURE_SPEC.md, orderq/ORDER_IN_ORDER_Q_IMPLEMENTATION_ROADMAP.md, orderq/ORDER_IN_STAGE1_INTAKE_DB_CONTRACT_SPEC.md를 전부 읽고 Stage 1만 구현한다. DB v8 additive migration, Intake 5 Store, native ID 우선 sourceOccurrenceKey/fallback identity, deterministic sourceDocumentKey, ORDER_SOURCE_DOCUMENT_CANONICAL_V1 기반 duplicate/conflict, final ORDER provenance·review/productIdentity, 전체 Store backup/restore, legacy Cloud fallback과 지정 테스트만 허용한다. Parser UI·Grid·분할·OCR·Mapping·Import·Collector·M9 공식명령은 금지한다. 완료후보 전 병합·배포·Stage 2 착수를 하지 말고 HEAD/diff/구조화 DB·Chromium·Cloud·회귀 증거로 검증을 요청하라.
 ```
