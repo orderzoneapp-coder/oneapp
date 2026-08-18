@@ -1,0 +1,42 @@
+name: Temporary ORDER Q v1.57 patch
+
+on:
+  push:
+    branches:
+      - agent/orderq-v1-57-sort-manager
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: ${{ !contains(github.event.head_commit.message, '[patched-v1.57]') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out patch branch
+        uses: actions/checkout@v7
+        with:
+          ref: agent/orderq-v1-57-sort-manager
+          fetch-depth: 0
+
+      - name: Apply focused ORDER Q patch
+        run: python scripts/tmp-orderq-v157-patch.py
+
+      - name: Run focused shipping management regression
+        run: node scripts/test-shipping-management.mjs
+
+      - name: Check diff whitespace
+        run: git diff --check
+
+      - name: Commit patched sources
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add orderops_list.html orderops/list.html orderFulfillmentEngine.js scripts/test-shipping-management.mjs
+          if git diff --cached --quiet; then
+            echo "No source changes to commit"
+            exit 0
+          fi
+          git commit -m "ORDER Q v1.57 누적정렬·담당자변경 반영 [patched-v1.57]"
+          git push origin HEAD:agent/orderq-v1-57-sort-manager
