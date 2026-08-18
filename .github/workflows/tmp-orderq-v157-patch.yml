@@ -30,7 +30,14 @@ jobs:
           new = '''    if text.count(anchor) != 2:\n        raise RuntimeError(f"public sort/manager interaction test contracts: expected 2 exact matches, got {text.count(anchor)}")\n    text = text.replace(anchor, replacement)'''
           if old not in patch_text:
               raise SystemExit('temporary main helper target not found')
-          patch_path.write_text(patch_text.replace(old, new, 1), encoding='utf-8')
+          patch_text = patch_text.replace(old, new, 1)
+
+          old_sort = '''        ["manager", "group", "customer"].forEach((role) => appendSetting(selectedByRole.get(role)));\n        selected.forEach((setting) => {'''
+          new_sort = '''        ["manager", "group", "customer"].forEach((role) => appendSetting(selectedByRole.get(role)));\n        if (selectedByRole.has("group") && !selectedByRole.has("customer")) {\n          const customerColumn = columnsByRole.get("customer");\n          if (customerColumn) appendSetting({ columnKey: customerColumn.key, direction: "asc" });\n        }\n        selected.forEach((setting) => {'''
+          if old_sort not in patch_text:
+              raise SystemExit('temporary layered-sort target not found')
+          patch_text = patch_text.replace(old_sort, new_sort, 1)
+          patch_path.write_text(patch_text, encoding='utf-8')
           PY
 
       - name: Apply focused ORDER Q patch
