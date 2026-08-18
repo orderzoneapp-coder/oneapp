@@ -1,3 +1,5 @@
+import('./collector-smartparser-review.js?v=0.8.7').catch(error => console.error('Collector SmartParser review load failed', error));
+
 const excludedPhotoIndexes = new Set();
 
 function photoList() { return document.querySelector('#photoCandidates'); }
