@@ -6,6 +6,20 @@
 - 변경 등급: 중요 개발
 - 원칙: 기존 M1~M10 원장·재고·출고·구매·ERP 계약을 유지하고 ORDER IN 계층만 확장한다.
 
+## 구현 문서 패키지
+
+- [전체 구현 로드맵](./ORDER_IN_ORDER_Q_IMPLEMENTATION_ROADMAP.md)
+- [Stage 1 — Intake DB·Identity](./ORDER_IN_STAGE1_INTAKE_DB_CONTRACT_SPEC.md)
+- [Stage 2 — 공통 주문 Grid](./ORDER_IN_STAGE2_SHARED_ORDER_GRID_SPEC.md)
+- [Stage 3 — 단일전표](./ORDER_IN_STAGE3_SINGLE_DOCUMENT_SPEC.md)
+- [Stage 4 — 다전표](./ORDER_IN_STAGE4_MULTI_DOCUMENT_SPEC.md)
+- [Stage 5 — Clipboard·OCR](./ORDER_IN_STAGE5_CLIPBOARD_OCR_SPEC.md)
+- [Stage 6 — Mapping Feedback](./ORDER_IN_STAGE6_MAPPING_FEEDBACK_SPEC.md)
+- [Stage 7 — 구조화 ORDER Q Import](./ORDER_Q_STAGE7_STRUCTURED_IMPORT_SPEC.md)
+- [Stage 8 — Collector 정리](./ORDER_IN_STAGE8_COLLECTOR_CLEANUP_SPEC.md)
+
+이 패키지는 구현 전 상세명세다. 각 Stage는 해당 문서의 선행 Gate와 별도 착수 승인 후에만 구현한다.
+
 ## 1. 목적과 범위
 
 ORDER IN은 카카오 대화, 일반 텍스트, 사진/OCR, 임의 Excel처럼 상품 식별이나 전표구조가 아직 결정되지 않은 외부정보를 읽어 관리자가 확인할 수 있는 정형 전표로 만든다.
