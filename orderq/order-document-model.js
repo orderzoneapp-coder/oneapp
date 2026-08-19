@@ -173,7 +173,7 @@ export function orderIntakeProvenanceSnapshot(payload = {}, previous = {}) {
   };
 }
 
-export function validateOrderItemIdentityState(input = {}, hasMasterIdentity = false) {
+export function validateOrderItemIdentityState(input = {}) {
   const reviewStatus = String(input.reviewStatus || '').trim().toUpperCase();
   const productIdentityStatus = String(input.productIdentityStatus || '').trim().toUpperCase();
   if (!VALID_REVIEW_STATUS.has(reviewStatus)) throw new Error(`ORDERQ_INTAKE_REVIEW_STATUS_INVALID:${reviewStatus}`);
@@ -182,7 +182,7 @@ export function validateOrderItemIdentityState(input = {}, hasMasterIdentity = f
   const productId = String(input.productId ?? '').trim();
   const itemCode = String(input.itemCode ?? '').trim();
   const itemName = String(input.itemName ?? '').trim();
-  const completeMasterIdentity = Boolean(hasMasterIdentity || (productId && itemCode && itemName));
+  const completeMasterIdentity = Boolean(productId && !productId.startsWith('CODE:') && itemCode && itemName);
 
   if (productIdentityStatus === 'MASTER_LINKED' && !completeMasterIdentity) {
     throw new Error('ORDERQ_INTAKE_MASTER_IDENTITY_REQUIRED');
@@ -205,7 +205,7 @@ export function orderItemIdentitySnapshot(input = {}, hasMasterIdentity = false)
   if (requestedIdentity && !VALID_PRODUCT_IDENTITY_STATUS.has(requestedIdentity)) throw new Error(`ORDERQ_INTAKE_PRODUCT_IDENTITY_INVALID:${requestedIdentity}`);
   const reviewStatus = requestedReview || (hasMasterIdentity ? 'CONFIRMED' : 'PENDING');
   const productIdentityStatus = requestedIdentity || (hasMasterIdentity ? 'MASTER_LINKED' : 'UNRESOLVED');
-  validateOrderItemIdentityState({ ...input, reviewStatus, productIdentityStatus }, hasMasterIdentity);
+  validateOrderItemIdentityState({ ...input, reviewStatus, productIdentityStatus });
   return {
     intakeLineId: String(input.intakeLineId || '').trim(),
     sourceLineKey: String(input.sourceLineKey || '').trim(),
