@@ -11594,9 +11594,9 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
             const current = Array.isArray(prev) ? prev : [];
             if (current.includes(value)) return current.filter(v => v !== value);
             const group = getDetailFilterGroup(value);
-            // 상태 계열은 서로 상충되므로 마지막 선택만 유지한다.
+            // 상태·가격방향 계열은 서로 상충되므로 마지막 선택만 유지한다.
             // 단위/테마 계열은 같은 그룹 안에서 OR 조건으로 중복 선택 가능하다.
-            const next = group === 'status'
+            const next = ['status', 'priceDirection'].includes(group)
                 ? current.filter(v => getDetailFilterGroup(v) !== group)
                 : [...current];
             return [...next, value];

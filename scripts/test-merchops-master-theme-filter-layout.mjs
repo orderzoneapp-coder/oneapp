@@ -89,6 +89,8 @@ assert.match(toolbar, /const showDetailFilterPanel = filterPanelOpen \|\| isDeta
   "active price-change and no-inbound filters must open the detail panel for their dynamic controls");
 assert.match(toolbar, /if \(\['priceRise', 'priceFall'\]\.includes\(value\)\) return 'priceDirection';/,
   "rise and fall must be a single-choice detail-filter group");
+assert.match(toolbar, /\['status', 'priceDirection'\]\.includes\(group\)[\s\S]*current\.filter\(v => getDetailFilterGroup\(v\) !== group\)/,
+  "selecting a rise/fall direction must clear the other direction");
 assert.match(toolbar, /priceFilter !== 'priceCheck'[\s\S]*filter\(value => !\['priceRise', 'priceFall'\]\.includes\(value\)\)/,
   "clearing price change must clear the hidden rise/fall filters too");
 
