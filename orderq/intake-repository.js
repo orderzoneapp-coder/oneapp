@@ -15,9 +15,10 @@ import {
   PRODUCT_IDENTITY_STATUS
 } from './orderq-v8-contracts.js?v=0.11.0';
 import { canonicalStringify } from './intake-identity.js?v=0.11.0';
+import { validateOrderItemIdentityState } from './order-document-model.js?v=0.8.0';
 
 const SESSION_STATUS = new Set(Object.values(INTAKE_SESSION_STATUS));
-const STAGES = Object.values(INTAKE_STAGE);
+const STAGES = new Set(Object.values(INTAKE_STAGE));
 const REVIEW_STATUS = new Set(Object.values(INTAKE_REVIEW_STATUS));
 const PRODUCT_IDENTITY = new Set(Object.values(PRODUCT_IDENTITY_STATUS));
 const MATCH_STATUS = new Set(['MATCHED', 'MATCH_FAILED', 'EXCLUDED', 'CANCELLED']);
@@ -56,15 +57,26 @@ function eventRecord(actor, input = {}, timestamp = nowIso()) {
   };
 }
 
+function normalizeIntakeStage(value, fallback = INTAKE_STAGE.CAPTURED) {
+  const stage = text(value || fallback).toUpperCase();
+  if (!STAGES.has(stage)) throw new Error(`ORDERQ_INTAKE_STAGE_INVALID:${stage}`);
+  return stage;
+}
+
+function normalizeIntakeReviewStatus(value, fallback = INTAKE_REVIEW_STATUS.PENDING) {
+  const reviewStatus = text(value || fallback).toUpperCase();
+  if (!REVIEW_STATUS.has(reviewStatus)) throw new Error(`ORDERQ_INTAKE_REVIEW_STATUS_INVALID:${reviewStatus}`);
+  return reviewStatus;
+}
+
 function normalizeSession(command, actor, timestamp) {
   const sourceOccurrenceKey = text(command.sourceOccurrenceKey);
   const rawFingerprint = text(command.rawFingerprint);
   if (!sourceOccurrenceKey) throw new Error('ORDERQ_INTAKE_SOURCE_OCCURRENCE_KEY_REQUIRED');
   if (!rawFingerprint) throw new Error('ORDERQ_INTAKE_RAW_FINGERPRINT_REQUIRED');
   const status = text(command.status || INTAKE_SESSION_STATUS.ACTIVE).toUpperCase();
-  const stage = text(command.stage || INTAKE_STAGE.CAPTURED).toUpperCase();
+  const stage = normalizeIntakeStage(command.stage, INTAKE_STAGE.CAPTURED);
   if (!SESSION_STATUS.has(status)) throw new Error(`ORDERQ_INTAKE_SESSION_STATUS_INVALID:${status}`);
-  if (!STAGES.includes(stage)) throw new Error(`ORDERQ_INTAKE_STAGE_INVALID:${stage}`);
   return {
     intakeSessionId: text(command.intakeSessionId) || newId('INTAKE'),
     documentType: text(command.documentType || 'ORDER').toUpperCase(),
@@ -83,20 +95,21 @@ function normalizeSession(command, actor, timestamp) {
 }
 
 function normalizeLine(input, document, actor, timestamp, previous = null) {
-  const reviewStatus = text(input.reviewStatus || previous?.reviewStatus || INTAKE_REVIEW_STATUS.PENDING).toUpperCase();
+  const reviewStatus = normalizeIntakeReviewStatus(input.reviewStatus, previous?.reviewStatus || INTAKE_REVIEW_STATUS.PENDING);
   const productIdentityStatus = text(input.productIdentityStatus || previous?.productIdentityStatus || PRODUCT_IDENTITY_STATUS.UNRESOLVED).toUpperCase();
   const matchStatus = text(input.matchStatus || previous?.matchStatus || 'MATCH_FAILED').toUpperCase();
-  if (!REVIEW_STATUS.has(reviewStatus)) throw new Error(`ORDERQ_INTAKE_REVIEW_STATUS_INVALID:${reviewStatus}`);
   if (!PRODUCT_IDENTITY.has(productIdentityStatus)) throw new Error(`ORDERQ_INTAKE_PRODUCT_IDENTITY_INVALID:${productIdentityStatus}`);
   if (!MATCH_STATUS.has(matchStatus)) throw new Error(`ORDERQ_INTAKE_MATCH_STATUS_INVALID:${matchStatus}`);
   const productId = text(input.productId ?? previous?.productId) || null;
   const itemCode = text(input.itemCode ?? previous?.itemCode);
   const itemName = text(input.itemName ?? previous?.itemName);
-  if (productIdentityStatus === PRODUCT_IDENTITY_STATUS.TEMPORARY_CONFIRMED) {
-    if (!itemName) throw new Error('ORDERQ_INTAKE_TEMPORARY_NAME_REQUIRED');
-    if (productId || itemCode) throw new Error('ORDERQ_INTAKE_TEMPORARY_MASTER_IDENTITY_FORBIDDEN');
-    if (reviewStatus !== INTAKE_REVIEW_STATUS.CONFIRMED) throw new Error('ORDERQ_INTAKE_TEMPORARY_REVIEW_REQUIRED');
-  }
+  validateOrderItemIdentityState({
+    reviewStatus,
+    productIdentityStatus,
+    productId,
+    itemCode,
+    itemName
+  }, Boolean(productId && itemCode && itemName));
   return {
     intakeLineId: text(input.intakeLineId) || previous?.intakeLineId || newId('ILN'),
     intakeSessionId: document.intakeSessionId,
@@ -133,6 +146,7 @@ function assertDocumentReady(lines) {
     || ![PRODUCT_IDENTITY_STATUS.MASTER_LINKED, PRODUCT_IDENTITY_STATUS.TEMPORARY_CONFIRMED].includes(line.productIdentityStatus))) {
     throw new Error('ORDERQ_INTAKE_REVIEW_INCOMPLETE');
   }
+  active.forEach(line => validateOrderItemIdentityState(line, Boolean(line.productId && line.itemCode && line.itemName)));
 }
 
 async function readBundleWithTransaction(tx, intakeSessionId) {
@@ -230,6 +244,9 @@ export async function createIntakeDocument(command) {
   const timestamp = nowIso();
   const sourceDocumentKey = text(command.sourceDocumentKey);
   if (!sourceDocumentKey) throw new Error('ORDERQ_INTAKE_SOURCE_DOCUMENT_KEY_REQUIRED');
+  const requestedStage = normalizeIntakeStage(command.stage, INTAKE_STAGE.CAPTURED);
+  const requestedReviewStatus = normalizeIntakeReviewStatus(command.reviewStatus, INTAKE_REVIEW_STATUS.PENDING);
+  const requestedDocumentType = text(command.documentType || 'ORDER').toUpperCase();
   const db = await openOrderQDb();
   const tx = db.transaction([STORE.INTAKE_SESSIONS, STORE.INTAKE_DOCUMENTS, STORE.INTAKE_EVENTS], 'readwrite');
   try {
@@ -237,17 +254,18 @@ export async function createIntakeDocument(command) {
     const existing = await requestToPromise(documentStore.index('bySourceDocumentKey').get(sourceDocumentKey));
     if (existing) {
       const sameFact = existing.intakeSessionId === text(command.intakeSessionId)
-        && existing.documentType === text(command.documentType || 'ORDER').toUpperCase();
+        && existing.documentType === requestedDocumentType;
       if (!sameFact) throw new Error('ORDERQ_INTAKE_DOCUMENT_IDEMPOTENCY_CONFLICT');
       await transactionDone(tx);
       return { document: existing, duplicate: true };
     }
     const session = await requestToPromise(tx.objectStore(STORE.INTAKE_SESSIONS).get(text(command.intakeSessionId)));
     if (!session) throw new Error('ORDERQ_INTAKE_SESSION_NOT_FOUND');
+    const documentType = text(command.documentType || session.documentType || 'ORDER').toUpperCase();
     const document = {
       intakeDocumentId: text(command.intakeDocumentId) || newId('IDOC'),
       intakeSessionId: session.intakeSessionId,
-      documentType: text(command.documentType || session.documentType || 'ORDER').toUpperCase(),
+      documentType,
       sourceDocumentKey,
       sourceMessageKeys: clone(command.sourceMessageKeys || []),
       documentIndex: Number(command.documentIndex || 0),
@@ -257,8 +275,8 @@ export async function createIntakeDocument(command) {
       confirmedCustomerId: text(command.confirmedCustomerId),
       confirmedCustomerName: text(command.confirmedCustomerName),
       headerDraft: clone(command.headerDraft || {}),
-      stage: text(command.stage || INTAKE_STAGE.CAPTURED).toUpperCase(),
-      reviewStatus: text(command.reviewStatus || INTAKE_REVIEW_STATUS.PENDING).toUpperCase(),
+      stage: requestedStage,
+      reviewStatus: requestedReviewStatus,
       orderId: '',
       revision: 1,
       intakeContractVersion: INTAKE_CONTRACT_VERSION,
@@ -293,16 +311,19 @@ export async function replaceIntakeLines(command) {
     const document = await requestToPromise(documentStore.get(documentId));
     if (!document) throw new Error('ORDERQ_INTAKE_DOCUMENT_NOT_FOUND');
     if (Number(document.revision || 0) !== Number(command.expectedRevision || 0)) throw new Error('ORDERQ_INTAKE_REVISION_CONFLICT');
+    const nextStage = normalizeIntakeStage(command.nextStage, document.stage || INTAKE_STAGE.CAPTURED);
+    const nextReviewStatus = normalizeIntakeReviewStatus(command.reviewStatus, document.reviewStatus || INTAKE_REVIEW_STATUS.PENDING);
     const previousLines = await requestToPromise(lineStore.index('byDocument').getAll(documentId));
     const previousById = new Map(previousLines.map(line => [line.intakeLineId, line]));
     const lines = (command.lines || []).map(input => normalizeLine(input, document, actor, timestamp, previousById.get(text(input.intakeLineId))));
-    if (command.nextStage === INTAKE_STAGE.DOCUMENT_REVIEW || command.nextStage === INTAKE_STAGE.COMMITTED) assertDocumentReady(lines);
+    if (nextStage === INTAKE_STAGE.DOCUMENT_REVIEW || nextStage === INTAKE_STAGE.COMMITTED) assertDocumentReady(lines);
     previousLines.forEach(line => lineStore.delete(line.intakeLineId));
     lines.forEach(line => lineStore.put(line));
     if (command.injectFailureAt === 'LINES_WRITTEN') throw new Error('ORDERQ_INTAKE_INJECTED_FAILURE:LINES_WRITTEN');
     const nextDocument = {
       ...document,
-      stage: text(command.nextStage || document.stage).toUpperCase(),
+      stage: nextStage,
+      reviewStatus: nextReviewStatus,
       revision: Number(document.revision || 0) + 1,
       updatedBy: actorContext(actor).actorId,
       updatedAt: timestamp
