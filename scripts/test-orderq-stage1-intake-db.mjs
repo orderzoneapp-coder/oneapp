@@ -97,10 +97,26 @@ assert.notEqual(clientHash, await computeOrderSourceDocumentCanonicalHash({
   items: [{ ...orderFixtureB.items[0], finalQuantity: 3 }]
 }));
 
-const identity = orderItemIdentitySnapshot({ reviewStatus: 'CONFIRMED', productIdentityStatus: 'TEMPORARY_CONFIRMED' }, false);
+const identity = orderItemIdentitySnapshot({
+  reviewStatus: 'CONFIRMED', productIdentityStatus: 'TEMPORARY_CONFIRMED', productId: null, itemCode: '', itemName: '관리자 임시상품'
+}, false);
 assert.deepEqual(identity, {
   intakeLineId: '', sourceLineKey: '', reviewStatus: 'CONFIRMED', productIdentityStatus: 'TEMPORARY_CONFIRMED'
 });
+assert.deepEqual(orderItemIdentitySnapshot({
+  reviewStatus: 'PENDING', productIdentityStatus: 'MASTER_LINKED', productId: 'P-1', itemCode: '100', itemName: '대파'
+}, true), {
+  intakeLineId: '', sourceLineKey: '', reviewStatus: 'PENDING', productIdentityStatus: 'MASTER_LINKED'
+});
+assert.throws(() => orderItemIdentitySnapshot({
+  reviewStatus: 'CONFIRMED', productIdentityStatus: 'MASTER_LINKED', productId: null, itemCode: '', itemName: '대파'
+}, false), /ORDERQ_INTAKE_MASTER_IDENTITY_REQUIRED/);
+assert.throws(() => orderItemIdentitySnapshot({
+  reviewStatus: 'CONFIRMED', productIdentityStatus: 'TEMPORARY_CONFIRMED', productId: null, itemCode: '100', itemName: '임시상품'
+}, false), /ORDERQ_INTAKE_TEMPORARY_MASTER_IDENTITY_FORBIDDEN/);
+assert.throws(() => orderItemIdentitySnapshot({
+  reviewStatus: 'CONFIRMED', productIdentityStatus: 'UNRESOLVED', productId: null, itemCode: '', itemName: '대파'
+}, false), /ORDERQ_INTAKE_CONFIRMED_UNRESOLVED_FORBIDDEN/);
 
 const cloudContext = vm.createContext({
   console,
@@ -119,6 +135,7 @@ const v8Source = read('orderq/orderq-v8-contracts.js');
 const repositorySource = read('orderq/intake-repository.js');
 const backupSource = read('orderq/orderq-v7-repository.js');
 const intakeSource = read('orderq/order-intake-engine.js');
+const documentModelSource = read('orderq/order-document-model.js');
 const cloudSource = read('orderq-cloud.gs');
 for (const store of V8_STORE_DEFINITIONS) assert.match(v8Source, new RegExp(store.name));
 assert.match(dbSource, /oldVersion < 8/);
@@ -128,7 +145,12 @@ assert.match(dbSource, /bySourceDocumentKey/);
 assert.match(dbSource, /LEGACY:\$\{sourceMessageKey\}/);
 assert.match(repositorySource, /ORDERQ_INTAKE_OCCURRENCE_CONTENT_CONFLICT/);
 assert.match(repositorySource, /ORDERQ_INTAKE_REVIEW_INCOMPLETE/);
+assert.match(repositorySource, /ORDERQ_INTAKE_STAGE_INVALID/);
+assert.match(repositorySource, /normalizeIntakeReviewStatus/);
+assert.match(repositorySource, /validateOrderItemIdentityState/);
 assert.match(repositorySource, /injectFailureAt === 'LINES_WRITTEN'/);
+assert.match(documentModelSource, /ORDERQ_INTAKE_MASTER_IDENTITY_REQUIRED/);
+assert.match(documentModelSource, /ORDERQ_INTAKE_CONFIRMED_UNRESOLVED_FORBIDDEN/);
 assert.match(backupSource, /validation\.schemaVersion < DB_VERSION/);
 assert.match(intakeSource, /ORDERQ_INTAKE_DOCUMENT_IDEMPOTENCY_CONFLICT/);
 for (const status of coreMatchStatus) assert.match(intakeSource, new RegExp(`${status}: ['"]${status}['"]`));
@@ -148,5 +170,7 @@ console.log(JSON.stringify({
   canonicalVersion: ORDER_SOURCE_DOCUMENT_CANONICAL_VERSION,
   clientHash,
   cloudHash,
-  coreMatchStatus
+  coreMatchStatus,
+  identityInvariants: 'PASS',
+  documentStateValidation: 'STATIC_CONTRACT_PRESENT'
 }, null, 2));
