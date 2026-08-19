@@ -112,6 +112,9 @@ assert.throws(() => orderItemIdentitySnapshot({
   reviewStatus: 'CONFIRMED', productIdentityStatus: 'MASTER_LINKED', productId: null, itemCode: '', itemName: '대파'
 }, false), /ORDERQ_INTAKE_MASTER_IDENTITY_REQUIRED/);
 assert.throws(() => orderItemIdentitySnapshot({
+  reviewStatus: 'CONFIRMED', productIdentityStatus: 'MASTER_LINKED', productId: 'CODE:100', itemCode: '100', itemName: '대파'
+}, false), /ORDERQ_INTAKE_MASTER_IDENTITY_REQUIRED/);
+assert.throws(() => orderItemIdentitySnapshot({
   reviewStatus: 'CONFIRMED', productIdentityStatus: 'TEMPORARY_CONFIRMED', productId: null, itemCode: '100', itemName: '임시상품'
 }, false), /ORDERQ_INTAKE_TEMPORARY_MASTER_IDENTITY_FORBIDDEN/);
 assert.throws(() => orderItemIdentitySnapshot({
