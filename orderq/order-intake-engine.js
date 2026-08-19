@@ -285,7 +285,8 @@ export async function createOrder(payload) {
   const db = await openOrderQDb();
   const tx = db.transaction([
     STORE.CUSTOMERS, STORE.CUSTOMER_ALIASES, STORE.WAREHOUSES, STORE.WAREHOUSE_ALIASES, STORE.ORDERS, STORE.ORDER_ITEMS,
-    STORE.ORDER_EVENTS, STORE.SYNC_QUEUE, STORE.META
+    STORE.ORDER_EVENTS, STORE.SYNC_QUEUE, STORE.META,
+    ...(payload.intakeCommit ? [STORE.INTAKE_SESSIONS, STORE.INTAKE_DOCUMENTS, STORE.INTAKE_LINES, STORE.INTAKE_EVENTS] : [])
   ], 'readwrite');
 
   try {
@@ -383,6 +384,23 @@ export async function createOrder(payload) {
     enqueue(tx, 'ORDER', orderId, 'UPSERT', order.revision, { order, items }, 0);
     enqueue(tx, 'ORDER_EVENT', event.eventId, 'UPSERT', event.revision, event, 0);
     if (transition) enqueue(tx, 'ORDER_EVENT', transition.eventId, 'UPSERT', transition.revision, transition, 0);
+
+    if (payload.intakeCommit) {
+      const commit = payload.intakeCommit;
+      if (commit.injectFailureAt === 'ORDER_WRITTEN') throw new Error('ORDERQ_INTAKE_INJECTED_FAILURE:ORDER_WRITTEN');
+      const sessions = tx.objectStore(STORE.INTAKE_SESSIONS), documents = tx.objectStore(STORE.INTAKE_DOCUMENTS);
+      const session = await requestToPromise(sessions.get(commit.intakeSessionId));
+      const document = await requestToPromise(documents.get(commit.intakeDocumentId));
+      if (!session || !document) throw new Error('ORDERQ_INTAKE_DOCUMENT_NOT_FOUND');
+      if (Number(document.revision || 0) !== Number(commit.expectedRevision || 0)) throw new Error('ORDERQ_INTAKE_REVISION_CONFLICT');
+      const intakeLines = await requestToPromise(tx.objectStore(STORE.INTAKE_LINES).index('byDocument').getAll(document.intakeDocumentId));
+      const active = intakeLines.filter(line => line.reviewStatus !== 'EXCLUDED' && line.matchStatus !== 'EXCLUDED');
+      if (!active.length || active.some(line => line.reviewStatus !== 'CONFIRMED' || !['MASTER_LINKED','TEMPORARY_CONFIRMED'].includes(line.productIdentityStatus))) throw new Error('ORDERQ_INTAKE_REVIEW_INCOMPLETE');
+      const committedAt = nowIso(), actorId = commit.actor?.actorId || 'LOCAL_USER';
+      documents.put({ ...document, stage:'COMMITTED', reviewStatus:'CONFIRMED', orderId, revision:Number(document.revision||0)+1, updatedBy:actorId, updatedAt:committedAt });
+      sessions.put({ ...session, stage:'COMMITTED', status:'COMMITTED', revision:Number(session.revision||0)+1, updatedBy:actorId, updatedAt:committedAt });
+      tx.objectStore(STORE.INTAKE_EVENTS).add({ eventId:newId('IEV'), intakeSessionId:session.intakeSessionId, intakeDocumentId:document.intakeDocumentId, intakeLineId:'', eventType:'INTAKE_ORDER_COMMITTED', reasonCode:'SINGLE_DOCUMENT_ORDER_SAVED', before:{stage:document.stage}, after:{stage:'COMMITTED',orderId}, actorId, actorName:commit.actor?.actorName||'ORDER IN 관리자', occurredAt:committedAt, createdAt:committedAt });
+    }
 
     await transactionDone(tx);
     broadcast('ORDER_CREATED', order);

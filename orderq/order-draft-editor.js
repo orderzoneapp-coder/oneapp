@@ -1,0 +1,11 @@
+import { numberOrNull, cycleManualPriceOption } from './manual-order-grid.js?v=0.8.0';
+import { applyProductSelection } from './product-line-common.js?v=0.8.0';
+const copy=v=>JSON.parse(JSON.stringify(v??null));
+export function createOrderDraftEditor({root,context={},initialDraft={},catalog=[],onChange=()=>{},onIntent=()=>{}}){
+ if(!root)throw new Error('ORDERQ_ORDER_DRAFT_EDITOR_ROOT_REQUIRED'); let draft=copy(initialDraft)||{header:{},lines:[]}; draft.header||={};draft.lines||=[];const dirty=new Set();
+ const emit=i=>{onChange(api.getDraft());onIntent(i,api.getDraft())}; const api={
+ getDraft(){if(context.mode==='adopt')return {...copy(draft),lines:[...root.querySelectorAll('tr')].map((r,i)=>({lineNo:i+1,itemCode:r.querySelector('[data-field="itemCode"]')?.value||'',itemName:r.querySelector('[data-field="itemName"]')?.value||'',finalQuantity:numberOrNull(r.querySelector('[data-field="finalQuantity"]')?.value),price:numberOrNull(r.querySelector('[data-field="price"]')?.value)}))};return copy(draft)},
+ setDraft(v){draft=copy(v);dirty.add('*');emit('SET_DRAFT')},patchHeader(v){Object.assign(draft.header,v);dirty.add('header');emit('PATCH_HEADER')},addLine(v={}){draft.lines.push(v);dirty.add('lines');emit('ADD_LINE')},removeLine(i){return draft.lines.splice(i,1)[0]},focusLine(i){return Boolean(root.querySelectorAll('tr')[i]?.querySelector('input')?.focus())},
+ applyProduct(i,p){draft.lines[i]={...draft.lines[i],...applyProductSelection(context.productContext||'ORDER',draft.lines[i],p),reviewStatus:'CONFIRMED',productIdentityStatus:'MASTER_LINKED'};emit('APPLY_PRODUCT')},clearProduct(i){Object.assign(draft.lines[i],{productId:null,itemCode:'',reviewStatus:'PENDING',productIdentityStatus:'UNRESOLVED'});emit('CLEAR_PRODUCT')},setPriceChoice(i,p){Object.assign(draft.lines[i],p);emit('SET_PRICE')},cyclePrice(i,d=1){draft.lines[i]=cycleManualPriceOption(draft.lines[i],d);emit('CYCLE_PRICE')},
+ validate(){const errors=[];(api.getDraft().lines||[]).filter(x=>!x.excluded).forEach((x,i)=>{if(!x.itemName)errors.push({line:i,message:'상품명을 확인하세요.'});if(!['MASTER_LINKED','TEMPORARY_CONFIRMED'].includes(x.productIdentityStatus))errors.push({line:i,message:'확인되지 않은 상품이 있습니다.'})});return{valid:!errors.length,errors}},getDirtyFields(){return[...dirty]},destroy(){dirty.clear()}};root.dataset.orderDraftEditor='ready';return api;
+}

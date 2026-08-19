@@ -6,6 +6,7 @@
   <meta name="google" content="notranslate">
   <title>ONEAPP ORDER Q vNext · 주문서 입력</title>
   <link rel="stylesheet" href="./orderq.css?v=0.11.0">
+  <link rel="stylesheet" href="./order-draft-editor.css?v=0.1.0">
 </head>
 <body class="manual-order-page">
   <div class="shell">
@@ -231,6 +232,7 @@
     import {
       calculateLineTotal, calculateVatAmount, compareManualRows, cycleManualPriceOption, numberOrNull, shiftIsoDate
     } from './manual-order-grid.js?v=0.8.0';
+    import { createOrderDraftEditor } from './order-draft-editor.js?v=0.1.0';
     import { INPUT_CHANNEL_LABEL } from './order-document-model.js?v=0.8.0';
 
     const params = new URLSearchParams(location.search);
@@ -278,6 +280,7 @@
     const warehouseInput = document.getElementById('warehouse');
     const warehouseOptions = document.getElementById('warehouseOptions');
     const transactionTypeInput = document.getElementById('transactionType');
+    const directOrderDraftEditor = createOrderDraftEditor({ root: document.getElementById('itemRows'), context: { mode: 'adopt', productContext: 'ORDER', consumer: 'DIRECT_INPUT' }, initialDraft: { header: {}, lines: [] } });
     const assigneeNameInput = document.getElementById('assigneeName');
     const orderStatusInput = document.getElementById('orderStatus');
     const adminStatusInput = document.getElementById('adminStatus');
