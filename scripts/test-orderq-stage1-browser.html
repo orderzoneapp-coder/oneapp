@@ -87,6 +87,13 @@
       return rows;
     }
 
+    async function expectFailure(action, expected, label) {
+      let actual = '';
+      try { await action(); }
+      catch (error) { actual = error.code || error.message; }
+      assert(actual === expected, `${label}:${actual || 'NO_ERROR'}`);
+    }
+
     async function runProfile(profileName) {
       let warningCount = 0;
       let errorCount = 0;
@@ -153,10 +160,53 @@
       assert(occurrenceConflict === 'ORDERQ_INTAKE_OCCURRENCE_CONTENT_CONFLICT', 'occurrence conflict missing');
       assert(canonicalStringify(await storeRows(V8_STORE_DEFINITIONS.map(row => row.name))) === beforeOccurrence, 'occurrence conflict changed stores');
 
+      const documentStateStores = ['intakeDocuments','intakeLines','intakeEvents'];
+      const beforeInvalidDocument = canonicalStringify(await storeRows(documentStateStores));
+      await expectFailure(() => createIntakeDocument({
+        actor:'ADMIN', intakeSessionId:`SESSION-${profileName}`, sourceDocumentKey:`${sourceDocumentKey}-BAD-STAGE`,
+        documentType:'ORDER', stage:'NOT_A_STAGE'
+      }), 'ORDERQ_INTAKE_STAGE_INVALID:NOT_A_STAGE', 'invalid document stage not rejected');
+      await expectFailure(() => createIntakeDocument({
+        actor:'ADMIN', intakeSessionId:`SESSION-${profileName}`, sourceDocumentKey:`${sourceDocumentKey}-BAD-REVIEW`,
+        documentType:'ORDER', reviewStatus:'NOT_A_REVIEW'
+      }), 'ORDERQ_INTAKE_REVIEW_STATUS_INVALID:NOT_A_REVIEW', 'invalid document review not rejected');
+      assert(canonicalStringify(await storeRows(documentStateStores)) === beforeInvalidDocument, 'invalid document state changed stores');
+
       const document = await createIntakeDocument({
         actor:'ADMIN', intakeSessionId:`SESSION-${profileName}`, intakeDocumentId:`DOCUMENT-${profileName}`,
         sourceDocumentKey, sourceMessageKeys:['MESSAGE-STAGE1'], documentType:'ORDER', segmentationVersion:'FIXTURE_V1'
       });
+
+      const beforeInvalidTransition = canonicalStringify(await storeRows(documentStateStores));
+      await expectFailure(() => replaceIntakeLines({
+        actor:'ADMIN', intakeDocumentId:document.document.intakeDocumentId, expectedRevision:1,
+        nextStage:'NOT_A_STAGE', lines:[]
+      }), 'ORDERQ_INTAKE_STAGE_INVALID:NOT_A_STAGE', 'invalid stage transition not rejected');
+      await expectFailure(() => replaceIntakeLines({
+        actor:'ADMIN', intakeDocumentId:document.document.intakeDocumentId, expectedRevision:1,
+        nextStage:'MATCH_REVIEW', reviewStatus:'NOT_A_REVIEW', lines:[]
+      }), 'ORDERQ_INTAKE_REVIEW_STATUS_INVALID:NOT_A_REVIEW', 'invalid review transition not rejected');
+      assert(canonicalStringify(await storeRows(documentStateStores)) === beforeInvalidTransition, 'invalid document transition changed stores');
+
+      const invalidLineBase = {
+        intakeLineId:`INVALID-LINE-${profileName}`, sourceLineKey, rawExpression:'대파 2', productText:'대파', quantity:2, unit:'개',
+        matchStatus:'MATCH_FAILED'
+      };
+      const beforeInvalidIdentity = canonicalStringify(await storeRows(documentStateStores));
+      await expectFailure(() => replaceIntakeLines({
+        actor:'ADMIN', intakeDocumentId:document.document.intakeDocumentId, expectedRevision:1, nextStage:'MATCH_REVIEW',
+        lines:[{ ...invalidLineBase, productId:null, itemCode:'', itemName:'대파', reviewStatus:'CONFIRMED', productIdentityStatus:'MASTER_LINKED' }]
+      }), 'ORDERQ_INTAKE_MASTER_IDENTITY_REQUIRED', 'invalid MASTER_LINKED not rejected');
+      await expectFailure(() => replaceIntakeLines({
+        actor:'ADMIN', intakeDocumentId:document.document.intakeDocumentId, expectedRevision:1, nextStage:'MATCH_REVIEW',
+        lines:[{ ...invalidLineBase, productId:null, itemCode:'100', itemName:'임시상품', reviewStatus:'CONFIRMED', productIdentityStatus:'TEMPORARY_CONFIRMED' }]
+      }), 'ORDERQ_INTAKE_TEMPORARY_MASTER_IDENTITY_FORBIDDEN', 'invalid TEMPORARY_CONFIRMED not rejected');
+      await expectFailure(() => replaceIntakeLines({
+        actor:'ADMIN', intakeDocumentId:document.document.intakeDocumentId, expectedRevision:1, nextStage:'MATCH_REVIEW',
+        lines:[{ ...invalidLineBase, productId:null, itemCode:'', itemName:'대파', reviewStatus:'CONFIRMED', productIdentityStatus:'UNRESOLVED' }]
+      }), 'ORDERQ_INTAKE_CONFIRMED_UNRESOLVED_FORBIDDEN', 'CONFIRMED+UNRESOLVED not rejected');
+      assert(canonicalStringify(await storeRows(documentStateStores)) === beforeInvalidIdentity, 'invalid line identity changed stores');
+
       const replaced = await replaceIntakeLines({
         actor:'ADMIN', intakeDocumentId:document.document.intakeDocumentId, expectedRevision:1, nextStage:'DOCUMENT_REVIEW',
         lines:[{
@@ -182,14 +232,31 @@
           matchStatus:'MATCH_FAILED', reviewStatus:'CONFIRMED', productIdentityStatus:'TEMPORARY_CONFIRMED'
         }]
       };
+
+      const orderInvariantStores = [
+        'customers','customerAliases','warehouses','warehouseAliases',
+        'orders','orderItems','orderEvents','syncQueue'
+      ];
+      const beforeInvalidOrderIdentity = canonicalStringify(await storeRows(orderInvariantStores));
+      await expectFailure(() => createOrder({
+        ...orderPayload,
+        items:[{ ...orderPayload.items[0], productId:null, itemCode:'', itemName:'대파', reviewStatus:'CONFIRMED', productIdentityStatus:'MASTER_LINKED' }]
+      }), 'ORDERQ_INTAKE_MASTER_IDENTITY_REQUIRED', 'final ORDER_ITEM invalid MASTER_LINKED not rejected');
+      await expectFailure(() => createOrder({
+        ...orderPayload,
+        items:[{ ...orderPayload.items[0], productId:null, itemCode:'100', itemName:'임시상품', reviewStatus:'CONFIRMED', productIdentityStatus:'TEMPORARY_CONFIRMED' }]
+      }), 'ORDERQ_INTAKE_TEMPORARY_MASTER_IDENTITY_FORBIDDEN', 'final ORDER_ITEM invalid TEMPORARY not rejected');
+      await expectFailure(() => createOrder({
+        ...orderPayload,
+        items:[{ ...orderPayload.items[0], productId:null, itemCode:'', itemName:'대파', reviewStatus:'CONFIRMED', productIdentityStatus:'UNRESOLVED' }]
+      }), 'ORDERQ_INTAKE_CONFIRMED_UNRESOLVED_FORBIDDEN', 'final ORDER_ITEM CONFIRMED+UNRESOLVED not rejected');
+      assert(canonicalStringify(await storeRows(orderInvariantStores)) === beforeInvalidOrderIdentity, 'invalid final ORDER_ITEM changed stores');
+
       const created = await createOrder(orderPayload);
       assert(created.duplicate === false, 'first order should be new');
       assert(created.items[0].productId === null && created.items[0].itemCode === '', 'temporary item master identity changed');
       assert(created.items[0].reviewStatus === 'CONFIRMED' && created.items[0].productIdentityStatus === 'TEMPORARY_CONFIRMED', 'temporary order item fields lost');
-      const duplicateStores = [
-        'customers','customerAliases','warehouses','warehouseAliases',
-        'orders','orderItems','orderEvents','syncQueue'
-      ];
+      const duplicateStores = orderInvariantStores;
       const countsBeforeDuplicate = await storeRows(duplicateStores);
       const duplicate = await createOrder({ ...orderPayload, orderId:`DIFFERENT-${profileName}`, intakeSessionId:`LOCAL-RETRY-${profileName}` });
       const countsAfterDuplicate = await storeRows(duplicateStores);
@@ -240,6 +307,7 @@
         orderId:created.order.orderId, repeatedOrderId:repeated.order.orderId,
         canonicalHash, canonicalProjection,
         temporaryIdentity:{ reviewStatus:created.items[0].reviewStatus, productIdentityStatus:created.items[0].productIdentityStatus },
+        identityInvariantRollback:true, documentStateRollback:true,
         duplicateRowsUnchanged:true, conflictAtomic:true, backupRestore:true, v7BackupCompatible:true,
         warningCount, errorCount
       };
@@ -267,6 +335,7 @@
       assert(value[0].sourceOccurrenceKey === value[1].sourceOccurrenceKey, 'A/B native occurrence did not converge');
       assert(value[0].sourceDocumentKey === value[1].sourceDocumentKey, 'A/B source document did not converge');
       assert(value[0].canonicalHash === value[1].canonicalHash, 'A/B canonical hash did not converge');
+      assert(value.every(row => row.identityInvariantRollback && row.documentStateRollback), 'A/B invariant rollback evidence missing');
       assert(value.every(row => row.warningCount === 0 && row.errorCount === 0), 'A/B console warning/error present');
       return { status:'PASS', clients:value, aBConverged:true };
     }
