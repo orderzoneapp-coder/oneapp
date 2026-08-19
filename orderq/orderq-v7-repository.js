@@ -8,6 +8,7 @@ import {
   nowIso
 } from './orderq-db.js?v=0.8.0';
 import { requireActor } from './orderq-v7-contracts.js?v=0.8.0';
+import { V8_STORE } from './orderq-v8-contracts.js?v=0.11.0';
 
 export const ORDERQ_BACKUP_FORMAT = 'ONEAPP_ORDERQ_BACKUP';
 export const ORDERQ_BACKUP_FORMAT_VERSION = 1;
@@ -112,13 +113,17 @@ export function validateOrderQBackup(backup) {
 export async function restoreOrderQBackup(backup, actor) {
   const context = requireActor(actor);
   const validation = validateOrderQBackup(backup);
+  const v8StoreNames = Object.values(V8_STORE);
+  const restoreStoreNames = validation.schemaVersion < DB_VERSION
+    ? [...new Set([...validation.storeNames, ...v8StoreNames])]
+    : validation.storeNames;
   const db = await openOrderQDb();
-  const tx = db.transaction(validation.storeNames, 'readwrite');
+  const tx = db.transaction(restoreStoreNames, 'readwrite');
   try {
-    for (const name of validation.storeNames) {
+    for (const name of restoreStoreNames) {
       const store = tx.objectStore(name);
       store.clear();
-      for (const row of backup.stores[name]) store.put(cloneValue(row));
+      for (const row of backup.stores[name] || []) store.put(cloneValue(row));
     }
     await transactionDone(tx);
   } catch (error) {

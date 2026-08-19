@@ -37,6 +37,10 @@ assert.match(cloudGs, /existing\.order\.revision[\s\S]*baseRevision/, 'server mu
 assert.match(cloudGs, /orderQMetaByQueueId\(ss, queueId\)/, 'queueId idempotency check is required');
 assert.match(cloudGs, /status:\s*'conflict'/, 'server conflict result is required');
 assert.match(cloudGs, /sequence[\s\S]*queueId[\s\S]*baseRevision/, 'SYNC_META contract must retain sequence, queueId and baseRevision');
+assert.match(cloudGs, /orderQFindOrderBundleBySourceDocumentKey/, 'Stage 1 sourceDocumentKey lookup is required');
+assert.match(cloudGs, /ORDER_SOURCE_DOCUMENT_CANONICAL_V1/, 'Stage 1 canonical order version is required');
+assert.match(cloudGs, /ORDERQ_INTAKE_DOCUMENT_IDEMPOTENCY_CONFLICT/, 'same document key with different business facts must be rejected');
+assert.match(cloudGs, /orderQComputeOrderSourceDocumentCanonicalHash/, 'Cloud canonical hash must use the shared Stage 1 projection');
 
 assert.match(adapter, /oneapp_cloud_sync_url_v1/, 'shared cloud URL key must remain the primary URL source');
 assert.match(adapter, /merchCloudUrl_v870/, 'legacy cloud URL fallback must remain compatible');
@@ -50,6 +54,8 @@ assert.match(intake, /enqueue\(tx, 'CUSTOMER'/, 'new customer must enter sync qu
 assert.match(intake, /enqueue\(tx, 'CUSTOMER_ALIAS'/, 'new customer alias must enter sync queue');
 assert.match(intake, /enqueue\(tx, 'ORDER_EVENT'/, 'order events must enter sync queue');
 assert.match(intake, /enqueue\(tx, 'ORDER',[\s\S]*expectedRevision\)/, 'order update must queue expected revision as base revision');
+assert.match(intake, /bySourceDocumentKey/, 'client createOrder must prefer sourceDocumentKey idempotency');
+assert.match(intake, /ORDERQ_INTAKE_DOCUMENT_IDEMPOTENCY_CONFLICT/, 'client createOrder must reject sourceDocument business conflicts');
 
 assert.match(syncEngine, /class CloudOrderConflictError/);
 assert.match(syncEngine, /getCloudOrderHead\(orderId\)/, 'save preflight must query cloud order head');

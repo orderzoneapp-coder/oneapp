@@ -2,11 +2,15 @@ import {
   CAPABILITY,
   DISPATCH_STAGE_POLICY,
   MVP_ACTOR_ID,
-  ORDERQ_DB_VERSION,
   V7_EXISTING_STORE_INDEXES,
   V7_STORE,
   V7_STORE_DEFINITIONS
 } from './orderq-v7-contracts.js?v=0.8.0';
+import {
+  ORDERQ_DB_VERSION,
+  V8_STORE,
+  V8_STORE_DEFINITIONS
+} from './orderq-v8-contracts.js?v=0.11.0';
 import { adminTestDatabaseName } from './admin-test-runtime.js?v=0.10.2';
 
 function databaseNameForRuntime() {
@@ -54,7 +58,8 @@ export const STORE = Object.freeze({
   COLLECTOR_SETTINGS: 'collectorSettings',
   SYNC_QUEUE: 'syncQueue',
   META: 'meta',
-  ...V7_STORE
+  ...V7_STORE,
+  ...V8_STORE
 });
 
 let dbPromise = null;
@@ -235,6 +240,33 @@ export function upgradeOrderQDbSchema(db, transaction, oldVersion = 0) {
   ensureIndex(store, 'byEntity', ['entityType', 'entityId']);
 
   const metaStore = ensureStore(STORE.META, { keyPath: 'key' });
+
+  if (oldVersion < 8) {
+    for (const definition of V8_STORE_DEFINITIONS) {
+      const v8Store = ensureStore(definition.name, { keyPath: definition.keyPath });
+      for (const entry of definition.indexes) {
+        ensureIndex(v8Store, entry.name, entry.keyPath, entry.options);
+      }
+    }
+
+    const orderStore = transaction.objectStore(STORE.ORDERS);
+    if (orderStore.indexNames.contains('bySourceMessageKey')) orderStore.deleteIndex('bySourceMessageKey');
+    orderStore.createIndex('bySourceMessageKey', 'sourceMessageKey', { unique: false });
+    ensureIndex(orderStore, 'bySourceDocumentKey', 'sourceDocumentKey', { unique: true });
+
+    const cursorRequest = orderStore.openCursor();
+    cursorRequest.onsuccess = () => {
+      const cursor = cursorRequest.result;
+      if (!cursor) return;
+      const order = cursor.value;
+      const sourceMessageKey = String(order.sourceMessageKey || '').trim();
+      if (!String(order.sourceDocumentKey || '').trim() && sourceMessageKey) {
+        cursor.update({ ...order, sourceDocumentKey: `LEGACY:${sourceMessageKey}` });
+      }
+      cursor.continue();
+    };
+    metaStore.put({ key: 'schemaVersion', value: ORDERQ_DB_VERSION, updatedAt: new Date().toISOString() });
+  }
 
   if (oldVersion < 7) {
     for (const definition of V7_STORE_DEFINITIONS) {

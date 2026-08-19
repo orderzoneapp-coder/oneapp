@@ -305,6 +305,119 @@ function orderQReadOrderBundle(ss, orderId) {
   return { order, items };
 }
 
+const ORDERQ_SOURCE_DOCUMENT_CANONICAL_VERSION = 'ORDER_SOURCE_DOCUMENT_CANONICAL_V1';
+
+function orderQCanonicalValueV1(value) {
+  if (value === undefined) return null;
+  if (value === null || typeof value === 'string' || typeof value === 'boolean') return value;
+  if (typeof value === 'number') {
+    if (!isFinite(value)) throw new Error('ORDERQ_INTAKE_CANONICAL_NUMBER_INVALID');
+    return value === 0 ? 0 : value;
+  }
+  if (Array.isArray(value)) return value.map(orderQCanonicalValueV1);
+  if (typeof value === 'object') {
+    const result = {};
+    Object.keys(value).sort().forEach(key => { result[key] = orderQCanonicalValueV1(value[key]); });
+    return result;
+  }
+  return String(value);
+}
+
+function orderQCanonicalStringifyV1(value) {
+  return JSON.stringify(orderQCanonicalValueV1(value));
+}
+
+function orderQCanonicalPickV1(source, keys) {
+  for (let index = 0; index < keys.length; index++) {
+    const key = keys[index];
+    if (Object.prototype.hasOwnProperty.call(source || {}, key)) return orderQCanonicalValueV1(source[key]);
+  }
+  return null;
+}
+
+function orderQNormalizedIdentityTextV1(value) {
+  let result = value === undefined || value === null ? '' : String(value).trim();
+  try { result = result.normalize('NFKC'); } catch (error) {}
+  return result.toLowerCase().replace(/\s+/g, '');
+}
+
+function orderQCanonicalIdentityOrNameV1(source, idKeys, nameKeys) {
+  const idValue = orderQCanonicalPickV1(source, idKeys);
+  const id = idValue === undefined || idValue === null ? '' : String(idValue).trim();
+  return id ? { id } : { normalizedName: orderQNormalizedIdentityTextV1(orderQCanonicalPickV1(source, nameKeys)) };
+}
+
+function orderQCanonicalOrderItemV1(item, index) {
+  const sourceLineKey = String(item && item.sourceLineKey || '').trim()
+    || `LEGACY_LINE:${String(Number(item && item.lineNo || 0) || index + 1).padStart(6, '0')}`;
+  return {
+    sourceLineKey,
+    productId: orderQCanonicalPickV1(item, ['productId']),
+    itemCode: orderQCanonicalPickV1(item, ['itemCode', 'productCode']),
+    itemName: orderQCanonicalPickV1(item, ['itemName', 'productName']),
+    specification: orderQCanonicalPickV1(item, ['specification']),
+    rawQuantity: orderQCanonicalPickV1(item, ['rawQuantity', 'quantity']),
+    rawUnit: orderQCanonicalPickV1(item, ['rawUnit', 'unit']),
+    finalQuantity: orderQCanonicalPickV1(item, ['finalQuantity', 'quantity']),
+    finalUnit: orderQCanonicalPickV1(item, ['finalUnit', 'unit', 'rawUnit']),
+    price: orderQCanonicalPickV1(item, ['price', 'unitPrice']),
+    priceType: orderQCanonicalPickV1(item, ['priceType']),
+    supplyAmount: orderQCanonicalPickV1(item, ['supplyAmount']),
+    vatAmount: orderQCanonicalPickV1(item, ['vatAmount']),
+    memo: orderQCanonicalPickV1(item, ['memo']),
+    description: orderQCanonicalPickV1(item, ['description']),
+    noticePrice: orderQCanonicalPickV1(item, ['noticePrice']),
+    reviewStatus: orderQCanonicalPickV1(item, ['reviewStatus']),
+    productIdentityStatus: orderQCanonicalPickV1(item, ['productIdentityStatus']),
+    matchStatus: orderQCanonicalPickV1(item, ['matchStatus'])
+  };
+}
+
+function orderQBuildOrderSourceDocumentCanonicalProjection(bundle) {
+  const order = bundle && bundle.order || {};
+  const items = Array.isArray(bundle && bundle.items) ? bundle.items : [];
+  const canonicalItems = items.map(orderQCanonicalOrderItemV1)
+    .sort((left, right) => String(left.sourceLineKey).localeCompare(String(right.sourceLineKey)));
+  return orderQCanonicalValueV1({
+    version: ORDERQ_SOURCE_DOCUMENT_CANONICAL_VERSION,
+    header: {
+      orderDate: orderQCanonicalPickV1(order, ['orderDate']),
+      customer: orderQCanonicalIdentityOrNameV1(order, ['customerId'], ['customerName', 'normalizedCustomerName']),
+      warehouse: orderQCanonicalIdentityOrNameV1(order, ['warehouseId', 'warehouseCode'], ['warehouseName', 'warehouse']),
+      transactionType: orderQCanonicalPickV1(order, ['transactionType']),
+      deliveryExpectedDate: orderQCanonicalPickV1(order, ['deliveryExpectedDate']),
+      orderMessage: orderQCanonicalPickV1(order, ['orderMessage']),
+      externalOrderNo: orderQCanonicalPickV1(order, ['externalOrderNo']),
+      sourceType: orderQCanonicalPickV1(order, ['sourceType']),
+      sourceId: orderQCanonicalPickV1(order, ['sourceId']),
+      assigneeId: orderQCanonicalPickV1(order, ['assigneeId']),
+      assigneeName: orderQCanonicalPickV1(order, ['assigneeName']),
+      orderStatus: orderQCanonicalPickV1(order, ['orderStatus']),
+      adminStatus: orderQCanonicalPickV1(order, ['adminStatus'])
+    },
+    items: canonicalItems
+  });
+}
+
+function orderQComputeOrderSourceDocumentCanonicalHash(bundle) {
+  return sha256Hex(orderQCanonicalStringifyV1(orderQBuildOrderSourceDocumentCanonicalProjection(bundle)));
+}
+
+function orderQFindOrderBundleBySourceDocumentKey(ss, sourceDocumentKey) {
+  const key = String(sourceDocumentKey || '').trim();
+  if (!key) return null;
+  const sheet = orderQEnsureSheet(ss, 'ORDER');
+  if (sheet.getLastRow() < 2) return null;
+  const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, ORDERQ_HEADERS.ORDER.length).getValues();
+  for (let index = 0; index < rows.length; index++) {
+    try {
+      const order = JSON.parse(String(rows[index][6] || '{}'));
+      if (String(order.sourceDocumentKey || '').trim() === key) return orderQReadOrderBundle(ss, order.orderId);
+    } catch (error) {}
+  }
+  return null;
+}
+
 function orderQFindOrderBundleBySourceMessageKey(ss, sourceMessageKey) {
   const key = String(sourceMessageKey || '');
   if (!key) return null;
@@ -375,14 +488,22 @@ function orderQApplyOrder(ss, change) {
   if (!Number.isInteger(revision) || revision < 1 || Number(order.revision) !== revision) throw new Error('ORDERQ_ORDER_REVISION_INVALID');
 
   const existing = orderQReadOrderBundle(ss, order.orderId);
-  if (!existing && baseRevision === 0 && order.sourceMessageKey) {
-    const sameSource = orderQFindOrderBundleBySourceMessageKey(ss, order.sourceMessageKey);
+  if (!existing && baseRevision === 0 && (order.sourceDocumentKey || order.sourceMessageKey)) {
+    const sameSource = order.sourceDocumentKey
+      ? orderQFindOrderBundleBySourceDocumentKey(ss, order.sourceDocumentKey)
+      : orderQFindOrderBundleBySourceMessageKey(ss, order.sourceMessageKey);
     if (sameSource && sameSource.order && String(sameSource.order.orderId) !== String(order.orderId)) {
+      if (order.sourceDocumentKey) {
+        const existingHash = orderQComputeOrderSourceDocumentCanonicalHash(sameSource);
+        const requestedHash = orderQComputeOrderSourceDocumentCanonicalHash({ order, items });
+        if (existingHash !== requestedHash) throw new Error('ORDERQ_INTAKE_DOCUMENT_IDEMPOTENCY_CONFLICT');
+      }
       return {
         status: 'source_duplicate',
         serverRevision: Number(sameSource.order.revision || 0),
         serverOrderId: String(sameSource.order.orderId || ''),
-        serverPayload: sameSource
+        serverPayload: sameSource,
+        canonicalHash: order.sourceDocumentKey ? orderQComputeOrderSourceDocumentCanonicalHash(sameSource) : ''
       };
     }
   }

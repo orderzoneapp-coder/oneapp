@@ -38,6 +38,9 @@ jobs:
       - name: Test ORDER Q vNext cloud sync contracts
         run: node scripts/test-orderq-vnext-cloud-contract.mjs
 
+      - name: Test ORDER IN Stage 1 Intake DB and identity contracts
+        run: node scripts/test-orderq-stage1-intake-db.mjs
+
       - name: Test ORDER Q order-document workflow
         run: node scripts/test-orderq-order-workflow.mjs
 

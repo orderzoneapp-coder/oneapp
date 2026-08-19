@@ -127,7 +127,8 @@ assert.deepEqual(validateOrderQBackup(backup), {
   storeNames: ['orders'],
   counts: { orders: 1 }
 });
-assert.throws(() => validateOrderQBackup({ ...backup, schemaVersion: 8 }), /ORDERQ_BACKUP_SCHEMA_UNSUPPORTED/);
+assert.doesNotThrow(() => validateOrderQBackup({ ...backup, schemaVersion: 8 }));
+assert.throws(() => validateOrderQBackup({ ...backup, schemaVersion: 9 }), /ORDERQ_BACKUP_SCHEMA_UNSUPPORTED/);
 assert.throws(() => validateOrderQBackup({ ...backup, stores: { unknownStore: [] } }), /ORDERQ_BACKUP_UNKNOWN_STORE/);
 
 const dbSource = await readFile(new URL('../orderq/orderq-db.js', import.meta.url), 'utf8');
@@ -144,5 +145,5 @@ console.log(JSON.stringify({
   legacyCases,
   blankAndZeroIdentity: identity,
   actorBoundary: 'ADMIN default; explicit blank rejected',
-  backupSchemasAccepted: '1..7'
+  backupSchemasAccepted: '1..8 (v7 contract remains readable)'
 }, null, 2));

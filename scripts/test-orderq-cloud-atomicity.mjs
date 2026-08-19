@@ -258,6 +258,72 @@ function pushOrder(revision, quantity, queueId, includeToken = true) {
   return post(payload);
 }
 
+function pushBundle(bundle, queueId) {
+  return post({
+    action: 'orderq_sync_push',
+    token: TOKEN,
+    schemaVersion: 'ONEAPP_ORDERQ_SYNC_V1',
+    deviceId: 'TEST-PC-STAGE1',
+    changes: [{
+      queueId,
+      entityType: 'ORDER',
+      entityId: bundle.order.orderId,
+      operation: 'UPSERT',
+      revision: 1,
+      baseRevision: 0,
+      payload: bundle
+    }]
+  });
+}
+
+function stage1Bundle(orderId, orderItemId, quantity = 2) {
+  return {
+    order: {
+      orderId,
+      revision: 1,
+      orderNo: orderId === 'ORDER-STAGE1-A' ? '20260818-001' : '20260818-999',
+      orderDate: '2026-08-18',
+      customerId: 'CUSTOMER-STAGE1',
+      customerName: '표시명은 비교에서 제외',
+      warehouseId: 'WAREHOUSE-STAGE1',
+      warehouseName: '테스트 창고',
+      transactionType: 'SALE',
+      deliveryExpectedDate: '',
+      orderMessage: '',
+      sourceType: 'ORDER_IN',
+      sourceId: 'ROOM-STAGE1',
+      sourceMessageKey: 'MESSAGE-STAGE1',
+      sourceDocumentKey: 'SOURCE-DOCUMENT-STAGE1',
+      orderStatus: 'ORDER',
+      adminStatus: 'UNCHECKED',
+      intakeSessionId: `LOCAL-${orderId}`,
+      createdAt: orderId,
+      updatedAt: orderId
+    },
+    items: [{
+      orderItemId,
+      orderId,
+      lineNo: 1,
+      sourceLineKey: 'SOURCE-LINE-STAGE1',
+      productId: null,
+      itemCode: '',
+      itemName: '관리자 임시상품',
+      rawQuantity: quantity,
+      rawUnit: '개',
+      finalQuantity: quantity,
+      finalUnit: '개',
+      price: 0,
+      supplyAmount: 0,
+      vatAmount: null,
+      matchStatus: 'MATCH_FAILED',
+      reviewStatus: 'CONFIRMED',
+      productIdentityStatus: 'TEMPORARY_CONFIRMED',
+      createdAt: orderItemId,
+      updatedAt: orderItemId
+    }]
+  };
+}
+
 const denied = pushOrder(1, 3, "QUEUE-DENIED", false);
 assert.equal(denied.status, "error");
 assert.match(denied.message, /ORDERQ_ACCESS_DENIED/);
@@ -267,6 +333,20 @@ assert.equal(created.status, "success");
 assert.equal(created.data.results[0].status, "applied");
 assert.equal(created.data.results[0].serverRevision, 1);
 assert.equal(context.orderQReadOrderBundle(spreadsheet, "ORDER-001").items[0].quantity, 3);
+
+const stage1Created = pushBundle(stage1Bundle('ORDER-STAGE1-A', 'ITEM-STAGE1-A'), 'QUEUE-STAGE1-A');
+assert.equal(stage1Created.data.results[0].status, 'applied');
+const stage1Cursor = stage1Created.data.cursor;
+const stage1Duplicate = pushBundle(stage1Bundle('ORDER-STAGE1-B', 'ITEM-STAGE1-B'), 'QUEUE-STAGE1-B');
+assert.equal(stage1Duplicate.data.results[0].status, 'source_duplicate');
+assert.equal(stage1Duplicate.data.results[0].serverOrderId, 'ORDER-STAGE1-A');
+assert.equal(stage1Duplicate.data.cursor, stage1Cursor, 'canonical duplicate must not append sync meta');
+assert.equal(context.orderQReadOrderBundle(spreadsheet, 'ORDER-STAGE1-B'), null);
+const stage1Conflict = pushBundle(stage1Bundle('ORDER-STAGE1-C', 'ITEM-STAGE1-C', 4), 'QUEUE-STAGE1-C');
+assert.equal(stage1Conflict.data.results[0].status, 'error');
+assert.match(stage1Conflict.data.results[0].message, /ORDERQ_INTAKE_DOCUMENT_IDEMPOTENCY_CONFLICT/);
+assert.equal(stage1Conflict.data.cursor, stage1Cursor, 'canonical conflict must not append sync meta');
+assert.equal(context.orderQReadOrderBundle(spreadsheet, 'ORDER-STAGE1-C'), null);
 
 const transactionSheet = spreadsheet.getSheetByName("ORDER_TXN_LOG");
 assert.equal(transactionSheet.getCell(transactionSheet.getLastRow(), 3), "COMMITTED");
