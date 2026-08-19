@@ -173,15 +173,39 @@ export function orderIntakeProvenanceSnapshot(payload = {}, previous = {}) {
   };
 }
 
+export function validateOrderItemIdentityState(input = {}, hasMasterIdentity = false) {
+  const reviewStatus = String(input.reviewStatus || '').trim().toUpperCase();
+  const productIdentityStatus = String(input.productIdentityStatus || '').trim().toUpperCase();
+  if (!VALID_REVIEW_STATUS.has(reviewStatus)) throw new Error(`ORDERQ_INTAKE_REVIEW_STATUS_INVALID:${reviewStatus}`);
+  if (!VALID_PRODUCT_IDENTITY_STATUS.has(productIdentityStatus)) throw new Error(`ORDERQ_INTAKE_PRODUCT_IDENTITY_INVALID:${productIdentityStatus}`);
+
+  const productId = String(input.productId ?? '').trim();
+  const itemCode = String(input.itemCode ?? '').trim();
+  const itemName = String(input.itemName ?? '').trim();
+  const completeMasterIdentity = Boolean(hasMasterIdentity || (productId && itemCode && itemName));
+
+  if (productIdentityStatus === 'MASTER_LINKED' && !completeMasterIdentity) {
+    throw new Error('ORDERQ_INTAKE_MASTER_IDENTITY_REQUIRED');
+  }
+  if (productIdentityStatus === 'TEMPORARY_CONFIRMED') {
+    if (!itemName) throw new Error('ORDERQ_INTAKE_TEMPORARY_NAME_REQUIRED');
+    if (productId || itemCode) throw new Error('ORDERQ_INTAKE_TEMPORARY_MASTER_IDENTITY_FORBIDDEN');
+    if (!['CONFIRMED', 'EXCLUDED'].includes(reviewStatus)) throw new Error('ORDERQ_INTAKE_TEMPORARY_REVIEW_REQUIRED');
+  }
+  if (productIdentityStatus === 'UNRESOLVED' && reviewStatus === 'CONFIRMED') {
+    throw new Error('ORDERQ_INTAKE_CONFIRMED_UNRESOLVED_FORBIDDEN');
+  }
+  return { reviewStatus, productIdentityStatus };
+}
+
 export function orderItemIdentitySnapshot(input = {}, hasMasterIdentity = false) {
   const requestedReview = String(input.reviewStatus || '').trim().toUpperCase();
   const requestedIdentity = String(input.productIdentityStatus || '').trim().toUpperCase();
-  const reviewStatus = VALID_REVIEW_STATUS.has(requestedReview)
-    ? requestedReview
-    : (hasMasterIdentity ? 'CONFIRMED' : 'PENDING');
-  const productIdentityStatus = VALID_PRODUCT_IDENTITY_STATUS.has(requestedIdentity)
-    ? requestedIdentity
-    : (hasMasterIdentity ? 'MASTER_LINKED' : 'UNRESOLVED');
+  if (requestedReview && !VALID_REVIEW_STATUS.has(requestedReview)) throw new Error(`ORDERQ_INTAKE_REVIEW_STATUS_INVALID:${requestedReview}`);
+  if (requestedIdentity && !VALID_PRODUCT_IDENTITY_STATUS.has(requestedIdentity)) throw new Error(`ORDERQ_INTAKE_PRODUCT_IDENTITY_INVALID:${requestedIdentity}`);
+  const reviewStatus = requestedReview || (hasMasterIdentity ? 'CONFIRMED' : 'PENDING');
+  const productIdentityStatus = requestedIdentity || (hasMasterIdentity ? 'MASTER_LINKED' : 'UNRESOLVED');
+  validateOrderItemIdentityState({ ...input, reviewStatus, productIdentityStatus }, hasMasterIdentity);
   return {
     intakeLineId: String(input.intakeLineId || '').trim(),
     sourceLineKey: String(input.sourceLineKey || '').trim(),
