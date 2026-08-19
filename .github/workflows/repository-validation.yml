@@ -110,6 +110,9 @@ jobs:
       - name: Test DataOps LOT merge cost choices
         run: node scripts/test-dataops-lot-detail-layout.mjs
 
+      - name: Test DataOps average-merge 100-won rounding
+        run: node scripts/test-dataops-average-merge-rounding.mjs
+
       - name: Test DataOps evidence report and F9 preflight
         run: node scripts/test-dataops-evidence-report-preflight.mjs
 

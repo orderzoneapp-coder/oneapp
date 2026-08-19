@@ -2745,7 +2745,7 @@ const FILTER_SORT_MODULE = Object.freeze({
 // V1.a22.79: 별도 Lot 검수모드와 일반 Tab 가로채기를 제거한다. 재고/Lot 카드에서는 기존 수량·Lot 이슈, 마이너스 재고, 재고가 남은 다중 Lot 상품을 한 목록으로 합쳐 품목코드 오름차순으로 검출·이동한다.
 // V1.a22.80: 재고/Lot 필터를 품목코드 그룹 유지 방식으로 보완한다. 한 Lot을 0으로 수정해 다중 Lot 조건이 해제되어도 같은 코드의 나머지 행은 편집 중 사라지지 않으며, 순수 Lot 후보의 0재고 행 제외 정책은 유지한다.
 // V1.a22.84: 재고/Lot 이슈카드는 필터가 아니라 탐색 기능으로 동작한다. 카드/Tab 이동 중에도 전체 상품행을 유지하고, 검출대상만 품목코드순으로 스크롤 이동한다.
-// V1.a22.114: Lot 상세형은 [선택원가 통합]과 [평균가 통합]을 분리한다. 선택원가는 클릭한 행의 단가를 유지하고 평균가는 양수 잔량 Lot만 수량가중 평균한다.
+// V1.a22.114: Lot 상세형은 [선택원가 통합]과 [평균가 통합]을 분리한다. 선택원가는 클릭한 행의 단가를 유지하고 평균가는 양수 잔량 Lot만 수량가중 평균한 뒤 100원 단위로 반올림한다.
 // V1.a22.84: 재고/Lot Tab은 검토 위치만 이동한다. 확인 완료는 관리자 행 버튼으로만 기록한다.
 // V1.a22.84: 재고/Lot 이동은 카드 선택 시 생성한 고정 품목코드순 큐와 방문경로 커서로 관리한다. Tab/Shift+Tab이 같은 기준을 사용하며 현재 행 제외 후 첫 항목으로 튀는 오류를 제거한다.
 // V1.a22.84: 스페이스바 치환 중 선택한 두 행을 현재 검토 세션의 완료키로 기록한다. 치환 후에도 검토 커서와 방문경로를 유지하고 다음 미확인 항목부터 순서대로 이동한다.
@@ -2866,6 +2866,7 @@ const DATAOPS_CODE_MERGE_OVERRIDE_MODULE = Object.freeze({
     }
 });
 
+const roundDataOpsAverageMergePrice = (averagePrice = 0) => Math.round(safeNum(averagePrice) / 100) * 100;
 
 const DATAOPS_VIEW_LAYER_MODULE = Object.freeze({
     STORAGE_KEY: 'dataops_view_mode_v1',
@@ -3075,18 +3076,21 @@ const DATAOPS_VIEW_LAYER_MODULE = Object.freeze({
         // V1.a22.29: 코드 통합형 상품명 하단의 구매정보는 구매처 계열만 사용한다. 판매처/거래처명은 거래처칩 영역 전용이다.
         const vendorSet = [...new Set(sourceRows.map(r => safeStr(r._displayPurchaseVendor || r._purchaseLotVendor || r._confirmedPurchaseVendor || (r._uploadRole === 'out' ? '' : r.거래처) || '')).filter(Boolean))];
         // V1.a22.114: 개별 LOT 통합 선택은 전역 대표단가 설정보다 우선한다.
-        // 선택원가는 클릭한 LOT 단가를 유지하고, 평균가는 양수 잔량 LOT만 수량가중 평균 후 원 단위 반올림한다.
+        // 선택원가는 클릭한 LOT 단가를 유지한다. 평균가 통합은 양수 잔량·양수 단가 LOT의 raw 수량가중 평균을 구한 뒤 마지막에 한 번만 100원 단위로 반올림한다.
         const mergePriceMode = DATAOPS_CODE_MERGE_OVERRIDE_MODULE.getPriceMode(code);
         const costBasisMode = mergePriceMode || DATAOPS_VIEW_LAYER_MODULE.getCostBasisMode();
         const qtyForPrice = (row = {}) => Math.max(0, DATAOPS_VIEW_LAYER_MODULE.getRowStockQty(row));
         const priceRows = sourceRows.filter(r => safeNum(r.단가) > 0);
         const weightedQty = priceRows.reduce((s, r) => s + qtyForPrice(r), 0);
         const weightedCost = priceRows.reduce((s, r) => s + (qtyForPrice(r) * safeNum(r.단가)), 0);
+        const weightedAveragePrice = weightedQty > 0 ? weightedCost / weightedQty : null;
         const highestPrice = priceRows.reduce((max, r) => Math.max(max, safeNum(r.단가)), 0);
         const representativePrice = representativeRow && costBasisMode !== 'average' && costBasisMode !== 'highest'
             ? safeNum(representativeRow.단가)
             : (costBasisMode === 'average'
-                ? (weightedQty > 0 ? Math.round(weightedCost / weightedQty) : safeNum((representativeRow || latestPriceRow).단가))
+                ? (weightedAveragePrice !== null
+                    ? (mergePriceMode === 'average' ? roundDataOpsAverageMergePrice(weightedAveragePrice) : Math.round(weightedAveragePrice))
+                    : safeNum((representativeRow || latestPriceRow).단가))
                 : (costBasisMode === 'highest'
                     ? (highestPrice || safeNum((representativeRow || latestPriceRow).단가))
                     : safeNum((representativeRow || latestPriceRow).단가)));
@@ -8501,7 +8505,7 @@ const ProductRow = React.memo(({ item, idx, isLinked, isActiveMulti, isMultiGrou
                                 : 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100';
                             return React.createElement(React.Fragment, null,
                                 React.createElement("button", { type: "button", onClick: (e) => { e.preventDefault(); e.stopPropagation(); onToggleCodeMerge(item._mergeOverrideCode || item.코드, representativeKey, action); }, className: `ml-2 shrink-0 px-2 py-[3px] rounded border text-[11px] font-black ${buttonClass}`, title }, label),
-                                isLotDetailMergeButtonRow && isLotReviewGroupStart && React.createElement("button", { type: "button", onClick: (e) => { e.preventDefault(); e.stopPropagation(); onToggleCodeMerge(item._mergeOverrideCode || item.코드, '', 'detail-merge-average'); }, className: "ml-1 shrink-0 px-2 py-[3px] rounded border text-[11px] font-black bg-emerald-600 text-white border-emerald-700 hover:bg-emerald-700", title: "재고가 남은 LOT 수량을 합산하고, 양수 잔량 LOT의 수량가중 평균원가를 원 단위로 반올림하여 적용합니다." }, "평균가 통합"));
+                                isLotDetailMergeButtonRow && isLotReviewGroupStart && React.createElement("button", { type: "button", onClick: (e) => { e.preventDefault(); e.stopPropagation(); onToggleCodeMerge(item._mergeOverrideCode || item.코드, '', 'detail-merge-average'); }, className: "ml-1 shrink-0 px-2 py-[3px] rounded border text-[11px] font-black bg-emerald-600 text-white border-emerald-700 hover:bg-emerald-700", title: "재고가 남은 LOT 수량을 합산하고, 양수 잔량·양수 단가 LOT의 수량가중 평균원가를 마지막에 한 번만 100원 단위로 반올림하여 적용합니다." }, "평균가 통합"));
                         })()),
                     React.createElement("div", { className: "text-[10px] text-slate-500 truncate font-medium tracking-tight flex items-center" },
                         item.코드 !== '-' && item.코드 !== 'NO_CODE' ? React.createElement("span", { className: "mr-1" }, item.코드) : '',
