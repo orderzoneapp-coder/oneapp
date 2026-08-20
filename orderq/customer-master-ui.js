@@ -191,6 +191,9 @@ async function readExcel(file) {
 elements.viewport.addEventListener('scroll', renderWindow, { passive: true });
 elements.search.addEventListener('input', applyFilter);
 elements.filter.addEventListener('change', applyFilter);
+elements.form.querySelectorAll('[data-close-customer-editor]').forEach(button => {
+  button.addEventListener('click', () => elements.editor.close());
+});
 elements.form.addEventListener('submit', saveEditor);
 document.querySelector('#newCustomerButton').addEventListener('click', () => openEditor());
 document.querySelector('#openImportButton').addEventListener('click', () => { elements.importWorkbench.hidden = false; elements.importWorkbench.scrollIntoView({ behavior: 'smooth' }); });

@@ -55,7 +55,9 @@ assert.match(ui, /state\.filtered\.slice\(start, end\)/);
 assert.match(ui, /canApplyCustomerImport\(state\.importRecords\)/);
 assert.match(html, /customerExcelFile/);
 assert.match(html, /거래처 Master/);
-assert.match(html, /customer-master-ui\.js\?v=0\.12\.1/, 'Customer Master entry module must invalidate the deployed cache');
+assert.match(html, /customer-master-ui\.js\?v=0\.12\.2/, 'Customer Master entry module must invalidate the deployed cache');
+assert.equal((html.match(/data-close-customer-editor/g) || []).length, 2, 'Customer Editor must expose close and cancel controls');
+assert.match(ui, /querySelectorAll\('\[data-close-customer-editor\]'\)[\s\S]*elements\.editor\.close\(\)/, 'Customer Editor close controls must bypass form submission');
 assert.match(service, /orderq-db\.js\?v=0\.12\.1/, 'Customer Master must load the fixed DB upgrade module URL');
 assert.match(css, /\.cm-viewport/);
 
