@@ -109,16 +109,17 @@ const loadTools = merch.indexOf('data-merch-toolbar-group": "parser-catalog"');
 const excelTools = merch.indexOf('data-merch-toolbar-group": "excel"', loadTools);
 const tableView = merch.indexOf("showTableViewSelect && commonExcelTableViewOptions.length > 0", excelTools);
 const operationTools = merch.indexOf('data-merch-toolbar-group": "operations"', tableView);
-const autoRule = merch.indexOf('"aria-label": "파일 불러오기 시 출고가 자동적용"', operationTools);
+const mainFilter = merch.indexOf('title: "필터·조회: 조건을 선택한 뒤 우측 액션을 실행합니다."', operationTools);
+const mainReset = merch.indexOf("onClick: handleReset", operationTools);
+const fixedTools = merch.indexOf('title: "출고가·제외·필터 초기화·검색"', mainFilter);
+const autoRule = merch.indexOf('"aria-label": "파일 불러오기 시 출고가 자동적용"', fixedTools);
 const manualRule = merch.indexOf("onClick: handleForceApplyMarginRules", autoRule);
-const mainReset = merch.indexOf("onClick: handleReset", manualRule);
-assert.ok(loadTools >= 0 && excelTools > loadTools && tableView > excelTools && operationTools > tableView && autoRule > operationTools && manualRule > autoRule && mainReset > manualRule,
-  "The table view must stay in the Excel group while auto-rule, manual out-price, and reset stay in the operation group");
-const fixedTools = merch.indexOf('title: "기본 판매가·필터 초기화·검색"');
+assert.ok(loadTools >= 0 && excelTools > loadTools && tableView > excelTools && operationTools > tableView && mainReset > operationTools && mainReset < mainFilter && fixedTools > mainFilter && autoRule > fixedTools && manualRule > autoRule,
+  "The table view must stay in the Excel group, reset in the top operation group, and out-price controls in the lower-right group");
 const filterReset = merch.indexOf("onClick: handleFilterResetOnly", fixedTools);
 const searchBar = merch.indexOf("React.createElement(SearchBar", fixedTools);
-assert.ok(fixedTools >= 0 && filterReset > fixedTools && searchBar > filterReset,
-  "Filter reset must remain immediately left of search");
+assert.ok(fixedTools >= 0 && filterReset > manualRule && searchBar > filterReset,
+  "The moved out-price controls must precede filter reset and search");
 assert.equal((merch.match(/onClick: handleForceApplyMarginRules/g) || []).length, 1,
   "Rule apply must appear once and must not remain in the promotion workbench");
 assert.match(merch, /출고가: 선택행 또는 현재 화면에 기존 마진룰을 수동 적용합니다/);
