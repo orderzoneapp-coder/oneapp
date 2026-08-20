@@ -13,7 +13,7 @@ import {
   getLatestCustomerSourceImportWork,
   prepareCustomerSourceImport,
   setCustomerSourceImportDecision
-} from './customer-source-import.js?v=0.14.0';
+} from './customer-source-import.js?v=0.14.1';
 import { openCustomerPicker } from './customer-picker.js?v=0.12.1';
 import { pushPending } from './orderq-sync-engine.js?v=0.14.0';
 

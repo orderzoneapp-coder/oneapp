@@ -381,7 +381,11 @@ export async function prepareCustomerSourceImport(rows, { sourceSystem, fileName
     const reusableBatch = batches
       .filter(batch => batch.sourceType === SOURCE_IMPORT_TYPE && batch.sourceSystem === system && batch.fileHash === fileHash && ['PREPARED', 'PARTIAL'].includes(batch.status))
       .sort((a, b) => String(b.updatedAt || b.createdAt).localeCompare(String(a.updatedAt || a.createdAt)))[0];
-    if (reusableBatch) return { batch: reusableBatch, records: await getCustomerSourceImportRecords(reusableBatch.importBatchId), resumed: true };
+    if (reusableBatch) {
+      const reusableRecords = await getCustomerSourceImportRecords(reusableBatch.importBatchId);
+      const hasStaleLinkConflict = reusableRecords.some(record => String(record.errorMessage || '').includes('CUSTOMER_SOURCE_LINK_REVISION_CONFLICT'));
+      if (!hasStaleLinkConflict) return { batch: reusableBatch, records: reusableRecords, resumed: true };
+    }
   }
 
   try { await pullRemote(); } catch (error) { console.warn('Customer source pre-import pull failed', error); }
@@ -462,6 +466,7 @@ export async function prepareCustomerSourceImport(rows, { sourceSystem, fileName
       selectedCustomerId,
       existingSourceLinkId: existingLink?.linkId || '',
       sourceLinkCustomerId: existingLink?.customerId || '',
+      sourceLinkRevision: Number(existingLink?.revision || 0),
       matchMethod,
       candidateCustomerIds: candidates.map(candidate => candidate.customerId),
       candidateEvidence: candidates,
@@ -628,6 +633,16 @@ async function applyOneRecord(record, actorId) {
   const existingLink = record.sourceLinkKey
     ? await requestToPromise(linkStore.index('bySourceLinkKey').get(record.sourceLinkKey))
     : null;
+  const expectedSourceLinkRevision = Number(record.sourceLinkRevision || 0);
+  const actualSourceLinkRevision = Number(existingLink?.revision || 0);
+  if (actualSourceLinkRevision !== expectedSourceLinkRevision) {
+    tx.abort();
+    const error = new Error('CUSTOMER_SOURCE_LINK_REVISION_CONFLICT');
+    error.code = 'CUSTOMER_SOURCE_LINK_REVISION_CONFLICT';
+    error.expectedRevision = expectedSourceLinkRevision;
+    error.actualRevision = actualSourceLinkRevision;
+    throw error;
+  }
   let customer = null;
   let customerWasChanged = false;
 
@@ -765,7 +780,7 @@ export async function applyCustomerSourceImport(importBatchId, { actorId = 'admi
   return results;
 }
 
-async function mutateSourceLink(sourceSystem, sourceCustomerCode, mutate, { actorId = 'administrator', reason = '' } = {}) {
+async function mutateSourceLink(sourceSystem, sourceCustomerCode, mutate, { actorId = 'administrator', reason = '', expectedRevision = null } = {}) {
   const key = makeCustomerSourceLinkKey(sourceSystem, sourceCustomerCode);
   const db = await openOrderQDb();
   const tx = db.transaction([STORE.CUSTOMERS, STORE.CUSTOMER_SOURCE_LINKS, STORE.CUSTOMER_SOURCE_LINK_EVENTS, STORE.SYNC_QUEUE], 'readwrite');
@@ -774,6 +789,18 @@ async function mutateSourceLink(sourceSystem, sourceCustomerCode, mutate, { acto
   if (!link) {
     tx.abort();
     throw new Error('Source Link를 찾을 수 없습니다.');
+  }
+  if (expectedRevision === null || expectedRevision === undefined || expectedRevision === '') {
+    tx.abort();
+    throw new Error('CUSTOMER_SOURCE_LINK_EXPECTED_REVISION_REQUIRED');
+  }
+  if (Number(link.revision || 0) !== Number(expectedRevision)) {
+    tx.abort();
+    const error = new Error('CUSTOMER_SOURCE_LINK_REVISION_CONFLICT');
+    error.code = 'CUSTOMER_SOURCE_LINK_REVISION_CONFLICT';
+    error.expectedRevision = Number(expectedRevision);
+    error.actualRevision = Number(link.revision || 0);
+    throw error;
   }
   const timestamp = nowIso();
   const changed = await mutate({ ...link }, tx, timestamp);

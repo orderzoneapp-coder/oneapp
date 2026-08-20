@@ -81,3 +81,4 @@ console.log('ORDER Q vNext cloud sync contract tests passed.');
 
 assert.match(cloudGs, /CUSTOMER_SOURCE_LINK: \{ key: 'CUSTOMER_SOURCE_LINK'/);
 assert.match(cloudGs, /ORDERQ_CUSTOMER_SOURCE_LINK_KEY_CONFLICT/);
+assert.match(cloudGs, /existingSourceLink[\s\S]*serverRevision !== baseRevision[\s\S]*status: 'conflict'/, 'Cloud Source Link upsert must reject stale baseRevision');

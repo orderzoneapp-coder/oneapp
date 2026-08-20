@@ -590,6 +590,17 @@ function orderQApplySimple(ss, change) {
         throw new Error(`ORDERQ_CUSTOMER_SOURCE_LINK_KEY_CONFLICT:${sourceLinkKey}`);
       }
     }
+    const existingSourceLink = orderQReadPayloadById(sheet, id);
+    const serverRevision = Number(existingSourceLink && existingSourceLink.revision || 0);
+    const baseRevision = Number(change.baseRevision || 0);
+    if (serverRevision !== baseRevision) {
+      return {
+        queueId: String(change.queueId || ''),
+        status: 'conflict',
+        serverRevision,
+        serverPayload: existingSourceLink || null
+      };
+    }
   }
   if (String(change.entityType || '') === 'ORDER_EVENT' && /^SALES_TRANSFER_(ALLOCATED|REVERSED)$/.test(String(payload.eventType || ''))) {
     const existing = orderQReadPayloadById(sheet, id);
