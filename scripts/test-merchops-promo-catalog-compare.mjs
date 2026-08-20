@@ -96,7 +96,8 @@ test("blank and duplicate codes remain unmatched without preserving prior work",
   edited = compare.replaceSource(edited, "loaded", duplicated).session;
   const masterRow = edited.rows.find((row) => row.key === "A001");
   assert.equal(masterRow.blocked, true);
-  assert.equal(masterRow.status, compare.STATUS.REVIEW);
+  assert.equal(masterRow.status, compare.STATUS.PENDING);
+  assert.equal(masterRow.primaryPurpose, "확인필요");
   assert.equal(masterRow.draft.promoPrice, 9000, "duplicate code must not preserve the edited work value");
   assert.equal(edited.rows.filter((row) => row.unmatched).length, 3);
 });
@@ -112,44 +113,62 @@ test("LOT matching ignores date fields", () => {
   assert.doesNotMatch(lotKeyBlock, /일자|날짜|Date|date/);
 });
 
-test("zero, blank, missing sources, and unmatched rows stay distinct", () => {
+test("zero and blank stay distinct while absent sources alone are not issues", () => {
   assert.equal(compare.sameValue(0, ""), false);
   assert.equal(compare.display(0), "0");
   assert.equal(compare.display(""), "—");
-  assert.match(html, /카탈로그 없음/);
-  assert.match(html, /오늘 정보 없음/);
-  assert.match(html, /미매칭/);
+  const masterOnly = compare.createSession({ masterSnapshot: compare.captureMasterSnapshot({ B002: masterProducts.B002 }) }).rows[0];
+  assert.equal(masterOnly.primaryPurpose, "변경없음");
+  assert.equal(masterOnly.workRequired, false);
+  assert.deepEqual(plain(masterOnly.issues), []);
+  const masterOnlyPromotion = compare.createSession({ masterSnapshot: compare.captureMasterSnapshot({ A001: masterProducts.A001 }) }).rows[0];
+  assert.equal(masterOnlyPromotion.primaryPurpose, "변경없음");
+  assert.deepEqual(plain(masterOnlyPromotion.issues), []);
 });
 
-test("equal comparison values use one centered line at fixed height", () => {
-  const block = html.slice(html.indexOf("const CompareCell"), html.indexOf("const WorkInput"));
-  assert.match(block, /h-\[58px\] min-h-\[58px\]/);
-  assert.match(block, /equal[\s\S]*text-center/);
+test("purpose vocabulary matches the practical workflow and removes legacy buckets", () => {
+  assert.deepEqual(plain(compare.PURPOSES), ["작업필요", "신규", "가격변경", "행사", "카탈로그 제외", "확인필요", "변경없음", "전체"]);
+  assert.doesNotMatch(moduleSource, /'기존행사'|'행사종료'|'신규입고'|'기타검토'/);
 });
 
-test("different comparison values render old above new", () => {
-  const block = html.slice(html.indexOf("const CompareCell"), html.indexOf("const WorkInput"));
-  assert.ok(block.indexOf("beforeText") < block.indexOf("afterText"));
-  assert.match(block, /React\.Fragment/);
+test("fixture rows receive one mutually exclusive primary purpose", () => {
+  const byCode = Object.fromEntries(session.rows.filter((row) => !row.unmatched).map((row) => [row.code, row]));
+  assert.equal(byCode.A001.primaryPurpose, "행사");
+  assert.equal(byCode.B002.primaryPurpose, "변경없음");
+  assert.equal(byCode.C003.primaryPurpose, "가격변경");
+  session.rows.forEach((row) => assert.deepEqual(plain(row.purposes), [row.primaryPurpose]));
 });
 
-test("comparison cells do not render arrows, deltas, or badges", () => {
-  const block = html.slice(html.indexOf("const CompareCell"), html.indexOf("const WorkInput"));
-  assert.doesNotMatch(block, /→|➡|차액|badge|rounded-full/);
-});
-
-test("purpose filters allow one row in multiple purposes", () => {
-  const row = session.rows.find((item) => item.code === "A001");
-  assert.ok(row.purposes.includes("기존행사"));
-  assert.ok(row.purposes.includes("행사종료"));
-  assert.ok(row.purposes.includes("가격변동"));
-});
-
-test("other-review is the complement of the main purpose groups", () => {
-  session.rows.forEach((row) => {
-    const main = row.purposes.some((purpose) => ["기존행사", "행사종료", "가격변동", "신규입고"].includes(purpose));
-    assert.equal(row.purposes.includes("기타검토"), !main);
+test("conflicting explicit source prices are the only rows sent to confirmation", () => {
+  const conflicting = compare.createSession({
+    masterSnapshot: master,
+    previousCatalog: compare.buildArea([{ 품목코드: "B002", "작업 출고가": 21000 }], "catalog"),
+    loadedRaw: compare.buildArea([{ 품목코드: "B002", 출고가: 22000 }], "loaded"),
   });
+  const row = conflicting.rows.find((item) => item.code === "B002");
+  assert.equal(row.primaryPurpose, "확인필요");
+  assert.ok(row.criticalIssues.includes("출고가 원본 충돌"));
+});
+
+test("source-only products are new instead of confirmation items", () => {
+  const created = compare.createSession({
+    masterSnapshot: master,
+    loadedRaw: compare.buildArea([{ 품목코드: "Z999", 품목명: "신규상품", 재고: 3, 구매단가: 1000 }], "loaded"),
+  });
+  const row = created.rows.find((item) => item.code === "Z999");
+  assert.equal(row.primaryPurpose, "신규");
+  assert.equal(row.workRequired, true);
+  assert.equal(row.criticalIssues.length, 0);
+});
+
+test("work-required filtering hides unchanged rows and counts unique products", () => {
+  assert.deepEqual(plain(compare.filterRows(session, "작업필요", "전체").map((row) => row.code)), ["A001", "C003"]);
+  const counts = compare.purposeCounts(session);
+  const summary = compare.sessionSummary(session);
+  assert.equal(counts.작업필요, 2);
+  assert.equal(counts.변경없음, 1);
+  assert.equal(summary.workRequired, 2);
+  assert.equal(summary.total, 3);
 });
 
 test("filtering never mutates work values", () => {
@@ -159,9 +178,16 @@ test("filtering never mutates work values", () => {
   assert.equal(JSON.stringify(session.rows.map((row) => row.draft)), before);
 });
 
-test("promotion-end candidate does not automatically clear promotion price", () => {
-  const row = session.rows.find((item) => item.code === "A001");
-  assert.ok(row.issues.includes("행사 종료 검토"));
+test("catalog exclusion starts only after a catalog is loaded and never auto-clears", () => {
+  const beforeLoad = compare.createSession({ masterSnapshot: compare.captureMasterSnapshot({ A001: masterProducts.A001 }) });
+  assert.equal(beforeLoad.rows.find((item) => item.code === "A001").primaryPurpose, "변경없음");
+  const excluded = compare.createSession({
+    masterSnapshot: compare.captureMasterSnapshot({ A001: masterProducts.A001 }),
+    previousCatalog: compare.buildArea([{ 품목코드: "B002", 품목명: "다른상품" }], "catalog"),
+  });
+  const row = excluded.rows.find((item) => item.code === "A001");
+  assert.equal(row.primaryPurpose, "카탈로그 제외");
+  assert.ok(row.issues.includes("이번 카탈로그에 없음"));
   assert.equal(row.draft.promoPrice, 9000);
   assert.equal(row.draft.actions.promoPrice, "KEEP");
 });
@@ -195,13 +221,13 @@ test("direct edits are not overwritten by master refresh", () => {
   assert.equal(edited.rows.find((row) => row.code === "A001").draft.outPrice, 12345);
 });
 
-test("source or master changes move completed rows back to review", () => {
+test("source or master changes move completed rows back to untreated", () => {
   let done = compare.setRowsStatus(session, ["A001"], compare.STATUS.DONE);
   const sourceChanged = compare.replaceSource(done, "loaded", compare.buildArea([{ 품목코드: "A001", 재고: 1, 구매단가: 7300 }], "loaded")).session;
-  assert.equal(sourceChanged.rows.find((row) => row.code === "A001").status, compare.STATUS.REVIEW);
+  assert.equal(sourceChanged.rows.find((row) => row.code === "A001").status, compare.STATUS.PENDING);
   done = compare.setRowsStatus(session, ["A001"], compare.STATUS.DONE);
   const masterChanged = compare.refreshMaster(done, { ...masterProducts, A001: { ...masterProducts.A001, 시중가: 13000 } });
-  assert.equal(masterChanged.rows.find((row) => row.code === "A001").status, compare.STATUS.REVIEW);
+  assert.equal(masterChanged.rows.find((row) => row.code === "A001").status, compare.STATUS.PENDING);
 });
 
 test("only completed, confirmed, registered rows enter apply results", () => {
@@ -215,7 +241,7 @@ test("only completed, confirmed, registered rows enter apply results", () => {
     loadedRaw: compare.buildArea([{ 품목코드: "Z999", 재고: 1 }], "loaded"),
   });
   const attempted = compare.setRowsStatus(unregistered, ["Z999"], compare.STATUS.DONE);
-  assert.equal(attempted.rows.find((row) => row.code === "Z999").status, compare.STATUS.REVIEW);
+  assert.equal(attempted.rows.find((row) => row.code === "Z999").status, compare.STATUS.PENDING);
 });
 
 test("unfinished catalog values are reference-only and never inherited", () => {
@@ -266,11 +292,22 @@ assert.equal(compare.getApplyReadiness(ready, masterProducts).ready, true);
 assert.equal(compare.getApplyReadiness(ready, { ...masterProducts, A001: { ...masterProducts.A001, 출고가: 15000 } }).ready, false);
 assert.equal(compare.getApplyReadiness(ready, { B002: masterProducts.B002, C003: masterProducts.C003 }).ready, false);
 
-const versions = [...html.matchAll(/v2\.1\.196_PromoPriceRight/g)].length;
+const versions = [...html.matchAll(/v2\.1\.197_ActionOnlyCompare/g)].length;
 assert.ok(versions >= 3, "all three MerchOps version labels must use the target version");
 assert.match(html, /handleOpenPromoCompare/);
 assert.match(html, /handleApplyPromoCompare/);
 assert.match(html, /handleQuickExcelExport/);
 assert.match(html, /handleOpenExportCenter/);
+assert.match(html, /data-promo-compare-flow/);
+assert.match(html, /data-promo-compare-summary/);
+assert.match(html, /data-promo-compare-table[^>]*compact-task/);
+assert.match(html, /1 카탈로그 불러오기/);
+assert.match(html, /2 재고 불러오기/);
+assert.match(html, /3 자동 비교/);
+assert.match(html, /4 결과 확인/);
+assert.match(html, /5 비교결과 저장/);
+assert.doesNotMatch(html, />최신 마스터</);
+assert.doesNotMatch(html, /기타검토/);
+assert.doesNotMatch(html, /행사종료/);
 
 console.log(`MerchOps promotion catalog comparison tests passed (${passed} dedicated scenarios).`);
