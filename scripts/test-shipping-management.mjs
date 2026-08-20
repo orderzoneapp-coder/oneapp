@@ -13,7 +13,7 @@ assert.doesNotMatch(orderOpsHtml, /tokens truncated|…\d+ tokens truncated…/,
   "the public OrderOps mirror must not contain a truncated source fragment");
 assert.match(orderOpsHtml, /<body>[\s\S]*<\/body>\s*<\/html>/,
   "the public OrderOps mirror must remain a complete HTML document");
-assert.match(orderOpsHtml, /brand-badge">v1\.58</, "ORDER Q visible version must be v1.58");
+assert.match(orderOpsHtml, /brand-badge">v1\.59</, "ORDER Q visible version must be v1.59");
 assert.match(orderOpsHtml, /<title>ONEAPP ORDER Q · 출고관리<\/title>/,
   "the public page title must establish ORDER Q as shipment management");
 assert.match(orderOpsHtml, /aria-label="ONEAPP ORDER Q 출고관리"/,
@@ -22,7 +22,7 @@ assert.match(orderOpsHtml, /class="brand-logo" src="assets\/order-q-logo\.png"/,
   "the public header must use the approved ORDER Q logo asset");
 assert.match(orderOpsHtml, /\.brand-logo-frame\s*\{[\s\S]*?width:\s*120px;[\s\S]*?height:\s*20px;/,
   "the public ORDER Q logo must match the ONEAPP wordmark height");
-assert.match(orderOpsHtml, /ORDER Q v1\.58 · 출고관리/,
+assert.match(orderOpsHtml, /ORDER Q v1\.59 · 출고관리/,
   "the public footer must use the ORDER Q product concept");
 assert.doesNotMatch(
   orderOpsHtml.slice(orderOpsHtml.indexOf('<header class="global-header">'), orderOpsHtml.indexOf('</header>')),
@@ -259,6 +259,9 @@ const publicViewControls = orderOpsHtml.slice(
   orderOpsHtml.indexOf('<div class="view-controls"'),
   orderOpsHtml.indexOf('<div class="warehouse-color-bar"'),
 );
+assert.ok(publicViewControls.indexOf('id="shortageFocusButton"') < publicViewControls.indexOf('id="viewPresetSelect"') &&
+  publicViewControls.indexOf('id="viewPresetDeleteButton"') < publicViewControls.indexOf('id="specFilterGroup"'),
+  "the public saved-layout group must sit immediately after shortage focus and before the remaining tools");
 assert.ok(publicViewControls.indexOf('id="columnWidthResetButton"') < publicViewControls.indexOf('id="warehouseFilterToggle"'),
   "warehouse and manager filter buttons must sit at the far right after column-width reset");
 assert.ok(publicViewControls.indexOf('id="tableSearchInput"') < publicViewControls.indexOf('id="resultFilterResetButton"'),
@@ -1875,7 +1878,7 @@ const html = fs.readFileSync(path.join(ROOT, "orderops", "list.html"), "utf8");
 const inlineScriptMatch = html.match(/<script>\s*([\s\S]*?)<\/script>\s*<\/body>/);
 assert.ok(inlineScriptMatch, "canonical ORDER Q inline application script must exist");
 new vm.Script(inlineScriptMatch[1], { filename: "orderops/list.html:inline" });
-assert.match(html, /brand-badge">v1\.58</, "canonical ORDER Q visible version must be v1.58");
+assert.match(html, /brand-badge">v1\.59</, "canonical ORDER Q visible version must be v1.59");
 assert.match(html, /class="brand-logo" src="\.\.\/assets\/order-q-logo\.png"/,
   "the canonical header must use the shared ORDER Q logo asset");
 assert.match(html, /<h2 id="settingsModalTitle">ORDER Q 환경설정<\/h2>/,
@@ -2043,6 +2046,9 @@ const canonicalViewControls = html.slice(
   html.indexOf('<div class="view-controls"'),
   html.indexOf('<div class="warehouse-color-bar"'),
 );
+assert.ok(canonicalViewControls.indexOf('id="shortageFocusButton"') < canonicalViewControls.indexOf('id="viewPresetSelect"') &&
+  canonicalViewControls.indexOf('id="viewPresetDeleteButton"') < canonicalViewControls.indexOf('id="specFilterGroup"'),
+  "the canonical saved-layout group must sit immediately after shortage focus and before the remaining tools");
 assert.ok(canonicalViewControls.indexOf('id="columnWidthResetButton"') < canonicalViewControls.indexOf('id="warehouseFilterToggle"'),
   "canonical filter buttons must remain at the right edge after the column tools");
 assert.match(combinedCss, /body\s*\{[^}]*font-size:\s*14px;/,
