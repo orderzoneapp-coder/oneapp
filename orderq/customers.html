@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;600;800;900&family=Noto+Serif+KR:wght@700;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="./customer-master.css?v=0.13.0">
+  <link rel="stylesheet" href="./customer-master.css?v=0.14.0">
 </head>
 <body class="customer-master-page">
   <header class="cm-topbar">
@@ -25,11 +25,14 @@
       <div>
         <div class="cm-kicker">Find · Create · Continue</div>
         <h1>거래처 Master</h1>
-        <p>거래처는 빠르게 찾고, 없으면 이름만으로 바로 등록합니다. 상세정보와 중복 정리는 업무가 끝난 뒤 보완할 수 있습니다.</p>
+        <p>ERP와 쇼핑몰의 거래처를 각각 NEXUS 대표 거래처에 연결합니다. 확실한 거래처는 자동 연결하고, 애매한 거래처만 확인합니다.</p>
       </div>
       <div class="cm-actions">
-        <button class="cm-button" id="openImportButton" type="button">Excel 업로드</button>
+        <button class="cm-button" id="openErpImportButton" type="button">ERP 거래처 업로드</button>
+        <button class="cm-button" id="openShopImportButton" type="button">쇼핑몰 회원 업로드</button>
         <button class="cm-button primary" id="newCustomerButton" type="button">+ 거래처 등록</button>
+        <input id="erpCustomerExcelFile" type="file" accept=".xlsx,.xls" hidden>
+        <input id="shopCustomerExcelFile" type="file" accept=".xlsx,.xls" hidden>
       </div>
     </section>
     <section class="cm-dashboard" aria-label="거래처 요약">
@@ -54,11 +57,10 @@
       <div class="cm-empty" id="customerEmpty" hidden>조건에 맞는 거래처가 없습니다.</div>
     </section>
     <section class="cm-panel cm-import" id="importWorkbench" hidden>
-      <div class="cm-import-head"><div><small>Excel Workbench</small><h2 id="importFileTitle">거래처 Excel 분석</h2></div><button class="cm-button" id="closeImportButton" type="button">닫기</button></div>
-      <label class="cm-drop">거래처 Excel 파일을 선택하세요<input id="customerExcelFile" type="file" accept=".xlsx,.xls" hidden></label>
+      <div class="cm-import-head"><div><small id="importSourceLabel">Source Link Workbench</small><h2 id="importFileTitle">거래처 파일 분석</h2></div><button class="cm-button" id="closeImportButton" type="button">닫기</button></div>
       <div class="cm-import-summary" id="importSummary"></div>
-      <div class="cm-import-toolbar"><input id="importSearch" type="search" placeholder="거래처명, 코드, 전화, 주소 검색"><label><input id="importIssuesOnly" type="checkbox" checked> 문제 거래처만 보기</label></div>
-      <p class="cm-import-gate" id="importGate">Excel 파일을 선택하면 자동으로 기존 거래처를 찾습니다.</p>
+      <div class="cm-import-toolbar"><input id="importSearch" type="search" placeholder="거래처명, 외부 코드, 전화, 주소 검색"><label><input id="importIssuesOnly" type="checkbox" checked> 문제 거래처만 보기</label></div>
+      <p class="cm-import-gate" id="importGate">ERP 거래처 또는 쇼핑몰 회원 파일을 선택하면 자동으로 대표 거래처를 찾습니다.</p>
       <div class="cm-review-list" id="importReview"></div>
       <div class="cm-actions"><button class="cm-button dark" id="applyImportButton" disabled>Master 적용</button></div>
     </section>
@@ -86,6 +88,6 @@
     </form>
   </dialog>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script type="module" src="./customer-master-ui.js?v=0.13.0"></script>
+  <script type="module" src="./customer-master-ui.js?v=0.14.1"></script>
 </body>
 </html>

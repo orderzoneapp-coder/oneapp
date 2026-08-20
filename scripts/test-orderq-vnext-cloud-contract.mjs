@@ -30,7 +30,7 @@ assert.match(codeGs, /orderQOrderHead\(ss, payload\)/);
 assert.match(cloudGs, /ONEAPP_ORDERQ_SYNC_V1/);
 for (const sheet of [
   'ORDER', 'ORDER_ITEM', 'ORDER_EVENT', 'CUSTOMER_MASTER', 'CUSTOMER_ALIAS_MAPPING',
-  'PRODUCT_MAPPING', 'UNIT_MAPPING', 'MAPPING_EVENT', 'SYNC_META'
+  'CUSTOMER_SOURCE_LINK', 'CUSTOMER_SOURCE_LINK_EVENT', 'PRODUCT_MAPPING', 'UNIT_MAPPING', 'MAPPING_EVENT', 'SYNC_META'
 ]) {
   assert.ok(cloudGs.includes(`'${sheet}'`), `purpose sheet missing: ${sheet}`);
 }
@@ -78,3 +78,7 @@ assert.match(inputHtml, /현재 입력내용은 유지되|현재 입력내용은
 assert.match(inputHtml, /최신|저장 전에 최신/);
 
 console.log('ORDER Q vNext cloud sync contract tests passed.');
+
+assert.match(cloudGs, /CUSTOMER_SOURCE_LINK: \{ key: 'CUSTOMER_SOURCE_LINK'/);
+assert.match(cloudGs, /ORDERQ_CUSTOMER_SOURCE_LINK_KEY_CONFLICT/);
+assert.match(cloudGs, /existingSourceLink[\s\S]*serverRevision !== baseRevision[\s\S]*status: 'conflict'/, 'Cloud Source Link upsert must reject stale baseRevision');

@@ -8,8 +8,8 @@ import {
   openOrderQDb,
   requestToPromise,
   transactionDone
-} from './orderq-db.js?v=0.12.1';
-import { pullRemote } from './orderq-sync-engine.js?v=0.12.1';
+} from './orderq-db.js?v=0.14.0';
+import { pullRemote } from './orderq-sync-engine.js?v=0.14.0';
 
 export const CUSTOMER_STATUS = Object.freeze({ ACTIVE: 'ACTIVE', INACTIVE: 'INACTIVE' });
 export const CUSTOMER_QUALITY = Object.freeze({
@@ -386,7 +386,7 @@ export async function getUnifiedCustomerLedger(customerId) {
 export async function ensureCustomerMasterReady({ onLoading = null } = {}) {
   const [local, queue] = await Promise.all([getAll(STORE.CUSTOMERS), getAll(STORE.SYNC_QUEUE)]);
   const hasUnsyncedCustomerChanges = queue.some(item => ['PENDING', 'RETRY', 'CONFLICT'].includes(item.status)
-    && ['CUSTOMER', 'CUSTOMER_ALIAS'].includes(item.entityType));
+    && ['CUSTOMER', 'CUSTOMER_ALIAS', 'CUSTOMER_SOURCE_LINK', 'CUSTOMER_SOURCE_LINK_EVENT'].includes(item.entityType));
   if (!local.length) {
     onLoading?.('거래처 정보를 불러오는 중...');
     await pullRemote();
