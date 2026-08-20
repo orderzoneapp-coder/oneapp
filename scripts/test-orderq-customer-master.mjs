@@ -31,7 +31,7 @@ assert.match(db, /oldVersion < 9/);
 for (const index of ['byCanonicalCustomerId', 'byCustomerCode', 'byStatusQuality']) assert.match(db, new RegExp(index));
 
 assert.match(service, /qualityStatus === CUSTOMER_QUALITY\.SUPERSEDED/);
-assert.match(service, /canonicalCustomerId: qualityStatus === CUSTOMER_QUALITY\.SUPERSEDED/);
+assert.match(service, /const canonicalCustomerId = qualityStatus === CUSTOMER_QUALITY\.SUPERSEDED/);
 assert.match(service, /export async function mergeCustomers/);
 assert.match(service, /export async function unmergeCustomer/);
 assert.match(service, /export async function getCustomerFamilyIds/);
