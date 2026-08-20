@@ -410,6 +410,13 @@ function changedFields(existing, incoming) {
 }
 
 export async function prepareCustomerImport(rows, { fileName = '', fileHash = '' } = {}) {
+  if (fileHash) {
+    const batches = await getAll(STORE.IMPORT_BATCHES);
+    const reusableBatch = batches
+      .filter(batch => batch.sourceType === 'CUSTOMER_EXCEL' && batch.fileHash === fileHash && ['PREPARED', 'PARTIAL'].includes(batch.status))
+      .sort((a, b) => String(b.updatedAt || b.createdAt).localeCompare(String(a.updatedAt || a.createdAt)))[0];
+    if (reusableBatch) return { batch: reusableBatch, records: await getCustomerImportRecords(reusableBatch.importBatchId), resumed: true };
+  }
   const [customers, aliases] = await Promise.all([getAll(STORE.CUSTOMERS), getAll(STORE.CUSTOMER_ALIASES)]);
   const timestamp = nowIso();
   const importBatchId = newId('CIB');
@@ -422,15 +429,22 @@ export async function prepareCustomerImport(rows, { fileName = '', fileHash = ''
     const nameMatches = name ? customers.filter(customer => normalizeText(customer.customerName) === name) : [];
     const aliasMatches = name ? aliases.filter(alias => alias.active !== false && (alias.normalizedAlias || alias.normalizedText) === name)
       .map(alias => customers.find(customer => customer.customerId === alias.customerId)).filter(Boolean) : [];
-    const matches = [...new Map([...codeMatches, ...nameMatches, ...aliasMatches].map(customer => [customer.customerId, customer])).values()];
+    const rawMatches = [...new Map([...codeMatches, ...nameMatches, ...aliasMatches].map(customer => [customer.customerId, customer])).values()];
+    const matches = [...new Map(rawMatches.map(customer => {
+      const canonical = customer.qualityStatus === CUSTOMER_QUALITY.SUPERSEDED
+        ? customers.find(candidate => candidate.customerId === customer.canonicalCustomerId) || customer
+        : customer;
+      return [canonical.customerId, canonical];
+    })).values()];
+    const selectableMatches = matches.filter(customer => customer.status === CUSTOMER_STATUS.ACTIVE && customer.qualityStatus !== CUSTOMER_QUALITY.SUPERSEDED);
     let status = CUSTOMER_IMPORT_STATUS.NEW;
     let selectedCustomerId = '';
     let differences = [];
     if (!incoming.customerName) status = CUSTOMER_IMPORT_STATUS.REVIEW_REQUIRED;
-    else if (matches.length > 1) status = CUSTOMER_IMPORT_STATUS.REVIEW_REQUIRED;
-    else if (matches.length === 1) {
-      selectedCustomerId = matches[0].customerId;
-      differences = changedFields(matches[0], incoming);
+    else if (matches.length > 1 || (matches.length && selectableMatches.length !== 1)) status = CUSTOMER_IMPORT_STATUS.REVIEW_REQUIRED;
+    else if (selectableMatches.length === 1) {
+      selectedCustomerId = selectableMatches[0].customerId;
+      differences = changedFields(selectableMatches[0], incoming);
       status = differences.length ? CUSTOMER_IMPORT_STATUS.CHANGED : CUSTOMER_IMPORT_STATUS.SAME;
     }
     records.push({
@@ -485,10 +499,23 @@ export async function getCustomerImportRecords(importBatchId) {
   return records.filter(record => record.importBatchId === importBatchId);
 }
 
+export async function getLatestCustomerImportWork() {
+  const batches = await getAll(STORE.IMPORT_BATCHES);
+  const batch = batches
+    .filter(candidate => candidate.sourceType === 'CUSTOMER_EXCEL' && ['PREPARED', 'PARTIAL'].includes(candidate.status))
+    .sort((a, b) => String(b.updatedAt || b.createdAt).localeCompare(String(a.updatedAt || a.createdAt)))[0];
+  if (!batch) return null;
+  return { batch, records: await getCustomerImportRecords(batch.importBatchId) };
+}
+
 export function canApplyCustomerImport(records) {
   return records.every(record => {
-    if ([CUSTOMER_IMPORT_STATUS.SAME, CUSTOMER_IMPORT_STATUS.NEW, CUSTOMER_IMPORT_STATUS.EXCLUDED].includes(record.status)) return true;
-    if (record.status === CUSTOMER_IMPORT_STATUS.CHANGED) return Boolean(record.selectedCustomerId && record.fieldDecisions);
+    const status = record.status === CUSTOMER_IMPORT_STATUS.FAILED ? record.retryStatus : record.status;
+    if ([CUSTOMER_IMPORT_STATUS.SAME, CUSTOMER_IMPORT_STATUS.NEW, CUSTOMER_IMPORT_STATUS.EXCLUDED, CUSTOMER_IMPORT_STATUS.APPLIED].includes(status)) return true;
+    if (status === CUSTOMER_IMPORT_STATUS.CHANGED) {
+      const decisions = record.fieldDecisions || {};
+      return Boolean(record.selectedCustomerId) && (record.changedFields || []).every(field => ['USE_FILE', 'KEEP_EXISTING'].includes(decisions[field]));
+    }
     return false;
   });
 }
@@ -498,13 +525,14 @@ export async function applyCustomerImport(importBatchId, { actorId = 'administra
   if (!canApplyCustomerImport(records)) throw new Error('확인필요 행과 필드 변경 선택을 모두 완료해 주세요.');
   const results = [];
   for (const record of records) {
-    if ([CUSTOMER_IMPORT_STATUS.SAME, CUSTOMER_IMPORT_STATUS.EXCLUDED].includes(record.status)) {
+    const operationStatus = record.status === CUSTOMER_IMPORT_STATUS.FAILED ? record.retryStatus : record.status;
+    if ([CUSTOMER_IMPORT_STATUS.SAME, CUSTOMER_IMPORT_STATUS.EXCLUDED, CUSTOMER_IMPORT_STATUS.APPLIED].includes(operationStatus)) {
       results.push({ sourceRecordId: record.sourceRecordId, status: record.status });
       continue;
     }
     try {
       let customer;
-      if (record.status === CUSTOMER_IMPORT_STATUS.NEW) {
+      if (operationStatus === CUSTOMER_IMPORT_STATUS.NEW) {
         customer = await createLiveCustomer(record.incoming, { source: 'IMPORT_APPLY', actorId, allowDuplicate: false });
       } else {
         const previous = await getByKey(STORE.CUSTOMERS, record.selectedCustomerId);
@@ -514,11 +542,11 @@ export async function applyCustomerImport(importBatchId, { actorId = 'administra
         });
         customer = await updateCustomer(previous.customerId, patch, { expectedRevision: previous.revision, actorId, source: 'IMPORT_APPLY' });
       }
-      await setCustomerImportDecision(record.sourceRecordId, { status: CUSTOMER_IMPORT_STATUS.APPLIED, appliedCustomerId: customer.customerId, errorMessage: '' });
+      await setCustomerImportDecision(record.sourceRecordId, { status: CUSTOMER_IMPORT_STATUS.APPLIED, retryStatus: '', appliedCustomerId: customer.customerId, errorMessage: '' });
       results.push({ sourceRecordId: record.sourceRecordId, status: CUSTOMER_IMPORT_STATUS.APPLIED, customerId: customer.customerId });
     } catch (error) {
-      await setCustomerImportDecision(record.sourceRecordId, { status: CUSTOMER_IMPORT_STATUS.FAILED, errorMessage: error.message });
-      results.push({ sourceRecordId: record.sourceRecordId, status: CUSTOMER_IMPORT_STATUS.FAILED, error: error.message });
+      await setCustomerImportDecision(record.sourceRecordId, { status: CUSTOMER_IMPORT_STATUS.FAILED, retryStatus: operationStatus, errorMessage: error.message });
+      results.push({ sourceRecordId: record.sourceRecordId, status: CUSTOMER_IMPORT_STATUS.FAILED, retryStatus: operationStatus, error: error.message });
     }
   }
   const db = await openOrderQDb();

@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;600;800;900&family=Noto+Serif+KR:wght@700;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="./customer-master.css?v=0.12.1">
+  <link rel="stylesheet" href="./customer-master.css?v=0.13.0">
 </head>
 <body class="customer-master-page">
   <header class="cm-topbar">
@@ -54,9 +54,11 @@
       <div class="cm-empty" id="customerEmpty" hidden>조건에 맞는 거래처가 없습니다.</div>
     </section>
     <section class="cm-panel cm-import" id="importWorkbench" hidden>
-      <div class="cm-actions"><button class="cm-button" id="closeImportButton">닫기</button></div>
+      <div class="cm-import-head"><div><small>Excel Workbench</small><h2 id="importFileTitle">거래처 Excel 분석</h2></div><button class="cm-button" id="closeImportButton" type="button">닫기</button></div>
       <label class="cm-drop">거래처 Excel 파일을 선택하세요<input id="customerExcelFile" type="file" accept=".xlsx,.xls" hidden></label>
       <div class="cm-import-summary" id="importSummary"></div>
+      <div class="cm-import-toolbar"><input id="importSearch" type="search" placeholder="거래처명, 코드, 전화, 주소 검색"><label><input id="importIssuesOnly" type="checkbox" checked> 문제 거래처만 보기</label></div>
+      <p class="cm-import-gate" id="importGate">Excel 파일을 선택하면 자동으로 기존 거래처를 찾습니다.</p>
       <div class="cm-review-list" id="importReview"></div>
       <div class="cm-actions"><button class="cm-button dark" id="applyImportButton" disabled>Master 적용</button></div>
     </section>
@@ -84,6 +86,6 @@
     </form>
   </dialog>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script type="module" src="./customer-master-ui.js?v=0.12.3"></script>
+  <script type="module" src="./customer-master-ui.js?v=0.13.0"></script>
 </body>
 </html>
