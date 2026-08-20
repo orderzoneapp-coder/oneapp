@@ -34,7 +34,12 @@ assert.equal(ORDERQ_DB_VERSION, 10);
 assert.deepEqual(V9_STORE_DEFINITIONS.map(store => store.name), ['customerEvents']);
 assert.deepEqual(V10_STORE_DEFINITIONS.map(store => store.name), ['customerSourceLinks', 'customerSourceLinkEvents']);
 assert.match(db, /oldVersion < 10/);
-assert.match(db, /bySourceLinkKey/);
+const sourceLinkStoreContract = V10_STORE_DEFINITIONS.find(store => store.name === 'customerSourceLinks');
+assert.deepEqual(
+  sourceLinkStoreContract.indexes.find(index => index.name === 'bySourceLinkKey'),
+  { name: 'bySourceLinkKey', keyPath: 'sourceLinkKey', options: { unique: true } },
+  'Source Link key must be unique in the v10 schema contract'
+);
 assert.match(db, /oldVersion < 9/);
 assert.doesNotMatch(db, /const customerStore = tx\.objectStore/, 'v9 upgrade must use the provided upgrade transaction');
 for (const index of ['byCanonicalCustomerId', 'byCustomerCode', 'byStatusQuality']) assert.match(db, new RegExp(index));
