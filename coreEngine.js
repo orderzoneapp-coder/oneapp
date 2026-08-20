@@ -193,8 +193,9 @@
     const generatedMarkers = finalData?._generatedFields || {};
     const finalCell = findOwnedField(finalData, fields);
     const direct = fields.some(name => directMarkers[name] === true);
-    const promoActionGenerated = finalData?._promoResetRequested === true
-      && fields.some(name => ['행사가', '행사테마', '테마', 'promoTheme', '_theme', '테마1', '테마2', '테마3', '테마4', '테마5'].includes(name));
+    const promoActionGenerated = (finalData?._promoResetRequested === true
+      && fields.some(name => ['행사가', '행사테마', '테마', 'promoTheme', '_theme', '테마1', '테마2', '테마3', '테마4', '테마5'].includes(name)))
+      || (finalData?._promoPriceResetRequested === true && fields.includes('행사가'));
     const previousPromoGenerated = finalData?._previousPromoApplied === true && fields.includes('행사가');
     const explicitGenerated = fields.some(name => generatedMarkers[name] === true)
       || options.generated === true

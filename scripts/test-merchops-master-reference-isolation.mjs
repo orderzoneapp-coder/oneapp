@@ -132,6 +132,15 @@ assert.equal(resolve(promoReset, master, "행사가").origin, "generated");
 assert.equal(resolve(promoReset, master, "행사테마").isExplicitBlank, true);
 assert.equal(browser.ONEAPP.EXPORT.buildWorkingPayload(promoReset, master).행사가, 0);
 
+const promoPriceReset = {
+  ...sourceRow,
+  finalData: { ...sourceRow.finalData, 행사가: 0, _promoPriceResetRequested: true },
+};
+assert.equal(resolve(promoPriceReset, master, "행사가").origin, "generated",
+  "price-only promo reset must own the zero promo price");
+assert.equal(resolve(promoPriceReset, master, "행사테마").origin, "master-reference",
+  "price-only promo reset must leave the master theme as a reference");
+
 const resumed = { ...sourceRow, finalData: { _salesResumeRequested: true } };
 assert.equal(browser.ONEAPP.EXPORT.buildWorkingPayload(resumed, master).판매여부, 1);
 
@@ -201,6 +210,7 @@ assert.match(merchSource.slice(f9Start, f9End), /ONEAPP\.EXPORT\.buildWorkingPay
 assert.match(merchSource, /String\(v\) === String\(initialVal\) && !\(isMasterReferenceCell && userEdited\)/, "same-value edits on gray references must be recorded");
 assert.match(merchSource.slice(f8Start, f8End), /explicitSale\.hasValue && explicitSale\.isExplicitBlank\) return ''/, "F8 must preserve an explicit blank sale cell");
 assert.match(merchSource.slice(f7Start, f7End), /newMaster\[item\.코드\]\['판매여부'\] = explicitSale\.isExplicitBlank \? ''/, "F7 must preserve an explicit blank sale cell");
+assert.match(merchSource.slice(f7Start, f7End), /promoPriceResetRequested[\s\S]*newMaster\[item\.코드\]\['행사가'\] = 0/, "F7 must commit the price-only promo reset");
 assert.match(merchSource.slice(f7Start, f7End), /commitCandidateFields = new Set\(\[\.\.\.Object\.keys\(activeSourceForCommit\), \.\.\.Object\.keys\(item\.finalData\)\]\)/, "F7 must inspect source-owned fields even when finalData omits them");
 
 assert.doesNotMatch(exportSource, /working\.품목명 \|\| master\['품목명'\]/, "Export Center must not mix master reference into working name");

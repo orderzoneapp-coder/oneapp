@@ -24,49 +24,67 @@ assert.match(topRow, /data-merch-toolbar-group": "parser-catalog"[\s\S]*data-mer
 assert.doesNotMatch(topRow, /justify-around/, "buttons inside each top group must remain clustered rather than spread apart");
 
 const categoryAt = lowerRow.indexOf('title: "카테고리: 클릭 단일선택');
-const themeAt = lowerRow.indexOf('title: "마스터 행사테마: 클릭 단일선택');
+const promoEntryAt = lowerRow.indexOf('data-merch-promo-entry": "single"');
 const marginAt = lowerRow.indexOf("selectIssueFilter('margin')");
 const priceAt = lowerRow.indexOf("selectIssueFilter('priceCheck')");
 const noInboundAt = lowerRow.indexOf("selectIssueFilter('noInboundPrice')");
 assert.ok(categoryAt >= 0, "category group must be rendered on the lower filter row");
-assert.ok(categoryAt < themeAt && themeAt < marginAt && marginAt < priceAt && priceAt < noInboundAt,
-  "lower row order must be category, theme, margin, price change, and no inbound price");
-assert.match(lowerRow, /handleAllThemeClick[\s\S]*\['theme1', '테마1'\][\s\S]*\['theme5', '테마5'\][\s\S]*\['themeNone', '없음'\]/,
-  "theme group must render 행사, 테마1~테마5, and 없음");
-assert.match(lowerRow, /handleAllThemeClick[\s\S]*"행사"/,
-  "the all-theme control must be named 행사");
+assert.ok(categoryAt < promoEntryAt && promoEntryAt < marginAt && marginAt < priceAt && priceAt < noInboundAt,
+  "lower row order must be category, single promotion entry, margin, price change, and no inbound price");
+const promoEntryEnd = lowerRow.indexOf('data-merch-issue-filter-group": "single"', promoEntryAt);
+const promoEntry = lowerRow.slice(promoEntryAt, promoEntryEnd);
+assert.match(promoEntry, /togglePromoWorkbenchManual[\s\S]*"행사작업"/,
+  "the upper promotion area must contain one 행사작업 entry button");
+assert.doesNotMatch(promoEntry, /handleAllThemeClick|promo-work-theme-|테마전체|테마없음|테마지정|테마삭제/,
+  "theme controls must not remain beside the upper 행사작업 entry");
 assert.match(toolbar, /isDetailFilterActive[\s\S]*!isThemeFilterValue\(v\)[\s\S]*!\['margin', 'noInboundPrice'\]\.includes\(v\)/,
   "fixed theme, margin, and no-inbound filters must not force the detail panel open");
 assert.doesNotMatch(toolbar, /showDetailFilterPanel\s*=\s*[^;]*isCategoryFilterActive/,
   "fixed category filters must not force the detail panel open");
 
 const allThemeHandler = toolbar.slice(toolbar.indexOf("const handleAllThemeClick ="), toolbar.indexOf("const toggleThemeFilter ="));
-assert.match(allThemeHandler, /filter\(v => !isThemeFilterValue\(v\)\)/, "행사 must preserve non-theme filters");
+assert.match(allThemeHandler, /filter\(v => !isThemeFilterValue\(v\)\)/, "테마전체 must preserve non-theme filters");
 assert.match(allThemeHandler, /return \[\.\.\.nonTheme, \.\.\.allThemeFilters\]/,
-  "행사 must select only the five named theme filters");
+  "테마전체 must select only the five named theme filters");
 assert.doesNotMatch(allThemeHandler, /setPriceFilter|setCategoryFilters|setGlobalSearch/,
-  "행사 must preserve every non-theme filter");
+  "테마전체 must preserve every non-theme filter");
 assert.match(toolbar, /const isAllThemeFilterActive = allThemeFilters\.every[\s\S]*!activeThemeFilters\.includes\('themeNone'\)/,
-  "행사 must be active for all five named themes and exclude 없음");
+  "테마전체 must be active for all five named themes and exclude 테마없음");
 
-const promoWorkbenchStart = lowerRow.indexOf('data-merch-promo-workbench": promoWorkbenchManualOpen');
+const promoWorkbenchStart = lowerRow.indexOf('data-merch-promo-workbench": "manual-open"');
 const detailPanelStart = lowerRow.indexOf("showDetailFilterPanel &&");
 assert.ok(promoWorkbenchStart >= 0 && detailPanelStart > promoWorkbenchStart, "promotion workbench/detail panel boundaries must exist");
 const promoWorkbench = lowerRow.slice(promoWorkbenchStart, detailPanelStart);
-assert.match(promoWorkbench, /\['promo', '행사가'\][\s\S]*\['promoExclude', '행사가없음'\]/,
-  "promotion workbench must expose 행사가 and 행사가없음");
+const themeGroupAt = promoWorkbench.indexOf('data-merch-promo-theme-group": "exposure"');
+const priceGroupAt = promoWorkbench.indexOf('data-merch-promo-price-group": "price"');
+assert.ok(themeGroupAt >= 0 && priceGroupAt > themeGroupAt,
+  "theme exposure controls must be grouped on the left and promo-price controls on the right");
+assert.match(promoWorkbench, /"테마 노출위치"[\s\S]*"테마전체"[\s\S]*\['theme1', '테마1'\][\s\S]*\['theme5', '테마5'\][\s\S]*\['themeNone', '테마없음'\][\s\S]*"테마지정"[\s\S]*"테마삭제"/,
+  "theme exposure group must expose the exact requested terminology and assignment/deletion actions");
+assert.match(promoWorkbench, /"행사가 설정"[\s\S]*\['promo', '행사가상품'\][\s\S]*\['promoExclude', '행사가없음'\][\s\S]*"행사가 생성"[\s\S]*"행사가초기화"[\s\S]*"전행사가적용"[\s\S]*"행사가 비교"/,
+  "promo-price group must expose the exact requested terminology");
 assert.doesNotMatch(promoWorkbench, /promoSuggest|'행사제안'|'행사상품'|'행사제외'/,
   "promotion workbench must remove the former suggestion and legacy labels");
-assert.doesNotMatch(promoWorkbench, /promo-work-theme-|beginThemeDrag|handleThemeClick/,
-  "promotion workbench must not duplicate the fixed theme group");
-assert.match(toolbar, /promoWorkbenchManualOpen[\s\S]*togglePromoWorkbenchManual[\s\S]*"작업"/,
+assert.match(promoWorkbench, /promo-work-theme-[\s\S]*beginThemeDrag[\s\S]*handleThemeClick/,
+  "promotion workbench must own the relocated theme filters");
+assert.match(toolbar, /promoWorkbenchManualOpen[\s\S]*togglePromoWorkbenchManual[\s\S]*"행사작업"/,
   "the promotion workbench may be opened explicitly without changing the theme filter");
-assert.match(toolbar, /const isPromoThemeSelected = activeThemeFilters\.some\(value => allThemeFilters\.includes\(value\)\)/,
-  "the promotion workbench must be driven by a named upper theme selection");
-assert.match(lowerRow, /isPromoWorkbenchVisible && React\.createElement\("div", \{ "data-merch-promo-workbench": promoWorkbenchManualOpen[\s\S]*"행사 작업대"/,
-  "the promotion workbench must render after a theme selection or the explicit 작업 button");
-assert.match(toolbar, /if \(\['promo', 'promoExclude', 'previousPromo'\]\.includes\(priceFilter\)\) setPriceFilter\('all'\)/,
-  "hidden promotion-only filters must be cleared when the upper theme is removed");
+assert.match(toolbar, /const isPromoWorkbenchVisible = promoWorkbenchManualOpen;/,
+  "the promotion workbench must be controlled only by the single 행사작업 entry");
+assert.doesNotMatch(toolbar, /const isPromoThemeSelected|isPromoWorkbenchVisible = isPromoThemeSelected/,
+  "theme selection must not implicitly open the workbench");
+const toggleWorkbench = toolbar.slice(toolbar.indexOf("const togglePromoWorkbenchManual ="), toolbar.indexOf("const isDetailFilterActive ="));
+assert.doesNotMatch(toggleWorkbench, /setPriceFilter|setDetailFilters/,
+  "closing 행사작업 must preserve the user's event filters and queued working values");
+assert.match(toolbar, /handleApplyBulkFields\(\{ themeAction: 'assign', theme: promoThemeInput \}\)[\s\S]*handleApplyBulkFields\(\{ themeAction: 'delete' \}\)/,
+  "theme designation and deletion must use the persisted bulk-work path");
+const promoResetStart = html.indexOf("const handleResetPromoValues = useCallback");
+const promoResetEnd = html.indexOf("// [M-BRIDGE-01]", promoResetStart);
+const promoResetSource = html.slice(promoResetStart, promoResetEnd);
+assert.match(promoResetSource, /행사가: 0[\s\S]*행사테마\/테마1~5: 기존 값 유지[\s\S]*_promoPriceResetRequested: true/,
+  "행사가초기화 must reset only the promo price and preserve theme exposure");
+assert.doesNotMatch(promoResetSource, /행사테마:\s*''|테마1:\s*''|_promoResetRequested:\s*true/,
+  "the price-reset action must not delete theme values or use the legacy combined reset marker");
 assert.doesNotMatch(toolbar, /basic-pill-|toggleDetailFilter\('basic'\)|toggleDetailFilter\('basicExclude'\)/,
   "basic-product controls must be removed from MerchOps");
 
@@ -204,7 +222,7 @@ assert.match(toolbar, /const selectIssueFilter = \(value\) =>[\s\S]*withoutIssue
 assert.match(toolbar, /data-merch-no-inbound-action": "touch-choice"[\s\S]*\['spot', '싯가판매'\][\s\S]*\['stop', '판매정지'\]/,
   "the no-inbound action touch choices must be adjacent and conditionally visible");
 
-const versionMatches = [...html.matchAll(/v2\.1\.193_CompactPriceReport/g)];
-assert.ok(versionMatches.length >= 3, "all MerchOps version labels must use v2.1.193");
+const versionMatches = [...html.matchAll(/v2\.1\.194_PromoWorkspaceGroups/g)];
+assert.ok(versionMatches.length >= 3, "all MerchOps version labels must use v2.1.194");
 
 console.log("MerchOps theme-none, promo-price, and fixed-layout contracts passed.");
