@@ -26,7 +26,7 @@ const [
 ]);
 
 new vm.Script(cloud, { filename: 'orderq-cloud.gs' });
-new vm.SourceTextModule(collectorReview, { identifier: 'collector-smartparser-review.js' });
+new vm.Script(collectorReview.replace(/^import .*;$/gm, ''), { filename: 'collector-smartparser-review.js' });
 assert.equal(ORDERQ_DB_VERSION, 9);
 assert.deepEqual(V9_STORE_DEFINITIONS.map(store => store.name), ['customerEvents']);
 assert.match(db, /oldVersion < 9/);
