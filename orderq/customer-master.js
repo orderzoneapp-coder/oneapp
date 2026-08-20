@@ -8,8 +8,8 @@ import {
   openOrderQDb,
   requestToPromise,
   transactionDone
-} from './orderq-db.js?v=0.12.0';
-import { pullRemote } from './orderq-sync-engine.js?v=0.12.0';
+} from './orderq-db.js?v=0.12.1';
+import { pullRemote } from './orderq-sync-engine.js?v=0.12.1';
 
 export const CUSTOMER_STATUS = Object.freeze({ ACTIVE: 'ACTIVE', INACTIVE: 'INACTIVE' });
 export const CUSTOMER_QUALITY = Object.freeze({

@@ -4,15 +4,15 @@ import {
   getCollectorSnapshot, rebuildFulfillmentEvidence, saveCollectorSettings,
   confirmParserEvidence, cancelParserEvidenceConfirmation,
   confirmFulfillmentLink, replaceFulfillmentLink, unlinkFulfillmentLink
-} from './history-collector/history-repository.js?v=0.8.0';
+} from './history-collector/history-repository.js?v=0.12.1';
 import {
   commitPreparedImportV2,
   rollbackImportBatchByContract
-} from './history-collector/collector-contracts.js?v=0.8.1';
+} from './history-collector/collector-contracts.js?v=0.12.1';
 import { syncNow } from './orderq-sync-engine.js?v=0.8.0';
 import { getCloudUrl, getCloudAccessToken } from './orderq-cloud-adapter.js?v=0.8.0';
-import { resolveCustomerInput } from './customer-master.js?v=0.12.0';
-import { openCustomerPicker } from './customer-picker.js?v=0.12.0';
+import { resolveCustomerInput } from './customer-master.js?v=0.12.1';
+import { openCustomerPicker } from './customer-picker.js?v=0.12.1';
 
 const prepared = [];
 const photoDrafts = [];

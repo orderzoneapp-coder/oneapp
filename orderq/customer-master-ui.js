@@ -8,8 +8,8 @@ import {
   prepareCustomerImport,
   setCustomerImportDecision,
   updateCustomer
-} from './customer-master.js?v=0.12.0';
-import { openCustomerPicker } from './customer-picker.js?v=0.12.0';
+} from './customer-master.js?v=0.12.1';
+import { openCustomerPicker } from './customer-picker.js?v=0.12.1';
 
 const ROW_HEIGHT = window.matchMedia('(max-width: 820px)').matches ? 86 : 74;
 const BUFFER_ROWS = 8;

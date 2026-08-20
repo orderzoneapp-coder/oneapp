@@ -52,6 +52,8 @@ assert.match(ui, /state\.filtered\.slice\(start, end\)/);
 assert.match(ui, /canApplyCustomerImport\(state\.importRecords\)/);
 assert.match(html, /customerExcelFile/);
 assert.match(html, /거래처 Master/);
+assert.match(html, /customer-master-ui\.js\?v=0\.12\.1/, 'Customer Master entry module must invalidate the deployed cache');
+assert.match(service, /orderq-db\.js\?v=0\.12\.1/, 'Customer Master must load the fixed DB upgrade module URL');
 assert.match(css, /\.cm-viewport/);
 
 assert.doesNotMatch(intakeEngine, /if \(!customer\) throw new Error\('ORDERQ_INTAKE_CUSTOMER_REQUIRED'\)/);

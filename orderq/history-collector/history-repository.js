@@ -8,7 +8,7 @@ import {
   newId,
   nowIso,
   normalizeText
-} from '../orderq-db.js?v=0.8.0';
+} from '../orderq-db.js?v=0.12.1';
 import { resolveWarehouseInTransaction, warehouseSnapshot } from '../warehouse-master.js?v=0.8.0';
 import { assigneeIdentity } from '../order-document-model.js?v=0.8.0';
 import { COLLECTOR_SOURCE } from './collector-schema.js?v=0.8.0';
