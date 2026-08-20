@@ -74,6 +74,13 @@ assert.equal(displayBrowser.getMerchDisplayBaseRows({
   P003: { 코드: "P003", sources: { estimate: {} }, finalData: {} },
 }, resetMaster, { suppressMasterFallback: true })[0].코드, "P003",
   "Newly loaded work rows must display even before the reset guard state effect settles");
+const editedCategoryRows = displayBrowser.getMerchDisplayBaseRows({
+  MASTER_LOOKUP__P001: { 코드: "P001", _managedKey: "MASTER_LOOKUP__P001", finalData: { 행사가: 0 }, sources: {} },
+}, resetMaster, { suppressMasterFallback: true, masterLookupMode: "category" });
+assert.equal(editedCategoryRows.length, 2,
+  "editing one category row must keep the complete category master worktable available");
+assert.equal(editedCategoryRows.find(row => row.코드 === "P001").finalData.행사가, 0,
+  "the edited category row must overlay its untouched master lookup row without losing numeric zero");
 assert.equal(displayBrowser.isMerchUnmodifiedMasterLookupRow(explicitAllRows[0]), true,
   "An untouched master lookup row must not be eligible for F7");
 assert.equal(displayBrowser.isMerchUnmodifiedMasterLookupRow({
@@ -81,6 +88,13 @@ assert.equal(displayBrowser.isMerchUnmodifiedMasterLookupRow({
   finalData: { 입고가: 1234, _editedFields: { 입고가: true } },
 }), false, "An edited master lookup row must become eligible for F7");
 assert.match(merch, /const \[suppressMasterFallback, setSuppressMasterFallback\] = useState\(true\);/);
+const managedLookupEffectStart = merch.indexOf("if (Object.keys(managedItems || {}).length === 0) return;");
+const managedLookupEffectEnd = merch.indexOf("}, [managedItems, suppressMasterFallback, masterLookupMode]);", managedLookupEffectStart);
+const managedLookupEffect = merch.slice(managedLookupEffectStart, managedLookupEffectEnd);
+assert.doesNotMatch(managedLookupEffect, /setMasterLookupMode\(''\)/,
+  "editing a master lookup row must not clear its category/all lookup scope");
+assert.match(merch, /if \(hasSavedWork\)[\s\S]*if \(savedLookupMode\)[\s\S]*data\.setMasterLookupMode\(savedLookupMode === 'category'/,
+  "session restore must retain the category lookup scope together with edited rows");
 assert.match(merch, /data\.setSuppressMasterFallback\(true\);\s*data\.setMasterLookupMode\(''\);\s*data\.setManagedItems\(\{\}\);/);
 assert.match(merch, /handleMasterLookup\?\.\(\[\]\)/);
 assert.match(merch, /handleMasterLookup\?\.\(nextCategories\)/);

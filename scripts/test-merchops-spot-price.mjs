@@ -48,7 +48,7 @@ vm.runInContext(inlineScripts[0], context, { filename: "MerchOps-head.js" });
 
 assert.deepEqual(
   JSON.parse(JSON.stringify(browser.createMerchEmptyBulkInputs())),
-  { theme: "", stock: "", sale: "", linkage: "", spot: "", warehouse: "", reportAction: "" },
+  { theme: "", stock: "", sale: "", linkage: "", spot: "", warehouse: "", reportAction: "", priceField: "", priceValue: "" },
   "filter reset must restore every common bulk input to unspecified/keep-existing",
 );
 
@@ -154,6 +154,18 @@ assert.deepEqual([...deleteThemePatch.inputFields], ["행사테마 삭제"]);
 assert.equal(browser.buildMerchBulkFieldPatch({ stock: "abc" }).ok, false);
 assert.equal(browser.buildMerchBulkFieldPatch({}).ok, false);
 
+const zeroPricePatch = browser.buildMerchBulkFieldPatch({ priceField: "행사가", priceValue: "0" });
+assert.equal(zeroPricePatch.ok, true, "numeric zero must be accepted as a real unit price");
+assert.equal(zeroPricePatch.patch.행사가, 0);
+assert.equal(zeroPricePatch.editedFields.행사가, true);
+assert.deepEqual([...zeroPricePatch.inputFields], ["행사가"]);
+const wholesalePricePatch = browser.buildMerchBulkFieldPatch({ priceField: "도매A", priceValue: "12,300" });
+assert.equal(wholesalePricePatch.patch.도매A, 12300);
+assert.deepEqual([...wholesalePricePatch.inputFields], ["도매가"]);
+assert.equal(browser.buildMerchBulkFieldPatch({ priceField: "행사가", priceValue: "" }).ok, false);
+assert.equal(browser.buildMerchBulkFieldPatch({ priceField: "", priceValue: "1000" }).ok, false);
+assert.equal(browser.buildMerchBulkFieldPatch({ priceField: "없는단가", priceValue: "1000" }).ok, false);
+
 const reportOnlyPatch = browser.buildMerchBulkFieldPatch({ reportAction: "apply" });
 assert.equal(reportOnlyPatch.ok, true, "price report must work without another bulk field");
 assert.equal(reportOnlyPatch.reportAction, "apply");
@@ -244,25 +256,16 @@ assert.doesNotMatch(html, /handleApplySelectedWarehouse|selectedWarehouseInput/)
 assert.match(html, /const handleApplyBulkFields = useCallback/);
 assert.match(html, /ui\.selectedRows\.size > 0[\s\S]*fullDisplayRows\.filter[\s\S]*: fullDisplayRows/);
 assert.match(html, /value: promoThemeInput[\s\S]*"aria-label": "지정할 행사테마"[\s\S]*"테마지정"/);
-assert.match(html, /placeholder: getBulkPlaceholder\('stock', '재고'\)/);
-assert.match(html, /getBulkSelectBlankLabel\('sale', '판매'\)/);
-assert.match(html, /getBulkSelectBlankLabel\('linkage', '연동'\)/);
-assert.match(html, /getBulkSelectBlankLabel\('spot', '싯가'\)/);
-assert.match(html, /placeholder: getBulkPlaceholder\('warehouse', '창고'\)/);
+assert.match(html, /data-merch-price-bulk-editor": "detail-filter"/);
+assert.match(html, /value: bulkInputs\.priceField[\s\S]*"단가필터"[\s\S]*MERCH_CATEGORY_WORK_COLUMNS\.map/);
+assert.match(html, /value: bulkInputs\.priceValue[\s\S]*placeholder: "단가 입력"/);
+assert.match(html, /isPriceWork && ui\.selectedRows\.size === 0[\s\S]*단가를 적용할 상품을 1개 이상 선택하세요/);
 assert.match(html, /setFilterScenarioOpen\(false\);\s*resetBulkInputs\(\);/);
-assert.match(html, /getBulkSelectBlankLabel = \(field, label\) =>[\s\S]*'지정 안 함\(기존 유지\)'/);
-assert.match(html, /React\.createElement\("option", \{ value: "" \}, getBulkSelectBlankLabel\('sale', '판매'\)\)/);
-assert.match(html, /React\.createElement\("option", \{ value: "" \}, getBulkSelectBlankLabel\('linkage', '연동'\)\)/);
-assert.match(html, /React\.createElement\("option", \{ value: "" \}, getBulkSelectBlankLabel\('spot', '싯가'\)\)/);
-assert.doesNotMatch(html, /value: "", disabled: true \}, getBulkSelectBlankLabel\('(sale|linkage|spot)'/);
-assert.match(html, /"판매\(1\)"[\s\S]*"정지\(0\)"/);
-assert.match(html, /"사용\(1\)"[\s\S]*"사용 안 함\(0\)"/);
-assert.match(html, /"적용\(1\)"[\s\S]*"미적용\(0\)"/);
+assert.doesNotMatch(html, /getBulkPlaceholder|getBulkSelectBlankLabel/);
 assert.match(html, /_bulkEditedFields/);
 assert.match(html, /actionType: '공통 일괄입력'/);
 assert.match(html, /source: 'MerchOps bulk'/);
-assert.match(html, /type: "checkbox", checked: bulkInputs\.reportAction === 'apply'/);
-assert.match(html, /type: "checkbox", checked: bulkInputs\.reportAction === 'clear'/);
+assert.doesNotMatch(html, /type: "checkbox", checked: bulkInputs\.reportAction === '(apply|clear)'/);
 assert.match(html, /화면상품 \$\{actionablePlans\.length\.toLocaleString\(\)\}건/);
 
 assert.match(html, /MERCH_DETAIL_FILTER_VALUES = \['noInboundPrice'/);

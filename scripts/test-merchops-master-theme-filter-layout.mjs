@@ -38,8 +38,8 @@ assert.doesNotMatch(promoEntry, /handleAllThemeClick|promo-work-theme-|테마전
   "theme controls must not remain beside the upper 행사작업 entry");
 assert.match(toolbar, /isDetailFilterActive[\s\S]*!isThemeFilterValue\(v\)[\s\S]*!\['margin', 'noInboundPrice'\]\.includes\(v\)/,
   "fixed theme, margin, and no-inbound filters must not force the detail panel open");
-assert.doesNotMatch(toolbar, /showDetailFilterPanel\s*=\s*[^;]*isCategoryFilterActive/,
-  "fixed category filters must not force the detail panel open");
+assert.match(toolbar, /const isCategoryPriceWorkbench = !registrationMode && Array\.isArray\(categoryFilters\) && categoryFilters\.length > 0;[\s\S]*const showDetailFilterPanel = filterPanelOpen \|\| isDetailFilterActive \|\| isCategoryPriceWorkbench/,
+  "selecting a category must force the existing detail-filter bar and price editor open");
 
 const allThemeHandler = toolbar.slice(toolbar.indexOf("const handleAllThemeClick ="), toolbar.indexOf("const toggleThemeFilter ="));
 assert.match(allThemeHandler, /filter\(v => !isThemeFilterValue\(v\)\)/, "테마전체 must preserve non-theme filters");
@@ -117,8 +117,25 @@ assert.match(rightIssueActions, /isNoInboundPriceActive[\s\S]*data-merch-no-inbo
   "no inbound price must expose the F7 reservation controls to the right of 상세");
 assert.doesNotMatch(detailOptions, /data-merch-price-direction|data-merch-no-inbound-action|상승만보기|싯가판매/,
   "moved issue actions must not remain in the lower detail row");
-assert.match(toolbar, /const showDetailFilterPanel = filterPanelOpen \|\| isDetailFilterActive \|\| \(selectedRows\.size > 0/,
-  "issue selection alone must not force the lower detail row open after its actions move upward");
+assert.match(toolbar, /const showDetailFilterPanel = filterPanelOpen \|\| isDetailFilterActive \|\| isCategoryPriceWorkbench \|\| \(selectedRows\.size > 0/,
+  "category selection must force the lower detail row while preserving selection-based opening");
+const priceEditor = lowerRow.slice(lowerRow.indexOf('data-merch-price-bulk-editor": "detail-filter"'), lowerRow.indexOf('const SessionExcludedPanel'));
+assert.match(priceEditor, /value: bulkInputs\.priceField[\s\S]*"단가필터"[\s\S]*MERCH_CATEGORY_WORK_COLUMNS\.map/,
+  "the existing detail-filter bar must contain the six-field unit-price selector");
+assert.match(priceEditor, /value: bulkInputs\.priceValue[\s\S]*placeholder: "단가 입력"[\s\S]*onClick: applyBulkInputs[\s\S]*"적용"/,
+  "the existing apply button must apply the unit-price input");
+assert.doesNotMatch(priceEditor, /bulkInputs\.(stock|sale|linkage|spot|warehouse|reportAction)/,
+  "the former complex per-field bulk controls must be removed from the detail-filter bar");
+assert.match(html, /const MERCH_CATEGORY_MASTER_COLUMNS = Object\.freeze\(\['입고가', '판매가'\]\);/,
+  "the category workbench master area must be limited to inbound price and sale price");
+assert.match(html, /const MERCH_CATEGORY_WORK_COLUMNS = Object\.freeze\(\['입고가', '도매A', '출고가', '행사가', '판매가', '시중가'\]\);/,
+  "the category workbench must expose exactly the requested six price fields");
+assert.match(html, /categoryPriceWorkbench \? \[\.\.\.MERCH_CATEGORY_MASTER_COLUMNS\][\s\S]*categoryPriceWorkbench \? \[\.\.\.MERCH_CATEGORY_WORK_COLUMNS\]/,
+  "category selection must override saved table layouts with the dedicated master/work columns");
+assert.match(html, /hasEditableWorktable && \(React\.createElement\("input", \{ type: "checkbox"/,
+  "category master lookup rows must expose the existing product-selection checkboxes");
+assert.match(html, /!registrationMode && !categoryPriceWorkbench && \(React\.createElement\("th"[\s\S]*리포트/,
+  "the category workbench must omit the unrelated report column");
 assert.match(toolbar, /if \(\['priceRise', 'priceFall'\]\.includes\(value\)\) return 'priceDirection';/,
   "rise and fall must be a single-choice detail-filter group");
 assert.match(toolbar, /\['status', 'priceDirection'\]\.includes\(group\)[\s\S]*current\.filter\(v => getDetailFilterGroup\(v\) !== group\)/,
@@ -236,7 +253,7 @@ assert.match(toolbar, /const selectIssueFilter = \(value\) =>[\s\S]*withoutIssue
 assert.match(toolbar, /data-merch-no-inbound-action": "touch-choice"[\s\S]*\['spot', '싯가판매'\][\s\S]*\['stop', '판매정지'\]/,
   "the no-inbound action touch choices must be adjacent and conditionally visible");
 
-const versionMatches = [...html.matchAll(/v2\.1\.197_ActionOnlyCompare/g)];
-assert.ok(versionMatches.length >= 3, "all MerchOps version labels must use v2.1.196");
+const versionMatches = [...html.matchAll(/v2\.1\.198_CategoryPriceWorkbench/g)];
+assert.ok(versionMatches.length >= 3, "all MerchOps version labels must use v2.1.198");
 
 console.log("MerchOps theme-none, promo-price, and fixed-layout contracts passed.");
