@@ -16,6 +16,7 @@
     // v2.1.192: 가격변동 상세에 상승/하락을, 입고가없음 상세에 싯가판매/판매정지 예약을 조건부로 노출한다.
     // v2.1.191: 행사테마 필터 뒤에 작업 버튼을 추가해 테마 선택 없이도 행사 작업대를 수동으로 열고 닫을 수 있게 한다.
     // v2.1.190: 이슈 필터를 단일선택으로 통일하고 행사 작업대는 상위 행사테마 선택 시에만 노출하며 입고가없음의 싯가판매/판매정지 예약을 F7 일괄 저장에 연결한다.
+    // v2.1.193: QuickF8 쇼핑몰업로드에서 작업 원본에 판매여부·재고 컬럼이 없으면 상품 마스터 값을 보강하되 명시 공란·0은 보존한다.
     // v2.1.189: QuickF8 쇼핑몰업로드의 복합 상품코드 헤더를 인식하여 수정·재저장 파일도 다시 불러올 수 있게 한다.
     // v2.1.188: 테마 없음 필터를 추가하고 기본상품 분류와 행사제안을 제거하며 행사상태를 행사가/행사가없음으로 명확히 구분한다.
     // v2.1.187: 초기 강조색을 실제 작업상태에 따라 동적으로 표시하고, 테마 전체를 모든 테마 행사 보기로 전환하며 행사 작업대를 상시 노출한다.
@@ -9716,7 +9717,23 @@ ${targetText} ${targetRows.length}건을 엑셀로 생성합니다.${workflowTex
                 : { hasValue: false, code: '' };
             if (explicitSale.hasValue && explicitSale.isExplicitBlank) return '';
             if (explicitSale.hasValue) return explicitSale.code;
-            return '';
+            const resolvedSale = window.resolveMerchSaleAvailability
+                ? window.resolveMerchSaleAvailability(row, getMasterForQuickRow(row))
+                : { hasValue: false, code: '' };
+            return resolvedSale.hasValue ? resolvedSale.code : '';
+        };
+        const getShopUploadStock = (row = {}) => {
+            const master = getMasterForQuickRow(row);
+            const state = window.resolveMerchWorkingField
+                ? window.resolveMerchWorkingField(row, master, '재고수량', { aliases: ['재고수량', '재고', '수량'] })
+                : { isWorkingValue: false, isExplicitBlank: false, value: '' };
+            if (state.isWorkingValue) {
+                return state.isExplicitBlank || window.isBlankCell(state.value) ? '' : window.parseNum(state.value);
+            }
+            const masterRaw = window.hasOwnField(master, '재고수량')
+                ? master['재고수량']
+                : (window.hasOwnField(master, '재고') ? master['재고'] : '');
+            return window.isBlankCell(masterRaw) ? '' : window.parseNum(masterRaw);
         };
         const getShopSalePrice = (row) => {
             const promo = getBestNum(row, '행사가');
@@ -9801,12 +9818,12 @@ ${targetText} ${targetRows.length}건을 엑셀로 생성합니다.${workflowTex
                 shopBPrice = getBestNumByAliases(row, ['B판매가', 'B 판매가']);
                 shopBWholesale = getBestNum(row, '도매B');
                 finalTransmission = getBestNumByAliases(row, ['최종전송', '최종(전송)', '최종입고'], '');
-                const finalStockRaw = getBestValue(row, '재고수량', '');
                 // F8 쇼핑몰업로드 재고 정책:
                 // - 엑셀/작업값에 명시 재고가 있으면 0을 포함해 그대로 보존한다.
-                // - 재고 컬럼이 없으면 자동 기본값을 만들지 않고 공란으로 출력한다.
+                // - 재고 컬럼 자체가 없으면 상품 마스터의 기존 재고를 보강한다.
+                // - 명시 공란은 마스터로 덮어쓰지 않고 공란으로 유지한다.
                 // - ERP업데이트 시트에는 재고수량을 쓰지 않으므로 영향 없다.
-                shopUploadStock = !window.isBlankCell(finalStockRaw) ? window.parseNum(finalStockRaw) : '';
+                shopUploadStock = getShopUploadStock(row);
                 name = getBestStrByAliases(row, ['품목명', '상품명']);
                 spec = getBestStr(row, '규격');
                 brand = getBestStr(row, '브랜드');

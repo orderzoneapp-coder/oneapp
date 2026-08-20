@@ -122,17 +122,27 @@ const makeContext = (scenarioName) => {
       return defaultValue;
     },
     getMerchMasterItemForRow: (masterProducts = {}, row = {}) => masterProducts[normalizeCode(row.코드)] || {},
-    getMerchExplicitSaleAvailability: (row = {}) => {
-      const sources = row.sources || {};
-      for (const obj of [row.finalData || {}, ...context.window.getWorkingSourcePriority(sources).map((role) => sources[role] || {})]) {
-        for (const key of ["판매여부", "판매"]) {
-          if (!hasOwn(obj, key) || String(obj[key] ?? "").trim() === "") continue;
-          return { hasValue: true, code: String(parseNum(obj[key]) === 0 ? 0 : 1) };
+    resolveMerchWorkingField: (row = {}, master = {}, field = "", options = {}) => {
+      const aliases = Array.from(new Set([field, ...(options.aliases || [])]));
+      for (const [origin, obj] of [["direct", row.finalData || {}], ...context.window.getWorkingSourcePriority(row.sources || {}).map((role) => [`source:${role}`, row.sources?.[role] || {}])]) {
+        for (const key of aliases) {
+          if (!hasOwn(obj, key)) continue;
+          const value = obj[key] ?? "";
+          return { value, origin, isWorkingValue: true, isExplicitBlank: String(value).trim() === "", field: key };
         }
       }
+      const masterKey = aliases.find((key) => hasOwn(master, key));
+      return { value: masterKey ? (master[masterKey] ?? "") : "", origin: "master-reference", isWorkingValue: false, isExplicitBlank: false, field: masterKey || field };
+    },
+    getMerchExplicitSaleAvailability: (row = {}) => {
+      const state = context.window.resolveMerchWorkingField(row, {}, "판매여부", { aliases: ["판매여부", "판매"] });
+      if (state.isWorkingValue && state.isExplicitBlank) return { hasValue: true, code: "", isExplicitBlank: true };
+      if (state.isWorkingValue) return { hasValue: true, code: String(parseNum(state.value) === 0 ? 0 : 1) };
       return { hasValue: false, code: "" };
     },
     resolveMerchSaleAvailability: (row = {}, master = {}) => {
+      const explicit = context.window.getMerchExplicitSaleAvailability(row);
+      if (explicit.hasValue) return explicit;
       if (hasOwn(master, "판매여부") && String(master.판매여부 ?? "").trim() !== "") {
         return { hasValue: true, code: String(parseNum(master.판매여부) === 0 ? 0 : 1) };
       }
@@ -295,6 +305,27 @@ try {
   assert.equal(transmissionErp[1][11], 0, "explicit zero final-transmission must survive F8 XLSX generation");
   assert.equal(transmissionErp[2][11], "", "explicit blank final-transmission must survive F8 XLSX generation");
   assert.equal(transmissionErp[3][11], "", "missing final-transmission must survive F8 XLSX generation without fallback");
+
+  const masterSaleStockResult = await runF8Scenario({
+    name: "master-sale-stock-fallback",
+    rows: [
+      makeRow({ code: "MS1", role: "purchase", source: { 품목명: "마스터 보강", 입고가: 9000, 출고가: 11000 } }),
+      makeRow({ code: "MS2", role: "purchase", source: { 품목명: "명시 공란 보존", 입고가: 9000, 출고가: 11000, 판매여부: "", 재고수량: "" } }),
+      makeRow({ code: "MS3", role: "purchase", source: { 품목명: "명시 0 보존", 입고가: 9000, 출고가: 11000, 판매여부: 0, 재고수량: 0 } }),
+    ],
+    masterProducts: {
+      MS1: { 판매여부: 1, 재고수량: 7 },
+      MS2: { 판매여부: 1, 재고수량: 8 },
+      MS3: { 판매여부: 1, 재고수량: 9 },
+    },
+  });
+  const masterSaleStockShop = masterSaleStockResult.context.XLSX.utils.sheet_to_json(masterSaleStockResult.reopened.Sheets["쇼핑몰업로드"], { header: 1, raw: true, defval: "" });
+  assert.equal(masterSaleStockShop[1][14], "1", "missing working sale availability must fall back to master");
+  assert.equal(masterSaleStockShop[1][15], 7, "missing working stock must fall back to master");
+  assert.equal(masterSaleStockShop[2][14], "", "explicit blank sale availability must stay blank");
+  assert.equal(masterSaleStockShop[2][15], "", "explicit blank stock must stay blank");
+  assert.equal(masterSaleStockShop[3][14], "0", "explicit zero sale availability must stay zero");
+  assert.equal(masterSaleStockShop[3][15], 0, "explicit zero stock must stay zero");
 
   const purchaseRow = makeRow({
     code: "30010001",
