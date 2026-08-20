@@ -1,12 +1,14 @@
 import { createOrderDraftEditor } from './order-draft-editor.js?v=0.1.0';
+import { STORE, getAll, normalizeText } from './orderq-db.js?v=0.11.0';
 import {
   captureTextIntake,
   analyzeSingleOrderDocument,
+  parseStructuredOrderText,
   confirmExtraction,
   confirmMatching,
   reopenIntakeStage,
   commitIntakeOrder
-} from './intake-engine.js?v=0.1.0';
+} from './intake-engine.js?v=0.2.0';
 
 const $ = id => document.getElementById(id);
 const state = {
@@ -14,7 +16,12 @@ const state = {
   lines: [],
   editor: null,
   currentStep: 0,
-  captured: false
+  captured: false,
+  customers: [],
+  activeCustomer: null,
+  imageEvidence: null,
+  imageFile: null,
+  ocrRunning: false
 };
 
 const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({
@@ -24,6 +31,7 @@ const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({
 const panels = [...document.querySelectorAll('[data-panel]')];
 const railSteps = [...document.querySelectorAll('[data-rail-step]')];
 const sourcePanel = $('sourcePanel');
+const KAKAO_HEADER = /^\s*\[([^\]]+)\]\s*\[([^\]]+)\]/m;
 
 function renderRail(stepIndex) {
   railSteps.forEach((button, index) => {
@@ -50,10 +58,19 @@ function step(stepIndex) {
   });
 }
 
-function msg(text = '', tone = 'info') {
+function msg(message = '', tone = 'info') {
   const element = $('intakeMessage');
-  element.textContent = text;
+  element.textContent = message;
   element.dataset.tone = tone;
+}
+
+function friendlyError(error) {
+  const value = String(error?.message || error || '');
+  if (value.includes('ORDERQ_INTAKE_CUSTOMER_REQUIRED')) return '거래처를 선택하세요. 거래처가 지정되어야 거래처별 상품 매칭을 적용할 수 있습니다.';
+  if (value.includes('ORDERQ_INTAKE_MULTIPLE_DOCUMENTS_REQUIRES_STAGE4')) return '여러 주문이 포함되어 있습니다. 현재 화면에서는 주문 한 건씩 분석해 주세요.';
+  if (value.includes('ORDERQ_INTAKE_REVIEW_INCOMPLETE')) return '주문 항목을 인식하지 못했습니다. 거래처와 상품·수량 표현을 확인해 주세요.';
+  if (value.includes('ORDERQ_INTAKE_SOURCE_EMPTY')) return '분석할 주문내용을 입력하세요.';
+  return value || '처리 중 오류가 발생했습니다.';
 }
 
 function rows() {
@@ -98,6 +115,133 @@ function editor() {
   });
 }
 
+function customerName(customer) {
+  return String(customer?.customerName || customer?.name || '').trim();
+}
+
+function customerCode(customer) {
+  return String(customer?.erpCustomerCode || customer?.customerCode || '').trim();
+}
+
+function findCustomer(value) {
+  const normalized = normalizeText(value);
+  if (!normalized) return null;
+  return state.customers.find(customer => normalizeText(customerName(customer)) === normalized)
+    || state.customers.find(customer => customerCode(customer) && normalizeText(customerCode(customer)) === normalized)
+    || null;
+}
+
+function inferCustomerFromRaw(rawText, sourceType) {
+  const textValue = String(rawText || '').replace(/\r\n?/g, '\n');
+  if (sourceType === 'KAKAO_TEXT') {
+    const sender = textValue.match(KAKAO_HEADER)?.[1] || '';
+    return findCustomer(sender);
+  }
+  const lines = textValue.split('\n').map(line => line.trim()).filter(Boolean).slice(0, 5);
+  for (const line of lines) {
+    const direct = findCustomer(line.replace(/^[-•·*]+\s*/, ''));
+    if (direct) return direct;
+  }
+  return null;
+}
+
+function detectInput(rawText) {
+  if (state.imageEvidence) return { sourceType: 'IMAGE_OCR', label: '사진 OCR' };
+  const structured = parseStructuredOrderText(rawText);
+  if (structured.detected) return { sourceType: 'GENERAL_TEXT', label: `쇼핑몰 표형 주문 · ${structured.rows.length}개 상품` };
+  if (KAKAO_HEADER.test(String(rawText || ''))) return { sourceType: 'KAKAO_TEXT', label: '카카오 대화' };
+  return { sourceType: 'GENERAL_TEXT', label: '일반 텍스트' };
+}
+
+function updateDetectionNote() {
+  const rawText = $('rawText').value;
+  if (!rawText.trim() && !state.imageEvidence) {
+    $('inputDetectionNote').textContent = '입력 종류는 자동으로 판단합니다.';
+    return;
+  }
+  const detected = detectInput(rawText);
+  $('inputDetectionNote').textContent = `${detected.label}로 인식`;
+}
+
+async function loadCustomers() {
+  try {
+    state.customers = (await getAll(STORE.CUSTOMERS)).filter(customer => (customer.status || 'ACTIVE') !== 'INACTIVE');
+    $('customerOptions').innerHTML = state.customers
+      .map(customer => `<option value="${esc(customerName(customer))}" label="${esc(customerCode(customer))}"></option>`)
+      .join('');
+  } catch (error) {
+    state.customers = [];
+    msg('거래처 목록을 불러오지 못했습니다. 새로고침 후 다시 시도하세요.', 'error');
+  }
+}
+
+function updatePresetCustomer() {
+  const customer = findCustomer($('customerPreset').value);
+  state.activeCustomer = customer;
+  $('customerPresetId').value = customer?.customerId || '';
+  return customer;
+}
+
+async function fileToEvidence(file) {
+  const buffer = await file.arrayBuffer();
+  const digest = await crypto.subtle.digest('SHA-256', buffer);
+  const contentHash = [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('');
+  const dataUrl = await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(reader.error || new Error('이미지를 읽지 못했습니다.'));
+    reader.readAsDataURL(file);
+  });
+  return {
+    fileName: file.name || '붙여넣은 이미지',
+    mimeType: file.type || 'image/png',
+    byteLength: file.size || buffer.byteLength,
+    contentHash,
+    binaryBase64: dataUrl.split(',')[1] || '',
+    dataUrl
+  };
+}
+
+async function recognizeImage(file) {
+  if (!file || !String(file.type || '').startsWith('image/')) return;
+  if (state.ocrRunning) return;
+  state.ocrRunning = true;
+  state.imageFile = file;
+  $('captureBtn').disabled = true;
+  $('imagePreview').hidden = false;
+  $('imagePreviewName').textContent = file.name || '붙여넣은 주문사진';
+  $('imageOcrStatus').textContent = '사진 준비 중…';
+  $('imageStatus').textContent = '사진에서 주문문자를 추출하고 있습니다.';
+  try {
+    const evidence = await fileToEvidence(file);
+    state.imageEvidence = evidence;
+    $('imagePreviewImg').src = evidence.dataUrl;
+    if (!window.Tesseract?.recognize) throw new Error('OCR 엔진을 불러오지 못했습니다.');
+    const result = await window.Tesseract.recognize(file, 'kor+eng', {
+      logger: progress => {
+        if (progress.status === 'recognizing text') {
+          const percent = Math.round(Number(progress.progress || 0) * 100);
+          $('imageOcrStatus').textContent = `문자 추출 ${percent}%`;
+        }
+      }
+    });
+    const extracted = String(result?.data?.text || '').replace(/\r/g, '').trim();
+    if (!extracted) throw new Error('사진에서 주문문자를 찾지 못했습니다.');
+    $('rawText').value = extracted;
+    $('imageOcrStatus').textContent = '문자 추출 완료';
+    $('imageStatus').textContent = '추출된 내용을 확인한 뒤 분석 실행을 누르세요.';
+    updateDetectionNote();
+    msg('사진 문자를 추출했습니다. 거래처와 추출 내용을 확인한 뒤 분석 실행을 누르세요.', 'success');
+  } catch (error) {
+    $('imageOcrStatus').textContent = '문자 추출 실패';
+    $('imageStatus').textContent = '사진은 유지했습니다. 주문내용을 직접 입력해도 됩니다.';
+    msg(`${friendlyError(error)} 주문내용을 직접 입력할 수도 있습니다.`, 'error');
+  } finally {
+    state.ocrRunning = false;
+    $('captureBtn').disabled = false;
+  }
+}
+
 async function goBackTo(targetStep) {
   if (!state.document || targetStep >= state.currentStep) return;
   try {
@@ -119,7 +263,7 @@ async function goBackTo(targetStep) {
       msg('상품 매칭을 다시 확인할 수 있습니다.', 'info');
     }
   } catch (error) {
-    msg(error.message || String(error), 'error');
+    msg(friendlyError(error), 'error');
   }
 }
 
@@ -127,30 +271,106 @@ railSteps.forEach((button, index) => {
   button.addEventListener('click', () => goBackTo(index));
 });
 
+$('customerPreset').addEventListener('input', updatePresetCustomer);
+$('rawText').addEventListener('input', updateDetectionNote);
+$('customerExpression').readOnly = true;
+
+$('imageInput').addEventListener('change', event => {
+  const file = [...(event.target.files || [])].find(item => String(item.type || '').startsWith('image/'));
+  if (file) recognizeImage(file);
+  event.target.value = '';
+});
+
+document.addEventListener('paste', event => {
+  const file = [...(event.clipboardData?.items || [])]
+    .filter(item => item.kind === 'file' && String(item.type || '').startsWith('image/'))
+    .map(item => item.getAsFile())
+    .find(Boolean);
+  if (!file) return;
+  event.preventDefault();
+  recognizeImage(file);
+});
+
+$('rawEntryField').addEventListener('dragover', event => {
+  const hasImage = [...(event.dataTransfer?.items || [])].some(item => item.kind === 'file' && String(item.type || '').startsWith('image/'));
+  if (hasImage) event.preventDefault();
+});
+
+$('rawEntryField').addEventListener('drop', event => {
+  const file = [...(event.dataTransfer?.files || [])].find(item => String(item.type || '').startsWith('image/'));
+  if (!file) return;
+  event.preventDefault();
+  recognizeImage(file);
+});
+
 $('captureBtn').onclick = async () => {
+  const button = $('captureBtn');
   try {
-    const rawText = $('rawText').value;
+    if (state.ocrRunning) {
+      msg('사진 문자 추출이 끝난 뒤 분석할 수 있습니다.', 'warn');
+      return;
+    }
+    const rawText = $('rawText').value.trim();
+    if (!rawText) {
+      msg('분석할 주문내용을 입력하세요.', 'error');
+      $('rawText').focus();
+      return;
+    }
+
+    const detected = detectInput(rawText);
+    const presetValue = $('customerPreset').value.trim();
+    const presetCustomer = presetValue ? findCustomer(presetValue) : null;
+    if (presetValue && !presetCustomer) {
+      msg('등록된 거래처를 검색해서 선택하세요.', 'error');
+      $('customerPreset').focus();
+      return;
+    }
+    const inferredCustomer = inferCustomerFromRaw(rawText, detected.sourceType);
+    const customer = presetCustomer || inferredCustomer;
+    if (!customer) {
+      msg('거래처를 선택하세요. 텍스트에 거래처명이 없으면 거래처를 먼저 지정해야 거래처별 상품 매칭이 작동합니다.', 'warn');
+      $('customerPreset').focus();
+      return;
+    }
+
+    state.activeCustomer = customer;
+    $('customerPreset').value = customerName(customer);
+    $('customerPresetId').value = customer.customerId || '';
+    button.disabled = true;
+    button.dataset.originalText = button.textContent;
+    button.textContent = '분석 중…';
+    msg(`${customerName(customer)} 기준으로 주문을 분석하고 있습니다…`, 'info');
+
     const captured = await captureTextIntake({
-      sourceType: $('sourceType').value,
-      sourceId: $('sourceId').value,
-      rawText
+      sourceType: detected.sourceType,
+      sourceId: 'ORDER_IN',
+      rawText,
+      imageEvidence: state.imageEvidence
     });
     const analyzed = await analyzeSingleOrderDocument({
       session: captured.session,
       sourcePart: captured.sourcePart,
       rawText,
+      customerOverride: {
+        customerId: customer.customerId,
+        customerName: customerName(customer)
+      },
       headerDraft: { warehouseName: $('warehouse').value }
     });
     state.document = analyzed.document;
     state.lines = analyzed.lines;
     state.captured = true;
     $('rawPreview').textContent = rawText;
-    $('customerExpression').value = analyzed.document.confirmedCustomerName || '';
+    $('customerExpression').value = analyzed.document.confirmedCustomerName || customerName(customer);
     rows();
     step(0);
-    msg('추출한 내용을 확인하고 필요한 부분만 수정하세요.', 'success');
+    const label = analyzed.detectedInputType === 'SHOP_TABLE' ? '쇼핑몰 표형 주문을 인식했습니다.' : `${detectInput(rawText).label} 분석이 완료되었습니다.`;
+    msg(`${label} 추출한 내용을 확인하세요.`, 'success');
   } catch (error) {
-    msg(error.message || String(error), 'error');
+    msg(friendlyError(error), 'error');
+  } finally {
+    button.disabled = false;
+    button.textContent = button.dataset.originalText || '분석 실행 →';
   }
 };
 
@@ -175,9 +395,9 @@ $('confirmExtractionBtn').onclick = async () => {
     state.lines = result.lines;
     editor();
     step(1);
-    msg('추출 확인이 끝났습니다. 실제 상품을 확인하세요.', 'success');
+    msg(`${state.activeCustomer ? customerName(state.activeCustomer) : '거래처'} 기준 상품 매칭을 확인하세요.`, 'success');
   } catch (error) {
-    msg(error.message || String(error), 'error');
+    msg(friendlyError(error), 'error');
   }
 };
 
@@ -212,6 +432,10 @@ $('draftEditor').onclick = event => {
 
 $('confirmMatchingBtn').onclick = async () => {
   try {
+    state.lines.forEach(line => {
+      if (line.reviewStatus === 'EXCLUDED') return;
+      if (line.productIdentityStatus === 'MASTER_LINKED') line.reviewStatus = 'CONFIRMED';
+    });
     const result = await confirmMatching({ document: state.document, lines: state.lines });
     state.document = result.document;
     state.lines = result.lines;
@@ -219,7 +443,7 @@ $('confirmMatchingBtn').onclick = async () => {
     step(2);
     msg('상품 확인이 끝났습니다. 최종 주문 내용을 확인하세요.', 'success');
   } catch (error) {
-    msg(error.message || String(error), 'error');
+    msg(friendlyError(error), 'error');
   }
 };
 
@@ -232,7 +456,8 @@ $('commitBtn').onclick = async () => {
       document: state.document,
       orderDraft: {
         orderDate: new Date().toISOString().slice(0, 10),
-        customerName: state.document.confirmedCustomerName || $('customerExpression').value,
+        customerId: state.activeCustomer?.customerId || state.document.confirmedCustomerId || '',
+        customerName: state.activeCustomer ? customerName(state.activeCustomer) : state.document.confirmedCustomerName,
         warehouseName: $('warehouse').value,
         transactionType: '기타',
         orderStatus: 'ORDER',
@@ -241,8 +466,10 @@ $('commitBtn').onclick = async () => {
     });
     location.href = `./index.html?orderId=${encodeURIComponent(result.order.orderId)}`;
   } catch (error) {
-    msg(error.message || String(error), 'error');
+    msg(friendlyError(error), 'error');
   }
 };
 
 renderRail(0);
+loadCustomers();
+updateDetectionNote();
