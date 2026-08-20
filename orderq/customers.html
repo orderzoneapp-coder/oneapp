@@ -63,7 +63,7 @@
   </main>
   <dialog class="cm-modal" id="customerEditor">
     <form method="dialog" class="cm-form" id="customerForm">
-      <header><div><small>Customer Editor</small><h2 id="editorTitle">거래처 등록</h2></div><button value="cancel" aria-label="닫기">×</button></header>
+      <header><div><small>Customer Editor</small><h2 id="editorTitle">거래처 등록</h2></div><button type="button" data-close-customer-editor aria-label="닫기">×</button></header>
       <input type="hidden" name="customerId">
       <input type="hidden" name="revision">
       <div class="cm-form-grid">
@@ -80,10 +80,10 @@
         <label>상태<select name="status"><option value="ACTIVE">사용중</option><option value="INACTIVE">거래중단</option></select></label>
         <label>주소<input name="address"></label>
       </div>
-      <div class="cm-form-actions"><button class="cm-button" value="cancel">취소</button><button class="cm-button primary" id="saveCustomerButton" type="submit">저장</button></div>
+      <div class="cm-form-actions"><button class="cm-button" type="button" data-close-customer-editor>취소</button><button class="cm-button primary" id="saveCustomerButton" type="submit">저장</button></div>
     </form>
   </dialog>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script type="module" src="./customer-master-ui.js?v=0.12.1"></script>
+  <script type="module" src="./customer-master-ui.js?v=0.12.2"></script>
 </body>
 </html>
