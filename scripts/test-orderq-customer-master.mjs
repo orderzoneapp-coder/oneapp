@@ -8,7 +8,7 @@ import { ORDERQ_DB_VERSION, V9_STORE_DEFINITIONS } from '../orderq/orderq-v9-con
 const read = path => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
 const [
   db, service, picker, ui, html, css, intakeEngine, intakeWorkbench,
-  directInput, collectorRepository, collectorUi, collectorReview, cloud
+  directInput, collectorRepository, collectorUi, collectorReview, collectorHtml, cloud
 ] = await Promise.all([
   read('orderq/orderq-db.js'),
   read('orderq/customer-master.js'),
@@ -22,6 +22,7 @@ const [
   read('orderq/history-collector/history-repository.js'),
   read('orderq/collector-ui.js'),
   read('orderq/collector-smartparser-review.js'),
+  read('orderq/collector.html'),
   read('orderq-cloud.gs')
 ]);
 
@@ -69,6 +70,7 @@ assert.doesNotMatch(collectorRepository, /customer = candidate;\s*customerStore?
 assert.match(collectorRepository, /미등록 거래처입니다/);
 assert.match(collectorUi, /resolvePreparedCustomers/);
 assert.match(collectorUi, /openCustomerPicker/);
+assert.match(collectorHtml, /collector-smartparser-review\.js\?v=0\.12\.2/);
 
 assert.doesNotMatch(cloud, /source: 'ORDER_SYNC'/);
 assert.match(cloud, /ORDERQ_CUSTOMER_NOT_FOUND/);
