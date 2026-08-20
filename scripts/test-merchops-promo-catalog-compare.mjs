@@ -356,6 +356,8 @@ assert.equal(workModeContext.resolveMerchWorkMode({ sourceWorkPresent: true }), 
 assert.equal(workModeContext.resolveMerchWorkMode({ categoryFilters: ["10"] }), modes.CATEGORY_PRICE);
 assert.equal(workModeContext.resolveMerchWorkMode({ activeTags: [{ type: "catalog", name: "파서A" }] }), modes.MASTER_LIST);
 assert.equal(workModeContext.resolveMerchWorkMode({}), modes.MASTER);
+assert.equal(workModeContext.MERCH_WORK_MODE_NOTICES[modes.MASTER], undefined, "normal master mode must stay visually silent");
+assert.equal(workModeContext.MERCH_WORK_MODE_NOTICES[modes.SOURCE_WORK], "외부 원본 작업 모드로 전환되었습니다.");
 
 const unionStart = html.indexOf("// 카탈로그·파서리스트는 마스터의 조회 목록이다.");
 const unionEnd = html.indexOf("// 선택 카탈로그 범위를 기존 비교 모듈", unionStart);
@@ -390,8 +392,13 @@ assert.equal(issueContext.resolveMerchMainIssue({ stockQty: 0 }).text, "품절")
 assert.equal(issueContext.resolveMerchMainIssue({ noInboundPrice: true }).text, "입고가없음");
 assert.equal(issueContext.resolveMerchMainIssue({ hasActualWorkSource: true, priceChanged: true }).text, "가격변경");
 
-const versions = [...html.matchAll(/v2\.1\.200_WorkModeIssueSystem/g)].length;
+const versions = [...html.matchAll(/v2\.1\.201_TransientWorkModeNotice/g)].length;
 assert.ok(versions >= 3, "all three MerchOps version labels must use the target version");
+assert.doesNotMatch(html, /data-merch-work-mode": workMode/, "the toolbar must not expose a persistent system-mode badge");
+assert.doesNotMatch(html, /workModeLabels/, "persistent work-mode label rendering must be removed");
+assert.match(html, /data-merch-work-mode-notice": workMode/, "mode changes must use a transient status notice");
+assert.match(html, /setTimeout\(\(\) => \{[\s\S]*setWorkModeNotice\(''\)[\s\S]*\}, 2500\)/,
+  "the mode notice must dismiss itself after 2.5 seconds");
 assert.doesNotMatch(html, /handleOpenPromoCompare/);
 assert.doesNotMatch(html, /handlePromoCompareSourceUpload/);
 assert.match(html, /handleClosePromoCompare/);
