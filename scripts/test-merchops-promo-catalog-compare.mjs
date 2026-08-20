@@ -292,20 +292,72 @@ assert.equal(compare.getApplyReadiness(ready, masterProducts).ready, true);
 assert.equal(compare.getApplyReadiness(ready, { ...masterProducts, A001: { ...masterProducts.A001, 출고가: 15000 } }).ready, false);
 assert.equal(compare.getApplyReadiness(ready, { B002: masterProducts.B002, C003: masterProducts.C003 }).ready, false);
 
-const versions = [...html.matchAll(/v2\.1\.198_CategoryPriceWorkbench/g)].length;
+const viewHelperStart = html.indexOf("// [M-CATALOG-COMPARE-VIEW-01]");
+const viewHelperEnd = html.indexOf("// 구버전 단축버튼 호출 호환용", viewHelperStart);
+assert.ok(viewHelperStart >= 0 && viewHelperEnd > viewHelperStart, "catalog comparison view bridge must exist");
+const savedStorage = new Map();
+const viewContext = vm.createContext({
+  window: {},
+  localStorage: {
+    setItem(key, value) { savedStorage.set(key, String(value)); },
+    removeItem(key) { savedStorage.delete(key); },
+  },
+  CustomEvent: class { constructor(type, options) { this.type = type; this.detail = options?.detail; } },
+});
+viewContext.window = viewContext;
+viewContext.dispatchEvent = () => true;
+viewContext.getMerchTableViewsForTarget = (presets, target) => presets?.[target]?.views || [];
+vm.runInContext(
+  `const DEFAULT_TABLE_VIEW_TARGET = 'estimate';\nconst normalizeMerchTableTarget = value => ['estimate','purchase','inventory','info','catalog'].includes(value) ? value : 'estimate';\n${html.slice(viewHelperStart, viewHelperEnd)}`,
+  viewContext,
+  { filename: "MerchOps-catalog-comparison-view-bridge.js" },
+);
+const selectedCompareView = viewContext.findMerchCatalogCompareTableView({ catalog: { views: [
+  { id: "catalog-main", name: "일반 카탈로그" },
+  { id: "catalog-compare", name: "카탈로그 비교" },
+] } });
+assert.equal(selectedCompareView.id, "catalog-compare", "the saved catalog comparison view must win over the first catalog view");
+let restoredTarget = "";
+let restoredViewId = "";
+let restoredMaster = {};
+let restoredWork = {};
+const viewConfig = {
+  activeTableTarget: "purchase",
+  activeTableViewId: "purchase-daily",
+  visibleMasterCols: { purchase: ["입고가", "판매가"] },
+  visibleUploadCols: { purchase: ["입고가", "출고가"] },
+  setActiveTableTarget(value) { restoredTarget = value; },
+  setActiveTableViewId(value) { restoredViewId = value; },
+  setVisibleMasterCols(updater) { restoredMaster = updater({}); },
+  setVisibleUploadCols(updater) { restoredWork = updater({}); },
+};
+const capturedView = viewContext.captureMerchTableViewState(viewConfig);
+viewContext.restoreMerchTableViewState(viewConfig, capturedView);
+assert.equal(restoredTarget, "purchase");
+assert.equal(restoredViewId, "purchase-daily");
+assert.deepEqual(plain(restoredMaster.purchase), ["입고가", "판매가"]);
+assert.deepEqual(plain(restoredWork.purchase), ["입고가", "출고가"]);
+
+const versions = [...html.matchAll(/v2\.1\.199_AutoCatalogInventoryCompare/g)].length;
 assert.ok(versions >= 3, "all three MerchOps version labels must use the target version");
-assert.match(html, /handleOpenPromoCompare/);
+assert.doesNotMatch(html, /handleOpenPromoCompare/);
+assert.match(html, /handlePromoCompareSourceUpload/);
+assert.match(html, /handleClosePromoCompare/);
 assert.match(html, /handleApplyPromoCompare/);
 assert.match(html, /handleQuickExcelExport/);
 assert.match(html, /handleOpenExportCenter/);
 assert.match(html, /data-promo-compare-flow/);
-assert.match(html, /data-promo-compare-summary/);
+assert.match(html, /data-promo-compare-intake[^>]*file-combination/);
+assert.match(html, /data-merch-compare-filter-row[^>]*dynamic/);
+assert.match(html, /data-promo-compare-waiting/);
 assert.match(html, /data-promo-compare-table[^>]*compact-task/);
-assert.match(html, /1 카탈로그 불러오기/);
-assert.match(html, /2 재고 불러오기/);
-assert.match(html, /3 자동 비교/);
-assert.match(html, /4 결과 확인/);
-assert.match(html, /5 비교결과 저장/);
+assert.match(html, /summary\.catalogLoaded > 0 && summary\.inventoryLoaded > 0/);
+assert.match(html, /ui\.setPromoComparePurpose\('작업필요'\)/);
+assert.match(html, /findMerchCatalogCompareTableView[\s\S]*applyMerchTableView\(config, 'catalog'/);
+assert.match(html, /captureMerchTableViewState[\s\S]*restoreMerchTableViewState/);
+assert.match(html, /'작업필요', \.\.\.promoCompare\.ACTION_PURPOSES/);
+assert.match(html, /비교결과 저장/);
+assert.doesNotMatch(html, /"행사가 비교"/);
 assert.doesNotMatch(html, />최신 마스터</);
 assert.doesNotMatch(html, /기타검토/);
 assert.doesNotMatch(html, /행사종료/);
