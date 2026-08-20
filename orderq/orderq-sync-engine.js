@@ -5,7 +5,7 @@ import {
   transactionDone,
   newId,
   nowIso
-} from './orderq-db.js?v=0.12.1';
+} from './orderq-db.js?v=0.14.0';
 import { resolveWarehouseInTransaction, warehouseSnapshot } from './warehouse-master.js?v=0.8.0';
 import { normalizedOrderView, orderDateKey, formatOrderNo, orderSequenceFromNo } from './order-document-model.js?v=0.8.0';
 import {
@@ -101,8 +101,9 @@ async function ensureOrderNoInTransaction(tx, order) {
 
 async function bootstrapPhase1References() {
   if (await metaGet(META_BOOTSTRAP)) return;
-  const [customers, aliases, events, productMappings, unitMappings, mappingEvents, queue] = await Promise.all([
+  const [customers, aliases, events, sourceLinks, sourceLinkEvents, productMappings, unitMappings, mappingEvents, queue] = await Promise.all([
     all(STORE.CUSTOMERS), all(STORE.CUSTOMER_ALIASES), all(STORE.ORDER_EVENTS),
+    all(STORE.CUSTOMER_SOURCE_LINKS), all(STORE.CUSTOMER_SOURCE_LINK_EVENTS),
     all(STORE.PRODUCT_MAPPINGS), all(STORE.UNIT_MAPPINGS), all(STORE.MAPPING_EVENTS), all(STORE.SYNC_QUEUE)
   ]);
   const existing = new Set(queue.map(row => `${row.entityType}:${row.entityId}`));
@@ -110,6 +111,8 @@ async function bootstrapPhase1References() {
   customers.forEach(row => { if (!existing.has(`CUSTOMER:${row.customerId}`)) additions.push(makeQueue('CUSTOMER', row.customerId, 1, row)); });
   aliases.forEach(row => { if (!existing.has(`CUSTOMER_ALIAS:${row.mappingId}`)) additions.push(makeQueue('CUSTOMER_ALIAS', row.mappingId, 1, row)); });
   events.forEach(row => { if (!existing.has(`ORDER_EVENT:${row.eventId}`)) additions.push(makeQueue('ORDER_EVENT', row.eventId, row.revision || 0, row)); });
+  sourceLinks.forEach(row => { if (!existing.has(`CUSTOMER_SOURCE_LINK:${row.linkId}`)) additions.push(makeQueue('CUSTOMER_SOURCE_LINK', row.linkId, row.revision || 1, row)); });
+  sourceLinkEvents.forEach(row => { if (!existing.has(`CUSTOMER_SOURCE_LINK_EVENT:${row.eventId}`)) additions.push(makeQueue('CUSTOMER_SOURCE_LINK_EVENT', row.eventId, 1, row)); });
   productMappings.forEach(row => { if (!existing.has(`PRODUCT_MAPPING:${row.mappingId}`)) additions.push(makeQueue('PRODUCT_MAPPING', row.mappingId, 1, row)); });
   unitMappings.forEach(row => { if (!existing.has(`UNIT_MAPPING:${row.mappingId}`)) additions.push(makeQueue('UNIT_MAPPING', row.mappingId, 1, row)); });
   mappingEvents.forEach(row => { if (!existing.has(`MAPPING_EVENT:${row.eventId}`)) additions.push(makeQueue('MAPPING_EVENT', row.eventId, 1, row)); });
@@ -288,6 +291,8 @@ async function applySimple(entityType, payload) {
     CUSTOMER: [STORE.CUSTOMERS, 'customerId'],
     PRODUCT: [STORE.PRODUCTS, 'productId'],
     CUSTOMER_ALIAS: [STORE.CUSTOMER_ALIASES, 'mappingId'],
+    CUSTOMER_SOURCE_LINK: [STORE.CUSTOMER_SOURCE_LINKS, 'linkId'],
+    CUSTOMER_SOURCE_LINK_EVENT: [STORE.CUSTOMER_SOURCE_LINK_EVENTS, 'eventId'],
     PRODUCT_MAPPING: [STORE.PRODUCT_MAPPINGS, 'mappingId'],
     UNIT_MAPPING: [STORE.UNIT_MAPPINGS, 'mappingId'],
     MAPPING_EVENT: [STORE.MAPPING_EVENTS, 'eventId'],
