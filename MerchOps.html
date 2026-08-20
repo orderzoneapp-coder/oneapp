@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.196_PromoPriceRight]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.197_ActionOnlyCompare]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -12,6 +12,7 @@
     <script src="coreEngine.js"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <script>
+    // v2.1.197: 카탈로그·재고·최신 마스터 비교를 변경 작업 중심의 단일 분류와 요약형 화면으로 재구성한다.
     // v2.1.196: 행사작업대의 행사가 설정 제목을 제거하고 행사가 작업 버튼 그룹을 우측 정렬한다.
     // v2.1.195: 카테고리를 상단 좌측으로 옮기고 행사작업 설명·정렬 공백 제거 및 상세·출고가·제외 작업을 재배치한다.
     // v2.1.194: 상단 행사 UI를 행사작업 버튼 하나로 통합하고 하위 작업대를 테마 노출위치·행사가 설정으로 분리하며 테마삭제와 행사가초기화를 독립 처리한다.
@@ -6593,7 +6594,8 @@ const parseExcelRobust = (file) => {
 // ============================================================
 window.MERCH_PROMO_CATALOG_COMPARE_MODULE = (() => {
     const STATUS = Object.freeze({ PENDING: '미처리', REVIEW: '확인 중', DONE: '완료', HOLD: '보류' });
-    const PURPOSES = Object.freeze(['전체', '기존행사', '행사종료', '가격변동', '신규입고', '기타검토']);
+    const PURPOSES = Object.freeze(['작업필요', '신규', '가격변경', '행사', '카탈로그 제외', '확인필요', '변경없음', '전체']);
+    const ACTION_PURPOSES = Object.freeze(['신규', '가격변경', '행사', '카탈로그 제외', '확인필요']);
     const WORK_FIELDS = Object.freeze([
         { key: 'outPrice', label: '출고가' },
         { key: 'promoPrice', label: '행사가' },
@@ -6824,50 +6826,80 @@ window.MERCH_PROMO_CATALOG_COMPARE_MODULE = (() => {
         });
         return { ...values, sources, actions: { promoPrice: 'KEEP' }, edited: {}, original: { ...values } };
     };
-    const decorateRow = (row, extraIssues = []) => {
-        const issues = [...extraIssues];
-        const lots = compareLots(row.catalog?.lots || [], row.loaded?.lots || [], row.code);
-        if (row.unmatched) issues.push('미매칭');
-        if (!row.master) issues.push('마스터 미등록');
-        if (!row.catalog) issues.push('카탈로그 없음');
-        if (!row.loaded) issues.push('오늘 정보 없음');
-        if (row.catalog && row.loaded && typeof row.catalog.stock === 'number' && typeof row.loaded.stock === 'number' && row.catalog.stock !== row.loaded.stock) {
-            const difference = row.loaded.stock - row.catalog.stock;
-            issues.push(`재고 ${difference > 0 ? '+' : ''}${difference}`);
-        }
-        if (lots.retained.length) issues.push('동일 LOT 현재 잔존');
-        if (lots.newKeys.length) issues.push('새 LOT');
-        if (lots.missing.length) issues.push('카탈로그 LOT 미잔존');
-        if (!blank(row.catalog?.purchasePrice) && !blank(row.loaded?.purchasePrice) && !sameValue(row.catalog.purchasePrice, row.loaded.purchasePrice)) {
-            const difference = Number(row.loaded.purchasePrice) - Number(row.catalog.purchasePrice);
-            if (Number.isFinite(difference)) issues.push(`구매원가 ${difference > 0 ? '+' : ''}${difference}`);
-        }
-        if (row.master && row.catalog && !blank(row.catalog.savedMarketPrice) && !sameValue(row.master.marketPrice, row.catalog.savedMarketPrice)) issues.push('기준시세 변경');
-        if (row.master && row.catalog && !blank(row.catalog.savedOutPrice) && !sameValue(row.master.outPrice, row.catalog.savedOutPrice)) issues.push('출고가 변경');
-        if (row.master && row.catalog) {
-            const catalogSalePrice = !blank(row.catalog.workPromoPrice) && Number(row.catalog.workPromoPrice) > 0 ? row.catalog.workPromoPrice : row.catalog.workOutPrice;
-            if (!blank(catalogSalePrice) && !sameValue(row.master.currentPrice, catalogSalePrice)) issues.push('현재 적용 판매가 변경');
-        }
-        if (blank(row.draft.promoPrice) && !blank(row.draft.theme)) issues.push('행사가 없이 테마만 존재');
-        const existingPromotion = !!row.catalog && row.catalog.status === STATUS.DONE && row.catalog.confirmed && row.catalog.adminCompleted
-            && !blank(row.catalog.workPromoPrice) && Number(row.catalog.workPromoPrice) !== 0;
-        const endReview = existingPromotion && (!row.loaded || row.loaded.stock === 0 || (lots.missing.length > 0 && lots.retained.length === 0));
-        const purposes = [];
-        if (existingPromotion) purposes.push('기존행사');
-        if (endReview) {
-            purposes.push('행사종료');
-            issues.push('행사 종료 검토');
-        }
-        if (issues.some(issue => /기준시세 변경|출고가 변경|현재 적용 판매가 변경|구매원가/.test(issue))) purposes.push('가격변동');
-        if ((!row.catalog && !!row.loaded) || lots.newKeys.length > 0) purposes.push('신규입고');
-        if (purposes.length === 0) purposes.push('기타검토');
-        const report = [];
-        if (row.catalog && row.loaded && !sameValue(row.catalog.stock, row.loaded.stock)) report.push(`재고 ${display(row.catalog.stock)} / ${display(row.loaded.stock)}`);
-        if (!blank(row.catalog?.purchasePrice) && !blank(row.loaded?.purchasePrice) && !sameValue(row.catalog.purchasePrice, row.loaded.purchasePrice)) report.push(`구매원가 ${display(row.catalog.purchasePrice)} / ${display(row.loaded.purchasePrice)}`);
-        if (lots.retained.length || lots.newKeys.length || lots.missing.length) report.push(`LOT 잔존 ${lots.retained.length}, 신규 ${lots.newKeys.length}, 미잔존 ${lots.missing.length}`);
-        return { ...row, lots, issues: [...new Set(issues)], purposes, report: report.slice(0, 2).join(' · ') || '추가 검토사실 없음' };
+    const explicitSourceValue = (source, primaryKey, aliases = []) => {
+        if (!source) return '';
+        if (!blank(source[primaryKey])) return source[primaryKey];
+        return numberOrBlank(firstValue(source._raw || {}, aliases));
     };
-    const createSession = ({ masterSnapshot = {}, previousCatalog = null, loadedRaw = null, previousRows = [], changeKind = '' } = {}) => {
+    const decorateRow = (row, extraIssues = []) => {
+        const lots = compareLots(row.catalog?.lots || [], row.loaded?.lots || [], row.code);
+        const issues = [...extraIssues];
+        const criticalIssues = [...extraIssues];
+        if (row.unmatched) criticalIssues.push('상품 매칭 실패');
+        const sourceExists = !!row.catalog || !!row.loaded;
+        const isNew = !row.master && sourceExists && !row.unmatched;
+        if (isNew) issues.push('마스터 신규 등록 필요');
+        if (isNew && blank(row.name)) criticalIssues.push('필수 품목명 누락');
+
+        const catalogOut = explicitSourceValue(row.catalog, 'workOutPrice', ['출고가', '작업 출고가']);
+        const loadedOut = explicitSourceValue(row.loaded, 'workOutPrice', ['출고가', '작업 출고가']);
+        const catalogPromo = explicitSourceValue(row.catalog, 'workPromoPrice', ['행사가', '작업 행사가']);
+        const loadedPromo = explicitSourceValue(row.loaded, 'workPromoPrice', ['행사가', '작업 행사가']);
+        if (!blank(catalogOut) && !blank(loadedOut) && !sameValue(catalogOut, loadedOut)) criticalIssues.push('출고가 원본 충돌');
+        if (!blank(catalogPromo) && !blank(loadedPromo) && !sameValue(catalogPromo, loadedPromo)) criticalIssues.push('행사가 원본 충돌');
+        const catalogThemeWithoutPromo = !blank(row.catalog?.workTheme)
+          && (blank(row.catalog?.workPromoPrice) || Number(row.catalog.workPromoPrice) <= 0);
+        const draftThemeWithoutPromo = !!(row.draft?.edited?.promoPrice || row.draft?.edited?.theme)
+          && !blank(row.draft?.theme)
+          && (blank(row.draft?.promoPrice) || Number(row.draft.promoPrice) <= 0);
+        if (catalogThemeWithoutPromo || draftThemeWithoutPromo) criticalIssues.push('행사가 없이 테마만 존재');
+
+        const currentIn = !blank(row.loaded?.purchasePrice) ? row.loaded.purchasePrice : row.catalog?.purchasePrice;
+        const currentOut = !blank(loadedOut) ? loadedOut : (!blank(catalogOut) ? catalogOut : row.catalog?.savedOutPrice);
+        const currentMarket = row.catalog?.savedMarketPrice;
+        const currentPromo = !blank(catalogPromo) ? catalogPromo : loadedPromo;
+        const priceChanges = [];
+        const addPriceChange = (label, field, before, after) => {
+            if (!row.master || blank(after) || sameValue(before, after)) return;
+            const numericDifference = typeof before === 'number' && typeof after === 'number' ? after - before : '';
+            priceChanges.push({ label, field, before, after, difference: numericDifference });
+        };
+        addPriceChange('입고가', 'inPrice', row.master?.inPrice, currentIn);
+        addPriceChange('출고가', 'outPrice', row.master?.outPrice, currentOut);
+        addPriceChange('시중가', 'marketPrice', row.master?.marketPrice, currentMarket);
+        addPriceChange('행사가', 'promoPrice', row.master?.promoPrice, currentPromo);
+
+        const masterHasPromotion = !!row.master && !blank(row.master.promoPrice) && Number(row.master.promoPrice) > 0;
+        const catalogHasPromotion = !!row.catalog && ((!blank(row.catalog.workPromoPrice) && Number(row.catalog.workPromoPrice) > 0) || !blank(row.catalog.workTheme));
+        const catalogExcluded = masterHasPromotion && row.catalogLoaded && !row.catalog;
+        let primaryPurpose = '변경없음';
+        if (criticalIssues.length > 0) primaryPurpose = '확인필요';
+        else if (isNew) primaryPurpose = '신규';
+        else if (catalogExcluded) primaryPurpose = '카탈로그 제외';
+        else if (catalogHasPromotion) primaryPurpose = '행사';
+        else if (priceChanges.length > 0) primaryPurpose = '가격변경';
+        const workRequired = primaryPurpose !== '변경없음';
+        issues.push(...criticalIssues);
+        priceChanges.forEach(change => issues.push(`${change.label} 변경`));
+        if (catalogExcluded) issues.push('이번 카탈로그에 없음');
+        if (catalogHasPromotion) issues.push('이번 카탈로그 행사정보');
+
+        const report = [];
+        if (priceChanges.length) report.push(priceChanges.slice(0, 2).map(change => `${change.label} ${display(change.before)} → ${display(change.after)}`).join(' · '));
+        if (lots.retained.length || lots.newKeys.length || lots.missing.length) report.push(`LOT 잔존 ${lots.retained.length}, 신규 ${lots.newKeys.length}, 미잔존 ${lots.missing.length}`);
+        return {
+            ...row,
+            lots,
+            issues: [...new Set(issues)],
+            criticalIssues: [...new Set(criticalIssues)],
+            purposes: [primaryPurpose],
+            primaryPurpose,
+            workRequired,
+            priceChanges,
+            report: report.slice(0, 2).join(' · ') || (workRequired ? primaryPurpose : '변경 없음')
+        };
+    };
+    const createSession = ({ masterSnapshot = {}, previousCatalog = null, loadedRaw = null, previousRows = [], changeKind = '', masterCapturedAt = '' } = {}) => {
         const catalog = previousCatalog || buildArea([], 'catalog');
         const loaded = loadedRaw || buildArea([], 'loaded');
         const priorByCode = {};
@@ -6888,12 +6920,12 @@ window.MERCH_PROMO_CATALOG_COMPARE_MODULE = (() => {
                 edited: { ...(prior.draft.edited || {}) },
                 original: { ...(prior.draft.original || {}) }
             } : initialDraft(master, catalogItem);
-            let status = prior?.status || STATUS.PENDING;
+            let status = prior?.status === STATUS.REVIEW ? STATUS.PENDING : (prior?.status || STATUS.PENDING);
             let confirmed = !!prior?.confirmed;
             let adminCompleted = !!prior?.adminCompleted;
             const extraIssues = [];
             if (conflict) {
-                status = STATUS.REVIEW;
+                status = STATUS.PENDING;
                 confirmed = false;
                 adminCompleted = false;
                 extraIssues.push('동일 영역 품목코드 중복');
@@ -6904,14 +6936,14 @@ window.MERCH_PROMO_CATALOG_COMPARE_MODULE = (() => {
                 const after = key === 'catalog' ? catalogItem : loadedItem;
                 const alreadyConfirmed = prior.status === STATUS.DONE || prior.confirmed || prior.adminCompleted;
                 if ((before || alreadyConfirmed) && sourceFingerprint(before) !== sourceFingerprint(after)) {
-                    status = after ? STATUS.REVIEW : STATUS.HOLD;
+                    status = after ? STATUS.PENDING : STATUS.HOLD;
                     confirmed = false;
                     adminCompleted = false;
                     extraIssues.push('원본 변경 후 재확인');
                 }
             }
             if (prior && changeKind === 'master' && masterFingerprint(prior.master) !== masterFingerprint(master)) {
-                if (status === STATUS.DONE) status = STATUS.REVIEW;
+                if (status === STATUS.DONE) status = STATUS.PENDING;
                 confirmed = false;
                 adminCompleted = false;
                 extraIssues.push('마스터 변경 후 재확인');
@@ -6932,6 +6964,7 @@ window.MERCH_PROMO_CATALOG_COMPARE_MODULE = (() => {
                 master,
                 catalog: catalogItem,
                 loaded: loadedItem,
+                catalogLoaded: catalog.total > 0,
                 unmatched: false,
                 blocked,
                 blockingReasons: [...(conflict ? ['동일 영역 품목코드 중복'] : []), ...(!master ? ['마스터 미등록'] : [])],
@@ -6951,18 +6984,19 @@ window.MERCH_PROMO_CATALOG_COMPARE_MODULE = (() => {
                 master: null,
                 catalog: areaName === 'catalog' ? item : null,
                 loaded: areaName === 'loaded' ? item : null,
+                catalogLoaded: catalog.total > 0,
                 unmatched: true,
                 blocked: true,
                 blockingReasons: [item.unmatchedReason || '미매칭'],
                 draft: initialDraft(null, null),
-                status: STATUS.REVIEW,
+                status: STATUS.PENDING,
                 confirmed: false,
                 adminCompleted: false
             }, [item.unmatchedReason || '미매칭']));
         };
         catalog.invalidRows.forEach(item => appendInvalid(item, 'catalog'));
         loaded.invalidRows.forEach(item => appendInvalid(item, 'loaded'));
-        return { masterSnapshot, previousCatalog: catalog, loadedRaw: loaded, rows };
+        return { masterSnapshot, previousCatalog: catalog, loadedRaw: loaded, rows, masterCapturedAt: masterCapturedAt || new Date().toISOString() };
     };
     const replaceSource = (session, kind, area) => {
         if (!area || area.total === 0) return { ok: false, reason: '정상 데이터가 0행이므로 기존 원본을 유지합니다.', session };
@@ -6973,7 +7007,8 @@ window.MERCH_PROMO_CATALOG_COMPARE_MODULE = (() => {
                 previousCatalog: kind === 'catalog' ? area : session.previousCatalog,
                 loadedRaw: kind === 'loaded' ? area : session.loadedRaw,
                 previousRows: session.rows,
-                changeKind: kind
+                changeKind: kind,
+                masterCapturedAt: session.masterCapturedAt
             })
         };
     };
@@ -6993,7 +7028,8 @@ window.MERCH_PROMO_CATALOG_COMPARE_MODULE = (() => {
         previousCatalog: session.previousCatalog,
         loadedRaw: session.loadedRaw,
         previousRows: session.rows,
-        changeKind: 'master'
+        changeKind: 'master',
+        masterCapturedAt: new Date().toISOString()
     });
     // [M-PROMO-PERF-01] 입력 1회마다 전체 행을 map/재할당하지 않고 변경된 행만 교체한다. 결과값/상태 규칙은 기존과 동일하다.
     const updateDraft = (session, key, field, value) => {
@@ -7009,7 +7045,7 @@ window.MERCH_PROMO_CATALOG_COMPARE_MODULE = (() => {
         if (field === 'promoPrice') actions.promoPrice = blank(value) ? 'CLEAR' : 'SET';
         const updated = {
             ...row,
-            status: row.status === STATUS.HOLD ? STATUS.HOLD : STATUS.REVIEW,
+            status: row.status === STATUS.HOLD ? STATUS.HOLD : STATUS.PENDING,
             confirmed: false,
             adminCompleted: false,
             draft: {
@@ -7021,7 +7057,7 @@ window.MERCH_PROMO_CATALOG_COMPARE_MODULE = (() => {
             }
         };
         const rows = session.rows.slice();
-        rows[rowIndex] = decorateRow(updated, (row.issues || []).filter(issue => !['행사가 없이 테마만 존재', '행사 종료 검토'].includes(issue)));
+        rows[rowIndex] = decorateRow(updated, (row.criticalIssues || []).filter(issue => issue !== '행사가 없이 테마만 존재'));
         return { ...session, rows };
     };
     const setRowsStatus = (session, keys, status) => {
@@ -7031,7 +7067,7 @@ window.MERCH_PROMO_CATALOG_COMPARE_MODULE = (() => {
             rows: session.rows.map(row => {
                 if (!selected.has(row.key)) return row;
                 if (status === STATUS.DONE && (row.unmatched || row.blocked || !row.master)) {
-                    return { ...row, status: STATUS.REVIEW, confirmed: false, adminCompleted: false };
+                    return { ...row, status: STATUS.PENDING, confirmed: false, adminCompleted: false };
                 }
                 const completed = status === STATUS.DONE;
                 return { ...row, status, confirmed: completed, adminCompleted: completed };
@@ -7043,12 +7079,30 @@ window.MERCH_PROMO_CATALOG_COMPARE_MODULE = (() => {
         const counts = Object.fromEntries(PURPOSES.map(purpose => [purpose, 0]));
         const rows = Array.isArray(session?.rows) ? session.rows : [];
         counts['전체'] = rows.length;
-        rows.forEach(row => (row.purposes || []).forEach(purpose => {
-            if (Object.prototype.hasOwnProperty.call(counts, purpose) && purpose !== '전체') counts[purpose] += 1;
-        }));
+        rows.forEach(row => {
+            if (row.workRequired) counts['작업필요'] += 1;
+            if (Object.prototype.hasOwnProperty.call(counts, row.primaryPurpose)) counts[row.primaryPurpose] += 1;
+        });
         return counts;
     };
-    const filterRows = (session, purpose = '전체', status = '전체') => session.rows.filter(row => (purpose === '전체' || row.purposes.includes(purpose)) && (status === '전체' || row.status === status));
+    const filterRows = (session, purpose = '작업필요', status = '전체') => session.rows.filter(row => {
+        const purposeMatch = purpose === '전체' || (purpose === '작업필요' ? row.workRequired : row.primaryPurpose === purpose);
+        const effectiveStatus = row.status === STATUS.REVIEW ? STATUS.PENDING : row.status;
+        return purposeMatch && (status === '전체' || effectiveStatus === status);
+    });
+    const sessionSummary = session => {
+        const rows = Array.isArray(session?.rows) ? session.rows : [];
+        const workRows = rows.filter(row => row.workRequired);
+        return {
+            total: rows.length,
+            workRequired: workRows.length,
+            untreated: workRows.filter(row => ![STATUS.DONE, STATUS.HOLD].includes(row.status)).length,
+            done: workRows.filter(row => row.status === STATUS.DONE).length,
+            hold: workRows.filter(row => row.status === STATUS.HOLD).length,
+            catalogLoaded: Number(session?.previousCatalog?.total || 0),
+            inventoryLoaded: Number(session?.loadedRaw?.total || 0)
+        };
+    };
     const sourceSummary = draft => WORK_FIELDS.map(field => `${field.label}:${draft?.sources?.[field.key] || ''}`).join(', ');
     const applyEligible = row => !!row?.master && !row.unmatched && !row.blocked && row.status === STATUS.DONE && row.confirmed && row.adminCompleted;
     const buildOutputRows = session => {
@@ -7129,10 +7183,10 @@ window.MERCH_PROMO_CATALOG_COMPARE_MODULE = (() => {
         return { eligible, ready: eligible.length > 0 && missingCodes.length === 0 && changedCodes.length === 0, missingCodes, changedCodes };
     };
     return Object.freeze({
-        STATUS, PURPOSES, WORK_FIELDS, SHEET_HEADERS, blank, display, sameValue, normalizeCode: codeOf,
+        STATUS, PURPOSES, ACTION_PURPOSES, WORK_FIELDS, SHEET_HEADERS, blank, display, sameValue, normalizeCode: codeOf,
         normalizeInputRow, buildArea, parseWorkbook, readWorkbookFile, captureMasterSnapshot, lotKey, compareLots,
         createSession, replaceSource, previewReplacement, refreshMaster, updateDraft, setRowsStatus, purposeCounts,
-        filterRows, buildOutputRows, createWorkbook, downloadWorkbook, getEligibleRows, getApplyReadiness
+        filterRows, sessionSummary, buildOutputRows, createWorkbook, downloadWorkbook, getEligibleRows, getApplyReadiness
     });
 })();
 
@@ -7604,7 +7658,7 @@ const useMerchUI = () => {
     }, [autoApplyOutPriceRule]);
     const [promoCompareOpen, setPromoCompareOpen] = useState(false);
     const [promoCompareSession, setPromoCompareSession] = useState(null);
-    const [promoComparePurpose, setPromoComparePurpose] = useState('전체');
+    const [promoComparePurpose, setPromoComparePurpose] = useState('작업필요');
     const [promoCompareStatus, setPromoCompareStatus] = useState('전체');
     const [promoCompareSelected, setPromoCompareSelected] = useState(new Set());
     const [promoCompareDetailKey, setPromoCompareDetailKey] = useState('');
@@ -11285,12 +11339,12 @@ ${targetModeText} ${targets.size}건을 MerchOps 마스터에 저장합니다. �
             return;
         }
         ui.setPromoCompareSession(compare.createSession({ masterSnapshot }));
-        ui.setPromoComparePurpose('전체');
+        ui.setPromoComparePurpose('작업필요');
         ui.setPromoCompareStatus('전체');
         ui.setPromoCompareSelected(new Set());
         ui.setPromoCompareDetailKey('');
         ui.setPromoCompareOpen(true);
-        ui.showToast('행사가 비교를 시작했습니다. 현재 마스터를 작업 기준으로 고정했습니다.');
+        ui.showToast('카탈로그 비교를 시작했습니다. 최신 마스터를 자동 기준으로 사용합니다.');
     }, [data.masterProducts, ui]);
     const handleApplyPromoCompare = useCallback(async () => {
         const compare = window.MERCH_PROMO_CATALOG_COMPARE_MODULE;
@@ -14209,7 +14263,7 @@ const WelcomeGuide = ({ onUpload, onCloudSync }) => (React.createElement("div", 
         React.createElement("i", { className: "fas fa-box-open" }),
         React.createElement("div", { className: "absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm" },
             React.createElement("i", { className: "fas fa-check" }))),
-    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.196_PromoPriceRight]"),
+    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.197_ActionOnlyCompare]"),
     React.createElement("p", { className: "text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold" },
         "\uD604\uC7AC \uB4F1\uB85D\uB41C ",
         React.createElement("span", { className: "text-indigo-500" }, "\uB9C8\uC2A4\uD130 \uC0C1\uD488 \uB370\uC774\uD130"),
@@ -14252,6 +14306,7 @@ const PromoCatalogCompareWorkspace = ({ state, actions }) => {
     }, [state.promoComparePurpose, state.promoCompareStatus]);
     if (!session) return null;
     const counts = compare.purposeCounts(session);
+    const summary = compare.sessionSummary(session);
     const selected = state.promoCompareSelected || new Set();
     const detailRow = session.rows.find(row => row.key === state.promoCompareDetailKey) || null;
     const setSession = actions.setPromoCompareSession;
@@ -14275,7 +14330,8 @@ const PromoCatalogCompareWorkspace = ({ state, actions }) => {
             setSession(result.session);
             setPage(0);
             actions.setPromoCompareSelected(new Set());
-            actions.showToast(`${label} ${area.total}건을 교체했습니다.`);
+            const nextSummary = compare.sessionSummary(result.session);
+            actions.showToast(`${label} ${area.total}건 반영 · 자동 비교 완료 · 작업 필요 ${nextSummary.workRequired}건`);
         }
         catch (error) {
             window.alert(error?.message || String(error));
@@ -14285,14 +14341,6 @@ const PromoCatalogCompareWorkspace = ({ state, actions }) => {
             if (kind === 'catalog' && catalogFileRef.current) catalogFileRef.current.value = '';
             if (kind === 'loaded' && loadedFileRef.current) loadedFileRef.current.value = '';
         }
-    };
-    const refreshMaster = () => {
-        const refreshed = compare.refreshMaster(session, state.masterProducts);
-        const changed = refreshed.rows.filter(row => row.issues.includes('마스터 변경 후 재확인')).length;
-        if (!window.confirm(`최신 마스터 차이 미리보기\n\n재확인 대상 ${changed}건\n직접 수정한 작업값은 보존됩니다.\n\n마스터 스냅샷을 교체하시겠습니까?`)) return;
-        setSession(refreshed);
-        setPage(0);
-        actions.showToast(`최신 마스터 기준을 적용했습니다. 재확인 ${changed}건`);
     };
     const saveResult = () => {
         try {
@@ -14359,93 +14407,180 @@ const PromoCatalogCompareWorkspace = ({ state, actions }) => {
         onChange: event => edit(row.key, field, event.target.value, numeric),
         className: 'w-full h-7 px-1.5 rounded border border-slate-300 bg-white text-[11px] font-bold outline-none focus:border-indigo-500 disabled:bg-slate-100'
     });
+    const masterCapturedLabel = (() => {
+        const parsed = new Date(session.masterCapturedAt || Date.now());
+        return Number.isNaN(parsed.getTime()) ? '현재 최신' : parsed.toLocaleString('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+    })();
+    const tableMode = ['신규', '가격변경', '행사', '카탈로그 제외', '확인필요'].includes(state.promoComparePurpose)
+        ? state.promoComparePurpose
+        : '작업필요';
+    const masterSummary = row => row.master
+        ? `입 ${compare.display(row.master.inPrice)} · 출 ${compare.display(row.master.outPrice)} · 행사 ${compare.display(row.master.promoPrice)}`
+        : '마스터 없음';
+    const catalogSummary = row => row.catalog
+        ? `출 ${compare.display(row.catalog.workOutPrice)} · 행사 ${compare.display(row.catalog.workPromoPrice)} · 테마 ${compare.display(row.catalog.workTheme)}`
+        : '카탈로그 없음';
+    const inventorySummary = row => row.loaded
+        ? `재고 ${compare.display(row.loaded.stock)} · 입 ${compare.display(row.loaded.purchasePrice)} · 출 ${compare.display(row.loaded.workOutPrice)}`
+        : '재고 원본 없음';
+    const contextHeaders = {
+        '신규': ['규격', '재고', '입고가', '카탈로그'],
+        '가격변경': ['가격구분', '기존가격', '이번가격', '차이'],
+        '행사': ['기존 판매가', '행사가', '행사테마', '카탈로그'],
+        '카탈로그 제외': ['기존 행사정보', '이번 카탈로그', '재고 원본', '판단기준'],
+        '확인필요': ['문제', '마스터', '카탈로그', '재고'],
+        '작업필요': ['작업구분', '기존', '이번', '핵심내용']
+    }[tableMode];
+    const contextCell = (key, content, options = {}) => h('td', { key, className: `border-l px-3 py-2 text-[11px] font-bold ${options.className || 'text-slate-700'}`, title: options.title || String(content ?? '') }, content);
+    const renderContextCells = row => {
+        const firstChange = row.priceChanges?.[0] || null;
+        if (tableMode === '신규') return [
+            contextCell('spec', `${row.spec || '—'} / ${row.unit || '—'}`),
+            contextCell('stock', compare.display(row.loaded?.stock)),
+            contextCell('in', compare.display(row.loaded?.purchasePrice ?? row.catalog?.purchasePrice)),
+            contextCell('catalog', row.catalog ? '있음' : '없음')
+        ];
+        if (tableMode === '가격변경') return [
+            contextCell('kind', firstChange?.label || '가격'),
+            contextCell('before', compare.display(firstChange?.before), { className: 'text-slate-500 text-right' }),
+            contextCell('after', compare.display(firstChange?.after), { className: 'text-amber-700 text-right font-black' }),
+            contextCell('diff', typeof firstChange?.difference === 'number' ? `${firstChange.difference > 0 ? '+' : ''}${firstChange.difference.toLocaleString()}` : '변경', { className: 'text-rose-600 text-right font-black' })
+        ];
+        if (tableMode === '행사') return [
+            contextCell('base', compare.display(row.master?.currentPrice), { className: 'text-right text-slate-500' }),
+            contextCell('promo', compare.display(row.catalog?.workPromoPrice), { className: 'text-right text-rose-700 font-black' }),
+            contextCell('theme', compare.display(row.catalog?.workTheme), { className: 'text-center text-purple-700 font-black' }),
+            contextCell('catalog', row.catalog ? '행사정보 확인' : '없음')
+        ];
+        if (tableMode === '카탈로그 제외') return [
+            contextCell('prior', `행사가 ${compare.display(row.master?.promoPrice)} · 테마 ${compare.display(row.master?.theme)}`),
+            contextCell('catalog', '이번 카탈로그에 없음', { className: 'text-rose-700 font-black' }),
+            contextCell('inventory', row.loaded ? `재고 ${compare.display(row.loaded.stock)}` : '없음'),
+            contextCell('basis', '날짜·판매량 미사용')
+        ];
+        if (tableMode === '확인필요') return [
+            contextCell('issue', row.criticalIssues.join(' · ') || row.issues.join(' · '), { className: 'text-amber-700 font-black' }),
+            contextCell('master', masterSummary(row)),
+            contextCell('catalog', catalogSummary(row)),
+            contextCell('inventory', inventorySummary(row))
+        ];
+        return [
+            contextCell('purpose', row.primaryPurpose, { className: 'text-indigo-700 font-black' }),
+            contextCell('master', masterSummary(row)),
+            contextCell('current', `${catalogSummary(row)} / ${inventorySummary(row)}`),
+            contextCell('report', row.report)
+        ];
+    };
+    const WorkControls = ({ row }) => {
+        if (row.primaryPurpose === '확인필요') return h('button', { onClick: () => actions.setPromoCompareDetailKey(row.key), className: 'h-7 px-2.5 rounded-lg border border-amber-200 bg-amber-50 text-[10px] font-black text-amber-700' }, '원본 상세 확인');
+        if (row.primaryPurpose === '변경없음') return h('span', { className: 'text-[10px] font-bold text-slate-400' }, '작업 없음');
+        if (row.primaryPurpose === '행사' || row.primaryPurpose === '카탈로그 제외') return h('div', { className: 'grid grid-cols-2 gap-1' },
+            h(WorkInput, { row, field: 'promoPrice', numeric: true }),
+            h(WorkInput, { row, field: 'theme' }));
+        return h('div', { className: 'grid grid-cols-2 gap-1' },
+            h(WorkInput, { row, field: 'outPrice', numeric: true }),
+            h('select', { value: row.draft.sale ?? '', disabled: row.unmatched, onChange: event => edit(row.key, 'sale', event.target.value), className: 'w-full h-7 px-1 rounded border border-slate-300 bg-white text-[11px] font-bold disabled:bg-slate-100' },
+                h('option', { value: '' }, '판매여부'), h('option', { value: '1' }, '판매'), h('option', { value: '0' }, '정지')));
+    };
     return h('div', { className: 'h-full min-h-0 flex flex-col gap-3' },
         h('section', { className: 'bg-white rounded-xl border border-slate-200 shadow-sm p-3 shrink-0' },
-            h('div', { className: 'flex items-center gap-2 flex-wrap' },
-                h('div', { className: 'mr-2' },
-                    h('div', { className: 'text-[15px] font-black text-slate-900' }, '카탈로그 비교형 행사가 작업'),
-                    h('div', { className: 'text-[10px] font-bold text-slate-500' }, '날짜·판매량 판단 없이 카탈로그 ↔ 불러온 원본 ↔ 고정 마스터 비교')),
-                h('input', { ref: catalogFileRef, type: 'file', accept: '.xlsx,.xls,.xlsm', className: 'hidden', onChange: event => loadSource('catalog', event.target.files?.[0]) }),
-                h('input', { ref: loadedFileRef, type: 'file', accept: '.xlsx,.xls,.xlsm', className: 'hidden', onChange: event => loadSource('loaded', event.target.files?.[0]) }),
-                h('button', { disabled: busy, onClick: () => catalogFileRef.current?.click(), className: 'h-8 px-3 rounded-lg bg-indigo-600 text-white text-[11px] font-black disabled:opacity-40' }, '카탈로그 불러오기'),
-                h('button', { disabled: busy, onClick: () => loadedFileRef.current?.click(), className: 'h-8 px-3 rounded-lg bg-slate-700 text-white text-[11px] font-black disabled:opacity-40' }, '재고 불러오기'),
-                h('button', { disabled: busy, onClick: refreshMaster, className: 'h-8 px-3 rounded-lg bg-white border border-slate-300 text-slate-700 text-[11px] font-black' }, '최신 마스터'),
-                h('button', { disabled: busy, onClick: saveResult, className: 'h-8 px-3 rounded-lg bg-emerald-600 text-white text-[11px] font-black' }, '비교결과 저장'),
-                h('button', { onClick: () => actions.setPromoCompareOpen(false), className: 'ml-auto h-8 px-3 rounded-lg bg-slate-100 border border-slate-300 text-slate-600 text-[11px] font-black' }, '비교 닫기')),
+            h('div', { className: 'flex items-start gap-3' },
+                h('div', { className: 'min-w-0' },
+                    h('div', { className: 'text-[15px] font-black text-slate-900' }, '카탈로그·재고 변경 작업대'),
+                    h('div', { className: 'text-[10px] font-bold text-slate-500' }, '최신 마스터와 자동 비교해 실제 작업이 필요한 상품만 기본 표시합니다.')),
+                h('div', { className: 'ml-auto text-right' },
+                    h('div', { className: 'text-[10px] font-black text-indigo-700' }, `기준 마스터: ${summary.total.toLocaleString()}건 · ${masterCapturedLabel} 최신`),
+                    h('div', { className: 'text-[9px] font-bold text-slate-400' }, '화면 진입 시 시스템 마스터 자동 사용')),
+                h('button', { onClick: () => actions.setPromoCompareOpen(false), className: 'h-8 px-3 rounded-lg bg-slate-100 border border-slate-300 text-slate-600 text-[11px] font-black' }, '비교 닫기')),
+            h('input', { ref: catalogFileRef, type: 'file', accept: '.xlsx,.xls,.xlsm', className: 'hidden', onChange: event => loadSource('catalog', event.target.files?.[0]) }),
+            h('input', { ref: loadedFileRef, type: 'file', accept: '.xlsx,.xls,.xlsm', className: 'hidden', onChange: event => loadSource('loaded', event.target.files?.[0]) }),
+            h('div', { 'data-promo-compare-flow': 'true', className: 'mt-3 flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 p-2 overflow-x-auto' },
+                h('button', { disabled: busy, onClick: () => catalogFileRef.current?.click(), className: `h-8 px-3 rounded-lg text-[11px] font-black whitespace-nowrap disabled:opacity-40 ${summary.catalogLoaded ? 'bg-indigo-600 text-white' : 'bg-white border border-indigo-200 text-indigo-700'}` }, `1 카탈로그 불러오기${summary.catalogLoaded ? ` ${summary.catalogLoaded}건` : ''}`),
+                h('span', { className: 'text-slate-300 font-black' }, '→'),
+                h('button', { disabled: busy, onClick: () => loadedFileRef.current?.click(), className: `h-8 px-3 rounded-lg text-[11px] font-black whitespace-nowrap disabled:opacity-40 ${summary.inventoryLoaded ? 'bg-slate-700 text-white' : 'bg-white border border-slate-300 text-slate-700'}` }, `2 재고 불러오기${summary.inventoryLoaded ? ` ${summary.inventoryLoaded}건` : ''}`),
+                h('span', { className: 'text-slate-300 font-black' }, '→'),
+                h('span', { className: `h-8 px-3 rounded-lg border flex items-center text-[11px] font-black whitespace-nowrap ${summary.catalogLoaded && summary.inventoryLoaded ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-white border-slate-200 text-slate-400'}` }, '3 자동 비교'),
+                h('span', { className: 'text-slate-300 font-black' }, '→'),
+                h('button', { onClick: () => actions.setPromoComparePurpose('작업필요'), className: 'h-8 px-3 rounded-lg border border-blue-200 bg-blue-50 text-blue-700 text-[11px] font-black whitespace-nowrap' }, `4 결과 확인 ${summary.workRequired}건`),
+                h('span', { className: 'text-slate-300 font-black' }, '→'),
+                h('button', { disabled: busy, onClick: saveResult, className: 'h-8 px-3 rounded-lg bg-emerald-600 text-white text-[11px] font-black whitespace-nowrap' }, '5 비교결과 저장')),
+            h('div', { 'data-promo-compare-summary': 'true', className: 'mt-3 grid grid-cols-[180px_repeat(5,minmax(92px,1fr))_110px] gap-2' },
+                h('button', { onClick: () => actions.setPromoComparePurpose('작업필요'), className: `rounded-xl border px-3 py-2 text-left ${state.promoComparePurpose === '작업필요' ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-indigo-50 border-indigo-200 text-indigo-800'}` },
+                    h('div', { className: 'text-[10px] font-black opacity-80' }, '비교 완료'),
+                    h('div', { className: 'text-[16px] font-black' }, `작업 필요 ${summary.workRequired.toLocaleString()}건`),
+                    h('div', { className: 'text-[9px] font-bold opacity-70' }, `전체 ${summary.total.toLocaleString()}건`)),
+                compare.ACTION_PURPOSES.map(purpose => h('button', { key: purpose, onClick: () => actions.setPromoComparePurpose(purpose), className: `rounded-xl border px-2 py-2 text-center ${state.promoComparePurpose === purpose ? 'bg-slate-800 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-700'}` },
+                    h('div', { className: 'text-[10px] font-black' }, purpose),
+                    h('div', { className: 'text-[16px] font-black' }, (counts[purpose] || 0).toLocaleString()))),
+                h('button', { onClick: () => actions.setPromoComparePurpose('변경없음'), className: `rounded-xl border px-2 py-2 text-center ${state.promoComparePurpose === '변경없음' ? 'bg-slate-600 border-slate-600 text-white' : 'bg-slate-50 border-slate-200 text-slate-500'}` },
+                    h('div', { className: 'text-[10px] font-black' }, '변경없음'),
+                    h('div', { className: 'text-[16px] font-black' }, (counts['변경없음'] || 0).toLocaleString()))),
             h('div', { className: 'mt-3 pt-3 border-t border-slate-100 flex items-center gap-2 flex-wrap' },
-                h('span', { className: 'text-[11px] font-black text-slate-500' }, '목적'),
-                compare.PURPOSES.map(purpose => h('button', {
-                    key: purpose,
-                    onClick: () => actions.setPromoComparePurpose(purpose),
-                    className: `h-7 px-2.5 rounded-full border text-[10px] font-black ${state.promoComparePurpose === purpose ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-300'}`
-                }, `${purpose} ${counts[purpose] || 0}`)),
-                h('span', { className: 'ml-3 text-[11px] font-black text-slate-500' }, '상태'),
-                ['전체', ...Object.values(compare.STATUS)].map(status => h('button', {
-                    key: status,
-                    onClick: () => actions.setPromoCompareStatus(status),
-                    className: `h-7 px-2.5 rounded-full border text-[10px] font-black ${state.promoCompareStatus === status ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-300'}`
-                }, status)),
+                h('span', { className: 'text-[11px] font-black text-slate-500' }, `미처리 ${summary.untreated} · 완료 ${summary.done} · 보류 ${summary.hold}`),
+                ['전체', compare.STATUS.PENDING, compare.STATUS.DONE, compare.STATUS.HOLD].map(status => h('button', { key: status, onClick: () => actions.setPromoCompareStatus(status), className: `h-7 px-2.5 rounded-full border text-[10px] font-black ${state.promoCompareStatus === status ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-300'}` }, status)),
+                h('button', { onClick: () => actions.setPromoComparePurpose('전체'), className: `h-7 px-2.5 rounded-full border text-[10px] font-black ${state.promoComparePurpose === '전체' ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-indigo-600 border-indigo-200'}` }, `전체 ${summary.total.toLocaleString()}건 보기`),
                 h('div', { className: 'ml-3 flex items-center gap-1 text-[10px] font-black text-slate-500' },
                     h('button', { disabled: safePage <= 0, onClick: () => setPage(value => Math.max(0, value - 1)), className: 'h-7 px-2 rounded border border-slate-300 bg-white disabled:opacity-40' }, '이전'),
                     h('span', { className: 'min-w-[90px] text-center' }, `${safePage + 1}/${totalPages} · ${filteredRows.length}건`),
                     h('button', { disabled: safePage >= totalPages - 1, onClick: () => setPage(value => Math.min(totalPages - 1, value + 1)), className: 'h-7 px-2 rounded border border-slate-300 bg-white disabled:opacity-40' }, '다음')),
                 h('div', { className: 'ml-auto flex gap-1' },
-                    h('button', { onClick: () => setStatus(compare.STATUS.REVIEW), className: 'h-7 px-2 rounded border border-amber-200 bg-amber-50 text-amber-700 text-[10px] font-black' }, '확인 중'),
+                    h('button', { onClick: () => setStatus(compare.STATUS.PENDING), className: 'h-7 px-2 rounded border border-slate-200 bg-white text-slate-600 text-[10px] font-black' }, '미처리로'),
                     h('button', { onClick: () => setStatus(compare.STATUS.DONE), className: 'h-7 px-2 rounded border border-emerald-200 bg-emerald-50 text-emerald-700 text-[10px] font-black' }, '완료'),
                     h('button', { onClick: () => setStatus(compare.STATUS.HOLD), className: 'h-7 px-2 rounded border border-rose-200 bg-rose-50 text-rose-700 text-[10px] font-black' }, '보류')))),
         h('div', { className: 'flex-1 min-h-0 flex gap-3' },
             h('section', { className: 'flex-1 min-w-0 bg-white rounded-xl border border-slate-200 shadow-sm overflow-auto' },
-                h('table', { className: 'w-full min-w-[1480px] table-fixed border-collapse', 'data-promo-compare-table': 'true' },
+                h('table', { className: 'w-full min-w-[1080px] table-fixed border-collapse', 'data-promo-compare-table': 'compact-task' },
                     h('thead', { className: 'sticky top-0 z-20 bg-slate-100' },
                         h('tr', { className: 'text-[10px] font-black text-slate-600' },
                             h('th', { className: 'w-[34px] border-b p-1' }, ''),
-                            h('th', { className: 'w-[200px] border-b p-2 text-left' }, '마스터'),
-                            h('th', { className: 'w-[170px] border-b p-2 text-left' }, '이슈'),
-                            ['재고', '입고가', '출고가', '행사가', '행사테마', '판매여부'].map(field => h('th', { key: field, className: 'w-[92px] border-b border-l p-2' }, field)),
-                            h('th', { className: 'w-[300px] border-b border-l p-2' }, '오늘 작업값'),
-                            h('th', { className: 'w-[84px] border-b border-l p-2' }, '상태'),
-                            h('th', { className: 'w-[210px] border-b border-l p-2 text-left' }, '리포트'))),
+                            h('th', { className: 'w-[220px] border-b p-2 text-left' }, '상품'),
+                            contextHeaders.map((label, index) => h('th', { key: label, className: `border-b border-l p-2 ${index === 0 ? 'w-[150px] text-left' : 'w-[120px]'}` }, label)),
+                            h('th', { className: 'w-[210px] border-b border-l p-2' }, '작업값'),
+                            h('th', { className: 'w-[90px] border-b border-l p-2' }, '상태'))),
                     h('tbody', null,
-                        rows.map(row => h('tr', { key: row.key, className: `h-[72px] border-b hover:bg-indigo-50/30 ${state.promoCompareDetailKey === row.key ? 'bg-indigo-50' : ''}`, onDoubleClick: () => actions.setPromoCompareDetailKey(row.key) },
+                        rows.map(row => h('tr', { key: row.key, className: `h-[66px] border-b hover:bg-indigo-50/30 ${state.promoCompareDetailKey === row.key ? 'bg-indigo-50' : ''}`, onDoubleClick: () => actions.setPromoCompareDetailKey(row.key) },
                             h('td', { className: 'p-1 text-center' }, h('input', { type: 'checkbox', checked: selected.has(row.key), onChange: () => toggleSelection(row.key) })),
                             h('td', { className: 'p-2 overflow-hidden cursor-pointer', onClick: () => actions.setPromoCompareDetailKey(row.key) },
                                 h('div', { className: 'text-[11px] font-black text-indigo-700 truncate' }, row.code || '미매칭'),
                                 h('div', { className: 'text-[12px] font-black text-slate-800 truncate', title: row.name }, row.name || '—'),
-                                h('div', { className: 'text-[10px] font-bold text-slate-400 truncate' }, `${row.spec || '—'} / 기준 ${compare.display(row.master?.currentPrice)}`)),
-                            h('td', { className: 'p-2' }, h('div', { className: 'max-h-[54px] overflow-hidden flex flex-wrap gap-1' },
-                                row.issues.slice(0, 4).map(issue => h('span', { key: issue, className: 'px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-100 text-[9px] font-black' }, issue)))),
-                            ['재고', '입고가', '출고가', '행사가', '행사테마', '판매여부'].map(field => h('td', { key: field, className: 'border-l p-0' }, h(CompareCell, { row, field }))),
-                            h('td', { className: 'border-l p-2' },
-                                h('div', { className: 'grid grid-cols-4 gap-1' },
-                                    h(WorkInput, { row, field: 'outPrice', numeric: true }),
-                                    h(WorkInput, { row, field: 'promoPrice', numeric: true }),
-                                    h(WorkInput, { row, field: 'theme' }),
-                                    h('select', { value: row.draft.sale ?? '', disabled: row.unmatched, onChange: event => edit(row.key, 'sale', event.target.value), className: 'w-full h-7 px-1 rounded border border-slate-300 bg-white text-[11px] font-bold disabled:bg-slate-100' },
-                                        h('option', { value: '' }, '—'),
-                                        h('option', { value: '1' }, '판매'),
-                                        h('option', { value: '0' }, '정지'))),
-                                h('div', { className: 'mt-1 text-[9px] font-bold text-slate-400 truncate', title: Object.values(row.draft.sources).join(', ') }, Object.values(row.draft.sources).join(' · '))),
+                                h('div', { className: 'text-[10px] font-bold text-slate-400 truncate' }, `${row.spec || '—'} / ${row.unit || '—'}`)),
+                            ...renderContextCells(row),
+                            h('td', { className: 'border-l p-2' }, h(WorkControls, { row })),
                             h('td', { className: 'border-l p-2 text-center' },
                                 h('button', {
                                     disabled: row.blocked,
-                                    title: row.blocked ? row.blockingReasons.join(', ') : '완료/확인 중 전환',
-                                    onClick: () => setSession(compare.setRowsStatus(session, [row.key], row.status === compare.STATUS.DONE ? compare.STATUS.REVIEW : compare.STATUS.DONE)),
-                                    className: `px-2 py-1 rounded-full text-[10px] font-black disabled:opacity-50 ${row.status === compare.STATUS.DONE ? 'bg-emerald-100 text-emerald-700' : row.status === compare.STATUS.HOLD ? 'bg-rose-100 text-rose-700' : row.status === compare.STATUS.REVIEW ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-600'}`
-                                }, row.status)),
-                            h('td', { className: 'border-l p-2 text-[10px] font-bold text-slate-600 leading-5', title: row.report }, row.report))),
-                        rows.length === 0 && h('tr', null, h('td', { colSpan: 13, className: 'h-40 text-center text-sm font-bold text-slate-400' }, '현재 필터에 해당하는 상품이 없습니다.'))))),
-            detailRow && h('aside', { className: 'w-[390px] shrink-0 bg-white rounded-xl border border-slate-200 shadow-sm overflow-auto p-4' },
+                                    title: row.blocked ? row.blockingReasons.join(', ') : '미처리/완료 전환',
+                                    onClick: () => setSession(compare.setRowsStatus(session, [row.key], row.status === compare.STATUS.DONE ? compare.STATUS.PENDING : compare.STATUS.DONE)),
+                                    className: `px-2 py-1 rounded-full text-[10px] font-black disabled:opacity-50 ${row.status === compare.STATUS.DONE ? 'bg-emerald-100 text-emerald-700' : row.status === compare.STATUS.HOLD ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-600'}`
+                                }, row.status === compare.STATUS.REVIEW ? compare.STATUS.PENDING : row.status)))),
+                        rows.length === 0 && h('tr', null, h('td', { colSpan: 8, className: 'h-40 text-center text-sm font-bold text-slate-400' }, state.promoComparePurpose === '작업필요' ? '처리할 변경 상품이 없습니다.' : '현재 필터에 해당하는 상품이 없습니다.'))))),
+            detailRow && h('aside', { className: 'w-[420px] shrink-0 bg-white rounded-xl border border-slate-200 shadow-sm overflow-auto p-4' },
                 h('div', { className: 'flex justify-between gap-2' },
                     h('div', null,
                         h('div', { className: 'text-[11px] font-black text-indigo-700' }, detailRow.code || '미매칭'),
-                        h('div', { className: 'text-[15px] font-black text-slate-900' }, detailRow.name || '—')),
+                        h('div', { className: 'text-[15px] font-black text-slate-900' }, detailRow.name || '—'),
+                        h('div', { className: 'mt-1 text-[10px] font-black text-slate-500' }, `${detailRow.primaryPurpose} · ${detailRow.issues.join(' · ') || '문제 없음'}`)),
                     h('button', { onClick: () => actions.setPromoCompareDetailKey(''), className: 'w-7 h-7 rounded bg-slate-100 text-slate-500' }, '×')),
+                h('div', { className: 'mt-4 grid grid-cols-1 gap-2' },
+                    [['최신 마스터', masterSummary(detailRow)], ['카탈로그', catalogSummary(detailRow)], ['재고 원본', inventorySummary(detailRow)]].map(([label, text]) => h('div', { key: label, className: 'rounded-lg border border-slate-200 p-2' },
+                        h('div', { className: 'text-[10px] font-black text-slate-500' }, label),
+                        h('div', { className: 'mt-1 text-[11px] font-bold text-slate-800' }, text)))),
+                h('div', { className: 'mt-4 text-[11px] font-black text-slate-500' }, '작업값'),
+                h('div', { className: 'mt-2 grid grid-cols-2 gap-2' },
+                    h(WorkInput, { row: detailRow, field: 'outPrice', numeric: true }),
+                    h(WorkInput, { row: detailRow, field: 'promoPrice', numeric: true }),
+                    h(WorkInput, { row: detailRow, field: 'theme' }),
+                    h('select', { value: detailRow.draft.sale ?? '', disabled: detailRow.unmatched, onChange: event => edit(detailRow.key, 'sale', event.target.value), className: 'w-full h-7 px-1 rounded border border-slate-300 bg-white text-[11px] font-bold disabled:bg-slate-100' },
+                        h('option', { value: '' }, '판매여부'), h('option', { value: '1' }, '판매'), h('option', { value: '0' }, '정지'))),
                 h('div', { className: 'mt-4 text-[11px] font-black text-slate-500' }, 'LOT 비교 (날짜 미사용)'),
                 h('div', { className: 'mt-2 grid grid-cols-3 gap-2' },
                     [['잔존', detailRow.lots.retained], ['새 LOT', detailRow.lots.newKeys], ['미잔존', detailRow.lots.missing]].map(([label, list]) =>
                         h('div', { key: label, className: 'rounded-lg border border-slate-200 p-2' },
                             h('div', { className: 'text-[10px] font-black text-slate-500' }, label),
-                            h('div', { className: 'text-xl font-black text-slate-800' }, list.length)))))));
+                            h('div', { className: 'text-xl font-black text-slate-800' }, list.length)))),
+                h('details', { className: 'mt-4 rounded-lg border border-slate-200 p-2 text-[10px]' },
+                    h('summary', { className: 'cursor-pointer font-black text-slate-600' }, '원본 데이터 보기'),
+                    h('pre', { className: 'mt-2 whitespace-pre-wrap break-all text-[9px] text-slate-500' }, JSON.stringify({ master: detailRow.master, catalog: detailRow.catalog?._raw, inventory: detailRow.loaded?._raw }, null, 2))))));
 };
 
 const App = () => {
@@ -14866,7 +15001,7 @@ const App = () => {
                                 React.createElement("div", { className: "flex flex-col border-l-2 border-slate-700 pl-3" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "MerchOps"),
-                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.196_PromoPriceRight")),
+                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.197_ActionOnlyCompare")),
                                     React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "MAIN WORKSPACE"))),
                             React.createElement(SystemConsole, { itemCount: Object.keys(data.masterProducts).length, isProcessing: ui.isProcessing, processMsg: ui.processMsg, estimateCount: Object.keys(data.managedItems).length, filteredCount: fullDisplayRows.length, activeTags: ui.activeTags, masterLookupMode: data.masterLookupMode }),
                             React.createElement("nav", { className: "flex gap-1.5 text-[14px] shrink-0 items-center" },
