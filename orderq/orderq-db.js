@@ -252,7 +252,7 @@ export function upgradeOrderQDbSchema(db, transaction, oldVersion = 0) {
         definition.indexes.forEach(index => ensureIndex(store, index.name, index.keyPath, index.options || {}));
       });
 
-      const customerStore = tx.objectStore(STORE.CUSTOMERS);
+      const customerStore = transaction.objectStore(STORE.CUSTOMERS);
       ensureIndex(customerStore, 'byCanonicalCustomerId', 'canonicalCustomerId');
       ensureIndex(customerStore, 'byCustomerCode', 'normalizedCustomerCode');
       ensureIndex(customerStore, 'byStatusQuality', ['status', 'qualityStatus']);
