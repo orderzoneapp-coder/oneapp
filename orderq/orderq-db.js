@@ -11,7 +11,7 @@ import {
   ORDERQ_DB_VERSION,
   V9_STORE,
   V9_STORE_DEFINITIONS
-} from './orderq-v9-contracts.js?v=0.12.0';
+} from './orderq-v9-contracts.js?v=0.12.1';
 import { adminTestDatabaseName } from './admin-test-runtime.js?v=0.10.2';
 
 function databaseNameForRuntime() {

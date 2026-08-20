@@ -219,7 +219,7 @@
     import {
       createOrder, updateOrder, cancelOrder, getOrder, listOrders, subscribeOrderChanges,
       OrderRevisionConflictError, MATCH_STATUS
-    } from './order-intake-engine.js?v=0.8.0';
+    } from './order-intake-engine.js?v=0.12.1';
     import {
       syncBeforeOrderMutation, syncAfterLocalMutation, getSyncState,
       CloudOrderConflictError
@@ -1283,6 +1283,6 @@
       })
       .catch(error => showMessage(error.message || String(error), 'error'));
   </script>
-  <script type="module" src="./customer-picker-bootstrap.js?v=0.12.0"></script>
+  <script type="module" src="./customer-picker-bootstrap.js?v=0.12.1"></script>
 </body>
 </html>

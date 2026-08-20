@@ -8,13 +8,13 @@ import {
   newId,
   nowIso,
   normalizeText
-} from '../orderq-db.js?v=0.8.0';
+} from '../orderq-db.js?v=0.12.1';
 import { COLLECTOR_SOURCE } from './collector-schema.js?v=0.8.0';
 import {
   commitPreparedImport,
   rebuildFulfillmentEvidence,
   getCollectorSnapshot
-} from './history-repository.js?v=0.8.0';
+} from './history-repository.js?v=0.12.1';
 
 export const FINGERPRINT_VERSION = 2;
 

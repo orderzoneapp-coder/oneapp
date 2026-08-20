@@ -1,5 +1,5 @@
-import { STORE, getAll, normalizeText } from '../orderq-db.js?v=0.8.0';
-import { resolveCustomerInput } from '../customer-master.js?v=0.12.0';
+import { STORE, getAll, normalizeText } from '../orderq-db.js?v=0.12.1';
+import { resolveCustomerInput } from '../customer-master.js?v=0.12.1';
 
 function similarity(left, right) {
   const a = normalizeText(left);

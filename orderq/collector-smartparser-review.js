@@ -1,7 +1,7 @@
 import { analyzeSmartText } from './smartparser/parser-orchestrator.js?v=0.8.0';
 import { recordProductMapping } from './smartparser/parser-repository.js?v=0.8.0';
 import { getDeviceId } from './orderq-sync-engine.js?v=0.8.0';
-import { commitPreparedImportV2, rebuildWhenReady } from './history-collector/collector-contracts.js?v=0.8.1';
+import { commitPreparedImportV2, rebuildWhenReady } from './history-collector/collector-contracts.js?v=0.12.1';
 
 const reviewState = { analysis:null, sourceId:'', sourceType:'GENERAL_TEXT', rawText:'', fileName:'', defaultDate:'', sourceMode:'', prepared:null };
 const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[char]));

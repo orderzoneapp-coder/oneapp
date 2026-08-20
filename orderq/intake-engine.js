@@ -1,7 +1,7 @@
-import { analyzeSmartText } from './smartparser/parser-orchestrator.js?v=0.8.1';
+import { analyzeSmartText } from './smartparser/parser-orchestrator.js?v=0.12.1';
 import { generateProductCandidates, loadCandidateContext } from './smartparser/candidate-generator.js?v=0.8.1';
 import { matchParsedLine } from './smartparser/matching-engine.js?v=0.8.0';
-import { createOrder } from './order-intake-engine.js?v=0.11.0';
+import { createOrder } from './order-intake-engine.js?v=0.12.1';
 import { buildSourceOccurrenceKey, computeRawFingerprint } from './intake-identity.js?v=0.11.0';
 import {
   createOrOpenIntakeSession,

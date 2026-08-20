@@ -1,6 +1,6 @@
 import { createOrderDraftEditor } from './order-draft-editor.js?v=0.1.0';
-import { STORE, getAll, normalizeText } from './orderq-db.js?v=0.11.0';
-import { openCustomerPicker } from './customer-picker.js?v=0.12.0';
+import { STORE, getAll, normalizeText } from './orderq-db.js?v=0.12.1';
+import { openCustomerPicker } from './customer-picker.js?v=0.12.1';
 import {
   captureTextIntake,
   analyzeSingleOrderDocument,
@@ -10,7 +10,7 @@ import {
   confirmMatching,
   reopenIntakeStage,
   commitIntakeOrder
-} from './intake-engine.js?v=0.2.0';
+} from './intake-engine.js?v=0.12.1';
 
 const $ = id => document.getElementById(id);
 const state = {

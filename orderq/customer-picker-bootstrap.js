@@ -1,4 +1,4 @@
-import { openCustomerPicker, readyCustomerPicker } from './customer-picker.js?v=0.12.0';
+import { openCustomerPicker, readyCustomerPicker } from './customer-picker.js?v=0.12.1';
 
 function findNameInput() {
   return document.querySelector('[data-customer-picker], #customerPreset, #customerName, [name="customerName"]');

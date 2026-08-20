@@ -3,7 +3,7 @@ import {
   createLiveCustomer,
   ensureCustomerMasterReady,
   searchCustomers
-} from './customer-master.js?v=0.12.0';
+} from './customer-master.js?v=0.12.1';
 
 let readyPromise = null;
 
@@ -11,7 +11,7 @@ function ensureStyles() {
   if (document.querySelector('link[data-customer-picker-style]')) return;
   const link = document.createElement('link');
   link.rel = 'stylesheet';
-  link.href = './customer-master.css?v=0.12.0';
+  link.href = './customer-master.css?v=0.12.1';
   link.dataset.customerPickerStyle = 'true';
   document.head.append(link);
 }

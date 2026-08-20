@@ -6,7 +6,7 @@ import {
   newId,
   nowIso,
   normalizeText
-} from './orderq-db.js?v=0.8.0';
+} from './orderq-db.js?v=0.12.1';
 import { resolveWarehouseInTransaction, warehouseSnapshot } from './warehouse-master.js?v=0.8.0';
 import {
   ORDER_STATUS, ADMIN_STATUS, OPS_STATUS, INPUT_CHANNEL,
