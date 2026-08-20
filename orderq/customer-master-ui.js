@@ -13,7 +13,7 @@ import {
   getLatestCustomerSourceImportWork,
   prepareCustomerSourceImport,
   setCustomerSourceImportDecision
-} from './customer-source-import.js?v=0.14.2';
+} from './customer-source-import.js?v=0.14.3';
 import { openCustomerPicker } from './customer-picker.js?v=0.12.1';
 import { pushPending } from './orderq-sync-engine.js?v=0.14.0';
 
@@ -21,7 +21,7 @@ const ROW_HEIGHT = window.matchMedia('(max-width: 820px)').matches ? 86 : 74;
 const BUFFER_ROWS = 8;
 const state = {
   customers: [], filtered: [], importBatch: null, importRecords: [],
-  importIssuesOnly: true, importQuery: '', importLimit: 200
+  importStatusFilter: 'ISSUES', importQuery: '', importLimit: 200
 };
 const elements = {
   viewport: document.querySelector('#customerViewport'),
@@ -38,7 +38,6 @@ const elements = {
   importSourceLabel: document.querySelector('#importSourceLabel'),
   importFileTitle: document.querySelector('#importFileTitle'),
   importSearch: document.querySelector('#importSearch'),
-  importIssuesOnly: document.querySelector('#importIssuesOnly'),
   importSummary: document.querySelector('#importSummary'),
   importReview: document.querySelector('#importReview'),
   importGate: document.querySelector('#importGate'),
@@ -53,7 +52,7 @@ const IMPORT_FIELD_LABELS = Object.freeze({
 });
 const ISSUE_STATUSES = new Set([
   CUSTOMER_IMPORT_STATUS.CHANGED, CUSTOMER_IMPORT_STATUS.REVIEW_REQUIRED,
-  CUSTOMER_IMPORT_STATUS.NEW, CUSTOMER_IMPORT_STATUS.FAILED
+  CUSTOMER_IMPORT_STATUS.FAILED
 ]);
 const EVIDENCE_LABELS = Object.freeze({
   NAME_EXACT: '거래처명 일치', ALIAS_EXACT: '별칭 일치', PHONE_EXACT: '전화 일치', NAME_SIMILAR: '이름 유사'
@@ -168,7 +167,8 @@ function importEffectiveStatus(record) {
 function importVisibleRecords() {
   const query = state.importQuery.toLocaleLowerCase('ko');
   return state.importRecords.filter(record => {
-    if (state.importIssuesOnly && !ISSUE_STATUSES.has(record.status)) return false;
+    if (state.importStatusFilter === 'ISSUES' && canApplyCustomerSourceImport([record])) return false;
+    if (!['ISSUES', 'ALL'].includes(state.importStatusFilter) && record.status !== state.importStatusFilter) return false;
     const incoming = record.incoming || {};
     const haystack = [record.sourceCustomerCode, record.sourceCustomerName, record.sourceNickname, incoming.phone, incoming.mobile, record.sourceAddress, incoming.contactName].join(' ').toLocaleLowerCase('ko');
     return !query || haystack.includes(query);
@@ -251,6 +251,11 @@ async function chooseCustomer(record, customer) {
 }
 
 function bindImportActions() {
+  elements.importSummary.querySelectorAll('[data-import-status]').forEach(button => button.addEventListener('click', () => {
+    state.importStatusFilter = button.dataset.importStatus;
+    state.importLimit = 200;
+    renderImport();
+  }));
   elements.importReview.querySelectorAll('[data-recommend]').forEach(button => button.addEventListener('click', async () => {
     const record = state.importRecords.find(row => row.sourceRecordId === button.dataset.recommend);
     await chooseCustomer(record, state.customers.find(row => row.customerId === button.dataset.customerId));
@@ -295,13 +300,25 @@ function bindImportActions() {
 
 function renderImport() {
   const counts = state.importRecords.reduce((map, row) => ({ ...map, [row.status]: (map[row.status] || 0) + 1 }), {});
-  const statusOrder = [CUSTOMER_IMPORT_STATUS.SAME, CUSTOMER_IMPORT_STATUS.CHANGED, CUSTOMER_IMPORT_STATUS.REVIEW_REQUIRED, CUSTOMER_IMPORT_STATUS.NEW, CUSTOMER_IMPORT_STATUS.APPLIED, CUSTOMER_IMPORT_STATUS.FAILED, CUSTOMER_IMPORT_STATUS.EXCLUDED];
-  elements.importSummary.innerHTML = `<span>전체 ${state.importRecords.length.toLocaleString()}</span>${statusOrder.filter(status => counts[status]).map(status => `<span>${importStatusLabel(status)} ${counts[status].toLocaleString()}</span>`).join('')}`;
-  const sourceLabel = state.importBatch?.sourceSystem === CUSTOMER_SOURCE_SYSTEM.SHOP ? '쇼핑몰 회원' : 'ERP 거래처';
-  elements.importSourceLabel.textContent = `${sourceLabel} · Source Link Workbench`;
-  elements.importFileTitle.textContent = `${state.importBatch?.fileName || sourceLabel} 분석 ${state.importBatch?.status === 'PARTIAL' ? '부분적용' : '완료'}`;
   const unresolved = state.importRecords.filter(record => !canApplyCustomerSourceImport([record])).length;
-  elements.importGate.textContent = unresolved ? `확인할 거래처 ${unresolved.toLocaleString()}건만 해결하면 Master에 적용할 수 있습니다.` : `모든 결정이 완료되었습니다. ${state.importRecords.length.toLocaleString()}건을 적용할 수 있습니다.`;
+  const filters = [
+    ['ISSUES', '확인할 항목', unresolved],
+    ['ALL', '전체', state.importRecords.length],
+    [CUSTOMER_IMPORT_STATUS.SAME, '연결됨', counts[CUSTOMER_IMPORT_STATUS.SAME] || 0],
+    [CUSTOMER_IMPORT_STATUS.REVIEW_REQUIRED, '확인필요', counts[CUSTOMER_IMPORT_STATUS.REVIEW_REQUIRED] || 0],
+    [CUSTOMER_IMPORT_STATUS.NEW, '신규', counts[CUSTOMER_IMPORT_STATUS.NEW] || 0],
+    [CUSTOMER_IMPORT_STATUS.CHANGED, '변경확인', counts[CUSTOMER_IMPORT_STATUS.CHANGED] || 0],
+    [CUSTOMER_IMPORT_STATUS.FAILED, '적용실패', counts[CUSTOMER_IMPORT_STATUS.FAILED] || 0]
+  ];
+  elements.importSummary.innerHTML = filters
+    .filter(([value, , count]) => ![CUSTOMER_IMPORT_STATUS.FAILED].includes(value) || count)
+    .map(([value, label, count]) => `<button type="button" data-import-status="${value}" class="cm-summary-filter ${state.importStatusFilter === value ? 'active' : ''}">${label} <strong>${count.toLocaleString()}</strong>${value === CUSTOMER_IMPORT_STATUS.NEW && count ? '<small>일괄 등록 예정</small>' : ''}</button>`)
+    .join('');
+  const sourceLabel = state.importBatch?.sourceSystem === CUSTOMER_SOURCE_SYSTEM.SHOP ? '쇼핑몰 회원' : 'ERP 거래처';
+  elements.importWorkbench.dataset.phase = 'READY';
+  elements.importSourceLabel.textContent = `${sourceLabel} 가져오기`;
+  elements.importFileTitle.textContent = `${state.importBatch?.fileName || sourceLabel} · ${state.importRecords.length.toLocaleString()}건 분석 ${state.importBatch?.status === 'PARTIAL' ? '부분적용' : '완료'}`;
+  elements.importGate.textContent = unresolved ? `${unresolved.toLocaleString()}건 확인 필요` : `적용 준비 완료 · ${state.importRecords.length.toLocaleString()}건`;
   const visibleRecords = importVisibleRecords();
   const renderedRecords = visibleRecords.slice(0, state.importLimit);
   elements.importReview.innerHTML = renderedRecords.map(importRecordMarkup).join('') || '<div class="cm-import-empty">현재 조건에 맞는 거래처가 없습니다.</div>';
@@ -330,24 +347,23 @@ async function readExcel(file, sourceSystem) {
   if (headerRow < 0) throw new Error(sourceSystem === CUSTOMER_SOURCE_SYSTEM.SHOP ? '아이디와 이름(거래처명) 열을 찾을 수 없습니다.' : '거래처코드와 거래처명 열을 찾을 수 없습니다.');
   const rows = window.XLSX.utils.sheet_to_json(sheet, { range: headerRow, defval: '', raw: false });
   if (!rows.length) throw new Error('불러올 거래처 데이터가 없습니다.');
-  elements.importSummary.innerHTML = `<span>Excel 읽기 완료 · ${rows.length.toLocaleString()}건</span>`;
-  elements.importReview.innerHTML = '<div class="cm-review-row"><strong>로컬 거래처 정보를 준비하고 있습니다.</strong></div>';
-  elements.importGate.textContent = 'Cloud 동기화를 기다리지 않고 바로 비교합니다.';
+  elements.importSummary.innerHTML = '<div class="cm-progress-copy"><strong>Excel 읽기 완료</strong><span>거래처 비교를 시작합니다.</span></div><div class="cm-progress-track"><span style="width:0%"></span></div>';
+  elements.importGate.textContent = '기존 거래처와 비교하고 있습니다.';
   const prepared = await prepareCustomerSourceImport(rows, {
     sourceSystem,
     fileName: file.name,
     fileHash: await sha256(file),
     onProgress: ({ processed, total }) => {
-      elements.importSummary.innerHTML = `<span>거래처 비교 중 · ${processed.toLocaleString()} / ${total.toLocaleString()}</span>`;
-      elements.importReview.innerHTML = `<div class="cm-review-row"><strong>거래처 비교 중 · ${processed.toLocaleString()} / ${total.toLocaleString()}</strong></div>`;
-      elements.importGate.textContent = '기존 Source Link와 로컬 거래처 Master를 비교하고 있습니다.';
+      const percent = total ? Math.round((processed / total) * 100) : 0;
+      elements.importSummary.innerHTML = `<div class="cm-progress-copy"><strong>거래처 비교 중 ${processed.toLocaleString()} / ${total.toLocaleString()}</strong><span>${percent}%</span></div><div class="cm-progress-track"><span style="width:${percent}%"></span></div>`;
     }
   });
   state.importBatch = prepared.batch;
   state.importRecords = prepared.records;
   state.importLimit = 200;
-  state.importIssuesOnly = true;
-  elements.importIssuesOnly.checked = true;
+  state.importStatusFilter = 'ISSUES';
+  state.importQuery = '';
+  elements.importSearch.value = '';
   renderImport();
 }
 
@@ -357,17 +373,19 @@ async function handleExcelSelection(input, sourceSystem) {
   state.importBatch = null;
   state.importRecords = [];
   elements.importWorkbench.hidden = false;
+  elements.importWorkbench.dataset.phase = 'ANALYZING';
   elements.applyImport.disabled = true;
-  elements.importSourceLabel.textContent = sourceSystem === CUSTOMER_SOURCE_SYSTEM.SHOP ? '쇼핑몰 회원 · 분석 중' : 'ERP 거래처 · 분석 중';
-  elements.importFileTitle.textContent = `${file.name} 분석 중...`;
-  elements.importSummary.innerHTML = `<span>${escapeHtml(file.name)} 읽는 중...</span>`;
-  elements.importReview.innerHTML = '<div class="cm-review-row"><strong>Excel 파일을 읽고 있습니다.</strong></div>';
-  elements.importGate.textContent = '파일을 읽은 뒤 로컬 거래처 Master와 바로 비교합니다.';
+  elements.importSourceLabel.textContent = sourceSystem === CUSTOMER_SOURCE_SYSTEM.SHOP ? '쇼핑몰 회원 가져오기' : 'ERP 거래처 가져오기';
+  elements.importFileTitle.textContent = file.name;
+  elements.importSummary.innerHTML = '<div class="cm-progress-copy"><strong>Excel 파일 읽는 중</strong><span>잠시만 기다려 주세요.</span></div><div class="cm-progress-track"><span class="indeterminate"></span></div>';
+  elements.importReview.innerHTML = '';
+  elements.importGate.textContent = '파일을 확인하고 있습니다.';
   elements.importWorkbench.scrollIntoView({ behavior: 'smooth', block: 'start' });
   try {
     await readExcel(file, sourceSystem);
   } catch (error) {
     console.error('Customer source import failed', error);
+    elements.importWorkbench.dataset.phase = 'ERROR';
     elements.importSummary.innerHTML = `<span>불러오기 실패 · ${escapeHtml(file.name)}</span>`;
     elements.importReview.innerHTML = `<div class="cm-review-row"><strong>${escapeHtml(error.message || String(error))}</strong></div>`;
     elements.importGate.textContent = '파일 형식과 헤더를 확인해 주세요.';
@@ -393,7 +411,6 @@ document.querySelector('#closeImportButton').addEventListener('click', () => { e
 elements.erpFile.addEventListener('change', () => handleExcelSelection(elements.erpFile, CUSTOMER_SOURCE_SYSTEM.ERP));
 elements.shopFile.addEventListener('change', () => handleExcelSelection(elements.shopFile, CUSTOMER_SOURCE_SYSTEM.SHOP));
 elements.importSearch.addEventListener('input', () => { state.importQuery = elements.importSearch.value.trim(); state.importLimit = 200; renderImport(); });
-elements.importIssuesOnly.addEventListener('change', () => { state.importIssuesOnly = elements.importIssuesOnly.checked; state.importLimit = 200; renderImport(); });
 elements.applyImport.addEventListener('click', async () => {
   elements.applyImport.disabled = true;
   elements.importGate.textContent = 'Master와 외부 거래처 연결을 적용하고 있습니다...';
@@ -407,8 +424,7 @@ elements.applyImport.addEventListener('click', async () => {
     });
     const failed = results.filter(result => result.status === CUSTOMER_IMPORT_STATUS.FAILED);
     state.importBatch.status = failed.length ? 'PARTIAL' : 'APPLIED';
-    state.importIssuesOnly = failed.length > 0;
-    elements.importIssuesOnly.checked = state.importIssuesOnly;
+    state.importStatusFilter = failed.length ? CUSTOMER_IMPORT_STATUS.FAILED : 'ALL';
     renderImport();
     await reload();
     pushPending().then(result => {
