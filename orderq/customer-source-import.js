@@ -15,7 +15,6 @@ import {
   normalizeCustomer,
   resolveCanonicalCustomer
 } from './customer-master.js?v=0.14.0';
-import { pullRemote } from './orderq-sync-engine.js?v=0.14.0';
 
 export const CUSTOMER_SOURCE_SYSTEM = Object.freeze({ ERP: 'ERP', SHOP: 'SHOP' });
 export const CUSTOMER_SOURCE_LINK_STATUS = Object.freeze({
@@ -373,7 +372,13 @@ function sourceRowNumber(index, sourceSystem) {
   return index + 2;
 }
 
-export async function prepareCustomerSourceImport(rows, { sourceSystem, fileName = '', fileHash = '' } = {}) {
+export async function prepareCustomerSourceImport(rows, {
+  sourceSystem,
+  fileName = '',
+  fileHash = '',
+  onProgress = null,
+  chunkSize = 200
+} = {}) {
   const system = clean(sourceSystem).toUpperCase();
   sourceHeaders(system);
   if (fileHash) {
@@ -388,7 +393,6 @@ export async function prepareCustomerSourceImport(rows, { sourceSystem, fileName
     }
   }
 
-  try { await pullRemote(); } catch (error) { console.warn('Customer source pre-import pull failed', error); }
   const [customers, aliases, links] = await Promise.all([
     getAll(STORE.CUSTOMERS),
     getAll(STORE.CUSTOMER_ALIASES),
@@ -400,6 +404,7 @@ export async function prepareCustomerSourceImport(rows, { sourceSystem, fileName
   const importBatchId = newId('CIB');
   const records = [];
   const mappedSources = rows.map(row => mapCustomerSourceRow(row, system));
+  const progressChunkSize = Math.max(1, Number(chunkSize) || 200);
   const sourceLinkKeyCounts = mappedSources.reduce((map, source) => {
     if (source.sourceLinkKey) map.set(source.sourceLinkKey, (map.get(source.sourceLinkKey) || 0) + 1);
     return map;
@@ -478,6 +483,11 @@ export async function prepareCustomerSourceImport(rows, { sourceSystem, fileName
       createdAt: timestamp,
       updatedAt: timestamp
     });
+    const processed = index + 1;
+    if (processed % progressChunkSize === 0 || processed === rows.length) {
+      onProgress?.({ phase: 'MATCHING', processed, total: rows.length });
+      if (processed < rows.length) await new Promise(resolve => setTimeout(resolve, 0));
+    }
   }
 
   const batch = {

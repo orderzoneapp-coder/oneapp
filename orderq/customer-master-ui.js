@@ -13,7 +13,7 @@ import {
   getLatestCustomerSourceImportWork,
   prepareCustomerSourceImport,
   setCustomerSourceImportDecision
-} from './customer-source-import.js?v=0.14.1';
+} from './customer-source-import.js?v=0.14.2';
 import { openCustomerPicker } from './customer-picker.js?v=0.12.1';
 import { pushPending } from './orderq-sync-engine.js?v=0.14.0';
 
@@ -330,7 +330,19 @@ async function readExcel(file, sourceSystem) {
   if (headerRow < 0) throw new Error(sourceSystem === CUSTOMER_SOURCE_SYSTEM.SHOP ? '아이디와 이름(거래처명) 열을 찾을 수 없습니다.' : '거래처코드와 거래처명 열을 찾을 수 없습니다.');
   const rows = window.XLSX.utils.sheet_to_json(sheet, { range: headerRow, defval: '', raw: false });
   if (!rows.length) throw new Error('불러올 거래처 데이터가 없습니다.');
-  const prepared = await prepareCustomerSourceImport(rows, { sourceSystem, fileName: file.name, fileHash: await sha256(file) });
+  elements.importSummary.innerHTML = `<span>Excel 읽기 완료 · ${rows.length.toLocaleString()}건</span>`;
+  elements.importReview.innerHTML = '<div class="cm-review-row"><strong>로컬 거래처 정보를 준비하고 있습니다.</strong></div>';
+  elements.importGate.textContent = 'Cloud 동기화를 기다리지 않고 바로 비교합니다.';
+  const prepared = await prepareCustomerSourceImport(rows, {
+    sourceSystem,
+    fileName: file.name,
+    fileHash: await sha256(file),
+    onProgress: ({ processed, total }) => {
+      elements.importSummary.innerHTML = `<span>거래처 비교 중 · ${processed.toLocaleString()} / ${total.toLocaleString()}</span>`;
+      elements.importReview.innerHTML = `<div class="cm-review-row"><strong>거래처 비교 중 · ${processed.toLocaleString()} / ${total.toLocaleString()}</strong></div>`;
+      elements.importGate.textContent = '기존 Source Link와 로컬 거래처 Master를 비교하고 있습니다.';
+    }
+  });
   state.importBatch = prepared.batch;
   state.importRecords = prepared.records;
   state.importLimit = 200;
@@ -349,8 +361,8 @@ async function handleExcelSelection(input, sourceSystem) {
   elements.importSourceLabel.textContent = sourceSystem === CUSTOMER_SOURCE_SYSTEM.SHOP ? '쇼핑몰 회원 · 분석 중' : 'ERP 거래처 · 분석 중';
   elements.importFileTitle.textContent = `${file.name} 분석 중...`;
   elements.importSummary.innerHTML = `<span>${escapeHtml(file.name)} 읽는 중...</span>`;
-  elements.importReview.innerHTML = '<div class="cm-review-row"><strong>대표 거래처를 찾고 있습니다.</strong></div>';
-  elements.importGate.textContent = '기존 Source Link와 사업자번호를 확인하고 있습니다.';
+  elements.importReview.innerHTML = '<div class="cm-review-row"><strong>Excel 파일을 읽고 있습니다.</strong></div>';
+  elements.importGate.textContent = '파일을 읽은 뒤 로컬 거래처 Master와 바로 비교합니다.';
   elements.importWorkbench.scrollIntoView({ behavior: 'smooth', block: 'start' });
   try {
     await readExcel(file, sourceSystem);
