@@ -1,9 +1,11 @@
 import { createOrderDraftEditor } from './order-draft-editor.js?v=0.1.0';
 import { STORE, getAll, normalizeText } from './orderq-db.js?v=0.11.0';
+import { openCustomerPicker } from './customer-picker.js?v=0.12.0';
 import {
   captureTextIntake,
   analyzeSingleOrderDocument,
   parseStructuredOrderText,
+  rematchExtractedLinesForCustomer,
   confirmExtraction,
   confirmMatching,
   reopenIntakeStage,
@@ -320,26 +322,17 @@ $('captureBtn').onclick = async () => {
     const detected = detectInput(rawText);
     const presetValue = $('customerPreset').value.trim();
     const presetCustomer = presetValue ? findCustomer(presetValue) : null;
-    if (presetValue && !presetCustomer) {
-      msg('등록된 거래처를 검색해서 선택하세요.', 'error');
-      $('customerPreset').focus();
-      return;
-    }
     const inferredCustomer = inferCustomerFromRaw(rawText, detected.sourceType);
     const customer = presetCustomer || inferredCustomer;
-    if (!customer) {
-      msg('거래처를 선택하세요. 텍스트에 거래처명이 없으면 거래처를 먼저 지정해야 거래처별 상품 매칭이 작동합니다.', 'warn');
-      $('customerPreset').focus();
-      return;
-    }
-
     state.activeCustomer = customer;
-    $('customerPreset').value = customerName(customer);
-    $('customerPresetId').value = customer.customerId || '';
+    if (customer) {
+      $('customerPreset').value = customerName(customer);
+      $('customerPresetId').value = customer.customerId || '';
+    }
     button.disabled = true;
     button.dataset.originalText = button.textContent;
     button.textContent = '분석 중…';
-    msg(`${customerName(customer)} 기준으로 주문을 분석하고 있습니다…`, 'info');
+    msg(customer ? `${customerName(customer)} 기준으로 주문을 분석하고 있습니다…` : '주문 상품과 수량을 먼저 추출하고 있습니다…', 'info');
 
     const captured = await captureTextIntake({
       sourceType: detected.sourceType,
@@ -351,17 +344,17 @@ $('captureBtn').onclick = async () => {
       session: captured.session,
       sourcePart: captured.sourcePart,
       rawText,
-      customerOverride: {
+      customerOverride: customer ? {
         customerId: customer.customerId,
         customerName: customerName(customer)
-      },
+      } : null,
       headerDraft: { warehouseName: $('warehouse').value }
     });
     state.document = analyzed.document;
     state.lines = analyzed.lines;
     state.captured = true;
     $('rawPreview').textContent = rawText;
-    $('customerExpression').value = analyzed.document.confirmedCustomerName || customerName(customer);
+    $('customerExpression').value = analyzed.document.confirmedCustomerName || (customer ? customerName(customer) : presetValue);
     rows();
     step(0);
     const label = analyzed.detectedInputType === 'SHOP_TABLE' ? '쇼핑몰 표형 주문을 인식했습니다.' : `${detectInput(rawText).label} 분석이 완료되었습니다.`;
@@ -390,6 +383,33 @@ $('extractionRows').oninput = event => {
 
 $('confirmExtractionBtn').onclick = async () => {
   try {
+    if (!state.activeCustomer) {
+      const customer = await openCustomerPicker({
+        initialName: state.document?.confirmedCustomerName || $('customerExpression').value || $('customerPreset').value,
+        source: 'ORDER_IN_QUICK_CREATE',
+        title: '거래처 선택 후 상품매칭'
+      });
+      if (!customer) {
+        msg('상품매칭을 계속하려면 거래처를 선택하거나 등록해 주세요.', 'warn');
+        return;
+      }
+      state.activeCustomer = customer;
+      if (!state.customers.some(row => row.customerId === customer.customerId)) state.customers.push(customer);
+      $('customerPreset').value = customerName(customer);
+      $('customerPresetId').value = customer.customerId;
+      $('customerExpression').value = customerName(customer);
+      state.lines = await rematchExtractedLinesForCustomer(state.lines, {
+        customerId: customer.customerId,
+        customerName: customerName(customer)
+      });
+      state.document = {
+        ...state.document,
+        confirmedCustomerId: customer.customerId,
+        confirmedCustomerName: customerName(customer),
+        customerResolutionStatus: 'CONFIRMED'
+      };
+      state.lines = state.lines.map(line => ({ ...line, customerId: customer.customerId, customerName: customerName(customer) }));
+    }
     const result = await confirmExtraction({ document: state.document, lines: state.lines });
     state.document = result.document;
     state.lines = result.lines;

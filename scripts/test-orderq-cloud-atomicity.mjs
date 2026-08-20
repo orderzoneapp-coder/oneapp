@@ -328,6 +328,23 @@ const denied = pushOrder(1, 3, "QUEUE-DENIED", false);
 assert.equal(denied.status, "error");
 assert.match(denied.message, /ORDERQ_ACCESS_DENIED/);
 
+const customerSheet = context.orderQEnsureSheet(spreadsheet, 'CUSTOMER');
+for (const [customerId, customerName] of [['CUSTOMER-001', '테스트거래처'], ['CUSTOMER-STAGE1', 'Stage 1 테스트거래처']]) {
+  const customer = {
+    customerId,
+    customerName,
+    normalizedName: customerName,
+    customerCode: '',
+    erpCustomerCode: '',
+    status: 'ACTIVE',
+    qualityStatus: 'VERIFIED',
+    canonicalCustomerId: customerId,
+    revision: 1,
+    updatedAt: '2026-08-13T00:00:00.000Z'
+  };
+  context.orderQWriteRow(customerSheet, customerId, [customerId, customerName, '', customer.updatedAt, JSON.stringify(customer)]);
+}
+
 const created = pushOrder(1, 3, "QUEUE-ORDER-R1");
 assert.equal(created.status, "success");
 assert.equal(created.data.results[0].status, "applied");

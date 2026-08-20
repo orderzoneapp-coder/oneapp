@@ -161,44 +161,20 @@ async function resolveCustomerInTransaction(tx, customerInput) {
   const normalizedName = normalizeText(customerName);
 
   if (customerInput.customerId) {
-    const existing = await requestToPromise(customerStore.get(customerInput.customerId));
-    if (existing && existing.normalizedName === normalizedName) return existing;
+    let existing = await requestToPromise(customerStore.get(customerInput.customerId));
+    if (existing?.qualityStatus === 'SUPERSEDED') {
+      existing = await requestToPromise(customerStore.get(existing.canonicalCustomerId || existing.supersededByCustomerId));
+    }
+    if (existing?.status === 'ACTIVE') return existing;
   }
 
   const byName = customerStore.index('byName');
-  const sameName = await requestToPromise(byName.get(normalizedName));
-  if (sameName) return sameName;
-
-  const customerId = newId('CUS');
-  const timestamp = nowIso();
-  const customer = {
-    customerId,
-    customerName,
-    normalizedName,
-    erpCustomerCode: String(customerInput.erpCustomerCode ?? '').trim(),
-    status: 'ACTIVE',
-    source: 'MANUAL',
-    createdAt: timestamp,
-    updatedAt: timestamp
-  };
-  const alias = {
-    mappingId: newId('CAM'),
-    rawText: customerName,
-    normalizedText: normalizedName,
-    customerId,
-    sourceType: 'MANUAL',
-    sourceId: '',
-    confirmed: true,
-    useCount: 1,
-    lastUsedAt: timestamp,
-    createdAt: timestamp,
-    updatedAt: timestamp
-  };
-  customerStore.add(customer);
-  aliasStore.add(alias);
-  enqueue(tx, 'CUSTOMER', customer.customerId, 'UPSERT', 1, customer, 0);
-  enqueue(tx, 'CUSTOMER_ALIAS', alias.mappingId, 'UPSERT', 1, alias, 0);
-  return customer;
+  let sameName = await requestToPromise(byName.get(normalizedName));
+  if (sameName?.qualityStatus === 'SUPERSEDED') {
+    sameName = await requestToPromise(customerStore.get(sameName.canonicalCustomerId || sameName.supersededByCustomerId));
+  }
+  if (sameName?.status === 'ACTIVE') return sameName;
+  throw new Error('미등록 거래처입니다. 거래처 찾기 / 간편등록으로 등록 후 계속해 주세요.');
 }
 
 function summarizeAmounts(items) {

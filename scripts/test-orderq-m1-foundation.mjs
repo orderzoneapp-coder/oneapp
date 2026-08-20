@@ -19,6 +19,7 @@ import {
   requireActor,
   requireCapability
 } from '../orderq/orderq-v7-contracts.js';
+import { ORDERQ_DB_VERSION as CURRENT_ORDERQ_DB_VERSION } from '../orderq/orderq-v9-contracts.js';
 import {
   ORDERQ_BACKUP_FORMAT,
   ORDERQ_BACKUP_FORMAT_VERSION,
@@ -127,8 +128,8 @@ assert.deepEqual(validateOrderQBackup(backup), {
   storeNames: ['orders'],
   counts: { orders: 1 }
 });
-assert.doesNotThrow(() => validateOrderQBackup({ ...backup, schemaVersion: 8 }));
-assert.throws(() => validateOrderQBackup({ ...backup, schemaVersion: 9 }), /ORDERQ_BACKUP_SCHEMA_UNSUPPORTED/);
+assert.doesNotThrow(() => validateOrderQBackup({ ...backup, schemaVersion: CURRENT_ORDERQ_DB_VERSION }));
+assert.throws(() => validateOrderQBackup({ ...backup, schemaVersion: CURRENT_ORDERQ_DB_VERSION + 1 }), /ORDERQ_BACKUP_SCHEMA_UNSUPPORTED/);
 assert.throws(() => validateOrderQBackup({ ...backup, stores: { unknownStore: [] } }), /ORDERQ_BACKUP_UNKNOWN_STORE/);
 
 const dbSource = await readFile(new URL('../orderq/orderq-db.js', import.meta.url), 'utf8');

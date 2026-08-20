@@ -6,11 +6,12 @@ import {
   V7_STORE,
   V7_STORE_DEFINITIONS
 } from './orderq-v7-contracts.js?v=0.8.0';
+import { V8_STORE, V8_STORE_DEFINITIONS } from './orderq-v8-contracts.js?v=0.11.0';
 import {
   ORDERQ_DB_VERSION,
-  V8_STORE,
-  V8_STORE_DEFINITIONS
-} from './orderq-v8-contracts.js?v=0.11.0';
+  V9_STORE,
+  V9_STORE_DEFINITIONS
+} from './orderq-v9-contracts.js?v=0.12.0';
 import { adminTestDatabaseName } from './admin-test-runtime.js?v=0.10.2';
 
 function databaseNameForRuntime() {
@@ -32,6 +33,7 @@ export const STORE = Object.freeze({
   WAREHOUSES: 'warehouses',
   WAREHOUSE_ALIASES: 'warehouseAliases',
   CUSTOMER_ALIASES: 'customerAliases',
+  CUSTOMER_EVENTS: V9_STORE.CUSTOMER_EVENTS,
   PRODUCT_MAPPINGS: 'productMappings',
   UNIT_MAPPINGS: 'unitMappings',
   RAW_INPUTS: 'rawInputs',
@@ -74,10 +76,13 @@ export function upgradeOrderQDbSchema(db, transaction, oldVersion = 0) {
     return transaction.objectStore(name);
   };
 
-  let store = ensureStore(STORE.CUSTOMERS, { keyPath: 'customerId' });
-  ensureIndex(store, 'byName', 'normalizedName');
-  ensureIndex(store, 'byErpCode', 'erpCustomerCode');
-  ensureIndex(store, 'byUpdatedAt', 'updatedAt');
+      let store = ensureStore(STORE.CUSTOMERS, { keyPath: 'customerId' });
+      ensureIndex(store, 'byName', 'normalizedName');
+      ensureIndex(store, 'byErpCode', 'erpCustomerCode');
+      ensureIndex(store, 'byUpdatedAt', 'updatedAt');
+      ensureIndex(store, 'byCanonicalCustomerId', 'canonicalCustomerId');
+      ensureIndex(store, 'byCustomerCode', 'normalizedCustomerCode');
+      ensureIndex(store, 'byStatusQuality', ['status', 'qualityStatus']);
 
   store = ensureStore(STORE.PRODUCTS, { keyPath: 'productId' });
   ensureIndex(store, 'byCode', 'itemCode', { unique: false });
@@ -241,7 +246,47 @@ export function upgradeOrderQDbSchema(db, transaction, oldVersion = 0) {
 
   const metaStore = ensureStore(STORE.META, { keyPath: 'key' });
 
-  if (oldVersion < 8) {
+    if (oldVersion < 9) {
+      V9_STORE_DEFINITIONS.forEach(definition => {
+        const store = ensureStore(definition.name, definition.options);
+        definition.indexes.forEach(index => ensureIndex(store, index.name, index.keyPath, index.options || {}));
+      });
+
+      const customerStore = tx.objectStore(STORE.CUSTOMERS);
+      ensureIndex(customerStore, 'byCanonicalCustomerId', 'canonicalCustomerId');
+      ensureIndex(customerStore, 'byCustomerCode', 'normalizedCustomerCode');
+      ensureIndex(customerStore, 'byStatusQuality', ['status', 'qualityStatus']);
+      const cursorRequest = customerStore.openCursor();
+      cursorRequest.onsuccess = () => {
+        const cursor = cursorRequest.result;
+        if (!cursor) return;
+        const customer = cursor.value || {};
+        const customerId = String(customer.customerId || '').trim();
+        const qualityStatus = customer.qualityStatus || 'UNVERIFIED';
+        const customerCode = String(customer.customerCode || customer.erpCustomerCode || '').trim();
+        const normalizedName = customer.normalizedName || normalizeText(customer.customerName);
+        cursor.update({
+          ...customer,
+          customerId,
+          customerCode,
+          normalizedCustomerCode: normalizeText(customerCode),
+          normalizedName,
+          looseNormalizedName: normalizeText(normalizedName).replace(/[()주식회사유한회사\s]/g, ''),
+          status: customer.status || 'ACTIVE',
+          qualityStatus,
+          canonicalCustomerId: qualityStatus === 'SUPERSEDED'
+            ? String(customer.canonicalCustomerId || customer.supersededByCustomerId || '')
+            : customerId,
+          revision: Math.max(1, Number(customer.revision || 1)),
+          updatedAt: customer.updatedAt || nowIso()
+        });
+        cursor.continue();
+      };
+
+      metaStore.put({ key: 'schemaVersion', value: 9, updatedAt: nowIso() });
+    }
+
+    if (oldVersion < 8) {
     for (const definition of V8_STORE_DEFINITIONS) {
       const v8Store = ensureStore(definition.name, { keyPath: definition.keyPath });
       for (const entry of definition.indexes) {

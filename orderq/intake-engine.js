@@ -154,6 +154,27 @@ async function rematchAnalysisForCustomer(analysis, customer, sourceId, structur
   return analysis;
 }
 
+export async function rematchExtractedLinesForCustomer(lines, customer, sourceId = 'ORDER_IN') {
+  if (!customer?.customerId || !customer?.customerName) throw new Error('ORDERQ_INTAKE_CUSTOMER_REQUIRED');
+  const context = await loadCandidateContext();
+  return Promise.all((lines || []).map(async line => {
+    if (line.excluded || line.reviewStatus === 'EXCLUDED') return line;
+    const candidates = await generateProductCandidates({
+      productText: line.productText || line.itemName || line.rawExpression,
+      customerId: customer.customerId,
+      sourceId,
+      itemCodeHint: line.externalItemCode || line.itemCode,
+      context
+    });
+    return {
+      ...line,
+      ...matchParsedLine(line, candidates),
+      customerId: customer.customerId,
+      customerName: customer.customerName
+    };
+  }));
+}
+
 export async function captureTextIntake(input = {}) {
   if (!text(input.rawText)) throw new Error('ORDERQ_INTAKE_SOURCE_EMPTY');
   if (text(input.documentType || 'ORDER') !== 'ORDER') throw new Error('ORDERQ_INTAKE_DOCUMENT_TYPE_UNSUPPORTED');
@@ -238,9 +259,7 @@ export async function analyzeSingleOrderDocument(input) {
     ? { customerId: orderRows[0].confirmedCustomerId, customerName: orderRows[0].confirmedCustomerName }
     : null;
   const customer = override || resolved;
-  if (!customer) throw new Error('ORDERQ_INTAKE_CUSTOMER_REQUIRED');
-
-  analysis = await rematchAnalysisForCustomer(analysis, customer, input.session.sourceId, structured.rows);
+  if (customer) analysis = await rematchAnalysisForCustomer(analysis, customer, input.session.sourceId, structured.rows);
   const adapted = await adaptAnalysisToOrderDocument({
     analysis,
     intakeSession: input.session,
@@ -252,8 +271,8 @@ export async function analyzeSingleOrderDocument(input) {
     documentType: 'ORDER',
     sourceDocumentKey: adapted.sourceDocumentKey,
     sourceMessageKeys: [adapted.parsed.sourceMessageKey],
-    confirmedCustomerId: customer.customerId,
-    confirmedCustomerName: customer.customerName,
+    confirmedCustomerId: customer?.customerId || '',
+    confirmedCustomerName: customer?.customerName || '',
     headerDraft: input.headerDraft || {},
     stage: 'EXTRACTION_REVIEW'
   });
