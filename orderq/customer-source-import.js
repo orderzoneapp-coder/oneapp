@@ -15,6 +15,7 @@ import {
   normalizeCustomer,
   resolveCanonicalCustomer
 } from './customer-master.js?v=0.14.0';
+import { pullRemote } from './orderq-sync-engine.js?v=0.14.0';
 
 export const CUSTOMER_SOURCE_SYSTEM = Object.freeze({ ERP: 'ERP', SHOP: 'SHOP' });
 export const CUSTOMER_SOURCE_LINK_STATUS = Object.freeze({
@@ -383,6 +384,7 @@ export async function prepareCustomerSourceImport(rows, { sourceSystem, fileName
     if (reusableBatch) return { batch: reusableBatch, records: await getCustomerSourceImportRecords(reusableBatch.importBatchId), resumed: true };
   }
 
+  try { await pullRemote(); } catch (error) { console.warn('Customer source pre-import pull failed', error); }
   const [customers, aliases, links] = await Promise.all([
     getAll(STORE.CUSTOMERS),
     getAll(STORE.CUSTOMER_ALIASES),
@@ -393,9 +395,14 @@ export async function prepareCustomerSourceImport(rows, { sourceSystem, fileName
   const timestamp = nowIso();
   const importBatchId = newId('CIB');
   const records = [];
+  const mappedSources = rows.map(row => mapCustomerSourceRow(row, system));
+  const sourceLinkKeyCounts = mappedSources.reduce((map, source) => {
+    if (source.sourceLinkKey) map.set(source.sourceLinkKey, (map.get(source.sourceLinkKey) || 0) + 1);
+    return map;
+  }, new Map());
 
   for (let index = 0; index < rows.length; index += 1) {
-    const source = mapCustomerSourceRow(rows[index], system);
+    const source = mappedSources[index];
     const existingLink = linksByKey.get(source.sourceLinkKey) || null;
     let status = CUSTOMER_IMPORT_STATUS.REVIEW_REQUIRED;
     let selectedCustomerId = '';
@@ -406,6 +413,7 @@ export async function prepareCustomerSourceImport(rows, { sourceSystem, fileName
 
     if (!source.sourceCustomerCode) validationError = system === CUSTOMER_SOURCE_SYSTEM.SHOP ? '쇼핑몰 회원 아이디가 없습니다.' : 'ERP 거래처코드가 없습니다.';
     else if (!source.sourceCustomerName) validationError = '거래처명이 없습니다.';
+    else if ((sourceLinkKeyCounts.get(source.sourceLinkKey) || 0) > 1) validationError = '같은 출처 거래처코드가 파일에 중복되어 있습니다. 중복 행은 하나만 남기고 나머지는 제외해 주세요.';
     else if (existingLink && existingLink.active !== false && existingLink.linkStatus === CUSTOMER_SOURCE_LINK_STATUS.CONFIRMED) {
       const original = byId.get(existingLink.customerId);
       const canonical = canonicalCustomer(original, byId);
@@ -517,6 +525,8 @@ function effectiveStatus(record) {
 }
 
 export function canApplyCustomerSourceImport(records) {
+  const activeKeys = records.filter(record => ![CUSTOMER_IMPORT_STATUS.EXCLUDED, CUSTOMER_IMPORT_STATUS.APPLIED].includes(effectiveStatus(record))).map(record => record.sourceLinkKey).filter(Boolean);
+  if (new Set(activeKeys).size !== activeKeys.length) return false;
   return records.every(record => {
     const status = effectiveStatus(record);
     if ([CUSTOMER_IMPORT_STATUS.SAME, CUSTOMER_IMPORT_STATUS.EXCLUDED, CUSTOMER_IMPORT_STATUS.APPLIED].includes(status)) return true;

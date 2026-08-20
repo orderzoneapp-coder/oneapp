@@ -10,7 +10,7 @@ const ORDERQ_SYNC_SCHEMA = 'ONEAPP_ORDERQ_SYNC_V1';
 const ORDERQ_SYNC_MAX_PUSH = 100;
 const ORDERQ_SYNC_MAX_PULL = 500;
 const ORDERQ_SHEET_SCHEMA_PROPERTY = 'ONEAPP_ORDERQ_SHEET_SCHEMA_VERSION';
-const ORDERQ_SHEET_SCHEMA_VERSION = '4';
+const ORDERQ_SHEET_SCHEMA_VERSION = '5';
 const ORDERQ_CUTOVER_MODE_PROPERTY = 'ONEAPP_ORDERQ_CUTOVER_MODE';
 const ORDERQ_CUTOVER_SAFE_MODE = 'SHADOW';
 const ORDERQ_CUTOVER_WRITE_MODES = Object.freeze(['PILOT_WRITE', 'VNEXT_PRIMARY']);
@@ -37,6 +37,8 @@ const ORDERQ_SHEETS = Object.freeze({
   CUSTOMER: 'CUSTOMER_MASTER',
   PRODUCT: 'PRODUCT_MASTER_ORDERQ',
   CUSTOMER_ALIAS: 'CUSTOMER_ALIAS_MAPPING',
+  CUSTOMER_SOURCE_LINK: 'CUSTOMER_SOURCE_LINK',
+  CUSTOMER_SOURCE_LINK_EVENT: 'CUSTOMER_SOURCE_LINK_EVENT',
   PRODUCT_MAPPING: 'PRODUCT_MAPPING',
   UNIT_MAPPING: 'UNIT_MAPPING',
   MAPPING_EVENT: 'MAPPING_EVENT',
@@ -72,6 +74,8 @@ const ORDERQ_HEADERS = Object.freeze({
   CUSTOMER: ['customerId', 'customerName', 'erpCustomerCode', 'updatedAt', 'payloadJson'],
   PRODUCT: ['productId', 'itemCode', 'itemName', 'updatedAt', 'payloadJson'],
   CUSTOMER_ALIAS: ['mappingId', 'customerId', 'normalizedText', 'sourceType', 'updatedAt', 'payloadJson'],
+  CUSTOMER_SOURCE_LINK: ['linkId', 'customerId', 'sourceSystem', 'sourceCustomerCode', 'sourceLinkKey', 'linkStatus', 'updatedAt', 'payloadJson'],
+  CUSTOMER_SOURCE_LINK_EVENT: ['eventId', 'linkId', 'eventType', 'beforeCustomerId', 'afterCustomerId', 'occurredAt', 'payloadJson'],
   PRODUCT_MAPPING: ['mappingId', 'customerId', 'sourceId', 'normalizedText', 'productId', 'updatedAt', 'payloadJson'],
   UNIT_MAPPING: ['mappingId', 'productId', 'productGroup', 'rawUnit', 'finalUnit', 'updatedAt', 'payloadJson'],
   MAPPING_EVENT: ['eventId', 'customerId', 'productId', 'createdAt', 'payloadJson'],
@@ -541,6 +545,8 @@ function orderQSimpleSpec(entityType) {
     CUSTOMER: { key: 'CUSTOMER', id: 'customerId', row: p => [p.customerId, p.customerName || '', p.erpCustomerCode || '', p.updatedAt || '', JSON.stringify(p)] },
     PRODUCT: { key: 'PRODUCT', id: 'productId', row: p => [p.productId, p.itemCode || '', p.itemName || '', p.updatedAt || '', JSON.stringify(p)] },
     CUSTOMER_ALIAS: { key: 'CUSTOMER_ALIAS', id: 'mappingId', row: p => [p.mappingId, p.customerId || '', p.normalizedText || '', p.sourceType || '', p.updatedAt || '', JSON.stringify(p)] },
+    CUSTOMER_SOURCE_LINK: { key: 'CUSTOMER_SOURCE_LINK', id: 'linkId', row: p => [p.linkId, p.customerId || '', p.sourceSystem || '', p.sourceCustomerCode || '', p.sourceLinkKey || '', p.linkStatus || '', p.updatedAt || '', JSON.stringify(p)] },
+    CUSTOMER_SOURCE_LINK_EVENT: { key: 'CUSTOMER_SOURCE_LINK_EVENT', id: 'eventId', row: p => [p.eventId, p.linkId || '', p.eventType || '', p.beforeCustomerId || '', p.afterCustomerId || '', p.occurredAt || '', JSON.stringify(p)] },
     PRODUCT_MAPPING: { key: 'PRODUCT_MAPPING', id: 'mappingId', row: p => [p.mappingId, p.customerId || '', p.sourceId || '', p.normalizedText || '', p.productId || '', p.updatedAt || '', JSON.stringify(p)] },
     UNIT_MAPPING: { key: 'UNIT_MAPPING', id: 'mappingId', row: p => [p.mappingId, p.productId || '', p.productGroup || '', p.rawUnit || '', p.finalUnit || '', p.updatedAt || '', JSON.stringify(p)] },
     MAPPING_EVENT: { key: 'MAPPING_EVENT', id: 'eventId', row: p => [p.eventId, p.customerId || '', p.productId || '', p.createdAt || '', JSON.stringify(p)] },
@@ -575,6 +581,16 @@ function orderQApplySimple(ss, change) {
     throw new Error('ORDERQ_ORDER_EVENT_ORPHAN');
   }
   const sheet = orderQEnsureSheet(ss, spec.key);
+  if (String(change.entityType || '') === 'CUSTOMER_SOURCE_LINK') {
+    const sourceLinkKey = String(payload.sourceLinkKey || '');
+    if (!sourceLinkKey) throw new Error('ORDERQ_CUSTOMER_SOURCE_LINK_KEY_REQUIRED');
+    if (sheet.getLastRow() >= 2) {
+      const found = sheet.getRange(2, 5, sheet.getLastRow() - 1, 1).createTextFinder(sourceLinkKey).matchEntireCell(true).findNext();
+      if (found && String(sheet.getRange(found.getRow(), 1).getValue() || '') !== id) {
+        throw new Error(`ORDERQ_CUSTOMER_SOURCE_LINK_KEY_CONFLICT:${sourceLinkKey}`);
+      }
+    }
+  }
   if (String(change.entityType || '') === 'ORDER_EVENT' && /^SALES_TRANSFER_(ALLOCATED|REVERSED)$/.test(String(payload.eventType || ''))) {
     const existing = orderQReadPayloadById(sheet, id);
     if (existing) {

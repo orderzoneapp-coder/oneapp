@@ -297,6 +297,8 @@ export function upgradeOrderQDbSchema(db, transaction, oldVersion = 0) {
     metaStore.put({ key: 'schemaVersion', value: 9, updatedAt: nowIso() });
   }
 
+  if (oldVersion < 10) metaStore.put({ key: 'schemaVersion', value: 10, updatedAt: nowIso() });
+
   if (oldVersion < 8) {
     for (const definition of V8_STORE_DEFINITIONS) {
       const v8Store = ensureStore(definition.name, { keyPath: definition.keyPath });

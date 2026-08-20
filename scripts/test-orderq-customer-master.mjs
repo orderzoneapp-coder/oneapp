@@ -3,15 +3,17 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
-import { ORDERQ_DB_VERSION, V9_STORE_DEFINITIONS } from '../orderq/orderq-v9-contracts.js';
+import { V9_STORE_DEFINITIONS } from '../orderq/orderq-v9-contracts.js';
+import { ORDERQ_DB_VERSION, V10_STORE_DEFINITIONS } from '../orderq/orderq-v10-contracts.js';
 
 const read = path => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
 const [
-  db, service, picker, ui, html, css, intakeEngine, intakeWorkbench,
+  db, service, sourceImport, picker, ui, html, css, intakeEngine, intakeWorkbench,
   directInput, collectorRepository, collectorUi, collectorReview, collectorHtml, cloud
 ] = await Promise.all([
   read('orderq/orderq-db.js'),
   read('orderq/customer-master.js'),
+  read('orderq/customer-source-import.js'),
   read('orderq/customer-picker.js'),
   read('orderq/customer-master-ui.js'),
   read('orderq/customers.html'),
@@ -28,8 +30,11 @@ const [
 
 new vm.Script(cloud, { filename: 'orderq-cloud.gs' });
 new vm.Script(collectorReview.replace(/^import .*;$/gm, ''), { filename: 'collector-smartparser-review.js' });
-assert.equal(ORDERQ_DB_VERSION, 9);
+assert.equal(ORDERQ_DB_VERSION, 10);
 assert.deepEqual(V9_STORE_DEFINITIONS.map(store => store.name), ['customerEvents']);
+assert.deepEqual(V10_STORE_DEFINITIONS.map(store => store.name), ['customerSourceLinks', 'customerSourceLinkEvents']);
+assert.match(db, /oldVersion < 10/);
+assert.match(db, /bySourceLinkKey/);
 assert.match(db, /oldVersion < 9/);
 assert.doesNotMatch(db, /const customerStore = tx\.objectStore/, 'v9 upgrade must use the provided upgrade transaction');
 for (const index of ['byCanonicalCustomerId', 'byCustomerCode', 'byStatusQuality']) assert.match(db, new RegExp(index));
@@ -45,8 +50,8 @@ assert.match(service, /hasUnsyncedCustomerChanges/);
 assert.match(service, /await pullRemote\(\)/);
 assert.match(service, /CUSTOMER_IMPORT_STATUS\.CHANGED/);
 assert.match(service, /fieldDecisions/);
-assert.match(service, /canApplyCustomerImport/);
-assert.match(service, /export async function getLatestCustomerImportWork/);
+assert.match(service, /canApplyCustomerSourceImport/);
+assert.match(service, /export async function getLatestCustomerSourceImportWork/);
 assert.match(service, /reusableBatch[\s\S]*fileHash/);
 assert.match(service, /customer\.status === CUSTOMER_STATUS\.ACTIVE/);
 assert.match(service, /record\.retryStatus/);
@@ -56,25 +61,26 @@ assert.match(picker, /그래도 새로 등록/);
 assert.match(picker, /customer\.status !== CUSTOMER_STATUS\.ACTIVE/);
 assert.match(ui, /ROW_HEIGHT/);
 assert.match(ui, /state\.filtered\.slice\(start, end\)/);
-assert.match(ui, /canApplyCustomerImport\(state\.importRecords\)/);
+assert.match(ui, /canApplyCustomerSourceImport\(state\.importRecords\)/);
 assert.match(ui, /allowQuickCreate: false/, 'Excel review must not create a live customer before Master apply');
 assert.match(ui, /data-field-decision/, 'Changed rows must expose field-level file or existing value decisions');
-assert.match(ui, /getLatestCustomerImportWork/, 'Pending Excel work must resume after reload');
+assert.match(ui, /getLatestCustomerSourceImportWork/, 'Pending Excel work must resume after reload');
 assert.match(ui, /state\.importIssuesOnly/, 'Workbench must default to problem customer rows');
-assert.match(html, /customerExcelFile/);
+assert.match(html, /erpCustomerExcelFile/);
 assert.match(html, /거래처 Master/);
-assert.match(html, /customer-master-ui\.js\?v=0\.13\.0/, 'Customer Master entry module must invalidate the deployed cache');
-assert.match(html, /customer-master\.css\?v=0\.13\.0/, 'Customer Master Workbench styles must invalidate the deployed cache');
-assert.match(ui, /customer-master\.js\?v=0\.13\.0/, 'Customer Master Workbench service must invalidate the deployed cache');
+assert.match(html, /customer-master-ui\.js\?v=0\.14\.0/, 'Customer Master entry module must invalidate the deployed cache');
+assert.match(html, /customer-master\.css\?v=0\.14\.0/, 'Customer Master Workbench styles must invalidate the deployed cache');
+assert.match(ui, /customer-master\.js\?v=0\.14\.0/, 'Customer Master Workbench service must invalidate the deployed cache');
 assert.match(html, /문제 거래처만 보기/);
 assert.match(html, /id="importGate"/);
 assert.equal((html.match(/data-close-customer-editor/g) || []).length, 2, 'Customer Editor must expose close and cancel controls');
 assert.match(ui, /querySelectorAll\('\[data-close-customer-editor\]'\)[\s\S]*elements\.editor\.close\(\)/, 'Customer Editor close controls must bypass form submission');
 assert.doesNotMatch(ui, /cm-drop'\)\.addEventListener\('click'/, 'Excel drop label must not open the file picker twice');
-assert.match(ui, /elements\.file\.addEventListener\('change', handleExcelSelection\)/, 'Excel selection must have one explicit processing path');
-assert.match(ui, /elements\.file\.value = ''/, 'Excel input must reset so the same file can be selected again');
-assert.match(ui, /headerRow[\s\S]*거래처명 열을 찾을 수 없습니다/, 'Excel import must locate and validate the customer header row');
-assert.match(service, /orderq-db\.js\?v=0\.12\.1/, 'Customer Master must load the fixed DB upgrade module URL');
+assert.match(ui, /openErpImportButton[\s\S]*openFilePicker\(elements\.erpFile\)/, 'ERP upload must open the file picker directly');
+assert.match(ui, /openShopImportButton[\s\S]*openFilePicker\(elements\.shopFile\)/, 'SHOP upload must open the file picker directly');
+assert.match(ui, /input\.value = ''/, 'Excel input must reset so the same file can be selected again');
+assert.match(ui, /findHeaderRow[\s\S]*아이디와 이름\(거래처명\) 열을 찾을 수 없습니다/, 'Source import must validate ERP and SHOP headers');
+assert.match(service, /orderq-db\.js\?v=0\.14\.0/, 'Customer Master must load the v10 DB module URL');
 assert.match(css, /\.cm-viewport/);
 
 assert.doesNotMatch(intakeEngine, /if \(!customer\) throw new Error\('ORDERQ_INTAKE_CUSTOMER_REQUIRED'\)/);
@@ -104,3 +110,12 @@ console.log(JSON.stringify({
   cloudAutoCreateBlocked: 'PASS',
   virtualizedImportWorkbench: 'PASS'
 }, null, 2));
+
+assert.match(html, /id="shopCustomerExcelFile"/);
+assert.match(sourceImport, /sourceLinkKey = sourceSystem + "::" + sourceCustomerCode|return `\$\{system\}::\$\{rawCode\}`/);
+assert.match(sourceImport, /BUSINESS_NUMBER_EXACT/);
+assert.match(sourceImport, /NAME_SIMILAR/);
+assert.match(sourceImport, /same|같은 출처 거래처코드/);
+assert.match(sourceImport, /CUSTOMER_SOURCE_LINK_EVENT/);
+assert.match(sourceImport, /sourceSnapshot/);
+assert.match(sourceImport, /pullRemote\(\)/);
