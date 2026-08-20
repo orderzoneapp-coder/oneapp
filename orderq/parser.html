@@ -7,7 +7,8 @@
   <title>ONEAPP · ORDER IN</title>
   <link rel="stylesheet" href="./orderq.css?v=0.11.0">
   <link rel="stylesheet" href="./order-draft-editor.css?v=0.2.0">
-  <link rel="stylesheet" href="./intake-workbench.css?v=0.2.0">
+  <link rel="stylesheet" href="./intake-workbench.css?v=0.3.0">
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@6/dist/tesseract.min.js"></script>
 </head>
 <body class="order-in-page">
   <header class="topbar order-in-topbar">
@@ -27,19 +28,16 @@
   <main class="intake-layout">
     <aside class="intake-context-rail" aria-label="현재 업무 경로">
       <div class="rail-brand">ORDER IN</div>
-
       <button class="rail-step active" data-rail-step="0" type="button" disabled>
         <span class="rail-index">01</span>
         <strong>추출 확인</strong>
         <span class="rail-tags">주문내용 · 거래처 · 상품·수량</span>
       </button>
-
       <button class="rail-step" data-rail-step="1" type="button" hidden>
         <span class="rail-index">02</span>
         <strong>매칭 확인</strong>
         <span class="rail-tags">상품 확인 · Master 연결 · 미등록 상품</span>
       </button>
-
       <button class="rail-step" data-rail-step="2" type="button" hidden>
         <span class="rail-index">03</span>
         <strong>주문 완성</strong>
@@ -53,21 +51,16 @@
       <section class="intake-panel intake-source-panel" id="sourcePanel">
         <div class="stage-heading">
           <span class="stage-eyebrow">새 주문</span>
-          <h1>받은 주문 내용을 입력하세요.</h1>
-          <p>원문을 그대로 붙여넣으면 거래처와 상품·수량을 먼저 읽어냅니다.</p>
+          <h1>주문자료를 넣고 분석하세요.</h1>
+          <p>카카오·일반 텍스트는 그대로 붙여넣고, 사진은 붙여넣거나 파일을 선택하세요. 거래처가 정해져 있으면 먼저 선택하면 거래처별 상품 매칭을 우선 적용합니다.</p>
         </div>
 
-        <div class="source-meta-grid">
-          <label class="intake-field">
-            <span>입력방식</span>
-            <select id="sourceType">
-              <option value="KAKAO_TEXT">카카오 대화</option>
-              <option value="GENERAL_TEXT" selected>일반 텍스트</option>
-            </select>
-          </label>
-          <label class="intake-field">
-            <span>출처</span>
-            <input id="sourceId" value="ORDER_IN" autocomplete="off">
+        <div class="source-meta-grid customer-first-grid">
+          <label class="intake-field customer-preset-field">
+            <span>거래처 <small>선택 권장</small></span>
+            <input id="customerPreset" list="customerOptions" placeholder="거래처명 검색 / 선택" autocomplete="off">
+            <datalist id="customerOptions"></datalist>
+            <input id="customerPresetId" type="hidden">
           </label>
           <label class="intake-field">
             <span>출하창고</span>
@@ -75,13 +68,24 @@
           </label>
         </div>
 
-        <label class="intake-field raw-entry-field">
-          <span>원문</span>
-          <textarea id="rawText" rows="10" placeholder="받은 주문 내용을 그대로 붙여넣으세요.&#10;&#10;예)&#10;진주170&#10;수입양상추 2&#10;대파 3"></textarea>
+        <div class="input-detection-note" id="inputDetectionNote">입력 종류는 자동으로 판단합니다.</div>
+
+        <label class="intake-field raw-entry-field drop-ready" id="rawEntryField">
+          <span>주문내용</span>
+          <textarea id="rawText" rows="10" placeholder="텍스트를 붙여넣거나 사진을 Ctrl+V로 붙여넣으세요.&#10;&#10;예)&#10;진주170&#10;수입양상추 2&#10;대파 3"></textarea>
         </label>
 
+        <div class="capture-tools">
+          <label class="intake-file-button">사진 선택<input id="imageInput" type="file" accept="image/*" capture="environment" hidden></label>
+          <span id="imageStatus" class="capture-status">사진을 붙여넣어도 됩니다.</span>
+        </div>
+        <div id="imagePreview" class="image-preview" hidden>
+          <img id="imagePreviewImg" alt="붙여넣은 주문사진 미리보기">
+          <div><strong id="imagePreviewName"></strong><span id="imageOcrStatus"></span></div>
+        </div>
+
         <div class="intake-actions">
-          <button class="intake-primary" id="captureBtn" type="button">주문 내용 확인 <span aria-hidden="true">→</span></button>
+          <button class="intake-primary" id="captureBtn" type="button">분석 실행 <span aria-hidden="true">→</span></button>
         </div>
       </section>
 
@@ -89,7 +93,7 @@
         <div class="stage-heading">
           <span class="stage-eyebrow">추출 확인</span>
           <h1>받은 주문 내용이 맞는지 확인하세요.</h1>
-          <p>원문은 그대로 보존됩니다. 잘못 읽은 거래처·상품·수량만 고치면 됩니다.</p>
+          <p>원문은 그대로 보존됩니다. 거래처·상품·수량이 잘못 읽힌 부분만 고치면 됩니다.</p>
         </div>
 
         <div class="extraction-review-layout">
@@ -101,8 +105,8 @@
           <div class="extraction-review-block extraction-fields-block">
             <label class="intake-field customer-expression-field">
               <span>거래처</span>
-              <small>원문에서 읽은 거래처를 확인하세요.</small>
-              <input id="customerExpression" autocomplete="off">
+              <small>이 거래처 기준으로 상품 매핑사전과 주문이력을 우선 적용합니다.</small>
+              <input id="customerExpression" list="customerOptions" autocomplete="off">
             </label>
 
             <div class="extraction-list">
@@ -123,7 +127,7 @@
         <div class="stage-heading">
           <span class="stage-eyebrow">매칭 확인</span>
           <h1>주문상품이 실제 상품과 맞는지 확인하세요.</h1>
-          <p>Master 상품을 연결하거나, 아직 등록되지 않은 상품은 관리자 확인 상품으로 확정할 수 있습니다.</p>
+          <p>거래처별 매핑과 주문이력을 우선 사용합니다. Master 상품을 연결하거나 미등록 상품을 관리자 확인 상품으로 확정할 수 있습니다.</p>
         </div>
 
         <div id="draftEditor" class="order-draft-editor"></div>
@@ -152,6 +156,6 @@
   </main>
 
   <script type="module" src="./workflow-guide.js?v=0.11.0"></script>
-  <script type="module" src="./intake-workbench.js?v=0.2.0"></script>
+  <script type="module" src="./intake-workbench.js?v=0.3.0"></script>
 </body>
 </html>
