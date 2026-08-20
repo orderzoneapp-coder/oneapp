@@ -73,7 +73,7 @@ assert.match(ui, /getLatestCustomerSourceImportWork/, 'Pending Excel work must r
 assert.match(ui, /state\.importIssuesOnly/, 'Workbench must default to problem customer rows');
 assert.match(html, /erpCustomerExcelFile/);
 assert.match(html, /거래처 Master/);
-assert.match(html, /customer-master-ui\.js\?v=0\.14\.0/, 'Customer Master entry module must invalidate the deployed cache');
+assert.match(html, /customer-master-ui\.js\?v=0\.14\.1/, 'Customer Master entry module must invalidate the deployed cache');
 assert.match(html, /customer-master\.css\?v=0\.14\.0/, 'Customer Master Workbench styles must invalidate the deployed cache');
 assert.match(ui, /customer-master\.js\?v=0\.14\.0/, 'Customer Master Workbench service must invalidate the deployed cache');
 assert.match(html, /문제 거래처만 보기/);
@@ -128,5 +128,4 @@ assert.match(sourceImport, /sourceLinkRevision: Number\(existingLink\?\.revision
 assert.match(sourceImport, /actualSourceLinkRevision !== expectedSourceLinkRevision/, 'Import apply must reject a stale Source Link decision');
 assert.match(sourceImport, /expectedRevision = null[\s\S]*CUSTOMER_SOURCE_LINK_EXPECTED_REVISION_REQUIRED/, 'Source Link mutations must require expectedRevision');
 assert.match(sourceImport, /CUSTOMER_SOURCE_LINK_REVISION_CONFLICT/, 'Source Link mutations must report revision conflicts');
-assert.match(html, /customer-master-ui\.js\?v=0\.14\.1/, 'Source Link revision fix must invalidate the Customer Master entry cache');
 assert.match(ui, /customer-source-import\.js\?v=0\.14\.1/, 'Source Link revision fix must invalidate the Source Import module cache');
