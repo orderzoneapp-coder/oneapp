@@ -77,7 +77,7 @@ test("load order produces the same comparison", () => {
 
 const session = compare.createSession({ masterSnapshot: master, previousCatalog: catalog, loadedRaw: loaded });
 
-test("product union keeps master, catalog, and loaded codes", () => {
+test("product union keeps only catalog and loaded source codes", () => {
   assert.deepEqual(plain(session.rows.filter((row) => !row.unmatched).map((row) => row.code)), ["A001", "B002", "C003"]);
 });
 
@@ -117,17 +117,14 @@ test("zero and blank stay distinct while absent sources alone are not issues", (
   assert.equal(compare.sameValue(0, ""), false);
   assert.equal(compare.display(0), "0");
   assert.equal(compare.display(""), "—");
-  const masterOnly = compare.createSession({ masterSnapshot: compare.captureMasterSnapshot({ B002: masterProducts.B002 }) }).rows[0];
-  assert.equal(masterOnly.primaryPurpose, "변경없음");
-  assert.equal(masterOnly.workRequired, false);
-  assert.deepEqual(plain(masterOnly.issues), []);
-  const masterOnlyPromotion = compare.createSession({ masterSnapshot: compare.captureMasterSnapshot({ A001: masterProducts.A001 }) }).rows[0];
-  assert.equal(masterOnlyPromotion.primaryPurpose, "변경없음");
-  assert.deepEqual(plain(masterOnlyPromotion.issues), []);
+  const masterOnly = compare.createSession({ masterSnapshot: compare.captureMasterSnapshot({ B002: masterProducts.B002 }) });
+  assert.equal(masterOnly.rows.length, 0);
+  const masterOnlyPromotion = compare.createSession({ masterSnapshot: compare.captureMasterSnapshot({ A001: masterProducts.A001 }) });
+  assert.equal(masterOnlyPromotion.rows.length, 0);
 });
 
 test("purpose vocabulary matches the practical workflow and removes legacy buckets", () => {
-  assert.deepEqual(plain(compare.PURPOSES), ["작업필요", "신규", "가격변경", "행사", "카탈로그 제외", "확인필요", "변경없음", "전체"]);
+  assert.deepEqual(plain(compare.PURPOSES), ["작업필요", "신규", "가격변경", "행사", "확인필요", "변경없음", "전체"]);
   assert.doesNotMatch(moduleSource, /'기존행사'|'행사종료'|'신규입고'|'기타검토'/);
 });
 
@@ -135,19 +132,19 @@ test("fixture rows receive one mutually exclusive primary purpose", () => {
   const byCode = Object.fromEntries(session.rows.filter((row) => !row.unmatched).map((row) => [row.code, row]));
   assert.equal(byCode.A001.primaryPurpose, "행사");
   assert.equal(byCode.B002.primaryPurpose, "변경없음");
-  assert.equal(byCode.C003.primaryPurpose, "가격변경");
+  assert.equal(byCode.C003.primaryPurpose, "신규");
   session.rows.forEach((row) => assert.deepEqual(plain(row.purposes), [row.primaryPurpose]));
 });
 
-test("conflicting explicit source prices are the only rows sent to confirmation", () => {
+test("explicit source price differences are price changes, not confirmation items", () => {
   const conflicting = compare.createSession({
     masterSnapshot: master,
     previousCatalog: compare.buildArea([{ 품목코드: "B002", "작업 출고가": 21000 }], "catalog"),
     loadedRaw: compare.buildArea([{ 품목코드: "B002", 출고가: 22000 }], "loaded"),
   });
   const row = conflicting.rows.find((item) => item.code === "B002");
-  assert.equal(row.primaryPurpose, "확인필요");
-  assert.ok(row.criticalIssues.includes("출고가 원본 충돌"));
+  assert.equal(row.primaryPurpose, "가격변경");
+  assert.equal(row.criticalIssues.length, 0);
 });
 
 test("source-only products are new instead of confirmation items", () => {
@@ -159,6 +156,17 @@ test("source-only products are new instead of confirmation items", () => {
   assert.equal(row.primaryPurpose, "신규");
   assert.equal(row.workRequired, true);
   assert.equal(row.criticalIssues.length, 0);
+});
+
+test("unit mismatches are isolated as true confirmation work", () => {
+  const mismatched = compare.createSession({
+    masterSnapshot: master,
+    previousCatalog: compare.buildArea([{ 품목코드: "B002", 단위: "BOX", 입고가: 15000 }], "catalog"),
+    loadedRaw: compare.buildArea([{ 품목코드: "B002", 단위: "EA", 입고가: 15000 }], "loaded"),
+  });
+  const row = mismatched.rows.find((item) => item.code === "B002");
+  assert.equal(row.primaryPurpose, "확인필요");
+  assert.ok(row.criticalIssues.includes("단위 불일치"));
 });
 
 test("work-required filtering hides unchanged rows and counts unique products", () => {
@@ -173,23 +181,20 @@ test("work-required filtering hides unchanged rows and counts unique products", 
 
 test("filtering never mutates work values", () => {
   const before = JSON.stringify(session.rows.map((row) => row.draft));
-  compare.filterRows(session, "가격변동", "전체");
+  compare.filterRows(session, "가격변경", "전체");
   compare.purposeCounts(session);
   assert.equal(JSON.stringify(session.rows.map((row) => row.draft)), before);
 });
 
-test("catalog exclusion starts only after a catalog is loaded and never auto-clears", () => {
+test("master-only products never become catalog comparison work", () => {
   const beforeLoad = compare.createSession({ masterSnapshot: compare.captureMasterSnapshot({ A001: masterProducts.A001 }) });
-  assert.equal(beforeLoad.rows.find((item) => item.code === "A001").primaryPurpose, "변경없음");
-  const excluded = compare.createSession({
+  assert.equal(beforeLoad.rows.length, 0);
+  const scoped = compare.createSession({
     masterSnapshot: compare.captureMasterSnapshot({ A001: masterProducts.A001 }),
     previousCatalog: compare.buildArea([{ 품목코드: "B002", 품목명: "다른상품" }], "catalog"),
   });
-  const row = excluded.rows.find((item) => item.code === "A001");
-  assert.equal(row.primaryPurpose, "카탈로그 제외");
-  assert.ok(row.issues.includes("이번 카탈로그에 없음"));
-  assert.equal(row.draft.promoPrice, 9000);
-  assert.equal(row.draft.actions.promoPrice, "KEEP");
+  assert.equal(scoped.rows.some((item) => item.code === "A001"), false);
+  assert.equal(scoped.rows.some((item) => item.code === "B002"), true);
 });
 
 test("reloading replaces only the selected source area", () => {
@@ -285,7 +290,7 @@ test("DataOps total stock and LOT evidence are parsed without double counting", 
   assert.equal(area.byCode.A001.lots.length, 2);
 });
 
-assert.equal(passed, 24, "all 24 dedicated scenarios must execute");
+assert.equal(passed, 25, "all 25 dedicated scenarios must execute");
 
 const ready = compare.setRowsStatus(session, ["A001"], compare.STATUS.DONE);
 assert.equal(compare.getApplyReadiness(ready, masterProducts).ready, true);
@@ -338,27 +343,82 @@ assert.equal(restoredViewId, "purchase-daily");
 assert.deepEqual(plain(restoredMaster.purchase), ["입고가", "판매가"]);
 assert.deepEqual(plain(restoredWork.purchase), ["입고가", "출고가"]);
 
-const versions = [...html.matchAll(/v2\.1\.199_AutoCatalogInventoryCompare/g)].length;
+const workModeStart = html.indexOf("// [M-WORK-MODE-01]");
+const workModeEnd = html.indexOf("// [M-PROMO-CATALOG-COMPARE-01]", workModeStart);
+assert.ok(workModeStart >= 0 && workModeEnd > workModeStart, "work-mode resolver must exist");
+const workModeContext = vm.createContext({ window: {}, Object, Array, String });
+workModeContext.window = workModeContext;
+vm.runInContext(html.slice(workModeStart, workModeEnd), workModeContext, { filename: "MerchOps-work-mode.js" });
+const modes = workModeContext.MERCH_WORK_MODES;
+assert.equal(workModeContext.resolveMerchWorkMode({ registrationMode: true }), modes.REGISTRATION);
+assert.equal(workModeContext.resolveMerchWorkMode({ activeTags: [{ type: "category", name: "여름" }], inventoryPresent: true }), modes.CATALOG_INVENTORY_COMPARE);
+assert.equal(workModeContext.resolveMerchWorkMode({ sourceWorkPresent: true }), modes.SOURCE_WORK);
+assert.equal(workModeContext.resolveMerchWorkMode({ categoryFilters: ["10"] }), modes.CATEGORY_PRICE);
+assert.equal(workModeContext.resolveMerchWorkMode({ activeTags: [{ type: "catalog", name: "파서A" }] }), modes.MASTER_LIST);
+assert.equal(workModeContext.resolveMerchWorkMode({}), modes.MASTER);
+
+const unionStart = html.indexOf("// 카탈로그·파서리스트는 마스터의 조회 목록이다.");
+const unionEnd = html.indexOf("// 선택 카탈로그 범위를 기존 비교 모듈", unionStart);
+assert.ok(unionStart >= 0 && unionEnd > unionStart, "master-list union builder must exist");
+const unionContext = vm.createContext({ window: {}, Object, Array, String, Set });
+unionContext.window = unionContext;
+unionContext.normalizeProductCodeText = value => String(value ?? "").trim();
+unionContext.getMerchLoadedParserListSelection = tags => ({ loaded: tags.some(tag => tag.type === "catalog"), all: false, catalogNames: tags.filter(tag => tag.type === "catalog").map(tag => tag.name) });
+unionContext.getMerchSelectedWorkCatalogNames = tags => tags.filter(tag => tag.type === "category").map(tag => tag.name);
+unionContext.getMerchParserListValue = item => item.parserList || "";
+unionContext.getMerchMasterWorkCatalogNames = item => item.catalogs || [];
+unionContext.sanitizeMerchMarginRules = rules => rules;
+unionContext.computeFinalData = item => ({ 품목명: item.품목명 });
+vm.runInContext(html.slice(unionStart, unionEnd), unionContext, { filename: "MerchOps-master-list-union.js" });
+const unionRows = unionContext.buildMerchMasterListUnionRows({
+  A: { 코드: "A", 품목명: "파서 전용", parserList: "P1", catalogs: [] },
+  B: { 코드: "B", 품목명: "카탈로그 전용", parserList: "", catalogs: ["C1"] },
+  C: { 코드: "C", 품목명: "중복 소속", parserList: "P1", catalogs: ["C1"] },
+  D: { 코드: "D", 품목명: "선택 밖", parserList: "P2", catalogs: ["C2"] },
+}, [{ type: "catalog", name: "P1" }, { type: "category", name: "C1" }], []);
+assert.deepEqual(Object.keys(unionRows).sort(), ["A", "B", "C"], "catalog and parser selections must form a deduplicated code union");
+assert.ok(Object.values(unionRows).every(row => row._masterListOnly === true));
+
+const issueStart = html.indexOf("// [M-ISSUE-SYSTEM-01]");
+const issueEnd = html.indexOf("const MemoizedTableRow", issueStart);
+assert.ok(issueStart >= 0 && issueEnd > issueStart, "main issue resolver must exist");
+const issueContext = vm.createContext({ window: {} });
+issueContext.window = issueContext;
+vm.runInContext(html.slice(issueStart, issueEnd), issueContext, { filename: "MerchOps-main-issue.js" });
+assert.equal(issueContext.resolveMerchMainIssue({ hasActualWorkSource: false, priceChanged: true }).text, "-", "list selection and parser history cannot create a price issue");
+assert.equal(issueContext.resolveMerchMainIssue({ stockQty: 0 }).text, "품절");
+assert.equal(issueContext.resolveMerchMainIssue({ noInboundPrice: true }).text, "입고가없음");
+assert.equal(issueContext.resolveMerchMainIssue({ hasActualWorkSource: true, priceChanged: true }).text, "가격변경");
+
+const versions = [...html.matchAll(/v2\.1\.200_WorkModeIssueSystem/g)].length;
 assert.ok(versions >= 3, "all three MerchOps version labels must use the target version");
 assert.doesNotMatch(html, /handleOpenPromoCompare/);
-assert.match(html, /handlePromoCompareSourceUpload/);
+assert.doesNotMatch(html, /handlePromoCompareSourceUpload/);
 assert.match(html, /handleClosePromoCompare/);
 assert.match(html, /handleApplyPromoCompare/);
 assert.match(html, /handleQuickExcelExport/);
 assert.match(html, /handleOpenExportCenter/);
 assert.match(html, /data-promo-compare-flow/);
-assert.match(html, /data-promo-compare-intake[^>]*file-combination/);
+assert.doesNotMatch(html, /data-promo-compare-intake[^>]*file-combination/);
 assert.match(html, /data-merch-compare-filter-row[^>]*dynamic/);
-assert.match(html, /data-promo-compare-waiting/);
+assert.doesNotMatch(html, /data-promo-compare-waiting/);
 assert.match(html, /data-promo-compare-table[^>]*compact-task/);
-assert.match(html, /summary\.catalogLoaded > 0 && summary\.inventoryLoaded > 0/);
+assert.match(html, /buildMerchCatalogCompareArea/);
+assert.match(html, /buildMerchInventoryCompareArea/);
+assert.match(html, /openCatalogInventoryCompare\(newManaged, ui\.activeTags/);
+assert.match(html, /handleMasterLookup[\s\S]*hasMerchActualWorkSourceRows\(data\.managedItems[\s\S]*data\.setManagedItems\(\{\}\)/,
+  "category work must replace list-only rows while preserving real external work-source priority");
 assert.match(html, /ui\.setPromoComparePurpose\('작업필요'\)/);
 assert.match(html, /findMerchCatalogCompareTableView[\s\S]*applyMerchTableView\(config, 'catalog'/);
 assert.match(html, /captureMerchTableViewState[\s\S]*restoreMerchTableViewState/);
 assert.match(html, /'작업필요', \.\.\.promoCompare\.ACTION_PURPOSES/);
 assert.match(html, /비교결과 저장/);
+assert.match(html, /카탈로그 · 재고 비교/);
+assert.match(html, /카탈로그 ✓/);
+assert.match(html, /재고 ✓/);
 assert.doesNotMatch(html, /"행사가 비교"/);
 assert.doesNotMatch(html, />최신 마스터</);
+assert.doesNotMatch(html, /카탈로그 제외/);
 assert.doesNotMatch(html, /기타검토/);
 assert.doesNotMatch(html, /행사종료/);
 

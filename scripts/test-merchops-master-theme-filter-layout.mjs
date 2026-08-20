@@ -38,7 +38,7 @@ assert.doesNotMatch(promoEntry, /handleAllThemeClick|promo-work-theme-|테마전
   "theme controls must not remain beside the upper 행사작업 entry");
 assert.match(toolbar, /isDetailFilterActive[\s\S]*!isThemeFilterValue\(v\)[\s\S]*!\['margin', 'noInboundPrice'\]\.includes\(v\)/,
   "fixed theme, margin, and no-inbound filters must not force the detail panel open");
-assert.match(toolbar, /const isCategoryPriceWorkbench = !registrationMode && Array\.isArray\(categoryFilters\) && categoryFilters\.length > 0;[\s\S]*const showDetailFilterPanel = filterPanelOpen \|\| isDetailFilterActive \|\| isCategoryPriceWorkbench/,
+assert.match(toolbar, /const isCategoryPriceWorkbench = workMode === window\.MERCH_WORK_MODES\.CATEGORY_PRICE;[\s\S]*const showDetailFilterPanel = filterPanelOpen \|\| isDetailFilterActive \|\| isCategoryPriceWorkbench/,
   "selecting a category must force the existing detail-filter bar and price editor open");
 
 const allThemeHandler = toolbar.slice(toolbar.indexOf("const handleAllThemeClick ="), toolbar.indexOf("const toggleThemeFilter ="));
@@ -255,7 +255,7 @@ assert.match(toolbar, /const selectIssueFilter = \(value\) =>[\s\S]*withoutIssue
 assert.match(toolbar, /data-merch-no-inbound-action": "touch-choice"[\s\S]*\['spot', '싯가판매'\][\s\S]*\['stop', '판매정지'\]/,
   "the no-inbound action touch choices must be adjacent and conditionally visible");
 
-const versionMatches = [...html.matchAll(/v2\.1\.199_AutoCatalogInventoryCompare/g)];
-assert.ok(versionMatches.length >= 3, "all MerchOps version labels must use v2.1.199");
+const versionMatches = [...html.matchAll(/v2\.1\.200_WorkModeIssueSystem/g)];
+assert.ok(versionMatches.length >= 3, "all MerchOps version labels must use v2.1.200");
 
 console.log("MerchOps theme-none, promo-price, and fixed-layout contracts passed.");
