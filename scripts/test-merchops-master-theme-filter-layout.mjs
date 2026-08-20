@@ -66,8 +66,10 @@ assert.doesNotMatch(themeGroup, /테마 노출위치|행사페이지|fa-layer-gr
   "the redundant theme heading and every subordinate explanatory text/icon must be removed");
 assert.match(themeGroup, /flex-nowrap/,
   "theme controls must remain on one line instead of wrapping the delete button");
-assert.match(priceGroup, /justify-end[\s\S]*\['promo', '행사가상품'\][\s\S]*\['promoExclude', '행사가없음'\][\s\S]*"행사가 생성"[\s\S]*"행사가초기화"[\s\S]*"전행사가적용"[\s\S]*"행사가 비교"/,
-  "promo-price controls must keep the exact requested buttons and align them to the right");
+assert.match(priceGroup, /justify-end[\s\S]*\['promo', '행사가상품'\][\s\S]*\['promoExclude', '행사가없음'\][\s\S]*"행사가 생성"[\s\S]*"행사가초기화"[\s\S]*"전행사가적용"/,
+  "promo-price controls must keep the event-price buttons and align them to the right");
+assert.doesNotMatch(priceGroup, /"행사가 비교"|handleOpenPromoCompare/,
+  "catalog comparison must start from the catalog and inventory file combination instead of the event workbench");
 assert.doesNotMatch(priceGroup, /"행사가 설정"|fa-won-sign|justify-start/,
   "the promo-price heading text/icon must be removed and the group must not remain left-aligned");
 assert.doesNotMatch(promoWorkbench, /promoSuggest|'행사제안'|'행사상품'|'행사제외'/,
@@ -253,7 +255,7 @@ assert.match(toolbar, /const selectIssueFilter = \(value\) =>[\s\S]*withoutIssue
 assert.match(toolbar, /data-merch-no-inbound-action": "touch-choice"[\s\S]*\['spot', '싯가판매'\][\s\S]*\['stop', '판매정지'\]/,
   "the no-inbound action touch choices must be adjacent and conditionally visible");
 
-const versionMatches = [...html.matchAll(/v2\.1\.198_CategoryPriceWorkbench/g)];
-assert.ok(versionMatches.length >= 3, "all MerchOps version labels must use v2.1.198");
+const versionMatches = [...html.matchAll(/v2\.1\.199_AutoCatalogInventoryCompare/g)];
+assert.ok(versionMatches.length >= 3, "all MerchOps version labels must use v2.1.199");
 
 console.log("MerchOps theme-none, promo-price, and fixed-layout contracts passed.");
