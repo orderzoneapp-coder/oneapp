@@ -87,7 +87,7 @@ assert.equal(displayBrowser.isMerchUnmodifiedMasterLookupRow({
   ...explicitAllRows[0],
   finalData: { 입고가: 1234, _editedFields: { 입고가: true } },
 }), false, "An edited master lookup row must become eligible for F7");
-assert.match(merch, /const \[suppressMasterFallback, setSuppressMasterFallback\] = useState\(true\);/);
+assert.match(merch, /const \[suppressMasterFallback, setSuppressMasterFallback\] = useState\(false\);/);
 const managedLookupEffectStart = merch.indexOf("if (Object.keys(managedItems || {}).length === 0) return;");
 const managedLookupEffectEnd = merch.indexOf("}, [managedItems, suppressMasterFallback, masterLookupMode]);", managedLookupEffectStart);
 const managedLookupEffect = merch.slice(managedLookupEffectStart, managedLookupEffectEnd);
@@ -95,7 +95,7 @@ assert.doesNotMatch(managedLookupEffect, /setMasterLookupMode\(''\)/,
   "editing a master lookup row must not clear its category/all lookup scope");
 assert.match(merch, /if \(hasSavedWork\)[\s\S]*if \(savedLookupMode\)[\s\S]*data\.setMasterLookupMode\(savedLookupMode === 'category'/,
   "session restore must retain the category lookup scope together with edited rows");
-assert.match(merch, /data\.setSuppressMasterFallback\(true\);\s*data\.setMasterLookupMode\(''\);\s*data\.setManagedItems\(\{\}\);/);
+assert.match(merch, /data\.setSuppressMasterFallback\(false\);\s*data\.setMasterLookupMode\('all'\);\s*data\.setManagedItems\(\{\}\);/);
 assert.match(merch, /handleMasterLookup\?\.\(\[\]\)/);
 assert.match(merch, /handleMasterLookup\?\.\(nextCategories\)/);
 assert.match(merch, /suppressMasterFallback: data\.suppressMasterFallback/);
