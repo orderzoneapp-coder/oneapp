@@ -1813,7 +1813,7 @@
       <div class="brand-mark">ONEAPP</div>
       <div class="brand-divider" aria-hidden="true"></div>
       <span class="brand-logo-frame" aria-hidden="true"><img class="brand-logo" src="../assets/order-q-logo.png" alt=""></span>
-      <span class="brand-badge">v1.57</span>
+      <span class="brand-badge">v1.58</span>
       <span class="brand-product">출고관리</span>
     </div>
     <div class="header-actions">
@@ -2021,7 +2021,7 @@
     </section>
 
     <footer class="page-footer">
-      <span>ORDER Q v1.57 · 출고관리 · workspace shipping-workspace/v2 · cloud plan v1</span>
+      <span>ORDER Q v1.58 · 출고관리 · workspace shipping-workspace/v2 · cloud plan v1</span>
       <a href="../SHIPPING_MANAGEMENT_GUIDANCE.md">개발·운영 기준 보기</a>
     </footer>
   </main>
@@ -6346,7 +6346,18 @@
         runAnalysis();
       }, true);
 
+      // ORDER Q v1.58: 구매처 → 구매수량 → 다음 구매처 키보드 흐름.
       function focusPurchaseInput(input) {
+        if (!input) return;
+        const row = input.closest("tr") || input;
+        row.scrollIntoView({ block: "center", inline: "nearest" });
+        window.requestAnimationFrame(() => {
+          input.focus({ preventScroll: true });
+          input.select();
+        });
+      }
+
+      function focusPurchaseQuantityInput(input) {
         if (!input) return;
         const row = input.closest("tr") || input;
         row.scrollIntoView({ block: "center", inline: "nearest" });
@@ -6364,7 +6375,7 @@
         return true;
       }
 
-      function commitPurchaseQuantityInput(input) {
+      function commitPurchaseQuantityInput(input, { render = true } = {}) {
         if (!input || !state.workspace || state.activePreview !== "inventory") return false;
         try {
           engine.setPurchaseQuantityValue(
@@ -6373,7 +6384,7 @@
             input.value,
           );
           scheduleLocalSave();
-          renderPreview();
+          if (render) renderPreview();
           return true;
         } catch (error) {
           renderPreview();
@@ -6619,6 +6630,16 @@
 
         if (event.key !== "Tab") return;
         commitPurchaseInput(input);
+        if (!event.shiftKey && state.activePreview === "inventory") {
+          const purchaseQuantityInput = input.closest("tr")
+            ?.querySelector(".purchase-quantity-input[data-purchase-quantity-code]");
+          if (purchaseQuantityInput) {
+            event.preventDefault();
+            closePurchaseAutocomplete();
+            focusPurchaseQuantityInput(purchaseQuantityInput);
+            return;
+          }
+        }
         const negatives = inputs.filter((candidate) => candidate.dataset.negativeBalance === "true");
         if (negatives.length === 0) {
           event.preventDefault();
@@ -6645,6 +6666,54 @@
           target = [...negatives].reverse().find((candidate) => inputs.indexOf(candidate) < currentIndex)
             || negatives[negatives.length - 1];
         }
+        focusPurchaseInput(target);
+      }
+
+      function handlePurchaseQuantityNavigation(event) {
+        const input = event.target.closest?.(".purchase-quantity-input[data-purchase-quantity-code]");
+        if (!input || !state.workspace || state.activePreview !== "inventory" || event.isComposing) return;
+        if (event.key !== "Tab") return;
+
+        const purchaseInputs = Array.from(
+          elements.previewTable.querySelectorAll(".purchase-input[data-purchase-code]"),
+        );
+        const currentPurchaseInput = input.closest("tr")
+          ?.querySelector(".purchase-input[data-purchase-code]");
+        const currentIndex = purchaseInputs.indexOf(currentPurchaseInput);
+        if (currentIndex < 0) return;
+
+        event.preventDefault();
+        const negatives = purchaseInputs.filter((candidate) => candidate.dataset.negativeBalance === "true");
+        const requiredInputs = negatives.length > 0 ? negatives : purchaseInputs;
+        const requiredIndex = requiredInputs.indexOf(currentPurchaseInput);
+        let targetProductCode = "";
+        let finish = false;
+
+        if (event.shiftKey) {
+          targetProductCode = currentPurchaseInput.dataset.purchaseCode;
+        } else if (requiredIndex >= 0) {
+          if (requiredIndex === requiredInputs.length - 1) finish = true;
+          else targetProductCode = requiredInputs[requiredIndex + 1].dataset.purchaseCode;
+        } else {
+          const target = requiredInputs.find((candidate) => purchaseInputs.indexOf(candidate) > currentIndex);
+          if (target) targetProductCode = target.dataset.purchaseCode;
+          else finish = true;
+        }
+
+        if (!commitPurchaseQuantityInput(input, { render: false })) return;
+        renderPreview();
+        const refreshedInputs = Array.from(
+          elements.previewTable.querySelectorAll(".purchase-input[data-purchase-code]"),
+        );
+        const refreshedRequiredInputs = refreshedInputs.filter(
+          (candidate) => candidate.dataset.negativeBalance === "true",
+        );
+        const completionInputs = refreshedRequiredInputs.length > 0 ? refreshedRequiredInputs : refreshedInputs;
+        if (finish) {
+          finishPurchaseEntry(completionInputs);
+          return;
+        }
+        const target = refreshedInputs.find((candidate) => candidate.dataset.purchaseCode === targetProductCode);
         focusPurchaseInput(target);
       }
 
@@ -7161,6 +7230,7 @@
       elements.previewTable.addEventListener("keydown", handlePurchaseAutocompleteKeyboard, true);
       elements.previewTable.addEventListener("keydown", handleInventoryGridArrowNavigation);
       elements.previewTable.addEventListener("keydown", handleInventoryQuantityNavigation);
+      elements.previewTable.addEventListener("keydown", handlePurchaseQuantityNavigation);
       elements.previewTable.addEventListener("keydown", handleInventoryPurchaseNavigation);
       elements.previewTable.addEventListener("keydown", handleColumnResizeKeydown);
       elements.recoveryRecordList.addEventListener("change", (event) => {
