@@ -18,19 +18,18 @@ assert.ok(topRowStart >= 0 && lowerRowStart > topRowStart, "top and lower toolba
 
 const topRow = toolbar.slice(topRowStart, lowerRowStart);
 const lowerRow = toolbar.slice(lowerRowStart);
-assert.doesNotMatch(topRow, /cat-main-|handleAllCategoryClick/, "category group must be removed from the top row");
-assert.match(topRow, /data-merch-toolbar-group": "parser-catalog"[\s\S]*data-merch-toolbar-group": "excel"[\s\S]*data-merch-toolbar-group": "operations"/,
-  "top row must contain the three independent parser/catalog, Excel, and operation groups");
+assert.match(topRow, /data-merch-category-group": "top-left"[\s\S]*handleAllCategoryClick[\s\S]*cat-main-[\s\S]*data-merch-toolbar-group": "parser-catalog"[\s\S]*data-merch-toolbar-group": "excel"[\s\S]*data-merch-toolbar-group": "operations"/,
+  "top row must begin with category buttons before parser/catalog, Excel, and operation groups");
 assert.doesNotMatch(topRow, /justify-around/, "buttons inside each top group must remain clustered rather than spread apart");
 
-const categoryAt = lowerRow.indexOf('title: "카테고리: 클릭 단일선택');
 const promoEntryAt = lowerRow.indexOf('data-merch-promo-entry": "single"');
 const marginAt = lowerRow.indexOf("selectIssueFilter('margin')");
 const priceAt = lowerRow.indexOf("selectIssueFilter('priceCheck')");
 const noInboundAt = lowerRow.indexOf("selectIssueFilter('noInboundPrice')");
-assert.ok(categoryAt >= 0, "category group must be rendered on the lower filter row");
-assert.ok(categoryAt < promoEntryAt && promoEntryAt < marginAt && marginAt < priceAt && priceAt < noInboundAt,
-  "lower row order must be category, single promotion entry, margin, price change, and no inbound price");
+assert.doesNotMatch(lowerRow.slice(0, promoEntryAt), /cat-main-|handleAllCategoryClick|data-merch-category-group/,
+  "category buttons must be removed from the lower filter row");
+assert.ok(promoEntryAt >= 0 && promoEntryAt < marginAt && marginAt < priceAt && priceAt < noInboundAt,
+  "lower row order must begin with single promotion entry, margin, price change, and no inbound price");
 const promoEntryEnd = lowerRow.indexOf('data-merch-issue-filter-group": "single"', promoEntryAt);
 const promoEntry = lowerRow.slice(promoEntryAt, promoEntryEnd);
 assert.match(promoEntry, /togglePromoWorkbenchManual[\s\S]*"행사작업"/,
@@ -59,10 +58,18 @@ const themeGroupAt = promoWorkbench.indexOf('data-merch-promo-theme-group": "exp
 const priceGroupAt = promoWorkbench.indexOf('data-merch-promo-price-group": "price"');
 assert.ok(themeGroupAt >= 0 && priceGroupAt > themeGroupAt,
   "theme exposure controls must be grouped on the left and promo-price controls on the right");
-assert.match(promoWorkbench, /"테마 노출위치"[\s\S]*"테마전체"[\s\S]*\['theme1', '테마1'\][\s\S]*\['theme5', '테마5'\][\s\S]*\['themeNone', '테마없음'\][\s\S]*"테마지정"[\s\S]*"테마삭제"/,
+const themeGroup = promoWorkbench.slice(themeGroupAt, priceGroupAt);
+const priceGroup = promoWorkbench.slice(priceGroupAt);
+assert.match(themeGroup, /"테마전체"[\s\S]*\['theme1', '테마1'\][\s\S]*\['theme5', '테마5'\][\s\S]*\['themeNone', '테마없음'\][\s\S]*"테마지정"[\s\S]*"테마삭제"/,
   "theme exposure group must expose the exact requested terminology and assignment/deletion actions");
-assert.match(promoWorkbench, /"행사가 설정"[\s\S]*\['promo', '행사가상품'\][\s\S]*\['promoExclude', '행사가없음'\][\s\S]*"행사가 생성"[\s\S]*"행사가초기화"[\s\S]*"전행사가적용"[\s\S]*"행사가 비교"/,
+assert.doesNotMatch(themeGroup, /테마 노출위치|행사페이지|fa-layer-group/,
+  "the redundant theme heading and every subordinate explanatory text/icon must be removed");
+assert.match(themeGroup, /flex-nowrap/,
+  "theme controls must remain on one line instead of wrapping the delete button");
+assert.match(priceGroup, /justify-start[\s\S]*"행사가 설정"[\s\S]*\['promo', '행사가상품'\][\s\S]*\['promoExclude', '행사가없음'\][\s\S]*"행사가 생성"[\s\S]*"행사가초기화"[\s\S]*"전행사가적용"[\s\S]*"행사가 비교"/,
   "promo-price group must expose the exact requested terminology");
+assert.doesNotMatch(priceGroup, /justify-end/,
+  "promo-price controls must start without a leading alignment gap");
 assert.doesNotMatch(promoWorkbench, /promoSuggest|'행사제안'|'행사상품'|'행사제외'/,
   "promotion workbench must remove the former suggestion and legacy labels");
 assert.match(promoWorkbench, /promo-work-theme-[\s\S]*beginThemeDrag[\s\S]*handleThemeClick/,
@@ -92,19 +99,26 @@ assert.match(topRow, /getLoadButtonClass\(isExcelWorktableLoaded, 'emerald'\)/,
   "Excel must stay neutral until an Excel worktable is loaded");
 assert.match(topRow, /hasResettableWorkSession \? 'text-white bg-rose-600[\s\S]*: 'bg-white text-slate-500/,
   "main reset must use a neutral initial style and a strong loaded-work style");
-assert.match(lowerRow, /isAllCategoryActive \? 'bg-blue-600[\s\S]*: 'bg-white text-blue-700/,
-  "category 전체 must become strong only when the full product view is active");
+assert.match(topRow, /isAllCategoryActive \? 'bg-blue-600[\s\S]*: 'bg-white text-blue-700/,
+  "top-left category 전체 must become strong only when the full product view is active");
 
 const detailOptionsEnd = lowerRow.indexOf("!registrationMode", detailPanelStart);
 const detailOptions = lowerRow.slice(detailPanelStart, detailOptionsEnd);
 assert.doesNotMatch(detailOptions, /\['margin', '역마진'\]/,
   "detail panel must not duplicate the fixed margin filter");
-assert.match(detailOptions, /isPriceCheckActive[\s\S]*data-merch-price-direction": "single-choice"[\s\S]*'priceRise', '상승만보기'[\s\S]*'priceFall', '하락만보기'/,
-  "price change must dynamically expose mutually-exclusive rise/fall controls in the detail panel");
-assert.match(detailOptions, /isNoInboundPriceActive[\s\S]*data-merch-no-inbound-action": "touch-choice"[\s\S]*'싯가판매'[\s\S]*'판매정지'/,
-  "no inbound price must expose the existing F7 reservation controls in the detail panel");
-assert.match(toolbar, /const showDetailFilterPanel = filterPanelOpen \|\| isDetailFilterActive \|\| isPriceCheckActive \|\| isNoInboundPriceActive/,
-  "active price-change and no-inbound filters must open the detail panel for their dynamic controls");
+const detailButtonAt = lowerRow.indexOf('"상세"),', noInboundAt);
+const rightIssueActionEnd = lowerRow.indexOf('className: "w-2 min-w-2 shrink-0"', detailButtonAt);
+assert.ok(detailButtonAt >= 0 && rightIssueActionEnd > detailButtonAt,
+  "the upper detail button and its right-side issue-action area must exist");
+const rightIssueActions = lowerRow.slice(detailButtonAt, rightIssueActionEnd);
+assert.match(rightIssueActions, /isPriceCheckActive[\s\S]*data-merch-price-direction": "single-choice"[\s\S]*'priceRise', '상승만보기'[\s\S]*'priceFall', '하락만보기'/,
+  "price change must dynamically expose mutually-exclusive rise/fall controls to the right of 상세");
+assert.match(rightIssueActions, /isNoInboundPriceActive[\s\S]*data-merch-no-inbound-action": "touch-choice"[\s\S]*'싯가판매'[\s\S]*'판매정지'/,
+  "no inbound price must expose the F7 reservation controls to the right of 상세");
+assert.doesNotMatch(detailOptions, /data-merch-price-direction|data-merch-no-inbound-action|상승만보기|싯가판매/,
+  "moved issue actions must not remain in the lower detail row");
+assert.match(toolbar, /const showDetailFilterPanel = filterPanelOpen \|\| isDetailFilterActive \|\| \(selectedRows\.size > 0/,
+  "issue selection alone must not force the lower detail row open after its actions move upward");
 assert.match(toolbar, /if \(\['priceRise', 'priceFall'\]\.includes\(value\)\) return 'priceDirection';/,
   "rise and fall must be a single-choice detail-filter group");
 assert.match(toolbar, /\['status', 'priceDirection'\]\.includes\(group\)[\s\S]*current\.filter\(v => getDetailFilterGroup\(v\) !== group\)/,
@@ -222,7 +236,7 @@ assert.match(toolbar, /const selectIssueFilter = \(value\) =>[\s\S]*withoutIssue
 assert.match(toolbar, /data-merch-no-inbound-action": "touch-choice"[\s\S]*\['spot', '싯가판매'\][\s\S]*\['stop', '판매정지'\]/,
   "the no-inbound action touch choices must be adjacent and conditionally visible");
 
-const versionMatches = [...html.matchAll(/v2\.1\.194_PromoWorkspaceGroups/g)];
-assert.ok(versionMatches.length >= 3, "all MerchOps version labels must use v2.1.194");
+const versionMatches = [...html.matchAll(/v2\.1\.195_CompactActionLayout/g)];
+assert.ok(versionMatches.length >= 3, "all MerchOps version labels must use v2.1.195");
 
 console.log("MerchOps theme-none, promo-price, and fixed-layout contracts passed.");
