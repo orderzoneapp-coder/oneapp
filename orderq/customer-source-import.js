@@ -389,7 +389,8 @@ export async function prepareCustomerSourceImport(rows, {
     if (reusableBatch) {
       const reusableRecords = await getCustomerSourceImportRecords(reusableBatch.importBatchId);
       const hasStaleLinkConflict = reusableRecords.some(record => String(record.errorMessage || '').includes('CUSTOMER_SOURCE_LINK_REVISION_CONFLICT'));
-      if (!hasStaleLinkConflict) return { batch: reusableBatch, records: reusableRecords, resumed: true };
+      const hasLegacyUnconfirmedNew = reusableRecords.some(record => record.status === CUSTOMER_IMPORT_STATUS.NEW && !record.newDraftConfirmed && !record.validationError);
+      if (!hasStaleLinkConflict && !hasLegacyUnconfirmedNew) return { batch: reusableBatch, records: reusableRecords, resumed: true };
     }
   }
 
@@ -477,7 +478,7 @@ export async function prepareCustomerSourceImport(rows, {
       candidateEvidence: candidates,
       changedFields: differences,
       fieldDecisions: status === CUSTOMER_IMPORT_STATUS.CHANGED ? null : {},
-      newDraftConfirmed: false,
+      newDraftConfirmed: status === CUSTOMER_IMPORT_STATUS.NEW,
       validationError,
       errorMessage: '',
       createdAt: timestamp,

@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;600;800;900&family=Noto+Serif+KR:wght@700;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="./customer-master.css?v=0.14.0">
+  <link rel="stylesheet" href="./customer-master.css?v=0.14.1">
 </head>
 <body class="customer-master-page">
   <header class="cm-topbar">
@@ -35,6 +35,14 @@
         <input id="shopCustomerExcelFile" type="file" accept=".xlsx,.xls" hidden>
       </div>
     </section>
+    <section class="cm-panel cm-import" id="importWorkbench" hidden>
+      <div class="cm-import-head"><div><h2 id="importSourceLabel">거래처 가져오기</h2><p class="cm-import-file" id="importFileTitle">거래처 파일 분석</p></div><button class="cm-button" id="closeImportButton" type="button">닫기</button></div>
+      <div class="cm-import-summary" id="importSummary"></div>
+      <div class="cm-import-toolbar"><input id="importSearch" type="search" placeholder="거래처명, 외부 코드, 전화, 주소 검색"></div>
+      <p class="cm-import-gate" id="importGate">ERP 거래처 또는 쇼핑몰 회원 파일을 선택하면 자동으로 대표 거래처를 찾습니다.</p>
+      <div class="cm-review-list" id="importReview"></div>
+      <div class="cm-actions cm-import-actions"><button class="cm-button dark" id="applyImportButton" disabled>Master 적용</button></div>
+    </section>
     <section class="cm-dashboard" aria-label="거래처 요약">
       <article class="cm-stat"><small>전체 거래처</small><strong id="totalCount">0</strong></article>
       <article class="cm-stat"><small>사용중</small><strong id="activeCount">0</strong></article>
@@ -55,14 +63,6 @@
       <div class="cm-list-head"><span>코드</span><span>거래처명</span><span>연락처 / 주소</span><span>그룹</span><span>상태</span></div>
       <div class="cm-viewport" id="customerViewport"><div class="cm-spacer" id="customerSpacer"></div></div>
       <div class="cm-empty" id="customerEmpty" hidden>조건에 맞는 거래처가 없습니다.</div>
-    </section>
-    <section class="cm-panel cm-import" id="importWorkbench" hidden>
-      <div class="cm-import-head"><div><small id="importSourceLabel">Source Link Workbench</small><h2 id="importFileTitle">거래처 파일 분석</h2></div><button class="cm-button" id="closeImportButton" type="button">닫기</button></div>
-      <div class="cm-import-summary" id="importSummary"></div>
-      <div class="cm-import-toolbar"><input id="importSearch" type="search" placeholder="거래처명, 외부 코드, 전화, 주소 검색"><label><input id="importIssuesOnly" type="checkbox" checked> 문제 거래처만 보기</label></div>
-      <p class="cm-import-gate" id="importGate">ERP 거래처 또는 쇼핑몰 회원 파일을 선택하면 자동으로 대표 거래처를 찾습니다.</p>
-      <div class="cm-review-list" id="importReview"></div>
-      <div class="cm-actions"><button class="cm-button dark" id="applyImportButton" disabled>Master 적용</button></div>
     </section>
   </main>
   <dialog class="cm-modal" id="customerEditor">
@@ -88,6 +88,6 @@
     </form>
   </dialog>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script type="module" src="./customer-master-ui.js?v=0.14.2"></script>
+  <script type="module" src="./customer-master-ui.js?v=0.14.3"></script>
 </body>
 </html>
