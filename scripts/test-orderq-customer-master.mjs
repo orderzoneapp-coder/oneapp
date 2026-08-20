@@ -55,11 +55,11 @@ assert.match(service, /hasUnsyncedCustomerChanges/);
 assert.match(service, /await pullRemote\(\)/);
 assert.match(service, /CUSTOMER_IMPORT_STATUS\.CHANGED/);
 assert.match(service, /fieldDecisions/);
-assert.match(service, /canApplyCustomerSourceImport/);
-assert.match(service, /export async function getLatestCustomerSourceImportWork/);
-assert.match(service, /reusableBatch[\s\S]*fileHash/);
-assert.match(service, /customer\.status === CUSTOMER_STATUS\.ACTIVE/);
-assert.match(service, /record\.retryStatus/);
+assert.match(sourceImport, /canApplyCustomerSourceImport/);
+assert.match(sourceImport, /export async function getLatestCustomerSourceImportWork/);
+assert.match(sourceImport, /reusableBatch[\s\S]*fileHash/);
+assert.match(sourceImport, /customer\.status === CUSTOMER_STATUS\.ACTIVE/);
+assert.match(sourceImport, /record\.retryStatus/);
 
 assert.match(picker, /등록 후 계속/);
 assert.match(picker, /그래도 새로 등록/);
