@@ -2,7 +2,7 @@ import { parseSourceInput } from './source-parser.js?v=0.8.0';
 import { EVENT_TYPE, detectOrderEvent } from './order-event-detector.js?v=0.8.0';
 import { resolveCustomer } from './customer-resolver.js?v=0.8.0';
 import { parseOrderLines } from './order-line-parser.js?v=0.8.0';
-import { generateProductCandidates, loadCandidateContext } from './candidate-generator.js?v=0.8.0';
+import { generateProductCandidates, loadCandidateContext } from './candidate-generator.js?v=0.8.1';
 import { matchParsedLine } from './matching-engine.js?v=0.8.0';
 import { persistAnalysis } from './parser-repository.js?v=0.8.0';
 
