@@ -843,7 +843,8 @@
     .table-tool-button:hover { border-color: var(--teal-700); color: var(--teal-700); background: #f0fdfa; }
     .table-tool-button.dirty { border-color: #4f46e5; color: #fff; background: #4f46e5; }
     .table-tool-button.active { border-color: var(--teal-700); color: #fff; background: var(--teal-700); }
-    .view-preset-tools { display: flex; align-items: center; gap: 4px; }
+    /* ORDER Q v1.59: 저장 양식 그룹을 재고부족 바로 뒤에 고정. */
+    .view-preset-tools { display: flex; flex: 0 0 auto; align-items: center; gap: 4px; }
     .view-preset-select {
       min-width: 104px;
       max-width: 150px;
@@ -1813,7 +1814,7 @@
       <div class="brand-mark">ONEAPP</div>
       <div class="brand-divider" aria-hidden="true"></div>
       <span class="brand-logo-frame" aria-hidden="true"><img class="brand-logo" src="../assets/order-q-logo.png" alt=""></span>
-      <span class="brand-badge">v1.58</span>
+      <span class="brand-badge">v1.59</span>
       <span class="brand-product">출고관리</span>
     </div>
     <div class="header-actions">
@@ -1963,6 +1964,16 @@
         <div class="preview-tabs" id="previewTabs" role="tablist" aria-label="결과 미리보기"></div>
         <button class="shortage-focus-button hidden" id="shortageFocusButton" type="button"
           aria-pressed="false" aria-label="재고부족 상품 모아보기">재고부족 0</button>
+        <div class="view-preset-tools" aria-label="현재 화면 저장 양식">
+          <select class="view-preset-select" id="viewPresetSelect" aria-label="저장한 현재 화면 양식 선택" disabled>
+            <option value="">저장 양식</option>
+          </select>
+          <button class="table-tool-button" id="viewPresetSaveButton" type="button" disabled>양식저장</button>
+          <button class="table-tool-button view-preset-default-button" id="viewPresetDefaultButton" type="button"
+            aria-pressed="false" disabled>기본지정</button>
+          <button class="table-tool-button view-preset-delete-button" id="viewPresetDeleteButton" type="button"
+            aria-label="선택한 현재 화면 양식 삭제" disabled>×</button>
+        </div>
         <fieldset class="spec-filter" id="specFilterGroup">
           <legend>규격</legend>
           <label><input type="checkbox" value="BOX">BOX</label>
@@ -1978,16 +1989,6 @@
           </div>
           <button class="table-tool-button" id="columnWidthSaveButton" type="button">열폭 저장</button>
           <button class="table-tool-button" id="columnWidthResetButton" type="button">열폭 초기화</button>
-          <div class="view-preset-tools" aria-label="현재 화면 저장 양식">
-            <select class="view-preset-select" id="viewPresetSelect" aria-label="저장한 현재 화면 양식 선택" disabled>
-              <option value="">저장 양식</option>
-            </select>
-            <button class="table-tool-button" id="viewPresetSaveButton" type="button" disabled>양식저장</button>
-            <button class="table-tool-button view-preset-default-button" id="viewPresetDefaultButton" type="button"
-              aria-pressed="false" disabled>기본지정</button>
-            <button class="table-tool-button view-preset-delete-button" id="viewPresetDeleteButton" type="button"
-              aria-label="선택한 현재 화면 양식 삭제" disabled>×</button>
-          </div>
         </div>
         <div class="preview-count" id="previewCount"></div>
         <button class="filter-toggle-button" id="warehouseFilterToggle" type="button"
@@ -2021,7 +2022,7 @@
     </section>
 
     <footer class="page-footer">
-      <span>ORDER Q v1.58 · 출고관리 · workspace shipping-workspace/v2 · cloud plan v1</span>
+      <span>ORDER Q v1.59 · 출고관리 · workspace shipping-workspace/v2 · cloud plan v1</span>
       <a href="../SHIPPING_MANAGEMENT_GUIDANCE.md">개발·운영 기준 보기</a>
     </footer>
   </main>
