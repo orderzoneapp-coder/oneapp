@@ -62,11 +62,31 @@ button { cursor: pointer; }
 .cm-empty { padding: 56px; text-align: center; color: var(--cm-muted); }
 .cm-import { margin-top: 20px; padding: 20px; }
 .cm-import[hidden] { display: none; }
+.cm-import-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 18px; margin-bottom: 14px; }
+.cm-import-head small { color: var(--cm-accent); font-weight: 900; letter-spacing: .12em; text-transform: uppercase; }
+.cm-import-head h2 { margin: 3px 0 0; font-family: Georgia, "Noto Serif KR", serif; font-size: 30px; }
 .cm-drop { display: grid; place-items: center; min-height: 130px; border: 2px dashed var(--cm-line); border-radius: 16px; background: rgba(247, 243, 232, .55); }
 .cm-import-summary { display: flex; gap: 8px; flex-wrap: wrap; margin: 16px 0; }
 .cm-import-summary span { background: #efe9da; border-radius: 999px; padding: 7px 10px; font-size: 12px; font-weight: 800; }
-.cm-review-list { max-height: 380px; overflow: auto; border: 1px solid var(--cm-line); border-radius: 14px; }
-.cm-review-row { display: grid; grid-template-columns: 90px 1fr 1fr auto; gap: 12px; align-items: center; padding: 12px; border-bottom: 1px solid var(--cm-line); }
+.cm-import-toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+.cm-import-toolbar input[type="search"] { flex: 1; min-width: 160px; border: 1px solid var(--cm-line); background: #fffdf7; border-radius: 12px; padding: 11px 13px; }
+.cm-import-toolbar label { display: flex; align-items: center; gap: 7px; color: var(--cm-muted); font-weight: 800; }
+.cm-import-gate { margin: 10px 0; padding: 10px 12px; border-left: 4px solid var(--cm-accent); background: #f4ead4; color: var(--cm-green); font-weight: 800; }
+.cm-review-list { max-height: 560px; overflow: auto; border: 1px solid var(--cm-line); border-radius: 14px; }
+.cm-review-row { display: grid; grid-template-columns: 90px minmax(180px, .9fr) minmax(220px, 1.2fr) auto; gap: 12px; align-items: center; padding: 14px; border-bottom: 1px solid var(--cm-line); }
+.cm-review-identity strong, .cm-review-contact strong { display: block; }
+.cm-review-identity small, .cm-review-contact small { display: block; color: var(--cm-muted); margin-top: 3px; }
+.cm-review-actions { display: flex; justify-content: flex-end; gap: 6px; flex-wrap: wrap; }
+.cm-button.mini { padding: 7px 9px; font-size: 12px; }
+.cm-plan-note { color: var(--cm-muted); font-size: 12px; font-weight: 800; }
+.cm-import-error { grid-column: 2 / -1; margin: 0; color: #a43b27; font-weight: 800; }
+.cm-change-grid { grid-column: 2 / -1; display: grid; grid-template-columns: repeat(2, minmax(220px, 1fr)); gap: 8px; padding-top: 4px; }
+.cm-change-grid label { display: grid; grid-template-columns: 110px 1fr 130px; gap: 8px; align-items: center; padding: 9px; border-radius: 10px; background: #f7f3e8; }
+.cm-change-grid span { font-weight: 900; }
+.cm-change-grid small { color: var(--cm-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cm-change-grid select { border: 1px solid var(--cm-line); border-radius: 9px; background: white; padding: 7px; }
+.cm-import-empty { padding: 42px; text-align: center; color: var(--cm-muted); }
+.cm-load-more { width: 100%; border: 0; border-top: 1px solid var(--cm-line); background: #f4ead4; padding: 14px; color: var(--cm-green); font-weight: 900; }
 .cm-modal, .customer-picker-dialog { border: 0; border-radius: 22px; padding: 0; width: min(620px, calc(100vw - 28px)); box-shadow: 0 30px 100px rgba(16, 35, 30, .32); color: var(--cm-ink); }
 .cm-modal::backdrop, .customer-picker-dialog::backdrop { background: rgba(12, 29, 25, .56); backdrop-filter: blur(4px); }
 .cm-form, .customer-picker-shell { padding: 22px; background: var(--cm-panel); }
@@ -98,5 +118,10 @@ button { cursor: pointer; }
   .cm-viewport { min-height: 420px; }
   .cm-form-grid { grid-template-columns: 1fr; }
   .cm-review-row { grid-template-columns: 78px 1fr auto; }
-  .cm-review-row > :nth-child(3) { display: none; }
+  .cm-review-contact { grid-column: 2 / -1; }
+  .cm-review-actions { grid-column: 2 / -1; justify-content: flex-start; }
+  .cm-change-grid { grid-column: 1 / -1; grid-template-columns: 1fr; }
+  .cm-change-grid label { grid-template-columns: 90px 1fr; }
+  .cm-change-grid select { grid-column: 1 / -1; }
+  .cm-import-toolbar { align-items: stretch; flex-direction: column; }
 }
