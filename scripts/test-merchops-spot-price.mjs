@@ -140,6 +140,17 @@ assert.equal(bulkPatch.patch.싯가, 0);
 assert.equal(bulkPatch.patch.싯가판매여부, 0);
 assert.equal(bulkPatch.patch.창고, "01", "warehouse code must preserve the leading zero");
 assert.equal(browser.buildMerchBulkFieldPatch({ theme: "1,6" }).ok, false);
+assert.equal(browser.buildMerchBulkFieldPatch({ themeAction: "assign", theme: "" }).ok, false,
+  "theme designation must require one or more theme numbers");
+const deleteThemePatch = browser.buildMerchBulkFieldPatch({ themeAction: "delete" });
+assert.equal(deleteThemePatch.ok, true, "theme deletion must be a standalone bulk action");
+assert.equal(deleteThemePatch.patch.행사테마, "");
+assert.deepEqual(
+  [1, 2, 3, 4, 5].map((number) => deleteThemePatch.patch[`테마${number}`]),
+  ["", "", "", "", ""],
+  "theme deletion must clear the normalized theme and all compatibility flags",
+);
+assert.deepEqual([...deleteThemePatch.inputFields], ["행사테마 삭제"]);
 assert.equal(browser.buildMerchBulkFieldPatch({ stock: "abc" }).ok, false);
 assert.equal(browser.buildMerchBulkFieldPatch({}).ok, false);
 
@@ -232,7 +243,7 @@ assert.match(html, /if \(hasOwn\(targetMaster, '싯가'\)\) targetMaster\['싯�
 assert.doesNotMatch(html, /handleApplySelectedWarehouse|selectedWarehouseInput/);
 assert.match(html, /const handleApplyBulkFields = useCallback/);
 assert.match(html, /ui\.selectedRows\.size > 0[\s\S]*fullDisplayRows\.filter[\s\S]*: fullDisplayRows/);
-assert.match(html, /placeholder: getBulkPlaceholder\('theme', '행사'\)/);
+assert.match(html, /value: promoThemeInput[\s\S]*"aria-label": "지정할 행사테마"[\s\S]*"테마지정"/);
 assert.match(html, /placeholder: getBulkPlaceholder\('stock', '재고'\)/);
 assert.match(html, /getBulkSelectBlankLabel\('sale', '판매'\)/);
 assert.match(html, /getBulkSelectBlankLabel\('linkage', '연동'\)/);
