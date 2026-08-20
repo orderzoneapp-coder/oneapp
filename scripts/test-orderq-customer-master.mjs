@@ -55,9 +55,13 @@ assert.match(ui, /state\.filtered\.slice\(start, end\)/);
 assert.match(ui, /canApplyCustomerImport\(state\.importRecords\)/);
 assert.match(html, /customerExcelFile/);
 assert.match(html, /거래처 Master/);
-assert.match(html, /customer-master-ui\.js\?v=0\.12\.2/, 'Customer Master entry module must invalidate the deployed cache');
+assert.match(html, /customer-master-ui\.js\?v=0\.12\.3/, 'Customer Master entry module must invalidate the deployed cache');
 assert.equal((html.match(/data-close-customer-editor/g) || []).length, 2, 'Customer Editor must expose close and cancel controls');
 assert.match(ui, /querySelectorAll\('\[data-close-customer-editor\]'\)[\s\S]*elements\.editor\.close\(\)/, 'Customer Editor close controls must bypass form submission');
+assert.doesNotMatch(ui, /cm-drop'\)\.addEventListener\('click'/, 'Excel drop label must not open the file picker twice');
+assert.match(ui, /elements\.file\.addEventListener\('change', handleExcelSelection\)/, 'Excel selection must have one explicit processing path');
+assert.match(ui, /elements\.file\.value = ''/, 'Excel input must reset so the same file can be selected again');
+assert.match(ui, /headerRow[\s\S]*거래처명 열을 찾을 수 없습니다/, 'Excel import must locate and validate the customer header row');
 assert.match(service, /orderq-db\.js\?v=0\.12\.1/, 'Customer Master must load the fixed DB upgrade module URL');
 assert.match(css, /\.cm-viewport/);
 

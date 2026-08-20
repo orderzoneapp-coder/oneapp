@@ -180,12 +180,36 @@ function renderImport() {
 async function readExcel(file) {
   if (!window.XLSX) throw new Error('Excel 모듈을 불러오지 못했습니다.');
   const workbook = window.XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: false });
+  if (!workbook.SheetNames.length) throw new Error('Excel 시트를 찾을 수 없습니다.');
   const sheet = workbook.Sheets[workbook.SheetNames[0]];
-  const rows = window.XLSX.utils.sheet_to_json(sheet, { defval: '', raw: false });
+  const matrix = window.XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false });
+  const headerRow = matrix.findIndex(row => row.some(value => String(value).trim() === '거래처명'));
+  if (headerRow < 0) throw new Error('거래처명 열을 찾을 수 없습니다. 거래처정보 Excel 양식을 확인해 주세요.');
+  const rows = window.XLSX.utils.sheet_to_json(sheet, { range: headerRow, defval: '', raw: false });
+  if (!rows.length) throw new Error('불러올 거래처 데이터가 없습니다.');
   const prepared = await prepareCustomerImport(rows, { fileName: file.name, fileHash: await sha256(file) });
   state.importBatch = prepared.batch;
   state.importRecords = prepared.records;
   renderImport();
+}
+
+async function handleExcelSelection() {
+  const file = elements.file.files?.[0];
+  if (!file) return;
+  state.importBatch = null;
+  state.importRecords = [];
+  elements.applyImport.disabled = true;
+  elements.importSummary.innerHTML = `<span>${escapeHtml(file.name)} 분석 중...</span>`;
+  elements.importReview.innerHTML = '<div class="cm-review-row"><strong>거래처 정보를 읽고 있습니다.</strong></div>';
+  try {
+    await readExcel(file);
+  } catch (error) {
+    console.error('Customer Excel import failed', error);
+    elements.importSummary.innerHTML = `<span>불러오기 실패 · ${escapeHtml(file.name)}</span>`;
+    elements.importReview.innerHTML = `<div class="cm-review-row"><strong>${escapeHtml(error.message || String(error))}</strong></div>`;
+  } finally {
+    elements.file.value = '';
+  }
 }
 
 elements.viewport.addEventListener('scroll', renderWindow, { passive: true });
@@ -198,8 +222,7 @@ elements.form.addEventListener('submit', saveEditor);
 document.querySelector('#newCustomerButton').addEventListener('click', () => openEditor());
 document.querySelector('#openImportButton').addEventListener('click', () => { elements.importWorkbench.hidden = false; elements.importWorkbench.scrollIntoView({ behavior: 'smooth' }); });
 document.querySelector('#closeImportButton').addEventListener('click', () => { elements.importWorkbench.hidden = true; });
-elements.importWorkbench.querySelector('.cm-drop').addEventListener('click', () => elements.file.click());
-elements.file.addEventListener('change', () => elements.file.files[0] && readExcel(elements.file.files[0]).catch(error => alert(error.message)));
+elements.file.addEventListener('change', handleExcelSelection);
 elements.applyImport.addEventListener('click', async () => {
   elements.applyImport.disabled = true;
   const results = await applyCustomerImport(state.importBatch.importBatchId);
