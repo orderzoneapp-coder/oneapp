@@ -11,6 +11,8 @@ import {
 } from './history-collector/collector-contracts.js?v=0.8.1';
 import { syncNow } from './orderq-sync-engine.js?v=0.8.0';
 import { getCloudUrl, getCloudAccessToken } from './orderq-cloud-adapter.js?v=0.8.0';
+import { resolveCustomerInput } from './customer-master.js?v=0.12.0';
+import { openCustomerPicker } from './customer-picker.js?v=0.12.0';
 
 const prepared = [];
 const photoDrafts = [];
@@ -138,6 +140,18 @@ function showOrderMethod(){ const isOrder=activeWork==='order'; $('#fileCollecto
 async function bestEffortSync(){ if(!getCloudUrl()||!getCloudAccessToken())return; try{await syncNow();}catch(e){show(`수집은 완료됐지만 클라우드 동기화가 남았습니다: ${e.message||e}`,'warn');} }
 async function maybeRebuildAfterSourceChange(sourceTypes){ const relevant=sourceTypes.some(t=>[COLLECTOR_SOURCE.ORDER,COLLECTOR_SOURCE.KAKAO,COLLECTOR_SOURCE.SALES].includes(t)); if(!relevant)return null; const s=await getCollectorSnapshot(); if(!matchingReady(s))return null; return rebuildFulfillmentEvidence(); }
 
+async function resolvePreparedCustomers(items){
+  const groups=new Map();
+  items.forEach(item=>(item.rows||[]).forEach(row=>{const name=String(row.customerName||row.supplierName||'').trim();if(!name)return;if(!groups.has(name))groups.set(name,[]);groups.get(name).push(row);}));
+  for(const [name,rows] of groups){
+    const resolution=await resolveCustomerInput({customerName:name});
+    let customer=resolution.status==='MATCHED'?resolution.customer:null;
+    if(!customer) customer=await openCustomerPicker({initialName:name,source:'COLLECTOR_QUICK_CREATE',title:`${name} 거래처 확인`});
+    if(!customer) throw new Error(`거래처 확인이 필요합니다: ${name}`);
+    rows.forEach(row=>{row.customerId=customer.customerId;row.customerName=row.customerName||customer.customerName;if(row.supplierName)row.supplierName=customer.customerName;});
+  }
+}
+
 $('.collector-work-tabs').addEventListener('click',e=>{const b=e.target.closest('[data-work-tab]');if(b)applyWorkTab(b.dataset.workTab);});
 $('#orderMethodTabs').addEventListener('click',e=>{const b=e.target.closest('[data-order-method]');if(!b)return;activeOrderMethod=b.dataset.orderMethod;showOrderMethod();});
 const dz=$('#dropZone'); ['dragenter','dragover'].forEach(t=>dz.addEventListener(t,e=>{e.preventDefault();dz.classList.add('dragover');})); ['dragleave','drop'].forEach(t=>dz.addEventListener(t,e=>{e.preventDefault();dz.classList.remove('dragover');})); dz.addEventListener('drop',e=>analyzeFiles([...e.dataTransfer.files])); $('#fileInput').addEventListener('change',e=>{analyzeFiles([...e.target.files]);e.target.value='';});
@@ -147,7 +161,7 @@ $('#analyzeTextBtn').addEventListener('click',async()=>{try{const result=await a
 $('#photoInput').addEventListener('change',e=>{for(const file of e.target.files){photoDrafts.push({file,name:file.name,text:''});}$('#photoCandidates').innerHTML=photoDrafts.map((d,i)=>`<article class="photo-draft"><strong>${esc(d.name)}</strong><textarea class="control" data-photo-text="${i}" rows="3" placeholder="사진에서 확인한 주문 내용을 검수 입력하세요.">${esc(d.text)}</textarea><button class="btn" data-photo-analyze="${i}" type="button">주문 후보 만들기</button></article>`).join('');e.target.value='';});
 $('#photoCandidates').addEventListener('input',e=>{if(e.target.matches('[data-photo-text]'))photoDrafts[Number(e.target.dataset.photoText)].text=e.target.value;});
 $('#photoCandidates').addEventListener('click',async e=>{const b=e.target.closest('[data-photo-analyze]');if(!b)return;const d=photoDrafts[Number(b.dataset.photoAnalyze)];if(!d?.text.trim())return show('현재 자동 이미지 분석 서버가 연결되지 않았습니다. 사진 주문내용을 확인해 입력한 뒤 후보를 만들어 주세요.','warn');try{const result=await analyzeHistoricalText({rawText:d.text,sourceId:`PHOTO:${d.name}`,fileName:`${d.name}.txt`,defaultDate:$('#textDate').value});prepared.push(result);renderPrepared();show(`사진 주문 후보 ${number(result.rows.length)}행을 만들었습니다. 수집 확정 전에는 매칭하지 않습니다.`);}catch(err){show(err.message||String(err),'error');}});
-$('#commitBtn').addEventListener('click',async()=>{const items=currentPrepared();if(!items.length)return;const button=$('#commitBtn');button.disabled=true;try{let inserted=0,skipped=0;const types=[];for(const item of items){const r=await commitPreparedImportV2(item);inserted+=r.inserted;skipped+=r.skipped;types.push(item.sourceType);prepared.splice(prepared.indexOf(item),1);}renderPrepared();await maybeRebuildAfterSourceChange(types);const snapshot=await renderSnapshot();await bestEffortSync();const label=WORK[activeWork].label;const suffix=activeWork==='sales'?(snapshot.orderLines.length?' · 주문자료와 자동매칭했습니다.':' · 주문자료를 수집하면 판매결과와 자동매칭합니다.') : '';show(`${label} 수집 완료: ${number(inserted)}행 · 중복제외 ${number(skipped)}행${suffix}`);}catch(e){show(`수집 실패: ${e.message||e}`,'error');}finally{button.disabled=!currentPrepared().length;}});
+$('#commitBtn').addEventListener('click',async()=>{const items=currentPrepared();if(!items.length)return;const button=$('#commitBtn');button.disabled=true;try{await resolvePreparedCustomers(items);let inserted=0,skipped=0;const types=[];for(const item of items){const r=await commitPreparedImportV2(item);inserted+=r.inserted;skipped+=r.skipped;types.push(item.sourceType);prepared.splice(prepared.indexOf(item),1);}renderPrepared();await maybeRebuildAfterSourceChange(types);const snapshot=await renderSnapshot();await bestEffortSync();const label=WORK[activeWork].label;const suffix=activeWork==='sales'?(snapshot.orderLines.length?' · 주문자료와 자동매칭했습니다.':' · 주문자료를 수집하면 판매결과와 자동매칭합니다.') : '';show(`${label} 수집 완료: ${number(inserted)}행 · 중복제외 ${number(skipped)}행${suffix}`);}catch(e){show(`수집 실패: ${e.message||e}`,'error');}finally{button.disabled=!currentPrepared().length;}});
 $('#saveSettingsBtn').addEventListener('click',async()=>{try{const [h,m]=$('#cutoffTime').value.split(':').map(Number);const holidays=$('#holidays').value.split(',').map(v=>v.trim()).filter(Boolean);await saveCollectorSettings({cutoffHour:h,cutoffMinute:m,holidays});const s=await getCollectorSnapshot();if(matchingReady(s))await rebuildFulfillmentEvidence();await renderSnapshot();show('매칭 기준을 저장하고 가능한 경우 매칭을 다시 계산했습니다.');}catch(e){show(e.message||String(e),'error');}});
 $('#rebuildBtn').addEventListener('click',async()=>{try{const s=await getCollectorSnapshot();if(!matchingReady(s))return show('주문자료와 판매현황이 모두 있어야 매칭을 계산할 수 있습니다.','warn');const r=await rebuildFulfillmentEvidence();await renderSnapshot();show(`매칭 계산 완료: 연결 ${number(r.summary.linkedCount)} · 확인필요 ${number(r.summary.reviewRequiredCount)}`);}catch(e){show(e.message||String(e),'error');}});
 $('#matchingNotReady').addEventListener('click',e=>{const b=e.target.closest('[data-go-work]');if(b)applyWorkTab(b.dataset.goWork);});

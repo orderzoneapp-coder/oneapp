@@ -161,3 +161,12 @@ Only LOCAL_ONLY DRAFT and required reference/snapshot facts may use the one-time
 `/orderq/erp.html` produces an XLSX file from operational sales and purchase facts in ERP `READY`. It preserves ORDER Q document/line identities, external identities, numeric zero, string `"0"`, blanks, signed quantities, actual/base/recognized axes, and amounts. Reimport uses exact ORDER Q/origin/external identifiers first and compares every exported quantity axis, price, supply/VAT/total amount, product, warehouse, and stable identity field with canonical blank/zero rules. A document advances only when every expected line has exactly one exact match and there are no additional, missing, duplicated, conflicting, or ambiguous rows; otherwise the entire document remains `REVIEW_REQUIRED`. ERP posting states advance separately through `READY -> EXPORTED -> POSTED -> RECONCILED`; corrections preserve the original ERP document number and set `CORRECTION_REQUIRED` without automatic ERP cancellation or retransmission.
 
 M9 code completion does not deploy the Apps Script backend or the site. Limited beta deployment is a separate verification gate.
+
+## Customer Master and canonical customer contract (2026-08)
+
+- Schema v9 adds the local `customerEvents` audit store and Customer canonical/search indexes.
+- Customer Picker automatic selection is limited to one exact ACTIVE non-superseded VERIFIED/UNVERIFIED result. INACTIVE rows require an explicit administrator decision; SUPERSEDED matches redirect to the ACTIVE canonical row; duplicate candidates never auto-select.
+- `mergeCustomers` and `unmergeCustomer` preserve historical IDs and audit events. Merge/unmerge service and repository contracts are part of this release; administrator merge UI can follow separately.
+- ORDER IN may extract products and quantities without a customer. Customer-specific product matching starts only after Picker selection or explicit quick-create.
+- Collector resolves unique customer names before commit. Repository and Cloud order writes reject implicit customer creation.
+- Customer Excel import uses SAME, CHANGED, NEW, REVIEW_REQUIRED, EXCLUDED, APPLIED, and FAILED states. CHANGED rows require field decisions before Apply. Lists use windowed rendering for 1,000+ rows.

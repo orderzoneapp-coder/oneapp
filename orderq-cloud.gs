@@ -146,20 +146,12 @@ function orderQWriteRow(sheet, id, rowValues) {
 
 function orderQUpsertCustomerMinimal(ss, order) {
   const customerId = String(order && order.customerId || '');
-  if (!customerId) return;
+  if (!customerId) throw new Error('ORDERQ_CUSTOMER_REQUIRED');
   const sheet = orderQEnsureSheet(ss, 'CUSTOMER');
-  if (orderQFindDataRow(sheet, customerId)) return;
-  const payload = {
-    customerId,
-    customerName: String(order.customerName || ''),
-    normalizedName: '',
-    erpCustomerCode: '',
-    status: 'ACTIVE',
-    source: 'ORDER_SYNC',
-    createdAt: String(order.createdAt || order.updatedAt || ''),
-    updatedAt: String(order.updatedAt || '')
-  };
-  orderQWriteRow(sheet, customerId, [customerId, payload.customerName, '', payload.updatedAt, JSON.stringify(payload)]);
+  if (!orderQFindDataRow(sheet, customerId)) throw new Error(`ORDERQ_CUSTOMER_NOT_FOUND:${customerId}`);
+  const payload = orderQReadPayloadById(sheet, customerId) || {};
+  if (String(payload.status || 'ACTIVE') !== 'ACTIVE') throw new Error(`ORDERQ_CUSTOMER_INACTIVE:${customerId}`);
+  if (String(payload.qualityStatus || '') === 'SUPERSEDED') throw new Error(`ORDERQ_CUSTOMER_SUPERSEDED:${customerId}:${payload.canonicalCustomerId || ''}`);
 }
 
 function orderQReplaceItems(ss, orderId, items) {

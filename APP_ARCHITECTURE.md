@@ -929,3 +929,11 @@ Confirm that critical development:
 - does not merge on assumptions.
 
 After the production MerchOps and DataOps workflows are stable, planned applications may be reviewed individually for promotion to Pilot status.
+
+## Customer Master shared boundary (2026-08)
+
+- Customer Master is the shared customer authority for ORDER IN, direct order entry, Collector, and customer history lookup.
+- IndexedDB remains the local cache and draft store. A device with no local customers must pull the Cloud customer revision before search; a populated device may use cache immediately and pull in the background only when no unsynced Customer/Customer Alias mutation exists.
+- `qualityStatus` owns merge state independently from trading `status`. Non-superseded rows are self-canonical. A `SUPERSEDED` row points to a different ACTIVE canonical customer.
+- New live work uses only the canonical customer ID. Historical document customer IDs are immutable and are expanded to the canonical family at read time for unified history and ledger views.
+- Excel import is draft-first and row-atomic. ORDER IN, direct input, Master, and Collector quick-create are explicit live creates that return a real customer ID immediately.

@@ -105,15 +105,21 @@ async function putCustomerAndProduct(tx, row, role, timestamp) {
   let customer = null;
   if (customerName) {
     const store = tx.objectStore(STORE.CUSTOMERS);
-    const candidate = customerShape(customerName, role, timestamp);
-    customer = await requestToPromise(store.index('byName').get(candidate.normalizedName));
+    const normalizedName = normalizeText(customerName);
+    customer = row.customerId ? await requestToPromise(store.get(row.customerId)) : null;
+    if (!customer) customer = await requestToPromise(store.index('byName').get(normalizedName));
     if (customer) {
+      if (customer.qualityStatus === 'SUPERSEDED') {
+        customer = await requestToPromise(store.get(customer.canonicalCustomerId || customer.supersededByCustomerId));
+      }
+      if (!customer || customer.status !== 'ACTIVE') {
+        throw new Error(`거래처를 사용할 수 없습니다: ${customerName}`);
+      }
       const roles = [...new Set([...(customer.roles || []), role])];
       customer = { ...customer, roles, updatedAt: timestamp };
       store.put(customer);
     } else {
-      customer = candidate;
-      store.put(customer);
+      throw new Error(`미등록 거래처입니다. 거래처를 찾거나 간편등록한 뒤 계속해 주세요: ${customerName}`);
     }
   }
   let product = null;

@@ -4,12 +4,13 @@ import vm from 'node:vm';
 
 const read = path => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
 
-const [codeGs, cloudGs, adapter, syncEngine, intake, indexHtml, inputHtml, cloudHtml] = await Promise.all([
+const [codeGs, cloudGs, adapter, syncEngine, intake, customerMaster, indexHtml, inputHtml, cloudHtml] = await Promise.all([
   read('code.gs'),
   read('orderq-cloud.gs'),
   read('orderq/orderq-cloud-adapter.js'),
   read('orderq/orderq-sync-engine.js'),
   read('orderq/order-intake-engine.js'),
+  read('orderq/customer-master.js'),
   read('orderq/index.html'),
   read('orderq/input.html'),
   read('orderq/cloud.html')
@@ -50,8 +51,9 @@ for (const action of ['orderq_sync_push', 'orderq_sync_pull', 'orderq_order_head
 assert.match(adapter, /Content-Type': 'text\/plain;charset=utf-8'/, 'Apps Script POST should avoid unnecessary CORS preflight');
 
 assert.match(intake, /baseRevision/, 'sync queue must retain baseRevision');
-assert.match(intake, /enqueue\(tx, 'CUSTOMER'/, 'new customer must enter sync queue');
-assert.match(intake, /enqueue\(tx, 'CUSTOMER_ALIAS'/, 'new customer alias must enter sync queue');
+assert.doesNotMatch(intake, /customerStore\.add\(customer\)/, 'direct order entry must not create a customer implicitly');
+assert.match(customerMaster, /queueItem\('CUSTOMER'/, 'explicit Customer Master creation must enter sync queue');
+assert.match(customerMaster, /queueItem\('CUSTOMER_ALIAS'/, 'explicit Customer Master alias must enter sync queue');
 assert.match(intake, /enqueue\(tx, 'ORDER_EVENT'/, 'order events must enter sync queue');
 assert.match(intake, /enqueue\(tx, 'ORDER',[\s\S]*expectedRevision\)/, 'order update must queue expected revision as base revision');
 assert.match(intake, /bySourceDocumentKey/, 'client createOrder must prefer sourceDocumentKey idempotency');
