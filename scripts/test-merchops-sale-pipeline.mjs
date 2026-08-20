@@ -101,8 +101,8 @@ assert.ok(f8Start >= 0 && f8End > f8Start, "Quick F8 sale resolver was not found
 const f8Block = html.slice(f8Start, f8End);
 assert.match(
   f8Block,
-  /if \(explicitSale\.hasValue && explicitSale\.isExplicitBlank\) return '';\s*if \(explicitSale\.hasValue\) return explicitSale\.code;\s*return '';/,
-  "Quick F8 must preserve explicit sale blanks and leave missing sale columns blank",
+  /if \(explicitSale\.hasValue && explicitSale\.isExplicitBlank\) return '';\s*if \(explicitSale\.hasValue\) return explicitSale\.code;[\s\S]*resolveMerchSaleAvailability\(row, getMasterForQuickRow\(row\)\)/,
+  "Quick F8 must preserve explicit sale blanks and fall back to master only when the working column is missing",
 );
 assert.doesNotMatch(f8Block, /if \(isEstimateQuickRow\(row\)\) return '1'/);
 
