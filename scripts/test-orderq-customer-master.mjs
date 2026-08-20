@@ -28,6 +28,7 @@ new vm.Script(cloud, { filename: 'orderq-cloud.gs' });
 assert.equal(ORDERQ_DB_VERSION, 9);
 assert.deepEqual(V9_STORE_DEFINITIONS.map(store => store.name), ['customerEvents']);
 assert.match(db, /oldVersion < 9/);
+assert.doesNotMatch(db, /const customerStore = tx\.objectStore/, 'v9 upgrade must use the provided upgrade transaction');
 for (const index of ['byCanonicalCustomerId', 'byCustomerCode', 'byStatusQuality']) assert.match(db, new RegExp(index));
 
 assert.match(service, /qualityStatus === CUSTOMER_QUALITY\.SUPERSEDED/);
