@@ -8,7 +8,7 @@ import { ORDERQ_DB_VERSION, V9_STORE_DEFINITIONS } from '../orderq/orderq-v9-con
 const read = path => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
 const [
   db, service, picker, ui, html, css, intakeEngine, intakeWorkbench,
-  directInput, collectorRepository, collectorUi, cloud
+  directInput, collectorRepository, collectorUi, collectorReview, cloud
 ] = await Promise.all([
   read('orderq/orderq-db.js'),
   read('orderq/customer-master.js'),
@@ -21,10 +21,12 @@ const [
   read('orderq/order-intake-engine.js'),
   read('orderq/history-collector/history-repository.js'),
   read('orderq/collector-ui.js'),
+  read('orderq/collector-smartparser-review.js'),
   read('orderq-cloud.gs')
 ]);
 
 new vm.Script(cloud, { filename: 'orderq-cloud.gs' });
+new vm.SourceTextModule(collectorReview, { identifier: 'collector-smartparser-review.js' });
 assert.equal(ORDERQ_DB_VERSION, 9);
 assert.deepEqual(V9_STORE_DEFINITIONS.map(store => store.name), ['customerEvents']);
 assert.match(db, /oldVersion < 9/);
