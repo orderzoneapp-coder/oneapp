@@ -1,20 +1,28 @@
 import {
   CUSTOMER_IMPORT_STATUS,
-  applyCustomerImport,
-  canApplyCustomerImport,
   createLiveCustomer,
   ensureCustomerMasterReady,
-  getLatestCustomerImportWork,
   listCustomers,
-  prepareCustomerImport,
-  setCustomerImportDecision,
   updateCustomer
-} from './customer-master.js?v=0.13.0';
+} from './customer-master.js?v=0.14.0';
+import {
+  CUSTOMER_SOURCE_MATCH_METHOD,
+  CUSTOMER_SOURCE_SYSTEM,
+  applyCustomerSourceImport,
+  canApplyCustomerSourceImport,
+  getLatestCustomerSourceImportWork,
+  prepareCustomerSourceImport,
+  setCustomerSourceImportDecision
+} from './customer-source-import.js?v=0.14.0';
 import { openCustomerPicker } from './customer-picker.js?v=0.12.1';
+import { pushPending } from './orderq-sync-engine.js?v=0.14.0';
 
 const ROW_HEIGHT = window.matchMedia('(max-width: 820px)').matches ? 86 : 74;
 const BUFFER_ROWS = 8;
-const state = { customers: [], filtered: [], importBatch: null, importRecords: [], importIssuesOnly: true, importQuery: '', importLimit: 200 };
+const state = {
+  customers: [], filtered: [], importBatch: null, importRecords: [],
+  importIssuesOnly: true, importQuery: '', importLimit: 200
+};
 const elements = {
   viewport: document.querySelector('#customerViewport'),
   spacer: document.querySelector('#customerSpacer'),
@@ -25,7 +33,9 @@ const elements = {
   form: document.querySelector('#customerForm'),
   editorTitle: document.querySelector('#editorTitle'),
   importWorkbench: document.querySelector('#importWorkbench'),
-  file: document.querySelector('#customerExcelFile'),
+  erpFile: document.querySelector('#erpCustomerExcelFile'),
+  shopFile: document.querySelector('#shopCustomerExcelFile'),
+  importSourceLabel: document.querySelector('#importSourceLabel'),
   importFileTitle: document.querySelector('#importFileTitle'),
   importSearch: document.querySelector('#importSearch'),
   importIssuesOnly: document.querySelector('#importIssuesOnly'),
@@ -34,6 +44,20 @@ const elements = {
   importGate: document.querySelector('#importGate'),
   applyImport: document.querySelector('#applyImportButton')
 };
+
+const IMPORT_FIELD_LABELS = Object.freeze({
+  customerCode: '거래처코드', customerName: '거래처명', representativeName: '대표자', businessNumber: '사업자번호',
+  businessType: '업태', businessItem: '종목', phone: '전화', fax: '팩스', mobile: '핸드폰', email: '이메일',
+  postalCode: '우편번호', address: '주소', addressDetail: '상세주소', contactName: '담당자',
+  contactPhone: '담당자연락처', groupName: '그룹', priceGroup: '단가그룹'
+});
+const ISSUE_STATUSES = new Set([
+  CUSTOMER_IMPORT_STATUS.CHANGED, CUSTOMER_IMPORT_STATUS.REVIEW_REQUIRED,
+  CUSTOMER_IMPORT_STATUS.NEW, CUSTOMER_IMPORT_STATUS.FAILED
+]);
+const EVIDENCE_LABELS = Object.freeze({
+  NAME_EXACT: '거래처명 일치', ALIAS_EXACT: '별칭 일치', PHONE_EXACT: '전화 일치', NAME_SIMILAR: '이름 유사'
+});
 
 function escapeHtml(value) {
   return String(value ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
@@ -56,7 +80,7 @@ function renderWindow() {
   const end = Math.min(count, start + visible);
   elements.spacer.innerHTML = state.filtered.slice(start, end).map((customer, offset) => {
     const [label, className] = qualityLabel(customer);
-    return `<button class="cm-row" type="button" data-id="${customer.customerId}" style="top:${(start + offset) * ROW_HEIGHT}px">
+    return `<button class="cm-row" type="button" data-id="${escapeHtml(customer.customerId)}" style="top:${(start + offset) * ROW_HEIGHT}px">
       <span>${escapeHtml(customer.customerCode || '-')}</span>
       <span><strong>${escapeHtml(customer.customerName)}</strong><small>${escapeHtml(customer.representativeName || customer.contactName || '')}</small></span>
       <span><strong>${escapeHtml(customer.phone || customer.mobile || '-')}</strong><small>${escapeHtml([customer.address, customer.addressDetail].filter(Boolean).join(' '))}</small></span>
@@ -64,7 +88,9 @@ function renderWindow() {
       <span class="cm-badge ${className}">${label}</span>
     </button>`;
   }).join('');
-  elements.spacer.querySelectorAll('[data-id]').forEach(button => button.addEventListener('click', () => openEditor(state.customers.find(customer => customer.customerId === button.dataset.id))));
+  elements.spacer.querySelectorAll('[data-id]').forEach(button => button.addEventListener('click', () => {
+    openEditor(state.customers.find(customer => customer.customerId === button.dataset.id));
+  }));
 }
 
 function applyFilter() {
@@ -72,11 +98,7 @@ function applyFilter() {
   const filter = elements.filter.value;
   state.filtered = state.customers.filter(customer => {
     const haystack = [customer.customerCode, customer.customerName, customer.phone, customer.mobile, customer.address, customer.contactName].join(' ').toLocaleLowerCase('ko');
-    const queryMatch = !query || haystack.includes(query);
-    const statusMatch = filter === 'ALL'
-      || customer.status === filter
-      || customer.qualityStatus === filter;
-    return queryMatch && statusMatch;
+    return (!query || haystack.includes(query)) && (filter === 'ALL' || customer.status === filter || customer.qualityStatus === filter);
   });
   elements.viewport.scrollTop = 0;
   renderWindow();
@@ -110,11 +132,8 @@ async function saveEditor(event) {
   event.preventDefault();
   const data = Object.fromEntries(new FormData(elements.form).entries());
   try {
-    if (data.customerId) {
-      await updateCustomer(data.customerId, data, { expectedRevision: Number(data.revision) });
-    } else {
-      await createLiveCustomer(data, { source: 'MASTER_MANUAL_CREATE' });
-    }
+    if (data.customerId) await updateCustomer(data.customerId, data, { expectedRevision: Number(data.revision) });
+    else await createLiveCustomer(data, { source: 'MASTER_MANUAL_CREATE' });
     elements.editor.close();
     await reload();
   } catch (error) {
@@ -126,7 +145,7 @@ async function saveEditor(event) {
       }
       return;
     }
-    alert(error.message);
+    alert(error.message || error);
   }
 }
 
@@ -138,22 +157,9 @@ async function sha256(file) {
 function importStatusLabel(status) {
   return ({
     SAME: '연결됨', CHANGED: '변경확인', NEW: '신규', REVIEW_REQUIRED: '확인필요',
-    APPLIED: '적용완료', FAILED: '실패', EXCLUDED: '제외'
+    APPLIED: '적용완료', FAILED: '적용실패', EXCLUDED: '제외'
   })[status] || status;
 }
-
-const IMPORT_FIELD_LABELS = Object.freeze({
-  customerCode: '거래처코드', customerName: '거래처명', representativeName: '대표자', businessNumber: '사업자번호',
-  businessType: '업태', businessItem: '종목', phone: '전화', fax: '팩스', mobile: '핸드폰', email: '이메일',
-  postalCode: '우편번호', address: '주소', addressDetail: '상세주소', contactName: '담당자',
-  contactPhone: '담당자연락처', groupName: '그룹', priceGroup: '단가그룹'
-});
-const ISSUE_STATUSES = new Set([
-  CUSTOMER_IMPORT_STATUS.CHANGED,
-  CUSTOMER_IMPORT_STATUS.REVIEW_REQUIRED,
-  CUSTOMER_IMPORT_STATUS.NEW,
-  CUSTOMER_IMPORT_STATUS.FAILED
-]);
 
 function importEffectiveStatus(record) {
   return record.status === CUSTOMER_IMPORT_STATUS.FAILED ? record.retryStatus : record.status;
@@ -164,16 +170,38 @@ function importVisibleRecords() {
   return state.importRecords.filter(record => {
     if (state.importIssuesOnly && !ISSUE_STATUSES.has(record.status)) return false;
     const incoming = record.incoming || {};
-    const haystack = [incoming.customerCode, incoming.customerName, incoming.phone, incoming.mobile, incoming.address, incoming.contactName].join(' ').toLocaleLowerCase('ko');
+    const haystack = [record.sourceCustomerCode, record.sourceCustomerName, record.sourceNickname, incoming.phone, incoming.mobile, record.sourceAddress, incoming.contactName].join(' ').toLocaleLowerCase('ko');
     return !query || haystack.includes(query);
   });
+}
+
+function changedFieldsFor(record, customer) {
+  return Object.keys(IMPORT_FIELD_LABELS).filter(field => {
+    const fileValue = String(record.incoming?.[field] ?? '').trim();
+    return fileValue && fileValue !== String(customer?.[field] ?? '').trim();
+  });
+}
+
+function sourceCodeLabel() {
+  return state.importBatch?.sourceSystem === CUSTOMER_SOURCE_SYSTEM.SHOP ? '회원 아이디' : 'ERP 코드';
+}
+
+function candidateMarkup(record) {
+  if (!record.candidateCustomerIds?.length) return '';
+  return `<div class="cm-change-grid">${record.candidateCustomerIds.slice(0, 4).map(customerId => {
+    const customer = state.customers.find(row => row.customerId === customerId);
+    if (!customer) return '';
+    const evidence = (record.candidateEvidence || []).find(row => row.customerId === customerId);
+    const reasons = (evidence?.reasons || []).map(reason => EVIDENCE_LABELS[reason] || reason).join(' · ');
+    return `<label><span>${escapeHtml(customer.customerName)}</span><small>${escapeHtml([customer.businessNumber, customer.phone || customer.mobile, reasons].filter(Boolean).join(' · '))}</small></label>`;
+  }).join('')}</div>`;
 }
 
 function importFieldMarkup(record, customer) {
   if (importEffectiveStatus(record) !== CUSTOMER_IMPORT_STATUS.CHANGED) return '';
   return `<div class="cm-change-grid">${(record.changedFields || []).map(field => {
     const decision = record.fieldDecisions?.[field] || '';
-    return `<label><span>${escapeHtml(IMPORT_FIELD_LABELS[field] || field)}</span><small>기존 ${escapeHtml(customer?.[field] || '-')} · 파일 ${escapeHtml(record.incoming?.[field] || '-')}</small><select data-field-decision="${record.sourceRecordId}" data-field="${field}"><option value="">선택</option><option value="USE_FILE" ${decision === 'USE_FILE' ? 'selected' : ''}>파일값 사용</option><option value="KEEP_EXISTING" ${decision === 'KEEP_EXISTING' ? 'selected' : ''}>기존값 유지</option></select></label>`;
+    return `<label><span>${escapeHtml(IMPORT_FIELD_LABELS[field] || field)}</span><small>기존 ${escapeHtml(customer?.[field] || '-')} · 파일 ${escapeHtml(record.incoming?.[field] || '-')}</small><select data-field-decision="${escapeHtml(record.sourceRecordId)}" data-field="${escapeHtml(field)}"><option value="">선택</option><option value="USE_FILE" ${decision === 'USE_FILE' ? 'selected' : ''}>파일값 사용</option><option value="KEEP_EXISTING" ${decision === 'KEEP_EXISTING' ? 'selected' : ''}>기존값 유지</option></select></label>`;
   }).join('')}</div>`;
 }
 
@@ -181,62 +209,70 @@ function importRecordMarkup(record) {
   const incoming = record.incoming || {};
   const effectiveStatus = importEffectiveStatus(record);
   const customer = state.customers.find(candidate => candidate.customerId === record.selectedCustomerId);
-  const needsDecision = [CUSTOMER_IMPORT_STATUS.CHANGED, CUSTOMER_IMPORT_STATUS.REVIEW_REQUIRED, CUSTOMER_IMPORT_STATUS.FAILED].includes(record.status);
+  const recommendedId = record.candidateCustomerIds?.[0] || '';
+  const recommended = state.customers.find(candidate => candidate.customerId === recommendedId);
+  const needsDecision = ISSUE_STATUSES.has(record.status);
   let actions = '';
   if (effectiveStatus === CUSTOMER_IMPORT_STATUS.CHANGED) {
     actions = `<button class="cm-button mini" data-decide-all="${record.sourceRecordId}" data-choice="USE_FILE">파일값 모두</button><button class="cm-button mini" data-decide-all="${record.sourceRecordId}" data-choice="KEEP_EXISTING">기존값 모두</button>`;
-  } else if ([CUSTOMER_IMPORT_STATUS.REVIEW_REQUIRED, CUSTOMER_IMPORT_STATUS.FAILED].includes(record.status)) {
-    actions = `<button class="cm-button mini" data-resolve="${record.sourceRecordId}">찾기</button>${incoming.customerName ? `<button class="cm-button mini" data-mark-new="${record.sourceRecordId}">신규로 적용</button>` : ''}<button class="cm-button mini" data-exclude="${record.sourceRecordId}">제외</button>`;
-  } else if (record.status === CUSTOMER_IMPORT_STATUS.NEW) {
-    actions = '<span class="cm-plan-note">Master 적용 시 생성</span>';
+  } else if (effectiveStatus === CUSTOMER_IMPORT_STATUS.REVIEW_REQUIRED) {
+    actions = `${recommended ? `<button class="cm-button mini" data-recommend="${record.sourceRecordId}" data-customer-id="${recommended.customerId}">${escapeHtml(recommended.customerName)} 연결</button>` : ''}<button class="cm-button mini" data-resolve="${record.sourceRecordId}">다른 거래처 찾기</button>${incoming.customerName ? `<button class="cm-button mini" data-mark-new="${record.sourceRecordId}">신규등록</button>` : ''}<button class="cm-button mini" data-exclude="${record.sourceRecordId}">제외</button>`;
+  } else if (effectiveStatus === CUSTOMER_IMPORT_STATUS.NEW) {
+    actions = record.newDraftConfirmed
+      ? '<span class="cm-plan-note">Master 적용 시 신규 생성</span>'
+      : `<button class="cm-button mini" data-mark-new="${record.sourceRecordId}">신규등록</button><button class="cm-button mini" data-resolve="${record.sourceRecordId}">기존 거래처 찾기</button><button class="cm-button mini" data-exclude="${record.sourceRecordId}">제외</button>`;
   } else if (record.status === CUSTOMER_IMPORT_STATUS.SAME) {
-    actions = `<span class="cm-plan-note">${escapeHtml(customer?.customerName || '기존 거래처 연결')}</span>`;
+    actions = `<span class="cm-plan-note">${escapeHtml(customer?.customerName || '대표 거래처 연결')}</span>`;
   }
-  return `<article class="cm-review-row" data-status="${record.status}">
+  return `<article class="cm-review-row" data-status="${escapeHtml(record.status)}">
     <span class="cm-badge ${needsDecision ? 'warn' : ''}">${importStatusLabel(record.status)}</span>
-    <div class="cm-review-identity"><strong>${escapeHtml(incoming.customerName || '(거래처명 없음)')}</strong><small>코드 ${escapeHtml(incoming.customerCode || '-')} · 행 ${record.rowNo}</small></div>
-    <div class="cm-review-contact"><strong>${escapeHtml(incoming.phone || incoming.mobile || '-')}</strong><small>${escapeHtml([incoming.address, incoming.addressDetail].filter(Boolean).join(' ') || '-')}</small></div>
+    <div class="cm-review-identity"><strong>${escapeHtml(record.sourceCustomerName || '(거래처명 없음)')}</strong><small>${sourceCodeLabel()} ${escapeHtml(record.sourceCustomerCode || '-')} · 행 ${record.rowNo}</small></div>
+    <div class="cm-review-contact"><strong>${escapeHtml(incoming.phone || incoming.mobile || '-')}</strong><small>${escapeHtml(record.sourceAddress || '-')}</small></div>
     <div class="cm-review-actions">${actions}</div>
+    ${record.validationError ? `<p class="cm-import-error">${escapeHtml(record.validationError)}</p>` : ''}
     ${record.errorMessage ? `<p class="cm-import-error">${escapeHtml(record.errorMessage)}</p>` : ''}
+    ${effectiveStatus === CUSTOMER_IMPORT_STATUS.REVIEW_REQUIRED ? candidateMarkup(record) : ''}
     ${importFieldMarkup(record, customer)}
   </article>`;
 }
 
-function renderImport() {
-  const counts = state.importRecords.reduce((map, row) => ({ ...map, [row.status]: (map[row.status] || 0) + 1 }), {});
-  const statusOrder = [CUSTOMER_IMPORT_STATUS.SAME, CUSTOMER_IMPORT_STATUS.CHANGED, CUSTOMER_IMPORT_STATUS.REVIEW_REQUIRED, CUSTOMER_IMPORT_STATUS.NEW, CUSTOMER_IMPORT_STATUS.APPLIED, CUSTOMER_IMPORT_STATUS.FAILED, CUSTOMER_IMPORT_STATUS.EXCLUDED];
-  elements.importSummary.innerHTML = `<span>전체 ${state.importRecords.length.toLocaleString()}</span>${statusOrder.filter(status => counts[status]).map(status => `<span>${importStatusLabel(status)} ${counts[status].toLocaleString()}</span>`).join('')}`;
-  elements.importFileTitle.textContent = `${state.importBatch?.fileName || 'Excel'} 분석 ${state.importBatch?.status === 'PARTIAL' ? '부분적용' : '완료'}`;
-  const unresolved = state.importRecords.filter(record => !canApplyCustomerImport([record])).length;
-  elements.importGate.textContent = unresolved ? `확인할 거래처 ${unresolved.toLocaleString()}건을 해결하면 Master에 적용할 수 있습니다.` : `모든 결정이 완료되었습니다. ${state.importRecords.length.toLocaleString()}건을 적용할 수 있습니다.`;
-  const visibleRecords = importVisibleRecords();
-  const renderedRecords = visibleRecords.slice(0, state.importLimit);
-  elements.importReview.innerHTML = renderedRecords.map(importRecordMarkup).join('') || '<div class="cm-import-empty">현재 조건에 맞는 거래처가 없습니다.</div>';
-  if (visibleRecords.length > renderedRecords.length) elements.importReview.insertAdjacentHTML('beforeend', `<button class="cm-load-more" type="button" data-load-more>다음 ${Math.min(200, visibleRecords.length - renderedRecords.length).toLocaleString()}건 보기 · 전체 ${visibleRecords.length.toLocaleString()}건</button>`);
-  elements.applyImport.disabled = !state.importRecords.length || !canApplyCustomerImport(state.importRecords);
+async function chooseCustomer(record, customer) {
+  if (!customer) return;
+  const changedFields = changedFieldsFor(record, customer);
+  const updated = await setCustomerSourceImportDecision(record.sourceRecordId, {
+    status: changedFields.length ? CUSTOMER_IMPORT_STATUS.CHANGED : CUSTOMER_IMPORT_STATUS.SAME,
+    retryStatus: '', selectedCustomerId: customer.customerId,
+    matchMethod: CUSTOMER_SOURCE_MATCH_METHOD.ADMIN_SELECTED,
+    changedFields, fieldDecisions: changedFields.length ? null : {},
+    newDraftConfirmed: false, validationError: '', errorMessage: ''
+  });
+  Object.assign(record, updated);
+  renderImport();
+}
+
+function bindImportActions() {
+  elements.importReview.querySelectorAll('[data-recommend]').forEach(button => button.addEventListener('click', async () => {
+    const record = state.importRecords.find(row => row.sourceRecordId === button.dataset.recommend);
+    await chooseCustomer(record, state.customers.find(row => row.customerId === button.dataset.customerId));
+  }));
   elements.importReview.querySelectorAll('[data-resolve]').forEach(button => button.addEventListener('click', async () => {
     const record = state.importRecords.find(row => row.sourceRecordId === button.dataset.resolve);
-    const customer = await openCustomerPicker({ initialName: record.incoming.customerName, source: 'IMPORT_REVIEW', allowQuickCreate: false });
-    if (!customer) return;
-    const changedFields = Object.keys(record.incoming).filter(field => record.incoming[field] && String(record.incoming[field]) !== String(customer[field] || ''));
-    const updated = await setCustomerImportDecision(record.sourceRecordId, {
-      status: changedFields.length ? CUSTOMER_IMPORT_STATUS.CHANGED : CUSTOMER_IMPORT_STATUS.SAME,
-      selectedCustomerId: customer.customerId,
-      changedFields,
-      fieldDecisions: changedFields.length ? null : {}
-    });
-    Object.assign(record, updated);
-    renderImport();
+    const customer = await openCustomerPicker({ initialName: record.sourceCustomerName, source: `${record.sourceSystem}_IMPORT_REVIEW`, allowQuickCreate: false });
+    if (customer) await chooseCustomer(record, customer);
   }));
   elements.importReview.querySelectorAll('[data-mark-new]').forEach(button => button.addEventListener('click', async () => {
     const record = state.importRecords.find(row => row.sourceRecordId === button.dataset.markNew);
-    const updated = await setCustomerImportDecision(record.sourceRecordId, { status: CUSTOMER_IMPORT_STATUS.NEW, retryStatus: '', selectedCustomerId: '', candidateCustomerIds: [], changedFields: [], fieldDecisions: {}, errorMessage: '' });
+    const updated = await setCustomerSourceImportDecision(record.sourceRecordId, {
+      status: CUSTOMER_IMPORT_STATUS.NEW, retryStatus: '', selectedCustomerId: '',
+      matchMethod: CUSTOMER_SOURCE_MATCH_METHOD.ADMIN_NEW, changedFields: [], fieldDecisions: {},
+      newDraftConfirmed: true, validationError: '', errorMessage: ''
+    });
     Object.assign(record, updated);
     renderImport();
   }));
   elements.importReview.querySelectorAll('[data-exclude]').forEach(button => button.addEventListener('click', async () => {
     const record = state.importRecords.find(row => row.sourceRecordId === button.dataset.exclude);
-    const updated = await setCustomerImportDecision(record.sourceRecordId, { status: CUSTOMER_IMPORT_STATUS.EXCLUDED, retryStatus: '', errorMessage: '' });
+    const updated = await setCustomerSourceImportDecision(record.sourceRecordId, { status: CUSTOMER_IMPORT_STATUS.EXCLUDED, retryStatus: '', errorMessage: '' });
     Object.assign(record, updated);
     renderImport();
   }));
@@ -245,79 +281,117 @@ function renderImport() {
     const fieldDecisions = { ...(record.fieldDecisions || {}) };
     if (select.value) fieldDecisions[select.dataset.field] = select.value;
     else delete fieldDecisions[select.dataset.field];
-    const updated = await setCustomerImportDecision(record.sourceRecordId, { fieldDecisions, errorMessage: '' });
-    Object.assign(record, updated);
+    Object.assign(record, await setCustomerSourceImportDecision(record.sourceRecordId, { fieldDecisions, errorMessage: '' }));
     renderImport();
   }));
   elements.importReview.querySelectorAll('[data-decide-all]').forEach(button => button.addEventListener('click', async () => {
     const record = state.importRecords.find(row => row.sourceRecordId === button.dataset.decideAll);
     const fieldDecisions = Object.fromEntries((record.changedFields || []).map(field => [field, button.dataset.choice]));
-    const updated = await setCustomerImportDecision(record.sourceRecordId, { fieldDecisions, errorMessage: '' });
-    Object.assign(record, updated);
+    Object.assign(record, await setCustomerSourceImportDecision(record.sourceRecordId, { fieldDecisions, errorMessage: '' }));
     renderImport();
   }));
   elements.importReview.querySelector('[data-load-more]')?.addEventListener('click', () => { state.importLimit += 200; renderImport(); });
 }
 
-async function readExcel(file) {
+function renderImport() {
+  const counts = state.importRecords.reduce((map, row) => ({ ...map, [row.status]: (map[row.status] || 0) + 1 }), {});
+  const statusOrder = [CUSTOMER_IMPORT_STATUS.SAME, CUSTOMER_IMPORT_STATUS.CHANGED, CUSTOMER_IMPORT_STATUS.REVIEW_REQUIRED, CUSTOMER_IMPORT_STATUS.NEW, CUSTOMER_IMPORT_STATUS.APPLIED, CUSTOMER_IMPORT_STATUS.FAILED, CUSTOMER_IMPORT_STATUS.EXCLUDED];
+  elements.importSummary.innerHTML = `<span>전체 ${state.importRecords.length.toLocaleString()}</span>${statusOrder.filter(status => counts[status]).map(status => `<span>${importStatusLabel(status)} ${counts[status].toLocaleString()}</span>`).join('')}`;
+  const sourceLabel = state.importBatch?.sourceSystem === CUSTOMER_SOURCE_SYSTEM.SHOP ? '쇼핑몰 회원' : 'ERP 거래처';
+  elements.importSourceLabel.textContent = `${sourceLabel} · Source Link Workbench`;
+  elements.importFileTitle.textContent = `${state.importBatch?.fileName || sourceLabel} 분석 ${state.importBatch?.status === 'PARTIAL' ? '부분적용' : '완료'}`;
+  const unresolved = state.importRecords.filter(record => !canApplyCustomerSourceImport([record])).length;
+  elements.importGate.textContent = unresolved ? `확인할 거래처 ${unresolved.toLocaleString()}건만 해결하면 Master에 적용할 수 있습니다.` : `모든 결정이 완료되었습니다. ${state.importRecords.length.toLocaleString()}건을 적용할 수 있습니다.`;
+  const visibleRecords = importVisibleRecords();
+  const renderedRecords = visibleRecords.slice(0, state.importLimit);
+  elements.importReview.innerHTML = renderedRecords.map(importRecordMarkup).join('') || '<div class="cm-import-empty">현재 조건에 맞는 거래처가 없습니다.</div>';
+  if (visibleRecords.length > renderedRecords.length) elements.importReview.insertAdjacentHTML('beforeend', `<button class="cm-load-more" type="button" data-load-more>다음 ${Math.min(200, visibleRecords.length - renderedRecords.length).toLocaleString()}건 보기 · 전체 ${visibleRecords.length.toLocaleString()}건</button>`);
+  elements.applyImport.disabled = !state.importRecords.length || !canApplyCustomerSourceImport(state.importRecords);
+  bindImportActions();
+}
+
+function findHeaderRow(matrix, sourceSystem) {
+  return matrix.findIndex(row => {
+    const headers = row.map(value => String(value).trim());
+    const hasName = headers.includes('거래처명') || headers.includes('이름(거래처명)');
+    if (sourceSystem === CUSTOMER_SOURCE_SYSTEM.SHOP) return hasName && headers.includes('아이디');
+    const hasCode = ['거래처코드', '코드', '사업자번호 (거래처코드)', '사업자번호(거래처코드)'].some(header => headers.includes(header));
+    return hasName && hasCode;
+  });
+}
+
+async function readExcel(file, sourceSystem) {
   if (!window.XLSX) throw new Error('Excel 모듈을 불러오지 못했습니다.');
   const workbook = window.XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: false });
   if (!workbook.SheetNames.length) throw new Error('Excel 시트를 찾을 수 없습니다.');
   const sheet = workbook.Sheets[workbook.SheetNames[0]];
   const matrix = window.XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false });
-  const headerRow = matrix.findIndex(row => row.some(value => String(value).trim() === '거래처명'));
-  if (headerRow < 0) throw new Error('거래처명 열을 찾을 수 없습니다. 거래처정보 Excel 양식을 확인해 주세요.');
+  const headerRow = findHeaderRow(matrix, sourceSystem);
+  if (headerRow < 0) throw new Error(sourceSystem === CUSTOMER_SOURCE_SYSTEM.SHOP ? '아이디와 이름(거래처명) 열을 찾을 수 없습니다.' : '거래처코드와 거래처명 열을 찾을 수 없습니다.');
   const rows = window.XLSX.utils.sheet_to_json(sheet, { range: headerRow, defval: '', raw: false });
   if (!rows.length) throw new Error('불러올 거래처 데이터가 없습니다.');
-  const prepared = await prepareCustomerImport(rows, { fileName: file.name, fileHash: await sha256(file) });
+  const prepared = await prepareCustomerSourceImport(rows, { sourceSystem, fileName: file.name, fileHash: await sha256(file) });
   state.importBatch = prepared.batch;
   state.importRecords = prepared.records;
   state.importLimit = 200;
+  state.importIssuesOnly = true;
+  elements.importIssuesOnly.checked = true;
   renderImport();
 }
 
-async function handleExcelSelection() {
-  const file = elements.file.files?.[0];
+async function handleExcelSelection(input, sourceSystem) {
+  const file = input.files?.[0];
   if (!file) return;
   state.importBatch = null;
   state.importRecords = [];
+  elements.importWorkbench.hidden = false;
   elements.applyImport.disabled = true;
-  elements.importSummary.innerHTML = `<span>${escapeHtml(file.name)} 분석 중...</span>`;
-  elements.importReview.innerHTML = '<div class="cm-review-row"><strong>거래처 정보를 읽고 있습니다.</strong></div>';
+  elements.importSourceLabel.textContent = sourceSystem === CUSTOMER_SOURCE_SYSTEM.SHOP ? '쇼핑몰 회원 · 분석 중' : 'ERP 거래처 · 분석 중';
+  elements.importFileTitle.textContent = `${file.name} 분석 중...`;
+  elements.importSummary.innerHTML = `<span>${escapeHtml(file.name)} 읽는 중...</span>`;
+  elements.importReview.innerHTML = '<div class="cm-review-row"><strong>대표 거래처를 찾고 있습니다.</strong></div>';
+  elements.importGate.textContent = '기존 Source Link와 사업자번호를 확인하고 있습니다.';
+  elements.importWorkbench.scrollIntoView({ behavior: 'smooth', block: 'start' });
   try {
-    await readExcel(file);
+    await readExcel(file, sourceSystem);
   } catch (error) {
-    console.error('Customer Excel import failed', error);
+    console.error('Customer source import failed', error);
     elements.importSummary.innerHTML = `<span>불러오기 실패 · ${escapeHtml(file.name)}</span>`;
     elements.importReview.innerHTML = `<div class="cm-review-row"><strong>${escapeHtml(error.message || String(error))}</strong></div>`;
+    elements.importGate.textContent = '파일 형식과 헤더를 확인해 주세요.';
   } finally {
-    elements.file.value = '';
+    input.value = '';
   }
+}
+
+function openFilePicker(input) {
+  input.value = '';
+  input.click();
 }
 
 elements.viewport.addEventListener('scroll', renderWindow, { passive: true });
 elements.search.addEventListener('input', applyFilter);
 elements.filter.addEventListener('change', applyFilter);
-elements.form.querySelectorAll('[data-close-customer-editor]').forEach(button => {
-  button.addEventListener('click', () => elements.editor.close());
-});
+elements.form.querySelectorAll('[data-close-customer-editor]').forEach(button => button.addEventListener('click', () => elements.editor.close()));
 elements.form.addEventListener('submit', saveEditor);
 document.querySelector('#newCustomerButton').addEventListener('click', () => openEditor());
-document.querySelector('#openImportButton').addEventListener('click', () => { elements.importWorkbench.hidden = false; elements.importWorkbench.scrollIntoView({ behavior: 'smooth' }); });
+document.querySelector('#openErpImportButton').addEventListener('click', () => openFilePicker(elements.erpFile));
+document.querySelector('#openShopImportButton').addEventListener('click', () => openFilePicker(elements.shopFile));
 document.querySelector('#closeImportButton').addEventListener('click', () => { elements.importWorkbench.hidden = true; });
-elements.file.addEventListener('change', handleExcelSelection);
+elements.erpFile.addEventListener('change', () => handleExcelSelection(elements.erpFile, CUSTOMER_SOURCE_SYSTEM.ERP));
+elements.shopFile.addEventListener('change', () => handleExcelSelection(elements.shopFile, CUSTOMER_SOURCE_SYSTEM.SHOP));
 elements.importSearch.addEventListener('input', () => { state.importQuery = elements.importSearch.value.trim(); state.importLimit = 200; renderImport(); });
 elements.importIssuesOnly.addEventListener('change', () => { state.importIssuesOnly = elements.importIssuesOnly.checked; state.importLimit = 200; renderImport(); });
 elements.applyImport.addEventListener('click', async () => {
   elements.applyImport.disabled = true;
-  elements.importGate.textContent = 'Master에 적용하고 있습니다...';
+  elements.importGate.textContent = 'Master와 외부 거래처 연결을 적용하고 있습니다...';
   try {
-    const results = await applyCustomerImport(state.importBatch.importBatchId);
+    const results = await applyCustomerSourceImport(state.importBatch.importBatchId);
     results.forEach(result => {
       const record = state.importRecords.find(row => row.sourceRecordId === result.sourceRecordId);
-      if (!record || [CUSTOMER_IMPORT_STATUS.SAME, CUSTOMER_IMPORT_STATUS.EXCLUDED].includes(result.status)) return;
+      if (!record || result.status === CUSTOMER_IMPORT_STATUS.EXCLUDED) return;
       if (result.status === CUSTOMER_IMPORT_STATUS.FAILED) Object.assign(record, { status: result.status, retryStatus: result.retryStatus || record.retryStatus || record.status, errorMessage: result.error || '' });
-      else Object.assign(record, { status: result.status, retryStatus: '', appliedCustomerId: result.customerId || record.appliedCustomerId, errorMessage: '' });
+      else if (result.status === CUSTOMER_IMPORT_STATUS.APPLIED) Object.assign(record, { status: result.status, retryStatus: '', appliedCustomerId: result.customerId || record.appliedCustomerId, appliedSourceLinkId: result.linkId || record.appliedSourceLinkId, errorMessage: '' });
     });
     const failed = results.filter(result => result.status === CUSTOMER_IMPORT_STATUS.FAILED);
     state.importBatch.status = failed.length ? 'PARTIAL' : 'APPLIED';
@@ -325,6 +399,9 @@ elements.applyImport.addEventListener('click', async () => {
     elements.importIssuesOnly.checked = state.importIssuesOnly;
     renderImport();
     await reload();
+    pushPending().then(result => {
+      if (result?.errors) console.warn('Customer source cloud sync pending', result);
+    }).catch(error => console.warn('Customer source cloud sync deferred', error));
   } catch (error) {
     elements.importGate.textContent = `적용 실패: ${error.message || error}`;
     elements.applyImport.disabled = false;
@@ -334,7 +411,7 @@ elements.applyImport.addEventListener('click', async () => {
 async function initializeCustomerMaster() {
   await ensureCustomerMasterReady({ onLoading: message => { elements.empty.hidden = false; elements.empty.textContent = message; } });
   await reload();
-  const pending = await getLatestCustomerImportWork();
+  const pending = await getLatestCustomerSourceImportWork();
   if (!pending) return;
   state.importBatch = pending.batch;
   state.importRecords = pending.records;
@@ -342,4 +419,7 @@ async function initializeCustomerMaster() {
   renderImport();
 }
 
-initializeCustomerMaster().catch(error => { elements.empty.hidden = false; elements.empty.textContent = `거래처 정보를 불러오지 못했습니다: ${error.message}`; });
+initializeCustomerMaster().catch(error => {
+  elements.empty.hidden = false;
+  elements.empty.textContent = `거래처 정보를 불러오지 못했습니다: ${error.message}`;
+});
