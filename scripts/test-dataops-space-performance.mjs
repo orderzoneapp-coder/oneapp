@@ -103,9 +103,15 @@ assert.equal(JSON.stringify(simplify(indexedResult)), JSON.stringify({
 const previewStart = html.indexOf("const substitutionPreviewView = useMemo(() => {");
 const previewEnd = html.indexOf("const substitutionCandidateStatusCounts", previewStart);
 const previewSource = html.slice(previewStart, previewEnd);
-assert.match(previewSource, /const rowsByCode = DATAOPS_SUBSTITUTION_CANDIDATE_MODULE\.buildRowsByCode\(productData \|\| \[\]\)/);
-assert.match(previewSource, /selectRawLotsForExecution\(row, productData \|\| \[\], rowsByCode\)/);
+assert.match(previewSource, /const rowsByCode = DATAOPS_SUBSTITUTION_CANDIDATE_MODULE\.buildRowsByCode\(renderProductData \|\| \[\]\)/);
+assert.match(previewSource, /selectRawLotsForExecution\(row, renderProductData \|\| \[\], rowsByCode\)/);
 assert.doesNotMatch(previewSource, /const subItems = \(productData \|\| \[\]\)\.filter/);
+
+assert.match(html, /const renderProductData = useDeferredValue\(productData\)/);
+assert.match(html, /let sourceRows = renderProductData/);
+assert.match(html, /const productIndexByBatchKeyRef = useRef\(new Map\(\)\)/);
+assert.match(html, /const rowIndex = findProductIndex\(prevP, batchKey\)/);
+assert.match(html, /const rowIndex = findProductIndex\(prev, batchKey\)/);
 
 assert.match(html, /const handleOpenMemo = useCallback/);
 assert.doesNotMatch(html, /onOpenMemo: \(key, text\) =>/);

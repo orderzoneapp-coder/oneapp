@@ -35,8 +35,8 @@ const datedV112Version =
   "V1.a22.112_EvidenceReportPreflight · 2026-08-12 KST";
 const v112ConfigVersion = "V1.a22.112_EvidenceReportPreflight";
 const datedV113Version =
-  "V1.a22.114_AdminActionRecovery · 2026-08-16 KST";
-const v114ConfigVersion = "V1.a22.114_AdminActionRecovery";
+  "V1.a22.115_InputPerformance · 2026-08-21 KST";
+const v114ConfigVersion = "V1.a22.115_InputPerformance";
 const isCompatibleV110ThroughV113 =
   (source.split(datedV110Version).length - 1 === 3 &&
     new RegExp(`version:\\s*'${v110ConfigVersion}'`).test(source)) ||
