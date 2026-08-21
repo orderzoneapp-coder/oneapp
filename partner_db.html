@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="ko" translate="no">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="google" content="notranslate">
+  <title>거래처 DB | ONEAPP NEXES</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;600;800;900&family=Noto+Serif+KR:wght@700;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./orderq/customer-master.css?v=0.14.1">
+  <style>
+    :root { --nexus-ink: #0b1021; --nexus-panel: #151b2b; --nexus-accent: #6366f1; }
+    body.customer-master-page { background: #f1f5f9; }
+    .nexus-shell { min-height: 100vh; }
+    .nexus-header { position: sticky; top: 0; z-index: 50; color: #fff; background: var(--nexus-ink); box-shadow: 0 2px 10px rgba(15, 23, 42, .2); }
+    .nexus-header-main { min-height: 72px; padding: 0 24px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid rgba(148, 163, 184, .18); }
+    .nexus-brand { display: flex; align-items: center; gap: 16px; color: inherit; text-decoration: none; }
+    .nexus-brand strong { font-size: 24px; letter-spacing: .08em; }
+    .nexus-brand-product { padding-left: 16px; border-left: 2px solid #334155; display: flex; align-items: center; gap: 9px; }
+    .nexus-brand-product b { color: #818cf8; letter-spacing: .14em; }
+    .nexus-brand-product small { padding: 3px 6px; color: #34d399; border: 1px solid rgba(52, 211, 153, .35); border-radius: 5px; font-weight: 900; }
+    .nexus-groups { display: flex; align-items: center; gap: 8px; }
+    .nexus-groups span { padding: 10px 14px; border-radius: 10px; color: #94a3b8; font-size: 13px; font-weight: 800; }
+    .nexus-groups .active { color: #fff; background: var(--nexus-panel); }
+    .nexus-tabs { padding: 12px 24px 0; display: flex; gap: 4px; overflow-x: auto; }
+    .nexus-tabs a { padding: 11px 18px 12px; color: #94a3b8; border: 1px solid transparent; border-top: 3px solid transparent; border-radius: 12px 12px 0 0; font-size: 13px; font-weight: 800; text-decoration: none; white-space: nowrap; }
+    .nexus-tabs a:hover { color: #e2e8f0; }
+    .nexus-tabs a[aria-current="page"] { margin-bottom: -1px; color: #4f46e5; background: #f1f5f9; border-color: #cbd5e1; border-top-color: var(--nexus-accent); }
+    .partner-main { padding-top: 34px; }
+    .partner-main .cm-hero { align-items: end; }
+    .partner-main .cm-kicker { color: #4f46e5; }
+    .partner-main .cm-button.primary { background: #4f46e5; }
+    .partner-main .cm-button.primary:hover { background: #4338ca; }
+    @media (max-width: 820px) {
+      .nexus-header-main { min-height: 62px; padding: 0 14px; }
+      .nexus-groups { display: none; }
+      .nexus-tabs { padding-left: 10px; padding-right: 10px; }
+      .nexus-tabs a { padding-left: 13px; padding-right: 13px; }
+      .partner-main { padding-top: 22px; }
+    }
+  </style>
+</head>
+<body class="customer-master-page">
+  <div class="nexus-shell">
+    <header class="nexus-header">
+      <div class="nexus-header-main">
+        <a class="nexus-brand" href="./Dashboard.html">
+          <strong>ONEAPP</strong>
+          <span class="nexus-brand-product"><b>NEXES</b><small>v3.5</small></span>
+        </a>
+        <div class="nexus-groups" aria-label="업무 영역">
+          <span class="active">정보 관리</span>
+          <span>운영 관리</span>
+          <span>인사이트</span>
+        </div>
+      </div>
+      <nav class="nexus-tabs" aria-label="정보 관리">
+        <a href="./Master.html">마스터 DB</a>
+        <a href="./Item_manager.html">상품 관리</a>
+        <a href="./Pipeline.html">시세 관리</a>
+        <a href="./Parser.html">스마트 파서</a>
+        <a href="./partner_db.html" aria-current="page">거래처 DB</a>
+        <a href="./partners.html">거래처 관리</a>
+      </nav>
+    </header>
+
+    <main class="cm-main partner-main">
+      <section class="cm-hero">
+        <div>
+          <div class="cm-kicker">ENTITY REGISTRY</div>
+          <h1>거래처 DB</h1>
+          <p>ERP와 쇼핑몰 거래처를 NEXUS 대표 거래처 기준으로 연결합니다. 파일을 선택하면 분석과 저장이 자동으로 끝납니다.</p>
+        </div>
+        <div class="cm-actions">
+          <button class="cm-button" id="openErpImportButton" type="button">ERP 거래처 업로드</button>
+          <button class="cm-button" id="openShopImportButton" type="button">쇼핑몰 회원 업로드</button>
+          <button class="cm-button primary" id="newCustomerButton" type="button">+ 거래처 등록</button>
+          <input id="erpCustomerExcelFile" type="file" accept=".xlsx,.xls" hidden>
+          <input id="shopCustomerExcelFile" type="file" accept=".xlsx,.xls" hidden>
+        </div>
+      </section>
+
+      <section class="cm-panel cm-import" id="importWorkbench" hidden>
+        <div class="cm-import-head">
+          <div><h2 id="importSourceLabel">거래처 가져오기</h2><p class="cm-import-file" id="importFileTitle">거래처 파일 분석</p></div>
+          <button class="cm-button" id="closeImportButton" type="button">닫기</button>
+        </div>
+        <div class="cm-import-summary" id="importSummary"></div>
+        <div class="cm-import-toolbar"><input id="importSearch" type="search" placeholder="거래처명, 외부 코드, 전화, 주소 검색"></div>
+        <p class="cm-import-gate" id="importGate">ERP 거래처 또는 쇼핑몰 회원 파일을 선택하면 자동으로 대표 거래처를 찾습니다.</p>
+        <div class="cm-review-list" id="importReview"></div>
+        <div class="cm-actions cm-import-actions"><button class="cm-button dark" id="applyImportButton" disabled>Master 적용</button></div>
+      </section>
+
+      <section class="cm-dashboard" aria-label="거래처 요약">
+        <article class="cm-stat"><small>전체 거래처</small><strong id="totalCount">0</strong></article>
+        <article class="cm-stat"><small>사용중</small><strong id="activeCount">0</strong></article>
+        <article class="cm-stat"><small>정보 보완</small><strong id="unverifiedCount">0</strong></article>
+        <article class="cm-stat"><small>중복 확인</small><strong id="duplicateCount">0</strong></article>
+      </section>
+
+      <section class="cm-panel">
+        <div class="cm-toolbar">
+          <input class="cm-search" id="customerSearch" type="search" placeholder="거래처명, 코드, 전화, 주소 검색">
+          <select class="cm-filter" id="customerFilter" aria-label="거래처 상태 필터">
+            <option value="ALL">전체</option>
+            <option value="ACTIVE">사용중</option>
+            <option value="INACTIVE">거래중단</option>
+            <option value="UNVERIFIED">정보 보완</option>
+            <option value="DUPLICATE_CANDIDATE">중복 확인</option>
+          </select>
+        </div>
+        <div class="cm-list-head"><span>코드</span><span>거래처명</span><span>연락처 / 주소</span><span>그룹</span><span>상태</span></div>
+        <div class="cm-viewport" id="customerViewport"><div class="cm-spacer" id="customerSpacer"></div></div>
+        <div class="cm-empty" id="customerEmpty" hidden>조건에 맞는 거래처가 없습니다.</div>
+      </section>
+    </main>
+  </div>
+
+  <dialog class="cm-modal" id="customerEditor">
+    <form method="dialog" class="cm-form" id="customerForm">
+      <header><div><small>Customer Editor</small><h2 id="editorTitle">거래처 등록</h2></div><button type="button" data-close-customer-editor aria-label="닫기">×</button></header>
+      <input type="hidden" name="customerId">
+      <input type="hidden" name="revision">
+      <div class="cm-form-grid">
+        <label>거래처명 *<input name="customerName" required></label>
+        <label>거래처코드<input name="customerCode"></label>
+        <label>대표자<input name="representativeName"></label>
+        <label>사업자번호<input name="businessNumber"></label>
+        <label>전화<input name="phone"></label>
+        <label>핸드폰<input name="mobile"></label>
+        <label>담당자<input name="contactName"></label>
+        <label>담당자 연락처<input name="contactPhone"></label>
+        <label>그룹<input name="groupName"></label>
+        <label>단가그룹<input name="priceGroup"></label>
+        <label>상태<select name="status"><option value="ACTIVE">사용중</option><option value="INACTIVE">거래중단</option></select></label>
+        <label>주소<input name="address"></label>
+      </div>
+      <div class="cm-form-actions"><button class="cm-button" type="button" data-close-customer-editor>취소</button><button class="cm-button primary" id="saveCustomerButton" type="submit">저장</button></div>
+    </form>
+  </dialog>
+
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script type="module" src="./orderq/customer-master-ui.js?v=0.14.4"></script>
+</body>
+</html>

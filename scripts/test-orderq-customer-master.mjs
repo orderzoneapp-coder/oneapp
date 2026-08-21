@@ -16,7 +16,7 @@ const [
   read('orderq/customer-source-import.js'),
   read('orderq/customer-picker.js'),
   read('orderq/customer-master-ui.js'),
-  read('orderq/customers.html'),
+  read('partner_db.html'),
   read('orderq/customer-master.css'),
   read('orderq/intake-engine.js'),
   read('orderq/intake-workbench.js'),
@@ -72,7 +72,7 @@ assert.match(ui, /data-field-decision/, 'Changed rows must expose field-level fi
 assert.match(ui, /getLatestCustomerSourceImportWork/, 'Pending Excel work must resume after reload');
 assert.match(ui, /importStatusFilter: 'ISSUES'/, 'Workbench must default to unresolved customer rows');
 assert.match(html, /erpCustomerExcelFile/);
-assert.match(html, /거래처 Master/);
+assert.match(html, /거래처 DB/);
 assert.match(html, /customer-master-ui\.js\?v=0\.14\.4/, 'Customer Master entry module must invalidate the deployed cache');
 assert.match(html, /customer-master\.css\?v=0\.14\.1/, 'Customer Master Workbench styles must invalidate the deployed cache');
 assert.match(ui, /customer-master\.js\?v=0\.14\.0/, 'Customer Master Workbench service must invalidate the deployed cache');
