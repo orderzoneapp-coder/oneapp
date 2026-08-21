@@ -13,7 +13,7 @@ import {
   getLatestCustomerSourceImportWork,
   prepareCustomerSourceImport,
   setCustomerSourceImportDecision
-} from './customer-source-import.js?v=0.14.3';
+} from './customer-source-import.js?v=0.14.4';
 import { openCustomerPicker } from './customer-picker.js?v=0.12.1';
 import { pushPending } from './orderq-sync-engine.js?v=0.14.0';
 
@@ -318,13 +318,48 @@ function renderImport() {
   elements.importWorkbench.dataset.phase = 'READY';
   elements.importSourceLabel.textContent = `${sourceLabel} 가져오기`;
   elements.importFileTitle.textContent = `${state.importBatch?.fileName || sourceLabel} · ${state.importRecords.length.toLocaleString()}건 분석 ${state.importBatch?.status === 'PARTIAL' ? '부분적용' : '완료'}`;
-  elements.importGate.textContent = unresolved ? `${unresolved.toLocaleString()}건 확인 필요` : `적용 준비 완료 · ${state.importRecords.length.toLocaleString()}건`;
+  elements.importGate.textContent = unresolved
+    ? `분석 결과 ${state.importRecords.length.toLocaleString()}건 저장 완료 · ${unresolved.toLocaleString()}건 확인 필요`
+    : `분석 결과 ${state.importRecords.length.toLocaleString()}건 저장 완료 · 적용 준비 완료`;
   const visibleRecords = importVisibleRecords();
   const renderedRecords = visibleRecords.slice(0, state.importLimit);
   elements.importReview.innerHTML = renderedRecords.map(importRecordMarkup).join('') || '<div class="cm-import-empty">현재 조건에 맞는 거래처가 없습니다.</div>';
   if (visibleRecords.length > renderedRecords.length) elements.importReview.insertAdjacentHTML('beforeend', `<button class="cm-load-more" type="button" data-load-more>다음 ${Math.min(200, visibleRecords.length - renderedRecords.length).toLocaleString()}건 보기 · 전체 ${visibleRecords.length.toLocaleString()}건</button>`);
   elements.applyImport.disabled = !state.importRecords.length || !canApplyCustomerSourceImport(state.importRecords);
   bindImportActions();
+}
+
+function bindImportRetry(sourceSystem) {
+  elements.importSummary.querySelector('[data-retry-import]')?.addEventListener('click', () => {
+    openFilePicker(sourceSystem === CUSTOMER_SOURCE_SYSTEM.SHOP ? elements.shopFile : elements.erpFile);
+  });
+}
+
+function renderImportFailure(error, fileName, sourceSystem) {
+  const processed = Number(error?.processedCount || 0);
+  const total = Number(error?.totalCount || 0);
+  const progress = total ? `${processed.toLocaleString()} / ${total.toLocaleString()} 처리 후 실패` : '분석 실패';
+  elements.importWorkbench.dataset.phase = 'ERROR';
+  elements.importSourceLabel.textContent = sourceSystem === CUSTOMER_SOURCE_SYSTEM.SHOP ? '쇼핑몰 회원 가져오기' : 'ERP 거래처 가져오기';
+  elements.importFileTitle.textContent = fileName || '거래처 파일';
+  elements.importSummary.innerHTML = `<div class="cm-progress-copy"><strong>${progress}</strong><button class="cm-button mini" type="button" data-retry-import>다시 시도</button></div>`;
+  elements.importReview.innerHTML = '';
+  elements.importGate.textContent = `IndexedDB 오류: ${error?.message || error}`;
+  bindImportRetry(sourceSystem);
+}
+
+function renderPreparingImport(batch, records) {
+  const processed = Number(batch.processedCount || records.length || 0);
+  const total = Number(batch.rowCount || 0);
+  const percent = total ? Math.round((processed / total) * 100) : 0;
+  elements.importWorkbench.hidden = false;
+  elements.importWorkbench.dataset.phase = 'ERROR';
+  elements.importSourceLabel.textContent = batch.sourceSystem === CUSTOMER_SOURCE_SYSTEM.SHOP ? '쇼핑몰 회원 가져오기' : 'ERP 거래처 가져오기';
+  elements.importFileTitle.textContent = batch.fileName || '거래처 파일';
+  elements.importSummary.innerHTML = `<div class="cm-progress-copy"><strong>${processed.toLocaleString()} / ${total.toLocaleString()} 저장됨 · ${percent}%</strong><button class="cm-button mini" type="button" data-retry-import>같은 파일로 계속</button></div><div class="cm-progress-track"><span style="width:${percent}%"></span></div>`;
+  elements.importReview.innerHTML = '';
+  elements.importGate.textContent = batch.lastError ? `이전 오류: ${batch.lastError}` : '동일 파일을 다시 선택하면 저장된 다음 행부터 계속합니다.';
+  bindImportRetry(batch.sourceSystem);
 }
 
 function findHeaderRow(matrix, sourceSystem) {
@@ -349,15 +384,22 @@ async function readExcel(file, sourceSystem) {
   if (!rows.length) throw new Error('불러올 거래처 데이터가 없습니다.');
   elements.importSummary.innerHTML = '<div class="cm-progress-copy"><strong>Excel 읽기 완료</strong><span>거래처 비교를 시작합니다.</span></div><div class="cm-progress-track"><span style="width:0%"></span></div>';
   elements.importGate.textContent = '기존 거래처와 비교하고 있습니다.';
-  const prepared = await prepareCustomerSourceImport(rows, {
-    sourceSystem,
-    fileName: file.name,
-    fileHash: await sha256(file),
-    onProgress: ({ processed, total }) => {
-      const percent = total ? Math.round((processed / total) * 100) : 0;
-      elements.importSummary.innerHTML = `<div class="cm-progress-copy"><strong>거래처 비교 중 ${processed.toLocaleString()} / ${total.toLocaleString()}</strong><span>${percent}%</span></div><div class="cm-progress-track"><span style="width:${percent}%"></span></div>`;
-    }
-  });
+  let prepared;
+  try {
+    prepared = await prepareCustomerSourceImport(rows, {
+      sourceSystem,
+      fileName: file.name,
+      fileHash: await sha256(file),
+      onProgress: ({ processed, total }) => {
+        const percent = total ? Math.round((processed / total) * 100) : 0;
+        elements.importSummary.innerHTML = `<div class="cm-progress-copy"><strong>분석·저장 중 ${processed.toLocaleString()} / ${total.toLocaleString()}</strong><span>${percent}%</span></div><div class="cm-progress-track"><span style="width:${percent}%"></span></div>`;
+        elements.importGate.textContent = `${processed.toLocaleString()}건 저장 완료`;
+      }
+    });
+  } catch (error) {
+    if (!error.totalCount) error.totalCount = rows.length;
+    throw error;
+  }
   state.importBatch = prepared.batch;
   state.importRecords = prepared.records;
   state.importLimit = 200;
@@ -385,10 +427,7 @@ async function handleExcelSelection(input, sourceSystem) {
     await readExcel(file, sourceSystem);
   } catch (error) {
     console.error('Customer source import failed', error);
-    elements.importWorkbench.dataset.phase = 'ERROR';
-    elements.importSummary.innerHTML = `<span>불러오기 실패 · ${escapeHtml(file.name)}</span>`;
-    elements.importReview.innerHTML = `<div class="cm-review-row"><strong>${escapeHtml(error.message || String(error))}</strong></div>`;
-    elements.importGate.textContent = '파일 형식과 헤더를 확인해 주세요.';
+    renderImportFailure(error, file.name, sourceSystem);
   } finally {
     input.value = '';
   }
@@ -444,6 +483,10 @@ async function initializeCustomerMaster() {
   state.importBatch = pending.batch;
   state.importRecords = pending.records;
   elements.importWorkbench.hidden = false;
+  if (pending.batch.status === 'PREPARING') {
+    renderPreparingImport(pending.batch, pending.records);
+    return;
+  }
   renderImport();
 }
 
