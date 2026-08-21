@@ -86,8 +86,9 @@ for (const [name, appId] of nexusApps) {
 
 const nexusConfig = read("nexus/common/apps-config.js");
 const defaultOrder = [...nexusConfig.matchAll(/id:'([^']+)'/g)].map((match) => match[1]);
-assert.deepEqual(defaultOrder, ["orderq", "dataops", "merchops", "orderin", "master"], "NEXUS TOP must retain the current operating order");
-assert.match(nexusConfig, /name:'검증·정산'/);
-assert.match(nexusConfig, /name:'주문입력'/);
+assert.deepEqual(defaultOrder, ["orderq", "dataops", "merchops", "master"], "NEXUS TOP must expose only the four parent applications in operating order");
+assert.match(nexusConfig, /name:'재고관리'/);
+assert.doesNotMatch(nexusConfig, /id:'orderin'|name:'주문입력'|SmartParser\.html/, "SmartParser must not appear as a parent NEXUS TOP application");
+assert.match(read("nexus/common/nexus-top.js"), /declared==='orderin'\?'merchops':declared/, "SmartParser must activate its parent MerchOps menu");
 
 console.log("NEXES application routing tests passed.");
