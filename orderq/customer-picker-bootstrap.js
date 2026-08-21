@@ -28,10 +28,10 @@ function addPickerButton(input) {
 }
 
 function addMasterLauncher() {
-  if (location.pathname.endsWith('/customers.html') || document.querySelector('.customer-master-launcher')) return;
+  if (location.pathname.endsWith('/partner_db.html') || document.querySelector('.customer-master-launcher')) return;
   const launcher = document.createElement('a');
   launcher.className = 'customer-master-launcher';
-  launcher.href = './customers.html';
+  launcher.href = '../partner_db.html';
   launcher.textContent = '거래처 Master';
   launcher.title = '거래처 Master 열기';
   document.body.append(launcher);
