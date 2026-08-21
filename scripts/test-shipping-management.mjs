@@ -16,7 +16,7 @@ assert.doesNotMatch(orderOpsHtml, /tokens truncated|…\d+ tokens truncated…/,
   "the public OrderOps mirror must not contain a truncated source fragment");
 assert.match(orderOpsHtml, /<body>[\s\S]*<\/body>\s*<\/html>/,
   "the public OrderOps mirror must remain a complete HTML document");
-assert.match(orderOpsHtml, /brand-badge">v1\.61</, "ORDER Q visible version must be v1.61");
+assert.match(orderOpsHtml, /brand-badge">v1\.62</, "ORDER Q visible version must be v1.62");
 assert.match(orderOpsHtml, /<title>ONEAPP ORDER Q · 출고관리<\/title>/,
   "the public page title must establish ORDER Q as shipment management");
 assert.match(orderOpsHtml, /aria-label="ONEAPP ORDER Q 출고관리"/,
@@ -25,7 +25,7 @@ assert.match(orderOpsHtml, /class="brand-logo" src="assets\/order-q-logo\.png"/,
   "the public header must use the approved ORDER Q logo asset");
 assert.match(orderOpsHtml, /\.brand-logo-frame\s*\{[\s\S]*?width:\s*120px;[\s\S]*?height:\s*20px;/,
   "the public ORDER Q logo must match the ONEAPP wordmark height");
-assert.match(orderOpsHtml, /ORDER Q v1\.61 · 출고관리/,
+assert.match(orderOpsHtml, /ORDER Q v1\.62 · 출고관리/,
   "the public footer must use the ORDER Q product concept");
 assert.doesNotMatch(
   orderOpsHtml.slice(orderOpsHtml.indexOf('<header class="global-header">'), orderOpsHtml.indexOf('</header>')),
@@ -226,6 +226,13 @@ const publicHeaderSource = orderOpsHtml.slice(
   orderOpsHtml.indexOf('<header class="global-header">'),
   orderOpsHtml.indexOf('</header>'),
 );
+assert.match(publicHeaderSource,
+  /class="master-brand-link" href="Master\.html"[^>]*aria-label="ONEAPP NEXES 마스터 DB로 이동"/,
+  "the public ONEAPP NEXES lockup must open Master.html by touch or click");
+for (const masterBrandText of ["NEXES", "v3.5", "GOLDEN RECORD"]) {
+  assert.ok(publicHeaderSource.includes(masterBrandText),
+    `the public master lockup is missing: ${masterBrandText}`);
+}
 assert.ok(publicHeaderSource.indexOf('id="smartInputButton"') < publicHeaderSource.indexOf('id="printButton"'),
   "Smart input F4 must sit immediately before screen print in the global header");
 assert.match(publicHeaderSource, /id="smartInputButton" href="orderops\/input\.html"/,
@@ -1883,7 +1890,7 @@ const html = fs.readFileSync(path.join(ROOT, "orderops", "list.html"), "utf8");
 const inlineScriptMatch = html.match(/<script>\s*([\s\S]*?)<\/script>\s*<\/body>/);
 assert.ok(inlineScriptMatch, "canonical ORDER Q inline application script must exist");
 new vm.Script(inlineScriptMatch[1], { filename: "orderops/list.html:inline" });
-assert.match(html, /brand-badge">v1\.61</, "canonical ORDER Q visible version must be v1.61");
+assert.match(html, /brand-badge">v1\.62</, "canonical ORDER Q visible version must be v1.62");
 assert.match(html, /class="brand-logo" src="\.\.\/assets\/order-q-logo\.png"/,
   "the canonical header must use the shared ORDER Q logo asset");
 assert.match(html, /<h2 id="settingsModalTitle">ORDER Q 환경설정<\/h2>/,
@@ -2056,6 +2063,9 @@ assert.ok(canonicalViewControls.indexOf('id="shortageFocusButton"') < canonicalV
   "the canonical saved-layout group must sit immediately after shortage focus and before the remaining tools");
 assert.match(html, /id="smartInputButton" href="input\.html"/,
   "canonical orderops route must retain its directory-relative manual-order link");
+assert.match(html,
+  /class="master-brand-link" href="\.\.\/Master\.html"[^>]*aria-label="ONEAPP NEXES 마스터 DB로 이동"/,
+  "the canonical ONEAPP NEXES lockup must resolve to the root Master.html page");
 assert.ok(canonicalViewControls.indexOf('id="columnWidthResetButton"') < canonicalViewControls.indexOf('id="warehouseFilterToggle"'),
   "canonical filter buttons must remain at the right edge after the column tools");
 assert.match(combinedCss, /body\s*\{[^}]*font-size:\s*14px;/,
