@@ -22,7 +22,7 @@ button, a { -webkit-tap-highlight-color: transparent; }
   inset: 0 0 auto;
   height: var(--header-h);
   display: grid;
-  grid-template-columns: minmax(205px, 1fr) auto minmax(205px, 1fr);
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: stretch;
   background: var(--navy);
   color: var(--text);
@@ -47,19 +47,19 @@ button, a { -webkit-tap-highlight-color: transparent; }
   object-fit: contain;
 }
 
-.app-nav { min-width: 0; height: 100%; }
+.app-nav { min-width: 0; height: 100%; padding-left: 40px; overflow: hidden; }
 .app-nav-track { height: 100%; display: flex; align-items: stretch; }
 .app-tab {
   position: relative;
   min-width: max-content;
   height: 100%;
   border: 0;
-  padding: 0 15px;
+  padding: 0 18px;
   color: var(--muted);
   background: transparent;
   cursor: pointer;
-  font-size: 13px;
-  font-weight: 560;
+  font-size: 14px;
+  font-weight: 600;
   display: inline-flex;
   align-items: center;
   text-decoration: none;
@@ -155,7 +155,7 @@ body.compact .app-tab { padding-inline: 10px; }
 @media (max-width: 900px) {
   .nexus-header { grid-template-columns: auto minmax(0, 1fr) auto; }
   .brand { padding-inline: 10px; }
-  .app-nav { overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain; }
+  .app-nav { padding-left: 18px; overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain; }
   .app-nav::-webkit-scrollbar { display: none; }
   .app-nav-track { width: max-content; }
   .header-actions { padding-right: 2px; }
@@ -166,7 +166,8 @@ body.compact .app-tab { padding-inline: 10px; }
 
 @media (max-width: 560px) {
   .brand { gap: 6px; padding-inline: 10px; }
-  .app-tab { padding-inline: 12px; font-size: 12px; }
+  .app-nav { padding-left: 10px; }
+  .app-tab { padding-inline: 14px; font-size: 13px; }
   .app-tab[aria-selected="true"]::after { inset-inline: 11px; }
   .app-grid { grid-template-columns: 1fr; }
   .apps-panel { max-height: calc(100vh - 62px); overflow: auto; }
