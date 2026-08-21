@@ -229,6 +229,21 @@ function orderWorkflowSnapshot(payload, previous = null) {
   };
 }
 
+function customerSnapshot(customer) {
+  return {
+    customerCode: String(customer?.customerCode || customer?.erpCustomerCode || '').trim(),
+    customerName: String(customer?.customerName || '').trim(),
+    phone: String(customer?.phone || '').trim(),
+    mobile: String(customer?.mobile || '').trim(),
+    contactName: String(customer?.contactName || '').trim(),
+    address: String(customer?.address || '').trim(),
+    addressDetail: String(customer?.addressDetail || '').trim(),
+    group1Name: String(customer?.group1Name || customer?.groupName || '').trim(),
+    group2Name: String(customer?.group2Name || '').trim(),
+    priceGroup: String(customer?.priceGroup || '').trim()
+  };
+}
+
 function appendEvent(tx, order, eventType, detail = {}) {
   const event = {
     eventId: newId('OE'),
@@ -295,6 +310,7 @@ export async function createOrder(payload) {
       orderDate: payload.orderDate,
       customerId: customer.customerId,
       customerName: customer.customerName,
+      customerSnapshot: customerSnapshot(customer),
       ...warehouseSnapshot(payload, warehouse),
       orderMessage: String(payload.orderMessage ?? '').trim(),
       transactionType: String(payload.transactionType ?? '').trim(),
@@ -430,6 +446,7 @@ export async function updateOrder(orderId, expectedRevision, payload) {
       orderDate: payload.orderDate,
       customerId: customer.customerId,
       customerName: customer.customerName,
+      customerSnapshot: customerSnapshot(customer),
       ...warehouseSnapshot(payload, warehouse),
       orderMessage: String(payload.orderMessage ?? '').trim(),
       transactionType: String(payload.transactionType ?? '').trim(),

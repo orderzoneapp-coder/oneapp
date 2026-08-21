@@ -3,17 +3,20 @@ import {
   createLiveCustomer,
   ensureCustomerMasterReady,
   listCustomers,
+  searchCustomers,
   updateCustomer
-} from './customer-master.js?v=0.14.0';
+} from './customer-master.js?v=0.15.0';
 import {
   CUSTOMER_SOURCE_MATCH_METHOD,
+  CUSTOMER_SOURCE_MAPPING_VERSION,
   CUSTOMER_SOURCE_SYSTEM,
   applyCustomerSourceImport,
   canApplyCustomerSourceImport,
   getLatestCustomerSourceImportWork,
+  listCustomerSourceLinks,
   prepareCustomerSourceImport,
   setCustomerSourceImportDecision
-} from './customer-source-import.js?v=0.14.4';
+} from './customer-source-import.js?v=0.15.0';
 import { openCustomerPicker } from './customer-picker.js?v=0.12.1';
 import { pushPending } from './orderq-sync-engine.js?v=0.14.0';
 
@@ -48,7 +51,11 @@ const IMPORT_FIELD_LABELS = Object.freeze({
   customerCode: '거래처코드', customerName: '거래처명', representativeName: '대표자', businessNumber: '사업자번호',
   businessType: '업태', businessItem: '종목', phone: '전화', fax: '팩스', mobile: '핸드폰', email: '이메일',
   postalCode: '우편번호', address: '주소', addressDetail: '상세주소', contactName: '담당자',
-  contactPhone: '담당자연락처', groupName: '그룹', priceGroup: '단가그룹'
+  contactPhone: '담당자연락처',
+  group1Code: '거래처그룹1코드', group1Name: '그룹1',
+  group2Code: '거래처그룹2코드', group2Name: '거래처그룹2명',
+  priceGroup: '단가그룹', paymentDay: '결제일', bankAccountText: '계좌',
+  memo: '적요', searchText: '검색창내용'
 });
 const ISSUE_STATUSES = new Set([
   CUSTOMER_IMPORT_STATUS.CHANGED, CUSTOMER_IMPORT_STATUS.REVIEW_REQUIRED,
@@ -83,7 +90,7 @@ function renderWindow() {
       <span>${escapeHtml(customer.customerCode || '-')}</span>
       <span><strong>${escapeHtml(customer.customerName)}</strong><small>${escapeHtml(customer.representativeName || customer.contactName || '')}</small></span>
       <span><strong>${escapeHtml(customer.phone || customer.mobile || '-')}</strong><small>${escapeHtml([customer.address, customer.addressDetail].filter(Boolean).join(' '))}</small></span>
-      <span>${escapeHtml(customer.groupName || '-')}</span>
+      <span>${escapeHtml(customer.group1Name || customer.groupName || '-')}</span>
       <span class="cm-badge ${className}">${label}</span>
     </button>`;
   }).join('');
@@ -92,12 +99,15 @@ function renderWindow() {
   }));
 }
 
-function applyFilter() {
+async function applyFilter() {
   const query = elements.search.value.trim().toLocaleLowerCase('ko');
   const filter = elements.filter.value;
+  const matchedIds = query
+    ? new Set((await searchCustomers(query, { limit: 10000, includeInactive: true })).map(item => item.customer.customerId))
+    : null;
   state.filtered = state.customers.filter(customer => {
-    const haystack = [customer.customerCode, customer.customerName, customer.phone, customer.mobile, customer.address, customer.contactName].join(' ').toLocaleLowerCase('ko');
-    return (!query || haystack.includes(query)) && (filter === 'ALL' || customer.status === filter || customer.qualityStatus === filter);
+    return (!matchedIds || matchedIds.has(customer.customerId))
+      && (filter === 'ALL' || customer.status === filter || customer.qualityStatus === filter);
   });
   elements.viewport.scrollTop = 0;
   renderWindow();
@@ -113,17 +123,30 @@ function renderStats() {
 async function reload() {
   state.customers = await listCustomers({ includeInactive: true, includeSuperseded: false });
   renderStats();
-  applyFilter();
+  await applyFilter();
 }
 
-function openEditor(customer = null) {
+async function openEditor(customer = null) {
   elements.form.reset();
   elements.editorTitle.textContent = customer ? '거래처 수정' : '거래처 등록';
-  const fields = ['customerId', 'revision', 'customerName', 'customerCode', 'representativeName', 'businessNumber', 'phone', 'mobile', 'contactName', 'contactPhone', 'groupName', 'priceGroup', 'status', 'address'];
+  const fields = [
+    'customerId', 'revision', 'customerName', 'customerCode', 'representativeName',
+    'businessNumber', 'businessType', 'businessItem', 'phone', 'fax', 'mobile',
+    'email', 'postalCode', 'address', 'addressDetail', 'contactName', 'contactPhone',
+    'group1Code', 'group1Name', 'group2Code', 'group2Name', 'priceGroup',
+    'paymentDay', 'bankAccountText', 'memo', 'searchText', 'status'
+  ];
   fields.forEach(field => {
     const input = elements.form.elements.namedItem(field);
     if (input) input.value = customer?.[field] ?? (field === 'status' ? 'ACTIVE' : '');
   });
+  const sourceLinkPanel = elements.form.querySelector('[data-customer-source-links]');
+  if (sourceLinkPanel) {
+    const links = customer ? await listCustomerSourceLinks({ customerId: customer.customerId }) : [];
+    sourceLinkPanel.innerHTML = links.length
+      ? links.map(link => `<span class="cm-badge">${escapeHtml(link.sourceSystem)} · ${escapeHtml(link.sourceCustomerCode)} · ${escapeHtml(link.sourceCustomerName || '')}</span>`).join('')
+      : '<small>연결된 ERP/SHOP 계정이 없습니다.</small>';
+  }
   elements.editor.showModal();
 }
 
@@ -349,6 +372,9 @@ function renderImport() {
   elements.importReview.innerHTML = renderedRecords.map(importRecordMarkup).join('') || '<div class="cm-import-empty">현재 조건에 맞는 거래처가 없습니다.</div>';
   if (visibleRecords.length > renderedRecords.length) elements.importReview.insertAdjacentHTML('beforeend', `<button class="cm-load-more" type="button" data-load-more>다음 ${Math.min(200, visibleRecords.length - renderedRecords.length).toLocaleString()}건 보기 · 전체 ${visibleRecords.length.toLocaleString()}건</button>`);
   elements.applyImport.disabled = !state.importRecords.length || !canApplyCustomerSourceImport(state.importRecords);
+  if (state.importBatch?.sourceSystem === CUSTOMER_SOURCE_SYSTEM.ERP) {
+    elements.importGate.textContent = `${CUSTOMER_SOURCE_MAPPING_VERSION} · 17/17열 인식 · 분석결과 ${state.importRecords.length.toLocaleString()}건 저장`;
+  }
   bindImportActions();
 }
 

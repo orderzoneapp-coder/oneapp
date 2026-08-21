@@ -139,20 +139,34 @@
         <label>거래처코드<input name="customerCode"></label>
         <label>대표자<input name="representativeName"></label>
         <label>사업자번호<input name="businessNumber"></label>
+        <label>업태<input name="businessType"></label>
+        <label>종목<input name="businessItem"></label>
         <label>전화<input name="phone"></label>
+        <label>팩스<input name="fax"></label>
         <label>핸드폰<input name="mobile"></label>
+        <label>이메일<input name="email"></label>
+        <label>우편번호<input name="postalCode"></label>
         <label>담당자<input name="contactName"></label>
         <label>담당자 연락처<input name="contactPhone"></label>
-        <label>그룹<input name="groupName"></label>
+        <label>거래처그룹1코드<input name="group1Code"></label>
+        <label>그룹1<input name="group1Name"></label>
+        <label>거래처그룹2코드<input name="group2Code"></label>
+        <label>거래처그룹2명<input name="group2Name"></label>
         <label>단가그룹<input name="priceGroup"></label>
+        <label>결제일<input name="paymentDay"></label>
+        <label>계좌<input name="bankAccountText"></label>
         <label>상태<select name="status"><option value="ACTIVE">사용중</option><option value="INACTIVE">거래중단</option></select></label>
         <label>주소<input name="address"></label>
+        <label>상세주소<input name="addressDetail"></label>
+        <label>적요<textarea name="memo" rows="2"></textarea></label>
+        <label>검색창내용<textarea name="searchText" rows="2"></textarea></label>
       </div>
+      <section class="cm-source-links"><strong>ERP / SHOP 연결</strong><div data-customer-source-links></div></section>
       <div class="cm-form-actions"><button class="cm-button" type="button" data-close-customer-editor>취소</button><button class="cm-button primary" id="saveCustomerButton" type="submit">저장</button></div>
     </form>
   </dialog>
 
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script type="module" src="./orderq/customer-master-ui.js?v=0.14.6"></script>
+  <script type="module" src="./orderq/customer-master-ui.js?v=0.15.0"></script>
 </body>
 </html>

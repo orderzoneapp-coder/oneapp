@@ -130,8 +130,8 @@ assert.match(input, /row\.dataset\.productId \? MATCH_STATUS\.MATCHED : MATCH_ST
 assert.match(input, /productId:\s*row\.dataset\.productId \|\| null/);
 assert.match(input, /order_in_logo_header_white_bg\.svg/);
 assert.match(input, /<nexus-top app-id="orderin"><\/nexus-top>/);
-assert.match(input, /orderq-db\.js\?v=0\.12\.1|order-intake-engine\.js\?v=0\.12\.1/,
-  'IndexedDB v7 화면은 이전 캐시 모듈과 섞이지 않도록 릴리스 쿼리를 사용해야 한다.');
+assert.match(input, /orderq-db\.js\?v=0\.12\.1|order-intake-engine\.js\?v=0\.15\.0/,
+  'IndexedDB 화면은 이전 캐시 모듈과 섞이지 않도록 릴리스 쿼리를 사용해야 한다.');
 for (const contract of [
   "const MANUAL_DEFAULTS_KEY = 'oneapp.orderq.manual-defaults.v1'",
   "customerNameInput.addEventListener('keydown'",

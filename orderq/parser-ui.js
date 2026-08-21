@@ -5,7 +5,7 @@ import {
   createOrder,
   DuplicateSourceMessageError,
   MATCH_STATUS
-} from './order-intake-engine.js?v=0.12.1';
+} from './order-intake-engine.js?v=0.15.0';
 import {
   getDeviceId,
   syncNow,
