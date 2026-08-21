@@ -37,7 +37,7 @@ assert.doesNotMatch(
 );
 assert.match(
   source,
-  /V1\.a22\.114_AdminActionRecovery/,
+  /V1\.a22\.115_InputPerformance/,
   "the deployed UI version must identify the administrator-action recovery release",
 );
 

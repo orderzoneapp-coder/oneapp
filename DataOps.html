@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP DataOps - 핵심 수불부 관리 (V1.a22.114_AdminActionRecovery · 2026-08-16 KST)</title>
+    <title>ONEAPP DataOps - 핵심 수불부 관리 (V1.a22.115_InputPerformance · 2026-08-21 KST)</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         body { font-family: 'Pretendard', -apple-system, sans-serif; background-color: #f8fafc; overflow: hidden; }
@@ -46,7 +46,7 @@
     <!-- 초기 로딩 스크린 -->
     <div id="initial-loader">
         <div class="spinner"></div>
-        <div class="loader-text">ONEAPP DataOps V1.a22.114_AdminActionRecovery · 2026-08-16 KST.....</div>
+        <div class="loader-text">ONEAPP DataOps V1.a22.115_InputPerformance · 2026-08-21 KST.....</div>
         <div style="font-size: 11px; color: #94a3b8; margin-top: 8px;">앱 환경을 구성하고 있습니다</div>
     </div>
 
@@ -95,7 +95,7 @@
         window.__DATAOPS_DEP_CHECK__();
     </script>
     <script type="text/javascript">
-const { useState, useRef, useEffect, useMemo, useCallback } = React;
+const { useState, useRef, useEffect, useMemo, useCallback, useDeferredValue } = React;
 /* =======================================================================
    1. 유틸리티 함수 (Data formatting & pure logic)
    ======================================================================= */
@@ -1200,7 +1200,7 @@ const clearTableSortPreference = () => {
    - 주의: 물리적 파일 분리는 하지 않는다. 단일 HTML 실행 구조를 유지한다.
    ======================================================================= */
 const CONFIG_MODULE = Object.freeze({
-    version: 'V1.a22.114_AdminActionRecovery',
+    version: 'V1.a22.115_InputPerformance',
     categoryMap: Object.freeze({
         '10': '채소.과일',
         '20': '수산.축산',
@@ -4983,6 +4983,20 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
     const [productData, setProductData] = useState([]);
     const productDataRef = useRef(productData);
     productDataRef.current = productData;
+    // V1.a22.115: 반복 입력 시 전체 배열을 매번 findIndex로 훑지 않는다.
+    // 구조 변경으로 행 위치가 달라진 경우 batchKey를 검증한 뒤 캐시를 안전하게 보정한다.
+    const productIndexByBatchKeyRef = useRef(new Map());
+    const findProductIndex = useCallback((rows, batchKey) => {
+        const cachedIndex = productIndexByBatchKeyRef.current.get(batchKey);
+        if (Number.isInteger(cachedIndex) && cachedIndex >= 0 && cachedIndex < rows.length && rows[cachedIndex].batchKey === batchKey)
+            return cachedIndex;
+        const rowIndex = rows.findIndex(item => item.batchKey === batchKey);
+        if (rowIndex >= 0)
+            productIndexByBatchKeyRef.current.set(batchKey, rowIndex);
+        else
+            productIndexByBatchKeyRef.current.delete(batchKey);
+        return rowIndex;
+    }, []);
     const [analysisPeriod, setAnalysisPeriod] = useState('전체 기간');
     const [targetDateStr, setTargetDateStr] = useState('');
     const [substHistory, setSubstHistory] = useState([]);
@@ -5116,7 +5130,7 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
         const parsedValue = val === '' ? 0 : Number(val);
         const numVal = Number.isFinite(parsedValue) ? parsedValue : 0;
         setProductData(prevP => {
-            const rowIndex = prevP.findIndex(item => item.batchKey === batchKey);
+            const rowIndex = findProductIndex(prevP, batchKey);
             if (rowIndex < 0)
                 return prevP;
             const currentItem = prevP[rowIndex];
@@ -5150,11 +5164,11 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
             nextData[rowIndex] = nextItem;
             return nextData;
         });
-    }, []);
+    }, [findProductIndex]);
     const handleManualStockChange = useCallback((batchKey, val) => {
         const nextActual = val === '' ? '' : Number(val);
         setProductData(prev => {
-            const rowIndex = prev.findIndex(item => item.batchKey === batchKey);
+            const rowIndex = findProductIndex(prev, batchKey);
             if (rowIndex < 0)
                 return prev;
             const currentItem = prev[rowIndex];
@@ -5181,7 +5195,7 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
             nextData[rowIndex] = nextItem;
             return nextData;
         });
-    }, []);
+    }, [findProductIndex]);
     const handlePurchaseLotManualAdjust = useCallback((batchKey) => {
         const currentProductData = productDataRef.current || [];
         const baseItem = currentProductData.find(item => item.batchKey === batchKey);
@@ -8822,6 +8836,9 @@ function App() {
     const { productData, setProductData, analysisPeriod, setAnalysisPeriod, targetDateStr, setTargetDateStr, substHistory, setSubstHistory, ackMultiCodes, setAckMultiCodes, resetEngine, saveWorkState, restoreWorkState, handleBaseDataChange, handleManualStockChange, executeImmediateSubstitution, handlePurchaseLotManualAdjust, executeMasterSubstitutionCandidates, handleSalesMove, executeAnalysis, runAnalysis, runCostExtraction } = useInventoryEngine({ mappings, grouping, setAlertMsg, setConfirmModal, setIsProcessing, setAppStep });
     const productDataRef = useRef(productData);
     productDataRef.current = productData;
+    // V1.a22.115: 입력값 저장·출력은 최신 데이터를 사용하고, 전체 목록 집계·정렬은
+    // 낮은 우선순위 렌더로 분리해 숫자 입력이 무거운 계산에 막히지 않도록 한다.
+    const renderProductData = useDeferredValue(productData);
     const isCostExtractionMode = !files.prev && files.in && !files.out && files.end;
     const hasEndFile = !!files.end;
     // V1.a22.12: 실행 버튼은 업로드된 파일 역할에 맞는 것만 노출한다.
@@ -9298,18 +9315,18 @@ function App() {
         DATAOPS_CLOUD_MODULE.setCloudUrl(cloudUrlInput);
         setShowSettings(false);
     };
-    const priceOptionsMap = useMemo(() => { const map = {}; productData.forEach(p => { if (!map[p.코드])
+    const priceOptionsMap = useMemo(() => { const map = {}; renderProductData.forEach(p => { if (!map[p.코드])
         map[p.코드] = new Set(); if (p.단가 > 0 && !p.isDummy)
         map[p.코드].add(p.단가); }); const result = {}; for (let code in map) {
         result[code] = Array.from(map[code]);
-    } return result; }, [productData]);
+    } return result; }, [renderProductData]);
     // V1.a22.12: 판매현황 구매처로 원가가 확정된 상품은 Lot 매치 이슈카드에 올리지 않는다.
     // 다중 원가 코드 자체는 참고 정보일 뿐이며, 이슈카드는 실제 미처리 Lot 문제만 다룬다.
-    const multiPriceCodes = useMemo(() => { const codes = new Set(); productData.forEach(p => { if (priceOptionsMap[p.코드] && priceOptionsMap[p.코드].length >= 2 && p.출고 > 0)
-        codes.add(p.코드); }); return Array.from(codes); }, [productData, priceOptionsMap]);
+    const multiPriceCodes = useMemo(() => { const codes = new Set(); renderProductData.forEach(p => { if (priceOptionsMap[p.코드] && priceOptionsMap[p.코드].length >= 2 && p.출고 > 0)
+        codes.add(p.코드); }); return Array.from(codes); }, [renderProductData, priceOptionsMap]);
     const multiPriceCodeSet = useMemo(() => new Set(multiPriceCodes), [multiPriceCodes]);
     // V1.a22.79: Lot 상품은 재고 > 0인 논리 Lot이 같은 품목코드에 2개 이상 남은 경우만 인정한다.
-    const lotReviewCandidateCodes = useMemo(() => DATAOPS_VIEW_LAYER_MODULE.getLotReviewCandidateCodes(productData), [productData]);
+    const lotReviewCandidateCodes = useMemo(() => DATAOPS_VIEW_LAYER_MODULE.getLotReviewCandidateCodes(renderProductData), [renderProductData]);
     const lotReviewCandidateCodeSet = useMemo(() => new Set(lotReviewCandidateCodes), [lotReviewCandidateCodes]);
     const pendingLotReviewCandidateCodes = useMemo(() => lotReviewCandidateCodes.filter(code => !DATAOPS_CODE_MERGE_OVERRIDE_MODULE.isDetailMerged(code) && !ackMultiCodes.has(code)), [lotReviewCandidateCodes, mergeOverrideVersion, ackMultiCodes]);
     const isSalesConfirmedLotResolvedRow = useCallback((p = {}) => {
@@ -9377,22 +9394,22 @@ function App() {
     // 단, 순수 다중 Lot 후보는 기존 정책대로 재고 > 0인 Lot만 노출한다.
     const stockLotIssueGroupCodeSet = useMemo(() => {
         const codes = new Set();
-        (productData || []).forEach(row => {
+        (renderProductData || []).forEach(row => {
             const code = DATAOPS_VIEW_LAYER_MODULE.normalizeCode(row);
             if (!code || code === 'NO_CODE') return;
             if (hasQtyIssueTotal(row) || hasLotIssueTotal(row)) codes.add(code);
         });
         return codes;
-    }, [productData, hasQtyIssueTotal, hasLotIssueTotal]);
+    }, [renderProductData, hasQtyIssueTotal, hasLotIssueTotal]);
     const stockLotStandaloneIssueKeySet = useMemo(() => {
         const keys = new Set();
-        (productData || []).forEach(row => {
+        (renderProductData || []).forEach(row => {
             const code = DATAOPS_VIEW_LAYER_MODULE.normalizeCode(row);
             if (code !== 'NO_CODE') return;
             if (hasQtyIssueTotal(row) || hasLotIssueTotal(row)) keys.add(safeStr(row.batchKey || ''));
         });
         return keys;
-    }, [productData, hasQtyIssueTotal, hasLotIssueTotal]);
+    }, [renderProductData, hasQtyIssueTotal, hasLotIssueTotal]);
     // V1.a22.79: 재고/Lot 검수대상을 한 목록으로 통합한다.
     // ① 기존 수량/재고 이슈 ② 기존 Lot 매칭 이슈 ③ 실제 마이너스 재고
     // ④ 재고 > 0인 논리 Lot이 같은 품목코드에 2개 이상 남은 Lot 상품을 포함한다.
@@ -9463,16 +9480,16 @@ function App() {
     }, []);
     const substitutionCandidateRows = useMemo(() => {
         try {
-            if (!productData || productData.length === 0)
+            if (!renderProductData || renderProductData.length === 0)
                 return [];
             // V1.a22.12: 치환 카드/필터는 실행 가능한 자동치환 후보만 대상으로 한다.
-            return DATAOPS_SUBSTITUTION_CANDIDATE_MODULE.buildExecutableRows({ productData, targetDateStr });
+            return DATAOPS_SUBSTITUTION_CANDIDATE_MODULE.buildExecutableRows({ productData: renderProductData, targetDateStr });
         }
         catch (e) {
             console.warn('소분치환 후보 생성 실패', e);
             return [];
         }
-    }, [productData, targetDateStr]);
+    }, [renderProductData, targetDateStr]);
     const substitutionCandidateCodeSet = useMemo(() => {
         const set = new Set();
         (substitutionCandidateRows || []).forEach(row => {
@@ -9489,7 +9506,7 @@ function App() {
         const batchKeySet = new Set();
         // 후보 수(C)만큼 productData(N)를 반복 탐색하던 O(C×N) 경로를 제거한다.
         // 코드별 Lot 인덱스는 이 미리보기 계산에서 한 번만 만들고 모든 후보가 공유한다.
-        const rowsByCode = DATAOPS_SUBSTITUTION_CANDIDATE_MODULE.buildRowsByCode(productData || []);
+        const rowsByCode = DATAOPS_SUBSTITUTION_CANDIDATE_MODULE.buildRowsByCode(renderProductData || []);
         const addMeta = (item, meta) => {
             if (!item || !item.batchKey) return;
             const prev = metaByBatchKey[item.batchKey] || { ...meta, plannedRawQty: 0, generatedSubQty: 0, groupOrder: meta.groupOrder, roleOrder: meta.roleOrder, lotOrder: meta.lotOrder, targetNames: [] };
@@ -9510,7 +9527,7 @@ function App() {
             const subCode = DATAOPS_SUBSTITUTION_CANDIDATE_MODULE.normalizeCode(row['소분상품코드']);
             const rawCode = DATAOPS_SUBSTITUTION_CANDIDATE_MODULE.normalizeCode(row['원물코드']);
             const subItems = (rowsByCode[subCode] || []).map(ref => ref.item);
-            const allocation = DATAOPS_SUBSTITUTION_CANDIDATE_MODULE.selectRawLotsForExecution(row, productData || [], rowsByCode);
+            const allocation = DATAOPS_SUBSTITUTION_CANDIDATE_MODULE.selectRawLotsForExecution(row, renderProductData || [], rowsByCode);
             const generatedSubQty = parseNumber(row['생성가능소분수량']);
             const requiredRawQty = parseNumber(row['필요원물수량']);
             const stockConversionQty = parseNumber(row['1당수량']);
@@ -9546,7 +9563,7 @@ function App() {
             });
         });
         return { metaByBatchKey, batchKeySet };
-    }, [substitutionCandidateRows, productData]);
+    }, [substitutionCandidateRows, renderProductData]);
     const substitutionCandidateStatusCounts = useMemo(() => {
         const counts = {};
         (substitutionCandidateRows || []).forEach(row => {
@@ -9561,7 +9578,7 @@ function App() {
         const totalStockLotKeys = new Set();
         const unresolvedLotKeys = new Set();
         const totalLotKeys = new Set();
-        productData.forEach((p, rowIndex) => {
+        renderProductData.forEach((p, rowIndex) => {
             const lotCostResolved = DATAOPS_OPERATION_MODULE.hasLotCostResolved(p);
             const hasPriceTotal = !lotCostResolved && ((Number(p.단가) || 0) <= 0 || (p.이슈 && p.이슈.some(i => i.includes('단가변경') || i.includes('단가없음'))));
             const hasPriceUnresolved = !lotCostResolved && (((safeNum(p.단가) <= 0)) || (p.이슈 && p.이슈.some(i => i.includes('🚨단가변경') || i.includes('🚨단가없음'))));
@@ -9612,7 +9629,7 @@ function App() {
         const matchCount = unresolvedLotKeys.size;
         const totalMatchCount = totalLotKeys.size;
         const integratedCostReviewCount = readSavedDataOpsGrouping().manageMode === 'CODE_SUMMARY'
-            ? DATAOPS_VIEW_LAYER_MODULE.buildCodeSummaryRows(productData).filter(row => row._costReviewNeeded).length
+            ? DATAOPS_VIEW_LAYER_MODULE.buildCodeSummaryRows(renderProductData).filter(row => row._costReviewNeeded).length
             : 0;
         missingPriceCount += integratedCostReviewCount;
         totalMissingPriceCount += integratedCostReviewCount;
@@ -9634,10 +9651,10 @@ function App() {
             totalRevenue,
             totalInventoryAsset,
             totalLossValue,
-            total: productData.length
+            total: renderProductData.length
         };
-    }, [productData, hasQtyIssueTotal, hasUnresolvedQtyIssue, hasLotIssueTotal, hasUnresolvedLotIssue, substitutionCandidateRows, substitutionCandidateStatusCounts, lotReviewCandidateCodes, mergeOverrideVersion, ackMultiCodes]);
-    const hiddenMovedSourceCount = useMemo(() => productData.filter(item => item && item._hiddenBySalesMove).length, [productData]);
+    }, [renderProductData, hasQtyIssueTotal, hasUnresolvedQtyIssue, hasLotIssueTotal, hasUnresolvedLotIssue, substitutionCandidateRows, substitutionCandidateStatusCounts, lotReviewCandidateCodes, mergeOverrideVersion, ackMultiCodes]);
+    const hiddenMovedSourceCount = useMemo(() => renderProductData.filter(item => item && item._hiddenBySalesMove).length, [renderProductData]);
     const showCards = useMemo(() => {
         // V1.a22.12: 카드뷰는 문제 건수가 0이어도 분석 완료 후 항상 표시한다.
         // 카드 자체가 '이상 없음' 상태를 보여주는 작업 체크리스트이기 때문이다.
@@ -12204,7 +12221,7 @@ ${balanceText}
         return stableRows;
     }, []);
     const filteredProductData = useMemo(() => {
-        let sourceRows = productData;
+        let sourceRows = renderProductData;
         if (!filters.showHiddenMoveRows)
             sourceRows = sourceRows.filter(p => !p._hiddenBySalesMove);
         // V1.a22.69: 구매잔량/기타상품 필터는 원본 Lot 행 기준으로 먼저 적용한 뒤 보기 계층을 만든다.
@@ -12291,7 +12308,7 @@ ${balanceText}
             });
         }
         return FILTER_SORT_MODULE.sortRows(data, filters.sortMode, filters.sortDesc);
-    }, [productData, viewMode, mergeOverrideVersion, filters, multiPriceCodes, mappings, hasQtyIssueTotal, hasLotIssueTotal, substitutionCandidateCodeSet, substitutionPreviewView, lotReviewCandidateCodeSet, stockLotIssueGroupCodeSet, stockLotStandaloneIssueKeySet, stabilizeViewRows]);
+    }, [renderProductData, viewMode, mergeOverrideVersion, filters, multiPriceCodes, mappings, hasQtyIssueTotal, hasLotIssueTotal, substitutionCandidateCodeSet, substitutionPreviewView, lotReviewCandidateCodeSet, stockLotIssueGroupCodeSet, stockLotStandaloneIssueKeySet, stabilizeViewRows]);
     const splitLotMemoMap = useMemo(() => {
         const counts = {};
         filteredProductData.forEach(row => {
@@ -12317,7 +12334,7 @@ ${balanceText}
                     React.createElement("h1", { className: "text-xl md:text-xl font-black leading-none text-slate-800 tracking-tight flex items-center cursor-pointer hover:opacity-80 transition", onClick: () => { var _a; return (_a = document.getElementById('main-scroll-container')) === null || _a === void 0 ? void 0 : _a.scrollTo({ top: 0, behavior: 'smooth' }); }, title: "\uD074\uB9AD\uC2DC \uCD5C\uC0C1\uB2E8 \uC774\uB3D9" },
                         React.createElement("span", { className: "text-blue-600 mr-2" }, "ONEAPP"),
                         " DataOps",
-                        React.createElement("span", { className: "text-slate-500 text-[10px] px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3" }, "V1.a22.114_AdminActionRecovery · 2026-08-16 KST"))),
+                        React.createElement("span", { className: "text-slate-500 text-[10px] px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3" }, "V1.a22.115_InputPerformance · 2026-08-21 KST"))),
                 React.createElement("div", { className: "flex items-center gap-2 shrink-0" },
                     productData.length > 0 && (React.createElement(React.Fragment, null,
                         React.createElement("button", { onClick: () => setGuideModalOpen(true), className: "px-3 py-1.5 rounded text-[12px] font-bold transition flex items-center border bg-white text-slate-700 border-slate-300 hover:bg-slate-50 shadow-sm mr-1" }, "\uC774\uC288 \uAC00\uC774\uB4DC"),

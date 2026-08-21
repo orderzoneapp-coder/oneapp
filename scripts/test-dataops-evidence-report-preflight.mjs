@@ -452,7 +452,7 @@ assert.match(source, /엑셀 생성을 차단하지 않습니다\./);
 assert.doesNotMatch(source, /오류를 해결하기 전에는 workbook을 생성하지 않습니다/);
 assert.match(source, /salesSourceEvidenceByProductKey/);
 assert.match(source, /NO_CODE\|\$\{safeStr\(evidenceName, '이름없음'\)\}/);
-assert.match(source, /V1\.a22\.114_AdminActionRecovery/);
+assert.match(source, /V1\.a22\.115_InputPerformance/);
 assert.doesNotMatch(vendorSource, /RECONCILED|base\.qty \+= delta|const delta = outQty - chipSum/);
 
 console.log("DataOps 계산근거 리포트·판매칩 사전검증 계약이 통과했습니다.");
