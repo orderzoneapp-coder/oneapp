@@ -372,6 +372,29 @@ function sourceRowNumber(index, sourceSystem) {
   return index + 2;
 }
 
+async function persistCustomerSourceImportChunk(batch, records = []) {
+  const db = await openOrderQDb();
+  const tx = db.transaction([STORE.IMPORT_BATCHES, STORE.SOURCE_RECORDS], 'readwrite');
+  tx.objectStore(STORE.IMPORT_BATCHES).put(batch);
+  const recordStore = tx.objectStore(STORE.SOURCE_RECORDS);
+  records.forEach(record => recordStore.put(record));
+  await transactionDone(tx);
+}
+
+function sortedCustomerSourceImportRecords(records = []) {
+  return [...records].sort((a, b) => Number(a.rowNo || 0) - Number(b.rowNo || 0));
+}
+
+function canResumeCustomerSourceImport(batch, records, rowCount) {
+  const processedCount = Number(batch?.processedCount || 0);
+  return batch?.status === 'PREPARING'
+    && Number(batch.rowCount || 0) === rowCount
+    && processedCount >= 0
+    && processedCount <= rowCount
+    && records.length === processedCount
+    && records.every((record, index) => Number(record.rowNo || 0) === sourceRowNumber(index, batch.sourceSystem));
+}
+
 export async function prepareCustomerSourceImport(rows, {
   sourceSystem,
   fileName = '',
@@ -381,133 +404,193 @@ export async function prepareCustomerSourceImport(rows, {
 } = {}) {
   const system = clean(sourceSystem).toUpperCase();
   sourceHeaders(system);
+  const progressChunkSize = Math.max(1, Number(chunkSize) || 200);
+  let batch = null;
+  let records = [];
+  let startIndex = 0;
+  let isNewBatch = true;
+
   if (fileHash) {
     const batches = await getAll(STORE.IMPORT_BATCHES);
     const reusableBatch = batches
-      .filter(batch => batch.sourceType === SOURCE_IMPORT_TYPE && batch.sourceSystem === system && batch.fileHash === fileHash && ['PREPARED', 'PARTIAL'].includes(batch.status))
+      .filter(candidate => candidate.sourceType === SOURCE_IMPORT_TYPE && candidate.sourceSystem === system && candidate.fileHash === fileHash && ['PREPARING', 'PREPARED', 'PARTIAL'].includes(candidate.status))
       .sort((a, b) => String(b.updatedAt || b.createdAt).localeCompare(String(a.updatedAt || a.createdAt)))[0];
     if (reusableBatch) {
-      const reusableRecords = await getCustomerSourceImportRecords(reusableBatch.importBatchId);
+      const reusableRecords = sortedCustomerSourceImportRecords(await getCustomerSourceImportRecords(reusableBatch.importBatchId));
       const hasStaleLinkConflict = reusableRecords.some(record => String(record.errorMessage || '').includes('CUSTOMER_SOURCE_LINK_REVISION_CONFLICT'));
       const hasLegacyUnconfirmedNew = reusableRecords.some(record => record.status === CUSTOMER_IMPORT_STATUS.NEW && !record.newDraftConfirmed && !record.validationError);
-      if (!hasStaleLinkConflict && !hasLegacyUnconfirmedNew) return { batch: reusableBatch, records: reusableRecords, resumed: true };
+      const completedRecordSet = ['PREPARED', 'PARTIAL'].includes(reusableBatch.status)
+        && Number(reusableBatch.rowCount || 0) === rows.length
+        && reusableRecords.length === rows.length;
+      if (completedRecordSet && !hasStaleLinkConflict && !hasLegacyUnconfirmedNew) {
+        const completedBatch = { ...reusableBatch, processedCount: reusableRecords.length, updatedAt: reusableBatch.updatedAt || nowIso() };
+        if (Number(reusableBatch.processedCount || 0) !== reusableRecords.length) await persistCustomerSourceImportChunk(completedBatch);
+        return { batch: completedBatch, records: reusableRecords, resumed: true };
+      }
+      if (canResumeCustomerSourceImport(reusableBatch, reusableRecords, rows.length)) {
+        batch = { ...reusableBatch, lastError: '' };
+        records = reusableRecords;
+        startIndex = Number(batch.processedCount || 0);
+        isNewBatch = false;
+      } else {
+        await persistCustomerSourceImportChunk({
+          ...reusableBatch,
+          status: 'FAILED',
+          lastError: 'CUSTOMER_SOURCE_IMPORT_RESUME_INVALID',
+          updatedAt: nowIso()
+        });
+      }
     }
   }
 
-  const [customers, aliases, links] = await Promise.all([
-    getAll(STORE.CUSTOMERS),
-    getAll(STORE.CUSTOMER_ALIASES),
-    getAll(STORE.CUSTOMER_SOURCE_LINKS)
-  ]);
-  const byId = canonicalMap(customers);
-  const linksByKey = new Map(links.map(link => [link.sourceLinkKey, link]));
-  const timestamp = nowIso();
-  const importBatchId = newId('CIB');
-  const records = [];
-  const mappedSources = rows.map(row => mapCustomerSourceRow(row, system));
-  const progressChunkSize = Math.max(1, Number(chunkSize) || 200);
-  const sourceLinkKeyCounts = mappedSources.reduce((map, source) => {
-    if (source.sourceLinkKey) map.set(source.sourceLinkKey, (map.get(source.sourceLinkKey) || 0) + 1);
-    return map;
-  }, new Map());
+  if (!batch) {
+    const timestamp = nowIso();
+    batch = {
+      importBatchId: newId('CIB'),
+      sourceType: SOURCE_IMPORT_TYPE,
+      sourceSystem: system,
+      fileName,
+      fileHash,
+      rowCount: rows.length,
+      processedCount: 0,
+      status: 'PREPARING',
+      lastError: '',
+      createdAt: timestamp,
+      updatedAt: timestamp
+    };
+  }
 
-  for (let index = 0; index < rows.length; index += 1) {
-    const source = mappedSources[index];
-    const existingLink = linksByKey.get(source.sourceLinkKey) || null;
-    let status = CUSTOMER_IMPORT_STATUS.REVIEW_REQUIRED;
-    let selectedCustomerId = '';
-    let matchMethod = '';
-    let differences = [];
-    let validationError = '';
-    let candidates = [];
+  try {
+    if (isNewBatch) await persistCustomerSourceImportChunk(batch);
+    onProgress?.({ phase: 'PERSISTED', processed: startIndex, total: rows.length, resumed: !isNewBatch });
 
-    if (!source.sourceCustomerCode) validationError = system === CUSTOMER_SOURCE_SYSTEM.SHOP ? '쇼핑몰 회원 아이디가 없습니다.' : 'ERP 거래처코드가 없습니다.';
-    else if (!source.sourceCustomerName) validationError = '거래처명이 없습니다.';
-    else if ((sourceLinkKeyCounts.get(source.sourceLinkKey) || 0) > 1) validationError = '같은 출처 거래처코드가 파일에 중복되어 있습니다. 중복 행은 하나만 남기고 나머지는 제외해 주세요.';
-    else if (existingLink && existingLink.active !== false && existingLink.linkStatus === CUSTOMER_SOURCE_LINK_STATUS.CONFIRMED) {
-      const original = byId.get(existingLink.customerId);
-      const canonical = canonicalCustomer(original, byId);
-      if (canonical && canonical.status === CUSTOMER_STATUS.ACTIVE) {
-        selectedCustomerId = canonical.customerId;
-        matchMethod = CUSTOMER_SOURCE_MATCH_METHOD.EXISTING_LINK;
-        differences = changedFields(canonical, source.incoming);
-        status = differences.length ? CUSTOMER_IMPORT_STATUS.CHANGED : CUSTOMER_IMPORT_STATUS.SAME;
-      } else validationError = '기존 연결 거래처가 거래중단 또는 삭제 상태입니다.';
-    } else if (!existingLink) {
-      const businessMatch = uniqueBusinessMatch(source, customers, byId);
-      if (businessMatch) {
-        selectedCustomerId = businessMatch.customerId;
-        matchMethod = CUSTOMER_SOURCE_MATCH_METHOD.BUSINESS_NUMBER_EXACT;
-        differences = changedFields(businessMatch, source.incoming);
-        status = differences.length ? CUSTOMER_IMPORT_STATUS.CHANGED : CUSTOMER_IMPORT_STATUS.SAME;
+    const [customers, aliases, links] = await Promise.all([
+      getAll(STORE.CUSTOMERS),
+      getAll(STORE.CUSTOMER_ALIASES),
+      getAll(STORE.CUSTOMER_SOURCE_LINKS)
+    ]);
+    const byId = canonicalMap(customers);
+    const linksByKey = new Map(links.map(link => [link.sourceLinkKey, link]));
+    const mappedSources = rows.map(row => mapCustomerSourceRow(row, system));
+    const sourceLinkKeyCounts = mappedSources.reduce((map, source) => {
+      if (source.sourceLinkKey) map.set(source.sourceLinkKey, (map.get(source.sourceLinkKey) || 0) + 1);
+      return map;
+    }, new Map());
+    const pendingChunk = [];
+
+    for (let index = startIndex; index < rows.length; index += 1) {
+      const source = mappedSources[index];
+      const existingLink = linksByKey.get(source.sourceLinkKey) || null;
+      let status = CUSTOMER_IMPORT_STATUS.REVIEW_REQUIRED;
+      let selectedCustomerId = '';
+      let matchMethod = '';
+      let differences = [];
+      let validationError = '';
+      let candidates = [];
+
+      if (!source.sourceCustomerCode) validationError = system === CUSTOMER_SOURCE_SYSTEM.SHOP ? '쇼핑몰 회원 아이디가 없습니다.' : 'ERP 거래처코드가 없습니다.';
+      else if (!source.sourceCustomerName) validationError = '거래처명이 없습니다.';
+      else if ((sourceLinkKeyCounts.get(source.sourceLinkKey) || 0) > 1) validationError = '같은 출처 거래처코드가 파일에 중복되어 있습니다. 중복 행은 하나만 남기고 나머지는 제외해 주세요.';
+      else if (existingLink && existingLink.active !== false && existingLink.linkStatus === CUSTOMER_SOURCE_LINK_STATUS.CONFIRMED) {
+        const original = byId.get(existingLink.customerId);
+        const canonical = canonicalCustomer(original, byId);
+        if (canonical && canonical.status === CUSTOMER_STATUS.ACTIVE) {
+          selectedCustomerId = canonical.customerId;
+          matchMethod = CUSTOMER_SOURCE_MATCH_METHOD.EXISTING_LINK;
+          differences = changedFields(canonical, source.incoming);
+          status = differences.length ? CUSTOMER_IMPORT_STATUS.CHANGED : CUSTOMER_IMPORT_STATUS.SAME;
+        } else validationError = '기존 연결 거래처가 거래중단 또는 삭제 상태입니다.';
+      } else if (!existingLink) {
+        const businessMatch = uniqueBusinessMatch(source, customers, byId);
+        if (businessMatch) {
+          selectedCustomerId = businessMatch.customerId;
+          matchMethod = CUSTOMER_SOURCE_MATCH_METHOD.BUSINESS_NUMBER_EXACT;
+          differences = changedFields(businessMatch, source.incoming);
+          status = differences.length ? CUSTOMER_IMPORT_STATUS.CHANGED : CUSTOMER_IMPORT_STATUS.SAME;
+        }
+      }
+
+      if (!selectedCustomerId && !validationError) {
+        candidates = recommendationCandidates(source, customers, aliases, byId);
+        status = candidates.length ? CUSTOMER_IMPORT_STATUS.REVIEW_REQUIRED : CUSTOMER_IMPORT_STATUS.NEW;
+      }
+
+      const recordTimestamp = nowIso();
+      const record = {
+        sourceRecordId: newId('CISR'),
+        importBatchId: batch.importBatchId,
+        sourceType: SOURCE_IMPORT_TYPE,
+        sourceSystem: system,
+        rowNo: sourceRowNumber(index, system),
+        raw: { ...rows[index] },
+        sourceSnapshot: source.sourceSnapshot,
+        sourceCustomerCode: source.sourceCustomerCode,
+        normalizedSourceCustomerCode: source.normalizedSourceCustomerCode,
+        sourceLinkKey: source.sourceLinkKey,
+        sourceCustomerName: source.sourceCustomerName,
+        sourceNickname: source.sourceNickname,
+        sourceBusinessNumber: source.sourceBusinessNumber,
+        sourceRepresentativeName: source.sourceRepresentativeName,
+        sourcePhone: source.sourcePhone,
+        sourceMobile: source.sourceMobile,
+        sourceAddress: source.sourceAddress,
+        sourceEmail: source.sourceEmail,
+        incoming: source.incoming,
+        status,
+        selectedCustomerId,
+        existingSourceLinkId: existingLink?.linkId || '',
+        sourceLinkCustomerId: existingLink?.customerId || '',
+        sourceLinkRevision: Number(existingLink?.revision || 0),
+        matchMethod,
+        candidateCustomerIds: candidates.map(candidate => candidate.customerId),
+        candidateEvidence: candidates,
+        changedFields: differences,
+        fieldDecisions: status === CUSTOMER_IMPORT_STATUS.CHANGED ? null : {},
+        newDraftConfirmed: status === CUSTOMER_IMPORT_STATUS.NEW,
+        validationError,
+        errorMessage: '',
+        createdAt: recordTimestamp,
+        updatedAt: recordTimestamp
+      };
+      records.push(record);
+      pendingChunk.push(record);
+
+      const processed = index + 1;
+      if (pendingChunk.length >= progressChunkSize || processed === rows.length) {
+        const persistedBatch = {
+          ...batch,
+          status: processed === rows.length ? 'PREPARED' : 'PREPARING',
+          processedCount: processed,
+          lastError: '',
+          updatedAt: nowIso()
+        };
+        await persistCustomerSourceImportChunk(persistedBatch, pendingChunk);
+        batch = persistedBatch;
+        pendingChunk.length = 0;
+        onProgress?.({ phase: 'PERSISTED', processed, total: rows.length, resumed: !isNewBatch });
+        if (processed < rows.length) await new Promise(resolve => setTimeout(resolve, 0));
       }
     }
 
-    if (!selectedCustomerId && !validationError) {
-      candidates = recommendationCandidates(source, customers, aliases, byId);
-      status = candidates.length ? CUSTOMER_IMPORT_STATUS.REVIEW_REQUIRED : CUSTOMER_IMPORT_STATUS.NEW;
+    if (!rows.length) {
+      batch = { ...batch, status: 'PREPARED', processedCount: 0, updatedAt: nowIso() };
+      await persistCustomerSourceImportChunk(batch);
     }
-
-    records.push({
-      sourceRecordId: newId('CISR'),
-      importBatchId,
-      sourceType: SOURCE_IMPORT_TYPE,
-      sourceSystem: system,
-      rowNo: sourceRowNumber(index, system),
-      raw: { ...rows[index] },
-      sourceSnapshot: source.sourceSnapshot,
-      sourceCustomerCode: source.sourceCustomerCode,
-      normalizedSourceCustomerCode: source.normalizedSourceCustomerCode,
-      sourceLinkKey: source.sourceLinkKey,
-      sourceCustomerName: source.sourceCustomerName,
-      sourceNickname: source.sourceNickname,
-      sourceBusinessNumber: source.sourceBusinessNumber,
-      sourceRepresentativeName: source.sourceRepresentativeName,
-      sourcePhone: source.sourcePhone,
-      sourceMobile: source.sourceMobile,
-      sourceAddress: source.sourceAddress,
-      sourceEmail: source.sourceEmail,
-      incoming: source.incoming,
-      status,
-      selectedCustomerId,
-      existingSourceLinkId: existingLink?.linkId || '',
-      sourceLinkCustomerId: existingLink?.customerId || '',
-      sourceLinkRevision: Number(existingLink?.revision || 0),
-      matchMethod,
-      candidateCustomerIds: candidates.map(candidate => candidate.customerId),
-      candidateEvidence: candidates,
-      changedFields: differences,
-      fieldDecisions: status === CUSTOMER_IMPORT_STATUS.CHANGED ? null : {},
-      newDraftConfirmed: status === CUSTOMER_IMPORT_STATUS.NEW,
-      validationError,
-      errorMessage: '',
-      createdAt: timestamp,
-      updatedAt: timestamp
-    });
-    const processed = index + 1;
-    if (processed % progressChunkSize === 0 || processed === rows.length) {
-      onProgress?.({ phase: 'MATCHING', processed, total: rows.length });
-      if (processed < rows.length) await new Promise(resolve => setTimeout(resolve, 0));
+    return { batch, records: sortedCustomerSourceImportRecords(records), resumed: !isNewBatch };
+  } catch (error) {
+    const processedCount = Number(batch?.processedCount || 0);
+    const actualMessage = String(error?.message || error || '알 수 없는 IndexedDB 오류');
+    try {
+      await persistCustomerSourceImportChunk({ ...batch, status: 'PREPARING', lastError: actualMessage, updatedAt: nowIso() });
+    } catch (batchError) {
+      console.error('Customer source import failure state could not be saved', batchError);
     }
+    const wrapped = new Error(actualMessage);
+    wrapped.code = error?.code || 'CUSTOMER_SOURCE_IMPORT_PREPARE_FAILED';
+    wrapped.processedCount = processedCount;
+    wrapped.totalCount = rows.length;
+    throw wrapped;
   }
-
-  const batch = {
-    importBatchId,
-    sourceType: SOURCE_IMPORT_TYPE,
-    sourceSystem: system,
-    fileName,
-    fileHash,
-    rowCount: records.length,
-    status: 'PREPARED',
-    createdAt: timestamp,
-    updatedAt: timestamp
-  };
-  const db = await openOrderQDb();
-  const tx = db.transaction([STORE.IMPORT_BATCHES, STORE.SOURCE_RECORDS], 'readwrite');
-  tx.objectStore(STORE.IMPORT_BATCHES).put(batch);
-  records.forEach(record => tx.objectStore(STORE.SOURCE_RECORDS).put(record));
-  await transactionDone(tx);
-  return { batch, records };
 }
 
 export async function setCustomerSourceImportDecision(sourceRecordId, decision = {}) {
@@ -530,7 +613,7 @@ export async function getCustomerSourceImportRecords(importBatchId) {
 export async function getLatestCustomerSourceImportWork() {
   const batches = await getAll(STORE.IMPORT_BATCHES);
   const batch = batches
-    .filter(candidate => candidate.sourceType === SOURCE_IMPORT_TYPE && ['PREPARED', 'PARTIAL'].includes(candidate.status))
+    .filter(candidate => candidate.sourceType === SOURCE_IMPORT_TYPE && ['PREPARING', 'PREPARED', 'PARTIAL'].includes(candidate.status))
     .sort((a, b) => String(b.updatedAt || b.createdAt).localeCompare(String(a.updatedAt || a.createdAt)))[0];
   if (!batch) return null;
   return { batch, records: await getCustomerSourceImportRecords(batch.importBatchId) };
