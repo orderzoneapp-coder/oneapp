@@ -148,9 +148,32 @@ async function saveEditor(event) {
   }
 }
 
+function fallbackFileHash(buffer, file) {
+  let hash = 0x811c9dc5;
+  for (const value of new Uint8Array(buffer)) {
+    hash ^= value;
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return `fnv1a-${(hash >>> 0).toString(16).padStart(8, '0')}-${file.size}`;
+}
+
 async function sha256(file) {
-  const hash = await crypto.subtle.digest('SHA-256', await file.arrayBuffer());
-  return [...new Uint8Array(hash)].map(value => value.toString(16).padStart(2, '0')).join('');
+  const buffer = await file.arrayBuffer();
+  const fallback = fallbackFileHash(buffer, file);
+  if (!globalThis.crypto?.subtle) return fallback;
+  let timeoutId = null;
+  try {
+    const hash = await Promise.race([
+      crypto.subtle.digest('SHA-256', buffer),
+      new Promise((_, reject) => { timeoutId = setTimeout(() => reject(new Error('파일 해시 계산 시간 초과')), 5000); })
+    ]);
+    return [...new Uint8Array(hash)].map(value => value.toString(16).padStart(2, '0')).join('');
+  } catch (error) {
+    console.warn('Customer import uses the deterministic fallback file hash', error);
+    return fallback;
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
 }
 
 function importStatusLabel(status) {
@@ -384,12 +407,16 @@ async function readExcel(file, sourceSystem) {
   if (!rows.length) throw new Error('불러올 거래처 데이터가 없습니다.');
   elements.importSummary.innerHTML = '<div class="cm-progress-copy"><strong>Excel 읽기 완료</strong><span>거래처 비교를 시작합니다.</span></div><div class="cm-progress-track"><span style="width:0%"></span></div>';
   elements.importGate.textContent = '기존 거래처와 비교하고 있습니다.';
+  elements.importSummary.innerHTML = `<div class="cm-progress-copy"><strong>파일 식별 중</strong><span>0 / ${rows.length.toLocaleString()}</span></div><div class="cm-progress-track"><span style="width:0%"></span></div>`;
+  elements.importGate.textContent = '분석 작업을 준비하고 있습니다.';
+  const fileHash = await sha256(file);
   let prepared;
   try {
     prepared = await prepareCustomerSourceImport(rows, {
       sourceSystem,
       fileName: file.name,
-      fileHash: await sha256(file),
+      fileHash,
+      chunkSize: 50,
       onProgress: ({ processed, total }) => {
         const percent = total ? Math.round((processed / total) * 100) : 0;
         elements.importSummary.innerHTML = `<div class="cm-progress-copy"><strong>분석·저장 중 ${processed.toLocaleString()} / ${total.toLocaleString()}</strong><span>${percent}%</span></div><div class="cm-progress-track"><span style="width:${percent}%"></span></div>`;
