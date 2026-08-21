@@ -204,6 +204,11 @@
       "purpose": "Manage the shipment workflow from customer order through available inventory, purchasing, staged shipment completion, and reviewed outbound workbooks.",
       "owner": "shipping-operations",
       "productionWrites": true,
+      "publicEntries": [
+        "orders.html",
+        "orderops_list.html",
+        "orderops/list.html"
+      ],
       "services": [
         "cloud-sync"
       ],
@@ -329,6 +334,8 @@
       "id": "shipping-purchase-plan",
       "owner": "orderops",
       "consumers": [
+        "orders.html",
+        "orderops_list.html",
         "orderops/list.html"
       ],
       "schemaVersion": "ONEAPP_SHIPPING_PURCHASE_PLAN_V1",
