@@ -1,10 +1,10 @@
 (() => {
   const apps = [
-    { name: '기초등록', service: 'Master', url: 'https://oneapp.orderz.co.kr/Master.html' },
+    { name: '출고관리', service: 'ORDER Q', url: 'https://oneapp.orderz.co.kr/orderops_list.html' },
+    { name: '재고관리', service: 'DataOps', url: 'https://oneapp.orderz.co.kr/DataOps' },
     { name: '시세관리', service: 'MerchOps', url: 'https://oneapp.orderz.co.kr/MerchOps' },
     { name: '스마트파서', service: 'SmartParser', url: 'https://oneapp.orderz.co.kr/SmartParser.html' },
-    { name: '출고관리', service: 'ORDER Q', url: 'https://oneapp.orderz.co.kr/orderops_list.html' },
-    { name: '재고관리', service: 'DataOps', url: 'https://oneapp.orderz.co.kr/DataOps' }
+    { name: '기초등록', service: 'Master', url: 'https://oneapp.orderz.co.kr/Master.html' }
   ];
 
   const navTrack = document.querySelector('.app-nav-track');

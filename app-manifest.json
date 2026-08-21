@@ -22,11 +22,11 @@
       "status": "production",
       "purpose": "Provide the shared ONEAPP application header and navigation entry point without adding dashboard content or production data writes.",
       "navigatesTo": [
-        "master-lookup",
+        "orderops",
+        "dataops",
         "merchops",
         "smart-parser",
-        "orderops",
-        "dataops"
+        "master-lookup"
       ],
       "sharedContracts": []
     },
