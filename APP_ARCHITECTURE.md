@@ -83,6 +83,7 @@ Shared storage or navigation does not make their business meaning identical.
 
 | Component | Type | Status | Primary responsibility |
 |---|---|---|---|
+| `nexus/index.html` | Web entry | Production | Shared ONEAPP application header and navigation entry point without dashboard content or production data writes |
 | `MerchOps.html` | Web entry | Production | Product master review, pricing, promotion, and Excel-based product-information application workflow; stopped-product state is consumed only for worktable protection and compatibility reads |
 | `DataOps.html` | Web entry | Production | Purchase, sales, inventory, stock ledger, cost, and performance analysis; administrator-reviewed out-of-list inventory product selection and positive-count sale resume |
 | `SmartParser.html` | Web entry | Production | Parse external documents, resolve duplicate mappings, own supplier exclusions and stopped/sold-out product management, apply approved changes directly to the product master, and record change history |

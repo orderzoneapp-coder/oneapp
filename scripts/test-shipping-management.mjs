@@ -19,12 +19,12 @@ assert.match(orderOpsHtml, /<body>[\s\S]*<\/body>\s*<\/html>/,
 assert.match(orderOpsHtml, /brand-badge">v1\.63</, "ORDER Q visible version must be v1.63");
 assert.match(orderOpsHtml, /<title>ONEAPP ORDER Q · 출고관리<\/title>/,
   "the public page title must establish ORDER Q as shipment management");
-assert.match(orderOpsHtml, /aria-label="ONEAPP ORDER Q 출고관리"/,
-  "the public brand must identify ONEAPP ORDER Q shipment management");
-assert.match(orderOpsHtml, /class="brand-logo" src="assets\/order-q-logo\.png"/,
-  "the public header must use the approved ORDER Q logo asset");
-assert.match(orderOpsHtml, /\.brand-logo-frame\s*\{[\s\S]*?width:\s*120px;[\s\S]*?height:\s*20px;/,
-  "the public ORDER Q logo must match the ONEAPP wordmark height");
+assert.match(orderOpsHtml, /<nexus-top app-id="orderq"><\/nexus-top>/,
+  "the public page must load NEXUS TOP with the ORDER Q app id");
+assert.match(orderOpsHtml, /<strong class="brand-product">ORDER Q · 출고관리<\/strong>/,
+  "the public APP BAR must identify ORDER Q shipment management");
+assert.doesNotMatch(orderOpsHtml, /class="brand-logo" src="assets\/order-q-logo\.png"/,
+  "the public APP BAR must not duplicate the former ORDER Q logo");
 assert.match(orderOpsHtml, /ORDER Q v1\.63 · 출고관리/,
   "the public footer must use the ORDER Q product concept");
 assert.doesNotMatch(
@@ -226,13 +226,10 @@ const publicHeaderSource = orderOpsHtml.slice(
   orderOpsHtml.indexOf('<header class="global-header">'),
   orderOpsHtml.indexOf('</header>'),
 );
-assert.match(publicHeaderSource,
-  /class="master-brand-link" href="Master\.html"[^>]*aria-label="ONEAPP NEXES 마스터 DB로 이동"/,
-  "the public ONEAPP NEXES lockup must open Master.html by touch or click");
-for (const masterBrandText of ["NEXES", "v3.6", "GOLDEN RECORD"]) {
-  assert.ok(publicHeaderSource.includes(masterBrandText),
-    `the public master lockup is missing: ${masterBrandText}`);
-}
+assert.match(publicHeaderSource, /ORDER Q · 출고관리/,
+  "the public APP BAR must retain the application and work name");
+assert.doesNotMatch(publicHeaderSource, /master-brand-link|NEXES|GOLDEN RECORD/,
+  "the public APP BAR must remove the duplicated global master lockup");
 assert.ok(publicHeaderSource.indexOf('id="smartInputButton"') < publicHeaderSource.indexOf('id="printButton"'),
   "Smart input F4 must sit immediately before screen print in the global header");
 assert.match(publicHeaderSource, /id="smartInputButton" href="orderops\/input\.html"/,
@@ -1891,8 +1888,10 @@ const inlineScriptMatch = html.match(/<script>\s*([\s\S]*?)<\/script>\s*<\/body>
 assert.ok(inlineScriptMatch, "canonical ORDER Q inline application script must exist");
 new vm.Script(inlineScriptMatch[1], { filename: "orderops/list.html:inline" });
 assert.match(html, /brand-badge">v1\.63</, "canonical ORDER Q visible version must be v1.63");
-assert.match(html, /class="brand-logo" src="\.\.\/assets\/order-q-logo\.png"/,
-  "the canonical header must use the shared ORDER Q logo asset");
+assert.match(html, /<nexus-top app-id="orderq"><\/nexus-top>/,
+  "the canonical route must load NEXUS TOP with the ORDER Q app id");
+assert.doesNotMatch(html, /class="brand-logo" src="\.\.\/assets\/order-q-logo\.png"/,
+  "the canonical APP BAR must not duplicate the former ORDER Q logo");
 assert.match(html, /<h2 id="settingsModalTitle">ORDER Q 환경설정<\/h2>/,
   "the settings title must use the ORDER Q brand");
 assert.match(
@@ -2063,9 +2062,8 @@ assert.ok(canonicalViewControls.indexOf('id="shortageFocusButton"') < canonicalV
   "the canonical saved-layout group must sit immediately after shortage focus and before the remaining tools");
 assert.match(html, /id="smartInputButton" href="input\.html"/,
   "canonical orderops route must retain its directory-relative manual-order link");
-assert.match(html,
-  /class="master-brand-link" href="\.\.\/Master\.html"[^>]*aria-label="ONEAPP NEXES 마스터 DB로 이동"/,
-  "the canonical ONEAPP NEXES lockup must resolve to the root Master.html page");
+assert.doesNotMatch(html.slice(html.indexOf('<header class="global-header">'), html.indexOf('</header>')), /master-brand-link|NEXES|GOLDEN RECORD/,
+  "the canonical APP BAR must remove the duplicated global master lockup");
 assert.ok(canonicalViewControls.indexOf('id="columnWidthResetButton"') < canonicalViewControls.indexOf('id="warehouseFilterToggle"'),
   "canonical filter buttons must remain at the right edge after the column tools");
 assert.match(combinedCss, /body\s*\{[^}]*font-size:\s*14px;/,
@@ -2741,7 +2739,7 @@ if (referenceFilesEnabled && fs.existsSync(referenceInventoryPath)) {
   const actualInventorySheet = workbookTools.buildWorkbook(inventoryReferenceWorkspace, XLSX).Sheets["창고별재고"];
   const actualPurchaseColumn = XLSX.utils.encode_col(actualInventoryView.headers.length);
   const actualSupplierColumn = XLSX.utils.encode_col(actualInventoryView.headers.length + 1);
-  const actualOrderCustomerColumn = XLSX.utils.encode_col(actualInventoryView.headers.length + 2);
+  const actualOrderCustomerColumn = XLSX.utils.encode_col(actualInventoryView.headers.length + 3);
   assert.equal(actualInventorySheet["!ref"], `A1:${actualOrderCustomerColumn}${referenceInventoryOnly.rowCount + 1}`);
   assert.equal(actualInventorySheet[`${actualPurchaseColumn}${referenceInventoryOnly.rowCount + 1}`].v, "실재고입력검증");
 }

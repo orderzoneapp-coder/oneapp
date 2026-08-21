@@ -66,8 +66,29 @@ for (const [name, source] of [
   ["orderops_list.html", compatibilityOrderQ],
   ["orderops/list.html", canonicalOrderQ],
 ]) {
-  assert.match(source, /master-brand-version">v3\.6</, `${name} must show the current NEXES version`);
+  assert.match(source, /<nexus-top app-id="orderq"><\/nexus-top>/, `${name} must load NEXUS TOP`);
+  assert.match(source, /\/nexus\/common\/nexus-top\.js\?v=1\.0\.0/, `${name} must use the shared NEXUS TOP component`);
   assert.match(source, /brand-badge">v1\.63</, `${name} must show the current ORDER Q version`);
 }
+
+const nexusApps = [
+  ["Master.html", "master"],
+  ["MerchOps.html", "merchops"],
+  ["SmartParser.html", "orderin"],
+  ["DataOps.html", "dataops"],
+];
+for (const [name, appId] of nexusApps) {
+  const source = read(name);
+  assert.match(source, new RegExp(`<nexus-top app-id="${appId}"></nexus-top>`), `${name} must declare its app-id`);
+  assert.match(source, /\/nexus\/common\/apps-config\.js\?v=1\.0\.0/, `${name} must load shared app configuration`);
+  assert.match(source, /\/nexus\/common\/nexus-top\.js\?v=1\.0\.0/, `${name} must load NEXUS TOP`);
+}
+
+const nexusConfig = read("nexus/common/apps-config.js");
+const defaultOrder = [...nexusConfig.matchAll(/id:'([^']+)'/g)].map((match) => match[1]);
+assert.deepEqual(defaultOrder, ["orderq", "dataops", "merchops", "master"], "NEXUS TOP must expose only the four parent applications in operating order");
+assert.match(nexusConfig, /name:'재고관리'/);
+assert.doesNotMatch(nexusConfig, /id:'orderin'|name:'주문입력'|SmartParser\.html/, "SmartParser must not appear as a parent NEXUS TOP application");
+assert.match(read("nexus/common/nexus-top.js"), /declared==='orderin'\?'merchops':declared/, "SmartParser must activate its parent MerchOps menu");
 
 console.log("NEXES application routing tests passed.");

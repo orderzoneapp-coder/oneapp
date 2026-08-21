@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.3.0",
-  "updatedAt": "2026-08-08",
+  "updatedAt": "2026-08-21",
   "repository": {
     "fullName": "orderzoneapp-coder/oneapp",
     "defaultBranch": "main",
@@ -14,6 +14,22 @@
     "archived": "Retained in Git history or releases and not deployed as an active entry point."
   },
   "applications": [
+    {
+      "id": "nexus",
+      "name": "NEXUS",
+      "path": "nexus/index.html",
+      "kind": "web-entry",
+      "status": "production",
+      "purpose": "Provide the shared ONEAPP application header and navigation entry point without adding dashboard content or production data writes.",
+      "navigatesTo": [
+        "orderops",
+        "dataops",
+        "merchops",
+        "smart-parser",
+        "master-lookup"
+      ],
+      "sharedContracts": []
+    },
     {
       "id": "merchops",
       "name": "MerchOps",

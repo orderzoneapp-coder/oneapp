@@ -133,8 +133,12 @@
         };
 
     </script>
+    <script src="/nexus/common/apps-config.js?v=1.0.0"></script>
+    <script src="/nexus/common/nexus-top.js?v=1.0.0"></script>
+    <style>:root{--nexus-top-height:44px}body>#root>.h-screen{height:calc(100vh - var(--nexus-top-height))!important}</style>
 </head>
 <body>
+    <nexus-top app-id="orderin"></nexus-top>
     <div id="root"></div>
 
     <script type="text/javascript">
@@ -2589,8 +2593,8 @@ const ParserApp = () => {
                     React.createElement("div", { className: "bg-[#0f172a] rounded-xl shadow-lg border border-slate-800 flex flex-col overflow-hidden" },
                         React.createElement("div", { className: "px-5 py-3 flex justify-between items-center border-b border-slate-800/80 bg-[#0b1120] gap-4" },
                             React.createElement("div", { className: "flex items-center group shrink-0" },
-                                React.createElement("span", { className: "text-xl font-black text-emerald-400 mr-3" }, "ONEAPP"),
-                                React.createElement("div", { className: "flex flex-col border-l-2 border-slate-700 pl-3" },
+                                React.createElement("span", { className: "text-[14px] font-black text-slate-100 mr-3 whitespace-nowrap" }, "ORDER IN · 주문입력"),
+                                React.createElement("div", { className: "hidden" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "Smart Parser"),
                                         React.createElement("span", { className: "ml-2 bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 px-1.5 py-0.5 rounded text-[9px] font-bold" }, "v3.2.0 CatalogWarehousePricing")),
