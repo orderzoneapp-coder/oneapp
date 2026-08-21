@@ -9,7 +9,7 @@ import {
   runCustomerCodeUpsert,
   saveCustomerHeaderMapping,
   saveCustomerUserFieldDefinition,
-} from './customer-code-upsert.js?v=0.16.0';
+} from './customer-code-upsert.js?v=0.16.1';
 import { getByKey, STORE } from './orderq-db.js?v=0.16.0';
 import { pushPending } from './orderq-sync-engine.js?v=0.16.0';
 
@@ -24,6 +24,8 @@ const state = {
   filter: 'SUMMARY',
   busy: false,
   definitions: [],
+  cloudRetryTimer: 0,
+  syncingCloud: false,
 };
 
 const byId = id => document.getElementById(id);
@@ -156,9 +158,50 @@ function cloudView(work) {
   const synced = job.cloudStatus === 'CLOUD_SYNCED';
   return `<section class="customer-upsert-cloud">
     <strong>로컬 저장</strong><p>완료 · ${Number(job.processedCount || 0).toLocaleString()} / ${Number(job.rowCount || 0).toLocaleString()}</p>
-    <strong>Cloud 동기화</strong><p>${synced ? '완료' : '전송 대기'} · 적용 ${Number(job.cloudAppliedCount || 0).toLocaleString()} · 오류 ${Number(job.cloudErrorCount || 0).toLocaleString()}</p>
+    <strong>Cloud 동기화</strong><p>${synced ? '완료' : '전송 대기'} · ACK ${Number(job.cloudAppliedCount || 0).toLocaleString()} / ${Number(job.cloudQueueTotalCount || 0).toLocaleString()} · 대기 ${Number(job.cloudPendingCount || 0).toLocaleString()} · 충돌 ${Number(job.cloudConflictCount || 0).toLocaleString()}</p>
     ${job.cloudMessage ? `<pre>${escapeHtml(job.cloudMessage)}</pre>` : ''}
   </section>`;
+}
+
+function clearCloudRetry() {
+  if (state.cloudRetryTimer) clearTimeout(state.cloudRetryTimer);
+  state.cloudRetryTimer = 0;
+}
+
+function scheduleCloudRetry(work, immediate = false) {
+  clearCloudRetry();
+  if (!work?.job?.importId || work.job.cloudStatus === 'CLOUD_SYNCED') return;
+  const plannedAt = Date.parse(work.job.cloudNextRetryAt || '');
+  const delay = immediate ? 0 : Math.max(1000, Number.isFinite(plannedAt) ? plannedAt - Date.now() : 15000);
+  state.cloudRetryTimer = setTimeout(() => {
+    syncCustomerImportCloud(work).catch(error => {
+      console.error('[CustomerCodeUpsertCloudRetry]', error);
+      work.job.cloudMessage = `Cloud 자동 재시도 실행 실패: ${error?.message || error}`;
+      renderWork(work);
+      scheduleCloudRetry(work);
+    });
+  }, delay);
+}
+
+async function syncCustomerImportCloud(work) {
+  if (!work?.job?.importId || state.syncingCloud) return work?.job || null;
+  state.syncingCloud = true;
+  clearCloudRetry();
+  let syncResult;
+  try {
+    try {
+      syncResult = await pushPending();
+    } catch (error) {
+      syncResult = { online: navigator.onLine, applied: 0, errors: 1, conflicts: 0, error };
+    }
+    const updatedJob = await markCustomerUpsertCloudStatus(work.job.importId, syncResult);
+    work.job = updatedJob || work.job;
+    renderWork(work);
+    scheduleCloudRetry(work);
+    return work.job;
+  } finally {
+    state.syncingCloud = false;
+  }
 }
 
 function renderWork(work) {
@@ -260,16 +303,7 @@ async function runStoredRows({ resetFilter = true } = {}) {
     });
     if (resetFilter) state.filter = 'SUMMARY';
     renderWork(work);
-    let syncResult;
-    try {
-      syncResult = await pushPending();
-    } catch (error) {
-      syncResult = { online: navigator.onLine, applied: 0, errors: 1, conflicts: 0, message: error.message };
-    }
-    const updatedJob = await markCustomerUpsertCloudStatus(work.job.importId, syncResult);
-    work.job = updatedJob || work.job;
-    if (syncResult?.message) work.job.cloudMessage = syncResult.message;
-    renderWork(work);
+    await syncCustomerImportCloud(work);
     const refreshKey = `customer-upsert-list-refreshed:${work.job.importId}`;
     if (!sessionStorage.getItem(refreshKey)) {
       sessionStorage.setItem(refreshKey, '1');
@@ -409,7 +443,11 @@ async function restoreWork() {
       progressView({ processed: work.job.processedCount, total: work.job.rowCount, message: '중단된 저장 작업을 이어서 처리합니다.' });
       const resumed = await resumeCustomerCodeUpsert(work.job.importId, progress => progressView({ ...progress, message: '중단된 저장 작업을 이어서 처리합니다.' }));
       renderWork(resumed);
-    } else renderWork(work);
+      await syncCustomerImportCloud(resumed);
+    } else {
+      renderWork(work);
+      scheduleCloudRetry(work, !work.job.cloudNextRetryAt || Date.parse(work.job.cloudNextRetryAt) <= Date.now());
+    }
   } catch (error) {
     renderFatal(error);
   }
@@ -446,6 +484,9 @@ function install() {
     if (select) mapHeader(select).catch(error => alert(error.message));
   });
   restoreWork();
+  window.addEventListener('online', () => {
+    if (state.work?.job?.cloudStatus !== 'CLOUD_SYNCED') scheduleCloudRetry(state.work, true);
+  });
 }
 
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', install, { once: true });
