@@ -291,20 +291,10 @@ try {
   assert.equal(estimateShop.length - 1, 2, "estimate F8 subdivision row must remain");
   assert.equal(estimateShop[2][0], "20010002");
   assert.equal(estimateShop[2][15], 0);
-  assert.equal(estimateErp[1][11], "", "missing final-transmission must stay blank instead of copying inbound price");
-
-  const transmissionResult = await runF8Scenario({
-    name: "final-transmission-state",
-    rows: [
-      makeRow({ code: "FT0", role: "estimate", source: { 품목명: "명시 0", 입고가: 9000, 출고가: 11000, 최종전송: 0 } }),
-      makeRow({ code: "FTB", role: "estimate", source: { 품목명: "명시 공란", 입고가: 9000, 출고가: 11000, 최종전송: "" } }),
-      makeRow({ code: "FTM", role: "estimate", source: { 품목명: "컬럼 누락", 입고가: 9000, 출고가: 11000 } }),
-    ],
-  });
-  const transmissionErp = transmissionResult.context.XLSX.utils.sheet_to_json(transmissionResult.reopened.Sheets["ERP업데이트"], { header: 1, raw: true, defval: "" });
-  assert.equal(transmissionErp[1][11], 0, "explicit zero final-transmission must survive F8 XLSX generation");
-  assert.equal(transmissionErp[2][11], "", "explicit blank final-transmission must survive F8 XLSX generation");
-  assert.equal(transmissionErp[3][11], "", "missing final-transmission must survive F8 XLSX generation without fallback");
+  assert.deepEqual(Array.from(estimateErp[0]), ['품목코드', '입고가', '0', '출고가', '0', '입고B', 'n', '도매A', 'n', '도매B', 'n'],
+    "F8 ERP upload must end at the wholesale-B helper column");
+  assert.ok(estimateErp.slice(1).every((row) => row.length === 11),
+    "main and subdivision ERP rows must contain exactly 11 columns");
 
   const masterSaleStockResult = await runF8Scenario({
     name: "master-sale-stock-fallback",

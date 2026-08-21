@@ -130,7 +130,7 @@ assert.match(toolbar,
 assert.match(toolbar.trimEnd(), /"적용"\)\)\)\)\)\)\)\);\s*\}\);$/,
   "MainToolbar must return its root element instead of the final detail-filter condition");
 
-const versions = [...html.matchAll(/v2\.1\.201_TransientWorkModeNotice/g)].length;
-assert.ok(versions >= 3, "all MerchOps version labels must use v2.1.201");
+const versions = [...html.matchAll(/v2\.1\.202_F8ErpCoreColumns/g)].length;
+assert.ok(versions >= 3, "all MerchOps version labels must use v2.1.202");
 
 console.log("MerchOps common Excel routing, toolbar grouping, template aggregation, and registration sub-toolbar contracts passed.");

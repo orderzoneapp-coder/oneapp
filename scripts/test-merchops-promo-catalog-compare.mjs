@@ -392,7 +392,7 @@ assert.equal(issueContext.resolveMerchMainIssue({ stockQty: 0 }).text, "품절")
 assert.equal(issueContext.resolveMerchMainIssue({ noInboundPrice: true }).text, "입고가없음");
 assert.equal(issueContext.resolveMerchMainIssue({ hasActualWorkSource: true, priceChanged: true }).text, "가격변경");
 
-const versions = [...html.matchAll(/v2\.1\.201_TransientWorkModeNotice/g)].length;
+const versions = [...html.matchAll(/v2\.1\.202_F8ErpCoreColumns/g)].length;
 assert.ok(versions >= 3, "all three MerchOps version labels must use the target version");
 assert.doesNotMatch(html, /data-merch-work-mode": workMode/, "the toolbar must not expose a persistent system-mode badge");
 assert.doesNotMatch(html, /workModeLabels/, "persistent work-mode label rendering must be removed");

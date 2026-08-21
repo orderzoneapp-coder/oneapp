@@ -255,7 +255,7 @@ assert.match(toolbar, /const selectIssueFilter = \(value\) =>[\s\S]*withoutIssue
 assert.match(toolbar, /data-merch-no-inbound-action": "touch-choice"[\s\S]*\['spot', '싯가판매'\][\s\S]*\['stop', '판매정지'\]/,
   "the no-inbound action touch choices must be adjacent and conditionally visible");
 
-const versionMatches = [...html.matchAll(/v2\.1\.201_TransientWorkModeNotice/g)];
-assert.ok(versionMatches.length >= 3, "all MerchOps version labels must use v2.1.201");
+const versionMatches = [...html.matchAll(/v2\.1\.202_F8ErpCoreColumns/g)];
+assert.ok(versionMatches.length >= 3, "all MerchOps version labels must use v2.1.202");
 
 console.log("MerchOps theme-none, promo-price, and fixed-layout contracts passed.");
