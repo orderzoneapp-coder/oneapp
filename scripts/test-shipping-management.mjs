@@ -21,10 +21,10 @@ assert.match(orderOpsHtml, /<title>ONEAPP ORDER Q · 출고관리<\/title>/,
   "the public page title must establish ORDER Q as shipment management");
 assert.match(orderOpsHtml, /<nexus-top app-id="orderq"><\/nexus-top>/,
   "the public page must load NEXUS TOP with the ORDER Q app id");
-assert.match(orderOpsHtml, /<strong class="brand-product">ORDER Q · 출고관리<\/strong>/,
-  "the public APP BAR must identify ORDER Q shipment management");
-assert.doesNotMatch(orderOpsHtml, /class="brand-logo" src="assets\/order-q-logo\.png"/,
-  "the public APP BAR must not duplicate the former ORDER Q logo");
+assert.match(orderOpsHtml, /<img class="brand-logo" src="assets\/order-q-logo\.png" alt="ORDER Q">/,
+  "the public APP BAR must use the approved ORDER Q logo");
+assert.doesNotMatch(orderOpsHtml, /<strong class="brand-product">ORDER Q · 출고관리<\/strong>/,
+  "the public APP BAR must not duplicate the logo with the former text brand");
 assert.match(orderOpsHtml, /ORDER Q v1\.63 · 출고관리/,
   "the public footer must use the ORDER Q product concept");
 assert.doesNotMatch(
