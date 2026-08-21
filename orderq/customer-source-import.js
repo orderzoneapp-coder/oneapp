@@ -9,12 +9,13 @@ import {
   transactionDone
 } from './orderq-db.js?v=0.14.0';
 import {
+  CUSTOMER_FIELDS,
   CUSTOMER_IMPORT_STATUS,
   CUSTOMER_QUALITY,
   CUSTOMER_STATUS,
   normalizeCustomer,
   resolveCanonicalCustomer
-} from './customer-master.js?v=0.14.0';
+} from './customer-master.js?v=0.15.0';
 
 export const CUSTOMER_SOURCE_SYSTEM = Object.freeze({ ERP: 'ERP', SHOP: 'SHOP' });
 export const CUSTOMER_SOURCE_LINK_STATUS = Object.freeze({
@@ -24,6 +25,8 @@ export const CUSTOMER_SOURCE_LINK_STATUS = Object.freeze({
 });
 export const CUSTOMER_SOURCE_MATCH_METHOD = Object.freeze({
   EXISTING_LINK: 'EXISTING_LINK',
+  CUSTOMER_CODE_EXACT: 'CUSTOMER_CODE_EXACT',
+  EXISTING_IMPORT_HISTORY: 'EXISTING_IMPORT_HISTORY',
   BUSINESS_NUMBER_EXACT: 'BUSINESS_NUMBER_EXACT',
   NAME_EXACT: 'NAME_EXACT',
   ALIAS_EXACT: 'ALIAS_EXACT',
@@ -31,6 +34,9 @@ export const CUSTOMER_SOURCE_MATCH_METHOD = Object.freeze({
   ADMIN_SELECTED: 'ADMIN_SELECTED',
   ADMIN_NEW: 'ADMIN_NEW'
 });
+
+export const CUSTOMER_SOURCE_MAPPING_PROFILE = 'ERP_CUSTOMER';
+export const CUSTOMER_SOURCE_MAPPING_VERSION = 'ERP_CUSTOMER_17COL_V1';
 export const CUSTOMER_SOURCE_LINK_EVENT = Object.freeze({
   CREATED: 'LINK_CREATED',
   CHANGED: 'LINK_CHANGED',
@@ -39,12 +45,6 @@ export const CUSTOMER_SOURCE_LINK_EVENT = Object.freeze({
 });
 
 const SOURCE_IMPORT_TYPE = 'CUSTOMER_SOURCE_IMPORT';
-const CUSTOMER_FIELDS = Object.freeze([
-  'customerCode', 'customerName', 'representativeName', 'businessNumber', 'businessType',
-  'businessItem', 'phone', 'fax', 'mobile', 'email', 'postalCode', 'address',
-  'addressDetail', 'contactName', 'contactPhone', 'groupName', 'priceGroup'
-]);
-
 const ERP_HEADERS = Object.freeze({
   sourceCustomerCode: ['거래처코드', '코드', '사업자번호 (거래처코드)', '사업자번호(거래처코드)'],
   customerName: ['거래처명', '이름(거래처명)'],
@@ -62,11 +62,44 @@ const ERP_HEADERS = Object.freeze({
   addressDetail: ['상세주소'],
   contactName: ['담당자명', '담당자'],
   contactPhone: ['관리자연락처', '담당자연락처'],
-  groupName: ['그룹1', '거래처그룹1', '그룹'],
+  group1Code: ['거래처그룹1코드'],
+  group1Name: ['그룹1', '거래처그룹1', '그룹'],
+  group2Code: ['거래처그룹2코드'],
+  group2Name: ['거래처그룹2명'],
   priceGroup: ['단가그룹'],
+  paymentDay: ['결제일'],
+  bankAccountText: ['계좌'],
   searchText: ['검색창내용'],
   memo: ['적요']
 });
+
+export const ERP_CUSTOMER_17COL_CONTRACT = Object.freeze([
+  ['담당자명', 'contactName'],
+  ['거래처그룹1코드', 'group1Code'],
+  ['그룹1', 'group1Name'],
+  ['거래처그룹2코드', 'group2Code'],
+  ['거래처그룹2명', 'group2Name'],
+  ['거래처코드', 'customerCode'],
+  ['거래처명', 'customerName'],
+  ['적요', 'memo'],
+  ['결제일', 'paymentDay'],
+  ['계좌', 'bankAccountText'],
+  ['단가그룹', 'priceGroup'],
+  ['핸드폰번호', 'mobile'],
+  ['대표자명', 'representativeName'],
+  ['주소1', 'address'],
+  ['전화', 'phone'],
+  ['검색창내용', 'searchText'],
+  ['Email', 'email']
+]);
+
+function mappingProfileFor(sourceSystem) {
+  return sourceSystem === CUSTOMER_SOURCE_SYSTEM.ERP ? CUSTOMER_SOURCE_MAPPING_PROFILE : 'SHOP_CUSTOMER';
+}
+
+function mappingVersionFor(sourceSystem) {
+  return sourceSystem === CUSTOMER_SOURCE_SYSTEM.ERP ? CUSTOMER_SOURCE_MAPPING_VERSION : 'SHOP_CUSTOMER_V1';
+}
 
 const SHOP_HEADERS = Object.freeze({
   sourceCustomerCode: ['아이디'],
@@ -267,9 +300,17 @@ export function mapCustomerSourceRow(row = {}, sourceSystem) {
     addressDetail,
     contactName: read('contactName'),
     contactPhone: read('contactPhone'),
-    groupName: read('groupName'),
-    priceGroup: read('priceGroup')
+    group1Code: read('group1Code'),
+    group1Name: read('group1Name'),
+    group2Code: read('group2Code'),
+    group2Name: read('group2Name'),
+    priceGroup: read('priceGroup'),
+    paymentDay: read('paymentDay'),
+    bankAccountText: read('bankAccountText'),
+    memo: read('memo'),
+    searchText: read('searchText')
   };
+  incoming.groupName = incoming.group1Name;
   return {
     sourceSystem,
     sourceCustomerCode,
@@ -290,7 +331,7 @@ export function mapCustomerSourceRow(row = {}, sourceSystem) {
 }
 
 function changedFields(existing, incoming) {
-  return CUSTOMER_FIELDS.filter(field => clean(incoming[field]) && clean(incoming[field]) !== clean(existing?.[field]));
+  return CUSTOMER_FIELDS.filter(field => field !== 'groupName' && clean(incoming[field]) && clean(incoming[field]) !== clean(existing?.[field]));
 }
 
 function candidateMapEntry(map, customer, reason, score) {
@@ -372,6 +413,30 @@ function sourceRowNumber(index, sourceSystem) {
   return index + 2;
 }
 
+function uniqueCustomerCodeMatch(source, customers, byId) {
+  const sourceCode = normalizeText(source.sourceCustomerCode);
+  if (!sourceCode) return null;
+  const matches = uniqueCanonicalCustomers(
+    customers.filter(customer => normalizeText(customer.customerCode || customer.erpCustomerCode) === sourceCode),
+    byId
+  ).filter(customer => customer.status === CUSTOMER_STATUS.ACTIVE && customer.qualityStatus !== CUSTOMER_QUALITY.SUPERSEDED);
+  return matches.length === 1 ? matches[0] : null;
+}
+
+function importHistoryMatch(source, historyByKey, byId) {
+  const history = historyByKey.get(source.sourceLinkKey);
+  const customer = canonicalCustomer(byId.get(history?.appliedCustomerId), byId);
+  return customer?.status === CUSTOMER_STATUS.ACTIVE && customer.qualityStatus !== CUSTOMER_QUALITY.SUPERSEDED
+    ? customer
+    : null;
+}
+
+function defaultFieldDecisions(existing, incoming, differences) {
+  return Object.fromEntries(differences
+    .filter(field => !clean(existing?.[field]) && clean(incoming?.[field]))
+    .map(field => [field, 'USE_FILE']));
+}
+
 async function persistCustomerSourceImportChunk(batch, records = []) {
   const db = await openOrderQDb();
   const tx = db.transaction([STORE.IMPORT_BATCHES, STORE.SOURCE_RECORDS], 'readwrite');
@@ -405,6 +470,15 @@ export async function prepareCustomerSourceImport(rows, {
   const system = clean(sourceSystem).toUpperCase();
   sourceHeaders(system);
   const progressChunkSize = Math.max(1, Number(chunkSize) || 200);
+  const expectedMappingProfile = mappingProfileFor(system);
+  const expectedMappingVersion = mappingVersionFor(system);
+  const mappedSources = rows.map(row => mapCustomerSourceRow(row, system));
+  const mappingFieldCounts = system === CUSTOMER_SOURCE_SYSTEM.ERP
+    ? Object.fromEntries(ERP_CUSTOMER_17COL_CONTRACT.map(([, field]) => [
+        field,
+        mappedSources.reduce((count, source) => count + (clean(source.incoming[field]) ? 1 : 0), 0)
+      ]))
+    : {};
   let batch = null;
   let records = [];
   let startIndex = 0;
@@ -413,7 +487,12 @@ export async function prepareCustomerSourceImport(rows, {
   if (fileHash) {
     const batches = await getAll(STORE.IMPORT_BATCHES);
     const reusableBatch = batches
-      .filter(candidate => candidate.sourceType === SOURCE_IMPORT_TYPE && candidate.sourceSystem === system && candidate.fileHash === fileHash && ['PREPARING', 'PREPARED', 'PARTIAL'].includes(candidate.status))
+      .filter(candidate => candidate.sourceType === SOURCE_IMPORT_TYPE
+        && candidate.sourceSystem === system
+        && candidate.fileHash === fileHash
+        && candidate.mappingProfile === expectedMappingProfile
+        && candidate.mappingVersion === expectedMappingVersion
+        && ['PREPARING', 'PREPARED', 'PARTIAL'].includes(candidate.status))
       .sort((a, b) => String(b.updatedAt || b.createdAt).localeCompare(String(a.updatedAt || a.createdAt)))[0];
     if (reusableBatch) {
       const reusableRecords = sortedCustomerSourceImportRecords(await getCustomerSourceImportRecords(reusableBatch.importBatchId));
@@ -449,6 +528,10 @@ export async function prepareCustomerSourceImport(rows, {
       importBatchId: newId('CIB'),
       sourceType: SOURCE_IMPORT_TYPE,
       sourceSystem: system,
+      mappingProfile: expectedMappingProfile,
+      mappingVersion: expectedMappingVersion,
+      mappedHeaderCount: system === CUSTOMER_SOURCE_SYSTEM.ERP ? ERP_CUSTOMER_17COL_CONTRACT.length : 0,
+      mappingFieldCounts,
       fileName,
       fileHash,
       rowCount: rows.length,
@@ -464,14 +547,22 @@ export async function prepareCustomerSourceImport(rows, {
     if (isNewBatch) await persistCustomerSourceImportChunk(batch);
     onProgress?.({ phase: 'PERSISTED', processed: startIndex, total: rows.length, resumed: !isNewBatch });
 
-    const [customers, aliases, links] = await Promise.all([
+    const [customers, aliases, links, priorSourceRecords] = await Promise.all([
       getAll(STORE.CUSTOMERS),
       getAll(STORE.CUSTOMER_ALIASES),
-      getAll(STORE.CUSTOMER_SOURCE_LINKS)
+      getAll(STORE.CUSTOMER_SOURCE_LINKS),
+      getAll(STORE.SOURCE_RECORDS)
     ]);
     const byId = canonicalMap(customers);
     const linksByKey = new Map(links.map(link => [link.sourceLinkKey, link]));
-    const mappedSources = rows.map(row => mapCustomerSourceRow(row, system));
+    const historyByKey = new Map();
+    priorSourceRecords
+      .filter(record => record.sourceType === SOURCE_IMPORT_TYPE
+        && record.sourceSystem === system
+        && record.sourceLinkKey
+        && record.appliedCustomerId)
+      .sort((a, b) => String(a.updatedAt || a.createdAt).localeCompare(String(b.updatedAt || b.createdAt)))
+      .forEach(record => historyByKey.set(record.sourceLinkKey, record));
     const sourceLinkKeyCounts = mappedSources.reduce((map, source) => {
       if (source.sourceLinkKey) map.set(source.sourceLinkKey, (map.get(source.sourceLinkKey) || 0) + 1);
       return map;
@@ -487,6 +578,7 @@ export async function prepareCustomerSourceImport(rows, {
       let differences = [];
       let validationError = '';
       let candidates = [];
+      let matchedCustomer = null;
 
       if (!source.sourceCustomerCode) validationError = system === CUSTOMER_SOURCE_SYSTEM.SHOP ? '쇼핑몰 회원 아이디가 없습니다.' : 'ERP 거래처코드가 없습니다.';
       else if (!source.sourceCustomerName) validationError = '거래처명이 없습니다.';
@@ -495,17 +587,25 @@ export async function prepareCustomerSourceImport(rows, {
         const original = byId.get(existingLink.customerId);
         const canonical = canonicalCustomer(original, byId);
         if (canonical && canonical.status === CUSTOMER_STATUS.ACTIVE) {
+          matchedCustomer = canonical;
           selectedCustomerId = canonical.customerId;
           matchMethod = CUSTOMER_SOURCE_MATCH_METHOD.EXISTING_LINK;
           differences = changedFields(canonical, source.incoming);
           status = differences.length ? CUSTOMER_IMPORT_STATUS.CHANGED : CUSTOMER_IMPORT_STATUS.SAME;
         } else validationError = '기존 연결 거래처가 거래중단 또는 삭제 상태입니다.';
       } else if (!existingLink) {
-        const businessMatch = uniqueBusinessMatch(source, customers, byId);
-        if (businessMatch) {
-          selectedCustomerId = businessMatch.customerId;
-          matchMethod = CUSTOMER_SOURCE_MATCH_METHOD.BUSINESS_NUMBER_EXACT;
-          differences = changedFields(businessMatch, source.incoming);
+        const codeMatch = uniqueCustomerCodeMatch(source, customers, byId);
+        const historyMatch = codeMatch ? null : importHistoryMatch(source, historyByKey, byId);
+        const businessMatch = codeMatch || historyMatch ? null : uniqueBusinessMatch(source, customers, byId);
+        matchedCustomer = codeMatch || historyMatch || businessMatch;
+        if (matchedCustomer) {
+          selectedCustomerId = matchedCustomer.customerId;
+          matchMethod = codeMatch
+            ? CUSTOMER_SOURCE_MATCH_METHOD.CUSTOMER_CODE_EXACT
+            : historyMatch
+              ? CUSTOMER_SOURCE_MATCH_METHOD.EXISTING_IMPORT_HISTORY
+              : CUSTOMER_SOURCE_MATCH_METHOD.BUSINESS_NUMBER_EXACT;
+          differences = changedFields(matchedCustomer, source.incoming);
           status = differences.length ? CUSTOMER_IMPORT_STATUS.CHANGED : CUSTOMER_IMPORT_STATUS.SAME;
         }
       }
@@ -529,6 +629,7 @@ export async function prepareCustomerSourceImport(rows, {
         sourceLinkKey: source.sourceLinkKey,
         sourceCustomerName: source.sourceCustomerName,
         sourceNickname: source.sourceNickname,
+        sourceSearchText: source.sourceSearchText,
         sourceBusinessNumber: source.sourceBusinessNumber,
         sourceRepresentativeName: source.sourceRepresentativeName,
         sourcePhone: source.sourcePhone,
@@ -542,10 +643,14 @@ export async function prepareCustomerSourceImport(rows, {
         sourceLinkCustomerId: existingLink?.customerId || '',
         sourceLinkRevision: Number(existingLink?.revision || 0),
         matchMethod,
+        mappingProfile: expectedMappingProfile,
+        mappingVersion: expectedMappingVersion,
         candidateCustomerIds: candidates.map(candidate => candidate.customerId),
         candidateEvidence: candidates,
         changedFields: differences,
-        fieldDecisions: status === CUSTOMER_IMPORT_STATUS.CHANGED ? null : {},
+        fieldDecisions: status === CUSTOMER_IMPORT_STATUS.CHANGED
+          ? defaultFieldDecisions(matchedCustomer, source.incoming, differences)
+          : {},
         newDraftConfirmed: status === CUSTOMER_IMPORT_STATUS.NEW,
         validationError,
         errorMessage: '',
@@ -613,7 +718,9 @@ export async function getCustomerSourceImportRecords(importBatchId) {
 export async function getLatestCustomerSourceImportWork() {
   const batches = await getAll(STORE.IMPORT_BATCHES);
   const batch = batches
-    .filter(candidate => candidate.sourceType === SOURCE_IMPORT_TYPE && ['PREPARING', 'PREPARED', 'PARTIAL'].includes(candidate.status))
+    .filter(candidate => candidate.sourceType === SOURCE_IMPORT_TYPE
+      && candidate.mappingVersion === mappingVersionFor(candidate.sourceSystem)
+      && ['PREPARING', 'PREPARED', 'PARTIAL'].includes(candidate.status))
     .sort((a, b) => String(b.updatedAt || b.createdAt).localeCompare(String(a.updatedAt || a.createdAt)))[0];
   if (!batch) return null;
   return { batch, records: await getCustomerSourceImportRecords(batch.importBatchId) };
@@ -672,6 +779,8 @@ function buildSourceLink(record, customerId, existing, timestamp) {
     normalizedSourceCustomerCode: record.normalizedSourceCustomerCode,
     sourceLinkKey: record.sourceLinkKey,
     sourceCustomerName: record.sourceCustomerName,
+    sourceNickname: record.sourceNickname,
+    sourceSearchText: record.sourceSearchText,
     sourceBusinessNumber: record.sourceBusinessNumber,
     sourceRepresentativeName: record.sourceRepresentativeName,
     sourcePhone: record.sourcePhone,
@@ -813,6 +922,13 @@ async function applyOneRecord(record, actorId) {
 
   await addAliasIfNeeded(tx, customer.customerId, record.sourceCustomerName, `${record.sourceSystem}_SOURCE_NAME`, record.sourceLinkKey, timestamp);
   await addAliasIfNeeded(tx, customer.customerId, record.sourceNickname, `${record.sourceSystem}_SOURCE_NICKNAME`, record.sourceLinkKey, timestamp);
+  const searchAliases = [...new Set([
+    record.sourceSearchText,
+    ...clean(record.sourceSearchText).split(/[\s,;/|]+/)
+  ].map(clean).filter(Boolean))];
+  for (const value of searchAliases) {
+    await addAliasIfNeeded(tx, customer.customerId, value, `${record.sourceSystem}_SOURCE_SEARCH`, record.sourceLinkKey, timestamp);
+  }
 
   const appliedRecord = {
     ...(persistedRecord || record),

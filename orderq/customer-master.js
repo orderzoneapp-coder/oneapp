@@ -29,15 +29,31 @@ export const CUSTOMER_IMPORT_STATUS = Object.freeze({
   EXCLUDED: 'EXCLUDED'
 });
 
-const CUSTOMER_FIELDS = Object.freeze([
+export const CUSTOMER_FIELDS = Object.freeze([
   'customerCode', 'customerName', 'representativeName', 'businessNumber', 'businessType',
   'businessItem', 'phone', 'fax', 'mobile', 'email', 'postalCode', 'address',
-  'addressDetail', 'contactName', 'contactPhone', 'groupName', 'priceGroup'
+  'addressDetail', 'contactName', 'contactPhone',
+  'group1Code', 'group1Name', 'group2Code', 'group2Name', 'priceGroup',
+  'paymentDay', 'bankAccountText', 'memo', 'searchText', 'groupName'
 ]);
 
 const EXCEL_FIELD_MAP = Object.freeze({
+  '담당자명': 'contactName',
+  '거래처그룹1코드': 'group1Code',
+  '그룹1': 'group1Name',
+  '거래처그룹2코드': 'group2Code',
+  '거래처그룹2명': 'group2Name',
   '거래처코드': 'customerCode',
   '거래처명': 'customerName',
+  '적요': 'memo',
+  '결제일': 'paymentDay',
+  '계좌': 'bankAccountText',
+  '단가그룹': 'priceGroup',
+  '핸드폰번호': 'mobile',
+  '대표자명': 'representativeName',
+  '주소1': 'address',
+  '검색창내용': 'searchText',
+  'Email': 'email',
   '대표자': 'representativeName',
   '사업자번호': 'businessNumber',
   '업태': 'businessType',
@@ -51,8 +67,7 @@ const EXCEL_FIELD_MAP = Object.freeze({
   '상세주소': 'addressDetail',
   '담당자': 'contactName',
   '담당자연락처': 'contactPhone',
-  '그룹': 'groupName',
-  '단가그룹': 'priceGroup'
+  '그룹': 'group1Name'
 });
 
 function clean(value) {
@@ -145,6 +160,12 @@ export function normalizeCustomer(input = {}, previous = null) {
     createdAt: previous?.createdAt || input.createdAt || timestamp,
     updatedAt: input.updatedAt || timestamp
   };
+  CUSTOMER_FIELDS.forEach(field => {
+    if (field === 'customerCode' || field === 'customerName') return;
+    normalized[field] = clean(input[field] ?? previous?.[field]);
+  });
+  normalized.group1Name = clean(input.group1Name ?? input.groupName ?? previous?.group1Name ?? previous?.groupName);
+  normalized.groupName = normalized.group1Name;
   if (qualityStatus === CUSTOMER_QUALITY.SUPERSEDED && (!canonicalCustomerId || canonicalCustomerId === customerId)) {
     throw new Error('SUPERSEDED 거래처는 자신과 다른 대표 거래처가 필요합니다.');
   }
@@ -176,14 +197,26 @@ export async function listCustomers({ includeInactive = true, includeSuperseded 
     .sort((a, b) => a.customerName.localeCompare(b.customerName, 'ko'));
 }
 
-function scoreCustomer(customer, aliases, normalizedQuery, looseQuery) {
+function scoreCustomer(customer, aliases, normalizedQuery, looseQuery, sourceLinks = []) {
   const code = customer.normalizedCustomerCode || normalizeText(customerCodeOf(customer));
   const name = customer.normalizedName || normalizeText(customer.customerName);
   const loose = customer.looseNormalizedName || looseName(customer.customerName);
   const aliasExact = aliases.some(alias => alias.customerId === customer.customerId && (alias.normalizedAlias || alias.normalizedText) === normalizedQuery && alias.active !== false);
+  const sourceValues = sourceLinks.flatMap(link => [
+    link.sourceCustomerCode,
+    link.sourceCustomerName,
+    link.sourceNickname,
+    link.sourceSearchText
+  ]).map(normalizeText).filter(Boolean);
+  const fieldValues = CUSTOMER_FIELDS
+    .filter(field => !['customerCode', 'customerName', 'groupName'].includes(field))
+    .map(field => normalizeText(customer[field]))
+    .filter(Boolean);
   if (code && code === normalizedQuery) return { score: 1000, matchMethod: 'CODE_EXACT' };
+  if (sourceValues.includes(normalizedQuery)) return { score: 975, matchMethod: 'SOURCE_EXACT' };
   if (name === normalizedQuery) return { score: 950, matchMethod: 'NAME_EXACT' };
   if (aliasExact) return { score: 925, matchMethod: 'ALIAS_EXACT' };
+  if (fieldValues.includes(normalizedQuery)) return { score: 900, matchMethod: 'FIELD_EXACT' };
   if (loose && loose === looseQuery) return { score: 875, matchMethod: 'LOOSE_EXACT' };
   if (name.includes(normalizedQuery) || normalizedQuery.includes(name)) return { score: 700, matchMethod: 'NAME_PARTIAL' };
   const aliasPartial = aliases.some(alias => {
@@ -194,16 +227,31 @@ function scoreCustomer(customer, aliases, normalizedQuery, looseQuery) {
       && (normalizedAlias.includes(normalizedQuery) || normalizedQuery.includes(normalizedAlias));
   });
   if (aliasPartial) return { score: 650, matchMethod: 'ALIAS_PARTIAL' };
+  if (sourceValues.some(value => value.includes(normalizedQuery) || normalizedQuery.includes(value))) return { score: 625, matchMethod: 'SOURCE_PARTIAL' };
+  if (fieldValues.some(value => value.includes(normalizedQuery) || normalizedQuery.includes(value))) return { score: 600, matchMethod: 'FIELD_PARTIAL' };
   return { score: 0, matchMethod: '' };
 }
 
 export async function searchCustomers(query, { limit = 20, includeInactive = true } = {}) {
   const normalizedQuery = normalizeText(query);
   if (!normalizedQuery) return [];
-  const [customers, aliases] = await Promise.all([getAll(STORE.CUSTOMERS), getAll(STORE.CUSTOMER_ALIASES)]);
+  const [customers, aliases, sourceLinks] = await Promise.all([
+    getAll(STORE.CUSTOMERS),
+    getAll(STORE.CUSTOMER_ALIASES),
+    getAll(STORE.CUSTOMER_SOURCE_LINKS)
+  ]);
   const byId = canonicalMap(customers);
   const ranked = customers
-    .map(customer => ({ customer, ...scoreCustomer(customer, aliases, normalizedQuery, looseName(query)) }))
+    .map(customer => ({
+      customer,
+      ...scoreCustomer(
+        customer,
+        aliases,
+        normalizedQuery,
+        looseName(query),
+        sourceLinks.filter(link => link.customerId === customer.customerId)
+      )
+    }))
     .filter(item => item.score > 0)
     .map(item => {
       const canonical = resolveCanonicalCustomer(item.customer, byId);
@@ -293,7 +341,16 @@ export async function createLiveCustomer(input, { source = 'LIVE_CREATE', actorI
     updatedAt: timestamp
   });
   const event = customerEvent(customer.customerId, 'CREATED', { source, customer }, actorId, timestamp);
-  return writeCustomerMutation({ customer, aliases: [aliasRow(customer.customerId, customer.customerName, source, timestamp)], event });
+  const aliasValues = [...new Set([
+    customer.customerName,
+    customer.searchText,
+    ...clean(customer.searchText).split(/[\s,;/|]+/)
+  ].map(clean).filter(Boolean))];
+  return writeCustomerMutation({
+    customer,
+    aliases: aliasValues.map(value => aliasRow(customer.customerId, value, source, timestamp)),
+    event
+  });
 }
 
 export async function updateCustomer(customerId, patch, { expectedRevision, actorId = 'administrator', source = 'MASTER_EDIT' } = {}) {

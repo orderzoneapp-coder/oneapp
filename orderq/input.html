@@ -222,7 +222,7 @@
     import {
       createOrder, updateOrder, cancelOrder, getOrder, listOrders, subscribeOrderChanges,
       OrderRevisionConflictError, MATCH_STATUS
-    } from './order-intake-engine.js?v=0.12.1';
+    } from './order-intake-engine.js?v=0.15.0';
     import {
       syncBeforeOrderMutation, syncAfterLocalMutation, getSyncState,
       CloudOrderConflictError
@@ -242,6 +242,7 @@
     const editingOrderId = params.get('orderId');
     let loadedRevision = null;
     let loadedCustomerId = null;
+    let loadedCustomerName = '';
     let loadedAssigneeId = '';
     let loadedSourceType = 'MANUAL';
     let loadedInputChannel = 'DIRECT';
@@ -969,6 +970,7 @@
       const { order, items } = data;
       loadedRevision = order.revision;
       loadedCustomerId = order.customerId;
+      loadedCustomerName = order.customerName || '';
       loadedAssigneeId = order.assigneeId || '';
       loadedSourceType = order.sourceType || 'MANUAL';
       loadedInputChannel = order.inputChannel || 'DIRECT';
@@ -976,6 +978,7 @@
       orderMeta.textContent = `${order.orderNo || order.orderId}`;
       orderDateInput.value = order.orderDate || todayLocal();
       customerNameInput.value = order.customerName || '';
+      customerNameInput.dataset.customerId = loadedCustomerId || '';
       selectedWarehouseId = order.warehouseId || '';
       warehouseInput.value = order.warehouseName || order.warehouse || order.warehouseCode || '';
       transactionTypeInput.value = order.transactionType || '기타';
@@ -1219,6 +1222,19 @@
       }
     });
 
+    customerNameInput.addEventListener('customer:selected', event => {
+      const customer = event.detail?.customer;
+      if (!customer) return;
+      loadedCustomerId = customer.customerId || '';
+      loadedCustomerName = customer.customerName || '';
+      customerNameInput.value = loadedCustomerName;
+      customerNameInput.dataset.customerId = loadedCustomerId;
+    });
+    customerNameInput.addEventListener('input', () => {
+      if (customerNameInput.value.trim() === loadedCustomerName) return;
+      loadedCustomerId = null;
+      customerNameInput.dataset.customerId = '';
+    });
     customerNameInput.addEventListener('keydown', event => {
       if (event.key !== 'Enter' || event.isComposing) return;
       event.preventDefault();
@@ -1286,6 +1302,6 @@
       })
       .catch(error => showMessage(error.message || String(error), 'error'));
   </script>
-  <script type="module" src="./customer-picker-bootstrap.js?v=0.12.1"></script>
+  <script type="module" src="./customer-picker-bootstrap.js?v=0.15.0"></script>
 </body>
 </html>

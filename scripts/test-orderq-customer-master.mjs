@@ -9,7 +9,7 @@ import { ORDERQ_DB_VERSION, V10_STORE_DEFINITIONS } from '../orderq/orderq-v10-c
 const read = path => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
 const [
   db, service, sourceImport, picker, ui, html, css, intakeEngine, intakeWorkbench,
-  directInput, collectorRepository, collectorUi, collectorReview, collectorHtml, cloud
+  directInput, manualInput, collectorRepository, collectorUi, collectorReview, collectorHtml, cloud
 ] = await Promise.all([
   read('orderq/orderq-db.js'),
   read('orderq/customer-master.js'),
@@ -21,6 +21,7 @@ const [
   read('orderq/intake-engine.js'),
   read('orderq/intake-workbench.js'),
   read('orderq/order-intake-engine.js'),
+  read('orderq/input.html'),
   read('orderq/history-collector/history-repository.js'),
   read('orderq/collector-ui.js'),
   read('orderq/collector-smartparser-review.js'),
@@ -73,13 +74,13 @@ assert.match(ui, /getLatestCustomerSourceImportWork/, 'Pending Excel work must r
 assert.match(ui, /importStatusFilter: 'ISSUES'/, 'Workbench must default to unresolved customer rows');
 assert.match(html, /erpCustomerExcelFile/);
 assert.match(html, /거래처 DB/);
-assert.match(html, /customer-master-ui\.js\?v=0\.14\.6/, 'Customer Master entry module must invalidate the deployed cache');
+assert.match(html, /customer-master-ui\.js\?v=0\.15\.0/, 'Customer Master entry module must invalidate the deployed cache');
 assert.match(ui, /async function initializeCustomerMaster\(\) \{\s+const pending = await getLatestCustomerSourceImportWork\(\)/, 'Saved Excel work must render before Cloud Master synchronization');
 assert.match(ui, /ensureCustomerMasterReady[\s\S]*\.then\(\(\) => reload\(\)\)/, 'Cloud Master synchronization must continue in the background');
 assert.match(ui, /fallbackFileHash/, 'Excel import must continue with a deterministic file hash when Web Crypto stalls');
 assert.match(ui, /chunkSize: 50/, 'Excel import must persist visible progress in small chunks');
 assert.match(html, /customer-master\.css\?v=0\.14\.1/, 'Customer Master Workbench styles must invalidate the deployed cache');
-assert.match(ui, /customer-master\.js\?v=0\.14\.0/, 'Customer Master Workbench service must invalidate the deployed cache');
+assert.match(ui, /customer-master\.js\?v=0\.15\.0/, 'Customer Master Workbench service must invalidate the deployed cache');
 assert.doesNotMatch(html, /문제 거래처만 보기/);
 assert.match(ui, /data-import-status/, 'Import counts must act as status filters');
 assert.match(sourceImport, /newDraftConfirmed: status === CUSTOMER_IMPORT_STATUS\.NEW/, 'Unmatched source rows must be prepared for bulk draft creation');
@@ -103,6 +104,9 @@ assert.match(intakeWorkbench, /customerOverride: customer \?/);
 
 assert.doesNotMatch(directInput, /customerStore\.add\(customer\)/);
 assert.match(directInput, /미등록 거래처입니다/);
+assert.match(directInput, /customerSnapshot: customerSnapshot\(customer\)/, 'Orders must preserve the selected Customer Master snapshot');
+assert.match(manualInput, /customer:selected/, 'Direct input must retain the customerId returned by the shared Customer Picker');
+assert.match(manualInput, /loadedCustomerId = customer\.customerId/, 'Direct input must save the selected canonical customerId');
 assert.doesNotMatch(collectorRepository, /customer = candidate;\s*customerStore?\.put/);
 assert.match(collectorRepository, /미등록 거래처입니다/);
 assert.match(collectorUi, /resolvePreparedCustomers/);
@@ -146,4 +150,15 @@ assert.match(sourceImport, /sourceLinkRevision: Number\(existingLink\?\.revision
 assert.match(sourceImport, /actualSourceLinkRevision !== expectedSourceLinkRevision/, 'Import apply must reject a stale Source Link decision');
 assert.match(sourceImport, /expectedRevision = null[\s\S]*CUSTOMER_SOURCE_LINK_EXPECTED_REVISION_REQUIRED/, 'Source Link mutations must require expectedRevision');
 assert.match(sourceImport, /CUSTOMER_SOURCE_LINK_REVISION_CONFLICT/, 'Source Link mutations must report revision conflicts');
-assert.match(ui, /customer-source-import\.js\?v=0\.14\.4/, 'Chunked Source Import must invalidate the module cache');
+assert.match(ui, /customer-source-import\.js\?v=0\.15\.0/, 'Chunked Source Import must invalidate the module cache');
+assert.match(sourceImport, /ERP_CUSTOMER_17COL_V1/, 'ERP imports must be versioned against the verified 17-column source contract');
+for (const header of ['담당자명', '거래처그룹1코드', '그룹1', '거래처그룹2코드', '거래처그룹2명', '거래처코드', '거래처명', '적요', '결제일', '계좌', '단가그룹', '핸드폰번호', '대표자명', '주소1', '전화', '검색창내용', 'Email']) {
+  assert.match(sourceImport, new RegExp(header), `ERP 17-column mapping must include ${header}`);
+}
+assert.match(sourceImport, /CUSTOMER_CODE_EXACT/, 'ERP recovery must preserve customerId by exact customer code');
+assert.match(sourceImport, /EXISTING_IMPORT_HISTORY/, 'ERP recovery must reuse prior applied import history');
+assert.match(sourceImport, /mappingVersion === expectedMappingVersion/, 'Legacy import caches must not bypass the current mapping contract');
+assert.match(service, /STORE\.CUSTOMER_SOURCE_LINKS/, 'Customer search must include ERP and SHOP external identifiers');
+assert.match(html, /name="group2Name"/);
+assert.match(html, /name="bankAccountText"/);
+assert.match(html, /data-customer-source-links/);
