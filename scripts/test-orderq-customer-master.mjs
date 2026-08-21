@@ -73,7 +73,7 @@ assert.match(ui, /getLatestCustomerSourceImportWork/, 'Pending Excel work must r
 assert.match(ui, /importStatusFilter: 'ISSUES'/, 'Workbench must default to unresolved customer rows');
 assert.match(html, /erpCustomerExcelFile/);
 assert.match(html, /거래처 Master/);
-assert.match(html, /customer-master-ui\.js\?v=0\.14\.3/, 'Customer Master entry module must invalidate the deployed cache');
+assert.match(html, /customer-master-ui\.js\?v=0\.14\.4/, 'Customer Master entry module must invalidate the deployed cache');
 assert.match(html, /customer-master\.css\?v=0\.14\.1/, 'Customer Master Workbench styles must invalidate the deployed cache');
 assert.match(ui, /customer-master\.js\?v=0\.14\.0/, 'Customer Master Workbench service must invalidate the deployed cache');
 assert.doesNotMatch(html, /문제 거래처만 보기/);
