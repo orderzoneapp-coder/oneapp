@@ -87,7 +87,7 @@ function sourceLinkKey(sourceSystem, code) {
   return `${clean(sourceSystem).toUpperCase()}::${normalizeText(code)}`;
 }
 
-function queueItem(entityType, entityId, payload, timestamp = nowIso()) {
+function queueItem(entityType, entityId, payload, timestamp = nowIso(), customerImportId = '') {
   const revision = Math.max(1, Number(payload?.revision || 1));
   return {
     queueId: newId('SQ'),
@@ -97,6 +97,7 @@ function queueItem(entityType, entityId, payload, timestamp = nowIso()) {
     revision,
     baseRevision: Math.max(0, revision - 1),
     payload,
+    customerImportId: clean(customerImportId),
     status: 'PENDING',
     attempts: 0,
     createdAt: timestamp,
@@ -407,7 +408,7 @@ async function saveRowFailure(record, reasonCode, reasonMessage, detail = {}) {
   const db = await openOrderQDb();
   const tx = db.transaction([STORE.SOURCE_RECORDS, STORE.SYNC_QUEUE], 'readwrite');
   tx.objectStore(STORE.SOURCE_RECORDS).put(updated);
-  tx.objectStore(STORE.SYNC_QUEUE).put(queueItem('SOURCE_RECORD', updated.sourceRecordId, updated, timestamp));
+  tx.objectStore(STORE.SYNC_QUEUE).put(queueItem('SOURCE_RECORD', updated.sourceRecordId, updated, timestamp, updated.importId));
   await transactionDone(tx);
   return updated;
 }
@@ -439,7 +440,7 @@ async function canonicalCustomerInTx(store, customer) {
   return current || null;
 }
 
-async function addAlias(tx, customerId, value, sourceId, timestamp, sourceSystem = 'ERP') {
+async function addAlias(tx, customerId, value, sourceId, timestamp, sourceSystem = 'ERP', importId = '') {
   const alias = clean(value);
   const normalized = normalizeText(alias);
   if (!normalized) return;
@@ -448,7 +449,7 @@ async function addAlias(tx, customerId, value, sourceId, timestamp, sourceSystem
   if (existing) return;
   const row = aliasRow(customerId, alias, `${clean(sourceSystem).toUpperCase()}_IMPORT`, sourceId, timestamp);
   store.put(row);
-  tx.objectStore(STORE.SYNC_QUEUE).put(queueItem('CUSTOMER_ALIAS', row.mappingId, row, timestamp));
+  tx.objectStore(STORE.SYNC_QUEUE).put(queueItem('CUSTOMER_ALIAS', row.mappingId, row, timestamp, importId));
 }
 
 async function applyUpsertRow(record, mapping, duplicateRowsByCode) {
@@ -562,11 +563,11 @@ async function applyUpsertRow(record, mapping, duplicateRowsByCode) {
         changedFields
       }, timestamp);
       tx.objectStore(STORE.CUSTOMER_EVENTS).put(event);
-      tx.objectStore(STORE.SYNC_QUEUE).put(queueItem('CUSTOMER', customer.customerId, customer, timestamp));
-      if (previous?.customerName && previous.customerName !== customer.customerName) await addAlias(tx, customer.customerId, previous.customerName, key, timestamp, sourceSystem);
+      tx.objectStore(STORE.SYNC_QUEUE).put(queueItem('CUSTOMER', customer.customerId, customer, timestamp, record.importId));
+      if (previous?.customerName && previous.customerName !== customer.customerName) await addAlias(tx, customer.customerId, previous.customerName, key, timestamp, sourceSystem, record.importId);
     }
-    await addAlias(tx, customer.customerId, customer.customerName, key, timestamp, sourceSystem);
-    for (const alias of clean(customer.searchText).split(/[\s,;/|]+/).filter(Boolean)) await addAlias(tx, customer.customerId, alias, key, timestamp, sourceSystem);
+    await addAlias(tx, customer.customerId, customer.customerName, key, timestamp, sourceSystem, record.importId);
+    for (const alias of clean(customer.searchText).split(/[\s,;/|]+/).filter(Boolean)) await addAlias(tx, customer.customerId, alias, key, timestamp, sourceSystem, record.importId);
 
     const link = {
       ...(existingLink || {}),
@@ -589,11 +590,11 @@ async function applyUpsertRow(record, mapping, duplicateRowsByCode) {
       active: true
     };
     linkStore.put(link);
-    tx.objectStore(STORE.SYNC_QUEUE).put(queueItem('CUSTOMER_SOURCE_LINK', link.linkId, link, timestamp));
+    tx.objectStore(STORE.SYNC_QUEUE).put(queueItem('CUSTOMER_SOURCE_LINK', link.linkId, link, timestamp, record.importId));
     if (!existingLink || existingLink.customerId !== link.customerId) {
       const linkEvent = sourceLinkEvent(link, existingLink ? 'LINK_CHANGED' : 'LINK_CREATED', existingLink?.customerId || '', link.customerId, 'CUSTOMER_CODE_UPSERT', timestamp);
       tx.objectStore(STORE.CUSTOMER_SOURCE_LINK_EVENTS).put(linkEvent);
-      tx.objectStore(STORE.SYNC_QUEUE).put(queueItem('CUSTOMER_SOURCE_LINK_EVENT', linkEvent.eventId, linkEvent, timestamp));
+      tx.objectStore(STORE.SYNC_QUEUE).put(queueItem('CUSTOMER_SOURCE_LINK_EVENT', linkEvent.eventId, linkEvent, timestamp, record.importId));
     }
 
     const updatedRecord = {
@@ -618,7 +619,7 @@ async function applyUpsertRow(record, mapping, duplicateRowsByCode) {
       updatedAt: timestamp
     };
     tx.objectStore(STORE.SOURCE_RECORDS).put(updatedRecord);
-    tx.objectStore(STORE.SYNC_QUEUE).put(queueItem('SOURCE_RECORD', updatedRecord.sourceRecordId, updatedRecord, timestamp));
+    tx.objectStore(STORE.SYNC_QUEUE).put(queueItem('SOURCE_RECORD', updatedRecord.sourceRecordId, updatedRecord, timestamp, record.importId));
     await transactionDone(tx);
     return updatedRecord;
   } catch (error) {
@@ -669,7 +670,7 @@ async function processJob(job, records, mapping, onProgress) {
   const db = await openOrderQDb();
   const tx = db.transaction([STORE.IMPORT_BATCHES, STORE.SYNC_QUEUE], 'readwrite');
   tx.objectStore(STORE.IMPORT_BATCHES).put(job);
-  tx.objectStore(STORE.SYNC_QUEUE).put(queueItem('IMPORT_BATCH', job.importId, job, timestamp));
+  tx.objectStore(STORE.SYNC_QUEUE).put(queueItem('IMPORT_BATCH', job.importId, job, timestamp, job.importId));
   await transactionDone(tx);
   return { job, records: results };
 }
@@ -747,20 +748,95 @@ export async function resumeCustomerCodeUpsert(importId, onProgress = null) {
   return processJob(job, await recordsForJob(importId), mapping, onProgress);
 }
 
+export function customerUpsertRetryDelay(retryCount = 0) {
+  return Math.min(300000, 15000 * (2 ** Math.max(0, Number(retryCount || 0))));
+}
+
+function queueBelongsToCustomerImport(row, importId) {
+  const id = clean(importId);
+  if (!id || row?.localOnly === true) return false;
+  return clean(row.customerImportId) === id
+    || clean(row.payload?.importId) === id
+    || clean(row.payload?.importBatchId) === id;
+}
+
+export function summarizeCustomerUpsertQueue(rows = [], importId = '') {
+  const owned = rows.filter(row => queueBelongsToCustomerImport(row, importId));
+  const acked = owned.filter(row => row.status === 'ACKED');
+  const conflicts = owned.filter(row => row.status === 'CONFLICT');
+  const pending = owned.filter(row => row.status !== 'ACKED' && row.status !== 'CONFLICT');
+  const errors = owned.filter(row => clean(row.lastError));
+  return {
+    cloudStatus: owned.length > 0 && acked.length === owned.length
+      ? CUSTOMER_UPSERT_REASON.CLOUD_SYNCED
+      : CUSTOMER_UPSERT_REASON.CLOUD_SYNC_PENDING,
+    total: owned.length,
+    acked: acked.length,
+    pending: pending.length,
+    conflicts: conflicts.length,
+    errors: errors.length,
+    lastError: errors.map(row => clean(row.lastError)).filter(Boolean).join('\n')
+  };
+}
+
+export function customerUpsertSourceLinkConflictPatch(row, importId, timestamp = nowIso()) {
+  if (!queueBelongsToCustomerImport(row, importId)
+    || row.status !== 'CONFLICT'
+    || row.entityType !== 'CUSTOMER_SOURCE_LINK'
+    || (row.remotePayload?.customerId && clean(row.remotePayload.customerId) !== clean(row.payload?.customerId))) return null;
+  const serverRevision = Math.max(0, Number(row.serverRevision || 0));
+  return {
+    ...row,
+    revision: serverRevision + 1,
+    baseRevision: serverRevision,
+    payload: { ...row.payload, revision: serverRevision + 1, updatedAt: timestamp },
+    status: 'PENDING',
+    lastError: `Cloud Source Link revision ${serverRevision}을 기준으로 관리자 업로드값을 자동 재시도합니다.`,
+    updatedAt: timestamp
+  };
+}
+
+async function requeueRevisionOnlySourceLinkConflicts(importId, rows) {
+  const timestamp = nowIso();
+  const patches = rows.map(row => customerUpsertSourceLinkConflictPatch(row, importId, timestamp)).filter(Boolean);
+  if (!patches.length) return rows;
+  const db = await openOrderQDb();
+  const tx = db.transaction(STORE.SYNC_QUEUE, 'readwrite');
+  const store = tx.objectStore(STORE.SYNC_QUEUE);
+  patches.forEach(row => store.put(row));
+  await transactionDone(tx);
+  return getAll(STORE.SYNC_QUEUE);
+}
+
 export async function markCustomerUpsertCloudStatus(importId, syncResult) {
   const jobs = await getAll(STORE.IMPORT_BATCHES);
   const job = jobs.find(row => (row.importId || row.importBatchId) === importId);
   if (!job) return null;
-  const cloudStatus = syncResult?.online && !syncResult.errors && !syncResult.conflicts
-    ? CUSTOMER_UPSERT_REASON.CLOUD_SYNCED
-    : CUSTOMER_UPSERT_REASON.CLOUD_SYNC_PENDING;
+  const queueRows = await requeueRevisionOnlySourceLinkConflicts(importId, await getAll(STORE.SYNC_QUEUE));
+  const queue = summarizeCustomerUpsertQueue(queueRows, importId);
+  const retryCount = queue.cloudStatus === CUSTOMER_UPSERT_REASON.CLOUD_SYNCED
+    ? 0
+    : Number(job.cloudRetryCount || 0) + 1;
+  const lastError = queue.lastError
+    || clean(syncResult?.error?.message || syncResult?.error || syncResult?.message)
+    || (syncResult?.online === false ? 'Cloud URL 또는 네트워크 연결을 확인할 수 없어 자동 재시도합니다.' : 'Cloud ACK를 기다리는 중입니다.');
+  const nextRetryAt = queue.cloudStatus === CUSTOMER_UPSERT_REASON.CLOUD_SYNCED
+    ? ''
+    : new Date(Date.now() + customerUpsertRetryDelay(retryCount - 1)).toISOString();
   const updated = {
     ...job,
-    cloudStatus,
-    cloudAppliedCount: Number(syncResult?.applied || 0),
-    cloudErrorCount: Number(syncResult?.errors || 0),
-    cloudConflictCount: Number(syncResult?.conflicts || 0),
-    cloudLastError: syncResult?.error ? String(syncResult.error?.message || syncResult.error) : '',
+    cloudStatus: queue.cloudStatus,
+    cloudQueueTotalCount: queue.total,
+    cloudAppliedCount: queue.acked,
+    cloudPendingCount: queue.pending,
+    cloudErrorCount: queue.errors,
+    cloudConflictCount: queue.conflicts,
+    cloudRetryCount: retryCount,
+    cloudNextRetryAt: nextRetryAt,
+    cloudLastError: queue.cloudStatus === CUSTOMER_UPSERT_REASON.CLOUD_SYNCED ? '' : lastError,
+    cloudMessage: queue.cloudStatus === CUSTOMER_UPSERT_REASON.CLOUD_SYNCED
+      ? `이 업로드가 생성한 Cloud 큐 ${queue.acked}건이 모두 ACKED로 확인되었습니다.`
+      : `${lastError}\n자동 재시도 예정: ${nextRetryAt}`,
     updatedAt: nowIso()
   };
   await persistJob(updated);

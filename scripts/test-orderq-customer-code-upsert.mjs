@@ -12,6 +12,7 @@ const cloud = read('orderq-cloud.gs');
 const page = read('partner_db.html');
 const customer = read('orderq/customer-master.js');
 const v11 = await import(pathToFileURL(path.join(root, 'orderq/orderq-v11-contracts.js')).href);
+const upsert = await import(pathToFileURL(path.join(root, 'orderq/customer-code-upsert.js')).href);
 
 assert.equal(v11.ORDERQ_DB_VERSION, 11, 'T01 DB schema must be v11');
 assert.equal(v11.V11_STORE.CUSTOMER_HEADER_MAPPINGS, 'customerHeaderMappings');
@@ -56,6 +57,11 @@ assert.match(page, /applyImportButton" hidden/, 'T14 separate Master apply actio
 
 assert.match(core, /CLOUD_SYNC_PENDING/, 'T15 local completion can remain Cloud pending');
 assert.match(core, /CLOUD_SYNCED/, 'T15 Cloud completion is separate');
+assert.match(core, /customerImportId/, 'T15 every upload queue row retains its owning import ID');
+assert.match(core, /acked\.length === owned\.length/, 'T15 completion requires every owned queue row ACK');
+assert.match(ui, /scheduleCloudRetry/, 'T15 pending Cloud work has automatic retry');
+assert.match(ui, /addEventListener\('online'/, 'T15 retry resumes immediately when connectivity returns');
+assert.match(page, /customer-code-upsert-ui\.js\?v=0\.16\.1/, 'T15 retry patch has an explicit browser cache version');
 assert.match(ui, /로컬 저장/, 'T15 UI separates local state');
 assert.match(ui, /Cloud 동기화/, 'T15 UI separates Cloud state');
 assert.match(cloud, /ORDERQ_SHEET_SCHEMA_VERSION = '6'/, 'T15 Cloud schema advances');
@@ -65,5 +71,30 @@ assert.match(cloud, /CUSTOMER_USER_FIELD_DEFINITION/, 'T15 field definitions syn
 assert.match(core, /sourceLinkKey\(sourceSystem, customerCode\)/, 'ERP/SHOP links are namespaced');
 assert.match(ui, /saveCustomerHeaderMapping/, 'unmatched headers can be mapped');
 assert.match(ui, /runStoredRows\(\{ resetFilter: false \}\)/, 'new mappings reprocess stored raw rows');
+
+const pendingQueue = upsert.summarizeCustomerUpsertQueue([
+  { customerImportId: 'JOB-1', status: 'ACKED' },
+  { customerImportId: 'JOB-1', status: 'PENDING', lastError: 'WAIT' },
+  { customerImportId: 'JOB-2', status: 'ACKED' }
+], 'JOB-1');
+assert.equal(pendingQueue.cloudStatus, 'CLOUD_SYNC_PENDING', 'T15 another job ACK must not hide this job pending row');
+assert.deepEqual({ total: pendingQueue.total, acked: pendingQueue.acked, pending: pendingQueue.pending }, { total: 2, acked: 1, pending: 1 });
+const syncedQueue = upsert.summarizeCustomerUpsertQueue([
+  { customerImportId: 'JOB-1', status: 'ACKED' },
+  { payload: { importId: 'JOB-1' }, status: 'ACKED' }
+], 'JOB-1');
+assert.equal(syncedQueue.cloudStatus, 'CLOUD_SYNCED', 'T15 all owned queue rows ACK the job');
+assert.equal(upsert.customerUpsertRetryDelay(0), 15000);
+assert.equal(upsert.customerUpsertRetryDelay(20), 300000, 'T15 retry backs off with a five-minute cap');
+const revisionRetry = upsert.customerUpsertSourceLinkConflictPatch({
+  customerImportId: 'JOB-1', status: 'CONFLICT', entityType: 'CUSTOMER_SOURCE_LINK', serverRevision: 4,
+  payload: { customerId: 'CU-1', revision: 2 }, remotePayload: { customerId: 'CU-1' }
+}, 'JOB-1', '2026-08-22T00:00:00.000Z');
+assert.deepEqual({ status: revisionRetry.status, baseRevision: revisionRetry.baseRevision, revision: revisionRetry.revision, payloadRevision: revisionRetry.payload.revision },
+  { status: 'PENDING', baseRevision: 4, revision: 5, payloadRevision: 5 }, 'revision-only Source Link conflict retries from the Cloud revision');
+assert.equal(upsert.customerUpsertSourceLinkConflictPatch({
+  customerImportId: 'JOB-1', status: 'CONFLICT', entityType: 'CUSTOMER_SOURCE_LINK', serverRevision: 4,
+  payload: { customerId: 'CU-1' }, remotePayload: { customerId: 'CU-2' }
+}, 'JOB-1'), null, 'different-customer Source Link conflict remains explicit instead of being overwritten');
 
 console.log('PASS orderq customerCode upsert architecture T01-T15');
