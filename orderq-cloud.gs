@@ -10,7 +10,7 @@ const ORDERQ_SYNC_SCHEMA = 'ONEAPP_ORDERQ_SYNC_V1';
 const ORDERQ_SYNC_MAX_PUSH = 100;
 const ORDERQ_SYNC_MAX_PULL = 500;
 const ORDERQ_SHEET_SCHEMA_PROPERTY = 'ONEAPP_ORDERQ_SHEET_SCHEMA_VERSION';
-const ORDERQ_SHEET_SCHEMA_VERSION = '5';
+const ORDERQ_SHEET_SCHEMA_VERSION = '6';
 const ORDERQ_CUTOVER_MODE_PROPERTY = 'ONEAPP_ORDERQ_CUTOVER_MODE';
 const ORDERQ_CUTOVER_SAFE_MODE = 'SHADOW';
 const ORDERQ_CUTOVER_WRITE_MODES = Object.freeze(['PILOT_WRITE', 'VNEXT_PRIMARY']);
@@ -39,6 +39,8 @@ const ORDERQ_SHEETS = Object.freeze({
   CUSTOMER_ALIAS: 'CUSTOMER_ALIAS_MAPPING',
   CUSTOMER_SOURCE_LINK: 'CUSTOMER_SOURCE_LINK',
   CUSTOMER_SOURCE_LINK_EVENT: 'CUSTOMER_SOURCE_LINK_EVENT',
+  CUSTOMER_HEADER_MAPPING: 'CUSTOMER_HEADER_MAPPING',
+  CUSTOMER_USER_FIELD_DEFINITION: 'CUSTOMER_USER_FIELD_DEFINITION',
   PRODUCT_MAPPING: 'PRODUCT_MAPPING',
   UNIT_MAPPING: 'UNIT_MAPPING',
   MAPPING_EVENT: 'MAPPING_EVENT',
@@ -76,6 +78,8 @@ const ORDERQ_HEADERS = Object.freeze({
   CUSTOMER_ALIAS: ['mappingId', 'customerId', 'normalizedText', 'sourceType', 'updatedAt', 'payloadJson'],
   CUSTOMER_SOURCE_LINK: ['linkId', 'customerId', 'sourceSystem', 'sourceCustomerCode', 'sourceLinkKey', 'linkStatus', 'updatedAt', 'payloadJson'],
   CUSTOMER_SOURCE_LINK_EVENT: ['eventId', 'linkId', 'eventType', 'beforeCustomerId', 'afterCustomerId', 'occurredAt', 'payloadJson'],
+  CUSTOMER_HEADER_MAPPING: ['mappingId', 'sourceSystem', 'normalizedHeader', 'targetFieldKey', 'updatedAt', 'payloadJson'],
+  CUSTOMER_USER_FIELD_DEFINITION: ['fieldKey', 'fieldType', 'displayName', 'enabled', 'updatedAt', 'payloadJson'],
   PRODUCT_MAPPING: ['mappingId', 'customerId', 'sourceId', 'normalizedText', 'productId', 'updatedAt', 'payloadJson'],
   UNIT_MAPPING: ['mappingId', 'productId', 'productGroup', 'rawUnit', 'finalUnit', 'updatedAt', 'payloadJson'],
   MAPPING_EVENT: ['eventId', 'customerId', 'productId', 'createdAt', 'payloadJson'],
@@ -547,6 +551,8 @@ function orderQSimpleSpec(entityType) {
     CUSTOMER_ALIAS: { key: 'CUSTOMER_ALIAS', id: 'mappingId', row: p => [p.mappingId, p.customerId || '', p.normalizedText || '', p.sourceType || '', p.updatedAt || '', JSON.stringify(p)] },
     CUSTOMER_SOURCE_LINK: { key: 'CUSTOMER_SOURCE_LINK', id: 'linkId', row: p => [p.linkId, p.customerId || '', p.sourceSystem || '', p.sourceCustomerCode || '', p.sourceLinkKey || '', p.linkStatus || '', p.updatedAt || '', JSON.stringify(p)] },
     CUSTOMER_SOURCE_LINK_EVENT: { key: 'CUSTOMER_SOURCE_LINK_EVENT', id: 'eventId', row: p => [p.eventId, p.linkId || '', p.eventType || '', p.beforeCustomerId || '', p.afterCustomerId || '', p.occurredAt || '', JSON.stringify(p)] },
+    CUSTOMER_HEADER_MAPPING: { key: 'CUSTOMER_HEADER_MAPPING', id: 'mappingId', row: p => [p.mappingId, p.sourceSystem || '', p.normalizedHeader || '', p.targetFieldKey || '', p.updatedAt || '', JSON.stringify(p)] },
+    CUSTOMER_USER_FIELD_DEFINITION: { key: 'CUSTOMER_USER_FIELD_DEFINITION', id: 'fieldKey', row: p => [p.fieldKey, p.fieldType || '', p.displayName || '', p.enabled === false ? 'FALSE' : 'TRUE', p.updatedAt || '', JSON.stringify(p)] },
     PRODUCT_MAPPING: { key: 'PRODUCT_MAPPING', id: 'mappingId', row: p => [p.mappingId, p.customerId || '', p.sourceId || '', p.normalizedText || '', p.productId || '', p.updatedAt || '', JSON.stringify(p)] },
     UNIT_MAPPING: { key: 'UNIT_MAPPING', id: 'mappingId', row: p => [p.mappingId, p.productId || '', p.productGroup || '', p.rawUnit || '', p.finalUnit || '', p.updatedAt || '', JSON.stringify(p)] },
     MAPPING_EVENT: { key: 'MAPPING_EVENT', id: 'eventId', row: p => [p.eventId, p.customerId || '', p.productId || '', p.createdAt || '', JSON.stringify(p)] },

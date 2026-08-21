@@ -5,7 +5,7 @@ import {
   transactionDone,
   newId,
   nowIso
-} from './orderq-db.js?v=0.14.0';
+} from './orderq-db.js?v=0.16.0';
 import { resolveWarehouseInTransaction, warehouseSnapshot } from './warehouse-master.js?v=0.8.0';
 import { normalizedOrderView, orderDateKey, formatOrderNo, orderSequenceFromNo } from './order-document-model.js?v=0.8.0';
 import {
@@ -293,6 +293,8 @@ async function applySimple(entityType, payload) {
     CUSTOMER_ALIAS: [STORE.CUSTOMER_ALIASES, 'mappingId'],
     CUSTOMER_SOURCE_LINK: [STORE.CUSTOMER_SOURCE_LINKS, 'linkId'],
     CUSTOMER_SOURCE_LINK_EVENT: [STORE.CUSTOMER_SOURCE_LINK_EVENTS, 'eventId'],
+    CUSTOMER_HEADER_MAPPING: [STORE.CUSTOMER_HEADER_MAPPINGS, 'mappingId'],
+    CUSTOMER_USER_FIELD_DEFINITION: [STORE.CUSTOMER_USER_FIELD_DEFINITIONS, 'fieldKey'],
     PRODUCT_MAPPING: [STORE.PRODUCT_MAPPINGS, 'mappingId'],
     UNIT_MAPPING: [STORE.UNIT_MAPPINGS, 'mappingId'],
     MAPPING_EVENT: [STORE.MAPPING_EVENTS, 'eventId'],

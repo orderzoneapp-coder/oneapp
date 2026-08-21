@@ -44,6 +44,9 @@ jobs:
       - name: Test ORDER Q Customer Master, canonical and quick-create contracts
         run: node scripts/test-orderq-customer-master.mjs
 
+      - name: Test ORDER Q customerCode Excel upsert architecture
+        run: node scripts/test-orderq-customer-code-upsert.mjs
+
       - name: Test ORDER Q order-document workflow
         run: node scripts/test-orderq-order-workflow.mjs
 

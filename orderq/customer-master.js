@@ -8,7 +8,7 @@ import {
   openOrderQDb,
   requestToPromise,
   transactionDone
-} from './orderq-db.js?v=0.14.0';
+} from './orderq-db.js?v=0.16.0';
 import { pullRemote } from './orderq-sync-engine.js?v=0.14.0';
 
 export const CUSTOMER_STATUS = Object.freeze({ ACTIVE: 'ACTIVE', INACTIVE: 'INACTIVE' });
@@ -34,7 +34,9 @@ export const CUSTOMER_FIELDS = Object.freeze([
   'businessItem', 'phone', 'fax', 'mobile', 'email', 'postalCode', 'address',
   'addressDetail', 'contactName', 'contactPhone',
   'group1Code', 'group1Name', 'group2Code', 'group2Name', 'priceGroup',
-  'paymentDay', 'bankAccountText', 'memo', 'searchText', 'groupName'
+  'paymentDay', 'bankAccountText', 'memo', 'searchText', 'groupName',
+  ...Array.from({ length: 10 }, (_, index) => `userText${String(index + 1).padStart(2, '0')}`),
+  ...Array.from({ length: 10 }, (_, index) => `userNumber${String(index + 1).padStart(2, '0')}`)
 ]);
 
 const EXCEL_FIELD_MAP = Object.freeze({
@@ -162,6 +164,11 @@ export function normalizeCustomer(input = {}, previous = null) {
   };
   CUSTOMER_FIELDS.forEach(field => {
     if (field === 'customerCode' || field === 'customerName') return;
+    if (/^userNumber\d{2}$/.test(field)) {
+      const value = input[field] ?? previous?.[field];
+      normalized[field] = value === '' || value == null ? '' : Number(value);
+      return;
+    }
     normalized[field] = clean(input[field] ?? previous?.[field]);
   });
   normalized.group1Name = clean(input.group1Name ?? input.groupName ?? previous?.group1Name ?? previous?.groupName);
