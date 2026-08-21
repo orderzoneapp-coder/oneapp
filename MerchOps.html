@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.201_TransientWorkModeNotice]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.202_F8ErpCoreColumns]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -12,7 +12,7 @@
     <script src="coreEngine.js"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <script>
-    // v2.1.201: 상단의 고정 작업모드 배지를 제거하고 실제 모드 전환 때만 짧은 시스템 안내를 노출한다.
+    // v2.1.202: F8 ERP업데이트를 품목코드~도매B 보조열까지 11열로 제한하고 후행 최종전송·행사·기본 열을 제거한다.
     // v2.1.199: 카탈로그·재고 비교파일 조합을 감지해 저장된 비교 양식과 비교 필터를 자동 적용하고 닫기·초기화 시 일반 양식으로 복귀한다.
     // v2.1.196: 행사작업대의 행사가 설정 제목을 제거하고 행사가 작업 버튼 그룹을 우측 정렬한다.
     // v2.1.195: 카테고리를 상단 좌측으로 옮기고 행사작업 설명·정렬 공백 제거 및 상세·출고가·제외 작업을 재배치한다.
@@ -10171,7 +10171,7 @@ ${targetText} ${targetRows.length}건을 엑셀로 생성합니다.${workflowTex
             return { code: subCode, spec: getBestStr(row, '1종규격'), parentInPrice: inPrice, subIn, subOut };
         };
         const wb = window.XLSX.utils.book_new();
-        const erpData = [['품목코드', '입고가', '0', '출고가', '0', '입고B', 'n', '도매A', 'n', '도매B', 'n', '최종(전송)', 'n', '행사', 'n', '1']];
+        const erpData = [['품목코드', '입고가', '0', '출고가', '0', '입고B', 'n', '도매A', 'n', '도매B', 'n']];
         const shopData = [['상품코드\n코드', '상품명', '규격', '출고가', '도매A', '시중가', 'B판매가', '도매B', 'C 판매가', 'C 도매가', 'D 판매가', 'D 도매가', '브랜드', '기본설명', '판매여부', '재고수량', '테마1', '테마2', '테마3', '테마4', '테마5', '상품태그']];
         const confirmData = [['확인구분', '상품코드', '상품명', '규격', '기준입고항목', '기준입고가', '도매항목', '도매가', '차이', '확인요청']];
         wholesaleBelowCostWarnings.forEach(w => confirmData.push(['매칭 도매가 낮음', w.code, w.name, w.spec, w.baseField, w.basePrice, w.wholesaleField, w.wholesalePrice, w.diff, w.message]));
@@ -10183,7 +10183,7 @@ ${targetText} ${targetRows.length}건을 엑셀로 생성합니다.${workflowTex
             const isInventoryRow = !!(inventoryF8Module && inventoryF8Module.isInventoryRow(row));
             const code = window.normalizeProductCodeText(isEstimateRow ? (readQuickSourceStr(row, ['품목코드', '상품코드', '코드'], row.코드) || row.코드) : row.코드);
             const saleCode = getSaleCode(row);
-            let inPrice, erpOutPrice, promoPrice, shopSalePrice, inPriceB, erpASale, erpBSale, pMarket, shopBPrice, shopBWholesale, finalTransmission, shopUploadStock, name, spec, brand, description, tag;
+            let inPrice, erpOutPrice, promoPrice, shopSalePrice, inPriceB, erpASale, erpBSale, pMarket, shopBPrice, shopBWholesale, shopUploadStock, name, spec, brand, description, tag;
             const themeFlags = buildThemeFlags(row);
             if (isEstimateRow) {
                 // 견적서 QuickF8 쇼핑몰업로드 정책
@@ -10202,7 +10202,6 @@ ${targetText} ${targetRows.length}건을 엑셀로 생성합니다.${workflowTex
                 pMarket = readQuickSourceNum(row, ['시중가', '시중단가'], '');
                 shopBPrice = readQuickSourceNum(row, ['B판매가', 'B 판매가'], '');
                 shopBWholesale = erpBSale;
-                finalTransmission = readQuickSourceNum(row, ['최종전송', '최종(전송)', '최종입고'], '');
                 const stockCandidate = readQuickSourceValue(row, ['재고수량'], '');
                 shopUploadStock = !window.isBlankCell(stockCandidate) ? window.parseNum(stockCandidate) : '';
                 name = readQuickSourceStr(row, ['품목명', '상품명'], '');
@@ -10221,7 +10220,6 @@ ${targetText} ${targetRows.length}건을 엑셀로 생성합니다.${workflowTex
                 pMarket = getBestNum(row, '시중가');
                 shopBPrice = getBestNumByAliases(row, ['B판매가', 'B 판매가']);
                 shopBWholesale = getBestNum(row, '도매B');
-                finalTransmission = getBestNumByAliases(row, ['최종전송', '최종(전송)', '최종입고'], '');
                 // F8 쇼핑몰업로드 재고 정책:
                 // - 엑셀/작업값에 명시 재고가 있으면 0을 포함해 그대로 보존한다.
                 // - 재고 컬럼 자체가 없으면 상품 마스터의 기존 재고를 보강한다.
@@ -10234,11 +10232,8 @@ ${targetText} ${targetRows.length}건을 엑셀로 생성합니다.${workflowTex
                 description = getBestStr(row, '간단설명');
                 tag = getBestStrByAliases(row, ['검색어등록', '상품태그']);
             }
-            // ERP는 기초정보 셋팅용이다. 출고가는 정상 출고가, 행사는 행사 컬럼으로 분리한다.
-            // ERP업데이트 P열(헤더 '1')은 기본여부다.
-            // 판매여부와 무관하게 ERP 입고가가 0보다 크면 1, 입고가가 0·공란이면 공백으로 출력한다.
-            const erpBasicFlag = inPrice > 0 ? '1' : '';
-            erpData.push([code, inPrice, '0', erpOutPrice, '0', inPriceB, 'n', erpASale, 'n', erpBSale, 'n', finalTransmission, 'n', promoPrice, 'n', erpBasicFlag]);
+            // ERP업데이트는 품목코드와 입고가·출고가·입고B·도매A·도매B의 보조열까지만 출력한다.
+            erpData.push([code, inPrice, '0', erpOutPrice, '0', inPriceB, 'n', erpASale, 'n', erpBSale, 'n']);
             // 쇼핑몰업로드는 견적서 작업 시 마스터값을 오늘 작업값으로 보강하지 않는다.
             shopData.push([code, name, spec, shopSalePrice, erpASale, pMarket, shopBPrice, shopBWholesale, 0, 0, 0, 0, brand, description, saleCode, shopUploadStock, ...themeFlags, tag]);
             // inventory F8은 DataOps 실제 재고만 출력한다. 소분 가격행 생성은 견적·구매 등 기존 역할에서만 유지한다.
@@ -10352,7 +10347,6 @@ ${targetText} ${targetRows.length}건을 엑셀로 생성합니다.${workflowTex
             const erpIndexes = erpIndexesByCode.get(subInfo.code) || [];
             if (shopIndexes.length > 1 || erpIndexes.length > 1) return;
 
-            const subErpBasicFlag = subInfo.subIn > 0 ? '1' : '';
             if (shopIndexes.length === 1 && erpIndexes.length === 1) {
                 // 소분품목이 이미 리스트에 있으면 한 행을 유지하고 계산된 가격만 갱신한다.
                 // 품명·규격·브랜드·설명·판매여부·재고·테마·태그는 기존 소분품목 값을 보존한다.
@@ -10363,8 +10357,6 @@ ${targetText} ${targetRows.length}건을 엑셀로 생성합니다.${workflowTex
                 const erpRow = erpData[erpIndexes[0]];
                 erpRow[1] = subInfo.subIn;
                 erpRow[3] = subInfo.subOut;
-                erpRow[11] = subInfo.subIn;
-                erpRow[15] = subErpBasicFlag;
                 subOutputCount++;
                 return;
             }
@@ -10377,7 +10369,7 @@ ${targetText} ${targetRows.length}건을 엑셀로 생성합니다.${workflowTex
                 missingSubCodes.add(subInfo.code);
                 return;
             }
-            erpData.push([subInfo.code, subInfo.subIn, '0', subInfo.subOut, '0', '', 'n', '', 'n', '', 'n', subInfo.subIn, 'n', '', 'n', subErpBasicFlag]);
+            erpData.push([subInfo.code, subInfo.subIn, '0', subInfo.subOut, '0', '', 'n', '', 'n', '', 'n']);
             shopData.push([
                 subInfo.code,
                 subName,
@@ -14538,7 +14530,7 @@ const WelcomeGuide = ({ onUpload, onCloudSync }) => (React.createElement("div", 
         React.createElement("i", { className: "fas fa-box-open" }),
         React.createElement("div", { className: "absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm" },
             React.createElement("i", { className: "fas fa-check" }))),
-    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.201_TransientWorkModeNotice]"),
+    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.202_F8ErpCoreColumns]"),
     React.createElement("p", { className: "text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold" },
         "\uD604\uC7AC \uB4F1\uB85D\uB41C ",
         React.createElement("span", { className: "text-indigo-500" }, "\uB9C8\uC2A4\uD130 \uC0C1\uD488 \uB370\uC774\uD130"),
@@ -15238,7 +15230,7 @@ const App = () => {
                                 React.createElement("div", { className: "hidden" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "MerchOps"),
-                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.201_TransientWorkModeNotice")),
+                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.202_F8ErpCoreColumns")),
                                     React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "MAIN WORKSPACE"))),
                             React.createElement(SystemConsole, { itemCount: Object.keys(data.masterProducts).length, isProcessing: ui.isProcessing, processMsg: ui.processMsg, estimateCount: Object.keys(data.managedItems).length, filteredCount: fullDisplayRows.length, activeTags: ui.activeTags, masterLookupMode: data.masterLookupMode }),
                             React.createElement("nav", { className: "flex gap-1.5 text-[14px] shrink-0 items-center" },

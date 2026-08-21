@@ -220,8 +220,10 @@ assert.doesNotMatch(exportSource, /saleIsGenerated/, "F9 must not generate sale 
 assert.match(exportSource, /'검색어등록', '창고', '단위', '1종코드'/, "F9 must preserve actual warehouse and unit working values");
 assert.doesNotMatch(exportSource, /if \(!hasStockValue\(working\.재고수량\)\) return DEFAULT_EXPORT_STOCK_QTY/, "F9 must not generate stock 999 when the source column is missing");
 assert.doesNotMatch(merchSource.slice(f8Start, f8End), /shopUploadStock = !window\.isBlankCell\(finalStockRaw\) \? window\.parseNum\(finalStockRaw\) : 999/, "F8 must not generate stock 999 when the source column is missing");
-assert.match(merchSource.slice(f8Start, f8End), /finalTransmission = getBestNumByAliases\(row, \['최종전송', '최종\(전송\)', '최종입고'\], ''\)/, "F8 missing final-transmission must use an explicit blank default");
-assert.doesNotMatch(merchSource.slice(f8Start, f8End), /finalTransmission = getBestNumByAliases\(row, \['최종전송', '최종\(전송\)', '최종입고'\], inPrice\)/, "F8 must not copy inbound price into a missing final-transmission column");
+assert.match(merchSource.slice(f8Start, f8End), /const erpData = \[\['품목코드', '입고가', '0', '출고가', '0', '입고B', 'n', '도매A', 'n', '도매B', 'n'\]\]/,
+  "F8 ERP output must use the approved 11-column header");
+assert.doesNotMatch(merchSource.slice(f8Start, f8End), /finalTransmission|erpBasicFlag|subErpBasicFlag/,
+  "F8 ERP output must not retain removed final-transmission, promotion, or basic tail values");
 assert.match(merchSource.slice(f8Start, f8End), /const subName = String\(subMaster\['품목명'\] \|\| subMaster\['상품명'\] \|\| ''\)\.trim\(\)/, "F8 may use registered master name metadata only when a calculated subdivision product is absent from the working list");
 assert.doesNotMatch(dataOpsSource, /merch_export_draft/, "DataOps is not a consumer of the MerchOps F9 draft contract");
 
