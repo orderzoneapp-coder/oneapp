@@ -9,10 +9,14 @@ import {
 import { V8_STORE, V8_STORE_DEFINITIONS } from './orderq-v8-contracts.js?v=0.11.0';
 import { V9_STORE, V9_STORE_DEFINITIONS } from './orderq-v9-contracts.js?v=0.12.1';
 import {
-  ORDERQ_DB_VERSION,
   V10_STORE,
   V10_STORE_DEFINITIONS
 } from './orderq-v10-contracts.js?v=0.14.0';
+import {
+  ORDERQ_DB_VERSION,
+  V11_STORE,
+  V11_STORE_DEFINITIONS
+} from './orderq-v11-contracts.js?v=0.16.0';
 import { adminTestDatabaseName } from './admin-test-runtime.js?v=0.10.2';
 
 function databaseNameForRuntime() {
@@ -37,6 +41,8 @@ export const STORE = Object.freeze({
   CUSTOMER_EVENTS: V9_STORE.CUSTOMER_EVENTS,
   CUSTOMER_SOURCE_LINKS: V10_STORE.CUSTOMER_SOURCE_LINKS,
   CUSTOMER_SOURCE_LINK_EVENTS: V10_STORE.CUSTOMER_SOURCE_LINK_EVENTS,
+  CUSTOMER_HEADER_MAPPINGS: V11_STORE.CUSTOMER_HEADER_MAPPINGS,
+  CUSTOMER_USER_FIELD_DEFINITIONS: V11_STORE.CUSTOMER_USER_FIELD_DEFINITIONS,
   PRODUCT_MAPPINGS: 'productMappings',
   UNIT_MAPPINGS: 'unitMappings',
   RAW_INPUTS: 'rawInputs',
@@ -248,6 +254,14 @@ export function upgradeOrderQDbSchema(db, transaction, oldVersion = 0) {
   ensureIndex(store, 'byEntity', ['entityType', 'entityId']);
 
   const metaStore = ensureStore(STORE.META, { keyPath: 'key' });
+
+  if (oldVersion < 11) {
+    V11_STORE_DEFINITIONS.forEach(definition => {
+      const v11Store = ensureStore(definition.name, definition.options);
+      definition.indexes.forEach(index => ensureIndex(v11Store, index.name, index.keyPath, index.options || {}));
+    });
+    metaStore.put({ key: 'schemaVersion', value: 11, updatedAt: nowIso() });
+  }
 
   if (oldVersion < 10) {
     V10_STORE_DEFINITIONS.forEach(definition => {

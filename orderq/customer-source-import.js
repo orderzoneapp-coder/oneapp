@@ -7,7 +7,7 @@ import {
   openOrderQDb,
   requestToPromise,
   transactionDone
-} from './orderq-db.js?v=0.14.0';
+} from './orderq-db.js?v=0.16.0';
 import {
   CUSTOMER_FIELDS,
   CUSTOMER_IMPORT_STATUS,
@@ -15,7 +15,7 @@ import {
   CUSTOMER_STATUS,
   normalizeCustomer,
   resolveCanonicalCustomer
-} from './customer-master.js?v=0.15.0';
+} from './customer-master.js?v=0.16.0';
 
 export const CUSTOMER_SOURCE_SYSTEM = Object.freeze({ ERP: 'ERP', SHOP: 'SHOP' });
 export const CUSTOMER_SOURCE_LINK_STATUS = Object.freeze({

@@ -1,0 +1,69 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const read = relative => fs.readFileSync(path.join(root, relative), 'utf8');
+const core = read('orderq/customer-code-upsert.js');
+const ui = read('orderq/customer-code-upsert-ui.js');
+const v11Source = read('orderq/orderq-v11-contracts.js');
+const cloud = read('orderq-cloud.gs');
+const page = read('partner_db.html');
+const customer = read('orderq/customer-master.js');
+const v11 = await import(pathToFileURL(path.join(root, 'orderq/orderq-v11-contracts.js')).href);
+
+assert.equal(v11.ORDERQ_DB_VERSION, 11, 'T01 DB schema must be v11');
+assert.equal(v11.V11_STORE.CUSTOMER_HEADER_MAPPINGS, 'customerHeaderMappings');
+assert.equal(v11.V11_STORE.CUSTOMER_USER_FIELD_DEFINITIONS, 'customerUserFieldDefinitions');
+assert.match(v11Source, /bySourceHeader[^\n]+\['sourceSystem', 'normalizedHeader'\]/, 'T01 mapping unique by source/header');
+
+assert.match(customer, /userText\$\{String\(index \+ 1\)\.padStart\(2, '0'\)\}/, 'T02 text custom fields 01-10');
+assert.match(customer, /userNumber\$\{String\(index \+ 1\)\.padStart\(2, '0'\)\}/, 'T02 number custom fields 01-10');
+assert.match(core, /ensureCustomerUserFieldDefinitions/, 'T02 definitions are persisted');
+assert.match(ui, /customer-field-manager-row/, 'T02 custom fields have management UI');
+assert.match(page, /data-customer-user-fields/, 'T02 active fields are exposed in Customer editor');
+
+assert.match(core, /DUPLICATE_CODE_IN_IMPORT/, 'T03 same-import duplicate reason exists');
+assert.match(core, /duplicates\.length > 1/, 'T03 all duplicate-code rows fail');
+assert.match(core, /byCustomerCode[^\n]+getAll\(normalizedCode\)/, 'T04 later upload updates by customerCode');
+assert.doesNotMatch(core, /if \([^\n]*fileHash[^\n]*(return|throw)/, 'T05 fileHash must not block re-upload');
+
+assert.match(core, /if \(!customerCode\)/, 'T06 customerCode is required');
+assert.doesNotMatch(core, /if \(!customerName\)/, 'T06 customerName must not block Excel upsert');
+assert.match(core, /if \(value === 0 \|\| clean\(value\) !== ''\) patch\[field\] = value/, 'T07 blanks preserve existing values');
+assert.match(core, /unmatchedValues/, 'T08 unmatched values retain evidence');
+assert.match(core, /NUMBER_FIELD_PARSE_FAILED/, 'T09 number errors exclude only the field');
+assert.match(core, /beforeValues/, 'T10 before values are stored');
+assert.match(core, /afterValues/, 'T10 after values are stored');
+
+assert.match(core, /db\.transaction\(stores, 'readwrite'\)/, 'T11 each row is atomic');
+assert.match(core, /processed % 200 === 0/, 'T12 200-row checkpoint exists');
+assert.match(core, /resumeCustomerCodeUpsert/, 'T12 interrupted work can resume');
+assert.match(ui, /중단된 저장 작업을 이어서 처리합니다/, 'T12 UI exposes recovery');
+
+assert.match(ui, /detectCustomerFileType/, 'T13 wrong file detection is wired');
+assert.match(ui, /판정 근거 헤더/, 'T13 warning shows evidence');
+assert.match(ui, /confirm\(/, 'T13 administrator can proceed');
+
+assert.match(ui, /신규/, 'T14 created is visible');
+assert.match(ui, /변경 없음/, 'T14 unchanged is visible');
+assert.match(ui, /전체 처리 실패/, 'T14 whole failure is explicit');
+assert.match(ui, /실패 원문과 근거/, 'T14 row failure has raw evidence');
+assert.match(ui, /필드 제외/, 'T14 field exclusion has a view');
+assert.match(ui, /미매핑 열/, 'T14 unmatched columns have a view');
+assert.match(page, /applyImportButton" hidden/, 'T14 separate Master apply action is removed');
+
+assert.match(core, /CLOUD_SYNC_PENDING/, 'T15 local completion can remain Cloud pending');
+assert.match(core, /CLOUD_SYNCED/, 'T15 Cloud completion is separate');
+assert.match(ui, /로컬 저장/, 'T15 UI separates local state');
+assert.match(ui, /Cloud 동기화/, 'T15 UI separates Cloud state');
+assert.match(cloud, /ORDERQ_SHEET_SCHEMA_VERSION = '6'/, 'T15 Cloud schema advances');
+assert.match(cloud, /CUSTOMER_HEADER_MAPPING/, 'T15 header mappings sync');
+assert.match(cloud, /CUSTOMER_USER_FIELD_DEFINITION/, 'T15 field definitions sync');
+
+assert.match(core, /sourceLinkKey\(sourceSystem, customerCode\)/, 'ERP/SHOP links are namespaced');
+assert.match(ui, /saveCustomerHeaderMapping/, 'unmatched headers can be mapped');
+assert.match(ui, /runStoredRows\(\{ resetFilter: false \}\)/, 'new mappings reprocess stored raw rows');
+
+console.log('PASS orderq customerCode upsert architecture T01-T15');

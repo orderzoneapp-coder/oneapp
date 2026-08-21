@@ -5,7 +5,7 @@ import {
   listCustomers,
   searchCustomers,
   updateCustomer
-} from './customer-master.js?v=0.15.0';
+} from './customer-master.js?v=0.16.0';
 import {
   CUSTOMER_SOURCE_MATCH_METHOD,
   CUSTOMER_SOURCE_MAPPING_VERSION,

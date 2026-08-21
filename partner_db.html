@@ -15,7 +15,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;600;800;900&family=Noto+Serif+KR:wght@700;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="./orderq/customer-master.css?v=0.14.1">
+  <link rel="stylesheet" href="./orderq/customer-master.css?v=0.16.0">
   <style>
     :root { --nexus-ink: #0b1021; --nexus-panel: #151b2b; --nexus-accent: #6366f1; }
     body.customer-master-page { background: #f1f5f9; }
@@ -81,11 +81,12 @@
         <div>
           <div class="cm-kicker">ENTITY REGISTRY</div>
           <h1>거래처 DB</h1>
-          <p>ERP와 쇼핑몰 거래처를 NEXUS 대표 거래처 기준으로 연결합니다. 파일을 선택하면 분석과 저장이 자동으로 끝납니다.</p>
+          <p>거래처 코드를 기준으로 Excel을 즉시 등록·수정합니다. 거래처명이 없거나 달라도 코드가 같으면 같은 거래처로 반영합니다.</p>
         </div>
         <div class="cm-actions">
           <button class="cm-button" id="openErpImportButton" type="button">ERP 거래처 업로드</button>
           <button class="cm-button" id="openShopImportButton" type="button">쇼핑몰 회원 업로드</button>
+          <button class="cm-button" id="manageCustomerUserFieldsButton" type="button">사용자 필드</button>
           <button class="cm-button primary" id="newCustomerButton" type="button">+ 거래처 등록</button>
           <input id="erpCustomerExcelFile" type="file" accept=".xlsx,.xls" hidden>
           <input id="shopCustomerExcelFile" type="file" accept=".xlsx,.xls" hidden>
@@ -101,7 +102,7 @@
         <div class="cm-import-toolbar"><input id="importSearch" type="search" placeholder="거래처명, 외부 코드, 전화, 주소 검색"></div>
         <p class="cm-import-gate" id="importGate">ERP 거래처 또는 쇼핑몰 회원 파일을 선택하면 자동으로 대표 거래처를 찾습니다.</p>
         <div class="cm-review-list" id="importReview"></div>
-        <div class="cm-actions cm-import-actions"><button class="cm-button dark" id="applyImportButton" disabled>Master 적용</button></div>
+        <div class="cm-actions cm-import-actions"><button class="cm-button dark" id="applyImportButton" hidden>사용하지 않음</button></div>
       </section>
 
       <section class="cm-dashboard" aria-label="거래처 요약">
@@ -161,12 +162,14 @@
         <label>적요<textarea name="memo" rows="2"></textarea></label>
         <label>검색창내용<textarea name="searchText" rows="2"></textarea></label>
       </div>
+      <section class="cm-source-links"><strong>사용자 정의 정보</strong><div class="cm-form-grid" data-customer-user-fields></div></section>
       <section class="cm-source-links"><strong>ERP / SHOP 연결</strong><div data-customer-source-links></div></section>
       <div class="cm-form-actions"><button class="cm-button" type="button" data-close-customer-editor>취소</button><button class="cm-button primary" id="saveCustomerButton" type="submit">저장</button></div>
     </form>
   </dialog>
 
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script type="module" src="./orderq/customer-master-ui.js?v=0.15.0"></script>
+  <script type="module" src="./orderq/customer-master-ui.js?v=0.16.0"></script>
+  <script type="module" src="./orderq/customer-code-upsert-ui.js?v=0.16.0"></script>
 </body>
 </html>

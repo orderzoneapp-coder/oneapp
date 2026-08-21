@@ -74,13 +74,13 @@ assert.match(ui, /getLatestCustomerSourceImportWork/, 'Pending Excel work must r
 assert.match(ui, /importStatusFilter: 'ISSUES'/, 'Workbench must default to unresolved customer rows');
 assert.match(html, /erpCustomerExcelFile/);
 assert.match(html, /거래처 DB/);
-assert.match(html, /customer-master-ui\.js\?v=0\.15\.0/, 'Customer Master entry module must invalidate the deployed cache');
+assert.match(html, /customer-master-ui\.js\?v=0\.16\.0/, 'Customer Master entry module must invalidate the deployed cache');
 assert.match(ui, /async function initializeCustomerMaster\(\) \{\s+const pending = await getLatestCustomerSourceImportWork\(\)/, 'Saved Excel work must render before Cloud Master synchronization');
 assert.match(ui, /ensureCustomerMasterReady[\s\S]*\.then\(\(\) => reload\(\)\)/, 'Cloud Master synchronization must continue in the background');
 assert.match(ui, /fallbackFileHash/, 'Excel import must continue with a deterministic file hash when Web Crypto stalls');
 assert.match(ui, /chunkSize: 50/, 'Excel import must persist visible progress in small chunks');
-assert.match(html, /customer-master\.css\?v=0\.14\.1/, 'Customer Master Workbench styles must invalidate the deployed cache');
-assert.match(ui, /customer-master\.js\?v=0\.15\.0/, 'Customer Master Workbench service must invalidate the deployed cache');
+assert.match(html, /customer-master\.css\?v=0\.16\.0/, 'Customer Master Workbench styles must invalidate the deployed cache');
+assert.match(ui, /customer-master\.js\?v=0\.16\.0/, 'Customer Master Workbench service must invalidate the deployed cache');
 assert.doesNotMatch(html, /문제 거래처만 보기/);
 assert.match(ui, /data-import-status/, 'Import counts must act as status filters');
 assert.match(sourceImport, /newDraftConfirmed: status === CUSTOMER_IMPORT_STATUS\.NEW/, 'Unmatched source rows must be prepared for bulk draft creation');
@@ -94,7 +94,7 @@ assert.match(ui, /openErpImportButton[\s\S]*openFilePicker\(elements\.erpFile\)/
 assert.match(ui, /openShopImportButton[\s\S]*openFilePicker\(elements\.shopFile\)/, 'SHOP upload must open the file picker directly');
 assert.match(ui, /input\.value = ''/, 'Excel input must reset so the same file can be selected again');
 assert.match(ui, /findHeaderRow[\s\S]*아이디와 이름\(거래처명\) 열을 찾을 수 없습니다/, 'Source import must validate ERP and SHOP headers');
-assert.match(service, /orderq-db\.js\?v=0\.14\.0/, 'Customer Master must load the v10 DB module URL');
+assert.match(service, /orderq-db\.js\?v=0\.16\.0/, 'Customer Master must load the v11 DB module URL');
 assert.match(css, /\.cm-viewport/);
 
 assert.doesNotMatch(intakeEngine, /if \(!customer\) throw new Error\('ORDERQ_INTAKE_CUSTOMER_REQUIRED'\)/);
