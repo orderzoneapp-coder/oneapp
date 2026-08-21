@@ -91,7 +91,7 @@ Shared storage or navigation does not make their business meaning identical.
 | `history_viewer.html` | Web entry | Production | Inspect product-change history and price trends |
 | `Master.html` | Web entry | Pilot | Product-master lookup and administrator-reviewed add/update; initial registration and full replacement are not active in the first phase |
 | `Item_manager.html` | Web entry | Pilot / transition | Existing category lookup and product-management route retained until approved feature migration and result verification are complete |
-| `orderops/list.html` | Web entry | Pilot | ORDER Q shipment management: four-way structure-first Excel intake, editable order status and order-aware inventory balance/stock-ledger review, purchase-plan editing and recovery, explicit revisioned cloud sharing, and integrated Excel output |
+| `orders.html` (`orderops_list.html`, `orderops/list.html`) | Web entry | Pilot | ORDER Q shipment management: `orders.html` is the primary public entry and deploys the complete root ORDER Q source; the existing root mirror and canonical compatibility route remain synchronized. The app provides four-way structure-first Excel intake, editable order status and order-aware inventory balance/stock-ledger review, purchase-plan editing and recovery, explicit revisioned cloud sharing, and integrated Excel output |
 | `orderq/index.html` (`input.html`, `parser.html`, `collector.html`, `cloud.html`) | Web entry group | Pilot | ORDER Q vNext manual/text order intake, source-preserving historical collection, order-to-sales fulfillment evidence, parser evidence review, and token-protected revisioned cloud sync; existing `orderops/` remains an independent compatibility route |
 | `coreEngine.js` | Shared library | Production | Storage, pricing, history, export, cloud synchronization, and master-data utilities |
 | `code.gs` | Cloud service | Production | Google Apps Script API for master, history, configuration, the finalized DataOps inventory snapshot, and immutable Shipping purchase-plan revisions |
@@ -458,7 +458,7 @@ They do not receive feature expansion during the current MerchOps and DataOps de
 
 Planned applications must not write production master data until they are promoted through architecture review.
 
-ORDER Q is registered as a Pilot on the existing `orderops/list.html` compatibility route. It owns the isolated `shipping-purchase-plan` local/cloud contract, does not call `coreEngine.js`, and does not change MerchOps or DataOps business behavior. Disabling the route and reverting its PR is the code rollback path; already finalized cloud revisions remain append-only operational records and are not deleted by rollback.
+ORDER Q is registered as a Pilot with `orders.html` as its primary public entry. `orders.html` and `orderops_list.html` deploy the same root-level source, while `orderops/list.html` remains the canonical compatibility route. It owns the isolated `shipping-purchase-plan` local/cloud contract, does not call `coreEngine.js`, and does not change MerchOps or DataOps business behavior. Disabling the public entries and reverting their PR is the code rollback path; already finalized cloud revisions remain append-only operational records and are not deleted by rollback.
 
 ---
 
