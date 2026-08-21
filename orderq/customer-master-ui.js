@@ -503,18 +503,23 @@ elements.applyImport.addEventListener('click', async () => {
 });
 
 async function initializeCustomerMaster() {
-  await ensureCustomerMasterReady({ onLoading: message => { elements.empty.hidden = false; elements.empty.textContent = message; } });
-  await reload();
   const pending = await getLatestCustomerSourceImportWork();
-  if (!pending) return;
-  state.importBatch = pending.batch;
-  state.importRecords = pending.records;
-  elements.importWorkbench.hidden = false;
-  if (pending.batch.status === 'PREPARING') {
-    renderPreparingImport(pending.batch, pending.records);
-    return;
+  if (pending) {
+    state.importBatch = pending.batch;
+    state.importRecords = pending.records;
+    elements.importWorkbench.hidden = false;
+    if (pending.batch.status === 'PREPARING') renderPreparingImport(pending.batch, pending.records);
+    else renderImport();
   }
-  renderImport();
+  ensureCustomerMasterReady({ onLoading: message => { elements.empty.hidden = false; elements.empty.textContent = message; } })
+    .then(() => reload())
+    .catch(error => {
+      console.warn('Customer Master background sync deferred', error);
+      if (!pending) {
+        elements.empty.hidden = false;
+        elements.empty.textContent = `거래처 정보를 불러오지 못했습니다: ${error.message}`;
+      }
+    });
 }
 
 initializeCustomerMaster().catch(error => {
