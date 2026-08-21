@@ -5,6 +5,13 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="google" content="notranslate">
   <title>거래처 DB | ONEAPP NEXES</title>
+  <script>
+    if (new URLSearchParams(window.location.search).get('embedded') === '1') {
+      document.documentElement.classList.add('cm-embedded');
+    } else {
+      window.location.replace('./Master.html?view=customers');
+    }
+  </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;600;800;900&family=Noto+Serif+KR:wght@700;900&display=swap" rel="stylesheet">
@@ -32,6 +39,10 @@
     .partner-main .cm-kicker { color: #4f46e5; }
     .partner-main .cm-button.primary { background: #4f46e5; }
     .partner-main .cm-button.primary:hover { background: #4338ca; }
+    html.cm-embedded, html.cm-embedded body { height: 100%; }
+    html.cm-embedded .nexus-shell { min-height: 100%; }
+    html.cm-embedded .nexus-header { display: none; }
+    html.cm-embedded .partner-main { min-height: 100%; padding-top: 24px; padding-bottom: 32px; }
     @media (max-width: 820px) {
       .nexus-header-main { min-height: 62px; padding: 0 14px; }
       .nexus-groups { display: none; }
