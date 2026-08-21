@@ -5336,8 +5336,15 @@
             return { status: '등록가능', canRegister: true, message: '필수/권장 입력 완료' };
         };
     </script>
+    <script src="https://oneapp.orderz.co.kr/nexus/common/apps-config.js?v=1.0.0"></script>
+    <script src="https://oneapp.orderz.co.kr/nexus/common/nexus-top.js?v=1.0.0"></script>
+    <style>
+        :root { --nexus-top-height: 44px; }
+        body > #root > .h-screen { height: calc(100vh - var(--nexus-top-height)) !important; }
+    </style>
 </head>
 <body>
+    <nexus-top app-id="merchops"></nexus-top>
     <div id="root"></div>
 
     
