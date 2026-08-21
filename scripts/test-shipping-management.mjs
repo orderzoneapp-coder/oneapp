@@ -226,8 +226,8 @@ const publicHeaderSource = orderOpsHtml.slice(
   orderOpsHtml.indexOf('<header class="global-header">'),
   orderOpsHtml.indexOf('</header>'),
 );
-assert.match(publicHeaderSource, /ORDER Q · 출고관리/,
-  "the public APP BAR must retain the application and work name");
+assert.match(publicHeaderSource, /class="brand-logo" src="assets\/order-q-logo\.png" alt="ORDER Q"/,
+  "the public APP BAR must retain the application identity with the approved logo");
 assert.doesNotMatch(publicHeaderSource, /master-brand-link|NEXES|GOLDEN RECORD/,
   "the public APP BAR must remove the duplicated global master lockup");
 assert.ok(publicHeaderSource.indexOf('id="smartInputButton"') < publicHeaderSource.indexOf('id="printButton"'),
