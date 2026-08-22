@@ -89,10 +89,11 @@ async function post(action, body = {}) {
   return data.data;
 }
 
-export function pushCloudChanges(deviceId, changes) {
+export function pushCloudChanges(deviceId, changes, requestId = '') {
   return post('orderq_sync_push', {
     schemaVersion: ORDERQ_SYNC_SCHEMA,
     deviceId,
+    requestId,
     changes
   });
 }

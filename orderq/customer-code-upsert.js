@@ -13,6 +13,7 @@ import {
   CUSTOMER_STATUS,
   normalizeCustomer
 } from './customer-master.js?v=0.16.0';
+import { createSyncIdentity } from './sync-identity.js?v=0.1.0';
 
 export const CUSTOMER_UPSERT_SOURCE_TYPE = 'CUSTOMER_CODE_UPSERT';
 export const CUSTOMER_UPSERT_MAPPING_VERSION = 'CUSTOMER_CODE_UPSERT_V1';
@@ -23,7 +24,8 @@ export const CUSTOMER_UPSERT_RESULT = Object.freeze({
   UPDATED: 'UPDATED',
   UNCHANGED: 'UNCHANGED',
   FAILED: 'FAILED',
-  EMPTY_ROW_EXCLUDED: 'EMPTY_ROW_EXCLUDED'
+  EMPTY_ROW_EXCLUDED: 'EMPTY_ROW_EXCLUDED',
+  SYSTEM_ROW_EXCLUDED: 'SYSTEM_ROW_EXCLUDED'
 });
 
 export const CUSTOMER_UPSERT_REASON = Object.freeze({
@@ -34,6 +36,7 @@ export const CUSTOMER_UPSERT_REASON = Object.freeze({
   CUSTOMER_CODE_COLUMN_NOT_FOUND: 'CUSTOMER_CODE_COLUMN_NOT_FOUND',
   NO_DATA_ROWS: 'NO_DATA_ROWS',
   EMPTY_ROW_EXCLUDED: 'EMPTY_ROW_EXCLUDED',
+  SYSTEM_ROW_EXCLUDED: 'SYSTEM_ROW_EXCLUDED',
   CUSTOMER_CODE_MISSING: 'CUSTOMER_CODE_MISSING',
   DUPLICATE_CODE_IN_IMPORT: 'DUPLICATE_CODE_IN_IMPORT',
   DUPLICATE_CUSTOMER_CODE_IN_DB: 'DUPLICATE_CUSTOMER_CODE_IN_DB',
@@ -80,7 +83,7 @@ function clean(value) {
 }
 
 export function normalizeCustomerHeader(value) {
-  return String(value ?? '').normalize('NFKC').trim().toLocaleLowerCase('ko').replace(/\s+/g, ' ');
+  return String(value ?? '').normalize('NFKC').trim().toLocaleLowerCase('ko').replace(/[\s_.\-/()]+/g, '');
 }
 
 function sourceLinkKey(sourceSystem, code) {
@@ -89,6 +92,7 @@ function sourceLinkKey(sourceSystem, code) {
 
 function queueItem(entityType, entityId, payload, timestamp = nowIso(), customerImportId = '') {
   const revision = Math.max(1, Number(payload?.revision || 1));
+  const identity = createSyncIdentity({ entityType, entityId, operation: 'UPSERT', revision, payload }, newId);
   return {
     queueId: newId('SQ'),
     entityType,
@@ -96,6 +100,7 @@ function queueItem(entityType, entityId, payload, timestamp = nowIso(), customer
     operation: 'UPSERT',
     revision,
     baseRevision: Math.max(0, revision - 1),
+    ...identity,
     payload,
     customerImportId: clean(customerImportId),
     status: 'PENDING',
@@ -344,12 +349,27 @@ function isEmptyRawRow(rawRow) {
   return Object.values(rawRow || {}).every(value => clean(value) === '');
 }
 
+export function isCustomerSystemRow(rawRow) {
+  const values = Object.values(rawRow || {}).map(clean).filter(Boolean);
+  if (!values.length) return false;
+  const joined = values.join(' ').normalize('NFKC').replace(/\s+/g, ' ').trim();
+  return /^(합계|총계|소계|페이지|page\s*\d+|출력일시|조회기간)(\s|:|：|$)/i.test(joined)
+    || /^[-=_]{3,}$/.test(joined);
+}
+
 function resultCounts(records) {
   return records.reduce((counts, record) => {
     counts[record.resultType] = (counts[record.resultType] || 0) + 1;
     counts.fieldExcluded += (record.fieldExclusions || []).length;
     return counts;
-  }, { CREATED: 0, UPDATED: 0, UNCHANGED: 0, FAILED: 0, EMPTY_ROW_EXCLUDED: 0, fieldExcluded: 0 });
+  }, { CREATED: 0, UPDATED: 0, UNCHANGED: 0, FAILED: 0, EMPTY_ROW_EXCLUDED: 0, SYSTEM_ROW_EXCLUDED: 0, fieldExcluded: 0 });
+}
+
+function maskedEvidence(rawRow) {
+  return Object.fromEntries(Object.entries(rawRow || {}).map(([key, value]) => {
+    const text = clean(value);
+    return [key, text ? `${text.slice(0, 2)}***(${text.length})` : ''];
+  }));
 }
 
 async function persistJob(job) {
@@ -403,12 +423,13 @@ async function saveRowFailure(record, reasonCode, reasonMessage, detail = {}) {
     resultType: CUSTOMER_UPSERT_RESULT.FAILED,
     reasonCode,
     reasonMessage,
+    rawEvidenceMasked: maskedEvidence(record.rawRow),
+    rawRow: undefined,
     updatedAt: timestamp
   };
   const db = await openOrderQDb();
-  const tx = db.transaction([STORE.SOURCE_RECORDS, STORE.SYNC_QUEUE], 'readwrite');
+  const tx = db.transaction(STORE.SOURCE_RECORDS, 'readwrite');
   tx.objectStore(STORE.SOURCE_RECORDS).put(updated);
-  tx.objectStore(STORE.SYNC_QUEUE).put(queueItem('SOURCE_RECORD', updated.sourceRecordId, updated, timestamp, updated.importId));
   await transactionDone(tx);
   return updated;
 }
@@ -420,6 +441,24 @@ async function saveEmptyRow(record) {
     resultType: CUSTOMER_UPSERT_RESULT.EMPTY_ROW_EXCLUDED,
     reasonCode: CUSTOMER_UPSERT_REASON.EMPTY_ROW_EXCLUDED,
     reasonMessage: '원본 행의 모든 셀이 비어 있어 등록 대상에서 제외했습니다.',
+    updatedAt: timestamp
+  };
+  const db = await openOrderQDb();
+  const tx = db.transaction(STORE.SOURCE_RECORDS, 'readwrite');
+  tx.objectStore(STORE.SOURCE_RECORDS).put(updated);
+  await transactionDone(tx);
+  return updated;
+}
+
+async function saveSystemRow(record) {
+  const timestamp = nowIso();
+  const updated = {
+    ...record,
+    rawEvidenceMasked: maskedEvidence(record.rawRow),
+    rawRow: undefined,
+    resultType: CUSTOMER_UPSERT_RESULT.SYSTEM_ROW_EXCLUDED,
+    reasonCode: CUSTOMER_UPSERT_REASON.SYSTEM_ROW_EXCLUDED,
+    reasonMessage: '합계·페이지·출력정보 등 시스템 행으로 판정하여 제외했습니다.',
     updatedAt: timestamp
   };
   const db = await openOrderQDb();
@@ -454,6 +493,7 @@ async function addAlias(tx, customerId, value, sourceId, timestamp, sourceSystem
 
 async function applyUpsertRow(record, mapping, duplicateRowsByCode) {
   if (isEmptyRawRow(record.rawRow)) return saveEmptyRow(record);
+  if (isCustomerSystemRow(record.rawRow)) return saveSystemRow(record);
   const { values, fieldExclusions } = mappedRow(record.rawRow, mapping);
   const customerCode = clean(values.customerCode);
   const normalizedCode = normalizeText(customerCode);
@@ -579,7 +619,7 @@ async function applyUpsertRow(record, mapping, duplicateRowsByCode) {
       normalizedSourceCustomerCode: normalizedCode,
       sourceLinkKey: key,
       sourceCustomerName: clean(values.customerName),
-      sourceSnapshot: { ...record.rawRow },
+      sourceSnapshot: { importId: record.importId, excelRowNumber: record.excelRowNumber, mappingVersion: CUSTOMER_UPSERT_MAPPING_VERSION },
       matchMethod: 'CUSTOMER_CODE_EXACT',
       linkStatus: 'CONFIRMED',
       revision: Number(existingLink?.revision || 0) + 1,
@@ -616,10 +656,11 @@ async function applyUpsertRow(record, mapping, duplicateRowsByCode) {
       beforeValues: previous ? Object.fromEntries(changedFields.map(field => [field, previous[field] ?? ''])) : {},
       afterValues: Object.fromEntries(changedFields.map(field => [field, customer[field] ?? ''])),
       fieldExclusions,
+      rawEvidenceMasked: maskedEvidence(record.rawRow),
+      rawRow: undefined,
       updatedAt: timestamp
     };
     tx.objectStore(STORE.SOURCE_RECORDS).put(updatedRecord);
-    tx.objectStore(STORE.SYNC_QUEUE).put(queueItem('SOURCE_RECORD', updatedRecord.sourceRecordId, updatedRecord, timestamp, record.importId));
     await transactionDone(tx);
     return updatedRecord;
   } catch (error) {
@@ -785,11 +826,21 @@ export function customerUpsertSourceLinkConflictPatch(row, importId, timestamp =
     || row.entityType !== 'CUSTOMER_SOURCE_LINK'
     || (row.remotePayload?.customerId && clean(row.remotePayload.customerId) !== clean(row.payload?.customerId))) return null;
   const serverRevision = Math.max(0, Number(row.serverRevision || 0));
+  const payload = { ...row.payload, revision: serverRevision + 1, updatedAt: timestamp };
+  const identity = createSyncIdentity({
+    entityType: row.entityType,
+    entityId: row.entityId,
+    operation: row.operation || 'UPSERT',
+    revision: serverRevision + 1,
+    payload
+  }, newId, { ...row, operationId: row.operationId || row.queueId, mutationId: row.mutationId || row.queueId });
   return {
     ...row,
+    queueId: newId('SQ'),
+    ...identity,
     revision: serverRevision + 1,
     baseRevision: serverRevision,
-    payload: { ...row.payload, revision: serverRevision + 1, updatedAt: timestamp },
+    payload,
     status: 'PENDING',
     lastError: `Cloud Source Link revision ${serverRevision}을 기준으로 관리자 업로드값을 자동 재시도합니다.`,
     updatedAt: timestamp
@@ -803,7 +854,11 @@ async function requeueRevisionOnlySourceLinkConflicts(importId, rows) {
   const db = await openOrderQDb();
   const tx = db.transaction(STORE.SYNC_QUEUE, 'readwrite');
   const store = tx.objectStore(STORE.SYNC_QUEUE);
-  patches.forEach(row => store.put(row));
+  patches.forEach(row => {
+    const previous = rows.find(candidate => candidate.mutationId === row.parentMutationId || candidate.queueId === row.parentMutationId);
+    if (previous) store.put({ ...previous, status: 'SUPERSEDED_REBASE', supersededByMutationId: row.mutationId, updatedAt: timestamp });
+    store.put(row);
+  });
   await transactionDone(tx);
   return getAll(STORE.SYNC_QUEUE);
 }

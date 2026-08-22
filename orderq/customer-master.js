@@ -10,8 +10,9 @@ import {
   transactionDone
 } from './orderq-db.js?v=0.16.0';
 import { pullRemote } from './orderq-sync-engine.js?v=0.14.0';
+import { createSyncIdentity } from './sync-identity.js?v=0.1.0';
 
-export const CUSTOMER_STATUS = Object.freeze({ ACTIVE: 'ACTIVE', INACTIVE: 'INACTIVE' });
+export const CUSTOMER_STATUS = Object.freeze({ ACTIVE: 'ACTIVE', INACTIVE: 'INACTIVE', DELETED: 'DELETED' });
 export const CUSTOMER_QUALITY = Object.freeze({
   VERIFIED: 'VERIFIED',
   UNVERIFIED: 'UNVERIFIED',
@@ -87,6 +88,7 @@ function customerCodeOf(customer) {
 
 function queueItem(entityType, entityId, payload, timestamp = nowIso()) {
   const revision = Math.max(1, Number(payload?.revision || 1));
+  const identity = createSyncIdentity({ entityType, entityId, operation: 'UPSERT', revision, payload }, newId);
   return {
     queueId: newId('SQ'),
     entityType,
@@ -95,6 +97,7 @@ function queueItem(entityType, entityId, payload, timestamp = nowIso()) {
     operation: 'UPSERT',
     revision,
     baseRevision: Math.max(0, revision - 1),
+    ...identity,
     payload,
     status: 'PENDING',
     attempts: 0,
@@ -371,6 +374,59 @@ export async function updateCustomer(customerId, patch, { expectedRevision, acto
     : [];
   const event = customerEvent(customerId, 'UPDATED', { source, before: previous, after: customer }, actorId);
   return writeCustomerMutation({ customer, aliases, event, expectedRevision: expectedRevision ?? previous.revision ?? 1 });
+}
+
+export async function retireCustomer(customerId, { expectedRevision, actorId = 'administrator', reason = '' } = {}) {
+  const [previous, orders] = await Promise.all([
+    getByKey(STORE.CUSTOMERS, customerId),
+    getAll(STORE.ORDERS)
+  ]);
+  if (!previous) throw new Error('거래처를 찾을 수 없습니다.');
+  if (previous.status === CUSTOMER_STATUS.DELETED) return { customer: previous, affectedOrderCount: 0, alreadyDeleted: true };
+  if (expectedRevision !== undefined && Number(previous.revision || 0) !== Number(expectedRevision)) {
+    throw new Error('거래처가 다른 화면에서 수정되었습니다. 새로고침 후 다시 시도해 주세요.');
+  }
+  const timestamp = nowIso();
+  const customer = normalizeCustomer({
+    customerId,
+    status: CUSTOMER_STATUS.DELETED,
+    revision: Number(previous.revision || 1) + 1,
+    deletedAt: timestamp,
+    deletedBy: actorId,
+    deleteReason: clean(reason),
+    updatedAt: timestamp
+  }, previous);
+  const db = await openOrderQDb();
+  const stores = [STORE.CUSTOMERS, STORE.CUSTOMER_ALIASES, STORE.CUSTOMER_SOURCE_LINKS, STORE.CUSTOMER_EVENTS, STORE.SYNC_QUEUE];
+  const tx = db.transaction(stores, 'readwrite');
+  const aliasStore = tx.objectStore(STORE.CUSTOMER_ALIASES);
+  const sourceLinkStore = tx.objectStore(STORE.CUSTOMER_SOURCE_LINKS);
+  const queueStore = tx.objectStore(STORE.SYNC_QUEUE);
+  const [aliases, sourceLinks] = await Promise.all([
+    requestToPromise(aliasStore.getAll()),
+    requestToPromise(sourceLinkStore.getAll())
+  ]);
+  tx.objectStore(STORE.CUSTOMERS).put(customer);
+  aliases.filter(row => row.customerId === customerId && row.active !== false).forEach(row => {
+    const updated = { ...row, active: false, revision: Number(row.revision || 1) + 1, updatedAt: timestamp };
+    aliasStore.put(updated);
+    queueStore.put(queueItem('CUSTOMER_ALIAS', updated.mappingId, updated, timestamp));
+  });
+  sourceLinks.filter(row => row.customerId === customerId && row.active !== false).forEach(row => {
+    const updated = { ...row, active: false, linkStatus: 'DELETED', revision: Number(row.revision || 1) + 1, updatedAt: timestamp };
+    sourceLinkStore.put(updated);
+    queueStore.put(queueItem('CUSTOMER_SOURCE_LINK', updated.linkId, updated, timestamp));
+  });
+  const event = customerEvent(customerId, 'DELETED', {
+    reason: clean(reason),
+    affectedOrderCount: orders.filter(order => order.customerId === customerId).length,
+    before: previous,
+    after: customer
+  }, actorId, timestamp);
+  tx.objectStore(STORE.CUSTOMER_EVENTS).put(event);
+  queueStore.put(queueItem('CUSTOMER', customerId, customer, timestamp));
+  await transactionDone(tx);
+  return { customer, event, affectedOrderCount: event.payload.affectedOrderCount, alreadyDeleted: false };
 }
 
 export async function mergeCustomers(canonicalCustomerId, supersededCustomerIds, { actorId = 'administrator', reason = '' } = {}) {

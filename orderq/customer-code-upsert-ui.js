@@ -9,9 +9,9 @@ import {
   runCustomerCodeUpsert,
   saveCustomerHeaderMapping,
   saveCustomerUserFieldDefinition,
-} from './customer-code-upsert.js?v=0.16.1';
+} from './customer-code-upsert.js?v=0.16.2';
 import { getByKey, STORE } from './orderq-db.js?v=0.16.0';
-import { pushPending } from './orderq-sync-engine.js?v=0.16.0';
+import { pushPending } from './orderq-sync-engine.js?v=0.16.1';
 
 const state = {
   sourceSystem: 'ERP',
@@ -19,6 +19,7 @@ const state = {
   fileHash: '',
   headers: [],
   rawRows: [],
+  sheetName: '',
   headerRowNumber: 1,
   work: null,
   filter: 'SUMMARY',
@@ -45,7 +46,11 @@ function cloneNodeById(id) {
 function takeOverLegacyImportUi() {
   ['importSummary', 'importGate', 'importReview', 'importSearch', 'applyImportButton'].forEach(cloneNodeById);
   byId('importSearch')?.setAttribute('hidden', 'hidden');
-  byId('applyImportButton')?.setAttribute('hidden', 'hidden');
+  const apply = byId('applyImportButton');
+  if (apply) {
+    apply.hidden = true;
+    apply.textContent = '업로드 실행';
+  }
 }
 
 function showWorkbench() {
@@ -283,6 +288,41 @@ function rowsAfterHeader(matrix, header) {
     .filter(([name]) => name)));
 }
 
+function renderPreview() {
+  showWorkbench();
+  const previewRows = state.rawRows.slice(0, 100);
+  byId('importSummary').innerHTML = `<div class="customer-upsert-progress"><strong>${escapeHtml(state.fileName)}</strong><span>${escapeHtml(state.sheetName)} · ${state.rawRows.length.toLocaleString()}행</span></div>`;
+  byId('importGate').textContent = '미리보기 단계입니다. 아직 거래처 Master와 Cloud에는 기록하지 않았습니다.';
+  byId('importReview').innerHTML = `<div class="customer-upsert-preview"><table><thead><tr>${state.headers.map(header => `<th>${escapeHtml(header)}</th>`).join('')}</tr></thead><tbody>${previewRows.map(row => `<tr>${state.headers.map(header => `<td>${escapeHtml(row[header])}</td>`).join('')}</tr>`).join('')}</tbody></table>${state.rawRows.length > previewRows.length ? `<p>화면에는 최초 ${previewRows.length}행을 표시하며 실행 시 전체 ${state.rawRows.length.toLocaleString()}행을 처리합니다.</p>` : ''}</div>`;
+  const apply = byId('applyImportButton');
+  if (apply) apply.hidden = false;
+}
+
+async function selectWorkbookSheet(workbook) {
+  const candidates = [];
+  for (const name of workbook.SheetNames) {
+    const matrix = XLSX.utils.sheet_to_json(workbook.Sheets[name], { header: 1, raw: false, defval: '', blankrows: true });
+    try {
+      const header = await selectHeaderRow(matrix);
+      candidates.push({ name, matrix, header });
+    } catch (_) {}
+  }
+  if (!candidates.length) {
+    const error = new Error('거래처코드 열이 있는 시트를 찾지 못했습니다.');
+    error.code = 'CUSTOMER_CODE_COLUMN_NOT_FOUND';
+    throw error;
+  }
+  if (candidates.length === 1) return candidates[0];
+  const answer = prompt(`거래처 시트가 여러 개입니다. 사용할 번호를 입력하세요.\n${candidates.map((candidate, index) => `${index + 1}. ${candidate.name}`).join('\n')}`, '1');
+  const index = Number(answer) - 1;
+  if (!Number.isInteger(index) || !candidates[index]) {
+    const error = new Error('시트 선택이 취소되었습니다.');
+    error.code = 'SHEET_SELECTION_CANCELLED';
+    throw error;
+  }
+  return candidates[index];
+}
+
 async function runStoredRows({ resetFilter = true } = {}) {
   if (state.busy) return;
   state.busy = true;
@@ -325,18 +365,18 @@ async function processFile(file, sourceSystem) {
   progressView({ message: 'Excel 내용을 읽고 있습니다.' });
   try {
     const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array', raw: false, cellDates: false });
-    const sheet = workbook.Sheets[workbook.SheetNames[0]];
-    const matrix = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false, defval: '', blankrows: true });
-    const header = await selectHeaderRow(matrix);
+    const selected = await selectWorkbookSheet(workbook);
+    const { matrix, header } = selected;
     const detection = detectCustomerFileType(header.headers);
     if (detection.suspected) {
       const proceed = confirm(`거래처 파일이 아닌 ${detection.suspectedType} 파일일 가능성이 있습니다.\n\n판정 근거 헤더: ${detection.evidence.join(', ')}\n\n그래도 거래처 등록을 진행하시겠습니까?`);
       if (!proceed) return;
     }
     state.headers = header.headers;
+    state.sheetName = selected.name;
     state.headerRowNumber = header.index + 1;
     state.rawRows = rowsAfterHeader(matrix, header);
-    await runStoredRows();
+    renderPreview();
   } catch (error) {
     renderFatal(error, 0, state.rawRows.length);
   }
@@ -467,6 +507,10 @@ function installFileButtons() {
 function install() {
   takeOverLegacyImportUi();
   installFileButtons();
+  byId('applyImportButton')?.addEventListener('click', () => {
+    byId('applyImportButton').hidden = true;
+    runStoredRows();
+  });
   cloneNodeById('manageCustomerUserFieldsButton')?.addEventListener('click', () => openFieldManager().catch(error => alert(error.message)));
   const editor = byId('customerEditor');
   if (editor) new MutationObserver(() => { if (editor.open) renderCustomerCustomFields(); }).observe(editor, { attributes: true, attributeFilter: ['open'] });
