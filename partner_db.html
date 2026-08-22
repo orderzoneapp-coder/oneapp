@@ -12,13 +12,13 @@
       document.documentElement.classList.add('cm-embedded');
       document.documentElement.dataset.masterMode = initialCustomerMasterMode;
     } else {
-      window.location.replace(`./Master.html?view=customers&mode=${initialCustomerMasterMode}&release=customer-groups-020`);
+      window.location.replace(`./Master.html?view=customers&mode=${initialCustomerMasterMode}&release=customer-completeness-021`);
     }
   </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;600;800;900&family=Noto+Serif+KR:wght@700;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="./orderq/customer-master.css?v=0.18.0">
+  <link rel="stylesheet" href="./orderq/customer-master.css?v=0.19.0">
   <style>
     :root { --nexus-ink: #0b1021; --nexus-panel: #151b2b; --nexus-accent: #6366f1; }
     body.customer-master-page { background: #f1f5f9; }
@@ -114,9 +114,9 @@
       </section>
 
       <section class="cm-dashboard cm-list-only" aria-label="거래처 요약">
-        <button class="cm-stat is-active" type="button" data-customer-summary-filter="ALL"><small>전체 거래처</small><strong id="totalCount">0</strong></button>
+        <button class="cm-stat is-active" type="button" data-customer-summary-filter="ACTIVE_ALL"><small>전체 거래처</small><strong id="totalCount">0</strong></button>
         <button class="cm-stat" type="button" data-customer-summary-filter="COMPLETE"><small>정보 완료</small><strong id="activeCount">0</strong></button>
-        <button class="cm-stat" type="button" data-customer-summary-filter="UNVERIFIED"><small>정보 보완</small><strong id="unverifiedCount">0</strong></button>
+        <button class="cm-stat" type="button" data-customer-summary-filter="INCOMPLETE"><small>정보 보완</small><strong id="unverifiedCount">0</strong></button>
         <button class="cm-stat" type="button" data-customer-summary-filter="DUPLICATE_CANDIDATE"><small>중복 확인</small><strong id="duplicateCount">0</strong></button>
       </section>
 
@@ -131,7 +131,8 @@
             <option value="ALL">전체</option>
             <option value="ACTIVE">사용중</option>
             <option value="INACTIVE">거래중단</option>
-            <option value="UNVERIFIED">정보 보완</option>
+            <option value="COMPLETE">정보 완료</option>
+            <option value="INCOMPLETE">정보 보완</option>
             <option value="DUPLICATE_CANDIDATE">중복 확인</option>
           </select>
           <select class="cm-filter" id="customerGroup1Filter" aria-label="그룹1 필터"><option value="ALL">그룹1 전체</option></select>
@@ -144,7 +145,7 @@
         </div>
         <section class="cm-issue-editor" id="customerIssueEditor" hidden aria-label="정보 보완 거래처 편집">
           <div class="cm-issue-actions"><strong id="customerIssueChangeCount">변경 0건</strong><span>Enter·방향키 이동 · 여러 행 붙여넣기</span><button class="cm-button primary" id="saveCustomerIssues" type="button" disabled>변경 0건 저장</button><button class="cm-button dark" id="saveCustomerIssuesNext" type="button" disabled>저장 후 다음 거래처</button></div>
-          <div class="cm-issue-scroll"><table class="cm-issue-grid"><thead><tr><th>행</th><th>상호</th><th>주소</th><th>휴대폰 번호</th></tr></thead><tbody id="customerIssueGrid"></tbody></table></div>
+          <div class="cm-issue-scroll"><table class="cm-issue-grid"><thead><tr><th>행</th><th>상호</th><th>주소</th><th>휴대폰 번호</th><th>보완 항목 / 저장 결과</th></tr></thead><tbody id="customerIssueGrid"></tbody></table></div>
         </section>
         <div class="cm-empty" id="customerEmpty" hidden>조건에 맞는 거래처가 없습니다.</div>
       </section>
@@ -210,7 +211,7 @@
   </script>
 
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script type="module" src="./orderq/customer-master-ui.js?v=0.20.0"></script>
+  <script type="module" src="./orderq/customer-master-ui.js?v=0.21.0"></script>
   <script type="module" src="./orderq/customer-code-upsert-ui.js?v=0.17.0"></script>
 </body>
 </html>
