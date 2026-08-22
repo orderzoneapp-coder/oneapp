@@ -114,10 +114,10 @@
       </section>
 
       <section class="cm-dashboard cm-list-only" aria-label="거래처 요약">
-        <article class="cm-stat"><small>전체 거래처</small><strong id="totalCount">0</strong></article>
-        <article class="cm-stat"><small>사용중</small><strong id="activeCount">0</strong></article>
-        <article class="cm-stat"><small>정보 보완</small><strong id="unverifiedCount">0</strong></article>
-        <article class="cm-stat"><small>중복 확인</small><strong id="duplicateCount">0</strong></article>
+        <button class="cm-stat is-active" type="button" data-customer-summary-filter="ALL"><small>전체 거래처</small><strong id="totalCount">0</strong></button>
+        <button class="cm-stat" type="button" data-customer-summary-filter="COMPLETE"><small>정보 완료</small><strong id="activeCount">0</strong></button>
+        <button class="cm-stat" type="button" data-customer-summary-filter="UNVERIFIED"><small>정보 보완</small><strong id="unverifiedCount">0</strong></button>
+        <button class="cm-stat" type="button" data-customer-summary-filter="DUPLICATE_CANDIDATE"><small>중복 확인</small><strong id="duplicateCount">0</strong></button>
       </section>
 
       <section class="cm-sync-state cm-list-only" id="customerCloudSyncState" data-state="local" aria-live="polite">
@@ -134,9 +134,17 @@
             <option value="UNVERIFIED">정보 보완</option>
             <option value="DUPLICATE_CANDIDATE">중복 확인</option>
           </select>
+          <select class="cm-filter" id="customerGroupFilter" aria-label="그룹 필터"><option value="ALL">그룹 전체</option></select>
+          <select class="cm-filter" id="customerManagerFilter" aria-label="담당자 필터"><option value="ALL">담당자 전체</option></select>
         </div>
-        <div class="cm-list-head"><span>코드</span><span>거래처명</span><span>연락처 / 주소</span><span>그룹</span><span>상태</span></div>
-        <div class="cm-viewport" id="customerViewport"><div class="cm-spacer" id="customerSpacer"></div></div>
+        <div id="customerStandardList">
+          <div class="cm-list-head"><span>코드</span><span>거래처명</span><span>연락처 / 주소</span><span>그룹</span><span>상태</span></div>
+          <div class="cm-viewport" id="customerViewport"><div class="cm-spacer" id="customerSpacer"></div></div>
+        </div>
+        <section class="cm-issue-editor" id="customerIssueEditor" hidden aria-label="정보 보완 거래처 편집">
+          <div class="cm-issue-actions"><strong id="customerIssueChangeCount">변경 0건</strong><span>Enter·방향키 이동 · 여러 행 붙여넣기</span><button class="cm-button primary" id="saveCustomerIssues" type="button" disabled>변경 0건 저장</button><button class="cm-button dark" id="saveCustomerIssuesNext" type="button" disabled>저장 후 다음 거래처</button></div>
+          <div class="cm-issue-scroll"><table class="cm-issue-grid"><thead><tr><th>행</th><th>상호</th><th>주소</th><th>휴대폰 번호</th></tr></thead><tbody id="customerIssueGrid"></tbody></table></div>
+        </section>
         <div class="cm-empty" id="customerEmpty" hidden>조건에 맞는 거래처가 없습니다.</div>
       </section>
     </main>
@@ -201,7 +209,7 @@
   </script>
 
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script type="module" src="./orderq/customer-master-ui.js?v=0.18.0"></script>
-  <script type="module" src="./orderq/customer-code-upsert-ui.js?v=0.16.2"></script>
+  <script type="module" src="./orderq/customer-master-ui.js?v=0.19.0"></script>
+  <script type="module" src="./orderq/customer-code-upsert-ui.js?v=0.17.0"></script>
 </body>
 </html>

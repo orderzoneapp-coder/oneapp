@@ -74,7 +74,7 @@ assert.match(ui, /getLatestCustomerSourceImportWork/, 'Pending Excel work must r
 assert.match(ui, /importStatusFilter: 'ISSUES'/, 'Workbench must default to unresolved customer rows');
 assert.match(html, /erpCustomerExcelFile/);
 assert.match(html, /거래처 DB/);
-assert.match(html, /customer-master-ui\.js\?v=0\.18\.0/, 'Customer Master entry module must invalidate the deployed cache');
+assert.match(html, /customer-master-ui\.js\?v=0\.19\.0/, 'Customer Master entry module must invalidate the deployed cache');
 assert.match(ui, /async function initializeCustomerMaster\(\) \{\s+const pending = await getLatestCustomerSourceImportWork\(\)/, 'Saved Excel work must render before Cloud Master synchronization');
 assert.match(ui, /await reload\(\);[\s\S]*ensureCustomerMasterReady/, 'Local Customer Master must render before Cloud synchronization');
 assert.match(ui, /fallbackFileHash/, 'Excel import must continue with a deterministic file hash when Web Crypto stalls');
@@ -96,6 +96,15 @@ assert.match(ui, /input\.value = ''/, 'Excel input must reset so the same file c
 assert.match(ui, /findHeaderRow[\s\S]*아이디와 이름\(거래처명\) 열을 찾을 수 없습니다/, 'Source import must validate ERP and SHOP headers');
 assert.match(service, /orderq-db\.js\?v=0\.16\.0/, 'Customer Master must load the v11 DB module URL');
 assert.match(css, /\.cm-viewport/);
+assert.match(html, /data-customer-summary-filter="ALL"/);
+assert.match(html, /data-customer-summary-filter="COMPLETE"[\s\S]*정보 완료/);
+assert.match(html, /id="customerGroupFilter"[\s\S]*id="customerManagerFilter"/);
+assert.match(html, /id="customerIssueGrid"/);
+assert.match(ui, /state\.summaryFilter === 'UNVERIFIED'/, 'Information supplement card must switch to the Excel editor');
+assert.match(ui, /const ISSUE_FIELDS = Object\.freeze\(\['customerName', 'address', 'mobile'\]\)/, 'Only business name, address and mobile are directly editable');
+assert.match(ui, /ArrowDown[\s\S]*ArrowUp[\s\S]*ArrowLeft[\s\S]*ArrowRight/, 'Excel editor must support keyboard cell navigation');
+assert.match(ui, /clipboardData[\s\S]*split\('\\t'\)/, 'Excel editor must support multi-cell paste');
+assert.match(ui, /await syncAndReload\(\)/, 'Issue edits must synchronize with Cloud after saving');
 
 assert.doesNotMatch(intakeEngine, /if \(!customer\) throw new Error\('ORDERQ_INTAKE_CUSTOMER_REQUIRED'\)/);
 assert.match(intakeEngine, /rematchExtractedLinesForCustomer/);
