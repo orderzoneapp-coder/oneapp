@@ -1,0 +1,48 @@
+# SmartInput 독립 앱 기준
+
+- 작업 ID: `SMARTINPUT-STANDALONE-V1`
+- 앱 ID: `smart-input`
+- 운영 경로: `/smartinput/`
+- 진입 파일: `smartinput/index.html`
+- 표시명: `스마트입력`
+- 상태: 독립 검증 단계
+
+## 목적
+
+NEXUS 공통헤더와 기존 입력 화면을 변경하지 않고 주문서·구매·판매 자료를 한 화면에서 접수하고, 원문·매칭·관리자 수정·전달 이력을 보존하는 독립 앱을 만든다.
+
+## 확정 화면 계약
+
+- 상단 대상 탭: `주문서 / 구매 / 판매` (`Alt+1 / Alt+2 / Alt+3`)
+- 3열 작업영역: 왼쪽 작업 단계 / 중앙 입력 본문 / 오른쪽 연결 앱
+- 입력 방식: 직접입력, Excel·파일, 텍스트, `Ctrl+V` 텍스트·이미지, 사진 OCR, 음성 STT
+- 일체형 입력: 거래처, 주문일자, 배송일자, 출하창고, 거래유형, 자동 높이 원문 입력창
+- 표준 그리드: 원문, 품목코드, 상품명, 규격, 수량, 단위, 단가, 금액, 매칭 상태
+- 매칭 상태: 일치 / 유사 / 미인식. 색상과 문구를 함께 표시한다.
+
+## 누적 입력 계약
+
+1. 분석 결과는 기존 행 아래에 추가한다.
+2. 동일 상품을 자동 합산하지 않고 중복 가능성만 표시한다.
+3. 관리자 수정 필드는 이후 분석으로 덮어쓰지 않는다.
+4. 모든 입력 차수는 원문과 생성 주문행을 연결하는 `batchId`, `sourceLineKey`, `intakeLineId`를 가진다.
+5. 원문은 공백과 줄바꿈을 보존한다.
+6. 로컬 초안은 탭별로 분리해 저장하며 저장 완료 후 새 주문을 계속 입력할 수 있다.
+7. 최근 전달 이력은 `oneapp.smartinput.delivery-history.v1`에 최대 30건 보존하고, 최종 주문의 업무 이력은 ORDER Q 원장이 소유한다.
+
+## 공통 주문서 원장 판정
+
+ORDER Q vNext의 IndexedDB `oneapp-orderq-vnext`와 `orderq/order-intake-engine.js`의 `createOrder()`를 공통 주문서 원장으로 재사용한다.
+
+- `orderq/index.html`: 같은 원장을 조회하므로 저장 직후 주문서 조회 가능
+- `orders.html`: 현재 Excel 기반 출고관리 흐름으로 vNext 원장을 직접 읽지 않으므로 별도 전달 어댑터가 필요
+- 독립 앱 단계: vNext 원장 저장과 `orderq/index.html` 조회 연결까지 구현
+- 후속 연결 단계: `orders.html`이 공통 주문서 원장을 소비하는 어댑터를 별도 검증 후 연결
+
+새 주문서 원장을 중복 생성하지 않는다. SmartInput은 입력 원본·초안·전달 상태를 소유하고, 저장 완료된 주문의 수정·취소·출고 판단은 ORDER Q가 소유한다.
+
+## 기존 앱 보호
+
+- `orderops/input.html`, `orderq/input.html`, `orderq/parser.html`, `orderq/collector.html`은 참고만 하며 변경하지 않는다.
+- `SmartParser.html`과 MerchOps 계약을 변경하지 않는다.
+- NEXUS 공통헤더와 전체 앱 등록은 독립 운영 검증 이후 진행한다.

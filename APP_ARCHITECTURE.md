@@ -94,6 +94,7 @@ Shared storage or navigation does not make their business meaning identical.
 | `Item_manager.html` | Web entry | Pilot / transition | Existing category lookup and product-management route retained until approved feature migration and result verification are complete |
 | `orders.html` (`orderops_list.html`, `orderops/list.html`) | Web entry | Pilot | ORDER Q shipment management: `orders.html` is the primary public entry and deploys the complete root ORDER Q source; the existing root mirror and canonical compatibility route remain synchronized. The app provides four-way structure-first Excel intake, editable order status and order-aware inventory balance/stock-ledger review, purchase-plan editing and recovery, explicit revisioned cloud sharing, and integrated Excel output |
 | `orderq/index.html` (`input.html`, `parser.html`, `collector.html`, `cloud.html`) | Web entry group | Pilot | ORDER Q vNext manual/text order intake, source-preserving historical collection, order-to-sales fulfillment evidence, parser evidence review, and token-protected revisioned cloud sync; existing `orderops/` remains an independent compatibility route |
+| `smartinput/index.html` | Web entry | Pilot | Standalone SmartInput workbench for order, purchase, and sale source capture through direct, file, text, clipboard, photo OCR, and voice STT inputs; cumulative source-to-row review; and order delivery to the ORDER Q vNext ledger before NEXUS registration |
 | `coreEngine.js` | Shared library | Production | Storage, pricing, history, export, cloud synchronization, and master-data utilities |
 | `code.gs` | Cloud service | Production | Google Apps Script API for master, history, configuration, the finalized DataOps inventory snapshot, and immutable Shipping purchase-plan revisions |
 
@@ -126,6 +127,8 @@ Header preferences are local display state under the `oneapp.nexus.v1.` prefix. 
 The current application reports only its own save, synchronization, warning, and error state through `window.NEXUS_TOP.reportStatus`. Concurrent signals use the fixed priority `error > warning > progress > normal`; snapshots from other applications are historical and must include their last-check time rather than appear live. `nexus:before-navigate` is the cancelable leave-guard event owned by the current application.
 
 Every consumer reserves `--nexus-top-height` and includes a light-DOM fallback. Failure to load or initialize the header must leave the application boot path independent and show only the retryable NEXUS fallback. The complete event and API examples are documented in `nexus/common/README.md` and registered as the `nexus-header` shared contract in `app-manifest.json`.
+
+`smartinput/index.html` is intentionally not a NEXUS-header consumer during its standalone pilot. Its public route is `/smartinput/`; common-header and all-apps registration occurs only after independent operational validation. This exception does not change the current work-group map or header preferences.
 
 ### 5.2.1 NEXUS application UI density
 
@@ -162,9 +165,11 @@ Important contracts include:
 | OrderOps Excel aliases | `oneapp.orderops.excel-mappings.v1` | OrderOps local parser preference only; administrator filename, sheet, and column aliases are excluded from workspace recovery and cloud plans |
 | OrderOps purchase-name history | `oneapp.orderops.purchase-history.v1` | OrderOps local input convenience only; up to 30 recent nonblank purchase-place names are excluded from workspace recovery and cloud plans |
 | OrderOps order-view presets | `oneapp.orderops.order-view-presets.v1` | ORDER Q per-view local display preferences only; named search/filter/sort conditions, visible columns, column order, and saved widths may be captured, and one preset per view may be marked as the access-time default. Presets remain excluded from workspace recovery and cloud plans |
-| ORDER Q vNext local ledger | IndexedDB `oneapp-orderq-vnext` v4 | ORDER Q vNext only; operational orders, historical source batches, sales/purchase/ledger/inventory facts, fulfillment links, parser evidence, and sync queue |
+| ORDER Q vNext local ledger | IndexedDB `oneapp-orderq-vnext` v4 | ORDER Q vNext and standalone SmartInput order delivery; operational orders, historical source batches, sales/purchase/ledger/inventory facts, fulfillment links, parser evidence, and sync queue |
 | ORDER Q vNext access token | `oneapp_orderq_access_token_v1` | Local cloud request credential only; excluded from IndexedDB records, imports, recovery payloads, and sync entities |
 | ORDER Q manual-entry defaults | `oneapp.orderq.manual-defaults.v1` | ORDER Q vNext only; restores the last shipment warehouse and transaction type for the next new manual order in the same browser |
+| SmartInput local draft | `oneapp.smartinput.draft.v1` | SmartInput only; preserves target tab, source batches, source-to-row links, administrator edits, matching state, responsive panel state, and delivery result. It is not a final order ledger or a cloud backup contract. |
+| SmartInput delivery history | `oneapp.smartinput.delivery-history.v1` | SmartInput only; retains the latest 30 local delivery references for operator continuity. Final order state and durable business history remain owned by ORDER Q. |
 
 A storage-key rename is a schema migration.
 
@@ -386,6 +391,19 @@ Equivalent safety controls must be preserved when another application writes the
 19. Named view presets persist local display conditions for order status, stock ledger, warehouse inventory, purchases, and sales: search and filters, sort, visible columns, column order, and explicitly saved column widths. One preset per view may be marked as the default and is applied automatically when that result view opens. Applying a preset discards keys absent from the current workbook and never changes analyzed rows, editable business values, workspace recovery, cloud plans, or color assignments. Header-body clicks do not sort; sorting remains available only inside the header filter control.
 20. The small folder-shaped `통합` picker beside `데이터 소스` is a batch wrapper for the existing order, inventory, purchase, and sales inputs, not a sixth result tab or a new business-data type; no full-width integrated-upload panel is shown. The five result tabs are ordered as order, stock ledger, inventory, purchase, and sales. In `환경설정 > 통합 Excel 시트명 매칭`, administrators may register comma-separated per-kind aliases. An identical normalized alias assigned to more than one kind blocks saving with a warning. Each workbook sheet is classified by a ranked alias match: exact normalized sheet-name matches win over contained aliases, then the sheet must pass required-header and structure validation. This lets `판매입력` resolve to the exact sales alias instead of the contained purchase alias `매입`, while a configured `미출고` alias can still recognize `미출고현황`. Valid sheets replace only their active kind; a later valid sheet or individual upload of the same kind wins. Missing, ignored, or invalid sheets never clear the previously active kind, so one bad sheet cannot block valid sheets in the same workbook.
 
+### 6.7 Standalone SmartInput intake
+
+1. The public pilot route is `/smartinput/` with stable application ID `smart-input`; `orderops/input.html`, ORDER Q vNext input pages, Smart Parser, and NEXUS header files remain unchanged during the standalone phase.
+2. The workbench has `주문서 / 구매 / 판매` target tabs with `Alt+1 / Alt+2 / Alt+3`, a left stage rail, central intake workbench, and a right related-app panel. Order links open `orderq/index.html` and `orders.html` in new tabs so the draft remains mounted.
+3. The first input contract includes direct entry, Excel/file import, text, clipboard text/image paste, photo OCR, and browser voice STT. Unsupported OCR, speech, or external-library states leave manual entry available and do not erase the source text.
+4. Each source capture creates an immutable local batch record that preserves original whitespace and line breaks. Parser results append below existing rows; identical products are not merged and receive only a duplicate-possibility marker.
+5. Rows retain `batchId`, `sourceLineKey`, and, when created by the ORDER Q intake engine, `intakeLineId`. Re-analysis may refresh parser-owned values but must not overwrite fields marked as administrator edits.
+6. Matching uses the read-only product master and classifies each row as matched, similar, or unresolved. A successful exact match fills standard item fields. A failed customer resolution focuses the customer field, and unresolved product rows remain directly editable.
+7. The ORDER Q vNext IndexedDB `oneapp-orderq-vnext` and `createOrder()` are the common order ledger. SmartInput creates revisioned order and order-item records with source-line evidence, then reuses the existing sync queue; it does not create a parallel final-order store.
+8. `orderq/index.html` reads the common order ledger directly. `orders.html` remains an Excel-based shipment workflow and requires a separately validated ledger-consumer adapter before SmartInput orders can appear there automatically; the standalone pilot exposes only a related-app link and does not claim direct `orders.html` delivery.
+9. Purchase and sale tabs preserve independent drafts and the complete input contract, but DataOps delivery remains disabled until target schemas and ownership are approved. An unrelated app is never substituted as a delivery target.
+10. After a successful order save, the completed order remains owned by ORDER Q. SmartInput starts the next draft while retaining a bounded local delivery reference; modification, cancellation, shipment judgment, and ledger state are not owned by SmartInput.
+
 ---
 
 ## 7. Change-impact rules
@@ -405,6 +423,7 @@ Equivalent safety controls must be preserved when another application writes the
 | DataOps out-of-list inventory master add or post-close sale resume | DataOps F6 location/search/duplicate/zero rules, masterAddUpdate single-product API, coreEngine revision and rollback, Master/SmartParser canonical `판매여부`, stop-management linked state, history, finalized snapshot boundary, and retry idempotency |
 | DataOps file classification or parsing | DataOps required/optional file policy, parsing errors, representative operational files, generated workbook, and regression tests |
 | OrderOps file classification or parsing | OrderOps four-way structural classification, administrator aliases, required order/inventory validation, current allocation calculations, local recovery exclusion, and integrated workbook regression tests |
+| SmartInput source, parser, draft, or order delivery | SmartInput source preservation, cumulative append, administrator-edit protection, duplicate marking, product/customer master reads, ORDER Q vNext ledger creation and sync queue, and explicit non-integration with `orders.html` until its adapter is approved |
 | Planned app promotion to production | Manifest update, architecture review, navigation review, and PR validation |
 | Function-key behavior | Review only the owning application's workflow; do not assume the same function key has the same meaning in another application |
 | Shared approval or audit rule | Every writer and reader of the affected data and history contract |
@@ -476,6 +495,8 @@ They do not receive feature expansion during the current MerchOps and DataOps de
 Planned applications must not write production master data until they are promoted through architecture review.
 
 ORDER Q is registered as a Pilot with `orders.html` as its primary public entry. `orders.html` and `orderops_list.html` deploy the same root-level source, while `orderops/list.html` remains the canonical compatibility route. It owns the isolated `shipping-purchase-plan` local/cloud contract, does not call `coreEngine.js`, and does not change MerchOps or DataOps business behavior. Disabling the public entries and reverting their PR is the code rollback path; already finalized cloud revisions remain append-only operational records and are not deleted by rollback.
+
+SmartInput is registered as a standalone Pilot at `smartinput/index.html`. It is not a production NEXUS dependency during independent validation. Reverting the SmartInput files removes the pilot entry without changing existing input routes or final ORDER Q records already created through the shared ledger.
 
 ---
 
