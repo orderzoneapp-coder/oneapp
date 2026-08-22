@@ -16,6 +16,7 @@ import {
 } from './orderq-cloud-adapter.js?v=0.8.1';
 import { runtimeStorageKey } from './admin-test-runtime.js?v=0.10.2';
 import { createSyncIdentity, newRequestId } from './sync-identity.js?v=0.1.0';
+import { shouldPreserveLocalEntityChange } from './customer-master-sync.js?v=0.1.0';
 
 const DEVICE_KEY = 'oneapp.orderq.device-id.v1';
 const ADMIN_TEST_DEVICE_KEY = 'oneapp.orderq.admin-test.device-id.v1';
@@ -257,6 +258,11 @@ async function orderHasUnsyncedChange(orderId) {
   return rows.some(row => row.entityType === 'ORDER' && row.entityId === orderId && (row.status === 'PENDING' || row.status === 'CONFLICT'));
 }
 
+async function entityHasUnsyncedChange(entityType, entityId) {
+  const rows = await all(STORE.SYNC_QUEUE);
+  return shouldPreserveLocalEntityChange(rows, { entityType, entityId });
+}
+
 async function rememberRemoteConflict(orderId, remotePayload, serverRevision) {
   const rows = await all(STORE.SYNC_QUEUE);
   const targets = rows.filter(row => row.entityType === 'ORDER' && row.entityId === orderId && (row.status === 'PENDING' || row.status === 'CONFLICT'));
@@ -347,6 +353,7 @@ async function applyCloudChange(change) {
     }
     return applyRemoteOrder(change.payload);
   }
+  if (await entityHasUnsyncedChange(change.entityType, change.entityId)) return false;
   return applySimple(change.entityType, change.payload);
 }
 

@@ -9,7 +9,9 @@ import {
   requestToPromise,
   transactionDone
 } from './orderq-db.js?v=0.16.0';
-import { pullRemote } from './orderq-sync-engine.js?v=0.14.0';
+import { getCloudUrl } from './orderq-cloud-adapter.js?v=0.8.1';
+import { pullRemote, pushPending } from './orderq-sync-engine.js?v=0.17.0';
+import { createCustomerMasterSyncCoordinator } from './customer-master-sync.js?v=0.1.0';
 import { createSyncIdentity } from './sync-identity.js?v=0.1.0';
 
 export const CUSTOMER_STATUS = Object.freeze({ ACTIVE: 'ACTIVE', INACTIVE: 'INACTIVE', DELETED: 'DELETED' });
@@ -504,18 +506,39 @@ export async function getUnifiedCustomerLedger(customerId) {
 }
 
 export async function ensureCustomerMasterReady({ onLoading = null } = {}) {
-  const [local, queue] = await Promise.all([getAll(STORE.CUSTOMERS), getAll(STORE.SYNC_QUEUE)]);
-  const hasUnsyncedCustomerChanges = queue.some(item => ['PENDING', 'RETRY', 'CONFLICT'].includes(item.status)
-    && ['CUSTOMER', 'CUSTOMER_ALIAS', 'CUSTOMER_SOURCE_LINK', 'CUSTOMER_SOURCE_LINK_EVENT'].includes(item.entityType));
+  const local = await getAll(STORE.CUSTOMERS);
   if (!local.length) {
     onLoading?.('거래처 정보를 불러오는 중...');
-    await pullRemote();
+    await synchronizeCustomerMaster();
     return { source: 'CLOUD_REQUIRED', customers: await listCustomers() };
   }
-  if (!hasUnsyncedCustomerChanges) {
-    Promise.resolve().then(() => pullRemote()).catch(error => console.warn('Customer background pull failed', error));
-  }
-  return { source: 'LOCAL_CACHE', customers: local.map(row => normalizeCustomer(row, row)) };
+  const syncPromise = synchronizeCustomerMaster();
+  return { source: 'LOCAL_CACHE', customers: local.map(row => normalizeCustomer(row, row)), syncPromise };
+}
+
+const CUSTOMER_SYNC_ENTITY_TYPES = new Set([
+  'CUSTOMER', 'CUSTOMER_ALIAS', 'CUSTOMER_SOURCE_LINK', 'CUSTOMER_SOURCE_LINK_EVENT',
+  'CUSTOMER_HEADER_MAPPING', 'CUSTOMER_USER_FIELD_DEFINITION'
+]);
+const customerSyncCoordinator = createCustomerMasterSyncCoordinator({
+  isConfigured: () => Boolean(getCloudUrl()),
+  push: () => pushPending(),
+  pull: () => pullRemote()
+});
+
+export async function getCustomerCloudSyncState() {
+  const queue = await getAll(STORE.SYNC_QUEUE);
+  const customerQueue = queue.filter(item => CUSTOMER_SYNC_ENTITY_TYPES.has(item.entityType) && item.localOnly !== true);
+  return {
+    configured: Boolean(getCloudUrl()),
+    pending: customerQueue.filter(item => item.status === 'PENDING' && !item.lastError).length,
+    retry: customerQueue.filter(item => item.status === 'RETRY' || (item.status === 'PENDING' && item.lastError)).length,
+    conflicts: customerQueue.filter(item => item.status === 'CONFLICT').length
+  };
+}
+
+export function synchronizeCustomerMaster({ onStatus = null } = {}) {
+  return customerSyncCoordinator.synchronize({ onStatus });
 }
 
 export function mapCustomerExcelRow(row = {}) {
