@@ -89,12 +89,13 @@ async function post(action, body = {}) {
   return data.data;
 }
 
-export function pushCloudChanges(deviceId, changes, requestId = '') {
+export function pushCloudChanges(deviceId, changes, requestId = '', customerResetGeneration = 0) {
   return post('orderq_sync_push', {
     schemaVersion: ORDERQ_SYNC_SCHEMA,
     deviceId,
     requestId,
-    changes
+    changes,
+    customerResetGeneration: Number(customerResetGeneration || 0)
   });
 }
 
@@ -104,6 +105,14 @@ export function pullCloudChanges(afterSequence = 0, limit = 200) {
     afterSequence,
     limit
   });
+}
+
+export function previewCustomerMasterReset() {
+  return post('orderq_customer_reset_preview');
+}
+
+export function executeCustomerMasterReset(confirmation = '') {
+  return post('orderq_customer_reset_execute', { confirmation });
 }
 
 export function getCloudOrderHead(orderId) {

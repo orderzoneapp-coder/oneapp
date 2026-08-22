@@ -7,7 +7,7 @@ import {
   searchCustomers,
   synchronizeCustomerMaster,
   updateCustomer
-} from './customer-master.js?v=0.17.0';
+} from './customer-master.js?v=0.18.0';
 import {
   CUSTOMER_SOURCE_MATCH_METHOD,
   CUSTOMER_SOURCE_MAPPING_VERSION,
