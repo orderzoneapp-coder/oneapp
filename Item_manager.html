@@ -1,1331 +1,176 @@
 <!DOCTYPE html>
-<html lang="ko" translate="no">
+<html lang="ko" translate="no" data-nexus-theme="system">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="google" content="notranslate">
-    <title>상품 관리</title>
-    <!-- 핵심 라이브러리 CDN 로드 -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/fuse.js/dist/fuse.min.js"></script>
-    <script src="https://unpkg.com/react@18.2.0/umd/react.production.min.js"></script>
-    <script src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
-    <script src="https://unpkg.com/@babel/standalone@7.24.7/babel.min.js"></script>
-    <script src="coreEngine.js"></script>
-    <!-- FontAwesome fallback icons only: 외부 아이콘 모듈 제거 -->
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
-    
-    <style>
-        /* Pretendard 외부 폰트 호출 제거: 기본 시스템 폰트 사용 */
-        body { font-family: 'Pretendard', sans-serif; -webkit-user-select: none; user-select: none; background-color: #f1f5f9; margin: 0; overflow: hidden; }
-        input, textarea, select { user-select: auto; }
-        ::-webkit-scrollbar { width: 6px; height: 6px; } 
-        ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
-        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
-        .fade-in { animation: fadeIn 0.2s ease-out; } 
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
-        
-        /* 🌟 Iframe 드로어용 슬라이딩 애니메이션 추가 */
-        @keyframes slideInRight { from { transform: translateX(100%); } to { transform: translateX(0); } }
-        .slide-in-right { animation: slideInRight 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
-
-        .custom-scrollbar { scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent; }
-        input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="google" content="notranslate">
+  <title>상품 기초정보 관리</title>
+  <link rel="icon" type="image/png" href="/nexus/assets/nexus-favicon.png">
+  <link rel="stylesheet" href="/nexus/common/oneapp-design-tokens.css?v=1.0.0">
+  <link rel="stylesheet" href="/nexus/common/oneapp-layout.css?v=1.0.0">
+  <link rel="stylesheet" href="/nexus/common/oneapp-components.css?v=1.0.0">
+  <link rel="stylesheet" href="Item_manager.css?v=2.0.1">
+  <script src="/nexus/common/apps-config.js?v=1.0.0"></script>
+  <script src="/nexus/common/nexus-top.js?v=1.0.0"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="coreEngine.js"></script>
 </head>
-<body class="text-slate-800">
-    <div id="root"></div>
-
-    <script>
-        (function () {
-            window.__oneappStarted = false;
-            function esc(v) {
-                return String(v == null ? '' : v).replace(/[&<>"]/g, function (ch) {
-                    return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[ch];
-                });
-            }
-            window.__oneappShowInitError = function (title, detail) {
-                var root = document.getElementById('root');
-                if (!root) return;
-                root.innerHTML = '' +
-                    '<div style="min-height:100vh;background:#f8fafc;display:flex;align-items:flex-start;justify-content:center;padding:48px 14px;font-family:Arial, sans-serif;color:#0f172a;box-sizing:border-box;">' +
-                    '<div style="width:100%;max-width:760px;background:white;border:1px solid #fecaca;border-radius:16px;box-shadow:0 16px 40px rgba(15,23,42,.12);overflow:hidden;">' +
-                    '<div style="background:#a7191c;color:white;padding:22px 26px;font-weight:900;font-size:20px;">ONEAPP 초기화 오류</div>' +
-                    '<div style="padding:24px 26px;">' +
-                    '<h2 style="margin:0 0 14px 0;color:#a7191c;font-size:19px;font-weight:900;">' + esc(title || '스크립트 실행 오류') + '</h2>' +
-                    '<pre style="white-space:pre-wrap;word-break:break-word;background:#fff1f2;color:#b91c1c;border:1px solid #fecdd3;border-radius:12px;padding:16px;font-size:12px;line-height:1.55;">' + esc(detail || '') + '</pre>' +
-                    '<div style="margin-top:16px;font-size:13px;line-height:1.7;color:#334155;">조치: 개발자도구 Console 오류, CDN 차단 여부, 파일 경로/확장자, localStorage/IndexedDB 권한을 확인하십시오.</div>' +
-                    '</div></div></div>';
-            };
-            window.addEventListener('error', function (e) {
-                if (window.__oneappStarted) return;
-                var detail = (e && e.error && e.error.stack) ? e.error.stack : ((e && e.message) || 'unknown error');
-                if (e && e.filename) detail += '\n' + e.filename + ':' + (e.lineno || '') + ':' + (e.colno || '');
-                window.__oneappShowInitError('스크립트 실행 오류', detail);
-            });
-            window.addEventListener('unhandledrejection', function (e) {
-                if (window.__oneappStarted) return;
-                var r = e && e.reason;
-                window.__oneappShowInitError('비동기 초기화 오류', (r && (r.stack || r.message)) || String(r || 'unknown rejection'));
-            });
-            setTimeout(function () {
-                var root = document.getElementById('root');
-                if (window.__oneappStarted) return;
-                if (root && root.childNodes && root.childNodes.length > 0) return;
-                var missing = [];
-                if (!window.React) missing.push('React');
-                if (!window.ReactDOM) missing.push('ReactDOM');
-                if (!window.Babel) missing.push('Babel');
-                if (!window.XLSX) missing.push('XLSX');
-                if (!window.Fuse) missing.push('Fuse');
-                window.__oneappShowInitError('CDN 또는 Babel 로딩 실패', missing.length ? ('누락 라이브러리: ' + missing.join(', ')) : 'Babel 변환 스크립트가 실행되지 않았습니다.');
-            }, 2500);
-        })();
-    </script>
-
-    <script type="text/babel">
-        const { useState, useMemo, useEffect, useCallback, Fragment } = React;
-
-        // ==========================================
-        // 🔑 0. Global Constants & URL Config
-        // ==========================================
-        const STORAGE_KEYS = {
-            // MerchOps 공통 클라우드/마스터 저장키
-            MASTER_DB: 'merchMaster_v870',
-            MASTER_STORE: 'master_products',
-            CLOUD_URL: 'oneapp_cloud_sync_url_v1',
-            LEGACY_CLOUD_URL: 'merchCloudUrl_v870',
-            OLD_CLOUD_URL: 'skuSyncCloudUrl_v6',
-            SYNC_TRIGGER: 'merchMaster_sync_trigger',
-            CONFIG_TRIGGER: 'config_sync_trigger'
-        };
-
-        const ONEAPP_DEFAULT_CLOUD_SYNC_URL = 'https://script.google.com/macros/s/AKfycbzOUOIu_bP7NkiFVziDR0Og1da1KO1ePoU09Q3pSlPr-9uD-WkdCpWN7nidO5hlrJi6Qw/exec';
-
-        const normalizeOneAppCloudSyncUrl = (url = '') => {
-            const raw = String(url || '').trim();
-            if (!raw) return '';
-            return raw
-                .replace(/\?action=[^&#]*/g, '')
-                .replace(/&action=[^&#]*/g, '')
-                .replace(/\?sheet=[^&#]*/g, '')
-                .replace(/&sheet=[^&#]*/g, '');
-        };
-
-        const getOneAppCloudSyncUrl = (fallback = '') => {
-            try {
-                const keys = [STORAGE_KEYS.CLOUD_URL, STORAGE_KEYS.LEGACY_CLOUD_URL, STORAGE_KEYS.OLD_CLOUD_URL];
-                for (const key of keys) {
-                    const v = normalizeOneAppCloudSyncUrl(localStorage.getItem(key) || '');
-                    if (v) return v;
-                }
-                const fb = normalizeOneAppCloudSyncUrl(fallback || '');
-                if (fb) return fb;
-                return ONEAPP_DEFAULT_CLOUD_SYNC_URL;
-            } catch (e) {
-                return normalizeOneAppCloudSyncUrl(fallback || '') || ONEAPP_DEFAULT_CLOUD_SYNC_URL;
-            }
-        };
-
-        const setOneAppCloudSyncUrl = (url = '') => {
-            const safeUrl = normalizeOneAppCloudSyncUrl(url || ONEAPP_DEFAULT_CLOUD_SYNC_URL);
-            if (!safeUrl) throw new Error('클라우드 URL이 비어 있습니다.');
-            try {
-                localStorage.setItem(STORAGE_KEYS.CLOUD_URL, safeUrl);
-                localStorage.setItem(STORAGE_KEYS.LEGACY_CLOUD_URL, safeUrl);
-                // 기존 NEXES/마스터 앱 호환키에도 같은 URL을 남긴다.
-                localStorage.setItem(STORAGE_KEYS.OLD_CLOUD_URL, safeUrl);
-                localStorage.setItem(STORAGE_KEYS.CONFIG_TRIGGER, Date.now().toString());
-            } catch (e) {}
-            return safeUrl;
-        };
-
-        const buildCloudUrl = (url = '', params = {}) => {
-            const base = normalizeOneAppCloudSyncUrl(url || getOneAppCloudSyncUrl());
-            const query = Object.entries(params).filter(([_, v]) => v !== undefined && v !== null && v !== '').map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&');
-            if (!query) return base;
-            return base.includes('?') ? `${base}&${query}` : `${base}?${query}`;
-        };
-
-        window.ONEAPP_DEFAULT_CLOUD_SYNC_URL = window.ONEAPP_DEFAULT_CLOUD_SYNC_URL || ONEAPP_DEFAULT_CLOUD_SYNC_URL;
-        window.getOneAppCloudSyncUrl = window.getOneAppCloudSyncUrl || getOneAppCloudSyncUrl;
-        window.setOneAppCloudSyncUrl = window.setOneAppCloudSyncUrl || setOneAppCloudSyncUrl;
-        try { setOneAppCloudSyncUrl(getOneAppCloudSyncUrl()); } catch (e) {}
-
-
-        // 하얀 화면 방지용 강제 문자열 변환 유틸리티 (추가할 것)
-        const safeStr = (val, def = '') => (val !== undefined && val !== null && val !== '') ? String(val) : def;
-
-        const PROMOTION_THEMES = [
-            { code: '1', label: '오늘의행사', type: '탭' },
-            { code: '2', label: '매장행사', type: '탭' },
-            { code: '3', label: '특가상품', type: '탭' },
-            { code: '4', label: '실사진', type: '뱃지' },
-            { code: '5', label: '행사', type: '뱃지' }
-        ];
-
-        const normalizePromotionThemeValue = (item = {}) => {
-            const out = [];
-            const push = (v) => {
-                const s = String(v ?? '').trim();
-                if (!s) return;
-                s.split(/[,/|\s]+/).forEach(part => {
-                    const n = String(part || '').replace(/[^1-5]/g, '');
-                    if (n && /^[1-5]$/.test(n) && !out.includes(n)) out.push(n);
-                });
-            };
-            push(item['행사테마']);
-            push(item['테마']);
-            push(item['promoTheme']);
-            push(item['_theme']);
-            [1, 2, 3, 4, 5].forEach(n => {
-                const raw = item[`테마${n}`];
-                const s = String(raw ?? '').trim();
-                if (s && s !== '0' && s !== 'false' && s !== 'FALSE' && !out.includes(String(n))) out.push(String(n));
-            });
-            return out.sort((a, b) => Number(a) - Number(b)).join(',');
-        };
-
-
-        const ONEAPP_CATEGORIES = [
-            { c1Name: '채소.과일', c1Code: '10', c2Name: '무/배추/대파/마늘', c2Code: '1010', c3Name: '무우', erp3Code: '11010', orders3Code: '101010' },
-            { c1Name: '채소.과일', c1Code: '10', c2Name: '무/배추/대파/마늘', c2Code: '1010', c3Name: '알타리', erp3Code: '11011', orders3Code: '101011' },
-            { c1Name: '채소.과일', c1Code: '10', c2Name: '무/배추/대파/마늘', c2Code: '1010', c3Name: '배추', erp3Code: '11012', orders3Code: '101012' },
-            { c1Name: '채소.과일', c1Code: '10', c2Name: '무/배추/대파/마늘', c2Code: '1010', c3Name: '대파', erp3Code: '11013', orders3Code: '101013' },
-            { c1Name: '채소.과일', c1Code: '10', c2Name: '무/배추/대파/마늘', c2Code: '1010', c3Name: '마늘', erp3Code: '11014', orders3Code: '101014' },
-            { c1Name: '채소.과일', c1Code: '10', c2Name: '무/배추/대파/마늘', c2Code: '1010', c3Name: '양파', erp3Code: '11015', orders3Code: '101015' },
-            { c1Name: '채소.과일', c1Code: '10', c2Name: '감자/고구마/당근', c2Code: '1020', c3Name: '감자', erp3Code: '11020', orders3Code: '102010' },
-            { c1Name: '채소.과일', c1Code: '10', c2Name: '감자/고구마/당근', c2Code: '1020', c3Name: '고구마', erp3Code: '11021', orders3Code: '102011' },
-            { c1Name: '채소.과일', c1Code: '10', c2Name: '버섯류', c2Code: '1030', c3Name: '새송이버섯', erp3Code: '11030', orders3Code: '103010' },
-            { c1Name: '채소.과일', c1Code: '10', c2Name: '버섯류', c2Code: '1030', c3Name: '팽이버섯', erp3Code: '11031', orders3Code: '103011' },
-            { c1Name: '수산.축산', c1Code: '20', c2Name: '돼지고기', c2Code: '2010', c3Name: '삼겹살', erp3Code: '21010', orders3Code: '201010' },
-            { c1Name: '수산.축산', c1Code: '20', c2Name: '닭고기', c2Code: '2020', c3Name: '생닭', erp3Code: '22010', orders3Code: '202010' },
-            { c1Name: '가공.식품', c1Code: '30', c2Name: '면류', c2Code: '3010', c3Name: '라면', erp3Code: '31010', orders3Code: '301010' },
-            { c1Name: '가공.식품', c1Code: '30', c2Name: '면류', c2Code: '3010', c3Name: '소면', erp3Code: '31011', orders3Code: '301011' },
-            { c1Name: '양념.소스', c1Code: '40', c2Name: '장류', c2Code: '4010', c3Name: '쌈장', erp3Code: '41030', orders3Code: '401030' },
-            { c1Name: '주방.잡화', c1Code: '50', c2Name: '일회용품/비닐/호일', c2Code: '5020', c3Name: '재단비닐', erp3Code: '52056', orders3Code: '502056' },
-            { c1Name: '주방.잡화', c1Code: '50', c2Name: '일회용품/비닐/호일', c2Code: '5020', c3Name: '비닐봉투', erp3Code: '52036', orders3Code: '502036' },
-            { c1Name: '주방.잡화', c1Code: '50', c2Name: '일회용품/비닐/호일', c2Code: '5020', c3Name: '단무지비닐', erp3Code: '52044', orders3Code: '502044' }
-        ];
-
-        // IndexedDB Wrapper
-        const initIDB = () => new Promise((resolve, reject) => {
-            const request = indexedDB.open('MerchOpsDB', 2);
-            request.onupgradeneeded = (e) => {
-                const db = e.target.result;
-                if (!db.objectStoreNames.contains('store')) db.createObjectStore('store');
-                if (!db.objectStoreNames.contains(STORAGE_KEYS.MASTER_STORE)) db.createObjectStore(STORAGE_KEYS.MASTER_STORE, { keyPath: '코드' });
-            };
-            request.onsuccess = () => resolve(request.result);
-            request.onerror = () => reject(request.error);
-        });
-        const setIDB = async (key, val) => {
-            if ([STORAGE_KEYS.MASTER_DB, 'merchMaster_revision_v870'].includes(key)) {
-                throw new Error(`${key}는 공통 원자 저장 경로만 사용할 수 있습니다.`);
-            }
-            const db = await initIDB();
-            return new Promise((resolve, reject) => {
-                const tx = db.transaction('store', 'readwrite');
-                tx.objectStore('store').put(val, key);
-                tx.oncomplete = () => resolve();
-                tx.onerror = () => reject(tx.error);
-            });
-        };
-        const getIDB = async (key) => { const db = await initIDB(); return new Promise((resolve, reject) => { const tx = db.transaction('store', 'readonly'); const req = tx.objectStore('store').get(key); req.onsuccess = () => resolve(req.result); req.onerror = () => reject(tx.error); }); };
-
-        const getAllMasterIDB = async () => {
-            const db = await initIDB();
-            return new Promise((resolve, reject) => {
-                const tx = db.transaction(STORAGE_KEYS.MASTER_STORE, 'readonly');
-                const req = tx.objectStore(STORAGE_KEYS.MASTER_STORE).getAll();
-                req.onsuccess = () => resolve(req.result || []);
-                req.onerror = () => reject(tx.error);
-            });
-        };
-        let itemManagerMasterRevision = undefined;
-
-        const normalizeMasterItem = (item = {}, fallbackCode = '') => {
-            const code = safeStr(item['코드'] || item['품목코드'] || fallbackCode).trim();
-            const themeValue = normalizePromotionThemeValue(item);
-            const next = {
-                ...item,
-                코드: code,
-                품목코드: safeStr(item['품목코드'] || code).trim(),
-                행사테마: themeValue
-            };
-            [1, 2, 3, 4, 5].forEach(n => { next[`테마${n}`] = themeValue.split(',').includes(String(n)) ? '1' : ''; });
-            return next;
-        };
-
-        const masterArrayToMap = (items = []) => {
-            const map = {};
-            const entries = Array.isArray(items)
-                ? items.map((item, idx) => [String(idx + 1), item, ''])
-                : Object.entries(items || {}).map(([key, item], idx) => [String(idx + 1), item, key]);
-            entries.forEach(([rowNumber, item, objectKey]) => {
-                const normalized = normalizeMasterItem(item, objectKey);
-                if (!normalized.코드) {
-                    throw new Error(`마스터 ${rowNumber}행에 코드가 없습니다.`);
-                }
-                if (map[normalized.코드]) {
-                    throw new Error(`마스터 중복 코드가 있습니다: ${normalized.코드}`);
-                }
-                map[normalized.코드] = normalized;
-            });
-            return map;
-        };
-
-        const saveMasterLocal = async (masterMap = {}) => {
-            const safeMap = masterArrayToMap(masterMap);
-            if (!window.ONEAPP?.STORAGE?.commitMasterStateOrThrow) {
-                throw new Error('공통 마스터 저장 엔진을 불러오지 못했습니다.');
-            }
-            const result = await window.ONEAPP.STORAGE.commitMasterStateOrThrow(safeMap, {
-                expectedRevision: itemManagerMasterRevision
-            });
-            itemManagerMasterRevision = result.revision;
-            try { localStorage.setItem(STORAGE_KEYS.SYNC_TRIGGER, Date.now().toString()); } catch (e) {}
-            return safeMap;
-        };
-
-        const loadMasterLocal = async () => {
-            const state = await window.ONEAPP.STORAGE.readMasterSnapshotState();
-            itemManagerMasterRevision = state.revision;
-            const items = state.items;
-            if (items && items.length > 0) return masterArrayToMap(items);
-            const legacy = await getIDB(STORAGE_KEYS.MASTER_DB).catch(() => null);
-            if (legacy && typeof legacy === 'object' && Object.keys(legacy).length > 0) {
-                const safeMap = await saveMasterLocal(legacy);
-                return safeMap;
-            }
-            return {};
-        };
-
-        const extractMasterFromCloudResult = (result = {}) => {
-            if (!result) return {};
-            if (result.status === 'success' && result.data) {
-                if (result.data.master) return masterArrayToMap(result.data.master);
-                if (Array.isArray(result.data)) return masterArrayToMap(result.data);
-            }
-            if (Array.isArray(result.data)) return masterArrayToMap(result.data);
-            if (Array.isArray(result)) return masterArrayToMap(result);
-            return {};
-        };
-
-        const readCloudFullPayload = async (cloudUrl) => {
-            const targetUrl = setOneAppCloudSyncUrl(cloudUrl || getOneAppCloudSyncUrl());
-            const res = await fetch(targetUrl, { method: 'GET' });
-            if (!res.ok) throw new Error('MerchOps 클라우드 수신 실패');
-            return await res.json();
-        };
-
-        const pullMerchOpsCloudMaster = async (cloudUrl) => {
-            const targetUrl = setOneAppCloudSyncUrl(cloudUrl || getOneAppCloudSyncUrl());
-            const candidates = [
-                targetUrl,
-                buildCloudUrl(targetUrl, { action: 'master_only' }),
-                buildCloudUrl(targetUrl, { action: 'pull', sheet: '마스터' })
-            ];
-            let lastError = null;
-            for (const url of candidates) {
-                try {
-                    const res = await fetch(url, { method: 'GET' });
-                    if (!res.ok) throw new Error('Network Error');
-                    const result = await res.json();
-                    const masterMap = extractMasterFromCloudResult(result);
-                    if (Object.keys(masterMap).length > 0) {
-                        await saveMasterLocal(masterMap);
-                        return { masterMap, count: Object.keys(masterMap).length, result };
-                    }
-                    lastError = new Error('마스터 데이터 없음');
-                } catch (e) {
-                    lastError = e;
-                }
-            }
-            throw lastError || new Error('MerchOps 클라우드 응답 형식 오류');
-        };
-
-        const safeJSONParseRaw = (raw, defaultVal) => {
-            try {
-                if (!raw || raw === 'undefined' || raw === 'null') return defaultVal;
-                const parsed = JSON.parse(raw);
-                return parsed === undefined || parsed === null ? defaultVal : parsed;
-            } catch (e) { return defaultVal; }
-        };
-
-        const chunkUploadCloud = async ({ url, action, data = [], chunkSize = 500, onProgress }) => {
-            const items = Array.isArray(data) ? data : Object.values(data || {});
-            for (let i = 0; i < items.length; i += chunkSize) {
-                const chunk = items.slice(i, i + chunkSize);
-                if (typeof onProgress === 'function') onProgress({ sent: Math.min(i + chunkSize, items.length), total: items.length });
-                const res = await fetch(url, { method: 'POST', body: JSON.stringify({ action, data: chunk }) });
-                const json = await res.json();
-                if (!json || json.status !== 'success') throw new Error(json?.message || `${action} 업로드 실패`);
-            }
-            return { total: items.length };
-        };
-
-        const pushMerchOpsCloudMaster = async (masterMap = {}, { cloudUrl, onProgress } = {}) => {
-            const targetUrl = setOneAppCloudSyncUrl(cloudUrl || getOneAppCloudSyncUrl());
-            const safeMaster = await saveMasterLocal(masterMap);
-            const previous = await readCloudFullPayload(targetUrl).catch(() => null);
-            const previousData = previous && previous.data ? previous.data : {};
-            const localHistory = safeJSONParseRaw(localStorage.getItem('merchHistory_v870'), []);
-            const historyItems = Array.isArray(localHistory) && localHistory.length > 0 ? localHistory : (Array.isArray(previousData.history) ? previousData.history : []);
-            const previousConfig = previousData.appConfig || {};
-            if (typeof onProgress === 'function') onProgress('서버 초기화 중...');
-            const initRes = await fetch(targetUrl, { method: 'POST', body: JSON.stringify({ action: 'initSync' }) });
-            const initJson = await initRes.json();
-            if (!initJson || initJson.status !== 'success') throw new Error(initJson?.message || '초기화 실패');
-
-            const masterItems = Object.values(safeMaster);
-            await chunkUploadCloud({
-                url: targetUrl,
-                action: 'chunk_master',
-                data: masterItems,
-                onProgress: p => onProgress && onProgress(`마스터 업로드 중... (${p.sent} / ${p.total}건)`)
-            });
-
-            await chunkUploadCloud({
-                url: targetUrl,
-                action: 'chunk_history',
-                data: historyItems,
-                onProgress: p => onProgress && onProgress(`히스토리 유지 업로드 중... (${p.sent} / ${p.total}건)`)
-            });
-
-            if (typeof onProgress === 'function') onProgress('환경설정 보존 중...');
-            const configPayload = {
-                action: 'config',
-                data: {
-                    dict: safeJSONParseRaw(localStorage.getItem('parserDict_v870'), previousData.dict || {}),
-                    rules: previousData.rules || [],
-                    appConfig: { ...previousConfig, cloudUrl: targetUrl }
-                }
-            };
-            const configRes = await fetch(targetUrl, { method: 'POST', body: JSON.stringify(configPayload) });
-            const configJson = await configRes.json();
-            if (!configJson || configJson.status !== 'success') throw new Error(configJson?.message || '설정 업로드 실패');
-
-            try { localStorage.setItem(STORAGE_KEYS.SYNC_TRIGGER, Date.now().toString()); } catch (e) {}
-            return { count: masterItems.length, historyCount: historyItems.length };
-        };
-
-
-        const parseNum = (v) => (!v ? 0 : Number(String(v).replace(/,/g, '').replace(/[^\d.-]/g, '')) || 0);
-        const generatePseudoSKU = (orders3Code) => {
-            const seq = String(Math.floor(100 + Math.random() * 900)); 
-            return `${orders3Code || '999999'}${seq}`;
-        };
-
-        // ==========================================
-        // 🛠 SafeIcon
-        // ==========================================
-        const SafeIcon = React.memo(function SafeIconComponent({ name, size = 18, className = "" }) {
-            const [svg, setSvg] = useState("");
-            useEffect(() => {
-                const renderIcon = () => {
-                    if (window.lucide && window.lucide.icons) {
-                        const kebabName = name.replace(/([a-z])([A-Z])/g, '$1-$2').toLowerCase();
-                        const possibleNames = [
-                            kebabName, name, 
-                            name === 'cloud-download' ? 'download-cloud' : name,
-                            name === 'cloud-upload' ? 'upload-cloud' : name,
-                            name === 'sliders-horizontal' ? 'sliders' : name
-                        ];
-                        for (const pName of possibleNames) {
-                            if (window.lucide.icons[pName]) {
-                                setSvg(window.lucide.icons[pName].toSvg({ width: size, height: size, class: className, 'stroke-width': 2.5 }));
-                                return;
-                            }
-                        }
-                    }
-                };
-                renderIcon();
-            }, [name, size, className]);
-
-            if (!svg) {
-                const faMap = {
-                    'cloud-download': 'fa-cloud-download-alt', 'cloud-upload': 'fa-cloud-upload-alt', 'settings': 'fa-cogs',
-                    'terminal': 'fa-terminal', 'tags': 'fa-tags', 'layout-dashboard': 'fa-th-large', 'package-search': 'fa-box-open',
-                    'file-spreadsheet': 'fa-table', 'zap': 'fa-bolt', 'truck': 'fa-truck', 'boxes': 'fa-boxes',
-                    'bar-chart-3': 'fa-chart-bar', 'check': 'fa-check', 'check-circle-2': 'fa-check-circle',
-                    'x': 'fa-times', 'database': 'fa-database', 'sliders-horizontal': 'fa-sliders-h', 'network': 'fa-sitemap',
-                    'file-code': 'fa-file-code', 'plus': 'fa-plus', 'search': 'fa-search',
-                    'shopping-cart': 'fa-shopping-cart', 'users': 'fa-users', 'megaphone': 'fa-bullhorn',
-                    'pie-chart': 'fa-chart-pie', 'book-open': 'fa-address-book', 'shopping-bag': 'fa-shopping-bag', 'credit-card': 'fa-credit-card', 'line-chart': 'fa-chart-line', 'printer': 'fa-print'
-                };
-                const faName = faMap[name] || `fa-${name}`;
-                return <i className={`fas ${faName} ${className}`} style={{ fontSize: size }} />;
-            }
-            return <span className="inline-flex shrink-0 items-center justify-center" dangerouslySetInnerHTML={{ __html: svg }} />;
-        });
-
-        // ==========================================
-        // 🧩 Read-Only 설정 훅 (v3.0 경량화)
-        // ==========================================
-        const useMerchConfig = () => {
-            const loadConfig = () => {
-                // [개선] 앱스스크립트 기본 URL 적용
-                const cloudUrl = getOneAppCloudSyncUrl();
-                return { cloudUrl };
-            };
-
-            const [config, setConfig] = useState(loadConfig());
-
-            useEffect(() => {
-                const handleStorageChange = () => setConfig(loadConfig());
-                window.addEventListener('storage', handleStorageChange);
-                return () => window.removeEventListener('storage', handleStorageChange);
-            }, []);
-
-            return config;
-        };
-
-        // ==========================================
-        // 🧩 통합 글로벌 헤더 (v3.3 최신판 전체 교체)
-        // ==========================================
-        const GlobalHeader = ({ activeTab, itemCount, isProcessing, processMsg, onOpenSettings, onPush, onPull, onNavigate }) => {
-            const groups = [
-                { id: 'master', label: '정보 관리', icon: 'database' },
-                { id: 'ops', label: '운영 관리', icon: 'truck' },
-                { id: 'admin', label: '인사이트', icon: 'bar-chart-3' }
-            ];
-
-            const tabs = [
-                { id: 'dashboard', label: '통합 대시보드', icon: "layout-dashboard", path: 'Dashboard.html', group: 'common', isReady: true, shortTag: 'ONE BOARD' },
-                { id: 'guide', label: '시스템 가이드', icon: "book-open", path: 'Guide/guide.html', group: 'common', isReady: true, shortTag: 'SYSTEM GUIDE' },
-
-                { id: 'item-info', label: '마스터 DB', icon: "database", path: 'Master.html', group: 'master', isReady: true, shortTag: 'GOLDEN RECORD' },
-                { id: 'item-manage', label: '상품 관리', icon: "package-search", path: 'Item_manager.html', group: 'master', isReady: true, shortTag: 'SKU FORGE' },
-                { id: 'pipeline', label: '시세 관리', icon: "file-spreadsheet", path: 'MerchOps.html', group: 'master', isReady: true, shortTag: 'VALUATION HUB' },
-                { id: 'parser', label: '스마트 파서', icon: "zap", path: 'SmartParser.html', group: 'master', isReady: true, shortTag: 'AI SMART PARSER' },
-                { id: 'partner-db', label: '거래처 DB', icon: "book-open", path: 'partner_db.html', group: 'master', isReady: true, shortTag: 'ENTITY REGISTRY' },
-                { id: 'partners', label: '거래처 관리', icon: "users", path: 'partners.html', group: 'master', isReady: true, shortTag: 'CRM STRATEGY' },
-
-                { id: 'orders', label: '주문 관리', icon: "shopping-bag", path: 'orders.html', group: 'ops', isReady: true, shortTag: 'ORDER STREAM' },
-                { id: 'purchases', label: '구매 관리', icon: "credit-card", path: 'purchases.html', group: 'ops', isReady: true, shortTag: 'SOURCE & PROCURE' },
-                { id: 'sales', label: '판매 관리', icon: "line-chart", path: 'sales.html', group: 'ops', isReady: true, shortTag: 'REVENUE LEDGER' },
-                { id: 'inventory', label: '재고 관리', icon: "boxes", path: 'DataOps.html', group: 'ops', isReady: true, shortTag: 'STOCK LEDGER' },
-                { id: 'print-center', label: '출력 센터', icon: "printer", path: 'print_center.html', group: 'ops', isReady: true, shortTag: 'OUTPUT TERMINAL' },
-
-                { id: 'insight', label: '경영 보고서', icon: "pie-chart", path: 'Report.html', group: 'admin', isReady: true, shortTag: 'INSIGHT ENGINE' },
-                { id: 'cs', label: '정보 마당', icon: "megaphone", path: 'cs.html', group: 'admin', isReady: true, shortTag: 'NOTICE PORTAL' }
-            ];
-
-            const currentTab = tabs.find(t => t.id === activeTab);
-            const activeGroup = currentTab ? currentTab.group : 'common';
-            const [selectedGroup, setSelectedGroup] = useState(activeGroup);
-
-            const handleGroupClick = (groupId) => setSelectedGroup(prev => prev === groupId ? 'common' : groupId);
-            const handleLogoClick = (e) => { setSelectedGroup('common'); onNavigate(e, 'Dashboard.html', true); };
-
-            return (
-                <div className="flex flex-col shrink-0 z-40 relative w-full shadow-sm bg-[#0B1021]">
-                    <header className="h-[72px] bg-[#0B1021] text-white flex justify-between px-6 border-b border-slate-800/80 relative z-20">
-                        <div className="flex items-center h-full">
-                            <div className="flex items-center cursor-pointer group mr-10 h-full" onClick={handleLogoClick} title="통합 대시보드 및 공통 메뉴로 이동">
-                                <span className="font-black text-[24px] tracking-wider text-slate-100 mr-4 group-hover:text-indigo-400 transition-colors">ONEAPP</span>
-                                <div className="flex flex-col border-l-2 border-slate-700/70 pl-4 py-0.5">
-                                    <div className="flex items-center">
-                                        <span className="font-black text-[16px] leading-none text-indigo-400 tracking-widest uppercase mt-0.5">NEXES</span>
-                                        <span className="ml-2.5 bg-emerald-500/10 border border-emerald-400/30 text-emerald-400 px-[5px] py-[2px] rounded text-[9px] font-black tracking-wider shadow-sm leading-none">v3.6</span>
-                                    </div>
-                                    <span className="text-[10px] text-slate-400/90 font-medium tracking-[0.15em] mt-1 uppercase">
-                                        {currentTab ? currentTab.shortTag : 'MERCHOPS CLOUD'}
-                                    </span>
-                                </div>
-                            </div>
-
-                            <div className="flex items-end h-full gap-8">
-                                {groups.map(g => (
-                                    <button key={g.id} onClick={() => handleGroupClick(g.id)}
-                                        className={`pb-[16px] text-[14px] font-bold transition-colors flex items-center gap-1.5
-                                        ${selectedGroup === g.id ? 'text-slate-100 border-b-[3px] border-indigo-500 -mb-[2px]' : 'text-slate-500 hover:text-slate-300'}`}>
-                                        <SafeIcon name={g.icon} size={15} /> {g.label}
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-
-                        <div className="flex items-center gap-4 h-full">
-                            <div className="flex items-center bg-[#151B2B] rounded-lg border border-slate-700/50 h-9 px-3 shadow-inner gap-3">
-                                <div className="flex items-center justify-center" title={isProcessing ? processMsg : "시스템 정상 대기중"}>
-                                    {isProcessing ? (
-                                        <i className="fas fa-circle-notch fa-spin text-amber-500 text-[12px]"></i>
-                                    ) : (
-                                        <div className="relative flex h-2 w-2">
-                                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                                            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                                        </div>
-                                    )}
-                                </div>
-                                <div className="w-px h-3.5 bg-slate-700"></div>
-                                <div className="flex items-center gap-1.5 text-slate-300 cursor-help" title={`마스터 DB 기준 데이터 수`}>
-                                    <SafeIcon name="database" size={10} className="text-slate-500" />
-                                    <span className="text-[11px] font-mono font-bold tracking-tight">{itemCount ? itemCount.toLocaleString() : 0}</span>
-                                </div>
-                            </div>
-
-                            <div className="flex items-center gap-2">
-                                <button onClick={onPull} className="w-10 h-10 rounded-xl bg-[#151B2B] hover:bg-[#1E293B] flex items-center justify-center border border-slate-700 transition-colors text-indigo-400 shadow-sm" title="데이터 불러오기(Pull)"><SafeIcon name="cloud-download" size={18} /></button>
-                                <button onClick={onPush} className="w-10 h-10 rounded-xl bg-[#151B2B] hover:bg-[#1E293B] flex items-center justify-center border border-slate-700 transition-colors text-indigo-400 shadow-sm" title="데이터 백업하기(Push)"><SafeIcon name="cloud-upload" size={18} /></button>
-                                <div className="w-px h-6 bg-slate-700 mx-1"></div>
-                                <button onClick={onOpenSettings} className="w-10 h-10 rounded-xl bg-[#151B2B] hover:bg-[#1E293B] flex items-center justify-center border border-slate-700 transition-colors text-slate-400 hover:text-white shadow-sm" title="통합 환경설정 센터 열기"><SafeIcon name="settings" size={18} /></button>
-                            </div>
-                        </div>
-                    </header>
-
-                    {selectedGroup && (
-                        <div className="bg-[#0B1021] px-6 pt-3 flex items-end gap-1 overflow-x-auto custom-scrollbar border-b border-slate-200 fade-in">
-                            {tabs.filter(t => t.group === selectedGroup).map(tab => {
-                                const isActive = activeTab === tab.id;
-                                const isPlaceholder = !tab.isReady;
-                                return (
-                                    <a key={tab.id} href={tab.path} onClick={(e) => onNavigate(e, tab.path, tab.isReady)}
-                                        className={`flex items-center gap-2 px-6 py-3 text-[14px] font-bold rounded-t-xl transition-all whitespace-nowrap border-x border-t-[3px]
-                                        ${isActive
-                                            ? 'bg-white text-indigo-600 border-t-indigo-500 border-x-slate-200 relative z-10 shadow-[0_-4px_10px_rgba(0,0,0,0.1)]'
-                                            : isPlaceholder
-                                                ? 'bg-[#151B2B] text-slate-500 border-t-transparent border-x-transparent cursor-not-allowed opacity-50 pb-2.5'
-                                                : 'bg-[#151B2B] text-slate-400 border-t-transparent border-x-transparent hover:text-slate-200 pb-2.5'
-                                        }`}
-                                        style={{ marginBottom: isActive ? '-1px' : '0', paddingBottom: isActive ? '13px' : '10px' }}
-                                    >
-                                        <SafeIcon name={tab.icon} size={16} className={isActive ? 'text-indigo-600' : 'opacity-70'} />
-                                        {tab.label}
-                                    </a>
-                                );
-                            })}
-                        </div>
-                    )}
-                </div>
-            );
-        };
-
-        // ==========================================
-        // 🌟 IframeSettingsModal (Wide Overlay) 적용
-        // ==========================================
-        const IframeSettingsModal = ({ isOpen, onClose }) => {
-            if (!isOpen) return null;
-            return (
-                <div className="fixed inset-0 z-[500] flex bg-slate-900/60 backdrop-blur-sm fade-in">
-                    <div className="w-full max-w-[1400px] h-full bg-white shadow-[-10px_0_40px_rgba(0,0,0,0.3)] flex flex-col slide-in-right border-l border-slate-300 relative overflow-hidden ml-auto">
-                        <div className="bg-[#0f172a] px-6 py-4 flex justify-between items-center text-white shrink-0 border-b border-slate-700 shadow-md relative z-10">
-                            <div className="flex items-center gap-3">
-                                <SafeIcon name="settings" size={20} className="text-indigo-400"/>
-                                <h2 className="font-black text-[17px] tracking-wide">통합 환경설정 센터</h2>
-                                <span className="bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded text-[10px] font-bold border border-indigo-500/30 ml-2">Wide Overlay</span>
-                            </div>
-                            <div className="flex items-center gap-4">
-                                <span className="text-[12px] text-slate-400 font-medium hidden md:inline-block">설정을 변경하고 창을 닫으면 작업 화면에 즉시 반영됩니다.</span>
-                                <button onClick={onClose} className="text-slate-300 hover:text-white transition-colors bg-slate-800 hover:bg-rose-500 w-8 h-8 rounded-lg flex items-center justify-center shadow-sm border border-slate-700 hover:border-rose-400">
-                                    <SafeIcon name="x" size={18} />
-                                </button>
-                            </div>
-                        </div>
-                        <div className="flex-1 w-full bg-slate-100 relative">
-                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                                <div className="text-slate-300 flex flex-col items-center">
-                                    <i className="fas fa-circle-notch fa-spin text-3xl mb-3"></i>
-                                    <span className="font-bold text-sm">설정 모듈을 불러오는 중입니다...</span>
-                                </div>
-                            </div>
-                            <iframe src="settings.html?mode=iframe" className="absolute inset-0 w-full h-full border-0 bg-white relative z-10" title="Settings Center"></iframe>
-                        </div>
-                    </div>
-                </div>
-            );
-        };
-
-        // ==========================================
-        // 🧩 Sub Views: Category Sourcing
-        // ==========================================
-        const CategorySourcingView = ({ data, ui, onRegister }) => {
-            const masterCatalogProducts = data?.masterCatalogProducts || [];
-            const showToast = ui?.showToast;
-
-            const [activeC1, setActiveC1] = useState('');
-            const [activeC2, setActiveC2] = useState('');
-            const [cart, setCart] = useState([]);
-            const [globalSearch, setGlobalSearch] = useState('');
-            
-            const c1List = useMemo(() => {
-                const map = new Map();
-                masterCatalogProducts.forEach(p => { if (p.c1Code && !map.has(p.c1Code)) map.set(p.c1Code, p.c1Name || p.c1Code); });
-                return Array.from(map.entries()).map(([code, name]) => ({code, name})).sort((a,b) => a.code.localeCompare(b.code));
-            }, [masterCatalogProducts]);
-
-            useEffect(() => { if (c1List.length > 0 && !activeC1) setActiveC1(c1List[0].code); }, [c1List, activeC1]);
-
-            const c2List = useMemo(() => {
-                if(!activeC1) return [];
-                const map = new Map();
-                masterCatalogProducts.filter(p => p.c1Code === activeC1).forEach(p => { if (p.c2Code && !map.has(p.c2Code)) map.set(p.c2Code, p.c2Name || p.c2Code); });
-                return Array.from(map.entries()).map(([code, name]) => ({code, name})).sort((a,b) => a.code.localeCompare(b.code));
-            }, [masterCatalogProducts, activeC1]);
-
-            useEffect(() => {
-                if (c2List.length > 0 && !c2List.find(c => c.code === activeC2)) setActiveC2(c2List[0].code);
-                else if (c2List.length === 0) setActiveC2('');
-            }, [c2List, activeC1, activeC2]);
-
-            const displayItems = useMemo(() => {
-                let baseList = masterCatalogProducts;
-                const kw = globalSearch.toLowerCase().trim();
-                
-                const map = new Map();
-                const targetList = kw ? baseList : (activeC2 ? baseList.filter(p => p.c2Code === activeC2) : []);
-                targetList.forEach(p => {
-                    if (p.c3Code && !map.has(p.c3Code)) {
-                        map.set(p.c3Code, { c3Code: p.c3Code, c3Name: p.c3Name, ordersCode: p.ordersCode });
-                    }
-                });
-                let items = Array.from(map.values()).sort((a,b) => a.c3Code.localeCompare(b.c3Code));
-                if (kw) {
-                    items = items.filter(item => (item.c3Name && item.c3Name.toLowerCase().includes(kw)) || (item.ordersCode && item.ordersCode.includes(kw)));
-                }
-                return items;
-            }, [masterCatalogProducts, activeC2, globalSearch]);
-
-            return (
-                <div className="flex h-full overflow-hidden bg-white rounded-xl shadow-sm border border-slate-200 fade-in m-6 mt-4">
-                    <div className="w-[240px] bg-slate-50 border-r border-slate-200 flex flex-col shrink-0 z-10 shadow-[2px_0_10px_rgba(0,0,0,0.02)]">
-                        <div className="p-4 bg-slate-100 border-b border-slate-200 font-bold text-slate-700 text-xs uppercase tracking-tighter flex items-center">
-                            <SafeIcon name="network" size={14} className="mr-2" /> Categories
-                        </div>
-                        <div className="flex-1 overflow-y-auto custom-scrollbar">
-                            {c1List.map(c => (
-                                <div key={c.code}>
-                                    <button onClick={() => {setActiveC1(c.code); setActiveC2('');}} className={`w-full text-left px-4 py-3 text-[13px] font-bold border-l-4 transition-all ${activeC1 === c.code ? 'bg-indigo-50 text-indigo-700 border-indigo-600' : 'border-transparent text-slate-600 hover:bg-slate-100'}`}>{c.name}</button>
-                                    {activeC1 === c.code && c2List.map(sc => (
-                                        <button key={sc.code} onClick={() => setActiveC2(sc.code)} className={`w-full text-left pl-8 pr-4 py-2 text-[12px] font-medium transition-all ${activeC2 === sc.code ? 'text-indigo-600 font-bold bg-indigo-50/50' : 'text-slate-500 hover:text-slate-800'}`}>• {sc.name}</button>
-                                    ))}
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                    <div className="flex-1 flex flex-col overflow-hidden">
-                        <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-white shrink-0">
-                            <h3 className="text-sm font-black text-slate-800 uppercase tracking-tighter">Category Sourcing</h3>
-                            <div className="relative">
-                                <input type="text" value={globalSearch} onChange={e=>setGlobalSearch(e.target.value)} placeholder="검색..." className="pl-9 pr-4 py-1.5 border border-slate-300 rounded-lg text-xs outline-none focus:border-indigo-400 w-64 shadow-sm transition-colors" />
-                                <div className="absolute left-3 top-2 text-slate-400"><SafeIcon name="search" size={14} /></div>
-                            </div>
-                        </div>
-                        <div className="flex-1 overflow-y-auto p-4 bg-slate-50/30 grid grid-cols-1 lg:grid-cols-2 gap-3 content-start custom-scrollbar">
-                            {displayItems.length === 0 ? (
-                                <div className="col-span-full py-16 text-center text-slate-400 text-sm font-bold">검색 결과가 없습니다.</div>
-                            ) : displayItems.map(item => (
-                                <div key={item.c3Code} className="p-4 bg-white border border-slate-200 rounded-lg hover:border-indigo-300 hover:shadow-md transition-all flex justify-between items-center group cursor-pointer" onClick={() => {setCart([...cart, {...item, cartId: Date.now()}]); showToast('큐에 추가됨');}}>
-                                    <div>
-                                        <div className="text-[10px] font-mono text-indigo-400 mb-0.5">{item.ordersCode}</div>
-                                        <div className="text-[13px] font-bold text-slate-800">{item.c3Name} <span className="text-[11px] text-slate-400 font-normal ml-1">(표준)</span></div>
-                                    </div>
-                                    <button className="w-8 h-8 rounded-full bg-slate-50 text-slate-400 group-hover:bg-indigo-600 group-hover:text-white flex items-center justify-center transition-all shadow-sm"><SafeIcon name="plus" size={16} /></button>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                    <div className="w-[300px] bg-slate-50 border-l border-slate-200 flex flex-col shrink-0 shadow-[-2px_0_10px_rgba(0,0,0,0.02)] z-10">
-                        <div className="p-4 bg-slate-100 border-b border-slate-200 font-bold text-slate-700 text-xs flex justify-between items-center uppercase tracking-widest">
-                            <span>Work Queue</span>
-                            <span className="bg-indigo-600 text-white px-2 py-0.5 rounded-full text-[10px] font-black">{cart.length}</span>
-                        </div>
-                        <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-2 custom-scrollbar">
-                            {cart.map(c => (
-                                <div key={c.cartId} className="bg-white border border-slate-200 p-3 rounded-lg shadow-sm relative fade-in group">
-                                    <button onClick={() => setCart(cart.filter(x => x.cartId !== c.cartId))} className="absolute top-2 right-2 text-slate-300 hover:text-rose-500 transition-colors"><SafeIcon name="x" size={14}/></button>
-                                    <div className="text-[11px] font-bold text-slate-800 truncate mb-1 pr-4">{c.c3Name}</div>
-                                    <div className="text-[10px] font-mono text-slate-400 tracking-tighter">{c.ordersCode}</div>
-                                </div>
-                            ))}
-                            {cart.length === 0 && <div className="h-full flex items-center justify-center text-slate-300 text-[11px] italic">담긴 항목이 없습니다.</div>}
-                        </div>
-                        <div className="p-4 bg-white border-t border-slate-200">
-                            <button onClick={() => { onRegister(cart, activeC1); setCart([]); }} disabled={cart.length === 0} className={`w-full py-3 rounded-lg font-bold text-sm shadow-md transition-all ${cart.length > 0 ? 'bg-[#0B1021] text-white hover:bg-black hover:-translate-y-0.5' : 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'}`}>템플릿 발급 및 파이프라인 전송</button>
-                        </div>
-                    </div>
-                </div>
-            );
-        };
-
-        // ==========================================
-        // 🧩 Sub Views: Smart Form (수기등록)
-        // ==========================================
-        const SmartFormView = ({ data, ui, onRegister }) => {
-            const showToast = ui?.showToast;
-            
-            const [keyword, setKeyword] = useState('');
-            const [selectedCat, setSelectedCat] = useState(null);
-            const [formData, setFormData] = useState({ name: '', spec: '', inPrice: '', outPrice: '', vendor: '' });
-            const [previewSku, setPreviewSku] = useState('');
-
-            const fuse = useMemo(() => new Fuse(ONEAPP_CATEGORIES, { keys: [{ name: 'c3Name', weight: 0.7 }, { name: 'c2Name', weight: 0.2 }, { name: 'c1Name', weight: 0.1 }], threshold: 0.3 }), []);
-            const searchResults = useMemo(() => keyword.trim() ? fuse.search(keyword).map(r => r.item).slice(0, 5) : [], [keyword, fuse]);
-
-            const handleSelectCategory = (cat) => {
-                setSelectedCat(cat); setFormData({...formData, name: cat.c3Name});
-                setPreviewSku(generatePseudoSKU(cat.orders3Code)); setKeyword('');
-            };
-
-            const handleSubmit = () => {
-                if (!selectedCat) return showToast('⚠️ 카테고리를 선택해주세요.');
-                if (!formData.name) return showToast('⚠️ 품목명을 입력해주세요.');
-                
-                const finalSKU = previewSku || generatePseudoSKU(selectedCat.orders3Code);
-                const pInNum = parseNum(formData.inPrice);
-                const pOutNum = parseNum(formData.outPrice);
-
-                const newItem = {
-                    코드: finalSKU,
-                    sources: { 'smartform': { ...formData } },
-                    finalData: { 
-                        '품목명': formData.name, '규격': formData.spec, '구매처': formData.vendor,
-                        '입고가': pInNum, '출고가': pOutNum,
-                        '오더즈': selectedCat.orders3Code, '3코드': selectedCat.erp3Code, '3그룹명': selectedCat.c3Name 
-                    }
-                };
-
-                onRegister(newItem);
-                showToast(`✅ [${formData.name}] SKU가 발급되었습니다.`);
-                setKeyword(''); setSelectedCat(null); setFormData({ name: '', spec: '', inPrice: '', outPrice: '', vendor: '' }); setPreviewSku('');
-            };
-
-            return (
-                <div className="h-full flex justify-center items-start pt-10 overflow-y-auto bg-slate-50 m-6 mt-4 border border-gray-200 rounded-xl shadow-sm">
-                    <div className="bg-white rounded-xl shadow-lg border border-gray-200 w-[680px] overflow-hidden my-10 relative fade-in">
-                        <div className="px-6 py-5 border-b border-gray-100 bg-slate-50 flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600"><i className="fas fa-bolt text-lg"></i></div>
-                            <div><h2 className="text-base font-bold text-slate-800">단건 수기 등록 (스마트 폼)</h2><p className="text-sm text-slate-500 mt-0.5">품명, 단가 등 기초 정보만 입력하면 시스템이 표준 SKU를 발급합니다.</p></div>
-                        </div>
-                        <div className="p-8 space-y-6">
-                            <div className="relative z-20">
-                                <label className="text-sm font-bold text-slate-700 mb-2 flex items-center"><span className="bg-indigo-600 text-white w-5 h-5 rounded-full flex items-center justify-center text-xs mr-2">1</span>카테고리 검색 (필수)</label>
-                                {!selectedCat ? (
-                                    <div className="relative mt-2">
-                                        <i className="fas fa-search absolute left-4 top-3.5 text-indigo-400"></i>
-                                        <input type="text" value={keyword} onChange={e=>setKeyword(e.target.value)} placeholder="예: 배추, 감자, 삼겹살, 비닐..." className="w-full pl-11 pr-4 py-3 bg-white border-2 border-indigo-100 rounded-lg text-sm outline-none focus:border-indigo-500 transition-colors shadow-sm text-slate-800 placeholder-slate-400" />
-                                        {searchResults.length > 0 && (
-                                            <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-gray-200 rounded-lg shadow-xl overflow-hidden divide-y divide-gray-100">
-                                                {searchResults.map((cat, i) => (
-                                                    <div key={i} onClick={() => handleSelectCategory(cat)} className="px-5 py-3 hover:bg-indigo-50 cursor-pointer flex justify-between items-center transition-colors group">
-                                                        <div>
-                                                            <div className="text-[15px] font-bold text-slate-800 group-hover:text-indigo-700">{cat.c3Name}</div>
-                                                            <div className="text-xs text-slate-500 mt-1 flex items-center gap-1.5"><span className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-600">{cat.c1Name}</span><i className="fas fa-chevron-right text-[8px] text-slate-300"></i><span className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-600">{cat.c2Name}</span><i className="fas fa-chevron-right text-[8px] text-slate-300"></i><span className="font-medium text-slate-700">{cat.c3Name}</span></div>
-                                                        </div>
-                                                        <div className="text-[10px] font-mono text-slate-400 text-right"><div>오더즈: <span className="font-bold text-slate-500">{cat.orders3Code}</span></div><div className="mt-0.5">ERP: {cat.erp3Code}</div></div>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        )}
-                                    </div>
-                                ) : (
-                                    <div className="flex justify-between items-center bg-indigo-50 border-2 border-indigo-200 px-5 py-4 rounded-lg mt-2">
-                                        <div><div className="text-[15px] font-bold text-indigo-900 mb-1">{selectedCat.c3Name}</div><div className="text-xs font-medium text-indigo-500 flex items-center gap-1">{selectedCat.c1Name} <i className="fas fa-chevron-right text-[8px] opacity-50"></i> {selectedCat.c2Name}</div></div>
-                                        <div className="flex items-center gap-4">
-                                            <div className="text-right"><div className="text-[10px] text-indigo-400 font-bold mb-0.5 uppercase tracking-wider">Generated SKU</div><div className="text-sm font-mono font-black text-indigo-700 bg-white px-2 py-1 rounded shadow-sm border border-indigo-100">{previewSku}</div></div>
-                                            <button onClick={()=>{setSelectedCat(null); setKeyword(''); setPreviewSku('');}} className="w-8 h-8 rounded-full bg-white text-indigo-400 hover:text-indigo-600 hover:bg-indigo-100 flex items-center justify-center transition-colors border border-indigo-100 shadow-sm" title="카테고리 변경"><i className="fas fa-sync-alt text-xs"></i></button>
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-                            <div className={`space-y-5 transition-all duration-300 relative z-10 ${selectedCat ? 'opacity-100 translate-y-0' : 'opacity-40 pointer-events-none translate-y-2'}`}>
-                                <label className="text-sm font-bold text-slate-700 mb-2 flex items-center"><span className="bg-indigo-600 text-white w-5 h-5 rounded-full flex items-center justify-center text-xs mr-2">2</span>상세 정보 입력</label>
-                                <div className="bg-slate-50 p-5 rounded-lg border border-slate-100 space-y-4">
-                                    <div className="flex gap-4">
-                                        <div className="flex-1"><label className="text-xs font-bold text-slate-500 mb-1.5 block">품목명 (표시용)</label><input type="text" value={formData.name} onChange={e=>setFormData({...formData, name: e.target.value})} className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-md text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-shadow" /></div>
-                                        <div className="w-1/3"><label className="text-xs font-bold text-slate-500 mb-1.5 block">규격</label><input type="text" value={formData.spec} onChange={e=>setFormData({...formData, spec: e.target.value})} placeholder="예: 1박스" className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-md text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-shadow" /></div>
-                                    </div>
-                                    <div className="flex gap-4">
-                                        <div className="flex-1"><label className="text-xs font-bold text-slate-500 mb-1.5 block">매입가 (입고가)</label><div className="relative"><input type="number" value={formData.inPrice} onChange={e=>setFormData({...formData, inPrice: e.target.value})} placeholder="0" className="w-full pl-3 pr-8 py-2.5 bg-white border border-slate-300 rounded-md text-sm text-right outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-shadow font-mono" /><span className="absolute right-3 top-2.5 text-sm text-slate-400">원</span></div></div>
-                                        <div className="flex-1"><label className="text-xs font-bold text-slate-500 mb-1.5 block">기준 판매가 (수기입력)</label><div className="relative"><input type="number" value={formData.outPrice} onChange={e=>setFormData({...formData, outPrice: e.target.value})} placeholder="0" className="w-full pl-3 pr-8 py-2.5 bg-white border border-slate-300 rounded-md text-sm text-right outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-shadow font-mono" /><span className="absolute right-3 top-2.5 text-sm text-slate-400">원</span></div></div>
-                                    </div>
-                                    <div><label className="text-xs font-bold text-slate-500 mb-1.5 block">구매처/벤더</label><input type="text" value={formData.vendor} onChange={e=>setFormData({...formData, vendor: e.target.value})} placeholder="예: 가락시장" className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-md text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-shadow" /></div>
-                                </div>
-                                <button onClick={handleSubmit} disabled={!selectedCat} className={`w-full py-3.5 rounded-lg font-bold text-sm transition-all flex justify-center items-center shadow-md ${selectedCat ? 'bg-[#0B1021] text-white hover:bg-black hover:-translate-y-0.5' : 'bg-slate-200 text-slate-400 cursor-not-allowed border border-slate-200 shadow-none'}`}>
-                                    <i className="fas fa-check-circle mr-2"></i> SKU 최종 발급 및 대기열 등록
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            );
-        };
-
-        // ==========================================
-        // 🧩 Sub Views: BOM Builder
-        // ==========================================
-        const BOMBuilderView = ({ data, ui, onRegister }) => {
-            const masterCatalogProducts = data?.masterCatalogProducts || [];
-            const showToast = ui?.showToast;
-            
-            const [bomList, setBomList] = useState([]);
-            const [bomName, setBomName] = useState('');
-            const [bomSpec, setBomSpec] = useState('');
-            const [searchKw, setSearchKw] = useState('');
-
-            const searchResults = useMemo(() => {
-                if(masterCatalogProducts.length === 0) return [];
-                if(!searchKw.trim()) return masterCatalogProducts.slice(0, 50);
-                const fuse = new Fuse(masterCatalogProducts, { keys: ['name', 'keywords', 'code', 'id'], threshold: 0.3 });
-                return fuse.search(searchKw).map(r => r.item).slice(0, 50);
-            }, [searchKw, masterCatalogProducts]);
-
-            const addToBom = (item) => { if(!bomList.find(b => b.id === item.id)) setBomList([...bomList, { ...item, qty: 1 }]); };
-            const updateQty = (id, delta) => setBomList(bomList.map(b => b.id === id ? { ...b, qty: Math.max(1, b.qty + delta) } : b));
-            const removeFromBom = (id) => setBomList(bomList.filter(b => b.id !== id));
-            const totalCost = bomList.reduce((sum, item) => sum + ((item.basePrice || 0) * item.qty), 0);
-
-            const handleSubmit = () => {
-                if(bomList.length < 2) return showToast('⚠️ 상품을 2개 이상 선택하세요.');
-                if(!bomName) return showToast('⚠️ 세트 상품명을 입력하세요.');
-                const pseudoSKU = `BOM-${Date.now().toString().slice(-6)}`;
-                const newItem = {
-                    코드: pseudoSKU,
-                    sources: { 'bom': { '품목명': bomName, '규격': bomSpec, '입고가': totalCost, '간단설명': `구성: ${bomList.map(b=>b.name).join(', ')}` } },
-                    finalData: { '품목명': bomName, '규격': bomSpec, '입고가': totalCost, '간단설명': `구성: ${bomList.map(b=>b.name).join(', ')}`, '오더즈': '999999', '3코드': '999999', '3그룹명': '기획세트' }
-                };
-                onRegister(newItem);
-                showToast(`✅ [${bomName}] 기획 SKU가 발급되었습니다.`);
-                setBomList([]); setBomName(''); setBomSpec('');
-            };
-
-            return (
-                <div className="h-full flex gap-6 fade-in p-6 pt-4 bg-slate-50 border border-gray-200 m-6 mt-4 rounded-xl shadow-sm">
-                    <div className="w-1/2 bg-white rounded-lg shadow-sm border border-gray-200 flex flex-col overflow-hidden">
-                        <div className="px-5 py-4 border-b border-gray-100 shrink-0 bg-slate-50">
-                            <h3 className="text-sm font-bold text-slate-800 mb-3">1. 마스터 카탈로그 검색</h3>
-                            <div className="relative"><input type="text" value={searchKw} onChange={e=>setSearchKw(e.target.value)} placeholder="상품 검색 후 우측 세트에 추가..." className="w-full pl-9 pr-3 py-2 bg-white border border-gray-300 rounded text-sm outline-none focus:border-indigo-500" /><i className="fas fa-search absolute left-3 top-2.5 text-slate-400"></i></div>
-                        </div>
-                        <div className="flex-1 overflow-y-auto p-3 custom-scrollbar">
-                            <div className="grid grid-cols-1 gap-2">
-                                {masterCatalogProducts.length === 0 ? (
-                                    <div className="py-10 text-center text-sm text-slate-400">마스터 DB를 먼저 불러와주세요.</div>
-                                ) : searchResults.map(m => (
-                                    <div key={m.id} onClick={() => addToBom(m)} className="px-4 py-3 border border-gray-100 bg-white rounded-md hover:border-indigo-300 hover:bg-indigo-50/30 cursor-pointer flex justify-between group transition-all">
-                                        <div className="flex flex-col min-w-0"><span className="text-sm font-bold text-slate-800 truncate">{m.name} <span className="text-slate-500 font-normal text-xs ml-1">({m.spec})</span></span><span className="text-xs font-mono text-slate-400 mt-1">{m.id}</span></div>
-                                        <div className="text-right shrink-0 ml-2"><div className="text-sm font-bold text-slate-600">{Number(m.basePrice||0).toLocaleString()}원</div></div>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    </div>
-                    <div className="w-1/2 bg-white rounded-lg shadow-sm border border-gray-200 flex flex-col overflow-hidden">
-                        <div className="bg-slate-50 px-5 py-4 border-b border-gray-200 flex items-center justify-between shrink-0">
-                            <div><h2 className="text-sm font-bold text-slate-900">2. BOM 세트 조립기</h2><p className="text-xs text-slate-500 mt-1">선택된 단품의 매입가를 순수 합산합니다.</p></div>
-                            <div className="bg-white px-3 py-2 rounded border border-gray-200 shadow-sm text-right"><div className="text-xs font-bold text-slate-500">합산 매입가</div><div className="text-lg font-black text-slate-900">{totalCost.toLocaleString()} <span className="text-sm font-normal">원</span></div></div>
-                        </div>
-                        <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
-                            <div className="space-y-3">
-                                {bomList.length === 0 ? (
-                                    <div className="h-full flex flex-col justify-center items-center text-slate-400 py-20">
-                                        <i className="fas fa-boxes text-3xl mb-3 text-slate-300"></i><p className="text-sm font-medium">좌측에서 구성품을 담아주세요.</p>
-                                    </div>
-                                ) : bomList.map((item, idx) => (
-                                    <div key={item.id} className="bg-white border border-gray-200 p-3 rounded flex items-center justify-between fade-in shadow-sm group">
-                                        <div className="flex items-center gap-3 min-w-0"><div className="w-6 h-6 rounded bg-slate-100 text-slate-600 flex items-center justify-center text-xs font-bold">{idx+1}</div><div className="flex flex-col min-w-0"><span className="text-sm font-bold text-slate-800 truncate">{item.name}</span><span className="text-xs text-slate-500 mt-0.5">{item.spec} | {Number(item.basePrice||0).toLocaleString()}원</span></div></div>
-                                        <div className="flex items-center gap-4 shrink-0">
-                                            <div className="flex items-center bg-slate-50 rounded border border-gray-200"><button onClick={()=>updateQty(item.id, -1)} className="w-7 h-7 text-slate-500 hover:bg-slate-200">-</button><div className="w-8 text-center text-xs font-bold">{item.qty}</div><button onClick={()=>updateQty(item.id, 1)} className="w-7 h-7 text-slate-500 hover:bg-slate-200">+</button></div>
-                                            <div className="w-16 text-right text-sm font-bold text-slate-700">{((item.basePrice||0)*item.qty).toLocaleString()}</div><button onClick={()=>removeFromBom(item.id)} className="text-slate-400 hover:text-red-500 w-6 h-6 flex items-center justify-center rounded hover:bg-red-50 transition-colors"><i className="fas fa-times"></i></button>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                        <div className="bg-slate-50 p-5 border-t border-gray-200 shrink-0">
-                            <div className="flex gap-3 mb-4">
-                                <div className="flex-1"><label className="text-xs font-bold text-slate-700 mb-1.5 block">기획(세트) 품목명</label><input type="text" value={bomName} onChange={e=>setBomName(e.target.value)} className="w-full px-3 py-2 bg-white border border-gray-300 rounded text-sm outline-none focus:border-indigo-500" /></div>
-                                <div className="w-1/3"><label className="text-xs font-bold text-slate-700 mb-1.5 block">규격</label><input type="text" value={bomSpec} onChange={e=>setBomSpec(e.target.value)} placeholder="예: 1세트" className="w-full px-3 py-2 bg-white border border-gray-300 rounded text-sm outline-none focus:border-indigo-500" /></div>
-                            </div>
-                            <button onClick={handleSubmit} disabled={bomList.length < 2 || !bomName} className={`w-full py-3 rounded-lg font-bold text-sm shadow-md transition-all ${bomList.length >= 2 && bomName ? 'bg-[#0B1021] text-white hover:bg-black hover:-translate-y-0.5' : 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'}`}>세트 SKU 발급 및 대기열 전송</button>
-                        </div>
-                    </div>
-                </div>
-            );
-        };
-
-
-        // ==========================================
-        // 🧩 Sub Views: Promotion Theme Manager
-        // ==========================================
-        const PromotionThemeManagerView = ({ data, ui, onUpdateMaster }) => {
-            const masterProducts = data?.masterProducts || {};
-            const showToast = ui?.showToast;
-            const [searchKw, setSearchKw] = useState('');
-            const [selectedCode, setSelectedCode] = useState('');
-            const [themeDraft, setThemeDraft] = useState([]);
-
-            const masterList = useMemo(() => Object.values(masterProducts || {})
-                .filter(Boolean)
-                .sort((a, b) => safeStr(a['품목명']).localeCompare(safeStr(b['품목명']), 'ko')), [masterProducts]);
-
-            const filteredList = useMemo(() => {
-                const kw = searchKw.toLowerCase().replace(/\s+/g, '');
-                const base = masterList;
-                if (!kw) return base.slice(0, 300);
-                return base.filter(item => (safeStr(item['품목코드']) + safeStr(item['코드']) + safeStr(item['품목명']) + safeStr(item['규격']) + safeStr(item['행사테마'])).toLowerCase().replace(/\s+/g, '').includes(kw)).slice(0, 300);
-            }, [masterList, searchKw]);
-
-            useEffect(() => {
-                if (!selectedCode && filteredList.length > 0) setSelectedCode(filteredList[0].코드 || filteredList[0]['품목코드']);
-            }, [filteredList, selectedCode]);
-
-            const selectedItem = useMemo(() => masterProducts[selectedCode] || filteredList.find(item => (item.코드 || item['품목코드']) === selectedCode) || null, [masterProducts, filteredList, selectedCode]);
-
-            useEffect(() => {
-                const value = normalizePromotionThemeValue(selectedItem || {});
-                setThemeDraft(value ? value.split(',') : []);
-            }, [selectedCode, selectedItem]);
-
-            const toggleTheme = (code) => {
-                setThemeDraft(prev => prev.includes(code) ? prev.filter(v => v !== code) : [...prev, code].sort((a, b) => Number(a) - Number(b)));
-            };
-
-            const saveTheme = () => {
-                if (!selectedItem) return showToast && showToast('⚠️ 선택된 상품이 없습니다.');
-                const themeValue = themeDraft.join(',');
-                const next = { ...selectedItem, 행사테마: themeValue };
-                [1, 2, 3, 4, 5].forEach(n => { next[`테마${n}`] = themeDraft.includes(String(n)) ? '1' : ''; });
-                onUpdateMaster(next);
-            };
-
-            const themeLabel = (value) => value ? value.split(',').map(code => PROMOTION_THEMES.find(t => t.code === code)?.label || code).join(', ') : '미지정';
-
-            return (
-                <div className="h-full flex gap-5 p-6 bg-slate-50 fade-in overflow-hidden">
-                    <div className="w-[420px] bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col overflow-hidden">
-                        <div className="p-4 border-b border-slate-100 bg-slate-50">
-                            <h3 className="text-sm font-black text-slate-800 flex items-center gap-2"><SafeIcon name="tags" size={15} /> 행사테마 상품 검색</h3>
-                            <div className="relative mt-3">
-                                <input value={searchKw} onChange={e => setSearchKw(e.target.value)} placeholder="품목명 / 코드 / 테마 검색" className="w-full pl-9 pr-3 py-2.5 rounded-lg border border-slate-300 text-sm outline-none focus:border-indigo-500 bg-white" />
-                                <SafeIcon name="search" size={14} className="absolute left-3 top-3 text-slate-400" />
-                            </div>
-                        </div>
-                        <div className="flex-1 overflow-y-auto custom-scrollbar divide-y divide-slate-100">
-                            {filteredList.map(item => {
-                                const code = item.코드 || item['품목코드'];
-                                const themeValue = normalizePromotionThemeValue(item);
-                                return (
-                                    <button key={code} onClick={() => setSelectedCode(code)} className={`w-full text-left px-4 py-3 transition-colors ${selectedCode === code ? 'bg-indigo-50 border-l-4 border-indigo-600' : 'hover:bg-slate-50 border-l-4 border-transparent'}`}>
-                                        <div className="text-[11px] font-mono text-indigo-400 mb-0.5">{code}</div>
-                                        <div className="text-sm font-bold text-slate-800 truncate">{safeStr(item['품목명'], '-')} <span className="text-xs text-slate-400 font-normal">{safeStr(item['규격'])}</span></div>
-                                        <div className="text-[11px] text-slate-500 mt-1">행사테마: <span className="font-bold text-emerald-700">{themeLabel(themeValue)}</span></div>
-                                    </button>
-                                );
-                            })}
-                        </div>
-                    </div>
-                    <div className="flex-1 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
-                        <div className="px-6 py-4 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
-                            <div>
-                                <h2 className="text-base font-black text-slate-900">상품별 행사테마 지정</h2>
-                                <p className="text-xs text-slate-500 mt-1">1~5 복수 선택 가능. 예: 1,4 = 오늘의행사 탭 + 실사진 뱃지</p>
-                            </div>
-                            <div className="text-right text-xs text-slate-500">
-                                <div className="font-mono">{selectedItem ? (selectedItem.코드 || selectedItem['품목코드']) : '-'}</div>
-                                <div className="font-bold text-slate-700 mt-1">현재값: {themeDraft.length ? themeDraft.join(',') : '-'}</div>
-                            </div>
-                        </div>
-                        <div className="flex-1 p-6 overflow-y-auto custom-scrollbar">
-                            {selectedItem ? (
-                                <div className="max-w-3xl space-y-6">
-                                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-5">
-                                        <div className="text-[12px] font-bold text-slate-500 mb-1">선택 상품</div>
-                                        <div className="text-xl font-black text-slate-900">{safeStr(selectedItem['품목명'], '-')}</div>
-                                        <div className="text-sm text-slate-500 mt-1">{safeStr(selectedItem['규격'])}</div>
-                                    </div>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                        {PROMOTION_THEMES.map(theme => (
-                                            <button key={theme.code} onClick={() => toggleTheme(theme.code)} className={`p-4 rounded-xl border text-left transition-all ${themeDraft.includes(theme.code) ? 'bg-emerald-50 border-emerald-300 text-emerald-800 shadow-inner' : 'bg-white border-slate-200 hover:border-indigo-300 text-slate-700'}`}>
-                                                <div className="flex items-center justify-between">
-                                                    <div className="text-sm font-black">테마{theme.code}. {theme.label}</div>
-                                                    <span className={`text-[11px] px-2 py-0.5 rounded-full font-bold ${theme.type === '탭' ? 'bg-indigo-100 text-indigo-700' : 'bg-rose-100 text-rose-700'}`}>{theme.type}</span>
-                                                </div>
-                                                <div className="text-xs text-slate-500 mt-1">{theme.code === '4' ? '쇼핑몰 실사진 뱃지' : theme.code === '5' ? '쇼핑몰 행사 뱃지' : '쇼핑몰 상단 탭 노출'}</div>
-                                            </button>
-                                        ))}
-                                    </div>
-                                    <button onClick={saveTheme} className="w-full py-3.5 rounded-xl bg-[#0B1021] text-white font-black shadow-md hover:bg-black transition-all">행사테마 저장</button>
-                                </div>
-                            ) : <div className="py-20 text-center text-slate-400 font-bold">상품을 선택하세요.</div>}
-                        </div>
-                    </div>
-                </div>
-            );
-        };
-
-        // ==========================================
-        // ⚙️ 6. Main App Container
-        // ==========================================
-        function App() {
-            const config = useMerchConfig();
-            const [viewMode, setViewMode] = useState('catalog'); 
-            const [toastMsg, setToastMsg] = useState('');
-            const [isProcessing, setIsProcessing] = useState(false);
-            const [processMsg, setProcessMsg] = useState('');
-            const [showSettingsModal, setShowSettingsModal] = useState(false);
-            
-            const [masterProducts, setMasterProducts] = useState({});
-            const [managedItems, setManagedItems] = useState({});
-            const [masterCatalogProducts, setMasterCatalogProducts] = useState([]);
-
-            const showToast = useCallback((msg) => { setToastMsg(msg); setTimeout(() => setToastMsg(''), 3000); }, []);
-
-            const handleNavigate = useCallback((e, path, isReady = true) => {
-                if (e && e.preventDefault) e.preventDefault();
-                if (!isReady || path === '#') { showToast(`⚠️ [${path}] 페이지는 아직 준비 중입니다.`); return; }
-                try {
-                    const protocol = window.location.protocol;
-                    if (protocol === 'about:' || protocol === 'blob:' || protocol === 'data:') {
-                        showToast(`💡 미리보기 환경: [${path}] 로 이동을 시뮬레이션 합니다.`);
-                    } else {
-                        window.location.href = path;
-                    }
-                } catch (err) {
-                    showToast(`💡 미리보기 환경: [${path}] 로 이동을 시뮬레이션 합니다.`);
-                }
-            }, [showToast]);
-
-            // [I-CLOUD-01] MerchOps 공통 클라우드 Push
-            const handlePush = async () => {
-                const targetUrl = getOneAppCloudSyncUrl(config.cloudUrl);
-                if (!targetUrl) return showToast("⚠️ 환경설정에서 앱스크립트 URL을 입력하세요.");
-                setIsProcessing(true); setProcessMsg("MerchOps 클라우드 전송 중...");
-                try {
-                    const result = await pushMerchOpsCloudMaster(masterProducts, {
-                        cloudUrl: targetUrl,
-                        onProgress: (msg) => setProcessMsg(msg)
-                    });
-                    showToast(`✅ MerchOps 클라우드 백업 완료! 마스터 ${result.count.toLocaleString()}건`);
-                } catch (e) { console.error(e); showToast("❌ 실패: " + e.message); } finally { setIsProcessing(false); setProcessMsg(""); }
-            };
-
-            // [I-CLOUD-02] MerchOps 공통 클라우드 Pull
-            const handlePull = async () => {
-                const targetUrl = getOneAppCloudSyncUrl(config.cloudUrl);
-                if (!targetUrl) return showToast("⚠️ 환경설정에서 앱스크립트 URL을 입력하세요.");
-                setIsProcessing(true); setProcessMsg("MerchOps 클라우드 수신 중...");
-                try {
-                    const result = await pullMerchOpsCloudMaster(targetUrl);
-                    setMasterProducts(result.masterMap);
-                    await loadMaster();
-                    showToast(`✅ MerchOps 클라우드 동기화 완료: ${result.count.toLocaleString()}건`);
-                } catch (e) { console.error(e); showToast("❌ 실패: " + e.message); } finally { setIsProcessing(false); setProcessMsg(""); }
-            };
-
-            const loadMaster = useCallback(() => {
-                return loadMasterLocal().then(data => {
-                    if (data && Object.keys(data).length > 0) {
-                        setMasterProducts(data); 
-                        const catalogArr = Object.values(data).map(row => {
-                            // [수정] 마스터 DB의 데이터 구조 호환성 보장 (1코드 혹은 분류 필드 자동 파싱)
-                            let c1Name = row['1그룹명'] || row['분류'] || row['카테고리'] || '일반';
-                            let c1Code = row['1코드'] || c1Name;
-                            
-                            return {
-                                id: row['품목코드'] || row['코드'] || `TEMP-${Date.now()}-${Math.floor(Math.random()*1000)}`,
-                                c1Code: String(c1Code).trim(),
-                                c1Name: String(c1Name).trim(),
-                                c2Code: String(row['2코드'] || 'all').trim(),
-                                c2Name: row['2그룹명'] || '전체',
-                                c3Code: String(row['3코드'] || 'all').trim(),
-                                c3Name: row['3그룹명'] || '전체',
-                                ordersCode: String(row['오더즈'] || '').trim(),
-                                erp3Code: String(row['3코드'] || '').trim(),
-                                name: row['품목명'] || row['상품명'] || '',
-                                spec: row['규격'] || '',
-                                basePrice: parseNum(row['입고가'] || row['매입가'] || row['출고가'] || 0),
-                                promoTheme: normalizePromotionThemeValue(row)
-                            };
-                        }).filter(p => p.name);
-                        setMasterCatalogProducts(catalogArr);
-                    }
-                }).catch(console.error);
-
-            }, []);
-
-            useEffect(() => {
-                loadMaster();
-                getIDB('merchPipeline_Managed_v2').then(data => { if (data) setManagedItems(data); }).catch(console.error);
-
-                const handleStorageChange = (e) => {
-                    if (e.key === STORAGE_KEYS.SYNC_TRIGGER) {
-                        loadMaster();
-                    }
-                };
-                window.addEventListener('storage', handleStorageChange);
-                
-                // 🌟 Iframe 메시지 수신 (설정창 닫힘 감지)
-                const handleMessage = (e) => {
-                    if (e.data && e.data.type === 'CLOSE_SETTINGS') {
-                        setShowSettingsModal(false);
-                        loadMaster(); 
-                    }
-                };
-                window.addEventListener('message', handleMessage);
-
-                return () => {
-                    window.removeEventListener('storage', handleStorageChange);
-                    window.removeEventListener('message', handleMessage);
-                };
-            }, [loadMaster]);
-
-            useEffect(() => {
-                if (Object.keys(managedItems).length > 0) {
-                    setIDB('merchPipeline_Managed_v2', managedItems).catch(console.error);
-                }
-            }, [managedItems]);
-
-
-            const handleMasterItemUpdate = async (updatedItem) => {
-                const normalized = normalizeMasterItem(updatedItem, updatedItem && (updatedItem.코드 || updatedItem['품목코드']));
-                if (!normalized.코드) return showToast('⚠️ 품목코드가 없는 상품은 저장할 수 없습니다.');
-                const nextMaster = { ...masterProducts, [normalized.코드]: normalized };
-                try {
-                    const saved = await saveMasterLocal(nextMaster);
-                    setMasterProducts(saved);
-                    await loadMaster();
-                    showToast(`✅ [${safeStr(normalized['품목명'], normalized.코드)}] 행사테마 ${safeStr(normalized['행사테마'], '미지정')} 저장 완료`);
-                } catch (error) {
-                    console.error(error);
-                    showToast(`❌ 마스터 저장 실패: ${error.message}`);
-                }
-            };
-
-            // 카탈로그에서 다수 항목 전송 시 (Pipeline 관리 대기열로 넘김)
-            const handleCatalogRegister = (cartItems, activeC1) => {
-                let currentCounter = 1;
-                const newManaged = { ...managedItems };
-                
-                cartItems.forEach(item => {
-                    const seq = String(currentCounter++).padStart(3, '0');
-                    const catPrefix = activeC1 === '10' ? 'C1' : activeC1 === '20' ? 'F1' : activeC1 === '30' ? 'F2' : activeC1 === '40' ? 'S1' : 'E1';
-                    const newSku = `SHOP-${catPrefix}-${new Date().toLocaleDateString('ko-KR', { month: '2-digit', day: '2-digit' }).replace(/\./g, '').replace(/\s/g, '')}-${seq}`;
-                    
-                    newManaged[newSku] = {
-                        코드: newSku,
-                        sources: { 'catalog': { ...item } },
-                        finalData: { 
-                            '품목명': '', '규격': '', '구매처': '자체조달',
-                            '입고가': 0, '출고가': 0, 
-                            '오더즈': item.ordersCode || '999999', '3코드': item.erp3Code || '999999', '3그룹명': item.c3Name || '기타' 
-                        }
-                    };
-                });
-                setManagedItems(newManaged);
-                showToast(`✅ ${cartItems.length}개의 템플릿이 시세 관리 큐에 등록되었습니다.`);
-                setTimeout(() => handleNavigate(null, 'MerchOps.html'), 1000);
-            };
-
-            // 수기/BOM 단건 전송 시 (Pipeline 관리 대기열로 넘김)
-            const handleSingleRegister = (newItem) => {
-                const newManaged = { ...managedItems, [newItem.코드]: newItem };
-                setManagedItems(newManaged);
-                setTimeout(() => handleNavigate(null, 'MerchOps.html'), 1000);
-            };
-
-            return (
-                <div className="h-screen w-full max-w-[1500px] mx-auto flex flex-col font-sans overflow-hidden bg-[#f1f5f9] relative shadow-2xl border-x border-slate-300 select-none">
-                    <GlobalHeader 
-                        activeTab="item-manage" 
-                        itemCount={Object.keys(masterProducts).length} 
-                        isProcessing={isProcessing} 
-                        processMsg={processMsg}
-                        onOpenSettings={() => setShowSettingsModal(true)}
-                        onPush={handlePush}
-                        onPull={handlePull}
-                        onNavigate={handleNavigate}
-                    />
-                    
-                    <div className="px-8 py-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between shadow-sm shrink-0">
-                        <div className="flex gap-1.5 bg-slate-200/50 p-1.5 rounded-xl border border-slate-200">
-                            {[ { id: 'catalog', label: '카탈로그 소싱', icon: "network" }, { id: 'theme', label: '행사테마', icon: "tags" }, { id: 'smartform', label: '수기등록', icon: "file-code" }, { id: 'bom', label: 'BOM 조립', icon: "boxes" } ].map(nav => (
-                                <button key={nav.id} onClick={() => setViewMode(nav.id)} className={`flex items-center gap-2 px-5 py-1.5 rounded-md text-[13px] font-bold transition-all ${viewMode === nav.id ? 'bg-white text-indigo-700 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-800'}`}>
-                                    <SafeIcon name={nav.icon} size={14} /> {nav.label}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-
-                    <main className="flex-1 overflow-hidden relative bg-slate-50 flex flex-col">
-                        {viewMode === 'catalog' ? (
-                            <CategorySourcingView data={{masterCatalogProducts}} ui={{ showToast }} onRegister={handleCatalogRegister} />
-                        ) : viewMode === 'theme' ? (
-                            <PromotionThemeManagerView data={{masterProducts}} ui={{ showToast }} onUpdateMaster={handleMasterItemUpdate} />
-                        ) : viewMode === 'smartform' ? (
-                            <SmartFormView data={{masterProducts}} ui={{ showToast }} onRegister={handleSingleRegister} />
-                        ) : (
-                            <BOMBuilderView data={{masterCatalogProducts}} ui={{ showToast }} onRegister={handleSingleRegister} />
-                        )}
-                        
-                        {toastMsg && (
-                            <div className="fixed bottom-10 right-10 z-[100] bg-slate-900 text-white px-6 py-3 rounded-xl shadow-2xl flex items-center gap-3 fade-in border border-slate-700">
-                                <SafeIcon name="check-circle-2" size={18} className="text-emerald-400" />
-                                <span className="text-sm font-bold tracking-tight">{toastMsg}</span>
-                            </div>
-                        )}
-                    </main>
-
-                    {/* 🌟 Iframe Overlay 로 설정 모달 표시 */}
-                    <IframeSettingsModal isOpen={showSettingsModal} onClose={() => setShowSettingsModal(false)} />
-                </div>
-            );
-        }
-
-        // ErrorBoundary (하얀 화면 방지 로직)
-        class ErrorBoundary extends React.Component {
-            constructor(props) {
-                super(props);
-                this.state = { hasError: false, error: null };
-            }
-            static getDerivedStateFromError(error) { return { hasError: true, error }; }
-            render() {
-                if (this.state.hasError) {
-                    return (
-                        <div className="h-screen w-full flex flex-col items-center justify-center bg-slate-50 p-6">
-                            <i className="fas fa-exclamation-triangle text-rose-500 text-6xl mb-6"></i>
-                            <h1 className="text-2xl font-black text-slate-800 mb-2">화면 렌더링 오류 발생 (Crash)</h1>
-                            <p className="text-slate-500 mb-6 text-center">
-                                불러온 데이터 중 잘못된 형식(숫자 등)이 섞여있어 화면이 중단되었습니다.<br/>
-                                아래 [초기화] 버튼을 눌러 복구해 주세요.
-                            </p>
-                            <div className="bg-white border border-rose-200 p-4 rounded-lg text-xs font-mono text-rose-600 w-full max-w-2xl overflow-auto mb-8 shadow-sm">
-                                {this.state.error && this.state.error.toString()}
-                            </div>
-                            <button
-                                onClick={() => {
-                                    indexedDB.deleteDatabase('MerchOpsDB');
-                                    localStorage.removeItem('merchMaster_v870');
-                                    window.location.reload();
-                                }}
-                                className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold transition-colors shadow-lg flex items-center gap-2"
-                            >
-                                <i className="fas fa-redo-alt"></i> 로컬 데이터 초기화 및 복구하기
-                            </button>
-                        </div>
-                    );
-                }
-                return this.props.children;
-            }
-        }
-
-        try {
-            if (!window.React || !window.ReactDOM) throw new Error('React 또는 ReactDOM 로드 실패');
-            const rootEl = document.getElementById('root');
-            if (!rootEl) throw new Error('#root 엘리먼트를 찾을 수 없습니다.');
-            const root = ReactDOM.createRoot(rootEl);
-            window.__oneappStarted = true;
-            root.render(<ErrorBoundary><App /></ErrorBoundary>);
-        } catch (err) {
-            window.__oneappStarted = false;
-            if (window.__oneappShowInitError) {
-                window.__oneappShowInitError('React 앱 렌더링 실패', err && (err.stack || err.message) ? (err.stack || err.message) : String(err));
-            } else {
-                throw err;
-            }
-        }
-    </script>
+<body>
+  <div id="nexus-common-header" data-app-id="master">
+    <nexus-top app-id="master"></nexus-top>
+  </div>
+
+  <div id="app" class="oneapp-shell" aria-busy="true">
+    <header class="oneapp-app-header">
+      <div class="oneapp-content oneapp-app-header-inner">
+        <div>
+          <div class="oneapp-eyebrow">MASTER</div>
+          <h1 class="oneapp-title">상품 기초정보 관리</h1>
+          <p class="oneapp-description">상품의 기준정보를 조회하고 연속으로 수정합니다.</p>
+        </div>
+        <div class="oneapp-actions">
+          <div class="menu-anchor">
+            <button id="excel-menu-button" type="button" class="oneapp-button" aria-haspopup="menu" aria-expanded="false">
+              <span aria-hidden="true">▦</span>
+              <span class="oneapp-button-label-mobile">Excel 관리</span>
+            </button>
+            <div id="excel-menu" class="oneapp-popover" role="menu" hidden>
+              <button type="button" class="oneapp-popover-item" data-excel-action="download">현재 조회 상품 내려받기<small>현재 표에 보이는 기초정보만 내려받습니다.</small></button>
+              <button type="button" class="oneapp-popover-item" data-excel-action="batch">상품 기초정보 일괄 등록·수정<small>가격 운영 열은 Master에서 적용하지 않습니다.</small></button>
+              <button type="button" class="oneapp-popover-item" data-excel-action="template">기초정보 양식 내려받기<small>상품 기초정보 전용 열만 포함합니다.</small></button>
+            </div>
+          </div>
+          <div class="menu-anchor">
+            <button id="sync-menu-button" type="button" class="oneapp-button oneapp-icon-button sync-button" aria-label="저장 및 클라우드 상태" aria-haspopup="dialog" aria-expanded="false">
+              <span id="sync-dot" class="sync-dot" aria-hidden="true"></span>
+              <span aria-hidden="true">ⓘ</span>
+            </button>
+            <div id="sync-menu" class="oneapp-popover sync-popover" role="dialog" aria-label="저장 및 동기화 상태" hidden>
+              <strong>저장 및 동기화</strong>
+              <p id="sync-message">상품 DB를 확인하고 있습니다.</p>
+              <div class="sync-actions">
+                <button id="cloud-pull-button" type="button" class="oneapp-button">클라우드 새로고침</button>
+                <button id="cloud-push-button" type="button" class="oneapp-button">클라우드에 반영</button>
+              </div>
+            </div>
+          </div>
+          <button id="header-save-button" type="button" class="oneapp-button oneapp-button-primary" disabled>
+            <span aria-hidden="true">✓</span>
+            <span>저장</span>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <nav class="oneapp-tabs" aria-label="기초등록 대상">
+      <div class="oneapp-content oneapp-tab-row">
+        <a class="oneapp-tab" href="Master.html?view=products&mode=list" aria-current="page">상품</a>
+        <a class="oneapp-tab" href="Master.html?view=customers&mode=list">거래처</a>
+      </div>
+    </nav>
+    <nav class="oneapp-subtabs" aria-label="상품 관리 방식">
+      <div class="oneapp-content oneapp-tab-row">
+        <a class="oneapp-tab" href="Master.html?view=products&mode=list">목록·조회</a>
+        <a class="oneapp-tab" href="Item_manager.html" aria-current="page">기초정보 관리</a>
+      </div>
+    </nav>
+
+    <main class="oneapp-main">
+      <section class="query-section" aria-label="상품 조회 조건">
+        <div class="oneapp-content query-toolbar">
+          <div class="query-field">
+            <label class="oneapp-label" for="category-filter">카테고리</label>
+            <select id="category-filter" class="oneapp-field">
+              <option value="">카테고리 선택</option>
+            </select>
+          </div>
+          <div class="query-field">
+            <label class="oneapp-label" for="group-filter">그룹</label>
+            <select id="group-filter" class="oneapp-field">
+              <option value="">그룹 선택</option>
+            </select>
+          </div>
+          <div class="query-field query-field-status">
+            <label class="oneapp-label" for="status-filter">사용 상태</label>
+            <select id="status-filter" class="oneapp-field">
+              <option value="all">전체</option>
+              <option value="active">사용</option>
+              <option value="stopped">사용 중지</option>
+            </select>
+          </div>
+          <div class="query-field query-field-search">
+            <label class="oneapp-label" for="search-filter">상품명·코드 검색</label>
+            <div class="search-wrap">
+              <span aria-hidden="true">⌕</span>
+              <input id="search-filter" class="oneapp-field" type="search" autocomplete="off" placeholder="상품코드, 상품명, 규격">
+            </div>
+          </div>
+          <button id="load-button" type="button" class="oneapp-button oneapp-button-primary query-load-button">불러오기</button>
+        </div>
+      </section>
+
+      <section class="workspace-section">
+        <div class="oneapp-content workspace-content">
+          <div class="summary-toolbar">
+            <div id="summary-counts" class="summary-counts" aria-live="polite">전체 0건 · 선택 0건 · 수정 0건</div>
+            <button id="add-product-button" type="button" class="oneapp-button">
+              <span aria-hidden="true">＋</span>
+              새 상품 추가
+            </button>
+          </div>
+
+          <div id="grid-empty" class="grid-empty">
+            <strong>카테고리 또는 그룹을 선택해 상품을 불러오세요.</strong>
+            <span>조회 조건은 다음 방문에도 그대로 유지됩니다.</span>
+          </div>
+
+          <div id="grid-region" class="grid-region" hidden>
+            <div id="table-scroll" class="table-scroll" tabindex="-1">
+              <table id="product-grid" class="product-grid" aria-label="상품 기초정보 편집표">
+                <thead></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+            <div id="mobile-editor" class="mobile-editor"></div>
+          </div>
+
+          <div id="batch-toolbar" class="batch-toolbar" hidden>
+            <strong id="batch-selection-count">0개 상품 선택</strong>
+            <select id="batch-field" class="oneapp-field" aria-label="일괄 수정 항목"></select>
+            <div id="batch-value-wrap"></div>
+            <select id="batch-mode" class="oneapp-field" aria-label="일괄 적용 방식">
+              <option value="all">선택 상품 전체에 적용</option>
+              <option value="blank">빈 값에만 적용</option>
+            </select>
+            <button id="batch-apply-button" type="button" class="oneapp-button oneapp-button-primary">선택 상품에 적용</button>
+          </div>
+
+          <div id="save-bar" class="save-bar">
+            <div>
+              <strong>선택 상품 일괄 수정</strong>
+              <span id="save-state-copy">변경된 내용이 없습니다.</span>
+            </div>
+            <div class="oneapp-actions">
+              <button id="discard-button" type="button" class="oneapp-button" disabled>변경 취소</button>
+              <button id="footer-save-button" type="button" class="oneapp-button oneapp-button-primary" disabled>변경사항 저장</button>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div id="dialog-backdrop" class="oneapp-modal-backdrop" hidden>
+    <section class="oneapp-modal" role="dialog" aria-modal="true" aria-labelledby="dialog-title">
+      <div class="oneapp-modal-body">
+        <h2 id="dialog-title" class="oneapp-modal-title"></h2>
+        <p id="dialog-copy" class="oneapp-modal-copy"></p>
+      </div>
+      <div id="dialog-actions" class="oneapp-modal-actions"></div>
+    </section>
+  </div>
+
+  <div id="toast" class="oneapp-toast" role="status" aria-live="polite" hidden></div>
+  <script src="Item_manager.js?v=2.0.3"></script>
 </body>
 </html>
