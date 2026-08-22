@@ -23,6 +23,8 @@
     <script src="coreEngine.js"></script>
     <script src="masterAddUpdate.js"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="/nexus/common/oneapp-design-tokens.css?v=1.1.0">
+    <link rel="stylesheet" href="/nexus/common/nexus-app-ui.css?v=1.0.0">
     
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; -webkit-user-select: none; user-select: none; background-color: #f1f5f9; margin: 0; }
@@ -37,9 +39,21 @@
         .slide-in-right { animation: slideInRight 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
 
         .custom-scrollbar { scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent; }
+
+        .master-work-tools { gap: 12px; }
+        .master-work-search { min-width: min(360px, 42vw); }
+        .master-data-workspace { min-width: 840px; height: 100%; min-height: 100%; }
+        .master-data-scroll { overflow: hidden; }
+        html[data-nexus-density="compact"] .master-category-tabs { height: var(--nexus-work-tools-height) !important; padding-top: 4px !important; }
+        html[data-nexus-density="compact"] .master-data-sidebar button { padding-top: 7px !important; padding-bottom: 7px !important; }
+        @media (max-width: 760px) {
+            .master-work-search { order: -1; width: 100% !important; min-width: 100%; }
+            .master-data-scroll { overflow-x: auto; overflow-y: hidden; }
+        }
     </style>
     <script src="/nexus/common/apps-config.js?v=1.1.0"></script>
     <script src="/nexus/common/nexus-top.js?v=1.1.0"></script>
+    <script src="/nexus/common/nexus-ui-contract.js?v=1.0.0"></script>
     <style>:root{--nexus-top-height:44px}nexus-top{display:block;min-height:var(--nexus-top-height)}.nexus-top-fallback{height:var(--nexus-top-height);padding:0 14px;display:flex;align-items:center;gap:12px;background:#0b1021;color:#fff;font:12px Pretendard,"Noto Sans KR",sans-serif}.nexus-top-fallback strong{letter-spacing:.08em}.nexus-top-fallback span{color:#cbd5e1}.nexus-top-fallback button{margin-left:auto;border:1px solid #64748b;border-radius:6px;padding:5px 9px;background:transparent;color:#fff;cursor:pointer}body>#root>.h-screen{height:calc(100vh - var(--nexus-top-height))!important}</style>
   <link rel="icon" type="image/png" href="/nexus/assets/nexus-favicon.png">
 </head>
@@ -454,7 +468,7 @@
         });
 
         // ==========================================
-        // 🧩 [절대 수정 금지] Global Header (v3.3 Final)
+        // 🧩 Master app work header
         // ==========================================
         const GlobalHeader = ({ activeTab, itemCount, isProcessing, processMsg, onOpenSettings, onPush, onPull, onNavigate, showCloudActions = true }) => {
             const groups = [
@@ -493,11 +507,11 @@
             const handleLogoClick = (e) => { setSelectedGroup('common'); onNavigate(e, 'Dashboard.html', true); };
 
             return (
-                <div className="flex flex-col shrink-0 z-40 relative w-full shadow-sm bg-[#0B1021]">
-                    <header className="h-[52px] bg-[#0B1021] text-white flex justify-between px-6 border-b border-slate-800/80 relative z-20">
+                <div className="nexus-app-work-header flex flex-col shrink-0 z-40 relative w-full shadow-sm bg-[#0B1021]">
+                    <header className="nexus-app-work-header__bar h-[52px] bg-[#0B1021] text-white flex justify-between border-b border-slate-800/80 relative z-20">
                         <div className="flex items-center h-full">
                             <div className="flex items-center cursor-pointer group mr-10 h-full" onClick={handleLogoClick} title="통합 대시보드 및 공통 메뉴로 이동">
-                                <span className="font-black text-[15px] tracking-wide text-slate-100 mr-4">MASTER · 기초등록</span>
+                                <span className="font-black text-[15px] tracking-wide text-slate-100 mr-4">MASTER · {activeTab === 'partner-db' ? '거래처' : '상품'}</span>
                                 <div className="hidden">
                                     <div className="flex items-center">
                                         <span className="font-black text-[16px] leading-none text-indigo-400 tracking-widest uppercase mt-0.5">NEXES</span>
@@ -521,19 +535,8 @@
                         </div>
 
                         <div className="flex items-center gap-4 h-full">
-                            <div className="flex items-center bg-[#151B2B] rounded-lg border border-slate-700/50 h-9 px-3 shadow-inner gap-3">
-                                <div className="flex items-center justify-center" title={isProcessing ? processMsg : "시스템 정상 대기중"}>
-                                    {isProcessing ? (
-                                        <i className="fas fa-circle-notch fa-spin text-amber-500 text-[12px]"></i>
-                                    ) : (
-                                        <div className="relative flex h-2 w-2">
-                                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                                            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                                        </div>
-                                    )}
-                                </div>
-                                <div className="w-px h-3.5 bg-slate-700"></div>
-                                <div className="flex items-center gap-1.5 text-slate-300 cursor-help" title={`마스터 DB 기준 상품 수`}>
+                            <div className="nexus-density-secondary flex items-center bg-[#151B2B] rounded-lg border border-slate-700/50 h-9 px-3 shadow-inner">
+                                <div className="flex items-center gap-1.5 text-slate-300 cursor-help" title="마스터 DB 기준 상품 수">
                                     <SafeIcon name="database" size={10} className="text-slate-500" />
                                     <span className="text-[11px] font-mono font-bold tracking-tight">{itemCount ? itemCount.toLocaleString() : 0}</span>
                                 </div>
@@ -542,12 +545,12 @@
                             <div className="flex items-center gap-2">
                                 {showCloudActions && (
                                     <>
-                                        <button onClick={onPull} className="w-10 h-10 rounded-xl bg-[#151B2B] hover:bg-[#1E293B] flex items-center justify-center border border-slate-700 transition-colors text-indigo-400 shadow-sm" title="데이터 불러오기(Pull)"><SafeIcon name="cloud-download" size={18} /></button>
-                                        <button onClick={onPush} className="w-10 h-10 rounded-xl bg-[#151B2B] hover:bg-[#1E293B] flex items-center justify-center border border-slate-700 transition-colors text-indigo-400 shadow-sm" title="데이터 백업하기(Push)"><SafeIcon name="cloud-upload" size={18} /></button>
+                                        <button onClick={onPull} className="w-10 h-10 rounded-xl bg-[#151B2B] hover:bg-[#1E293B] flex items-center justify-center border border-slate-700 transition-colors text-indigo-400 shadow-sm" title="데이터 불러오기(Pull)" aria-label="클라우드 상품정보 불러오기"><SafeIcon name="cloud-download" size={18} /></button>
+                                        <button onClick={onPush} className="w-10 h-10 rounded-xl bg-[#151B2B] hover:bg-[#1E293B] flex items-center justify-center border border-slate-700 transition-colors text-indigo-400 shadow-sm" title="데이터 백업하기(Push)" aria-label="클라우드에 상품정보 반영"><SafeIcon name="cloud-upload" size={18} /></button>
                                         <div className="w-px h-6 bg-slate-700 mx-1"></div>
                                     </>
                                 )}
-                                <button onClick={onOpenSettings} className="w-10 h-10 rounded-xl bg-[#151B2B] hover:bg-[#1E293B] flex items-center justify-center border border-slate-700 transition-colors text-slate-400 hover:text-white shadow-sm" title="통합 환경설정 센터 열기"><SafeIcon name="settings" size={18} /></button>
+                                <button onClick={onOpenSettings} className="w-10 h-10 rounded-xl bg-[#151B2B] hover:bg-[#1E293B] flex items-center justify-center border border-slate-700 transition-colors text-slate-400 hover:text-white shadow-sm" title="Master 환경설정 열기" aria-label="Master 환경설정 열기"><SafeIcon name="settings" size={18} /></button>
                             </div>
                         </div>
                     </header>
@@ -1099,6 +1102,21 @@
                 }
             }, [masterRoute.mode]);
 
+            useEffect(() => {
+                const sendDensity = (density) => {
+                    const frame = document.getElementById('customerMasterFrame');
+                    if (!frame?.contentWindow) return;
+                    frame.contentWindow.postMessage({
+                        type: 'ONEAPP_NEXUS_DENSITY',
+                        density: density === 'compact' ? 'compact' : 'standard'
+                    }, window.location.origin);
+                };
+                const handleDensity = (event) => sendDensity(event.detail?.density);
+                window.addEventListener('nexus-density-change', handleDensity);
+                sendDensity(document.documentElement.dataset.nexusDensity);
+                return () => window.removeEventListener('nexus-density-change', handleDensity);
+            }, []);
+
             const discardAddUpdateAnalysis = () => {
                 setAddUpdateAnalysis(null);
                 setShowAddUpdateConfirm(false);
@@ -1349,7 +1367,7 @@
             }, [masterProducts, globalSearch, activeC1, activeC2, activeC3]);
 
             return (
-                <div className="h-screen w-full max-w-[1500px] mx-auto flex flex-col font-sans overflow-hidden bg-slate-100 relative shadow-2xl border-x border-slate-300 select-none">
+                <div className="nexus-app-shell h-screen w-full flex flex-col font-sans overflow-hidden bg-slate-100 relative select-none" data-nexus-ui-app="master-lookup">
                     {toastMsg && (
                         <div className="fixed bottom-10 right-10 z-[100] bg-slate-900 text-white px-6 py-3 rounded-xl shadow-2xl flex items-center gap-3 fade-in border border-slate-700">
                             <SafeIcon name="check-circle-2" size={18} className="text-emerald-400" />
@@ -1392,96 +1410,91 @@
                         showCloudActions={!isCustomerView}
                     />
 
-                    <nav className="bg-white border-b border-slate-200 px-6 pt-3 shrink-0" aria-label="기초등록 대상">
-                        <div className="flex gap-2" role="tablist" aria-label="상품 또는 거래처 선택">
+                    <nav className="nexus-target-tabs bg-white border-b border-slate-200 shrink-0" aria-label="기초등록 대상">
+                        <div className="flex h-full gap-2" role="tablist" aria-label="상품 또는 거래처 선택">
                             {[['products', '상품'], ['customers', '거래처']].map(([view, label]) => (
                                 <button key={view} type="button" role="tab" aria-selected={masterRoute.view === view} aria-current={masterRoute.view === view ? 'page' : undefined}
                                     onClick={() => selectMasterRoute({ view, mode: masterRoute.mode })}
-                                    className={`px-6 py-2.5 rounded-t-lg border-b-[3px] text-sm font-black focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 ${masterRoute.view === view ? 'border-indigo-600 text-indigo-700 bg-indigo-50/60' : 'border-transparent text-slate-500 hover:text-slate-800'}`}>
+                                    className={`nexus-target-tab px-6 rounded-t-lg border-b-[3px] text-sm font-black focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 ${masterRoute.view === view ? 'border-indigo-600 text-indigo-700 bg-indigo-50/60' : 'border-transparent text-slate-500 hover:text-slate-800'}`}>
                                     {label}
                                 </button>
                             ))}
                         </div>
                     </nav>
-                    <nav className="bg-slate-50 border-b border-slate-200 px-6 py-2 shrink-0" aria-label="관리 방식">
-                        <div className="flex gap-2" role="tablist" aria-label="목록 또는 일괄 관리 선택">
-                            {(isCustomerView ? [['list', '목록·조회'], ['batch', '일괄 관리']] : [['list', '목록·조회'], ['manage', '기초정보 관리']]).map(([mode, label]) => (
-                                <button key={mode} type="button" role="tab" aria-selected={masterRoute.mode === mode} aria-current={masterRoute.mode === mode ? 'page' : undefined}
-                                    onClick={(event) => mode === 'manage' ? handleNavigate(event, 'Item_manager.html', true) : selectMasterRoute({ view: masterRoute.view, mode })}
-                                    className={`px-4 py-2 rounded-lg border text-xs font-black focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 ${masterRoute.mode === mode ? 'bg-indigo-600 border-indigo-600 text-white shadow-sm' : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-100'}`}>
-                                    {label}
+                    <main className={`${isCustomerView ? 'flex' : 'hidden'} flex-1 flex-col overflow-hidden bg-slate-50`} aria-hidden={!isCustomerView}>
+                            <div className="nexus-work-tools flex items-center justify-between border-b border-slate-200 bg-white shrink-0">
+                                <span className="text-[12px] font-bold text-slate-500">거래처 {isBatchMode ? '일괄 관리' : '조회'}</span>
+                                <button type="button" onClick={() => selectMasterRoute({ view: 'customers', mode: isBatchMode ? 'list' : 'batch' })}
+                                    className="h-9 px-4 rounded-lg text-[12px] font-bold bg-white text-slate-700 hover:bg-slate-100 border border-slate-300 shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2">
+                                    {isBatchMode ? '조회로 돌아가기' : '일괄 관리'}
                                 </button>
-                            ))}
-                        </div>
-                    </nav>
-
-                    <main className={`${isCustomerView ? 'flex' : 'hidden'} flex-1 overflow-hidden bg-slate-50`} aria-hidden={!isCustomerView}>
+                            </div>
                             <iframe
                                 id="customerMasterFrame"
-                                src={`./partner_db.html?embedded=1&mode=${customerFrameInitialMode}&release=customer-completeness-021`}
+                                src={`./partner_db.html?embedded=1&mode=${customerFrameInitialMode}&release=customer-completeness-022`}
                                 className="w-full h-full border-0 bg-slate-50"
                                 title={isBatchMode ? '거래처 일괄 등록·수정' : '거래처 목록'}
-                                onLoad={(event) => event.currentTarget.contentWindow?.postMessage({ type: 'ONEAPP_MASTER_MODE', mode: masterRoute.mode }, window.location.origin)}
+                                onLoad={(event) => {
+                                    event.currentTarget.contentWindow?.postMessage({ type: 'ONEAPP_MASTER_MODE', mode: masterRoute.mode }, window.location.origin);
+                                    event.currentTarget.contentWindow?.postMessage({ type: 'ONEAPP_NEXUS_DENSITY', density: document.documentElement.dataset.nexusDensity === 'compact' ? 'compact' : 'standard' }, window.location.origin);
+                                }}
                             ></iframe>
                     </main>
                     <main className={`${isCustomerView ? 'hidden' : 'flex'} flex-1 flex-col overflow-hidden bg-slate-50 border-t border-slate-200`} aria-hidden={isCustomerView}>
-                        <div className="px-6 py-3 bg-white border-b border-slate-200 flex items-center justify-between shrink-0 z-10 shadow-sm">
-                            <div className="flex items-center gap-4">
-                                <h1 className="text-base font-black text-slate-800">{isBatchMode ? '상품 일괄 등록·수정' : '상품 목록'}</h1>
-                                <span className="text-[12px] font-bold text-slate-400">
-                                    총 <strong className="text-indigo-600">{Object.keys(masterProducts).length.toLocaleString()}</strong>건 데이터
-                                </span>
-                                {Object.keys(masterProducts).length === 0 && (
-                                    <span className="text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5">
-                                        최초 등록은 1차 미구현으로 차단됨
-                                    </span>
-                                )}
-                            </div>
-                            <div className="flex items-center gap-2">
-                                {!isBatchMode && (
-                                    <>
-                                        <button type="button" onClick={(e) => handleNavigate(e, 'Item_manager.html', true)} className="h-9 px-4 rounded-lg text-[12px] font-bold bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2">신규 등록</button>
-                                        <button type="button" onClick={(e) => handleNavigate(e, 'Item_manager.html', true)} className="h-9 px-4 rounded-lg text-[12px] font-bold bg-white text-slate-700 hover:bg-slate-100 border border-slate-300 shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2">단건 수정</button>
-                                    </>
-                                )}
-                                {isBatchMode && (
-                                    <>
-                                <select value="add-update" onChange={() => {}} className="h-9 px-3 rounded-lg text-[12px] font-bold bg-slate-100 text-slate-700 border border-slate-300 outline-none">
-                                    <option value="add-update">추가·갱신</option>
-                                    <option value="initial" disabled>최초 등록 · 1차 미구현</option>
-                                    <option value="replace" disabled>전체교체 · 1차 미구현</option>
-                                </select>
-                                <label className={`h-9 px-4 rounded-lg text-[12px] font-bold border transition-colors flex items-center shadow-sm ${Object.keys(masterProducts).length === 0 || isProcessing ? 'cursor-not-allowed bg-slate-100 text-slate-400 border-slate-200' : 'cursor-pointer bg-white text-slate-700 hover:bg-slate-100 border-slate-300'}`}>
-                                    <SafeIcon name="upload" size={14} className="mr-2 text-slate-500" /> 추가·갱신 Excel 비교
-                                    <input type="file" className="hidden" accept=".xlsx,.xls" onChange={handleExcelUpload} disabled={isProcessing || Object.keys(masterProducts).length === 0} />
-                                </label>
-                                {addUpdateAnalysis && !showAddUpdateConfirm && !showAddUpdateReview && (
-                                    <button onClick={() => setShowAddUpdateReview(true)} className="h-9 px-4 rounded-lg text-[12px] font-black bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm">
-                                        검토 이어보기
-                                    </button>
-                                )}
-                                    </>
-                                )}
-                                {!isBatchMode && (
-                                <div className="relative w-64 h-9 ml-2">
-                                    <input type="text" placeholder="마스터 DB 검색..." value={globalSearch} onChange={(e) => setGlobalSearch(e.target.value)} className="w-full h-full pl-9 pr-4 bg-slate-100 border-none rounded-lg text-[13px] outline-none focus:ring-1 focus:ring-indigo-400 transition-all shadow-inner" />
+                        <div className="nexus-work-tools master-work-tools bg-white border-b border-slate-200 flex items-center justify-between shrink-0 z-10 shadow-sm">
+                            {!isBatchMode && (
+                                <div className="master-work-search relative flex-1 h-9">
+                                    <input type="text" aria-label="상품 통합검색" placeholder="상품코드, 상품명, 규격 통합검색" value={globalSearch} onChange={(e) => setGlobalSearch(e.target.value)} className="w-full h-full pl-9 pr-4 bg-slate-100 border-none rounded-lg text-[13px] outline-none focus:ring-1 focus:ring-indigo-400 transition-all shadow-inner" />
                                     <SafeIcon name="search" size={14} className="absolute left-3 top-2.5 text-slate-400 pointer-events-none" />
                                 </div>
+                            )}
+                            <span className="text-[12px] font-bold text-slate-500 whitespace-nowrap">
+                                {isBatchMode ? '상품 일괄 관리' : `결과 ${displayRows.length.toLocaleString()}건`} · 전체 {Object.keys(masterProducts).length.toLocaleString()}건
+                            </span>
+                            {Object.keys(masterProducts).length === 0 && (
+                                <span className="nexus-density-secondary text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5 whitespace-nowrap">
+                                    최초 등록은 별도 승인 전까지 사용할 수 없습니다.
+                                </span>
+                            )}
+                            <div className="flex items-center gap-2 ml-auto">
+                                {!isBatchMode ? (
+                                    <>
+                                        <button type="button" onClick={() => selectMasterRoute({ view: 'products', mode: 'batch' })} className="h-9 px-4 rounded-lg text-[12px] font-bold bg-white text-slate-700 hover:bg-slate-100 border border-slate-300 shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2">일괄 관리</button>
+                                        <button type="button" onClick={(e) => handleNavigate(e, 'Item_manager.html', true)} className="h-9 px-4 rounded-lg text-[12px] font-bold bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2">+ 상품 등록</button>
+                                    </>
+                                ) : (
+                                    <>
+                                        <button type="button" onClick={() => selectMasterRoute({ view: 'products', mode: 'list' })} className="h-9 px-4 rounded-lg text-[12px] font-bold bg-white text-slate-700 hover:bg-slate-100 border border-slate-300 shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2">조회로 돌아가기</button>
+                                        <select aria-label="일괄 관리 방식" value="add-update" onChange={() => {}} className="h-9 px-3 rounded-lg text-[12px] font-bold bg-slate-100 text-slate-700 border border-slate-300 outline-none">
+                                            <option value="add-update">추가·갱신</option>
+                                            <option value="initial" disabled>최초 등록 · 미지원</option>
+                                            <option value="replace" disabled>전체교체 · 미지원</option>
+                                        </select>
+                                        <label title={Object.keys(masterProducts).length === 0 ? '기존 Master가 0건이면 추가·갱신을 사용할 수 없습니다.' : '추가·갱신 Excel을 선택합니다.'} className={`h-9 px-4 rounded-lg text-[12px] font-bold border transition-colors flex items-center shadow-sm ${Object.keys(masterProducts).length === 0 || isProcessing ? 'cursor-not-allowed bg-slate-100 text-slate-400 border-slate-200' : addUpdateAnalysis ? 'cursor-pointer bg-white text-slate-700 hover:bg-slate-100 border-slate-300' : 'cursor-pointer bg-indigo-600 text-white hover:bg-indigo-700 border-indigo-600'}`}>
+                                            <SafeIcon name="upload" size={14} className="mr-2" /> Excel 비교
+                                            <input type="file" className="hidden" accept=".xlsx,.xls" onChange={handleExcelUpload} disabled={isProcessing || Object.keys(masterProducts).length === 0} />
+                                        </label>
+                                        {addUpdateAnalysis && !showAddUpdateConfirm && !showAddUpdateReview && (
+                                            <button onClick={() => setShowAddUpdateReview(true)} className="h-9 px-4 rounded-lg text-[12px] font-black bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm">검토 이어보기</button>
+                                        )}
+                                    </>
                                 )}
                             </div>
                         </div>
 
-                        <div className={`${isBatchMode ? 'flex' : 'hidden'} flex-1 items-center justify-center bg-slate-100 p-8`}>
-                            <div className="max-w-xl rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm">
-                                <SafeIcon name="file-spreadsheet" size={32} className="mx-auto mb-4 text-indigo-500" />
-                                <h2 className="text-lg font-black text-slate-800">상품 일괄 등록·수정</h2>
-                                <p className="mt-2 text-sm leading-6 text-slate-500">상단의 Excel 비교에서 추가·갱신 대상을 분석한 뒤 선택, 검증, 적용할 수 있습니다. 진행 중인 검토는 목록 탭을 오가도 유지됩니다.</p>
+                        <div className={`${isBatchMode ? 'flex' : 'hidden'} flex-1 items-start bg-slate-100 nexus-app-gutter py-4`}>
+                            <div className="w-full rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+                                <div className="flex items-center gap-3">
+                                    <SafeIcon name="file-spreadsheet" size={24} className="text-indigo-500" />
+                                    <h2 className="text-base font-black text-slate-800">상품 추가·갱신 비교</h2>
+                                </div>
+                                <p className="nexus-density-secondary mt-2 text-sm leading-6 text-slate-500">상단의 Excel 비교에서 대상을 분석한 뒤 선택, 검증, 적용합니다. 조회 상태로 돌아가도 진행 중인 검토는 유지됩니다.</p>
                             </div>
                         </div>
 
                         <div className={`${isBatchMode ? 'hidden' : 'flex'} flex-1 flex-col overflow-hidden`}>
                         {/* 💡 [복구됨] 3단 카테고리 레이아웃 원본 복구 */}
-                        <div className="flex items-end px-4 pt-3 border-b border-slate-200 bg-slate-200/50 shrink-0 h-[50px]">
+                        <div className="master-category-tabs flex items-end nexus-app-gutter pt-3 border-b border-slate-200 bg-slate-200/50 shrink-0 h-[50px]">
                             <div className="flex overflow-x-auto custom-scrollbar h-full items-end w-full gap-1">
                                 {c1List.map(c1 => (
                                     <button key={c1.code} onClick={() => { setActiveC1(c1.code); setActiveC2(''); setActiveC3(''); setGlobalSearch(''); }} className={`px-5 py-2.5 text-[13px] font-bold rounded-t-lg transition-colors border-b-[3px] ${activeC1 === c1.code ? 'border-indigo-600 text-indigo-700 bg-white shadow-[0_-2px_5px_rgba(0,0,0,0.02)] z-10' : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-300/50'}`}>
@@ -1491,8 +1504,9 @@
                             </div>
                         </div>
 
-                        <div className="flex-1 flex overflow-hidden">
-                            <div className="w-[180px] bg-white border-r border-slate-200 overflow-y-auto py-2 shrink-0 custom-scrollbar z-10 shadow-[2px_0_10px_rgba(0,0,0,0.02)]">
+                        <div className="master-data-scroll flex-1">
+                        <div className="master-data-workspace min-h-full flex">
+                            <div className="master-data-sidebar w-[180px] bg-white border-r border-slate-200 overflow-y-auto py-2 shrink-0 custom-scrollbar z-10 shadow-[2px_0_10px_rgba(0,0,0,0.02)]">
                                 {c2List.map(c2 => (
                                     <button key={c2.code} onClick={() => { setActiveC2(c2.code); setActiveC3(''); setGlobalSearch(''); }} className={`w-full text-left px-5 py-3 text-[12px] font-bold transition-all border-l-4 ${activeC2 === c2.code ? 'bg-indigo-50/50 text-indigo-700 border-indigo-600' : 'border-transparent text-slate-600 hover:bg-slate-50'}`}>
                                         {c2.name}
@@ -1500,7 +1514,7 @@
                                 ))}
                             </div>
 
-                            <div className="w-[200px] bg-slate-50 border-r border-slate-200 flex flex-col overflow-hidden shrink-0 z-10">
+                            <div className="master-data-sidebar w-[200px] bg-slate-50 border-r border-slate-200 flex flex-col overflow-hidden shrink-0 z-10">
                                 <div className="px-4 py-3 border-b border-slate-200 bg-white shrink-0">
                                     <h3 className="text-[12px] font-black text-slate-800">소분류 (3차)</h3>
                                 </div>
@@ -1530,13 +1544,13 @@
                                     </div>
                                 )}
                                 <div className="flex-1 overflow-auto custom-scrollbar relative">
-                                    <table className="w-full text-left text-[12px] whitespace-nowrap">
+                                    <table className="nexus-data-table w-full text-left text-[12px] whitespace-nowrap">
                                         <thead className="bg-slate-50 sticky top-0 z-10 border-b border-slate-200 shadow-sm">
                                             <tr>
                                                 <th className="py-2.5 px-4 w-20 text-slate-600">코드</th>
                                                 <th className="py-2.5 px-4 text-slate-600">품목명</th>
                                                 <th className="py-2.5 px-3 text-slate-600">규격</th>
-                                                {visMasterCols.map(h => <th key={h} className="py-2.5 px-3 text-slate-600">{h}</th>)}
+                                                {visMasterCols.map(h => <th key={h} className={`py-2.5 px-3 text-slate-600 ${NUMERIC_HEADERS.includes(h) ? 'text-right' : 'text-left'}`}>{h}</th>)}
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-100">
@@ -1544,10 +1558,10 @@
                                                 const code = safeStr(row['코드'] || row['품목코드'], `key-${idx}`);
                                                 return (
                                                     <tr key={code} className="hover:bg-slate-50 transition-colors">
-                                                        <td className="py-2 px-4 font-mono text-slate-400">{safeStr(row['코드'] || row['품목코드'], '-')}</td>
-                                                        <td className="py-2 px-4 font-bold">{safeStr(row['품목명'], '-')}</td>
-                                                        <td className="py-2 px-3 text-slate-500">{safeStr(row['규격'], '-')}</td>
-                                                        {visMasterCols.map(h => <td key={h} className="py-2 px-3 text-slate-500">{safeStr(row[h], '-')}</td>)}
+                                                        <td className="py-2 px-4 font-mono text-slate-400">{safeStr(row['코드'] || row['품목코드'], '—')}</td>
+                                                        <td className="py-2 px-4 font-bold">{safeStr(row['품목명'], '—')}</td>
+                                                        <td className="py-2 px-3 text-slate-500">{safeStr(row['규격'], '—')}</td>
+                                                        {visMasterCols.map(h => <td key={h} className={`py-2 px-3 text-slate-500 ${NUMERIC_HEADERS.includes(h) ? 'text-right tabular-nums' : 'text-left'}`}>{safeStr(row[h], '—')}</td>)}
                                                     </tr>
                                                 );
                                             }) : (
@@ -1559,6 +1573,7 @@
                                     </table>
                                 </div>
                             </div>
+                        </div>
                         </div>
                         </div>
                     </main>

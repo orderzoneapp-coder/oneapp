@@ -127,6 +127,12 @@ The current application reports only its own save, synchronization, warning, and
 
 Every consumer reserves `--nexus-top-height` and includes a light-DOM fallback. Failure to load or initialize the header must leave the application boot path independent and show only the retryable NEXUS fallback. The complete event and API examples are documented in `nexus/common/README.md` and registered as the `nexus-header` shared contract in `app-manifest.json`.
 
+### 5.2.1 NEXUS application UI density
+
+`nexus/common/nexus-app-ui.css` is the declarative application-density interface under the common header. It maps `data-nexus-density` to the application work header, target tabs, work tools, table header, table rows, and content gutter without reinitializing the application or reading and writing business state. `nexus/common/nexus-ui-contract.js` is the code registry for application rollout status, the nine preserved state identifiers, and registered exceptions; `nexus/common/NEXUS_APP_UI_CONTRACT.md` is the matching operator and regression record.
+
+Master is the first pilot. `Master.html`, its embedded `partner_db.html`, and `Item_manager.html` consume the contract. Lookup is the default state and is not rendered as a tab; product/customer are target tabs, while new registration and batch management are work-entry actions. Product and customer tables remain horizontally scrollable data structures on narrow screens instead of converting to cards. The embedded customer workbench receives only a density message and stays mounted, so target, search, filters, row focus, scroll, drafts, and opened work remain in place. MerchOps, DataOps, ORDER Q, and Smart Parser retain their current UI as registered staged exceptions until the preceding pilot regression gate passes.
+
 ### 5.3 Shared browser state
 
 The current applications share the browser database `MerchOpsDB` and a set of `localStorage` keys.

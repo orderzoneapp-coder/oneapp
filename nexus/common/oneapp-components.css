@@ -6,9 +6,9 @@
 }
 
 .oneapp-title {
-  margin: 3px 0 0;
+  margin: 0;
   color: var(--oneapp-text);
-  font-size: 22px;
+  font-size: 18px;
   line-height: 1.25;
   font-weight: 800;
   letter-spacing: -.025em;
@@ -126,7 +126,7 @@
 }
 
 .oneapp-tab-row {
-  min-height: 41px;
+  min-height: var(--nexus-target-tab-height, 42px);
   display: flex;
   align-items: flex-end;
   gap: 22px;
@@ -134,7 +134,7 @@
 
 .oneapp-tab {
   position: relative;
-  min-height: 41px;
+  min-height: var(--nexus-target-tab-height, 42px);
   display: inline-flex;
   align-items: center;
   padding: 0 2px;
@@ -170,11 +170,11 @@
 }
 
 .oneapp-subtabs .oneapp-tab-row {
-  min-height: 38px;
+  min-height: var(--nexus-target-tab-height, 42px);
 }
 
 .oneapp-subtabs .oneapp-tab {
-  min-height: 38px;
+  min-height: var(--nexus-target-tab-height, 42px);
   font-size: 12px;
 }
 
@@ -340,4 +340,8 @@
     gap: 18px;
     overflow-x: auto;
   }
+}
+
+html[data-nexus-density="compact"] .oneapp-description {
+  display: none;
 }

@@ -163,6 +163,7 @@
       ],
       "sharedContracts": [
         "nexus-header",
+        "nexus-app-ui",
         "product-master",
         "change-history"
       ]
@@ -180,6 +181,7 @@
       ],
       "sharedContracts": [
         "nexus-header",
+        "nexus-app-ui",
         "product-master",
         "change-history"
       ]
@@ -335,6 +337,31 @@
         "statusApi": "window.NEXUS_TOP.reportStatus",
         "leaveGuardEvent": "nexus:before-navigate",
         "preferencePrefix": "oneapp.nexus.v1."
+      }
+    },
+    {
+      "id": "nexus-app-ui",
+      "owner": "nexus",
+      "consumers": [
+        "Master.html",
+        "Item_manager.html",
+        "partner_db.html"
+      ],
+      "schemaVersion": "NEXUS_APP_UI_V1",
+      "applicationStatus": {
+        "master-lookup": "pilot",
+        "item-manager": "pilot",
+        "merchops": "planned",
+        "dataops": "planned",
+        "orderq": "planned",
+        "smart-parser": "planned"
+      },
+      "resources": {
+        "styles": "nexus/common/nexus-app-ui.css",
+        "registry": "nexus/common/nexus-ui-contract.js",
+        "documentation": "nexus/common/NEXUS_APP_UI_CONTRACT.md",
+        "densityAttribute": "data-nexus-density",
+        "densityEvent": "nexus-density-change"
       }
     },
     {

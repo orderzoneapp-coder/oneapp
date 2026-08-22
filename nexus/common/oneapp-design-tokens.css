@@ -18,9 +18,23 @@
   --oneapp-danger-soft: #fef2f2;
   --oneapp-disabled: #94a3b8;
   --oneapp-radius: 8px;
-  --oneapp-content-width: 1320px;
   --oneapp-shadow-popover: 0 12px 32px rgb(15 23 42 / 14%);
+  --nexus-content-gutter: 24px;
+  --nexus-app-header-height: 56px;
+  --nexus-target-tab-height: 42px;
+  --nexus-work-tools-height: 50px;
+  --nexus-table-header-height: 40px;
+  --nexus-table-row-height: 48px;
   color-scheme: light;
+}
+
+html[data-nexus-density="compact"] {
+  --nexus-content-gutter: 12px;
+  --nexus-app-header-height: 42px;
+  --nexus-target-tab-height: 36px;
+  --nexus-work-tools-height: 42px;
+  --nexus-table-header-height: 34px;
+  --nexus-table-row-height: 36px;
 }
 
 html[data-nexus-theme="dark"] {

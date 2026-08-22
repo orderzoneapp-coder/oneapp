@@ -26,7 +26,7 @@ import {
   missingCustomerFields
 } from './customer-completeness.js?v=0.1.0';
 
-const ROW_HEIGHT = window.matchMedia('(max-width: 820px)').matches ? 86 : 74;
+let rowHeight = document.documentElement.dataset.nexusDensity === 'compact' ? 36 : 48;
 const BUFFER_ROWS = 8;
 const state = {
   customers: [], filtered: [], importBatch: null, importRecords: [],
@@ -106,13 +106,13 @@ function renderWindow() {
   const count = state.filtered.length;
   elements.empty.hidden = count > 0;
   elements.viewport.hidden = count === 0;
-  elements.spacer.style.height = `${count * ROW_HEIGHT}px`;
-  const start = Math.max(0, Math.floor(elements.viewport.scrollTop / ROW_HEIGHT) - BUFFER_ROWS);
-  const visible = Math.ceil(elements.viewport.clientHeight / ROW_HEIGHT) + BUFFER_ROWS * 2;
+  elements.spacer.style.height = `${count * rowHeight}px`;
+  const start = Math.max(0, Math.floor(elements.viewport.scrollTop / rowHeight) - BUFFER_ROWS);
+  const visible = Math.ceil(elements.viewport.clientHeight / rowHeight) + BUFFER_ROWS * 2;
   const end = Math.min(count, start + visible);
   elements.spacer.innerHTML = state.filtered.slice(start, end).map((customer, offset) => {
     const [label, className] = qualityLabel(customer);
-    return `<button class="cm-row" type="button" data-id="${escapeHtml(customer.customerId)}" style="top:${(start + offset) * ROW_HEIGHT}px">
+    return `<button class="cm-row" type="button" data-id="${escapeHtml(customer.customerId)}" style="top:${(start + offset) * rowHeight}px">
       <span>${escapeHtml(customer.customerCode || '-')}</span>
       <span><strong>${escapeHtml(customer.customerName)}</strong><small>${escapeHtml(customer.representativeName || customer.contactName || '')}</small></span>
       <span><strong>${escapeHtml(customer.phone || customer.mobile || '-')}</strong><small>${escapeHtml([customer.address, customer.addressDetail].filter(Boolean).join(' '))}</small></span>
@@ -711,6 +711,18 @@ elements.issueGrid.addEventListener('paste', event => {
 });
 
 elements.viewport.addEventListener('scroll', renderWindow, { passive: true });
+window.addEventListener('oneapp:nexus-density-applied', event => {
+  const nextHeight = event.detail?.density === 'compact' ? 36 : 48;
+  if (nextHeight === rowHeight) return;
+  const previousHeight = rowHeight;
+  const anchorIndex = Math.floor(elements.viewport.scrollTop / previousHeight);
+  const anchorOffset = elements.viewport.scrollTop % previousHeight;
+  const focusedCustomerId = document.activeElement?.dataset?.id || '';
+  rowHeight = nextHeight;
+  elements.viewport.scrollTop = (anchorIndex * rowHeight) + Math.min(anchorOffset, rowHeight - 1);
+  renderWindow();
+  if (focusedCustomerId) elements.spacer.querySelector(`[data-id="${CSS.escape(focusedCustomerId)}"]`)?.focus({ preventScroll: true });
+});
 elements.search.addEventListener('input', applyFilter);
 elements.filter.addEventListener('change', async () => {
   state.summaryFilter = elements.filter.value === 'ALL' ? 'ACTIVE_ALL' : 'NONE';
