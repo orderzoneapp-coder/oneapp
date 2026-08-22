@@ -6,7 +6,7 @@ import path from "node:path";
 
 const ROOT = process.cwd();
 const read = (name) => fs.readFileSync(path.join(ROOT, name), "utf8");
-const navigationFiles = ["Master.html", "Item_manager.html", "dashboard.html"];
+const navigationFiles = ["Master.html", "dashboard.html"];
 
 const expectedRoutes = [
   {
@@ -48,14 +48,15 @@ for (const name of navigationFiles) {
 const master = read("Master.html");
 const itemManager = read("Item_manager.html");
 const dashboard = read("dashboard.html");
-assert.match(master, /Master DB \[v3\.6 AppRoutes\]/);
+assert.match(master, /<title>기초등록<\/title>/);
 assert.match(master, />v3\.6<\/span>/);
-assert.match(itemManager, /Item Manager \[v3\.6 AppRoutes\]/);
-assert.match(itemManager, />v3\.6<\/span>/);
+assert.match(itemManager, /<title>상품 기초정보 관리<\/title>/);
+assert.match(itemManager, /<nexus-top app-id="master"><\/nexus-top>/);
+assert.match(itemManager, /\/nexus\/common\/apps-config\.js\?v=1\.0\.0/);
+assert.match(itemManager, /\/nexus\/common\/nexus-top\.js\?v=1\.0\.0/);
+assert.doesNotMatch(itemManager, /\{ id: 'pipeline'|\{ id: 'parser'|\{ id: 'inventory'/, "Item Manager must use the shared NEXUS header instead of a duplicate app shortcut menu");
 assert.match(dashboard, /Dashboard \[v2\.1 AppRoutes\]/);
 assert.match(dashboard, />v2\.1<\/span>/);
-assert.doesNotMatch(itemManager, /handleNavigate\(null, 'Pipeline\.html'\)/, "Item Manager queue completion must return to MerchOps");
-assert.equal((itemManager.match(/handleNavigate\(null, 'MerchOps\.html'\)/g) || []).length, 2);
 
 const publicOrderQ = read("orders.html");
 const compatibilityOrderQ = read("orderops_list.html");
@@ -73,6 +74,7 @@ for (const [name, source] of [
 
 const nexusApps = [
   ["Master.html", "master"],
+  ["Item_manager.html", "master"],
   ["MerchOps.html", "merchops"],
   ["SmartParser.html", "orderin"],
   ["DataOps.html", "dataops"],
