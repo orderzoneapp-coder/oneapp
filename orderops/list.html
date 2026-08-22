@@ -1836,12 +1836,13 @@
     }
 
   </style>
-  <script src="/nexus/common/apps-config.js?v=1.0.0"></script>
-  <script src="/nexus/common/nexus-top.js?v=1.0.0"></script>
+  <style>:root{--nexus-top-height:44px}nexus-top{display:block;min-height:var(--nexus-top-height)}.nexus-top-fallback{height:var(--nexus-top-height);padding:0 14px;display:flex;align-items:center;gap:12px;background:#0b1021;color:#fff;font:12px Pretendard,"Noto Sans KR",sans-serif}.nexus-top-fallback strong{letter-spacing:.08em}.nexus-top-fallback span{color:#cbd5e1}.nexus-top-fallback button{margin-left:auto;border:1px solid #64748b;border-radius:6px;padding:5px 9px;background:transparent;color:#fff;cursor:pointer}</style>
+  <script src="/nexus/common/apps-config.js?v=1.1.0"></script>
+  <script src="/nexus/common/nexus-top.js?v=1.1.0"></script>
   <link rel="icon" type="image/png" href="/nexus/assets/nexus-favicon.png">
 </head>
 <body>
-  <nexus-top app-id="orderq"></nexus-top>
+  <nexus-top app-id="orderq"><div class="nexus-top-fallback" role="status"><strong>NEXUS</strong><span>NEXUS 메뉴를 불러오지 못했습니다.</span><button type="button" onclick="window.location.reload()">재시도</button></div></nexus-top>
   <header class="global-header">
     <div class="brand" aria-label="ORDER Q 출고관리"><span class="brand-logo-frame"><img class="brand-logo" src="assets/order-q-logo.png" alt="ORDER Q"></span><span class="brand-divider" aria-hidden="true"></span><strong class="brand-product">출고관리</strong><span class="brand-badge">v1.63</span></div>
     <div class="header-actions">
@@ -2609,6 +2610,18 @@
 
       function setSystemMessage(message) {
         elements.systemMessage.textContent = message;
+        if (/(저장|클라우드|복구|revision|동기화)/i.test(message)) {
+          const failed = /(실패|오류|차단)/.test(message);
+          const completed = !failed && /(완료|준비 완료|revision \d+)/.test(message);
+          const waiting = !failed && !completed && /(대기|확인)/.test(message);
+          window.NEXUS_TOP?.reportStatus({
+            appId: "orderq",
+            taskId: "orderq-storage",
+            level: failed ? "error" : completed ? "normal" : waiting ? "warning" : "progress",
+            active: !completed,
+            message: message
+          });
+        }
       }
 
       async function sha256Hex(value) {

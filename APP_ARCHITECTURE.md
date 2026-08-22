@@ -117,7 +117,17 @@ Production files must not be reorganized into folders without first updating and
 - navigation regression tests;
 - external bookmarks or operational links where applicable.
 
-### 5.2 Shared browser state
+### 5.2 NEXUS common header
+
+`nexus/common/nexus-top.js` is the shared `<nexus-top>` web component. `nexus/common/apps-config.js` is the single runtime mapping from application IDs to the four work groups. The default group order is Shipping (`출고관리`), Inventory (`재고관리`), Pricing (`시세관리`), then Foundation (`기초등록`). Display names and filenames are not app identity contracts.
+
+Header preferences are local display state under the `oneapp.nexus.v1.` prefix. Work-group order and visibility are stored separately from per-application favorites and hidden state. A hidden current work group is rendered temporarily without changing the stored preference.
+
+The current application reports only its own save, synchronization, warning, and error state through `window.NEXUS_TOP.reportStatus`. Concurrent signals use the fixed priority `error > warning > progress > normal`; snapshots from other applications are historical and must include their last-check time rather than appear live. `nexus:before-navigate` is the cancelable leave-guard event owned by the current application.
+
+Every consumer reserves `--nexus-top-height` and includes a light-DOM fallback. Failure to load or initialize the header must leave the application boot path independent and show only the retryable NEXUS fallback. The complete event and API examples are documented in `nexus/common/README.md` and registered as the `nexus-header` shared contract in `app-manifest.json`.
+
+### 5.3 Shared browser state
 
 The current applications share the browser database `MerchOpsDB` and a set of `localStorage` keys.
 
@@ -162,7 +172,7 @@ It must:
 6. include a rollback plan;
 7. confirm production behavior after deployment.
 
-### 5.3 Cloud synchronization
+### 5.4 Cloud synchronization
 
 `code.gs` exposes the following current API actions:
 
@@ -207,7 +217,7 @@ Changing any action name, payload shape, response shape, authentication rule, or
 - backup and restore validation;
 - rollback procedures.
 
-### 5.4 Shared engine status
+### 5.5 Shared engine status
 
 `coreEngine.js` defines the intended ONEAPP shared modules:
 
@@ -235,7 +245,7 @@ Treat `coreEngine.js` as the intended shared contract, but do not remove duplica
 
 A shared-engine consolidation must not be performed as incidental refactoring during an unrelated feature or bug fix.
 
-### 5.5 Client-side safety baseline
+### 5.6 Client-side safety baseline
 
 The master Excel workflow in `settings.html` uses the shared core engine and applies these controls before production data changes:
 
