@@ -1403,7 +1403,7 @@
                     <main className={`${isCustomerView ? 'flex' : 'hidden'} flex-1 overflow-hidden bg-slate-50`} aria-hidden={!isCustomerView}>
                             <iframe
                                 id="customerMasterFrame"
-                                src={`./partner_db.html?embedded=1&mode=${customerFrameInitialMode}&release=customer-groups-020`}
+                                src={`./partner_db.html?embedded=1&mode=${customerFrameInitialMode}&release=customer-completeness-021`}
                                 className="w-full h-full border-0 bg-slate-50"
                                 title={isBatchMode ? '거래처 일괄 등록·수정' : '거래처 목록'}
                                 onLoad={(event) => event.currentTarget.contentWindow?.postMessage({ type: 'ONEAPP_MASTER_MODE', mode: masterRoute.mode }, window.location.origin)}

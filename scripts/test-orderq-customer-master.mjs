@@ -5,6 +5,7 @@ import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
 import { V9_STORE_DEFINITIONS } from '../orderq/orderq-v9-contracts.js';
 import { ORDERQ_DB_VERSION, V10_STORE_DEFINITIONS } from '../orderq/orderq-v10-contracts.js';
+import { customerDisplayStatus, isMissingCustomerValue, missingCustomerFields } from '../orderq/customer-completeness.js';
 
 const read = path => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
 const [
@@ -75,14 +76,14 @@ assert.match(ui, /getLatestCustomerSourceImportWork/, 'Pending Excel work must r
 assert.match(ui, /importStatusFilter: 'ISSUES'/, 'Workbench must default to unresolved customer rows');
 assert.match(html, /erpCustomerExcelFile/);
 assert.match(html, /거래처 DB/);
-assert.match(html, /customer-master-ui\.js\?v=0\.20\.0/, 'Customer Master entry module must invalidate the deployed cache');
+assert.match(html, /customer-master-ui\.js\?v=0\.21\.0/, 'Customer Master entry module must invalidate the deployed cache');
 assert.match(ui, /async function initializeCustomerMaster\(\) \{\s+const pending = await getLatestCustomerSourceImportWork\(\)/, 'Saved Excel work must render before Cloud Master synchronization');
 assert.match(ui, /await reload\(\);[\s\S]*ensureCustomerMasterReady/, 'Local Customer Master must render before Cloud synchronization');
 assert.match(ui, /fallbackFileHash/, 'Excel import must continue with a deterministic file hash when Web Crypto stalls');
 assert.match(ui, /chunkSize: 50/, 'Excel import must persist visible progress in small chunks');
-assert.match(html, /customer-master\.css\?v=0\.18\.0/, 'Customer Master Workbench styles must invalidate the deployed cache');
-assert.match(html, /Master\.html\?view=customers&mode=\$\{initialCustomerMasterMode\}&release=customer-groups-020/, 'Standalone route must invalidate the cached Master shell');
-assert.match(masterShell, /partner_db\.html\?embedded=1&mode=\$\{customerFrameInitialMode\}&release=customer-groups-020/, 'Master shell must invalidate the cached customer iframe');
+assert.match(html, /customer-master\.css\?v=0\.19\.0/, 'Customer Master Workbench styles must invalidate the deployed cache');
+assert.match(html, /Master\.html\?view=customers&mode=\$\{initialCustomerMasterMode\}&release=customer-completeness-021/, 'Standalone route must invalidate the cached Master shell');
+assert.match(masterShell, /partner_db\.html\?embedded=1&mode=\$\{customerFrameInitialMode\}&release=customer-completeness-021/, 'Master shell must invalidate the cached customer iframe');
 assert.match(ui, /customer-master\.js\?v=0\.18\.0/, 'Customer Master Workbench service must invalidate the deployed cache');
 assert.doesNotMatch(html, /문제 거래처만 보기/);
 assert.match(ui, /data-import-status/, 'Import counts must act as status filters');
@@ -99,18 +100,35 @@ assert.match(ui, /input\.value = ''/, 'Excel input must reset so the same file c
 assert.match(ui, /findHeaderRow[\s\S]*아이디와 이름\(거래처명\) 열을 찾을 수 없습니다/, 'Source import must validate ERP and SHOP headers');
 assert.match(service, /orderq-db\.js\?v=0\.16\.0/, 'Customer Master must load the v11 DB module URL');
 assert.match(css, /\.cm-viewport/);
-assert.match(html, /data-customer-summary-filter="ALL"/);
+assert.match(html, /data-customer-summary-filter="ACTIVE_ALL"/);
 assert.match(html, /data-customer-summary-filter="COMPLETE"[\s\S]*정보 완료/);
 assert.match(html, /id="customerGroup1Filter"[\s\S]*id="customerGroup2Filter"[\s\S]*id="customerManagerFilter"/);
 assert.match(html, /<span>그룹1<\/span><span>그룹2<\/span>/, 'Customer list must expose both group levels');
 assert.match(ui, /customer\.group2Name \|\| '-'/, 'Customer rows must render group2');
 assert.match(ui, /group1 === 'ALL'[\s\S]*group2 === 'ALL'/, 'Group1 and Group2 filters must combine with AND');
 assert.match(html, /id="customerIssueGrid"/);
-assert.match(ui, /state\.summaryFilter === 'UNVERIFIED'/, 'Information supplement card must switch to the Excel editor');
+assert.match(ui, /state\.summaryFilter === 'INCOMPLETE'/, 'Information supplement card must switch to the Excel editor');
 assert.match(ui, /const ISSUE_FIELDS = Object\.freeze\(\['customerName', 'address', 'mobile'\]\)/, 'Only business name, address and mobile are directly editable');
 assert.match(ui, /ArrowDown[\s\S]*ArrowUp[\s\S]*ArrowLeft[\s\S]*ArrowRight/, 'Excel editor must support keyboard cell navigation');
 assert.match(ui, /clipboardData[\s\S]*split\('\\t'\)/, 'Excel editor must support multi-cell paste');
 assert.match(ui, /await syncAndReload\(\)/, 'Issue edits must synchronize with Cloud after saving');
+assert.equal(isMissingCustomerValue(''), true);
+assert.equal(isMissingCustomerValue('   '), true);
+assert.equal(isMissingCustomerValue('-'), true);
+assert.equal(isMissingCustomerValue('없음'), true);
+assert.equal(isMissingCustomerValue('010-0000-0000'), false, 'Mobile requires presence only');
+assert.deepEqual(missingCustomerFields({ customerName: '상호', address: '-', mobile: '' }).map(([field]) => field), ['address', 'mobile']);
+assert.equal(customerDisplayStatus({ status: 'ACTIVE', qualityStatus: 'VERIFIED', customerName: '상호', address: '주소', mobile: '010' }), 'COMPLETE');
+assert.equal(customerDisplayStatus({ status: 'ACTIVE', qualityStatus: 'VERIFIED', customerName: '상호', address: '', mobile: '010' }), 'INCOMPLETE');
+assert.equal(customerDisplayStatus({ status: 'ACTIVE', qualityStatus: 'DUPLICATE_CANDIDATE', customerName: '', address: '', mobile: '' }), 'DUPLICATE_CANDIDATE');
+for (const customer of [
+  { status: 'INACTIVE', qualityStatus: 'VERIFIED' },
+  { status: 'DELETED', qualityStatus: 'VERIFIED' },
+  { status: 'ACTIVE', qualityStatus: 'SUPERSEDED' }
+]) assert.equal(customerDisplayStatus(customer), 'EXCLUDED');
+assert.match(ui, /state\.issueErrors\.set\(customerId/, 'Failed issue rows must retain row-level errors');
+assert.match(css, /html\.cm-embedded body\.customer-master-page[^{]*\{[^}]*overflow: hidden/, 'Embedded list must remove page scrolling');
+assert.match(css, /\.cm-issue-grid thead th \{ position: sticky/, 'Issue grid headers must remain fixed');
 
 assert.doesNotMatch(intakeEngine, /if \(!customer\) throw new Error\('ORDERQ_INTAKE_CUSTOMER_REQUIRED'\)/);
 assert.match(intakeEngine, /rematchExtractedLinesForCustomer/);

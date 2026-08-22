@@ -20,13 +20,18 @@ import {
   setCustomerSourceImportDecision
 } from './customer-source-import.js?v=0.15.0';
 import { openCustomerPicker } from './customer-picker.js?v=0.12.1';
+import {
+  CUSTOMER_COMPLETENESS_FIELDS,
+  customerDisplayStatus,
+  missingCustomerFields
+} from './customer-completeness.js?v=0.1.0';
 
 const ROW_HEIGHT = window.matchMedia('(max-width: 820px)').matches ? 86 : 74;
 const BUFFER_ROWS = 8;
 const state = {
   customers: [], filtered: [], importBatch: null, importRecords: [],
   importStatusFilter: 'ISSUES', importQuery: '', importLimit: 200,
-  summaryFilter: 'ALL', issueDrafts: new Map(), issueFocusCustomerId: ''
+  summaryFilter: 'ACTIVE_ALL', issueDrafts: new Map(), issueErrors: new Map(), issueFocusCustomerId: ''
 };
 const elements = {
   viewport: document.querySelector('#customerViewport'),
@@ -83,13 +88,15 @@ function escapeHtml(value) {
 
 function qualityLabel(customer) {
   if (customer.status === 'INACTIVE') return ['거래중단', 'inactive'];
-  if (customer.qualityStatus === 'DUPLICATE_CANDIDATE') return ['중복 확인', 'warn'];
-  if (customer.qualityStatus === 'UNVERIFIED') return ['정보 보완', 'warn'];
-  return ['사용중', ''];
+  if (customer.status === 'DELETED') return ['삭제', 'inactive'];
+  const displayStatus = customerDisplayStatus(customer);
+  if (displayStatus === 'DUPLICATE_CANDIDATE') return ['중복 확인', 'warn'];
+  if (displayStatus === 'INCOMPLETE') return ['정보 보완', 'warn'];
+  return ['정보 완료', ''];
 }
 
 function renderWindow() {
-  const issueMode = state.summaryFilter === 'UNVERIFIED';
+  const issueMode = state.summaryFilter === 'INCOMPLETE';
   elements.standardList.hidden = issueMode;
   elements.issueEditor.hidden = !issueMode;
   if (issueMode) {
@@ -128,11 +135,16 @@ function issueValue(customer, field) {
 function renderIssueGrid() {
   elements.empty.hidden = state.filtered.length > 0;
   elements.issueEditor.hidden = state.filtered.length === 0;
-  elements.issueGrid.innerHTML = state.filtered.map((customer, rowIndex) => `<tr data-customer-id="${escapeHtml(customer.customerId)}">
+  elements.issueGrid.innerHTML = state.filtered.map((customer, rowIndex) => {
+    const effective = { ...customer, ...(state.issueDrafts.get(customer.customerId) || {}) };
+    const missing = new Set(missingCustomerFields(effective).map(([field]) => field));
+    const error = state.issueErrors.get(customer.customerId) || '';
+    return `<tr data-customer-id="${escapeHtml(customer.customerId)}" class="${error ? 'has-error' : ''}">
     <th scope="row">${rowIndex + 1}</th>${ISSUE_FIELDS.map((field, columnIndex) => {
       const dirty = Object.hasOwn(state.issueDrafts.get(customer.customerId) || {}, field);
-      return `<td class="${dirty ? 'is-dirty' : ''}"><input aria-label="${['상호', '주소', '휴대폰 번호'][columnIndex]} ${rowIndex + 1}행" data-issue-row="${rowIndex}" data-issue-column="${columnIndex}" data-issue-field="${field}" value="${escapeHtml(issueValue(customer, field))}"></td>`;
-    }).join('')}</tr>`).join('');
+      return `<td class="${[dirty ? 'is-dirty' : '', missing.has(field) ? 'is-missing' : ''].filter(Boolean).join(' ')}"><input aria-label="${['상호', '주소', '휴대폰 번호'][columnIndex]} ${rowIndex + 1}행" data-issue-row="${rowIndex}" data-issue-column="${columnIndex}" data-issue-field="${field}" value="${escapeHtml(issueValue(customer, field))}"></td>`;
+    }).join('')}<td class="cm-issue-reason">${error ? `<strong>저장 실패</strong><span>${escapeHtml(error)}</span>` : `<span>${missing.size ? [...missing].map(field => `${CUSTOMER_COMPLETENESS_FIELDS.find(([key]) => key === field)?.[1]} 없음`).join(' · ') : '정보 완료'}</span>`}</td></tr>`;
+  }).join('');
   renderIssueChangeCount();
   if (state.issueFocusCustomerId) {
     requestAnimationFrame(() => elements.issueGrid.querySelector(`[data-customer-id="${CSS.escape(state.issueFocusCustomerId)}"] input`)?.focus());
@@ -160,6 +172,13 @@ function setIssueValue(input, value) {
   else state.issueDrafts.delete(customer.customerId);
   input.value = next;
   input.closest('td').classList.toggle('is-dirty', Object.hasOwn(draft, field));
+  state.issueErrors.delete(customer.customerId);
+  const effective = { ...customer, ...draft };
+  const missing = new Set(missingCustomerFields(effective).map(([key]) => key));
+  const row = input.closest('tr');
+  row.classList.remove('has-error');
+  row.querySelectorAll('[data-issue-field]').forEach(cell => cell.closest('td').classList.toggle('is-missing', missing.has(cell.dataset.issueField)));
+  row.querySelector('.cm-issue-reason').innerHTML = `<span>${missing.size ? [...missing].map(key => `${CUSTOMER_COMPLETENESS_FIELDS.find(([fieldKey]) => fieldKey === key)?.[1]} 없음`).join(' · ') : '정보 완료'}</span>`;
   renderIssueChangeCount();
 }
 
@@ -186,9 +205,10 @@ async function applyFilter() {
     : null;
   state.filtered = state.customers.filter(customer => {
     return (!matchedIds || matchedIds.has(customer.customerId))
-      && (filter === 'ALL' || customer.status === filter || customer.qualityStatus === filter)
-      && (state.summaryFilter === 'ALL'
-        || (state.summaryFilter === 'COMPLETE' ? customer.qualityStatus === 'VERIFIED' : customer.qualityStatus === state.summaryFilter))
+      && (filter === 'ALL' || customer.status === filter || customerDisplayStatus(customer) === filter)
+      && (state.summaryFilter === 'NONE' || (state.summaryFilter === 'ACTIVE_ALL'
+        ? customerDisplayStatus(customer) !== 'EXCLUDED'
+        : customerDisplayStatus(customer) === state.summaryFilter))
       && (group1 === 'ALL' || (customer.group1Name || customer.groupName || '') === group1)
       && (group2 === 'ALL' || (customer.group2Name || '') === group2)
       && (manager === 'ALL' || (customer.contactName || '') === manager);
@@ -198,10 +218,18 @@ async function applyFilter() {
 }
 
 function renderStats() {
-  document.querySelector('#totalCount').textContent = state.customers.length.toLocaleString();
-  document.querySelector('#activeCount').textContent = state.customers.filter(row => row.qualityStatus === 'VERIFIED').length.toLocaleString();
-  document.querySelector('#unverifiedCount').textContent = state.customers.filter(row => row.qualityStatus === 'UNVERIFIED').length.toLocaleString();
-  document.querySelector('#duplicateCount').textContent = state.customers.filter(row => row.qualityStatus === 'DUPLICATE_CANDIDATE').length.toLocaleString();
+  const counts = state.customers.reduce((result, customer) => {
+    const status = customerDisplayStatus(customer);
+    if (status !== 'EXCLUDED') result.total += 1;
+    if (status === 'COMPLETE') result.complete += 1;
+    if (status === 'INCOMPLETE') result.incomplete += 1;
+    if (status === 'DUPLICATE_CANDIDATE') result.duplicate += 1;
+    return result;
+  }, { total: 0, complete: 0, incomplete: 0, duplicate: 0 });
+  document.querySelector('#totalCount').textContent = counts.total.toLocaleString();
+  document.querySelector('#activeCount').textContent = counts.complete.toLocaleString();
+  document.querySelector('#unverifiedCount').textContent = counts.incomplete.toLocaleString();
+  document.querySelector('#duplicateCount').textContent = counts.duplicate.toLocaleString();
 }
 
 async function reload() {
@@ -612,28 +640,43 @@ async function saveIssueDrafts(moveToNext = false) {
   const activeIndex = state.filtered.findIndex(customer => customer.customerId === active);
   elements.saveIssues.disabled = true;
   elements.saveIssuesNext.disabled = true;
-  try {
-    for (const [customerId, patch] of state.issueDrafts) {
+  state.issueErrors.clear();
+  let savedCount = 0;
+  for (const [customerId, patch] of [...state.issueDrafts]) {
+    try {
       const customer = state.customers.find(row => row.customerId === customerId);
       if (!customer) continue;
       await updateCustomer(customerId, patch, { expectedRevision: Number(customer.revision), source: 'MASTER_ISSUE_GRID_EDIT' });
       state.issueDrafts.delete(customerId);
+      savedCount += 1;
+    } catch (error) {
+      state.issueErrors.set(customerId, error.message || String(error));
     }
-    await syncAndReload();
-    if (moveToNext && state.filtered.length) {
-      const nextIndex = activeIndex < 0 ? 0 : (activeIndex + 1) % state.filtered.length;
-      state.issueFocusCustomerId = state.filtered[nextIndex]?.customerId || '';
-      renderIssueGrid();
-    }
+  }
+  try {
+    if (savedCount) await syncAndReload();
+    else await reload();
   } catch (error) {
-    alert(`정보 보완 저장 실패: ${error.message || error}`);
+    alert(`Cloud 동기화 실패: ${error.message || error}`);
     await reload();
-    renderIssueChangeCount();
+  }
+  if (moveToNext && state.filtered.length) {
+    const remainingActiveIndex = state.filtered.findIndex(customer => customer.customerId === active);
+    const nextIndex = remainingActiveIndex >= 0
+      ? (remainingActiveIndex + 1) % state.filtered.length
+      : Math.min(Math.max(activeIndex, 0), state.filtered.length - 1);
+    state.issueFocusCustomerId = state.filtered[nextIndex]?.customerId || '';
+  }
+  renderIssueGrid();
+  if (state.issueErrors.size) {
+    const firstFailedId = [...state.issueErrors.keys()][0];
+    requestAnimationFrame(() => elements.issueGrid.querySelector(`[data-customer-id="${CSS.escape(firstFailedId)}"] input`)?.focus());
   }
 }
 
 document.querySelectorAll('[data-customer-summary-filter]').forEach(button => button.addEventListener('click', async () => {
   state.summaryFilter = button.dataset.customerSummaryFilter;
+  elements.filter.value = 'ALL';
   document.querySelectorAll('[data-customer-summary-filter]').forEach(card => card.classList.toggle('is-active', card === button));
   await applyFilter();
 }));
@@ -669,7 +712,11 @@ elements.issueGrid.addEventListener('paste', event => {
 
 elements.viewport.addEventListener('scroll', renderWindow, { passive: true });
 elements.search.addEventListener('input', applyFilter);
-elements.filter.addEventListener('change', applyFilter);
+elements.filter.addEventListener('change', async () => {
+  state.summaryFilter = elements.filter.value === 'ALL' ? 'ACTIVE_ALL' : 'NONE';
+  document.querySelectorAll('[data-customer-summary-filter]').forEach(card => card.classList.toggle('is-active', elements.filter.value === 'ALL' && card.dataset.customerSummaryFilter === 'ACTIVE_ALL'));
+  await applyFilter();
+});
 elements.group1Filter.addEventListener('change', applyFilter);
 elements.group2Filter.addEventListener('change', applyFilter);
 elements.managerFilter.addEventListener('change', applyFilter);
