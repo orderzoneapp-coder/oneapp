@@ -291,10 +291,11 @@
         "cloud-sync"
       ],
       "sharedContracts": [
+        "nexus-header",
         "orderq-vnext-sync",
         "product-master"
       ],
-      "integrationNote": "The standalone pilot intentionally does not consume nexus-header. NEXUS registration follows independent operational validation. ORDER Q vNext is the common order ledger; orders.html still requires a separately validated ledger-consumer adapter."
+      "integrationNote": "The standalone pilot displays the existing nexus-header without adding SmartInput to the global NEXUS menu or changing shared header sources. ORDER Q vNext is the common order ledger; orders.html still requires a separately validated ledger-consumer adapter."
     },
     {
       "id": "cloud-sync",
@@ -353,7 +354,8 @@
         "orderops/list.html",
         "orderops/input.html",
         "orderq/input.html",
-        "orderq/parser.html"
+        "orderq/parser.html",
+        "smartinput/index.html"
       ],
       "schemaVersion": "NEXUS_HEADER_V1",
       "resources": {

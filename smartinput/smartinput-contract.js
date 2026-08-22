@@ -3,7 +3,9 @@
 
   const SCHEMA_VERSION = 'ONEAPP_SMART_INPUT_DRAFT_V1';
   const DRAFT_STORAGE_KEY = 'oneapp.smartinput.draft.v1';
+  const DRAFT_LIST_STORAGE_KEY = 'oneapp.smartinput.drafts.v1';
   const DELIVERY_HISTORY_KEY = 'oneapp.smartinput.delivery-history.v1';
+  const SETTINGS_STORAGE_KEY = 'oneapp.smartinput.settings.v1';
   const APP_ID = 'smart-input';
   const MODE_ORDER = ['order', 'purchase', 'sale'];
   const MODES = Object.freeze({
@@ -21,6 +23,16 @@
   ]);
   const STAGES = Object.freeze(['capture', 'extract', 'match', 'review', 'complete']);
   const ROW_FIELDS = Object.freeze(['itemCode', 'itemName', 'specification', 'quantity', 'unit', 'unitPrice', 'memo']);
+  const DEFAULT_SETTINGS = Object.freeze({
+    orderCutoffTime: '',
+    allowSameDayDelivery: true,
+    defaultDeliveryWeekdays: Object.freeze([0, 1, 2, 3, 4, 5, 6]),
+    deliveryCustomerWeekdays: Object.freeze({}),
+    holidayWeekdays: Object.freeze([]),
+    holidayDates: Object.freeze([]),
+    timezone: 'Asia/Seoul'
+  });
+  const WEEKDAY_LABELS = Object.freeze(['일', '월', '화', '수', '목', '금', '토']);
 
   function text(value) {
     return String(value ?? '').normalize('NFKC').trim();
@@ -41,14 +53,126 @@
     return local.toISOString().slice(0, 10);
   }
 
+  function normalizeWeekdays(value, fallback = []) {
+    const source = Array.isArray(value) ? value : fallback;
+    return [...new Set(source.map(Number).filter(day => Number.isInteger(day) && day >= 0 && day <= 6))].sort((a, b) => a - b);
+  }
+
+  function normalizeSettings(value = {}) {
+    const deliveryCustomerWeekdays = {};
+    const sourceMap = value.deliveryCustomerWeekdays && typeof value.deliveryCustomerWeekdays === 'object'
+      ? value.deliveryCustomerWeekdays
+      : {};
+    Object.entries(sourceMap).forEach(([customerId, weekdays]) => {
+      deliveryCustomerWeekdays[text(customerId)] = normalizeWeekdays(weekdays);
+    });
+    return {
+      orderCutoffTime: /^\d{2}:\d{2}$/.test(text(value.orderCutoffTime)) ? text(value.orderCutoffTime) : '',
+      allowSameDayDelivery: value.allowSameDayDelivery !== false,
+      defaultDeliveryWeekdays: normalizeWeekdays(value.defaultDeliveryWeekdays, DEFAULT_SETTINGS.defaultDeliveryWeekdays),
+      deliveryCustomerWeekdays,
+      holidayWeekdays: normalizeWeekdays(value.holidayWeekdays, DEFAULT_SETTINGS.holidayWeekdays),
+      holidayDates: [...new Set((Array.isArray(value.holidayDates) ? value.holidayDates : []).map(text).filter(date => /^\d{4}-\d{2}-\d{2}$/.test(date)))].sort(),
+      timezone: text(value.timezone || DEFAULT_SETTINGS.timezone)
+    };
+  }
+
+  function parseDate(value) {
+    const match = text(value).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!match) return null;
+    const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]), 12));
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+
+  function dateText(date) {
+    return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
+  }
+
+  function addDays(value, count) {
+    const date = parseDate(value);
+    if (!date) return '';
+    date.setUTCDate(date.getUTCDate() + Number(count || 0));
+    return dateText(date);
+  }
+
+  function zonedNow(date = new Date(), timezone = DEFAULT_SETTINGS.timezone) {
+    try {
+      const parts = new Intl.DateTimeFormat('en-CA', {
+        timeZone: timezone,
+        year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
+        hourCycle: 'h23'
+      }).formatToParts(date).reduce((result, part) => ({ ...result, [part.type]: part.value }), {});
+      return { date: `${parts.year}-${parts.month}-${parts.day}`, time: `${parts.hour}:${parts.minute}` };
+    } catch (_) {
+      return { date: todayLocal(date), time: `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}` };
+    }
+  }
+
+  function effectiveDeliveryWeekdays(settings, customerId = '') {
+    const normalized = normalizeSettings(settings);
+    const key = text(customerId);
+    if (key && Object.prototype.hasOwnProperty.call(normalized.deliveryCustomerWeekdays, key)) {
+      return normalized.deliveryCustomerWeekdays[key];
+    }
+    return normalized.defaultDeliveryWeekdays;
+  }
+
+  function validateDeliveryDate({ deliveryDate, orderDate, customerId = '', settings = DEFAULT_SETTINGS, now = new Date() } = {}) {
+    const normalized = normalizeSettings(settings);
+    const target = parseDate(deliveryDate);
+    const order = parseDate(orderDate);
+    if (!target) return { valid: false, code: 'DATE_REQUIRED', message: '배송일자를 확인하세요.' };
+    if (order && deliveryDate < orderDate) return { valid: false, code: 'BEFORE_ORDER_DATE', message: '배송일은 주문일자보다 빠를 수 없습니다.' };
+    const weekdays = effectiveDeliveryWeekdays(normalized, customerId);
+    if (!weekdays.length) return { valid: false, code: 'NO_DELIVERY_WEEKDAYS', message: '배송 가능 요일을 설정하세요.' };
+    const weekday = target.getUTCDay();
+    if (!weekdays.includes(weekday)) return { valid: false, code: 'WEEKDAY_BLOCKED', message: `${WEEKDAY_LABELS[weekday]}요일은 선택한 배송처의 배송 가능 요일이 아닙니다.` };
+    if (normalized.holidayWeekdays.includes(weekday) || normalized.holidayDates.includes(deliveryDate)) {
+      return { valid: false, code: 'HOLIDAY', message: '휴무일은 배송일로 선택할 수 없습니다.' };
+    }
+    const current = zonedNow(now, normalized.timezone);
+    if (deliveryDate === current.date) {
+      if (!normalized.allowSameDayDelivery) return { valid: false, code: 'SAME_DAY_DISABLED', message: '당일 배송이 허용되지 않습니다.' };
+      if (normalized.orderCutoffTime && current.time > normalized.orderCutoffTime) {
+        return { valid: false, code: 'CUTOFF_PASSED', message: `주문 마감 ${normalized.orderCutoffTime} 이후에는 당일 배송을 선택할 수 없습니다.` };
+      }
+    }
+    return { valid: true, code: 'AVAILABLE', message: '선택 가능한 배송일입니다.', weekday };
+  }
+
+  function nextDeliveryDate({ orderDate, customerId = '', settings = DEFAULT_SETTINGS, now = new Date(), maxDays = 366 } = {}) {
+    if (!parseDate(orderDate)) return { date: '', error: '주문일자를 확인하세요.' };
+    for (let offset = 1; offset <= maxDays; offset += 1) {
+      const candidate = addDays(orderDate, offset);
+      const decision = validateDeliveryDate({ deliveryDate: candidate, orderDate, customerId, settings, now });
+      if (decision.valid) return { date: candidate, offset, decision };
+    }
+    return { date: '', error: `${maxDays}일 안에 배송 가능한 날짜가 없습니다.` };
+  }
+
+  function deliveryWeekdayLabel(settings, customerId = '') {
+    const weekdays = effectiveDeliveryWeekdays(settings, customerId);
+    return weekdays.length ? weekdays.map(day => WEEKDAY_LABELS[day]).join('·') : '미설정';
+  }
+
   function createModeDraft(mode, date = todayLocal()) {
     return {
+      documentId: createId('SIDOC'),
       mode,
       header: {
         customerId: '',
         customerName: '',
+        customerLinkGroupId: '',
+        taxCustomerId: '',
+        taxCustomerName: '',
+        isTemporaryCustomer: false,
+        rawOrdererName: '',
+        aliasMappingId: '',
+        customerMappingSource: '',
         orderDate: date,
         deliveryDate: '',
+        manualDeliveryOverride: false,
+        deliveryPolicySnapshot: null,
         warehouseId: '',
         warehouseCode: '',
         warehouseName: '',
@@ -85,8 +209,19 @@
     return {
       customerId: text(value.customerId || fallback.customerId),
       customerName: text(value.customerName || fallback.customerName),
+      customerLinkGroupId: text(value.customerLinkGroupId || fallback.customerLinkGroupId),
+      taxCustomerId: text(value.taxCustomerId || fallback.taxCustomerId),
+      taxCustomerName: text(value.taxCustomerName || fallback.taxCustomerName),
+      isTemporaryCustomer: Boolean(value.isTemporaryCustomer ?? fallback.isTemporaryCustomer),
+      rawOrdererName: text(value.rawOrdererName || fallback.rawOrdererName),
+      aliasMappingId: text(value.aliasMappingId || fallback.aliasMappingId),
+      customerMappingSource: text(value.customerMappingSource || fallback.customerMappingSource),
       orderDate: text(value.orderDate || fallback.orderDate || todayLocal()),
       deliveryDate: text(value.deliveryDate || fallback.deliveryDate),
+      manualDeliveryOverride: Boolean(value.manualDeliveryOverride ?? fallback.manualDeliveryOverride),
+      deliveryPolicySnapshot: value.deliveryPolicySnapshot && typeof value.deliveryPolicySnapshot === 'object'
+        ? { ...value.deliveryPolicySnapshot }
+        : (fallback.deliveryPolicySnapshot ? { ...fallback.deliveryPolicySnapshot } : null),
       warehouseId: text(value.warehouseId || fallback.warehouseId),
       warehouseCode: text(value.warehouseCode || fallback.warehouseCode),
       warehouseName: text(value.warehouseName || fallback.warehouseName),
@@ -131,6 +266,7 @@
 
   function normalizeModeDraft(mode, input = {}, fallback = createModeDraft(mode)) {
     return {
+      documentId: text(input.documentId) || fallback.documentId,
       mode,
       header: normalizeHeader(input.header, fallback.header),
       sourceText: String(input.sourceText ?? ''),
@@ -257,17 +393,27 @@
   global.SMART_INPUT_CONTRACT = Object.freeze({
     SCHEMA_VERSION,
     DRAFT_STORAGE_KEY,
+    DRAFT_LIST_STORAGE_KEY,
     DELIVERY_HISTORY_KEY,
+    SETTINGS_STORAGE_KEY,
     APP_ID,
     MODES,
     INPUT_METHODS,
     STAGES,
     ROW_FIELDS,
+    DEFAULT_SETTINGS,
+    WEEKDAY_LABELS,
     text,
     numberOrNull,
     createId,
     todayLocal,
+    normalizeSettings,
+    effectiveDeliveryWeekdays,
+    validateDeliveryDate,
+    nextDeliveryDate,
+    deliveryWeekdayLabel,
     createDraft,
+    normalizeModeDraft,
     normalizeDraft,
     normalizeRow,
     createBatch,
