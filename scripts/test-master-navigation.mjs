@@ -13,18 +13,18 @@ assert.match(master, /rawMode === 'batch' \? 'batch' : 'list'/, 'invalid and mis
 assert.match(master, /window\.history\.pushState/, 'tab changes must update the URL without reloading');
 assert.match(master, /window\.addEventListener\('popstate'/, 'back and forward navigation must restore tab state');
 assert.match(master, /\[\['products', '상품'\], \['customers', '거래처'\]\]/, 'primary product/customer tabs must exist');
-assert.match(master, /\[\['list', '목록'\], \['batch', '일괄 관리'\]\]/, 'secondary list/batch tabs must exist');
 assert.match(master, /role="tablist"/, 'tab lists must use tab semantics');
 assert.match(master, /role="tab" aria-selected=/, 'tabs must expose selected state');
 assert.match(master, /aria-current=.*'page'/, 'active tabs must expose aria-current');
 assert.match(master, /focus-visible:ring-2/, 'tabs and actions must have visible keyboard focus');
-assert.match(master, /상품 목록/, 'product list title must exist');
-assert.match(master, /상품 일괄 등록·수정/, 'product batch title must exist');
-assert.match(master, /신규 등록/, 'product list must expose new registration');
-assert.match(master, /단건 수정/, 'product list must expose single-item editing');
+assert.doesNotMatch(master, /aria-label="관리 방식"|목록·조회/, 'lookup must remain the default state rather than a tab');
+assert.match(master, />일괄 관리<\/button>/, 'batch management must be a work-entry action');
+assert.match(master, />\+ 상품 등록<\/button>/, 'product registration must be a work-entry action');
+assert.match(master, />조회로 돌아가기<\/button>/, 'batch work must provide an explicit return to lookup');
 assert.match(master, /customerMasterFrame/, 'customer workbench must stay mounted');
 assert.match(master, /ONEAPP_MASTER_MODE/, 'customer mode changes must use in-place messaging');
 assert.match(master, /partner_db\.html\?embedded=1&mode=/, 'customer iframe must receive the initial mode');
+assert.match(master, /ONEAPP_NEXUS_DENSITY/, 'customer iframe must receive density without being reloaded');
 
 assert.match(customer, /initialCustomerMasterMode/, 'customer page must read mode from its URL');
 assert.match(customer, /Master\.html\?view=customers&mode=/, 'legacy customer entry must redirect to the compatible Master route');
@@ -38,4 +38,4 @@ assert.match(customer, /cm-list-only[^>]*id="newCustomerButton"/, 'single custom
 assert.match(customer, /ONEAPP_MASTER_MODE/, 'customer iframe must accept in-place mode changes');
 assert.doesNotMatch(customer, /ENTITY REGISTRY/, 'legacy decorative registry title must be removed');
 
-console.log('Master two-level navigation tests passed.');
+console.log('Master target navigation and work-entry action tests passed.');

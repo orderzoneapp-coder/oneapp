@@ -13,9 +13,11 @@ const master = readFileSync(path.join(root, "Master.html"), "utf8");
 assert.match(html, /id="nexus-common-header"\s+data-app-id="master"/);
 assert.match(html, /<nexus-top app-id="item-manager">[\s\S]*?<\/nexus-top>/);
 assert.match(html, /상품 기초정보 관리/);
-assert.match(html, /목록·조회/);
-assert.match(html, /기초정보 관리/);
+assert.match(html, /nexus-app-ui\.css/);
+assert.match(html, /nexus-ui-contract\.js/);
+assert.doesNotMatch(html, /aria-label="상품 관리 방식"|목록·조회/);
 assert.doesNotMatch(html, /SKU FORGE|카탈로그 소싱|행사테마|BOM 조립|수기등록/);
+assert.doesNotMatch(html, /id="mobile-editor"/);
 
 for (const sharedStyle of [
   "oneapp-design-tokens.css",
@@ -52,17 +54,19 @@ assert.match(js, /event\.key\.toLowerCase\(\) === "s"/);
 assert.match(js, /BATCH_FIELDS = \["1그룹명", "3그룹명", "안전재고", "외주비", "경비", "비과세", "판매여부"\]/);
 assert.match(js, /beforeunload/);
 
-assert.match(css, /\.product-grid th[\s\S]*height:\s*40px/);
-assert.match(css, /\.product-grid th,[\s\S]*\.product-grid td[\s\S]*height:\s*42px/);
+assert.match(css, /\.product-grid th[\s\S]*height:\s*var\(--nexus-table-header-height/);
+assert.match(css, /\.product-grid th,[\s\S]*\.product-grid td[\s\S]*height:\s*var\(--nexus-table-row-height/);
 assert.match(css, /\.grid-code[\s\S]*position:\s*sticky/);
 assert.match(css, /\.grid-name[\s\S]*position:\s*sticky/);
 assert.match(css, /\.cell-modified/);
 assert.match(css, /\.cell-error/);
 assert.match(css, /@media \(max-width: 760px\)/);
-assert.match(css, /\.mobile-editor[\s\S]*display:\s*none/);
+assert.match(css, /\.table-scroll[\s\S]*display:\s*block/);
+assert.doesNotMatch(js, /renderMobileEditor|mobileRowId|mobile-editor/);
 
 assert.match(master, /params\.get\('mode'\) === 'manage'/);
 assert.match(master, /window\.location\.replace\(new URL\('Item_manager\.html'/);
-assert.match(master, /\['manage', '기초정보 관리'\]/);
+assert.match(master, />\+ 상품 등록<\/button>/);
+assert.match(master, />일괄 관리<\/button>/);
 
 console.log("Item manager UI contract tests passed.");

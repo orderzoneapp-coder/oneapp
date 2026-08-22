@@ -50,7 +50,6 @@
     redoStack: [],
     processing: false,
     filters: loadSavedFilters(),
-    mobileRowId: "",
     sync: {
       state: "pending",
       message: "상품 DB를 확인하고 있습니다."
@@ -72,7 +71,7 @@
       "sync-dot", "sync-message", "cloud-pull-button", "cloud-push-button",
       "header-save-button", "category-filter", "group-filter", "status-filter",
       "search-filter", "load-button", "summary-counts", "add-product-button",
-      "grid-empty", "grid-region", "table-scroll", "product-grid", "mobile-editor",
+      "grid-empty", "grid-region", "table-scroll", "product-grid",
       "batch-toolbar", "batch-selection-count", "batch-field", "batch-value-wrap",
       "batch-mode", "batch-apply-button", "save-bar", "save-state-copy",
       "discard-button", "footer-save-button", "dialog-backdrop", "dialog-title",
@@ -729,7 +728,7 @@
       }
     } else {
       var shown = displayValue(def, value);
-      inner = '<span class="cell-text">' + escapeHtml(shown || (def.key === "코드" && state.newIds.has(rowId) ? "입력 필요" : "")) + "</span>";
+      inner = '<span class="cell-text">' + escapeHtml(shown || (def.key === "코드" && state.newIds.has(rowId) ? "입력 필요" : "—")) + "</span>";
       if (def.key === "코드" && state.newIds.has(rowId)) {
         inner += '<span class="oneapp-badge oneapp-badge-indigo new-row-badge">신규</span>';
       }
@@ -751,7 +750,6 @@
       els["grid-empty"].innerHTML = state.loaded
         ? "<strong>조건에 맞는 상품이 없습니다.</strong><span>조회 조건을 변경하거나 새 상품을 추가하세요.</span>"
         : "<strong>카테고리 또는 그룹을 선택해 상품을 불러오세요.</strong><span>조회 조건은 다음 방문에도 그대로 유지됩니다.</span>";
-      renderMobileEditor([]);
       return;
     }
 
@@ -782,48 +780,7 @@
       return html + "</tr>";
     }).join("");
     els["product-grid"].querySelector("tbody").innerHTML = body;
-    renderMobileEditor(rows);
     focusCurrentEditor();
-  }
-
-  function renderMobileEditor(rows) {
-    if (!rows.length) {
-      els["mobile-editor"].innerHTML = "";
-      return;
-    }
-    if (!state.mobileRowId || rows.indexOf(state.mobileRowId) < 0) {
-      state.mobileRowId = state.active && rows.indexOf(state.active.rowId) >= 0 ? state.active.rowId : rows[0];
-    }
-    var rowId = state.mobileRowId;
-    var row = state.working[rowId] || {};
-    var picker = '<div class="mobile-product-picker"><label class="oneapp-label" for="mobile-product-select">수정할 상품</label>' +
-      '<select id="mobile-product-select" class="oneapp-field">' +
-      rows.map(function (id) {
-        var item = state.working[id] || {};
-        var label = trimmed(item["품목명"]) || trimmed(item["코드"]) || "신규 상품";
-        return '<option value="' + escapeHtml(id) + '"' + (id === rowId ? " selected" : "") + ">" +
-          escapeHtml(label) + "</option>";
-      }).join("") + "</select></div>";
-    var form = '<div class="mobile-form">';
-    FIELD_DEFS.forEach(function (def) {
-      var disabled = !isEditable(rowId, def.key) ? " disabled" : "";
-      var key = cellKey(rowId, def.key);
-      var control;
-      if (["unit", "category", "group", "tax", "status"].indexOf(def.type) >= 0) {
-        control = '<select class="oneapp-field mobile-field" data-mobile-row="' + escapeHtml(rowId) +
-          '" data-mobile-field="' + escapeHtml(def.key) + '"' + disabled + ">" +
-          renderChoiceOptions(def, rowId, row[def.key]) + "</select>";
-      } else {
-        control = '<input class="oneapp-field mobile-field" data-mobile-row="' + escapeHtml(rowId) +
-          '" data-mobile-field="' + escapeHtml(def.key) + '" value="' + escapeHtml(text(row[def.key])) +
-          '"' + disabled + ">";
-      }
-      form += '<label><span class="oneapp-label">' + escapeHtml(def.label) + "</span>" + control +
-        (state.errors.has(key) ? '<span class="mobile-field-error">' + escapeHtml(state.errors.get(key)) + "</span>" : "") +
-        "</label>";
-    });
-    form += "</div>";
-    els["mobile-editor"].innerHTML = picker + form;
   }
 
   function renderBatchValue() {
@@ -862,6 +819,9 @@
     els["header-save-button"].disabled = !enabled;
     els["footer-save-button"].disabled = !enabled;
     els["discard-button"].disabled = !enabled;
+    var saveReason = enabled ? "변경사항을 저장합니다." : "변경사항이 있을 때 저장할 수 있습니다.";
+    els["header-save-button"].title = saveReason;
+    els["footer-save-button"].title = saveReason;
     window.NEXUS_TOP?.reportStatus({
       appId: "item-manager",
       taskId: "item-manager-unsaved",
@@ -925,7 +885,6 @@
         end: { rowId: rowId, field: field }
       };
     }
-    state.mobileRowId = rowId;
     refreshCellSelectionClasses();
     var cell = findCell(rowId, field);
     if (cell) cell.focus({ preventScroll: true });
@@ -1014,7 +973,6 @@
     var next = { rowId: rows[nextRow], field: FIELD_DEFS[nextCol].key };
     state.active = next;
     state.range = { start: next, end: next };
-    state.mobileRowId = next.rowId;
     if (startEdit && isEditable(next.rowId, next.field)) {
       state.edit = { rowId: next.rowId, field: next.field, seed: null };
     }
@@ -1170,7 +1128,6 @@
     state.loaded = state.loaded || false;
     state.active = { rowId: id, field: "코드" };
     state.range = { start: state.active, end: state.active };
-    state.mobileRowId = id;
     state.edit = { rowId: id, field: "코드", seed: null };
     renderAll();
   }
@@ -1811,22 +1768,6 @@
       refreshCellSelectionClasses();
     });
     window.addEventListener("mouseup", function () { state.dragging = false; });
-
-    els["mobile-editor"].addEventListener("change", function (event) {
-      if (event.target.id === "mobile-product-select") {
-        state.mobileRowId = event.target.value;
-        renderMobileEditor(visibleRowIds());
-        return;
-      }
-      var control = event.target.closest("[data-mobile-field]");
-      if (!control) return;
-      applyChanges([{
-        rowId: control.dataset.mobileRow,
-        field: control.dataset.mobileField,
-        value: control.value
-      }], true);
-      renderAll();
-    });
 
     els["batch-field"].addEventListener("change", renderBatchValue);
     els["batch-apply-button"].addEventListener("click", applyBatch);

@@ -86,17 +86,27 @@ body {
 }
 
 .query-toolbar {
-  min-height: 72px;
+  min-height: var(--nexus-work-tools-height, 50px);
   display: grid;
-  grid-template-columns: minmax(155px, 1fr) minmax(155px, 1fr) 130px minmax(220px, 1.65fr) auto;
-  align-items: end;
+  grid-template-columns: minmax(280px, 1.8fr) minmax(145px, 1fr) minmax(145px, 1fr) 120px auto;
+  align-items: center;
   gap: 10px;
-  padding-top: 10px;
-  padding-bottom: 10px;
+  padding-top: 7px;
+  padding-bottom: 7px;
 }
 
 .query-field {
   min-width: 0;
+}
+
+.query-toolbar .oneapp-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
 }
 
 .query-load-button {
@@ -207,7 +217,7 @@ body {
 
 .product-grid th,
 .product-grid td {
-  height: 42px;
+  height: var(--nexus-table-row-height, 48px);
   padding: 0;
   border-right: 1px solid var(--oneapp-border);
   border-bottom: 1px solid var(--oneapp-border);
@@ -218,7 +228,7 @@ body {
   position: sticky;
   z-index: 20;
   top: 0;
-  height: 40px;
+  height: var(--nexus-table-header-height, 40px);
   padding: 0 9px;
   background: var(--oneapp-surface-subtle);
   color: var(--oneapp-muted);
@@ -281,7 +291,7 @@ body {
 .grid-cell {
   position: relative;
   width: 100%;
-  height: 41px;
+  height: calc(var(--nexus-table-row-height, 48px) - 1px);
   display: flex;
   align-items: center;
   overflow: hidden;
@@ -368,7 +378,7 @@ body {
 .cell-input,
 .cell-select {
   width: calc(100% + 18px);
-  height: 41px;
+  height: calc(var(--nexus-table-row-height, 48px) - 1px);
   margin: 0 -9px;
   padding: 0 8px;
   border: 2px solid var(--oneapp-master-accent);
@@ -397,7 +407,7 @@ body {
 
 .batch-toolbar {
   flex: 0 0 auto;
-  min-height: 52px;
+  min-height: var(--nexus-work-tools-height, 50px);
   display: grid;
   grid-template-columns: auto minmax(145px, .8fr) minmax(150px, 1fr) minmax(170px, 1fr) auto;
   align-items: center;
@@ -421,7 +431,7 @@ body {
 
 .save-bar {
   flex: 0 0 auto;
-  min-height: 54px;
+  min-height: var(--nexus-work-tools-height, 50px);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -455,28 +465,6 @@ body {
   white-space: nowrap;
 }
 
-.mobile-editor {
-  display: none;
-}
-
-.mobile-product-picker {
-  padding: 12px;
-  border-bottom: 1px solid var(--oneapp-border);
-  background: var(--oneapp-surface-subtle);
-}
-
-.mobile-form {
-  display: grid;
-  gap: 11px;
-  padding: 14px;
-}
-
-.mobile-field-error {
-  margin-top: 4px;
-  color: var(--oneapp-danger);
-  font-size: 10px;
-}
-
 @media (max-width: 980px) {
   .query-toolbar {
     grid-template-columns: 1fr 1fr 130px auto;
@@ -488,19 +476,15 @@ body {
 
   .query-load-button {
     grid-column: 4;
-    grid-row: 2;
+    grid-row: 1;
   }
 
   .query-toolbar {
-    min-height: 116px;
+    min-height: calc(var(--nexus-work-tools-height, 50px) * 2);
   }
 }
 
 @media (max-width: 760px) {
-  body {
-    overflow: auto;
-  }
-
   .oneapp-actions {
     gap: 5px;
   }
@@ -512,13 +496,12 @@ body {
     padding-bottom: 12px;
   }
 
-  .query-field-status,
   .query-field-search {
-    grid-column: auto;
+    grid-column: 1 / -1;
   }
 
   .query-load-button {
-    grid-column: 1 / -1;
+    grid-column: auto;
     grid-row: auto;
   }
 
@@ -526,15 +509,7 @@ body {
     min-height: 520px;
   }
 
-  .grid-region {
-    overflow: auto;
-  }
-
   .table-scroll {
-    display: none;
-  }
-
-  .mobile-editor {
     display: block;
   }
 

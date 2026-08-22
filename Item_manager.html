@@ -6,12 +6,14 @@
   <meta name="google" content="notranslate">
   <title>상품 기초정보 관리</title>
   <link rel="icon" type="image/png" href="/nexus/assets/nexus-favicon.png">
-  <link rel="stylesheet" href="/nexus/common/oneapp-design-tokens.css?v=1.0.0">
-  <link rel="stylesheet" href="/nexus/common/oneapp-layout.css?v=1.0.0">
-  <link rel="stylesheet" href="/nexus/common/oneapp-components.css?v=1.0.0">
-  <link rel="stylesheet" href="Item_manager.css?v=2.0.1">
+  <link rel="stylesheet" href="/nexus/common/oneapp-design-tokens.css?v=1.1.0">
+  <link rel="stylesheet" href="/nexus/common/nexus-app-ui.css?v=1.0.0">
+  <link rel="stylesheet" href="/nexus/common/oneapp-layout.css?v=1.1.0">
+  <link rel="stylesheet" href="/nexus/common/oneapp-components.css?v=1.1.0">
+  <link rel="stylesheet" href="Item_manager.css?v=2.1.0">
   <script src="/nexus/common/apps-config.js?v=1.1.0"></script>
   <script src="/nexus/common/nexus-top.js?v=1.1.0"></script>
+  <script src="/nexus/common/nexus-ui-contract.js?v=1.0.0"></script>
   <style>:root{--nexus-top-height:44px}nexus-top{display:block;min-height:var(--nexus-top-height)}.nexus-top-fallback{height:var(--nexus-top-height);padding:0 14px;display:flex;align-items:center;gap:12px;background:#0b1021;color:#fff;font:12px Pretendard,"Noto Sans KR",sans-serif}.nexus-top-fallback strong{letter-spacing:.08em}.nexus-top-fallback span{color:#cbd5e1}.nexus-top-fallback button{margin-left:auto;border:1px solid #64748b;border-radius:6px;padding:5px 9px;background:transparent;color:#fff;cursor:pointer}</style>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script src="coreEngine.js"></script>
@@ -21,19 +23,15 @@
     <nexus-top app-id="item-manager"><div class="nexus-top-fallback" role="status"><strong>NEXUS</strong><span>NEXUS 메뉴를 불러오지 못했습니다.</span><button type="button" onclick="window.location.reload()">재시도</button></div></nexus-top>
   </div>
 
-  <div id="app" class="oneapp-shell" aria-busy="true">
+  <div id="app" class="oneapp-shell" data-nexus-ui-app="item-manager" aria-busy="true">
     <header class="oneapp-app-header">
       <div class="oneapp-content oneapp-app-header-inner">
-        <div>
-          <div class="oneapp-eyebrow">MASTER</div>
-          <h1 class="oneapp-title">상품 기초정보 관리</h1>
-          <p class="oneapp-description">상품의 기준정보를 조회하고 연속으로 수정합니다.</p>
-        </div>
+        <h1 class="oneapp-title">MASTER · 상품 기초정보 관리</h1>
         <div class="oneapp-actions">
           <div class="menu-anchor">
             <button id="excel-menu-button" type="button" class="oneapp-button" aria-haspopup="menu" aria-expanded="false">
               <span aria-hidden="true">▦</span>
-              <span class="oneapp-button-label-mobile">Excel 관리</span>
+              <span class="oneapp-button-label-mobile">일괄 관리</span>
             </button>
             <div id="excel-menu" class="oneapp-popover" role="menu" hidden>
               <button type="button" class="oneapp-popover-item" data-excel-action="download">현재 조회 상품 내려받기<small>현재 표에 보이는 기초정보만 내려받습니다.</small></button>
@@ -55,7 +53,7 @@
               </div>
             </div>
           </div>
-          <button id="header-save-button" type="button" class="oneapp-button oneapp-button-primary" disabled>
+          <button id="header-save-button" type="button" class="oneapp-button oneapp-button-primary" title="변경사항이 있을 때 저장할 수 있습니다." disabled>
             <span aria-hidden="true">✓</span>
             <span>저장</span>
           </button>
@@ -69,16 +67,16 @@
         <a class="oneapp-tab" href="Master.html?view=customers&mode=list">거래처</a>
       </div>
     </nav>
-    <nav class="oneapp-subtabs" aria-label="상품 관리 방식">
-      <div class="oneapp-content oneapp-tab-row">
-        <a class="oneapp-tab" href="Master.html?view=products&mode=list">목록·조회</a>
-        <a class="oneapp-tab" href="Item_manager.html" aria-current="page">기초정보 관리</a>
-      </div>
-    </nav>
-
     <main class="oneapp-main">
       <section class="query-section" aria-label="상품 조회 조건">
         <div class="oneapp-content query-toolbar">
+          <div class="query-field query-field-search">
+            <label class="oneapp-label" for="search-filter">상품명·코드 검색</label>
+            <div class="search-wrap">
+              <span aria-hidden="true">⌕</span>
+              <input id="search-filter" class="oneapp-field" type="search" autocomplete="off" placeholder="상품코드, 상품명, 규격 통합검색">
+            </div>
+          </div>
           <div class="query-field">
             <label class="oneapp-label" for="category-filter">카테고리</label>
             <select id="category-filter" class="oneapp-field">
@@ -99,14 +97,7 @@
               <option value="stopped">사용 중지</option>
             </select>
           </div>
-          <div class="query-field query-field-search">
-            <label class="oneapp-label" for="search-filter">상품명·코드 검색</label>
-            <div class="search-wrap">
-              <span aria-hidden="true">⌕</span>
-              <input id="search-filter" class="oneapp-field" type="search" autocomplete="off" placeholder="상품코드, 상품명, 규격">
-            </div>
-          </div>
-          <button id="load-button" type="button" class="oneapp-button oneapp-button-primary query-load-button">불러오기</button>
+          <button id="load-button" type="button" class="oneapp-button query-load-button">불러오기</button>
         </div>
       </section>
 
@@ -132,7 +123,6 @@
                 <tbody></tbody>
               </table>
             </div>
-            <div id="mobile-editor" class="mobile-editor"></div>
           </div>
 
           <div id="batch-toolbar" class="batch-toolbar" hidden>
@@ -143,7 +133,7 @@
               <option value="all">선택 상품 전체에 적용</option>
               <option value="blank">빈 값에만 적용</option>
             </select>
-            <button id="batch-apply-button" type="button" class="oneapp-button oneapp-button-primary">선택 상품에 적용</button>
+            <button id="batch-apply-button" type="button" class="oneapp-button">선택 상품에 적용</button>
           </div>
 
           <div id="save-bar" class="save-bar">
@@ -153,7 +143,7 @@
             </div>
             <div class="oneapp-actions">
               <button id="discard-button" type="button" class="oneapp-button" disabled>변경 취소</button>
-              <button id="footer-save-button" type="button" class="oneapp-button oneapp-button-primary" disabled>변경사항 저장</button>
+              <button id="footer-save-button" type="button" class="oneapp-button" title="변경사항이 있을 때 저장할 수 있습니다." disabled>변경사항 저장</button>
             </div>
           </div>
         </div>
@@ -172,6 +162,6 @@
   </div>
 
   <div id="toast" class="oneapp-toast" role="status" aria-live="polite" hidden></div>
-  <script src="Item_manager.js?v=2.0.3"></script>
+  <script src="Item_manager.js?v=2.1.0"></script>
 </body>
 </html>

@@ -43,3 +43,14 @@ window.addEventListener('nexus:before-navigate', (event) => {
 window.NEXUS_TOP.reportGlobalError({ id: 'preferences', message: '공통 설정 서버에 연결할 수 없습니다.' });
 window.NEXUS_TOP.clearGlobalError('preferences');
 ```
+
+## 앱 공통 UI 밀도
+
+지원 앱은 `nexus-app-ui.css`와 `nexus-ui-contract.js`를 불러온다. 공통헤더가 설정한 `data-nexus-density`에 따라 작업헤더, 대상 탭, 도구와 표가 CSS 변수로만 변경되며 앱 초기화·데이터 재조회·자동저장을 실행하지 않는다.
+
+```html
+<link rel="stylesheet" href="/nexus/common/nexus-app-ui.css">
+<script src="/nexus/common/nexus-ui-contract.js"></script>
+```
+
+Master 파일럿 적용 상태, 9개 상태 보존 식별자와 후속 앱 예외는 [`NEXUS_APP_UI_CONTRACT.md`](./NEXUS_APP_UI_CONTRACT.md)에 기록한다.

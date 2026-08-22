@@ -352,7 +352,7 @@
       const densityOptions = [['standard', '표준'], ['compact', '압축']];
       this.root.querySelector('.settings-content').innerHTML = `
         <section class="settings-section"><h3>색상 모드</h3><div class="segments" role="group" aria-label="색상 모드">${colorOptions.map(([id, label]) => `<button type="button" data-color-mode="${id}" aria-pressed="${preferences.colorMode === id}">${label}</button>`).join('')}</div></section>
-        <section class="settings-section"><h3>화면 밀도</h3><div class="segments two" role="group" aria-label="화면 밀도">${densityOptions.map(([id, label]) => `<button type="button" data-density="${id}" aria-pressed="${preferences.density === id}">${label}</button>`).join('')}</div><p class="section-note">헤더·메뉴 간격과 공통 좌우 여백만 변경합니다.</p></section>
+        <section class="settings-section"><h3>화면 밀도</h3><div class="segments two" role="group" aria-label="화면 밀도">${densityOptions.map(([id, label]) => `<button type="button" data-density="${id}" aria-pressed="${preferences.density === id}">${label}</button>`).join('')}</div><p class="section-note">헤더와 지원 앱의 작업영역 밀도를 변경합니다.</p></section>
         <section class="settings-section"><div class="section-title"><div><h3>업무군 메뉴</h3><p>노출과 순서를 업무군 단위로 관리합니다.</p></div><button type="button" class="reset" data-reset-groups>초기화</button></div>
           <div class="group-settings">${groups.map((group, index) => `<div class="group-setting">
             <div class="move-buttons"><button type="button" data-group-move="-1" data-group-id="${group.id}" aria-label="${escapeHtml(group.name)} 위로" ${index === 0 ? 'disabled' : ''}>↑</button><button type="button" data-group-move="1" data-group-id="${group.id}" aria-label="${escapeHtml(group.name)} 아래로" ${index === groups.length - 1 ? 'disabled' : ''}>↓</button></div>

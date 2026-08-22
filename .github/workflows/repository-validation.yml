@@ -32,6 +32,15 @@ jobs:
       - name: Validate manifest, files, and contracts
         run: node scripts/validate-repository.mjs
 
+      - name: Test NEXUS common header contract
+        run: node scripts/test-nexus-common-header.mjs
+
+      - name: Test NEXUS common application UI and density contract
+        run: node scripts/test-nexus-common-ui.mjs
+
+      - name: Test Master target navigation and work-entry actions
+        run: node scripts/test-master-navigation.mjs
+
       - name: Test client-side import and storage safety
         run: node scripts/test-client-safety.mjs
 
