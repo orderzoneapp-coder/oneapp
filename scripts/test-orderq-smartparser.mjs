@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { parseKakaoText, parseGeneralText, createSourceMessageKey } from '../orderq/smartparser/source-parser.js';
+import { parseKakaoText, parseGeneralText, createSourceMessageKey, isKakaoDateSeparator } from '../orderq/smartparser/source-parser.js';
 import { EVENT_TYPE, detectOrderEvent } from '../orderq/smartparser/order-event-detector.js';
 import { parseOrderLine } from '../orderq/smartparser/order-line-parser.js';
 import { generateProductCandidates, loadCandidateContext } from '../orderq/smartparser/candidate-generator.js';
 import { matchParsedLine } from '../orderq/smartparser/matching-engine.js';
+import { extractOrderMessages, extractOrderProductLines } from '../orderq/smartparser/order-text-extractor.js';
 
 const cases = [
   ['수입양상추1', EVENT_TYPE.ORDER],
@@ -27,6 +28,12 @@ assert.equal(packed.specText, '12수');
 assert.equal(packed.attributeText, '좋은거');
 assert.equal(packed.quantity, 3);
 assert.equal(packed.rawUnit, '박스');
+
+const boxed = parseOrderLine('당근1상자.');
+assert.equal(boxed.productText, '당근');
+assert.equal(boxed.quantity, 1);
+assert.equal(boxed.rawUnit, '상자');
+assert.equal(parseOrderLine('내일 배송 가능할까요?').excluded, true, 'a conversation without quantity must not become a product line');
 
 for (const [input, productText, quantity] of [
   ['수입양상추1', '수입양상추', 1],
@@ -73,6 +80,24 @@ assert.equal(kakao.length, 2);
 assert.equal(kakao[0].senderRaw, '진주8번');
 assert.deepEqual(kakao[0].lines, ['8번', '봉지추부깻잎 1', '베이비(소) 5']);
 assert.equal(kakao[1].senderRaw, '진주170');
+
+const noisyKakaoText = `2026년 8월 22일 토요일
+[로만시스] [오전 9:11] 주문 부탁드립니다.
+당근1상자.
+양파1망
+[로만시스] [오전 9:12] 내일 배송 가능할까요?
+[담당자] [오전 10:45] 네`;
+assert.equal(isKakaoDateSeparator('--------------- 2026년 8월 22일 토요일 ---------------'), true);
+const noisyMessages = extractOrderMessages({ sourceType: 'KAKAO_TEXT', sourceId: 'KAKAO_NOISE_FIXTURE', rawText: noisyKakaoText });
+assert.equal(noisyMessages.length, 3, 'the date separator before the first message must not become a message');
+assert.equal(noisyMessages[0].message.rawText.includes('주문 부탁드립니다.'), true, 'non-product text must remain in the source message for review');
+assert.equal(noisyMessages[1].parsedLines.length, 0, 'delivery conversation must not become a product row');
+assert.equal(noisyMessages[2].event.eventType, EVENT_TYPE.ACK);
+const noisyProducts = extractOrderProductLines({ sourceType: 'KAKAO_TEXT', sourceId: 'KAKAO_NOISE_FIXTURE', rawText: noisyKakaoText });
+assert.deepEqual(noisyProducts.map(line => [line.productText, line.quantity, line.rawUnit]), [
+  ['당근', 1, '상자'],
+  ['양파', 1, '망']
+], 'the noisy Kakao fixture must produce exactly two behavioral product rows');
 
 const general = parseGeneralText('꽃상추3\n상장 1900', 'GENERAL_FIXTURE');
 assert.equal(general.length, 2);

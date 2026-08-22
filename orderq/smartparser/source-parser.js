@@ -1,4 +1,9 @@
 const KAKAO_HEADER = /^\[([^\]]+)\]\s*\[([^\]]+)\]\s*(.*)$/;
+const KAKAO_DATE_SEPARATOR = /^(?:-+\s*)?\d{4}(?:년|\s*[./-])\s*\d{1,2}(?:월|\s*[./-])\s*\d{1,2}(?:일|\.)?\s*(?:월|화|수|목|금|토|일)요일(?:\s*-+)?$/;
+
+export function isKakaoDateSeparator(value) {
+  return KAKAO_DATE_SEPARATOR.test(String(value ?? '').normalize('NFKC').trim());
+}
 
 export function normalizeSourceText(value) {
   return String(value ?? '')
@@ -48,6 +53,11 @@ export function parseKakaoText(rawText, sourceId = '') {
   const messages = [];
   let current = null;
   normalizeSourceText(rawText).split('\n').forEach(line => {
+    if (isKakaoDateSeparator(line)) {
+      finalizeMessage(messages, current, sourceType, sourceId);
+      current = null;
+      return;
+    }
     const header = line.match(KAKAO_HEADER);
     if (header) {
       finalizeMessage(messages, current, sourceType, sourceId);

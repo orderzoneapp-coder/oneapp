@@ -1,4 +1,4 @@
-import('./collector-smartparser-review.js?v=0.12.2').catch(error => console.error('Collector SmartParser review load failed', error));
+import('./collector-smartparser-review.js?v=0.12.3').catch(error => console.error('Collector SmartParser review load failed', error));
 
 const excludedPhotoIndexes = new Set();
 
