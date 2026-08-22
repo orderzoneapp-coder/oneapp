@@ -74,7 +74,7 @@ assert.match(ui, /getLatestCustomerSourceImportWork/, 'Pending Excel work must r
 assert.match(ui, /importStatusFilter: 'ISSUES'/, 'Workbench must default to unresolved customer rows');
 assert.match(html, /erpCustomerExcelFile/);
 assert.match(html, /거래처 DB/);
-assert.match(html, /customer-master-ui\.js\?v=0\.19\.0/, 'Customer Master entry module must invalidate the deployed cache');
+assert.match(html, /customer-master-ui\.js\?v=0\.20\.0/, 'Customer Master entry module must invalidate the deployed cache');
 assert.match(ui, /async function initializeCustomerMaster\(\) \{\s+const pending = await getLatestCustomerSourceImportWork\(\)/, 'Saved Excel work must render before Cloud Master synchronization');
 assert.match(ui, /await reload\(\);[\s\S]*ensureCustomerMasterReady/, 'Local Customer Master must render before Cloud synchronization');
 assert.match(ui, /fallbackFileHash/, 'Excel import must continue with a deterministic file hash when Web Crypto stalls');
@@ -98,7 +98,10 @@ assert.match(service, /orderq-db\.js\?v=0\.16\.0/, 'Customer Master must load th
 assert.match(css, /\.cm-viewport/);
 assert.match(html, /data-customer-summary-filter="ALL"/);
 assert.match(html, /data-customer-summary-filter="COMPLETE"[\s\S]*정보 완료/);
-assert.match(html, /id="customerGroupFilter"[\s\S]*id="customerManagerFilter"/);
+assert.match(html, /id="customerGroup1Filter"[\s\S]*id="customerGroup2Filter"[\s\S]*id="customerManagerFilter"/);
+assert.match(html, /<span>그룹1<\/span><span>그룹2<\/span>/, 'Customer list must expose both group levels');
+assert.match(ui, /customer\.group2Name \|\| '-'/, 'Customer rows must render group2');
+assert.match(ui, /group1 === 'ALL'[\s\S]*group2 === 'ALL'/, 'Group1 and Group2 filters must combine with AND');
 assert.match(html, /id="customerIssueGrid"/);
 assert.match(ui, /state\.summaryFilter === 'UNVERIFIED'/, 'Information supplement card must switch to the Excel editor');
 assert.match(ui, /const ISSUE_FIELDS = Object\.freeze\(\['customerName', 'address', 'mobile'\]\)/, 'Only business name, address and mobile are directly editable');

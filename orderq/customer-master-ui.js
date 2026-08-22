@@ -34,7 +34,8 @@ const elements = {
   empty: document.querySelector('#customerEmpty'),
   search: document.querySelector('#customerSearch'),
   filter: document.querySelector('#customerFilter'),
-  groupFilter: document.querySelector('#customerGroupFilter'),
+  group1Filter: document.querySelector('#customerGroup1Filter'),
+  group2Filter: document.querySelector('#customerGroup2Filter'),
   managerFilter: document.querySelector('#customerManagerFilter'),
   standardList: document.querySelector('#customerStandardList'),
   issueEditor: document.querySelector('#customerIssueEditor'),
@@ -109,6 +110,7 @@ function renderWindow() {
       <span><strong>${escapeHtml(customer.customerName)}</strong><small>${escapeHtml(customer.representativeName || customer.contactName || '')}</small></span>
       <span><strong>${escapeHtml(customer.phone || customer.mobile || '-')}</strong><small>${escapeHtml([customer.address, customer.addressDetail].filter(Boolean).join(' '))}</small></span>
       <span>${escapeHtml(customer.group1Name || customer.groupName || '-')}</span>
+      <span>${escapeHtml(customer.group2Name || '-')}</span>
       <span class="cm-badge ${className}">${label}</span>
     </button>`;
   }).join('');
@@ -176,7 +178,8 @@ function populateFilter(select, values, label) {
 async function applyFilter() {
   const query = elements.search.value.trim().toLocaleLowerCase('ko');
   const filter = elements.filter.value;
-  const group = elements.groupFilter.value;
+  const group1 = elements.group1Filter.value;
+  const group2 = elements.group2Filter.value;
   const manager = elements.managerFilter.value;
   const matchedIds = query
     ? new Set((await searchCustomers(query, { limit: 10000, includeInactive: true })).map(item => item.customer.customerId))
@@ -186,7 +189,8 @@ async function applyFilter() {
       && (filter === 'ALL' || customer.status === filter || customer.qualityStatus === filter)
       && (state.summaryFilter === 'ALL'
         || (state.summaryFilter === 'COMPLETE' ? customer.qualityStatus === 'VERIFIED' : customer.qualityStatus === state.summaryFilter))
-      && (group === 'ALL' || (customer.group1Name || customer.groupName || '') === group)
+      && (group1 === 'ALL' || (customer.group1Name || customer.groupName || '') === group1)
+      && (group2 === 'ALL' || (customer.group2Name || '') === group2)
       && (manager === 'ALL' || (customer.contactName || '') === manager);
   });
   elements.viewport.scrollTop = 0;
@@ -202,7 +206,8 @@ function renderStats() {
 
 async function reload() {
   state.customers = await listCustomers({ includeInactive: true, includeSuperseded: false });
-  populateFilter(elements.groupFilter, state.customers.map(customer => customer.group1Name || customer.groupName || ''), '그룹');
+  populateFilter(elements.group1Filter, state.customers.map(customer => customer.group1Name || customer.groupName || ''), '그룹1');
+  populateFilter(elements.group2Filter, state.customers.map(customer => customer.group2Name || ''), '그룹2');
   populateFilter(elements.managerFilter, state.customers.map(customer => customer.contactName || ''), '담당자');
   elements.empty.textContent = state.customers.length ? '조건에 맞는 거래처가 없습니다.' : '등록된 거래처가 없습니다.';
   renderStats();
@@ -665,7 +670,8 @@ elements.issueGrid.addEventListener('paste', event => {
 elements.viewport.addEventListener('scroll', renderWindow, { passive: true });
 elements.search.addEventListener('input', applyFilter);
 elements.filter.addEventListener('change', applyFilter);
-elements.groupFilter.addEventListener('change', applyFilter);
+elements.group1Filter.addEventListener('change', applyFilter);
+elements.group2Filter.addEventListener('change', applyFilter);
 elements.managerFilter.addEventListener('change', applyFilter);
 elements.saveIssues.addEventListener('click', () => saveIssueDrafts(false));
 elements.saveIssuesNext.addEventListener('click', () => saveIssueDrafts(true));
