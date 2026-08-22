@@ -8,7 +8,7 @@
   <meta name="description" content="주문서·구매·판매 자료를 분석하고 표준 입력표로 전달하는 NEXUS 스마트입력">
   <link rel="icon" type="image/png" href="../nexus/assets/nexus-favicon.png">
   <link rel="stylesheet" href="../orderq/customer-master.css?v=0.12.1" data-customer-picker-style>
-  <link rel="stylesheet" href="./smartinput.css?v=0.3.0">
+  <link rel="stylesheet" href="./smartinput.css?v=0.3.1">
   <script src="../nexus/common/apps-config.js?v=1.2.0"></script>
   <script src="../nexus/common/nexus-top.js?v=1.2.0"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
@@ -26,6 +26,11 @@
         <span class="app-status__dot" aria-hidden="true"></span>
         <span>새 입력을 시작할 수 있습니다.</span>
       </div>
+      <nav class="mode-tabs" aria-label="입력 업무 선택">
+        <button type="button" class="mode-tab is-active" data-mode="order" aria-selected="true"><span>주문서</span><kbd>Alt+1</kbd></button>
+        <button type="button" class="mode-tab" data-mode="purchase" aria-selected="false"><span>구매</span><kbd>Alt+2</kbd></button>
+        <button type="button" class="mode-tab" data-mode="sale" aria-selected="false"><span>판매</span><kbd>Alt+3</kbd></button>
+      </nav>
       <div class="app-bar__actions">
         <span class="save-state" id="saveState">초안 저장됨</span>
         <button class="button button--quiet" id="draftListButton" type="button">초안 목록</button>
@@ -38,19 +43,7 @@
   </header>
 
   <main class="app-shell">
-    <section class="hero" aria-labelledby="pageTitle">
-      <div>
-        <p class="eyebrow">원본 접수부터 업무 전달까지</p>
-        <h1 id="pageTitle">한 번 입력하고, 정확한 업무로 보냅니다.</h1>
-        <p>원문은 그대로 보존하고 매칭 결과와 관리자 수정값을 분리해 관리합니다.</p>
-      </div>
-      <nav class="mode-tabs" aria-label="입력 업무 선택">
-        <button type="button" class="mode-tab is-active" data-mode="order" aria-selected="true"><span>주문서</span><kbd>Alt+1</kbd></button>
-        <button type="button" class="mode-tab" data-mode="purchase" aria-selected="false"><span>구매</span><kbd>Alt+2</kbd></button>
-        <button type="button" class="mode-tab" data-mode="sale" aria-selected="false"><span>판매</span><kbd>Alt+3</kbd></button>
-      </nav>
-    </section>
-
+    <h1 class="sr-only">스마트입력</h1>
     <div class="workspace">
       <aside class="stage-rail" aria-label="입력 현황">
         <div class="aside-heading">
