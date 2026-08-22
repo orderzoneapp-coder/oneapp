@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = '1.1.0';
+  const VERSION = '1.2.0';
   const STORAGE = Object.freeze({
     colorMode: 'oneapp.nexus.v1.colorMode',
     density: 'oneapp.nexus.v1.density',
@@ -68,6 +68,7 @@
       try {
         this.groups = asArray(window.NEXUS_GROUPS);
         this.apps = asArray(window.NEXUS_APPS);
+        this.globalActions = asArray(window.NEXUS_GLOBAL_ACTIONS);
         this.aliases = window.NEXUS_APP_ALIASES || {};
         if (!this.groups.length || !this.apps.length) throw new Error('NEXUS app configuration is unavailable.');
 
@@ -121,6 +122,7 @@
           <a class="brand" href="https://oneapp.orderz.co.kr/nexus/" aria-label="NEXUS 홈" data-navigate data-target-app="">
             <img src="/nexus/assets/brand/oneapp-nexus-dark.svg" alt="ONEAPP NEXUS">
           </a>
+          <div class="global-entries" aria-label="고정 실행"></div>
           <nav class="nav" aria-label="업무군 메뉴"><div class="track"></div></nav>
           <div class="actions">
             <button class="action global-alert" type="button" aria-label="NEXUS 전역 오류" hidden>
@@ -226,10 +228,20 @@
     }
 
     renderAll() {
+      this.renderGlobalEntries();
       this.renderNavigation();
       this.renderStatus();
       this.renderApps();
       this.renderSettings();
+    }
+
+    renderGlobalEntries() {
+      this.root.querySelector('.global-entries').innerHTML = this.globalActions.map((action) => {
+        const active = action.appId === this.currentAppId;
+        return `<a class="global-entry${active ? ' is-current' : ''}" href="${escapeHtml(action.url)}" data-navigate data-target-app="${escapeHtml(action.appId)}" ${active ? 'aria-current="page"' : ''}>
+          <span class="global-entry-icon" aria-hidden="true">✦</span><span>${escapeHtml(action.name)}</span>
+        </a>`;
+      }).join('');
     }
 
     renderNavigation() {

@@ -1,4 +1,5 @@
 import { STORE, getAll, normalizeText } from '../orderq-db.js?v=0.8.0';
+import { loadProductCatalog } from '../product-master-search.js?v=0.8.0';
 
 export function productTextSimilarity(left, right) {
   const a = normalizeText(left);
@@ -40,18 +41,24 @@ function fuzzyMappingScore(kind, similarityScore, useCount = 0) {
   return Math.min(0.90, 0.70 + similarityScore * 0.18 + usageBonus);
 }
 
-export async function loadCandidateContext() {
-  const [mappings, products, orders, items] = await Promise.all([
-    getAll(STORE.PRODUCT_MAPPINGS),
-    getAll(STORE.PRODUCTS),
-    getAll(STORE.ORDERS),
-    getAll(STORE.ORDER_ITEMS)
+export async function loadCandidateContext({ readStore = getAll, loadCatalog = loadProductCatalog } = {}) {
+  const [mappings, catalog, orders, items] = await Promise.all([
+    readStore(STORE.PRODUCT_MAPPINGS),
+    loadCatalog(),
+    readStore(STORE.ORDERS),
+    readStore(STORE.ORDER_ITEMS)
   ]);
+  const products = Array.isArray(catalog) ? catalog : (catalog?.products || []);
   return {
     mappings,
     products,
     orders,
     items,
+    catalogSummary: Array.isArray(catalog) ? null : {
+      commonCount: Number(catalog?.commonCount || 0),
+      orderQCount: Number(catalog?.orderQCount || 0),
+      errors: Array.isArray(catalog?.errors) ? catalog.errors : []
+    },
     productById: new Map(products.map(product => [product.productId, product]))
   };
 }
@@ -112,7 +119,7 @@ export async function generateProductCandidates({ productText, customerId = '', 
 
   if (normalized) {
     products.forEach(product => {
-      const fields = [product.itemName, product.productName, product.secondName, product.alias, product.searchInfo, product.specification].filter(Boolean);
+      const fields = [product.itemName, product.productName, product.secondaryName, product.secondName, product.alias, product.searchInfo, product.specification].filter(Boolean);
       let score = 0;
       let matchedField = '';
       fields.forEach(field => {

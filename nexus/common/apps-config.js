@@ -15,6 +15,7 @@
   ]);
 
   window.NEXUS_APPS = freezeRecords([
+    { id: 'smart-input', groupId: 'shipping', name: '스마트입력', description: '주문·구매·판매 통합입력', url: `${base}/smartinput/`, lifecycle: 'operational', access: 'allowed' },
     { id: 'orderq', groupId: 'shipping', name: 'ORDER Q', description: '출고 작업', url: `${base}/orders.html`, lifecycle: 'operational', access: 'allowed' },
     { id: 'orderops', groupId: 'shipping', name: 'OrderOps', description: '출고 운영', url: `${base}/orderops/list.html`, lifecycle: 'operational', access: 'allowed' },
     { id: 'orderin', groupId: 'shipping', name: 'ORDER IN', description: '주문 직접입력', url: `${base}/orderq/input.html`, lifecycle: 'development', access: 'allowed' },
@@ -24,6 +25,10 @@
     { id: 'master', groupId: 'foundation', name: 'Master', description: '상품·거래처 기초등록', url: `${base}/Master.html`, lifecycle: 'operational', access: 'allowed' },
     { id: 'item-manager', groupId: 'foundation', name: 'Item Manager', description: '상품 기초정보 관리', url: `${base}/Item_manager.html`, lifecycle: 'operational', access: 'allowed', defaultHidden: true },
     { id: 'customer-manager', groupId: 'foundation', name: '거래처 관리', description: '거래처 기초정보', url: `${base}/Master.html?view=customers`, lifecycle: 'development', access: 'allowed' },
+  ]);
+
+  window.NEXUS_GLOBAL_ACTIONS = freezeRecords([
+    { id: 'smart-input', appId: 'smart-input', name: '스마트입력', url: `${base}/smartinput/` },
   ]);
 
   // Existing entry-point IDs remain valid while each page moves to canonical IDs.

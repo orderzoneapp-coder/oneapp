@@ -2,7 +2,7 @@ import {
   captureTextIntake,
   analyzeSingleOrderDocument,
   rematchExtractedLinesForCustomer
-} from '../orderq/intake-engine.js?v=0.12.1';
+} from '../orderq/intake-engine.js?v=0.12.2';
 import { createOrder } from '../orderq/order-intake-engine.js?v=0.15.0';
 import { syncAfterLocalMutation } from '../orderq/orderq-sync-engine.js?v=0.8.0';
 import { STORE, getAll } from '../orderq/orderq-db.js?v=0.12.1';
@@ -172,6 +172,10 @@ function extractOrdererName(rawText) {
   return lines.find(line => !/\d+(?:\.\d+)?\s*(개|박스|box|kg|g|판|봉|팩|ea|세트)?\s*$/i.test(line)) || lines[0] || '';
 }
 
+function looksLikeKakaoText(rawText) {
+  return /^\s*\[[^\]\r\n]+\]\s*\[(?:오전|오후)?\s*\d{1,2}:\d{2}\]/m.test(String(rawText || ''));
+}
+
 function aliasContextKey(sourceType = '') {
   return `SMART_INPUT|${String(sourceType || 'GENERAL_TEXT').toUpperCase()}`;
 }
@@ -327,7 +331,10 @@ function inferCustomer(rawText) {
 }
 
 function currentSourceType() {
-  return contract.INPUT_METHODS.find(method => method.id === modeDraft().activeMethod)?.sourceType || 'GENERAL_TEXT';
+  const batches = modeDraft().batches;
+  return batches[batches.length - 1]?.sourceType
+    || contract.INPUT_METHODS.find(method => method.id === modeDraft().activeMethod)?.sourceType
+    || 'GENERAL_TEXT';
 }
 
 async function refreshCustomers() {
@@ -717,7 +724,8 @@ async function rematchRowsForCustomer(customer) {
     current.rows = contract.markDuplicatePossibilities(current.rows);
     renderRows();
     saveDraftNow();
-    setAppStatus('거래처 기준 상품 매칭을 갱신했습니다.');
+    const summary = contract.summarizeRows(current.rows);
+    setAppStatus(`${customerName(customer)} 재매칭 완료 · 일치 ${summary.matched} · 확인 ${summary.similar} · 미인식 ${summary.unresolved}`);
   } catch (error) {
     setAppStatus('상품 재매칭을 완료하지 못했습니다. 현재 수정값은 유지됩니다.', 'warn');
     toast(error.message || '상품 재매칭에 실패했습니다.', 'error');
@@ -745,7 +753,6 @@ function hydrateHeader() {
   const header = modeDraft().header;
   $('customerInput').value = header.customerName;
   $('customerInput').dataset.customerId = header.customerId;
-  $('orderDateInput').value = header.orderDate || contract.todayLocal();
   $('deliveryDateInput').value = header.deliveryDate;
   $('warehouseInput').value = header.warehouseName;
   $('transactionTypeInput').value = header.transactionType || '기타';
@@ -756,7 +763,7 @@ function hydrateHeader() {
 
 function rowStatusLabel(row) {
   if (row.matchStatus === 'MATCHED') return ['일치', 'match-badge--matched'];
-  if (row.matchStatus === 'SIMILAR') return ['유사', 'match-badge--similar'];
+  if (row.matchStatus === 'SIMILAR') return ['확인', 'match-badge--similar'];
   return ['미인식', 'match-badge--failed'];
 }
 
@@ -800,28 +807,36 @@ function updateSummaries() {
   const summary = contract.summarizeRows(modeDraft().rows);
   $('gridRowCount').textContent = `${summary.total.toLocaleString('ko-KR')}행`;
   $('matchedCount').textContent = `일치 ${summary.matched.toLocaleString('ko-KR')}`;
-  $('similarCount').textContent = `유사 ${summary.similar.toLocaleString('ko-KR')}`;
+  $('similarCount').textContent = `확인 ${summary.similar.toLocaleString('ko-KR')}`;
   $('failedCount').textContent = `미인식 ${summary.unresolved.toLocaleString('ko-KR')}`;
   $('duplicateCount').textContent = `중복 가능 ${summary.duplicate.toLocaleString('ko-KR')}`;
   $('totalQuantity').textContent = summary.quantity.toLocaleString('ko-KR');
   $('totalAmount').textContent = `${summary.amount.toLocaleString('ko-KR')}원`;
   $('batchCount').textContent = `${modeDraft().batches.length.toLocaleString('ko-KR')}차`;
-  $('rowCountRail').textContent = `${contract.MODES[state.draft.activeMode].label}행 ${summary.total.toLocaleString('ko-KR')}개`;
-  updateStage(summary);
+  $('rowCountRail').textContent = `상품행 ${summary.total.toLocaleString('ko-KR')}개`;
+  updateIntakeStatus(summary);
 }
 
-function updateStage(summary = contract.summarizeRows(modeDraft().rows)) {
-  let stageIndex = 0;
-  if (summary.total) stageIndex = summary.unresolved || summary.similar ? 2 : 3;
-  if (modeDraft().delivery.status === 'SAVED') stageIndex = 4;
-  state.draft.ui.stage = contract.STAGES[stageIndex];
-  document.querySelectorAll('[data-stage]').forEach((item, index) => {
-    item.classList.toggle('is-current', index === stageIndex);
-    item.classList.toggle('is-complete', index < stageIndex);
-    const indexLabel = item.querySelector('button > span');
-    if (indexLabel) indexLabel.textContent = index < stageIndex ? '✓' : String(index + 1).padStart(2, '0');
-  });
-  $('progressText').textContent = `${stageIndex + 1} / ${contract.STAGES.length}`;
+function updateIntakeStatus(summary = contract.summarizeRows(modeDraft().rows)) {
+  const current = modeDraft();
+  const sourcePresent = Boolean(current.sourceText.trim() || current.batches.length);
+  $('sourceRailStatus').textContent = sourcePresent ? `원문 ${current.batches.length || 1}차 보존` : '입력 전';
+  $('matchingRailStatus').textContent = `일치 ${summary.matched} · 확인 ${summary.similar} · 미인식 ${summary.unresolved}`;
+  const sourceItem = $('sourceRailStatus').closest('li');
+  const rowItem = $('rowCountRail').closest('li');
+  const matchItem = $('matchingRailStatus').closest('li');
+  const deliveryItem = $('deliveryRailStatus').closest('li');
+  sourceItem.dataset.tone = sourcePresent ? 'ready' : 'idle';
+  rowItem.dataset.tone = summary.total ? 'ready' : 'idle';
+  matchItem.dataset.tone = !summary.total ? 'idle' : (summary.unresolved ? 'error' : (summary.similar ? 'review' : 'ready'));
+  if (current.delivery.status === 'SAVED') {
+    $('deliveryRailStatus').textContent = '전달 완료';
+    deliveryItem.dataset.tone = 'ready';
+  } else {
+    const ready = state.draft.activeMode === 'order' && summary.total > 0 && summary.unresolved === 0 && summary.similar === 0;
+    $('deliveryRailStatus').textContent = ready ? '전달 가능' : '전달 전';
+    deliveryItem.dataset.tone = ready ? 'review' : 'idle';
+  }
 }
 
 function renderDelivery() {
@@ -941,10 +956,13 @@ async function analyzeSource() {
     return;
   }
   const method = contract.INPUT_METHODS.find(item => item.id === current.activeMethod) || contract.INPUT_METHODS[2];
+  const detectedSourceType = looksLikeKakaoText(rawText)
+    ? 'KAKAO_TEXT'
+    : (method.sourceType === 'CLIPBOARD' ? 'GENERAL_TEXT' : method.sourceType);
   const batch = contract.createBatch({
     sequence: current.batches.length + 1,
     method: method.id,
-    sourceType: method.sourceType,
+    sourceType: detectedSourceType,
     sourceName: state.pendingSourceName,
     rawText,
     contentHash: await sha256Text(rawText)
@@ -973,7 +991,7 @@ async function analyzeSource() {
     if (state.draft.activeMode === 'order') {
       try {
         const captured = await captureTextIntake({
-          sourceType: method.sourceType === 'CLIPBOARD' ? 'GENERAL_TEXT' : method.sourceType,
+          sourceType: batch.sourceType,
           sourceId: 'SMART_INPUT',
           captureOccurrenceId: `${state.draft.draftId}:${state.draft.activeMode}:${batch.sequence}`,
           rawText,
@@ -1027,7 +1045,7 @@ async function analyzeSource() {
     renderDelivery();
     saveDraftNow();
     const summary = contract.summarizeRows(current.rows);
-    setAppStatus(`${batch.sequence}차 분석 완료 · ${lines.length}행 추가 · 일치 ${summary.matched}, 확인 필요 ${summary.similar + summary.unresolved}`);
+    setAppStatus(`${batch.sequence}차 분석 완료 · ${lines.length}행 추가 · 일치 ${summary.matched} · 확인 ${summary.similar} · 미인식 ${summary.unresolved}`);
     if (!current.header.customerId) {
       $('customerHint').textContent = '거래처를 인식하지 못했습니다. 등록 거래처를 선택하세요.';
       $('customerInput').focus();
@@ -1322,6 +1340,9 @@ async function completeOrder() {
     toast('구매·판매 전달 대상은 확정 후 활성화합니다.', 'error');
     return;
   }
+  const submittedAt = new Date();
+  current.header.recordedAt ||= submittedAt.toISOString();
+  current.header.orderDate = contract.businessDate(current.header.recordedAt, state.settings.timezone);
   applyWarehouseMatch();
   const deliveryDecision = updateDeliveryPolicy();
   if (!deliveryDecision?.valid) {
@@ -1332,7 +1353,6 @@ async function completeOrder() {
   if (errors.length) {
     const first = errors[0];
     if (first.field === 'customer') $('customerInput').focus();
-    else if (first.field === 'orderDate') $('orderDateInput').focus();
     else if (first.field === 'warehouse') $('warehouseInput').focus();
     else if (first.field.startsWith('row:')) {
       const [, index, field] = first.field.split(':');
@@ -1385,6 +1405,7 @@ async function completeOrder() {
         productIdentityStatus: row.productId && row.itemCode ? 'MASTER_LINKED' : 'UNRESOLVED'
       }))
     });
+    current.header.submittedAt = submittedAt.toISOString();
     let online = false;
     try {
       const sync = await syncAfterLocalMutation(result.order.orderId);
@@ -1403,6 +1424,9 @@ async function completeOrder() {
       orderNo: result.order.orderNo,
       draftId: state.draft.draftId,
       sourceBatchIds: current.batches.map(batch => batch.batchId),
+      recordedAt: current.header.recordedAt,
+      submittedAt: current.header.submittedAt,
+      orderDate: current.header.orderDate,
       customerId: current.header.customerId,
       customerName: current.header.customerName,
       customerLinkGroupId: current.header.customerLinkGroupId,
@@ -1411,7 +1435,7 @@ async function completeOrder() {
       deliveryPolicySnapshot: current.header.deliveryPolicySnapshot,
       rowCount: current.rows.length
     });
-    const next = contract.createDraft({ date: contract.todayLocal() }).modes.order;
+    const next = contract.createDraft().modes.order;
     next.header.warehouseId = current.header.warehouseId;
     next.header.warehouseCode = current.header.warehouseCode;
     next.header.warehouseName = current.header.warehouseName;
@@ -1434,7 +1458,7 @@ function resetCurrentMode(requireConfirmation = true) {
   const current = modeDraft();
   const hasData = current.rows.length || current.sourceText.trim();
   if (requireConfirmation && hasData && !window.confirm(`${contract.MODES[state.draft.activeMode].label} 입력 내용을 비우고 새로 작성하시겠습니까?`)) return;
-  const fallback = contract.createDraft({ date: contract.todayLocal() }).modes[state.draft.activeMode];
+  const fallback = contract.createDraft().modes[state.draft.activeMode];
   fallback.header.warehouseId = current.header.warehouseId;
   fallback.header.warehouseCode = current.header.warehouseCode;
   fallback.header.warehouseName = current.header.warehouseName;
@@ -1531,12 +1555,6 @@ $('customerInput').addEventListener('keydown', event => {
     event.preventDefault();
     chooseCustomer();
   }
-});
-$('orderDateInput').addEventListener('input', event => {
-  modeDraft().header.orderDate = event.target.value;
-  if (!modeDraft().header.manualDeliveryOverride) updateDeliveryPolicy({ force: true });
-  else updateDeliveryPolicy();
-  scheduleSave();
 });
 $('deliveryDateInput').addEventListener('input', event => {
   modeDraft().header.deliveryDate = event.target.value;
