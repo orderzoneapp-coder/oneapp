@@ -134,11 +134,12 @@
             <option value="UNVERIFIED">정보 보완</option>
             <option value="DUPLICATE_CANDIDATE">중복 확인</option>
           </select>
-          <select class="cm-filter" id="customerGroupFilter" aria-label="그룹 필터"><option value="ALL">그룹 전체</option></select>
+          <select class="cm-filter" id="customerGroup1Filter" aria-label="그룹1 필터"><option value="ALL">그룹1 전체</option></select>
+          <select class="cm-filter" id="customerGroup2Filter" aria-label="그룹2 필터"><option value="ALL">그룹2 전체</option></select>
           <select class="cm-filter" id="customerManagerFilter" aria-label="담당자 필터"><option value="ALL">담당자 전체</option></select>
         </div>
         <div id="customerStandardList">
-          <div class="cm-list-head"><span>코드</span><span>거래처명</span><span>연락처 / 주소</span><span>그룹</span><span>상태</span></div>
+          <div class="cm-list-head"><span>코드</span><span>거래처명</span><span>연락처 / 주소</span><span>그룹1</span><span>그룹2</span><span>상태</span></div>
           <div class="cm-viewport" id="customerViewport"><div class="cm-spacer" id="customerSpacer"></div></div>
         </div>
         <section class="cm-issue-editor" id="customerIssueEditor" hidden aria-label="정보 보완 거래처 편집">
@@ -209,7 +210,7 @@
   </script>
 
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script type="module" src="./orderq/customer-master-ui.js?v=0.19.0"></script>
+  <script type="module" src="./orderq/customer-master-ui.js?v=0.20.0"></script>
   <script type="module" src="./orderq/customer-code-upsert-ui.js?v=0.17.0"></script>
 </body>
 </html>
