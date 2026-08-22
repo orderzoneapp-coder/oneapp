@@ -1,3 +1,5 @@
+import { parseOrderLines } from './order-line-parser.js?v=0.8.1';
+
 export const EVENT_TYPE = Object.freeze({
   ORDER: 'ORDER',
   ORDER_UPDATE: 'ORDER_UPDATE',
@@ -9,8 +11,6 @@ export const EVENT_TYPE = Object.freeze({
 });
 
 const ACK_PATTERN = /^(?:[/.]|ㅇ|네|넵|예|확인|감사|감사합니다|알겠습니다|ok|okay)$/i;
-const UNIT_PATTERN = '(?:박스|box|ea|개|봉|팩|단|망|묶음|kg|키로|통|병|포|롤|장|대|판)';
-
 export function detectOrderEvent(rawText) {
   const text = String(rawText ?? '').normalize('NFKC').trim();
   const compact = text.replace(/\s+/g, ' ');
@@ -34,13 +34,11 @@ export function detectOrderEvent(rawText) {
     return { eventType: EVENT_TYPE.INFORMATION, score: 0.9, reasons: ['PRICE_OR_STOCK_INFORMATION'] };
   }
 
-  const hasUnitQuantity = new RegExp(`\\d+(?:\\.\\d+)?\\s*${UNIT_PATTERN}(?:요|주세요)?(?:\\s|$)`, 'i').test(compact);
-  const hasTerminalQuantity = /[가-힣A-Za-z][가-힣A-Za-z()/_\-\s]*\d+(?:\.\d+)?\s*(?:요|주세요)?$/i.test(compact);
-  const hasMultilineItems = text.includes('\n') && text.split('\n').filter(line => /\d/.test(line)).length >= 1;
-  if (hasUnitQuantity || hasTerminalQuantity || hasMultilineItems) {
-    if (hasUnitQuantity) reasons.push('QUANTITY_WITH_UNIT');
-    if (hasTerminalQuantity) reasons.push('PRODUCT_WITH_TERMINAL_QUANTITY');
-    if (hasMultilineItems) reasons.push('MULTILINE_ITEMS');
+  const orderLines = parseOrderLines(text);
+  if (orderLines.length) {
+    const hasUnitQuantity = orderLines.some(line => line.rawUnit);
+    reasons.push(hasUnitQuantity ? 'QUANTITY_WITH_UNIT' : 'PRODUCT_WITH_TERMINAL_QUANTITY');
+    if (orderLines.length > 1) reasons.push('MULTIPLE_ORDER_LINES');
     return { eventType: EVENT_TYPE.ORDER, score: hasUnitQuantity ? 0.9 : 0.82, reasons };
   }
 

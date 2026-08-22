@@ -144,7 +144,7 @@ assert.doesNotMatch(collectorRepository, /customer = candidate;\s*customerStore?
 assert.match(collectorRepository, /미등록 거래처입니다/);
 assert.match(collectorUi, /resolvePreparedCustomers/);
 assert.match(collectorUi, /openCustomerPicker/);
-assert.match(collectorHtml, /collector-smartparser-review\.js\?v=0\.12\.2/);
+assert.match(collectorHtml, /collector-smartparser-review\.js\?v=0\.12\.3/);
 
 assert.doesNotMatch(cloud, /source: 'ORDER_SYNC'/);
 assert.match(cloud, /ORDERQ_CUSTOMER_NOT_FOUND/);

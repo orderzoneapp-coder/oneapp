@@ -2,7 +2,8 @@ import {
   captureTextIntake,
   analyzeSingleOrderDocument,
   rematchExtractedLinesForCustomer
-} from '../orderq/intake-engine.js?v=0.12.2';
+} from '../orderq/intake-engine.js?v=0.12.3';
+import { extractOrderProductLines } from '../orderq/smartparser/order-text-extractor.js?v=0.1.0';
 import { createOrder } from '../orderq/order-intake-engine.js?v=0.15.0';
 import { syncAfterLocalMutation } from '../orderq/orderq-sync-engine.js?v=0.8.0';
 import { STORE, getAll } from '../orderq/orderq-db.js?v=0.12.1';
@@ -926,21 +927,17 @@ async function sha256Text(value) {
 
 function fallbackLines(rawText, batch) {
   const customerKey = normalizedKey(modeDraft().header.customerName);
-  return String(rawText || '').replace(/\r\n?/g, '\n').split('\n').map((raw, index) => ({ raw, index }))
-    .filter(({ raw }) => raw.trim() && normalizedKey(raw) !== customerKey)
-    .map(({ raw, index }) => {
-      const cleaned = raw.trim().replace(/^[-•·*]+\s*/, '');
-      const match = cleaned.match(/^(.*?)\s+(-?\d+(?:\.\d+)?)\s*([^\d\s]*)$/);
-      return {
-        rawText: raw,
-        productText: match ? match[1].trim() : cleaned,
-        itemName: match ? match[1].trim() : cleaned,
-        quantity: match ? Number(match[2]) : null,
-        unit: match?.[3] || '',
-        sourceLineKey: `${batch.batchId}:${index + 1}`,
-        matchStatus: 'UNRESOLVED'
-      };
-    });
+  return extractOrderProductLines({ sourceType: batch.sourceType, sourceId: 'SMART_INPUT', rawText })
+    .filter(line => normalizedKey(line.productText) !== customerKey)
+    .map(line => ({
+      rawText: line.rawText,
+      productText: line.productText,
+      itemName: line.productText,
+      quantity: line.quantity,
+      unit: line.finalUnit || line.rawUnit || '',
+      sourceLineKey: `${batch.batchId}:${line.sourceMessageKey}:${line.sourceLineNo}`,
+      matchStatus: 'UNRESOLVED'
+    }));
 }
 
 async function analyzeSource() {

@@ -1,5 +1,5 @@
-import { analyzeSmartText, summarizeParserResults } from './smartparser/parser-orchestrator.js?v=0.12.2';
-import { EVENT_TYPE } from './smartparser/order-event-detector.js?v=0.8.0';
+import { analyzeSmartText, summarizeParserResults } from './smartparser/parser-orchestrator.js?v=0.12.3';
+import { EVENT_TYPE } from './smartparser/order-event-detector.js?v=0.8.1';
 import { updateParseResult, recordProductMapping } from './smartparser/parser-repository.js?v=0.8.0';
 import {
   createOrder,

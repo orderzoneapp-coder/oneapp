@@ -1,4 +1,4 @@
-import { analyzeExcelFile, analyzeHistoricalText } from './history-collector/collector-importer.js?v=0.8.0';
+import { analyzeExcelFile, analyzeHistoricalText } from './history-collector/collector-importer.js?v=0.8.1';
 import { SOURCE_LABEL, COLLECTOR_SOURCE } from './history-collector/collector-schema.js?v=0.8.0';
 import {
   getCollectorSnapshot, rebuildFulfillmentEvidence, saveCollectorSettings,

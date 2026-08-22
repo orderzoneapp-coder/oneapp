@@ -1,4 +1,4 @@
-import { analyzeSmartText } from './smartparser/parser-orchestrator.js?v=0.12.2';
+import { analyzeSmartText } from './smartparser/parser-orchestrator.js?v=0.12.3';
 import { generateProductCandidates, loadCandidateContext } from './smartparser/candidate-generator.js?v=0.8.2';
 import { matchParsedLine } from './smartparser/matching-engine.js?v=0.8.0';
 import { createOrder } from './order-intake-engine.js?v=0.15.0';
@@ -56,7 +56,7 @@ function unitFromSpecification(specification) {
   const value = text(specification);
   if (/^box$/i.test(value)) return 'BOX';
   if (/^ea$/i.test(value)) return 'EA';
-  const known = value.match(/(?:^|\d)\s*(개|봉|팩|단|망|묶음|kg|키로|통|병|포|롤|장|대|판)$/i);
+  const known = value.match(/(?:^|\d)\s*(개|봉|팩|단|망|상자|묶음|kg|키로|통|병|포|롤|장|대|판)$/i);
   return known?.[1] || '';
 }
 

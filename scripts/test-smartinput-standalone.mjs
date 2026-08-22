@@ -128,6 +128,7 @@ assert.match(css, /prefers-reduced-motion: reduce/);
 
 for (const required of [
   'captureTextIntake',
+  'extractOrderProductLines',
   'analyzeSingleOrderDocument',
   'rematchExtractedLinesForCustomer',
   'createOrder',
@@ -145,6 +146,10 @@ for (const required of [
   'looksLikeKakaoText',
   'appendDeliveryHistory'
 ]) assert.match(appSource, new RegExp(required));
+assert.match(appSource, /extractOrderProductLines\(\{ sourceType: batch\.sourceType, sourceId: 'SMART_INPUT', rawText \}\)/,
+  'SmartInput fallback must use the same behavioral order-line extractor as SmartParser');
+assert.doesNotMatch(appSource, /split\('\\n'\)\.map\(\(raw, index\)/,
+  'SmartInput fallback must not turn every non-empty source line into a product row');
 assert.match(appSource, /customerInput'\)\.focus\(\)/);
 assert.match(appSource, /SMART_INPUT:\$\{current\.batches\[0\]/);
 assert.match(appSource, /editedFields/);

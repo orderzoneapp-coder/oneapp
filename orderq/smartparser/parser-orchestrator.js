@@ -1,7 +1,6 @@
-import { parseSourceInput } from './source-parser.js?v=0.8.0';
-import { EVENT_TYPE, detectOrderEvent } from './order-event-detector.js?v=0.8.0';
+import { EVENT_TYPE } from './order-event-detector.js?v=0.8.1';
+import { extractOrderMessages } from './order-text-extractor.js?v=0.1.0';
 import { resolveCustomer } from './customer-resolver.js?v=0.12.1';
-import { parseOrderLines } from './order-line-parser.js?v=0.8.0';
 import { generateProductCandidates, loadCandidateContext } from './candidate-generator.js?v=0.8.2';
 import { matchParsedLine } from './matching-engine.js?v=0.8.0';
 import { persistAnalysis } from './parser-repository.js?v=0.8.0';
@@ -9,14 +8,12 @@ import { persistAnalysis } from './parser-repository.js?v=0.8.0';
 const ORDER_LIKE = new Set([EVENT_TYPE.ORDER, EVENT_TYPE.ORDER_UPDATE]);
 
 export async function analyzeSmartText({ sourceType, sourceId, rawText, deviceId = '', forceReanalyze = false }) {
-  const messages = parseSourceInput({ sourceType, sourceId, rawText });
-  if (!messages.length) throw new Error('분석할 텍스트를 입력하세요.');
+  const extractedMessages = extractOrderMessages({ sourceType, sourceId, rawText });
+  if (!extractedMessages.length) throw new Error('분석할 텍스트를 입력하세요.');
   const candidateContext = await loadCandidateContext();
   const rows = [];
-  for (const message of messages) {
-    const event = detectOrderEvent(message.rawText);
+  for (const { message, event, parsedLines: parsed } of extractedMessages) {
     const customerResolution = await resolveCustomer({ senderRaw: message.senderRaw, sourceId });
-    const parsed = ORDER_LIKE.has(event.eventType) ? parseOrderLines(message.rawText) : [];
     const parsedLines = [];
     for (const line of parsed) {
       const candidates = line.excluded ? [] : await generateProductCandidates({
