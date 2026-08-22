@@ -50,10 +50,13 @@
 
       <div class="toolbar">
         <button class="btn" id="saveUrlBtn" type="button">Cloud 설정 저장</button>
+        <button class="btn" id="customerResetPreviewBtn" type="button">거래처 초기화 사전점검</button>
+        <button class="btn" id="customerResetExecuteBtn" type="button" disabled>점검 결과대로 거래처 초기화</button>
         <span class="status" id="stateText">상태 확인 중...</span>
         <span class="spacer"></span>
         <span class="status">시트는 첫 동기화 때 목적별로 자동 생성됩니다.</span>
       </div>
+      <pre id="customerResetResult" class="notice" hidden></pre>
 
       <section class="cloud-grid">
         <div class="cloud-card">
@@ -101,8 +104,8 @@
   </div>
 
   <script type="module">
-    import { getCloudUrl, setCloudUrl, getCloudAccessToken, setCloudAccessToken } from './orderq-cloud-adapter.js?v=0.9.0';
-    import { getSyncState, syncNow, acceptRemoteOrder } from './orderq-sync-engine.js?v=0.8.0';
+    import { getCloudUrl, setCloudUrl, getCloudAccessToken, setCloudAccessToken, previewCustomerMasterReset, executeCustomerMasterReset } from './orderq-cloud-adapter.js?v=0.11.0';
+    import { getSyncState, syncNow, acceptRemoteOrder } from './orderq-sync-engine.js?v=0.18.0';
     import { pullCentralOfficialState } from './central-command-gateway.js?v=0.9.0';
 
     const cloudUrl = document.getElementById('cloudUrl');
@@ -110,6 +113,10 @@
     const message = document.getElementById('message');
     const syncBtn = document.getElementById('syncBtn');
     const conflictRows = document.getElementById('conflictRows');
+    const resetPreviewBtn = document.getElementById('customerResetPreviewBtn');
+    const resetExecuteBtn = document.getElementById('customerResetExecuteBtn');
+    const resetResult = document.getElementById('customerResetResult');
+    let verifiedResetPreview = null;
 
     const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
 
@@ -160,6 +167,36 @@
       } catch (error) {
         show(`동기화 실패: ${error.message || error}`, 'error');
       } finally { syncBtn.disabled = false; }
+    });
+
+    resetPreviewBtn.addEventListener('click', async () => {
+      resetPreviewBtn.disabled = true;
+      resetExecuteBtn.disabled = true;
+      verifiedResetPreview = null;
+      try {
+        const result = await previewCustomerMasterReset();
+        verifiedResetPreview = result;
+        resetResult.hidden = false;
+        resetResult.textContent = JSON.stringify(result, null, 2);
+        resetExecuteBtn.disabled = false;
+        show('거래처 현재값과 보존 대상 건수를 읽기 전용으로 확인했습니다.', 'info');
+      } catch (error) { show(error.message || String(error), 'error'); }
+      finally { resetPreviewBtn.disabled = false; }
+    });
+
+    resetExecuteBtn.addEventListener('click', async () => {
+      if (!verifiedResetPreview) return show('먼저 사전점검을 실행하세요.', 'warn');
+      if (!confirm('거래처 현재 Master·별칭·외부 연결과 미완료 거래처 Import 작업을 물리 삭제합니다. 주문·판매·History/Event는 보존됩니다. 실행하시겠습니까?')) return;
+      resetExecuteBtn.disabled = true;
+      try {
+        const result = await executeCustomerMasterReset('RESET_CUSTOMER_MASTER_ONLY');
+        resetResult.hidden = false;
+        resetResult.textContent = JSON.stringify(result, null, 2);
+        verifiedResetPreview = null;
+        show('거래처 Master 초기화와 보존 데이터 검증이 완료되었습니다.', 'info');
+        await syncNow();
+        await render();
+      } catch (error) { show(error.message || String(error), 'error'); }
     });
 
     conflictRows.addEventListener('click', async event => {
