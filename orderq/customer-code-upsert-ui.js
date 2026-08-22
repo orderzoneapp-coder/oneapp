@@ -113,6 +113,16 @@ function fieldExclusionList(record) {
   </li>`).join('');
 }
 
+function excelRawEvidence(record) {
+  const cells = Object.entries(record.rawRow || {});
+  if (!cells.length) return '<p class="customer-upsert-empty">Excel 원본 행을 불러올 수 없습니다.</p>';
+  return `<section class="customer-upsert-raw" aria-label="Excel 원본 ${Number(record.excelRowNumber || 0)}행">
+    <h4>Excel 원본 · ${Number(record.excelRowNumber || 0).toLocaleString()}행</h4>
+    <div><table><thead><tr>${cells.map(([header]) => `<th>${escapeHtml(header)}</th>`).join('')}</tr></thead>
+    <tbody><tr>${cells.map(([, value]) => `<td>${clean(value) === '' ? '<em>(빈 값)</em>' : escapeHtml(value)}</td>`).join('')}</tr></tbody></table></div>
+  </section>`;
+}
+
 function resultRow(record) {
   const changes = fieldChangeList(record);
   const exclusions = fieldExclusionList(record);
@@ -126,13 +136,7 @@ function resultRow(record) {
     <p>${escapeHtml(record.reasonMessage || record.reasonCode || '정상 처리')}</p>
     ${changes ? `<h4>변경 전 → 변경 후</h4><ul class="customer-upsert-changes">${changes}</ul>` : ''}
     ${exclusions ? `<h4>제외된 필드</h4><ul class="customer-upsert-issues">${exclusions}</ul>` : ''}
-    ${failed ? `<details><summary>실패 원문과 근거</summary><pre>${escapeHtml(JSON.stringify({
-      reasonCode: record.reasonCode,
-      duplicateExcelRows: record.duplicateExcelRows,
-      conflictingCustomerIds: record.conflictingCustomerIds,
-      sourceLinkKey: record.sourceLinkKey,
-      rawRow: record.rawRow
-    }, null, 2))}</pre></details>` : ''}
+    ${failed ? excelRawEvidence(record) : ''}
   </article>`;
 }
 
@@ -258,11 +262,12 @@ function renderWork(work) {
 
 function renderFatal(error, processed = 0, total = 0) {
   showWorkbench();
-  byId('importSummary').innerHTML = `<div class="customer-upsert-failed"><strong>전체 처리 실패</strong><span>${escapeHtml(error.code || 'IMPORT_FAILED')}</span></div>`;
+  const detectedHeaders = (error.detectedHeaders || []).flatMap(row => row.headers || []);
+  byId('importSummary').innerHTML = '<div class="customer-upsert-failed"><strong>전체 처리 실패</strong><span>Excel 원본을 확인해 주세요.</span></div>';
   byId('importGate').textContent = `${processed.toLocaleString()} / ${total.toLocaleString()} 처리 후 중단되었습니다.`;
   byId('importReview').innerHTML = `<article class="customer-upsert-error">
     <strong>${escapeHtml(error.message || error)}</strong>
-    <pre>${escapeHtml(JSON.stringify({ code: error.code, detectedHeaders: error.detectedHeaders, evidence: error.evidence }, null, 2))}</pre>
+    ${detectedHeaders.length ? `<section class="customer-upsert-raw"><h4>Excel 원본 · 인식된 열 제목</h4><div><table><thead><tr>${detectedHeaders.map(header => `<th>${escapeHtml(header || '(빈 값)')}</th>`).join('')}</tr></thead></table></div></section>` : ''}
     <button class="cm-button" type="button" data-retry-customer-upsert>다시 시도</button>
   </article>`;
 }

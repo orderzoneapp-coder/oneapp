@@ -25,7 +25,8 @@ const ROW_HEIGHT = window.matchMedia('(max-width: 820px)').matches ? 86 : 74;
 const BUFFER_ROWS = 8;
 const state = {
   customers: [], filtered: [], importBatch: null, importRecords: [],
-  importStatusFilter: 'ISSUES', importQuery: '', importLimit: 200
+  importStatusFilter: 'ISSUES', importQuery: '', importLimit: 200,
+  summaryFilter: 'ALL', issueDrafts: new Map(), issueFocusCustomerId: ''
 };
 const elements = {
   viewport: document.querySelector('#customerViewport'),
@@ -33,6 +34,14 @@ const elements = {
   empty: document.querySelector('#customerEmpty'),
   search: document.querySelector('#customerSearch'),
   filter: document.querySelector('#customerFilter'),
+  groupFilter: document.querySelector('#customerGroupFilter'),
+  managerFilter: document.querySelector('#customerManagerFilter'),
+  standardList: document.querySelector('#customerStandardList'),
+  issueEditor: document.querySelector('#customerIssueEditor'),
+  issueGrid: document.querySelector('#customerIssueGrid'),
+  issueChangeCount: document.querySelector('#customerIssueChangeCount'),
+  saveIssues: document.querySelector('#saveCustomerIssues'),
+  saveIssuesNext: document.querySelector('#saveCustomerIssuesNext'),
   editor: document.querySelector('#customerEditor'),
   form: document.querySelector('#customerForm'),
   editorTitle: document.querySelector('#editorTitle'),
@@ -79,6 +88,13 @@ function qualityLabel(customer) {
 }
 
 function renderWindow() {
+  const issueMode = state.summaryFilter === 'UNVERIFIED';
+  elements.standardList.hidden = issueMode;
+  elements.issueEditor.hidden = !issueMode;
+  if (issueMode) {
+    renderIssueGrid();
+    return;
+  }
   const count = state.filtered.length;
   elements.empty.hidden = count > 0;
   elements.viewport.hidden = count === 0;
@@ -101,15 +117,77 @@ function renderWindow() {
   }));
 }
 
+const ISSUE_FIELDS = Object.freeze(['customerName', 'address', 'mobile']);
+
+function issueValue(customer, field) {
+  return state.issueDrafts.get(customer.customerId)?.[field] ?? customer[field] ?? '';
+}
+
+function renderIssueGrid() {
+  elements.empty.hidden = state.filtered.length > 0;
+  elements.issueEditor.hidden = state.filtered.length === 0;
+  elements.issueGrid.innerHTML = state.filtered.map((customer, rowIndex) => `<tr data-customer-id="${escapeHtml(customer.customerId)}">
+    <th scope="row">${rowIndex + 1}</th>${ISSUE_FIELDS.map((field, columnIndex) => {
+      const dirty = Object.hasOwn(state.issueDrafts.get(customer.customerId) || {}, field);
+      return `<td class="${dirty ? 'is-dirty' : ''}"><input aria-label="${['상호', '주소', '휴대폰 번호'][columnIndex]} ${rowIndex + 1}행" data-issue-row="${rowIndex}" data-issue-column="${columnIndex}" data-issue-field="${field}" value="${escapeHtml(issueValue(customer, field))}"></td>`;
+    }).join('')}</tr>`).join('');
+  renderIssueChangeCount();
+  if (state.issueFocusCustomerId) {
+    requestAnimationFrame(() => elements.issueGrid.querySelector(`[data-customer-id="${CSS.escape(state.issueFocusCustomerId)}"] input`)?.focus());
+    state.issueFocusCustomerId = '';
+  }
+}
+
+function renderIssueChangeCount() {
+  const count = [...state.issueDrafts.values()].reduce((total, patch) => total + Object.keys(patch).length, 0);
+  elements.issueChangeCount.textContent = `변경 ${count.toLocaleString()}건`;
+  elements.saveIssues.textContent = `변경 ${count.toLocaleString()}건 저장`;
+  elements.saveIssues.disabled = count === 0;
+  elements.saveIssuesNext.disabled = count === 0;
+}
+
+function setIssueValue(input, value) {
+  const customer = state.filtered[Number(input.dataset.issueRow)];
+  if (!customer) return;
+  const field = input.dataset.issueField;
+  const next = String(value ?? '');
+  const draft = { ...(state.issueDrafts.get(customer.customerId) || {}) };
+  if (next === String(customer[field] ?? '')) delete draft[field];
+  else draft[field] = next;
+  if (Object.keys(draft).length) state.issueDrafts.set(customer.customerId, draft);
+  else state.issueDrafts.delete(customer.customerId);
+  input.value = next;
+  input.closest('td').classList.toggle('is-dirty', Object.hasOwn(draft, field));
+  renderIssueChangeCount();
+}
+
+function focusIssueCell(row, column) {
+  const boundedRow = Math.max(0, Math.min(state.filtered.length - 1, row));
+  const boundedColumn = Math.max(0, Math.min(ISSUE_FIELDS.length - 1, column));
+  elements.issueGrid.querySelector(`[data-issue-row="${boundedRow}"][data-issue-column="${boundedColumn}"]`)?.focus();
+}
+
+function populateFilter(select, values, label) {
+  const selected = select.value;
+  select.innerHTML = `<option value="ALL">${label} 전체</option>${[...new Set(values.filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ko')).map(value => `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`).join('')}`;
+  select.value = [...select.options].some(option => option.value === selected) ? selected : 'ALL';
+}
+
 async function applyFilter() {
   const query = elements.search.value.trim().toLocaleLowerCase('ko');
   const filter = elements.filter.value;
+  const group = elements.groupFilter.value;
+  const manager = elements.managerFilter.value;
   const matchedIds = query
     ? new Set((await searchCustomers(query, { limit: 10000, includeInactive: true })).map(item => item.customer.customerId))
     : null;
   state.filtered = state.customers.filter(customer => {
     return (!matchedIds || matchedIds.has(customer.customerId))
-      && (filter === 'ALL' || customer.status === filter || customer.qualityStatus === filter);
+      && (filter === 'ALL' || customer.status === filter || customer.qualityStatus === filter)
+      && (state.summaryFilter === 'ALL'
+        || (state.summaryFilter === 'COMPLETE' ? customer.qualityStatus === 'VERIFIED' : customer.qualityStatus === state.summaryFilter))
+      && (group === 'ALL' || (customer.group1Name || customer.groupName || '') === group)
+      && (manager === 'ALL' || (customer.contactName || '') === manager);
   });
   elements.viewport.scrollTop = 0;
   renderWindow();
@@ -117,13 +195,15 @@ async function applyFilter() {
 
 function renderStats() {
   document.querySelector('#totalCount').textContent = state.customers.length.toLocaleString();
-  document.querySelector('#activeCount').textContent = state.customers.filter(row => row.status === 'ACTIVE').length.toLocaleString();
+  document.querySelector('#activeCount').textContent = state.customers.filter(row => row.qualityStatus === 'VERIFIED').length.toLocaleString();
   document.querySelector('#unverifiedCount').textContent = state.customers.filter(row => row.qualityStatus === 'UNVERIFIED').length.toLocaleString();
   document.querySelector('#duplicateCount').textContent = state.customers.filter(row => row.qualityStatus === 'DUPLICATE_CANDIDATE').length.toLocaleString();
 }
 
 async function reload() {
   state.customers = await listCustomers({ includeInactive: true, includeSuperseded: false });
+  populateFilter(elements.groupFilter, state.customers.map(customer => customer.group1Name || customer.groupName || ''), '그룹');
+  populateFilter(elements.managerFilter, state.customers.map(customer => customer.contactName || ''), '담당자');
   elements.empty.textContent = state.customers.length ? '조건에 맞는 거래처가 없습니다.' : '등록된 거래처가 없습니다.';
   renderStats();
   await applyFilter();
@@ -522,9 +602,73 @@ function openFilePicker(input) {
   input.click();
 }
 
+async function saveIssueDrafts(moveToNext = false) {
+  const active = document.activeElement?.closest?.('[data-customer-id]')?.dataset.customerId || '';
+  const activeIndex = state.filtered.findIndex(customer => customer.customerId === active);
+  elements.saveIssues.disabled = true;
+  elements.saveIssuesNext.disabled = true;
+  try {
+    for (const [customerId, patch] of state.issueDrafts) {
+      const customer = state.customers.find(row => row.customerId === customerId);
+      if (!customer) continue;
+      await updateCustomer(customerId, patch, { expectedRevision: Number(customer.revision), source: 'MASTER_ISSUE_GRID_EDIT' });
+      state.issueDrafts.delete(customerId);
+    }
+    await syncAndReload();
+    if (moveToNext && state.filtered.length) {
+      const nextIndex = activeIndex < 0 ? 0 : (activeIndex + 1) % state.filtered.length;
+      state.issueFocusCustomerId = state.filtered[nextIndex]?.customerId || '';
+      renderIssueGrid();
+    }
+  } catch (error) {
+    alert(`정보 보완 저장 실패: ${error.message || error}`);
+    await reload();
+    renderIssueChangeCount();
+  }
+}
+
+document.querySelectorAll('[data-customer-summary-filter]').forEach(button => button.addEventListener('click', async () => {
+  state.summaryFilter = button.dataset.customerSummaryFilter;
+  document.querySelectorAll('[data-customer-summary-filter]').forEach(card => card.classList.toggle('is-active', card === button));
+  await applyFilter();
+}));
+
+elements.issueGrid.addEventListener('input', event => {
+  const input = event.target.closest('[data-issue-field]');
+  if (input) setIssueValue(input, input.value);
+});
+elements.issueGrid.addEventListener('keydown', event => {
+  const input = event.target.closest('[data-issue-field]');
+  if (!input) return;
+  const row = Number(input.dataset.issueRow);
+  const column = Number(input.dataset.issueColumn);
+  const moves = { Enter: [1, 0], ArrowDown: [1, 0], ArrowUp: [-1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1] };
+  if (!moves[event.key]) return;
+  event.preventDefault();
+  focusIssueCell(row + moves[event.key][0], column + moves[event.key][1]);
+});
+elements.issueGrid.addEventListener('paste', event => {
+  const input = event.target.closest('[data-issue-field]');
+  const text = event.clipboardData?.getData('text/plain');
+  if (!input || !text || (!text.includes('\t') && !/[\r\n]/.test(text))) return;
+  event.preventDefault();
+  const startRow = Number(input.dataset.issueRow);
+  const startColumn = Number(input.dataset.issueColumn);
+  text.replace(/\r/g, '').split('\n').filter((row, index, rows) => row !== '' || index < rows.length - 1).forEach((line, rowOffset) => {
+    line.split('\t').forEach((value, columnOffset) => {
+      const target = elements.issueGrid.querySelector(`[data-issue-row="${startRow + rowOffset}"][data-issue-column="${startColumn + columnOffset}"]`);
+      if (target) setIssueValue(target, value);
+    });
+  });
+});
+
 elements.viewport.addEventListener('scroll', renderWindow, { passive: true });
 elements.search.addEventListener('input', applyFilter);
 elements.filter.addEventListener('change', applyFilter);
+elements.groupFilter.addEventListener('change', applyFilter);
+elements.managerFilter.addEventListener('change', applyFilter);
+elements.saveIssues.addEventListener('click', () => saveIssueDrafts(false));
+elements.saveIssuesNext.addEventListener('click', () => saveIssueDrafts(true));
 elements.form.querySelectorAll('[data-close-customer-editor]').forEach(button => button.addEventListener('click', () => elements.editor.close()));
 elements.form.addEventListener('submit', saveEditor);
 document.querySelector('#newCustomerButton').addEventListener('click', () => openEditor());
