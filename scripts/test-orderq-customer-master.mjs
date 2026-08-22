@@ -9,7 +9,7 @@ import { ORDERQ_DB_VERSION, V10_STORE_DEFINITIONS } from '../orderq/orderq-v10-c
 const read = path => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
 const [
   db, service, sourceImport, picker, ui, html, css, intakeEngine, intakeWorkbench,
-  directInput, manualInput, collectorRepository, collectorUi, collectorReview, collectorHtml, cloud
+  directInput, manualInput, collectorRepository, collectorUi, collectorReview, collectorHtml, cloud, syncEngine
 ] = await Promise.all([
   read('orderq/orderq-db.js'),
   read('orderq/customer-master.js'),
@@ -26,7 +26,8 @@ const [
   read('orderq/collector-ui.js'),
   read('orderq/collector-smartparser-review.js'),
   read('orderq/collector.html'),
-  read('orderq-cloud.gs')
+  read('orderq-cloud.gs'),
+  read('orderq/orderq-sync-engine.js')
 ]);
 
 new vm.Script(cloud, { filename: 'orderq-cloud.gs' });
@@ -73,13 +74,13 @@ assert.match(ui, /getLatestCustomerSourceImportWork/, 'Pending Excel work must r
 assert.match(ui, /importStatusFilter: 'ISSUES'/, 'Workbench must default to unresolved customer rows');
 assert.match(html, /erpCustomerExcelFile/);
 assert.match(html, /거래처 DB/);
-assert.match(html, /customer-master-ui\.js\?v=0\.17\.0/, 'Customer Master entry module must invalidate the deployed cache');
+assert.match(html, /customer-master-ui\.js\?v=0\.18\.0/, 'Customer Master entry module must invalidate the deployed cache');
 assert.match(ui, /async function initializeCustomerMaster\(\) \{\s+const pending = await getLatestCustomerSourceImportWork\(\)/, 'Saved Excel work must render before Cloud Master synchronization');
 assert.match(ui, /await reload\(\);[\s\S]*ensureCustomerMasterReady/, 'Local Customer Master must render before Cloud synchronization');
 assert.match(ui, /fallbackFileHash/, 'Excel import must continue with a deterministic file hash when Web Crypto stalls');
 assert.match(ui, /chunkSize: 50/, 'Excel import must persist visible progress in small chunks');
 assert.match(html, /customer-master\.css\?v=0\.17\.0/, 'Customer Master Workbench styles must invalidate the deployed cache');
-assert.match(ui, /customer-master\.js\?v=0\.17\.0/, 'Customer Master Workbench service must invalidate the deployed cache');
+assert.match(ui, /customer-master\.js\?v=0\.18\.0/, 'Customer Master Workbench service must invalidate the deployed cache');
 assert.doesNotMatch(html, /문제 거래처만 보기/);
 assert.match(ui, /data-import-status/, 'Import counts must act as status filters');
 assert.match(sourceImport, /newDraftConfirmed: status === CUSTOMER_IMPORT_STATUS\.NEW/, 'Unmatched source rows must be prepared for bulk draft creation');
@@ -133,6 +134,17 @@ assert.match(sourceImport, /BUSINESS_NUMBER_EXACT/);
 assert.match(sourceImport, /NAME_SIMILAR/);
 assert.match(sourceImport, /same|같은 출처 거래처코드/);
 assert.match(sourceImport, /CUSTOMER_SOURCE_LINK_EVENT/);
+assert.match(cloud, /orderQCustomerMasterReset/);
+assert.match(cloud, /ORDERQ_CUSTOMER_RESET_CONFIRMATION_REQUIRED/);
+assert.match(cloud, /ORDERQ_CUSTOMER_RESET_PRESERVED_COUNT_CHANGED/);
+assert.match(cloud, /CUSTOMER_SOURCE_LINK_EVENT: orderQSheetDataCount/);
+assert.match(cloud, /ORDERQ_CUSTOMER_RESET_GENERATION_MISMATCH/);
+assert.match(syncEngine, /applyCustomerResetState/);
+assert.match(syncEngine, /STORE\.CUSTOMERS\)\.clear\(\)/);
+assert.match(syncEngine, /STORE\.CUSTOMER_ALIASES\)\.clear\(\)/);
+assert.match(syncEngine, /STORE\.CUSTOMER_SOURCE_LINKS\)\.clear\(\)/);
+assert.doesNotMatch(syncEngine, /STORE\.CUSTOMER_EVENTS\)\.clear\(\)/);
+assert.doesNotMatch(syncEngine, /STORE\.CUSTOMER_SOURCE_LINK_EVENTS\)\.clear\(\)/);
 assert.match(sourceImport, /sourceSnapshot/);
 assert.doesNotMatch(sourceImport, /pullRemote/, 'Excel analysis must not wait for Cloud sync');
 assert.match(sourceImport, /status: 'PREPARING'/, 'Import batch must be persisted before source analysis');

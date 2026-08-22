@@ -14,6 +14,12 @@ const ORDERQ_SHEET_SCHEMA_VERSION = '7';
 const ORDERQ_CUTOVER_MODE_PROPERTY = 'ONEAPP_ORDERQ_CUTOVER_MODE';
 const ORDERQ_CUTOVER_SAFE_MODE = 'SHADOW';
 const ORDERQ_CUTOVER_WRITE_MODES = Object.freeze(['PILOT_WRITE', 'VNEXT_PRIMARY']);
+const ORDERQ_CUSTOMER_RESET_GENERATION_PROPERTY = 'ONEAPP_ORDERQ_CUSTOMER_RESET_GENERATION';
+const ORDERQ_CUSTOMER_RESET_AT_PROPERTY = 'ONEAPP_ORDERQ_CUSTOMER_RESET_AT';
+const ORDERQ_CUSTOMER_RESET_CONFIRMATION = 'RESET_CUSTOMER_MASTER_ONLY';
+const ORDERQ_CUSTOMER_MUTABLE_TYPES = Object.freeze(['CUSTOMER', 'CUSTOMER_ALIAS', 'CUSTOMER_SOURCE_LINK']);
+const ORDERQ_CUSTOMER_IMPORT_TYPES = Object.freeze(['CUSTOMER_EXCEL', 'CUSTOMER_CODE_UPSERT', 'CUSTOMER_SOURCE_IMPORT']);
+const ORDERQ_CUSTOMER_INCOMPLETE_IMPORT_STATUSES = Object.freeze(['PREPARED', 'PARTIAL', 'PENDING', 'RETRY', 'FAILED', 'CONFLICT']);
 
 function orderQM10CutoverMode() {
   const properties = PropertiesService.getScriptProperties();
@@ -129,6 +135,95 @@ function orderQEnsureAllSheets(ss) {
   if (String(properties.getProperty(ORDERQ_SHEET_SCHEMA_PROPERTY) || '') === ORDERQ_SHEET_SCHEMA_VERSION) return;
   Object.keys(ORDERQ_SHEETS).forEach(key => orderQEnsureSheet(ss, key));
   properties.setProperty(ORDERQ_SHEET_SCHEMA_PROPERTY, ORDERQ_SHEET_SCHEMA_VERSION);
+}
+
+function orderQCustomerResetState() {
+  const properties = PropertiesService.getScriptProperties();
+  return {
+    generation: Math.max(0, Number(properties.getProperty(ORDERQ_CUSTOMER_RESET_GENERATION_PROPERTY) || 0)),
+    resetAt: String(properties.getProperty(ORDERQ_CUSTOMER_RESET_AT_PROPERTY) || '')
+  };
+}
+
+function orderQSheetDataCount(ss, key) {
+  return Math.max(0, orderQEnsureSheet(ss, key).getLastRow() - 1);
+}
+
+function orderQReadSheetPayloads(ss, key) {
+  const sheet = orderQEnsureSheet(ss, key);
+  if (sheet.getLastRow() < 2) return [];
+  return sheet.getRange(2, 1, sheet.getLastRow() - 1, ORDERQ_HEADERS[key].length).getValues().map((row, index) => {
+    let payload = null;
+    try { payload = JSON.parse(String(row[row.length - 1] || 'null')); } catch (error) {}
+    return { row: index + 2, values: row, payload };
+  });
+}
+
+function orderQCustomerResetPlan(ss) {
+  orderQEnsureAllSheets(ss);
+  const batches = orderQReadSheetPayloads(ss, 'IMPORT_BATCH');
+  const targetedBatchIds = new Set(batches.filter(item => {
+    const sourceType = String(item.payload && item.payload.sourceType || item.values[1] || '').toUpperCase();
+    const status = String(item.payload && item.payload.status || item.values[2] || '').toUpperCase();
+    return ORDERQ_CUSTOMER_IMPORT_TYPES.indexOf(sourceType) >= 0 && ORDERQ_CUSTOMER_INCOMPLETE_IMPORT_STATUSES.indexOf(status) >= 0;
+  }).map(item => String(item.payload && item.payload.importBatchId || item.values[0] || '')));
+  const sourceRecords = orderQReadSheetPayloads(ss, 'SOURCE_RECORD');
+  return {
+    current: {
+      CUSTOMER: orderQSheetDataCount(ss, 'CUSTOMER'),
+      CUSTOMER_ALIAS: orderQSheetDataCount(ss, 'CUSTOMER_ALIAS'),
+      CUSTOMER_SOURCE_LINK: orderQSheetDataCount(ss, 'CUSTOMER_SOURCE_LINK')
+    },
+    incompleteImportBatchIds: Array.from(targetedBatchIds),
+    incompleteImportBatches: targetedBatchIds.size,
+    incompleteSourceRecords: sourceRecords.filter(item => targetedBatchIds.has(String(item.payload && item.payload.importBatchId || item.values[1] || ''))).length,
+    preserved: {
+      ORDER: orderQSheetDataCount(ss, 'ORDER'), ORDER_ITEM: orderQSheetDataCount(ss, 'ORDER_ITEM'),
+      CUSTOMER_SOURCE_LINK_EVENT: orderQSheetDataCount(ss, 'CUSTOMER_SOURCE_LINK_EVENT'), ORDER_EVENT: orderQSheetDataCount(ss, 'ORDER_EVENT'),
+      SALES_DOCUMENT: orderQSheetDataCount(ss, 'SALES_DOCUMENT'), SALES_LINE: orderQSheetDataCount(ss, 'SALES_LINE'),
+      PURCHASE_DOCUMENT: orderQSheetDataCount(ss, 'PURCHASE_DOCUMENT'), PURCHASE_LINE: orderQSheetDataCount(ss, 'PURCHASE_LINE'),
+      LEDGER_DOCUMENT: orderQSheetDataCount(ss, 'LEDGER_DOCUMENT'), LEDGER_LINE: orderQSheetDataCount(ss, 'LEDGER_LINE'),
+      INVENTORY_SNAPSHOT: orderQSheetDataCount(ss, 'INVENTORY_SNAPSHOT'), INVENTORY_LINE: orderQSheetDataCount(ss, 'INVENTORY_LINE'),
+      SYNC_META: orderQSheetDataCount(ss, 'SYNC_META')
+    },
+    reset: orderQCustomerResetState()
+  };
+}
+
+function orderQDeleteRowsByPredicate(ss, key, predicate) {
+  const sheet = orderQEnsureSheet(ss, key);
+  let deleted = 0;
+  for (let row = sheet.getLastRow(); row >= 2; row--) {
+    const values = sheet.getRange(row, 1, 1, ORDERQ_HEADERS[key].length).getValues()[0];
+    let payload = null;
+    try { payload = JSON.parse(String(values[values.length - 1] || 'null')); } catch (error) {}
+    if (predicate(values, payload)) { sheet.deleteRow(row); deleted++; }
+  }
+  return deleted;
+}
+
+function orderQCustomerMasterReset(ss, payload) {
+  if (String(payload.confirmation || '') !== ORDERQ_CUSTOMER_RESET_CONFIRMATION) throw new Error('ORDERQ_CUSTOMER_RESET_CONFIRMATION_REQUIRED');
+  const before = orderQCustomerResetPlan(ss);
+  const batchIds = new Set(before.incompleteImportBatchIds);
+  const deleted = {
+    CUSTOMER: orderQDeleteRowsByPredicate(ss, 'CUSTOMER', () => true),
+    CUSTOMER_ALIAS: orderQDeleteRowsByPredicate(ss, 'CUSTOMER_ALIAS', () => true),
+    CUSTOMER_SOURCE_LINK: orderQDeleteRowsByPredicate(ss, 'CUSTOMER_SOURCE_LINK', () => true),
+    IMPORT_BATCH: orderQDeleteRowsByPredicate(ss, 'IMPORT_BATCH', (row, item) => batchIds.has(String(item && item.importBatchId || row[0] || ''))),
+    SOURCE_RECORD: orderQDeleteRowsByPredicate(ss, 'SOURCE_RECORD', (row, item) => batchIds.has(String(item && item.importBatchId || row[1] || '')))
+  };
+  const properties = PropertiesService.getScriptProperties();
+  const generation = before.reset.generation + 1;
+  const resetAt = new Date().toISOString();
+  properties.setProperty(ORDERQ_CUSTOMER_RESET_GENERATION_PROPERTY, String(generation));
+  properties.setProperty(ORDERQ_CUSTOMER_RESET_AT_PROPERTY, resetAt);
+  const after = orderQCustomerResetPlan(ss);
+  if (Object.values(after.current).some(Number)) throw new Error('ORDERQ_CUSTOMER_RESET_VERIFY_FAILED');
+  Object.keys(before.preserved).forEach(key => {
+    if (before.preserved[key] !== after.preserved[key]) throw new Error(`ORDERQ_CUSTOMER_RESET_PRESERVED_COUNT_CHANGED:${key}`);
+  });
+  return { schemaVersion: ORDERQ_SYNC_SCHEMA, spreadsheet: { id: ss.getId(), name: ss.getName() }, before, deleted, after, generation, resetAt };
 }
 
 function orderQFindDataRow(sheet, id) {
@@ -666,6 +761,11 @@ function orderQSyncPush(ss, payload) {
   const requestId = String(payload.requestId || '');
   if (!deviceId) throw new Error('ORDERQ_DEVICE_ID_REQUIRED');
   const changes = Array.isArray(payload.changes) ? payload.changes : [];
+  const reset = orderQCustomerResetState();
+  if (reset.generation > 0 && changes.some(change => ORDERQ_CUSTOMER_MUTABLE_TYPES.indexOf(String(change && change.entityType || '')) >= 0)
+      && Number(payload.customerResetGeneration || 0) !== reset.generation) {
+    throw new Error(`ORDERQ_CUSTOMER_RESET_GENERATION_MISMATCH:${reset.generation}`);
+  }
   if (changes.length > ORDERQ_SYNC_MAX_PUSH) throw new Error('ORDERQ_PUSH_LIMIT_EXCEEDED');
   const results = [];
   const duplicateOrderIds = {};
@@ -727,7 +827,7 @@ function orderQSyncPush(ss, payload) {
 
   const meta = orderQEnsureSheet(ss, 'SYNC_META');
   const cursor = meta.getLastRow() < 2 ? 0 : Number(meta.getRange(meta.getLastRow(), 1).getValue() || 0);
-  return { schemaVersion: ORDERQ_SYNC_SCHEMA, results, cursor };
+  return { schemaVersion: ORDERQ_SYNC_SCHEMA, results, cursor, customerReset: reset };
 }
 
 function orderQSyncPull(ss, payload) {
@@ -768,7 +868,8 @@ function orderQSyncPull(ss, payload) {
     schemaVersion: ORDERQ_SYNC_SCHEMA,
     changes,
     nextCursor,
-    hasMore: pending.length > selected.length
+    hasMore: pending.length > selected.length,
+    customerReset: orderQCustomerResetState()
   };
 }
 

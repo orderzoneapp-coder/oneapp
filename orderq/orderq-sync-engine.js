@@ -13,7 +13,7 @@ import {
   pushCloudChanges,
   pullCloudChanges,
   getCloudOrderHead
-} from './orderq-cloud-adapter.js?v=0.8.1';
+} from './orderq-cloud-adapter.js?v=0.11.0';
 import { runtimeStorageKey } from './admin-test-runtime.js?v=0.10.2';
 import { createSyncIdentity, newRequestId } from './sync-identity.js?v=0.1.0';
 import { shouldPreserveLocalEntityChange } from './customer-master-sync.js?v=0.1.0';
@@ -22,6 +22,10 @@ const DEVICE_KEY = 'oneapp.orderq.device-id.v1';
 const ADMIN_TEST_DEVICE_KEY = 'oneapp.orderq.admin-test.device-id.v1';
 const META_CURSOR = 'cloudCursor';
 const META_BOOTSTRAP = 'phase2BootstrapQueued';
+const META_CUSTOMER_RESET_GENERATION = 'customerResetGeneration';
+const CUSTOMER_RESET_ENTITY_TYPES = new Set(['CUSTOMER', 'CUSTOMER_ALIAS', 'CUSTOMER_SOURCE_LINK']);
+const CUSTOMER_RESET_IMPORT_TYPES = new Set(['CUSTOMER_EXCEL', 'CUSTOMER_CODE_UPSERT', 'CUSTOMER_SOURCE_IMPORT']);
+const CUSTOMER_RESET_INCOMPLETE_STATUSES = new Set(['PREPARED', 'PARTIAL', 'PENDING', 'RETRY', 'FAILED', 'CONFLICT']);
 
 export class CloudOrderConflictError extends Error {
   constructor(orderId, localRevision, serverRevision, serverPayload = null) {
@@ -66,6 +70,43 @@ async function all(storeName) {
   const rows = await requestToPromise(tx.objectStore(storeName).getAll());
   await transactionDone(tx);
   return rows;
+}
+
+async function applyCustomerResetState(reset) {
+  const generation = Math.max(0, Number(reset?.generation || 0));
+  const localGeneration = Math.max(0, Number(await metaGet(META_CUSTOMER_RESET_GENERATION) || 0));
+  if (!generation || generation <= localGeneration) return { applied: false, generation: localGeneration };
+  const db = await openOrderQDb();
+  const storeNames = [STORE.CUSTOMERS, STORE.CUSTOMER_ALIASES, STORE.CUSTOMER_SOURCE_LINKS,
+    STORE.SYNC_QUEUE, STORE.IMPORT_BATCHES, STORE.SOURCE_RECORDS, STORE.META];
+  const tx = db.transaction(storeNames, 'readwrite');
+  const queueStore = tx.objectStore(STORE.SYNC_QUEUE);
+  const batchStore = tx.objectStore(STORE.IMPORT_BATCHES);
+  const recordStore = tx.objectStore(STORE.SOURCE_RECORDS);
+  const [queueRows, batches, records] = await Promise.all([
+    requestToPromise(queueStore.getAll()), requestToPromise(batchStore.getAll()), requestToPromise(recordStore.getAll())
+  ]);
+  const batchIds = new Set(batches.filter(row => CUSTOMER_RESET_IMPORT_TYPES.has(String(row.sourceType || '').toUpperCase())
+    && CUSTOMER_RESET_INCOMPLETE_STATUSES.has(String(row.status || '').toUpperCase())).map(row => row.importBatchId));
+  tx.objectStore(STORE.CUSTOMERS).clear();
+  tx.objectStore(STORE.CUSTOMER_ALIASES).clear();
+  tx.objectStore(STORE.CUSTOMER_SOURCE_LINKS).clear();
+  queueRows.filter(row => CUSTOMER_RESET_ENTITY_TYPES.has(row.entityType)
+    || (['IMPORT_BATCH', 'SOURCE_RECORD'].includes(row.entityType) && batchIds.has(row.customerImportId || row.payload?.importBatchId || row.entityId)))
+    .forEach(row => queueStore.delete(row.queueId));
+  batches.filter(row => batchIds.has(row.importBatchId)).forEach(row => batchStore.delete(row.importBatchId));
+  records.filter(row => batchIds.has(row.importBatchId)).forEach(row => recordStore.delete(row.sourceRecordId));
+  tx.objectStore(STORE.META).put({ key: META_BOOTSTRAP, value: true, updatedAt: nowIso() });
+  tx.objectStore(STORE.META).put({ key: META_CUSTOMER_RESET_GENERATION, value: generation, updatedAt: nowIso() });
+  await transactionDone(tx);
+  return { applied: true, generation, deleted: { customers: true, aliases: true, sourceLinks: true, importBatches: batchIds.size } };
+}
+
+async function refreshCustomerResetState() {
+  if (!getCloudUrl()) return;
+  const cursor = Number(await metaGet(META_CURSOR) || 0);
+  const result = await pullCloudChanges(cursor, 1);
+  await applyCustomerResetState(result?.customerReset);
 }
 
 function makeQueue(entityType, entityId, revision, payload, baseRevision = 0) {
@@ -205,6 +246,7 @@ function toCloudChange(row) {
 
 export async function pushPending(entityId = '') {
   if (!getCloudUrl()) return { online: false, applied: 0, conflicts: 0, errors: 0, sourceDuplicates: [] };
+  await refreshCustomerResetState();
   await bootstrapPhase1References();
   const rows = await pendingRows(entityId);
   let applied = 0;
@@ -213,7 +255,7 @@ export async function pushPending(entityId = '') {
   const sourceDuplicates = [];
   for (let start = 0; start < rows.length; start += 50) {
     const batch = rows.slice(start, start + 50);
-    const response = await pushCloudChanges(getDeviceId(), batch.map(toCloudChange), newRequestId(newId));
+    const response = await pushCloudChanges(getDeviceId(), batch.map(toCloudChange), newRequestId(newId), Number(await metaGet(META_CUSTOMER_RESET_GENERATION) || 0));
     const byId = new Map((response?.results || []).map(result => [result.queueId, result]));
     for (const row of batch) {
       const result = byId.get(row.queueId);
@@ -364,6 +406,7 @@ export async function pullRemote() {
   let conflicts = 0;
   for (let page = 0; page < 20; page++) {
     const result = await pullCloudChanges(cursor, 200);
+    await applyCustomerResetState(result?.customerReset);
     for (const change of result?.changes || []) {
       if (change.entityType === 'ORDER' && await orderHasUnsyncedChange(change.entityId)) conflicts++;
       if (await applyCloudChange(change)) applied++;

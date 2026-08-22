@@ -678,6 +678,20 @@ function doPost(e) {
     const action = String(payload.action || '');
     const ss = SpreadsheetApp.getActiveSpreadsheet();
 
+    if (action === 'orderq_customer_reset_preview') {
+      requireOrderQAccess(payload);
+      return withScriptLock(() => jsonResponse({ status: 'success', action, data: {
+        schemaVersion: ORDERQ_SYNC_SCHEMA,
+        spreadsheet: { id: ss.getId(), name: ss.getName() },
+        plan: orderQCustomerResetPlan(ss)
+      } }));
+    }
+
+    if (action === 'orderq_customer_reset_execute') {
+      requireOrderQAccess(payload);
+      return withScriptLock(() => jsonResponse({ status: 'success', action, data: orderQCustomerMasterReset(ss, payload) }));
+    }
+
     if (action === 'orderq_sync_push') {
       requireOrderQAccess(payload);
       return withScriptLock(() => jsonResponse({
