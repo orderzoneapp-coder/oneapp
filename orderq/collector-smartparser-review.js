@@ -1,4 +1,4 @@
-import { analyzeSmartText } from './smartparser/parser-orchestrator.js?v=0.8.0';
+import { analyzeSmartText } from './smartparser/parser-orchestrator.js?v=0.12.2';
 import { recordProductMapping } from './smartparser/parser-repository.js?v=0.8.0';
 import { getDeviceId } from './orderq-sync-engine.js?v=0.8.0';
 import { commitPreparedImportV2, rebuildWhenReady } from './history-collector/collector-contracts.js?v=0.12.1';

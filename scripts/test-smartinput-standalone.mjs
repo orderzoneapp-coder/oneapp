@@ -29,10 +29,15 @@ assert.equal(contract.SETTINGS_STORAGE_KEY, 'oneapp.smartinput.settings.v1');
 assert.deepEqual(Array.from(contract.INPUT_METHODS, item => item.id), ['direct', 'excel', 'text', 'paste', 'photo', 'voice']);
 assert.deepEqual(Array.from(contract.STAGES), ['capture', 'extract', 'match', 'review', 'complete']);
 
-const draft = contract.createDraft({ date: '2026-08-23', now: 1, random: 0.1 });
+const draft = contract.createDraft({ now: Date.parse('2026-08-23T01:00:00.000Z'), random: 0.1 });
 assert.equal(draft.activeMode, 'order');
 assert.equal(draft.modes.order.header.orderDate, '2026-08-23');
+assert.equal(draft.modes.order.header.recordedAt, '2026-08-23T01:00:00.000Z');
+assert.equal(draft.modes.order.header.submittedAt, '');
 assert.ok(draft.modes.order.documentId);
+const storedDraft = JSON.parse(JSON.stringify(draft));
+storedDraft.modes.order.header.orderDate = '1999-01-01';
+assert.equal(contract.normalizeDraft(storedDraft).modes.order.header.orderDate, '2026-08-23', 'stored editable order dates must be replaced by the recorded current-time date');
 assert.notEqual(draft.modes.order, draft.modes.purchase);
 draft.modes.order.sourceText = '주문 원문';
 assert.equal(draft.modes.purchase.sourceText, '');
@@ -91,8 +96,10 @@ const scheduleSettings = contract.normalizeSettings({
   holidayDates: ['2026-08-24'],
   timezone: 'Asia/Seoul'
 });
-assert.equal(contract.nextDeliveryDate({ orderDate: '2026-08-23', settings: scheduleSettings }).date, '2026-08-26');
-assert.equal(contract.nextDeliveryDate({ orderDate: '2026-08-23', customerId: 'C1', settings: scheduleSettings }).date, '2026-08-25');
+const scheduleNow = new Date('2026-08-23T01:00:00.000Z');
+assert.equal(contract.nextDeliveryDate({ orderDate: '2026-08-23', settings: scheduleSettings, now: scheduleNow }).date, '2026-08-26');
+assert.equal(contract.nextDeliveryDate({ orderDate: '2026-08-23', customerId: 'C1', settings: scheduleSettings, now: scheduleNow }).date, '2026-08-25');
+assert.equal(contract.validateDeliveryDate({ orderDate: '2026-08-23', deliveryDate: '2026-08-22', settings: scheduleSettings, now: scheduleNow }).code, 'PAST_DATE');
 
 for (const mode of ['order', 'purchase', 'sale']) assert.match(html, new RegExp(`data-mode="${mode}"`));
 for (const method of ['direct', 'excel', 'text', 'paste', 'photo', 'voice']) assert.match(html, new RegExp(`data-method="${method}"`));
@@ -107,8 +114,13 @@ assert.match(html, /nexus\/common\/nexus-top\.js/);
 assert.match(html, /id="draftListButton"/);
 assert.match(html, /id="settingsButton"/);
 assert.match(html, /id="taxCustomerInput"/);
+assert.doesNotMatch(html, /id="orderDateInput"/);
+assert.match(html, /aria-label="입력 현황"/);
+assert.match(html, /id="matchingRailStatus">일치 0 · 확인 0 · 미인식 0/);
+assert.doesNotMatch(html, /작업 단계|\d+\s*\/\s*5|data-stage=/);
 
 assert.match(css, /grid-template-columns: 180px minmax\(0, 1fr\) 220px/);
+assert.match(css, /--app-max: 1360px/);
 assert.match(css, /@media \(max-width: 1180px\)/);
 assert.match(css, /@media \(max-width: 820px\)/);
 assert.match(css, /prefers-color-scheme: dark/);
@@ -130,6 +142,7 @@ for (const required of [
   'window.Tesseract',
   'SpeechRecognition',
   'captureOccurrenceId',
+  'looksLikeKakaoText',
   'appendDeliveryHistory'
 ]) assert.match(appSource, new RegExp(required));
 assert.match(appSource, /customerInput'\)\.focus\(\)/);
@@ -137,6 +150,10 @@ assert.match(appSource, /SMART_INPUT:\$\{current\.batches\[0\]/);
 assert.match(appSource, /editedFields/);
 assert.match(appSource, /다음 가능일은 \$\{nextAvailable\.date\}입니다/);
 assert.match(appSource, /mappingSource: 'PARSER_CONFIRMED', learnAlias: false/);
+assert.match(appSource, /일치 \$\{summary\.matched\} · 확인 \$\{summary\.similar\} · 미인식 \$\{summary\.unresolved\}/);
+assert.match(appSource, /current\.header\.orderDate = contract\.businessDate\(current\.header\.recordedAt/);
+assert.doesNotMatch(appSource, /orderDateInput/);
+assert.doesNotMatch(appSource, /function updateStage|progressText|stageIndex/);
 assert.doesNotMatch(appSource, /data-order-customer/);
 assert.match(dataStoreSource, /oneapp-smartinput/);
 assert.match(dataStoreSource, /customerLinkGroups/);

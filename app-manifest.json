@@ -295,7 +295,7 @@
         "orderq-vnext-sync",
         "product-master"
       ],
-      "integrationNote": "The standalone pilot displays the existing nexus-header without adding SmartInput to the global NEXUS menu or changing shared header sources. ORDER Q vNext is the common order ledger; orders.html still requires a separately validated ledger-consumer adapter."
+      "integrationNote": "SmartInput is available from the fixed NEXUS global entry and the full application list at /smartinput/. ORDER Q vNext is the common order ledger; orders.html still requires a separately validated ledger-consumer adapter."
     },
     {
       "id": "cloud-sync",
@@ -357,10 +357,11 @@
         "orderq/parser.html",
         "smartinput/index.html"
       ],
-      "schemaVersion": "NEXUS_HEADER_V1",
+      "schemaVersion": "NEXUS_HEADER_V2",
       "resources": {
         "component": "nexus/common/nexus-top.js",
         "configuration": "nexus/common/apps-config.js",
+        "globalActions": "window.NEXUS_GLOBAL_ACTIONS",
         "statusApi": "window.NEXUS_TOP.reportStatus",
         "leaveGuardEvent": "nexus:before-navigate",
         "preferencePrefix": "oneapp.nexus.v1."

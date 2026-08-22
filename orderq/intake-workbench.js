@@ -10,7 +10,7 @@ import {
   confirmMatching,
   reopenIntakeStage,
   commitIntakeOrder
-} from './intake-engine.js?v=0.12.1';
+} from './intake-engine.js?v=0.12.2';
 
 const $ = id => document.getElementById(id);
 const state = {

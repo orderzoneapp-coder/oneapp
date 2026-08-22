@@ -53,8 +53,8 @@ assert.match(master, /<title>기초등록<\/title>/);
 assert.match(master, />v3\.6<\/span>/);
 assert.match(itemManager, /<title>상품 기초정보 관리<\/title>/);
 assert.match(itemManager, /<nexus-top app-id="item-manager">[\s\S]*?<\/nexus-top>/);
-assert.match(itemManager, /\/nexus\/common\/apps-config\.js\?v=1\.1\.0/);
-assert.match(itemManager, /\/nexus\/common\/nexus-top\.js\?v=1\.1\.0/);
+assert.match(itemManager, /\/nexus\/common\/apps-config\.js\?v=1\.2\.0/);
+assert.match(itemManager, /\/nexus\/common\/nexus-top\.js\?v=1\.2\.0/);
 assert.doesNotMatch(itemManager, /\{ id: 'pipeline'|\{ id: 'parser'|\{ id: 'inventory'/, "Item Manager must use the shared NEXUS header instead of a duplicate app shortcut menu");
 assert.match(dashboard, /Dashboard \[v2\.1 AppRoutes\]/);
 assert.match(dashboard, />v2\.1<\/span>/);
@@ -69,7 +69,7 @@ for (const [name, source] of [
   ["orderops/list.html", canonicalOrderQ],
 ]) {
   assert.match(source, /<nexus-top app-id="orderq">[\s\S]*?<\/nexus-top>/, `${name} must load NEXUS TOP`);
-  assert.match(source, /\/nexus\/common\/nexus-top\.js\?v=1\.1\.0/, `${name} must use the shared NEXUS TOP component`);
+  assert.match(source, /\/nexus\/common\/nexus-top\.js\?v=1\.2\.0/, `${name} must use the shared NEXUS TOP component`);
   assert.match(source, /NEXUS 메뉴를 불러오지 못했습니다/, `${name} must reserve a failure-isolated NEXUS fallback`);
   assert.match(source, /brand-badge">v1\.63</, `${name} must show the current ORDER Q version`);
 }
@@ -84,8 +84,8 @@ const nexusApps = [
 for (const [name, appId] of nexusApps) {
   const source = read(name);
   assert.match(source, new RegExp(`<nexus-top app-id="${appId}">[\\s\\S]*?<\\/nexus-top>`), `${name} must declare its app-id`);
-  assert.match(source, /\/nexus\/common\/apps-config\.js\?v=1\.1\.0/, `${name} must load shared app configuration`);
-  assert.match(source, /\/nexus\/common\/nexus-top\.js\?v=1\.1\.0/, `${name} must load NEXUS TOP`);
+  assert.match(source, /\/nexus\/common\/apps-config\.js\?v=1\.2\.0/, `${name} must load shared app configuration`);
+  assert.match(source, /\/nexus\/common\/nexus-top\.js\?v=1\.2\.0/, `${name} must load NEXUS TOP`);
   assert.match(source, /NEXUS 메뉴를 불러오지 못했습니다/, `${name} must keep working when the common header fails`);
 }
 
@@ -96,7 +96,8 @@ const groups = Array.from(context.window.NEXUS_GROUPS, (group) => ({ ...group })
 const apps = Array.from(context.window.NEXUS_APPS, (app) => ({ ...app }));
 assert.deepEqual(groups.map((group) => group.id), ["shipping", "inventory", "pricing", "foundation"], "NEXUS work groups must use the approved default order");
 assert.deepEqual(groups.map((group) => group.name), ["출고관리", "재고관리", "시세관리", "기초등록"]);
-assert.deepEqual(apps.filter((app) => app.groupId === "shipping").map((app) => app.id), ["orderq", "orderops", "orderin"]);
+assert.deepEqual(apps.filter((app) => app.groupId === "shipping").map((app) => app.id), ["smart-input", "orderq", "orderops", "orderin"]);
+assert.deepEqual(Array.from(context.window.NEXUS_GLOBAL_ACTIONS, (action) => action.id), ["smart-input"]);
 assert.deepEqual(apps.filter((app) => app.groupId === "inventory").map((app) => app.id), ["dataops"]);
 assert.deepEqual(apps.filter((app) => app.groupId === "pricing").map((app) => app.id), ["merchops", "smart-parser"]);
 assert.deepEqual(apps.filter((app) => app.groupId === "foundation").map((app) => app.id), ["master", "item-manager", "customer-manager"]);

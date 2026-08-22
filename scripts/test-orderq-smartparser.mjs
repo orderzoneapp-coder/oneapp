@@ -3,6 +3,8 @@ import { readFile } from 'node:fs/promises';
 import { parseKakaoText, parseGeneralText, createSourceMessageKey } from '../orderq/smartparser/source-parser.js';
 import { EVENT_TYPE, detectOrderEvent } from '../orderq/smartparser/order-event-detector.js';
 import { parseOrderLine } from '../orderq/smartparser/order-line-parser.js';
+import { generateProductCandidates, loadCandidateContext } from '../orderq/smartparser/candidate-generator.js';
+import { matchParsedLine } from '../orderq/smartparser/matching-engine.js';
 
 const cases = [
   ['수입양상추1', EVENT_TYPE.ORDER],
@@ -42,6 +44,26 @@ assert.equal(context.quantity, 200);
 assert.equal(context.rawUnit, '단');
 assert.equal(context.productText, '');
 assert.equal(context.reason, 'CONTEXT_PRODUCT_UNRESOLVED');
+
+const commonOnlyProduct = {
+  productId: 'PRD-COMMON-ONLY',
+  itemCode: 'CM0001',
+  itemName: '공통전용양파',
+  specification: '1망',
+  finalUnit: '망',
+  source: 'COMMON_MASTER'
+};
+const commonContext = await loadCandidateContext({
+  readStore: async () => [],
+  loadCatalog: async () => ({ products: [commonOnlyProduct], commonCount: 1, orderQCount: 0, errors: [] })
+});
+assert.equal(commonContext.products.length, 1, 'common-master-only products must enter the parser candidate context');
+assert.equal(commonContext.catalogSummary.commonCount, 1);
+assert.equal(commonContext.catalogSummary.orderQCount, 0, 'the fixture must not exist in ORDER Q PRODUCTS');
+const commonCandidates = await generateProductCandidates({ productText: '공통전용양파', context: commonContext });
+const commonMatch = matchParsedLine({ productText: '공통전용양파', quantity: 1, rawUnit: '망' }, commonCandidates);
+assert.equal(commonMatch.matchStatus, 'MATCHED', 'a common-master-only exact product must be matched by behavior, not source-name inspection');
+assert.equal(commonMatch.itemCode, 'CM0001');
 
 const kakao = parseKakaoText(`[진주8번] [오후 6:59] 8번
 봉지추부깻잎 1

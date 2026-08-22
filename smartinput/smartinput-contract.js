@@ -108,6 +108,11 @@
     }
   }
 
+  function businessDate(date = new Date(), timezone = DEFAULT_SETTINGS.timezone) {
+    const value = date instanceof Date ? date : new Date(date);
+    return zonedNow(Number.isNaN(value.getTime()) ? new Date() : value, timezone).date;
+  }
+
   function effectiveDeliveryWeekdays(settings, customerId = '') {
     const normalized = normalizeSettings(settings);
     const key = text(customerId);
@@ -122,6 +127,8 @@
     const target = parseDate(deliveryDate);
     const order = parseDate(orderDate);
     if (!target) return { valid: false, code: 'DATE_REQUIRED', message: '배송일자를 확인하세요.' };
+    const current = zonedNow(now, normalized.timezone);
+    if (deliveryDate < current.date) return { valid: false, code: 'PAST_DATE', message: '지난 날짜는 배송일로 선택할 수 없습니다.' };
     if (order && deliveryDate < orderDate) return { valid: false, code: 'BEFORE_ORDER_DATE', message: '배송일은 주문일자보다 빠를 수 없습니다.' };
     const weekdays = effectiveDeliveryWeekdays(normalized, customerId);
     if (!weekdays.length) return { valid: false, code: 'NO_DELIVERY_WEEKDAYS', message: '배송 가능 요일을 설정하세요.' };
@@ -130,7 +137,6 @@
     if (normalized.holidayWeekdays.includes(weekday) || normalized.holidayDates.includes(deliveryDate)) {
       return { valid: false, code: 'HOLIDAY', message: '휴무일은 배송일로 선택할 수 없습니다.' };
     }
-    const current = zonedNow(now, normalized.timezone);
     if (deliveryDate === current.date) {
       if (!normalized.allowSameDayDelivery) return { valid: false, code: 'SAME_DAY_DISABLED', message: '당일 배송이 허용되지 않습니다.' };
       if (normalized.orderCutoffTime && current.time > normalized.orderCutoffTime) {
@@ -142,8 +148,10 @@
 
   function nextDeliveryDate({ orderDate, customerId = '', settings = DEFAULT_SETTINGS, now = new Date(), maxDays = 366 } = {}) {
     if (!parseDate(orderDate)) return { date: '', error: '주문일자를 확인하세요.' };
+    const current = zonedNow(now, normalizeSettings(settings).timezone);
+    const baseDate = orderDate > current.date ? orderDate : current.date;
     for (let offset = 1; offset <= maxDays; offset += 1) {
-      const candidate = addDays(orderDate, offset);
+      const candidate = addDays(baseDate, offset);
       const decision = validateDeliveryDate({ deliveryDate: candidate, orderDate, customerId, settings, now });
       if (decision.valid) return { date: candidate, offset, decision };
     }
@@ -155,11 +163,13 @@
     return weekdays.length ? weekdays.map(day => WEEKDAY_LABELS[day]).join('·') : '미설정';
   }
 
-  function createModeDraft(mode, date = todayLocal()) {
+  function createModeDraft(mode, date = businessDate(), recordedAt = new Date().toISOString()) {
     return {
       documentId: createId('SIDOC'),
       mode,
       header: {
+        recordedAt,
+        submittedAt: '',
         customerId: '',
         customerName: '',
         customerLinkGroupId: '',
@@ -188,25 +198,30 @@
   }
 
   function createDraft(options = {}) {
-    const date = options.date || todayLocal();
+    const created = new Date(options.now ?? Date.now());
+    const recordedAt = created.toISOString();
+    const date = options.date || businessDate(created);
     return {
       schemaVersion: SCHEMA_VERSION,
       appId: APP_ID,
       draftId: options.draftId || createId('SIDRAFT', options.now, options.random),
       activeMode: MODE_ORDER.includes(options.activeMode) ? options.activeMode : 'order',
       modes: {
-        order: createModeDraft('order', date),
-        purchase: createModeDraft('purchase', date),
-        sale: createModeDraft('sale', date)
+        order: createModeDraft('order', date, recordedAt),
+        purchase: createModeDraft('purchase', date, recordedAt),
+        sale: createModeDraft('sale', date, recordedAt)
       },
       ui: { stage: 'capture', relatedOpen: false, selectedRowId: '', scrollTop: 0 },
-      createdAt: new Date(options.now || Date.now()).toISOString(),
-      updatedAt: new Date(options.now || Date.now()).toISOString()
+      createdAt: recordedAt,
+      updatedAt: recordedAt
     };
   }
 
   function normalizeHeader(value = {}, fallback = {}) {
+    const recordedAt = text(value.recordedAt || fallback.recordedAt) || new Date().toISOString();
     return {
+      recordedAt,
+      submittedAt: text(value.submittedAt || fallback.submittedAt),
       customerId: text(value.customerId || fallback.customerId),
       customerName: text(value.customerName || fallback.customerName),
       customerLinkGroupId: text(value.customerLinkGroupId || fallback.customerLinkGroupId),
@@ -216,7 +231,7 @@
       rawOrdererName: text(value.rawOrdererName || fallback.rawOrdererName),
       aliasMappingId: text(value.aliasMappingId || fallback.aliasMappingId),
       customerMappingSource: text(value.customerMappingSource || fallback.customerMappingSource),
-      orderDate: text(value.orderDate || fallback.orderDate || todayLocal()),
+      orderDate: businessDate(recordedAt),
       deliveryDate: text(value.deliveryDate || fallback.deliveryDate),
       manualDeliveryOverride: Boolean(value.manualDeliveryOverride ?? fallback.manualDeliveryOverride),
       deliveryPolicySnapshot: value.deliveryPolicySnapshot && typeof value.deliveryPolicySnapshot === 'object'
@@ -407,6 +422,7 @@
     numberOrNull,
     createId,
     todayLocal,
+    businessDate,
     normalizeSettings,
     effectiveDeliveryWeekdays,
     validateDeliveryDate,

@@ -8,9 +8,9 @@
   <meta name="description" content="주문서·구매·판매 자료를 분석하고 표준 입력표로 전달하는 NEXUS 스마트입력">
   <link rel="icon" type="image/png" href="../nexus/assets/nexus-favicon.png">
   <link rel="stylesheet" href="../orderq/customer-master.css?v=0.12.1" data-customer-picker-style>
-  <link rel="stylesheet" href="./smartinput.css?v=0.2.0">
-  <script src="../nexus/common/apps-config.js?v=1.1.0"></script>
-  <script src="../nexus/common/nexus-top.js?v=1.1.0"></script>
+  <link rel="stylesheet" href="./smartinput.css?v=0.3.0">
+  <script src="../nexus/common/apps-config.js?v=1.2.0"></script>
+  <script src="../nexus/common/nexus-top.js?v=1.2.0"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@6/dist/tesseract.min.js"></script>
 </head>
@@ -52,22 +52,21 @@
     </section>
 
     <div class="workspace">
-      <aside class="stage-rail" aria-label="작업 단계">
+      <aside class="stage-rail" aria-label="입력 현황">
         <div class="aside-heading">
-          <span>작업 단계</span>
-          <strong id="progressText">1 / 5</strong>
+          <span>입력 현황</span>
+          <strong>실시간</strong>
         </div>
-        <ol class="stage-list">
-          <li class="is-current" data-stage="capture"><button type="button"><span>01</span><div><strong>원본 입력</strong><small>자료를 접수합니다</small></div></button></li>
-          <li data-stage="extract"><button type="button"><span>02</span><div><strong>추출 확인</strong><small>원문과 결과 비교</small></div></button></li>
-          <li data-stage="match"><button type="button"><span>03</span><div><strong>마스터 매칭</strong><small>거래처·상품 확인</small></div></button></li>
-          <li data-stage="review"><button type="button"><span>04</span><div><strong>입력 검토</strong><small>수량·단가 검토</small></div></button></li>
-          <li data-stage="complete"><button type="button"><span>05</span><div><strong>완료</strong><small>대상 앱에 전달</small></div></button></li>
-        </ol>
+        <ul class="intake-status-list">
+          <li data-tone="idle"><span aria-hidden="true"></span><div><strong>원문</strong><small id="sourceRailStatus">입력 전</small></div></li>
+          <li data-tone="idle"><span aria-hidden="true"></span><div><strong>입력표</strong><small id="rowCountRail">상품행 0개</small></div></li>
+          <li data-tone="idle"><span aria-hidden="true"></span><div><strong>상품 매칭</strong><small id="matchingRailStatus">일치 0 · 확인 0 · 미인식 0</small></div></li>
+          <li data-tone="idle"><span aria-hidden="true"></span><div><strong>ORDER Q</strong><small id="deliveryRailStatus">전달 전</small></div></li>
+        </ul>
         <div class="stage-summary">
-          <span>현재 입력</span>
+          <span>누적 입력</span>
           <strong id="batchCount">0차</strong>
-          <small id="rowCountRail">주문행 0개</small>
+          <small>원문 차수별로 상품행을 보존합니다.</small>
         </div>
       </aside>
 
@@ -82,7 +81,6 @@
             <small id="customerHint">거래처가 인식되지 않으면 이 입력란으로 이동합니다.</small>
           </label>
           <label class="field field--tax"><span>세무 거래처</span><input id="taxCustomerInput" type="text" readonly placeholder="연결 후 1개 지정"><small id="customerRelationHint">배송처 연결 관계를 확인하세요.</small></label>
-          <label class="field"><span>주문일자 <em>필수</em></span><input id="orderDateInput" type="date"></label>
           <label class="field"><span>배송일자</span><input id="deliveryDateInput" type="date"><small id="deliveryPolicyHint">배송 가능일을 계산합니다.</small></label>
           <label class="field"><span>출하창고 <em>필수</em></span><input id="warehouseInput" type="text" list="warehouseOptions" placeholder="창고명 또는 코드"><datalist id="warehouseOptions"></datalist></label>
           <label class="field"><span>거래유형</span><select id="transactionTypeInput"><option>기타</option><option>카드</option><option>현금</option><option>현금영수증</option><option>사내사용</option></select></label>
@@ -91,7 +89,7 @@
 
         <section class="parser-card" aria-labelledby="parserTitle">
           <div class="parser-card__header">
-            <div><span class="section-number">01</span><div><h2 id="parserTitle">원본 자료 입력</h2><p>공백과 줄바꿈을 포함한 원문을 그대로 보존합니다.</p></div></div>
+            <div><span class="section-number">입력</span><div><h2 id="parserTitle">원본 자료 입력</h2><p>공백과 줄바꿈을 포함한 원문을 그대로 보존합니다.</p></div></div>
             <span class="method-status" id="methodStatus">텍스트 입력</span>
           </div>
           <div class="method-bar" role="toolbar" aria-label="입력 방식">
@@ -116,11 +114,11 @@
 
         <section class="grid-card" aria-labelledby="gridTitle">
           <div class="grid-card__header">
-            <div><span class="section-number">02</span><div><h2 id="gridTitle">표준 입력표</h2><p>일치 항목은 자동 입력하고, 실패 항목은 표에서 직접 수정합니다.</p></div></div>
-            <div class="legend" aria-label="매칭 상태 범례"><span class="legend--matched">일치</span><span class="legend--similar">유사</span><span class="legend--failed">미인식</span></div>
+            <div><span class="section-number">표</span><div><h2 id="gridTitle">표준 입력표</h2><p>일치 항목은 자동 입력하고, 실패 항목은 표에서 직접 수정합니다.</p></div></div>
+            <div class="legend" aria-label="매칭 상태 범례"><span class="legend--matched">일치</span><span class="legend--similar">확인</span><span class="legend--failed">미인식</span></div>
           </div>
           <div class="grid-toolbar">
-            <div class="grid-stats"><strong id="gridRowCount">0행</strong><span id="matchedCount">일치 0</span><span id="similarCount">유사 0</span><span id="failedCount">미인식 0</span><span id="duplicateCount">중복 가능 0</span></div>
+            <div class="grid-stats"><strong id="gridRowCount">0행</strong><span id="matchedCount">일치 0</span><span id="similarCount">확인 0</span><span id="failedCount">미인식 0</span><span id="duplicateCount">중복 가능 0</span></div>
             <button class="button button--quiet button--small" id="addRowButton" type="button">빈 행 추가</button>
           </div>
           <div class="table-scroll" id="tableScroll" tabindex="0">
@@ -153,7 +151,7 @@
   </main>
 
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
-  <script src="./smartinput-contract.js?v=0.2.0"></script>
-  <script type="module" src="./smartinput.js?v=0.2.0"></script>
+  <script src="./smartinput-contract.js?v=0.3.0"></script>
+  <script type="module" src="./smartinput.js?v=0.3.0"></script>
 </body>
 </html>
