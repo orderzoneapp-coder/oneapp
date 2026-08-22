@@ -133,13 +133,13 @@
         };
 
     </script>
-    <script src="/nexus/common/apps-config.js?v=1.0.0"></script>
-    <script src="/nexus/common/nexus-top.js?v=1.0.0"></script>
-    <style>:root{--nexus-top-height:44px}body>#root>.h-screen{height:calc(100vh - var(--nexus-top-height))!important}</style>
+    <script src="/nexus/common/apps-config.js?v=1.1.0"></script>
+    <script src="/nexus/common/nexus-top.js?v=1.1.0"></script>
+    <style>:root{--nexus-top-height:44px}nexus-top{display:block;min-height:var(--nexus-top-height)}.nexus-top-fallback{height:var(--nexus-top-height);padding:0 14px;display:flex;align-items:center;gap:12px;background:#0b1021;color:#fff;font:12px Pretendard,"Noto Sans KR",sans-serif}.nexus-top-fallback strong{letter-spacing:.08em}.nexus-top-fallback span{color:#cbd5e1}.nexus-top-fallback button{margin-left:auto;border:1px solid #64748b;border-radius:6px;padding:5px 9px;background:transparent;color:#fff;cursor:pointer}body>#root>.h-screen{height:calc(100vh - var(--nexus-top-height))!important}</style>
   <link rel="icon" type="image/png" href="/nexus/assets/nexus-favicon.png">
 </head>
 <body>
-    <nexus-top app-id="orderin"></nexus-top>
+    <nexus-top app-id="smart-parser"><div class="nexus-top-fallback" role="status"><strong>NEXUS</strong><span>NEXUS 메뉴를 불러오지 못했습니다.</span><button type="button" onclick="window.location.reload()">재시도</button></div></nexus-top>
     <div id="root"></div>
 
     <script type="text/javascript">
@@ -1341,6 +1341,19 @@ const useParserApp = () => {
     const [showMappingExcludeModal, setShowMappingExcludeModal] = useState(false);
     const [lastExcludedCount, setLastExcludedCount] = useState(0);
     const showToast = useCallback((msg) => { setToastMsg(msg); setTimeout(() => setToastMsg(''), 3000); }, []);
+    useEffect(() => {
+        const message = String(processMsg || toastMsg || '').trim();
+        if (!message || !/(저장|마스터 적용|동기화|히스토리)/.test(message)) return;
+        const failed = /(실패|오류|차단|❌)/.test(message);
+        const completed = !failed && /(완료|반영|✅)/.test(message);
+        window.NEXUS_TOP?.reportStatus({
+            appId: 'smart-parser',
+            taskId: 'smart-parser-storage',
+            level: failed ? 'error' : completed ? 'normal' : isProcessing ? 'progress' : 'warning',
+            active: !completed,
+            message
+        });
+    }, [isProcessing, processMsg, toastMsg]);
     return { masterProducts, saveMaster, parserDict, saveDict, parserExcludeDict, saveParserExcludeDict, stoppedProducts, setStoppedProducts, showStopManager, setShowStopManager, catalogUpdatedAt, setCatalogUpdatedAt, catalogWarehouseMap, saveCatalogWarehouse, marginRules, parserBuffer, setParserBuffer, currentTag, setCurrentTag, activeTab, setActiveTab, showInputModal, setShowInputModal, showReviewModal, setShowReviewModal, showErpModal, setShowErpModal, toastMsg, showToast, isProcessing, setIsProcessing, processMsg, setProcessMsg, globalSearch, setGlobalSearch, targetId, setTargetId, selectedMissingCodes, setSelectedMissingCodes, processedCodes, setProcessedCodes, missingSearch, setMissingSearch, showExcludeModal, setShowExcludeModal, excludeTarget, setExcludeTarget, showMappingExcludeModal, setShowMappingExcludeModal, lastExcludedCount, setLastExcludedCount };
 };
 const useParserActions = (appState) => {

@@ -41,13 +41,13 @@
         .loader-text { font-family: 'Pretendard', sans-serif; font-size: 14px; font-weight: 700; color: #475569; letter-spacing: -0.5px; animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
     </style>
-    <script src="/nexus/common/apps-config.js?v=1.0.0"></script>
-    <script src="/nexus/common/nexus-top.js?v=1.0.0"></script>
-    <style>:root{--nexus-top-height:44px}body>#root>.h-screen{height:calc(100vh - var(--nexus-top-height))!important}</style>
+    <script src="/nexus/common/apps-config.js?v=1.1.0"></script>
+    <script src="/nexus/common/nexus-top.js?v=1.1.0"></script>
+    <style>:root{--nexus-top-height:44px}nexus-top{display:block;min-height:var(--nexus-top-height)}.nexus-top-fallback{height:var(--nexus-top-height);padding:0 14px;display:flex;align-items:center;gap:12px;background:#0b1021;color:#fff;font:12px Pretendard,"Noto Sans KR",sans-serif}.nexus-top-fallback strong{letter-spacing:.08em}.nexus-top-fallback span{color:#cbd5e1}.nexus-top-fallback button{margin-left:auto;border:1px solid #64748b;border-radius:6px;padding:5px 9px;background:transparent;color:#fff;cursor:pointer}body>#root>.h-screen{height:calc(100vh - var(--nexus-top-height))!important}</style>
   <link rel="icon" type="image/png" href="/nexus/assets/nexus-favicon.png">
 </head>
 <body>
-    <nexus-top app-id="dataops"></nexus-top>
+    <nexus-top app-id="dataops"><div class="nexus-top-fallback" role="status"><strong>NEXUS</strong><span>NEXUS 메뉴를 불러오지 못했습니다.</span><button type="button" onclick="window.location.reload()">재시도</button></div></nexus-top>
     <!-- 초기 로딩 스크린 -->
     <div id="initial-loader">
         <div class="spinner"></div>
@@ -8651,6 +8651,19 @@ function App() {
     const isClosingOutputBlocked = isProcessing || ['processing', 'blocked', 'awaiting-confirmation'].includes(analysisMeta.status);
     const [error, setError] = useState('');
     const [alertMsg, setAlertMsg] = useState('');
+    useEffect(() => {
+        const message = String(error || alertMsg || '').trim();
+        if (!message || !/(저장|클라우드|동기화|재고 스냅샷)/.test(message)) return;
+        const failed = /(실패|오류|차단|❌)/.test(message);
+        const completed = !failed && /(완료|성공|✅)/.test(message);
+        window.NEXUS_TOP?.reportStatus({
+            appId: 'dataops',
+            taskId: 'dataops-storage',
+            level: failed ? 'error' : completed ? 'normal' : isProcessing ? 'progress' : 'warning',
+            active: !completed,
+            message
+        });
+    }, [isProcessing, error, alertMsg]);
     // V1.a22.74: 02창고 마감오차는 일반 문장 팝업이 아니라 구매/판매 상세 박스 전용 팝업으로 표시한다.
     const [transferClosingAlert, setTransferClosingAlert] = useState(null);
     const [f9PreflightResult, setF9PreflightResult] = useState(null);

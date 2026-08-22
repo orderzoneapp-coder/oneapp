@@ -11,7 +11,7 @@ const css = readFileSync(path.join(root, "Item_manager.css"), "utf8");
 const master = readFileSync(path.join(root, "Master.html"), "utf8");
 
 assert.match(html, /id="nexus-common-header"\s+data-app-id="master"/);
-assert.match(html, /<nexus-top app-id="master"><\/nexus-top>/);
+assert.match(html, /<nexus-top app-id="item-manager">[\s\S]*?<\/nexus-top>/);
 assert.match(html, /상품 기초정보 관리/);
 assert.match(html, /목록·조회/);
 assert.match(html, /기초정보 관리/);

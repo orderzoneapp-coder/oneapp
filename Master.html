@@ -38,13 +38,13 @@
 
         .custom-scrollbar { scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent; }
     </style>
-    <script src="/nexus/common/apps-config.js?v=1.0.0"></script>
-    <script src="/nexus/common/nexus-top.js?v=1.0.0"></script>
-    <style>:root{--nexus-top-height:44px}body>#root>.h-screen{height:calc(100vh - var(--nexus-top-height))!important}</style>
+    <script src="/nexus/common/apps-config.js?v=1.1.0"></script>
+    <script src="/nexus/common/nexus-top.js?v=1.1.0"></script>
+    <style>:root{--nexus-top-height:44px}nexus-top{display:block;min-height:var(--nexus-top-height)}.nexus-top-fallback{height:var(--nexus-top-height);padding:0 14px;display:flex;align-items:center;gap:12px;background:#0b1021;color:#fff;font:12px Pretendard,"Noto Sans KR",sans-serif}.nexus-top-fallback strong{letter-spacing:.08em}.nexus-top-fallback span{color:#cbd5e1}.nexus-top-fallback button{margin-left:auto;border:1px solid #64748b;border-radius:6px;padding:5px 9px;background:transparent;color:#fff;cursor:pointer}body>#root>.h-screen{height:calc(100vh - var(--nexus-top-height))!important}</style>
   <link rel="icon" type="image/png" href="/nexus/assets/nexus-favicon.png">
 </head>
 <body class="overflow-hidden text-slate-800">
-    <nexus-top app-id="master"></nexus-top>
+    <nexus-top app-id="master"><div class="nexus-top-fallback" role="status"><strong>NEXUS</strong><span>NEXUS 메뉴를 불러오지 못했습니다.</span><button type="button" onclick="window.location.reload()">재시도</button></div></nexus-top>
     <div id="root"></div>
 
     <!-- White screen guard: shows startup/runtime errors instead of blank screen -->
@@ -1171,6 +1171,7 @@
                 setIsProcessing(true);
                 setProcessMsg('승인 범위 master·history 저장 및 재검증 중...');
                 setAddUpdateError('');
+                window.NEXUS_TOP?.reportStatus({ appId: 'master', taskId: 'master-save', level: 'progress', message: '상품 기초정보를 저장하고 검증하고 있습니다.' });
                 try {
                     const result = await window.ONEAPP_MASTER_ADD_UPDATE.commitApprovedChanges({
                         analysis: addUpdateAnalysis,
@@ -1188,8 +1189,10 @@
                     setAddUpdateAnalysis(null);
                     setShowAddUpdateReview(false);
                     setShowAddUpdateConfirm(false);
+                    window.NEXUS_TOP?.reportStatus({ appId: 'master', taskId: 'master-save', level: 'normal', active: false, message: '상품 기초정보 저장·검증이 완료되었습니다.' });
                 } catch (error) {
                     console.error(error);
+                    window.NEXUS_TOP?.reportStatus({ appId: 'master', taskId: 'master-save', level: 'error', message: error?.message || '상품 기초정보 저장에 실패했습니다.' });
                     if (error?.code === 'MERCH_MASTER_REVISION_CONFLICT') {
                         try {
                             const latest = await window.ONEAPP.STORAGE.readMasterSnapshotState();
@@ -1247,13 +1250,19 @@
                 const targetUrl = getOneAppCloudSyncUrl(config.cloudUrl);
                 if (!targetUrl) return showToast("⚠️ 클라우드 URL 설정 필요");
                 setIsProcessing(true); setProcessMsg("MerchOps 클라우드 전송 중...");
+                window.NEXUS_TOP?.reportStatus({ appId: 'master', taskId: 'master-cloud', level: 'progress', message: '클라우드에 상품 기초정보를 전송하고 있습니다.' });
                 try {
                     const result = await pushMerchOpsCloudMaster(masterProducts, {
                         cloudUrl: targetUrl,
                         onProgress: (msg) => setProcessMsg(msg)
                     });
                     showToast(`✅ MerchOps 클라우드 백업 완료! 마스터 ${result.count.toLocaleString()}건`);
-                } catch (e) { console.error(e); showToast("❌ 실패: " + e.message); } finally { setIsProcessing(false); setProcessMsg(""); }
+                    window.NEXUS_TOP?.reportStatus({ appId: 'master', taskId: 'master-cloud', level: 'normal', active: false, message: '클라우드 전송이 완료되었습니다.' });
+                } catch (e) {
+                    console.error(e);
+                    showToast("❌ 실패: " + e.message);
+                    window.NEXUS_TOP?.reportStatus({ appId: 'master', taskId: 'master-cloud', level: 'error', message: e?.message || '클라우드 전송에 실패했습니다.' });
+                } finally { setIsProcessing(false); setProcessMsg(""); }
             };
 
             // [M-CLOUD-02] MerchOps 공통 클라우드 Pull
@@ -1261,11 +1270,17 @@
                 const targetUrl = getOneAppCloudSyncUrl(config.cloudUrl);
                 if (!targetUrl) return showToast("⚠️ 클라우드 URL 설정 필요");
                 setIsProcessing(true); setProcessMsg("MerchOps 클라우드 수신 중...");
+                window.NEXUS_TOP?.reportStatus({ appId: 'master', taskId: 'master-cloud', level: 'progress', message: '클라우드 상품 기초정보를 불러오고 있습니다.' });
                 try {
                     const result = await pullMerchOpsCloudMaster(targetUrl);
                     setMasterProducts(result.masterMap);
                     showToast(`✅ MerchOps 클라우드 동기화 완료: ${result.count.toLocaleString()}건`);
-                } catch (e) { console.error(e); showToast("❌ 실패: " + e.message); } finally { setIsProcessing(false); setProcessMsg(""); }
+                    window.NEXUS_TOP?.reportStatus({ appId: 'master', taskId: 'master-cloud', level: 'normal', active: false, message: '클라우드 동기화가 완료되었습니다.' });
+                } catch (e) {
+                    console.error(e);
+                    showToast("❌ 실패: " + e.message);
+                    window.NEXUS_TOP?.reportStatus({ appId: 'master', taskId: 'master-cloud', level: 'error', message: e?.message || '클라우드 동기화에 실패했습니다.' });
+                } finally { setIsProcessing(false); setProcessMsg(""); }
             };
 
             // 💡 safeStr을 적용하여 숫자 데이터로 인한 에러 방어 및 카테고리 로직 복구

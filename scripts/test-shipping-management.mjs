@@ -19,7 +19,7 @@ assert.match(orderOpsHtml, /<body>[\s\S]*<\/body>\s*<\/html>/,
 assert.match(orderOpsHtml, /brand-badge">v1\.63</, "ORDER Q visible version must be v1.63");
 assert.match(orderOpsHtml, /<title>ORDER Q<\/title>/,
   "the public page title must use the approved ORDER Q name");
-assert.match(orderOpsHtml, /<nexus-top app-id="orderq"><\/nexus-top>/,
+assert.match(orderOpsHtml, /<nexus-top app-id="orderq">[\s\S]*?<\/nexus-top>/,
   "the public page must load NEXUS TOP with the ORDER Q app id");
 assert.match(orderOpsHtml, /<img class="brand-logo" src="assets\/order-q-logo\.png" alt="ORDER Q">/,
   "the public APP BAR must use the approved ORDER Q logo");
@@ -1888,7 +1888,7 @@ const inlineScriptMatch = html.match(/<script>\s*([\s\S]*?)<\/script>\s*<\/body>
 assert.ok(inlineScriptMatch, "canonical ORDER Q inline application script must exist");
 new vm.Script(inlineScriptMatch[1], { filename: "orderops/list.html:inline" });
 assert.match(html, /brand-badge">v1\.63</, "canonical ORDER Q visible version must be v1.63");
-assert.match(html, /<nexus-top app-id="orderq"><\/nexus-top>/,
+assert.match(html, /<nexus-top app-id="orderq">[\s\S]*?<\/nexus-top>/,
   "the canonical route must load NEXUS TOP with the ORDER Q app id");
 assert.doesNotMatch(html, /class="brand-logo" src="\.\.\/assets\/order-q-logo\.png"/,
   "the canonical APP BAR must not duplicate the former ORDER Q logo");

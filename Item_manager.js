@@ -531,6 +531,14 @@
   function setSync(status, message) {
     state.sync.state = status;
     state.sync.message = message;
+    var level = status === "synced" ? "normal" : status === "error" ? "error" : status === "working" ? "progress" : "warning";
+    window.NEXUS_TOP?.reportStatus({
+      appId: "item-manager",
+      taskId: "item-manager-sync",
+      level: level,
+      active: status !== "synced",
+      message: message
+    });
     renderSync();
   }
 
@@ -854,6 +862,13 @@
     els["header-save-button"].disabled = !enabled;
     els["footer-save-button"].disabled = !enabled;
     els["discard-button"].disabled = !enabled;
+    window.NEXUS_TOP?.reportStatus({
+      appId: "item-manager",
+      taskId: "item-manager-unsaved",
+      level: rows.length ? "warning" : "normal",
+      active: rows.length > 0,
+      message: rows.length ? rows.length + "개 상품에 저장하지 않은 변경사항이 있습니다." : "저장하지 않은 변경사항이 없습니다."
+    });
   }
 
   function renderAll() {
