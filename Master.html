@@ -993,7 +993,19 @@
         // 📊 Main App Container
         // ==========================================
         function App() {
-            const isCustomerView = new URLSearchParams(window.location.search).get('view') === 'customers';
+            const readMasterRoute = () => {
+                const params = new URLSearchParams(window.location.search);
+                const rawView = params.get('view');
+                const rawMode = params.get('mode');
+                return {
+                    view: rawView === 'customers' ? 'customers' : 'products',
+                    mode: rawMode === 'batch' ? 'batch' : 'list'
+                };
+            };
+            const [masterRoute, setMasterRoute] = useState(readMasterRoute);
+            const [customerFrameInitialMode] = useState(() => readMasterRoute().mode);
+            const isCustomerView = masterRoute.view === 'customers';
+            const isBatchMode = masterRoute.mode === 'batch';
             const [masterProducts, setMasterProducts] = useState({});
             const config = useMerchConfig();
             const [toastMsg, setToastMsg] = useState("");
@@ -1019,6 +1031,18 @@
 
             const showToast = useCallback((msg) => { setToastMsg(msg); setTimeout(() => setToastMsg(""), 3000); }, []);
 
+            const selectMasterRoute = useCallback((nextRoute) => {
+                const normalized = {
+                    view: nextRoute.view === 'customers' ? 'customers' : 'products',
+                    mode: nextRoute.mode === 'batch' ? 'batch' : 'list'
+                };
+                const url = new URL(window.location.href);
+                url.searchParams.set('view', normalized.view);
+                url.searchParams.set('mode', normalized.mode);
+                window.history.pushState(normalized, '', `${url.pathname}${url.search}${url.hash}`);
+                setMasterRoute(normalized);
+            }, []);
+
             const handleNavigate = useCallback((e, path, isReady = true) => {
                 if (e && e.preventDefault) e.preventDefault();
                 if (!isReady || path === '#') { showToast(`⚠️ [${path}] 페이지는 아직 준비 중입니다.`); return; }
@@ -1035,11 +1059,9 @@
             }, [showToast]);
 
             useEffect(() => {
-                if (!isCustomerView) {
-                    loadMasterLocal().then(data => {
-                        if (data && typeof data === 'object') setMasterProducts(data);
-                    }).catch(console.error);
-                }
+                loadMasterLocal().then(data => {
+                    if (data && typeof data === 'object') setMasterProducts(data);
+                }).catch(console.error);
 
                 const handleMessage = (e) => {
                     if (e.data && e.data.type === 'CLOSE_SETTINGS') {
@@ -1052,9 +1074,21 @@
                         });
                     }
                 };
+                const handlePopState = () => setMasterRoute(readMasterRoute());
                 window.addEventListener('message', handleMessage);
-                return () => window.removeEventListener('message', handleMessage);
+                window.addEventListener('popstate', handlePopState);
+                return () => {
+                    window.removeEventListener('message', handleMessage);
+                    window.removeEventListener('popstate', handlePopState);
+                };
             }, []);
+
+            useEffect(() => {
+                const frame = document.getElementById('customerMasterFrame');
+                if (frame?.contentWindow) {
+                    frame.contentWindow.postMessage({ type: 'ONEAPP_MASTER_MODE', mode: masterRoute.mode }, window.location.origin);
+                }
+            }, [masterRoute.mode]);
 
             const discardAddUpdateAnalysis = () => {
                 setAddUpdateAnalysis(null);
@@ -1322,18 +1356,54 @@
 
                     <MasterAddUpdateResultModal result={addUpdateResult} onClose={() => setAddUpdateResult(null)} />
 
-                    {isCustomerView ? (
-                        <main className="flex-1 overflow-hidden bg-slate-50">
+                    <GlobalHeader
+                        activeTab={isCustomerView ? 'partner-db' : 'item-info'}
+                        itemCount={isCustomerView ? 0 : Object.keys(masterProducts).length}
+                        isProcessing={isProcessing}
+                        processMsg={processMsg}
+                        onOpenSettings={() => setShowSettingsModal(true)}
+                        onPush={handlePush}
+                        onPull={handlePull}
+                        onNavigate={handleNavigate}
+                        showCloudActions={!isCustomerView}
+                    />
+
+                    <nav className="bg-white border-b border-slate-200 px-6 pt-3 shrink-0" aria-label="기초등록 대상">
+                        <div className="flex gap-2" role="tablist" aria-label="상품 또는 거래처 선택">
+                            {[['products', '상품'], ['customers', '거래처']].map(([view, label]) => (
+                                <button key={view} type="button" role="tab" aria-selected={masterRoute.view === view} aria-current={masterRoute.view === view ? 'page' : undefined}
+                                    onClick={() => selectMasterRoute({ view, mode: masterRoute.mode })}
+                                    className={`px-6 py-2.5 rounded-t-lg border-b-[3px] text-sm font-black focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 ${masterRoute.view === view ? 'border-indigo-600 text-indigo-700 bg-indigo-50/60' : 'border-transparent text-slate-500 hover:text-slate-800'}`}>
+                                    {label}
+                                </button>
+                            ))}
+                        </div>
+                    </nav>
+                    <nav className="bg-slate-50 border-b border-slate-200 px-6 py-2 shrink-0" aria-label="관리 방식">
+                        <div className="flex gap-2" role="tablist" aria-label="목록 또는 일괄 관리 선택">
+                            {[['list', '목록'], ['batch', '일괄 관리']].map(([mode, label]) => (
+                                <button key={mode} type="button" role="tab" aria-selected={masterRoute.mode === mode} aria-current={masterRoute.mode === mode ? 'page' : undefined}
+                                    onClick={() => selectMasterRoute({ view: masterRoute.view, mode })}
+                                    className={`px-4 py-2 rounded-lg border text-xs font-black focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 ${masterRoute.mode === mode ? 'bg-indigo-600 border-indigo-600 text-white shadow-sm' : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-100'}`}>
+                                    {label}
+                                </button>
+                            ))}
+                        </div>
+                    </nav>
+
+                    <main className={`${isCustomerView ? 'flex' : 'hidden'} flex-1 overflow-hidden bg-slate-50`} aria-hidden={!isCustomerView}>
                             <iframe
-                                src="./partner_db.html?embedded=1"
+                                id="customerMasterFrame"
+                                src={`./partner_db.html?embedded=1&mode=${customerFrameInitialMode}`}
                                 className="w-full h-full border-0 bg-slate-50"
-                                title="거래처 등록·수정"
+                                title={isBatchMode ? '거래처 일괄 등록·수정' : '거래처 목록'}
+                                onLoad={(event) => event.currentTarget.contentWindow?.postMessage({ type: 'ONEAPP_MASTER_MODE', mode: masterRoute.mode }, window.location.origin)}
                             ></iframe>
-                        </main>
-                    ) : (
-                    <main className="flex-1 flex flex-col overflow-hidden bg-slate-50 border-t border-slate-200">
+                    </main>
+                    <main className={`${isCustomerView ? 'hidden' : 'flex'} flex-1 flex-col overflow-hidden bg-slate-50 border-t border-slate-200`} aria-hidden={isCustomerView}>
                         <div className="px-6 py-3 bg-white border-b border-slate-200 flex items-center justify-between shrink-0 z-10 shadow-sm">
                             <div className="flex items-center gap-4">
+                                <h1 className="text-base font-black text-slate-800">{isBatchMode ? '상품 일괄 등록·수정' : '상품 목록'}</h1>
                                 <span className="text-[12px] font-bold text-slate-400">
                                     총 <strong className="text-indigo-600">{Object.keys(masterProducts).length.toLocaleString()}</strong>건 데이터
                                 </span>
@@ -1344,6 +1414,14 @@
                                 )}
                             </div>
                             <div className="flex items-center gap-2">
+                                {!isBatchMode && (
+                                    <>
+                                        <button type="button" onClick={(e) => handleNavigate(e, 'Item_manager.html', true)} className="h-9 px-4 rounded-lg text-[12px] font-bold bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2">신규 등록</button>
+                                        <button type="button" onClick={(e) => handleNavigate(e, 'Item_manager.html', true)} className="h-9 px-4 rounded-lg text-[12px] font-bold bg-white text-slate-700 hover:bg-slate-100 border border-slate-300 shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2">단건 수정</button>
+                                    </>
+                                )}
+                                {isBatchMode && (
+                                    <>
                                 <select value="add-update" onChange={() => {}} className="h-9 px-3 rounded-lg text-[12px] font-bold bg-slate-100 text-slate-700 border border-slate-300 outline-none">
                                     <option value="add-update">추가·갱신</option>
                                     <option value="initial" disabled>최초 등록 · 1차 미구현</option>
@@ -1358,13 +1436,26 @@
                                         검토 이어보기
                                     </button>
                                 )}
+                                    </>
+                                )}
+                                {!isBatchMode && (
                                 <div className="relative w-64 h-9 ml-2">
                                     <input type="text" placeholder="마스터 DB 검색..." value={globalSearch} onChange={(e) => setGlobalSearch(e.target.value)} className="w-full h-full pl-9 pr-4 bg-slate-100 border-none rounded-lg text-[13px] outline-none focus:ring-1 focus:ring-indigo-400 transition-all shadow-inner" />
                                     <SafeIcon name="search" size={14} className="absolute left-3 top-2.5 text-slate-400 pointer-events-none" />
                                 </div>
+                                )}
                             </div>
                         </div>
 
+                        <div className={`${isBatchMode ? 'flex' : 'hidden'} flex-1 items-center justify-center bg-slate-100 p-8`}>
+                            <div className="max-w-xl rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm">
+                                <SafeIcon name="file-spreadsheet" size={32} className="mx-auto mb-4 text-indigo-500" />
+                                <h2 className="text-lg font-black text-slate-800">상품 일괄 등록·수정</h2>
+                                <p className="mt-2 text-sm leading-6 text-slate-500">상단의 Excel 비교에서 추가·갱신 대상을 분석한 뒤 선택, 검증, 적용할 수 있습니다. 진행 중인 검토는 목록 탭을 오가도 유지됩니다.</p>
+                            </div>
+                        </div>
+
+                        <div className={`${isBatchMode ? 'hidden' : 'flex'} flex-1 flex-col overflow-hidden`}>
                         {/* 💡 [복구됨] 3단 카테고리 레이아웃 원본 복구 */}
                         <div className="flex items-end px-4 pt-3 border-b border-slate-200 bg-slate-200/50 shrink-0 h-[50px]">
                             <div className="flex overflow-x-auto custom-scrollbar h-full items-end w-full gap-1">
@@ -1445,8 +1536,8 @@
                                 </div>
                             </div>
                         </div>
+                        </div>
                     </main>
-                    )}
 
                     <IframeSettingsModal 
                         isOpen={showSettingsModal} 
