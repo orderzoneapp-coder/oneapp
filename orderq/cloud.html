@@ -186,7 +186,6 @@
 
     resetExecuteBtn.addEventListener('click', async () => {
       if (!verifiedResetPreview) return show('먼저 사전점검을 실행하세요.', 'warn');
-      if (!confirm('거래처 현재 Master·별칭·외부 연결과 미완료 거래처 Import 작업을 물리 삭제합니다. 주문·판매·History/Event는 보존됩니다. 실행하시겠습니까?')) return;
       resetExecuteBtn.disabled = true;
       try {
         const result = await executeCustomerMasterReset('RESET_CUSTOMER_MASTER_ONLY');
