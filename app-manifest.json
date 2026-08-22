@@ -272,6 +272,31 @@
       ]
     },
     {
+      "id": "smart-input",
+      "name": "스마트입력",
+      "path": "smartinput/index.html",
+      "kind": "web-entry",
+      "status": "pilot",
+      "purpose": "Capture order, purchase, and sale source material through direct, file, text, clipboard, photo OCR, and voice STT inputs; preserve cumulative source-to-row evidence; and deliver completed orders to the ORDER Q vNext ledger before NEXUS navigation registration.",
+      "owner": "smart-input",
+      "productionWrites": true,
+      "publicEntries": [
+        "smartinput/index.html"
+      ],
+      "navigatesTo": [
+        "orderq-vnext",
+        "orderops"
+      ],
+      "services": [
+        "cloud-sync"
+      ],
+      "sharedContracts": [
+        "orderq-vnext-sync",
+        "product-master"
+      ],
+      "integrationNote": "The standalone pilot intentionally does not consume nexus-header. NEXUS registration follows independent operational validation. ORDER Q vNext is the common order ledger; orders.html still requires a separately validated ledger-consumer adapter."
+    },
+    {
       "id": "cloud-sync",
       "name": "ONEAPP Cloud Sync",
       "path": "code.gs",
@@ -372,7 +397,8 @@
         "orderq/input.html",
         "orderq/parser.html",
         "orderq/collector.html",
-        "orderq/cloud.html"
+        "orderq/cloud.html",
+        "smartinput/index.html"
       ],
       "schemaVersion": "ONEAPP_ORDERQ_SYNC_V1",
       "localDatabase": "oneapp-orderq-vnext",
@@ -491,7 +517,8 @@
       "id": "product-master",
       "owner": "merchops",
       "consumers": [
-        "orderq/input.html"
+        "orderq/input.html",
+        "smartinput/index.html"
       ],
       "resources": {
         "indexedDb": {
