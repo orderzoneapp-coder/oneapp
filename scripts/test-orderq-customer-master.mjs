@@ -9,7 +9,7 @@ import { ORDERQ_DB_VERSION, V10_STORE_DEFINITIONS } from '../orderq/orderq-v10-c
 const read = path => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
 const [
   db, service, sourceImport, picker, ui, html, css, intakeEngine, intakeWorkbench,
-  directInput, manualInput, collectorRepository, collectorUi, collectorReview, collectorHtml, cloud, syncEngine
+  directInput, manualInput, collectorRepository, collectorUi, collectorReview, collectorHtml, cloud, syncEngine, masterShell
 ] = await Promise.all([
   read('orderq/orderq-db.js'),
   read('orderq/customer-master.js'),
@@ -27,7 +27,8 @@ const [
   read('orderq/collector-smartparser-review.js'),
   read('orderq/collector.html'),
   read('orderq-cloud.gs'),
-  read('orderq/orderq-sync-engine.js')
+  read('orderq/orderq-sync-engine.js'),
+  read('Master.html')
 ]);
 
 new vm.Script(cloud, { filename: 'orderq-cloud.gs' });
@@ -79,7 +80,9 @@ assert.match(ui, /async function initializeCustomerMaster\(\) \{\s+const pending
 assert.match(ui, /await reload\(\);[\s\S]*ensureCustomerMasterReady/, 'Local Customer Master must render before Cloud synchronization');
 assert.match(ui, /fallbackFileHash/, 'Excel import must continue with a deterministic file hash when Web Crypto stalls');
 assert.match(ui, /chunkSize: 50/, 'Excel import must persist visible progress in small chunks');
-assert.match(html, /customer-master\.css\?v=0\.17\.0/, 'Customer Master Workbench styles must invalidate the deployed cache');
+assert.match(html, /customer-master\.css\?v=0\.18\.0/, 'Customer Master Workbench styles must invalidate the deployed cache');
+assert.match(html, /Master\.html\?view=customers&mode=\$\{initialCustomerMasterMode\}&release=customer-groups-020/, 'Standalone route must invalidate the cached Master shell');
+assert.match(masterShell, /partner_db\.html\?embedded=1&mode=\$\{customerFrameInitialMode\}&release=customer-groups-020/, 'Master shell must invalidate the cached customer iframe');
 assert.match(ui, /customer-master\.js\?v=0\.18\.0/, 'Customer Master Workbench service must invalidate the deployed cache');
 assert.doesNotMatch(html, /문제 거래처만 보기/);
 assert.match(ui, /data-import-status/, 'Import counts must act as status filters');
