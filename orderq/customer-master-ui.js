@@ -2,10 +2,12 @@ import {
   CUSTOMER_IMPORT_STATUS,
   createLiveCustomer,
   ensureCustomerMasterReady,
+  getCustomerCloudSyncState,
   listCustomers,
   searchCustomers,
+  synchronizeCustomerMaster,
   updateCustomer
-} from './customer-master.js?v=0.16.0';
+} from './customer-master.js?v=0.17.0';
 import {
   CUSTOMER_SOURCE_MATCH_METHOD,
   CUSTOMER_SOURCE_MAPPING_VERSION,
@@ -18,7 +20,6 @@ import {
   setCustomerSourceImportDecision
 } from './customer-source-import.js?v=0.15.0';
 import { openCustomerPicker } from './customer-picker.js?v=0.12.1';
-import { pushPending } from './orderq-sync-engine.js?v=0.14.0';
 
 const ROW_HEIGHT = window.matchMedia('(max-width: 820px)').matches ? 86 : 74;
 const BUFFER_ROWS = 8;
@@ -44,7 +45,8 @@ const elements = {
   importSummary: document.querySelector('#importSummary'),
   importReview: document.querySelector('#importReview'),
   importGate: document.querySelector('#importGate'),
-  applyImport: document.querySelector('#applyImportButton')
+  applyImport: document.querySelector('#applyImportButton'),
+  syncState: document.querySelector('#customerCloudSyncState')
 };
 
 const IMPORT_FIELD_LABELS = Object.freeze({
@@ -122,8 +124,35 @@ function renderStats() {
 
 async function reload() {
   state.customers = await listCustomers({ includeInactive: true, includeSuperseded: false });
+  elements.empty.textContent = state.customers.length ? '조건에 맞는 거래처가 없습니다.' : '등록된 거래처가 없습니다.';
   renderStats();
   await applyFilter();
+}
+
+function syncErrorText(error) {
+  return error?.message || String(error || '');
+}
+
+async function renderCloudSyncState(result = null) {
+  const sync = await getCustomerCloudSyncState();
+  let label = sync.configured ? 'Cloud 연결됨' : 'Cloud 미설정 · 로컬 저장';
+  if (result?.pushError || result?.pullError) label = `Cloud 동기화 오류 · 로컬 저장 유지 (${syncErrorText(result.pushError || result.pullError)})`;
+  else if (result?.configured && (result?.push?.errors || result?.push?.conflicts)) label = 'Cloud 일부 대기 · 로컬 저장 유지';
+  elements.syncState.dataset.state = result?.pushError || result?.pullError || sync.retry ? 'error' : sync.conflicts ? 'conflict' : sync.configured ? 'online' : 'local';
+  elements.syncState.innerHTML = `<strong>${escapeHtml(label)}</strong><span>대기 ${sync.pending} · 재시도/실패 ${sync.retry} · 충돌 ${sync.conflicts}</span>`;
+}
+
+async function syncAndReload() {
+  await renderCloudSyncState();
+  const result = await synchronizeCustomerMaster({
+    onStatus: ({ phase }) => {
+      elements.syncState.dataset.state = 'syncing';
+      elements.syncState.querySelector('strong').textContent = phase === 'PUSHING' ? 'Cloud로 로컬 변경 전송 중' : 'Cloud 공통 거래처 병합 중';
+    }
+  });
+  await reload();
+  await renderCloudSyncState(result);
+  return result;
 }
 
 async function openEditor(customer = null) {
@@ -158,12 +187,14 @@ async function saveEditor(event) {
     else await createLiveCustomer(data, { source: 'MASTER_MANUAL_CREATE' });
     elements.editor.close();
     await reload();
+    await syncAndReload();
   } catch (error) {
     if (error.code === 'CUSTOMER_DUPLICATE_CANDIDATE') {
       if (confirm('비슷한 거래처가 있습니다. 그래도 새로 등록하시겠습니까?')) {
         await createLiveCustomer(data, { source: 'MASTER_MANUAL_CREATE', allowDuplicate: true });
         elements.editor.close();
         await reload();
+        await syncAndReload();
       }
       return;
     }
@@ -519,9 +550,7 @@ elements.applyImport.addEventListener('click', async () => {
     state.importStatusFilter = failed.length ? CUSTOMER_IMPORT_STATUS.FAILED : 'ALL';
     renderImport();
     await reload();
-    pushPending().then(result => {
-      if (result?.errors) console.warn('Customer source cloud sync pending', result);
-    }).catch(error => console.warn('Customer source cloud sync deferred', error));
+    await syncAndReload();
   } catch (error) {
     elements.importGate.textContent = `적용 실패: ${error.message || error}`;
     elements.applyImport.disabled = false;
@@ -537,15 +566,15 @@ async function initializeCustomerMaster() {
     if (pending.batch.status === 'PREPARING') renderPreparingImport(pending.batch, pending.records);
     else renderImport();
   }
-  ensureCustomerMasterReady({ onLoading: message => { elements.empty.hidden = false; elements.empty.textContent = message; } })
-    .then(() => reload())
-    .catch(error => {
-      console.warn('Customer Master background sync deferred', error);
-      if (!pending) {
-        elements.empty.hidden = false;
-        elements.empty.textContent = `거래처 정보를 불러오지 못했습니다: ${error.message}`;
-      }
-    });
+  await reload();
+  const ready = await ensureCustomerMasterReady({ onLoading: message => { elements.empty.hidden = false; elements.empty.textContent = message; } });
+  if (ready.syncPromise) {
+    ready.syncPromise.then(async result => { await reload(); await renderCloudSyncState(result); })
+      .catch(async error => { console.warn('Customer Master background sync deferred', error); await renderCloudSyncState({ pullError: error }); });
+  } else {
+    await reload();
+    await renderCloudSyncState();
+  }
 }
 
 initializeCustomerMaster().catch(error => {
