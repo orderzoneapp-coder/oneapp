@@ -8,11 +8,14 @@
   <meta name="description" content="주문서·구매·판매 자료를 분석하고 표준 입력표로 전달하는 NEXUS 스마트입력">
   <link rel="icon" type="image/png" href="../nexus/assets/nexus-favicon.png">
   <link rel="stylesheet" href="../orderq/customer-master.css?v=0.12.1" data-customer-picker-style>
-  <link rel="stylesheet" href="./smartinput.css?v=0.1.0">
+  <link rel="stylesheet" href="./smartinput.css?v=0.2.0">
+  <script src="../nexus/common/apps-config.js?v=1.1.0"></script>
+  <script src="../nexus/common/nexus-top.js?v=1.1.0"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@6/dist/tesseract.min.js"></script>
 </head>
 <body>
+  <nexus-top app-id="smart-input"><div class="nexus-top-fallback" role="status"><strong>NEXUS</strong><span>NEXUS 메뉴를 불러오지 못했습니다.</span><button type="button" onclick="window.location.reload()">재시도</button></div></nexus-top>
   <header class="app-bar">
     <div class="app-bar__inner">
       <a class="brand" href="./" aria-label="스마트입력 처음으로">
@@ -25,7 +28,10 @@
       </div>
       <div class="app-bar__actions">
         <span class="save-state" id="saveState">초안 저장됨</span>
+        <button class="button button--quiet" id="draftListButton" type="button">초안 목록</button>
+        <button class="button button--quiet" id="settingsButton" type="button">설정</button>
         <button class="button button--quiet" id="resetDraftButton" type="button">새로 작성</button>
+        <button class="button button--quiet" id="saveDraftButton" type="button">저장</button>
         <button class="button button--primary" id="completeButton" type="button">입력 완료</button>
       </div>
     </div>
@@ -68,17 +74,19 @@
       <section class="workbench" aria-label="스마트입력 본문">
         <div class="document-fields">
           <label class="field field--customer">
-            <span>거래처 <em>필수</em></span>
+            <span>배송 거래처 <em>필수</em></span>
             <div class="input-action">
               <input id="customerInput" type="text" autocomplete="off" placeholder="거래처명 또는 코드">
               <button id="customerSearchButton" type="button">찾기</button>
             </div>
             <small id="customerHint">거래처가 인식되지 않으면 이 입력란으로 이동합니다.</small>
           </label>
+          <label class="field field--tax"><span>세무 거래처</span><input id="taxCustomerInput" type="text" readonly placeholder="연결 후 1개 지정"><small id="customerRelationHint">배송처 연결 관계를 확인하세요.</small></label>
           <label class="field"><span>주문일자 <em>필수</em></span><input id="orderDateInput" type="date"></label>
-          <label class="field"><span>배송일자</span><input id="deliveryDateInput" type="date"></label>
+          <label class="field"><span>배송일자</span><input id="deliveryDateInput" type="date"><small id="deliveryPolicyHint">배송 가능일을 계산합니다.</small></label>
           <label class="field"><span>출하창고 <em>필수</em></span><input id="warehouseInput" type="text" list="warehouseOptions" placeholder="창고명 또는 코드"><datalist id="warehouseOptions"></datalist></label>
           <label class="field"><span>거래유형</span><select id="transactionTypeInput"><option>기타</option><option>카드</option><option>현금</option><option>현금영수증</option><option>사내사용</option></select></label>
+          <div class="reference-status" id="referenceStatus" role="status"><span></span><strong>기준자료를 불러오고 있습니다.</strong></div>
         </div>
 
         <section class="parser-card" aria-labelledby="parserTitle">
@@ -145,7 +153,7 @@
   </main>
 
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
-  <script src="./smartinput-contract.js?v=0.1.0"></script>
-  <script type="module" src="./smartinput.js?v=0.1.0"></script>
+  <script src="./smartinput-contract.js?v=0.2.0"></script>
+  <script type="module" src="./smartinput.js?v=0.2.0"></script>
 </body>
 </html>

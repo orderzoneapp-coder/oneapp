@@ -9,6 +9,7 @@ const root = process.cwd();
 const read = file => fs.readFileSync(path.join(root, file), 'utf8');
 const contractSource = read('smartinput/smartinput-contract.js');
 const appSource = read('smartinput/smartinput.js');
+const dataStoreSource = read('smartinput/smartinput-data-store.js');
 const html = read('smartinput/index.html');
 const css = read('smartinput/smartinput.css');
 const readme = read('smartinput/README.md');
@@ -22,13 +23,16 @@ const contract = context.window.SMART_INPUT_CONTRACT;
 assert.equal(contract.APP_ID, 'smart-input');
 assert.equal(contract.SCHEMA_VERSION, 'ONEAPP_SMART_INPUT_DRAFT_V1');
 assert.equal(contract.DRAFT_STORAGE_KEY, 'oneapp.smartinput.draft.v1');
+assert.equal(contract.DRAFT_LIST_STORAGE_KEY, 'oneapp.smartinput.drafts.v1');
 assert.equal(contract.DELIVERY_HISTORY_KEY, 'oneapp.smartinput.delivery-history.v1');
+assert.equal(contract.SETTINGS_STORAGE_KEY, 'oneapp.smartinput.settings.v1');
 assert.deepEqual(Array.from(contract.INPUT_METHODS, item => item.id), ['direct', 'excel', 'text', 'paste', 'photo', 'voice']);
 assert.deepEqual(Array.from(contract.STAGES), ['capture', 'extract', 'match', 'review', 'complete']);
 
 const draft = contract.createDraft({ date: '2026-08-23', now: 1, random: 0.1 });
 assert.equal(draft.activeMode, 'order');
 assert.equal(draft.modes.order.header.orderDate, '2026-08-23');
+assert.ok(draft.modes.order.documentId);
 assert.notEqual(draft.modes.order, draft.modes.purchase);
 draft.modes.order.sourceText = '주문 원문';
 assert.equal(draft.modes.purchase.sourceText, '');
@@ -66,6 +70,30 @@ assert.deepEqual(Array.from(contract.validateOrderDraft(orderDraft)), []);
 orderDraft.header.customerId = '';
 assert.equal(contract.validateOrderDraft(orderDraft)[0].field, 'customer');
 
+const cutoffSettings = contract.normalizeSettings({
+  orderCutoffTime: '12:00',
+  allowSameDayDelivery: true,
+  defaultDeliveryWeekdays: [0],
+  timezone: 'Asia/Seoul'
+});
+assert.equal(contract.validateDeliveryDate({
+  orderDate: '2026-08-23', deliveryDate: '2026-08-23', settings: cutoffSettings,
+  now: new Date('2026-08-23T01:00:00.000Z')
+}).valid, true, 'same-day delivery must remain available before cutoff');
+assert.equal(contract.validateDeliveryDate({
+  orderDate: '2026-08-23', deliveryDate: '2026-08-23', settings: cutoffSettings,
+  now: new Date('2026-08-23T04:00:00.000Z')
+}).code, 'CUTOFF_PASSED', 'same-day delivery must be blocked after cutoff');
+
+const scheduleSettings = contract.normalizeSettings({
+  defaultDeliveryWeekdays: [1, 3],
+  deliveryCustomerWeekdays: { C1: [2] },
+  holidayDates: ['2026-08-24'],
+  timezone: 'Asia/Seoul'
+});
+assert.equal(contract.nextDeliveryDate({ orderDate: '2026-08-23', settings: scheduleSettings }).date, '2026-08-26');
+assert.equal(contract.nextDeliveryDate({ orderDate: '2026-08-23', customerId: 'C1', settings: scheduleSettings }).date, '2026-08-25');
+
 for (const mode of ['order', 'purchase', 'sale']) assert.match(html, new RegExp(`data-mode="${mode}"`));
 for (const method of ['direct', 'excel', 'text', 'paste', 'photo', 'voice']) assert.match(html, new RegExp(`data-method="${method}"`));
 assert.match(html, /Alt\+1/);
@@ -73,7 +101,12 @@ assert.match(html, /Alt\+2/);
 assert.match(html, /Alt\+3/);
 assert.match(html, /href="\.\.\/orderq\/index\.html" target="_blank" rel="noopener"/);
 assert.match(html, /href="\.\.\/orders\.html" target="_blank" rel="noopener"/);
-assert.doesNotMatch(html, /<nexus-top|nexus\/common\/apps-config|nexus\/common\/nexus-top/);
+assert.match(html, /<nexus-top app-id="smart-input">/);
+assert.match(html, /nexus\/common\/apps-config\.js/);
+assert.match(html, /nexus\/common\/nexus-top\.js/);
+assert.match(html, /id="draftListButton"/);
+assert.match(html, /id="settingsButton"/);
+assert.match(html, /id="taxCustomerInput"/);
 
 assert.match(css, /grid-template-columns: 180px minmax\(0, 1fr\) 220px/);
 assert.match(css, /@media \(max-width: 1180px\)/);
@@ -88,7 +121,12 @@ for (const required of [
   'createOrder',
   'syncAfterLocalMutation',
   'loadProductCatalog',
-  'openCustomerPicker',
+  'createLiveCustomer',
+  'loadSmartInputData',
+  'saveLinkGroup',
+  'saveAliasMapping',
+  'orderCutoffTime',
+  'deliveryCustomerWeekdays',
   'window.Tesseract',
   'SpeechRecognition',
   'captureOccurrenceId',
@@ -97,20 +135,31 @@ for (const required of [
 assert.match(appSource, /customerInput'\)\.focus\(\)/);
 assert.match(appSource, /SMART_INPUT:\$\{current\.batches\[0\]/);
 assert.match(appSource, /editedFields/);
+assert.match(appSource, /다음 가능일은 \$\{nextAvailable\.date\}입니다/);
+assert.match(appSource, /mappingSource: 'PARSER_CONFIRMED', learnAlias: false/);
+assert.doesNotMatch(appSource, /data-order-customer/);
+assert.match(dataStoreSource, /oneapp-smartinput/);
+assert.match(dataStoreSource, /customerLinkGroups/);
+assert.match(dataStoreSource, /temporaryCustomers/);
+assert.match(dataStoreSource, /customerAliasMappings/);
 
 const app = manifest.applications.find(item => item.id === 'smart-input');
 assert.ok(app, 'smart-input must be registered in the manifest');
 assert.equal(app.path, 'smartinput/index.html');
 assert.equal(app.status, 'pilot');
-assert.ok(!app.sharedContracts.includes('nexus-header'), 'standalone pilot must not consume the NEXUS header yet');
+assert.ok(app.sharedContracts.includes('nexus-header'), 'SmartInput must display the existing NEXUS header');
 assert.ok(app.sharedContracts.includes('orderq-vnext-sync'));
 assert.ok(app.sharedContracts.includes('product-master'));
 const orderLedger = manifest.sharedDataContracts.find(item => item.id === 'orderq-vnext-sync');
 assert.ok(orderLedger.consumers.includes('smartinput/index.html'));
+const nexusHeader = manifest.sharedDataContracts.find(item => item.id === 'nexus-header');
+assert.ok(nexusHeader.consumers.includes('smartinput/index.html'));
 
 assert.match(readme, /\/smartinput\//);
 assert.match(readme, /orders\.html.*별도 전달 어댑터/);
 assert.match(architecture, /### 6\.7 Standalone SmartInput intake/);
 assert.match(architecture, /does not claim direct `orders\.html` delivery/);
+assert.match(architecture, /Customer linking is relational, never canonical merging/);
+assert.match(architecture, /same-day cutoff/);
 
 console.log('SmartInput standalone contract PASS');

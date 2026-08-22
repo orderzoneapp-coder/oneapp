@@ -170,6 +170,8 @@ Important contracts include:
 | ORDER Q manual-entry defaults | `oneapp.orderq.manual-defaults.v1` | ORDER Q vNext only; restores the last shipment warehouse and transaction type for the next new manual order in the same browser |
 | SmartInput local draft | `oneapp.smartinput.draft.v1` | SmartInput only; preserves target tab, source batches, source-to-row links, administrator edits, matching state, responsive panel state, and delivery result. It is not a final order ledger or a cloud backup contract. |
 | SmartInput delivery history | `oneapp.smartinput.delivery-history.v1` | SmartInput only; retains the latest 30 local delivery references for operator continuity. Final order state and durable business history remain owned by ORDER Q. |
+| SmartInput customer relationships | IndexedDB `oneapp-smartinput` v1 | SmartInput pilot only; stores tax-to-delivery link groups, temporary-delivery metadata, confirmed source-orderer mappings, and delivery-policy settings. It is not customer canonicalization and does not merge orders. |
+| SmartInput recent drafts | `oneapp.smartinput.drafts.v1` | SmartInput only; retains up to 30 device-local mode drafts for reopen and split-order continuity. ORDER Q remains the owner after delivery. |
 
 A storage-key rename is a schema migration.
 
@@ -393,7 +395,7 @@ Equivalent safety controls must be preserved when another application writes the
 
 ### 6.7 Standalone SmartInput intake
 
-1. The public pilot route is `/smartinput/` with stable application ID `smart-input`; `orderops/input.html`, ORDER Q vNext input pages, Smart Parser, and NEXUS header files remain unchanged during the standalone phase.
+1. The public pilot route is `/smartinput/` with stable application ID `smart-input`. The page consumes the existing NEXUS header component with an independent failure fallback, while global NEXUS menu/work-group registration remains deferred; `orderops/input.html`, ORDER Q vNext input pages, Smart Parser, and NEXUS shared header files remain unchanged.
 2. The workbench has `주문서 / 구매 / 판매` target tabs with `Alt+1 / Alt+2 / Alt+3`, a left stage rail, central intake workbench, and a right related-app panel. Order links open `orderq/index.html` and `orders.html` in new tabs so the draft remains mounted.
 3. The first input contract includes direct entry, Excel/file import, text, clipboard text/image paste, photo OCR, and browser voice STT. Unsupported OCR, speech, or external-library states leave manual entry available and do not erase the source text.
 4. Each source capture creates an immutable local batch record that preserves original whitespace and line breaks. Parser results append below existing rows; identical products are not merged and receive only a duplicate-possibility marker.
@@ -403,6 +405,10 @@ Equivalent safety controls must be preserved when another application writes the
 8. `orderq/index.html` reads the common order ledger directly. `orders.html` remains an Excel-based shipment workflow and requires a separately validated ledger-consumer adapter before SmartInput orders can appear there automatically; the standalone pilot exposes only a related-app link and does not claim direct `orders.html` delivery.
 9. Purchase and sale tabs preserve independent drafts and the complete input contract, but DataOps delivery remains disabled until target schemas and ownership are approved. An unrelated app is never substituted as a delivery target.
 10. After a successful order save, the completed order remains owned by ORDER Q. SmartInput starts the next draft while retaining a bounded local delivery reference; modification, cancellation, shipment judgment, and ledger state are not owned by SmartInput.
+11. Customer linking is relational, never canonical merging: one confirmed link group has one tax customer and may contain multiple registered or temporary delivery customers. The tax customer is never an order-aggregation key, and orders remain separate by delivery customer and delivery site.
+12. A manually confirmed source-orderer alias maps first to a delivery customer. Exact unambiguous repeats may auto-select that delivery customer; similar or conflicting aliases remain review candidates. The linked tax customer is resolved after delivery-customer selection and is snapshotted with the SmartInput draft and delivery reference.
+13. SmartInput-owned IndexedDB `oneapp-smartinput` stores device-local customer link groups, temporary-delivery metadata, source-orderer mappings, and delivery settings. Official customer creation continues through the Customer Master mutation contract, and temporary-delivery status does not make a customer eligible for the single tax-customer role.
+14. Delivery dates are validated from the selected delivery customer's weekday override or the app default weekdays, recurring and dated holidays, and the Asia/Seoul same-day cutoff. A post-cutoff same-day draft remains visible but cannot be delivered to ORDER Q until the date is corrected.
 
 ---
 
