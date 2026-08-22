@@ -13,6 +13,7 @@ const page = read('partner_db.html');
 const customer = read('orderq/customer-master.js');
 const v11 = await import(pathToFileURL(path.join(root, 'orderq/orderq-v11-contracts.js')).href);
 const upsert = await import(pathToFileURL(path.join(root, 'orderq/customer-code-upsert.js')).href);
+const syncIdentity = await import(pathToFileURL(path.join(root, 'orderq/sync-identity.js')).href);
 
 assert.equal(v11.ORDERQ_DB_VERSION, 11, 'T01 DB schema must be v11');
 assert.equal(v11.V11_STORE.CUSTOMER_HEADER_MAPPINGS, 'customerHeaderMappings');
@@ -61,10 +62,10 @@ assert.match(core, /customerImportId/, 'T15 every upload queue row retains its o
 assert.match(core, /acked\.length === owned\.length/, 'T15 completion requires every owned queue row ACK');
 assert.match(ui, /scheduleCloudRetry/, 'T15 pending Cloud work has automatic retry');
 assert.match(ui, /addEventListener\('online'/, 'T15 retry resumes immediately when connectivity returns');
-assert.match(page, /customer-code-upsert-ui\.js\?v=0\.16\.1/, 'T15 retry patch has an explicit browser cache version');
+assert.match(page, /customer-code-upsert-ui\.js\?v=0\.16\.2/, 'T15 retry patch has an explicit browser cache version');
 assert.match(ui, /로컬 저장/, 'T15 UI separates local state');
 assert.match(ui, /Cloud 동기화/, 'T15 UI separates Cloud state');
-assert.match(cloud, /ORDERQ_SHEET_SCHEMA_VERSION = '6'/, 'T15 Cloud schema advances');
+assert.match(cloud, /ORDERQ_SHEET_SCHEMA_VERSION = '7'/, 'T15 Cloud schema advances');
 assert.match(cloud, /CUSTOMER_HEADER_MAPPING/, 'T15 header mappings sync');
 assert.match(cloud, /CUSTOMER_USER_FIELD_DEFINITION/, 'T15 field definitions sync');
 
@@ -97,4 +98,26 @@ assert.equal(upsert.customerUpsertSourceLinkConflictPatch({
   payload: { customerId: 'CU-1' }, remotePayload: { customerId: 'CU-2' }
 }, 'JOB-1'), null, 'different-customer Source Link conflict remains explicit instead of being overwritten');
 
-console.log('PASS orderq customerCode upsert architecture T01-T15');
+assert.match(ui, /renderPreview\(\)/, 'T16 file selection renders a read-only preview');
+assert.match(ui, /업로드 실행/, 'T16 persistence requires an explicit execution action');
+assert.match(ui, /selectWorkbookSheet/, 'T17 multiple candidate sheets require selection');
+assert.equal(upsert.normalizeCustomerHeader(' 사업자_번호-(거래처 코드) '), '사업자번호거래처코드', 'T18 headers use exact deterministic normalization');
+assert.equal(upsert.isCustomerSystemRow({ A: '합계', B: '10' }), true, 'T19 deterministic total rows are excluded');
+assert.doesNotMatch(core, /queueItem\('SOURCE_RECORD'/, 'T20 raw source rows never enter Cloud queue');
+assert.doesNotMatch(core, /sourceSnapshot: \{ \.\.\.record\.rawRow \}/, 'T20 source links retain identifiers, not full source rows');
+
+let sequence = 0;
+const makeId = prefix => `${prefix}-${++sequence}`;
+const firstIdentity = syncIdentity.createSyncIdentity({ entityType: 'CUSTOMER', entityId: 'CU-1', revision: 1, payload: { b: 2, a: 1 } }, makeId);
+const rebasedIdentity = syncIdentity.createSyncIdentity({ entityType: 'CUSTOMER', entityId: 'CU-1', revision: 2, payload: { a: 1, b: 3 } }, makeId, firstIdentity);
+assert.equal(rebasedIdentity.operationId, firstIdentity.operationId, 'T21 rebase preserves logical operationId');
+assert.equal(rebasedIdentity.parentMutationId, firstIdentity.mutationId, 'T21 rebase links a new mutation to its parent');
+assert.notEqual(rebasedIdentity.mutationId, firstIdentity.mutationId, 'T21 rebase creates a new mutationId');
+assert.match(cloud, /ORDERQ_MUTATION_CHECKSUM_MISMATCH/, 'T22 Cloud rejects mutationId reuse with a different checksum');
+assert.match(cloud, /requestId/, 'T23 Cloud records request identity separately');
+assert.match(customer, /retireCustomer/, 'T24 customer deletion is an explicit lifecycle operation');
+assert.match(customer, /status: CUSTOMER_STATUS\.DELETED/, 'T24 deletion preserves the customer identity as a tombstone');
+assert.doesNotMatch(customer, /CUSTOMERS\)\.delete\(customerId\)/, 'T24 customer deletion never physically removes the stable ID');
+assert.match(customer, /linkStatus: 'DELETED'/, 'T24 aliases and source links cannot keep resolving a deleted customer');
+
+console.log('PASS orderq customerCode upsert architecture T01-T24');

@@ -10,7 +10,7 @@ const ORDERQ_SYNC_SCHEMA = 'ONEAPP_ORDERQ_SYNC_V1';
 const ORDERQ_SYNC_MAX_PUSH = 100;
 const ORDERQ_SYNC_MAX_PULL = 500;
 const ORDERQ_SHEET_SCHEMA_PROPERTY = 'ONEAPP_ORDERQ_SHEET_SCHEMA_VERSION';
-const ORDERQ_SHEET_SCHEMA_VERSION = '6';
+const ORDERQ_SHEET_SCHEMA_VERSION = '7';
 const ORDERQ_CUTOVER_MODE_PROPERTY = 'ONEAPP_ORDERQ_CUTOVER_MODE';
 const ORDERQ_CUTOVER_SAFE_MODE = 'SHADOW';
 const ORDERQ_CUTOVER_WRITE_MODES = Object.freeze(['PILOT_WRITE', 'VNEXT_PRIMARY']);
@@ -100,7 +100,7 @@ const ORDERQ_HEADERS = Object.freeze({
   PARSER_EVIDENCE: ['parserEvidenceId', 'customerId', 'productCode', 'updatedAt', 'payloadJson'],
   COLLECTOR_SETTING: ['key', 'cutoffTime', 'holidayCount', 'updatedAt', 'payloadJson'],
   ORDER_TXN_LOG: ['txnId', 'orderId', 'status', 'previous1', 'previous2', 'previous3', 'previous4', 'next1', 'next2', 'next3', 'next4', 'error', 'createdAt', 'updatedAt'],
-  SYNC_META: ['sequence', 'queueId', 'deviceId', 'entityType', 'entityId', 'operation', 'revision', 'baseRevision', 'appliedAt'],
+  SYNC_META: ['sequence', 'queueId', 'deviceId', 'entityType', 'entityId', 'operation', 'revision', 'baseRevision', 'appliedAt', 'operationId', 'mutationId', 'parentMutationId', 'checksum', 'idempotencyKey', 'requestId'],
   M9_ENTITY: ['entityKey', 'entityType', 'entityId', 'revision', 'status', 'updatedAt', 'payloadJson'],
   M9_COMMAND: ['idempotencyKey', 'commandType', 'aggregateId', 'expectedRevision', 'fingerprint', 'status', 'leaseToken', 'deviceId', 'resultJson', 'updatedAt', 'payloadJson'],
   M9_META: ['key', 'value', 'updatedAt', 'payloadJson'],
@@ -116,8 +116,11 @@ function orderQEnsureSheet(ss, key) {
     sheet.getRange(1, 1, 1, header.length).setValues([header]);
     return sheet;
   }
-  const actual = sheet.getRange(1, 1, 1, header.length).getValues()[0].map(String);
-  if (JSON.stringify(actual) !== JSON.stringify(header)) throw new Error(`ORDERQ_HEADER_INVALID:${name}`);
+  const existingWidth = Math.max(1, sheet.getLastColumn());
+  const actual = sheet.getRange(1, 1, 1, existingWidth).getValues()[0].map(String);
+  const expectedPrefix = header.slice(0, actual.length);
+  if (JSON.stringify(actual) !== JSON.stringify(expectedPrefix)) throw new Error(`ORDERQ_HEADER_INVALID:${name}`);
+  if (actual.length < header.length) sheet.getRange(1, actual.length + 1, 1, header.length - actual.length).setValues([header.slice(actual.length)]);
   return sheet;
 }
 
@@ -448,6 +451,16 @@ function orderQMetaByQueueId(ss, queueId) {
   };
 }
 
+function orderQMetaByMutationId(ss, mutationId) {
+  const sheet = orderQEnsureSheet(ss, 'SYNC_META');
+  if (sheet.getLastRow() < 2 || !mutationId) return null;
+  const found = sheet.getRange(2, 11, sheet.getLastRow() - 1, 1)
+    .createTextFinder(String(mutationId)).matchEntireCell(true).findNext();
+  if (!found) return null;
+  const values = sheet.getRange(found.getRow(), 1, 1, ORDERQ_HEADERS.SYNC_META.length).getValues()[0];
+  return { sequence: Number(values[0] || 0), queueId: String(values[1] || ''), revision: Number(values[6] || 0), mutationId: String(values[10] || ''), checksum: String(values[12] || '') };
+}
+
 function orderQAppendMeta(ss, change, deviceId) {
   const sheet = orderQEnsureSheet(ss, 'SYNC_META');
   const sequence = sheet.getLastRow() < 2 ? 1 : Number(sheet.getRange(sheet.getLastRow(), 1).getValue() || 0) + 1;
@@ -460,7 +473,13 @@ function orderQAppendMeta(ss, change, deviceId) {
     String(change.operation || 'UPSERT'),
     Number(change.revision || 0),
     Number(change.baseRevision || 0),
-    new Date().toISOString()
+    new Date().toISOString(),
+    String(change.operationId || change.queueId || ''),
+    String(change.mutationId || change.queueId || ''),
+    String(change.parentMutationId || ''),
+    String(change.checksum || ''),
+    String(change.idempotencyKey || change.queueId || ''),
+    String(change.requestId || '')
   ];
   sheet.getRange(sheet.getLastRow() + 1, 1, 1, row.length).setValues([row]);
   return sequence;
@@ -644,6 +663,7 @@ function orderQSyncPush(ss, payload) {
   orderQRecoverPendingTransactions(ss);
   if (String(payload.schemaVersion || '') !== ORDERQ_SYNC_SCHEMA) throw new Error('ORDERQ_SYNC_SCHEMA_INVALID');
   const deviceId = String(payload.deviceId || '');
+  const requestId = String(payload.requestId || '');
   if (!deviceId) throw new Error('ORDERQ_DEVICE_ID_REQUIRED');
   const changes = Array.isArray(payload.changes) ? payload.changes : [];
   if (changes.length > ORDERQ_SYNC_MAX_PUSH) throw new Error('ORDERQ_PUSH_LIMIT_EXCEEDED');
@@ -651,13 +671,19 @@ function orderQSyncPush(ss, payload) {
   const duplicateOrderIds = {};
 
   changes.forEach(change => {
+    change.requestId = requestId;
     const queueId = String(change && change.queueId || '');
     if (!queueId) {
       results.push({ queueId: '', status: 'error', message: 'ORDERQ_QUEUE_ID_REQUIRED' });
       return;
     }
-    const duplicate = orderQMetaByQueueId(ss, queueId);
+    const mutationId = String(change.mutationId || queueId);
+    const duplicate = orderQMetaByMutationId(ss, mutationId) || orderQMetaByQueueId(ss, queueId);
     if (duplicate) {
+      if (duplicate.checksum && change.checksum && duplicate.checksum !== String(change.checksum)) {
+        results.push({ queueId, status: 'error', message: 'ORDERQ_MUTATION_CHECKSUM_MISMATCH' });
+        return;
+      }
       results.push({ queueId, status: 'duplicate', sequence: duplicate.sequence, serverRevision: duplicate.revision });
       return;
     }
@@ -728,6 +754,12 @@ function orderQSyncPull(ss, payload) {
       revision: Number(row[6] || 0),
       baseRevision: Number(row[7] || 0),
       appliedAt: String(row[8] || ''),
+      operationId: String(row[9] || row[1] || ''),
+      mutationId: String(row[10] || row[1] || ''),
+      parentMutationId: String(row[11] || ''),
+      checksum: String(row[12] || ''),
+      idempotencyKey: String(row[13] || row[1] || ''),
+      requestId: String(row[14] || ''),
       payload: orderQReadEntity(ss, entityType, entityId)
     };
   });

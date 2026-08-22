@@ -13,8 +13,9 @@ import {
   pushCloudChanges,
   pullCloudChanges,
   getCloudOrderHead
-} from './orderq-cloud-adapter.js?v=0.8.0';
+} from './orderq-cloud-adapter.js?v=0.8.1';
 import { runtimeStorageKey } from './admin-test-runtime.js?v=0.10.2';
+import { createSyncIdentity, newRequestId } from './sync-identity.js?v=0.1.0';
 
 const DEVICE_KEY = 'oneapp.orderq.device-id.v1';
 const ADMIN_TEST_DEVICE_KEY = 'oneapp.orderq.admin-test.device-id.v1';
@@ -68,6 +69,7 @@ async function all(storeName) {
 
 function makeQueue(entityType, entityId, revision, payload, baseRevision = 0) {
   const timestamp = nowIso();
+  const identity = createSyncIdentity({ entityType, entityId, operation: 'UPSERT', revision: Number(revision || 0), payload }, newId);
   return {
     queueId: newId('SQ'),
     entityType,
@@ -75,6 +77,7 @@ function makeQueue(entityType, entityId, revision, payload, baseRevision = 0) {
     operation: 'UPSERT',
     revision: Number(revision || 0),
     baseRevision: Number(baseRevision || 0),
+    ...identity,
     payload,
     status: 'PENDING',
     createdAt: timestamp,
@@ -185,6 +188,11 @@ function toCloudChange(row) {
   const revision = Number(row.revision || 0);
   return {
     queueId: row.queueId,
+    operationId: row.operationId || row.queueId,
+    mutationId: row.mutationId || row.queueId,
+    parentMutationId: row.parentMutationId || '',
+    checksum: row.checksum || '',
+    idempotencyKey: row.idempotencyKey || row.queueId,
     entityType: row.entityType,
     entityId: row.entityId,
     operation: row.operation || 'UPSERT',
@@ -204,7 +212,7 @@ export async function pushPending(entityId = '') {
   const sourceDuplicates = [];
   for (let start = 0; start < rows.length; start += 50) {
     const batch = rows.slice(start, start + 50);
-    const response = await pushCloudChanges(getDeviceId(), batch.map(toCloudChange));
+    const response = await pushCloudChanges(getDeviceId(), batch.map(toCloudChange), newRequestId(newId));
     const byId = new Map((response?.results || []).map(result => [result.queueId, result]));
     for (const row of batch) {
       const result = byId.get(row.queueId);
