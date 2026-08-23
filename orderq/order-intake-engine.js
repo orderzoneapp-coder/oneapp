@@ -15,13 +15,13 @@ import {
   orderDateKey, formatOrderNo, orderSequenceFromNo, assigneeIdentity, externalOrderSnapshot,
   normalizedOrderView, documentFieldChanges, orderItemChanges,
   orderIntakeProvenanceSnapshot, orderItemIdentitySnapshot
-} from './order-document-model.js?v=0.8.0';
+} from './order-document-model.js?v=0.8.1';
 import { deriveOrderLifecycle, TRANSFER_EVENT_TYPE } from './order-fulfillment-lifecycle.js?v=0.8.0';
 import { INTAKE_CONTRACT_VERSION, PRODUCT_IDENTITY_STATUS } from './orderq-v8-contracts.js?v=0.11.0';
 import {
   buildOrderSourceDocumentCanonicalProjection,
   canonicalStringify
-} from './intake-identity.js?v=0.11.0';
+} from './intake-identity.js?v=0.11.1';
 
 export { ORDER_STATUS, ADMIN_STATUS, OPS_STATUS, INPUT_CHANNEL };
 
@@ -113,6 +113,7 @@ function normalizeItem(input, orderId, previous = null) {
     orderId,
     lineNo: Number(input.lineNo) || 0,
     productId,
+    masterProductId: String(input.masterProductId ?? '').trim() || null,
     itemCode,
     itemName,
     specification: String(input.specification ?? '').trim(),

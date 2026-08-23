@@ -4,11 +4,11 @@ import {
   rematchExtractedLinesForCustomer
 } from '../orderq/intake-engine.js?v=0.12.3';
 import { extractOrderProductLines } from '../orderq/smartparser/order-text-extractor.js?v=0.1.0';
-import { createOrder } from '../orderq/order-intake-engine.js?v=0.15.0';
+import { createOrder } from '../orderq/order-intake-engine.js?v=0.15.1';
 import { syncAfterLocalMutation } from '../orderq/orderq-sync-engine.js?v=0.8.0';
 import { STORE, getAll } from '../orderq/orderq-db.js?v=0.12.1';
 import { createLiveCustomer, ensureCustomerMasterReady, searchCustomers } from '../orderq/customer-master.js?v=0.12.1';
-import { loadProductCatalog, searchProductCatalog } from '../orderq/product-master-search.js?v=0.8.0';
+import { loadProductCatalog, searchProductCatalog } from '../orderq/product-master-search.js?v=0.8.1';
 import { loadWarehouseCatalog, matchWarehouseInput, warehouseDisplayName } from '../orderq/warehouse-master.js?v=0.8.0';
 import {
   createRecordId,
@@ -1209,8 +1209,16 @@ function toggleVoice() {
 function exactProduct(query) {
   const key = normalizedKey(query);
   if (!key) return null;
-  return state.products.find(product => [product.itemCode, product.itemName, product.secondaryName, product.searchInfo]
+  return state.products.find(product => product.masterProductId && [product.itemCode, product.itemName, product.secondaryName, product.searchInfo]
     .some(value => normalizedKey(value) === key)) || null;
+}
+
+function commonMasterProducts() {
+  return state.products.filter(product => String(product.masterProductId || '').trim());
+}
+
+function hasMasterProductIdentity(row) {
+  return Boolean(String(row?.masterProductId || '').trim() && String(row?.productId || '').trim() && String(row?.itemCode || '').trim());
 }
 
 function priceFromProduct(product) {
@@ -1222,13 +1230,14 @@ function priceFromProduct(product) {
 function applyProduct(row, product, force = false) {
   if (!row || !product) return;
   const protect = field => !force && row.editedFields?.[field];
-  row.productId = product.productId || '';
+  row.masterProductId = String(product.masterProductId || '').trim();
+  row.productId = row.masterProductId ? product.productId || '' : '';
   if (!protect('itemCode')) row.itemCode = product.itemCode || '';
   if (!protect('itemName')) row.itemName = product.itemName || '';
   if (!protect('specification')) row.specification = product.specification || '';
   if (!protect('unit')) row.unit = product.finalUnit || product.unit || '';
   if (!protect('unitPrice') && row.unitPrice == null) row.unitPrice = priceFromProduct(product);
-  row.matchStatus = row.productId && row.itemCode ? 'MATCHED' : 'UNRESOLVED';
+  row.matchStatus = hasMasterProductIdentity(row) ? 'MATCHED' : 'UNRESOLVED';
   row.reviewStatus = row.matchStatus === 'MATCHED' ? 'CONFIRMED' : 'PENDING';
   row.productIdentityStatus = row.matchStatus === 'MATCHED' ? 'MASTER_LINKED' : 'UNRESOLVED';
   row.candidateProducts = [];
@@ -1241,11 +1250,14 @@ function enrichRowFromUnifiedCatalog(row) {
   const exact = exactProduct(query);
   if (exact) {
     applyProduct(row, exact);
-    row.matchSource = 'SMART_INPUT_UNIFIED_CATALOG';
+    row.matchSource = 'SMART_INPUT_COMMON_MASTER';
     return row;
   }
-  const candidates = searchProductCatalog(query, state.products, 5);
-  if (candidates.length) {
+  const candidates = searchProductCatalog(query, commonMasterProducts(), 5);
+  if (candidates.length === 1) {
+    applyProduct(row, candidates[0]);
+    row.matchSource = 'SMART_INPUT_COMMON_MASTER';
+  } else if (candidates.length) {
     row.candidateProducts = candidates;
     row.matchStatus = 'SIMILAR';
     row.reviewStatus = 'PENDING';
@@ -1261,10 +1273,14 @@ function tryMatchRow(row) {
     applyProduct(row, exact);
   } else if (query) {
     row.productId = '';
-    row.candidateProducts = searchProductCatalog(query, state.products, 5);
-    row.matchStatus = row.candidateProducts.length ? 'SIMILAR' : 'UNRESOLVED';
-    row.reviewStatus = 'PENDING';
-    row.productIdentityStatus = 'UNRESOLVED';
+    row.masterProductId = '';
+    row.candidateProducts = searchProductCatalog(query, commonMasterProducts(), 5);
+    if (row.candidateProducts.length === 1) applyProduct(row, row.candidateProducts[0]);
+    else {
+      row.matchStatus = row.candidateProducts.length ? 'SIMILAR' : 'UNRESOLVED';
+      row.reviewStatus = 'PENDING';
+      row.productIdentityStatus = 'UNRESOLVED';
+    }
   }
   modeDraft().rows = contract.markDuplicatePossibilities(modeDraft().rows);
   renderRows();
@@ -1314,7 +1330,7 @@ function openProductDialog(row) {
     dialog.remove();
   };
   const render = () => {
-    const found = searchProductCatalog(search.value, state.products, 12);
+    const found = searchProductCatalog(search.value, commonMasterProducts(), 12);
     results.innerHTML = '';
     message.textContent = found.length ? `${found.length}개 후보를 확인하세요.` : '일치하는 상품 후보가 없습니다.';
     found.forEach(product => {
@@ -1393,29 +1409,33 @@ async function completeOrder() {
       intakeContractVersion: 'SMART_INPUT_V1',
       inputChannel: 'SMART_INPUT',
       actorName: 'SMART INPUT 관리자',
-      items: current.rows.map((row, index) => ({
-        lineNo: index + 1,
-        productId: row.productId || null,
-        itemCode: row.itemCode,
-        itemName: row.itemName,
-        specification: row.specification,
-        rawText: row.rawText,
-        rawQuantity: row.quantity,
-        rawUnit: row.unit,
-        finalQuantity: row.quantity,
-        finalUnit: row.unit,
-        price: row.unitPrice,
-        supplyAmount: Number(row.quantity || 0) * Number(row.unitPrice || 0),
-        memo: row.memo,
-        description: row.description,
-        noticePrice: row.noticePrice,
-        matchStatus: row.productId && row.itemCode ? 'MATCHED' : 'MATCH_FAILED',
-        matchSource: row.productId ? 'SMART_INPUT_MASTER' : 'SMART_INPUT_UNRESOLVED',
-        intakeLineId: row.intakeLineId,
-        sourceLineKey: row.sourceLineKey || `${row.batchId}:${row.sourceLineNo || index + 1}`,
-        reviewStatus: row.productId && row.itemCode ? 'CONFIRMED' : 'PENDING',
-        productIdentityStatus: row.productId && row.itemCode ? 'MASTER_LINKED' : 'UNRESOLVED'
-      }))
+      items: current.rows.map((row, index) => {
+        const masterLinked = hasMasterProductIdentity(row);
+        return {
+          lineNo: index + 1,
+          productId: masterLinked ? row.productId : null,
+          masterProductId: masterLinked ? row.masterProductId : null,
+          itemCode: row.itemCode,
+          itemName: row.itemName,
+          specification: row.specification,
+          rawText: row.rawText,
+          rawQuantity: row.quantity,
+          rawUnit: row.unit,
+          finalQuantity: row.quantity,
+          finalUnit: row.unit,
+          price: row.unitPrice,
+          supplyAmount: Number(row.quantity || 0) * Number(row.unitPrice || 0),
+          memo: row.memo,
+          description: row.description,
+          noticePrice: row.noticePrice,
+          matchStatus: masterLinked ? 'MATCHED' : 'MATCH_FAILED',
+          matchSource: masterLinked ? 'SMART_INPUT_COMMON_MASTER' : 'SMART_INPUT_UNRESOLVED',
+          intakeLineId: row.intakeLineId,
+          sourceLineKey: row.sourceLineKey || `${row.batchId}:${row.sourceLineNo || index + 1}`,
+          reviewStatus: masterLinked ? 'CONFIRMED' : 'PENDING',
+          productIdentityStatus: masterLinked ? 'MASTER_LINKED' : 'UNRESOLVED'
+        };
+      })
     });
     current.header.submittedAt = submittedAt.toISOString();
     let online = false;
@@ -1601,6 +1621,7 @@ inputRows.addEventListener('input', event => {
   let row = contract.markUserEdit(modeDraft().rows[index], field, input.value);
   if (field === 'itemCode' || field === 'itemName') {
     row.productId = '';
+    row.masterProductId = '';
     row.matchStatus = 'UNRESOLVED';
     row.reviewStatus = 'PENDING';
     row.productIdentityStatus = 'UNRESOLVED';

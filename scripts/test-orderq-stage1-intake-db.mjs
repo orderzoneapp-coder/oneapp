@@ -160,6 +160,8 @@ for (const status of coreMatchStatus) assert.match(intakeSource, new RegExp(`${s
 assert.doesNotMatch(intakeSource, /TEMPORARY_CONFIRMED:\s*['"]TEMPORARY_CONFIRMED['"]/);
 assert.match(cloudSource, /orderQFindOrderBundleBySourceDocumentKey/);
 assert.match(cloudSource, /ORDERQ_SOURCE_DOCUMENT_CANONICAL_VERSION/);
+assert.match(cloudSource, /masterProductId: orderQCanonicalPickV1\(item, \['masterProductId'\]\)/,
+  '클라우드 원문 멱등성 계약에도 실제 마스터 ID가 포함되어야 한다.');
 
 console.log('ORDER IN Stage 1 Intake DB / identity contracts: PASS');
 console.log(JSON.stringify({
