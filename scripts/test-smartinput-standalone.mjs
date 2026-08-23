@@ -223,17 +223,22 @@ const relatedColumnAt = html.indexOf('<aside class="related-panel"');
 assert.ok(parserColumnAt >= 0 && parserColumnAt < workbenchColumnAt && workbenchColumnAt < relatedColumnAt,
   'desktop workspace must order the parser, workbench and related-app columns from left to right');
 
-assert.match(css, /grid-template-columns: 390px minmax\(0, 1fr\) 220px/);
-assert.match(css, /--app-max: 1600px/);
+assert.match(css, /grid-template-columns: 420px minmax\(0, 1fr\) 230px/);
+assert.match(css, /--app-max: 2400px/);
+assert.match(css, /\.app-shell \{[^}]*calc\(100% - 32px\)/,
+  'desktop SmartInput must use the viewport instead of leaving wide side margins');
 assert.match(css, /\.parser-card \{[^}]*position: sticky;[^}]*padding: 14px;[^}]*border: 1px solid var\(--border\)/);
 assert.match(css, /\.source-highlight, \.source-editor textarea \{[^}]*height: clamp\(360px, calc\(100vh - 340px\), 660px\);[^}]*overflow: auto;/);
-assert.match(css, /font: 13px\/1\.68 ui-monospace/);
+assert.match(css, /font: 15px\/1\.72 ui-monospace/);
+assert.match(css, /table \{[^}]*font-size: 12px/);
+assert.match(css, /\.settings-group > summary strong \{ font-size: 13px; \}/,
+  'settings groups must remain readable at the enlarged application scale');
 assert.match(css, /\.source-editor textarea \{[^}]*resize: none;/);
 assert.match(css, /\.source-editor\[hidden\] \{ display: none; \}/,
   '사진 모드에서는 OCR 문자 편집기가 레이아웃 공간을 차지하면 안 된다.');
 assert.match(css, /\.photo-viewer__viewport \{[^}]*overflow: auto;/);
 assert.match(css, /\.photo-viewer__region \{/);
-assert.match(css, /\.workspace\.has-photo-source \{[^}]*grid-template-columns: minmax\(330px, var\(--photo-pane-width\)\) 8px minmax\(480px, 1fr\) 220px;/);
+assert.match(css, /\.workspace\.has-photo-source \{[^}]*grid-template-columns: minmax\(370px, var\(--photo-pane-width\)\) 8px minmax\(520px, 1fr\) 230px;/);
 assert.match(css, /\.workspace\.has-photo-source \.parser-card, \.workspace\.has-photo-source \.workbench \{[^}]*height: calc\(100vh - var\(--nexus-top-height\) - 88px\)/);
 assert.match(css, /\.photo-ocr-panel \{/);
 assert.match(css, /\.photo-resizer \{/);
@@ -242,7 +247,9 @@ assert.match(css, /\.source-token--user/);
 assert.match(css, /\.source-token--time/);
 assert.match(css, /\.source-token--collected/);
 assert.match(css, /\.source-token--unmatched/);
-assert.match(css, /\.save-state \{[^}]*flex: 0 0 58px;[^}]*width: 58px;[^}]*white-space: nowrap;/);
+assert.match(css, /\.save-state \{[^}]*flex: 0 0 64px;[^}]*width: 64px;[^}]*white-space: nowrap;/);
+assert.match(css, /@media \(max-width: 1480px\) \{[^}]*grid-template-columns: 380px minmax\(0, 1fr\)/,
+  'related apps must yield width to the input table on ordinary desktop screens');
 assert.match(css, /@media \(max-width: 1180px\)/);
 assert.match(css, /@media \(max-width: 980px\)/);
 assert.match(css, /@media \(max-width: 820px\)/);
