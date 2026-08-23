@@ -296,14 +296,20 @@ function voucherColumnsForMode(mode = state.draft.activeMode) {
 
 function optionalProductFields() {
   const baseIds = new Set(contract.VOUCHER_COLUMN_DEFINITIONS.map(field => field.id));
-  return contract.PRODUCT_FIELD_DEFINITIONS.filter(field => !baseIds.has(field.id));
+  const selectedIds = new Set(voucherColumnsForMode());
+  return contract.PRODUCT_FIELD_DEFINITIONS.filter(field => !baseIds.has(field.id) && selectedIds.has(field.id));
 }
 
 function layoutDefinitions(scope, customFields = state.settings.customFields || []) {
   const builtIn = scope === 'header' ? contract.HEADER_FIELD_DEFINITIONS : contract.PRODUCT_FIELD_DEFINITIONS;
   return [
     ...builtIn,
-    ...customFields.filter(field => field.scope === scope).map(field => ({ ...field, custom: true, required: false }))
+    ...customFields.filter(field => field.scope === scope).map(field => ({
+      ...field,
+      group: scope === 'voucher' ? 'ADDITIONAL' : field.group,
+      custom: true,
+      required: false
+    }))
   ];
 }
 
@@ -371,7 +377,12 @@ const DEFAULT_COLUMN_WIDTHS = Object.freeze({
 });
 
 function columnWidth(fieldId) {
-  return Number(state.settings.columnWidths?.[fieldId] || DEFAULT_COLUMN_WIDTHS[fieldId] || 120);
+  return Number(
+    state.settings.columnWidthsByMode?.[state.draft.activeMode]?.[fieldId]
+    || state.settings.columnWidths?.[fieldId]
+    || DEFAULT_COLUMN_WIDTHS[fieldId]
+    || 120
+  );
 }
 
 function ensureColumnResizeHandles() {
@@ -504,8 +515,9 @@ function visibleVoucherColumnIds() {
 
 function setVoucherColumnWidth(fieldId, width) {
   const nextWidth = Math.max(56, Math.min(480, Math.round(Number(width) || columnWidth(fieldId))));
-  state.settings.columnWidths ||= {};
-  state.settings.columnWidths[fieldId] = nextWidth;
+  state.settings.columnWidthsByMode ||= {};
+  state.settings.columnWidthsByMode[state.draft.activeMode] ||= {};
+  state.settings.columnWidthsByMode[state.draft.activeMode][fieldId] = nextWidth;
   const col = document.querySelector(`#tableScroll col[data-column="${CSS.escape(fieldId)}"]`);
   if (col) col.style.width = `${nextWidth}px`;
   const handle = document.querySelector(`#tableScroll .column-resize-handle[data-resize-column="${CSS.escape(fieldId)}"]`);
@@ -517,7 +529,11 @@ function setVoucherColumnWidth(fieldId, width) {
 async function persistVoucherColumnWidths() {
   state.settings = contract.normalizeSettings({
     ...state.settings,
-    columnWidths: { ...(state.settings.columnWidths || {}) }
+    columnWidths: { ...(state.settings.columnWidths || {}) },
+    columnWidthsByMode: Object.fromEntries(Object.keys(contract.MODES).map(mode => [
+      mode,
+      { ...(state.settings.columnWidthsByMode?.[mode] || {}) }
+    ]))
   });
   try {
     await saveSettings(state.settings);
@@ -585,7 +601,8 @@ function applyFormLayout() {
   });
   const voucherColumns = new Set(voucherColumnsForMode());
   const photoActive = modeDraft().activeMethod === 'photo' && Boolean(currentSourceImage()?.dataUrl);
-  const photoBasicColumns = new Set(['itemCode', 'itemName', 'specification', 'quantity', 'unit', 'unitPrice', 'supplyAmount', 'purchasePriceB']);
+  const photoBasicColumns = new Set(['itemCode', 'itemName', 'specification', 'quantity', 'unit', 'unitPrice', 'supplyAmount']
+    .filter(fieldId => fieldId === 'itemCode' || voucherColumns.has(fieldId)));
   const visibleVoucherColumns = photoActive && !state.photoView.detailColumns ? photoBasicColumns : voucherColumns;
   document.querySelectorAll('[data-column]').forEach(element => {
     const column = element.dataset.column;
@@ -1358,9 +1375,23 @@ function selectedWeekdays(form, name) {
   return [...form.querySelectorAll(`input[name="${name}"]:checked`)].map(input => Number(input.value)).sort((a, b) => a - b);
 }
 
-function layoutChecks(name, definitions, selected = []) {
+function layoutCheckItems(name, definitions, selected = [], inputOrders = null) {
   const selectedSet = new Set(selected);
-  return definitions.map(field => `<label class="layout-check"><input type="checkbox" name="${name}" value="${esc(field.id)}" ${selectedSet.has(field.id) || field.required ? 'checked' : ''} ${field.required ? 'disabled' : ''}><span>${esc(field.label)}</span>${field.required ? '<small>필수</small>' : (field.custom ? `<small>${field.valueType === 'NUMBER' ? '숫자형' : '문자형'}</small><button type="button" data-remove-custom-field="${esc(field.id)}" aria-label="${esc(field.label)} 삭제">×</button>` : '')}</label>`).join('');
+  return definitions.map(field => {
+    const orderControl = inputOrders
+      ? `<span class="layout-input-order"><b>입력</b><input type="number" min="0" max="999" step="1" inputmode="numeric" data-input-order-field="${esc(field.id)}" value="${Number(inputOrders[field.id] || 0)}" aria-label="${esc(field.label)} Enter 입력 순서" ${field.editable === false ? 'disabled' : ''}></span>`
+      : '';
+    return `<div class="layout-check"><label class="layout-check__toggle"><input type="checkbox" name="${name}" value="${esc(field.id)}" ${selectedSet.has(field.id) || field.required ? 'checked' : ''} ${field.required ? 'disabled' : ''}><span>${esc(field.label)}</span></label>${field.required ? '<small>필수</small>' : (field.custom ? `<small>${field.valueType === 'NUMBER' ? '숫자형' : '문자형'}</small><button type="button" data-remove-custom-field="${esc(field.id)}" aria-label="${esc(field.label)} 삭제">×</button>` : '')}${orderControl}</div>`;
+  }).join('');
+}
+
+function layoutChecks(name, definitions, selected = [], grouped = false, inputOrders = null) {
+  if (!grouped) return layoutCheckItems(name, definitions, selected, inputOrders);
+  return contract.PRODUCT_FIELD_GROUPS.map(group => {
+    const fields = definitions.filter(field => (field.group || 'ADDITIONAL') === group.id);
+    if (!fields.length) return '';
+    return `<section class="layout-field-group" data-product-field-group="${esc(group.id)}"><h4>${esc(group.label)}</h4><div>${layoutCheckItems(name, fields, selected, inputOrders)}</div></section>`;
+  }).join('');
 }
 
 function selectedLayoutFields(form, name) {
@@ -1377,11 +1408,16 @@ function openLayoutFieldDialog(scope, customFields, onAdd) {
         CUSTOMER: definitions.filter(field => ['customer', 'taxCustomer'].includes(field.id)),
         ORDER: definitions.filter(field => !['customer', 'taxCustomer'].includes(field.id))
       }
-    : { PRODUCT: definitions };
+    : Object.fromEntries(contract.PRODUCT_FIELD_GROUPS.map(group => [
+        group.id,
+        definitions.filter(field => field.group === group.id)
+      ]));
+  const productCategoryOptions = contract.PRODUCT_FIELD_GROUPS
+    .map(group => `<option value="${esc(group.id)}">${esc(group.label)}</option>`).join('');
   fieldDialog.innerHTML = `<form method="dialog" class="smart-dialog__shell">
     <header><div><small>Form Field Library</small><h2>${isHeader ? '상단 정보열' : '전표 열'} 항목 추가</h2></div><button type="button" data-close aria-label="닫기">×</button></header>
     <div class="smart-form">
-      <label><span>항목 분류</span><select name="category">${isHeader ? '<option value="CUSTOMER">거래처정보</option><option value="ORDER">주문정보</option>' : '<option value="PRODUCT">상품정보</option>'}<option value="CUSTOM">사용자지정</option></select></label>
+      <label><span>항목 분류</span><select name="category">${isHeader ? '<option value="CUSTOMER">거래처정보</option><option value="ORDER">주문정보</option>' : productCategoryOptions}<option value="CUSTOM">${isHeader ? '사용자지정' : '부가정보 · 사용자지정'}</option></select></label>
       <label data-library-field><span>추가할 항목</span><select name="libraryField"></select></label>
       <label data-custom-type hidden><span>사용자지정 형식</span><select name="customType"><option value="TEXT">문자형 · 최대 10개</option><option value="NUMBER">숫자형 · 최대 10개</option></select></label>
       <label data-custom-label hidden><span>사용자지정 항목명</span><input name="customLabel" maxlength="30" placeholder="예: 배송 요청사항"></label>
@@ -1449,6 +1485,10 @@ async function openSettingsDialog() {
   const settingsModeIds = Object.keys(contract.MODES);
   const workingHeaderFieldsByMode = Object.fromEntries(settingsModeIds.map(mode => [mode, [...headerFieldsForMode(mode)]]));
   const workingVoucherColumnsByMode = Object.fromEntries(settingsModeIds.map(mode => [mode, [...voucherColumnsForMode(mode)]]));
+  const workingInputOrderByMode = Object.fromEntries(settingsModeIds.map(mode => [
+    mode,
+    { ...(state.settings.inputOrderByMode?.[mode] || {}) }
+  ]));
   let settingsLayoutMode = state.draft.activeMode;
   const settingsModeButtons = scope => settingsModeIds.map(mode => `<button type="button" data-settings-layout-mode="${esc(mode)}" data-settings-layout-scope="${esc(scope)}" class="${mode === settingsLayoutMode ? 'is-active' : ''}" aria-pressed="${mode === settingsLayoutMode}">${esc(contract.MODES[mode].label)}</button>`).join('');
   const dialog = document.createElement('dialog');
@@ -1456,7 +1496,7 @@ async function openSettingsDialog() {
   dialog.innerHTML = `<form method="dialog" class="smart-dialog__shell">
     <header><div><small>SmartInput Preferences</small><h2>환경설정</h2></div><button type="button" data-close aria-label="닫기">×</button></header>
     <div class="smart-settings-grid">
-      <details class="settings-group" open>
+      <details class="settings-group" data-settings-group="delivery">
         <summary><span><strong>배송 정책</strong><small>마감시간·배송 요일·휴무일</small></span><i aria-hidden="true"></i></summary>
         <div class="settings-group__body">
           <label><span>당일 주문 마감시간</span><input type="time" name="orderCutoffTime" value="${esc(state.settings.orderCutoffTime)}"><small>미설정이면 마감 제한을 적용하지 않습니다.</small></label>
@@ -1483,6 +1523,8 @@ async function openSettingsDialog() {
     <footer><button type="button" class="button button--quiet" data-close>취소</button><button type="button" class="button button--primary" data-save>설정 저장</button></footer>
   </form>`;
   document.body.append(dialog);
+  const deliverySettingsGroup = dialog.querySelector('[data-settings-group="delivery"]');
+  if (deliverySettingsGroup) dialog.querySelector('.smart-settings-grid').append(deliverySettingsGroup);
   const form = dialog.querySelector('form');
   const message = dialog.querySelector('.smart-dialog__message');
   const selectedFieldsByScope = scope => scope === 'header'
@@ -1492,18 +1534,40 @@ async function openSettingsDialog() {
   const captureLayoutSelection = scope => {
     const container = form.querySelector(`[data-layout-fields="${scope}"]`);
     if (!container?.querySelector('input')) return;
-    selectedFieldsByScope(scope)[settingsLayoutMode] = selectedLayoutFields(form, inputNameByScope(scope));
+    const checked = selectedLayoutFields(form, inputNameByScope(scope));
+    const checkedSet = new Set(checked);
+    const previous = selectedFieldsByScope(scope)[settingsLayoutMode];
+    selectedFieldsByScope(scope)[settingsLayoutMode] = [
+      ...previous.filter(fieldId => checkedSet.has(fieldId)),
+      ...checked.filter(fieldId => !previous.includes(fieldId))
+    ];
+  };
+  const captureInputOrder = () => {
+    const next = { ...(workingInputOrderByMode[settingsLayoutMode] || {}) };
+    form.querySelectorAll('[data-layout-fields="voucher"] [data-input-order-field]').forEach(input => {
+      next[input.dataset.inputOrderField] = Math.max(0, Math.min(999, Math.round(Number(input.value) || 0)));
+    });
+    workingInputOrderByMode[settingsLayoutMode] = next;
   };
   const renderLayoutGroup = (scope, selected = null) => {
     const name = inputNameByScope(scope);
     const previous = selected || selectedFieldsByScope(scope)[settingsLayoutMode];
-    const priorIndex = new Map(previous.map((fieldId, index) => [fieldId, index]));
-    const definitions = layoutDefinitions(scope, workingCustomFields).sort((left, right) => {
-      const leftIndex = priorIndex.has(left.id) ? priorIndex.get(left.id) : Number.MAX_SAFE_INTEGER;
-      const rightIndex = priorIndex.has(right.id) ? priorIndex.get(right.id) : Number.MAX_SAFE_INTEGER;
-      return leftIndex - rightIndex;
-    });
-    form.querySelector(`[data-layout-fields="${scope}"]`).innerHTML = layoutChecks(name, definitions, previous);
+    const sourceDefinitions = layoutDefinitions(scope, workingCustomFields);
+    const definitions = scope === 'voucher' ? sourceDefinitions : (() => {
+      const priorIndex = new Map(previous.map((fieldId, index) => [fieldId, index]));
+      return sourceDefinitions.sort((left, right) => {
+        const leftIndex = priorIndex.has(left.id) ? priorIndex.get(left.id) : Number.MAX_SAFE_INTEGER;
+        const rightIndex = priorIndex.has(right.id) ? priorIndex.get(right.id) : Number.MAX_SAFE_INTEGER;
+        return leftIndex - rightIndex;
+      });
+    })();
+    form.querySelector(`[data-layout-fields="${scope}"]`).innerHTML = layoutChecks(
+      name,
+      definitions,
+      previous,
+      scope === 'voucher',
+      scope === 'voucher' ? workingInputOrderByMode[settingsLayoutMode] : null
+    );
     dialog.querySelector(`[data-settings-layout-label="${scope}"]`).textContent = contract.MODES[settingsLayoutMode].label;
     dialog.querySelectorAll(`[data-settings-layout-modes="${scope}"] [data-settings-layout-mode]`).forEach(button => {
       const active = button.dataset.settingsLayoutMode === settingsLayoutMode;
@@ -1515,6 +1579,7 @@ async function openSettingsDialog() {
     if (!settingsModeIds.includes(mode) || mode === settingsLayoutMode) return;
     captureLayoutSelection('header');
     captureLayoutSelection('voucher');
+    captureInputOrder();
     settingsLayoutMode = mode;
     renderLayoutGroup('header');
     renderLayoutGroup('voucher');
@@ -1526,10 +1591,15 @@ async function openSettingsDialog() {
   }));
   dialog.querySelectorAll('[data-add-layout-field]').forEach(button => button.addEventListener('click', () => {
     const scope = button.dataset.addLayoutField;
+    captureLayoutSelection(scope);
     openLayoutFieldDialog(scope, workingCustomFields, field => {
-      const selected = selectedLayoutFields(form, inputNameByScope(scope));
+      const selected = selectedFieldsByScope(scope)[settingsLayoutMode];
       if (!field.builtIn) workingCustomFields.push(field);
       selectedFieldsByScope(scope)[settingsLayoutMode] = [...new Set([...selected, field.id])];
+      if (scope === 'voucher' && !Number(workingInputOrderByMode[settingsLayoutMode]?.[field.id])) {
+        const nextOrder = Math.max(0, ...Object.values(workingInputOrderByMode[settingsLayoutMode] || {}).map(Number).filter(Number.isFinite)) + 1;
+        workingInputOrderByMode[settingsLayoutMode][field.id] = nextOrder;
+      }
       renderLayoutGroup(scope);
     });
   }));
@@ -1543,6 +1613,7 @@ async function openSettingsDialog() {
     captureLayoutSelection(field.scope);
     settingsModeIds.forEach(mode => {
       selectedFieldsByScope(field.scope)[mode] = selectedFieldsByScope(field.scope)[mode].filter(id => id !== fieldId);
+      if (field.scope === 'voucher') delete workingInputOrderByMode[mode][fieldId];
     });
     workingCustomFields = workingCustomFields.filter(item => item.id !== fieldId);
     renderLayoutGroup(field.scope);
@@ -1584,6 +1655,7 @@ async function openSettingsDialog() {
     const holidayDates = String(form.elements.holidayDates.value || '').split(/[\s,;]+/).map(value => value.trim()).filter(Boolean);
     captureLayoutSelection('header');
     captureLayoutSelection('voucher');
+    captureInputOrder();
     const next = contract.normalizeSettings({
       ...state.settings,
       orderCutoffTime: form.elements.orderCutoffTime.value,
@@ -1596,8 +1668,13 @@ async function openSettingsDialog() {
       voucherColumns: workingVoucherColumnsByMode.order,
       headerFieldsByMode: workingHeaderFieldsByMode,
       voucherColumnsByMode: workingVoucherColumnsByMode,
+      inputOrderByMode: workingInputOrderByMode,
       customFields: workingCustomFields,
-      columnWidths: { ...(state.settings.columnWidths || {}) }
+      columnWidths: { ...(state.settings.columnWidths || {}) },
+      columnWidthsByMode: Object.fromEntries(settingsModeIds.map(mode => [
+        mode,
+        { ...(state.settings.columnWidthsByMode?.[mode] || {}) }
+      ]))
     });
     if (holidayDates.some(date => !/^\d{4}-\d{2}-\d{2}$/.test(date))) {
       message.textContent = '지정 휴무일은 YYYY-MM-DD 형식으로 입력하세요.';
@@ -1670,7 +1747,9 @@ function openDraftListDialog() {
 }
 
 function estimateTitle(record) {
-  return record?.catalogName || record?.customerName || record?.draft?.header?.customerName || '거래처 미지정 견적';
+  const customer = catalogCustomerName(record) || '거래처 미지정';
+  const count = Number(record?.rowCount ?? record?.draft?.rows?.length ?? 0);
+  return `${customer}(${count.toLocaleString('ko-KR')})`;
 }
 
 function catalogCustomerId(record) {
@@ -1709,7 +1788,7 @@ function renderCatalogControls() {
   const current = modeDraft();
   const records = availableCatalogs(current.header);
   $('catalogSelect').innerHTML = `<option value="">카탈로그 선택</option>${records.map(record => (
-    `<option value="${esc(record.estimateId)}">${esc(estimateTitle(record))} · ${esc(catalogCustomerName(record) || '거래처 미지정')} · ${Number(record.rowCount || record.draft?.rows?.length || 0)}품목</option>`
+    `<option value="${esc(record.estimateId)}">${esc(estimateTitle(record))}</option>`
   )).join('')}`;
   $('catalogSelect').value = records.some(record => record.estimateId === current.catalogRecordId) ? current.catalogRecordId : '';
   $('catalogSaveButton').textContent = current.catalogRecordId ? '수정 저장' : '카탈로그 저장';
@@ -1868,9 +1947,10 @@ function renderRows({ restoreFocus = true } = {}) {
     const isDefault = row.rowId === DEFAULT_INPUT_ROW_ID;
     const amount = Number(row.quantity || 0) * Number(row.unitPrice || 0);
     const productCells = optionalProductFields().map(field => {
-      const inputType = field.valueType === 'NUMBER' ? 'number' : 'text';
-      const step = inputType === 'number' ? ' step="any"' : '';
-      return `<td data-column="${esc(field.id)}"><input data-field="${esc(field.id)}" type="${inputType}"${step} value="${esc(row[field.id] ?? '')}" aria-label="${esc(field.label)}"></td>`;
+      const excelNumber = field.valueType === 'NUMBER' && ['PRICE', 'COST'].includes(field.group);
+      const inputType = field.valueType === 'NUMBER' && !excelNumber ? 'number' : 'text';
+      const numericAttributes = excelNumber ? ' inputmode="decimal"' : (inputType === 'number' ? ' step="any"' : '');
+      return `<td data-column="${esc(field.id)}"><input data-field="${esc(field.id)}" type="${inputType}"${numericAttributes} value="${esc(row[field.id] ?? '')}" aria-label="${esc(field.label)}"></td>`;
     }).join('');
     const customCells = customFieldsFor('voucher').map(field => (
       `<td data-column="${esc(field.id)}"><input data-custom-row-field="${esc(field.id)}" type="${field.valueType === 'NUMBER' ? 'number' : 'text'}"${field.valueType === 'NUMBER' ? ' step="any"' : ''} value="${esc(row.customValues?.[field.id] || '')}" aria-label="${esc(field.label)}"></td>`
@@ -1886,7 +1966,7 @@ function renderRows({ restoreFocus = true } = {}) {
       <td data-column="supplyAmount"><input data-supply-amount value="${amount.toLocaleString('ko-KR')}" aria-label="공급가액" readonly tabindex="-1"></td>
       <td data-column="memo"><input data-field="memo" value="${esc(row.memo)}" aria-label="메모"></td>
       <td data-column="description"><input data-field="description" value="${esc(row.description)}" aria-label="적요(직원)"></td>
-      <td data-column="noticePrice"><input data-field="noticePrice" type="number" step="any" value="${esc(row.noticePrice ?? 0)}" aria-label="공지단가"></td>
+      <td data-column="noticePrice"><input data-field="noticePrice" type="text" inputmode="decimal" value="${esc(row.noticePrice ?? 0)}" aria-label="공지단가"></td>
       ${productCells}
       ${customCells}
       <td data-column="status"><div class="row-status"><span>${rowStatusText(row.matchStatus)}</span></div></td>
@@ -2070,6 +2150,16 @@ function visibleEditableGridFields() {
     .filter(field => inputRows.querySelector(`[data-field="${CSS.escape(field)}"], [data-custom-row-field="${CSS.escape(field)}"]`));
 }
 
+function enterGridFields() {
+  const visible = visibleEditableGridFields();
+  const inputOrder = state.settings.inputOrderByMode?.[state.draft.activeMode] || {};
+  return visible
+    .map((field, displayIndex) => ({ field, displayIndex, order: Number(inputOrder[field] ?? displayIndex + 1) }))
+    .filter(item => Number.isFinite(item.order) && item.order > 0)
+    .sort((left, right) => left.order - right.order || left.displayIndex - right.displayIndex)
+    .map(item => item.field);
+}
+
 function gridInput(rowId, field) {
   return inputRows.querySelector(`[data-row-id="${CSS.escape(rowId)}"] [data-field="${CSS.escape(field)}"], [data-row-id="${CSS.escape(rowId)}"] [data-custom-row-field="${CSS.escape(field)}"]`);
 }
@@ -2092,12 +2182,18 @@ function focusGridTarget(target) {
 }
 
 function sequentialGridTarget(rowId, field) {
-  const fields = visibleEditableGridFields();
+  const visibleFields = visibleEditableGridFields();
+  const fields = enterGridFields();
   const rows = [...inputRows.querySelectorAll('tr[data-row-id]')];
   const rowIndex = rows.findIndex(row => row.dataset.rowId === rowId);
+  if (rowIndex < 0 || !fields.length) return null;
   const fieldIndex = fields.indexOf(field);
-  if (rowIndex < 0 || fieldIndex < 0) return null;
-  if (fieldIndex < fields.length - 1) return { rowId, field: fields[fieldIndex + 1] };
+  if (fieldIndex >= 0 && fieldIndex < fields.length - 1) return { rowId, field: fields[fieldIndex + 1] };
+  if (fieldIndex < 0) {
+    const displayIndex = visibleFields.indexOf(field);
+    const nextConfiguredField = visibleFields.slice(displayIndex + 1).find(candidate => fields.includes(candidate));
+    if (nextConfiguredField) return { rowId, field: nextConfiguredField };
+  }
   const nextRow = rows[rowIndex + 1];
   return nextRow ? { rowId: nextRow.dataset.rowId, field: fields[0] } : { append: true, field: fields[0] };
 }
@@ -2114,6 +2210,15 @@ function directionalGridTarget(rowId, field, key) {
   const targetField = fields[fieldIndex + fieldOffset];
   if (!targetRow || !targetField) return null;
   return { rowId: targetRow.dataset.rowId, field: targetField };
+}
+
+function nextRowItemCodeTarget(rowId, backwards = false) {
+  const rows = [...inputRows.querySelectorAll('tr[data-row-id]')];
+  const rowIndex = rows.findIndex(row => row.dataset.rowId === rowId);
+  if (rowIndex < 0) return null;
+  const targetRow = rows[rowIndex + (backwards ? -1 : 1)];
+  if (targetRow) return { rowId: targetRow.dataset.rowId, field: 'itemCode' };
+  return backwards ? null : { append: true, field: 'itemCode' };
 }
 
 function confirmUnitPriceReview(tr) {
@@ -2692,6 +2797,20 @@ function priceFromProduct(product) {
   return price ? Number(price.value) : null;
 }
 
+function masterFieldValue(product, field) {
+  const sources = [product, product?.raw].filter(source => source && typeof source === 'object');
+  const keys = [...new Set([field.id, ...(field.masterAliases || [])])];
+  for (const source of sources) {
+    for (const key of keys) {
+      if (!Object.prototype.hasOwnProperty.call(source, key)) continue;
+      const value = source[key];
+      if (value === undefined || value === null || String(value).trim() === '') continue;
+      return field.valueType === 'NUMBER' ? contract.numberOrNull(value) : String(value).trim();
+    }
+  }
+  return undefined;
+}
+
 function applyProduct(row, product, { forceIdentityFields = false, preserveIdentityField = '' } = {}) {
   if (!row || !isSelectableMasterProduct(product)) return false;
   const protect = field => Boolean(row.editedFields?.[field]);
@@ -2711,6 +2830,12 @@ function applyProduct(row, product, { forceIdentityFields = false, preserveIdent
   ['outPrice', 'wholesaleA', 'wholesaleB', 'listingPrice', 'marketPrice', 'promoPrice',
     'purchasePriceB', 'priceD', 'lastPurchasePrice', 'priceH', 'priceI'].forEach(field => {
     if (!protect(field)) row[field] = priceOptions.get(field) ?? product[field] ?? null;
+  });
+  const identityFields = new Set(['itemCode', 'itemName', 'specification', 'unit', 'secondaryName', 'searchInfo', 'boxQuantity']);
+  contract.PRODUCT_FIELD_DEFINITIONS.forEach(field => {
+    if (identityFields.has(field.id) || protect(field.id)) return;
+    const value = masterFieldValue(product, field);
+    if (value !== undefined) row[field.id] = value;
   });
   row.matchStatus = hasMasterProductIdentity(row) ? 'MATCHED' : 'UNRESOLVED';
   row.reviewStatus = row.matchStatus === 'MATCHED' ? 'CONFIRMED' : 'PENDING';
@@ -2772,7 +2897,8 @@ function tryMatchRow(row, changedField = '', { focusTarget = null } = {}) {
   if (openCandidates) modeUi().activeCellId = '';
   renderRows({ restoreFocus: !openCandidates && !focusTarget });
   saveDraftNow();
-  if (openCandidates) openProductDialog(row, { query, focusTarget, returnField: changedField });
+  const liveRow = modeDraft().rows.find(item => item.rowId === row.rowId) || row;
+  if (openCandidates) openProductDialog(liveRow, { query, focusTarget, returnField: changedField });
   else if (focusTarget) focusGridTarget(focusTarget);
 }
 
@@ -2809,8 +2935,9 @@ function openProductDialog(row, { query = '', focusTarget = null, returnField = 
   document.body.append(dialog);
 
   const finish = product => {
+    const liveRow = modeDraft().rows.find(item => item.rowId === row.rowId) || row;
     if (product) {
-      if (!applyProduct(row, product, { forceIdentityFields: true })) {
+      if (!applyProduct(liveRow, product, { forceIdentityFields: true })) {
         message.textContent = '공통 상품 마스터에 등록된 정상 상품만 선택할 수 있습니다.';
         return;
       }
@@ -2822,7 +2949,7 @@ function openProductDialog(row, { query = '', focusTarget = null, returnField = 
     dialog.remove();
     window.requestAnimationFrame(() => {
       if (product && focusTarget) focusGridTarget(focusTarget);
-      else if (!product) gridInput(row.rowId, returnField)?.focus();
+      else if (!product) gridInput(liveRow.rowId, returnField)?.focus();
     });
   };
   let foundProducts = [];
@@ -3027,10 +3154,9 @@ async function saveEstimateDocument() {
     current.updatedAt = timestamp;
     current.delivery = { status: 'SAVED', targetId: 'smart-input-estimates', targetRecordId: estimateId, deliveredAt: timestamp };
     const summary = contract.summarizeRows(current.rows);
-    const catalogSequence = catalogsForCustomer(current.header).filter(item => item.estimateId !== estimateId).length + 1;
     const record = {
       estimateId,
-      catalogName: existing?.catalogName || `${current.header.customerName} 카탈로그 ${catalogSequence}`,
+      catalogName: `${current.header.customerName}(${summary.total})`,
       customerId: current.header.customerId,
       customerName: current.header.customerName,
       rowCount: summary.total,
@@ -3487,15 +3613,15 @@ inputRows.addEventListener('keydown', event => {
   const tr = event.target.closest('[data-row-id]');
   if (!input || !tr || event.isComposing) return;
   const field = gridFieldId(input);
-  const priceTab = event.key === 'Tab' && field === 'unitPrice';
-  if (!priceTab && !['Enter', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return;
+  const rowTab = event.key === 'Tab';
+  if (!rowTab && !['Enter', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return;
   if (tr.dataset.defaultRow === 'true' && input.value) materializeDefaultRow(tr);
   const rowId = tr.dataset.rowId;
-  if (priceTab) {
-    const priceTarget = directionalGridTarget(rowId, field, event.shiftKey ? 'ArrowUp' : 'ArrowDown');
-    if (!priceTarget) return;
+  if (rowTab) {
+    const rowTarget = nextRowItemCodeTarget(rowId, event.shiftKey);
+    if (!rowTarget) return;
     event.preventDefault();
-    focusGridTarget(priceTarget);
+    focusGridTarget(rowTarget);
     return;
   }
   event.preventDefault();

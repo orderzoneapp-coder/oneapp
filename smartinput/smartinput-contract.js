@@ -23,12 +23,22 @@
     Object.freeze({ id: 'voice', label: '음성 STT', sourceType: 'VOICE_STT' })
   ]);
   const STAGES = Object.freeze(['capture', 'extract', 'match', 'review', 'complete']);
-  const ROW_FIELDS = Object.freeze([
-    'itemCode', 'itemName', 'secondaryName', 'searchInfo', 'specification', 'boxQuantity',
-    'quantity', 'unit', 'unitPrice', 'outPrice', 'wholesaleA', 'wholesaleB', 'listingPrice',
-    'marketPrice', 'promoPrice', 'purchasePriceB', 'priceD', 'lastPurchasePrice', 'priceH', 'priceI',
-    'memo', 'description', 'noticePrice'
+  const PRODUCT_FIELD_GROUPS = Object.freeze([
+    Object.freeze({ id: 'ITEM', label: '품목정보' }),
+    Object.freeze({ id: 'QUANTITY', label: '수량' }),
+    Object.freeze({ id: 'PRICE', label: '단가' }),
+    Object.freeze({ id: 'COST', label: '원가' }),
+    Object.freeze({ id: 'ADDITIONAL', label: '부가정보' })
   ]);
+  const productField = (id, label, group, options = {}) => Object.freeze({
+    id,
+    label,
+    group,
+    required: options.required === true,
+    valueType: options.valueType === 'NUMBER' ? 'NUMBER' : 'TEXT',
+    editable: options.editable !== false,
+    masterAliases: Object.freeze([...(options.masterAliases || [])])
+  });
   const HEADER_FIELD_DEFINITIONS = Object.freeze([
     Object.freeze({ id: 'customer', label: '배송 거래처', required: true }),
     Object.freeze({ id: 'deliveryDate', label: '배송일자', required: true }),
@@ -36,34 +46,120 @@
     Object.freeze({ id: 'transactionType', label: '거래유형', required: false })
   ]);
   const VOUCHER_COLUMN_DEFINITIONS = Object.freeze([
-    Object.freeze({ id: 'itemCode', label: '품목코드', required: false }),
-    Object.freeze({ id: 'itemName', label: '품목명', required: true }),
-    Object.freeze({ id: 'specification', label: '규격', required: false }),
-    Object.freeze({ id: 'quantity', label: '수량', required: true }),
-    Object.freeze({ id: 'unit', label: '단위', required: false }),
-    Object.freeze({ id: 'unitPrice', label: '단가', required: false }),
-    Object.freeze({ id: 'supplyAmount', label: '공급가액', required: false }),
-    Object.freeze({ id: 'memo', label: '메모', required: false }),
-    Object.freeze({ id: 'description', label: '적요(직원)', required: false }),
-    Object.freeze({ id: 'noticePrice', label: '공지단가', required: false })
+    productField('itemCode', '품목코드', 'ITEM', { required: true, masterAliases: ['itemCode', 'productCode', '코드', '품목코드', '상품코드'] }),
+    productField('itemName', '품목(상품명)', 'ITEM', { masterAliases: ['itemName', 'productName', '품목명', '상품명', '제품명', '품명'] }),
+    productField('specification', '규격', 'ITEM', { masterAliases: ['specification', 'spec', '규격', '규격명'] }),
+    productField('quantity', '수량', 'QUANTITY', { valueType: 'NUMBER' }),
+    productField('unit', '단위(상품구성)', 'ITEM', { masterAliases: ['finalUnit', 'unit', '업무단위', '단위', '상품구성'] }),
+    productField('unitPrice', '단가', 'PRICE', { valueType: 'NUMBER' }),
+    productField('supplyAmount', '공급가액', 'PRICE', { valueType: 'NUMBER', editable: false }),
+    productField('memo', '메모', 'ADDITIONAL'),
+    productField('description', '적요(직원)', 'ADDITIONAL'),
+    productField('noticePrice', '공지단가', 'PRICE', { valueType: 'NUMBER' })
   ]);
+  const voucherField = id => VOUCHER_COLUMN_DEFINITIONS.find(field => field.id === id);
   const PRODUCT_FIELD_DEFINITIONS = Object.freeze([
-    ...VOUCHER_COLUMN_DEFINITIONS,
-    Object.freeze({ id: 'secondaryName', label: '제2품명', required: false, valueType: 'TEXT' }),
-    Object.freeze({ id: 'searchInfo', label: '검색정보', required: false, valueType: 'TEXT' }),
-    Object.freeze({ id: 'boxQuantity', label: '입수', required: false, valueType: 'NUMBER' }),
-    Object.freeze({ id: 'outPrice', label: '출고가', required: false, valueType: 'NUMBER' }),
-    Object.freeze({ id: 'wholesaleA', label: '도매A', required: false, valueType: 'NUMBER' }),
-    Object.freeze({ id: 'wholesaleB', label: '도매B', required: false, valueType: 'NUMBER' }),
-    Object.freeze({ id: 'listingPrice', label: '상장가', required: false, valueType: 'NUMBER' }),
-    Object.freeze({ id: 'marketPrice', label: '시중가', required: false, valueType: 'NUMBER' }),
-    Object.freeze({ id: 'promoPrice', label: '행사가', required: false, valueType: 'NUMBER' }),
-    Object.freeze({ id: 'purchasePriceB', label: '입고B', required: true, valueType: 'NUMBER' }),
-    Object.freeze({ id: 'priceD', label: '단가D', required: false, valueType: 'NUMBER' }),
-    Object.freeze({ id: 'lastPurchasePrice', label: '최종입고', required: false, valueType: 'NUMBER' }),
-    Object.freeze({ id: 'priceH', label: '단가H', required: false, valueType: 'NUMBER' }),
-    Object.freeze({ id: 'priceI', label: '단가I', required: false, valueType: 'NUMBER' })
+    voucherField('itemCode'),
+    voucherField('itemName'),
+    voucherField('specification'),
+    voucherField('unit'),
+    productField('productType', '품목구분', 'ITEM', { masterAliases: ['productType', '품목구분'] }),
+    productField('inventoryQuantityManagement', '재고수량관리', 'ITEM', { masterAliases: ['inventoryQuantityManagement', '재고수량관리'] }),
+    productField('salesVatRate', '부가세율(매출)', 'ITEM', { valueType: 'NUMBER', masterAliases: ['salesVatRate', '부가세율(매출)', '매출부가세율'] }),
+    productField('purchaseVatRate', '부가세율(매입)', 'ITEM', { valueType: 'NUMBER', masterAliases: ['purchaseVatRate', '부가세율(매입)', '매입부가세율'] }),
+    productField('barcode', '바코드', 'ITEM', { masterAliases: ['barcode', '바코드'] }),
+    productField('productionProcess', '생산공정', 'ITEM', { masterAliases: ['productionProcess', '생산공정'] }),
+    productField('secondaryName', '검색(품명2)', 'ITEM', { masterAliases: ['secondaryName', 'secondName', '제2품명', '제2상품명', '품명2', '검색(품명2)', '약칭', '별칭'] }),
+    productField('shared', '공유여부', 'ITEM', { masterAliases: ['shared', '공유여부'] }),
+    productField('productGroup1', '품목그룹1', 'ITEM', { masterAliases: ['productGroup1', '품목그룹1', '1그룹명'] }),
+    productField('productGroup2', '품목그룹2', 'ITEM', { masterAliases: ['productGroup2', '품목그룹2', '2그룹명'] }),
+    productField('productGroup3', '품목그룹3', 'ITEM', { masterAliases: ['productGroup3', '품목그룹3', '3그룹명'] }),
+    productField('productDescription', '상품설명', 'ITEM', { masterAliases: ['productDescription', '상품설명', '간단설명'] }),
+    productField('qualityInspectionType', '품질검사유형', 'ITEM', { masterAliases: ['qualityInspectionType', '품질검사유형'] }),
+    productField('qualityInspectionMethod', '품질검사방법', 'ITEM', { masterAliases: ['qualityInspectionMethod', '품질검사방법'] }),
+
+    voucherField('quantity'),
+    productField('quantityPerQuantity2', '수량2당수량', 'QUANTITY', { valueType: 'NUMBER', masterAliases: ['quantityPerQuantity2', '수량2당수량', '2당수량'] }),
+    productField('safetyStockManagement', '안전재고관리', 'QUANTITY', { masterAliases: ['safetyStockManagement', '안전재고관리'] }),
+    productField('safetyQuantity', '안전수량', 'QUANTITY', { valueType: 'NUMBER', masterAliases: ['safetyQuantity', '안전수량', '안전재고'] }),
+    productField('cPortalMinOrderQuantityCheck', 'C-Portal최소주문수량체크', 'QUANTITY', { masterAliases: ['cPortalMinOrderQuantityCheck', 'C-Portal최소주문수량체크'] }),
+    productField('cPortalMinOrderQuantity', 'C-Portal최소주문수량', 'QUANTITY', { valueType: 'NUMBER', masterAliases: ['cPortalMinOrderQuantity', 'C-Portal최소주문수량', '최소구매수'] }),
+    productField('cPortalMinOrderUnit', 'C-Portal최소주문단위', 'QUANTITY', { valueType: 'NUMBER', masterAliases: ['cPortalMinOrderUnit', 'C-Portal최소주문단위'] }),
+    productField('procurementLeadTime', '조달기간', 'QUANTITY', { valueType: 'NUMBER', masterAliases: ['procurementLeadTime', '조달기간'] }),
+    productField('minimumPurchaseUnit', '최소구매단위', 'QUANTITY', { valueType: 'NUMBER', masterAliases: ['minimumPurchaseUnit', '최소구매단위'] }),
+    productField('supplier', '구매처', 'QUANTITY', { masterAliases: ['supplier', '구매처'] }),
+
+    voucherField('unitPrice'),
+    voucherField('supplyAmount'),
+    productField('inboundPrice', '입고가', 'PRICE', { valueType: 'NUMBER', masterAliases: ['inboundPrice', '입고가'] }),
+    productField('outPrice', '출고가', 'PRICE', { valueType: 'NUMBER', masterAliases: ['outPrice', '출고가'] }),
+    productField('purchasePriceB', '입고B', 'PRICE', { valueType: 'NUMBER', masterAliases: ['purchasePriceB', '입고B'] }),
+    productField('wholesaleA', '도매A', 'PRICE', { valueType: 'NUMBER', masterAliases: ['wholesaleA', '도매A', '도매가', 'A판매', 'A판매가'] }),
+    productField('wholesaleB', '도매B', 'PRICE', { valueType: 'NUMBER', masterAliases: ['wholesaleB', '도매B', 'B판매', 'B판매가', 'B도매', 'B도매가'] }),
+    productField('priceD', '단가D', 'PRICE', { valueType: 'NUMBER', masterAliases: ['priceD', '단가D'] }),
+    productField('lastPurchasePrice', '최종입고', 'PRICE', { valueType: 'NUMBER', masterAliases: ['lastPurchasePrice', '최종입고'] }),
+    productField('marketPrice', '시중가', 'PRICE', { valueType: 'NUMBER', masterAliases: ['marketPrice', '시중가', '시중가격'] }),
+    productField('listingPrice', '상장가', 'PRICE', { valueType: 'NUMBER', masterAliases: ['listingPrice', '상장가'] }),
+    productField('priceH', '단가H', 'PRICE', { valueType: 'NUMBER', masterAliases: ['priceH', '단가H'] }),
+    productField('priceI', '단가I', 'PRICE', { valueType: 'NUMBER', masterAliases: ['priceI', '단가I'] }),
+    productField('promoPrice', '행사가', 'PRICE', { valueType: 'NUMBER', masterAliases: ['promoPrice', '행사가', '특가'] }),
+    voucherField('noticePrice'),
+
+    productField('outsourcingUnitPrice', '외주비단가', 'COST', { valueType: 'NUMBER', masterAliases: ['outsourcingUnitPrice', '외주비단가', '외주비'] }),
+    productField('standardLaborTime', '표준노무시간(노무비가중치)', 'COST', { valueType: 'NUMBER', masterAliases: ['standardLaborTime', '표준노무시간(노무비가중치)', '노무비가중치'] }),
+    productField('expenseWeight', '경비가중치', 'COST', { valueType: 'NUMBER', masterAliases: ['expenseWeight', '경비가중치'] }),
+    productField('materialStandardCost', '재료비표준원가', 'COST', { valueType: 'NUMBER', masterAliases: ['materialStandardCost', '재료비표준원가'] }),
+    productField('expenseStandardCost', '경비표준원가', 'COST', { valueType: 'NUMBER', masterAliases: ['expenseStandardCost', '경비표준원가', '경비'] }),
+    productField('laborStandardCost', '노무비표준원가', 'COST', { valueType: 'NUMBER', masterAliases: ['laborStandardCost', '노무비표준원가', '노무비'] }),
+    productField('outsourcingStandardCost', '외주비표준원가', 'COST', { valueType: 'NUMBER', masterAliases: ['outsourcingStandardCost', '외주비표준원가'] }),
+
+    productField('brand', '브랜드', 'ADDITIONAL', { masterAliases: ['brand', '브랜드'] }),
+    productField('type1Code', '1종코드', 'ADDITIONAL', { masterAliases: ['type1Code', '1종코드'] }),
+    productField('type1Specification', '1종규격', 'ADDITIONAL', { masterAliases: ['type1Specification', '1종규격'] }),
+    productField('type2Code', '2종코드', 'ADDITIONAL', { masterAliases: ['type2Code', '2종코드'] }),
+    productField('type2Specification', '2종규격', 'ADDITIONAL', { masterAliases: ['type2Specification', '2종규격'] }),
+    productField('defaultDivision', '구분(기본)', 'ADDITIONAL', { masterAliases: ['defaultDivision', '구분(기본)', '기본'] }),
+    productField('type1Operation', '1종연산', 'ADDITIONAL', { masterAliases: ['type1Operation', '1종연산'] }),
+    productField('type2Operation', '2종연산', 'ADDITIONAL', { masterAliases: ['type2Operation', '2종연산'] }),
+    productField('boxQuantity', '박스입수', 'ADDITIONAL', { valueType: 'NUMBER', masterAliases: ['boxQuantity', 'unitsPerBox', '박스입수', '박스당수량', '박스당 수량', '원단위', '입수'] }),
+    productField('preparationDays', '준비기간(일)', 'ADDITIONAL', { valueType: 'NUMBER', masterAliases: ['preparationDays', '준비기간(일)', '준비기간'] }),
+    productField('orderCutoffTime', '주문마감시간', 'ADDITIONAL', { masterAliases: ['orderCutoffTime', '주문마감시간', '마감시간'] }),
+    productField('machang', '마창', 'ADDITIONAL', { masterAliases: ['machang', '마창'] }),
+    productField('saecheonyeon', '새천년', 'ADDITIONAL', { masterAliases: ['saecheonyeon', '새천년'] }),
+    productField('hanbit', '한빛', 'ADDITIONAL', { masterAliases: ['hanbit', '한빛'] }),
+    productField('distributor1', '유통사1', 'ADDITIONAL', { masterAliases: ['distributor1', '유통사1'] }),
+    productField('distributor2', '유통사2', 'ADDITIONAL', { masterAliases: ['distributor2', '유통사2'] }),
+    productField('taxExempt', '비과세', 'ADDITIONAL', { masterAliases: ['taxExempt', '비과세'] }),
+    productField('storageLocation', '적재위치', 'ADDITIONAL', { masterAliases: ['storageLocation', '적재위치'] }),
+    productField('naver', '네이버', 'ADDITIONAL', { masterAliases: ['naver', '네이버'] }),
+    productField('orderzCategory3', '오더즈분류3', 'ADDITIONAL', { masterAliases: ['orderzCategory3', '오더즈분류3', '오더즈'] }),
+    productField('distributor', '유통사', 'ADDITIONAL', { masterAliases: ['distributor', '유통사'] }),
+    productField('shelfLife', '유통기한', 'ADDITIONAL', { masterAliases: ['shelfLife', '유통기한'] }),
+    productField('dateInfo', '일자', 'ADDITIONAL', { masterAliases: ['dateInfo', '일자'] }),
+    productField('transactionInfo', '거래', 'ADDITIONAL', { masterAliases: ['transactionInfo', '거래'] }),
+    productField('additionalQuantity', '수량', 'ADDITIONAL', { valueType: 'NUMBER', masterAliases: ['additionalQuantity', '부가수량'] }),
+    productField('marketPriceFlag', '싯가', 'ADDITIONAL', { masterAliases: ['marketPriceFlag', '싯가'] }),
+    productField('orderzTags', '오더즈태그', 'ADDITIONAL', { masterAliases: ['orderzTags', '오더즈태그'] }),
+    productField('disclosureInfo', '정보고시', 'ADDITIONAL', { masterAliases: ['disclosureInfo', '정보고시'] }),
+    productField('category', '카테고리', 'ADDITIONAL', { masterAliases: ['category', '카테고리'] }),
+    productField('additionalSpecification', '규격', 'ADDITIONAL', { masterAliases: ['additionalSpecification', '부가규격'] }),
+    productField('oneApp', '원앱', 'ADDITIONAL', { masterAliases: ['oneApp', '원앱'] }),
+    productField('woori2', '우리2', 'ADDITIONAL', { masterAliases: ['woori2', '우리2'] }),
+    productField('grade', '등급', 'ADDITIONAL', { masterAliases: ['grade', '등급'] }),
+    productField('sizeFruitCount', '사이즈/과수', 'ADDITIONAL', { masterAliases: ['sizeFruitCount', '사이즈/과수'] }),
+    productField('weightFruitCount', '중량/과수', 'ADDITIONAL', { masterAliases: ['weightFruitCount', '중량/과수'] }),
+    productField('packaging', '포장', 'ADDITIONAL', { masterAliases: ['packaging', '포장'] }),
+    productField('managementItem', '관리항목', 'ADDITIONAL', { masterAliases: ['managementItem', '관리항목'] }),
+    productField('serialLotNo', '시리얼/로트No.', 'ADDITIONAL', { masterAliases: ['serialLotNo', '시리얼/로트No.', '시리얼/로트NO'] }),
+    productField('productionSlipTarget', '생산전표생성대상', 'ADDITIONAL', { masterAliases: ['productionSlipTarget', '생산전표생성대상'] }),
+    productField('qualityInspectionRequestTarget', '품질검사요청대상', 'ADDITIONAL', { masterAliases: ['qualityInspectionRequestTarget', '품질검사요청대상'] }),
+    productField('otherInfo', '기타', 'ADDITIONAL', { masterAliases: ['otherInfo', '기타'] }),
+    productField('discontinued', '사용중단', 'ADDITIONAL', { masterAliases: ['discontinued', '사용중단', '판매여부'] }),
+    productField('searchInfo', '검색정보', 'ADDITIONAL', { masterAliases: ['searchInfo', 'searchKeywords', '검색창정보', '검색어등록', '검색어'] }),
+    voucherField('memo'),
+    voucherField('description')
   ]);
+  const ROW_FIELDS = Object.freeze(PRODUCT_FIELD_DEFINITIONS.filter(field => field.editable !== false).map(field => field.id));
   const DEFAULT_HEADER_FIELDS = Object.freeze(HEADER_FIELD_DEFINITIONS.map(field => field.id));
   const DEFAULT_VOUCHER_COLUMNS = Object.freeze(VOUCHER_COLUMN_DEFINITIONS.map(field => field.id));
   const DEFAULT_HEADER_FIELDS_BY_MODE = Object.freeze(Object.fromEntries(
@@ -72,6 +168,13 @@
   const DEFAULT_VOUCHER_COLUMNS_BY_MODE = Object.freeze(Object.fromEntries(
     MODE_ORDER.map(mode => [mode, Object.freeze([...DEFAULT_VOUCHER_COLUMNS])])
   ));
+  const DEFAULT_INPUT_ORDER_BY_MODE = Object.freeze(Object.fromEntries(MODE_ORDER.map(mode => [
+    mode,
+    Object.freeze(Object.fromEntries(DEFAULT_VOUCHER_COLUMNS.map((fieldId, index) => [
+      fieldId,
+      VOUCHER_COLUMN_DEFINITIONS.find(field => field.id === fieldId)?.editable === false ? 0 : index + 1
+    ])))
+  ])));
   const DEFAULT_SETTINGS = Object.freeze({
     orderCutoffTime: '',
     allowSameDayDelivery: true,
@@ -84,8 +187,10 @@
     voucherColumns: DEFAULT_VOUCHER_COLUMNS,
     headerFieldsByMode: DEFAULT_HEADER_FIELDS_BY_MODE,
     voucherColumnsByMode: DEFAULT_VOUCHER_COLUMNS_BY_MODE,
+    inputOrderByMode: DEFAULT_INPUT_ORDER_BY_MODE,
     customFields: Object.freeze([]),
-    columnWidths: Object.freeze({})
+    columnWidths: Object.freeze({}),
+    columnWidthsByMode: Object.freeze(Object.fromEntries(MODE_ORDER.map(mode => [mode, Object.freeze({})])))
   });
   const WEEKDAY_LABELS = Object.freeze(['일', '월', '화', '수', '목', '금', '토']);
 
@@ -159,6 +264,19 @@
       if (!allowedColumnIds.has(text(fieldId)) || !Number.isFinite(normalizedWidth)) return;
       columnWidths[text(fieldId)] = Math.max(56, Math.min(480, Math.round(normalizedWidth)));
     });
+    const sourceColumnWidthsByMode = value.columnWidthsByMode && typeof value.columnWidthsByMode === 'object'
+      ? value.columnWidthsByMode
+      : {};
+    const columnWidthsByMode = Object.fromEntries(MODE_ORDER.map(mode => {
+      const widths = {};
+      Object.entries(sourceColumnWidthsByMode[mode] && typeof sourceColumnWidthsByMode[mode] === 'object' ? sourceColumnWidthsByMode[mode] : {})
+        .forEach(([fieldId, width]) => {
+          const normalizedWidth = Number(width);
+          if (!allowedColumnIds.has(text(fieldId)) || !Number.isFinite(normalizedWidth)) return;
+          widths[text(fieldId)] = Math.max(56, Math.min(480, Math.round(normalizedWidth)));
+        });
+      return [mode, widths];
+    }));
     const legacyHeaderFields = normalizeLayout(value.headerFields, HEADER_FIELD_DEFINITIONS, DEFAULT_SETTINGS.headerFields, 'header');
     const legacyVoucherColumns = normalizeLayout(value.voucherColumns, PRODUCT_FIELD_DEFINITIONS, DEFAULT_SETTINGS.voucherColumns, 'voucher');
     const sourceHeaderFieldsByMode = value.headerFieldsByMode && typeof value.headerFieldsByMode === 'object'
@@ -175,6 +293,27 @@
       mode,
       normalizeLayout(sourceVoucherColumnsByMode[mode], PRODUCT_FIELD_DEFINITIONS, legacyVoucherColumns, 'voucher')
     ]));
+    const inputOrderSource = value.inputOrderByMode && typeof value.inputOrderByMode === 'object'
+      ? value.inputOrderByMode
+      : {};
+    const productFieldById = new Map(PRODUCT_FIELD_DEFINITIONS.map(field => [field.id, field]));
+    const inputOrderByMode = Object.fromEntries(MODE_ORDER.map(mode => {
+      const selected = voucherColumnsByMode[mode];
+      const selectedIndex = new Map(selected.map((fieldId, index) => [fieldId, index]));
+      const source = inputOrderSource[mode] && typeof inputOrderSource[mode] === 'object' ? inputOrderSource[mode] : {};
+      const order = {};
+      allowedColumnIds.forEach(fieldId => {
+        const configured = Number(source[fieldId]);
+        const builtIn = productFieldById.get(fieldId);
+        const fallbackOrder = selectedIndex.has(fieldId) && builtIn?.editable !== false ? selectedIndex.get(fieldId) + 1 : 0;
+        order[fieldId] = builtIn?.editable === false
+          ? 0
+          : (Number.isFinite(configured) && configured >= 0
+              ? Math.min(999, Math.round(configured))
+              : fallbackOrder);
+      });
+      return [mode, order];
+    }));
     return {
       orderCutoffTime: /^\d{2}:\d{2}$/.test(text(value.orderCutoffTime)) ? text(value.orderCutoffTime) : '',
       allowSameDayDelivery: value.allowSameDayDelivery !== false,
@@ -187,8 +326,10 @@
       voucherColumns: [...voucherColumnsByMode.order],
       headerFieldsByMode,
       voucherColumnsByMode,
+      inputOrderByMode,
       customFields,
-      columnWidths
+      columnWidths,
+      columnWidthsByMode
     };
   }
 
@@ -399,7 +540,7 @@
       : (requestedMatchStatus === 'SIMILAR' || candidateProducts.length
         ? 'SIMILAR'
         : 'UNRESOLVED');
-    return {
+    const row = {
       rowId: text(input.rowId) || createId('SIROW'),
       batchId: text(input.batchId || fallbackBatchId),
       batchSequence: Number(input.batchSequence || 0),
@@ -442,6 +583,11 @@
       reviewStatus: hasMasterIdentity ? 'CONFIRMED' : 'PENDING',
       productIdentityStatus: hasMasterIdentity ? 'MASTER_LINKED' : 'UNRESOLVED'
     };
+    PRODUCT_FIELD_DEFINITIONS.forEach(field => {
+      if (Object.prototype.hasOwnProperty.call(row, field.id)) return;
+      row[field.id] = field.valueType === 'NUMBER' ? numberOrNull(input[field.id]) : text(input[field.id]);
+    });
+    return row;
   }
 
   function normalizeModeDraft(mode, input = {}, fallback = createModeDraft(mode)) {
@@ -614,6 +760,7 @@
     MODES,
     INPUT_METHODS,
     STAGES,
+    PRODUCT_FIELD_GROUPS,
     ROW_FIELDS,
     HEADER_FIELD_DEFINITIONS,
     VOUCHER_COLUMN_DEFINITIONS,
