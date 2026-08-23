@@ -242,6 +242,8 @@
       "sharedContracts": [
         "nexus-header",
         "cloud-url",
+        "dataops-inventory-snapshot",
+        "orderq-vnext-sync",
         "shipping-purchase-plan"
       ]
     },
@@ -295,7 +297,7 @@
         "orderq-vnext-sync",
         "product-master"
       ],
-      "integrationNote": "SmartInput is available from the fixed-position NEXUS global entry, the common-header settings list, and the full application list at /smartinput/. ORDER Q vNext is the common order ledger; orders.html still requires a separately validated ledger-consumer adapter."
+      "integrationNote": "SmartInput is available from the fixed-position NEXUS global entry, the common-header settings list, and the full application list at /smartinput/. ORDER Q vNext is the common order ledger; the validated read-only orders.html adapter loads active SMART_INPUT orders without creating another order store or triggering cloud synchronization."
     },
     {
       "id": "cloud-sync",
@@ -403,7 +405,10 @@
         "orderq/parser.html",
         "orderq/collector.html",
         "orderq/cloud.html",
-        "smartinput/index.html"
+        "smartinput/index.html",
+        "orders.html",
+        "orderops_list.html",
+        "orderops/list.html"
       ],
       "schemaVersion": "ONEAPP_ORDERQ_SYNC_V1",
       "localDatabase": "oneapp-orderq-vnext",
@@ -477,7 +482,10 @@
       "owner": "dataops",
       "consumers": [
         "DataOps.html",
-        "MerchOps.html"
+        "MerchOps.html",
+        "orders.html",
+        "orderops_list.html",
+        "orderops/list.html"
       ],
       "schemaVersion": "ONEAPP_DATAOPS_SNAPSHOT_V1",
       "columns": [

@@ -9,6 +9,7 @@
   <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
   <script src="orderFulfillmentEngine.js"></script>
   <script src="orderFulfillmentWorkbook.js"></script>
+  <script src="orderops/orderops-source-adapter.js?v=1.64.0"></script>
   <style>
     :root {
       color-scheme: light;
@@ -871,7 +872,7 @@
     .table-tool-button:hover { border-color: var(--teal-700); color: var(--teal-700); background: #f0fdfa; }
     .table-tool-button.dirty { border-color: #4f46e5; color: #fff; background: #4f46e5; }
     .table-tool-button.active { border-color: var(--teal-700); color: #fff; background: var(--teal-700); }
-    /* ORDER Q v1.63: NEXES v3.6 앱 라우팅 표기 일치. */
+    /* ORDER Q v1.64: DataOps 확정재고와 SmartInput 주문 원장 탭 연동. */
     /* ORDER Q v1.59: 저장 양식 그룹을 재고부족 바로 뒤에 고정. */
     .view-preset-tools { display: flex; flex: 0 0 auto; align-items: center; gap: 4px; }
     .view-preset-select {
@@ -1827,7 +1828,7 @@
 <body>
   <nexus-top app-id="orderq"><div class="nexus-top-fallback" role="status"><strong>NEXUS</strong><span>NEXUS 메뉴를 불러오지 못했습니다.</span><button type="button" onclick="window.location.reload()">재시도</button></div></nexus-top>
   <header class="global-header">
-    <div class="brand" aria-label="ORDER Q 출고관리"><span class="brand-logo-frame"><img class="brand-logo" src="assets/order-q-logo.png" alt="ORDER Q"></span><span class="brand-divider" aria-hidden="true"></span><strong class="brand-product">출고관리</strong><span class="brand-badge">v1.63</span></div>
+    <div class="brand" aria-label="ORDER Q 출고관리"><span class="brand-logo-frame"><img class="brand-logo" src="assets/order-q-logo.png" alt="ORDER Q"></span><span class="brand-divider" aria-hidden="true"></span><strong class="brand-product">출고관리</strong><span class="brand-badge">v1.64</span></div>
     <div class="header-actions">
       <a class="header-link header-smart-input" id="smartInputButton" href="orderops/input.html"
         aria-label="스마트 전표입력 화면 열기 F4" aria-keyshortcuts="F4">
@@ -2033,7 +2034,7 @@
     </section>
 
     <footer class="page-footer">
-      <span>ORDER Q v1.63 · 출고관리 · workspace shipping-workspace/v2 · cloud plan v1</span>
+      <span>ORDER Q v1.64 · 출고관리 · workspace shipping-workspace/v2 · cloud plan v1</span>
       <a href="SHIPPING_MANAGEMENT_GUIDANCE.md">개발·운영 기준 보기</a>
     </footer>
   </main>
@@ -2151,6 +2152,7 @@
 
       const engine = window.ShippingManagementEngine;
       const workbookTools = window.ShippingManagementWorkbook;
+      const sourceAdapter = window.OrderOpsSourceAdapter;
       const MAX_FILE_SIZE = 25 * 1024 * 1024;
       const LOCAL_DB_NAME = "ONEAPPShippingRecoveryDB";
       const LOCAL_DB_VERSION = 1;
@@ -3509,6 +3511,57 @@
           showToast(error.message || "Excel 파일을 읽지 못했습니다.", true);
         } finally {
           setLoading(kind, false);
+          refreshInputState();
+        }
+      }
+
+      async function loadDataOpsInventory() {
+        if (state.loading.inventory) return;
+        if (!sourceAdapter) {
+          showToast("DataOps 재고 연결 모듈을 불러오지 못했습니다. 페이지를 새로고침하세요.", true);
+          return;
+        }
+        const previous = state.inventory;
+        resetResults();
+        setLoading("inventory", true);
+        elements.inventoryFileName.textContent = "DataOps 확정재고를 불러오는 중...";
+        setSystemMessage("DataOps 재고 불러오는 중 · 최신 확정본의 무결성을 검증합니다");
+        try {
+          const cloudUrl = normalizeCloudUrl(
+            elements.cloudUrlInput.value || localStorage.getItem("oneapp_cloud_sync_url_v1") || "",
+          );
+          const snapshot = await sourceAdapter.fetchLatestDataOpsSnapshot(cloudUrl);
+          state.inventory = sourceAdapter.buildDataOpsInventoryParsed(snapshot, engine);
+          showToast(`DataOps 확정재고 ${snapshot.revision} · ${state.inventory.rowCount.toLocaleString("ko-KR")}행을 불러왔습니다.`);
+        } catch (error) {
+          state.inventory = previous;
+          showToast(error.message || "DataOps 확정재고를 불러오지 못했습니다.", true);
+        } finally {
+          setLoading("inventory", false);
+          refreshInputState();
+        }
+      }
+
+      async function loadSmartInputOrders() {
+        if (state.loading.orders) return;
+        if (!sourceAdapter) {
+          showToast("스마트입력 주문 연결 모듈을 불러오지 못했습니다. 페이지를 새로고침하세요.", true);
+          return;
+        }
+        const previous = state.orders;
+        resetResults();
+        setLoading("orders", true);
+        elements.ordersFileName.textContent = "스마트입력 주문 원장을 불러오는 중...";
+        setSystemMessage("스마트입력 주문 불러오는 중 · ORDER Q 주문 원장을 조회합니다");
+        try {
+          state.orders = await sourceAdapter.loadSmartInputOrders(engine);
+          const source = state.orders.dataSource || {};
+          showToast(`스마트입력 주문 ${Number(source.orderCount || 0).toLocaleString("ko-KR")}건 · ${state.orders.rowCount.toLocaleString("ko-KR")}행을 불러왔습니다.`);
+        } catch (error) {
+          state.orders = previous;
+          showToast(error.message || "스마트입력 주문을 불러오지 못했습니다.", true);
+        } finally {
+          setLoading("orders", false);
           refreshInputState();
         }
       }
@@ -6232,6 +6285,14 @@
         const fileButton = elements[kind + "FileButton"];
         drop.addEventListener("click", () => {
           if (activatePreview(FILE_KIND_PREVIEWS[kind])) return;
+          if (kind === "inventory") {
+            loadDataOpsInventory();
+            return;
+          }
+          if (kind === "orders") {
+            loadSmartInputOrders();
+            return;
+          }
           showToast("출고분석을 완료하면 이 카드에서 해당 화면을 볼 수 있습니다.");
         });
         fileButton.addEventListener("click", () => input.click());
