@@ -41,19 +41,21 @@ assert.deepEqual(Array.from(contract.STAGES), ['capture', 'extract', 'match', 'r
 assert.deepEqual(Array.from(contract.ROW_FIELDS), [
   'itemCode', 'itemName', 'secondaryName', 'searchInfo', 'specification', 'boxQuantity',
   'quantity', 'unit', 'unitPrice', 'outPrice', 'wholesaleA', 'wholesaleB', 'listingPrice',
-  'marketPrice', 'promoPrice', 'memo', 'description', 'noticePrice'
+  'marketPrice', 'promoPrice', 'purchasePriceB', 'priceD', 'lastPurchasePrice', 'priceH', 'priceI',
+  'memo', 'description', 'noticePrice'
 ]);
-for (const productField of ['itemCode', 'itemName', 'specification', 'quantity', 'unit', 'unitPrice', 'supplyAmount', 'memo', 'description', 'noticePrice', 'secondaryName', 'searchInfo', 'boxQuantity', 'outPrice', 'wholesaleA', 'wholesaleB', 'listingPrice', 'marketPrice', 'promoPrice']) {
+for (const productField of ['itemCode', 'itemName', 'specification', 'quantity', 'unit', 'unitPrice', 'supplyAmount', 'memo', 'description', 'noticePrice', 'secondaryName', 'searchInfo', 'boxQuantity', 'outPrice', 'wholesaleA', 'wholesaleB', 'listingPrice', 'marketPrice', 'promoPrice', 'purchasePriceB', 'priceD', 'lastPurchasePrice', 'priceH', 'priceI']) {
   assert.ok(Array.from(contract.PRODUCT_FIELD_DEFINITIONS, field => field.id).includes(productField), `${productField} must be available in the product field library`);
 }
+assert.equal(contract.PRODUCT_FIELD_DEFINITIONS.find(field => field.id === 'purchasePriceB').required, true);
 assert.ok(Array.from(contract.DEFAULT_SETTINGS.headerFields).includes('customer'));
 assert.ok(Array.from(contract.DEFAULT_SETTINGS.voucherColumns).includes('itemName'));
 const minimalLayout = contract.normalizeSettings({ headerFields: [], voucherColumns: [] });
 assert.deepEqual(Array.from(minimalLayout.headerFields), ['customer', 'deliveryDate', 'warehouse']);
-assert.deepEqual(Array.from(minimalLayout.voucherColumns), ['itemName', 'quantity']);
+assert.deepEqual(Array.from(minimalLayout.voucherColumns), ['itemName', 'quantity', 'purchasePriceB']);
 for (const mode of Object.keys(contract.MODES)) {
   assert.deepEqual(Array.from(minimalLayout.headerFieldsByMode[mode]), ['customer', 'deliveryDate', 'warehouse']);
-  assert.deepEqual(Array.from(minimalLayout.voucherColumnsByMode[mode]), ['itemName', 'quantity']);
+  assert.deepEqual(Array.from(minimalLayout.voucherColumnsByMode[mode]), ['itemName', 'quantity', 'purchasePriceB']);
 }
 const perVoucherLayout = contract.normalizeSettings({
   headerFieldsByMode: {
@@ -69,6 +71,10 @@ const perVoucherLayout = contract.normalizeSettings({
     estimate: ['itemName', 'quantity', 'memo']
   }
 });
+const reorderedVoucherLayout = contract.normalizeSettings({
+  voucherColumnsByMode: { order: ['quantity', 'itemName', 'purchasePriceB', 'unitPrice'] }
+});
+assert.deepEqual(Array.from(reorderedVoucherLayout.voucherColumnsByMode.order), ['quantity', 'itemName', 'purchasePriceB', 'unitPrice']);
 assert.ok(Array.from(perVoucherLayout.headerFieldsByMode.order).includes('transactionType'));
 assert.ok(!Array.from(perVoucherLayout.headerFieldsByMode.purchase).includes('transactionType'));
 assert.ok(Array.from(perVoucherLayout.voucherColumnsByMode.purchase).includes('supplyAmount'));
@@ -141,10 +147,14 @@ assert.deepEqual(JSON.parse(JSON.stringify(contract.normalizeRow({
 }).sourceRegion)), { left: .1, top: .2, width: .3, height: .4 });
 assert.deepEqual(JSON.parse(JSON.stringify(contract.normalizeRow({ customValues: { 'custom-voucher-lot': 'A-01' } }).customValues)), { 'custom-voucher-lot': 'A-01' });
 const commonOnlyProduct = normalizeMasterProduct(
-  { 코드: 'COMMON-ONLY-1', 품목명: '공통 마스터 전용상품', 규격: 'EA' },
+  { 코드: 'COMMON-ONLY-1', 품목명: '공통 마스터 전용상품', 규격: 'EA', 입고B: '1200', 단가D: '1300', 최종입고: '1400', 단가H: '1500', 단가I: '1600' },
   'COMMON-ONLY-1',
   'COMMON_MASTER',
   'COMMON-ONLY-1'
+);
+assert.deepEqual(
+  commonOnlyProduct.priceOptions.filter(option => ['purchasePriceB', 'priceD', 'lastPurchasePrice', 'priceH', 'priceI'].includes(option.key)).map(option => [option.key, option.value]),
+  [['purchasePriceB', 1200], ['priceD', 1300], ['lastPurchasePrice', 1400], ['priceH', 1500], ['priceI', 1600]]
 );
 const selectedCommonProduct = searchProductCatalog('공통 마스터 전용상품', [commonOnlyProduct], 5)[0];
 const linkedCommonRow = contract.normalizeRow({
@@ -280,6 +290,8 @@ assert.doesNotMatch(html, /id="orderDateInput"/);
 assert.doesNotMatch(html, /class="stage-rail"/);
 assert.match(html, /id="activityTrail"[^>]*aria-live="polite"[^>]*hidden/);
 assert.match(html, /id="activityItems" aria-label="누적 입력현황"/);
+assert.match(html, /id="clearParserButton"[^>]*>[^<]*<span[^>]*>↻<\/span> 지우기<\/button>/,
+  'the parser must expose an explicit clear control beside its activity history');
 assert.doesNotMatch(html, /class="parser-card__header"/);
 assert.doesNotMatch(html, /<th>원문<\/th>|class="col-source"/);
 assert.doesNotMatch(html, /<th>차수<\/th>|<th>상태<\/th>/);
@@ -317,6 +329,11 @@ assert.ok(html.indexOf('class="field field--mode"') < html.indexOf('data-header-
 assert.match(html, /id="selectAllRows"/);
 assert.match(html, /id="deleteSelectedRows"/);
 assert.match(html, /class="col-unit"/);
+assert.match(html, /class="voucher-footer-actions"[\s\S]*id="resetDraftButton"[^>]*>[\s\S]*전표 초기화[\s\S]*id="saveDraftButton"[^>]*>저장<\/button>/,
+  'voucher reset and save controls must live below the input table');
+const appBarHtml = html.slice(html.indexOf('<header class="app-bar">'), html.indexOf('</header>') + 9);
+assert.doesNotMatch(appBarHtml, /id="resetDraftButton"|id="saveDraftButton"/,
+  'voucher reset and save controls must not remain in the top application bar');
 assert.doesNotMatch(html, /작업 단계|\d+\s*\/\s*5|data-stage=/);
 const parserColumnAt = html.indexOf('<section class="parser-card"');
 const workbenchColumnAt = html.indexOf('<section class="workbench"');
@@ -365,6 +382,16 @@ assert.match(css, /\.save-state \{[^}]*flex: 0 0 64px;[^}]*width: 64px;[^}]*whit
 assert.match(css, /@media \(max-width: 1480px\) \{[^}]*grid-template-columns: 380px minmax\(0, 1fr\)/,
   'related apps must yield width to the input table on ordinary desktop screens');
 assert.match(css, /@media \(max-width: 1180px\)/);
+assert.match(css, /@media \(max-width: 1400px\) \{[\s\S]*?\.workspace\.has-photo-source \{ grid-template-columns: minmax\(0, 1fr\); \}/,
+  'photo mode must stack before the workbench becomes too narrow around 1335px');
+assert.match(css, /\.parser-card \{[^}]*overflow: hidden;/,
+  'parser children must not escape the assigned parser column');
+assert.match(css, /\.parser-card > \*, \.parser-input-row, \.method-bar, \.photo-viewer, \.photo-viewer__toolbar, \.photo-viewer__viewport \{[^}]*width: 100%;[^}]*max-width: 100%;/,
+  'parser controls and photo viewer must shrink within their parent width');
+assert.match(css, /table \{[^}]*width: var\(--table-render-width, 1103px\);[^}]*min-width: 0;[^}]*max-width: none;/,
+  'the input table must use the visible-column sum and leave unused space blank');
+assert.match(css, /\.column-draggable \{ cursor: grab; \}/);
+assert.match(css, /\.column-drop-before \{[^}]*inset 3px 0 0 var\(--accent\)/);
 assert.match(css, /@media \(max-width: 1240px\) \{[\s\S]*?\.workspace, \.workspace\.has-photo-source \{ grid-template-columns: minmax\(0, 1fr\); \}/,
   'photo and input workspaces must stack before their minimum widths collide');
 assert.match(css, /@media \(max-width: 980px\)/);
@@ -417,7 +444,8 @@ assert.match(appSource, /function renderActivityTrail\(\)/);
 assert.match(appSource, /function scheduleAutoAnalysis\(/);
 assert.match(appSource, /analyzeSource\(\{ automatic: true \}\)/);
 assert.match(appSource, /current\.sourceText = rawText/);
-assert.doesNotMatch(appSource, /current\.sourceText = '';/, 'parser and direct entry must not clear the preserved source text');
+const analyzeSourceBlock = appSource.slice(appSource.indexOf('async function analyzeSource'), appSource.indexOf('async function handleFile'));
+assert.doesNotMatch(analyzeSourceBlock, /current\.sourceText = '';/, 'ordinary parser analysis must not clear the preserved source text');
 assert.match(appSource, /sourceRole: 'LIVE_SOURCE'/);
 assert.match(appSource, /function renderSourceAnalysis\(\)/);
 assert.match(appSource, /source-token--user/);
@@ -449,11 +477,32 @@ assert.match(appSource, /event\.key === 'ArrowUp'[\s\S]*updateSelection\(selecte
 assert.match(appSource, /button\.scrollIntoView\(\{ block: 'nearest' \}\)/);
 assert.match(appSource, /if \(foundProducts\[selectedIndex\]\) finish\(foundProducts\[selectedIndex\]\)/);
 assert.match(appSource, /resetCurrentMode\(false\)/);
+assert.match(appSource, /function clearParserWorkspace\(\)/);
+assert.match(appSource, /current\.batches = \(current\.batches \|\| \[\]\)\.filter\(batch => batch\.sourceType === 'MANUAL'\)/,
+  'parser clear must preserve direct-entry batches while dropping parser batches');
+assert.match(appSource, /state\.sourceImages\[state\.draft\.activeMode\] = null/,
+  'parser clear must detach the current source photo');
+assert.match(appSource, /const PARSER_ERROR_LABEL = [^;]+/);
+assert.match(appSource, /if \(PARSER_ERROR_LABEL\.test\(productText\)\) return true/,
+  'short bracketed parser error labels must not become product-name rows');
+assert.match(appSource, /function armItemCodeEntry\(\)/);
+assert.match(appSource, /if \(mappingSource === 'MANUAL'\) armItemCodeEntry\(\)/,
+  'manual customer selection must move directly to the first item-code cell');
 assert.match(appSource, /data-customer-use/);
 assert.match(appSource, /data-tax-register/);
 assert.match(appSource, /거래처 앞 체크박스/);
 assert.match(appSource, /if \(!linkMode\) selected\.clear\(\)/, 'normal customer selection must keep only one checked customer');
 assert.match(appSource, /memberCustomerIds: \[customerId\][\s\S]*taxCustomerId: customerId/, 'an unlinked formal customer must become a one-member tax group when registered');
+assert.match(appSource, /data-link-mode>거래처 관계 설정</);
+assert.match(appSource, /deliveryCustomerIds: \[customerId\]/,
+  'one formal customer can hold both delivery and tax roles');
+assert.match(appSource, /if \(selected\.size < 1\)[\s\S]*배송처를 1곳 이상 선택하세요/);
+assert.match(appSource, /if \(!selectedTaxCustomerId\)[\s\S]*세무거래처를 정확히 1곳 지정하세요/);
+assert.match(appSource, /deliveryCustomerIds = \[\.\.\.selected\]/);
+assert.doesNotMatch(appSource, /연결할 거래처를 2개 이상/,
+  'customer relationship setup must not require two or more records');
+assert.match(appSource, /const isTax = hasRelationship && group\?\.taxCustomerId === customerItem\.customerId/,
+  'tax badges must also appear for one-to-one relationships');
 assert.match(appSource, /dialog\.showModal\(\);[\s\S]*refreshCustomers\(\{ syncIfEmpty: true \}\)/, 'customer dialog must open before background master refresh completes');
 assert.match(appSource, /withTimeout\(listCustomers\(\{ includeInactive: false \}\), 5000/, 'startup customer loading must have a bounded wait');
 assert.doesNotMatch(appSource, /function openEstimateListDialog\(\)/);
@@ -464,6 +513,11 @@ assert.match(appSource, /function saveEstimateDocument\(\)/);
 assert.match(appSource, /function applyFormLayout\(\)/);
 assert.match(appSource, /function headerFieldsForMode\(/);
 assert.match(appSource, /function voucherColumnsForMode\(/);
+assert.match(appSource, /function applyVoucherColumnOrder\(/);
+assert.match(appSource, /function beginColumnDrag\(/);
+assert.match(appSource, /function finishColumnDrop\(/);
+assert.match(appSource, /voucherTableHead\.addEventListener\('dragstart', beginColumnDrag\)/);
+assert.match(appSource, /voucherTableHead\.addEventListener\('drop', finishColumnDrop\)/);
 assert.match(appSource, /class="settings-group" open/);
 assert.match(appSource, /data-add-layout-field="header"/);
 assert.match(appSource, /data-add-layout-field="voucher"/);
@@ -476,6 +530,12 @@ assert.match(css, /\.document-fields > \.field--mode \{ grid-column: 1;/,
   '전표 선택은 상단 정보 영역의 첫 번째 열에 배치해야 한다.');
 assert.match(css, /\.document-fields \.field--mode \.mode-tabs \{[^}]*border: 2px solid var\(--voucher-accent\)/,
   '전표 선택은 주황색 보더로 강조해야 한다.');
+assert.match(css, /\.document-fields \.field--mode \.mode-tabs \{[^}]*background: transparent;[^}]*box-shadow: none;/,
+  '전표 선택 영역은 배경 배색과 외곽 그림자를 사용하지 않아야 한다.');
+assert.match(css, /\.document-fields \.field--mode \.mode-tab\.is-active \{[^}]*background: transparent;[^}]*inset 0 -3px 0 var\(--voucher-accent\)/,
+  '선택 전표는 배경 채움 대신 라인으로만 표시해야 한다.');
+assert.match(css, /\.voucher-footer-actions \{[^}]*justify-content: flex-end;[^}]*border-top: 1px solid var\(--border\)/,
+  '전표 작업 버튼은 입력표 하단의 독립 작업줄에 배치해야 한다.');
 assert.match(appSource, /상품정보/);
 assert.match(appSource, /거래처정보/);
 assert.match(appSource, /사용자지정/);
@@ -499,7 +559,7 @@ assert.match(appSource, /function renderPhotoTransform\(\)/);
 assert.match(appSource, /function showPhotoRegion\(region\)/);
 assert.match(appSource, /sourceImages: \{ order: null, purchase: null, sale: null, estimate: null \}/);
 assert.match(appSource, /intakeSessionId: sourceBatch\?\.intakeSessionId \|\| ''/);
-assert.match(appSource, /photoBasicColumns = new Set\(\['itemCode', 'itemName', 'specification', 'quantity', 'unit', 'unitPrice', 'supplyAmount'\]\)/);
+assert.match(appSource, /photoBasicColumns = new Set\(\['itemCode', 'itemName', 'specification', 'quantity', 'unit', 'unitPrice', 'supplyAmount', 'purchasePriceB'\]\)/);
 assert.match(appSource, /state\.photoView\.detailColumns = !state\.photoView\.detailColumns/);
 assert.match(appSource, /photoResizer\.addEventListener\('pointermove'/);
 assert.match(appSource, /if \(modeDraft\(\)\.activeMethod !== 'photo'\) updateMethod\('direct'\)/,

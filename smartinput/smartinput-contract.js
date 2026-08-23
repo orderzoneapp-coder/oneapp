@@ -26,7 +26,8 @@
   const ROW_FIELDS = Object.freeze([
     'itemCode', 'itemName', 'secondaryName', 'searchInfo', 'specification', 'boxQuantity',
     'quantity', 'unit', 'unitPrice', 'outPrice', 'wholesaleA', 'wholesaleB', 'listingPrice',
-    'marketPrice', 'promoPrice', 'memo', 'description', 'noticePrice'
+    'marketPrice', 'promoPrice', 'purchasePriceB', 'priceD', 'lastPurchasePrice', 'priceH', 'priceI',
+    'memo', 'description', 'noticePrice'
   ]);
   const HEADER_FIELD_DEFINITIONS = Object.freeze([
     Object.freeze({ id: 'customer', label: '배송 거래처', required: true }),
@@ -56,7 +57,12 @@
     Object.freeze({ id: 'wholesaleB', label: '도매B', required: false, valueType: 'NUMBER' }),
     Object.freeze({ id: 'listingPrice', label: '상장가', required: false, valueType: 'NUMBER' }),
     Object.freeze({ id: 'marketPrice', label: '시중가', required: false, valueType: 'NUMBER' }),
-    Object.freeze({ id: 'promoPrice', label: '행사가', required: false, valueType: 'NUMBER' })
+    Object.freeze({ id: 'promoPrice', label: '행사가', required: false, valueType: 'NUMBER' }),
+    Object.freeze({ id: 'purchasePriceB', label: '입고B', required: true, valueType: 'NUMBER' }),
+    Object.freeze({ id: 'priceD', label: '단가D', required: false, valueType: 'NUMBER' }),
+    Object.freeze({ id: 'lastPurchasePrice', label: '최종입고', required: false, valueType: 'NUMBER' }),
+    Object.freeze({ id: 'priceH', label: '단가H', required: false, valueType: 'NUMBER' }),
+    Object.freeze({ id: 'priceI', label: '단가I', required: false, valueType: 'NUMBER' })
   ]);
   const DEFAULT_HEADER_FIELDS = Object.freeze(HEADER_FIELD_DEFINITIONS.map(field => field.id));
   const DEFAULT_VOUCHER_COLUMNS = Object.freeze(VOUCHER_COLUMN_DEFINITIONS.map(field => field.id));
@@ -139,10 +145,12 @@
     });
     const normalizeLayout = (selected, definitions, fallback, scope) => {
       const allowed = new Set([...definitions.map(field => field.id), ...customFields.filter(field => field.scope === scope).map(field => field.id)]);
-      const requested = Array.isArray(selected) ? selected.map(text).filter(id => allowed.has(id)) : [...fallback];
-      const requestedSet = new Set(requested);
-      definitions.filter(field => field.required).forEach(field => requestedSet.add(field.id));
-      return [...definitions.map(field => field.id), ...customFields.filter(field => field.scope === scope).map(field => field.id)].filter(id => requestedSet.has(id));
+      const requested = Array.isArray(selected) ? selected.map(text).filter(id => allowed.has(id)) : [...fallback].filter(id => allowed.has(id));
+      const ordered = [...new Set(requested)];
+      definitions.filter(field => field.required).forEach(field => {
+        if (!ordered.includes(field.id)) ordered.push(field.id);
+      });
+      return ordered;
     };
     const allowedColumnIds = new Set([...PRODUCT_FIELD_DEFINITIONS.map(field => field.id), ...customFields.filter(field => field.scope === 'voucher').map(field => field.id)]);
     const columnWidths = {};
@@ -417,6 +425,11 @@
       listingPrice: numberOrNull(input.listingPrice),
       marketPrice: numberOrNull(input.marketPrice),
       promoPrice: numberOrNull(input.promoPrice),
+      purchasePriceB: numberOrNull(input.purchasePriceB),
+      priceD: numberOrNull(input.priceD),
+      lastPurchasePrice: numberOrNull(input.lastPurchasePrice),
+      priceH: numberOrNull(input.priceH),
+      priceI: numberOrNull(input.priceI),
       memo: text(input.memo),
       description: text(input.description),
       noticePrice: numberOrNull(input.noticePrice) ?? 0,

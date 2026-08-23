@@ -7,7 +7,7 @@ import { extractOrderProductLines } from '../orderq/smartparser/order-text-extra
 import { createOrder } from '../orderq/order-intake-engine.js?v=0.15.2';
 import { syncAfterLocalMutation } from '../orderq/orderq-sync-engine.js?v=0.8.0';
 import { createLiveCustomer, ensureCustomerMasterReady, listCustomers } from '../orderq/customer-master.js?v=0.12.1';
-import { isSelectableMasterProduct, loadProductCatalog, searchProductCatalog } from '../orderq/product-master-search.js?v=0.8.2';
+import { isSelectableMasterProduct, loadProductCatalog, searchProductCatalog } from '../orderq/product-master-search.js?v=0.8.3';
 import { loadWarehouseCatalog, matchWarehouseInput, warehouseDisplayName } from '../orderq/warehouse-master.js?v=0.8.0';
 import { recognizeOcrDocument, verifiedRowsToParserLines } from './ocr-document-parser.js?v=0.1.1';
 import {
@@ -69,7 +69,8 @@ const state = {
   autoAnalyzeTimer: null,
   analysisRequestId: 0,
   sourceComposing: false,
-  columnResize: null
+  columnResize: null,
+  columnDrag: null
 };
 
 const ACTIVITY_LABELS = {
@@ -365,6 +366,7 @@ const DEFAULT_COLUMN_WIDTHS = Object.freeze({
   unitPrice: 90, supplyAmount: 102, memo: 112, description: 118, noticePrice: 90,
   secondaryName: 150, searchInfo: 180, boxQuantity: 72, outPrice: 90,
   wholesaleA: 90, wholesaleB: 90, listingPrice: 90, marketPrice: 90, promoPrice: 90,
+  purchasePriceB: 90, priceD: 90, lastPurchasePrice: 96, priceH: 90, priceI: 90,
   status: 74
 });
 
@@ -375,6 +377,11 @@ function columnWidth(fieldId) {
 function ensureColumnResizeHandles() {
   document.querySelectorAll('#tableScroll thead th[data-column]').forEach(th => {
     th.classList.add('column-resizable');
+    if (th.dataset.column !== 'status') {
+      th.classList.add('column-draggable');
+      th.draggable = true;
+      th.dataset.columnDrag = th.dataset.column;
+    }
     if (th.querySelector('.column-resize-handle')) return;
     const handle = document.createElement('span');
     handle.className = 'column-resize-handle';
@@ -398,7 +405,95 @@ function applyColumnWidths() {
 
 function updateTableWidth(visibleColumns) {
   const total = visibleColumns.reduce((sum, fieldId) => sum + columnWidth(fieldId), 72);
-  document.querySelector('#tableScroll table')?.style.setProperty('--table-min-width', `${Math.max(520, total)}px`);
+  document.querySelector('#tableScroll table')?.style.setProperty('--table-render-width', `${total}px`);
+}
+
+function applyVoucherColumnOrder() {
+  const configured = voucherColumnsForMode();
+  const allFields = layoutDefinitions('voucher').map(field => field.id);
+  const ordered = [...new Set([...configured, ...allFields])];
+  const containers = [
+    document.querySelector('#tableScroll colgroup'),
+    document.querySelector('#tableScroll thead tr'),
+    ...document.querySelectorAll('#tableScroll tbody tr'),
+    document.querySelector('#tableScroll tfoot tr')
+  ].filter(Boolean);
+  containers.forEach(container => {
+    const status = [...container.children].find(child => child.dataset.column === 'status');
+    if (!status) return;
+    ordered.forEach(fieldId => {
+      const cell = [...container.children].find(child => child.dataset.column === fieldId);
+      if (cell) container.insertBefore(cell, status);
+    });
+  });
+}
+
+function clearColumnDragMarkers() {
+  document.querySelectorAll('#tableScroll .column-dragging, #tableScroll .column-drop-before, #tableScroll .column-drop-after')
+    .forEach(element => element.classList.remove('column-dragging', 'column-drop-before', 'column-drop-after'));
+}
+
+function beginColumnDrag(event) {
+  const header = event.target.closest('th[data-column-drag]');
+  if (!header || event.target.closest('.column-resize-handle') || header.classList.contains('is-column-hidden')) {
+    event.preventDefault();
+    return;
+  }
+  state.columnDrag = { mode: state.draft.activeMode, fieldId: header.dataset.columnDrag };
+  header.classList.add('column-dragging');
+  event.dataTransfer.effectAllowed = 'move';
+  event.dataTransfer.setData('text/plain', header.dataset.columnDrag);
+}
+
+function moveColumnDrag(event) {
+  const header = event.target.closest('th[data-column-drag]');
+  if (!header || !state.columnDrag || state.columnDrag.mode !== state.draft.activeMode || header.classList.contains('is-column-hidden')) return;
+  event.preventDefault();
+  document.querySelectorAll('#tableScroll .column-drop-before, #tableScroll .column-drop-after')
+    .forEach(element => element.classList.remove('column-drop-before', 'column-drop-after'));
+  const bounds = header.getBoundingClientRect();
+  header.classList.add(event.clientX >= bounds.left + bounds.width / 2 ? 'column-drop-after' : 'column-drop-before');
+  event.dataTransfer.dropEffect = 'move';
+}
+
+async function finishColumnDrop(event) {
+  const header = event.target.closest('th[data-column-drag]');
+  const drag = state.columnDrag;
+  if (!header || !drag || drag.mode !== state.draft.activeMode) return;
+  event.preventDefault();
+  const sourceId = drag.fieldId;
+  const targetId = header.dataset.columnDrag;
+  const order = [...voucherColumnsForMode()];
+  if (sourceId === targetId || !order.includes(sourceId) || !order.includes(targetId)) {
+    clearColumnDragMarkers();
+    state.columnDrag = null;
+    return;
+  }
+  order.splice(order.indexOf(sourceId), 1);
+  const bounds = header.getBoundingClientRect();
+  const after = event.clientX >= bounds.left + bounds.width / 2;
+  order.splice(order.indexOf(targetId) + (after ? 1 : 0), 0, sourceId);
+  const voucherColumnsByMode = { ...(state.settings.voucherColumnsByMode || {}), [state.draft.activeMode]: order };
+  state.settings = contract.normalizeSettings({
+    ...state.settings,
+    voucherColumns: state.draft.activeMode === 'order' ? order : state.settings.voucherColumns,
+    voucherColumnsByMode
+  });
+  state.columnDrag = null;
+  clearColumnDragMarkers();
+  applyFormLayout();
+  try {
+    await saveSettings(state.settings);
+    setSaveState('저장됨', 'saved');
+    toast('열 순서를 저장했습니다.', 'success');
+  } catch (_) {
+    toast('열 순서를 저장하지 못했습니다.', 'error');
+  }
+}
+
+function finishColumnDrag() {
+  clearColumnDragMarkers();
+  state.columnDrag = null;
 }
 
 function visibleVoucherColumnIds() {
@@ -483,13 +578,14 @@ function resizeColumnWithKeyboard(event) {
 
 function applyFormLayout() {
   renderCustomLayoutFields();
+  applyVoucherColumnOrder();
   const headerFields = new Set(headerFieldsForMode());
   document.querySelectorAll('[data-header-field]').forEach(element => {
     element.hidden = !headerFields.has(element.dataset.headerField);
   });
   const voucherColumns = new Set(voucherColumnsForMode());
   const photoActive = modeDraft().activeMethod === 'photo' && Boolean(currentSourceImage()?.dataUrl);
-  const photoBasicColumns = new Set(['itemCode', 'itemName', 'specification', 'quantity', 'unit', 'unitPrice', 'supplyAmount']);
+  const photoBasicColumns = new Set(['itemCode', 'itemName', 'specification', 'quantity', 'unit', 'unitPrice', 'supplyAmount', 'purchasePriceB']);
   const visibleVoucherColumns = photoActive && !state.photoView.detailColumns ? photoBasicColumns : voucherColumns;
   document.querySelectorAll('[data-column]').forEach(element => {
     const column = element.dataset.column;
@@ -747,13 +843,14 @@ function customerById(customerId) {
 function applyCustomerRelationship(header = modeDraft().header) {
   const group = groupForCustomer(header.customerId);
   const taxCustomer = group?.taxCustomerId ? customerById(group.taxCustomerId) : null;
+  const deliveryCustomerIds = group?.deliveryCustomerIds?.length ? group.deliveryCustomerIds : (group?.memberCustomerIds || []);
   header.customerLinkGroupId = group?.linkGroupId || '';
   header.taxCustomerId = taxCustomer?.customerId || '';
   header.taxCustomerName = customerName(taxCustomer);
   header.isTemporaryCustomer = Boolean(temporaryMeta(header.customerId));
   $('taxCustomerInput').value = header.taxCustomerName;
   $('customerRelationHint').textContent = group
-    ? (taxCustomer ? `연결 ${group.memberCustomerIds.length}곳 · 세무 1개 지정` : `연결 ${group.memberCustomerIds.length}곳 · 세무 거래처 지정 필요`)
+    ? (taxCustomer ? `배송처 ${deliveryCustomerIds.length}곳 · 세무거래처 1곳` : `배송처 ${deliveryCustomerIds.length}곳 · 세무거래처 지정 필요`)
     : '연결되지 않은 배송 거래처입니다.';
   $('customerRelationHint').dataset.tone = group && !taxCustomer ? 'warn' : '';
 }
@@ -864,7 +961,21 @@ function applyCustomer(customer, { rematch = true, mappingSource = 'MANUAL', lea
       .then(() => { $('customerHint').textContent = `${customerCode(customer) || '등록 거래처'} · 다음 동일 주문자명 자동 지정`; saveDraftNow(); })
       .catch(() => toast('거래처는 선택했지만 주문자명 매핑은 저장하지 못했습니다.', 'error'));
   }
+  if (mappingSource === 'MANUAL') armItemCodeEntry();
   if (rematch && state.draft.activeMode === 'order' && modeDraft().rows.length) rematchRowsForCustomer(customer);
+}
+
+function armItemCodeEntry() {
+  const targetRow = modeDraft().rows.find(row => !String(row.itemCode || '').trim()) || modeDraft().rows[0] || null;
+  const rowId = targetRow?.rowId || DEFAULT_INPUT_ROW_ID;
+  modeUi().activeCellId = `${rowId}|itemCode`;
+  state.draft.ui.selectedRowId = rowId;
+  window.requestAnimationFrame(() => {
+    const input = inputRows.querySelector(`[data-row-id="${CSS.escape(rowId)}"] [data-field="itemCode"]`);
+    if (!input) return;
+    input.focus({ preventScroll: true });
+    if (typeof input.setSelectionRange === 'function') input.setSelectionRange(input.value.length, input.value.length);
+  });
 }
 
 function inferCustomer(rawText) {
@@ -1007,12 +1118,12 @@ async function chooseCustomer() {
       dialog.className = 'smart-dialog smart-customer-dialog';
       dialog.innerHTML = `<div class="smart-dialog__shell">
         <header><div><small>Customer Master</small><h2>스마트입력 거래처 찾기</h2></div><button type="button" data-close aria-label="닫기">×</button></header>
-        <div class="smart-dialog__toolbar"><button type="button" class="button button--quiet" data-link-mode>거래처 연결</button><button type="button" class="button button--quiet" data-temp-create>임시 배송처</button></div>
+        <div class="smart-dialog__toolbar"><button type="button" class="button button--quiet" data-link-mode>거래처 관계 설정</button><button type="button" class="button button--quiet" data-temp-create>임시 배송처</button></div>
         <label class="smart-dialog__search">거래처명 또는 코드<input type="search" value="${esc($('customerInput').value)}" autocomplete="off"></label>
         <div class="smart-dialog__message">거래처 앞 체크박스를 선택한 뒤 용도를 지정하세요.</div>
         <div class="smart-customer-results"></div>
         <footer class="smart-customer-action-footer"><span data-customer-selection>선택된 거래처가 없습니다.</span><button type="button" class="button button--quiet" data-customer-use>배송 거래처 선택</button><button type="button" class="button button--primary" data-tax-register>세무 거래처 등록</button></footer>
-        <footer class="smart-link-footer" hidden><span>연결할 거래처를 2개 이상 체크하세요.</span><button type="button" class="button button--quiet" data-link-cancel>취소</button><button type="button" class="button button--primary" data-link-save>연결 저장</button></footer>
+        <footer class="smart-link-footer" hidden><span>배송처 1곳 이상과 세무거래처 1곳을 지정하세요.</span><button type="button" class="button button--quiet" data-link-cancel>취소</button><button type="button" class="button button--primary" data-link-save>관계 저장</button></footer>
       </div>`;
       document.body.append(dialog);
       const input = dialog.querySelector('input[type="search"]');
@@ -1022,6 +1133,7 @@ async function chooseCustomer() {
       const linkFooter = dialog.querySelector('.smart-link-footer');
       const selectionText = dialog.querySelector('[data-customer-selection]');
       const selected = new Set();
+      let selectedTaxCustomerId = '';
       let linkMode = false;
       let customerLoading = !state.customers.length;
       let visibleCustomers = [];
@@ -1036,15 +1148,22 @@ async function chooseCustomer() {
           .filter(customerItem => !query || normalizedKey(customerSearchText(customerItem)).includes(normalizedKey(query)))
             .sort((left, right) => customerName(left).localeCompare(customerName(right), 'ko'))
             .slice(0, 80);
+        if (linkMode && visibleCustomers.length === 1 && !selected.size && !selectedTaxCustomerId) {
+          const onlyCustomer = visibleCustomers[0];
+          selected.add(onlyCustomer.customerId);
+          if (!temporaryMeta(onlyCustomer.customerId)) selectedTaxCustomerId = onlyCustomer.customerId;
+        }
         results.innerHTML = visibleCustomers.map(customerItem => {
           const group = groupForCustomer(customerItem.customerId);
-          const isMultiCustomerGroup = Number(group?.memberCustomerIds?.length || 0) > 1;
-          const isTax = isMultiCustomerGroup && group?.taxCustomerId === customerItem.customerId;
+          const deliveryCustomerIds = group?.deliveryCustomerIds?.length ? group.deliveryCustomerIds : (group?.memberCustomerIds || []);
+          const hasRelationship = Number(group?.memberCustomerIds?.length || 0) >= 1;
+          const isDelivery = hasRelationship && deliveryCustomerIds.includes(customerItem.customerId);
+          const isTax = hasRelationship && group?.taxCustomerId === customerItem.customerId;
           const isTemporary = Boolean(temporaryMeta(customerItem.customerId));
           return `<article class="smart-customer-row ${selected.has(customerItem.customerId) ? 'is-selected' : ''}" data-customer-id="${esc(customerItem.customerId)}">
-            <label class="smart-customer-check"><input type="checkbox" ${selected.has(customerItem.customerId) ? 'checked' : ''}><span class="sr-only">${esc(customerName(customerItem))} 선택</span></label>
+            <label class="smart-customer-check"><input type="checkbox" ${selected.has(customerItem.customerId) ? 'checked' : ''}><span class="sr-only">${esc(customerName(customerItem))} ${linkMode ? '배송처' : ''} 선택</span></label>
             <div class="smart-customer-select"><strong>${esc(customerName(customerItem))}</strong><span>${esc(customerIdentityLabel(customerItem))}</span><small>${esc(customerItem.address || temporaryMeta(customerItem.customerId)?.warehouseName || '')}</small></div>
-            <div class="smart-customer-badges">${isTemporary ? '<span class="is-temp">임시 배송처</span>' : ''}${isMultiCustomerGroup ? `<span>연결 ${group.memberCustomerIds.length}</span>` : ''}${isTax ? '<span class="is-tax">세무거래처</span>' : ''}</div>
+            <div class="smart-customer-badges">${isTemporary ? '<span class="is-temp">임시 배송처</span>' : ''}${hasRelationship ? `<span>관계 ${group.memberCustomerIds.length}</span>` : ''}${isDelivery ? '<span class="is-delivery">배송처</span>' : ''}${isTax ? '<span class="is-tax">세무거래처</span>' : ''}${linkMode ? `<label class="smart-tax-role ${isTemporary ? 'is-disabled' : ''}"><input type="radio" name="taxCustomerRole" value="${esc(customerItem.customerId)}" ${selectedTaxCustomerId === customerItem.customerId ? 'checked' : ''} ${isTemporary ? 'disabled' : ''}><span>세무</span></label>` : ''}</div>
           </article>`;
         }).join('') || '<div class="smart-dialog__empty">일치하는 거래처가 없습니다.</div>';
         results.querySelectorAll('.smart-customer-row').forEach(row => {
@@ -1052,10 +1171,17 @@ async function chooseCustomer() {
           row.querySelector('input[type="checkbox"]')?.addEventListener('change', event => {
             if (!linkMode) selected.clear();
             if (event.target.checked) selected.add(customerId);
-            else selected.delete(customerId);
+            else {
+              selected.delete(customerId);
+              if (!linkMode && selectedTaxCustomerId === customerId) selectedTaxCustomerId = '';
+            }
             render();
           });
         });
+        results.querySelectorAll('input[name="taxCustomerRole"]').forEach(radio => radio.addEventListener('change', event => {
+          selectedTaxCustomerId = event.target.value;
+          render();
+        }));
         const selectedCustomer = !linkMode && selected.size === 1 ? customerById([...selected][0]) : null;
         const selectedIsTemporary = Boolean(selectedCustomer && temporaryMeta(selectedCustomer.customerId));
         if (selectionText) {
@@ -1066,14 +1192,30 @@ async function chooseCustomer() {
         dialog.querySelector('[data-customer-use]').disabled = !selectedCustomer;
         dialog.querySelector('[data-tax-register]').disabled = !selectedCustomer || selectedIsTemporary;
         message.textContent = linkMode
-          ? `${selected.size}개 선택 · 연결할 거래처를 2개 이상 체크하세요.`
+          ? `배송처 ${selected.size}곳 · 세무거래처 ${selectedTaxCustomerId ? '1곳 지정' : '미지정'}`
           : (customerLoading && !visibleCustomers.length
             ? '거래처 목록을 불러오는 중입니다. 창은 그대로 두고 잠시 기다려 주세요.'
             : `${visibleCustomers.length}개 거래처 · 한 곳만 체크할 수 있습니다.`);
       };
       const setLinkMode = value => {
         linkMode = value;
-        selected.clear();
+        if (linkMode) {
+          const anchorCustomerId = selected.size === 1 ? [...selected][0] : '';
+          const existingGroup = anchorCustomerId ? groupForCustomer(anchorCustomerId) : null;
+          if (existingGroup) {
+            const deliveryCustomerIds = existingGroup.deliveryCustomerIds?.length
+              ? existingGroup.deliveryCustomerIds
+              : existingGroup.memberCustomerIds || [];
+            selected.clear();
+            deliveryCustomerIds.forEach(customerId => selected.add(customerId));
+            selectedTaxCustomerId = existingGroup.taxCustomerId || '';
+          } else if (anchorCustomerId && !temporaryMeta(anchorCustomerId)) {
+            selectedTaxCustomerId = anchorCustomerId;
+          }
+        } else {
+          selected.clear();
+          selectedTaxCustomerId = '';
+        }
         actionFooter.hidden = linkMode;
         linkFooter.hidden = !linkMode;
         dialog.querySelector('[data-link-mode]').classList.toggle('button--primary', linkMode);
@@ -1105,10 +1247,19 @@ async function chooseCustomer() {
         const group = groupForCustomer(customerId);
         const timestamp = new Date().toISOString();
         const next = group
-          ? { ...group, taxCustomerId: customerId, status: 'CONFIRMED', revision: Number(group.revision || 0) + 1, updatedAt: timestamp }
+          ? {
+              ...group,
+              memberCustomerIds: [...new Set([...(group.memberCustomerIds || []), customerId])],
+              deliveryCustomerIds: [...new Set([...(group.deliveryCustomerIds?.length ? group.deliveryCustomerIds : group.memberCustomerIds || []), customerId])],
+              taxCustomerId: customerId,
+              status: 'CONFIRMED',
+              revision: Number(group.revision || 0) + 1,
+              updatedAt: timestamp
+            }
           : {
               linkGroupId: createRecordId('SILINK'),
               memberCustomerIds: [customerId],
+              deliveryCustomerIds: [customerId],
               taxCustomerId: customerId,
               status: 'CONFIRMED',
               revision: 1,
@@ -1125,23 +1276,33 @@ async function chooseCustomer() {
         }
       });
       dialog.querySelector('[data-link-save]').addEventListener('click', async () => {
-        if (selected.size < 2) {
-          message.textContent = '연결할 거래처를 2개 이상 선택하세요.';
+        if (selected.size < 1) {
+          message.textContent = '배송처를 1곳 이상 선택하세요.';
           return;
         }
-        const groupIds = [...new Set([...selected].map(id => groupForCustomer(id)?.linkGroupId).filter(Boolean))];
+        if (!selectedTaxCustomerId) {
+          message.textContent = '세무거래처를 정확히 1곳 지정하세요.';
+          return;
+        }
+        if (temporaryMeta(selectedTaxCustomerId)) {
+          message.textContent = '임시 배송처는 세무거래처로 지정할 수 없습니다.';
+          return;
+        }
+        const groupIds = [...new Set([...selected, selectedTaxCustomerId].map(id => groupForCustomer(id)?.linkGroupId).filter(Boolean))];
         if (groupIds.length > 1) {
-          message.textContent = '서로 다른 연결 그룹은 한 번에 합칠 수 없습니다. 그룹별로 처리하세요.';
+          message.textContent = '서로 다른 관계 그룹은 한 번에 합칠 수 없습니다. 그룹별로 처리하세요.';
           return;
         }
         const existing = groupIds.length ? state.linkGroups.find(group => group.linkGroupId === groupIds[0]) : null;
-        const memberCustomerIds = [...new Set([...(existing?.memberCustomerIds || []), ...selected])];
+        const deliveryCustomerIds = [...selected];
+        const memberCustomerIds = [...new Set([...deliveryCustomerIds, selectedTaxCustomerId])];
         const timestamp = new Date().toISOString();
         const group = {
           linkGroupId: existing?.linkGroupId || createRecordId('SILINK'),
           memberCustomerIds,
-          taxCustomerId: existing?.taxCustomerId && memberCustomerIds.includes(existing.taxCustomerId) ? existing.taxCustomerId : '',
-          status: existing?.taxCustomerId ? 'CONFIRMED' : 'PENDING',
+          deliveryCustomerIds,
+          taxCustomerId: selectedTaxCustomerId,
+          status: 'CONFIRMED',
           revision: Number(existing?.revision || 0) + 1,
           createdAt: existing?.createdAt || timestamp,
           updatedAt: timestamp,
@@ -1149,11 +1310,12 @@ async function chooseCustomer() {
         };
         await persistLinkGroup(group);
         selected.clear();
+        selectedTaxCustomerId = '';
         linkMode = false;
         actionFooter.hidden = false;
         linkFooter.hidden = true;
         await render();
-        message.textContent = '연결을 저장했습니다. 연결된 거래처 중 세무 거래처 1개를 체크한 뒤 등록하세요.';
+        message.textContent = `거래처 관계를 저장했습니다. 배송처 ${deliveryCustomerIds.length}곳 · 세무거래처 1곳`;
       });
       dialog.querySelector('[data-temp-create]').addEventListener('click', async () => {
         const created = await registerCustomerProfile({ temporary: true });
@@ -1332,7 +1494,13 @@ async function openSettingsDialog() {
   const renderLayoutGroup = (scope, selected = null) => {
     const name = inputNameByScope(scope);
     const previous = selected || selectedFieldsByScope(scope)[settingsLayoutMode];
-    form.querySelector(`[data-layout-fields="${scope}"]`).innerHTML = layoutChecks(name, layoutDefinitions(scope, workingCustomFields), previous);
+    const priorIndex = new Map(previous.map((fieldId, index) => [fieldId, index]));
+    const definitions = layoutDefinitions(scope, workingCustomFields).sort((left, right) => {
+      const leftIndex = priorIndex.has(left.id) ? priorIndex.get(left.id) : Number.MAX_SAFE_INTEGER;
+      const rightIndex = priorIndex.has(right.id) ? priorIndex.get(right.id) : Number.MAX_SAFE_INTEGER;
+      return leftIndex - rightIndex;
+    });
+    form.querySelector(`[data-layout-fields="${scope}"]`).innerHTML = layoutChecks(name, definitions, previous);
     dialog.querySelector(`[data-settings-layout-label="${scope}"]`).textContent = contract.MODES[settingsLayoutMode].label;
     dialog.querySelectorAll(`[data-settings-layout-modes="${scope}"] [data-settings-layout-mode]`).forEach(button => {
       const active = button.dataset.settingsLayoutMode === settingsLayoutMode;
@@ -1688,7 +1856,8 @@ function renderRows({ restoreFocus = true } = {}) {
     rowId: DEFAULT_INPUT_ROW_ID,
     itemCode: '', itemName: '', secondaryName: '', searchInfo: '', specification: '', boxQuantity: '',
     quantity: '', unit: '', unitPrice: '', outPrice: '', wholesaleA: '', wholesaleB: '', listingPrice: '',
-    marketPrice: '', promoPrice: '', memo: '', description: '', noticePrice: '', customValues: {}, duplicatePossible: false,
+    marketPrice: '', promoPrice: '', purchasePriceB: '', priceD: '', lastPurchasePrice: '', priceH: '', priceI: '',
+    memo: '', description: '', noticePrice: '', customValues: {}, duplicatePossible: false,
     matchStatus: state.busy && modeDraft().activeMethod === 'photo' ? 'ANALYZING' : 'EMPTY'
   };
   const displayedRows = rows.length ? rows : [defaultRow];
@@ -1954,10 +2123,12 @@ function confirmUnitPriceReview(tr) {
 }
 
 const PARSER_ARTIFACT_TERMS = /(품목코드|품목명|품목|품명|상품명|규격|수량|단가|공급가액|금액|합계|총계|소계)/g;
+const PARSER_ERROR_LABEL = /^[\[(【<{]\s*(?:오류|에러|미인식|확인|error|err|[가-힣A-Za-z]{1,2})\s*[\])】>}]$/i;
 
 function isParserArtifactLine(line) {
   const productText = String(line?.productText || line?.itemName || '').normalize('NFKC').trim();
   const rawText = String(line?.rawText || '').normalize('NFKC').trim();
+  if (PARSER_ERROR_LABEL.test(productText)) return true;
   if (/^(?:합계|총계|소계)(?:\s|[:：|]|$)/.test(productText || rawText)) return true;
   const terms = productText.match(PARSER_ARTIFACT_TERMS) || [];
   if (terms.length < 2) return false;
@@ -1979,6 +2150,58 @@ function removeParserArtifactRows(current) {
     return !isParserArtifactLine({ productText: row.itemName, rawText: row.rawText });
   });
   return current.rows.length !== previousLength;
+}
+
+function clearParserWorkspace() {
+  const current = modeDraft();
+  const parserBatchIds = new Set((current.batches || [])
+    .filter(batch => batch.sourceType !== 'MANUAL')
+    .map(batch => batch.batchId));
+  const removedRows = (current.rows || []).filter(row => parserBatchIds.has(row.batchId)).length;
+  clearTimeout(state.autoAnalyzeTimer);
+  state.analysisRequestId += 1;
+  state.photoCaptureSequence += 1;
+  state.busy = false;
+  if (state.listening && state.recognition) {
+    const recognition = state.recognition;
+    recognition.onend = null;
+    state.recognition = null;
+    state.listening = false;
+    try {
+      recognition.stop();
+    } catch (_) {
+      // 이미 종료된 음성 세션은 파서 초기화를 막지 않는다.
+    }
+  }
+  current.batches = (current.batches || []).filter(batch => batch.sourceType === 'MANUAL');
+  current.rows = contract.markDuplicatePossibilities((current.rows || []).filter(row => !parserBatchIds.has(row.batchId)));
+  current.sourceText = '';
+  current.delivery = { status: 'DRAFT', targetId: '', targetRecordId: '', deliveredAt: '' };
+  sourceTextInput.value = '';
+  $('fileInput').value = '';
+  $('photoInput').value = '';
+  state.sourceImages[state.draft.activeMode] = null;
+  state.selectedRowIds.clear();
+  state.pendingImageEvidence = null;
+  state.pendingOcrReview = null;
+  state.pendingSourceName = '';
+  state.activeActivity = '';
+  state.draft.ui.selectedRowId = '';
+  modeUi().scrollTop = 0;
+  modeUi().scrollLeft = 0;
+  modeUi().activeCellId = '';
+  resetPhotoView();
+  setActiveActivity('');
+  $('analyzeButton').disabled = false;
+  $('parserProgress').hidden = true;
+  $('parserProgress').querySelector('strong').textContent = '자료를 분석하고 있습니다.';
+  $('sourceNotice').textContent = '텍스트와 이미지를 바로 붙여넣을 수 있습니다.';
+  saveDraftNow();
+  renderMode();
+  setAppStatus(removedRows ? `파서 원문과 분석 결과 ${removedRows}행을 지웠습니다.` : '파서 입력창을 비웠습니다.');
+  if (modeDraft().activeMethod === 'photo') $('photoEmptySelectButton').focus();
+  else sourceTextInput.focus();
+  toast(removedRows ? `파서 원문과 분석 결과 ${removedRows}행을 지웠습니다.` : '파서 입력창을 비웠습니다.', 'success');
 }
 
 async function sha256Text(value) {
@@ -2482,7 +2705,8 @@ function applyProduct(row, product, { forceIdentityFields = false, preserveIdent
   if (!protect('unit')) row.unit = product.finalUnit || product.unit || '';
   if (!protect('unitPrice') && row.unitPrice == null) row.unitPrice = priceFromProduct(product);
   const priceOptions = new Map((product.priceOptions || []).map(option => [option.key, option.value]));
-  ['outPrice', 'wholesaleA', 'wholesaleB', 'listingPrice', 'marketPrice', 'promoPrice'].forEach(field => {
+  ['outPrice', 'wholesaleA', 'wholesaleB', 'listingPrice', 'marketPrice', 'promoPrice',
+    'purchasePriceB', 'priceD', 'lastPurchasePrice', 'priceH', 'priceI'].forEach(field => {
     if (!protect(field)) row[field] = priceOptions.get(field) ?? product[field] ?? null;
   });
   row.matchStatus = hasMasterProductIdentity(row) ? 'MATCHED' : 'UNRESOLVED';
@@ -3139,6 +3363,7 @@ const finishPhotoResize = event => {
 photoResizer.addEventListener('pointerup', finishPhotoResize);
 photoResizer.addEventListener('pointercancel', finishPhotoResize);
 $('analyzeButton').addEventListener('click', () => analyzeSource({ automatic: false }));
+$('clearParserButton').addEventListener('click', clearParserWorkspace);
 $('addRowButton').addEventListener('click', () => {
   if (modeDraft().activeMethod !== 'photo') updateMethod('direct');
   addDirectRow();
@@ -3204,8 +3429,13 @@ $('relatedCollapseButton').addEventListener('click', event => {
   scheduleSave();
 });
 
-document.querySelector('#tableScroll thead').addEventListener('pointerdown', beginColumnResize);
-document.querySelector('#tableScroll thead').addEventListener('keydown', resizeColumnWithKeyboard);
+const voucherTableHead = document.querySelector('#tableScroll thead');
+voucherTableHead.addEventListener('pointerdown', beginColumnResize);
+voucherTableHead.addEventListener('keydown', resizeColumnWithKeyboard);
+voucherTableHead.addEventListener('dragstart', beginColumnDrag);
+voucherTableHead.addEventListener('dragover', moveColumnDrag);
+voucherTableHead.addEventListener('drop', finishColumnDrop);
+voucherTableHead.addEventListener('dragend', finishColumnDrag);
 
 document.querySelector('.document-fields').addEventListener('input', event => {
   const input = event.target.closest('[data-custom-header-input]');
