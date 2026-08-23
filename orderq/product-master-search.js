@@ -11,7 +11,12 @@ export const MANUAL_PRICE_FIELDS = Object.freeze([
   { key: 'wholesaleB', label: '도매B', aliases: ['wholesaleB', '도매B', 'B판매', 'B판매가', 'B도매', 'B도매가'] },
   { key: 'listingPrice', label: '상장가', aliases: ['listingPrice', '상장가'] },
   { key: 'marketPrice', label: '시중가', aliases: ['marketPrice', '시중가', '시중가격'] },
-  { key: 'promoPrice', label: '행사가', aliases: ['promoPrice', '행사가', '특가'] }
+  { key: 'promoPrice', label: '행사가', aliases: ['promoPrice', '행사가', '특가'] },
+  { key: 'purchasePriceB', label: '입고B', aliases: ['purchasePriceB', '입고B'] },
+  { key: 'priceD', label: '단가D', aliases: ['priceD', '단가D'] },
+  { key: 'lastPurchasePrice', label: '최종입고', aliases: ['lastPurchasePrice', '최종입고'] },
+  { key: 'priceH', label: '단가H', aliases: ['priceH', '단가H'] },
+  { key: 'priceI', label: '단가I', aliases: ['priceI', '단가I'] }
 ]);
 
 function firstValue(source, keys, fallback = '') {
