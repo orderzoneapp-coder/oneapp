@@ -84,7 +84,11 @@ class QuotaFailingLocalStorage extends MemoryLocalStorage {
 }
 
 function createStorage(initialMaster, localStorageRef, options = {}) {
-  let state = { masterMap: clone(initialMaster), revision: options.revision || "rev-1" };
+  let state = {
+    masterMap: clone(initialMaster),
+    revision: options.revision || "rev-1",
+    extraStoreEntries: clone(options.extraStoreEntries || {})
+  };
   let revisionCounter = 1;
   let historyWriteAttempts = 0;
   return {
@@ -123,7 +127,14 @@ function createStorage(initialMaster, localStorageRef, options = {}) {
       }
       const previous = clone(state);
       const revision = `rev-${++revisionCounter}`;
-      state = { masterMap: clone(nextMaster), revision };
+      state = {
+        masterMap: clone(nextMaster),
+        revision,
+        extraStoreEntries: {
+          ...(previous.extraStoreEntries || {}),
+          ...clone(commitOptions.extraStoreEntries || {})
+        }
+      };
       if (options.mutateAfterWrite) options.mutateAfterWrite(state.masterMap);
       try {
         if (commitOptions.afterVerified) await commitOptions.afterVerified();
@@ -657,6 +668,92 @@ await scenario("필수 8. 브라우저 저장공간 부족 시 master와 history
   }), /forced quota exceeded/);
   assert.equal(api.stableSerialize(storage.state.masterMap), api.stableSerialize(baseMaster));
   assert.equal(local.getItem(api.HISTORY_KEY), beforeHistory);
+});
+
+await scenario("상품 선택 삭제. Master·이력·연결상태 원자 반영", async () => {
+  const stoppedProducts = {
+    "001": { productCode: "001", reason: "정지" },
+    "002": { productCode: "002", reason: "유지" }
+  };
+  const pendingShopStatus = [
+    { code: "001", type: "stop" },
+    { code: "002", type: "stop" }
+  ];
+  const local = new MemoryLocalStorage({
+    [api.HISTORY_KEY]: JSON.stringify([{ id: "prior-history" }]),
+    merchStoppedProducts_v2: JSON.stringify(stoppedProducts),
+    pendingShopStatus: JSON.stringify(pendingShopStatus)
+  });
+  const storage = createStorage(baseMaster, local, {
+    extraStoreEntries: {
+      merchStoppedProducts_v2: stoppedProducts,
+      pending_shop_status: pendingShopStatus
+    }
+  });
+  const result = await api.commitSelectedProductDeletion({
+    codes: ["001", "001"],
+    expectedRevision: "rev-1",
+    storage,
+    historyApi: { normalizeHistoryLog: log => ({ ...log, normalized: true }) },
+    localStorageRef: local
+  });
+  assert.deepEqual(Object.keys(result.masterMap), ["002"]);
+  assert.equal(result.deletedCount, 1);
+  assert.deepEqual(result.deletedCodes, ["001"]);
+  assert.equal(result.historyCount, 2);
+  assert.equal(result.stoppedProducts["001"], undefined);
+  assert.equal(result.stoppedProducts["002"].reason, "유지");
+  assert.deepEqual(Array.from(result.pendingShopStatus, row => row.code), ["002"]);
+  assert.equal(storage.state.extraStoreEntries.merchStoppedProducts_v2["001"], undefined);
+  assert.deepEqual(storage.state.extraStoreEntries.pending_shop_status.map(row => row.code), ["002"]);
+  assert.equal(JSON.parse(local.getItem("merchStoppedProducts_v2"))["001"], undefined);
+  assert.deepEqual(JSON.parse(local.getItem("pendingShopStatus")).map(row => row.code), ["002"]);
+  const history = JSON.parse(local.getItem(api.HISTORY_KEY));
+  assert.equal(history[0].recordType, "master_delete_job");
+  assert.equal(history[1].recordType, "master_delete_detail");
+  assert.equal(history[1].actionType, "master_delete");
+  assert.equal(history[1].deletedProduct.품목명, "사과");
+  assert.equal(history.some(log => log.id === "prior-history"), true);
+});
+
+await scenario("상품 선택 삭제. 전체 삭제와 없는 코드 차단", async () => {
+  const local = new MemoryLocalStorage({ [api.HISTORY_KEY]: "[]" });
+  const storage = createStorage(baseMaster, local);
+  await assert.rejects(api.commitSelectedProductDeletion({
+    codes: ["001", "002"], expectedRevision: "rev-1", storage, localStorageRef: local
+  }), error => error.code === "MASTER_PRODUCT_DELETE_ALL_FORBIDDEN");
+  await assert.rejects(api.commitSelectedProductDeletion({
+    codes: ["999"], expectedRevision: "rev-1", storage, localStorageRef: local
+  }), error => error.code === "MASTER_PRODUCT_DELETE_TARGET_MISSING");
+  assert.equal(api.stableSerialize(storage.state.masterMap), api.stableSerialize(baseMaster));
+  assert.equal(local.getItem(api.HISTORY_KEY), "[]");
+});
+
+await scenario("상품 선택 삭제. 이력 실패 시 Master·연결상태 원상 유지", async () => {
+  const stoppedProducts = { "001": { productCode: "001", reason: "정지" } };
+  const pendingShopStatus = [{ code: "001", type: "stop" }];
+  const initialHistory = JSON.stringify([{ id: "stable-history" }]);
+  const local = new MemoryLocalStorage({
+    [api.HISTORY_KEY]: initialHistory,
+    merchStoppedProducts_v2: JSON.stringify(stoppedProducts),
+    pendingShopStatus: JSON.stringify(pendingShopStatus)
+  });
+  const storage = createStorage(baseMaster, local, {
+    failHistoryOnce: true,
+    extraStoreEntries: {
+      merchStoppedProducts_v2: stoppedProducts,
+      pending_shop_status: pendingShopStatus
+    }
+  });
+  await assert.rejects(api.commitSelectedProductDeletion({
+    codes: ["001"], expectedRevision: "rev-1", storage, localStorageRef: local
+  }), /forced history failure/);
+  assert.equal(api.stableSerialize(storage.state.masterMap), api.stableSerialize(baseMaster));
+  assert.equal(storage.state.extraStoreEntries.merchStoppedProducts_v2["001"].reason, "정지");
+  assert.deepEqual(storage.state.extraStoreEntries.pending_shop_status, pendingShopStatus);
+  assert.equal(local.getItem(api.HISTORY_KEY), initialHistory);
+  assert.equal(local.getItem("merchStoppedProducts_v2"), JSON.stringify(stoppedProducts));
+  assert.equal(local.getItem("pendingShopStatus"), JSON.stringify(pendingShopStatus));
 });
 
 await scenario("25. MerchOps F7 회귀검사", () => {

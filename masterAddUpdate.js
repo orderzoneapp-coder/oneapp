@@ -1351,6 +1351,149 @@
     };
   };
 
+  const commitSelectedProductDeletion = async ({
+    codes = [],
+    expectedRevision,
+    storage,
+    historyApi,
+    localStorageRef,
+    actor = null
+  } = {}) => {
+    if (!storage || typeof storage.commitMasterStateOrThrow !== 'function' || typeof storage.readMasterSnapshotState !== 'function') {
+      throw new Error('공통 master 저장 엔진을 사용할 수 없습니다.');
+    }
+    if (!localStorageRef) throw new Error('공식 history 저장소를 사용할 수 없습니다.');
+    const targetCodes = Array.from(new Set((Array.isArray(codes) ? codes : []).map(normalizeSharedProductCode).filter(Boolean)));
+    if (targetCodes.length === 0) {
+      throw createOperationalError('MASTER_PRODUCT_DELETE_TARGET_REQUIRED', '삭제할 상품을 선택하세요.');
+    }
+
+    const currentState = await storage.readMasterSnapshotState([STOPPED_PRODUCTS_KEY, PENDING_SHOP_STATUS_KEY]);
+    const currentMaster = assertExistingMaster(currentState.masterMap, '상품 선택 삭제');
+    if (currentState.revision !== expectedRevision) {
+      const error = new Error('상품 선택 이후 master가 변경되었습니다. 최신 상품 DB를 다시 읽고 삭제 대상을 확인하세요.');
+      error.code = 'MERCH_MASTER_REVISION_CONFLICT';
+      throw error;
+    }
+
+    const resolver = new Map();
+    Object.entries(currentMaster).forEach(([masterKey, masterItem]) => {
+      const code = normalizeSharedProductCode(getMasterCode(masterItem, masterKey));
+      if (code && !resolver.has(code)) resolver.set(code, { masterKey, item: cloneValue(masterItem) });
+    });
+    const missingCodes = targetCodes.filter(code => !resolver.has(code));
+    if (missingCodes.length > 0) {
+      throw createOperationalError(
+        'MASTER_PRODUCT_DELETE_TARGET_MISSING',
+        `마스터에서 삭제할 상품을 찾지 못했습니다: ${missingCodes.join(', ')}`,
+        { missingCodes }
+      );
+    }
+    if (targetCodes.length >= Object.keys(currentMaster).length) {
+      throw createOperationalError(
+        'MASTER_PRODUCT_DELETE_ALL_FORBIDDEN',
+        '전체 상품 삭제는 지원하지 않습니다. Master에는 최소 1개 상품을 유지해야 합니다.',
+        { targetCount: targetCodes.length, masterCount: Object.keys(currentMaster).length }
+      );
+    }
+
+    const nextMaster = cloneValue(currentMaster);
+    const deletedProducts = targetCodes.map(code => {
+      const resolved = resolver.get(code);
+      delete nextMaster[resolved.masterKey];
+      return { code, item: cloneValue(resolved.item) };
+    });
+    const nextStoppedProducts = normalizeStoppedProducts(
+      currentState.extraStoreEntries && currentState.extraStoreEntries[STOPPED_PRODUCTS_KEY] !== undefined
+        ? currentState.extraStoreEntries[STOPPED_PRODUCTS_KEY]
+        : readLocalJSON(localStorageRef, STOPPED_PRODUCTS_KEY, {})
+    );
+    targetCodes.forEach(code => { delete nextStoppedProducts[code]; });
+    const nextPendingShopStatus = normalizePendingShopStatus(
+      currentState.extraStoreEntries && currentState.extraStoreEntries[PENDING_SHOP_STATUS_KEY] !== undefined
+        ? currentState.extraStoreEntries[PENDING_SHOP_STATUS_KEY]
+        : readLocalJSON(localStorageRef, PENDING_SHOP_STATUS_LOCAL_KEY, [])
+    ).filter(item => !targetCodes.includes(normalizeSharedProductCode(item.code || item.productCode)));
+
+    const executionId = `master-product-delete-${Date.now()}-${global.crypto && typeof global.crypto.randomUUID === 'function' ? global.crypto.randomUUID() : Math.random().toString(36).slice(2)}`;
+    const timestampISO = new Date().toISOString();
+    const basePayload = {
+      executionId,
+      mode: '선택 삭제',
+      actor: actor || null,
+      actorStatus: actor ? 'identified' : 'identity-system-unavailable',
+      timestampISO,
+      source: 'master_selection_delete',
+      sourceRole: 'master',
+      sourceLabel: '상품 기초정보 관리',
+      applyMode: 'direct_master_apply',
+      path: 'Master > 상품 기초정보 관리 > 선택 삭제',
+      route: 'Master/상품기초정보/선택삭제'
+    };
+    const logs = [
+      normalizeOfficialLog(historyApi, {
+        ...basePayload,
+        id: `${executionId}-job`,
+        recordType: 'master_delete_job',
+        actionType: 'master_delete_job',
+        field: '작업',
+        oldVal: `${targetCodes.length}건`,
+        newVal: '삭제 완료',
+        deletedCount: targetCodes.length,
+        deletedCodes: cloneValue(targetCodes),
+        memo: `관리자 선택 상품 ${targetCodes.length}건 삭제`
+      }),
+      ...deletedProducts.map(({ code, item }, index) => normalizeOfficialLog(historyApi, {
+        ...basePayload,
+        id: `${executionId}-detail-${index + 1}`,
+        recordType: 'master_delete_detail',
+        actionType: 'master_delete',
+        code,
+        name: normalizeCode(item['품목명'] || item['상품명']),
+        spec: normalizeCode(item['규격']),
+        unit: normalizeCode(item['단위']),
+        field: '상품',
+        oldVal: normalizeCode(item['품목명'] || item['상품명'] || code),
+        newVal: '',
+        deletedProduct: cloneValue(item),
+        memo: '상품 기초정보 관리자 선택 삭제'
+      }))
+    ];
+    const trigger = timestampISO;
+    const commitResult = await commitNarrowMasterMutation({
+      storage,
+      historyApi,
+      localStorageRef,
+      currentState,
+      nextMaster,
+      expectedRevision,
+      logs,
+      extraStoreEntries: {
+        [STOPPED_PRODUCTS_KEY]: nextStoppedProducts,
+        [PENDING_SHOP_STATUS_KEY]: nextPendingShopStatus
+      },
+      localWrites: {
+        [STOPPED_PRODUCTS_KEY]: nextStoppedProducts,
+        [PENDING_SHOP_STATUS_LOCAL_KEY]: nextPendingShopStatus,
+        [MASTER_SYNC_TRIGGER_KEY]: trigger,
+        [STOP_MANAGER_SYNC_TRIGGER_KEY]: trigger
+      },
+      label: 'Master 상품 선택 삭제'
+    });
+    return {
+      status: 'success',
+      executionId,
+      revision: commitResult.revision,
+      deletedCodes: targetCodes,
+      deletedProducts,
+      deletedCount: targetCodes.length,
+      masterMap: nextMaster,
+      historyCount: logs.length,
+      stoppedProducts: nextStoppedProducts,
+      pendingShopStatus: nextPendingShopStatus
+    };
+  };
+
   const commitApprovedChanges = async ({
     analysis,
     currentMaster,
@@ -1491,6 +1634,7 @@
     validateSingleProductInput,
     commitSingleProductRegistration,
     commitSalesStatusChanges,
+    commitSelectedProductDeletion,
     stableSerialize
   };
 })(window);

@@ -1,0 +1,79 @@
+body {
+  background-color: var(--oneapp-bg);
+  color: var(--oneapp-text);
+}
+
+.nexus-app-shell {
+  background-color: var(--oneapp-bg) !important;
+  color: var(--oneapp-text) !important;
+}
+
+.nexus-app-shell .bg-white {
+  background-color: var(--oneapp-surface) !important;
+}
+
+.nexus-app-shell .bg-slate-50,
+.nexus-app-shell .bg-slate-100 {
+  background-color: var(--oneapp-surface-subtle) !important;
+}
+
+.nexus-app-shell .bg-slate-200\/50 {
+  background-color: color-mix(in srgb, var(--oneapp-surface-subtle) 76%, var(--oneapp-border)) !important;
+}
+
+.nexus-app-shell .text-slate-900,
+.nexus-app-shell .text-slate-800,
+.nexus-app-shell .text-slate-700 {
+  color: var(--oneapp-text) !important;
+}
+
+.nexus-app-shell .text-slate-600,
+.nexus-app-shell .text-slate-500,
+.nexus-app-shell .text-slate-400 {
+  color: var(--oneapp-muted) !important;
+}
+
+.nexus-app-shell .border-slate-100,
+.nexus-app-shell .border-slate-200 {
+  border-color: var(--oneapp-border) !important;
+}
+
+.nexus-app-shell .border-slate-300 {
+  border-color: var(--oneapp-border-strong) !important;
+}
+
+.nexus-app-shell .divide-slate-100 > :not([hidden]) ~ :not([hidden]) {
+  border-color: var(--oneapp-border) !important;
+}
+
+.nexus-app-shell .hover\:bg-slate-50:hover,
+.nexus-app-shell .hover\:bg-slate-100:hover {
+  background-color: var(--oneapp-master-soft) !important;
+}
+
+.nexus-app-shell .hover\:text-slate-800:hover {
+  color: var(--oneapp-text) !important;
+}
+
+.nexus-app-shell input,
+.nexus-app-shell select,
+.nexus-app-shell textarea {
+  color: var(--oneapp-text);
+}
+
+.nexus-app-shell input::placeholder,
+.nexus-app-shell textarea::placeholder {
+  color: var(--oneapp-muted);
+}
+
+.nexus-app-shell input[type="checkbox"] {
+  accent-color: var(--oneapp-master-accent);
+}
+
+.nexus-app-shell ::-webkit-scrollbar-thumb {
+  background: var(--oneapp-border-strong);
+}
+
+.nexus-app-shell .custom-scrollbar {
+  scrollbar-color: var(--oneapp-border-strong) transparent;
+}

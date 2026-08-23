@@ -70,7 +70,7 @@
       "app", "excel-menu-button", "excel-menu", "sync-menu-button", "sync-menu",
       "sync-dot", "sync-message", "cloud-pull-button", "cloud-push-button",
       "header-save-button", "category-filter", "group-filter", "status-filter",
-      "search-filter", "load-button", "summary-counts", "add-product-button",
+      "search-filter", "load-button", "summary-counts", "delete-selected-button", "add-product-button",
       "grid-empty", "grid-region", "table-scroll", "product-grid",
       "batch-toolbar", "batch-selection-count", "batch-field", "batch-value-wrap",
       "batch-mode", "batch-apply-button", "save-bar", "save-state-copy",
@@ -656,6 +656,27 @@
     els["summary-counts"].innerHTML = summary;
   }
 
+  function selectedExistingIds() {
+    return Array.from(state.selected).filter(function (id) {
+      return Boolean(state.masterOriginal[id]);
+    });
+  }
+
+  function renderDeleteState() {
+    var count = selectedExistingIds().length;
+    var hasUnsavedChanges = dirtyRowIds().length > 0;
+    var disabled = state.processing || count === 0 || hasUnsavedChanges;
+    els["delete-selected-button"].disabled = disabled;
+    els["delete-selected-button"].textContent = count ? "선택 삭제 (" + count + ")" : "선택 삭제";
+    els["delete-selected-button"].title = state.processing
+      ? "현재 작업이 끝난 뒤 삭제할 수 있습니다."
+      : hasUnsavedChanges
+        ? "저장하지 않은 변경사항을 저장하거나 취소한 뒤 삭제할 수 있습니다."
+        : count
+          ? "선택한 상품을 Master에서 삭제합니다."
+          : "삭제할 상품을 선택하세요.";
+  }
+
   function isEditable(rowId, field) {
     if (field === "코드" && !state.newIds.has(rowId)) return false;
     return Boolean(FIELD_MAP[field]);
@@ -837,6 +858,7 @@
     renderSummary();
     renderTable();
     renderBatchToolbar();
+    renderDeleteState();
     renderSaveState();
     renderSync();
   }
@@ -1164,6 +1186,139 @@
         }
       ]
     );
+  }
+
+  function requestDeleteSelected() {
+    if (state.processing) return;
+    var ids = selectedExistingIds();
+    if (!ids.length) {
+      showToast("삭제할 상품을 선택해 주세요.");
+      return;
+    }
+    if (dirtyRowIds().length) {
+      showToast("변경사항을 저장하거나 취소한 뒤 선택 상품을 삭제해 주세요.");
+      return;
+    }
+    if (ids.length >= Object.keys(state.masterOriginal).length) {
+      openDialog(
+        "전체 상품은 삭제할 수 없습니다.",
+        "Master에는 최소 1개 상품을 유지해야 합니다. 전체교체 또는 초기화는 별도 승인 절차를 사용하세요.",
+        [{ label: "확인", primary: true, onClick: closeDialog }]
+      );
+      return;
+    }
+    var preview = ids.slice(0, 5).map(function (id) {
+      var row = state.masterOriginal[id] || {};
+      return "· " + (row["품목명"] || row["상품명"] || id) + " (" + id + ")";
+    });
+    if (ids.length > preview.length) preview.push("· 외 " + (ids.length - preview.length) + "개 상품");
+    openDialog(
+      "선택 상품 " + ids.length + "건을 삭제할까요?",
+      preview.join("\n") + "\n\n삭제 즉시 기기 Master와 정지·쇼핑몰 반영 대기 상태에서 제거하고 공식 이력을 남깁니다. 클라우드는 상단 동기화 메뉴에서 별도로 반영합니다.",
+      [
+        { label: "취소", onClick: closeDialog },
+        {
+          label: ids.length + "건 삭제",
+          danger: true,
+          onClick: function () {
+            closeDialog();
+            performSelectedDeletion(ids);
+          }
+        }
+      ]
+    );
+  }
+
+  async function performSelectedDeletion(ids) {
+    var api = window.ONEAPP_MASTER_ADD_UPDATE;
+    if (!api || typeof api.commitSelectedProductDeletion !== "function") {
+      showToast("상품 삭제 모듈을 불러오지 못했습니다.");
+      return;
+    }
+    state.processing = true;
+    setSync("working", "선택 상품을 삭제하고 Master와 이력을 검증하고 있습니다.");
+    renderAll();
+    window.NEXUS_TOP?.reportStatus({
+      appId: "item-manager",
+      taskId: "item-manager-delete",
+      level: "progress",
+      message: "선택 상품 " + ids.length + "건을 삭제하고 검증하고 있습니다."
+    });
+    try {
+      var result = await api.commitSelectedProductDeletion({
+        codes: ids,
+        expectedRevision: state.revision,
+        storage: window.ONEAPP && window.ONEAPP.STORAGE,
+        historyApi: window.ONEAPP && window.ONEAPP.HISTORY,
+        localStorageRef: window.localStorage,
+        actor: null
+      });
+      state.revision = result.revision;
+      state.masterOriginal = result.masterMap;
+      state.working = deepClone(result.masterMap);
+      state.selected.clear();
+      state.newIds.clear();
+      state.loadedIds = state.loadedIds.filter(function (id) { return Boolean(state.working[id]); });
+      state.dirtyCells.clear();
+      state.errors.clear();
+      state.undoStack = [];
+      state.redoStack = [];
+      state.active = null;
+      state.range = null;
+      state.edit = null;
+      populateQueryOptions();
+      if (!state.filters.category && !state.filters.group) {
+        state.loaded = false;
+        state.filters.loaded = false;
+        state.loadedIds = [];
+      } else if (state.loaded) {
+        state.loadedIds = Object.keys(state.masterOriginal).filter(function (id) {
+          return matchesLoadFilters(state.working[id] || {});
+        }).sort(function (a, b) {
+          return compareText((state.working[a] || {})["품목명"] || a, (state.working[b] || {})["품목명"] || b);
+        });
+      }
+      saveFilters();
+      state.processing = false;
+      setSync("pending", "기기 삭제 완료 · 클라우드 동기화 대기");
+      renderAll();
+      window.NEXUS_TOP?.reportStatus({
+        appId: "item-manager",
+        taskId: "item-manager-delete",
+        level: "normal",
+        active: false,
+        message: "선택 상품 삭제와 검증이 완료되었습니다."
+      });
+      openDialog(
+        "상품 삭제 완료",
+        result.deletedCount + "개 상품을 Master에서 삭제하고 공식 이력과 연결 상태를 확인했습니다.\n클라우드 공용 DB에는 아직 반영하지 않았습니다.",
+        [{ label: "확인", primary: true, onClick: closeDialog }]
+      );
+    } catch (error) {
+      state.processing = false;
+      var message = "상품을 삭제하지 못했습니다. 기존 Master와 이력은 유지했습니다.";
+      if (error && error.code === "MERCH_MASTER_REVISION_CONFLICT") {
+        message = "다른 화면에서 상품 DB가 먼저 변경되었습니다. 최신 기기 DB를 다시 불러왔으니 삭제 대상을 다시 선택해 주세요.";
+        try {
+          state.masterOriginal = await readLocalMaster();
+          state.working = deepClone(state.masterOriginal);
+          state.selected.clear();
+          state.loadedIds = state.loadedIds.filter(function (id) { return Boolean(state.working[id]); });
+          populateQueryOptions();
+        } catch (reloadError) {
+          message += " 최신 DB 재조회에도 실패했습니다.";
+        }
+      }
+      setSync("error", message);
+      renderAll();
+      window.NEXUS_TOP?.reportStatus({
+        appId: "item-manager",
+        taskId: "item-manager-delete",
+        level: "error",
+        message: error && error.message ? error.message : message
+      });
+      openDialog("상품 삭제 확인 필요", message, [{ label: "확인", primary: true, onClick: closeDialog }]);
+    }
   }
 
   function buildSavePlan() {
@@ -1688,6 +1843,7 @@
       renderAll();
     });
     els["load-button"].addEventListener("click", requestLoadProducts);
+    els["delete-selected-button"].addEventListener("click", requestDeleteSelected);
     els["add-product-button"].addEventListener("click", addNewProduct);
     els["header-save-button"].addEventListener("click", function () { requestSave(); });
     els["footer-save-button"].addEventListener("click", function () { requestSave(); });

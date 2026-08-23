@@ -605,6 +605,7 @@ const files = Object.fromEntries(
     "export_center.html",
     "Master.html",
     "Item_manager.html",
+    "Item_manager.js",
     "DataOps.html",
     "coreEngine.js",
     "masterAddUpdate.js",
@@ -761,7 +762,7 @@ assert.doesNotMatch(files["settings.html"], /bulkPutIDB\('master_products'/);
 assert.doesNotMatch(files["settings.html"], /setIDB\('merchMaster_v870'/);
 assert.doesNotMatch(files["export_center.html"], /bulkPutIDB\('master_products'/);
 assert.doesNotMatch(files["export_center.html"], /setIDB\('merchMaster_v870'/);
-for (const name of ["Master.html", "Item_manager.html"]) {
+for (const name of ["Master.html"]) {
   const saveMasterLocal = files[name].match(/const saveMasterLocal = async[\s\S]*?\n        };/)?.[0] || "";
   assert.match(saveMasterLocal, /commitMasterStateOrThrow\(safeMap, \{\s*expectedRevision:/, `${name} must use the revision-checked shared writer`);
   assert.doesNotMatch(saveMasterLocal, /setIDB\(/, `${name} must not split the snapshot write`);
@@ -774,8 +775,14 @@ for (const name of ["Master.html", "Item_manager.html"]) {
   );
 }
 assert.match(
-  files["Item_manager.html"],
-  /const handleMasterItemUpdate = async[\s\S]*?catch \(error\)[\s\S]*?마스터 저장 실패/,
+  files["Item_manager.js"],
+  /function commitMaster\(masterMap\)[\s\S]*?commitMasterStateOrThrow\(masterMap, \{\s*expectedRevision: state\.revision/,
+  "Item manager must use the revision-checked shared writer",
+);
+assert.doesNotMatch(files["Item_manager.js"], /setIDB\(|bulkPutMasterIDB|bulkPutIDB\(/);
+assert.match(
+  files["Item_manager.js"],
+  /async function performSave[\s\S]*?catch \(error\)[\s\S]*?저장하지 못했습니다/,
   "Item manager must absorb writer rejection and avoid a false success UI",
 );
 assert.doesNotMatch(files["coreEngine.js"], /bulkPutIDB\(STORE_MASTER/);
@@ -798,10 +805,10 @@ assert.match(
   files["MerchOps.html"],
   /const migration = await window\.commitMerchMasterState\(state\.snapshot, \{\s*expectedRevision: state\.revision/,
 );
-for (const name of ["Master.html", "Item_manager.html"]) {
-  assert.doesNotMatch(files[name], /ROW-\$\{idx\}/);
-  assert.match(files[name], /마스터 중복 코드가 있습니다/);
-  assert.match(files[name], /Object\.keys\(legacy\)\.length > 0/);
+for (const [name, source] of [["Master.html", files["Master.html"]], ["Item_manager.js", files["Item_manager.js"]]]) {
+  assert.doesNotMatch(source, /ROW-\$\{idx\}/);
+  assert.match(source, /상품코드가 중복되어 있습니다|마스터 중복 코드가 있습니다/);
+  assert.match(source, /Object\.keys\(legacy\)\.length/);
 }
 assert.match(files["Master.html"], /ONEAPP_MASTER_ADD_UPDATE\.analyzeUploadRows/);
 assert.match(files["Master.html"], /ONEAPP_MASTER_ADD_UPDATE\.commitApprovedChanges/);
