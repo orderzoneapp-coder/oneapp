@@ -23,8 +23,8 @@
     <script src="coreEngine.js"></script>
     <script src="masterAddUpdate.js"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="/nexus/common/oneapp-design-tokens.css?v=1.1.0">
-    <link rel="stylesheet" href="/nexus/common/nexus-app-ui.css?v=1.0.0">
+    <link rel="stylesheet" href="/nexus/common/oneapp-design-tokens.css?v=1.2.0">
+    <link rel="stylesheet" href="/nexus/common/nexus-app-ui.css?v=2.0.0">
     
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; -webkit-user-select: none; user-select: none; background-color: #f1f5f9; margin: 0; }
@@ -44,16 +44,14 @@
         .master-work-search { min-width: min(360px, 42vw); }
         .master-data-workspace { min-width: 840px; height: 100%; min-height: 100%; }
         .master-data-scroll { overflow: hidden; }
-        html[data-nexus-density="compact"] .master-category-tabs { height: var(--nexus-work-tools-height) !important; padding-top: 4px !important; }
-        html[data-nexus-density="compact"] .master-data-sidebar button { padding-top: 7px !important; padding-bottom: 7px !important; }
         @media (max-width: 760px) {
             .master-work-search { order: -1; width: 100% !important; min-width: 100%; }
             .master-data-scroll { overflow-x: auto; overflow-y: hidden; }
         }
     </style>
-    <script src="/nexus/common/apps-config.js?v=1.2.0"></script>
-    <script src="/nexus/common/nexus-top.js?v=1.2.0"></script>
-    <script src="/nexus/common/nexus-ui-contract.js?v=1.0.0"></script>
+    <script src="/nexus/common/apps-config.js?v=1.3.0"></script>
+    <script src="/nexus/common/nexus-top.js?v=1.3.0"></script>
+    <script src="/nexus/common/nexus-ui-contract.js?v=2.0.0"></script>
     <style>:root{--nexus-top-height:44px}nexus-top{display:block;min-height:var(--nexus-top-height)}.nexus-top-fallback{height:var(--nexus-top-height);padding:0 14px;display:flex;align-items:center;gap:12px;background:#0b1021;color:#fff;font:12px Pretendard,"Noto Sans KR",sans-serif}.nexus-top-fallback strong{letter-spacing:.08em}.nexus-top-fallback span{color:#cbd5e1}.nexus-top-fallback button{margin-left:auto;border:1px solid #64748b;border-radius:6px;padding:5px 9px;background:transparent;color:#fff;cursor:pointer}body>#root>.h-screen{height:calc(100vh - var(--nexus-top-height))!important}</style>
   <link rel="icon" type="image/png" href="/nexus/assets/nexus-favicon.png">
 </head>
@@ -470,114 +468,42 @@
         // ==========================================
         // 🧩 Master app work header
         // ==========================================
-        const GlobalHeader = ({ activeTab, itemCount, isProcessing, processMsg, onOpenSettings, onPush, onPull, onNavigate, showCloudActions = true }) => {
-            const groups = [
-                { id: 'master', label: '정보 관리', icon: 'database' },
-                { id: 'ops', label: '운영 관리', icon: 'truck' },
-                { id: 'admin', label: '인사이트', icon: 'bar-chart-3' }
-            ];
-
-            // 💡 [절대 수정 금지] 15개 탭 완벽 매핑 데이터
-            const tabs = [
-                { id: 'dashboard', label: '통합 대시보드', icon: "layout-dashboard", path: 'Dashboard.html', group: 'common', isReady: true, shortTag: 'ONE BOARD' },
-                { id: 'guide', label: '시스템 가이드', icon: "book-open", path: 'Guide/guide.html', group: 'common', isReady: true, shortTag: 'SYSTEM GUIDE' },
-
-                { id: 'item-info', label: '상품 마스터', icon: "database", path: 'Master.html', group: 'master', isReady: true, shortTag: 'GOLDEN RECORD' },
-                { id: 'item-manage', label: '상품 관리', icon: "package-search", path: 'Item_manager.html', group: 'master', isReady: true, shortTag: 'SKU FORGE' },
-                { id: 'pipeline', label: '시세 관리', icon: "file-spreadsheet", path: 'MerchOps.html', group: 'master', isReady: true, shortTag: 'VALUATION HUB' },
-                { id: 'parser', label: '스마트 파서', icon: "zap", path: 'SmartParser.html', group: 'master', isReady: true, shortTag: 'AI SMART PARSER' },
-                { id: 'partner-db', label: '거래처 마스터', icon: "book-open", path: 'Master.html?view=customers', group: 'master', isReady: true, shortTag: 'ENTITY REGISTRY' },
-                { id: 'partners', label: '거래처 관리', icon: "users", path: 'partners.html', group: 'master', isReady: true, shortTag: 'CRM STRATEGY' },
-
-                { id: 'orders', label: '주문 관리', icon: "shopping-bag", path: 'orders.html', group: 'ops', isReady: true, shortTag: 'ORDER STREAM' },
-                { id: 'purchases', label: '구매 관리', icon: "credit-card", path: 'purchases.html', group: 'ops', isReady: true, shortTag: 'SOURCE & PROCURE' },
-                { id: 'sales', label: '판매 관리', icon: "line-chart", path: 'sales.html', group: 'ops', isReady: true, shortTag: 'REVENUE LEDGER' },
-                { id: 'inventory', label: '재고 관리', icon: "boxes", path: 'DataOps.html', group: 'ops', isReady: true, shortTag: 'STOCK LEDGER' },
-                { id: 'print-center', label: '출력 센터', icon: "printer", path: 'print_center.html', group: 'ops', isReady: true, shortTag: 'OUTPUT TERMINAL' },
-
-                { id: 'insight', label: '경영 보고서', icon: "pie-chart", path: 'Report.html', group: 'admin', isReady: true, shortTag: 'INSIGHT ENGINE' },
-                { id: 'cs', label: '정보 마당', icon: "megaphone", path: 'cs.html', group: 'admin', isReady: true, shortTag: 'NOTICE PORTAL' }
-            ];
-
-            const currentTab = tabs.find(t => t.id === activeTab);
-            const activeGroup = currentTab ? currentTab.group : 'common';
-            const [selectedGroup, setSelectedGroup] = useState(activeGroup);
-
-            const handleGroupClick = (groupId) => setSelectedGroup(prev => prev === groupId ? 'common' : groupId);
-            const handleLogoClick = (e) => { setSelectedGroup('common'); onNavigate(e, 'Dashboard.html', true); };
-
+        const GlobalHeader = ({ view, itemCount, onSelectView, onOpenSettings, onPush, onPull, showCloudActions = true }) => {
             return (
-                <div className="nexus-app-work-header flex flex-col shrink-0 z-40 relative w-full shadow-sm bg-[#0B1021]">
-                    <header className="nexus-app-work-header__bar h-[52px] bg-[#0B1021] text-white flex justify-between border-b border-slate-800/80 relative z-20">
-                        <div className="flex items-center h-full">
-                            <div className="flex items-center cursor-pointer group mr-10 h-full" onClick={handleLogoClick} title="통합 대시보드 및 공통 메뉴로 이동">
-                                <span className="font-black text-[15px] tracking-wide text-slate-100 mr-4">MASTER · {activeTab === 'partner-db' ? '거래처' : '상품'}</span>
-                                <div className="hidden">
-                                    <div className="flex items-center">
-                                        <span className="font-black text-[16px] leading-none text-indigo-400 tracking-widest uppercase mt-0.5">NEXES</span>
-                                        <span className="ml-2.5 bg-emerald-500/10 border border-emerald-400/30 text-emerald-400 px-[5px] py-[2px] rounded text-[9px] font-black tracking-wider shadow-sm leading-none">v3.6</span>
-                                    </div>
-                                    <span className="text-[10px] text-slate-400/90 font-medium tracking-[0.15em] mt-1 uppercase">
-                                        {currentTab ? currentTab.shortTag : 'MERCHOPS CLOUD'}
-                                    </span>
-                                </div>
-                            </div>
-
-                            <div className="hidden">
-                                {groups.map(g => (
-                                    <button key={g.id} onClick={() => handleGroupClick(g.id)}
-                                        className={`pb-[16px] text-[14px] font-bold transition-colors flex items-center gap-1.5
-                                        ${selectedGroup === g.id ? 'text-slate-100 border-b-[3px] border-indigo-500 -mb-[2px]' : 'text-slate-500 hover:text-slate-300'}`}>
-                                        <SafeIcon name={g.icon} size={15} /> {g.label}
+                <div className="nexus-app-work-header shrink-0 z-40 relative w-full bg-white border-b border-slate-200 shadow-sm">
+                    <header className="nexus-app-work-header__bar nexus-app-content flex items-center justify-between gap-4 relative z-20">
+                        <div className="flex items-center h-full min-w-0 gap-5">
+                            <strong className="text-[17px] font-black text-slate-900 whitespace-nowrap">기초등록</strong>
+                            <div className="flex items-center h-full gap-1" role="tablist" aria-label="상품 또는 거래처 선택">
+                                {[['products', '상품'], ['customers', '거래처']].map(([targetView, label]) => (
+                                    <button key={targetView} type="button" role="tab" aria-selected={view === targetView} aria-current={view === targetView ? 'page' : undefined}
+                                        onClick={() => onSelectView(targetView)}
+                                        className={`nexus-target-tab h-full px-5 border-b-[3px] text-[13px] font-black focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-inset ${view === targetView ? 'border-indigo-600 text-indigo-700 bg-indigo-50/60' : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50'}`}>
+                                        {label}
                                     </button>
                                 ))}
                             </div>
                         </div>
 
-                        <div className="flex items-center gap-4 h-full">
-                            <div className="nexus-density-secondary flex items-center bg-[#151B2B] rounded-lg border border-slate-700/50 h-9 px-3 shadow-inner">
-                                <div className="flex items-center gap-1.5 text-slate-300 cursor-help" title="마스터 DB 기준 상품 수">
-                                    <SafeIcon name="database" size={10} className="text-slate-500" />
+                        <div className="flex items-center gap-3 h-full">
+                            {showCloudActions && (
+                                <div className="flex items-center gap-1.5 text-slate-500 h-9 px-3 rounded-lg bg-slate-50 border border-slate-200" title="마스터 DB 기준 상품 수">
+                                    <SafeIcon name="database" size={12} className="text-slate-400" />
                                     <span className="text-[11px] font-mono font-bold tracking-tight">{itemCount ? itemCount.toLocaleString() : 0}</span>
                                 </div>
-                            </div>
+                            )}
 
                             <div className="flex items-center gap-2">
                                 {showCloudActions && (
                                     <>
-                                        <button onClick={onPull} className="w-10 h-10 rounded-xl bg-[#151B2B] hover:bg-[#1E293B] flex items-center justify-center border border-slate-700 transition-colors text-indigo-400 shadow-sm" title="데이터 불러오기(Pull)" aria-label="클라우드 상품정보 불러오기"><SafeIcon name="cloud-download" size={18} /></button>
-                                        <button onClick={onPush} className="w-10 h-10 rounded-xl bg-[#151B2B] hover:bg-[#1E293B] flex items-center justify-center border border-slate-700 transition-colors text-indigo-400 shadow-sm" title="데이터 백업하기(Push)" aria-label="클라우드에 상품정보 반영"><SafeIcon name="cloud-upload" size={18} /></button>
-                                        <div className="w-px h-6 bg-slate-700 mx-1"></div>
+                                        <button onClick={onPull} className="w-9 h-9 rounded-lg bg-white hover:bg-slate-50 flex items-center justify-center border border-slate-300 transition-colors text-indigo-600" title="데이터 불러오기(Pull)" aria-label="클라우드 상품정보 불러오기"><SafeIcon name="cloud-download" size={17} /></button>
+                                        <button onClick={onPush} className="w-9 h-9 rounded-lg bg-white hover:bg-slate-50 flex items-center justify-center border border-slate-300 transition-colors text-indigo-600" title="데이터 백업하기(Push)" aria-label="클라우드에 상품정보 반영"><SafeIcon name="cloud-upload" size={17} /></button>
                                     </>
                                 )}
-                                <button onClick={onOpenSettings} className="w-10 h-10 rounded-xl bg-[#151B2B] hover:bg-[#1E293B] flex items-center justify-center border border-slate-700 transition-colors text-slate-400 hover:text-white shadow-sm" title="Master 환경설정 열기" aria-label="Master 환경설정 열기"><SafeIcon name="settings" size={18} /></button>
+                                <button onClick={onOpenSettings} className="w-9 h-9 rounded-lg bg-white hover:bg-slate-50 flex items-center justify-center border border-slate-300 transition-colors text-slate-500 hover:text-slate-800" title="기초등록 환경설정 열기" aria-label="기초등록 환경설정 열기"><SafeIcon name="settings" size={17} /></button>
                             </div>
                         </div>
                     </header>
-
-                    {false && selectedGroup && (
-                        <div className="bg-[#0B1021] px-6 pt-3 flex items-end gap-1 overflow-x-auto custom-scrollbar border-b border-slate-200 fade-in">
-                            {tabs.filter(t => t.group === selectedGroup).map(tab => {
-                                const isActive = activeTab === tab.id;
-                                const isPlaceholder = !tab.isReady;
-                                return (
-                                    <a key={tab.id} href={tab.path} onClick={(e) => onNavigate(e, tab.path, tab.isReady)}
-                                        className={`flex items-center gap-2 px-6 py-3 text-[14px] font-bold rounded-t-xl transition-all whitespace-nowrap border-x border-t-[3px]
-                                        ${isActive
-                                            ? 'bg-white text-indigo-600 border-t-indigo-500 border-x-slate-200 relative z-10 shadow-[0_-4px_10px_rgba(0,0,0,0.1)]'
-                                            : isPlaceholder
-                                                ? 'bg-[#151B2B] text-slate-500 border-t-transparent border-x-transparent cursor-not-allowed opacity-50 pb-2.5'
-                                                : 'bg-[#151B2B] text-slate-400 border-t-transparent border-x-transparent hover:text-slate-200 pb-2.5'
-                                        }`}
-                                        style={{ marginBottom: isActive ? '-1px' : '0', paddingBottom: isActive ? '13px' : '10px' }}
-                                    >
-                                        <SafeIcon name={tab.icon} size={16} className={isActive ? 'text-indigo-600' : 'opacity-70'} />
-                                        {tab.label}
-                                    </a>
-                                );
-                            })}
-                        </div>
-                    )}
                 </div>
             );
         };
@@ -1102,21 +1028,6 @@
                 }
             }, [masterRoute.mode]);
 
-            useEffect(() => {
-                const sendDensity = (density) => {
-                    const frame = document.getElementById('customerMasterFrame');
-                    if (!frame?.contentWindow) return;
-                    frame.contentWindow.postMessage({
-                        type: 'ONEAPP_NEXUS_DENSITY',
-                        density: density === 'compact' ? 'compact' : 'standard'
-                    }, window.location.origin);
-                };
-                const handleDensity = (event) => sendDensity(event.detail?.density);
-                window.addEventListener('nexus-density-change', handleDensity);
-                sendDensity(document.documentElement.dataset.nexusDensity);
-                return () => window.removeEventListener('nexus-density-change', handleDensity);
-            }, []);
-
             const discardAddUpdateAnalysis = () => {
                 setAddUpdateAnalysis(null);
                 setShowAddUpdateConfirm(false);
@@ -1399,29 +1310,16 @@
                     <MasterAddUpdateResultModal result={addUpdateResult} onClose={() => setAddUpdateResult(null)} />
 
                     <GlobalHeader
-                        activeTab={isCustomerView ? 'partner-db' : 'item-info'}
+                        view={masterRoute.view}
                         itemCount={isCustomerView ? 0 : Object.keys(masterProducts).length}
-                        isProcessing={isProcessing}
-                        processMsg={processMsg}
+                        onSelectView={(view) => selectMasterRoute({ view, mode: masterRoute.mode })}
                         onOpenSettings={() => setShowSettingsModal(true)}
                         onPush={handlePush}
                         onPull={handlePull}
-                        onNavigate={handleNavigate}
                         showCloudActions={!isCustomerView}
                     />
 
-                    <nav className="nexus-target-tabs bg-white border-b border-slate-200 shrink-0" aria-label="기초등록 대상">
-                        <div className="flex h-full gap-2" role="tablist" aria-label="상품 또는 거래처 선택">
-                            {[['products', '상품'], ['customers', '거래처']].map(([view, label]) => (
-                                <button key={view} type="button" role="tab" aria-selected={masterRoute.view === view} aria-current={masterRoute.view === view ? 'page' : undefined}
-                                    onClick={() => selectMasterRoute({ view, mode: masterRoute.mode })}
-                                    className={`nexus-target-tab px-6 rounded-t-lg border-b-[3px] text-sm font-black focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 ${masterRoute.view === view ? 'border-indigo-600 text-indigo-700 bg-indigo-50/60' : 'border-transparent text-slate-500 hover:text-slate-800'}`}>
-                                    {label}
-                                </button>
-                            ))}
-                        </div>
-                    </nav>
-                    <main className={`${isCustomerView ? 'flex' : 'hidden'} flex-1 flex-col overflow-hidden bg-slate-50`} aria-hidden={!isCustomerView}>
+                    <main className={`nexus-app-content ${isCustomerView ? 'flex' : 'hidden'} flex-1 flex-col overflow-hidden bg-slate-50`} aria-hidden={!isCustomerView}>
                             <div className="nexus-work-tools flex items-center justify-between border-b border-slate-200 bg-white shrink-0">
                                 <span className="text-[12px] font-bold text-slate-500">거래처 {isBatchMode ? '일괄 관리' : '조회'}</span>
                                 <button type="button" onClick={() => selectMasterRoute({ view: 'customers', mode: isBatchMode ? 'list' : 'batch' })}
@@ -1436,11 +1334,10 @@
                                 title={isBatchMode ? '거래처 일괄 등록·수정' : '거래처 목록'}
                                 onLoad={(event) => {
                                     event.currentTarget.contentWindow?.postMessage({ type: 'ONEAPP_MASTER_MODE', mode: masterRoute.mode }, window.location.origin);
-                                    event.currentTarget.contentWindow?.postMessage({ type: 'ONEAPP_NEXUS_DENSITY', density: document.documentElement.dataset.nexusDensity === 'compact' ? 'compact' : 'standard' }, window.location.origin);
                                 }}
                             ></iframe>
                     </main>
-                    <main className={`${isCustomerView ? 'hidden' : 'flex'} flex-1 flex-col overflow-hidden bg-slate-50 border-t border-slate-200`} aria-hidden={isCustomerView}>
+                    <main className={`nexus-app-content ${isCustomerView ? 'hidden' : 'flex'} flex-1 flex-col overflow-hidden bg-slate-50 border-x border-slate-200`} aria-hidden={isCustomerView}>
                         <div className="nexus-work-tools master-work-tools bg-white border-b border-slate-200 flex items-center justify-between shrink-0 z-10 shadow-sm">
                             {!isBatchMode && (
                                 <div className="master-work-search relative flex-1 h-9">
@@ -1452,7 +1349,7 @@
                                 {isBatchMode ? '상품 일괄 관리' : `결과 ${displayRows.length.toLocaleString()}건`} · 전체 {Object.keys(masterProducts).length.toLocaleString()}건
                             </span>
                             {Object.keys(masterProducts).length === 0 && (
-                                <span className="nexus-density-secondary text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5 whitespace-nowrap">
+                                <span className="text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5 whitespace-nowrap">
                                     최초 등록은 별도 승인 전까지 사용할 수 없습니다.
                                 </span>
                             )}
@@ -1488,7 +1385,7 @@
                                     <SafeIcon name="file-spreadsheet" size={24} className="text-indigo-500" />
                                     <h2 className="text-base font-black text-slate-800">상품 추가·갱신 비교</h2>
                                 </div>
-                                <p className="nexus-density-secondary mt-2 text-sm leading-6 text-slate-500">상단의 Excel 비교에서 대상을 분석한 뒤 선택, 검증, 적용합니다. 조회 상태로 돌아가도 진행 중인 검토는 유지됩니다.</p>
+                                <p className="mt-2 text-sm leading-6 text-slate-500">상단의 Excel 비교에서 대상을 분석한 뒤 선택, 검증, 적용합니다. 조회 상태로 돌아가도 진행 중인 검토는 유지됩니다.</p>
                             </div>
                         </div>
 

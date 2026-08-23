@@ -1,33 +1,39 @@
 # NEXUS 앱 공통 UI 계약
 
-`NEXUS_APP_UI_V1`은 공통헤더 아래 앱의 작업헤더, 대상 탭, 작업 도구와 표 밀도를 연결한다. 공통헤더가 루트에 설정한 `data-nexus-density`와 CSS 변수만 사용하므로 밀도 변경 시 앱 초기화, 데이터 재조회, 자동저장 또는 입력 초기화를 실행하지 않는다.
+`NEXUS_APP_UI_V2`는 공통헤더 아래 앱에 하나의 고정 레이아웃을 제공한다. 화면 밀도 전환은 제공하지 않으며, 과거에 저장된 표준·압축 값도 읽거나 적용하지 않는다.
 
 ## 공통 변수
 
-| 변수 | 표준 | 압축 |
-|---|---:|---:|
-| `--nexus-app-header-height` | 56px | 42px |
-| `--nexus-target-tab-height` | 42px | 36px |
-| `--nexus-work-tools-height` | 50px | 42px |
-| `--nexus-table-header-height` | 40px | 34px |
-| `--nexus-table-row-height` | 48px | 36px |
-| `--nexus-content-gutter` | 24px | 12px |
+| 변수 | 고정값 |
+|---|---:|
+| `--nexus-content-max-width` | 1440px |
+| `--nexus-content-gutter` | 24px |
+| `--nexus-app-header-height` | 56px |
+| `--nexus-target-tab-height` | 42px |
+| `--nexus-work-tools-height` | 50px |
+| `--nexus-table-header-height` | 40px |
+| `--nexus-table-row-height` | 48px |
 
-지원 앱은 `nexus-app-ui.css`를 불러오고 `nexus-app-work-header`, `nexus-target-tabs`, `nexus-work-tools`, `nexus-data-table` 적용 지점을 선언한다. 적용 상태와 보존 식별자는 `nexus-ui-contract.js`가 단일 코드 등록부로 제공한다.
+NEXUS 공통헤더는 브라우저 전체 폭을 사용한다. 앱 작업영역은 `.nexus-app-content`로 중앙 정렬하고 공통 최대 폭을 적용한다. 좁은 화면에서는 가용 폭을 모두 사용하고, 표는 카드로 변환하지 않고 가로 스크롤을 유지한다.
 
-## 상태 보존
+## 기초등록 적용 상태
 
-선언적 CSS 전환은 `activeTab`, `searchState`, `filterState`, `sortState`, `selectedRowId`, `activeCellId`, `scrollPosition`, `draftChanges`, `openedPanelId`를 읽거나 쓰지 않는다. Master의 내장 거래처 화면에는 밀도 값만 `ONEAPP_NEXUS_DENSITY` 메시지로 전달하며 기존 iframe을 다시 만들거나 다시 불러오지 않는다.
+- 앱 작업헤더 한 줄 안에 `기초등록`, `상품`, `거래처`를 배치한다.
+- 별도의 검은 `MASTER · 상품/거래처` 제목바를 사용하지 않는다.
+- 검색과 작업 버튼이 필요한 경우에만 두 번째 도구 줄을 사용한다.
+- 상품·거래처 조회는 기본 상태이며, 일괄 관리는 작업 진입 버튼이다.
+- 상품·거래처 작업영역과 내장 거래처 화면은 같은 중앙 기준 폭을 사용한다.
+- Master와 상품 등록은 고정 레이아웃 시범 적용 상태다.
 
 ## 적용 상태와 예외
 
-| 앱 ID | 상태 | 적용 범위 | 예외·대체 UI | 회귀 검증 | 재검토 조건 |
-|---|---|---|---|---|---|
-| `master-lookup` | 파일럿 적용 | 작업헤더, 대상 탭, 작업 도구, 표 | 없음 | 대상/검색/필터/검토/iframe 상태와 스크롤 유지 | Master 수용 기준 통과 후 운영 전환 |
-| `item-manager` | 파일럿 적용 | 작업헤더, 대상 탭, 조회 도구, 편집표 | 없음 | 선택/활성 셀/초안/스크롤/저장 유지 | Master 수용 기준 통과 후 운영 전환 |
-| `merchops` | 등록 예외 | 아직 미적용 | 기존 화면을 유지하고 F7/F8/F9 계약으로 동일 업무 수행 | 저장·적용·출력·F키 | Master 파일럿 통과 후 순차 적용 |
-| `dataops` | 등록 예외 | 아직 미적용 | 기존 자체 환경설정과 검증표 유지 | LOT·재고·원가·마감 | MerchOps 적용 검증 후 |
-| `orderq` | 등록 예외 | 아직 미적용 | 기존 주문·구매·출고 작업대 유지 | 저장·출력·F키·복구 | DataOps 적용 검증 후 |
-| `smart-parser` | 등록 예외 | 아직 미적용 | 기존 원본·파싱·마스터 검토 화면 유지 | 파싱·매칭·마스터 적용 | ORDER Q 적용 검증 후 |
+| 앱 ID | 상태 | 적용 범위 | 예외·대체 UI | 재검토 조건 |
+|---|---|---|---|---|
+| `master-lookup` | 시범 적용 | 작업헤더, 대상 탭, 작업 도구, 표, 중앙 기준 폭 | 없음 | 운영 수용 기준 통과 시 |
+| `item-manager` | 시범 적용 | 작업헤더, 대상 탭, 조회 도구, 편집표 | 없음 | 운영 수용 기준 통과 시 |
+| `merchops` | 등록 예외 | 아직 미적용 | 기존 가격·행사 작업표와 F7/F8/F9 유지 | 기초등록 시범 적용 검증 후 |
+| `dataops` | 등록 예외 | 아직 미적용 | 기존 자체 환경설정과 검증표 유지 | MerchOps 적용 검증 후 |
+| `orderq` | 등록 예외 | 아직 미적용 | 기존 주문·구매·출고 작업대 유지 | DataOps 적용 검증 후 |
+| `smart-parser` | 등록 예외 | 아직 미적용 | 기존 원본·파싱·마스터 검토 화면 유지 | ORDER Q 적용 검증 후 |
 
 등록되지 않은 예외는 허용하지 않는다. 후속 앱 적용은 이 표와 코드 등록부를 함께 갱신하고 해당 앱 회귀검사를 통과해야 한다.

@@ -4,7 +4,6 @@
   font-weight: 800;
   letter-spacing: .09em;
 }
-
 .oneapp-title {
   margin: 0;
   color: var(--oneapp-text);
@@ -340,8 +339,4 @@
     gap: 18px;
     overflow-x: auto;
   }
-}
-
-html[data-nexus-density="compact"] .oneapp-description {
-  display: none;
 }

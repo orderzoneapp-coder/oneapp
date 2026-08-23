@@ -24,7 +24,10 @@ assert.match(master, />조회로 돌아가기<\/button>/, 'batch work must provi
 assert.match(master, /customerMasterFrame/, 'customer workbench must stay mounted');
 assert.match(master, /ONEAPP_MASTER_MODE/, 'customer mode changes must use in-place messaging');
 assert.match(master, /partner_db\.html\?embedded=1&mode=/, 'customer iframe must receive the initial mode');
-assert.match(master, /ONEAPP_NEXUS_DENSITY/, 'customer iframe must receive density without being reloaded');
+assert.match(master, />기초등록<\/strong>/, 'the application header must use the Foundation title');
+assert.doesNotMatch(master, /MASTER ·|bg-\[#0B1021\]|ONEAPP_NEXUS_DENSITY|nexus-density-change/, 'the legacy black title bar and density bridge must be removed');
+assert.match(master, /nexus-app-work-header__bar nexus-app-content/, 'the one-line work header must use the shared centered width');
+assert.match(master, /nexus-app-content.*isCustomerView[\s\S]*?<main className={`nexus-app-content/, 'product and customer workspaces must share the centered width');
 
 assert.match(customer, /initialCustomerMasterMode/, 'customer page must read mode from its URL');
 assert.match(customer, /Master\.html\?view=customers&mode=/, 'legacy customer entry must redirect to the compatible Master route');

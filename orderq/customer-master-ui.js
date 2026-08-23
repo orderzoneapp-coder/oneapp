@@ -711,18 +711,6 @@ elements.issueGrid.addEventListener('paste', event => {
 });
 
 elements.viewport.addEventListener('scroll', renderWindow, { passive: true });
-window.addEventListener('oneapp:nexus-density-applied', event => {
-  const nextHeight = event.detail?.density === 'compact' ? 36 : 48;
-  if (nextHeight === rowHeight) return;
-  const previousHeight = rowHeight;
-  const anchorIndex = Math.floor(elements.viewport.scrollTop / previousHeight);
-  const anchorOffset = elements.viewport.scrollTop % previousHeight;
-  const focusedCustomerId = document.activeElement?.dataset?.id || '';
-  rowHeight = nextHeight;
-  elements.viewport.scrollTop = (anchorIndex * rowHeight) + Math.min(anchorOffset, rowHeight - 1);
-  renderWindow();
-  if (focusedCustomerId) elements.spacer.querySelector(`[data-id="${CSS.escape(focusedCustomerId)}"]`)?.focus({ preventScroll: true });
-});
 elements.search.addEventListener('input', applyFilter);
 elements.filter.addEventListener('change', async () => {
   state.summaryFilter = elements.filter.value === 'ALL' ? 'ACTIVE_ALL' : 'NONE';

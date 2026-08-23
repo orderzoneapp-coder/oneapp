@@ -1,10 +1,10 @@
 (() => {
-  const VERSION = '1.2.0';
+  const VERSION = '1.3.0';
   const STORAGE = Object.freeze({
     colorMode: 'oneapp.nexus.v1.colorMode',
-    density: 'oneapp.nexus.v1.density',
     groupOrder: 'oneapp.nexus.v1.groupOrder',
     hiddenGroups: 'oneapp.nexus.v1.hiddenGroups',
+    hiddenGlobalActions: 'oneapp.nexus.v1.hiddenGlobalActions',
     favoriteApps: 'oneapp.nexus.v1.favoriteApps',
     hiddenApps: 'oneapp.nexus.v1.hiddenApps',
     statusPrefix: 'oneapp.nexus.v1.status.',
@@ -82,7 +82,8 @@
         this.declaredAppId = this.getAttribute('app-id') || '';
         this.currentAppId = this.canonicalAppId(this.declaredAppId);
         this.currentApp = this.apps.find((app) => app.id === this.currentAppId) || null;
-        this.currentGroupId = this.currentApp?.groupId || this.resolveLegacyGroup(this.declaredAppId);
+        this.currentGlobalAction = this.globalActions.find((action) => action.appId === this.currentAppId) || null;
+        this.currentGroupId = this.currentGlobalAction ? '' : (this.currentApp?.groupId || this.resolveLegacyGroup(this.declaredAppId));
 
         this.root = this.attachShadow({ mode: 'open' });
         this.root.innerHTML = this.shellMarkup();
@@ -151,7 +152,7 @@
         </section>
 
         <aside class="panel settings-panel" data-panel="settings" role="dialog" aria-modal="true" aria-label="공통헤더 설정" hidden>
-          <div class="heading"><div><span class="eyebrow">NEXUS</span><h2>공통헤더 설정</h2><p>업무군 메뉴와 개인 화면환경을 설정합니다.</p></div><button class="close" type="button" aria-label="설정 닫기">×</button></div>
+          <div class="heading"><div><span class="eyebrow">NEXUS</span><h2>공통헤더 설정</h2><p>상단 메뉴와 색상 모드를 설정합니다.</p></div><button class="close" type="button" aria-label="설정 닫기">×</button></div>
           <div class="settings-content"></div>
         </aside>
 
@@ -200,6 +201,7 @@
     preferences() {
       const groupIds = this.groups.map((group) => group.id);
       const appIds = this.apps.map((app) => app.id);
+      const globalActionIds = this.globalActions.map((action) => action.id);
       const legacyOrder = asArray(this.readValue(LEGACY.groupOrder)).map((id) => LEGACY_GROUP_IDS[id]).filter(Boolean);
       const savedOrder = asArray(this.readValue(STORAGE.groupOrder));
       const requestedOrder = savedOrder.length ? savedOrder : legacyOrder;
@@ -210,6 +212,7 @@
       const legacyHidden = asArray(this.readValue(LEGACY.hiddenGroups)).map((id) => LEGACY_GROUP_IDS[id]).filter(Boolean);
       const savedHiddenGroups = this.readValue(STORAGE.hiddenGroups);
       const hiddenGroups = asArray(savedHiddenGroups === undefined ? legacyHidden : savedHiddenGroups).filter((id) => groupIds.includes(id));
+      const hiddenGlobalActions = asArray(this.readPreference(STORAGE.hiddenGlobalActions, [])).filter((id) => globalActionIds.includes(id));
       const defaultHiddenApps = this.apps.filter((app) => app.defaultHidden).map((app) => app.id);
       const hiddenApps = asArray(this.readPreference(STORAGE.hiddenApps, defaultHiddenApps)).filter((id) => appIds.includes(id));
       const favoriteApps = asArray(this.readPreference(STORAGE.favoriteApps, [])).filter((id) => appIds.includes(id));
@@ -217,8 +220,7 @@
       const colorMode = ['system', 'light', 'dark'].includes(this.readValue(STORAGE.colorMode))
         ? this.readValue(STORAGE.colorMode)
         : (['system', 'light', 'dark'].includes(legacyTheme) ? legacyTheme : 'system');
-      const density = ['standard', 'compact'].includes(this.readValue(STORAGE.density)) ? this.readValue(STORAGE.density) : 'standard';
-      return { groupOrder, hiddenGroups, hiddenApps, favoriteApps, colorMode, density };
+      return { groupOrder, hiddenGroups, hiddenGlobalActions, hiddenApps, favoriteApps, colorMode };
     }
 
     orderedGroups() {
@@ -236,10 +238,13 @@
     }
 
     renderGlobalEntries() {
-      this.root.querySelector('.global-entries').innerHTML = this.globalActions.map((action) => {
+      const { hiddenGlobalActions } = this.preferences();
+      const actions = this.globalActions.filter((action) => !hiddenGlobalActions.includes(action.id) || action.appId === this.currentAppId);
+      this.root.querySelector('.global-entries').innerHTML = actions.map((action) => {
         const active = action.appId === this.currentAppId;
-        return `<a class="global-entry${active ? ' is-current' : ''}" href="${escapeHtml(action.url)}" data-navigate data-target-app="${escapeHtml(action.appId)}" ${active ? 'aria-current="page"' : ''}>
-          <span class="global-entry-icon" aria-hidden="true">✦</span><span>${escapeHtml(action.name)}</span>
+        const temporary = active && hiddenGlobalActions.includes(action.id);
+        return `<a class="global-entry${active ? ' is-current' : ''}${temporary ? ' temporary' : ''}" href="${escapeHtml(action.url)}" data-navigate data-target-app="${escapeHtml(action.appId)}" ${active ? 'aria-current="page"' : ''}>
+          <span class="global-entry-icon" aria-hidden="true">✦</span><span>${escapeHtml(action.name)}</span>${temporary ? '<small>현재 위치</small>' : ''}
         </a>`;
       }).join('');
     }
@@ -361,12 +366,15 @@
       const preferences = this.preferences();
       const groups = this.orderedGroups();
       const colorOptions = [['system', '시스템'], ['light', '일반'], ['dark', '다크']];
-      const densityOptions = [['standard', '표준'], ['compact', '압축']];
+      const globalActionRows = this.globalActions.map((action) => `<div class="group-setting global-action-setting">
+        <span class="fixed-menu-label">고정</span>
+        <strong>${escapeHtml(action.name)}</strong>
+        <label class="switch"><input type="checkbox" data-global-visible="${escapeHtml(action.id)}" ${preferences.hiddenGlobalActions.includes(action.id) ? '' : 'checked'}><span aria-hidden="true"></span><b>${preferences.hiddenGlobalActions.includes(action.id) ? '숨김' : '노출'}</b></label>
+      </div>`).join('');
       this.root.querySelector('.settings-content').innerHTML = `
         <section class="settings-section"><h3>색상 모드</h3><div class="segments" role="group" aria-label="색상 모드">${colorOptions.map(([id, label]) => `<button type="button" data-color-mode="${id}" aria-pressed="${preferences.colorMode === id}">${label}</button>`).join('')}</div></section>
-        <section class="settings-section"><h3>화면 밀도</h3><div class="segments two" role="group" aria-label="화면 밀도">${densityOptions.map(([id, label]) => `<button type="button" data-density="${id}" aria-pressed="${preferences.density === id}">${label}</button>`).join('')}</div><p class="section-note">헤더와 지원 앱의 작업영역 밀도를 변경합니다.</p></section>
-        <section class="settings-section"><div class="section-title"><div><h3>업무군 메뉴</h3><p>노출과 순서를 업무군 단위로 관리합니다.</p></div><button type="button" class="reset" data-reset-groups>초기화</button></div>
-          <div class="group-settings">${groups.map((group, index) => `<div class="group-setting">
+        <section class="settings-section"><div class="section-title"><div><h3>상단 메뉴</h3><p>스마트입력 노출과 업무군 노출·순서를 관리합니다.</p></div><button type="button" class="reset" data-reset-groups>초기화</button></div>
+          <div class="group-settings">${globalActionRows}${groups.map((group, index) => `<div class="group-setting">
             <div class="move-buttons"><button type="button" data-group-move="-1" data-group-id="${group.id}" aria-label="${escapeHtml(group.name)} 위로" ${index === 0 ? 'disabled' : ''}>↑</button><button type="button" data-group-move="1" data-group-id="${group.id}" aria-label="${escapeHtml(group.name)} 아래로" ${index === groups.length - 1 ? 'disabled' : ''}>↓</button></div>
             <strong>${escapeHtml(group.name)}</strong>
             <label class="switch"><input type="checkbox" data-group-visible="${group.id}" ${preferences.hiddenGroups.includes(group.id) ? '' : 'checked'}><span aria-hidden="true"></span><b>${preferences.hiddenGroups.includes(group.id) ? '숨김' : '노출'}</b></label>
@@ -377,16 +385,15 @@
     }
 
     applyEnvironment() {
-      const { colorMode, density } = this.preferences();
+      const { colorMode } = this.preferences();
       const root = document.documentElement;
       root.dataset.nexusColorMode = colorMode;
       root.dataset.nexusTheme = colorMode;
-      root.dataset.nexusDensity = density;
+      delete root.dataset.nexusDensity;
       root.style.colorScheme = colorMode === 'system' ? 'light dark' : colorMode;
-      root.style.setProperty('--nexus-top-height', density === 'compact' ? '36px' : '44px');
-      root.style.setProperty('--nexus-content-gutter', density === 'compact' ? '12px' : '24px');
+      root.style.setProperty('--nexus-top-height', '44px');
+      root.style.setProperty('--nexus-content-gutter', '24px');
       window.dispatchEvent(new CustomEvent('nexus-theme-change', { detail: { theme: colorMode, colorMode } }));
-      window.dispatchEvent(new CustomEvent('nexus-density-change', { detail: { density } }));
     }
 
     bind() {
@@ -445,10 +452,14 @@
         this.renderSettings();
         return;
       }
-      const densityButton = event.target.closest('[data-density]');
-      if (densityButton) {
-        this.writePreference(STORAGE.density, densityButton.dataset.density);
-        this.applyEnvironment();
+      const globalVisibility = event.target.closest('[data-global-visible]');
+      if (globalVisibility) {
+        const preferences = this.preferences();
+        const id = globalVisibility.dataset.globalVisible;
+        const hiddenGlobalActions = globalVisibility.checked
+          ? preferences.hiddenGlobalActions.filter((actionId) => actionId !== id)
+          : unique([...preferences.hiddenGlobalActions, id]);
+        this.writePreference(STORAGE.hiddenGlobalActions, hiddenGlobalActions);
         this.renderAll();
         return;
       }
@@ -502,6 +513,7 @@
       if (event.target.closest('[data-reset-groups]')) {
         this.writePreference(STORAGE.groupOrder, this.groups.map((group) => group.id));
         this.writePreference(STORAGE.hiddenGroups, []);
+        this.writePreference(STORAGE.hiddenGlobalActions, []);
         this.renderAll();
         return;
       }

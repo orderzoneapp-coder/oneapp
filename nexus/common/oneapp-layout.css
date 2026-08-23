@@ -39,6 +39,8 @@ select {
 
 .oneapp-content {
   width: 100%;
+  max-width: var(--nexus-content-max-width, 1440px);
+  margin-inline: auto;
   padding-inline: var(--nexus-content-gutter, 24px);
 }
 

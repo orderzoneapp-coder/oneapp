@@ -18,7 +18,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;600;800;900&family=Noto+Serif+KR:wght@700;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/nexus/common/nexus-app-ui.css?v=1.0.0">
+  <link rel="stylesheet" href="/nexus/common/nexus-app-ui.css?v=2.0.0">
   <link rel="stylesheet" href="./orderq/customer-master.css?v=0.19.0">
   <style>
     :root { --nexus-ink: #0b1021; --nexus-panel: #151b2b; --nexus-accent: #6366f1; }
@@ -58,9 +58,6 @@
     html.cm-embedded .cm-toolbar { min-height: var(--nexus-work-tools-height, 50px); padding: 7px; }
     html.cm-embedded .cm-list-head { height: var(--nexus-table-header-height, 40px); }
     html.cm-embedded .cm-row { height: var(--nexus-table-row-height, 48px); }
-    html[data-nexus-density="compact"].cm-embedded .cm-row small,
-    html[data-nexus-density="compact"].cm-embedded .cm-dashboard,
-    html[data-nexus-density="compact"].cm-embedded .cm-sync-state { display: none; }
     @media (max-width: 820px) {
       .nexus-header-main { min-height: 62px; padding: 0 14px; }
       .nexus-groups { display: none; }
@@ -225,11 +222,6 @@
       window.addEventListener('message', (event) => {
         if (event.origin !== window.location.origin) return;
         if (event.data?.type === 'ONEAPP_MASTER_MODE') applyCustomerMasterMode(event.data.mode);
-        if (event.data?.type === 'ONEAPP_NEXUS_DENSITY') {
-          const density = event.data.density === 'compact' ? 'compact' : 'standard';
-          document.documentElement.dataset.nexusDensity = density;
-          window.dispatchEvent(new CustomEvent('oneapp:nexus-density-applied', { detail: { density } }));
-        }
       });
     })();
   </script>

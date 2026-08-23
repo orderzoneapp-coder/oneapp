@@ -120,7 +120,7 @@ Production files must not be reorganized into folders without first updating and
 
 ### 5.2 NEXUS common header
 
-`nexus/common/nexus-top.js` is the shared `<nexus-top>` web component. `nexus/common/apps-config.js` is the single runtime mapping from application IDs to the four work groups. The default group order is Shipping (`출고관리`), Inventory (`재고관리`), Pricing (`시세관리`), then Foundation (`기초등록`). Display names and filenames are not app identity contracts.
+`nexus/common/nexus-top.js` is the shared `<nexus-top>` web component. `nexus/common/apps-config.js` is the single runtime mapping from application IDs to the four work groups and the SmartInput global entry. The default group order is Shipping (`출고관리`), Inventory (`재고관리`), Pricing (`시세관리`), then Foundation (`기초등록`). SmartInput keeps its fixed position immediately after the brand, while its visibility is managed in the same header-settings list as the work groups. Display names and filenames are not app identity contracts.
 
 Header preferences are local display state under the `oneapp.nexus.v1.` prefix. Work-group order and visibility are stored separately from per-application favorites and hidden state. A hidden current work group is rendered temporarily without changing the stored preference.
 
@@ -128,13 +128,13 @@ The current application reports only its own save, synchronization, warning, and
 
 Every consumer reserves `--nexus-top-height` and includes a light-DOM fallback. Failure to load or initialize the header must leave the application boot path independent and show only the retryable NEXUS fallback. The complete event and API examples are documented in `nexus/common/README.md` and registered as the `nexus-header` shared contract in `app-manifest.json`.
 
-`smartinput/index.html` is intentionally not a NEXUS-header consumer during its standalone pilot. Its public route is `/smartinput/`; common-header and all-apps registration occurs only after independent operational validation. This exception does not change the current work-group map or header preferences.
+`smartinput/index.html` is a NEXUS-header consumer during its standalone pilot. Its public route is `/smartinput/`; it is registered in the all-apps list and as the fixed-position SmartInput global entry. SmartInput remains part of the Shipping application group for application-list organization and status routing.
 
-### 5.2.1 NEXUS application UI density
+### 5.2.1 NEXUS application fixed layout
 
-`nexus/common/nexus-app-ui.css` is the declarative application-density interface under the common header. It maps `data-nexus-density` to the application work header, target tabs, work tools, table header, table rows, and content gutter without reinitializing the application or reading and writing business state. `nexus/common/nexus-ui-contract.js` is the code registry for application rollout status, the nine preserved state identifiers, and registered exceptions; `nexus/common/NEXUS_APP_UI_CONTRACT.md` is the matching operator and regression record.
+`nexus/common/nexus-app-ui.css` is the fixed application-layout interface under the common header. The common header spans the browser width; supported application workspaces use the shared `--nexus-content-max-width` and fixed component dimensions. No standard/compact density preference, event, or saved value is read or applied. `nexus/common/nexus-ui-contract.js` is the code registry for application rollout status and registered exceptions; `nexus/common/NEXUS_APP_UI_CONTRACT.md` is the matching operator and regression record.
 
-Master is the first pilot. `Master.html`, its embedded `partner_db.html`, and `Item_manager.html` consume the contract. Lookup is the default state and is not rendered as a tab; product/customer are target tabs, while new registration and batch management are work-entry actions. Product and customer tables remain horizontally scrollable data structures on narrow screens instead of converting to cards. The embedded customer workbench receives only a density message and stays mounted, so target, search, filters, row focus, scroll, drafts, and opened work remain in place. MerchOps, DataOps, ORDER Q, and Smart Parser retain their current UI as registered staged exceptions until the preceding pilot regression gate passes.
+Foundation is the first pilot consumer. `Master.html`, its embedded `partner_db.html`, and `Item_manager.html` consume the contract. Master uses one light application header containing the Foundation title and product/customer target tabs; the former black `MASTER · target` bar is prohibited. Search and work-entry actions use a second tool row only when needed. Product/customer lookup is the default state, while new registration and batch management remain work-entry actions. Product and customer tables remain horizontally scrollable data structures on narrow screens instead of converting to cards. MerchOps, DataOps, ORDER Q, and Smart Parser retain their current UI as registered staged exceptions until their separate rollout gates pass.
 
 ### 5.3 Shared browser state
 
@@ -395,7 +395,7 @@ Equivalent safety controls must be preserved when another application writes the
 
 ### 6.7 Standalone SmartInput intake
 
-1. The public pilot route is `/smartinput/` with stable application ID `smart-input`. NEXUS exposes SmartInput as a fixed global entry immediately after the brand and independently of work-group order or visibility, and also lists it as a shipping application. The page retains an independent header-failure fallback.
+1. The public pilot route is `/smartinput/` with stable application ID `smart-input`. NEXUS exposes SmartInput as a fixed-position global entry immediately after the brand and also lists it as a shipping application. Its visibility is controlled from the common-header settings independently from the Shipping work-group preference; when SmartInput is the current hidden entry, it is temporarily shown as the current location. The page retains an independent header-failure fallback.
 2. The NEXUS header always spans the browser width. The SmartInput application bar and three-column work area use a centered maximum width of `1360px`; the left column reports independent data states, the center owns intake, and the right contains related apps. Order links open `orderq/index.html` and `orders.html` in new tabs so the draft remains mounted.
 3. The first input contract includes direct entry, Excel/file import, text, clipboard text/image paste, photo OCR, and browser voice STT. Unsupported OCR, speech, or external-library states leave manual entry available and do not erase the source text.
 4. Each source capture creates an immutable local batch record that preserves original whitespace and line breaks. Parser results append below existing rows; identical products are not merged and receive only a duplicate-possibility marker.

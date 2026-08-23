@@ -87,6 +87,7 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .global-entry:hover { color: #fff; background: rgb(255 255 255 / 6%); }
 .global-entry.is-current { color: #fff; background: rgb(105 211 189 / 12%); box-shadow: inset 0 -2px var(--nexus-accent); }
 .global-entry-icon { width: 18px; height: 18px; display: grid; place-items: center; border: 1px solid rgb(105 211 189 / 38%); border-radius: 5px; color: var(--nexus-accent); font-size: 10px; }
+.global-entry small { padding: 2px 5px; border: 1px solid rgb(105 211 189 / 45%); border-radius: 999px; color: #a8eddf; font-size: 9px; font-weight: 800; }
 
 .nav { min-width: 0; overflow: hidden; }
 .track { width: max-content; height: var(--nexus-top-height, 44px); display: flex; }
@@ -303,6 +304,8 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .reset { border: 0; padding: 5px 7px; border-radius: 6px; color: var(--panel-muted); background: var(--panel-soft); cursor: pointer; font-size: 10px; }
 .group-setting { min-height: 48px; display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; align-items: center; gap: 8px; border-bottom: 1px solid var(--panel-border); }
 .group-setting > strong { font-size: 12px; }
+.fixed-menu-label { width: 61px; color: var(--panel-muted); font-size: 10px; font-weight: 800; text-align: center; }
+.global-action-setting { border-top: 1px solid var(--panel-border); }
 .move-buttons { display: flex; gap: 3px; }
 .move-buttons button { width: 29px; height: 29px; border: 0; border-radius: 6px; color: var(--panel-muted); background: var(--panel-soft); cursor: pointer; }
 .move-buttons button:disabled { opacity: .28; cursor: default; }
@@ -318,12 +321,6 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .storage-warning strong { font-size: 11px; }
 .storage-warning span { grid-column: 1; font-size: 10px; }
 .storage-warning button { grid-column: 2; grid-row: 1 / span 2; align-self: center; border: 1px solid #d7a83e; border-radius: 6px; padding: 6px 8px; color: #754e05; background: #fff; cursor: pointer; font-size: 10px; font-weight: 800; }
-
-:host-context(:root[data-nexus-density="compact"]) .brand { padding-inline: 10px; }
-:host-context(:root[data-nexus-density="compact"]) .global-entry { padding-inline: 11px; font-size: 11px; }
-:host-context(:root[data-nexus-density="compact"]) .tab { padding-inline: 13px; font-size: 12px; }
-:host-context(:root[data-nexus-density="compact"]) .action { min-width: 58px; padding-inline: 7px; }
-:host-context(:root[data-nexus-density="compact"]) .status-action { min-width: 72px; }
 
 @keyframes panel-in { from { opacity: 0; transform: translateY(-4px) scale(.985); } }
 @keyframes drawer-in { from { opacity: 0; transform: translateX(18px); } }
