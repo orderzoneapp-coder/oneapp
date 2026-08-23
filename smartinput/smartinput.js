@@ -11,6 +11,13 @@ import { isSelectableMasterProduct, loadProductCatalog, searchProductCatalog } f
 import { loadWarehouseCatalog, matchWarehouseInput, warehouseDisplayName } from '../orderq/warehouse-master.js?v=0.8.0';
 import { recognizeOcrDocument, verifiedRowsToParserLines } from './ocr-document-parser.js?v=0.1.1';
 import {
+  buildCatalogPriceSnapshot,
+  priceSnapshotsEqual,
+  buildKakaoNoticeRows,
+  buildEstimateF8Data,
+  renderKakaoNoticeCanvases
+} from './estimate-output.js?v=0.1.0';
+import {
   createRecordId,
   loadSmartInputData,
   normalizeAliasName,
@@ -1524,15 +1531,18 @@ function availableCatalogs(header = modeDraft().header) {
 function renderCatalogControls() {
   const visible = state.draft.activeMode === 'estimate';
   $('catalogFilter').hidden = !visible;
+  $('catalogNewButton').hidden = !visible;
   $('catalogSaveButton').hidden = !visible;
+  $('catalogDeleteButton').hidden = !visible;
   if (!visible) return;
   const current = modeDraft();
   const records = availableCatalogs(current.header);
-  $('catalogSelect').innerHTML = `<option value="">신규 카탈로그</option>${records.map(record => (
+  $('catalogSelect').innerHTML = `<option value="">카탈로그 선택</option>${records.map(record => (
     `<option value="${esc(record.estimateId)}">${esc(estimateTitle(record))} · ${esc(catalogCustomerName(record) || '거래처 미지정')} · ${Number(record.rowCount || record.draft?.rows?.length || 0)}품목</option>`
   )).join('')}`;
   $('catalogSelect').value = records.some(record => record.estimateId === current.catalogRecordId) ? current.catalogRecordId : '';
-  $('catalogSaveButton').textContent = current.catalogRecordId ? '수정 저장' : '저장';
+  $('catalogSaveButton').textContent = current.catalogRecordId ? '수정 저장' : '카탈로그 저장';
+  $('catalogDeleteButton').disabled = !current.catalogRecordId;
 }
 
 function restoreSourceImageForMode(mode) {
@@ -1545,6 +1555,10 @@ function loadCatalogRecord(record) {
   syncSourceText();
   state.draft.activeMode = 'estimate';
   const catalogDraft = contract.normalizeModeDraft('estimate', { ...record.draft, catalogRecordId: record.estimateId });
+  catalogDraft.catalogBaselinePrices = buildCatalogPriceSnapshot(catalogDraft.rows);
+  catalogDraft.catalogPreviousPrices = record.previousPrices && typeof record.previousPrices === 'object'
+    ? { ...record.previousPrices }
+    : { ...(catalogDraft.catalogPreviousPrices || {}) };
   const linkedCustomer = customerById(catalogCustomerId(record));
   catalogDraft.header.customerId = linkedCustomer?.customerId || catalogCustomerId(record);
   catalogDraft.header.customerName = customerName(linkedCustomer) || catalogCustomerName(record);
@@ -1565,6 +1579,8 @@ function startNewCatalog() {
   const fallback = contract.createDraft().modes.estimate;
   fallback.header = { ...fallback.header, ...current.header, customValues: { ...(current.header.customValues || {}) } };
   fallback.activeMethod = 'direct';
+  fallback.catalogBaselinePrices = {};
+  fallback.catalogPreviousPrices = {};
   state.draft.modes.estimate = fallback;
   state.sourceImages.estimate = null;
   state.selectedRowIds.clear();
@@ -1574,45 +1590,21 @@ function startNewCatalog() {
   window.requestAnimationFrame(() => inputRows.querySelector('[data-field="itemCode"]')?.focus());
 }
 
-function openEstimateListDialog() {
-  const dialog = document.createElement('dialog');
-  dialog.className = 'smart-dialog smart-estimate-dialog';
-  dialog.innerHTML = `<div class="smart-dialog__shell">
-    <header><div><small>Estimate Catalog</small><h2>견적 목록</h2></div><button type="button" data-close aria-label="닫기">×</button></header>
-    <div class="smart-dialog__message">저장된 견적서를 선택하면 현재 견적 입력화면으로 불러옵니다.</div>
-    <div class="smart-estimate-results"></div>
-    <footer><button type="button" class="button button--quiet" data-close>닫기</button></footer>
-  </div>`;
-  document.body.append(dialog);
-  const results = dialog.querySelector('.smart-estimate-results');
-  const render = () => {
-    results.innerHTML = state.estimates.length ? state.estimates.map(item => `<article class="smart-draft-row" data-estimate-id="${esc(item.estimateId)}">
-      <button type="button" data-open-estimate><strong>${esc(estimateTitle(item))}</strong><span>${Number(item.rowCount || item.draft?.rows?.length || 0)}품목 · ${Number(item.amount || 0).toLocaleString('ko-KR')}원</span><small>${item.updatedAt ? new Date(item.updatedAt).toLocaleString('ko-KR') : ''}</small></button>
-      <button type="button" class="row-remove" data-delete-estimate aria-label="견적 삭제">×</button>
-    </article>`).join('') : '<div class="smart-dialog__empty">저장된 견적서가 없습니다.</div>';
-    results.querySelectorAll('[data-estimate-id]').forEach(row => {
-      const estimateId = row.dataset.estimateId;
-      row.querySelector('[data-open-estimate]').addEventListener('click', () => {
-        const record = state.estimates.find(item => item.estimateId === estimateId);
-        if (!record?.draft) return;
-        loadCatalogRecord(record);
-        dialog.close();
-        dialog.remove();
-      });
-      row.querySelector('[data-delete-estimate]').addEventListener('click', async () => {
-        const record = state.estimates.find(item => item.estimateId === estimateId);
-        if (!record || !window.confirm(`${estimateTitle(record)} 견적서를 삭제하시겠습니까?`)) return;
-        await deleteEstimate(estimateId);
-        state.estimates = state.estimates.filter(item => item.estimateId !== estimateId);
-        render();
-      });
-    });
-  };
-  const finish = () => { dialog.close(); dialog.remove(); };
-  dialog.querySelectorAll('[data-close]').forEach(button => button.addEventListener('click', finish));
-  dialog.addEventListener('cancel', event => { event.preventDefault(); finish(); });
-  dialog.showModal();
-  render();
+async function deleteSelectedCatalog() {
+  const current = modeDraft();
+  const estimateId = current.catalogRecordId || $('catalogSelect').value;
+  const record = state.estimates.find(item => item.estimateId === estimateId);
+  if (!record) return toast('삭제할 카탈로그를 선택하세요.', 'error');
+  if (!window.confirm(`${estimateTitle(record)} 카탈로그를 삭제하시겠습니까?`)) return;
+  try {
+    await deleteEstimate(estimateId);
+    state.estimates = state.estimates.filter(item => item.estimateId !== estimateId);
+    startNewCatalog();
+    renderCatalogControls();
+    toast('선택한 카탈로그를 삭제했습니다.', 'success');
+  } catch (error) {
+    toast(error.message || '카탈로그를 삭제하지 못했습니다.', 'error');
+  }
 }
 
 async function rematchRowsForCustomer(customer) {
@@ -1772,14 +1764,15 @@ function renderDelivery() {
   $('deliveryTarget').textContent = isOrder ? '공통 주문서 원장' : (isEstimate ? '견적서 카탈로그' : `${contract.MODES[state.draft.activeMode].label} 전달 계약 준비 중`);
   $('deliveryDescription').textContent = isOrder
     ? 'ORDER Q vNext 저장소에 먼저 기록합니다.'
-    : (isEstimate ? '견적 목록에 저장하고 다시 불러올 수 있습니다.' : '확정된 DataOps 연결만 이후 단계에서 활성화합니다.');
+    : (isEstimate ? '카탈로그에서 저장·불러오기·삭제를 관리합니다.' : '확정된 DataOps 연결만 이후 단계에서 활성화합니다.');
   const visibleDelivery = delivery.status === 'SAVED' ? delivery : lastDelivery;
   $('deliveryState').textContent = visibleDelivery
     ? `최근 ${visibleDelivery.orderNo || visibleDelivery.targetRecordId || '저장 완료'}${visibleDelivery.deliveredAt ? ` · ${new Date(visibleDelivery.deliveredAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}` : ''}`
     : '전달 전';
   document.querySelector('.delivery-state span').style.background = visibleDelivery ? '#5eead4' : '#fbbf24';
   $('completeButton').disabled = (!isOrder && !isEstimate) || state.busy;
-  $('completeButton').textContent = isEstimate ? '견적서 저장' : '입력 완료';
+  $('completeButton').hidden = isEstimate;
+  $('completeButton').textContent = '입력 완료';
   if (visibleDelivery?.targetRecordId) {
     document.querySelector('#orderLinks a:first-child').href = `../orderq/index.html?focus=${encodeURIComponent(visibleDelivery.targetRecordId)}&saved=1`;
   } else {
@@ -1797,7 +1790,7 @@ function renderMode() {
   $('relatedModeLabel').textContent = selected.label;
   $('orderLinks').hidden = selected.id !== 'order';
   $('relatedEmpty').hidden = selected.id === 'order';
-  $('estimateListButton').hidden = selected.id !== 'estimate';
+  $('estimateOutputActions').hidden = selected.id !== 'estimate';
   hydrateHeader();
   if (removeParserArtifactRows(modeDraft())) scheduleSave();
   sourceTextInput.value = modeDraft().sourceText;
@@ -1814,7 +1807,7 @@ function renderMode() {
   $('relatedCollapseButton').textContent = relatedOpen ? '연결 앱 닫기' : '연결 앱 열기';
   setAppStatus(selected.id === 'order'
     ? '주문서 입력을 시작할 수 있습니다.'
-    : (selected.id === 'estimate' ? '견적서를 작성하거나 저장된 견적을 불러올 수 있습니다.' : `${selected.label} 입력 화면입니다. 전달 연결은 준비 중입니다.`));
+    : (selected.id === 'estimate' ? '카탈로그를 선택하거나 새 견적을 작성할 수 있습니다.' : `${selected.label} 입력 화면입니다. 전달 연결은 준비 중입니다.`));
   if (sourceTextInput.value.trim()) scheduleAutoAnalysis(650);
 }
 
@@ -2678,6 +2671,99 @@ function openProductDialog(row, { query = '', focusTarget = null, returnField = 
   render();
 }
 
+function estimateComparisonPrices(current = modeDraft()) {
+  const currentPrices = buildCatalogPriceSnapshot(current.rows);
+  const baselinePrices = current.catalogBaselinePrices || {};
+  return priceSnapshotsEqual(currentPrices, baselinePrices)
+    ? (current.catalogPreviousPrices || {})
+    : baselinePrices;
+}
+
+function canvasBlob(canvas) {
+  return new Promise((resolve, reject) => canvas.toBlob(blob => {
+    if (blob) resolve(blob);
+    else reject(new Error('공지 이미지를 생성하지 못했습니다.'));
+  }, 'image/png'));
+}
+
+function downloadBlob(blob, fileName) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = fileName;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+async function copyNoticeCanvas(canvas, fileName) {
+  const blob = await canvasBlob(canvas);
+  if (navigator.clipboard?.write && window.ClipboardItem) {
+    try {
+      await navigator.clipboard.write([new window.ClipboardItem({ 'image/png': blob })]);
+      toast('카톡 공지 이미지를 클립보드에 복사했습니다.', 'success');
+      return;
+    } catch (_) {}
+  }
+  downloadBlob(blob, fileName);
+  toast('이미지 복사를 지원하지 않아 PNG로 저장했습니다.', 'warn');
+}
+
+function openEstimateNoticePreview() {
+  const current = modeDraft();
+  const rows = buildKakaoNoticeRows(current.rows, estimateComparisonPrices(current));
+  if (!rows.length) return toast('공지로 출력할 견적 품목이 없습니다.', 'error');
+  const title = `${current.header.customerName || '거래처'} 견적 단가 안내`;
+  const canvases = renderKakaoNoticeCanvases(rows, { title, rowsPerPage: 12 });
+  const dateStamp = new Date().toLocaleDateString('sv-SE');
+  const dialog = document.createElement('dialog');
+  dialog.className = 'smart-dialog estimate-notice-dialog';
+  dialog.innerHTML = `<div class="smart-dialog__shell">
+    <header><div><small>Kakao Notice</small><h2>카톡 공지 미리보기</h2></div><button type="button" data-close aria-label="닫기">×</button></header>
+    <div class="smart-dialog__message">직전 저장 공지단가와 비교한 변동액입니다. 페이지별로 복사하거나 PNG로 저장할 수 있습니다.</div>
+    <div class="estimate-notice-pages">${canvases.map((canvas, index) => `<article class="estimate-notice-page" data-notice-page="${index}"><img src="${canvas.toDataURL('image/png')}" alt="카톡 공지 ${index + 1}페이지 미리보기"><footer><button type="button" class="button button--quiet" data-download-notice>PNG 저장</button><button type="button" class="button button--primary" data-copy-notice>이미지 복사</button></footer></article>`).join('')}</div>
+    <footer><button type="button" class="button button--quiet" data-close>닫기</button></footer>
+  </div>`;
+  document.body.append(dialog);
+  dialog.querySelectorAll('[data-notice-page]').forEach(page => {
+    const index = Number(page.dataset.noticePage);
+    const fileName = `카톡공지_${dateStamp}_${String(index + 1).padStart(2, '0')}.png`;
+    page.querySelector('[data-copy-notice]').addEventListener('click', () => void copyNoticeCanvas(canvases[index], fileName));
+    page.querySelector('[data-download-notice]').addEventListener('click', async () => {
+      downloadBlob(await canvasBlob(canvases[index]), fileName);
+      toast(`${index + 1}페이지 PNG를 저장했습니다.`, 'success');
+    });
+  });
+  const finish = () => { dialog.close(); dialog.remove(); };
+  dialog.querySelectorAll('[data-close]').forEach(button => button.addEventListener('click', finish));
+  dialog.addEventListener('cancel', event => { event.preventDefault(); finish(); });
+  dialog.showModal();
+}
+
+function exportEstimateExcel() {
+  const output = buildEstimateF8Data(modeDraft().rows);
+  if (!output.ok) {
+    const first = output.errors[0];
+    if (Number.isInteger(first?.rowIndex)) {
+      inputRows.querySelectorAll('tr')[first.rowIndex]?.querySelector('[data-field="itemCode"], [data-field="unitPrice"]')?.focus();
+    }
+    setAppStatus(first?.message || '견적 Excel 출력 조건을 확인하세요.', 'error');
+    return toast(first?.message || '견적 Excel 출력 조건을 확인하세요.', 'error');
+  }
+  if (!window.XLSX?.utils?.book_new) return toast('Excel 생성 모듈을 불러오지 못했습니다.', 'error');
+  const workbook = window.XLSX.utils.book_new();
+  window.XLSX.utils.book_append_sheet(workbook, window.XLSX.utils.aoa_to_sheet(output.shopData), '쇼핑몰업로드');
+  window.XLSX.utils.book_append_sheet(workbook, window.XLSX.utils.aoa_to_sheet(output.erpData), 'ERP업데이트');
+  if (output.confirmData.length > 1) {
+    window.XLSX.utils.book_append_sheet(workbook, window.XLSX.utils.aoa_to_sheet(output.confirmData), '확인요청');
+  }
+  const dateStamp = new Date().toLocaleDateString('sv-SE');
+  window.XLSX.writeFile(workbook, `통합업로드용_견적F8_${dateStamp}.xlsx`);
+  setAppStatus(`견적 Excel 생성 완료 · ${output.rows.length}품목`);
+  toast('MerchOps F8 형식의 견적 Excel을 생성했습니다.', 'success');
+}
+
 async function saveEstimateDocument() {
   const current = modeDraft();
   if (!current.header.customerId) {
@@ -2701,12 +2787,19 @@ async function saveEstimateDocument() {
   setAppStatus('견적서 카탈로그에 저장하고 있습니다.');
   try {
     const timestamp = new Date().toISOString();
+    const isNewCatalog = !current.catalogRecordId;
     const estimateId = current.catalogRecordId || createRecordId('SIEST');
+    const existing = state.estimates.find(item => item.estimateId === estimateId);
+    const storedPrices = buildCatalogPriceSnapshot(existing?.draft?.rows || []);
+    const priorPrices = Object.keys(current.catalogBaselinePrices || {}).length
+      ? { ...current.catalogBaselinePrices }
+      : storedPrices;
+    current.catalogPreviousPrices = { ...priorPrices };
+    current.catalogBaselinePrices = buildCatalogPriceSnapshot(current.rows);
     current.catalogRecordId = estimateId;
     current.updatedAt = timestamp;
     current.delivery = { status: 'SAVED', targetId: 'smart-input-estimates', targetRecordId: estimateId, deliveredAt: timestamp };
     const summary = contract.summarizeRows(current.rows);
-    const existing = state.estimates.find(item => item.estimateId === estimateId);
     const catalogSequence = catalogsForCustomer(current.header).filter(item => item.estimateId !== estimateId).length + 1;
     const record = {
       estimateId,
@@ -2715,6 +2808,7 @@ async function saveEstimateDocument() {
       customerName: current.header.customerName,
       rowCount: summary.total,
       amount: summary.amount,
+      previousPrices: priorPrices,
       createdAt: existing?.createdAt || timestamp,
       updatedAt: timestamp,
       draft: JSON.parse(JSON.stringify(current))
@@ -2726,7 +2820,7 @@ async function saveEstimateDocument() {
     renderCatalogControls();
     renderDelivery();
     setAppStatus(`${estimateTitle(record)} · ${summary.total}품목 견적 저장 완료`);
-    toast('견적서를 견적 목록에 저장했습니다.', 'success');
+    toast(isNewCatalog ? '새 카탈로그를 생성했습니다.' : '카탈로그를 수정 저장했습니다.', 'success');
   } catch (error) {
     setAppStatus('견적서를 저장하지 못했습니다. 입력 내용은 유지됩니다.', 'error');
     toast(error.message || '견적서 저장에 실패했습니다.', 'error');
@@ -3086,7 +3180,8 @@ $('transactionTypeInput').addEventListener('change', event => { modeDraft().head
 $('completeButton').addEventListener('click', completeOrder);
 $('saveDraftButton').addEventListener('click', () => { saveDraftNow(); toast('현재 초안을 저장했습니다.', 'success'); });
 $('draftListButton').addEventListener('click', openDraftListDialog);
-$('estimateListButton').addEventListener('click', openEstimateListDialog);
+$('estimateNoticeButton').addEventListener('click', openEstimateNoticePreview);
+$('estimateExcelButton').addEventListener('click', exportEstimateExcel);
 $('catalogSelect').addEventListener('change', event => {
   if (!event.target.value) {
     startNewCatalog();
@@ -3095,7 +3190,9 @@ $('catalogSelect').addEventListener('change', event => {
   const record = state.estimates.find(item => item.estimateId === event.target.value);
   if (record) loadCatalogRecord(record);
 });
+$('catalogNewButton').addEventListener('click', startNewCatalog);
 $('catalogSaveButton').addEventListener('click', saveEstimateDocument);
+$('catalogDeleteButton').addEventListener('click', deleteSelectedCatalog);
 $('settingsButton').addEventListener('click', openSettingsDialog);
 $('resetDraftButton').addEventListener('click', () => resetCurrentMode(false));
 $('relatedCollapseButton').addEventListener('click', event => {
