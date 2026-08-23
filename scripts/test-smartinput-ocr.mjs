@@ -38,6 +38,7 @@ assert.deepEqual(parserLines[0], {
   quantity: 165,
   unit: '',
   unitPrice: 3800,
+  unitPriceReviewStatus: 'PENDING',
   sourceLineNo: 1,
   sourceLineKey: 'OCR-BATCH:OCR:1',
   matchStatus: 'UNRESOLVED',

@@ -45,6 +45,30 @@ assert.ok(Array.from(contract.DEFAULT_SETTINGS.voucherColumns).includes('itemNam
 const minimalLayout = contract.normalizeSettings({ headerFields: [], voucherColumns: [] });
 assert.deepEqual(Array.from(minimalLayout.headerFields), ['customer', 'deliveryDate', 'warehouse']);
 assert.deepEqual(Array.from(minimalLayout.voucherColumns), ['itemName', 'quantity']);
+for (const mode of Object.keys(contract.MODES)) {
+  assert.deepEqual(Array.from(minimalLayout.headerFieldsByMode[mode]), ['customer', 'deliveryDate', 'warehouse']);
+  assert.deepEqual(Array.from(minimalLayout.voucherColumnsByMode[mode]), ['itemName', 'quantity']);
+}
+const perVoucherLayout = contract.normalizeSettings({
+  headerFieldsByMode: {
+    order: ['customer', 'deliveryDate', 'warehouse', 'transactionType'],
+    purchase: ['customer', 'deliveryDate', 'warehouse'],
+    sale: ['customer', 'deliveryDate', 'warehouse', 'transactionType'],
+    estimate: ['customer', 'deliveryDate', 'warehouse']
+  },
+  voucherColumnsByMode: {
+    order: ['itemName', 'quantity', 'unitPrice'],
+    purchase: ['itemName', 'quantity', 'supplyAmount'],
+    sale: ['itemName', 'quantity', 'noticePrice'],
+    estimate: ['itemName', 'quantity', 'memo']
+  }
+});
+assert.ok(Array.from(perVoucherLayout.headerFieldsByMode.order).includes('transactionType'));
+assert.ok(!Array.from(perVoucherLayout.headerFieldsByMode.purchase).includes('transactionType'));
+assert.ok(Array.from(perVoucherLayout.voucherColumnsByMode.purchase).includes('supplyAmount'));
+assert.ok(!Array.from(perVoucherLayout.voucherColumnsByMode.purchase).includes('unitPrice'));
+assert.ok(Array.from(perVoucherLayout.voucherColumnsByMode.sale).includes('noticePrice'));
+assert.ok(Array.from(perVoucherLayout.voucherColumnsByMode.estimate).includes('memo'));
 const customLayout = contract.normalizeSettings({
   customFields: [
     { id: 'custom-header-request', label: '배송 요청사항', scope: 'header', category: 'CUSTOM' },
@@ -74,6 +98,8 @@ const displayRow = contract.normalizeRow({ memo: '메모', description: '직원 
 assert.equal(displayRow.memo, '메모');
 assert.equal(displayRow.description, '직원 적요');
 assert.equal(displayRow.noticePrice, 1200);
+assert.equal(contract.normalizeRow({ unitPrice: 3800, unitPriceReviewStatus: 'PENDING' }).unitPriceReviewStatus, 'PENDING');
+assert.equal(contract.normalizeRow({ unitPrice: 3800 }).unitPriceReviewStatus, 'CONFIRMED');
 assert.deepEqual(JSON.parse(JSON.stringify(contract.normalizeRow({
   sourceRegion: { left: .1, top: .2, width: .3, height: .4 }
 }).sourceRegion)), { left: .1, top: .2, width: .3, height: .4 });
@@ -234,6 +260,12 @@ assert.match(html, /id="photoRotateRight"/);
 assert.match(html, /id="photoOcrToggle"/);
 assert.match(html, /id="photoOcrPanel"[^>]*hidden/);
 assert.match(html, /id="photoResizer"[^>]*hidden/);
+assert.match(html, /id="photoEmptyState"/);
+assert.match(html, /id="photoEmptySelectButton"/);
+assert.match(html, /id="photoViewerToolbar"[^>]*hidden/);
+assert.match(html, /legend--matched">일치/);
+assert.match(html, /legend--similar">유사/);
+assert.match(html, /legend--failed">불일치/);
 assert.match(html, /id="detailColumnsButton"[^>]*hidden/);
 assert.match(html, /<th data-column="status">상태<\/th>/);
 assert.doesNotMatch(html, /id="mobilePhotoTabs"|data-photo-pane=/);
@@ -268,12 +300,20 @@ assert.match(css, /\.source-editor textarea \{[^}]*resize: none;/);
 assert.match(css, /\.source-editor\[hidden\] \{ display: none; \}/,
   '사진 모드에서는 OCR 문자 편집기가 레이아웃 공간을 차지하면 안 된다.');
 assert.match(css, /\.photo-viewer__viewport \{[^}]*overflow: auto;/);
+assert.match(css, /\.photo-viewer__viewport \{[^}]*background: #f8fafc;/);
+assert.match(css, /\.photo-viewer\.has-image \.photo-viewer__viewport \{/);
+assert.match(css, /\.photo-empty-state \{/);
+assert.match(css, /\.analyze-button\[hidden\], \.parser-progress\[hidden\] \{ display: none; \}/);
 assert.match(css, /\.photo-viewer__region \{/);
 assert.match(css, /\.workspace\.has-photo-source \{[^}]*grid-template-columns: minmax\(370px, var\(--photo-pane-width\)\) 8px minmax\(520px, 1fr\) 230px;/);
+assert.match(css, /--photo-pane-width: clamp\(420px, 38vw, 760px\)/);
+assert.match(css, /\.document-fields > \.field \{[^}]*grid-template-rows: 18px 42px 14px;/);
+assert.match(css, /\.document-fields \.mode-tabs \{[^}]*height: 42px;/);
 assert.match(css, /\.workspace\.has-photo-source \.parser-card, \.workspace\.has-photo-source \.workbench \{[^}]*height: calc\(100vh - var\(--nexus-top-height\) - 88px\)/);
 assert.match(css, /\.photo-ocr-panel \{/);
 assert.match(css, /\.photo-resizer \{/);
 assert.match(css, /\.row-status \{/);
+assert.match(css, /td\.is-price-review-pending::before \{/);
 assert.match(css, /\.source-token--user/);
 assert.match(css, /\.source-token--time/);
 assert.match(css, /\.source-token--collected/);
@@ -368,9 +408,16 @@ assert.match(appSource, /withTimeout\(listCustomers\(\{ includeInactive: false \
 assert.match(appSource, /function openEstimateListDialog\(\)/);
 assert.match(appSource, /function saveEstimateDocument\(\)/);
 assert.match(appSource, /function applyFormLayout\(\)/);
+assert.match(appSource, /function headerFieldsForMode\(/);
+assert.match(appSource, /function voucherColumnsForMode\(/);
 assert.match(appSource, /class="settings-group" open/);
 assert.match(appSource, /data-add-layout-field="header"/);
 assert.match(appSource, /data-add-layout-field="voucher"/);
+assert.match(appSource, /data-settings-layout-mode/);
+assert.match(appSource, /headerFieldsByMode: workingHeaderFieldsByMode/);
+assert.match(appSource, /voucherColumnsByMode: workingVoucherColumnsByMode/);
+assert.match(css, /\.settings-layout-modes \{[^}]*grid-template-columns: repeat\(4,/,
+  '전표별 상단 정보 열과 표시 열은 주문서·구매·판매·견적서 선택 탭을 제공해야 한다.');
 assert.match(appSource, /상품정보/);
 assert.match(appSource, /거래처정보/);
 assert.match(appSource, /사용자지정/);
@@ -450,6 +497,17 @@ assert.match(dataStoreSource, /export function saveSourceImage/);
 assert.match(appSource, /function persistSourceImageForMode\(/);
 assert.match(appSource, /function restoreSourceImageForMode\(/);
 assert.match(appSource, /function renderCatalogControls\(/);
+assert.match(appSource, /photoViewer\.classList\.toggle\('has-image', showPhoto\)/);
+assert.match(appSource, /\$\('photoEmptySelectButton'\)\.addEventListener\('click'/);
+assert.match(appSource, /state\.sourceImages\[state\.draft\.activeMode\] = imageEvidence;[\s\S]*renderSourceSurface\(\);[\s\S]*if \(state\.busy\)/,
+  '붙여넣은 원본 사진은 진행 중인 파서보다 먼저 뷰어에 표시해야 한다.');
+assert.match(appSource, /if \(status === 'SIMILAR'\) return '유사';[\s\S]*return '불일치';/);
+assert.match(appSource, /data-field="unitPrice" type="text" inputmode="decimal"/,
+  '단가 입력은 브라우저 숫자 증감 스피너를 사용하면 안 된다.');
+assert.match(appSource, /function confirmUnitPriceReview\(/);
+assert.match(appSource, /inputRows\.addEventListener\('focusout',[\s\S]*confirmUnitPriceReview/);
+assert.match(appSource, /const priceTab = event\.key === 'Tab' && field === 'unitPrice';/);
+assert.match(appSource, /directionalGridTarget\(rowId, field, event\.shiftKey \? 'ArrowUp' : 'ArrowDown'\)/);
 assert.match(appSource, /function startNewCatalog\(/);
 assert.match(appSource, /function availableCatalogs\(/);
 assert.match(appSource, /const records = availableCatalogs\(current\.header\)/);
