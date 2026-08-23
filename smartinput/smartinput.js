@@ -7,7 +7,7 @@ import { extractOrderProductLines } from '../orderq/smartparser/order-text-extra
 import { createOrder } from '../orderq/order-intake-engine.js?v=0.15.1';
 import { syncAfterLocalMutation } from '../orderq/orderq-sync-engine.js?v=0.8.0';
 import { STORE, getAll } from '../orderq/orderq-db.js?v=0.12.1';
-import { createLiveCustomer, ensureCustomerMasterReady, searchCustomers } from '../orderq/customer-master.js?v=0.12.1';
+import { createLiveCustomer, ensureCustomerMasterReady } from '../orderq/customer-master.js?v=0.12.1';
 import { loadProductCatalog, searchProductCatalog } from '../orderq/product-master-search.js?v=0.8.1';
 import { loadWarehouseCatalog, matchWarehouseInput, warehouseDisplayName } from '../orderq/warehouse-master.js?v=0.8.0';
 import {
@@ -139,6 +139,16 @@ function toast(message, tone = 'normal') {
   element.hidden = false;
   clearTimeout(state.toastTimer);
   state.toastTimer = window.setTimeout(() => { element.hidden = true; }, 3800);
+}
+
+function withTimeout(promise, timeoutMs, message) {
+  return new Promise((resolve, reject) => {
+    const timer = window.setTimeout(() => reject(new Error(message)), timeoutMs);
+    Promise.resolve(promise).then(
+      value => { clearTimeout(timer); resolve(value); },
+      error => { clearTimeout(timer); reject(error); }
+    );
+  });
 }
 
 function setSaveState(message = '', stateName = 'idle') {
@@ -469,9 +479,16 @@ function currentSourceType() {
     || 'GENERAL_TEXT';
 }
 
-async function refreshCustomers() {
-  await ensureCustomerMasterReady();
-  state.customers = (await getAll(STORE.CUSTOMERS)).filter(customer => (customer.status || 'ACTIVE') === 'ACTIVE');
+async function refreshCustomers({ syncIfEmpty = true } = {}) {
+  let customers = (await withTimeout(getAll(STORE.CUSTOMERS), 3500, '로컬 거래처 목록을 불러오는 데 시간이 걸리고 있습니다.'))
+    .filter(customer => (customer.status || 'ACTIVE') === 'ACTIVE');
+  if (!customers.length && syncIfEmpty) {
+    await withTimeout(ensureCustomerMasterReady(), 7000, '거래처 마스터 동기화가 지연되고 있습니다.');
+    customers = (await withTimeout(getAll(STORE.CUSTOMERS), 3500, '동기화된 거래처 목록을 불러오지 못했습니다.'))
+      .filter(customer => (customer.status || 'ACTIVE') === 'ACTIVE');
+  }
+  if (customers.length) state.customers = customers;
+  return state.customers;
 }
 
 function customerSearchText(customer) {
@@ -568,7 +585,6 @@ async function persistLinkGroup(group) {
 
 async function chooseCustomer() {
   try {
-    await refreshCustomers();
     const customer = await new Promise(resolve => {
       const dialog = document.createElement('dialog');
       dialog.className = 'smart-dialog smart-customer-dialog';
@@ -590,22 +606,19 @@ async function chooseCustomer() {
       const selectionText = dialog.querySelector('[data-customer-selection]');
       const selected = new Set();
       let linkMode = false;
+      let customerLoading = !state.customers.length;
       let visibleCustomers = [];
       const finish = value => {
         resolve(value || null);
         dialog.close();
         dialog.remove();
       };
-      const render = async () => {
+      const render = () => {
         const query = input.value.trim();
-        if (query) {
-          const matched = await searchCustomers(query, { includeInactive: false });
-          visibleCustomers = matched.map(item => item.customer);
-        } else {
-          visibleCustomers = [...state.customers]
+        visibleCustomers = [...state.customers]
+          .filter(customerItem => !query || normalizedKey(customerSearchText(customerItem)).includes(normalizedKey(query)))
             .sort((left, right) => customerName(left).localeCompare(customerName(right), 'ko'))
             .slice(0, 80);
-        }
         results.innerHTML = visibleCustomers.map(customerItem => {
           const group = groupForCustomer(customerItem.customerId);
           const isTax = group?.taxCustomerId === customerItem.customerId;
@@ -626,10 +639,19 @@ async function chooseCustomer() {
           });
         });
         const selectedCustomer = !linkMode && selected.size === 1 ? customerById([...selected][0]) : null;
-        if (selectionText) selectionText.textContent = selectedCustomer ? `${customerName(selectedCustomer)} 선택됨` : '선택된 거래처가 없습니다.';
+        const selectedIsTemporary = Boolean(selectedCustomer && temporaryMeta(selectedCustomer.customerId));
+        if (selectionText) {
+          selectionText.textContent = selectedCustomer
+            ? `${customerName(selectedCustomer)} 선택됨${selectedIsTemporary ? ' · 임시 배송처는 세무 등록 불가' : ''}`
+            : '선택된 거래처가 없습니다.';
+        }
+        dialog.querySelector('[data-customer-use]').disabled = !selectedCustomer;
+        dialog.querySelector('[data-tax-register]').disabled = !selectedCustomer || selectedIsTemporary;
         message.textContent = linkMode
           ? `${selected.size}개 선택 · 연결할 거래처를 2개 이상 체크하세요.`
-          : `${visibleCustomers.length}개 거래처 · 한 곳만 체크할 수 있습니다.`;
+          : (customerLoading && !visibleCustomers.length
+            ? '거래처 목록을 불러오는 중입니다. 창은 그대로 두고 잠시 기다려 주세요.'
+            : `${visibleCustomers.length}개 거래처 · 한 곳만 체크할 수 있습니다.`);
       };
       const setLinkMode = value => {
         linkMode = value;
@@ -658,15 +680,31 @@ async function chooseCustomer() {
           return;
         }
         const customerItem = customerById(customerId);
-        const group = groupForCustomer(customerId);
-        if (!group || temporaryMeta(customerId)) {
-          message.textContent = '거래처 연결을 먼저 저장한 뒤 연결된 정식 거래처를 체크하세요.';
+        if (temporaryMeta(customerId)) {
+          message.textContent = '임시 배송처는 세무 거래처로 등록할 수 없습니다.';
           return;
         }
-        const next = { ...group, taxCustomerId: customerId, status: 'CONFIRMED', revision: Number(group.revision || 0) + 1, updatedAt: new Date().toISOString() };
-        await persistLinkGroup(next);
-        await render();
-        message.textContent = `${customerName(customerItem)}을 세무 거래처로 등록했습니다.`;
+        const group = groupForCustomer(customerId);
+        const timestamp = new Date().toISOString();
+        const next = group
+          ? { ...group, taxCustomerId: customerId, status: 'CONFIRMED', revision: Number(group.revision || 0) + 1, updatedAt: timestamp }
+          : {
+              linkGroupId: createRecordId('SILINK'),
+              memberCustomerIds: [customerId],
+              taxCustomerId: customerId,
+              status: 'CONFIRMED',
+              revision: 1,
+              createdAt: timestamp,
+              updatedAt: timestamp,
+              updatedBy: 'SMART_INPUT_ADMIN'
+            };
+        try {
+          await persistLinkGroup(next);
+          render();
+          message.textContent = `${customerName(customerItem)}을 세무 거래처로 등록했습니다.`;
+        } catch (error) {
+          message.textContent = error.message || '세무 거래처를 등록하지 못했습니다.';
+        }
       });
       dialog.querySelector('[data-link-save]').addEventListener('click', async () => {
         if (selected.size < 2) {
@@ -712,6 +750,16 @@ async function chooseCustomer() {
       dialog.showModal();
       input.focus();
       render();
+      void refreshCustomers({ syncIfEmpty: true })
+        .then(() => {
+          customerLoading = false;
+          render();
+        })
+        .catch(error => {
+          customerLoading = false;
+          render();
+          message.textContent = error.message || '거래처 목록을 불러오지 못했습니다.';
+        });
     });
     if (customer) applyCustomer(customer);
   } catch (error) {
@@ -1829,10 +1877,10 @@ async function hydrateReferences() {
   $('referenceStatus').dataset.status = 'LOADING';
   $('referenceStatus').querySelector('strong').textContent = '상품·거래처·배송 설정을 불러오고 있습니다.';
   const results = await Promise.allSettled([
-    ensureCustomerMasterReady().then(() => getAll(STORE.CUSTOMERS)),
-    loadProductCatalog(),
-    loadWarehouseCatalog(),
-    loadSmartInputData()
+    withTimeout(getAll(STORE.CUSTOMERS), 5000, '거래처 기준자료 로딩 시간 초과'),
+    withTimeout(loadProductCatalog(), 7000, '상품 기준자료 로딩 시간 초과'),
+    withTimeout(loadWarehouseCatalog(), 5000, '창고 기준자료 로딩 시간 초과'),
+    withTimeout(loadSmartInputData(), 5000, '스마트입력 설정 로딩 시간 초과')
   ]);
   if (results[0].status === 'fulfilled') state.customers = results[0].value.filter(customer => (customer.status || 'ACTIVE') === 'ACTIVE');
   if (results[1].status === 'fulfilled') {
@@ -1861,6 +1909,14 @@ async function hydrateReferences() {
     : (state.catalogStatus === 'EMPTY' ? '상품 기준자료가 없습니다. 직접입력은 계속 사용할 수 있습니다.' : '상품 기준자료 일부를 불러오지 못했습니다. 직접입력은 계속 사용할 수 있습니다.');
   renderMode();
   if (sourceTextInput.value.trim()) scheduleAutoAnalysis(650);
+  if (!state.customers.length) {
+    void refreshCustomers({ syncIfEmpty: true })
+      .then(() => {
+        const referenceText = $('referenceStatus').querySelector('strong');
+        referenceText.textContent = referenceText.textContent.replace(/거래처 [\d,]+건/, `거래처 ${state.customers.length.toLocaleString('ko-KR')}건`);
+      })
+      .catch(() => setAppStatus('거래처 마스터 동기화가 지연되고 있습니다. 거래처 찾기 창은 계속 사용할 수 있습니다.', 'warn'));
+  }
   if (results.some(result => result.status === 'rejected')) {
     setAppStatus('일부 마스터를 불러오지 못했습니다. 직접입력은 계속 사용할 수 있습니다.', 'warn');
   }
