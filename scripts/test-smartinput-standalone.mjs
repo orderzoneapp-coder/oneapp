@@ -703,6 +703,16 @@ assert.doesNotMatch(appSource, /\$\('catalogSelect'\)\.disabled = !current\.head
 assert.match(appSource, /catalogDraft\.header\.customerId = linkedCustomer\?\.customerId \|\| catalogCustomerId\(record\)/);
 assert.match(appSource, /catalogDraft\.header\.customerName = customerName\(linkedCustomer\) \|\| catalogCustomerName\(record\)/);
 assert.match(appSource, /customerMappingSource = 'CATALOG'/);
+assert.match(appSource, /function createCatalogOnlyDraft\(source = \{\}, catalogRecordId = ''\)[\s\S]*sourceText: ''[\s\S]*activeMethod: 'direct'[\s\S]*batches: \[\]/,
+  'catalog records must keep product content without parser text or input batches');
+assert.match(appSource, /batchId: ''[\s\S]*sourceRegion: null[\s\S]*rawText: ''[\s\S]*candidateProducts: \[\][\s\S]*editedFields: \{\}/,
+  'catalog product rows must not retain parser provenance or photo regions');
+assert.match(appSource, /rawOrdererName: ''[\s\S]*aliasMappingId: ''[\s\S]*customerMappingSource: 'CATALOG'/,
+  'catalog headers must not retain parser orderer matching evidence');
+assert.match(appSource, /const catalogDraft = createCatalogOnlyDraft\(record\.draft, record\.estimateId\)[\s\S]*state\.sourceImages\.estimate = null[\s\S]*state\.pendingImageEvidence = null[\s\S]*state\.pendingOcrReview = null[\s\S]*resetPhotoView\(\)/,
+  'loading legacy catalogs must detach any previously saved parser photo');
+assert.match(appSource, /draft: JSON\.parse\(JSON\.stringify\(createCatalogOnlyDraft\(current, estimateId\)\)\)/,
+  'saving a catalog must persist the catalog-only projection');
 assert.match(appSource, /function isParserArtifactLine\(/);
 assert.match(appSource, /lines = lines\.filter\(line => !isParserArtifactLine\(line\)\)/);
 

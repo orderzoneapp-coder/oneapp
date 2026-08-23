@@ -1806,11 +1806,44 @@ function restoreSourceImageForMode(mode) {
   state.sourceImages[mode] = state.sourceImageRecords.get(documentId) || null;
 }
 
+function createCatalogOnlyDraft(source = {}, catalogRecordId = '') {
+  const fallback = contract.createDraft().modes.estimate;
+  const rows = (source.rows || []).map(row => contract.normalizeRow({
+    ...row,
+    batchId: '',
+    batchSequence: 0,
+    sourceLineNo: 0,
+    sourceLineKey: '',
+    intakeLineId: '',
+    sourceRegion: null,
+    rawText: '',
+    candidateProducts: [],
+    editedFields: {}
+  }));
+  return contract.normalizeModeDraft('estimate', {
+    ...source,
+    documentId: fallback.documentId,
+    catalogRecordId,
+    header: {
+      ...(source.header || {}),
+      submittedAt: '',
+      rawOrdererName: '',
+      aliasMappingId: '',
+      customerMappingSource: 'CATALOG'
+    },
+    sourceText: '',
+    activeMethod: 'direct',
+    batches: [],
+    rows,
+    delivery: { ...fallback.delivery }
+  });
+}
+
 function loadCatalogRecord(record) {
   if (!record?.draft) return;
   syncSourceText();
   state.draft.activeMode = 'estimate';
-  const catalogDraft = contract.normalizeModeDraft('estimate', { ...record.draft, catalogRecordId: record.estimateId });
+  const catalogDraft = createCatalogOnlyDraft(record.draft, record.estimateId);
   catalogDraft.catalogBaselinePrices = buildCatalogPriceSnapshot(catalogDraft.rows);
   catalogDraft.catalogPreviousPrices = record.previousPrices && typeof record.previousPrices === 'object'
     ? { ...record.previousPrices }
@@ -1820,8 +1853,15 @@ function loadCatalogRecord(record) {
   catalogDraft.header.customerName = customerName(linkedCustomer) || catalogCustomerName(record);
   catalogDraft.header.customerMappingSource = 'CATALOG';
   state.draft.modes.estimate = catalogDraft;
-  restoreSourceImageForMode('estimate');
+  state.sourceImages.estimate = null;
   state.selectedRowIds.clear();
+  clearTimeout(state.autoAnalyzeTimer);
+  state.analysisRequestId += 1;
+  state.pendingImageEvidence = null;
+  state.pendingOcrReview = null;
+  state.pendingSourceName = '';
+  setActiveActivity('');
+  resetPhotoView();
   saveDraftNow();
   renderMode();
   if (catalogDraft.header.customerId) {
@@ -3190,7 +3230,7 @@ async function saveEstimateDocument() {
       previousPrices: priorPrices,
       createdAt: existing?.createdAt || timestamp,
       updatedAt: timestamp,
-      draft: JSON.parse(JSON.stringify(current))
+      draft: JSON.parse(JSON.stringify(createCatalogOnlyDraft(current, estimateId)))
     };
     await saveEstimate(record);
     state.estimates = [record, ...state.estimates.filter(item => item.estimateId !== estimateId)]
