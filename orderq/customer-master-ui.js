@@ -26,7 +26,7 @@ import {
   missingCustomerFields
 } from './customer-completeness.js?v=0.1.0';
 
-let rowHeight = document.documentElement.dataset.nexusDensity === 'compact' ? 36 : 48;
+const rowHeight = 48;
 const BUFFER_ROWS = 8;
 const state = {
   customers: [], filtered: [], importBatch: null, importRecords: [],

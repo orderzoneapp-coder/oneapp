@@ -88,7 +88,7 @@ for (const appId of ['master-lookup', 'item-manager']) {
   assert.ok(manifest.applications.find(entry => entry.id === appId).sharedContracts.includes('nexus-app-ui'));
   assert.equal(manifest.applications.find(entry => entry.id === appId).status, 'pilot');
 }
-assert.match(documentation, /화면 밀도 전환은 제공하지 않으며/);
+assert.match(documentation, /하나의 고정 레이아웃/);
 assert.match(documentation, /등록되지 않은 예외는 허용하지 않는다/);
 assert.match(documentation, /F7\/F8\/F9/);
 

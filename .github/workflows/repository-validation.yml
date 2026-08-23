@@ -35,7 +35,7 @@ jobs:
       - name: Test NEXUS common header contract
         run: node scripts/test-nexus-common-header.mjs
 
-      - name: Test NEXUS common application UI and density contract
+      - name: Test NEXUS common fixed application UI contract
         run: node scripts/test-nexus-common-ui.mjs
 
       - name: Test standalone SmartInput contract

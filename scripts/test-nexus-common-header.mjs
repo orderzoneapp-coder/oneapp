@@ -42,8 +42,7 @@ assert.match(componentSource, /this\.currentGlobalAction \? '' :/, 'a global Sma
 assert.match(componentSource, /data-global-visible=/);
 assert.match(componentSource, /스마트입력 노출과 업무군 노출·순서를 관리합니다/);
 assert.match(componentSource, /action\.appId === this\.currentAppId/);
-assert.doesNotMatch(componentSource, /화면 밀도|data-density|nexus-density-change|STORAGE\.density|preferences\.density/);
-assert.match(componentSource, /delete root\.dataset\.nexusDensity/, 'legacy density markers must be discarded without reading the old preference');
+assert.doesNotMatch(componentSource, /화면 밀도|data-density|nexus-density-change|nexusDensity|STORAGE\.density|preferences\.density/);
 assert.match(cssSource, /--nexus-top-height, 44px/);
 assert.match(cssSource, /\.top \{\s*width: 100%/);
 assert.match(cssSource, /\.global-entries/);

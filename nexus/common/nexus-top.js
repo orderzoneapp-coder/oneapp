@@ -389,7 +389,6 @@
       const root = document.documentElement;
       root.dataset.nexusColorMode = colorMode;
       root.dataset.nexusTheme = colorMode;
-      delete root.dataset.nexusDensity;
       root.style.colorScheme = colorMode === 'system' ? 'light dark' : colorMode;
       root.style.setProperty('--nexus-top-height', '44px');
       root.style.setProperty('--nexus-content-gutter', '24px');

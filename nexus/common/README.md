@@ -50,7 +50,7 @@ window.NEXUS_TOP.clearGlobalError('preferences');
 
 ## 앱 공통 고정 UI
 
-지원 앱은 `nexus-app-ui.css`와 `nexus-ui-contract.js`를 불러온다. 공통헤더는 전체 폭을 사용하고 앱 작업영역은 `--nexus-content-max-width` 안에서 중앙 정렬한다. 화면 밀도 전환은 제공하지 않는다.
+지원 앱은 `nexus-app-ui.css`와 `nexus-ui-contract.js`를 불러온다. 공통헤더는 전체 폭을 사용하고 앱 작업영역은 `--nexus-content-max-width` 안에서 중앙 정렬하는 하나의 고정 레이아웃을 사용한다.
 
 ```html
 <link rel="stylesheet" href="/nexus/common/nexus-app-ui.css">
