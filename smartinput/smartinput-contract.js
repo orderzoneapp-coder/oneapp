@@ -23,7 +23,11 @@
     Object.freeze({ id: 'voice', label: '음성 STT', sourceType: 'VOICE_STT' })
   ]);
   const STAGES = Object.freeze(['capture', 'extract', 'match', 'review', 'complete']);
-  const ROW_FIELDS = Object.freeze(['itemCode', 'itemName', 'specification', 'quantity', 'unit', 'unitPrice', 'memo', 'description', 'noticePrice']);
+  const ROW_FIELDS = Object.freeze([
+    'itemCode', 'itemName', 'secondaryName', 'searchInfo', 'specification', 'boxQuantity',
+    'quantity', 'unit', 'unitPrice', 'outPrice', 'wholesaleA', 'wholesaleB', 'listingPrice',
+    'marketPrice', 'promoPrice', 'memo', 'description', 'noticePrice'
+  ]);
   const HEADER_FIELD_DEFINITIONS = Object.freeze([
     Object.freeze({ id: 'customer', label: '배송 거래처', required: true }),
     Object.freeze({ id: 'taxCustomer', label: '세무 거래처', required: false }),
@@ -43,6 +47,18 @@
     Object.freeze({ id: 'description', label: '적요(직원)', required: false }),
     Object.freeze({ id: 'noticePrice', label: '공지단가', required: false })
   ]);
+  const PRODUCT_FIELD_DEFINITIONS = Object.freeze([
+    ...VOUCHER_COLUMN_DEFINITIONS,
+    Object.freeze({ id: 'secondaryName', label: '제2품명', required: false, valueType: 'TEXT' }),
+    Object.freeze({ id: 'searchInfo', label: '검색정보', required: false, valueType: 'TEXT' }),
+    Object.freeze({ id: 'boxQuantity', label: '입수', required: false, valueType: 'NUMBER' }),
+    Object.freeze({ id: 'outPrice', label: '출고가', required: false, valueType: 'NUMBER' }),
+    Object.freeze({ id: 'wholesaleA', label: '도매A', required: false, valueType: 'NUMBER' }),
+    Object.freeze({ id: 'wholesaleB', label: '도매B', required: false, valueType: 'NUMBER' }),
+    Object.freeze({ id: 'listingPrice', label: '상장가', required: false, valueType: 'NUMBER' }),
+    Object.freeze({ id: 'marketPrice', label: '시중가', required: false, valueType: 'NUMBER' }),
+    Object.freeze({ id: 'promoPrice', label: '행사가', required: false, valueType: 'NUMBER' })
+  ]);
   const DEFAULT_SETTINGS = Object.freeze({
     orderCutoffTime: '',
     allowSameDayDelivery: true,
@@ -53,7 +69,8 @@
     timezone: 'Asia/Seoul',
     headerFields: Object.freeze(HEADER_FIELD_DEFINITIONS.map(field => field.id)),
     voucherColumns: Object.freeze(VOUCHER_COLUMN_DEFINITIONS.map(field => field.id)),
-    customFields: Object.freeze([])
+    customFields: Object.freeze([]),
+    columnWidths: Object.freeze({})
   });
   const WEEKDAY_LABELS = Object.freeze(['일', '월', '화', '수', '목', '금', '토']);
 
@@ -82,6 +99,7 @@
   }
 
   function normalizeSettings(value = {}) {
+    const customTypeCounts = { TEXT: 0, NUMBER: 0 };
     const customFields = (Array.isArray(value.customFields) ? value.customFields : []).map((field, index) => {
       const scope = field?.scope === 'voucher' ? 'voucher' : 'header';
       const category = ['PRODUCT', 'CUSTOMER', 'CUSTOM'].includes(text(field?.category).toUpperCase())
@@ -89,12 +107,18 @@
         : 'CUSTOM';
       const label = text(field?.label);
       if (!label) return null;
+      const valueType = text(field?.valueType).toUpperCase() === 'NUMBER' ? 'NUMBER' : 'TEXT';
+      if (category === 'CUSTOM') {
+        if (customTypeCounts[valueType] >= 10) return null;
+        customTypeCounts[valueType] += 1;
+      }
       return {
         id: text(field?.id) || `custom-${scope}-${index + 1}`,
         label,
         scope,
         category,
-        sourceField: text(field?.sourceField)
+        sourceField: text(field?.sourceField),
+        valueType
       };
     }).filter(Boolean).filter((field, index, rows) => rows.findIndex(other => other.id === field.id) === index);
     const deliveryCustomerWeekdays = {};
@@ -111,6 +135,13 @@
       definitions.filter(field => field.required).forEach(field => requestedSet.add(field.id));
       return [...definitions.map(field => field.id), ...customFields.filter(field => field.scope === scope).map(field => field.id)].filter(id => requestedSet.has(id));
     };
+    const allowedColumnIds = new Set([...PRODUCT_FIELD_DEFINITIONS.map(field => field.id), ...customFields.filter(field => field.scope === 'voucher').map(field => field.id)]);
+    const columnWidths = {};
+    Object.entries(value.columnWidths && typeof value.columnWidths === 'object' ? value.columnWidths : {}).forEach(([fieldId, width]) => {
+      const normalizedWidth = Number(width);
+      if (!allowedColumnIds.has(text(fieldId)) || !Number.isFinite(normalizedWidth)) return;
+      columnWidths[text(fieldId)] = Math.max(56, Math.min(480, Math.round(normalizedWidth)));
+    });
     return {
       orderCutoffTime: /^\d{2}:\d{2}$/.test(text(value.orderCutoffTime)) ? text(value.orderCutoffTime) : '',
       allowSameDayDelivery: value.allowSameDayDelivery !== false,
@@ -120,8 +151,9 @@
       holidayDates: [...new Set((Array.isArray(value.holidayDates) ? value.holidayDates : []).map(text).filter(date => /^\d{4}-\d{2}-\d{2}$/.test(date)))].sort(),
       timezone: text(value.timezone || DEFAULT_SETTINGS.timezone),
       headerFields: normalizeLayout(value.headerFields, HEADER_FIELD_DEFINITIONS, DEFAULT_SETTINGS.headerFields, 'header'),
-      voucherColumns: normalizeLayout(value.voucherColumns, VOUCHER_COLUMN_DEFINITIONS, DEFAULT_SETTINGS.voucherColumns, 'voucher'),
-      customFields
+      voucherColumns: normalizeLayout(value.voucherColumns, PRODUCT_FIELD_DEFINITIONS, DEFAULT_SETTINGS.voucherColumns, 'voucher'),
+      customFields,
+      columnWidths
     };
   }
 
@@ -343,10 +375,19 @@
       masterProductId,
       itemCode,
       itemName: text(input.itemName || input.productText),
+      secondaryName: text(input.secondaryName),
+      searchInfo: text(input.searchInfo),
       specification: text(input.specification),
+      boxQuantity: numberOrNull(input.boxQuantity),
       quantity: numberOrNull(input.quantity ?? input.finalQuantity ?? input.rawQuantity),
       unit: text(input.unit || input.finalUnit || input.rawUnit),
       unitPrice: numberOrNull(input.unitPrice ?? input.price),
+      outPrice: numberOrNull(input.outPrice),
+      wholesaleA: numberOrNull(input.wholesaleA),
+      wholesaleB: numberOrNull(input.wholesaleB),
+      listingPrice: numberOrNull(input.listingPrice),
+      marketPrice: numberOrNull(input.marketPrice),
+      promoPrice: numberOrNull(input.promoPrice),
       memo: text(input.memo),
       description: text(input.description),
       noticePrice: numberOrNull(input.noticePrice) ?? 0,
@@ -524,6 +565,7 @@
     ROW_FIELDS,
     HEADER_FIELD_DEFINITIONS,
     VOUCHER_COLUMN_DEFINITIONS,
+    PRODUCT_FIELD_DEFINITIONS,
     DEFAULT_SETTINGS,
     WEEKDAY_LABELS,
     text,

@@ -32,7 +32,14 @@ assert.equal(contract.SETTINGS_STORAGE_KEY, 'oneapp.smartinput.settings.v1');
 assert.deepEqual(Array.from(contract.INPUT_METHODS, item => item.id), ['direct', 'excel', 'text', 'paste', 'photo', 'voice']);
 assert.deepEqual(Object.keys(contract.MODES), ['order', 'purchase', 'sale', 'estimate']);
 assert.deepEqual(Array.from(contract.STAGES), ['capture', 'extract', 'match', 'review', 'complete']);
-assert.deepEqual(Array.from(contract.ROW_FIELDS), ['itemCode', 'itemName', 'specification', 'quantity', 'unit', 'unitPrice', 'memo', 'description', 'noticePrice']);
+assert.deepEqual(Array.from(contract.ROW_FIELDS), [
+  'itemCode', 'itemName', 'secondaryName', 'searchInfo', 'specification', 'boxQuantity',
+  'quantity', 'unit', 'unitPrice', 'outPrice', 'wholesaleA', 'wholesaleB', 'listingPrice',
+  'marketPrice', 'promoPrice', 'memo', 'description', 'noticePrice'
+]);
+for (const productField of ['itemCode', 'itemName', 'specification', 'quantity', 'unit', 'unitPrice', 'supplyAmount', 'memo', 'description', 'noticePrice', 'secondaryName', 'searchInfo', 'boxQuantity', 'outPrice', 'wholesaleA', 'wholesaleB', 'listingPrice', 'marketPrice', 'promoPrice']) {
+  assert.ok(Array.from(contract.PRODUCT_FIELD_DEFINITIONS, field => field.id).includes(productField), `${productField} must be available in the product field library`);
+}
 assert.ok(Array.from(contract.DEFAULT_SETTINGS.headerFields).includes('customer'));
 assert.ok(Array.from(contract.DEFAULT_SETTINGS.voucherColumns).includes('itemName'));
 const minimalLayout = contract.normalizeSettings({ headerFields: [], voucherColumns: [] });
@@ -49,6 +56,20 @@ const customLayout = contract.normalizeSettings({
 assert.equal(customLayout.customFields.length, 2);
 assert.ok(Array.from(customLayout.headerFields).includes('custom-header-request'));
 assert.ok(Array.from(customLayout.voucherColumns).includes('custom-voucher-lot'));
+const typedCustomLayout = contract.normalizeSettings({
+  customFields: [
+    ...Array.from({ length: 11 }, (_, index) => ({ id: `text-${index}`, label: `문자 ${index}`, scope: 'voucher', category: 'CUSTOM', valueType: 'TEXT' })),
+    ...Array.from({ length: 11 }, (_, index) => ({ id: `number-${index}`, label: `숫자 ${index}`, scope: 'voucher', category: 'CUSTOM', valueType: 'NUMBER' }))
+  ],
+  voucherColumns: ['itemName', 'quantity', 'secondaryName', 'number-0'],
+  columnWidths: { itemName: 233, secondaryName: 150, unknown: 999, quantity: 12 }
+});
+assert.equal(typedCustomLayout.customFields.filter(field => field.valueType === 'TEXT').length, 10);
+assert.equal(typedCustomLayout.customFields.filter(field => field.valueType === 'NUMBER').length, 10);
+assert.ok(Array.from(typedCustomLayout.voucherColumns).includes('secondaryName'));
+assert.equal(typedCustomLayout.columnWidths.itemName, 233);
+assert.equal(typedCustomLayout.columnWidths.quantity, 56);
+assert.equal(typedCustomLayout.columnWidths.unknown, undefined);
 const displayRow = contract.normalizeRow({ memo: '메모', description: '직원 적요', noticePrice: 1200 });
 assert.equal(displayRow.memo, '메모');
 assert.equal(displayRow.description, '직원 적요');
@@ -231,6 +252,10 @@ assert.match(css, /\.parser-card \{[^}]*position: sticky;[^}]*padding: 14px;[^}]
 assert.match(css, /\.source-highlight, \.source-editor textarea \{[^}]*height: clamp\(360px, calc\(100vh - 340px\), 660px\);[^}]*overflow: auto;/);
 assert.match(css, /font: 15px\/1\.72 ui-monospace/);
 assert.match(css, /table \{[^}]*font-size: 12px/);
+assert.match(css, /\.column-resize-handle \{/);
+assert.match(css, /html\.smartinput-column-resizing/);
+assert.match(css, /\.smart-form \[hidden\] \{ display: none; \}/,
+  'inactive field-library controls must not remain visible beside product fields');
 assert.match(css, /\.settings-group > summary strong \{ font-size: 13px; \}/,
   'settings groups must remain readable at the enlarged application scale');
 assert.match(css, /\.source-editor textarea \{[^}]*resize: none;/);
@@ -309,10 +334,10 @@ assert.doesNotMatch(parserEnrichmentSource, /candidates\.length === 1[\s\S]*appl
   'parser fuzzy candidates must stay in confirmation state even when only one candidate exists');
 assert.match(parserEnrichmentSource, /row\.matchStatus = 'SIMILAR'/);
 assert.match(appSource, /if \(changedField === 'itemName'\) return row\.itemName \|\| row\.itemCode/);
-assert.match(appSource, /applyProduct\(row, exact, \{ preserveIdentityField: changedField \}\)/);
+assert.match(appSource, /applyProduct\(row, exact, \{ forceIdentityFields: true \}\)/);
 assert.match(appSource, /if \(openCandidates\) openProductDialog\(row, \{ query \}\)/);
 assert.match(appSource, /applyProduct\(row, product, \{ forceIdentityFields: true \}\)/);
-assert.match(appSource, /event\.key !== 'Enter'[\s\S]*tryMatchRow\(row, input\.dataset\.field\)/);
+assert.match(appSource, /event\.key !== 'Enter'[\s\S]*tryMatchRow\(row, field\)/);
 assert.match(appSource, /data-field="specification"/);
 assert.match(appSource, /data-field="unit"/);
 assert.doesNotMatch(appSource, /data-match-row|item-match-action|>Fn<|rowStatusLabel/);
@@ -333,7 +358,7 @@ assert.match(appSource, /거래처 앞 체크박스/);
 assert.match(appSource, /if \(!linkMode\) selected\.clear\(\)/, 'normal customer selection must keep only one checked customer');
 assert.match(appSource, /memberCustomerIds: \[customerId\][\s\S]*taxCustomerId: customerId/, 'an unlinked formal customer must become a one-member tax group when registered');
 assert.match(appSource, /dialog\.showModal\(\);[\s\S]*refreshCustomers\(\{ syncIfEmpty: true \}\)/, 'customer dialog must open before background master refresh completes');
-assert.match(appSource, /withTimeout\(getAll\(STORE\.CUSTOMERS\), 5000/, 'startup customer loading must have a bounded wait');
+assert.match(appSource, /withTimeout\(listCustomers\(\{ includeInactive: false \}\), 5000/, 'startup customer loading must have a bounded wait');
 assert.match(appSource, /function openEstimateListDialog\(\)/);
 assert.match(appSource, /function saveEstimateDocument\(\)/);
 assert.match(appSource, /function applyFormLayout\(\)/);
@@ -344,6 +369,10 @@ assert.match(appSource, /상품정보/);
 assert.match(appSource, /거래처정보/);
 assert.match(appSource, /사용자지정/);
 assert.match(appSource, /function openLayoutFieldDialog\(/);
+assert.match(appSource, /contract\.PRODUCT_FIELD_DEFINITIONS/,
+  'the field picker must expose the complete product information library');
+assert.match(appSource, /사용자지정 항목은 최대 10개/,
+  'custom text and number field creation must enforce the ten-field limit');
 assert.match(css, /\.smart-settings-dialog \{ height: min\(720px, calc\(100dvh - 28px\)\); \}/,
   '환경설정 바깥 창은 그룹 개폐와 무관하게 고정 높이를 유지해야 한다.');
 assert.match(css, /\.smart-settings-dialog \.smart-settings-grid \{[^}]*flex: 1 1 auto;[^}]*scrollbar-gutter: stable;/,
@@ -364,6 +393,27 @@ assert.match(appSource, /state\.photoView\.detailColumns = !state\.photoView\.de
 assert.match(appSource, /photoResizer\.addEventListener\('pointermove'/);
 assert.match(appSource, /if \(modeDraft\(\)\.activeMethod !== 'photo'\) updateMethod\('direct'\)/,
   '사진 분석 중 빈 행을 추가해도 원본 사진 작업영역을 유지해야 한다.');
+assert.match(appSource, /const DEFAULT_INPUT_ROW_ID = '__SMARTINPUT_DEFAULT_ROW__'/);
+assert.match(appSource, /const displayedRows = rows\.length \? rows : \[defaultRow\]/,
+  'an immediately editable first row must be shown without pressing add-row');
+assert.match(appSource, /function materializeDefaultRow\(tr\)/,
+  'the visual default row must become persistent only after the user types');
+assert.match(appSource, /function normalizedCustomerCandidates\(customers = \[\]\)/);
+assert.match(appSource, /customer\.qualityStatus === 'SUPERSEDED'/,
+  'superseded customer rows must not appear in SmartInput search');
+assert.match(appSource, /if \(!locationKey\) return false;[\s\S]*return !identifiedLocations\.has\(locationKey\)/,
+  'a code-less shadow must be removed while a distinct delivery location remains selectable');
+assert.match(appSource, /'코드 미등록'/,
+  'a standalone code-less customer must be labelled instead of rendering a blank identity');
+assert.match(appSource, /applyProduct\(row, exact, \{ forceIdentityFields: true \}\)/,
+  'confirmed product matching must replace the search text with master code and name');
+assert.match(appSource, /modeUi\(\)\.activeCellId = `\$\{row\.rowId\}\|quantity`/,
+  'a confirmed product must move focus to quantity');
+assert.match(appSource, /field === 'quantity'[\s\S]*data-field="unitPrice"[\s\S]*field === 'unitPrice'[\s\S]*addDirectRow\(\)/,
+  'Enter must move quantity to price and price to a new item-code row');
+assert.match(appSource, /function beginColumnResize\(/);
+assert.match(appSource, /await saveSettings\(state\.settings\)/,
+  'resizing a standard-input column must persist its width directly');
 assert.match(appSource, /pendingOcr\.status !== 'VERIFIED'/);
 assert.doesNotMatch(appSource, /Tesseract\.recognize\(file, 'kor\+eng'/, 'raw one-pass OCR must not feed the order parser directly');
 assert.match(appSource, /function hasMeaningfulDraftContent\(draft\)/);
