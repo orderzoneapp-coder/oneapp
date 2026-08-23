@@ -817,27 +817,21 @@ function hydrateHeader() {
   updateDeliveryPolicy();
 }
 
-function rowStatusLabel(row) {
-  if (row.matchStatus === 'MATCHED') return ['일치', 'match-badge--matched'];
-  if (row.matchStatus === 'SIMILAR') return ['확인', 'match-badge--similar'];
-  return ['미인식', 'match-badge--failed'];
-}
-
-function renderRows() {
+function renderRows({ restoreFocus = true } = {}) {
   const rows = modeDraft().rows;
   if (!rows.length) {
-    inputRows.innerHTML = '<tr class="empty-row"><td colspan="10"><strong>아직 입력된 상품이 없습니다.</strong><span>원문을 분석하거나 빈 행을 추가해 시작하세요.</span></td></tr>';
+    inputRows.innerHTML = '<tr class="empty-row"><td colspan="11"><strong>아직 입력된 상품이 없습니다.</strong><span>원문을 분석하거나 빈 행을 추가해 시작하세요.</span></td></tr>';
     updateSummaries();
     return;
   }
   inputRows.innerHTML = rows.map(row => {
-    const [status, statusClass] = rowStatusLabel(row);
     const amount = Number(row.quantity || 0) * Number(row.unitPrice || 0);
     return `<tr data-row-id="${esc(row.rowId)}" data-status="${esc(row.matchStatus)}" class="${row.duplicatePossible ? 'is-duplicate' : ''}">
-      <td><input data-field="itemCode" value="${esc(row.itemCode)}" aria-label="품목코드"></td>
-      <td><div class="item-name-control"><input data-field="itemName" value="${esc(row.itemName)}" aria-label="품목명"><button type="button" class="item-match-action ${statusClass}" data-match-row="${esc(row.rowId)}" aria-label="${status} 상품 후보 선택" title="${status}${row.duplicatePossible ? ' · 중복 가능' : ''}">Fn</button></div></td>
-      <td><input data-field="unit" value="${esc(row.unit || row.specification)}" aria-label="규격"></td>
+      <td><input data-field="itemCode" type="search" enterkeyhint="search" value="${esc(row.itemCode)}" aria-label="품목코드" title="입력 후 Enter로 상품 검색"></td>
+      <td><input data-field="itemName" type="search" enterkeyhint="search" value="${esc(row.itemName)}" aria-label="품목명" title="입력 후 Enter로 상품 검색"></td>
+      <td><input data-field="specification" value="${esc(row.specification)}" aria-label="규격"></td>
       <td><input data-field="quantity" type="number" step="any" value="${esc(row.quantity ?? '')}" aria-label="수량"></td>
+      <td><input data-field="unit" value="${esc(row.unit)}" aria-label="단위"></td>
       <td><input data-field="unitPrice" type="number" step="any" value="${esc(row.unitPrice ?? '')}" aria-label="단가"></td>
       <td><input data-supply-amount value="${amount.toLocaleString('ko-KR')}" aria-label="공급가액" readonly tabindex="-1"></td>
       <td><input data-field="memo" value="${esc(row.memo)}" aria-label="메모"></td>
@@ -850,6 +844,7 @@ function renderRows() {
   window.requestAnimationFrame(() => {
     $('tableScroll').scrollTop = Number(modeUi().scrollTop || 0);
     $('tableScroll').scrollLeft = Number(modeUi().scrollLeft || 0);
+    if (!restoreFocus) return;
     const active = modeUi().activeCellId;
     if (!active) return;
     const [rowId, field] = active.split('|');
@@ -1252,19 +1247,22 @@ function priceFromProduct(product) {
   return price ? Number(price.value) : null;
 }
 
-function applyProduct(row, product, force = false) {
+function applyProduct(row, product, { forceIdentityFields = false, preserveIdentityField = '' } = {}) {
   if (!row || !product) return;
-  const protect = field => !force && row.editedFields?.[field];
+  const protect = field => Boolean(row.editedFields?.[field]);
+  const preserveIdentity = field => !forceIdentityFields
+    && (preserveIdentityField ? field === preserveIdentityField : protect(field));
   row.masterProductId = String(product.masterProductId || '').trim();
   row.productId = row.masterProductId ? product.productId || '' : '';
-  if (!protect('itemCode')) row.itemCode = product.itemCode || '';
-  if (!protect('itemName')) row.itemName = product.itemName || '';
+  if (!preserveIdentity('itemCode')) row.itemCode = product.itemCode || '';
+  if (!preserveIdentity('itemName')) row.itemName = product.itemName || '';
   if (!protect('specification')) row.specification = product.specification || '';
   if (!protect('unit')) row.unit = product.finalUnit || product.unit || '';
   if (!protect('unitPrice') && row.unitPrice == null) row.unitPrice = priceFromProduct(product);
   row.matchStatus = hasMasterProductIdentity(row) ? 'MATCHED' : 'UNRESOLVED';
   row.reviewStatus = row.matchStatus === 'MATCHED' ? 'CONFIRMED' : 'PENDING';
   row.productIdentityStatus = row.matchStatus === 'MATCHED' ? 'MASTER_LINKED' : 'UNRESOLVED';
+  row.matchSource = row.matchStatus === 'MATCHED' ? 'SMART_INPUT_COMMON_MASTER' : '';
   row.candidateProducts = [];
 }
 
@@ -1279,10 +1277,7 @@ function enrichRowFromUnifiedCatalog(row) {
     return row;
   }
   const candidates = searchProductCatalog(query, commonMasterProducts(), 5);
-  if (candidates.length === 1) {
-    applyProduct(row, candidates[0]);
-    row.matchSource = 'SMART_INPUT_COMMON_MASTER';
-  } else if (candidates.length) {
+  if (candidates.length) {
     row.candidateProducts = candidates;
     row.matchStatus = 'SIMILAR';
     row.reviewStatus = 'PENDING';
@@ -1291,28 +1286,41 @@ function enrichRowFromUnifiedCatalog(row) {
   return row;
 }
 
-function tryMatchRow(row) {
-  const query = row.itemCode || row.itemName;
-  const exact = exactProduct(query);
-  if (exact) {
-    applyProduct(row, exact);
-  } else if (query) {
-    row.productId = '';
-    row.masterProductId = '';
-    row.candidateProducts = searchProductCatalog(query, commonMasterProducts(), 5);
-    if (row.candidateProducts.length === 1) applyProduct(row, row.candidateProducts[0]);
-    else {
-      row.matchStatus = row.candidateProducts.length ? 'SIMILAR' : 'UNRESOLVED';
-      row.reviewStatus = 'PENDING';
-      row.productIdentityStatus = 'UNRESOLVED';
-    }
-  }
-  modeDraft().rows = contract.markDuplicatePossibilities(modeDraft().rows);
-  renderRows();
-  saveDraftNow();
+function rematchQuery(row, changedField = '') {
+  if (changedField === 'itemName') return row.itemName || row.itemCode;
+  return row.itemCode || row.itemName;
 }
 
-function openProductDialog(row) {
+function tryMatchRow(row, changedField = '') {
+  const query = rematchQuery(row, changedField);
+  row.productId = '';
+  row.masterProductId = '';
+  row.matchSource = '';
+  row.reviewStatus = 'PENDING';
+  row.productIdentityStatus = 'UNRESOLVED';
+  const exact = exactProduct(query);
+  let openCandidates = false;
+  if (exact) {
+    applyProduct(row, exact, { preserveIdentityField: changedField });
+  } else if (query) {
+    row.candidateProducts = searchProductCatalog(query, commonMasterProducts(), 5);
+    if (row.candidateProducts.length === 1) applyProduct(row, row.candidateProducts[0], { preserveIdentityField: changedField });
+    else {
+      row.matchStatus = row.candidateProducts.length ? 'SIMILAR' : 'UNRESOLVED';
+      openCandidates = row.candidateProducts.length > 1;
+    }
+  } else {
+    row.candidateProducts = [];
+    row.matchStatus = 'UNRESOLVED';
+  }
+  modeDraft().rows = contract.markDuplicatePossibilities(modeDraft().rows);
+  if (openCandidates) modeUi().activeCellId = '';
+  renderRows({ restoreFocus: !openCandidates });
+  saveDraftNow();
+  if (openCandidates) openProductDialog(row, { query });
+}
+
+function openProductDialog(row, { query = '' } = {}) {
   const dialog = document.createElement('dialog');
   dialog.className = 'customer-picker-dialog';
   const shell = document.createElement('div');
@@ -1334,7 +1342,7 @@ function openProductDialog(row) {
   label.append('상품명 또는 코드');
   const search = document.createElement('input');
   search.type = 'search';
-  search.value = row.itemCode || row.itemName || '';
+  search.value = query || row.itemCode || row.itemName || '';
   label.append(search);
   const message = document.createElement('div');
   message.className = 'customer-picker-message';
@@ -1346,7 +1354,7 @@ function openProductDialog(row) {
 
   const finish = product => {
     if (product) {
-      applyProduct(row, product, true);
+      applyProduct(row, product, { forceIdentityFields: true });
       modeDraft().rows = contract.markDuplicatePossibilities(modeDraft().rows);
       renderRows();
       saveDraftNow();
@@ -1643,13 +1651,9 @@ inputRows.addEventListener('input', event => {
   const index = modeDraft().rows.findIndex(row => row.rowId === tr.dataset.rowId);
   if (index < 0) return;
   const field = input.dataset.field;
-  let row = contract.markUserEdit(modeDraft().rows[index], field, input.value);
+  const row = contract.markProductEdit(modeDraft().rows[index], field, input.value);
   if (field === 'itemCode' || field === 'itemName') {
-    row.productId = '';
-    row.masterProductId = '';
-    row.matchStatus = 'UNRESOLVED';
-    row.reviewStatus = 'PENDING';
-    row.productIdentityStatus = 'UNRESOLVED';
+    tr.dataset.status = 'SIMILAR';
   }
   modeDraft().rows[index] = row;
   if (field === 'quantity' || field === 'unitPrice') {
@@ -1659,6 +1663,14 @@ inputRows.addEventListener('input', event => {
   }
   updateSummaries();
   scheduleSave();
+});
+inputRows.addEventListener('keydown', event => {
+  const input = event.target.closest('[data-field="itemCode"], [data-field="itemName"]');
+  const tr = event.target.closest('[data-row-id]');
+  if (!input || !tr || event.key !== 'Enter' || event.isComposing) return;
+  event.preventDefault();
+  const row = modeDraft().rows.find(item => item.rowId === tr.dataset.rowId);
+  if (row) tryMatchRow(row, input.dataset.field);
 });
 inputRows.addEventListener('focusin', event => {
   const input = event.target.closest('[data-field]');
@@ -1672,7 +1684,7 @@ inputRows.addEventListener('change', event => {
   const tr = event.target.closest('[data-row-id]');
   if (!input || !tr || !['itemCode', 'itemName'].includes(input.dataset.field)) return;
   const row = modeDraft().rows.find(item => item.rowId === tr.dataset.rowId);
-  if (row) tryMatchRow(row);
+  if (row) tryMatchRow(row, input.dataset.field);
 });
 inputRows.addEventListener('click', event => {
   const remove = event.target.closest('[data-remove-row]');
@@ -1682,11 +1694,6 @@ inputRows.addEventListener('click', event => {
     renderRows();
     saveDraftNow();
     return;
-  }
-  const match = event.target.closest('[data-match-row]');
-  if (match) {
-    const row = modeDraft().rows.find(item => item.rowId === match.dataset.matchRow);
-    if (row) openProductDialog(row);
   }
 });
 

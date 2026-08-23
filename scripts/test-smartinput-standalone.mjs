@@ -53,6 +53,24 @@ assert.equal(linkedCommonRow.masterProductId, 'COMMON-ONLY-1');
 assert.equal(linkedCommonRow.productIdentityStatus, 'MASTER_LINKED');
 assert.equal(buildOrderSourceDocumentCanonicalProjection({ order: {}, items: [linkedCommonRow] }).items[0].masterProductId, 'COMMON-ONLY-1',
   '공통 마스터 전용상품의 실제 ID가 검색·선택·ORDER Q 원문 계약까지 유지되어야 한다.');
+const editableMatchedRow = contract.normalizeRow({
+  ...linkedCommonRow,
+  specification: '10kg', quantity: 2, unit: 'BOX', unitPrice: 15000, memo: '유지 메모'
+});
+const identityEditedRow = contract.markProductEdit(editableMatchedRow, 'itemName', '사용자 수정 상품명');
+assert.equal(identityEditedRow.productId, '');
+assert.equal(identityEditedRow.masterProductId, '');
+assert.equal(identityEditedRow.matchStatus, 'SIMILAR');
+assert.equal(identityEditedRow.productIdentityStatus, 'UNRESOLVED');
+assert.equal(identityEditedRow.itemName, '사용자 수정 상품명');
+assert.equal(identityEditedRow.specification, '10kg');
+assert.equal(identityEditedRow.quantity, 2);
+assert.equal(identityEditedRow.unit, 'BOX');
+assert.equal(identityEditedRow.unitPrice, 15000);
+assert.equal(identityEditedRow.memo, '유지 메모');
+for (const [field, value] of [['itemCode', 'NEW-1'], ['itemName', '새 상품'], ['specification', '20kg'], ['quantity', 3], ['unit', 'EA'], ['unitPrice', 17000]]) {
+  assert.equal(contract.markProductEdit(editableMatchedRow, field, value)[field], value, `${field} must remain editable for matched rows`);
+}
 
 const draft = contract.createDraft({ now: Date.parse('2026-08-23T01:00:00.000Z'), random: 0.1 });
 assert.equal(draft.activeMode, 'order');
@@ -151,7 +169,8 @@ assert.match(html, /id="activityItems" aria-label="누적 입력현황"/);
 assert.doesNotMatch(html, /class="parser-card__header"/);
 assert.doesNotMatch(html, /<th>원문<\/th>|class="col-source"/);
 assert.doesNotMatch(html, /<th>차수<\/th>|<th>상태<\/th>/);
-assert.match(html, /<th>품목코드<\/th><th>품목명<\/th><th>규격<\/th><th>수량<\/th><th>단가<\/th><th>공급가액<\/th><th>메모<\/th><th>적요\(직원\)<\/th><th>공지단가<\/th>/);
+assert.match(html, /<th>품목코드<\/th><th>품목명<\/th><th>규격<\/th><th>수량<\/th><th>단위<\/th><th>단가<\/th><th>공급가액<\/th><th>메모<\/th><th>적요\(직원\)<\/th><th>공지단가<\/th>/);
+assert.match(html, /class="col-unit"/);
 assert.doesNotMatch(html, /작업 단계|\d+\s*\/\s*5|data-stage=/);
 const parserColumnAt = html.indexOf('<section class="parser-card"');
 const workbenchColumnAt = html.indexOf('<section class="workbench"');
@@ -206,6 +225,20 @@ assert.match(appSource, /description: row\.description/);
 assert.match(appSource, /noticePrice: row\.noticePrice/);
 assert.match(appSource, /일치 \$\{summary\.matched\} · 확인 \$\{summary\.similar\} · 미인식 \$\{summary\.unresolved\}/);
 assert.match(appSource, /function renderActivityTrail\(\)/);
+assert.match(appSource, /contract\.markProductEdit\(modeDraft\(\)\.rows\[index\], field, input\.value\)/);
+assert.match(appSource, /function tryMatchRow\(row, changedField = ''\)/);
+const parserEnrichmentSource = appSource.slice(appSource.indexOf('function enrichRowFromUnifiedCatalog'), appSource.indexOf('function rematchQuery'));
+assert.doesNotMatch(parserEnrichmentSource, /candidates\.length === 1[\s\S]*applyProduct/,
+  'parser fuzzy candidates must stay in confirmation state even when only one candidate exists');
+assert.match(parserEnrichmentSource, /row\.matchStatus = 'SIMILAR'/);
+assert.match(appSource, /if \(changedField === 'itemName'\) return row\.itemName \|\| row\.itemCode/);
+assert.match(appSource, /applyProduct\(row, exact, \{ preserveIdentityField: changedField \}\)/);
+assert.match(appSource, /if \(openCandidates\) openProductDialog\(row, \{ query \}\)/);
+assert.match(appSource, /applyProduct\(row, product, \{ forceIdentityFields: true \}\)/);
+assert.match(appSource, /event\.key !== 'Enter'[\s\S]*tryMatchRow\(row, input\.dataset\.field\)/);
+assert.match(appSource, /data-field="specification"/);
+assert.match(appSource, /data-field="unit"/);
+assert.doesNotMatch(appSource, /data-match-row|item-match-action|>Fn<|rowStatusLabel/);
 assert.match(appSource, /function hasMeaningfulDraftContent\(draft\)/);
 assert.match(appSource, /rows\.filter\(hasMeaningfulDraftContent\)/);
 assert.match(appSource, /state\.draftDirty = true;[\s\S]*setSaveState\('저장 중…', 'saving'\)/);
