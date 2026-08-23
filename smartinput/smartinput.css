@@ -342,6 +342,7 @@ tfoot td { position: sticky; bottom: 0; z-index: 2; height: 38px; padding: 0 8px
 .customer-picker-result.is-selected span { color: #fff !important; }
 .customer-picker-result.is-selected small { color: #c8fff6 !important; }
 .smart-dialog footer { min-height: 58px; padding: 10px 16px; display: flex; align-items: center; justify-content: flex-end; gap: 8px; border-top: 1px solid var(--border); background: var(--surface-muted); }
+.smart-dialog footer[hidden] { display: none; }
 .smart-link-footer span { margin-right: auto; color: var(--text-soft); font-size: 11px; }
 .smart-customer-action-footer span { margin-right: auto; color: var(--text-soft); font-size: 11px; }
 .smart-customer-results, .smart-draft-results, .smart-estimate-results { min-height: 160px; overflow: auto; }
