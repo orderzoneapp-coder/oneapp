@@ -451,6 +451,7 @@ function orderQCanonicalOrderItemV1(item, index) {
   return {
     sourceLineKey,
     productId: orderQCanonicalPickV1(item, ['productId']),
+    masterProductId: orderQCanonicalPickV1(item, ['masterProductId']),
     itemCode: orderQCanonicalPickV1(item, ['itemCode', 'productCode']),
     itemName: orderQCanonicalPickV1(item, ['itemName', 'productName']),
     specification: orderQCanonicalPickV1(item, ['specification']),

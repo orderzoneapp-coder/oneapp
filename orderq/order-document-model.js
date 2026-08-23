@@ -249,6 +249,7 @@ export function documentFieldChanges(before = {}, after = {}) {
 }
 
 const ITEM_CHANGE_FIELDS = Object.freeze({
+  masterProductId: '마스터상품ID',
   itemCode: '품목코드',
   itemName: '상품',
   specification: '규격',

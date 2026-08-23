@@ -88,6 +88,10 @@ const itemChanges = orderItemChanges(
 );
 assert.deepEqual(itemChanges.map(change => change.itemField), ['finalQuantity', 'price', 'added']);
 assert.equal(orderItemChanges([{ orderItemId: 'OI-1', itemName: '사과' }], [])[0].itemField, 'removed');
+assert.equal(orderItemChanges(
+  [{ orderItemId: 'OI-1', masterProductId: 'MASTER-OLD', itemName: '사과' }],
+  [{ orderItemId: 'OI-1', masterProductId: 'MASTER-NEW', itemName: '사과' }]
+)[0].itemField, 'masterProductId', '주문행의 실제 마스터 ID 변경은 감사 변경이력에 포함해야 한다.');
 
 assert.match(db, /export const DB_VERSION = ORDERQ_DB_VERSION/);
 for (const index of ['byOrderNo', 'byExternalOrderNo', 'byOrderStatus', 'byAdminStatus', 'byOpsStatus', 'byAssigneeId', 'byInputChannel']) {

@@ -4,6 +4,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import vm from 'node:vm';
+import { normalizeMasterProduct, searchProductCatalog } from '../orderq/product-master-search.js';
+import { buildOrderSourceDocumentCanonicalProjection } from '../orderq/intake-identity.js';
 
 const root = process.cwd();
 const read = file => fs.readFileSync(path.join(root, file), 'utf8');
@@ -33,6 +35,24 @@ const displayRow = contract.normalizeRow({ memo: '메모', description: '직원 
 assert.equal(displayRow.memo, '메모');
 assert.equal(displayRow.description, '직원 적요');
 assert.equal(displayRow.noticePrice, 1200);
+const commonOnlyProduct = normalizeMasterProduct(
+  { 코드: 'COMMON-ONLY-1', 품목명: '공통 마스터 전용상품', 규격: 'EA' },
+  'COMMON-ONLY-1',
+  'COMMON_MASTER',
+  'COMMON-ONLY-1'
+);
+const selectedCommonProduct = searchProductCatalog('공통 마스터 전용상품', [commonOnlyProduct], 5)[0];
+const linkedCommonRow = contract.normalizeRow({
+  productId: selectedCommonProduct.productId,
+  masterProductId: selectedCommonProduct.masterProductId,
+  itemCode: selectedCommonProduct.itemCode,
+  itemName: selectedCommonProduct.itemName,
+  quantity: 1
+});
+assert.equal(linkedCommonRow.masterProductId, 'COMMON-ONLY-1');
+assert.equal(linkedCommonRow.productIdentityStatus, 'MASTER_LINKED');
+assert.equal(buildOrderSourceDocumentCanonicalProjection({ order: {}, items: [linkedCommonRow] }).items[0].masterProductId, 'COMMON-ONLY-1',
+  '공통 마스터 전용상품의 실제 ID가 검색·선택·ORDER Q 원문 계약까지 유지되어야 한다.');
 
 const draft = contract.createDraft({ now: Date.parse('2026-08-23T01:00:00.000Z'), random: 0.1 });
 assert.equal(draft.activeMode, 'order');
@@ -51,13 +71,17 @@ const rawText = '  행복상회\n계란  2판\n';
 const firstBatch = contract.createBatch({ batchId: 'B1', sequence: 1, method: 'text', sourceType: 'GENERAL_TEXT', rawText, now: 1 });
 assert.equal(firstBatch.rawText, rawText, 'source whitespace and line breaks must be preserved');
 let rows = contract.applyParserResults([], firstBatch, [{
-  sourceLineKey: 'L1', intakeLineId: 'IL1', rawText: '계란  2판', productId: 'P1', itemCode: 'A001', itemName: '계란', quantity: 2, unit: '판'
+  sourceLineKey: 'L1', intakeLineId: 'IL1', rawText: '계란  2판', productId: 'P1', masterProductId: 'MASTER-A001', itemCode: 'A001', itemName: '계란', quantity: 2, unit: '판'
 }]);
 assert.equal(rows.length, 1);
 assert.equal(rows[0].matchStatus, 'MATCHED');
+assert.equal(rows[0].masterProductId, 'MASTER-A001');
+const syntheticOnlyRow = contract.normalizeRow({ productId: 'PRD-A002', itemCode: 'A002', itemName: '가짜 연결' });
+assert.equal(syntheticOnlyRow.matchStatus, 'UNRESOLVED', '합성 productId만으로 실제 마스터 연결 처리하면 안 된다.');
+assert.equal(syntheticOnlyRow.productIdentityStatus, 'UNRESOLVED');
 rows[0] = contract.markUserEdit(rows[0], 'itemName', '관리자 확정 계란');
 rows = contract.applyParserResults(rows, firstBatch, [{
-  sourceLineKey: 'L1', intakeLineId: 'IL1', rawText: '계란  2판', productId: 'P1', itemCode: 'A001', itemName: '파서 덮어쓰기', quantity: 3, unit: '판'
+  sourceLineKey: 'L1', intakeLineId: 'IL1', rawText: '계란  2판', productId: 'P1', masterProductId: 'MASTER-A001', itemCode: 'A001', itemName: '파서 덮어쓰기', quantity: 3, unit: '판'
 }]);
 assert.equal(rows.length, 1, 're-analysis of the same source line must update, not append');
 assert.equal(rows[0].itemName, '관리자 확정 계란', 'administrator edits must survive re-analysis');
@@ -65,7 +89,7 @@ assert.equal(rows[0].quantity, 3, 'parser-owned fields may refresh');
 
 const secondBatch = contract.createBatch({ batchId: 'B2', sequence: 2, method: 'paste', sourceType: 'CLIPBOARD', rawText: '계란 1판', now: 2 });
 rows = contract.applyParserResults(rows, secondBatch, [{
-  sourceLineKey: 'L2', rawText: '계란 1판', productId: 'P1', itemCode: 'A001', itemName: '계란', quantity: 1, unit: '판'
+  sourceLineKey: 'L2', rawText: '계란 1판', productId: 'P1', masterProductId: 'MASTER-A001', itemCode: 'A001', itemName: '계란', quantity: 1, unit: '판'
 }]);
 assert.equal(rows.length, 2, 'later batches must append below existing rows');
 assert.equal(rows.filter(row => row.duplicatePossible).length, 2, 'duplicate products must be marked, not summed');
@@ -165,6 +189,9 @@ assert.match(appSource, /SMART_INPUT:\$\{current\.batches\[0\]/);
 assert.match(appSource, /editedFields/);
 assert.match(appSource, /다음 가능일은 \$\{nextAvailable\.date\}입니다/);
 assert.match(appSource, /mappingSource: 'PARSER_CONFIRMED', learnAlias: false/);
+assert.match(appSource, /row\.masterProductId = String\(product\.masterProductId/);
+assert.match(appSource, /masterProductId: masterLinked \? row\.masterProductId : null/);
+assert.match(appSource, /commonMasterProducts\(\)/);
 assert.match(appSource, /description: row\.description/);
 assert.match(appSource, /noticePrice: row\.noticePrice/);
 assert.match(appSource, /일치 \$\{summary\.matched\} · 확인 \$\{summary\.similar\} · 미인식 \$\{summary\.unresolved\}/);

@@ -57,7 +57,7 @@ export function productCategoryCode(itemCode) {
   return String(itemCode || '').trim().slice(0, 6);
 }
 
-export function normalizeMasterProduct(raw = {}, fallbackCode = '', source = 'COMMON_MASTER') {
+export function normalizeMasterProduct(raw = {}, fallbackCode = '', source = 'COMMON_MASTER', primaryKey = '') {
   const itemCode = firstValue(raw, ['itemCode', 'productCode', '코드', '품목코드', '상품코드'], fallbackCode);
   const itemName = firstValue(raw, ['itemName', 'productName', '품목명', '상품명', '제품명', '품명']);
   const specification = firstValue(raw, ['specification', 'spec', '규격', '규격명']);
@@ -67,6 +67,9 @@ export function normalizeMasterProduct(raw = {}, fallbackCode = '', source = 'CO
   const searchInfo = firstValue(raw, ['searchInfo', 'searchKeywords', '검색창정보', '검색어등록', '검색어', '간단설명']);
   const priceOptions = normalizeManualPriceOptions(raw, source);
   const outPrice = priceOptions.find(option => option.key === 'outPrice')?.value ?? null;
+  const masterProductId = source === 'COMMON_MASTER'
+    ? (String(primaryKey ?? '').trim() || firstValue(raw, ['코드', 'itemCode', 'productCode', '품목코드', '상품코드'], fallbackCode))
+    : firstValue(raw, ['masterProductId']);
   if (!itemCode && !itemName) return null;
   return {
     productId: firstValue(raw, ['productId']) || stableProductId(itemCode, itemName, specification),
@@ -82,7 +85,7 @@ export function normalizeMasterProduct(raw = {}, fallbackCode = '', source = 'CO
     status: firstValue(raw, ['status', '상태'], 'ACTIVE'),
     productIdentityType: firstValue(raw, ['productIdentityType']),
     registrationStatus: firstValue(raw, ['registrationStatus']),
-    masterProductId: firstValue(raw, ['masterProductId']),
+    masterProductId,
     source,
     raw
   };
@@ -202,10 +205,18 @@ async function readCommonMasterIndexedDb() {
         return;
       }
       const transaction = db.transaction(COMMON_MASTER_STORE, 'readonly');
-      const read = transaction.objectStore(COMMON_MASTER_STORE).getAll();
+      const products = [];
+      const read = transaction.objectStore(COMMON_MASTER_STORE).openCursor();
       read.onsuccess = () => {
+        const cursor = read.result;
+        if (cursor) {
+          const product = normalizeMasterProduct(cursor.value, String(cursor.primaryKey ?? ''), 'COMMON_MASTER', cursor.primaryKey);
+          if (product) products.push(product);
+          cursor.continue();
+          return;
+        }
         db.close();
-        resolve(normalizeCollection(read.result, 'COMMON_MASTER'));
+        resolve(products);
       };
       read.onerror = () => {
         db.close();

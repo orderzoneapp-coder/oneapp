@@ -246,10 +246,12 @@
 
   function normalizeRow(input = {}, fallbackBatchId = '') {
     const productId = text(input.productId);
+    const masterProductId = text(input.masterProductId);
     const itemCode = text(input.itemCode);
     const candidateProducts = Array.isArray(input.candidateProducts) ? input.candidateProducts : [];
     const requestedMatchStatus = text(input.matchStatus).toUpperCase();
-    const matchStatus = productId && itemCode
+    const hasMasterIdentity = Boolean(productId && masterProductId && itemCode);
+    const matchStatus = hasMasterIdentity
       ? 'MATCHED'
       : (requestedMatchStatus === 'SIMILAR' || candidateProducts.length
         ? 'SIMILAR'
@@ -263,6 +265,7 @@
       intakeLineId: text(input.intakeLineId),
       rawText: String(input.rawText ?? input.rawExpression ?? ''),
       productId,
+      masterProductId,
       itemCode,
       itemName: text(input.itemName || input.productText),
       specification: text(input.specification),
@@ -276,8 +279,8 @@
       candidateProducts,
       editedFields: input.editedFields && typeof input.editedFields === 'object' ? { ...input.editedFields } : {},
       duplicatePossible: Boolean(input.duplicatePossible),
-      reviewStatus: text(input.reviewStatus).toUpperCase() || (productId && itemCode ? 'CONFIRMED' : 'PENDING'),
-      productIdentityStatus: text(input.productIdentityStatus).toUpperCase() || (productId && itemCode ? 'MASTER_LINKED' : 'UNRESOLVED')
+      reviewStatus: hasMasterIdentity ? 'CONFIRMED' : 'PENDING',
+      productIdentityStatus: hasMasterIdentity ? 'MASTER_LINKED' : 'UNRESOLVED'
     };
   }
 

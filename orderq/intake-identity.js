@@ -141,6 +141,7 @@ function canonicalOrderItem(item = {}, index = 0) {
   return {
     sourceLineKey,
     productId: pick(item, ['productId']),
+    masterProductId: pick(item, ['masterProductId']),
     itemCode: pick(item, ['itemCode', 'productCode']),
     itemName: pick(item, ['itemName', 'productName']),
     specification: pick(item, ['specification']),
