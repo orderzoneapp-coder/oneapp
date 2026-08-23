@@ -19,8 +19,9 @@ import {
   saveEstimate,
   saveLinkGroup,
   saveSettings,
+  saveSourceImage,
   saveTemporaryCustomer
-} from './smartinput-data-store.js?v=0.2.0';
+} from './smartinput-data-store.js?v=0.3.0';
 
 const contract = window.SMART_INPUT_CONTRACT;
 if (!contract) throw new Error('SMART_INPUT_CONTRACT_NOT_LOADED');
@@ -47,6 +48,8 @@ const state = {
   pendingOcrReview: null,
   pendingSourceName: '',
   sourceImages: { order: null, purchase: null, sale: null, estimate: null },
+  sourceImageRecords: new Map(),
+  selectedRowIds: new Set(),
   photoView: { zoom: 1, rotation: 0, activeRegion: null, detailColumns: false, ocrOpen: false },
   saveTimer: null,
   draftDirty: false,
@@ -372,7 +375,7 @@ function applyColumnWidths() {
 }
 
 function updateTableWidth(visibleColumns) {
-  const total = visibleColumns.reduce((sum, fieldId) => sum + columnWidth(fieldId), 34);
+  const total = visibleColumns.reduce((sum, fieldId) => sum + columnWidth(fieldId), 72);
   document.querySelector('#tableScroll table')?.style.setProperty('--table-min-width', `${Math.max(520, total)}px`);
 }
 
@@ -478,7 +481,7 @@ function applyFormLayout() {
     .map(element => element.dataset.column);
   applyColumnWidths();
   updateTableWidth(visibleColumnIds);
-  inputRows.querySelector('.empty-row td')?.setAttribute('colspan', String(visibleColumns + 1));
+  inputRows.querySelector('.empty-row td')?.setAttribute('colspan', String(visibleColumns + 2));
   $('detailColumnsButton').hidden = !photoActive;
   $('detailColumnsButton').textContent = state.photoView.detailColumns ? '기본 열' : '상세 열';
   $('detailColumnsButton').setAttribute('aria-pressed', String(state.photoView.detailColumns));
@@ -543,21 +546,31 @@ function renderPhotoTransform() {
 
 function renderSourceSurface() {
   const evidence = currentSourceImage();
-  const showPhoto = modeDraft().activeMethod === 'photo' && Boolean(evidence?.dataUrl);
+  const photoMode = modeDraft().activeMethod === 'photo';
+  const showPhoto = photoMode && Boolean(evidence?.dataUrl);
   const workspace = document.querySelector('.workspace');
-  const photoStateChanged = workspace.classList.contains('has-photo-source') !== showPhoto;
-  workspace.classList.toggle('has-photo-source', showPhoto);
+  const photoStateChanged = workspace.classList.contains('has-photo-source') !== photoMode;
+  workspace.classList.toggle('has-photo-source', photoMode);
   const savedWidth = Number(state.draft.ui.photoPaneWidth || 0);
   if (savedWidth > 0) workspace.style.setProperty('--photo-pane-width', `${savedWidth}px`);
-  $('photoResizer').hidden = !showPhoto;
-  $('sourceEditor').hidden = showPhoto;
-  $('photoViewer').hidden = !showPhoto;
+  $('photoResizer').hidden = !photoMode;
+  $('sourceEditor').hidden = photoMode;
+  $('photoViewer').hidden = !photoMode;
   if (photoStateChanged) window.requestAnimationFrame(applyFormLayout);
   if (!showPhoto) {
     $('photoOcrPanel').hidden = true;
     $('photoOcrToggle').setAttribute('aria-expanded', 'false');
+    $('photoOcrToggle').disabled = true;
+    const image = $('photoPreview');
+    image.removeAttribute('src');
+    image.dataset.sourceImageId = '';
+    $('photoFileName').textContent = '원본 사진 없음';
+    $('photoViewerNotice').textContent = state.smartDataReady
+      ? '사진을 선택하면 원본을 이 영역에 그대로 표시합니다.'
+      : '저장된 원본 사진을 불러오고 있습니다.';
     return;
   }
+  $('photoOcrToggle').disabled = false;
   const image = $('photoPreview');
   if (image.dataset.sourceImageId !== evidence.sourceImageId) {
     image.dataset.sourceImageId = evidence.sourceImageId;
@@ -813,6 +826,7 @@ function applyCustomer(customer, { rematch = true, mappingSource = 'MANUAL', lea
   $('customerHint').textContent = `${customerCode(customer) || (temporaryMeta(header.customerId) ? '임시 배송처' : '등록 거래처')} · ${mappingSource === 'CONFIRMED_ALIAS' ? '주문자명 자동 지정' : '마스터 연결됨'}`;
   applyCustomerRelationship(header);
   updateDeliveryPolicy();
+  renderCatalogControls();
   scheduleSave();
   if (learnAlias && header.rawOrdererName) {
     void confirmCustomerAlias(header.rawOrdererName, customer, currentSourceType())
@@ -993,12 +1007,13 @@ async function chooseCustomer() {
             .slice(0, 80);
         results.innerHTML = visibleCustomers.map(customerItem => {
           const group = groupForCustomer(customerItem.customerId);
-          const isTax = group?.taxCustomerId === customerItem.customerId;
+          const isMultiCustomerGroup = Number(group?.memberCustomerIds?.length || 0) > 1;
+          const isTax = isMultiCustomerGroup && group?.taxCustomerId === customerItem.customerId;
           const isTemporary = Boolean(temporaryMeta(customerItem.customerId));
           return `<article class="smart-customer-row ${selected.has(customerItem.customerId) ? 'is-selected' : ''}" data-customer-id="${esc(customerItem.customerId)}">
             <label class="smart-customer-check"><input type="checkbox" ${selected.has(customerItem.customerId) ? 'checked' : ''}><span class="sr-only">${esc(customerName(customerItem))} 선택</span></label>
             <div class="smart-customer-select"><strong>${esc(customerName(customerItem))}</strong><span>${esc(customerIdentityLabel(customerItem))}</span><small>${esc(customerItem.address || temporaryMeta(customerItem.customerId)?.warehouseName || '')}</small></div>
-            <div class="smart-customer-badges">${isTemporary ? '<span class="is-temp">임시 배송처</span>' : ''}${group ? `<span>연결 ${group.memberCustomerIds.length}</span>` : ''}${isTax ? '<span class="is-tax">세무</span>' : ''}</div>
+            <div class="smart-customer-badges">${isTemporary ? '<span class="is-temp">임시 배송처</span>' : ''}${isMultiCustomerGroup ? `<span>연결 ${group.memberCustomerIds.length}</span>` : ''}${isTax ? '<span class="is-tax">세무거래처</span>' : ''}</div>
           </article>`;
         }).join('') || '<div class="smart-dialog__empty">일치하는 거래처가 없습니다.</div>';
         results.querySelectorAll('.smart-customer-row').forEach(row => {
@@ -1395,6 +1410,8 @@ function openDraftListDialog() {
         syncSourceText();
         state.draft.activeMode = item.mode;
         state.draft.modes[item.mode] = contract.normalizeModeDraft(item.mode, item);
+        restoreSourceImageForMode(item.mode);
+        state.selectedRowIds.clear();
         saveDraftNow();
         renderMode();
         dialog.close();
@@ -1416,7 +1433,64 @@ function openDraftListDialog() {
 }
 
 function estimateTitle(record) {
-  return record?.customerName || record?.draft?.header?.customerName || '거래처 미지정 견적';
+  return record?.catalogName || record?.customerName || record?.draft?.header?.customerName || '거래처 미지정 견적';
+}
+
+function customerCatalogs() {
+  const header = modeDraft().header;
+  if (!header.customerId && !header.customerName) return [];
+  const customerKey = normalizedKey(header.customerName);
+  return state.estimates.filter(record => (
+    header.customerId
+      ? String(record.customerId || '') === String(header.customerId)
+      : normalizedKey(record.customerName) === customerKey
+  ));
+}
+
+function renderCatalogControls() {
+  const visible = state.draft.activeMode === 'estimate';
+  $('catalogFilter').hidden = !visible;
+  $('catalogSaveButton').hidden = !visible;
+  if (!visible) return;
+  const current = modeDraft();
+  const records = customerCatalogs();
+  $('catalogSelect').innerHTML = `<option value="">신규 카탈로그</option>${records.map(record => (
+    `<option value="${esc(record.estimateId)}">${esc(estimateTitle(record))} · ${Number(record.rowCount || record.draft?.rows?.length || 0)}품목</option>`
+  )).join('')}`;
+  $('catalogSelect').value = records.some(record => record.estimateId === current.catalogRecordId) ? current.catalogRecordId : '';
+  $('catalogSelect').disabled = !current.header.customerId;
+  $('catalogSaveButton').textContent = current.catalogRecordId ? '수정 저장' : '저장';
+}
+
+function restoreSourceImageForMode(mode) {
+  const documentId = state.draft.modes[mode]?.documentId;
+  state.sourceImages[mode] = state.sourceImageRecords.get(documentId) || null;
+}
+
+function loadCatalogRecord(record) {
+  if (!record?.draft) return;
+  syncSourceText();
+  state.draft.activeMode = 'estimate';
+  state.draft.modes.estimate = contract.normalizeModeDraft('estimate', { ...record.draft, catalogRecordId: record.estimateId });
+  restoreSourceImageForMode('estimate');
+  state.selectedRowIds.clear();
+  saveDraftNow();
+  renderMode();
+  toast(`${estimateTitle(record)}을 불러왔습니다.`, 'success');
+}
+
+function startNewCatalog() {
+  const current = modeDraft();
+  const fallback = contract.createDraft().modes.estimate;
+  fallback.header = { ...fallback.header, ...current.header, customValues: { ...(current.header.customValues || {}) } };
+  fallback.activeMethod = 'direct';
+  state.draft.modes.estimate = fallback;
+  state.sourceImages.estimate = null;
+  state.selectedRowIds.clear();
+  resetPhotoView();
+  saveDraftNow();
+  renderMode();
+  window.requestAnimationFrame(() => inputRows.querySelector('[data-field="itemCode"]')?.focus());
 }
 
 function openEstimateListDialog() {
@@ -1440,14 +1514,9 @@ function openEstimateListDialog() {
       row.querySelector('[data-open-estimate]').addEventListener('click', () => {
         const record = state.estimates.find(item => item.estimateId === estimateId);
         if (!record?.draft) return;
-        syncSourceText();
-        state.draft.activeMode = 'estimate';
-        state.draft.modes.estimate = contract.normalizeModeDraft('estimate', { ...record.draft, catalogRecordId: record.estimateId });
-        saveDraftNow();
-        renderMode();
+        loadCatalogRecord(record);
         dialog.close();
         dialog.remove();
-        toast('견적서를 불러왔습니다.', 'success');
       });
       row.querySelector('[data-delete-estimate]').addEventListener('click', async () => {
         const record = state.estimates.find(item => item.estimateId === estimateId);
@@ -1519,6 +1588,27 @@ function hydrateHeader() {
   updateDeliveryPolicy();
 }
 
+function syncRowSelectionControls() {
+  const rowIds = modeDraft().rows.map(row => row.rowId);
+  state.selectedRowIds = new Set([...state.selectedRowIds].filter(rowId => rowIds.includes(rowId)));
+  const selectedCount = state.selectedRowIds.size;
+  const selectAll = $('selectAllRows');
+  selectAll.checked = Boolean(rowIds.length && selectedCount === rowIds.length);
+  selectAll.indeterminate = selectedCount > 0 && selectedCount < rowIds.length;
+  selectAll.disabled = !rowIds.length;
+  $('deleteSelectedRows').disabled = !selectedCount;
+}
+
+function deleteSelectedGridRows() {
+  if (!state.selectedRowIds.size) return;
+  modeDraft().rows = modeDraft().rows.filter(row => !state.selectedRowIds.has(row.rowId));
+  modeDraft().rows = contract.markDuplicatePossibilities(modeDraft().rows);
+  state.selectedRowIds.clear();
+  renderRows();
+  saveDraftNow();
+  toast('선택한 품목을 삭제했습니다.', 'success');
+}
+
 function renderRows({ restoreFocus = true } = {}) {
   const rows = modeDraft().rows;
   const defaultRow = {
@@ -1541,6 +1631,7 @@ function renderRows({ restoreFocus = true } = {}) {
       `<td data-column="${esc(field.id)}"><input data-custom-row-field="${esc(field.id)}" type="${field.valueType === 'NUMBER' ? 'number' : 'text'}"${field.valueType === 'NUMBER' ? ' step="any"' : ''} value="${esc(row.customValues?.[field.id] || '')}" aria-label="${esc(field.label)}"></td>`
     )).join('');
     return `<tr data-row-id="${esc(row.rowId)}" ${isDefault ? 'data-default-row="true"' : ''} data-status="${esc(row.matchStatus)}" class="${row.duplicatePossible ? 'is-duplicate' : ''}">
+      <td class="row-select-cell"><input type="checkbox" data-select-row="${isDefault ? '' : esc(row.rowId)}" aria-label="행 선택" ${isDefault ? 'disabled' : (state.selectedRowIds.has(row.rowId) ? 'checked' : '')}></td>
       <td data-column="itemCode"><input data-field="itemCode" type="search" enterkeyhint="search" value="${esc(row.itemCode)}" aria-label="품목코드" title="입력 후 Enter로 상품 검색"></td>
       <td data-column="itemName"><input data-field="itemName" type="search" enterkeyhint="search" value="${esc(row.itemName)}" aria-label="품목명" title="입력 후 Enter로 상품 검색"></td>
       <td data-column="specification"><input data-field="specification" value="${esc(row.specification)}" aria-label="규격"></td>
@@ -1557,6 +1648,7 @@ function renderRows({ restoreFocus = true } = {}) {
       <td><button type="button" class="row-remove" data-remove-row="${isDefault ? '' : esc(row.rowId)}" aria-label="행 삭제" ${isDefault ? 'disabled tabindex="-1"' : ''}>×</button></td>
     </tr>`;
   }).join('');
+  syncRowSelectionControls();
   updateSummaries();
   applyFormLayout();
   renderSourceAnalysis();
@@ -1575,7 +1667,7 @@ function renderRows({ restoreFocus = true } = {}) {
     const active = modeUi().activeCellId;
     if (!active) return;
     const [rowId, field] = active.split('|');
-    inputRows.querySelector(`[data-row-id="${CSS.escape(rowId)}"] [data-field="${CSS.escape(field)}"]`)?.focus({ preventScroll: true });
+    inputRows.querySelector(`[data-row-id="${CSS.escape(rowId)}"] [data-field="${CSS.escape(field)}"], [data-row-id="${CSS.escape(rowId)}"] [data-custom-row-field="${CSS.escape(field)}"]`)?.focus({ preventScroll: true });
   });
 }
 
@@ -1626,9 +1718,11 @@ function renderMode() {
   $('relatedEmpty').hidden = selected.id === 'order';
   $('estimateListButton').hidden = selected.id !== 'estimate';
   hydrateHeader();
+  if (removeParserArtifactRows(modeDraft())) scheduleSave();
   sourceTextInput.value = modeDraft().sourceText;
   updateMethod(modeDraft().activeMethod, { persist: false });
   renderRows();
+  renderCatalogControls();
   renderDelivery();
   resizeSource();
   renderSourceAnalysis();
@@ -1647,6 +1741,8 @@ function setMode(mode) {
   if (!contract.MODES[mode] || mode === state.draft.activeMode) return;
   syncSourceText();
   state.draft.activeMode = mode;
+  restoreSourceImageForMode(mode);
+  state.selectedRowIds.clear();
   state.activeActivity = '';
   state.pendingImageEvidence = null;
   state.pendingOcrReview = null;
@@ -1696,8 +1792,14 @@ function materializeDefaultRow(tr) {
     remove.disabled = false;
     remove.removeAttribute('tabindex');
   }
+  const selector = tr.querySelector('[data-select-row]');
+  if (selector) {
+    selector.dataset.selectRow = row.rowId;
+    selector.disabled = false;
+  }
   modeUi().activeCellId = `${row.rowId}|${document.activeElement?.dataset?.field || 'itemCode'}`;
   state.draft.ui.selectedRowId = row.rowId;
+  syncRowSelectionControls();
   updateSummaries();
   scheduleSave();
   return row;
@@ -1709,6 +1811,91 @@ function addDirectRow() {
   saveDraftNow();
   const last = inputRows.querySelector('tr:last-child input[data-field="itemCode"]');
   last?.focus();
+}
+
+function gridFieldId(input) {
+  return input?.dataset?.field || input?.dataset?.customRowField || '';
+}
+
+function visibleEditableGridFields() {
+  return [...document.querySelectorAll('#tableScroll thead th[data-column]')]
+    .filter(header => !header.classList.contains('is-column-hidden'))
+    .map(header => header.dataset.column)
+    .filter(field => inputRows.querySelector(`[data-field="${CSS.escape(field)}"], [data-custom-row-field="${CSS.escape(field)}"]`));
+}
+
+function gridInput(rowId, field) {
+  return inputRows.querySelector(`[data-row-id="${CSS.escape(rowId)}"] [data-field="${CSS.escape(field)}"], [data-row-id="${CSS.escape(rowId)}"] [data-custom-row-field="${CSS.escape(field)}"]`);
+}
+
+function focusGridTarget(target) {
+  if (!target) return;
+  let rowId = target.rowId;
+  if (target.append) {
+    const row = appendDirectRow();
+    rowId = row.rowId;
+    modeUi().activeCellId = `${rowId}|${target.field}`;
+    renderRows();
+    saveDraftNow();
+    return;
+  }
+  modeUi().activeCellId = `${rowId}|${target.field}`;
+  const input = gridInput(rowId, target.field);
+  input?.focus({ preventScroll: true });
+  input?.select?.();
+}
+
+function sequentialGridTarget(rowId, field) {
+  const fields = visibleEditableGridFields();
+  const rows = [...inputRows.querySelectorAll('tr[data-row-id]')];
+  const rowIndex = rows.findIndex(row => row.dataset.rowId === rowId);
+  const fieldIndex = fields.indexOf(field);
+  if (rowIndex < 0 || fieldIndex < 0) return null;
+  if (fieldIndex < fields.length - 1) return { rowId, field: fields[fieldIndex + 1] };
+  const nextRow = rows[rowIndex + 1];
+  return nextRow ? { rowId: nextRow.dataset.rowId, field: fields[0] } : { append: true, field: fields[0] };
+}
+
+function directionalGridTarget(rowId, field, key) {
+  const fields = visibleEditableGridFields();
+  const rows = [...inputRows.querySelectorAll('tr[data-row-id]')];
+  const rowIndex = rows.findIndex(row => row.dataset.rowId === rowId);
+  const fieldIndex = fields.indexOf(field);
+  if (rowIndex < 0 || fieldIndex < 0) return null;
+  const rowOffset = key === 'ArrowDown' ? 1 : (key === 'ArrowUp' ? -1 : 0);
+  const fieldOffset = key === 'ArrowRight' ? 1 : (key === 'ArrowLeft' ? -1 : 0);
+  const targetRow = rows[rowIndex + rowOffset];
+  const targetField = fields[fieldIndex + fieldOffset];
+  if (!targetRow || !targetField) return null;
+  return { rowId: targetRow.dataset.rowId, field: targetField };
+}
+
+const PARSER_ARTIFACT_TERMS = /(품목코드|품목명|품목|품명|상품명|규격|수량|단가|공급가액|금액|합계|총계|소계)/g;
+
+function isParserArtifactLine(line) {
+  const productText = String(line?.productText || line?.itemName || '').normalize('NFKC').trim();
+  const rawText = String(line?.rawText || '').normalize('NFKC').trim();
+  if (/^(?:합계|총계|소계)(?:\s|[:：|]|$)/.test(productText || rawText)) return true;
+  const terms = productText.match(PARSER_ARTIFACT_TERMS) || [];
+  if (terms.length < 2) return false;
+  const residue = productText
+    .replace(PARSER_ARTIFACT_TERMS, '')
+    .replace(/[|:;·•_\-\s\d,.원₩()[\]{}<>]/g, '')
+    .trim();
+  return residue.length <= 2;
+}
+
+function removeParserArtifactRows(current) {
+  const previousLength = Number(current?.rows?.length || 0);
+  const parserBatchIds = new Set((current?.batches || [])
+    .filter(batch => batch.sourceType !== 'MANUAL')
+    .map(batch => batch.batchId));
+  current.rows = (current?.rows || []).filter(row => {
+    if (!parserBatchIds.has(row.batchId)) return true;
+    if (row.editedFields?.itemCode || row.editedFields?.itemName) return true;
+    return !isParserArtifactLine({ productText: row.itemName, rawText: row.rawText });
+  });
+  return current.rows.length !== previousLength;
 }
 
 async function sha256Text(value) {
@@ -1874,6 +2061,7 @@ async function analyzeSource({ automatic = false } = {}) {
       lines = fallbackLines(rawText, batch);
     }
 
+    lines = lines.filter(line => !isParserArtifactLine(line));
     if (!lines.length) throw new Error('상품 행을 인식하지 못했습니다. 상품명과 수량을 확인해 주세요.');
     if (requestId !== state.analysisRequestId || state.draft.activeMode !== modeId || sourceTextInput.value !== rawText) return;
     const liveBatchIds = new Set(current.batches.filter(item => item.sourceRole === 'LIVE_SOURCE').map(item => item.batchId));
@@ -1995,6 +2183,26 @@ async function fileToImageEvidence(file) {
   };
 }
 
+async function persistSourceImageForMode(mode = state.draft.activeMode) {
+  const sourceImage = state.sourceImages[mode];
+  const documentId = state.draft.modes[mode]?.documentId;
+  if (!sourceImage?.dataUrl || !documentId) return;
+  const record = {
+    ...sourceImage,
+    documentId,
+    mode,
+    updatedAt: new Date().toISOString()
+  };
+  state.sourceImages[mode] = record;
+  state.sourceImageRecords.set(documentId, record);
+  try {
+    await saveSourceImage(record);
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
 async function recognizeImage(file) {
   if (!file || !String(file.type || '').startsWith('image/')) return;
   if (state.busy) return;
@@ -2010,6 +2218,7 @@ async function recognizeImage(file) {
     state.sourceImages[state.draft.activeMode] = state.pendingImageEvidence;
     state.pendingSourceName = state.pendingImageEvidence.fileName;
     state.pendingImageEvidence.notice = '원본 사진을 유지한 채 상품표를 분석하고 있습니다.';
+    await persistSourceImageForMode();
     renderSourceSurface();
     if (!modeDraft().rows.length) renderRows({ restoreFocus: false });
     if (!window.Tesseract?.createWorker && !window.Tesseract?.recognize) throw new Error('사진 OCR 모듈을 불러오지 못했습니다.');
@@ -2039,6 +2248,7 @@ async function recognizeImage(file) {
       const totals = analysis.calculatedTotal;
       $('sourceNotice').textContent = `OCR 검증 완료 · ${analysis.validRows.length}행 · 수량 ${totals.quantity.toLocaleString('ko-KR')} · 금액 ${totals.amount.toLocaleString('ko-KR')}원`;
       state.sourceImages[state.draft.activeMode].notice = `검증 완료 · ${analysis.validRows.length}행 · 수량 ${totals.quantity.toLocaleString('ko-KR')} · 금액 ${totals.amount.toLocaleString('ko-KR')}원`;
+      await persistSourceImageForMode();
       renderSourceSurface();
       setAppStatus('사진의 행 산식과 합계가 일치했습니다. 검증된 상품만 자동 분석합니다.');
       toast('OCR 검증을 통과한 상품행만 입력합니다.', 'success');
@@ -2051,6 +2261,7 @@ async function recognizeImage(file) {
       const totals = analysis.calculatedTotal;
       $('sourceNotice').textContent = `OCR 확인 필요 · 검증 ${analysis.validRows.length}행 · 오류 ${analysis.invalidRows.length}행 · 계산 ${totals.amount.toLocaleString('ko-KR')}원`;
       state.sourceImages[state.draft.activeMode].notice = `확인 필요 · 검증 ${analysis.validRows.length}행 · 오류 ${analysis.invalidRows.length}행`;
+      await persistSourceImageForMode();
       renderSourceSurface();
       setAppStatus('OCR 산식·합계 검증이 일치하지 않아 상품행을 생성하지 않았습니다.', 'error');
       toast('OCR 확인이 필요합니다. 원문은 유지되고 상품행은 생성하지 않았습니다.', 'error');
@@ -2059,6 +2270,7 @@ async function recognizeImage(file) {
     state.pendingOcrReview = null;
     if (state.sourceImages[state.draft.activeMode]) {
       state.sourceImages[state.draft.activeMode].notice = '자동 인식에 실패했습니다. 원본 사진을 보면서 직접 입력할 수 있습니다.';
+      void persistSourceImageForMode();
       renderSourceSurface();
     }
     toast(error.message || '사진 문자를 추출하지 못했습니다.', 'error');
@@ -2197,7 +2409,7 @@ function rematchQuery(row, changedField = '') {
   return row.itemCode || row.itemName;
 }
 
-function tryMatchRow(row, changedField = '') {
+function tryMatchRow(row, changedField = '', { focusTarget = null } = {}) {
   const query = rematchQuery(row, changedField);
   row.productId = '';
   row.masterProductId = '';
@@ -2221,14 +2433,14 @@ function tryMatchRow(row, changedField = '') {
     row.matchStatus = 'UNRESOLVED';
   }
   modeDraft().rows = contract.markDuplicatePossibilities(modeDraft().rows);
-  if (matched) modeUi().activeCellId = `${row.rowId}|quantity`;
-  else if (openCandidates) modeUi().activeCellId = '';
-  renderRows({ restoreFocus: !openCandidates });
+  if (openCandidates) modeUi().activeCellId = '';
+  renderRows({ restoreFocus: !openCandidates && !focusTarget });
   saveDraftNow();
-  if (openCandidates) openProductDialog(row, { query });
+  if (openCandidates) openProductDialog(row, { query, focusTarget, returnField: changedField });
+  else if (focusTarget) focusGridTarget(focusTarget);
 }
 
-function openProductDialog(row, { query = '' } = {}) {
+function openProductDialog(row, { query = '', focusTarget = null, returnField = '' } = {}) {
   const dialog = document.createElement('dialog');
   dialog.className = 'customer-picker-dialog';
   const shell = document.createElement('div');
@@ -2267,12 +2479,15 @@ function openProductDialog(row, { query = '' } = {}) {
         return;
       }
       modeDraft().rows = contract.markDuplicatePossibilities(modeDraft().rows);
-      modeUi().activeCellId = `${row.rowId}|quantity`;
-      renderRows();
+      renderRows({ restoreFocus: false });
       saveDraftNow();
     }
     dialog.close();
     dialog.remove();
+    window.requestAnimationFrame(() => {
+      if (product && focusTarget) focusGridTarget(focusTarget);
+      else if (!product) gridInput(row.rowId, returnField)?.focus();
+    });
   };
   let foundProducts = [];
   let selectedIndex = 0;
@@ -2349,6 +2564,11 @@ function openProductDialog(row, { query = '' } = {}) {
 
 async function saveEstimateDocument() {
   const current = modeDraft();
+  if (!current.header.customerId) {
+    $('customerInput').focus();
+    toast('카탈로그를 저장할 배송 거래처를 선택하세요.', 'error');
+    return;
+  }
   if (!current.rows.length) {
     toast('견적 품목을 1개 이상 입력하세요.', 'error');
     return;
@@ -2371,8 +2591,10 @@ async function saveEstimateDocument() {
     current.delivery = { status: 'SAVED', targetId: 'smart-input-estimates', targetRecordId: estimateId, deliveredAt: timestamp };
     const summary = contract.summarizeRows(current.rows);
     const existing = state.estimates.find(item => item.estimateId === estimateId);
+    const catalogSequence = customerCatalogs().filter(item => item.estimateId !== estimateId).length + 1;
     const record = {
       estimateId,
+      catalogName: existing?.catalogName || `${current.header.customerName} 카탈로그 ${catalogSequence}`,
       customerId: current.header.customerId,
       customerName: current.header.customerName,
       rowCount: summary.total,
@@ -2385,6 +2607,7 @@ async function saveEstimateDocument() {
     state.estimates = [record, ...state.estimates.filter(item => item.estimateId !== estimateId)]
       .sort((left, right) => String(right.updatedAt || '').localeCompare(String(left.updatedAt || '')));
     saveDraftNow();
+    renderCatalogControls();
     renderDelivery();
     setAppStatus(`${estimateTitle(record)} · ${summary.total}품목 견적 저장 완료`);
     toast('견적서를 견적 목록에 저장했습니다.', 'success');
@@ -2523,6 +2746,7 @@ async function completeOrder() {
     next.header.transactionType = current.header.transactionType;
     state.draft.modes.order = next;
     state.sourceImages.order = null;
+    state.selectedRowIds.clear();
     resetPhotoView();
     state.pendingImageEvidence = null;
     state.pendingOcrReview = null;
@@ -2551,6 +2775,7 @@ function resetCurrentMode(requireConfirmation = true) {
   fallback.header.transactionType = current.header.transactionType;
   state.draft.modes[state.draft.activeMode] = fallback;
   state.sourceImages[state.draft.activeMode] = null;
+  state.selectedRowIds.clear();
   resetPhotoView();
   state.pendingImageEvidence = null;
   state.pendingOcrReview = null;
@@ -2590,6 +2815,8 @@ async function hydrateReferences() {
     state.temporaryCustomers = results[3].value.temporaryCustomers || [];
     state.aliasMappings = results[3].value.aliasMappings || [];
     state.estimates = results[3].value.estimates || [];
+    state.sourceImageRecords = new Map((results[3].value.sourceImages || []).map(sourceImage => [sourceImage.documentId, sourceImage]));
+    Object.keys(state.sourceImages).forEach(mode => restoreSourceImageForMode(mode));
     state.smartDataReady = true;
   }
   state.customers = normalizedCustomerCandidates(loadedCustomers);
@@ -2717,6 +2944,7 @@ $('customerInput').addEventListener('input', event => {
     event.target.dataset.customerId = '';
     applyCustomerRelationship(header);
     updateDeliveryPolicy();
+    renderCatalogControls();
     $('customerHint').textContent = '등록 거래처를 선택해야 주문서 원장에 저장할 수 있습니다.';
     scheduleSave();
   }
@@ -2740,6 +2968,15 @@ $('completeButton').addEventListener('click', completeOrder);
 $('saveDraftButton').addEventListener('click', () => { saveDraftNow(); toast('현재 초안을 저장했습니다.', 'success'); });
 $('draftListButton').addEventListener('click', openDraftListDialog);
 $('estimateListButton').addEventListener('click', openEstimateListDialog);
+$('catalogSelect').addEventListener('change', event => {
+  if (!event.target.value) {
+    startNewCatalog();
+    return;
+  }
+  const record = state.estimates.find(item => item.estimateId === event.target.value);
+  if (record) loadCatalogRecord(record);
+});
+$('catalogSaveButton').addEventListener('click', saveEstimateDocument);
 $('settingsButton').addEventListener('click', openSettingsDialog);
 $('resetDraftButton').addEventListener('click', () => resetCurrentMode(false));
 $('relatedCollapseButton').addEventListener('click', event => {
@@ -2797,39 +3034,49 @@ inputRows.addEventListener('input', event => {
   scheduleSave();
 });
 inputRows.addEventListener('keydown', event => {
-  const input = event.target.closest('[data-field]');
+  const input = event.target.closest('[data-field], [data-custom-row-field]');
   const tr = event.target.closest('[data-row-id]');
-  if (!input || !tr || event.key !== 'Enter' || event.isComposing) return;
-  if (tr.dataset.defaultRow === 'true' && input.value) materializeDefaultRow(tr);
-  const field = input.dataset.field;
-  if (field === 'quantity') {
-    event.preventDefault();
-    tr.querySelector('[data-field="unitPrice"]')?.focus();
-    return;
-  }
-  if (field === 'unitPrice') {
-    event.preventDefault();
-    addDirectRow();
-    return;
-  }
-  if (!['itemCode', 'itemName'].includes(field)) return;
+  if (!input || !tr || event.isComposing || !['Enter', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return;
   event.preventDefault();
+  if (tr.dataset.defaultRow === 'true' && input.value) materializeDefaultRow(tr);
+  const field = gridFieldId(input);
+  const rowId = tr.dataset.rowId;
+  const focusTarget = event.key === 'Enter'
+    ? sequentialGridTarget(rowId, field)
+    : directionalGridTarget(rowId, field, event.key);
+  if (event.key !== 'Enter') {
+    focusGridTarget(focusTarget);
+    return;
+  }
   const row = modeDraft().rows.find(item => item.rowId === tr.dataset.rowId);
-  if (row) tryMatchRow(row, field);
+  if (row && ['itemCode', 'itemName'].includes(field)) {
+    input.dataset.matchSubmitted = 'true';
+    tryMatchRow(row, field, { focusTarget });
+    return;
+  }
+  focusGridTarget(focusTarget);
 });
 inputRows.addEventListener('focusin', event => {
-  const input = event.target.closest('[data-field]');
+  const input = event.target.closest('[data-field], [data-custom-row-field]');
   const tr = event.target.closest('[data-row-id]');
   if (!input || !tr) return;
-  modeUi().activeCellId = `${tr.dataset.rowId}|${input.dataset.field}`;
+  modeUi().activeCellId = `${tr.dataset.rowId}|${gridFieldId(input)}`;
   state.draft.ui.selectedRowId = tr.dataset.rowId;
   const row = modeDraft().rows.find(item => item.rowId === tr.dataset.rowId);
   if (modeDraft().activeMethod === 'photo') showPhotoRegion(row?.sourceRegion || null);
 });
 inputRows.addEventListener('change', event => {
+  const selector = event.target.closest('[data-select-row]');
+  if (selector) {
+    if (selector.checked) state.selectedRowIds.add(selector.dataset.selectRow);
+    else state.selectedRowIds.delete(selector.dataset.selectRow);
+    syncRowSelectionControls();
+    return;
+  }
   const input = event.target.closest('[data-field]');
   const tr = event.target.closest('[data-row-id]');
   if (!input || !tr || !['itemCode', 'itemName'].includes(input.dataset.field)) return;
+  if (input.dataset.matchSubmitted === 'true') return;
   const row = modeDraft().rows.find(item => item.rowId === tr.dataset.rowId);
   if (row) tryMatchRow(row, input.dataset.field);
 });
@@ -2842,6 +3089,7 @@ inputRows.addEventListener('click', event => {
   }
   const remove = event.target.closest('[data-remove-row]');
   if (remove) {
+    state.selectedRowIds.delete(remove.dataset.removeRow);
     modeDraft().rows = modeDraft().rows.filter(row => row.rowId !== remove.dataset.removeRow);
     modeDraft().rows = contract.markDuplicatePossibilities(modeDraft().rows);
     renderRows();
@@ -2849,6 +3097,14 @@ inputRows.addEventListener('click', event => {
     return;
   }
 });
+
+$('selectAllRows').addEventListener('change', event => {
+  state.selectedRowIds = event.target.checked
+    ? new Set(modeDraft().rows.map(row => row.rowId))
+    : new Set();
+  renderRows({ restoreFocus: false });
+});
+$('deleteSelectedRows').addEventListener('click', deleteSelectedGridRows);
 
 document.addEventListener('paste', event => {
   const image = [...(event.clipboardData?.items || [])]
