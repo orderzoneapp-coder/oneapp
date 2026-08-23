@@ -451,6 +451,12 @@ assert.match(appSource, /function persistSourceImageForMode\(/);
 assert.match(appSource, /function restoreSourceImageForMode\(/);
 assert.match(appSource, /function renderCatalogControls\(/);
 assert.match(appSource, /function startNewCatalog\(/);
+assert.match(appSource, /function availableCatalogs\(/);
+assert.match(appSource, /const records = availableCatalogs\(current\.header\)/);
+assert.doesNotMatch(appSource, /\$\('catalogSelect'\)\.disabled = !current\.header\.customerId/);
+assert.match(appSource, /catalogDraft\.header\.customerId = linkedCustomer\?\.customerId \|\| catalogCustomerId\(record\)/);
+assert.match(appSource, /catalogDraft\.header\.customerName = customerName\(linkedCustomer\) \|\| catalogCustomerName\(record\)/);
+assert.match(appSource, /customerMappingSource = 'CATALOG'/);
 assert.match(appSource, /function isParserArtifactLine\(/);
 assert.match(appSource, /lines = lines\.filter\(line => !isParserArtifactLine\(line\)\)/);
 

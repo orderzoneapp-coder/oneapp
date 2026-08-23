@@ -1436,15 +1436,30 @@ function estimateTitle(record) {
   return record?.catalogName || record?.customerName || record?.draft?.header?.customerName || '거래처 미지정 견적';
 }
 
-function customerCatalogs() {
-  const header = modeDraft().header;
+function catalogCustomerId(record) {
+  return String(record?.customerId || record?.draft?.header?.customerId || '').trim();
+}
+
+function catalogCustomerName(record) {
+  return String(record?.customerName || record?.draft?.header?.customerName || '').trim();
+}
+
+function catalogsForCustomer(header = modeDraft().header) {
   if (!header.customerId && !header.customerName) return [];
   const customerKey = normalizedKey(header.customerName);
   return state.estimates.filter(record => (
     header.customerId
-      ? String(record.customerId || '') === String(header.customerId)
-      : normalizedKey(record.customerName) === customerKey
+      ? catalogCustomerId(record) === String(header.customerId)
+      : normalizedKey(catalogCustomerName(record)) === customerKey
   ));
+}
+
+function availableCatalogs(header = modeDraft().header) {
+  const preferredIds = new Set(catalogsForCustomer(header).map(record => record.estimateId));
+  return [
+    ...state.estimates.filter(record => preferredIds.has(record.estimateId)),
+    ...state.estimates.filter(record => !preferredIds.has(record.estimateId))
+  ];
 }
 
 function renderCatalogControls() {
@@ -1453,12 +1468,11 @@ function renderCatalogControls() {
   $('catalogSaveButton').hidden = !visible;
   if (!visible) return;
   const current = modeDraft();
-  const records = customerCatalogs();
+  const records = availableCatalogs(current.header);
   $('catalogSelect').innerHTML = `<option value="">신규 카탈로그</option>${records.map(record => (
-    `<option value="${esc(record.estimateId)}">${esc(estimateTitle(record))} · ${Number(record.rowCount || record.draft?.rows?.length || 0)}품목</option>`
+    `<option value="${esc(record.estimateId)}">${esc(estimateTitle(record))} · ${esc(catalogCustomerName(record) || '거래처 미지정')} · ${Number(record.rowCount || record.draft?.rows?.length || 0)}품목</option>`
   )).join('')}`;
   $('catalogSelect').value = records.some(record => record.estimateId === current.catalogRecordId) ? current.catalogRecordId : '';
-  $('catalogSelect').disabled = !current.header.customerId;
   $('catalogSaveButton').textContent = current.catalogRecordId ? '수정 저장' : '저장';
 }
 
@@ -1471,12 +1485,20 @@ function loadCatalogRecord(record) {
   if (!record?.draft) return;
   syncSourceText();
   state.draft.activeMode = 'estimate';
-  state.draft.modes.estimate = contract.normalizeModeDraft('estimate', { ...record.draft, catalogRecordId: record.estimateId });
+  const catalogDraft = contract.normalizeModeDraft('estimate', { ...record.draft, catalogRecordId: record.estimateId });
+  const linkedCustomer = customerById(catalogCustomerId(record));
+  catalogDraft.header.customerId = linkedCustomer?.customerId || catalogCustomerId(record);
+  catalogDraft.header.customerName = customerName(linkedCustomer) || catalogCustomerName(record);
+  catalogDraft.header.customerMappingSource = 'CATALOG';
+  state.draft.modes.estimate = catalogDraft;
   restoreSourceImageForMode('estimate');
   state.selectedRowIds.clear();
   saveDraftNow();
   renderMode();
-  toast(`${estimateTitle(record)}을 불러왔습니다.`, 'success');
+  if (catalogDraft.header.customerId) {
+    $('customerHint').textContent = '카탈로그에 연결된 배송 거래처가 자동 지정되었습니다.';
+  }
+  toast(`${estimateTitle(record)}과 배송 거래처를 불러왔습니다.`, 'success');
 }
 
 function startNewCatalog() {
@@ -2591,7 +2613,7 @@ async function saveEstimateDocument() {
     current.delivery = { status: 'SAVED', targetId: 'smart-input-estimates', targetRecordId: estimateId, deliveredAt: timestamp };
     const summary = contract.summarizeRows(current.rows);
     const existing = state.estimates.find(item => item.estimateId === estimateId);
-    const catalogSequence = customerCatalogs().filter(item => item.estimateId !== estimateId).length + 1;
+    const catalogSequence = catalogsForCustomer(current.header).filter(item => item.estimateId !== estimateId).length + 1;
     const record = {
       estimateId,
       catalogName: existing?.catalogName || `${current.header.customerName} 카탈로그 ${catalogSequence}`,
