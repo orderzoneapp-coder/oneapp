@@ -4,12 +4,13 @@ import {
   rematchExtractedLinesForCustomer
 } from '../orderq/intake-engine.js?v=0.12.3';
 import { extractOrderProductLines } from '../orderq/smartparser/order-text-extractor.js?v=0.1.0';
-import { createOrder } from '../orderq/order-intake-engine.js?v=0.15.1';
+import { createOrder } from '../orderq/order-intake-engine.js?v=0.15.2';
 import { syncAfterLocalMutation } from '../orderq/orderq-sync-engine.js?v=0.8.0';
 import { STORE, getAll } from '../orderq/orderq-db.js?v=0.12.1';
 import { createLiveCustomer, ensureCustomerMasterReady } from '../orderq/customer-master.js?v=0.12.1';
 import { loadProductCatalog, searchProductCatalog } from '../orderq/product-master-search.js?v=0.8.1';
 import { loadWarehouseCatalog, matchWarehouseInput, warehouseDisplayName } from '../orderq/warehouse-master.js?v=0.8.0';
+import { recognizeOcrDocument, verifiedRowsToParserLines } from './ocr-document-parser.js?v=0.1.0';
 import {
   createRecordId,
   loadSmartInputData,
@@ -44,6 +45,7 @@ const state = {
   estimates: [],
   smartDataReady: false,
   pendingImageEvidence: null,
+  pendingOcrReview: null,
   pendingSourceName: '',
   saveTimer: null,
   draftDirty: false,
@@ -232,6 +234,17 @@ function renderSourceAnalysis() {
       row.matchStatus === 'MATCHED' ? 2 : 3
     );
   });
+  const ocrReview = state.pendingOcrReview;
+  if (ocrReview?.rawText === source && ocrReview.status !== 'VERIFIED') {
+    ocrReview.validRows.forEach(row => {
+      const start = source.indexOf(String(row.rawText || '').trim());
+      if (start >= 0) paint(start, start + row.rawText.length, 'source-token--collected', 3);
+    });
+    ocrReview.invalidRows.forEach(row => {
+      const start = source.indexOf(String(row.rawText || '').trim());
+      if (start >= 0) paint(start, start + row.rawText.length, 'source-token--unmatched', 4);
+    });
+  }
   let html = '';
   let segmentStart = 0;
   for (let index = 1; index <= source.length; index += 1) {
@@ -247,7 +260,55 @@ function renderSourceAnalysis() {
   highlight.scrollLeft = sourceTextInput.scrollLeft;
 }
 
+function customFieldsFor(scope) {
+  return (state.settings.customFields || []).filter(field => field.scope === scope);
+}
+
+function layoutDefinitions(scope, customFields = state.settings.customFields || []) {
+  const builtIn = scope === 'header' ? contract.HEADER_FIELD_DEFINITIONS : contract.VOUCHER_COLUMN_DEFINITIONS;
+  return [
+    ...builtIn,
+    ...customFields.filter(field => field.scope === scope).map(field => ({ ...field, custom: true, required: false }))
+  ];
+}
+
+function renderCustomLayoutFields() {
+  document.querySelectorAll('[data-custom-header-field]').forEach(element => element.remove());
+  const referenceStatus = $('referenceStatus');
+  customFieldsFor('header').forEach(field => {
+    const label = document.createElement('label');
+    label.className = 'field field--custom';
+    label.dataset.headerField = field.id;
+    label.dataset.customHeaderField = field.id;
+    label.innerHTML = `<span>${esc(field.label)} <em>사용자지정</em></span><input type="text" data-custom-header-input="${esc(field.id)}" value="${esc(modeDraft().header.customValues?.[field.id] || '')}"><small>주문서별 사용자 입력 항목</small>`;
+    referenceStatus.before(label);
+  });
+
+  const table = document.querySelector('#tableScroll table');
+  table.querySelectorAll('[data-custom-column]').forEach(element => element.remove());
+  const actionCol = table.querySelector('colgroup col:last-child');
+  const actionHead = table.querySelector('thead th:last-child');
+  const actionFoot = table.querySelector('tfoot td:last-child');
+  customFieldsFor('voucher').forEach(field => {
+    const col = document.createElement('col');
+    col.dataset.column = field.id;
+    col.dataset.customColumn = field.id;
+    col.className = 'col-custom';
+    actionCol.before(col);
+    const th = document.createElement('th');
+    th.dataset.column = field.id;
+    th.dataset.customColumn = field.id;
+    th.textContent = field.label;
+    actionHead.before(th);
+    const td = document.createElement('td');
+    td.dataset.column = field.id;
+    td.dataset.customColumn = field.id;
+    actionFoot.before(td);
+  });
+}
+
 function applyFormLayout() {
+  renderCustomLayoutFields();
   const headerFields = new Set(state.settings.headerFields || contract.DEFAULT_SETTINGS.headerFields);
   document.querySelectorAll('[data-header-field]').forEach(element => {
     element.hidden = !headerFields.has(element.dataset.headerField);
@@ -256,7 +317,7 @@ function applyFormLayout() {
   document.querySelectorAll('[data-column]').forEach(element => {
     element.classList.toggle('is-column-hidden', !voucherColumns.has(element.dataset.column));
   });
-  const visibleColumns = contract.VOUCHER_COLUMN_DEFINITIONS.filter(column => voucherColumns.has(column.id)).length;
+  const visibleColumns = layoutDefinitions('voucher').filter(column => voucherColumns.has(column.id)).length;
   const table = document.querySelector('#tableScroll table');
   table?.style.setProperty('--table-min-width', `${Math.max(520, visibleColumns * 94 + 34)}px`);
   inputRows.querySelector('.empty-row td')?.setAttribute('colspan', String(visibleColumns + 1));
@@ -777,11 +838,74 @@ function selectedWeekdays(form, name) {
 
 function layoutChecks(name, definitions, selected = []) {
   const selectedSet = new Set(selected);
-  return definitions.map(field => `<label class="layout-check"><input type="checkbox" name="${name}" value="${esc(field.id)}" ${selectedSet.has(field.id) || field.required ? 'checked' : ''} ${field.required ? 'disabled' : ''}><span>${esc(field.label)}</span>${field.required ? '<small>필수</small>' : ''}</label>`).join('');
+  return definitions.map(field => `<label class="layout-check"><input type="checkbox" name="${name}" value="${esc(field.id)}" ${selectedSet.has(field.id) || field.required ? 'checked' : ''} ${field.required ? 'disabled' : ''}><span>${esc(field.label)}</span>${field.required ? '<small>필수</small>' : (field.custom ? `<small>${esc(field.category === 'CUSTOM' ? '사용자지정' : field.category)}</small><button type="button" data-remove-custom-field="${esc(field.id)}" aria-label="${esc(field.label)} 삭제">×</button>` : '')}</label>`).join('');
 }
 
 function selectedLayoutFields(form, name) {
   return [...form.querySelectorAll(`input[name="${name}"]:checked`)].map(input => input.value);
+}
+
+function openLayoutFieldDialog(scope, onAdd) {
+  const isHeader = scope === 'header';
+  const fieldDialog = document.createElement('dialog');
+  fieldDialog.className = 'smart-dialog smart-field-dialog';
+  const definitions = isHeader ? contract.HEADER_FIELD_DEFINITIONS : contract.VOUCHER_COLUMN_DEFINITIONS;
+  const categoryDefinitions = isHeader
+    ? {
+        CUSTOMER: definitions.filter(field => ['customer', 'taxCustomer'].includes(field.id)),
+        ORDER: definitions.filter(field => !['customer', 'taxCustomer'].includes(field.id))
+      }
+    : { PRODUCT: definitions };
+  fieldDialog.innerHTML = `<form method="dialog" class="smart-dialog__shell">
+    <header><div><small>Form Field Library</small><h2>${isHeader ? '상단 정보열' : '전표 열'} 항목 추가</h2></div><button type="button" data-close aria-label="닫기">×</button></header>
+    <div class="smart-form">
+      <label><span>항목 분류</span><select name="category">${isHeader ? '<option value="CUSTOMER">거래처정보</option><option value="ORDER">주문정보</option>' : '<option value="PRODUCT">상품정보</option>'}<option value="CUSTOM">사용자지정</option></select></label>
+      <label data-library-field><span>추가할 항목</span><select name="libraryField"></select></label>
+      <label data-custom-label hidden><span>사용자지정 항목명</span><input name="customLabel" maxlength="30" placeholder="예: 배송 요청사항"></label>
+    </div>
+    <p class="smart-dialog__message">기존 정보 항목을 다시 표시하거나 새 사용자지정 항목을 만들 수 있습니다.</p>
+    <footer><button type="button" class="button button--quiet" data-close>취소</button><button type="button" class="button button--primary" data-add>항목 추가</button></footer>
+  </form>`;
+  document.body.append(fieldDialog);
+  const form = fieldDialog.querySelector('form');
+  const finish = () => { fieldDialog.close(); fieldDialog.remove(); };
+  const syncCategory = () => {
+    const custom = form.elements.category.value === 'CUSTOM';
+    fieldDialog.querySelector('[data-library-field]').hidden = custom;
+    fieldDialog.querySelector('[data-custom-label]').hidden = !custom;
+    if (!custom) {
+      form.elements.libraryField.innerHTML = (categoryDefinitions[form.elements.category.value] || [])
+        .map(field => `<option value="${esc(field.id)}">${esc(field.label)}</option>`).join('');
+    }
+    if (custom) form.elements.customLabel.focus();
+  };
+  form.elements.category.addEventListener('change', syncCategory);
+  fieldDialog.querySelectorAll('[data-close]').forEach(button => button.addEventListener('click', finish));
+  fieldDialog.addEventListener('cancel', event => { event.preventDefault(); finish(); });
+  fieldDialog.querySelector('[data-add]').addEventListener('click', () => {
+    if (form.elements.category.value !== 'CUSTOM') {
+      onAdd({ id: form.elements.libraryField.value, builtIn: true });
+      finish();
+      return;
+    }
+    const label = form.elements.customLabel.value.trim();
+    if (!label) {
+      fieldDialog.querySelector('.smart-dialog__message').textContent = '사용자지정 항목명을 입력하세요.';
+      form.elements.customLabel.focus();
+      return;
+    }
+    onAdd({
+      id: `custom-${scope}-${Date.now().toString(36)}-${Math.floor(Math.random() * 0xffff).toString(36)}`,
+      label,
+      scope,
+      category: 'CUSTOM',
+      sourceField: ''
+    });
+    finish();
+  });
+  form.addEventListener('submit', event => { event.preventDefault(); fieldDialog.querySelector('[data-add]').click(); });
+  fieldDialog.showModal();
+  syncCategory();
 }
 
 async function openSettingsDialog() {
@@ -790,22 +914,34 @@ async function openSettingsDialog() {
   const customerWeekdays = hasCustomerOverride
     ? state.settings.deliveryCustomerWeekdays[customerId]
     : state.settings.defaultDeliveryWeekdays;
+  let workingCustomFields = (state.settings.customFields || []).map(field => ({ ...field }));
   const dialog = document.createElement('dialog');
   dialog.className = 'smart-dialog smart-settings-dialog';
   dialog.innerHTML = `<form method="dialog" class="smart-dialog__shell">
     <header><div><small>SmartInput Preferences</small><h2>환경설정</h2></div><button type="button" data-close aria-label="닫기">×</button></header>
     <div class="smart-settings-grid">
-      <label><span>당일 주문 마감시간</span><input type="time" name="orderCutoffTime" value="${esc(state.settings.orderCutoffTime)}"><small>미설정이면 마감 제한을 적용하지 않습니다.</small></label>
-      <label class="toggle-setting"><input type="checkbox" name="allowSameDayDelivery" ${state.settings.allowSameDayDelivery ? 'checked' : ''}><span>마감시간 전 당일 배송 선택 허용</span></label>
-      <fieldset><legend>앱 기본 배송 가능 요일</legend><div class="weekday-grid">${weekdayChecks('defaultDeliveryWeekdays', state.settings.defaultDeliveryWeekdays)}</div></fieldset>
-      <fieldset><legend>반복 휴무 요일</legend><div class="weekday-grid">${weekdayChecks('holidayWeekdays', state.settings.holidayWeekdays)}</div></fieldset>
-      <label class="smart-settings--wide"><span>지정 휴무일</span><textarea name="holidayDates" rows="3" placeholder="2026-08-24&#10;2026-09-01">${esc(state.settings.holidayDates.join('\n'))}</textarea><small>날짜를 줄바꿈·쉼표로 구분합니다.</small></label>
-      <fieldset class="smart-settings--wide" ${customerId ? '' : 'disabled'}><legend>현재 배송처 요일 · ${esc(modeDraft().header.customerName || '거래처 미선택')}</legend>
-        <label class="toggle-setting"><input type="checkbox" name="useDefaultCustomerWeekdays" ${hasCustomerOverride ? '' : 'checked'}><span>앱 기본 배송 요일 사용</span></label>
-        <div class="weekday-grid" data-customer-weekdays>${weekdayChecks('customerDeliveryWeekdays', customerWeekdays)}</div>
-      </fieldset>
-      <fieldset class="smart-settings--wide"><legend>주문서 상단 정보열</legend><div class="layout-check-grid">${layoutChecks('headerFields', contract.HEADER_FIELD_DEFINITIONS, state.settings.headerFields)}</div></fieldset>
-      <fieldset class="smart-settings--wide"><legend>전표 표시 열</legend><div class="layout-check-grid">${layoutChecks('voucherColumns', contract.VOUCHER_COLUMN_DEFINITIONS, state.settings.voucherColumns)}</div></fieldset>
+      <details class="settings-group" open>
+        <summary><span><strong>배송 정책</strong><small>마감시간·배송 요일·휴무일</small></span><i aria-hidden="true"></i></summary>
+        <div class="settings-group__body">
+          <label><span>당일 주문 마감시간</span><input type="time" name="orderCutoffTime" value="${esc(state.settings.orderCutoffTime)}"><small>미설정이면 마감 제한을 적용하지 않습니다.</small></label>
+          <label class="toggle-setting"><input type="checkbox" name="allowSameDayDelivery" ${state.settings.allowSameDayDelivery ? 'checked' : ''}><span>마감시간 전 당일 배송 선택 허용</span></label>
+          <fieldset><legend>앱 기본 배송 가능 요일</legend><div class="weekday-grid">${weekdayChecks('defaultDeliveryWeekdays', state.settings.defaultDeliveryWeekdays)}</div></fieldset>
+          <fieldset><legend>반복 휴무 요일</legend><div class="weekday-grid">${weekdayChecks('holidayWeekdays', state.settings.holidayWeekdays)}</div></fieldset>
+          <label class="smart-settings--wide"><span>지정 휴무일</span><textarea name="holidayDates" rows="3" placeholder="2026-08-24&#10;2026-09-01">${esc(state.settings.holidayDates.join('\n'))}</textarea><small>날짜를 줄바꿈·쉼표로 구분합니다.</small></label>
+          <fieldset class="smart-settings--wide" ${customerId ? '' : 'disabled'}><legend>현재 배송처 요일 · ${esc(modeDraft().header.customerName || '거래처 미선택')}</legend>
+            <label class="toggle-setting"><input type="checkbox" name="useDefaultCustomerWeekdays" ${hasCustomerOverride ? '' : 'checked'}><span>앱 기본 배송 요일 사용</span></label>
+            <div class="weekday-grid" data-customer-weekdays>${weekdayChecks('customerDeliveryWeekdays', customerWeekdays)}</div>
+          </fieldset>
+        </div>
+      </details>
+      <details class="settings-group">
+        <summary><span><strong>주문서 상단 정보열</strong><small>거래처·배송일·창고 표시 설정</small></span><i aria-hidden="true"></i></summary>
+        <div class="settings-group__body settings-group__body--single"><div class="settings-group__actions"><span>거래처정보 또는 사용자지정 항목을 추가할 수 있습니다.</span><button type="button" class="button button--quiet button--small" data-add-layout-field="header">항목 추가</button></div><div class="layout-check-grid" data-layout-fields="header"></div></div>
+      </details>
+      <details class="settings-group">
+        <summary><span><strong>전표 표시 열</strong><small>품목·수량·단가 등 표 열 설정</small></span><i aria-hidden="true"></i></summary>
+        <div class="settings-group__body settings-group__body--single"><div class="settings-group__actions"><span>상품정보 또는 사용자지정 열을 추가할 수 있습니다.</span><button type="button" class="button button--quiet button--small" data-add-layout-field="voucher">항목 추가</button></div><div class="layout-check-grid" data-layout-fields="voucher"></div></div>
+      </details>
     </div>
     <p class="smart-dialog__message">선택 불가 날짜에는 사유와 다음 배송 가능일을 표시합니다.</p>
     <footer><button type="button" class="button button--quiet" data-close>취소</button><button type="button" class="button button--primary" data-save>설정 저장</button></footer>
@@ -813,6 +949,36 @@ async function openSettingsDialog() {
   document.body.append(dialog);
   const form = dialog.querySelector('form');
   const message = dialog.querySelector('.smart-dialog__message');
+  const renderLayoutGroup = (scope, selected = null) => {
+    const name = scope === 'header' ? 'headerFields' : 'voucherColumns';
+    const previous = selected || (form.querySelector(`[data-layout-fields="${scope}"] input`)
+      ? selectedLayoutFields(form, name)
+      : state.settings[name]);
+    form.querySelector(`[data-layout-fields="${scope}"]`).innerHTML = layoutChecks(name, layoutDefinitions(scope, workingCustomFields), previous);
+  };
+  renderLayoutGroup('header', state.settings.headerFields);
+  renderLayoutGroup('voucher', state.settings.voucherColumns);
+  dialog.querySelectorAll('[data-add-layout-field]').forEach(button => button.addEventListener('click', () => {
+    const scope = button.dataset.addLayoutField;
+    openLayoutFieldDialog(scope, field => {
+      const name = scope === 'header' ? 'headerFields' : 'voucherColumns';
+      const selected = selectedLayoutFields(form, name);
+      if (!field.builtIn) workingCustomFields.push(field);
+      renderLayoutGroup(scope, [...new Set([...selected, field.id])]);
+    });
+  }));
+  dialog.querySelector('.smart-settings-grid').addEventListener('click', event => {
+    const remove = event.target.closest('[data-remove-custom-field]');
+    if (!remove) return;
+    event.preventDefault();
+    const fieldId = remove.dataset.removeCustomField;
+    const field = workingCustomFields.find(item => item.id === fieldId);
+    if (!field) return;
+    const name = field.scope === 'header' ? 'headerFields' : 'voucherColumns';
+    const selected = selectedLayoutFields(form, name).filter(id => id !== fieldId);
+    workingCustomFields = workingCustomFields.filter(item => item.id !== fieldId);
+    renderLayoutGroup(field.scope, selected);
+  });
   const defaultToggle = form.elements.useDefaultCustomerWeekdays;
   const customerWeekdaysElement = dialog.querySelector('[data-customer-weekdays]');
   const syncCustomerWeekdaysState = () => {
@@ -821,6 +987,11 @@ async function openSettingsDialog() {
   };
   defaultToggle?.addEventListener('change', syncCustomerWeekdaysState);
   syncCustomerWeekdaysState();
+  const settingGroups = [...dialog.querySelectorAll('.settings-group')];
+  settingGroups.forEach(group => group.addEventListener('toggle', () => {
+    if (!group.open) return;
+    settingGroups.filter(other => other !== group).forEach(other => { other.open = false; });
+  }));
   const finish = () => { dialog.close(); dialog.remove(); };
   dialog.querySelectorAll('[data-close]').forEach(button => button.addEventListener('click', finish));
   dialog.addEventListener('cancel', event => { event.preventDefault(); finish(); });
@@ -852,7 +1023,8 @@ async function openSettingsDialog() {
       holidayWeekdays: selectedWeekdays(form, 'holidayWeekdays'),
       holidayDates,
       headerFields: selectedLayoutFields(form, 'headerFields'),
-      voucherColumns: selectedLayoutFields(form, 'voucherColumns')
+      voucherColumns: selectedLayoutFields(form, 'voucherColumns'),
+      customFields: workingCustomFields
     });
     if (holidayDates.some(date => !/^\d{4}-\d{2}-\d{2}$/.test(date))) {
       message.textContent = '지정 휴무일은 YYYY-MM-DD 형식으로 입력하세요.';
@@ -862,7 +1034,7 @@ async function openSettingsDialog() {
       await saveSettings(next);
       state.settings = next;
       updateDeliveryPolicy();
-      applyFormLayout();
+      renderRows({ restoreFocus: false });
       saveDraftNow();
       finish();
       toast('환경설정을 저장했습니다.', 'success');
@@ -1037,6 +1209,9 @@ function renderRows({ restoreFocus = true } = {}) {
   }
   inputRows.innerHTML = rows.map(row => {
     const amount = Number(row.quantity || 0) * Number(row.unitPrice || 0);
+    const customCells = customFieldsFor('voucher').map(field => (
+      `<td data-column="${esc(field.id)}"><input data-custom-row-field="${esc(field.id)}" value="${esc(row.customValues?.[field.id] || '')}" aria-label="${esc(field.label)}"></td>`
+    )).join('');
     return `<tr data-row-id="${esc(row.rowId)}" data-status="${esc(row.matchStatus)}" class="${row.duplicatePossible ? 'is-duplicate' : ''}">
       <td data-column="itemCode"><input data-field="itemCode" type="search" enterkeyhint="search" value="${esc(row.itemCode)}" aria-label="품목코드" title="입력 후 Enter로 상품 검색"></td>
       <td data-column="itemName"><input data-field="itemName" type="search" enterkeyhint="search" value="${esc(row.itemName)}" aria-label="품목명" title="입력 후 Enter로 상품 검색"></td>
@@ -1048,6 +1223,7 @@ function renderRows({ restoreFocus = true } = {}) {
       <td data-column="memo"><input data-field="memo" value="${esc(row.memo)}" aria-label="메모"></td>
       <td data-column="description"><input data-field="description" value="${esc(row.description)}" aria-label="적요(직원)"></td>
       <td data-column="noticePrice"><input data-field="noticePrice" type="number" step="any" value="${esc(row.noticePrice ?? 0)}" aria-label="공지단가"></td>
+      ${customCells}
       <td><button type="button" class="row-remove" data-remove-row="${esc(row.rowId)}" aria-label="행 삭제">×</button></td>
     </tr>`;
   }).join('');
@@ -1135,6 +1311,7 @@ function setMode(mode) {
   state.draft.activeMode = mode;
   state.activeActivity = '';
   state.pendingImageEvidence = null;
+  state.pendingOcrReview = null;
   state.pendingSourceName = '';
   saveDraftNow();
   renderMode();
@@ -1225,9 +1402,24 @@ async function analyzeSource({ automatic = false } = {}) {
   }
   const requestId = ++state.analysisRequestId;
   const method = contract.INPUT_METHODS.find(item => item.id === current.activeMethod) || contract.INPUT_METHODS[2];
+  const pendingOcr = method.sourceType === 'IMAGE_OCR' && state.pendingOcrReview?.rawText === rawText
+    ? state.pendingOcrReview
+    : null;
+  if (pendingOcr && pendingOcr.status !== 'VERIFIED') {
+    const reason = pendingOcr.warnings.includes('TOTAL_NOT_FOUND')
+      ? '합계 수량·금액을 인식하지 못했습니다.'
+      : '행 산식 또는 합계 검증이 일치하지 않습니다.';
+    setAppStatus(`OCR 확인 필요 · ${reason}`, 'error');
+    $('sourceNotice').textContent = `OCR 확인 필요 · 검증 ${pendingOcr.validRows.length}행 · 오류 ${pendingOcr.invalidRows.length}행`;
+    if (!automatic) toast('OCR 검증이 끝나지 않아 상품행을 생성하지 않았습니다.', 'error');
+    renderSourceAnalysis();
+    return;
+  }
   const detectedSourceType = looksLikeKakaoText(rawText)
     ? 'KAKAO_TEXT'
-    : (method.sourceType === 'CLIPBOARD' ? 'GENERAL_TEXT' : method.sourceType);
+    : (pendingOcr?.status === 'VERIFIED'
+      ? 'IMAGE_OCR'
+      : (['CLIPBOARD', 'IMAGE_OCR'].includes(method.sourceType) ? 'GENERAL_TEXT' : method.sourceType));
   const batch = contract.createBatch({
     sequence: current.batches.length + 1,
     method: method.id,
@@ -1238,6 +1430,12 @@ async function analyzeSource({ automatic = false } = {}) {
     rawText,
     contentHash
   });
+  if (pendingOcr?.status === 'VERIFIED') {
+    batch.ocrStatus = pendingOcr.status;
+    batch.ocrConfidence = pendingOcr.confidence;
+    batch.ocrVariant = pendingOcr.variant;
+    batch.ocrTotals = { ...pendingOcr.calculatedTotal };
+  }
   state.busy = true;
   $('analyzeButton').disabled = true;
   $('parserProgress').hidden = false;
@@ -1260,7 +1458,19 @@ async function analyzeSource({ automatic = false } = {}) {
       if (inferred) applyCustomer(inferred, { rematch: false, mappingSource: 'MASTER_EXACT', learnAlias: false });
     }
 
-    if (state.draft.activeMode === 'order') {
+    if (pendingOcr?.status === 'VERIFIED') {
+      lines = verifiedRowsToParserLines(pendingOcr, batch.batchId);
+      if (state.draft.activeMode === 'order') {
+        const captured = await captureTextIntake({
+          sourceType: batch.sourceType,
+          sourceId: 'SMART_INPUT',
+          captureOccurrenceId: `${state.draft.draftId}:${state.draft.activeMode}:${batch.sequence}`,
+          rawText,
+          imageEvidence: state.pendingImageEvidence
+        });
+        batch.intakeSessionId = captured.session.intakeSessionId;
+      }
+    } else if (state.draft.activeMode === 'order') {
       try {
         const captured = await captureTextIntake({
           sourceType: batch.sourceType,
@@ -1324,6 +1534,7 @@ async function analyzeSource({ automatic = false } = {}) {
     current.sourceText = rawText;
     current.delivery = { status: 'DRAFT', targetId: '', targetRecordId: '', deliveredAt: '' };
     state.pendingImageEvidence = null;
+    state.pendingOcrReview = null;
     state.pendingSourceName = '';
     resizeSource();
     if (!current.header.customerId && analyzedDocument?.confirmedCustomerId) {
@@ -1423,25 +1634,52 @@ async function recognizeImage(file) {
   $('parserProgress').querySelector('strong').textContent = '사진에서 문자를 추출하고 있습니다.';
   updateMethod('photo');
   setActiveActivity('사진 OCR 처리 중');
+  let shouldAnalyze = false;
   try {
-    if (!window.Tesseract?.recognize) throw new Error('사진 OCR 모듈을 불러오지 못했습니다.');
+    if (!window.Tesseract?.createWorker && !window.Tesseract?.recognize) throw new Error('사진 OCR 모듈을 불러오지 못했습니다.');
     state.pendingImageEvidence = await fileToImageEvidence(file);
     state.pendingSourceName = state.pendingImageEvidence.fileName;
-    const result = await window.Tesseract.recognize(file, 'kor+eng', {
-      logger: progress => {
-        if (progress.status === 'recognizing text') {
-          $('parserProgress').querySelector('strong').textContent = `사진 문자 추출 ${Math.round(Number(progress.progress || 0) * 100)}%`;
+    const analysis = await recognizeOcrDocument(file, {
+      Tesseract: window.Tesseract,
+      onProgress: progress => {
+        const percent = Math.round(Number(progress.progress || 0) * 100);
+        if (progress.status === 'preprocessing') {
+          $('parserProgress').querySelector('strong').textContent = `${progress.variant || '사진'} 전처리 중`;
+        } else if (progress.status === 'table-region') {
+          $('parserProgress').querySelector('strong').textContent = '상품표 영역을 다시 인식하고 있습니다.';
+        } else if (progress.status === 'recognizing text') {
+          $('parserProgress').querySelector('strong').textContent = `사진 문자 추출 ${percent}%`;
         }
       }
     });
-    const text = String(result?.data?.text || '').replace(/\r/g, '');
+    const text = String(analysis.rawText || '').replace(/\r/g, '');
     if (!text.trim()) throw new Error('사진에서 문자를 찾지 못했습니다.');
+    state.pendingOcrReview = { ...analysis, rawText: text };
     sourceTextInput.value = text;
-    syncSourceText();
-    setAppStatus('사진 문자 추출이 완료되었습니다. 자동 분석을 시작합니다.');
-    toast('추출된 문자를 원문에 유지하고 자동 분석합니다.', 'success');
+    modeDraft().sourceText = text;
+    scheduleSave();
+    resizeSource();
+    renderSourceAnalysis();
+    if (analysis.status === 'VERIFIED') {
+      shouldAnalyze = true;
+      const totals = analysis.calculatedTotal;
+      $('sourceNotice').textContent = `OCR 검증 완료 · ${analysis.validRows.length}행 · 수량 ${totals.quantity.toLocaleString('ko-KR')} · 금액 ${totals.amount.toLocaleString('ko-KR')}원`;
+      setAppStatus('사진의 행 산식과 합계가 일치했습니다. 검증된 상품만 자동 분석합니다.');
+      toast('OCR 검증을 통과한 상품행만 입력합니다.', 'success');
+    } else {
+      const current = modeDraft();
+      const liveBatchIds = new Set(current.batches.filter(batch => batch.sourceRole === 'LIVE_SOURCE').map(batch => batch.batchId));
+      current.batches = current.batches.filter(batch => batch.sourceRole !== 'LIVE_SOURCE');
+      current.rows = current.rows.filter(row => !liveBatchIds.has(row.batchId));
+      renderRows();
+      const totals = analysis.calculatedTotal;
+      $('sourceNotice').textContent = `OCR 확인 필요 · 검증 ${analysis.validRows.length}행 · 오류 ${analysis.invalidRows.length}행 · 계산 ${totals.amount.toLocaleString('ko-KR')}원`;
+      setAppStatus('OCR 산식·합계 검증이 일치하지 않아 상품행을 생성하지 않았습니다.', 'error');
+      toast('OCR 확인이 필요합니다. 원문은 유지되고 상품행은 생성하지 않았습니다.', 'error');
+    }
   } catch (error) {
     state.pendingImageEvidence = null;
+    state.pendingOcrReview = null;
     toast(error.message || '사진 문자를 추출하지 못했습니다.', 'error');
     setAppStatus('사진 OCR을 완료하지 못했습니다. 직접 입력할 수 있습니다.', 'warn');
   } finally {
@@ -1451,6 +1689,7 @@ async function recognizeImage(file) {
     $('analyzeButton').disabled = false;
     $('parserProgress').hidden = true;
     $('parserProgress').querySelector('strong').textContent = '자료를 분석하고 있습니다.';
+    if (shouldAnalyze) scheduleAutoAnalysis(80);
   }
 }
 
@@ -1770,6 +2009,12 @@ async function completeOrder() {
       warehouseCode: current.header.warehouseCode,
       warehouseName: current.header.warehouseName,
       transactionType: current.header.transactionType,
+      customValues: { ...(current.header.customValues || {}) },
+      formLayoutSnapshot: {
+        customFields: (state.settings.customFields || []).map(field => ({ ...field })),
+        headerFields: [...state.settings.headerFields],
+        voucherColumns: [...state.settings.voucherColumns]
+      },
       sourceType: 'SMART_INPUT',
       sourceId: current.batches[0]?.batchId || state.draft.draftId,
       sourceDocumentKey: `SMART_INPUT:${current.batches[0]?.batchId || state.draft.draftId}:ORDER`,
@@ -1796,6 +2041,7 @@ async function completeOrder() {
           memo: row.memo,
           description: row.description,
           noticePrice: row.noticePrice,
+          customValues: { ...(row.customValues || {}) },
           matchStatus: masterLinked ? 'MATCHED' : 'MATCH_FAILED',
           matchSource: masterLinked ? 'SMART_INPUT_COMMON_MASTER' : 'SMART_INPUT_UNRESOLVED',
           intakeLineId: row.intakeLineId,
@@ -1865,6 +2111,7 @@ function resetCurrentMode(requireConfirmation = true) {
   fallback.header.transactionType = current.header.transactionType;
   state.draft.modes[state.draft.activeMode] = fallback;
   state.pendingImageEvidence = null;
+  state.pendingOcrReview = null;
   state.pendingSourceName = '';
   saveDraftNow();
   renderMode();
@@ -1998,7 +2245,25 @@ $('relatedCollapseButton').addEventListener('click', event => {
   scheduleSave();
 });
 
+document.querySelector('.document-fields').addEventListener('input', event => {
+  const input = event.target.closest('[data-custom-header-input]');
+  if (!input) return;
+  modeDraft().header.customValues ||= {};
+  modeDraft().header.customValues[input.dataset.customHeaderInput] = input.value;
+  scheduleSave();
+});
+
 inputRows.addEventListener('input', event => {
+  const customInput = event.target.closest('[data-custom-row-field]');
+  if (customInput) {
+    const customRow = event.target.closest('[data-row-id]');
+    const row = modeDraft().rows.find(item => item.rowId === customRow?.dataset.rowId);
+    if (!row) return;
+    row.customValues ||= {};
+    row.customValues[customInput.dataset.customRowField] = customInput.value;
+    scheduleSave();
+    return;
+  }
   const input = event.target.closest('[data-field]');
   const tr = event.target.closest('[data-row-id]');
   if (!input || !tr) return;
