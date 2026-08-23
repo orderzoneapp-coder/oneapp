@@ -53,6 +53,9 @@ const displayRow = contract.normalizeRow({ memo: '메모', description: '직원 
 assert.equal(displayRow.memo, '메모');
 assert.equal(displayRow.description, '직원 적요');
 assert.equal(displayRow.noticePrice, 1200);
+assert.deepEqual(JSON.parse(JSON.stringify(contract.normalizeRow({
+  sourceRegion: { left: .1, top: .2, width: .3, height: .4 }
+}).sourceRegion)), { left: .1, top: .2, width: .3, height: .4 });
 assert.deepEqual(JSON.parse(JSON.stringify(contract.normalizeRow({ customValues: { 'custom-voucher-lot': 'A-01' } }).customValues)), { 'custom-voucher-lot': 'A-01' });
 const commonOnlyProduct = normalizeMasterProduct(
   { 코드: 'COMMON-ONLY-1', 품목명: '공통 마스터 전용상품', 규격: 'EA' },
@@ -107,6 +110,9 @@ assert.equal(draft.modes.purchase.sourceText, '');
 const rawText = '  행복상회\n계란  2판\n';
 const firstBatch = contract.createBatch({ batchId: 'B1', sequence: 1, method: 'text', sourceType: 'GENERAL_TEXT', rawText, now: 1 });
 assert.equal(firstBatch.rawText, rawText, 'source whitespace and line breaks must be preserved');
+const imageBatch = contract.createBatch({ sourceImageId: 'IMG-1', sourceImageHash: 'HASH-1' });
+assert.equal(imageBatch.sourceImageId, 'IMG-1');
+assert.equal(imageBatch.sourceImageHash, 'HASH-1');
 const liveBatch = contract.createBatch({ batchId: 'LIVE', sourceRole: 'LIVE_SOURCE', automatic: true });
 assert.equal(liveBatch.sourceRole, 'LIVE_SOURCE');
 assert.equal(liveBatch.automatic, true);
@@ -196,6 +202,15 @@ for (const heading of ['품목코드', '품목명', '규격', '수량', '단위'
   assert.match(html, new RegExp(`<th data-column="[^"]+">${heading.replace(/[()]/g, '\\$&')}<\\/th>`));
 }
 assert.match(html, /id="sourceHighlight"/);
+assert.match(html, /id="photoViewer"[^>]*hidden/);
+assert.match(html, /id="photoPreview"/);
+assert.match(html, /id="photoZoomOut"/);
+assert.match(html, /id="photoZoomIn"/);
+assert.match(html, /id="photoRotateLeft"/);
+assert.match(html, /id="photoRotateRight"/);
+assert.match(html, /id="mobilePhotoTabs"[^>]*hidden/);
+assert.match(html, /data-photo-pane="photo"/);
+assert.match(html, /data-photo-pane="grid"/);
 assert.match(html, /id="estimateListButton"/);
 assert.match(html, /class="col-unit"/);
 assert.doesNotMatch(html, /작업 단계|\d+\s*\/\s*5|data-stage=/);
@@ -211,6 +226,10 @@ assert.match(css, /\.parser-card \{[^}]*position: sticky;[^}]*padding: 14px;[^}]
 assert.match(css, /\.source-highlight, \.source-editor textarea \{[^}]*height: clamp\(360px, calc\(100vh - 340px\), 660px\);[^}]*overflow: auto;/);
 assert.match(css, /font: 13px\/1\.68 ui-monospace/);
 assert.match(css, /\.source-editor textarea \{[^}]*resize: none;/);
+assert.match(css, /\.photo-viewer__viewport \{[^}]*overflow: auto;/);
+assert.match(css, /\.photo-viewer__region \{/);
+assert.match(css, /data-photo-pane="photo"/);
+assert.match(css, /data-photo-pane="grid"/);
 assert.match(css, /\.source-token--user/);
 assert.match(css, /\.source-token--time/);
 assert.match(css, /\.source-token--collected/);
@@ -321,6 +340,10 @@ assert.match(orderIntakeSource, /customValues: input\.customValues/);
 assert.match(orderIntakeSource, /formLayoutSnapshot: payload\.formLayoutSnapshot/);
 assert.match(appSource, /recognizeOcrDocument/);
 assert.match(appSource, /verifiedRowsToParserLines/);
+assert.match(appSource, /function renderPhotoTransform\(\)/);
+assert.match(appSource, /function showPhotoRegion\(region\)/);
+assert.match(appSource, /sourceImages: \{ order: null, purchase: null, sale: null, estimate: null \}/);
+assert.match(appSource, /intakeSessionId: sourceBatch\?\.intakeSessionId \|\| ''/);
 assert.match(appSource, /pendingOcr\.status !== 'VERIFIED'/);
 assert.doesNotMatch(appSource, /Tesseract\.recognize\(file, 'kor\+eng'/, 'raw one-pass OCR must not feed the order parser directly');
 assert.match(appSource, /function hasMeaningfulDraftContent\(draft\)/);

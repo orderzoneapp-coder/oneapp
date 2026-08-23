@@ -10,7 +10,7 @@ import { STORE, getAll } from '../orderq/orderq-db.js?v=0.12.1';
 import { createLiveCustomer, ensureCustomerMasterReady } from '../orderq/customer-master.js?v=0.12.1';
 import { isSelectableMasterProduct, loadProductCatalog, searchProductCatalog } from '../orderq/product-master-search.js?v=0.8.2';
 import { loadWarehouseCatalog, matchWarehouseInput, warehouseDisplayName } from '../orderq/warehouse-master.js?v=0.8.0';
-import { recognizeOcrDocument, verifiedRowsToParserLines } from './ocr-document-parser.js?v=0.1.0';
+import { recognizeOcrDocument, verifiedRowsToParserLines } from './ocr-document-parser.js?v=0.1.1';
 import {
   createRecordId,
   loadSmartInputData,
@@ -47,6 +47,8 @@ const state = {
   pendingImageEvidence: null,
   pendingOcrReview: null,
   pendingSourceName: '',
+  sourceImages: { order: null, purchase: null, sale: null, estimate: null },
+  photoView: { zoom: 1, rotation: 0, activeRegion: null, mobilePane: 'photo' },
   saveTimer: null,
   draftDirty: false,
   toastTimer: null,
@@ -328,8 +330,94 @@ function updateMethod(method, { persist = true } = {}) {
   const changed = modeDraft().activeMethod !== selected.id;
   modeDraft().activeMethod = selected.id;
   methodButtons.forEach(button => button.classList.toggle('is-active', button.dataset.method === selected.id));
+  renderSourceSurface();
   if (persist && changed) scheduleSave();
   return selected;
+}
+
+function currentSourceImage() {
+  return state.sourceImages[state.draft.activeMode] || null;
+}
+
+function resetPhotoView() {
+  state.photoView.zoom = 1;
+  state.photoView.rotation = 0;
+  state.photoView.activeRegion = null;
+  state.photoView.mobilePane = 'photo';
+}
+
+function renderPhotoTransform() {
+  const image = $('photoPreview');
+  const viewport = $('photoViewport');
+  const stage = $('photoStage');
+  const layer = $('photoLayer');
+  if (!image?.naturalWidth || !image.naturalHeight || $('photoViewer').hidden) return;
+  const rotation = ((Number(state.photoView.rotation || 0) % 360) + 360) % 360;
+  const quarterTurn = rotation === 90 || rotation === 270;
+  const rotatedWidth = quarterTurn ? image.naturalHeight : image.naturalWidth;
+  const rotatedHeight = quarterTurn ? image.naturalWidth : image.naturalHeight;
+  const availableWidth = Math.max(80, viewport.clientWidth - 28);
+  const availableHeight = Math.max(80, viewport.clientHeight - 28);
+  const fitScale = Math.min(availableWidth / rotatedWidth, availableHeight / rotatedHeight);
+  const scale = Math.max(.05, fitScale * Number(state.photoView.zoom || 1));
+  const layerWidth = image.naturalWidth * scale;
+  const layerHeight = image.naturalHeight * scale;
+  const stageWidth = Math.max(viewport.clientWidth, rotatedWidth * scale + 28);
+  const stageHeight = Math.max(viewport.clientHeight, rotatedHeight * scale + 28);
+  stage.style.width = `${stageWidth}px`;
+  stage.style.height = `${stageHeight}px`;
+  layer.style.width = `${layerWidth}px`;
+  layer.style.height = `${layerHeight}px`;
+  layer.style.transform = `translate(-50%, -50%) rotate(${rotation}deg)`;
+  $('photoZoomLabel').textContent = state.photoView.zoom === 1 ? '맞춤 100%' : `${Math.round(state.photoView.zoom * 100)}%`;
+  const region = state.photoView.activeRegion;
+  const marker = $('photoRegion');
+  marker.hidden = !region;
+  if (region) {
+    marker.style.left = `${region.left * 100}%`;
+    marker.style.top = `${region.top * 100}%`;
+    marker.style.width = `${region.width * 100}%`;
+    marker.style.height = `${region.height * 100}%`;
+  }
+}
+
+function renderSourceSurface() {
+  const evidence = currentSourceImage();
+  const showPhoto = modeDraft().activeMethod === 'photo' && Boolean(evidence?.dataUrl);
+  const workspace = document.querySelector('.workspace');
+  workspace.classList.toggle('has-photo-source', showPhoto);
+  workspace.dataset.photoPane = state.photoView.mobilePane;
+  $('mobilePhotoTabs').hidden = !showPhoto;
+  document.querySelectorAll('[data-photo-pane]').forEach(button => {
+    const active = button.dataset.photoPane === state.photoView.mobilePane;
+    button.classList.toggle('is-active', active);
+    button.setAttribute('aria-pressed', String(active));
+  });
+  $('sourceEditor').hidden = showPhoto;
+  $('photoViewer').hidden = !showPhoto;
+  if (!showPhoto) return;
+  const image = $('photoPreview');
+  if (image.dataset.sourceImageId !== evidence.sourceImageId) {
+    image.dataset.sourceImageId = evidence.sourceImageId;
+    image.src = evidence.dataUrl;
+    resetPhotoView();
+  }
+  $('photoFileName').textContent = evidence.fileName || '원본 사진';
+  $('photoViewerNotice').textContent = state.photoView.activeRegion
+    ? '선택한 상품의 원본 위치입니다.'
+    : (evidence.notice || '원본 사진을 기준으로 입력값을 확인하세요.');
+  window.requestAnimationFrame(renderPhotoTransform);
+}
+
+function showPhotoRegion(region) {
+  state.photoView.activeRegion = region && typeof region === 'object' ? { ...region } : null;
+  renderSourceSurface();
+  $('photoViewerNotice').textContent = state.photoView.activeRegion
+    ? '선택한 상품의 원본 위치입니다.'
+    : '이 행은 신뢰할 수 있는 사진 좌표가 없어 원본 전체를 표시합니다.';
+  if (state.photoView.activeRegion) {
+    window.requestAnimationFrame(() => $('photoRegion').scrollIntoView({ block: 'center', inline: 'center', behavior: 'smooth' }));
+  }
 }
 
 function activityLabel(method) {
@@ -1205,6 +1293,8 @@ function renderRows({ restoreFocus = true } = {}) {
     updateSummaries();
     applyFormLayout();
     renderSourceAnalysis();
+    state.photoView.activeRegion = null;
+    renderSourceSurface();
     return;
   }
   inputRows.innerHTML = rows.map(row => {
@@ -1230,6 +1320,14 @@ function renderRows({ restoreFocus = true } = {}) {
   updateSummaries();
   applyFormLayout();
   renderSourceAnalysis();
+  const selectedRow = rows.find(row => row.rowId === state.draft.ui.selectedRowId);
+  if (modeDraft().activeMethod === 'photo') {
+    if (selectedRow) showPhotoRegion(selectedRow.sourceRegion || null);
+    else {
+      state.photoView.activeRegion = null;
+      renderSourceSurface();
+    }
+  }
   window.requestAnimationFrame(() => {
     $('tableScroll').scrollTop = Number(modeUi().scrollTop || 0);
     $('tableScroll').scrollLeft = Number(modeUi().scrollLeft || 0);
@@ -1424,7 +1522,7 @@ async function analyzeSource({ automatic = false } = {}) {
     sequence: current.batches.length + 1,
     method: method.id,
     sourceType: detectedSourceType,
-    sourceName: state.pendingSourceName,
+    sourceName: state.pendingSourceName || currentSourceImage()?.fileName,
     sourceRole: 'LIVE_SOURCE',
     automatic,
     rawText,
@@ -1466,9 +1564,11 @@ async function analyzeSource({ automatic = false } = {}) {
           sourceId: 'SMART_INPUT',
           captureOccurrenceId: `${state.draft.draftId}:${state.draft.activeMode}:${batch.sequence}`,
           rawText,
-          imageEvidence: state.pendingImageEvidence
+          imageEvidence: state.pendingImageEvidence || state.sourceImages[modeId]
         });
         batch.intakeSessionId = captured.session.intakeSessionId;
+        batch.sourceImageId = captured.imagePart?.sourcePartId || state.sourceImages[modeId]?.sourceImageId || '';
+        batch.sourceImageHash = state.sourceImages[modeId]?.contentHash || '';
       }
     } else if (state.draft.activeMode === 'order') {
       try {
@@ -1477,7 +1577,7 @@ async function analyzeSource({ automatic = false } = {}) {
           sourceId: 'SMART_INPUT',
           captureOccurrenceId: `${state.draft.draftId}:${state.draft.activeMode}:${batch.sequence}`,
           rawText,
-          imageEvidence: state.pendingImageEvidence
+          imageEvidence: state.pendingImageEvidence || state.sourceImages[modeId]
         });
         const selectedCustomer = current.header.customerId && current.header.customerName
           ? { customerId: current.header.customerId, customerName: current.header.customerName }
@@ -1494,6 +1594,8 @@ async function analyzeSource({ automatic = false } = {}) {
           }
         });
         batch.intakeSessionId = captured.session.intakeSessionId;
+        batch.sourceImageId = captured.imagePart?.sourcePartId || state.sourceImages[modeId]?.sourceImageId || '';
+        batch.sourceImageHash = state.sourceImages[modeId]?.contentHash || '';
         batch.intakeDocumentId = analyzed.document.intakeDocumentId;
         analyzedDocument = analyzed.document;
         lines = analyzed.lines;
@@ -1617,10 +1719,12 @@ async function fileToImageEvidence(file) {
     reader.readAsDataURL(file);
   });
   return {
+    sourceImageId: contentHash ? `SIIMG-${contentHash}` : createRecordId('SIIMG'),
     fileName: file.name || '붙여넣은 이미지',
     mimeType: file.type || 'image/png',
     byteLength: file.size || buffer.byteLength,
     contentHash,
+    dataUrl,
     binaryBase64: dataUrl.split(',')[1] || ''
   };
 }
@@ -1636,9 +1740,12 @@ async function recognizeImage(file) {
   setActiveActivity('사진 OCR 처리 중');
   let shouldAnalyze = false;
   try {
-    if (!window.Tesseract?.createWorker && !window.Tesseract?.recognize) throw new Error('사진 OCR 모듈을 불러오지 못했습니다.');
     state.pendingImageEvidence = await fileToImageEvidence(file);
+    state.sourceImages[state.draft.activeMode] = state.pendingImageEvidence;
     state.pendingSourceName = state.pendingImageEvidence.fileName;
+    state.pendingImageEvidence.notice = '원본 사진을 유지한 채 상품표를 분석하고 있습니다.';
+    renderSourceSurface();
+    if (!window.Tesseract?.createWorker && !window.Tesseract?.recognize) throw new Error('사진 OCR 모듈을 불러오지 못했습니다.');
     const analysis = await recognizeOcrDocument(file, {
       Tesseract: window.Tesseract,
       onProgress: progress => {
@@ -1664,6 +1771,8 @@ async function recognizeImage(file) {
       shouldAnalyze = true;
       const totals = analysis.calculatedTotal;
       $('sourceNotice').textContent = `OCR 검증 완료 · ${analysis.validRows.length}행 · 수량 ${totals.quantity.toLocaleString('ko-KR')} · 금액 ${totals.amount.toLocaleString('ko-KR')}원`;
+      state.sourceImages[state.draft.activeMode].notice = `검증 완료 · ${analysis.validRows.length}행 · 수량 ${totals.quantity.toLocaleString('ko-KR')} · 금액 ${totals.amount.toLocaleString('ko-KR')}원`;
+      renderSourceSurface();
       setAppStatus('사진의 행 산식과 합계가 일치했습니다. 검증된 상품만 자동 분석합니다.');
       toast('OCR 검증을 통과한 상품행만 입력합니다.', 'success');
     } else {
@@ -1674,12 +1783,17 @@ async function recognizeImage(file) {
       renderRows();
       const totals = analysis.calculatedTotal;
       $('sourceNotice').textContent = `OCR 확인 필요 · 검증 ${analysis.validRows.length}행 · 오류 ${analysis.invalidRows.length}행 · 계산 ${totals.amount.toLocaleString('ko-KR')}원`;
+      state.sourceImages[state.draft.activeMode].notice = `확인 필요 · 검증 ${analysis.validRows.length}행 · 오류 ${analysis.invalidRows.length}행`;
+      renderSourceSurface();
       setAppStatus('OCR 산식·합계 검증이 일치하지 않아 상품행을 생성하지 않았습니다.', 'error');
       toast('OCR 확인이 필요합니다. 원문은 유지되고 상품행은 생성하지 않았습니다.', 'error');
     }
   } catch (error) {
-    state.pendingImageEvidence = null;
     state.pendingOcrReview = null;
+    if (state.sourceImages[state.draft.activeMode]) {
+      state.sourceImages[state.draft.activeMode].notice = '자동 인식에 실패했습니다. 원본 사진을 보면서 직접 입력할 수 있습니다.';
+      renderSourceSurface();
+    }
     toast(error.message || '사진 문자를 추출하지 못했습니다.', 'error');
     setAppStatus('사진 OCR을 완료하지 못했습니다. 직접 입력할 수 있습니다.', 'warn');
   } finally {
@@ -2039,6 +2153,7 @@ async function completeOrder() {
   try {
     const batchText = current.batches.map(batch => batch.rawText).join('\n\n--- SMART INPUT BATCH ---\n\n');
     const rawFingerprint = await sha256Text(batchText);
+    const sourceBatch = current.batches.find(batch => batch.intakeSessionId) || current.batches[0];
     const result = await createOrder({
       orderDate: current.header.orderDate,
       deliveryExpectedDate: current.header.deliveryDate,
@@ -2057,6 +2172,8 @@ async function completeOrder() {
       sourceType: 'SMART_INPUT',
       sourceId: current.batches[0]?.batchId || state.draft.draftId,
       sourceDocumentKey: `SMART_INPUT:${current.batches[0]?.batchId || state.draft.draftId}:ORDER`,
+      intakeSessionId: sourceBatch?.intakeSessionId || '',
+      intakeDocumentId: sourceBatch?.intakeDocumentId || '',
       rawFingerprint,
       intakeContractVersion: 'SMART_INPUT_V1',
       inputChannel: 'SMART_INPUT',
@@ -2126,6 +2243,11 @@ async function completeOrder() {
     next.header.warehouseName = current.header.warehouseName;
     next.header.transactionType = current.header.transactionType;
     state.draft.modes.order = next;
+    state.sourceImages.order = null;
+    resetPhotoView();
+    state.pendingImageEvidence = null;
+    state.pendingOcrReview = null;
+    state.pendingSourceName = '';
     saveDraftNow();
     renderMode();
     setAppStatus(online ? `주문 ${result.order.orderNo} 저장·중앙 반영 완료` : `주문 ${result.order.orderNo} 로컬 저장 완료 · 중앙 반영 대기`, online ? 'normal' : 'warn');
@@ -2149,6 +2271,8 @@ function resetCurrentMode(requireConfirmation = true) {
   fallback.header.warehouseName = current.header.warehouseName;
   fallback.header.transactionType = current.header.transactionType;
   state.draft.modes[state.draft.activeMode] = fallback;
+  state.sourceImages[state.draft.activeMode] = null;
+  resetPhotoView();
   state.pendingImageEvidence = null;
   state.pendingOcrReview = null;
   state.pendingSourceName = '';
@@ -2234,6 +2358,32 @@ sourceTextInput.addEventListener('scroll', () => {
 }, { passive: true });
 $('fileInput').addEventListener('change', event => handleFile(event.target.files?.[0]));
 $('photoInput').addEventListener('change', event => recognizeImage(event.target.files?.[0]));
+$('photoPreview').addEventListener('load', renderPhotoTransform);
+$('photoZoomOut').addEventListener('click', () => {
+  state.photoView.zoom = Math.max(.5, Number(state.photoView.zoom || 1) - .25);
+  renderPhotoTransform();
+});
+$('photoZoomIn').addEventListener('click', () => {
+  state.photoView.zoom = Math.min(4, Number(state.photoView.zoom || 1) + .25);
+  renderPhotoTransform();
+});
+$('photoFit').addEventListener('click', () => {
+  state.photoView.zoom = 1;
+  renderPhotoTransform();
+  $('photoViewport').scrollTo({ left: 0, top: 0 });
+});
+$('photoRotateLeft').addEventListener('click', () => {
+  state.photoView.rotation = Number(state.photoView.rotation || 0) - 90;
+  renderPhotoTransform();
+});
+$('photoRotateRight').addEventListener('click', () => {
+  state.photoView.rotation = Number(state.photoView.rotation || 0) + 90;
+  renderPhotoTransform();
+});
+document.querySelectorAll('[data-photo-pane]').forEach(button => button.addEventListener('click', () => {
+  state.photoView.mobilePane = button.dataset.photoPane === 'grid' ? 'grid' : 'photo';
+  renderSourceSurface();
+}));
 $('analyzeButton').addEventListener('click', () => analyzeSource({ automatic: false }));
 $('addRowButton').addEventListener('click', () => { updateMethod('direct'); addDirectRow(); });
 $('customerSearchButton').addEventListener('click', chooseCustomer);
@@ -2336,6 +2486,8 @@ inputRows.addEventListener('focusin', event => {
   if (!input || !tr) return;
   modeUi().activeCellId = `${tr.dataset.rowId}|${input.dataset.field}`;
   state.draft.ui.selectedRowId = tr.dataset.rowId;
+  const row = modeDraft().rows.find(item => item.rowId === tr.dataset.rowId);
+  if (modeDraft().activeMethod === 'photo') showPhotoRegion(row?.sourceRegion || null);
 });
 inputRows.addEventListener('change', event => {
   const input = event.target.closest('[data-field]');
@@ -2345,6 +2497,12 @@ inputRows.addEventListener('change', event => {
   if (row) tryMatchRow(row, input.dataset.field);
 });
 inputRows.addEventListener('click', event => {
+  const tr = event.target.closest('[data-row-id]');
+  if (tr && modeDraft().activeMethod === 'photo') {
+    const row = modeDraft().rows.find(item => item.rowId === tr.dataset.rowId);
+    state.draft.ui.selectedRowId = tr.dataset.rowId;
+    showPhotoRegion(row?.sourceRegion || null);
+  }
   const remove = event.target.closest('[data-remove-row]');
   if (remove) {
     modeDraft().rows = modeDraft().rows.filter(row => row.rowId !== remove.dataset.removeRow);
@@ -2377,6 +2535,8 @@ document.addEventListener('keydown', event => {
     setMode(['order', 'purchase', 'sale', 'estimate'][Number(event.key) - 1]);
   }
 });
+
+window.addEventListener('resize', () => window.requestAnimationFrame(renderPhotoTransform), { passive: true });
 
 $('tableScroll').addEventListener('scroll', event => {
   modeUi().scrollTop = event.currentTarget.scrollTop;

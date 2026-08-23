@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {
   analyzeOcrDocument,
+  mapOcrBboxToSource,
   selectBestOcrAnalysis,
   verifiedRowsToParserLines
 } from '../smartinput/ocr-document-parser.js';
@@ -41,8 +42,22 @@ assert.deepEqual(parserLines[0], {
   sourceLineKey: 'OCR-BATCH:OCR:1',
   matchStatus: 'UNRESOLVED',
   ocrAmount: 627000,
-  ocrVerified: true
+  ocrVerified: true,
+  sourceRegion: null
 });
+
+assert.deepEqual(mapOcrBboxToSource(
+  { left: 100, top: 50, right: 300, bottom: 150 },
+  {
+    sourceWidth: 1000,
+    sourceHeight: 500,
+    scale: 2,
+    crop: { left: 100, top: 50, width: 1800, height: 900 },
+    angle: 0,
+    ocrWidth: 1800,
+    ocrHeight: 900
+  }
+), { left: .1, top: .1, width: .1, height: .1 });
 
 const brokenAmount = analyzeOcrDocument({
   text: statement.replace('열무 165 3,800 627,000', '열무 165 3,800 627,900'),

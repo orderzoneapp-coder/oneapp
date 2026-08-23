@@ -190,8 +190,61 @@ export function verifiedRowsToParserLines(analysis, batchId = 'OCR') {
     sourceLineKey: `${batchId}:OCR:${row.sourceLineNo || index + 1}`,
     matchStatus: 'UNRESOLVED',
     ocrAmount: row.amount,
-    ocrVerified: true
+    ocrVerified: true,
+    sourceRegion: row.sourceRegion ? { ...row.sourceRegion } : null
   }));
+}
+
+function clampUnit(value) {
+  return Math.max(0, Math.min(1, Number(value) || 0));
+}
+
+export function mapOcrBboxToSource(bbox, transform = {}) {
+  if (!bbox) return null;
+  const sourceWidth = Number(transform.sourceWidth || 0);
+  const sourceHeight = Number(transform.sourceHeight || 0);
+  const scale = Number(transform.scale || 0);
+  const crop = transform.crop;
+  const ocrWidth = Number(transform.ocrWidth || 0);
+  const ocrHeight = Number(transform.ocrHeight || 0);
+  if (!sourceWidth || !sourceHeight || !scale || !crop || !ocrWidth || !ocrHeight) return null;
+  const angle = Number(transform.angle || 0) * Math.PI / 180;
+  const cosine = Math.cos(-angle);
+  const sine = Math.sin(-angle);
+  const inversePoint = (x, y) => {
+    const centeredX = Number(x) - ocrWidth / 2;
+    const centeredY = Number(y) - ocrHeight / 2;
+    return {
+      x: (centeredX * cosine - centeredY * sine + crop.width / 2 + crop.left) / scale,
+      y: (centeredX * sine + centeredY * cosine + crop.height / 2 + crop.top) / scale
+    };
+  };
+  const corners = [
+    inversePoint(bbox.left, bbox.top),
+    inversePoint(bbox.right, bbox.top),
+    inversePoint(bbox.right, bbox.bottom),
+    inversePoint(bbox.left, bbox.bottom)
+  ];
+  const left = clampUnit(Math.min(...corners.map(point => point.x)) / sourceWidth);
+  const top = clampUnit(Math.min(...corners.map(point => point.y)) / sourceHeight);
+  const right = clampUnit(Math.max(...corners.map(point => point.x)) / sourceWidth);
+  const bottom = clampUnit(Math.max(...corners.map(point => point.y)) / sourceHeight);
+  if (right <= left || bottom <= top) return null;
+  return { left, top, width: right - left, height: bottom - top };
+}
+
+function withSourceRegions(analysis, transform) {
+  const decorate = row => ({
+    ...row,
+    sourceRegion: mapOcrBboxToSource(row?.bbox, transform)
+  });
+  return {
+    ...analysis,
+    rows: analysis.rows.map(decorate),
+    validRows: analysis.validRows.map(decorate),
+    invalidRows: analysis.invalidRows.map(decorate),
+    detectedTotal: analysis.detectedTotal ? decorate(analysis.detectedTotal) : analysis.detectedTotal
+  };
 }
 
 function percentile(histogram, count, ratio) {
@@ -337,7 +390,8 @@ function deskewCanvas(source) {
       bestAngle = angle;
     }
   }
-  return bestScore > baseline * 1.04 ? rotatedCanvas(source, bestAngle, true) : source;
+  const angle = bestScore > baseline * 1.04 ? bestAngle : 0;
+  return { canvas: angle ? rotatedCanvas(source, angle, true) : source, angle };
 }
 
 async function imageSource(file) {
@@ -371,10 +425,20 @@ export async function buildOcrImageVariants(file) {
   context.imageSmoothingQuality = 'high';
   context.drawImage(source, 0, 0, canvas.width, canvas.height);
   source.close?.();
-  const documentCanvas = deskewCanvas(cropCanvas(canvas, documentBounds(canvas)));
+  const crop = documentBounds(canvas);
+  const deskewed = deskewCanvas(cropCanvas(canvas, crop));
+  const transform = {
+    sourceWidth,
+    sourceHeight,
+    scale,
+    crop,
+    angle: deskewed.angle,
+    ocrWidth: deskewed.canvas.width,
+    ocrHeight: deskewed.canvas.height
+  };
   return [
-    { id: 'document-contrast', label: '문서영역·기울기·명암 보정', canvas: enhanceCanvas(documentCanvas) },
-    { id: 'document-binary', label: '문서영역 고대비 표 보정', canvas: enhanceCanvas(documentCanvas, { binary: true }) }
+    { id: 'document-contrast', label: '문서영역·기울기·명암 보정', canvas: enhanceCanvas(deskewed.canvas), transform },
+    { id: 'document-binary', label: '문서영역 고대비 표 보정', canvas: enhanceCanvas(deskewed.canvas, { binary: true }), transform }
   ];
 }
 
@@ -412,12 +476,12 @@ export async function recognizeOcrDocument(file, { Tesseract, onProgress = () =>
       const result = worker
         ? await worker.recognize(variant.canvas, {}, { text: true, tsv: true, blocks: true })
         : await Tesseract.recognize(variant.canvas, 'kor+eng', { logger });
-      let analysis = analyzeOcrDocument({
+      let analysis = withSourceRegions(analyzeOcrDocument({
         text: result?.data?.text,
         tsv: result?.data?.tsv,
         confidence: result?.data?.confidence,
         variant: variant.id
-      });
+      }), variant.transform);
       analyses.push(analysis);
       if (analysis.status === 'VERIFIED') break;
       const rectangle = tableRectangleFromAnalysis(analysis, variant.canvas.width, variant.canvas.height);

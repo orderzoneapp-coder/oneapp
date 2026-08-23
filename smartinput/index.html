@@ -8,7 +8,7 @@
   <meta name="description" content="주문서·구매·판매·견적 자료를 분석하고 표준 입력표로 전달하는 NEXUS 스마트입력">
   <link rel="icon" type="image/png" href="../nexus/assets/nexus-favicon.png">
   <link rel="stylesheet" href="../orderq/customer-master.css?v=0.12.1" data-customer-picker-style>
-  <link rel="stylesheet" href="./smartinput.css?v=0.4.4">
+  <link rel="stylesheet" href="./smartinput.css?v=0.4.5">
   <script src="../nexus/common/apps-config.js?v=1.3.0"></script>
   <script src="../nexus/common/nexus-top.js?v=1.3.0"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
@@ -47,6 +47,10 @@
   <main class="app-shell">
     <h1 class="sr-only">스마트입력</h1>
     <div class="workspace">
+      <div class="mobile-photo-tabs" id="mobilePhotoTabs" aria-label="사진 입력 화면 전환" hidden>
+        <button type="button" class="is-active" data-photo-pane="photo" aria-pressed="true">원본 사진</button>
+        <button type="button" data-photo-pane="grid" aria-pressed="false">입력표</button>
+      </div>
       <section class="parser-card" aria-label="원본 자료 입력">
         <div class="method-bar" role="toolbar" aria-label="입력 방식">
           <button type="button" data-method="direct">직접입력</button>
@@ -69,6 +73,27 @@
               <textarea id="sourceTextInput" rows="3" spellcheck="false" placeholder="거래처명과 상품·수량을 붙여넣으세요.&#10;입력하면 자동으로 분석합니다."></textarea>
             </div>
             <div class="source-editor__meta"><span id="sourceLength">0자</span><span id="sourceNotice">텍스트와 이미지를 바로 붙여넣을 수 있습니다.</span></div>
+          </div>
+          <div class="photo-viewer" id="photoViewer" hidden>
+            <div class="photo-viewer__toolbar" role="toolbar" aria-label="원본 사진 보기">
+              <strong>원본 사진</strong>
+              <div>
+                <button id="photoZoomOut" type="button" aria-label="사진 축소">−</button>
+                <button id="photoFit" type="button" aria-label="화면에 맞춤"><span id="photoZoomLabel">맞춤 100%</span></button>
+                <button id="photoZoomIn" type="button" aria-label="사진 확대">＋</button>
+                <button id="photoRotateLeft" type="button" aria-label="왼쪽으로 회전">↺</button>
+                <button id="photoRotateRight" type="button" aria-label="오른쪽으로 회전">↻</button>
+              </div>
+            </div>
+            <div class="photo-viewer__viewport" id="photoViewport" tabindex="0" aria-label="원본 사진 확대 보기">
+              <div class="photo-viewer__stage" id="photoStage">
+                <div class="photo-viewer__layer" id="photoLayer">
+                  <img id="photoPreview" alt="입력 원본 사진">
+                  <span class="photo-viewer__region" id="photoRegion" aria-hidden="true" hidden></span>
+                </div>
+              </div>
+            </div>
+            <div class="photo-viewer__meta"><span id="photoFileName"></span><span id="photoViewerNotice">원본 사진을 기준으로 입력값을 확인하세요.</span></div>
           </div>
           <button class="analyze-button" id="analyzeButton" type="button"><span aria-hidden="true">✦</span><strong>다시 분석</strong><small>원문은 그대로 유지</small></button>
         </div>
@@ -131,7 +156,7 @@
   </main>
 
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
-  <script src="./smartinput-contract.js?v=0.4.2"></script>
-  <script type="module" src="./smartinput.js?v=0.4.4"></script>
+  <script src="./smartinput-contract.js?v=0.4.3"></script>
+  <script type="module" src="./smartinput.js?v=0.4.5"></script>
 </body>
 </html>
