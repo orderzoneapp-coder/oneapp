@@ -277,7 +277,7 @@
       "path": "smartinput/index.html",
       "kind": "web-entry",
       "status": "pilot",
-      "purpose": "Capture order, purchase, and sale source material through direct, file, text, clipboard, photo OCR, and voice STT inputs; preserve cumulative source-to-row evidence; and deliver completed orders to the ORDER Q vNext ledger before NEXUS navigation registration.",
+      "purpose": "Capture order, purchase, sale, and estimate source material through direct, file, text, clipboard, photo OCR, and voice STT inputs; preserve and visually annotate original source text; configure entry fields; save a device-local estimate catalog; and deliver completed orders to the ORDER Q vNext ledger.",
       "owner": "smart-input",
       "productionWrites": true,
       "publicEntries": [

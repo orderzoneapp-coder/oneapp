@@ -1,12 +1,13 @@
 const DB_NAME = 'oneapp-smartinput';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const FALLBACK_KEY = 'oneapp.smartinput.relationships.v1';
 
 export const DATA_STORES = Object.freeze({
   SETTINGS: 'settings',
   LINK_GROUPS: 'customerLinkGroups',
   TEMPORARY_CUSTOMERS: 'temporaryCustomers',
-  ALIAS_MAPPINGS: 'customerAliasMappings'
+  ALIAS_MAPPINGS: 'customerAliasMappings',
+  ESTIMATES: 'estimates'
 });
 
 function requestResult(request) {
@@ -46,6 +47,11 @@ function openDatabase() {
         store.createIndex('byNormalizedName', 'normalizedName', { unique: false });
         store.createIndex('byContextKey', 'contextKey', { unique: false });
         store.createIndex('byStatus', 'status', { unique: false });
+      }
+      if (!db.objectStoreNames.contains(DATA_STORES.ESTIMATES)) {
+        const store = db.createObjectStore(DATA_STORES.ESTIMATES, { keyPath: 'estimateId' });
+        store.createIndex('byUpdatedAt', 'updatedAt', { unique: false });
+        store.createIndex('byCustomerName', 'customerName', { unique: false });
       }
     };
     request.onsuccess = () => resolve(request.result);
@@ -121,17 +127,19 @@ export function createRecordId(prefix) {
 }
 
 export async function loadSmartInputData() {
-  const [settingsRows, linkGroups, temporaryCustomers, aliasMappings] = await Promise.all([
+  const [settingsRows, linkGroups, temporaryCustomers, aliasMappings, estimates] = await Promise.all([
     getAll(DATA_STORES.SETTINGS),
     getAll(DATA_STORES.LINK_GROUPS),
     getAll(DATA_STORES.TEMPORARY_CUSTOMERS),
-    getAll(DATA_STORES.ALIAS_MAPPINGS)
+    getAll(DATA_STORES.ALIAS_MAPPINGS),
+    getAll(DATA_STORES.ESTIMATES)
   ]);
   return {
     settings: settingsRows.find(row => row.key === 'app')?.value || null,
     linkGroups,
     temporaryCustomers,
-    aliasMappings
+    aliasMappings,
+    estimates: estimates.sort((left, right) => String(right.updatedAt || '').localeCompare(String(left.updatedAt || '')))
   };
 }
 
@@ -157,4 +165,12 @@ export function saveAliasMapping(mapping) {
 
 export function deleteAliasMapping(aliasMappingId) {
   return remove(DATA_STORES.ALIAS_MAPPINGS, aliasMappingId);
+}
+
+export function saveEstimate(estimate) {
+  return put(DATA_STORES.ESTIMATES, estimate, 'estimateId');
+}
+
+export function deleteEstimate(estimateId) {
+  return remove(DATA_STORES.ESTIMATES, estimateId);
 }

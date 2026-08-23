@@ -14,11 +14,13 @@ import {
   createRecordId,
   loadSmartInputData,
   normalizeAliasName,
+  deleteEstimate,
   saveAliasMapping,
+  saveEstimate,
   saveLinkGroup,
   saveSettings,
   saveTemporaryCustomer
-} from './smartinput-data-store.js?v=0.1.0';
+} from './smartinput-data-store.js?v=0.2.0';
 
 const contract = window.SMART_INPUT_CONTRACT;
 if (!contract) throw new Error('SMART_INPUT_CONTRACT_NOT_LOADED');
@@ -39,6 +41,7 @@ const state = {
   linkGroups: [],
   temporaryCustomers: [],
   aliasMappings: [],
+  estimates: [],
   smartDataReady: false,
   pendingImageEvidence: null,
   pendingSourceName: '',
@@ -48,7 +51,10 @@ const state = {
   recognition: null,
   listening: false,
   busy: false,
-  activeActivity: ''
+  activeActivity: '',
+  autoAnalyzeTimer: null,
+  analysisRequestId: 0,
+  sourceComposing: false
 };
 
 const ACTIVITY_LABELS = {
@@ -174,6 +180,76 @@ function appendDeliveryHistory(record) {
 
 function resizeSource() {
   $('sourceLength').textContent = `${sourceTextInput.value.length.toLocaleString('ko-KR')}자`;
+}
+
+function renderSourceAnalysis() {
+  const source = sourceTextInput.value;
+  const highlight = $('sourceHighlight');
+  if (!highlight) return;
+  if (!source) {
+    highlight.textContent = '';
+    return;
+  }
+  const marks = new Array(source.length).fill(null);
+  const paint = (start, end, className, priority) => {
+    for (let index = Math.max(0, start); index < Math.min(source.length, end); index += 1) {
+      if (!marks[index] || marks[index].priority <= priority) marks[index] = { className, priority };
+    }
+  };
+  const kakaoHeader = /^[ \t]*\[([^\]\r\n]+)\]\s*\[((?:오전|오후)?\s*\d{1,2}:\d{2})\]/gm;
+  for (const match of source.matchAll(kakaoHeader)) {
+    const lineStart = Number(match.index || 0);
+    const userStart = lineStart + match[0].indexOf('[') + 1;
+    const timeToken = match[2];
+    const timeBracketStart = lineStart + match[0].lastIndexOf(`[${timeToken}]`);
+    paint(userStart, userStart + match[1].length, 'source-token--user', 5);
+    paint(timeBracketStart + 1, timeBracketStart + 1 + timeToken.length, 'source-token--time', 5);
+  }
+  const occupied = [];
+  modeDraft().rows.forEach(row => {
+    const token = String(row.rawText || '').trim();
+    if (!token) return;
+    let start = source.indexOf(token);
+    while (start >= 0 && occupied.some(range => start < range.end && start + token.length > range.start)) {
+      start = source.indexOf(token, start + 1);
+    }
+    if (start < 0) return;
+    occupied.push({ start, end: start + token.length });
+    paint(
+      start,
+      start + token.length,
+      row.matchStatus === 'MATCHED' ? 'source-token--collected' : 'source-token--unmatched',
+      row.matchStatus === 'MATCHED' ? 2 : 3
+    );
+  });
+  let html = '';
+  let segmentStart = 0;
+  for (let index = 1; index <= source.length; index += 1) {
+    const previous = marks[index - 1]?.className || '';
+    const next = marks[index]?.className || '';
+    if (index < source.length && previous === next) continue;
+    const content = esc(source.slice(segmentStart, index));
+    html += previous ? `<mark class="${previous}">${content}</mark>` : content;
+    segmentStart = index;
+  }
+  highlight.innerHTML = html;
+  highlight.scrollTop = sourceTextInput.scrollTop;
+  highlight.scrollLeft = sourceTextInput.scrollLeft;
+}
+
+function applyFormLayout() {
+  const headerFields = new Set(state.settings.headerFields || contract.DEFAULT_SETTINGS.headerFields);
+  document.querySelectorAll('[data-header-field]').forEach(element => {
+    element.hidden = !headerFields.has(element.dataset.headerField);
+  });
+  const voucherColumns = new Set(state.settings.voucherColumns || contract.DEFAULT_SETTINGS.voucherColumns);
+  document.querySelectorAll('[data-column]').forEach(element => {
+    element.classList.toggle('is-column-hidden', !voucherColumns.has(element.dataset.column));
+  });
+  const visibleColumns = contract.VOUCHER_COLUMN_DEFINITIONS.filter(column => voucherColumns.has(column.id)).length;
+  const table = document.querySelector('#tableScroll table');
+  table?.style.setProperty('--table-min-width', `${Math.max(520, visibleColumns * 94 + 34)}px`);
+  inputRows.querySelector('.empty-row td')?.setAttribute('colspan', String(visibleColumns + 1));
 }
 
 function updateMethod(method, { persist = true } = {}) {
@@ -498,17 +574,20 @@ async function chooseCustomer() {
       dialog.className = 'smart-dialog smart-customer-dialog';
       dialog.innerHTML = `<div class="smart-dialog__shell">
         <header><div><small>Customer Master</small><h2>스마트입력 거래처 찾기</h2></div><button type="button" data-close aria-label="닫기">×</button></header>
-        <div class="smart-dialog__toolbar"><button type="button" class="button button--quiet" data-link-mode>연결</button><button type="button" class="button button--quiet" data-temp-create>임시 배송처</button><button type="button" class="button button--quiet" data-tax-create>세무 거래처 등록</button></div>
+        <div class="smart-dialog__toolbar"><button type="button" class="button button--quiet" data-link-mode>거래처 연결</button><button type="button" class="button button--quiet" data-temp-create>임시 배송처</button></div>
         <label class="smart-dialog__search">거래처명 또는 코드<input type="search" value="${esc($('customerInput').value)}" autocomplete="off"></label>
-        <div class="smart-dialog__message">거래처를 선택하세요.</div>
+        <div class="smart-dialog__message">거래처 앞 체크박스를 선택한 뒤 용도를 지정하세요.</div>
         <div class="smart-customer-results"></div>
+        <footer class="smart-customer-action-footer"><span data-customer-selection>선택된 거래처가 없습니다.</span><button type="button" class="button button--quiet" data-customer-use>배송 거래처 선택</button><button type="button" class="button button--primary" data-tax-register>세무 거래처 등록</button></footer>
         <footer class="smart-link-footer" hidden><span>연결할 거래처를 2개 이상 체크하세요.</span><button type="button" class="button button--quiet" data-link-cancel>취소</button><button type="button" class="button button--primary" data-link-save>연결 저장</button></footer>
       </div>`;
       document.body.append(dialog);
       const input = dialog.querySelector('input[type="search"]');
       const results = dialog.querySelector('.smart-customer-results');
       const message = dialog.querySelector('.smart-dialog__message');
-      const footer = dialog.querySelector('.smart-link-footer');
+      const actionFooter = dialog.querySelector('.smart-customer-action-footer');
+      const linkFooter = dialog.querySelector('.smart-link-footer');
+      const selectionText = dialog.querySelector('[data-customer-selection]');
       const selected = new Set();
       let linkMode = false;
       let visibleCustomers = [];
@@ -531,34 +610,32 @@ async function chooseCustomer() {
           const group = groupForCustomer(customerItem.customerId);
           const isTax = group?.taxCustomerId === customerItem.customerId;
           const isTemporary = Boolean(temporaryMeta(customerItem.customerId));
-          return `<article class="smart-customer-row" data-customer-id="${esc(customerItem.customerId)}">
-            <label class="smart-customer-check" ${linkMode ? '' : 'hidden'}><input type="checkbox" ${selected.has(customerItem.customerId) ? 'checked' : ''}><span class="sr-only">${esc(customerName(customerItem))} 연결 선택</span></label>
-            <button type="button" class="smart-customer-select" ${linkMode ? 'disabled' : ''}><strong>${esc(customerName(customerItem))}</strong><span>${esc(customerCode(customerItem) || customerItem.businessNumber || '')}</span><small>${esc(customerItem.address || temporaryMeta(customerItem.customerId)?.warehouseName || '')}</small></button>
+          return `<article class="smart-customer-row ${selected.has(customerItem.customerId) ? 'is-selected' : ''}" data-customer-id="${esc(customerItem.customerId)}">
+            <label class="smart-customer-check"><input type="checkbox" ${selected.has(customerItem.customerId) ? 'checked' : ''}><span class="sr-only">${esc(customerName(customerItem))} 선택</span></label>
+            <div class="smart-customer-select"><strong>${esc(customerName(customerItem))}</strong><span>${esc(customerCode(customerItem) || customerItem.businessNumber || '')}</span><small>${esc(customerItem.address || temporaryMeta(customerItem.customerId)?.warehouseName || '')}</small></div>
             <div class="smart-customer-badges">${isTemporary ? '<span class="is-temp">임시 배송처</span>' : ''}${group ? `<span>연결 ${group.memberCustomerIds.length}</span>` : ''}${isTax ? '<span class="is-tax">세무</span>' : ''}</div>
-            ${group && !isTemporary ? `<button type="button" class="button button--small ${isTax ? 'button--primary' : 'button--quiet'}" data-tax-customer="${esc(customerItem.customerId)}">${isTax ? '세무 지정됨' : '세무 지정'}</button>` : ''}
           </article>`;
         }).join('') || '<div class="smart-dialog__empty">일치하는 거래처가 없습니다.</div>';
         results.querySelectorAll('.smart-customer-row').forEach(row => {
           const customerId = row.dataset.customerId;
-          row.querySelector('.smart-customer-select')?.addEventListener('click', () => finish(customerById(customerId)));
           row.querySelector('input[type="checkbox"]')?.addEventListener('change', event => {
-            if (event.target.checked) selected.add(customerId); else selected.delete(customerId);
-          });
-          row.querySelector('[data-tax-customer]')?.addEventListener('click', async () => {
-            const group = groupForCustomer(customerId);
-            if (!group) return;
-            const next = { ...group, taxCustomerId: customerId, status: 'CONFIRMED', revision: Number(group.revision || 0) + 1, updatedAt: new Date().toISOString() };
-            await persistLinkGroup(next);
-            message.textContent = `${customerName(customerById(customerId))}을 세무 거래처로 지정했습니다.`;
+            if (!linkMode) selected.clear();
+            if (event.target.checked) selected.add(customerId);
+            else selected.delete(customerId);
             render();
           });
         });
-        message.textContent = linkMode ? `${selected.size}개 선택 · 연결 후 세무 거래처 1개를 지정하세요.` : `${visibleCustomers.length}개 거래처를 확인하세요.`;
+        const selectedCustomer = !linkMode && selected.size === 1 ? customerById([...selected][0]) : null;
+        if (selectionText) selectionText.textContent = selectedCustomer ? `${customerName(selectedCustomer)} 선택됨` : '선택된 거래처가 없습니다.';
+        message.textContent = linkMode
+          ? `${selected.size}개 선택 · 연결할 거래처를 2개 이상 체크하세요.`
+          : `${visibleCustomers.length}개 거래처 · 한 곳만 체크할 수 있습니다.`;
       };
       const setLinkMode = value => {
         linkMode = value;
         selected.clear();
-        footer.hidden = !linkMode;
+        actionFooter.hidden = linkMode;
+        linkFooter.hidden = !linkMode;
         dialog.querySelector('[data-link-mode]').classList.toggle('button--primary', linkMode);
         render();
       };
@@ -566,6 +643,31 @@ async function chooseCustomer() {
       dialog.addEventListener('cancel', event => { event.preventDefault(); finish(null); });
       dialog.querySelector('[data-link-mode]').addEventListener('click', () => setLinkMode(!linkMode));
       dialog.querySelector('[data-link-cancel]').addEventListener('click', () => setLinkMode(false));
+      dialog.querySelector('[data-customer-use]').addEventListener('click', () => {
+        const customerId = [...selected][0];
+        if (!customerId) {
+          message.textContent = '배송 거래처로 사용할 곳을 먼저 체크하세요.';
+          return;
+        }
+        finish(customerById(customerId));
+      });
+      dialog.querySelector('[data-tax-register]').addEventListener('click', async () => {
+        const customerId = [...selected][0];
+        if (!customerId) {
+          message.textContent = '세무 거래처로 등록할 곳을 먼저 체크하세요.';
+          return;
+        }
+        const customerItem = customerById(customerId);
+        const group = groupForCustomer(customerId);
+        if (!group || temporaryMeta(customerId)) {
+          message.textContent = '거래처 연결을 먼저 저장한 뒤 연결된 정식 거래처를 체크하세요.';
+          return;
+        }
+        const next = { ...group, taxCustomerId: customerId, status: 'CONFIRMED', revision: Number(group.revision || 0) + 1, updatedAt: new Date().toISOString() };
+        await persistLinkGroup(next);
+        await render();
+        message.textContent = `${customerName(customerItem)}을 세무 거래처로 등록했습니다.`;
+      });
       dialog.querySelector('[data-link-save]').addEventListener('click', async () => {
         if (selected.size < 2) {
           message.textContent = '연결할 거래처를 2개 이상 선택하세요.';
@@ -592,21 +694,16 @@ async function chooseCustomer() {
         await persistLinkGroup(group);
         selected.clear();
         linkMode = false;
-        footer.hidden = true;
-        message.textContent = '연결을 저장했습니다. 연결된 거래처 중 세무 거래처 1개를 지정하세요.';
-        render();
+        actionFooter.hidden = false;
+        linkFooter.hidden = true;
+        await render();
+        message.textContent = '연결을 저장했습니다. 연결된 거래처 중 세무 거래처 1개를 체크한 뒤 등록하세요.';
       });
       dialog.querySelector('[data-temp-create]').addEventListener('click', async () => {
         const created = await registerCustomerProfile({ temporary: true });
         if (!created) return;
-        if (linkMode) selected.add(created.customerId);
-        input.value = created.customerName;
-        render();
-      });
-      dialog.querySelector('[data-tax-create]').addEventListener('click', async () => {
-        const created = await registerCustomerProfile({ temporary: false });
-        if (!created) return;
-        if (linkMode) selected.add(created.customerId);
+        if (!linkMode) selected.clear();
+        selected.add(created.customerId);
         input.value = created.customerName;
         render();
       });
@@ -630,6 +727,15 @@ function selectedWeekdays(form, name) {
   return [...form.querySelectorAll(`input[name="${name}"]:checked`)].map(input => Number(input.value)).sort((a, b) => a - b);
 }
 
+function layoutChecks(name, definitions, selected = []) {
+  const selectedSet = new Set(selected);
+  return definitions.map(field => `<label class="layout-check"><input type="checkbox" name="${name}" value="${esc(field.id)}" ${selectedSet.has(field.id) || field.required ? 'checked' : ''} ${field.required ? 'disabled' : ''}><span>${esc(field.label)}</span>${field.required ? '<small>필수</small>' : ''}</label>`).join('');
+}
+
+function selectedLayoutFields(form, name) {
+  return [...form.querySelectorAll(`input[name="${name}"]:checked`)].map(input => input.value);
+}
+
 async function openSettingsDialog() {
   const customerId = modeDraft().header.customerId;
   const hasCustomerOverride = customerId && Object.prototype.hasOwnProperty.call(state.settings.deliveryCustomerWeekdays, customerId);
@@ -639,7 +745,7 @@ async function openSettingsDialog() {
   const dialog = document.createElement('dialog');
   dialog.className = 'smart-dialog smart-settings-dialog';
   dialog.innerHTML = `<form method="dialog" class="smart-dialog__shell">
-    <header><div><small>SmartInput Settings</small><h2>배송·입력 설정</h2></div><button type="button" data-close aria-label="닫기">×</button></header>
+    <header><div><small>SmartInput Preferences</small><h2>환경설정</h2></div><button type="button" data-close aria-label="닫기">×</button></header>
     <div class="smart-settings-grid">
       <label><span>당일 주문 마감시간</span><input type="time" name="orderCutoffTime" value="${esc(state.settings.orderCutoffTime)}"><small>미설정이면 마감 제한을 적용하지 않습니다.</small></label>
       <label class="toggle-setting"><input type="checkbox" name="allowSameDayDelivery" ${state.settings.allowSameDayDelivery ? 'checked' : ''}><span>마감시간 전 당일 배송 선택 허용</span></label>
@@ -650,6 +756,8 @@ async function openSettingsDialog() {
         <label class="toggle-setting"><input type="checkbox" name="useDefaultCustomerWeekdays" ${hasCustomerOverride ? '' : 'checked'}><span>앱 기본 배송 요일 사용</span></label>
         <div class="weekday-grid" data-customer-weekdays>${weekdayChecks('customerDeliveryWeekdays', customerWeekdays)}</div>
       </fieldset>
+      <fieldset class="smart-settings--wide"><legend>주문서 상단 정보열</legend><div class="layout-check-grid">${layoutChecks('headerFields', contract.HEADER_FIELD_DEFINITIONS, state.settings.headerFields)}</div></fieldset>
+      <fieldset class="smart-settings--wide"><legend>전표 표시 열</legend><div class="layout-check-grid">${layoutChecks('voucherColumns', contract.VOUCHER_COLUMN_DEFINITIONS, state.settings.voucherColumns)}</div></fieldset>
     </div>
     <p class="smart-dialog__message">선택 불가 날짜에는 사유와 다음 배송 가능일을 표시합니다.</p>
     <footer><button type="button" class="button button--quiet" data-close>취소</button><button type="button" class="button button--primary" data-save>설정 저장</button></footer>
@@ -694,7 +802,9 @@ async function openSettingsDialog() {
       defaultDeliveryWeekdays,
       deliveryCustomerWeekdays,
       holidayWeekdays: selectedWeekdays(form, 'holidayWeekdays'),
-      holidayDates
+      holidayDates,
+      headerFields: selectedLayoutFields(form, 'headerFields'),
+      voucherColumns: selectedLayoutFields(form, 'voucherColumns')
     });
     if (holidayDates.some(date => !/^\d{4}-\d{2}-\d{2}$/.test(date))) {
       message.textContent = '지정 휴무일은 YYYY-MM-DD 형식으로 입력하세요.';
@@ -704,9 +814,10 @@ async function openSettingsDialog() {
       await saveSettings(next);
       state.settings = next;
       updateDeliveryPolicy();
+      applyFormLayout();
       saveDraftNow();
       finish();
-      toast('배송 설정을 저장했습니다.', 'success');
+      toast('환경설정을 저장했습니다.', 'success');
     } catch (error) {
       message.textContent = error.message || '설정을 저장하지 못했습니다.';
     }
@@ -752,6 +863,56 @@ function openDraftListDialog() {
         const item = loadDraftList().find(draft => draft.documentId === documentId);
         if (!item || !window.confirm(`${item.header?.customerName || '거래처 미확정'} 초안을 삭제하시겠습니까? 원본 ${Number(item.batches?.length || 0)}차가 함께 삭제됩니다.`)) return;
         localStorage.setItem(contract.DRAFT_LIST_STORAGE_KEY, JSON.stringify(loadDraftList().filter(draft => draft.documentId !== documentId)));
+        render();
+      });
+    });
+  };
+  const finish = () => { dialog.close(); dialog.remove(); };
+  dialog.querySelectorAll('[data-close]').forEach(button => button.addEventListener('click', finish));
+  dialog.addEventListener('cancel', event => { event.preventDefault(); finish(); });
+  dialog.showModal();
+  render();
+}
+
+function estimateTitle(record) {
+  return record?.customerName || record?.draft?.header?.customerName || '거래처 미지정 견적';
+}
+
+function openEstimateListDialog() {
+  const dialog = document.createElement('dialog');
+  dialog.className = 'smart-dialog smart-estimate-dialog';
+  dialog.innerHTML = `<div class="smart-dialog__shell">
+    <header><div><small>Estimate Catalog</small><h2>견적 목록</h2></div><button type="button" data-close aria-label="닫기">×</button></header>
+    <div class="smart-dialog__message">저장된 견적서를 선택하면 현재 견적 입력화면으로 불러옵니다.</div>
+    <div class="smart-estimate-results"></div>
+    <footer><button type="button" class="button button--quiet" data-close>닫기</button></footer>
+  </div>`;
+  document.body.append(dialog);
+  const results = dialog.querySelector('.smart-estimate-results');
+  const render = () => {
+    results.innerHTML = state.estimates.length ? state.estimates.map(item => `<article class="smart-draft-row" data-estimate-id="${esc(item.estimateId)}">
+      <button type="button" data-open-estimate><strong>${esc(estimateTitle(item))}</strong><span>${Number(item.rowCount || item.draft?.rows?.length || 0)}품목 · ${Number(item.amount || 0).toLocaleString('ko-KR')}원</span><small>${item.updatedAt ? new Date(item.updatedAt).toLocaleString('ko-KR') : ''}</small></button>
+      <button type="button" class="row-remove" data-delete-estimate aria-label="견적 삭제">×</button>
+    </article>`).join('') : '<div class="smart-dialog__empty">저장된 견적서가 없습니다.</div>';
+    results.querySelectorAll('[data-estimate-id]').forEach(row => {
+      const estimateId = row.dataset.estimateId;
+      row.querySelector('[data-open-estimate]').addEventListener('click', () => {
+        const record = state.estimates.find(item => item.estimateId === estimateId);
+        if (!record?.draft) return;
+        syncSourceText();
+        state.draft.activeMode = 'estimate';
+        state.draft.modes.estimate = contract.normalizeModeDraft('estimate', { ...record.draft, catalogRecordId: record.estimateId });
+        saveDraftNow();
+        renderMode();
+        dialog.close();
+        dialog.remove();
+        toast('견적서를 불러왔습니다.', 'success');
+      });
+      row.querySelector('[data-delete-estimate]').addEventListener('click', async () => {
+        const record = state.estimates.find(item => item.estimateId === estimateId);
+        if (!record || !window.confirm(`${estimateTitle(record)} 견적서를 삭제하시겠습니까?`)) return;
+        await deleteEstimate(estimateId);
+        state.estimates = state.estimates.filter(item => item.estimateId !== estimateId);
         render();
       });
     });
@@ -822,25 +983,29 @@ function renderRows({ restoreFocus = true } = {}) {
   if (!rows.length) {
     inputRows.innerHTML = '<tr class="empty-row"><td colspan="11"><strong>아직 입력된 상품이 없습니다.</strong><span>원문을 분석하거나 빈 행을 추가해 시작하세요.</span></td></tr>';
     updateSummaries();
+    applyFormLayout();
+    renderSourceAnalysis();
     return;
   }
   inputRows.innerHTML = rows.map(row => {
     const amount = Number(row.quantity || 0) * Number(row.unitPrice || 0);
     return `<tr data-row-id="${esc(row.rowId)}" data-status="${esc(row.matchStatus)}" class="${row.duplicatePossible ? 'is-duplicate' : ''}">
-      <td><input data-field="itemCode" type="search" enterkeyhint="search" value="${esc(row.itemCode)}" aria-label="품목코드" title="입력 후 Enter로 상품 검색"></td>
-      <td><input data-field="itemName" type="search" enterkeyhint="search" value="${esc(row.itemName)}" aria-label="품목명" title="입력 후 Enter로 상품 검색"></td>
-      <td><input data-field="specification" value="${esc(row.specification)}" aria-label="규격"></td>
-      <td><input data-field="quantity" type="number" step="any" value="${esc(row.quantity ?? '')}" aria-label="수량"></td>
-      <td><input data-field="unit" value="${esc(row.unit)}" aria-label="단위"></td>
-      <td><input data-field="unitPrice" type="number" step="any" value="${esc(row.unitPrice ?? '')}" aria-label="단가"></td>
-      <td><input data-supply-amount value="${amount.toLocaleString('ko-KR')}" aria-label="공급가액" readonly tabindex="-1"></td>
-      <td><input data-field="memo" value="${esc(row.memo)}" aria-label="메모"></td>
-      <td><input data-field="description" value="${esc(row.description)}" aria-label="적요(직원)"></td>
-      <td><input data-field="noticePrice" type="number" step="any" value="${esc(row.noticePrice ?? 0)}" aria-label="공지단가"></td>
+      <td data-column="itemCode"><input data-field="itemCode" type="search" enterkeyhint="search" value="${esc(row.itemCode)}" aria-label="품목코드" title="입력 후 Enter로 상품 검색"></td>
+      <td data-column="itemName"><input data-field="itemName" type="search" enterkeyhint="search" value="${esc(row.itemName)}" aria-label="품목명" title="입력 후 Enter로 상품 검색"></td>
+      <td data-column="specification"><input data-field="specification" value="${esc(row.specification)}" aria-label="규격"></td>
+      <td data-column="quantity"><input data-field="quantity" type="number" step="any" value="${esc(row.quantity ?? '')}" aria-label="수량"></td>
+      <td data-column="unit"><input data-field="unit" value="${esc(row.unit)}" aria-label="단위"></td>
+      <td data-column="unitPrice"><input data-field="unitPrice" type="number" step="any" value="${esc(row.unitPrice ?? '')}" aria-label="단가"></td>
+      <td data-column="supplyAmount"><input data-supply-amount value="${amount.toLocaleString('ko-KR')}" aria-label="공급가액" readonly tabindex="-1"></td>
+      <td data-column="memo"><input data-field="memo" value="${esc(row.memo)}" aria-label="메모"></td>
+      <td data-column="description"><input data-field="description" value="${esc(row.description)}" aria-label="적요(직원)"></td>
+      <td data-column="noticePrice"><input data-field="noticePrice" type="number" step="any" value="${esc(row.noticePrice ?? 0)}" aria-label="공지단가"></td>
       <td><button type="button" class="row-remove" data-remove-row="${esc(row.rowId)}" aria-label="행 삭제">×</button></td>
     </tr>`;
   }).join('');
   updateSummaries();
+  applyFormLayout();
+  renderSourceAnalysis();
   window.requestAnimationFrame(() => {
     $('tableScroll').scrollTop = Number(modeUi().scrollTop || 0);
     $('tableScroll').scrollLeft = Number(modeUi().scrollLeft || 0);
@@ -866,19 +1031,20 @@ function updateSummaries() {
 
 function renderDelivery() {
   const isOrder = state.draft.activeMode === 'order';
+  const isEstimate = state.draft.activeMode === 'estimate';
   const delivery = modeDraft().delivery;
   const lastDelivery = isOrder ? state.draft.ui.lastDelivery : null;
-  $('deliveryTarget').textContent = isOrder ? '공통 주문서 원장' : `${contract.MODES[state.draft.activeMode].label} 전달 계약 준비 중`;
+  $('deliveryTarget').textContent = isOrder ? '공통 주문서 원장' : (isEstimate ? '견적서 카탈로그' : `${contract.MODES[state.draft.activeMode].label} 전달 계약 준비 중`);
   $('deliveryDescription').textContent = isOrder
     ? 'ORDER Q vNext 저장소에 먼저 기록합니다.'
-    : '확정된 DataOps 연결만 이후 단계에서 활성화합니다.';
+    : (isEstimate ? '견적 목록에 저장하고 다시 불러올 수 있습니다.' : '확정된 DataOps 연결만 이후 단계에서 활성화합니다.');
   const visibleDelivery = delivery.status === 'SAVED' ? delivery : lastDelivery;
   $('deliveryState').textContent = visibleDelivery
     ? `최근 ${visibleDelivery.orderNo || visibleDelivery.targetRecordId || '저장 완료'}${visibleDelivery.deliveredAt ? ` · ${new Date(visibleDelivery.deliveredAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}` : ''}`
     : '전달 전';
   document.querySelector('.delivery-state span').style.background = visibleDelivery ? '#5eead4' : '#fbbf24';
-  $('completeButton').disabled = !isOrder || state.busy;
-  $('completeButton').textContent = '입력 완료';
+  $('completeButton').disabled = (!isOrder && !isEstimate) || state.busy;
+  $('completeButton').textContent = isEstimate ? '견적서 저장' : '입력 완료';
   if (visibleDelivery?.targetRecordId) {
     document.querySelector('#orderLinks a:first-child').href = `../orderq/index.html?focus=${encodeURIComponent(visibleDelivery.targetRecordId)}&saved=1`;
   } else {
@@ -896,17 +1062,23 @@ function renderMode() {
   $('relatedModeLabel').textContent = selected.label;
   $('orderLinks').hidden = selected.id !== 'order';
   $('relatedEmpty').hidden = selected.id === 'order';
+  $('estimateListButton').hidden = selected.id !== 'estimate';
   hydrateHeader();
   sourceTextInput.value = modeDraft().sourceText;
   updateMethod(modeDraft().activeMethod, { persist: false });
   renderRows();
   renderDelivery();
   resizeSource();
+  renderSourceAnalysis();
+  applyFormLayout();
   const relatedOpen = Boolean(state.draft.ui.relatedOpen);
   document.querySelector('.related-panel').classList.toggle('is-open', relatedOpen);
   $('relatedCollapseButton').setAttribute('aria-expanded', String(relatedOpen));
   $('relatedCollapseButton').textContent = relatedOpen ? '연결 앱 닫기' : '연결 앱 열기';
-  setAppStatus(selected.id === 'order' ? '주문서 입력을 시작할 수 있습니다.' : `${selected.label} 입력 화면입니다. 전달 연결은 준비 중입니다.`);
+  setAppStatus(selected.id === 'order'
+    ? '주문서 입력을 시작할 수 있습니다.'
+    : (selected.id === 'estimate' ? '견적서를 작성하거나 저장된 견적을 불러올 수 있습니다.' : `${selected.label} 입력 화면입니다. 전달 연결은 준비 중입니다.`));
+  if (sourceTextInput.value.trim()) scheduleAutoAnalysis(650);
 }
 
 function setMode(mode) {
@@ -924,6 +1096,14 @@ function syncSourceText() {
   modeDraft().sourceText = sourceTextInput.value;
   scheduleSave();
   resizeSource();
+  renderSourceAnalysis();
+  scheduleAutoAnalysis();
+}
+
+function scheduleAutoAnalysis(delay = 320) {
+  clearTimeout(state.autoAnalyzeTimer);
+  if (state.sourceComposing || !sourceTextInput.value.trim()) return;
+  state.autoAnalyzeTimer = window.setTimeout(() => analyzeSource({ automatic: true }), delay);
 }
 
 function addDirectRow() {
@@ -936,8 +1116,6 @@ function addDirectRow() {
   });
   current.batches.push(batch);
   current.rows = contract.applyParserResults(current.rows, batch, [{ rawText: '', itemName: '', quantity: null }]);
-  current.sourceText = '';
-  sourceTextInput.value = '';
   renderRows();
   saveDraftNow();
   const last = inputRows.querySelector('tr:last-child input[data-field="itemCode"]');
@@ -965,18 +1143,39 @@ function fallbackLines(rawText, batch) {
     }));
 }
 
-async function analyzeSource() {
-  if (state.busy) return;
+async function analyzeSource({ automatic = false } = {}) {
+  if (state.busy) {
+    if (automatic) scheduleAutoAnalysis(600);
+    return;
+  }
+  const modeId = state.draft.activeMode;
   const current = modeDraft();
   const rawText = sourceTextInput.value;
   if (!rawText.trim()) {
+    if (automatic) return;
     sourceTextInput.focus();
     return toast('분석할 원문을 입력하세요.', 'error');
   }
   if (state.catalogStatus === 'LOADING') {
+    if (automatic) return scheduleAutoAnalysis(700);
     toast('상품 기준자료를 불러오는 중입니다. 잠시 후 다시 분석하세요.', 'error');
     return;
   }
+  const contentHash = await sha256Text(rawText);
+  if (state.busy || state.draft.activeMode !== modeId || sourceTextInput.value !== rawText) {
+    if (automatic && sourceTextInput.value.trim()) scheduleAutoAnalysis(420);
+    return;
+  }
+  let existingLiveBatch = current.batches.find(batch => batch.sourceRole === 'LIVE_SOURCE');
+  if (!existingLiveBatch && current.sourceText === rawText) {
+    existingLiveBatch = [...current.batches].reverse().find(batch => batch.rawText === rawText) || null;
+    if (existingLiveBatch) existingLiveBatch.sourceRole = 'LIVE_SOURCE';
+  }
+  if (existingLiveBatch?.contentHash && existingLiveBatch.contentHash === contentHash) {
+    renderSourceAnalysis();
+    return;
+  }
+  const requestId = ++state.analysisRequestId;
   const method = contract.INPUT_METHODS.find(item => item.id === current.activeMethod) || contract.INPUT_METHODS[2];
   const detectedSourceType = looksLikeKakaoText(rawText)
     ? 'KAKAO_TEXT'
@@ -986,8 +1185,10 @@ async function analyzeSource() {
     method: method.id,
     sourceType: detectedSourceType,
     sourceName: state.pendingSourceName,
+    sourceRole: 'LIVE_SOURCE',
+    automatic,
     rawText,
-    contentHash: await sha256Text(rawText)
+    contentHash
   });
   state.busy = true;
   $('analyzeButton').disabled = true;
@@ -1041,20 +1242,39 @@ async function analyzeSource() {
       } catch (error) {
         lines = fallbackLines(rawText, batch);
         if (!lines.length) throw error;
-        toast('자동 파서가 인식하지 못한 원문은 직접 확인할 행으로 추가했습니다.', 'error');
+        if (!automatic) toast('자동 파서가 인식하지 못한 원문은 직접 확인할 행으로 추가했습니다.', 'error');
       }
     } else {
       lines = fallbackLines(rawText, batch);
     }
 
     if (!lines.length) throw new Error('상품 행을 인식하지 못했습니다. 상품명과 수량을 확인해 주세요.');
+    if (requestId !== state.analysisRequestId || state.draft.activeMode !== modeId || sourceTextInput.value !== rawText) return;
+    const liveBatchIds = new Set(current.batches.filter(item => item.sourceRole === 'LIVE_SOURCE').map(item => item.batchId));
+    const previousLiveRows = current.rows.filter(row => liveBatchIds.has(row.batchId));
+    const firstLiveRowIndex = current.rows.findIndex(row => liveBatchIds.has(row.batchId));
+    const insertionIndex = firstLiveRowIndex < 0
+      ? current.rows.length
+      : current.rows.slice(0, firstLiveRowIndex).filter(row => !liveBatchIds.has(row.batchId)).length;
+    current.batches = current.batches.filter(item => item.sourceRole !== 'LIVE_SOURCE');
+    current.rows = current.rows.filter(row => !liveBatchIds.has(row.batchId));
     current.batches.push(batch);
     current.rows = contract.applyParserResults(current.rows, batch, lines);
+    current.rows.filter(row => row.batchId === batch.batchId).forEach(row => {
+      const previous = previousLiveRows.find(item => String(item.rawText || '').trim() === String(row.rawText || '').trim());
+      if (!previous) return;
+      contract.ROW_FIELDS.forEach(field => {
+        if (previous.editedFields?.[field]) row[field] = previous[field];
+      });
+      row.editedFields = { ...(previous.editedFields || {}) };
+    });
+    const liveRows = current.rows.filter(row => row.batchId === batch.batchId);
+    const otherRows = current.rows.filter(row => row.batchId !== batch.batchId);
+    current.rows = [...otherRows.slice(0, insertionIndex), ...liveRows, ...otherRows.slice(insertionIndex)];
     current.rows.forEach(row => enrichRowFromUnifiedCatalog(row));
     current.rows = contract.markDuplicatePossibilities(current.rows);
-    current.sourceText = '';
+    current.sourceText = rawText;
     current.delivery = { status: 'DRAFT', targetId: '', targetRecordId: '', deliveredAt: '' };
-    sourceTextInput.value = '';
     state.pendingImageEvidence = null;
     state.pendingSourceName = '';
     resizeSource();
@@ -1068,21 +1288,30 @@ async function analyzeSource() {
     renderDelivery();
     saveDraftNow();
     const summary = contract.summarizeRows(current.rows);
-    setAppStatus(`${batch.sequence}차 분석 완료 · ${lines.length}행 추가 · 일치 ${summary.matched} · 확인 ${summary.similar} · 미인식 ${summary.unresolved}`);
+    setAppStatus(`${activityLabel(method.id)} 분석 완료 · ${lines.length}행 · 일치 ${summary.matched} · 확인 ${summary.similar} · 미인식 ${summary.unresolved}`);
+    $('sourceNotice').textContent = '노랑: 수집된 상품 · 빨강: 마스터 미확정 · 주문자명/시간: 고정 구분색';
     if (!current.header.customerId) {
       $('customerHint').textContent = '거래처를 인식하지 못했습니다. 등록 거래처를 선택하세요.';
-      $('customerInput').focus();
-      toast('거래처를 인식하지 못해 거래처 입력란으로 이동했습니다.', 'error');
+      if (!automatic) {
+        $('customerInput').focus();
+        toast('거래처를 인식하지 못해 거래처 입력란으로 이동했습니다.', 'error');
+      }
     }
   } catch (error) {
-    setAppStatus('분석을 완료하지 못했습니다. 원문은 그대로 유지됩니다.', 'error');
-    toast(error.message || '자료 분석에 실패했습니다.', 'error');
+    if (!automatic) {
+      setAppStatus('분석을 완료하지 못했습니다. 원문은 그대로 유지됩니다.', 'error');
+      toast(error.message || '자료 분석에 실패했습니다.', 'error');
+    } else {
+      $('sourceNotice').textContent = '상품명과 수량을 입력하면 자동으로 다시 분석합니다.';
+    }
   } finally {
     state.busy = false;
     setActiveActivity('');
     $('analyzeButton').disabled = false;
     $('parserProgress').hidden = true;
     renderDelivery();
+    renderSourceAnalysis();
+    if (sourceTextInput.value !== rawText) scheduleAutoAnalysis(420);
   }
 }
 
@@ -1107,8 +1336,8 @@ async function handleFile(file) {
     }
     sourceTextInput.value = rawText;
     syncSourceText();
-    setAppStatus(`${file.name}을 원문 입력창에 불러왔습니다.`);
-    toast('파일 내용을 확인한 뒤 분석·추가를 누르세요.', 'success');
+    setAppStatus(`${file.name}을 불러왔습니다. 자동 분석을 시작합니다.`);
+    toast('파일 내용을 불러와 자동 분석합니다.', 'success');
   } catch (error) {
     toast(error.message || '파일을 읽지 못했습니다.', 'error');
     setAppStatus('파일을 읽지 못했습니다.', 'error');
@@ -1161,8 +1390,8 @@ async function recognizeImage(file) {
     if (!text.trim()) throw new Error('사진에서 문자를 찾지 못했습니다.');
     sourceTextInput.value = text;
     syncSourceText();
-    setAppStatus('사진 문자 추출이 완료되었습니다. 원문을 확인하세요.');
-    toast('추출된 문자를 확인한 뒤 분석·추가를 누르세요.', 'success');
+    setAppStatus('사진 문자 추출이 완료되었습니다. 자동 분석을 시작합니다.');
+    toast('추출된 문자를 원문에 유지하고 자동 분석합니다.', 'success');
   } catch (error) {
     state.pendingImageEvidence = null;
     toast(error.message || '사진 문자를 추출하지 못했습니다.', 'error');
@@ -1362,14 +1591,16 @@ function openProductDialog(row, { query = '' } = {}) {
     dialog.close();
     dialog.remove();
   };
+  let foundProducts = [];
   const render = () => {
-    const found = searchProductCatalog(search.value, commonMasterProducts(), 12);
+    foundProducts = searchProductCatalog(search.value, commonMasterProducts(), 12);
     results.innerHTML = '';
-    message.textContent = found.length ? `${found.length}개 후보를 확인하세요.` : '일치하는 상품 후보가 없습니다.';
-    found.forEach(product => {
+    message.textContent = foundProducts.length ? `${foundProducts.length}개 후보 · 첫 번째 항목이 선택되었습니다. Enter로 확정합니다.` : '일치하는 상품 후보가 없습니다.';
+    foundProducts.forEach((product, index) => {
       const button = document.createElement('button');
       button.type = 'button';
-      button.className = 'customer-picker-result';
+      button.className = `customer-picker-result${index === 0 ? ' is-selected' : ''}`;
+      button.setAttribute('aria-selected', String(index === 0));
       const strong = document.createElement('strong');
       strong.textContent = product.itemName || '상품명 없음';
       const code = document.createElement('span');
@@ -1386,6 +1617,11 @@ function openProductDialog(row, { query = '' } = {}) {
     clearTimeout(timer);
     timer = setTimeout(render, 90);
   });
+  search.addEventListener('keydown', event => {
+    if (event.key !== 'Enter' || event.isComposing) return;
+    event.preventDefault();
+    if (foundProducts[0]) finish(foundProducts[0]);
+  });
   close.addEventListener('click', () => finish(null));
   dialog.addEventListener('cancel', event => { event.preventDefault(); finish(null); });
   dialog.showModal();
@@ -1393,8 +1629,59 @@ function openProductDialog(row, { query = '' } = {}) {
   render();
 }
 
+async function saveEstimateDocument() {
+  const current = modeDraft();
+  if (!current.rows.length) {
+    toast('견적 품목을 1개 이상 입력하세요.', 'error');
+    return;
+  }
+  const invalidIndex = current.rows.findIndex(row => (!row.itemCode && !row.itemName) || row.quantity === null || row.quantity === '');
+  if (invalidIndex >= 0) {
+    const rowElement = inputRows.querySelectorAll('tr')[invalidIndex];
+    rowElement?.querySelector(!current.rows[invalidIndex].itemCode && !current.rows[invalidIndex].itemName ? '[data-field="itemName"]' : '[data-field="quantity"]')?.focus();
+    toast(`${invalidIndex + 1}행의 품목과 수량을 확인하세요.`, 'error');
+    return;
+  }
+  state.busy = true;
+  renderDelivery();
+  setAppStatus('견적서 카탈로그에 저장하고 있습니다.');
+  try {
+    const timestamp = new Date().toISOString();
+    const estimateId = current.catalogRecordId || createRecordId('SIEST');
+    current.catalogRecordId = estimateId;
+    current.updatedAt = timestamp;
+    current.delivery = { status: 'SAVED', targetId: 'smart-input-estimates', targetRecordId: estimateId, deliveredAt: timestamp };
+    const summary = contract.summarizeRows(current.rows);
+    const existing = state.estimates.find(item => item.estimateId === estimateId);
+    const record = {
+      estimateId,
+      customerId: current.header.customerId,
+      customerName: current.header.customerName,
+      rowCount: summary.total,
+      amount: summary.amount,
+      createdAt: existing?.createdAt || timestamp,
+      updatedAt: timestamp,
+      draft: JSON.parse(JSON.stringify(current))
+    };
+    await saveEstimate(record);
+    state.estimates = [record, ...state.estimates.filter(item => item.estimateId !== estimateId)]
+      .sort((left, right) => String(right.updatedAt || '').localeCompare(String(left.updatedAt || '')));
+    saveDraftNow();
+    renderDelivery();
+    setAppStatus(`${estimateTitle(record)} · ${summary.total}품목 견적 저장 완료`);
+    toast('견적서를 견적 목록에 저장했습니다.', 'success');
+  } catch (error) {
+    setAppStatus('견적서를 저장하지 못했습니다. 입력 내용은 유지됩니다.', 'error');
+    toast(error.message || '견적서 저장에 실패했습니다.', 'error');
+  } finally {
+    state.busy = false;
+    renderDelivery();
+  }
+}
+
 async function completeOrder() {
   const current = modeDraft();
+  if (state.draft.activeMode === 'estimate') return saveEstimateDocument();
   if (state.draft.activeMode !== 'order') {
     toast('구매·판매 전달 대상은 확정 후 활성화합니다.', 'error');
     return;
@@ -1565,6 +1852,7 @@ async function hydrateReferences() {
     state.linkGroups = results[3].value.linkGroups || [];
     state.temporaryCustomers = results[3].value.temporaryCustomers || [];
     state.aliasMappings = results[3].value.aliasMappings || [];
+    state.estimates = results[3].value.estimates || [];
     state.smartDataReady = true;
   }
   $('referenceStatus').dataset.status = state.catalogStatus;
@@ -1572,6 +1860,7 @@ async function hydrateReferences() {
     ? `상품 준비 · 공통 ${Number(state.catalogSummary.commonCount || 0).toLocaleString('ko-KR')}건 · ORDER Q ${Number(state.catalogSummary.orderQCount || 0).toLocaleString('ko-KR')}건 · 거래처 ${state.customers.length.toLocaleString('ko-KR')}건`
     : (state.catalogStatus === 'EMPTY' ? '상품 기준자료가 없습니다. 직접입력은 계속 사용할 수 있습니다.' : '상품 기준자료 일부를 불러오지 못했습니다. 직접입력은 계속 사용할 수 있습니다.');
   renderMode();
+  if (sourceTextInput.value.trim()) scheduleAutoAnalysis(650);
   if (results.some(result => result.status === 'rejected')) {
     setAppStatus('일부 마스터를 불러오지 못했습니다. 직접입력은 계속 사용할 수 있습니다.', 'warn');
   }
@@ -1593,9 +1882,17 @@ methodButtons.forEach(button => button.addEventListener('click', () => {
 }));
 
 sourceTextInput.addEventListener('input', syncSourceText);
+sourceTextInput.addEventListener('compositionstart', () => { state.sourceComposing = true; });
+sourceTextInput.addEventListener('compositionend', () => { state.sourceComposing = false; syncSourceText(); });
+sourceTextInput.addEventListener('scroll', () => {
+  const highlight = $('sourceHighlight');
+  if (!highlight) return;
+  highlight.scrollTop = sourceTextInput.scrollTop;
+  highlight.scrollLeft = sourceTextInput.scrollLeft;
+}, { passive: true });
 $('fileInput').addEventListener('change', event => handleFile(event.target.files?.[0]));
 $('photoInput').addEventListener('change', event => recognizeImage(event.target.files?.[0]));
-$('analyzeButton').addEventListener('click', analyzeSource);
+$('analyzeButton').addEventListener('click', () => analyzeSource({ automatic: false }));
 $('addRowButton').addEventListener('click', () => { updateMethod('direct'); addDirectRow(); });
 $('customerSearchButton').addEventListener('click', chooseCustomer);
 $('customerInput').addEventListener('input', event => {
@@ -1633,8 +1930,9 @@ $('transactionTypeInput').addEventListener('change', event => { modeDraft().head
 $('completeButton').addEventListener('click', completeOrder);
 $('saveDraftButton').addEventListener('click', () => { saveDraftNow(); toast('현재 초안을 저장했습니다.', 'success'); });
 $('draftListButton').addEventListener('click', openDraftListDialog);
+$('estimateListButton').addEventListener('click', openEstimateListDialog);
 $('settingsButton').addEventListener('click', openSettingsDialog);
-$('resetDraftButton').addEventListener('click', () => resetCurrentMode(true));
+$('resetDraftButton').addEventListener('click', () => resetCurrentMode(false));
 $('relatedCollapseButton').addEventListener('click', event => {
   const panel = document.querySelector('.related-panel');
   const open = panel.classList.toggle('is-open');
@@ -1714,9 +2012,9 @@ document.addEventListener('paste', event => {
 });
 
 document.addEventListener('keydown', event => {
-  if (event.altKey && ['1', '2', '3'].includes(event.key)) {
+  if (event.altKey && ['1', '2', '3', '4'].includes(event.key)) {
     event.preventDefault();
-    setMode(['order', 'purchase', 'sale'][Number(event.key) - 1]);
+    setMode(['order', 'purchase', 'sale', 'estimate'][Number(event.key) - 1]);
   }
 });
 
