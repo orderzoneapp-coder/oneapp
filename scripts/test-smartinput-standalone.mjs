@@ -38,24 +38,31 @@ assert.equal(contract.SETTINGS_STORAGE_KEY, 'oneapp.smartinput.settings.v1');
 assert.deepEqual(Array.from(contract.INPUT_METHODS, item => item.id), ['direct', 'excel', 'text', 'paste', 'photo', 'voice']);
 assert.deepEqual(Object.keys(contract.MODES), ['order', 'purchase', 'sale', 'estimate']);
 assert.deepEqual(Array.from(contract.STAGES), ['capture', 'extract', 'match', 'review', 'complete']);
-assert.deepEqual(Array.from(contract.ROW_FIELDS), [
-  'itemCode', 'itemName', 'secondaryName', 'searchInfo', 'specification', 'boxQuantity',
-  'quantity', 'unit', 'unitPrice', 'outPrice', 'wholesaleA', 'wholesaleB', 'listingPrice',
-  'marketPrice', 'promoPrice', 'purchasePriceB', 'priceD', 'lastPurchasePrice', 'priceH', 'priceI',
-  'memo', 'description', 'noticePrice'
-]);
-for (const productField of ['itemCode', 'itemName', 'specification', 'quantity', 'unit', 'unitPrice', 'supplyAmount', 'memo', 'description', 'noticePrice', 'secondaryName', 'searchInfo', 'boxQuantity', 'outPrice', 'wholesaleA', 'wholesaleB', 'listingPrice', 'marketPrice', 'promoPrice', 'purchasePriceB', 'priceD', 'lastPurchasePrice', 'priceH', 'priceI']) {
-  assert.ok(Array.from(contract.PRODUCT_FIELD_DEFINITIONS, field => field.id).includes(productField), `${productField} must be available in the product field library`);
-}
-assert.equal(contract.PRODUCT_FIELD_DEFINITIONS.find(field => field.id === 'purchasePriceB').required, true);
+assert.deepEqual(Array.from(contract.PRODUCT_FIELD_GROUPS, group => group.label), ['품목정보', '수량', '단가', '원가', '부가정보']);
+const productDefinitions = Array.from(contract.PRODUCT_FIELD_DEFINITIONS);
+const productFieldIds = productDefinitions.map(field => field.id);
+assert.equal(new Set(productFieldIds).size, productFieldIds.length, 'product field ids must be unique');
+assert.ok(productDefinitions.length >= 90, 'the complete product master field library must be preserved');
+const groupIndexes = productDefinitions.map(field => ['ITEM', 'QUANTITY', 'PRICE', 'COST', 'ADDITIONAL'].indexOf(field.group));
+assert.ok(groupIndexes.every((groupIndex, index) => index === 0 || groupIndex >= groupIndexes[index - 1]), 'product fields must follow the five canonical group order');
+for (const productField of [
+  'itemCode', 'itemName', 'productType', 'inventoryQuantityManagement', 'salesVatRate', 'purchaseVatRate',
+  'qualityInspectionType', 'quantityPerQuantity2', 'cPortalMinOrderQuantityCheck', 'minimumPurchaseUnit',
+  'inboundPrice', 'purchasePriceB', 'priceD', 'lastPurchasePrice', 'priceH', 'priceI',
+  'outsourcingUnitPrice', 'materialStandardCost', 'laborStandardCost', 'brand', 'orderCutoffTime',
+  'serialLotNo', 'productionSlipTarget', 'qualityInspectionRequestTarget', 'discontinued'
+]) assert.ok(productFieldIds.includes(productField), `${productField} must be available in the product field library`);
+assert.deepEqual(productDefinitions.filter(field => field.required).map(field => field.id), ['itemCode']);
+assert.ok(contract.ROW_FIELDS.includes('materialStandardCost'));
+assert.ok(!contract.ROW_FIELDS.includes('supplyAmount'), 'computed supply amount must not be directly editable');
 assert.ok(Array.from(contract.DEFAULT_SETTINGS.headerFields).includes('customer'));
 assert.ok(Array.from(contract.DEFAULT_SETTINGS.voucherColumns).includes('itemName'));
 const minimalLayout = contract.normalizeSettings({ headerFields: [], voucherColumns: [] });
 assert.deepEqual(Array.from(minimalLayout.headerFields), ['customer', 'deliveryDate', 'warehouse']);
-assert.deepEqual(Array.from(minimalLayout.voucherColumns), ['itemName', 'quantity', 'purchasePriceB']);
+assert.deepEqual(Array.from(minimalLayout.voucherColumns), ['itemCode']);
 for (const mode of Object.keys(contract.MODES)) {
   assert.deepEqual(Array.from(minimalLayout.headerFieldsByMode[mode]), ['customer', 'deliveryDate', 'warehouse']);
-  assert.deepEqual(Array.from(minimalLayout.voucherColumnsByMode[mode]), ['itemName', 'quantity', 'purchasePriceB']);
+  assert.deepEqual(Array.from(minimalLayout.voucherColumnsByMode[mode]), ['itemCode']);
 }
 const perVoucherLayout = contract.normalizeSettings({
   headerFieldsByMode: {
@@ -74,7 +81,7 @@ const perVoucherLayout = contract.normalizeSettings({
 const reorderedVoucherLayout = contract.normalizeSettings({
   voucherColumnsByMode: { order: ['quantity', 'itemName', 'purchasePriceB', 'unitPrice'] }
 });
-assert.deepEqual(Array.from(reorderedVoucherLayout.voucherColumnsByMode.order), ['quantity', 'itemName', 'purchasePriceB', 'unitPrice']);
+assert.deepEqual(Array.from(reorderedVoucherLayout.voucherColumnsByMode.order), ['quantity', 'itemName', 'purchasePriceB', 'unitPrice', 'itemCode']);
 assert.ok(Array.from(perVoucherLayout.headerFieldsByMode.order).includes('transactionType'));
 assert.ok(!Array.from(perVoucherLayout.headerFieldsByMode.purchase).includes('transactionType'));
 assert.ok(Array.from(perVoucherLayout.voucherColumnsByMode.purchase).includes('supplyAmount'));
@@ -98,7 +105,9 @@ const typedCustomLayout = contract.normalizeSettings({
     ...Array.from({ length: 11 }, (_, index) => ({ id: `number-${index}`, label: `숫자 ${index}`, scope: 'voucher', category: 'CUSTOM', valueType: 'NUMBER' }))
   ],
   voucherColumns: ['itemName', 'quantity', 'secondaryName', 'number-0'],
-  columnWidths: { itemName: 233, secondaryName: 150, unknown: 999, quantity: 12 }
+  columnWidths: { itemName: 233, secondaryName: 150, unknown: 999, quantity: 12 },
+  columnWidthsByMode: { purchase: { itemName: 312, unknown: 90 } },
+  inputOrderByMode: { order: { itemCode: 2, itemName: 0, quantity: 1, supplyAmount: 9 } }
 });
 assert.equal(typedCustomLayout.customFields.filter(field => field.valueType === 'TEXT').length, 10);
 assert.equal(typedCustomLayout.customFields.filter(field => field.valueType === 'NUMBER').length, 10);
@@ -106,10 +115,19 @@ assert.ok(Array.from(typedCustomLayout.voucherColumns).includes('secondaryName')
 assert.equal(typedCustomLayout.columnWidths.itemName, 233);
 assert.equal(typedCustomLayout.columnWidths.quantity, 56);
 assert.equal(typedCustomLayout.columnWidths.unknown, undefined);
+assert.equal(typedCustomLayout.columnWidthsByMode.purchase.itemName, 312);
+assert.equal(typedCustomLayout.columnWidthsByMode.purchase.unknown, undefined);
+assert.equal(typedCustomLayout.inputOrderByMode.order.quantity, 1);
+assert.equal(typedCustomLayout.inputOrderByMode.order.itemCode, 2);
+assert.equal(typedCustomLayout.inputOrderByMode.order.itemName, 0, 'input order zero must skip the field during Enter navigation');
+assert.equal(typedCustomLayout.inputOrderByMode.order.supplyAmount, 0, 'computed fields cannot enter the keyboard input sequence');
 const displayRow = contract.normalizeRow({ memo: '메모', description: '직원 적요', noticePrice: 1200 });
 assert.equal(displayRow.memo, '메모');
 assert.equal(displayRow.description, '직원 적요');
 assert.equal(displayRow.noticePrice, 1200);
+const extendedProductRow = contract.normalizeRow({ materialStandardCost: '1,250', brand: 'ORDERZ' });
+assert.equal(extendedProductRow.materialStandardCost, 1250);
+assert.equal(extendedProductRow.brand, 'ORDERZ');
 assert.equal(contract.normalizeRow({ unitPrice: 3800, unitPriceReviewStatus: 'PENDING' }).unitPriceReviewStatus, 'PENDING');
 assert.equal(contract.normalizeRow({ unitPrice: 3800 }).unitPriceReviewStatus, 'CONFIRMED');
 const estimateDraftWithPrices = contract.normalizeModeDraft('estimate', {
@@ -462,8 +480,10 @@ assert.doesNotMatch(parserEnrichmentSource, /candidates\.length === 1[\s\S]*appl
 assert.match(parserEnrichmentSource, /row\.matchStatus = 'SIMILAR'/);
 assert.match(appSource, /if \(changedField === 'itemName'\) return row\.itemName \|\| row\.itemCode/);
 assert.match(appSource, /applyProduct\(row, exact, \{ forceIdentityFields: true \}\)/);
-assert.match(appSource, /if \(openCandidates\) openProductDialog\(row, \{ query, focusTarget, returnField: changedField \}\)/);
-assert.match(appSource, /applyProduct\(row, product, \{ forceIdentityFields: true \}\)/);
+assert.match(appSource, /const liveRow = modeDraft\(\)\.rows\.find\(item => item\.rowId === row\.rowId\) \|\| row;[\s\S]*if \(openCandidates\) openProductDialog\(liveRow/,
+  'candidate selection must receive the current row object after duplicate detection replaces row objects');
+assert.match(appSource, /applyProduct\(liveRow, product, \{ forceIdentityFields: true \}\)/,
+  'candidate confirmation must update the live row instead of a stale row reference');
 assert.match(appSource, /\['Enter', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'\][\s\S]*tryMatchRow\(row, field, \{ focusTarget \}\)/);
 assert.match(appSource, /data-field="specification"/);
 assert.match(appSource, /data-field="unit"/);
@@ -522,12 +542,24 @@ assert.match(appSource, /function beginColumnDrag\(/);
 assert.match(appSource, /function finishColumnDrop\(/);
 assert.match(appSource, /voucherTableHead\.addEventListener\('dragstart', beginColumnDrag\)/);
 assert.match(appSource, /voucherTableHead\.addEventListener\('drop', finishColumnDrop\)/);
-assert.match(appSource, /class="settings-group" open/);
+assert.doesNotMatch(appSource, /class="settings-group" open/,
+  'environment settings must open with every accordion group closed');
+assert.match(appSource, /smart-settings-grid'\)\.append\(deliverySettingsGroup\)/,
+  'delivery policy must be moved to the bottom of the settings groups');
 assert.match(appSource, /data-add-layout-field="header"/);
 assert.match(appSource, /data-add-layout-field="voucher"/);
 assert.match(appSource, /data-settings-layout-mode/);
 assert.match(appSource, /headerFieldsByMode: workingHeaderFieldsByMode/);
 assert.match(appSource, /voucherColumnsByMode: workingVoucherColumnsByMode/);
+assert.match(appSource, /inputOrderByMode: workingInputOrderByMode/);
+assert.match(appSource, /data-input-order-field/);
+assert.match(appSource, /function enterGridFields\(\)/);
+assert.match(appSource, /\.filter\(item => Number\.isFinite\(item\.order\) && item\.order > 0\)/,
+  'input order zero must be skipped during Enter navigation');
+assert.match(appSource, /scope === 'voucher' \? sourceDefinitions/,
+  'voucher settings must use the canonical product-field dictionary order');
+assert.match(css, /\.settings-group:not\(\[open\]\) > \.settings-group__body \{ display: none; \}/,
+  'closed settings groups must not leave empty body space');
 assert.match(css, /\.settings-layout-modes \{[^}]*grid-template-columns: repeat\(4,/,
   '전표별 상단 정보 열과 표시 열은 주문서·구매·판매·견적서 선택 탭을 제공해야 한다.');
 assert.match(css, /\.document-fields > \.field--mode \{ grid-column: 1;/,
@@ -540,9 +572,8 @@ assert.match(css, /\.document-fields \.field--mode \.mode-tab\.is-active \{[^}]*
   '선택 전표는 배경 채움 대신 라인으로만 표시해야 한다.');
 assert.match(css, /\.voucher-footer-actions \{[^}]*justify-content: flex-end;[^}]*border-top: 1px solid var\(--border\)/,
   '전표 작업 버튼은 입력표 하단의 독립 작업줄에 배치해야 한다.');
-assert.match(appSource, /상품정보/);
 assert.match(appSource, /거래처정보/);
-assert.match(appSource, /사용자지정/);
+assert.match(appSource, /부가정보 · 사용자지정/);
 assert.match(appSource, /function openLayoutFieldDialog\(/);
 assert.match(appSource, /contract\.PRODUCT_FIELD_DEFINITIONS/,
   'the field picker must expose the complete product information library');
@@ -563,7 +594,7 @@ assert.match(appSource, /function renderPhotoTransform\(\)/);
 assert.match(appSource, /function showPhotoRegion\(region\)/);
 assert.match(appSource, /sourceImages: \{ order: null, purchase: null, sale: null, estimate: null \}/);
 assert.match(appSource, /intakeSessionId: sourceBatch\?\.intakeSessionId \|\| ''/);
-assert.match(appSource, /photoBasicColumns = new Set\(\['itemCode', 'itemName', 'specification', 'quantity', 'unit', 'unitPrice', 'supplyAmount', 'purchasePriceB'\]\)/);
+assert.match(appSource, /photoBasicColumns = new Set\(\['itemCode', 'itemName', 'specification', 'quantity', 'unit', 'unitPrice', 'supplyAmount'\]/);
 assert.match(appSource, /state\.photoView\.detailColumns = !state\.photoView\.detailColumns/);
 assert.match(appSource, /photoResizer\.addEventListener\('pointermove'/);
 assert.match(appSource, /if \(modeDraft\(\)\.activeMethod !== 'photo'\) updateMethod\('direct'\)/,
@@ -628,8 +659,15 @@ assert.match(appSource, /data-field="unitPrice" type="text" inputmode="decimal"/
   '단가 입력은 브라우저 숫자 증감 스피너를 사용하면 안 된다.');
 assert.match(appSource, /function confirmUnitPriceReview\(/);
 assert.match(appSource, /inputRows\.addEventListener\('focusout',[\s\S]*confirmUnitPriceReview/);
-assert.match(appSource, /const priceTab = event\.key === 'Tab' && field === 'unitPrice';/);
-assert.match(appSource, /directionalGridTarget\(rowId, field, event\.shiftKey \? 'ArrowUp' : 'ArrowDown'\)/);
+assert.match(appSource, /const rowTab = event\.key === 'Tab';/);
+assert.match(appSource, /nextRowItemCodeTarget\(rowId, event\.shiftKey\)/,
+  'Tab must move to the item-code cell of the previous or next row');
+assert.match(appSource, /event\.key === 'Enter'[\s\S]*sequentialGridTarget\(rowId, field\)/,
+  'Enter must follow the configured cell input order');
+assert.match(appSource, /\['PRICE', 'COST'\]\.includes\(field\.group\)/,
+  'every price and cost field must render without browser numeric steppers');
+assert.match(appSource, /function masterFieldValue\(product, field\)/,
+  'selected master products must populate fields from the complete master field dictionary');
 assert.match(appSource, /function startNewCatalog\(/);
 assert.match(appSource, /function availableCatalogs\(/);
 assert.match(appSource, /previousPrices: priorPrices/);
@@ -639,6 +677,8 @@ assert.match(appSource, /'ERP업데이트'/);
 assert.match(appSource, /if \(output\.confirmData\.length > 1\)/);
 assert.match(appSource, /MerchOps F8 형식의 견적 Excel/);
 assert.match(appSource, /const records = availableCatalogs\(current\.header\)/);
+assert.match(appSource, /return `\$\{customer\}\(\$\{count\.toLocaleString\('ko-KR'\)\}\)`/,
+  'catalog names must use the compact customer-name(row-count) format');
 assert.doesNotMatch(appSource, /\$\('catalogSelect'\)\.disabled = !current\.header\.customerId/);
 assert.match(appSource, /catalogDraft\.header\.customerId = linkedCustomer\?\.customerId \|\| catalogCustomerId\(record\)/);
 assert.match(appSource, /catalogDraft\.header\.customerName = customerName\(linkedCustomer\) \|\| catalogCustomerName\(record\)/);
