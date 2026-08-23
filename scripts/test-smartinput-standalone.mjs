@@ -600,6 +600,11 @@ assert.match(appSource, /recognizeOcrDocument/);
 assert.match(appSource, /verifiedRowsToParserLines/);
 assert.match(appSource, /function renderPhotoTransform\(\)/);
 assert.match(appSource, /function showPhotoRegion\(region\)/);
+assert.match(appSource, /function renderPhotoRegion\(\)[\s\S]*?marker\.hidden = !region;/,
+  'row focus must update only the photo-region marker');
+const showPhotoRegionSource = appSource.match(/function showPhotoRegion\(region\) \{[\s\S]*?\n\}/)?.[0] || '';
+assert.doesNotMatch(showPhotoRegionSource, /renderSourceSurface|renderPhotoTransform|scrollIntoView/,
+  'row focus must not rerender, resize, or scroll the source photo');
 assert.match(appSource, /sourceImages: \{ order: null, purchase: null, sale: null, estimate: null \}/);
 assert.match(appSource, /intakeSessionId: sourceBatch\?\.intakeSessionId \|\| ''/);
 assert.match(appSource, /photoBasicColumns = new Set\(\['itemCode', 'itemName', 'specification', 'quantity', 'unit', 'unitPrice', 'supplyAmount'\]/);
@@ -631,6 +636,8 @@ assert.match(appSource, /function directionalGridTarget\(rowId, field, key\)/,
   'arrow navigation must move to adjacent visible cells');
 assert.match(appSource, /inputRows\.addEventListener\('focusin',[\s\S]*requestAnimationFrame\([\s\S]*document\.activeElement !== input[\s\S]*input\.select/,
   'focusing a standard-input cell must select its current value so typing replaces it');
+assert.match(appSource, /const editableInput = event\.target\.closest\('\[data-field\], \[data-custom-row-field\]'\);[\s\S]*if \(tr && !editableInput && modeDraft\(\)\.activeMethod === 'photo'\)/,
+  'a grid-input click must not repeat the photo-region update already handled by focus');
 assert.match(appSource, /function revealGridInput\(input\)[\s\S]*visibleBottom = scrollBounds\.bottom - footerHeight[\s\S]*scroll\.scrollTop \+= rowBounds\.bottom - visibleBottom/,
   'the active input row must scroll above the sticky totals row when it reaches the table bottom');
 assert.match(appSource, /input\.select\?\.\(\);\s*revealGridInput\(input\);/,

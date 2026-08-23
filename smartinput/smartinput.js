@@ -646,6 +646,17 @@ function resetPhotoView() {
   state.photoView.ocrOpen = false;
 }
 
+function renderPhotoRegion() {
+  const region = state.photoView.activeRegion;
+  const marker = $('photoRegion');
+  marker.hidden = !region;
+  if (!region) return;
+  marker.style.left = `${region.left * 100}%`;
+  marker.style.top = `${region.top * 100}%`;
+  marker.style.width = `${region.width * 100}%`;
+  marker.style.height = `${region.height * 100}%`;
+}
+
 function renderPhotoTransform() {
   const image = $('photoPreview');
   const viewport = $('photoViewport');
@@ -670,15 +681,7 @@ function renderPhotoTransform() {
   layer.style.height = `${layerHeight}px`;
   layer.style.transform = `translate(-50%, -50%) rotate(${rotation}deg)`;
   $('photoZoomLabel').textContent = state.photoView.zoom === 1 ? '맞춤 100%' : `${Math.round(state.photoView.zoom * 100)}%`;
-  const region = state.photoView.activeRegion;
-  const marker = $('photoRegion');
-  marker.hidden = !region;
-  if (region) {
-    marker.style.left = `${region.left * 100}%`;
-    marker.style.top = `${region.top * 100}%`;
-    marker.style.width = `${region.width * 100}%`;
-    marker.style.height = `${region.height * 100}%`;
-  }
+  renderPhotoRegion();
 }
 
 function renderSourceSurface() {
@@ -735,13 +738,10 @@ function renderSourceSurface() {
 
 function showPhotoRegion(region) {
   state.photoView.activeRegion = region && typeof region === 'object' ? { ...region } : null;
-  renderSourceSurface();
+  renderPhotoRegion();
   $('photoViewerNotice').textContent = state.photoView.activeRegion
     ? '선택한 상품의 원본 위치입니다.'
     : '이 행은 신뢰할 수 있는 사진 좌표가 없어 원본 전체를 표시합니다.';
-  if (state.photoView.activeRegion) {
-    window.requestAnimationFrame(() => $('photoRegion').scrollIntoView({ block: 'center', inline: 'center', behavior: 'smooth' }));
-  }
 }
 
 function rowStatusText(status) {
@@ -3752,7 +3752,8 @@ inputRows.addEventListener('change', event => {
 });
 inputRows.addEventListener('click', event => {
   const tr = event.target.closest('[data-row-id]');
-  if (tr && modeDraft().activeMethod === 'photo') {
+  const editableInput = event.target.closest('[data-field], [data-custom-row-field]');
+  if (tr && !editableInput && modeDraft().activeMethod === 'photo') {
     const row = modeDraft().rows.find(item => item.rowId === tr.dataset.rowId);
     state.draft.ui.selectedRowId = tr.dataset.rowId;
     showPhotoRegion(row?.sourceRegion || null);
