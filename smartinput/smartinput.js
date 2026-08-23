@@ -6,8 +6,7 @@ import {
 import { extractOrderProductLines } from '../orderq/smartparser/order-text-extractor.js?v=0.1.0';
 import { createOrder } from '../orderq/order-intake-engine.js?v=0.15.2';
 import { syncAfterLocalMutation } from '../orderq/orderq-sync-engine.js?v=0.8.0';
-import { STORE, getAll } from '../orderq/orderq-db.js?v=0.12.1';
-import { createLiveCustomer, ensureCustomerMasterReady } from '../orderq/customer-master.js?v=0.12.1';
+import { createLiveCustomer, ensureCustomerMasterReady, listCustomers } from '../orderq/customer-master.js?v=0.12.1';
 import { isSelectableMasterProduct, loadProductCatalog, searchProductCatalog } from '../orderq/product-master-search.js?v=0.8.2';
 import { loadWarehouseCatalog, matchWarehouseInput, warehouseDisplayName } from '../orderq/warehouse-master.js?v=0.8.0';
 import { recognizeOcrDocument, verifiedRowsToParserLines } from './ocr-document-parser.js?v=0.1.1';
@@ -58,7 +57,8 @@ const state = {
   activeActivity: '',
   autoAnalyzeTimer: null,
   analysisRequestId: 0,
-  sourceComposing: false
+  sourceComposing: false,
+  columnResize: null
 };
 
 const ACTIVITY_LABELS = {
@@ -69,6 +69,8 @@ const ACTIVITY_LABELS = {
   photo: '사진 OCR',
   voice: '음성 STT'
 };
+
+const DEFAULT_INPUT_ROW_ID = '__SMARTINPUT_DEFAULT_ROW__';
 
 function esc(value) {
   return String(value ?? '').replace(/[&<>"']/g, character => ({
@@ -266,8 +268,13 @@ function customFieldsFor(scope) {
   return (state.settings.customFields || []).filter(field => field.scope === scope);
 }
 
+function optionalProductFields() {
+  const baseIds = new Set(contract.VOUCHER_COLUMN_DEFINITIONS.map(field => field.id));
+  return contract.PRODUCT_FIELD_DEFINITIONS.filter(field => !baseIds.has(field.id));
+}
+
 function layoutDefinitions(scope, customFields = state.settings.customFields || []) {
-  const builtIn = scope === 'header' ? contract.HEADER_FIELD_DEFINITIONS : contract.VOUCHER_COLUMN_DEFINITIONS;
+  const builtIn = scope === 'header' ? contract.HEADER_FIELD_DEFINITIONS : contract.PRODUCT_FIELD_DEFINITIONS;
   return [
     ...builtIn,
     ...customFields.filter(field => field.scope === scope).map(field => ({ ...field, custom: true, required: false }))
@@ -282,15 +289,33 @@ function renderCustomLayoutFields() {
     label.className = 'field field--custom';
     label.dataset.headerField = field.id;
     label.dataset.customHeaderField = field.id;
-    label.innerHTML = `<span>${esc(field.label)} <em>사용자지정</em></span><input type="text" data-custom-header-input="${esc(field.id)}" value="${esc(modeDraft().header.customValues?.[field.id] || '')}"><small>주문서별 사용자 입력 항목</small>`;
+    const inputType = field.valueType === 'NUMBER' ? 'number' : 'text';
+    const step = inputType === 'number' ? ' step="any"' : '';
+    label.innerHTML = `<span>${esc(field.label)} <em>${field.valueType === 'NUMBER' ? '숫자형' : '문자형'}</em></span><input type="${inputType}"${step} data-custom-header-input="${esc(field.id)}" value="${esc(modeDraft().header.customValues?.[field.id] || '')}"><small>주문서별 사용자 입력 항목</small>`;
     referenceStatus.before(label);
   });
 
   const table = document.querySelector('#tableScroll table');
-  table.querySelectorAll('[data-custom-column]').forEach(element => element.remove());
+  table.querySelectorAll('[data-dynamic-product-column], [data-custom-column]').forEach(element => element.remove());
   const actionCol = table.querySelector('colgroup col[data-column="status"]') || table.querySelector('colgroup col:last-child');
   const actionHead = table.querySelector('thead th[data-column="status"]') || table.querySelector('thead th:last-child');
   const actionFoot = table.querySelector('tfoot td[data-column="status"]') || table.querySelector('tfoot td:last-child');
+  optionalProductFields().forEach(field => {
+    const col = document.createElement('col');
+    col.dataset.column = field.id;
+    col.dataset.dynamicProductColumn = field.id;
+    col.className = 'col-product-extra';
+    actionCol.before(col);
+    const th = document.createElement('th');
+    th.dataset.column = field.id;
+    th.dataset.dynamicProductColumn = field.id;
+    th.textContent = field.label;
+    actionHead.before(th);
+    const td = document.createElement('td');
+    td.dataset.column = field.id;
+    td.dataset.dynamicProductColumn = field.id;
+    actionFoot.before(td);
+  });
   customFieldsFor('voucher').forEach(field => {
     const col = document.createElement('col');
     col.dataset.column = field.id;
@@ -307,6 +332,128 @@ function renderCustomLayoutFields() {
     td.dataset.customColumn = field.id;
     actionFoot.before(td);
   });
+  ensureColumnResizeHandles();
+}
+
+const DEFAULT_COLUMN_WIDTHS = Object.freeze({
+  itemCode: 112, itemName: 190, specification: 100, quantity: 72, unit: 70,
+  unitPrice: 90, supplyAmount: 102, memo: 112, description: 118, noticePrice: 90,
+  secondaryName: 150, searchInfo: 180, boxQuantity: 72, outPrice: 90,
+  wholesaleA: 90, wholesaleB: 90, listingPrice: 90, marketPrice: 90, promoPrice: 90,
+  status: 74
+});
+
+function columnWidth(fieldId) {
+  return Number(state.settings.columnWidths?.[fieldId] || DEFAULT_COLUMN_WIDTHS[fieldId] || 120);
+}
+
+function ensureColumnResizeHandles() {
+  document.querySelectorAll('#tableScroll thead th[data-column]').forEach(th => {
+    th.classList.add('column-resizable');
+    if (th.querySelector('.column-resize-handle')) return;
+    const handle = document.createElement('span');
+    handle.className = 'column-resize-handle';
+    handle.dataset.resizeColumn = th.dataset.column;
+    handle.setAttribute('role', 'separator');
+    handle.setAttribute('tabindex', '0');
+    handle.setAttribute('aria-label', `${th.textContent.trim()} 열 너비 조정`);
+    handle.setAttribute('aria-orientation', 'vertical');
+    th.append(handle);
+  });
+}
+
+function applyColumnWidths() {
+  document.querySelectorAll('#tableScroll col[data-column]').forEach(col => {
+    col.style.width = `${columnWidth(col.dataset.column)}px`;
+  });
+  document.querySelectorAll('#tableScroll .column-resize-handle').forEach(handle => {
+    handle.setAttribute('aria-valuenow', String(columnWidth(handle.dataset.resizeColumn)));
+  });
+}
+
+function updateTableWidth(visibleColumns) {
+  const total = visibleColumns.reduce((sum, fieldId) => sum + columnWidth(fieldId), 34);
+  document.querySelector('#tableScroll table')?.style.setProperty('--table-min-width', `${Math.max(520, total)}px`);
+}
+
+function visibleVoucherColumnIds() {
+  return [...document.querySelectorAll('#tableScroll thead th[data-column]')]
+    .filter(element => !element.classList.contains('is-column-hidden'))
+    .map(element => element.dataset.column);
+}
+
+function setVoucherColumnWidth(fieldId, width) {
+  const nextWidth = Math.max(56, Math.min(480, Math.round(Number(width) || columnWidth(fieldId))));
+  state.settings.columnWidths ||= {};
+  state.settings.columnWidths[fieldId] = nextWidth;
+  const col = document.querySelector(`#tableScroll col[data-column="${CSS.escape(fieldId)}"]`);
+  if (col) col.style.width = `${nextWidth}px`;
+  const handle = document.querySelector(`#tableScroll .column-resize-handle[data-resize-column="${CSS.escape(fieldId)}"]`);
+  handle?.setAttribute('aria-valuenow', String(nextWidth));
+  updateTableWidth(visibleVoucherColumnIds());
+  return nextWidth;
+}
+
+async function persistVoucherColumnWidths() {
+  state.settings = contract.normalizeSettings({
+    ...state.settings,
+    columnWidths: { ...(state.settings.columnWidths || {}) }
+  });
+  try {
+    await saveSettings(state.settings);
+    setSaveState('저장됨', 'saved');
+  } catch (_) {
+    toast('열 너비를 저장하지 못했습니다.', 'error');
+  }
+}
+
+function finishColumnResize(event) {
+  const resize = state.columnResize;
+  if (!resize || (event?.pointerId !== undefined && event.pointerId !== resize.pointerId)) return;
+  try { resize.handle.releasePointerCapture?.(resize.pointerId); } catch (_) {}
+  document.removeEventListener('pointermove', moveColumnResize);
+  document.removeEventListener('pointerup', finishColumnResize);
+  document.removeEventListener('pointercancel', finishColumnResize);
+  window.removeEventListener('blur', finishColumnResize);
+  document.documentElement.classList.remove('smartinput-column-resizing');
+  state.columnResize = null;
+  void persistVoucherColumnWidths();
+}
+
+function moveColumnResize(event) {
+  const resize = state.columnResize;
+  if (!resize || event.pointerId !== resize.pointerId) return;
+  event.preventDefault();
+  setVoucherColumnWidth(resize.fieldId, resize.startWidth + event.clientX - resize.startX);
+}
+
+function beginColumnResize(event) {
+  const handle = event.target.closest('.column-resize-handle');
+  if (!handle || (event.pointerType === 'mouse' && event.button !== 0)) return;
+  event.preventDefault();
+  const fieldId = handle.dataset.resizeColumn;
+  state.columnResize = {
+    fieldId,
+    pointerId: event.pointerId,
+    startX: event.clientX,
+    startWidth: columnWidth(fieldId),
+    handle
+  };
+  try { handle.setPointerCapture?.(event.pointerId); } catch (_) {}
+  document.documentElement.classList.add('smartinput-column-resizing');
+  document.addEventListener('pointermove', moveColumnResize, { passive: false });
+  document.addEventListener('pointerup', finishColumnResize);
+  document.addEventListener('pointercancel', finishColumnResize);
+  window.addEventListener('blur', finishColumnResize);
+}
+
+function resizeColumnWithKeyboard(event) {
+  const handle = event.target.closest('.column-resize-handle');
+  if (!handle || !['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
+  event.preventDefault();
+  const direction = event.key === 'ArrowRight' ? 1 : -1;
+  setVoucherColumnWidth(handle.dataset.resizeColumn, columnWidth(handle.dataset.resizeColumn) + direction * (event.shiftKey ? 24 : 8));
+  void persistVoucherColumnWidths();
 }
 
 function applyFormLayout() {
@@ -326,11 +473,11 @@ function applyFormLayout() {
   });
   const visibleColumns = [...document.querySelectorAll('thead th[data-column]')]
     .filter(element => !element.classList.contains('is-column-hidden')).length;
-  const table = document.querySelector('#tableScroll table');
-  const tableWidth = photoActive && !state.photoView.detailColumns
-    ? 600
-    : Math.max(520, visibleColumns * 92 + 34);
-  table?.style.setProperty('--table-min-width', `${tableWidth}px`);
+  const visibleColumnIds = [...document.querySelectorAll('thead th[data-column]')]
+    .filter(element => !element.classList.contains('is-column-hidden'))
+    .map(element => element.dataset.column);
+  applyColumnWidths();
+  updateTableWidth(visibleColumnIds);
   inputRows.querySelector('.empty-row td')?.setAttribute('colspan', String(visibleColumns + 1));
   $('detailColumnsButton').hidden = !photoActive;
   $('detailColumnsButton').textContent = state.photoView.detailColumns ? '기본 열' : '상세 열';
@@ -439,6 +586,8 @@ function showPhotoRegion(region) {
 }
 
 function rowStatusText(status) {
+  if (status === 'EMPTY') return '입력 대기';
+  if (status === 'ANALYZING') return '분석 중';
   if (status === 'MATCHED') return '일치';
   if (status === 'SIMILAR') return '확인';
   return '미인식';
@@ -473,6 +622,20 @@ function customerCode(customer) {
   return String(customer?.customerCode || customer?.erpCustomerCode || '').trim();
 }
 
+function customerIdentityLabel(customer) {
+  return customerCode(customer)
+    || String(customer?.businessNumber || '').trim()
+    || (temporaryMeta(customer?.customerId) ? '임시 배송처' : '코드 미등록');
+}
+
+function customerLocationKey(customer) {
+  return normalizedKey([
+    customer?.address,
+    customer?.addressDetail,
+    customer?.phone || customer?.contactPhone || customer?.mobile
+  ].filter(Boolean).join('|'));
+}
+
 function normalizedKey(value) {
   return String(value ?? '').normalize('NFKC').toLowerCase().replace(/[\s()[\]{}<>,.:;·_-]+/g, '');
 }
@@ -497,6 +660,36 @@ function aliasContextKey(sourceType = '') {
 
 function temporaryMeta(customerId) {
   return state.temporaryCustomers.find(item => item.customerId === customerId && item.status !== 'INACTIVE') || null;
+}
+
+function normalizedCustomerCandidates(customers = []) {
+  const uniqueById = new Map();
+  customers.forEach(customer => {
+    const customerId = String(customer?.customerId || '').trim();
+    if (!customerId || !customerName(customer)) return;
+    if ((customer.status || 'ACTIVE') !== 'ACTIVE' || customer.qualityStatus === 'SUPERSEDED') return;
+    const previous = uniqueById.get(customerId);
+    if (!previous || (!customerCode(previous) && customerCode(customer))) uniqueById.set(customerId, customer);
+  });
+  const active = [...uniqueById.values()];
+  const identifiedByName = new Map();
+  active.filter(customer => customerCode(customer) || String(customer.businessNumber || '').trim() || temporaryMeta(customer.customerId))
+    .forEach(customer => {
+      const nameKey = normalizedKey(customerName(customer));
+      if (!nameKey) return;
+      const locations = identifiedByName.get(nameKey) || new Set();
+      const locationKey = customerLocationKey(customer);
+      if (locationKey) locations.add(locationKey);
+      identifiedByName.set(nameKey, locations);
+    });
+  return active.filter(customer => {
+    if (customerCode(customer) || String(customer.businessNumber || '').trim() || temporaryMeta(customer.customerId)) return true;
+    const identifiedLocations = identifiedByName.get(normalizedKey(customerName(customer)));
+    if (!identifiedLocations) return true;
+    const locationKey = customerLocationKey(customer);
+    if (!locationKey) return false;
+    return !identifiedLocations.has(locationKey);
+  });
 }
 
 function groupForCustomer(customerId) {
@@ -653,12 +846,18 @@ function currentSourceType() {
 }
 
 async function refreshCustomers({ syncIfEmpty = true } = {}) {
-  let customers = (await withTimeout(getAll(STORE.CUSTOMERS), 3500, '로컬 거래처 목록을 불러오는 데 시간이 걸리고 있습니다.'))
-    .filter(customer => (customer.status || 'ACTIVE') === 'ACTIVE');
+  let customers = normalizedCustomerCandidates(await withTimeout(
+    listCustomers({ includeInactive: false }),
+    3500,
+    '로컬 거래처 목록을 불러오는 데 시간이 걸리고 있습니다.'
+  ));
   if (!customers.length && syncIfEmpty) {
     await withTimeout(ensureCustomerMasterReady(), 7000, '거래처 마스터 동기화가 지연되고 있습니다.');
-    customers = (await withTimeout(getAll(STORE.CUSTOMERS), 3500, '동기화된 거래처 목록을 불러오지 못했습니다.'))
-      .filter(customer => (customer.status || 'ACTIVE') === 'ACTIVE');
+    customers = normalizedCustomerCandidates(await withTimeout(
+      listCustomers({ includeInactive: false }),
+      3500,
+      '동기화된 거래처 목록을 불러오지 못했습니다.'
+    ));
   }
   if (customers.length) state.customers = customers;
   return state.customers;
@@ -788,7 +987,7 @@ async function chooseCustomer() {
       };
       const render = () => {
         const query = input.value.trim();
-        visibleCustomers = [...state.customers]
+        visibleCustomers = normalizedCustomerCandidates(state.customers)
           .filter(customerItem => !query || normalizedKey(customerSearchText(customerItem)).includes(normalizedKey(query)))
             .sort((left, right) => customerName(left).localeCompare(customerName(right), 'ko'))
             .slice(0, 80);
@@ -798,7 +997,7 @@ async function chooseCustomer() {
           const isTemporary = Boolean(temporaryMeta(customerItem.customerId));
           return `<article class="smart-customer-row ${selected.has(customerItem.customerId) ? 'is-selected' : ''}" data-customer-id="${esc(customerItem.customerId)}">
             <label class="smart-customer-check"><input type="checkbox" ${selected.has(customerItem.customerId) ? 'checked' : ''}><span class="sr-only">${esc(customerName(customerItem))} 선택</span></label>
-            <div class="smart-customer-select"><strong>${esc(customerName(customerItem))}</strong><span>${esc(customerCode(customerItem) || customerItem.businessNumber || '')}</span><small>${esc(customerItem.address || temporaryMeta(customerItem.customerId)?.warehouseName || '')}</small></div>
+            <div class="smart-customer-select"><strong>${esc(customerName(customerItem))}</strong><span>${esc(customerIdentityLabel(customerItem))}</span><small>${esc(customerItem.address || temporaryMeta(customerItem.customerId)?.warehouseName || '')}</small></div>
             <div class="smart-customer-badges">${isTemporary ? '<span class="is-temp">임시 배송처</span>' : ''}${group ? `<span>연결 ${group.memberCustomerIds.length}</span>` : ''}${isTax ? '<span class="is-tax">세무</span>' : ''}</div>
           </article>`;
         }).join('') || '<div class="smart-dialog__empty">일치하는 거래처가 없습니다.</div>';
@@ -950,18 +1149,18 @@ function selectedWeekdays(form, name) {
 
 function layoutChecks(name, definitions, selected = []) {
   const selectedSet = new Set(selected);
-  return definitions.map(field => `<label class="layout-check"><input type="checkbox" name="${name}" value="${esc(field.id)}" ${selectedSet.has(field.id) || field.required ? 'checked' : ''} ${field.required ? 'disabled' : ''}><span>${esc(field.label)}</span>${field.required ? '<small>필수</small>' : (field.custom ? `<small>${esc(field.category === 'CUSTOM' ? '사용자지정' : field.category)}</small><button type="button" data-remove-custom-field="${esc(field.id)}" aria-label="${esc(field.label)} 삭제">×</button>` : '')}</label>`).join('');
+  return definitions.map(field => `<label class="layout-check"><input type="checkbox" name="${name}" value="${esc(field.id)}" ${selectedSet.has(field.id) || field.required ? 'checked' : ''} ${field.required ? 'disabled' : ''}><span>${esc(field.label)}</span>${field.required ? '<small>필수</small>' : (field.custom ? `<small>${field.valueType === 'NUMBER' ? '숫자형' : '문자형'}</small><button type="button" data-remove-custom-field="${esc(field.id)}" aria-label="${esc(field.label)} 삭제">×</button>` : '')}</label>`).join('');
 }
 
 function selectedLayoutFields(form, name) {
   return [...form.querySelectorAll(`input[name="${name}"]:checked`)].map(input => input.value);
 }
 
-function openLayoutFieldDialog(scope, onAdd) {
+function openLayoutFieldDialog(scope, customFields, onAdd) {
   const isHeader = scope === 'header';
   const fieldDialog = document.createElement('dialog');
   fieldDialog.className = 'smart-dialog smart-field-dialog';
-  const definitions = isHeader ? contract.HEADER_FIELD_DEFINITIONS : contract.VOUCHER_COLUMN_DEFINITIONS;
+  const definitions = isHeader ? contract.HEADER_FIELD_DEFINITIONS : contract.PRODUCT_FIELD_DEFINITIONS;
   const categoryDefinitions = isHeader
     ? {
         CUSTOMER: definitions.filter(field => ['customer', 'taxCustomer'].includes(field.id)),
@@ -973,6 +1172,7 @@ function openLayoutFieldDialog(scope, onAdd) {
     <div class="smart-form">
       <label><span>항목 분류</span><select name="category">${isHeader ? '<option value="CUSTOMER">거래처정보</option><option value="ORDER">주문정보</option>' : '<option value="PRODUCT">상품정보</option>'}<option value="CUSTOM">사용자지정</option></select></label>
       <label data-library-field><span>추가할 항목</span><select name="libraryField"></select></label>
+      <label data-custom-type hidden><span>사용자지정 형식</span><select name="customType"><option value="TEXT">문자형 · 최대 10개</option><option value="NUMBER">숫자형 · 최대 10개</option></select></label>
       <label data-custom-label hidden><span>사용자지정 항목명</span><input name="customLabel" maxlength="30" placeholder="예: 배송 요청사항"></label>
     </div>
     <p class="smart-dialog__message">기존 정보 항목을 다시 표시하거나 새 사용자지정 항목을 만들 수 있습니다.</p>
@@ -984,6 +1184,7 @@ function openLayoutFieldDialog(scope, onAdd) {
   const syncCategory = () => {
     const custom = form.elements.category.value === 'CUSTOM';
     fieldDialog.querySelector('[data-library-field]').hidden = custom;
+    fieldDialog.querySelector('[data-custom-type]').hidden = !custom;
     fieldDialog.querySelector('[data-custom-label]').hidden = !custom;
     if (!custom) {
       form.elements.libraryField.innerHTML = (categoryDefinitions[form.elements.category.value] || [])
@@ -1006,12 +1207,19 @@ function openLayoutFieldDialog(scope, onAdd) {
       form.elements.customLabel.focus();
       return;
     }
+    const valueType = form.elements.customType.value === 'NUMBER' ? 'NUMBER' : 'TEXT';
+    const used = customFields.filter(field => field.category === 'CUSTOM' && (field.valueType === 'NUMBER' ? 'NUMBER' : 'TEXT') === valueType).length;
+    if (used >= 10) {
+      fieldDialog.querySelector('.smart-dialog__message').textContent = `${valueType === 'NUMBER' ? '숫자형' : '문자형'} 사용자지정 항목은 최대 10개까지 만들 수 있습니다.`;
+      return;
+    }
     onAdd({
-      id: `custom-${scope}-${Date.now().toString(36)}-${Math.floor(Math.random() * 0xffff).toString(36)}`,
+      id: `custom-${valueType.toLowerCase()}-${Date.now().toString(36)}-${Math.floor(Math.random() * 0xffff).toString(36)}`,
       label,
       scope,
       category: 'CUSTOM',
-      sourceField: ''
+      sourceField: '',
+      valueType
     });
     finish();
   });
@@ -1072,7 +1280,7 @@ async function openSettingsDialog() {
   renderLayoutGroup('voucher', state.settings.voucherColumns);
   dialog.querySelectorAll('[data-add-layout-field]').forEach(button => button.addEventListener('click', () => {
     const scope = button.dataset.addLayoutField;
-    openLayoutFieldDialog(scope, field => {
+    openLayoutFieldDialog(scope, workingCustomFields, field => {
       const name = scope === 'header' ? 'headerFields' : 'voucherColumns';
       const selected = selectedLayoutFields(form, name);
       if (!field.builtIn) workingCustomFields.push(field);
@@ -1136,7 +1344,8 @@ async function openSettingsDialog() {
       holidayDates,
       headerFields: selectedLayoutFields(form, 'headerFields'),
       voucherColumns: selectedLayoutFields(form, 'voucherColumns'),
-      customFields: workingCustomFields
+      customFields: workingCustomFields,
+      columnWidths: { ...(state.settings.columnWidths || {}) }
     });
     if (holidayDates.some(date => !/^\d{4}-\d{2}-\d{2}$/.test(date))) {
       message.textContent = '지정 휴무일은 YYYY-MM-DD 형식으로 입력하세요.';
@@ -1312,22 +1521,26 @@ function hydrateHeader() {
 
 function renderRows({ restoreFocus = true } = {}) {
   const rows = modeDraft().rows;
-  if (!rows.length) {
-    const photoAnalyzing = state.busy && modeDraft().activeMethod === 'photo';
-    inputRows.innerHTML = `<tr class="empty-row${photoAnalyzing ? ' is-analyzing' : ''}"><td colspan="12"><strong>${photoAnalyzing ? '사진에서 상품 정보를 분석하고 있습니다.' : '아직 입력된 상품이 없습니다.'}</strong><span>${photoAnalyzing ? '분석 중에도 빈 행 추가로 직접 입력할 수 있습니다.' : '원문을 분석하거나 빈 행을 추가해 시작하세요.'}</span></td></tr>`;
-    updateSummaries();
-    applyFormLayout();
-    renderSourceAnalysis();
-    state.photoView.activeRegion = null;
-    renderSourceSurface();
-    return;
-  }
-  inputRows.innerHTML = rows.map(row => {
+  const defaultRow = {
+    rowId: DEFAULT_INPUT_ROW_ID,
+    itemCode: '', itemName: '', secondaryName: '', searchInfo: '', specification: '', boxQuantity: '',
+    quantity: '', unit: '', unitPrice: '', outPrice: '', wholesaleA: '', wholesaleB: '', listingPrice: '',
+    marketPrice: '', promoPrice: '', memo: '', description: '', noticePrice: '', customValues: {}, duplicatePossible: false,
+    matchStatus: state.busy && modeDraft().activeMethod === 'photo' ? 'ANALYZING' : 'EMPTY'
+  };
+  const displayedRows = rows.length ? rows : [defaultRow];
+  inputRows.innerHTML = displayedRows.map(row => {
+    const isDefault = row.rowId === DEFAULT_INPUT_ROW_ID;
     const amount = Number(row.quantity || 0) * Number(row.unitPrice || 0);
+    const productCells = optionalProductFields().map(field => {
+      const inputType = field.valueType === 'NUMBER' ? 'number' : 'text';
+      const step = inputType === 'number' ? ' step="any"' : '';
+      return `<td data-column="${esc(field.id)}"><input data-field="${esc(field.id)}" type="${inputType}"${step} value="${esc(row[field.id] ?? '')}" aria-label="${esc(field.label)}"></td>`;
+    }).join('');
     const customCells = customFieldsFor('voucher').map(field => (
-      `<td data-column="${esc(field.id)}"><input data-custom-row-field="${esc(field.id)}" value="${esc(row.customValues?.[field.id] || '')}" aria-label="${esc(field.label)}"></td>`
+      `<td data-column="${esc(field.id)}"><input data-custom-row-field="${esc(field.id)}" type="${field.valueType === 'NUMBER' ? 'number' : 'text'}"${field.valueType === 'NUMBER' ? ' step="any"' : ''} value="${esc(row.customValues?.[field.id] || '')}" aria-label="${esc(field.label)}"></td>`
     )).join('');
-    return `<tr data-row-id="${esc(row.rowId)}" data-status="${esc(row.matchStatus)}" class="${row.duplicatePossible ? 'is-duplicate' : ''}">
+    return `<tr data-row-id="${esc(row.rowId)}" ${isDefault ? 'data-default-row="true"' : ''} data-status="${esc(row.matchStatus)}" class="${row.duplicatePossible ? 'is-duplicate' : ''}">
       <td data-column="itemCode"><input data-field="itemCode" type="search" enterkeyhint="search" value="${esc(row.itemCode)}" aria-label="품목코드" title="입력 후 Enter로 상품 검색"></td>
       <td data-column="itemName"><input data-field="itemName" type="search" enterkeyhint="search" value="${esc(row.itemName)}" aria-label="품목명" title="입력 후 Enter로 상품 검색"></td>
       <td data-column="specification"><input data-field="specification" value="${esc(row.specification)}" aria-label="규격"></td>
@@ -1338,9 +1551,10 @@ function renderRows({ restoreFocus = true } = {}) {
       <td data-column="memo"><input data-field="memo" value="${esc(row.memo)}" aria-label="메모"></td>
       <td data-column="description"><input data-field="description" value="${esc(row.description)}" aria-label="적요(직원)"></td>
       <td data-column="noticePrice"><input data-field="noticePrice" type="number" step="any" value="${esc(row.noticePrice ?? 0)}" aria-label="공지단가"></td>
+      ${productCells}
       ${customCells}
       <td data-column="status"><div class="row-status"><span>${rowStatusText(row.matchStatus)}</span></div></td>
-      <td><button type="button" class="row-remove" data-remove-row="${esc(row.rowId)}" aria-label="행 삭제">×</button></td>
+      <td><button type="button" class="row-remove" data-remove-row="${isDefault ? '' : esc(row.rowId)}" aria-label="행 삭제" ${isDefault ? 'disabled tabindex="-1"' : ''}>×</button></td>
     </tr>`;
   }).join('');
   updateSummaries();
@@ -1455,7 +1669,7 @@ function scheduleAutoAnalysis(delay = 320) {
   state.autoAnalyzeTimer = window.setTimeout(() => analyzeSource({ automatic: true }), delay);
 }
 
-function addDirectRow() {
+function appendDirectRow() {
   const current = modeDraft();
   const batch = contract.createBatch({
     sequence: current.batches.length + 1,
@@ -1465,6 +1679,32 @@ function addDirectRow() {
   });
   current.batches.push(batch);
   current.rows = contract.applyParserResults(current.rows, batch, [{ rawText: '', itemName: '', quantity: null }]);
+  return current.rows[current.rows.length - 1];
+}
+
+function materializeDefaultRow(tr) {
+  if (!tr || tr.dataset.defaultRow !== 'true') return modeDraft().rows.find(row => row.rowId === tr?.dataset.rowId) || null;
+  const row = appendDirectRow();
+  tr.dataset.rowId = row.rowId;
+  tr.dataset.status = row.matchStatus;
+  delete tr.dataset.defaultRow;
+  const status = tr.querySelector('.row-status span');
+  if (status) status.textContent = rowStatusText(row.matchStatus);
+  const remove = tr.querySelector('[data-remove-row]');
+  if (remove) {
+    remove.dataset.removeRow = row.rowId;
+    remove.disabled = false;
+    remove.removeAttribute('tabindex');
+  }
+  modeUi().activeCellId = `${row.rowId}|${document.activeElement?.dataset?.field || 'itemCode'}`;
+  state.draft.ui.selectedRowId = row.rowId;
+  updateSummaries();
+  scheduleSave();
+  return row;
+}
+
+function addDirectRow() {
+  appendDirectRow();
   renderRows();
   saveDraftNow();
   const last = inputRows.querySelector('tr:last-child input[data-field="itemCode"]');
@@ -1914,9 +2154,16 @@ function applyProduct(row, product, { forceIdentityFields = false, preserveIdent
   row.productId = row.masterProductId ? product.productId || '' : '';
   if (!preserveIdentity('itemCode')) row.itemCode = product.itemCode || '';
   if (!preserveIdentity('itemName')) row.itemName = product.itemName || '';
+  if (!protect('secondaryName')) row.secondaryName = product.secondaryName || '';
+  if (!protect('searchInfo')) row.searchInfo = product.searchInfo || '';
   if (!protect('specification')) row.specification = product.specification || '';
+  if (!protect('boxQuantity')) row.boxQuantity = product.boxQuantity;
   if (!protect('unit')) row.unit = product.finalUnit || product.unit || '';
   if (!protect('unitPrice') && row.unitPrice == null) row.unitPrice = priceFromProduct(product);
+  const priceOptions = new Map((product.priceOptions || []).map(option => [option.key, option.value]));
+  ['outPrice', 'wholesaleA', 'wholesaleB', 'listingPrice', 'marketPrice', 'promoPrice'].forEach(field => {
+    if (!protect(field)) row[field] = priceOptions.get(field) ?? product[field] ?? null;
+  });
   row.matchStatus = hasMasterProductIdentity(row) ? 'MATCHED' : 'UNRESOLVED';
   row.reviewStatus = row.matchStatus === 'MATCHED' ? 'CONFIRMED' : 'PENDING';
   row.productIdentityStatus = row.matchStatus === 'MATCHED' ? 'MASTER_LINKED' : 'UNRESOLVED';
@@ -1959,11 +2206,12 @@ function tryMatchRow(row, changedField = '') {
   row.productIdentityStatus = 'UNRESOLVED';
   const exact = exactProduct(query);
   let openCandidates = false;
+  let matched = false;
   if (exact) {
-    applyProduct(row, exact, { preserveIdentityField: changedField });
+    matched = applyProduct(row, exact, { forceIdentityFields: true });
   } else if (query) {
     row.candidateProducts = searchProductCatalog(query, commonMasterProducts(), 5);
-    if (row.candidateProducts.length === 1) applyProduct(row, row.candidateProducts[0], { preserveIdentityField: changedField });
+    if (row.candidateProducts.length === 1) matched = applyProduct(row, row.candidateProducts[0], { forceIdentityFields: true });
     else {
       row.matchStatus = row.candidateProducts.length ? 'SIMILAR' : 'UNRESOLVED';
       openCandidates = row.candidateProducts.length > 1;
@@ -1973,7 +2221,8 @@ function tryMatchRow(row, changedField = '') {
     row.matchStatus = 'UNRESOLVED';
   }
   modeDraft().rows = contract.markDuplicatePossibilities(modeDraft().rows);
-  if (openCandidates) modeUi().activeCellId = '';
+  if (matched) modeUi().activeCellId = `${row.rowId}|quantity`;
+  else if (openCandidates) modeUi().activeCellId = '';
   renderRows({ restoreFocus: !openCandidates });
   saveDraftNow();
   if (openCandidates) openProductDialog(row, { query });
@@ -2018,6 +2267,7 @@ function openProductDialog(row, { query = '' } = {}) {
         return;
       }
       modeDraft().rows = contract.markDuplicatePossibilities(modeDraft().rows);
+      modeUi().activeCellId = `${row.rowId}|quantity`;
       renderRows();
       saveDraftNow();
     }
@@ -2195,7 +2445,8 @@ async function completeOrder() {
       formLayoutSnapshot: {
         customFields: (state.settings.customFields || []).map(field => ({ ...field })),
         headerFields: [...state.settings.headerFields],
-        voucherColumns: [...state.settings.voucherColumns]
+        voucherColumns: [...state.settings.voucherColumns],
+        columnWidths: { ...(state.settings.columnWidths || {}) }
       },
       sourceType: 'SMART_INPUT',
       sourceId: current.batches[0]?.batchId || state.draft.draftId,
@@ -2315,12 +2566,12 @@ async function hydrateReferences() {
   $('referenceStatus').dataset.status = 'LOADING';
   $('referenceStatus').querySelector('strong').textContent = '상품·거래처·배송 설정을 불러오고 있습니다.';
   const results = await Promise.allSettled([
-    withTimeout(getAll(STORE.CUSTOMERS), 5000, '거래처 기준자료 로딩 시간 초과'),
+    withTimeout(listCustomers({ includeInactive: false }), 5000, '거래처 기준자료 로딩 시간 초과'),
     withTimeout(loadProductCatalog(), 7000, '상품 기준자료 로딩 시간 초과'),
     withTimeout(loadWarehouseCatalog(), 5000, '창고 기준자료 로딩 시간 초과'),
     withTimeout(loadSmartInputData(), 5000, '스마트입력 설정 로딩 시간 초과')
   ]);
-  if (results[0].status === 'fulfilled') state.customers = results[0].value.filter(customer => (customer.status || 'ACTIVE') === 'ACTIVE');
+  const loadedCustomers = results[0].status === 'fulfilled' ? results[0].value : [];
   if (results[1].status === 'fulfilled') {
     state.products = results[1].value.products;
     state.catalogSummary = results[1].value;
@@ -2341,6 +2592,7 @@ async function hydrateReferences() {
     state.estimates = results[3].value.estimates || [];
     state.smartDataReady = true;
   }
+  state.customers = normalizedCustomerCandidates(loadedCustomers);
   $('referenceStatus').dataset.status = state.catalogStatus;
   $('referenceStatus').querySelector('strong').textContent = state.catalogStatus === 'READY'
     ? `상품 준비 · 공통 ${Number(state.catalogSummary.commonCount || 0).toLocaleString('ko-KR')}건 · ORDER Q ${Number(state.catalogSummary.orderQCount || 0).toLocaleString('ko-KR')}건 · 거래처 ${state.customers.length.toLocaleString('ko-KR')}건`
@@ -2499,6 +2751,9 @@ $('relatedCollapseButton').addEventListener('click', event => {
   scheduleSave();
 });
 
+document.querySelector('#tableScroll thead').addEventListener('pointerdown', beginColumnResize);
+document.querySelector('#tableScroll thead').addEventListener('keydown', resizeColumnWithKeyboard);
+
 document.querySelector('.document-fields').addEventListener('input', event => {
   const input = event.target.closest('[data-custom-header-input]');
   if (!input) return;
@@ -2508,6 +2763,8 @@ document.querySelector('.document-fields').addEventListener('input', event => {
 });
 
 inputRows.addEventListener('input', event => {
+  const targetRow = event.target.closest('[data-row-id]');
+  if (targetRow?.dataset.defaultRow === 'true') materializeDefaultRow(targetRow);
   const customInput = event.target.closest('[data-custom-row-field]');
   if (customInput) {
     const customRow = event.target.closest('[data-row-id]');
@@ -2527,6 +2784,8 @@ inputRows.addEventListener('input', event => {
   const row = contract.markProductEdit(modeDraft().rows[index], field, input.value);
   if (field === 'itemCode' || field === 'itemName') {
     tr.dataset.status = 'SIMILAR';
+    const status = tr.querySelector('.row-status span');
+    if (status) status.textContent = rowStatusText('SIMILAR');
   }
   modeDraft().rows[index] = row;
   if (field === 'quantity' || field === 'unitPrice') {
@@ -2538,12 +2797,25 @@ inputRows.addEventListener('input', event => {
   scheduleSave();
 });
 inputRows.addEventListener('keydown', event => {
-  const input = event.target.closest('[data-field="itemCode"], [data-field="itemName"]');
+  const input = event.target.closest('[data-field]');
   const tr = event.target.closest('[data-row-id]');
   if (!input || !tr || event.key !== 'Enter' || event.isComposing) return;
+  if (tr.dataset.defaultRow === 'true' && input.value) materializeDefaultRow(tr);
+  const field = input.dataset.field;
+  if (field === 'quantity') {
+    event.preventDefault();
+    tr.querySelector('[data-field="unitPrice"]')?.focus();
+    return;
+  }
+  if (field === 'unitPrice') {
+    event.preventDefault();
+    addDirectRow();
+    return;
+  }
+  if (!['itemCode', 'itemName'].includes(field)) return;
   event.preventDefault();
   const row = modeDraft().rows.find(item => item.rowId === tr.dataset.rowId);
-  if (row) tryMatchRow(row, input.dataset.field);
+  if (row) tryMatchRow(row, field);
 });
 inputRows.addEventListener('focusin', event => {
   const input = event.target.closest('[data-field]');
