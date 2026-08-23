@@ -57,6 +57,15 @@ export function productCategoryCode(itemCode) {
   return String(itemCode || '').trim().slice(0, 6);
 }
 
+export function isSelectableMasterProduct(product = {}) {
+  return String(product.source || '').trim() === 'COMMON_MASTER'
+    && String(product.masterProductId || '').trim() !== ''
+    && String(product.productId || '').trim() !== ''
+    && String(product.itemCode || '').trim() !== ''
+    && String(product.itemName || '').trim() !== ''
+    && String(product.status || 'ACTIVE').trim().toUpperCase() !== 'INACTIVE';
+}
+
 export function normalizeMasterProduct(raw = {}, fallbackCode = '', source = 'COMMON_MASTER', primaryKey = '') {
   const itemCode = firstValue(raw, ['itemCode', 'productCode', '코드', '품목코드', '상품코드'], fallbackCode);
   const itemName = firstValue(raw, ['itemName', 'productName', '품목명', '상품명', '제품명', '품명']);
