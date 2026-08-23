@@ -43,6 +43,7 @@ const state = {
   pendingImageEvidence: null,
   pendingSourceName: '',
   saveTimer: null,
+  draftDirty: false,
   toastTimer: null,
   recognition: null,
   listening: false,
@@ -76,16 +77,33 @@ function loadDraft() {
 function loadDraftList() {
   try {
     const rows = JSON.parse(localStorage.getItem(contract.DRAFT_LIST_STORAGE_KEY) || '[]');
-    return Array.isArray(rows) ? rows : [];
+    return Array.isArray(rows) ? rows.filter(hasMeaningfulDraftContent) : [];
   } catch (_) {
     return [];
   }
+}
+
+function hasMeaningfulDraftContent(draft) {
+  const header = draft?.header || {};
+  return Boolean(
+    String(draft?.sourceText || '').trim()
+    || Number(draft?.rows?.length || 0)
+    || Number(draft?.batches?.length || 0)
+    || String(header.customerId || header.customerName || '').trim()
+    || String(header.taxCustomerId || header.taxCustomerName || '').trim()
+    || String(header.warehouseId || header.warehouseName || '').trim()
+  );
 }
 
 function saveModeDraftSnapshot() {
   const current = modeDraft();
   if (!current?.documentId) return;
   const previous = loadDraftList();
+  if (!hasMeaningfulDraftContent(current)) {
+    const next = previous.filter(item => item.documentId !== current.documentId);
+    if (next.length !== previous.length) localStorage.setItem(contract.DRAFT_LIST_STORAGE_KEY, JSON.stringify(next));
+    return;
+  }
   const snapshot = JSON.parse(JSON.stringify({ ...current, mode: state.draft.activeMode, parentDraftId: state.draft.draftId }));
   const next = [snapshot, ...previous.filter(item => item.documentId !== current.documentId)]
     .sort((left, right) => String(right.updatedAt || '').localeCompare(String(left.updatedAt || '')))
@@ -117,6 +135,12 @@ function toast(message, tone = 'normal') {
   state.toastTimer = window.setTimeout(() => { element.hidden = true; }, 3800);
 }
 
+function setSaveState(message = '', stateName = 'idle') {
+  const element = $('saveState');
+  element.textContent = message;
+  element.dataset.state = stateName;
+}
+
 function saveDraftNow() {
   clearTimeout(state.saveTimer);
   state.draft.updatedAt = new Date().toISOString();
@@ -124,15 +148,17 @@ function saveDraftNow() {
   try {
     localStorage.setItem(contract.DRAFT_STORAGE_KEY, JSON.stringify(state.draft));
     saveModeDraftSnapshot();
-    $('saveState').textContent = '초안 저장됨';
+    state.draftDirty = false;
+    setSaveState('저장됨', 'saved');
   } catch (_) {
-    $('saveState').textContent = '초안 저장 실패';
+    setSaveState('저장 실패', 'error');
     setAppStatus('초안을 저장하지 못했습니다. 입력 내용은 현재 화면에 유지됩니다.', 'warn');
   }
 }
 
 function scheduleSave() {
-  $('saveState').textContent = '저장 중…';
+  state.draftDirty = true;
+  setSaveState('저장 중…', 'saving');
   clearTimeout(state.saveTimer);
   state.saveTimer = window.setTimeout(saveDraftNow, 160);
 }
@@ -147,16 +173,15 @@ function appendDeliveryHistory(record) {
 }
 
 function resizeSource() {
-  sourceTextInput.style.height = 'auto';
-  sourceTextInput.style.height = `${Math.min(300, Math.max(84, sourceTextInput.scrollHeight))}px`;
   $('sourceLength').textContent = `${sourceTextInput.value.length.toLocaleString('ko-KR')}자`;
 }
 
-function updateMethod(method) {
+function updateMethod(method, { persist = true } = {}) {
   const selected = contract.INPUT_METHODS.find(item => item.id === method) || contract.INPUT_METHODS[2];
+  const changed = modeDraft().activeMethod !== selected.id;
   modeDraft().activeMethod = selected.id;
   methodButtons.forEach(button => button.classList.toggle('is-active', button.dataset.method === selected.id));
-  scheduleSave();
+  if (persist && changed) scheduleSave();
   return selected;
 }
 
@@ -878,7 +903,7 @@ function renderMode() {
   $('relatedEmpty').hidden = selected.id === 'order';
   hydrateHeader();
   sourceTextInput.value = modeDraft().sourceText;
-  updateMethod(modeDraft().activeMethod);
+  updateMethod(modeDraft().activeMethod, { persist: false });
   renderRows();
   renderDelivery();
   resizeSource();
@@ -1641,7 +1666,6 @@ inputRows.addEventListener('focusin', event => {
   if (!input || !tr) return;
   modeUi().activeCellId = `${tr.dataset.rowId}|${input.dataset.field}`;
   state.draft.ui.selectedRowId = tr.dataset.rowId;
-  scheduleSave();
 });
 inputRows.addEventListener('change', event => {
   const input = event.target.closest('[data-field]');
@@ -1692,9 +1716,10 @@ document.addEventListener('keydown', event => {
 $('tableScroll').addEventListener('scroll', event => {
   modeUi().scrollTop = event.currentTarget.scrollTop;
   modeUi().scrollLeft = event.currentTarget.scrollLeft;
-  scheduleSave();
 }, { passive: true });
 
-window.addEventListener('pagehide', saveDraftNow);
+window.addEventListener('pagehide', () => {
+  if (state.draftDirty) saveDraftNow();
+});
 renderMode();
 hydrateReferences();
