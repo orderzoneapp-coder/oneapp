@@ -22,7 +22,7 @@
     Object.freeze({ id: 'voice', label: '음성 STT', sourceType: 'VOICE_STT' })
   ]);
   const STAGES = Object.freeze(['capture', 'extract', 'match', 'review', 'complete']);
-  const ROW_FIELDS = Object.freeze(['itemCode', 'itemName', 'specification', 'quantity', 'unit', 'unitPrice', 'memo']);
+  const ROW_FIELDS = Object.freeze(['itemCode', 'itemName', 'specification', 'quantity', 'unit', 'unitPrice', 'memo', 'description', 'noticePrice']);
   const DEFAULT_SETTINGS = Object.freeze({
     orderCutoffTime: '',
     allowSameDayDelivery: true,
@@ -270,6 +270,8 @@
       unit: text(input.unit || input.finalUnit || input.rawUnit),
       unitPrice: numberOrNull(input.unitPrice ?? input.price),
       memo: text(input.memo),
+      description: text(input.description),
+      noticePrice: numberOrNull(input.noticePrice) ?? 0,
       matchStatus: ['MATCHED', 'SIMILAR', 'UNRESOLVED'].includes(matchStatus) ? matchStatus : 'UNRESOLVED',
       candidateProducts,
       editedFields: input.editedFields && typeof input.editedFields === 'object' ? { ...input.editedFields } : {},
