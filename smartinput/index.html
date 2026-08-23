@@ -8,7 +8,7 @@
   <meta name="description" content="주문서·구매·판매 자료를 분석하고 표준 입력표로 전달하는 NEXUS 스마트입력">
   <link rel="icon" type="image/png" href="../nexus/assets/nexus-favicon.png">
   <link rel="stylesheet" href="../orderq/customer-master.css?v=0.12.1" data-customer-picker-style>
-  <link rel="stylesheet" href="./smartinput.css?v=0.3.3">
+  <link rel="stylesheet" href="./smartinput.css?v=0.3.4">
   <script src="../nexus/common/apps-config.js?v=1.2.0"></script>
   <script src="../nexus/common/nexus-top.js?v=1.2.0"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
@@ -32,7 +32,7 @@
         <button type="button" class="mode-tab" data-mode="sale" aria-selected="false"><span>판매</span><kbd>Alt+3</kbd></button>
       </nav>
       <div class="app-bar__actions">
-        <span class="save-state" id="saveState">초안 저장됨</span>
+        <span class="save-state" id="saveState" role="status" aria-live="polite"></span>
         <button class="button button--quiet" id="draftListButton" type="button">초안 목록</button>
         <button class="button button--quiet" id="settingsButton" type="button">설정</button>
         <button class="button button--quiet" id="resetDraftButton" type="button">새로 작성</button>
@@ -45,6 +45,31 @@
   <main class="app-shell">
     <h1 class="sr-only">스마트입력</h1>
     <div class="workspace">
+      <section class="parser-card" aria-label="원본 자료 입력">
+        <div class="method-bar" role="toolbar" aria-label="입력 방식">
+          <button type="button" data-method="direct">직접입력</button>
+          <button type="button" data-method="excel">Excel·파일</button>
+          <button type="button" class="is-active" data-method="text">텍스트</button>
+          <button type="button" data-method="paste">Ctrl+V</button>
+          <button type="button" data-method="photo">사진 OCR</button>
+          <button type="button" data-method="voice">음성 STT</button>
+          <input id="fileInput" type="file" accept=".xlsx,.xls,.csv,.tsv,.txt" hidden>
+          <input id="photoInput" type="file" accept="image/*" capture="environment" hidden>
+        </div>
+        <div class="activity-trail" id="activityTrail" role="status" aria-live="polite" hidden>
+          <span class="activity-trail__current" id="activityCurrent" hidden><i aria-hidden="true"></i><strong id="activityCurrentText"></strong></span>
+          <ol id="activityItems" aria-label="누적 입력현황"></ol>
+        </div>
+        <div class="parser-input-row">
+          <div class="source-editor" id="sourceEditor">
+            <textarea id="sourceTextInput" rows="3" placeholder="거래처명과 상품·수량을 붙여넣으세요.&#10;예) 행복상회&#10;무항생제 계란 30구 2판&#10;제주 감귤 5kg 3박스"></textarea>
+            <div class="source-editor__meta"><span id="sourceLength">0자</span><span id="sourceNotice">텍스트와 이미지를 바로 붙여넣을 수 있습니다.</span></div>
+          </div>
+          <button class="analyze-button" id="analyzeButton" type="button"><span aria-hidden="true">✦</span><strong>분석·추가</strong><small>기존 행 아래에 추가</small></button>
+        </div>
+        <div class="parser-progress" id="parserProgress" hidden><span></span><strong>자료를 분석하고 있습니다.</strong></div>
+      </section>
+
       <section class="workbench" aria-label="스마트입력 본문">
         <div class="document-fields">
           <label class="field field--customer">
@@ -61,32 +86,6 @@
           <label class="field"><span>거래유형</span><select id="transactionTypeInput"><option>기타</option><option>카드</option><option>현금</option><option>현금영수증</option><option>사내사용</option></select></label>
           <div class="reference-status" id="referenceStatus" role="status"><span></span><strong>기준자료를 불러오고 있습니다.</strong></div>
         </div>
-
-        <div class="activity-trail" id="activityTrail" role="status" aria-live="polite" hidden>
-          <span class="activity-trail__current" id="activityCurrent" hidden><i aria-hidden="true"></i><strong id="activityCurrentText"></strong></span>
-          <ol id="activityItems" aria-label="누적 입력현황"></ol>
-        </div>
-
-        <section class="parser-card" aria-label="원본 자료 입력">
-          <div class="method-bar" role="toolbar" aria-label="입력 방식">
-            <button type="button" data-method="direct">직접입력</button>
-            <button type="button" data-method="excel">Excel·파일</button>
-            <button type="button" class="is-active" data-method="text">텍스트</button>
-            <button type="button" data-method="paste">Ctrl+V</button>
-            <button type="button" data-method="photo">사진 OCR</button>
-            <button type="button" data-method="voice">음성 STT</button>
-            <input id="fileInput" type="file" accept=".xlsx,.xls,.csv,.tsv,.txt" hidden>
-            <input id="photoInput" type="file" accept="image/*" capture="environment" hidden>
-          </div>
-          <div class="parser-input-row">
-            <div class="source-editor" id="sourceEditor">
-              <textarea id="sourceTextInput" rows="3" placeholder="거래처명과 상품·수량을 붙여넣으세요.&#10;예) 행복상회&#10;무항생제 계란 30구 2판&#10;제주 감귤 5kg 3박스"></textarea>
-              <div class="source-editor__meta"><span id="sourceLength">0자</span><span id="sourceNotice">텍스트와 이미지를 바로 붙여넣을 수 있습니다.</span></div>
-            </div>
-            <button class="analyze-button" id="analyzeButton" type="button"><span aria-hidden="true">✦</span><strong>분석·추가</strong><small>기존 행 아래에 추가</small></button>
-          </div>
-          <div class="parser-progress" id="parserProgress" hidden><span></span><strong>자료를 분석하고 있습니다.</strong></div>
-        </section>
 
         <section class="grid-card" aria-labelledby="gridTitle">
           <div class="grid-card__header">
@@ -128,6 +127,6 @@
 
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
   <script src="./smartinput-contract.js?v=0.3.2"></script>
-  <script type="module" src="./smartinput.js?v=0.3.4"></script>
+  <script type="module" src="./smartinput.js?v=0.3.5"></script>
 </body>
 </html>
