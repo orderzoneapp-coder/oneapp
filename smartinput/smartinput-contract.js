@@ -298,6 +298,26 @@
     };
   }
 
+  function normalizeSourceRegion(value) {
+    if (!value || typeof value !== 'object') return null;
+    const left = Number(value.left);
+    const top = Number(value.top);
+    const width = Number(value.width);
+    const height = Number(value.height);
+    if (![left, top, width, height].every(Number.isFinite) || width <= 0 || height <= 0) return null;
+    const normalizedLeft = Math.max(0, Math.min(1, left));
+    const normalizedTop = Math.max(0, Math.min(1, top));
+    const normalizedWidth = Math.max(0, Math.min(1 - normalizedLeft, width));
+    const normalizedHeight = Math.max(0, Math.min(1 - normalizedTop, height));
+    if (!normalizedWidth || !normalizedHeight) return null;
+    return {
+      left: normalizedLeft,
+      top: normalizedTop,
+      width: normalizedWidth,
+      height: normalizedHeight
+    };
+  }
+
   function normalizeRow(input = {}, fallbackBatchId = '') {
     const productId = text(input.productId);
     const masterProductId = text(input.masterProductId);
@@ -317,6 +337,7 @@
       sourceLineNo: Number(input.sourceLineNo || 0),
       sourceLineKey: text(input.sourceLineKey),
       intakeLineId: text(input.intakeLineId),
+      sourceRegion: normalizeSourceRegion(input.sourceRegion),
       rawText: String(input.rawText ?? input.rawExpression ?? ''),
       productId,
       masterProductId,
@@ -384,6 +405,8 @@
       automatic: Boolean(input.automatic),
       rawText: String(input.rawText ?? ''),
       contentHash: text(input.contentHash),
+      sourceImageId: text(input.sourceImageId),
+      sourceImageHash: text(input.sourceImageHash),
       intakeSessionId: text(input.intakeSessionId),
       intakeDocumentId: text(input.intakeDocumentId),
       ocrStatus: text(input.ocrStatus),
