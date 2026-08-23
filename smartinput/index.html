@@ -8,7 +8,7 @@
   <meta name="description" content="주문서·구매·판매 자료를 분석하고 표준 입력표로 전달하는 NEXUS 스마트입력">
   <link rel="icon" type="image/png" href="../nexus/assets/nexus-favicon.png">
   <link rel="stylesheet" href="../orderq/customer-master.css?v=0.12.1" data-customer-picker-style>
-  <link rel="stylesheet" href="./smartinput.css?v=0.3.4">
+  <link rel="stylesheet" href="./smartinput.css?v=0.3.5">
   <script src="../nexus/common/apps-config.js?v=1.2.0"></script>
   <script src="../nexus/common/nexus-top.js?v=1.2.0"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
@@ -98,10 +98,10 @@
           </div>
           <div class="table-scroll" id="tableScroll" tabindex="0">
             <table>
-              <colgroup><col class="col-code"><col class="col-name"><col class="col-spec"><col class="col-qty"><col class="col-price"><col class="col-supply"><col class="col-memo"><col class="col-description"><col class="col-notice"><col class="col-action"></colgroup>
-              <thead><tr><th>품목코드</th><th>품목명</th><th>규격</th><th>수량</th><th>단가</th><th>공급가액</th><th>메모</th><th>적요(직원)</th><th>공지단가</th><th><span class="sr-only">행 작업</span></th></tr></thead>
-              <tbody id="inputRows"><tr class="empty-row"><td colspan="10"><strong>아직 입력된 상품이 없습니다.</strong><span>원문을 분석하거나 빈 행을 추가해 시작하세요.</span></td></tr></tbody>
-              <tfoot><tr><td colspan="3">합계</td><td id="totalQuantity">0</td><td></td><td id="totalAmount">0원</td><td colspan="4"></td></tr></tfoot>
+              <colgroup><col class="col-code"><col class="col-name"><col class="col-spec"><col class="col-qty"><col class="col-unit"><col class="col-price"><col class="col-supply"><col class="col-memo"><col class="col-description"><col class="col-notice"><col class="col-action"></colgroup>
+              <thead><tr><th>품목코드</th><th>품목명</th><th>규격</th><th>수량</th><th>단위</th><th>단가</th><th>공급가액</th><th>메모</th><th>적요(직원)</th><th>공지단가</th><th><span class="sr-only">행 작업</span></th></tr></thead>
+              <tbody id="inputRows"><tr class="empty-row"><td colspan="11"><strong>아직 입력된 상품이 없습니다.</strong><span>원문을 분석하거나 빈 행을 추가해 시작하세요.</span></td></tr></tbody>
+              <tfoot><tr><td colspan="3">합계</td><td id="totalQuantity">0</td><td></td><td></td><td id="totalAmount">0원</td><td colspan="4"></td></tr></tfoot>
             </table>
           </div>
         </section>
@@ -126,7 +126,7 @@
   </main>
 
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
-  <script src="./smartinput-contract.js?v=0.3.2"></script>
-  <script type="module" src="./smartinput.js?v=0.3.5"></script>
+  <script src="./smartinput-contract.js?v=0.3.3"></script>
+  <script type="module" src="./smartinput.js?v=0.3.6"></script>
 </body>
 </html>

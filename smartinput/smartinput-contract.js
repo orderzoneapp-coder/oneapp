@@ -382,6 +382,21 @@
     return normalizeRow({ ...row, [field]: value, editedFields: { ...(row.editedFields || {}), [field]: true } });
   }
 
+  function markProductEdit(row, field, value) {
+    const next = markUserEdit(row, field, value);
+    if (!['itemCode', 'itemName'].includes(field)) return next;
+    return normalizeRow({
+      ...next,
+      productId: '',
+      masterProductId: '',
+      matchStatus: 'SIMILAR',
+      reviewStatus: 'PENDING',
+      productIdentityStatus: 'UNRESOLVED',
+      matchSource: '',
+      candidateProducts: []
+    });
+  }
+
   function summarizeRows(rows = []) {
     const summary = { total: rows.length, matched: 0, similar: 0, unresolved: 0, duplicate: 0, quantity: 0, amount: 0 };
     rows.forEach(row => {
@@ -440,6 +455,7 @@
     createBatch,
     applyParserResults,
     markUserEdit,
+    markProductEdit,
     markDuplicatePossibilities,
     summarizeRows,
     validateOrderDraft
