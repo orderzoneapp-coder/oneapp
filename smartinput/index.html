@@ -8,7 +8,7 @@
   <meta name="description" content="주문서·구매·판매 자료를 분석하고 표준 입력표로 전달하는 NEXUS 스마트입력">
   <link rel="icon" type="image/png" href="../nexus/assets/nexus-favicon.png">
   <link rel="stylesheet" href="../orderq/customer-master.css?v=0.12.1" data-customer-picker-style>
-  <link rel="stylesheet" href="./smartinput.css?v=0.3.1">
+  <link rel="stylesheet" href="./smartinput.css?v=0.3.2">
   <script src="../nexus/common/apps-config.js?v=1.2.0"></script>
   <script src="../nexus/common/nexus-top.js?v=1.2.0"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
@@ -45,24 +45,6 @@
   <main class="app-shell">
     <h1 class="sr-only">스마트입력</h1>
     <div class="workspace">
-      <aside class="stage-rail" aria-label="입력 현황">
-        <div class="aside-heading">
-          <span>입력 현황</span>
-          <strong>실시간</strong>
-        </div>
-        <ul class="intake-status-list">
-          <li data-tone="idle"><span aria-hidden="true"></span><div><strong>원문</strong><small id="sourceRailStatus">입력 전</small></div></li>
-          <li data-tone="idle"><span aria-hidden="true"></span><div><strong>입력표</strong><small id="rowCountRail">상품행 0개</small></div></li>
-          <li data-tone="idle"><span aria-hidden="true"></span><div><strong>상품 매칭</strong><small id="matchingRailStatus">일치 0 · 확인 0 · 미인식 0</small></div></li>
-          <li data-tone="idle"><span aria-hidden="true"></span><div><strong>ORDER Q</strong><small id="deliveryRailStatus">전달 전</small></div></li>
-        </ul>
-        <div class="stage-summary">
-          <span>누적 입력</span>
-          <strong id="batchCount">0차</strong>
-          <small>원문 차수별로 상품행을 보존합니다.</small>
-        </div>
-      </aside>
-
       <section class="workbench" aria-label="스마트입력 본문">
         <div class="document-fields">
           <label class="field field--customer">
@@ -80,11 +62,12 @@
           <div class="reference-status" id="referenceStatus" role="status"><span></span><strong>기준자료를 불러오고 있습니다.</strong></div>
         </div>
 
-        <section class="parser-card" aria-labelledby="parserTitle">
-          <div class="parser-card__header">
-            <div><span class="section-number">입력</span><div><h2 id="parserTitle">원본 자료 입력</h2><p>공백과 줄바꿈을 포함한 원문을 그대로 보존합니다.</p></div></div>
-            <span class="method-status" id="methodStatus">텍스트 입력</span>
-          </div>
+        <div class="activity-trail" id="activityTrail" role="status" aria-live="polite" hidden>
+          <span class="activity-trail__current" id="activityCurrent" hidden><i aria-hidden="true"></i><strong id="activityCurrentText"></strong></span>
+          <ol id="activityItems" aria-label="누적 입력현황"></ol>
+        </div>
+
+        <section class="parser-card" aria-label="원본 자료 입력">
           <div class="method-bar" role="toolbar" aria-label="입력 방식">
             <button type="button" data-method="direct">직접입력</button>
             <button type="button" data-method="excel">Excel·파일</button>
@@ -145,6 +128,6 @@
 
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
   <script src="./smartinput-contract.js?v=0.3.0"></script>
-  <script type="module" src="./smartinput.js?v=0.3.1"></script>
+  <script type="module" src="./smartinput.js?v=0.3.2"></script>
 </body>
 </html>

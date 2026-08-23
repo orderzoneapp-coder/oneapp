@@ -46,7 +46,17 @@ const state = {
   toastTimer: null,
   recognition: null,
   listening: false,
-  busy: false
+  busy: false,
+  activeActivity: ''
+};
+
+const ACTIVITY_LABELS = {
+  direct: '직접입력',
+  excel: 'Excel·파일',
+  text: '텍스트',
+  paste: 'Ctrl+V',
+  photo: '사진 OCR',
+  voice: '음성 STT'
 };
 
 function esc(value) {
@@ -146,9 +156,29 @@ function updateMethod(method) {
   const selected = contract.INPUT_METHODS.find(item => item.id === method) || contract.INPUT_METHODS[2];
   modeDraft().activeMethod = selected.id;
   methodButtons.forEach(button => button.classList.toggle('is-active', button.dataset.method === selected.id));
-  $('methodStatus').textContent = selected.label;
   scheduleSave();
   return selected;
+}
+
+function activityLabel(method) {
+  return ACTIVITY_LABELS[method] || contract.INPUT_METHODS.find(item => item.id === method)?.label || '입력';
+}
+
+function renderActivityTrail() {
+  const batches = modeDraft().batches || [];
+  const trail = $('activityTrail');
+  const current = $('activityCurrent');
+  trail.hidden = !state.activeActivity && batches.length === 0;
+  current.hidden = !state.activeActivity;
+  $('activityCurrentText').textContent = state.activeActivity;
+  $('activityItems').innerHTML = batches.map((batch, index) => (
+    `<li><strong>${index + 1}.</strong> ${esc(activityLabel(batch.method))}</li>`
+  )).join('');
+}
+
+function setActiveActivity(message = '') {
+  state.activeActivity = message;
+  renderActivityTrail();
 }
 
 function customerName(customer) {
@@ -813,31 +843,7 @@ function updateSummaries() {
   $('duplicateCount').textContent = `중복 가능 ${summary.duplicate.toLocaleString('ko-KR')}`;
   $('totalQuantity').textContent = summary.quantity.toLocaleString('ko-KR');
   $('totalAmount').textContent = `${summary.amount.toLocaleString('ko-KR')}원`;
-  $('batchCount').textContent = `${modeDraft().batches.length.toLocaleString('ko-KR')}차`;
-  $('rowCountRail').textContent = `상품행 ${summary.total.toLocaleString('ko-KR')}개`;
-  updateIntakeStatus(summary);
-}
-
-function updateIntakeStatus(summary = contract.summarizeRows(modeDraft().rows)) {
-  const current = modeDraft();
-  const sourcePresent = Boolean(current.sourceText.trim() || current.batches.length);
-  $('sourceRailStatus').textContent = sourcePresent ? `원문 ${current.batches.length || 1}차 보존` : '입력 전';
-  $('matchingRailStatus').textContent = `일치 ${summary.matched} · 확인 ${summary.similar} · 미인식 ${summary.unresolved}`;
-  const sourceItem = $('sourceRailStatus').closest('li');
-  const rowItem = $('rowCountRail').closest('li');
-  const matchItem = $('matchingRailStatus').closest('li');
-  const deliveryItem = $('deliveryRailStatus').closest('li');
-  sourceItem.dataset.tone = sourcePresent ? 'ready' : 'idle';
-  rowItem.dataset.tone = summary.total ? 'ready' : 'idle';
-  matchItem.dataset.tone = !summary.total ? 'idle' : (summary.unresolved ? 'error' : (summary.similar ? 'review' : 'ready'));
-  if (current.delivery.status === 'SAVED') {
-    $('deliveryRailStatus').textContent = '전달 완료';
-    deliveryItem.dataset.tone = 'ready';
-  } else {
-    const ready = state.draft.activeMode === 'order' && summary.total > 0 && summary.unresolved === 0 && summary.similar === 0;
-    $('deliveryRailStatus').textContent = ready ? '전달 가능' : '전달 전';
-    deliveryItem.dataset.tone = ready ? 'review' : 'idle';
-  }
+  renderActivityTrail();
 }
 
 function renderDelivery() {
@@ -889,6 +895,7 @@ function setMode(mode) {
   if (!contract.MODES[mode] || mode === state.draft.activeMode) return;
   syncSourceText();
   state.draft.activeMode = mode;
+  state.activeActivity = '';
   state.pendingImageEvidence = null;
   state.pendingSourceName = '';
   saveDraftNow();
@@ -967,6 +974,7 @@ async function analyzeSource() {
   state.busy = true;
   $('analyzeButton').disabled = true;
   $('parserProgress').hidden = false;
+  setActiveActivity(`${batch.sequence}. ${activityLabel(method.id)} 분석 중`);
   setAppStatus(`${batch.sequence}차 입력을 분석하고 있습니다.`);
   try {
     let lines = [];
@@ -1053,6 +1061,7 @@ async function analyzeSource() {
     toast(error.message || '자료 분석에 실패했습니다.', 'error');
   } finally {
     state.busy = false;
+    setActiveActivity('');
     $('analyzeButton').disabled = false;
     $('parserProgress').hidden = true;
     renderDelivery();
@@ -1063,6 +1072,7 @@ async function handleFile(file) {
   if (!file) return;
   try {
     updateMethod('excel');
+    setActiveActivity('Excel·파일 불러오는 중');
     setAppStatus(`${file.name} 파일을 읽고 있습니다.`);
     let rawText = '';
     if (/\.(xlsx|xls)$/i.test(file.name)) {
@@ -1085,6 +1095,7 @@ async function handleFile(file) {
     toast(error.message || '파일을 읽지 못했습니다.', 'error');
     setAppStatus('파일을 읽지 못했습니다.', 'error');
   } finally {
+    setActiveActivity('');
     $('fileInput').value = '';
   }
 }
@@ -1116,6 +1127,7 @@ async function recognizeImage(file) {
   $('parserProgress').hidden = false;
   $('parserProgress').querySelector('strong').textContent = '사진에서 문자를 추출하고 있습니다.';
   updateMethod('photo');
+  setActiveActivity('사진 OCR 처리 중');
   try {
     if (!window.Tesseract?.recognize) throw new Error('사진 OCR 모듈을 불러오지 못했습니다.');
     state.pendingImageEvidence = await fileToImageEvidence(file);
@@ -1139,6 +1151,7 @@ async function recognizeImage(file) {
     setAppStatus('사진 OCR을 완료하지 못했습니다. 직접 입력할 수 있습니다.', 'warn');
   } finally {
     state.busy = false;
+    setActiveActivity('');
     $('photoInput').value = '';
     $('analyzeButton').disabled = false;
     $('parserProgress').hidden = true;
@@ -1164,6 +1177,7 @@ function toggleVoice() {
   recognition.onstart = () => {
     state.listening = true;
     updateMethod('voice');
+    setActiveActivity('음성 STT 인식 중');
     $('sourceNotice').textContent = '음성을 듣고 있습니다. 다시 누르면 종료됩니다.';
     setAppStatus('음성 입력 중입니다.');
   };
@@ -1187,6 +1201,7 @@ function toggleVoice() {
   recognition.onend = () => {
     state.listening = false;
     state.recognition = null;
+    setActiveActivity('');
     $('sourceNotice').textContent = '음성 입력이 종료되었습니다. 내용을 확인하세요.';
     setAppStatus('음성 입력 내용을 확인할 수 있습니다.');
   };
