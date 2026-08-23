@@ -395,13 +395,15 @@ assert.ok(app.sharedContracts.includes('orderq-vnext-sync'));
 assert.ok(app.sharedContracts.includes('product-master'));
 const orderLedger = manifest.sharedDataContracts.find(item => item.id === 'orderq-vnext-sync');
 assert.ok(orderLedger.consumers.includes('smartinput/index.html'));
+assert.ok(orderLedger.consumers.includes('orders.html'), 'ORDER Q shipment must be registered as a read-only ledger consumer');
 const nexusHeader = manifest.sharedDataContracts.find(item => item.id === 'nexus-header');
 assert.ok(nexusHeader.consumers.includes('smartinput/index.html'));
 
 assert.match(readme, /\/smartinput\//);
-assert.match(readme, /orders\.html.*별도 전달 어댑터/);
+assert.match(readme, /orders\.html.*검증된 읽기 전용 어댑터/);
 assert.match(architecture, /### 6\.7 Standalone SmartInput intake/);
-assert.match(architecture, /does not claim direct `orders\.html` delivery/);
+assert.match(architecture, /tapping the order-status card before analysis invokes the separately validated read-only adapter/);
+assert.match(architecture, /does not create a second order store, mutate the ledger, or trigger cloud synchronization/);
 assert.match(architecture, /Customer linking is relational, never canonical merging/);
 assert.match(architecture, /same-day cutoff/);
 
