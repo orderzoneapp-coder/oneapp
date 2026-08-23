@@ -12,6 +12,7 @@
     <script src="coreEngine.js"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <script>
+    // ONEAPP MerchOps - Main Workspace [v2.1.203_F8ShopInboundDefaults]: F8 쇼핑몰업로드의 비재고 상품은 입고가가 있으면 판매여부 1·재고수량 999로 출력하고 테마는 그대로 유지한다.
     // v2.1.202: F8 ERP업데이트를 품목코드~도매B 보조열까지 11열로 제한하고 후행 최종전송·행사·기본 열을 제거한다.
     // v2.1.199: 카탈로그·재고 비교파일 조합을 감지해 저장된 비교 양식과 비교 필터를 자동 적용하고 닫기·초기화 시 일반 양식으로 복귀한다.
     // v2.1.196: 행사작업대의 행사가 설정 제목을 제거하고 행사가 작업 버튼 그룹을 우측 정렬한다.
@@ -10201,8 +10202,8 @@ ${targetText} ${targetRows.length}건을 엑셀로 생성합니다.${workflowTex
             if (isEstimateRow) {
                 // 견적서 QuickF8 쇼핑몰업로드 정책
                 // 1) 견적서 상품은 품목코드 기준으로 읽는다.
-                // 2) 판매여부는 무조건 1.
-                // 3) 판매가가 없으면 재고수량은 0.
+                // 2) 입고가가 있으면 비재고 공통 정책으로 판매여부 1·재고수량 999를 출력한다.
+                // 3) 입고가가 없으면 판매여부·재고수량의 기존 작업값을 유지한다.
                 // 4) 입고가가 없으면 시중가는 0.
                 // 5) 도매A는 견적서 엑셀 단가를 우선 사용하며, 없으면 0.
                 inPrice = readQuickSourceNum(row, ['입고가'], '');
@@ -10234,9 +10235,9 @@ ${targetText} ${targetRows.length}건을 엑셀로 생성합니다.${workflowTex
                 shopBPrice = getBestNumByAliases(row, ['B판매가', 'B 판매가']);
                 shopBWholesale = getBestNum(row, '도매B');
                 // F8 쇼핑몰업로드 재고 정책:
-                // - 엑셀/작업값에 명시 재고가 있으면 0을 포함해 그대로 보존한다.
-                // - 재고 컬럼 자체가 없으면 상품 마스터의 기존 재고를 보강한다.
-                // - 명시 공란은 마스터로 덮어쓰지 않고 공란으로 유지한다.
+                // - 입고가가 있는 비재고 상품은 아래 공통 정책에서 재고수량 999를 출력한다.
+                // - 입고가가 없으면 명시 재고(0·공란 포함)를 보존하고, 컬럼이 없을 때만 마스터값을 보강한다.
+                // - inventory 역할은 DataOps 실제 재고 합계와 검증 계약을 유지한다.
                 // - ERP업데이트 시트에는 재고수량을 쓰지 않으므로 영향 없다.
                 shopUploadStock = getShopUploadStock(row);
                 name = getBestStrByAliases(row, ['품목명', '상품명']);
@@ -10245,10 +10246,13 @@ ${targetText} ${targetRows.length}건을 엑셀로 생성합니다.${workflowTex
                 description = getBestStr(row, '간단설명');
                 tag = getBestStrByAliases(row, ['검색어등록', '상품태그']);
             }
+            const applyInboundShopDefaults = !isInventoryRow && window.parseNum(inPrice) > 0;
+            const shopSaleCode = applyInboundShopDefaults ? '1' : saleCode;
+            const effectiveShopUploadStock = applyInboundShopDefaults ? 999 : shopUploadStock;
             // ERP업데이트는 품목코드와 입고가·출고가·입고B·도매A·도매B의 보조열까지만 출력한다.
             erpData.push([code, inPrice, '0', erpOutPrice, '0', inPriceB, 'n', erpASale, 'n', erpBSale, 'n']);
             // 쇼핑몰업로드는 견적서 작업 시 마스터값을 오늘 작업값으로 보강하지 않는다.
-            shopData.push([code, name, spec, shopSalePrice, erpASale, pMarket, shopBPrice, shopBWholesale, 0, 0, 0, 0, brand, description, saleCode, shopUploadStock, ...themeFlags, tag]);
+            shopData.push([code, name, spec, shopSalePrice, erpASale, pMarket, shopBPrice, shopBWholesale, 0, 0, 0, 0, brand, description, shopSaleCode, effectiveShopUploadStock, ...themeFlags, tag]);
             // inventory F8은 DataOps 실제 재고만 출력한다. 소분 가격행 생성은 견적·구매 등 기존 역할에서만 유지한다.
             const subInfo = (isInventoryRow || isMasterThemeResetQuickRow(row)) ? null : calculateSubInfo(row);
             if (subInfo) {
@@ -10258,8 +10262,6 @@ ${targetText} ${targetRows.length}건을 엑셀로 생성합니다.${workflowTex
                     code: subCode,
                     parentCode: code,
                     parentName: name || data.masterProducts[code]?.['품목명'] || data.masterProducts[code]?.['상품명'] || '',
-                    saleCode,
-                    shopUploadStock,
                     themeFlags
                 };
                 const candidates = pendingSubCandidatesByCode.get(subCode) || [];
@@ -10361,12 +10363,14 @@ ${targetText} ${targetRows.length}건을 엑셀로 생성합니다.${workflowTex
             if (shopIndexes.length > 1 || erpIndexes.length > 1) return;
 
             if (shopIndexes.length === 1 && erpIndexes.length === 1) {
-                // 소분품목이 이미 리스트에 있으면 한 행을 유지하고 계산된 가격만 갱신한다.
-                // 품명·규격·브랜드·설명·판매여부·재고·테마·태그는 기존 소분품목 값을 보존한다.
+                // 소분품목이 이미 리스트에 있으면 한 행을 유지하고 계산된 가격을 갱신한다.
+                // 계산된 소분 입고가가 있으므로 판매여부 1·재고수량 999를 적용하고 테마 등 나머지는 보존한다.
                 const shopRow = shopData[shopIndexes[0]];
                 shopRow[3] = subInfo.subOut;
                 shopRow[4] = subInfo.subOut;
                 shopRow[5] = subInfo.subOut;
+                shopRow[14] = '1';
+                shopRow[15] = 999;
                 const erpRow = erpData[erpIndexes[0]];
                 erpRow[1] = subInfo.subIn;
                 erpRow[3] = subInfo.subOut;
@@ -10393,8 +10397,8 @@ ${targetText} ${targetRows.length}건을 엑셀로 생성합니다.${workflowTex
                 '', '', 0, 0, 0, 0,
                 subMaster['브랜드'] || '',
                 subMaster['간단설명'] || subMaster['기본설명'] || '',
-                subInfo.saleCode,
-                subInfo.shopUploadStock,
+                '1',
+                999,
                 ...subInfo.themeFlags,
                 subMaster['검색어등록'] || subMaster['상품태그'] || ''
             ]);
@@ -14543,7 +14547,7 @@ const WelcomeGuide = ({ onUpload, onCloudSync }) => (React.createElement("div", 
         React.createElement("i", { className: "fas fa-box-open" }),
         React.createElement("div", { className: "absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm" },
             React.createElement("i", { className: "fas fa-check" }))),
-    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.202_F8ErpCoreColumns]"),
+    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.203_F8ShopInboundDefaults]"),
     React.createElement("p", { className: "text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold" },
         "\uD604\uC7AC \uB4F1\uB85D\uB41C ",
         React.createElement("span", { className: "text-indigo-500" }, "\uB9C8\uC2A4\uD130 \uC0C1\uD488 \uB370\uC774\uD130"),
@@ -15243,7 +15247,7 @@ const App = () => {
                                 React.createElement("div", { className: "hidden" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "MerchOps"),
-                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.202_F8ErpCoreColumns")),
+                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.203_F8ShopInboundDefaults")),
                                     React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "MAIN WORKSPACE"))),
                             React.createElement(SystemConsole, { itemCount: Object.keys(data.masterProducts).length, isProcessing: ui.isProcessing, processMsg: ui.processMsg, estimateCount: Object.keys(data.managedItems).length, filteredCount: fullDisplayRows.length, activeTags: ui.activeTags, masterLookupMode: data.masterLookupMode }),
                             React.createElement("nav", { className: "flex gap-1.5 text-[14px] shrink-0 items-center" },
