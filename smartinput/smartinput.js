@@ -1308,14 +1308,17 @@ async function chooseCustomer() {
           updatedAt: timestamp,
           updatedBy: 'SMART_INPUT_ADMIN'
         };
+        const currentCustomerId = modeDraft().header.customerId;
+        const deliveryCustomerId = deliveryCustomerIds.includes(currentCustomerId)
+          ? currentCustomerId
+          : (visibleCustomers.find(customerItem => deliveryCustomerIds.includes(customerItem.customerId))?.customerId || deliveryCustomerIds[0]);
+        const deliveryCustomer = customerById(deliveryCustomerId);
+        if (!deliveryCustomer) {
+          message.textContent = '현재 전표에 지정할 배송처를 불러오지 못했습니다.';
+          return;
+        }
         await persistLinkGroup(group);
-        selected.clear();
-        selectedTaxCustomerId = '';
-        linkMode = false;
-        actionFooter.hidden = false;
-        linkFooter.hidden = true;
-        await render();
-        message.textContent = `거래처 관계를 저장했습니다. 배송처 ${deliveryCustomerIds.length}곳 · 세무거래처 1곳`;
+        finish(deliveryCustomer);
       });
       dialog.querySelector('[data-temp-create]').addEventListener('click', async () => {
         const created = await registerCustomerProfile({ temporary: true });

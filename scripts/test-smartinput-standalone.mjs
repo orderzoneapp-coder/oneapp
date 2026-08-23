@@ -391,6 +391,8 @@ assert.match(css, /\.parser-card > \*, \.parser-input-row, \.method-bar, \.photo
 assert.match(css, /table \{[^}]*width: var\(--table-render-width, 1103px\);[^}]*min-width: 0;[^}]*max-width: none;/,
   'the input table must use the visible-column sum and leave unused space blank');
 assert.match(css, /\.column-draggable \{ cursor: grab; \}/);
+assert.match(css, /\.smart-dialog footer\[hidden\] \{ display: none; \}/,
+  'hidden customer dialog footer must override the generic flex footer rule');
 assert.match(css, /\.column-drop-before \{[^}]*inset 3px 0 0 var\(--accent\)/);
 assert.match(css, /@media \(max-width: 1240px\) \{[\s\S]*?\.workspace, \.workspace\.has-photo-source \{ grid-template-columns: minmax\(0, 1fr\); \}/,
   'photo and input workspaces must stack before their minimum widths collide');
@@ -498,6 +500,8 @@ assert.match(appSource, /deliveryCustomerIds: \[customerId\]/,
   'one formal customer can hold both delivery and tax roles');
 assert.match(appSource, /if \(selected\.size < 1\)[\s\S]*배송처를 1곳 이상 선택하세요/);
 assert.match(appSource, /if \(!selectedTaxCustomerId\)[\s\S]*세무거래처를 정확히 1곳 지정하세요/);
+assert.match(appSource, /await persistLinkGroup\(group\);\s*finish\(deliveryCustomer\);/,
+  'saving a customer relationship must apply the chosen delivery customer to the active voucher');
 assert.match(appSource, /deliveryCustomerIds = \[\.\.\.selected\]/);
 assert.doesNotMatch(appSource, /연결할 거래처를 2개 이상/,
   'customer relationship setup must not require two or more records');
