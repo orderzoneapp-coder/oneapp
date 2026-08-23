@@ -22,9 +22,9 @@
     { id: 'dataops', groupId: 'inventory', name: 'DataOps', description: '재고 검증', url: `${base}/DataOps.html`, lifecycle: 'operational', access: 'allowed' },
     { id: 'merchops', groupId: 'pricing', name: 'MerchOps', description: '시세·가격 작업', url: `${base}/MerchOps.html`, lifecycle: 'operational', access: 'allowed' },
     { id: 'smart-parser', groupId: 'pricing', name: 'Smart Parser', description: '문서 파싱', url: `${base}/SmartParser.html`, lifecycle: 'operational', access: 'allowed' },
-    { id: 'master', groupId: 'foundation', name: 'Master', description: '상품·거래처 기초등록', url: `${base}/Master.html`, lifecycle: 'operational', access: 'allowed' },
-    { id: 'item-manager', groupId: 'foundation', name: 'Item Manager', description: '상품 기초정보 관리', url: `${base}/Item_manager.html`, lifecycle: 'operational', access: 'allowed', defaultHidden: true },
-    { id: 'customer-manager', groupId: 'foundation', name: '거래처 관리', description: '거래처 기초정보', url: `${base}/Master.html?view=customers`, lifecycle: 'development', access: 'allowed' },
+    { id: 'master', groupId: 'foundation', name: '기초등록', description: '상품·거래처 기초정보 조회·관리', url: `${base}/Master.html`, lifecycle: 'operational', access: 'allowed' },
+    { id: 'item-manager', groupId: 'foundation', name: '상품 등록', description: '상품 단건 등록·수정', url: `${base}/Item_manager.html`, lifecycle: 'operational', access: 'allowed', defaultHidden: true },
+    { id: 'customer-manager', groupId: 'foundation', name: '거래처 관리', description: '거래처 조회·등록·수정', url: `${base}/Master.html?view=customers`, lifecycle: 'operational', access: 'allowed' },
   ]);
 
   window.NEXUS_GLOBAL_ACTIONS = freezeRecords([

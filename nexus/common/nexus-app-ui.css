@@ -5,22 +5,18 @@
   --nexus-work-tools-height: 50px;
   --nexus-table-header-height: 40px;
   --nexus-table-row-height: 48px;
-}
-
-html[data-nexus-density="compact"] {
-  --nexus-content-gutter: 12px;
-  --nexus-app-header-height: 42px;
-  --nexus-target-tab-height: 36px;
-  --nexus-work-tools-height: 42px;
-  --nexus-table-header-height: 34px;
-  --nexus-table-row-height: 36px;
+  --nexus-content-max-width: 1440px;
 }
 
 .nexus-app-shell {
   width: 100%;
-  max-width: none;
   height: calc(100vh - var(--nexus-top-height, 44px));
   margin: 0;
+}
+
+.nexus-app-content {
+  width: min(100%, var(--nexus-content-max-width, 1440px));
+  margin-inline: auto;
 }
 
 .nexus-app-gutter {
@@ -57,10 +53,6 @@ html[data-nexus-density="compact"] {
 
 .nexus-data-table > thead > tr {
   height: var(--nexus-table-header-height, 40px);
-}
-
-html[data-nexus-density="compact"] .nexus-density-secondary {
-  display: none !important;
 }
 
 @media (max-width: 760px) {

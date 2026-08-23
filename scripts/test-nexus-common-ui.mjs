@@ -19,33 +19,37 @@ const customerHtml = read('partner_db.html');
 const customerUi = read('orderq/customer-master-ui.js');
 const manifest = JSON.parse(read('app-manifest.json'));
 
-for (const [name, standard, compact] of [
-  ['--nexus-app-header-height', '56px', '42px'],
-  ['--nexus-target-tab-height', '42px', '36px'],
-  ['--nexus-work-tools-height', '50px', '42px'],
-  ['--nexus-table-header-height', '40px', '34px'],
-  ['--nexus-table-row-height', '48px', '36px'],
-  ['--nexus-content-gutter', '24px', '12px']
+for (const [name, value] of [
+  ['--nexus-content-max-width', '1440px'],
+  ['--nexus-content-gutter', '24px'],
+  ['--nexus-app-header-height', '56px'],
+  ['--nexus-target-tab-height', '42px'],
+  ['--nexus-work-tools-height', '50px'],
+  ['--nexus-table-header-height', '40px'],
+  ['--nexus-table-row-height', '48px']
 ]) {
-  assert.match(tokens, new RegExp(`${name}: ${standard}`), `${name} standard value must be registered`);
-  assert.match(tokens, new RegExp(`data-nexus-density="compact"[\\s\\S]*${name}: ${compact}`), `${name} compact value must be registered`);
+  assert.match(tokens, new RegExp(`${name}: ${value}`), `${name} fixed value must be registered`);
 }
 
-for (const hook of ['nexus-app-work-header', 'nexus-target-tabs', 'nexus-work-tools', 'nexus-data-table']) {
-  assert.ok(commonCss.includes(`.${hook}`), `${hook} declarative hook must exist`);
+for (const source of [tokens, commonCss, master, customerHtml, customerUi]) {
+  assert.doesNotMatch(source, /data-nexus-density|nexus-density-change|ONEAPP_NEXUS_DENSITY|oneapp:nexus-density-applied/);
 }
-assert.match(commonCss, /\.nexus-app-shell[\s\S]*max-width:\s*none/, 'common app layout must remove the content maximum width');
+
+for (const hook of ['nexus-app-work-header', 'nexus-target-tabs', 'nexus-work-tools', 'nexus-data-table', 'nexus-app-content']) {
+  assert.ok(commonCss.includes(`.${hook}`), `${hook} fixed-layout hook must exist`);
+}
+assert.match(commonCss, /\.nexus-app-content[\s\S]*max-width, 1440px/);
 
 const context = { window: {} };
 vm.runInNewContext(registrySource, context);
 const contract = context.window.NEXUS_APP_UI;
-assert.equal(contract.version, 'NEXUS_APP_UI_V1');
-assert.deepEqual(Array.from(contract.stateKeys), [
-  'activeTab', 'searchState', 'filterState', 'sortState', 'selectedRowId',
-  'activeCellId', 'scrollPosition', 'draftChanges', 'openedPanelId'
-]);
-assert.equal(contract.getApplication('master-lookup').strategy, 'declarative-css');
-assert.equal(contract.getApplication('item-manager').strategy, 'declarative-css');
+assert.equal(contract.version, 'NEXUS_APP_UI_V2');
+assert.equal(contract.layout.contentMaxWidth, '1440px');
+assert.equal(contract.layout.fixed, true);
+assert.equal(contract.getApplication('master-lookup').strategy, 'fixed-layout');
+assert.equal(contract.getApplication('master-lookup').status, 'pilot');
+assert.equal(contract.getApplication('item-manager').strategy, 'fixed-layout');
+assert.equal(contract.getApplication('item-manager').status, 'pilot');
 for (const appId of ['merchops', 'dataops', 'orderq', 'smart-parser']) {
   assert.equal(contract.getApplication(appId).strategy, 'registered-exception');
   assert.ok(contract.getApplication(appId).exceptions.length, `${appId} exception must be registered`);
@@ -61,32 +65,31 @@ for (const source of [master, itemHtml]) {
 }
 assert.match(master, /data-nexus-ui-app="master-lookup"/);
 assert.match(itemHtml, /data-nexus-ui-app="item-manager"/);
-assert.doesNotMatch(master, /aria-label="관리 방식"|목록·조회/);
-assert.doesNotMatch(itemHtml, /oneapp-subtabs|목록·조회/);
+assert.match(master, /nexus-app-work-header__bar nexus-app-content/);
+assert.match(master, />기초등록<\/strong>/);
+assert.doesNotMatch(master, /MASTER ·/);
 assert.match(master, />일괄 관리<\/button>/);
 assert.match(master, />\+ 상품 등록<\/button>/);
 assert.equal((itemHtml.match(/oneapp-button-primary/g) || []).length, 1, 'Item Manager must expose one highlighted action outside modal overlays');
 
-assert.doesNotMatch(itemJs, /nexus-density-change|renderMobileEditor|mobileRowId/, 'Item Manager density must remain CSS-only and must not create mobile cards');
+assert.doesNotMatch(itemJs, /renderMobileEditor|mobileRowId/, 'Item Manager must not create mobile cards');
 assert.match(itemCss, /\.table-scroll[\s\S]*overflow:\s*auto/);
 assert.match(itemCss, /@media \(max-width: 760px\)[\s\S]*\.table-scroll[\s\S]*display:\s*block/);
 assert.doesNotMatch(itemHtml, /mobile-editor/);
 
-const densityEffect = master.slice(master.indexOf("const sendDensity"), master.indexOf("const discardAddUpdateAnalysis"));
-assert.match(densityEffect, /ONEAPP_NEXUS_DENSITY/);
-assert.doesNotMatch(densityEffect, /loadMasterLocal|fetch\(|location\.(?:reload|replace)|setMasterRoute|setGlobalSearch/);
-assert.match(customerHtml, /ONEAPP_NEXUS_DENSITY[\s\S]*dataset\.nexusDensity/);
-assert.match(customerUi, /anchorIndex[\s\S]*focusedCustomerId[\s\S]*renderWindow/);
-assert.doesNotMatch(customerUi.slice(customerUi.indexOf("oneapp:nexus-density-applied")), /listCustomers|searchCustomers|synchronizeCustomerMaster/);
-
 const uiContract = manifest.sharedDataContracts.find(entry => entry.id === 'nexus-app-ui');
 assert.ok(uiContract, 'nexus-app-ui manifest contract must exist');
-assert.equal(uiContract.schemaVersion, 'NEXUS_APP_UI_V1');
+assert.equal(uiContract.schemaVersion, 'NEXUS_APP_UI_V2');
+assert.equal(uiContract.resources.contentMaxWidthToken, '--nexus-content-max-width');
+assert.equal(uiContract.applicationStatus['master-lookup'], 'pilot');
+assert.equal(uiContract.applicationStatus['item-manager'], 'pilot');
 assert.deepEqual(uiContract.consumers, ['Master.html', 'Item_manager.html', 'partner_db.html']);
 for (const appId of ['master-lookup', 'item-manager']) {
   assert.ok(manifest.applications.find(entry => entry.id === appId).sharedContracts.includes('nexus-app-ui'));
+  assert.equal(manifest.applications.find(entry => entry.id === appId).status, 'pilot');
 }
+assert.match(documentation, /하나의 고정 레이아웃/);
 assert.match(documentation, /등록되지 않은 예외는 허용하지 않는다/);
 assert.match(documentation, /F7\/F8\/F9/);
 
-console.log('NEXUS common application UI contract tests passed.');
+console.log('NEXUS common fixed application UI contract tests passed.');

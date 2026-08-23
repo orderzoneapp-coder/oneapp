@@ -6,6 +6,10 @@
 <nexus-top app-id="dataops"></nexus-top>
 ```
 
+## 상단 메뉴 설정
+
+스마트입력은 브랜드 바로 뒤의 고정 위치를 사용하지만 공통헤더 설정의 `상단 메뉴` 목록에 표시되며 노출 여부를 변경할 수 있다. 업무군 메뉴의 순서·노출 설정과 개별 앱의 즐겨찾기·숨김 설정은 서로 독립적이다. 숨긴 스마트입력 화면에 직접 진입하면 현재 위치로만 임시 표시된다.
+
 ## 현재 앱 상태
 
 공통헤더는 현재 페이지의 앱 ID와 일치하는 상태만 실시간으로 반영한다. 동시에 여러 작업이 있으면 `오류 > 주의 > 진행 > 정상` 순서로 대표 상태를 선택한다.
@@ -44,13 +48,13 @@ window.NEXUS_TOP.reportGlobalError({ id: 'preferences', message: '공통 설정 
 window.NEXUS_TOP.clearGlobalError('preferences');
 ```
 
-## 앱 공통 UI 밀도
+## 앱 공통 고정 UI
 
-지원 앱은 `nexus-app-ui.css`와 `nexus-ui-contract.js`를 불러온다. 공통헤더가 설정한 `data-nexus-density`에 따라 작업헤더, 대상 탭, 도구와 표가 CSS 변수로만 변경되며 앱 초기화·데이터 재조회·자동저장을 실행하지 않는다.
+지원 앱은 `nexus-app-ui.css`와 `nexus-ui-contract.js`를 불러온다. 공통헤더는 전체 폭을 사용하고 앱 작업영역은 `--nexus-content-max-width` 안에서 중앙 정렬하는 하나의 고정 레이아웃을 사용한다.
 
 ```html
 <link rel="stylesheet" href="/nexus/common/nexus-app-ui.css">
 <script src="/nexus/common/nexus-ui-contract.js"></script>
 ```
 
-Master 파일럿 적용 상태, 9개 상태 보존 식별자와 후속 앱 예외는 [`NEXUS_APP_UI_CONTRACT.md`](./NEXUS_APP_UI_CONTRACT.md)에 기록한다.
+기초등록 운영 적용 상태와 후속 앱 예외는 [`NEXUS_APP_UI_CONTRACT.md`](./NEXUS_APP_UI_CONTRACT.md)에 기록한다.

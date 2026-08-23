@@ -156,7 +156,7 @@
       "path": "Master.html",
       "kind": "web-entry",
       "status": "pilot",
-      "purpose": "Provide product-master lookup and a controlled, administrator-reviewed add/update workflow with cloud synchronization.",
+      "purpose": "Provide centered product and customer foundation-data workspaces with controlled registration, update, and cloud synchronization workflows.",
       "productionWrites": true,
       "runtimeDependencies": [
         "core-engine"
@@ -295,7 +295,7 @@
         "orderq-vnext-sync",
         "product-master"
       ],
-      "integrationNote": "SmartInput is available from the fixed NEXUS global entry and the full application list at /smartinput/. ORDER Q vNext is the common order ledger; orders.html still requires a separately validated ledger-consumer adapter."
+      "integrationNote": "SmartInput is available from the fixed-position NEXUS global entry, the common-header settings list, and the full application list at /smartinput/. ORDER Q vNext is the common order ledger; orders.html still requires a separately validated ledger-consumer adapter."
     },
     {
       "id": "cloud-sync",
@@ -357,11 +357,12 @@
         "orderq/parser.html",
         "smartinput/index.html"
       ],
-      "schemaVersion": "NEXUS_HEADER_V2",
+      "schemaVersion": "NEXUS_HEADER_V3",
       "resources": {
         "component": "nexus/common/nexus-top.js",
         "configuration": "nexus/common/apps-config.js",
         "globalActions": "window.NEXUS_GLOBAL_ACTIONS",
+        "globalActionVisibilityPreference": "oneapp.nexus.v1.hiddenGlobalActions",
         "statusApi": "window.NEXUS_TOP.reportStatus",
         "leaveGuardEvent": "nexus:before-navigate",
         "preferencePrefix": "oneapp.nexus.v1."
@@ -375,7 +376,7 @@
         "Item_manager.html",
         "partner_db.html"
       ],
-      "schemaVersion": "NEXUS_APP_UI_V1",
+      "schemaVersion": "NEXUS_APP_UI_V2",
       "applicationStatus": {
         "master-lookup": "pilot",
         "item-manager": "pilot",
@@ -388,8 +389,7 @@
         "styles": "nexus/common/nexus-app-ui.css",
         "registry": "nexus/common/nexus-ui-contract.js",
         "documentation": "nexus/common/NEXUS_APP_UI_CONTRACT.md",
-        "densityAttribute": "data-nexus-density",
-        "densityEvent": "nexus-density-change"
+        "contentMaxWidthToken": "--nexus-content-max-width"
       }
     },
     {
