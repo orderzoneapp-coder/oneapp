@@ -461,6 +461,10 @@ assert.match(appSource, /description: row\.description/);
 assert.match(appSource, /noticePrice: row\.noticePrice/);
 assert.match(appSource, /일치 \$\{summary\.matched\} · 확인 \$\{summary\.similar\} · 미인식 \$\{summary\.unresolved\}/);
 assert.match(appSource, /function renderActivityTrail\(\)/);
+assert.match(appSource, /function visibleActivityBatches\([\s\S]*batch\.sourceType !== 'MANUAL'[\s\S]*batch\.method !== 'direct'/,
+  'direct-entry rows must not create visible input-activity chips');
+assert.match(appSource, /sequence: visibleActivityBatches\(current\)\.length \+ 1/,
+  'direct-entry rows must not inflate the displayed source-analysis sequence');
 assert.match(appSource, /function scheduleAutoAnalysis\(/);
 assert.match(appSource, /analyzeSource\(\{ automatic: true \}\)/);
 assert.match(appSource, /current\.sourceText = rawText/);
@@ -499,6 +503,10 @@ assert.match(appSource, /event\.key === 'ArrowUp'[\s\S]*updateSelection\(selecte
 assert.match(appSource, /button\.scrollIntoView\(\{ block: 'nearest' \}\)/);
 assert.match(appSource, /if \(foundProducts\[selectedIndex\]\) finish\(foundProducts\[selectedIndex\]\)/);
 assert.match(appSource, /resetCurrentMode\(false\)/);
+assert.match(appSource, /function saveAndStartNextVoucher\(\)[\s\S]*if \(!saveDraftNow\(\)\)[\s\S]*resetCurrentMode\(false, '전표를 저장하고 다음 입력을 시작합니다\.'/,
+  'saving a voucher must preserve its draft snapshot before opening a fresh voucher');
+assert.match(appSource, /saveDraftButton'\)\.addEventListener\('click', saveAndStartNextVoucher\)/,
+  'the voucher save action must immediately prepare the next voucher entry');
 assert.match(appSource, /function clearParserWorkspace\(\)/);
 assert.match(appSource, /current\.batches = \(current\.batches \|\| \[\]\)\.filter\(batch => batch\.sourceType === 'MANUAL'\)/,
   'parser clear must preserve direct-entry batches while dropping parser batches');
@@ -596,6 +604,10 @@ assert.match(appSource, /sourceImages: \{ order: null, purchase: null, sale: nul
 assert.match(appSource, /intakeSessionId: sourceBatch\?\.intakeSessionId \|\| ''/);
 assert.match(appSource, /photoBasicColumns = new Set\(\['itemCode', 'itemName', 'specification', 'quantity', 'unit', 'unitPrice', 'supplyAmount'\]/);
 assert.match(appSource, /state\.photoView\.detailColumns = !state\.photoView\.detailColumns/);
+assert.match(appSource, /modeUi\(\)\.detailColumns = state\.photoView\.detailColumns;[\s\S]*scheduleSave\(\);[\s\S]*applyFormLayout\(\);/,
+  'the selected photo detail-column layout must persist for the active voucher mode');
+assert.match(appSource, /state\.photoView\.detailColumns = Boolean\(modeUi\(\)\.detailColumns\);[\s\S]*updateMethod\(modeDraft\(\)\.activeMethod/,
+  'rendering a voucher mode must restore its saved detail-column layout');
 assert.match(appSource, /photoResizer\.addEventListener\('pointermove'/);
 assert.match(appSource, /if \(modeDraft\(\)\.activeMethod !== 'photo'\) updateMethod\('direct'\)/,
   '사진 분석 중 빈 행을 추가해도 원본 사진 작업영역을 유지해야 한다.');
@@ -617,6 +629,12 @@ assert.match(appSource, /function sequentialGridTarget\(rowId, field\)/,
   'Enter navigation must follow the complete visible cell sequence');
 assert.match(appSource, /function directionalGridTarget\(rowId, field, key\)/,
   'arrow navigation must move to adjacent visible cells');
+assert.match(appSource, /inputRows\.addEventListener\('focusin',[\s\S]*requestAnimationFrame\([\s\S]*document\.activeElement !== input[\s\S]*input\.select/,
+  'focusing a standard-input cell must select its current value so typing replaces it');
+assert.match(appSource, /function revealGridInput\(input\)[\s\S]*visibleBottom = scrollBounds\.bottom - footerHeight[\s\S]*scroll\.scrollTop \+= rowBounds\.bottom - visibleBottom/,
+  'the active input row must scroll above the sticky totals row when it reaches the table bottom');
+assert.match(appSource, /input\.select\?\.\(\);\s*revealGridInput\(input\);/,
+  'mouse, touch, and keyboard focus must reveal the active standard-input cell');
 assert.doesNotMatch(appSource, /activeCellId = `\$\{row\.rowId\}\|quantity`/,
   'product matching must not skip populated product-information cells');
 assert.match(appSource, /data-select-row/);
@@ -654,6 +672,8 @@ assert.match(appSource, /photoViewer\.classList\.toggle\('has-image', showPhoto\
 assert.match(appSource, /\$\('photoEmptySelectButton'\)\.addEventListener\('click'/);
 assert.match(appSource, /state\.sourceImages\[state\.draft\.activeMode\] = imageEvidence;[\s\S]*renderSourceSurface\(\);[\s\S]*if \(state\.busy\)/,
   '붙여넣은 원본 사진은 진행 중인 파서보다 먼저 뷰어에 표시해야 한다.');
+assert.match(appSource, /if \(event\.target === sourceTextInput && event\.clipboardData\?\.getData\('text\/plain'\)\)/,
+  'pasting text into a standard-input cell must not switch an active photo workspace to text');
 assert.match(appSource, /if \(status === 'SIMILAR'\) return '유사';[\s\S]*return '불일치';/);
 assert.match(appSource, /data-field="unitPrice" type="text" inputmode="decimal"/,
   '단가 입력은 브라우저 숫자 증감 스피너를 사용하면 안 된다.');
@@ -683,6 +703,16 @@ assert.doesNotMatch(appSource, /\$\('catalogSelect'\)\.disabled = !current\.head
 assert.match(appSource, /catalogDraft\.header\.customerId = linkedCustomer\?\.customerId \|\| catalogCustomerId\(record\)/);
 assert.match(appSource, /catalogDraft\.header\.customerName = customerName\(linkedCustomer\) \|\| catalogCustomerName\(record\)/);
 assert.match(appSource, /customerMappingSource = 'CATALOG'/);
+assert.match(appSource, /function createCatalogOnlyDraft\(source = \{\}, catalogRecordId = ''\)[\s\S]*sourceText: ''[\s\S]*activeMethod: 'direct'[\s\S]*batches: \[\]/,
+  'catalog records must keep product content without parser text or input batches');
+assert.match(appSource, /batchId: ''[\s\S]*sourceRegion: null[\s\S]*rawText: ''[\s\S]*candidateProducts: \[\][\s\S]*editedFields: \{\}/,
+  'catalog product rows must not retain parser provenance or photo regions');
+assert.match(appSource, /rawOrdererName: ''[\s\S]*aliasMappingId: ''[\s\S]*customerMappingSource: 'CATALOG'/,
+  'catalog headers must not retain parser orderer matching evidence');
+assert.match(appSource, /const catalogDraft = createCatalogOnlyDraft\(record\.draft, record\.estimateId\)[\s\S]*state\.sourceImages\.estimate = null[\s\S]*state\.pendingImageEvidence = null[\s\S]*state\.pendingOcrReview = null[\s\S]*resetPhotoView\(\)/,
+  'loading legacy catalogs must detach any previously saved parser photo');
+assert.match(appSource, /draft: JSON\.parse\(JSON\.stringify\(createCatalogOnlyDraft\(current, estimateId\)\)\)/,
+  'saving a catalog must persist the catalog-only projection');
 assert.match(appSource, /function isParserArtifactLine\(/);
 assert.match(appSource, /lines = lines\.filter\(line => !isParserArtifactLine\(line\)\)/);
 

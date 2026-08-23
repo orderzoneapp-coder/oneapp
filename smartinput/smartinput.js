@@ -184,9 +184,11 @@ function saveDraftNow() {
     saveModeDraftSnapshot();
     state.draftDirty = false;
     setSaveState('저장됨', 'saved');
+    return true;
   } catch (_) {
     setSaveState('저장 실패', 'error');
     setAppStatus('초안을 저장하지 못했습니다. 입력 내용은 현재 화면에 유지됩니다.', 'warn');
+    return false;
   }
 }
 
@@ -640,7 +642,7 @@ function resetPhotoView() {
   state.photoView.zoom = 1;
   state.photoView.rotation = 0;
   state.photoView.activeRegion = null;
-  state.photoView.detailColumns = false;
+  state.photoView.detailColumns = Boolean(modeUi().detailColumns);
   state.photoView.ocrOpen = false;
 }
 
@@ -754,8 +756,12 @@ function activityLabel(method) {
   return ACTIVITY_LABELS[method] || contract.INPUT_METHODS.find(item => item.id === method)?.label || '입력';
 }
 
+function visibleActivityBatches(current = modeDraft()) {
+  return (current.batches || []).filter(batch => batch.sourceType !== 'MANUAL' && batch.method !== 'direct');
+}
+
 function renderActivityTrail() {
-  const batches = modeDraft().batches || [];
+  const batches = visibleActivityBatches();
   const trail = $('activityTrail');
   const current = $('activityCurrent');
   trail.hidden = !state.activeActivity && batches.length === 0;
@@ -1800,11 +1806,44 @@ function restoreSourceImageForMode(mode) {
   state.sourceImages[mode] = state.sourceImageRecords.get(documentId) || null;
 }
 
+function createCatalogOnlyDraft(source = {}, catalogRecordId = '') {
+  const fallback = contract.createDraft().modes.estimate;
+  const rows = (source.rows || []).map(row => contract.normalizeRow({
+    ...row,
+    batchId: '',
+    batchSequence: 0,
+    sourceLineNo: 0,
+    sourceLineKey: '',
+    intakeLineId: '',
+    sourceRegion: null,
+    rawText: '',
+    candidateProducts: [],
+    editedFields: {}
+  }));
+  return contract.normalizeModeDraft('estimate', {
+    ...source,
+    documentId: fallback.documentId,
+    catalogRecordId,
+    header: {
+      ...(source.header || {}),
+      submittedAt: '',
+      rawOrdererName: '',
+      aliasMappingId: '',
+      customerMappingSource: 'CATALOG'
+    },
+    sourceText: '',
+    activeMethod: 'direct',
+    batches: [],
+    rows,
+    delivery: { ...fallback.delivery }
+  });
+}
+
 function loadCatalogRecord(record) {
   if (!record?.draft) return;
   syncSourceText();
   state.draft.activeMode = 'estimate';
-  const catalogDraft = contract.normalizeModeDraft('estimate', { ...record.draft, catalogRecordId: record.estimateId });
+  const catalogDraft = createCatalogOnlyDraft(record.draft, record.estimateId);
   catalogDraft.catalogBaselinePrices = buildCatalogPriceSnapshot(catalogDraft.rows);
   catalogDraft.catalogPreviousPrices = record.previousPrices && typeof record.previousPrices === 'object'
     ? { ...record.previousPrices }
@@ -1814,8 +1853,15 @@ function loadCatalogRecord(record) {
   catalogDraft.header.customerName = customerName(linkedCustomer) || catalogCustomerName(record);
   catalogDraft.header.customerMappingSource = 'CATALOG';
   state.draft.modes.estimate = catalogDraft;
-  restoreSourceImageForMode('estimate');
+  state.sourceImages.estimate = null;
   state.selectedRowIds.clear();
+  clearTimeout(state.autoAnalyzeTimer);
+  state.analysisRequestId += 1;
+  state.pendingImageEvidence = null;
+  state.pendingOcrReview = null;
+  state.pendingSourceName = '';
+  setActiveActivity('');
+  resetPhotoView();
   saveDraftNow();
   renderMode();
   if (catalogDraft.header.customerId) {
@@ -2046,6 +2092,7 @@ function renderMode() {
   hydrateHeader();
   if (removeParserArtifactRows(modeDraft())) scheduleSave();
   sourceTextInput.value = modeDraft().sourceText;
+  state.photoView.detailColumns = Boolean(modeUi().detailColumns);
   updateMethod(modeDraft().activeMethod, { persist: false });
   renderRows();
   renderCatalogControls();
@@ -2162,6 +2209,25 @@ function enterGridFields() {
 
 function gridInput(rowId, field) {
   return inputRows.querySelector(`[data-row-id="${CSS.escape(rowId)}"] [data-field="${CSS.escape(field)}"], [data-row-id="${CSS.escape(rowId)}"] [data-custom-row-field="${CSS.escape(field)}"]`);
+}
+
+function revealGridInput(input) {
+  const scroll = $('tableScroll');
+  const row = input?.closest('tr[data-row-id]');
+  if (!scroll || !row) return;
+  const scrollBounds = scroll.getBoundingClientRect();
+  const rowBounds = row.getBoundingClientRect();
+  const headerHeight = scroll.querySelector('thead')?.getBoundingClientRect().height || 0;
+  const footerHeight = scroll.querySelector('tfoot')?.getBoundingClientRect().height || 0;
+  const visibleTop = scrollBounds.top + headerHeight + 4;
+  const visibleBottom = scrollBounds.bottom - footerHeight - 4;
+  if (rowBounds.bottom > visibleBottom) scroll.scrollTop += rowBounds.bottom - visibleBottom;
+  else if (rowBounds.top < visibleTop) scroll.scrollTop -= visibleTop - rowBounds.top;
+
+  const cellBounds = input.closest('td')?.getBoundingClientRect();
+  if (!cellBounds) return;
+  if (cellBounds.right > scrollBounds.right) scroll.scrollLeft += cellBounds.right - scrollBounds.right + 4;
+  else if (cellBounds.left < scrollBounds.left) scroll.scrollLeft -= scrollBounds.left - cellBounds.left + 4;
 }
 
 function focusGridTarget(target) {
@@ -2386,7 +2452,7 @@ async function analyzeSource({ automatic = false } = {}) {
       ? 'IMAGE_OCR'
       : (['CLIPBOARD', 'IMAGE_OCR'].includes(method.sourceType) ? 'GENERAL_TEXT' : method.sourceType));
   const batch = contract.createBatch({
-    sequence: current.batches.length + 1,
+    sequence: visibleActivityBatches(current).length + 1,
     method: method.id,
     sourceType: detectedSourceType,
     sourceName: state.pendingSourceName || currentSourceImage()?.fileName,
@@ -3164,7 +3230,7 @@ async function saveEstimateDocument() {
       previousPrices: priorPrices,
       createdAt: existing?.createdAt || timestamp,
       updatedAt: timestamp,
-      draft: JSON.parse(JSON.stringify(current))
+      draft: JSON.parse(JSON.stringify(createCatalogOnlyDraft(current, estimateId)))
     };
     await saveEstimate(record);
     state.estimates = [record, ...state.estimates.filter(item => item.estimateId !== estimateId)]
@@ -3329,7 +3395,7 @@ async function completeOrder() {
   }
 }
 
-function resetCurrentMode(requireConfirmation = true) {
+function resetCurrentMode(requireConfirmation = true, successMessage = '새 입력을 시작합니다.') {
   const current = modeDraft();
   const hasData = current.rows.length || current.sourceText.trim();
   if (requireConfirmation && hasData && !window.confirm(`${contract.MODES[state.draft.activeMode].label} 입력 내용을 비우고 새로 작성하시겠습니까?`)) return;
@@ -3348,7 +3414,15 @@ function resetCurrentMode(requireConfirmation = true) {
   saveDraftNow();
   renderMode();
   sourceTextInput.focus();
-  toast('새 입력을 시작합니다.', 'success');
+  toast(successMessage, 'success');
+}
+
+function saveAndStartNextVoucher() {
+  if (!saveDraftNow()) {
+    toast('전표를 저장하지 못해 현재 입력 내용을 유지합니다.', 'error');
+    return;
+  }
+  resetCurrentMode(false, '전표를 저장하고 다음 입력을 시작합니다.');
 }
 
 async function hydrateReferences() {
@@ -3464,6 +3538,8 @@ $('photoOcrClose').addEventListener('click', () => {
 $('photoEmptySelectButton').addEventListener('click', () => $('photoInput').click());
 $('detailColumnsButton').addEventListener('click', () => {
   state.photoView.detailColumns = !state.photoView.detailColumns;
+  modeUi().detailColumns = state.photoView.detailColumns;
+  scheduleSave();
   applyFormLayout();
 });
 const photoResizer = $('photoResizer');
@@ -3532,7 +3608,7 @@ $('warehouseInput').addEventListener('input', applyWarehouseMatch);
 $('warehouseInput').addEventListener('change', applyWarehouseMatch);
 $('transactionTypeInput').addEventListener('change', event => { modeDraft().header.transactionType = event.target.value; scheduleSave(); });
 $('completeButton').addEventListener('click', completeOrder);
-$('saveDraftButton').addEventListener('click', () => { saveDraftNow(); toast('현재 초안을 저장했습니다.', 'success'); });
+$('saveDraftButton').addEventListener('click', saveAndStartNextVoucher);
 $('draftListButton').addEventListener('click', openDraftListDialog);
 $('estimateNoticeButton').addEventListener('click', openEstimateNoticePreview);
 $('estimateExcelButton').addEventListener('click', exportEstimateExcel);
@@ -3644,6 +3720,11 @@ inputRows.addEventListener('focusin', event => {
   const input = event.target.closest('[data-field], [data-custom-row-field]');
   const tr = event.target.closest('[data-row-id]');
   if (!input || !tr) return;
+  window.requestAnimationFrame(() => {
+    if (document.activeElement !== input) return;
+    input.select?.();
+    revealGridInput(input);
+  });
   modeUi().activeCellId = `${tr.dataset.rowId}|${gridFieldId(input)}`;
   state.draft.ui.selectedRowId = tr.dataset.rowId;
   const row = modeDraft().rows.find(item => item.rowId === tr.dataset.rowId);
@@ -3705,7 +3786,7 @@ document.addEventListener('paste', event => {
     recognizeImage(image);
     return;
   }
-  if (event.clipboardData?.getData('text/plain')) {
+  if (event.target === sourceTextInput && event.clipboardData?.getData('text/plain')) {
     updateMethod('paste');
     window.setTimeout(syncSourceText, 0);
   }
