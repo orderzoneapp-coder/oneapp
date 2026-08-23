@@ -192,10 +192,11 @@ const relatedColumnAt = html.indexOf('<aside class="related-panel"');
 assert.ok(parserColumnAt >= 0 && parserColumnAt < workbenchColumnAt && workbenchColumnAt < relatedColumnAt,
   'desktop workspace must order the parser, workbench and related-app columns from left to right');
 
-assert.match(css, /grid-template-columns: 320px minmax\(0, 1fr\) 220px/);
+assert.match(css, /grid-template-columns: 390px minmax\(0, 1fr\) 220px/);
 assert.match(css, /--app-max: 1600px/);
-assert.match(css, /\.parser-card \{[^}]*position: sticky;[^}]*padding: 12px;[^}]*border: 1px solid var\(--border\)/);
+assert.match(css, /\.parser-card \{[^}]*position: sticky;[^}]*padding: 14px;[^}]*border: 1px solid var\(--border\)/);
 assert.match(css, /\.source-highlight, \.source-editor textarea \{[^}]*height: clamp\(360px, calc\(100vh - 340px\), 660px\);[^}]*overflow: auto;/);
+assert.match(css, /font: 13px\/1\.68 ui-monospace/);
 assert.match(css, /\.source-editor textarea \{[^}]*resize: none;/);
 assert.match(css, /\.source-token--user/);
 assert.match(css, /\.source-token--time/);
@@ -275,6 +276,9 @@ assert.match(appSource, /data-customer-use/);
 assert.match(appSource, /data-tax-register/);
 assert.match(appSource, /거래처 앞 체크박스/);
 assert.match(appSource, /if \(!linkMode\) selected\.clear\(\)/, 'normal customer selection must keep only one checked customer');
+assert.match(appSource, /memberCustomerIds: \[customerId\][\s\S]*taxCustomerId: customerId/, 'an unlinked formal customer must become a one-member tax group when registered');
+assert.match(appSource, /dialog\.showModal\(\);[\s\S]*refreshCustomers\(\{ syncIfEmpty: true \}\)/, 'customer dialog must open before background master refresh completes');
+assert.match(appSource, /withTimeout\(getAll\(STORE\.CUSTOMERS\), 5000/, 'startup customer loading must have a bounded wait');
 assert.match(appSource, /function openEstimateListDialog\(\)/);
 assert.match(appSource, /function saveEstimateDocument\(\)/);
 assert.match(appSource, /function applyFormLayout\(\)/);
