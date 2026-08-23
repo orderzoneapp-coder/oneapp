@@ -347,7 +347,8 @@ assert.match(css, /\.photo-viewer\.has-image \.photo-viewer__viewport \{/);
 assert.match(css, /\.photo-empty-state \{/);
 assert.match(css, /\.analyze-button\[hidden\], \.parser-progress\[hidden\] \{ display: none; \}/);
 assert.match(css, /\.photo-viewer__region \{/);
-assert.match(css, /\.workspace\.has-photo-source \{[^}]*grid-template-columns: minmax\(370px, var\(--photo-pane-width\)\) 8px minmax\(520px, 1fr\) 230px;/);
+assert.match(css, /\.workspace\.has-photo-source \{[^}]*grid-template-columns: minmax\(370px, min\(var\(--photo-pane-width\), calc\(100% - 806px\)\)\) 8px minmax\(0, 1fr\) 230px;/,
+  'the saved photo pane width must be capped so the input grid cannot overflow its workbench');
 assert.match(css, /--photo-pane-width: clamp\(420px, 38vw, 760px\)/);
 assert.match(css, /\.document-fields > \.field \{[^}]*grid-template-rows: 18px 42px 14px;/);
 assert.match(css, /\.document-fields \.mode-tabs \{[^}]*height: 42px;/);
@@ -364,8 +365,16 @@ assert.match(css, /\.save-state \{[^}]*flex: 0 0 64px;[^}]*width: 64px;[^}]*whit
 assert.match(css, /@media \(max-width: 1480px\) \{[^}]*grid-template-columns: 380px minmax\(0, 1fr\)/,
   'related apps must yield width to the input table on ordinary desktop screens');
 assert.match(css, /@media \(max-width: 1180px\)/);
+assert.match(css, /@media \(max-width: 1240px\) \{[\s\S]*?\.workspace, \.workspace\.has-photo-source \{ grid-template-columns: minmax\(0, 1fr\); \}/,
+  'photo and input workspaces must stack before their minimum widths collide');
 assert.match(css, /@media \(max-width: 980px\)/);
 assert.match(css, /@media \(max-width: 820px\)/);
+assert.match(css, /@media \(max-width: 820px\) \{[\s\S]*?\.app-bar__actions \{[^}]*overflow-x: auto;/,
+  'tablet action buttons must scroll within the app bar instead of widening the page');
+assert.match(css, /@media \(max-width: 560px\) \{[\s\S]*?\.method-bar \{ grid-template-columns: repeat\(2, minmax\(0, 1fr\)\); \}[\s\S]*?\.document-fields \{ grid-template-columns: 1fr;/,
+  'mobile input methods and document fields must collapse to touch-friendly columns');
+assert.match(css, /\.parser-card, \.related-panel, \.workbench, \.document-fields, \.grid-card, \.table-scroll \{[^}]*min-width: 0;[^}]*max-width: 100%;/,
+  'nested workspace cards must be allowed to shrink inside the responsive grid');
 assert.match(css, /prefers-color-scheme: dark/);
 assert.match(css, /prefers-reduced-motion: reduce/);
 
