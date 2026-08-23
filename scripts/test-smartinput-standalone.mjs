@@ -6,6 +6,12 @@ import path from 'node:path';
 import vm from 'node:vm';
 import { normalizeMasterProduct, searchProductCatalog } from '../orderq/product-master-search.js';
 import { buildOrderSourceDocumentCanonicalProjection } from '../orderq/intake-identity.js';
+import {
+  buildCatalogPriceSnapshot,
+  buildKakaoNoticeRows,
+  buildEstimateF8Data,
+  validateEstimateRows
+} from '../smartinput/estimate-output.js';
 
 const root = process.cwd();
 const read = file => fs.readFileSync(path.join(root, file), 'utf8');
@@ -100,6 +106,36 @@ assert.equal(displayRow.description, '직원 적요');
 assert.equal(displayRow.noticePrice, 1200);
 assert.equal(contract.normalizeRow({ unitPrice: 3800, unitPriceReviewStatus: 'PENDING' }).unitPriceReviewStatus, 'PENDING');
 assert.equal(contract.normalizeRow({ unitPrice: 3800 }).unitPriceReviewStatus, 'CONFIRMED');
+const estimateDraftWithPrices = contract.normalizeModeDraft('estimate', {
+  catalogRecordId: 'CAT-1',
+  catalogBaselinePrices: { 'MASTER:M-1': 12000 },
+  catalogPreviousPrices: { 'MASTER:M-1': 10000 }
+});
+assert.equal(estimateDraftWithPrices.catalogRecordId, 'CAT-1');
+assert.equal(estimateDraftWithPrices.catalogBaselinePrices['MASTER:M-1'], 12000);
+assert.equal(estimateDraftWithPrices.catalogPreviousPrices['MASTER:M-1'], 10000);
+const estimateOutputRows = [{
+  productId: 'P-1', masterProductId: 'M-1', itemCode: '1001', itemName: '열무', specification: '4kg',
+  unitPrice: 3800, noticePrice: 4200, memo: '주말 단가', unitPriceReviewStatus: 'PENDING'
+}];
+const priceSnapshot = buildCatalogPriceSnapshot(estimateOutputRows);
+assert.equal(priceSnapshot['MASTER:M-1'], 4200);
+const noticeRows = buildKakaoNoticeRows(estimateOutputRows, { 'MASTER:M-1': 4000 });
+assert.equal(noticeRows[0].nameSpec, '열무 · 4kg');
+assert.equal(noticeRows[0].change, 200);
+assert.equal(noticeRows[0].note, '주말 단가');
+assert.equal(validateEstimateRows(estimateOutputRows).ok, true);
+assert.equal(validateEstimateRows([{ ...estimateOutputRows[0], itemCode: '' }]).ok, false);
+assert.equal(validateEstimateRows([estimateOutputRows[0], { ...estimateOutputRows[0], masterProductId: 'M-2' }]).errors.some(error => error.code === 'DUPLICATE_ITEM_CODE'), true);
+const estimateF8 = buildEstimateF8Data(estimateOutputRows);
+assert.equal(estimateF8.ok, true);
+assert.deepEqual(estimateF8.shopData[0].slice(0, 6), ['상품코드\n코드', '상품명', '규격', '출고가', '도매A', '시중가']);
+assert.deepEqual(estimateF8.shopData[1].slice(0, 6), ['1001', '열무', '4kg', '', 3800, 4200]);
+assert.deepEqual(estimateF8.erpData[1], ['1001', '', '0', '', '0', '', 'n', 3800, 'n', '', 'n']);
+assert.equal(estimateF8.confirmData.length, 2);
+assert.deepEqual(estimateF8.confirmData[0], ['확인구분', '상품코드', '상품명', '규격', '기준입고항목', '기준입고가', '도매항목', '도매가', '차이', '확인요청']);
+assert.equal(estimateF8.confirmData[1][7], 3800);
+assert.equal(validateEstimateRows([{}, { ...estimateOutputRows[0], itemCode: '' }]).errors[0].rowIndex, 1);
 assert.deepEqual(JSON.parse(JSON.stringify(contract.normalizeRow({
   sourceRegion: { left: .1, top: .2, width: .3, height: .4 }
 }).sourceRegion)), { left: .1, top: .2, width: .3, height: .4 });
@@ -269,9 +305,15 @@ assert.match(html, /legend--failed">불일치/);
 assert.match(html, /id="detailColumnsButton"[^>]*hidden/);
 assert.match(html, /<th data-column="status">상태<\/th>/);
 assert.doesNotMatch(html, /id="mobilePhotoTabs"|data-photo-pane=/);
-assert.match(html, /id="estimateListButton"/);
+assert.doesNotMatch(html, /id="estimateListButton"|>견적 목록</);
+assert.match(html, /id="estimateOutputActions"[^>]*hidden/);
+assert.match(html, /id="estimateNoticeButton"[^>]*>카톡 공지 복사</);
+assert.match(html, /id="estimateExcelButton"[^>]*>견적 Excel</);
 assert.match(html, /id="catalogSelect"/);
+assert.match(html, /id="catalogNewButton"/);
 assert.match(html, /id="catalogSaveButton"/);
+assert.match(html, /id="catalogDeleteButton"/);
+assert.ok(html.indexOf('class="field field--mode"') < html.indexOf('data-header-field="deliveryDate"'), '전표 선택은 배송일자보다 왼쪽 DOM 순서여야 한다.');
 assert.match(html, /id="selectAllRows"/);
 assert.match(html, /id="deleteSelectedRows"/);
 assert.match(html, /class="col-unit"/);
@@ -405,7 +447,10 @@ assert.match(appSource, /if \(!linkMode\) selected\.clear\(\)/, 'normal customer
 assert.match(appSource, /memberCustomerIds: \[customerId\][\s\S]*taxCustomerId: customerId/, 'an unlinked formal customer must become a one-member tax group when registered');
 assert.match(appSource, /dialog\.showModal\(\);[\s\S]*refreshCustomers\(\{ syncIfEmpty: true \}\)/, 'customer dialog must open before background master refresh completes');
 assert.match(appSource, /withTimeout\(listCustomers\(\{ includeInactive: false \}\), 5000/, 'startup customer loading must have a bounded wait');
-assert.match(appSource, /function openEstimateListDialog\(\)/);
+assert.doesNotMatch(appSource, /function openEstimateListDialog\(\)/);
+assert.match(appSource, /function deleteSelectedCatalog\(\)/);
+assert.match(appSource, /function openEstimateNoticePreview\(\)/);
+assert.match(appSource, /function exportEstimateExcel\(\)/);
 assert.match(appSource, /function saveEstimateDocument\(\)/);
 assert.match(appSource, /function applyFormLayout\(\)/);
 assert.match(appSource, /function headerFieldsForMode\(/);
@@ -418,6 +463,10 @@ assert.match(appSource, /headerFieldsByMode: workingHeaderFieldsByMode/);
 assert.match(appSource, /voucherColumnsByMode: workingVoucherColumnsByMode/);
 assert.match(css, /\.settings-layout-modes \{[^}]*grid-template-columns: repeat\(4,/,
   '전표별 상단 정보 열과 표시 열은 주문서·구매·판매·견적서 선택 탭을 제공해야 한다.');
+assert.match(css, /\.document-fields > \.field--mode \{ grid-column: 1;/,
+  '전표 선택은 상단 정보 영역의 첫 번째 열에 배치해야 한다.');
+assert.match(css, /\.document-fields \.field--mode \.mode-tabs \{[^}]*border: 2px solid var\(--voucher-accent\)/,
+  '전표 선택은 주황색 보더로 강조해야 한다.');
 assert.match(appSource, /상품정보/);
 assert.match(appSource, /거래처정보/);
 assert.match(appSource, /사용자지정/);
@@ -510,6 +559,12 @@ assert.match(appSource, /const priceTab = event\.key === 'Tab' && field === 'uni
 assert.match(appSource, /directionalGridTarget\(rowId, field, event\.shiftKey \? 'ArrowUp' : 'ArrowDown'\)/);
 assert.match(appSource, /function startNewCatalog\(/);
 assert.match(appSource, /function availableCatalogs\(/);
+assert.match(appSource, /previousPrices: priorPrices/);
+assert.match(appSource, /buildCatalogPriceSnapshot\(current\.rows\)/);
+assert.match(appSource, /'쇼핑몰업로드'/);
+assert.match(appSource, /'ERP업데이트'/);
+assert.match(appSource, /if \(output\.confirmData\.length > 1\)/);
+assert.match(appSource, /MerchOps F8 형식의 견적 Excel/);
 assert.match(appSource, /const records = availableCatalogs\(current\.header\)/);
 assert.doesNotMatch(appSource, /\$\('catalogSelect'\)\.disabled = !current\.header\.customerId/);
 assert.match(appSource, /catalogDraft\.header\.customerId = linkedCustomer\?\.customerId \|\| catalogCustomerId\(record\)/);

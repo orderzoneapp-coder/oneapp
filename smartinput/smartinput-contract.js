@@ -274,6 +274,8 @@
     return {
       documentId: createId('SIDOC'),
       catalogRecordId: '',
+      catalogBaselinePrices: {},
+      catalogPreviousPrices: {},
       mode,
       header: {
         recordedAt,
@@ -433,6 +435,12 @@
     return {
       documentId: text(input.documentId) || fallback.documentId,
       catalogRecordId: text(input.catalogRecordId),
+      catalogBaselinePrices: input.catalogBaselinePrices && typeof input.catalogBaselinePrices === 'object'
+        ? { ...input.catalogBaselinePrices }
+        : {},
+      catalogPreviousPrices: input.catalogPreviousPrices && typeof input.catalogPreviousPrices === 'object'
+        ? { ...input.catalogPreviousPrices }
+        : {},
       mode,
       header: normalizeHeader(input.header, fallback.header),
       sourceText: String(input.sourceText ?? ''),
