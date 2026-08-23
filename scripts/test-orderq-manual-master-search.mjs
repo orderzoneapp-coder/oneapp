@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import {
+  isSelectableMasterProduct,
   mergeProductCatalog,
   normalizeManualPriceOptions,
   normalizeMasterProduct,
@@ -52,6 +53,12 @@ assert.equal(normalizeMasterProduct({ 코드: 'MASTER-ONLY-1', masterProductId: 
   '공통 마스터 레코드의 임의 필드보다 IndexedDB 실제 기본키가 우선해야 한다.');
 assert.equal(normalizeMasterProduct({ itemCode: 'HISTORY-1', itemName: '이력상품' }, '', 'ORDERQ_HISTORY').masterProductId, '',
   'ORDER Q 이력 상품에는 공통 마스터 ID를 합성하면 안 된다.');
+assert.equal(isSelectableMasterProduct(common[0]), true, '실제 공통 마스터의 완전한 상품만 선택할 수 있어야 한다.');
+assert.equal(isSelectableMasterProduct(normalizeMasterProduct({
+  itemCode: 'HISTORY-STALE', itemName: '삭제된 이력상품', productId: 'PRD-HISTORY-STALE', masterProductId: 'DELETED-MASTER'
+}, '', 'ORDERQ_HISTORY')), false, '삭제된 마스터를 가리키는 ORDER Q 이력 상품은 후보에서 제외해야 한다.');
+assert.equal(isSelectableMasterProduct(normalizeMasterProduct({ 품목코드: 'EMPTY-NAME' }, '', 'COMMON_MASTER')), false,
+  '품목명이 비어 있는 불완전한 마스터 행은 후보에서 제외해야 한다.');
 
 assert.equal(normalizeWarehouseCode('1'), '01', '숫자 창고코드는 선행 0을 포함한 정식 코드로 정규화해야 한다.');
 assert.deepEqual(warehouseIdentity({ warehouse: '1창고' }), {

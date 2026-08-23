@@ -8,7 +8,7 @@ import { createOrder } from '../orderq/order-intake-engine.js?v=0.15.2';
 import { syncAfterLocalMutation } from '../orderq/orderq-sync-engine.js?v=0.8.0';
 import { STORE, getAll } from '../orderq/orderq-db.js?v=0.12.1';
 import { createLiveCustomer, ensureCustomerMasterReady } from '../orderq/customer-master.js?v=0.12.1';
-import { loadProductCatalog, searchProductCatalog } from '../orderq/product-master-search.js?v=0.8.1';
+import { isSelectableMasterProduct, loadProductCatalog, searchProductCatalog } from '../orderq/product-master-search.js?v=0.8.2';
 import { loadWarehouseCatalog, matchWarehouseInput, warehouseDisplayName } from '../orderq/warehouse-master.js?v=0.8.0';
 import { recognizeOcrDocument, verifiedRowsToParserLines } from './ocr-document-parser.js?v=0.1.0';
 import {
@@ -1745,12 +1745,12 @@ function toggleVoice() {
 function exactProduct(query) {
   const key = normalizedKey(query);
   if (!key) return null;
-  return state.products.find(product => product.masterProductId && [product.itemCode, product.itemName, product.secondaryName, product.searchInfo]
+  return state.products.find(product => isSelectableMasterProduct(product) && [product.itemCode, product.itemName, product.secondaryName, product.searchInfo]
     .some(value => normalizedKey(value) === key)) || null;
 }
 
 function commonMasterProducts() {
-  return state.products.filter(product => String(product.masterProductId || '').trim());
+  return state.products.filter(isSelectableMasterProduct);
 }
 
 function hasMasterProductIdentity(row) {
@@ -1764,7 +1764,7 @@ function priceFromProduct(product) {
 }
 
 function applyProduct(row, product, { forceIdentityFields = false, preserveIdentityField = '' } = {}) {
-  if (!row || !product) return;
+  if (!row || !isSelectableMasterProduct(product)) return false;
   const protect = field => Boolean(row.editedFields?.[field]);
   const preserveIdentity = field => !forceIdentityFields
     && (preserveIdentityField ? field === preserveIdentityField : protect(field));
@@ -1780,6 +1780,7 @@ function applyProduct(row, product, { forceIdentityFields = false, preserveIdent
   row.productIdentityStatus = row.matchStatus === 'MATCHED' ? 'MASTER_LINKED' : 'UNRESOLVED';
   row.matchSource = row.matchStatus === 'MATCHED' ? 'SMART_INPUT_COMMON_MASTER' : '';
   row.candidateProducts = [];
+  return row.matchStatus === 'MATCHED';
 }
 
 function enrichRowFromUnifiedCatalog(row) {
@@ -1870,7 +1871,10 @@ function openProductDialog(row, { query = '' } = {}) {
 
   const finish = product => {
     if (product) {
-      applyProduct(row, product, { forceIdentityFields: true });
+      if (!applyProduct(row, product, { forceIdentityFields: true })) {
+        message.textContent = '공통 상품 마스터에 등록된 정상 상품만 선택할 수 있습니다.';
+        return;
+      }
       modeDraft().rows = contract.markDuplicatePossibilities(modeDraft().rows);
       renderRows();
       saveDraftNow();
@@ -1879,13 +1883,35 @@ function openProductDialog(row, { query = '' } = {}) {
     dialog.remove();
   };
   let foundProducts = [];
+  let selectedIndex = 0;
+  const updateSelection = (nextIndex, { scroll = true } = {}) => {
+    if (!foundProducts.length) {
+      selectedIndex = 0;
+      search.removeAttribute('aria-activedescendant');
+      return;
+    }
+    selectedIndex = Math.max(0, Math.min(nextIndex, foundProducts.length - 1));
+    const buttons = [...results.querySelectorAll('.customer-picker-result')];
+    buttons.forEach((button, index) => {
+      const selected = index === selectedIndex;
+      button.classList.toggle('is-selected', selected);
+      button.setAttribute('aria-selected', String(selected));
+      if (selected) {
+        search.setAttribute('aria-activedescendant', button.id);
+        if (scroll) button.scrollIntoView({ block: 'nearest' });
+      }
+    });
+    message.textContent = `${foundProducts.length}개 후보 · ${selectedIndex + 1}번째 항목 선택 · ↑↓ 이동 · Enter 확정`;
+  };
   const render = () => {
     foundProducts = searchProductCatalog(search.value, commonMasterProducts(), 12);
+    selectedIndex = 0;
     results.innerHTML = '';
-    message.textContent = foundProducts.length ? `${foundProducts.length}개 후보 · 첫 번째 항목이 선택되었습니다. Enter로 확정합니다.` : '일치하는 상품 후보가 없습니다.';
+    message.textContent = foundProducts.length ? `${foundProducts.length}개 후보 · 첫 번째 항목이 선택되었습니다. ↑↓로 이동하고 Enter로 확정합니다.` : '일치하는 상품 후보가 없습니다.';
     foundProducts.forEach((product, index) => {
       const button = document.createElement('button');
       button.type = 'button';
+      button.id = `product-candidate-${index}`;
       button.className = `customer-picker-result${index === 0 ? ' is-selected' : ''}`;
       button.setAttribute('aria-selected', String(index === 0));
       const strong = document.createElement('strong');
@@ -1898,6 +1924,7 @@ function openProductDialog(row, { query = '' } = {}) {
       button.addEventListener('click', () => finish(product));
       results.append(button);
     });
+    updateSelection(0, { scroll: false });
   };
   let timer = null;
   search.addEventListener('input', () => {
@@ -1905,9 +1932,21 @@ function openProductDialog(row, { query = '' } = {}) {
     timer = setTimeout(render, 90);
   });
   search.addEventListener('keydown', event => {
-    if (event.key !== 'Enter' || event.isComposing) return;
-    event.preventDefault();
-    if (foundProducts[0]) finish(foundProducts[0]);
+    if (event.isComposing) return;
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      updateSelection(selectedIndex + 1);
+      return;
+    }
+    if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      updateSelection(selectedIndex - 1);
+      return;
+    }
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      if (foundProducts[selectedIndex]) finish(foundProducts[selectedIndex]);
+    }
   });
   close.addEventListener('click', () => finish(null));
   dialog.addEventListener('cancel', event => { event.preventDefault(); finish(null); });

@@ -283,7 +283,15 @@ assert.match(appSource, /data-field="specification"/);
 assert.match(appSource, /data-field="unit"/);
 assert.doesNotMatch(appSource, /data-match-row|item-match-action|>Fn<|rowStatusLabel/);
 assert.match(appSource, /first 번째 항목|첫 번째 항목/);
-assert.match(appSource, /if \(foundProducts\[0\]\) finish\(foundProducts\[0\]\)/);
+assert.match(appSource, /let selectedIndex = 0/);
+assert.match(appSource, /state\.products\.filter\(isSelectableMasterProduct\)/,
+  '상품 후보는 실제 공통 마스터의 완전한 상품으로 제한해야 한다.');
+assert.match(appSource, /if \(!row \|\| !isSelectableMasterProduct\(product\)\) return false/,
+  '마스터가 아닌 상품은 선택 확정 단계에서도 차단해야 한다.');
+assert.match(appSource, /event\.key === 'ArrowDown'[\s\S]*updateSelection\(selectedIndex \+ 1\)/);
+assert.match(appSource, /event\.key === 'ArrowUp'[\s\S]*updateSelection\(selectedIndex - 1\)/);
+assert.match(appSource, /button\.scrollIntoView\(\{ block: 'nearest' \}\)/);
+assert.match(appSource, /if \(foundProducts\[selectedIndex\]\) finish\(foundProducts\[selectedIndex\]\)/);
 assert.match(appSource, /resetCurrentMode\(false\)/);
 assert.match(appSource, /data-customer-use/);
 assert.match(appSource, /data-tax-register/);
