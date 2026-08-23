@@ -16,7 +16,7 @@ assert.doesNotMatch(orderOpsHtml, /tokens truncated|…\d+ tokens truncated…/,
   "the public OrderOps mirror must not contain a truncated source fragment");
 assert.match(orderOpsHtml, /<body>[\s\S]*<\/body>\s*<\/html>/,
   "the public OrderOps mirror must remain a complete HTML document");
-assert.match(orderOpsHtml, /brand-badge">v1\.63</, "ORDER Q visible version must be v1.63");
+assert.match(orderOpsHtml, /brand-badge">v1\.64</, "ORDER Q visible version must be v1.64");
 assert.match(orderOpsHtml, /<title>ORDER Q<\/title>/,
   "the public page title must use the approved ORDER Q name");
 assert.match(orderOpsHtml, /<nexus-top app-id="orderq">[\s\S]*?<\/nexus-top>/,
@@ -25,8 +25,18 @@ assert.match(orderOpsHtml, /<img class="brand-logo" src="assets\/order-q-logo\.p
   "the public APP BAR must use the approved ORDER Q logo");
 assert.doesNotMatch(orderOpsHtml, /<strong class="brand-product">ORDER Q · 출고관리<\/strong>/,
   "the public APP BAR must not duplicate the logo with the former text brand");
-assert.match(orderOpsHtml, /ORDER Q v1\.63 · 출고관리/,
+assert.match(orderOpsHtml, /ORDER Q v1\.64 · 출고관리/,
   "the public footer must use the ORDER Q product concept");
+assert.match(orderOpsHtml, /orderops\/orderops-source-adapter\.js\?v=1\.64\.0/,
+  "the public page must load the DataOps and SmartInput source adapter");
+assert.match(orderOpsHtml, /function loadDataOpsInventory\(\)[\s\S]*fetchLatestDataOpsSnapshot/,
+  "the warehouse card must load and validate the latest DataOps snapshot");
+assert.match(orderOpsHtml, /function loadSmartInputOrders\(\)[\s\S]*sourceAdapter\.loadSmartInputOrders/,
+  "the order card must read SmartInput orders from the ORDER Q ledger");
+assert.match(orderOpsHtml, /kind === "inventory"[\s\S]*loadDataOpsInventory\(\)/,
+  "the warehouse card surface must invoke the DataOps loader");
+assert.match(orderOpsHtml, /kind === "orders"[\s\S]*loadSmartInputOrders\(\)/,
+  "the order card surface must invoke the SmartInput loader");
 assert.doesNotMatch(
   orderOpsHtml.slice(orderOpsHtml.indexOf('<header class="global-header">'), orderOpsHtml.indexOf('</header>')),
   /NEXUS|OrderOps/,
@@ -1887,7 +1897,9 @@ const html = fs.readFileSync(path.join(ROOT, "orderops", "list.html"), "utf8");
 const inlineScriptMatch = html.match(/<script>\s*([\s\S]*?)<\/script>\s*<\/body>/);
 assert.ok(inlineScriptMatch, "canonical ORDER Q inline application script must exist");
 new vm.Script(inlineScriptMatch[1], { filename: "orderops/list.html:inline" });
-assert.match(html, /brand-badge">v1\.63</, "canonical ORDER Q visible version must be v1.63");
+assert.match(html, /brand-badge">v1\.64</, "canonical ORDER Q visible version must be v1.64");
+assert.match(html, /orderops-source-adapter\.js\?v=1\.64\.0/,
+  "the canonical route must load the shared source adapter");
 assert.match(html, /<nexus-top app-id="orderq">[\s\S]*?<\/nexus-top>/,
   "the canonical route must load NEXUS TOP with the ORDER Q app id");
 assert.doesNotMatch(html, /class="brand-logo" src="\.\.\/assets\/order-q-logo\.png"/,

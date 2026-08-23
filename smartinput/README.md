@@ -47,9 +47,9 @@ NEXUS 공통헤더의 고정 스마트입력 진입점에서 주문서·구매·
 ORDER Q vNext의 IndexedDB `oneapp-orderq-vnext`와 `orderq/order-intake-engine.js`의 `createOrder()`를 공통 주문서 원장으로 재사용한다.
 
 - `orderq/index.html`: 같은 원장을 조회하므로 저장 직후 주문서 조회 가능
-- `orders.html`: 현재 Excel 기반 출고관리 흐름으로 vNext 원장을 직접 읽지 않으므로 별도 전달 어댑터가 필요
-- 독립 앱 단계: vNext 원장 저장과 `orderq/index.html` 조회 연결까지 구현
-- 후속 연결 단계: `orders.html`이 공통 주문서 원장을 소비하는 어댑터를 별도 검증 후 연결
+- `orders.html`: 주문현황 카드를 누르면 검증된 읽기 전용 어댑터가 같은 원장의 `SMART_INPUT` 출고 대상 주문을 기존 출고분석 입력으로 변환
+- 완료·전체취소 주문과 취소·제외 상품행은 출고분석에 다시 넣지 않으며, 어댑터는 원장을 수정하거나 Cloud Sync를 실행하지 않음
+- `orders.html` 연결은 별도 주문 저장소를 만들지 않고 원장 revision과 상품행을 source fingerprint로 고정해 읽음
 
 새 주문서 원장을 중복 생성하지 않는다. SmartInput은 입력 원본·초안·전달 상태를 소유하고, 저장 완료된 주문의 수정·취소·출고 판단은 ORDER Q가 소유한다.
 
