@@ -269,7 +269,7 @@ try {
   assert.equal(directDiagnostics.order.orderMatches, false);
   Object.values(directDiagnostics).forEach((result) => assert.equal(result.ok, false));
 
-  // 견적·구매는 기존 소분 가격행 및 재고복사 동작을 유지한다.
+  // 입고가가 있는 비재고 상품과 소분행은 판매여부 1·재고수량 999를 출력하고 테마는 변경하지 않는다.
   const estimateRow = makeRow({
     code: "20010001",
     role: "estimate",
@@ -289,33 +289,41 @@ try {
   const estimateShop = estimateResult.context.XLSX.utils.sheet_to_json(estimateResult.reopened.Sheets["쇼핑몰업로드"], { header: 1, raw: true });
   const estimateErp = estimateResult.context.XLSX.utils.sheet_to_json(estimateResult.reopened.Sheets["ERP업데이트"], { header: 1, raw: true, defval: "" });
   assert.equal(estimateShop.length - 1, 2, "estimate F8 subdivision row must remain");
+  assert.equal(estimateShop[1][14], "1", "priced estimate row must be sale-enabled");
+  assert.equal(estimateShop[1][15], 999, "priced estimate row must receive shopping-mall stock 999");
+  assert.deepEqual(Array.from(estimateShop[1].slice(16, 21)), ["1", "", "", "", ""], "priced estimate row themes must remain unchanged");
   assert.equal(estimateShop[2][0], "20010002");
-  assert.equal(estimateShop[2][15], 0);
+  assert.equal(estimateShop[2][14], "1", "priced subdivision row must be sale-enabled");
+  assert.equal(estimateShop[2][15], 999, "priced subdivision row must receive shopping-mall stock 999");
+  assert.deepEqual(Array.from(estimateShop[2].slice(16, 21)), ["1", "", "", "", ""], "subdivision themes must remain unchanged");
   assert.deepEqual(Array.from(estimateErp[0]), ['품목코드', '입고가', '0', '출고가', '0', '입고B', 'n', '도매A', 'n', '도매B', 'n'],
     "F8 ERP upload must end at the wholesale-B helper column");
   assert.ok(estimateErp.slice(1).every((row) => row.length === 11),
     "main and subdivision ERP rows must contain exactly 11 columns");
 
-  const masterSaleStockResult = await runF8Scenario({
-    name: "master-sale-stock-fallback",
+  const inboundDefaultsResult = await runF8Scenario({
+    name: "inbound-shop-defaults",
     rows: [
-      makeRow({ code: "MS1", role: "purchase", source: { 품목명: "마스터 보강", 입고가: 9000, 출고가: 11000 } }),
-      makeRow({ code: "MS2", role: "purchase", source: { 품목명: "명시 공란 보존", 입고가: 9000, 출고가: 11000, 판매여부: "", 재고수량: "" } }),
-      makeRow({ code: "MS3", role: "purchase", source: { 품목명: "명시 0 보존", 입고가: 9000, 출고가: 11000, 판매여부: 0, 재고수량: 0 } }),
+      makeRow({ code: "IP1", role: "purchase", source: { 품목명: "입고가 있음", 입고가: 9000, 출고가: 11000, 판매여부: 0, 재고수량: 3, 행사테마: "1,4" } }),
+      makeRow({ code: "IP0", role: "purchase", source: { 품목명: "입고가 0", 입고가: 0, 출고가: 11000, 판매여부: 0, 재고수량: 4, 행사테마: "2" } }),
+      makeRow({ code: "IPB", role: "purchase", source: { 품목명: "입고가 공란", 입고가: "", 출고가: 11000, 판매여부: "", 재고수량: "", 행사테마: "3" } }),
+      makeRow({ code: "IPM", role: "purchase", source: { 품목명: "입고가 없음 마스터 보강", 출고가: 11000 } }),
     ],
-    masterProducts: {
-      MS1: { 판매여부: 1, 재고수량: 7 },
-      MS2: { 판매여부: 1, 재고수량: 8 },
-      MS3: { 판매여부: 1, 재고수량: 9 },
-    },
+    masterProducts: { IPM: { 판매여부: 1, 재고수량: 7 } },
   });
-  const masterSaleStockShop = masterSaleStockResult.context.XLSX.utils.sheet_to_json(masterSaleStockResult.reopened.Sheets["쇼핑몰업로드"], { header: 1, raw: true, defval: "" });
-  assert.equal(masterSaleStockShop[1][14], "1", "missing working sale availability must fall back to master");
-  assert.equal(masterSaleStockShop[1][15], 7, "missing working stock must fall back to master");
-  assert.equal(masterSaleStockShop[2][14], "", "explicit blank sale availability must stay blank");
-  assert.equal(masterSaleStockShop[2][15], "", "explicit blank stock must stay blank");
-  assert.equal(masterSaleStockShop[3][14], "0", "explicit zero sale availability must stay zero");
-  assert.equal(masterSaleStockShop[3][15], 0, "explicit zero stock must stay zero");
+  const inboundDefaultsShop = inboundDefaultsResult.context.XLSX.utils.sheet_to_json(inboundDefaultsResult.reopened.Sheets["쇼핑몰업로드"], { header: 1, raw: true, defval: "" });
+  assert.equal(inboundDefaultsShop[1][14], "1", "positive inbound price must override sale availability to 1");
+  assert.equal(inboundDefaultsShop[1][15], 999, "positive inbound price must override stock to 999");
+  assert.deepEqual(Array.from(inboundDefaultsShop[1].slice(16, 21)), ["1", "", "", "1", ""], "positive inbound price must not add or remove themes");
+  assert.equal(inboundDefaultsShop[2][14], "0", "zero inbound price must preserve existing sale availability");
+  assert.equal(inboundDefaultsShop[2][15], 4, "zero inbound price must preserve existing stock");
+  assert.deepEqual(Array.from(inboundDefaultsShop[2].slice(16, 21)), ["", "1", "", "", ""], "zero inbound price must preserve themes");
+  assert.equal(inboundDefaultsShop[3][14], "", "blank inbound price must preserve blank sale availability");
+  assert.equal(inboundDefaultsShop[3][15], "", "blank inbound price must preserve blank stock");
+  assert.deepEqual(Array.from(inboundDefaultsShop[3].slice(16, 21)), ["", "", "1", "", ""], "blank inbound price must preserve themes");
+  assert.equal(inboundDefaultsShop[4][14], "1", "missing inbound price must preserve the existing master sale fallback");
+  assert.equal(inboundDefaultsShop[4][15], 7, "missing inbound price must preserve the existing master stock fallback");
+  assert.deepEqual(Array.from(inboundDefaultsShop[4].slice(16, 21)), ["", "", "", "", ""], "missing inbound price must not add theme 2");
 
   const purchaseRow = makeRow({
     code: "30010001",
@@ -332,8 +340,26 @@ try {
   });
   const purchaseShop = purchaseResult.context.XLSX.utils.sheet_to_json(purchaseResult.reopened.Sheets["쇼핑몰업로드"], { header: 1, raw: true });
   assert.equal(purchaseShop.length - 1, 2, "purchase F8 subdivision row must remain");
+  assert.equal(purchaseShop[1][14], "1");
+  assert.equal(purchaseShop[1][15], 999, "priced purchase row must receive shopping-mall stock 999");
   assert.equal(purchaseShop[2][0], "30010002");
-  assert.equal(purchaseShop[2][15], 5, "non-inventory subdivision stock behavior must remain unchanged");
+  assert.equal(purchaseShop[2][14], "1");
+  assert.equal(purchaseShop[2][15], 999, "priced subdivision row must receive shopping-mall stock 999");
+
+  const inventoryDefaultsGuardRow = makeRow({
+    code: "INV1",
+    role: "inventory",
+    source: { 품목명: "재고 계약 보존", 입고가: 5000, 출고가: 7000, 판매여부: 0, 재고수량: 6, 행사테마: "2" },
+  });
+  const inventoryDefaultsGuardResult = await runF8Scenario({
+    name: "inventory-defaults-guard",
+    rows: [inventoryDefaultsGuardRow],
+    snapshotRows: [inventoryDefaultsGuardRow],
+  });
+  const inventoryDefaultsGuardShop = inventoryDefaultsGuardResult.context.XLSX.utils.sheet_to_json(inventoryDefaultsGuardResult.reopened.Sheets["쇼핑몰업로드"], { header: 1, raw: true, defval: "" });
+  assert.equal(inventoryDefaultsGuardShop[1][14], "0", "inventory F8 sale availability must not be overridden");
+  assert.equal(inventoryDefaultsGuardShop[1][15], 6, "inventory F8 must preserve the actual aggregated stock");
+  assert.deepEqual(Array.from(inventoryDefaultsGuardShop[1].slice(16, 21)), ["", "1", "", "", ""], "inventory F8 themes must remain unchanged");
 
   // 네 오류 유형이 실제 F8 파일 쓰기 전에 전체 출력을 차단하고 진단을 남기는지 확인한다.
   const blockerRows = [
