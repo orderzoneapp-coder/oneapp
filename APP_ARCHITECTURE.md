@@ -336,7 +336,7 @@ Equivalent safety controls must be preserved when another application writes the
 5. Backup success must not be assumed from request completion alone.
 6. Restored data must be re-read and checked for expected counts and structure.
 
-### 6.5 Master add/update review
+### 6.5 Master add/update and selected deletion review
 
 1. Master accepts an Excel workbook only as an add/update comparison source when an existing master is present.
 2. The operator reviews:
@@ -369,6 +369,11 @@ Equivalent safety controls must be preserved when another application writes the
 18. Initial registration and full replacement remain unavailable until separate approval, backup, and recovery workflows are implemented.
 19. `Item_manager.html` remains available during the transition.
 20. `Item_manager.html` is not removed by this phase.
+21. Product deletion is available only for explicitly selected, already-saved products in `Item_manager.html`; unsaved edits must be saved or discarded first.
+22. Deleting every remaining product is prohibited. Initial registration, full replacement, and full reset retain their separate approval and recovery boundary.
+23. A selected deletion removes the product master rows, matching stopped-product metadata, and matching pending shop-status rows as one revision-checked operation. Official deletion history and local compatibility mirrors are verified in the same success unit, and any failure restores the prior state.
+24. Product deletion does not erase historical orders, sales, purchases, ledgers, or prior audit records. Those records keep their snapshotted product identity.
+25. A successful local deletion is not represented as a cloud deletion until the operator explicitly runs the existing cloud synchronization action.
 
 ### 6.6 ORDER Q smart file intake
 

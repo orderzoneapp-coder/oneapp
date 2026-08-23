@@ -164,6 +164,12 @@ body {
   color: var(--oneapp-text);
 }
 
+.summary-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .grid-empty {
   min-height: 0;
   flex: 1;
@@ -507,6 +513,15 @@ body {
 
   .workspace-content {
     min-height: 520px;
+  }
+
+  .summary-toolbar {
+    align-items: flex-start;
+  }
+
+  .summary-actions {
+    flex-wrap: wrap;
+    justify-content: flex-end;
   }
 
   .table-scroll {

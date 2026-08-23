@@ -156,7 +156,7 @@
       "path": "Master.html",
       "kind": "web-entry",
       "status": "pilot",
-      "purpose": "Provide centered product and customer foundation-data workspaces with controlled registration, update, and cloud synchronization workflows.",
+      "purpose": "Provide centered product and customer foundation-data workspaces with controlled registration, update, selected product deletion, and cloud synchronization workflows.",
       "productionWrites": true,
       "runtimeDependencies": [
         "core-engine"
@@ -387,6 +387,8 @@
       },
       "resources": {
         "styles": "nexus/common/nexus-app-ui.css",
+        "themeInitializer": "nexus/common/nexus-theme-init.js",
+        "masterThemeStyles": "nexus/common/nexus-master-theme.css",
         "registry": "nexus/common/nexus-ui-contract.js",
         "documentation": "nexus/common/NEXUS_APP_UI_CONTRACT.md",
         "contentMaxWidthToken": "--nexus-content-max-width"

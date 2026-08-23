@@ -9,12 +9,25 @@ const html = readFileSync(path.join(root, "Item_manager.html"), "utf8");
 const js = readFileSync(path.join(root, "Item_manager.js"), "utf8");
 const css = readFileSync(path.join(root, "Item_manager.css"), "utf8");
 const master = readFileSync(path.join(root, "Master.html"), "utf8");
+const themeInit = readFileSync(path.join(root, "nexus/common/nexus-theme-init.js"), "utf8");
+const masterTheme = readFileSync(path.join(root, "nexus/common/nexus-master-theme.css"), "utf8");
+const uiContract = readFileSync(path.join(root, "nexus/common/NEXUS_APP_UI_CONTRACT.md"), "utf8");
 
 assert.match(html, /id="nexus-common-header"\s+data-app-id="master"/);
 assert.match(html, /<nexus-top app-id="item-manager">[\s\S]*?<\/nexus-top>/);
 assert.match(html, /상품 기초정보 관리/);
 assert.match(html, /nexus-app-ui\.css/);
 assert.match(html, /nexus-ui-contract\.js/);
+assert.match(html, /nexus-theme-init\.js/);
+assert.match(master, /nexus-theme-init\.js/);
+assert.match(master, /nexus-master-theme\.css/);
+assert.match(themeInit, /oneapp\.nexus\.v1\.colorMode/);
+assert.match(themeInit, /dataset\.nexusTheme = next/);
+assert.match(themeInit, /return "system"/);
+assert.match(masterTheme, /var\(--oneapp-bg\)/);
+assert.match(masterTheme, /var\(--oneapp-surface\)/);
+assert.match(uiContract, /공통헤더의 `시스템 \/ 일반 \/ 다크` 선택/);
+assert.match(uiContract, /nexus-theme-init\.js/);
 assert.doesNotMatch(html, /aria-label="상품 관리 방식"|목록·조회/);
 assert.doesNotMatch(html, /SKU FORGE|카탈로그 소싱|행사테마|BOM 조립|수기등록/);
 assert.doesNotMatch(html, /id="mobile-editor"/);
@@ -39,6 +52,12 @@ for (const excluded of ["판매가", "행사가", "마진율", "가격변동", "
 }
 
 assert.match(js, /commitMasterStateOrThrow/);
+assert.match(html, /id="delete-selected-button"[\s\S]*?선택 삭제/);
+assert.match(html, /<script src="masterAddUpdate\.js"><\/script>/);
+assert.match(js, /commitSelectedProductDeletion/);
+assert.match(js, /selectedExistingIds/);
+assert.match(js, /변경사항을 저장하거나 취소한 뒤 선택 상품을 삭제/);
+assert.match(js, /클라우드 공용 DB에는 아직 반영하지 않았습니다/);
 assert.match(js, /expectedRevision:\s*state\.revision/);
 assert.match(js, /plan\.valid/);
 assert.match(js, /plan\.invalid/);
