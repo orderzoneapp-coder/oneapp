@@ -697,7 +697,7 @@
     }
     .search-field { display: block; flex: 1 1 360px; min-width: 260px; }
     .search-field span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-    .spec-filter legend { color: var(--slate-500); font-size: 11px; font-weight: 900; }
+    .unit-filter legend { color: var(--slate-500); font-size: 11px; font-weight: 900; }
     .search-field input {
       width: 100%;
       min-height: 31px;
@@ -711,11 +711,11 @@
     }
     .search-field input:focus { border-color: var(--teal-600); box-shadow: 0 0 0 2px rgba(13,148,136,.12); }
     .view-controls .preview-tabs,
-    .view-controls .spec-filter,
+    .view-controls .unit-filter,
     .view-controls .preview-count { flex: 0 0 auto; }
     .view-controls .preview-tabs { padding: 0; }
     .view-controls .preview-count { white-space: nowrap; }
-    .spec-filter {
+    .unit-filter {
       display: flex;
       align-items: center;
       gap: 4px;
@@ -724,8 +724,8 @@
       padding: 0;
       border: 0;
     }
-    .spec-filter legend { float: left; margin-right: 2px; }
-    .spec-filter label {
+    .unit-filter legend { float: left; margin-right: 2px; }
+    .unit-filter label {
       display: inline-flex;
       align-items: center;
       gap: 3px;
@@ -739,7 +739,7 @@
       font-weight: 800;
       white-space: nowrap;
     }
-    .spec-filter:disabled { opacity: .42; }
+    .unit-filter:disabled { opacity: .42; }
     .shortage-focus-button {
       min-height: 31px;
       padding: 0 10px;
@@ -872,7 +872,7 @@
     .table-tool-button:hover { border-color: var(--teal-700); color: var(--teal-700); background: #f0fdfa; }
     .table-tool-button.dirty { border-color: #4f46e5; color: #fff; background: #4f46e5; }
     .table-tool-button.active { border-color: var(--teal-700); color: #fff; background: var(--teal-700); }
-    /* ORDER Q v1.64: DataOps 확정재고와 SmartInput 주문 원장 탭 연동. */
+    /* ORDER Q v1.65: 단위 기준 필터와 EA·소분 행 강조 판정 교정. */
     /* ORDER Q v1.59: 저장 양식 그룹을 재고부족 바로 뒤에 고정. */
     .view-preset-tools { display: flex; flex: 0 0 auto; align-items: center; gap: 4px; }
     .view-preset-select {
@@ -1539,7 +1539,7 @@
       .operator-note { min-height: 42px; }
       .primary-button { width: 100%; min-width: 0; min-height: 36px; }
       .view-controls { align-items: center; }
-      .spec-filter { flex-wrap: wrap; }
+      .unit-filter { flex-wrap: wrap; }
       .table-view-tools { flex-wrap: nowrap; }
       .warehouse-color-bar { align-items: flex-start; flex-wrap: wrap; }
       .warehouse-color-options { order: 3; width: 100%; }
@@ -1845,7 +1845,7 @@
 <body>
   <nexus-top app-id="orderq"><div class="nexus-top-fallback" role="status"><strong>NEXUS</strong><span>NEXUS 메뉴를 불러오지 못했습니다.</span><button type="button" onclick="window.location.reload()">재시도</button></div></nexus-top>
   <header class="global-header">
-    <div class="brand" aria-label="ORDER Q 출고관리"><span class="brand-logo-frame"><img class="brand-logo" src="assets/order-q-logo.png" alt="ORDER Q"></span><span class="brand-divider" aria-hidden="true"></span><strong class="brand-product">출고관리</strong><span class="brand-badge">v1.64</span></div>
+    <div class="brand" aria-label="ORDER Q 출고관리"><span class="brand-logo-frame"><img class="brand-logo" src="assets/order-q-logo.png" alt="ORDER Q"></span><span class="brand-divider" aria-hidden="true"></span><strong class="brand-product">출고관리</strong><span class="brand-badge">v1.65</span></div>
     <div class="header-actions">
       <a class="header-link header-smart-input" id="smartInputButton" href="input.html"
         aria-label="스마트 전표입력 화면 열기 F4" aria-keyshortcuts="F4">
@@ -2003,8 +2003,8 @@
           <button class="table-tool-button view-preset-delete-button" id="viewPresetDeleteButton" type="button"
             aria-label="선택한 현재 화면 양식 삭제" disabled>×</button>
         </div>
-        <fieldset class="spec-filter" id="specFilterGroup">
-          <legend>규격</legend>
+        <fieldset class="unit-filter" id="unitFilterGroup">
+          <legend>단위</legend>
           <label><input type="checkbox" value="BOX">BOX</label>
           <label><input type="checkbox" value="EA">EA</label>
           <label><input type="checkbox" value="소분">소분</label>
@@ -2051,7 +2051,7 @@
     </section>
 
     <footer class="page-footer">
-      <span>ORDER Q v1.64 · 출고관리 · workspace shipping-workspace/v2 · cloud plan v1</span>
+      <span>ORDER Q v1.65 · 출고관리 · workspace shipping-workspace/v2 · cloud plan v1</span>
       <a href="../SHIPPING_MANAGEMENT_GUIDANCE.md">개발·운영 기준 보기</a>
     </footer>
   </main>
@@ -2284,7 +2284,7 @@
         activePreview: "validation",
         searchQuery: "",
         shortageFocus: false,
-        specificationFilters: new Set(),
+        unitFilters: new Set(),
         loading: { orders: false, inventory: false, purchases: false, sales: false, integrated: false },
         integratedFile: null,
         db: null,
@@ -2363,7 +2363,7 @@
         tableSearchInput: document.getElementById("tableSearchInput"),
         resultFilterResetButton: document.getElementById("resultFilterResetButton"),
         shortageFocusButton: document.getElementById("shortageFocusButton"),
-        specFilterGroup: document.getElementById("specFilterGroup"),
+        unitFilterGroup: document.getElementById("unitFilterGroup"),
         warehouseColorBar: document.getElementById("warehouseColorBar"),
         warehouseFilterToggle: document.getElementById("warehouseFilterToggle"),
         managerFilterToggle: document.getElementById("managerFilterToggle"),
@@ -3080,7 +3080,7 @@
         state.activePreview = payload.ui?.activePreview || "validation";
         state.searchQuery = "";
         state.shortageFocus = false;
-        state.specificationFilters.clear();
+        state.unitFilters.clear();
         state.warehouseFilters.clear();
         state.managerFilters.clear();
         state.managerAssignmentCustomer = "";
@@ -3089,7 +3089,7 @@
         state.selectedOrderViewPresetId = "";
         closeColumnSortMenu();
         elements.tableSearchInput.value = "";
-        elements.specFilterGroup.querySelectorAll("input[type='checkbox']").forEach((input) => {
+        elements.unitFilterGroup.querySelectorAll("input[type='checkbox']").forEach((input) => {
           input.checked = false;
         });
         applyDefaultOrderViewPreset(state.activePreview, { render: false });
@@ -3817,6 +3817,10 @@
           sortSettings.push({ columnKey: setting.columnKey, direction: setting.direction });
         });
         const sortSetting = sortSettings[0] || null;
+        const unitFilters = normalizeStringList(
+          Array.isArray(value.view.unitFilters) ? value.view.unitFilters : value.view.specificationFilters,
+          20,
+        );
         return {
           id,
           name,
@@ -3826,7 +3830,8 @@
           view: {
             searchQuery: String(value.view.searchQuery || "").slice(0, 300),
             shortageFocus: value.view.shortageFocus === true,
-            specificationFilters: normalizeStringList(value.view.specificationFilters, 20),
+            unitFilters,
+            specificationFilters: [...unitFilters],
             warehouseFilters: normalizeStringList(value.view.warehouseFilters, 100),
             managerFilters: normalizeStringList(value.view.managerFilters, 100),
             sortSetting,
@@ -3911,7 +3916,8 @@
         return {
           searchQuery: state.searchQuery,
           shortageFocus: state.shortageFocus,
-          specificationFilters: [...state.specificationFilters],
+          unitFilters: [...state.unitFilters],
+          specificationFilters: [...state.unitFilters],
           warehouseFilters: [...state.warehouseFilters],
           managerFilters: [...state.managerFilters],
           sortSetting: sortSettings[0] ? { ...sortSettings[0] } : null,
@@ -3959,7 +3965,7 @@
           .map((row) => String(row?.manager || "").trim()).filter(Boolean));
         state.searchQuery = preset.view.searchQuery;
         state.shortageFocus = ["allocations", "ledger", "inventory"].includes(previewId) && preset.view.shortageFocus;
-        state.specificationFilters = new Set(preset.view.specificationFilters);
+        state.unitFilters = new Set(preset.view.unitFilters);
         state.warehouseFilters = new Set(preset.view.warehouseFilters.filter((key) => warehouseKeys.has(key)));
         state.managerFilters = new Set(preset.view.managerFilters.filter((name) => managerNames.has(name)));
         const presetSortSettings = (Array.isArray(preset.view.sortSettings)
@@ -4015,8 +4021,8 @@
         state.activePreview = previewId;
         state.selectedOrderViewPresetId = preset.id;
         elements.tableSearchInput.value = state.searchQuery;
-        elements.specFilterGroup.querySelectorAll("input[type='checkbox']").forEach((input) => {
-          input.checked = state.specificationFilters.has(input.value);
+        elements.unitFilterGroup.querySelectorAll("input[type='checkbox']").forEach((input) => {
+          input.checked = state.unitFilters.has(input.value);
         });
         setActiveFilterPanel("");
         if (options.render !== false) renderPreview();
@@ -4913,9 +4919,23 @@
 
       function buildTransactionPreview(workspace, kind) {
         const isPurchase = kind === "purchases";
-        const sourceRows = Array.isArray(workspace.orderOpsInputs?.[kind]?.rows)
+        const unitByProductCode = new Map();
+        (Array.isArray(workspace.inventory) ? workspace.inventory : []).forEach((row) => {
+          const productCode = engine.normalizeProductCode(row?.productCode);
+          if (productCode && normalizedSourceUnit(row)) unitByProductCode.set(productCode, normalizedSourceUnit(row));
+        });
+        (Array.isArray(workspace.orders) ? workspace.orders : []).forEach((row) => {
+          const productCode = engine.normalizeProductCode(row?.productCode);
+          if (productCode && !unitByProductCode.has(productCode) && normalizedSourceUnit(row)) {
+            unitByProductCode.set(productCode, normalizedSourceUnit(row));
+          }
+        });
+        const sourceRows = (Array.isArray(workspace.orderOpsInputs?.[kind]?.rows)
           ? workspace.orderOpsInputs[kind].rows
-          : [];
+          : []).map((row) => ({
+            ...row,
+            unit: normalizedSourceUnit(row) || unitByProductCode.get(engine.normalizeProductCode(row?.productCode)) || "",
+          }));
         const preview = {
           label: isPurchase ? "구매현황" : "판매현황",
           headers: ["원본행", "상품코드", "품명", isPurchase ? "구매처" : "거래처", "수량"],
@@ -5168,13 +5188,21 @@
         return text ? "good" : "";
       }
 
+      function normalizedSourceUnit(sourceRow) {
+        for (const value of [sourceRow?.unit, sourceRow?.sourceUnit, sourceRow?.sourceRow?.unit]) {
+          const unit = String(value ?? "").trim().toUpperCase();
+          if (unit) return unit;
+        }
+        return "";
+      }
+
       function exactWarningUnit(sourceRow) {
-        const specification = String(sourceRow?.specification || sourceRow?.spec || "").trim();
-        return specification === "EA" || specification === "소분";
+        const unit = normalizedSourceUnit(sourceRow);
+        return unit === "EA" || unit === "소분";
       }
 
       function exactBoxUnit(sourceRow) {
-        return String(sourceRow?.specification || sourceRow?.spec || "").trim() === "BOX";
+        return normalizedSourceUnit(sourceRow) === "BOX";
       }
 
       function previewRowFill(previewId, sourceRow) {
@@ -5220,11 +5248,9 @@
           const manager = String(pair.sourceRow?.manager || "").trim();
           if (!state.managerFilters.has(manager)) return false;
         }
-        if (previewId !== "validation" && previewId !== "notices" && state.specificationFilters.size > 0) {
-          const specification = String(
-            pair.sourceRow?.specification ?? pair.sourceRow?.spec ?? pair.row?.[2] ?? "",
-          ).trim();
-          if (!state.specificationFilters.has(specification)) return false;
+        if (previewId !== "validation" && previewId !== "notices" && state.unitFilters.size > 0) {
+          const unit = normalizedSourceUnit(pair.sourceRow);
+          if (!state.unitFilters.has(unit)) return false;
         }
         return rowMatchesColumnFilters(previewId, pair, preview);
       }
@@ -5472,7 +5498,7 @@
           blocks.sort((left, right) => comparePreviewPairs(previewId, preview, left.main, right.main));
 
           return blocks.flatMap((block) => {
-            if (!state.searchQuery.trim() && state.specificationFilters.size === 0 && !hasColumnFilters(previewId)) return block.pairs;
+            if (!state.searchQuery.trim() && state.unitFilters.size === 0 && !hasColumnFilters(previewId)) return block.pairs;
             const matching = block.pairs.filter((pair) => rowMatchesView(previewId, pair, preview));
             if (matching.length === 0) return [];
             if (matching.includes(block.main)) return block.pairs;
@@ -5887,7 +5913,7 @@
         elements.systemViewNote.classList.toggle("hidden", viewNotes.length === 0);
         elements.previewCount.textContent = `${formatNumber(pairs.length)}/${formatNumber(preview.rows.length)}행`;
 
-        elements.specFilterGroup.disabled = state.activePreview === "validation" || state.activePreview === "notices";
+        elements.unitFilterGroup.disabled = state.activePreview === "validation" || state.activePreview === "notices";
         renderColumnVisibilityMenu(preview);
         const previewMarkup = renderTableMarkup(preview, pairs, { editable: true, resizable: true });
         if (state.activePreview === "validation") {
@@ -5998,7 +6024,7 @@
       function resetResultViewFilters() {
         state.searchQuery = "";
         state.shortageFocus = false;
-        state.specificationFilters.clear();
+        state.unitFilters.clear();
         state.warehouseFilters.clear();
         state.managerFilters.clear();
         state.managerAssignmentCustomer = "";
@@ -6006,7 +6032,7 @@
         state.selectedOrderViewPresetId = "";
         closeColumnSortMenu();
         elements.tableSearchInput.value = "";
-        elements.specFilterGroup.querySelectorAll("input[type='checkbox']").forEach((input) => {
+        elements.unitFilterGroup.querySelectorAll("input[type='checkbox']").forEach((input) => {
           input.checked = false;
         });
         setActiveFilterPanel("");
@@ -6292,12 +6318,12 @@
           state.activePreview = plan.activePreview || "validation";
           state.searchQuery = "";
           state.shortageFocus = false;
-          state.specificationFilters.clear();
+          state.unitFilters.clear();
           state.warehouseFilters.clear();
           state.managerFilters.clear();
         state.managerAssignmentCustomer = "";
           elements.tableSearchInput.value = "";
-          elements.specFilterGroup.querySelectorAll("input[type='checkbox']").forEach((input) => {
+          elements.unitFilterGroup.querySelectorAll("input[type='checkbox']").forEach((input) => {
             input.checked = false;
           });
           state.selectedOrderViewPresetId = "";
@@ -6920,11 +6946,11 @@
         markOrderViewPresetCustom();
         if (state.workspace) renderPreview();
       });
-      elements.specFilterGroup.addEventListener("change", (event) => {
+      elements.unitFilterGroup.addEventListener("change", (event) => {
         const input = event.target.closest("input[type='checkbox']");
         if (!input) return;
-        if (input.checked) state.specificationFilters.add(input.value);
-        else state.specificationFilters.delete(input.value);
+        if (input.checked) state.unitFilters.add(input.value);
+        else state.unitFilters.delete(input.value);
         markOrderViewPresetCustom();
         if (state.workspace) renderPreview();
       });

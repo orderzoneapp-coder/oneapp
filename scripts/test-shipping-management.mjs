@@ -16,7 +16,7 @@ assert.doesNotMatch(orderOpsHtml, /tokens truncated|…\d+ tokens truncated…/,
   "the public OrderOps mirror must not contain a truncated source fragment");
 assert.match(orderOpsHtml, /<body>[\s\S]*<\/body>\s*<\/html>/,
   "the public OrderOps mirror must remain a complete HTML document");
-assert.match(orderOpsHtml, /brand-badge">v1\.64</, "ORDER Q visible version must be v1.64");
+assert.match(orderOpsHtml, /brand-badge">v1\.65</, "ORDER Q visible version must be v1.65");
 assert.match(orderOpsHtml, /<title>ORDER Q<\/title>/,
   "the public page title must use the approved ORDER Q name");
 assert.match(orderOpsHtml, /<nexus-top app-id="orderq">[\s\S]*?<\/nexus-top>/,
@@ -25,7 +25,7 @@ assert.match(orderOpsHtml, /<img class="brand-logo" src="assets\/order-q-logo\.p
   "the public APP BAR must use the approved ORDER Q logo");
 assert.doesNotMatch(orderOpsHtml, /<strong class="brand-product">ORDER Q · 출고관리<\/strong>/,
   "the public APP BAR must not duplicate the logo with the former text brand");
-assert.match(orderOpsHtml, /ORDER Q v1\.64 · 출고관리/,
+assert.match(orderOpsHtml, /ORDER Q v1\.65 · 출고관리/,
   "the public footer must use the ORDER Q product concept");
 assert.match(orderOpsHtml, /orderops\/orderops-source-adapter\.js\?v=1\.64\.0/,
   "the public page must load the DataOps and SmartInput source adapter");
@@ -279,7 +279,7 @@ const publicViewControls = orderOpsHtml.slice(
   orderOpsHtml.indexOf('<div class="warehouse-color-bar"'),
 );
 assert.ok(publicViewControls.indexOf('id="shortageFocusButton"') < publicViewControls.indexOf('id="viewPresetSelect"') &&
-  publicViewControls.indexOf('id="viewPresetDeleteButton"') < publicViewControls.indexOf('id="specFilterGroup"'),
+  publicViewControls.indexOf('id="viewPresetDeleteButton"') < publicViewControls.indexOf('id="unitFilterGroup"'),
   "the public saved-layout group must sit immediately after shortage focus and before the remaining tools");
 assert.ok(publicViewControls.indexOf('id="columnWidthResetButton"') < publicViewControls.indexOf('id="warehouseFilterToggle"'),
   "warehouse and manager filter buttons must sit at the far right after column-width reset");
@@ -768,6 +768,28 @@ assert.deepEqual(
     .filter((value) => value !== null),
   edgeInventoryView.columns.filter((column) => column.role === "warehouseQuantity").map(() => 0),
   "every warehouse quantity cell for an order-only product must begin at numeric zero",
+);
+const unitSemanticsWorkspace = engine.analyze(
+  parseOrders(buildOrderMatrix([
+    { code: "UNIT-BOX-SPEC-EA", unit: "BOX", spec: "EA", quantity: 1 },
+    { code: "UNIT-EA-SPEC-BOX", unit: "EA", spec: "BOX", quantity: 1 },
+    { code: "UNIT-SPLIT-SPEC-ETC", unit: "소분", spec: "기타", quantity: 1 },
+  ])),
+  parseInventory(buildInventoryMatrix([
+    { code: "UNIT-BOX-SPEC-EA", unit: "BOX", spec: "EA", whole: 2, seoul: 0, transfer: 0 },
+    { code: "UNIT-EA-SPEC-BOX", unit: "EA", spec: "BOX", whole: 2, seoul: 0, transfer: 0 },
+    { code: "UNIT-SPLIT-SPEC-ETC", unit: "소분", spec: "기타", whole: 2, seoul: 0, transfer: 0 },
+  ])),
+  { sourceFingerprint: "c".repeat(64) },
+);
+assert.deepEqual(
+  engine.getInventoryViewRows(unitSemanticsWorkspace).rows.map((row) => [row.productCode, row.unit, row.specification]),
+  [
+    ["UNIT-BOX-SPEC-EA", "BOX", "EA"],
+    ["UNIT-EA-SPEC-BOX", "EA", "BOX"],
+    ["UNIT-SPLIT-SPEC-ETC", "소분", "기타"],
+  ],
+  "inventory view rows must expose unit independently from specification for UI filtering and emphasis",
 );
 assert.equal(
   engine.getPurchaseUploadSelection(edgeWorkspace).included.find((row) => row.productCode === "NO-STOCK")?.purchaseNeed,
@@ -1569,21 +1591,21 @@ assert.deepEqual(edgeWorkbook.Sheets["주문현황"]["!freeze"], { xSplit: 0, yS
 
 const formatOrders = parseOrders(
   buildOrderMatrix([
-    { code: "PURCHASE", quantity: 2, manager: "담당A", spec: "BOX" },
-    { code: "ADDITIONAL", quantity: 2, manager: "담당B", spec: "EA" },
-    { code: "SEOUL", quantity: 2, manager: "담당A", spec: "소분" },
-    { code: "STOCK", quantity: 2, manager: "담당C", spec: "BOX" },
-    { code: "MIXED", quantity: 2, manager: "담당C", spec: "EA" },
-    { code: "NO-STOCK", quantity: 1, manager: "담당D", spec: "BOX" },
+    { code: "PURCHASE", quantity: 2, manager: "담당A", unit: "BOX", spec: "EA" },
+    { code: "ADDITIONAL", quantity: 2, manager: "담당B", unit: "EA", spec: "BOX" },
+    { code: "SEOUL", quantity: 2, manager: "담당A", unit: "소분", spec: "기타" },
+    { code: "STOCK", quantity: 2, manager: "담당C", unit: "BOX", spec: "BOX" },
+    { code: "MIXED", quantity: 2, manager: "담당C", unit: "EA", spec: "EA" },
+    { code: "NO-STOCK", quantity: 1, manager: "담당D", unit: "BOX", spec: "BOX" },
   ]),
 );
 const formatInventory = parseInventory(
   buildInventoryMatrix([
-    { code: "PURCHASE", spec: "BOX", quantity: -4, whole: 0, seoul: 0, transfer: 0, jinyeong: -4, warehousePrice: 6000 },
-    { code: "ADDITIONAL", spec: "EA", quantity: 4, whole: 1, seoul: 0, transfer: 0, transfer2: 3, warehousePrice: 2000 },
-    { code: "SEOUL", spec: "소분", quantity: 2, whole: 0, seoul: 3, transfer: -1, warehousePrice: 17000 },
-    { code: "STOCK", spec: "BOX", quantity: 5, whole: 5, seoul: 0, transfer: 0, warehousePrice: 15000 },
-    { code: "MIXED", spec: "EA", quantity: 2, whole: 1, seoul: 1, transfer: 0, warehousePrice: 8100 },
+    { code: "PURCHASE", unit: "BOX", spec: "EA", quantity: -4, whole: 0, seoul: 0, transfer: 0, jinyeong: -4, warehousePrice: 6000 },
+    { code: "ADDITIONAL", unit: "EA", spec: "BOX", quantity: 4, whole: 1, seoul: 0, transfer: 0, transfer2: 3, warehousePrice: 2000 },
+    { code: "SEOUL", unit: "소분", spec: "기타", quantity: 2, whole: 0, seoul: 3, transfer: -1, warehousePrice: 17000 },
+    { code: "STOCK", unit: "BOX", spec: "BOX", quantity: 5, whole: 5, seoul: 0, transfer: 0, warehousePrice: 15000 },
+    { code: "MIXED", unit: "EA", spec: "EA", quantity: 2, whole: 1, seoul: 1, transfer: 0, warehousePrice: 8100 },
   ]),
 );
 const formatValidation = engine.validateInputs(formatOrders, formatInventory);
@@ -1897,7 +1919,7 @@ const html = fs.readFileSync(path.join(ROOT, "orderops", "list.html"), "utf8");
 const inlineScriptMatch = html.match(/<script>\s*([\s\S]*?)<\/script>\s*<\/body>/);
 assert.ok(inlineScriptMatch, "canonical ORDER Q inline application script must exist");
 new vm.Script(inlineScriptMatch[1], { filename: "orderops/list.html:inline" });
-assert.match(html, /brand-badge">v1\.64</, "canonical ORDER Q visible version must be v1.64");
+assert.match(html, /brand-badge">v1\.65</, "canonical ORDER Q visible version must be v1.65");
 assert.match(html, /orderops-source-adapter\.js\?v=1\.64\.0/,
   "the canonical route must load the shared source adapter");
 assert.match(html, /<nexus-top app-id="orderq">[\s\S]*?<\/nexus-top>/,
@@ -2070,7 +2092,7 @@ const canonicalViewControls = html.slice(
   html.indexOf('<div class="warehouse-color-bar"'),
 );
 assert.ok(canonicalViewControls.indexOf('id="shortageFocusButton"') < canonicalViewControls.indexOf('id="viewPresetSelect"') &&
-  canonicalViewControls.indexOf('id="viewPresetDeleteButton"') < canonicalViewControls.indexOf('id="specFilterGroup"'),
+  canonicalViewControls.indexOf('id="viewPresetDeleteButton"') < canonicalViewControls.indexOf('id="unitFilterGroup"'),
   "the canonical saved-layout group must sit immediately after shortage focus and before the remaining tools");
 assert.match(html, /id="smartInputButton" href="input\.html"/,
   "canonical orderops route must retain its directory-relative manual-order link");
@@ -2256,11 +2278,34 @@ assert.match(combinedCss, /\.purchase-input\[data-negative-balance="true"\]\s*\{
   "negative purchase cells must retain only the pale fill without an internal horizontal rule");
 assert.match(combinedCss, /td\.ledger-negative-cell \.inventory-total-frame\s*\{[^}]*background:\s*#fef9c3\s*!important;[^}]*box-shadow:\s*none;/,
   "negative balance cells must retain only the pale fill without an internal vertical rule");
-assert.ok(html.includes('specification === "EA" || specification === "소분"') &&
-  html.includes('const warningUnitContext = exactWarningUnit(sourceRow)') &&
+assert.ok(html.includes('<legend>단위</legend>') &&
+  html.includes('const unit = normalizedSourceUnit(pair.sourceRow);') &&
+  html.includes('if (!state.unitFilters.has(unit)) return false;'),
+  "BOX, EA, and 소분 quick filters must use the source unit instead of specification");
+assert.ok(html.includes("const unitByProductCode = new Map();") &&
+  html.includes('unit: normalizedSourceUnit(row) || unitByProductCode.get(engine.normalizeProductCode(row?.productCode)) || ""'),
+  "purchase and sales previews must inherit unit data by product code before applying the unit filter");
+const unitEmphasisSource = html.slice(
+  html.indexOf("function normalizedSourceUnit"),
+  html.indexOf("function previewRowFill"),
+);
+const unitEmphasisContext = {};
+vm.runInNewContext(`${unitEmphasisSource}
+  this.results = {
+    specEaUnitBox: exactWarningUnit({ specification: "EA", unit: "BOX" }),
+    specBoxUnitEa: exactWarningUnit({ specification: "BOX", unit: "ea" }),
+    splitUnit: exactWarningUnit({ specification: "기타", unit: "소분" }),
+    exactBox: exactBoxUnit({ specification: "EA", sourceUnit: "BOX" })
+  };`, unitEmphasisContext);
+assert.deepEqual(
+  JSON.parse(JSON.stringify(unitEmphasisContext.results)),
+  { specEaUnitBox: false, specBoxUnitEa: true, splitUnit: true, exactBox: true },
+  "EA, 소분, and BOX emphasis must be decided only from unit data",
+);
+assert.ok(html.includes('const warningUnitContext = exactWarningUnit(sourceRow)') &&
   html.includes('["productName", "specification"].includes(column.role) || quantityColumn') &&
   html.includes('warningUnitContext ? "unit-alert-cell"'),
-  "EA and 소분 rows must use red text for product name, specification, order, stock, and balance quantities");
+  "unit EA and 소분 rows must use red text for product name, specification, order, stock, and balance quantities");
 assert.match(combinedCss, /td\.unit-alert-cell \.inventory-total-frame\s*\{[^}]*color:\s*#b91c1c\s*!important;/,
   "EA and 소분 quantity frames must keep red text even when quantity-zero styling is also present");
 assert.match(combinedCss, /td\.unit-alert-cell[\s\S]*?\.inventory-total-frame\s*\{[^}]*font-weight:\s*400\s*!important;/,
@@ -2396,7 +2441,10 @@ vm.runInNewContext(`const TABLE_WIDTH_MIN = 32;
 assert.equal(presetContext.normalizedPreset.name, "부족상품");
 assert.equal(presetContext.normalizedPreset.previewId, "inventory");
 assert.equal(presetContext.normalizedPreset.isDefault, true);
-assert.deepEqual(Array.from(presetContext.normalizedPreset.view.specificationFilters), ["BOX"]);
+assert.deepEqual(Array.from(presetContext.normalizedPreset.view.unitFilters), ["BOX"],
+  "legacy specificationFilters must migrate to the unit-filter runtime contract");
+assert.deepEqual(Array.from(presetContext.normalizedPreset.view.specificationFilters), ["BOX"],
+  "the legacy preset field must remain for rollback compatibility");
 assert.equal(presetContext.normalizedPreset.view.sortSetting.direction, "desc");
 assert.equal(presetContext.normalizedPreset.view.columnWidths["shipping:inventory:1:품명"], 245);
 assert.deepEqual(Array.from(presetContext.normalizedPreset.view.columnOrder), [

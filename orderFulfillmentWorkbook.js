@@ -120,8 +120,8 @@
     return palette[hash % palette.length];
   }
 
-  function exactUnitWarning(specification) {
-    const value = String(specification ?? "").trim();
+  function exactUnitWarning(unit) {
+    const value = String(unit ?? "").trim().toUpperCase();
     return value === "EA" || value === "소분";
   }
 
@@ -458,7 +458,7 @@
       const rowFill = !rowManager || rowManager === whiteManager
         ? COLORS.white
         : managerFill(rowManager);
-      const warningUnit = exactUnitWarning(sourceRow.specification);
+      const warningUnit = exactUnitWarning(sourceRow.unit || sourceRow.sourceUnit);
       row.forEach((value, column) => {
         const cell = ensureCell(sheet, XLSX, sheetRow, column);
         const style = {
@@ -569,7 +569,7 @@
       textColumns: [0],
       inventoryColumns: [],
       rowStyleResolver(row, index) {
-        return exactUnitWarning(sourceRows[index]?.specification)
+        return exactUnitWarning(sourceRows[index]?.unit || sourceRows[index]?.sourceUnit)
           ? { fill: COLORS.white, fontColor: COLORS.red }
           : { fill: COLORS.white };
       },
@@ -756,7 +756,7 @@
     const headers = layout.map((column) => safeValue(column.header));
     const sheet = XLSX.utils.aoa_to_sheet([headers, ...dataRows]);
     const codeColumn = layout.findIndex((column) => column.role === "productCode");
-    const specificationColumn = headers.findIndex((header) => normalizedHeader(header) === "규격");
+    const unitColumn = layout.findIndex((column) => column.role === "unit" || normalizedHeader(column.header) === "단위");
     const informationColumn = layout.findIndex((column) => column.orderInformation === true);
     const notesColumn = layout.findIndex((column) => column.orderNotes === true);
     const lastColumn = columnName(Math.max(0, headers.length - 1));
@@ -793,7 +793,7 @@
 
     dataRows.forEach((row, rowIndex) => {
       const sheetRow = rowIndex + 1;
-      const highlightText = exactUnitWarning(row[specificationColumn]);
+      const highlightText = unitColumn >= 0 && exactUnitWarning(row[unitColumn]);
       row.forEach((_, column) => {
         const cell = ensureCell(sheet, XLSX, sheetRow, column);
         const style = {
