@@ -302,6 +302,10 @@ assert.match(appSource, /상품정보/);
 assert.match(appSource, /거래처정보/);
 assert.match(appSource, /사용자지정/);
 assert.match(appSource, /function openLayoutFieldDialog\(/);
+assert.match(css, /\.smart-settings-dialog \{ height: min\(720px, calc\(100dvh - 28px\)\); \}/,
+  '환경설정 바깥 창은 그룹 개폐와 무관하게 고정 높이를 유지해야 한다.');
+assert.match(css, /\.smart-settings-dialog \.smart-settings-grid \{[^}]*flex: 1 1 auto;[^}]*scrollbar-gutter: stable;/,
+  '환경설정 그룹은 고정 창 내부에서만 스크롤되어야 한다.');
 assert.match(appSource, /data-custom-header-input/);
 assert.match(appSource, /data-custom-row-field/);
 assert.match(appSource, /customValues: \{ \.\.\.\(current\.header\.customValues/);
