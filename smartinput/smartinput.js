@@ -48,7 +48,7 @@ const state = {
   pendingOcrReview: null,
   pendingSourceName: '',
   sourceImages: { order: null, purchase: null, sale: null, estimate: null },
-  photoView: { zoom: 1, rotation: 0, activeRegion: null, mobilePane: 'photo' },
+  photoView: { zoom: 1, rotation: 0, activeRegion: null, detailColumns: false, ocrOpen: false },
   saveTimer: null,
   draftDirty: false,
   toastTimer: null,
@@ -288,9 +288,9 @@ function renderCustomLayoutFields() {
 
   const table = document.querySelector('#tableScroll table');
   table.querySelectorAll('[data-custom-column]').forEach(element => element.remove());
-  const actionCol = table.querySelector('colgroup col:last-child');
-  const actionHead = table.querySelector('thead th:last-child');
-  const actionFoot = table.querySelector('tfoot td:last-child');
+  const actionCol = table.querySelector('colgroup col[data-column="status"]') || table.querySelector('colgroup col:last-child');
+  const actionHead = table.querySelector('thead th[data-column="status"]') || table.querySelector('thead th:last-child');
+  const actionFoot = table.querySelector('tfoot td[data-column="status"]') || table.querySelector('tfoot td:last-child');
   customFieldsFor('voucher').forEach(field => {
     const col = document.createElement('col');
     col.dataset.column = field.id;
@@ -316,13 +316,25 @@ function applyFormLayout() {
     element.hidden = !headerFields.has(element.dataset.headerField);
   });
   const voucherColumns = new Set(state.settings.voucherColumns || contract.DEFAULT_SETTINGS.voucherColumns);
+  const photoActive = modeDraft().activeMethod === 'photo' && Boolean(currentSourceImage()?.dataUrl);
+  const photoBasicColumns = new Set(['itemCode', 'itemName', 'specification', 'quantity', 'unit', 'unitPrice', 'supplyAmount']);
+  const visibleVoucherColumns = photoActive && !state.photoView.detailColumns ? photoBasicColumns : voucherColumns;
   document.querySelectorAll('[data-column]').forEach(element => {
-    element.classList.toggle('is-column-hidden', !voucherColumns.has(element.dataset.column));
+    const column = element.dataset.column;
+    const visible = column === 'status' ? photoActive : visibleVoucherColumns.has(column);
+    element.classList.toggle('is-column-hidden', !visible);
   });
-  const visibleColumns = layoutDefinitions('voucher').filter(column => voucherColumns.has(column.id)).length;
+  const visibleColumns = [...document.querySelectorAll('thead th[data-column]')]
+    .filter(element => !element.classList.contains('is-column-hidden')).length;
   const table = document.querySelector('#tableScroll table');
-  table?.style.setProperty('--table-min-width', `${Math.max(520, visibleColumns * 94 + 34)}px`);
+  const tableWidth = photoActive && !state.photoView.detailColumns
+    ? 600
+    : Math.max(520, visibleColumns * 92 + 34);
+  table?.style.setProperty('--table-min-width', `${tableWidth}px`);
   inputRows.querySelector('.empty-row td')?.setAttribute('colspan', String(visibleColumns + 1));
+  $('detailColumnsButton').hidden = !photoActive;
+  $('detailColumnsButton').textContent = state.photoView.detailColumns ? '기본 열' : '상세 열';
+  $('detailColumnsButton').setAttribute('aria-pressed', String(state.photoView.detailColumns));
 }
 
 function updateMethod(method, { persist = true } = {}) {
@@ -343,7 +355,8 @@ function resetPhotoView() {
   state.photoView.zoom = 1;
   state.photoView.rotation = 0;
   state.photoView.activeRegion = null;
-  state.photoView.mobilePane = 'photo';
+  state.photoView.detailColumns = false;
+  state.photoView.ocrOpen = false;
 }
 
 function renderPhotoTransform() {
@@ -385,24 +398,29 @@ function renderSourceSurface() {
   const evidence = currentSourceImage();
   const showPhoto = modeDraft().activeMethod === 'photo' && Boolean(evidence?.dataUrl);
   const workspace = document.querySelector('.workspace');
+  const photoStateChanged = workspace.classList.contains('has-photo-source') !== showPhoto;
   workspace.classList.toggle('has-photo-source', showPhoto);
-  workspace.dataset.photoPane = state.photoView.mobilePane;
-  $('mobilePhotoTabs').hidden = !showPhoto;
-  document.querySelectorAll('[data-photo-pane]').forEach(button => {
-    const active = button.dataset.photoPane === state.photoView.mobilePane;
-    button.classList.toggle('is-active', active);
-    button.setAttribute('aria-pressed', String(active));
-  });
+  const savedWidth = Number(state.draft.ui.photoPaneWidth || 0);
+  if (savedWidth > 0) workspace.style.setProperty('--photo-pane-width', `${savedWidth}px`);
+  $('photoResizer').hidden = !showPhoto;
   $('sourceEditor').hidden = showPhoto;
   $('photoViewer').hidden = !showPhoto;
-  if (!showPhoto) return;
+  if (photoStateChanged) window.requestAnimationFrame(applyFormLayout);
+  if (!showPhoto) {
+    $('photoOcrPanel').hidden = true;
+    $('photoOcrToggle').setAttribute('aria-expanded', 'false');
+    return;
+  }
   const image = $('photoPreview');
   if (image.dataset.sourceImageId !== evidence.sourceImageId) {
     image.dataset.sourceImageId = evidence.sourceImageId;
     image.src = evidence.dataUrl;
     resetPhotoView();
   }
+  $('photoOcrPanel').hidden = !state.photoView.ocrOpen;
+  $('photoOcrToggle').setAttribute('aria-expanded', String(state.photoView.ocrOpen));
   $('photoFileName').textContent = evidence.fileName || '원본 사진';
+  $('photoOcrText').textContent = sourceTextInput.value || '사진 분석 후 인식된 문자가 표시됩니다.';
   $('photoViewerNotice').textContent = state.photoView.activeRegion
     ? '선택한 상품의 원본 위치입니다.'
     : (evidence.notice || '원본 사진을 기준으로 입력값을 확인하세요.');
@@ -418,6 +436,12 @@ function showPhotoRegion(region) {
   if (state.photoView.activeRegion) {
     window.requestAnimationFrame(() => $('photoRegion').scrollIntoView({ block: 'center', inline: 'center', behavior: 'smooth' }));
   }
+}
+
+function rowStatusText(status) {
+  if (status === 'MATCHED') return '일치';
+  if (status === 'SIMILAR') return '확인';
+  return '미인식';
 }
 
 function activityLabel(method) {
@@ -1289,7 +1313,8 @@ function hydrateHeader() {
 function renderRows({ restoreFocus = true } = {}) {
   const rows = modeDraft().rows;
   if (!rows.length) {
-    inputRows.innerHTML = '<tr class="empty-row"><td colspan="11"><strong>아직 입력된 상품이 없습니다.</strong><span>원문을 분석하거나 빈 행을 추가해 시작하세요.</span></td></tr>';
+    const photoAnalyzing = state.busy && modeDraft().activeMethod === 'photo';
+    inputRows.innerHTML = `<tr class="empty-row${photoAnalyzing ? ' is-analyzing' : ''}"><td colspan="12"><strong>${photoAnalyzing ? '사진에서 상품 정보를 분석하고 있습니다.' : '아직 입력된 상품이 없습니다.'}</strong><span>${photoAnalyzing ? '분석 중에도 빈 행 추가로 직접 입력할 수 있습니다.' : '원문을 분석하거나 빈 행을 추가해 시작하세요.'}</span></td></tr>`;
     updateSummaries();
     applyFormLayout();
     renderSourceAnalysis();
@@ -1314,6 +1339,7 @@ function renderRows({ restoreFocus = true } = {}) {
       <td data-column="description"><input data-field="description" value="${esc(row.description)}" aria-label="적요(직원)"></td>
       <td data-column="noticePrice"><input data-field="noticePrice" type="number" step="any" value="${esc(row.noticePrice ?? 0)}" aria-label="공지단가"></td>
       ${customCells}
+      <td data-column="status"><div class="row-status"><span>${rowStatusText(row.matchStatus)}</span></div></td>
       <td><button type="button" class="row-remove" data-remove-row="${esc(row.rowId)}" aria-label="행 삭제">×</button></td>
     </tr>`;
   }).join('');
@@ -1745,6 +1771,7 @@ async function recognizeImage(file) {
     state.pendingSourceName = state.pendingImageEvidence.fileName;
     state.pendingImageEvidence.notice = '원본 사진을 유지한 채 상품표를 분석하고 있습니다.';
     renderSourceSurface();
+    if (!modeDraft().rows.length) renderRows({ restoreFocus: false });
     if (!window.Tesseract?.createWorker && !window.Tesseract?.recognize) throw new Error('사진 OCR 모듈을 불러오지 못했습니다.');
     const analysis = await recognizeOcrDocument(file, {
       Tesseract: window.Tesseract,
@@ -1803,6 +1830,7 @@ async function recognizeImage(file) {
     $('analyzeButton').disabled = false;
     $('parserProgress').hidden = true;
     $('parserProgress').querySelector('strong').textContent = '자료를 분석하고 있습니다.';
+    if (!modeDraft().rows.length) renderRows({ restoreFocus: false });
     if (shouldAnalyze) scheduleAutoAnalysis(80);
   }
 }
@@ -2380,12 +2408,49 @@ $('photoRotateRight').addEventListener('click', () => {
   state.photoView.rotation = Number(state.photoView.rotation || 0) + 90;
   renderPhotoTransform();
 });
-document.querySelectorAll('[data-photo-pane]').forEach(button => button.addEventListener('click', () => {
-  state.photoView.mobilePane = button.dataset.photoPane === 'grid' ? 'grid' : 'photo';
+$('photoOcrToggle').addEventListener('click', () => {
+  state.photoView.ocrOpen = !state.photoView.ocrOpen;
   renderSourceSurface();
-}));
+});
+$('photoOcrClose').addEventListener('click', () => {
+  state.photoView.ocrOpen = false;
+  renderSourceSurface();
+  $('photoOcrToggle').focus();
+});
+$('detailColumnsButton').addEventListener('click', () => {
+  state.photoView.detailColumns = !state.photoView.detailColumns;
+  applyFormLayout();
+});
+const photoResizer = $('photoResizer');
+photoResizer.addEventListener('pointerdown', event => {
+  if (window.innerWidth <= 980) return;
+  event.preventDefault();
+  photoResizer.classList.add('is-dragging');
+  photoResizer.setPointerCapture(event.pointerId);
+});
+photoResizer.addEventListener('pointermove', event => {
+  if (!photoResizer.hasPointerCapture(event.pointerId)) return;
+  const workspace = document.querySelector('.workspace');
+  const bounds = workspace.getBoundingClientRect();
+  const relatedWidth = window.innerWidth > 1180 ? 244 : 0;
+  const maximum = Math.max(330, bounds.width - relatedWidth - 8 - 470 - 24);
+  const width = Math.max(330, Math.min(maximum, event.clientX - bounds.left));
+  state.draft.ui.photoPaneWidth = Math.round(width);
+  workspace.style.setProperty('--photo-pane-width', `${Math.round(width)}px`);
+  window.requestAnimationFrame(renderPhotoTransform);
+});
+const finishPhotoResize = event => {
+  if (photoResizer.hasPointerCapture(event.pointerId)) photoResizer.releasePointerCapture(event.pointerId);
+  photoResizer.classList.remove('is-dragging');
+  scheduleSave();
+};
+photoResizer.addEventListener('pointerup', finishPhotoResize);
+photoResizer.addEventListener('pointercancel', finishPhotoResize);
 $('analyzeButton').addEventListener('click', () => analyzeSource({ automatic: false }));
-$('addRowButton').addEventListener('click', () => { updateMethod('direct'); addDirectRow(); });
+$('addRowButton').addEventListener('click', () => {
+  if (modeDraft().activeMethod !== 'photo') updateMethod('direct');
+  addDirectRow();
+});
 $('customerSearchButton').addEventListener('click', chooseCustomer);
 $('customerInput').addEventListener('input', event => {
   const header = modeDraft().header;
