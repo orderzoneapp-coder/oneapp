@@ -7,11 +7,12 @@
   const DELIVERY_HISTORY_KEY = 'oneapp.smartinput.delivery-history.v1';
   const SETTINGS_STORAGE_KEY = 'oneapp.smartinput.settings.v1';
   const APP_ID = 'smart-input';
-  const MODE_ORDER = ['order', 'purchase', 'sale'];
+  const MODE_ORDER = ['order', 'purchase', 'sale', 'estimate'];
   const MODES = Object.freeze({
     order: Object.freeze({ id: 'order', label: '주문서', target: 'ORDERQ_VNEXT_LEDGER' }),
     purchase: Object.freeze({ id: 'purchase', label: '구매', target: 'DATAOPS_PURCHASE_PENDING' }),
-    sale: Object.freeze({ id: 'sale', label: '판매', target: 'DATAOPS_SALE_PENDING' })
+    sale: Object.freeze({ id: 'sale', label: '판매', target: 'DATAOPS_SALE_PENDING' }),
+    estimate: Object.freeze({ id: 'estimate', label: '견적서', target: 'SMART_INPUT_ESTIMATE_CATALOG' })
   });
   const INPUT_METHODS = Object.freeze([
     Object.freeze({ id: 'direct', label: '직접입력', sourceType: 'MANUAL' }),
@@ -23,6 +24,25 @@
   ]);
   const STAGES = Object.freeze(['capture', 'extract', 'match', 'review', 'complete']);
   const ROW_FIELDS = Object.freeze(['itemCode', 'itemName', 'specification', 'quantity', 'unit', 'unitPrice', 'memo', 'description', 'noticePrice']);
+  const HEADER_FIELD_DEFINITIONS = Object.freeze([
+    Object.freeze({ id: 'customer', label: '배송 거래처', required: true }),
+    Object.freeze({ id: 'taxCustomer', label: '세무 거래처', required: false }),
+    Object.freeze({ id: 'deliveryDate', label: '배송일자', required: true }),
+    Object.freeze({ id: 'warehouse', label: '출하창고', required: true }),
+    Object.freeze({ id: 'transactionType', label: '거래유형', required: false })
+  ]);
+  const VOUCHER_COLUMN_DEFINITIONS = Object.freeze([
+    Object.freeze({ id: 'itemCode', label: '품목코드', required: false }),
+    Object.freeze({ id: 'itemName', label: '품목명', required: true }),
+    Object.freeze({ id: 'specification', label: '규격', required: false }),
+    Object.freeze({ id: 'quantity', label: '수량', required: true }),
+    Object.freeze({ id: 'unit', label: '단위', required: false }),
+    Object.freeze({ id: 'unitPrice', label: '단가', required: false }),
+    Object.freeze({ id: 'supplyAmount', label: '공급가액', required: false }),
+    Object.freeze({ id: 'memo', label: '메모', required: false }),
+    Object.freeze({ id: 'description', label: '적요(직원)', required: false }),
+    Object.freeze({ id: 'noticePrice', label: '공지단가', required: false })
+  ]);
   const DEFAULT_SETTINGS = Object.freeze({
     orderCutoffTime: '',
     allowSameDayDelivery: true,
@@ -30,7 +50,9 @@
     deliveryCustomerWeekdays: Object.freeze({}),
     holidayWeekdays: Object.freeze([]),
     holidayDates: Object.freeze([]),
-    timezone: 'Asia/Seoul'
+    timezone: 'Asia/Seoul',
+    headerFields: Object.freeze(HEADER_FIELD_DEFINITIONS.map(field => field.id)),
+    voucherColumns: Object.freeze(VOUCHER_COLUMN_DEFINITIONS.map(field => field.id))
   });
   const WEEKDAY_LABELS = Object.freeze(['일', '월', '화', '수', '목', '금', '토']);
 
@@ -66,6 +88,13 @@
     Object.entries(sourceMap).forEach(([customerId, weekdays]) => {
       deliveryCustomerWeekdays[text(customerId)] = normalizeWeekdays(weekdays);
     });
+    const normalizeLayout = (selected, definitions, fallback) => {
+      const allowed = new Set(definitions.map(field => field.id));
+      const requested = Array.isArray(selected) ? selected.map(text).filter(id => allowed.has(id)) : [...fallback];
+      const requestedSet = new Set(requested);
+      definitions.filter(field => field.required).forEach(field => requestedSet.add(field.id));
+      return definitions.map(field => field.id).filter(id => requestedSet.has(id));
+    };
     return {
       orderCutoffTime: /^\d{2}:\d{2}$/.test(text(value.orderCutoffTime)) ? text(value.orderCutoffTime) : '',
       allowSameDayDelivery: value.allowSameDayDelivery !== false,
@@ -73,7 +102,9 @@
       deliveryCustomerWeekdays,
       holidayWeekdays: normalizeWeekdays(value.holidayWeekdays, DEFAULT_SETTINGS.holidayWeekdays),
       holidayDates: [...new Set((Array.isArray(value.holidayDates) ? value.holidayDates : []).map(text).filter(date => /^\d{4}-\d{2}-\d{2}$/.test(date)))].sort(),
-      timezone: text(value.timezone || DEFAULT_SETTINGS.timezone)
+      timezone: text(value.timezone || DEFAULT_SETTINGS.timezone),
+      headerFields: normalizeLayout(value.headerFields, HEADER_FIELD_DEFINITIONS, DEFAULT_SETTINGS.headerFields),
+      voucherColumns: normalizeLayout(value.voucherColumns, VOUCHER_COLUMN_DEFINITIONS, DEFAULT_SETTINGS.voucherColumns)
     };
   }
 
@@ -166,6 +197,7 @@
   function createModeDraft(mode, date = businessDate(), recordedAt = new Date().toISOString()) {
     return {
       documentId: createId('SIDOC'),
+      catalogRecordId: '',
       mode,
       header: {
         recordedAt,
@@ -209,7 +241,8 @@
       modes: {
         order: createModeDraft('order', date, recordedAt),
         purchase: createModeDraft('purchase', date, recordedAt),
-        sale: createModeDraft('sale', date, recordedAt)
+        sale: createModeDraft('sale', date, recordedAt),
+        estimate: createModeDraft('estimate', date, recordedAt)
       },
       ui: { stage: 'capture', relatedOpen: false, selectedRowId: '', scrollTop: 0 },
       createdAt: recordedAt,
@@ -287,6 +320,7 @@
   function normalizeModeDraft(mode, input = {}, fallback = createModeDraft(mode)) {
     return {
       documentId: text(input.documentId) || fallback.documentId,
+      catalogRecordId: text(input.catalogRecordId),
       mode,
       header: normalizeHeader(input.header, fallback.header),
       sourceText: String(input.sourceText ?? ''),
@@ -308,7 +342,8 @@
       modes: {
         order: normalizeModeDraft('order', input.modes?.order, fallback.modes.order),
         purchase: normalizeModeDraft('purchase', input.modes?.purchase, fallback.modes.purchase),
-        sale: normalizeModeDraft('sale', input.modes?.sale, fallback.modes.sale)
+        sale: normalizeModeDraft('sale', input.modes?.sale, fallback.modes.sale),
+        estimate: normalizeModeDraft('estimate', input.modes?.estimate, fallback.modes.estimate)
       },
       ui: { ...fallback.ui, ...(input.ui || {}) },
       createdAt: text(input.createdAt) || fallback.createdAt,
@@ -323,6 +358,8 @@
       method: text(input.method || 'text'),
       sourceType: text(input.sourceType || 'GENERAL_TEXT'),
       sourceName: text(input.sourceName),
+      sourceRole: text(input.sourceRole),
+      automatic: Boolean(input.automatic),
       rawText: String(input.rawText ?? ''),
       contentHash: text(input.contentHash),
       intakeSessionId: text(input.intakeSessionId),
@@ -436,6 +473,8 @@
     INPUT_METHODS,
     STAGES,
     ROW_FIELDS,
+    HEADER_FIELD_DEFINITIONS,
+    VOUCHER_COLUMN_DEFINITIONS,
     DEFAULT_SETTINGS,
     WEEKDAY_LABELS,
     text,
