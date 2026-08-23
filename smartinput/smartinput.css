@@ -177,7 +177,7 @@ td input[type="number"] { text-align: right; }
 .empty-row strong, .empty-row span { display: block; }
 .empty-row strong { margin-bottom: 5px; color: var(--text-soft); font-size: 11px; }
 tfoot td { position: sticky; bottom: 0; z-index: 2; height: 36px; padding: 0 8px; color: var(--navy); background: #eef3f8; font-weight: 900; text-align: right; }
-.col-code { width: 96px; }.col-name { width: 175px; }.col-spec { width: 90px; }.col-qty { width: 64px; }.col-unit { width: 62px; }.col-price { width: 78px; }.col-supply { width: 88px; }.col-memo { width: 96px; }.col-description { width: 104px; }.col-notice { width: 78px; }.col-action { width: 34px; }
+.col-code { width: 96px; }.col-name { width: 175px; }.col-spec { width: 90px; }.col-qty { width: 64px; }.col-unit { width: 62px; }.col-price { width: 78px; }.col-supply { width: 88px; }.col-memo { width: 96px; }.col-description { width: 104px; }.col-notice { width: 78px; }.col-custom { width: 112px; }.col-action { width: 34px; }
 
 .related-list { padding: 10px; display: grid; gap: 7px; }
 .related-list a { min-height: 58px; padding: 9px; display: grid; grid-template-columns: 31px 1fr auto; align-items: center; gap: 8px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); }
@@ -237,11 +237,24 @@ tfoot td { position: sticky; bottom: 0; z-index: 2; height: 36px; padding: 0 8px
 .smart-customer-badges span { padding: 3px 5px; border-radius: 999px; color: var(--text-soft); background: var(--surface-strong); font-size: 8px; font-weight: 900; }
 .smart-customer-badges .is-temp { color: var(--warning); background: var(--warning-soft); }
 .smart-customer-badges .is-tax { color: var(--success); background: var(--success-soft); }
-.smart-form, .smart-settings-grid { padding: 16px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 13px; overflow: auto; }
-.smart-form label, .smart-settings-grid > label { min-width: 0; display: grid; gap: 6px; color: var(--text-soft); font-size: 9px; font-weight: 800; }
+.smart-form { padding: 16px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 13px; overflow: auto; }
+.smart-settings-grid { padding: 12px 16px 16px; display: grid; gap: 8px; overflow: auto; }
+.smart-form label, .settings-group__body > label { min-width: 0; display: grid; gap: 6px; color: var(--text-soft); font-size: 9px; font-weight: 800; }
 .smart-form label span em { color: var(--danger); font-style: normal; }
-.smart-form input, .smart-settings-grid input[type="time"], .smart-settings-grid textarea { width: 100%; min-height: 39px; padding: 8px 10px; border: 1px solid var(--border-strong); border-radius: 8px; }
+.smart-form input, .smart-form select, .smart-settings-grid input[type="time"], .smart-settings-grid textarea { width: 100%; min-height: 39px; padding: 8px 10px; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--surface); }
 .smart-form--wide, .smart-settings--wide { grid-column: 1 / -1; }
+.settings-group { min-width: 0; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); overflow: clip; }
+.settings-group[open] { border-color: var(--border-strong); box-shadow: 0 5px 18px rgba(15, 38, 65, .05); }
+.settings-group > summary { min-height: 52px; padding: 10px 12px; display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--navy); background: var(--surface-muted); cursor: pointer; list-style: none; user-select: none; }
+.settings-group > summary::-webkit-details-marker { display: none; }
+.settings-group > summary span { min-width: 0; display: grid; gap: 2px; }
+.settings-group > summary strong { font-size: 11px; }
+.settings-group > summary small { color: var(--text-faint); font-size: 8px; font-weight: 600; }
+.settings-group > summary i { width: 9px; height: 9px; border-right: 2px solid var(--text-faint); border-bottom: 2px solid var(--text-faint); transform: rotate(45deg); transition: transform .16s ease; }
+.settings-group[open] > summary i { transform: rotate(225deg); }
+.settings-group__body { padding: 13px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 13px; border-top: 1px solid var(--border); }
+.settings-group__body--single { grid-template-columns: 1fr; }
+.settings-group__actions { min-height: 32px; display: flex; align-items: center; justify-content: space-between; gap: 10px; color: var(--text-faint); font-size: 8px; }
 .smart-settings-grid fieldset { min-width: 0; margin: 0; padding: 10px; border: 1px solid var(--border); border-radius: 9px; }
 .smart-settings-grid legend { padding: 0 5px; color: var(--text-soft); font-size: 9px; font-weight: 900; }
 .smart-settings-grid label small { color: var(--text-faint); font-size: 8px; font-weight: 500; }
@@ -249,6 +262,8 @@ tfoot td { position: sticky; bottom: 0; z-index: 2; height: 36px; padding: 0 8px
 .layout-check { min-height: 34px; padding: 6px 8px; display: flex; align-items: center; gap: 7px; border: 1px solid var(--border); border-radius: 7px; color: var(--text-soft); background: var(--surface); font-size: 9px; font-weight: 800; }
 .layout-check input { width: 16px; height: 16px; accent-color: var(--accent); }
 .layout-check small { margin-left: auto; color: var(--danger); font-size: 8px; }
+.layout-check button { width: 20px; height: 20px; display: grid; place-items: center; border: 0; border-radius: 5px; color: var(--text-faint); background: transparent; }
+.layout-check button:hover { color: var(--danger); background: var(--danger-soft); }
 .toggle-setting { min-height: 39px; display: flex !important; grid-template-columns: auto 1fr; align-items: center; gap: 8px !important; }
 .toggle-setting input { width: 17px; height: 17px; accent-color: var(--accent); }
 .weekday-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; }
@@ -314,7 +329,7 @@ tfoot td { position: sticky; bottom: 0; z-index: 2; height: 36px; padding: 0 8px
   .smart-dialog__toolbar { flex-wrap: wrap; }
   .smart-customer-row { grid-template-columns: auto minmax(0, 1fr); }
   .smart-customer-badges, .smart-customer-row > .button { grid-column: 2; justify-content: flex-start; }
-  .smart-form, .smart-settings-grid { grid-template-columns: 1fr; }
+  .smart-form, .settings-group__body { grid-template-columns: 1fr; }
   .smart-form--wide, .smart-settings--wide { grid-column: auto; }
   .layout-check-grid { grid-template-columns: 1fr; }
 }

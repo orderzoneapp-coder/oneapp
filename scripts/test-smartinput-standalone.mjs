@@ -12,6 +12,7 @@ const read = file => fs.readFileSync(path.join(root, file), 'utf8');
 const contractSource = read('smartinput/smartinput-contract.js');
 const appSource = read('smartinput/smartinput.js');
 const dataStoreSource = read('smartinput/smartinput-data-store.js');
+const orderIntakeSource = read('orderq/order-intake-engine.js');
 const html = read('smartinput/index.html');
 const css = read('smartinput/smartinput.css');
 const readme = read('smartinput/README.md');
@@ -37,10 +38,22 @@ assert.ok(Array.from(contract.DEFAULT_SETTINGS.voucherColumns).includes('itemNam
 const minimalLayout = contract.normalizeSettings({ headerFields: [], voucherColumns: [] });
 assert.deepEqual(Array.from(minimalLayout.headerFields), ['customer', 'deliveryDate', 'warehouse']);
 assert.deepEqual(Array.from(minimalLayout.voucherColumns), ['itemName', 'quantity']);
+const customLayout = contract.normalizeSettings({
+  customFields: [
+    { id: 'custom-header-request', label: '배송 요청사항', scope: 'header', category: 'CUSTOM' },
+    { id: 'custom-voucher-lot', label: 'LOT 메모', scope: 'voucher', category: 'CUSTOM' }
+  ],
+  headerFields: ['customer', 'deliveryDate', 'warehouse', 'custom-header-request'],
+  voucherColumns: ['itemName', 'quantity', 'custom-voucher-lot']
+});
+assert.equal(customLayout.customFields.length, 2);
+assert.ok(Array.from(customLayout.headerFields).includes('custom-header-request'));
+assert.ok(Array.from(customLayout.voucherColumns).includes('custom-voucher-lot'));
 const displayRow = contract.normalizeRow({ memo: '메모', description: '직원 적요', noticePrice: 1200 });
 assert.equal(displayRow.memo, '메모');
 assert.equal(displayRow.description, '직원 적요');
 assert.equal(displayRow.noticePrice, 1200);
+assert.deepEqual(JSON.parse(JSON.stringify(contract.normalizeRow({ customValues: { 'custom-voucher-lot': 'A-01' } }).customValues)), { 'custom-voucher-lot': 'A-01' });
 const commonOnlyProduct = normalizeMasterProduct(
   { 코드: 'COMMON-ONLY-1', 품목명: '공통 마스터 전용상품', 규격: 'EA' },
   'COMMON-ONLY-1',
@@ -282,6 +295,22 @@ assert.match(appSource, /withTimeout\(getAll\(STORE\.CUSTOMERS\), 5000/, 'startu
 assert.match(appSource, /function openEstimateListDialog\(\)/);
 assert.match(appSource, /function saveEstimateDocument\(\)/);
 assert.match(appSource, /function applyFormLayout\(\)/);
+assert.match(appSource, /class="settings-group" open/);
+assert.match(appSource, /data-add-layout-field="header"/);
+assert.match(appSource, /data-add-layout-field="voucher"/);
+assert.match(appSource, /상품정보/);
+assert.match(appSource, /거래처정보/);
+assert.match(appSource, /사용자지정/);
+assert.match(appSource, /function openLayoutFieldDialog\(/);
+assert.match(appSource, /data-custom-header-input/);
+assert.match(appSource, /data-custom-row-field/);
+assert.match(appSource, /customValues: \{ \.\.\.\(current\.header\.customValues/);
+assert.match(orderIntakeSource, /customValues: input\.customValues/);
+assert.match(orderIntakeSource, /formLayoutSnapshot: payload\.formLayoutSnapshot/);
+assert.match(appSource, /recognizeOcrDocument/);
+assert.match(appSource, /verifiedRowsToParserLines/);
+assert.match(appSource, /pendingOcr\.status !== 'VERIFIED'/);
+assert.doesNotMatch(appSource, /Tesseract\.recognize\(file, 'kor\+eng'/, 'raw one-pass OCR must not feed the order parser directly');
 assert.match(appSource, /function hasMeaningfulDraftContent\(draft\)/);
 assert.match(appSource, /rows\.filter\(hasMeaningfulDraftContent\)/);
 assert.match(appSource, /state\.draftDirty = true;[\s\S]*setSaveState\('저장 중…', 'saving'\)/);

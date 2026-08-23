@@ -52,7 +52,8 @@
     holidayDates: Object.freeze([]),
     timezone: 'Asia/Seoul',
     headerFields: Object.freeze(HEADER_FIELD_DEFINITIONS.map(field => field.id)),
-    voucherColumns: Object.freeze(VOUCHER_COLUMN_DEFINITIONS.map(field => field.id))
+    voucherColumns: Object.freeze(VOUCHER_COLUMN_DEFINITIONS.map(field => field.id)),
+    customFields: Object.freeze([])
   });
   const WEEKDAY_LABELS = Object.freeze(['일', '월', '화', '수', '목', '금', '토']);
 
@@ -81,6 +82,21 @@
   }
 
   function normalizeSettings(value = {}) {
+    const customFields = (Array.isArray(value.customFields) ? value.customFields : []).map((field, index) => {
+      const scope = field?.scope === 'voucher' ? 'voucher' : 'header';
+      const category = ['PRODUCT', 'CUSTOMER', 'CUSTOM'].includes(text(field?.category).toUpperCase())
+        ? text(field.category).toUpperCase()
+        : 'CUSTOM';
+      const label = text(field?.label);
+      if (!label) return null;
+      return {
+        id: text(field?.id) || `custom-${scope}-${index + 1}`,
+        label,
+        scope,
+        category,
+        sourceField: text(field?.sourceField)
+      };
+    }).filter(Boolean).filter((field, index, rows) => rows.findIndex(other => other.id === field.id) === index);
     const deliveryCustomerWeekdays = {};
     const sourceMap = value.deliveryCustomerWeekdays && typeof value.deliveryCustomerWeekdays === 'object'
       ? value.deliveryCustomerWeekdays
@@ -88,12 +104,12 @@
     Object.entries(sourceMap).forEach(([customerId, weekdays]) => {
       deliveryCustomerWeekdays[text(customerId)] = normalizeWeekdays(weekdays);
     });
-    const normalizeLayout = (selected, definitions, fallback) => {
-      const allowed = new Set(definitions.map(field => field.id));
+    const normalizeLayout = (selected, definitions, fallback, scope) => {
+      const allowed = new Set([...definitions.map(field => field.id), ...customFields.filter(field => field.scope === scope).map(field => field.id)]);
       const requested = Array.isArray(selected) ? selected.map(text).filter(id => allowed.has(id)) : [...fallback];
       const requestedSet = new Set(requested);
       definitions.filter(field => field.required).forEach(field => requestedSet.add(field.id));
-      return definitions.map(field => field.id).filter(id => requestedSet.has(id));
+      return [...definitions.map(field => field.id), ...customFields.filter(field => field.scope === scope).map(field => field.id)].filter(id => requestedSet.has(id));
     };
     return {
       orderCutoffTime: /^\d{2}:\d{2}$/.test(text(value.orderCutoffTime)) ? text(value.orderCutoffTime) : '',
@@ -103,8 +119,9 @@
       holidayWeekdays: normalizeWeekdays(value.holidayWeekdays, DEFAULT_SETTINGS.holidayWeekdays),
       holidayDates: [...new Set((Array.isArray(value.holidayDates) ? value.holidayDates : []).map(text).filter(date => /^\d{4}-\d{2}-\d{2}$/.test(date)))].sort(),
       timezone: text(value.timezone || DEFAULT_SETTINGS.timezone),
-      headerFields: normalizeLayout(value.headerFields, HEADER_FIELD_DEFINITIONS, DEFAULT_SETTINGS.headerFields),
-      voucherColumns: normalizeLayout(value.voucherColumns, VOUCHER_COLUMN_DEFINITIONS, DEFAULT_SETTINGS.voucherColumns)
+      headerFields: normalizeLayout(value.headerFields, HEADER_FIELD_DEFINITIONS, DEFAULT_SETTINGS.headerFields, 'header'),
+      voucherColumns: normalizeLayout(value.voucherColumns, VOUCHER_COLUMN_DEFINITIONS, DEFAULT_SETTINGS.voucherColumns, 'voucher'),
+      customFields
     };
   }
 
@@ -218,7 +235,8 @@
         warehouseId: '',
         warehouseCode: '',
         warehouseName: '',
-        transactionType: '기타'
+        transactionType: '기타',
+        customValues: {}
       },
       sourceText: '',
       activeMethod: 'text',
@@ -273,7 +291,10 @@
       warehouseId: text(value.warehouseId || fallback.warehouseId),
       warehouseCode: text(value.warehouseCode || fallback.warehouseCode),
       warehouseName: text(value.warehouseName || fallback.warehouseName),
-      transactionType: text(value.transactionType || fallback.transactionType || '기타')
+      transactionType: text(value.transactionType || fallback.transactionType || '기타'),
+      customValues: value.customValues && typeof value.customValues === 'object'
+        ? { ...value.customValues }
+        : (fallback.customValues ? { ...fallback.customValues } : {})
     };
   }
 
@@ -308,6 +329,7 @@
       memo: text(input.memo),
       description: text(input.description),
       noticePrice: numberOrNull(input.noticePrice) ?? 0,
+      customValues: input.customValues && typeof input.customValues === 'object' ? { ...input.customValues } : {},
       matchStatus: ['MATCHED', 'SIMILAR', 'UNRESOLVED'].includes(matchStatus) ? matchStatus : 'UNRESOLVED',
       candidateProducts,
       editedFields: input.editedFields && typeof input.editedFields === 'object' ? { ...input.editedFields } : {},
@@ -364,6 +386,10 @@
       contentHash: text(input.contentHash),
       intakeSessionId: text(input.intakeSessionId),
       intakeDocumentId: text(input.intakeDocumentId),
+      ocrStatus: text(input.ocrStatus),
+      ocrConfidence: numberOrNull(input.ocrConfidence),
+      ocrVariant: text(input.ocrVariant),
+      ocrTotals: input.ocrTotals && typeof input.ocrTotals === 'object' ? { ...input.ocrTotals } : null,
       createdAt: new Date(input.now || Date.now()).toISOString()
     };
   }

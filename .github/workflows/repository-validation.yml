@@ -41,6 +41,9 @@ jobs:
       - name: Test standalone SmartInput contract
         run: node scripts/test-smartinput-standalone.mjs
 
+      - name: Test SmartInput OCR arithmetic and total validation
+        run: node scripts/test-smartinput-ocr.mjs
+
       - name: Test Master target navigation and work-entry actions
         run: node scripts/test-master-navigation.mjs
 
