@@ -58,6 +58,14 @@
     Object.freeze({ id: 'marketPrice', label: '시중가', required: false, valueType: 'NUMBER' }),
     Object.freeze({ id: 'promoPrice', label: '행사가', required: false, valueType: 'NUMBER' })
   ]);
+  const DEFAULT_HEADER_FIELDS = Object.freeze(HEADER_FIELD_DEFINITIONS.map(field => field.id));
+  const DEFAULT_VOUCHER_COLUMNS = Object.freeze(VOUCHER_COLUMN_DEFINITIONS.map(field => field.id));
+  const DEFAULT_HEADER_FIELDS_BY_MODE = Object.freeze(Object.fromEntries(
+    MODE_ORDER.map(mode => [mode, Object.freeze([...DEFAULT_HEADER_FIELDS])])
+  ));
+  const DEFAULT_VOUCHER_COLUMNS_BY_MODE = Object.freeze(Object.fromEntries(
+    MODE_ORDER.map(mode => [mode, Object.freeze([...DEFAULT_VOUCHER_COLUMNS])])
+  ));
   const DEFAULT_SETTINGS = Object.freeze({
     orderCutoffTime: '',
     allowSameDayDelivery: true,
@@ -66,8 +74,10 @@
     holidayWeekdays: Object.freeze([]),
     holidayDates: Object.freeze([]),
     timezone: 'Asia/Seoul',
-    headerFields: Object.freeze(HEADER_FIELD_DEFINITIONS.map(field => field.id)),
-    voucherColumns: Object.freeze(VOUCHER_COLUMN_DEFINITIONS.map(field => field.id)),
+    headerFields: DEFAULT_HEADER_FIELDS,
+    voucherColumns: DEFAULT_VOUCHER_COLUMNS,
+    headerFieldsByMode: DEFAULT_HEADER_FIELDS_BY_MODE,
+    voucherColumnsByMode: DEFAULT_VOUCHER_COLUMNS_BY_MODE,
     customFields: Object.freeze([]),
     columnWidths: Object.freeze({})
   });
@@ -141,6 +151,22 @@
       if (!allowedColumnIds.has(text(fieldId)) || !Number.isFinite(normalizedWidth)) return;
       columnWidths[text(fieldId)] = Math.max(56, Math.min(480, Math.round(normalizedWidth)));
     });
+    const legacyHeaderFields = normalizeLayout(value.headerFields, HEADER_FIELD_DEFINITIONS, DEFAULT_SETTINGS.headerFields, 'header');
+    const legacyVoucherColumns = normalizeLayout(value.voucherColumns, PRODUCT_FIELD_DEFINITIONS, DEFAULT_SETTINGS.voucherColumns, 'voucher');
+    const sourceHeaderFieldsByMode = value.headerFieldsByMode && typeof value.headerFieldsByMode === 'object'
+      ? value.headerFieldsByMode
+      : {};
+    const sourceVoucherColumnsByMode = value.voucherColumnsByMode && typeof value.voucherColumnsByMode === 'object'
+      ? value.voucherColumnsByMode
+      : {};
+    const headerFieldsByMode = Object.fromEntries(MODE_ORDER.map(mode => [
+      mode,
+      normalizeLayout(sourceHeaderFieldsByMode[mode], HEADER_FIELD_DEFINITIONS, legacyHeaderFields, 'header')
+    ]));
+    const voucherColumnsByMode = Object.fromEntries(MODE_ORDER.map(mode => [
+      mode,
+      normalizeLayout(sourceVoucherColumnsByMode[mode], PRODUCT_FIELD_DEFINITIONS, legacyVoucherColumns, 'voucher')
+    ]));
     return {
       orderCutoffTime: /^\d{2}:\d{2}$/.test(text(value.orderCutoffTime)) ? text(value.orderCutoffTime) : '',
       allowSameDayDelivery: value.allowSameDayDelivery !== false,
@@ -149,8 +175,10 @@
       holidayWeekdays: normalizeWeekdays(value.holidayWeekdays, DEFAULT_SETTINGS.holidayWeekdays),
       holidayDates: [...new Set((Array.isArray(value.holidayDates) ? value.holidayDates : []).map(text).filter(date => /^\d{4}-\d{2}-\d{2}$/.test(date)))].sort(),
       timezone: text(value.timezone || DEFAULT_SETTINGS.timezone),
-      headerFields: normalizeLayout(value.headerFields, HEADER_FIELD_DEFINITIONS, DEFAULT_SETTINGS.headerFields, 'header'),
-      voucherColumns: normalizeLayout(value.voucherColumns, PRODUCT_FIELD_DEFINITIONS, DEFAULT_SETTINGS.voucherColumns, 'voucher'),
+      headerFields: [...headerFieldsByMode.order],
+      voucherColumns: [...voucherColumnsByMode.order],
+      headerFieldsByMode,
+      voucherColumnsByMode,
       customFields,
       columnWidths
     };
@@ -390,6 +418,7 @@
       memo: text(input.memo),
       description: text(input.description),
       noticePrice: numberOrNull(input.noticePrice) ?? 0,
+      unitPriceReviewStatus: input.unitPriceReviewStatus === 'PENDING' ? 'PENDING' : 'CONFIRMED',
       customValues: input.customValues && typeof input.customValues === 'object' ? { ...input.customValues } : {},
       matchStatus: ['MATCHED', 'SIMILAR', 'UNRESOLVED'].includes(matchStatus) ? matchStatus : 'UNRESOLVED',
       candidateProducts,
@@ -477,6 +506,9 @@
     ROW_FIELDS.forEach(field => {
       if (previous.editedFields?.[field]) merged[field] = previous[field];
     });
+    if (previous.unitPriceReviewStatus === 'CONFIRMED' && Number(previous.unitPrice) === Number(next.unitPrice)) {
+      merged.unitPriceReviewStatus = 'CONFIRMED';
+    }
     merged.rowId = previous.rowId;
     return merged;
   }

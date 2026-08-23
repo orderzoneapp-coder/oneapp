@@ -186,6 +186,7 @@ export function verifiedRowsToParserLines(analysis, batchId = 'OCR') {
     quantity: row.quantity,
     unit: '',
     unitPrice: row.unitPrice,
+    unitPriceReviewStatus: 'PENDING',
     sourceLineNo: row.sourceLineNo,
     sourceLineKey: `${batchId}:OCR:${row.sourceLineNo || index + 1}`,
     matchStatus: 'UNRESOLVED',

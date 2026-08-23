@@ -45,6 +45,7 @@ const state = {
   estimates: [],
   smartDataReady: false,
   pendingImageEvidence: null,
+  photoCaptureSequence: 0,
   pendingOcrReview: null,
   pendingSourceName: '',
   sourceImages: { order: null, purchase: null, sale: null, estimate: null },
@@ -271,6 +272,20 @@ function customFieldsFor(scope) {
   return (state.settings.customFields || []).filter(field => field.scope === scope);
 }
 
+function headerFieldsForMode(mode = state.draft.activeMode) {
+  return state.settings.headerFieldsByMode?.[mode]
+    || state.settings.headerFields
+    || contract.DEFAULT_SETTINGS.headerFieldsByMode?.[mode]
+    || contract.DEFAULT_SETTINGS.headerFields;
+}
+
+function voucherColumnsForMode(mode = state.draft.activeMode) {
+  return state.settings.voucherColumnsByMode?.[mode]
+    || state.settings.voucherColumns
+    || contract.DEFAULT_SETTINGS.voucherColumnsByMode?.[mode]
+    || contract.DEFAULT_SETTINGS.voucherColumns;
+}
+
 function optionalProductFields() {
   const baseIds = new Set(contract.VOUCHER_COLUMN_DEFINITIONS.map(field => field.id));
   return contract.PRODUCT_FIELD_DEFINITIONS.filter(field => !baseIds.has(field.id));
@@ -461,11 +476,11 @@ function resizeColumnWithKeyboard(event) {
 
 function applyFormLayout() {
   renderCustomLayoutFields();
-  const headerFields = new Set(state.settings.headerFields || contract.DEFAULT_SETTINGS.headerFields);
+  const headerFields = new Set(headerFieldsForMode());
   document.querySelectorAll('[data-header-field]').forEach(element => {
     element.hidden = !headerFields.has(element.dataset.headerField);
   });
-  const voucherColumns = new Set(state.settings.voucherColumns || contract.DEFAULT_SETTINGS.voucherColumns);
+  const voucherColumns = new Set(voucherColumnsForMode());
   const photoActive = modeDraft().activeMethod === 'photo' && Boolean(currentSourceImage()?.dataUrl);
   const photoBasicColumns = new Set(['itemCode', 'itemName', 'specification', 'quantity', 'unit', 'unitPrice', 'supplyAmount']);
   const visibleVoucherColumns = photoActive && !state.photoView.detailColumns ? photoBasicColumns : voucherColumns;
@@ -549,13 +564,20 @@ function renderSourceSurface() {
   const photoMode = modeDraft().activeMethod === 'photo';
   const showPhoto = photoMode && Boolean(evidence?.dataUrl);
   const workspace = document.querySelector('.workspace');
+  const photoViewer = $('photoViewer');
   const photoStateChanged = workspace.classList.contains('has-photo-source') !== photoMode;
   workspace.classList.toggle('has-photo-source', photoMode);
   const savedWidth = Number(state.draft.ui.photoPaneWidth || 0);
   if (savedWidth > 0) workspace.style.setProperty('--photo-pane-width', `${savedWidth}px`);
   $('photoResizer').hidden = !photoMode;
   $('sourceEditor').hidden = photoMode;
-  $('photoViewer').hidden = !photoMode;
+  photoViewer.hidden = !photoMode;
+  photoViewer.classList.toggle('has-image', showPhoto);
+  $('photoViewerToolbar').hidden = !showPhoto;
+  $('photoEmptyState').hidden = showPhoto;
+  $('photoStage').hidden = !showPhoto;
+  $('photoViewerMeta').hidden = !showPhoto;
+  $('analyzeButton').hidden = photoMode && !showPhoto;
   if (photoStateChanged) window.requestAnimationFrame(applyFormLayout);
   if (!showPhoto) {
     $('photoOcrPanel').hidden = true;
@@ -563,6 +585,7 @@ function renderSourceSurface() {
     $('photoOcrToggle').disabled = true;
     const image = $('photoPreview');
     image.removeAttribute('src');
+    image.hidden = true;
     image.dataset.sourceImageId = '';
     $('photoFileName').textContent = '원본 사진 없음';
     $('photoViewerNotice').textContent = state.smartDataReady
@@ -572,6 +595,7 @@ function renderSourceSurface() {
   }
   $('photoOcrToggle').disabled = false;
   const image = $('photoPreview');
+  image.hidden = false;
   if (image.dataset.sourceImageId !== evidence.sourceImageId) {
     image.dataset.sourceImageId = evidence.sourceImageId;
     image.src = evidence.dataUrl;
@@ -602,8 +626,8 @@ function rowStatusText(status) {
   if (status === 'EMPTY') return '입력 대기';
   if (status === 'ANALYZING') return '분석 중';
   if (status === 'MATCHED') return '일치';
-  if (status === 'SIMILAR') return '확인';
-  return '미인식';
+  if (status === 'SIMILAR') return '유사';
+  return '불일치';
 }
 
 function activityLabel(method) {
@@ -1250,6 +1274,11 @@ async function openSettingsDialog() {
     ? state.settings.deliveryCustomerWeekdays[customerId]
     : state.settings.defaultDeliveryWeekdays;
   let workingCustomFields = (state.settings.customFields || []).map(field => ({ ...field }));
+  const settingsModeIds = Object.keys(contract.MODES);
+  const workingHeaderFieldsByMode = Object.fromEntries(settingsModeIds.map(mode => [mode, [...headerFieldsForMode(mode)]]));
+  const workingVoucherColumnsByMode = Object.fromEntries(settingsModeIds.map(mode => [mode, [...voucherColumnsForMode(mode)]]));
+  let settingsLayoutMode = state.draft.activeMode;
+  const settingsModeButtons = scope => settingsModeIds.map(mode => `<button type="button" data-settings-layout-mode="${esc(mode)}" data-settings-layout-scope="${esc(scope)}" class="${mode === settingsLayoutMode ? 'is-active' : ''}" aria-pressed="${mode === settingsLayoutMode}">${esc(contract.MODES[mode].label)}</button>`).join('');
   const dialog = document.createElement('dialog');
   dialog.className = 'smart-dialog smart-settings-dialog';
   dialog.innerHTML = `<form method="dialog" class="smart-dialog__shell">
@@ -1270,12 +1299,12 @@ async function openSettingsDialog() {
         </div>
       </details>
       <details class="settings-group">
-        <summary><span><strong>주문서 상단 정보열</strong><small>거래처·배송일·창고 표시 설정</small></span><i aria-hidden="true"></i></summary>
-        <div class="settings-group__body settings-group__body--single"><div class="settings-group__actions"><span>거래처정보 또는 사용자지정 항목을 추가할 수 있습니다.</span><button type="button" class="button button--quiet button--small" data-add-layout-field="header">항목 추가</button></div><div class="layout-check-grid" data-layout-fields="header"></div></div>
+        <summary><span><strong>전표별 상단 정보 열</strong><small>전표마다 거래처·배송일·창고 구성을 별도 저장</small></span><i aria-hidden="true"></i></summary>
+        <div class="settings-group__body settings-group__body--single"><div class="settings-layout-modes" data-settings-layout-modes="header" aria-label="상단 정보 열을 편집할 전표">${settingsModeButtons('header')}</div><div class="settings-group__actions"><span><b data-settings-layout-label="header">${esc(contract.MODES[settingsLayoutMode].label)}</b> 상단 정보 열을 편집합니다.</span><button type="button" class="button button--quiet button--small" data-add-layout-field="header">항목 추가</button></div><div class="layout-check-grid" data-layout-fields="header"></div></div>
       </details>
       <details class="settings-group">
-        <summary><span><strong>전표 표시 열</strong><small>품목·수량·단가 등 표 열 설정</small></span><i aria-hidden="true"></i></summary>
-        <div class="settings-group__body settings-group__body--single"><div class="settings-group__actions"><span>상품정보 또는 사용자지정 열을 추가할 수 있습니다.</span><button type="button" class="button button--quiet button--small" data-add-layout-field="voucher">항목 추가</button></div><div class="layout-check-grid" data-layout-fields="voucher"></div></div>
+        <summary><span><strong>전표별 표시 열</strong><small>전표마다 품목·수량·단가 구성을 별도 저장</small></span><i aria-hidden="true"></i></summary>
+        <div class="settings-group__body settings-group__body--single"><div class="settings-layout-modes" data-settings-layout-modes="voucher" aria-label="표시 열을 편집할 전표">${settingsModeButtons('voucher')}</div><div class="settings-group__actions"><span><b data-settings-layout-label="voucher">${esc(contract.MODES[settingsLayoutMode].label)}</b> 표시 열을 편집합니다.</span><button type="button" class="button button--quiet button--small" data-add-layout-field="voucher">항목 추가</button></div><div class="layout-check-grid" data-layout-fields="voucher"></div></div>
       </details>
     </div>
     <p class="smart-dialog__message">선택 불가 날짜에는 사유와 다음 배송 가능일을 표시합니다.</p>
@@ -1284,22 +1313,46 @@ async function openSettingsDialog() {
   document.body.append(dialog);
   const form = dialog.querySelector('form');
   const message = dialog.querySelector('.smart-dialog__message');
-  const renderLayoutGroup = (scope, selected = null) => {
-    const name = scope === 'header' ? 'headerFields' : 'voucherColumns';
-    const previous = selected || (form.querySelector(`[data-layout-fields="${scope}"] input`)
-      ? selectedLayoutFields(form, name)
-      : state.settings[name]);
-    form.querySelector(`[data-layout-fields="${scope}"]`).innerHTML = layoutChecks(name, layoutDefinitions(scope, workingCustomFields), previous);
+  const selectedFieldsByScope = scope => scope === 'header'
+    ? workingHeaderFieldsByMode
+    : workingVoucherColumnsByMode;
+  const inputNameByScope = scope => scope === 'header' ? 'headerFields' : 'voucherColumns';
+  const captureLayoutSelection = scope => {
+    const container = form.querySelector(`[data-layout-fields="${scope}"]`);
+    if (!container?.querySelector('input')) return;
+    selectedFieldsByScope(scope)[settingsLayoutMode] = selectedLayoutFields(form, inputNameByScope(scope));
   };
-  renderLayoutGroup('header', state.settings.headerFields);
-  renderLayoutGroup('voucher', state.settings.voucherColumns);
+  const renderLayoutGroup = (scope, selected = null) => {
+    const name = inputNameByScope(scope);
+    const previous = selected || selectedFieldsByScope(scope)[settingsLayoutMode];
+    form.querySelector(`[data-layout-fields="${scope}"]`).innerHTML = layoutChecks(name, layoutDefinitions(scope, workingCustomFields), previous);
+    dialog.querySelector(`[data-settings-layout-label="${scope}"]`).textContent = contract.MODES[settingsLayoutMode].label;
+    dialog.querySelectorAll(`[data-settings-layout-modes="${scope}"] [data-settings-layout-mode]`).forEach(button => {
+      const active = button.dataset.settingsLayoutMode === settingsLayoutMode;
+      button.classList.toggle('is-active', active);
+      button.setAttribute('aria-pressed', String(active));
+    });
+  };
+  const switchSettingsLayoutMode = mode => {
+    if (!settingsModeIds.includes(mode) || mode === settingsLayoutMode) return;
+    captureLayoutSelection('header');
+    captureLayoutSelection('voucher');
+    settingsLayoutMode = mode;
+    renderLayoutGroup('header');
+    renderLayoutGroup('voucher');
+  };
+  renderLayoutGroup('header');
+  renderLayoutGroup('voucher');
+  dialog.querySelectorAll('[data-settings-layout-mode]').forEach(button => button.addEventListener('click', () => {
+    switchSettingsLayoutMode(button.dataset.settingsLayoutMode);
+  }));
   dialog.querySelectorAll('[data-add-layout-field]').forEach(button => button.addEventListener('click', () => {
     const scope = button.dataset.addLayoutField;
     openLayoutFieldDialog(scope, workingCustomFields, field => {
-      const name = scope === 'header' ? 'headerFields' : 'voucherColumns';
-      const selected = selectedLayoutFields(form, name);
+      const selected = selectedLayoutFields(form, inputNameByScope(scope));
       if (!field.builtIn) workingCustomFields.push(field);
-      renderLayoutGroup(scope, [...new Set([...selected, field.id])]);
+      selectedFieldsByScope(scope)[settingsLayoutMode] = [...new Set([...selected, field.id])];
+      renderLayoutGroup(scope);
     });
   }));
   dialog.querySelector('.smart-settings-grid').addEventListener('click', event => {
@@ -1309,10 +1362,12 @@ async function openSettingsDialog() {
     const fieldId = remove.dataset.removeCustomField;
     const field = workingCustomFields.find(item => item.id === fieldId);
     if (!field) return;
-    const name = field.scope === 'header' ? 'headerFields' : 'voucherColumns';
-    const selected = selectedLayoutFields(form, name).filter(id => id !== fieldId);
+    captureLayoutSelection(field.scope);
+    settingsModeIds.forEach(mode => {
+      selectedFieldsByScope(field.scope)[mode] = selectedFieldsByScope(field.scope)[mode].filter(id => id !== fieldId);
+    });
     workingCustomFields = workingCustomFields.filter(item => item.id !== fieldId);
-    renderLayoutGroup(field.scope, selected);
+    renderLayoutGroup(field.scope);
   });
   const defaultToggle = form.elements.useDefaultCustomerWeekdays;
   const customerWeekdaysElement = dialog.querySelector('[data-customer-weekdays]');
@@ -1349,6 +1404,8 @@ async function openSettingsDialog() {
       }
     }
     const holidayDates = String(form.elements.holidayDates.value || '').split(/[\s,;]+/).map(value => value.trim()).filter(Boolean);
+    captureLayoutSelection('header');
+    captureLayoutSelection('voucher');
     const next = contract.normalizeSettings({
       ...state.settings,
       orderCutoffTime: form.elements.orderCutoffTime.value,
@@ -1357,8 +1414,10 @@ async function openSettingsDialog() {
       deliveryCustomerWeekdays,
       holidayWeekdays: selectedWeekdays(form, 'holidayWeekdays'),
       holidayDates,
-      headerFields: selectedLayoutFields(form, 'headerFields'),
-      voucherColumns: selectedLayoutFields(form, 'voucherColumns'),
+      headerFields: workingHeaderFieldsByMode.order,
+      voucherColumns: workingVoucherColumnsByMode.order,
+      headerFieldsByMode: workingHeaderFieldsByMode,
+      voucherColumnsByMode: workingVoucherColumnsByMode,
       customFields: workingCustomFields,
       columnWidths: { ...(state.settings.columnWidths || {}) }
     });
@@ -1659,7 +1718,7 @@ function renderRows({ restoreFocus = true } = {}) {
       <td data-column="specification"><input data-field="specification" value="${esc(row.specification)}" aria-label="규격"></td>
       <td data-column="quantity"><input data-field="quantity" type="number" step="any" value="${esc(row.quantity ?? '')}" aria-label="수량"></td>
       <td data-column="unit"><input data-field="unit" value="${esc(row.unit)}" aria-label="단위"></td>
-      <td data-column="unitPrice"><input data-field="unitPrice" type="number" step="any" value="${esc(row.unitPrice ?? '')}" aria-label="단가"></td>
+      <td data-column="unitPrice" class="price-cell${row.unitPriceReviewStatus === 'PENDING' ? ' is-price-review-pending' : ''}"><input data-field="unitPrice" type="text" inputmode="decimal" value="${esc(row.unitPrice ?? '')}" aria-label="단가"></td>
       <td data-column="supplyAmount"><input data-supply-amount value="${amount.toLocaleString('ko-KR')}" aria-label="공급가액" readonly tabindex="-1"></td>
       <td data-column="memo"><input data-field="memo" value="${esc(row.memo)}" aria-label="메모"></td>
       <td data-column="description"><input data-field="description" value="${esc(row.description)}" aria-label="적요(직원)"></td>
@@ -1892,6 +1951,15 @@ function directionalGridTarget(rowId, field, key) {
   return { rowId: targetRow.dataset.rowId, field: targetField };
 }
 
+function confirmUnitPriceReview(tr) {
+  const row = modeDraft().rows.find(item => item.rowId === tr?.dataset.rowId);
+  if (!row || row.unitPriceReviewStatus !== 'PENDING') return false;
+  row.unitPriceReviewStatus = 'CONFIRMED';
+  tr.querySelector('[data-column="unitPrice"]')?.classList.remove('is-price-review-pending');
+  scheduleSave();
+  return true;
+}
+
 const PARSER_ARTIFACT_TERMS = /(품목코드|품목명|품목|품명|상품명|규격|수량|단가|공급가액|금액|합계|총계|소계)/g;
 
 function isParserArtifactLine(line) {
@@ -2103,6 +2171,9 @@ async function analyzeSource({ automatic = false } = {}) {
         if (previous.editedFields?.[field]) row[field] = previous[field];
       });
       row.editedFields = { ...(previous.editedFields || {}) };
+      if (previous.unitPriceReviewStatus === 'CONFIRMED' && Number(previous.unitPrice) === Number(row.unitPrice)) {
+        row.unitPriceReviewStatus = 'CONFIRMED';
+      }
     });
     const liveRows = current.rows.filter(row => row.batchId === batch.batchId);
     const otherRows = current.rows.filter(row => row.batchId !== batch.batchId);
@@ -2227,22 +2298,45 @@ async function persistSourceImageForMode(mode = state.draft.activeMode) {
 
 async function recognizeImage(file) {
   if (!file || !String(file.type || '').startsWith('image/')) return;
-  if (state.busy) return;
+  const captureSequence = ++state.photoCaptureSequence;
+  updateMethod('photo');
+  let imageEvidence;
+  try {
+    imageEvidence = await fileToImageEvidence(file);
+  } catch (error) {
+    if (captureSequence === state.photoCaptureSequence) {
+      toast(error.message || '원본 사진을 불러오지 못했습니다.', 'error');
+      setAppStatus('원본 사진을 불러오지 못했습니다.', 'error');
+    }
+    $('photoInput').value = '';
+    return;
+  }
+  if (captureSequence !== state.photoCaptureSequence) return;
+  state.pendingImageEvidence = imageEvidence;
+  state.sourceImages[state.draft.activeMode] = imageEvidence;
+  state.pendingSourceName = imageEvidence.fileName;
+  imageEvidence.notice = '원본 사진을 유지한 채 상품표를 분석하고 있습니다.';
+  renderSourceSurface();
+  void persistSourceImageForMode();
+  $('photoInput').value = '';
+  if (!modeDraft().rows.length) renderRows({ restoreFocus: false });
+  if (state.busy) {
+    setAppStatus('원본 사진을 불러왔습니다. 진행 중인 분석이 끝나면 사진 분석을 시작합니다.');
+    while (state.busy && currentSourceImage()?.sourceImageId === imageEvidence.sourceImageId) {
+      await new Promise(resolve => window.setTimeout(resolve, 120));
+    }
+  }
+  if (captureSequence !== state.photoCaptureSequence || currentSourceImage()?.sourceImageId !== imageEvidence.sourceImageId) return;
+  state.pendingImageEvidence = imageEvidence;
   state.busy = true;
   $('analyzeButton').disabled = true;
   $('parserProgress').hidden = false;
   $('parserProgress').querySelector('strong').textContent = '사진에서 문자를 추출하고 있습니다.';
-  updateMethod('photo');
   setActiveActivity('사진 OCR 처리 중');
   let shouldAnalyze = false;
   try {
-    state.pendingImageEvidence = await fileToImageEvidence(file);
-    state.sourceImages[state.draft.activeMode] = state.pendingImageEvidence;
-    state.pendingSourceName = state.pendingImageEvidence.fileName;
-    state.pendingImageEvidence.notice = '원본 사진을 유지한 채 상품표를 분석하고 있습니다.';
     await persistSourceImageForMode();
     renderSourceSurface();
-    if (!modeDraft().rows.length) renderRows({ restoreFocus: false });
     if (!window.Tesseract?.createWorker && !window.Tesseract?.recognize) throw new Error('사진 OCR 모듈을 불러오지 못했습니다.');
     const analysis = await recognizeOcrDocument(file, {
       Tesseract: window.Tesseract,
@@ -2689,8 +2783,10 @@ async function completeOrder() {
       customValues: { ...(current.header.customValues || {}) },
       formLayoutSnapshot: {
         customFields: (state.settings.customFields || []).map(field => ({ ...field })),
-        headerFields: [...state.settings.headerFields],
-        voucherColumns: [...state.settings.voucherColumns],
+        headerFields: [...headerFieldsForMode(current.mode)],
+        voucherColumns: [...voucherColumnsForMode(current.mode)],
+        headerFieldsByMode: Object.fromEntries(Object.keys(contract.MODES).map(mode => [mode, [...headerFieldsForMode(mode)]])),
+        voucherColumnsByMode: Object.fromEntries(Object.keys(contract.MODES).map(mode => [mode, [...voucherColumnsForMode(mode)]])),
         columnWidths: { ...(state.settings.columnWidths || {}) }
       },
       sourceType: 'SMART_INPUT',
@@ -2918,6 +3014,7 @@ $('photoOcrClose').addEventListener('click', () => {
   renderSourceSurface();
   $('photoOcrToggle').focus();
 });
+$('photoEmptySelectButton').addEventListener('click', () => $('photoInput').click());
 $('detailColumnsButton').addEventListener('click', () => {
   state.photoView.detailColumns = !state.photoView.detailColumns;
   applyFormLayout();
@@ -3058,11 +3155,20 @@ inputRows.addEventListener('input', event => {
 inputRows.addEventListener('keydown', event => {
   const input = event.target.closest('[data-field], [data-custom-row-field]');
   const tr = event.target.closest('[data-row-id]');
-  if (!input || !tr || event.isComposing || !['Enter', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return;
-  event.preventDefault();
-  if (tr.dataset.defaultRow === 'true' && input.value) materializeDefaultRow(tr);
+  if (!input || !tr || event.isComposing) return;
   const field = gridFieldId(input);
+  const priceTab = event.key === 'Tab' && field === 'unitPrice';
+  if (!priceTab && !['Enter', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return;
+  if (tr.dataset.defaultRow === 'true' && input.value) materializeDefaultRow(tr);
   const rowId = tr.dataset.rowId;
+  if (priceTab) {
+    const priceTarget = directionalGridTarget(rowId, field, event.shiftKey ? 'ArrowUp' : 'ArrowDown');
+    if (!priceTarget) return;
+    event.preventDefault();
+    focusGridTarget(priceTarget);
+    return;
+  }
+  event.preventDefault();
   const focusTarget = event.key === 'Enter'
     ? sequentialGridTarget(rowId, field)
     : directionalGridTarget(rowId, field, event.key);
@@ -3086,6 +3192,11 @@ inputRows.addEventListener('focusin', event => {
   state.draft.ui.selectedRowId = tr.dataset.rowId;
   const row = modeDraft().rows.find(item => item.rowId === tr.dataset.rowId);
   if (modeDraft().activeMethod === 'photo') showPhotoRegion(row?.sourceRegion || null);
+});
+inputRows.addEventListener('focusout', event => {
+  const input = event.target.closest('[data-field="unitPrice"]');
+  if (!input) return;
+  confirmUnitPriceReview(event.target.closest('[data-row-id]'));
 });
 inputRows.addEventListener('change', event => {
   const selector = event.target.closest('[data-select-row]');
