@@ -145,7 +145,7 @@ nexus-top { display: block; min-height: var(--nexus-top-height); }
 .grid-stats { display: flex; align-items: center; gap: 10px; color: var(--text-soft); font-size: 9px; }
 .grid-stats strong { color: var(--navy); font-size: 10px; }
 .table-scroll { max-height: 420px; overflow: auto; }
-table { width: 100%; min-width: 990px; border-collapse: separate; border-spacing: 0; table-layout: fixed; font-size: 10px; }
+table { width: 100%; min-width: 930px; border-collapse: separate; border-spacing: 0; table-layout: fixed; font-size: 10px; }
 th { position: sticky; top: 0; z-index: 3; height: 34px; padding: 0 8px; color: var(--text-soft); background: #eef3f8; border-bottom: 1px solid var(--border-strong); border-right: 1px solid var(--border); text-align: left; font-weight: 900; white-space: nowrap; }
 td { height: 39px; padding: 0; border-bottom: 1px solid var(--border); border-right: 1px solid var(--border); background: var(--surface); }
 tbody tr[data-status="MATCHED"] td:first-child { box-shadow: inset 3px 0 0 var(--success); }
@@ -155,10 +155,9 @@ tbody tr.is-duplicate td { background: #fffaf0; }
 td input { width: 100%; height: 38px; padding: 0 7px; border: 0; outline: 0; background: transparent; font-size: 10px; }
 td input:focus { box-shadow: inset 0 0 0 2px var(--focus); background: #f5faff; }
 td input[type="number"] { text-align: right; }
-.source-cell { padding: 5px 7px; color: var(--text-soft); font: 8px/1.35 ui-monospace, SFMono-Regular, Consolas, monospace; white-space: pre-wrap; word-break: break-word; }
-.batch-badge { display: inline-grid; min-width: 28px; height: 20px; place-items: center; border-radius: 5px; color: var(--accent-strong); background: var(--accent-soft); font-size: 8px; font-weight: 900; }
-.match-badge { display: inline-flex; align-items: center; gap: 4px; padding: 4px 6px; border-radius: 999px; font-size: 8px; font-weight: 900; white-space: nowrap; }
-.match-badge::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+.item-name-control { display: grid; grid-template-columns: minmax(0, 1fr) 32px; align-items: center; }
+.item-name-control input { min-width: 0; }
+.item-match-action { width: 28px; height: 26px; margin-right: 3px; padding: 0; border: 0; border-radius: 5px; font-size: 8px; font-style: italic; font-weight: 900; }
 .match-badge--matched { color: var(--success); background: var(--success-soft); }
 .match-badge--similar { color: var(--warning); background: var(--warning-soft); }
 .match-badge--failed { color: var(--danger); background: var(--danger-soft); }
@@ -168,7 +167,7 @@ td input[type="number"] { text-align: right; }
 .empty-row strong, .empty-row span { display: block; }
 .empty-row strong { margin-bottom: 5px; color: var(--text-soft); font-size: 11px; }
 tfoot td { position: sticky; bottom: 0; z-index: 2; height: 36px; padding: 0 8px; color: var(--navy); background: #eef3f8; font-weight: 900; text-align: right; }
-.col-seq { width: 48px; }.col-source { width: 126px; }.col-code { width: 88px; }.col-name { width: 152px; }.col-spec { width: 84px; }.col-qty { width: 64px; }.col-unit { width: 58px; }.col-price { width: 75px; }.col-amount { width: 86px; }.col-status { width: 78px; }.col-action { width: 34px; }
+.col-code { width: 92px; }.col-name { width: 178px; }.col-spec { width: 82px; }.col-qty { width: 64px; }.col-price { width: 78px; }.col-supply { width: 88px; }.col-memo { width: 96px; }.col-description { width: 104px; }.col-notice { width: 78px; }.col-action { width: 34px; }
 
 .related-list { padding: 10px; display: grid; gap: 7px; }
 .related-list a { min-height: 58px; padding: 9px; display: grid; grid-template-columns: 31px 1fr auto; align-items: center; gap: 8px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); }

@@ -28,6 +28,11 @@ assert.equal(contract.DELIVERY_HISTORY_KEY, 'oneapp.smartinput.delivery-history.
 assert.equal(contract.SETTINGS_STORAGE_KEY, 'oneapp.smartinput.settings.v1');
 assert.deepEqual(Array.from(contract.INPUT_METHODS, item => item.id), ['direct', 'excel', 'text', 'paste', 'photo', 'voice']);
 assert.deepEqual(Array.from(contract.STAGES), ['capture', 'extract', 'match', 'review', 'complete']);
+assert.deepEqual(Array.from(contract.ROW_FIELDS), ['itemCode', 'itemName', 'specification', 'quantity', 'unit', 'unitPrice', 'memo', 'description', 'noticePrice']);
+const displayRow = contract.normalizeRow({ memo: '메모', description: '직원 적요', noticePrice: 1200 });
+assert.equal(displayRow.memo, '메모');
+assert.equal(displayRow.description, '직원 적요');
+assert.equal(displayRow.noticePrice, 1200);
 
 const draft = contract.createDraft({ now: Date.parse('2026-08-23T01:00:00.000Z'), random: 0.1 });
 assert.equal(draft.activeMode, 'order');
@@ -119,6 +124,9 @@ assert.doesNotMatch(html, /class="stage-rail"/);
 assert.match(html, /id="activityTrail"[^>]*aria-live="polite"[^>]*hidden/);
 assert.match(html, /id="activityItems" aria-label="누적 입력현황"/);
 assert.doesNotMatch(html, /class="parser-card__header"/);
+assert.doesNotMatch(html, /<th>원문<\/th>|class="col-source"/);
+assert.doesNotMatch(html, /<th>차수<\/th>|<th>상태<\/th>/);
+assert.match(html, /<th>품목코드<\/th><th>품목명<\/th><th>규격<\/th><th>수량<\/th><th>단가<\/th><th>공급가액<\/th><th>메모<\/th><th>적요\(직원\)<\/th><th>공지단가<\/th>/);
 assert.doesNotMatch(html, /작업 단계|\d+\s*\/\s*5|data-stage=/);
 
 assert.match(css, /grid-template-columns: minmax\(0, 1fr\) 220px/);
@@ -157,6 +165,8 @@ assert.match(appSource, /SMART_INPUT:\$\{current\.batches\[0\]/);
 assert.match(appSource, /editedFields/);
 assert.match(appSource, /다음 가능일은 \$\{nextAvailable\.date\}입니다/);
 assert.match(appSource, /mappingSource: 'PARSER_CONFIRMED', learnAlias: false/);
+assert.match(appSource, /description: row\.description/);
+assert.match(appSource, /noticePrice: row\.noticePrice/);
 assert.match(appSource, /일치 \$\{summary\.matched\} · 확인 \$\{summary\.similar\} · 미인식 \$\{summary\.unresolved\}/);
 assert.match(appSource, /function renderActivityTrail\(\)/);
 assert.match(appSource, /직접입력/);

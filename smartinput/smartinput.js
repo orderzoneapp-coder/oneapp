@@ -801,25 +801,23 @@ function rowStatusLabel(row) {
 function renderRows() {
   const rows = modeDraft().rows;
   if (!rows.length) {
-    inputRows.innerHTML = '<tr class="empty-row"><td colspan="11"><strong>아직 입력된 상품이 없습니다.</strong><span>원문을 분석하거나 빈 행을 추가해 시작하세요.</span></td></tr>';
+    inputRows.innerHTML = '<tr class="empty-row"><td colspan="10"><strong>아직 입력된 상품이 없습니다.</strong><span>원문을 분석하거나 빈 행을 추가해 시작하세요.</span></td></tr>';
     updateSummaries();
     return;
   }
   inputRows.innerHTML = rows.map(row => {
     const [status, statusClass] = rowStatusLabel(row);
-    const raw = row.rawText || modeDraft().batches.find(batch => batch.batchId === row.batchId)?.rawText || '';
     const amount = Number(row.quantity || 0) * Number(row.unitPrice || 0);
     return `<tr data-row-id="${esc(row.rowId)}" data-status="${esc(row.matchStatus)}" class="${row.duplicatePossible ? 'is-duplicate' : ''}">
-      <td class="source-cell"><span class="batch-badge">${Number(row.batchSequence || 0) || '-'}</span></td>
-      <td class="source-cell" title="${esc(raw)}">${esc(raw)}</td>
       <td><input data-field="itemCode" value="${esc(row.itemCode)}" aria-label="품목코드"></td>
-      <td><input data-field="itemName" value="${esc(row.itemName)}" aria-label="상품명"></td>
-      <td><input data-field="specification" value="${esc(row.specification)}" aria-label="규격"></td>
+      <td><div class="item-name-control"><input data-field="itemName" value="${esc(row.itemName)}" aria-label="품목명"><button type="button" class="item-match-action ${statusClass}" data-match-row="${esc(row.rowId)}" aria-label="${status} 상품 후보 선택" title="${status}${row.duplicatePossible ? ' · 중복 가능' : ''}">Fn</button></div></td>
+      <td><input data-field="unit" value="${esc(row.unit || row.specification)}" aria-label="규격"></td>
       <td><input data-field="quantity" type="number" step="any" value="${esc(row.quantity ?? '')}" aria-label="수량"></td>
-      <td><input data-field="unit" value="${esc(row.unit)}" aria-label="단위"></td>
       <td><input data-field="unitPrice" type="number" step="any" value="${esc(row.unitPrice ?? '')}" aria-label="단가"></td>
-      <td><input value="${amount ? amount.toLocaleString('ko-KR') : ''}" aria-label="금액" readonly tabindex="-1"></td>
-      <td><button type="button" class="match-badge ${statusClass}" data-match-row="${esc(row.rowId)}" title="상품 후보 선택">${status}${row.duplicatePossible ? ' · 중복' : ''}</button></td>
+      <td><input data-supply-amount value="${amount.toLocaleString('ko-KR')}" aria-label="공급가액" readonly tabindex="-1"></td>
+      <td><input data-field="memo" value="${esc(row.memo)}" aria-label="메모"></td>
+      <td><input data-field="description" value="${esc(row.description)}" aria-label="적요(직원)"></td>
+      <td><input data-field="noticePrice" type="number" step="any" value="${esc(row.noticePrice ?? 0)}" aria-label="공지단가"></td>
       <td><button type="button" class="row-remove" data-remove-row="${esc(row.rowId)}" aria-label="행 삭제">×</button></td>
     </tr>`;
   }).join('');
@@ -1409,6 +1407,8 @@ async function completeOrder() {
         price: row.unitPrice,
         supplyAmount: Number(row.quantity || 0) * Number(row.unitPrice || 0),
         memo: row.memo,
+        description: row.description,
+        noticePrice: row.noticePrice,
         matchStatus: row.productId && row.itemCode ? 'MATCHED' : 'MATCH_FAILED',
         matchSource: row.productId ? 'SMART_INPUT_MASTER' : 'SMART_INPUT_UNRESOLVED',
         intakeLineId: row.intakeLineId,
@@ -1608,8 +1608,8 @@ inputRows.addEventListener('input', event => {
   modeDraft().rows[index] = row;
   if (field === 'quantity' || field === 'unitPrice') {
     const amount = Number(row.quantity || 0) * Number(row.unitPrice || 0);
-    const amountInput = tr.querySelector('td:nth-child(9) input');
-    if (amountInput) amountInput.value = amount ? amount.toLocaleString('ko-KR') : '';
+    const amountInput = tr.querySelector('[data-supply-amount]');
+    if (amountInput) amountInput.value = amount.toLocaleString('ko-KR');
   }
   updateSummaries();
   scheduleSave();
