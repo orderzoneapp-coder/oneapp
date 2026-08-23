@@ -1,5 +1,5 @@
 const DB_NAME = 'oneapp-smartinput';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const FALLBACK_KEY = 'oneapp.smartinput.relationships.v1';
 
 export const DATA_STORES = Object.freeze({
@@ -7,7 +7,8 @@ export const DATA_STORES = Object.freeze({
   LINK_GROUPS: 'customerLinkGroups',
   TEMPORARY_CUSTOMERS: 'temporaryCustomers',
   ALIAS_MAPPINGS: 'customerAliasMappings',
-  ESTIMATES: 'estimates'
+  ESTIMATES: 'estimates',
+  SOURCE_IMAGES: 'sourceImages'
 });
 
 function requestResult(request) {
@@ -52,6 +53,11 @@ function openDatabase() {
         const store = db.createObjectStore(DATA_STORES.ESTIMATES, { keyPath: 'estimateId' });
         store.createIndex('byUpdatedAt', 'updatedAt', { unique: false });
         store.createIndex('byCustomerName', 'customerName', { unique: false });
+      }
+      if (!db.objectStoreNames.contains(DATA_STORES.SOURCE_IMAGES)) {
+        const store = db.createObjectStore(DATA_STORES.SOURCE_IMAGES, { keyPath: 'documentId' });
+        store.createIndex('byMode', 'mode', { unique: false });
+        store.createIndex('byUpdatedAt', 'updatedAt', { unique: false });
       }
     };
     request.onsuccess = () => resolve(request.result);
@@ -127,19 +133,21 @@ export function createRecordId(prefix) {
 }
 
 export async function loadSmartInputData() {
-  const [settingsRows, linkGroups, temporaryCustomers, aliasMappings, estimates] = await Promise.all([
+  const [settingsRows, linkGroups, temporaryCustomers, aliasMappings, estimates, sourceImages] = await Promise.all([
     getAll(DATA_STORES.SETTINGS),
     getAll(DATA_STORES.LINK_GROUPS),
     getAll(DATA_STORES.TEMPORARY_CUSTOMERS),
     getAll(DATA_STORES.ALIAS_MAPPINGS),
-    getAll(DATA_STORES.ESTIMATES)
+    getAll(DATA_STORES.ESTIMATES),
+    getAll(DATA_STORES.SOURCE_IMAGES)
   ]);
   return {
     settings: settingsRows.find(row => row.key === 'app')?.value || null,
     linkGroups,
     temporaryCustomers,
     aliasMappings,
-    estimates: estimates.sort((left, right) => String(right.updatedAt || '').localeCompare(String(left.updatedAt || '')))
+    estimates: estimates.sort((left, right) => String(right.updatedAt || '').localeCompare(String(left.updatedAt || ''))),
+    sourceImages
   };
 }
 
@@ -173,4 +181,12 @@ export function saveEstimate(estimate) {
 
 export function deleteEstimate(estimateId) {
   return remove(DATA_STORES.ESTIMATES, estimateId);
+}
+
+export function saveSourceImage(sourceImage) {
+  return put(DATA_STORES.SOURCE_IMAGES, sourceImage, 'documentId');
+}
+
+export function deleteSourceImage(documentId) {
+  return remove(DATA_STORES.SOURCE_IMAGES, documentId);
 }

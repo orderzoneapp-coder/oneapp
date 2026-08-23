@@ -30,7 +30,6 @@
   ]);
   const HEADER_FIELD_DEFINITIONS = Object.freeze([
     Object.freeze({ id: 'customer', label: '배송 거래처', required: true }),
-    Object.freeze({ id: 'taxCustomer', label: '세무 거래처', required: false }),
     Object.freeze({ id: 'deliveryDate', label: '배송일자', required: true }),
     Object.freeze({ id: 'warehouse', label: '출하창고', required: true }),
     Object.freeze({ id: 'transactionType', label: '거래유형', required: false })

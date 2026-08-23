@@ -212,6 +212,8 @@ assert.match(html, /id="draftListButton"/);
 assert.match(html, /id="saveState"[^>]*aria-live="polite"[^>]*><\/span>/);
 assert.match(html, /id="settingsButton"/);
 assert.match(html, /id="taxCustomerInput"/);
+assert.match(html, /id="taxCustomerInput" type="hidden"/);
+assert.doesNotMatch(html, /data-header-field="taxCustomer"/);
 assert.doesNotMatch(html, /id="orderDateInput"/);
 assert.doesNotMatch(html, /class="stage-rail"/);
 assert.match(html, /id="activityTrail"[^>]*aria-live="polite"[^>]*hidden/);
@@ -236,6 +238,10 @@ assert.match(html, /id="detailColumnsButton"[^>]*hidden/);
 assert.match(html, /<th data-column="status">상태<\/th>/);
 assert.doesNotMatch(html, /id="mobilePhotoTabs"|data-photo-pane=/);
 assert.match(html, /id="estimateListButton"/);
+assert.match(html, /id="catalogSelect"/);
+assert.match(html, /id="catalogSaveButton"/);
+assert.match(html, /id="selectAllRows"/);
+assert.match(html, /id="deleteSelectedRows"/);
 assert.match(html, /class="col-unit"/);
 assert.doesNotMatch(html, /작업 단계|\d+\s*\/\s*5|data-stage=/);
 const parserColumnAt = html.indexOf('<section class="parser-card"');
@@ -328,16 +334,16 @@ assert.match(appSource, /source-token--time/);
 assert.match(appSource, /source-token--collected/);
 assert.match(appSource, /source-token--unmatched/);
 assert.match(appSource, /contract\.markProductEdit\(modeDraft\(\)\.rows\[index\], field, input\.value\)/);
-assert.match(appSource, /function tryMatchRow\(row, changedField = ''\)/);
+assert.match(appSource, /function tryMatchRow\(row, changedField = '', \{ focusTarget = null \} = \{\}\)/);
 const parserEnrichmentSource = appSource.slice(appSource.indexOf('function enrichRowFromUnifiedCatalog'), appSource.indexOf('function rematchQuery'));
 assert.doesNotMatch(parserEnrichmentSource, /candidates\.length === 1[\s\S]*applyProduct/,
   'parser fuzzy candidates must stay in confirmation state even when only one candidate exists');
 assert.match(parserEnrichmentSource, /row\.matchStatus = 'SIMILAR'/);
 assert.match(appSource, /if \(changedField === 'itemName'\) return row\.itemName \|\| row\.itemCode/);
 assert.match(appSource, /applyProduct\(row, exact, \{ forceIdentityFields: true \}\)/);
-assert.match(appSource, /if \(openCandidates\) openProductDialog\(row, \{ query \}\)/);
+assert.match(appSource, /if \(openCandidates\) openProductDialog\(row, \{ query, focusTarget, returnField: changedField \}\)/);
 assert.match(appSource, /applyProduct\(row, product, \{ forceIdentityFields: true \}\)/);
-assert.match(appSource, /event\.key !== 'Enter'[\s\S]*tryMatchRow\(row, field\)/);
+assert.match(appSource, /\['Enter', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'\][\s\S]*tryMatchRow\(row, field, \{ focusTarget \}\)/);
 assert.match(appSource, /data-field="specification"/);
 assert.match(appSource, /data-field="unit"/);
 assert.doesNotMatch(appSource, /data-match-row|item-match-action|>Fn<|rowStatusLabel/);
@@ -407,10 +413,14 @@ assert.match(appSource, /'코드 미등록'/,
   'a standalone code-less customer must be labelled instead of rendering a blank identity');
 assert.match(appSource, /applyProduct\(row, exact, \{ forceIdentityFields: true \}\)/,
   'confirmed product matching must replace the search text with master code and name');
-assert.match(appSource, /modeUi\(\)\.activeCellId = `\$\{row\.rowId\}\|quantity`/,
-  'a confirmed product must move focus to quantity');
-assert.match(appSource, /field === 'quantity'[\s\S]*data-field="unitPrice"[\s\S]*field === 'unitPrice'[\s\S]*addDirectRow\(\)/,
-  'Enter must move quantity to price and price to a new item-code row');
+assert.match(appSource, /function sequentialGridTarget\(rowId, field\)/,
+  'Enter navigation must follow the complete visible cell sequence');
+assert.match(appSource, /function directionalGridTarget\(rowId, field, key\)/,
+  'arrow navigation must move to adjacent visible cells');
+assert.doesNotMatch(appSource, /activeCellId = `\$\{row\.rowId\}\|quantity`/,
+  'product matching must not skip populated product-information cells');
+assert.match(appSource, /data-select-row/);
+assert.match(appSource, /function deleteSelectedGridRows\(\)/);
 assert.match(appSource, /function beginColumnResize\(/);
 assert.match(appSource, /await saveSettings\(state\.settings\)/,
   'resizing a standard-input column must persist its width directly');
@@ -433,8 +443,16 @@ assert.match(dataStoreSource, /customerLinkGroups/);
 assert.match(dataStoreSource, /temporaryCustomers/);
 assert.match(dataStoreSource, /customerAliasMappings/);
 assert.match(dataStoreSource, /ESTIMATES: 'estimates'/);
+assert.match(dataStoreSource, /SOURCE_IMAGES: 'sourceImages'/);
 assert.match(dataStoreSource, /export function saveEstimate/);
 assert.match(dataStoreSource, /export function deleteEstimate/);
+assert.match(dataStoreSource, /export function saveSourceImage/);
+assert.match(appSource, /function persistSourceImageForMode\(/);
+assert.match(appSource, /function restoreSourceImageForMode\(/);
+assert.match(appSource, /function renderCatalogControls\(/);
+assert.match(appSource, /function startNewCatalog\(/);
+assert.match(appSource, /function isParserArtifactLine\(/);
+assert.match(appSource, /lines = lines\.filter\(line => !isParserArtifactLine\(line\)\)/);
 
 const app = manifest.applications.find(item => item.id === 'smart-input');
 assert.ok(app, 'smart-input must be registered in the manifest');
