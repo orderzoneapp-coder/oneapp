@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = '1.5.0';
+  const VERSION = '1.5.1';
   const STORAGE = Object.freeze({
     colorMode: 'oneapp.nexus.v1.colorMode',
     groupOrder: 'oneapp.nexus.v1.groupOrder',
@@ -30,18 +30,21 @@
   let navigationCoverShownAt = 0;
 
   const navigationCoverStyle = `
-    #${NAVIGATION_COVER_ID}{position:fixed;z-index:2147483647;inset:0;display:grid;place-items:center;overflow:hidden;color:#f7fbff;background:radial-gradient(circle at 50% 38%,rgba(28,74,117,.34),transparent 34%),linear-gradient(145deg,#050b16,#0a1626 56%,#07111e);font-family:Inter,Pretendard,"Noto Sans KR",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;opacity:1;transition:opacity .22s ease}
+    #${NAVIGATION_COVER_ID}{--nexus-loading-text:#12233f;--nexus-loading-muted:#62728a;--nexus-loading-accent:#0baa91;--nexus-loading-grid:rgba(35,78,125,.1);--nexus-loading-track:rgba(53,79,111,.12);position:fixed;z-index:2147483647;inset:0;display:grid;place-items:center;overflow:hidden;color:var(--nexus-loading-text);background:radial-gradient(circle at 50% 36%,rgba(91,181,211,.2),transparent 34%),linear-gradient(145deg,#f7fbff,#eef5fb 56%,#e8f1f9);font-family:Inter,Pretendard,"Noto Sans KR",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;opacity:1;transition:opacity .22s ease}
+    #${NAVIGATION_COVER_ID}[data-mode="dark"]{--nexus-loading-text:#f7fbff;--nexus-loading-muted:#9eb0c5;--nexus-loading-accent:#69d3bd;--nexus-loading-grid:rgba(105,211,189,.18);--nexus-loading-track:rgba(143,169,196,.13);background:radial-gradient(circle at 50% 38%,rgba(28,74,117,.34),transparent 34%),linear-gradient(145deg,#050b16,#0a1626 56%,#07111e)}
     #${NAVIGATION_COVER_ID}[hidden]{display:none}
     #${NAVIGATION_COVER_ID}.is-leaving{opacity:0;pointer-events:none}
-    #${NAVIGATION_COVER_ID} .nexus-navigation-cover__grid{position:absolute;inset:-20%;opacity:.13;background-image:linear-gradient(rgba(105,211,189,.18) 1px,transparent 1px),linear-gradient(90deg,rgba(105,211,189,.18) 1px,transparent 1px);background-size:46px 46px;transform:perspective(560px) rotateX(62deg) translateY(26%);transform-origin:center}
-    #${NAVIGATION_COVER_ID} .nexus-navigation-cover__card{position:relative;width:min(420px,calc(100vw - 40px));padding:30px 32px 26px;display:grid;justify-items:center;border:1px solid rgba(151,189,222,.18);border-radius:22px;background:linear-gradient(145deg,rgba(17,37,61,.9),rgba(8,22,39,.94));box-shadow:0 28px 90px rgba(0,0,0,.42),inset 0 1px rgba(255,255,255,.05);backdrop-filter:blur(18px);text-align:center}
-    #${NAVIGATION_COVER_ID} .nexus-navigation-cover__mark{width:66px;height:66px;display:grid;place-items:center;border:1px solid rgba(105,211,189,.28);border-radius:18px;background:linear-gradient(145deg,rgba(20,49,84,.96),rgba(9,24,48,.96));box-shadow:0 14px 38px rgba(1,8,20,.42),0 0 28px rgba(105,211,189,.08)}
+    #${NAVIGATION_COVER_ID} .nexus-navigation-cover__grid{position:absolute;inset:-20%;opacity:.13;background-image:linear-gradient(var(--nexus-loading-grid) 1px,transparent 1px),linear-gradient(90deg,var(--nexus-loading-grid) 1px,transparent 1px);background-size:46px 46px;transform:perspective(560px) rotateX(62deg) translateY(26%);transform-origin:center}
+    #${NAVIGATION_COVER_ID} .nexus-navigation-cover__card{position:relative;width:min(420px,calc(100vw - 40px));padding:30px 32px 26px;display:grid;justify-items:center;border:1px solid rgba(75,111,151,.16);border-radius:22px;background:rgba(255,255,255,.88);box-shadow:0 28px 90px rgba(48,76,108,.18),inset 0 1px rgba(255,255,255,.9);backdrop-filter:blur(18px);text-align:center}
+    #${NAVIGATION_COVER_ID}[data-mode="dark"] .nexus-navigation-cover__card{border-color:rgba(151,189,222,.18);background:linear-gradient(145deg,rgba(17,37,61,.9),rgba(8,22,39,.94));box-shadow:0 28px 90px rgba(0,0,0,.42),inset 0 1px rgba(255,255,255,.05)}
+    #${NAVIGATION_COVER_ID} .nexus-navigation-cover__mark{width:66px;height:66px;display:grid;place-items:center;border:1px solid rgba(11,170,145,.24);border-radius:18px;background:linear-gradient(145deg,#173b72,#091b49);box-shadow:0 14px 38px rgba(38,74,121,.24),0 0 28px rgba(11,170,145,.08)}
+    #${NAVIGATION_COVER_ID}[data-mode="dark"] .nexus-navigation-cover__mark{border-color:rgba(105,211,189,.28);background:linear-gradient(145deg,rgba(20,49,84,.96),rgba(9,24,48,.96));box-shadow:0 14px 38px rgba(1,8,20,.42),0 0 28px rgba(105,211,189,.08)}
     #${NAVIGATION_COVER_ID} svg{width:39px;height:39px;overflow:visible}
-    #${NAVIGATION_COVER_ID} .nexus-navigation-cover__eyebrow{margin-top:17px;color:#69d3bd;font-size:10px;font-weight:900;letter-spacing:.2em}
-    #${NAVIGATION_COVER_ID} strong{max-width:100%;margin-top:5px;overflow:hidden;color:#fff;font-size:20px;line-height:1.35;text-overflow:ellipsis;white-space:nowrap}
-    #${NAVIGATION_COVER_ID} p{margin:7px 0 0;color:#9eb0c5;font-size:12px}
-    #${NAVIGATION_COVER_ID} .nexus-navigation-cover__progress{position:relative;width:100%;height:3px;margin-top:24px;overflow:hidden;border-radius:99px;background:rgba(143,169,196,.13)}
-    #${NAVIGATION_COVER_ID} .nexus-navigation-cover__progress i{position:absolute;inset:0 auto 0 0;width:42%;border-radius:inherit;background:linear-gradient(90deg,transparent,#69d3bd,#79aef7,transparent);animation:nexus-navigation-progress 1.15s cubic-bezier(.4,0,.2,1) infinite}
+    #${NAVIGATION_COVER_ID} .nexus-navigation-cover__eyebrow{margin-top:17px;color:var(--nexus-loading-accent);font-size:10px;font-weight:900;letter-spacing:.2em}
+    #${NAVIGATION_COVER_ID} strong{max-width:100%;margin-top:5px;overflow:hidden;color:var(--nexus-loading-text);font-size:20px;line-height:1.35;text-overflow:ellipsis;white-space:nowrap}
+    #${NAVIGATION_COVER_ID} p{margin:7px 0 0;color:var(--nexus-loading-muted);font-size:12px}
+    #${NAVIGATION_COVER_ID} .nexus-navigation-cover__progress{position:relative;width:100%;height:3px;margin-top:24px;overflow:hidden;border-radius:99px;background:var(--nexus-loading-track)}
+    #${NAVIGATION_COVER_ID} .nexus-navigation-cover__progress i{position:absolute;inset:0 auto 0 0;width:42%;border-radius:inherit;background:linear-gradient(90deg,transparent,var(--nexus-loading-accent),#79aef7,transparent);animation:nexus-navigation-progress 1.15s cubic-bezier(.4,0,.2,1) infinite}
     @keyframes nexus-navigation-progress{0%{transform:translateX(-115%)}100%{transform:translateX(340%)}}
     @media (prefers-reduced-motion:reduce){#${NAVIGATION_COVER_ID} .nexus-navigation-cover__progress i{animation-duration:2.4s}}
   `;
@@ -55,7 +58,13 @@
     }
   };
 
-  const installNavigationCover = (label = 'NEXUS') => {
+  const navigationMode = (requestedMode) => {
+    if (requestedMode === 'dark' || requestedMode === 'light') return requestedMode;
+    const rootMode = document.documentElement.dataset.nexusColorMode || document.documentElement.dataset.nexusTheme;
+    return rootMode === 'dark' ? 'dark' : 'light';
+  };
+
+  const installNavigationCover = (label = 'NEXUS', requestedMode) => {
     let cover = document.getElementById(NAVIGATION_COVER_ID);
     if (!cover) {
       const style = document.createElement('style');
@@ -68,6 +77,7 @@
       cover.innerHTML = `<div class="nexus-navigation-cover__grid" aria-hidden="true"></div><section class="nexus-navigation-cover__card"><div class="nexus-navigation-cover__mark" aria-hidden="true"><svg viewBox="0 0 48 48"><path d="M7 7l13 17L7 41" fill="none" stroke="#f7fbff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/><path d="M41 7L28 24l13 17" fill="none" stroke="#39d1ae" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/></svg></div><span class="nexus-navigation-cover__eyebrow">NEXUS WORKSPACE</span><strong></strong><p>업무 화면을 준비하고 있습니다.</p><div class="nexus-navigation-cover__progress" aria-hidden="true"><i></i></div></section>`;
       document.documentElement.append(style, cover);
     }
+    cover.dataset.mode = navigationMode(requestedMode);
     cover.querySelector('strong').textContent = String(label || 'NEXUS');
     cover.classList.remove('is-leaving');
     cover.hidden = false;
@@ -94,7 +104,7 @@
 
   const initialNavigationMarker = readNavigationMarker();
   if (initialNavigationMarker) {
-    installNavigationCover(initialNavigationMarker.label);
+    installNavigationCover(initialNavigationMarker.label, initialNavigationMarker.mode);
     window.addEventListener('load', () => clearNavigationCover(), { once: true });
     window.setTimeout(() => clearNavigationCover(true), 12000);
   }
@@ -681,9 +691,10 @@
         || link.getAttribute('aria-label')
         || link.textContent.trim()
         || 'NEXUS';
-      const marker = { label, startedAt: Date.now(), url: link.href };
+      const mode = navigationMode();
+      const marker = { label, mode, startedAt: Date.now(), url: link.href };
       try { sessionStorage.setItem(NAVIGATION_STORAGE_KEY, JSON.stringify(marker)); } catch {}
-      installNavigationCover(label);
+      installNavigationCover(label, mode);
       window.setTimeout(() => {
         if (!this.navigationPending) return;
         this.navigationPending = false;
