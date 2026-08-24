@@ -395,16 +395,14 @@ function columnWidth(fieldId) {
 
 function ensureColumnResizeHandles() {
   document.querySelectorAll('#tableScroll thead th[data-column]').forEach(th => {
+    th.classList.add('column-resizable');
     if (th.dataset.column === 'productSearch') {
       th.classList.add('column-fixed');
-      th.classList.remove('column-resizable', 'column-draggable');
+      th.classList.remove('column-draggable');
       th.draggable = false;
       delete th.dataset.columnDrag;
-      th.querySelector('.column-resize-handle')?.remove();
-      return;
-    }
-    th.classList.add('column-resizable');
-    if (th.dataset.column !== 'status') {
+    } else if (th.dataset.column !== 'status') {
+      th.classList.remove('column-fixed');
       th.classList.add('column-draggable');
       th.draggable = true;
       th.dataset.columnDrag = th.dataset.column;

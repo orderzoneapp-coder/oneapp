@@ -105,16 +105,18 @@ const typedCustomLayout = contract.normalizeSettings({
     ...Array.from({ length: 11 }, (_, index) => ({ id: `number-${index}`, label: `숫자 ${index}`, scope: 'voucher', category: 'CUSTOM', valueType: 'NUMBER' }))
   ],
   voucherColumns: ['itemName', 'quantity', 'secondaryName', 'number-0'],
-  columnWidths: { itemName: 233, secondaryName: 150, unknown: 999, quantity: 12 },
-  columnWidthsByMode: { purchase: { itemName: 312, unknown: 90 } },
+  columnWidths: { productSearch: 260, itemName: 233, secondaryName: 150, unknown: 999, quantity: 12 },
+  columnWidthsByMode: { purchase: { productSearch: 336, itemName: 312, unknown: 90 } },
   inputOrderByMode: { order: { itemCode: 2, itemName: 0, quantity: 1, supplyAmount: 9 } }
 });
 assert.equal(typedCustomLayout.customFields.filter(field => field.valueType === 'TEXT').length, 10);
 assert.equal(typedCustomLayout.customFields.filter(field => field.valueType === 'NUMBER').length, 10);
 assert.ok(Array.from(typedCustomLayout.voucherColumns).includes('secondaryName'));
+assert.equal(typedCustomLayout.columnWidths.productSearch, 260);
 assert.equal(typedCustomLayout.columnWidths.itemName, 233);
 assert.equal(typedCustomLayout.columnWidths.quantity, 56);
 assert.equal(typedCustomLayout.columnWidths.unknown, undefined);
+assert.equal(typedCustomLayout.columnWidthsByMode.purchase.productSearch, 336);
 assert.equal(typedCustomLayout.columnWidthsByMode.purchase.itemName, 312);
 assert.equal(typedCustomLayout.columnWidthsByMode.purchase.unknown, undefined);
 assert.equal(typedCustomLayout.inputOrderByMode.order.quantity, 1);
