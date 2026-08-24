@@ -1,5 +1,10 @@
 (() => {
   const base = 'https://oneapp.orderz.co.kr';
+  const logoSlot = (id) => Object.freeze({
+    directory: `/nexus/assets/brand/apps/${id}/`,
+    light: null,
+    dark: null,
+  });
   const freezeRecords = (records) => Object.freeze(records.map((record) => Object.freeze(record)));
 
   /**
@@ -8,10 +13,10 @@
    * app preferences can never change the work-group navigation contract.
    */
   window.NEXUS_GROUPS = freezeRecords([
-    { id: 'shipping', name: '출고관리', url: `${base}/orders.html` },
-    { id: 'inventory', name: '재고관리', url: `${base}/DataOps.html` },
-    { id: 'pricing', name: '시세관리', url: `${base}/MerchOps.html` },
-    { id: 'foundation', name: '기초등록', url: `${base}/Master.html` },
+    { id: 'foundation', name: '기준정보', section: 'management', url: `${base}/Master.html`, logo: logoSlot('foundation') },
+    { id: 'pricing', name: '가격·시세', section: 'management', url: `${base}/MerchOps.html`, logo: logoSlot('pricing') },
+    { id: 'shipping', name: '주문·출고', section: 'operations', url: `${base}/orders.html`, logo: logoSlot('shipping') },
+    { id: 'inventory', name: '재고·정산', section: 'operations', url: `${base}/DataOps.html`, logo: logoSlot('inventory') },
   ]);
 
   window.NEXUS_APPS = freezeRecords([
@@ -28,7 +33,7 @@
   ]);
 
   window.NEXUS_GLOBAL_ACTIONS = freezeRecords([
-    { id: 'smart-input', appId: 'smart-input', name: '스마트입력', url: `${base}/smartinput/` },
+    { id: 'smart-input', appId: 'smart-input', name: '스마트입력', section: 'operations', url: `${base}/smartinput/`, logo: logoSlot('smart-input') },
   ]);
 
   // Existing entry-point IDs remain valid while each page moves to canonical IDs.
