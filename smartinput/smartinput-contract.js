@@ -176,6 +176,11 @@
       VOUCHER_COLUMN_DEFINITIONS.find(field => field.id === fieldId)?.editable === false ? 0 : index + 1
     ])))
   ])));
+  const ESTIMATE_NOTICE_PRICE_FIELD_IDS = Object.freeze([
+    'noticePrice', 'unitPrice', 'wholesaleA', 'wholesaleB', 'outPrice',
+    'marketPrice', 'listingPrice', 'promoPrice', 'priceD', 'priceH', 'priceI'
+  ]);
+  const DEFAULT_ESTIMATE_NOTICE_PRICE_FIELDS = Object.freeze(['noticePrice']);
   const DEFAULT_SETTINGS = Object.freeze({
     orderCutoffTime: '',
     allowSameDayDelivery: true,
@@ -189,6 +194,7 @@
     headerFieldsByMode: DEFAULT_HEADER_FIELDS_BY_MODE,
     voucherColumnsByMode: DEFAULT_VOUCHER_COLUMNS_BY_MODE,
     inputOrderByMode: DEFAULT_INPUT_ORDER_BY_MODE,
+    estimateNoticePriceFields: DEFAULT_ESTIMATE_NOTICE_PRICE_FIELDS,
     customFields: Object.freeze([]),
     columnWidths: Object.freeze({}),
     columnWidthsByMode: Object.freeze(Object.fromEntries(MODE_ORDER.map(mode => [mode, Object.freeze({})])))
@@ -315,6 +321,13 @@
       });
       return [mode, order];
     }));
+    const requestedNoticePriceFields = Array.isArray(value.estimateNoticePriceFields)
+      ? value.estimateNoticePriceFields.map(text)
+      : [...DEFAULT_SETTINGS.estimateNoticePriceFields];
+    const estimateNoticePriceFields = [...new Set(requestedNoticePriceFields)]
+      .filter(fieldId => ESTIMATE_NOTICE_PRICE_FIELD_IDS.includes(fieldId))
+      .slice(0, 2);
+    if (!estimateNoticePriceFields.length) estimateNoticePriceFields.push(...DEFAULT_ESTIMATE_NOTICE_PRICE_FIELDS);
     return {
       orderCutoffTime: /^\d{2}:\d{2}$/.test(text(value.orderCutoffTime)) ? text(value.orderCutoffTime) : '',
       allowSameDayDelivery: value.allowSameDayDelivery !== false,
@@ -328,6 +341,7 @@
       headerFieldsByMode,
       voucherColumnsByMode,
       inputOrderByMode,
+      estimateNoticePriceFields,
       customFields,
       columnWidths,
       columnWidthsByMode
@@ -767,6 +781,7 @@
     HEADER_FIELD_DEFINITIONS,
     VOUCHER_COLUMN_DEFINITIONS,
     PRODUCT_FIELD_DEFINITIONS,
+    ESTIMATE_NOTICE_PRICE_FIELD_IDS,
     DEFAULT_SETTINGS,
     WEEKDAY_LABELS,
     text,
