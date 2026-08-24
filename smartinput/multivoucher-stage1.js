@@ -17,9 +17,9 @@ const MODE_CONFIG = Object.freeze({
   }),
   purchase: Object.freeze({
     customerLabel: '구매처명',
-    customerAliases: ['구매처', '구매처명', '공급처', '공급처명', '거래처', '거래처명'],
+    customerAliases: ['구매처', '구매처명', '거래처', '거래처명'],
     customerCodeLabel: '구매처코드',
-    customerCodeAliases: ['구매처코드', '공급처코드', '거래처코드'],
+    customerCodeAliases: ['구매처코드', '거래처코드'],
     voucherDateLabel: '구매일자',
     voucherDateAliases: ['구매일자', '전표일자', '일자'],
     deliveryDateLabel: '입고일자',
@@ -33,7 +33,7 @@ const MODE_CONFIG = Object.freeze({
   }),
   sale: Object.freeze({
     customerLabel: '판매처명',
-    customerAliases: ['판매처', '판매처명', '배송처', '거래처', '거래처명', '고객명'],
+    customerAliases: ['판매처', '판매처명', '거래처', '거래처명', '고객명'],
     customerCodeLabel: '판매처코드',
     customerCodeAliases: ['판매처코드', '거래처코드', '고객코드'],
     voucherDateLabel: '판매일자',
@@ -70,6 +70,32 @@ function field(id, label, aliases = [], valueType = 'TEXT') {
   });
 }
 
+function roleFieldDefinitions(mode) {
+  const delivery = [
+    field('deliveryCustomerId', '배송처ID', ['배송처아이디', '납품처ID', '납품처아이디']),
+    field('deliveryCustomerCode', '배송처코드', ['납품처코드']),
+    field('deliveryCustomerName', '배송처명', ['납품처명'])
+  ];
+  const billing = [
+    field('billingCustomerId', '세무거래처ID', ['세무거래처아이디', '청구처ID', '채권거래처ID']),
+    field('billingCustomerCode', '세무거래처코드', ['청구처코드', '채권거래처코드']),
+    field('billingCustomerName', '세무거래처명', ['청구처명', '채권거래처명'])
+  ];
+  const supplier = [
+    field('supplierCustomerId', '공급처ID', ['공급처아이디', '구매공급처ID', '구매처ID']),
+    field('supplierCustomerCode', '공급처코드', ['구매공급처코드']),
+    field('supplierCustomerName', '공급처명', ['구매공급처명'])
+  ];
+  const sales = [
+    field('salesCustomerId', '판매업무처ID', ['판매업무처아이디', '영업거래처ID']),
+    field('salesCustomerCode', '판매업무처코드', ['영업거래처코드']),
+    field('salesCustomerName', '판매업무처명', ['영업거래처명'])
+  ];
+  if (mode === 'purchase') return supplier;
+  if (mode === 'sale') return [...sales, ...delivery, ...billing];
+  return [...delivery, ...billing];
+}
+
 export function modeConfig(mode) {
   return MODE_CONFIG[mode] || MODE_CONFIG.order;
 }
@@ -83,6 +109,7 @@ export function stage1RowFieldDefinitions(mode = 'order') {
     field('rowDeliveryDate', config.deliveryDateLabel, config.deliveryDateAliases),
     field('rowWarehouseCode', config.warehouseLabel, config.warehouseAliases),
     field('rowVoucherNo', config.voucherNoLabel, config.voucherNoAliases),
+    ...roleFieldDefinitions(mode),
     field('sourceDocumentKey', '원본문서키', ['원본문서키', '문서키']),
     field('sourceVoucherIndex', '원본전표순번', ['원본전표순번', '전표순번'], 'NUMBER'),
     field('manualSplitKey', '전표분리키', ['전표분리키', '수동분리키'])
@@ -118,6 +145,18 @@ export function normalizeStage1Row(row = {}, context = {}) {
     rowCustomerCode: text(row.rowCustomerCode),
     rowCustomerId: text(row.rowCustomerId),
     rowCustomerName: text(row.rowCustomerName),
+    deliveryCustomerId: text(row.deliveryCustomerId),
+    deliveryCustomerCode: text(row.deliveryCustomerCode),
+    deliveryCustomerName: text(row.deliveryCustomerName),
+    billingCustomerId: text(row.billingCustomerId),
+    billingCustomerCode: text(row.billingCustomerCode),
+    billingCustomerName: text(row.billingCustomerName),
+    supplierCustomerId: text(row.supplierCustomerId),
+    supplierCustomerCode: text(row.supplierCustomerCode),
+    supplierCustomerName: text(row.supplierCustomerName),
+    salesCustomerId: text(row.salesCustomerId),
+    salesCustomerCode: text(row.salesCustomerCode),
+    salesCustomerName: text(row.salesCustomerName),
     rowVoucherDate: text(row.rowVoucherDate),
     rowDeliveryDate: text(row.rowDeliveryDate),
     rowWarehouseId: text(row.rowWarehouseId),
@@ -158,30 +197,46 @@ function rowValue(row, fieldName, fallback) {
 }
 
 function groupRoleSnapshot(mode, row, header = {}) {
-  const code = rowValue(row, 'rowCustomerCode', header.customerCode);
-  const id = rowValue(row, 'rowCustomerId', header.customerId);
-  const name = rowValue(row, 'rowCustomerName', header.customerName);
-  if (mode === 'purchase') return { supplierCustomerId: id, supplierCustomerCode: code, supplierCustomerName: name };
+  const generic = {
+    id: rowValue(row, 'rowCustomerId', header.customerId),
+    code: rowValue(row, 'rowCustomerCode', header.customerCode),
+    name: rowValue(row, 'rowCustomerName', header.customerName)
+  };
+  const role = (prefix, headerPrefix = prefix) => ({
+    id: rowValue(row, `${prefix}CustomerId`, header[`${headerPrefix}CustomerId`]),
+    code: rowValue(row, `${prefix}CustomerCode`, header[`${headerPrefix}CustomerCode`]),
+    name: rowValue(row, `${prefix}CustomerName`, header[`${headerPrefix}CustomerName`])
+  });
+  const withDefault = value => (value.id || value.code || value.name) ? value : generic;
+  if (mode === 'purchase') {
+    const supplier = withDefault(role('supplier'));
+    return { supplierCustomerId: supplier.id, supplierCustomerCode: supplier.code, supplierCustomerName: supplier.name };
+  }
   if (mode === 'sale') {
+    const sales = withDefault(role('sales'));
+    const delivery = withDefault(role('delivery'));
+    const billing = withDefault(role('billing', 'tax'));
     return {
-      salesCustomerId: id,
-      salesCustomerCode: code,
-      salesCustomerName: name,
-      deliveryCustomerId: id,
-      deliveryCustomerCode: code,
-      deliveryCustomerName: name,
-      billingCustomerId: text(header.taxCustomerId || id),
-      billingCustomerCode: text(header.taxCustomerCode || code),
-      billingCustomerName: text(header.taxCustomerName || name)
+      salesCustomerId: sales.id,
+      salesCustomerCode: sales.code,
+      salesCustomerName: sales.name,
+      deliveryCustomerId: delivery.id,
+      deliveryCustomerCode: delivery.code,
+      deliveryCustomerName: delivery.name,
+      billingCustomerId: billing.id,
+      billingCustomerCode: billing.code,
+      billingCustomerName: billing.name
     };
   }
+  const delivery = withDefault(role('delivery'));
+  const billing = withDefault(role('billing', 'tax'));
   return {
-    deliveryCustomerId: id,
-    deliveryCustomerCode: code,
-    deliveryCustomerName: name,
-    billingCustomerId: text(header.taxCustomerId || id),
-    billingCustomerCode: text(header.taxCustomerCode || code),
-    billingCustomerName: text(header.taxCustomerName || name)
+    deliveryCustomerId: delivery.id,
+    deliveryCustomerCode: delivery.code,
+    deliveryCustomerName: delivery.name,
+    billingCustomerId: billing.id,
+    billingCustomerCode: billing.code,
+    billingCustomerName: billing.name
   };
 }
 
@@ -292,7 +347,12 @@ export function filterVoucherRows(rows = [], query = '') {
   return rows.filter(row => {
     const haystack = [
       row.itemCode, row.itemName, row.specification, row.secondaryName, row.searchInfo,
-      row.rowCustomerCode, row.rowCustomerName, row.rowVoucherNo, row.memo
+      row.rowCustomerCode, row.rowCustomerName,
+      row.deliveryCustomerCode, row.deliveryCustomerName,
+      row.billingCustomerCode, row.billingCustomerName,
+      row.supplierCustomerCode, row.supplierCustomerName,
+      row.salesCustomerCode, row.salesCustomerName,
+      row.rowVoucherNo, row.memo
     ].map(value => text(value).toLowerCase().replace(/\s+/g, '')).join('|');
     return terms.every(term => haystack.includes(term.replace(/\s+/g, '')));
   });

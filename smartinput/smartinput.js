@@ -1058,16 +1058,25 @@ function inferCustomer(rawText) {
 }
 
 function resolveStage1RowReferences(rows = modeDraft().rows) {
-  rows.forEach(row => {
-    if (row.rowCustomerId && row.rowCustomerName) return;
-    const codeKey = normalizedKey(row.rowCustomerCode);
-    const nameKey = normalizedKey(row.rowCustomerName);
-    const customer = state.customers.find(candidate => (codeKey && normalizedKey(customerCode(candidate)) === codeKey)
-      || (!codeKey && nameKey && normalizedKey(customerName(candidate)) === nameKey));
+  const resolveRole = (row, prefix) => {
+    const idField = `${prefix}CustomerId`;
+    const codeField = `${prefix}CustomerCode`;
+    const nameField = `${prefix}CustomerName`;
+    const idKey = normalizedKey(row[idField]);
+    const codeKey = normalizedKey(row[codeField]);
+    const nameKey = normalizedKey(row[nameField]);
+    if (!idKey && !codeKey && !nameKey) return;
+    const customer = state.customers.find(candidate => (idKey && normalizedKey(candidate.customerId) === idKey)
+      || (codeKey && normalizedKey(customerCode(candidate)) === codeKey)
+      || (!idKey && !codeKey && nameKey && normalizedKey(customerName(candidate)) === nameKey));
     if (!customer) return;
-    row.rowCustomerId = String(customer.customerId || '').trim();
-    row.rowCustomerCode = customerCode(customer);
-    row.rowCustomerName = customerName(customer);
+    row[idField] = String(customer.customerId || '').trim();
+    row[codeField] = customerCode(customer);
+    row[nameField] = customerName(customer);
+  };
+  rows.forEach(row => {
+    resolveRole(row, 'row');
+    ['delivery', 'billing', 'supplier', 'sales'].forEach(prefix => resolveRole(row, prefix));
   });
   return rows;
 }
