@@ -1,0 +1,138 @@
+/* NEXUS header navigation policy v1.4.0 */
+.top {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.track,
+.nav-section,
+.track .global-entries {
+  height: var(--nexus-top-height, 44px);
+  display: flex;
+  align-items: stretch;
+}
+
+.track {
+  width: max-content;
+}
+
+.track .global-entries {
+  border: 0;
+}
+
+.workflow-divider {
+  width: 1px;
+  height: 20px;
+  margin: 12px 6px;
+  flex: 0 0 auto;
+  background: rgb(255 255 255 / 17%);
+}
+
+.track .global-entry {
+  width: auto;
+  padding: 0 17px;
+  gap: 7px;
+  color: #939db5;
+  background: transparent;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.track .global-entry:hover {
+  color: #d9deeb;
+  background: rgb(255 255 255 / 3%);
+}
+
+.track .global-entry.is-current {
+  color: #fff;
+  background: transparent;
+  box-shadow: none;
+}
+
+.nav-brand {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+}
+
+.nav-brand img {
+  display: block;
+  width: auto;
+  max-width: 118px;
+  height: 22px;
+  object-fit: contain;
+}
+
+.nav-brand.has-logo:not(.logo-missing) .nav-text {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.nav-brand.logo-missing .nav-text {
+  position: static;
+  width: auto;
+  height: auto;
+  overflow: visible;
+  clip: auto;
+  white-space: nowrap;
+}
+
+.settings-menu-group + .settings-menu-group {
+  margin-top: 14px;
+}
+
+.settings-menu-group h4 {
+  margin: 0;
+  padding: 8px 0 5px;
+  color: var(--panel-muted);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: .06em;
+}
+
+.segments.two {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+@media (max-width: 900px) {
+  .workflow-divider {
+    margin-inline: 3px;
+  }
+
+  .track .global-entry {
+    padding-inline: 13px;
+  }
+
+  .nav-brand img {
+    max-width: 94px;
+  }
+}
+
+@media (max-width: 680px) {
+  .workflow-divider {
+    display: none;
+  }
+
+  .track .global-entry {
+    width: auto;
+    padding-inline: 10px;
+    justify-content: flex-start;
+  }
+
+  .track .global-entry:not([aria-current="page"]) {
+    display: none;
+  }
+
+  .track .global-entry > .nav-text,
+  .track .global-entry > .nav-brand {
+    position: static;
+    width: auto;
+    height: auto;
+    overflow: visible;
+    clip: auto;
+    white-space: nowrap;
+  }
+}

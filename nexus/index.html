@@ -1,11 +1,12 @@
 <!doctype html>
-<html lang="ko" data-nexus-color-mode="system">
+<html lang="ko" data-nexus-color-mode="light">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#0B1021">
   <title>NEXUS</title>
   <link rel="icon" type="image/png" href="./assets/nexus-favicon.png">
+  <script src="./common/nexus-theme-init.js?v=1.0.0"></script>
   <style>
     :root { --nexus-top-height: 44px; --nexus-content-gutter: 24px; }
     * { box-sizing: border-box; }
@@ -19,10 +20,6 @@
     .empty-canvas { min-height: calc(100vh - var(--nexus-top-height)); }
     :root[data-nexus-color-mode="dark"] body,
     :root[data-nexus-color-mode="dark"] .empty-canvas { background: #111827; }
-    @media (prefers-color-scheme: dark) {
-      :root[data-nexus-color-mode="system"] body,
-      :root[data-nexus-color-mode="system"] .empty-canvas { background: #111827; }
-    }
   </style>
   <script src="./common/apps-config.js?v=1.3.0"></script>
   <script src="./common/nexus-top.js?v=1.3.0"></script>

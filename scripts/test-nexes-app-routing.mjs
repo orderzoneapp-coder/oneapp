@@ -95,8 +95,9 @@ const context = { window: {} };
 vm.runInNewContext(nexusConfig, context);
 const groups = Array.from(context.window.NEXUS_GROUPS, (group) => ({ ...group }));
 const apps = Array.from(context.window.NEXUS_APPS, (app) => ({ ...app }));
-assert.deepEqual(groups.map((group) => group.id), ["shipping", "inventory", "pricing", "foundation"], "NEXUS work groups must use the approved default order");
-assert.deepEqual(groups.map((group) => group.name), ["출고관리", "재고관리", "시세관리", "기초등록"]);
+assert.deepEqual(groups.map((group) => group.id), ["foundation", "pricing", "shipping", "inventory"], "NEXUS work groups must use the approved default order");
+assert.deepEqual(groups.map((group) => group.name), ["기준정보", "가격·시세", "주문·출고", "재고·정산"]);
+assert.deepEqual(groups.map((group) => group.section), ["management", "management", "operations", "operations"]);
 assert.deepEqual(apps.filter((app) => app.groupId === "shipping").map((app) => app.id), ["smart-input", "orderq", "orderops", "orderin"]);
 assert.deepEqual(Array.from(context.window.NEXUS_GLOBAL_ACTIONS, (action) => action.id), ["smart-input"]);
 assert.deepEqual(apps.filter((app) => app.groupId === "inventory").map((app) => app.id), ["dataops"]);
@@ -109,5 +110,7 @@ assert.match(nexusTop, /nexus:before-navigate/, "app navigation must provide the
 assert.match(nexusTop, /이 기기에만 적용됨/, "failed preference persistence must keep the local visual state and offer retry");
 assert.match(nexusTop, /!hiddenGroups\.includes\(group\.id\) \|\| group\.id === this\.currentGroupId/, "a hidden current group must remain temporarily visible");
 assert.match(nexusTop, /현재 앱이 전달한 저장·동기화 상태만 실시간으로 표시합니다/, "the header must not infer other apps' live status");
+assert.match(nexusTop, /management-entries[\s\S]*workflow-divider[\s\S]*global-entries[\s\S]*operation-entries/, "the shared header must render management before SmartInput and operational groups");
+assert.doesNotMatch(nexusTop, /\['system', '시스템'\]|prefers-color-scheme/, "the common header must expose only light and dark modes");
 
 console.log("NEXES application routing tests passed.");

@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = '1.3.0';
+  const VERSION = '1.4.0';
   const STORAGE = Object.freeze({
     colorMode: 'oneapp.nexus.v1.colorMode',
     groupOrder: 'oneapp.nexus.v1.groupOrder',
@@ -20,9 +20,10 @@
     merchops: 'pricing',
     master: 'foundation',
   });
+  const LEGACY_DEFAULT_GROUP_ORDER = Object.freeze(['shipping', 'inventory', 'pricing', 'foundation']);
+  const SECTION_LABEL = Object.freeze({ management: '기준·관리', operations: '운영 흐름' });
   const STATUS_PRIORITY = Object.freeze({ normal: 0, progress: 1, warning: 2, error: 3 });
   const STATUS_LABEL = Object.freeze({ normal: '정상', progress: '진행 중', warning: '주의', error: '오류' });
-  const LIFECYCLE_LABEL = Object.freeze({ operational: '운영', development: '개발 중', retired: '사용 중지' });
   const base = new URL('.', document.currentScript?.src || '/nexus/common/nexus-top.js');
 
   const escapeHtml = (value) => String(value ?? '')
@@ -31,9 +32,9 @@
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#039;');
-
   const asArray = (value) => Array.isArray(value) ? value : [];
   const unique = (values) => [...new Set(values)];
+  const sameOrder = (left, right) => left.length === right.length && left.every((value, index) => value === right[index]);
   const normalizeLevel = (value) => {
     const aliases = {
       ok: 'normal', success: 'normal', idle: 'normal',
@@ -103,7 +104,8 @@
       document.removeEventListener('click', this.onDocumentClick);
       document.removeEventListener('keydown', this.onDocumentKeydown);
       window.removeEventListener('storage', this.onStorage);
-      this.colorSchemeMedia?.removeEventListener?.('change', this.onSystemThemeChange);
+      window.removeEventListener('nexus:app-status', this.onAppStatus);
+      window.removeEventListener('nexus:global-error', this.onGlobalError);
       if (api._instance === this) api._instance = null;
     }
 
@@ -117,14 +119,22 @@
 
     shellMarkup() {
       const stylesheet = new URL(`nexus-top.css?v=${VERSION}`, base);
+      const policyStylesheet = new URL(`nexus-top-navigation.css?v=${VERSION}`, base);
       return `
         <link rel="stylesheet" href="${stylesheet}">
+        <link rel="stylesheet" href="${policyStylesheet}">
         <header class="top" aria-label="NEXUS 공통 헤더">
           <a class="brand" href="https://oneapp.orderz.co.kr/nexus/" aria-label="NEXUS 홈" data-navigate data-target-app="">
             <img src="/nexus/assets/brand/oneapp-nexus-dark.svg" alt="ONEAPP NEXUS">
           </a>
-          <div class="global-entries" aria-label="고정 실행"></div>
-          <nav class="nav" aria-label="업무군 메뉴"><div class="track"></div></nav>
+          <nav class="nav" aria-label="업무 메뉴">
+            <div class="track">
+              <div class="nav-section management-entries" aria-label="기준·관리"></div>
+              <span class="workflow-divider" role="separator" aria-label="기준·관리와 운영 흐름 구분"></span>
+              <div class="global-entries" aria-label="운영 흐름 시작"></div>
+              <div class="nav-section operation-entries" aria-label="운영 흐름"></div>
+            </div>
+          </nav>
           <div class="actions">
             <button class="action global-alert" type="button" aria-label="NEXUS 전역 오류" hidden>
               <span class="alert-icon" aria-hidden="true">!</span><span class="action-label">전역 오류</span>
@@ -152,7 +162,7 @@
         </section>
 
         <aside class="panel settings-panel" data-panel="settings" role="dialog" aria-modal="true" aria-label="공통헤더 설정" hidden>
-          <div class="heading"><div><span class="eyebrow">NEXUS</span><h2>공통헤더 설정</h2><p>상단 메뉴와 색상 모드를 설정합니다.</p></div><button class="close" type="button" aria-label="설정 닫기">×</button></div>
+          <div class="heading"><div><span class="eyebrow">NEXUS</span><h2>공통헤더 설정</h2><p>상단 메뉴와 화면 모드를 설정합니다.</p></div><button class="close" type="button" aria-label="설정 닫기">×</button></div>
           <div class="settings-content"></div>
         </aside>
 
@@ -174,7 +184,12 @@
       if (this.memory.has(key)) return this.memory.get(key);
       try {
         const raw = localStorage.getItem(key);
-        return raw == null ? undefined : JSON.parse(raw);
+        if (raw == null) return undefined;
+        try {
+          return JSON.parse(raw);
+        } catch {
+          return raw;
+        }
       } catch {
         return undefined;
       }
@@ -204,11 +219,14 @@
       const globalActionIds = this.globalActions.map((action) => action.id);
       const legacyOrder = asArray(this.readValue(LEGACY.groupOrder)).map((id) => LEGACY_GROUP_IDS[id]).filter(Boolean);
       const savedOrder = asArray(this.readValue(STORAGE.groupOrder));
-      const requestedOrder = savedOrder.length ? savedOrder : legacyOrder;
+      const storedOrder = savedOrder.length ? savedOrder : legacyOrder;
+      const requestedOrder = !storedOrder.length || sameOrder(storedOrder, LEGACY_DEFAULT_GROUP_ORDER) ? groupIds : storedOrder;
       const groupOrder = unique([
         ...requestedOrder.filter((id) => groupIds.includes(id)),
         ...groupIds,
       ]);
+      if (savedOrder.length && sameOrder(savedOrder, LEGACY_DEFAULT_GROUP_ORDER)) this.writePreference(STORAGE.groupOrder, groupIds);
+
       const legacyHidden = asArray(this.readValue(LEGACY.hiddenGroups)).map((id) => LEGACY_GROUP_IDS[id]).filter(Boolean);
       const savedHiddenGroups = this.readValue(STORAGE.hiddenGroups);
       const hiddenGroups = asArray(savedHiddenGroups === undefined ? legacyHidden : savedHiddenGroups).filter((id) => groupIds.includes(id));
@@ -216,10 +234,11 @@
       const defaultHiddenApps = this.apps.filter((app) => app.defaultHidden).map((app) => app.id);
       const hiddenApps = asArray(this.readPreference(STORAGE.hiddenApps, defaultHiddenApps)).filter((id) => appIds.includes(id));
       const favoriteApps = asArray(this.readPreference(STORAGE.favoriteApps, [])).filter((id) => appIds.includes(id));
-      const legacyTheme = this.readValue(LEGACY.colorMode);
-      const colorMode = ['system', 'light', 'dark'].includes(this.readValue(STORAGE.colorMode))
-        ? this.readValue(STORAGE.colorMode)
-        : (['system', 'light', 'dark'].includes(legacyTheme) ? legacyTheme : 'system');
+
+      const savedColorMode = this.readValue(STORAGE.colorMode);
+      const requestedColorMode = savedColorMode === undefined ? this.readValue(LEGACY.colorMode) : savedColorMode;
+      const colorMode = requestedColorMode === 'dark' ? 'dark' : 'light';
+      if (savedColorMode !== colorMode) this.writePreference(STORAGE.colorMode, colorMode);
       return { groupOrder, hiddenGroups, hiddenGlobalActions, hiddenApps, favoriteApps, colorMode };
     }
 
@@ -229,38 +248,78 @@
       return groupOrder.map((id) => groupsById[id]).filter(Boolean);
     }
 
+    groupsForSection(section) {
+      return this.orderedGroups().filter((group) => (group.section || 'operations') === section);
+    }
+
     renderAll() {
-      this.renderGlobalEntries();
-      this.renderNavigation();
+      this.renderHeaderNavigation();
       this.renderStatus();
       this.renderApps();
       this.renderSettings();
     }
 
+    logoPath(record, colorMode) {
+      const logo = record?.logo;
+      if (!logo || typeof logo !== 'object') return '';
+      const preferred = colorMode === 'dark' ? logo.dark : logo.light;
+      const fallback = colorMode === 'dark' ? logo.light : logo.dark;
+      return String(preferred || fallback || '');
+    }
+
+    navigationLabel(record, colorMode) {
+      const name = escapeHtml(record.name);
+      const logoPath = this.logoPath(record, colorMode);
+      if (!logoPath) return `<span class="nav-text">${name}</span>`;
+      return `<span class="nav-brand has-logo"><img src="${escapeHtml(logoPath)}" alt="" data-nav-logo><span class="nav-text">${name}</span></span>`;
+    }
+
+    bindLogoFallback(container) {
+      container.querySelectorAll('img[data-nav-logo]:not([data-fallback-bound])').forEach((image) => {
+        image.dataset.fallbackBound = 'true';
+        image.addEventListener('error', () => {
+          image.hidden = true;
+          image.closest('.nav-brand')?.classList.add('logo-missing');
+        }, { once: true });
+      });
+    }
+
+    renderHeaderNavigation() {
+      this.renderNavigation();
+      this.renderGlobalEntries();
+      const hasManagement = Boolean(this.root.querySelector('.management-entries a'));
+      const hasOperations = Boolean(this.root.querySelector('.global-entries a, .operation-entries a'));
+      this.root.querySelector('.workflow-divider').hidden = !(hasManagement && hasOperations);
+      this.bindLogoFallback(this.root.querySelector('.track'));
+      requestAnimationFrame(() => this.root.querySelector('a[aria-current="page"]')?.scrollIntoView({ block: 'nearest', inline: 'center' }));
+    }
+
     renderGlobalEntries() {
-      const { hiddenGlobalActions } = this.preferences();
+      const { hiddenGlobalActions, colorMode } = this.preferences();
       const actions = this.globalActions.filter((action) => !hiddenGlobalActions.includes(action.id) || action.appId === this.currentAppId);
       this.root.querySelector('.global-entries').innerHTML = actions.map((action) => {
         const active = action.appId === this.currentAppId;
         const temporary = active && hiddenGlobalActions.includes(action.id);
-        return `<a class="global-entry${active ? ' is-current' : ''}${temporary ? ' temporary' : ''}" href="${escapeHtml(action.url)}" data-navigate data-target-app="${escapeHtml(action.appId)}" ${active ? 'aria-current="page"' : ''}>
-          <span class="global-entry-icon" aria-hidden="true">✦</span><span>${escapeHtml(action.name)}</span>${temporary ? '<small>현재 위치</small>' : ''}
+        return `<a class="tab global-entry${active ? ' is-current' : ''}${temporary ? ' temporary' : ''}" href="${escapeHtml(action.url)}" data-navigate data-target-app="${escapeHtml(action.appId)}" ${active ? 'aria-current="page"' : ''}>
+          ${this.navigationLabel(action, colorMode)}${temporary ? '<small>현재 위치</small>' : ''}
         </a>`;
       }).join('');
     }
 
     renderNavigation() {
-      const { hiddenGroups } = this.preferences();
-      const groups = this.orderedGroups();
-      const visibleGroups = groups.filter((group) => !hiddenGroups.includes(group.id) || group.id === this.currentGroupId);
-      this.root.querySelector('.track').innerHTML = visibleGroups.map((group) => {
-        const active = group.id === this.currentGroupId;
-        const temporary = active && hiddenGroups.includes(group.id);
-        return `<a class="tab${temporary ? ' temporary' : ''}" href="${escapeHtml(group.url)}" data-navigate data-target-group="${escapeHtml(group.id)}" ${active ? 'aria-current="page"' : ''}>
-          <span>${escapeHtml(group.name)}</span>${temporary ? '<small>현재 위치</small>' : ''}
-        </a>`;
-      }).join('');
-      requestAnimationFrame(() => this.root.querySelector('.tab[aria-current="page"]')?.scrollIntoView({ block: 'nearest', inline: 'center' }));
+      const { hiddenGroups, colorMode } = this.preferences();
+      for (const section of ['management', 'operations']) {
+        const groups = this.groupsForSection(section);
+        const visibleGroups = groups.filter((group) => !hiddenGroups.includes(group.id) || group.id === this.currentGroupId);
+        const target = this.root.querySelector(section === 'management' ? '.management-entries' : '.operation-entries');
+        target.innerHTML = visibleGroups.map((group) => {
+          const active = group.id === this.currentGroupId;
+          const temporary = active && hiddenGroups.includes(group.id);
+          return `<a class="tab${temporary ? ' temporary' : ''}" href="${escapeHtml(group.url)}" data-navigate data-target-group="${escapeHtml(group.id)}" ${active ? 'aria-current="page"' : ''}>
+            ${this.navigationLabel(group, colorMode)}${temporary ? '<small>현재 위치</small>' : ''}
+          </a>`;
+        }).join('');
+      }
     }
 
     representativeStatus() {
@@ -359,26 +418,31 @@
         if (!apps.length) return '';
         return `<section class="app-group"><h3>${escapeHtml(group.name)}<span>${apps.length}</span></h3><div class="app-list">${apps.map((app) => this.appMarkup(app, preferences)).join('')}</div></section>`;
       }).join('');
-      this.root.querySelector('.apps-content').innerHTML = `${favoriteSection}${groupSections}<p class="apps-note">즐겨찾기·숨김은 개별 앱 설정이며, 업무군 메뉴 설정과 별도로 저장됩니다.</p>`;
+      this.root.querySelector('.apps-content').innerHTML = `${favoriteSection}${groupSections}<p class="apps-note">즐겨찾기·숨김은 개별 앱 설정이며, 상단 업무 메뉴 설정과 별도로 저장됩니다.</p>`;
+    }
+
+    settingsRows(section, preferences) {
+      const groups = this.groupsForSection(section);
+      const globalRows = section === 'operations' ? this.globalActions.map((action) => `<div class="group-setting global-action-setting">
+        <span class="fixed-menu-label">고정</span>
+        <strong>${escapeHtml(action.name)}</strong>
+        <label class="switch"><input type="checkbox" data-global-visible="${escapeHtml(action.id)}" ${preferences.hiddenGlobalActions.includes(action.id) ? '' : 'checked'}><span aria-hidden="true"></span><b>${preferences.hiddenGlobalActions.includes(action.id) ? '숨김' : '노출'}</b></label>
+      </div>`).join('') : '';
+      const groupRows = groups.map((group, index) => `<div class="group-setting">
+        <div class="move-buttons"><button type="button" data-group-move="-1" data-group-id="${group.id}" aria-label="${escapeHtml(group.name)} 위로" ${index === 0 ? 'disabled' : ''}>↑</button><button type="button" data-group-move="1" data-group-id="${group.id}" aria-label="${escapeHtml(group.name)} 아래로" ${index === groups.length - 1 ? 'disabled' : ''}>↓</button></div>
+        <strong>${escapeHtml(group.name)}</strong>
+        <label class="switch"><input type="checkbox" data-group-visible="${group.id}" ${preferences.hiddenGroups.includes(group.id) ? '' : 'checked'}><span aria-hidden="true"></span><b>${preferences.hiddenGroups.includes(group.id) ? '숨김' : '노출'}</b></label>
+      </div>`).join('');
+      return `<div class="settings-menu-group"><h4>${SECTION_LABEL[section]}</h4>${globalRows}${groupRows}</div>`;
     }
 
     renderSettings() {
       const preferences = this.preferences();
-      const groups = this.orderedGroups();
-      const colorOptions = [['system', '시스템'], ['light', '일반'], ['dark', '다크']];
-      const globalActionRows = this.globalActions.map((action) => `<div class="group-setting global-action-setting">
-        <span class="fixed-menu-label">고정</span>
-        <strong>${escapeHtml(action.name)}</strong>
-        <label class="switch"><input type="checkbox" data-global-visible="${escapeHtml(action.id)}" ${preferences.hiddenGlobalActions.includes(action.id) ? '' : 'checked'}><span aria-hidden="true"></span><b>${preferences.hiddenGlobalActions.includes(action.id) ? '숨김' : '노출'}</b></label>
-      </div>`).join('');
+      const colorOptions = [['light', '일반'], ['dark', '다크']];
       this.root.querySelector('.settings-content').innerHTML = `
-        <section class="settings-section"><h3>색상 모드</h3><div class="segments" role="group" aria-label="색상 모드">${colorOptions.map(([id, label]) => `<button type="button" data-color-mode="${id}" aria-pressed="${preferences.colorMode === id}">${label}</button>`).join('')}</div></section>
-        <section class="settings-section"><div class="section-title"><div><h3>상단 메뉴</h3><p>스마트입력 노출과 업무군 노출·순서를 관리합니다.</p></div><button type="button" class="reset" data-reset-groups>초기화</button></div>
-          <div class="group-settings">${globalActionRows}${groups.map((group, index) => `<div class="group-setting">
-            <div class="move-buttons"><button type="button" data-group-move="-1" data-group-id="${group.id}" aria-label="${escapeHtml(group.name)} 위로" ${index === 0 ? 'disabled' : ''}>↑</button><button type="button" data-group-move="1" data-group-id="${group.id}" aria-label="${escapeHtml(group.name)} 아래로" ${index === groups.length - 1 ? 'disabled' : ''}>↓</button></div>
-            <strong>${escapeHtml(group.name)}</strong>
-            <label class="switch"><input type="checkbox" data-group-visible="${group.id}" ${preferences.hiddenGroups.includes(group.id) ? '' : 'checked'}><span aria-hidden="true"></span><b>${preferences.hiddenGroups.includes(group.id) ? '숨김' : '노출'}</b></label>
-          </div>`).join('')}</div>
+        <section class="settings-section"><h3>화면 모드</h3><div class="segments two" role="group" aria-label="화면 모드">${colorOptions.map(([id, label]) => `<button type="button" data-color-mode="${id}" aria-pressed="${preferences.colorMode === id}">${label}</button>`).join('')}</div></section>
+        <section class="settings-section"><div class="section-title"><div><h3>상단 메뉴</h3><p>기준·관리와 운영 흐름의 노출·순서를 관리합니다.</p></div><button type="button" class="reset" data-reset-groups>초기화</button></div>
+          <div class="group-settings">${this.settingsRows('management', preferences)}${this.settingsRows('operations', preferences)}</div>
         </section>
         <div class="storage-warning" role="status" aria-live="polite" ${this.pendingWrites.size ? '' : 'hidden'}><strong>이 기기에만 적용됨</strong><span>개인 설정을 영구 저장하지 못했습니다.</span><button type="button" data-retry-storage>저장 재시도</button></div>
         <p class="settings-note">개별 앱의 즐겨찾기·숨김은 <strong>전체 앱</strong>에서 설정합니다.</p>`;
@@ -389,7 +453,7 @@
       const root = document.documentElement;
       root.dataset.nexusColorMode = colorMode;
       root.dataset.nexusTheme = colorMode;
-      root.style.colorScheme = colorMode === 'system' ? 'light dark' : colorMode;
+      root.style.colorScheme = colorMode;
       root.style.setProperty('--nexus-top-height', '44px');
       root.style.setProperty('--nexus-content-gutter', '24px');
       window.dispatchEvent(new CustomEvent('nexus-theme-change', { detail: { theme: colorMode, colorMode } }));
@@ -416,16 +480,13 @@
           this.applyEnvironment();
         }
       };
-      this.onSystemThemeChange = () => {
-        if (this.preferences().colorMode === 'system') window.dispatchEvent(new CustomEvent('nexus-theme-change', { detail: { theme: 'system', colorMode: 'system' } }));
-      };
+      this.onAppStatus = (event) => this.receiveStatus(event.detail);
+      this.onGlobalError = (event) => this.receiveGlobalError(event.detail);
       document.addEventListener('click', this.onDocumentClick);
       document.addEventListener('keydown', this.onDocumentKeydown);
       window.addEventListener('storage', this.onStorage);
-      this.colorSchemeMedia = window.matchMedia?.('(prefers-color-scheme: dark)');
-      this.colorSchemeMedia?.addEventListener?.('change', this.onSystemThemeChange);
-      window.addEventListener('nexus:app-status', (event) => this.receiveStatus(event.detail));
-      window.addEventListener('nexus:global-error', (event) => this.receiveGlobalError(event.detail));
+      window.addEventListener('nexus:app-status', this.onAppStatus);
+      window.addEventListener('nexus:global-error', this.onGlobalError);
     }
 
     handleClick(event) {
@@ -446,8 +507,10 @@
       }
       const colorButton = event.target.closest('[data-color-mode]');
       if (colorButton) {
-        this.writePreference(STORAGE.colorMode, colorButton.dataset.colorMode);
+        const colorMode = colorButton.dataset.colorMode === 'dark' ? 'dark' : 'light';
+        this.writePreference(STORAGE.colorMode, colorMode);
         this.applyEnvironment();
+        this.renderHeaderNavigation();
         this.renderSettings();
         return;
       }
@@ -464,14 +527,7 @@
       }
       const moveButton = event.target.closest('[data-group-move]');
       if (moveButton) {
-        const preferences = this.preferences();
-        const index = preferences.groupOrder.indexOf(moveButton.dataset.groupId);
-        const target = index + Number(moveButton.dataset.groupMove);
-        if (index >= 0 && target >= 0 && target < preferences.groupOrder.length) {
-          [preferences.groupOrder[index], preferences.groupOrder[target]] = [preferences.groupOrder[target], preferences.groupOrder[index]];
-          this.writePreference(STORAGE.groupOrder, preferences.groupOrder);
-          this.renderAll();
-        }
+        this.moveGroup(moveButton.dataset.groupId, Number(moveButton.dataset.groupMove));
         return;
       }
       const groupVisibility = event.target.closest('[data-group-visible]');
@@ -517,6 +573,22 @@
         return;
       }
       if (event.target.closest('[data-retry-storage]')) this.retryStorage();
+    }
+
+    moveGroup(groupId, direction) {
+      const preferences = this.preferences();
+      const group = this.groups.find((item) => item.id === groupId);
+      if (!group) return;
+      const section = group.section || 'operations';
+      const peers = preferences.groupOrder.filter((id) => (this.groups.find((item) => item.id === id)?.section || 'operations') === section);
+      const peerIndex = peers.indexOf(groupId);
+      const targetPeer = peers[peerIndex + direction];
+      if (!targetPeer) return;
+      const currentIndex = preferences.groupOrder.indexOf(groupId);
+      const targetIndex = preferences.groupOrder.indexOf(targetPeer);
+      [preferences.groupOrder[currentIndex], preferences.groupOrder[targetIndex]] = [preferences.groupOrder[targetIndex], preferences.groupOrder[currentIndex]];
+      this.writePreference(STORAGE.groupOrder, preferences.groupOrder);
+      this.renderAll();
     }
 
     navigate(link) {
