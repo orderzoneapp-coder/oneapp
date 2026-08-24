@@ -91,9 +91,17 @@ export function matrixToSourceText(matrix = []) {
 export function parseStructuredSheet(matrix = [], {
   fieldDefinitions = [],
   numberParser,
-  maxScanRows = 80
+  maxScanRows = 80,
+  sheetName = ''
 } = {}) {
   const rawText = matrixToSourceText(matrix);
+  const firstRow = (matrix[0] || []).map(cellText);
+  const schemaColumn = firstRow.indexOf('schemaVersion');
+  const isPurchaseMeta = cellText(sheetName) === '_NEXUS_META'
+    || (schemaColumn >= 0 && matrix.slice(1, 6).some(row => cellText(row?.[schemaColumn]) === 'ORDERQ_PURCHASE_META_V2'));
+  if (isPurchaseMeta) {
+    return { structured: false, excluded: true, exclusionReason: 'PURCHASE_META', rawText, headerRowIndex: -1, headerRowNumber: 0, score: 0, mappings: [], rows: [], invalidCells: [] };
+  }
   const header = detectStructuredHeader(matrix, fieldDefinitions, { maxScanRows });
   if (!header) {
     return {

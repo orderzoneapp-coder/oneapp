@@ -2,12 +2,15 @@
   const engine = typeof module === "object" && module.exports
     ? require("./orderFulfillmentEngine.js")
     : root.ShippingManagementEngine;
-  const api = factory(engine);
+  const canonicalHash = typeof module === "object" && module.exports
+    ? require("./orderq/canonical-hash.js")
+    : root.ORDERQ_CANONICAL_HASH;
+  const api = factory(engine, canonicalHash);
   if (typeof module === "object" && module.exports) {
     module.exports = api;
   }
   root.ShippingManagementWorkbook = api;
-})(typeof globalThis !== "undefined" ? globalThis : this, function (engine) {
+})(typeof globalThis !== "undefined" ? globalThis : this, function (engine, canonicalHash) {
   "use strict";
 
   const WORKBOOK_VERSION = "4.9.0";
@@ -20,6 +23,18 @@
     "판매업로드",
   ]);
   const PURCHASE_UPLOAD_SCHEMA_VERSION = "shipping-purchase-upload/v1";
+  const PURCHASE_META_SCHEMA_VERSION = "ORDERQ_PURCHASE_META_V2";
+  const PURCHASE_META_RULE_VERSION = "PURCHASE_UNIT_RULE_V1";
+  const PURCHASE_META_SHEET_NAME = "_NEXUS_META";
+  const PURCHASE_META_HEADERS = Object.freeze([
+    "schemaVersion", "ruleVersion", "workbookKind", "exportBatchId", "exportedAt",
+    "originSystem", "originTransactionId", "externalDocumentNo", "planId", "sourceFingerprint",
+    "basisDate", "sourceRowKey", "sourceVoucherIndex", "documentSuffix", "documentOrdinal",
+    "purchasePlanId", "sourceDocumentKey", "sourceLineKey", "visibleSheetName", "visibleRowNo",
+    "supplierCustomerId", "supplierCustomerCode", "productId", "productCode", "warehouseId",
+    "warehouseCode", "suggestedQuantity", "suggestedUnit", "suggestedBaseQuantity", "suggestedBaseUnit",
+    "unit", "baseUnit", "conversionFactor", "conversionSource", "conversionRuleVersion", "rowDigest",
+  ]);
   const PURCHASE_UPLOAD_HEADERS = Object.freeze([
     "일자", "순번", "거래처코드", "거래처명", "입고창고", "거래유형", "전잔액", "전달사항",
     "코드", "품명", "규격(기본)", "수량", "단가", "외화금액", "공급가", "간단설명(품위)",
@@ -64,6 +79,11 @@
     if (!XLSX?.utils?.book_new || !XLSX?.utils?.aoa_to_sheet) {
       throw new Error("XLSX 출력 라이브러리를 불러오지 못했습니다.");
     }
+  }
+
+  function requireCanonicalHash() {
+    if (!canonicalHash?.canonicalSha256) throw new Error("ORDERQ_CANONICAL_HASH_NOT_LOADED");
+    return canonicalHash;
   }
 
   function safeValue(value) {
@@ -1067,6 +1087,128 @@
     }, []);
   }
 
+  function metaText(value) {
+    return String(value ?? "").replace(/\r\n?/g, "\n").normalize("NFC").trim();
+  }
+
+  function metaUpper(value) {
+    return metaText(value).toUpperCase();
+  }
+
+  function metaNumber(value) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) throw new Error("ORDERQ_PURCHASE_META_NUMBER_INVALID");
+    return Object.is(number, -0) ? 0 : number;
+  }
+
+  function purchaseMetaDigestPairs(meta) {
+    return [
+      ["schemaVersion", metaText(meta.schemaVersion)], ["ruleVersion", metaText(meta.ruleVersion)],
+      ["originSystem", metaUpper(meta.originSystem)], ["originTransactionId", metaText(meta.originTransactionId)],
+      ["planId", metaText(meta.planId)], ["sourceFingerprint", metaText(meta.sourceFingerprint)],
+      ["basisDate", metaText(meta.basisDate)], ["sourceRowKey", metaText(meta.sourceRowKey)],
+      ["sourceVoucherIndex", String(Number(meta.sourceVoucherIndex))], ["documentSuffix", metaText(meta.documentSuffix)],
+      ["documentOrdinal", String(Number(meta.documentOrdinal))], ["purchasePlanId", metaText(meta.purchasePlanId)],
+      ["sourceDocumentKey", metaText(meta.sourceDocumentKey)], ["sourceLineKey", metaText(meta.sourceLineKey)],
+      ["visibleSheetName", metaText(meta.visibleSheetName)], ["visibleRowNo", String(Number(meta.visibleRowNo))],
+      ["supplierCustomerId", metaText(meta.supplierCustomerId)], ["supplierCustomerCode", metaUpper(meta.supplierCustomerCode)],
+      ["productId", metaText(meta.productId)], ["productCode", metaUpper(meta.productCode)],
+      ["warehouseId", metaText(meta.warehouseId)], ["warehouseCode", metaUpper(meta.warehouseCode)],
+      ["suggestedQuantity", metaNumber(meta.suggestedQuantity)], ["suggestedUnit", metaUpper(meta.suggestedUnit)],
+      ["suggestedBaseQuantity", metaNumber(meta.suggestedBaseQuantity)], ["suggestedBaseUnit", metaUpper(meta.suggestedBaseUnit)],
+      ["unit", metaUpper(meta.unit)], ["baseUnit", metaUpper(meta.baseUnit)],
+      ["conversionFactor", metaNumber(meta.conversionFactor)], ["conversionSource", metaUpper(meta.conversionSource)],
+      ["conversionRuleVersion", metaText(meta.conversionRuleVersion)],
+    ];
+  }
+
+  function purchaseMetaRowDigest(meta) {
+    return requireCanonicalHash().canonicalSha256(purchaseMetaDigestPairs(meta));
+  }
+
+  function buildPurchaseMetaRows(workspace, sourceRows, visibleSheetName = "구매입력") {
+    requireCanonicalHash();
+    const planId = metaText(workspace.planId);
+    const sourceFingerprint = metaText(workspace.sourceFingerprint);
+    // Historical/programmatic workbook callers can construct a workspace
+    // without the UI-issued run identity.  Emit a header-only meta sheet for
+    // those callers; SmartInput's 1:1 join then correctly blocks that file
+    // instead of inventing a false ORDER_Q identity.
+    if (!planId || !sourceFingerprint) return [];
+    const exportBatchId = `OQEXP-${canonicalHash.canonicalSha256({ planId, sourceFingerprint, schemaVersion: PURCHASE_META_SCHEMA_VERSION }).slice(0, 24)}`;
+    const sourceRunKey = `RUN:ORDER_Q:${planId}:${sourceFingerprint}`;
+    const groupKeys = [];
+    const groupOrdinal = new Map();
+    sourceRows.forEach(row => {
+      const supplierId = metaText(row.supplierCustomerId);
+      const supplierCode = metaUpper(row.supplierCustomerCode);
+      const supplierName = metaText(row.supplierCustomerName || row.purchase);
+      const roleSupplierKey = supplierId || supplierCode || `NAME:${supplierName.normalize("NFKC").toLowerCase().replace(/\s+/g, "")}`;
+      const externalDocumentNo = metaText(row.externalDocumentNo || row.no);
+      const groupHint = externalDocumentNo || `GROUP:${Number(row.sourceVoucherIndex || row.documentOrdinal || 1)}`;
+      const key = `${roleSupplierKey}\u001f${metaText(workspace.basisDate)}\u001f${groupHint}`;
+      if (!groupOrdinal.has(key)) {
+        groupKeys.push(key);
+        groupOrdinal.set(key, groupKeys.length);
+      }
+    });
+    const occurrence = new Map();
+    return sourceRows.map((row, index) => {
+      const supplierCustomerId = metaText(row.supplierCustomerId);
+      const supplierCustomerCode = metaUpper(row.supplierCustomerCode);
+      const supplierName = metaText(row.supplierCustomerName || row.purchase);
+      const roleSupplierKey = supplierCustomerId || supplierCustomerCode || `NAME:${supplierName.normalize("NFKC").toLowerCase().replace(/\s+/g, "")}`;
+      const externalDocumentNo = metaText(row.externalDocumentNo || row.no);
+      const groupHint = externalDocumentNo || `GROUP:${Number(row.sourceVoucherIndex || row.documentOrdinal || 1)}`;
+      const documentOrdinal = groupOrdinal.get(`${roleSupplierKey}\u001f${metaText(workspace.basisDate)}\u001f${groupHint}`);
+      const documentSuffix = externalDocumentNo ? `NO:${externalDocumentNo}` : `SUP:${roleSupplierKey}:DATE:${metaText(workspace.basisDate)}:${documentOrdinal}`;
+      const sourceDocumentKey = `PURCHASE:${canonicalHash.canonicalSha256({ contractKind: "PURCHASE_STAGE3_V1", sourceRunKey, documentSuffix, roleSupplierKey, purchaseDate: metaText(workspace.basisDate), externalDocumentNo })}`;
+      const sourceRowBasis = {
+        planId, sourceFingerprint, basisDate: metaText(workspace.basisDate), rowType: metaText(row.rowType),
+        referenceFor: metaText(row.referenceFor), productCode: metaUpper(row.productCode), purchase: metaText(row.purchase),
+        hasPurchaseQuantityOverride: Object.prototype.hasOwnProperty.call(row, "purchaseQuantityOverride"),
+        purchaseQuantityOverride: Object.prototype.hasOwnProperty.call(row, "purchaseQuantityOverride") ? metaNumber(row.purchaseQuantityOverride) : null,
+      };
+      const sourceRowKey = canonicalHash.canonicalSha256(sourceRowBasis);
+      const sourceOccurrence = (occurrence.get(sourceRowKey) || 0) + 1;
+      occurrence.set(sourceRowKey, sourceOccurrence);
+      const warehouseCode = metaUpper(row.warehouseCode || "01");
+      const productId = metaText(row.productId);
+      const productCode = metaUpper(row.productCode);
+      const sourceLineKey = `${sourceDocumentKey}:LINE:${canonicalHash.canonicalSha256({ sourceRowKey, productIdentity: productId || productCode, warehouseIdentity: metaText(row.warehouseId) || warehouseCode, sourceOccurrence })}`;
+      const suggestedQuantity = metaNumber(row.purchaseNeed);
+      const suggestedUnit = metaUpper(row.unit);
+      const meta = {
+        schemaVersion: PURCHASE_META_SCHEMA_VERSION, ruleVersion: PURCHASE_META_RULE_VERSION,
+        workbookKind: "ORDER_Q_PURCHASE", exportBatchId, exportedAt: metaText(workspace.createdAt),
+        originSystem: "ORDER_Q", originTransactionId: planId, externalDocumentNo, planId, sourceFingerprint,
+        basisDate: metaText(workspace.basisDate), sourceRowKey, sourceVoucherIndex: documentOrdinal,
+        documentSuffix, documentOrdinal, purchasePlanId: planId, sourceDocumentKey, sourceLineKey,
+        visibleSheetName, visibleRowNo: index + 2, supplierCustomerId, supplierCustomerCode,
+        productId, productCode, warehouseId: metaText(row.warehouseId), warehouseCode,
+        suggestedQuantity, suggestedUnit, suggestedBaseQuantity: suggestedQuantity, suggestedBaseUnit: suggestedUnit,
+        unit: suggestedUnit, baseUnit: suggestedUnit, conversionFactor: 1,
+        conversionSource: "PRODUCT_MASTER", conversionRuleVersion: PURCHASE_META_RULE_VERSION,
+      };
+      return { ...meta, rowDigest: purchaseMetaRowDigest(meta) };
+    });
+  }
+
+  function buildPurchaseMetaSheet(workspace, sourceRows, XLSX, visibleSheetName = "구매입력") {
+    const metaRows = buildPurchaseMetaRows(workspace, sourceRows, visibleSheetName);
+    const matrix = [PURCHASE_META_HEADERS, ...metaRows.map(row => PURCHASE_META_HEADERS.map(header => row[header] ?? ""))];
+    return XLSX.utils.aoa_to_sheet(matrix);
+  }
+
+  function appendVeryHiddenSheet(workbook, sheet, XLSX, sheetName) {
+    XLSX.utils.book_append_sheet(workbook, sheet, sheetName);
+    workbook.Workbook ||= {};
+    workbook.Workbook.Sheets = workbook.SheetNames.map(name => {
+      const existing = (workbook.Workbook.Sheets || []).find(row => row?.name === name) || {};
+      return { ...existing, name, Hidden: name === sheetName ? 2 : Number(existing.Hidden || 0) };
+    });
+  }
+
   function getSalesUploadRows(workspace) {
     return (workspace?.allocations || [])
       .map((row, sourceIndex) => ({ row, sourceIndex }))
@@ -1104,7 +1246,7 @@
     const sourceRows = getSalesUploadRows(workspace);
     const rows = sourceRows.map((row) => [
       workspace.uploadDate,
-      "",
+      String(row.externalDocumentNo || row.no || ""),
       "",
       String(row.customer || ""),
       String(row.warehouse || ""),
@@ -1220,7 +1362,7 @@
       "",
       "",
       "",
-      "",
+      String(row.externalDocumentNo || row.no || ""),
     ]);
     const sheet = XLSX.utils.aoa_to_sheet([[...PURCHASE_UPLOAD_HEADERS], ...rows]);
     const lastRow = Math.max(1, rows.length + 1);
@@ -1278,6 +1420,7 @@
   }
 
   function buildPurchaseUploadWorkbook(workspace, XLSX) {
+    const sourceRows = getPurchaseUploadRows(workspace);
     const sheet = buildPurchaseUploadSheet(workspace, XLSX);
     const workbook = XLSX.utils.book_new();
     workbook.Props = {
@@ -1289,6 +1432,7 @@
       CreatedDate: new Date(workspace.createdAt),
     };
     XLSX.utils.book_append_sheet(workbook, sheet, "구매입력");
+    appendVeryHiddenSheet(workbook, buildPurchaseMetaSheet(workspace, sourceRows, XLSX, "구매입력"), XLSX, PURCHASE_META_SHEET_NAME);
     return workbook;
   }
 
@@ -1359,6 +1503,12 @@
       buildSalesUploadSheet(workspace, XLSX),
       "판매업로드",
     );
+    appendVeryHiddenSheet(
+      workbook,
+      buildPurchaseMetaSheet(workspace, getPurchaseUploadRows(workspace), XLSX, "구매업로드"),
+      XLSX,
+      PURCHASE_META_SHEET_NAME,
+    );
     const allocationLastColumn = columnName(
       XLSX.utils.decode_range(allocationSheet["!ref"]).e.c,
     );
@@ -1389,6 +1539,10 @@
     WORKBOOK_VERSION,
     REQUIRED_SHEETS,
     PURCHASE_UPLOAD_SCHEMA_VERSION,
+    PURCHASE_META_SCHEMA_VERSION,
+    PURCHASE_META_RULE_VERSION,
+    PURCHASE_META_SHEET_NAME,
+    PURCHASE_META_HEADERS,
     PURCHASE_UPLOAD_HEADERS,
     SALES_UPLOAD_SCHEMA_VERSION,
     SALES_UPLOAD_HEADERS,
@@ -1399,6 +1553,9 @@
     buildWorkbook,
     buildDeliveryNoticeSheet,
     buildPurchaseUploadSheet,
+    buildPurchaseMetaRows,
+    buildPurchaseMetaSheet,
+    purchaseMetaRowDigest,
     buildPurchaseUploadWorkbook,
     buildSalesUploadSheet,
     writeWorkbook,

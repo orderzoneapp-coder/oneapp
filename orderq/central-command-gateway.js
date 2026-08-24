@@ -218,8 +218,21 @@ async function migrationEntities(commandType, aggregateId) {
   };
   source[STORE.ORDERS].forEach(row => add('ORDER', row, 'orderId'));
   source[STORE.ORDER_ITEMS].forEach(row => add('ORDER_ITEM', row, 'orderItemId'));
-  source[STORE.PRODUCTS].forEach(row => add('PRODUCT', row, 'productId'));
-  source[STORE.WAREHOUSES].forEach(row => add('WAREHOUSE', row, 'warehouseId'));
+  const purchaseDocument = purchaseCommand
+    ? source[STORE.PURCHASE_DOCUMENTS].find(row => row.purchaseDocumentId === aggregateId)
+    : null;
+  const purchaseLines = purchaseCommand
+    ? source[STORE.PURCHASE_LINES].filter(row => row.purchaseDocumentId === aggregateId)
+    : [];
+  const requiredProductIds = new Set(purchaseLines.map(row => text(row.productId)).filter(Boolean));
+  const requiredWarehouseIds = new Set([
+    text(purchaseDocument?.warehouseId),
+    ...purchaseLines.map(row => text(row.warehouseId))
+  ].filter(Boolean));
+  source[STORE.PRODUCTS].filter(row => !purchaseCommand || requiredProductIds.has(text(row.productId)))
+    .forEach(row => add('PRODUCT', row, 'productId'));
+  source[STORE.WAREHOUSES].filter(row => !purchaseCommand || requiredWarehouseIds.has(text(row.warehouseId)))
+    .forEach(row => add('WAREHOUSE', row, 'warehouseId'));
   source[STORE.INVENTORY_SNAPSHOTS].forEach(row => add('INVENTORY_SNAPSHOT', row, 'inventorySnapshotId'));
   source[STORE.INVENTORY_LINES].forEach(row => add('INVENTORY_LINE', row, 'inventoryLineId'));
   if (dispatchCommand) {
@@ -231,10 +244,10 @@ async function migrationEntities(commandType, aggregateId) {
     }
   }
   if (purchaseCommand) {
-    const document = source[STORE.PURCHASE_DOCUMENTS].find(row => row.purchaseDocumentId === aggregateId);
+    const document = purchaseDocument;
     if (document?.status === 'DRAFT') {
       add('PURCHASE_DOCUMENT', document, 'purchaseDocumentId');
-      source[STORE.PURCHASE_LINES].filter(row => row.purchaseDocumentId === aggregateId).forEach(row => add('PURCHASE_LINE', row, 'purchaseLineId'));
+      purchaseLines.forEach(row => add('PURCHASE_LINE', row, 'purchaseLineId'));
     }
   }
   if (saleCommand) {
