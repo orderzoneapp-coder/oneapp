@@ -171,6 +171,7 @@ jobs:
           node scripts/test-orderq-stage4-sale-legacy-origin.mjs
           node scripts/test-orderq-stage4-sale-workbook-e2e.mjs
           node scripts/test-orderq-stage4-sale-product-flow.mjs
+          node scripts/test-orderq-stage4-sale-blocker-resolution.mjs
           node scripts/test-orderq-stage4-sale-cloud-parity.mjs
           node scripts/test-orderq-stage4-sale-source-claims.mjs
 

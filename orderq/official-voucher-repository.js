@@ -537,5 +537,5 @@ export async function runCentralOfficialVoucherCommand(source = {}) {
     commandType,
     commandContract: 'VOUCHER_CORE_V1'
   };
-  return runCentralOfficialCommand(command, () => applyOfficialVoucherCommand(command));
+  return runCentralOfficialCommand(command, canonicalIntent => applyOfficialVoucherCommand(canonicalIntent || command));
 }
