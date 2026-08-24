@@ -3,12 +3,16 @@ import { evaluatePurchaseStage3Capability, validatePurchaseGroup } from '../smar
 import { createCentralAuthorityState, migrateCentralDrafts, prepareCentralCommand } from '../orderq/central-authority.js';
 import vm from 'node:vm';
 import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import '../orderq/canonical-hash.js';
 
 const ready={officialPurchaseStage3:'V1',normalizedOriginVersion:'PURCHASE_V2',commandContract:'VOUCHER_CORE_V1',metaSchema:'ORDERQ_PURCHASE_META_V2',cutoverMode:'VNEXT_PRIMARY',deploymentId:'DEP1',deploymentVersion:'3',gitCommit:'abc'};
-assert.equal(evaluatePurchaseStage3Capability(ready).ready,true);
+assert.equal(evaluatePurchaseStage3Capability(ready).ready,false,'unfrozen/garbage deployment evidence stays disabled');
+assert.equal(evaluatePurchaseStage3Capability(ready,{deploymentId:'DEP1',deploymentVersion:'3',gitCommit:'abc'}).ready,true);
+assert.equal(evaluatePurchaseStage3Capability({...ready,gitCommit:'wrong'},{deploymentId:'DEP1',deploymentVersion:'3',gitCommit:'abc'}).ready,false);
 assert.equal(evaluatePurchaseStage3Capability({...ready,deploymentVersion:''}).code,'ORDERQ_PURCHASE_STAGE3_CAPABILITY_UNAVAILABLE');
-const group={supplierCustomerId:'C1',voucherDate:'2026-08-25',warehouseId:'W1',rows:[{productId:'P1',warehouseId:'W1',quantity:0,unit:'EA',unitPrice:0}]};
-assert.equal(validatePurchaseGroup(group,{customers:[{customerId:'C1',status:'ACTIVE'}],products:[{productId:'P1',status:'ACTIVE'}],warehouses:[{warehouseId:'W1',status:'ACTIVE'}]}),true);
+const group={supplierCustomerId:'C1',voucherDate:'2026-08-25',warehouseId:'W1',rows:[{productId:'P1',warehouseId:'W1',quantity:0,unit:'EA',unitPrice:0,productMasterRevision:2,warehouseMasterRevision:1}]};
+assert.equal(validatePurchaseGroup(group,{customers:[{customerId:'C1',status:'ACTIVE'}],products:[{productId:'P1',status:'ACTIVE',revision:2}],warehouses:[{warehouseId:'W1',status:'ACTIVE',revision:1}]}),true);
 assert.throws(()=>validatePurchaseGroup(group,{customers:[],products:[],warehouses:[]}),/ORDERQ_PURCHASE_SUPPLIER_MASTER_INVALID/);
 const linked={...group,rows:[{...group.rows[0],sourceType:'ORDER_Q',sourceLineKey:'LINE1',metaProductId:'P2',metaProductCode:'B'}]};
 assert.throws(()=>validatePurchaseGroup(linked,{customers:[{customerId:'C1',status:'ACTIVE'}],products:[{productId:'P1',productCode:'A',status:'ACTIVE'}],warehouses:[{warehouseId:'W1',status:'ACTIVE'}]}),/ORDERQ_PURCHASE_PRODUCT_LINK_MISMATCH/);
@@ -28,4 +32,17 @@ vm.createContext(context);vm.runInContext([declaration('orderQM9Text'),declarati
 assert.doesNotThrow(()=>context.orderQM9ValidatePurchaseMasters({},command));
 const missingSupplier=structuredClone(command);missingSupplier.intent.document.supplierCustomerId='MISS';
 assert.throws(()=>context.orderQM9ValidatePurchaseMasters({},missingSupplier),/ORDERQ_PURCHASE_SUPPLIER_MASTER_INVALID/);
+const missingRevision=structuredClone(command); delete missingRevision.intent.lines[0].productMasterRevision;
+assert.throws(()=>prepareCentralCommand(state,{...missingRevision,idempotencyKey:'CMD-MISSING',intent:{...missingRevision.intent,commandId:'CMD-MISSING'}}),/ORDERQ_PURCHASE_MASTER_REVISION_STALE/);
+assert.throws(()=>context.orderQM9ValidatePurchaseMasters({},missingRevision),/ORDERQ_PURCHASE_MASTER_REVISION_STALE/);
+const staleRevision=structuredClone(command); staleRevision.intent.lines[0].productMasterRevision=1;
+assert.throws(()=>prepareCentralCommand(state,{...staleRevision,idempotencyKey:'CMD-STALE',intent:{...staleRevision.intent,commandId:'CMD-STALE'}}),/ORDERQ_PURCHASE_MASTER_REVISION_STALE/);
+assert.throws(()=>context.orderQM9ValidatePurchaseMasters({},staleRevision),/ORDERQ_PURCHASE_MASTER_REVISION_STALE/);
+
+const hashContext={sha256Hex:value=>createHash('sha256').update(String(value),'utf8').digest('hex')};
+vm.createContext(hashContext);vm.runInContext(['orderQM9CanonicalText','orderQM9CodePointCompare','orderQM9Stable','orderQM9StableJson','orderQM9Digest'].map(declaration).join('\n'),hashContext);
+const nfd='남경\r\n';
+const intent={actor:'  '+nfd,quantity:-0,nested:{z:' 값 ',a:'A'}};
+assert.equal(hashContext.orderQM9StableJson(intent),globalThis.ORDERQ_CANONICAL_HASH.canonicalJson(intent));
+assert.equal(hashContext.orderQM9Digest(intent),globalThis.ORDERQ_CANONICAL_HASH.canonicalSha256(intent));
 console.log('ORDER Q stage3 purchase master/capability tests passed');

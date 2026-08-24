@@ -131,7 +131,9 @@ function validatePurchaseMasters(state, source) {
     if (!activeMaster(warehouse)) commandError('ORDERQ_PURCHASE_WAREHOUSE_MASTER_INVALID', text(line.warehouseId));
     const productRevision = Number(line.productMasterRevision || 0);
     const warehouseRevision = Number(line.warehouseMasterRevision || 0);
-    if ((productRevision && productRevision < entityRevision(product)) || (warehouseRevision && warehouseRevision < entityRevision(warehouse))) {
+    if (!Number.isSafeInteger(productRevision) || productRevision <= 0
+      || !Number.isSafeInteger(warehouseRevision) || warehouseRevision <= 0
+      || productRevision < entityRevision(product) || warehouseRevision < entityRevision(warehouse)) {
       commandError('ORDERQ_PURCHASE_MASTER_REVISION_STALE', text(line.sourceLineKey));
     }
   }

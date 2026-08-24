@@ -6,8 +6,8 @@ const encodeCell=({r,c})=>String.fromCharCode(65+c)+(r+1);
 const aoa_to_sheet=matrix=>{const sheet={};matrix.forEach((row,r)=>row.forEach((v,c)=>{sheet[encodeCell({r,c})]={v,t:typeof v==='number'?'n':'s'};}));sheet['!ref']=`A1:${encodeCell({r:matrix.length-1,c:Math.max(...matrix.map(r=>r.length))-1})}`;return sheet;};
 const XLSX={utils:{aoa_to_sheet,encode_cell:encodeCell,book_new:()=>({SheetNames:[],Sheets:{}}),book_append_sheet:(book,sheet,name)=>{book.SheetNames.push(name);book.Sheets[name]=sheet;}},write:book=>Buffer.from(JSON.stringify(book))};
 const workspace={schemaVersion:'shipping-workspace/v2',basisDateStatus:'valid',uploadDate:'20260825',basisDate:'2026-08-25',basisDates:['2026-08-25'],createdAt:'2026-08-25T00:00:00.000Z',planId:'PLAN1',sourceFingerprint:'FP1',purchaseManagement:[
-  {rowType:'main',inventoryMatched:true,productCode:'A',productName:'상품A',specification:'',purchaseNeed:2,purchase:'남경',unit:'EA',productId:'P1',supplierCustomerId:'C1',supplierCustomerCode:'S1',warehouseId:'W1',warehouseCode:'01',externalDocumentNo:'EXT-1'},
-  {rowType:'main',inventoryMatched:true,productCode:'B',productName:'상품B',specification:'',purchaseNeed:3,purchase:'남경',unit:'EA',productId:'P2',supplierCustomerId:'C1',supplierCustomerCode:'S1',warehouseId:'W1',warehouseCode:'01',externalDocumentNo:'EXT-2'}
+  {rowType:'main',inventoryMatched:true,productCode:'A',productName:'상품A',specification:'',purchaseNeed:2,purchase:'남경',unit:'BOX',baseUnit:'EA',unitConversionFactor:10,baseQuantity:20,unitConversionSource:'PRODUCT_MASTER',productId:'P1',productMasterRevision:2,supplierCustomerId:'C1',supplierCustomerCode:'S1',warehouseId:'W1',warehouseCode:'01',warehouseMasterRevision:1,externalDocumentNo:'EXT-1'},
+  {rowType:'main',inventoryMatched:true,productCode:'B',productName:'상품B',specification:'',purchaseNeed:3,purchase:'남경',unit:'EA',baseUnit:'EA',unitConversionFactor:1,productId:'P2',productMasterRevision:3,supplierCustomerId:'C1',supplierCustomerCode:'S1',warehouseId:'W1',warehouseCode:'01',warehouseMasterRevision:1,externalDocumentNo:'EXT-2'}
 ]};
 const book=workbookApi.buildPurchaseUploadWorkbook(workspace,XLSX);
 assert.deepEqual(book.SheetNames,['구매입력','_NEXUS_META']);
@@ -20,5 +20,6 @@ assert.equal(book.Sheets['구매입력'].T3.v,'EXT-2');
 const meta=workbookApi.buildPurchaseMetaRows(workspace,workbookApi.getPurchaseUploadRows(workspace));
 assert.equal(meta.length,2); assert.notEqual(meta[0].sourceDocumentKey,meta[1].sourceDocumentKey);
 assert.deepEqual(meta.map(row=>row.externalDocumentNo),['EXT-1','EXT-2']);
+assert.deepEqual([meta[0].suggestedQuantity,meta[0].suggestedBaseQuantity,meta[0].suggestedUnit,meta[0].baseUnit,meta[0].conversionFactor],[2,20,'BOX','EA',10]);
 assert.equal(meta[0].rowDigest,workbookApi.purchaseMetaRowDigest(meta[0]));
 console.log('ORDER Q stage3 purchase workbook e2e tests passed');

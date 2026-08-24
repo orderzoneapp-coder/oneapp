@@ -620,6 +620,8 @@
       suggestedBaseUnit: text(input.suggestedBaseUnit),
       metaProductId: text(input.metaProductId),
       metaProductCode: text(input.metaProductCode),
+      productMasterRevision: numberOrNull(input.productMasterRevision),
+      warehouseMasterRevision: numberOrNull(input.warehouseMasterRevision),
       conversionFactor: numberOrNull(input.conversionFactor ?? input.unitConversionFactor),
       conversionSource: text(input.conversionSource || input.unitConversionSource),
       conversionRuleVersion: text(input.conversionRuleVersion),

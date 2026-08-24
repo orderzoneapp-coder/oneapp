@@ -32,6 +32,7 @@ export function purchaseMetaDigestPairs(meta = {}) {
     ['supplierCustomerId', text(meta.supplierCustomerId)], ['supplierCustomerCode', upper(meta.supplierCustomerCode)],
     ['productId', text(meta.productId)], ['productCode', upper(meta.productCode)],
     ['warehouseId', text(meta.warehouseId)], ['warehouseCode', upper(meta.warehouseCode)],
+    ['productMasterRevision', number(meta.productMasterRevision)], ['warehouseMasterRevision', number(meta.warehouseMasterRevision)],
     ['suggestedQuantity', number(meta.suggestedQuantity)], ['suggestedUnit', upper(meta.suggestedUnit)],
     ['suggestedBaseQuantity', number(meta.suggestedBaseQuantity)], ['suggestedBaseUnit', upper(meta.suggestedBaseUnit)],
     ['unit', upper(meta.unit)], ['baseUnit', upper(meta.baseUnit)],
@@ -65,7 +66,7 @@ export function readPurchaseMeta(matrix = []) {
     if (!(number(record.conversionFactor) > 0)) throw new Error(`ORDERQ_PURCHASE_META_CONVERSION_INVALID:${offset + 2}`);
     const digest = purchaseMetaRowDigest(record);
     if (digest !== text(record.rowDigest).toLowerCase()) throw new Error(`ORDERQ_PURCHASE_META_MUTATED:${offset + 2}`);
-    return { ...record, sourceVoucherIndex: Number(record.sourceVoucherIndex), documentOrdinal: Number(record.documentOrdinal), visibleRowNo: Number(record.visibleRowNo), suggestedQuantity: Number(record.suggestedQuantity), suggestedBaseQuantity: Number(record.suggestedBaseQuantity), conversionFactor: Number(record.conversionFactor) };
+    return { ...record, sourceVoucherIndex: Number(record.sourceVoucherIndex), documentOrdinal: Number(record.documentOrdinal), visibleRowNo: Number(record.visibleRowNo), productMasterRevision: Number(record.productMasterRevision), warehouseMasterRevision: Number(record.warehouseMasterRevision), suggestedQuantity: Number(record.suggestedQuantity), suggestedBaseQuantity: Number(record.suggestedBaseQuantity), conversionFactor: Number(record.conversionFactor) };
   });
 }
 
@@ -84,6 +85,8 @@ export function joinPurchaseMeta({ visibleSheetName, visibleRows = [], metaRows 
     metaByKey.delete(key);
     const visibleCode = upper(row.itemCode || row.productCode);
     if (visibleCode && visibleCode !== upper(meta.productCode)) throw new Error(`ORDERQ_PURCHASE_META_MUTATED:${key}:PRODUCT`);
+    const visibleUnit = upper(row.unit);
+    if (visibleUnit && visibleUnit !== upper(meta.unit)) throw new Error(`ORDERQ_PURCHASE_META_MUTATED:${key}:UNIT`);
     return {
       ...row, ...meta,
       // Keep the immutable workbook link beside the mutable/current master

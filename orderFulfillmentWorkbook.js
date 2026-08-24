@@ -32,7 +32,8 @@
     "basisDate", "sourceRowKey", "sourceVoucherIndex", "documentSuffix", "documentOrdinal",
     "purchasePlanId", "sourceDocumentKey", "sourceLineKey", "visibleSheetName", "visibleRowNo",
     "supplierCustomerId", "supplierCustomerCode", "productId", "productCode", "warehouseId",
-    "warehouseCode", "suggestedQuantity", "suggestedUnit", "suggestedBaseQuantity", "suggestedBaseUnit",
+    "warehouseCode", "productMasterRevision", "warehouseMasterRevision",
+    "suggestedQuantity", "suggestedUnit", "suggestedBaseQuantity", "suggestedBaseUnit",
     "unit", "baseUnit", "conversionFactor", "conversionSource", "conversionRuleVersion", "rowDigest",
   ]);
   const PURCHASE_UPLOAD_HEADERS = Object.freeze([
@@ -1114,6 +1115,7 @@
       ["supplierCustomerId", metaText(meta.supplierCustomerId)], ["supplierCustomerCode", metaUpper(meta.supplierCustomerCode)],
       ["productId", metaText(meta.productId)], ["productCode", metaUpper(meta.productCode)],
       ["warehouseId", metaText(meta.warehouseId)], ["warehouseCode", metaUpper(meta.warehouseCode)],
+      ["productMasterRevision", metaNumber(meta.productMasterRevision)], ["warehouseMasterRevision", metaNumber(meta.warehouseMasterRevision)],
       ["suggestedQuantity", metaNumber(meta.suggestedQuantity)], ["suggestedUnit", metaUpper(meta.suggestedUnit)],
       ["suggestedBaseQuantity", metaNumber(meta.suggestedBaseQuantity)], ["suggestedBaseUnit", metaUpper(meta.suggestedBaseUnit)],
       ["unit", metaUpper(meta.unit)], ["baseUnit", metaUpper(meta.baseUnit)],
@@ -1178,6 +1180,13 @@
       const sourceLineKey = `${sourceDocumentKey}:LINE:${canonicalHash.canonicalSha256({ sourceRowKey, productIdentity: productId || productCode, warehouseIdentity: metaText(row.warehouseId) || warehouseCode, sourceOccurrence })}`;
       const suggestedQuantity = metaNumber(row.purchaseNeed);
       const suggestedUnit = metaUpper(row.unit);
+      const baseUnit = metaUpper(row.baseUnit || row.suggestedBaseUnit || row.unit);
+      const explicitFactor = row.unitConversionFactor ?? row.conversionFactor;
+      const inferredFactor = Number(row.baseQuantity) && suggestedQuantity
+        ? Number(row.baseQuantity) / suggestedQuantity : 1;
+      const conversionFactor = metaNumber(explicitFactor ?? inferredFactor);
+      if (!(conversionFactor > 0)) throw new Error("ORDERQ_PURCHASE_META_CONVERSION_INVALID");
+      const suggestedBaseQuantity = metaNumber(row.suggestedBaseQuantity ?? row.baseQuantity ?? suggestedQuantity * conversionFactor);
       const meta = {
         schemaVersion: PURCHASE_META_SCHEMA_VERSION, ruleVersion: PURCHASE_META_RULE_VERSION,
         workbookKind: "ORDER_Q_PURCHASE", exportBatchId, exportedAt: metaText(workspace.createdAt),
@@ -1186,9 +1195,11 @@
         documentSuffix, documentOrdinal, purchasePlanId: planId, sourceDocumentKey, sourceLineKey,
         visibleSheetName, visibleRowNo: index + 2, supplierCustomerId, supplierCustomerCode,
         productId, productCode, warehouseId: metaText(row.warehouseId), warehouseCode,
-        suggestedQuantity, suggestedUnit, suggestedBaseQuantity: suggestedQuantity, suggestedBaseUnit: suggestedUnit,
-        unit: suggestedUnit, baseUnit: suggestedUnit, conversionFactor: 1,
-        conversionSource: "PRODUCT_MASTER", conversionRuleVersion: PURCHASE_META_RULE_VERSION,
+        productMasterRevision: metaNumber(row.productMasterRevision ?? row.productRevision ?? row.revision ?? 0),
+        warehouseMasterRevision: metaNumber(row.warehouseMasterRevision ?? row.warehouseRevision ?? 0),
+        suggestedQuantity, suggestedUnit, suggestedBaseQuantity, suggestedBaseUnit: baseUnit,
+        unit: suggestedUnit, baseUnit, conversionFactor,
+        conversionSource: metaUpper(row.unitConversionSource || row.conversionSource || "MANUAL_CONFIRMED"), conversionRuleVersion: PURCHASE_META_RULE_VERSION,
       };
       return { ...meta, rowDigest: purchaseMetaRowDigest(meta) };
     });
