@@ -258,7 +258,7 @@
       });
       return ordered;
     };
-    const allowedColumnIds = new Set([...PRODUCT_FIELD_DEFINITIONS.map(field => field.id), ...customFields.filter(field => field.scope === 'voucher').map(field => field.id)]);
+    const allowedColumnIds = new Set(['productSearch', ...PRODUCT_FIELD_DEFINITIONS.map(field => field.id), ...customFields.filter(field => field.scope === 'voucher').map(field => field.id)]);
     const columnWidths = {};
     Object.entries(value.columnWidths && typeof value.columnWidths === 'object' ? value.columnWidths : {}).forEach(([fieldId, width]) => {
       const normalizedWidth = Number(width);
