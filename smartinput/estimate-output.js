@@ -172,7 +172,9 @@ export function buildEstimateF8Data(rows = []) {
       code, text(row.itemName), text(row.specification), '', unitPrice, noticePrice, '', '',
       0, 0, 0, 0, '', '', 1, '', '', '', '', '', '', ''
     ]);
-    erpData.push([code, '', '0', '', '0', '', 'n', unitPrice, 'n', '', 'n']);
+    erpData.push([
+      code, unitPrice, '0', '', '0', sourceNumber(row.purchasePriceB), 'n', unitPrice, 'n', sourceNumber(row.wholesaleB), 'n'
+    ]);
     if (row.unitPriceReviewStatus === 'PENDING' && numeric(originalUnitPrice) !== null) {
       errorData.push(issueDataRow(estimateIssue(
         'UNIT_PRICE_REVIEW_REQUIRED', row, rowIndex, '단가', originalUnitPrice ?? '', '사진 인식 단가 확인이 필요합니다.',
