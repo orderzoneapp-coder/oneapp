@@ -5,9 +5,9 @@ import {
 } from '../orderq/intake-engine.js?v=0.12.3';
 import { extractOrderProductLines } from '../orderq/smartparser/order-text-extractor.js?v=0.1.0';
 import { createOrder } from '../orderq/order-intake-engine.js?v=0.15.2';
-import { syncAfterLocalMutation } from '../orderq/orderq-sync-engine.js?v=0.8.0';
-import { createLiveCustomer, ensureCustomerMasterReady, listCustomers } from '../orderq/customer-master.js?v=0.12.1';
-import { isSelectableMasterProduct, loadProductCatalog, searchProductCatalog } from '../orderq/product-master-search.js?v=0.8.3';
+import { syncAfterLocalMutation } from '../orderq/orderq-sync-engine.js?v=0.18.1';
+import { createLiveCustomer, ensureCustomerMasterReady, listCustomers } from '../orderq/customer-master.js?v=0.19.0';
+import { isSelectableMasterProduct, loadProductCatalog, searchProductCatalog } from '../orderq/product-master-search.js?v=0.8.4';
 import { loadWarehouseCatalog, matchWarehouseInput, warehouseDisplayName } from '../orderq/warehouse-master.js?v=0.8.0';
 import { recognizeOcrDocument, verifiedRowsToParserLines } from './ocr-document-parser.js?v=0.1.1';
 import { parseStructuredSheet } from './structured-sheet-parser.js?v=0.1.1';
@@ -41,6 +41,11 @@ import {
   saveSourceImage,
   saveTemporaryCustomer
 } from './smartinput-data-store.js?v=0.3.1';
+import {
+  REFERENCE_STATUS,
+  evaluateReferenceReadiness,
+  preserveReferenceRows
+} from './reference-readiness.js?v=0.1.0';
 
 const contract = window.SMART_INPUT_CONTRACT;
 if (!contract) throw new Error('SMART_INPUT_CONTRACT_NOT_LOADED');
@@ -56,6 +61,9 @@ const state = {
   customers: [],
   products: [],
   catalogStatus: 'LOADING',
+  customerStatus: 'LOADING',
+  referenceStatus: REFERENCE_STATUS.LOADING,
+  referenceMessage: '상품·거래처 기준정보를 불러오고 있습니다.',
   catalogSummary: { commonCount: 0, orderQCount: 0, errors: [] },
   warehouseCatalog: { warehouses: [], aliases: [] },
   settings: contract.normalizeSettings(),
@@ -219,6 +227,50 @@ function scheduleSave() {
   setSaveState('저장 중…', 'saving');
   clearTimeout(state.saveTimer);
   state.saveTimer = window.setTimeout(saveDraftNow, 160);
+}
+
+function referencesReady() {
+  return state.referenceStatus === REFERENCE_STATUS.READY;
+}
+
+function referenceStatusMessage() {
+  return state.referenceMessage || (state.referenceStatus === REFERENCE_STATUS.LOADING
+    ? '상품·거래처 기준정보를 불러오고 있습니다.'
+    : 'REFERENCE_ERROR · 상품·거래처 기준정보를 불러오지 못했습니다. 기준정보를 다시 불러오세요.');
+}
+
+function renderReferenceControls() {
+  const blocked = !referencesReady();
+  $('analyzeButton').disabled = blocked || state.busy;
+  $('customerSearchButton').disabled = blocked || state.busy;
+  $('saveDraftButton').disabled = blocked || state.busy;
+  $('estimateNoticeButton').disabled = blocked || state.busy;
+  $('estimateExcelButton').disabled = blocked || state.busy;
+  $('catalogSaveButton').disabled = blocked || state.busy;
+  $('catalogComposeButton').disabled = blocked || !state.noticeEstimateIds.length;
+}
+
+function requireReferenceReady(actionLabel, { automatic = false } = {}) {
+  if (referencesReady()) return true;
+  saveDraftNow();
+  setAppStatus(referenceStatusMessage(), state.referenceStatus === REFERENCE_STATUS.ERROR ? 'error' : 'warn');
+  renderReferenceControls();
+  if (!automatic) toast(`${actionLabel}을(를) 실행할 수 없습니다. 기준정보를 다시 불러오세요.`, 'error');
+  return false;
+}
+
+function applyReferenceLoad({ customers = [], customerError = null, productResult = null, productError = null } = {}) {
+  const readiness = evaluateReferenceReadiness({ customers, customerError, productResult, productError });
+  state.customers = preserveReferenceRows(state.customers, normalizedCustomerCandidates(customers), readiness.customerReady);
+  state.products = preserveReferenceRows(state.products, productResult?.products, readiness.productReady);
+  if (readiness.productReady) state.catalogSummary = productResult;
+  state.customerStatus = readiness.customerReady ? 'READY' : REFERENCE_STATUS.ERROR;
+  state.catalogStatus = readiness.productReady ? 'READY' : REFERENCE_STATUS.ERROR;
+  state.referenceStatus = readiness.status;
+  state.referenceMessage = readiness.ready
+    ? `상품 준비 · 공통 ${Number(state.catalogSummary.commonCount || 0).toLocaleString('ko-KR')}건 · ORDER Q ${Number(state.catalogSummary.orderQCount || 0).toLocaleString('ko-KR')}건 · 거래처 ${state.customers.length.toLocaleString('ko-KR')}건`
+    : readiness.message;
+  return readiness;
 }
 
 function appendDeliveryHistory(record) {
@@ -1089,21 +1141,37 @@ function currentSourceType() {
 }
 
 async function refreshCustomers({ syncIfEmpty = true } = {}) {
-  let customers = normalizedCustomerCandidates(await withTimeout(
-    listCustomers({ includeInactive: false }),
-    3500,
-    '로컬 거래처 목록을 불러오는 데 시간이 걸리고 있습니다.'
-  ));
-  if (!customers.length && syncIfEmpty) {
-    await withTimeout(ensureCustomerMasterReady(), 7000, '거래처 마스터 동기화가 지연되고 있습니다.');
-    customers = normalizedCustomerCandidates(await withTimeout(
+  try {
+    if (syncIfEmpty) {
+      await withTimeout(ensureCustomerMasterReady(), 7000, '거래처 마스터 동기화가 지연되고 있습니다.');
+    }
+    const customers = normalizedCustomerCandidates(await withTimeout(
       listCustomers({ includeInactive: false }),
       3500,
-      '동기화된 거래처 목록을 불러오지 못했습니다.'
+      '거래처 기준정보를 불러오지 못했습니다.'
     ));
+    const readiness = applyReferenceLoad({
+      customers,
+      productResult: { ...state.catalogSummary, products: state.products }
+    });
+    renderReferenceControls();
+    if (!readiness.customerReady) {
+      const error = new Error(readiness.message);
+      error.referenceApplied = true;
+      throw error;
+    }
+    return state.customers;
+  } catch (error) {
+    if (!error.referenceApplied) {
+      applyReferenceLoad({
+        customers: [],
+        customerError: error,
+        productResult: { ...state.catalogSummary, products: state.products }
+      });
+    }
+    renderReferenceControls();
+    throw error;
   }
-  if (customers.length) state.customers = customers;
-  return state.customers;
 }
 
 function customerSearchText(customer) {
@@ -1199,6 +1267,7 @@ async function persistLinkGroup(group) {
 }
 
 async function chooseCustomer() {
+  if (!requireReferenceReady('거래처 선택')) return;
   try {
     const customer = await new Promise(resolve => {
       const dialog = document.createElement('dialog');
@@ -1936,10 +2005,11 @@ function renderCatalogControls() {
       <label class="catalog-picker__output"><input type="checkbox" data-output-estimate aria-label="${esc(estimateTitle(record))} 선택" ${state.noticeEstimateIds.includes(record.estimateId) ? 'checked' : ''}><span>선택</span></label>
       <button class="catalog-picker__edit" type="button" data-edit-estimate>편집</button>
     </div>`).join('') : '<div class="smart-dialog__empty">저장된 견적서가 없습니다.</div>';
-  $('catalogComposeButton').disabled = !selectedCount;
+  $('catalogComposeButton').disabled = !referencesReady() || !selectedCount;
 }
 
 function composeSelectedEstimates() {
+  if (!requireReferenceReady('견적서 합치기')) return;
   const records = selectedEstimateRecords();
   if (!records.length) return toast('상품을 불러올 견적서를 선택하세요.', 'error');
   const rows = combinedEstimateRows(records);
@@ -2329,7 +2399,7 @@ function renderDelivery() {
     ? `최근 ${visibleDelivery.orderNo || visibleDelivery.targetRecordId || '저장 완료'}${visibleDelivery.deliveredAt ? ` · ${new Date(visibleDelivery.deliveredAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}` : ''}`
     : '전달 전';
   document.querySelector('.delivery-state span').style.background = visibleDelivery ? '#5eead4' : '#fbbf24';
-  $('completeButton').disabled = (!isOrder && !isEstimate) || state.busy;
+  $('completeButton').disabled = (!isOrder && !isEstimate) || state.busy || !referencesReady();
   $('completeButton').hidden = isEstimate;
   $('completeButton').textContent = '입력 완료';
   if (visibleDelivery?.targetRecordId) {
@@ -2374,6 +2444,7 @@ function renderMode() {
   renderRows();
   renderCatalogControls();
   renderDelivery();
+  renderReferenceControls();
   resizeSource();
   renderSourceAnalysis();
   applyFormLayout();
@@ -2381,10 +2452,14 @@ function renderMode() {
   document.querySelector('.related-panel').classList.toggle('is-open', relatedOpen);
   $('relatedCollapseButton').setAttribute('aria-expanded', String(relatedOpen));
   $('relatedCollapseButton').textContent = relatedOpen ? '연결 앱 닫기' : '연결 앱 열기';
-  setAppStatus(selected.id === 'order'
-    ? '주문서 입력을 시작할 수 있습니다.'
-    : (selected.id === 'estimate' ? '견적서를 선택하거나 새 견적을 작성할 수 있습니다.' : `${selected.label} 입력 화면입니다. 전달 연결은 준비 중입니다.`));
-  if (sourceTextInput.value.trim()) scheduleAutoAnalysis(650);
+  if (!referencesReady()) {
+    setAppStatus(referenceStatusMessage(), state.referenceStatus === REFERENCE_STATUS.ERROR ? 'error' : 'warn');
+  } else {
+    setAppStatus(selected.id === 'order'
+      ? '주문서 입력을 시작할 수 있습니다.'
+      : (selected.id === 'estimate' ? '견적서를 선택하거나 새 견적을 작성할 수 있습니다.' : `${selected.label} 입력 화면입니다. 전달 연결은 준비 중입니다.`));
+  }
+  if (sourceTextInput.value.trim() && referencesReady()) scheduleAutoAnalysis(650);
 }
 
 function setMode(mode) {
@@ -2790,13 +2865,14 @@ function clearParserWorkspace() {
   resetPhotoView();
   updateMethod('text', { persist: false });
   setActiveActivity('');
-  $('analyzeButton').disabled = false;
+  renderReferenceControls();
   $('parserProgress').hidden = true;
   $('parserProgress').querySelector('strong').textContent = '자료를 분석하고 있습니다.';
   $('sourceNotice').textContent = '직접 입력과 Ctrl+V도 지원합니다.';
   saveDraftNow();
   renderMode();
-  setAppStatus(removedRows ? `파서 원문과 분석 결과 ${removedRows}행을 지웠습니다.` : '파서 입력창을 비웠습니다.');
+  if (!referencesReady()) setAppStatus(referenceStatusMessage(), state.referenceStatus === REFERENCE_STATUS.ERROR ? 'error' : 'warn');
+  else setAppStatus(removedRows ? `파서 원문과 분석 결과 ${removedRows}행을 지웠습니다.` : '파서 입력창을 비웠습니다.');
   if (modeDraft().activeMethod === 'photo') $('photoEmptySelectButton').focus();
   else sourceTextInput.focus();
   toast(removedRows ? `파서 원문과 분석 결과 ${removedRows}행을 지웠습니다.` : '파서 입력창을 비웠습니다.', 'success');
@@ -2837,11 +2913,7 @@ async function analyzeSource({ automatic = false } = {}) {
     sourceTextInput.focus();
     return toast('분석할 원문을 입력하세요.', 'error');
   }
-  if (state.catalogStatus === 'LOADING') {
-    if (automatic) return scheduleAutoAnalysis(700);
-    toast('상품 기준자료를 불러오는 중입니다. 잠시 후 다시 분석하세요.', 'error');
-    return;
-  }
+  if (!requireReferenceReady('자료 분석', { automatic })) return;
   const contentHash = await sha256Text(rawText);
   if (state.busy || state.draft.activeMode !== modeId || sourceTextInput.value !== rawText) {
     if (automatic && sourceTextInput.value.trim()) scheduleAutoAnalysis(420);
@@ -3071,7 +3143,7 @@ async function analyzeSource({ automatic = false } = {}) {
   } finally {
     state.busy = false;
     setActiveActivity('');
-    $('analyzeButton').disabled = false;
+    renderReferenceControls();
     $('parserProgress').hidden = true;
     renderDelivery();
     renderSourceAnalysis();
@@ -3308,7 +3380,7 @@ async function recognizeImage(file) {
     state.busy = false;
     setActiveActivity('');
     $('photoInput').value = '';
-    $('analyzeButton').disabled = false;
+    renderReferenceControls();
     $('parserProgress').hidden = true;
     $('parserProgress').querySelector('strong').textContent = '자료를 분석하고 있습니다.';
     if (!modeDraft().rows.length) renderRows({ restoreFocus: false });
@@ -3714,6 +3786,7 @@ async function copyNoticeCanvas(canvas, fileName) {
 }
 
 function openEstimateNoticePreview() {
+  if (!requireReferenceReady('견적 공지 생성')) return;
   const current = modeDraft();
   const availablePriceFields = estimateNoticePriceDefinitions();
   const availablePriceFieldIds = new Set(availablePriceFields.map(field => field.id));
@@ -3808,6 +3881,7 @@ function openEstimateNoticePreview() {
 }
 
 function exportEstimateExcel() {
+  if (!requireReferenceReady('견적 Excel 생성')) return;
   const selectedRecords = selectedEstimateRecords();
   const sourceRows = selectedRecords.length ? combinedEstimateRows(selectedRecords) : modeDraft().rows;
   const output = buildEstimateF8Data(sourceRows);
@@ -3840,6 +3914,7 @@ function validateEstimateDocument() {
 }
 
 function openEstimateSaveDialog() {
+  if (!requireReferenceReady('견적서 저장')) return;
   if (!validateEstimateDocument()) return;
   const current = modeDraft();
   const loadedRecord = state.estimates.find(record => record.estimateId === current.catalogRecordId);
@@ -3879,6 +3954,7 @@ function openEstimateSaveDialog() {
 }
 
 async function saveEstimateDocument(catalogName) {
+  if (!requireReferenceReady('견적서 저장')) return false;
   if (!validateEstimateDocument()) return false;
   const current = modeDraft();
   const requestedName = String(catalogName || '').trim();
@@ -3935,6 +4011,7 @@ async function saveEstimateDocument(catalogName) {
 }
 
 async function completeOrder() {
+  if (!requireReferenceReady('입력 완료')) return;
   return completeOrderLegacy();
 }
 
@@ -4285,6 +4362,7 @@ function resetCurrentMode(requireConfirmation = true, successMessage = '새 입�
 }
 
 function saveAndStartNextVoucher() {
+  if (!requireReferenceReady('전표 저장')) return;
   if (!saveDraftNow()) {
     toast('전표를 저장하지 못해 현재 입력 내용을 유지합니다.', 'error');
     return;
@@ -4292,24 +4370,38 @@ function saveAndStartNextVoucher() {
   resetCurrentMode(false, '전표를 저장하고 다음 입력을 시작합니다.');
 }
 
+async function loadCustomerReferences() {
+  await withTimeout(ensureCustomerMasterReady({
+    onLoading: message => setAppStatus(message || '거래처 정보를 불러오는 중...')
+  }), 7000, '거래처 마스터 동기화가 지연되고 있습니다.');
+  return withTimeout(
+    listCustomers({ includeInactive: false }),
+    3500,
+    '거래처 기준정보를 불러오지 못했습니다.'
+  );
+}
+
 async function hydrateReferences() {
   state.catalogStatus = 'LOADING';
-  setAppStatus('상품·거래처·배송 설정을 불러오고 있습니다.');
+  state.customerStatus = 'LOADING';
+  state.referenceStatus = REFERENCE_STATUS.LOADING;
+  state.referenceMessage = '상품·거래처·배송 설정을 불러오고 있습니다.';
+  renderReferenceControls();
+  setAppStatus(state.referenceMessage);
   const results = await Promise.allSettled([
-    withTimeout(listCustomers({ includeInactive: false }), 5000, '거래처 기준자료 로딩 시간 초과'),
+    loadCustomerReferences(),
     withTimeout(loadProductCatalog(), 7000, '상품 기준자료 로딩 시간 초과'),
     withTimeout(loadWarehouseCatalog(), 5000, '창고 기준자료 로딩 시간 초과'),
     withTimeout(loadSmartInputData(), 5000, '스마트입력 설정 로딩 시간 초과')
   ]);
   const loadedCustomers = results[0].status === 'fulfilled' ? results[0].value : [];
-  if (results[1].status === 'fulfilled') {
-    state.products = results[1].value.products;
-    state.catalogSummary = results[1].value;
-    state.catalogStatus = state.products.length ? 'READY' : (results[1].value.errors?.length ? 'ERROR' : 'EMPTY');
-  } else {
-    state.catalogStatus = 'ERROR';
-    state.catalogSummary = { commonCount: 0, orderQCount: 0, errors: [results[1].reason?.message || '상품 카탈로그 오류'] };
-  }
+  const productResult = results[1].status === 'fulfilled' ? results[1].value : null;
+  const readiness = applyReferenceLoad({
+    customers: loadedCustomers,
+    customerError: results[0].status === 'rejected' ? results[0].reason : null,
+    productResult,
+    productError: results[1].status === 'rejected' ? results[1].reason : null
+  });
   if (results[2].status === 'fulfilled') {
     state.warehouseCatalog = results[2].value;
     renderWarehouseOptions();
@@ -4322,26 +4414,16 @@ async function hydrateReferences() {
     state.estimates = normalizeEstimateOrder(results[3].value.estimates || []);
     state.sourceImageRecords = new Map((results[3].value.sourceImages || []).map(sourceImage => [sourceImage.documentId, sourceImage]));
     Object.keys(state.sourceImages).forEach(mode => restoreSourceImageForMode(mode));
+    state.customers = normalizedCustomerCandidates(state.customers);
     state.smartDataReady = true;
   }
-  state.customers = normalizedCustomerCandidates(loadedCustomers);
-  const referenceSummary = state.catalogStatus === 'READY'
-    ? `상품 준비 · 공통 ${Number(state.catalogSummary.commonCount || 0).toLocaleString('ko-KR')}건 · ORDER Q ${Number(state.catalogSummary.orderQCount || 0).toLocaleString('ko-KR')}건 · 거래처 ${state.customers.length.toLocaleString('ko-KR')}건`
-    : (state.catalogStatus === 'EMPTY' ? '상품 기준자료가 없습니다. 직접입력은 계속 사용할 수 있습니다.' : '상품 기준자료 일부를 불러오지 못했습니다. 직접입력은 계속 사용할 수 있습니다.');
-  renderMode();
-  setAppStatus(referenceSummary, state.catalogStatus === 'READY' ? '' : 'warn');
-  if (sourceTextInput.value.trim()) scheduleAutoAnalysis(650);
-  if (!state.customers.length) {
-    void refreshCustomers({ syncIfEmpty: true })
-      .then(() => {
-        if (state.catalogStatus === 'READY') {
-          setAppStatus(`상품 준비 · 공통 ${Number(state.catalogSummary.commonCount || 0).toLocaleString('ko-KR')}건 · ORDER Q ${Number(state.catalogSummary.orderQCount || 0).toLocaleString('ko-KR')}건 · 거래처 ${state.customers.length.toLocaleString('ko-KR')}건`);
-        }
-      })
-      .catch(() => setAppStatus('거래처 마스터 동기화가 지연되고 있습니다. 거래처 찾기 창은 계속 사용할 수 있습니다.', 'warn'));
+  if (readiness.ready) {
+    state.referenceMessage = `상품 준비 · 공통 ${Number(state.catalogSummary.commonCount || 0).toLocaleString('ko-KR')}건 · ORDER Q ${Number(state.catalogSummary.orderQCount || 0).toLocaleString('ko-KR')}건 · 거래처 ${state.customers.length.toLocaleString('ko-KR')}건`;
   }
-  if (results.some(result => result.status === 'rejected') && state.catalogStatus === 'READY') {
-    setAppStatus('일부 마스터를 불러오지 못했습니다. 직접입력은 계속 사용할 수 있습니다.', 'warn');
+  renderMode();
+  setAppStatus(state.referenceMessage, readiness.ready ? '' : 'error');
+  if (readiness.ready && [results[2], results[3]].some(result => result.status === 'rejected')) {
+    setAppStatus(`${state.referenceMessage} · 배송 또는 설정 자료 일부를 불러오지 못했습니다.`, 'warn');
   }
 }
 
@@ -4571,7 +4653,7 @@ $('catalogPickerList').addEventListener('change', event => {
   $('catalogPickerButton').textContent = currentRecord
     ? `${estimateTitle(currentRecord)} · 선택 ${state.noticeEstimateIds.length}`
     : `견적서 선택 · 선택 ${state.noticeEstimateIds.length}`;
-  $('catalogComposeButton').disabled = !state.noticeEstimateIds.length;
+  $('catalogComposeButton').disabled = !referencesReady() || !state.noticeEstimateIds.length;
 });
 $('catalogComposeButton').addEventListener('click', composeSelectedEstimates);
 $('catalogNewButton').addEventListener('click', () => {

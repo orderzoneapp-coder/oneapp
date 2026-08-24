@@ -16,12 +16,20 @@ import {
   splitKakaoNoticeColumns,
   KAKAO_NOTICE_ROWS_PER_PAGE
 } from '../smartinput/estimate-output.js';
+import {
+  REFERENCE_STATUS,
+  evaluateReferenceReadiness,
+  preserveReferenceRows
+} from '../smartinput/reference-readiness.js';
 
 const root = process.cwd();
 const read = file => fs.readFileSync(path.join(root, file), 'utf8');
 const contractSource = read('smartinput/smartinput-contract.js');
 const appSource = read('smartinput/smartinput.js');
 const dataStoreSource = read('smartinput/smartinput-data-store.js');
+const customerMasterSource = read('orderq/customer-master.js');
+const productMasterSearchSource = read('orderq/product-master-search.js');
+const orderQSyncEngineSource = read('orderq/orderq-sync-engine.js');
 const orderIntakeSource = read('orderq/order-intake-engine.js');
 const html = read('smartinput/index.html');
 const css = read('smartinput/smartinput.css');
@@ -32,6 +40,38 @@ const manifest = JSON.parse(read('app-manifest.json'));
 const context = { window: {}, globalThis: {}, Date, Math, String, Number, Boolean, Object, Array, Map, Set };
 vm.runInNewContext(contractSource, context);
 const contract = context.window.SMART_INPUT_CONTRACT;
+
+assert.match(productMasterSearchSource, /orderq-db\.js\?v=0\.17\.0/,
+  'SmartInput product search must load the current v12 ORDER Q DB module URL');
+assert.match(customerMasterSource, /orderq-db\.js\?v=0\.17\.0/,
+  'SmartInput customer master must load the current v12 ORDER Q DB module URL');
+assert.match(customerMasterSource, /orderq-sync-engine\.js\?v=0\.18\.1/,
+  'SmartInput customer recovery must invalidate the sync-engine module graph');
+assert.match(orderQSyncEngineSource, /orderq-db\.js\?v=0\.17\.0/,
+  'SmartInput customer recovery and delivery sync must not re-enter a pre-v12 DB module URL');
+
+const readyReferences = evaluateReferenceReadiness({
+  customers: [{ customerId: 'CU-1' }],
+  productResult: { products: [{ productId: 'PR-1' }], commonCount: 1, orderQCount: 0, errors: [] }
+});
+assert.equal(readyReferences.status, REFERENCE_STATUS.READY);
+assert.equal(readyReferences.ready, true);
+for (const failedReferences of [
+  evaluateReferenceReadiness({ customers: [], productResult: { products: [{ productId: 'PR-1' }], errors: [] } }),
+  evaluateReferenceReadiness({ customers: [{ customerId: 'CU-1' }], productResult: { products: [], errors: [] } }),
+  evaluateReferenceReadiness({ customers: [{ customerId: 'CU-1' }], productResult: { products: [{ productId: 'PR-HISTORY' }], commonCount: 0, orderQCount: 1, errors: [] } }),
+  evaluateReferenceReadiness({ customerError: new Error('VersionError'), productResult: { products: [{ productId: 'PR-1' }], errors: [] } }),
+  evaluateReferenceReadiness({ customers: [{ customerId: 'CU-1' }], productResult: { products: [{ productId: 'PR-1' }], errors: ['VersionError'] } })
+]) {
+  assert.equal(failedReferences.status, REFERENCE_STATUS.ERROR);
+  assert.match(failedReferences.message, /REFERENCE_ERROR/);
+  assert.match(failedReferences.message, /기준정보를 다시 불러오세요/);
+}
+const lastCustomers = [{ customerId: 'CU-LAST' }];
+const lastProducts = [{ productId: 'PR-LAST' }];
+assert.strictEqual(preserveReferenceRows(lastCustomers, [], false), lastCustomers, '빈 거래처 동기화 결과가 마지막 정상 목록을 덮어쓰면 안 된다.');
+assert.strictEqual(preserveReferenceRows(lastProducts, [], false), lastProducts, '빈 상품 동기화 결과가 마지막 정상 목록을 덮어쓰면 안 된다.');
+assert.deepEqual(preserveReferenceRows(lastProducts, [{ productId: 'PR-NEXT' }], true), [{ productId: 'PR-NEXT' }]);
 
 assert.equal(contract.APP_ID, 'smart-input');
 assert.equal(contract.SCHEMA_VERSION, 'ONEAPP_SMART_INPUT_DRAFT_V1');
@@ -727,7 +767,21 @@ assert.doesNotMatch(appSource, /연결할 거래처를 2개 이상/,
 assert.match(appSource, /const isTax = hasRelationship && group\?\.taxCustomerId === customerItem\.customerId/,
   'tax badges must also appear for one-to-one relationships');
 assert.match(appSource, /dialog\.showModal\(\);[\s\S]*refreshCustomers\(\{ syncIfEmpty: true \}\)/, 'customer dialog must open before background master refresh completes');
-assert.match(appSource, /withTimeout\(listCustomers\(\{ includeInactive: false \}\), 5000/, 'startup customer loading must have a bounded wait');
+assert.match(appSource, /async function loadCustomerReferences\(\)[\s\S]*ensureCustomerMasterReady[\s\S]*listCustomers\(\{ includeInactive: false \}\)/,
+  'startup must complete empty-local customer cloud recovery before finalizing the active customer list');
+assert.match(appSource, /customer-master\.js\?v=0\.19\.0/);
+assert.match(appSource, /product-master-search\.js\?v=0\.8\.4/);
+assert.match(appSource, /orderq-sync-engine\.js\?v=0\.18\.1/);
+assert.match(appSource, /reference-readiness\.js\?v=0\.1\.0/);
+assert.match(appSource, /function requireReferenceReady\(actionLabel,[\s\S]*saveDraftNow\(\)[\s\S]*기준정보를 다시 불러오세요/,
+  'the common reference guard must preserve the current draft before blocking an operation');
+for (const guardedAction of ['자료 분석', '입력 완료', '전표 저장', '견적서 저장', '견적 Excel 생성']) {
+  assert.match(appSource, new RegExp(`requireReferenceReady\\('${guardedAction}`), `${guardedAction} must use the common reference guard`);
+}
+assert.match(appSource, /function renderReferenceControls\(\)[\s\S]*analyzeButton'[\s\S]*saveDraftButton'[\s\S]*estimateExcelButton'[\s\S]*catalogSaveButton'/,
+  'reference-dependent operation controls must remain disabled until both masters are ready');
+assert.doesNotMatch(appSource, /직접입력은 계속 사용할 수 있습니다|거래처 찾기 창은 계속 사용할 수 있습니다/,
+  'missing reference data must not be presented as a normal continue state');
 assert.doesNotMatch(appSource, /function openEstimateListDialog\(\)/);
 assert.match(appSource, /function openEstimateNoticePreview\(\)/);
 assert.match(appSource, /function exportEstimateExcel\(\)/);
@@ -749,8 +803,8 @@ assert.match(appSource, /function selectedEstimateRecords\(\)[\s\S]*availableCat
 assert.match(appSource, /function combinedEstimateRows\(records = selectedEstimateRecords\(\)\)/);
 assert.doesNotMatch(appSource, /\$\('referenceStatus'\)/,
   'reference status must be reported through the single app status surface');
-assert.match(appSource, /const referenceSummary = state\.catalogStatus === 'READY'[\s\S]*renderMode\(\);[\s\S]*setAppStatus\(referenceSummary/,
-  'reference loading results must remain visible in the app status after mode rendering');
+assert.match(appSource, /const readiness = applyReferenceLoad\([\s\S]*renderMode\(\);[\s\S]*setAppStatus\(state\.referenceMessage, readiness\.ready \? '' : 'error'\)/,
+  'REFERENCE_ERROR must remain visible in the app status after mode rendering');
 assert.match(appSource, /function composeSelectedEstimates\(\)[\s\S]*startNewCatalog\(\)[\s\S]*current\.rows = rows/,
   'selected saved estimates must compose a new editable estimate');
 assert.match(appSource, /noticeSources\.flatMap/,
@@ -961,7 +1015,7 @@ assert.ok(errorSheetAppendAt >= 0 && errorSheetAppendAt < shopSheetAppendAt && s
   'Excel 시트는 오류정보, 쇼핑몰업로드, ERP업데이트 순서여야 한다.');
 assert.doesNotMatch(appSource, /if \(!output\.ok\)/, '오류 정보로 Excel 생성을 차단하면 안 된다.');
 assert.match(html, /smartinput-contract\.js\?v=0\.4\.16/);
-assert.match(html, /smartinput\.js\?v=0\.4\.33/);
+assert.match(html, /smartinput\.js\?v=0\.4\.34/);
 assert.match(appSource, /structured-sheet-parser\.js\?v=0\.1\.1/);
 assert.match(appSource, /estimate-output\.js\?v=0\.1\.4/);
 assert.match(appSource, /const sourceRows = selectedRecords\.length \? combinedEstimateRows\(selectedRecords\) : modeDraft\(\)\.rows/,
