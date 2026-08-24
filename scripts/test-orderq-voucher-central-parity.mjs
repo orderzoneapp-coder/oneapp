@@ -13,7 +13,8 @@ function declaration(name){
 }
 const context={sha256Hex:value=>crypto.createHash('sha256').update(value).digest('hex')};
 vm.createContext(context);
-vm.runInContext(['orderQM9Text','orderQM9Stable','orderQM9StableJson','orderQM9Digest','orderQM9CommandFingerprint'].map(declaration).join('\n'),context);
+vm.runInContext(['orderQM9Text','orderQM9CanonicalText','orderQM9CodePointCompare','orderQM9Stable','orderQM9StableJson','orderQM9Digest',
+  'orderQM9ValidateSaleCanonicalIntent','orderQM9CommandFingerprint'].map(declaration).join('\n'),context);
 const fixture={commandType:'POST_SALE',aggregateId:'SD-PARITY',idempotencyKey:'CMD-PARITY',expectedRevision:1,intent:{commandContract:'VOUCHER_CORE_V1',commandId:'CMD-PARITY',sourceType:'ORDER_Q',document:{sourceDocumentKey:'SRC',billingCustomerId:'B'},lines:[{sourceLineKey:'1',quantity:2}]}};
 assert.equal(context.orderQM9CommandFingerprint(fixture),centralCommandFingerprint(fixture),'browser and Cloud canonical SHA-256 fingerprints must match');
 assert.notEqual(centralCommandFingerprint(fixture),centralCommandFingerprint({...fixture,intent:{...fixture.intent,lines:[{sourceLineKey:'1',quantity:3}]}}));

@@ -1683,6 +1683,35 @@ function orderQM9EnforceTransactionBoundary(ss) {
   }
 }
 
+function orderQM9ValidateSaleCanonicalIntent(payload) {
+  const commandType = orderQM9Text(payload && payload.commandType).toUpperCase();
+  const intent = payload && payload.intent || {};
+  const intentDocument = intent.document && typeof intent.document === 'object' ? intent.document : {};
+  const sourceDocument = payload.document && typeof payload.document === 'object' ? payload.document : {};
+  const stage4 = [intent.contractKind, payload.contractKind, intentDocument.contractKind, sourceDocument.contractKind]
+    .some(value => orderQM9Text(value) === 'SALE_STAGE4_V1');
+  if (!stage4 || ['POST_SALE', 'CORRECT_SALE', 'REVERSE_SALE'].indexOf(commandType) < 0) return;
+  const fields = ['contractKind','normalizedOriginVersion','sourceDocumentKey','originSystem','originTransactionId','sourceVoucherIndex','externalDocumentNo','sourceClaimKeys'];
+  const normalize = (field, value) => {
+    if (field === 'sourceVoucherIndex') return value === '' || value === null || value === undefined ? '' : Number(value);
+    if (field === 'sourceClaimKeys') return Array.isArray(value) ? value.map(orderQM9Text) : [];
+    const result = orderQM9Text(value); return field === 'originSystem' ? result.toUpperCase() : result;
+  };
+  const present = value => Array.isArray(value) ? value.length > 0 : value !== '';
+  const identity = {};
+  fields.forEach(field => {
+    const values = [intent[field], payload[field], intentDocument[field], sourceDocument[field]].map(value => normalize(field, value)).filter(present);
+    if (values.length > 1 && values.slice(1).some(value => orderQM9StableJson(value) !== orderQM9StableJson(values[0]))) {
+      throw new Error(`ORDERQ_OFFICIAL_INTENT_MISMATCH:${field}`);
+    }
+    identity[field] = values.length ? values[0] : field === 'sourceClaimKeys' ? [] : '';
+  });
+  if (!identity.normalizedOriginVersion || !identity.sourceDocumentKey || !identity.originSystem || !identity.originTransactionId
+    || !Number.isInteger(identity.sourceVoucherIndex) || identity.sourceVoucherIndex < 1 || !identity.sourceClaimKeys.length) {
+    throw new Error('ORDERQ_SALE_ORIGIN_IDENTITY_REQUIRED');
+  }
+}
+
 function orderQM9CommandFingerprint(payload) {
   const commandType = orderQM9Text(payload.commandType).toUpperCase();
   const aggregateId = orderQM9Text(payload.aggregateId);
@@ -1700,6 +1729,7 @@ function orderQM9CommandFingerprint(payload) {
     && orderQM9Text(payload.intent && payload.intent.commandId) !== idempotencyKey) {
     throw new Error('ORDERQ_CENTRAL_COMMAND_IDEMPOTENCY_MISMATCH');
   }
+  orderQM9ValidateSaleCanonicalIntent(payload);
   return orderQM9Digest({ commandType, aggregateId, expectedRevision, intent: payload.intent || null });
 }
 

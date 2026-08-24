@@ -1,5 +1,6 @@
 import { canonicalSha256 } from './official-voucher-core.js?v=0.17.0';
 import { openOrderQDb, requestToPromise, transactionDone, STORE } from './orderq-db.js?v=0.9.0';
+import { pullCentralOfficialState } from './central-command-gateway.js?v=0.19.0';
 
 export const SALE_SIDECAR_SCHEMA = 'ORDERQ_SALE_SIDECAR_V1';
 export const SALE_META_SCHEMA = 'ORDERQ_SALES_META_V1';
@@ -184,7 +185,10 @@ export async function loadSaleStage4SourceSnapshot() {
 }
 
 export async function connectSaleStage4Workspace(workspace = {}, options = {}) {
-  const source = options.source || await loadSaleStage4SourceSnapshot();
+  const pull = options.pull || pullCentralOfficialState;
+  const loadSource = options.loadSource || loadSaleStage4SourceSnapshot;
+  await pull();
+  const source = options.source || await loadSource();
   const sidecar = buildSaleStage4Sidecar(workspace, source, options.reviews || {}, options.actor || 'ADMIN');
   return attachSaleSidecar(workspace, sidecar);
 }
