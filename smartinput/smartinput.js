@@ -11,6 +11,7 @@ import { isSelectableMasterProduct, loadProductCatalog, searchProductCatalog } f
 import { loadWarehouseCatalog, matchWarehouseInput, warehouseDisplayName } from '../orderq/warehouse-master.js?v=0.8.0';
 import { recognizeOcrDocument, verifiedRowsToParserLines } from './ocr-document-parser.js?v=0.1.1';
 import { parseStructuredSheet } from './structured-sheet-parser.js?v=0.1.0';
+import { buildGridPastePlan } from './grid-clipboard.js?v=0.1.0';
 import {
   buildCatalogPriceSnapshot,
   priceSnapshotsEqual,
@@ -72,7 +73,9 @@ const state = {
   analysisRequestId: 0,
   sourceComposing: false,
   columnResize: null,
-  columnDrag: null
+  columnDrag: null,
+  gridPasteUndo: null,
+  applyingGridPaste: false
 };
 
 const ACTIVITY_LABELS = {
@@ -372,6 +375,7 @@ function renderCustomLayoutFields() {
 }
 
 const DEFAULT_COLUMN_WIDTHS = Object.freeze({
+  productSearch: 210,
   itemCode: 112, itemName: 190, specification: 100, quantity: 72, unit: 70,
   unitPrice: 90, supplyAmount: 102, memo: 112, description: 118, noticePrice: 90,
   secondaryName: 150, searchInfo: 180, boxQuantity: 72, outPrice: 90,
@@ -391,6 +395,14 @@ function columnWidth(fieldId) {
 
 function ensureColumnResizeHandles() {
   document.querySelectorAll('#tableScroll thead th[data-column]').forEach(th => {
+    if (th.dataset.column === 'productSearch') {
+      th.classList.add('column-fixed');
+      th.classList.remove('column-resizable', 'column-draggable');
+      th.draggable = false;
+      delete th.dataset.columnDrag;
+      th.querySelector('.column-resize-handle')?.remove();
+      return;
+    }
     th.classList.add('column-resizable');
     if (th.dataset.column !== 'status') {
       th.classList.add('column-draggable');
@@ -610,7 +622,7 @@ function applyFormLayout() {
   const visibleVoucherColumns = photoActive && !state.photoView.detailColumns ? photoBasicColumns : voucherColumns;
   document.querySelectorAll('[data-column]').forEach(element => {
     const column = element.dataset.column;
-    const visible = column === 'status' ? photoActive : visibleVoucherColumns.has(column);
+    const visible = column === 'productSearch' || (column === 'status' ? photoActive : visibleVoucherColumns.has(column));
     element.classList.toggle('is-column-hidden', !visible);
   });
   const visibleColumns = [...document.querySelectorAll('thead th[data-column]')]
@@ -993,10 +1005,10 @@ function applyCustomer(customer, { rematch = true, mappingSource = 'MANUAL', lea
 function armItemCodeEntry() {
   const targetRow = modeDraft().rows.find(row => !String(row.itemCode || '').trim()) || modeDraft().rows[0] || null;
   const rowId = targetRow?.rowId || DEFAULT_INPUT_ROW_ID;
-  modeUi().activeCellId = `${rowId}|itemCode`;
+  modeUi().activeCellId = `${rowId}|productSearch`;
   state.draft.ui.selectedRowId = rowId;
   window.requestAnimationFrame(() => {
-    const input = inputRows.querySelector(`[data-row-id="${CSS.escape(rowId)}"] [data-field="itemCode"]`);
+    const input = inputRows.querySelector(`[data-row-id="${CSS.escape(rowId)}"] [data-product-search]`);
     if (!input) return;
     input.focus({ preventScroll: true });
     if (typeof input.setSelectionRange === 'function') input.setSelectionRange(input.value.length, input.value.length);
@@ -1886,7 +1898,7 @@ function startNewCatalog() {
   resetPhotoView();
   saveDraftNow();
   renderMode();
-  window.requestAnimationFrame(() => inputRows.querySelector('[data-field="itemCode"]')?.focus());
+  window.requestAnimationFrame(() => inputRows.querySelector('[data-product-search]')?.focus());
 }
 
 async function deleteSelectedCatalog() {
@@ -1960,6 +1972,50 @@ function hydrateHeader() {
   updateDeliveryPolicy();
 }
 
+function cloneGridValue(value) {
+  if (typeof structuredClone === 'function') return structuredClone(value);
+  return JSON.parse(JSON.stringify(value));
+}
+
+function syncGridPasteUndoButton() {
+  const button = $('undoGridPasteButton');
+  if (!button) return;
+  button.disabled = state.gridPasteUndo?.mode !== state.draft.activeMode;
+}
+
+function invalidateGridPasteUndo() {
+  if (state.applyingGridPaste || !state.gridPasteUndo) return;
+  state.gridPasteUndo = null;
+  syncGridPasteUndoButton();
+}
+
+function captureGridPasteUndo() {
+  const current = modeDraft();
+  state.gridPasteUndo = {
+    mode: state.draft.activeMode,
+    rows: cloneGridValue(current.rows),
+    batches: cloneGridValue(current.batches),
+    selectedRowIds: [...state.selectedRowIds],
+    activeCellId: modeUi().activeCellId || ''
+  };
+  syncGridPasteUndoButton();
+}
+
+function undoGridPaste() {
+  const snapshot = state.gridPasteUndo;
+  if (!snapshot || snapshot.mode !== state.draft.activeMode) return;
+  const current = modeDraft();
+  current.rows = snapshot.rows.map(row => contract.normalizeRow(row));
+  current.batches = cloneGridValue(snapshot.batches);
+  state.selectedRowIds = new Set(snapshot.selectedRowIds);
+  modeUi().activeCellId = snapshot.activeCellId;
+  state.gridPasteUndo = null;
+  renderRows();
+  saveDraftNow();
+  syncGridPasteUndoButton();
+  toast('Excel 붙여넣기를 취소했습니다.', 'success');
+}
+
 function syncRowSelectionControls() {
   const rowIds = modeDraft().rows.map(row => row.rowId);
   state.selectedRowIds = new Set([...state.selectedRowIds].filter(rowId => rowIds.includes(rowId)));
@@ -1973,6 +2029,7 @@ function syncRowSelectionControls() {
 
 function deleteSelectedGridRows() {
   if (!state.selectedRowIds.size) return;
+  invalidateGridPasteUndo();
   modeDraft().rows = modeDraft().rows.filter(row => !state.selectedRowIds.has(row.rowId));
   modeDraft().rows = contract.markDuplicatePossibilities(modeDraft().rows);
   state.selectedRowIds.clear();
@@ -2006,6 +2063,7 @@ function renderRows({ restoreFocus = true } = {}) {
     )).join('');
     return `<tr data-row-id="${esc(row.rowId)}" ${isDefault ? 'data-default-row="true"' : ''} data-status="${esc(row.matchStatus)}" class="${row.duplicatePossible ? 'is-duplicate' : ''}">
       <td class="row-select-cell"><input type="checkbox" data-select-row="${isDefault ? '' : esc(row.rowId)}" aria-label="행 선택" ${isDefault ? 'disabled' : (state.selectedRowIds.has(row.rowId) ? 'checked' : '')}></td>
+      <td data-column="productSearch" class="product-search-cell"><input data-product-search type="search" enterkeyhint="search" value="${esc(row.itemName || row.itemCode || '')}" placeholder="코드·품명·검색어" aria-label="상품 검색" title="상품코드, 품명 또는 검색어 입력 후 Enter"></td>
       <td data-column="itemCode"><input data-field="itemCode" type="search" enterkeyhint="search" value="${esc(row.itemCode)}" aria-label="품목코드" title="입력 후 Enter로 상품 검색"></td>
       <td data-column="itemName"><input data-field="itemName" type="search" enterkeyhint="search" value="${esc(row.itemName)}" aria-label="품목명" title="입력 후 Enter로 상품 검색"></td>
       <td data-column="specification"><input data-field="specification" value="${esc(row.specification)}" aria-label="규격"></td>
@@ -2023,6 +2081,7 @@ function renderRows({ restoreFocus = true } = {}) {
     </tr>`;
   }).join('');
   syncRowSelectionControls();
+  syncGridPasteUndoButton();
   updateSummaries();
   applyFormLayout();
   renderSourceAnalysis();
@@ -2041,7 +2100,7 @@ function renderRows({ restoreFocus = true } = {}) {
     const active = modeUi().activeCellId;
     if (!active) return;
     const [rowId, field] = active.split('|');
-    inputRows.querySelector(`[data-row-id="${CSS.escape(rowId)}"] [data-field="${CSS.escape(field)}"], [data-row-id="${CSS.escape(rowId)}"] [data-custom-row-field="${CSS.escape(field)}"]`)?.focus({ preventScroll: true });
+    gridInput(rowId, field)?.focus({ preventScroll: true });
   });
 }
 
@@ -2116,6 +2175,7 @@ function renderMode() {
 function setMode(mode) {
   if (!contract.MODES[mode] || mode === state.draft.activeMode) return;
   syncSourceText();
+  state.gridPasteUndo = null;
   state.draft.activeMode = mode;
   restoreSourceImageForMode(mode);
   state.selectedRowIds.clear();
@@ -2152,7 +2212,7 @@ function appendDirectRow() {
     sourceName: '직접입력'
   });
   current.batches.push(batch);
-  current.rows = contract.applyParserResults(current.rows, batch, [{ rawText: '', itemName: '', quantity: null }]);
+  current.rows = contract.applyParserResults(current.rows, batch, [{ rawText: '', itemName: '', quantity: null, inputOwnership: 'USER' }]);
   return current.rows[current.rows.length - 1];
 }
 
@@ -2175,7 +2235,7 @@ function materializeDefaultRow(tr) {
     selector.dataset.selectRow = row.rowId;
     selector.disabled = false;
   }
-  modeUi().activeCellId = `${row.rowId}|${document.activeElement?.dataset?.field || 'itemCode'}`;
+  modeUi().activeCellId = `${row.rowId}|${gridFieldId(document.activeElement) || 'productSearch'}`;
   state.draft.ui.selectedRowId = row.rowId;
   syncRowSelectionControls();
   updateSummaries();
@@ -2184,14 +2244,16 @@ function materializeDefaultRow(tr) {
 }
 
 function addDirectRow() {
+  invalidateGridPasteUndo();
   appendDirectRow();
   renderRows();
   saveDraftNow();
-  const last = inputRows.querySelector('tr:last-child input[data-field="itemCode"]');
+  const last = inputRows.querySelector('tr:last-child input[data-product-search]');
   last?.focus();
 }
 
 function gridFieldId(input) {
+  if (input?.hasAttribute?.('data-product-search')) return 'productSearch';
   return input?.dataset?.field || input?.dataset?.customRowField || '';
 }
 
@@ -2199,7 +2261,9 @@ function visibleEditableGridFields() {
   return [...document.querySelectorAll('#tableScroll thead th[data-column]')]
     .filter(header => !header.classList.contains('is-column-hidden'))
     .map(header => header.dataset.column)
-    .filter(field => inputRows.querySelector(`[data-field="${CSS.escape(field)}"], [data-custom-row-field="${CSS.escape(field)}"]`));
+    .filter(field => field === 'productSearch'
+      ? inputRows.querySelector('[data-product-search]')
+      : inputRows.querySelector(`[data-field="${CSS.escape(field)}"], [data-custom-row-field="${CSS.escape(field)}"]`));
 }
 
 function enterGridFields() {
@@ -2213,6 +2277,7 @@ function enterGridFields() {
 }
 
 function gridInput(rowId, field) {
+  if (field === 'productSearch') return inputRows.querySelector(`[data-row-id="${CSS.escape(rowId)}"] [data-product-search]`);
   return inputRows.querySelector(`[data-row-id="${CSS.escape(rowId)}"] [data-field="${CSS.escape(field)}"], [data-row-id="${CSS.escape(rowId)}"] [data-custom-row-field="${CSS.escape(field)}"]`);
 }
 
@@ -2283,13 +2348,148 @@ function directionalGridTarget(rowId, field, key) {
   return { rowId: targetRow.dataset.rowId, field: targetField };
 }
 
-function nextRowItemCodeTarget(rowId, backwards = false) {
+function nextRowEntryTarget(rowId, backwards = false) {
   const rows = [...inputRows.querySelectorAll('tr[data-row-id]')];
   const rowIndex = rows.findIndex(row => row.dataset.rowId === rowId);
   if (rowIndex < 0) return null;
   const targetRow = rows[rowIndex + (backwards ? -1 : 1)];
-  if (targetRow) return { rowId: targetRow.dataset.rowId, field: 'itemCode' };
-  return backwards ? null : { append: true, field: 'itemCode' };
+  if (targetRow) return { rowId: targetRow.dataset.rowId, field: 'productSearch' };
+  return backwards ? null : { append: true, field: 'productSearch' };
+}
+
+function gridPasteFieldDefinitions() {
+  return layoutDefinitions('voucher').filter(field => field.editable !== false);
+}
+
+function visibleGridPasteFields() {
+  return visibleEditableGridFields().filter(fieldId => fieldId !== 'productSearch');
+}
+
+function applyGridPaste(rawText, startRowId, startFieldId) {
+  const current = modeDraft();
+  const startRowIndex = startRowId === DEFAULT_INPUT_ROW_ID
+    ? 0
+    : current.rows.findIndex(row => row.rowId === startRowId);
+  if (startRowIndex < 0 || startFieldId === 'productSearch') return false;
+  const definitions = gridPasteFieldDefinitions();
+  const definitionById = new Map(definitions.map(field => [field.id, field]));
+  const plan = buildGridPastePlan(rawText, {
+    fieldDefinitions: definitions,
+    visibleFieldIds: visibleGridPasteFields(),
+    startFieldId,
+    numberParser: contract.numberOrNull,
+    requireHeaders: true
+  });
+  if (!plan.valid) {
+    const fields = (plan.headerErrors || []).slice(0, 3).map(error => {
+      if (error.reason === 'EMPTY_HEADER') return `${error.columnIndex + 1}열(빈 필드명)`;
+      if (error.reason === 'DUPLICATE_FIELD') return `${error.columnIndex + 1}열(${error.header} 중복)`;
+      return `${error.columnIndex + 1}열(${error.header || '알 수 없음'})`;
+    }).join(', ');
+    const rows = (plan.rowErrors || []).slice(0, 3).map(error => `${error.rowNumber}행(${error.actualColumnCount}/${error.expectedColumnCount}열)`).join(', ');
+    toast(rows
+      ? `행별 열 수가 필드명과 일치하지 않아 붙여넣기를 중단했습니다. ${rows}`
+      : `필드명이 일치하지 않아 붙여넣기를 중단했습니다.${fields ? ` ${fields}` : ''}`, 'error');
+    return false;
+  }
+  if (plan.invalidCells.length) {
+    const cells = plan.invalidCells.slice(0, 3).map(cell => `${cell.rowNumber}행 ${cell.fieldId}`).join(', ');
+    toast(`숫자 필드 값을 확인하세요. 붙여넣기를 중단했습니다. ${cells}`, 'error');
+    return false;
+  }
+  if (!plan.rows.length || plan.rows.every(row => !row.cells.length)) {
+    toast('필드명 아래에 입력할 값이 없습니다.', 'error');
+    return false;
+  }
+
+  captureGridPasteUndo();
+  state.applyingGridPaste = true;
+  try {
+    const batch = contract.createBatch({
+      sequence: current.batches.length + 1,
+      method: 'grid-paste',
+      sourceType: 'MANUAL',
+      sourceName: 'Excel 범위 붙여넣기',
+      sourceRole: 'USER_ENTRY',
+      rawText
+    });
+    current.batches.push(batch);
+    const requiredRowCount = startRowIndex + plan.rows.length;
+    const additionalRowCount = Math.max(0, requiredRowCount - current.rows.length);
+    if (additionalRowCount) {
+      current.rows = contract.applyParserResults(current.rows, batch, Array.from({ length: additionalRowCount }, (_, index) => ({
+        rawText: '',
+        itemName: '',
+        quantity: null,
+        sourceLineNo: index + 1,
+        inputOwnership: 'USER'
+      })));
+    }
+
+    const identityRows = new Set();
+    let pastedCellCount = 0;
+    plan.rows.forEach((pasteRow, rowOffset) => {
+      const rowIndex = startRowIndex + rowOffset;
+      let row = contract.normalizeRow({
+        ...current.rows[rowIndex],
+        batchId: batch.batchId,
+        batchSequence: batch.sequence,
+        sourceLineNo: rowOffset + 1,
+        sourceLineKey: '',
+        intakeLineId: '',
+        sourceRegion: null,
+        rawText: pasteRow.rawText,
+        inputOwnership: 'USER'
+      }, batch.batchId);
+      pasteRow.cells.forEach(cell => {
+        const definition = definitionById.get(cell.fieldId);
+        if (!definition) return;
+        pastedCellCount += 1;
+        if (definition.custom) {
+          row.customValues = { ...(row.customValues || {}), [cell.fieldId]: cell.value };
+          return;
+        }
+        row = contract.markProductEdit(row, cell.fieldId, cell.value);
+        if (cell.fieldId === 'itemCode' || cell.fieldId === 'itemName') identityRows.add(rowIndex);
+      });
+      current.rows[rowIndex] = contract.normalizeRow(row, batch.batchId);
+    });
+    identityRows.forEach(rowIndex => {
+      current.rows[rowIndex] = matchGridPasteRow(current.rows[rowIndex]);
+    });
+    current.rows = contract.markDuplicatePossibilities(current.rows);
+    const firstRow = current.rows[startRowIndex];
+    modeUi().activeCellId = firstRow ? `${firstRow.rowId}|${startFieldId}` : '';
+    state.draft.ui.selectedRowId = firstRow?.rowId || '';
+    renderRows();
+    saveDraftNow();
+    const message = `${plan.rows.length.toLocaleString('ko-KR')}행 · ${pastedCellCount.toLocaleString('ko-KR')}셀을 입력했습니다.`;
+    if (plan.invalidCells.length || plan.ignoredColumnCount) {
+      const details = [
+        plan.invalidCells.length ? `숫자 확인 ${plan.invalidCells.length}셀` : '',
+        plan.ignoredColumnCount ? `범위 밖 ${plan.ignoredColumnCount}열 제외` : ''
+      ].filter(Boolean).join(' · ');
+      toast(`${message} ${details}`, 'warn');
+    } else {
+      toast(`${message}${plan.kind === 'HEADER' ? ' 필드명으로 열을 매칭했습니다.' : ''}`, 'success');
+    }
+    return true;
+  } catch (error) {
+    const snapshot = state.gridPasteUndo;
+    if (snapshot?.mode === state.draft.activeMode) {
+      current.rows = snapshot.rows.map(row => contract.normalizeRow(row));
+      current.batches = cloneGridValue(snapshot.batches);
+      state.selectedRowIds = new Set(snapshot.selectedRowIds);
+      modeUi().activeCellId = snapshot.activeCellId;
+    }
+    state.gridPasteUndo = null;
+    renderRows();
+    toast(error.message || 'Excel 범위를 붙여넣지 못했습니다.', 'error');
+    return false;
+  } finally {
+    state.applyingGridPaste = false;
+    syncGridPasteUndoButton();
+  }
 }
 
 function confirmUnitPriceReview(tr) {
@@ -2332,6 +2532,7 @@ function removeParserArtifactRows(current) {
 }
 
 function clearParserWorkspace() {
+  invalidateGridPasteUndo();
   const current = modeDraft();
   const parserBatchIds = new Set((current.batches || [])
     .filter(batch => batch.sourceType !== 'MANUAL')
@@ -2406,6 +2607,7 @@ function fallbackLines(rawText, batch) {
 }
 
 async function analyzeSource({ automatic = false } = {}) {
+  invalidateGridPasteUndo();
   if (state.busy) {
     if (automatic) scheduleAutoAnalysis(600);
     return;
@@ -2652,6 +2854,7 @@ async function analyzeSource({ automatic = false } = {}) {
 
 async function handleFile(file) {
   if (!file) return;
+  invalidateGridPasteUndo();
   state.pendingStructuredImport = null;
   try {
     updateMethod('excel');
@@ -2751,6 +2954,7 @@ async function persistSourceImageForMode(mode = state.draft.activeMode) {
 
 async function recognizeImage(file) {
   if (!file || !String(file.type || '').startsWith('image/')) return;
+  invalidateGridPasteUndo();
   const captureSequence = ++state.photoCaptureSequence;
   updateMethod('photo');
   let imageEvidence;
@@ -3029,6 +3233,55 @@ function tryMatchRow(row, changedField = '', { focusTarget = null } = {}) {
   const liveRow = modeDraft().rows.find(item => item.rowId === row.rowId) || row;
   if (openCandidates) openProductDialog(liveRow, { query, focusTarget, returnField: changedField });
   else if (focusTarget) focusGridTarget(focusTarget);
+}
+
+function trySearchProductRow(row, query = '', { focusTarget = null } = {}) {
+  const searchText = String(query || '').trim();
+  if (!row || !searchText) return;
+  invalidateGridPasteUndo();
+  const exact = exactProduct(searchText);
+  const candidates = exact ? [exact] : searchProductCatalog(searchText, commonMasterProducts(), 12);
+  if (candidates.length === 1) {
+    applyProduct(row, candidates[0], { forceIdentityFields: true });
+    modeDraft().rows = contract.markDuplicatePossibilities(modeDraft().rows);
+    renderRows({ restoreFocus: false });
+    saveDraftNow();
+    if (focusTarget) focusGridTarget(focusTarget);
+    return;
+  }
+  if (!candidates.length) {
+    toast('일치하는 상품을 찾지 못했습니다. 상품코드·품명·검색어를 확인하세요.', 'error');
+    gridInput(row.rowId, 'productSearch')?.focus();
+    return;
+  }
+  openProductDialog(row, { query: searchText, focusTarget, returnField: 'productSearch' });
+}
+
+function matchGridPasteRow(row) {
+  if (!row) return row;
+  const exact = exactProduct(row.itemCode) || exactProduct(row.itemName);
+  if (exact) {
+    applyProduct(row, exact, { forceIdentityFields: true });
+    return row;
+  }
+  const query = row.itemCode || row.itemName;
+  if (!query) {
+    row.candidateProducts = [];
+    row.matchStatus = 'UNRESOLVED';
+    row.reviewStatus = 'PENDING';
+    row.productIdentityStatus = 'UNRESOLVED';
+    return row;
+  }
+  const candidates = searchProductCatalog(query, commonMasterProducts(), 5);
+  if (candidates.length === 1) {
+    applyProduct(row, candidates[0], { forceIdentityFields: true });
+    return row;
+  }
+  row.candidateProducts = candidates;
+  row.matchStatus = candidates.length ? 'SIMILAR' : 'UNRESOLVED';
+  row.reviewStatus = 'PENDING';
+  row.productIdentityStatus = 'UNRESOLVED';
+  return row;
 }
 
 function openProductDialog(row, { query = '', focusTarget = null, returnField = '' } = {}) {
@@ -3439,6 +3692,7 @@ async function completeOrder() {
     next.header.warehouseName = current.header.warehouseName;
     next.header.transactionType = current.header.transactionType;
     state.draft.modes.order = next;
+    state.gridPasteUndo = null;
     state.sourceImages.order = null;
     state.selectedRowIds.clear();
     resetPhotoView();
@@ -3469,6 +3723,7 @@ function resetCurrentMode(requireConfirmation = true, successMessage = '새 입�
   fallback.header.warehouseName = current.header.warehouseName;
   fallback.header.transactionType = current.header.transactionType;
   state.draft.modes[state.draft.activeMode] = fallback;
+  state.gridPasteUndo = null;
   state.sourceImages[state.draft.activeMode] = null;
   state.selectedRowIds.clear();
   resetPhotoView();
@@ -3634,6 +3889,7 @@ photoResizer.addEventListener('pointerup', finishPhotoResize);
 photoResizer.addEventListener('pointercancel', finishPhotoResize);
 $('analyzeButton').addEventListener('click', () => analyzeSource({ automatic: false }));
 $('clearParserButton').addEventListener('click', clearParserWorkspace);
+$('undoGridPasteButton').addEventListener('click', undoGridPaste);
 $('addRowButton').addEventListener('click', () => {
   if (modeDraft().activeMethod !== 'photo') updateMethod('direct');
   addDirectRow();
@@ -3716,8 +3972,10 @@ document.querySelector('.document-fields').addEventListener('input', event => {
 });
 
 inputRows.addEventListener('input', event => {
+  invalidateGridPasteUndo();
   const targetRow = event.target.closest('[data-row-id]');
   if (targetRow?.dataset.defaultRow === 'true') materializeDefaultRow(targetRow);
+  if (event.target.closest('[data-product-search]')) return;
   const customInput = event.target.closest('[data-custom-row-field]');
   if (customInput) {
     const customRow = event.target.closest('[data-row-id]');
@@ -3750,7 +4008,7 @@ inputRows.addEventListener('input', event => {
   scheduleSave();
 });
 inputRows.addEventListener('keydown', event => {
-  const input = event.target.closest('[data-field], [data-custom-row-field]');
+  const input = event.target.closest('[data-product-search], [data-field], [data-custom-row-field]');
   const tr = event.target.closest('[data-row-id]');
   if (!input || !tr || event.isComposing) return;
   const field = gridFieldId(input);
@@ -3759,7 +4017,7 @@ inputRows.addEventListener('keydown', event => {
   if (tr.dataset.defaultRow === 'true' && input.value) materializeDefaultRow(tr);
   const rowId = tr.dataset.rowId;
   if (rowTab) {
-    const rowTarget = nextRowItemCodeTarget(rowId, event.shiftKey);
+    const rowTarget = nextRowEntryTarget(rowId, event.shiftKey);
     if (!rowTarget) return;
     event.preventDefault();
     focusGridTarget(rowTarget);
@@ -3774,6 +4032,10 @@ inputRows.addEventListener('keydown', event => {
     return;
   }
   const row = modeDraft().rows.find(item => item.rowId === tr.dataset.rowId);
+  if (row && field === 'productSearch') {
+    trySearchProductRow(row, input.value, { focusTarget });
+    return;
+  }
   if (row && ['itemCode', 'itemName'].includes(field)) {
     input.dataset.matchSubmitted = 'true';
     tryMatchRow(row, field, { focusTarget });
@@ -3782,7 +4044,7 @@ inputRows.addEventListener('keydown', event => {
   focusGridTarget(focusTarget);
 });
 inputRows.addEventListener('focusin', event => {
-  const input = event.target.closest('[data-field], [data-custom-row-field]');
+  const input = event.target.closest('[data-product-search], [data-field], [data-custom-row-field]');
   const tr = event.target.closest('[data-row-id]');
   if (!input || !tr) return;
   window.requestAnimationFrame(() => {
@@ -3817,7 +4079,7 @@ inputRows.addEventListener('change', event => {
 });
 inputRows.addEventListener('click', event => {
   const tr = event.target.closest('[data-row-id]');
-  const editableInput = event.target.closest('[data-field], [data-custom-row-field]');
+  const editableInput = event.target.closest('[data-product-search], [data-field], [data-custom-row-field]');
   if (tr && !editableInput && modeDraft().activeMethod === 'photo') {
     const row = modeDraft().rows.find(item => item.rowId === tr.dataset.rowId);
     state.draft.ui.selectedRowId = tr.dataset.rowId;
@@ -3825,6 +4087,7 @@ inputRows.addEventListener('click', event => {
   }
   const remove = event.target.closest('[data-remove-row]');
   if (remove) {
+    invalidateGridPasteUndo();
     state.selectedRowIds.delete(remove.dataset.removeRow);
     modeDraft().rows = modeDraft().rows.filter(row => row.rowId !== remove.dataset.removeRow);
     modeDraft().rows = contract.markDuplicatePossibilities(modeDraft().rows);
@@ -3841,6 +4104,23 @@ $('selectAllRows').addEventListener('change', event => {
   renderRows({ restoreFocus: false });
 });
 $('deleteSelectedRows').addEventListener('click', deleteSelectedGridRows);
+
+inputRows.addEventListener('paste', event => {
+  const searchInput = event.target.closest('[data-product-search]');
+  if (searchInput) {
+    event.preventDefault();
+    event.stopPropagation();
+    toast('상품 검색 열에는 붙여넣을 수 없습니다. 직접 검색어를 입력하세요.', 'error');
+    return;
+  }
+  const input = event.target.closest('[data-field], [data-custom-row-field]');
+  const tr = event.target.closest('[data-row-id]');
+  const clipboardText = event.clipboardData?.getData('text/plain');
+  if (!input || !tr || clipboardText === undefined || clipboardText === '') return;
+  event.preventDefault();
+  event.stopPropagation();
+  applyGridPaste(clipboardText, tr.dataset.rowId, gridFieldId(input));
+});
 
 document.addEventListener('paste', event => {
   const image = [...(event.clipboardData?.items || [])]

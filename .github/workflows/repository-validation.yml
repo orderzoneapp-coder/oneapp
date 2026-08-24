@@ -44,6 +44,9 @@ jobs:
       - name: Test SmartInput structured spreadsheet field mapping
         run: node scripts/test-smartinput-structured-sheet-parser.mjs
 
+      - name: Test SmartInput Excel grid clipboard input
+        run: node scripts/test-smartinput-grid-clipboard.mjs
+
       - name: Test SmartInput OCR arithmetic and total validation
         run: node scripts/test-smartinput-ocr.mjs
 
