@@ -99,8 +99,10 @@ export function parseStructuredSheet(matrix = [], {
   const schemaColumn = firstRow.indexOf('schemaVersion');
   const isPurchaseMeta = cellText(sheetName) === '_NEXUS_META'
     || (schemaColumn >= 0 && matrix.slice(1, 6).some(row => cellText(row?.[schemaColumn]) === 'ORDERQ_PURCHASE_META_V2'));
-  if (isPurchaseMeta) {
-    return { structured: false, excluded: true, exclusionReason: 'PURCHASE_META', rawText, headerRowIndex: -1, headerRowNumber: 0, score: 0, mappings: [], rows: [], invalidCells: [] };
+  const isSalesMeta = cellText(sheetName) === '_NEXUS_SALES_META'
+    || (schemaColumn >= 0 && matrix.slice(1, 6).some(row => cellText(row?.[schemaColumn]) === 'ORDERQ_SALES_META_V1'));
+  if (isPurchaseMeta || isSalesMeta) {
+    return { structured: false, excluded: true, exclusionReason: isSalesMeta ? 'SALES_META' : 'PURCHASE_META', rawText, headerRowIndex: -1, headerRowNumber: 0, score: 0, mappings: [], rows: [], invalidCells: [] };
   }
   const header = detectStructuredHeader(matrix, fieldDefinitions, { maxScanRows });
   if (!header) {

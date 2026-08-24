@@ -19,12 +19,18 @@ import {
   stableDirectDocumentKey,
   detachOrderQPurchaseLink
 } from './purchase-stage3.js?v=0.1.0';
+import { isSalesMetaSheet, joinSalesMeta, readSalesMeta } from './sale-stage4.js?v=0.1.0';
 import {
   loadPurchaseStage3Capability,
   postPurchaseGroup,
   SMARTINPUT_PURCHASE_ACTOR_ID,
   validatePurchaseGroup
 } from './purchase-official-stage3.js?v=0.1.0';
+import {
+  loadSaleStage4Capability,
+  postSaleGroup,
+  SMARTINPUT_SALE_ACTOR_ID
+} from './sale-official-stage4.js?v=0.1.0';
 import {
   buildMinimumUploadMatrix,
   buildOrderGroupPayload,
@@ -103,6 +109,7 @@ const state = {
   gridPasteUndo: null,
   applyingGridPaste: false
   ,purchaseCapability: { ready: false, code: 'ORDERQ_PURCHASE_STAGE3_CAPABILITY_UNAVAILABLE', detail: 'loading' }
+  ,saleCapability: { ready: false, code: 'ORDERQ_SALE_STAGE4_CAPABILITY_UNAVAILABLE', detail: 'loading' }
 };
 
 const ACTIVITY_LABELS = {
@@ -2336,21 +2343,23 @@ function updateSummaries() {
 function renderDelivery() {
   const isOrder = state.draft.activeMode === 'order';
   const isPurchase = state.draft.activeMode === 'purchase';
+  const isSale = state.draft.activeMode === 'sale';
   const isEstimate = state.draft.activeMode === 'estimate';
   const delivery = modeDraft().delivery;
   const lastDelivery = isOrder ? state.draft.ui.lastDelivery : null;
-  $('deliveryTarget').textContent = isOrder ? '공통 주문서 원장' : (isEstimate ? '저장 견적서' : (isPurchase ? '공식 구매전표 원장' : `${contract.MODES[state.draft.activeMode].label} 전달 계약 준비 중`));
+  $('deliveryTarget').textContent = isOrder ? '공통 주문서 원장' : (isEstimate ? '저장 견적서' : (isPurchase ? '공식 구매전표 원장' : (isSale ? '공식 판매전표 원장' : `${contract.MODES[state.draft.activeMode].label} 전달 계약 준비 중`)));
   $('deliveryDescription').textContent = isOrder
     ? 'ORDER Q vNext 저장소에 먼저 기록합니다.'
     : (isEstimate ? '견적서 저장·불러오기·삭제를 관리합니다.' : (isPurchase
       ? (state.purchaseCapability.ready ? '중앙 공식 구매전표로 저장합니다.' : '중앙 배포 계약 확인 후 활성화됩니다.')
-      : '확정된 DataOps 연결만 이후 단계에서 활성화합니다.'));
+      : (isSale ? (state.saleCapability.ready ? '중앙 공식 판매전표로 저장합니다.' : '중앙 배포 계약 확인 후 활성화됩니다.')
+        : '확정된 DataOps 연결만 이후 단계에서 활성화합니다.')));
   const visibleDelivery = delivery.status === 'SAVED' ? delivery : lastDelivery;
   $('deliveryState').textContent = visibleDelivery
     ? `최근 ${visibleDelivery.orderNo || visibleDelivery.targetRecordId || '저장 완료'}${visibleDelivery.deliveredAt ? ` · ${new Date(visibleDelivery.deliveredAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}` : ''}`
     : '전달 전';
   document.querySelector('.delivery-state span').style.background = visibleDelivery ? '#5eead4' : '#fbbf24';
-  $('completeButton').disabled = (!isOrder && !isEstimate && !(isPurchase && state.purchaseCapability.ready)) || state.busy;
+  $('completeButton').disabled = (!isOrder && !isEstimate && !(isPurchase && state.purchaseCapability.ready) && !(isSale && state.saleCapability.ready)) || state.busy;
   $('completeButton').hidden = isEstimate;
   $('completeButton').textContent = '입력 완료';
   if (visibleDelivery?.targetRecordId) {
@@ -3122,11 +3131,16 @@ async function handleFile(file) {
       let firstReadable = null;
       let structured = null;
       let purchaseMetaRows = null;
+      let salesMetaRows = null;
       workbook.SheetNames.forEach(sheetName => {
         if (!workbook.Sheets[sheetName]?.['!ref']) return;
         const matrix = window.XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, raw: false, defval: '', blankrows: true });
         if (isPurchaseMetaSheet(sheetName, matrix)) {
           if (state.draft.activeMode === 'purchase') purchaseMetaRows = readPurchaseMeta(matrix);
+          return;
+        }
+        if (isSalesMetaSheet(sheetName, matrix)) {
+          if (state.draft.activeMode === 'sale') salesMetaRows = readSalesMeta(matrix);
           return;
         }
         const parsed = parseStructuredSheet(matrix, {
@@ -3170,6 +3184,14 @@ async function handleFile(file) {
             }),
             metaStatus: 'DIRECT_NO_META'
           }))
+        };
+      } else if (structured && state.draft.activeMode === 'sale' && salesMetaRows) {
+        structured = {
+          ...structured,
+          rows: joinSalesMeta({ visibleSheetName: structured.sheetName,
+            visibleRows: structured.rows.map(row => ({ ...row, directOriginSystem: 'SMARTINPUT_FILE', directOriginTransactionId: fileDigest })),
+            metaRows: salesMetaRows }),
+          salesMetaStatus: 'VERIFIED'
         };
       }
       rawText = selected.rawText;
@@ -4000,7 +4022,67 @@ async function saveEstimateDocument(catalogName) {
 
 async function completeOrder() {
   if (state.draft.activeMode === 'purchase') return completePurchaseOfficial();
+  if (state.draft.activeMode === 'sale') return completeSaleOfficial();
   return completeOrderLegacy();
+}
+
+async function completeSaleOfficial() {
+  const current = modeDraft();
+  if (!state.saleCapability.ready) {
+    setAppStatus('공식 판매전표 중앙 배포 계약을 확인할 수 없어 저장이 비활성화되었습니다.', 'warn');
+    return toast('ORDERQ_SALE_STAGE4_CAPABILITY_UNAVAILABLE', 'error');
+  }
+  applyWarehouseMatch();
+  resolveStage1RowReferences(current.rows);
+  const groups = groupVoucherRows('sale', current.rows, current.header);
+  const results = [];
+  state.busy = true;
+  renderDelivery();
+  try {
+    for (const group of groups) {
+      try {
+        const producer = current.activeMethod === 'paste' ? 'SMARTINPUT_CLIPBOARD' : 'SMARTINPUT_MANUAL';
+        const customerRevision = customerId => Number(state.customers.find(row => String(row.customerId) === String(customerId))?.revision || 0);
+        const hydratedGroup = { ...group,
+          salesCustomerRevision: Number(group.salesCustomerRevision || group.rows?.[0]?.salesCustomerRevision || customerRevision(group.salesCustomerId)),
+          deliveryCustomerRevision: Number(group.deliveryCustomerRevision || group.rows?.[0]?.deliveryCustomerRevision || customerRevision(group.deliveryCustomerId)),
+          billingCustomerRevision: Number(group.billingCustomerRevision || group.rows?.[0]?.billingCustomerRevision || customerRevision(group.billingCustomerId)),
+          rows: group.rows.map(row => {
+            const product = state.products.find(item => String(item.productId || item.itemCode) === String(row.productId || row.itemCode));
+            const warehouse = (state.warehouseCatalog.warehouses || []).find(item => String(item.warehouseId || item.warehouseCode) === String(row.warehouseId || group.warehouseId || row.rowWarehouseCode));
+            const sourceType = String(row.sourceType || group.sourceType || 'DIRECT').toUpperCase();
+            return { ...row, sourceType, orderLinkMode: sourceType === 'ORDER_Q' ? 'ORDER_Q' : 'DIRECT',
+              productId: row.productId || product?.productId || '', productMasterRevision: Number(row.productMasterRevision || product?.revision || 0),
+              warehouseId: row.warehouseId || group.warehouseId || warehouse?.warehouseId || '', warehouseMasterRevision: Number(row.warehouseMasterRevision || warehouse?.revision || 0),
+              actualToBaseFactor: Number(row.actualToBaseFactor ?? row.conversionFactor ?? 1),
+              actualToRecognizedFactor: sourceType === 'ORDER_Q' ? Number(row.actualToRecognizedFactor ?? 1) : 0 };
+          }) };
+        const result = await postSaleGroup(hydratedGroup, { actor: SMARTINPUT_SALE_ACTOR_ID, originSystem: producer,
+          manualSessionId: current.documentId, occurredAt: new Date().toISOString() });
+        const documentId = result.salesDocumentId || result.document?.salesDocumentId || '';
+        const commandId = result.commandId || '';
+        current.saleSubmissions = (current.saleSubmissions || []).filter(pointer => pointer.voucherGroupKey !== group.voucherGroupKey);
+        current.saleSubmissions.push({ salesDocumentId: documentId, commandId,
+          state: result.projectionPending ? 'PROJECTION_PENDING' : 'LOCAL_PROJECTED',
+          receiptKey: commandId ? `centralProjection:${commandId}` : '', voucherGroupKey: group.voucherGroupKey, lastErrorCode: '' });
+        results.push({ ok: true, group, result });
+      } catch (error) { results.push({ ok: false, group, error }); }
+    }
+    const failed = results.filter(row => !row.ok); const succeeded = results.filter(row => row.ok);
+    if (failed.length) {
+      const failedKeys = new Set(failed.map(row => row.group.voucherGroupKey));
+      current.rows = current.rows.filter(row => failedKeys.has(groupVoucherRows('sale', [row], current.header)[0]?.voucherGroupKey));
+      current.voucherGroups = failed.map(row => row.group);
+      current.delivery = { status: succeeded.length ? 'PARTIAL' : 'FAILED', targetId: 'official-sale-voucher', targetRecordId: '', deliveredAt: '' };
+      saveDraftNow(); renderMode();
+      setAppStatus(`판매 ${succeeded.length}건 저장 완료 · 실패 ${failed.length}건은 입력표에 유지됩니다.`, 'warn');
+      return toast(failed[0].error?.message || '판매전표 저장 실패', 'error');
+    }
+    current.rows = []; current.voucherGroups = [];
+    current.delivery = { status: 'SAVED', targetId: 'official-sale-voucher', targetRecordId: '', deliveredAt: new Date().toISOString() };
+    saveDraftNow(); renderMode(); setAppStatus(`공식 판매전표 ${succeeded.length}건 저장 완료`);
+    toast(`판매전표 ${succeeded.length}건을 저장했습니다.`, 'success');
+  } finally { state.busy = false; renderDelivery(); }
 }
 
 async function completePurchaseOfficial() {
@@ -4418,7 +4500,8 @@ async function hydrateReferences() {
     withTimeout(loadProductCatalog(), 7000, '상품 기준자료 로딩 시간 초과'),
     withTimeout(loadWarehouseCatalog(), 5000, '창고 기준자료 로딩 시간 초과'),
     withTimeout(loadSmartInputData(), 5000, '스마트입력 설정 로딩 시간 초과'),
-    withTimeout(loadPurchaseStage3Capability(), 5000, '구매 저장 계약 확인 시간 초과')
+    withTimeout(loadPurchaseStage3Capability(), 5000, '구매 저장 계약 확인 시간 초과'),
+    withTimeout(loadSaleStage4Capability(), 5000, '판매 저장 계약 확인 시간 초과')
   ]);
   const loadedCustomers = results[0].status === 'fulfilled' ? results[0].value : [];
   if (results[1].status === 'fulfilled') {
@@ -4446,6 +4529,9 @@ async function hydrateReferences() {
   state.purchaseCapability = results[4].status === 'fulfilled'
     ? results[4].value
     : { ready: false, code: 'ORDERQ_PURCHASE_STAGE3_CAPABILITY_UNAVAILABLE', detail: results[4].reason?.message || 'ping failed' };
+  state.saleCapability = results[5].status === 'fulfilled'
+    ? results[5].value
+    : { ready: false, code: 'ORDERQ_SALE_STAGE4_CAPABILITY_UNAVAILABLE', detail: results[5].reason?.message || 'ping failed' };
   state.customers = normalizedCustomerCandidates(loadedCustomers);
   const referenceSummary = state.catalogStatus === 'READY'
     ? `상품 준비 · 공통 ${Number(state.catalogSummary.commonCount || 0).toLocaleString('ko-KR')}건 · ORDER Q ${Number(state.catalogSummary.orderQCount || 0).toLocaleString('ko-KR')}건 · 거래처 ${state.customers.length.toLocaleString('ko-KR')}건`
