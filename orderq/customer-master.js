@@ -8,9 +8,9 @@ import {
   openOrderQDb,
   requestToPromise,
   transactionDone
-} from './orderq-db.js?v=0.16.0';
+} from './orderq-db.js?v=0.17.0';
 import { getCloudUrl } from './orderq-cloud-adapter.js?v=0.11.0';
-import { pullRemote, pushPending } from './orderq-sync-engine.js?v=0.18.0';
+import { pullRemote, pushPending } from './orderq-sync-engine.js?v=0.18.1';
 import { createCustomerMasterSyncCoordinator } from './customer-master-sync.js?v=0.1.0';
 import { createSyncIdentity } from './sync-identity.js?v=0.1.0';
 

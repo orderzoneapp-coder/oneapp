@@ -99,7 +99,7 @@ assert.match(ui, /openErpImportButton[\s\S]*openFilePicker\(elements\.erpFile\)/
 assert.match(ui, /openShopImportButton[\s\S]*openFilePicker\(elements\.shopFile\)/, 'SHOP upload must open the file picker directly');
 assert.match(ui, /input\.value = ''/, 'Excel input must reset so the same file can be selected again');
 assert.match(ui, /findHeaderRow[\s\S]*아이디와 이름\(거래처명\) 열을 찾을 수 없습니다/, 'Source import must validate ERP and SHOP headers');
-assert.match(service, /orderq-db\.js\?v=0\.16\.0/, 'Customer Master must load the v11 DB module URL');
+assert.match(service, /orderq-db\.js\?v=0\.17\.0/, 'Customer Master must load the v12 DB module URL');
 assert.match(css, /\.cm-viewport/);
 assert.match(html, /data-customer-summary-filter="ACTIVE_ALL"/);
 assert.match(html, /data-customer-summary-filter="COMPLETE"[\s\S]*정보 완료/);
