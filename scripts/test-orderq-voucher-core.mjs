@@ -1,0 +1,16 @@
+import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
+import { canonicalSha256, planOfficialVoucherCommand } from '../orderq/official-voucher-core.js';
+await import('./test-orderq-stage2-official-voucher-core.mjs');
+const canonical={a:'가',b:2};
+assert.equal(canonicalSha256({b:2,a:'가'}),crypto.createHash('sha256').update(JSON.stringify(canonical)).digest('hex'));
+const doc={purchaseDocumentId:'SNAP',supplierCustomerId:'SUP',warehouseId:'W',documentContract:'VOUCHER_CORE_V1',sourceDocumentKey:'SNAP-SRC',sourceType:'DIRECT',businessStatus:'DRAFT',status:'DRAFT',revision:1};
+const lines=[1,2].map(index=>({purchaseLineId:`SPL${index}`,lineIdentityId:`LI${index}`,sourceLineKey:String(index),productId:`P${index}`,warehouseId:'W',quantity:index,baseQuantity:index,unitPrice:10}));
+const post=planOfficialVoucherCommand({document:doc,lines,command:{commandType:'POST_PURCHASE',commandContract:'VOUCHER_CORE_V1',commandId:'SNAP-1',idempotencyKey:'SNAP-1',expectedRevision:1,actor:'A',occurredAt:'2026-08-25T00:00:00Z',document:doc,lines}});
+const correct=planOfficialVoucherCommand({document:post.document,lines:post.lines,movements:post.movements,entries:post.entries,command:{commandType:'CORRECT_PURCHASE',commandContract:'VOUCHER_CORE_V1',commandId:'SNAP-2',idempotencyKey:'SNAP-2',expectedRevision:2,actor:'A',occurredAt:'2026-08-25T01:00:00Z',reason:'행 삭제',document:post.document,lines:[post.lines[0]]}});
+assert.equal(correct.voucherEvent.afterSnapshot.lines.find(row=>row.lineIdentityId==='LI2').lineStatus,'DELETED');
+assert.equal(correct.voucherEvent.afterDigest,canonicalSha256(correct.voucherEvent.afterSnapshot));
+assert.equal(correct.voucherEvent.afterDigest.length,64);
+const oversized={...lines[0],purchaseLineId:'BIG',lineIdentityId:'BIG-LI',sourceLineKey:'X'.repeat(100000)};
+assert.throws(()=>planOfficialVoucherCommand({document:doc,lines:[oversized],command:{commandType:'POST_PURCHASE',commandContract:'VOUCHER_CORE_V1',commandId:'BIG-C',idempotencyKey:'BIG-C',expectedRevision:1,actor:'A',occurredAt:'2026-08-25T00:00:00Z',document:doc,lines:[oversized]}}),/ORDERQ_VOUCHER_PAYLOAD_TOO_LARGE/);
+console.log('ORDER Q voucher core tests passed');

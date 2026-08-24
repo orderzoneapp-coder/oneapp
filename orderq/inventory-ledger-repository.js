@@ -15,6 +15,7 @@ import {
   normalizeInventoryMovementDraft,
   sameMovementBusinessContent,
   validateInventoryReversal,
+  validateVoucherCoreReversal,
   validateInventoryTransferDrafts
 } from './inventory-ledger.js?v=0.8.0';
 
@@ -28,7 +29,7 @@ function validStoredSequence(value) {
   return Number.isInteger(sequence) && sequence >= 0 ? sequence : 0;
 }
 
-export async function appendInventoryMovementsInTransaction({ tx, actor, drafts }) {
+export async function appendInventoryMovementsInTransaction({ tx, actor, drafts, allocateLedgerSequence = true }) {
   const movementStore = tx.objectStore(STORE.INVENTORY_MOVEMENTS);
   const metaStore = tx.objectStore(STORE.META);
   const meta = await requestToPromise(metaStore.get(INVENTORY_LEDGER_SEQUENCE_META_KEY));
@@ -59,12 +60,26 @@ export async function appendInventoryMovementsInTransaction({ tx, actor, drafts 
         throw new Error(`ORDERQ_MOVEMENT_REVERSAL_EXCEEDS_ORIGINAL:${draft.reversalOf}`);
       }
     }
-    sequence += 1;
+    if (draft.movementType.endsWith('_REVERSAL') || (draft.movementType.endsWith('_CORRECTION') && draft.effectKind === 'REVERSE_OLD')) {
+      const original = await requestToPromise(movementStore.get(draft.reversalOf));
+      validateVoucherCoreReversal(original, draft);
+      const allRows = await requestToPromise(movementStore.getAll());
+      const reversedQuantity = allRows
+        .filter(row => (String(row.movementType || '').endsWith('_REVERSAL') || row.effectKind === 'REVERSE_OLD') && row.reversalOf === draft.reversalOf)
+        .reduce((sum, row) => sum + Number(row.signedBaseQuantity || 0), 0);
+      const targetQuantity = -Number(original.signedBaseQuantity || 0);
+      const cumulativeQuantity = reversedQuantity + draft.signedBaseQuantity;
+      const exceedsOriginal = targetQuantity > 0
+        ? cumulativeQuantity > targetQuantity + 1e-9
+        : cumulativeQuantity < targetQuantity - 1e-9;
+      if (exceedsOriginal) throw new Error(`ORDERQ_VOUCHER_MOVEMENT_REVERSAL_EXCEEDS_ORIGINAL:${draft.reversalOf}`);
+    }
+    if (allocateLedgerSequence) sequence += 1;
     const timestamp = nowIso();
     const movement = {
       ...draft,
       movementId: draft.movementId || newId('IM'),
-      ledgerSequence: sequence,
+      ...(allocateLedgerSequence ? { ledgerSequence: sequence } : {}),
       occurredAt: draft.occurredAt || timestamp,
       postedAt: timestamp,
       createdAt: timestamp,
@@ -74,12 +89,12 @@ export async function appendInventoryMovementsInTransaction({ tx, actor, drafts 
     results.push({ duplicate: false, movement });
   }
 
-  metaStore.put({
-    key: INVENTORY_LEDGER_SEQUENCE_META_KEY,
-    value: sequence,
-    updatedAt: nowIso(),
-    updatedBy: actor.actorId
-  });
+  if (allocateLedgerSequence) metaStore.put({
+      key: INVENTORY_LEDGER_SEQUENCE_META_KEY,
+      value: sequence,
+      updatedAt: nowIso(),
+      updatedBy: actor.actorId
+    });
   return results;
 }
 

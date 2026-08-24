@@ -1,6 +1,18 @@
 export const INVENTORY_MOVEMENT_TYPE = Object.freeze({
   PURCHASE_RECEIPT: 'PURCHASE_RECEIPT',
   SALE_ISSUE: 'SALE_ISSUE',
+  DIRECT_PURCHASE_POST: 'DIRECT_PURCHASE_POST',
+  DIRECT_SALE_POST: 'DIRECT_SALE_POST',
+  DIRECT_PURCHASE_CORRECTION: 'DIRECT_PURCHASE_CORRECTION',
+  DIRECT_PURCHASE_REVERSAL: 'DIRECT_PURCHASE_REVERSAL',
+  ORDER_Q_PURCHASE_POST: 'ORDER_Q_PURCHASE_POST',
+  ORDER_Q_PURCHASE_CORRECTION: 'ORDER_Q_PURCHASE_CORRECTION',
+  ORDER_Q_PURCHASE_REVERSAL: 'ORDER_Q_PURCHASE_REVERSAL',
+  DIRECT_SALE_CORRECTION: 'DIRECT_SALE_CORRECTION',
+  DIRECT_SALE_REVERSAL: 'DIRECT_SALE_REVERSAL',
+  ORDER_Q_SALE_POST: 'ORDER_Q_SALE_POST',
+  ORDER_Q_SALE_CORRECTION: 'ORDER_Q_SALE_CORRECTION',
+  ORDER_Q_SALE_REVERSAL: 'ORDER_Q_SALE_REVERSAL',
   TRANSFER_OUT: 'TRANSFER_OUT',
   TRANSFER_IN: 'TRANSFER_IN',
   ADJUSTMENT: 'ADJUSTMENT',
@@ -74,20 +86,27 @@ export function normalizeInventoryMovementDraft(source = {}) {
   if (!productId) throw new Error('ORDERQ_MOVEMENT_PRODUCT_REQUIRED');
   if (!warehouseId) throw new Error('ORDERQ_MOVEMENT_WAREHOUSE_REQUIRED');
   const signedBaseQuantity = finiteNumber(source.signedBaseQuantity, 'ORDERQ_MOVEMENT_QUANTITY_INVALID');
-  if (movementType === INVENTORY_MOVEMENT_TYPE.PURCHASE_RECEIPT && signedBaseQuantity < 0) {
+  // Official voucher movements intentionally preserve 0 and signed quantities.
+  // Legacy receipt/issue direction validation below remains unchanged.
+  const directOfficialMovement = movementType.startsWith('DIRECT_PURCHASE_')
+    || movementType.startsWith('DIRECT_SALE_')
+    || movementType.startsWith('ORDER_Q_PURCHASE_')
+    || movementType.startsWith('ORDER_Q_SALE_');
+  if (!directOfficialMovement && movementType === INVENTORY_MOVEMENT_TYPE.PURCHASE_RECEIPT && signedBaseQuantity < 0) {
     throw new Error('ORDERQ_PURCHASE_MOVEMENT_MUST_BE_POSITIVE');
   }
-  if ([INVENTORY_MOVEMENT_TYPE.SALE_ISSUE, INVENTORY_MOVEMENT_TYPE.TRANSFER_OUT].includes(movementType) && signedBaseQuantity > 0) {
+  if (!directOfficialMovement && [INVENTORY_MOVEMENT_TYPE.SALE_ISSUE, INVENTORY_MOVEMENT_TYPE.TRANSFER_OUT].includes(movementType) && signedBaseQuantity > 0) {
     throw new Error(`ORDERQ_OUTBOUND_MOVEMENT_MUST_BE_NEGATIVE:${movementType}`);
   }
   if (movementType === INVENTORY_MOVEMENT_TYPE.TRANSFER_IN && signedBaseQuantity < 0) {
     throw new Error('ORDERQ_TRANSFER_IN_MOVEMENT_MUST_BE_POSITIVE');
   }
   const reversalOf = text(source.reversalOf);
-  if (movementType === INVENTORY_MOVEMENT_TYPE.REVERSAL && !reversalOf) {
+  const officialReversalEffect = directOfficialMovement && text(source.effectKind).toUpperCase() === 'REVERSE_OLD';
+  if ((movementType === INVENTORY_MOVEMENT_TYPE.REVERSAL || movementType.endsWith('_REVERSAL') || officialReversalEffect) && !reversalOf) {
     throw new Error('ORDERQ_MOVEMENT_REVERSAL_SOURCE_REQUIRED');
   }
-  if (movementType !== INVENTORY_MOVEMENT_TYPE.REVERSAL && reversalOf) {
+  if (movementType !== INVENTORY_MOVEMENT_TYPE.REVERSAL && !movementType.endsWith('_REVERSAL') && !officialReversalEffect && reversalOf) {
     throw new Error('ORDERQ_MOVEMENT_REVERSAL_TYPE_REQUIRED');
   }
   const normalized = {
@@ -106,7 +125,15 @@ export function normalizeInventoryMovementDraft(source = {}) {
     transferId: text(source.transferId),
     occurredAt: text(source.occurredAt),
     reason: source.reason === undefined || source.reason === null ? '' : String(source.reason),
-    reversalOf
+    reversalOf,
+    commandId: text(source.commandId),
+    sourceDocumentRevision: Number(source.sourceDocumentRevision || 0),
+    lineIdentityId: text(source.lineIdentityId),
+    effectKind: text(source.effectKind).toUpperCase(),
+    effectOrdinal: Number(source.effectOrdinal || 0),
+    effectKey: text(source.effectKey),
+    officialCommandType: text(source.officialCommandType).toUpperCase(),
+    officialCommandProofRequired: source.officialCommandProofRequired === true
   };
   normalized.idempotencyKey = text(source.idempotencyKey) || buildMovementIdempotencyKey(normalized);
   return normalized;
@@ -130,6 +157,14 @@ export function movementBusinessContent(source = {}) {
     occurredAt: movement.occurredAt,
     reason: movement.reason,
     reversalOf: movement.reversalOf,
+    commandId: movement.commandId,
+    sourceDocumentRevision: movement.sourceDocumentRevision,
+    lineIdentityId: movement.lineIdentityId,
+    effectKind: movement.effectKind,
+    effectOrdinal: movement.effectOrdinal,
+    effectKey: movement.effectKey,
+    officialCommandType: movement.officialCommandType,
+    officialCommandProofRequired: movement.officialCommandProofRequired,
     idempotencyKey: movement.idempotencyKey
   };
 }
@@ -173,6 +208,41 @@ export function validateInventoryReversal(original, reversal) {
   if (Math.abs(reversalQuantity) > Math.abs(originalQuantity) + 1e-9) {
     throw new Error('ORDERQ_REVERSAL_QUANTITY_EXCEEDS_ORIGINAL');
   }
+  return normalized;
+}
+
+export function validateVoucherCoreReversal(original, reversal) {
+  if (!original) throw new Error('ORDERQ_VOUCHER_REVERSAL_ORIGINAL_NOT_FOUND');
+  const normalized = normalizeInventoryMovementDraft(reversal);
+  if (!normalized.movementType.endsWith('_REVERSAL')
+    && !(normalized.movementType.endsWith('_CORRECTION') && normalized.effectKind === 'REVERSE_OLD')) {
+    throw new Error('ORDERQ_VOUCHER_REVERSAL_TYPE_REQUIRED');
+  }
+  if (normalized.reversalOf !== text(original.movementId)) throw new Error('ORDERQ_VOUCHER_REVERSAL_SOURCE_MISMATCH');
+  if (normalized.productId !== text(original.productId) || normalized.warehouseId !== text(original.warehouseId)) {
+    throw new Error('ORDERQ_VOUCHER_REVERSAL_INVENTORY_KEY_MISMATCH');
+  }
+  if (original.officialCommandProofRequired !== true || !text(original.commandId)
+    || !text(original.sourceDocumentId) || !text(original.sourceDocumentType).match(/^(DIRECT|ORDER_Q)_(PURCHASE|SALE)$/)
+    || !text(original.officialCommandType).match(/^(POST|CORRECT)_(PURCHASE|SALE)$/)) {
+    throw new Error('ORDERQ_VOUCHER_REVERSAL_ORIGINAL_PROOF_INVALID');
+  }
+  const originalKind = text(original.sourceDocumentType).split('_').at(-1);
+  const commandProofValid = normalized.movementType.endsWith('_REVERSAL')
+    ? normalized.officialCommandType.startsWith('REVERSE_')
+    : normalized.officialCommandType.startsWith('CORRECT_');
+  if (!normalized.sourceDocumentType.endsWith(`_${originalKind}`)
+    || normalized.officialCommandProofRequired !== true
+    || !normalized.commandId || !commandProofValid) {
+    throw new Error('ORDERQ_VOUCHER_REVERSAL_COMMAND_PROOF_INVALID');
+  }
+  const originalQuantity = Number(original.signedBaseQuantity);
+  const reversalQuantity = Number(normalized.signedBaseQuantity);
+  if (originalQuantity === 0 && reversalQuantity === 0) return normalized;
+  if (!originalQuantity || !reversalQuantity || Math.sign(reversalQuantity) === Math.sign(originalQuantity)) {
+    throw new Error('ORDERQ_VOUCHER_REVERSAL_QUANTITY_MUST_BE_OPPOSITE');
+  }
+  if (Math.abs(reversalQuantity) > Math.abs(originalQuantity) + 1e-9) throw new Error('ORDERQ_VOUCHER_REVERSAL_EXCEEDS_ORIGINAL');
   return normalized;
 }
 

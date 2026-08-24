@@ -12,11 +12,12 @@ import {
   V10_STORE,
   V10_STORE_DEFINITIONS
 } from './orderq-v10-contracts.js?v=0.14.0';
+import { V11_STORE, V11_STORE_DEFINITIONS } from './orderq-v11-contracts.js?v=0.16.0';
 import {
   ORDERQ_DB_VERSION,
-  V11_STORE,
-  V11_STORE_DEFINITIONS
-} from './orderq-v11-contracts.js?v=0.16.0';
+  V12_STORE,
+  V12_STORE_DEFINITIONS
+} from './orderq-v12-contracts.js?v=0.17.0';
 import { adminTestDatabaseName } from './admin-test-runtime.js?v=0.10.2';
 
 function databaseNameForRuntime() {
@@ -43,6 +44,9 @@ export const STORE = Object.freeze({
   CUSTOMER_SOURCE_LINK_EVENTS: V10_STORE.CUSTOMER_SOURCE_LINK_EVENTS,
   CUSTOMER_HEADER_MAPPINGS: V11_STORE.CUSTOMER_HEADER_MAPPINGS,
   CUSTOMER_USER_FIELD_DEFINITIONS: V11_STORE.CUSTOMER_USER_FIELD_DEFINITIONS,
+  VOUCHER_EVENTS: V12_STORE.VOUCHER_EVENTS,
+  RECEIVABLE_ENTRIES: V12_STORE.RECEIVABLE_ENTRIES,
+  PAYABLE_ENTRIES: V12_STORE.PAYABLE_ENTRIES,
   PRODUCT_MAPPINGS: 'productMappings',
   UNIT_MAPPINGS: 'unitMappings',
   RAW_INPUTS: 'rawInputs',
@@ -255,6 +259,52 @@ export function upgradeOrderQDbSchema(db, transaction, oldVersion = 0) {
 
   const metaStore = ensureStore(STORE.META, { keyPath: 'key' });
 
+  if (oldVersion < 12) {
+    // inventoryMovements is a v7 store.  A fresh (or pre-v7) database reaches
+    // this block before the historical v7 migration below, so create the v7
+    // stores first.  ensureStore/ensureIndex make the later v7 block harmless.
+    if (oldVersion < 7) {
+      for (const definition of V7_STORE_DEFINITIONS) {
+        const v7Store = ensureStore(definition.name, { keyPath: definition.keyPath });
+        for (const entry of definition.indexes) ensureIndex(v7Store, entry.name, entry.keyPath, entry.options);
+      }
+      for (const [storeName, indexes] of Object.entries(V7_EXISTING_STORE_INDEXES)) {
+        const existingStore = transaction.objectStore(storeName);
+        for (const entry of indexes) ensureIndex(existingStore, entry.name, entry.keyPath, entry.options);
+      }
+    }
+    V12_STORE_DEFINITIONS.forEach(definition => {
+      const v12Store = ensureStore(definition.name, definition.options);
+      definition.indexes.forEach(index => ensureIndex(v12Store, index.name, index.keyPath, index.options || {}));
+    });
+    const purchaseDocumentStore = transaction.objectStore(STORE.PURCHASE_DOCUMENTS);
+    const salesDocumentStore = transaction.objectStore(STORE.SALES_DOCUMENTS);
+    const purchaseLineStore = transaction.objectStore(STORE.PURCHASE_LINES);
+    const salesLineStore = transaction.objectStore(STORE.SALES_LINES);
+    const inventoryMovementStore = transaction.objectStore(STORE.INVENTORY_MOVEMENTS);
+    const orderEventStore = transaction.objectStore(STORE.ORDER_EVENTS);
+    [purchaseDocumentStore, salesDocumentStore].forEach(documentStore => {
+      ensureIndex(documentStore, 'byCommandId', 'commandId');
+      ensureIndex(documentStore, 'byDocumentContractSourceKey', ['documentContract', 'sourceDocumentKey'], { unique: true });
+      ensureIndex(documentStore, 'byRevisionStatus', ['revision', 'businessStatus']);
+      ensureIndex(documentStore, 'byProjectionStatus', 'projectionStatus');
+      ensureIndex(documentStore, 'bySourceType', 'sourceType');
+    });
+    ensureIndex(purchaseLineStore, 'byDocumentRevision', ['purchaseDocumentId', 'revision']);
+    ensureIndex(purchaseLineStore, 'byLineIdentity', ['purchaseDocumentId', 'lineIdentityId'], { unique: true });
+    ensureIndex(purchaseLineStore, 'byCommandId', 'commandId');
+    ensureIndex(purchaseLineStore, 'bySourceLineKey', ['purchaseDocumentId', 'sourceLineKey'], { unique: true });
+    ensureIndex(salesLineStore, 'byDocumentRevision', ['salesDocumentId', 'revision']);
+    ensureIndex(salesLineStore, 'byLineIdentity', ['salesDocumentId', 'lineIdentityId'], { unique: true });
+    ensureIndex(salesLineStore, 'byCommandId', 'commandId');
+    ensureIndex(salesLineStore, 'bySourceLineKey', ['salesDocumentId', 'sourceLineKey'], { unique: true });
+    ensureIndex(inventoryMovementStore, 'byCommandRevision', ['commandId', 'sourceDocumentRevision']);
+    ensureIndex(inventoryMovementStore, 'byReversalOf', 'reversalOf');
+    ensureIndex(orderEventStore, 'byCommandRevision', ['commandId', 'sourceDocumentRevision']);
+    ensureIndex(orderEventStore, 'byLedgerSequence', 'ledgerSequence', { unique: true });
+    metaStore.put({ key: 'schemaVersion', value: 12, updatedAt: nowIso() });
+  }
+
   if (oldVersion < 11) {
     V11_STORE_DEFINITIONS.forEach(definition => {
       const v11Store = ensureStore(definition.name, definition.options);
@@ -416,6 +466,10 @@ export function upgradeOrderQDbSchema(db, transaction, oldVersion = 0) {
     orderRequest.onsuccess = () => { migrationOrders = orderRequest.result || []; migrate(); };
     itemRequest.onsuccess = () => { migrationItems = itemRequest.result || []; migrate(); };
   }
+  // Intermediate migrations intentionally remain independently runnable, but
+  // the persisted metadata must always describe the database version that was
+  // actually opened, including fresh and v7-v11 upgrades.
+  metaStore.put({ key: 'schemaVersion', value: ORDERQ_DB_VERSION, updatedAt: nowIso() });
 }
 
 export function openOrderQDb() {

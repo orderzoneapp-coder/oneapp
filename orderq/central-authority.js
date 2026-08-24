@@ -1,4 +1,5 @@
 import { calculateInventoryShadowProjection } from './inventory-ledger.js?v=0.8.0';
+import { canonicalSha256, planOfficialVoucherCommand } from './official-voucher-core.js?v=0.17.0';
 
 export const CENTRAL_SCHEMA = 'ONEAPP_ORDERQ_CENTRAL_V1';
 
@@ -12,6 +13,11 @@ export const OFFICIAL_COMMAND_TYPE = Object.freeze({
   CONFIRM_PURCHASE: 'CONFIRM_PURCHASE',
   REVERSE_PURCHASE: 'REVERSE_PURCHASE',
   RECONCILE_PURCHASE_EXTERNAL: 'RECONCILE_PURCHASE_EXTERNAL',
+  POST_PURCHASE: 'POST_PURCHASE',
+  CORRECT_PURCHASE: 'CORRECT_PURCHASE',
+  POST_SALE: 'POST_SALE',
+  CORRECT_SALE: 'CORRECT_SALE',
+  REVERSE_SALE: 'REVERSE_SALE',
   ERP_TRANSITION: 'ERP_TRANSITION'
 });
 
@@ -19,12 +25,13 @@ const COMMAND_TYPES = new Set(Object.values(OFFICIAL_COMMAND_TYPE));
 const MIGRATION_TYPES = new Set([
   'ORDER', 'ORDER_ITEM', 'PRODUCT', 'WAREHOUSE', 'INVENTORY_SNAPSHOT', 'INVENTORY_LINE',
   'DISPATCH_DECISION', 'DISPATCH_LINE', 'DISPATCH_STOCK_ALLOCATION',
-  'PURCHASE_DOCUMENT', 'PURCHASE_LINE'
+  'PURCHASE_DOCUMENT', 'PURCHASE_LINE', 'SALES_DOCUMENT', 'SALES_LINE'
 ]);
 const OFFICIAL_TYPES = new Set([
   ...MIGRATION_TYPES,
   'DISPATCH_APPROVAL', 'INVENTORY_RESERVATION', 'INVENTORY_MOVEMENT', 'DISPATCH_RECONCILIATION',
-  'SALES_DOCUMENT', 'SALES_LINE', 'ORDER_EVENT'
+  'SALES_DOCUMENT', 'SALES_LINE', 'ORDER_EVENT',
+  'VOUCHER_EVENT', 'RECEIVABLE_ENTRY', 'PAYABLE_ENTRY'
 ]);
 const EPSILON = 1e-9;
 export const CENTRAL_LEASE_DURATION_MS = 5 * 60 * 1000;
@@ -101,7 +108,13 @@ export function centralCommandFingerprint(source = {}) {
   if (!aggregateId) commandError('ORDERQ_CENTRAL_AGGREGATE_ID_REQUIRED');
   if (!idempotencyKey) commandError('ORDERQ_CENTRAL_IDEMPOTENCY_KEY_REQUIRED');
   if (!Number.isInteger(expectedRevision) || expectedRevision < 1) commandError('ORDERQ_CENTRAL_REVISION_REQUIRED');
-  return stableJson({
+  const voucherCommands = ['POST_PURCHASE', 'CORRECT_PURCHASE', 'POST_SALE', 'CORRECT_SALE', 'REVERSE_SALE'];
+  if (voucherCommands.includes(commandType) && text(source.intent?.commandContract).toUpperCase() !== 'VOUCHER_CORE_V1') {
+    commandError('ORDERQ_CENTRAL_COMMAND_CONTRACT_REQUIRED', commandType);
+  }
+  if (text(source.intent?.commandContract).toUpperCase() === 'VOUCHER_CORE_V1'
+    && text(source.intent?.commandId) !== idempotencyKey) commandError('ORDERQ_CENTRAL_COMMAND_IDEMPOTENCY_MISMATCH');
+  return canonicalSha256({
     commandType,
     aggregateId,
     expectedRevision,
@@ -118,8 +131,9 @@ function entityStatus(entity) {
 }
 
 function targetType(commandType) {
-  return commandType.includes('PURCHASE') ? 'PURCHASE_DOCUMENT' : commandType === OFFICIAL_COMMAND_TYPE.ERP_TRANSITION
-    ? '' : 'DISPATCH_DECISION';
+  if (commandType.includes('PURCHASE')) return 'PURCHASE_DOCUMENT';
+  if (commandType.includes('SALE')) return 'SALES_DOCUMENT';
+  return commandType === OFFICIAL_COMMAND_TYPE.ERP_TRANSITION ? '' : 'DISPATCH_DECISION';
 }
 
 function targetStatusAllowed(commandType, status) {
@@ -133,6 +147,11 @@ function targetStatusAllowed(commandType, status) {
     CONFIRM_PURCHASE: ['DRAFT'],
     REVERSE_PURCHASE: ['CONFIRMED'],
     RECONCILE_PURCHASE_EXTERNAL: ['CONFIRMED'],
+    POST_PURCHASE: ['DRAFT'],
+    CORRECT_PURCHASE: ['CONFIRMED'],
+    POST_SALE: ['DRAFT'],
+    CORRECT_SALE: ['CONFIRMED'],
+    REVERSE_SALE: ['CONFIRMED'],
     ERP_TRANSITION: ['READY', 'EXPORTED', 'POSTED', 'RECONCILED', 'CORRECTION_REQUIRED']
   }[commandType] || [];
   return allowed.includes(status);
@@ -278,6 +297,7 @@ export function migrateCentralDrafts(stateSource, source = {}, options = {}) {
     if (!MIGRATION_TYPES.has(type) || !id || !payload) commandError('ORDERQ_CENTRAL_MIGRATION_ENTITY_INVALID', `${type}:${id}`);
     if (type === 'DISPATCH_DECISION' && entityStatus(payload) !== 'DRAFT') commandError('ORDERQ_CENTRAL_MIGRATION_DISPATCH_DRAFT_ONLY', id);
     if (type === 'PURCHASE_DOCUMENT' && entityStatus(payload) !== 'DRAFT') commandError('ORDERQ_CENTRAL_MIGRATION_PURCHASE_DRAFT_ONLY', id);
+    if (type === 'SALES_DOCUMENT' && entityStatus(payload) !== 'DRAFT') commandError('ORDERQ_CENTRAL_MIGRATION_SALE_DRAFT_ONLY', id);
     if (payload.localOnly === false || payload.centralRevision || payload.ledgerSequence) {
       commandError('ORDERQ_CENTRAL_MIGRATION_EVIDENCE_INVALID', `${type}:${id}`);
     }
@@ -291,6 +311,9 @@ export function migrateCentralDrafts(stateSource, source = {}, options = {}) {
   }
   const normalized = [...normalizedByKey.values()]
     .sort((left, right) => entityKey(left.entityType, left.entityId).localeCompare(entityKey(right.entityType, right.entityId)));
+  const migrationRows = new Map(Object.values(state.entities || {}).map(row => [entityKey(row.entityType, row.entityId), row]));
+  normalized.forEach(row => migrationRows.set(entityKey(row.entityType, row.entityId), row));
+  assertNoNormalizedOriginDuplicate([...migrationRows.values()]);
   const fingerprint = stableJson(normalized.map(row => ({
     entityType:row.entityType, entityId:row.entityId, revision:row.revision, payload:row.payload
   })));
@@ -384,7 +407,7 @@ export function prepareCentralCommand(state, source = {}) {
   const prior = state.commands[idempotencyKey];
   if (prior) {
     if (prior.fingerprint !== fingerprint) commandError('ORDERQ_CENTRAL_IDEMPOTENCY_CONFLICT', idempotencyKey);
-    if (prior.status === 'COMMITTED') return { duplicate: true, committed: true, result: clone(prior.result) };
+    if (prior.status === 'COMMITTED') return { duplicate: true, committed: true, fingerprint, result: clone(prior.result) };
     if (prior.status !== 'PREPARED') commandError('ORDERQ_CENTRAL_COMMAND_TERMINAL', `${idempotencyKey}:${prior.status}`);
     return { duplicate: true, committed: false, leaseToken: prior.leaseToken, leaseExpiresAt:prior.leaseExpiresAt, fingerprint };
   }
@@ -397,6 +420,17 @@ export function prepareCentralCommand(state, source = {}) {
   if (target && !targetStatusAllowed(commandType, entityStatus(target))) {
     commandError('ORDERQ_CENTRAL_STATE_CONFLICT', entityStatus(target));
   }
+  if (target && text(source.intent?.commandContract).toUpperCase() === 'VOUCHER_CORE_V1'
+    && text(target.payload?.documentContract).toUpperCase() !== 'VOUCHER_CORE_V1') {
+    commandError('ORDERQ_CENTRAL_COMMAND_CONTRACT_MISMATCH', aggregateId);
+  }
+  if (target && commandType.startsWith('POST_') && text(source.intent?.commandContract).toUpperCase() === 'VOUCHER_CORE_V1') {
+    const allRows = Object.values(state.entities || {});
+    const duplicateKey = normalizedOriginKeys(target, allRows).find(key => allRows.some(row => row.entityId !== aggregateId
+      && ['PURCHASE_DOCUMENT', 'SALES_DOCUMENT'].includes(row.entityType)
+      && normalizedOriginKeys(row, allRows).includes(key)));
+    if (duplicateKey) commandError('ORDERQ_CENTRAL_SOURCE_ALREADY_POSTED', duplicateKey);
+  }
   const conflictingLease = Object.values(state.commands).find(row => row.status === 'PREPARED'
     && row.aggregateId === aggregateId && row.idempotencyKey !== idempotencyKey);
   if (conflictingLease) commandError('ORDERQ_CENTRAL_AGGREGATE_LOCKED', aggregateId);
@@ -406,6 +440,7 @@ export function prepareCentralCommand(state, source = {}) {
   state.commands[idempotencyKey] = {
     idempotencyKey, commandType, aggregateId, expectedRevision, fingerprint,
     leaseToken, status: 'PREPARED', deviceId: text(source.deviceId), preparedAt, leaseExpiresAt,
+    intent: clone(source.intent || null),
     inventoryResourceFingerprint: inventoryResourceFingerprint(state)
   };
   return { duplicate: false, committed: false, leaseToken, leaseExpiresAt, fingerprint, serverRevision: expectedRevision };
@@ -662,10 +697,386 @@ function validatePurchaseReversalLedger(state, command, mutations) {
   }
 }
 
+function normalizedOriginKeys(documentRow, allRows = []) {
+  if (!documentRow || !['PURCHASE_DOCUMENT', 'SALES_DOCUMENT'].includes(documentRow.entityType)) return [];
+  const payload = documentRow.payload || {};
+  const kind = documentRow.entityType === 'PURCHASE_DOCUMENT' ? 'PURCHASE' : 'SALE';
+  const documentIdField = kind === 'PURCHASE' ? 'purchaseDocumentId' : 'salesDocumentId';
+  const lineType = kind === 'PURCHASE' ? 'PURCHASE_LINE' : 'SALES_LINE';
+  const lines = allRows.filter(row => row.entityType === lineType && text(row.payload?.[documentIdField]) === documentRow.entityId);
+  const keys = new Set();
+  if (kind === 'SALE') {
+    const pairs = lines.map(row => [text(row.payload?.sourceDispatchId || row.payload?.dispatchId), text(row.payload?.sourceDispatchLineId || row.payload?.dispatchLineId)])
+      .filter(pair => pair[0] || pair[1]);
+    if (!pairs.length && text(payload.dispatchId || payload.sourceDispatchId)) pairs.push([text(payload.dispatchId || payload.sourceDispatchId), text(payload.dispatchLineId || payload.sourceDispatchLineId)]);
+    pairs.forEach(pair => keys.add(`SALE:DISPATCH:${pair[0]}:${pair[1]}`));
+    const salesOrigin = text(payload.salesOriginId || payload.sourceSalesDocumentId || payload.sourceSalesId);
+    if (salesOrigin) keys.add(`SALE:ORIGIN:${salesOrigin}`);
+  } else {
+    const purchaseOrigin = text(payload.shortageId || payload.purchaseOriginId || payload.sourcePurchaseId || payload.purchasePlanId);
+    if (purchaseOrigin) keys.add(`PURCHASE:ORIGIN:${purchaseOrigin}`);
+  }
+  const sourceKey = text(payload.sourceDocumentKey);
+  if (sourceKey) keys.add(`${kind}:SOURCE:${sourceKey}`);
+  return [...keys].sort();
+}
+
+function assertNoNormalizedOriginDuplicate(rows) {
+  const owner = new Map();
+  rows.filter(row => ['PURCHASE_DOCUMENT', 'SALES_DOCUMENT'].includes(row.entityType)).forEach(document => {
+    normalizedOriginKeys(document, rows).forEach(key => {
+      const prior = owner.get(key);
+      if (prior && prior !== document.entityId) commandError('ORDERQ_CENTRAL_SOURCE_ALREADY_POSTED', key);
+      owner.set(key, document.entityId);
+    });
+  });
+}
+
+function roundOfficialWon(value) {
+  const number = finite(value);
+  return Math.sign(number) * Math.floor(Math.abs(number) + 0.5);
+}
+
+function validateOfficialVoucherLedger(state, command, mutations) {
+  const purchase = command.commandType.endsWith('PURCHASE');
+  const reverse = command.commandType.startsWith('REVERSE_');
+  const documentType = purchase ? 'PURCHASE_DOCUMENT' : 'SALES_DOCUMENT';
+  const lineType = purchase ? 'PURCHASE_LINE' : 'SALES_LINE';
+  const entryType = purchase ? 'PAYABLE_ENTRY' : 'RECEIVABLE_ENTRY';
+  const documentIdField = purchase ? 'purchaseDocumentId' : 'salesDocumentId';
+  const lineIdField = purchase ? 'purchaseLineId' : 'salesLineId';
+  const rows = type => mutations.filter(row => row.entityType === type);
+  const documentRow = rows(documentType).find(row => row.entityId === command.aggregateId);
+  const document = documentRow?.payload;
+  const previousDocument = state.entities[entityKey(documentType, command.aggregateId)]?.payload || {};
+  const projectionLines = rows(lineType).filter(row => text(row.payload[documentIdField]) === command.aggregateId);
+  const lines = projectionLines.filter(row => text(row.payload.lineStatus || 'ACTIVE').toUpperCase() !== 'DELETED' && entityStatus(row) === 'CONFIRMED');
+  const movements = rows('INVENTORY_MOVEMENT');
+  const events = rows('VOUCHER_EVENT');
+  const entries = rows(entryType);
+  const orderEvents = rows('ORDER_EVENT');
+  const existingCurrentLines = Object.values(state.entities || {}).filter(row => row.entityType === lineType
+    && text(row.payload?.[documentIdField]) === command.aggregateId && entityStatus(row) !== 'REVERSED');
+  const existingProjectionLines = existingCurrentLines.filter(row => row.entityType === lineType
+    && text(row.payload?.[documentIdField]) === command.aggregateId
+    && text(row.payload?.lineStatus || 'ACTIVE').toUpperCase() !== 'DELETED');
+  if (!document || entityStatus(documentRow) !== (reverse ? 'REVERSED' : 'CONFIRMED')
+    || Number(documentRow.revision || 0) !== command.expectedRevision + 1
+    || events.length !== 1 || !entries.length) {
+    commandError('ORDERQ_CENTRAL_OFFICIAL_VOUCHER_RESULT_INVALID', command.aggregateId);
+  }
+  const allowedTypes = new Set([documentType, lineType, 'INVENTORY_MOVEMENT', 'VOUCHER_EVENT', entryType]);
+  if (!purchase) allowedTypes.add('ORDER_EVENT');
+  if (mutations.some(row => !allowedTypes.has(row.entityType))) {
+    commandError('ORDERQ_CENTRAL_OFFICIAL_MUTATION_SCOPE_INVALID', command.aggregateId);
+  }
+  if (rows(documentType).length !== 1 || events.length !== 1) {
+    commandError('ORDERQ_CENTRAL_OFFICIAL_CARDINALITY_INVALID', command.aggregateId);
+  }
+  const existingIdentities = (reverse ? existingCurrentLines : existingProjectionLines).map(row => text(row.payload?.lineIdentityId));
+  const intendedIdentities = Array.isArray(command.intent?.lines) ? command.intent.lines.map(row => text(row.lineIdentityId)) : [];
+  const expectedIdentities = new Set(reverse ? existingIdentities
+    : command.commandType.startsWith('POST_') ? intendedIdentities.length ? intendedIdentities : existingIdentities
+      : [...existingIdentities, ...intendedIdentities]);
+  const projectedIdentities = projectionLines.map(row => text(row.payload?.lineIdentityId));
+  if ([...expectedIdentities].some(identity => !identity) || projectedIdentities.some(identity => !identity)
+    || new Set(projectedIdentities).size !== projectedIdentities.length
+    || projectionLines.length !== expectedIdentities.size || projectedIdentities.some(identity => !expectedIdentities.has(identity))) {
+    commandError('ORDERQ_CENTRAL_OFFICIAL_LINE_CARDINALITY_INVALID', command.aggregateId);
+  }
+  if (reverse && projectionLines.some(row => entityStatus(row) !== 'REVERSED')) commandError('ORDERQ_CENTRAL_OFFICIAL_REVERSE_TOMBSTONE_INVALID', command.aggregateId);
+  if (command.commandType.startsWith('POST_') && movements.length !== lines.length) commandError('ORDERQ_CENTRAL_OFFICIAL_MOVEMENT_CARDINALITY_INVALID', command.aggregateId);
+  if (command.commandType.startsWith('CORRECT_')) {
+    const beforeByIdentity = new Map(existingProjectionLines.map(row => [text(row.payload?.lineIdentityId), row.payload]));
+    const afterActive = projectionLines.filter(row => text(row.payload?.lineStatus || 'ACTIVE').toUpperCase() !== 'DELETED');
+    const afterByIdentity = new Map(afterActive.map(row => [text(row.payload?.lineIdentityId), row.payload]));
+    const expectedEffects = [];
+    for (const identity of new Set([...beforeByIdentity.keys(), ...afterByIdentity.keys()])) {
+      const beforeLine = beforeByIdentity.get(identity); const afterLine = afterByIdentity.get(identity);
+      const sameInventory = beforeLine && afterLine && text(beforeLine.productId) === text(afterLine.productId) && text(beforeLine.warehouseId) === text(afterLine.warehouseId);
+      if (sameInventory) expectedEffects.push({ identity, effectKind:'DELTA', reversalOf:'' });
+      else {
+        if (beforeLine) {
+          const residuals = residualOfficialMovements(state, command.aggregateId, identity);
+          const reversalTargets = residuals.length ? residuals.map(row => row.entityId) : [text(beforeLine.movementId)];
+          reversalTargets.forEach(reversalOf => expectedEffects.push({ identity, effectKind:'REVERSE_OLD', reversalOf }));
+        }
+        if (afterLine) expectedEffects.push({ identity, effectKind:'APPLY_NEW', reversalOf:'' });
+      }
+    }
+    const actualEffects = movements.map(row => ({ identity:text(row.payload?.lineIdentityId), effectKind:text(row.payload?.effectKind), reversalOf:text(row.payload?.reversalOf) }));
+    const effectKey = row => `${row.identity}\u001f${row.effectKind}\u001f${row.reversalOf}`;
+    requireExactIds(actualEffects.map(effectKey), expectedEffects.map(effectKey), 'ORDERQ_CENTRAL_OFFICIAL_MOVEMENT_CARDINALITY_INVALID');
+    for (const [identity] of beforeByIdentity) if (!afterByIdentity.has(identity)
+      && !projectionLines.some(row => text(row.payload?.lineIdentityId) === identity && text(row.payload?.lineStatus).toUpperCase() === 'DELETED')) {
+      commandError('ORDERQ_CENTRAL_OFFICIAL_LINE_TOMBSTONE_REQUIRED', identity);
+    }
+  }
+  if (reverse) {
+    const expectedReversalIds = existingCurrentLines.flatMap(row => residualOfficialMovements(state, command.aggregateId, text(row.payload?.lineIdentityId)).map(effect => effect.entityId));
+    if (movements.some(row => text(row.payload?.effectKind) !== 'REVERSE_OLD')) commandError('ORDERQ_CENTRAL_OFFICIAL_REVERSE_MOVEMENT_CARDINALITY_INVALID', command.aggregateId);
+    requireExactIds(movements.map(row => row.payload?.reversalOf), expectedReversalIds, 'ORDERQ_CENTRAL_OFFICIAL_REVERSE_MOVEMENT_CARDINALITY_INVALID');
+  }
+  const intent = command.intent || {};
+  if (!text(intent.commandId) || !text(intent.actor) || !text(intent.occurredAt)
+    || (!command.commandType.startsWith('POST_') && !text(intent.reason))) {
+    commandError('ORDERQ_CENTRAL_OFFICIAL_COMMAND_AUDIT_REQUIRED', command.aggregateId);
+  }
+  validateExactOfficialEffects(state, command, mutations, { purchase, documentType, lineType, entryType, document, projectionLines, movements, entries, orderEvents });
+  const event = events[0].payload;
+  const expectedEventType = `${purchase ? 'PURCHASE' : 'SALE'}_${command.commandType.startsWith('POST_') ? 'POSTED' : command.commandType.startsWith('CORRECT_') ? 'CORRECTED' : 'REVERSED'}`;
+  if (text(event.documentId) !== command.aggregateId || text(event.eventType).toUpperCase() !== expectedEventType
+    || text(event.commandId) !== text(intent.commandId) || Number(event.sourceDocumentRevision || 0) !== command.expectedRevision + 1) {
+    commandError('ORDERQ_CENTRAL_OFFICIAL_VOUCHER_EVENT_INVALID', command.aggregateId);
+  }
+  const declaredEffects = new Set((event.lineEffects || []).map(row => `${text(row.entityType).toUpperCase()}:${text(row.entityId)}`));
+  const actualEffects = [
+    ...movements.map(row => `INVENTORY_MOVEMENT:${row.entityId}`),
+    ...orderEvents.map(row => `ORDER_EVENT:${row.entityId}`),
+    ...entries.map(row => `${entryType}:${row.entityId}`)
+  ];
+  if (declaredEffects.size !== actualEffects.length || actualEffects.some(key => !declaredEffects.has(key))) {
+    commandError('ORDERQ_CENTRAL_OFFICIAL_EFFECT_CARDINALITY_INVALID', command.aggregateId);
+  }
+  if (reverse) {
+    const expectedReversalType = `${text(document.sourceType).toUpperCase()}_${purchase ? 'PURCHASE' : 'SALE'}_REVERSAL`;
+    if (movements.some(row => text(row.payload.movementType).toUpperCase() !== expectedReversalType)) {
+      commandError('ORDERQ_CENTRAL_OFFICIAL_REVERSAL_MOVEMENT_INVALID', command.aggregateId);
+    }
+  } else {
+    if (!lines.length || !movements.length) commandError('ORDERQ_CENTRAL_OFFICIAL_LINES_REQUIRED', command.aggregateId);
+    const operationType = command.commandType.startsWith('POST_') ? 'POST' : 'CORRECTION';
+    const expectedMovementType = `${text(document.sourceType).toUpperCase()}_${purchase ? 'PURCHASE' : 'SALE'}_${operationType}`;
+    const reversalType = `${text(document.sourceType).toUpperCase()}_${purchase ? 'PURCHASE' : 'SALE'}_REVERSAL`;
+    if (movements.some(row => ![expectedMovementType, reversalType].includes(text(row.payload.movementType).toUpperCase()))) {
+      commandError('ORDERQ_CENTRAL_OFFICIAL_MOVEMENT_TYPE_INVALID', command.aggregateId);
+    }
+    for (const lineRow of lines) {
+      const line = lineRow.payload;
+      const supply = roundOfficialWon(finite(line.quantity) * finite(line.unitPrice));
+      if (!sameNumber(line.supplyAmount, supply) || !sameNumber(line.totalAmount, supply)
+        || line.vatAmount !== null || text(line.taxType) !== 'VAT_INCLUDED_IN_SUPPLY') {
+        commandError('ORDERQ_CENTRAL_OFFICIAL_LINE_AMOUNT_INVALID', text(line[lineIdField]));
+      }
+    }
+    const supply = lines.reduce((sum, row) => sum + finite(row.payload.supplyAmount), 0);
+    if (!sameNumber(document.supplyAmount, supply) || !sameNumber(document.totalAmount, supply)
+      || document.vatAmount !== null || text(document.taxType) !== 'VAT_INCLUDED_IN_SUPPLY') {
+      commandError('ORDERQ_CENTRAL_OFFICIAL_DOCUMENT_AMOUNT_INVALID', command.aggregateId);
+    }
+  }
+  for (const movement of movements) {
+    if (text(movement.payload.commandId) !== text(intent.commandId)
+      || movement.payload.officialCommandProofRequired !== true
+      || text(movement.payload.sourceDocumentId) !== command.aggregateId) {
+      commandError('ORDERQ_CENTRAL_OFFICIAL_MOVEMENT_PROOF_INVALID', movement.entityId);
+    }
+    if (text(movement.payload.reversalOf)) {
+      const original = state.entities[entityKey('INVENTORY_MOVEMENT', text(movement.payload.reversalOf))]?.payload;
+      if (!original || original.officialCommandProofRequired !== true
+        || !text(original.commandId) || text(original.sourceDocumentId) !== command.aggregateId
+        || !/^(DIRECT|ORDER_Q)_(PURCHASE|SALE)$/.test(text(original.sourceDocumentType).toUpperCase())) {
+        commandError('ORDERQ_CENTRAL_OFFICIAL_REVERSAL_PROOF_INVALID', movement.entityId);
+      }
+    }
+  }
+  if (!purchase) {
+    if (text(document.sourceType).toUpperCase() === 'DIRECT' && orderEvents.length) {
+      commandError('ORDERQ_CENTRAL_DIRECT_ORDER_EVENT_FORBIDDEN', command.aggregateId);
+    }
+    if (text(document.sourceType).toUpperCase() === 'DIRECT' && projectionLines.some(row => text(row.payload?.orderLinkMode).toUpperCase() === 'ORDER_Q'
+      || text(row.payload?.sourceOrderId) || text(row.payload?.sourceOrderItemId) || text(row.payload?.sourceDispatchId)
+      || text(row.payload?.sourceDispatchLineId) || text(row.payload?.allocationEventId)
+      || (Array.isArray(row.payload?.allocationEventIds) && row.payload.allocationEventIds.some(text)))) {
+      commandError('ORDERQ_CENTRAL_DIRECT_ORDER_LINK_FORBIDDEN', command.aggregateId);
+    }
+    if (text(document.sourceType).toUpperCase() === 'ORDER_Q') {
+      for (const eventRow of orderEvents) {
+        const itemId = text(eventRow.payload?.detail?.orderItemId);
+        const orderId = text(eventRow.payload?.orderId);
+        const item = state.entities[entityKey('ORDER_ITEM', itemId)];
+        const eventType = text(eventRow.payload?.eventType).toUpperCase();
+        const dispatchId = text(eventRow.payload?.detail?.sourceDispatchId);
+        const dispatchLineId = text(eventRow.payload?.detail?.sourceDispatchLineId);
+        const hasDispatch = Boolean(dispatchId);
+        const dispatchLine = hasDispatch ? state.entities[entityKey('DISPATCH_LINE', dispatchLineId)] : null;
+        const eventLine = projectionLines.find(row => text(row.payload?.salesLineId) === text(eventRow.payload?.detail?.salesLineId));
+        const allocatedLineInvalid = eventType === 'SALES_TRANSFER_ALLOCATED' && (text(eventLine?.payload?.sourceOrderId) !== orderId
+          || text(eventLine?.payload?.sourceOrderItemId) !== itemId || text(eventLine?.payload?.sourceDispatchId) !== dispatchId
+          || text(eventLine?.payload?.sourceDispatchLineId) !== dispatchLineId);
+        if (!item || !state.entities[entityKey('ORDER', orderId)] || text(item.payload?.orderId) !== orderId
+          || hasDispatch !== Boolean(dispatchLineId)
+          || (hasDispatch && (!dispatchLine || text(dispatchLine.payload?.dispatchId) !== dispatchId || text(dispatchLine.payload?.orderItemId) !== itemId))
+          || !eventLine || text(eventRow.payload?.detail?.salesDocumentId) !== command.aggregateId
+          || allocatedLineInvalid
+          || !['SALES_TRANSFER_ALLOCATED', 'SALES_TRANSFER_REVERSED'].includes(eventType)) {
+          commandError('ORDERQ_CENTRAL_ORDER_EVENT_LINK_INVALID', eventRow.entityId);
+        }
+        if (eventType === 'SALES_TRANSFER_REVERSED') {
+          const allocationId = text(eventRow.payload?.detail?.allocationEventId);
+          const allocation = state.entities[entityKey('ORDER_EVENT', allocationId)];
+          const priorReversed = Object.values(state.entities || {}).filter(candidate => candidate.entityType === 'ORDER_EVENT'
+            && text(candidate.payload?.eventType).toUpperCase() === 'SALES_TRANSFER_REVERSED'
+            && text(candidate.payload?.detail?.allocationEventId) === allocationId)
+            .reduce((sum, candidate) => sum + finite(candidate.payload?.detail?.transferredQty), 0);
+          const negativePost = command.commandType === 'POST_SALE';
+          const allocationLinkInvalid = negativePost
+            ? text(allocation?.payload?.detail?.productId) !== text(eventLine.payload?.productId)
+              || text(allocation?.payload?.detail?.lineIdentityId) !== text(eventLine.payload?.lineIdentityId)
+              || (text(allocation?.payload?.detail?.warehouseId) && text(allocation?.payload?.detail?.warehouseId) !== text(eventLine.payload?.warehouseId))
+            : text(allocation?.payload?.detail?.salesDocumentId) !== command.aggregateId
+              || text(allocation?.payload?.detail?.salesLineId) !== text(eventRow.payload?.detail?.salesLineId);
+          if (!allocation || text(allocation.payload?.eventType).toUpperCase() !== 'SALES_TRANSFER_ALLOCATED'
+            || text(allocation.payload?.orderId) !== orderId || text(allocation.payload?.detail?.orderItemId) !== itemId
+            || allocationLinkInvalid
+            || priorReversed + finite(eventRow.payload?.detail?.transferredQty) > finite(allocation.payload?.detail?.transferredQty) + EPSILON) {
+            commandError('ORDERQ_CENTRAL_ORDER_ALLOCATION_REVERSAL_INVALID', eventRow.entityId);
+          }
+        }
+      }
+      for (const itemId of new Set(orderEvents.map(row => text(row.payload?.detail?.orderItemId)))) {
+        const item = state.entities[entityKey('ORDER_ITEM', itemId)];
+        const existingAllocated = Object.values(state.entities || {}).filter(candidate => candidate.entityType === 'ORDER_EVENT'
+          && text(candidate.payload?.detail?.orderItemId) === itemId
+          && ['SALES_TRANSFER_ALLOCATED', 'SALES_TRANSFER_REVERSED'].includes(text(candidate.payload?.eventType).toUpperCase())).reduce((sum, candidate) => sum
+            + (text(candidate.payload?.eventType).toUpperCase() === 'SALES_TRANSFER_REVERSED' ? -1 : 1) * finite(candidate.payload?.detail?.transferredQty), 0);
+        const commandAllocated = orderEvents.filter(candidate => text(candidate.payload?.detail?.orderItemId) === itemId).reduce((sum, candidate) => sum
+          + (text(candidate.payload?.eventType).toUpperCase() === 'SALES_TRANSFER_REVERSED' ? -1 : 1) * finite(candidate.payload?.detail?.transferredQty), 0);
+        const ordered = Math.abs(finite(item?.payload?.finalQuantity ?? item?.payload?.rawQuantity ?? item?.payload?.quantity));
+        if (existingAllocated + commandAllocated > ordered + EPSILON || existingAllocated + commandAllocated < -EPSILON) {
+          commandError('ORDERQ_CENTRAL_ORDER_ALLOCATION_LIMIT', itemId);
+        }
+      }
+      for (const row of projectionLines) {
+        const line = row.payload;
+        const order = state.entities[entityKey('ORDER', text(line.sourceOrderId))];
+        const item = state.entities[entityKey('ORDER_ITEM', text(line.sourceOrderItemId))];
+        const dispatchId = text(line.sourceDispatchId); const dispatchLineId = text(line.sourceDispatchLineId);
+        const hasDispatch = Boolean(dispatchId);
+        const dispatchLine = hasDispatch ? state.entities[entityKey('DISPATCH_LINE', dispatchLineId)] : null;
+        if (text(line.orderLinkMode).toUpperCase() !== 'ORDER_Q'
+          || !order || !item || text(item.payload?.orderId) !== order.entityId
+          || hasDispatch !== Boolean(dispatchLineId)
+          || (hasDispatch && (!dispatchLine || text(dispatchLine.payload?.dispatchId) !== dispatchId
+            || text(dispatchLine.payload?.orderItemId) !== item.entityId
+            || text(dispatchLine.payload?.actualProductId || dispatchLine.payload?.productId || dispatchLine.payload?.requestedProductId) !== text(line.productId)
+            || text(dispatchLine.payload?.warehouseId) !== text(line.warehouseId)))) {
+          commandError('ORDERQ_CENTRAL_ORDER_LINK_INVALID', row.entityId);
+        }
+      }
+    }
+  }
+  for (const entryRow of entries) {
+    const entry = entryRow.payload;
+    if (text(entry[documentIdField]) !== command.aggregateId
+      || Number(entry.sourceDocumentRevision || 0) !== command.expectedRevision + 1
+      || entry.vatAmount !== null || text(entry.taxType) !== 'VAT_INCLUDED_IN_SUPPLY'
+      || !sameNumber(entry.supplyAmount, entry.totalAmount)
+      || text(entry.commandId) !== text(intent.commandId)) {
+      commandError('ORDERQ_CENTRAL_OFFICIAL_LEDGER_ENTRY_INVALID', entryRow.entityId);
+    }
+  }
+  const previousTotal = command.commandType.startsWith('POST_')
+    ? 0
+    : finite(previousDocument.totalAmount ?? previousDocument.totalAmountWon ?? previousDocument.amountWon);
+  const nextTotal = reverse ? 0 : finite(document.totalAmount);
+  requireSameNumber(entries.reduce((sum, row) => sum + finite(row.payload.totalAmount), 0), nextTotal - previousTotal,
+    'ORDERQ_CENTRAL_OFFICIAL_ENTRY_DELTA_INVALID', command.aggregateId);
+  const partnerField = purchase ? 'supplierCustomerId' : 'billingCustomerId';
+  const oldPartner = text(previousDocument[partnerField]);
+  const nextPartner = text(document[partnerField]);
+  const existingEntries = Object.values(state.entities || {}).filter(row => row.entityType === entryType
+    && text(row.payload?.[documentIdField]) === command.aggregateId);
+  const oldBalance = existingEntries.filter(row => text(row.payload?.partnerId) === oldPartner)
+    .reduce((sum, row) => sum + finite(row.payload?.totalAmount), 0);
+  if (reverse) {
+    if (entries.some(row => text(row.payload.partnerId) !== oldPartner)) commandError('ORDERQ_CENTRAL_OFFICIAL_REVERSE_PARTNER_INVALID');
+    requireSameNumber(entries.reduce((sum, row) => sum + finite(row.payload.totalAmount), 0), -oldBalance,
+      'ORDERQ_CENTRAL_OFFICIAL_REVERSE_BALANCE_INVALID', command.aggregateId);
+  } else if (!command.commandType.startsWith('POST_') && oldPartner !== nextPartner) {
+    requireSameNumber(entries.filter(row => text(row.payload.partnerId) === oldPartner).reduce((sum, row) => sum + finite(row.payload.totalAmount), 0), -oldBalance,
+      'ORDERQ_CENTRAL_OFFICIAL_PARTNER_RELEASE_INVALID', command.aggregateId);
+    requireSameNumber(entries.filter(row => text(row.payload.partnerId) === nextPartner).reduce((sum, row) => sum + finite(row.payload.totalAmount), 0), nextTotal,
+      'ORDERQ_CENTRAL_OFFICIAL_PARTNER_ASSIGN_INVALID', command.aggregateId);
+  }
+}
+
+function residualOfficialMovements(state, documentId, lineIdentityId) {
+  const rows = Object.values(state.entities || {}).filter(row => row.entityType === 'INVENTORY_MOVEMENT'
+    && text(row.payload?.sourceDocumentId) === documentId && text(row.payload?.lineIdentityId) === lineIdentityId);
+  const reversals = new Map();
+  const reversedIds = new Set();
+  rows.filter(row => text(row.payload?.effectKind) === 'REVERSE_OLD' || text(row.payload?.movementType).endsWith('_REVERSAL')).forEach(row => {
+    const target = text(row.payload?.reversalOf);
+    reversedIds.add(target);
+    reversals.set(target, finite(reversals.get(target)) + finite(row.payload?.signedBaseQuantity));
+  });
+  return rows.filter(row => text(row.payload?.effectKind) !== 'REVERSE_OLD' && !text(row.payload?.movementType).endsWith('_REVERSAL')).map(row => ({
+    entityId: row.entityId,
+    signedBaseQuantity: finite(row.payload?.signedBaseQuantity),
+    remaining: finite(row.payload?.signedBaseQuantity) + finite(reversals.get(row.entityId))
+  })).filter(row => Math.abs(row.remaining) > EPSILON || (row.signedBaseQuantity === 0 && !reversedIds.has(row.entityId)));
+}
+
+function strictOfficialNumber(value, code) {
+  if (value === '' || value === null || value === undefined || !Number.isFinite(Number(value))) commandError(code);
+  return Number(value);
+}
+
+function validateExactOfficialEffects(state, command, mutations, context) {
+  const { purchase, documentType, lineType, entryType, document, projectionLines, movements, entries, orderEvents } = context;
+  (Array.isArray(command.intent?.lines) ? command.intent.lines : []).filter(row => text(row?.lineStatus || 'ACTIVE').toUpperCase() !== 'DELETED').forEach(row => {
+    strictOfficialNumber(row.quantity ?? row.actualQuantity, 'ORDERQ_CENTRAL_OFFICIAL_QUANTITY_REQUIRED');
+    strictOfficialNumber(row.unitPrice, 'ORDERQ_CENTRAL_OFFICIAL_UNIT_PRICE_REQUIRED');
+    strictOfficialNumber(row.baseQuantity, 'ORDERQ_CENTRAL_OFFICIAL_BASE_QUANTITY_REQUIRED');
+  });
+  const currentLines = Object.values(state.entities || {}).filter(row => row.entityType === lineType
+    && text(row.payload?.[purchase ? 'purchaseDocumentId' : 'salesDocumentId']) === command.aggregateId
+    && text(row.payload?.lineStatus || 'ACTIVE').toUpperCase() !== 'DELETED' && entityStatus(row) !== 'REVERSED').map(row => row.payload);
+  const snapshotLines = Object.values(state.entities || {}).filter(row => row.entityType === lineType
+    && text(row.payload?.[purchase ? 'purchaseDocumentId' : 'salesDocumentId']) === command.aggregateId && entityStatus(row) !== 'REVERSED').map(row => row.payload);
+  const expected = planOfficialVoucherCommand({
+    document: state.entities[entityKey(documentType, command.aggregateId)]?.payload,
+    lines: currentLines,
+    snapshotLines,
+    movements: Object.values(state.entities || {}).filter(row => row.entityType === 'INVENTORY_MOVEMENT' && text(row.payload?.sourceDocumentId) === command.aggregateId).map(row => row.payload),
+    entries: Object.values(state.entities || {}).filter(row => row.entityType === entryType).map(row => row.payload),
+    orderEvents: Object.values(state.entities || {}).filter(row => row.entityType === 'ORDER_EVENT').map(row => row.payload),
+    command: {
+      commandType: command.commandType, commandContract:'VOUCHER_CORE_V1', commandId:command.idempotencyKey, idempotencyKey:command.idempotencyKey,
+      expectedRevision:command.expectedRevision, actor:text(command.intent?.actor), occurredAt:text(command.intent?.occurredAt), reason:text(command.intent?.reason),
+      document: command.intent?.document || document, lines: Array.isArray(command.intent?.lines) ? command.intent.lines : projectionLines.map(row => row.payload)
+    }
+  });
+  const exactSet = (actual, planned, code) => {
+    const actualKeys = actual.map(row => stableJson(row)); const expectedKeys = planned.map(row => stableJson(row));
+    if (new Set(actualKeys).size !== actualKeys.length || new Set(expectedKeys).size !== expectedKeys.length
+      || actualKeys.length !== expectedKeys.length || actualKeys.some(key => !expectedKeys.includes(key))) commandError(code, command.aggregateId);
+  };
+  projectionLines.forEach(row => {
+    if (text(row.payload?.lineStatus || 'ACTIVE').toUpperCase() !== 'DELETED') {
+      strictOfficialNumber(row.payload?.quantity, 'ORDERQ_CENTRAL_OFFICIAL_QUANTITY_REQUIRED');
+      strictOfficialNumber(row.payload?.unitPrice, 'ORDERQ_CENTRAL_OFFICIAL_UNIT_PRICE_REQUIRED');
+      strictOfficialNumber(row.payload?.baseQuantity, 'ORDERQ_CENTRAL_OFFICIAL_BASE_QUANTITY_REQUIRED');
+    }
+  });
+  exactSet(movements.map(row => ({ lineIdentityId:text(row.payload?.lineIdentityId), movementType:text(row.payload?.movementType), signedBaseQuantity:strictOfficialNumber(row.payload?.signedBaseQuantity,'ORDERQ_CENTRAL_OFFICIAL_MOVEMENT_QUANTITY_REQUIRED'), effectKind:text(row.payload?.effectKind), effectOrdinal:Number(row.payload?.effectOrdinal || 0), reversalOf:text(row.payload?.reversalOf), productId:text(row.payload?.productId), warehouseId:text(row.payload?.warehouseId) })),
+    expected.movements.map(row => ({ lineIdentityId:text(row.lineIdentityId), movementType:text(row.movementType), signedBaseQuantity:Number(row.signedBaseQuantity), effectKind:text(row.effectKind), effectOrdinal:Number(row.effectOrdinal || 0), reversalOf:text(row.reversalOf), productId:text(row.productId), warehouseId:text(row.warehouseId) })), 'ORDERQ_CENTRAL_OFFICIAL_MOVEMENT_EFFECT_MISMATCH');
+  exactSet(entries.map(row => ({ entryType:text(row.payload?.entryType), partnerId:text(row.payload?.partnerId), supplyAmount:strictOfficialNumber(row.payload?.supplyAmount,'ORDERQ_CENTRAL_OFFICIAL_ENTRY_AMOUNT_REQUIRED'), totalAmount:strictOfficialNumber(row.payload?.totalAmount,'ORDERQ_CENTRAL_OFFICIAL_ENTRY_AMOUNT_REQUIRED'), effectOrdinal:Number(row.payload?.effectOrdinal || 0), reversalOf:text(row.payload?.reversalOf) })),
+    expected.entries.map(row => ({ entryType:text(row.entryType), partnerId:text(row.partnerId), supplyAmount:Number(row.supplyAmount), totalAmount:Number(row.totalAmount), effectOrdinal:Number(row.effectOrdinal || 0), reversalOf:text(row.reversalOf) })), 'ORDERQ_CENTRAL_OFFICIAL_ENTRY_EFFECT_MISMATCH');
+  exactSet(orderEvents.map(row => ({ eventType:text(row.payload?.eventType), orderId:text(row.payload?.orderId), orderItemId:text(row.payload?.detail?.orderItemId), salesLineId:text(row.payload?.detail?.salesLineId), transferredQty:strictOfficialNumber(row.payload?.detail?.transferredQty,'ORDERQ_CENTRAL_ORDER_EVENT_QUANTITY_REQUIRED'), allocationEventId:text(row.payload?.detail?.allocationEventId), effectOrdinal:Number(row.payload?.effectOrdinal || 0) })),
+    expected.orderEvents.map(row => ({ eventType:text(row.eventType), orderId:text(row.orderId), orderItemId:text(row.detail?.orderItemId), salesLineId:text(row.detail?.salesLineId), transferredQty:Number(row.detail?.transferredQty), allocationEventId:text(row.detail?.allocationEventId), effectOrdinal:Number(row.effectOrdinal || 0) })), 'ORDERQ_CENTRAL_ORDER_EVENT_EFFECT_MISMATCH');
+}
+
 function validateCommandMutations(state, command, mutations) {
   const byType = type => mutations.filter(row => row.entityType === type);
   const decision = byType('DISPATCH_DECISION').find(row => row.entityId === command.aggregateId);
   const purchase = byType('PURCHASE_DOCUMENT').find(row => row.entityId === command.aggregateId);
+  const officialVoucherCommand = text(command.intent?.commandContract).toUpperCase() === 'VOUCHER_CORE_V1';
+  if (officialVoucherCommand && ['POST_PURCHASE', 'CORRECT_PURCHASE', 'REVERSE_PURCHASE', 'POST_SALE', 'CORRECT_SALE', 'REVERSE_SALE'].includes(command.commandType)) {
+    validateOfficialVoucherLedger(state, command, mutations);
+    return;
+  }
   if (command.commandType === OFFICIAL_COMMAND_TYPE.RELEASE_DISPATCH) {
     if (!decision || entityStatus(decision) !== 'RELEASED' || !byType('INVENTORY_RESERVATION').length) {
       commandError('ORDERQ_CENTRAL_RELEASE_RESULT_INVALID');
@@ -798,28 +1209,59 @@ export function commitCentralCommand(state, source = {}, options = {}) {
         commandError('ORDERQ_CENTRAL_ERP_TRANSITION_INVALID', `${row.entityType}:${row.entityId}:${entityRevision(prior)}`);
       }
     }
-    if (row.entityType === 'INVENTORY_MOVEMENT') {
-      if (row.payload.ledgerSequence !== undefined && row.payload.ledgerSequence !== null) {
-        delete row.payload.ledgerSequence;
-      }
-      working.ledgerSequence += 1;
-      row.payload.ledgerSequence = working.ledgerSequence;
-      row.revision = Math.max(row.revision, working.ledgerSequence);
-    }
     row.payload.centralRevision = row.revision;
     row.payload.localOnly = false;
+    if (['PURCHASE_DOCUMENT', 'SALES_DOCUMENT'].includes(row.entityType) && row.payload.documentContract === 'VOUCHER_CORE_V1') {
+      row.payload.projectionStatus = 'CENTRAL_COMMITTED';
+    }
     working.entities[key] = clone(row);
   }
+  const voucherCore = text(command.intent?.commandContract).toUpperCase() === 'VOUCHER_CORE_V1';
+  const ledgerRank = voucherCore
+    ? { VOUCHER_EVENT: 1, INVENTORY_MOVEMENT: 2, ORDER_EVENT: 3, PAYABLE_ENTRY: 4, RECEIVABLE_ENTRY: 4 }
+    : { INVENTORY_MOVEMENT: 2 };
+  const effectRank = { REVERSE_OLD: 1, DELTA: 2, APPLY_NEW: 3 };
+  const eventRank = { SALES_TRANSFER_REVERSED: 1, SALES_TRANSFER_ALLOCATED: 2 };
+  const compareLedger = (left, right) => {
+    const typeRank = ledgerRank[left.entityType] - ledgerRank[right.entityType];
+    if (typeRank) return typeRank;
+    if (left.entityType === 'INVENTORY_MOVEMENT') return text(left.payload.lineIdentityId).localeCompare(text(right.payload.lineIdentityId))
+      || (effectRank[text(left.payload.effectKind).toUpperCase()] || 9) - (effectRank[text(right.payload.effectKind).toUpperCase()] || 9)
+      || Number(left.payload.effectOrdinal || 0) - Number(right.payload.effectOrdinal || 0)
+      || left.entityId.localeCompare(right.entityId);
+    if (left.entityType === 'ORDER_EVENT') return text(left.payload.orderId).localeCompare(text(right.payload.orderId))
+      || text(left.payload.detail?.orderItemId).localeCompare(text(right.payload.detail?.orderItemId))
+      || text(left.payload.detail?.salesLineId).localeCompare(text(right.payload.detail?.salesLineId))
+      || (eventRank[text(left.payload.eventType).toUpperCase()] || 9) - (eventRank[text(right.payload.eventType).toUpperCase()] || 9)
+      || Number(left.payload.effectOrdinal || 0) - Number(right.payload.effectOrdinal || 0)
+      || left.entityId.localeCompare(right.entityId);
+    if (['PAYABLE_ENTRY', 'RECEIVABLE_ENTRY'].includes(left.entityType)) return text(left.payload.partnerId).localeCompare(text(right.payload.partnerId))
+      || text(left.payload.entryType).localeCompare(text(right.payload.entryType))
+      || text(left.payload.reversalOf).localeCompare(text(right.payload.reversalOf))
+      || Number(left.payload.effectOrdinal || 0) - Number(right.payload.effectOrdinal || 0)
+      || left.entityId.localeCompare(right.entityId);
+    return left.entityId.localeCompare(right.entityId);
+  };
+  mutations.filter(row => ledgerRank[row.entityType]).sort(compareLedger).forEach(row => {
+    delete row.payload.ledgerSequence;
+    working.ledgerSequence += 1;
+    row.payload.ledgerSequence = working.ledgerSequence;
+    if (row.entityType === 'INVENTORY_MOVEMENT') row.revision = Math.max(row.revision, working.ledgerSequence);
+    const key = entityKey(row.entityType, row.entityId);
+    working.entities[key] = clone(row);
+  });
   if (text(options.failureAt).toUpperCase() === 'ENTITIES_WRITTEN') {
     commandError('ORDERQ_CENTRAL_FAILURE_INJECTED', 'ENTITIES_WRITTEN');
   }
   mutations.forEach(row => appendChange(working, row, command.deviceId, idempotencyKey));
   const result = {
+    transactionId: `${idempotencyKey}:OFFICIAL`,
     changes: clone(mutations),
     cursor: working.syncSequence,
     ledgerSequence: working.ledgerSequence,
     serverRevision: Math.max(...mutations.map(row => row.entityId === command.aggregateId ? row.revision : 0), command.expectedRevision)
   };
+  result.resultDigest = canonicalSha256({ changes: result.changes, cursor: result.cursor, ledgerSequence: result.ledgerSequence, serverRevision: result.serverRevision });
   workingCommand.status = 'COMMITTED';
   workingCommand.mutationFingerprint = mutationFingerprint;
   workingCommand.committedAt = new Date(commitAtMillis).toISOString();
