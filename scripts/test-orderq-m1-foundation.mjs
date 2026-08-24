@@ -19,7 +19,7 @@ import {
   requireActor,
   requireCapability
 } from '../orderq/orderq-v7-contracts.js';
-import { ORDERQ_DB_VERSION as CURRENT_ORDERQ_DB_VERSION } from '../orderq/orderq-v11-contracts.js';
+import { ORDERQ_DB_VERSION as CURRENT_ORDERQ_DB_VERSION } from '../orderq/orderq-v12-contracts.js';
 import {
   ORDERQ_BACKUP_FORMAT,
   ORDERQ_BACKUP_FORMAT_VERSION,
