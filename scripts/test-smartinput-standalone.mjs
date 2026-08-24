@@ -352,7 +352,11 @@ assert.equal(contract.nextDeliveryDate({ orderDate: '2026-08-23', customerId: 'C
 assert.equal(contract.validateDeliveryDate({ orderDate: '2026-08-23', deliveryDate: '2026-08-22', settings: scheduleSettings, now: scheduleNow }).code, 'PAST_DATE');
 
 for (const mode of ['order', 'purchase', 'sale', 'estimate']) assert.match(html, new RegExp(`data-mode="${mode}"`));
-for (const method of ['direct', 'excel', 'text', 'paste', 'photo', 'voice']) assert.match(html, new RegExp(`data-method="${method}"`));
+assert.match(html, /data-method="voice"/);
+for (const method of ['direct', 'excel', 'text', 'paste', 'photo']) assert.doesNotMatch(html, new RegExp(`data-method="${method}"`));
+assert.match(html, /class="parser-toolbar"[^>]*>[\s\S]*data-method="voice"[\s\S]*class="legend"[\s\S]*id="clearParserButton"/,
+  'the parser toolbar must contain only voice, match-status chips and clear controls in that order');
+assert.match(html, /placeholder="텍스트·이미지·Excel 파일을&#10;붙여넣거나 끌어다 놓으세요\.&#10;입력 내용을 자동으로 분석합니다\."/);
 assert.match(html, /Alt\+1/);
 assert.match(html, /Alt\+2/);
 assert.match(html, /Alt\+3/);
@@ -411,7 +415,8 @@ assert.match(html, /견적서 · 거래처 자동 지정/);
 assert.match(html, /id="catalogSelect"[^>]*aria-label="거래처 견적서 불러오기"[^>]*><option value="">견적서 선택<\/option>/);
 assert.match(html, /id="catalogSaveButton"[^>]*>견적서 저장<\/button>/);
 assert.doesNotMatch(html, /카탈로그 · 거래처 자동 지정|카탈로그 선택|카탈로그 저장/);
-assert.ok(html.indexOf('class="field field--mode"') < html.indexOf('data-header-field="deliveryDate"'), '전표 선택은 배송일자보다 왼쪽 DOM 순서여야 한다.');
+assert.ok(html.indexOf('class="app-voucher-switcher"') < html.indexOf('class="app-bar__actions"'), '전표 선택은 앱 헤더의 작업 버튼 앞에 있어야 한다.');
+assert.doesNotMatch(html, /class="field field--mode"/, '전표 선택은 본문 상단 정보 영역에 남아 있으면 안 된다.');
 assert.match(html, /id="selectAllRows"/);
 assert.match(html, /id="deleteSelectedRows"/);
 assert.match(html, /class="col-unit"/);
@@ -427,7 +432,7 @@ const relatedColumnAt = html.indexOf('<aside class="related-panel"');
 assert.ok(parserColumnAt >= 0 && parserColumnAt < workbenchColumnAt && workbenchColumnAt < relatedColumnAt,
   'desktop workspace must order the parser, workbench and related-app columns from left to right');
 
-assert.match(css, /grid-template-columns: 420px minmax\(0, 1fr\) 230px/);
+assert.match(css, /grid-template-columns: 360px minmax\(0, 1fr\) 230px/);
 assert.match(css, /--app-max: 2400px/);
 assert.match(css, /\.app-shell \{[^}]*calc\(100% - 32px\)/,
   'desktop SmartInput must use the viewport instead of leaving wide side margins');
@@ -454,7 +459,7 @@ assert.match(css, /\.workspace\.has-photo-source \{[^}]*grid-template-columns: m
   'the saved photo pane width must be capped so the input grid cannot overflow its workbench');
 assert.match(css, /--photo-pane-width: clamp\(420px, 38vw, 760px\)/);
 assert.match(css, /\.document-fields > \.field \{[^}]*grid-template-rows: 18px 42px 14px;/);
-assert.match(css, /\.document-fields \.mode-tabs \{[^}]*height: 42px;/);
+assert.match(css, /\.document-fields \{[^}]*grid-template-columns: repeat\(3, minmax\(140px, 1fr\)\)/);
 assert.match(css, /\.workspace\.has-photo-source \.parser-card, \.workspace\.has-photo-source \.workbench \{[^}]*height: calc\(100vh - var\(--nexus-top-height\) - 88px\)/);
 assert.match(css, /\.photo-ocr-panel \{/);
 assert.match(css, /\.photo-resizer \{/);
@@ -465,7 +470,7 @@ assert.match(css, /\.source-token--time/);
 assert.match(css, /\.source-token--collected/);
 assert.match(css, /\.source-token--unmatched/);
 assert.match(css, /\.save-state \{[^}]*flex: 0 0 64px;[^}]*width: 64px;[^}]*white-space: nowrap;/);
-assert.match(css, /@media \(max-width: 1480px\) \{[^}]*grid-template-columns: 380px minmax\(0, 1fr\)/,
+assert.match(css, /@media \(max-width: 1480px\) \{[^}]*grid-template-columns: 340px minmax\(0, 1fr\)/,
   'related apps must yield width to the input table on ordinary desktop screens');
 assert.match(css, /@media \(min-width: 1481px\) \{[\s\S]*?html, body \{[^}]*overflow: hidden;/,
   'wide desktop SmartInput must not create a page-level vertical scrollbar');
@@ -480,7 +485,7 @@ assert.match(css, /@media \(max-width: 1400px\) \{[\s\S]*?\.workspace\.has-photo
   'photo mode must stack before the workbench becomes too narrow around 1335px');
 assert.match(css, /\.parser-card \{[^}]*overflow: hidden;/,
   'parser children must not escape the assigned parser column');
-assert.match(css, /\.parser-card > \*, \.parser-input-row, \.method-bar, \.photo-viewer, \.photo-viewer__toolbar, \.photo-viewer__viewport \{[^}]*width: 100%;[^}]*max-width: 100%;/,
+assert.match(css, /\.parser-card > \*, \.parser-input-row, \.parser-toolbar, \.photo-viewer, \.photo-viewer__toolbar, \.photo-viewer__viewport \{[^}]*width: 100%;[^}]*max-width: 100%;/,
   'parser controls and photo viewer must shrink within their parent width');
 assert.match(css, /table \{[^}]*width: var\(--table-render-width, 1103px\);[^}]*min-width: 0;[^}]*max-width: none;/,
   'the input table must use the visible-column sum and leave unused space blank');
@@ -494,8 +499,8 @@ assert.match(css, /@media \(max-width: 980px\)/);
 assert.match(css, /@media \(max-width: 820px\)/);
 assert.match(css, /@media \(max-width: 820px\) \{[\s\S]*?\.app-bar__actions \{[^}]*overflow-x: auto;/,
   'tablet action buttons must scroll within the app bar instead of widening the page');
-assert.match(css, /@media \(max-width: 560px\) \{[\s\S]*?\.method-bar \{ grid-template-columns: repeat\(2, minmax\(0, 1fr\)\); \}[\s\S]*?\.document-fields \{ grid-template-columns: 1fr;/,
-  'mobile input methods and document fields must collapse to touch-friendly columns');
+assert.match(css, /@media \(max-width: 560px\) \{[\s\S]*?\.document-fields, \.workspace\.has-photo-source \.document-fields \{ grid-template-columns: 1fr;/,
+  'mobile document fields must collapse to one touch-friendly column');
 assert.match(css, /\.parser-card, \.related-panel, \.workbench, \.document-fields, \.grid-card, \.table-scroll \{[^}]*min-width: 0;[^}]*max-width: 100%;/,
   'nested workspace cards must be allowed to shrink inside the responsive grid');
 assert.match(css, /prefers-color-scheme: dark/);
@@ -669,14 +674,21 @@ assert.match(css, /\.settings-group:not\(\[open\]\) > \.settings-group__body \{ 
   'closed settings groups must not leave empty body space');
 assert.match(css, /\.settings-layout-modes \{[^}]*grid-template-columns: repeat\(4,/,
   '전표별 상단 정보 열과 표시 열은 주문서·구매·판매·견적서 선택 탭을 제공해야 한다.');
-assert.match(css, /\.document-fields > \.field--mode \{ grid-column: 1;/,
-  '전표 선택은 상단 정보 영역의 첫 번째 열에 배치해야 한다.');
-assert.match(css, /\.document-fields \.field--mode \.mode-tabs \{[^}]*border: 2px solid var\(--voucher-accent\)/,
-  '전표 선택은 주황색 보더로 강조해야 한다.');
-assert.match(css, /\.document-fields \.field--mode \.mode-tabs \{[^}]*background: transparent;[^}]*box-shadow: none;/,
-  '전표 선택 영역은 배경 배색과 외곽 그림자를 사용하지 않아야 한다.');
-assert.match(css, /\.document-fields \.field--mode \.mode-tab\.is-active \{[^}]*background: transparent;[^}]*inset 0 -3px 0 var\(--voucher-accent\)/,
-  '선택 전표는 배경 채움 대신 라인으로만 표시해야 한다.');
+assert.match(css, /\.app-voucher-switcher \.mode-tabs \{[^}]*border: 2px solid var\(--voucher-accent\);[^}]*background: transparent;/,
+  '헤더의 전표 선택은 주황색 보더와 투명 배경을 유지해야 한다.');
+assert.match(css, /\.app-voucher-switcher \.mode-tab\.is-active \{[^}]*background: transparent;[^}]*inset 0 -3px 0 var\(--voucher-accent\)/,
+  '헤더의 선택 전표는 배경 채움 대신 라인으로만 표시해야 한다.');
+assert.match(css, /\.parser-toolbar \{[^}]*grid-template-columns: auto minmax\(0, 1fr\) auto;/,
+  '파서 상단은 음성·상태칩·지우기의 한 줄 구조여야 한다.');
+assert.match(appSource, /parserCard\.addEventListener\('dragover'/);
+assert.match(appSource, /parserCard\.addEventListener\('drop',[^\n]*acceptParserDrop/,
+  '파서 전체가 텍스트·이미지·문서 파일 끌어놓기를 받아야 한다.');
+assert.match(appSource, /isParserDocumentFile\(file\)/);
+assert.match(appSource, /isImageFile\(file\)/);
+assert.match(appSource, /parserCard\.contains\(event\.target\) && pastedText/,
+  'plain-text paste must work anywhere inside the parser, including after photo input');
+assert.match(appSource, /updateMethod\('text', \{ persist: false \}\)/,
+  'clearing a photo source must return the parser to direct text input');
 assert.match(css, /\.voucher-footer-actions \{[^}]*justify-content: flex-end;[^}]*border-top: 1px solid var\(--border\)/,
   '전표 작업 버튼은 입력표 하단의 독립 작업줄에 배치해야 한다.');
 assert.match(appSource, /거래처정보/);
@@ -778,8 +790,8 @@ assert.match(appSource, /photoViewer\.classList\.toggle\('has-image', showPhoto\
 assert.match(appSource, /\$\('photoEmptySelectButton'\)\.addEventListener\('click'/);
 assert.match(appSource, /state\.sourceImages\[state\.draft\.activeMode\] = imageEvidence;[\s\S]*renderSourceSurface\(\);[\s\S]*if \(state\.busy\)/,
   '붙여넣은 원본 사진은 진행 중인 파서보다 먼저 뷰어에 표시해야 한다.');
-assert.match(appSource, /if \(event\.target === sourceTextInput && event\.clipboardData\?\.getData\('text\/plain'\)\)/,
-  'pasting text into a standard-input cell must not switch an active photo workspace to text');
+assert.match(appSource, /if \(event\.target === sourceTextInput && pastedText\)[\s\S]*else if \(parserCard\.contains\(event\.target\) && pastedText\)/,
+  'plain-text paste may switch photo mode only when the event belongs to the parser, never a standard-input cell');
 assert.match(appSource, /if \(status === 'SIMILAR'\) return '유사';[\s\S]*return '불일치';/);
 assert.match(appSource, /data-field="unitPrice" type="text" inputmode="decimal"/,
   '단가 입력은 브라우저 숫자 증감 스피너를 사용하면 안 된다.');

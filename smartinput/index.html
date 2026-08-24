@@ -8,7 +8,7 @@
   <meta name="description" content="주문서·구매·판매·견적 자료를 분석하고 표준 입력표로 전달하는 NEXUS 스마트입력">
   <link rel="icon" type="image/png" href="../nexus/assets/nexus-favicon.png">
   <link rel="stylesheet" href="../orderq/customer-master.css?v=0.12.1" data-customer-picker-style>
-  <link rel="stylesheet" href="./smartinput.css?v=0.4.20">
+  <link rel="stylesheet" href="./smartinput.css?v=0.4.21">
   <script src="../nexus/common/apps-config.js?v=1.4.0"></script>
   <script src="../nexus/common/nexus-top.js?v=1.4.0"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
@@ -25,6 +25,15 @@
       <div class="app-status" id="appStatus" role="status" aria-live="polite">
         <span class="app-status__dot" aria-hidden="true"></span>
         <span>새 입력을 시작할 수 있습니다.</span>
+      </div>
+      <div class="app-voucher-switcher">
+        <span class="sr-only">전표 선택</span>
+        <nav class="mode-tabs" aria-label="전표 선택">
+          <button type="button" class="mode-tab is-active" data-mode="order" aria-selected="true"><span>주문서</span><kbd>Alt+1</kbd></button>
+          <button type="button" class="mode-tab" data-mode="purchase" aria-selected="false"><span>구매</span><kbd>Alt+2</kbd></button>
+          <button type="button" class="mode-tab" data-mode="sale" aria-selected="false"><span>판매</span><kbd>Alt+3</kbd></button>
+          <button type="button" class="mode-tab" data-mode="estimate" aria-selected="false"><span>견적서</span><kbd>Alt+4</kbd></button>
+        </nav>
       </div>
       <div class="app-bar__actions">
         <span class="save-state" id="saveState" role="status" aria-live="polite"></span>
@@ -43,30 +52,23 @@
     <h1 class="sr-only">스마트입력</h1>
     <div class="workspace">
       <section class="parser-card" aria-label="원본 자료 입력">
-        <div class="method-bar" role="toolbar" aria-label="입력 방식">
-          <button type="button" data-method="direct">직접입력</button>
-          <button type="button" data-method="excel">Excel·파일</button>
-          <button type="button" class="is-active" data-method="text">텍스트</button>
-          <button type="button" data-method="paste">Ctrl+V</button>
-          <button type="button" data-method="photo">사진 OCR</button>
-          <button type="button" data-method="voice">음성 STT</button>
+        <div class="parser-toolbar" role="toolbar" aria-label="파서 작업">
+          <button class="button button--quiet button--small parser-voice-button" type="button" data-method="voice"><span aria-hidden="true">●</span> 음성</button>
+          <div class="legend" aria-label="매칭 상태 범례"><span class="legend--matched">일치</span><span class="legend--similar">유사</span><span class="legend--failed">불일치</span></div>
+          <button class="button button--quiet button--small parser-clear-button" id="clearParserButton" type="button" title="파서 원문과 분석 결과 지우기"><span aria-hidden="true">↻</span> 지우기</button>
           <input id="fileInput" type="file" accept=".xlsx,.xls,.csv,.tsv,.txt" hidden>
           <input id="photoInput" type="file" accept="image/*" capture="environment" hidden>
-        </div>
-        <div class="parser-utility-bar">
-          <div class="activity-trail" id="activityTrail" role="status" aria-live="polite" hidden>
-            <span class="activity-trail__current" id="activityCurrent" hidden><i aria-hidden="true"></i><strong id="activityCurrentText"></strong></span>
-            <ol id="activityItems" aria-label="누적 입력현황"></ol>
+          <div class="activity-trail sr-only" id="activityTrail" role="status" aria-live="polite" hidden>
+            <span class="activity-trail__current" id="activityCurrent" hidden><i aria-hidden="true"></i><strong id="activityCurrentText"></strong></span><ol id="activityItems" aria-label="누적 입력현황"></ol>
           </div>
-          <button class="button button--quiet button--small parser-clear-button" id="clearParserButton" type="button" title="파서 원문과 분석 결과 지우기"><span aria-hidden="true">↻</span> 지우기</button>
         </div>
         <div class="parser-input-row">
           <div class="source-editor" id="sourceEditor">
             <div class="source-editor__body">
               <pre class="source-highlight" id="sourceHighlight" aria-hidden="true"></pre>
-              <textarea id="sourceTextInput" rows="3" spellcheck="false" placeholder="거래처명과 상품·수량을 붙여넣으세요.&#10;입력하면 자동으로 분석합니다."></textarea>
+              <textarea id="sourceTextInput" rows="3" spellcheck="false" placeholder="텍스트·이미지·Excel 파일을&#10;붙여넣거나 끌어다 놓으세요.&#10;입력 내용을 자동으로 분석합니다."></textarea>
             </div>
-            <div class="source-editor__meta"><span id="sourceLength">0자</span><span id="sourceNotice">텍스트와 이미지를 바로 붙여넣을 수 있습니다.</span></div>
+            <div class="source-editor__meta"><span id="sourceLength">0자</span><span id="sourceNotice">직접 입력과 Ctrl+V도 지원합니다.</span></div>
           </div>
           <div class="photo-viewer" id="photoViewer" hidden>
             <div class="photo-viewer__toolbar" id="photoViewerToolbar" role="toolbar" aria-label="원본 사진 보기" hidden>
@@ -109,16 +111,6 @@
 
       <section class="workbench" aria-label="스마트입력 본문">
         <div class="document-fields">
-          <div class="field field--mode">
-            <span>전표 선택</span>
-            <nav class="mode-tabs" aria-label="전표 선택">
-              <button type="button" class="mode-tab is-active" data-mode="order" aria-selected="true"><span>주문서</span><kbd>Alt+1</kbd></button>
-              <button type="button" class="mode-tab" data-mode="purchase" aria-selected="false"><span>구매</span><kbd>Alt+2</kbd></button>
-              <button type="button" class="mode-tab" data-mode="sale" aria-selected="false"><span>판매</span><kbd>Alt+3</kbd></button>
-              <button type="button" class="mode-tab" data-mode="estimate" aria-selected="false"><span>견적서</span><kbd>Alt+4</kbd></button>
-            </nav>
-            <small>Alt+1~4로 빠르게 전환합니다.</small>
-          </div>
           <label class="field" data-header-field="deliveryDate"><span>배송일자</span><input id="deliveryDateInput" type="date"><small id="deliveryPolicyHint">배송 가능일을 계산합니다.</small></label>
           <label class="field" data-header-field="warehouse"><span>출하창고 <em>필수</em></span><input id="warehouseInput" type="text" list="warehouseOptions" placeholder="창고명 또는 코드"><datalist id="warehouseOptions"></datalist><small>배송·출고에 사용할 창고를 지정합니다.</small></label>
           <label class="field" data-header-field="transactionType"><span>거래유형</span><select id="transactionTypeInput"><option>기타</option><option>카드</option><option>현금</option><option>현금영수증</option><option>사내사용</option></select><small>전표의 거래 처리 유형을 지정합니다.</small></label>
@@ -150,7 +142,6 @@
               <button class="button button--primary button--small" id="catalogSaveButton" type="button" hidden>견적서 저장</button>
               <button class="button button--danger button--small" id="catalogDeleteButton" type="button" hidden disabled>삭제</button>
             </div>
-            <div class="legend" aria-label="매칭 상태 범례"><span class="legend--matched">일치</span><span class="legend--similar">유사</span><span class="legend--failed">불일치</span></div>
           </div>
           <div class="grid-toolbar">
             <div class="grid-stats"><strong id="gridRowCount">0행</strong><span id="matchedCount">일치 0</span><span id="similarCount">확인 0</span><span id="failedCount">미인식 0</span><span id="duplicateCount">중복 가능 0</span></div>
@@ -191,6 +182,6 @@
 
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
   <script src="./smartinput-contract.js?v=0.4.14"></script>
-  <script type="module" src="./smartinput.js?v=0.4.23"></script>
+  <script type="module" src="./smartinput.js?v=0.4.24"></script>
 </body>
 </html>
