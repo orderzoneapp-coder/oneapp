@@ -58,6 +58,37 @@ function clone(value) {
   return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
 }
 
+export function buildLegacyPurchaseStage3Snapshot(aggregate = {}) {
+  const document = aggregate.document || aggregate;
+  const purchaseDocumentId = text(document.purchaseDocumentId);
+  return {
+    contractKind: 'LEGACY_PURCHASE_V1',
+    originSystem: 'ORDERQ_LEGACY_PURCHASE',
+    originTransactionId: purchaseDocumentId,
+    legacyPurchaseDocumentId: purchaseDocumentId,
+    externalDocumentNo: text(document.externalDocumentNo || document.erpDocumentNo),
+    purchasePlanId: text(document.sourceShortageKey),
+    legacySourceShortageKey: text(document.sourceShortageKey),
+    supplierCustomerId: text(document.supplierId),
+    supplierCustomerName: text(document.supplierName),
+    lines: (aggregate.lines || []).map(line => ({
+      purchaseLineId: text(line.purchaseLineId), productId: text(line.productId), productCode: text(line.productCode),
+      warehouseId: text(line.warehouseId), actualQuantity: finite(line.quantity), unit: text(line.unit),
+      baseQuantity: finite(line.baseQuantity), baseUnit: text(line.baseUnit), unitPrice: finite(line.unitCostWon)
+    }))
+  };
+}
+
+export async function findLegacyPurchaseOriginConflict(identity = {}) {
+  const purchasePlanId = text(identity.purchasePlanId || identity.legacySourceShortageKey);
+  const legacyPurchaseDocumentId = text(identity.legacyPurchaseDocumentId);
+  const rows = await listPurchases({});
+  const document = rows.filter(row => text(row.documentContract) !== 'VOUCHER_CORE_V1')
+    .find(row => (legacyPurchaseDocumentId && text(row.purchaseDocumentId) === legacyPurchaseDocumentId)
+    || (purchasePlanId && text(row.sourceShortageKey) === purchasePlanId)) || null;
+  return document ? buildLegacyPurchaseStage3Snapshot(document) : null;
+}
+
 async function allFrom(tx, storeName, indexName = '', query = undefined) {
   const store = tx.objectStore(storeName);
   return requestToPromise((indexName ? store.index(indexName) : store).getAll(query));
