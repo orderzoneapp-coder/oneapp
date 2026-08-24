@@ -146,7 +146,13 @@ export async function loadSmartInputData() {
     linkGroups,
     temporaryCustomers,
     aliasMappings,
-    estimates: estimates.sort((left, right) => String(right.updatedAt || '').localeCompare(String(left.updatedAt || ''))),
+    estimates: estimates.sort((left, right) => {
+      const leftOrder = Number(left.sortOrder);
+      const rightOrder = Number(right.sortOrder);
+      if (Number.isFinite(leftOrder) && Number.isFinite(rightOrder) && leftOrder !== rightOrder) return leftOrder - rightOrder;
+      if (Number.isFinite(leftOrder) !== Number.isFinite(rightOrder)) return Number.isFinite(leftOrder) ? -1 : 1;
+      return String(left.createdAt || left.updatedAt || '').localeCompare(String(right.createdAt || right.updatedAt || ''));
+    }),
     sourceImages
   };
 }

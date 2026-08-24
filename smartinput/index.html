@@ -8,7 +8,7 @@
   <meta name="description" content="주문서·구매·판매·견적 자료를 분석하고 표준 입력표로 전달하는 NEXUS 스마트입력">
   <link rel="icon" type="image/png" href="../nexus/assets/nexus-favicon.png">
   <link rel="stylesheet" href="../orderq/customer-master.css?v=0.12.1" data-customer-picker-style>
-  <link rel="stylesheet" href="./smartinput.css?v=0.4.21">
+  <link rel="stylesheet" href="./smartinput.css?v=0.4.22">
   <script src="../nexus/common/apps-config.js?v=1.4.0"></script>
   <script src="../nexus/common/nexus-top.js?v=1.4.0"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
@@ -107,7 +107,7 @@
         <div class="parser-progress" id="parserProgress" hidden><span></span><strong>자료를 분석하고 있습니다.</strong></div>
       </section>
 
-      <button class="photo-resizer" id="photoResizer" type="button" aria-label="원본 사진과 입력표 폭 조절" hidden><span></span></button>
+      <button class="photo-resizer" id="photoResizer" type="button" aria-label="파서 입력창과 입력표 폭 조절"><span></span></button>
 
       <section class="workbench" aria-label="스마트입력 본문">
         <div class="document-fields">
@@ -131,16 +131,17 @@
               </label>
               <input id="taxCustomerInput" type="hidden">
               <span id="customerRelationHint" hidden></span>
-              <label class="catalog-filter" id="catalogFilter" hidden>
-                <span>견적서 · 거래처 자동 지정</span>
-                <div class="catalog-selection-row">
-                  <select id="catalogSelect" aria-label="거래처 견적서 불러오기"><option value="">견적서 선택</option></select>
-                  <button class="button button--quiet button--small" id="catalogBatchButton" type="button" disabled>공지 묶음 0/3</button>
+              <div class="catalog-filter" id="catalogFilter" hidden>
+                <span>견적서 필터 · 거래처 자동 지정</span>
+                <div class="catalog-picker" id="catalogPicker">
+                  <button class="catalog-picker__toggle" id="catalogPickerButton" type="button" aria-haspopup="true" aria-expanded="false">견적서 선택</button>
+                  <div class="catalog-picker__menu" id="catalogPickerMenu" popover="auto">
+                    <div class="catalog-picker__heading"><span>견적서명</span><span>일괄출력</span><span>관리</span></div>
+                    <div class="catalog-picker__list" id="catalogPickerList"></div>
+                  </div>
                 </div>
-              </label>
-              <button class="button button--quiet button--small" id="catalogNewButton" type="button" hidden>신규</button>
-              <button class="button button--primary button--small" id="catalogSaveButton" type="button" hidden>견적서 저장</button>
-              <button class="button button--danger button--small" id="catalogDeleteButton" type="button" hidden disabled>삭제</button>
+              </div>
+              <button class="button button--primary button--small" id="catalogSaveButton" type="button" hidden>저장</button>
             </div>
           </div>
           <div class="grid-toolbar">
@@ -182,6 +183,6 @@
 
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
   <script src="./smartinput-contract.js?v=0.4.14"></script>
-  <script type="module" src="./smartinput.js?v=0.4.24"></script>
+  <script type="module" src="./smartinput.js?v=0.4.25"></script>
 </body>
 </html>
