@@ -747,7 +747,7 @@
     if (!rows.length) errors.push({ field: 'rows', message: '상품을 1개 이상 입력하세요.' });
     rows.forEach((row, index) => {
       if (!text(row.itemName) && !text(row.itemCode)) errors.push({ field: `row:${index}:item`, message: `${index + 1}행 상품을 입력하세요.` });
-      if (numberOrNull(row.quantity) === null) errors.push({ field: `row:${index}:quantity`, message: `${index + 1}행 수량을 입력하세요.` });
+      if (numberOrNull(row.quantity) === null) errors.push({ field: `row:${index}:quantity`, message: `${index + 1}행 수량을 입력하세요. 0과 음수는 사용할 수 있습니다.` });
     });
     return errors;
   }

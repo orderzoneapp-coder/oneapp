@@ -260,6 +260,19 @@ orderDraft.header = {
 };
 orderDraft.rows = rows;
 assert.deepEqual(Array.from(contract.validateOrderDraft(orderDraft)), []);
+const signedQuantityOrderDraft = {
+  ...orderDraft,
+  rows: rows.map((row, index) => ({ ...row, quantity: index === 0 ? 0 : -2 }))
+};
+assert.deepEqual(Array.from(contract.validateOrderDraft(signedQuantityOrderDraft)), [],
+  'order quantity zero and negative values must remain valid');
+const blankQuantityOrderDraft = {
+  ...orderDraft,
+  rows: rows.map((row, index) => ({ ...row, quantity: index === 0 ? '' : row.quantity }))
+};
+const blankQuantityError = contract.validateOrderDraft(blankQuantityOrderDraft).find(error => error.field === 'row:0:quantity');
+assert.ok(blankQuantityError, 'blank order quantity must remain invalid');
+assert.match(blankQuantityError.message, /0과 음수는 사용할 수 있습니다/);
 orderDraft.header.customerId = '';
 assert.equal(contract.validateOrderDraft(orderDraft)[0].field, 'customer');
 
