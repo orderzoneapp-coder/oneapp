@@ -1793,11 +1793,11 @@ function renderCatalogControls() {
   if (!visible) return;
   const current = modeDraft();
   const records = availableCatalogs(current.header);
-  $('catalogSelect').innerHTML = `<option value="">카탈로그 선택</option>${records.map(record => (
+  $('catalogSelect').innerHTML = `<option value="">견적서 선택</option>${records.map(record => (
     `<option value="${esc(record.estimateId)}">${esc(estimateTitle(record))}</option>`
   )).join('')}`;
   $('catalogSelect').value = records.some(record => record.estimateId === current.catalogRecordId) ? current.catalogRecordId : '';
-  $('catalogSaveButton').textContent = current.catalogRecordId ? '수정 저장' : '카탈로그 저장';
+  $('catalogSaveButton').textContent = current.catalogRecordId ? '수정 저장' : '견적서 저장';
   $('catalogDeleteButton').disabled = !current.catalogRecordId;
 }
 
@@ -1865,7 +1865,7 @@ function loadCatalogRecord(record) {
   saveDraftNow();
   renderMode();
   if (catalogDraft.header.customerId) {
-    $('customerHint').textContent = '카탈로그에 연결된 배송 거래처가 자동 지정되었습니다.';
+    $('customerHint').textContent = '견적서에 연결된 배송 거래처가 자동 지정되었습니다.';
   }
   toast(`${estimateTitle(record)}과 배송 거래처를 불러왔습니다.`, 'success');
 }
@@ -1890,16 +1890,16 @@ async function deleteSelectedCatalog() {
   const current = modeDraft();
   const estimateId = current.catalogRecordId || $('catalogSelect').value;
   const record = state.estimates.find(item => item.estimateId === estimateId);
-  if (!record) return toast('삭제할 카탈로그를 선택하세요.', 'error');
-  if (!window.confirm(`${estimateTitle(record)} 카탈로그를 삭제하시겠습니까?`)) return;
+  if (!record) return toast('삭제할 견적서를 선택하세요.', 'error');
+  if (!window.confirm(`${estimateTitle(record)} 견적서를 삭제하시겠습니까?`)) return;
   try {
     await deleteEstimate(estimateId);
     state.estimates = state.estimates.filter(item => item.estimateId !== estimateId);
     startNewCatalog();
     renderCatalogControls();
-    toast('선택한 카탈로그를 삭제했습니다.', 'success');
+    toast('선택한 견적서를 삭제했습니다.', 'success');
   } catch (error) {
-    toast(error.message || '카탈로그를 삭제하지 못했습니다.', 'error');
+    toast(error.message || '견적서를 삭제하지 못했습니다.', 'error');
   }
 }
 
@@ -2059,10 +2059,10 @@ function renderDelivery() {
   const isEstimate = state.draft.activeMode === 'estimate';
   const delivery = modeDraft().delivery;
   const lastDelivery = isOrder ? state.draft.ui.lastDelivery : null;
-  $('deliveryTarget').textContent = isOrder ? '공통 주문서 원장' : (isEstimate ? '견적서 카탈로그' : `${contract.MODES[state.draft.activeMode].label} 전달 계약 준비 중`);
+  $('deliveryTarget').textContent = isOrder ? '공통 주문서 원장' : (isEstimate ? '저장 견적서' : `${contract.MODES[state.draft.activeMode].label} 전달 계약 준비 중`);
   $('deliveryDescription').textContent = isOrder
     ? 'ORDER Q vNext 저장소에 먼저 기록합니다.'
-    : (isEstimate ? '카탈로그에서 저장·불러오기·삭제를 관리합니다.' : '확정된 DataOps 연결만 이후 단계에서 활성화합니다.');
+    : (isEstimate ? '견적서 저장·불러오기·삭제를 관리합니다.' : '확정된 DataOps 연결만 이후 단계에서 활성화합니다.');
   const visibleDelivery = delivery.status === 'SAVED' ? delivery : lastDelivery;
   $('deliveryState').textContent = visibleDelivery
     ? `최근 ${visibleDelivery.orderNo || visibleDelivery.targetRecordId || '저장 완료'}${visibleDelivery.deliveredAt ? ` · ${new Date(visibleDelivery.deliveredAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}` : ''}`
@@ -2106,7 +2106,7 @@ function renderMode() {
   $('relatedCollapseButton').textContent = relatedOpen ? '연결 앱 닫기' : '연결 앱 열기';
   setAppStatus(selected.id === 'order'
     ? '주문서 입력을 시작할 수 있습니다.'
-    : (selected.id === 'estimate' ? '카탈로그를 선택하거나 새 견적을 작성할 수 있습니다.' : `${selected.label} 입력 화면입니다. 전달 연결은 준비 중입니다.`));
+    : (selected.id === 'estimate' ? '견적서를 선택하거나 새 견적을 작성할 수 있습니다.' : `${selected.label} 입력 화면입니다. 전달 연결은 준비 중입니다.`));
   if (sourceTextInput.value.trim()) scheduleAutoAnalysis(650);
 }
 
@@ -3188,7 +3188,7 @@ async function saveEstimateDocument() {
   const current = modeDraft();
   if (!current.header.customerId) {
     $('customerInput').focus();
-    toast('카탈로그를 저장할 배송 거래처를 선택하세요.', 'error');
+    toast('견적서를 저장할 배송 거래처를 선택하세요.', 'error');
     return;
   }
   if (!current.rows.length) {
@@ -3204,7 +3204,7 @@ async function saveEstimateDocument() {
   }
   state.busy = true;
   renderDelivery();
-  setAppStatus('견적서 카탈로그에 저장하고 있습니다.');
+  setAppStatus('견적서를 저장하고 있습니다.');
   try {
     const timestamp = new Date().toISOString();
     const isNewCatalog = !current.catalogRecordId;
@@ -3239,7 +3239,7 @@ async function saveEstimateDocument() {
     renderCatalogControls();
     renderDelivery();
     setAppStatus(`${estimateTitle(record)} · ${summary.total}품목 견적 저장 완료`);
-    toast(isNewCatalog ? '새 카탈로그를 생성했습니다.' : '카탈로그를 수정 저장했습니다.', 'success');
+    toast(isNewCatalog ? '새 견적서를 생성했습니다.' : '견적서를 수정 저장했습니다.', 'success');
   } catch (error) {
     setAppStatus('견적서를 저장하지 못했습니다. 입력 내용은 유지됩니다.', 'error');
     toast(error.message || '견적서 저장에 실패했습니다.', 'error');
