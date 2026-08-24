@@ -10,7 +10,7 @@ import { createLiveCustomer, ensureCustomerMasterReady, listCustomers } from '..
 import { isSelectableMasterProduct, loadProductCatalog, searchProductCatalog } from '../orderq/product-master-search.js?v=0.8.3';
 import { loadWarehouseCatalog, matchWarehouseInput, warehouseDisplayName } from '../orderq/warehouse-master.js?v=0.8.0';
 import { recognizeOcrDocument, verifiedRowsToParserLines } from './ocr-document-parser.js?v=0.1.1';
-import { parseStructuredSheet } from './structured-sheet-parser.js?v=0.1.0';
+import { parseStructuredSheet } from './structured-sheet-parser.js?v=0.1.1';
 import { buildGridPastePlan } from './grid-clipboard.js?v=0.1.0';
 import {
   buildMinimumUploadMatrix,
@@ -28,7 +28,7 @@ import {
   buildEstimateF8Data,
   renderKakaoNoticeCanvases,
   KAKAO_NOTICE_ROWS_PER_PAGE
-} from './estimate-output.js?v=0.1.1';
+} from './estimate-output.js?v=0.1.2';
 import {
   createRecordId,
   loadSmartInputData,
@@ -2262,7 +2262,7 @@ function renderRows({ restoreFocus = true } = {}) {
       <td data-column="specification"><input data-field="specification" value="${esc(row.specification)}" aria-label="규격"></td>
       <td data-column="quantity"><input data-field="quantity" type="number" step="any" value="${esc(row.quantity ?? '')}" aria-label="수량"></td>
       <td data-column="unit"><input data-field="unit" value="${esc(row.unit)}" aria-label="단위"></td>
-      <td data-column="unitPrice" class="price-cell${row.unitPriceReviewStatus === 'PENDING' ? ' is-price-review-pending' : ''}"><input data-field="unitPrice" type="text" inputmode="decimal" value="${esc(row.unitPrice ?? '')}" aria-label="단가"></td>
+      <td data-column="unitPrice" class="price-cell${row.unitPriceReviewStatus === 'PENDING' ? ' is-price-review-pending' : ''}"><input data-field="unitPrice" type="text" inputmode="decimal" value="${esc(row.sourceUnitPrice ?? row.unitPrice ?? '')}" aria-label="단가"></td>
       <td data-column="supplyAmount"><input data-supply-amount value="${amount.toLocaleString('ko-KR')}" aria-label="공급가액" readonly tabindex="-1"></td>
       <td data-column="memo"><input data-field="memo" value="${esc(row.memo)}" aria-label="메모"></td>
       <td data-column="description"><input data-field="description" value="${esc(row.description)}" aria-label="적요(직원)"></td>
@@ -3018,6 +3018,7 @@ async function analyzeSource({ automatic = false } = {}) {
       contract.ROW_FIELDS.forEach(field => {
         if (previous.editedFields?.[field]) row[field] = previous[field];
       });
+      if (previous.editedFields?.unitPrice) row.sourceUnitPrice = previous.sourceUnitPrice;
       row.editedFields = { ...(previous.editedFields || {}) };
       if (previous.unitPriceReviewStatus === 'CONFIRMED' && Number(previous.unitPrice) === Number(row.unitPrice)) {
         row.unitPriceReviewStatus = 'CONFIRMED';
@@ -3810,25 +3811,15 @@ function exportEstimateExcel() {
   const selectedRecords = selectedEstimateRecords();
   const sourceRows = selectedRecords.length ? combinedEstimateRows(selectedRecords) : modeDraft().rows;
   const output = buildEstimateF8Data(sourceRows);
-  if (!output.ok) {
-    const first = output.errors[0];
-    if (Number.isInteger(first?.rowIndex)) {
-      inputRows.querySelectorAll('tr')[first.rowIndex]?.querySelector('[data-field="itemCode"], [data-field="unitPrice"]')?.focus();
-    }
-    setAppStatus(first?.message || '견적 Excel 출력 조건을 확인하세요.', 'error');
-    return toast(first?.message || '견적 Excel 출력 조건을 확인하세요.', 'error');
-  }
   if (!window.XLSX?.utils?.book_new) return toast('Excel 생성 모듈을 불러오지 못했습니다.', 'error');
   const workbook = window.XLSX.utils.book_new();
+  window.XLSX.utils.book_append_sheet(workbook, window.XLSX.utils.aoa_to_sheet(output.errorData), '오류정보');
   window.XLSX.utils.book_append_sheet(workbook, window.XLSX.utils.aoa_to_sheet(output.shopData), '쇼핑몰업로드');
   window.XLSX.utils.book_append_sheet(workbook, window.XLSX.utils.aoa_to_sheet(output.erpData), 'ERP업데이트');
-  if (output.confirmData.length > 1) {
-    window.XLSX.utils.book_append_sheet(workbook, window.XLSX.utils.aoa_to_sheet(output.confirmData), '확인요청');
-  }
   const dateStamp = new Date().toLocaleDateString('sv-SE');
   const selectionLabel = selectedRecords.length ? `선택견적_${selectedRecords.length}개_` : '';
   window.XLSX.writeFile(workbook, `통합업로드용_${selectionLabel}견적F8_${dateStamp}.xlsx`);
-  setAppStatus(`견적 Excel 생성 완료 · ${selectedRecords.length || 1}개 견적 · ${output.rows.length}품목`);
+  setAppStatus(`견적 Excel 생성 완료 · ${selectedRecords.length || 1}개 견적 · ${output.rows.length}품목 · 확인 ${output.errorData.length - 1}건`);
   toast(selectedRecords.length ? '선택한 견적서의 상품을 합쳐 Excel로 생성했습니다.' : '현재 견적서를 Excel로 생성했습니다.', 'success');
 }
 

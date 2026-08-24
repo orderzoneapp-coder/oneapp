@@ -136,6 +136,7 @@ export function parseStructuredSheet(matrix = [], {
       const rawValue = sourceRow?.[mapping.columnIndex] ?? '';
       const hasValue = cellText(rawValue) !== '';
       editedFields[mapping.fieldId] = true;
+      if (mapping.fieldId === 'unitPrice') values.sourceUnitPrice = String(rawValue ?? '');
       if (!hasValue) {
         values[mapping.fieldId] = mapping.valueType === 'NUMBER' ? null : '';
         return;

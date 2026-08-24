@@ -140,6 +140,14 @@ assert.equal(extendedProductRow.materialStandardCost, 1250);
 assert.equal(extendedProductRow.brand, 'ORDERZ');
 assert.equal(contract.normalizeRow({ unitPrice: 3800, unitPriceReviewStatus: 'PENDING' }).unitPriceReviewStatus, 'PENDING');
 assert.equal(contract.normalizeRow({ unitPrice: 3800 }).unitPriceReviewStatus, 'CONFIRMED');
+assert.equal(contract.normalizeRow({ unitPrice: '' }).unitPrice, null, '업무 단가의 숫자/null 계약은 유지해야 한다.');
+assert.equal(contract.normalizeRow({ unitPrice: '' }).sourceUnitPrice, '', '단가 공백은 별도 원본 필드에 유지해야 한다.');
+assert.equal(contract.normalizeRow({ unitPrice: 0 }).unitPrice, 0, '단가 0은 공백과 구분해야 한다.');
+assert.equal(contract.normalizeRow({ unitPrice: '가격 확인' }).unitPrice, null, '업무 단가에 비숫자 문자열을 전파하면 안 된다.');
+assert.equal(contract.normalizeRow({ unitPrice: '가격 확인' }).sourceUnitPrice, '가격 확인', '비숫자 단가 원본은 별도 필드에 유지해야 한다.');
+const directlyEditedInvalidPrice = contract.markProductEdit(contract.normalizeRow({ itemCode: 'DIRECT' }), 'unitPrice', '가격 확인');
+assert.equal(directlyEditedInvalidPrice.unitPrice, null);
+assert.equal(directlyEditedInvalidPrice.sourceUnitPrice, '가격 확인', '관리자가 직접 입력한 비숫자 단가도 견적 Excel 원본으로 유지해야 한다.');
 const estimateDraftWithPrices = contract.normalizeModeDraft('estimate', {
   catalogRecordId: 'CAT-1',
   catalogBaselinePrices: { 'MASTER:M-1': 12000 },
@@ -204,12 +212,60 @@ assert.equal(validateEstimateRows([{ ...estimateOutputRows[0], itemCode: '' }]).
 assert.equal(validateEstimateRows([estimateOutputRows[0], { ...estimateOutputRows[0], masterProductId: 'M-2' }]).errors.some(error => error.code === 'DUPLICATE_ITEM_CODE'), true);
 const estimateF8 = buildEstimateF8Data(estimateOutputRows);
 assert.equal(estimateF8.ok, true);
-assert.deepEqual(estimateF8.shopData[0].slice(0, 6), ['상품코드\n코드', '상품명', '규격', '출고가', '도매A', '시중가']);
+assert.equal(estimateF8.validationOk, true);
+assert.deepEqual(estimateF8.shopData[0], [
+  '상품코드\n코드', '상품명', '규격', '출고가', '도매A', '시중가', 'B판매가', '도매B',
+  'C 판매가', 'C 도매가', 'D 판매가', 'D 도매가', '브랜드', '기본설명', '판매여부',
+  '재고수량', '테마1', '테마2', '테마3', '테마4', '테마5', '상품태그'
+]);
 assert.deepEqual(estimateF8.shopData[1].slice(0, 6), ['1001', '열무', '4kg', '', 3800, 4200]);
+assert.deepEqual(estimateF8.erpData[0], ['품목코드', '입고가', '0', '출고가', '0', '입고B', 'n', '도매A', 'n', '도매B', 'n']);
 assert.deepEqual(estimateF8.erpData[1], ['1001', '', '0', '', '0', '', 'n', 3800, 'n', '', 'n']);
-assert.equal(estimateF8.confirmData.length, 2);
-assert.deepEqual(estimateF8.confirmData[0], ['확인구분', '상품코드', '상품명', '규격', '기준입고항목', '기준입고가', '도매항목', '도매가', '차이', '확인요청']);
-assert.equal(estimateF8.confirmData[1][7], 3800);
+assert.deepEqual(estimateF8.errorData[0], ['행', '품목', '필드', '원본값', '오류내용', '관리자 판단 안내']);
+assert.equal(estimateF8.errorData[1][3], 3800);
+
+const unblockedEstimateF8 = buildEstimateF8Data([
+  { ...estimateOutputRows[0], itemCode: 'BLANK', unitPrice: '', unitPriceReviewStatus: 'CONFIRMED' },
+  { ...estimateOutputRows[0], itemCode: 'ZERO', unitPrice: 0, unitPriceReviewStatus: 'CONFIRMED' },
+  { ...estimateOutputRows[0], itemCode: 'NUMBER', unitPrice: '1,500', unitPriceReviewStatus: 'CONFIRMED' },
+  { ...estimateOutputRows[0], itemCode: 'TEXT', unitPrice: '가격 확인', unitPriceReviewStatus: 'CONFIRMED' }
+]);
+assert.equal(unblockedEstimateF8.ok, true, '오류가 있어도 Excel 출력 데이터는 생성해야 한다.');
+assert.equal(unblockedEstimateF8.validationOk, false);
+assert.deepEqual(unblockedEstimateF8.shopData.slice(1).map(row => row[4]), ['', 0, 1500, '가격 확인']);
+assert.deepEqual(unblockedEstimateF8.erpData.slice(1).map(row => row[7]), ['', 0, 1500, '가격 확인']);
+assert.ok(unblockedEstimateF8.errorData.some(row => row[2] === '단가' && row[3] === ''));
+assert.ok(unblockedEstimateF8.errorData.some(row => row[2] === '단가' && row[3] === '가격 확인'));
+
+const advisoryEstimateF8 = buildEstimateF8Data([
+  {},
+  { ...estimateOutputRows[0], productId: '', masterProductId: '', itemCode: '', unitPrice: 1000, unitPriceReviewStatus: 'CONFIRMED' },
+  { ...estimateOutputRows[0], itemCode: 'DUP', unitPriceReviewStatus: 'CONFIRMED' },
+  { ...estimateOutputRows[0], itemCode: 'DUP', unitPriceReviewStatus: 'CONFIRMED' }
+]);
+assert.equal(advisoryEstimateF8.ok, true);
+assert.equal(advisoryEstimateF8.shopData.length, 4, '품목이 전혀 없는 빈 행만 제외해야 한다.');
+for (const code of ['ITEM_CODE_REQUIRED', 'MASTER_LINK_REQUIRED', 'DUPLICATE_ITEM_CODE']) {
+  assert.ok(advisoryEstimateF8.errors.some(error => error.code === code), `${code}는 차단 대신 오류정보에 있어야 한다.`);
+}
+const combinedIssueF8 = buildEstimateF8Data([
+  {},
+  { ...estimateOutputRows[0], itemCode: 'BLANK-ALL', unitPrice: '', unitPriceReviewStatus: 'CONFIRMED' },
+  { ...estimateOutputRows[0], itemCode: 'ZERO-ALL', unitPrice: 0, unitPriceReviewStatus: 'CONFIRMED' },
+  { ...estimateOutputRows[0], itemCode: 'NUMBER-ALL', unitPrice: '1,500', unitPriceReviewStatus: 'CONFIRMED' },
+  { ...estimateOutputRows[0], itemCode: 'TEXT-ALL', unitPrice: '가격 확인', unitPriceReviewStatus: 'CONFIRMED' },
+  { ...estimateOutputRows[0], itemCode: '', unitPrice: 1000, unitPriceReviewStatus: 'CONFIRMED' },
+  { ...estimateOutputRows[0], productId: '', masterProductId: '', itemCode: 'NO-MASTER', unitPrice: 1000, unitPriceReviewStatus: 'CONFIRMED' },
+  { ...estimateOutputRows[0], itemCode: 'DUP-ALL', unitPrice: 1000, unitPriceReviewStatus: 'CONFIRMED' },
+  { ...estimateOutputRows[0], itemCode: 'DUP-ALL', unitPrice: 1000, unitPriceReviewStatus: 'CONFIRMED' }
+]);
+assert.equal(combinedIssueF8.ok, true);
+assert.equal(combinedIssueF8.shopData.length, 9);
+assert.equal(combinedIssueF8.erpData.length, 9);
+assert.equal(combinedIssueF8.errorData.length, 7, '오류정보 헤더 1행과 확인 항목 6건을 출력해야 한다.');
+assert.ok(combinedIssueF8.errorData.slice(1).every(row => row.length === 6 && row[4] && row[5]));
+assert.deepEqual(combinedIssueF8.shopData.slice(1, 5).map(row => row[4]), ['', 0, 1500, '가격 확인']);
+assert.deepEqual(combinedIssueF8.erpData.slice(1, 5).map(row => row[7]), ['', 0, 1500, '가격 확인']);
 assert.equal(validateEstimateRows([{}, { ...estimateOutputRows[0], itemCode: '' }]).errors[0].rowIndex, 1);
 assert.deepEqual(JSON.parse(JSON.stringify(contract.normalizeRow({
   sourceRegion: { left: .1, top: .2, width: .3, height: .4 }
@@ -885,7 +941,16 @@ assert.match(appSource, /previousPrices: priorPrices/);
 assert.match(appSource, /buildCatalogPriceSnapshot\(current\.rows\)/);
 assert.match(appSource, /'쇼핑몰업로드'/);
 assert.match(appSource, /'ERP업데이트'/);
-assert.match(appSource, /if \(output\.confirmData\.length > 1\)/);
+const errorSheetAppendAt = appSource.indexOf("'오류정보'");
+const shopSheetAppendAt = appSource.indexOf("'쇼핑몰업로드'");
+const erpSheetAppendAt = appSource.indexOf("'ERP업데이트'");
+assert.ok(errorSheetAppendAt >= 0 && errorSheetAppendAt < shopSheetAppendAt && shopSheetAppendAt < erpSheetAppendAt,
+  'Excel 시트는 오류정보, 쇼핑몰업로드, ERP업데이트 순서여야 한다.');
+assert.doesNotMatch(appSource, /if \(!output\.ok\)/, '오류 정보로 Excel 생성을 차단하면 안 된다.');
+assert.match(html, /smartinput-contract\.js\?v=0\.4\.16/);
+assert.match(html, /smartinput\.js\?v=0\.4\.31/);
+assert.match(appSource, /structured-sheet-parser\.js\?v=0\.1\.1/);
+assert.match(appSource, /estimate-output\.js\?v=0\.1\.2/);
 assert.match(appSource, /const sourceRows = selectedRecords\.length \? combinedEstimateRows\(selectedRecords\) : modeDraft\(\)\.rows/,
   'Excel export must combine only the selected estimate product sets');
 assert.match(appSource, /const records = availableCatalogs\(\)/);

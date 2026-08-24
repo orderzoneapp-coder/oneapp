@@ -232,6 +232,11 @@
     return Number.isFinite(number) ? number : null;
   }
 
+  function sourceValue(value) {
+    if (value === null || value === undefined) return null;
+    return String(value);
+  }
+
   function createId(prefix, now = Date.now(), random = Math.random()) {
     return `${prefix}-${Number(now).toString(36)}-${Math.floor(Number(random) * 0xffffff).toString(36).padStart(5, '0')}`;
   }
@@ -633,6 +638,11 @@
       rowWarehouseCode: text(input.rowWarehouseCode),
       rowVoucherNo: text(input.rowVoucherNo),
       unitPrice: numberOrNull(input.unitPrice ?? input.price),
+      sourceUnitPrice: sourceValue(
+        Object.prototype.hasOwnProperty.call(input, 'sourceUnitPrice') && input.sourceUnitPrice !== null
+          ? input.sourceUnitPrice
+          : (input.unitPrice ?? input.price)
+      ),
       outPrice: numberOrNull(input.outPrice),
       wholesaleA: numberOrNull(input.wholesaleA),
       wholesaleB: numberOrNull(input.wholesaleB),
@@ -753,6 +763,7 @@
     if (previous.unitPriceReviewStatus === 'CONFIRMED' && Number(previous.unitPrice) === Number(next.unitPrice)) {
       merged.unitPriceReviewStatus = 'CONFIRMED';
     }
+    if (previous.editedFields?.unitPrice) merged.sourceUnitPrice = previous.sourceUnitPrice;
     merged.rowId = previous.rowId;
     return merged;
   }
@@ -781,7 +792,12 @@
 
   function markUserEdit(row, field, value) {
     if (!ROW_FIELDS.includes(field)) return normalizeRow(row);
-    return normalizeRow({ ...row, [field]: value, editedFields: { ...(row.editedFields || {}), [field]: true } });
+    return normalizeRow({
+      ...row,
+      [field]: value,
+      ...(field === 'unitPrice' ? { sourceUnitPrice: value } : {}),
+      editedFields: { ...(row.editedFields || {}), [field]: true }
+    });
   }
 
   function markProductEdit(row, field, value) {

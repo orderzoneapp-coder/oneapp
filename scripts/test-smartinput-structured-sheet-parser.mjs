@@ -7,6 +7,8 @@ import {
   normalizeStructuredFieldName,
   parseStructuredSheet
 } from '../smartinput/structured-sheet-parser.js';
+import { buildEstimateF8Data } from '../smartinput/estimate-output.js';
+import { decorateStructuredRows } from '../smartinput/multivoucher-stage1.js';
 
 const contractSource = fs.readFileSync(new URL('../smartinput/smartinput-contract.js', import.meta.url), 'utf8');
 const context = { window: {}, globalThis: {}, Date, Math, String, Number, Boolean, Object, Array, Map, Set };
@@ -83,6 +85,37 @@ assert.equal(parsedOrder.rows[0].quantity, 2);
 assert.equal(parsedOrder.rows[0].itemCode, '105032110');
 assert.equal(parsedOrder.rows[0].memo, '오전 배송');
 assert.equal(parsedOrder.rows[1].unitPrice, 0, '숫자 0은 공란으로 바꾸면 안 된다.');
+
+const pricePreservationMatrix = [
+  ['품목코드', '품목명', '단가'],
+  ['BLANK', '공백 단가', ''],
+  ['ZERO', '0 단가', '0'],
+  ['NUMBER', '숫자 단가', '1,500'],
+  ['TEXT', '문자 단가', '가격 확인']
+];
+const parsedPricePreservation = parseStructuredSheet(pricePreservationMatrix, {
+  fieldDefinitions: Array.from(contract.PRODUCT_FIELD_DEFINITIONS),
+  numberParser: contract.numberOrNull
+});
+assert.deepEqual(parsedPricePreservation.rows.map(row => row.unitPrice), [null, 0, 1500, null]);
+assert.deepEqual(parsedPricePreservation.rows.map(row => row.sourceUnitPrice), ['', '0', '1,500', '가격 확인']);
+assert.equal(parsedPricePreservation.invalidCells.length, 1);
+assert.equal(parsedPricePreservation.invalidCells[0].value, '가격 확인');
+const priceBatch = contract.createBatch({ batchId: 'PRICE-BATCH', sequence: 1, method: 'excel', sourceType: 'STRUCTURED_FILE' });
+const normalizedPriceRows = contract.applyParserResults([], priceBatch, decorateStructuredRows(
+  parsedPricePreservation.rows.map((row, index) => ({ ...row, productId: `P-${index}`, masterProductId: `M-${index}` })),
+  { sourceBatchId: priceBatch.batchId, sourceSheetName: '견적' }
+));
+assert.deepEqual(Array.from(normalizedPriceRows, row => row.unitPrice), [null, 0, 1500, null],
+  '업무 단가는 기존 숫자/null 계약을 유지해야 한다.');
+assert.deepEqual(Array.from(normalizedPriceRows, row => row.sourceUnitPrice), ['', '0', '1,500', '가격 확인'],
+  'Excel 파서에서 견적 행 생성까지 단가 원본을 별도로 유지해야 한다.');
+const priceOutput = buildEstimateF8Data(normalizedPriceRows);
+assert.equal(priceOutput.ok, true);
+assert.deepEqual(priceOutput.shopData.slice(1).map(row => row[4]), ['', 0, 1500, '가격 확인']);
+assert.deepEqual(priceOutput.erpData.slice(1).map(row => row[7]), ['', 0, 1500, '가격 확인']);
+assert.ok(priceOutput.errorData.some(row => row[0] === 1 && row[2] === '단가' && row[3] === ''));
+assert.ok(priceOutput.errorData.some(row => row[0] === 4 && row[2] === '단가' && row[3] === '가격 확인'));
 
 const notStructured = parseStructuredSheet([
   ['오늘 주문합니다'],

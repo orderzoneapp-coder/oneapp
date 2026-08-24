@@ -4,10 +4,7 @@ const SHOP_HEADERS = Object.freeze([
   '재고수량', '테마1', '테마2', '테마3', '테마4', '테마5', '상품태그'
 ]);
 const ERP_HEADERS = Object.freeze(['품목코드', '입고가', '0', '출고가', '0', '입고B', 'n', '도매A', 'n', '도매B', 'n']);
-const CONFIRM_HEADERS = Object.freeze([
-  '확인구분', '상품코드', '상품명', '규격', '기준입고항목',
-  '기준입고가', '도매항목', '도매가', '차이', '확인요청'
-]);
+const ERROR_HEADERS = Object.freeze(['행', '품목', '필드', '원본값', '오류내용', '관리자 판단 안내']);
 export const KAKAO_NOTICE_ROWS_PER_PAGE = 40;
 
 export function paginateKakaoNoticeRows(rows = [], maxRowsPerPage = KAKAO_NOTICE_ROWS_PER_PAGE) {
@@ -30,6 +27,38 @@ function numeric(value) {
   if (value === '' || value === null || value === undefined) return null;
   const parsed = Number(String(value).replace(/[,원₩]/g, '').trim());
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function sourceNumber(value) {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'number') return value;
+  const parsed = numeric(value);
+  return parsed === null ? String(value) : parsed;
+}
+
+function unitPriceSource(row = {}) {
+  return Object.prototype.hasOwnProperty.call(row, 'sourceUnitPrice') && row.sourceUnitPrice !== null
+    ? row.sourceUnitPrice
+    : row.unitPrice;
+}
+
+function itemLabel(row = {}) {
+  return [text(row.itemCode), text(row.itemName)].filter(Boolean).join(' · ') || '품목 확인 필요';
+}
+
+function estimateIssue(code, row, rowIndex, field, originalValue, message, guide) {
+  return { code, rowIndex, item: itemLabel(row), field, originalValue, message, guide };
+}
+
+function issueDataRow(issue = {}) {
+  return [
+    Number.isInteger(issue.rowIndex) ? issue.rowIndex + 1 : '',
+    issue.item || '',
+    issue.field || '',
+    issue.originalValue ?? '',
+    issue.message || '',
+    issue.guide || '오류 정보를 확인한 뒤 관리자가 업로드 여부를 판단하세요.'
+  ];
 }
 
 function priceKey(row = {}, index = 0) {
@@ -90,48 +119,76 @@ export function validateEstimateRows(rows = []) {
     .map((row, rowIndex) => ({ row, rowIndex }))
     .filter(({ row }) => text(row.itemCode) || text(row.itemName));
   const errors = [];
-  if (!candidates.length) errors.push({ code: 'EMPTY', message: '출력할 견적 품목이 없습니다.' });
+  if (!candidates.length) errors.push({
+    code: 'EMPTY', rowIndex: null, item: '', field: '품목', originalValue: '',
+    message: '출력할 견적 품목이 없습니다.',
+    guide: '빈 업로드 양식이 필요한지 확인하고 사용 여부를 판단하세요.'
+  });
   const codeCounts = new Map();
   candidates.forEach(({ row, rowIndex }) => {
     const code = text(row.itemCode);
-    if (!code) errors.push({ code: 'ITEM_CODE_REQUIRED', rowIndex, message: `${rowIndex + 1}행 품목코드가 없습니다.` });
+    if (!code) errors.push(estimateIssue(
+      'ITEM_CODE_REQUIRED', row, rowIndex, '품목코드', row.itemCode ?? '', '품목코드가 없습니다.',
+      '업로드 대상 시스템에서 코드 공백을 허용하는지 확인하고 업로드 여부를 판단하세요.'
+    ));
     else codeCounts.set(code, (codeCounts.get(code) || 0) + 1);
     if (!text(row.masterProductId)) {
-      errors.push({ code: 'MASTER_LINK_REQUIRED', rowIndex, message: `${rowIndex + 1}행 마스터 상품 연결을 확인하세요.` });
+      errors.push(estimateIssue(
+        'MASTER_LINK_REQUIRED', row, rowIndex, '마스터 연결', row.masterProductId ?? '', '마스터 상품이 연결되지 않았습니다.',
+        '원본 품목과 업로드 결과를 대조하고 업로드 여부를 판단하세요.'
+      ));
     }
-    if (numeric(row.unitPrice) === null) {
-      errors.push({ code: 'UNIT_PRICE_INVALID', rowIndex, message: `${rowIndex + 1}행 단가가 숫자가 아닙니다.` });
+    const originalUnitPrice = unitPriceSource(row);
+    if (numeric(originalUnitPrice) === null) {
+      const originalValue = originalUnitPrice ?? '';
+      errors.push(estimateIssue(
+        'UNIT_PRICE_INVALID', row, rowIndex, '단가', originalValue,
+        String(originalValue) === '' ? '단가가 공백입니다.' : '단가가 숫자가 아닙니다.',
+        '원본 단가를 그대로 출력했습니다. 업로드 대상 시스템의 허용 여부를 확인하고 판단하세요.'
+      ));
     }
   });
-  codeCounts.forEach((count, code) => {
-    if (count > 1) errors.push({ code: 'DUPLICATE_ITEM_CODE', itemCode: code, message: `품목코드 ${code}가 중복되었습니다.` });
+  candidates.forEach(({ row, rowIndex }) => {
+    const code = text(row.itemCode);
+    if (code && codeCounts.get(code) > 1) errors.push(estimateIssue(
+      'DUPLICATE_ITEM_CODE', row, rowIndex, '품목코드', row.itemCode ?? '', `품목코드 ${code}가 중복되었습니다.`,
+      '중복 행을 각각 업로드할지 확인하고 업로드 여부를 판단하세요.'
+    ));
   });
-  return { ok: errors.length === 0, errors, rows: candidates.map(({ row }) => row) };
+  return { ok: errors.length === 0, errors, entries: candidates, rows: candidates.map(({ row }) => row) };
 }
 
 export function buildEstimateF8Data(rows = []) {
   const validation = validateEstimateRows(rows);
-  if (!validation.ok) return { ...validation, shopData: [], erpData: [], confirmData: [] };
   const shopData = [[...SHOP_HEADERS]];
   const erpData = [[...ERP_HEADERS]];
-  const confirmData = [[...CONFIRM_HEADERS]];
-  validation.rows.forEach(row => {
+  const errorData = [[...ERROR_HEADERS], ...validation.errors.map(issueDataRow)];
+  validation.entries.forEach(({ row, rowIndex }) => {
     const code = text(row.itemCode);
-    const unitPrice = numeric(row.unitPrice) ?? 0;
+    const originalUnitPrice = unitPriceSource(row);
+    const unitPrice = sourceNumber(originalUnitPrice);
     const noticePrice = numeric(row.noticePrice) ?? 0;
     shopData.push([
       code, text(row.itemName), text(row.specification), '', unitPrice, noticePrice, '', '',
       0, 0, 0, 0, '', '', 1, '', '', '', '', '', '', ''
     ]);
     erpData.push([code, '', '0', '', '0', '', 'n', unitPrice, 'n', '', 'n']);
-    if (row.unitPriceReviewStatus === 'PENDING') {
-      confirmData.push([
-        '단가 확인 필요', code, text(row.itemName), text(row.specification), '',
-        '', '도매A', unitPrice, '', '사진 인식 단가를 확인하세요.'
-      ]);
+    if (row.unitPriceReviewStatus === 'PENDING' && numeric(originalUnitPrice) !== null) {
+      errorData.push(issueDataRow(estimateIssue(
+        'UNIT_PRICE_REVIEW_REQUIRED', row, rowIndex, '단가', originalUnitPrice ?? '', '사진 인식 단가 확인이 필요합니다.',
+        '원본 사진과 단가를 대조한 뒤 업로드 여부를 판단하세요.'
+      )));
     }
   });
-  return { ok: true, errors: [], rows: validation.rows, shopData, erpData, confirmData };
+  return {
+    ok: true,
+    validationOk: validation.ok,
+    errors: validation.errors,
+    rows: validation.rows,
+    errorData,
+    shopData,
+    erpData
+  };
 }
 
 function fitText(context, value, maxWidth) {
@@ -233,4 +290,4 @@ export function renderKakaoNoticeCanvases(noticeRows = [], { title = '견적 단
   return pages;
 }
 
-export const ESTIMATE_F8_HEADERS = Object.freeze({ shop: SHOP_HEADERS, erp: ERP_HEADERS, confirm: CONFIRM_HEADERS });
+export const ESTIMATE_F8_HEADERS = Object.freeze({ error: ERROR_HEADERS, shop: SHOP_HEADERS, erp: ERP_HEADERS });
