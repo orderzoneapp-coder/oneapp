@@ -3509,11 +3509,11 @@ async function saveEstimateDocument() {
     toast('견적 품목을 1개 이상 입력하세요.', 'error');
     return;
   }
-  const invalidIndex = current.rows.findIndex(row => (!row.itemCode && !row.itemName) || row.quantity === null || row.quantity === '');
+  const invalidIndex = current.rows.findIndex(row => !row.itemCode && !row.itemName);
   if (invalidIndex >= 0) {
     const rowElement = inputRows.querySelectorAll('tr')[invalidIndex];
-    rowElement?.querySelector(!current.rows[invalidIndex].itemCode && !current.rows[invalidIndex].itemName ? '[data-field="itemName"]' : '[data-field="quantity"]')?.focus();
-    toast(`${invalidIndex + 1}행의 품목과 수량을 확인하세요.`, 'error');
+    rowElement?.querySelector('[data-field="itemName"]')?.focus();
+    toast(`${invalidIndex + 1}행의 품목을 확인하세요.`, 'error');
     return;
   }
   state.busy = true;

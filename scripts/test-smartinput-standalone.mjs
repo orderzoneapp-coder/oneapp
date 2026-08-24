@@ -548,6 +548,11 @@ assert.match(appSource, /function deleteSelectedCatalog\(\)/);
 assert.match(appSource, /function openEstimateNoticePreview\(\)/);
 assert.match(appSource, /function exportEstimateExcel\(\)/);
 assert.match(appSource, /function saveEstimateDocument\(\)/);
+const saveEstimateSource = appSource.match(/async function saveEstimateDocument\(\)[\s\S]*?(?=\nasync function completeOrder\(\))/)?.[0] || '';
+assert.match(saveEstimateSource, /current\.rows\.findIndex\(row => !row\.itemCode && !row\.itemName\)/,
+  'estimate saving must require a product identity');
+assert.doesNotMatch(saveEstimateSource, /row\.quantity/,
+  'estimate saving must allow rows without quantity');
 assert.match(appSource, /function applyFormLayout\(\)/);
 assert.match(appSource, /function headerFieldsForMode\(/);
 assert.match(appSource, /function voucherColumnsForMode\(/);
