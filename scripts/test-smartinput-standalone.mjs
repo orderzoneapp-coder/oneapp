@@ -433,6 +433,10 @@ assert.match(html, /class="document-fields__right"[\s\S]*id="customerInput"[\s\S
   'customer, estimate selection, and Kakao copy must share the right side of the unified header');
 assert.doesNotMatch(html, /class="grid-card__header"|id="gridTitle"|>표준 입력표</,
   'the duplicate table title header must be removed to expose more rows');
+assert.doesNotMatch(html, /id="referenceStatus"|class="reference-status"/,
+  'reference loading status must not duplicate the app status above the work table');
+assert.doesNotMatch(css, /\.reference-status/,
+  'the removed reference status row must not reserve table height');
 assert.match(html, /id="selectAllRows"/);
 assert.match(html, /id="deleteSelectedRows"/);
 assert.match(html, /class="col-unit"/);
@@ -661,6 +665,10 @@ assert.match(appSource, /data-edit-estimate/);
 assert.match(appSource, /function selectedEstimateRecords\(\)[\s\S]*availableCatalogs\(\)\.filter\(record => selectedIds\.has\(record\.estimateId\)\)/,
   'estimate composition and outputs must use checked estimates in stored library order');
 assert.match(appSource, /function combinedEstimateRows\(records = selectedEstimateRecords\(\)\)/);
+assert.doesNotMatch(appSource, /\$\('referenceStatus'\)/,
+  'reference status must be reported through the single app status surface');
+assert.match(appSource, /const referenceSummary = state\.catalogStatus === 'READY'[\s\S]*renderMode\(\);[\s\S]*setAppStatus\(referenceSummary/,
+  'reference loading results must remain visible in the app status after mode rendering');
 assert.match(appSource, /function composeSelectedEstimates\(\)[\s\S]*startNewCatalog\(\)[\s\S]*current\.rows = rows/,
   'selected saved estimates must compose a new editable estimate');
 assert.match(appSource, /noticeSources\.flatMap/,

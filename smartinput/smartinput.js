@@ -4040,8 +4040,7 @@ function saveAndStartNextVoucher() {
 
 async function hydrateReferences() {
   state.catalogStatus = 'LOADING';
-  $('referenceStatus').dataset.status = 'LOADING';
-  $('referenceStatus').querySelector('strong').textContent = '상품·거래처·배송 설정을 불러오고 있습니다.';
+  setAppStatus('상품·거래처·배송 설정을 불러오고 있습니다.');
   const results = await Promise.allSettled([
     withTimeout(listCustomers({ includeInactive: false }), 5000, '거래처 기준자료 로딩 시간 초과'),
     withTimeout(loadProductCatalog(), 7000, '상품 기준자료 로딩 시간 초과'),
@@ -4072,21 +4071,22 @@ async function hydrateReferences() {
     state.smartDataReady = true;
   }
   state.customers = normalizedCustomerCandidates(loadedCustomers);
-  $('referenceStatus').dataset.status = state.catalogStatus;
-  $('referenceStatus').querySelector('strong').textContent = state.catalogStatus === 'READY'
+  const referenceSummary = state.catalogStatus === 'READY'
     ? `상품 준비 · 공통 ${Number(state.catalogSummary.commonCount || 0).toLocaleString('ko-KR')}건 · ORDER Q ${Number(state.catalogSummary.orderQCount || 0).toLocaleString('ko-KR')}건 · 거래처 ${state.customers.length.toLocaleString('ko-KR')}건`
     : (state.catalogStatus === 'EMPTY' ? '상품 기준자료가 없습니다. 직접입력은 계속 사용할 수 있습니다.' : '상품 기준자료 일부를 불러오지 못했습니다. 직접입력은 계속 사용할 수 있습니다.');
   renderMode();
+  setAppStatus(referenceSummary, state.catalogStatus === 'READY' ? '' : 'warn');
   if (sourceTextInput.value.trim()) scheduleAutoAnalysis(650);
   if (!state.customers.length) {
     void refreshCustomers({ syncIfEmpty: true })
       .then(() => {
-        const referenceText = $('referenceStatus').querySelector('strong');
-        referenceText.textContent = referenceText.textContent.replace(/거래처 [\d,]+건/, `거래처 ${state.customers.length.toLocaleString('ko-KR')}건`);
+        if (state.catalogStatus === 'READY') {
+          setAppStatus(`상품 준비 · 공통 ${Number(state.catalogSummary.commonCount || 0).toLocaleString('ko-KR')}건 · ORDER Q ${Number(state.catalogSummary.orderQCount || 0).toLocaleString('ko-KR')}건 · 거래처 ${state.customers.length.toLocaleString('ko-KR')}건`);
+        }
       })
       .catch(() => setAppStatus('거래처 마스터 동기화가 지연되고 있습니다. 거래처 찾기 창은 계속 사용할 수 있습니다.', 'warn'));
   }
-  if (results.some(result => result.status === 'rejected')) {
+  if (results.some(result => result.status === 'rejected') && state.catalogStatus === 'READY') {
     setAppStatus('일부 마스터를 불러오지 못했습니다. 직접입력은 계속 사용할 수 있습니다.', 'warn');
   }
 }

@@ -140,10 +140,6 @@ nexus-top { display: block; min-height: var(--nexus-top-height); }
 .field small { overflow: hidden; color: var(--text-faint); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .field small[data-tone="error"] { color: var(--danger); }
 .field small[data-tone="warn"] { color: var(--warning); }
-.reference-status { grid-column: 1 / -1; min-height: 27px; padding: 4px 8px; display: flex; align-items: center; gap: 7px; border: 1px solid var(--border); border-radius: 7px; color: var(--text-soft); background: var(--surface-muted); font-size: 10px; }
-.reference-status > span { width: 6px; height: 6px; border-radius: 50%; background: #fbbf24; }
-.reference-status[data-status="READY"] > span { background: var(--success); }
-.reference-status[data-status="ERROR"] > span, .reference-status[data-status="EMPTY"] > span { background: var(--danger); }
 .input-action { display: flex; }
 .input-action input { border-radius: 7px 0 0 7px; }
 .input-action button { flex: 0 0 auto; min-width: 56px; border: 1px solid var(--border-strong); border-left: 0; border-radius: 0 7px 7px 0; color: var(--accent-strong); background: var(--accent-soft); font-size: 12px; font-weight: 900; }
@@ -557,7 +553,6 @@ tfoot td { position: sticky; bottom: 0; z-index: 2; height: 38px; padding: 0 8px
   .document-fields__left { grid-template-columns: 1fr; }
   .document-fields__left > .field, .document-fields__right > .field { grid-template-rows: 18px 42px; }
   .document-fields__left .field input, .document-fields__left .field select, .document-fields__right .field input, .document-fields__right .field select { height: 42px; }
-  .reference-status { grid-column: 1; }
   .parser-input-row { grid-template-columns: 1fr; }
   .analyze-button { min-height: 52px; grid-template-columns: auto auto; column-gap: 6px; }
   .analyze-button small { grid-column: 1 / -1; }
