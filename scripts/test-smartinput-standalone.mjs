@@ -480,8 +480,14 @@ assert.match(css, /\.photo-viewer__region \{/);
 assert.match(css, /\.workspace\.has-photo-source \{[^}]*grid-template-columns: minmax\(370px, min\(var\(--parser-pane-width\), calc\(100% - 806px\)\)\) 8px minmax\(0, 1fr\) 230px;/,
   'photo input must share the saved parser width without overflowing its workbench');
 assert.match(css, /\.document-fields \{[^}]*grid-template-columns: minmax\(330px, \.72fr\) minmax\(0, 1\.45fr\)/);
-assert.match(css, /\.document-fields__left \{[^}]*grid-template-columns: repeat\(3, minmax\(110px, 1fr\)\)/);
-assert.match(css, /\.document-fields__right \{[^}]*display: flex;[^}]*justify-content: flex-end/);
+assert.match(css, /\.document-fields__left \{[^}]*grid-template-columns: repeat\(3, minmax\(0, 1fr\)\)/,
+  'the three fixed document fields must fit their left header lane without overlapping the customer lane');
+assert.match(css, /\.document-fields__right \{[^}]*display: flex;[^}]*justify-content: flex-start/,
+  'the customer field must keep the same left edge when estimate-only controls appear');
+assert.match(css, /\.app-bar__actions \{[^}]*min-width: 313px;[^}]*width: 313px;[^}]*flex: 0 0 313px;[^}]*justify-content: flex-end/,
+  'mode-specific header actions must reserve a stable lane so the voucher switcher does not move');
+assert.match(css, /\.document-fields__right > \.catalog-filter \{ grid-template-rows: 15px 36px; gap: 3px; \}/,
+  'estimate controls must keep the unified document header at the same height as other vouchers');
 assert.match(css, /\.workbench \{[^}]*gap: 10px/,
   'the unified header must reduce vertical spacing above the table');
 assert.match(css, /\.workspace\.has-photo-source \.parser-card, \.workspace\.has-photo-source \.workbench \{[^}]*height: calc\(100vh - var\(--nexus-top-height\) - 88px\)/);
