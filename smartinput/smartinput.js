@@ -41,6 +41,7 @@ const tabs = [...document.querySelectorAll('[data-mode]')];
 const methodButtons = [...document.querySelectorAll('[data-method]')];
 const sourceTextInput = $('sourceTextInput');
 const inputRows = $('inputRows');
+const parserCard = document.querySelector('.parser-card');
 const state = {
   draft: loadDraft(),
   customers: [],
@@ -2657,11 +2658,12 @@ function clearParserWorkspace() {
   modeUi().scrollLeft = 0;
   modeUi().activeCellId = '';
   resetPhotoView();
+  updateMethod('text', { persist: false });
   setActiveActivity('');
   $('analyzeButton').disabled = false;
   $('parserProgress').hidden = true;
   $('parserProgress').querySelector('strong').textContent = '자료를 분석하고 있습니다.';
-  $('sourceNotice').textContent = '텍스트와 이미지를 바로 붙여넣을 수 있습니다.';
+  $('sourceNotice').textContent = '직접 입력과 Ctrl+V도 지원합니다.';
   saveDraftNow();
   renderMode();
   setAppStatus(removedRows ? `파서 원문과 분석 결과 ${removedRows}행을 지웠습니다.` : '파서 입력창을 비웠습니다.');
@@ -2996,6 +2998,35 @@ async function handleFile(file) {
   }
 }
 
+function isImageFile(file) {
+  return Boolean(file) && (String(file.type || '').startsWith('image/') || /\.(?:jpe?g|png|webp|gif|bmp)$/i.test(file.name || ''));
+}
+
+function isParserDocumentFile(file) {
+  return Boolean(file) && /\.(?:xlsx?|csv|tsv|txt)$/i.test(file.name || '');
+}
+
+function appendParserText(text, method = 'text') {
+  if (!text) return;
+  updateMethod(method);
+  const separator = sourceTextInput.value && !sourceTextInput.value.endsWith('\n') ? '\n' : '';
+  sourceTextInput.value += `${separator}${text}`;
+  syncSourceText();
+}
+
+async function acceptParserDrop(event) {
+  event.preventDefault();
+  const file = [...(event.dataTransfer?.files || [])][0];
+  if (file) {
+    if (isImageFile(file)) await recognizeImage(file);
+    else if (isParserDocumentFile(file)) await handleFile(file);
+    else toast('지원하지 않는 파일 형식입니다.', 'error');
+    return;
+  }
+  const droppedText = event.dataTransfer?.getData('text/plain') || '';
+  appendParserText(droppedText);
+}
+
 async function fileToImageEvidence(file) {
   const buffer = await file.arrayBuffer();
   const digest = crypto?.subtle ? await crypto.subtle.digest('SHA-256', buffer) : null;
@@ -3038,7 +3069,7 @@ async function persistSourceImageForMode(mode = state.draft.activeMode) {
 }
 
 async function recognizeImage(file) {
-  if (!file || !String(file.type || '').startsWith('image/')) return;
+  if (!isImageFile(file)) return;
   invalidateGridPasteUndo();
   const captureSequence = ++state.photoCaptureSequence;
   updateMethod('photo');
@@ -3980,6 +4011,12 @@ sourceTextInput.addEventListener('scroll', () => {
 }, { passive: true });
 $('fileInput').addEventListener('change', event => handleFile(event.target.files?.[0]));
 $('photoInput').addEventListener('change', event => recognizeImage(event.target.files?.[0]));
+parserCard.addEventListener('dragover', event => {
+  if (![...(event.dataTransfer?.types || [])].some(type => type === 'Files' || type === 'text/plain')) return;
+  event.preventDefault();
+  event.dataTransfer.dropEffect = 'copy';
+});
+parserCard.addEventListener('drop', event => { void acceptParserDrop(event); });
 $('photoPreview').addEventListener('load', renderPhotoTransform);
 $('photoZoomOut').addEventListener('click', () => {
   state.photoView.zoom = Math.max(.5, Number(state.photoView.zoom || 1) - .25);
@@ -4292,9 +4329,13 @@ document.addEventListener('paste', event => {
     recognizeImage(image);
     return;
   }
-  if (event.target === sourceTextInput && event.clipboardData?.getData('text/plain')) {
+  const pastedText = event.clipboardData?.getData('text/plain') || '';
+  if (event.target === sourceTextInput && pastedText) {
     updateMethod('paste');
     window.setTimeout(syncSourceText, 0);
+  } else if (parserCard.contains(event.target) && pastedText) {
+    event.preventDefault();
+    appendParserText(pastedText, 'paste');
   }
 });
 
