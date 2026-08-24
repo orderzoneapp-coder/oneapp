@@ -28,7 +28,7 @@ import {
   buildEstimateF8Data,
   renderKakaoNoticeCanvases,
   KAKAO_NOTICE_ROWS_PER_PAGE
-} from './estimate-output.js?v=0.1.3';
+} from './estimate-output.js?v=0.1.4';
 import {
   createRecordId,
   loadSmartInputData,
