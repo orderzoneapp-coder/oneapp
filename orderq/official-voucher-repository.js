@@ -112,6 +112,20 @@ function purchaseSearchText(document, lines) {
     .map(value => text(value).toLowerCase()).join('|');
 }
 
+export function officialPurchaseReviewCandidate(rows = [], identity = {}) {
+  const contractKind = text(identity.contractKind);
+  const sourceDocumentKey = text(identity.sourceDocumentKey);
+  const purchasePlanId = text(identity.purchasePlanId);
+  const externalDocumentNo = text(identity.externalDocumentNo);
+  const sourceVoucherIndex = Number(identity.sourceVoucherIndex || 0);
+  return rows.find(row => text(row.contractKind) === contractKind
+    && text(row.documentContract) === 'VOUCHER_CORE_V1'
+    && text(row.sourceDocumentKey) !== sourceDocumentKey
+    && ((externalDocumentNo && text(row.externalDocumentNo) === externalDocumentNo)
+      || (purchasePlanId && text(row.purchasePlanId) === purchasePlanId
+        && sourceVoucherIndex > 0 && Number(row.sourceVoucherIndex || 0) === sourceVoucherIndex))) || null;
+}
+
 export async function listOfficialPurchases(filters = {}) {
   const db = await openOrderQDb();
   const tx = db.transaction([STORE.PURCHASE_DOCUMENTS, STORE.PURCHASE_LINES], 'readonly');
@@ -181,6 +195,9 @@ export async function findOfficialPurchaseBySource(identity = {}) {
   const sourceDocumentKey = text(identity.sourceDocumentKey);
   const originSystem = text(identity.originSystem).toUpperCase();
   const originTransactionId = text(identity.originTransactionId);
+  const purchasePlanId = text(identity.purchasePlanId);
+  const externalDocumentNo = text(identity.externalDocumentNo);
+  const sourceVoucherIndex = Number(identity.sourceVoucherIndex || 0);
   if (originSystem && originTransactionId && sourceDocumentKey && store.indexNames.contains('byOriginRunDocument')) {
     document = await requestToPromise(store.index('byOriginRunDocument').get([originSystem, originTransactionId, sourceDocumentKey]));
   }
@@ -192,6 +209,11 @@ export async function findOfficialPurchaseBySource(identity = {}) {
     document = rows.find(row => text(row.originSystem).toUpperCase() === originSystem
       && text(row.originTransactionId) === originTransactionId
       && (!sourceDocumentKey || text(row.sourceDocumentKey) === sourceDocumentKey)) || null;
+  }
+  if (!document) {
+    const rows = await requestToPromise(store.getAll());
+    const reviewCandidate = officialPurchaseReviewCandidate(rows, identity);
+    if (reviewCandidate) throw new Error(`ORDERQ_PURCHASE_SOURCE_REVIEW_REQUIRED:${reviewCandidate.purchaseDocumentId}`);
   }
   await transactionDone(tx);
   return document && text(document.contractKind) === contractKind ? document : null;

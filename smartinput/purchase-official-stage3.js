@@ -17,6 +17,11 @@ export const PURCHASE_STAGE3_CAPABILITY = Object.freeze({
   metaSchema: 'ORDERQ_PURCHASE_META_V2',
   cutoverMode: 'VNEXT_PRIMARY'
 });
+// Filled only by the immutable Apps Script deployment release commit. Empty
+// values intentionally keep production writes disabled.
+export const PURCHASE_STAGE3_EXPECTED_DEPLOYMENT = Object.freeze({
+  deploymentId: '', deploymentVersion: '', gitCommit: ''
+});
 
 // SmartInput currently has no authenticated actor/session provider. Keep the
 // established application actor explicit until that shared provider exists.
@@ -28,10 +33,12 @@ function finiteRequired(value, code) {
   return Object.is(Number(value), -0) ? 0 : Number(value);
 }
 function roundWon(value) { return Math.sign(value) * Math.floor(Math.abs(value) + 0.5); }
+function masterRevision(row) { return Number(row?.revision ?? row?.masterRevision ?? row?.raw?.revision ?? row?.raw?.masterRevision ?? 0); }
 
-export function evaluatePurchaseStage3Capability(ping = {}) {
+export function evaluatePurchaseStage3Capability(ping = {}, expectedDeployment = PURCHASE_STAGE3_EXPECTED_DEPLOYMENT) {
   const mismatch = Object.entries(PURCHASE_STAGE3_CAPABILITY).find(([key, expected]) => text(ping[key]) !== expected);
-  const deploymentReady = text(ping.deploymentId) && text(ping.deploymentVersion) && text(ping.gitCommit);
+  const deploymentReady = ['deploymentId', 'deploymentVersion', 'gitCommit'].every(key =>
+    text(expectedDeployment[key]) && text(ping[key]) === text(expectedDeployment[key]));
   return mismatch || !deploymentReady
     ? { ready: false, code: 'ORDERQ_PURCHASE_STAGE3_CAPABILITY_UNAVAILABLE', detail: mismatch?.[0] || 'deploymentEvidence' }
     : { ready: true, code: '', deploymentId: text(ping.deploymentId), deploymentVersion: text(ping.deploymentVersion), gitCommit: text(ping.gitCommit) };
@@ -69,6 +76,13 @@ export function validatePurchaseGroup(group = {}, masters = {}) {
     const warehouse = warehouseById.get(warehouseId);
     if (!warehouse || text(warehouse.status || 'ACTIVE').toUpperCase() !== 'ACTIVE' || warehouse.active === false) {
       throw new Error(`ORDERQ_PURCHASE_WAREHOUSE_MASTER_INVALID:${warehouseId}`);
+    }
+    const productRevision = Number(row.productMasterRevision || 0);
+    const warehouseRevision = Number(row.warehouseMasterRevision || 0);
+    if (!Number.isSafeInteger(productRevision) || productRevision <= 0
+      || !Number.isSafeInteger(warehouseRevision) || warehouseRevision <= 0
+      || productRevision < masterRevision(product) || warehouseRevision < masterRevision(warehouse)) {
+      throw new Error(`ORDERQ_PURCHASE_MASTER_REVISION_STALE:${text(row.sourceLineKey)}`);
     }
     finiteRequired(row.actualQuantity ?? row.quantity, 'ORDERQ_PURCHASE_QUANTITY_REQUIRED');
     finiteRequired(row.unitPrice, 'ORDERQ_PURCHASE_UNIT_PRICE_REQUIRED');
@@ -159,7 +173,12 @@ export function resolvePersistedPurchaseRetry(group = {}, context = {}, aggregat
 export async function postPurchaseGroup(group, context = {}) {
   await pullCentralOfficialState();
   const source = derivePurchaseDraftIdentity(group, context);
-  const identity = { contractKind: source.contractKind, sourceDocumentKey: source.sourceDocumentKey, originSystem: source.originSystem, originTransactionId: source.originTransactionId };
+  const identity = {
+    contractKind: source.contractKind, sourceDocumentKey: source.sourceDocumentKey,
+    originSystem: source.originSystem, originTransactionId: source.originTransactionId,
+    purchasePlanId: source.purchasePlanId, externalDocumentNo: source.externalDocumentNo,
+    sourceVoucherIndex: source.sourceVoucherIndex
+  };
   const legacyConflict = await findLegacyPurchaseOriginConflict({ purchasePlanId: source.purchasePlanId, legacySourceShortageKey: source.legacySourceShortageKey });
   if (legacyConflict) throw new Error(`ORDERQ_PURCHASE_ORIGIN_DUPLICATE:PURCHASE:LEGACY:${legacyConflict.legacyPurchaseDocumentId}`);
   const existing = await findOfficialPurchaseBySource(identity);

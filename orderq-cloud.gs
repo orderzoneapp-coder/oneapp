@@ -914,12 +914,36 @@ function orderQM9Text(value) {
   return value === undefined || value === null ? '' : String(value).trim();
 }
 
+function orderQM9CanonicalText(value) {
+  return String(value === undefined || value === null ? '' : value).replace(/\r\n?/g, '\n').normalize('NFC').trim();
+}
+
+function orderQM9CodePointCompare(left, right) {
+  const a = Array.from(orderQM9CanonicalText(left), char => char.codePointAt(0));
+  const b = Array.from(orderQM9CanonicalText(right), char => char.codePointAt(0));
+  for (let index = 0; index < Math.min(a.length, b.length); index += 1) if (a[index] !== b[index]) return a[index] - b[index];
+  return a.length - b.length;
+}
+
 function orderQM9Stable(value) {
+  const normalizeText = input => String(input === undefined || input === null ? '' : input).replace(/\r\n?/g, '\n').normalize('NFC').trim();
+  const compare = (left, right) => {
+    const a = Array.from(normalizeText(left), char => char.codePointAt(0));
+    const b = Array.from(normalizeText(right), char => char.codePointAt(0));
+    for (let index = 0; index < Math.min(a.length, b.length); index += 1) if (a[index] !== b[index]) return a[index] - b[index];
+    return a.length - b.length;
+  };
   if (Array.isArray(value)) return value.map(orderQM9Stable);
-  if (value && typeof value === 'object') return Object.keys(value).sort().reduce((result, key) => {
-    result[key] = orderQM9Stable(value[key]);
+  if (value && typeof value === 'object') return Object.keys(value).sort(compare).reduce((result, key) => {
+    if (value[key] === undefined) return result;
+    result[normalizeText(key)] = orderQM9Stable(value[key]);
     return result;
   }, {});
+  if (typeof value === 'string') return normalizeText(value);
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) throw new Error('ORDERQ_CANONICAL_NUMBER_INVALID');
+    return Object.is(value, -0) ? 0 : value;
+  }
   return value;
 }
 
@@ -1920,8 +1944,11 @@ function orderQM9ValidatePurchaseMasters(ss, payload) {
       || warehouse.payload && warehouse.payload.active === false) {
       throw new Error(`ORDERQ_PURCHASE_WAREHOUSE_MASTER_INVALID:${warehouseId}`);
     }
-    if ((Number(line.productMasterRevision || 0) && Number(line.productMasterRevision) < Number(product.revision || 0))
-      || (Number(line.warehouseMasterRevision || 0) && Number(line.warehouseMasterRevision) < Number(warehouse.revision || 0))) {
+    const productRevision = Number(line.productMasterRevision || 0);
+    const warehouseRevision = Number(line.warehouseMasterRevision || 0);
+    if (!Number.isSafeInteger(productRevision) || productRevision <= 0
+      || !Number.isSafeInteger(warehouseRevision) || warehouseRevision <= 0
+      || productRevision < Number(product.revision || 0) || warehouseRevision < Number(warehouse.revision || 0)) {
       throw new Error(`ORDERQ_PURCHASE_MASTER_REVISION_STALE:${orderQM9Text(line.sourceLineKey)}`);
     }
   });

@@ -10,10 +10,11 @@ import { V10_STORE_DEFINITIONS } from '../orderq/orderq-v10-contracts.js';
 import { V11_STORE_DEFINITIONS } from '../orderq/orderq-v11-contracts.js';
 import { V12_STORE_DEFINITIONS } from '../orderq/orderq-v12-contracts.js';
 import { createCentralAuthorityState, migrateCentralDrafts } from '../orderq/central-authority.js';
+import { officialPurchaseReviewCandidate } from '../orderq/official-voucher-repository.js';
 
 const group={voucherDate:'2026-08-25',supplierCustomerId:'C1',supplierCustomerCode:'S1',supplierCustomerName:'남경',warehouseId:'W1',warehouseCode:'01',sourceDocumentKey:'PURCHASE:DOC1',sourceVoucherIndex:1,rows:[
-  {sourceLineKey:'LINE:A',productId:'P1',itemCode:'A',itemName:'상품A',warehouseId:'W1',warehouseCode:'01',quantity:0,unit:'EA',baseQuantity:0,baseUnit:'EA',conversionFactor:1,unitPrice:100},
-  {sourceLineKey:'LINE:B',productId:'P2',itemCode:'B',itemName:'상품B',warehouseId:'W1',warehouseCode:'01',quantity:-2,unit:'BOX',baseQuantity:-20,baseUnit:'EA',conversionFactor:10,unitPrice:300}
+  {sourceLineKey:'LINE:A',productId:'P1',itemCode:'A',itemName:'상품A',warehouseId:'W1',warehouseCode:'01',quantity:0,unit:'EA',baseQuantity:0,baseUnit:'EA',conversionFactor:1,unitPrice:100,productMasterRevision:2,warehouseMasterRevision:1},
+  {sourceLineKey:'LINE:B',productId:'P2',itemCode:'B',itemName:'상품B',warehouseId:'W1',warehouseCode:'01',quantity:-2,unit:'BOX',baseQuantity:-20,baseUnit:'EA',conversionFactor:10,unitPrice:300,productMasterRevision:3,warehouseMasterRevision:1}
 ]};
 const a=buildPurchasePostDraft(group,{actor:'ADMIN',manualSessionId:'M1',occurredAt:'2026-08-25T00:00:00.000Z'});
 const b=buildPurchasePostDraft(JSON.parse(JSON.stringify(group)),{actor:'ADMIN',manualSessionId:'M1',occurredAt:'2026-08-25T00:00:00.000Z'});
@@ -42,4 +43,8 @@ const splitState=createCentralAuthorityState();
 migrateCentralDrafts(splitState,{deviceId:'D',idempotencyKey:'SPLIT',entities:[1,2].map(index=>({entityType:'PURCHASE_DOCUMENT',entityId:`PD${index}`,revision:1,payload:{purchaseDocumentId:`PD${index}`,status:'DRAFT',documentContract:'VOUCHER_CORE_V1',contractKind:'PURCHASE_STAGE3_V1',normalizedOriginVersion:'PURCHASE_V2',originSystem:'SMARTINPUT_FILE',originTransactionId:'FILEHASH',sourceVoucherIndex:index,sourceDocumentKey:`DOC${index}`,externalDocumentNo:'REUSED'}}))});
 assert.equal(Object.values(splitState.entities).filter(row=>row.entityType==='PURCHASE_DOCUMENT').length,2,'one file may contain multiple voucher indexes and reused external numbers');
 assert.throws(()=>migrateCentralDrafts(splitState,{deviceId:'D',idempotencyKey:'TX-DUP',entities:[{entityType:'PURCHASE_DOCUMENT',entityId:'PD3',revision:1,payload:{purchaseDocumentId:'PD3',status:'DRAFT',documentContract:'VOUCHER_CORE_V1',contractKind:'PURCHASE_STAGE3_V1',normalizedOriginVersion:'PURCHASE_V2',originSystem:'SMARTINPUT_FILE',originTransactionId:'FILEHASH',sourceVoucherIndex:2,sourceDocumentKey:'DOC3'}}]}),/ORDERQ_CENTRAL_SOURCE_ALREADY_POSTED/);
+const prior=[{purchaseDocumentId:'PD1',documentContract:'VOUCHER_CORE_V1',contractKind:'PURCHASE_STAGE3_V1',sourceDocumentKey:'DOC1',purchasePlanId:'PLAN1',sourceVoucherIndex:1,externalDocumentNo:'EXT1'}];
+assert.equal(officialPurchaseReviewCandidate(prior,{contractKind:'PURCHASE_STAGE3_V1',sourceDocumentKey:'DOC2',purchasePlanId:'PLAN1',sourceVoucherIndex:1})?.purchaseDocumentId,'PD1');
+assert.equal(officialPurchaseReviewCandidate(prior,{contractKind:'PURCHASE_STAGE3_V1',sourceDocumentKey:'DOC2',purchasePlanId:'PLAN1',sourceVoucherIndex:2}),null,'planned sibling voucher is not a split/merge candidate');
+assert.equal(officialPurchaseReviewCandidate(prior,{contractKind:'PURCHASE_STAGE3_V1',sourceDocumentKey:'DOC2',externalDocumentNo:'EXT1'})?.purchaseDocumentId,'PD1');
 console.log('ORDER Q stage3 purchase identity tests passed');
