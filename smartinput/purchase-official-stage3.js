@@ -18,6 +18,10 @@ export const PURCHASE_STAGE3_CAPABILITY = Object.freeze({
   cutoverMode: 'VNEXT_PRIMARY'
 });
 
+// SmartInput currently has no authenticated actor/session provider. Keep the
+// established application actor explicit until that shared provider exists.
+export const SMARTINPUT_PURCHASE_ACTOR_ID = 'SMART_INPUT_ADMIN';
+
 function text(value) { return String(value ?? '').trim(); }
 function finiteRequired(value, code) {
   if (value === '' || value === null || value === undefined || !Number.isFinite(Number(value))) throw new Error(code);
@@ -74,7 +78,7 @@ export function validatePurchaseGroup(group = {}, masters = {}) {
   return true;
 }
 
-export function buildPurchasePostDraft(group = {}, context = {}) {
+export function derivePurchaseDraftIdentity(group = {}, context = {}) {
   const sourceType = text(group.sourceType || group.rows?.[0]?.sourceType || 'DIRECT').toUpperCase();
   const originSystem = text(group.originSystem || group.rows?.[0]?.originSystem || context.originSystem || 'SMARTINPUT_MANUAL').toUpperCase();
   const originTransactionId = text(group.originTransactionId || group.rows?.[0]?.originTransactionId || context.manualSessionId);
@@ -90,6 +94,15 @@ export function buildPurchasePostDraft(group = {}, context = {}) {
     : `PURCHASE:${canonicalSha256({ contractKind: 'PURCHASE_STAGE3_V1', sourceRunKey, documentSuffix, roleSupplierKey, purchaseDate: text(group.voucherDate), externalDocumentNo })}`;
   if (!sourceDocumentKey) throw new Error('ORDERQ_OFFICIAL_SOURCE_DOCUMENT_KEY_REQUIRED');
   const purchaseDocumentId = `PD-${canonicalSha256(['VOUCHER_CORE_V1', sourceType, sourceDocumentKey]).slice(0, 32)}`;
+  return { sourceType, originSystem, originTransactionId, externalDocumentNo, sourceVoucherIndex,
+    sourceRunKey, roleSupplierKey, documentSuffix, sourceDocumentKey, purchaseDocumentId,
+    contractKind: 'PURCHASE_STAGE3_V1', purchasePlanId: text(group.purchasePlanId || group.rows?.[0]?.purchasePlanId) };
+}
+
+export function buildPurchasePostDraft(group = {}, context = {}) {
+  const identity = derivePurchaseDraftIdentity(group, context);
+  const { sourceType, originSystem, originTransactionId, externalDocumentNo, sourceVoucherIndex,
+    sourceRunKey, documentSuffix, sourceDocumentKey, purchaseDocumentId } = identity;
   const occurredAt = text(context.occurredAt || new Date().toISOString());
   const lines = (group.rows || []).map((row, index) => {
     const actualQuantity = finiteRequired(row.actualQuantity ?? row.quantity, 'ORDERQ_PURCHASE_QUANTITY_REQUIRED');
@@ -125,34 +138,46 @@ export function buildPurchasePostDraft(group = {}, context = {}) {
   };
   const commandSource = {
     commandType: 'POST_PURCHASE', aggregateId: purchaseDocumentId, expectedRevision: 1, commandId, idempotencyKey: commandId,
-    actor: text(context.actor || 'ADMIN'), actorId: text(context.actor || 'ADMIN'), reason: 'PURCHASE_POST', occurredAt,
+    actor: text(context.actor || SMARTINPUT_PURCHASE_ACTOR_ID), actorId: text(context.actor || SMARTINPUT_PURCHASE_ACTOR_ID), reason: 'PURCHASE_POST', occurredAt,
     commandContract: 'VOUCHER_CORE_V1', ...document, document, lines
   };
   return { ...document, ...buildFrozenPurchaseIntent(commandSource), lines, commandSource };
 }
 
-export async function postPurchaseGroup(group, context = {}) {
-  const draft = buildPurchasePostDraft(group, context);
-  await pullCentralOfficialState();
-  const identity = { contractKind: draft.contractKind, sourceDocumentKey: draft.sourceDocumentKey, originSystem: draft.originSystem, originTransactionId: draft.originTransactionId };
-  const legacyConflict = await findLegacyPurchaseOriginConflict({ purchasePlanId: draft.purchasePlanId, legacySourceShortageKey: draft.legacySourceShortageKey });
-  if (legacyConflict) throw new Error(`ORDERQ_PURCHASE_ORIGIN_DUPLICATE:PURCHASE:LEGACY:${legacyConflict.legacyPurchaseDocumentId}`);
-  const existing = await findOfficialPurchaseBySource(identity);
-  if (existing && text(existing.purchaseDocumentId) !== text(draft.purchaseDocumentId)) throw new Error(`ORDERQ_PURCHASE_ORIGIN_DUPLICATE:${draft.sourceDocumentKey}`);
-  let aggregate = existing ? await loadOfficialPurchaseAggregate(existing.purchaseDocumentId) : null;
-  if (aggregate && text(aggregate.document.status).toUpperCase() === 'DRAFT'
+export function resolvePersistedPurchaseRetry(group = {}, context = {}, aggregate = null) {
+  const storedEnvelope = aggregate?.document?.commandEnvelope || null;
+  const draft = buildPurchasePostDraft(group, storedEnvelope
+    ? { ...context, actor: storedEnvelope.actorId, occurredAt: storedEnvelope.occurredAt }
+    : context);
+  if (aggregate && storedEnvelope
     && text(aggregate.document.draftIntentDigest) !== text(draft.draftIntentDigest)) {
     throw new Error('ORDERQ_PURCHASE_DRAFT_IDENTITY_CONFLICT');
   }
+  return { draft, envelope: storedEnvelope || draft.commandEnvelope };
+}
+
+export async function postPurchaseGroup(group, context = {}) {
+  await pullCentralOfficialState();
+  const source = derivePurchaseDraftIdentity(group, context);
+  const identity = { contractKind: source.contractKind, sourceDocumentKey: source.sourceDocumentKey, originSystem: source.originSystem, originTransactionId: source.originTransactionId };
+  const legacyConflict = await findLegacyPurchaseOriginConflict({ purchasePlanId: source.purchasePlanId, legacySourceShortageKey: source.legacySourceShortageKey });
+  if (legacyConflict) throw new Error(`ORDERQ_PURCHASE_ORIGIN_DUPLICATE:PURCHASE:LEGACY:${legacyConflict.legacyPurchaseDocumentId}`);
+  const existing = await findOfficialPurchaseBySource(identity);
+  if (existing && text(existing.purchaseDocumentId) !== text(source.purchaseDocumentId)) throw new Error(`ORDERQ_PURCHASE_ORIGIN_DUPLICATE:${source.sourceDocumentKey}`);
+  let aggregate = existing ? await loadOfficialPurchaseAggregate(existing.purchaseDocumentId) : null;
+  const retry = resolvePersistedPurchaseRetry(group, context, aggregate);
+  const draft = retry.draft;
   if (!aggregate) {
-    try { aggregate = await saveOfficialVoucherDraft({ kind: 'PURCHASE', ...draft, purchaseDocumentId: draft.purchaseDocumentId }, context.actor || 'ADMIN'); }
+    try { aggregate = await saveOfficialVoucherDraft({ kind: 'PURCHASE', ...draft, purchaseDocumentId: draft.purchaseDocumentId }, context.actor || SMARTINPUT_PURCHASE_ACTOR_ID); }
     catch (error) {
       if (!text(error?.message).startsWith('ORDERQ_OFFICIAL_DRAFT_EXISTS:')) throw error;
       aggregate = await loadOfficialPurchaseAggregate(draft.purchaseDocumentId);
       if (!aggregate || text(aggregate.document.draftIntentDigest) !== text(draft.draftIntentDigest)) throw new Error('ORDERQ_PURCHASE_DRAFT_IDENTITY_CONFLICT');
     }
   }
-  const envelope = aggregate.document?.commandEnvelope || draft.commandEnvelope;
+  // Retrying a lost response must resend the byte-identical persisted command;
+  // wall-clock time and current UI state can never replace this envelope.
+  const envelope = aggregate.document?.commandEnvelope || retry.envelope;
   const result = await runCentralOfficialVoucherCommand({
     ...envelope,
     intent: envelope,
