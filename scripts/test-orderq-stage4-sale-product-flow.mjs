@@ -45,7 +45,7 @@ let workspace = { schemaVersion:'shipping-workspace/v2', planId:'PLAN-1', source
     allocation({ sourceRowNumber:2, sourceOccurrence:1, sourceRowKey:'ORDER_ROW:2:ALLOC:A', orderNumber:'N1', quantity:-0.5 }),
     allocation({ sourceRowNumber:3, sourceOccurrence:1, sourceRowKey:'ORDER_ROW:3:ALLOC:A', orderNumber:'N2', customer:'나', salesCustomerId:'S2', deliveryCustomerId:'D2', billingCustomerId:'B2' })
   ] };
-workspace = await connectSaleStage4Workspace(workspace, { source, actor:'TEST', reviews:{
+workspace = await connectSaleStage4Workspace(workspace, { pull:async()=>({online:true}), source, actor:'TEST', reviews:{
   '2:1':{ orderId:'O1', orderItemId:'OI1-A' }, '2:2':{ orderId:'O1', orderItemId:'OI1-B' }, '3:1':{ orderId:'O2', orderItemId:'OI2' }
 } });
 assert.deepEqual(workspace.saleStage4Sidecar.rows.map(row => [row.sourceRowNumber, row.sourceOccurrence, row.sourceRowKey]), [
