@@ -98,8 +98,8 @@ assert.equal(manifestContract.schemaVersion, 'NEXUS_HEADER_V3');
 assert.equal(manifestContract.resources.globalActionVisibilityPreference, 'oneapp.nexus.v1.hiddenGlobalActions');
 for (const file of manifestContract.consumers) {
   const source = read(file);
-  assert.match(source, /apps-config\.js\?v=1\.3\.0/, `${file} must load the current NEXUS configuration`);
-  assert.match(source, /nexus-top\.js\?v=1\.3\.0/, `${file} must load the current NEXUS component`);
+  assert.match(source, /apps-config\.js\?v=1\.4\.0/, `${file} must load the current NEXUS configuration`);
+  assert.match(source, /nexus-top\.js\?v=1\.4\.0/, `${file} must load the current NEXUS component`);
 }
 
 const entries = [
@@ -116,8 +116,8 @@ const entries = [
 for (const [file, appId] of entries) {
   const source = read(file);
   assert.match(source, new RegExp(`<nexus-top app-id="${appId}">[\\s\\S]*?<\\/nexus-top>`), `${file} must declare its canonical NEXUS app ID`);
-  assert.match(source, /apps-config\.js\?v=1\.3\.0/);
-  assert.match(source, /nexus-top\.js\?v=1\.3\.0/);
+  assert.match(source, /apps-config\.js\?v=1\.4\.0/);
+  assert.match(source, /nexus-top\.js\?v=1\.4\.0/);
   assert.match(source, /NEXUS 메뉴를 불러오지 못했습니다/);
 }
 

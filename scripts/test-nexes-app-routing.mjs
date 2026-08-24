@@ -54,8 +54,8 @@ assert.match(master, />기초등록<\/strong>/);
 assert.doesNotMatch(master, /MASTER ·|>v3\.6<\/span>/);
 assert.match(itemManager, /<title>상품 기초정보 관리<\/title>/);
 assert.match(itemManager, /<nexus-top app-id="item-manager">[\s\S]*?<\/nexus-top>/);
-assert.match(itemManager, /\/nexus\/common\/apps-config\.js\?v=1\.3\.0/);
-assert.match(itemManager, /\/nexus\/common\/nexus-top\.js\?v=1\.3\.0/);
+assert.match(itemManager, /\/nexus\/common\/apps-config\.js\?v=1\.4\.0/);
+assert.match(itemManager, /\/nexus\/common\/nexus-top\.js\?v=1\.4\.0/);
 assert.doesNotMatch(itemManager, /\{ id: 'pipeline'|\{ id: 'parser'|\{ id: 'inventory'/, "Item Manager must use the shared NEXUS header instead of a duplicate app shortcut menu");
 assert.match(dashboard, /Dashboard \[v2\.1 AppRoutes\]/);
 assert.match(dashboard, />v2\.1<\/span>/);
@@ -70,7 +70,7 @@ for (const [name, source] of [
   ["orderops/list.html", canonicalOrderQ],
 ]) {
   assert.match(source, /<nexus-top app-id="orderq">[\s\S]*?<\/nexus-top>/, `${name} must load NEXUS TOP`);
-  assert.match(source, /\/nexus\/common\/nexus-top\.js\?v=1\.3\.0/, `${name} must use the shared NEXUS TOP component`);
+  assert.match(source, /\/nexus\/common\/nexus-top\.js\?v=1\.4\.0/, `${name} must use the shared NEXUS TOP component`);
   assert.match(source, /NEXUS 메뉴를 불러오지 못했습니다/, `${name} must reserve a failure-isolated NEXUS fallback`);
   assert.match(source, /brand-badge">v1\.65</, `${name} must show the current ORDER Q version`);
 }
@@ -85,8 +85,8 @@ const nexusApps = [
 for (const [name, appId] of nexusApps) {
   const source = read(name);
   assert.match(source, new RegExp(`<nexus-top app-id="${appId}">[\\s\\S]*?<\\/nexus-top>`), `${name} must declare its app-id`);
-  assert.match(source, /\/nexus\/common\/apps-config\.js\?v=1\.3\.0/, `${name} must load shared app configuration`);
-  assert.match(source, /\/nexus\/common\/nexus-top\.js\?v=1\.3\.0/, `${name} must load NEXUS TOP`);
+  assert.match(source, /\/nexus\/common\/apps-config\.js\?v=1\.4\.0/, `${name} must load shared app configuration`);
+  assert.match(source, /\/nexus\/common\/nexus-top\.js\?v=1\.4\.0/, `${name} must load NEXUS TOP`);
   assert.match(source, /NEXUS 메뉴를 불러오지 못했습니다/, `${name} must keep working when the common header fails`);
 }
 
