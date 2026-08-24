@@ -4164,22 +4164,22 @@ $('detailColumnsButton').addEventListener('click', () => {
 const photoResizer = $('photoResizer');
 let brandAlignmentFrame = 0;
 function syncBrandToWorkbench() {
-  const brand = document.querySelector('.brand');
+  const primary = document.querySelector('.app-bar__primary');
   const appBarInner = document.querySelector('.app-bar__inner');
   const workspace = document.querySelector('.workspace');
   const workbench = document.querySelector('.workbench');
-  if (!brand || !appBarInner || !workspace || !workbench) return;
+  if (!primary || !appBarInner || !workspace || !workbench) return;
   const appBarBounds = appBarInner.getBoundingClientRect();
   const workspaceBounds = workspace.getBoundingClientRect();
   const workbenchBounds = workbench.getBoundingClientRect();
   const hasSeparateMainPane = workbenchBounds.left - workspaceBounds.left > 24;
   if (!hasSeparateMainPane) {
-    brand.removeAttribute('data-table-aligned');
+    primary.removeAttribute('data-table-aligned');
     appBarInner.style.removeProperty('--brand-workbench-left');
     return;
   }
   appBarInner.style.setProperty('--brand-workbench-left', `${Math.round(workbenchBounds.left - appBarBounds.left)}px`);
-  brand.dataset.tableAligned = 'true';
+  primary.dataset.tableAligned = 'true';
 }
 
 function scheduleBrandAlignment() {
