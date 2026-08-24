@@ -1,3 +1,8 @@
+import './canonical-hash.js?v=0.1.0';
+
+const sharedCanonicalHash = globalThis.ORDERQ_CANONICAL_HASH;
+if (!sharedCanonicalHash) throw new Error('ORDERQ_CANONICAL_HASH_NOT_LOADED');
+
 export const OFFICIAL_VOUCHER_COMMAND = Object.freeze({
   POST_PURCHASE: 'POST_PURCHASE',
   CORRECT_PURCHASE: 'CORRECT_PURCHASE',
@@ -92,7 +97,7 @@ function utf8Bytes(value) {
   return typeof TextEncoder !== 'undefined' ? new TextEncoder().encode(encoded).byteLength : unescape(encodeURIComponent(encoded)).length;
 }
 
-export function canonicalSha256(value) {
+function legacyCanonicalSha256(value) {
   const input = unescape(encodeURIComponent(JSON.stringify(canonicalValue(value))));
   const words = [];
   const bitLength = input.length * 8;
@@ -129,6 +134,8 @@ export function canonicalSha256(value) {
   }
   return hash.map(value32 => (value32 >>> 0).toString(16).padStart(8, '0')).join('');
 }
+
+export const canonicalSha256 = sharedCanonicalHash.canonicalSha256;
 
 export function voucherStableId(prefix, ...parts) { return stableId(prefix, ...parts); }
 
