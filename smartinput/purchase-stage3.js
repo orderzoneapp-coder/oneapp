@@ -23,7 +23,7 @@ export function purchaseMetaDigestPairs(meta = {}) {
   return [
     ['schemaVersion', text(meta.schemaVersion)], ['ruleVersion', text(meta.ruleVersion)],
     ['originSystem', upper(meta.originSystem)], ['originTransactionId', text(meta.originTransactionId)],
-    ['planId', text(meta.planId)], ['sourceFingerprint', text(meta.sourceFingerprint)],
+    ['planId', text(meta.planId)], ['sourceShortageKey', text(meta.sourceShortageKey)], ['sourceFingerprint', text(meta.sourceFingerprint)],
     ['basisDate', text(meta.basisDate)], ['sourceRowKey', text(meta.sourceRowKey)],
     ['sourceVoucherIndex', integer(meta.sourceVoucherIndex)], ['documentSuffix', text(meta.documentSuffix)],
     ['documentOrdinal', integer(meta.documentOrdinal)], ['purchasePlanId', text(meta.purchasePlanId)],
@@ -141,7 +141,7 @@ export function detachOrderQPurchaseLink(row = {}, { originSystem = 'SMARTINPUT_
     sourceType: 'DIRECT', contractKind: 'PURCHASE_STAGE3_V1', originSystem: system,
     originTransactionId: transactionId, sourceFingerprint: transactionId,
     sourceDocumentKey: '', sourceLineKey: '', purchasePlanId: '', planId: '',
-    sourceRowKey: '', documentSuffix: '', documentOrdinal: null,
+    sourceShortageKey: '', sourceRowKey: '', documentSuffix: '', documentOrdinal: null,
     metaProductId: '', metaProductCode: '', metaStatus: 'DIRECT_DETACHED',
     directOriginSystem: system, directOriginTransactionId: transactionId
   };

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { evaluatePurchaseStage3Capability, validatePurchaseGroup } from '../smartinput/purchase-official-stage3.js';
+import { buildPurchasePostDraft, evaluatePurchaseStage3Capability, validatePurchaseGroup } from '../smartinput/purchase-official-stage3.js';
 import { createCentralAuthorityState, migrateCentralDrafts, prepareCentralCommand } from '../orderq/central-authority.js';
 import vm from 'node:vm';
 import { readFileSync } from 'node:fs';
@@ -38,6 +38,18 @@ assert.throws(()=>context.orderQM9ValidatePurchaseMasters({},missingRevision),/O
 const staleRevision=structuredClone(command); staleRevision.intent.lines[0].productMasterRevision=1;
 assert.throws(()=>prepareCentralCommand(state,{...staleRevision,idempotencyKey:'CMD-STALE',intent:{...staleRevision.intent,commandId:'CMD-STALE'}}),/ORDERQ_PURCHASE_MASTER_REVISION_STALE/);
 assert.throws(()=>context.orderQM9ValidatePurchaseMasters({},staleRevision),/ORDERQ_PURCHASE_MASTER_REVISION_STALE/);
+
+const frozenGroup={sourceType:'ORDER_Q',sourceDocumentKey:'FROZEN-SOURCE',sourceVoucherIndex:1,purchasePlanId:'PLAN-F',sourceShortageKey:'SHORT-F',supplierCustomerId:'C1',supplierCustomerName:'남경',voucherDate:'2026-08-25',warehouseId:'W1',warehouseCode:'01',rows:[{sourceType:'ORDER_Q',sourceLineKey:'FROZEN-L1',productId:'P1',itemCode:'A',itemName:'상품A',warehouseId:'W1',warehouseCode:'01',quantity:2,unit:'BOX',conversionFactor:10,baseQuantity:20,baseUnit:'EA',unitPrice:100,productMasterRevision:2,warehouseMasterRevision:1}]};
+const frozenDraft=buildPurchasePostDraft(frozenGroup,{actor:'SMART_INPUT_ADMIN',occurredAt:'2026-08-25T00:00:00.000Z'});
+assert.equal(frozenDraft.commandEnvelope.lines[0].productMasterRevision,2); assert.equal(frozenDraft.commandEnvelope.lines[0].warehouseMasterRevision,1);
+const frozenState=createCentralAuthorityState({customerMasters:{C1:{customerId:'C1',status:'ACTIVE'}},entities:{}});
+migrateCentralDrafts(frozenState,{deviceId:'D2',idempotencyKey:'FROZEN-MIG',entities:[
+  {entityType:'PRODUCT',entityId:'P1',revision:2,payload:{productId:'P1',status:'ACTIVE'}},{entityType:'WAREHOUSE',entityId:'W1',revision:1,payload:{warehouseId:'W1',status:'ACTIVE'}},
+  {entityType:'PURCHASE_DOCUMENT',entityId:frozenDraft.purchaseDocumentId,revision:1,payload:{...frozenDraft,status:'DRAFT',documentContract:'VOUCHER_CORE_V1'}},
+  {entityType:'PURCHASE_LINE',entityId:'FROZEN-PL1',revision:1,payload:{...frozenDraft.lines[0],purchaseLineId:'FROZEN-PL1',purchaseDocumentId:frozenDraft.purchaseDocumentId,status:'DRAFT'}}]});
+const frozenPrepare={...frozenDraft.commandEnvelope,aggregateId:frozenDraft.purchaseDocumentId,intent:{...frozenDraft.commandEnvelope,actor:frozenDraft.commandEnvelope.actorId}};
+assert.equal(prepareCentralCommand(frozenState,frozenPrepare).committed,false);
+assert.doesNotThrow(()=>context.orderQM9ValidatePurchaseMasters({},frozenPrepare));
 
 const hashContext={sha256Hex:value=>createHash('sha256').update(String(value),'utf8').digest('hex')};
 vm.createContext(hashContext);vm.runInContext(['orderQM9CanonicalText','orderQM9CodePointCompare','orderQM9Stable','orderQM9StableJson','orderQM9Digest'].map(declaration).join('\n'),hashContext);

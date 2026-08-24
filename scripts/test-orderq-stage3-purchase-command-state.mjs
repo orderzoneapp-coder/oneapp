@@ -13,9 +13,11 @@ assert.equal(frozen.commandEnvelope.uiState,undefined);
 assert.equal(frozen.commandFingerprint,centralCommandFingerprint({commandType:'POST_PURCHASE',aggregateId:'PD1',expectedRevision:1,idempotencyKey:'CMD1',intent:{...frozen.commandEnvelope,actor:frozen.commandEnvelope.actorId}}));
 assert.notEqual(buildFrozenPurchaseIntent({...base,lines:[{...base.lines[0],actualQuantity:1,baseQuantity:1,supplyAmount:10,totalAmount:10}]}).draftIntentDigest,frozen.draftIntentDigest);
 
-const purchaseGroup={sourceType:'DIRECT',originSystem:'SMARTINPUT_MANUAL',originTransactionId:'SESSION1',sourceVoucherIndex:1,supplierCustomerId:'C1',supplierCustomerCode:'S1',supplierCustomerName:'남경',voucherDate:'2026-08-25',warehouseId:'W1',warehouseCode:'01',rows:[{sourceSheetName:'직접입력',sourceRowNo:1,productId:'P1',itemCode:'A',itemName:'상품A',warehouseId:'W1',warehouseCode:'01',quantity:2,unit:'EA',unitPrice:100,conversionFactor:1,baseQuantity:2,baseUnit:'EA'}]};
+const purchaseGroup={sourceType:'DIRECT',originSystem:'SMARTINPUT_MANUAL',originTransactionId:'SESSION1',sourceVoucherIndex:1,supplierCustomerId:'C1',supplierCustomerCode:'S1',supplierCustomerName:'남경',voucherDate:'2026-08-25',warehouseId:'W1',warehouseCode:'01',rows:[{sourceSheetName:'직접입력',sourceRowNo:1,productId:'P1',itemCode:'A',itemName:'상품A',warehouseId:'W1',warehouseCode:'01',quantity:2,unit:'EA',unitPrice:100,conversionFactor:1,baseQuantity:2,baseUnit:'EA',productMasterRevision:2,warehouseMasterRevision:1}]};
 const saved=buildPurchasePostDraft(purchaseGroup,{actor:'ACTOR-1',occurredAt:'2026-08-25T01:00:00.000Z'});
 const aggregate={document:{status:'DRAFT',draftIntentDigest:saved.draftIntentDigest,commandEnvelope:structuredClone(saved.commandEnvelope)}};
+assert.equal(saved.commandEnvelope.lines[0].productMasterRevision,2);
+assert.equal(saved.commandEnvelope.lines[0].warehouseMasterRevision,1);
 const retry=resolvePersistedPurchaseRetry(purchaseGroup,{actor:'ACTOR-2',occurredAt:'2026-08-25T09:00:00.000Z'},aggregate);
 assert.deepEqual(retry.envelope,saved.commandEnvelope);
 assert.equal(retry.draft.commandId,saved.commandId);
