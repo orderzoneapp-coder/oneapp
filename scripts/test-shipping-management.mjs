@@ -874,7 +874,7 @@ assert.equal(signedInventoryView.rows[0].orderNotes, "0 수량 전달\n음수 �
 const signedWorkbook = workbookTools.buildWorkbook(signedWorkspace, XLSX);
 assert.deepEqual(Array.from(signedWorkbook.SheetNames), [
   "전달사항(적요보기)", "주문현황", "재고수불부", "창고별재고", "구매업로드", "판매업로드",
-  "_NEXUS_META",
+  "_NEXUS_META", "_NEXUS_SALES_META",
 ]);
 const signedNoticeSheet = signedWorkbook.Sheets["전달사항(적요보기)"];
 assert.deepEqual(
@@ -895,8 +895,8 @@ assert.equal(sheetCellByHeader(signedWorkbook.Sheets["주문현황"], "주문수
 assert.equal(XLSX.utils.decode_range(signedWorkbook.Sheets["구매업로드"]["!ref"]).e.c, 19);
 assert.equal(XLSX.utils.decode_range(signedWorkbook.Sheets["구매업로드"]["!ref"]).e.r, 0);
 assert.equal(XLSX.utils.decode_range(signedWorkbook.Sheets["판매업로드"]["!ref"]).e.c, 21);
-assert.equal(XLSX.utils.decode_range(signedWorkbook.Sheets["판매업로드"]["!ref"]).e.r, 2,
-  "sales upload must preserve negative order quantities and omit zero quantities");
+assert.equal(XLSX.utils.decode_range(signedWorkbook.Sheets["판매업로드"]["!ref"]).e.r, 3,
+  "sales upload must preserve positive, zero, and negative order quantities");
 assert.equal(edgeWorkspace.basisDate, "2026-08-04");
 assert.equal(edgeWorkspace.uploadDate, "20260804");
 assert.equal(edgeWorkspace.planId, `SHIPPLAN-20260804-${"a".repeat(16)}`);
@@ -1366,7 +1366,7 @@ assert.deepEqual(
 const edgeWorkbook = workbookTools.buildWorkbook(edgeWorkspace, XLSX);
 assert.deepEqual(
   Array.from(edgeWorkbook.SheetNames),
-  [...Array.from(workbookTools.REQUIRED_SHEETS), "_NEXUS_META"],
+  [...Array.from(workbookTools.REQUIRED_SHEETS), "_NEXUS_META", "_NEXUS_SALES_META"],
   "workbook sheet contract changed",
 );
 assert.deepEqual(Array.from(workbookTools.REQUIRED_SHEETS), [
@@ -1517,12 +1517,12 @@ Object.assign(salesUploadWorkspace.allocations[3], {
 });
 salesUploadWorkspace.sourceFiles.sales = { rows: [{ productCode: "HISTORY-ONLY", quantity: 99 }] };
 const salesUploadRows = workbookTools.getSalesUploadRows(salesUploadWorkspace);
-assert.equal(salesUploadRows.length, 3, "sales upload must contain only current nonzero allocation rows");
+assert.equal(salesUploadRows.length, 4, "sales upload must preserve current positive, zero, and negative allocation rows");
 assert.equal(salesUploadRows.some((row) => row.productCode === "HISTORY-ONLY"), false,
   "historical sales evidence must not be re-exported as a new sales voucher");
 assert.deepEqual(
   salesUploadRows.map((row) => row.customer),
-  ["가거래처", "가거래처", "나거래처"],
+  ["가거래처", "가거래처", "같은거래처", "나거래처"],
   "sales upload rows must be grouped in ascending customer order while retaining source order inside each customer",
 );
 const salesUploadSheet = workbookTools.buildSalesUploadSheet(salesUploadWorkspace, XLSX);
@@ -2920,7 +2920,7 @@ try {
   });
   assert.deepEqual(
     Array.from(reopened.SheetNames),
-    [...Array.from(workbookTools.REQUIRED_SHEETS), "_NEXUS_META"],
+    [...Array.from(workbookTools.REQUIRED_SHEETS), "_NEXUS_META", "_NEXUS_SALES_META"],
     "reopened workbook sheet contract changed",
   );
   assert.equal(

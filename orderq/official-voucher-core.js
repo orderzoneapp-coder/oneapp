@@ -321,12 +321,13 @@ function orderEventsForLine(command, document, previous, next, priorEvents = [])
   const sameLink = previousMode === nextMode
     && text(previous?.sourceOrderId) === text(next?.sourceOrderId)
     && text(previous?.sourceOrderItemId) === text(next?.sourceOrderItemId);
-  const makeEvent = (source, signedQuantity, ordinal, allocationEventId = '') => {
+  const makeEvent = (source, signedQuantity, ordinal, allocationEventId = '', subtype = '', restoresReversalEventId = '') => {
     if (!source || Math.abs(signedQuantity) <= 1e-9) return null;
     const orderId = requiredText(source.sourceOrderId, 'ORDERQ_OFFICIAL_SOURCE_ORDER_REQUIRED');
     const orderItemId = requiredText(source.sourceOrderItemId, 'ORDERQ_OFFICIAL_SOURCE_ORDER_ITEM_REQUIRED');
     const eventType = signedQuantity > 0 ? 'SALES_TRANSFER_ALLOCATED' : 'SALES_TRANSFER_REVERSED';
-    const effectKey = stableId('FX', command.commandId, document.salesDocumentId, document.revision, source.lineIdentityId, eventType, ordinal);
+    const effectKey = stableId('FX', command.commandId, document.salesDocumentId, document.revision, source.lineIdentityId,
+      eventType, subtype, allocationEventId, restoresReversalEventId, ordinal);
     const reversalAllocationId = signedQuantity < 0 ? requiredText(allocationEventId, 'ORDERQ_OFFICIAL_ALLOCATION_EVENT_REQUIRED') : '';
     const event = {
     eventId: stableId('OE', effectKey),
@@ -341,6 +342,9 @@ function orderEventsForLine(command, document, previous, next, priorEvents = [])
     detail: {
       transferBusinessKey: [document.salesDocumentId, lineId('SALE', source), orderItemId].join('|'),
       allocationEventId: reversalAllocationId,
+      allocationKind: signedQuantity > 0 ? (subtype || 'ORDINARY') : '',
+      reversalKind: signedQuantity < 0 ? (subtype || 'CORRECTION') : '',
+      restoresReversalEventId: text(restoresReversalEventId),
       orderItemId,
       productId: text(source.productId),
       warehouseId: text(source.warehouseId),
@@ -355,13 +359,15 @@ function orderEventsForLine(command, document, previous, next, priorEvents = [])
     },
     createdAt: command.occurredAt
     };
-    if (signedQuantity > 0) source.allocationEventId = event.eventId;
+    if (signedQuantity > 0 && !restoresReversalEventId) source.allocationEventId = event.eventId;
     return event;
   };
   const allocationRows = priorEvents.filter(row => text(row.eventType).toUpperCase() === 'SALES_TRANSFER_ALLOCATED');
   const reversalRows = priorEvents.filter(row => text(row.eventType).toUpperCase() === 'SALES_TRANSFER_REVERSED');
+  const restorationRows = allocationRows.filter(row => text(row.detail?.restoresReversalEventId));
   const remainingAllocations = (source, explicitOnly = false) => {
-    const explicitIds = new Set([...(Array.isArray(source?.allocationEventIds) ? source.allocationEventIds : []), source?.allocationEventId].map(text).filter(Boolean));
+    const rich = Array.isArray(source?.reversalSourceAllocations) ? source.reversalSourceAllocations : [];
+    const explicitIds = new Set([...rich.map(row => row.allocationEventId), ...(Array.isArray(source?.allocationEventIds) ? source.allocationEventIds : []), source?.allocationEventId].map(text).filter(Boolean));
     return allocationRows.filter(row => {
       const detail = row.detail || {};
       if (explicitOnly) return explicitIds.has(text(row.eventId));
@@ -373,6 +379,8 @@ function orderEventsForLine(command, document, previous, next, priorEvents = [])
       event: row,
       remaining: Number(row.detail?.transferredQty || 0) - reversalRows.filter(reversal => text(reversal.detail?.allocationEventId) === text(row.eventId))
         .reduce((sum, reversal) => sum + Number(reversal.detail?.transferredQty || 0), 0)
+        + restorationRows.filter(restore => reversalRows.some(reversal => text(reversal.eventId) === text(restore.detail?.restoresReversalEventId)
+          && text(reversal.detail?.allocationEventId) === text(row.eventId))).reduce((sum, restore) => sum + Number(restore.detail?.transferredQty || 0), 0)
     })).filter(row => row.remaining > 1e-9)
       .sort((left, right) => text(right.event.createdAt).localeCompare(text(left.event.createdAt)) || text(right.event.eventId).localeCompare(text(left.event.eventId)));
   };
@@ -382,32 +390,73 @@ function orderEventsForLine(command, document, previous, next, priorEvents = [])
     for (const allocation of remainingAllocations(source, explicitOnly)) {
       if (remaining <= 1e-9) break;
       const detail = allocation.event.detail || {};
+      const rich = (Array.isArray(source.reversalSourceAllocations) ? source.reversalSourceAllocations : []).find(row => text(row.allocationEventId) === text(allocation.event.eventId));
       if (text(allocation.event.orderId) !== text(source.sourceOrderId) || text(detail.orderItemId) !== text(source.sourceOrderItemId)
         || (text(detail.productId) && text(detail.productId) !== text(source.productId))
         || (text(detail.warehouseId) && text(detail.warehouseId) !== text(source.warehouseId))
-        || (text(detail.lineIdentityId) && text(detail.lineIdentityId) !== text(source.lineIdentityId))) {
+        || (rich && (text(rich.sourceSalesDocumentId) !== text(detail.salesDocumentId)
+          || text(rich.sourceSalesLineId) !== text(detail.salesLineId)
+          || text(rich.sourceLineIdentityId) !== text(detail.lineIdentityId)))) {
         throw new Error('ORDERQ_OFFICIAL_ALLOCATION_LINK_INVALID');
       }
-      const amount = Math.min(remaining, allocation.remaining);
-      events.push(makeEvent(source, -amount, ordinalStart + events.length, allocation.event.eventId));
+      const requested = rich ? Number(rich.reversalQuantity || rich.residualQuantity || 0) : remaining;
+      const amount = Math.min(remaining, allocation.remaining, requested > 0 ? requested : remaining);
+      events.push(makeEvent(source, -amount, ordinalStart + events.length, allocation.event.eventId, explicitOnly ? 'NEGATIVE_SALE' : 'CORRECTION'));
       remaining -= amount;
     }
     if (remaining > 1e-9) throw new Error('ORDERQ_OFFICIAL_ALLOCATION_BALANCE_INSUFFICIENT');
     return events;
   };
+  const restorationResiduals = source => {
+    const refs = Array.isArray(source?.restorationSourceReversals) ? source.restorationSourceReversals : [];
+    return reversalRows.filter(row => text(row.detail?.reversalKind) === 'NEGATIVE_SALE'
+      && text(row.detail?.salesDocumentId) === text(document.salesDocumentId)
+      && text(row.detail?.salesLineId) === text(lineId('SALE', source)))
+      .filter(row => !refs.length || refs.some(ref => text(ref.reversalEventId) === text(row.eventId)))
+      .map(row => ({ event:row, remaining:Number(row.detail?.transferredQty || 0) - restorationRows
+        .filter(restore => text(restore.detail?.restoresReversalEventId) === text(row.eventId))
+        .reduce((sum, restore) => sum + Number(restore.detail?.transferredQty || 0), 0) }))
+      .filter(row => row.remaining > 1e-9).sort((a, b) => text(a.event.eventId).localeCompare(text(b.event.eventId)));
+  };
+  const restoreQuantity = (source, quantity, ordinalStart) => {
+    let remaining = Math.abs(Number(quantity || 0)); const events = [];
+    for (const reversal of restorationResiduals(source)) {
+      if (remaining <= 1e-9) break;
+      const amount = Math.min(remaining, reversal.remaining);
+      events.push(makeEvent(source, amount, ordinalStart + events.length, '', 'REVERSAL_RESTORE', reversal.event.eventId));
+      remaining -= amount;
+    }
+    if (remaining > 1e-9) throw new Error('ORDERQ_OFFICIAL_RESTORATION_BALANCE_INSUFFICIENT');
+    return events;
+  };
+  const applyQuantity = (source, quantity, ordinalStart) => Number(quantity || 0) < 0
+    ? reverseQuantity(source, quantity, ordinalStart, true)
+    : [makeEvent(source, Number(quantity || 0), ordinalStart, '', 'ORDINARY')].filter(Boolean);
+  const undoQuantity = (source, quantity, ordinalStart) => Number(quantity || 0) < 0
+    ? restoreQuantity(source, quantity, ordinalStart)
+    : reverseQuantity(source, quantity, ordinalStart, false);
   if (!previous && nextMode === 'ORDER_Q') {
-    const quantity = Number(next.recognizedOrderQuantity || 0);
-    return quantity < 0 ? reverseQuantity(next, quantity, 1, true) : [makeEvent(next, quantity, 1)].filter(Boolean);
+    return applyQuantity(next, Number(next.recognizedOrderQuantity || 0), 1);
   }
   if (!sameLink) {
-    const reversals = previousMode === 'ORDER_Q' ? reverseQuantity(previous, previous.recognizedOrderQuantity, 1) : [];
+    const reversals = previousMode === 'ORDER_Q' ? undoQuantity(previous, previous.recognizedOrderQuantity, 1) : [];
     if (nextMode !== 'ORDER_Q') return reversals;
-    const nextQuantity = Number(next.recognizedOrderQuantity || 0);
-    if (nextQuantity < 0) return [...reversals, ...reverseQuantity(next, nextQuantity, reversals.length + 1, true)];
-    return [...reversals, makeEvent(next, nextQuantity, reversals.length + 1)].filter(Boolean);
+    return [...reversals, ...applyQuantity(next, next.recognizedOrderQuantity, reversals.length + 1)];
   }
-  const delta = Number(next?.recognizedOrderQuantity || 0) - Number(previous?.recognizedOrderQuantity || 0);
-  return delta < 0 ? reverseQuantity(previous, delta, 1) : [makeEvent(next || previous, delta, 1)].filter(Boolean);
+  const before = Number(previous?.recognizedOrderQuantity || 0); const after = Number(next?.recognizedOrderQuantity || 0);
+  if (before < 0 && after <= 0) return Math.abs(after) < Math.abs(before)
+    ? restoreQuantity(previous, Math.abs(before) - Math.abs(after), 1)
+    : reverseQuantity(next || previous, Math.abs(after) - Math.abs(before), 1, true);
+  if (before < 0 && after > 0) {
+    const restored = restoreQuantity(previous, before, 1);
+    return [...restored, ...applyQuantity(next, after, restored.length + 1)];
+  }
+  if (before >= 0 && after < 0) {
+    const undone = undoQuantity(previous, before, 1);
+    return [...undone, ...applyQuantity(next, after, undone.length + 1)];
+  }
+  const delta = after - before;
+  return delta < 0 ? reverseQuantity(previous, delta, 1) : [makeEvent(next || previous, delta, 1, '', 'ORDINARY')].filter(Boolean);
 }
 
 function snapshotLine(kind, line, deleted = false) {
@@ -420,6 +469,8 @@ function snapshotLine(kind, line, deleted = false) {
     sourceOrderId: text(line.sourceOrderId), sourceOrderItemId: text(line.sourceOrderItemId),
     sourceDispatchId: text(line.sourceDispatchId), sourceDispatchLineId: text(line.sourceDispatchLineId),
     allocationEventId: text(line.allocationEventId), recognizedOrderQuantity: Number(line.recognizedOrderQuantity || 0),
+    reversalSourceAllocations: JSON.parse(JSON.stringify(line.reversalSourceAllocations || [])),
+    restorationSourceReversals: JSON.parse(JSON.stringify(line.restorationSourceReversals || [])),
     lineStatus: deleted ? 'DELETED' : text(line.lineStatus || 'ACTIVE')
   };
 }

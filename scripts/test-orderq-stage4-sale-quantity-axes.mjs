@@ -1,0 +1,5 @@
+import assert from 'node:assert/strict';
+import { buildSalePostDraft } from '../smartinput/sale-official-stage4.js';
+for(const quantity of [-2,0,2]){const draft=buildSalePostDraft({sourceType:'DIRECT',originSystem:'SMARTINPUT_MANUAL',originTransactionId:`T${quantity}`,sourceVoucherIndex:1,salesCustomerId:'C',salesCustomerRevision:1,deliveryCustomerId:'C',deliveryCustomerRevision:1,billingCustomerId:'C',billingCustomerRevision:1,saleDate:'2026-08-25',rows:[{sourceRowKey:'R',productId:'P',productMasterRevision:1,warehouseId:'W',warehouseMasterRevision:1,quantity,unit:'EA',unitPrice:100,actualToBaseFactor:10,actualToRecognizedFactor:0,orderLinkMode:'DIRECT'}]},{actor:'A',occurredAt:'2026-08-25T00:00:00Z'});const line=draft.lines[0];assert.equal(line.baseQuantity,quantity*10);assert.equal(line.recognizedOrderQuantity,0);assert.equal(line.supplyAmount,quantity*100);}
+assert.throws(()=>buildSalePostDraft({sourceType:'DIRECT',salesCustomerId:'C',deliveryCustomerId:'C',billingCustomerId:'C',rows:[{productId:'P',warehouseId:'W',quantity:'',unitPrice:1,actualToBaseFactor:1}]},{}),/QUANTITY_REQUIRED/);
+console.log('ORDER Q stage4 sale quantity-axis tests passed');
