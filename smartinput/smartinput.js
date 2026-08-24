@@ -4162,6 +4162,31 @@ $('detailColumnsButton').addEventListener('click', () => {
   applyFormLayout();
 });
 const photoResizer = $('photoResizer');
+let brandAlignmentFrame = 0;
+function syncBrandToWorkbench() {
+  const brand = document.querySelector('.brand');
+  const appBarInner = document.querySelector('.app-bar__inner');
+  const workspace = document.querySelector('.workspace');
+  const workbench = document.querySelector('.workbench');
+  if (!brand || !appBarInner || !workspace || !workbench) return;
+  const appBarBounds = appBarInner.getBoundingClientRect();
+  const workspaceBounds = workspace.getBoundingClientRect();
+  const workbenchBounds = workbench.getBoundingClientRect();
+  const hasSeparateMainPane = workbenchBounds.left - workspaceBounds.left > 24;
+  if (!hasSeparateMainPane) {
+    brand.removeAttribute('data-table-aligned');
+    appBarInner.style.removeProperty('--brand-workbench-left');
+    return;
+  }
+  appBarInner.style.setProperty('--brand-workbench-left', `${Math.round(workbenchBounds.left - appBarBounds.left)}px`);
+  brand.dataset.tableAligned = 'true';
+}
+
+function scheduleBrandAlignment() {
+  window.cancelAnimationFrame(brandAlignmentFrame);
+  brandAlignmentFrame = window.requestAnimationFrame(syncBrandToWorkbench);
+}
+
 function applyParserPaneWidth(requestedWidth) {
   const workspace = document.querySelector('.workspace');
   const bounds = workspace.getBoundingClientRect();
@@ -4170,6 +4195,7 @@ function applyParserPaneWidth(requestedWidth) {
   const width = Math.round(Math.max(330, Math.min(maximum, requestedWidth)));
   state.draft.ui.parserPaneWidth = width;
   workspace.style.setProperty('--parser-pane-width', `${width}px`);
+  scheduleBrandAlignment();
   window.requestAnimationFrame(renderPhotoTransform);
   return width;
 }
@@ -4487,7 +4513,16 @@ document.addEventListener('keydown', event => {
   }
 });
 
-window.addEventListener('resize', () => window.requestAnimationFrame(renderPhotoTransform), { passive: true });
+window.addEventListener('resize', () => {
+  scheduleBrandAlignment();
+  window.requestAnimationFrame(renderPhotoTransform);
+}, { passive: true });
+
+if ('ResizeObserver' in window) {
+  const brandAlignmentObserver = new ResizeObserver(scheduleBrandAlignment);
+  brandAlignmentObserver.observe(document.querySelector('.workspace'));
+  brandAlignmentObserver.observe(document.querySelector('.workbench'));
+}
 
 $('tableScroll').addEventListener('scroll', event => {
   modeUi().scrollTop = event.currentTarget.scrollTop;
@@ -4498,4 +4533,5 @@ window.addEventListener('pagehide', () => {
   if (state.draftDirty) saveDraftNow();
 });
 renderMode();
+scheduleBrandAlignment();
 hydrateReferences();
