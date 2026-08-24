@@ -7,8 +7,9 @@
   <title>스마트입력 · NEXUS</title>
   <meta name="description" content="주문서·구매·판매·견적 자료를 분석하고 표준 입력표로 전달하는 NEXUS 스마트입력">
   <link rel="icon" type="image/png" href="../nexus/assets/nexus-favicon.png">
+  <script src="../nexus/common/nexus-theme-init.js?v=1.0.0"></script>
   <link rel="stylesheet" href="../orderq/customer-master.css?v=0.12.1" data-customer-picker-style>
-  <link rel="stylesheet" href="./smartinput.css?v=0.4.22">
+  <link rel="stylesheet" href="./smartinput.css?v=0.4.24">
   <script src="../nexus/common/apps-config.js?v=1.4.0"></script>
   <script src="../nexus/common/nexus-top.js?v=1.4.0"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
@@ -18,14 +19,15 @@
   <nexus-top app-id="smart-input"><div class="nexus-top-fallback" role="status"><strong>NEXUS</strong><span>NEXUS 메뉴를 불러오지 못했습니다.</span><button type="button" onclick="window.location.reload()">재시도</button></div></nexus-top>
   <header class="app-bar">
     <div class="app-bar__inner">
-      <a class="brand" href="./" aria-label="스마트입력 처음으로">
-        <span class="brand__mark" aria-hidden="true">N</span>
-        <span><strong>스마트입력</strong><small>SMART INPUT</small></span>
-      </a>
       <div class="app-status" id="appStatus" role="status" aria-live="polite">
         <span class="app-status__dot" aria-hidden="true"></span>
         <span>새 입력을 시작할 수 있습니다.</span>
       </div>
+      <a class="brand" href="./" aria-label="스마트입력 처음으로">
+        <img class="brand__logo brand__logo--light" src="../nexus/assets/brand/apps/smart-input/logo-light.png" alt="">
+        <img class="brand__logo brand__logo--dark" src="../nexus/assets/brand/apps/smart-input/logo-dark.png" alt="">
+        <span class="sr-only">스마트입력</span>
+      </a>
       <div class="app-voucher-switcher">
         <span class="sr-only">전표 선택</span>
         <nav class="mode-tabs" aria-label="전표 선택">
@@ -38,10 +40,6 @@
       <div class="app-bar__actions">
         <span class="save-state" id="saveState" role="status" aria-live="polite"></span>
         <button class="button button--quiet" id="draftListButton" type="button">초안 목록</button>
-        <div class="estimate-output-actions" id="estimateOutputActions" hidden>
-          <button class="button button--quiet" id="estimateNoticeButton" type="button">카톡 공지 복사</button>
-          <button class="button button--quiet" id="estimateExcelButton" type="button">견적 Excel</button>
-        </div>
         <button class="button button--quiet" id="settingsButton" type="button">환경설정</button>
         <button class="button button--primary" id="completeButton" type="button">입력 완료</button>
       </div>
@@ -111,39 +109,45 @@
 
       <section class="workbench" aria-label="스마트입력 본문">
         <div class="document-fields">
-          <label class="field" data-header-field="deliveryDate"><span>배송일자</span><input id="deliveryDateInput" type="date"><small id="deliveryPolicyHint">배송 가능일을 계산합니다.</small></label>
-          <label class="field" data-header-field="warehouse"><span>출하창고 <em>필수</em></span><input id="warehouseInput" type="text" list="warehouseOptions" placeholder="창고명 또는 코드"><datalist id="warehouseOptions"></datalist><small>배송·출고에 사용할 창고를 지정합니다.</small></label>
-          <label class="field" data-header-field="transactionType"><span>거래유형</span><select id="transactionTypeInput"><option>기타</option><option>카드</option><option>현금</option><option>현금영수증</option><option>사내사용</option></select><small>전표의 거래 처리 유형을 지정합니다.</small></label>
+          <div class="document-fields__left">
+            <label class="field" data-header-field="deliveryDate"><span>배송일자</span><input id="deliveryDateInput" type="date"><small id="deliveryPolicyHint">배송 가능일을 계산합니다.</small></label>
+            <label class="field" data-header-field="warehouse"><span>출하창고 <em>필수</em></span><input id="warehouseInput" type="text" list="warehouseOptions" placeholder="창고명 또는 코드"><datalist id="warehouseOptions"></datalist><small>배송·출고에 사용할 창고를 지정합니다.</small></label>
+            <label class="field" data-header-field="transactionType"><span>거래유형</span><select id="transactionTypeInput"><option>기타</option><option>카드</option><option>현금</option><option>현금영수증</option><option>사내사용</option></select><small>전표의 거래 처리 유형을 지정합니다.</small></label>
+          </div>
+          <div class="document-fields__right">
+            <label class="field field--customer" data-header-field="customer">
+              <span id="customerFieldLabel">배송 거래처 <em id="customerRequiredMark">필수</em></span>
+              <div class="input-action">
+                <input id="customerInput" type="text" autocomplete="off" placeholder="거래처명 또는 코드">
+                <button id="customerSearchButton" type="button">찾기</button>
+              </div>
+              <small id="customerHint">거래처가 인식되지 않으면 이 입력란으로 이동합니다.</small>
+            </label>
+            <input id="taxCustomerInput" type="hidden">
+            <span id="customerRelationHint" hidden></span>
+            <div class="catalog-filter" id="catalogFilter" hidden>
+              <span>견적서 선택 · 상품 조합</span>
+              <div class="catalog-picker" id="catalogPicker">
+                <button class="catalog-picker__toggle" id="catalogPickerButton" type="button" aria-haspopup="true" aria-expanded="false">견적서 선택</button>
+                <div class="catalog-picker__menu" id="catalogPickerMenu" popover="auto">
+                  <div class="catalog-picker__heading"><span>견적서명</span><span>선택</span><span>관리</span></div>
+                  <div class="catalog-picker__list" id="catalogPickerList"></div>
+                  <div class="catalog-picker__footer"><span>선택 항목은 상품 불러오기·카톡·Excel에 함께 사용됩니다.</span><button class="button button--primary button--small" id="catalogComposeButton" type="button">선택 상품 불러오기</button></div>
+                </div>
+              </div>
+            </div>
+            <button class="button button--quiet button--small" id="catalogNewButton" type="button" hidden>새 견적서</button>
+            <button class="button button--primary button--small" id="catalogSaveButton" type="button" hidden>저장</button>
+            <div class="estimate-output-actions" id="estimateOutputActions" hidden>
+              <button class="button button--quiet button--small" id="estimateNoticeButton" type="button">카톡 복사</button>
+              <button class="button button--quiet button--small" id="estimateExcelButton" type="button">견적 Excel</button>
+            </div>
+          </div>
           <div class="reference-status" id="referenceStatus" role="status"><span></span><strong>기준자료를 불러오고 있습니다.</strong></div>
         </div>
 
-        <section class="grid-card" aria-labelledby="gridTitle">
-          <div class="grid-card__header">
-            <div class="grid-title"><span class="section-number">표</span><div><h2 id="gridTitle">표준 입력표</h2><p>상품 검색으로 행을 채우거나 품목코드 열부터 Excel 범위를 붙여넣습니다.</p></div></div>
-            <div class="voucher-header-controls">
-              <label class="field field--customer" data-header-field="customer">
-                <span>배송 거래처 <em>필수</em></span>
-                <div class="input-action">
-                  <input id="customerInput" type="text" autocomplete="off" placeholder="거래처명 또는 코드">
-                  <button id="customerSearchButton" type="button">찾기</button>
-                </div>
-                <small id="customerHint">거래처가 인식되지 않으면 이 입력란으로 이동합니다.</small>
-              </label>
-              <input id="taxCustomerInput" type="hidden">
-              <span id="customerRelationHint" hidden></span>
-              <div class="catalog-filter" id="catalogFilter" hidden>
-                <span>견적서 필터 · 거래처 자동 지정</span>
-                <div class="catalog-picker" id="catalogPicker">
-                  <button class="catalog-picker__toggle" id="catalogPickerButton" type="button" aria-haspopup="true" aria-expanded="false">견적서 선택</button>
-                  <div class="catalog-picker__menu" id="catalogPickerMenu" popover="auto">
-                    <div class="catalog-picker__heading"><span>견적서명</span><span>일괄출력</span><span>관리</span></div>
-                    <div class="catalog-picker__list" id="catalogPickerList"></div>
-                  </div>
-                </div>
-              </div>
-              <button class="button button--primary button--small" id="catalogSaveButton" type="button" hidden>저장</button>
-            </div>
-          </div>
+        <section class="grid-card" aria-label="입력표">
+          <h2 class="sr-only">입력표</h2>
           <div class="grid-toolbar">
             <div class="grid-stats"><strong id="gridRowCount">0행</strong><span id="matchedCount">일치 0</span><span id="similarCount">확인 0</span><span id="failedCount">미인식 0</span><span id="duplicateCount">중복 가능 0</span></div>
             <div class="grid-toolbar__actions"><button class="button button--quiet button--small" id="undoGridPasteButton" type="button" disabled>붙여넣기 취소</button><button class="button button--quiet button--small" id="deleteSelectedRows" type="button" disabled>선택 삭제</button><button class="button button--quiet button--small" id="detailColumnsButton" type="button" hidden>상세 열</button><button class="button button--quiet button--small" id="addRowButton" type="button">빈 행 추가</button></div>
@@ -183,6 +187,6 @@
 
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
   <script src="./smartinput-contract.js?v=0.4.14"></script>
-  <script type="module" src="./smartinput.js?v=0.4.25"></script>
+  <script type="module" src="./smartinput.js?v=0.4.26"></script>
 </body>
 </html>

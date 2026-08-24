@@ -5,6 +5,11 @@
     light: null,
     dark: null,
   });
+  const smartInputLogo = Object.freeze({
+    directory: '/nexus/assets/brand/apps/smart-input/',
+    light: '/nexus/assets/brand/apps/smart-input/logo-light.png',
+    dark: '/nexus/assets/brand/apps/smart-input/logo-dark.png',
+  });
   const freezeRecords = (records) => Object.freeze(records.map((record) => Object.freeze(record)));
 
   /**
@@ -33,7 +38,7 @@
   ]);
 
   window.NEXUS_GLOBAL_ACTIONS = freezeRecords([
-    { id: 'smart-input', appId: 'smart-input', name: '스마트입력', section: 'operations', url: `${base}/smartinput/`, logo: logoSlot('smart-input') },
+    { id: 'smart-input', appId: 'smart-input', name: '스마트입력', section: 'operations', url: `${base}/smartinput/`, logo: smartInputLogo },
   ]);
 
   // Existing entry-point IDs remain valid while each page moves to canonical IDs.

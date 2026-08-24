@@ -42,8 +42,10 @@ assert.deepEqual(
   { id: 'smart-input', appId: 'smart-input', name: '스마트입력', section: 'operations', url: 'https://oneapp.orderz.co.kr/smartinput/' },
 );
 assert.equal(globalActions[0].logo.directory, '/nexus/assets/brand/apps/smart-input/');
-assert.equal(globalActions[0].logo.light, null);
-assert.equal(globalActions[0].logo.dark, null);
+assert.equal(globalActions[0].logo.light, '/nexus/assets/brand/apps/smart-input/logo-light.png');
+assert.equal(globalActions[0].logo.dark, '/nexus/assets/brand/apps/smart-input/logo-dark.png');
+assert.ok(fs.existsSync(path.join(root, 'nexus/assets/brand/apps/smart-input/logo-light.png')));
+assert.ok(fs.existsSync(path.join(root, 'nexus/assets/brand/apps/smart-input/logo-dark.png')));
 
 assert.match(componentSource, /hiddenGroups: 'oneapp\.nexus\.v1\.hiddenGroups'/);
 assert.match(componentSource, /hiddenGlobalActions: 'oneapp\.nexus\.v1\.hiddenGlobalActions'/);
@@ -87,8 +89,8 @@ assert.doesNotMatch(nexusHome, /data-nexus-color-mode="system"|prefers-color-sch
 for (const directory of ['foundation', 'pricing', 'smart-input', 'shipping', 'inventory']) {
   assert.ok(fs.existsSync(path.join(root, `nexus/assets/brand/apps/${directory}/.gitkeep`)), `${directory} logo slot must exist`);
 }
-assert.match(logoDocumentation, /logo-light\.svg/);
-assert.match(logoDocumentation, /logo-dark\.svg/);
+assert.match(logoDocumentation, /logo-light\.png/);
+assert.match(logoDocumentation, /logo-dark\.png/);
 assert.match(logoDocumentation, /파일 로드에 실패하면 공통헤더는 탭 명칭을 표시한다/);
 
 const manifestContract = manifest.sharedDataContracts.find((contract) => contract.id === 'nexus-header');
