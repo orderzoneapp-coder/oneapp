@@ -441,8 +441,9 @@ export function planOfficialVoucherCommand(input = {}) {
       line.orderLinkMode = 'ORDER_Q';
       requiredText(line.sourceOrderId, 'ORDERQ_OFFICIAL_SOURCE_ORDER_REQUIRED');
       requiredText(line.sourceOrderItemId, 'ORDERQ_OFFICIAL_SOURCE_ORDER_ITEM_REQUIRED');
-      requiredText(line.sourceDispatchId, 'ORDERQ_OFFICIAL_SOURCE_DISPATCH_REQUIRED');
-      requiredText(line.sourceDispatchLineId, 'ORDERQ_OFFICIAL_SOURCE_DISPATCH_LINE_REQUIRED');
+      const hasDispatch = Boolean(text(line.sourceDispatchId));
+      const hasDispatchLine = Boolean(text(line.sourceDispatchLineId));
+      if (hasDispatch !== hasDispatchLine) throw new Error('ORDERQ_OFFICIAL_SOURCE_DISPATCH_PAIR_REQUIRED');
     }
   });
   const amount = calculateOfficialDocumentAmount(nextLines);

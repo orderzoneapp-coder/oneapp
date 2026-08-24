@@ -2102,6 +2102,24 @@ function orderQM9RoundOfficialWon(value) {
   return Math.sign(number) * Math.floor(Math.abs(number) + 0.5);
 }
 
+function orderQM9ResidualOfficialMovements(existingRows, documentId, lineIdentityId) {
+  const rows = (existingRows || []).filter(row => row.entityType === 'INVENTORY_MOVEMENT'
+    && orderQM9Text(row.payload && row.payload.sourceDocumentId) === documentId
+    && orderQM9Text(row.payload && row.payload.lineIdentityId) === lineIdentityId);
+  const reversals = new Map(); const reversedIds = new Set();
+  rows.filter(row => orderQM9Text(row.payload && row.payload.effectKind) === 'REVERSE_OLD'
+    || /_REVERSAL$/.test(orderQM9Text(row.payload && row.payload.movementType))).forEach(row => {
+    const target = orderQM9Text(row.payload && row.payload.reversalOf); reversedIds.add(target);
+    reversals.set(target, Number(reversals.get(target) || 0) + Number(row.payload.signedBaseQuantity || 0));
+  });
+  return rows.filter(row => orderQM9Text(row.payload && row.payload.effectKind) !== 'REVERSE_OLD'
+    && !/_REVERSAL$/.test(orderQM9Text(row.payload && row.payload.movementType))).map(row => ({
+    entityId: row.entityId,
+    signedBaseQuantity: Number(row.payload.signedBaseQuantity || 0),
+    remaining: Number(row.payload.signedBaseQuantity || 0) + Number(reversals.get(row.entityId) || 0)
+  })).filter(row => Math.abs(row.remaining) > 1e-9 || (row.signedBaseQuantity === 0 && !reversedIds.has(row.entityId)));
+}
+
 function orderQM9ValidateOfficialVoucher(command, mutations, existingRows) {
   const commandType = orderQM9Text(command && command.commandType).toUpperCase();
   const idempotencyKey = orderQM9Text(command && command.idempotencyKey);
@@ -2123,10 +2141,12 @@ function orderQM9ValidateOfficialVoucher(command, mutations, existingRows) {
   const events = rows('VOUCHER_EVENT');
   const entries = rows(entryType);
   const orderEvents = rows('ORDER_EVENT');
-  const existingProjectionLines = (existingRows || []).filter(row => row.entityType === lineType
+  const existingCurrentLines = (existingRows || []).filter(row => row.entityType === lineType
     && orderQM9Text(row.payload && row.payload[documentIdField]) === command.aggregateId
-    && orderQM9Text(row.payload && (row.payload.lineStatus || 'ACTIVE')).toUpperCase() !== 'DELETED'
     && orderQM9Text(row.payload && row.payload.status).toUpperCase() !== 'REVERSED');
+  const existingProjectionLines = existingCurrentLines.filter(row => row.entityType === lineType
+    && orderQM9Text(row.payload && row.payload[documentIdField]) === command.aggregateId
+    && orderQM9Text(row.payload && (row.payload.lineStatus || 'ACTIVE')).toUpperCase() !== 'DELETED');
   const allowedTypes = new Set([documentType, lineType, 'INVENTORY_MOVEMENT', 'VOUCHER_EVENT', entryType]);
   if (!purchase) allowedTypes.add('ORDER_EVENT');
   if (mutations.some(row => !allowedTypes.has(row.entityType))) throw new Error(`ORDERQ_CENTRAL_OFFICIAL_MUTATION_SCOPE_INVALID:${command.aggregateId}`);
@@ -2139,7 +2159,7 @@ function orderQM9ValidateOfficialVoucher(command, mutations, existingRows) {
     throw new Error(`ORDERQ_CENTRAL_OFFICIAL_VOUCHER_RESULT_INVALID:${command.aggregateId}`);
   }
   const projectionLines = rows(lineType).filter(row => orderQM9Text(row.payload && row.payload[documentIdField]) === command.aggregateId);
-  const existingIdentities = existingProjectionLines.map(row => orderQM9Text(row.payload && row.payload.lineIdentityId));
+  const existingIdentities = (reverse ? existingCurrentLines : existingProjectionLines).map(row => orderQM9Text(row.payload && row.payload.lineIdentityId));
   const intendedIdentities = Array.isArray(intent.lines) ? intent.lines.map(row => orderQM9Text(row.lineIdentityId)) : [];
   const expectedIdentities = new Set(reverse ? existingIdentities
     : String(command.commandType || '').indexOf('POST_') === 0 ? (intendedIdentities.length ? intendedIdentities : existingIdentities)
@@ -2156,20 +2176,35 @@ function orderQM9ValidateOfficialVoucher(command, mutations, existingRows) {
     const beforeByIdentity = new Map(existingProjectionLines.map(row => [orderQM9Text(row.payload.lineIdentityId), row.payload]));
     const afterActive = projectionLines.filter(row => orderQM9Text(row.payload.lineStatus || 'ACTIVE').toUpperCase() !== 'DELETED');
     const afterByIdentity = new Map(afterActive.map(row => [orderQM9Text(row.payload.lineIdentityId), row.payload]));
-    let expectedMovements = 0;
+    const expectedEffects = [];
     new Set([].concat(Array.from(beforeByIdentity.keys()), Array.from(afterByIdentity.keys()))).forEach(identity => {
       const beforeLine = beforeByIdentity.get(identity); const afterLine = afterByIdentity.get(identity);
-      expectedMovements += beforeLine && afterLine && (orderQM9Text(beforeLine.productId) !== orderQM9Text(afterLine.productId) || orderQM9Text(beforeLine.warehouseId) !== orderQM9Text(afterLine.warehouseId)) ? 2 : 1;
+      const sameInventory = beforeLine && afterLine && orderQM9Text(beforeLine.productId) === orderQM9Text(afterLine.productId) && orderQM9Text(beforeLine.warehouseId) === orderQM9Text(afterLine.warehouseId);
+      if (sameInventory) expectedEffects.push({ identity, effectKind:'DELTA', reversalOf:'' });
+      else {
+        if (beforeLine) {
+          const residuals = orderQM9ResidualOfficialMovements(existingRows, command.aggregateId, identity);
+          const reversalTargets = residuals.length ? residuals.map(row => row.entityId) : [orderQM9Text(beforeLine.movementId)];
+          reversalTargets.forEach(reversalOf => expectedEffects.push({ identity, effectKind:'REVERSE_OLD', reversalOf }));
+        }
+        if (afterLine) expectedEffects.push({ identity, effectKind:'APPLY_NEW', reversalOf:'' });
+      }
       if (beforeLine && !afterLine && !projectionLines.some(row => orderQM9Text(row.payload.lineIdentityId) === identity && orderQM9Text(row.payload.lineStatus).toUpperCase() === 'DELETED')) throw new Error(`ORDERQ_CENTRAL_OFFICIAL_LINE_TOMBSTONE_REQUIRED:${identity}`);
     });
-    if (movements.length !== expectedMovements) throw new Error(`ORDERQ_CENTRAL_OFFICIAL_MOVEMENT_CARDINALITY_INVALID:${command.aggregateId}`);
+    const effectKey = row => `${row.identity}\u001f${row.effectKind}\u001f${row.reversalOf}`;
+    const actualKeys = movements.map(row => effectKey({ identity:orderQM9Text(row.payload.lineIdentityId), effectKind:orderQM9Text(row.payload.effectKind), reversalOf:orderQM9Text(row.payload.reversalOf) }));
+    const expectedKeys = expectedEffects.map(effectKey);
+    if (new Set(actualKeys).size !== actualKeys.length || new Set(expectedKeys).size !== expectedKeys.length
+      || actualKeys.length !== expectedKeys.length || actualKeys.some(key => expectedKeys.indexOf(key) < 0)) throw new Error(`ORDERQ_CENTRAL_OFFICIAL_MOVEMENT_CARDINALITY_INVALID:${command.aggregateId}`);
   }
   if (reverse) {
-    const priorMovements = (existingRows || []).filter(row => row.entityType === 'INVENTORY_MOVEMENT' && orderQM9Text(row.payload.sourceDocumentId) === command.aggregateId);
-    const reversedIds = new Set(priorMovements.filter(row => orderQM9Text(row.payload.effectKind) === 'REVERSE_OLD' || /_REVERSAL$/.test(orderQM9Text(row.payload.movementType))).map(row => orderQM9Text(row.payload.reversalOf)));
-    const sums = new Map(); priorMovements.filter(row => reversedIds.has(orderQM9Text(row.payload.reversalOf))).forEach(row => sums.set(orderQM9Text(row.payload.reversalOf), Number(sums.get(orderQM9Text(row.payload.reversalOf)) || 0) + Number(row.payload.signedBaseQuantity || 0)));
-    const expected = priorMovements.filter(row => !orderQM9Text(row.payload.reversalOf) && (Math.abs(Number(row.payload.signedBaseQuantity || 0) + Number(sums.get(row.entityId) || 0)) > 1e-9 || (Number(row.payload.signedBaseQuantity || 0) === 0 && !reversedIds.has(row.entityId)))).length;
-    if (movements.length !== expected) throw new Error(`ORDERQ_CENTRAL_OFFICIAL_REVERSE_MOVEMENT_CARDINALITY_INVALID:${command.aggregateId}`);
+    const expectedReversalIds = existingCurrentLines.flatMap(row => orderQM9ResidualOfficialMovements(existingRows, command.aggregateId, orderQM9Text(row.payload.lineIdentityId)).map(effect => effect.entityId));
+    const actualReversalIds = movements.map(row => orderQM9Text(row.payload.reversalOf));
+    if (movements.some(row => orderQM9Text(row.payload.effectKind) !== 'REVERSE_OLD')
+      || new Set(actualReversalIds).size !== actualReversalIds.length || new Set(expectedReversalIds).size !== expectedReversalIds.length
+      || actualReversalIds.length !== expectedReversalIds.length || actualReversalIds.some(id => expectedReversalIds.indexOf(id) < 0)) {
+      throw new Error(`ORDERQ_CENTRAL_OFFICIAL_REVERSE_MOVEMENT_CARDINALITY_INVALID:${command.aggregateId}`);
+    }
   }
   const voucherCommands = ['POST_PURCHASE', 'CORRECT_PURCHASE', 'REVERSE_PURCHASE', 'POST_SALE', 'CORRECT_SALE', 'REVERSE_SALE'];
   if (voucherCommands.indexOf(commandType) >= 0 && orderQM9Text(payload.intent && payload.intent.commandContract).toUpperCase() !== 'VOUCHER_CORE_V1') {
@@ -2200,30 +2235,36 @@ function orderQM9ValidateOfficialVoucher(command, mutations, existingRows) {
     throw new Error(`ORDERQ_CENTRAL_DIRECT_ORDER_EVENT_FORBIDDEN:${command.aggregateId}`);
   }
   if (!purchase && orderQM9Text(document.sourceType).toUpperCase() === 'ORDER_Q') {
-    lines.forEach(row => {
+    projectionLines.forEach(row => {
       const line = row.payload;
       const order = (existingRows || []).find(candidate => candidate.entityType === 'ORDER'
         && candidate.entityId === orderQM9Text(line.sourceOrderId));
       const item = (existingRows || []).find(candidate => candidate.entityType === 'ORDER_ITEM'
         && candidate.entityId === orderQM9Text(line.sourceOrderItemId));
-      const dispatchLine = (existingRows || []).find(candidate => candidate.entityType === 'DISPATCH_LINE'
-        && candidate.entityId === orderQM9Text(line.sourceDispatchLineId));
+      const dispatchId = orderQM9Text(line.sourceDispatchId); const dispatchLineId = orderQM9Text(line.sourceDispatchLineId);
+      const hasDispatch = Boolean(dispatchId);
+      const dispatchLine = hasDispatch ? (existingRows || []).find(candidate => candidate.entityType === 'DISPATCH_LINE'
+        && candidate.entityId === dispatchLineId) : null;
       if (orderQM9Text(line.orderLinkMode).toUpperCase() !== 'ORDER_Q' || !order || !item
-        || orderQM9Text(item.payload && item.payload.orderId) !== order.entityId || !dispatchLine
-        || orderQM9Text(dispatchLine.payload && dispatchLine.payload.dispatchId) !== orderQM9Text(line.sourceDispatchId)
-        || orderQM9Text(dispatchLine.payload && dispatchLine.payload.orderItemId) !== item.entityId
-        || orderQM9Text(dispatchLine.payload && (dispatchLine.payload.actualProductId || dispatchLine.payload.productId || dispatchLine.payload.requestedProductId)) !== orderQM9Text(line.productId)
-        || orderQM9Text(dispatchLine.payload && dispatchLine.payload.warehouseId) !== orderQM9Text(line.warehouseId)) {
+        || orderQM9Text(item.payload && item.payload.orderId) !== order.entityId
+        || hasDispatch !== Boolean(dispatchLineId)
+        || (hasDispatch && (!dispatchLine || orderQM9Text(dispatchLine.payload && dispatchLine.payload.dispatchId) !== dispatchId
+          || orderQM9Text(dispatchLine.payload && dispatchLine.payload.orderItemId) !== item.entityId
+          || orderQM9Text(dispatchLine.payload && (dispatchLine.payload.actualProductId || dispatchLine.payload.productId || dispatchLine.payload.requestedProductId)) !== orderQM9Text(line.productId)
+          || orderQM9Text(dispatchLine.payload && dispatchLine.payload.warehouseId) !== orderQM9Text(line.warehouseId)))) {
         throw new Error(`ORDERQ_CENTRAL_ORDER_LINK_INVALID:${row.entityId}`);
       }
     });
     orderEvents.forEach(row => {
       const detail = row.payload.detail || {};
       const item = (existingRows || []).find(candidate => candidate.entityType === 'ORDER_ITEM' && candidate.entityId === orderQM9Text(detail.orderItemId));
-      const dispatchLine = (existingRows || []).find(candidate => candidate.entityType === 'DISPATCH_LINE' && candidate.entityId === orderQM9Text(detail.sourceDispatchLineId));
-      const eventLine = lines.find(candidate => orderQM9Text(candidate.payload.salesLineId) === orderQM9Text(detail.salesLineId));
-      if (!item || !dispatchLine || orderQM9Text(item.payload && item.payload.orderId) !== orderQM9Text(row.payload.orderId)
-        || orderQM9Text(dispatchLine.payload && dispatchLine.payload.orderItemId) !== item.entityId || !eventLine
+      const dispatchId = orderQM9Text(detail.sourceDispatchId); const dispatchLineId = orderQM9Text(detail.sourceDispatchLineId);
+      const hasDispatch = Boolean(dispatchId);
+      const dispatchLine = hasDispatch ? (existingRows || []).find(candidate => candidate.entityType === 'DISPATCH_LINE' && candidate.entityId === dispatchLineId) : null;
+      const eventLine = projectionLines.find(candidate => orderQM9Text(candidate.payload.salesLineId) === orderQM9Text(detail.salesLineId));
+      if (!item || orderQM9Text(item.payload && item.payload.orderId) !== orderQM9Text(row.payload.orderId)
+        || hasDispatch !== Boolean(dispatchLineId)
+        || (hasDispatch && (!dispatchLine || orderQM9Text(dispatchLine.payload && dispatchLine.payload.orderItemId) !== item.entityId)) || !eventLine
         || orderQM9Text(detail.salesDocumentId) !== command.aggregateId
         || orderQM9Text(eventLine.payload.sourceOrderId) !== orderQM9Text(row.payload.orderId)
         || orderQM9Text(eventLine.payload.sourceOrderItemId) !== item.entityId
@@ -2577,7 +2618,7 @@ function orderQM9Commit(ss, payload) {
     let cursor = orderQM9MetaNumber(ss, 'syncSequence');
     mutations.forEach(row => { cursor = orderQM9AppendChange(ss, command.deviceId, idempotencyKey, row); });
     const result = { transactionId: txnId, changes: mutations, cursor, ledgerSequence, serverRevision };
-    result.resultDigest = orderQM9Digest({ transactionId: txnId, changes: mutations, cursor, ledgerSequence, serverRevision });
+    result.resultDigest = orderQM9Digest({ changes: mutations, cursor, ledgerSequence, serverRevision });
     command.status = 'COMMITTED';
     command.mutationFingerprint = mutationFingerprint;
     command.committedAt = new Date().toISOString();

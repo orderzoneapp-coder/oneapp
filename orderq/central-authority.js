@@ -727,10 +727,11 @@ function validateOfficialVoucherLedger(state, command, mutations) {
   const events = rows('VOUCHER_EVENT');
   const entries = rows(entryType);
   const orderEvents = rows('ORDER_EVENT');
-  const existingProjectionLines = Object.values(state.entities || {}).filter(row => row.entityType === lineType
+  const existingCurrentLines = Object.values(state.entities || {}).filter(row => row.entityType === lineType
+    && text(row.payload?.[documentIdField]) === command.aggregateId && entityStatus(row) !== 'REVERSED');
+  const existingProjectionLines = existingCurrentLines.filter(row => row.entityType === lineType
     && text(row.payload?.[documentIdField]) === command.aggregateId
-    && text(row.payload?.lineStatus || 'ACTIVE').toUpperCase() !== 'DELETED'
-    && entityStatus(row) !== 'REVERSED');
+    && text(row.payload?.lineStatus || 'ACTIVE').toUpperCase() !== 'DELETED');
   if (!document || entityStatus(documentRow) !== (reverse ? 'REVERSED' : 'CONFIRMED')
     || Number(documentRow.revision || 0) !== command.expectedRevision + 1
     || events.length !== 1 || !entries.length) {
@@ -744,7 +745,7 @@ function validateOfficialVoucherLedger(state, command, mutations) {
   if (rows(documentType).length !== 1 || events.length !== 1) {
     commandError('ORDERQ_CENTRAL_OFFICIAL_CARDINALITY_INVALID', command.aggregateId);
   }
-  const existingIdentities = existingProjectionLines.map(row => text(row.payload?.lineIdentityId));
+  const existingIdentities = (reverse ? existingCurrentLines : existingProjectionLines).map(row => text(row.payload?.lineIdentityId));
   const intendedIdentities = Array.isArray(command.intent?.lines) ? command.intent.lines.map(row => text(row.lineIdentityId)) : [];
   const expectedIdentities = new Set(reverse ? existingIdentities
     : command.commandType.startsWith('POST_') ? intendedIdentities.length ? intendedIdentities : existingIdentities
@@ -761,26 +762,32 @@ function validateOfficialVoucherLedger(state, command, mutations) {
     const beforeByIdentity = new Map(existingProjectionLines.map(row => [text(row.payload?.lineIdentityId), row.payload]));
     const afterActive = projectionLines.filter(row => text(row.payload?.lineStatus || 'ACTIVE').toUpperCase() !== 'DELETED');
     const afterByIdentity = new Map(afterActive.map(row => [text(row.payload?.lineIdentityId), row.payload]));
-    let expectedMovements = 0;
+    const expectedEffects = [];
     for (const identity of new Set([...beforeByIdentity.keys(), ...afterByIdentity.keys()])) {
       const beforeLine = beforeByIdentity.get(identity); const afterLine = afterByIdentity.get(identity);
-      expectedMovements += beforeLine && afterLine && (text(beforeLine.productId) !== text(afterLine.productId) || text(beforeLine.warehouseId) !== text(afterLine.warehouseId)) ? 2 : 1;
+      const sameInventory = beforeLine && afterLine && text(beforeLine.productId) === text(afterLine.productId) && text(beforeLine.warehouseId) === text(afterLine.warehouseId);
+      if (sameInventory) expectedEffects.push({ identity, effectKind:'DELTA', reversalOf:'' });
+      else {
+        if (beforeLine) {
+          const residuals = residualOfficialMovements(state, command.aggregateId, identity);
+          const reversalTargets = residuals.length ? residuals.map(row => row.entityId) : [text(beforeLine.movementId)];
+          reversalTargets.forEach(reversalOf => expectedEffects.push({ identity, effectKind:'REVERSE_OLD', reversalOf }));
+        }
+        if (afterLine) expectedEffects.push({ identity, effectKind:'APPLY_NEW', reversalOf:'' });
+      }
     }
-    if (movements.length !== expectedMovements) commandError('ORDERQ_CENTRAL_OFFICIAL_MOVEMENT_CARDINALITY_INVALID', command.aggregateId);
+    const actualEffects = movements.map(row => ({ identity:text(row.payload?.lineIdentityId), effectKind:text(row.payload?.effectKind), reversalOf:text(row.payload?.reversalOf) }));
+    const effectKey = row => `${row.identity}\u001f${row.effectKind}\u001f${row.reversalOf}`;
+    requireExactIds(actualEffects.map(effectKey), expectedEffects.map(effectKey), 'ORDERQ_CENTRAL_OFFICIAL_MOVEMENT_CARDINALITY_INVALID');
     for (const [identity] of beforeByIdentity) if (!afterByIdentity.has(identity)
       && !projectionLines.some(row => text(row.payload?.lineIdentityId) === identity && text(row.payload?.lineStatus).toUpperCase() === 'DELETED')) {
       commandError('ORDERQ_CENTRAL_OFFICIAL_LINE_TOMBSTONE_REQUIRED', identity);
     }
   }
   if (reverse) {
-    const existingMovements = Object.values(state.entities || {}).filter(row => row.entityType === 'INVENTORY_MOVEMENT'
-      && text(row.payload?.sourceDocumentId) === command.aggregateId);
-    const reversedIds = new Set(existingMovements.filter(row => text(row.payload?.effectKind) === 'REVERSE_OLD' || text(row.payload?.movementType).endsWith('_REVERSAL')).map(row => text(row.payload?.reversalOf)));
-    const reversalSums = new Map();
-    existingMovements.filter(row => reversedIds.has(text(row.payload?.reversalOf))).forEach(row => reversalSums.set(text(row.payload.reversalOf), finite(reversalSums.get(text(row.payload.reversalOf))) + finite(row.payload.signedBaseQuantity)));
-    const expected = existingMovements.filter(row => !text(row.payload?.reversalOf) && (Math.abs(finite(row.payload?.signedBaseQuantity) + finite(reversalSums.get(row.entityId))) > EPSILON
-      || (finite(row.payload?.signedBaseQuantity) === 0 && !reversedIds.has(row.entityId)))).length;
-    if (movements.length !== expected) commandError('ORDERQ_CENTRAL_OFFICIAL_REVERSE_MOVEMENT_CARDINALITY_INVALID', command.aggregateId);
+    const expectedReversalIds = existingCurrentLines.flatMap(row => residualOfficialMovements(state, command.aggregateId, text(row.payload?.lineIdentityId)).map(effect => effect.entityId));
+    if (movements.some(row => text(row.payload?.effectKind) !== 'REVERSE_OLD')) commandError('ORDERQ_CENTRAL_OFFICIAL_REVERSE_MOVEMENT_CARDINALITY_INVALID', command.aggregateId);
+    requireExactIds(movements.map(row => row.payload?.reversalOf), expectedReversalIds, 'ORDERQ_CENTRAL_OFFICIAL_REVERSE_MOVEMENT_CARDINALITY_INVALID');
   }
   const intent = command.intent || {};
   if (!text(intent.commandId) || !text(intent.actor) || !text(intent.occurredAt)
@@ -854,15 +861,17 @@ function validateOfficialVoucherLedger(state, command, mutations) {
         const orderId = text(eventRow.payload?.orderId);
         const item = state.entities[entityKey('ORDER_ITEM', itemId)];
         const eventType = text(eventRow.payload?.eventType).toUpperCase();
-        const dispatchLine = state.entities[entityKey('DISPATCH_LINE', text(eventRow.payload?.detail?.sourceDispatchLineId))];
-        const eventLine = lines.find(row => text(row.payload?.salesLineId) === text(eventRow.payload?.detail?.salesLineId));
+        const dispatchId = text(eventRow.payload?.detail?.sourceDispatchId);
+        const dispatchLineId = text(eventRow.payload?.detail?.sourceDispatchLineId);
+        const hasDispatch = Boolean(dispatchId);
+        const dispatchLine = hasDispatch ? state.entities[entityKey('DISPATCH_LINE', dispatchLineId)] : null;
+        const eventLine = projectionLines.find(row => text(row.payload?.salesLineId) === text(eventRow.payload?.detail?.salesLineId));
         if (!item || !state.entities[entityKey('ORDER', orderId)] || text(item.payload?.orderId) !== orderId
-          || !dispatchLine || text(dispatchLine.payload?.dispatchId) !== text(eventRow.payload?.detail?.sourceDispatchId)
-          || text(dispatchLine.payload?.orderItemId) !== itemId
+          || hasDispatch !== Boolean(dispatchLineId)
+          || (hasDispatch && (!dispatchLine || text(dispatchLine.payload?.dispatchId) !== dispatchId || text(dispatchLine.payload?.orderItemId) !== itemId))
           || !eventLine || text(eventRow.payload?.detail?.salesDocumentId) !== command.aggregateId
           || text(eventLine.payload?.sourceOrderId) !== orderId || text(eventLine.payload?.sourceOrderItemId) !== itemId
-          || text(eventLine.payload?.sourceDispatchId) !== text(eventRow.payload?.detail?.sourceDispatchId)
-          || text(eventLine.payload?.sourceDispatchLineId) !== text(eventRow.payload?.detail?.sourceDispatchLineId)
+          || text(eventLine.payload?.sourceDispatchId) !== dispatchId || text(eventLine.payload?.sourceDispatchLineId) !== dispatchLineId
           || !['SALES_TRANSFER_ALLOCATED', 'SALES_TRANSFER_REVERSED'].includes(eventType)) {
           commandError('ORDERQ_CENTRAL_ORDER_EVENT_LINK_INVALID', eventRow.entityId);
         }
@@ -895,17 +904,20 @@ function validateOfficialVoucherLedger(state, command, mutations) {
           commandError('ORDERQ_CENTRAL_ORDER_ALLOCATION_LIMIT', itemId);
         }
       }
-      for (const row of lines) {
+      for (const row of projectionLines) {
         const line = row.payload;
         const order = state.entities[entityKey('ORDER', text(line.sourceOrderId))];
         const item = state.entities[entityKey('ORDER_ITEM', text(line.sourceOrderItemId))];
-        const dispatchLine = state.entities[entityKey('DISPATCH_LINE', text(line.sourceDispatchLineId))];
+        const dispatchId = text(line.sourceDispatchId); const dispatchLineId = text(line.sourceDispatchLineId);
+        const hasDispatch = Boolean(dispatchId);
+        const dispatchLine = hasDispatch ? state.entities[entityKey('DISPATCH_LINE', dispatchLineId)] : null;
         if (text(line.orderLinkMode).toUpperCase() !== 'ORDER_Q'
           || !order || !item || text(item.payload?.orderId) !== order.entityId
-          || !dispatchLine || text(dispatchLine.payload?.dispatchId) !== text(line.sourceDispatchId)
-          || text(dispatchLine.payload?.orderItemId) !== item.entityId
-          || text(dispatchLine.payload?.actualProductId || dispatchLine.payload?.productId || dispatchLine.payload?.requestedProductId) !== text(line.productId)
-          || text(dispatchLine.payload?.warehouseId) !== text(line.warehouseId)) {
+          || hasDispatch !== Boolean(dispatchLineId)
+          || (hasDispatch && (!dispatchLine || text(dispatchLine.payload?.dispatchId) !== dispatchId
+            || text(dispatchLine.payload?.orderItemId) !== item.entityId
+            || text(dispatchLine.payload?.actualProductId || dispatchLine.payload?.productId || dispatchLine.payload?.requestedProductId) !== text(line.productId)
+            || text(dispatchLine.payload?.warehouseId) !== text(line.warehouseId)))) {
           commandError('ORDERQ_CENTRAL_ORDER_LINK_INVALID', row.entityId);
         }
       }
@@ -944,6 +956,23 @@ function validateOfficialVoucherLedger(state, command, mutations) {
     requireSameNumber(entries.filter(row => text(row.payload.partnerId) === nextPartner).reduce((sum, row) => sum + finite(row.payload.totalAmount), 0), nextTotal,
       'ORDERQ_CENTRAL_OFFICIAL_PARTNER_ASSIGN_INVALID', command.aggregateId);
   }
+}
+
+function residualOfficialMovements(state, documentId, lineIdentityId) {
+  const rows = Object.values(state.entities || {}).filter(row => row.entityType === 'INVENTORY_MOVEMENT'
+    && text(row.payload?.sourceDocumentId) === documentId && text(row.payload?.lineIdentityId) === lineIdentityId);
+  const reversals = new Map();
+  const reversedIds = new Set();
+  rows.filter(row => text(row.payload?.effectKind) === 'REVERSE_OLD' || text(row.payload?.movementType).endsWith('_REVERSAL')).forEach(row => {
+    const target = text(row.payload?.reversalOf);
+    reversedIds.add(target);
+    reversals.set(target, finite(reversals.get(target)) + finite(row.payload?.signedBaseQuantity));
+  });
+  return rows.filter(row => text(row.payload?.effectKind) !== 'REVERSE_OLD' && !text(row.payload?.movementType).endsWith('_REVERSAL')).map(row => ({
+    entityId: row.entityId,
+    signedBaseQuantity: finite(row.payload?.signedBaseQuantity),
+    remaining: finite(row.payload?.signedBaseQuantity) + finite(reversals.get(row.entityId))
+  })).filter(row => Math.abs(row.remaining) > EPSILON || (row.signedBaseQuantity === 0 && !reversedIds.has(row.entityId)));
 }
 
 function validateCommandMutations(state, command, mutations) {
@@ -1139,7 +1168,7 @@ export function commitCentralCommand(state, source = {}, options = {}) {
     ledgerSequence: working.ledgerSequence,
     serverRevision: Math.max(...mutations.map(row => row.entityId === command.aggregateId ? row.revision : 0), command.expectedRevision)
   };
-  result.resultDigest = canonicalSha256({ transactionId: result.transactionId, changes: result.changes, cursor: result.cursor, ledgerSequence: result.ledgerSequence, serverRevision: result.serverRevision });
+  result.resultDigest = canonicalSha256({ changes: result.changes, cursor: result.cursor, ledgerSequence: result.ledgerSequence, serverRevision: result.serverRevision });
   workingCommand.status = 'COMMITTED';
   workingCommand.mutationFingerprint = mutationFingerprint;
   workingCommand.committedAt = new Date(commitAtMillis).toISOString();

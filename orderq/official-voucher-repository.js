@@ -137,7 +137,9 @@ export async function applyOfficialVoucherCommand(source = {}) {
     const nextIds = new Set(plan.lines.map(line => text(line[kind === 'PURCHASE' ? 'purchaseLineId' : 'salesLineId'])));
     storedLines.forEach(line => {
       const id = text(line[kind === 'PURCHASE' ? 'purchaseLineId' : 'salesLineId']);
-      if (!nextIds.has(id) && text(line.lineStatus || 'ACTIVE').toUpperCase() !== 'DELETED' && text(line.status).toUpperCase() !== 'REVERSED') {
+      const reversingCurrentLine = plan.document.status === 'REVERSED' && text(line.status).toUpperCase() !== 'REVERSED';
+      const deletingActiveLine = !nextIds.has(id) && text(line.lineStatus || 'ACTIVE').toUpperCase() !== 'DELETED' && text(line.status).toUpperCase() !== 'REVERSED';
+      if (reversingCurrentLine || deletingActiveLine) {
         lineStore.put({
           ...line,
           status: plan.document.status === 'REVERSED' ? 'REVERSED' : 'CONFIRMED',
