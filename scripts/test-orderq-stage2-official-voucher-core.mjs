@@ -85,6 +85,26 @@ assert.equal(saleCorrect.movements[0].signedBaseQuantity, -3);
 assert.equal(saleCorrect.entries[0].totalAmount, 6000);
 
 const central = createCentralAuthorityState();
+assert.throws(()=>migrateCentralDrafts(createCentralAuthorityState(), {
+  deviceId:'PC-1',idempotencyKey:'MIGRATE-DUPLICATE-ORIGIN',entities:[
+    {entityType:'PURCHASE_DOCUMENT',entityId:'DUP-1',revision:1,payload:{...purchaseDraft,purchaseDocumentId:'DUP-1',localOnly:true}},
+    {entityType:'PURCHASE_DOCUMENT',entityId:'DUP-2',revision:1,payload:{...purchaseDraft,purchaseDocumentId:'DUP-2',localOnly:true}}
+  ]
+}),/ORDERQ_CENTRAL_SOURCE_ALREADY_POSTED/,'migration must reject voucher-to-voucher normalized origin duplicates');
+assert.throws(()=>migrateCentralDrafts(createCentralAuthorityState(),{
+  deviceId:'PC-1',idempotencyKey:'MIGRATE-LEGACY-SALE-ORIGIN',entities:[
+    {entityType:'SALES_DOCUMENT',entityId:'LEG-S',revision:1,payload:{status:'DRAFT',dispatchId:'DSP-1',sourceDocumentKey:'LEG-SRC',localOnly:true}},
+    {entityType:'SALES_LINE',entityId:'LEG-SL',revision:1,payload:{salesDocumentId:'LEG-S',salesLineId:'LEG-SL',sourceDispatchId:'DSP-1',sourceDispatchLineId:'DSPL-1',status:'DRAFT',localOnly:true}},
+    {entityType:'SALES_DOCUMENT',entityId:'NEW-S',revision:1,payload:{status:'DRAFT',documentContract:'VOUCHER_CORE_V1',sourceType:'ORDER_Q',sourceDocumentKey:'NEW-SRC',localOnly:true}},
+    {entityType:'SALES_LINE',entityId:'NEW-SL',revision:1,payload:{salesDocumentId:'NEW-S',salesLineId:'NEW-SL',sourceDispatchId:'DSP-1',sourceDispatchLineId:'DSPL-1',status:'DRAFT',localOnly:true}}
+  ]
+}),/ORDERQ_CENTRAL_SOURCE_ALREADY_POSTED/,'legacy dispatch sale and ORDER_Q voucher sale must share one normalized origin');
+assert.throws(()=>migrateCentralDrafts(createCentralAuthorityState(),{
+  deviceId:'PC-1',idempotencyKey:'MIGRATE-LEGACY-PURCHASE-ORIGIN',entities:[
+    {entityType:'PURCHASE_DOCUMENT',entityId:'LEG-P',revision:1,payload:{status:'DRAFT',purchaseOriginId:'PO-1',sourceDocumentKey:'LEG-P-SRC',localOnly:true}},
+    {entityType:'PURCHASE_DOCUMENT',entityId:'NEW-P',revision:1,payload:{status:'DRAFT',documentContract:'VOUCHER_CORE_V1',sourceType:'ORDER_Q',shortageId:'PO-1',sourceDocumentKey:'NEW-P-SRC',localOnly:true}}
+  ]
+}),/ORDERQ_CENTRAL_SOURCE_ALREADY_POSTED/,'legacy purchase and ORDER_Q purchase must share one normalized origin');
 migrateCentralDrafts(central, {
   deviceId: 'PC-1', idempotencyKey: 'MIGRATE-PD-1',
   entities: [
@@ -93,7 +113,7 @@ migrateCentralDrafts(central, {
       entityType: 'PURCHASE_LINE', entityId: line.purchaseLineId, revision: 1,
       payload: { ...line, purchaseDocumentId: 'PD-1', status: 'DRAFT', revision: 1, localOnly: true }
     })),
-    { entityType: 'PURCHASE_DOCUMENT', entityId: 'PD-2', revision: 1, payload: { ...purchaseDraft, purchaseDocumentId: 'PD-2', localOnly: true } },
+    { entityType: 'PURCHASE_DOCUMENT', entityId: 'PD-2', revision: 1, payload: { ...purchaseDraft, purchaseDocumentId: 'PD-2', sourceDocumentKey:'SRC-P-2', localOnly: true } },
     ...purchaseLines.map((line, index) => ({
       entityType: 'PURCHASE_LINE', entityId: `PD2-L${index + 1}`, revision: 1,
       payload: { ...line, purchaseLineId: `PD2-L${index + 1}`, lineIdentityId: `PD2-I${index + 1}`, sourceLineKey: `PD2-S${index + 1}`, purchaseDocumentId: 'PD-2', status: 'DRAFT', revision: 1, localOnly: true }
@@ -116,6 +136,11 @@ const centralMutations = [
   { entityType: 'VOUCHER_EVENT', entityId: purchasePost.voucherEvent.eventId, revision: 2, payload: purchasePost.voucherEvent },
   ...purchasePost.entries.map(entry => ({ entityType: 'PAYABLE_ENTRY', entityId: entry.entryId, revision: 2, payload: entry }))
 ];
+const invalidCommit=mutations=>commitCentralCommand(central,{idempotencyKey:centralSource.idempotencyKey,leaseToken:lease.leaseToken,fingerprint:lease.fingerprint,mutations});
+assert.throws(()=>invalidCommit(centralMutations.map(row=>row.entityType==='INVENTORY_MOVEMENT'?{...row,payload:{...row.payload,signedBaseQuantity:Number(row.payload.signedBaseQuantity)+1}}:row)),/MOVEMENT_EFFECT_MISMATCH/,'central must independently recompute movement quantity');
+assert.throws(()=>invalidCommit(centralMutations.map(row=>row.entityType==='PAYABLE_ENTRY'?{...row,payload:{...row.payload,entryType:'PAYABLE_BOGUS'}}:row)),/ENTRY_EFFECT_MISMATCH/,'central must independently recompute payable taxonomy');
+assert.throws(()=>invalidCommit(centralMutations.map(row=>row.entityType==='PAYABLE_ENTRY'?{...row,payload:{...row.payload,partnerId:'WRONG'}}:row)),/ENTRY_EFFECT_MISMATCH|PARTNER/,'central must independently recompute payable partner');
+assert.throws(()=>invalidCommit(centralMutations.map(row=>row.entityType==='PURCHASE_LINE'?{...row,payload:{...row.payload,quantity:''}}:row)),/QUANTITY_REQUIRED/,'central must reject blank numeric quantity');
 const committed = commitCentralCommand(central, {
   idempotencyKey: centralSource.idempotencyKey,
   leaseToken: lease.leaseToken,
@@ -126,6 +151,7 @@ assert.equal(committed.duplicate, false);
 assert.ok(committed.transactionId); assert.match(committed.resultDigest,/^[0-9a-f]{64}$/);
 assert.equal(committed.changes.filter(row => row.entityType === 'PAYABLE_ENTRY').length, 1);
 assert.equal(committed.changes.filter(row => row.entityType === 'INVENTORY_MOVEMENT').length, 2);
+Object.values(central.entities).find(row=>row.entityType==='PURCHASE_DOCUMENT'&&row.entityId==='PD-2').payload.sourceDocumentKey='SRC-P-1';
 assert.throws(() => prepareCentralCommand(central, {
   commandType: OFFICIAL_COMMAND_TYPE.POST_PURCHASE,
   aggregateId: 'PD-2', expectedRevision: 1, idempotencyKey: 'IDEM-P-DUPLICATE-SOURCE', deviceId: 'PC-1',

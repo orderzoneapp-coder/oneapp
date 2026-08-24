@@ -129,8 +129,9 @@ export async function applyOfficialVoucherCommand(source = {}) {
       .filter(row => text(row.sourceDocumentId) === aggregateId);
     const storedEntries = (await requestToPromise(tx.objectStore(contract.entry).getAll()))
       .filter(entry => text(entry[contract.idField]) === aggregateId);
+    const storedOrderEvents = kind === 'SALE' ? await requestToPromise(tx.objectStore(STORE.ORDER_EVENTS).getAll()) : [];
     const activeLines = storedLines.filter(line => text(line.lineStatus || 'ACTIVE').toUpperCase() !== 'DELETED' && text(line.status).toUpperCase() !== 'REVERSED');
-    const plan = planOfficialVoucherCommand({ command: { ...source, actor: actor.actorId }, document, lines: activeLines, snapshotLines: storedLines, movements: storedMovements, entries: storedEntries });
+    const plan = planOfficialVoucherCommand({ command: { ...source, actor: actor.actorId }, document, lines: activeLines, snapshotLines: storedLines, movements: storedMovements, entries: storedEntries, orderEvents: storedOrderEvents });
     const documentStore = tx.objectStore(contract.document);
     const lineStore = tx.objectStore(contract.lines);
     documentStore.put(plan.document);

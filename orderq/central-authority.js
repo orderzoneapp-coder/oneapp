@@ -1,5 +1,5 @@
 import { calculateInventoryShadowProjection } from './inventory-ledger.js?v=0.8.0';
-import { canonicalSha256 } from './official-voucher-core.js?v=0.17.0';
+import { canonicalSha256, planOfficialVoucherCommand } from './official-voucher-core.js?v=0.17.0';
 
 export const CENTRAL_SCHEMA = 'ONEAPP_ORDERQ_CENTRAL_V1';
 
@@ -298,15 +298,6 @@ export function migrateCentralDrafts(stateSource, source = {}, options = {}) {
     if (type === 'DISPATCH_DECISION' && entityStatus(payload) !== 'DRAFT') commandError('ORDERQ_CENTRAL_MIGRATION_DISPATCH_DRAFT_ONLY', id);
     if (type === 'PURCHASE_DOCUMENT' && entityStatus(payload) !== 'DRAFT') commandError('ORDERQ_CENTRAL_MIGRATION_PURCHASE_DRAFT_ONLY', id);
     if (type === 'SALES_DOCUMENT' && entityStatus(payload) !== 'DRAFT') commandError('ORDERQ_CENTRAL_MIGRATION_SALE_DRAFT_ONLY', id);
-    if (['PURCHASE_DOCUMENT', 'SALES_DOCUMENT'].includes(type) && payload.documentContract === 'VOUCHER_CORE_V1') {
-      const sourceKey = text(payload.sourceDocumentKey);
-      const alreadyPosted = Object.values(state.entities || {}).find(row => row.entityType === type
-        && row.entityId !== id
-        && text(row.payload?.documentContract) === 'VOUCHER_CORE_V1'
-        && text(row.payload?.sourceDocumentKey) === sourceKey
-        && ['CONFIRMED', 'REVERSED'].includes(entityStatus(row)));
-      if (alreadyPosted) commandError('ORDERQ_CENTRAL_SOURCE_ALREADY_POSTED', sourceKey);
-    }
     if (payload.localOnly === false || payload.centralRevision || payload.ledgerSequence) {
       commandError('ORDERQ_CENTRAL_MIGRATION_EVIDENCE_INVALID', `${type}:${id}`);
     }
@@ -320,6 +311,9 @@ export function migrateCentralDrafts(stateSource, source = {}, options = {}) {
   }
   const normalized = [...normalizedByKey.values()]
     .sort((left, right) => entityKey(left.entityType, left.entityId).localeCompare(entityKey(right.entityType, right.entityId)));
+  const migrationRows = new Map(Object.values(state.entities || {}).map(row => [entityKey(row.entityType, row.entityId), row]));
+  normalized.forEach(row => migrationRows.set(entityKey(row.entityType, row.entityId), row));
+  assertNoNormalizedOriginDuplicate([...migrationRows.values()]);
   const fingerprint = stableJson(normalized.map(row => ({
     entityType:row.entityType, entityId:row.entityId, revision:row.revision, payload:row.payload
   })));
@@ -431,12 +425,11 @@ export function prepareCentralCommand(state, source = {}) {
     commandError('ORDERQ_CENTRAL_COMMAND_CONTRACT_MISMATCH', aggregateId);
   }
   if (target && commandType.startsWith('POST_') && text(source.intent?.commandContract).toUpperCase() === 'VOUCHER_CORE_V1') {
-    const sourceKey = text(target.payload?.sourceDocumentKey);
-    const duplicate = Object.values(state.entities || {}).find(row => row.entityType === type && row.entityId !== aggregateId
-      && text(row.payload?.documentContract).toUpperCase() === 'VOUCHER_CORE_V1'
-      && text(row.payload?.sourceDocumentKey) === sourceKey
-      && ['CONFIRMED', 'REVERSED'].includes(entityStatus(row)));
-    if (sourceKey && duplicate) commandError('ORDERQ_CENTRAL_SOURCE_ALREADY_POSTED', sourceKey);
+    const allRows = Object.values(state.entities || {});
+    const duplicateKey = normalizedOriginKeys(target, allRows).find(key => allRows.some(row => row.entityId !== aggregateId
+      && ['PURCHASE_DOCUMENT', 'SALES_DOCUMENT'].includes(row.entityType)
+      && normalizedOriginKeys(row, allRows).includes(key)));
+    if (duplicateKey) commandError('ORDERQ_CENTRAL_SOURCE_ALREADY_POSTED', duplicateKey);
   }
   const conflictingLease = Object.values(state.commands).find(row => row.status === 'PREPARED'
     && row.aggregateId === aggregateId && row.idempotencyKey !== idempotencyKey);
@@ -704,6 +697,41 @@ function validatePurchaseReversalLedger(state, command, mutations) {
   }
 }
 
+function normalizedOriginKeys(documentRow, allRows = []) {
+  if (!documentRow || !['PURCHASE_DOCUMENT', 'SALES_DOCUMENT'].includes(documentRow.entityType)) return [];
+  const payload = documentRow.payload || {};
+  const kind = documentRow.entityType === 'PURCHASE_DOCUMENT' ? 'PURCHASE' : 'SALE';
+  const documentIdField = kind === 'PURCHASE' ? 'purchaseDocumentId' : 'salesDocumentId';
+  const lineType = kind === 'PURCHASE' ? 'PURCHASE_LINE' : 'SALES_LINE';
+  const lines = allRows.filter(row => row.entityType === lineType && text(row.payload?.[documentIdField]) === documentRow.entityId);
+  const keys = new Set();
+  if (kind === 'SALE') {
+    const pairs = lines.map(row => [text(row.payload?.sourceDispatchId || row.payload?.dispatchId), text(row.payload?.sourceDispatchLineId || row.payload?.dispatchLineId)])
+      .filter(pair => pair[0] || pair[1]);
+    if (!pairs.length && text(payload.dispatchId || payload.sourceDispatchId)) pairs.push([text(payload.dispatchId || payload.sourceDispatchId), text(payload.dispatchLineId || payload.sourceDispatchLineId)]);
+    pairs.forEach(pair => keys.add(`SALE:DISPATCH:${pair[0]}:${pair[1]}`));
+    const salesOrigin = text(payload.salesOriginId || payload.sourceSalesDocumentId || payload.sourceSalesId);
+    if (salesOrigin) keys.add(`SALE:ORIGIN:${salesOrigin}`);
+  } else {
+    const purchaseOrigin = text(payload.shortageId || payload.purchaseOriginId || payload.sourcePurchaseId || payload.purchasePlanId);
+    if (purchaseOrigin) keys.add(`PURCHASE:ORIGIN:${purchaseOrigin}`);
+  }
+  const sourceKey = text(payload.sourceDocumentKey);
+  if (sourceKey) keys.add(`${kind}:SOURCE:${sourceKey}`);
+  return [...keys].sort();
+}
+
+function assertNoNormalizedOriginDuplicate(rows) {
+  const owner = new Map();
+  rows.filter(row => ['PURCHASE_DOCUMENT', 'SALES_DOCUMENT'].includes(row.entityType)).forEach(document => {
+    normalizedOriginKeys(document, rows).forEach(key => {
+      const prior = owner.get(key);
+      if (prior && prior !== document.entityId) commandError('ORDERQ_CENTRAL_SOURCE_ALREADY_POSTED', key);
+      owner.set(key, document.entityId);
+    });
+  });
+}
+
 function roundOfficialWon(value) {
   const number = finite(value);
   return Math.sign(number) * Math.floor(Math.abs(number) + 0.5);
@@ -794,6 +822,7 @@ function validateOfficialVoucherLedger(state, command, mutations) {
     || (!command.commandType.startsWith('POST_') && !text(intent.reason))) {
     commandError('ORDERQ_CENTRAL_OFFICIAL_COMMAND_AUDIT_REQUIRED', command.aggregateId);
   }
+  validateExactOfficialEffects(state, command, mutations, { purchase, documentType, lineType, entryType, document, projectionLines, movements, entries, orderEvents });
   const event = events[0].payload;
   const expectedEventType = `${purchase ? 'PURCHASE' : 'SALE'}_${command.commandType.startsWith('POST_') ? 'POSTED' : command.commandType.startsWith('CORRECT_') ? 'CORRECTED' : 'REVERSED'}`;
   if (text(event.documentId) !== command.aggregateId || text(event.eventType).toUpperCase() !== expectedEventType
@@ -855,6 +884,12 @@ function validateOfficialVoucherLedger(state, command, mutations) {
     if (text(document.sourceType).toUpperCase() === 'DIRECT' && orderEvents.length) {
       commandError('ORDERQ_CENTRAL_DIRECT_ORDER_EVENT_FORBIDDEN', command.aggregateId);
     }
+    if (text(document.sourceType).toUpperCase() === 'DIRECT' && projectionLines.some(row => text(row.payload?.orderLinkMode).toUpperCase() === 'ORDER_Q'
+      || text(row.payload?.sourceOrderId) || text(row.payload?.sourceOrderItemId) || text(row.payload?.sourceDispatchId)
+      || text(row.payload?.sourceDispatchLineId) || text(row.payload?.allocationEventId)
+      || (Array.isArray(row.payload?.allocationEventIds) && row.payload.allocationEventIds.some(text)))) {
+      commandError('ORDERQ_CENTRAL_DIRECT_ORDER_LINK_FORBIDDEN', command.aggregateId);
+    }
     if (text(document.sourceType).toUpperCase() === 'ORDER_Q') {
       for (const eventRow of orderEvents) {
         const itemId = text(eventRow.payload?.detail?.orderItemId);
@@ -866,12 +901,14 @@ function validateOfficialVoucherLedger(state, command, mutations) {
         const hasDispatch = Boolean(dispatchId);
         const dispatchLine = hasDispatch ? state.entities[entityKey('DISPATCH_LINE', dispatchLineId)] : null;
         const eventLine = projectionLines.find(row => text(row.payload?.salesLineId) === text(eventRow.payload?.detail?.salesLineId));
+        const allocatedLineInvalid = eventType === 'SALES_TRANSFER_ALLOCATED' && (text(eventLine?.payload?.sourceOrderId) !== orderId
+          || text(eventLine?.payload?.sourceOrderItemId) !== itemId || text(eventLine?.payload?.sourceDispatchId) !== dispatchId
+          || text(eventLine?.payload?.sourceDispatchLineId) !== dispatchLineId);
         if (!item || !state.entities[entityKey('ORDER', orderId)] || text(item.payload?.orderId) !== orderId
           || hasDispatch !== Boolean(dispatchLineId)
           || (hasDispatch && (!dispatchLine || text(dispatchLine.payload?.dispatchId) !== dispatchId || text(dispatchLine.payload?.orderItemId) !== itemId))
           || !eventLine || text(eventRow.payload?.detail?.salesDocumentId) !== command.aggregateId
-          || text(eventLine.payload?.sourceOrderId) !== orderId || text(eventLine.payload?.sourceOrderItemId) !== itemId
-          || text(eventLine.payload?.sourceDispatchId) !== dispatchId || text(eventLine.payload?.sourceDispatchLineId) !== dispatchLineId
+          || allocatedLineInvalid
           || !['SALES_TRANSFER_ALLOCATED', 'SALES_TRANSFER_REVERSED'].includes(eventType)) {
           commandError('ORDERQ_CENTRAL_ORDER_EVENT_LINK_INVALID', eventRow.entityId);
         }
@@ -882,10 +919,16 @@ function validateOfficialVoucherLedger(state, command, mutations) {
             && text(candidate.payload?.eventType).toUpperCase() === 'SALES_TRANSFER_REVERSED'
             && text(candidate.payload?.detail?.allocationEventId) === allocationId)
             .reduce((sum, candidate) => sum + finite(candidate.payload?.detail?.transferredQty), 0);
+          const negativePost = command.commandType === 'POST_SALE';
+          const allocationLinkInvalid = negativePost
+            ? text(allocation?.payload?.detail?.productId) !== text(eventLine.payload?.productId)
+              || text(allocation?.payload?.detail?.lineIdentityId) !== text(eventLine.payload?.lineIdentityId)
+              || (text(allocation?.payload?.detail?.warehouseId) && text(allocation?.payload?.detail?.warehouseId) !== text(eventLine.payload?.warehouseId))
+            : text(allocation?.payload?.detail?.salesDocumentId) !== command.aggregateId
+              || text(allocation?.payload?.detail?.salesLineId) !== text(eventRow.payload?.detail?.salesLineId);
           if (!allocation || text(allocation.payload?.eventType).toUpperCase() !== 'SALES_TRANSFER_ALLOCATED'
             || text(allocation.payload?.orderId) !== orderId || text(allocation.payload?.detail?.orderItemId) !== itemId
-            || text(allocation.payload?.detail?.salesDocumentId) !== command.aggregateId
-            || text(allocation.payload?.detail?.salesLineId) !== text(eventRow.payload?.detail?.salesLineId)
+            || allocationLinkInvalid
             || priorReversed + finite(eventRow.payload?.detail?.transferredQty) > finite(allocation.payload?.detail?.transferredQty) + EPSILON) {
             commandError('ORDERQ_CENTRAL_ORDER_ALLOCATION_REVERSAL_INVALID', eventRow.entityId);
           }
@@ -973,6 +1016,56 @@ function residualOfficialMovements(state, documentId, lineIdentityId) {
     signedBaseQuantity: finite(row.payload?.signedBaseQuantity),
     remaining: finite(row.payload?.signedBaseQuantity) + finite(reversals.get(row.entityId))
   })).filter(row => Math.abs(row.remaining) > EPSILON || (row.signedBaseQuantity === 0 && !reversedIds.has(row.entityId)));
+}
+
+function strictOfficialNumber(value, code) {
+  if (value === '' || value === null || value === undefined || !Number.isFinite(Number(value))) commandError(code);
+  return Number(value);
+}
+
+function validateExactOfficialEffects(state, command, mutations, context) {
+  const { purchase, documentType, lineType, entryType, document, projectionLines, movements, entries, orderEvents } = context;
+  (Array.isArray(command.intent?.lines) ? command.intent.lines : []).filter(row => text(row?.lineStatus || 'ACTIVE').toUpperCase() !== 'DELETED').forEach(row => {
+    strictOfficialNumber(row.quantity ?? row.actualQuantity, 'ORDERQ_CENTRAL_OFFICIAL_QUANTITY_REQUIRED');
+    strictOfficialNumber(row.unitPrice, 'ORDERQ_CENTRAL_OFFICIAL_UNIT_PRICE_REQUIRED');
+    strictOfficialNumber(row.baseQuantity, 'ORDERQ_CENTRAL_OFFICIAL_BASE_QUANTITY_REQUIRED');
+  });
+  const currentLines = Object.values(state.entities || {}).filter(row => row.entityType === lineType
+    && text(row.payload?.[purchase ? 'purchaseDocumentId' : 'salesDocumentId']) === command.aggregateId
+    && text(row.payload?.lineStatus || 'ACTIVE').toUpperCase() !== 'DELETED' && entityStatus(row) !== 'REVERSED').map(row => row.payload);
+  const snapshotLines = Object.values(state.entities || {}).filter(row => row.entityType === lineType
+    && text(row.payload?.[purchase ? 'purchaseDocumentId' : 'salesDocumentId']) === command.aggregateId && entityStatus(row) !== 'REVERSED').map(row => row.payload);
+  const expected = planOfficialVoucherCommand({
+    document: state.entities[entityKey(documentType, command.aggregateId)]?.payload,
+    lines: currentLines,
+    snapshotLines,
+    movements: Object.values(state.entities || {}).filter(row => row.entityType === 'INVENTORY_MOVEMENT' && text(row.payload?.sourceDocumentId) === command.aggregateId).map(row => row.payload),
+    entries: Object.values(state.entities || {}).filter(row => row.entityType === entryType).map(row => row.payload),
+    orderEvents: Object.values(state.entities || {}).filter(row => row.entityType === 'ORDER_EVENT').map(row => row.payload),
+    command: {
+      commandType: command.commandType, commandContract:'VOUCHER_CORE_V1', commandId:command.idempotencyKey, idempotencyKey:command.idempotencyKey,
+      expectedRevision:command.expectedRevision, actor:text(command.intent?.actor), occurredAt:text(command.intent?.occurredAt), reason:text(command.intent?.reason),
+      document: command.intent?.document || document, lines: Array.isArray(command.intent?.lines) ? command.intent.lines : projectionLines.map(row => row.payload)
+    }
+  });
+  const exactSet = (actual, planned, code) => {
+    const actualKeys = actual.map(row => stableJson(row)); const expectedKeys = planned.map(row => stableJson(row));
+    if (new Set(actualKeys).size !== actualKeys.length || new Set(expectedKeys).size !== expectedKeys.length
+      || actualKeys.length !== expectedKeys.length || actualKeys.some(key => !expectedKeys.includes(key))) commandError(code, command.aggregateId);
+  };
+  projectionLines.forEach(row => {
+    if (text(row.payload?.lineStatus || 'ACTIVE').toUpperCase() !== 'DELETED') {
+      strictOfficialNumber(row.payload?.quantity, 'ORDERQ_CENTRAL_OFFICIAL_QUANTITY_REQUIRED');
+      strictOfficialNumber(row.payload?.unitPrice, 'ORDERQ_CENTRAL_OFFICIAL_UNIT_PRICE_REQUIRED');
+      strictOfficialNumber(row.payload?.baseQuantity, 'ORDERQ_CENTRAL_OFFICIAL_BASE_QUANTITY_REQUIRED');
+    }
+  });
+  exactSet(movements.map(row => ({ lineIdentityId:text(row.payload?.lineIdentityId), movementType:text(row.payload?.movementType), signedBaseQuantity:strictOfficialNumber(row.payload?.signedBaseQuantity,'ORDERQ_CENTRAL_OFFICIAL_MOVEMENT_QUANTITY_REQUIRED'), effectKind:text(row.payload?.effectKind), effectOrdinal:Number(row.payload?.effectOrdinal || 0), reversalOf:text(row.payload?.reversalOf), productId:text(row.payload?.productId), warehouseId:text(row.payload?.warehouseId) })),
+    expected.movements.map(row => ({ lineIdentityId:text(row.lineIdentityId), movementType:text(row.movementType), signedBaseQuantity:Number(row.signedBaseQuantity), effectKind:text(row.effectKind), effectOrdinal:Number(row.effectOrdinal || 0), reversalOf:text(row.reversalOf), productId:text(row.productId), warehouseId:text(row.warehouseId) })), 'ORDERQ_CENTRAL_OFFICIAL_MOVEMENT_EFFECT_MISMATCH');
+  exactSet(entries.map(row => ({ entryType:text(row.payload?.entryType), partnerId:text(row.payload?.partnerId), supplyAmount:strictOfficialNumber(row.payload?.supplyAmount,'ORDERQ_CENTRAL_OFFICIAL_ENTRY_AMOUNT_REQUIRED'), totalAmount:strictOfficialNumber(row.payload?.totalAmount,'ORDERQ_CENTRAL_OFFICIAL_ENTRY_AMOUNT_REQUIRED'), effectOrdinal:Number(row.payload?.effectOrdinal || 0), reversalOf:text(row.payload?.reversalOf) })),
+    expected.entries.map(row => ({ entryType:text(row.entryType), partnerId:text(row.partnerId), supplyAmount:Number(row.supplyAmount), totalAmount:Number(row.totalAmount), effectOrdinal:Number(row.effectOrdinal || 0), reversalOf:text(row.reversalOf) })), 'ORDERQ_CENTRAL_OFFICIAL_ENTRY_EFFECT_MISMATCH');
+  exactSet(orderEvents.map(row => ({ eventType:text(row.payload?.eventType), orderId:text(row.payload?.orderId), orderItemId:text(row.payload?.detail?.orderItemId), salesLineId:text(row.payload?.detail?.salesLineId), transferredQty:strictOfficialNumber(row.payload?.detail?.transferredQty,'ORDERQ_CENTRAL_ORDER_EVENT_QUANTITY_REQUIRED'), allocationEventId:text(row.payload?.detail?.allocationEventId), effectOrdinal:Number(row.payload?.effectOrdinal || 0) })),
+    expected.orderEvents.map(row => ({ eventType:text(row.eventType), orderId:text(row.orderId), orderItemId:text(row.detail?.orderItemId), salesLineId:text(row.detail?.salesLineId), transferredQty:Number(row.detail?.transferredQty), allocationEventId:text(row.detail?.allocationEventId), effectOrdinal:Number(row.effectOrdinal || 0) })), 'ORDERQ_CENTRAL_ORDER_EVENT_EFFECT_MISMATCH');
 }
 
 function validateCommandMutations(state, command, mutations) {

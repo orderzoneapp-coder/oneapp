@@ -307,20 +307,20 @@ function ledgerEntry(kind, command, document, entryType, amounts, partner, suffi
   };
 }
 
-function orderEventsForLine(command, document, previous, next) {
+function orderEventsForLine(command, document, previous, next, priorEvents = []) {
   const previousMode = text(previous?.orderLinkMode).toUpperCase();
   const nextMode = text(next?.orderLinkMode).toUpperCase();
   if (previousMode !== 'ORDER_Q' && nextMode !== 'ORDER_Q') return [];
   const sameLink = previousMode === nextMode
     && text(previous?.sourceOrderId) === text(next?.sourceOrderId)
     && text(previous?.sourceOrderItemId) === text(next?.sourceOrderItemId);
-  const makeEvent = (source, signedQuantity, ordinal) => {
+  const makeEvent = (source, signedQuantity, ordinal, allocationEventId = '') => {
     if (!source || Math.abs(signedQuantity) <= 1e-9) return null;
     const orderId = requiredText(source.sourceOrderId, 'ORDERQ_OFFICIAL_SOURCE_ORDER_REQUIRED');
     const orderItemId = requiredText(source.sourceOrderItemId, 'ORDERQ_OFFICIAL_SOURCE_ORDER_ITEM_REQUIRED');
     const eventType = signedQuantity > 0 ? 'SALES_TRANSFER_ALLOCATED' : 'SALES_TRANSFER_REVERSED';
     const effectKey = stableId('FX', command.commandId, document.salesDocumentId, document.revision, source.lineIdentityId, eventType, ordinal);
-    const allocationEventId = signedQuantity < 0 ? requiredText(source.allocationEventId, 'ORDERQ_OFFICIAL_ALLOCATION_EVENT_REQUIRED') : '';
+    const reversalAllocationId = signedQuantity < 0 ? requiredText(allocationEventId, 'ORDERQ_OFFICIAL_ALLOCATION_EVENT_REQUIRED') : '';
     const event = {
     eventId: stableId('OE', effectKey),
     orderId,
@@ -333,8 +333,11 @@ function orderEventsForLine(command, document, previous, next) {
     actor: command.actor,
     detail: {
       transferBusinessKey: [document.salesDocumentId, lineId('SALE', source), orderItemId].join('|'),
-      allocationEventId,
+      allocationEventId: reversalAllocationId,
       orderItemId,
+      productId: text(source.productId),
+      warehouseId: text(source.warehouseId),
+      lineIdentityId: text(source.lineIdentityId),
       sourceDispatchId: text(source.sourceDispatchId),
       sourceDispatchLineId: text(source.sourceDispatchLineId),
       salesDocumentId: document.salesDocumentId,
@@ -348,12 +351,56 @@ function orderEventsForLine(command, document, previous, next) {
     if (signedQuantity > 0) source.allocationEventId = event.eventId;
     return event;
   };
-  if (!sameLink) return [
-    previousMode === 'ORDER_Q' ? makeEvent(previous, -Number(previous.recognizedOrderQuantity || 0), 1) : null,
-    nextMode === 'ORDER_Q' ? makeEvent(next, Number(next.recognizedOrderQuantity || 0), 2) : null
-  ].filter(Boolean);
+  const allocationRows = priorEvents.filter(row => text(row.eventType).toUpperCase() === 'SALES_TRANSFER_ALLOCATED');
+  const reversalRows = priorEvents.filter(row => text(row.eventType).toUpperCase() === 'SALES_TRANSFER_REVERSED');
+  const remainingAllocations = (source, explicitOnly = false) => {
+    const explicitIds = new Set([...(Array.isArray(source?.allocationEventIds) ? source.allocationEventIds : []), source?.allocationEventId].map(text).filter(Boolean));
+    return allocationRows.filter(row => {
+      const detail = row.detail || {};
+      if (explicitOnly) return explicitIds.has(text(row.eventId));
+      return text(row.orderId) === text(source?.sourceOrderId)
+        && text(detail.orderItemId) === text(source?.sourceOrderItemId)
+        && text(detail.salesDocumentId) === text(document.salesDocumentId)
+        && text(detail.salesLineId) === text(lineId('SALE', source));
+    }).map(row => ({
+      event: row,
+      remaining: Number(row.detail?.transferredQty || 0) - reversalRows.filter(reversal => text(reversal.detail?.allocationEventId) === text(row.eventId))
+        .reduce((sum, reversal) => sum + Number(reversal.detail?.transferredQty || 0), 0)
+    })).filter(row => row.remaining > 1e-9)
+      .sort((left, right) => text(right.event.createdAt).localeCompare(text(left.event.createdAt)) || text(right.event.eventId).localeCompare(text(left.event.eventId)));
+  };
+  const reverseQuantity = (source, quantity, ordinalStart, explicitOnly = false) => {
+    let remaining = Math.abs(Number(quantity || 0));
+    const events = [];
+    for (const allocation of remainingAllocations(source, explicitOnly)) {
+      if (remaining <= 1e-9) break;
+      const detail = allocation.event.detail || {};
+      if (text(allocation.event.orderId) !== text(source.sourceOrderId) || text(detail.orderItemId) !== text(source.sourceOrderItemId)
+        || (text(detail.productId) && text(detail.productId) !== text(source.productId))
+        || (text(detail.warehouseId) && text(detail.warehouseId) !== text(source.warehouseId))
+        || (text(detail.lineIdentityId) && text(detail.lineIdentityId) !== text(source.lineIdentityId))) {
+        throw new Error('ORDERQ_OFFICIAL_ALLOCATION_LINK_INVALID');
+      }
+      const amount = Math.min(remaining, allocation.remaining);
+      events.push(makeEvent(source, -amount, ordinalStart + events.length, allocation.event.eventId));
+      remaining -= amount;
+    }
+    if (remaining > 1e-9) throw new Error('ORDERQ_OFFICIAL_ALLOCATION_BALANCE_INSUFFICIENT');
+    return events;
+  };
+  if (!previous && nextMode === 'ORDER_Q') {
+    const quantity = Number(next.recognizedOrderQuantity || 0);
+    return quantity < 0 ? reverseQuantity(next, quantity, 1, true) : [makeEvent(next, quantity, 1)].filter(Boolean);
+  }
+  if (!sameLink) {
+    const reversals = previousMode === 'ORDER_Q' ? reverseQuantity(previous, previous.recognizedOrderQuantity, 1) : [];
+    if (nextMode !== 'ORDER_Q') return reversals;
+    const nextQuantity = Number(next.recognizedOrderQuantity || 0);
+    if (nextQuantity < 0) return [...reversals, ...reverseQuantity(next, nextQuantity, reversals.length + 1, true)];
+    return [...reversals, makeEvent(next, nextQuantity, reversals.length + 1)].filter(Boolean);
+  }
   const delta = Number(next?.recognizedOrderQuantity || 0) - Number(previous?.recognizedOrderQuantity || 0);
-  return [makeEvent(next || previous, delta, 1)].filter(Boolean);
+  return delta < 0 ? reverseQuantity(previous, delta, 1) : [makeEvent(next || previous, delta, 1)].filter(Boolean);
 }
 
 function snapshotLine(kind, line, deleted = false) {
@@ -393,6 +440,7 @@ export function planOfficialVoucherCommand(input = {}) {
   const previousLines = Array.isArray(input.lines) ? input.lines : [];
   const previousSnapshotLines = Array.isArray(input.snapshotLines) ? input.snapshotLines : previousLines;
   const previousMovements = Array.isArray(input.movements) ? input.movements : [];
+  const previousOrderEvents = Array.isArray(input.orderEvents) ? input.orderEvents : [];
   const allPreviousEntries = Array.isArray(input.entries) ? input.entries : [];
   if (!previousDocument) throw new Error('ORDERQ_OFFICIAL_DOCUMENT_REQUIRED');
   const aggregateId = documentId(kind, previousDocument);
@@ -465,7 +513,7 @@ export function planOfficialVoucherCommand(input = {}) {
     const planned = lineMovements(kind, command, nextDocument, previous, next, previousMovements.filter(row => text(row.sourceLineId) === id));
     movements.push(...planned);
     if (next) next.movementId = planned[planned.length - 1].movementId;
-    if (kind === 'SALE') orderEvents.push(...orderEventsForLine(command, nextDocument, previous, next));
+    if (kind === 'SALE') orderEvents.push(...orderEventsForLine(command, nextDocument, previous, next, previousOrderEvents));
   }
 
   const previousAmount = {
