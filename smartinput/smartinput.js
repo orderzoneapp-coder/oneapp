@@ -1513,7 +1513,6 @@ async function openSettingsDialog() {
     mode,
     { ...(state.settings.inputOrderByMode?.[mode] || {}) }
   ]));
-  let workingEstimateNoticePriceFields = [...(state.settings.estimateNoticePriceFields || contract.DEFAULT_SETTINGS.estimateNoticePriceFields)];
   let settingsLayoutMode = state.draft.activeMode;
   const settingsModeButtons = scope => settingsModeIds.map(mode => `<button type="button" data-settings-layout-mode="${esc(mode)}" data-settings-layout-scope="${esc(scope)}" class="${mode === settingsLayoutMode ? 'is-active' : ''}" aria-pressed="${mode === settingsLayoutMode}">${esc(contract.MODES[mode].label)}</button>`).join('');
   const dialog = document.createElement('dialog');
@@ -1542,13 +1541,6 @@ async function openSettingsDialog() {
       <details class="settings-group">
         <summary><span><strong>전표별 표시 열</strong><small>전표마다 품목·수량·단가 구성을 별도 저장</small></span><i aria-hidden="true"></i></summary>
         <div class="settings-group__body settings-group__body--single"><div class="settings-layout-modes" data-settings-layout-modes="voucher" aria-label="표시 열을 편집할 전표">${settingsModeButtons('voucher')}</div><div class="settings-group__actions"><span><b data-settings-layout-label="voucher">${esc(contract.MODES[settingsLayoutMode].label)}</b> 표시 열을 편집합니다.</span><button type="button" class="button button--quiet button--small" data-add-layout-field="voucher">항목 추가</button></div><div class="layout-check-grid" data-layout-fields="voucher"></div></div>
-      </details>
-      <details class="settings-group" data-settings-group="estimate-notice">
-        <summary><span><strong>카톡 공지 판매가</strong><small>공지 이미지에 노출할 판매가 최대 2개</small></span><i aria-hidden="true"></i></summary>
-        <div class="settings-group__body settings-group__body--single">
-          <fieldset class="smart-settings--wide"><legend>노출 판매가 · 1~2개 선택</legend><div class="layout-check-grid" data-estimate-notice-prices>${layoutCheckItems('estimateNoticePriceFields', estimateNoticePriceDefinitions(), workingEstimateNoticePriceFields)}</div></fieldset>
-          <small>품목 20개까지는 한 줄, 21~40개는 좌우 두 줄로 표시합니다.</small>
-        </div>
       </details>
     </div>
     <p class="smart-dialog__message">선택 불가 날짜에는 사유와 다음 배송 가능일을 표시합니다.</p>
@@ -1651,14 +1643,6 @@ async function openSettingsDialog() {
     renderLayoutGroup(field.scope);
   });
   const defaultToggle = form.elements.useDefaultCustomerWeekdays;
-  const syncEstimateNoticePriceState = () => {
-    const inputs = [...form.querySelectorAll('input[name="estimateNoticePriceFields"]')];
-    const selected = inputs.filter(input => input.checked);
-    inputs.forEach(input => { input.disabled = !input.checked && selected.length >= 2; });
-    workingEstimateNoticePriceFields = selected.map(input => input.value);
-  };
-  form.querySelector('[data-estimate-notice-prices]')?.addEventListener('change', syncEstimateNoticePriceState);
-  syncEstimateNoticePriceState();
   const customerWeekdaysElement = dialog.querySelector('[data-customer-weekdays]');
   const syncCustomerWeekdaysState = () => {
     customerWeekdaysElement?.querySelectorAll('input').forEach(input => { input.disabled = !customerId || defaultToggle.checked; });
@@ -1696,11 +1680,6 @@ async function openSettingsDialog() {
     captureLayoutSelection('header');
     captureLayoutSelection('voucher');
     captureInputOrder();
-    syncEstimateNoticePriceState();
-    if (!workingEstimateNoticePriceFields.length) {
-      message.textContent = '카톡 공지에 노출할 판매가를 1개 이상 선택하세요.';
-      return;
-    }
     const next = contract.normalizeSettings({
       ...state.settings,
       orderCutoffTime: form.elements.orderCutoffTime.value,
@@ -1714,7 +1693,6 @@ async function openSettingsDialog() {
       headerFieldsByMode: workingHeaderFieldsByMode,
       voucherColumnsByMode: workingVoucherColumnsByMode,
       inputOrderByMode: workingInputOrderByMode,
-      estimateNoticePriceFields: workingEstimateNoticePriceFields,
       customFields: workingCustomFields,
       columnWidths: { ...(state.settings.columnWidths || {}) },
       columnWidthsByMode: Object.fromEntries(settingsModeIds.map(mode => [
@@ -3474,33 +3452,78 @@ async function copyNoticeCanvas(canvas, fileName) {
 
 function openEstimateNoticePreview() {
   const current = modeDraft();
-  const priceFields = estimateNoticePriceDefinitions(state.settings.estimateNoticePriceFields);
-  const rows = buildKakaoNoticeRows(current.rows, estimateComparisonPrices(current), priceFields);
-  if (!rows.length) return toast('공지로 출력할 견적 품목이 없습니다.', 'error');
+  const availablePriceFields = estimateNoticePriceDefinitions();
+  const availablePriceFieldIds = new Set(availablePriceFields.map(field => field.id));
+  let selectedPriceFieldIds = [...new Set(state.settings.estimateNoticePriceFields || [])]
+    .filter(fieldId => availablePriceFieldIds.has(fieldId))
+    .slice(0, 2);
+  if (!selectedPriceFieldIds.length) selectedPriceFieldIds = [availablePriceFields[0]?.id || 'noticePrice'];
+  const initialRows = buildKakaoNoticeRows(current.rows, estimateComparisonPrices(current), estimateNoticePriceDefinitions(selectedPriceFieldIds));
+  if (!initialRows.length) return toast('공지로 출력할 견적 품목이 없습니다.', 'error');
   const title = `${current.header.customerName || '거래처'} 견적 단가 안내`;
-  const canvases = renderKakaoNoticeCanvases(rows, { title, rowsPerPage: KAKAO_NOTICE_ROWS_PER_PAGE });
   const dateStamp = new Date().toLocaleDateString('sv-SE');
   const dialog = document.createElement('dialog');
   dialog.className = 'smart-dialog estimate-notice-dialog';
   dialog.innerHTML = `<div class="smart-dialog__shell">
     <header><div><small>Kakao Notice</small><h2>카톡 공지 미리보기</h2></div><button type="button" data-close aria-label="닫기">×</button></header>
-    <div class="smart-dialog__message">선택한 판매가를 표시합니다. 20개까지 한 줄, 21~40개는 좌우 두 줄로 만들며 페이지별로 복사하거나 PNG로 저장할 수 있습니다.</div>
-    <div class="estimate-notice-pages">${canvases.map((canvas, index) => `<article class="estimate-notice-page" data-notice-page="${index}"><img src="${canvas.toDataURL('image/png')}" alt="카톡 공지 ${index + 1}페이지 미리보기"><footer><button type="button" class="button button--quiet" data-download-notice>PNG 저장</button><button type="button" class="button button--primary" data-copy-notice>이미지 복사</button></footer></article>`).join('')}</div>
+    <div class="smart-dialog__message">미리보기 상단에서 단가를 최대 2개 선택합니다. 선택값은 다음 미리보기에도 유지되며 PNG에는 필터가 포함되지 않습니다.</div>
+    <div class="estimate-notice-pages" data-notice-pages></div>
     <footer><button type="button" class="button button--quiet" data-close>닫기</button></footer>
   </div>`;
   document.body.append(dialog);
-  dialog.querySelectorAll('[data-notice-page]').forEach(page => {
-    const index = Number(page.dataset.noticePage);
-    const fileName = `카톡공지_${dateStamp}_${String(index + 1).padStart(2, '0')}.png`;
-    page.querySelector('[data-copy-notice]').addEventListener('click', () => void copyNoticeCanvas(canvases[index], fileName));
-    page.querySelector('[data-download-notice]').addEventListener('click', async () => {
-      downloadBlob(await canvasBlob(canvases[index]), fileName);
-      toast(`${index + 1}페이지 PNG를 저장했습니다.`, 'success');
+  const pagesElement = dialog.querySelector('[data-notice-pages]');
+  let priceSettingsSave = Promise.resolve();
+  const priceOptions = (selectedId, excludedId = '', allowEmpty = false) => [
+    allowEmpty ? '<option value="">사용 안 함</option>' : '',
+    ...availablePriceFields.map(field => `<option value="${esc(field.id)}" ${field.id === selectedId ? 'selected' : ''} ${field.id === excludedId ? 'disabled' : ''}>${esc(field.label)}</option>`)
+  ].join('');
+  const persistPriceFields = () => {
+    const next = contract.normalizeSettings({ ...state.settings, estimateNoticePriceFields: selectedPriceFieldIds });
+    state.settings = next;
+    priceSettingsSave = priceSettingsSave
+      .then(() => saveSettings(next))
+      .catch(error => toast(error.message || '단가 필터를 저장하지 못했습니다.', 'error'));
+  };
+  const renderPreview = () => {
+    const priceFields = estimateNoticePriceDefinitions(selectedPriceFieldIds);
+    const rows = buildKakaoNoticeRows(current.rows, estimateComparisonPrices(current), priceFields);
+    const canvases = renderKakaoNoticeCanvases(rows, { title, rowsPerPage: KAKAO_NOTICE_ROWS_PER_PAGE });
+    const primaryId = selectedPriceFieldIds[0];
+    const secondaryId = selectedPriceFieldIds[1] || '';
+    pagesElement.innerHTML = canvases.map((canvas, index) => `<article class="estimate-notice-page" data-notice-page="${index}">
+      <div class="estimate-notice-image-wrap">
+        <img src="${canvas.toDataURL('image/png')}" alt="카톡 공지 ${index + 1}페이지 미리보기">
+        ${index === 0 ? `<div class="estimate-notice-filters" aria-label="공지 단가 필터">
+          <label><span class="sr-only">단가 1</span><select data-notice-price-primary aria-label="단가 1">${priceOptions(primaryId, secondaryId)}</select></label>
+          <label><span class="sr-only">단가 2</span><select data-notice-price-secondary aria-label="단가 2">${priceOptions(secondaryId, primaryId, true)}</select></label>
+        </div>` : ''}
+      </div>
+      <footer><button type="button" class="button button--quiet" data-download-notice>PNG 저장</button><button type="button" class="button button--primary" data-copy-notice>이미지 복사</button></footer>
+    </article>`).join('');
+    pagesElement.querySelectorAll('[data-notice-page]').forEach(page => {
+      const index = Number(page.dataset.noticePage);
+      const fileName = `카톡공지_${dateStamp}_${String(index + 1).padStart(2, '0')}.png`;
+      page.querySelector('[data-copy-notice]').addEventListener('click', () => void copyNoticeCanvas(canvases[index], fileName));
+      page.querySelector('[data-download-notice]').addEventListener('click', async () => {
+        downloadBlob(await canvasBlob(canvases[index]), fileName);
+        toast(`${index + 1}페이지 PNG를 저장했습니다.`, 'success');
+      });
     });
-  });
+    pagesElement.querySelector('[data-notice-price-primary]')?.addEventListener('change', event => {
+      selectedPriceFieldIds = [event.target.value, secondaryId].filter(Boolean);
+      persistPriceFields();
+      renderPreview();
+    });
+    pagesElement.querySelector('[data-notice-price-secondary]')?.addEventListener('change', event => {
+      selectedPriceFieldIds = [primaryId, event.target.value].filter(Boolean);
+      persistPriceFields();
+      renderPreview();
+    });
+  };
   const finish = () => { dialog.close(); dialog.remove(); };
   dialog.querySelectorAll('[data-close]').forEach(button => button.addEventListener('click', finish));
   dialog.addEventListener('cancel', event => { event.preventDefault(); finish(); });
+  renderPreview();
   dialog.showModal();
 }
 
