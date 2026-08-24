@@ -22,6 +22,7 @@ import {
 import {
   loadPurchaseStage3Capability,
   postPurchaseGroup,
+  SMARTINPUT_PURCHASE_ACTOR_ID,
   validatePurchaseGroup
 } from './purchase-official-stage3.js?v=0.1.0';
 import {
@@ -4020,7 +4021,7 @@ async function completePurchaseOfficial() {
       try {
         validatePurchaseGroup(group, masters);
         const producer = current.activeMethod === 'paste' ? 'SMARTINPUT_CLIPBOARD' : 'SMARTINPUT_MANUAL';
-        const result = await postPurchaseGroup(group, { actor: 'ADMIN', originSystem: producer, manualSessionId: current.documentId, occurredAt: new Date().toISOString() });
+        const result = await postPurchaseGroup(group, { actor: SMARTINPUT_PURCHASE_ACTOR_ID, originSystem: producer, manualSessionId: current.documentId, occurredAt: new Date().toISOString() });
         const documentId = result.purchaseDocumentId || result.document?.purchaseDocumentId || result.central?.changes?.find(row => row.entityType === 'PURCHASE_DOCUMENT')?.entityId || '';
         const commandId = result.commandId || result.central?.commandId || result.central?.result?.commandId || '';
         current.purchaseSubmissions = (current.purchaseSubmissions || []).filter(pointer => pointer.voucherGroupKey !== group.voucherGroupKey);
