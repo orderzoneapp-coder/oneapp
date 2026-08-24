@@ -550,6 +550,7 @@
       intakeLineId: text(input.intakeLineId),
       sourceRegion: normalizeSourceRegion(input.sourceRegion),
       rawText: String(input.rawText ?? input.rawExpression ?? ''),
+      inputOwnership: input.inputOwnership === 'USER' ? 'USER' : 'SOURCE',
       productId,
       masterProductId,
       itemCode,

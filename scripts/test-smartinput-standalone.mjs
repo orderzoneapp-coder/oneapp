@@ -640,7 +640,7 @@ assert.match(appSource, /function directionalGridTarget\(rowId, field, key\)/,
   'arrow navigation must move to adjacent visible cells');
 assert.match(appSource, /inputRows\.addEventListener\('focusin',[\s\S]*requestAnimationFrame\([\s\S]*document\.activeElement !== input[\s\S]*input\.select/,
   'focusing a standard-input cell must select its current value so typing replaces it');
-assert.match(appSource, /const editableInput = event\.target\.closest\('\[data-field\], \[data-custom-row-field\]'\);[\s\S]*if \(tr && !editableInput && modeDraft\(\)\.activeMethod === 'photo'\)/,
+assert.match(appSource, /const editableInput = event\.target\.closest\('\[data-product-search\], \[data-field\], \[data-custom-row-field\]'\);[\s\S]*if \(tr && !editableInput && modeDraft\(\)\.activeMethod === 'photo'\)/,
   'a grid-input click must not repeat the photo-region update already handled by focus');
 assert.match(appSource, /function revealGridInput\(input\)[\s\S]*visibleBottom = scrollBounds\.bottom - footerHeight[\s\S]*scroll\.scrollTop \+= rowBounds\.bottom - visibleBottom/,
   'the active input row must scroll above the sticky totals row when it reaches the table bottom');
@@ -691,8 +691,8 @@ assert.match(appSource, /data-field="unitPrice" type="text" inputmode="decimal"/
 assert.match(appSource, /function confirmUnitPriceReview\(/);
 assert.match(appSource, /inputRows\.addEventListener\('focusout',[\s\S]*confirmUnitPriceReview/);
 assert.match(appSource, /const rowTab = event\.key === 'Tab';/);
-assert.match(appSource, /nextRowItemCodeTarget\(rowId, event\.shiftKey\)/,
-  'Tab must move to the item-code cell of the previous or next row');
+assert.match(appSource, /nextRowEntryTarget\(rowId, event\.shiftKey\)/,
+  'Tab must move to the product-search cell of the previous or next row');
 assert.match(appSource, /event\.key === 'Enter'[\s\S]*sequentialGridTarget\(rowId, field\)/,
   'Enter must follow the configured cell input order');
 assert.match(appSource, /\['PRICE', 'COST'\]\.includes\(field\.group\)/,
