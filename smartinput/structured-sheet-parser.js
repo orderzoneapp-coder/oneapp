@@ -108,8 +108,19 @@ export function parseStructuredSheet(matrix = [], {
   const fieldIndex = buildStructuredFieldIndex(fieldDefinitions);
   const invalidCells = [];
   const rows = [];
+  let sourceVoucherIndex = 1;
+  let boundaryPending = false;
   matrix.slice(header.rowIndex + 1).forEach((sourceRow, offset) => {
-    if (isRepeatedHeader(sourceRow, fieldIndex)) return;
+    if (isRepeatedHeader(sourceRow, fieldIndex)) {
+      if (rows.length) sourceVoucherIndex += 1;
+      boundaryPending = false;
+      return;
+    }
+    const hasSourceValue = (sourceRow || []).some(value => cellText(value));
+    if (!hasSourceValue) {
+      boundaryPending = Boolean(rows.length);
+      return;
+    }
     const values = {};
     const editedFields = {};
     header.mappings.forEach(mapping => {
@@ -137,13 +148,21 @@ export function parseStructuredSheet(matrix = [], {
     });
 
     if (!cellText(values.itemCode) && !cellText(values.itemName)) return;
-    if (isFooterIdentity(values.itemCode, values.itemName, sourceRow)) return;
+    if (isFooterIdentity(values.itemCode, values.itemName, sourceRow)) {
+      boundaryPending = Boolean(rows.length);
+      return;
+    }
+    if (boundaryPending) {
+      sourceVoucherIndex += 1;
+      boundaryPending = false;
+    }
     const sourceLineNo = header.rowIndex + offset + 2;
     rows.push({
       ...values,
       rawText: (sourceRow || []).map(cell => String(cell ?? '')).join('\t'),
       productText: values.itemName || '',
       sourceLineNo,
+      sourceVoucherIndex: Number(values.sourceVoucherIndex) || sourceVoucherIndex,
       editedFields,
       matchStatus: 'UNRESOLVED'
     });
