@@ -617,6 +617,15 @@ assert.match(appSource, /data-notice-price-secondary/);
 assert.match(appSource, /사용 안 함/);
 assert.match(appSource, /persistPriceFields/,
   'Kakao notice preview price filters must persist the latest selection');
+assert.match(appSource, /function openEstimateBatchDialog\(\)/);
+assert.match(appSource, /state\.noticeEstimateIds\.filter[\s\S]*\.slice\(0, 3\)/,
+  'Kakao notice batch selection must keep at most three saved estimates');
+assert.match(appSource, /data-move-batch="up"/);
+assert.match(appSource, /data-move-batch="down"/);
+assert.match(appSource, /noticeSources\.flatMap/,
+  'Kakao notice preview must render selected companies in sequence');
+assert.match(css, /\.estimate-batch-selected article \{/,
+  'selected notice companies must expose an ordered list');
 assert.match(css, /\.estimate-notice-filters \{[^}]*position: absolute;/,
   'Kakao notice price filters must be placed over the preview header');
 const saveEstimateSource = appSource.match(/async function saveEstimateDocument\(\)[\s\S]*?(?=\nasync function completeOrder\(\))/)?.[0] || '';

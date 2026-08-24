@@ -53,6 +53,7 @@ const state = {
   temporaryCustomers: [],
   aliasMappings: [],
   estimates: [],
+  noticeEstimateIds: [],
   smartDataReady: false,
   pendingImageEvidence: null,
   photoCaptureSequence: 0,
@@ -1811,12 +1812,90 @@ function renderCatalogControls() {
   if (!visible) return;
   const current = modeDraft();
   const records = availableCatalogs(current.header);
+  const availableIds = new Set(records.map(record => record.estimateId));
+  state.noticeEstimateIds = state.noticeEstimateIds.filter(estimateId => availableIds.has(estimateId)).slice(0, 3);
+  if (!state.noticeEstimateIds.length && current.catalogRecordId && availableIds.has(current.catalogRecordId)) {
+    state.noticeEstimateIds = [current.catalogRecordId];
+  }
   $('catalogSelect').innerHTML = `<option value="">견적서 선택</option>${records.map(record => (
     `<option value="${esc(record.estimateId)}">${esc(estimateTitle(record))}</option>`
   )).join('')}`;
   $('catalogSelect').value = records.some(record => record.estimateId === current.catalogRecordId) ? current.catalogRecordId : '';
+  $('catalogBatchButton').disabled = !records.length;
+  $('catalogBatchButton').textContent = `공지 묶음 ${state.noticeEstimateIds.length}/3`;
   $('catalogSaveButton').textContent = current.catalogRecordId ? '수정 저장' : '견적서 저장';
   $('catalogDeleteButton').disabled = !current.catalogRecordId;
+}
+
+function openEstimateBatchDialog() {
+  const current = modeDraft();
+  const records = availableCatalogs(current.header);
+  if (!records.length) return toast('묶음으로 선택할 저장 견적서가 없습니다.', 'error');
+  const recordById = new Map(records.map(record => [record.estimateId, record]));
+  let selectedIds = state.noticeEstimateIds.filter(estimateId => recordById.has(estimateId)).slice(0, 3);
+  if (!selectedIds.length && current.catalogRecordId && recordById.has(current.catalogRecordId)) selectedIds = [current.catalogRecordId];
+  const dialog = document.createElement('dialog');
+  dialog.className = 'smart-dialog estimate-batch-dialog';
+  dialog.innerHTML = `<div class="smart-dialog__shell">
+    <header><div><small>Kakao Notice Batch</small><h2>공지 견적서 선택</h2></div><button type="button" data-close aria-label="닫기">×</button></header>
+    <div class="smart-dialog__message" data-batch-message>최대 3개 업체를 선택하고 위·아래 버튼으로 공지 순서를 정합니다.</div>
+    <div class="estimate-batch-content"><div class="estimate-batch-selected" data-batch-selected></div><div class="estimate-batch-options" data-batch-options></div></div>
+    <footer><button type="button" class="button button--quiet" data-close>취소</button><button type="button" class="button button--primary" data-apply-batch>적용</button></footer>
+  </div>`;
+  document.body.append(dialog);
+  const selectedElement = dialog.querySelector('[data-batch-selected]');
+  const optionsElement = dialog.querySelector('[data-batch-options]');
+  const messageElement = dialog.querySelector('[data-batch-message]');
+  const render = () => {
+    selectedElement.innerHTML = selectedIds.length ? selectedIds.map((estimateId, index) => `<article data-batch-estimate-id="${esc(estimateId)}"><span>${index + 1}</span><strong>${esc(estimateTitle(recordById.get(estimateId)))}</strong><div class="estimate-batch-order-actions"><button type="button" data-move-batch="up" aria-label="${index + 1}번째 견적 위로" ${index === 0 ? 'disabled' : ''}>↑</button><button type="button" data-move-batch="down" aria-label="${index + 1}번째 견적 아래로" ${index === selectedIds.length - 1 ? 'disabled' : ''}>↓</button><button type="button" data-remove-batch aria-label="${index + 1}번째 견적 선택 해제">×</button></div></article>`).join('') : '<div class="smart-dialog__empty">공지 견적서를 1개 이상 선택하세요.</div>';
+    optionsElement.innerHTML = `<strong>저장 견적서 · ${selectedIds.length}/3 선택</strong>${records.map(record => {
+      const checked = selectedIds.includes(record.estimateId);
+      return `<label><input type="checkbox" data-batch-option value="${esc(record.estimateId)}" ${checked ? 'checked' : ''} ${!checked && selectedIds.length >= 3 ? 'disabled' : ''}><span>${esc(estimateTitle(record))}</span></label>`;
+    }).join('')}`;
+    dialog.querySelector('[data-apply-batch]').disabled = !selectedIds.length;
+  };
+  selectedElement.addEventListener('click', event => {
+    const row = event.target.closest('[data-batch-estimate-id]');
+    if (!row) return;
+    const index = selectedIds.indexOf(row.dataset.batchEstimateId);
+    if (index < 0) return;
+    if (event.target.closest('[data-remove-batch]')) selectedIds.splice(index, 1);
+    else {
+      const direction = event.target.closest('[data-move-batch]')?.dataset.moveBatch;
+      const targetIndex = direction === 'up' ? index - 1 : (direction === 'down' ? index + 1 : index);
+      if (targetIndex !== index && targetIndex >= 0 && targetIndex < selectedIds.length) {
+        [selectedIds[index], selectedIds[targetIndex]] = [selectedIds[targetIndex], selectedIds[index]];
+      }
+    }
+    render();
+  });
+  optionsElement.addEventListener('change', event => {
+    const option = event.target.closest('[data-batch-option]');
+    if (!option) return;
+    if (option.checked) {
+      if (selectedIds.length >= 3) {
+        option.checked = false;
+        messageElement.textContent = '공지 견적서는 최대 3개까지 선택할 수 있습니다.';
+        return;
+      }
+      selectedIds.push(option.value);
+    } else selectedIds = selectedIds.filter(estimateId => estimateId !== option.value);
+    messageElement.textContent = '최대 3개 업체를 선택하고 위·아래 버튼으로 공지 순서를 정합니다.';
+    render();
+  });
+  const finish = () => { dialog.close(); dialog.remove(); };
+  dialog.querySelectorAll('[data-close]').forEach(button => button.addEventListener('click', finish));
+  dialog.addEventListener('cancel', event => { event.preventDefault(); finish(); });
+  dialog.querySelector('[data-apply-batch]').addEventListener('click', () => {
+    state.noticeEstimateIds = [...selectedIds];
+    const firstRecord = recordById.get(selectedIds[0]);
+    finish();
+    if (firstRecord && current.catalogRecordId !== firstRecord.estimateId) loadCatalogRecord(firstRecord);
+    else renderCatalogControls();
+    toast(`카톡 공지 ${selectedIds.length}개 업체 순서를 저장했습니다.`, 'success');
+  });
+  render();
+  dialog.showModal();
 }
 
 function restoreSourceImageForMode(mode) {
@@ -1896,6 +1975,7 @@ function startNewCatalog() {
   fallback.activeMethod = 'direct';
   fallback.catalogBaselinePrices = {};
   fallback.catalogPreviousPrices = {};
+  state.noticeEstimateIds = [];
   state.draft.modes.estimate = fallback;
   state.sourceImages.estimate = null;
   state.selectedRowIds.clear();
@@ -1914,6 +1994,7 @@ async function deleteSelectedCatalog() {
   try {
     await deleteEstimate(estimateId);
     state.estimates = state.estimates.filter(item => item.estimateId !== estimateId);
+    state.noticeEstimateIds = state.noticeEstimateIds.filter(item => item !== estimateId);
     startNewCatalog();
     renderCatalogControls();
     toast('선택한 견적서를 삭제했습니다.', 'success');
@@ -3458,15 +3539,33 @@ function openEstimateNoticePreview() {
     .filter(fieldId => availablePriceFieldIds.has(fieldId))
     .slice(0, 2);
   if (!selectedPriceFieldIds.length) selectedPriceFieldIds = [availablePriceFields[0]?.id || 'noticePrice'];
-  const initialRows = buildKakaoNoticeRows(current.rows, estimateComparisonPrices(current), estimateNoticePriceDefinitions(selectedPriceFieldIds));
-  if (!initialRows.length) return toast('공지로 출력할 견적 품목이 없습니다.', 'error');
-  const title = `${current.header.customerName || '거래처'} 견적 단가 안내`;
+  const selectedRecords = state.noticeEstimateIds
+    .map(estimateId => state.estimates.find(record => record.estimateId === estimateId))
+    .filter(Boolean)
+    .slice(0, 3);
+  const noticeSources = selectedRecords.length ? selectedRecords.map(record => {
+    const useCurrent = record.estimateId === current.catalogRecordId;
+    return {
+      estimateId: record.estimateId,
+      customerName: (useCurrent ? current.header.customerName : catalogCustomerName(record)) || '거래처',
+      rows: useCurrent ? current.rows : (record.draft?.rows || []),
+      previousPrices: useCurrent ? estimateComparisonPrices(current) : (record.previousPrices || {})
+    };
+  }) : [{
+    estimateId: current.catalogRecordId || 'current',
+    customerName: current.header.customerName || '거래처',
+    rows: current.rows,
+    previousPrices: estimateComparisonPrices(current)
+  }];
+  if (!noticeSources.some(source => buildKakaoNoticeRows(source.rows, source.previousPrices, estimateNoticePriceDefinitions(selectedPriceFieldIds)).length)) {
+    return toast('공지로 출력할 견적 품목이 없습니다.', 'error');
+  }
   const dateStamp = new Date().toLocaleDateString('sv-SE');
   const dialog = document.createElement('dialog');
   dialog.className = 'smart-dialog estimate-notice-dialog';
   dialog.innerHTML = `<div class="smart-dialog__shell">
     <header><div><small>Kakao Notice</small><h2>카톡 공지 미리보기</h2></div><button type="button" data-close aria-label="닫기">×</button></header>
-    <div class="smart-dialog__message">미리보기 상단에서 단가를 최대 2개 선택합니다. 선택값은 다음 미리보기에도 유지되며 PNG에는 필터가 포함되지 않습니다.</div>
+    <div class="smart-dialog__message">선택한 ${noticeSources.length}개 업체를 지정 순서대로 표시합니다. 상단 단가 필터는 전체 업체에 함께 적용되며 PNG에는 포함되지 않습니다.</div>
     <div class="estimate-notice-pages" data-notice-pages></div>
     <footer><button type="button" class="button button--quiet" data-close>닫기</button></footer>
   </div>`;
@@ -3486,13 +3585,17 @@ function openEstimateNoticePreview() {
   };
   const renderPreview = () => {
     const priceFields = estimateNoticePriceDefinitions(selectedPriceFieldIds);
-    const rows = buildKakaoNoticeRows(current.rows, estimateComparisonPrices(current), priceFields);
-    const canvases = renderKakaoNoticeCanvases(rows, { title, rowsPerPage: KAKAO_NOTICE_ROWS_PER_PAGE });
+    const pages = noticeSources.flatMap((source, companyIndex) => {
+      const rows = buildKakaoNoticeRows(source.rows, source.previousPrices, priceFields);
+      const canvases = renderKakaoNoticeCanvases(rows, { title: `${source.customerName} 견적 단가 안내`, rowsPerPage: KAKAO_NOTICE_ROWS_PER_PAGE });
+      return canvases.map((canvas, pageIndex) => ({ canvas, companyIndex, companyName: source.customerName, pageIndex, pageCount: canvases.length }));
+    });
     const primaryId = selectedPriceFieldIds[0];
     const secondaryId = selectedPriceFieldIds[1] || '';
-    pagesElement.innerHTML = canvases.map((canvas, index) => `<article class="estimate-notice-page" data-notice-page="${index}">
+    pagesElement.innerHTML = pages.map((page, index) => `<article class="estimate-notice-page" data-notice-page="${index}">
+      <div class="estimate-notice-company"><strong>${page.companyIndex + 1}. ${esc(page.companyName)}</strong><span>${page.pageIndex + 1}/${page.pageCount} 페이지</span></div>
       <div class="estimate-notice-image-wrap">
-        <img src="${canvas.toDataURL('image/png')}" alt="카톡 공지 ${index + 1}페이지 미리보기">
+        <img src="${page.canvas.toDataURL('image/png')}" alt="${esc(page.companyName)} 카톡 공지 ${page.pageIndex + 1}페이지 미리보기">
         ${index === 0 ? `<div class="estimate-notice-filters" aria-label="공지 단가 필터">
           <label><span class="sr-only">단가 1</span><select data-notice-price-primary aria-label="단가 1">${priceOptions(primaryId, secondaryId)}</select></label>
           <label><span class="sr-only">단가 2</span><select data-notice-price-secondary aria-label="단가 2">${priceOptions(secondaryId, primaryId, true)}</select></label>
@@ -3502,11 +3605,13 @@ function openEstimateNoticePreview() {
     </article>`).join('');
     pagesElement.querySelectorAll('[data-notice-page]').forEach(page => {
       const index = Number(page.dataset.noticePage);
-      const fileName = `카톡공지_${dateStamp}_${String(index + 1).padStart(2, '0')}.png`;
-      page.querySelector('[data-copy-notice]').addEventListener('click', () => void copyNoticeCanvas(canvases[index], fileName));
+      const noticePage = pages[index];
+      const safeCompanyName = noticePage.companyName.replace(/[\\/:*?"<>|]/g, '_');
+      const fileName = `카톡공지_${String(noticePage.companyIndex + 1).padStart(2, '0')}_${safeCompanyName}_${dateStamp}_${String(noticePage.pageIndex + 1).padStart(2, '0')}.png`;
+      page.querySelector('[data-copy-notice]').addEventListener('click', () => void copyNoticeCanvas(noticePage.canvas, fileName));
       page.querySelector('[data-download-notice]').addEventListener('click', async () => {
-        downloadBlob(await canvasBlob(canvases[index]), fileName);
-        toast(`${index + 1}페이지 PNG를 저장했습니다.`, 'success');
+        downloadBlob(await canvasBlob(noticePage.canvas), fileName);
+        toast(`${noticePage.companyName} ${noticePage.pageIndex + 1}페이지 PNG를 저장했습니다.`, 'success');
       });
     });
     pagesElement.querySelector('[data-notice-price-primary]')?.addEventListener('change', event => {
@@ -3601,6 +3706,7 @@ async function saveEstimateDocument() {
     await saveEstimate(record);
     state.estimates = [record, ...state.estimates.filter(item => item.estimateId !== estimateId)]
       .sort((left, right) => String(right.updatedAt || '').localeCompare(String(left.updatedAt || '')));
+    if (isNewCatalog || !state.noticeEstimateIds.length) state.noticeEstimateIds = [estimateId];
     saveDraftNow();
     renderCatalogControls();
     renderDelivery();
@@ -3989,8 +4095,12 @@ $('catalogSelect').addEventListener('change', event => {
     return;
   }
   const record = state.estimates.find(item => item.estimateId === event.target.value);
-  if (record) loadCatalogRecord(record);
+  if (record) {
+    state.noticeEstimateIds = [record.estimateId];
+    loadCatalogRecord(record);
+  }
 });
+$('catalogBatchButton').addEventListener('click', openEstimateBatchDialog);
 $('catalogNewButton').addEventListener('click', startNewCatalog);
 $('catalogSaveButton').addEventListener('click', saveEstimateDocument);
 $('catalogDeleteButton').addEventListener('click', deleteSelectedCatalog);
