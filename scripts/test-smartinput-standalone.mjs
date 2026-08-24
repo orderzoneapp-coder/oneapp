@@ -610,10 +610,15 @@ assert.match(appSource, /function deleteSelectedCatalog\(\)/);
 assert.match(appSource, /function openEstimateNoticePreview\(\)/);
 assert.match(appSource, /function exportEstimateExcel\(\)/);
 assert.match(appSource, /function saveEstimateDocument\(\)/);
-assert.match(appSource, /카톡 공지 판매가/);
-assert.match(appSource, /estimateNoticePriceFields: workingEstimateNoticePriceFields/);
-assert.match(appSource, /selected\.length >= 2/,
-  'Kakao notice settings must disable a third price choice after two selections');
+assert.doesNotMatch(appSource, /data-settings-group="estimate-notice"/,
+  'Kakao notice price filters must not remain buried in environment settings');
+assert.match(appSource, /data-notice-price-primary/);
+assert.match(appSource, /data-notice-price-secondary/);
+assert.match(appSource, /사용 안 함/);
+assert.match(appSource, /persistPriceFields/,
+  'Kakao notice preview price filters must persist the latest selection');
+assert.match(css, /\.estimate-notice-filters \{[^}]*position: absolute;/,
+  'Kakao notice price filters must be placed over the preview header');
 const saveEstimateSource = appSource.match(/async function saveEstimateDocument\(\)[\s\S]*?(?=\nasync function completeOrder\(\))/)?.[0] || '';
 assert.match(saveEstimateSource, /current\.rows\.findIndex\(row => !row\.itemCode && !row\.itemName\)/,
   'estimate saving must require a product identity');
