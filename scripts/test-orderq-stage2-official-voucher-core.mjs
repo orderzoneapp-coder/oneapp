@@ -92,6 +92,11 @@ migrateCentralDrafts(central, {
     ...purchaseLines.map(line => ({
       entityType: 'PURCHASE_LINE', entityId: line.purchaseLineId, revision: 1,
       payload: { ...line, purchaseDocumentId: 'PD-1', status: 'DRAFT', revision: 1, localOnly: true }
+    })),
+    { entityType: 'PURCHASE_DOCUMENT', entityId: 'PD-2', revision: 1, payload: { ...purchaseDraft, purchaseDocumentId: 'PD-2', localOnly: true } },
+    ...purchaseLines.map((line, index) => ({
+      entityType: 'PURCHASE_LINE', entityId: `PD2-L${index + 1}`, revision: 1,
+      payload: { ...line, purchaseLineId: `PD2-L${index + 1}`, lineIdentityId: `PD2-I${index + 1}`, sourceLineKey: `PD2-S${index + 1}`, purchaseDocumentId: 'PD-2', status: 'DRAFT', revision: 1, localOnly: true }
     }))
   ]
 });
@@ -118,7 +123,17 @@ const committed = commitCentralCommand(central, {
   mutations: centralMutations
 });
 assert.equal(committed.duplicate, false);
+assert.ok(committed.transactionId); assert.match(committed.resultDigest,/^[0-9a-f]{64}$/);
 assert.equal(committed.changes.filter(row => row.entityType === 'PAYABLE_ENTRY').length, 1);
 assert.equal(committed.changes.filter(row => row.entityType === 'INVENTORY_MOVEMENT').length, 2);
+assert.throws(() => prepareCentralCommand(central, {
+  commandType: OFFICIAL_COMMAND_TYPE.POST_PURCHASE,
+  aggregateId: 'PD-2', expectedRevision: 1, idempotencyKey: 'IDEM-P-DUPLICATE-SOURCE', deviceId: 'PC-1',
+  intent: { commandContract: 'VOUCHER_CORE_V1', commandId: 'IDEM-P-DUPLICATE-SOURCE', actor: 'ADMIN', occurredAt: '2026-08-25T01:30:00.000Z' }
+}), /ORDERQ_CENTRAL_SOURCE_ALREADY_POSTED/);
+const committedRetry=commitCentralCommand(central,{idempotencyKey:centralSource.idempotencyKey,leaseToken:lease.leaseToken,fingerprint:lease.fingerprint,mutations:centralMutations});
+assert.equal(committedRetry.duplicate,true); assert.equal(committedRetry.resultDigest,committed.resultDigest);
+const preparedRetry = prepareCentralCommand(central, centralSource);
+assert.equal(preparedRetry.committed, true); assert.equal(preparedRetry.fingerprint, lease.fingerprint); assert.equal(preparedRetry.result.resultDigest, committed.resultDigest);
 
 console.log('ORDER Q stage2 official voucher core tests passed');

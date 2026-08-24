@@ -413,7 +413,7 @@ export function prepareCentralCommand(state, source = {}) {
   const prior = state.commands[idempotencyKey];
   if (prior) {
     if (prior.fingerprint !== fingerprint) commandError('ORDERQ_CENTRAL_IDEMPOTENCY_CONFLICT', idempotencyKey);
-    if (prior.status === 'COMMITTED') return { duplicate: true, committed: true, result: clone(prior.result) };
+    if (prior.status === 'COMMITTED') return { duplicate: true, committed: true, fingerprint, result: clone(prior.result) };
     if (prior.status !== 'PREPARED') commandError('ORDERQ_CENTRAL_COMMAND_TERMINAL', `${idempotencyKey}:${prior.status}`);
     return { duplicate: true, committed: false, leaseToken: prior.leaseToken, leaseExpiresAt:prior.leaseExpiresAt, fingerprint };
   }
@@ -430,6 +430,14 @@ export function prepareCentralCommand(state, source = {}) {
     && text(target.payload?.documentContract).toUpperCase() !== 'VOUCHER_CORE_V1') {
     commandError('ORDERQ_CENTRAL_COMMAND_CONTRACT_MISMATCH', aggregateId);
   }
+  if (target && commandType.startsWith('POST_') && text(source.intent?.commandContract).toUpperCase() === 'VOUCHER_CORE_V1') {
+    const sourceKey = text(target.payload?.sourceDocumentKey);
+    const duplicate = Object.values(state.entities || {}).find(row => row.entityType === type && row.entityId !== aggregateId
+      && text(row.payload?.documentContract).toUpperCase() === 'VOUCHER_CORE_V1'
+      && text(row.payload?.sourceDocumentKey) === sourceKey
+      && ['CONFIRMED', 'REVERSED'].includes(entityStatus(row)));
+    if (sourceKey && duplicate) commandError('ORDERQ_CENTRAL_SOURCE_ALREADY_POSTED', sourceKey);
+  }
   const conflictingLease = Object.values(state.commands).find(row => row.status === 'PREPARED'
     && row.aggregateId === aggregateId && row.idempotencyKey !== idempotencyKey);
   if (conflictingLease) commandError('ORDERQ_CENTRAL_AGGREGATE_LOCKED', aggregateId);
@@ -439,6 +447,7 @@ export function prepareCentralCommand(state, source = {}) {
   state.commands[idempotencyKey] = {
     idempotencyKey, commandType, aggregateId, expectedRevision, fingerprint,
     leaseToken, status: 'PREPARED', deviceId: text(source.deviceId), preparedAt, leaseExpiresAt,
+    intent: clone(source.intent || null),
     inventoryResourceFingerprint: inventoryResourceFingerprint(state)
   };
   return { duplicate: false, committed: false, leaseToken, leaseExpiresAt, fingerprint, serverRevision: expectedRevision };
@@ -718,6 +727,10 @@ function validateOfficialVoucherLedger(state, command, mutations) {
   const events = rows('VOUCHER_EVENT');
   const entries = rows(entryType);
   const orderEvents = rows('ORDER_EVENT');
+  const existingProjectionLines = Object.values(state.entities || {}).filter(row => row.entityType === lineType
+    && text(row.payload?.[documentIdField]) === command.aggregateId
+    && text(row.payload?.lineStatus || 'ACTIVE').toUpperCase() !== 'DELETED'
+    && entityStatus(row) !== 'REVERSED');
   if (!document || entityStatus(documentRow) !== (reverse ? 'REVERSED' : 'CONFIRMED')
     || Number(documentRow.revision || 0) !== command.expectedRevision + 1
     || events.length !== 1 || !entries.length) {
@@ -730,6 +743,44 @@ function validateOfficialVoucherLedger(state, command, mutations) {
   }
   if (rows(documentType).length !== 1 || events.length !== 1) {
     commandError('ORDERQ_CENTRAL_OFFICIAL_CARDINALITY_INVALID', command.aggregateId);
+  }
+  const existingIdentities = existingProjectionLines.map(row => text(row.payload?.lineIdentityId));
+  const intendedIdentities = Array.isArray(command.intent?.lines) ? command.intent.lines.map(row => text(row.lineIdentityId)) : [];
+  const expectedIdentities = new Set(reverse ? existingIdentities
+    : command.commandType.startsWith('POST_') ? intendedIdentities.length ? intendedIdentities : existingIdentities
+      : [...existingIdentities, ...intendedIdentities]);
+  const projectedIdentities = projectionLines.map(row => text(row.payload?.lineIdentityId));
+  if ([...expectedIdentities].some(identity => !identity) || projectedIdentities.some(identity => !identity)
+    || new Set(projectedIdentities).size !== projectedIdentities.length
+    || projectionLines.length !== expectedIdentities.size || projectedIdentities.some(identity => !expectedIdentities.has(identity))) {
+    commandError('ORDERQ_CENTRAL_OFFICIAL_LINE_CARDINALITY_INVALID', command.aggregateId);
+  }
+  if (reverse && projectionLines.some(row => entityStatus(row) !== 'REVERSED')) commandError('ORDERQ_CENTRAL_OFFICIAL_REVERSE_TOMBSTONE_INVALID', command.aggregateId);
+  if (command.commandType.startsWith('POST_') && movements.length !== lines.length) commandError('ORDERQ_CENTRAL_OFFICIAL_MOVEMENT_CARDINALITY_INVALID', command.aggregateId);
+  if (command.commandType.startsWith('CORRECT_')) {
+    const beforeByIdentity = new Map(existingProjectionLines.map(row => [text(row.payload?.lineIdentityId), row.payload]));
+    const afterActive = projectionLines.filter(row => text(row.payload?.lineStatus || 'ACTIVE').toUpperCase() !== 'DELETED');
+    const afterByIdentity = new Map(afterActive.map(row => [text(row.payload?.lineIdentityId), row.payload]));
+    let expectedMovements = 0;
+    for (const identity of new Set([...beforeByIdentity.keys(), ...afterByIdentity.keys()])) {
+      const beforeLine = beforeByIdentity.get(identity); const afterLine = afterByIdentity.get(identity);
+      expectedMovements += beforeLine && afterLine && (text(beforeLine.productId) !== text(afterLine.productId) || text(beforeLine.warehouseId) !== text(afterLine.warehouseId)) ? 2 : 1;
+    }
+    if (movements.length !== expectedMovements) commandError('ORDERQ_CENTRAL_OFFICIAL_MOVEMENT_CARDINALITY_INVALID', command.aggregateId);
+    for (const [identity] of beforeByIdentity) if (!afterByIdentity.has(identity)
+      && !projectionLines.some(row => text(row.payload?.lineIdentityId) === identity && text(row.payload?.lineStatus).toUpperCase() === 'DELETED')) {
+      commandError('ORDERQ_CENTRAL_OFFICIAL_LINE_TOMBSTONE_REQUIRED', identity);
+    }
+  }
+  if (reverse) {
+    const existingMovements = Object.values(state.entities || {}).filter(row => row.entityType === 'INVENTORY_MOVEMENT'
+      && text(row.payload?.sourceDocumentId) === command.aggregateId);
+    const reversedIds = new Set(existingMovements.filter(row => text(row.payload?.effectKind) === 'REVERSE_OLD' || text(row.payload?.movementType).endsWith('_REVERSAL')).map(row => text(row.payload?.reversalOf)));
+    const reversalSums = new Map();
+    existingMovements.filter(row => reversedIds.has(text(row.payload?.reversalOf))).forEach(row => reversalSums.set(text(row.payload.reversalOf), finite(reversalSums.get(text(row.payload.reversalOf))) + finite(row.payload.signedBaseQuantity)));
+    const expected = existingMovements.filter(row => !text(row.payload?.reversalOf) && (Math.abs(finite(row.payload?.signedBaseQuantity) + finite(reversalSums.get(row.entityId))) > EPSILON
+      || (finite(row.payload?.signedBaseQuantity) === 0 && !reversedIds.has(row.entityId)))).length;
+    if (movements.length !== expected) commandError('ORDERQ_CENTRAL_OFFICIAL_REVERSE_MOVEMENT_CARDINALITY_INVALID', command.aggregateId);
   }
   const intent = command.intent || {};
   if (!text(intent.commandId) || !text(intent.actor) || !text(intent.occurredAt)
@@ -802,15 +853,40 @@ function validateOfficialVoucherLedger(state, command, mutations) {
         const itemId = text(eventRow.payload?.detail?.orderItemId);
         const orderId = text(eventRow.payload?.orderId);
         const item = state.entities[entityKey('ORDER_ITEM', itemId)];
+        const eventType = text(eventRow.payload?.eventType).toUpperCase();
+        const dispatchLine = state.entities[entityKey('DISPATCH_LINE', text(eventRow.payload?.detail?.sourceDispatchLineId))];
+        const eventLine = lines.find(row => text(row.payload?.salesLineId) === text(eventRow.payload?.detail?.salesLineId));
         if (!item || !state.entities[entityKey('ORDER', orderId)] || text(item.payload?.orderId) !== orderId
-          || !['SALES_TRANSFER_ALLOCATED', 'SALES_TRANSFER_REVERSED'].includes(text(eventRow.payload?.eventType).toUpperCase())) {
+          || !dispatchLine || text(dispatchLine.payload?.dispatchId) !== text(eventRow.payload?.detail?.sourceDispatchId)
+          || text(dispatchLine.payload?.orderItemId) !== itemId
+          || !eventLine || text(eventRow.payload?.detail?.salesDocumentId) !== command.aggregateId
+          || text(eventLine.payload?.sourceOrderId) !== orderId || text(eventLine.payload?.sourceOrderItemId) !== itemId
+          || text(eventLine.payload?.sourceDispatchId) !== text(eventRow.payload?.detail?.sourceDispatchId)
+          || text(eventLine.payload?.sourceDispatchLineId) !== text(eventRow.payload?.detail?.sourceDispatchLineId)
+          || !['SALES_TRANSFER_ALLOCATED', 'SALES_TRANSFER_REVERSED'].includes(eventType)) {
           commandError('ORDERQ_CENTRAL_ORDER_EVENT_LINK_INVALID', eventRow.entityId);
+        }
+        if (eventType === 'SALES_TRANSFER_REVERSED') {
+          const allocationId = text(eventRow.payload?.detail?.allocationEventId);
+          const allocation = state.entities[entityKey('ORDER_EVENT', allocationId)];
+          const priorReversed = Object.values(state.entities || {}).filter(candidate => candidate.entityType === 'ORDER_EVENT'
+            && text(candidate.payload?.eventType).toUpperCase() === 'SALES_TRANSFER_REVERSED'
+            && text(candidate.payload?.detail?.allocationEventId) === allocationId)
+            .reduce((sum, candidate) => sum + finite(candidate.payload?.detail?.transferredQty), 0);
+          if (!allocation || text(allocation.payload?.eventType).toUpperCase() !== 'SALES_TRANSFER_ALLOCATED'
+            || text(allocation.payload?.orderId) !== orderId || text(allocation.payload?.detail?.orderItemId) !== itemId
+            || text(allocation.payload?.detail?.salesDocumentId) !== command.aggregateId
+            || text(allocation.payload?.detail?.salesLineId) !== text(eventRow.payload?.detail?.salesLineId)
+            || priorReversed + finite(eventRow.payload?.detail?.transferredQty) > finite(allocation.payload?.detail?.transferredQty) + EPSILON) {
+            commandError('ORDERQ_CENTRAL_ORDER_ALLOCATION_REVERSAL_INVALID', eventRow.entityId);
+          }
         }
       }
       for (const itemId of new Set(orderEvents.map(row => text(row.payload?.detail?.orderItemId)))) {
         const item = state.entities[entityKey('ORDER_ITEM', itemId)];
         const existingAllocated = Object.values(state.entities || {}).filter(candidate => candidate.entityType === 'ORDER_EVENT'
-          && text(candidate.payload?.detail?.orderItemId) === itemId).reduce((sum, candidate) => sum
+          && text(candidate.payload?.detail?.orderItemId) === itemId
+          && ['SALES_TRANSFER_ALLOCATED', 'SALES_TRANSFER_REVERSED'].includes(text(candidate.payload?.eventType).toUpperCase())).reduce((sum, candidate) => sum
             + (text(candidate.payload?.eventType).toUpperCase() === 'SALES_TRANSFER_REVERSED' ? -1 : 1) * finite(candidate.payload?.detail?.transferredQty), 0);
         const commandAllocated = orderEvents.filter(candidate => text(candidate.payload?.detail?.orderItemId) === itemId).reduce((sum, candidate) => sum
           + (text(candidate.payload?.eventType).toUpperCase() === 'SALES_TRANSFER_REVERSED' ? -1 : 1) * finite(candidate.payload?.detail?.transferredQty), 0);
@@ -823,9 +899,13 @@ function validateOfficialVoucherLedger(state, command, mutations) {
         const line = row.payload;
         const order = state.entities[entityKey('ORDER', text(line.sourceOrderId))];
         const item = state.entities[entityKey('ORDER_ITEM', text(line.sourceOrderItemId))];
+        const dispatchLine = state.entities[entityKey('DISPATCH_LINE', text(line.sourceDispatchLineId))];
         if (text(line.orderLinkMode).toUpperCase() !== 'ORDER_Q'
           || !order || !item || text(item.payload?.orderId) !== order.entityId
-          || Math.abs(finite(line.recognizedOrderQuantity)) > Math.abs(finite(line.actualQuantity)) + EPSILON) {
+          || !dispatchLine || text(dispatchLine.payload?.dispatchId) !== text(line.sourceDispatchId)
+          || text(dispatchLine.payload?.orderItemId) !== item.entityId
+          || text(dispatchLine.payload?.actualProductId || dispatchLine.payload?.productId || dispatchLine.payload?.requestedProductId) !== text(line.productId)
+          || text(dispatchLine.payload?.warehouseId) !== text(line.warehouseId)) {
           commandError('ORDERQ_CENTRAL_ORDER_LINK_INVALID', row.entityId);
         }
       }
@@ -847,6 +927,23 @@ function validateOfficialVoucherLedger(state, command, mutations) {
   const nextTotal = reverse ? 0 : finite(document.totalAmount);
   requireSameNumber(entries.reduce((sum, row) => sum + finite(row.payload.totalAmount), 0), nextTotal - previousTotal,
     'ORDERQ_CENTRAL_OFFICIAL_ENTRY_DELTA_INVALID', command.aggregateId);
+  const partnerField = purchase ? 'supplierCustomerId' : 'billingCustomerId';
+  const oldPartner = text(previousDocument[partnerField]);
+  const nextPartner = text(document[partnerField]);
+  const existingEntries = Object.values(state.entities || {}).filter(row => row.entityType === entryType
+    && text(row.payload?.[documentIdField]) === command.aggregateId);
+  const oldBalance = existingEntries.filter(row => text(row.payload?.partnerId) === oldPartner)
+    .reduce((sum, row) => sum + finite(row.payload?.totalAmount), 0);
+  if (reverse) {
+    if (entries.some(row => text(row.payload.partnerId) !== oldPartner)) commandError('ORDERQ_CENTRAL_OFFICIAL_REVERSE_PARTNER_INVALID');
+    requireSameNumber(entries.reduce((sum, row) => sum + finite(row.payload.totalAmount), 0), -oldBalance,
+      'ORDERQ_CENTRAL_OFFICIAL_REVERSE_BALANCE_INVALID', command.aggregateId);
+  } else if (!command.commandType.startsWith('POST_') && oldPartner !== nextPartner) {
+    requireSameNumber(entries.filter(row => text(row.payload.partnerId) === oldPartner).reduce((sum, row) => sum + finite(row.payload.totalAmount), 0), -oldBalance,
+      'ORDERQ_CENTRAL_OFFICIAL_PARTNER_RELEASE_INVALID', command.aggregateId);
+    requireSameNumber(entries.filter(row => text(row.payload.partnerId) === nextPartner).reduce((sum, row) => sum + finite(row.payload.totalAmount), 0), nextTotal,
+      'ORDERQ_CENTRAL_OFFICIAL_PARTNER_ASSIGN_INVALID', command.aggregateId);
+  }
 }
 
 function validateCommandMutations(state, command, mutations) {
@@ -1002,17 +1099,28 @@ export function commitCentralCommand(state, source = {}, options = {}) {
     ? { VOUCHER_EVENT: 1, INVENTORY_MOVEMENT: 2, ORDER_EVENT: 3, PAYABLE_ENTRY: 4, RECEIVABLE_ENTRY: 4 }
     : { INVENTORY_MOVEMENT: 2 };
   const effectRank = { REVERSE_OLD: 1, DELTA: 2, APPLY_NEW: 3 };
-  mutations.filter(row => ledgerRank[row.entityType]).sort((left, right) => (
-    ledgerRank[left.entityType] - ledgerRank[right.entityType]
-    || text(left.payload.lineIdentityId).localeCompare(text(right.payload.lineIdentityId))
-    || (effectRank[text(left.payload.effectKind).toUpperCase()] || 9) - (effectRank[text(right.payload.effectKind).toUpperCase()] || 9)
-    || Number(left.payload.effectOrdinal || 0) - Number(right.payload.effectOrdinal || 0)
-    || text(left.payload.orderId).localeCompare(text(right.payload.orderId))
-    || text(left.payload.detail?.orderItemId).localeCompare(text(right.payload.detail?.orderItemId))
-    || text(left.payload.partnerId).localeCompare(text(right.payload.partnerId))
-    || text(left.payload.reversalOf).localeCompare(text(right.payload.reversalOf))
-    || left.entityId.localeCompare(right.entityId)
-  )).forEach(row => {
+  const eventRank = { SALES_TRANSFER_REVERSED: 1, SALES_TRANSFER_ALLOCATED: 2 };
+  const compareLedger = (left, right) => {
+    const typeRank = ledgerRank[left.entityType] - ledgerRank[right.entityType];
+    if (typeRank) return typeRank;
+    if (left.entityType === 'INVENTORY_MOVEMENT') return text(left.payload.lineIdentityId).localeCompare(text(right.payload.lineIdentityId))
+      || (effectRank[text(left.payload.effectKind).toUpperCase()] || 9) - (effectRank[text(right.payload.effectKind).toUpperCase()] || 9)
+      || Number(left.payload.effectOrdinal || 0) - Number(right.payload.effectOrdinal || 0)
+      || left.entityId.localeCompare(right.entityId);
+    if (left.entityType === 'ORDER_EVENT') return text(left.payload.orderId).localeCompare(text(right.payload.orderId))
+      || text(left.payload.detail?.orderItemId).localeCompare(text(right.payload.detail?.orderItemId))
+      || text(left.payload.detail?.salesLineId).localeCompare(text(right.payload.detail?.salesLineId))
+      || (eventRank[text(left.payload.eventType).toUpperCase()] || 9) - (eventRank[text(right.payload.eventType).toUpperCase()] || 9)
+      || Number(left.payload.effectOrdinal || 0) - Number(right.payload.effectOrdinal || 0)
+      || left.entityId.localeCompare(right.entityId);
+    if (['PAYABLE_ENTRY', 'RECEIVABLE_ENTRY'].includes(left.entityType)) return text(left.payload.partnerId).localeCompare(text(right.payload.partnerId))
+      || text(left.payload.entryType).localeCompare(text(right.payload.entryType))
+      || text(left.payload.reversalOf).localeCompare(text(right.payload.reversalOf))
+      || Number(left.payload.effectOrdinal || 0) - Number(right.payload.effectOrdinal || 0)
+      || left.entityId.localeCompare(right.entityId);
+    return left.entityId.localeCompare(right.entityId);
+  };
+  mutations.filter(row => ledgerRank[row.entityType]).sort(compareLedger).forEach(row => {
     delete row.payload.ledgerSequence;
     working.ledgerSequence += 1;
     row.payload.ledgerSequence = working.ledgerSequence;
@@ -1025,11 +1133,13 @@ export function commitCentralCommand(state, source = {}, options = {}) {
   }
   mutations.forEach(row => appendChange(working, row, command.deviceId, idempotencyKey));
   const result = {
+    transactionId: `${idempotencyKey}:OFFICIAL`,
     changes: clone(mutations),
     cursor: working.syncSequence,
     ledgerSequence: working.ledgerSequence,
     serverRevision: Math.max(...mutations.map(row => row.entityId === command.aggregateId ? row.revision : 0), command.expectedRevision)
   };
+  result.resultDigest = canonicalSha256({ transactionId: result.transactionId, changes: result.changes, cursor: result.cursor, ledgerSequence: result.ledgerSequence, serverRevision: result.serverRevision });
   workingCommand.status = 'COMMITTED';
   workingCommand.mutationFingerprint = mutationFingerprint;
   workingCommand.committedAt = new Date(commitAtMillis).toISOString();

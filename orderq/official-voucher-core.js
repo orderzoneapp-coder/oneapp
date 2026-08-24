@@ -87,6 +87,11 @@ function canonicalValue(value) {
   return value;
 }
 
+function utf8Bytes(value) {
+  const encoded = JSON.stringify(value);
+  return typeof TextEncoder !== 'undefined' ? new TextEncoder().encode(encoded).byteLength : unescape(encodeURIComponent(encoded)).length;
+}
+
 export function canonicalSha256(value) {
   const input = unescape(encodeURIComponent(JSON.stringify(canonicalValue(value))));
   const words = [];
@@ -323,12 +328,15 @@ function orderEventsForLine(command, document, previous, next) {
     sourceDocumentRevision: document.revision,
     commandId: command.commandId,
     effectKey,
+    effectOrdinal: ordinal,
     eventType,
     actor: command.actor,
     detail: {
       transferBusinessKey: [document.salesDocumentId, lineId('SALE', source), orderItemId].join('|'),
       allocationEventId,
       orderItemId,
+      sourceDispatchId: text(source.sourceDispatchId),
+      sourceDispatchLineId: text(source.sourceDispatchLineId),
       salesDocumentId: document.salesDocumentId,
       salesLineId: lineId('SALE', source),
       transferredQty: Math.abs(signedQuantity),
@@ -356,6 +364,7 @@ function snapshotLine(kind, line, deleted = false) {
     baseQuantity: Number(line.baseQuantity ?? 0), unitPrice: Number(line.unitPrice ?? 0), supplyAmount: Number(line.supplyAmount ?? 0),
     totalAmount: Number(line.totalAmount ?? 0), partnerId: text(line.partnerId), orderLinkMode: text(line.orderLinkMode),
     sourceOrderId: text(line.sourceOrderId), sourceOrderItemId: text(line.sourceOrderItemId),
+    sourceDispatchId: text(line.sourceDispatchId), sourceDispatchLineId: text(line.sourceDispatchLineId),
     allocationEventId: text(line.allocationEventId), recognizedOrderQuantity: Number(line.recognizedOrderQuantity || 0),
     lineStatus: deleted ? 'DELETED' : text(line.lineStatus || 'ACTIVE')
   };
@@ -382,10 +391,12 @@ export function planOfficialVoucherCommand(input = {}) {
   const operation = action(command.commandType);
   const previousDocument = input.document || null;
   const previousLines = Array.isArray(input.lines) ? input.lines : [];
+  const previousSnapshotLines = Array.isArray(input.snapshotLines) ? input.snapshotLines : previousLines;
   const previousMovements = Array.isArray(input.movements) ? input.movements : [];
-  const previousEntries = Array.isArray(input.entries) ? input.entries : [];
+  const allPreviousEntries = Array.isArray(input.entries) ? input.entries : [];
   if (!previousDocument) throw new Error('ORDERQ_OFFICIAL_DOCUMENT_REQUIRED');
   const aggregateId = documentId(kind, previousDocument);
+  const previousEntries = allPreviousEntries.filter(entry => text(kind === 'PURCHASE' ? entry.purchaseDocumentId : entry.salesDocumentId) === aggregateId);
   if (Number(previousDocument.revision || 0) !== command.expectedRevision) throw new Error(`ORDERQ_OFFICIAL_REVISION_CONFLICT:${previousDocument.revision || 0}`);
   const expectedStatus = operation === 'POST' ? OFFICIAL_VOUCHER_STATUS.DRAFT : OFFICIAL_VOUCHER_STATUS.CONFIRMED;
   const previousStatus = text(previousDocument.businessStatus || previousDocument.status).toUpperCase();
@@ -430,6 +441,8 @@ export function planOfficialVoucherCommand(input = {}) {
       line.orderLinkMode = 'ORDER_Q';
       requiredText(line.sourceOrderId, 'ORDERQ_OFFICIAL_SOURCE_ORDER_REQUIRED');
       requiredText(line.sourceOrderItemId, 'ORDERQ_OFFICIAL_SOURCE_ORDER_ITEM_REQUIRED');
+      requiredText(line.sourceDispatchId, 'ORDERQ_OFFICIAL_SOURCE_DISPATCH_REQUIRED');
+      requiredText(line.sourceDispatchLineId, 'ORDERQ_OFFICIAL_SOURCE_DISPATCH_LINE_REQUIRED');
     }
   });
   const amount = calculateOfficialDocumentAmount(nextLines);
@@ -489,8 +502,10 @@ export function planOfficialVoucherCommand(input = {}) {
   }
   nextDocument.lastLedgerEntryId = entries[entries.length - 1].entryId;
 
-  const removedLines = previousLines.filter(line => !nextById.has(lineId(kind, line)));
-  const beforeSnapshot = businessSnapshot(kind, previousDocument, previousLines);
+  const removedLines = previousSnapshotLines.filter(line => !nextById.has(lineId(kind, line)));
+  const beforeSnapshot = businessSnapshot(kind, previousDocument,
+    previousSnapshotLines.filter(line => text(line.lineStatus || 'ACTIVE').toUpperCase() !== 'DELETED'),
+    previousSnapshotLines.filter(line => text(line.lineStatus || 'ACTIVE').toUpperCase() === 'DELETED'));
   const afterSnapshot = businessSnapshot(kind, nextDocument, nextLines, removedLines);
 
   const voucherEvent = {
@@ -519,10 +534,10 @@ export function planOfficialVoucherCommand(input = {}) {
     reversalOf: operation === 'REVERSE' ? text(previousDocument.lastVoucherEventId) : '',
     createdAt: command.occurredAt
   };
-  if (JSON.stringify(voucherEvent.beforeSnapshot).length > 96 * 1024
-    || JSON.stringify(voucherEvent.afterSnapshot).length > 96 * 1024
-    || JSON.stringify(voucherEvent.lineEffects).length > 64 * 1024
-    || JSON.stringify(voucherEvent).length > 256 * 1024) throw new Error('ORDERQ_VOUCHER_PAYLOAD_TOO_LARGE');
+  if (utf8Bytes(voucherEvent.beforeSnapshot) > 96 * 1024
+    || utf8Bytes(voucherEvent.afterSnapshot) > 96 * 1024
+    || utf8Bytes(voucherEvent.lineEffects) > 64 * 1024
+    || utf8Bytes(voucherEvent) > 256 * 1024) throw new Error('ORDERQ_VOUCHER_PAYLOAD_TOO_LARGE');
   nextDocument.lastVoucherEventId = voucherEvent.eventId;
   nextDocument.history = [...(Array.isArray(previousDocument.history) ? previousDocument.history : []), {
     eventId: voucherEvent.eventId,

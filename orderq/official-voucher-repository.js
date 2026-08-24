@@ -127,9 +127,10 @@ export async function applyOfficialVoucherCommand(source = {}) {
     const storedLines = await allByIndex(tx.objectStore(contract.lines), 'byDocumentId', aggregateId);
     const storedMovements = (await requestToPromise(tx.objectStore(STORE.INVENTORY_MOVEMENTS).getAll()))
       .filter(row => text(row.sourceDocumentId) === aggregateId);
-    const storedEntries = await requestToPromise(tx.objectStore(contract.entry).getAll());
+    const storedEntries = (await requestToPromise(tx.objectStore(contract.entry).getAll()))
+      .filter(entry => text(entry[contract.idField]) === aggregateId);
     const activeLines = storedLines.filter(line => text(line.lineStatus || 'ACTIVE').toUpperCase() !== 'DELETED' && text(line.status).toUpperCase() !== 'REVERSED');
-    const plan = planOfficialVoucherCommand({ command: { ...source, actor: actor.actorId }, document, lines: activeLines, movements: storedMovements, entries: storedEntries });
+    const plan = planOfficialVoucherCommand({ command: { ...source, actor: actor.actorId }, document, lines: activeLines, snapshotLines: storedLines, movements: storedMovements, entries: storedEntries });
     const documentStore = tx.objectStore(contract.document);
     const lineStore = tx.objectStore(contract.lines);
     documentStore.put(plan.document);

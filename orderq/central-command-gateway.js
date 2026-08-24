@@ -109,7 +109,7 @@ function changedEntities(before, after) {
   return mutations;
 }
 
-async function applyCentralChanges(changes = [], ledgerSequence = null, cursor = null) {
+async function applyCentralChanges(changes = [], ledgerSequence = null, cursor = null, projectionEvidence = null) {
   const storeNames = [...new Set(changes.map(row => ENTITY_STORES[row.entityType]?.[0]).filter(Boolean))];
   const stores = [...new Set([...storeNames, STORE.META, STORE.SYNC_QUEUE])];
   const db = await openOrderQDb();
@@ -129,10 +129,16 @@ async function applyCentralChanges(changes = [], ledgerSequence = null, cursor =
     };
     tx.objectStore(storeName).put(payload);
     centralKeys.add(`${change.entityType}:${change.entityId}`);
-    const projectedCommandId = text(change.payload?.commandId);
-    if (projectedCommandId) tx.objectStore(STORE.META).put({
-      key: `centralProjection:${projectedCommandId}`,
-      value: { commandId: projectedCommandId, projectionStatus: 'LOCAL_PROJECTED', projectedAt: nowIso() },
+  }
+  if (projectionEvidence) {
+    const commandId = text(projectionEvidence.commandId);
+    if (!commandId || !text(projectionEvidence.fingerprint) || !text(projectionEvidence.transactionId) || !text(projectionEvidence.resultDigest)) {
+      throw new Error('ORDERQ_CENTRAL_PROJECTION_RECEIPT_EVIDENCE_REQUIRED');
+    }
+    tx.objectStore(STORE.META).put({
+      key: `centralProjection:${commandId}`,
+      value: { commandId, fingerprint: text(projectionEvidence.fingerprint), centralTransactionId: text(projectionEvidence.transactionId),
+        resultDigest: text(projectionEvidence.resultDigest), projectionStatus: 'LOCAL_PROJECTED', projectedAt: nowIso() },
       updatedAt: nowIso(), source: 'CENTRAL'
     });
   }
@@ -158,18 +164,28 @@ async function applyCentralChanges(changes = [], ledgerSequence = null, cursor =
   await transactionDone(tx);
 }
 
+function utf8Bytes(value) {
+  const encoded = JSON.stringify(value);
+  return typeof TextEncoder !== 'undefined' ? new TextEncoder().encode(encoded).byteLength : unescape(encodeURIComponent(encoded)).length;
+}
+
 async function writeProjectionReceipt(command, central, projectionError = '') {
+  const fingerprint = text(central?.fingerprint);
+  const transactionId = text(central?.transactionId);
+  const resultDigest = text(central?.resultDigest);
+  if (!fingerprint || !transactionId || !resultDigest) throw new Error('ORDERQ_CENTRAL_PROJECTION_RECEIPT_EVIDENCE_REQUIRED');
   const db = await openOrderQDb();
   const tx = db.transaction(STORE.META, 'readwrite');
   tx.objectStore(STORE.META).put({
     key: `centralProjection:${text(command.intent?.commandId || command.idempotencyKey)}`,
     value: {
       commandId: text(command.intent?.commandId || command.idempotencyKey),
-      fingerprint: text(central?.fingerprint || ''),
-      centralTransactionId: text(central?.transactionId || central?.transactionId || ''),
+      fingerprint,
+      centralTransactionId: transactionId,
       centralCursor: Number(central?.cursor || 0),
       centralLedgerSequence: Number(central?.ledgerSequence || 0),
-      resultDigest: text(central?.resultDigest || ''),
+      resultDigest,
+      command: clone(command),
       projectionStatus: 'PROJECTION_PENDING',
       projectionError: text(projectionError),
       updatedAt: nowIso()
@@ -266,7 +282,7 @@ export async function runCentralOfficialCommand(source = {}, localOperation) {
       lines: clone(source.lines || null)
     })
   };
-  if (JSON.stringify(command.intent).length > 512 * 1024) throw new Error('ORDERQ_VOUCHER_PAYLOAD_TOO_LARGE');
+  if (utf8Bytes(command.intent) > 512 * 1024) throw new Error('ORDERQ_VOUCHER_PAYLOAD_TOO_LARGE');
   // The browser profile is the first half of the two-key cutover boundary.
   // This check is deliberately before draft migration and before the local
   // transaction so SHADOW/rollback mode cannot pre-write either side.
@@ -279,10 +295,12 @@ export async function runCentralOfficialCommand(source = {}, localOperation) {
   const prepared = await prepareCentralOfficialCommand(command);
   if (prepared.committed && prepared.result) {
     try {
-      await applyCentralChanges(prepared.result.changes, prepared.result.ledgerSequence, prepared.result.cursor);
+      await applyCentralChanges(prepared.result.changes, prepared.result.ledgerSequence, prepared.result.cursor, {
+        ...prepared.result, fingerprint: prepared.fingerprint, commandId: text(command.intent?.commandId || command.idempotencyKey)
+      });
       return { duplicate: true, central: prepared.result, status: 'LOCAL_PROJECTED', projectionPending: false };
     } catch (projectionError) {
-      await writeProjectionReceipt(command, prepared.result, projectionError?.message || projectionError);
+      await writeProjectionReceipt(command, { ...prepared.result, fingerprint: prepared.fingerprint }, projectionError?.message || projectionError);
       return {
         duplicate: true,
         central: prepared.result,
@@ -312,7 +330,9 @@ export async function runCentralOfficialCommand(source = {}, localOperation) {
     });
     centralCommitted = committed;
     try {
-      await applyCentralChanges(committed.changes, committed.ledgerSequence, committed.cursor);
+      await applyCentralChanges(committed.changes, committed.ledgerSequence, committed.cursor, {
+        ...committed, fingerprint: prepared.fingerprint, commandId: text(command.intent?.commandId || command.idempotencyKey)
+      });
       return {
         ...localResult,
         duplicate: Boolean(committed.duplicate),
@@ -323,7 +343,7 @@ export async function runCentralOfficialCommand(source = {}, localOperation) {
     } catch (projectionError) {
       let restoreError = '';
       try { await restoreStores(before); } catch (error) { restoreError = text(error?.message || error); }
-      await writeProjectionReceipt(command, committed, [text(projectionError?.message || projectionError), restoreError].filter(Boolean).join('|'));
+      await writeProjectionReceipt(command, { ...committed, fingerprint: prepared.fingerprint }, [text(projectionError?.message || projectionError), restoreError].filter(Boolean).join('|'));
       return {
         duplicate: Boolean(committed.duplicate),
         central: committed,
@@ -345,6 +365,28 @@ export async function runCentralOfficialCommand(source = {}, localOperation) {
   }
 }
 
+export async function replayPendingProjectionReceipts(receipts = [], dependencies = {}) {
+  const prepare = dependencies.prepare || prepareCentralOfficialCommand;
+  const apply = dependencies.apply || applyCentralChanges;
+  let projected = 0;
+  for (const row of receipts) {
+    const receipt = row?.value || row || {};
+    if (text(receipt.projectionStatus) !== 'PROJECTION_PENDING') continue;
+    const prepared = await prepare(receipt.command || {});
+    const result = prepared.committed && prepared.result;
+    if (!result || text(prepared.fingerprint) !== text(receipt.fingerprint)
+      || text(result.transactionId) !== text(receipt.centralTransactionId)
+      || text(result.resultDigest) !== text(receipt.resultDigest)) {
+      throw new Error(`ORDERQ_CENTRAL_PROJECTION_RECEIPT_MISMATCH:${text(receipt.commandId)}`);
+    }
+    await apply(result.changes, result.ledgerSequence, result.cursor, {
+      ...result, fingerprint: prepared.fingerprint, commandId: receipt.commandId
+    });
+    projected += 1;
+  }
+  return projected;
+}
+
 export async function pullCentralOfficialState() {
   if (!getCloudUrl()) return { online: false, applied: 0, cursor: 0 };
   const db = await openOrderQDb();
@@ -360,5 +402,11 @@ export async function pullCentralOfficialState() {
     cursor = Number(result.nextCursor || cursor);
     if (!result.hasMore) break;
   }
+  const receiptDb = await openOrderQDb();
+  const receiptTx = receiptDb.transaction(STORE.META, 'readonly');
+  const pendingReceipts = (await requestToPromise(receiptTx.objectStore(STORE.META).getAll()))
+    .filter(row => text(row.key).startsWith('centralProjection:') && text(row.value?.projectionStatus) === 'PROJECTION_PENDING');
+  await transactionDone(receiptTx);
+  await replayPendingProjectionReceipts(pendingReceipts);
   return { online: true, applied, cursor };
 }

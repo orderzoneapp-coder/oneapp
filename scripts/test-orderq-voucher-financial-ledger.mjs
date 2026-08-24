@@ -9,10 +9,18 @@ const command=(commandType,commandId,expectedRevision,document,lines)=>({command
 const posted=planOfficialVoucherCommand({document:draft,lines:[line],command:command('POST_PURCHASE','PF-1',1,draft,[line])});
 const correctedLine={...posted.lines[0],quantity:2,actualQuantity:2,baseQuantity:2};
 const corrected=planOfficialVoucherCommand({document:posted.document,lines:posted.lines,movements:posted.movements,entries:posted.entries,command:command('CORRECT_PURCHASE','PF-2',2,posted.document,[correctedLine])});
-const reversed=planOfficialVoucherCommand({document:corrected.document,lines:corrected.lines,movements:[...posted.movements,...corrected.movements],entries:[...posted.entries,...corrected.entries],command:command('REVERSE_PURCHASE','PF-3',3,corrected.document,[])});
-assert.deepEqual(reversed.movements.map(item=>item.signedBaseQuantity),[-1,-1],'reverse must clear every residual movement effect');
-assert.equal(reversed.entries.reduce((sum,item)=>sum+item.totalAmount,0),-20,'reverse must clear the active payable balance');
-assert.equal([...posted.entries,...corrected.entries,...reversed.entries].reduce((sum,item)=>sum+item.totalAmount,0),0);
+const movedLine={...corrected.lines[0],productId:'P2',warehouseId:'W2',unitPrice:15};
+const movedDocument={...corrected.document,supplierCustomerId:'SUP2',warehouseId:'W2'};
+const moved=planOfficialVoucherCommand({document:corrected.document,lines:corrected.lines,movements:[...posted.movements,...corrected.movements],entries:[...posted.entries,...corrected.entries],command:command('CORRECT_PURCHASE','PF-3',3,movedDocument,[movedLine])});
+assert.deepEqual(moved.movements.map(item=>item.effectKind),['REVERSE_OLD','REVERSE_OLD','APPLY_NEW']);
+assert.equal(moved.entries.filter(item=>item.partnerId==='SUP').reduce((sum,item)=>sum+item.totalAmount,0),-20);
+assert.equal(moved.entries.find(item=>item.partnerId==='SUP2').totalAmount,30);
+const foreign={...posted.entries[0],entryId:'FOREIGN',effectKey:'FOREIGN',purchaseDocumentId:'PF-OTHER',totalAmount:999,supplyAmount:999};
+const reversed=planOfficialVoucherCommand({document:moved.document,lines:moved.lines,movements:[...posted.movements,...corrected.movements,...moved.movements],entries:[...posted.entries,...corrected.entries,...moved.entries,foreign],command:command('REVERSE_PURCHASE','PF-4',4,moved.document,[])});
+assert.deepEqual(reversed.movements.map(item=>item.signedBaseQuantity),[-2],'reverse must clear every residual movement effect');
+assert.equal(reversed.entries.reduce((sum,item)=>sum+item.totalAmount,0),-30,'reverse must clear the active payable balance');
+assert.equal([...posted.entries,...corrected.entries,...moved.entries,...reversed.entries].reduce((sum,item)=>sum+item.totalAmount,0),0);
+assert.ok(reversed.entries.every(item=>item.purchaseDocumentId==='PF'),'same-partner entries from another voucher must never be reversed');
 for(const movement of reversed.movements) assert.doesNotThrow(()=>validateVoucherCoreReversal(
-  [...posted.movements,...corrected.movements].find(item=>item.movementId===movement.reversalOf),movement));
+  [...posted.movements,...corrected.movements,...moved.movements].find(item=>item.movementId===movement.reversalOf),movement));
 console.log('ORDER Q voucher financial ledger tests passed');
