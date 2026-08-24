@@ -407,19 +407,30 @@ assert.match(html, /<th data-column="status">상태<\/th>/);
 assert.doesNotMatch(html, /id="mobilePhotoTabs"|data-photo-pane=/);
 assert.doesNotMatch(html, /id="estimateListButton"|>견적 목록</);
 assert.match(html, /id="estimateOutputActions"[^>]*hidden/);
-assert.match(html, /id="estimateNoticeButton"[^>]*>카톡 공지 복사</);
+assert.match(html, /id="estimateNoticeButton"[^>]*>카톡 복사</);
 assert.match(html, /id="estimateExcelButton"[^>]*>견적 Excel</);
 assert.match(html, /id="catalogPickerButton"/);
 assert.match(html, /id="catalogPickerMenu"[^>]*popover="auto"/);
 assert.match(html, /id="catalogPickerList"/);
 assert.match(html, /id="catalogSaveButton"/);
-assert.doesNotMatch(html, /id="catalogSelect"|id="catalogNewButton"|id="catalogDeleteButton"|id="catalogBatchButton"/);
-assert.match(html, /견적서 필터 · 거래처 자동 지정/);
-assert.match(html, /일괄출력/);
+assert.match(html, /id="catalogNewButton"[^>]*>새 견적서<\/button>/);
+assert.match(html, /id="catalogComposeButton"[^>]*>선택 상품 불러오기<\/button>/);
+assert.doesNotMatch(html, /id="catalogSelect"|id="catalogDeleteButton"|id="catalogBatchButton"/);
+assert.match(html, /견적서 선택 · 상품 조합/);
+assert.match(html, /선택 항목은 상품 불러오기·카톡·Excel에 함께 사용됩니다/);
 assert.match(html, /id="catalogSaveButton"[^>]*>저장<\/button>/);
 assert.doesNotMatch(html, /카탈로그 · 거래처 자동 지정|카탈로그 선택|카탈로그 저장/);
 assert.ok(html.indexOf('class="app-voucher-switcher"') < html.indexOf('class="app-bar__actions"'), '전표 선택은 앱 헤더의 작업 버튼 앞에 있어야 한다.');
 assert.doesNotMatch(html, /class="field field--mode"/, '전표 선택은 본문 상단 정보 영역에 남아 있으면 안 된다.');
+assert.match(html, /nexus-theme-init\.js/);
+assert.match(html, /brand__logo--light[^>]*logo-light\.png/);
+assert.match(html, /brand__logo--dark[^>]*logo-dark\.png/);
+assert.match(html, /class="document-fields__left"[\s\S]*id="deliveryDateInput"[\s\S]*id="warehouseInput"[\s\S]*id="transactionTypeInput"/,
+  'delivery date, warehouse, and transaction type must share the left side of the unified header');
+assert.match(html, /class="document-fields__right"[\s\S]*id="customerInput"[\s\S]*id="catalogPickerButton"[\s\S]*id="estimateNoticeButton"/,
+  'customer, estimate selection, and Kakao copy must share the right side of the unified header');
+assert.doesNotMatch(html, /class="grid-card__header"|id="gridTitle"|>표준 입력표</,
+  'the duplicate table title header must be removed to expose more rows');
 assert.match(html, /id="selectAllRows"/);
 assert.match(html, /id="deleteSelectedRows"/);
 assert.match(html, /class="col-unit"/);
@@ -462,8 +473,11 @@ assert.match(css, /\.analyze-button\[hidden\], \.parser-progress\[hidden\] \{ di
 assert.match(css, /\.photo-viewer__region \{/);
 assert.match(css, /\.workspace\.has-photo-source \{[^}]*grid-template-columns: minmax\(370px, min\(var\(--parser-pane-width\), calc\(100% - 806px\)\)\) 8px minmax\(0, 1fr\) 230px;/,
   'photo input must share the saved parser width without overflowing its workbench');
-assert.match(css, /\.document-fields > \.field \{[^}]*grid-template-rows: 18px 42px 14px;/);
-assert.match(css, /\.document-fields \{[^}]*grid-template-columns: repeat\(3, minmax\(140px, 1fr\)\)/);
+assert.match(css, /\.document-fields \{[^}]*grid-template-columns: minmax\(330px, \.72fr\) minmax\(0, 1\.45fr\)/);
+assert.match(css, /\.document-fields__left \{[^}]*grid-template-columns: repeat\(3, minmax\(110px, 1fr\)\)/);
+assert.match(css, /\.document-fields__right \{[^}]*display: flex;[^}]*justify-content: flex-end/);
+assert.match(css, /\.workbench \{[^}]*gap: 10px/,
+  'the unified header must reduce vertical spacing above the table');
 assert.match(css, /\.workspace\.has-photo-source \.parser-card, \.workspace\.has-photo-source \.workbench \{[^}]*height: calc\(100vh - var\(--nexus-top-height\) - 88px\)/);
 assert.match(css, /\.photo-ocr-panel \{/);
 assert.match(css, /\.photo-resizer \{/);
@@ -509,7 +523,9 @@ assert.match(css, /@media \(max-width: 560px\) \{[\s\S]*?\.document-fields, \.wo
   'mobile document fields must collapse to one touch-friendly column');
 assert.match(css, /\.parser-card, \.related-panel, \.workbench, \.document-fields, \.grid-card, \.table-scroll \{[^}]*min-width: 0;[^}]*max-width: 100%;/,
   'nested workspace cards must be allowed to shrink inside the responsive grid');
-assert.match(css, /prefers-color-scheme: dark/);
+assert.match(css, /html\[data-nexus-theme="dark"\] \.brand__logo--light \{ display: none; \}/);
+assert.match(css, /html\[data-nexus-theme="dark"\] \.brand__logo--dark \{ display: block; \}/);
+assert.doesNotMatch(css, /prefers-color-scheme: dark/);
 assert.match(css, /prefers-reduced-motion: reduce/);
 
 for (const required of [
@@ -640,8 +656,11 @@ assert.match(appSource, /persistPriceFields/,
   'Kakao notice preview price filters must persist the latest selection');
 assert.match(appSource, /data-output-estimate/);
 assert.match(appSource, /data-edit-estimate/);
-assert.match(appSource, /state\.estimates\.filter\(record => selectedIds\.has\(record\.estimateId\)\)/,
-  'bulk notice output must use only checked estimates in stored library order');
+assert.match(appSource, /function selectedEstimateRecords\(\)[\s\S]*availableCatalogs\(\)\.filter\(record => selectedIds\.has\(record\.estimateId\)\)/,
+  'estimate composition and outputs must use checked estimates in stored library order');
+assert.match(appSource, /function combinedEstimateRows\(records = selectedEstimateRecords\(\)\)/);
+assert.match(appSource, /function composeSelectedEstimates\(\)[\s\S]*startNewCatalog\(\)[\s\S]*current\.rows = rows/,
+  'selected saved estimates must compose a new editable estimate');
 assert.match(appSource, /noticeSources\.flatMap/,
   'Kakao notice preview must render selected companies in sequence');
 assert.match(css, /\.catalog-picker__heading, \.catalog-picker__row \{[^}]*grid-template-columns: minmax\(0, 1fr\) 76px 48px/,
@@ -649,10 +668,13 @@ assert.match(css, /\.catalog-picker__heading, \.catalog-picker__row \{[^}]*grid-
 assert.match(css, /\.estimate-notice-filters \{[^}]*position: absolute;/,
   'Kakao notice price filters must be placed over the preview header');
 const saveEstimateSource = appSource.match(/function validateEstimateDocument\(\)[\s\S]*?(?=\nasync function completeOrder\(\))/)?.[0] || '';
+const validateEstimateSource = appSource.match(/function validateEstimateDocument\(\)[\s\S]*?(?=\nfunction openEstimateSaveDialog\(\))/)?.[0] || '';
 assert.match(saveEstimateSource, /current\.rows\.findIndex\(row => !row\.itemCode && !row\.itemName\)/,
   'estimate saving must require a product identity');
 assert.doesNotMatch(saveEstimateSource, /row\.quantity/,
   'estimate saving must allow rows without quantity');
+assert.doesNotMatch(validateEstimateSource, /header\.customerId|배송 거래처를 선택하세요/,
+  'estimate saving must not require a customer');
 assert.match(appSource, /function applyFormLayout\(\)/);
 assert.match(appSource, /function headerFieldsForMode\(/);
 assert.match(appSource, /function voucherColumnsForMode\(/);
@@ -819,8 +841,8 @@ assert.match(appSource, /function masterFieldValue\(product, field\)/,
   'selected master products must populate fields from the complete master field dictionary');
 assert.match(appSource, /function startNewCatalog\(/);
 assert.match(appSource, /function availableCatalogs\(/);
-assert.match(appSource, /const defaultName = loadedRecord \? estimateTitle\(loadedRecord\) : current\.header\.customerName/,
-  'the estimate save modal must default to the loaded estimate name or current customer name');
+assert.match(appSource, /const defaultName = loadedRecord \? estimateTitle\(loadedRecord\) : \(current\.header\.customerName \|\| '새 견적서'\)/,
+  'a customer-free estimate must receive an editable new-estimate default name');
 assert.match(appSource, /requestedName === estimateTitle\(loadedRecord\)/,
   'saving a loaded estimate under the same name must update that record');
 assert.match(appSource, /sortOrder: updateLoadedRecord \? Number\(loadedRecord\.sortOrder/);
@@ -832,9 +854,10 @@ assert.match(appSource, /buildCatalogPriceSnapshot\(current\.rows\)/);
 assert.match(appSource, /'쇼핑몰업로드'/);
 assert.match(appSource, /'ERP업데이트'/);
 assert.match(appSource, /if \(output\.confirmData\.length > 1\)/);
-assert.match(appSource, /MerchOps F8 형식의 견적 Excel/);
+assert.match(appSource, /const sourceRows = selectedRecords\.length \? combinedEstimateRows\(selectedRecords\) : modeDraft\(\)\.rows/,
+  'Excel export must combine only the selected estimate product sets');
 assert.match(appSource, /const records = availableCatalogs\(\)/);
-assert.match(appSource, /견적서 선택 · 일괄/);
+assert.match(appSource, /견적서 선택 · 선택/);
 assert.match(appSource, /현재 이름을 유지하면 같은 견적서를 수정하고/);
 assert.match(appSource, /새 견적서를 목록 최하단에 저장했습니다/);
 assert.doesNotMatch(appSource, /카탈로그 선택|카탈로그 저장|삭제할 카탈로그|새 카탈로그를 생성/);
