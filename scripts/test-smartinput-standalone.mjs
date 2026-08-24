@@ -393,7 +393,9 @@ assert.match(html, /id="photoRotateLeft"/);
 assert.match(html, /id="photoRotateRight"/);
 assert.match(html, /id="photoOcrToggle"/);
 assert.match(html, /id="photoOcrPanel"[^>]*hidden/);
-assert.match(html, /id="photoResizer"[^>]*hidden/);
+assert.match(html, /id="photoResizer"[^>]*aria-label="파서 입력창과 입력표 폭 조절"/);
+assert.doesNotMatch(html, /id="photoResizer"[^>]*hidden/,
+  'the parser/workbench horizontal resizer must remain available on desktop');
 assert.match(html, /id="photoEmptyState"/);
 assert.match(html, /id="photoEmptySelectButton"/);
 assert.match(html, /id="photoViewerToolbar"[^>]*hidden/);
@@ -407,13 +409,14 @@ assert.doesNotMatch(html, /id="estimateListButton"|>견적 목록</);
 assert.match(html, /id="estimateOutputActions"[^>]*hidden/);
 assert.match(html, /id="estimateNoticeButton"[^>]*>카톡 공지 복사</);
 assert.match(html, /id="estimateExcelButton"[^>]*>견적 Excel</);
-assert.match(html, /id="catalogSelect"/);
-assert.match(html, /id="catalogNewButton"/);
+assert.match(html, /id="catalogPickerButton"/);
+assert.match(html, /id="catalogPickerMenu"[^>]*popover="auto"/);
+assert.match(html, /id="catalogPickerList"/);
 assert.match(html, /id="catalogSaveButton"/);
-assert.match(html, /id="catalogDeleteButton"/);
-assert.match(html, /견적서 · 거래처 자동 지정/);
-assert.match(html, /id="catalogSelect"[^>]*aria-label="거래처 견적서 불러오기"[^>]*><option value="">견적서 선택<\/option>/);
-assert.match(html, /id="catalogSaveButton"[^>]*>견적서 저장<\/button>/);
+assert.doesNotMatch(html, /id="catalogSelect"|id="catalogNewButton"|id="catalogDeleteButton"|id="catalogBatchButton"/);
+assert.match(html, /견적서 필터 · 거래처 자동 지정/);
+assert.match(html, /일괄출력/);
+assert.match(html, /id="catalogSaveButton"[^>]*>저장<\/button>/);
 assert.doesNotMatch(html, /카탈로그 · 거래처 자동 지정|카탈로그 선택|카탈로그 저장/);
 assert.ok(html.indexOf('class="app-voucher-switcher"') < html.indexOf('class="app-bar__actions"'), '전표 선택은 앱 헤더의 작업 버튼 앞에 있어야 한다.');
 assert.doesNotMatch(html, /class="field field--mode"/, '전표 선택은 본문 상단 정보 영역에 남아 있으면 안 된다.');
@@ -432,7 +435,9 @@ const relatedColumnAt = html.indexOf('<aside class="related-panel"');
 assert.ok(parserColumnAt >= 0 && parserColumnAt < workbenchColumnAt && workbenchColumnAt < relatedColumnAt,
   'desktop workspace must order the parser, workbench and related-app columns from left to right');
 
-assert.match(css, /grid-template-columns: 360px minmax\(0, 1fr\) 230px/);
+assert.match(css, /--parser-pane-width: clamp\(360px, 26vw, 760px\)/);
+assert.match(css, /grid-template-columns: minmax\(330px, min\(var\(--parser-pane-width\), calc\(100% - 806px\)\)\) 8px minmax\(0, 1fr\) 230px/,
+  'desktop parser width must remain adjustable while the table and related panel keep their own columns');
 assert.match(css, /--app-max: 2400px/);
 assert.match(css, /\.app-shell \{[^}]*calc\(100% - 32px\)/,
   'desktop SmartInput must use the viewport instead of leaving wide side margins');
@@ -455,9 +460,8 @@ assert.match(css, /\.photo-viewer\.has-image \.photo-viewer__viewport \{/);
 assert.match(css, /\.photo-empty-state \{/);
 assert.match(css, /\.analyze-button\[hidden\], \.parser-progress\[hidden\] \{ display: none; \}/);
 assert.match(css, /\.photo-viewer__region \{/);
-assert.match(css, /\.workspace\.has-photo-source \{[^}]*grid-template-columns: minmax\(370px, min\(var\(--photo-pane-width\), calc\(100% - 806px\)\)\) 8px minmax\(0, 1fr\) 230px;/,
-  'the saved photo pane width must be capped so the input grid cannot overflow its workbench');
-assert.match(css, /--photo-pane-width: clamp\(420px, 38vw, 760px\)/);
+assert.match(css, /\.workspace\.has-photo-source \{[^}]*grid-template-columns: minmax\(370px, min\(var\(--parser-pane-width\), calc\(100% - 806px\)\)\) 8px minmax\(0, 1fr\) 230px;/,
+  'photo input must share the saved parser width without overflowing its workbench');
 assert.match(css, /\.document-fields > \.field \{[^}]*grid-template-rows: 18px 42px 14px;/);
 assert.match(css, /\.document-fields \{[^}]*grid-template-columns: repeat\(3, minmax\(140px, 1fr\)\)/);
 assert.match(css, /\.workspace\.has-photo-source \.parser-card, \.workspace\.has-photo-source \.workbench \{[^}]*height: calc\(100vh - var\(--nexus-top-height\) - 88px\)/);
@@ -470,8 +474,10 @@ assert.match(css, /\.source-token--time/);
 assert.match(css, /\.source-token--collected/);
 assert.match(css, /\.source-token--unmatched/);
 assert.match(css, /\.save-state \{[^}]*flex: 0 0 64px;[^}]*width: 64px;[^}]*white-space: nowrap;/);
-assert.match(css, /@media \(max-width: 1480px\) \{[^}]*grid-template-columns: 340px minmax\(0, 1fr\)/,
-  'related apps must yield width to the input table on ordinary desktop screens');
+assert.match(css, /@media \(max-width: 1480px\) \{[^}]*grid-template-columns: minmax\(330px, min\(var\(--parser-pane-width\), calc\(100% - 502px\)\)\) 8px minmax\(0, 1fr\)/,
+  'related apps must yield width while the ordinary desktop parser remains resizable');
+assert.match(css, /@media \(max-width: 1240px\) \{[\s\S]*?\.photo-resizer, \.workspace\.has-photo-source \.photo-resizer \{ display: none; \}/,
+  'the horizontal resizer must disappear only after the workspace stacks');
 assert.match(css, /@media \(min-width: 1481px\) \{[\s\S]*?html, body \{[^}]*overflow: hidden;/,
   'wide desktop SmartInput must not create a page-level vertical scrollbar');
 assert.match(css, /@media \(min-width: 1481px\) \{[\s\S]*?\.workspace \{[^}]*height: 100%;[^}]*align-items: stretch;/,
@@ -619,10 +625,12 @@ assert.match(appSource, /const isTax = hasRelationship && group\?\.taxCustomerId
 assert.match(appSource, /dialog\.showModal\(\);[\s\S]*refreshCustomers\(\{ syncIfEmpty: true \}\)/, 'customer dialog must open before background master refresh completes');
 assert.match(appSource, /withTimeout\(listCustomers\(\{ includeInactive: false \}\), 5000/, 'startup customer loading must have a bounded wait');
 assert.doesNotMatch(appSource, /function openEstimateListDialog\(\)/);
-assert.match(appSource, /function deleteSelectedCatalog\(\)/);
 assert.match(appSource, /function openEstimateNoticePreview\(\)/);
 assert.match(appSource, /function exportEstimateExcel\(\)/);
-assert.match(appSource, /function saveEstimateDocument\(\)/);
+assert.match(appSource, /function openEstimateSaveDialog\(\)/);
+assert.match(appSource, /function openEstimateManageDialog\(record\)/);
+assert.match(appSource, /function normalizeEstimateOrder\(records = state\.estimates\)/);
+assert.match(appSource, /async function saveEstimateDocument\(catalogName\)/);
 assert.doesNotMatch(appSource, /data-settings-group="estimate-notice"/,
   'Kakao notice price filters must not remain buried in environment settings');
 assert.match(appSource, /data-notice-price-primary/);
@@ -630,18 +638,17 @@ assert.match(appSource, /data-notice-price-secondary/);
 assert.match(appSource, /사용 안 함/);
 assert.match(appSource, /persistPriceFields/,
   'Kakao notice preview price filters must persist the latest selection');
-assert.match(appSource, /function openEstimateBatchDialog\(\)/);
-assert.match(appSource, /state\.noticeEstimateIds\.filter[\s\S]*\.slice\(0, 3\)/,
-  'Kakao notice batch selection must keep at most three saved estimates');
-assert.match(appSource, /data-move-batch="up"/);
-assert.match(appSource, /data-move-batch="down"/);
+assert.match(appSource, /data-output-estimate/);
+assert.match(appSource, /data-edit-estimate/);
+assert.match(appSource, /state\.estimates\.filter\(record => selectedIds\.has\(record\.estimateId\)\)/,
+  'bulk notice output must use only checked estimates in stored library order');
 assert.match(appSource, /noticeSources\.flatMap/,
   'Kakao notice preview must render selected companies in sequence');
-assert.match(css, /\.estimate-batch-selected article \{/,
-  'selected notice companies must expose an ordered list');
+assert.match(css, /\.catalog-picker__heading, \.catalog-picker__row \{[^}]*grid-template-columns: minmax\(0, 1fr\) 76px 48px/,
+  'the estimate picker must expose name, bulk-output checkbox, and management controls');
 assert.match(css, /\.estimate-notice-filters \{[^}]*position: absolute;/,
   'Kakao notice price filters must be placed over the preview header');
-const saveEstimateSource = appSource.match(/async function saveEstimateDocument\(\)[\s\S]*?(?=\nasync function completeOrder\(\))/)?.[0] || '';
+const saveEstimateSource = appSource.match(/function validateEstimateDocument\(\)[\s\S]*?(?=\nasync function completeOrder\(\))/)?.[0] || '';
 assert.match(saveEstimateSource, /current\.rows\.findIndex\(row => !row\.itemCode && !row\.itemName\)/,
   'estimate saving must require a product identity');
 assert.doesNotMatch(saveEstimateSource, /row\.quantity/,
@@ -725,6 +732,10 @@ assert.match(appSource, /modeUi\(\)\.detailColumns = state\.photoView\.detailCol
 assert.match(appSource, /state\.photoView\.detailColumns = Boolean\(modeUi\(\)\.detailColumns\);[\s\S]*updateMethod\(modeDraft\(\)\.activeMethod/,
   'rendering a voucher mode must restore its saved detail-column layout');
 assert.match(appSource, /photoResizer\.addEventListener\('pointermove'/);
+assert.match(appSource, /photoResizer\.addEventListener\('keydown'[\s\S]*ArrowLeft[\s\S]*ArrowRight[\s\S]*applyParserPaneWidth/,
+  'the parser width resizer must also support precise left/right keyboard adjustment');
+assert.match(appSource, /state\.draft\.ui\.parserPaneWidth = width/,
+  'the adjusted parser width must persist in the draft UI state');
 assert.match(appSource, /if \(modeDraft\(\)\.activeMethod !== 'photo'\) updateMethod\('direct'\)/,
   '사진 분석 중 빈 행을 추가해도 원본 사진 작업영역을 유지해야 한다.');
 assert.match(appSource, /const DEFAULT_INPUT_ROW_ID = '__SMARTINPUT_DEFAULT_ROW__'/);
@@ -808,20 +819,27 @@ assert.match(appSource, /function masterFieldValue\(product, field\)/,
   'selected master products must populate fields from the complete master field dictionary');
 assert.match(appSource, /function startNewCatalog\(/);
 assert.match(appSource, /function availableCatalogs\(/);
+assert.match(appSource, /const defaultName = loadedRecord \? estimateTitle\(loadedRecord\) : current\.header\.customerName/,
+  'the estimate save modal must default to the loaded estimate name or current customer name');
+assert.match(appSource, /requestedName === estimateTitle\(loadedRecord\)/,
+  'saving a loaded estimate under the same name must update that record');
+assert.match(appSource, /sortOrder: updateLoadedRecord \? Number\(loadedRecord\.sortOrder/);
+assert.match(appSource, /: state\.estimates\.length \+ 1/,
+  'a differently named copy must append to the bottom of the estimate library');
+assert.match(appSource, /state\.estimates = normalizeEstimateOrder\(updateLoadedRecord[\s\S]*: \[\.\.\.state\.estimates, record\]\)/);
 assert.match(appSource, /previousPrices: priorPrices/);
 assert.match(appSource, /buildCatalogPriceSnapshot\(current\.rows\)/);
 assert.match(appSource, /'쇼핑몰업로드'/);
 assert.match(appSource, /'ERP업데이트'/);
 assert.match(appSource, /if \(output\.confirmData\.length > 1\)/);
 assert.match(appSource, /MerchOps F8 형식의 견적 Excel/);
-assert.match(appSource, /const records = availableCatalogs\(current\.header\)/);
-assert.match(appSource, /<option value="">견적서 선택<\/option>/);
-assert.match(appSource, /current\.catalogRecordId \? '수정 저장' : '견적서 저장'/);
-assert.match(appSource, /삭제할 견적서를 선택하세요/);
-assert.match(appSource, /새 견적서를 생성했습니다/);
+assert.match(appSource, /const records = availableCatalogs\(\)/);
+assert.match(appSource, /견적서 선택 · 일괄/);
+assert.match(appSource, /현재 이름을 유지하면 같은 견적서를 수정하고/);
+assert.match(appSource, /새 견적서를 목록 최하단에 저장했습니다/);
 assert.doesNotMatch(appSource, /카탈로그 선택|카탈로그 저장|삭제할 카탈로그|새 카탈로그를 생성/);
-assert.match(appSource, /return `\$\{customer\}\(\$\{count\.toLocaleString\('ko-KR'\)\}\)`/,
-  'catalog names must use the compact customer-name(row-count) format');
+assert.match(appSource, /String\(record\?\.catalogName \|\| ''\)\.trim\(\)/,
+  'catalog names must use the user-editable estimate name');
 assert.doesNotMatch(appSource, /\$\('catalogSelect'\)\.disabled = !current\.header\.customerId/);
 assert.match(appSource, /catalogDraft\.header\.customerId = linkedCustomer\?\.customerId \|\| catalogCustomerId\(record\)/);
 assert.match(appSource, /catalogDraft\.header\.customerName = customerName\(linkedCustomer\) \|\| catalogCustomerName\(record\)/);
