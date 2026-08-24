@@ -24,7 +24,8 @@ parseInlineScripts(parser, "SmartParser");
 JSON.parse(manifest);
 
 assert.match(merch, /ONEAPP MerchOps - Main Workspace \[v\d+\.\d+\.\d+_[^\]]+\]/);
-assert.match(parser, /ONEAPP MerchOps - Smart Parser \[v3\.\d+\.\d+/);
+assert.match(parser, /<title>Smart Parser<\/title>/);
+assert.match(parser, /v3\.\d+\.\d+ CatalogWarehousePricing/);
 
 assert.match(merch, /window\.hasMerchExistingWorktableRows =/);
 assert.match(merch, /const preserveExistingWorktable = window\.hasMerchExistingWorktableRows/);

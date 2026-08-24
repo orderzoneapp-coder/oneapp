@@ -41,6 +41,9 @@ jobs:
       - name: Test standalone SmartInput contract
         run: node scripts/test-smartinput-standalone.mjs
 
+      - name: Test SmartInput structured spreadsheet field mapping
+        run: node scripts/test-smartinput-structured-sheet-parser.mjs
+
       - name: Test SmartInput OCR arithmetic and total validation
         run: node scripts/test-smartinput-ocr.mjs
 

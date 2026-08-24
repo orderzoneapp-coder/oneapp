@@ -39,15 +39,14 @@ const v112ConfigVersion = "V1.a22.112_EvidenceReportPreflight";
 const datedV113Version =
   "V1.a22.115_InputPerformance · 2026-08-21 KST";
 const v114ConfigVersion = "V1.a22.115_InputPerformance";
+const hasCompatibleVersion = (datedVersion, configVersion) =>
+  source.split(datedVersion).length - 1 >= 2 &&
+  new RegExp(`version:\\s*'${configVersion}'`).test(source);
 const isCompatibleV110ThroughV113 =
-  (source.split(datedV110Version).length - 1 === 3 &&
-    new RegExp(`version:\\s*'${v110ConfigVersion}'`).test(source)) ||
-  (source.split(datedV111Version).length - 1 === 3 &&
-    new RegExp(`version:\\s*'${v111ConfigVersion}'`).test(source)) ||
-  (source.split(datedV112Version).length - 1 === 3 &&
-    new RegExp(`version:\\s*'${v112ConfigVersion}'`).test(source)) ||
-  (source.split(datedV113Version).length - 1 === 3 &&
-    new RegExp(`version:\\s*'${v114ConfigVersion}'`).test(source));
+  hasCompatibleVersion(datedV110Version, v110ConfigVersion) ||
+  hasCompatibleVersion(datedV111Version, v111ConfigVersion) ||
+  hasCompatibleVersion(datedV112Version, v112ConfigVersion) ||
+  hasCompatibleVersion(datedV113Version, v114ConfigVersion);
 if (isCompatibleV110ThroughV113) {
   const v110Analysis = section(
     "const executeAnalysis = useCallback",

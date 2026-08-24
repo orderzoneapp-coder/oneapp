@@ -72,7 +72,7 @@ for (const [name, source] of [
   assert.match(source, /<nexus-top app-id="orderq">[\s\S]*?<\/nexus-top>/, `${name} must load NEXUS TOP`);
   assert.match(source, /\/nexus\/common\/nexus-top\.js\?v=1\.3\.0/, `${name} must use the shared NEXUS TOP component`);
   assert.match(source, /NEXUS 메뉴를 불러오지 못했습니다/, `${name} must reserve a failure-isolated NEXUS fallback`);
-  assert.match(source, /brand-badge">v1\.63</, `${name} must show the current ORDER Q version`);
+  assert.match(source, /brand-badge">v1\.65</, `${name} must show the current ORDER Q version`);
 }
 
 const nexusApps = [

@@ -214,8 +214,8 @@ const expectedDisplayVersion =
   "V1.a22.115_InputPerformance · 2026-08-21 KST";
 assert.equal(
   source.split(expectedDisplayVersion).length - 1,
-  3,
-  "dated V113 version must appear at title, loader, and header",
+  2,
+  "dated V113 version must appear at loader and application header",
 );
 assert.match(source, /version:\s*'V1\.a22\.115_InputPerformance'/);
 
