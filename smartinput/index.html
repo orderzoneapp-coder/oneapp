@@ -150,8 +150,12 @@
         <section class="grid-card" aria-label="입력표">
           <h2 class="sr-only">입력표</h2>
           <div class="grid-toolbar">
-            <div class="grid-stats"><strong id="gridRowCount">0행</strong><span id="matchedCount">일치 0</span><span id="similarCount">확인 0</span><span id="failedCount">미인식 0</span><span id="duplicateCount">중복 가능 0</span></div>
-            <div class="grid-toolbar__actions"><button class="button button--quiet button--small" id="undoGridPasteButton" type="button" disabled>붙여넣기 취소</button><button class="button button--quiet button--small" id="deleteSelectedRows" type="button" disabled>선택 삭제</button><button class="button button--quiet button--small" id="detailColumnsButton" type="button" hidden>상세 열</button><button class="button button--quiet button--small" id="addRowButton" type="button">빈 행 추가</button></div>
+            <div class="grid-review-tools">
+              <label class="grid-search"><span class="sr-only">입력표 검색</span><input id="gridSearchInput" type="search" autocomplete="off" placeholder="상품명·코드·규격·거래처 검색"><button id="gridSearchClear" type="button" aria-label="검색 해제">×</button></label>
+              <div class="grid-stats"><strong id="gridRowCount">0행</strong><span id="gridSearchCount" hidden>검색 0행</span><span id="matchedCount">일치 0</span><span id="similarCount">확인 0</span><span id="failedCount">미인식 0</span><span id="duplicateCount">중복 가능 0</span></div>
+              <small id="voucherGroupSummary" class="voucher-group-summary"></small>
+            </div>
+            <div class="grid-toolbar__actions"><button class="button button--quiet button--small" id="uploadTemplateButton" type="button">업로드 양식</button><button class="button button--quiet button--small" id="undoGridPasteButton" type="button" disabled>붙여넣기 취소</button><button class="button button--quiet button--small" id="deleteSelectedRows" type="button" disabled>선택 삭제</button><button class="button button--quiet button--small" id="detailColumnsButton" type="button" hidden>상세 열</button><button class="button button--quiet button--small" id="addRowButton" type="button">빈 행 추가</button></div>
           </div>
           <div class="table-scroll" id="tableScroll" tabindex="0">
             <table>
@@ -187,7 +191,7 @@
   </main>
 
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
-  <script src="./smartinput-contract.js?v=0.4.14"></script>
-  <script type="module" src="./smartinput.js?v=0.4.29"></script>
+  <script src="./smartinput-contract.js?v=0.4.15"></script>
+  <script type="module" src="./smartinput.js?v=0.4.30"></script>
 </body>
 </html>

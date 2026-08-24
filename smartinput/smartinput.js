@@ -13,6 +13,15 @@ import { recognizeOcrDocument, verifiedRowsToParserLines } from './ocr-document-
 import { parseStructuredSheet } from './structured-sheet-parser.js?v=0.1.0';
 import { buildGridPastePlan } from './grid-clipboard.js?v=0.1.0';
 import {
+  buildMinimumUploadMatrix,
+  buildOrderGroupPayload,
+  decorateStructuredRows,
+  filterVoucherRows,
+  groupVoucherRows,
+  structuredFieldsForMode,
+  summarizeVoucherGroups
+} from './multivoucher-stage1.js?v=0.1.0';
+import {
   buildCatalogPriceSnapshot,
   priceSnapshotsEqual,
   buildKakaoNoticeRows,
@@ -61,6 +70,7 @@ const state = {
   pendingOcrReview: null,
   pendingSourceName: '',
   pendingStructuredImport: null,
+  gridSearch: '',
   sourceImages: { order: null, purchase: null, sale: null, estimate: null },
   sourceImageRecords: new Map(),
   selectedRowIds: new Set(),
@@ -185,6 +195,10 @@ function setSaveState(message = '', stateName = 'idle') {
 
 function saveDraftNow() {
   clearTimeout(state.saveTimer);
+  if (state.draft.activeMode !== 'estimate') {
+    modeDraft().voucherGroups = groupVoucherRows(state.draft.activeMode, modeDraft().rows, modeDraft().header)
+      .map(({ rows, ...group }) => group);
+  }
   state.draft.updatedAt = new Date().toISOString();
   modeDraft().updatedAt = state.draft.updatedAt;
   try {
@@ -307,13 +321,19 @@ function voucherColumnsForMode(mode = state.draft.activeMode) {
 function optionalProductFields() {
   const baseIds = new Set(contract.VOUCHER_COLUMN_DEFINITIONS.map(field => field.id));
   const selectedIds = new Set(voucherColumnsForMode());
-  return contract.PRODUCT_FIELD_DEFINITIONS.filter(field => !baseIds.has(field.id) && selectedIds.has(field.id));
+  const modeFields = new Map(structuredFieldsForMode(state.draft.activeMode, []).map(field => [field.id, field]));
+  return contract.PRODUCT_FIELD_DEFINITIONS
+    .filter(field => !baseIds.has(field.id) && selectedIds.has(field.id))
+    .map(field => modeFields.has(field.id) ? { ...field, label: modeFields.get(field.id).label } : field);
 }
 
 function layoutDefinitions(scope, customFields = state.settings.customFields || []) {
   const builtIn = scope === 'header' ? contract.HEADER_FIELD_DEFINITIONS : contract.PRODUCT_FIELD_DEFINITIONS;
+  const modeFields = scope === 'voucher'
+    ? new Map(structuredFieldsForMode(state.draft.activeMode, []).map(field => [field.id, field]))
+    : new Map();
   return [
-    ...builtIn,
+    ...builtIn.map(field => modeFields.has(field.id) ? { ...field, label: modeFields.get(field.id).label } : field),
     ...customFields.filter(field => field.scope === scope).map(field => ({
       ...field,
       group: scope === 'voucher' ? 'ADDITIONAL' : field.group,
@@ -989,6 +1009,7 @@ function applyCustomer(customer, { rematch = true, mappingSource = 'MANUAL', lea
   if (customer.customerId && !state.customers.some(item => item.customerId === customer.customerId)) state.customers.push(customer);
   const header = modeDraft().header;
   header.customerId = String(customer.customerId || '').trim();
+  header.customerCode = customerCode(customer);
   header.customerName = customerName(customer);
   header.customerMappingSource = mappingSource;
   $('customerInput').value = header.customerName;
@@ -1034,6 +1055,30 @@ function inferCustomer(rawText) {
     if (found) return found;
   }
   return null;
+}
+
+function resolveStage1RowReferences(rows = modeDraft().rows) {
+  const resolveRole = (row, prefix) => {
+    const idField = `${prefix}CustomerId`;
+    const codeField = `${prefix}CustomerCode`;
+    const nameField = `${prefix}CustomerName`;
+    const idKey = normalizedKey(row[idField]);
+    const codeKey = normalizedKey(row[codeField]);
+    const nameKey = normalizedKey(row[nameField]);
+    if (!idKey && !codeKey && !nameKey) return;
+    const customer = state.customers.find(candidate => (idKey && normalizedKey(candidate.customerId) === idKey)
+      || (codeKey && normalizedKey(customerCode(candidate)) === codeKey)
+      || (!idKey && !codeKey && nameKey && normalizedKey(customerName(candidate)) === nameKey));
+    if (!customer) return;
+    row[idField] = String(customer.customerId || '').trim();
+    row[codeField] = customerCode(customer);
+    row[nameField] = customerName(customer);
+  };
+  rows.forEach(row => {
+    resolveRole(row, 'row');
+    ['delivery', 'billing', 'supplier', 'sales'].forEach(prefix => resolveRole(row, prefix));
+  });
+  return rows;
 }
 
 function currentSourceType() {
@@ -2108,7 +2153,9 @@ function hydrateHeader() {
   const header = modeDraft().header;
   $('customerInput').value = header.customerName;
   $('customerInput').dataset.customerId = header.customerId;
-  $('deliveryDateInput').value = header.deliveryDate;
+  $('deliveryDateInput').value = state.draft.activeMode === 'order' || state.draft.activeMode === 'estimate'
+    ? header.deliveryDate
+    : (header.voucherDate || header.deliveryDate);
   $('warehouseInput').value = header.warehouseName;
   $('transactionTypeInput').value = header.transactionType || '기타';
   $('customerHint').textContent = header.customerId ? '등록 거래처 · 마스터 연결됨' : '거래처가 인식되지 않으면 이 입력란으로 이동합니다.';
@@ -2184,6 +2231,7 @@ function deleteSelectedGridRows() {
 
 function renderRows({ restoreFocus = true } = {}) {
   const rows = modeDraft().rows;
+  const visibleRows = filterVoucherRows(rows, state.gridSearch);
   const defaultRow = {
     rowId: DEFAULT_INPUT_ROW_ID,
     itemCode: '', itemName: '', secondaryName: '', searchInfo: '', specification: '', boxQuantity: '',
@@ -2193,7 +2241,8 @@ function renderRows({ restoreFocus = true } = {}) {
     matchStatus: state.busy && modeDraft().activeMethod === 'photo' ? 'ANALYZING' : 'EMPTY'
   };
   const displayedRows = rows.length ? rows : [defaultRow];
-  inputRows.innerHTML = displayedRows.map(row => {
+  const renderedRows = rows.length ? visibleRows : displayedRows;
+  inputRows.innerHTML = renderedRows.map(row => {
     const isDefault = row.rowId === DEFAULT_INPUT_ROW_ID;
     const amount = Number(row.quantity || 0) * Number(row.unitPrice || 0);
     const productCells = optionalProductFields().map(field => {
@@ -2250,7 +2299,13 @@ function renderRows({ restoreFocus = true } = {}) {
 
 function updateSummaries() {
   const summary = contract.summarizeRows(modeDraft().rows);
+  const visibleRows = filterVoucherRows(modeDraft().rows, state.gridSearch);
+  const groups = groupVoucherRows(state.draft.activeMode, modeDraft().rows, modeDraft().header);
+  const groupSummary = summarizeVoucherGroups(groups);
   $('gridRowCount').textContent = `${summary.total.toLocaleString('ko-KR')}행`;
+  $('gridSearchCount').hidden = !state.gridSearch;
+  $('gridSearchCount').textContent = `검색 ${visibleRows.length.toLocaleString('ko-KR')}행`;
+  $('voucherGroupSummary').textContent = state.draft.activeMode === 'estimate' || !modeDraft().rows.length ? '' : groupSummary.label;
   $('matchedCount').textContent = `일치 ${summary.matched.toLocaleString('ko-KR')}`;
   $('similarCount').textContent = `확인 ${summary.similar.toLocaleString('ko-KR')}`;
   $('failedCount').textContent = `미인식 ${summary.unresolved.toLocaleString('ko-KR')}`;
@@ -2293,7 +2348,15 @@ function renderMode() {
   });
   $('relatedModeLabel').textContent = selected.label;
   const estimateMode = selected.id === 'estimate';
-  $('customerFieldLabel').firstChild.nodeValue = estimateMode ? '거래처명 ' : '배송 거래처 ';
+  const modeLabels = selected.id === 'purchase'
+    ? { customer: '구매처 ', date: '구매일자', warehouse: '입고창고 ' }
+    : (selected.id === 'sale'
+      ? { customer: '판매처 ', date: '판매일자', warehouse: '출하창고 ' }
+      : { customer: estimateMode ? '거래처명 ' : '배송 거래처 ', date: '배송일자', warehouse: '출하창고 ' });
+  $('customerFieldLabel').firstChild.nodeValue = modeLabels.customer;
+  document.querySelector('[data-header-field="deliveryDate"] > span').textContent = modeLabels.date;
+  const warehouseLabel = document.querySelector('[data-header-field="warehouse"] > span');
+  if (warehouseLabel) warehouseLabel.innerHTML = `${modeLabels.warehouse}<em>필수</em>`;
   $('customerRequiredMark').hidden = estimateMode;
   $('customerInput').placeholder = estimateMode ? '선택 입력' : '거래처명 또는 코드';
   $('customerHint').textContent = estimateMode
@@ -2303,6 +2366,7 @@ function renderMode() {
   $('relatedEmpty').hidden = selected.id === 'order';
   $('estimateOutputActions').hidden = selected.id !== 'estimate';
   hydrateHeader();
+  $('gridSearchInput').value = state.gridSearch;
   if (removeParserArtifactRows(modeDraft())) scheduleSave();
   sourceTextInput.value = modeDraft().sourceText;
   state.photoView.detailColumns = Boolean(modeUi().detailColumns);
@@ -2335,6 +2399,7 @@ function setMode(mode) {
   state.pendingOcrReview = null;
   state.pendingSourceName = '';
   state.pendingStructuredImport = null;
+  state.gridSearch = '';
   saveDraftNow();
   renderMode();
 }
@@ -2842,22 +2907,30 @@ async function analyzeSource({ automatic = false } = {}) {
   try {
     let lines = [];
     let analyzedDocument = null;
-    const rawOrdererName = extractOrdererName(rawText);
+    const rawOrdererName = structuredImport ? '' : extractOrdererName(rawText);
     current.header.rawOrdererName = rawOrdererName;
-    const aliasResolution = resolveAliasCustomer(rawOrdererName, batch.sourceType);
-    if (current.header.customerId && aliasResolution?.customer?.customerId && aliasResolution.customer.customerId !== current.header.customerId) {
-      throw new Error(`현재 배송처와 다른 주문자명입니다. 주문을 합치지 않고 새로 작성으로 분리하세요: ${customerName(aliasResolution.customer)}`);
-    }
-    if (!current.header.customerId && aliasResolution) {
-      current.header.aliasMappingId = aliasResolution.mapping.aliasMappingId;
-      applyCustomer(aliasResolution.customer, { rematch: false, mappingSource: 'CONFIRMED_ALIAS', learnAlias: false });
-    } else if (!current.header.customerId) {
-      const inferred = inferCustomer(rawText);
-      if (inferred) applyCustomer(inferred, { rematch: false, mappingSource: 'MASTER_EXACT', learnAlias: false });
+    if (!structuredImport) {
+      const aliasResolution = resolveAliasCustomer(rawOrdererName, batch.sourceType);
+      if (current.header.customerId && aliasResolution?.customer?.customerId && aliasResolution.customer.customerId !== current.header.customerId) {
+        throw new Error(`현재 배송처와 다른 주문자명입니다. 주문을 합치지 않고 새로 작성으로 분리하세요: ${customerName(aliasResolution.customer)}`);
+      }
+      if (!current.header.customerId && aliasResolution) {
+        current.header.aliasMappingId = aliasResolution.mapping.aliasMappingId;
+        applyCustomer(aliasResolution.customer, { rematch: false, mappingSource: 'CONFIRMED_ALIAS', learnAlias: false });
+      } else if (!current.header.customerId) {
+        const inferred = inferCustomer(rawText);
+        if (inferred) applyCustomer(inferred, { rematch: false, mappingSource: 'MASTER_EXACT', learnAlias: false });
+      }
     }
 
     if (structuredImport) {
-      lines = structuredImport.rows.map((row, index) => ({
+      batch.sourceSheetName = structuredImport.sheetName;
+      batch.sourceDocumentKey = `${structuredImport.fileName || batch.batchId}:${structuredImport.sheetName}`;
+      lines = decorateStructuredRows(structuredImport.rows, {
+        sourceBatchId: batch.batchId,
+        sourceSheetName: structuredImport.sheetName,
+        sourceFingerprint: batch.contentHash
+      }).map((row, index) => ({
         ...row,
         sourceLineKey: `${batch.batchId}:sheet:${row.sourceLineNo || index + 1}`
       }));
@@ -2954,6 +3027,7 @@ async function analyzeSource({ automatic = false } = {}) {
     const otherRows = current.rows.filter(row => row.batchId !== batch.batchId);
     current.rows = [...otherRows.slice(0, insertionIndex), ...liveRows, ...otherRows.slice(insertionIndex)];
     current.rows.forEach(row => enrichRowFromUnifiedCatalog(row));
+    resolveStage1RowReferences(current.rows);
     current.rows = contract.markDuplicatePossibilities(current.rows);
     current.sourceText = rawText;
     current.delivery = { status: 'DRAFT', targetId: '', targetRecordId: '', deliveredAt: '' };
@@ -3022,7 +3096,7 @@ async function handleFile(file) {
         if (!workbook.Sheets[sheetName]?.['!ref']) return;
         const matrix = window.XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, raw: false, defval: '', blankrows: true });
         const parsed = parseStructuredSheet(matrix, {
-          fieldDefinitions: contract.PRODUCT_FIELD_DEFINITIONS,
+          fieldDefinitions: structuredFieldsForMode(state.draft.activeMode, contract.PRODUCT_FIELD_DEFINITIONS),
           numberParser: contract.numberOrNull
         });
         const candidate = { ...parsed, sheetName };
@@ -3614,6 +3688,17 @@ function downloadBlob(blob, fileName) {
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+function downloadMinimumUploadTemplate() {
+  const mode = state.draft.activeMode;
+  if (mode === 'estimate') return toast('견적서는 현재 견적 Excel 기능을 이용하세요.', 'error');
+  if (!window.XLSX?.utils?.book_new) return toast('Excel 생성 모듈을 불러오지 못했습니다.', 'error');
+  const workbook = window.XLSX.utils.book_new();
+  const sheet = window.XLSX.utils.aoa_to_sheet(buildMinimumUploadMatrix(mode));
+  window.XLSX.utils.book_append_sheet(workbook, sheet, contract.MODES[mode].label);
+  window.XLSX.writeFile(workbook, `스마트입력_${contract.MODES[mode].label}_최소업로드양식.xlsx`);
+  toast(`${contract.MODES[mode].label} 최소 업로드 양식을 생성했습니다.`, 'success');
+}
+
 async function copyNoticeCanvas(canvas, fileName) {
   const blob = await canvasBlob(canvas);
   if (navigator.clipboard?.write && window.ClipboardItem) {
@@ -3859,6 +3944,160 @@ async function saveEstimateDocument(catalogName) {
 }
 
 async function completeOrder() {
+  return completeOrderLegacy();
+}
+
+function orderGroupErrors(groups = []) {
+  const errors = [];
+  groups.forEach((group, index) => {
+    const label = `${index + 1}번 전표`;
+    if (!group.deliveryCustomerName) errors.push(`${label} 등록 거래처`);
+    if (!group.voucherDate) errors.push(`${label} 주문일자`);
+    if (!group.deliveryDate) errors.push(`${label} 배송일자`);
+    if (!group.warehouseId && !group.warehouseCode) errors.push(`${label} 출하창고`);
+    if (!group.rows.length) errors.push(`${label} 상품`);
+    group.rows.forEach((row, rowIndex) => {
+      if (!row.itemCode && !row.itemName) errors.push(`${label} ${rowIndex + 1}행 상품`);
+      if (row.quantity === null) errors.push(`${label} ${rowIndex + 1}행 수량`);
+      if (row.unitConversionStatus === 'REVIEW_REQUIRED') errors.push(`${label} ${rowIndex + 1}행 단위 환산`);
+    });
+  });
+  return errors;
+}
+
+function orderGroupCommonPayload(current, rawFingerprint) {
+  return {
+    orderDate: current.header.orderDate,
+    deliveryExpectedDate: current.header.deliveryDate,
+    customerId: current.header.customerId,
+    customerName: current.header.customerName,
+    warehouseId: current.header.warehouseId,
+    warehouseCode: current.header.warehouseCode,
+    warehouseName: current.header.warehouseName,
+    transactionType: current.header.transactionType,
+    customValues: { ...(current.header.customValues || {}) },
+    formLayoutSnapshot: {
+      customFields: (state.settings.customFields || []).map(field => ({ ...field })),
+      headerFields: [...headerFieldsForMode(current.mode)],
+      voucherColumns: [...voucherColumnsForMode(current.mode)],
+      headerFieldsByMode: Object.fromEntries(Object.keys(contract.MODES).map(mode => [mode, [...headerFieldsForMode(mode)]])),
+      voucherColumnsByMode: Object.fromEntries(Object.keys(contract.MODES).map(mode => [mode, [...voucherColumnsForMode(mode)]])),
+      columnWidths: { ...(state.settings.columnWidths || {}) }
+    },
+    sourceType: 'SMART_INPUT',
+    rawFingerprint,
+    intakeContractVersion: 'SMART_INPUT_V1',
+    inputChannel: 'SMART_INPUT',
+    actorName: 'SMART INPUT 관리자'
+  };
+}
+
+async function saveOrderGroups(current, groups, submittedAt) {
+  const batchText = current.batches.map(batch => batch.rawText).join('\n\n--- SMART INPUT BATCH ---\n\n');
+  const rawFingerprint = await sha256Text(batchText);
+  const common = orderGroupCommonPayload(current, rawFingerprint);
+  const results = [];
+  for (const group of groups) {
+    try {
+      const payload = buildOrderGroupPayload(group, common);
+      payload.items = payload.items.map((row, index) => {
+        const masterLinked = hasMasterProductIdentity(row);
+        return {
+          ...row,
+          lineNo: index + 1,
+          productId: masterLinked ? row.productId : null,
+          masterProductId: masterLinked ? row.masterProductId : null,
+          rawQuantity: row.rawQuantity,
+          rawUnit: row.rawUnit,
+          finalQuantity: row.quantity,
+          finalUnit: row.unit,
+          price: row.unitPrice,
+          supplyAmount: Number(row.quantity || 0) * Number(row.unitPrice || 0),
+          matchStatus: masterLinked ? 'MATCHED' : 'MATCH_FAILED',
+          matchSource: masterLinked ? 'SMART_INPUT_COMMON_MASTER' : 'SMART_INPUT_UNRESOLVED',
+          sourceLineKey: row.sourceLineKey || `${row.sourceBatchId}:${row.sourceRowNo || index + 1}`,
+          reviewStatus: masterLinked ? 'CONFIRMED' : 'PENDING',
+          productIdentityStatus: masterLinked ? 'MASTER_LINKED' : 'UNRESOLVED'
+        };
+      });
+      const result = await createOrder(payload);
+      let online = false;
+      try {
+        const sync = await syncAfterLocalMutation(result.order.orderId);
+        online = Boolean(sync?.online);
+      } catch (_) {}
+      results.push({ ok: true, group, result, online });
+    } catch (error) {
+      results.push({ ok: false, group, error });
+    }
+  }
+
+  const succeeded = results.filter(result => result.ok);
+  const failed = results.filter(result => !result.ok);
+  current.header.submittedAt = submittedAt.toISOString();
+  succeeded.forEach(({ group, result, online }) => appendDeliveryHistory({
+    status: 'SAVED',
+    targetId: 'orderq-vnext',
+    targetRecordId: result.order.orderId,
+    orderNo: result.order.orderNo,
+    deliveredAt: new Date().toISOString(),
+    online,
+    draftId: state.draft.draftId,
+    sourceBatchIds: [group.sourceBatchId],
+    orderDate: group.voucherDate,
+    customerId: group.deliveryCustomerId,
+    customerName: group.deliveryCustomerName,
+    rowCount: group.rows.length,
+    voucherGroupKey: group.voucherGroupKey
+  }));
+
+  if (failed.length) {
+    const failedKeys = new Set(failed.map(result => result.group.voucherGroupKey));
+    current.rows = current.rows.filter(row => failedKeys.has(buildVoucherGroupKeyForCurrentRow(row)));
+    current.voucherGroups = failed.map(result => result.group);
+    current.delivery = { status: 'PARTIAL', targetId: 'orderq-vnext', targetRecordId: '', deliveredAt: '' };
+    saveDraftNow();
+    renderMode();
+    const firstMessage = failed[0].error?.message || '저장 실패';
+    setAppStatus(`주문 ${succeeded.length}건 저장 완료 · 실패 ${failed.length}건은 입력표에 유지됩니다.`, 'warn');
+    toast(`${failed.length}건 저장 필요: ${firstMessage}`, 'error');
+    return;
+  }
+
+  const last = succeeded[succeeded.length - 1];
+  state.draft.ui.lastDelivery = last ? {
+    status: 'SAVED',
+    targetId: 'orderq-vnext',
+    targetRecordId: last.result.order.orderId,
+    orderNo: last.result.order.orderNo,
+    deliveredAt: new Date().toISOString(),
+    online: last.online
+  } : null;
+  const next = contract.createDraft().modes.order;
+  next.header.warehouseId = current.header.warehouseId;
+  next.header.warehouseCode = current.header.warehouseCode;
+  next.header.warehouseName = current.header.warehouseName;
+  next.header.transactionType = current.header.transactionType;
+  state.draft.modes.order = next;
+  state.gridPasteUndo = null;
+  state.sourceImages.order = null;
+  state.selectedRowIds.clear();
+  resetPhotoView();
+  state.pendingImageEvidence = null;
+  state.pendingOcrReview = null;
+  state.pendingSourceName = '';
+  state.pendingStructuredImport = null;
+  saveDraftNow();
+  renderMode();
+  setAppStatus(`주문 ${succeeded.length}건 저장 완료`);
+  toast(`전표 그룹별 주문 ${succeeded.length}건을 중복 없이 저장했습니다.`, 'success');
+}
+
+function buildVoucherGroupKeyForCurrentRow(row) {
+  return groupVoucherRows('order', [row], modeDraft().header)[0]?.voucherGroupKey || '';
+}
+
+async function completeOrderLegacy() {
   const current = modeDraft();
   if (state.draft.activeMode === 'estimate') return openEstimateSaveDialog();
   if (state.draft.activeMode !== 'order') {
@@ -3868,7 +4107,31 @@ async function completeOrder() {
   const submittedAt = new Date();
   current.header.recordedAt ||= submittedAt.toISOString();
   current.header.orderDate = contract.businessDate(current.header.recordedAt, state.settings.timezone);
+  current.header.voucherDate ||= current.header.orderDate;
   applyWarehouseMatch();
+  resolveStage1RowReferences(current.rows);
+  const groups = groupVoucherRows('order', current.rows, current.header);
+  const groupedInput = groups.length > 1 || current.rows.some(row => row.sourceDocumentKey || row.manualSplitKey
+    || row.rowCustomerCode || row.rowCustomerName || row.rowVoucherDate || row.rowDeliveryDate
+    || row.rowWarehouseCode || row.rowVoucherNo);
+  if (groupedInput) {
+    const errors = orderGroupErrors(groups);
+    if (errors.length) {
+      setAppStatus('다중 전표 정보를 확인하세요.', 'error');
+      return toast(`${errors[0]}을(를) 확인하세요.`, 'error');
+    }
+    if (!current.header.taxCustomerId && !window.confirm('세무 거래처가 지정되지 않았습니다. 배송처별 주문은 유지한 채 ORDER Q에 저장하시겠습니까?')) return;
+    state.busy = true;
+    renderDelivery();
+    setAppStatus(`전표 그룹 ${groups.length}건을 공통 주문서 원장에 저장하고 있습니다.`);
+    try {
+      await saveOrderGroups(current, groups, submittedAt);
+    } finally {
+      state.busy = false;
+      renderDelivery();
+    }
+    return;
+  }
   const deliveryDecision = updateDeliveryPolicy();
   if (!deliveryDecision?.valid) {
     $('deliveryDateInput').focus();
@@ -4229,6 +4492,17 @@ photoResizer.addEventListener('keydown', event => {
 $('analyzeButton').addEventListener('click', () => analyzeSource({ automatic: false }));
 $('clearParserButton').addEventListener('click', clearParserWorkspace);
 $('undoGridPasteButton').addEventListener('click', undoGridPaste);
+$('gridSearchInput').addEventListener('input', event => {
+  state.gridSearch = event.target.value;
+  renderRows({ restoreFocus: false });
+});
+$('gridSearchClear').addEventListener('click', () => {
+  state.gridSearch = '';
+  $('gridSearchInput').value = '';
+  renderRows({ restoreFocus: false });
+  $('gridSearchInput').focus();
+});
+$('uploadTemplateButton').addEventListener('click', downloadMinimumUploadTemplate);
 $('addRowButton').addEventListener('click', () => {
   if (modeDraft().activeMethod !== 'photo') updateMethod('direct');
   addDirectRow();
@@ -4238,6 +4512,7 @@ $('customerInput').addEventListener('input', event => {
   const header = modeDraft().header;
   if (event.target.value.trim() !== header.customerName) {
     header.customerId = '';
+    header.customerCode = '';
     header.customerName = event.target.value.trim();
     header.customerLinkGroupId = '';
     header.taxCustomerId = '';
@@ -4259,7 +4534,13 @@ $('customerInput').addEventListener('keydown', event => {
   }
 });
 $('deliveryDateInput').addEventListener('input', event => {
-  modeDraft().header.deliveryDate = event.target.value;
+  const header = modeDraft().header;
+  if (state.draft.activeMode === 'purchase' || state.draft.activeMode === 'sale') {
+    header.voucherDate = event.target.value;
+    header.deliveryDate = event.target.value;
+  } else {
+    header.deliveryDate = event.target.value;
+  }
   modeDraft().header.manualDeliveryOverride = true;
   updateDeliveryPolicy();
   scheduleSave();

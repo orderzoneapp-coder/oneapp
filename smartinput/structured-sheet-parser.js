@@ -1,5 +1,6 @@
 const DUPLICATED_FIELD_TERM = /(코드|번호|수량|단가|가격|품목|상품|이름|규격|메모)\1+/g;
-const FOOTER_LABEL = /^(?:합계|총계|소계|출력일시|출력시간|인쇄일시|작성일시)(?:\s|[:：]|$)/;
+const SUMMARY_LABEL = /^(?:합계|총계|소계)\s*[:：]?\s*$/;
+const FOOTER_LABEL = /^(?:출력일시|출력시간|인쇄일시|작성일시)(?:\s|[:：]|$)/;
 const PRINTED_AT = /^\d{4}[/.\-]\d{1,2}[/.\-]\d{1,2}(?:\s|\([^)]*\)).*(?:오전|오후|\d{1,2}:\d{2})/;
 
 function cellText(value) {
@@ -68,10 +69,12 @@ function isRepeatedHeader(row, fieldIndex) {
 }
 
 function isFooterIdentity(itemCode, itemName, rawRow) {
-  if (cellText(itemName)) return false;
-  const code = cellText(itemCode);
-  const firstValue = cellText((rawRow || []).find(value => cellText(value)));
-  return FOOTER_LABEL.test(code || firstValue) || PRINTED_AT.test(code || firstValue);
+  const identities = [
+    itemCode,
+    itemName,
+    (rawRow || []).find(value => cellText(value))
+  ].map(cellText).filter(Boolean);
+  return identities.some(value => SUMMARY_LABEL.test(value) || FOOTER_LABEL.test(value) || PRINTED_AT.test(value));
 }
 
 function numericValue(value, numberParser) {
@@ -108,8 +111,25 @@ export function parseStructuredSheet(matrix = [], {
   const fieldIndex = buildStructuredFieldIndex(fieldDefinitions);
   const invalidCells = [];
   const rows = [];
+  let sourceVoucherIndex = 1;
+  let boundaryPending = false;
   matrix.slice(header.rowIndex + 1).forEach((sourceRow, offset) => {
-    if (isRepeatedHeader(sourceRow, fieldIndex)) return;
+    if (isRepeatedHeader(sourceRow, fieldIndex)) {
+      if (rows.length) sourceVoucherIndex += 1;
+      boundaryPending = false;
+      return;
+    }
+    const hasSourceValue = (sourceRow || []).some(value => cellText(value));
+    if (!hasSourceValue) {
+      boundaryPending = Boolean(rows.length);
+      return;
+    }
+    const rawItemCode = sourceRow?.[header.mappings.find(mapping => mapping.fieldId === 'itemCode')?.columnIndex] ?? '';
+    const rawItemName = sourceRow?.[header.mappings.find(mapping => mapping.fieldId === 'itemName')?.columnIndex] ?? '';
+    if (isFooterIdentity(rawItemCode, rawItemName, sourceRow)) {
+      boundaryPending = Boolean(rows.length);
+      return;
+    }
     const values = {};
     const editedFields = {};
     header.mappings.forEach(mapping => {
@@ -137,13 +157,17 @@ export function parseStructuredSheet(matrix = [], {
     });
 
     if (!cellText(values.itemCode) && !cellText(values.itemName)) return;
-    if (isFooterIdentity(values.itemCode, values.itemName, sourceRow)) return;
+    if (boundaryPending) {
+      sourceVoucherIndex += 1;
+      boundaryPending = false;
+    }
     const sourceLineNo = header.rowIndex + offset + 2;
     rows.push({
       ...values,
       rawText: (sourceRow || []).map(cell => String(cell ?? '')).join('\t'),
       productText: values.itemName || '',
       sourceLineNo,
+      sourceVoucherIndex: Number(values.sourceVoucherIndex) || sourceVoucherIndex,
       editedFields,
       matchStatus: 'UNRESOLVED'
     });
