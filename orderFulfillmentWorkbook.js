@@ -50,6 +50,22 @@
   ]);
   const SALES_UPLOAD_BOLD_HEADER_INDEXES = Object.freeze([0, 4, 5, 8, 9, 11, 12, 14, 15]);
   const SALES_UPLOAD_REQUIRED_COLUMN_INDEXES = Object.freeze([4, 8, 9, 11, 12, 14, 15]);
+  const SALES_META_SCHEMA_VERSION = "ORDERQ_SALES_META_V1";
+  const SALES_META_RULE_VERSION = "SALE_QUANTITY_RULE_V1";
+  const SALES_META_SHEET_NAME = "_NEXUS_SALES_META";
+  const SALES_META_HEADERS = Object.freeze([
+    "schemaVersion", "ruleVersion", "planId", "sourceFingerprint", "basisDate", "sourceRowKey",
+    "sourceRowNumber", "sourceOccurrence", "visibleSheetName", "visibleRowNo", "sourceVoucherIndex",
+    "originSystem", "originTransactionId", "sourceDocumentKey", "sourceLineKey", "stableGroupKey",
+    "salesCustomerId", "salesCustomerRevision", "deliveryCustomerId", "deliveryCustomerRevision",
+    "billingCustomerId", "billingCustomerRevision", "productId", "productCode", "productMasterRevision",
+    "warehouseId", "warehouseCode", "warehouseMasterRevision", "sourceOrderId", "sourceOrderRevision",
+    "sourceOrderItemId", "sourceOrderItemRevision", "sourceDispatchId", "sourceDispatchRevision",
+    "sourceDispatchLineId", "sourceDispatchLineRevision", "suggestedActualQuantity", "suggestedActualUnit",
+    "suggestedBaseQuantity", "suggestedBaseUnit", "suggestedRecognizedOrderQuantity", "suggestedRecognizedUnit",
+    "suggestedActualToBaseFactor", "suggestedActualToRecognizedFactor", "conversionSource", "conversionRuleId",
+    "conversionRuleVersion", "priorAllocationRefs", "rowDigest",
+  ]);
 
   const COLORS = Object.freeze({
     navy: "153B55",
@@ -1228,8 +1244,7 @@
         ({ row }) =>
           String(row?.productCode || "").trim() &&
           typeof row?.quantity === "number" &&
-          Number.isFinite(row.quantity) &&
-          row.quantity !== 0,
+          Number.isFinite(row.quantity),
       )
       .sort((left, right) => {
         const customerOrder = String(left.row?.customer || "").localeCompare(
@@ -1240,6 +1255,72 @@
         return customerOrder || left.sourceIndex - right.sourceIndex;
       })
       .map(({ row }) => row);
+  }
+
+  function salesMetaDigestPairs(meta) {
+    return SALES_META_HEADERS.filter(header => header !== "rowDigest").map(header => {
+      const value = meta[header];
+      return [header, typeof value === "number" ? metaNumber(value) : metaText(value)];
+    });
+  }
+
+  function salesMetaRowDigest(meta) {
+    return requireCanonicalHash().canonicalSha256(salesMetaDigestPairs(meta));
+  }
+
+  function buildSalesMetaRows(workspace, sourceRows, visibleSheetName = "판매업로드") {
+    requireCanonicalHash();
+    const sidecar = workspace?.saleStage4Sidecar;
+    if (!sidecar || sidecar.schemaVersion !== "ORDERQ_SALE_SIDECAR_V1") return [];
+    const byJoin = new Map((sidecar.rows || []).map(row => [`${Number(row.sourceRowNumber)}:${Number(row.sourceOccurrence || 1)}`, row]));
+    const occurrences = new Map();
+    return sourceRows.map((row, index) => {
+      const sourceRowNumber = Number(row.sourceRowNumber || index + 2);
+      const sourceOccurrence = (occurrences.get(sourceRowNumber) || 0) + 1;
+      occurrences.set(sourceRowNumber, sourceOccurrence);
+      const identity = byJoin.get(`${sourceRowNumber}:${sourceOccurrence}`);
+      if (!identity || String(identity.linkStatus || "").startsWith("REVIEW_REQUIRED")) throw new Error("ORDERQ_SALE_META_IDENTITY_REQUIRED");
+      const actual = metaNumber(row.quantity);
+      const actualUnit = metaUpper(row.unit || row.sourceUnit);
+      const baseFactor = metaNumber(row.actualToBaseFactor ?? row.conversionFactor ?? 1);
+      const recognizedFactor = identity.linkStatus === "DIRECT_UNLINKED" ? 0 : metaNumber(row.actualToRecognizedFactor ?? 1);
+      if (!(baseFactor > 0) || !(recognizedFactor >= 0)) throw new Error("ORDERQ_SALE_META_CONVERSION_INVALID");
+      const sourceDocumentKey = `SALE:${canonicalHash.canonicalSha256({ contractKind:"SALE_STAGE4_V1", stableGroupKey:identity.stableGroupKey,
+        planId:sidecar.planId, sourceFingerprint:sidecar.sourceFingerprint, sourceVoucherIndex:identity.sourceVoucherIndex })}`;
+      const sourceLineKey = `${sourceDocumentKey}:LINE:${canonicalHash.canonicalSha256({ sourceRowKey:identity.sourceRowKey,
+        sourceOccurrence:identity.sourceOccurrence, productId:identity.productId || metaUpper(row.productCode), warehouseId:identity.warehouseId,
+        sourceOrderId:identity.orderId, sourceOrderItemId:identity.orderItemId, sourceDispatchId:identity.dispatchId, sourceDispatchLineId:identity.dispatchLineId })}`;
+      const refs = [...(Array.isArray(row.priorAllocationRefs) ? row.priorAllocationRefs : [])]
+        .sort((left, right) => metaText(left.allocationEventId).localeCompare(metaText(right.allocationEventId)));
+      const meta = {
+        schemaVersion:SALES_META_SCHEMA_VERSION, ruleVersion:SALES_META_RULE_VERSION,
+        planId:metaText(sidecar.planId), sourceFingerprint:metaText(sidecar.sourceFingerprint), basisDate:metaText(sidecar.basisDate),
+        sourceRowKey:identity.sourceRowKey, sourceRowNumber, sourceOccurrence, visibleSheetName, visibleRowNo:index + 2,
+        sourceVoucherIndex:Number(identity.sourceVoucherIndex), originSystem:"ORDER_Q", originTransactionId:metaText(sidecar.planId),
+        sourceDocumentKey, sourceLineKey, stableGroupKey:identity.stableGroupKey,
+        salesCustomerId:identity.salesCustomerId, salesCustomerRevision:metaNumber(identity.salesCustomerRevision || 0),
+        deliveryCustomerId:identity.deliveryCustomerId, deliveryCustomerRevision:metaNumber(identity.deliveryCustomerRevision || 0),
+        billingCustomerId:identity.billingCustomerId, billingCustomerRevision:metaNumber(identity.billingCustomerRevision || 0),
+        productId:identity.productId, productCode:metaUpper(row.productCode), productMasterRevision:metaNumber(identity.productMasterRevision || 0),
+        warehouseId:identity.warehouseId, warehouseCode:metaUpper(row.warehouseCode || row.warehouse), warehouseMasterRevision:metaNumber(identity.warehouseMasterRevision || 0),
+        sourceOrderId:identity.orderId, sourceOrderRevision:metaNumber(identity.orderRevision || 0),
+        sourceOrderItemId:identity.orderItemId, sourceOrderItemRevision:metaNumber(identity.orderItemRevision || 0),
+        sourceDispatchId:identity.dispatchId, sourceDispatchRevision:identity.dispatchId ? metaNumber(identity.dispatchRevision || 0) : "",
+        sourceDispatchLineId:identity.dispatchLineId, sourceDispatchLineRevision:identity.dispatchLineId ? metaNumber(identity.dispatchLineRevision || 0) : "",
+        suggestedActualQuantity:actual, suggestedActualUnit:actualUnit, suggestedBaseQuantity:metaNumber(actual * baseFactor),
+        suggestedBaseUnit:metaUpper(row.baseUnit || actualUnit), suggestedRecognizedOrderQuantity:metaNumber(actual * recognizedFactor),
+        suggestedRecognizedUnit:metaUpper(row.recognizedUnit || actualUnit), suggestedActualToBaseFactor:baseFactor,
+        suggestedActualToRecognizedFactor:recognizedFactor, conversionSource:metaUpper(row.conversionSource || "ORDER_Q"),
+        conversionRuleId:metaText(row.conversionRuleId || "SALE_DEFAULT"), conversionRuleVersion:metaText(row.conversionRuleVersion || SALES_META_RULE_VERSION),
+        priorAllocationRefs:canonicalHash.canonicalJson(refs),
+      };
+      return { ...meta, rowDigest:salesMetaRowDigest(meta) };
+    });
+  }
+
+  function buildSalesMetaSheet(workspace, sourceRows, XLSX, visibleSheetName = "판매업로드") {
+    const rows = buildSalesMetaRows(workspace, sourceRows, visibleSheetName);
+    return XLSX.utils.aoa_to_sheet([SALES_META_HEADERS, ...rows.map(row => SALES_META_HEADERS.map(header => row[header] ?? ""))]);
   }
 
   function salesUploadSupplyAmount(row) {
@@ -1521,6 +1602,7 @@
       XLSX,
       PURCHASE_META_SHEET_NAME,
     );
+    appendVeryHiddenSheet(workbook, buildSalesMetaSheet(workspace, getSalesUploadRows(workspace), XLSX, "판매업로드"), XLSX, SALES_META_SHEET_NAME);
     const allocationLastColumn = columnName(
       XLSX.utils.decode_range(allocationSheet["!ref"]).e.c,
     );
@@ -1558,6 +1640,10 @@
     PURCHASE_UPLOAD_HEADERS,
     SALES_UPLOAD_SCHEMA_VERSION,
     SALES_UPLOAD_HEADERS,
+    SALES_META_SCHEMA_VERSION,
+    SALES_META_RULE_VERSION,
+    SALES_META_SHEET_NAME,
+    SALES_META_HEADERS,
     getOutputFileName,
     getPurchaseUploadRows,
     getSalesUploadRows,
@@ -1570,6 +1656,9 @@
     purchaseMetaRowDigest,
     buildPurchaseUploadWorkbook,
     buildSalesUploadSheet,
+    buildSalesMetaRows,
+    buildSalesMetaSheet,
+    salesMetaRowDigest,
     writeWorkbook,
     writeStandardWorkbook,
     downloadWorkbook,

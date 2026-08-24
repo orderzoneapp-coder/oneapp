@@ -1,0 +1,11 @@
+import assert from 'node:assert/strict';
+import { buildOfficialSaleEditCommand, mergeOfficialSaleConflictEdits, normalizeOfficialSaleEditLines, officialSaleEvidence } from '../orderq/sale-official-editor.js';
+const line={salesLineId:'L',lineIdentityId:'I',actualQuantity:2,actualToBaseFactor:10,actualToRecognizedFactor:2,unitPrice:100,orderLinkMode:'ORDER_Q'};
+assert.deepEqual(normalizeOfficialSaleEditLines([line]).map(row=>[row.baseQuantity,row.recognizedOrderQuantity,row.supplyAmount]),[[20,4,200]]);
+assert.throws(()=>normalizeOfficialSaleEditLines([{...line,actualQuantity:''}]),/QUANTITY_REQUIRED/);
+const document={salesDocumentId:'SD',revision:2,billingCustomerId:'B',sourceType:'ORDER_Q'};
+assert.equal(buildOfficialSaleEditCommand({action:'correct',document,lines:[line],reason:'정정',occurredAt:'2026-08-25T00:00:00Z'}).commandType,'CORRECT_SALE');
+assert.equal(buildOfficialSaleEditCommand({action:'reverse',document,lines:[line],reason:'취소',occurredAt:'2026-08-25T00:00:00Z'}).commandType,'REVERSE_SALE');
+const merged=mergeOfficialSaleConflictEdits({document:{billingCustomerId:'B2'},lines:[{...line,actualQuantity:3}]},{document,activeLines:[line]});assert.equal(merged.document.billingCustomerId,'B2');assert.equal(merged.activeLines[0].actualQuantity,3);
+assert.equal(officialSaleEvidence({activeLines:[line],orderEvents:[{eventId:'E',eventType:'SALES_TRANSFER_ALLOCATED',detail:{}}]}).orderEvents.length,1);
+console.log('ORDER Q stage4 sale query/correction tests passed');

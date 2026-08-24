@@ -10,7 +10,7 @@ const ORDERQ_SYNC_SCHEMA = 'ONEAPP_ORDERQ_SYNC_V1';
 const ORDERQ_SYNC_MAX_PUSH = 100;
 const ORDERQ_SYNC_MAX_PULL = 500;
 const ORDERQ_SHEET_SCHEMA_PROPERTY = 'ONEAPP_ORDERQ_SHEET_SCHEMA_VERSION';
-const ORDERQ_SHEET_SCHEMA_VERSION = '7';
+const ORDERQ_SHEET_SCHEMA_VERSION = '8';
 const ORDERQ_CUTOVER_MODE_PROPERTY = 'ONEAPP_ORDERQ_CUTOVER_MODE';
 const ORDERQ_CUTOVER_SAFE_MODE = 'SHADOW';
 const ORDERQ_CUTOVER_WRITE_MODES = Object.freeze(['PILOT_WRITE', 'VNEXT_PRIMARY']);
@@ -23,6 +23,9 @@ const ORDERQ_CUSTOMER_INCOMPLETE_IMPORT_STATUSES = Object.freeze(['PREPARED', 'P
 const ORDERQ_STAGE3_DEPLOYMENT_ID_PROPERTY = 'ONEAPP_ORDERQ_STAGE3_DEPLOYMENT_ID';
 const ORDERQ_STAGE3_DEPLOYMENT_VERSION_PROPERTY = 'ONEAPP_ORDERQ_STAGE3_DEPLOYMENT_VERSION';
 const ORDERQ_STAGE3_GIT_COMMIT_PROPERTY = 'ONEAPP_ORDERQ_STAGE3_GIT_COMMIT';
+const ORDERQ_STAGE4_DEPLOYMENT_ID_PROPERTY = 'ONEAPP_ORDERQ_STAGE4_DEPLOYMENT_ID';
+const ORDERQ_STAGE4_DEPLOYMENT_VERSION_PROPERTY = 'ONEAPP_ORDERQ_STAGE4_DEPLOYMENT_VERSION';
+const ORDERQ_STAGE4_GIT_COMMIT_PROPERTY = 'ONEAPP_ORDERQ_STAGE4_GIT_COMMIT';
 
 function orderQM10CutoverMode() {
   const properties = PropertiesService.getScriptProperties();
@@ -75,7 +78,8 @@ const ORDERQ_SHEETS = Object.freeze({
   M9_COMMAND: 'ORDERQ_M9_COMMAND',
   M9_META: 'ORDERQ_M9_META',
   M9_CHANGE: 'ORDERQ_M9_CHANGE',
-  M9_TXN_LOG: 'ORDERQ_M9_TXN_LOG'
+  M9_TXN_LOG: 'ORDERQ_M9_TXN_LOG',
+  M9_SOURCE_CLAIM: 'ORDERQ_M9_SOURCE_CLAIM'
 });
 
 const ORDERQ_HEADERS = Object.freeze({
@@ -114,7 +118,9 @@ const ORDERQ_HEADERS = Object.freeze({
   M9_COMMAND: ['idempotencyKey', 'commandType', 'aggregateId', 'expectedRevision', 'fingerprint', 'status', 'leaseToken', 'deviceId', 'resultJson', 'updatedAt', 'payloadJson'],
   M9_META: ['key', 'value', 'updatedAt', 'payloadJson'],
   M9_CHANGE: ['sequence', 'deviceId', 'commandId', 'entityType', 'entityId', 'revision', 'payloadJson', 'appliedAt'],
-  M9_TXN_LOG: ['txnId', 'idempotencyKey', 'status', 'previousJson', 'nextJson', 'error', 'updatedAt']
+  M9_TXN_LOG: ['txnId', 'idempotencyKey', 'status', 'previousJson', 'nextJson', 'error', 'updatedAt'],
+  M9_SOURCE_CLAIM: ['claimKey', 'ownerCommandId', 'ownerContract', 'aggregateId', 'fingerprint', 'leaseToken',
+    'leaseExpiresAt', 'status', 'preparedAt', 'committedAt', 'releasedAt', 'releaseReason', 'payloadJson']
 });
 
 function orderQEnsureSheet(ss, key) {
@@ -914,6 +920,16 @@ function orderQM9Text(value) {
   return value === undefined || value === null ? '' : String(value).trim();
 }
 
+function orderQM9EffectiveOrderQuantity(order, item) {
+  const status = orderQM9Text(order && (order.orderStatus || order.cancelType)).toUpperCase();
+  const match = orderQM9Text(item && item.matchStatus).toUpperCase();
+  if (status === 'FULL_CANCEL' || match === 'CANCELLED' || (item && item.active === false)) return 0;
+  const raw = item && (item.finalQuantity != null ? item.finalQuantity : item.rawQuantity != null ? item.rawQuantity : item.quantity);
+  const ordered = Number(raw || 0);
+  const cancelled = Math.max(0, Number(item && item.cancelledQuantity || 0));
+  return Math.max(0, (Number.isFinite(ordered) ? ordered : 0) - (Number.isFinite(cancelled) ? cancelled : 0));
+}
+
 function orderQM9CanonicalText(value) {
   return String(value === undefined || value === null ? '' : value).replace(/\r\n?/g, '\n').normalize('NFC').trim();
 }
@@ -1225,6 +1241,114 @@ function orderQM9WriteCommand(ss, command) {
   return command;
 }
 
+function orderQM9SaleClaimOwner(command) {
+  const intent = command && command.intent || {};
+  return {
+    ownerCommandId: orderQM9Text(command && command.idempotencyKey),
+    ownerContract: `${orderQM9Text(intent.commandContract).toUpperCase()}:${orderQM9Text(intent.contractKind || intent.document && intent.document.contractKind).toUpperCase()}`,
+    aggregateId: orderQM9Text(command && command.aggregateId),
+    fingerprint: orderQM9Text(command && command.fingerprint),
+    leaseToken: orderQM9Text(command && command.leaseToken),
+    leaseExpiresAt: orderQM9Text(command && command.leaseExpiresAt)
+  };
+}
+
+function orderQM9SaleSourceClaimKeys(command) {
+  const commandType = orderQM9Text(command && command.commandType).toUpperCase();
+  const intent = command && command.intent || {};
+  const document = intent.document || {};
+  const keys = [];
+  const add = value => { const key = orderQM9Text(value); if (key) keys.push(key); };
+  if (commandType === 'CONFIRM_DISPATCH') {
+    const dispatchId = orderQM9Text(intent.dispatchId || document.dispatchId || command.aggregateId);
+    (intent.lines || document.lines || []).forEach(line => add(`SALE:DISPATCH:${dispatchId}:${orderQM9Text(line.dispatchLineId || line.sourceDispatchLineId)}`));
+  } else if (['POST_SALE', 'CORRECT_SALE', 'REVERSE_SALE'].indexOf(commandType) >= 0
+    && orderQM9Text(intent.contractKind || document.contractKind) === 'SALE_STAGE4_V1') {
+    add(`SALE:SOURCE:${orderQM9Text(intent.sourceDocumentKey || document.sourceDocumentKey)}`);
+    add(`SALE:TX:${orderQM9Text(intent.originSystem || document.originSystem).toUpperCase()}:${orderQM9Text(intent.originTransactionId || document.originTransactionId)}:${Number(intent.sourceVoucherIndex || document.sourceVoucherIndex || 0)}`);
+    (intent.lines || []).forEach(line => {
+      const dispatchId = orderQM9Text(line.sourceDispatchId);
+      const dispatchLineId = orderQM9Text(line.sourceDispatchLineId);
+      if (dispatchId && dispatchLineId) add(`SALE:DISPATCH:${dispatchId}:${dispatchLineId}`);
+      (line.reversalSourceAllocations || []).forEach(ref => add(`SALE:ALLOCATION:${orderQM9Text(ref.allocationEventId)}`));
+      (line.restorationSourceReversals || []).forEach(ref => add(`SALE:REVERSAL:${orderQM9Text(ref.reversalEventId)}`));
+    });
+  }
+  return Array.from(new Set(keys.filter(key => !/:$/.test(key)))).sort(orderQM9CodePointCompare);
+}
+
+function orderQM9ReadSourceClaim(ss, claimKey) {
+  return orderQReadPayloadById(orderQEnsureSheet(ss, 'M9_SOURCE_CLAIM'), orderQM9Text(claimKey));
+}
+
+function orderQM9WriteSourceClaim(ss, claim) {
+  orderQWriteRow(orderQEnsureSheet(ss, 'M9_SOURCE_CLAIM'), claim.claimKey, [
+    claim.claimKey, claim.ownerCommandId || '', claim.ownerContract || '', claim.aggregateId || '', claim.fingerprint || '',
+    claim.leaseToken || '', claim.leaseExpiresAt || '', claim.status || '', claim.preparedAt || '', claim.committedAt || '',
+    claim.releasedAt || '', claim.releaseReason || '', JSON.stringify(claim)
+  ]);
+  return claim;
+}
+
+function orderQM9PrepareSourceClaims(ss, command, nowMillis) {
+  const keys = orderQM9SaleSourceClaimKeys(command);
+  if (!keys.length) return [];
+  const owner = orderQM9SaleClaimOwner(command);
+  const occurrence = key => key.indexOf('SALE:SOURCE:') === 0 || key.indexOf('SALE:TX:') === 0 || key.indexOf('SALE:DISPATCH:') === 0;
+  const inspected = keys.map(key => ({ key, prior: orderQM9ReadSourceClaim(ss, key) }));
+  inspected.forEach(({ key, prior }) => {
+    if (!prior || prior.status === 'RELEASED') return;
+    const sameLineage = prior.ownerContract === owner.ownerContract && prior.aggregateId === owner.aggregateId;
+    if (prior.status === 'COMMITTED' && occurrence(key) && sameLineage) return;
+    if (prior.status === 'PREPARED' && Date.parse(prior.leaseExpiresAt) <= nowMillis) return;
+    if (prior.ownerCommandId === owner.ownerCommandId && prior.fingerprint !== owner.fingerprint) {
+      throw new Error(`ORDERQ_CENTRAL_IDEMPOTENCY_CONFLICT:${owner.ownerCommandId}`);
+    }
+    if (prior.ownerCommandId === owner.ownerCommandId && prior.fingerprint === owner.fingerprint) return;
+    throw new Error(`ORDERQ_CENTRAL_SOURCE_CLAIM_CONFLICT:${key}`);
+  });
+  const preparedAt = new Date(nowMillis).toISOString();
+  keys.forEach(key => {
+    const prior = orderQM9ReadSourceClaim(ss, key);
+    if (prior && prior.status === 'COMMITTED' && occurrence(key)
+      && prior.ownerContract === owner.ownerContract && prior.aggregateId === owner.aggregateId) return;
+    orderQM9WriteSourceClaim(ss, { claimKey: key, ...owner, status: 'PREPARED', preparedAt,
+      committedAt: '', releasedAt: '', releaseReason: '', resourceClaim: !occurrence(key) });
+  });
+  return keys;
+}
+
+function orderQM9ReleaseSourceClaims(ss, command, reason, atMillis) {
+  orderQM9SaleSourceClaimKeys(command).forEach(key => {
+    const claim = orderQM9ReadSourceClaim(ss, key);
+    if (claim && claim.status === 'PREPARED' && claim.ownerCommandId === command.idempotencyKey) {
+      orderQM9WriteSourceClaim(ss, { ...claim, status: 'RELEASED', releasedAt: new Date(atMillis).toISOString(), releaseReason: reason });
+    }
+  });
+}
+
+function orderQM9VerifyAndCommitSourceClaims(ss, command, atMillis) {
+  const owner = orderQM9SaleClaimOwner(command);
+  orderQM9SaleSourceClaimKeys(command).forEach(key => {
+    const claim = orderQM9ReadSourceClaim(ss, key);
+    const occurrence = key.indexOf('SALE:SOURCE:') === 0 || key.indexOf('SALE:TX:') === 0 || key.indexOf('SALE:DISPATCH:') === 0;
+    const lineageCommitted = claim && claim.status === 'COMMITTED' && occurrence
+      && claim.ownerContract === owner.ownerContract && claim.aggregateId === owner.aggregateId;
+    if (!lineageCommitted && (!claim || claim.status !== 'PREPARED' || claim.ownerCommandId !== owner.ownerCommandId
+      || claim.fingerprint !== owner.fingerprint || claim.leaseToken !== owner.leaseToken)) {
+      throw new Error(`ORDERQ_CENTRAL_SOURCE_CLAIM_CONFLICT:${key}`);
+    }
+  });
+  orderQM9SaleSourceClaimKeys(command).forEach(key => {
+    const claim = orderQM9ReadSourceClaim(ss, key);
+    if (!claim || claim.status === 'COMMITTED') return;
+    const occurrence = key.indexOf('SALE:SOURCE:') === 0 || key.indexOf('SALE:TX:') === 0 || key.indexOf('SALE:DISPATCH:') === 0;
+    orderQM9WriteSourceClaim(ss, occurrence
+      ? { ...claim, status: 'COMMITTED', committedAt: new Date(atMillis).toISOString() }
+      : { ...claim, status: 'RELEASED', releasedAt: new Date(atMillis).toISOString(), releaseReason: 'COMMITTED' });
+  });
+}
+
 function orderQM9MetaNumber(ss, key) {
   const row = orderQReadPayloadById(orderQEnsureSheet(ss, 'M9_META'), key);
   return Number(row && row.value || 0);
@@ -1426,6 +1550,14 @@ function orderQM9VerifyOfficialCommitState(ss, transaction) {
     return { complete: false, changes: [] };
   }
   const command = orderQM9ReadCommand(ss, transaction.idempotencyKey);
+  const claimsComplete = orderQM9SaleSourceClaimKeys(command || {}).every(key => {
+    const claim = orderQM9ReadSourceClaim(ss, key);
+    const occurrence = key.indexOf('SALE:SOURCE:') === 0 || key.indexOf('SALE:TX:') === 0 || key.indexOf('SALE:DISPATCH:') === 0;
+    return claim && (occurrence
+      ? claim.status === 'COMMITTED' && claim.aggregateId === command.aggregateId
+      : claim.status === 'RELEASED' && claim.releaseReason === 'COMMITTED');
+  });
+  if (!claimsComplete) return { complete: false, changes: [] };
   const audit = orderQM9VerifyOfficialAudit(ss, { ...transaction, status: 'COMMITTED' }, command);
   return { complete: audit.complete, changes: audit.changes };
 }
@@ -1440,6 +1572,7 @@ function orderQM9RollbackOfficialTransaction(ss, transaction, options) {
   const bundle = orderQM9ReadOfficialChunkPayload(ss, transaction, previousSummary.previousChunks);
   const previous = Array.isArray(bundle && bundle.entities) ? bundle.entities : [];
   const previousCommand = bundle && bundle.command;
+  const previousSourceClaims = Array.isArray(bundle && bundle.sourceClaims) ? bundle.sourceClaims : [];
   if (previous.length !== Number(previousSummary.previousEntityCount || 0)
     || orderQM9OfficialMutationKeyDigest(previous.map(row => ({
       entityType: row.entityType,
@@ -1448,7 +1581,9 @@ function orderQM9RollbackOfficialTransaction(ss, transaction, options) {
       payload: row.value && row.value.payload || {}
     }))) !== previousSummary.previousEntityKeyDigest
     || orderQM9OfficialPayloadDigest(previous) !== previousSummary.previousEntityDigest
-    || orderQM9OfficialPayloadDigest(previousCommand) !== previousSummary.previousCommandDigest) {
+    || orderQM9OfficialPayloadDigest(previousCommand) !== previousSummary.previousCommandDigest
+    || (previousSummary.previousSourceClaimDigest
+      && orderQM9OfficialPayloadDigest(previousSourceClaims) !== previousSummary.previousSourceClaimDigest)) {
     throw new Error(`ORDERQ_CENTRAL_OFFICIAL_RECOVERY_PREVIOUS_INVALID:${transaction.txnId}`);
   }
   previous.forEach(entry => {
@@ -1468,6 +1603,10 @@ function orderQM9RollbackOfficialTransaction(ss, transaction, options) {
   }
   if (previousCommand) orderQM9WriteCommand(ss, previousCommand);
   else orderQM9DeleteRowsByFirstColumn(orderQEnsureSheet(ss, 'M9_COMMAND'), [transaction.idempotencyKey]);
+  previousSourceClaims.forEach(entry => {
+    if (entry.value) orderQM9WriteSourceClaim(ss, entry.value);
+    else orderQM9DeleteRowsByFirstColumn(orderQEnsureSheet(ss, 'M9_SOURCE_CLAIM'), [entry.claimKey]);
+  });
   if (orderQM9Text(options && options.failureAt).toUpperCase() === 'STATE_RESTORED') {
     throw new Error('ORDERQ_CENTRAL_OFFICIAL_ROLLBACK_INTERRUPTED:STATE_RESTORED');
   }
@@ -1835,6 +1974,7 @@ function orderQM9ExpireStaleLeases(ss, nowMillis) {
         command.status = 'EXPIRED';
         command.expiredAt = new Date(nowMillis).toISOString();
         orderQM9WriteCommand(ss, command);
+        orderQM9ReleaseSourceClaims(ss, command, 'LEASE_EXPIRED', nowMillis);
       }
     } catch (error) {}
   });
@@ -1864,6 +2004,7 @@ function orderQM9Prepare(ss, payload) {
   const commandType = orderQM9Text(payload.commandType).toUpperCase();
   orderQM10AssertOfficialWriteEnabled(commandType);
   orderQM9ValidatePurchaseMasters(ss, payload);
+  orderQM9ValidateSaleMasters(ss, payload);
   const aggregateId = orderQM9Text(payload.aggregateId);
   const expectedRevision = Number(payload.expectedRevision);
   const targetType = orderQM9TargetType(commandType);
@@ -1907,12 +2048,19 @@ function orderQM9Prepare(ss, payload) {
   const leaseToken = `LEASE-${Utilities.getUuid()}`;
   const preparedAt = new Date(preparedAtMillis).toISOString();
   const leaseExpiresAt = new Date(preparedAtMillis + ORDERQ_M9_LEASE_DURATION_MS).toISOString();
-  orderQM9WriteCommand(ss, {
+  const preparedCommand = {
     idempotencyKey, commandType, aggregateId, expectedRevision, fingerprint,
     status: 'PREPARED', leaseToken, deviceId: orderQM9Text(payload.deviceId), intent: payload.intent || null,
     preparedAt, leaseExpiresAt,
     inventoryResourceFingerprint: orderQM9InventoryResourceFingerprint(ss)
-  });
+  };
+  orderQM9WriteCommand(ss, preparedCommand);
+  try { orderQM9PrepareSourceClaims(ss, preparedCommand, preparedAtMillis); }
+  catch (error) {
+    orderQM9ReleaseSourceClaims(ss, preparedCommand, 'PREPARE_FAILED', preparedAtMillis);
+    orderQM9WriteCommand(ss, { ...preparedCommand, status: 'ABORTED', abortReason: String(error.message || error), abortedAt: preparedAt });
+    throw error;
+  }
   return { duplicate: false, committed: false, leaseToken, leaseExpiresAt, fingerprint, serverRevision: expectedRevision };
 }
 
@@ -1949,6 +2097,58 @@ function orderQM9ValidatePurchaseMasters(ss, payload) {
       || !Number.isSafeInteger(warehouseRevision) || warehouseRevision <= 0
       || productRevision < Number(product.revision || 0) || warehouseRevision < Number(warehouse.revision || 0)) {
       throw new Error(`ORDERQ_PURCHASE_MASTER_REVISION_STALE:${orderQM9Text(line.sourceLineKey)}`);
+    }
+  });
+}
+
+function orderQM9ValidateSaleMasters(ss, payload) {
+  const commandType = orderQM9Text(payload && payload.commandType).toUpperCase();
+  const intent = payload && payload.intent || {};
+  const document = intent.document || {};
+  if (['POST_SALE', 'CORRECT_SALE'].indexOf(commandType) < 0
+    || orderQM9Text(intent.contractKind || document.contractKind) !== 'SALE_STAGE4_V1') return;
+  ['sales', 'delivery', 'billing'].forEach(role => {
+    const id = orderQM9Text(document[`${role}CustomerId`]);
+    const master = id ? orderQReadPayloadById(orderQEnsureSheet(ss, 'CUSTOMER'), id) : null;
+    if (!master || orderQM9Text(master.status || 'ACTIVE').toUpperCase() !== 'ACTIVE'
+      || orderQM9Text(master.qualityStatus).toUpperCase() === 'SUPERSEDED') throw new Error(`ORDERQ_SALE_CUSTOMER_MASTER_INVALID:${id}`);
+    if (Number(document[`${role}CustomerRevision`] || 0) !== Number(master.revision || master.masterRevision || 0)) {
+      throw new Error(`ORDERQ_SALE_SOURCE_REVISION_STALE:${role}CustomerId`);
+    }
+  });
+  (intent.lines || []).forEach(line => {
+    const product = orderQM9ReadEntity(ss, 'PRODUCT', orderQM9Text(line.productId));
+    const warehouse = orderQM9ReadEntity(ss, 'WAREHOUSE', orderQM9Text(line.warehouseId));
+    if (!product || product.payload && product.payload.active === false
+      || orderQM9Text(product.status || product.payload && product.payload.status || 'ACTIVE').toUpperCase() !== 'ACTIVE') throw new Error(`ORDERQ_SALE_PRODUCT_MASTER_INVALID:${orderQM9Text(line.productId)}`);
+    if (!warehouse || warehouse.payload && warehouse.payload.active === false
+      || orderQM9Text(warehouse.status || warehouse.payload && warehouse.payload.status || 'ACTIVE').toUpperCase() !== 'ACTIVE') throw new Error(`ORDERQ_SALE_WAREHOUSE_MASTER_INVALID:${orderQM9Text(line.warehouseId)}`);
+    if (Number(line.productMasterRevision || 0) !== Number(product.revision || 0)
+      || Number(line.warehouseMasterRevision || 0) !== Number(warehouse.revision || 0)) throw new Error(`ORDERQ_SALE_SOURCE_REVISION_STALE:${orderQM9Text(line.sourceLineKey)}`);
+    const mode = orderQM9Text(line.orderLinkMode || 'DIRECT').toUpperCase();
+    if (mode === 'DIRECT') {
+      if (orderQM9Text(line.sourceOrderId || line.sourceOrderItemId || line.sourceDispatchId || line.sourceDispatchLineId)
+        || !orderQM9SameNumber(line.recognizedOrderQuantity, 0)) throw new Error(`ORDERQ_SALE_DIRECT_ORDER_LINK_FORBIDDEN:${orderQM9Text(line.sourceLineKey)}`);
+      return;
+    }
+    const order = orderQM9ReadEntity(ss, 'ORDER', orderQM9Text(line.sourceOrderId));
+    const item = orderQM9ReadEntity(ss, 'ORDER_ITEM', orderQM9Text(line.sourceOrderItemId));
+    if (!order || !item || item.payload && orderQM9Text(item.payload.orderId) !== orderQM9Text(line.sourceOrderId)
+      || orderQM9Text(item.payload && (item.payload.productId || item.payload.productCode)) !== orderQM9Text(line.productId || line.productCode)) {
+      throw new Error(`ORDERQ_SALE_ORDER_LINK_INVALID:${orderQM9Text(line.sourceLineKey)}`);
+    }
+    if (orderQM9Text(order.payload && order.payload.customerId) !== orderQM9Text(document.deliveryCustomerId)) throw new Error(`ORDERQ_SALE_DELIVERY_ORDER_CUSTOMER_MISMATCH:${orderQM9Text(line.sourceLineKey)}`);
+    if (Number(line.sourceOrderRevision || 0) !== Number(order.revision || 0)
+      || Number(line.sourceOrderItemRevision || 0) !== Number(item.revision || 0)) throw new Error(`ORDERQ_SALE_SOURCE_REVISION_STALE:${orderQM9Text(line.sourceLineKey)}`);
+    const dispatchId = orderQM9Text(line.sourceDispatchId); const dispatchLineId = orderQM9Text(line.sourceDispatchLineId);
+    if (!!dispatchId !== !!dispatchLineId) throw new Error(`ORDERQ_SALE_DISPATCH_LINK_INVALID:${orderQM9Text(line.sourceLineKey)}`);
+    if (dispatchId) {
+      const dispatch = orderQM9ReadEntity(ss, 'DISPATCH_DECISION', dispatchId);
+      const dispatchLine = orderQM9ReadEntity(ss, 'DISPATCH_LINE', dispatchLineId);
+      if (!dispatch || !dispatchLine || orderQM9Text(dispatchLine.payload && dispatchLine.payload.dispatchId) !== dispatchId
+        || orderQM9Text(dispatchLine.payload && dispatchLine.payload.orderItemId) !== orderQM9Text(line.sourceOrderItemId)
+        || Number(line.sourceDispatchRevision || 0) !== Number(dispatch.revision || 0)
+        || Number(line.sourceDispatchLineRevision || 0) !== Number(dispatchLine.revision || 0)) throw new Error(`ORDERQ_SALE_DISPATCH_LINK_INVALID:${orderQM9Text(line.sourceLineKey)}`);
     }
   });
 }
@@ -2410,11 +2610,15 @@ function orderQM9ValidateOfficialVoucher(command, mutations, existingRows) {
           && orderQM9Text(candidate.payload && candidate.payload.detail && candidate.payload.detail.allocationEventId) === allocationId)
           .reduce((sum, candidate) => sum + Number(candidate.payload.detail.transferredQty || 0), 0);
         const negativePost = command.commandType === 'POST_SALE';
+        const richRef = (Array.isArray(eventLine.payload.reversalSourceAllocations) ? eventLine.payload.reversalSourceAllocations : [])
+          .find(ref => orderQM9Text(ref.allocationEventId) === allocationId);
         const allocationLinkInvalid = negativePost
           ? orderQM9Text(allocation && allocation.payload && allocation.payload.detail && allocation.payload.detail.productId) !== orderQM9Text(eventLine.payload.productId)
-            || orderQM9Text(allocation && allocation.payload && allocation.payload.detail && allocation.payload.detail.lineIdentityId) !== orderQM9Text(eventLine.payload.lineIdentityId)
             || (orderQM9Text(allocation && allocation.payload && allocation.payload.detail && allocation.payload.detail.warehouseId)
               && orderQM9Text(allocation.payload.detail.warehouseId) !== orderQM9Text(eventLine.payload.warehouseId))
+            || (richRef && (orderQM9Text(richRef.sourceSalesDocumentId) !== orderQM9Text(allocation && allocation.payload && allocation.payload.detail && allocation.payload.detail.salesDocumentId)
+              || orderQM9Text(richRef.sourceSalesLineId) !== orderQM9Text(allocation && allocation.payload && allocation.payload.detail && allocation.payload.detail.salesLineId)
+              || orderQM9Text(richRef.sourceLineIdentityId) !== orderQM9Text(allocation && allocation.payload && allocation.payload.detail && allocation.payload.detail.lineIdentityId)))
           : orderQM9Text(allocation && allocation.payload && allocation.payload.detail && allocation.payload.detail.salesDocumentId) !== command.aggregateId
             || orderQM9Text(allocation && allocation.payload && allocation.payload.detail && allocation.payload.detail.salesLineId) !== orderQM9Text(detail.salesLineId);
         if (!allocation || orderQM9Text(allocation.payload && allocation.payload.eventType).toUpperCase() !== 'SALES_TRANSFER_ALLOCATED'
@@ -2434,7 +2638,15 @@ function orderQM9ValidateOfficialVoucher(command, mutations, existingRows) {
         .reduce((sum, candidate) => sum + (orderQM9Text(candidate.payload.eventType).toUpperCase() === 'SALES_TRANSFER_REVERSED' ? -1 : 1) * Number(candidate.payload.detail.transferredQty || 0), 0);
       const commandAllocated = orderEvents.filter(candidate => orderQM9Text(candidate.payload.detail && candidate.payload.detail.orderItemId) === itemId)
         .reduce((sum, candidate) => sum + (orderQM9Text(candidate.payload.eventType).toUpperCase() === 'SALES_TRANSFER_REVERSED' ? -1 : 1) * Number(candidate.payload.detail.transferredQty || 0), 0);
-      const ordered = Math.abs(Number(item && item.payload && (item.payload.finalQuantity ?? item.payload.rawQuantity ?? item.payload.quantity) || 0));
+      const order = (existingRows || []).find(candidate => candidate.entityType === 'ORDER'
+        && candidate.entityId === orderQM9Text(item && item.payload && item.payload.orderId));
+      const orderPayload = order && order.payload || {};
+      const itemPayload = item && item.payload || {};
+      const cancelled = Math.max(0, Number(itemPayload.cancelledQuantity || 0));
+      const rawOrdered = Number(itemPayload.finalQuantity ?? itemPayload.rawQuantity ?? itemPayload.quantity ?? 0);
+      const ordered = (orderQM9Text(orderPayload.orderStatus || orderPayload.cancelType).toUpperCase() === 'FULL_CANCEL'
+        || orderQM9Text(itemPayload.status).toUpperCase() === 'CANCELLED' || itemPayload.active === false)
+        ? 0 : Math.max(0, (Number.isFinite(rawOrdered) ? rawOrdered : 0) - (Number.isFinite(cancelled) ? cancelled : 0));
       if (!item || existingAllocated + commandAllocated > ordered + 1e-9 || existingAllocated + commandAllocated < -1e-9) {
         throw new Error(`ORDERQ_CENTRAL_ORDER_ALLOCATION_LIMIT:${itemId}`);
       }
@@ -2559,32 +2771,42 @@ function orderQM9ValidateOfficialVoucher(command, mutations, existingRows) {
     const priorOrderEvents=(existingRows||[]).filter(row=>row.entityType==='ORDER_EVENT').map(row=>row.payload);
     const allocations=priorOrderEvents.filter(row=>orderQM9Text(row.eventType).toUpperCase()==='SALES_TRANSFER_ALLOCATED');
     const priorReversals=priorOrderEvents.filter(row=>orderQM9Text(row.eventType).toUpperCase()==='SALES_TRANSFER_REVERSED');
-    const descriptor=(source,qty,ordinal,allocationEventId)=>({eventType:qty>0?'SALES_TRANSFER_ALLOCATED':'SALES_TRANSFER_REVERSED',orderId:orderQM9Text(source.sourceOrderId),orderItemId:orderQM9Text(source.sourceOrderItemId),salesLineId:orderQM9Text(source.salesLineId),transferredQty:Math.abs(Number(qty)),allocationEventId:orderQM9Text(allocationEventId),effectOrdinal:ordinal});
+    const restorationEvents=allocations.filter(row=>orderQM9Text(row.detail&&row.detail.restoresReversalEventId));
+    const descriptor=(source,qty,ordinal,allocationEventId,subtype,restoresReversalEventId)=>({eventType:qty>0?'SALES_TRANSFER_ALLOCATED':'SALES_TRANSFER_REVERSED',orderId:orderQM9Text(source.sourceOrderId),orderItemId:orderQM9Text(source.sourceOrderItemId),salesLineId:orderQM9Text(source.salesLineId),transferredQty:Math.abs(Number(qty)),allocationEventId:orderQM9Text(allocationEventId),allocationKind:qty>0?orderQM9Text(subtype||'ORDINARY'):'',reversalKind:qty<0?orderQM9Text(subtype||'CORRECTION'):'',restoresReversalEventId:orderQM9Text(restoresReversalEventId),effectOrdinal:ordinal});
     const reverseQuantity=(source,qty,ordinalStart,explicitOnly)=>{
       let remaining=Math.abs(Number(qty||0));const effects=[];
-      const explicitIds=new Set([].concat(Array.isArray(source.allocationEventIds)?source.allocationEventIds:[],source.allocationEventId||[]).map(orderQM9Text).filter(Boolean));
+      const rich=Array.isArray(source.reversalSourceAllocations)?source.reversalSourceAllocations:[];
+      const explicitIds=new Set([].concat(rich.map(row=>row.allocationEventId),Array.isArray(source.allocationEventIds)?source.allocationEventIds:[],source.allocationEventId||[]).map(orderQM9Text).filter(Boolean));
       const candidates=allocations.filter(row=>{
         const detail=row.detail||{};
         if(explicitOnly)return explicitIds.has(orderQM9Text(row.eventId));
         return orderQM9Text(row.orderId)===orderQM9Text(source.sourceOrderId)&&orderQM9Text(detail.orderItemId)===orderQM9Text(source.sourceOrderItemId)
           &&orderQM9Text(detail.salesDocumentId)===command.aggregateId&&orderQM9Text(detail.salesLineId)===orderQM9Text(source.salesLineId);
-      }).map(row=>({row,remaining:Number(row.detail&&row.detail.transferredQty||0)-priorReversals.filter(reversal=>orderQM9Text(reversal.detail&&reversal.detail.allocationEventId)===orderQM9Text(row.eventId)).reduce((sum,reversal)=>sum+Number(reversal.detail&&reversal.detail.transferredQty||0),0)}))
+      }).map(row=>({row,remaining:Number(row.detail&&row.detail.transferredQty||0)-priorReversals.filter(reversal=>orderQM9Text(reversal.detail&&reversal.detail.allocationEventId)===orderQM9Text(row.eventId)).reduce((sum,reversal)=>sum+Number(reversal.detail&&reversal.detail.transferredQty||0),0)+restorationEvents.filter(restore=>priorReversals.some(reversal=>orderQM9Text(reversal.eventId)===orderQM9Text(restore.detail&&restore.detail.restoresReversalEventId)&&orderQM9Text(reversal.detail&&reversal.detail.allocationEventId)===orderQM9Text(row.eventId))).reduce((sum,restore)=>sum+Number(restore.detail&&restore.detail.transferredQty||0),0)}))
         .filter(row=>row.remaining>1e-9).sort((a,b)=>orderQM9Text(b.row.createdAt).localeCompare(orderQM9Text(a.row.createdAt))||orderQM9Text(b.row.eventId).localeCompare(orderQM9Text(a.row.eventId)));
-      candidates.forEach(candidate=>{if(remaining<=1e-9)return;const amount=Math.min(remaining,candidate.remaining);effects.push(descriptor(source,-amount,ordinalStart+effects.length,candidate.row.eventId));remaining-=amount;});
+      candidates.forEach(candidate=>{if(remaining<=1e-9)return;const detail=candidate.row.detail||{};const ref=rich.find(row=>orderQM9Text(row.allocationEventId)===orderQM9Text(candidate.row.eventId));if(orderQM9Text(candidate.row.orderId)!==orderQM9Text(source.sourceOrderId)||orderQM9Text(detail.orderItemId)!==orderQM9Text(source.sourceOrderItemId)||(orderQM9Text(detail.productId)&&orderQM9Text(detail.productId)!==orderQM9Text(source.productId))||(orderQM9Text(detail.warehouseId)&&orderQM9Text(detail.warehouseId)!==orderQM9Text(source.warehouseId))||(ref&&(orderQM9Text(ref.sourceSalesDocumentId)!==orderQM9Text(detail.salesDocumentId)||orderQM9Text(ref.sourceSalesLineId)!==orderQM9Text(detail.salesLineId)||orderQM9Text(ref.sourceLineIdentityId)!==orderQM9Text(detail.lineIdentityId))))throw new Error(`ORDERQ_CENTRAL_ORDER_ALLOCATION_LINK_INVALID:${command.aggregateId}`);const requested=ref?Number(ref.reversalQuantity||ref.residualQuantity||0):remaining;const amount=Math.min(remaining,candidate.remaining,requested>0?requested:remaining);effects.push(descriptor(source,-amount,ordinalStart+effects.length,candidate.row.eventId,explicitOnly?'NEGATIVE_SALE':'CORRECTION',''));remaining-=amount;});
       if(remaining>1e-9)throw new Error(`ORDERQ_CENTRAL_ORDER_ALLOCATION_BALANCE_INSUFFICIENT:${command.aggregateId}`);
       return effects;
     };
+    const restorationResiduals=source=>{const refs=Array.isArray(source.restorationSourceReversals)?source.restorationSourceReversals:[];return priorReversals.filter(row=>orderQM9Text(row.detail&&row.detail.reversalKind)==='NEGATIVE_SALE'&&orderQM9Text(row.detail&&row.detail.salesDocumentId)===command.aggregateId&&orderQM9Text(row.detail&&row.detail.salesLineId)===orderQM9Text(source.salesLineId)).filter(row=>!refs.length||refs.some(ref=>orderQM9Text(ref.reversalEventId)===orderQM9Text(row.eventId))).map(row=>({row,remaining:Number(row.detail&&row.detail.transferredQty||0)-restorationEvents.filter(restore=>orderQM9Text(restore.detail&&restore.detail.restoresReversalEventId)===orderQM9Text(row.eventId)).reduce((sum,restore)=>sum+Number(restore.detail&&restore.detail.transferredQty||0),0)})).filter(row=>row.remaining>1e-9).sort((a,b)=>orderQM9Text(a.row.eventId).localeCompare(orderQM9Text(b.row.eventId)));};
+    const restoreQuantity=(source,qty,ordinalStart)=>{let remaining=Math.abs(Number(qty||0));const effects=[];restorationResiduals(source).forEach(candidate=>{if(remaining<=1e-9)return;const amount=Math.min(remaining,candidate.remaining);effects.push(descriptor(source,amount,ordinalStart+effects.length,'','REVERSAL_RESTORE',candidate.row.eventId));remaining-=amount;});if(remaining>1e-9)throw new Error(`ORDERQ_CENTRAL_ORDER_RESTORATION_BALANCE_INSUFFICIENT:${command.aggregateId}`);return effects;};
+    const applyQuantity=(source,qty,ordinal)=>Number(qty||0)<0?reverseQuantity(source,qty,ordinal,true):(Number(qty||0)?[descriptor(source,qty,ordinal,'','ORDINARY','')]:[]);
+    const undoQuantity=(source,qty,ordinal)=>Number(qty||0)<0?restoreQuantity(source,qty,ordinal):reverseQuantity(source,qty,ordinal,false);
     const identities=new Set([].concat(Array.from(beforeByIdentity.keys()),Array.from(afterByIdentity.keys())));
     identities.forEach(identity=>{
       const beforeLine=beforeByIdentity.get(identity);const afterLine=afterByIdentity.get(identity);
-      if(String(command.commandType||'').indexOf('POST_')===0){const qty=Number(afterLine.recognizedOrderQuantity||0);expectedOrderEffects.push(...(qty<0?reverseQuantity(afterLine,qty,1,true):qty?[descriptor(afterLine,qty,1,'')]:[]));return;}
-      if(reverse){expectedOrderEffects.push(...reverseQuantity(beforeLine,Number(beforeLine.recognizedOrderQuantity||0),1,false));return;}
+      if(String(command.commandType||'').indexOf('POST_')===0){expectedOrderEffects.push(...applyQuantity(afterLine,Number(afterLine.recognizedOrderQuantity||0),1));return;}
+      if(reverse){expectedOrderEffects.push(...undoQuantity(beforeLine,Number(beforeLine.recognizedOrderQuantity||0),1));return;}
       const sameLink=beforeLine&&afterLine&&orderQM9Text(beforeLine.orderLinkMode).toUpperCase()===orderQM9Text(afterLine.orderLinkMode).toUpperCase()&&orderQM9Text(beforeLine.sourceOrderId)===orderQM9Text(afterLine.sourceOrderId)&&orderQM9Text(beforeLine.sourceOrderItemId)===orderQM9Text(afterLine.sourceOrderItemId);
-      if(!sameLink){const oldEffects=beforeLine&&orderQM9Text(beforeLine.orderLinkMode).toUpperCase()==='ORDER_Q'?reverseQuantity(beforeLine,Number(beforeLine.recognizedOrderQuantity||0),1,false):[];expectedOrderEffects.push(...oldEffects);if(afterLine&&orderQM9Text(afterLine.orderLinkMode).toUpperCase()==='ORDER_Q'){const qty=Number(afterLine.recognizedOrderQuantity||0);expectedOrderEffects.push(...(qty<0?reverseQuantity(afterLine,qty,oldEffects.length+1,true):qty?[descriptor(afterLine,qty,oldEffects.length+1,'')]:[]));}return;}
-      const delta=Number(afterLine&&afterLine.recognizedOrderQuantity||0)-Number(beforeLine&&beforeLine.recognizedOrderQuantity||0);expectedOrderEffects.push(...(delta<0?reverseQuantity(beforeLine,delta,1,false):delta?[descriptor(afterLine||beforeLine,delta,1,'')]:[]));
+      if(!sameLink){const oldEffects=beforeLine&&orderQM9Text(beforeLine.orderLinkMode).toUpperCase()==='ORDER_Q'?undoQuantity(beforeLine,Number(beforeLine.recognizedOrderQuantity||0),1):[];expectedOrderEffects.push(...oldEffects);if(afterLine&&orderQM9Text(afterLine.orderLinkMode).toUpperCase()==='ORDER_Q')expectedOrderEffects.push(...applyQuantity(afterLine,Number(afterLine.recognizedOrderQuantity||0),oldEffects.length+1));return;}
+      const before=Number(beforeLine&&beforeLine.recognizedOrderQuantity||0),after=Number(afterLine&&afterLine.recognizedOrderQuantity||0);
+      if(before<0&&after<=0){expectedOrderEffects.push(...(Math.abs(after)<Math.abs(before)?restoreQuantity(beforeLine,Math.abs(before)-Math.abs(after),1):reverseQuantity(afterLine||beforeLine,Math.abs(after)-Math.abs(before),1,true)));return;}
+      if(before<0&&after>0){const restored=restoreQuantity(beforeLine,before,1);expectedOrderEffects.push(...restored,...applyQuantity(afterLine,after,restored.length+1));return;}
+      if(before>=0&&after<0){const undone=undoQuantity(beforeLine,before,1);expectedOrderEffects.push(...undone,...applyQuantity(afterLine,after,undone.length+1));return;}
+      const delta=after-before;expectedOrderEffects.push(...(delta<0?reverseQuantity(beforeLine,delta,1,false):delta?[descriptor(afterLine||beforeLine,delta,1,'','ORDINARY','')]:[]));
     });
   }
-  exactSet(orderEvents.map(row=>({eventType:orderQM9Text(row.payload.eventType),orderId:orderQM9Text(row.payload.orderId),orderItemId:orderQM9Text(row.payload.detail&&row.payload.detail.orderItemId),salesLineId:orderQM9Text(row.payload.detail&&row.payload.detail.salesLineId),transferredQty:orderQM9StrictOfficialNumber(row.payload.detail&&row.payload.detail.transferredQty,'ORDERQ_CENTRAL_ORDER_EVENT_QUANTITY_REQUIRED'),allocationEventId:orderQM9Text(row.payload.detail&&row.payload.detail.allocationEventId),effectOrdinal:Number(row.payload.effectOrdinal||0)})),expectedOrderEffects,'ORDERQ_CENTRAL_ORDER_EVENT_EFFECT_MISMATCH');
+  exactSet(orderEvents.map(row=>({eventType:orderQM9Text(row.payload.eventType),orderId:orderQM9Text(row.payload.orderId),orderItemId:orderQM9Text(row.payload.detail&&row.payload.detail.orderItemId),salesLineId:orderQM9Text(row.payload.detail&&row.payload.detail.salesLineId),transferredQty:orderQM9StrictOfficialNumber(row.payload.detail&&row.payload.detail.transferredQty,'ORDERQ_CENTRAL_ORDER_EVENT_QUANTITY_REQUIRED'),allocationEventId:orderQM9Text(row.payload.detail&&row.payload.detail.allocationEventId),allocationKind:orderQM9Text(row.payload.detail&&row.payload.detail.allocationKind),reversalKind:orderQM9Text(row.payload.detail&&row.payload.detail.reversalKind),restoresReversalEventId:orderQM9Text(row.payload.detail&&row.payload.detail.restoresReversalEventId),effectOrdinal:Number(row.payload.effectOrdinal||0)})),expectedOrderEffects,'ORDERQ_CENTRAL_ORDER_EVENT_EFFECT_MISMATCH');
 }
 
 function orderQM9ValidateCommit(ss, command, mutations) {
@@ -2699,12 +2921,26 @@ function orderQM9Commit(ss, payload) {
     command.status = 'EXPIRED';
     command.expiredAt = new Date(commitAtMillis).toISOString();
     orderQM9WriteCommand(ss, command);
+    orderQM9ReleaseSourceClaims(ss, command, 'LEASE_EXPIRED', commitAtMillis);
     throw new Error(`ORDERQ_CENTRAL_LEASE_EXPIRED:${idempotencyKey}`);
   }
   if (command.inventoryResourceFingerprint !== orderQM9InventoryResourceFingerprint(ss)) {
     throw new Error(`ORDERQ_CENTRAL_INVENTORY_REVISION_CONFLICT:${command.aggregateId}`);
   }
   const previousCommand = JSON.parse(JSON.stringify(command));
+  const previousSourceClaims = orderQM9SaleSourceClaimKeys(command).map(claimKey => ({
+    claimKey, value: orderQM9ReadSourceClaim(ss, claimKey)
+  }));
+  orderQM9SaleSourceClaimKeys(command).forEach(claimKey => {
+    const claim = orderQM9ReadSourceClaim(ss, claimKey);
+    const occurrence = claimKey.indexOf('SALE:SOURCE:') === 0 || claimKey.indexOf('SALE:TX:') === 0 || claimKey.indexOf('SALE:DISPATCH:') === 0;
+    const lineageCommitted = claim && claim.status === 'COMMITTED' && occurrence
+      && claim.ownerContract === orderQM9SaleClaimOwner(command).ownerContract && claim.aggregateId === command.aggregateId;
+    if (!lineageCommitted && (!claim || claim.status !== 'PREPARED' || claim.ownerCommandId !== command.idempotencyKey
+      || claim.leaseToken !== command.leaseToken || claim.fingerprint !== command.fingerprint)) {
+      throw new Error(`ORDERQ_CENTRAL_SOURCE_CLAIM_CONFLICT:${claimKey}`);
+    }
+  });
   orderQM9ValidateCommit(ss, command, mutations);
   const targetType = orderQM9TargetType(command.commandType);
   if (targetType) {
@@ -2770,7 +3006,7 @@ function orderQM9Commit(ss, payload) {
   });
   const txnId = `OQM9TX-${Utilities.getUuid()}`;
   const txnSheet = orderQEnsureSheet(ss, 'M9_TXN_LOG');
-  const previousBundle = { entities: previous, command: previousCommand };
+  const previousBundle = { entities: previous, command: previousCommand, sourceClaims: previousSourceClaims };
   const previousChunks = orderQM9BuildOfficialChunks(txnId, idempotencyKey, 'PREVIOUS', previousBundle);
   const mutationChunks = orderQM9BuildOfficialChunks(txnId, idempotencyKey, 'MUTATIONS', mutations);
   orderQM9AppendRows(txnSheet, previousChunks.rows.concat(mutationChunks.rows));
@@ -2800,6 +3036,7 @@ function orderQM9Commit(ss, payload) {
       previousEntityKeyDigest: orderQM9OfficialMutationKeyDigest(previousRowsForKeys),
       previousEntityDigest: orderQM9OfficialPayloadDigest(previous),
       previousCommandDigest: orderQM9OfficialPayloadDigest(previousCommand),
+      previousSourceClaimDigest: orderQM9OfficialPayloadDigest(previousSourceClaims),
       previousLedgerSequence: previousLedger,
       previousSyncSequence: previousSync,
       previousChangeLastRow,
@@ -2847,6 +3084,7 @@ function orderQM9Commit(ss, payload) {
     };
     orderQM9WriteCommand(ss, command);
     if (orderQM9Text(payload.testFailureAt).toUpperCase() === 'COMMAND_WRITTEN') throw new Error('ORDERQ_CENTRAL_FAILURE_INJECTED:COMMAND_WRITTEN');
+    orderQM9VerifyAndCommitSourceClaims(ss, command, commitAtMillis);
     if (!orderQM9VerifyOfficialCommitState(ss, transaction).complete) {
       throw new Error(`ORDERQ_CENTRAL_OFFICIAL_COMPLETENESS_FAILED:${idempotencyKey}`);
     }
@@ -2886,12 +3124,14 @@ function orderQM9Abort(ss, payload) {
     command.status = 'EXPIRED';
     command.expiredAt = new Date(abortedAtMillis).toISOString();
     orderQM9WriteCommand(ss, command);
+    orderQM9ReleaseSourceClaims(ss, command, 'LEASE_EXPIRED', abortedAtMillis);
     return { aborted: false, status: 'EXPIRED' };
   }
   command.status = 'ABORTED';
   command.abortReason = orderQM9Text(payload.reason);
   command.abortedAt = new Date(abortedAtMillis).toISOString();
   orderQM9WriteCommand(ss, command);
+  orderQM9ReleaseSourceClaims(ss, command, 'ABORTED', abortedAtMillis);
   return { aborted: true };
 }
 
@@ -2933,8 +3173,15 @@ function orderQM9Ping(ss, payload) {
     normalizedOriginVersion: 'PURCHASE_V2',
     commandContract: 'VOUCHER_CORE_V1',
     metaSchema: 'ORDERQ_PURCHASE_META_V2',
+    officialSaleStage4: 'V1',
+    normalizedSaleOriginVersion: 'SALE_V2',
+    salesMetaSchema: 'ORDERQ_SALES_META_V1',
+    dbSchemaVersion: '14',
     deploymentId: String(properties.getProperty(ORDERQ_STAGE3_DEPLOYMENT_ID_PROPERTY) || ''),
     deploymentVersion: String(properties.getProperty(ORDERQ_STAGE3_DEPLOYMENT_VERSION_PROPERTY) || ''),
-    gitCommit: String(properties.getProperty(ORDERQ_STAGE3_GIT_COMMIT_PROPERTY) || '')
+    gitCommit: String(properties.getProperty(ORDERQ_STAGE3_GIT_COMMIT_PROPERTY) || ''),
+    saleDeploymentId: String(properties.getProperty(ORDERQ_STAGE4_DEPLOYMENT_ID_PROPERTY) || ''),
+    saleDeploymentVersion: String(properties.getProperty(ORDERQ_STAGE4_DEPLOYMENT_VERSION_PROPERTY) || ''),
+    saleGitCommit: String(properties.getProperty(ORDERQ_STAGE4_GIT_COMMIT_PROPERTY) || '')
   };
 }

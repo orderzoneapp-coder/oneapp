@@ -17,7 +17,8 @@ import {
   V12_STORE,
   V12_STORE_DEFINITIONS
 } from './orderq-v12-contracts.js?v=0.17.0';
-import { ORDERQ_DB_VERSION, V13_PURCHASE_DOCUMENT_INDEXES } from './orderq-v13-contracts.js?v=0.1.0';
+import { V13_PURCHASE_DOCUMENT_INDEXES } from './orderq-v13-contracts.js?v=0.1.0';
+import { ORDERQ_DB_VERSION, V14_INDEXES } from './orderq-v14-contracts.js?v=0.1.0';
 import { adminTestDatabaseName } from './admin-test-runtime.js?v=0.10.2';
 
 function databaseNameForRuntime() {
@@ -258,6 +259,16 @@ export function upgradeOrderQDbSchema(db, transaction, oldVersion = 0) {
   ensureIndex(store, 'byEntity', ['entityType', 'entityId']);
 
   const metaStore = ensureStore(STORE.META, { keyPath: 'key' });
+
+  if (oldVersion < 14) {
+    const targets = {
+      salesDocuments:transaction.objectStore(STORE.SALES_DOCUMENTS),
+      salesLines:transaction.objectStore(STORE.SALES_LINES),
+      orderEvents:transaction.objectStore(STORE.ORDER_EVENTS)
+    };
+    Object.entries(V14_INDEXES).forEach(([name, indexes]) => indexes.forEach(entry => ensureIndex(targets[name], entry.name, entry.keyPath, entry.options)));
+    metaStore.put({ key:'schemaVersion', value:14, updatedAt:nowIso() });
+  }
 
   if (oldVersion < 13) {
     const purchaseDocumentStore = transaction.objectStore(STORE.PURCHASE_DOCUMENTS);
