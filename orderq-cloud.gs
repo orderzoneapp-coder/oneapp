@@ -1264,8 +1264,15 @@ function orderQM9SaleSourceClaimKeys(command) {
     (intent.lines || document.lines || []).forEach(line => add(`SALE:DISPATCH:${dispatchId}:${orderQM9Text(line.dispatchLineId || line.sourceDispatchLineId)}`));
   } else if (['POST_SALE', 'CORRECT_SALE', 'REVERSE_SALE'].indexOf(commandType) >= 0
     && orderQM9Text(intent.contractKind || document.contractKind) === 'SALE_STAGE4_V1') {
-    add(`SALE:SOURCE:${orderQM9Text(intent.sourceDocumentKey || document.sourceDocumentKey)}`);
-    add(`SALE:TX:${orderQM9Text(intent.originSystem || document.originSystem).toUpperCase()}:${orderQM9Text(intent.originTransactionId || document.originTransactionId)}:${Number(intent.sourceVoucherIndex || document.sourceVoucherIndex || 0)}`);
+    const sourceDocumentKey = orderQM9Text(intent.sourceDocumentKey || document.sourceDocumentKey);
+    const originSystem = orderQM9Text(intent.originSystem || document.originSystem).toUpperCase();
+    const originTransactionId = orderQM9Text(intent.originTransactionId || document.originTransactionId);
+    const sourceVoucherIndex = Number(intent.sourceVoucherIndex || document.sourceVoucherIndex || 0);
+    if (!sourceDocumentKey || !originSystem || !originTransactionId || !Number.isInteger(sourceVoucherIndex) || sourceVoucherIndex < 1) {
+      throw new Error('ORDERQ_SALE_ORIGIN_IDENTITY_REQUIRED');
+    }
+    add(`SALE:SOURCE:${sourceDocumentKey}`);
+    add(`SALE:TX:${originSystem}:${originTransactionId}:${sourceVoucherIndex}`);
     (intent.lines || []).forEach(line => {
       const dispatchId = orderQM9Text(line.sourceDispatchId);
       const dispatchLineId = orderQM9Text(line.sourceDispatchLineId);

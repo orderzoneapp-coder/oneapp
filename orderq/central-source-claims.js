@@ -8,9 +8,15 @@ export function deriveSaleSourceClaims(command = {}) {
   const lines = Array.isArray(intent.lines) ? intent.lines : Array.isArray(intent) ? intent : [];
   const keys = [];
   const official = text(intent.commandContract).toUpperCase() === 'VOUCHER_CORE_V1';
-  if (official && ['POST_SALE','CORRECT_SALE','REVERSE_SALE'].includes(type)) {
-    if (text(intent.sourceDocumentKey)) keys.push(`SALE:SOURCE:${text(intent.sourceDocumentKey)}`);
-    if (text(intent.originSystem) && text(intent.originTransactionId)) keys.push(`SALE:TX:${text(intent.originSystem).toUpperCase()}:${text(intent.originTransactionId)}:${Number(intent.sourceVoucherIndex || 1)}`);
+  if (official && text(intent.contractKind || intent.document?.contractKind).toUpperCase() === 'SALE_STAGE4_V1'
+    && ['POST_SALE','CORRECT_SALE','REVERSE_SALE'].includes(type)) {
+    const sourceDocumentKey=text(intent.sourceDocumentKey), originSystem=text(intent.originSystem).toUpperCase(), originTransactionId=text(intent.originTransactionId);
+    const sourceVoucherIndex=Number(intent.sourceVoucherIndex || 0);
+    if (!sourceDocumentKey || !originSystem || !originTransactionId || !Number.isInteger(sourceVoucherIndex) || sourceVoucherIndex < 1) {
+      throw new Error('ORDERQ_SALE_ORIGIN_IDENTITY_REQUIRED');
+    }
+    keys.push(`SALE:SOURCE:${sourceDocumentKey}`);
+    keys.push(`SALE:TX:${originSystem}:${originTransactionId}:${sourceVoucherIndex}`);
     lines.forEach(line => {
       if (text(line.sourceDispatchId) && text(line.sourceDispatchLineId)) keys.push(`SALE:DISPATCH:${text(line.sourceDispatchId)}:${text(line.sourceDispatchLineId)}`);
       (line.reversalSourceAllocations || []).forEach(ref => { if (text(ref.allocationEventId)) keys.push(`SALE:ALLOCATION:${text(ref.allocationEventId)}`); });

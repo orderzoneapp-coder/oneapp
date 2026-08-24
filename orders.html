@@ -11,6 +11,10 @@
   <script src="orderq/canonical-hash.js?v=0.1.0"></script>
   <script src="orderFulfillmentWorkbook.js"></script>
   <script src="orderops/orderops-source-adapter.js?v=1.64.0"></script>
+  <script type="module">
+    import { connectSaleStage4Workspace } from './orderq/sale-stage4-source-adapter.js?v=0.2.0';
+    window.ORDERQ_STAGE4_SALE_BRIDGE = Object.freeze({ connectSaleStage4Workspace });
+  </script>
   <style>
     :root {
       color-scheme: light;
@@ -4977,13 +4981,16 @@
           allocationProductSummaries.set(productCode, summary);
         });
         const allocationAggregateShown = new Set();
+        const saleIdentityByOccurrence = new Map((workspace.saleStage4Sidecar?.rows || []).map(row => [`${Number(row.sourceRowNumber)}:${Number(row.sourceOccurrence)}`, row]));
         const allocationSourceRows = workspace.allocations.map((row) => {
           const productCode = engine.normalizeProductCode(row?.productCode);
           const summary = allocationProductSummaries.get(productCode);
           const showAggregate = Boolean(productCode && summary && !allocationAggregateShown.has(productCode));
           if (productCode) allocationAggregateShown.add(productCode);
+          const saleIdentity = saleIdentityByOccurrence.get(`${Number(row.sourceRowNumber)}:${Number(row.sourceOccurrence)}`);
           return {
             ...decorateShortageRow(row, shortageSets, inventoryByCode),
+            saleStage4LinkStatus: saleIdentity?.linkStatus || "REVIEW_REQUIRED_MISSING",
             productAggregateQuantity: showAggregate
               ? Math.round(summary.quantity * 1000000) / 1000000
               : "",
@@ -4992,7 +4999,7 @@
         const allocations = {
           label: "주문현황",
           shortcut: "F5",
-          headers: ["창고", "거래처", "그룹", "담당자", "상품코드", "품명", "규격", "정보", "주문", "단가", ...allocationWarehouseHeaders, "전달사항", "구매"],
+          headers: ["창고", "거래처", "그룹", "담당자", "상품코드", "품명", "규격", "정보", "주문", "단가", ...allocationWarehouseHeaders, "전달사항", "구매", "판매연결"],
           numeric: [
             7,
             8,
@@ -5018,6 +5025,7 @@
             ...(allocationInventoryView.rows[index]?.warehouseValues || []).map(blankZero),
             formatDeliveryNotice(row),
             row.purchase || "",
+            row.saleStage4LinkStatus,
           ]),
           sortByProductCode: true,
           notice: allocationTailStart,
@@ -5050,6 +5058,8 @@
           if (column) column.defaultWidth = width;
         });
         allocations.columns[allocationTailStart].orderField = "note";
+        allocations.columns[allocationTailStart + 2].role = "saleStage4LinkStatus";
+        allocations.columns[allocationTailStart + 2].defaultWidth = 132;
         allocations.shortageCount = shortageContext.shortageCount || 0;
 
         const notices = {
@@ -5761,7 +5771,11 @@
                     const acknowledgement = editable && preview.acknowledgement === index && sourceRow?.noticeId;
                     const editableOrder = editable && previewId === "allocations" && column.orderField && sourceRow?.sourceRowNumber;
                     const managerAssignment = editable && previewId === "allocations" && column.role === "manager" && sourceRow?.customer;
-                    const content = editablePurchase
+                    const saleLinkControl = editable && previewId === "allocations" && column.role === "saleStage4LinkStatus";
+                    const content = saleLinkControl
+                      ? `<button class="manager-assignment-trigger" type="button" data-sale-stage4-link="${escapeHtml(`${sourceRow.sourceRowNumber}:${sourceRow.sourceOccurrence}`)}"
+                          title="ORDER Q 판매 연결과 직접판매를 전환합니다.">${escapeHtml(String(displayValue).startsWith("DIRECT_") ? "직접판매 · 연결복구" : `${displayValue} · 직접판매`)}</button>`
+                      : editablePurchase
                       ? `<input class="purchase-input" data-purchase-code="${escapeHtml(sourceRow?.productCode || "")}"
                           data-grid-column="${escapeHtml(column.key)}" data-negative-balance="${negativeBalance ? "true" : "false"}"
                           autocomplete="off"
@@ -6072,6 +6086,11 @@
         try {
           await new Promise((resolve) => window.setTimeout(resolve, 20));
           state.workspace = await analyzeCurrentInputs();
+          if (window.ORDERQ_STAGE4_SALE_BRIDGE?.connectSaleStage4Workspace) {
+            state.workspace = await window.ORDERQ_STAGE4_SALE_BRIDGE.connectSaleStage4Workspace(state.workspace, {
+              reviews: state.workspace.saleStage4Reviews || {}, actor: "ORDER_Q_ADMIN"
+            });
+          }
           state.activePreview = "validation";
           resetResultViewFilters();
           renderResults();
@@ -7121,6 +7140,18 @@
         const button = event.target.closest("[data-preview]");
         if (!button || !state.workspace) return;
         activatePreview(button.dataset.preview);
+      });
+      elements.previewTable.addEventListener("click", (event) => {
+        const saleLinkButton = event.target.closest("[data-sale-stage4-link]");
+        if (!saleLinkButton || !state.workspace || state.activePreview !== "allocations" || !window.ORDERQ_STAGE4_SALE_BRIDGE?.connectSaleStage4Workspace) return;
+        const occurrenceKey = String(saleLinkButton.dataset.saleStage4Link || "");
+        const reviews = { ...(state.workspace.saleStage4Reviews || {}) };
+        if (reviews[occurrenceKey]?.unlinkDirect === true) delete reviews[occurrenceKey];
+        else reviews[occurrenceKey] = { ...(reviews[occurrenceKey] || {}), unlinkDirect:true };
+        state.workspace = { ...state.workspace, saleStage4Reviews:reviews };
+        window.ORDERQ_STAGE4_SALE_BRIDGE.connectSaleStage4Workspace(state.workspace, { reviews, actor:"ORDER_Q_ADMIN" })
+          .then(workspace => { state.workspace = workspace; renderResults(); scheduleLocalSave(); })
+          .catch(error => showToast(error.message || "판매 연결을 변경하지 못했습니다.", true));
       });
       elements.previewTable.addEventListener("click", (event) => {
         const managerButton = event.target.closest("[data-manager-assignment-customer]");

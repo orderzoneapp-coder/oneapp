@@ -35,11 +35,21 @@ export function salesMetaRowDigest(meta = {}) { return hashApi.canonicalSha256(s
 export function readSalesMeta(matrix = []) {
   const headers = (matrix[0] || []).map(text);
   if (!headers.includes('schemaVersion') || !headers.includes('rowDigest')) throw new Error('ORDERQ_SALE_META_INVALID');
+  const occurrences = new Set(); const sourceKeys = new Set();
   return matrix.slice(1).filter(row => (row || []).some(cell => text(cell))).map((row, offset) => {
     const meta = Object.fromEntries(headers.map((header, index) => [header, row?.[index] ?? '']));
     if (text(meta.schemaVersion) !== SALES_META_SCHEMA || text(meta.ruleVersion) !== SALES_QUANTITY_RULE) throw new Error(`ORDERQ_SALE_META_SCHEMA_INVALID:${offset + 2}`);
     if (salesMetaRowDigest(meta) !== text(meta.rowDigest).toLowerCase()) throw new Error(`ORDERQ_SALE_META_MUTATED:${offset + 2}`);
     numericHeaders.forEach(key => { if (meta[key] !== '') meta[key] = finite(meta[key]); });
+    const occurrenceKey = `${Number(meta.sourceRowNumber)}:${Number(meta.sourceOccurrence)}`;
+    if (!Number.isInteger(Number(meta.sourceRowNumber)) || Number(meta.sourceRowNumber) < 1
+      || !Number.isInteger(Number(meta.sourceOccurrence)) || Number(meta.sourceOccurrence) < 1 || !text(meta.sourceRowKey)) {
+      throw new Error(`ORDERQ_SALE_META_IDENTITY_REQUIRED:${offset + 2}`);
+    }
+    if (occurrences.has(occurrenceKey) || sourceKeys.has(text(meta.sourceRowKey))) throw new Error(`ORDERQ_SALE_META_IDENTITY_DUPLICATE:${offset + 2}`);
+    occurrences.add(occurrenceKey); sourceKeys.add(text(meta.sourceRowKey));
+    if (!(Number(meta.suggestedActualToBaseFactor) > 0) || Number(meta.suggestedActualToRecognizedFactor) < 0
+      || !text(meta.conversionSource) || !text(meta.conversionRuleVersion)) throw new Error(`ORDERQ_SALE_META_CONVERSION_INVALID:${offset + 2}`);
     try { meta.priorAllocationRefs = JSON.parse(text(meta.priorAllocationRefs) || '[]'); } catch { throw new Error(`ORDERQ_SALE_META_INVALID:${offset + 2}:ALLOCATIONS`); }
     return meta;
   });
@@ -54,7 +64,8 @@ export function recomputeSaleLine(row = {}, meta = {}) {
   if (!(actualToBaseFactor > 0) || !(actualToRecognizedFactor >= 0)) throw new Error('ORDERQ_SALE_CONVERSION_INVALID');
   const baseQuantity = actualQuantity * actualToBaseFactor;
   const recognizedOrderQuantity = direct ? 0 : actualQuantity * actualToRecognizedFactor;
-  const supplyAmount = Math.round(actualQuantity * unitPrice);
+  const rawAmount = actualQuantity * unitPrice;
+  const supplyAmount = Math.sign(rawAmount) * Math.floor(Math.abs(rawAmount) + 0.5);
   return { ...row, actualQuantity, quantity:actualQuantity, unitPrice, actualToBaseFactor, actualToRecognizedFactor, baseQuantity,
     recognizedOrderQuantity, supplyAmount, totalAmount:supplyAmount, vatAmount:null, taxType:'VAT_INCLUDED_IN_SUPPLY', currency:'KRW' };
 }
@@ -86,6 +97,9 @@ export function detachOrderQSaleLink(row = {}, { originSystem = 'SMARTINPUT_FILE
     externalDocumentNo:text(row.externalDocumentNo), sourceVoucherIndex:Number(row.sourceVoucherIndex || 1) })}`;
   return recomputeSaleLine({ ...row, sourceType:'DIRECT', orderLinkMode:'DIRECT', originSystem:system, originTransactionId:tx,
     sourceDocumentKey, sourceOrderId:'', sourceOrderItemId:'', sourceDispatchId:'', sourceDispatchLineId:'', priorAllocationRefs:[],
-    reversalSourceAllocations:[], restorationSourceReversals:[], recognizedOrderQuantity:0, actualToRecognizedFactor:0, metaStatus:'DIRECT_DETACHED' },
-  { suggestedActualToBaseFactor:row.actualToBaseFactor || 1, suggestedActualToRecognizedFactor:0 });
+    sourceOrderRevision:'', sourceOrderItemRevision:'', sourceDispatchRevision:'', sourceDispatchLineRevision:'',
+    reversalSourceAllocations:[], restorationSourceReversals:[], recognizedOrderQuantity:0, actualToRecognizedFactor:0,
+    actualToBaseFactor:1, baseUnit:text(row.actualUnit || row.unit).toUpperCase(),
+    conversionSource:'DIRECT_SAME_UNIT', conversionRuleId:'DIRECT_1_TO_1', conversionRuleVersion:'DIRECT_1_TO_1_V1', metaStatus:'DIRECT_DETACHED' },
+  { suggestedActualToBaseFactor:1, suggestedActualToRecognizedFactor:0 });
 }
