@@ -3102,9 +3102,12 @@ async function analyzeSource({ automatic = false } = {}) {
     }
 
     lines = lines.filter(line => !isParserArtifactLine(line));
-    if (state.draft.activeMode === 'purchase' && !structuredImport && method.id === 'paste') {
-      lines = lines.map(line => ({ ...line, sourceType: 'DIRECT', contractKind: 'PURCHASE_STAGE3_V1',
-        originSystem: 'SMARTINPUT_CLIPBOARD', originTransactionId: contentHash, sourceFingerprint: contentHash, metaStatus: 'DIRECT' }));
+    if (['purchase','sale'].includes(state.draft.activeMode) && !structuredImport && method.id === 'paste') {
+      const sale = state.draft.activeMode === 'sale';
+      lines = lines.map(line => ({ ...line, sourceType: 'DIRECT', contractKind: sale ? 'SALE_STAGE4_V1' : 'PURCHASE_STAGE3_V1',
+        originSystem: 'SMARTINPUT_CLIPBOARD', originTransactionId: contentHash, sourceFingerprint: contentHash,
+        ...(sale ? { actualToBaseFactor:1, actualToRecognizedFactor:0, actualUnit:line.unit || '', baseUnit:line.unit || '', recognizedUnit:line.unit || '',
+          conversionSource:'DIRECT_SAME_UNIT', conversionRuleId:'DIRECT_1_TO_1', conversionRuleVersion:'DIRECT_1_TO_1_V1' } : {}), metaStatus: 'DIRECT' }));
     }
     if (!lines.length) throw new Error('상품 행을 인식하지 못했습니다. 상품명과 수량을 확인해 주세요.');
     if (requestId !== state.analysisRequestId || state.draft.activeMode !== modeId || sourceTextInput.value !== rawText) return;
@@ -3265,6 +3268,12 @@ async function handleFile(file) {
             metaRows: salesMetaRows }),
           salesMetaStatus: 'VERIFIED'
         };
+      } else if (structured && state.draft.activeMode === 'sale') {
+        structured = { ...structured, rows: structured.rows.map(row => ({ ...row,
+          sourceType:'DIRECT', contractKind:'SALE_STAGE4_V1', originSystem:'SMARTINPUT_FILE', originTransactionId:fileDigest,
+          sourceFingerprint:fileDigest, actualToBaseFactor:1, actualToRecognizedFactor:0,
+          actualUnit:row.unit || '', baseUnit:row.unit || '', recognizedUnit:row.unit || '',
+          conversionSource:'DIRECT_SAME_UNIT', conversionRuleId:'DIRECT_1_TO_1', conversionRuleVersion:'DIRECT_1_TO_1_V1', metaStatus:'DIRECT_NO_META' })) };
       }
       rawText = selected.rawText;
       state.pendingSourceName = `${file.name} · ${selected.sheetName}`;
@@ -4118,7 +4127,10 @@ async function completeSaleOfficial() {
   try {
     for (const group of groups) {
       try {
-        const producer = current.activeMethod === 'paste' ? 'SMARTINPUT_CLIPBOARD' : 'SMARTINPUT_MANUAL';
+        const producer = String(group.originSystem || group.rows?.[0]?.originSystem
+          || (current.activeMethod === 'paste' ? 'SMARTINPUT_CLIPBOARD' : current.activeMethod === 'excel' ? 'SMARTINPUT_FILE' : 'SMARTINPUT_MANUAL')).toUpperCase();
+        const producerTransactionId = String(group.originTransactionId || group.rows?.[0]?.originTransactionId
+          || current.batches?.at(-1)?.contentHash || current.documentId);
         const customerRevision = customerId => Number(state.customers.find(row => String(row.customerId) === String(customerId))?.revision || 0);
         const hydratedGroup = { ...group,
           salesCustomerRevision: Number(group.salesCustomerRevision || group.rows?.[0]?.salesCustomerRevision || customerRevision(group.salesCustomerId)),
@@ -4131,11 +4143,16 @@ async function completeSaleOfficial() {
             return { ...row, sourceType, orderLinkMode: sourceType === 'ORDER_Q' ? 'ORDER_Q' : 'DIRECT',
               productId: row.productId || product?.productId || '', productMasterRevision: Number(row.productMasterRevision || product?.revision || 0),
               warehouseId: row.warehouseId || group.warehouseId || warehouse?.warehouseId || '', warehouseMasterRevision: Number(row.warehouseMasterRevision || warehouse?.revision || 0),
-              actualToBaseFactor: Number(row.actualToBaseFactor ?? row.conversionFactor ?? 1),
-              actualToRecognizedFactor: sourceType === 'ORDER_Q' ? Number(row.actualToRecognizedFactor ?? 1) : 0 };
+              actualToBaseFactor: sourceType === 'ORDER_Q' ? Number(row.actualToBaseFactor) : 1,
+              actualToRecognizedFactor: sourceType === 'ORDER_Q' ? Number(row.actualToRecognizedFactor) : 0,
+              actualUnit:row.actualUnit || row.unit || '', baseUnit:sourceType === 'ORDER_Q' ? row.baseUnit : (row.actualUnit || row.unit || ''),
+              recognizedUnit:row.recognizedUnit || row.unit || '',
+              conversionSource:sourceType === 'ORDER_Q' ? row.conversionSource : 'DIRECT_SAME_UNIT',
+              conversionRuleId:sourceType === 'ORDER_Q' ? row.conversionRuleId : 'DIRECT_1_TO_1',
+              conversionRuleVersion:sourceType === 'ORDER_Q' ? row.conversionRuleVersion : 'DIRECT_1_TO_1_V1' };
           }) };
         const result = await postSaleGroup(hydratedGroup, { actor: SMARTINPUT_SALE_ACTOR_ID, originSystem: producer,
-          manualSessionId: current.documentId, occurredAt: new Date().toISOString() });
+          manualSessionId: producerTransactionId, occurredAt: new Date().toISOString() });
         const documentId = result.salesDocumentId || result.document?.salesDocumentId || '';
         const commandId = result.commandId || '';
         current.saleSubmissions = (current.saleSubmissions || []).filter(pointer => pointer.voucherGroupKey !== group.voucherGroupKey);

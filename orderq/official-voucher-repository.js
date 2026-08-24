@@ -298,6 +298,33 @@ export async function listOfficialSales(filters = {}) {
       .filter(line => text(line.lineStatus || 'ACTIVE') !== 'DELETED').length }));
 }
 
+export async function listLegacySales(filters = {}) {
+  const db = await openOrderQDb();
+  const tx = db.transaction([STORE.SALES_DOCUMENTS, STORE.SALES_LINES], 'readonly');
+  const documents = await requestToPromise(tx.objectStore(STORE.SALES_DOCUMENTS).getAll());
+  const lines = await requestToPromise(tx.objectStore(STORE.SALES_LINES).getAll());
+  await transactionDone(tx);
+  const query = text(filters.search).toLowerCase();
+  return documents.filter(document => text(document.documentContract) !== 'VOUCHER_CORE_V1')
+    .filter(document => !filters.status || text(document.businessStatus || document.status).toUpperCase() === text(filters.status).toUpperCase())
+    .filter(document => !query || saleSearchText(document, lines.filter(line => text(line.salesDocumentId) === text(document.salesDocumentId))).includes(query))
+    .map(document => ({ ...document, contractKind:'LEGACY_SALE_V1' }))
+    .sort((a,b) => text(b.updatedAt || b.saleDate).localeCompare(text(a.updatedAt || a.saleDate)) || text(a.salesDocumentId).localeCompare(text(b.salesDocumentId)));
+}
+
+export async function loadLegacySaleAggregate(salesDocumentId) {
+  const db = await openOrderQDb();
+  const tx = db.transaction([STORE.SALES_DOCUMENTS, STORE.SALES_LINES, STORE.INVENTORY_MOVEMENTS], 'readonly');
+  const document = await requestToPromise(tx.objectStore(STORE.SALES_DOCUMENTS).get(text(salesDocumentId)));
+  if (!document || text(document.documentContract) === 'VOUCHER_CORE_V1') { await transactionDone(tx); return null; }
+  const lines = await allByIndex(tx.objectStore(STORE.SALES_LINES), 'byDocumentId', text(salesDocumentId));
+  const movements = (await requestToPromise(tx.objectStore(STORE.INVENTORY_MOVEMENTS).getAll()))
+    .filter(row => text(row.sourceDocumentId) === text(salesDocumentId));
+  await transactionDone(tx);
+  return { document:{ ...document, contractKind:'LEGACY_SALE_V1' }, lines, activeLines:lines, movements,
+    receivableEntries:[], orderEvents:[], voucherEvents:[] };
+}
+
 export async function loadOfficialSaleAggregate(salesDocumentId) {
   const id = text(salesDocumentId);
   if (!id) throw new Error('ORDERQ_OFFICIAL_SALE_ID_REQUIRED');
@@ -355,6 +382,10 @@ export async function findOfficialSaleBySource(identity = {}) {
   const sourceDocumentKey = text(identity.sourceDocumentKey);
   const originSystem = text(identity.originSystem).toUpperCase();
   const originTransactionId = text(identity.originTransactionId);
+  const sourceVoucherIndex = Number(identity.sourceVoucherIndex || 0);
+  if (!sourceDocumentKey || !originSystem || !originTransactionId || !Number.isInteger(sourceVoucherIndex) || sourceVoucherIndex < 1) {
+    throw new Error('ORDERQ_SALE_ORIGIN_IDENTITY_REQUIRED');
+  }
   if (originSystem && originTransactionId && sourceDocumentKey && store.indexNames.contains('byOriginRunDocument')) {
     document = await requestToPromise(store.index('byOriginRunDocument').get([originSystem, originTransactionId, sourceDocumentKey]));
   }
@@ -375,7 +406,7 @@ export function buildFrozenSaleIntent(source = {}) {
     'taxType', 'currency', 'orderLinkMode', 'sourceOrderId', 'sourceOrderItemId', 'sourceOrderRevision', 'sourceOrderItemRevision',
     'sourceDispatchId', 'sourceDispatchLineId', 'sourceDispatchRevision', 'sourceDispatchLineRevision',
     'salesCustomerRevision', 'deliveryCustomerRevision', 'billingCustomerRevision',
-    'conversionSource', 'conversionRuleId', 'conversionRuleVersion', 'sourcePlanId', 'sourceFingerprint', 'sourceRowKey'];
+    'conversionSource', 'conversionRuleId', 'conversionRuleVersion', 'sourcePlanId', 'sourceFingerprint', 'sourceRowKey', 'sourceRowNumber', 'sourceOccurrence'];
   const documentFields = ['salesCustomerId', 'salesCustomerCode', 'salesCustomerName', 'salesCustomerRevision',
     'deliveryCustomerId', 'deliveryCustomerCode', 'deliveryCustomerName', 'deliveryCustomerRevision',
     'billingCustomerId', 'billingCustomerCode', 'billingCustomerName', 'billingCustomerRevision',
@@ -398,6 +429,8 @@ export function buildFrozenSaleIntent(source = {}) {
     actorId: text(source.actorId || source.actor), reason: text(source.reason), occurredAt: text(source.occurredAt),
     document: pick(source.document || source, documentFields), lines
   };
+  if (!intent.sourceDocumentKey || !intent.originSystem || !intent.originTransactionId
+    || !Number.isInteger(intent.sourceVoucherIndex) || intent.sourceVoucherIndex < 1) throw new Error('ORDERQ_SALE_ORIGIN_IDENTITY_REQUIRED');
   const derivedClaims = [`SALE:SOURCE:${intent.sourceDocumentKey}`,
     `SALE:TX:${intent.originSystem.toUpperCase()}:${intent.originTransactionId}:${intent.sourceVoucherIndex}`];
   lines.forEach(line => {

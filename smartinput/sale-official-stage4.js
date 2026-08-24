@@ -70,6 +70,10 @@ export function validateSaleGroup(group = {}, masters = {}) {
       if (text(row.sourceOrderId || row.sourceOrderItemId || row.sourceDispatchId || row.sourceDispatchLineId) || actual * recognizedFactor !== 0) {
         throw new Error('ORDERQ_SALE_DIRECT_ORDER_LINK_FORBIDDEN');
       }
+      const actualUnit = text(row.actualUnit || row.unit).toUpperCase();
+      if (baseFactor !== 1 || text(row.baseUnit || actualUnit).toUpperCase() !== actualUnit
+        || text(row.conversionSource).toUpperCase() !== 'DIRECT_SAME_UNIT'
+        || !text(row.conversionRuleVersion)) throw new Error('ORDERQ_SALE_DIRECT_CONVERSION_PROVENANCE_REQUIRED');
     } else {
       const order = orders.get(text(row.sourceOrderId)); const item = orderItems.get(text(row.sourceOrderItemId));
       if (!order || !item || text(item.orderId) !== text(order.orderId) || text(item.productId || item.productCode) !== text(row.productId || row.productCode)) {
@@ -85,9 +89,10 @@ export function validateSaleGroup(group = {}, masters = {}) {
 
 export function deriveSaleDraftIdentity(group = {}, context = {}) {
   const sourceType = text(group.sourceType || group.rows?.[0]?.sourceType || 'DIRECT').toUpperCase();
-  const originSystem = text(group.originSystem || group.rows?.[0]?.originSystem || context.originSystem || 'SMARTINPUT_MANUAL').toUpperCase();
+  const originSystem = text(group.originSystem || group.rows?.[0]?.originSystem || context.originSystem).toUpperCase();
   const originTransactionId = text(group.originTransactionId || group.rows?.[0]?.originTransactionId || context.manualSessionId);
   const sourceVoucherIndex = Number(group.sourceVoucherIndex || group.rows?.[0]?.sourceVoucherIndex || 1);
+  if (!originSystem || !originTransactionId || !Number.isInteger(sourceVoucherIndex) || sourceVoucherIndex < 1) throw new Error('ORDERQ_SALE_ORIGIN_IDENTITY_REQUIRED');
   const sourceDocumentKey = text(group.sourceDocumentKey || group.rows?.[0]?.sourceDocumentKey)
     || `SALE:${canonicalSha256({ contractKind: 'SALE_STAGE4_V1', originSystem, originTransactionId, sourceVoucherIndex,
       billingCustomerId: text(group.billingCustomerId), saleDate: text(group.voucherDate || group.saleDate), externalDocumentNo: text(group.externalVoucherNo) })}`;
@@ -102,19 +107,28 @@ export function buildSalePostDraft(group = {}, context = {}) {
   const lines = (group.rows || []).map((row, index) => {
     const actualQuantity = finite(row.actualQuantity ?? row.quantity, 'ORDERQ_SALE_QUANTITY_REQUIRED');
     const unitPrice = finite(row.unitPrice, 'ORDERQ_SALE_UNIT_PRICE_REQUIRED');
-    const actualToBaseFactor = finite(row.actualToBaseFactor, 'ORDERQ_SALE_CONVERSION_REQUIRED');
     const orderLinkMode = text(row.orderLinkMode || group.orderLinkMode || 'DIRECT').toUpperCase();
+    const direct = orderLinkMode === 'DIRECT';
+    const actualToBaseFactor = finite(row.actualToBaseFactor ?? (direct ? 1 : undefined), 'ORDERQ_SALE_CONVERSION_REQUIRED');
     const actualToRecognizedFactor = orderLinkMode === 'DIRECT' ? 0 : finite(row.actualToRecognizedFactor, 'ORDERQ_SALE_CONVERSION_REQUIRED');
+    const actualUnit = text(row.actualUnit || row.unit).toUpperCase();
+    const conversionSource = text(row.conversionSource || (direct ? 'DIRECT_SAME_UNIT' : '')).toUpperCase();
+    const conversionRuleId = text(row.conversionRuleId || (direct ? 'DIRECT_1_TO_1' : ''));
+    const conversionRuleVersion = text(row.conversionRuleVersion || (direct ? 'DIRECT_1_TO_1_V1' : ''));
+    if (direct && (actualToBaseFactor !== 1 || text(row.baseUnit || actualUnit).toUpperCase() !== actualUnit
+      || conversionSource !== 'DIRECT_SAME_UNIT' || !conversionRuleVersion)) {
+      throw new Error('ORDERQ_SALE_DIRECT_CONVERSION_PROVENANCE_REQUIRED');
+    }
     const sourceLineKey = text(row.sourceLineKey) || `${identity.sourceDocumentKey}:LINE:${canonicalSha256({ sourceRowKey: text(row.sourceRowKey || index + 1),
       sourceOccurrence: Number(row.sourceOccurrence || 1), productId: text(row.productId || row.productCode), warehouseId: text(row.warehouseId || group.warehouseId),
       sourceOrderId: text(row.sourceOrderId), sourceOrderItemId: text(row.sourceOrderItemId), sourceDispatchId: text(row.sourceDispatchId), sourceDispatchLineId: text(row.sourceDispatchLineId) })}`;
     const supplyAmount = won(actualQuantity * unitPrice);
     return { ...row, sourceLineKey, lineIdentityId: text(row.lineIdentityId) || `LI-${canonicalSha256([identity.salesDocumentId, sourceLineKey]).slice(0, 32)}`,
-      lineSequence: index + 1, actualQuantity, actualUnit: text(row.actualUnit || row.unit).toUpperCase(), actualToBaseFactor,
+      lineSequence: index + 1, actualQuantity, actualUnit, actualToBaseFactor,
       baseQuantity: actualQuantity * actualToBaseFactor, baseUnit: text(row.baseUnit || row.unit).toUpperCase(),
       actualToRecognizedFactor, recognizedOrderQuantity: orderLinkMode === 'DIRECT' ? 0 : actualQuantity * actualToRecognizedFactor,
       recognizedUnit: text(row.recognizedUnit || row.unit).toUpperCase(), unitPrice, supplyAmount, totalAmount: supplyAmount,
-      taxType: 'VAT_INCLUDED_IN_SUPPLY', currency: 'KRW', orderLinkMode };
+      taxType: 'VAT_INCLUDED_IN_SUPPLY', currency: 'KRW', orderLinkMode, conversionSource, conversionRuleId, conversionRuleVersion };
   });
   const commandId = `POST_SALE:${canonicalSha256({ salesDocumentId: identity.salesDocumentId, sourceDocumentKey: identity.sourceDocumentKey, lines: lines.map(row => row.sourceLineKey) })}`;
   const document = { ...identity, salesCustomerId: text(group.salesCustomerId), salesCustomerName: text(group.salesCustomerName),
@@ -130,6 +144,7 @@ export function buildSalePostDraft(group = {}, context = {}) {
 }
 
 export async function postSaleGroup(group, context = {}) {
+  if (context.masters) validateSaleGroup(group, context.masters);
   await pullCentralOfficialState();
   const identity = deriveSaleDraftIdentity(group, context);
   const existing = await findOfficialSaleBySource(identity);

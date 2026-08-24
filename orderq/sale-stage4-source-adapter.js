@@ -1,4 +1,5 @@
 import { canonicalSha256 } from './official-voucher-core.js?v=0.17.0';
+import { openOrderQDb, requestToPromise, transactionDone, STORE } from './orderq-db.js?v=0.9.0';
 
 export const SALE_SIDECAR_SCHEMA = 'ORDERQ_SALE_SIDECAR_V1';
 export const SALE_META_SCHEMA = 'ORDERQ_SALES_META_V1';
@@ -54,8 +55,42 @@ function record(source, type, id) {
   return rows.find(row => text(row[idFields[type]]) === text(id));
 }
 
+function masterByIdentity(source, type, id, code) {
+  const rows = source[type] || [];
+  const idFields = { customers:'customerId', products:'productId', warehouses:'warehouseId' };
+  const codeFields = { customers:['customerCode','erpCustomerCode','customerName','name'], products:['itemCode','productCode'], warehouses:['warehouseCode'] };
+  return rows.find(row => text(row[idFields[type]]) === text(id))
+    || rows.find(row => (codeFields[type] || []).some(field => text(row[field]).toUpperCase() === text(code).toUpperCase()));
+}
+
+function conversionSnapshot(allocation = {}, item = {}, direct = false) {
+  const actualUnit = text(allocation.actualUnit || allocation.unit || allocation.sourceUnit).toUpperCase();
+  const baseUnit = text(allocation.baseUnit || item.baseUnit || actualUnit).toUpperCase();
+  const actualToBaseFactor = number(allocation.actualToBaseFactor ?? allocation.conversionFactor ?? item.actualToBaseFactor);
+  const actualToRecognizedFactor = direct ? 0 : number(allocation.actualToRecognizedFactor ?? item.actualToRecognizedFactor);
+  const conversionSource = text(allocation.conversionSource || item.conversionSource || (direct ? 'DIRECT_SAME_UNIT' : '')).toUpperCase();
+  const conversionRuleId = text(allocation.conversionRuleId || item.conversionRuleId || (direct ? 'DIRECT_1_TO_1' : ''));
+  const conversionRuleVersion = text(allocation.conversionRuleVersion || item.conversionRuleVersion || (direct ? 'DIRECT_1_TO_1_V1' : ''));
+  if (!actualUnit || !baseUnit || !(actualToBaseFactor > 0) || (!direct && !(actualToRecognizedFactor > 0))
+    || !conversionSource || !conversionRuleVersion) return null;
+  if (direct && (actualUnit !== baseUnit || actualToBaseFactor !== 1 || conversionSource !== 'DIRECT_SAME_UNIT')) return null;
+  return { actualUnit, baseUnit, recognizedUnit:text(allocation.recognizedUnit || item.recognizedUnit || actualUnit).toUpperCase(),
+    actualToBaseFactor, actualToRecognizedFactor, conversionSource, conversionRuleId, conversionRuleVersion };
+}
+
 export function classifySaleAllocation(allocation = {}, source = {}, review = {}) {
-  if (review.unlinkDirect === true) return { linkStatus:'DIRECT_UNLINKED', mode:'DIRECT', allocation };
+  if (review.unlinkDirect === true) {
+    const salesCustomer = masterByIdentity(source, 'customers', review.salesCustomerId || allocation.salesCustomerId, allocation.salesCustomerCode || allocation.customerCode || allocation.customer);
+    const deliveryCustomer = masterByIdentity(source, 'customers', review.deliveryCustomerId || allocation.deliveryCustomerId || salesCustomer?.customerId, allocation.deliveryCustomerCode || allocation.deliveryCustomerName);
+    const billingCustomer = masterByIdentity(source, 'customers', review.billingCustomerId || allocation.billingCustomerId || salesCustomer?.customerId, allocation.billingCustomerCode || allocation.billingCustomerName);
+    const product = masterByIdentity(source, 'products', review.productId || allocation.productId, allocation.productCode);
+    const warehouse = masterByIdentity(source, 'warehouses', review.warehouseId || allocation.warehouseId, allocation.warehouseCode || allocation.warehouse);
+    const conversion = conversionSnapshot(allocation, {}, true);
+    if (![salesCustomer, deliveryCustomer, billingCustomer, product, warehouse].every(row => active(row) && revision(row)) || !conversion) {
+      return { linkStatus:'REVIEW_REQUIRED_DIRECT_MASTER_OR_CONVERSION', mode:'REVIEW', candidates:[] };
+    }
+    return { linkStatus:'DIRECT_UNLINKED', mode:'DIRECT', allocation, salesCustomer, deliveryCustomer, billingCustomer, product, warehouse, conversion };
+  }
   const explicitOrderId = text(review.orderId || allocation.orderId);
   const explicitItemId = text(review.orderItemId || allocation.orderItemId);
   let matches = exactOrderCandidates(allocation, source);
@@ -82,34 +117,40 @@ export function classifySaleAllocation(allocation = {}, source = {}, review = {}
     || text(dispatchLine.dispatchId) !== dispatchId || text(dispatchLine.orderItemId) !== text(match.item.orderItemId))) {
     return { linkStatus:'REVIEW_REQUIRED_DISPATCH_INVALID', mode:'REVIEW', candidates:matches };
   }
+  const conversion = conversionSnapshot(allocation, match.item, false);
+  if (!conversion) return { linkStatus:'REVIEW_REQUIRED_CONVERSION_PROVENANCE', mode:'REVIEW', candidates:matches };
   return { linkStatus:'ORDER_Q_LINKED', mode:'ORDER_Q', order:match.order, item:match.item, customer,
-    salesCustomer, deliveryCustomer, billingCustomer, product, warehouse, dispatch, dispatchLine };
+    salesCustomer, deliveryCustomer, billingCustomer, product, warehouse, dispatch, dispatchLine, conversion };
 }
 
 export function buildSaleStage4Sidecar(workspace = {}, source = {}, reviews = {}, actor = 'ADMIN') {
   const allocations = Array.isArray(workspace.allocations) ? workspace.allocations : [];
-  const occurrence = new Map();
-  const classified = allocations.map((allocation, index) => {
-    const sourceRowNumber = Number(allocation.sourceRowNumber || index + 2);
-    const basis = canonicalSha256({ planId:text(workspace.planId), sourceFingerprint:text(workspace.sourceFingerprint), sourceRowNumber,
-      orderNumber:text(allocation.orderNumber), productCode:text(allocation.productCode), customer:text(allocation.customer) });
-    const sourceOccurrence = (occurrence.get(basis) || 0) + 1;
-    occurrence.set(basis, sourceOccurrence);
-    return { allocation, sourceRowNumber, sourceOccurrence, sourceRowKey:canonicalSha256({ basis, sourceOccurrence }),
+  const identityKeys = new Set(); const sourceRowKeys = new Set();
+  const classified = allocations.map(allocation => {
+    const sourceRowNumber = Number(allocation.sourceRowNumber);
+    const sourceOccurrence = Number(allocation.sourceOccurrence);
+    const sourceRowKey = text(allocation.sourceRowKey);
+    const compound = `${sourceRowNumber}:${sourceOccurrence}`;
+    if (!Number.isInteger(sourceRowNumber) || sourceRowNumber < 1 || !Number.isInteger(sourceOccurrence) || sourceOccurrence < 1 || !sourceRowKey) {
+      throw new Error('ORDERQ_SALE_SOURCE_OCCURRENCE_REQUIRED');
+    }
+    if (identityKeys.has(compound) || sourceRowKeys.has(sourceRowKey)) throw new Error(`ORDERQ_SALE_SOURCE_OCCURRENCE_DUPLICATE:${compound}`);
+    identityKeys.add(compound); sourceRowKeys.add(sourceRowKey);
+    return { allocation, sourceRowNumber, sourceOccurrence, sourceRowKey,
       result:classifySaleAllocation(allocation, source, reviews[`${sourceRowNumber}:${sourceOccurrence}`] || reviews[sourceRowNumber] || {}) };
   });
   const groupKeys = classified.filter(row => row.result.mode !== 'REVIEW').map(row => {
-    const linked = row.result.mode === 'ORDER_Q' ? row.result : {};
-    const customerId = text(linked.salesCustomer?.customerId || row.allocation.salesCustomerId);
+    const linked = row.result.mode !== 'REVIEW' ? row.result : {};
+    const customerId = text(linked.salesCustomer?.customerId);
     return stableSaleGroupKey({ ...workspace, ...row.allocation, salesCustomerId:customerId,
-      deliveryCustomerId:text(row.allocation.deliveryCustomerId || customerId), billingCustomerId:text(row.allocation.billingCustomerId || customerId),
+      deliveryCustomerId:text(linked.deliveryCustomer?.customerId), billingCustomerId:text(linked.billingCustomer?.customerId),
       warehouseId:text(linked.warehouse?.warehouseId || row.allocation.warehouseId), orderId:text(linked.order?.orderId), dispatchId:text(linked.dispatch?.dispatchId) });
   });
   const ordinals = assignStableVoucherOrdinals(groupKeys, workspace.saleStage4Sidecar?.voucherOrdinalByGroupKey);
   let groupCursor = 0;
   const rows = classified.map(row => {
-    const linked = row.result.mode === 'ORDER_Q' ? row.result : {};
-    const customerId = text(linked.salesCustomer?.customerId || row.allocation.salesCustomerId);
+    const linked = row.result.mode !== 'REVIEW' ? row.result : {};
+    const customerId = text(linked.salesCustomer?.customerId);
     const groupKey = row.result.mode === 'REVIEW' ? '' : groupKeys[groupCursor++];
     return {
       sourceRowKey:row.sourceRowKey, sourceRowNumber:row.sourceRowNumber, sourceOccurrence:row.sourceOccurrence,
@@ -117,17 +158,35 @@ export function buildSaleStage4Sidecar(workspace = {}, source = {}, reviews = {}
       orderId:text(linked.order?.orderId), orderRevision:revision(linked.order) || '',
       orderItemId:text(linked.item?.orderItemId), orderItemRevision:revision(linked.item) || '',
       salesCustomerId:customerId, salesCustomerRevision:revision(linked.salesCustomer) || '',
-      deliveryCustomerId:text(linked.deliveryCustomer?.customerId || row.allocation.deliveryCustomerId || customerId), deliveryCustomerRevision:revision(linked.deliveryCustomer) || '',
-      billingCustomerId:text(linked.billingCustomer?.customerId || row.allocation.billingCustomerId || customerId), billingCustomerRevision:revision(linked.billingCustomer) || '',
+      deliveryCustomerId:text(linked.deliveryCustomer?.customerId), deliveryCustomerRevision:revision(linked.deliveryCustomer) || '',
+      billingCustomerId:text(linked.billingCustomer?.customerId), billingCustomerRevision:revision(linked.billingCustomer) || '',
       dispatchId:text(linked.dispatch?.dispatchId), dispatchRevision:revision(linked.dispatch) || '',
       dispatchLineId:text(linked.dispatchLine?.dispatchLineId), dispatchLineRevision:revision(linked.dispatchLine) || '',
       productId:text(linked.product?.productId), productMasterRevision:revision(linked.product) || '',
       warehouseId:text(linked.warehouse?.warehouseId), warehouseMasterRevision:revision(linked.warehouse) || '',
+      actualUnit:text(linked.conversion?.actualUnit), baseUnit:text(linked.conversion?.baseUnit), recognizedUnit:text(linked.conversion?.recognizedUnit),
+      actualToBaseFactor:linked.conversion?.actualToBaseFactor ?? '', actualToRecognizedFactor:linked.conversion?.actualToRecognizedFactor ?? '',
+      conversionSource:text(linked.conversion?.conversionSource), conversionRuleId:text(linked.conversion?.conversionRuleId), conversionRuleVersion:text(linked.conversion?.conversionRuleVersion),
       linkStatus:row.result.linkStatus, linkedAt:new Date().toISOString(), linkedBy:text(actor)
     };
   });
   return { schemaVersion:SALE_SIDECAR_SCHEMA, planId:text(workspace.planId), sourceFingerprint:text(workspace.sourceFingerprint),
     basisDate:text(workspace.basisDate), voucherOrdinalByGroupKey:ordinals, rows };
+}
+
+export async function loadSaleStage4SourceSnapshot() {
+  const db = await openOrderQDb();
+  const names = [STORE.ORDERS, STORE.ORDER_ITEMS, STORE.CUSTOMERS, STORE.PRODUCTS, STORE.WAREHOUSES, STORE.DISPATCH_DECISIONS, STORE.DISPATCH_LINES];
+  const tx = db.transaction(names, 'readonly');
+  const [orders, orderItems, customers, products, warehouses, dispatches, dispatchLines] = await Promise.all(names.map(name => requestToPromise(tx.objectStore(name).getAll())));
+  await transactionDone(tx);
+  return { orders, orderItems, customers, products, warehouses, dispatches, dispatchLines };
+}
+
+export async function connectSaleStage4Workspace(workspace = {}, options = {}) {
+  const source = options.source || await loadSaleStage4SourceSnapshot();
+  const sidecar = buildSaleStage4Sidecar(workspace, source, options.reviews || {}, options.actor || 'ADMIN');
+  return attachSaleSidecar(workspace, sidecar);
 }
 
 export function attachSaleSidecar(workspace = {}, sidecar = {}) {
