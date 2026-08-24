@@ -10,6 +10,7 @@ import { createLiveCustomer, ensureCustomerMasterReady, listCustomers } from '..
 import { isSelectableMasterProduct, loadProductCatalog, searchProductCatalog } from '../orderq/product-master-search.js?v=0.8.3';
 import { loadWarehouseCatalog, matchWarehouseInput, warehouseDisplayName } from '../orderq/warehouse-master.js?v=0.8.0';
 import { recognizeOcrDocument, verifiedRowsToParserLines } from './ocr-document-parser.js?v=0.1.1';
+import { parseStructuredSheet } from './structured-sheet-parser.js?v=0.1.0';
 import {
   buildCatalogPriceSnapshot,
   priceSnapshotsEqual,
@@ -55,6 +56,7 @@ const state = {
   photoCaptureSequence: 0,
   pendingOcrReview: null,
   pendingSourceName: '',
+  pendingStructuredImport: null,
   sourceImages: { order: null, purchase: null, sale: null, estimate: null },
   sourceImageRecords: new Map(),
   selectedRowIds: new Set(),
@@ -1860,6 +1862,7 @@ function loadCatalogRecord(record) {
   state.pendingImageEvidence = null;
   state.pendingOcrReview = null;
   state.pendingSourceName = '';
+  state.pendingStructuredImport = null;
   setActiveActivity('');
   resetPhotoView();
   saveDraftNow();
@@ -2120,11 +2123,13 @@ function setMode(mode) {
   state.pendingImageEvidence = null;
   state.pendingOcrReview = null;
   state.pendingSourceName = '';
+  state.pendingStructuredImport = null;
   saveDraftNow();
   renderMode();
 }
 
 function syncSourceText() {
+  if (state.pendingStructuredImport?.rawText !== sourceTextInput.value) state.pendingStructuredImport = null;
   modeDraft().sourceText = sourceTextInput.value;
   scheduleSave();
   resizeSource();
@@ -2359,6 +2364,7 @@ function clearParserWorkspace() {
   state.pendingImageEvidence = null;
   state.pendingOcrReview = null;
   state.pendingSourceName = '';
+  state.pendingStructuredImport = null;
   state.activeActivity = '';
   state.draft.ui.selectedRowId = '';
   modeUi().scrollTop = 0;
@@ -2436,6 +2442,11 @@ async function analyzeSource({ automatic = false } = {}) {
   const pendingOcr = method.sourceType === 'IMAGE_OCR' && state.pendingOcrReview?.rawText === rawText
     ? state.pendingOcrReview
     : null;
+  const structuredImport = method.id === 'excel'
+    && state.pendingStructuredImport?.modeId === modeId
+    && state.pendingStructuredImport?.rawText === rawText
+    ? state.pendingStructuredImport
+    : null;
   if (pendingOcr && pendingOcr.status !== 'VERIFIED') {
     const reason = pendingOcr.warnings.includes('TOTAL_NOT_FOUND')
       ? '합계 수량·금액을 인식하지 못했습니다.'
@@ -2446,11 +2457,13 @@ async function analyzeSource({ automatic = false } = {}) {
     renderSourceAnalysis();
     return;
   }
-  const detectedSourceType = looksLikeKakaoText(rawText)
+  const detectedSourceType = structuredImport
+    ? 'STRUCTURED_FILE'
+    : (looksLikeKakaoText(rawText)
     ? 'KAKAO_TEXT'
     : (pendingOcr?.status === 'VERIFIED'
       ? 'IMAGE_OCR'
-      : (['CLIPBOARD', 'IMAGE_OCR'].includes(method.sourceType) ? 'GENERAL_TEXT' : method.sourceType));
+      : (['CLIPBOARD', 'IMAGE_OCR'].includes(method.sourceType) ? 'GENERAL_TEXT' : method.sourceType)));
   const batch = contract.createBatch({
     sequence: visibleActivityBatches(current).length + 1,
     method: method.id,
@@ -2489,7 +2502,25 @@ async function analyzeSource({ automatic = false } = {}) {
       if (inferred) applyCustomer(inferred, { rematch: false, mappingSource: 'MASTER_EXACT', learnAlias: false });
     }
 
-    if (pendingOcr?.status === 'VERIFIED') {
+    if (structuredImport) {
+      lines = structuredImport.rows.map((row, index) => ({
+        ...row,
+        sourceLineKey: `${batch.batchId}:sheet:${row.sourceLineNo || index + 1}`
+      }));
+      if (state.draft.activeMode === 'order') {
+        try {
+          const captured = await captureTextIntake({
+            sourceType: batch.sourceType,
+            sourceId: 'SMART_INPUT',
+            captureOccurrenceId: `${state.draft.draftId}:${state.draft.activeMode}:${batch.sequence}`,
+            rawText
+          });
+          batch.intakeSessionId = captured.session.intakeSessionId;
+        } catch (_) {
+          // 구조화 행은 원본 표에서 이미 검증했으므로 수집 이력 실패가 입력표 생성을 막지 않는다.
+        }
+      }
+    } else if (pendingOcr?.status === 'VERIFIED') {
       lines = verifiedRowsToParserLines(pendingOcr, batch.batchId);
       if (state.draft.activeMode === 'order') {
         const captured = await captureTextIntake({
@@ -2575,6 +2606,7 @@ async function analyzeSource({ automatic = false } = {}) {
     state.pendingImageEvidence = null;
     state.pendingOcrReview = null;
     state.pendingSourceName = '';
+    state.pendingStructuredImport = null;
     resizeSource();
     if (!current.header.customerId && analyzedDocument?.confirmedCustomerId) {
       applyCustomer(
@@ -2586,8 +2618,13 @@ async function analyzeSource({ automatic = false } = {}) {
     renderDelivery();
     saveDraftNow();
     const summary = contract.summarizeRows(current.rows);
-    setAppStatus(`${activityLabel(method.id)} 분석 완료 · ${lines.length}행 · 일치 ${summary.matched} · 확인 ${summary.similar} · 미인식 ${summary.unresolved}`);
-    $('sourceNotice').textContent = '노랑: 수집된 상품 · 빨강: 마스터 미확정 · 주문자명/시간: 고정 구분색';
+    const structuredSummary = structuredImport
+      ? ` · 헤더 ${structuredImport.headerRowNumber}행 · 필드 ${structuredImport.mappings.length}개`
+      : '';
+    setAppStatus(`${activityLabel(method.id)} 분석 완료 · ${lines.length}행${structuredSummary} · 일치 ${summary.matched} · 확인 ${summary.similar} · 미인식 ${summary.unresolved}`);
+    $('sourceNotice').textContent = structuredImport
+      ? `${structuredImport.sheetName} · ${structuredImport.mappings.map(mapping => mapping.sourceHeader).join(' · ')} 필드를 입력표에 반영했습니다.`
+      : '노랑: 수집된 상품 · 빨강: 마스터 미확정 · 주문자명/시간: 고정 구분색';
     if (!current.header.customerId) {
       $('customerHint').textContent = '거래처를 인식하지 못했습니다. 등록 거래처를 선택하세요.';
       if (!automatic) {
@@ -2615,6 +2652,7 @@ async function analyzeSource({ automatic = false } = {}) {
 
 async function handleFile(file) {
   if (!file) return;
+  state.pendingStructuredImport = null;
   try {
     updateMethod('excel');
     setActiveActivity('Excel·파일 불러오는 중');
@@ -2623,19 +2661,44 @@ async function handleFile(file) {
     if (/\.(xlsx|xls)$/i.test(file.name)) {
       if (!window.XLSX) throw new Error('Excel 처리 모듈을 불러오지 못했습니다.');
       const workbook = window.XLSX.read(new Uint8Array(await file.arrayBuffer()), { type: 'array', cellDates: false, cellText: true });
-      const sheetName = workbook.SheetNames.find(name => workbook.Sheets[name]?.['!ref']) || workbook.SheetNames[0];
-      if (!sheetName) throw new Error('읽을 수 있는 Excel 시트가 없습니다.');
-      const matrix = window.XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, raw: false, defval: '', blankrows: true });
-      rawText = matrix.map(row => row.map(cell => String(cell ?? '')).join('\t')).join('\n');
-      state.pendingSourceName = `${file.name} · ${sheetName}`;
+      let firstReadable = null;
+      let structured = null;
+      workbook.SheetNames.forEach(sheetName => {
+        if (!workbook.Sheets[sheetName]?.['!ref']) return;
+        const matrix = window.XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, raw: false, defval: '', blankrows: true });
+        const parsed = parseStructuredSheet(matrix, {
+          fieldDefinitions: contract.PRODUCT_FIELD_DEFINITIONS,
+          numberParser: contract.numberOrNull
+        });
+        const candidate = { ...parsed, sheetName };
+        if (!firstReadable) firstReadable = candidate;
+        if (!candidate.structured) return;
+        if (!structured || candidate.score > structured.score
+          || (candidate.score === structured.score && candidate.rows.length > structured.rows.length)) structured = candidate;
+      });
+      const selected = structured || firstReadable;
+      if (!selected) throw new Error('읽을 수 있는 Excel 시트가 없습니다.');
+      rawText = selected.rawText;
+      state.pendingSourceName = `${file.name} · ${selected.sheetName}`;
+      state.pendingStructuredImport = structured
+        ? { ...structured, rawText, modeId: state.draft.activeMode, fileName: file.name }
+        : null;
     } else {
       rawText = await file.text();
       state.pendingSourceName = file.name;
+      state.pendingStructuredImport = null;
     }
     sourceTextInput.value = rawText;
     syncSourceText();
-    setAppStatus(`${file.name}을 불러왔습니다. 자동 분석을 시작합니다.`);
-    toast('파일 내용을 불러와 자동 분석합니다.', 'success');
+    if (state.pendingStructuredImport) {
+      const imported = state.pendingStructuredImport;
+      const warning = imported.invalidCells.length ? ` · 숫자 확인 ${imported.invalidCells.length}셀` : '';
+      setAppStatus(`${file.name} · ${imported.sheetName} ${imported.headerRowNumber}행에서 필드 ${imported.mappings.length}개를 찾았습니다${warning}.`);
+      toast(`필드명을 찾아 상품 ${imported.rows.length}행을 자동 입력합니다.`, 'success');
+    } else {
+      setAppStatus(`${file.name}을 불러왔습니다. 자동 분석을 시작합니다.`);
+      toast('표 필드를 찾지 못해 기존 텍스트 방식으로 자동 분석합니다.', 'success');
+    }
   } catch (error) {
     toast(error.message || '파일을 읽지 못했습니다.', 'error');
     setAppStatus('파일을 읽지 못했습니다.', 'error');
@@ -3382,6 +3445,7 @@ async function completeOrder() {
     state.pendingImageEvidence = null;
     state.pendingOcrReview = null;
     state.pendingSourceName = '';
+    state.pendingStructuredImport = null;
     saveDraftNow();
     renderMode();
     setAppStatus(online ? `주문 ${result.order.orderNo} 저장·중앙 반영 완료` : `주문 ${result.order.orderNo} 로컬 저장 완료 · 중앙 반영 대기`, online ? 'normal' : 'warn');
@@ -3411,6 +3475,7 @@ function resetCurrentMode(requireConfirmation = true, successMessage = '새 입�
   state.pendingImageEvidence = null;
   state.pendingOcrReview = null;
   state.pendingSourceName = '';
+  state.pendingStructuredImport = null;
   saveDraftNow();
   renderMode();
   sourceTextInput.focus();

@@ -37,7 +37,8 @@
     required: options.required === true,
     valueType: options.valueType === 'NUMBER' ? 'NUMBER' : 'TEXT',
     editable: options.editable !== false,
-    masterAliases: Object.freeze([...(options.masterAliases || [])])
+    masterAliases: Object.freeze([...(options.masterAliases || [])]),
+    inputAliases: Object.freeze([...(options.inputAliases || [])])
   });
   const HEADER_FIELD_DEFINITIONS = Object.freeze([
     Object.freeze({ id: 'customer', label: '배송 거래처', required: true }),
@@ -51,10 +52,10 @@
     productField('specification', '규격', 'ITEM', { masterAliases: ['specification', 'spec', '규격', '규격명'] }),
     productField('quantity', '수량', 'QUANTITY', { valueType: 'NUMBER' }),
     productField('unit', '단위(상품구성)', 'ITEM', { masterAliases: ['finalUnit', 'unit', '업무단위', '단위', '상품구성'] }),
-    productField('unitPrice', '단가', 'PRICE', { valueType: 'NUMBER' }),
+    productField('unitPrice', '단가', 'PRICE', { valueType: 'NUMBER', inputAliases: ['견적단가', '판매단가', '주문단가'] }),
     productField('supplyAmount', '공급가액', 'PRICE', { valueType: 'NUMBER', editable: false }),
-    productField('memo', '메모', 'ADDITIONAL'),
-    productField('description', '적요(직원)', 'ADDITIONAL'),
+    productField('memo', '메모', 'ADDITIONAL', { inputAliases: ['지시사항', '비고', '요청사항'] }),
+    productField('description', '적요(직원)', 'ADDITIONAL', { inputAliases: ['적요', '직원적요'] }),
     productField('noticePrice', '공지단가', 'PRICE', { valueType: 'NUMBER' })
   ]);
   const voucherField = id => VOUCHER_COLUMN_DEFINITIONS.find(field => field.id === id);
