@@ -121,17 +121,18 @@ nexus-top { display: block; min-height: var(--nexus-top-height); }
 .aside-heading { height: 48px; padding: 0 15px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border); background: var(--surface-muted); }
 .aside-heading span { color: var(--text-soft); font-size: 12px; font-weight: 800; }
 .aside-heading strong { color: var(--navy); font-size: 12px; }
-.workbench { display: grid; gap: 10px; }
+.workbench { container: smartinput-workbench / inline-size; display: grid; gap: 10px; }
 .document-fields, .grid-card { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow); }
 .document-fields { padding: 9px 12px 8px; display: grid; grid-template-columns: minmax(330px, .72fr) minmax(0, 1.45fr); align-items: end; gap: 8px 12px; }
 .document-fields__left { min-width: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: end; gap: 8px; }
-.document-fields__right { min-width: 0; display: flex; align-items: end; justify-content: flex-start; gap: 6px; }
+.document-fields__right { min-width: 0; display: flex; align-items: end; justify-content: flex-start; gap: 4px; }
 .document-fields__left > .field, .document-fields__right > .field, .document-fields__right > .catalog-filter { grid-template-rows: 15px 36px; gap: 3px; }
 .document-fields__left .field small, .document-fields__right .field small { display: none; }
 .document-fields__left .field input, .document-fields__left .field select, .document-fields__right .field input, .document-fields__right .field select { height: 36px; font-size: 12px; }
-.document-fields__right .field--customer { flex: 1 1 180px; min-width: 150px; max-width: 270px; }
-.document-fields__right .catalog-filter { flex: 1 1 220px; min-width: 190px; max-width: 320px; }
+.document-fields__right .field--customer { width: 220px; min-width: 220px; max-width: 220px; flex: 0 0 220px; }
+.document-fields__right .catalog-filter { flex: 0 1 160px; min-width: 150px; max-width: 320px; }
 .document-fields__right > .button, .document-fields__right .estimate-output-actions { flex: 0 0 auto; white-space: nowrap; }
+.document-fields__right > .button, .document-fields__right .estimate-output-actions .button { padding-inline: 8px; }
 .document-fields [data-header-field][hidden] { display: none; }
 .field { min-width: 0; display: grid; gap: 6px; }
 .field > span { color: var(--text-soft); font-size: 12px; font-weight: 800; }
@@ -452,6 +453,11 @@ tfoot td { position: sticky; bottom: 0; z-index: 2; height: 38px; padding: 0 8px
 .smart-draft-row strong { overflow: hidden; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
 .smart-draft-row span, .smart-draft-row small { color: var(--text-soft); font-size: 11px; }
 .smart-draft-row small { grid-column: 1 / -1; }
+
+@container smartinput-workbench (max-width: 1012px) {
+  .document-fields, .workspace.has-photo-source .document-fields { grid-template-columns: minmax(0, 1fr); }
+  .document-fields__right { justify-content: flex-start; flex-wrap: wrap; }
+}
 
 @media (min-width: 1481px) {
   html, body { height: 100%; min-height: 0; overflow: hidden; }
