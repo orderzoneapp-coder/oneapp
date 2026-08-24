@@ -14,8 +14,10 @@ export function normalizeOfficialSaleEditLines(lines = []) {
     const unitPrice = finite(source.unitPrice, 'ORDERQ_SALE_UNIT_PRICE_REQUIRED');
     const actualToBaseFactor = finite(source.actualToBaseFactor, 'ORDERQ_SALE_CONVERSION_REQUIRED');
     const actualToRecognizedFactor = finite(source.actualToRecognizedFactor, 'ORDERQ_SALE_CONVERSION_REQUIRED');
-    if (!(actualToBaseFactor > 0) || !(actualToRecognizedFactor > 0)) throw new Error('ORDERQ_SALE_CONVERSION_REQUIRED');
     const orderLinkMode = text(source.orderLinkMode || 'DIRECT').toUpperCase();
+    if (!(actualToBaseFactor > 0) || (orderLinkMode === 'DIRECT' ? actualToRecognizedFactor !== 0 : !(actualToRecognizedFactor > 0))) {
+      throw new Error('ORDERQ_SALE_CONVERSION_REQUIRED');
+    }
     const baseQuantity = actualQuantity * actualToBaseFactor;
     const recognizedOrderQuantity = orderLinkMode === 'DIRECT' ? 0 : actualQuantity * actualToRecognizedFactor;
     const supplyAmount = won(actualQuantity * unitPrice);
@@ -35,6 +37,8 @@ export function buildOfficialSaleEditCommand({ action, document, lines, reason, 
   return { commandType, commandId, idempotencyKey: commandId, aggregateId: text(document?.salesDocumentId),
     salesDocumentId: text(document?.salesDocumentId), expectedRevision: revision, actor, reason: editReason,
     occurredAt: text(occurredAt || new Date().toISOString()), sourceType: text(document?.sourceType),
+    sourceDocumentKey:text(document?.sourceDocumentKey), originSystem:text(document?.originSystem),
+    originTransactionId:text(document?.originTransactionId), sourceVoucherIndex:Number(document?.sourceVoucherIndex || 0),
     contractKind: 'SALE_STAGE4_V1', commandContract: 'VOUCHER_CORE_V1', document: { ...document }, lines: normalizedLines };
 }
 

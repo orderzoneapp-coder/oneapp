@@ -1272,19 +1272,26 @@
     requireCanonicalHash();
     const sidecar = workspace?.saleStage4Sidecar;
     if (!sidecar || sidecar.schemaVersion !== "ORDERQ_SALE_SIDECAR_V1") return [];
-    const byJoin = new Map((sidecar.rows || []).map(row => [`${Number(row.sourceRowNumber)}:${Number(row.sourceOccurrence || 1)}`, row]));
-    const occurrences = new Map();
+    const byJoin = new Map();
+    (sidecar.rows || []).forEach(row => {
+      const key = `${Number(row.sourceRowNumber)}:${Number(row.sourceOccurrence)}`;
+      if (byJoin.has(key) || !String(row.sourceRowKey || "").trim()) throw new Error("ORDERQ_SALE_META_IDENTITY_DUPLICATE");
+      byJoin.set(key, row);
+    });
     return sourceRows.map((row, index) => {
-      const sourceRowNumber = Number(row.sourceRowNumber || index + 2);
-      const sourceOccurrence = (occurrences.get(sourceRowNumber) || 0) + 1;
-      occurrences.set(sourceRowNumber, sourceOccurrence);
+      const sourceRowNumber = Number(row.sourceRowNumber);
+      const sourceOccurrence = Number(row.sourceOccurrence);
+      if (!Number.isInteger(sourceRowNumber) || sourceRowNumber < 1 || !Number.isInteger(sourceOccurrence) || sourceOccurrence < 1 || !String(row.sourceRowKey || "").trim()) {
+        throw new Error("ORDERQ_SALE_META_IDENTITY_REQUIRED");
+      }
       const identity = byJoin.get(`${sourceRowNumber}:${sourceOccurrence}`);
-      if (!identity || String(identity.linkStatus || "").startsWith("REVIEW_REQUIRED")) throw new Error("ORDERQ_SALE_META_IDENTITY_REQUIRED");
+      if (!identity || identity.sourceRowKey !== row.sourceRowKey || String(identity.linkStatus || "").startsWith("REVIEW_REQUIRED")) throw new Error("ORDERQ_SALE_META_IDENTITY_REQUIRED");
       const actual = metaNumber(row.quantity);
-      const actualUnit = metaUpper(row.unit || row.sourceUnit);
-      const baseFactor = metaNumber(row.actualToBaseFactor ?? row.conversionFactor ?? 1);
-      const recognizedFactor = identity.linkStatus === "DIRECT_UNLINKED" ? 0 : metaNumber(row.actualToRecognizedFactor ?? 1);
-      if (!(baseFactor > 0) || !(recognizedFactor >= 0)) throw new Error("ORDERQ_SALE_META_CONVERSION_INVALID");
+      const actualUnit = metaUpper(identity.actualUnit);
+      const baseFactor = metaNumber(identity.actualToBaseFactor);
+      const recognizedFactor = metaNumber(identity.actualToRecognizedFactor);
+      if (!actualUnit || !identity.baseUnit || !(baseFactor > 0) || !(recognizedFactor >= 0)
+        || !identity.conversionSource || !identity.conversionRuleVersion) throw new Error("ORDERQ_SALE_META_CONVERSION_INVALID");
       const sourceDocumentKey = `SALE:${canonicalHash.canonicalSha256({ contractKind:"SALE_STAGE4_V1", stableGroupKey:identity.stableGroupKey,
         planId:sidecar.planId, sourceFingerprint:sidecar.sourceFingerprint, sourceVoucherIndex:identity.sourceVoucherIndex })}`;
       const sourceLineKey = `${sourceDocumentKey}:LINE:${canonicalHash.canonicalSha256({ sourceRowKey:identity.sourceRowKey,
@@ -1308,10 +1315,10 @@
         sourceDispatchId:identity.dispatchId, sourceDispatchRevision:identity.dispatchId ? metaNumber(identity.dispatchRevision || 0) : "",
         sourceDispatchLineId:identity.dispatchLineId, sourceDispatchLineRevision:identity.dispatchLineId ? metaNumber(identity.dispatchLineRevision || 0) : "",
         suggestedActualQuantity:actual, suggestedActualUnit:actualUnit, suggestedBaseQuantity:metaNumber(actual * baseFactor),
-        suggestedBaseUnit:metaUpper(row.baseUnit || actualUnit), suggestedRecognizedOrderQuantity:metaNumber(actual * recognizedFactor),
-        suggestedRecognizedUnit:metaUpper(row.recognizedUnit || actualUnit), suggestedActualToBaseFactor:baseFactor,
-        suggestedActualToRecognizedFactor:recognizedFactor, conversionSource:metaUpper(row.conversionSource || "ORDER_Q"),
-        conversionRuleId:metaText(row.conversionRuleId || "SALE_DEFAULT"), conversionRuleVersion:metaText(row.conversionRuleVersion || SALES_META_RULE_VERSION),
+        suggestedBaseUnit:metaUpper(identity.baseUnit), suggestedRecognizedOrderQuantity:metaNumber(actual * recognizedFactor),
+        suggestedRecognizedUnit:metaUpper(identity.recognizedUnit), suggestedActualToBaseFactor:baseFactor,
+        suggestedActualToRecognizedFactor:recognizedFactor, conversionSource:metaUpper(identity.conversionSource),
+        conversionRuleId:metaText(identity.conversionRuleId), conversionRuleVersion:metaText(identity.conversionRuleVersion),
         priorAllocationRefs:canonicalHash.canonicalJson(refs),
       };
       return { ...meta, rowDigest:salesMetaRowDigest(meta) };
@@ -1330,7 +1337,8 @@
     if (typeof row?.unitPrice !== "number" || !Number.isFinite(row.unitPrice)) return "";
     const quantity = typeof row?.quantity === "number" && Number.isFinite(row.quantity) ? row.quantity : 0;
     const unitPrice = row.unitPrice;
-    return Number((quantity * unitPrice).toFixed(9));
+    const raw = quantity * unitPrice;
+    return Math.sign(raw) * Math.floor(Math.abs(raw) + 0.5);
   }
 
   function buildSalesUploadSheet(workspace, XLSX) {
