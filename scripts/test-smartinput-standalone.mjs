@@ -484,6 +484,11 @@ assert.match(css, /\.document-fields__left \{[^}]*grid-template-columns: repeat\
   'the three fixed document fields must fit their left header lane without overlapping the customer lane');
 assert.match(css, /\.document-fields__right \{[^}]*display: flex;[^}]*justify-content: flex-start/,
   'the customer field must keep the same left edge when estimate-only controls appear');
+assert.match(css, /\.document-fields__right \.field--customer \{[^}]*width: 220px;[^}]*min-width: 220px;[^}]*max-width: 220px;[^}]*flex: 0 0 220px/,
+  'the customer field must keep the same width across all voucher modes');
+assert.match(css, /\.workbench \{[^}]*container: smartinput-workbench \/ inline-size/);
+assert.match(css, /@container smartinput-workbench \(max-width: 1012px\) \{[\s\S]*?\.document-fields[^}]*grid-template-columns: minmax\(0, 1fr\)/,
+  'the unified header must wrap before fixed estimate controls can overflow a narrowed workbench');
 assert.match(css, /\.app-bar__actions \{[^}]*min-width: 313px;[^}]*width: 313px;[^}]*flex: 0 0 313px;[^}]*justify-content: flex-end/,
   'mode-specific header actions must reserve a stable lane so the voucher switcher does not move');
 assert.match(css, /\.document-fields__right > \.catalog-filter \{ grid-template-rows: 15px 36px; gap: 3px; \}/,
