@@ -110,7 +110,8 @@ export function derivePurchaseDraftIdentity(group = {}, context = {}) {
   const purchaseDocumentId = `PD-${canonicalSha256(['VOUCHER_CORE_V1', sourceType, sourceDocumentKey]).slice(0, 32)}`;
   return { sourceType, originSystem, originTransactionId, externalDocumentNo, sourceVoucherIndex,
     sourceRunKey, roleSupplierKey, documentSuffix, sourceDocumentKey, purchaseDocumentId,
-    contractKind: 'PURCHASE_STAGE3_V1', purchasePlanId: text(group.purchasePlanId || group.rows?.[0]?.purchasePlanId) };
+    contractKind: 'PURCHASE_STAGE3_V1', purchasePlanId: text(group.purchasePlanId || group.rows?.[0]?.purchasePlanId),
+    sourceShortageKey: text(group.sourceShortageKey || group.rows?.[0]?.sourceShortageKey) };
 }
 
 export function buildPurchasePostDraft(group = {}, context = {}) {
@@ -134,6 +135,8 @@ export function buildPurchasePostDraft(group = {}, context = {}) {
       productId: text(row.productId), productCode: text(row.itemCode || row.productCode), productName: text(row.itemName || row.productName),
       specification: text(row.specification), warehouseId: text(row.warehouseId || group.warehouseId),
       warehouseCode: text(row.warehouseCode || group.warehouseCode), actualQuantity, unit: text(row.unit).toUpperCase(),
+      suggestedQuantity: row.suggestedQuantity === null || row.suggestedQuantity === undefined ? null : Number(row.suggestedQuantity),
+      suggestedBaseQuantity: row.suggestedBaseQuantity === null || row.suggestedBaseQuantity === undefined ? null : Number(row.suggestedBaseQuantity),
       conversionFactor, baseQuantity: finiteRequired(row.baseQuantity ?? actualQuantity * conversionFactor, 'ORDERQ_PURCHASE_BASE_QUANTITY_REQUIRED'),
       baseUnit: text(row.baseUnit || row.unit).toUpperCase(), unitPrice, supplyAmount, totalAmount: supplyAmount,
       taxType: 'VAT_INCLUDED_IN_SUPPLY', currency: 'KRW', productMasterRevision: Number(row.productMasterRevision || 0),
@@ -148,7 +151,8 @@ export function buildPurchasePostDraft(group = {}, context = {}) {
     warehouseId: text(group.warehouseId), warehouseCode: text(group.warehouseCode), warehouseName: text(group.warehouseName || group.warehouseCode),
     taxType: 'VAT_INCLUDED_IN_SUPPLY', currency: 'KRW', sourceType, contractKind: 'PURCHASE_STAGE3_V1', sourceDocumentKey,
     normalizedOriginVersion: 'PURCHASE_V2', originSystem, originTransactionId, externalDocumentNo,
-    purchasePlanId: text(group.purchasePlanId || group.rows?.[0]?.purchasePlanId), sourceRunKey, sourceVoucherIndex, documentSuffix
+    purchasePlanId: text(group.purchasePlanId || group.rows?.[0]?.purchasePlanId),
+    sourceShortageKey: text(group.sourceShortageKey || group.rows?.[0]?.sourceShortageKey), sourceRunKey, sourceVoucherIndex, documentSuffix
   };
   const commandSource = {
     commandType: 'POST_PURCHASE', aggregateId: purchaseDocumentId, expectedRevision: 1, commandId, idempotencyKey: commandId,
@@ -179,7 +183,7 @@ export async function postPurchaseGroup(group, context = {}) {
     purchasePlanId: source.purchasePlanId, externalDocumentNo: source.externalDocumentNo,
     sourceVoucherIndex: source.sourceVoucherIndex
   };
-  const legacyConflict = await findLegacyPurchaseOriginConflict({ purchasePlanId: source.purchasePlanId, legacySourceShortageKey: source.legacySourceShortageKey });
+  const legacyConflict = await findLegacyPurchaseOriginConflict({ legacySourceShortageKey: source.sourceShortageKey });
   if (legacyConflict) throw new Error(`ORDERQ_PURCHASE_ORIGIN_DUPLICATE:PURCHASE:LEGACY:${legacyConflict.legacyPurchaseDocumentId}`);
   const existing = await findOfficialPurchaseBySource(identity);
   if (existing && text(existing.purchaseDocumentId) !== text(source.purchaseDocumentId)) throw new Error(`ORDERQ_PURCHASE_ORIGIN_DUPLICATE:${source.sourceDocumentKey}`);

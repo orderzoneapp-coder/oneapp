@@ -609,6 +609,7 @@
       externalDocumentNo: text(input.externalDocumentNo || input.externalVoucherNo),
       purchasePlanId: text(input.purchasePlanId),
       planId: text(input.planId),
+      sourceShortageKey: text(input.sourceShortageKey || input.shortageId),
       sourceRowKey: text(input.sourceRowKey),
       documentSuffix: text(input.documentSuffix),
       documentOrdinal: numberOrNull(input.documentOrdinal),

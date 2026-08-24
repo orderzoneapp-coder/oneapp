@@ -221,10 +221,10 @@ export async function findOfficialPurchaseBySource(identity = {}) {
 
 export function buildFrozenPurchaseIntent(source = {}) {
   const lineFields = ['sourceLineKey', 'lineIdentityId', 'lineSequence', 'productId', 'productCode', 'productName', 'specification',
-    'warehouseId', 'warehouseCode', 'actualQuantity', 'unit', 'conversionFactor', 'baseQuantity', 'baseUnit', 'unitPrice',
-    'supplyAmount', 'totalAmount', 'taxType', 'currency'];
+    'warehouseId', 'warehouseCode', 'suggestedQuantity', 'suggestedBaseQuantity', 'actualQuantity', 'unit', 'conversionFactor', 'baseQuantity', 'baseUnit', 'unitPrice',
+    'supplyAmount', 'totalAmount', 'taxType', 'currency', 'productMasterRevision', 'warehouseMasterRevision'];
   const documentFields = ['supplierCustomerId', 'supplierCustomerCode', 'supplierCustomerName', 'purchaseDate', 'warehouseId',
-    'warehouseCode', 'warehouseName', 'taxType', 'currency'];
+    'warehouseCode', 'warehouseName', 'taxType', 'currency', 'sourceShortageKey'];
   const pick = (value, fields) => Object.fromEntries(fields.filter(field => value?.[field] !== undefined).map(field => [field, value[field]]));
   const sortedLines = [...(source.lines || [])].sort((left, right) => Number(left.lineSequence || 0) - Number(right.lineSequence || 0)
     || text(left.sourceLineKey).localeCompare(text(right.sourceLineKey)));
@@ -244,6 +244,7 @@ export function buildFrozenPurchaseIntent(source = {}) {
     originTransactionId: text(source.originTransactionId),
     externalDocumentNo: text(source.externalDocumentNo),
     purchasePlanId: text(source.purchasePlanId),
+    sourceShortageKey: text(source.sourceShortageKey),
     actorId: text(source.actorId || source.actor),
     reason: text(source.reason),
     occurredAt: text(source.occurredAt),

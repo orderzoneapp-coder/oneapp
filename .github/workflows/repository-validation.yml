@@ -155,6 +155,7 @@ jobs:
           node scripts/test-orderq-stage3-purchase-ui.mjs
           node scripts/test-orderq-stage3-purchase-workbook-e2e.mjs
           node scripts/test-orderq-stage3-purchase-legacy-boundary.mjs
+          node scripts/test-orderq-stage3-purchase-correction.mjs
 
       - name: Test DataOps zero and negative stock preservation
         run: node scripts/test-dataops-zero-stock-contract.mjs

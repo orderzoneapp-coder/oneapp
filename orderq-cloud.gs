@@ -1638,7 +1638,6 @@ function orderQM9NormalizedOriginKeys(documentRow, allRows) {
     if (originSystem && transactionId && documentKey) keys.add(`PURCHASE:RUN_DOC:${originSystem}:${transactionId}:${documentKey}`);
     if (originSystem && transactionId) keys.add(`PURCHASE:TX:${originSystem}:${transactionId}:${sourceVoucherIndex}`);
     if (originSystem && externalNo) keys.add(`PURCHASE:DOCNO:${originSystem}:${externalNo}`);
-    if (planId) keys.add(`PURCHASE:PLAN:${planId}`);
     if (shortageKey) keys.add(`PURCHASE:SHORTAGE:${shortageKey}`);
     if (legacyDocumentId) keys.add(`PURCHASE:LEGACY:${legacyDocumentId}`);
     const purchaseOrigin = orderQM9Text(payload.purchaseOriginId || payload.sourcePurchaseId || payload.shortageId || payload.legacySourceShortageKey || payload.sourceShortageKey);

@@ -28,7 +28,7 @@
   const PURCHASE_META_SHEET_NAME = "_NEXUS_META";
   const PURCHASE_META_HEADERS = Object.freeze([
     "schemaVersion", "ruleVersion", "workbookKind", "exportBatchId", "exportedAt",
-    "originSystem", "originTransactionId", "externalDocumentNo", "planId", "sourceFingerprint",
+    "originSystem", "originTransactionId", "externalDocumentNo", "planId", "sourceShortageKey", "sourceFingerprint",
     "basisDate", "sourceRowKey", "sourceVoucherIndex", "documentSuffix", "documentOrdinal",
     "purchasePlanId", "sourceDocumentKey", "sourceLineKey", "visibleSheetName", "visibleRowNo",
     "supplierCustomerId", "supplierCustomerCode", "productId", "productCode", "warehouseId",
@@ -1106,7 +1106,7 @@
     return [
       ["schemaVersion", metaText(meta.schemaVersion)], ["ruleVersion", metaText(meta.ruleVersion)],
       ["originSystem", metaUpper(meta.originSystem)], ["originTransactionId", metaText(meta.originTransactionId)],
-      ["planId", metaText(meta.planId)], ["sourceFingerprint", metaText(meta.sourceFingerprint)],
+      ["planId", metaText(meta.planId)], ["sourceShortageKey", metaText(meta.sourceShortageKey)], ["sourceFingerprint", metaText(meta.sourceFingerprint)],
       ["basisDate", metaText(meta.basisDate)], ["sourceRowKey", metaText(meta.sourceRowKey)],
       ["sourceVoucherIndex", String(Number(meta.sourceVoucherIndex))], ["documentSuffix", metaText(meta.documentSuffix)],
       ["documentOrdinal", String(Number(meta.documentOrdinal))], ["purchasePlanId", metaText(meta.purchasePlanId)],
@@ -1190,7 +1190,8 @@
       const meta = {
         schemaVersion: PURCHASE_META_SCHEMA_VERSION, ruleVersion: PURCHASE_META_RULE_VERSION,
         workbookKind: "ORDER_Q_PURCHASE", exportBatchId, exportedAt: metaText(workspace.createdAt),
-        originSystem: "ORDER_Q", originTransactionId: planId, externalDocumentNo, planId, sourceFingerprint,
+        originSystem: "ORDER_Q", originTransactionId: planId, externalDocumentNo, planId,
+        sourceShortageKey: metaText(row.sourceShortageKey || row.shortageId), sourceFingerprint,
         basisDate: metaText(workspace.basisDate), sourceRowKey, sourceVoucherIndex: documentOrdinal,
         documentSuffix, documentOrdinal, purchasePlanId: planId, sourceDocumentKey, sourceLineKey,
         visibleSheetName, visibleRowNo: index + 2, supplierCustomerId, supplierCustomerCode,
