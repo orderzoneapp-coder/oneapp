@@ -467,6 +467,14 @@ assert.match(css, /\.source-token--unmatched/);
 assert.match(css, /\.save-state \{[^}]*flex: 0 0 64px;[^}]*width: 64px;[^}]*white-space: nowrap;/);
 assert.match(css, /@media \(max-width: 1480px\) \{[^}]*grid-template-columns: 380px minmax\(0, 1fr\)/,
   'related apps must yield width to the input table on ordinary desktop screens');
+assert.match(css, /@media \(min-width: 1481px\) \{[\s\S]*?html, body \{[^}]*overflow: hidden;/,
+  'wide desktop SmartInput must not create a page-level vertical scrollbar');
+assert.match(css, /@media \(min-width: 1481px\) \{[\s\S]*?\.workspace \{[^}]*height: 100%;[^}]*align-items: stretch;/,
+  'the three wide-desktop workspace columns must share the available viewport height');
+assert.match(css, /@media \(min-width: 1481px\) \{[\s\S]*?\.workbench, \.workspace\.has-photo-source \.workbench \{[^}]*grid-template-rows: auto minmax\(0, 1fr\);/,
+  'the document header must remain fixed above the flexible input grid');
+assert.match(css, /@media \(min-width: 1481px\) \{[\s\S]*?\.table-scroll, \.workspace\.has-photo-source \.table-scroll \{[^}]*flex: 1 1 auto;[^}]*height: auto;[^}]*overflow: auto;/,
+  'only the input table body must scroll when rows exceed the available height');
 assert.match(css, /@media \(max-width: 1180px\)/);
 assert.match(css, /@media \(max-width: 1400px\) \{[\s\S]*?\.workspace\.has-photo-source \{ grid-template-columns: minmax\(0, 1fr\); \}/,
   'photo mode must stack before the workbench becomes too narrow around 1335px');

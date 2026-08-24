@@ -451,6 +451,24 @@ tfoot td { position: sticky; bottom: 0; z-index: 2; height: 38px; padding: 0 8px
 .smart-draft-row span, .smart-draft-row small { color: var(--text-soft); font-size: 11px; }
 .smart-draft-row small { grid-column: 1 / -1; }
 
+@media (min-width: 1481px) {
+  html, body { height: 100%; min-height: 0; overflow: hidden; }
+  .app-shell { height: calc(100dvh - var(--nexus-top-height) - 62px); min-height: 0; padding-bottom: 14px; overflow: hidden; }
+  .workspace { height: 100%; min-height: 0; align-items: stretch; }
+  .parser-card, .workbench, .related-panel,
+  .workspace.has-photo-source .parser-card, .workspace.has-photo-source .workbench { position: relative; top: auto; height: 100%; min-height: 0; }
+  .parser-card, .workspace.has-photo-source .parser-card { grid-template-rows: auto auto minmax(0, 1fr) auto; align-content: stretch; }
+  .parser-input-row, .workspace.has-photo-source .parser-input-row { min-height: 0; display: grid; grid-template-rows: minmax(0, 1fr) auto; }
+  .source-editor { min-height: 0; }
+  .source-editor__body { flex: 1 1 auto; height: 100%; min-height: 0; }
+  .source-highlight, .source-editor textarea { height: 100%; min-height: 0; }
+  .workbench, .workspace.has-photo-source .workbench { grid-template-rows: auto minmax(0, 1fr); }
+  .grid-card, .workspace.has-photo-source .grid-card { min-height: 0; display: flex; flex-direction: column; }
+  .table-scroll, .workspace.has-photo-source .table-scroll { flex: 1 1 auto; height: auto; min-height: 0; overflow: auto; }
+  .grid-card__header, .grid-toolbar, .voucher-footer-actions { flex: 0 0 auto; }
+  .related-panel { overflow: auto; overscroll-behavior: contain; }
+}
+
 @media (max-width: 1480px) {
   .workspace { grid-template-columns: 380px minmax(0, 1fr); }
   .workspace.has-photo-source { grid-template-columns: minmax(360px, min(var(--photo-pane-width), calc(100% - 502px))) 8px minmax(0, 1fr); }
