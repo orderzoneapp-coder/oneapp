@@ -10,7 +10,7 @@ import { requireActor } from './orderq-v7-contracts.js?v=0.8.0';
 import { appendInventoryMovementsInTransaction } from './inventory-ledger-repository.js?v=0.17.0';
 import { assertOfficialCommandAuthority } from './official-command-policy.js?v=0.17.0';
 import { runCentralOfficialCommand } from './central-command-gateway.js?v=0.17.0';
-import { calculateOfficialDocumentAmount, planOfficialVoucherCommand, voucherStableId } from './official-voucher-core.js?v=0.17.0';
+import { calculateOfficialDocumentAmount, canonicalSha256, planOfficialVoucherCommand, voucherStableId } from './official-voucher-core.js?v=0.17.0';
 
 function text(value) {
   return value === undefined || value === null ? '' : String(value).trim();
@@ -46,6 +46,16 @@ export async function saveOfficialVoucherDraft(source = {}, actor = 'ADMIN') {
     sourceDocumentKey,
     revision: 1,
     sourceType,
+    contractKind: text(source.contractKind) || (kind === 'PURCHASE' ? 'PURCHASE_STAGE3_V1' : ''),
+    draftIntentDigest: text(source.draftIntentDigest),
+    commandEnvelope: source.commandEnvelope ? JSON.parse(JSON.stringify(source.commandEnvelope)) : null,
+    commandFingerprint: text(source.commandFingerprint),
+    commandId: text(source.commandId),
+    commandState: text(source.commandState) || (source.commandEnvelope ? 'COMMAND_FROZEN' : 'DRAFT_SAVED'),
+    lastErrorCode: '',
+    centralTransactionId: '',
+    resultDigest: '',
+    projectionPending: false,
     localOnly: true,
     createdAt: source.createdAt || timestamp,
     createdBy: source.createdBy || context.actorId,
@@ -93,6 +103,142 @@ export async function saveOfficialVoucherDraft(source = {}, actor = 'ADMIN') {
     try { tx.abort(); } catch {}
     throw error;
   }
+}
+
+function purchaseSearchText(document, lines) {
+  return [document.purchaseDocumentId, document.supplierCustomerId, document.supplierCustomerCode,
+    document.supplierCustomerName, document.externalDocumentNo, document.purchasePlanId,
+    ...lines.flatMap(line => [line.productId, line.productCode, line.productName])]
+    .map(value => text(value).toLowerCase()).join('|');
+}
+
+export async function listOfficialPurchases(filters = {}) {
+  const db = await openOrderQDb();
+  const tx = db.transaction([STORE.PURCHASE_DOCUMENTS, STORE.PURCHASE_LINES], 'readonly');
+  const documents = await requestToPromise(tx.objectStore(STORE.PURCHASE_DOCUMENTS).getAll());
+  const lines = await requestToPromise(tx.objectStore(STORE.PURCHASE_LINES).getAll());
+  await transactionDone(tx);
+  const byDocument = new Map();
+  lines.forEach(line => {
+    const key = text(line.purchaseDocumentId);
+    if (!byDocument.has(key)) byDocument.set(key, []);
+    byDocument.get(key).push(line);
+  });
+  const query = text(filters.search).toLowerCase();
+  return documents.filter(document => text(document.documentContract) === 'VOUCHER_CORE_V1'
+      && text(document.contractKind) === 'PURCHASE_STAGE3_V1')
+    .filter(document => !filters.status || text(document.businessStatus || document.status) === text(filters.status).toUpperCase())
+    .filter(document => !filters.sourceType || text(document.sourceType) === text(filters.sourceType).toUpperCase())
+    .filter(document => !filters.projectionStatus || text(document.projectionStatus) === text(filters.projectionStatus).toUpperCase())
+    .filter(document => !filters.from || text(document.purchaseDate) >= text(filters.from))
+    .filter(document => !filters.to || text(document.purchaseDate) <= text(filters.to))
+    .filter(document => !query || purchaseSearchText(document, byDocument.get(document.purchaseDocumentId) || []).includes(query))
+    .sort((left, right) => text(right.purchaseDate).localeCompare(text(left.purchaseDate))
+      || text(right.createdAt).localeCompare(text(left.createdAt))
+      || text(left.purchaseDocumentId).localeCompare(text(right.purchaseDocumentId)))
+    .map(document => ({ ...document, lineCount: (byDocument.get(document.purchaseDocumentId) || []).filter(line => text(line.lineStatus || 'ACTIVE') !== 'DELETED').length }));
+}
+
+export async function loadOfficialPurchaseAggregate(purchaseDocumentId) {
+  const id = text(purchaseDocumentId);
+  if (!id) throw new Error('ORDERQ_OFFICIAL_PURCHASE_ID_REQUIRED');
+  const db = await openOrderQDb();
+  const stores = [STORE.PURCHASE_DOCUMENTS, STORE.PURCHASE_LINES, STORE.INVENTORY_MOVEMENTS,
+    STORE.VOUCHER_EVENTS, STORE.PAYABLE_ENTRIES, STORE.META];
+  const tx = db.transaction(stores, 'readonly');
+  const document = await requestToPromise(tx.objectStore(STORE.PURCHASE_DOCUMENTS).get(id));
+  if (!document || text(document.documentContract) !== 'VOUCHER_CORE_V1') {
+    await transactionDone(tx);
+    return null;
+  }
+  const lines = await allByIndex(tx.objectStore(STORE.PURCHASE_LINES), 'byDocumentId', id);
+  const movements = (await requestToPromise(tx.objectStore(STORE.INVENTORY_MOVEMENTS).getAll())).filter(row => text(row.sourceDocumentId) === id);
+  const voucherEvents = (await requestToPromise(tx.objectStore(STORE.VOUCHER_EVENTS).getAll())).filter(row => text(row.documentType) === 'PURCHASE' && text(row.documentId) === id);
+  const payableEntries = (await requestToPromise(tx.objectStore(STORE.PAYABLE_ENTRIES).getAll())).filter(row => text(row.purchaseDocumentId) === id);
+  const commandId = text(document.commandId);
+  const projectionReceipt = commandId ? await requestToPromise(tx.objectStore(STORE.META).get(`centralProjection:${commandId}`)) : null;
+  await transactionDone(tx);
+  const activeLines = lines.filter(line => text(line.lineStatus || 'ACTIVE') !== 'DELETED' && text(line.status) !== 'REVERSED');
+  const tombstones = lines.filter(line => !activeLines.includes(line));
+  const receipt = projectionReceipt?.value || projectionReceipt || null;
+  const overlay = receipt ? {
+    projectionStatus: text(receipt.projectionStatus) || document.projectionStatus,
+    projectionPending: text(receipt.projectionStatus) === 'PROJECTION_PENDING',
+    centralTransactionId: text(receipt.centralTransactionId) || document.centralTransactionId,
+    resultDigest: text(receipt.resultDigest) || document.resultDigest,
+    commandState: text(receipt.projectionStatus) === 'LOCAL_PROJECTED' ? 'LOCAL_PROJECTED' : 'PROJECTION_PENDING'
+  } : {};
+  return { document: { ...document, ...overlay }, activeLines, tombstones, movements, voucherEvents, payableEntries, projectionReceipt: receipt };
+}
+
+export async function findOfficialPurchaseBySource(identity = {}) {
+  const contractKind = text(identity.contractKind);
+  if (!contractKind) throw new Error('ORDERQ_PURCHASE_CONTRACT_KIND_REQUIRED');
+  const db = await openOrderQDb();
+  const tx = db.transaction(STORE.PURCHASE_DOCUMENTS, 'readonly');
+  const store = tx.objectStore(STORE.PURCHASE_DOCUMENTS);
+  let document = null;
+  const sourceDocumentKey = text(identity.sourceDocumentKey);
+  const originSystem = text(identity.originSystem).toUpperCase();
+  const originTransactionId = text(identity.originTransactionId);
+  if (originSystem && originTransactionId && sourceDocumentKey && store.indexNames.contains('byOriginRunDocument')) {
+    document = await requestToPromise(store.index('byOriginRunDocument').get([originSystem, originTransactionId, sourceDocumentKey]));
+  }
+  if (sourceDocumentKey) {
+    document ||= await requestToPromise(store.index('byDocumentContractSourceKey').get(['VOUCHER_CORE_V1', sourceDocumentKey]));
+  }
+  if (!document && originSystem && originTransactionId) {
+    const rows = await requestToPromise(store.getAll());
+    document = rows.find(row => text(row.originSystem).toUpperCase() === originSystem
+      && text(row.originTransactionId) === originTransactionId
+      && (!sourceDocumentKey || text(row.sourceDocumentKey) === sourceDocumentKey)) || null;
+  }
+  await transactionDone(tx);
+  return document && text(document.contractKind) === contractKind ? document : null;
+}
+
+export function buildFrozenPurchaseIntent(source = {}) {
+  const lineFields = ['sourceLineKey', 'lineIdentityId', 'lineSequence', 'productId', 'productCode', 'productName', 'specification',
+    'warehouseId', 'warehouseCode', 'actualQuantity', 'unit', 'conversionFactor', 'baseQuantity', 'baseUnit', 'unitPrice',
+    'supplyAmount', 'totalAmount', 'taxType', 'currency'];
+  const documentFields = ['supplierCustomerId', 'supplierCustomerCode', 'supplierCustomerName', 'purchaseDate', 'warehouseId',
+    'warehouseCode', 'warehouseName', 'taxType', 'currency'];
+  const pick = (value, fields) => Object.fromEntries(fields.filter(field => value?.[field] !== undefined).map(field => [field, value[field]]));
+  const sortedLines = [...(source.lines || [])].sort((left, right) => Number(left.lineSequence || 0) - Number(right.lineSequence || 0)
+    || text(left.sourceLineKey).localeCompare(text(right.sourceLineKey)));
+  const commandId = text(source.commandId || source.idempotencyKey);
+  const intent = {
+    commandContract: 'VOUCHER_CORE_V1',
+    commandId,
+    idempotencyKey: commandId,
+    commandType: text(source.commandType).toUpperCase(),
+    aggregateId: text(source.aggregateId),
+    expectedRevision: Number(source.expectedRevision),
+    sourceType: text(source.sourceType).toUpperCase(),
+    contractKind: text(source.contractKind),
+    sourceDocumentKey: text(source.sourceDocumentKey),
+    normalizedOriginVersion: 'PURCHASE_V2',
+    originSystem: text(source.originSystem),
+    originTransactionId: text(source.originTransactionId),
+    externalDocumentNo: text(source.externalDocumentNo),
+    purchasePlanId: text(source.purchasePlanId),
+    actorId: text(source.actorId || source.actor),
+    reason: text(source.reason),
+    occurredAt: text(source.occurredAt),
+    document: pick(source.document || source, documentFields),
+    lines: sortedLines.map(line => pick(line, lineFields))
+  };
+  const draftIntentDigest = canonicalSha256(intent);
+  const stableCommandId = commandId || `PURCHASE:${draftIntentDigest}`;
+  const commandEnvelope = { ...intent, commandId: stableCommandId, idempotencyKey: stableCommandId };
+  const centralIntent = { ...commandEnvelope, actor: commandEnvelope.actorId };
+  const commandFingerprint = canonicalSha256({
+    commandType: commandEnvelope.commandType,
+    aggregateId: commandEnvelope.aggregateId,
+    expectedRevision: commandEnvelope.expectedRevision,
+    intent: centralIntent
+  });
+  return { draftIntentDigest: canonicalSha256(commandEnvelope), commandId: stableCommandId, commandEnvelope, commandFingerprint, commandState: 'COMMAND_FROZEN' };
 }
 
 export async function applyOfficialVoucherCommand(source = {}) {

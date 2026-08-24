@@ -146,6 +146,16 @@ jobs:
       - name: Test ORDER Q voucher cloud contract
         run: node scripts/test-orderq-voucher-cloud-contract.mjs
 
+      - name: Test ORDER Q stage 3 purchase operations
+        run: |
+          node scripts/test-orderq-stage3-purchase-identity.mjs
+          node scripts/test-orderq-stage3-purchase-meta.mjs
+          node scripts/test-orderq-stage3-purchase-command-state.mjs
+          node scripts/test-orderq-stage3-purchase-master-capability.mjs
+          node scripts/test-orderq-stage3-purchase-ui.mjs
+          node scripts/test-orderq-stage3-purchase-workbook-e2e.mjs
+          node scripts/test-orderq-stage3-purchase-legacy-boundary.mjs
+
       - name: Test DataOps zero and negative stock preservation
         run: node scripts/test-dataops-zero-stock-contract.mjs
 

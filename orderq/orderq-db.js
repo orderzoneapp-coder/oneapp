@@ -14,10 +14,10 @@ import {
 } from './orderq-v10-contracts.js?v=0.14.0';
 import { V11_STORE, V11_STORE_DEFINITIONS } from './orderq-v11-contracts.js?v=0.16.0';
 import {
-  ORDERQ_DB_VERSION,
   V12_STORE,
   V12_STORE_DEFINITIONS
 } from './orderq-v12-contracts.js?v=0.17.0';
+import { ORDERQ_DB_VERSION, V13_PURCHASE_DOCUMENT_INDEXES } from './orderq-v13-contracts.js?v=0.1.0';
 import { adminTestDatabaseName } from './admin-test-runtime.js?v=0.10.2';
 
 function databaseNameForRuntime() {
@@ -258,6 +258,12 @@ export function upgradeOrderQDbSchema(db, transaction, oldVersion = 0) {
   ensureIndex(store, 'byEntity', ['entityType', 'entityId']);
 
   const metaStore = ensureStore(STORE.META, { keyPath: 'key' });
+
+  if (oldVersion < 13) {
+    const purchaseDocumentStore = transaction.objectStore(STORE.PURCHASE_DOCUMENTS);
+    V13_PURCHASE_DOCUMENT_INDEXES.forEach(entry => ensureIndex(purchaseDocumentStore, entry.name, entry.keyPath, entry.options));
+    metaStore.put({ key: 'schemaVersion', value: 13, updatedAt: nowIso() });
+  }
 
   if (oldVersion < 12) {
     // inventoryMovements is a v7 store.  A fresh (or pre-v7) database reaches
