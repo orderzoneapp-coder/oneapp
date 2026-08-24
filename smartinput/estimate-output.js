@@ -173,7 +173,7 @@ export function buildEstimateF8Data(rows = []) {
       0, 0, 0, 0, '', '', 1, '', '', '', '', '', '', ''
     ]);
     erpData.push([
-      code, unitPrice, '0', '', '0', sourceNumber(row.purchasePriceB), 'n', unitPrice, 'n', sourceNumber(row.wholesaleB), 'n'
+      code, unitPrice, '0', '', '0', sourceNumber(row.purchasePriceB), 'n', sourceNumber(row.wholesaleA), 'n', sourceNumber(row.wholesaleB), 'n'
     ]);
     if (row.unitPriceReviewStatus === 'PENDING' && numeric(originalUnitPrice) !== null) {
       errorData.push(issueDataRow(estimateIssue(

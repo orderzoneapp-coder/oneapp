@@ -113,7 +113,7 @@ assert.deepEqual(Array.from(normalizedPriceRows, row => row.sourceUnitPrice), ['
 const priceOutput = buildEstimateF8Data(normalizedPriceRows);
 assert.equal(priceOutput.ok, true);
 assert.deepEqual(priceOutput.shopData.slice(1).map(row => row[4]), ['', 0, 1500, '가격 확인']);
-assert.deepEqual(priceOutput.erpData.slice(1).map(row => row[7]), ['', 0, 1500, '가격 확인']);
+assert.deepEqual(priceOutput.erpData.slice(1).map(row => row[7]), ['', '', '', '']);
 assert.ok(priceOutput.errorData.some(row => row[0] === 1 && row[2] === '단가' && row[3] === ''));
 assert.ok(priceOutput.errorData.some(row => row[0] === 4 && row[2] === '단가' && row[3] === '가격 확인'));
 
