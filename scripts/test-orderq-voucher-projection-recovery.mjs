@@ -1,0 +1,12 @@
+import assert from 'node:assert/strict'; import { readFileSync } from 'node:fs';
+import { createCentralAuthorityState, migrateCentralDrafts, prepareCentralCommand } from '../orderq/central-authority.js';
+const source=readFileSync(new URL('../orderq/central-command-gateway.js',import.meta.url),'utf8');
+for(const token of ['projectionPending: true','centralProjection:','PROJECTION_PENDING','if (centralCommitted)']) assert.ok(source.includes(token));
+const state=createCentralAuthorityState();
+migrateCentralDrafts(state,{idempotencyKey:'REC-MIG',deviceId:'PC',entities:[{entityType:'PURCHASE_DOCUMENT',entityId:'REC-P',revision:1,payload:{purchaseDocumentId:'REC-P',documentContract:'VOUCHER_CORE_V1',sourceDocumentKey:'REC-SRC',status:'DRAFT',businessStatus:'DRAFT',localOnly:true}}]});
+const command={commandType:'POST_PURCHASE',aggregateId:'REC-P',idempotencyKey:'REC-C',expectedRevision:1,deviceId:'PC',intent:{commandContract:'VOUCHER_CORE_V1',commandId:'REC-C',actor:'A',occurredAt:'2026-08-25T00:00:00Z'}};
+const prepared=prepareCentralCommand(state,command);
+assert.equal(prepared.committed,false);
+const repeated=prepareCentralCommand(state,command);
+assert.equal(repeated.duplicate,true); assert.equal(repeated.leaseToken,prepared.leaseToken); assert.equal(repeated.fingerprint,prepared.fingerprint);
+console.log('ORDER Q voucher projection recovery tests passed');

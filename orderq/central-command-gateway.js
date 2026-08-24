@@ -38,7 +38,10 @@ const ENTITY_STORES = Object.freeze({
   SALES_LINE: [STORE.SALES_LINES, 'salesLineId'],
   PURCHASE_DOCUMENT: [STORE.PURCHASE_DOCUMENTS, 'purchaseDocumentId'],
   PURCHASE_LINE: [STORE.PURCHASE_LINES, 'purchaseLineId'],
-  ORDER_EVENT: [STORE.ORDER_EVENTS, 'eventId']
+  ORDER_EVENT: [STORE.ORDER_EVENTS, 'eventId'],
+  VOUCHER_EVENT: [STORE.VOUCHER_EVENTS, 'eventId'],
+  RECEIVABLE_ENTRY: [STORE.RECEIVABLE_ENTRIES, 'entryId'],
+  PAYABLE_ENTRY: [STORE.PAYABLE_ENTRIES, 'entryId']
 });
 
 const STORE_TO_ENTITY = new Map(Object.entries(ENTITY_STORES).map(([entityType, [storeName, idField]]) => [storeName, { entityType, idField }]));
@@ -116,9 +119,22 @@ async function applyCentralChanges(changes = [], ledgerSequence = null, cursor =
     const contract = ENTITY_STORES[change.entityType];
     if (!contract) continue;
     const [storeName, idField] = contract;
-    const payload = { ...clone(change.payload), [idField]: change.entityId, localOnly: false, centralRevision: Number(change.revision || 0) };
+    const payload = {
+      ...clone(change.payload),
+      [idField]: change.entityId,
+      localOnly: false,
+      centralRevision: Number(change.revision || 0),
+      ...(['PURCHASE_DOCUMENT', 'SALES_DOCUMENT'].includes(change.entityType) && change.payload?.documentContract === 'VOUCHER_CORE_V1'
+        ? { projectionStatus: 'LOCAL_PROJECTED' } : {})
+    };
     tx.objectStore(storeName).put(payload);
     centralKeys.add(`${change.entityType}:${change.entityId}`);
+    const projectedCommandId = text(change.payload?.commandId);
+    if (projectedCommandId) tx.objectStore(STORE.META).put({
+      key: `centralProjection:${projectedCommandId}`,
+      value: { commandId: projectedCommandId, projectionStatus: 'LOCAL_PROJECTED', projectedAt: nowIso() },
+      updatedAt: nowIso(), source: 'CENTRAL'
+    });
   }
   if (ledgerSequence !== null && ledgerSequence !== undefined) {
     tx.objectStore(STORE.META).put({ key: CENTRAL_LEDGER_META_KEY, value: Number(ledgerSequence || 0), updatedAt: nowIso(), source: 'CENTRAL' });
@@ -142,14 +158,38 @@ async function applyCentralChanges(changes = [], ledgerSequence = null, cursor =
   await transactionDone(tx);
 }
 
+async function writeProjectionReceipt(command, central, projectionError = '') {
+  const db = await openOrderQDb();
+  const tx = db.transaction(STORE.META, 'readwrite');
+  tx.objectStore(STORE.META).put({
+    key: `centralProjection:${text(command.intent?.commandId || command.idempotencyKey)}`,
+    value: {
+      commandId: text(command.intent?.commandId || command.idempotencyKey),
+      fingerprint: text(central?.fingerprint || ''),
+      centralTransactionId: text(central?.transactionId || central?.transactionId || ''),
+      centralCursor: Number(central?.cursor || 0),
+      centralLedgerSequence: Number(central?.ledgerSequence || 0),
+      resultDigest: text(central?.resultDigest || ''),
+      projectionStatus: 'PROJECTION_PENDING',
+      projectionError: text(projectionError),
+      updatedAt: nowIso()
+    },
+    updatedAt: nowIso(),
+    source: 'CENTRAL'
+  });
+  await transactionDone(tx);
+}
+
 async function migrationEntities(commandType, aggregateId) {
   const dispatchCommand = text(commandType).includes('DISPATCH');
   const purchaseCommand = text(commandType).includes('PURCHASE');
+  const saleCommand = text(commandType).includes('SALE');
   const source = await readStores([
     STORE.ORDERS, STORE.ORDER_ITEMS, STORE.PRODUCTS, STORE.WAREHOUSES,
     STORE.INVENTORY_SNAPSHOTS, STORE.INVENTORY_LINES,
     STORE.DISPATCH_DECISIONS, STORE.DISPATCH_LINES, STORE.DISPATCH_STOCK_ALLOCATIONS,
-    STORE.PURCHASE_DOCUMENTS, STORE.PURCHASE_LINES
+    STORE.PURCHASE_DOCUMENTS, STORE.PURCHASE_LINES,
+    STORE.SALES_DOCUMENTS, STORE.SALES_LINES
   ]);
   const result = [];
   const add = (entityType, row, idField) => {
@@ -181,11 +221,18 @@ async function migrationEntities(commandType, aggregateId) {
       source[STORE.PURCHASE_LINES].filter(row => row.purchaseDocumentId === aggregateId).forEach(row => add('PURCHASE_LINE', row, 'purchaseLineId'));
     }
   }
+  if (saleCommand) {
+    const document = source[STORE.SALES_DOCUMENTS].find(row => row.salesDocumentId === aggregateId);
+    if (document?.status === 'DRAFT') {
+      add('SALES_DOCUMENT', document, 'salesDocumentId');
+      source[STORE.SALES_LINES].filter(row => row.salesDocumentId === aggregateId).forEach(row => add('SALES_LINE', row, 'salesLineId'));
+    }
+  }
   return result.filter(row => row.entityId);
 }
 
 async function ensureDraftMigrated(command) {
-  if (!['RELEASE_DISPATCH', 'CONFIRM_PURCHASE'].includes(command.commandType)) return null;
+  if (!['RELEASE_DISPATCH', 'CONFIRM_PURCHASE', 'POST_PURCHASE', 'POST_SALE'].includes(command.commandType)) return null;
   const entities = await migrationEntities(command.commandType, command.aggregateId);
   if (!entities.length) return null;
   return migrateCentralDraftEntities(
@@ -207,8 +254,19 @@ export async function runCentralOfficialCommand(source = {}, localOperation) {
   const deviceId = getDeviceId();
   const command = {
     commandType, aggregateId, idempotencyKey, expectedRevision, deviceId,
-    intent: clone(source.intent || null)
+    intent: clone({
+      ...(source.intent || {}),
+      commandId: text(source.commandId),
+      actor: text(source.actor),
+      occurredAt: text(source.occurredAt),
+      reason: text(source.reason),
+      commandContract: text(source.commandContract),
+      sourceType: text(source.sourceType || source.document?.sourceType).toUpperCase(),
+      document: clone(source.document || null),
+      lines: clone(source.lines || null)
+    })
   };
+  if (JSON.stringify(command.intent).length > 512 * 1024) throw new Error('ORDERQ_VOUCHER_PAYLOAD_TOO_LARGE');
   // The browser profile is the first half of the two-key cutover boundary.
   // This check is deliberately before draft migration and before the local
   // transaction so SHADOW/rollback mode cannot pre-write either side.
@@ -220,11 +278,24 @@ export async function runCentralOfficialCommand(source = {}, localOperation) {
   await pullCentralOfficialState();
   const prepared = await prepareCentralOfficialCommand(command);
   if (prepared.committed && prepared.result) {
-    await applyCentralChanges(prepared.result.changes, prepared.result.ledgerSequence, prepared.result.cursor);
-    return { duplicate: true, central: prepared.result };
+    try {
+      await applyCentralChanges(prepared.result.changes, prepared.result.ledgerSequence, prepared.result.cursor);
+      return { duplicate: true, central: prepared.result, status: 'LOCAL_PROJECTED', projectionPending: false };
+    } catch (projectionError) {
+      await writeProjectionReceipt(command, prepared.result, projectionError?.message || projectionError);
+      return {
+        duplicate: true,
+        central: prepared.result,
+        status: 'CENTRAL_COMMITTED',
+        code: 'CENTRAL_COMMITTED_PROJECTION_PENDING',
+        projectionPending: true,
+        projectionError: text(projectionError?.message || projectionError)
+      };
+    }
   }
   const before = await readStores(OFFICIAL_STORE_NAMES);
   let localStarted = false;
+  let centralCommitted = null;
   try {
     const localResult = await withOfficialCommandAuthority({ commandType, leaseToken: prepared.leaseToken }, async () => {
       localStarted = true;
@@ -239,9 +310,31 @@ export async function runCentralOfficialCommand(source = {}, localOperation) {
       fingerprint: prepared.fingerprint,
       mutations
     });
-    await applyCentralChanges(committed.changes, committed.ledgerSequence, committed.cursor);
-    return { ...localResult, duplicate: Boolean(committed.duplicate), central: committed };
+    centralCommitted = committed;
+    try {
+      await applyCentralChanges(committed.changes, committed.ledgerSequence, committed.cursor);
+      return {
+        ...localResult,
+        duplicate: Boolean(committed.duplicate),
+        central: committed,
+        status: 'LOCAL_PROJECTED',
+        projectionPending: false
+      };
+    } catch (projectionError) {
+      let restoreError = '';
+      try { await restoreStores(before); } catch (error) { restoreError = text(error?.message || error); }
+      await writeProjectionReceipt(command, committed, [text(projectionError?.message || projectionError), restoreError].filter(Boolean).join('|'));
+      return {
+        duplicate: Boolean(committed.duplicate),
+        central: committed,
+        status: 'CENTRAL_COMMITTED',
+        code: 'CENTRAL_COMMITTED_PROJECTION_PENDING',
+        projectionPending: true,
+        projectionError: text(projectionError?.message || projectionError)
+      };
+    }
   } catch (error) {
+    if (centralCommitted) throw error;
     if (localStarted) await restoreStores(before);
     try {
       await abortCentralOfficialCommand({

@@ -122,6 +122,30 @@ jobs:
       - name: Test ORDER Q M10 administrator direct-test isolation
         run: node scripts/test-orderq-m10-admin-test.mjs
 
+      - name: Test ORDER Q v12 schema
+        run: node scripts/test-orderq-v12-schema.mjs
+
+      - name: Test ORDER Q voucher core
+        run: node scripts/test-orderq-voucher-core.mjs
+
+      - name: Test ORDER Q voucher zero and negative quantities
+        run: node scripts/test-orderq-voucher-zero-negative.mjs
+
+      - name: Test ORDER Q voucher financial ledger
+        run: node scripts/test-orderq-voucher-financial-ledger.mjs
+
+      - name: Test ORDER Q voucher order links
+        run: node scripts/test-orderq-voucher-order-link.mjs
+
+      - name: Test ORDER Q voucher central parity
+        run: node scripts/test-orderq-voucher-central-parity.mjs
+
+      - name: Test ORDER Q voucher projection recovery
+        run: node scripts/test-orderq-voucher-projection-recovery.mjs
+
+      - name: Test ORDER Q voucher cloud contract
+        run: node scripts/test-orderq-voucher-cloud-contract.mjs
+
       - name: Test DataOps zero and negative stock preservation
         run: node scripts/test-dataops-zero-stock-contract.mjs
 
