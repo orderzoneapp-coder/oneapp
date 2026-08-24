@@ -9,9 +9,9 @@
   <link rel="icon" type="image/png" href="../nexus/assets/nexus-favicon.png">
   <script src="../nexus/common/nexus-theme-init.js?v=1.0.0"></script>
   <link rel="stylesheet" href="../orderq/customer-master.css?v=0.12.1" data-customer-picker-style>
-  <link rel="stylesheet" href="./smartinput.css?v=0.4.28">
+  <link rel="stylesheet" href="./smartinput.css?v=0.4.29">
   <script src="../nexus/common/apps-config.js?v=1.4.0"></script>
-  <script src="../nexus/common/nexus-top.js?v=1.4.0"></script>
+  <script src="../nexus/common/nexus-top.js?v=1.5.0"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@6/dist/tesseract.min.js"></script>
 </head>
@@ -23,19 +23,21 @@
         <span class="app-status__dot" aria-hidden="true"></span>
         <span>새 입력을 시작할 수 있습니다.</span>
       </div>
-      <a class="brand" href="./" aria-label="스마트입력 처음으로">
-        <img class="brand__logo brand__logo--light" src="../nexus/assets/brand/apps/smart-input/logo-light.png" alt="">
-        <img class="brand__logo brand__logo--dark" src="../nexus/assets/brand/apps/smart-input/logo-dark.png" alt="">
-        <span class="sr-only">스마트입력</span>
-      </a>
-      <div class="app-voucher-switcher">
-        <span class="sr-only">전표 선택</span>
-        <nav class="mode-tabs" aria-label="전표 선택">
-          <button type="button" class="mode-tab is-active" data-mode="order" aria-selected="true"><span>주문서</span><kbd>Alt+1</kbd></button>
-          <button type="button" class="mode-tab" data-mode="purchase" aria-selected="false"><span>구매</span><kbd>Alt+2</kbd></button>
-          <button type="button" class="mode-tab" data-mode="sale" aria-selected="false"><span>판매</span><kbd>Alt+3</kbd></button>
-          <button type="button" class="mode-tab" data-mode="estimate" aria-selected="false"><span>견적서</span><kbd>Alt+4</kbd></button>
-        </nav>
+      <div class="app-bar__primary">
+        <a class="brand" href="./" aria-label="스마트입력 처음으로">
+          <img class="brand__logo brand__logo--light" src="../nexus/assets/brand/apps/smart-input/logo-light.png" alt="">
+          <img class="brand__logo brand__logo--dark" src="../nexus/assets/brand/apps/smart-input/logo-dark.png" alt="">
+          <span class="sr-only">스마트입력</span>
+        </a>
+        <div class="app-voucher-switcher">
+          <span class="sr-only">전표 선택</span>
+          <nav class="mode-tabs" aria-label="전표 선택">
+            <button type="button" class="mode-tab is-active" data-mode="order" aria-selected="true"><span>주문서</span><kbd>Alt+1</kbd></button>
+            <button type="button" class="mode-tab" data-mode="purchase" aria-selected="false"><span>구매</span><kbd>Alt+2</kbd></button>
+            <button type="button" class="mode-tab" data-mode="sale" aria-selected="false"><span>판매</span><kbd>Alt+3</kbd></button>
+            <button type="button" class="mode-tab" data-mode="estimate" aria-selected="false"><span>견적서</span><kbd>Alt+4</kbd></button>
+          </nav>
+        </div>
       </div>
       <div class="app-bar__actions">
         <span class="save-state" id="saveState" role="status" aria-live="polite"></span>
@@ -186,6 +188,6 @@
 
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
   <script src="./smartinput-contract.js?v=0.4.14"></script>
-  <script type="module" src="./smartinput.js?v=0.4.28"></script>
+  <script type="module" src="./smartinput.js?v=0.4.29"></script>
 </body>
 </html>

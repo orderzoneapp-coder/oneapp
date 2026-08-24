@@ -420,13 +420,15 @@ assert.match(html, /견적서 선택 · 상품 조합/);
 assert.match(html, /선택 항목은 상품 불러오기·카톡·Excel에 함께 사용됩니다/);
 assert.match(html, /id="catalogSaveButton"[^>]*>저장<\/button>/);
 assert.doesNotMatch(html, /카탈로그 · 거래처 자동 지정|카탈로그 선택|카탈로그 저장/);
+assert.match(html, /class="app-bar__primary"[\s\S]*class="brand"[\s\S]*class="app-voucher-switcher"/,
+  'the SmartInput logo and voucher selector must share one movement group');
 assert.ok(html.indexOf('class="app-voucher-switcher"') < html.indexOf('class="app-bar__actions"'), '전표 선택은 앱 헤더의 작업 버튼 앞에 있어야 한다.');
 assert.doesNotMatch(html, /class="field field--mode"/, '전표 선택은 본문 상단 정보 영역에 남아 있으면 안 된다.');
 assert.match(html, /nexus-theme-init\.js/);
 assert.match(html, /brand__logo--light[^>]*logo-light\.png/);
 assert.match(html, /brand__logo--dark[^>]*logo-dark\.png/);
-assert.match(css, /\.brand\[data-table-aligned="true"\] \{[^}]*position: absolute;[^}]*left: var\(--brand-workbench-left\)/,
-  'the app logo must be positionable from the main workbench boundary');
+assert.match(css, /\.app-bar__primary\[data-table-aligned="true"\] \{[^}]*position: absolute;[^}]*left: var\(--brand-workbench-left\)/,
+  'the logo and voucher selector group must follow the main workbench boundary together');
 assert.match(html, /class="document-fields__left"[\s\S]*id="deliveryDateInput"[\s\S]*id="warehouseInput"[\s\S]*id="transactionTypeInput"/,
   'delivery date, warehouse, and transaction type must share the left side of the unified header');
 assert.match(html, /class="document-fields__right"[\s\S]*id="customerInput"[\s\S]*id="catalogPickerButton"[\s\S]*id="estimateNoticeButton"/,
@@ -781,6 +783,8 @@ assert.match(appSource, /state\.draft\.ui\.parserPaneWidth = width/,
   'the adjusted parser width must persist in the draft UI state');
 assert.match(appSource, /function syncBrandToWorkbench\(\)[\s\S]*workbenchBounds\.left - workspaceBounds\.left > 24[\s\S]*--brand-workbench-left/,
   'the logo must align to the separate main workbench only');
+assert.match(appSource, /const primary = document\.querySelector\('\.app-bar__primary'\)[\s\S]*primary\.dataset\.tableAligned = 'true'/,
+  'workbench alignment must move the grouped logo and voucher selector instead of the logo alone');
 assert.match(appSource, /function scheduleBrandAlignment\(\)/);
 assert.match(appSource, /workspace\.style\.setProperty\('--parser-pane-width',[\s\S]*scheduleBrandAlignment\(\)/,
   'parser width changes must realign the logo');

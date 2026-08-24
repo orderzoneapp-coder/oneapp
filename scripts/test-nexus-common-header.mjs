@@ -55,6 +55,15 @@ assert.match(componentSource, /normal: 0, progress: 1, warning: 2, error: 3/);
 assert.match(componentSource, /event\.key === 'Escape'/);
 assert.match(componentSource, /trapFocus\(event\)/);
 assert.match(componentSource, /nexus:before-navigate/);
+assert.match(componentSource, /oneapp\.nexus\.v1\.navigation/);
+assert.match(componentSource, /cover\.id = NAVIGATION_COVER_ID/);
+assert.match(componentSource, /NEXUS WORKSPACE/);
+assert.match(componentSource, /업무 화면을 준비하고 있습니다/);
+assert.match(componentSource, /window\.addEventListener\('load', \(\) => clearNavigationCover\(\)/);
+assert.match(componentSource, /window\.setTimeout\(\(\) => window\.location\.assign\(link\.href\), 80\)/,
+  'same-tab navigation must paint the loading cover before changing documents');
+assert.doesNotMatch(componentSource, /nexus-navigation-cover__mark[^`]*<img/,
+  'the navigation cover must not depend on another image request');
 assert.match(componentSource, /이 기기에만 적용됨/);
 assert.match(componentSource, /마지막 확인/);
 assert.match(componentSource, /group\.id === this\.currentGroupId/);
@@ -98,10 +107,11 @@ assert.ok(manifestContract, 'the shared NEXUS header contract must be registered
 assert.equal(manifestContract.owner, 'nexus');
 assert.equal(manifestContract.schemaVersion, 'NEXUS_HEADER_V3');
 assert.equal(manifestContract.resources.globalActionVisibilityPreference, 'oneapp.nexus.v1.hiddenGlobalActions');
+assert.equal(manifestContract.resources.navigationLoadingSession, 'oneapp.nexus.v1.navigation');
 for (const file of manifestContract.consumers) {
   const source = read(file);
   assert.match(source, /apps-config\.js\?v=1\.4\.0/, `${file} must load the current NEXUS configuration`);
-  assert.match(source, /nexus-top\.js\?v=1\.4\.0/, `${file} must load the current NEXUS component`);
+  assert.match(source, /nexus-top\.js\?v=1\.5\.0/, `${file} must load the current NEXUS component`);
 }
 
 const entries = [
@@ -119,7 +129,7 @@ for (const [file, appId] of entries) {
   const source = read(file);
   assert.match(source, new RegExp(`<nexus-top app-id="${appId}">[\\s\\S]*?<\\/nexus-top>`), `${file} must declare its canonical NEXUS app ID`);
   assert.match(source, /apps-config\.js\?v=1\.4\.0/);
-  assert.match(source, /nexus-top\.js\?v=1\.4\.0/);
+  assert.match(source, /nexus-top\.js\?v=1\.5\.0/);
   assert.match(source, /NEXUS 메뉴를 불러오지 못했습니다/);
 }
 

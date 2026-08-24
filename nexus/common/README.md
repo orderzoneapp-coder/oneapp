@@ -47,6 +47,8 @@ window.NEXUS_TOP.clearStatus('inventory-save-42', 'dataops');
 
 다른 앱으로 이동하기 전에 취소 가능한 `nexus:before-navigate` 이벤트를 발생시킨다. 미저장 내용을 보유한 앱은 이벤트를 취소하고 자체 저장·폐기 확인 절차를 실행한다.
 
+이동이 허용되면 외부 이미지에 의존하지 않는 NEXUS 전환 화면을 즉시 표시한다. 이동 대상 이름과 진행 상태를 보여 주고, 다음 앱의 이미지·스타일을 포함한 전체 로드가 끝난 뒤 전환 화면을 제거한다. 뒤로가기 복원과 12초 안전 해제를 지원하며 새 탭·보조키 이동에는 개입하지 않는다. 전환 상태는 현재 탭의 `sessionStorage` 키 `oneapp.nexus.v1.navigation`에만 임시 보관한다.
+
 ```js
 window.addEventListener('nexus:before-navigate', (event) => {
   if (!hasUnsavedChanges()) return;

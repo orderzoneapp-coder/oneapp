@@ -367,6 +367,7 @@
         "globalActionVisibilityPreference": "oneapp.nexus.v1.hiddenGlobalActions",
         "statusApi": "window.NEXUS_TOP.reportStatus",
         "leaveGuardEvent": "nexus:before-navigate",
+        "navigationLoadingSession": "oneapp.nexus.v1.navigation",
         "preferencePrefix": "oneapp.nexus.v1."
       }
     },

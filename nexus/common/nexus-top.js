@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = '1.4.0';
+  const VERSION = '1.5.0';
   const STORAGE = Object.freeze({
     colorMode: 'oneapp.nexus.v1.colorMode',
     groupOrder: 'oneapp.nexus.v1.groupOrder',
@@ -25,6 +25,80 @@
   const STATUS_PRIORITY = Object.freeze({ normal: 0, progress: 1, warning: 2, error: 3 });
   const STATUS_LABEL = Object.freeze({ normal: '정상', progress: '진행 중', warning: '주의', error: '오류' });
   const base = new URL('.', document.currentScript?.src || '/nexus/common/nexus-top.js');
+  const NAVIGATION_STORAGE_KEY = 'oneapp.nexus.v1.navigation';
+  const NAVIGATION_COVER_ID = 'nexusNavigationCover';
+  let navigationCoverShownAt = 0;
+
+  const navigationCoverStyle = `
+    #${NAVIGATION_COVER_ID}{position:fixed;z-index:2147483647;inset:0;display:grid;place-items:center;overflow:hidden;color:#f7fbff;background:radial-gradient(circle at 50% 38%,rgba(28,74,117,.34),transparent 34%),linear-gradient(145deg,#050b16,#0a1626 56%,#07111e);font-family:Inter,Pretendard,"Noto Sans KR",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;opacity:1;transition:opacity .22s ease}
+    #${NAVIGATION_COVER_ID}[hidden]{display:none}
+    #${NAVIGATION_COVER_ID}.is-leaving{opacity:0;pointer-events:none}
+    #${NAVIGATION_COVER_ID} .nexus-navigation-cover__grid{position:absolute;inset:-20%;opacity:.13;background-image:linear-gradient(rgba(105,211,189,.18) 1px,transparent 1px),linear-gradient(90deg,rgba(105,211,189,.18) 1px,transparent 1px);background-size:46px 46px;transform:perspective(560px) rotateX(62deg) translateY(26%);transform-origin:center}
+    #${NAVIGATION_COVER_ID} .nexus-navigation-cover__card{position:relative;width:min(420px,calc(100vw - 40px));padding:30px 32px 26px;display:grid;justify-items:center;border:1px solid rgba(151,189,222,.18);border-radius:22px;background:linear-gradient(145deg,rgba(17,37,61,.9),rgba(8,22,39,.94));box-shadow:0 28px 90px rgba(0,0,0,.42),inset 0 1px rgba(255,255,255,.05);backdrop-filter:blur(18px);text-align:center}
+    #${NAVIGATION_COVER_ID} .nexus-navigation-cover__mark{width:66px;height:66px;display:grid;place-items:center;border:1px solid rgba(105,211,189,.28);border-radius:18px;background:linear-gradient(145deg,rgba(20,49,84,.96),rgba(9,24,48,.96));box-shadow:0 14px 38px rgba(1,8,20,.42),0 0 28px rgba(105,211,189,.08)}
+    #${NAVIGATION_COVER_ID} svg{width:39px;height:39px;overflow:visible}
+    #${NAVIGATION_COVER_ID} .nexus-navigation-cover__eyebrow{margin-top:17px;color:#69d3bd;font-size:10px;font-weight:900;letter-spacing:.2em}
+    #${NAVIGATION_COVER_ID} strong{max-width:100%;margin-top:5px;overflow:hidden;color:#fff;font-size:20px;line-height:1.35;text-overflow:ellipsis;white-space:nowrap}
+    #${NAVIGATION_COVER_ID} p{margin:7px 0 0;color:#9eb0c5;font-size:12px}
+    #${NAVIGATION_COVER_ID} .nexus-navigation-cover__progress{position:relative;width:100%;height:3px;margin-top:24px;overflow:hidden;border-radius:99px;background:rgba(143,169,196,.13)}
+    #${NAVIGATION_COVER_ID} .nexus-navigation-cover__progress i{position:absolute;inset:0 auto 0 0;width:42%;border-radius:inherit;background:linear-gradient(90deg,transparent,#69d3bd,#79aef7,transparent);animation:nexus-navigation-progress 1.15s cubic-bezier(.4,0,.2,1) infinite}
+    @keyframes nexus-navigation-progress{0%{transform:translateX(-115%)}100%{transform:translateX(340%)}}
+    @media (prefers-reduced-motion:reduce){#${NAVIGATION_COVER_ID} .nexus-navigation-cover__progress i{animation-duration:2.4s}}
+  `;
+
+  const readNavigationMarker = () => {
+    try {
+      const marker = JSON.parse(sessionStorage.getItem(NAVIGATION_STORAGE_KEY) || 'null');
+      return marker && Date.now() - Number(marker.startedAt || 0) < 15000 ? marker : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const installNavigationCover = (label = 'NEXUS') => {
+    let cover = document.getElementById(NAVIGATION_COVER_ID);
+    if (!cover) {
+      const style = document.createElement('style');
+      style.dataset.nexusNavigationCover = 'true';
+      style.textContent = navigationCoverStyle;
+      cover = document.createElement('div');
+      cover.id = NAVIGATION_COVER_ID;
+      cover.setAttribute('role', 'status');
+      cover.setAttribute('aria-live', 'polite');
+      cover.innerHTML = `<div class="nexus-navigation-cover__grid" aria-hidden="true"></div><section class="nexus-navigation-cover__card"><div class="nexus-navigation-cover__mark" aria-hidden="true"><svg viewBox="0 0 48 48"><path d="M7 7l13 17L7 41" fill="none" stroke="#f7fbff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/><path d="M41 7L28 24l13 17" fill="none" stroke="#39d1ae" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/></svg></div><span class="nexus-navigation-cover__eyebrow">NEXUS WORKSPACE</span><strong></strong><p>업무 화면을 준비하고 있습니다.</p><div class="nexus-navigation-cover__progress" aria-hidden="true"><i></i></div></section>`;
+      document.documentElement.append(style, cover);
+    }
+    cover.querySelector('strong').textContent = String(label || 'NEXUS');
+    cover.classList.remove('is-leaving');
+    cover.hidden = false;
+    document.documentElement.dataset.nexusNavigating = 'true';
+    navigationCoverShownAt = Date.now();
+    return cover;
+  };
+
+  const clearNavigationCover = (immediate = false) => {
+    const cover = document.getElementById(NAVIGATION_COVER_ID);
+    if (!cover) return;
+    const marker = readNavigationMarker();
+    const minimumWait = immediate ? 0 : Math.max(0, 420 - (Date.now() - Number(marker?.startedAt || navigationCoverShownAt)));
+    window.setTimeout(() => {
+      cover.classList.add('is-leaving');
+      window.setTimeout(() => {
+        cover.hidden = true;
+        cover.classList.remove('is-leaving');
+        delete document.documentElement.dataset.nexusNavigating;
+        try { sessionStorage.removeItem(NAVIGATION_STORAGE_KEY); } catch {}
+      }, immediate ? 0 : 230);
+    }, minimumWait);
+  };
+
+  const initialNavigationMarker = readNavigationMarker();
+  if (initialNavigationMarker) {
+    installNavigationCover(initialNavigationMarker.label);
+    window.addEventListener('load', () => clearNavigationCover(), { once: true });
+    window.setTimeout(() => clearNavigationCover(true), 12000);
+  }
+  window.addEventListener('pageshow', (event) => { if (event.persisted) clearNavigationCover(true); });
 
   const escapeHtml = (value) => String(value ?? '')
     .replaceAll('&', '&amp;')
@@ -600,7 +674,22 @@
       });
       if (!window.dispatchEvent(navigationEvent)) return;
       this.closePanel({ restoreFocus: false });
-      window.location.assign(link.href);
+      if (this.navigationPending) return;
+      this.navigationPending = true;
+      const label = this.apps.find((app) => app.id === appId)?.name
+        || this.groups.find((group) => group.id === groupId)?.name
+        || link.getAttribute('aria-label')
+        || link.textContent.trim()
+        || 'NEXUS';
+      const marker = { label, startedAt: Date.now(), url: link.href };
+      try { sessionStorage.setItem(NAVIGATION_STORAGE_KEY, JSON.stringify(marker)); } catch {}
+      installNavigationCover(label);
+      window.setTimeout(() => {
+        if (!this.navigationPending) return;
+        this.navigationPending = false;
+        clearNavigationCover(true);
+      }, 12000);
+      window.setTimeout(() => window.location.assign(link.href), 80);
     }
 
     togglePanel(name, trigger) {
