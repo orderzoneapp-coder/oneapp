@@ -48,8 +48,9 @@ nexus-top { display: block; min-height: var(--nexus-top-height); }
 .nexus-top-fallback button { margin-left: auto; padding: 5px 9px; border: 1px solid #64748b; border-radius: 6px; color: #fff; background: transparent; }
 
 .app-bar { position: sticky; top: var(--nexus-top-height); z-index: 50; width: 100%; color: var(--text); border-bottom: 1px solid var(--border); background: var(--surface); box-shadow: 0 3px 18px rgba(3, 13, 28, .12); }
-.app-bar__inner { min-width: 0; width: min(var(--app-max), calc(100% - 32px)); min-height: 62px; margin: 0 auto; display: flex; align-items: center; gap: 16px; }
+.app-bar__inner { position: relative; min-width: 0; width: min(var(--app-max), calc(100% - 32px)); min-height: 62px; margin: 0 auto; display: flex; align-items: center; gap: 16px; }
 .brand { flex: 0 0 176px; width: 176px; height: 47px; display: grid; place-items: center; overflow: hidden; border-radius: 8px; }
+.brand[data-table-aligned="true"] { position: absolute; left: var(--brand-workbench-left); }
 .brand__logo { display: block; width: 176px; height: auto; }
 .brand__logo--dark { display: none; }
 .app-status { flex: 0 1 460px; min-width: 120px; display: flex; align-items: center; gap: 8px; color: var(--text-soft); font-size: 13px; }

@@ -425,6 +425,8 @@ assert.doesNotMatch(html, /class="field field--mode"/, '전표 선택은 본문 
 assert.match(html, /nexus-theme-init\.js/);
 assert.match(html, /brand__logo--light[^>]*logo-light\.png/);
 assert.match(html, /brand__logo--dark[^>]*logo-dark\.png/);
+assert.match(css, /\.brand\[data-table-aligned="true"\] \{[^}]*position: absolute;[^}]*left: var\(--brand-workbench-left\)/,
+  'the app logo must be positionable from the main workbench boundary');
 assert.match(html, /class="document-fields__left"[\s\S]*id="deliveryDateInput"[\s\S]*id="warehouseInput"[\s\S]*id="transactionTypeInput"/,
   'delivery date, warehouse, and transaction type must share the left side of the unified header');
 assert.match(html, /class="document-fields__right"[\s\S]*id="customerInput"[\s\S]*id="catalogPickerButton"[\s\S]*id="estimateNoticeButton"/,
@@ -758,6 +760,13 @@ assert.match(appSource, /photoResizer\.addEventListener\('keydown'[\s\S]*ArrowLe
   'the parser width resizer must also support precise left/right keyboard adjustment');
 assert.match(appSource, /state\.draft\.ui\.parserPaneWidth = width/,
   'the adjusted parser width must persist in the draft UI state');
+assert.match(appSource, /function syncBrandToWorkbench\(\)[\s\S]*workbenchBounds\.left - workspaceBounds\.left > 24[\s\S]*--brand-workbench-left/,
+  'the logo must align to the separate main workbench only');
+assert.match(appSource, /function scheduleBrandAlignment\(\)/);
+assert.match(appSource, /workspace\.style\.setProperty\('--parser-pane-width',[\s\S]*scheduleBrandAlignment\(\)/,
+  'parser width changes must realign the logo');
+assert.match(appSource, /new ResizeObserver\(scheduleBrandAlignment\)/,
+  'workbench resizing must keep the logo aligned');
 assert.match(appSource, /if \(modeDraft\(\)\.activeMethod !== 'photo'\) updateMethod\('direct'\)/,
   '사진 분석 중 빈 행을 추가해도 원본 사진 작업영역을 유지해야 한다.');
 assert.match(appSource, /const DEFAULT_INPUT_ROW_ID = '__SMARTINPUT_DEFAULT_ROW__'/);
