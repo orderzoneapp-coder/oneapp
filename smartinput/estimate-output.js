@@ -8,6 +8,19 @@ const CONFIRM_HEADERS = Object.freeze([
   '확인구분', '상품코드', '상품명', '규격', '기준입고항목',
   '기준입고가', '도매항목', '도매가', '차이', '확인요청'
 ]);
+export const KAKAO_NOTICE_ROWS_PER_PAGE = 40;
+
+export function paginateKakaoNoticeRows(rows = [], maxRowsPerPage = KAKAO_NOTICE_ROWS_PER_PAGE) {
+  const source = Array.isArray(rows) ? rows : [];
+  if (!source.length) return [[]];
+  const maximum = Math.max(1, Math.min(KAKAO_NOTICE_ROWS_PER_PAGE, Math.floor(Number(maxRowsPerPage)) || KAKAO_NOTICE_ROWS_PER_PAGE));
+  return Array.from({ length: Math.ceil(source.length / maximum) }, (_, pageIndex) => source.slice(pageIndex * maximum, (pageIndex + 1) * maximum));
+}
+
+export function splitKakaoNoticeColumns(rows = []) {
+  const source = Array.isArray(rows) ? rows.slice(0, KAKAO_NOTICE_ROWS_PER_PAGE) : [];
+  return source.length <= 20 ? [source] : [source.slice(0, 20), source.slice(20)];
+}
 
 function text(value) {
   return String(value ?? '').trim();
@@ -26,10 +39,10 @@ function priceKey(row = {}, index = 0) {
   return code ? `CODE:${code}` : `ROW:${index}`;
 }
 
-export function buildCatalogPriceSnapshot(rows = []) {
+export function buildCatalogPriceSnapshot(rows = [], priceFieldId = 'noticePrice') {
   return Object.fromEntries((Array.isArray(rows) ? rows : []).map((row, index) => [
     priceKey(row, index),
-    numeric(row.noticePrice) ?? 0
+    numeric(row?.[priceFieldId]) ?? 0
   ]));
 }
 
@@ -40,9 +53,23 @@ export function priceSnapshotsEqual(left = {}, right = {}) {
     && leftKeys.every((key, index) => key === rightKeys[index] && Number(left[key]) === Number(right[key]));
 }
 
-export function buildKakaoNoticeRows(rows = [], previousPrices = {}) {
+function normalizeNoticePriceFields(priceFields = []) {
+  const normalized = (Array.isArray(priceFields) ? priceFields : []).map(field => ({
+    id: text(typeof field === 'string' ? field : field?.id),
+    label: text(typeof field === 'string' ? field : field?.label)
+  })).filter(field => field.id).filter((field, index, fields) => fields.findIndex(other => other.id === field.id) === index).slice(0, 2);
+  return normalized.length ? normalized : [{ id: 'noticePrice', label: '공지단가' }];
+}
+
+export function buildKakaoNoticeRows(rows = [], previousPrices = {}, priceFields = []) {
+  const selectedPriceFields = normalizeNoticePriceFields(priceFields);
   return (Array.isArray(rows) ? rows : []).map((row, index) => {
-    const currentPrice = numeric(row.noticePrice) ?? 0;
+    const prices = selectedPriceFields.map(field => ({
+      fieldId: field.id,
+      label: field.label || field.id,
+      value: numeric(row?.[field.id]) ?? 0
+    }));
+    const currentPrice = prices[0].value;
     const key = priceKey(row, index);
     const hasPrevious = Object.prototype.hasOwnProperty.call(previousPrices || {}, key);
     const previousPrice = hasPrevious ? numeric(previousPrices[key]) : null;
@@ -50,6 +77,7 @@ export function buildKakaoNoticeRows(rows = [], previousPrices = {}) {
       key,
       itemCode: text(row.itemCode),
       nameSpec: [text(row.itemName), text(row.specification)].filter(Boolean).join(' · '),
+      prices,
       price: currentPrice,
       change: previousPrice === null ? null : currentPrice - previousPrice,
       note: text(row.memo)
@@ -118,28 +146,27 @@ function formatAmount(value) {
   return Number(value || 0).toLocaleString('ko-KR');
 }
 
-function formatChange(value) {
-  if (value === null || value === undefined) return '';
-  const amount = Number(value || 0);
-  return `${amount > 0 ? '+' : ''}${formatAmount(amount)}`;
-}
-
-export function renderKakaoNoticeCanvases(noticeRows = [], { title = '견적 단가 안내', rowsPerPage = 12 } = {}) {
+export function renderKakaoNoticeCanvases(noticeRows = [], { title = '견적 단가 안내', rowsPerPage = KAKAO_NOTICE_ROWS_PER_PAGE } = {}) {
   if (typeof document === 'undefined') return [];
   const rows = Array.isArray(noticeRows) ? noticeRows : [];
-  const pageSize = Math.max(1, Number(rowsPerPage) || 12);
+  const requestedPageSize = Math.floor(Number(rowsPerPage));
+  const pageSize = Math.max(1, Math.min(KAKAO_NOTICE_ROWS_PER_PAGE, Number.isFinite(requestedPageSize) ? requestedPageSize : KAKAO_NOTICE_ROWS_PER_PAGE));
+  const rowPages = paginateKakaoNoticeRows(rows, pageSize);
   const pages = [];
-  const pageCount = Math.max(1, Math.ceil(rows.length / pageSize));
+  const pageCount = rowPages.length;
   for (let pageIndex = 0; pageIndex < pageCount; pageIndex += 1) {
-    const pageRows = rows.slice(pageIndex * pageSize, (pageIndex + 1) * pageSize);
+    const pageRows = rowPages[pageIndex];
+    const rowColumns = splitKakaoNoticeColumns(pageRows);
+    const twoColumn = rowColumns.length === 2;
     const canvas = document.createElement('canvas');
-    const width = 960;
+    const width = twoColumn ? 1440 : 960;
     const headerHeight = 132;
     const tableHeaderHeight = 54;
     const rowHeight = 66;
     const footerHeight = 54;
+    const visibleRowCount = Math.max(1, ...rowColumns.map(columnRows => columnRows.length));
     canvas.width = width;
-    canvas.height = headerHeight + tableHeaderHeight + Math.max(1, pageRows.length) * rowHeight + footerHeight;
+    canvas.height = headerHeight + tableHeaderHeight + visibleRowCount * rowHeight + footerHeight;
     const context = canvas.getContext('2d');
     context.fillStyle = '#fffaf4';
     context.fillRect(0, 0, canvas.width, canvas.height);
@@ -156,33 +183,42 @@ export function renderKakaoNoticeCanvases(noticeRows = [], { title = '견적 단
     context.textAlign = 'right';
     context.fillText(`${pageIndex + 1} / ${pageCount}`, width - 42, 96);
     context.textAlign = 'left';
-    const columns = [42, 474, 640, 778, 918];
-    const headers = ['품명·규격', '단가', '변동액', '적요'];
-    context.fillStyle = '#ffedd5';
-    context.fillRect(24, headerHeight, width - 48, tableHeaderHeight);
-    context.fillStyle = '#9a4a08';
-    context.font = '700 19px Pretendard, Arial, sans-serif';
-    headers.forEach((header, index) => context.fillText(header, columns[index] + 10, headerHeight + 35));
-    pageRows.forEach((row, rowIndex) => {
-      const top = headerHeight + tableHeaderHeight + rowIndex * rowHeight;
-      context.fillStyle = rowIndex % 2 ? '#fff7ed' : '#ffffff';
-      context.fillRect(24, top, width - 48, rowHeight);
-      context.strokeStyle = '#fed7aa';
-      context.beginPath();
-      context.moveTo(24, top + rowHeight);
-      context.lineTo(width - 24, top + rowHeight);
-      context.stroke();
-      context.fillStyle = '#172033';
-      context.font = '600 20px Pretendard, Arial, sans-serif';
-      context.fillText(fitText(context, row.nameSpec, columns[1] - columns[0] - 22), columns[0] + 10, top + 40);
-      context.textAlign = 'right';
-      context.fillText(formatAmount(row.price), columns[2] - 14, top + 40);
-      context.fillStyle = row.change > 0 ? '#b42318' : (row.change < 0 ? '#16746d' : '#667085');
-      context.fillText(formatChange(row.change), columns[3] - 14, top + 40);
-      context.textAlign = 'left';
-      context.fillStyle = '#475467';
-      context.font = '500 18px Pretendard, Arial, sans-serif';
-      context.fillText(fitText(context, row.note, columns[4] - columns[3] - 20), columns[3] + 10, top + 40);
+    const selectedPriceFields = (pageRows[0]?.prices || rows[0]?.prices || [{ fieldId: 'noticePrice', label: '공지단가', value: 0 }]).slice(0, 2);
+    const priceCount = Math.max(1, selectedPriceFields.length);
+    const outerMargin = 24;
+    const panelGap = twoColumn ? 20 : 0;
+    const panelWidth = (width - (outerMargin * 2) - panelGap) / rowColumns.length;
+    rowColumns.forEach((columnRows, panelIndex) => {
+      const panelLeft = outerMargin + panelIndex * (panelWidth + panelGap);
+      const nameWidth = twoColumn ? (priceCount === 2 ? 406 : 510) : (priceCount === 2 ? 552 : 650);
+      const priceWidth = (panelWidth - nameWidth) / priceCount;
+      const columns = [{ key: 'name', label: '품명·규격', left: panelLeft, width: nameWidth }];
+      selectedPriceFields.forEach((field, index) => columns.push({ key: `price-${index}`, label: field.label, left: panelLeft + nameWidth + (priceWidth * index), width: priceWidth }));
+      context.fillStyle = '#ffedd5';
+      context.fillRect(panelLeft, headerHeight, panelWidth, tableHeaderHeight);
+      context.fillStyle = '#9a4a08';
+      context.font = `700 ${twoColumn ? 15 : 18}px Pretendard, Arial, sans-serif`;
+      columns.forEach(column => context.fillText(fitText(context, column.label, column.width - 20), column.left + 10, headerHeight + 35));
+      columnRows.forEach((row, rowIndex) => {
+        const top = headerHeight + tableHeaderHeight + rowIndex * rowHeight;
+        context.fillStyle = rowIndex % 2 ? '#fff7ed' : '#ffffff';
+        context.fillRect(panelLeft, top, panelWidth, rowHeight);
+        context.strokeStyle = '#fed7aa';
+        context.beginPath();
+        context.moveTo(panelLeft, top + rowHeight);
+        context.lineTo(panelLeft + panelWidth, top + rowHeight);
+        context.stroke();
+        context.fillStyle = '#172033';
+        context.font = `600 ${twoColumn ? 17 : 20}px Pretendard, Arial, sans-serif`;
+        context.fillText(fitText(context, row.nameSpec, columns[0].width - 22), columns[0].left + 10, top + 40);
+        context.textAlign = 'right';
+        selectedPriceFields.forEach((field, priceIndex) => {
+          const column = columns[priceIndex + 1];
+          context.fillStyle = '#172033';
+          context.fillText(formatAmount(row.prices?.[priceIndex]?.value ?? 0), column.left + column.width - 12, top + 40);
+        });
+        context.textAlign = 'left';
+      });
     });
     if (!pageRows.length) {
       context.fillStyle = '#667085';
@@ -191,7 +227,7 @@ export function renderKakaoNoticeCanvases(noticeRows = [], { title = '견적 단
     }
     context.fillStyle = '#667085';
     context.font = '500 15px Pretendard, Arial, sans-serif';
-    context.fillText('SMART INPUT · 저장된 직전 공지단가 기준', 42, canvas.height - 20);
+    context.fillText(`SMART INPUT · ${selectedPriceFields.map(field => field.label).join(' · ')} 표시`, 42, canvas.height - 20);
     pages.push(canvas);
   }
   return pages;

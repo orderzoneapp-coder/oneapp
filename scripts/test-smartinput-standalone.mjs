@@ -10,7 +10,11 @@ import {
   buildCatalogPriceSnapshot,
   buildKakaoNoticeRows,
   buildEstimateF8Data,
-  validateEstimateRows
+  validateEstimateRows,
+  renderKakaoNoticeCanvases,
+  paginateKakaoNoticeRows,
+  splitKakaoNoticeColumns,
+  KAKAO_NOTICE_ROWS_PER_PAGE
 } from '../smartinput/estimate-output.js';
 
 const root = process.cwd();
@@ -57,6 +61,10 @@ assert.ok(contract.ROW_FIELDS.includes('materialStandardCost'));
 assert.ok(!contract.ROW_FIELDS.includes('supplyAmount'), 'computed supply amount must not be directly editable');
 assert.ok(Array.from(contract.DEFAULT_SETTINGS.headerFields).includes('customer'));
 assert.ok(Array.from(contract.DEFAULT_SETTINGS.voucherColumns).includes('itemName'));
+assert.deepEqual(Array.from(contract.DEFAULT_SETTINGS.estimateNoticePriceFields), ['noticePrice']);
+assert.deepEqual(Array.from(contract.normalizeSettings({
+  estimateNoticePriceFields: ['wholesaleA', 'unitPrice', 'wholesaleB', 'unknown']
+}).estimateNoticePriceFields), ['wholesaleA', 'unitPrice'], 'Kakao notice price settings must keep at most two supported fields');
 const minimalLayout = contract.normalizeSettings({ headerFields: [], voucherColumns: [] });
 assert.deepEqual(Array.from(minimalLayout.headerFields), ['customer', 'deliveryDate', 'warehouse']);
 assert.deepEqual(Array.from(minimalLayout.voucherColumns), ['itemCode']);
@@ -142,7 +150,7 @@ assert.equal(estimateDraftWithPrices.catalogBaselinePrices['MASTER:M-1'], 12000)
 assert.equal(estimateDraftWithPrices.catalogPreviousPrices['MASTER:M-1'], 10000);
 const estimateOutputRows = [{
   productId: 'P-1', masterProductId: 'M-1', itemCode: '1001', itemName: '열무', specification: '4kg',
-  unitPrice: 3800, noticePrice: 4200, memo: '주말 단가', unitPriceReviewStatus: 'PENDING'
+  unitPrice: 3800, wholesaleA: 4500, noticePrice: 4200, memo: '주말 단가', unitPriceReviewStatus: 'PENDING'
 }];
 const priceSnapshot = buildCatalogPriceSnapshot(estimateOutputRows);
 assert.equal(priceSnapshot['MASTER:M-1'], 4200);
@@ -150,6 +158,47 @@ const noticeRows = buildKakaoNoticeRows(estimateOutputRows, { 'MASTER:M-1': 4000
 assert.equal(noticeRows[0].nameSpec, '열무 · 4kg');
 assert.equal(noticeRows[0].change, 200);
 assert.equal(noticeRows[0].note, '주말 단가');
+const dualPriceNoticeRows = buildKakaoNoticeRows(estimateOutputRows, {}, [
+  { id: 'wholesaleA', label: '도매A' },
+  { id: 'unitPrice', label: '단가' }
+]);
+assert.deepEqual(dualPriceNoticeRows[0].prices, [
+  { fieldId: 'wholesaleA', label: '도매A', value: 4500 },
+  { fieldId: 'unitPrice', label: '단가', value: 3800 }
+]);
+assert.equal(KAKAO_NOTICE_ROWS_PER_PAGE, 40);
+const noticeFixtures = Array.from({ length: 41 }, (_, index) => ({ ...dualPriceNoticeRows[0], key: `ROW:${index}` }));
+assert.deepEqual(paginateKakaoNoticeRows(noticeFixtures).map(page => page.length), [40, 1]);
+assert.deepEqual(splitKakaoNoticeColumns(noticeFixtures.slice(0, 20)).map(column => column.length), [20]);
+assert.deepEqual(splitKakaoNoticeColumns(noticeFixtures.slice(0, 21)).map(column => column.length), [20, 1]);
+assert.deepEqual(splitKakaoNoticeColumns(noticeFixtures.slice(0, 40)).map(column => column.length), [20, 20]);
+const originalDocument = globalThis.document;
+try {
+  globalThis.document = {
+    createElement(tagName) {
+      assert.equal(tagName, 'canvas');
+      const drawnText = [];
+      const context = {
+        fillRect() {}, beginPath() {}, moveTo() {}, lineTo() {}, stroke() {},
+        measureText(value) { return { width: String(value).length * 10 }; },
+        fillText(value) { drawnText.push(String(value)); },
+        fillStyle: '', strokeStyle: '', font: '', textAlign: 'left'
+      };
+      return { width: 0, height: 0, drawnText, getContext: () => context };
+    }
+  };
+  const singleColumnCanvases = renderKakaoNoticeCanvases(noticeFixtures.slice(0, 20));
+  assert.equal(singleColumnCanvases[0].width, 960, 'up to 20 products must use one notice column');
+  const dualColumnCanvases = renderKakaoNoticeCanvases(noticeFixtures);
+  assert.deepEqual(dualColumnCanvases.map(canvas => canvas.width), [1440, 960], '21-40 products must use two columns and the next 40-product page must restart independently');
+  assert.ok(dualColumnCanvases[0].drawnText.includes('도매A'));
+  assert.ok(dualColumnCanvases[0].drawnText.includes('단가'));
+  assert.ok(!dualColumnCanvases[0].drawnText.includes('변동액'));
+  assert.ok(!dualColumnCanvases[0].drawnText.includes('적요'));
+} finally {
+  if (originalDocument === undefined) delete globalThis.document;
+  else globalThis.document = originalDocument;
+}
 assert.equal(validateEstimateRows(estimateOutputRows).ok, true);
 assert.equal(validateEstimateRows([{ ...estimateOutputRows[0], itemCode: '' }]).ok, false);
 assert.equal(validateEstimateRows([estimateOutputRows[0], { ...estimateOutputRows[0], masterProductId: 'M-2' }]).errors.some(error => error.code === 'DUPLICATE_ITEM_CODE'), true);
@@ -561,6 +610,10 @@ assert.match(appSource, /function deleteSelectedCatalog\(\)/);
 assert.match(appSource, /function openEstimateNoticePreview\(\)/);
 assert.match(appSource, /function exportEstimateExcel\(\)/);
 assert.match(appSource, /function saveEstimateDocument\(\)/);
+assert.match(appSource, /카톡 공지 판매가/);
+assert.match(appSource, /estimateNoticePriceFields: workingEstimateNoticePriceFields/);
+assert.match(appSource, /selected\.length >= 2/,
+  'Kakao notice settings must disable a third price choice after two selections');
 const saveEstimateSource = appSource.match(/async function saveEstimateDocument\(\)[\s\S]*?(?=\nasync function completeOrder\(\))/)?.[0] || '';
 assert.match(saveEstimateSource, /current\.rows\.findIndex\(row => !row\.itemCode && !row\.itemName\)/,
   'estimate saving must require a product identity');
