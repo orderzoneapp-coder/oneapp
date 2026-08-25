@@ -55,8 +55,8 @@ assert.equal(operator.state().report.issueCount, 1);
 operator.setReviewReason('fixture review'); operator.markReviewed(true);
 await operator.confirm();
 assert.equal(operator.state().phase, 'COMMITTED');
-assert.deepEqual(calls.map(call => call.action), ['dataops_close_ping', 'dataops_close_context', 'dataops_close_seal', 'dataops_close_prepare', 'dataops_close_write_chunks', 'dataops_close_write_chunks', 'dataops_close_write_chunks', 'dataops_close_write_chunks', 'dataops_close_write_chunks', 'dataops_close_write_chunks', 'dataops_close_commit']);
-assert.deepEqual(calls.filter(call => call.action === 'dataops_close_write_chunks').map(call => call.body.kind), ['A', 'B', 'ISSUES', 'DECISIONS', 'REPORT', 'BASELINES']);
+assert.deepEqual(calls.map(call => call.action), ['dataops_close_ping', 'dataops_close_context', 'dataops_close_seal', 'dataops_close_prepare', 'dataops_close_write_chunks', 'dataops_close_write_chunks', 'dataops_close_write_chunks', 'dataops_close_write_chunks', 'dataops_close_write_chunks', 'dataops_close_write_chunks', 'dataops_close_write_chunks', 'dataops_close_commit']);
+assert.deepEqual(calls.filter(call => call.action === 'dataops_close_write_chunks').map(call => call.body.kind), ['A', 'B', 'ISSUES', 'DECISIONS', 'AUDIT', 'REPORT', 'BASELINES']);
 
 const mismatchCalls = [];
 const mismatch = api.createDataOpsCloseOperator({ expectedDeployment: expected,
