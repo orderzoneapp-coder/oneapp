@@ -13,10 +13,7 @@
   <script src="orderq/canonical-hash.js?v=0.1.0"></script>
   <script src="orderFulfillmentWorkbook.js"></script>
   <script src="orderops/orderops-source-adapter.js?v=1.64.0"></script>
-  <script type="module">
-    import { connectSaleStage4Workspace } from './orderq/sale-stage4-source-adapter.js?v=0.2.0';
-    window.ORDERQ_STAGE4_SALE_BRIDGE = Object.freeze({ connectSaleStage4Workspace });
-  </script>
+  <script type="module" src="./orderops/orderops-stage4-analysis-bridge.js?v=0.1.0"></script>
   <style>
     :root {
       color-scheme: light;
@@ -6089,11 +6086,6 @@
         try {
           await new Promise((resolve) => window.setTimeout(resolve, 20));
           state.workspace = await analyzeCurrentInputs();
-          if (window.ORDERQ_STAGE4_SALE_BRIDGE?.connectSaleStage4Workspace) {
-            state.workspace = await window.ORDERQ_STAGE4_SALE_BRIDGE.connectSaleStage4Workspace(state.workspace, {
-              reviews: state.workspace.saleStage4Reviews || {}, actor: "ORDER_Q_ADMIN"
-            });
-          }
           state.activePreview = "validation";
           resetResultViewFilters();
           renderResults();
@@ -7152,7 +7144,9 @@
         if (reviews[occurrenceKey]?.unlinkDirect === true) delete reviews[occurrenceKey];
         else reviews[occurrenceKey] = { ...(reviews[occurrenceKey] || {}), unlinkDirect:true };
         state.workspace = { ...state.workspace, saleStage4Reviews:reviews };
-        window.ORDERQ_STAGE4_SALE_BRIDGE.connectSaleStage4Workspace(state.workspace, { reviews, actor:"ORDER_Q_ADMIN" })
+        window.ORDERQ_STAGE4_SALE_BRIDGE.connectSaleStage4Workspace(state.workspace, { reviews, actor:"ORDER_Q_ADMIN",
+          cloudUrl: normalizeCloudUrl(elements.cloudUrlInput.value || localStorage.getItem("oneapp_cloud_sync_url_v1") || ""),
+          accessToken: elements.cloudTokenInput.value, allowDeferredAuth:false })
           .then(workspace => { state.workspace = workspace; renderResults(); scheduleLocalSave(); })
           .catch(error => showToast(error.message || "판매 연결을 변경하지 못했습니다.", true));
       });

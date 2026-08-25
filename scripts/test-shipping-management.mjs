@@ -5,13 +5,25 @@ import path from "node:path";
 import vm from "node:vm";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
+import { connectSaleStage4ForAnalysis } from "../orderops/orderops-stage4-analysis-bridge.js";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const require = createRequire(import.meta.url);
 const orderOpsHtml = fs.readFileSync(path.join(ROOT, "orderops_list.html"), "utf8");
 const ordersEntryHtml = fs.readFileSync(path.join(ROOT, "orders.html"), "utf8");
+const canonicalOrderOpsHtml = fs.readFileSync(path.join(ROOT, "orderops/list.html"), "utf8");
 assert.equal(ordersEntryHtml, orderOpsHtml,
   "orders.html must deploy the complete public ORDER Q source without route-only divergence");
+assert.match(canonicalOrderOpsHtml, /orderops-stage4-analysis-bridge\.js\?v=0\.1\.0/,
+  "the live /orderops/list.html product route must use the non-blocking Stage4 connection bridge");
+assert.match(canonicalOrderOpsHtml, /\.\/orderops-stage4-analysis-bridge\.js/,
+  "the canonical nested route must use its own relative module path rather than a root-mirror path");
+assert.match(canonicalOrderOpsHtml,
+  /state\.workspace = await analyzeCurrentInputs\(\);\s*state\.activePreview = "validation";[\s\S]{0,220}renderResults\(\);\s*scheduleLocalSave\(\);/,
+  "the canonical route must render and persist local analysis without waiting for an optional Cloud read");
+assert.doesNotMatch(canonicalOrderOpsHtml,
+  /state\.workspace = await window\.ORDERQ_STAGE4_SALE_BRIDGE\.connectSaleStage4Workspace/,
+  "the canonical analysis action must never await the optional Stage4 Cloud connection");
 assert.doesNotMatch(orderOpsHtml, /tokens truncated|…\d+ tokens truncated…/,
   "the public OrderOps mirror must not contain a truncated source fragment");
 assert.match(orderOpsHtml, /<body>[\s\S]*<\/body>\s*<\/html>/,
@@ -33,6 +45,14 @@ assert.match(orderOpsHtml, /function loadDataOpsInventory\(\)[\s\S]*fetchLatestD
   "the warehouse card must load and validate the latest DataOps snapshot");
 assert.match(orderOpsHtml, /function loadSmartInputOrders\(\)[\s\S]*sourceAdapter\.loadSmartInputOrders/,
   "the order card must read SmartInput orders from the ORDER Q ledger");
+assert.match(orderOpsHtml, /orderops-stage4-analysis-bridge\.js\?v=0\.1\.0/,
+  "ORDER Q analysis must use the auth-aware Stage4 bridge");
+assert.match(orderOpsHtml,
+  /state\.workspace = await analyzeCurrentInputs\(\);\s*state\.activePreview = "validation";[\s\S]{0,220}renderResults\(\);\s*scheduleLocalSave\(\);/,
+  "root mirrors must also render and persist local analysis before any explicit Stage4 connection");
+assert.doesNotMatch(orderOpsHtml,
+  /state\.workspace = await window\.ORDERQ_STAGE4_SALE_BRIDGE\.connectSaleStage4Workspace/,
+  "root mirrors must not restore the former unconditional Cloud wait");
 assert.match(orderOpsHtml, /kind === "inventory"[\s\S]*loadDataOpsInventory\(\)/,
   "the warehouse card surface must invoke the DataOps loader");
 assert.match(orderOpsHtml, /kind === "orders"[\s\S]*loadSmartInputOrders\(\)/,
@@ -2862,7 +2882,73 @@ if (referenceFilesEnabled && fs.existsSync(referenceOrdersPath) && fs.existsSync
     }),
     "every real order-only product must display zero stock and its full negative remaining quantity",
   );
+  const deferredActual = await connectSaleStage4ForAnalysis(referenceWorkspace, {
+    connect: async () => { throw new Error("ORDERQ_ACCESS_DENIED"); },
+    setCloudUrl: () => {}, setCloudAccessToken: () => {}, allowDeferredAuth: true,
+  });
+  assert.equal(deferredActual.planId, referenceWorkspace.planId,
+    "real workbook analysis must survive a Stage4 ORDER Q auth failure");
+  assert.deepEqual(deferredActual.stats, referenceWorkspace.stats,
+    "real workbook totals must remain unchanged when only the Stage4 Cloud read is denied");
+  assert.deepEqual(deferredActual.allocations, referenceWorkspace.allocations,
+    "real workbook allocations must remain unchanged when only the Stage4 Cloud read is denied");
+  assert.deepEqual(deferredActual.saleStage4ConnectionError,
+    { code: "ORDERQ_ACCESS_DENIED", retryable: true, action: "orderq_m9_pull" });
 }
+
+const authBridgeWorkspace = referenceWorkspace || inventoryReferenceWorkspace || formatWorkspace;
+let pendingConnectionStarted = false;
+const unresolvedOptionalConnection = connectSaleStage4ForAnalysis(authBridgeWorkspace, {
+  setCloudUrl: () => {}, setCloudAccessToken: () => {},
+  connect: async () => { pendingConnectionStarted = true; return new Promise(() => {}); },
+});
+await Promise.resolve();
+assert.equal(pendingConnectionStarted, true, "the explicit optional connection fixture must remain unresolved");
+assert.deepEqual((referenceWorkspace || authBridgeWorkspace).stats, authBridgeWorkspace.stats,
+  "an unresolved optional Cloud connection must not delay or mutate the already rendered totals");
+assert.deepEqual((referenceWorkspace || authBridgeWorkspace).allocations, authBridgeWorkspace.allocations,
+  "an unresolved optional Cloud connection must not delay or mutate persisted allocations");
+void unresolvedOptionalConnection;
+const configured = [];
+const deferredAuth = await connectSaleStage4ForAnalysis(authBridgeWorkspace, {
+  cloudUrl: "https://example.invalid/exec", accessToken: "operator-token",
+  setCloudUrl: (value, remember) => configured.push(["url", value, remember]),
+  setCloudAccessToken: (value, remember) => configured.push(["token", value, remember]),
+  connect: async () => { throw new Error("ORDERQ_ACCESS_DENIED"); }, allowDeferredAuth: true,
+});
+assert.equal(deferredAuth.saleStage4ConnectionError.action, "orderq_m9_pull");
+assert.equal(deferredAuth.saleStage4Sidecar, authBridgeWorkspace.saleStage4Sidecar,
+  "auth failure must not create or replace the immutable sale sidecar");
+const { saleStage4ConnectionError: _deferredMarker, ...deferredBusinessState } = deferredAuth;
+assert.deepEqual(deferredBusinessState, authBridgeWorkspace,
+  "auth failure may add only the retry marker and must preserve all ORDER Q business state exactly");
+assert.equal(engine.containsCloudTokenKey(deferredAuth), false,
+  "the retry marker saved with local workspace must never contain a raw credential");
+assert.doesNotMatch(JSON.stringify(deferredAuth), /operator-token|example\.invalid|oneapp_orderq_access_token/i,
+  "local save/export workspace must not contain token, endpoint, or storage-key material");
+assert.deepEqual(configured, [["url", "https://example.invalid/exec", true], ["token", "operator-token", false]],
+  "the visible Cloud credential must configure the exact ORDER Q client keys with a session-only token");
+for (const code of ["CLOUD_NETWORK_ERROR", "CLOUD_TIMEOUT", "CLOUD_HTTP_ERROR"]) {
+  const deferredTransport = await connectSaleStage4ForAnalysis(authBridgeWorkspace, {
+    setCloudUrl: () => {}, setCloudAccessToken: () => {}, allowDeferredAuth: true,
+    connect: async () => { const error = new Error("sanitized transport failure"); error.code = code; throw error; },
+  });
+  assert.equal(deferredTransport.saleStage4ConnectionError.code, code,
+    `${code} from the optional central read must preserve the completed local analysis`);
+  const { saleStage4ConnectionError: _transportMarker, ...transportBusinessState } = deferredTransport;
+  assert.deepEqual(transportBusinessState, authBridgeWorkspace,
+    `${code} may add only a sanitized retry marker`);
+}
+const retriedAuth = await connectSaleStage4ForAnalysis(deferredAuth, {
+  setCloudUrl: () => {}, setCloudAccessToken: () => {}, allowDeferredAuth: false,
+  connect: async workspace => ({ ...workspace, saleStage4Sidecar: { schemaVersion: "ORDERQ_SALE_SIDECAR_V1", rows: [] } }),
+});
+assert.equal(retriedAuth.saleStage4ConnectionError, undefined,
+  "a successful explicit retry must clear the deferred auth marker");
+await assert.rejects(() => connectSaleStage4ForAnalysis(authBridgeWorkspace, {
+  setCloudUrl: () => {}, setCloudAccessToken: () => {}, allowDeferredAuth: true,
+  connect: async () => { throw new Error("ORDERQ_SOURCE_CORRUPT"); },
+}), /ORDERQ_SOURCE_CORRUPT/, "non-auth failures must remain blocking");
 
 const outputWorkspace = referenceWorkspace || inventoryReferenceWorkspace || formatWorkspace;
 const tempDir = fs.mkdtempSync(path.join(ROOT, ".tmp-shipping-management-"));
