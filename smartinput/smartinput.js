@@ -116,7 +116,18 @@ const state = {
   columnResize: null,
   columnDrag: null,
   gridPasteUndo: null,
-  applyingGridPaste: false
+  applyingGridPaste: false,
+  mobileLayout: {
+    active: false,
+    frame: 0,
+    viewportBound: false,
+    orientation: '',
+    baseVisualHeight: 0,
+    drag: null,
+    fullscreen: null,
+    photoPointers: new Map(),
+    photoGesture: null
+  }
   ,purchaseCapability: { ready: false, code: 'ORDERQ_PURCHASE_STAGE3_CAPABILITY_UNAVAILABLE', detail: 'loading' }
   ,saleCapability: { ready: false, code: 'ORDERQ_SALE_STAGE4_CAPABILITY_UNAVAILABLE', detail: 'loading' }
 };
@@ -131,6 +142,11 @@ const ACTIVITY_LABELS = {
 };
 
 const DEFAULT_INPUT_ROW_ID = '__SMARTINPUT_DEFAULT_ROW__';
+const MOBILE_LAYOUT_QUERY = '(max-width: 820px), (max-width: 1024px) and (max-height: 540px)';
+const MOBILE_PARSER_COLLAPSED_HEIGHT = 68;
+const MOBILE_PARSER_DEFAULT_RATIO = .325;
+const MOBILE_PARSER_EXPANDED_RATIO = .65;
+const MOBILE_GRID_MIN_HEIGHT = 185;
 
 function esc(value) {
   return String(value ?? '').replace(/[&<>"']/g, character => ({
@@ -191,6 +207,259 @@ function modeUi() {
   state.draft.ui.modes ||= {};
   state.draft.ui.modes[state.draft.activeMode] ||= { scrollTop: 0, scrollLeft: 0, activeCellId: '' };
   return state.draft.ui.modes[state.draft.activeMode];
+}
+
+function mobileUi() {
+  state.draft.ui ||= {};
+  const current = state.draft.ui.mobile && typeof state.draft.ui.mobile === 'object'
+    ? state.draft.ui.mobile
+    : {};
+  const presets = new Set(['collapsed', 'default', 'expanded', 'custom']);
+  current.infoCollapsed = Boolean(current.infoCollapsed);
+  current.parserPreset = presets.has(current.parserPreset) ? current.parserPreset : 'default';
+  current.parserRatio = Math.max(.08, Math.min(MOBILE_PARSER_EXPANDED_RATIO, Number(current.parserRatio) || MOBILE_PARSER_DEFAULT_RATIO));
+  current.sourceByMode = current.sourceByMode && typeof current.sourceByMode === 'object' ? current.sourceByMode : {};
+  state.draft.ui.mobile = current;
+  return current;
+}
+
+function mobileSourceUi(mode = state.draft.activeMode) {
+  const mobile = mobileUi();
+  mobile.sourceByMode[mode] ||= {
+    textScrollTop: 0,
+    textScrollLeft: 0,
+    photoScrollTop: 0,
+    photoScrollLeft: 0,
+    sourceImageId: '',
+    zoom: 1,
+    rotation: 0,
+    ocrOpen: false
+  };
+  return mobile.sourceByMode[mode];
+}
+
+function isMobileLayout() {
+  return window.matchMedia(MOBILE_LAYOUT_QUERY).matches;
+}
+
+function mobileOrientation() {
+  return window.innerWidth > window.innerHeight ? 'landscape' : 'portrait';
+}
+
+function captureFocusedField() {
+  const element = document.activeElement;
+  if (!(element instanceof HTMLElement)) return null;
+  return {
+    element,
+    start: typeof element.selectionStart === 'number' ? element.selectionStart : null,
+    end: typeof element.selectionEnd === 'number' ? element.selectionEnd : null
+  };
+}
+
+function restoreFocusedField(snapshot) {
+  if (!snapshot?.element?.isConnected) return;
+  snapshot.element.focus({ preventScroll: true });
+  if (snapshot.start !== null) {
+    try { snapshot.element.setSelectionRange(snapshot.start, snapshot.end); } catch (_) {}
+  }
+}
+
+function placeDocumentFieldsForLayout(mobile) {
+  const fields = document.querySelector('.document-fields');
+  const anchor = $('documentFieldsAnchor');
+  if (!fields || !anchor) return;
+  const alreadyPlaced = mobile ? fields.nextElementSibling === parserCard : fields.previousElementSibling === anchor;
+  if (alreadyPlaced) return;
+  const focus = fields.contains(document.activeElement) ? captureFocusedField() : null;
+  if (mobile) parserCard.before(fields);
+  else anchor.after(fields);
+  if (focus) window.requestAnimationFrame(() => restoreFocusedField(focus));
+}
+
+function updateMobileInfoSummary() {
+  const header = modeDraft().header;
+  const date = header.voucherDate || header.deliveryDate || $('deliveryDateInput').value || '날짜 미선택';
+  const transaction = header.transactionType || $('transactionTypeInput').value || '거래유형 미선택';
+  const customer = header.customerName || $('customerInput').value.trim() || '거래처 미선택';
+  const warehouse = header.warehouseName || $('warehouseInput').value.trim() || '창고 미선택';
+  $('mobileInfoSummary').textContent = `${date} · ${transaction} · ${customer} · ${warehouse}`;
+  const collapsed = mobileUi().infoCollapsed;
+  const fields = document.querySelector('.document-fields');
+  fields.classList.toggle('is-mobile-collapsed', collapsed);
+  $('mobileInfoToggle').setAttribute('aria-expanded', String(!collapsed));
+  $('mobileInfoToggle').querySelector('span:last-child').textContent = collapsed ? '▸' : '▾';
+  $('mobileInfoSummary').hidden = !collapsed;
+}
+
+function mobileParserBounds() {
+  const viewport = window.visualViewport;
+  const viewportHeight = Math.max(1, Number(viewport?.height || window.innerHeight || 1));
+  const workspace = document.querySelector('.workspace');
+  const infoHeight = document.querySelector('.document-fields')?.getBoundingClientRect().height || 0;
+  const handleHeight = $('mobileParserResizer')?.getBoundingClientRect().height || 44;
+  const gridMinimum = document.body.classList.contains('is-mobile-keyboard-open')
+    ? 96
+    : (mobileOrientation() === 'landscape' ? 80 : MOBILE_GRID_MIN_HEIGHT);
+  const layoutMaximum = Math.max(56, (workspace?.clientHeight || viewportHeight) - infoHeight - handleHeight - gridMinimum - 12);
+  return {
+    viewportHeight,
+    minimum: 56,
+    maximum: Math.max(56, Math.min(viewportHeight * MOBILE_PARSER_EXPANDED_RATIO, layoutMaximum))
+  };
+}
+
+function applyMobileParserHeight({ requestedHeight = null, persist = false } = {}) {
+  if (!isMobileLayout()) return 0;
+  const mobile = mobileUi();
+  const bounds = mobileParserBounds();
+  let requested = requestedHeight === null ? Number.NaN : Number(requestedHeight);
+  if (!Number.isFinite(requested)) {
+    if (mobile.parserPreset === 'collapsed') requested = MOBILE_PARSER_COLLAPSED_HEIGHT;
+    else if (mobile.parserPreset === 'expanded') requested = bounds.viewportHeight * MOBILE_PARSER_EXPANDED_RATIO;
+    else if (mobile.parserPreset === 'custom') requested = bounds.viewportHeight * mobile.parserRatio;
+    else requested = bounds.viewportHeight * MOBILE_PARSER_DEFAULT_RATIO;
+  }
+  const height = Math.round(Math.max(bounds.minimum, Math.min(bounds.maximum, requested)));
+  document.documentElement.style.setProperty('--smartinput-mobile-parser-height', `${height}px`);
+  $('mobileParserDragHandle').setAttribute('aria-valuemax', String(Math.round(bounds.maximum)));
+  $('mobileParserDragHandle').setAttribute('aria-valuenow', String(height));
+  if (persist && mobile.parserPreset === 'custom') mobile.parserRatio = Math.max(.08, Math.min(MOBILE_PARSER_EXPANDED_RATIO, height / bounds.viewportHeight));
+  document.querySelectorAll('[data-mobile-parser-preset]').forEach(button => {
+    button.classList.toggle('is-active', button.dataset.mobileParserPreset === mobile.parserPreset);
+  });
+  if (persist) scheduleSave();
+  return height;
+}
+
+function setMobileParserPreset(preset) {
+  if (!['collapsed', 'default', 'expanded'].includes(preset)) return;
+  mobileUi().parserPreset = preset;
+  applyMobileParserHeight({ persist: true });
+}
+
+function beginMobileParserDrag(event) {
+  if (!isMobileLayout() || (event.pointerType === 'mouse' && event.button !== 0)) return;
+  event.preventDefault();
+  const handle = $('mobileParserDragHandle');
+  state.mobileLayout.drag = {
+    pointerId: event.pointerId,
+    startY: event.clientY,
+    startHeight: parserCard.getBoundingClientRect().height
+  };
+  mobileUi().parserPreset = 'custom';
+  handle.classList.add('is-dragging');
+  try { handle.setPointerCapture(event.pointerId); } catch (_) {}
+}
+
+function moveMobileParserDrag(event) {
+  const drag = state.mobileLayout.drag;
+  if (!drag || drag.pointerId !== event.pointerId) return;
+  event.preventDefault();
+  const requested = drag.startHeight + event.clientY - drag.startY;
+  const bounds = mobileParserBounds();
+  mobileUi().parserRatio = Math.max(.08, Math.min(MOBILE_PARSER_EXPANDED_RATIO, requested / bounds.viewportHeight));
+  applyMobileParserHeight({ requestedHeight: requested });
+}
+
+function finishMobileParserDrag(event) {
+  const drag = state.mobileLayout.drag;
+  if (!drag || drag.pointerId !== event.pointerId) return;
+  const handle = $('mobileParserDragHandle');
+  state.mobileLayout.drag = null;
+  try { if (handle.hasPointerCapture(event.pointerId)) handle.releasePointerCapture(event.pointerId); } catch (_) {}
+  handle.classList.remove('is-dragging');
+  applyMobileParserHeight();
+  scheduleSave();
+}
+
+function resizeMobileParserWithKeyboard(event) {
+  if (!isMobileLayout()) return;
+  if (event.key === 'Home') {
+    event.preventDefault();
+    setMobileParserPreset('collapsed');
+    return;
+  }
+  if (event.key === 'End') {
+    event.preventDefault();
+    setMobileParserPreset('expanded');
+    return;
+  }
+  if (!['ArrowUp', 'ArrowDown'].includes(event.key)) return;
+  event.preventDefault();
+  const step = event.shiftKey ? 24 : 8;
+  const requested = parserCard.getBoundingClientRect().height + (event.key === 'ArrowDown' ? step : -step);
+  const bounds = mobileParserBounds();
+  const mobile = mobileUi();
+  mobile.parserPreset = 'custom';
+  mobile.parserRatio = Math.max(.08, Math.min(MOBILE_PARSER_EXPANDED_RATIO, requested / bounds.viewportHeight));
+  applyMobileParserHeight({ requestedHeight: requested, persist: true });
+}
+
+function syncMobileParserToolbar() {
+  const method = contract.INPUT_METHODS.find(item => item.id === modeDraft().activeMethod);
+  $('mobileSourceType').textContent = method?.label || '원본';
+}
+
+function syncMobileViewportLayout() {
+  const active = isMobileLayout();
+  state.mobileLayout.active = active;
+  placeDocumentFieldsForLayout(active);
+  $('mobileParserToolbar').hidden = !active;
+  $('mobileParserResizer').hidden = !active;
+  document.documentElement.classList.toggle('smartinput-mobile-layout', active);
+  if (!active) {
+    if (state.mobileLayout.fullscreen) closeSourceFullscreen();
+    document.documentElement.style.removeProperty('--smartinput-mobile-viewport-height');
+    document.documentElement.style.removeProperty('--smartinput-visual-offset-top');
+    document.documentElement.style.removeProperty('--smartinput-mobile-parser-height');
+    document.body.classList.remove('is-mobile-keyboard-open');
+    return;
+  }
+  const viewport = window.visualViewport;
+  const height = Math.max(1, Number(viewport?.height || window.innerHeight || 1));
+  const orientation = mobileOrientation();
+  if (state.mobileLayout.orientation !== orientation) {
+    state.mobileLayout.orientation = orientation;
+    state.mobileLayout.baseVisualHeight = height;
+  } else if (height > state.mobileLayout.baseVisualHeight) {
+    state.mobileLayout.baseVisualHeight = height;
+  }
+  const keyboardOpen = state.mobileLayout.baseVisualHeight - height > 120;
+  document.body.classList.toggle('is-mobile-keyboard-open', keyboardOpen);
+  document.documentElement.style.setProperty('--smartinput-mobile-viewport-height', `${Math.round(height)}px`);
+  document.documentElement.style.setProperty('--smartinput-visual-offset-top', `${Math.round(Number(viewport?.offsetTop || 0))}px`);
+  updateMobileInfoSummary();
+  syncMobileParserToolbar();
+  applyMobileParserHeight();
+  const activeCell = document.activeElement?.closest?.('#tableScroll input');
+  if (activeCell) revealGridInput(activeCell);
+}
+
+function scheduleMobileViewportLayout() {
+  window.cancelAnimationFrame(state.mobileLayout.frame);
+  state.mobileLayout.frame = window.requestAnimationFrame(() => {
+    state.mobileLayout.frame = 0;
+    syncMobileViewportLayout();
+    window.requestAnimationFrame(renderPhotoTransform);
+  });
+}
+
+function bindMobileViewportListeners() {
+  if (state.mobileLayout.viewportBound) return;
+  state.mobileLayout.viewportBound = true;
+  window.visualViewport?.addEventListener('resize', scheduleMobileViewportLayout, { passive: true });
+  window.visualViewport?.addEventListener('scroll', scheduleMobileViewportLayout, { passive: true });
+  window.addEventListener('orientationchange', scheduleMobileViewportLayout, { passive: true });
+}
+
+function unbindMobileViewportListeners() {
+  if (!state.mobileLayout.viewportBound) return;
+  state.mobileLayout.viewportBound = false;
+  window.visualViewport?.removeEventListener('resize', scheduleMobileViewportLayout);
+  window.visualViewport?.removeEventListener('scroll', scheduleMobileViewportLayout);
+  window.removeEventListener('orientationchange', scheduleMobileViewportLayout);
+  window.cancelAnimationFrame(state.mobileLayout.frame);
+  state.mobileLayout.frame = 0;
 }
 
 function setAppStatus(message, tone = 'normal') {
@@ -264,6 +533,7 @@ function referenceStatusMessage() {
 function renderReferenceControls() {
   const blocked = !referencesReady();
   $('analyzeButton').disabled = blocked || state.busy;
+  $('mobileAnalyzeButton').disabled = blocked || state.busy || (modeDraft().activeMethod === 'photo' && !currentSourceImage()?.dataUrl);
   $('customerSearchButton').disabled = blocked || state.busy;
   $('saveDraftButton').disabled = blocked || state.busy;
   $('estimateNoticeButton').disabled = blocked || state.busy;
@@ -741,9 +1011,12 @@ function applyFormLayout() {
 function updateMethod(method, { persist = true } = {}) {
   const selected = contract.INPUT_METHODS.find(item => item.id === method) || contract.INPUT_METHODS[2];
   const changed = modeDraft().activeMethod !== selected.id;
+  if (changed) captureMobileSourceView();
   modeDraft().activeMethod = selected.id;
   methodButtons.forEach(button => button.classList.toggle('is-active', button.dataset.method === selected.id));
   renderSourceSurface();
+  syncMobileParserToolbar();
+  if (changed) restoreMobileSourceView();
   if (persist && changed) scheduleSave();
   return selected;
 }
@@ -752,12 +1025,51 @@ function currentSourceImage() {
   return state.sourceImages[state.draft.activeMode] || null;
 }
 
-function resetPhotoView() {
-  state.photoView.zoom = 1;
-  state.photoView.rotation = 0;
+function captureMobileSourceView({ persist = false } = {}) {
+  if (!isMobileLayout()) return null;
+  const view = mobileSourceUi();
+  view.textScrollTop = sourceTextInput.scrollTop;
+  view.textScrollLeft = sourceTextInput.scrollLeft;
+  view.photoScrollTop = $('photoViewport').scrollTop;
+  view.photoScrollLeft = $('photoViewport').scrollLeft;
+  view.sourceImageId = currentSourceImage()?.sourceImageId || '';
+  view.zoom = Number(state.photoView.zoom || 1);
+  view.rotation = Number(state.photoView.rotation || 0);
+  view.ocrOpen = Boolean(state.photoView.ocrOpen);
+  if (persist) scheduleSave();
+  return { ...view };
+}
+
+function restoreMobileSourceView(view = mobileSourceUi()) {
+  if (!isMobileLayout()) return;
+  window.requestAnimationFrame(() => {
+    sourceTextInput.scrollTop = Number(view.textScrollTop || 0);
+    sourceTextInput.scrollLeft = Number(view.textScrollLeft || 0);
+    const highlight = $('sourceHighlight');
+    highlight.scrollTop = sourceTextInput.scrollTop;
+    highlight.scrollLeft = sourceTextInput.scrollLeft;
+    renderPhotoTransform();
+    window.requestAnimationFrame(() => {
+      $('photoViewport').scrollTop = Number(view.photoScrollTop || 0);
+      $('photoViewport').scrollLeft = Number(view.photoScrollLeft || 0);
+    });
+  });
+}
+
+function clearMobileSourceView(mode = state.draft.activeMode) {
+  const mobile = mobileUi();
+  delete mobile.sourceByMode[mode];
+}
+
+function resetPhotoView(sourceImageId = '') {
+  if (!sourceImageId && isMobileLayout()) clearMobileSourceView();
+  const saved = isMobileLayout() ? mobileSourceUi() : null;
+  const restoreSaved = Boolean(sourceImageId && saved?.sourceImageId === sourceImageId);
+  state.photoView.zoom = restoreSaved ? Math.max(.5, Math.min(4, Number(saved.zoom || 1))) : 1;
+  state.photoView.rotation = restoreSaved ? Number(saved.rotation || 0) : 0;
   state.photoView.activeRegion = null;
   state.photoView.detailColumns = Boolean(modeUi().detailColumns);
-  state.photoView.ocrOpen = false;
+  state.photoView.ocrOpen = restoreSaved && Boolean(saved.ocrOpen);
 }
 
 function renderPhotoRegion() {
@@ -806,6 +1118,7 @@ function renderSourceSurface() {
   const photoViewer = $('photoViewer');
   const photoStateChanged = workspace.classList.contains('has-photo-source') !== photoMode;
   workspace.classList.toggle('has-photo-source', photoMode);
+  workspace.classList.toggle('has-tabular-source', modeDraft().activeMethod === 'excel');
   const savedWidth = Number(state.draft.ui.parserPaneWidth || state.draft.ui.photoPaneWidth || 0);
   if (savedWidth > 0) workspace.style.setProperty('--parser-pane-width', `${savedWidth}px`);
   $('sourceEditor').hidden = photoMode;
@@ -816,6 +1129,7 @@ function renderSourceSurface() {
   $('photoStage').hidden = !showPhoto;
   $('photoViewerMeta').hidden = !showPhoto;
   $('analyzeButton').hidden = photoMode && !showPhoto;
+  $('mobileAnalyzeButton').disabled = !referencesReady() || state.busy || (photoMode && !showPhoto);
   if (photoStateChanged) window.requestAnimationFrame(applyFormLayout);
   if (!showPhoto) {
     $('photoOcrPanel').hidden = true;
@@ -837,7 +1151,7 @@ function renderSourceSurface() {
   if (image.dataset.sourceImageId !== evidence.sourceImageId) {
     image.dataset.sourceImageId = evidence.sourceImageId;
     image.src = evidence.dataUrl;
-    resetPhotoView();
+    resetPhotoView(evidence.sourceImageId);
   }
   $('photoOcrPanel').hidden = !state.photoView.ocrOpen;
   $('photoOcrToggle').setAttribute('aria-expanded', String(state.photoView.ocrOpen));
@@ -847,6 +1161,131 @@ function renderSourceSurface() {
     ? '선택한 상품의 원본 위치입니다.'
     : (evidence.notice || '원본 사진을 기준으로 입력값을 확인하세요.');
   window.requestAnimationFrame(renderPhotoTransform);
+}
+
+function sourceFullscreenFocusable() {
+  return [...parserCard.querySelectorAll('button:not([disabled]):not([hidden]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')]
+    .filter(element => element.getClientRects().length);
+}
+
+function openSourceFullscreen() {
+  if (!isMobileLayout() || state.mobileLayout.fullscreen) return;
+  state.mobileLayout.fullscreen = {
+    focus: captureFocusedField(),
+    sourceView: captureMobileSourceView({ persist: true })
+  };
+  parserCard.classList.add('is-source-fullscreen');
+  document.body.classList.add('is-source-fullscreen');
+  $('sourceFullscreenButton').setAttribute('aria-expanded', 'true');
+  $('sourceFullscreenButton').textContent = '닫기';
+  window.requestAnimationFrame(() => {
+    renderPhotoTransform();
+    $('sourceFullscreenButton').focus({ preventScroll: true });
+  });
+}
+
+function closeSourceFullscreen() {
+  const memory = state.mobileLayout.fullscreen;
+  if (!memory) return;
+  state.mobileLayout.fullscreen = null;
+  parserCard.classList.remove('is-source-fullscreen');
+  document.body.classList.remove('is-source-fullscreen');
+  $('sourceFullscreenButton').setAttribute('aria-expanded', 'false');
+  $('sourceFullscreenButton').textContent = '전체보기';
+  if (memory.sourceView) Object.assign(mobileSourceUi(), memory.sourceView);
+  scheduleMobileViewportLayout();
+  restoreMobileSourceView(memory.sourceView);
+  window.requestAnimationFrame(() => restoreFocusedField(memory.focus));
+}
+
+function trapSourceFullscreenFocus(event) {
+  if (!state.mobileLayout.fullscreen || event.key !== 'Tab') return;
+  const focusable = sourceFullscreenFocusable();
+  if (!focusable.length) return;
+  const index = focusable.indexOf(document.activeElement);
+  const next = event.shiftKey
+    ? focusable[(index <= 0 ? focusable.length : index) - 1]
+    : focusable[(index + 1) % focusable.length];
+  event.preventDefault();
+  next.focus({ preventScroll: true });
+}
+
+function photoPointerDistance(points) {
+  return Math.hypot(points[0].clientX - points[1].clientX, points[0].clientY - points[1].clientY);
+}
+
+function beginPhotoGesture(event) {
+  if (!isMobileLayout() || $('photoViewer').hidden || $('photoPreview').hidden) return;
+  if (event.pointerType === 'mouse' && event.button !== 0) return;
+  event.preventDefault();
+  const viewport = $('photoViewport');
+  state.mobileLayout.photoPointers.set(event.pointerId, { clientX: event.clientX, clientY: event.clientY });
+  try { viewport.setPointerCapture(event.pointerId); } catch (_) {}
+  const points = [...state.mobileLayout.photoPointers.values()];
+  if (points.length >= 2) {
+    const bounds = viewport.getBoundingClientRect();
+    const centerX = (points[0].clientX + points[1].clientX) / 2 - bounds.left;
+    const centerY = (points[0].clientY + points[1].clientY) / 2 - bounds.top;
+    state.mobileLayout.photoGesture = {
+      type: 'pinch',
+      distance: Math.max(1, photoPointerDistance(points)),
+      zoom: Number(state.photoView.zoom || 1),
+      contentX: viewport.scrollLeft + centerX,
+      contentY: viewport.scrollTop + centerY
+    };
+  } else {
+    state.mobileLayout.photoGesture = {
+      type: 'pan',
+      x: event.clientX,
+      y: event.clientY,
+      scrollLeft: viewport.scrollLeft,
+      scrollTop: viewport.scrollTop
+    };
+  }
+}
+
+function movePhotoGesture(event) {
+  if (!state.mobileLayout.photoPointers.has(event.pointerId)) return;
+  event.preventDefault();
+  const viewport = $('photoViewport');
+  state.mobileLayout.photoPointers.set(event.pointerId, { clientX: event.clientX, clientY: event.clientY });
+  const points = [...state.mobileLayout.photoPointers.values()];
+  const gesture = state.mobileLayout.photoGesture;
+  if (points.length >= 2) {
+    if (gesture?.type !== 'pinch') return beginPhotoGesture(event);
+    const bounds = viewport.getBoundingClientRect();
+    const centerX = (points[0].clientX + points[1].clientX) / 2 - bounds.left;
+    const centerY = (points[0].clientY + points[1].clientY) / 2 - bounds.top;
+    const zoom = Math.max(.5, Math.min(4, gesture.zoom * photoPointerDistance(points) / gesture.distance));
+    const scaleRatio = zoom / Math.max(.01, gesture.zoom);
+    state.photoView.zoom = zoom;
+    renderPhotoTransform();
+    viewport.scrollLeft = gesture.contentX * scaleRatio - centerX;
+    viewport.scrollTop = gesture.contentY * scaleRatio - centerY;
+  } else if (points.length === 1 && gesture?.type === 'pan') {
+    viewport.scrollLeft = gesture.scrollLeft - (event.clientX - gesture.x);
+    viewport.scrollTop = gesture.scrollTop - (event.clientY - gesture.y);
+  }
+}
+
+function finishPhotoGesture(event) {
+  const viewport = $('photoViewport');
+  if (!state.mobileLayout.photoPointers.has(event.pointerId)) return;
+  state.mobileLayout.photoPointers.delete(event.pointerId);
+  try { if (viewport.hasPointerCapture(event.pointerId)) viewport.releasePointerCapture(event.pointerId); } catch (_) {}
+  const remaining = [...state.mobileLayout.photoPointers.values()];
+  if (remaining.length === 1) {
+    state.mobileLayout.photoGesture = {
+      type: 'pan',
+      x: remaining[0].clientX,
+      y: remaining[0].clientY,
+      scrollLeft: viewport.scrollLeft,
+      scrollTop: viewport.scrollTop
+    };
+  } else if (!remaining.length) {
+    state.mobileLayout.photoGesture = null;
+    captureMobileSourceView({ persist: true });
+  }
 }
 
 function showPhotoRegion(region) {
@@ -1092,6 +1531,7 @@ function applyCustomer(customer, { rematch = true, mappingSource = 'MANUAL', lea
   applyCustomerRelationship(header);
   updateDeliveryPolicy();
   renderCatalogControls();
+  updateMobileInfoSummary();
   scheduleSave();
   if (learnAlias && header.rawOrdererName) {
     void confirmCustomerAlias(header.rawOrdererName, customer, currentSourceType())
@@ -2241,6 +2681,7 @@ function applyWarehouseMatch() {
   header.warehouseId = match?.warehouseId || '';
   header.warehouseCode = match?.warehouseCode || '';
   header.warehouseName = match ? warehouseDisplayName(match) : value.trim();
+  updateMobileInfoSummary();
   scheduleSave();
 }
 
@@ -2256,6 +2697,7 @@ function hydrateHeader() {
   $('customerHint').textContent = header.customerId ? '등록 거래처 · 마스터 연결됨' : '거래처가 인식되지 않으면 이 입력란으로 이동합니다.';
   applyCustomerRelationship(header);
   updateDeliveryPolicy();
+  updateMobileInfoSummary();
 }
 
 function cloneGridValue(value) {
@@ -2408,6 +2850,9 @@ function updateSummaries() {
   $('matchedCount').textContent = `일치 ${summary.matched.toLocaleString('ko-KR')}`;
   $('similarCount').textContent = `확인 ${summary.similar.toLocaleString('ko-KR')}`;
   $('failedCount').textContent = `미인식 ${summary.unresolved.toLocaleString('ko-KR')}`;
+  $('mobileMatchedCount').textContent = summary.matched.toLocaleString('ko-KR');
+  $('mobileSimilarCount').textContent = summary.similar.toLocaleString('ko-KR');
+  $('mobileFailedCount').textContent = summary.unresolved.toLocaleString('ko-KR');
   $('duplicateCount').textContent = `중복 가능 ${summary.duplicate.toLocaleString('ko-KR')}`;
   $('totalQuantity').textContent = summary.quantity.toLocaleString('ko-KR');
   $('totalAmount').textContent = `${summary.amount.toLocaleString('ko-KR')}원`;
@@ -2482,6 +2927,10 @@ function renderMode() {
   resizeSource();
   renderSourceAnalysis();
   applyFormLayout();
+  updateMobileInfoSummary();
+  syncMobileParserToolbar();
+  scheduleMobileViewportLayout();
+  restoreMobileSourceView();
   const relatedOpen = Boolean(state.draft.ui.relatedOpen);
   document.querySelector('.related-panel').classList.toggle('is-open', relatedOpen);
   $('relatedCollapseButton').setAttribute('aria-expanded', String(relatedOpen));
@@ -2498,6 +2947,8 @@ function renderMode() {
 
 function setMode(mode) {
   if (!contract.MODES[mode] || mode === state.draft.activeMode) return;
+  captureMobileSourceView({ persist: true });
+  closeSourceFullscreen();
   syncSourceText();
   state.gridPasteUndo = null;
   state.draft.activeMode = mode;
@@ -3007,6 +3458,7 @@ async function analyzeSource({ automatic = false } = {}) {
   }
   state.busy = true;
   $('analyzeButton').disabled = true;
+  $('mobileAnalyzeButton').disabled = true;
   $('parserProgress').hidden = false;
   setActiveActivity(`${batch.sequence}. ${activityLabel(method.id)} 분석 중`);
   setAppStatus(`${batch.sequence}차 입력을 분석하고 있습니다.`);
@@ -3414,6 +3866,7 @@ async function recognizeImage(file) {
   state.pendingImageEvidence = imageEvidence;
   state.busy = true;
   $('analyzeButton').disabled = true;
+  $('mobileAnalyzeButton').disabled = true;
   $('parserProgress').hidden = false;
   $('parserProgress').querySelector('strong').textContent = '사진에서 문자를 추출하고 있습니다.';
   setActiveActivity('사진 OCR 처리 중');
@@ -4677,6 +5130,12 @@ sourceTextInput.addEventListener('scroll', () => {
   if (!highlight) return;
   highlight.scrollTop = sourceTextInput.scrollTop;
   highlight.scrollLeft = sourceTextInput.scrollLeft;
+  if (isMobileLayout()) {
+    const view = mobileSourceUi();
+    view.textScrollTop = sourceTextInput.scrollTop;
+    view.textScrollLeft = sourceTextInput.scrollLeft;
+    scheduleSave();
+  }
 }, { passive: true });
 $('fileInput').addEventListener('change', event => handleFile(event.target.files?.[0]));
 $('photoInput').addEventListener('change', event => recognizeImage(event.target.files?.[0]));
@@ -4690,33 +5149,51 @@ $('photoPreview').addEventListener('load', renderPhotoTransform);
 $('photoZoomOut').addEventListener('click', () => {
   state.photoView.zoom = Math.max(.5, Number(state.photoView.zoom || 1) - .25);
   renderPhotoTransform();
+  captureMobileSourceView({ persist: true });
 });
 $('photoZoomIn').addEventListener('click', () => {
   state.photoView.zoom = Math.min(4, Number(state.photoView.zoom || 1) + .25);
   renderPhotoTransform();
+  captureMobileSourceView({ persist: true });
 });
 $('photoFit').addEventListener('click', () => {
   state.photoView.zoom = 1;
   renderPhotoTransform();
   $('photoViewport').scrollTo({ left: 0, top: 0 });
+  captureMobileSourceView({ persist: true });
 });
 $('photoRotateLeft').addEventListener('click', () => {
   state.photoView.rotation = Number(state.photoView.rotation || 0) - 90;
   renderPhotoTransform();
+  captureMobileSourceView({ persist: true });
 });
 $('photoRotateRight').addEventListener('click', () => {
   state.photoView.rotation = Number(state.photoView.rotation || 0) + 90;
   renderPhotoTransform();
+  captureMobileSourceView({ persist: true });
 });
 $('photoOcrToggle').addEventListener('click', () => {
   state.photoView.ocrOpen = !state.photoView.ocrOpen;
   renderSourceSurface();
+  captureMobileSourceView({ persist: true });
 });
 $('photoOcrClose').addEventListener('click', () => {
   state.photoView.ocrOpen = false;
   renderSourceSurface();
+  captureMobileSourceView({ persist: true });
   $('photoOcrToggle').focus();
 });
+$('photoViewport').addEventListener('pointerdown', beginPhotoGesture, { passive: false });
+$('photoViewport').addEventListener('pointermove', movePhotoGesture, { passive: false });
+$('photoViewport').addEventListener('pointerup', finishPhotoGesture);
+$('photoViewport').addEventListener('pointercancel', finishPhotoGesture);
+$('photoViewport').addEventListener('scroll', () => {
+  if (!isMobileLayout()) return;
+  const view = mobileSourceUi();
+  view.photoScrollTop = $('photoViewport').scrollTop;
+  view.photoScrollLeft = $('photoViewport').scrollLeft;
+  scheduleSave();
+}, { passive: true });
 $('photoEmptySelectButton').addEventListener('click', () => $('photoInput').click());
 $('detailColumnsButton').addEventListener('click', () => {
   state.photoView.detailColumns = !state.photoView.detailColumns;
@@ -4791,6 +5268,26 @@ photoResizer.addEventListener('keydown', event => {
 });
 $('analyzeButton').addEventListener('click', () => analyzeSource({ automatic: false }));
 $('clearParserButton').addEventListener('click', clearParserWorkspace);
+$('mobileAnalyzeButton').addEventListener('click', () => analyzeSource({ automatic: false }));
+$('mobileClearParserButton').addEventListener('click', clearParserWorkspace);
+$('sourceFullscreenButton').addEventListener('click', () => {
+  if (state.mobileLayout.fullscreen) closeSourceFullscreen();
+  else openSourceFullscreen();
+});
+$('mobileInfoToggle').addEventListener('click', () => {
+  mobileUi().infoCollapsed = !mobileUi().infoCollapsed;
+  updateMobileInfoSummary();
+  scheduleMobileViewportLayout();
+  scheduleSave();
+});
+$('mobileParserDragHandle').addEventListener('pointerdown', beginMobileParserDrag, { passive: false });
+$('mobileParserDragHandle').addEventListener('pointermove', moveMobileParserDrag, { passive: false });
+$('mobileParserDragHandle').addEventListener('pointerup', finishMobileParserDrag);
+$('mobileParserDragHandle').addEventListener('pointercancel', finishMobileParserDrag);
+$('mobileParserDragHandle').addEventListener('keydown', resizeMobileParserWithKeyboard);
+document.querySelectorAll('[data-mobile-parser-preset]').forEach(button => {
+  button.addEventListener('click', () => setMobileParserPreset(button.dataset.mobileParserPreset));
+});
 $('undoGridPasteButton').addEventListener('click', undoGridPaste);
 $('gridSearchInput').addEventListener('input', event => {
   state.gridSearch = event.target.value;
@@ -4909,12 +5406,14 @@ voucherTableHead.addEventListener('drop', finishColumnDrop);
 voucherTableHead.addEventListener('dragend', finishColumnDrag);
 
 document.querySelector('.document-fields').addEventListener('input', event => {
+  updateMobileInfoSummary();
   const input = event.target.closest('[data-custom-header-input]');
   if (!input) return;
   modeDraft().header.customValues ||= {};
   modeDraft().header.customValues[input.dataset.customHeaderInput] = input.value;
   scheduleSave();
 });
+document.querySelector('.document-fields').addEventListener('change', updateMobileInfoSummary);
 
 inputRows.addEventListener('input', event => {
   invalidateGridPasteUndo();
@@ -5104,6 +5603,13 @@ document.addEventListener('paste', event => {
 });
 
 document.addEventListener('keydown', event => {
+  if (state.mobileLayout.fullscreen && event.key === 'Escape') {
+    event.preventDefault();
+    closeSourceFullscreen();
+    return;
+  }
+  trapSourceFullscreenFocus(event);
+  if (event.defaultPrevented) return;
   if (event.altKey && ['1', '2', '3', '4'].includes(event.key)) {
     event.preventDefault();
     setMode(['order', 'purchase', 'sale', 'estimate'][Number(event.key) - 1]);
@@ -5112,6 +5618,7 @@ document.addEventListener('keydown', event => {
 
 window.addEventListener('resize', () => {
   scheduleBrandAlignment();
+  scheduleMobileViewportLayout();
   window.requestAnimationFrame(renderPhotoTransform);
 }, { passive: true });
 
@@ -5129,6 +5636,17 @@ $('tableScroll').addEventListener('scroll', event => {
 window.addEventListener('pagehide', () => {
   if (state.draftDirty) saveDraftNow();
 });
+window.addEventListener('pagehide', () => {
+  captureMobileSourceView();
+  unbindMobileViewportListeners();
+});
+window.addEventListener('pageshow', () => {
+  bindMobileViewportListeners();
+  scheduleMobileViewportLayout();
+});
+mobileUi();
+bindMobileViewportListeners();
+syncMobileViewportLayout();
 renderMode();
 scheduleBrandAlignment();
 hydrateReferences();

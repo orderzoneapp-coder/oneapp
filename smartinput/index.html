@@ -9,7 +9,7 @@
   <link rel="icon" type="image/png" href="../nexus/assets/nexus-favicon.png">
   <script src="../nexus/common/nexus-theme-init.js?v=1.0.0"></script>
   <link rel="stylesheet" href="../orderq/customer-master.css?v=0.12.1" data-customer-picker-style>
-  <link rel="stylesheet" href="./smartinput.css?v=0.4.29">
+  <link rel="stylesheet" href="./smartinput.css?v=0.4.30">
   <script src="../nexus/common/apps-config.js?v=1.4.0"></script>
   <script src="../nexus/common/nexus-top.js?v=1.5.1"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
@@ -41,8 +41,8 @@
       </div>
       <div class="app-bar__actions">
         <span class="save-state" id="saveState" role="status" aria-live="polite"></span>
-        <button class="button button--quiet" id="draftListButton" type="button">초안 목록</button>
-        <button class="button button--quiet" id="settingsButton" type="button">환경설정</button>
+        <button class="button button--quiet" id="draftListButton" type="button" aria-label="초안 목록"><span class="app-action-label--full">초안 목록</span><span class="app-action-label--compact" aria-hidden="true">초안</span></button>
+        <button class="button button--quiet" id="settingsButton" type="button" aria-label="환경설정"><span class="app-action-label--full">환경설정</span><span class="app-action-label--compact" aria-hidden="true">설정</span></button>
         <button class="button button--primary" id="completeButton" type="button">입력 완료</button>
       </div>
     </div>
@@ -52,6 +52,13 @@
     <h1 class="sr-only">스마트입력</h1>
     <div class="workspace">
       <section class="parser-card" aria-label="원본 자료 입력">
+        <div class="mobile-parser-toolbar" id="mobileParserToolbar" role="toolbar" aria-label="모바일 파서 작업" hidden>
+          <strong class="mobile-source-type" id="mobileSourceType">직접 입력</strong>
+          <div class="mobile-parser-counts" aria-label="분석 결과"><span>일치 <b id="mobileMatchedCount">0</b></span><span>유사 <b id="mobileSimilarCount">0</b></span><span>불일치 <b id="mobileFailedCount">0</b></span></div>
+          <button class="button button--quiet button--small" id="mobileAnalyzeButton" type="button">다시 분석</button>
+          <button class="button button--quiet button--small" id="mobileClearParserButton" type="button">지우기</button>
+          <button class="button button--quiet button--small" id="sourceFullscreenButton" type="button" aria-expanded="false">전체보기</button>
+        </div>
         <div class="parser-toolbar" role="toolbar" aria-label="파서 작업">
           <button class="button button--quiet button--small parser-voice-button" type="button" data-method="voice"><span aria-hidden="true">●</span> 음성</button>
           <div class="legend" aria-label="매칭 상태 범례"><span class="legend--matched">일치</span><span class="legend--similar">유사</span><span class="legend--failed">불일치</span></div>
@@ -107,10 +114,24 @@
         <div class="parser-progress" id="parserProgress" hidden><span></span><strong>자료를 분석하고 있습니다.</strong></div>
       </section>
 
+      <div class="mobile-parser-resizer" id="mobileParserResizer" hidden>
+        <button class="mobile-parser-drag-handle" id="mobileParserDragHandle" type="button" role="separator" aria-label="원본 파서 높이 조절" aria-orientation="horizontal" aria-valuemin="56" aria-valuemax="650" aria-valuenow="68"><span aria-hidden="true"></span></button>
+        <div class="mobile-parser-presets" role="group" aria-label="원본 파서 높이">
+          <button type="button" data-mobile-parser-preset="collapsed">접기</button>
+          <button type="button" data-mobile-parser-preset="default">기본</button>
+          <button type="button" data-mobile-parser-preset="expanded">확대</button>
+        </div>
+      </div>
+
       <button class="photo-resizer" id="photoResizer" type="button" aria-label="파서 입력창과 입력표 폭 조절"><span></span></button>
 
       <section class="workbench" aria-label="스마트입력 본문">
-        <div class="document-fields">
+        <span id="documentFieldsAnchor" hidden aria-hidden="true"></span>
+        <div class="document-fields" id="mobileDocumentInfo">
+          <div class="mobile-info-heading">
+            <button id="mobileInfoToggle" type="button" aria-expanded="true" aria-controls="mobileDocumentInfo"><span>기본정보</span><span aria-hidden="true">▾</span></button>
+            <p id="mobileInfoSummary" aria-live="polite" hidden></p>
+          </div>
           <div class="document-fields__left">
             <label class="field" data-header-field="deliveryDate"><span>배송일자</span><input id="deliveryDateInput" type="date"><small id="deliveryPolicyHint">배송 가능일을 계산합니다.</small></label>
             <label class="field" data-header-field="warehouse"><span>출하창고 <em>필수</em></span><input id="warehouseInput" type="text" list="warehouseOptions" placeholder="창고명 또는 코드"><datalist id="warehouseOptions"></datalist><small>배송·출고에 사용할 창고를 지정합니다.</small></label>
