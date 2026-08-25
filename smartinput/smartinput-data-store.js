@@ -1,3 +1,5 @@
+import { normalizeEstimateOrder } from './estimate-order.js?v=0.1.0';
+
 const DB_NAME = 'oneapp-smartinput';
 const DB_VERSION = 3;
 const FALLBACK_KEY = 'oneapp.smartinput.relationships.v1';
@@ -146,13 +148,7 @@ export async function loadSmartInputData() {
     linkGroups,
     temporaryCustomers,
     aliasMappings,
-    estimates: estimates.sort((left, right) => {
-      const leftOrder = Number(left.sortOrder);
-      const rightOrder = Number(right.sortOrder);
-      if (Number.isFinite(leftOrder) && Number.isFinite(rightOrder) && leftOrder !== rightOrder) return leftOrder - rightOrder;
-      if (Number.isFinite(leftOrder) !== Number.isFinite(rightOrder)) return Number.isFinite(leftOrder) ? -1 : 1;
-      return String(left.createdAt || left.updatedAt || '').localeCompare(String(right.createdAt || right.updatedAt || ''));
-    }),
+    estimates: normalizeEstimateOrder(estimates),
     sourceImages
   };
 }
@@ -183,6 +179,26 @@ export function deleteAliasMapping(aliasMappingId) {
 
 export function saveEstimate(estimate) {
   return put(DATA_STORES.ESTIMATES, estimate, 'estimateId');
+}
+
+export async function saveEstimatesAtomically(estimates = []) {
+  const records = Array.isArray(estimates) ? estimates : [];
+  const db = await openDatabase();
+  if (!db) {
+    const value = readFallback();
+    const stored = { ...(value[DATA_STORES.ESTIMATES] || {}) };
+    records.forEach(record => { stored[record.estimateId] = record; });
+    value[DATA_STORES.ESTIMATES] = stored;
+    writeFallback(value);
+    return records;
+  }
+
+  const transaction = db.transaction(DATA_STORES.ESTIMATES, 'readwrite');
+  const store = transaction.objectStore(DATA_STORES.ESTIMATES);
+  records.forEach(record => store.put(record));
+  await transactionDone(transaction);
+  db.close();
+  return records;
 }
 
 export function deleteEstimate(estimateId) {

@@ -9,7 +9,7 @@
   <link rel="icon" type="image/png" href="../nexus/assets/nexus-favicon.png">
   <script src="../nexus/common/nexus-theme-init.js?v=1.0.0"></script>
   <link rel="stylesheet" href="../orderq/customer-master.css?v=0.12.1" data-customer-picker-style>
-  <link rel="stylesheet" href="./smartinput.css?v=0.4.31">
+  <link rel="stylesheet" href="./smartinput.css?v=0.4.32">
   <script src="../nexus/common/apps-config.js?v=1.4.0"></script>
   <script src="../nexus/common/nexus-top.js?v=1.5.1"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
@@ -153,8 +153,8 @@
               <div class="catalog-picker" id="catalogPicker">
                 <button class="catalog-picker__toggle" id="catalogPickerButton" type="button" aria-haspopup="true" aria-expanded="false">견적서 선택</button>
                 <div class="catalog-picker__menu" id="catalogPickerMenu" popover="auto">
-                  <div class="catalog-picker__heading"><span>견적서명</span><span>선택</span><span>관리</span></div>
-                  <div class="catalog-picker__list" id="catalogPickerList"></div>
+                  <div class="catalog-picker__heading"><span>순서</span><span>견적서명</span><span>선택</span><span>관리</span></div>
+                  <div class="catalog-picker__list" id="catalogPickerList" role="list" aria-label="저장 견적서"></div>
                   <div class="catalog-picker__footer"><span>선택 항목은 상품 불러오기·카톡·Excel에 함께 사용됩니다.</span><button class="button button--primary button--small" id="catalogComposeButton" type="button">선택 상품 불러오기</button></div>
                 </div>
               </div>
@@ -213,6 +213,6 @@
 
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
   <script src="./smartinput-contract.js?v=0.4.16"></script>
-  <script type="module" src="./smartinput.js?v=0.4.37"></script>
+  <script type="module" src="./smartinput.js?v=0.4.38"></script>
 </body>
 </html>

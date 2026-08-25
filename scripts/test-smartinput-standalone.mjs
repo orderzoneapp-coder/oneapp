@@ -26,6 +26,10 @@ import {
   CUSTOMER_REFERENCE_READ_TIMEOUT_MS,
   loadCustomerReferenceRows
 } from '../smartinput/reference-bootstrap.js';
+import {
+  normalizeEstimateOrder,
+  reorderEstimateRecords
+} from '../smartinput/estimate-order.js';
 
 const root = process.cwd();
 const read = file => fs.readFileSync(path.join(root, file), 'utf8');
@@ -41,6 +45,33 @@ const css = read('smartinput/smartinput.css');
 const readme = read('smartinput/README.md');
 const architecture = read('APP_ARCHITECTURE.md');
 const manifest = JSON.parse(read('app-manifest.json'));
+
+const orderFixtures = [
+  { estimateId: 'EST-A', catalogName: 'A', sortOrder: 1, createdAt: '2026-01-01T00:00:00.000Z', draft: { rows: [{ itemCode: 'A' }] } },
+  { estimateId: 'EST-B', catalogName: 'B', sortOrder: 2, createdAt: '2026-01-02T00:00:00.000Z', draft: { rows: [{ itemCode: 'B' }] } },
+  { estimateId: 'EST-C', catalogName: 'C', sortOrder: 3, createdAt: '2026-01-03T00:00:00.000Z', draft: { rows: [{ itemCode: 'C' }] } }
+];
+const legacySplice = orderFixtures.filter(record => record.estimateId !== 'EST-C');
+legacySplice.splice(0, 0, orderFixtures[2]);
+assert.deepEqual(normalizeEstimateOrder(legacySplice).map(record => record.estimateId), ['EST-A', 'EST-B', 'EST-C'],
+  'legacy normalization must reproduce the defect where stale sortOrder cancels a splice move');
+const reorderedFixtures = reorderEstimateRecords(orderFixtures, 'EST-C', 0);
+assert.deepEqual(reorderedFixtures.map(record => record.estimateId), ['EST-C', 'EST-A', 'EST-B']);
+assert.deepEqual(reorderedFixtures.map(record => record.sortOrder), [1, 2, 3]);
+for (const source of orderFixtures) {
+  const reordered = reorderedFixtures.find(record => record.estimateId === source.estimateId);
+  const { sortOrder: sourceOrder, ...sourceStable } = source;
+  const { sortOrder: reorderedOrder, ...reorderedStable } = reordered;
+  assert.deepEqual(reorderedStable, sourceStable, 'reorder must preserve every estimate field except sortOrder');
+}
+const legacyOrderA = normalizeEstimateOrder([
+  { estimateId: 'EST-MISSING', catalogName: 'Missing', createdAt: '2026-01-03T00:00:00.000Z' },
+  { estimateId: 'EST-DUP-B', catalogName: 'Duplicate B', sortOrder: 1, createdAt: '2026-01-02T00:00:00.000Z' },
+  { estimateId: 'EST-DUP-A', catalogName: 'Duplicate A', sortOrder: 1, createdAt: '2026-01-01T00:00:00.000Z' }
+]);
+const legacyOrderB = normalizeEstimateOrder([...legacyOrderA].reverse());
+assert.deepEqual(legacyOrderA.map(record => record.estimateId), legacyOrderB.map(record => record.estimateId),
+  'duplicate and missing legacy sortOrder values must normalize deterministically');
 
 const context = { window: {}, globalThis: {}, Date, Math, String, Number, Boolean, Object, Array, Map, Set };
 vm.runInNewContext(contractSource, context);
@@ -830,7 +861,20 @@ assert.match(appSource, /function openEstimateNoticePreview\(\)/);
 assert.match(appSource, /function exportEstimateExcel\(\)/);
 assert.match(appSource, /function openEstimateSaveDialog\(\)/);
 assert.match(appSource, /function openEstimateManageDialog\(record\)/);
-assert.match(appSource, /function normalizeEstimateOrder\(records = state\.estimates\)/);
+assert.match(appSource, /from '\.\/estimate-order\.js\?v=0\.1\.0'/);
+assert.match(dataStoreSource, /async function saveEstimatesAtomically|export async function saveEstimatesAtomically/);
+assert.match(dataStoreSource, /db\.transaction\(DATA_STORES\.ESTIMATES, 'readwrite'\)[\s\S]*records\.forEach\(record => store\.put\(record\)\)[\s\S]*transactionDone\(transaction\)/,
+  'reorder persistence must put every normalized estimate in one IndexedDB transaction');
+assert.doesNotMatch(appSource, /data-estimate-position/,
+  'the broken position select must not remain alongside direct reorder controls');
+for (const contractPattern of [
+  /data-drag-estimate/,
+  /pointercancel/,
+  /runEstimateOrderAutoScroll/,
+  /reorderEstimateRecords/,
+  /ArrowUp/,
+  /ArrowDown/
+]) assert.match(appSource, contractPattern);
 assert.match(appSource, /async function saveEstimateDocument\(catalogName\)/);
 assert.doesNotMatch(appSource, /data-settings-group="estimate-notice"/,
   'Kakao notice price filters must not remain buried in environment settings');
@@ -852,7 +896,7 @@ assert.match(appSource, /function composeSelectedEstimates\(\)[\s\S]*startNewCat
   'selected saved estimates must compose a new editable estimate');
 assert.match(appSource, /noticeSources\.flatMap/,
   'Kakao notice preview must render selected companies in sequence');
-assert.match(css, /\.catalog-picker__heading, \.catalog-picker__row \{[^}]*grid-template-columns: minmax\(0, 1fr\) 76px 48px/,
+assert.match(css, /\.catalog-picker__heading, \.catalog-picker__row \{[^}]*grid-template-columns: 44px minmax\(0, 1fr\) 76px 48px/,
   'the estimate picker must expose name, bulk-output checkbox, and management controls');
 assert.match(css, /\.estimate-notice-filters \{[^}]*position: absolute;/,
   'Kakao notice price filters must be placed over the preview header');
@@ -1046,7 +1090,7 @@ assert.match(appSource, /requestedName === estimateTitle\(loadedRecord\)/,
 assert.match(appSource, /sortOrder: updateLoadedRecord \? Number\(loadedRecord\.sortOrder/);
 assert.match(appSource, /: state\.estimates\.length \+ 1/,
   'a differently named copy must append to the bottom of the estimate library');
-assert.match(appSource, /state\.estimates = normalizeEstimateOrder\(updateLoadedRecord[\s\S]*: \[\.\.\.state\.estimates, record\]\)/);
+assert.match(appSource, /await persistEstimateLibrary\(updateLoadedRecord[\s\S]*: \[\.\.\.state\.estimates, record\]\)/);
 assert.match(appSource, /previousPrices: priorPrices/);
 assert.match(appSource, /buildCatalogPriceSnapshot\(current\.rows\)/);
 assert.match(appSource, /'쇼핑몰업로드'/);
@@ -1058,7 +1102,7 @@ assert.ok(errorSheetAppendAt >= 0 && errorSheetAppendAt < shopSheetAppendAt && s
   'Excel 시트는 오류정보, 쇼핑몰업로드, ERP업데이트 순서여야 한다.');
 assert.doesNotMatch(appSource, /if \(!output\.ok\)/, '오류 정보로 Excel 생성을 차단하면 안 된다.');
 assert.match(html, /smartinput-contract\.js\?v=0\.4\.16/);
-assert.match(html, /smartinput\.js\?v=0\.4\.37/);
+assert.match(html, /smartinput\.js\?v=0\.4\.38/);
 assert.match(appSource, /structured-sheet-parser\.js\?v=0\.1\.1/);
 assert.match(appSource, /estimate-output\.js\?v=0\.1\.4/);
 assert.match(appSource, /const sourceRows = selectedRecords\.length \? combinedEstimateRows\(selectedRecords\) : modeDraft\(\)\.rows/,

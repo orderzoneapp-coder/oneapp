@@ -54,12 +54,17 @@ import {
   normalizeAliasName,
   deleteEstimate,
   saveAliasMapping,
-  saveEstimate,
+  saveEstimatesAtomically,
   saveLinkGroup,
   saveSettings,
   saveSourceImage,
   saveTemporaryCustomer
-} from './smartinput-data-store.js?v=0.3.1';
+} from './smartinput-data-store.js?v=0.3.2';
+import {
+  normalizeEstimateOrder,
+  normalizeEstimateSequence,
+  reorderEstimateRecords
+} from './estimate-order.js?v=0.1.0';
 import {
   REFERENCE_STATUS,
   evaluateReferenceReadiness,
@@ -118,6 +123,8 @@ const state = {
   columnDrag: null,
   gridPasteUndo: null,
   applyingGridPaste: false,
+  estimateOrderDrag: null,
+  estimateOrderSaving: false,
   mobileLayout: {
     active: false,
     frame: 0,
@@ -2364,20 +2371,8 @@ function catalogCustomerName(record) {
   return String(record?.customerName || record?.draft?.header?.customerName || '').trim();
 }
 
-function normalizeEstimateOrder(records = state.estimates) {
-  return [...records]
-    .sort((left, right) => {
-      const leftOrder = Number(left.sortOrder);
-      const rightOrder = Number(right.sortOrder);
-      if (Number.isFinite(leftOrder) && Number.isFinite(rightOrder) && leftOrder !== rightOrder) return leftOrder - rightOrder;
-      if (Number.isFinite(leftOrder) !== Number.isFinite(rightOrder)) return Number.isFinite(leftOrder) ? -1 : 1;
-      return String(left.createdAt || left.updatedAt || '').localeCompare(String(right.createdAt || right.updatedAt || ''));
-    })
-    .map((record, index) => ({ ...record, sortOrder: index + 1 }));
-}
-
 function availableCatalogs() {
-  return normalizeEstimateOrder();
+  return normalizeEstimateOrder(state.estimates);
 }
 
 function selectedEstimateRecords() {
@@ -2421,6 +2416,7 @@ function combinedEstimateRows(records = selectedEstimateRecords()) {
 }
 
 function closeCatalogPicker() {
+  cancelEstimateOrderDrag();
   const menu = $('catalogPickerMenu');
   if (menu.matches(':popover-open')) menu.hidePopover();
   $('catalogPickerButton').setAttribute('aria-expanded', 'false');
@@ -2457,7 +2453,7 @@ function renderCatalogControls() {
     return;
   }
   const current = modeDraft();
-  state.estimates = normalizeEstimateOrder();
+  state.estimates = normalizeEstimateOrder(state.estimates);
   const records = availableCatalogs();
   const availableIds = new Set(records.map(record => record.estimateId));
   state.noticeEstimateIds = state.noticeEstimateIds.filter(estimateId => availableIds.has(estimateId));
@@ -2466,8 +2462,10 @@ function renderCatalogControls() {
   $('catalogPickerButton').textContent = currentRecord
     ? `${estimateTitle(currentRecord)} · 선택 ${selectedCount}`
     : `견적서 선택 · 선택 ${selectedCount}`;
+  $('catalogPickerList').setAttribute('aria-busy', String(state.estimateOrderSaving));
   $('catalogPickerList').innerHTML = records.length ? records.map(record => `
-    <div class="catalog-picker__row ${record.estimateId === current.catalogRecordId ? 'is-current' : ''}" data-estimate-id="${esc(record.estimateId)}">
+    <div class="catalog-picker__row ${record.estimateId === current.catalogRecordId ? 'is-current' : ''}" data-estimate-id="${esc(record.estimateId)}" role="listitem">
+      <button class="catalog-picker__drag" type="button" data-drag-estimate aria-label="${esc(estimateTitle(record))} 순서 이동" aria-keyshortcuts="ArrowUp ArrowDown Home End" ${state.estimateOrderSaving ? 'disabled' : ''}><span aria-hidden="true">⋮⋮</span></button>
       <button class="catalog-picker__load" type="button" data-load-estimate title="${esc(estimateTitle(record))}">${esc(estimateTitle(record))}</button>
       <label class="catalog-picker__output"><input type="checkbox" data-output-estimate aria-label="${esc(estimateTitle(record))} 선택" ${state.noticeEstimateIds.includes(record.estimateId) ? 'checked' : ''}><span>선택</span></label>
       <button class="catalog-picker__edit" type="button" data-edit-estimate>편집</button>
@@ -2494,24 +2492,180 @@ function composeSelectedEstimates() {
   toast(`${records.length}개 견적서에서 중복을 제외한 ${rows.length}개 상품을 불러왔습니다.`, 'success');
 }
 
-async function persistEstimateLibrary(records = state.estimates) {
-  state.estimates = normalizeEstimateOrder(records);
-  await Promise.all(state.estimates.map(record => saveEstimate(record)));
+async function persistEstimateLibrary(records = state.estimates, { preserveSequence = false } = {}) {
+  const normalized = preserveSequence ? normalizeEstimateSequence(records) : normalizeEstimateOrder(records);
+  await saveEstimatesAtomically(normalized);
+  state.estimates = normalized;
+  return normalized;
+}
+
+function updateEstimateDropTarget(clientY) {
+  const drag = state.estimateOrderDrag;
+  if (!drag) return;
+  const rows = [...drag.list.querySelectorAll('.catalog-picker__row:not(.is-dragging)')];
+  const before = rows.find(row => clientY < row.getBoundingClientRect().top + row.getBoundingClientRect().height / 2);
+  if (before) drag.list.insertBefore(drag.placeholder, before);
+  else drag.list.append(drag.placeholder);
+}
+
+function runEstimateOrderAutoScroll() {
+  const drag = state.estimateOrderDrag;
+  if (!drag) return;
+  const bounds = drag.list.getBoundingClientRect();
+  const edge = 44;
+  let delta = 0;
+  if (drag.clientY < bounds.top + edge) delta = -Math.ceil((bounds.top + edge - drag.clientY) / 4);
+  else if (drag.clientY > bounds.bottom - edge) delta = Math.ceil((drag.clientY - (bounds.bottom - edge)) / 4);
+  if (delta) {
+    const previous = drag.list.scrollTop;
+    drag.list.scrollTop += Math.max(-14, Math.min(14, delta));
+    if (drag.list.scrollTop !== previous) updateEstimateDropTarget(drag.clientY);
+  }
+  drag.autoScrollFrame = window.requestAnimationFrame(runEstimateOrderAutoScroll);
+}
+
+function cleanupEstimateOrderDrag({ keepPosition = false } = {}) {
+  const drag = state.estimateOrderDrag;
+  if (!drag) return null;
+  state.estimateOrderDrag = null;
+  if (drag.autoScrollFrame) window.cancelAnimationFrame(drag.autoScrollFrame);
+  try {
+    if (drag.handle.hasPointerCapture?.(drag.pointerId)) drag.handle.releasePointerCapture(drag.pointerId);
+  } catch (_) {}
+  if (keepPosition) drag.list.insertBefore(drag.row, drag.placeholder);
+  else drag.list.insertBefore(drag.row, drag.originalNext?.isConnected ? drag.originalNext : null);
+  drag.placeholder.remove();
+  drag.row.classList.remove('is-dragging');
+  drag.handle.classList.remove('is-dragging');
+  drag.row.removeAttribute('style');
+  document.body.classList.remove('is-estimate-order-dragging');
+  return drag;
+}
+
+function cancelEstimateOrderDrag() {
+  cleanupEstimateOrderDrag();
+}
+
+async function commitEstimateOrder(records, estimateId, message) {
+  if (state.estimateOrderSaving) return;
+  state.estimateOrderSaving = true;
+  const list = $('catalogPickerList');
+  list.setAttribute('aria-busy', 'true');
+  list.querySelectorAll('[data-drag-estimate]').forEach(button => { button.disabled = true; });
+  try {
+    await persistEstimateLibrary(records, { preserveSequence: true });
+    renderCatalogControls();
+    window.requestAnimationFrame(() => {
+      const row = [...$('catalogPickerList').querySelectorAll('[data-estimate-id]')]
+        .find(item => item.dataset.estimateId === estimateId);
+      row?.querySelector('[data-drag-estimate]')?.focus({ preventScroll: true });
+    });
+    toast(message, 'success');
+  } catch (error) {
+    renderCatalogControls();
+    toast(error.message || '견적서 순서를 저장하지 못했습니다.', 'error');
+  } finally {
+    state.estimateOrderSaving = false;
+    $('catalogPickerList').setAttribute('aria-busy', 'false');
+    $('catalogPickerList').querySelectorAll('[data-drag-estimate]').forEach(button => { button.disabled = false; });
+  }
+}
+
+function beginEstimateOrderDrag(event) {
+  const handle = event.target.closest('[data-drag-estimate]');
+  if (!handle || state.estimateOrderDrag || state.estimateOrderSaving || handle.disabled) return;
+  if (event.pointerType === 'mouse' && event.button !== 0) return;
+  const row = handle.closest('[data-estimate-id]');
+  const list = $('catalogPickerList');
+  if (!row || !list.contains(row)) return;
+  event.preventDefault();
+  const bounds = row.getBoundingClientRect();
+  const placeholder = document.createElement('div');
+  placeholder.className = 'catalog-picker__drop-indicator';
+  placeholder.setAttribute('aria-hidden', 'true');
+  placeholder.style.height = `${Math.round(bounds.height)}px`;
+  const originalNext = row.nextElementSibling;
+  list.insertBefore(placeholder, row);
+  row.classList.add('is-dragging');
+  handle.classList.add('is-dragging');
+  row.style.left = `${Math.round(bounds.left)}px`;
+  row.style.top = `${Math.round(bounds.top)}px`;
+  row.style.width = `${Math.round(bounds.width)}px`;
+  row.style.height = `${Math.round(bounds.height)}px`;
+  document.body.classList.add('is-estimate-order-dragging');
+  state.estimateOrderDrag = {
+    pointerId: event.pointerId,
+    estimateId: row.dataset.estimateId,
+    list,
+    row,
+    handle,
+    placeholder,
+    originalNext,
+    offsetY: event.clientY - bounds.top,
+    clientY: event.clientY,
+    autoScrollFrame: 0
+  };
+  try { handle.setPointerCapture?.(event.pointerId); } catch (_) {}
+  updateEstimateDropTarget(event.clientY);
+  state.estimateOrderDrag.autoScrollFrame = window.requestAnimationFrame(runEstimateOrderAutoScroll);
+}
+
+function moveEstimateOrderDrag(event) {
+  const drag = state.estimateOrderDrag;
+  if (!drag || drag.pointerId !== event.pointerId) return;
+  event.preventDefault();
+  drag.clientY = event.clientY;
+  drag.row.style.top = `${Math.round(event.clientY - drag.offsetY)}px`;
+  updateEstimateDropTarget(event.clientY);
+}
+
+function finishEstimateOrderDrag(event, { cancelled = false } = {}) {
+  const drag = state.estimateOrderDrag;
+  if (!drag || drag.pointerId !== event.pointerId) return;
+  const bounds = drag.list.getBoundingClientRect();
+  const insideList = !cancelled
+    && event.clientX >= bounds.left && event.clientX <= bounds.right
+    && event.clientY >= bounds.top && event.clientY <= bounds.bottom;
+  const siblings = [...drag.list.children].filter(child => child === drag.placeholder || child.matches?.('.catalog-picker__row:not(.is-dragging)'));
+  const targetIndex = siblings.indexOf(drag.placeholder);
+  const estimateId = drag.estimateId;
+  cleanupEstimateOrderDrag({ keepPosition: insideList });
+  if (!insideList || targetIndex < 0) return;
+  const current = availableCatalogs();
+  const sourceIndex = current.findIndex(record => record.estimateId === estimateId);
+  if (sourceIndex === targetIndex) return;
+  const next = reorderEstimateRecords(current, estimateId, targetIndex);
+  void commitEstimateOrder(next, estimateId, `${targetIndex + 1}번째로 순서를 저장했습니다.`);
+}
+
+function moveEstimateOrderWithKeyboard(event) {
+  const handle = event.target.closest('[data-drag-estimate]');
+  if (!handle || state.estimateOrderSaving) return;
+  const directions = new Set(['ArrowUp', 'ArrowDown', 'Home', 'End']);
+  if (!directions.has(event.key)) return;
+  const row = handle.closest('[data-estimate-id]');
+  const records = availableCatalogs();
+  const sourceIndex = records.findIndex(record => record.estimateId === row?.dataset.estimateId);
+  if (sourceIndex < 0) return;
+  const targetIndex = event.key === 'Home' ? 0
+    : (event.key === 'End' ? records.length - 1 : sourceIndex + (event.key === 'ArrowUp' ? -1 : 1));
+  const clamped = Math.max(0, Math.min(records.length - 1, targetIndex));
+  event.preventDefault();
+  if (clamped === sourceIndex) return;
+  const next = reorderEstimateRecords(records, row.dataset.estimateId, clamped);
+  void commitEstimateOrder(next, row.dataset.estimateId, `${clamped + 1}번째로 순서를 저장했습니다.`);
 }
 
 function openEstimateManageDialog(record) {
   if (!record) return;
   closeCatalogPicker();
-  const records = availableCatalogs();
-  const currentPosition = Math.max(1, records.findIndex(item => item.estimateId === record.estimateId) + 1);
   const dialog = document.createElement('dialog');
   dialog.className = 'smart-dialog estimate-manage-dialog';
   dialog.innerHTML = `<div class="smart-dialog__shell">
     <header><div><small>Estimate Library</small><h2>견적서 관리</h2></div><button type="button" data-close aria-label="닫기">×</button></header>
-    <div class="smart-dialog__message">견적서명과 목록 순서를 변경하거나 견적서를 삭제합니다.</div>
+    <div class="smart-dialog__message">견적서명을 변경하거나 견적서를 삭제합니다. 목록 순서는 견적서 선택에서 손잡이로 이동하세요.</div>
     <div class="estimate-dialog-form">
       <label><span>견적서명</span><input type="text" data-estimate-name maxlength="80" value="${esc(estimateTitle(record))}"></label>
-      <label><span>정렬 위치</span><select data-estimate-position>${records.map((_, index) => `<option value="${index + 1}" ${index + 1 === currentPosition ? 'selected' : ''}>${index + 1}번째</option>`).join('')}</select></label>
     </div>
     <footer><button type="button" class="button button--danger" data-delete-estimate>삭제</button><button type="button" class="button button--quiet" data-close>취소</button><button type="button" class="button button--primary" data-save-estimate>저장</button></footer>
   </div>`;
@@ -2525,15 +2679,13 @@ function openEstimateManageDialog(record) {
       dialog.querySelector('[data-estimate-name]').focus();
       return toast('견적서명을 입력하세요.', 'error');
     }
-    const targetPosition = Math.max(1, Math.min(records.length, Number(dialog.querySelector('[data-estimate-position]').value) || currentPosition));
     const updatedRecord = { ...record, catalogName, updatedAt: new Date().toISOString() };
-    const next = state.estimates.filter(item => item.estimateId !== record.estimateId);
-    next.splice(targetPosition - 1, 0, updatedRecord);
+    const next = availableCatalogs().map(item => item.estimateId === record.estimateId ? updatedRecord : item);
     try {
-      await persistEstimateLibrary(next);
+      await persistEstimateLibrary(next, { preserveSequence: true });
       finish();
       renderCatalogControls();
-      toast('견적서명과 순서를 저장했습니다.', 'success');
+      toast('견적서명을 저장했습니다.', 'success');
     } catch (error) {
       toast(error.message || '견적서 관리를 저장하지 못했습니다.', 'error');
     }
@@ -4544,8 +4696,7 @@ async function saveEstimateDocument(catalogName) {
       updatedAt: timestamp,
       draft: JSON.parse(JSON.stringify(createCatalogOnlyDraft(current, estimateId)))
     };
-    await saveEstimate(record);
-    state.estimates = normalizeEstimateOrder(updateLoadedRecord
+    await persistEstimateLibrary(updateLoadedRecord
       ? state.estimates.map(item => item.estimateId === estimateId ? record : item)
       : [...state.estimates, record]);
     saveDraftNow();
@@ -5374,7 +5525,13 @@ $('estimateExcelButton').addEventListener('click', exportEstimateExcel);
 $('catalogPickerButton').addEventListener('click', toggleCatalogPicker);
 $('catalogPickerMenu').addEventListener('toggle', event => {
   $('catalogPickerButton').setAttribute('aria-expanded', String(event.newState === 'open'));
+  if (event.newState !== 'open') cancelEstimateOrderDrag();
 });
+$('catalogPickerList').addEventListener('pointerdown', beginEstimateOrderDrag);
+$('catalogPickerList').addEventListener('keydown', moveEstimateOrderWithKeyboard);
+window.addEventListener('pointermove', moveEstimateOrderDrag, { passive: false });
+window.addEventListener('pointerup', finishEstimateOrderDrag);
+window.addEventListener('pointercancel', event => finishEstimateOrderDrag(event, { cancelled: true }));
 $('catalogPickerList').addEventListener('click', event => {
   const row = event.target.closest('[data-estimate-id]');
   if (!row) return;
