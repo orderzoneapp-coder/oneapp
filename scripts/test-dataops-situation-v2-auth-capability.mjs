@@ -8,6 +8,10 @@ const read = authority.context.dataOpsSituationRequireAuth(credentials, 'DATAOPS
 assert.equal(read.actorId, 'ADMIN-1');
 assert.throws(() => authority.context.dataOpsSituationRequireAuth({ ...credentials, actorId: 'OTHER' }, 'DATAOPS_SITUATION_READ', authority.properties), /DATAOPS_SITUATION_ACCESS_DENIED/);
 assert.throws(() => authority.context.dataOpsSituationRequireAuth({ ...credentials, token: 'wrong' }, 'DATAOPS_SITUATION_READ', authority.properties), /DATAOPS_SITUATION_ACCESS_DENIED/);
+assert.throws(() => authority.context.dataOpsSituationRequireAuth({ ...credentials, scope: { companyId: 'OTHER-COMPANY' } },
+  'DATAOPS_SITUATION_READ', authority.properties), /DATAOPS_SITUATION_SCOPE_NOT_ALLOWED/);
+assert.throws(() => authority.context.dataOpsSituationRequireAuth({ ...credentials, scope: { companyId: 'ONEAPP', warehouseId: 'W1' } },
+  'DATAOPS_SITUATION_READ', authority.properties), /DATAOPS_SITUATION_SCOPE_NOT_ALLOWED/, 'request cannot expand server binding scope');
 
 const publishOnly = makeAuthority({ entities: baseEntities() });
 const publishCredential = configureAuthority(publishOnly, ['DATAOPS_SITUATION_PUBLISH']);
