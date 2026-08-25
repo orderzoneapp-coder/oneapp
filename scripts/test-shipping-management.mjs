@@ -11,19 +11,20 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const require = createRequire(import.meta.url);
 const orderOpsHtml = fs.readFileSync(path.join(ROOT, "orderops_list.html"), "utf8");
 const ordersEntryHtml = fs.readFileSync(path.join(ROOT, "orders.html"), "utf8");
-const canonicalOrderOpsHtml = fs.readFileSync(path.join(ROOT, "orderops/list.html"), "utf8");
+const legacyOrderOpsHtml = fs.readFileSync(path.join(ROOT, "orderops/list.html"), "utf8");
+const appsConfig = fs.readFileSync(path.join(ROOT, "nexus/common/apps-config.js"), "utf8");
 assert.equal(ordersEntryHtml, orderOpsHtml,
   "orders.html must deploy the complete public ORDER Q source without route-only divergence");
-assert.match(canonicalOrderOpsHtml, /orderops-stage4-analysis-bridge\.js\?v=0\.1\.0/,
-  "the live /orderops/list.html product route must use the non-blocking Stage4 connection bridge");
-assert.match(canonicalOrderOpsHtml, /\.\/orderops-stage4-analysis-bridge\.js/,
-  "the canonical nested route must use its own relative module path rather than a root-mirror path");
-assert.match(canonicalOrderOpsHtml,
-  /state\.workspace = await analyzeCurrentInputs\(\);\s*state\.activePreview = "validation";[\s\S]{0,220}renderResults\(\);\s*scheduleLocalSave\(\);/,
-  "the canonical route must render and persist local analysis without waiting for an optional Cloud read");
-assert.doesNotMatch(canonicalOrderOpsHtml,
-  /state\.workspace = await window\.ORDERQ_STAGE4_SALE_BRIDGE\.connectSaleStage4Workspace/,
-  "the canonical analysis action must never await the optional Stage4 Cloud connection");
+assert.match(appsConfig,
+  /id:\s*'orderq'[\s\S]{0,180}?url:\s*`\$\{base\}\/orders\.html`/,
+  "the NEXUS shipping group must route ORDER Q to /orders.html");
+assert.match(appsConfig,
+  /id:\s*'orderops'[\s\S]{0,180}?url:\s*`\$\{base\}\/orderops\/list\.html`/,
+  "the separately named OrderOps compatibility entry must remain isolated from ORDER Q");
+assert.doesNotMatch(legacyOrderOpsHtml, /orderops-stage4-analysis-bridge\.js/,
+  "the deletion-planned /orderops/list.html legacy route must not receive the ORDER Q Stage4 bridge");
+assert.doesNotMatch(legacyOrderOpsHtml, /data-sale-stage4-link/,
+  "the deletion-planned legacy route must not receive the ORDER Q sale-link listener");
 assert.doesNotMatch(orderOpsHtml, /tokens truncated|…\d+ tokens truncated…/,
   "the public OrderOps mirror must not contain a truncated source fragment");
 assert.match(orderOpsHtml, /<body>[\s\S]*<\/body>\s*<\/html>/,
@@ -46,13 +47,13 @@ assert.match(orderOpsHtml, /function loadDataOpsInventory\(\)[\s\S]*fetchLatestD
 assert.match(orderOpsHtml, /function loadSmartInputOrders\(\)[\s\S]*sourceAdapter\.loadSmartInputOrders/,
   "the order card must read SmartInput orders from the ORDER Q ledger");
 assert.match(orderOpsHtml, /orderops-stage4-analysis-bridge\.js\?v=0\.1\.0/,
-  "ORDER Q analysis must use the auth-aware Stage4 bridge");
+  "the actual /orders.html ORDER Q route must use the auth-aware Stage4 bridge");
 assert.match(orderOpsHtml,
   /state\.workspace = await analyzeCurrentInputs\(\);\s*state\.activePreview = "validation";[\s\S]{0,220}renderResults\(\);\s*scheduleLocalSave\(\);/,
-  "root mirrors must also render and persist local analysis before any explicit Stage4 connection");
+  "the actual ORDER Q route must render and persist local analysis before any explicit Stage4 connection");
 assert.doesNotMatch(orderOpsHtml,
   /state\.workspace = await window\.ORDERQ_STAGE4_SALE_BRIDGE\.connectSaleStage4Workspace/,
-  "root mirrors must not restore the former unconditional Cloud wait");
+  "the actual ORDER Q route must not restore the former unconditional Cloud wait");
 assert.match(orderOpsHtml, /kind === "inventory"[\s\S]*loadDataOpsInventory\(\)/,
   "the warehouse card surface must invoke the DataOps loader");
 assert.match(orderOpsHtml, /kind === "orders"[\s\S]*loadSmartInputOrders\(\)/,
