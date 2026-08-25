@@ -6,7 +6,7 @@ import { effectiveOrderQuantity,effectiveTransferredQuantity } from './order-ful
 
 async function beginOrderQFrozenRead({adapter,dataOps,businessDate,windowKey,now=Date.now()}) {
   if (!adapter?.begin || !adapter?.page || !adapter?.head) throw new Error('ORDERQ_SITUATION_READ_CAPABILITY_REQUIRED');
-  return validateFrozenSession(await adapter.begin({businessDate,windowKey,dataOpsTokenDigest:dataOps.tokenDigest,inventoryKeyDigest:dataOps.inventoryKeyDigest,perKeyCutoffDigest:dataOps.perKeyCutoffDigest}),'ORDERQ',now);
+  return validateFrozenSession(await adapter.begin({businessDate,windowKey,dataOpsReadSessionId:dataOps.readSessionId,dataOpsTokenDigest:dataOps.tokenDigest}),'ORDERQ',now);
 }
 async function readOrderQFrozenPages(adapter,begin) {
   const pages=[];for(const item of begin.pageManifest?.pages||begin.pageManifest||[])pages.push(await adapter.page({readSessionId:begin.readSessionId,tokenDigest:begin.tokenDigest,pageIndex:item.pageIndex}));
@@ -20,7 +20,7 @@ async function confirmOrderQFrozenHead(adapter,begin) {
 function assembleOrderQSnapshot(begin,pages,head) {
   const entities=pages.flatMap(page=>page.entities||[]),byType=type=>entities.filter(row=>String(row.entityType||'').toUpperCase()===type).map(row=>({...row.payload,revision:row.revision,status:row.status}));
   const orders=byType('ORDER'),items=byType('ORDER_ITEM'),events=byType('ORDER_EVENT'),orderById=new Map(orders.map(row=>[row.orderId,row]));
-  const orderLines=items.map(item=>{const order=orderById.get(item.orderId)||{};return {...item,warehouseId:item.warehouseId||order.warehouseId||null,remainingRecognizedQuantity:Math.max(0,effectiveOrderQuantity(order,item)-effectiveTransferredQuantity(item.orderItemId,events))};});
+  const orderLines=items.map(item=>{const order=orderById.get(item.orderId)||{},effective=effectiveOrderQuantity(order,item),transferred=effectiveTransferredQuantity(item.orderItemId,events);return {...item,orderNo:order.orderNo,customerId:order.customerId,warehouseId:item.warehouseId||order.warehouseId||null,effectiveOrderQuantity:effective,transferredRecognizedQuantity:transferred,overDispatchQuantity:Math.max(0,transferred-effective),remainingRecognizedQuantity:Math.max(0,effective-transferred)};});
   const inventoryMovements=byType('INVENTORY_MOVEMENT'),purchaseDocuments=byType('PURCHASE_DOCUMENT'),purchaseIds=new Set(purchaseDocuments.map(row=>row.purchaseDocumentId||row.documentId));
   return {session:begin,head,pages,...(begin.entityManifest||{}),ledgerUpperBound:begin.ledgerUpperBound,entities,movements:inventoryMovements,products:byType('PRODUCT'),warehouses:byType('WAREHOUSE'),orderLines,purchaseDocuments,purchaseMovements:inventoryMovements.filter(row=>purchaseIds.has(row.sourceDocumentId||row.purchaseDocumentId))};
 }

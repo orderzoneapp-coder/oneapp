@@ -3,13 +3,14 @@ export const MAX_SITUATION_READ_RETRIES = 2;
 export const TOTAL_SITUATION_READ_ATTEMPTS = 3;
 
 const text = value => String(value ?? '').trim();
+const codePointCompare=(left,right)=>{const a=Array.from(String(left),char=>char.codePointAt(0)),b=Array.from(String(right),char=>char.codePointAt(0));for(let index=0;index<Math.min(a.length,b.length);index+=1)if(a[index]!==b[index])return a[index]-b[index];return a.length-b.length;};
 const canonical = value => {
   if (value === null || value === undefined) return null;
   if (typeof value === 'string') return value.normalize('NFC').replace(/\r\n?/g,'\n').trim();
   if (typeof value === 'number') { if (!Number.isFinite(value)) throw new Error('SITUATION_CANONICAL_NUMBER_INVALID'); return Object.is(value,-0) ? 0 : value; }
   if (typeof value === 'boolean') return value;
   if (Array.isArray(value)) return value.map(canonical);
-  return Object.keys(value).sort().reduce((out,key) => { out[key]=canonical(value[key]); return out; },{});
+  const keys=new Map();for(const original of Object.keys(value)){const key=original.normalize('NFC').replace(/\r\n?/g,'\n').trim();if(keys.has(key))throw new Error('SITUATION_CANONICAL_KEY_CONFLICT');keys.set(key,original);}return [...keys.keys()].sort(codePointCompare).reduce((out,key)=>{out[key]=canonical(value[keys.get(key)]);return out;},{});
 };
 export const canonicalJson = value => JSON.stringify(canonical(value));
 export async function canonicalSha256(value) {

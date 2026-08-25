@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { readOrderQFrozenSnapshot,runCurrentSituation } from '../orderq/situation-orchestrator.js';
-import { canonicalSha256,crossAuthorityHandshakeDigest } from '../orderq/situation-read-token.js';
+import { canonicalSha256,crossAuthorityHandshakeDigest,withSituationReadRetries } from '../orderq/situation-read-token.js';
 
 const now=Date.now();
 const entity={entityType:'INVENTORY_MOVEMENT',entityId:'M1',revision:7,status:'CONFIRMED',payload:{movementId:'M1'}};
@@ -12,9 +12,17 @@ assert.equal((await readOrderQFrozenSnapshot({adapter,dataOps,businessDate:'2026
 await assert.rejects(()=>readOrderQFrozenSnapshot({adapter:{...adapter,head:async()=>({frozenTokenDigest:begin.tokenDigest,currentHeadRevision:8,currentHeadDigest:'H8'})},dataOps,businessDate:'2026-08-25',windowKey:'D'}),/SITUATION_HEAD_CHANGED/);
 const calls=[],emptyDigest=await canonicalSha256([]);
 const d1={authority:'DATAOPS',readSessionId:'D1',tokenDigest:'d'.repeat(64),inventoryKeyDigest:'I',perKeyCutoffDigest:'C',status:'OPEN',issuedAt:new Date(now-1000).toISOString(),expiresAt:new Date(now+119000).toISOString(),deploymentId:'DD',deploymentVersion:'28',gitCommit:'dg',capabilityVersion:'DATAOPS_SITUATION_V2',headRevision:3,headDigest:'DH',pageManifest:{pages:[{pageIndex:0,rowCount:0,pageDigest:emptyDigest}]}};
-const o1={...begin,tokenDigest:'q'.repeat(64),headRevision:4,headDigest:'OH',ledgerUpperBound:4,pageManifest:{pages:[{pageIndex:0,rowCount:0,pageDigest:emptyDigest}]},entityManifest:{movementManifest:{movementIds:[],effectKeys:[],movementCount:0,manifestDigest:'MM'},ledgerUpperBound:4},movementManifestDigest:'MM'};
+const movementManifestBase={movementIds:[],effectKeys:[],movementCount:0,pages:[{pageIndex:0,rowCount:0,pageDigest:emptyDigest}]};
+const movementManifest={...movementManifestBase,manifestDigest:await canonicalSha256(movementManifestBase)};
+const o1={...begin,tokenDigest:'q'.repeat(64),headRevision:4,headDigest:'OH',ledgerUpperBound:4,pageManifest:{pages:[{pageIndex:0,rowCount:0,pageDigest:emptyDigest}]},entityManifest:{movementManifest,ledgerUpperBound:4},movementManifestDigest:movementManifest.manifestDigest};
 o1.crossAuthorityHandshakeDigest=await crossAuthorityHandshakeDigest(d1,o1);
-const orderedAdapter={begin:async()=>{calls.push('O_BEGIN');return o1;},page:async()=>{calls.push('O_PAGE');return{pageIndex:0,rowCount:0,pageDigest:emptyDigest,entities:[]};},head:async()=>{calls.push('O_HEAD');return{frozenTokenDigest:o1.tokenDigest,currentHeadRevision:4,currentHeadDigest:'OH'};}};
+const orderedAdapter={begin:async()=>{calls.push('O_BEGIN');return o1;},page:async()=>{calls.push('O_PAGE');return{pageIndex:0,rowCount:0,pageDigest:emptyDigest,entities:[],movements:[],movementPageDigest:emptyDigest};},head:async()=>{calls.push('O_HEAD');return{frozenTokenDigest:o1.tokenDigest,currentHeadRevision:4,currentHeadDigest:'OH'};}};
 await runCurrentSituation({businessDate:'2026-08-25',windowKey:'DAY',operationWindow:{from:'2026-08-25',to:'2026-08-25'},dataOps:{},orderQAdapter:orderedAdapter,beginDataOps:async()=>{calls.push('D_BEGIN');return d1;},readDataOpsPages:async()=>{calls.push('D_PAGE');return[{pageIndex:0,rowCount:0,pageDigest:emptyDigest,rows:[]}]},confirmDataOpsHead:async()=>{calls.push('D_HEAD');return{frozenTokenDigest:d1.tokenDigest,currentHeadRevision:3,currentHeadDigest:'DH'};},save:async value=>value});
 assert.deepEqual(calls,['D_BEGIN','O_BEGIN','D_PAGE','O_PAGE','O_HEAD','D_HEAD']);
+const prior={analysisId:'PREVIOUS',status:'COMPLETED'},retryEvents=[];let failedAttempts=0,saves=0;
+await assert.rejects(()=>withSituationReadRetries(async()=>{failedAttempts+=1;throw new Error('SITUATION_MOVEMENT_MANIFEST_INCOMPLETE');},event=>retryEvents.push(event)),/SITUATION_MOVEMENT_MANIFEST_INCOMPLETE/);
+assert.equal(failedAttempts,3);
+assert.equal(retryEvents.length,2);
+assert.equal(saves,0);
+assert.deepEqual(prior,{analysisId:'PREVIOUS',status:'COMPLETED'});
 console.log('PASS stage5 frozen begin page head');

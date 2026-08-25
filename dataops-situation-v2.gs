@@ -39,7 +39,7 @@ function dataOpsSituationText(value) { return String(value === undefined || valu
 
 function dataOpsSituationCanonical(value) {
   if (value === null || value === undefined) return null;
-  if (typeof value === 'string') return value.normalize ? value.normalize('NFC').replace(/\r\n?/g, '\n') : value.replace(/\r\n?/g, '\n');
+  if (typeof value === 'string') return (value.normalize ? value.normalize('NFC') : value).replace(/\r\n?/g, '\n').trim();
   if (typeof value === 'number') {
     if (!Number.isFinite(value)) throw new Error('DATAOPS_V2_ROW_INVALID');
     return Object.is(value, -0) ? 0 : value;
@@ -47,8 +47,10 @@ function dataOpsSituationCanonical(value) {
   if (typeof value === 'boolean') return value;
   if (Array.isArray(value)) return value.map(dataOpsSituationCanonical);
   if (typeof value === 'object') {
-    const result = {};
-    Object.keys(value).sort().forEach(key => { result[key] = dataOpsSituationCanonical(value[key]); });
+    const result = {},normalizedKeys={};
+    Object.keys(value).forEach(key=>{const normalized=dataOpsSituationCanonical(key);if(Object.prototype.hasOwnProperty.call(normalizedKeys,normalized))throw new Error('DATAOPS_V2_CANONICAL_KEY_CONFLICT');normalizedKeys[normalized]=key;});
+    const compare=(left,right)=>{const a=Array.from(left,char=>char.codePointAt(0)),b=Array.from(right,char=>char.codePointAt(0));for(let index=0;index<Math.min(a.length,b.length);index+=1)if(a[index]!==b[index])return a[index]-b[index];return a.length-b.length;};
+    Object.keys(normalizedKeys).sort(compare).forEach(key => { result[key] = dataOpsSituationCanonical(value[normalizedKeys[key]]); });
     return result;
   }
   throw new Error('DATAOPS_V2_ROW_INVALID');

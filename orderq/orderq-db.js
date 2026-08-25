@@ -86,6 +86,18 @@ function ensureIndex(store, name, keyPath, options = {}) {
   if (!store.indexNames.contains(name)) store.createIndex(name, keyPath, options);
 }
 
+function ensureExactIndex(store, name, keyPath, options = {}) {
+  if (store.indexNames.contains(name)) {
+    const current=store.index(name);
+    const sameKeyPath=JSON.stringify(current.keyPath)===JSON.stringify(keyPath);
+    const sameUnique=Boolean(current.unique)===Boolean(options.unique);
+    const sameMultiEntry=Boolean(current.multiEntry)===Boolean(options.multiEntry);
+    if (!sameKeyPath||!sameUnique||!sameMultiEntry) store.deleteIndex(name);
+    else return current;
+  }
+  return store.createIndex(name,keyPath,options);
+}
+
 export function upgradeOrderQDbSchema(db, transaction, oldVersion = 0) {
   const ensureStore = (name, options) => {
     if (!db.objectStoreNames.contains(name)) return db.createObjectStore(name, options);
@@ -265,7 +277,7 @@ export function upgradeOrderQDbSchema(db, transaction, oldVersion = 0) {
   if (oldVersion < 15) {
     V15_STORE_DEFINITIONS.forEach(definition => {
       const v15Store = ensureStore(definition.name, { keyPath: definition.keyPath });
-      definition.indexes.forEach(index => ensureIndex(v15Store,index.name,index.keyPath,index.options));
+      definition.indexes.forEach(index => ensureExactIndex(v15Store,index.name,index.keyPath,index.options));
     });
     metaStore.put({ key:'schemaVersion', value:15, updatedAt:nowIso() });
   }

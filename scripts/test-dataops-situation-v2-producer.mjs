@@ -6,7 +6,7 @@ import { baseEntities, configureAuthority, makeAuthority, snapshotInput, snapsho
 const authority = makeAuthority({ entities: baseEntities() });
 configureAuthority(authority);
 const frozenSchema = readFileSync(new URL('./fixtures/dataops-situation-read-v2.schema.json', import.meta.url));
-assert.equal(createHash('sha256').update(frozenSchema).digest('hex'), 'def40f33fe69c0c6e3c5e0eb9a7b5fbb5b3279052ccade2597e63df28ad3c556');
+assert.equal(createHash('sha256').update(frozenSchema.toString('utf8').replace(/\r\n?/g,'\n')).digest('hex'), 'def40f33fe69c0c6e3c5e0eb9a7b5fbb5b3279052ccade2597e63df28ad3c556');
 const source = snapshotInput(authority.context);
 const envelope = snapshotEnvelope(authority.context);
 const built = authority.context.dataOpsSituationBuildSnapshot(authority.ss, { ...envelope, _serverScope: source.scope });
@@ -25,7 +25,9 @@ const browserBuilt = await browser.DATAOPS_SITUATION_V2_MODULE.buildSnapshot(sou
 assert.equal(browserBuilt.snapshot.rows[0].sourceRowDigest, built.rows[0].sourceRowDigest, 'browser and Apps Script canonical row digest parity');
 assert.deepEqual(JSON.parse(JSON.stringify(browserBuilt.snapshot)), JSON.parse(JSON.stringify(envelope.snapshot)));
 assert.equal(browser.DATAOPS_SITUATION_V2_MODULE.canonical({ value: -0, name: '남경\r\n' }).value, 0);
-assert.equal(browser.DATAOPS_SITUATION_V2_MODULE.canonical({ name: '남경\r\n' }).name, '남경\n');
+assert.equal(browser.DATAOPS_SITUATION_V2_MODULE.canonical({ name: '남경\r\n' }).name, '남경');
+const parityValue={' 가 ':[' line\r\n',-0],z:' 끝 '};
+assert.equal(await browser.DATAOPS_SITUATION_V2_MODULE.sha256Hex(parityValue),authority.context.dataOpsSituationDigest(parityValue));
 
 const signs = await browser.DATAOPS_SITUATION_V2_MODULE.buildSnapshot({ ...source, snapshotId: 'SIGNS', rows: [
   { ...source.rows[0], rowId: 'NEG', signedBaseQuantity: -5, status: 'ACTIVE' },

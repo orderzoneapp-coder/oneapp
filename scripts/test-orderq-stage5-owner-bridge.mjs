@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { makeAuthority,configureAuthority,snapshotEnvelope,baseEntities } from './dataops-situation-v2-test-harness.mjs';
+import { canonicalSha256 } from '../orderq/situation-read-token.js';
 
 const authority=makeAuthority({entities:baseEntities()}),credential=configureAuthority(authority),envelope=snapshotEnvelope(authority.context);
 authority.context.dataOpsSituationPublish(authority.ss,envelope,authority.context.dataOpsSituationRequireAuth(credential,'DATAOPS_SITUATION_PUBLISH',authority.properties),authority.properties);
@@ -14,4 +15,6 @@ assert.throws(()=>authority.context.dataOpsSituationVerifyOrderQBridgeSession(au
 const stored=authority.context.dataOpsSituationReadSessions(authority.ss).rows.find(row=>row.readSessionId===d1.readSessionId);
 authority.context.dataOpsSituationSaveSession(authority.ss,{...stored.payload,status:'CONSUMED'});
 assert.throws(()=>authority.context.dataOpsSituationVerifyOrderQBridgeSession(authority.ss,request,authority.properties),/SITUATION_READ_TOKEN_INVALID/);
+const parityValue={' 가 ':[' line\r\n',-0],z:' 끝 '};
+assert.equal(authority.context.dataOpsSituationDigest(parityValue),await canonicalSha256(parityValue));
 console.log('PASS stage5 DataOps owner bridge');

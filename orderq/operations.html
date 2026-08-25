@@ -90,6 +90,7 @@
       search: document.getElementById('productSearch')
     };
     let latestSnapshot = null;
+    let currentDashboardMode = 'LEGACY_EVIDENCE';
 
     const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
     const qty = value => Number(value || 0).toLocaleString('ko-KR', { maximumFractionDigits: 3 });
@@ -142,6 +143,7 @@
       latestSnapshot = await getOperationsSnapshot(currentFilters());
       populateAssignees(latestSnapshot.bundles);
       if (filters.assignee.value !== currentFilters().assigneeId) latestSnapshot = await getOperationsSnapshot(currentFilters());
+      if (currentDashboardMode === 'OFFICIAL_SITUATION') return;
       const query = filters.search.value.trim().toLowerCase();
       const visible = latestSnapshot.rows.filter(row => !query || [row.productCode, row.productName, row.specification].some(value => String(value || '').toLowerCase().includes(query)));
       const unchecked = latestSnapshot.filteredBundles.filter(bundle => bundle.order.adminStatus === 'UNCHECKED').length;
@@ -170,7 +172,7 @@
       render().catch(error => showMessage(error.message || String(error), 'error'));
     });
     document.getElementById('refreshBtn').addEventListener('click', () => render().catch(error => showMessage(error.message || String(error), 'error')));
-    attachSituationUi({button:document.getElementById('currentSituationBtn'),summary,alerts:alertSummary,rows,message:showMessage});
+    attachSituationUi({button:document.getElementById('currentSituationBtn'),summary,alerts:alertSummary,rows,message:showMessage,onRendered:()=>{currentDashboardMode='OFFICIAL_SITUATION';}});
     document.getElementById('syncBtn').addEventListener('click', async event => {
       if (!getCloudUrl()) return showMessage('클라우드 URL을 먼저 설정하세요.', 'warn');
       event.currentTarget.disabled = true;
