@@ -18,6 +18,11 @@ function functionBlock(name) {
   return app.slice(start, next < 0 ? app.length : next);
 }
 
+assert.match(html, /smartinput\.css\?v=0\.4\.31/, 'mobile CSS cache key must invalidate the pre-split asset');
+assert.match(html, /smartinput\.js\?v=0\.4\.37/, 'mobile JS cache key must invalidate the pre-split asset');
+assert.doesNotMatch(html, /smartinput\.(?:css|js)\?v=0\.4\.(?:30|36)/,
+  'the deployed page must not reuse the stale mobile asset cache keys');
+
 assert.equal(occurrences(html, /class="document-fields"/g), 1, 'mobile must move, not clone, the document information DOM');
 assert.match(html, /id="documentFieldsAnchor"/);
 assert.match(app, /if \(mobile\) parserCard\.before\(fields\);\s*else anchor\.after\(fields\);/);
