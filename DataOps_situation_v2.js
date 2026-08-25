@@ -21,14 +21,18 @@
   const text = value => String(value ?? '').trim();
   const canonical = value => {
     if (value === null || value === undefined) return null;
-    if (typeof value === 'string') return value.normalize('NFC').replace(/\r\n?/g, '\n');
+    if (typeof value === 'string') return value.normalize('NFC').replace(/\r\n?/g, '\n').trim();
     if (typeof value === 'number') {
       if (!Number.isFinite(value)) throw new Error('DATAOPS_V2_ROW_INVALID');
       return Object.is(value, -0) ? 0 : value;
     }
     if (typeof value === 'boolean') return value;
     if (Array.isArray(value)) return value.map(canonical);
-    if (typeof value === 'object') return Object.keys(value).sort().reduce((result, key) => { result[key] = canonical(value[key]); return result; }, {});
+    if (typeof value === 'object') {
+      const normalizedKeys=new Map();for(const original of Object.keys(value)){const key=canonical(original);if(normalizedKeys.has(key))throw new Error('DATAOPS_V2_CANONICAL_KEY_CONFLICT');normalizedKeys.set(key,original);}
+      const compare=(left,right)=>{const a=Array.from(left,char=>char.codePointAt(0)),b=Array.from(right,char=>char.codePointAt(0));for(let index=0;index<Math.min(a.length,b.length);index+=1)if(a[index]!==b[index])return a[index]-b[index];return a.length-b.length;};
+      return [...normalizedKeys.keys()].sort(compare).reduce((result,key)=>{result[key]=canonical(value[normalizedKeys.get(key)]);return result;},{});
+    }
     throw new Error('DATAOPS_V2_ROW_INVALID');
   };
   const canonicalJson = value => JSON.stringify(canonical(value));

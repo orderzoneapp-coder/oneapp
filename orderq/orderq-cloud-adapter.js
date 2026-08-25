@@ -163,3 +163,15 @@ export function pullCentralOfficialChanges(afterSequence = 0, limit = 500) {
 export function pingCentralAuthority() {
   return post('orderq_m9_ping', { schemaVersion: 'ONEAPP_ORDERQ_CENTRAL_V1' });
 }
+
+export function beginOrderQSituationRead(request = {}) {
+  return post('situation_orderq_begin', { schemaVersion: 'ONEAPP_ORDERQ_CENTRAL_V1', ...request });
+}
+
+export function readOrderQSituationPage(request = {}) {
+  return post('situation_orderq_page', { schemaVersion: 'ONEAPP_ORDERQ_CENTRAL_V1', ...request });
+}
+
+export function readOrderQSituationHead(request = {}) {
+  return post('situation_orderq_head', { schemaVersion: 'ONEAPP_ORDERQ_CENTRAL_V1', ...request });
+}

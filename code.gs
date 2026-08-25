@@ -743,6 +743,21 @@ function doPost(e) {
       return withScriptLock(() => jsonResponse({ status: 'success', action, data: orderQM9Pull(ss, payload) }));
     }
 
+    if (action === 'situation_orderq_begin') {
+      requireOrderQAccess(payload);
+      return withScriptLock(() => jsonResponse({ status:'success', action, data:orderQM9SituationBegin(ss,payload) }));
+    }
+
+    if (action === 'situation_orderq_page') {
+      requireOrderQAccess(payload);
+      return withScriptLock(() => jsonResponse({ status:'success', action, data:orderQM9SituationPage(ss,payload) }));
+    }
+
+    if (action === 'situation_orderq_head') {
+      requireOrderQAccess(payload);
+      return withScriptLock(() => jsonResponse({ status:'success', action, data:orderQM9SituationHead(ss,payload) }));
+    }
+
     if (action === 'shipping_plan_save') {
       requireShippingPlanAccess(payload);
       return withScriptLock(() => {

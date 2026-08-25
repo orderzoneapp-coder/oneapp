@@ -18,7 +18,8 @@ import {
   V12_STORE_DEFINITIONS
 } from './orderq-v12-contracts.js?v=0.17.0';
 import { V13_PURCHASE_DOCUMENT_INDEXES } from './orderq-v13-contracts.js?v=0.1.0';
-import { ORDERQ_DB_VERSION, V14_INDEXES } from './orderq-v14-contracts.js?v=0.1.0';
+import { V14_INDEXES } from './orderq-v14-contracts.js?v=0.1.0';
+import { ORDERQ_DB_VERSION, V15_STORE, V15_STORE_DEFINITIONS } from './orderq-v15-contracts.js?v=0.1.0';
 import { adminTestDatabaseName } from './admin-test-runtime.js?v=0.10.2';
 
 function databaseNameForRuntime() {
@@ -75,13 +76,26 @@ export const STORE = Object.freeze({
   SYNC_QUEUE: 'syncQueue',
   META: 'meta',
   ...V7_STORE,
-  ...V8_STORE
+  ...V8_STORE,
+  ...V15_STORE
 });
 
 let dbPromise = null;
 
 function ensureIndex(store, name, keyPath, options = {}) {
   if (!store.indexNames.contains(name)) store.createIndex(name, keyPath, options);
+}
+
+function ensureExactIndex(store, name, keyPath, options = {}) {
+  if (store.indexNames.contains(name)) {
+    const current=store.index(name);
+    const sameKeyPath=JSON.stringify(current.keyPath)===JSON.stringify(keyPath);
+    const sameUnique=Boolean(current.unique)===Boolean(options.unique);
+    const sameMultiEntry=Boolean(current.multiEntry)===Boolean(options.multiEntry);
+    if (!sameKeyPath||!sameUnique||!sameMultiEntry) store.deleteIndex(name);
+    else return current;
+  }
+  return store.createIndex(name,keyPath,options);
 }
 
 export function upgradeOrderQDbSchema(db, transaction, oldVersion = 0) {
@@ -259,6 +273,14 @@ export function upgradeOrderQDbSchema(db, transaction, oldVersion = 0) {
   ensureIndex(store, 'byEntity', ['entityType', 'entityId']);
 
   const metaStore = ensureStore(STORE.META, { keyPath: 'key' });
+
+  if (oldVersion < 15) {
+    V15_STORE_DEFINITIONS.forEach(definition => {
+      const v15Store = ensureStore(definition.name, { keyPath: definition.keyPath });
+      definition.indexes.forEach(index => ensureExactIndex(v15Store,index.name,index.keyPath,index.options));
+    });
+    metaStore.put({ key:'schemaVersion', value:15, updatedAt:nowIso() });
+  }
 
   if (oldVersion < 14) {
     const targets = {

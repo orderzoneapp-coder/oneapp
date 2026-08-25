@@ -28,7 +28,8 @@
       <p class="notice">아직 출고하지 않은 주문과 재고를 한눈에 확인하세요. 주문번호를 누르면 주문 내용을 다시 확인할 수 있습니다.</p>
       <div id="message" class="message page-message"></div>
       <div class="toolbar document-filters operations-filters">
-        <button class="btn" id="refreshBtn" type="button">새로고침</button>
+        <button class="btn primary" id="currentSituationBtn" type="button">현재상황 불러오기</button>
+        <button class="btn" id="refreshBtn" type="button">화면 새로고침</button>
         <button class="btn" id="syncBtn" type="button">클라우드 동기화</button>
         <label>주문상태
           <select id="orderStatusFilter">
@@ -54,7 +55,7 @@
         <span class="spacer"></span>
         <span class="status" id="summaryText">불러오는 중...</span>
       </div>
-      <div class="operations-alerts" id="alertSummary"></div>
+      <div class="operations-alerts" id="alertSummary" data-situation-dashboard="single"></div>
       <div class="table-wrap operations-table-wrap">
         <table class="operations-table">
           <thead><tr>
@@ -73,6 +74,7 @@
     import { TRANSFER_STATUS_LABEL } from './order-fulfillment-lifecycle.js?v=0.8.0';
     import { syncNow } from './orderq-sync-engine.js?v=0.8.0';
     import { getCloudUrl } from './orderq-cloud-adapter.js?v=0.8.0';
+    import { attachSituationUi } from './situation-ui.js?v=0.1.1';
 
     const CURRENT_ASSIGNEE_KEY = 'oneapp.orderq.current-assignee.v1';
     const rows = document.getElementById('operationRows');
@@ -88,6 +90,7 @@
       search: document.getElementById('productSearch')
     };
     let latestSnapshot = null;
+    let currentDashboardMode = 'LEGACY_EVIDENCE';
 
     const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
     const qty = value => Number(value || 0).toLocaleString('ko-KR', { maximumFractionDigits: 3 });
@@ -140,6 +143,7 @@
       latestSnapshot = await getOperationsSnapshot(currentFilters());
       populateAssignees(latestSnapshot.bundles);
       if (filters.assignee.value !== currentFilters().assigneeId) latestSnapshot = await getOperationsSnapshot(currentFilters());
+      if (currentDashboardMode === 'OFFICIAL_SITUATION') return;
       const query = filters.search.value.trim().toLowerCase();
       const visible = latestSnapshot.rows.filter(row => !query || [row.productCode, row.productName, row.specification].some(value => String(value || '').toLowerCase().includes(query)));
       const unchecked = latestSnapshot.filteredBundles.filter(bundle => bundle.order.adminStatus === 'UNCHECKED').length;
@@ -168,6 +172,7 @@
       render().catch(error => showMessage(error.message || String(error), 'error'));
     });
     document.getElementById('refreshBtn').addEventListener('click', () => render().catch(error => showMessage(error.message || String(error), 'error')));
+    attachSituationUi({button:document.getElementById('currentSituationBtn'),summary,alerts:alertSummary,rows,message:showMessage,onRendered:()=>{currentDashboardMode='OFFICIAL_SITUATION';}});
     document.getElementById('syncBtn').addEventListener('click', async event => {
       if (!getCloudUrl()) return showMessage('클라우드 URL을 먼저 설정하세요.', 'warn');
       event.currentTarget.disabled = true;

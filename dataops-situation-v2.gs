@@ -39,7 +39,7 @@ function dataOpsSituationText(value) { return String(value === undefined || valu
 
 function dataOpsSituationCanonical(value) {
   if (value === null || value === undefined) return null;
-  if (typeof value === 'string') return value.normalize ? value.normalize('NFC').replace(/\r\n?/g, '\n') : value.replace(/\r\n?/g, '\n');
+  if (typeof value === 'string') return (value.normalize ? value.normalize('NFC') : value).replace(/\r\n?/g, '\n').trim();
   if (typeof value === 'number') {
     if (!Number.isFinite(value)) throw new Error('DATAOPS_V2_ROW_INVALID');
     return Object.is(value, -0) ? 0 : value;
@@ -47,8 +47,10 @@ function dataOpsSituationCanonical(value) {
   if (typeof value === 'boolean') return value;
   if (Array.isArray(value)) return value.map(dataOpsSituationCanonical);
   if (typeof value === 'object') {
-    const result = {};
-    Object.keys(value).sort().forEach(key => { result[key] = dataOpsSituationCanonical(value[key]); });
+    const result = {},normalizedKeys={};
+    Object.keys(value).forEach(key=>{const normalized=dataOpsSituationCanonical(key);if(Object.prototype.hasOwnProperty.call(normalizedKeys,normalized))throw new Error('DATAOPS_V2_CANONICAL_KEY_CONFLICT');normalizedKeys[normalized]=key;});
+    const compare=(left,right)=>{const a=Array.from(left,char=>char.codePointAt(0)),b=Array.from(right,char=>char.codePointAt(0));for(let index=0;index<Math.min(a.length,b.length);index+=1)if(a[index]!==b[index])return a[index]-b[index];return a.length-b.length;};
+    Object.keys(normalizedKeys).sort(compare).forEach(key => { result[key] = dataOpsSituationCanonical(value[normalizedKeys[key]]); });
     return result;
   }
   throw new Error('DATAOPS_V2_ROW_INVALID');
@@ -622,11 +624,17 @@ function dataOpsSituationBegin(ss, payload, auth, properties) {
     pages.push({ pageIndex: pages.length, rowCount: pageRows.length, pageDigest: dataOpsSituationDigest(pageRows) });
   }
   const issuedAtMillis = Date.now();
+  const inventoryKeyDigest = dataOpsSituationDigest([...(current.snapshot.manifest.inventoryKeys || [])].sort());
+  const perKeyCutoffDigest = dataOpsSituationDigest(rows.map(row => ({ inventoryKey: `${row.productId}\u001f${row.warehouseId}\u001f${row.baseUnit}`,
+    includedOrderQLedgerSequence: Number(row.includedOrderQLedgerSequence), status: dataOpsSituationText(row.status).toUpperCase() }))
+    .sort((left,right) => left.inventoryKey.localeCompare(right.inventoryKey)));
+  const headDigest = dataOpsSituationDigest(current.snapshot.manifest);
   const session = {
     readSessionId: Utilities.getUuid(), authority: 'DATAOPS', tokenVersion: 'V1', ...deployment,
     actorId: auth.actorId, roleIds: auth.roleIds, scopeDigest: scope.digest, deviceId: auth.deviceId, environment: auth.environment,
     issuedAt: new Date(issuedAtMillis).toISOString(), expiresAt: new Date(issuedAtMillis + DATAOPS_SITUATION_V2_TTL_SECONDS * 1000).toISOString(),
-    headRevision: current.snapshot.manifest.snapshotRevision, entityManifest: current.snapshot.manifest,
+    headRevision: current.snapshot.manifest.snapshotRevision, headDigest, inventoryKeyDigest, perKeyCutoffDigest,
+    entityManifest: current.snapshot.manifest,
     pageManifest: pages, tombstoneManifest: { count: current.snapshot.manifest.tombstoneCount, digest: current.snapshot.manifest.tombstoneDigest },
     snapshotId: current.snapshot.manifest.snapshotId, snapshotRevision: current.snapshot.manifest.snapshotRevision, slot: current.pointer.slot, status: 'OPEN'
   };
@@ -636,6 +644,34 @@ function dataOpsSituationBegin(ss, payload, auth, properties) {
     deviceId: auth.deviceId, environment: auth.environment,
     snapshotId: session.snapshotId, readSessionId: session.readSessionId, tokenAuditDigest: sha256Hex(session.tokenDigest), detail: { pageCount: pages.length } });
   return session;
+}
+
+/** Internal bridge for ORDER Q O1. It never accepts client-provided D1 digests. */
+function dataOpsSituationVerifyOrderQBridgeSession(ss, request, properties) {
+  const readSessionId = dataOpsSituationText(request && request.dataOpsReadSessionId);
+  const tokenDigest = dataOpsSituationText(request && request.dataOpsTokenDigest);
+  const stored = dataOpsSituationReadSessions(ss).rows.find(row => row.readSessionId === readSessionId);
+  if (!stored || stored.status !== 'OPEN') throw new Error('SITUATION_READ_TOKEN_INVALID');
+  const session = stored.payload;
+  const recalculated = dataOpsSituationSessionToken(session, properties);
+  if (!dataOpsSituationConstantTime(session.tokenDigest,recalculated) || !dataOpsSituationConstantTime(session.tokenDigest,tokenDigest)) throw new Error('SITUATION_READ_TOKEN_INVALID');
+  if (Date.now() >= new Date(session.expiresAt).getTime()) {
+    dataOpsSituationSaveSession(ss,{...session,status:'EXPIRED'});
+    throw new Error('SITUATION_READ_TOKEN_EXPIRED');
+  }
+  const deployment = dataOpsSituationRequireDeployment(properties);
+  if (deployment.deploymentId !== session.deploymentId || deployment.deploymentVersion !== session.deploymentVersion
+    || deployment.gitCommit !== session.gitCommit || deployment.capabilityVersion !== session.capabilityVersion) throw new Error('SITUATION_READ_DEPLOYMENT_CHANGED');
+  const actorId=dataOpsSituationText(request&&request.actorId),scopeDigest=dataOpsSituationDigest({companyId:dataOpsSituationText(request&&request.scope&&request.scope.companyId)});
+  if (actorId!==session.actorId || scopeDigest!==session.scopeDigest || (session.roleIds||[]).indexOf(DATAOPS_SITUATION_V2_ROLE_READ)<0) throw new Error('SITUATION_READ_SCOPE_MISMATCH');
+  dataOpsSituationAudit(ss,{action:'ORDERQ_BRIDGE_VERIFY',actorId:session.actorId,roleIds:session.roleIds,scopeDigest:session.scopeDigest,
+    deviceId:dataOpsSituationText(request&&request.device),environment:dataOpsSituationText(request&&request.environment),snapshotId:session.snapshotId,
+    readSessionId:session.readSessionId,tokenAuditDigest:sha256Hex(session.tokenDigest),detail:{headRevision:session.headRevision,inventoryKeyDigest:session.inventoryKeyDigest,perKeyCutoffDigest:session.perKeyCutoffDigest}});
+  return { readSessionId:session.readSessionId, tokenDigest:session.tokenDigest, actorId:session.actorId, scopeDigest:session.scopeDigest,
+    expiresAt:session.expiresAt, deploymentId:session.deploymentId, deploymentVersion:session.deploymentVersion, gitCommit:session.gitCommit,
+    capabilityVersion:session.capabilityVersion, headRevision:session.headRevision, headDigest:session.headDigest,
+    inventoryKeyDigest:session.inventoryKeyDigest, perKeyCutoffDigest:session.perKeyCutoffDigest,
+    inventoryKeys:[...(session.entityManifest.inventoryKeys||[])], rows:(dataOpsSituationReadSlot(ss,session.slot==='A'?DATAOPS_SITUATION_V2_SHEETS.A:DATAOPS_SITUATION_V2_SHEETS.B).snapshot.rows||[]) };
 }
 
 function dataOpsSituationRequireSession(ss, payload, auth, properties) {
@@ -679,7 +715,7 @@ function dataOpsSituationHead(ss, payload, auth, properties) {
   const current = dataOpsSituationCurrentSnapshot(ss, properties);
   const result = { readSessionId: session.readSessionId, frozenTokenDigest: session.tokenDigest,
     frozenManifestDigest: dataOpsSituationDigest({ entityManifest: session.entityManifest, pageManifest: session.pageManifest, tombstoneManifest: session.tombstoneManifest }),
-    beginHeadRevision: session.headRevision, currentHeadRevision: current.snapshot.manifest.snapshotRevision,
+    beginHeadRevision: session.headRevision, beginHeadDigest:session.headDigest, currentHeadRevision: current.snapshot.manifest.snapshotRevision,
     currentHeadDigest: dataOpsSituationDigest(current.snapshot.manifest) };
   dataOpsSituationAudit(ss, { action: 'HEAD', actorId: auth.actorId, roleIds: auth.roleIds, scopeDigest: session.scopeDigest,
     deviceId: auth.deviceId, environment: auth.environment,

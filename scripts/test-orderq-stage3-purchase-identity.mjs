@@ -3,7 +3,7 @@ import { buildPurchasePostDraft } from '../smartinput/purchase-official-stage3.j
 import { canonicalSha256 } from '../orderq/official-voucher-core.js';
 import { STORE, upgradeOrderQDbSchema } from '../orderq/orderq-db.js';
 import { V13_PURCHASE_DOCUMENT_INDEXES } from '../orderq/orderq-v13-contracts.js';
-import { ORDERQ_DB_VERSION } from '../orderq/orderq-v14-contracts.js';
+import { ORDERQ_DB_VERSION } from '../orderq/orderq-v15-contracts.js';
 import { V7_STORE_DEFINITIONS } from '../orderq/orderq-v7-contracts.js';
 import { V8_STORE_DEFINITIONS } from '../orderq/orderq-v8-contracts.js';
 import { V9_STORE_DEFINITIONS } from '../orderq/orderq-v9-contracts.js';
@@ -38,6 +38,8 @@ function schemaHarness(oldVersion){
 for(const oldVersion of [0,7,8,9,10,11,12]){
   const result=schemaHarness(oldVersion),store=result.stores.get(STORE.PURCHASE_DOCUMENTS);
   for(const index of V13_PURCHASE_DOCUMENT_INDEXES) assert.deepEqual(store._indexes.get(index.name),{path:index.keyPath,options:index.options});
+  assert.ok(result.stores.has(STORE.SITUATION_ANALYSES));
+  assert.ok(result.stores.has(STORE.SITUATION_READ_SESSIONS));
   assert.equal(result.meta.filter(row=>row.key==='schemaVersion').at(-1).value,ORDERQ_DB_VERSION);
 }
 const splitState=createCentralAuthorityState();

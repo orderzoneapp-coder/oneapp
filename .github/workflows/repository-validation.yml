@@ -179,6 +179,20 @@ jobs:
           node scripts/test-orderq-stage4-sale-source-claims.mjs
           node scripts/test-orderq-stage4-sale-capability.mjs
 
+      - name: Test ORDER Q stage 5 current situation consumer
+        run: |
+          node scripts/test-orderq-stage5-dataops-v2-read-contract.mjs
+          node scripts/test-orderq-stage5-movement-manifest.mjs
+          node scripts/test-orderq-stage5-frozen-read-session.mjs
+          node scripts/test-orderq-stage5-demand-conversion-packaging.mjs
+          node scripts/test-orderq-stage5-purchase-cohort.mjs
+          node scripts/test-orderq-stage5-db-v15.mjs
+          node scripts/test-orderq-stage5-single-entrypoint.mjs
+          node scripts/test-orderq-stage5-cloud-contract.mjs
+          node scripts/test-orderq-stage5-owner-bridge.mjs
+          node scripts/test-orderq-stage5-cloud-e2e.mjs
+          node scripts/test-orderq-stage5-ui-gate.mjs
+
       - name: Test DataOps zero and negative stock preservation
         run: node scripts/test-dataops-zero-stock-contract.mjs
 
