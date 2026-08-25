@@ -30,7 +30,7 @@ import {
   loadSaleStage4Capability,
   postSaleGroup,
   SMARTINPUT_SALE_ACTOR_ID
-} from './sale-official-stage4.js?v=0.1.0';
+} from './sale-official-stage4.js?v=0.1.1';
 import {
   buildMinimumUploadMatrix,
   buildOrderGroupPayload,

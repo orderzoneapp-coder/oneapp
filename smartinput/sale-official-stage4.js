@@ -14,9 +14,12 @@ export const SALE_STAGE4_CAPABILITY = Object.freeze({
   commandContract: 'VOUCHER_CORE_V1', salesMetaSchema: 'ORDERQ_SALES_META_V1', dbSchemaVersion: '14',
   cutoverMode: 'VNEXT_PRIMARY'
 });
-// Immutable deployment evidence is intentionally blank until the Cloud-first
-// release commit. Production sale writes therefore remain disabled.
-export const SALE_STAGE4_EXPECTED_DEPLOYMENT = Object.freeze({ deploymentId: '', deploymentVersion: '', gitCommit: '' });
+// Cloud-first immutable deployment evidence required before production sale writes.
+export const SALE_STAGE4_EXPECTED_DEPLOYMENT = Object.freeze({
+  deploymentId: 'AKfycbzOUOIu_bP7NkiFVziDR0Og1da1KO1ePoU09Q3pSlPr-9uD-WkdCpWN7nidO5hlrJi6Qw',
+  deploymentVersion: '27',
+  gitCommit: 'ae120131a3890438ef5fadfa14f3c3905f872e69'
+});
 export const SMARTINPUT_SALE_ACTOR_ID = 'SMART_INPUT_ADMIN';
 
 const text = value => String(value ?? '').trim();
