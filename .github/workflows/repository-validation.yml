@@ -218,6 +218,15 @@ jobs:
       - name: Test DataOps stock print readability
         run: node scripts/test-dataops-stock-print-readable.mjs
 
+      - name: Test DataOps Situation V2 owner authority
+        run: |
+          node scripts/test-dataops-situation-v2-legacy-v1.mjs
+          node scripts/test-dataops-situation-v2-producer.mjs
+          node scripts/test-dataops-situation-v2-auth-capability.mjs
+          node scripts/test-dataops-situation-v2-frozen-read.mjs
+          node scripts/test-dataops-situation-v2-storage-recovery.mjs
+          node scripts/test-dataops-situation-v2-cloud-parity.mjs
+
       - name: Test MerchOps sale availability pipeline
         run: node scripts/test-merchops-sale-pipeline.mjs
 
