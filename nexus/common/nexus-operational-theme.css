@@ -27,6 +27,51 @@ html[data-nexus-theme="dark"][data-nexus-app="merchops"] {
   background-color: var(--nexus-page-bg);
 }
 
+/*
+ * DataOps is a dense operational table. Keep its dark palette neutral and
+ * reserve only a quiet pastel tint for semantic states so adjacent LOT cells
+ * do not compete for attention.
+ */
+html[data-nexus-theme="dark"][data-nexus-app="dataops"] {
+  --nexus-page-bg: #15181d;
+  --nexus-panel-bg: #1c2026;
+  --nexus-panel-subtle-bg: #22272e;
+  --nexus-table-header-bg: #292f37;
+  --nexus-table-row-bg: #1d2228;
+  --nexus-table-row-hover-bg: #282e36;
+  --nexus-input-bg: #262c33;
+  --nexus-border: #343b44;
+  --nexus-border-strong: #444d58;
+  --nexus-text: #d6d9de;
+  --nexus-text-muted: #9299a3;
+  --nexus-selection-bg: #303842;
+  --nexus-focus-ring: #778b9e;
+  --nexus-info: #b3c4d4;
+  --nexus-info-bg: #2a323a;
+  --nexus-info-border: #687b8d;
+  --nexus-success: #b3c8ba;
+  --nexus-success-bg: #2b342f;
+  --nexus-success-border: #6d8174;
+  --nexus-warning: #c4b8a8;
+  --nexus-warning-bg: #342f2a;
+  --nexus-warning-border: #786d60;
+  --nexus-danger: #c7b1b4;
+  --nexus-danger-bg: #352d2f;
+  --nexus-danger-border: #7d686c;
+  --nexus-accent: #bbbdd0;
+  --nexus-accent-bg: #302f39;
+  --nexus-accent-border: #737383;
+  --nexus-purple: #c1b6ca;
+  --nexus-purple-bg: #332f37;
+  --nexus-purple-border: #776d7d;
+  --nexus-cyan: #b2c6c8;
+  --nexus-cyan-bg: #293435;
+  --nexus-cyan-border: #687c7e;
+  --nexus-orange: #c4b8aa;
+  --nexus-orange-bg: #342f2a;
+  --nexus-orange-border: #786e61;
+}
+
 html[data-nexus-theme="dark"][data-nexus-app="orderq"] body,
 html[data-nexus-theme="dark"][data-nexus-app="dataops"] body,
 html[data-nexus-theme="dark"][data-nexus-app="merchops"] body {

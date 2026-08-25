@@ -23,7 +23,7 @@ for (const [file, app] of maintainedPages) {
   assert.match(source, new RegExp(`<html[^>]+data-nexus-app="${app}"`), `${file} must opt into its maintained application scope`);
   assert.match(source, /\/nexus\/common\/nexus-theme-init\.js/);
   assert.match(source, /\/nexus\/common\/oneapp-design-tokens\.css/);
-  assert.match(source, /\/nexus\/common\/nexus-operational-theme\.css\?v=1\.0\.0/);
+  assert.match(source, /\/nexus\/common\/nexus-operational-theme\.css\?v=1\.0\.\d+/);
   assert.ok(source.indexOf('nexus-theme-init.js') < source.indexOf('<style'), `${file} must resolve the saved theme before first-paint styles`);
   const tailwindIndex = source.indexOf('cdn.tailwindcss.com');
   if (tailwindIndex >= 0) {
@@ -87,6 +87,16 @@ const contrast = (first, second) => {
   return (bright + 0.05) / (dark + 0.05);
 };
 const darkTokens = cssVariables('html[data-nexus-theme="dark"]');
+
+const dataOpsScope = operationalCss.match(/html\[data-nexus-theme="dark"\]\[data-nexus-app="dataops"\] \{([\s\S]*?)\n\}/);
+assert.ok(dataOpsScope, 'DataOps needs a dedicated low-chroma dark table palette');
+for (const token of [
+  '--nexus-page-bg', '--nexus-panel-bg', '--nexus-table-row-bg',
+  '--nexus-info', '--nexus-info-bg', '--nexus-success', '--nexus-success-bg',
+  '--nexus-warning', '--nexus-warning-bg', '--nexus-danger', '--nexus-danger-bg'
+]) {
+  assert.match(dataOpsScope[1], new RegExp(`${token}:\\s*#[0-9a-f]{6}`, 'i'), `DataOps palette must define ${token}`);
+}
 const contrastEvidence = [
   ['nexus-text', 'nexus-page-bg'],
   ['nexus-text', 'nexus-panel-bg'],
