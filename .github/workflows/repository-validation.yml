@@ -186,6 +186,7 @@ jobs:
           node scripts/test-orderq-stage5-db-v15.mjs
           node scripts/test-orderq-stage5-single-entrypoint.mjs
           node scripts/test-orderq-stage5-cloud-contract.mjs
+          node scripts/test-orderq-stage5-owner-bridge.mjs
 
       - name: Test DataOps zero and negative stock preservation
         run: node scripts/test-dataops-zero-stock-contract.mjs
