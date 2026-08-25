@@ -108,10 +108,10 @@ assert.strictEqual(await loadCustomerReferenceRows({
 assert.deepEqual(fallbackTimeoutCalls, [CUSTOMER_REFERENCE_BOOTSTRAP_TIMEOUT_MS, CUSTOMER_REFERENCE_READ_TIMEOUT_MS]);
 
 await assert.rejects(loadCustomerReferenceRows({
-  ensureReady: async () => ({ source: 'CLOUD_REQUIRED', customers: [], sync: { pullError: new Error('cloud pull failed') } }),
+  ensureReady: async () => ({ source: 'CLOUD_REQUIRED', customers: [{ customerId: 'CU-PARTIAL' }], sync: { pullError: new Error('cloud pull failed') } }),
   listRows: async () => [],
   withTimeout: async promise => promise
-}), /cloud pull failed/, 'an actual Cloud failure must remain blocking instead of being treated as ready');
+}), /cloud pull failed/, 'a failed multi-page Cloud pull must remain blocking even if it wrote partial customer rows');
 
 assert.equal(contract.APP_ID, 'smart-input');
 assert.equal(contract.SCHEMA_VERSION, 'ONEAPP_SMART_INPUT_DRAFT_V1');

@@ -20,6 +20,9 @@ export async function loadCustomerReferenceRows({
     CUSTOMER_REFERENCE_BOOTSTRAP_TIMEOUT_MS,
     '거래처 마스터 동기화 시간이 초과되었습니다. 네트워크를 확인한 뒤 다시 시도하세요.'
   );
+  if (readiness?.source === 'CLOUD_REQUIRED' && readiness?.sync?.pullError) {
+    throw readiness.sync.pullError;
+  }
   const readyRows = rows(readiness?.customers);
   if (readyRows.length) return readyRows;
 
