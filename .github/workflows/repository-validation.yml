@@ -174,6 +174,7 @@ jobs:
           node scripts/test-orderq-stage4-sale-blocker-resolution.mjs
           node scripts/test-orderq-stage4-sale-cloud-parity.mjs
           node scripts/test-orderq-stage4-sale-source-claims.mjs
+          node scripts/test-orderq-stage4-sale-capability.mjs
 
       - name: Test DataOps zero and negative stock preservation
         run: node scripts/test-dataops-zero-stock-contract.mjs

@@ -29,10 +29,16 @@ function revision(value) { return Number(value?.revision ?? value?.masterRevisio
 
 export function evaluateSaleStage4Capability(ping = {}, expected = SALE_STAGE4_EXPECTED_DEPLOYMENT) {
   const mismatch = Object.entries(SALE_STAGE4_CAPABILITY).find(([key, expectedValue]) => text(ping[key]) !== expectedValue);
-  const deploymentReady = ['deploymentId', 'deploymentVersion', 'gitCommit'].every(key => text(expected[key]) && text(ping[key]) === text(expected[key]));
+  const saleDeploymentFields = [
+    ['deploymentId', 'saleDeploymentId'],
+    ['deploymentVersion', 'saleDeploymentVersion'],
+    ['gitCommit', 'saleGitCommit']
+  ];
+  const deploymentReady = saleDeploymentFields.every(([expectedKey, pingKey]) =>
+    text(expected[expectedKey]) && text(ping[pingKey]) === text(expected[expectedKey]));
   return mismatch || !deploymentReady
     ? { ready: false, code: 'ORDERQ_SALE_STAGE4_CAPABILITY_UNAVAILABLE', detail: mismatch?.[0] || 'deploymentEvidence' }
-    : { ready: true, code: '', deploymentId: text(ping.deploymentId), deploymentVersion: text(ping.deploymentVersion), gitCommit: text(ping.gitCommit) };
+    : { ready: true, code: '', deploymentId: text(ping.saleDeploymentId), deploymentVersion: text(ping.saleDeploymentVersion), gitCommit: text(ping.saleGitCommit) };
 }
 
 export async function loadSaleStage4Capability() {
