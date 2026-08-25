@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { buildPurchasePostDraft, evaluatePurchaseStage3Capability, validatePurchaseGroup } from '../smartinput/purchase-official-stage3.js';
+import { buildPurchasePostDraft, evaluatePurchaseStage3Capability, PURCHASE_STAGE3_CAPABILITY, PURCHASE_STAGE3_EXPECTED_DEPLOYMENT, validatePurchaseGroup } from '../smartinput/purchase-official-stage3.js';
 import { createCentralAuthorityState, migrateCentralDrafts, prepareCentralCommand } from '../orderq/central-authority.js';
 import vm from 'node:vm';
 import { readFileSync } from 'node:fs';
@@ -11,6 +11,11 @@ assert.equal(evaluatePurchaseStage3Capability(ready).ready,false,'unfrozen/garba
 assert.equal(evaluatePurchaseStage3Capability(ready,{deploymentId:'DEP1',deploymentVersion:'3',gitCommit:'abc'}).ready,true);
 assert.equal(evaluatePurchaseStage3Capability({...ready,gitCommit:'wrong'},{deploymentId:'DEP1',deploymentVersion:'3',gitCommit:'abc'}).ready,false);
 assert.equal(evaluatePurchaseStage3Capability({...ready,deploymentVersion:''}).code,'ORDERQ_PURCHASE_STAGE3_CAPABILITY_UNAVAILABLE');
+const releasePing={...PURCHASE_STAGE3_CAPABILITY,...PURCHASE_STAGE3_EXPECTED_DEPLOYMENT};
+assert.equal(evaluatePurchaseStage3Capability(releasePing).ready,true,'exact immutable release ping enables purchase');
+for(const [field,value] of [['deploymentId','wrong'],['deploymentVersion','27'],['gitCommit','wrong'],['cutoverMode','SHADOW'],['commandContract','WRONG']]){
+  assert.equal(evaluatePurchaseStage3Capability({...releasePing,[field]:value}).ready,false,`${field} mutation stays disabled`);
+}
 const group={supplierCustomerId:'C1',voucherDate:'2026-08-25',warehouseId:'W1',rows:[{productId:'P1',warehouseId:'W1',quantity:0,unit:'EA',unitPrice:0,productMasterRevision:2,warehouseMasterRevision:1}]};
 assert.equal(validatePurchaseGroup(group,{customers:[{customerId:'C1',status:'ACTIVE'}],products:[{productId:'P1',status:'ACTIVE',revision:2}],warehouses:[{warehouseId:'W1',status:'ACTIVE',revision:1}]}),true);
 assert.throws(()=>validatePurchaseGroup(group,{customers:[],products:[],warehouses:[]}),/ORDERQ_PURCHASE_SUPPLIER_MASTER_INVALID/);

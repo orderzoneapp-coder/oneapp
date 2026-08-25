@@ -20,7 +20,9 @@ export const PURCHASE_STAGE3_CAPABILITY = Object.freeze({
 // Filled only by the immutable Apps Script deployment release commit. Empty
 // values intentionally keep production writes disabled.
 export const PURCHASE_STAGE3_EXPECTED_DEPLOYMENT = Object.freeze({
-  deploymentId: '', deploymentVersion: '', gitCommit: ''
+  deploymentId: 'AKfycbzOUOIu_bP7NkiFVziDR0Og1da1KO1ePoU09Q3pSlPr-9uD-WkdCpWN7nidO5hlrJi6Qw',
+  deploymentVersion: '26',
+  gitCommit: 'c84b7962313b5c266e7466045c9623f5c149d50c'
 });
 
 // SmartInput currently has no authenticated actor/session provider. Keep the
