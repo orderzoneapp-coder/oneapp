@@ -227,6 +227,7 @@ jobs:
           node scripts/test-dataops-situation-v2-storage-recovery.mjs
           node scripts/test-dataops-situation-v2-cloud-parity.mjs
           node scripts/test-dataops-situation-v2-product-path.mjs
+          node scripts/test-dataops-situation-v2-render-runtime.mjs
 
       - name: Test MerchOps sale availability pipeline
         run: node scripts/test-merchops-sale-pipeline.mjs
