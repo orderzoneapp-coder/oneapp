@@ -24,7 +24,33 @@
 
 ## 화면 모드
 
-공통헤더 화면 모드는 `일반(light)`과 `다크(dark)`만 제공한다. 사용자가 선택한 값은 `oneapp.nexus.v1.colorMode`에 저장되어 모든 앱에 적용된다. 이전 `system` 저장값과 잘못된 값은 `light`로 자동 전환한다.
+공통헤더 화면 모드는 `일반(light)`과 `다크(dark)`만 제공한다. 사용자가 선택한 값은 `oneapp.nexus.v1.colorMode`에 저장되어 모든 앱에 적용된다. 이전 `system` 저장값과 잘못된 값은 `light`로 자동 전환한다. 운영체제 화면 모드는 읽거나 감시하지 않는다.
+
+각 앱은 첫 스타일과 본문 렌더보다 먼저 `nexus-theme-init.js`를 동기 실행한다. 이 초기화 스크립트가 저장값을 읽어 루트의 `data-nexus-theme="light|dark"`와 `color-scheme`을 지정하므로 저장된 다크모드 앞에 밝은 로딩·오류·빈 화면이 먼저 표시되면 안 된다.
+
+```html
+<head>
+  <script src="/nexus/common/nexus-theme-init.js"></script>
+  <link rel="stylesheet" href="/nexus/common/oneapp-design-tokens.css">
+  <!-- application styles and runtime follow -->
+</head>
+```
+
+`data-nexus-theme`와 `nexus-theme-change`가 애플리케이션의 유일한 테마 입력이다. 애플리케이션은 저장키를 직접 읽거나 별도 테마값을 저장하지 않는다. 기존 공통헤더 스타일 호환용 `data-nexus-color-mode` alias는 같은 `light|dark` 값으로 유지하지만 신규 애플리케이션 계약으로 사용하지 않는다.
+
+```js
+window.addEventListener('nexus-theme-change', (event) => {
+  // 기존 필드 theme/colorMode는 항상 같은 light 또는 dark 값이다.
+  // source는 추가 정보이며 기존 소비자는 무시할 수 있다.
+  const { theme, colorMode, source } = event.detail;
+});
+```
+
+테마 전환은 루트 속성과 CSS 변수만 변경한다. 화면 reload, 업무 데이터 재조회, 애플리케이션 root 재생성 또는 검색·필터·선택·편집·스크롤·저장·동기화 상태 초기화를 수행하지 않는다.
+
+`oneapp-design-tokens.css`는 화면·패널·표·입력·선택·포커스·상태의 의미 기반 `--nexus-*` 변수를 제공한다. 기존 Master 계열의 `--oneapp-*` 변수는 호환 alias로 유지한다. 성공·주의·오류 foreground/background 조합은 일반·다크 모두 기본 글자 대비 `4.5:1` 이상이어야 한다. 가격 상승·하락, 역마진, 재고 부족, 주문 충돌과 대사 차이는 공통 오류 변수와 별도 업무 변수로 사용한다.
+
+앱별 호환 스타일은 해당 앱 root와 `[data-nexus-theme="dark"]` 아래로 범위를 제한한다. 전역 Tailwind 팔레트 교체, `nexus-master-theme.css`의 대상 앱 확대와 광범위한 `!important` 사용은 금지한다. Excel·ERP·인쇄·카카오 이미지 컨테이너는 화면 테마를 소비하지 않고 기존 밝은 출력 계약을 유지한다.
 
 ## 현재 앱 상태
 

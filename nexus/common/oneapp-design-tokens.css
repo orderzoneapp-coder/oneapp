@@ -1,24 +1,68 @@
 :root {
   --oneapp-navy: #081225;
-  --oneapp-bg: #f4f7fb;
-  --oneapp-surface: #ffffff;
-  --oneapp-surface-subtle: #f8fafc;
-  --oneapp-border: #dbe3ec;
-  --oneapp-border-strong: #cbd5e1;
-  --oneapp-text: #172033;
-  --oneapp-muted: #64748b;
+
+  /* NEXUS semantic surfaces */
+  --nexus-page-bg: #f4f7fb;
+  --nexus-panel-bg: #ffffff;
+  --nexus-panel-subtle-bg: #f8fafc;
+  --nexus-table-header-bg: #f1f5f9;
+  --nexus-table-row-bg: #ffffff;
+  --nexus-table-row-hover-bg: #f8fafc;
+  --nexus-input-bg: #ffffff;
+  --nexus-border: #dbe3ec;
+  --nexus-border-strong: #cbd5e1;
+  --nexus-text: #172033;
+  --nexus-text-muted: #64748b;
+  --nexus-text-inverse: #ffffff;
+
+  /* NEXUS interaction states */
+  --nexus-selection-bg: #eef2ff;
+  --nexus-selection-border: #4f46e5;
+  --nexus-edit-border: #0f766e;
+  --nexus-focus-ring: #0f766e;
+  --nexus-disabled-bg: #f1f5f9;
+  --nexus-disabled-text: #64748b;
+
+  /* NEXUS common statuses: foreground/background pairs meet 4.5:1. */
+  --nexus-success: #047857;
+  --nexus-success-bg: #ecfdf5;
+  --nexus-success-border: #6ee7b7;
+  --nexus-warning: #92400e;
+  --nexus-warning-bg: #fffbeb;
+  --nexus-warning-border: #f59e0b;
+  --nexus-danger: #b91c1c;
+  --nexus-danger-bg: #fef2f2;
+  --nexus-danger-border: #f87171;
+
+  /* Business meanings remain separate from common error semantics. */
+  --nexus-price-up: #b91c1c;
+  --nexus-price-down: #1d4ed8;
+  --nexus-negative-margin: #b45309;
+  --nexus-stock-shortage: #b45309;
+  --nexus-order-conflict: #b91c1c;
+  --nexus-reconciliation-diff: #92400e;
+
+  /* Existing ONEAPP aliases remain stable for current consumers. */
+  --oneapp-bg: var(--nexus-page-bg);
+  --oneapp-surface: var(--nexus-panel-bg);
+  --oneapp-surface-subtle: var(--nexus-panel-subtle-bg);
+  --oneapp-border: var(--nexus-border);
+  --oneapp-border-strong: var(--nexus-border-strong);
+  --oneapp-text: var(--nexus-text);
+  --oneapp-muted: var(--nexus-text-muted);
   --oneapp-master-accent: #4f46e5;
   --oneapp-master-accent-hover: #4338ca;
-  --oneapp-master-soft: #eef2ff;
-  --oneapp-success: #059669;
-  --oneapp-success-soft: #ecfdf5;
-  --oneapp-warning: #d97706;
-  --oneapp-warning-soft: #fffbeb;
-  --oneapp-danger: #dc2626;
-  --oneapp-danger-soft: #fef2f2;
-  --oneapp-disabled: #94a3b8;
+  --oneapp-master-soft: var(--nexus-selection-bg);
+  --oneapp-success: var(--nexus-success);
+  --oneapp-success-soft: var(--nexus-success-bg);
+  --oneapp-warning: var(--nexus-warning);
+  --oneapp-warning-soft: var(--nexus-warning-bg);
+  --oneapp-danger: var(--nexus-danger);
+  --oneapp-danger-soft: var(--nexus-danger-bg);
+  --oneapp-disabled: var(--nexus-disabled-text);
   --oneapp-radius: 8px;
   --oneapp-shadow-popover: 0 12px 32px rgb(15 23 42 / 14%);
+
   --nexus-content-max-width: 1440px;
   --nexus-content-gutter: 24px;
   --nexus-app-header-height: 56px;
@@ -30,33 +74,43 @@
 }
 
 html[data-nexus-theme="dark"] {
-  --oneapp-bg: #0f172a;
-  --oneapp-surface: #111c30;
-  --oneapp-surface-subtle: #172238;
-  --oneapp-border: #29364d;
-  --oneapp-border-strong: #3a4860;
-  --oneapp-text: #e8edf6;
-  --oneapp-muted: #9aa8be;
-  --oneapp-master-soft: #232852;
-  --oneapp-success-soft: #0f352c;
-  --oneapp-warning-soft: #3b2b11;
-  --oneapp-danger-soft: #3d1d26;
-  color-scheme: dark;
-}
+  --nexus-page-bg: #0f172a;
+  --nexus-panel-bg: #111c30;
+  --nexus-panel-subtle-bg: #172238;
+  --nexus-table-header-bg: #172238;
+  --nexus-table-row-bg: #111c30;
+  --nexus-table-row-hover-bg: #1d2a43;
+  --nexus-input-bg: #172238;
+  --nexus-border: #29364d;
+  --nexus-border-strong: #3a4860;
+  --nexus-text: #e8edf6;
+  --nexus-text-muted: #9aa8be;
+  --nexus-text-inverse: #0f172a;
 
-@media (prefers-color-scheme: dark) {
-  html[data-nexus-theme="system"] {
-    --oneapp-bg: #0f172a;
-    --oneapp-surface: #111c30;
-    --oneapp-surface-subtle: #172238;
-    --oneapp-border: #29364d;
-    --oneapp-border-strong: #3a4860;
-    --oneapp-text: #e8edf6;
-    --oneapp-muted: #9aa8be;
-    --oneapp-master-soft: #232852;
-    --oneapp-success-soft: #0f352c;
-    --oneapp-warning-soft: #3b2b11;
-    --oneapp-danger-soft: #3d1d26;
-    color-scheme: dark;
-  }
+  --nexus-selection-bg: #1e3a5f;
+  --nexus-selection-border: #67e8f9;
+  --nexus-edit-border: #67e8f9;
+  --nexus-focus-ring: #67e8f9;
+  --nexus-disabled-bg: #172238;
+  --nexus-disabled-text: #9aa8be;
+
+  --nexus-success: #6ee7b7;
+  --nexus-success-bg: #0f352c;
+  --nexus-success-border: #34d399;
+  --nexus-warning: #fbbf24;
+  --nexus-warning-bg: #3b2b11;
+  --nexus-warning-border: #f59e0b;
+  --nexus-danger: #fda4af;
+  --nexus-danger-bg: #3d1d26;
+  --nexus-danger-border: #fb7185;
+
+  --nexus-price-up: #fb7185;
+  --nexus-price-down: #7dd3fc;
+  --nexus-negative-margin: #fbbf24;
+  --nexus-stock-shortage: #fdba74;
+  --nexus-order-conflict: #fda4af;
+  --nexus-reconciliation-diff: #fbbf24;
+
+  --oneapp-master-soft: var(--nexus-selection-bg);
+  color-scheme: dark;
 }
