@@ -19,7 +19,8 @@ import {
 } from './orderq-v12-contracts.js?v=0.17.0';
 import { V13_PURCHASE_DOCUMENT_INDEXES } from './orderq-v13-contracts.js?v=0.1.0';
 import { V14_INDEXES } from './orderq-v14-contracts.js?v=0.1.0';
-import { ORDERQ_DB_VERSION, V15_STORE, V15_STORE_DEFINITIONS } from './orderq-v15-contracts.js?v=0.1.0';
+import { V15_STORE, V15_STORE_DEFINITIONS } from './orderq-v15-contracts.js?v=0.1.0';
+import { ORDERQ_DB_VERSION, V16_STORE, V16_STORE_DEFINITIONS, V16_META_DEFAULTS } from './orderq-v16-contracts.js?v=0.1.0';
 import { adminTestDatabaseName } from './admin-test-runtime.js?v=0.10.2';
 
 function databaseNameForRuntime() {
@@ -77,7 +78,8 @@ export const STORE = Object.freeze({
   META: 'meta',
   ...V7_STORE,
   ...V8_STORE,
-  ...V15_STORE
+  ...V15_STORE,
+  ...V16_STORE
 });
 
 let dbPromise = null;
@@ -273,6 +275,16 @@ export function upgradeOrderQDbSchema(db, transaction, oldVersion = 0) {
   ensureIndex(store, 'byEntity', ['entityType', 'entityId']);
 
   const metaStore = ensureStore(STORE.META, { keyPath: 'key' });
+
+  if (oldVersion < 16) {
+    V16_STORE_DEFINITIONS.forEach(definition => {
+      const v16Store = ensureStore(definition.name, { keyPath: definition.keyPath });
+      definition.indexes.forEach(entry => ensureExactIndex(v16Store, entry.name, entry.keyPath, entry.options));
+    });
+    const updatedAt=nowIso();
+    Object.entries(V16_META_DEFAULTS).forEach(([key,value])=>metaStore.put({key,value,updatedAt}));
+    metaStore.put({ key:'schemaVersion', value:16, updatedAt });
+  }
 
   if (oldVersion < 15) {
     V15_STORE_DEFINITIONS.forEach(definition => {

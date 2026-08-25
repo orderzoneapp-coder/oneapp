@@ -3,7 +3,7 @@ import { buildPurchasePostDraft } from '../smartinput/purchase-official-stage3.j
 import { canonicalSha256 } from '../orderq/official-voucher-core.js';
 import { STORE, upgradeOrderQDbSchema } from '../orderq/orderq-db.js';
 import { V13_PURCHASE_DOCUMENT_INDEXES } from '../orderq/orderq-v13-contracts.js';
-import { ORDERQ_DB_VERSION } from '../orderq/orderq-v15-contracts.js';
+import { ORDERQ_DB_VERSION } from '../orderq/orderq-v16-contracts.js';
 import { V7_STORE_DEFINITIONS } from '../orderq/orderq-v7-contracts.js';
 import { V8_STORE_DEFINITIONS } from '../orderq/orderq-v8-contracts.js';
 import { V9_STORE_DEFINITIONS } from '../orderq/orderq-v9-contracts.js';

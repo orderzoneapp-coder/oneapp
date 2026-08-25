@@ -1,0 +1,10 @@
+import assert from 'node:assert/strict';
+import { deriveFinancialCloseRows } from '../orderq/dataops-close-core.js';
+import { financialFixture } from './dataops-stage6-test-fixtures.mjs';
+
+let fixture=financialFixture(),rows=deriveFinancialCloseRows(fixture,'PAYABLE','CR1');assert.equal(rows[0].documentBusinessDate,'2026-08-25');assert.equal(rows[0].partnerName,'거래처');assert.equal(rows[0].derivedStatus,'EFFECTIVE');
+assert.throws(()=>deriveFinancialCloseRows({...fixture,voucherEvents:[]},'PAYABLE'),/VOUCHER_JOIN_INVALID/);
+fixture=financialFixture();fixture.entries[0].entryType='PAYABLE_UNKNOWN';assert.throws(()=>deriveFinancialCloseRows(fixture,'PAYABLE'),/ENTRY_TYPE_UNKNOWN/);
+fixture=financialFixture();const second={...fixture.entries[0],entryId:'F2',effectKey:'EF2',purchaseDocumentId:'P2',commandId:'CMD2'};const secondEvent={...fixture.voucherEvents[0],eventId:'VE2',documentId:'P2',commandId:'CMD2',lineEffects:[{entityType:'PAYABLE_ENTRY',entityId:'F2',effectKind:'PAYABLE_POST'}]};rows=deriveFinancialCloseRows({entries:[second,fixture.entries[0]],voucherEvents:[secondEvent,fixture.voucherEvents[0]],customers:fixture.customers},'PAYABLE','CR1');assert.deepEqual(rows.map(row=>row.entryId),['F1','F2'],'same ledger sequence sorts by entryId');
+fixture=financialFixture();const over={...fixture.entries[0],entryId:'F2',entryType:'PAYABLE_REVERSAL',effectKey:'EF2',effectOrdinal:2,totalAmount:-101,supplyAmount:-101,reversalOf:'F1',ledgerSequence:2,commandId:'CMD2',sourceDocumentRevision:2};const overEvent={eventId:'VE2',commandId:'CMD2',sourceDocumentRevision:2,documentId:'P1',after:{businessDate:'2026-08-25'},lineEffects:[{entityType:'PAYABLE_ENTRY',entityId:'F2',effectKind:'PAYABLE_REVERSAL'}]};assert.throws(()=>deriveFinancialCloseRows({entries:[fixture.entries[0],over],voucherEvents:[fixture.voucherEvents[0],overEvent],customers:fixture.customers},'PAYABLE'),/OVER_REVERSAL/);
+console.log('PASS stage6 v12 financial entry');
