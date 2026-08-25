@@ -592,6 +592,8 @@
         rows.push({
           inputOrder: rows.length + 1,
           sourceRowNumber: rowIndex + 1,
+          sourceOccurrence: 1,
+          sourceRowKey: `ORDER_ROW:${rowIndex + 1}`,
           orderNumber: cleanText(orderNumberValue),
           basisDate: rowBasisDateStatus === "valid" ? rowBasisDates[0] : "",
           basisDateStatus: rowBasisDateStatus,

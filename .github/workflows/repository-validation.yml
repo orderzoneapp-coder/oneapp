@@ -157,6 +157,25 @@ jobs:
           node scripts/test-orderq-stage3-purchase-legacy-boundary.mjs
           node scripts/test-orderq-stage3-purchase-correction.mjs
 
+      - name: Test ORDER Q stage 4 sale operations
+        run: |
+          node scripts/test-orderq-v14-schema.mjs
+          node scripts/test-orderq-stage4-sale-identity-meta.mjs
+          node scripts/test-orderq-stage4-sale-roles.mjs
+          node scripts/test-orderq-stage4-sale-quantity-axes.mjs
+          node scripts/test-orderq-stage4-sale-allocation-split.mjs
+          node scripts/test-orderq-stage4-sale-negative-voucher.mjs
+          node scripts/test-orderq-stage4-sale-master-link.mjs
+          node scripts/test-orderq-stage4-sale-command-recovery.mjs
+          node scripts/test-orderq-stage4-sale-query-correction.mjs
+          node scripts/test-orderq-stage4-sale-legacy-origin.mjs
+          node scripts/test-orderq-stage4-sale-workbook-e2e.mjs
+          node scripts/test-orderq-stage4-sale-product-flow.mjs
+          node scripts/test-orderq-stage4-sale-blocker-resolution.mjs
+          node scripts/test-orderq-stage4-sale-cloud-parity.mjs
+          node scripts/test-orderq-stage4-sale-source-claims.mjs
+          node scripts/test-orderq-stage4-sale-capability.mjs
+
       - name: Test DataOps zero and negative stock preservation
         run: node scripts/test-dataops-zero-stock-contract.mjs
 

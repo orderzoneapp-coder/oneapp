@@ -68,7 +68,7 @@ assert.match(ui, /addEventListener\('online'/, 'T15 retry resumes immediately wh
 assert.match(page, /customer-code-upsert-ui\.js\?v=0\.17\.0/, 'T15 retry patch has an explicit browser cache version');
 assert.match(ui, /로컬 저장/, 'T15 UI separates local state');
 assert.match(ui, /Cloud 동기화/, 'T15 UI separates Cloud state');
-assert.match(cloud, /ORDERQ_SHEET_SCHEMA_VERSION = '7'/, 'T15 Cloud schema advances');
+assert.match(cloud, /ORDERQ_SHEET_SCHEMA_VERSION = '8'/, 'T15 Cloud schema advances');
 assert.match(cloud, /CUSTOMER_HEADER_MAPPING/, 'T15 header mappings sync');
 assert.match(cloud, /CUSTOMER_USER_FIELD_DEFINITION/, 'T15 field definitions sync');
 

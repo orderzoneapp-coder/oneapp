@@ -55,6 +55,66 @@ function clone(value) {
   return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
 }
 
+const OFFICIAL_ORIGIN_FIELDS = Object.freeze([
+  'contractKind', 'normalizedOriginVersion', 'sourceDocumentKey', 'originSystem',
+  'originTransactionId', 'sourceVoucherIndex', 'externalDocumentNo', 'sourceClaimKeys'
+]);
+
+function originValue(source, field) {
+  if (field === 'sourceVoucherIndex') {
+    if (source === '' || source === null || source === undefined) return '';
+    const value = Number(source);
+    return Number.isInteger(value) ? value : NaN;
+  }
+  if (field === 'sourceClaimKeys') return Array.isArray(source) ? [...source].map(text) : source == null ? [] : source;
+  const value = text(source);
+  return field === 'originSystem' ? value.toUpperCase() : value;
+}
+
+function sameOriginValue(left, right) {
+  return Array.isArray(left) || Array.isArray(right) ? same(left, right) : left === right;
+}
+
+export function buildCanonicalOfficialCommand(source = {}, deviceId = '') {
+  const sourceIntent = source.intent && typeof source.intent === 'object' ? source.intent : {};
+  const intentDocument = sourceIntent.document && typeof sourceIntent.document === 'object' ? sourceIntent.document : {};
+  const sourceDocument = source.document && typeof source.document === 'object' ? source.document : {};
+  const document = Object.keys(intentDocument).length ? intentDocument : sourceDocument;
+  const commandType = text(source.commandType || sourceIntent.commandType).toUpperCase();
+  const aggregateId = text(source.aggregateId || sourceIntent.aggregateId);
+  const idempotencyKey = text(source.idempotencyKey || sourceIntent.idempotencyKey);
+  const expectedRevision = Number(source.expectedRevision ?? sourceIntent.expectedRevision);
+  const identity = {};
+  for (const field of OFFICIAL_ORIGIN_FIELDS) {
+    const candidates = [sourceIntent[field], source[field], intentDocument[field], sourceDocument[field]]
+      .map(value => originValue(value, field))
+      .filter(value => Array.isArray(value) ? value.length > 0 : value !== '');
+    if (candidates.some(value => typeof value === 'number' && !Number.isFinite(value))
+      || candidates.some(value => !Array.isArray(value) && typeof value === 'object')) throw new Error(`ORDERQ_OFFICIAL_INTENT_INVALID:${field}`);
+    if (candidates.length > 1 && candidates.slice(1).some(value => !sameOriginValue(candidates[0], value))) {
+      throw new Error(`ORDERQ_OFFICIAL_INTENT_MISMATCH:${field}`);
+    }
+    identity[field] = candidates.length ? clone(candidates[0]) : field === 'sourceClaimKeys' ? [] : '';
+  }
+  const saleStage4 = identity.contractKind === 'SALE_STAGE4_V1' && ['POST_SALE','CORRECT_SALE','REVERSE_SALE'].includes(commandType);
+  if (saleStage4 && (!identity.normalizedOriginVersion || !identity.sourceDocumentKey || !identity.originSystem
+    || !identity.originTransactionId || !Number.isInteger(identity.sourceVoucherIndex) || identity.sourceVoucherIndex < 1
+    || !identity.sourceClaimKeys.length)) throw new Error('ORDERQ_SALE_ORIGIN_IDENTITY_REQUIRED');
+  const intent = clone({
+    ...sourceIntent,
+    commandId: text(sourceIntent.commandId || source.commandId),
+    actor: text(sourceIntent.actor || source.actor),
+    occurredAt: text(sourceIntent.occurredAt || source.occurredAt),
+    reason: text(sourceIntent.reason || source.reason),
+    commandContract: text(sourceIntent.commandContract || source.commandContract),
+    sourceType: text(sourceIntent.sourceType || source.sourceType || document.sourceType).toUpperCase(),
+    ...identity,
+    document: clone(sourceIntent.document || source.document || null),
+    lines: clone(sourceIntent.lines || source.lines || null)
+  });
+  return { commandType, aggregateId, idempotencyKey, expectedRevision, deviceId:text(deviceId || source.deviceId), intent };
+}
+
 function stable(value) {
   if (Array.isArray(value)) return value.map(stable);
   if (value && typeof value === 'object') return Object.keys(value).sort().reduce((result, key) => {
@@ -281,20 +341,7 @@ export async function runCentralOfficialCommand(source = {}, localOperation) {
     throw new Error('ORDERQ_CENTRAL_OFFICIAL_COMMAND_INVALID');
   }
   const deviceId = getDeviceId();
-  const command = {
-    commandType, aggregateId, idempotencyKey, expectedRevision, deviceId,
-    intent: clone({
-      ...(source.intent || {}),
-      commandId: text(source.commandId),
-      actor: text(source.actor),
-      occurredAt: text(source.occurredAt),
-      reason: text(source.reason),
-      commandContract: text(source.commandContract),
-      sourceType: text(source.sourceType || source.document?.sourceType).toUpperCase(),
-      document: clone(source.document || null),
-      lines: clone(source.lines || null)
-    })
-  };
+  const command = buildCanonicalOfficialCommand(source, deviceId);
   if (utf8Bytes(command.intent) > 512 * 1024) throw new Error('ORDERQ_VOUCHER_PAYLOAD_TOO_LARGE');
   // The browser profile is the first half of the two-key cutover boundary.
   // This check is deliberately before draft migration and before the local
@@ -330,7 +377,7 @@ export async function runCentralOfficialCommand(source = {}, localOperation) {
   try {
     const localResult = await withOfficialCommandAuthority({ commandType, leaseToken: prepared.leaseToken }, async () => {
       localStarted = true;
-      const value = await localOperation();
+      const value = await localOperation(command.intent);
       return value;
     });
     const after = await readStores(OFFICIAL_STORE_NAMES);
