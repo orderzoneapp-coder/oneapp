@@ -156,6 +156,33 @@
     return post(url, 'situation_dataops_publish', { ...envelope, scope: source.scope || {} });
   }
   async function publishOperationalState(url, input) { return publish(url, buildOperationalSource(input)); }
+  function buildProductOperationalRequest({ productData = [], targetDateStr = '' } = {}) {
+    if (!Array.isArray(productData) || !productData.length || !/^\d{4}-\d{2}-\d{2}$/.test(text(targetDateStr))) throw new Error('DATAOPS_V2_OPERATIONAL_SOURCE_REQUIRED');
+    const rows = productData.map((item, index) => {
+      const productCode = text(item?.품목코드 || item?.코드 || item?.productCode);
+      const warehouseCode = text(item?.창고코드 || item?.warehouseCode || item?.창고);
+      const actual = item?.실사;
+      const rawQuantity = actual === '' || actual === null || actual === undefined ? item?.전산잔량 : actual;
+      if (!productCode || !warehouseCode || rawQuantity === '' || rawQuantity === null || rawQuantity === undefined || !Number.isFinite(Number(rawQuantity))) {
+        throw new Error(`DATAOPS_V2_OPERATIONAL_ROW_INVALID:${index + 1}`);
+      }
+      const status = text(item?._dataopsV2Status || item?.status || 'ACTIVE').toUpperCase();
+      if (!['ACTIVE', 'TOMBSTONED'].includes(status)) throw new Error(`DATAOPS_V2_OPERATIONAL_ROW_INVALID:${index + 1}`);
+      return { productCode, warehouseCode, signedBaseQuantity: Object.is(Number(rawQuantity), -0) ? 0 : Number(rawQuantity), status };
+    });
+    return { operationId: global.crypto?.randomUUID ? global.crypto.randomUUID() : `OP-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      occurredAt: new Date().toISOString(), basisDate: text(targetDateStr), rows };
+  }
+  function operationalSourceReady(context) { try { buildProductOperationalRequest(context); return true; } catch (error) { return false; } }
+  async function prepareProductOperationalSource(url, context) {
+    const gate = await loadCapability(url); if (!gate.ready) throw new Error('DATAOPS_V2_CAPABILITY_REQUIRED');
+    return post(url, 'situation_dataops_publish', { prepareOperationalRequest: buildProductOperationalRequest(context) });
+  }
+  async function publishProductState(url, context) {
+    const prepared = await prepareProductOperationalSource(url, context);
+    if (canonicalJson(prepared.scope || {}) !== canonicalJson(runtimeCredential.scope)) throw new Error('DATAOPS_SITUATION_SCOPE_NOT_ALLOWED');
+    return post(url, 'situation_dataops_publish', prepared);
+  }
   async function rollback(url, { expectedCurrentRevision, reason } = {}) {
     const gate = await loadCapability(url); if (!gate.ready) throw new Error('DATAOPS_V2_CAPABILITY_REQUIRED');
     if (!Number.isInteger(Number(expectedCurrentRevision)) || Number(expectedCurrentRevision) < 1 || !text(reason)) throw new Error('DATAOPS_V2_ROLLBACK_PRECONDITION_FAILED');
@@ -170,9 +197,16 @@
       capability: () => loadCapability(url)
     });
   }
+  function createDefaultOperatorConnection({ url = '', credential = {} } = {}) {
+    if (!text(url)) throw new Error('DATAOPS_V2_OPERATOR_CONNECTION_REQUIRED');
+    setRuntimeCredential(credential);
+    return Object.freeze({ publish: context => publishProductState(url, context || {}), rollback: request => rollback(url, request),
+      capability: () => loadCapability(url), operationalSourceReady });
+  }
 
   global.DATAOPS_SITUATION_V2_MODULE = Object.freeze({ SCHEMA_VERSION, CAPABILITY_VERSION, EXPECTED_DEPLOYMENT, REQUIRED_CAPABILITY,
     canonical, canonicalJson, sha256Hex, validateSnapshotSchema, evaluateCapability, setRuntimeCredential, clearRuntimeCredential,
-    hasRuntimeCredential, loadCapability, begin, page, head, buildSnapshot, buildOperationalSource, publish, publishOperationalState,
-    rollback, createOperatorConnection });
+    hasRuntimeCredential, loadCapability, begin, page, head, buildSnapshot, buildOperationalSource, buildProductOperationalRequest,
+    operationalSourceReady, prepareProductOperationalSource, publish, publishOperationalState, publishProductState,
+    rollback, createOperatorConnection, createDefaultOperatorConnection });
 })(typeof window !== 'undefined' ? window : globalThis);

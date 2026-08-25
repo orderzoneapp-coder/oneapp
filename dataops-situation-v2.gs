@@ -344,6 +344,114 @@ function dataOpsSituationBuildSnapshot(ss, payload, properties) {
   return dataOpsSituationCanonical(source);
 }
 
+function dataOpsSituationPrepareOperationalSource(ss, request, auth, properties) {
+  const basisDate = dataOpsSituationText(request && request.basisDate);
+  const operationId = dataOpsSituationText(request && request.operationId);
+  const occurredAt = dataOpsSituationText(request && request.occurredAt);
+  const inputRows = Array.isArray(request && request.rows) ? request.rows : null;
+  if (!inputRows || !inputRows.length || inputRows.length > DATAOPS_SITUATION_V2_MAX_ROWS
+    || !/^\d{4}-\d{2}-\d{2}$/.test(basisDate) || !operationId || Number.isNaN(new Date(occurredAt).getTime())) {
+    throw new Error('DATAOPS_V2_OPERATIONAL_SOURCE_REQUIRED');
+  }
+  const grouped = new Map();
+  inputRows.forEach((row, index) => {
+    if (!dataOpsSituationExactKeys(row, ['productCode', 'warehouseCode', 'signedBaseQuantity', 'status'])) {
+      throw new Error(`DATAOPS_V2_OPERATIONAL_ROW_INVALID:${index + 1}`);
+    }
+    const productCode = dataOpsSituationText(row.productCode);
+    const warehouseCode = dataOpsSituationText(row.warehouseCode);
+    const quantity = dataOpsSituationStrictNumber(row.signedBaseQuantity);
+    const status = dataOpsSituationText(row.status || 'ACTIVE').toUpperCase();
+    if (!productCode || !warehouseCode || ['ACTIVE', 'TOMBSTONED'].indexOf(status) < 0) throw new Error(`DATAOPS_V2_OPERATIONAL_ROW_INVALID:${index + 1}`);
+    const key = `${productCode}\u001f${warehouseCode}`;
+    const current = grouped.get(key) || { productCode, warehouseCode, signedBaseQuantity: 0, status };
+    if (current.status !== status) throw new Error(`DATAOPS_V2_OPERATIONAL_ROW_STATUS_CONFLICT:${key}`);
+    current.signedBaseQuantity += quantity;
+    grouped.set(key, current);
+  });
+  const entities = orderQM9ReadAllEntities(ss);
+  const exactMaster = (entityType, code) => {
+    const matches = entities.filter(row => row.entityType === entityType && dataOpsSituationText(row.status || row.payload && row.payload.status || 'ACTIVE').toUpperCase() === 'ACTIVE'
+      && [row.entityId, row.payload && row.payload.entityCode, row.payload && row.payload.productCode,
+        row.payload && row.payload.warehouseCode, row.payload && row.payload.code].some(value => dataOpsSituationText(value) === code));
+    if (matches.length !== 1) throw new Error(`DATAOPS_V2_OPERATIONAL_MASTER_REQUIRED:${entityType}:${code}`);
+    return matches[0];
+  };
+  const resolved = Array.from(grouped.values()).map(row => {
+    const product = exactMaster('PRODUCT', row.productCode);
+    const warehouse = exactMaster('WAREHOUSE', row.warehouseCode);
+    const descriptor = dataOpsSituationMasterDescriptor(product);
+    if (!descriptor.revision || !descriptor.baseUnit || !descriptor.baseUnitRuleVersion
+      || !Number(product.revision || product.payload && product.payload.revision || 0)
+      || !Number(warehouse.revision || warehouse.payload && warehouse.payload.revision || 0)) {
+      throw new Error(`DATAOPS_V2_OPERATIONAL_MASTER_REQUIRED:${row.productCode}:${row.warehouseCode}`);
+    }
+    return { ...row, productId: dataOpsSituationText(product.entityId), productMasterRevision: descriptor.revision,
+      warehouseId: dataOpsSituationText(warehouse.entityId), warehouseMasterRevision: Number(warehouse.revision || warehouse.payload.revision),
+      baseUnit: descriptor.baseUnit, baseUnitRuleVersion: descriptor.baseUnitRuleVersion };
+  });
+  const productIds = new Set(resolved.map(row => row.productId));
+  const warehouseIds = new Set(resolved.map(row => row.warehouseId));
+  const head = dataOpsSituationAuthorityHead(ss, productIds, warehouseIds);
+  const movements = head.entities.filter(row => row.entityType === 'INVENTORY_MOVEMENT').map(row => ({
+    movementId: dataOpsSituationText(row.entityId), movementRevision: Number(row.revision || row.payload && row.payload.revision || 0),
+    productId: dataOpsSituationText(row.payload && row.payload.productId), warehouseId: dataOpsSituationText(row.payload && row.payload.warehouseId),
+    baseUnit: dataOpsSituationText(row.payload && row.payload.baseUnit), ledgerSequence: Number(row.payload && row.payload.ledgerSequence || 0),
+    effectKey: dataOpsSituationText(row.payload && row.payload.effectKey)
+  })).filter(row => row.movementId && row.movementRevision && row.ledgerSequence > 0 && row.effectKey);
+  const pointer = dataOpsSituationPointer(properties);
+  const snapshotRevision = pointer ? Number(pointer.snapshotRevision) + 1 : 1;
+  const snapshotId = `DATAOPS-V2-${operationId}`;
+  const sourceRows = resolved.map(row => {
+    const sourceEvidence = movements.filter(item => item.productId === row.productId && item.warehouseId === row.warehouseId
+      && (!item.baseUnit || item.baseUnit === row.baseUnit)).sort((left, right) => left.ledgerSequence - right.ledgerSequence || left.movementId.localeCompare(right.movementId))
+      .map(item => ({ sourceEvidenceId: dataOpsSituationDigest({ movementId: item.movementId, effectKey: item.effectKey,
+        movementRevision: item.movementRevision }), movementId: item.movementId, effectKey: item.effectKey, movementRevision: item.movementRevision }));
+    const cutoff = movements.filter(item => item.productId === row.productId && item.warehouseId === row.warehouseId
+      && (!item.baseUnit || item.baseUnit === row.baseUnit)).reduce((maximum, item) => Math.max(maximum, item.ledgerSequence), 0);
+    return { rowRevision: snapshotRevision, productId: row.productId, productMasterRevision: row.productMasterRevision,
+      warehouseId: row.warehouseId, warehouseMasterRevision: row.warehouseMasterRevision, baseUnit: row.baseUnit,
+      baseUnitRuleVersion: row.baseUnitRuleVersion, signedBaseQuantity: row.signedBaseQuantity,
+      includedOrderQLedgerSequence: cutoff, status: row.status, sourceEvidence };
+  });
+  const deployment = dataOpsSituationRequireDeployment(properties);
+  const producer = { deploymentId: deployment.deploymentId, deploymentVersion: deployment.deploymentVersion, gitCommit: deployment.gitCommit,
+    handshakeDigest: dataOpsSituationDigest({ schemaVersion: DATAOPS_SITUATION_V2_SCHEMA, capabilityVersion: DATAOPS_SITUATION_V2_CAPABILITY,
+      deploymentId: deployment.deploymentId, deploymentVersion: deployment.deploymentVersion, gitCommit: deployment.gitCommit }) };
+  const source = { snapshotId, snapshotRevision, basisDate, publishedAt: occurredAt, producer, scope: auth.allowedScope,
+    authorityHead: { cursor: head.cursor, ledgerSequence: head.ledgerSequence, masterDigest: head.masterDigest,
+      changeDigest: head.changeDigest, movementDigest: head.movementDigest }, rows: sourceRows };
+  const evidenceRows = sourceRows.map(row => ({ rowId: `${row.productId}\u001f${row.warehouseId}\u001f${row.baseUnit}`,
+    sourceEvidence: row.sourceEvidence })).sort((left, right) => left.rowId.localeCompare(right.rowId));
+  const rows = sourceRows.map(row => {
+    const rowId = `${row.productId}\u001f${row.warehouseId}\u001f${row.baseUnit}`;
+    const sourceRowDigest = dataOpsSituationDigest({ rowRevision: row.rowRevision, productId: row.productId,
+      productMasterRevision: row.productMasterRevision, warehouseId: row.warehouseId, warehouseMasterRevision: row.warehouseMasterRevision,
+      baseUnit: row.baseUnit, baseUnitRuleVersion: row.baseUnitRuleVersion, signedBaseQuantity: row.signedBaseQuantity,
+      includedOrderQLedgerSequence: row.includedOrderQLedgerSequence, status: row.status, sourceEvidence: row.sourceEvidence });
+    return { snapshotId, rowId, rowRevision: row.rowRevision, productId: row.productId, productMasterRevision: row.productMasterRevision,
+      warehouseId: row.warehouseId, warehouseMasterRevision: row.warehouseMasterRevision, baseUnit: row.baseUnit,
+      baseUnitRuleVersion: row.baseUnitRuleVersion, signedBaseQuantity: row.signedBaseQuantity,
+      includedOrderQLedgerSequence: row.includedOrderQLedgerSequence, sourceRowDigest, status: row.status };
+  }).sort((left, right) => left.rowId.localeCompare(right.rowId));
+  const pages = [];
+  for (let index = 0; index < rows.length; index += DATAOPS_SITUATION_V2_PAGE_SIZE) {
+    const pageRows = rows.slice(index, index + DATAOPS_SITUATION_V2_PAGE_SIZE);
+    pages.push({ pageIndex: pages.length, rowCount: pageRows.length, pageDigest: dataOpsSituationDigest(pageRows) });
+  }
+  const tombstones = rows.filter(row => row.status === 'TOMBSTONED');
+  const inventoryKeys = rows.map(row => `${row.productId}\u001f${row.warehouseId}\u001f${row.baseUnit}`).sort();
+  const producerEvidence = { authorityHead: source.authorityHead, rows: evidenceRows, pages, scope: auth.allowedScope };
+  const snapshot = { manifest: { schemaVersion: DATAOPS_SITUATION_V2_SCHEMA, snapshotId, snapshotRevision, basisDate,
+    publishedAt: occurredAt, producerDeploymentId: producer.deploymentId, producerDeploymentVersion: producer.deploymentVersion,
+    producerGitCommit: producer.gitCommit, producerHandshakeDigest: producer.handshakeDigest, rowCount: rows.length,
+    activeRowCount: rows.filter(row => row.status === 'ACTIVE').length, tombstoneCount: tombstones.length, inventoryKeys,
+    rowDigest: dataOpsSituationDigest(rows), tombstoneDigest: dataOpsSituationDigest(tombstones), pageManifestDigest: dataOpsSituationDigest(pages),
+    sourceDigest: dataOpsSituationDigest({ authorityHead: source.authorityHead, evidenceRows, scope: auth.allowedScope }), status: 'PUBLISHED' }, rows };
+  dataOpsSituationBuildSnapshot(ss, { snapshot, producerEvidence, _serverScope: auth.allowedScope }, properties);
+  return { snapshot, producerEvidence, scope: auth.allowedScope };
+}
+
 function dataOpsSituationChunks(text) {
   const rows = [];
   for (let index = 0; index < text.length; index += DATAOPS_SITUATION_V2_CHUNK_SIZE) rows.push(text.slice(index, index + DATAOPS_SITUATION_V2_CHUNK_SIZE));
@@ -601,6 +709,9 @@ function dataOpsSituationHandleAction(ss, action, payload) {
     if (action === 'situation_dataops_ping') return dataOpsSituationPing(properties);
     if (action === 'situation_dataops_publish' && payload && payload.rollbackRequest) {
       return dataOpsSituationRollbackInternal(ss, payload.rollbackRequest, auth, properties);
+    }
+    if (action === 'situation_dataops_publish' && payload && payload.prepareOperationalRequest) {
+      return dataOpsSituationPrepareOperationalSource(ss, payload.prepareOperationalRequest, auth, properties);
     }
     if (action === 'situation_dataops_publish') return dataOpsSituationPublish(ss, payload, auth, properties);
     if (action === 'situation_dataops_begin') return dataOpsSituationBegin(ss, payload, auth, properties);

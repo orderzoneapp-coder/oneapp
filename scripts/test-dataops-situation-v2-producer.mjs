@@ -46,5 +46,8 @@ assert.match(productHtml, /DATAOPS_SITUATION_V2_OPERATOR_MODULE/);
 assert.match(productHtml, /publishCurrent\(\{ productData, targetDateStr \}\)/);
 assert.match(productHtml, /"상황자료 발행"/);
 assert.match(productHtml, /disabled: isProcessing \|\| !window\.DATAOPS_SITUATION_V2_OPERATOR_MODULE\.releaseEnabled\(\)/);
+assert.match(productHtml, /disabled: isProcessing \|\| !window\.DATAOPS_SITUATION_V2_OPERATOR_MODULE\.canPublish\(\{ productData, targetDateStr \}\)/);
+assert.match(productHtml, /configured: \(\) => Boolean\(connection\)/);
+assert.match(productHtml, /operationalSourceReady: context => api\(\)\.operationalSourceReady\(context\)/);
 assert.doesNotMatch(productHtml, /saveWorkState[\s\S]{0,150}publishSituationV2/, 'V2 publish is never automatic or a V1 fallback');
 console.log('DataOps Situation V2 producer tests passed');
