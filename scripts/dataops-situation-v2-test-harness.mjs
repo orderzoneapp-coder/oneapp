@@ -143,10 +143,13 @@ export function snapshotEnvelope(context, overrides = {}) {
   return { snapshot: { manifest, rows }, producerEvidence: { authorityHead: source.authorityHead, rows: evidenceRows, pages, scope: source.scope }, scope: source.scope };
 }
 
-export function loadBrowserModule() {
-  const window = { crypto: webcrypto, TextEncoder, fetch: async () => { throw new Error('FETCH_NOT_CONFIGURED'); } };
+export function loadBrowserModule({ fetch: fetchImpl, expected } = {}) {
+  const window = { crypto: webcrypto, TextEncoder, fetch: fetchImpl || (async () => { throw new Error('FETCH_NOT_CONFIGURED'); }) };
   window.window = window;
   vm.createContext(window);
-  vm.runInContext(readFileSync(new URL('../DataOps_situation_v2.js', import.meta.url), 'utf8'), window);
+  let source = readFileSync(new URL('../DataOps_situation_v2.js', import.meta.url), 'utf8');
+  if (expected) source = source.replace("Object.freeze({ deploymentId: '', deploymentVersion: '', gitCommit: '' })",
+    `Object.freeze(${JSON.stringify(expected)})`);
+  vm.runInContext(source, window);
   return window;
 }

@@ -71,17 +71,17 @@
   }
 
   function setRuntimeCredential(value = {}) {
-    const token = text(value.token); const actorId = text(value.actorId);
-    if (!token || !actorId) throw new Error('DATAOPS_SITUATION_ACCESS_DENIED');
-    runtimeCredential = Object.freeze({ token, actorId, deviceId: text(value.deviceId), environment: text(value.environment) });
+    const token = text(value.token); const actorId = text(value.actorId); const scope = canonical(value.scope || {});
+    if (!token || !actorId || !text(scope.companyId)) throw new Error('DATAOPS_SITUATION_ACCESS_DENIED');
+    runtimeCredential = Object.freeze({ token, actorId, deviceId: text(value.deviceId), environment: text(value.environment), scope });
     return true;
   }
   function clearRuntimeCredential() { runtimeCredential = null; }
-  function hasRuntimeCredential() { return Boolean(runtimeCredential?.token && runtimeCredential?.actorId); }
+  function hasRuntimeCredential() { return Boolean(runtimeCredential?.token && runtimeCredential?.actorId && text(runtimeCredential?.scope?.companyId)); }
   async function post(url, action, body = {}) {
     if (!hasRuntimeCredential()) throw new Error('DATAOPS_SITUATION_ACCESS_DENIED');
     const response = await global.fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ action, ...body, token: runtimeCredential.token, actorId: runtimeCredential.actorId,
+      body: JSON.stringify({ action, ...body, scope: runtimeCredential.scope, token: runtimeCredential.token, actorId: runtimeCredential.actorId,
         deviceId: runtimeCredential.deviceId, environment: runtimeCredential.environment }) });
     const json = await response.json();
     if (!response.ok || json?.status !== 'success') throw new Error(text(json?.message) || `DATAOPS_SITUATION_HTTP_${response.status}`);
@@ -91,6 +91,9 @@
     try { return evaluateCapability(await post(url, 'situation_dataops_ping')); }
     catch (error) { return { ready: false, code: 'DATAOPS_V2_CAPABILITY_REQUIRED', detail: text(error?.message || error) }; }
   }
+  async function begin(url) { return post(url, 'situation_dataops_begin'); }
+  async function page(url, request) { return post(url, 'situation_dataops_page', request || {}); }
+  async function head(url, request) { return post(url, 'situation_dataops_head', request || {}); }
 
   async function buildSnapshot(source = {}) {
     if (!Array.isArray(source.rows) || !source.rows.length || !source.authorityHead || !source.producer) throw new Error('DATAOPS_V2_SNAPSHOT_REQUIRED');
@@ -147,13 +150,29 @@
       authorityHead: officialState.authorityHead, basisDate, snapshotId, snapshotRevision, publishedAt, producer, scope };
   }
   async function publish(url, source) {
+    if (!hasRuntimeCredential() || canonicalJson(source.scope || {}) !== canonicalJson(runtimeCredential.scope)) throw new Error('DATAOPS_SITUATION_SCOPE_NOT_ALLOWED');
     const gate = await loadCapability(url); if (!gate.ready) throw new Error('DATAOPS_V2_CAPABILITY_REQUIRED');
     const envelope = await buildSnapshot(source);
     return post(url, 'situation_dataops_publish', { ...envelope, scope: source.scope || {} });
   }
   async function publishOperationalState(url, input) { return publish(url, buildOperationalSource(input)); }
+  async function rollback(url, { expectedCurrentRevision, reason } = {}) {
+    const gate = await loadCapability(url); if (!gate.ready) throw new Error('DATAOPS_V2_CAPABILITY_REQUIRED');
+    if (!Number.isInteger(Number(expectedCurrentRevision)) || Number(expectedCurrentRevision) < 1 || !text(reason)) throw new Error('DATAOPS_V2_ROLLBACK_PRECONDITION_FAILED');
+    return post(url, 'situation_dataops_publish', { rollbackRequest: { expectedCurrentRevision: Number(expectedCurrentRevision), reason: text(reason) } });
+  }
+  function createOperatorConnection({ url = '', credential = {}, loadOperationalState } = {}) {
+    if (!text(url) || typeof loadOperationalState !== 'function') throw new Error('DATAOPS_V2_OPERATOR_CONNECTION_REQUIRED');
+    setRuntimeCredential(credential);
+    return Object.freeze({
+      publish: async context => publishOperationalState(url, await loadOperationalState(context || {})),
+      rollback: request => rollback(url, request),
+      capability: () => loadCapability(url)
+    });
+  }
 
   global.DATAOPS_SITUATION_V2_MODULE = Object.freeze({ SCHEMA_VERSION, CAPABILITY_VERSION, EXPECTED_DEPLOYMENT, REQUIRED_CAPABILITY,
     canonical, canonicalJson, sha256Hex, validateSnapshotSchema, evaluateCapability, setRuntimeCredential, clearRuntimeCredential,
-    hasRuntimeCredential, loadCapability, buildSnapshot, buildOperationalSource, publish, publishOperationalState });
+    hasRuntimeCredential, loadCapability, begin, page, head, buildSnapshot, buildOperationalSource, publish, publishOperationalState,
+    rollback, createOperatorConnection });
 })(typeof window !== 'undefined' ? window : globalThis);

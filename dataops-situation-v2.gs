@@ -599,6 +599,9 @@ function dataOpsSituationHandleAction(ss, action, payload) {
     auth = dataOpsSituationRequireAuth(payload, role, properties);
     if (action === 'situation_dataops_publish' && auth.roleIds.indexOf(DATAOPS_SITUATION_V2_ROLE_READ) < 0) throw new Error('DATAOPS_SITUATION_ROLE_REQUIRED');
     if (action === 'situation_dataops_ping') return dataOpsSituationPing(properties);
+    if (action === 'situation_dataops_publish' && payload && payload.rollbackRequest) {
+      return dataOpsSituationRollbackInternal(ss, payload.rollbackRequest, auth, properties);
+    }
     if (action === 'situation_dataops_publish') return dataOpsSituationPublish(ss, payload, auth, properties);
     if (action === 'situation_dataops_begin') return dataOpsSituationBegin(ss, payload, auth, properties);
     if (action === 'situation_dataops_page') return dataOpsSituationPage(ss, payload, auth, properties);

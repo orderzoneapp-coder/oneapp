@@ -41,4 +41,10 @@ const operational = browser.DATAOPS_SITUATION_V2_MODULE.buildOperationalSource({
     productId: 'P1', warehouseId: 'W1', baseUnit: 'EA' })) }, basisDate: source.basisDate, snapshotId: source.snapshotId,
   snapshotRevision: source.snapshotRevision, publishedAt: source.publishedAt, producer: source.producer, scope: source.scope });
 assert.equal(operational.rows[0].sourceEvidence.length, 2, 'operational state adapter joins official movement evidence');
+const productHtml = readFileSync(new URL('../DataOps.html', import.meta.url), 'utf8');
+assert.match(productHtml, /DATAOPS_SITUATION_V2_OPERATOR_MODULE/);
+assert.match(productHtml, /publishCurrent\(\{ productData, targetDateStr \}\)/);
+assert.match(productHtml, /"상황자료 발행"/);
+assert.match(productHtml, /disabled: isProcessing \|\| !window\.DATAOPS_SITUATION_V2_OPERATOR_MODULE\.releaseEnabled\(\)/);
+assert.doesNotMatch(productHtml, /saveWorkState[\s\S]{0,150}publishSituationV2/, 'V2 publish is never automatic or a V1 fallback');
 console.log('DataOps Situation V2 producer tests passed');
