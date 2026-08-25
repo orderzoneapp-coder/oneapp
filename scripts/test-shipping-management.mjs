@@ -18,8 +18,12 @@ assert.match(canonicalOrderOpsHtml, /orderops-stage4-analysis-bridge\.js\?v=0\.1
   "the live /orderops/list.html product route must use the non-blocking Stage4 connection bridge");
 assert.match(canonicalOrderOpsHtml, /\.\/orderops-stage4-analysis-bridge\.js/,
   "the canonical nested route must use its own relative module path rather than a root-mirror path");
-assert.match(canonicalOrderOpsHtml, /accessToken:\s*elements\.cloudTokenInput\.value,\s*allowDeferredAuth:\s*true/,
-  "the canonical route must preserve local analysis when its optional central read is unavailable");
+assert.match(canonicalOrderOpsHtml,
+  /state\.workspace = await analyzeCurrentInputs\(\);\s*state\.activePreview = "validation";[\s\S]{0,220}renderResults\(\);\s*scheduleLocalSave\(\);/,
+  "the canonical route must render and persist local analysis without waiting for an optional Cloud read");
+assert.doesNotMatch(canonicalOrderOpsHtml,
+  /state\.workspace = await window\.ORDERQ_STAGE4_SALE_BRIDGE\.connectSaleStage4Workspace/,
+  "the canonical analysis action must never await the optional Stage4 Cloud connection");
 assert.doesNotMatch(orderOpsHtml, /tokens truncated|…\d+ tokens truncated…/,
   "the public OrderOps mirror must not contain a truncated source fragment");
 assert.match(orderOpsHtml, /<body>[\s\S]*<\/body>\s*<\/html>/,
@@ -43,8 +47,12 @@ assert.match(orderOpsHtml, /function loadSmartInputOrders\(\)[\s\S]*sourceAdapte
   "the order card must read SmartInput orders from the ORDER Q ledger");
 assert.match(orderOpsHtml, /orderops-stage4-analysis-bridge\.js\?v=0\.1\.0/,
   "ORDER Q analysis must use the auth-aware Stage4 bridge");
-assert.match(orderOpsHtml, /accessToken:\s*elements\.cloudTokenInput\.value,\s*allowDeferredAuth:\s*true/,
-  "initial analysis must pass the operator Cloud token and defer only ORDER Q auth failures");
+assert.match(orderOpsHtml,
+  /state\.workspace = await analyzeCurrentInputs\(\);\s*state\.activePreview = "validation";[\s\S]{0,220}renderResults\(\);\s*scheduleLocalSave\(\);/,
+  "root mirrors must also render and persist local analysis before any explicit Stage4 connection");
+assert.doesNotMatch(orderOpsHtml,
+  /state\.workspace = await window\.ORDERQ_STAGE4_SALE_BRIDGE\.connectSaleStage4Workspace/,
+  "root mirrors must not restore the former unconditional Cloud wait");
 assert.match(orderOpsHtml, /kind === "inventory"[\s\S]*loadDataOpsInventory\(\)/,
   "the warehouse card surface must invoke the DataOps loader");
 assert.match(orderOpsHtml, /kind === "orders"[\s\S]*loadSmartInputOrders\(\)/,
@@ -2889,6 +2897,18 @@ if (referenceFilesEnabled && fs.existsSync(referenceOrdersPath) && fs.existsSync
 }
 
 const authBridgeWorkspace = referenceWorkspace || inventoryReferenceWorkspace || formatWorkspace;
+let pendingConnectionStarted = false;
+const unresolvedOptionalConnection = connectSaleStage4ForAnalysis(authBridgeWorkspace, {
+  setCloudUrl: () => {}, setCloudAccessToken: () => {},
+  connect: async () => { pendingConnectionStarted = true; return new Promise(() => {}); },
+});
+await Promise.resolve();
+assert.equal(pendingConnectionStarted, true, "the explicit optional connection fixture must remain unresolved");
+assert.deepEqual((referenceWorkspace || authBridgeWorkspace).stats, authBridgeWorkspace.stats,
+  "an unresolved optional Cloud connection must not delay or mutate the already rendered totals");
+assert.deepEqual((referenceWorkspace || authBridgeWorkspace).allocations, authBridgeWorkspace.allocations,
+  "an unresolved optional Cloud connection must not delay or mutate persisted allocations");
+void unresolvedOptionalConnection;
 const configured = [];
 const deferredAuth = await connectSaleStage4ForAnalysis(authBridgeWorkspace, {
   cloudUrl: "https://example.invalid/exec", accessToken: "operator-token",
