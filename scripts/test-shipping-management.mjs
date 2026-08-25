@@ -874,6 +874,7 @@ assert.equal(signedInventoryView.rows[0].orderNotes, "0 수량 전달\n음수 �
 const signedWorkbook = workbookTools.buildWorkbook(signedWorkspace, XLSX);
 assert.deepEqual(Array.from(signedWorkbook.SheetNames), [
   "전달사항(적요보기)", "주문현황", "재고수불부", "창고별재고", "구매업로드", "판매업로드",
+  "_NEXUS_META",
 ]);
 const signedNoticeSheet = signedWorkbook.Sheets["전달사항(적요보기)"];
 assert.deepEqual(
@@ -1365,7 +1366,7 @@ assert.deepEqual(
 const edgeWorkbook = workbookTools.buildWorkbook(edgeWorkspace, XLSX);
 assert.deepEqual(
   Array.from(edgeWorkbook.SheetNames),
-  Array.from(workbookTools.REQUIRED_SHEETS),
+  [...Array.from(workbookTools.REQUIRED_SHEETS), "_NEXUS_META"],
   "workbook sheet contract changed",
 );
 assert.deepEqual(Array.from(workbookTools.REQUIRED_SHEETS), [
@@ -1470,7 +1471,7 @@ assert.equal(
 );
 
 const purchaseUploadWorkbook = workbookTools.buildPurchaseUploadWorkbook(edgeWorkspace, XLSX);
-assert.deepEqual(Array.from(purchaseUploadWorkbook.SheetNames), ["구매입력"]);
+assert.deepEqual(Array.from(purchaseUploadWorkbook.SheetNames), ["구매입력", "_NEXUS_META"]);
 const purchaseUploadSheet = purchaseUploadWorkbook.Sheets["구매입력"];
 assert.deepEqual(
   Array.from(XLSX.utils.sheet_to_json(purchaseUploadSheet, { header: 1, raw: true, range: "A1:T1" })[0]),
@@ -2919,7 +2920,7 @@ try {
   });
   assert.deepEqual(
     Array.from(reopened.SheetNames),
-    Array.from(workbookTools.REQUIRED_SHEETS),
+    [...Array.from(workbookTools.REQUIRED_SHEETS), "_NEXUS_META"],
     "reopened workbook sheet contract changed",
   );
   assert.equal(
@@ -2973,7 +2974,8 @@ try {
     cellStyles: true,
     cellText: true,
   });
-  assert.deepEqual(Array.from(reopenedPurchase.SheetNames), ["구매입력"]);
+  assert.deepEqual(Array.from(reopenedPurchase.SheetNames), ["구매입력", "_NEXUS_META"]);
+  assert.equal(reopenedPurchase.Workbook.Sheets.find(row => row.name === "_NEXUS_META").Hidden, 2);
   assert.equal(reopenedPurchase.Sheets["구매입력"].A2.t, "s");
   assert.equal(reopenedPurchase.Sheets["구매입력"].A2.v, "20260804");
   assert.equal(reopenedPurchase.Sheets["구매입력"].E2.t, "s");

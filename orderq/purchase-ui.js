@@ -15,9 +15,15 @@ import { loadProductCatalog } from './product-master-search.js?v=0.8.0';
 import {
   PRODUCT_LINE_CONTEXT, applyProductSelection, editProductLine, searchLineProducts
 } from './product-line-common.js?v=0.8.0';
-import { runCentralOfficialCommand } from './central-command-gateway.js?v=0.9.0';
+import { pullCentralOfficialState, runCentralOfficialCommand } from './central-command-gateway.js?v=0.18.0';
 import { disableCentralAuthorityModeForLegacyTest, enableCentralAuthorityMode } from './official-command-policy.js?v=0.9.0';
 import { erpStatusLabel, purchaseStatusLabel } from './workflow-language.js?v=0.11.0';
+import {
+  listOfficialPurchases,
+  loadOfficialPurchaseAggregate,
+  runCentralOfficialVoucherCommand
+} from './official-voucher-repository.js?v=0.18.0';
+import { buildOfficialPurchaseEditCommand, mergeOfficialPurchaseConflictEdits, officialPurchaseEvidence } from './purchase-official-editor.js?v=0.1.0';
 
 const legacyLocalBrowserTest = ['127.0.0.1', 'localhost'].includes(location.hostname)
   && /[?&]m6-browser=/i.test(location.search);
@@ -84,9 +90,9 @@ function emptyDraft() {
 function renderList() {
   listElement.innerHTML = documents.length ? documents.map(row => `
     <button class="purchase-card ${row.purchaseDocumentId === selectedId ? 'selected' : ''}" type="button" data-select="${esc(row.purchaseDocumentId)}">
-      <strong>${esc(row.purchaseDocumentId)} <span class="purchase-status">${esc(purchaseStatusLabel(row.status))}</span></strong>
-      <span>${esc(row.supplierName || '공급처 미지정')} · ${esc(row.businessDate || row.purchaseDate || '-')}</span>
-      <span>${esc(row.sourceShortageKey || '수기 구매')} · ${Number(row.amountWon || 0).toLocaleString('ko-KR')}원</span>
+      <strong>${esc(row.purchaseDocumentId)} <span class="purchase-status">${row.contractKind === 'PURCHASE_STAGE3_V1' ? '공식 · ' : '기존 · '}${esc(purchaseStatusLabel(row.businessStatus || row.status))}</span></strong>
+      <span>${esc(row.supplierCustomerName || row.supplierName || '공급처 미지정')} · ${esc(row.businessDate || row.purchaseDate || '-')}</span>
+      <span>${esc(row.externalDocumentNo || row.sourceShortageKey || '수기 구매')} · ${Number(row.totalAmount ?? row.amountWon ?? 0).toLocaleString('ko-KR')}원</span>
     </button>`).join('') : '<div class="empty-state">저장된 구매안이 없습니다.</div>';
   summaryElement.textContent = `구매 ${documents.length}건`;
 }
@@ -119,6 +125,7 @@ function renderDetail() {
     detailElement.innerHTML = '<div class="empty-state">왼쪽에서 구매안을 선택하거나 새 구매안을 만드세요.</div>';
     return;
   }
+  if (current.document?.contractKind === 'PURCHASE_STAGE3_V1') return renderOfficialDetail();
   const documentRow = current.document;
   const editable = documentRow.status === 'DRAFT';
   detailElement.innerHTML = `<form class="purchase-form" id="purchaseForm">
@@ -153,6 +160,69 @@ function renderDetail() {
     </section>` : ''}
     <p class="purchase-evidence">출고와 구매는 따로 확정합니다. 확정 후 수정은 원 기록을 보존하고 취소 기록을 추가합니다.</p>
   </form>`;
+}
+
+function renderOfficialDetail() {
+  const documentRow = current.document;
+  const confirmed = text(documentRow.businessStatus || documentRow.status).toUpperCase() === 'CONFIRMED';
+  const lines = current.activeLines || [];
+  detailElement.innerHTML = `<form class="purchase-form" id="officialPurchaseForm">
+    <h2>공식 구매전표 · ${esc(purchaseStatusLabel(documentRow.businessStatus || documentRow.status))}</h2>
+    <div class="purchase-form-grid">
+      <label>구매 ID<input value="${esc(documentRow.purchaseDocumentId)}" readonly></label>
+      <label>Revision<input value="${esc(documentRow.revision)}" readonly></label>
+      <label>공급처 ID<input id="officialSupplierId" value="${esc(documentRow.supplierCustomerId)}" ${confirmed ? '' : 'readonly'}></label>
+      <label>공급처명<input id="officialSupplierName" value="${esc(documentRow.supplierCustomerName)}" ${confirmed ? '' : 'readonly'}></label>
+      <label>구매일자<input id="officialPurchaseDate" type="date" value="${esc(documentRow.purchaseDate)}" ${confirmed ? '' : 'readonly'}></label>
+      <label>중앙 상태<input value="${esc(documentRow.projectionStatus || 'LOCAL_PROJECTED')}" readonly></label>
+    </div>
+    <h3>구매행</h3>
+    <div id="purchaseLines">${lines.map((line, index) => `<section class="purchase-line" data-official-line="${index}">
+      <div class="purchase-form-grid">
+        <label>상품 ID<input class="official-product-id" value="${esc(line.productId)}" ${confirmed ? '' : 'readonly'}></label>
+        <label>상품<input class="official-product-name" value="${esc(line.productName || line.productCode)}" ${confirmed ? '' : 'readonly'}></label>
+        <label>상품 Revision<input class="official-product-revision" type="number" value="${esc(line.productMasterRevision)}" ${confirmed ? '' : 'readonly'}></label>
+        <label>창고 ID<input class="official-warehouse-id" value="${esc(line.warehouseId)}" ${confirmed ? '' : 'readonly'}></label>
+        <label>창고<input class="official-warehouse-name" value="${esc(line.warehouseName || line.warehouseCode)}" ${confirmed ? '' : 'readonly'}></label>
+        <label>창고 Revision<input class="official-warehouse-revision" type="number" value="${esc(line.warehouseMasterRevision)}" ${confirmed ? '' : 'readonly'}></label>
+        <label>수량<input class="official-quantity" type="number" step="any" value="${esc(line.actualQuantity)}" ${confirmed ? '' : 'readonly'}></label>
+        <label>단위<input class="official-unit" value="${esc(line.unit)}" ${confirmed ? '' : 'readonly'}></label>
+        <label>환산계수<input class="official-conversion" type="number" step="any" value="${esc(line.conversionFactor)}" ${confirmed ? '' : 'readonly'}></label>
+        <label>기준수량<input value="${esc(line.baseQuantity)}" readonly></label>
+        <label>단가<input class="official-unit-price" type="number" step="any" value="${esc(line.unitPrice)}" ${confirmed ? '' : 'readonly'}></label>
+        <label>공급가액<input value="${Number(line.supplyAmount || 0).toLocaleString('ko-KR')}" readonly></label>
+        ${confirmed ? `<button type="button" class="pq-btn danger" data-action="official-remove-line" data-index="${index}">행 삭제</button>` : ''}
+      </div></section>`).join('')}</div>
+    ${confirmed ? `<button class="pq-btn" type="button" data-action="official-add-line">+ 행 추가</button><label>수정·취소 사유<input id="officialReason" value="${esc(documentRow.correctionReason || '')}"></label>` : ''}
+    <div class="purchase-actions">
+      ${confirmed ? '<button class="pq-btn primary" type="button" data-action="official-correct">수정 저장</button><button class="pq-btn danger" type="button" data-action="official-reverse">전표 전체 취소</button>' : ''}
+    </div>
+    <pre class="purchase-evidence">${esc(JSON.stringify(officialPurchaseEvidence(current), null, 2))}</pre>
+    <p class="purchase-evidence">공식 전표는 VOUCHER_CORE_V1 명령으로만 수정·취소하며 기존 구매 handler를 호출하지 않습니다.</p>
+  </form>`;
+}
+
+function officialCommand(action) {
+  const documentRow = current.document;
+  const lines = action === 'reverse' ? current.activeLines : [...detailElement.querySelectorAll('[data-official-line]')].map((element, index) => ({
+    ...current.activeLines[index],
+    productId: text(element.querySelector('.official-product-id').value),
+    productName: text(element.querySelector('.official-product-name').value),
+    productMasterRevision: element.querySelector('.official-product-revision').value,
+    warehouseId: text(element.querySelector('.official-warehouse-id').value),
+    warehouseName: text(element.querySelector('.official-warehouse-name').value),
+    warehouseMasterRevision: element.querySelector('.official-warehouse-revision').value,
+    actualQuantity: element.querySelector('.official-quantity').value,
+    unit: text(element.querySelector('.official-unit').value),
+    conversionFactor: element.querySelector('.official-conversion').value,
+    unitPrice: element.querySelector('.official-unit-price').value
+  }));
+  const document = { ...documentRow,
+    supplierCustomerId: text(document.querySelector('#officialSupplierId')?.value || documentRow.supplierCustomerId),
+    supplierCustomerName: text(document.querySelector('#officialSupplierName')?.value || documentRow.supplierCustomerName),
+    purchaseDate: text(document.querySelector('#officialPurchaseDate')?.value || documentRow.purchaseDate) };
+  return buildOfficialPurchaseEditCommand({ action, document, lines,
+    reason: text(document.querySelector('#officialReason')?.value), occurredAt: new Date().toISOString() });
 }
 
 function collectDraft() {
@@ -227,11 +297,19 @@ function applyPurchaseProduct(row, query) {
 }
 
 async function reload(selectId = selectedId) {
-  documents = await listPurchases({ status: statusFilter.value, search: searchFilter.value });
+  const [legacy, official] = await Promise.all([
+    listPurchases({ status: statusFilter.value, search: searchFilter.value }),
+    listOfficialPurchases({ status: statusFilter.value, search: searchFilter.value })
+  ]);
+  documents = [...official, ...legacy.filter(row => text(row.documentContract) !== 'VOUCHER_CORE_V1')
+    .map(row => ({ ...row, contractKind: 'LEGACY_PURCHASE_V1' }))];
   if (selectId && documents.some(row => row.purchaseDocumentId === selectId)) selectedId = selectId;
   else if (selectedId && !documents.some(row => row.purchaseDocumentId === selectedId)) selectedId = '';
   renderList();
-  current = selectedId ? await loadPurchaseAggregate(selectedId) : current?.document?.purchaseDocumentId ? current : null;
+  const selected = documents.find(row => row.purchaseDocumentId === selectedId);
+  current = selectedId ? (selected?.contractKind === 'PURCHASE_STAGE3_V1'
+    ? await loadOfficialPurchaseAggregate(selectedId)
+    : await loadPurchaseAggregate(selectedId)) : current?.document?.purchaseDocumentId ? current : null;
   renderDetail();
 }
 
@@ -253,7 +331,10 @@ listElement.addEventListener('click', event => {
   if (!button) return;
   execute(async () => {
     selectedId = button.dataset.select;
-    current = await loadPurchaseAggregate(selectedId);
+    const selected = documents.find(row => row.purchaseDocumentId === selectedId);
+    current = selected?.contractKind === 'PURCHASE_STAGE3_V1'
+      ? await loadOfficialPurchaseAggregate(selectedId)
+      : await loadPurchaseAggregate(selectedId);
     renderList();
     renderDetail();
   });
@@ -275,7 +356,38 @@ detailElement.addEventListener('click', event => {
     renderDetail();
     return;
   }
+  if (action === 'official-add-line') {
+    const identity = newId('LI');
+    current.activeLines.push({ lineIdentityId: identity, sourceLineKey: identity, lineSequence: current.activeLines.length + 1,
+      productId: '', productCode: '', productName: '', warehouseId: '', warehouseCode: '', warehouseName: '',
+      actualQuantity: 0, unit: '', conversionFactor: 1, baseQuantity: 0, baseUnit: '', unitPrice: 0,
+      productMasterRevision: 0, warehouseMasterRevision: 0 });
+    renderDetail();
+    return;
+  }
+  if (action === 'official-remove-line') {
+    current.activeLines.splice(Number(button.dataset.index), 1);
+    renderDetail();
+    return;
+  }
   execute(async () => {
+    if (action === 'official-correct' || action === 'official-reverse') {
+      if (current.document.contractKind !== 'PURCHASE_STAGE3_V1') throw new Error('ORDERQ_PURCHASE_CONTRACT_KIND_INVALID');
+      if (action === 'official-reverse' && !confirm('공식 구매전표 전체를 취소하시겠습니까?')) return;
+      const command = officialCommand(action === 'official-reverse' ? 'reverse' : 'correct');
+      const edited = { document: { ...command.document, correctionReason: command.reason }, lines: command.lines };
+      await pullCentralOfficialState();
+      const fresh = await loadOfficialPurchaseAggregate(selectedId);
+      if (!fresh || Number(fresh.document.revision) !== Number(command.expectedRevision)) {
+        current = mergeOfficialPurchaseConflictEdits(edited, fresh || current);
+        renderDetail();
+        throw new Error('ORDERQ_PURCHASE_REVISION_CONFLICT_EDIT_PRESERVED');
+      }
+      await runCentralOfficialVoucherCommand(command);
+      showMessage(action === 'official-reverse' ? '공식 구매전표를 취소했습니다.' : '공식 구매전표 수정 전표를 저장했습니다.', 'success');
+      await reload(selectedId);
+      return;
+    }
     if (action === 'save' || action === 'confirm') {
       const saved = await savePurchaseDraft(collectDraft(), 'ADMIN');
       selectedId = saved.document.purchaseDocumentId;

@@ -95,8 +95,48 @@ export function createCentralAuthorityState(source = {}) {
     transactions: clone(source.transactions || {}),
     syncSequence: Math.max(0, Number(source.syncSequence || 0)),
     ledgerSequence: Math.max(0, Number(source.ledgerSequence || 0)),
-    changes: clone(source.changes || [])
+    changes: clone(source.changes || []),
+    customerMasters: clone(source.customerMasters || {})
   };
+}
+
+function activeMaster(row) {
+  const payload = row?.payload || row || {};
+  return Boolean(row) && text(payload.status || 'ACTIVE').toUpperCase() === 'ACTIVE' && payload.active !== false;
+}
+
+function customerMaster(state, customerId) {
+  const source = state?.customerMasters || {};
+  if (Array.isArray(source)) return source.find(row => text(row.customerId) === text(customerId));
+  return source[text(customerId)] || null;
+}
+
+function validatePurchaseMasters(state, source) {
+  const commandType = text(source.commandType).toUpperCase();
+  if (!['POST_PURCHASE', 'CORRECT_PURCHASE'].includes(commandType)) return;
+  const intent = source.intent || {};
+  const document = intent.document || {};
+  if (text(intent.contractKind || document.contractKind) !== 'PURCHASE_STAGE3_V1'
+    && text(intent.normalizedOriginVersion || document.normalizedOriginVersion) !== 'PURCHASE_V2') return;
+  const supplier = customerMaster(state, document.supplierCustomerId);
+  if (!activeMaster(supplier) || text(supplier.qualityStatus).toUpperCase() === 'SUPERSEDED') {
+    commandError('ORDERQ_PURCHASE_SUPPLIER_MASTER_INVALID', text(document.supplierCustomerId));
+  }
+  for (const line of intent.lines || []) {
+    const product = state.entities[entityKey('PRODUCT', line.productId)];
+    if (!activeMaster(product) || text(product?.payload?.productIdentityType).toUpperCase() === 'TEMPORARY') {
+      commandError('ORDERQ_PURCHASE_PRODUCT_MASTER_INVALID', text(line.productId));
+    }
+    const warehouse = state.entities[entityKey('WAREHOUSE', line.warehouseId)];
+    if (!activeMaster(warehouse)) commandError('ORDERQ_PURCHASE_WAREHOUSE_MASTER_INVALID', text(line.warehouseId));
+    const productRevision = Number(line.productMasterRevision || 0);
+    const warehouseRevision = Number(line.warehouseMasterRevision || 0);
+    if (!Number.isSafeInteger(productRevision) || productRevision <= 0
+      || !Number.isSafeInteger(warehouseRevision) || warehouseRevision <= 0
+      || productRevision < entityRevision(product) || warehouseRevision < entityRevision(warehouse)) {
+      commandError('ORDERQ_PURCHASE_MASTER_REVISION_STALE', text(line.sourceLineKey));
+    }
+  }
 }
 
 export function centralCommandFingerprint(source = {}) {
@@ -411,6 +451,7 @@ export function prepareCentralCommand(state, source = {}) {
     if (prior.status !== 'PREPARED') commandError('ORDERQ_CENTRAL_COMMAND_TERMINAL', `${idempotencyKey}:${prior.status}`);
     return { duplicate: true, committed: false, leaseToken: prior.leaseToken, leaseExpiresAt:prior.leaseExpiresAt, fingerprint };
   }
+  validatePurchaseMasters(state, source);
   const type = targetType(commandType);
   const target = type ? state.entities[entityKey(type, aggregateId)] : null;
   if (type && !target) commandError('ORDERQ_CENTRAL_TARGET_NOT_FOUND', `${type}:${aggregateId}`);
@@ -426,10 +467,12 @@ export function prepareCentralCommand(state, source = {}) {
   }
   if (target && commandType.startsWith('POST_') && text(source.intent?.commandContract).toUpperCase() === 'VOUCHER_CORE_V1') {
     const allRows = Object.values(state.entities || {});
-    const duplicateKey = normalizedOriginKeys(target, allRows).find(key => allRows.some(row => row.entityId !== aggregateId
+    const duplicateKey = normalizedOriginKeys(target, allRows).filter(key => !key.startsWith('PURCHASE:DOCNO:')).find(key => allRows.some(row => row.entityId !== aggregateId
       && ['PURCHASE_DOCUMENT', 'SALES_DOCUMENT'].includes(row.entityType)
       && normalizedOriginKeys(row, allRows).includes(key)));
-    if (duplicateKey) commandError('ORDERQ_CENTRAL_SOURCE_ALREADY_POSTED', duplicateKey);
+    const stage3Purchase = type === 'PURCHASE_DOCUMENT'
+      && (text(target.payload?.contractKind) === 'PURCHASE_STAGE3_V1' || text(target.payload?.normalizedOriginVersion) === 'PURCHASE_V2');
+    if (duplicateKey) commandError(stage3Purchase ? 'ORDERQ_PURCHASE_ORIGIN_DUPLICATE' : 'ORDERQ_CENTRAL_SOURCE_ALREADY_POSTED', duplicateKey);
   }
   const conflictingLease = Object.values(state.commands).find(row => row.status === 'PREPARED'
     && row.aggregateId === aggregateId && row.idempotencyKey !== idempotencyKey);
@@ -713,7 +756,20 @@ function normalizedOriginKeys(documentRow, allRows = []) {
     const salesOrigin = text(payload.salesOriginId || payload.sourceSalesDocumentId || payload.sourceSalesId);
     if (salesOrigin) keys.add(`SALE:ORIGIN:${salesOrigin}`);
   } else {
-    const purchaseOrigin = text(payload.shortageId || payload.purchaseOriginId || payload.sourcePurchaseId || payload.purchasePlanId);
+    const documentKey = text(payload.sourceDocumentKey);
+    const originSystem = text(payload.originSystem).toUpperCase();
+    const transactionId = text(payload.originTransactionId);
+    const sourceVoucherIndex = text(payload.sourceVoucherIndex || payload.documentOrdinal || 1);
+    const externalNo = text(payload.externalDocumentNo);
+    const planId = text(payload.purchasePlanId);
+    const shortageKey = text(payload.legacySourceShortageKey || payload.sourceShortageKey || payload.shortageId);
+    const legacyDocumentId = text(payload.legacyPurchaseDocumentId);
+    if (originSystem && transactionId && documentKey) keys.add(`PURCHASE:RUN_DOC:${originSystem}:${transactionId}:${documentKey}`);
+    if (originSystem && transactionId) keys.add(`PURCHASE:TX:${originSystem}:${transactionId}:${sourceVoucherIndex}`);
+    if (originSystem && externalNo) keys.add(`PURCHASE:DOCNO:${originSystem}:${externalNo}`);
+    if (shortageKey) keys.add(`PURCHASE:SHORTAGE:${shortageKey}`);
+    if (legacyDocumentId) keys.add(`PURCHASE:LEGACY:${legacyDocumentId}`);
+    const purchaseOrigin = text(payload.purchaseOriginId || payload.sourcePurchaseId || payload.shortageId || payload.legacySourceShortageKey || payload.sourceShortageKey);
     if (purchaseOrigin) keys.add(`PURCHASE:ORIGIN:${purchaseOrigin}`);
   }
   const sourceKey = text(payload.sourceDocumentKey);
@@ -724,7 +780,7 @@ function normalizedOriginKeys(documentRow, allRows = []) {
 function assertNoNormalizedOriginDuplicate(rows) {
   const owner = new Map();
   rows.filter(row => ['PURCHASE_DOCUMENT', 'SALES_DOCUMENT'].includes(row.entityType)).forEach(document => {
-    normalizedOriginKeys(document, rows).forEach(key => {
+    normalizedOriginKeys(document, rows).filter(key => !key.startsWith('PURCHASE:DOCNO:')).forEach(key => {
       const prior = owner.get(key);
       if (prior && prior !== document.entityId) commandError('ORDERQ_CENTRAL_SOURCE_ALREADY_POSTED', key);
       owner.set(key, document.entityId);

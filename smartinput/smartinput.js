@@ -13,6 +13,19 @@ import { recognizeOcrDocument, verifiedRowsToParserLines } from './ocr-document-
 import { parseStructuredSheet } from './structured-sheet-parser.js?v=0.1.1';
 import { buildGridPastePlan } from './grid-clipboard.js?v=0.1.0';
 import {
+  isPurchaseMetaSheet,
+  joinPurchaseMeta,
+  readPurchaseMeta,
+  stableDirectDocumentKey,
+  detachOrderQPurchaseLink
+} from './purchase-stage3.js?v=0.1.0';
+import {
+  loadPurchaseStage3Capability,
+  postPurchaseGroup,
+  SMARTINPUT_PURCHASE_ACTOR_ID,
+  validatePurchaseGroup
+} from './purchase-official-stage3.js?v=0.1.1';
+import {
   buildMinimumUploadMatrix,
   buildOrderGroupPayload,
   decorateStructuredRows,
@@ -97,6 +110,7 @@ const state = {
   columnDrag: null,
   gridPasteUndo: null,
   applyingGridPaste: false
+  ,purchaseCapability: { ready: false, code: 'ORDERQ_PURCHASE_STAGE3_CAPABILITY_UNAVAILABLE', detail: 'loading' }
 };
 
 const ACTIVITY_LABELS = {
@@ -2314,6 +2328,10 @@ function renderRows({ restoreFocus = true } = {}) {
   const renderedRows = rows.length ? visibleRows : displayedRows;
   inputRows.innerHTML = renderedRows.map(row => {
     const isDefault = row.rowId === DEFAULT_INPUT_ROW_ID;
+    const orderQProductMismatch = row.sourceType === 'ORDER_Q' && (
+      (row.metaProductId && row.productId && row.metaProductId !== row.productId)
+      || (row.metaProductCode && row.itemCode && row.metaProductCode.toUpperCase() !== row.itemCode.toUpperCase())
+    );
     const amount = Number(row.quantity || 0) * Number(row.unitPrice || 0);
     const productCells = optionalProductFields().map(field => {
       const excelNumber = field.valueType === 'NUMBER' && ['PRICE', 'COST'].includes(field.group);
@@ -2339,7 +2357,7 @@ function renderRows({ restoreFocus = true } = {}) {
       <td data-column="noticePrice"><input data-field="noticePrice" type="text" inputmode="decimal" value="${esc(row.noticePrice ?? 0)}" aria-label="공지단가"></td>
       ${productCells}
       ${customCells}
-      <td data-column="status"><div class="row-status"><span>${rowStatusText(row.matchStatus)}</span></div></td>
+      <td data-column="status"><div class="row-status"><span>${orderQProductMismatch ? 'ORDER Q 상품 불일치' : rowStatusText(row.matchStatus)}</span>${orderQProductMismatch ? `<button type="button" data-detach-orderq="${esc(row.rowId)}" title="ORDER Q 연결을 해제한 뒤 새 상품을 직접 선택합니다.">DIRECT로 연결 해제</button>` : ''}</div></td>
       <td><button type="button" class="row-remove" data-remove-row="${isDefault ? '' : esc(row.rowId)}" aria-label="행 삭제" ${isDefault ? 'disabled tabindex="-1"' : ''}>×</button></td>
     </tr>`;
   }).join('');
@@ -2387,19 +2405,22 @@ function updateSummaries() {
 
 function renderDelivery() {
   const isOrder = state.draft.activeMode === 'order';
+  const isPurchase = state.draft.activeMode === 'purchase';
   const isEstimate = state.draft.activeMode === 'estimate';
   const delivery = modeDraft().delivery;
   const lastDelivery = isOrder ? state.draft.ui.lastDelivery : null;
-  $('deliveryTarget').textContent = isOrder ? '공통 주문서 원장' : (isEstimate ? '저장 견적서' : `${contract.MODES[state.draft.activeMode].label} 전달 계약 준비 중`);
+  $('deliveryTarget').textContent = isOrder ? '공통 주문서 원장' : (isEstimate ? '저장 견적서' : (isPurchase ? '공식 구매전표 원장' : `${contract.MODES[state.draft.activeMode].label} 전달 계약 준비 중`));
   $('deliveryDescription').textContent = isOrder
     ? 'ORDER Q vNext 저장소에 먼저 기록합니다.'
-    : (isEstimate ? '견적서 저장·불러오기·삭제를 관리합니다.' : '확정된 DataOps 연결만 이후 단계에서 활성화합니다.');
+    : (isEstimate ? '견적서 저장·불러오기·삭제를 관리합니다.' : (isPurchase
+      ? (state.purchaseCapability.ready ? '중앙 공식 구매전표로 저장합니다.' : '중앙 배포 계약 확인 후 활성화됩니다.')
+      : '확정된 DataOps 연결만 이후 단계에서 활성화합니다.'));
   const visibleDelivery = delivery.status === 'SAVED' ? delivery : lastDelivery;
   $('deliveryState').textContent = visibleDelivery
     ? `최근 ${visibleDelivery.orderNo || visibleDelivery.targetRecordId || '저장 완료'}${visibleDelivery.deliveredAt ? ` · ${new Date(visibleDelivery.deliveredAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}` : ''}`
     : '전달 전';
   document.querySelector('.delivery-state span').style.background = visibleDelivery ? '#5eead4' : '#fbbf24';
-  $('completeButton').disabled = (!isOrder && !isEstimate) || state.busy || !referencesReady();
+  $('completeButton').disabled = (!isOrder && !isEstimate && !(isPurchase && state.purchaseCapability.ready)) || state.busy || !referencesReady();
   $('completeButton').hidden = isEstimate;
   $('completeButton').textContent = '입력 완료';
   if (visibleDelivery?.targetRecordId) {
@@ -3004,7 +3025,7 @@ async function analyzeSource({ automatic = false } = {}) {
         sourceFingerprint: batch.contentHash
       }).map((row, index) => ({
         ...row,
-        sourceLineKey: `${batch.batchId}:sheet:${row.sourceLineNo || index + 1}`
+        sourceLineKey: row.sourceLineKey || `${batch.batchId}:sheet:${row.sourceLineNo || index + 1}`
       }));
       if (state.draft.activeMode === 'order') {
         try {
@@ -3072,6 +3093,10 @@ async function analyzeSource({ automatic = false } = {}) {
     }
 
     lines = lines.filter(line => !isParserArtifactLine(line));
+    if (state.draft.activeMode === 'purchase' && !structuredImport && method.id === 'paste') {
+      lines = lines.map(line => ({ ...line, sourceType: 'DIRECT', contractKind: 'PURCHASE_STAGE3_V1',
+        originSystem: 'SMARTINPUT_CLIPBOARD', originTransactionId: contentHash, sourceFingerprint: contentHash, metaStatus: 'DIRECT' }));
+    }
     if (!lines.length) throw new Error('상품 행을 인식하지 못했습니다. 상품명과 수량을 확인해 주세요.');
     if (requestId !== state.analysisRequestId || state.draft.activeMode !== modeId || sourceTextInput.value !== rawText) return;
     const liveBatchIds = new Set(current.batches.filter(item => item.sourceRole === 'LIVE_SOURCE').map(item => item.batchId));
@@ -3162,15 +3187,24 @@ async function handleFile(file) {
     let rawText = '';
     if (/\.(xlsx|xls)$/i.test(file.name)) {
       if (!window.XLSX) throw new Error('Excel 처리 모듈을 불러오지 못했습니다.');
-      const workbook = window.XLSX.read(new Uint8Array(await file.arrayBuffer()), { type: 'array', cellDates: false, cellText: true });
+      const fileBytes = new Uint8Array(await file.arrayBuffer());
+      const fileHashBuffer = await crypto.subtle.digest('SHA-256', fileBytes);
+      const fileDigest = [...new Uint8Array(fileHashBuffer)].map(byte => byte.toString(16).padStart(2, '0')).join('');
+      const workbook = window.XLSX.read(fileBytes, { type: 'array', cellDates: false, cellText: true });
       let firstReadable = null;
       let structured = null;
+      let purchaseMetaRows = null;
       workbook.SheetNames.forEach(sheetName => {
         if (!workbook.Sheets[sheetName]?.['!ref']) return;
         const matrix = window.XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, raw: false, defval: '', blankrows: true });
+        if (isPurchaseMetaSheet(sheetName, matrix)) {
+          if (state.draft.activeMode === 'purchase') purchaseMetaRows = readPurchaseMeta(matrix);
+          return;
+        }
         const parsed = parseStructuredSheet(matrix, {
           fieldDefinitions: structuredFieldsForMode(state.draft.activeMode, contract.PRODUCT_FIELD_DEFINITIONS),
-          numberParser: contract.numberOrNull
+          numberParser: contract.numberOrNull,
+          sheetName
         });
         const candidate = { ...parsed, sheetName };
         if (!firstReadable) firstReadable = candidate;
@@ -3180,6 +3214,36 @@ async function handleFile(file) {
       });
       const selected = structured || firstReadable;
       if (!selected) throw new Error('읽을 수 있는 Excel 시트가 없습니다.');
+      if (structured && state.draft.activeMode === 'purchase' && purchaseMetaRows) {
+        structured = {
+          ...structured,
+          rows: joinPurchaseMeta({
+            visibleSheetName: structured.sheetName,
+            visibleRows: structured.rows.map(row => ({
+              ...row, directOriginSystem: 'SMARTINPUT_FILE', directOriginTransactionId: fileDigest
+            })),
+            metaRows: purchaseMetaRows
+          }),
+          purchaseMetaStatus: 'VERIFIED'
+        };
+      } else if (structured && state.draft.activeMode === 'purchase') {
+        structured = {
+          ...structured,
+          rows: structured.rows.map(row => ({
+            ...row,
+            sourceType: 'DIRECT',
+            contractKind: 'PURCHASE_STAGE3_V1',
+            originSystem: 'SMARTINPUT_FILE',
+            originTransactionId: fileDigest,
+            sourceFingerprint: fileDigest,
+            sourceDocumentKey: row.sourceDocumentKey || stableDirectDocumentKey({
+              originSystem: 'SMARTINPUT_FILE', originTransactionId: fileDigest,
+              externalDocumentNo: row.rowVoucherNo, sourceVoucherIndex: row.sourceVoucherIndex
+            }),
+            metaStatus: 'DIRECT_NO_META'
+          }))
+        };
+      }
       rawText = selected.rawText;
       state.pendingSourceName = `${file.name} · ${selected.sheetName}`;
       state.pendingStructuredImport = structured
@@ -4012,7 +4076,61 @@ async function saveEstimateDocument(catalogName) {
 
 async function completeOrder() {
   if (!requireReferenceReady('입력 완료')) return;
+  if (state.draft.activeMode === 'purchase') return completePurchaseOfficial();
   return completeOrderLegacy();
+}
+
+async function completePurchaseOfficial() {
+  const current = modeDraft();
+  if (!state.purchaseCapability.ready) {
+    setAppStatus('공식 구매전표 중앙 배포 계약을 확인할 수 없어 저장이 비활성화되었습니다.', 'warn');
+    return toast('ORDERQ_PURCHASE_STAGE3_CAPABILITY_UNAVAILABLE', 'error');
+  }
+  applyWarehouseMatch();
+  resolveStage1RowReferences(current.rows);
+  const groups = groupVoucherRows('purchase', current.rows, current.header);
+  const masters = { customers: state.customers, products: state.products, warehouses: state.warehouseCatalog.warehouses || [] };
+  const results = [];
+  state.busy = true;
+  renderDelivery();
+  try {
+    for (const group of groups) {
+      try {
+        validatePurchaseGroup(group, masters);
+        const producer = current.activeMethod === 'paste' ? 'SMARTINPUT_CLIPBOARD' : 'SMARTINPUT_MANUAL';
+        const result = await postPurchaseGroup(group, { actor: SMARTINPUT_PURCHASE_ACTOR_ID, originSystem: producer, manualSessionId: current.documentId, occurredAt: new Date().toISOString() });
+        const documentId = result.purchaseDocumentId || result.document?.purchaseDocumentId || result.central?.changes?.find(row => row.entityType === 'PURCHASE_DOCUMENT')?.entityId || '';
+        const commandId = result.commandId || result.central?.commandId || result.central?.result?.commandId || '';
+        current.purchaseSubmissions = (current.purchaseSubmissions || []).filter(pointer => pointer.voucherGroupKey !== group.voucherGroupKey);
+        current.purchaseSubmissions.push({ purchaseDocumentId: documentId, commandId, state: result.projectionPending ? 'PROJECTION_PENDING' : 'LOCAL_PROJECTED', receiptKey: commandId ? `centralProjection:${commandId}` : '', voucherGroupKey: group.voucherGroupKey, lastErrorCode: '' });
+        results.push({ ok: true, group, result });
+      } catch (error) {
+        results.push({ ok: false, group, error });
+      }
+    }
+    const failed = results.filter(row => !row.ok);
+    const succeeded = results.filter(row => row.ok);
+    if (failed.length) {
+      const failedKeys = new Set(failed.map(row => row.group.voucherGroupKey));
+      current.rows = current.rows.filter(row => failedKeys.has(groupVoucherRows('purchase', [row], current.header)[0]?.voucherGroupKey));
+      current.voucherGroups = failed.map(row => row.group);
+      current.delivery = { status: succeeded.length ? 'PARTIAL' : 'FAILED', targetId: 'official-purchase-voucher', targetRecordId: '', deliveredAt: '' };
+      saveDraftNow();
+      renderMode();
+      setAppStatus(`구매 ${succeeded.length}건 저장 완료 · 실패 ${failed.length}건은 입력표에 유지됩니다.`, 'warn');
+      return toast(failed[0].error?.message || '구매전표 저장 실패', 'error');
+    }
+    current.rows = [];
+    current.voucherGroups = [];
+    current.delivery = { status: 'SAVED', targetId: 'official-purchase-voucher', targetRecordId: '', deliveredAt: new Date().toISOString() };
+    saveDraftNow();
+    renderMode();
+    setAppStatus(`공식 구매전표 ${succeeded.length}건 저장 완료`);
+    toast(`구매전표 ${succeeded.length}건을 저장했습니다.`, 'success');
+  } finally {
+    state.busy = false;
+    renderDelivery();
+  }
 }
 
 function orderGroupErrors(groups = []) {
@@ -4392,7 +4510,8 @@ async function hydrateReferences() {
     loadCustomerReferences(),
     withTimeout(loadProductCatalog(), 7000, '상품 기준자료 로딩 시간 초과'),
     withTimeout(loadWarehouseCatalog(), 5000, '창고 기준자료 로딩 시간 초과'),
-    withTimeout(loadSmartInputData(), 5000, '스마트입력 설정 로딩 시간 초과')
+    withTimeout(loadSmartInputData(), 5000, '스마트입력 설정 로딩 시간 초과'),
+    withTimeout(loadPurchaseStage3Capability(), 5000, '구매 저장 계약 확인 시간 초과')
   ]);
   const loadedCustomers = results[0].status === 'fulfilled' ? results[0].value : [];
   const productResult = results[1].status === 'fulfilled' ? results[1].value : null;
@@ -4417,6 +4536,9 @@ async function hydrateReferences() {
     state.customers = normalizedCustomerCandidates(state.customers);
     state.smartDataReady = true;
   }
+  state.purchaseCapability = results[4].status === 'fulfilled'
+    ? results[4].value
+    : { ready: false, code: 'ORDERQ_PURCHASE_STAGE3_CAPABILITY_UNAVAILABLE', detail: results[4].reason?.message || 'ping failed' };
   if (readiness.ready) {
     state.referenceMessage = `상품 준비 · 공통 ${Number(state.catalogSummary.commonCount || 0).toLocaleString('ko-KR')}건 · ORDER Q ${Number(state.catalogSummary.orderQCount || 0).toLocaleString('ko-KR')}건 · 거래처 ${state.customers.length.toLocaleString('ko-KR')}건`;
   }
@@ -4812,6 +4934,22 @@ inputRows.addEventListener('click', event => {
     renderRows();
     saveDraftNow();
     return;
+  }
+  const detach = event.target.closest('[data-detach-orderq]');
+  if (detach) {
+    const index = modeDraft().rows.findIndex(row => row.rowId === detach.dataset.detachOrderq);
+    if (index < 0) return;
+    try {
+      modeDraft().rows[index] = contract.normalizeRow(detachOrderQPurchaseLink(modeDraft().rows[index], {
+        originSystem: modeDraft().rows[index].directOriginSystem || 'SMARTINPUT_FILE',
+        originTransactionId: modeDraft().rows[index].directOriginTransactionId
+      }));
+      renderRows({ restoreFocus: false });
+      saveDraftNow();
+      toast('ORDER Q 연결을 해제했습니다. 새 상품을 명시적으로 선택하세요.', 'warn');
+    } catch (error) {
+      toast(error.message || 'ORDER Q 연결 해제에 실패했습니다.', 'error');
+    }
   }
 });
 

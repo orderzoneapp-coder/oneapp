@@ -1,0 +1,26 @@
+import assert from 'node:assert/strict';
+import { detachOrderQPurchaseLink, isPurchaseMetaSheet, joinPurchaseMeta, purchaseMetaRowDigest, readPurchaseMeta } from '../smartinput/purchase-stage3.js';
+import { parseStructuredSheet } from '../smartinput/structured-sheet-parser.js';
+
+const meta={schemaVersion:'ORDERQ_PURCHASE_META_V2',ruleVersion:'PURCHASE_UNIT_RULE_V1',workbookKind:'ORDER_Q_PURCHASE',exportBatchId:'B1',exportedAt:'',originSystem:'ORDER_Q',originTransactionId:'RUN1',externalDocumentNo:'',planId:'PLAN1',sourceFingerprint:'FP1',basisDate:'2026-08-25',sourceRowKey:'R1',sourceVoucherIndex:1,documentSuffix:'D1',documentOrdinal:1,purchasePlanId:'PLAN1',sourceDocumentKey:'DOC1',sourceLineKey:'LINE1',visibleSheetName:'구매입력',visibleRowNo:2,supplierCustomerId:'C1',supplierCustomerCode:'S1',productId:'P1',productCode:'A',warehouseId:'W1',warehouseCode:'01',productMasterRevision:2,warehouseMasterRevision:1,suggestedQuantity:2,suggestedUnit:'BOX',suggestedBaseQuantity:20,suggestedBaseUnit:'EA',unit:'BOX',baseUnit:'EA',conversionFactor:10,conversionSource:'PRODUCT_MASTER',conversionRuleVersion:'PURCHASE_UNIT_RULE_V1'};
+meta.rowDigest=purchaseMetaRowDigest(meta);
+const headers=Object.keys(meta), matrix=[headers,headers.map(key=>meta[key])];
+assert.equal(isPurchaseMetaSheet('_NEXUS_META',matrix),true);
+assert.equal(parseStructuredSheet(matrix,{sheetName:'_NEXUS_META'}).excluded,true);
+const parsed=readPurchaseMeta(matrix);
+const joined=joinPurchaseMeta({visibleSheetName:'구매입력',visibleRows:[{sourceLineNo:2,itemCode:'A',quantity:3,unitPrice:900}],metaRows:parsed});
+assert.equal(joined[0].baseQuantity,30);
+assert.equal(joined[0].unitPrice,900);
+assert.equal(joined[0].metaProductId,'P1');
+assert.equal(joined[0].metaProductCode,'A');
+assert.throws(()=>joinPurchaseMeta({visibleSheetName:'구매입력',visibleRows:[{sourceLineNo:2,itemCode:'A',quantity:3,unit:'EA',unitPrice:900}],metaRows:parsed}),/ORDERQ_PURCHASE_META_MUTATED:.*:UNIT/);
+const detached=detachOrderQPurchaseLink({...joined[0],directOriginTransactionId:'FILE-SHA'}, {originSystem:'SMARTINPUT_FILE'});
+assert.equal(detached.sourceType,'DIRECT');
+assert.equal(detached.originTransactionId,'FILE-SHA');
+assert.equal(detached.purchasePlanId,'');
+assert.equal(detached.sourceDocumentKey,'');
+assert.equal(detached.metaProductId,'');
+assert.throws(()=>joinPurchaseMeta({visibleSheetName:'구매입력',visibleRows:[],metaRows:parsed}),/ORDERQ_PURCHASE_META_JOIN_INVALID/);
+const mutated=matrix.map(row=>[...row]); mutated[1][headers.indexOf('productCode')]='B';
+assert.throws(()=>readPurchaseMeta(mutated),/ORDERQ_PURCHASE_META_MUTATED/);
+console.log('ORDER Q stage3 purchase meta tests passed');
