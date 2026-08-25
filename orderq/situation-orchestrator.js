@@ -4,9 +4,9 @@ import { saveSituationAnalysis } from './situation-repository.js?v=0.1.0';
 import { withSituationReadRetries,crossAuthorityHandshakeDigest,validateFrozenSession,validatePageManifest } from './situation-read-token.js?v=0.1.0';
 import { effectiveOrderQuantity,effectiveTransferredQuantity } from './order-fulfillment-lifecycle.js?v=0.8.0';
 
-async function beginOrderQFrozenRead({adapter,dataOps,businessDate,windowKey,now=Date.now()}) {
+async function beginOrderQFrozenRead({adapter,dataOps,businessDate,windowKey,closeContext=null,closeSeriesId='',now=Date.now()}) {
   if (!adapter?.begin || !adapter?.page || !adapter?.head) throw new Error('ORDERQ_SITUATION_READ_CAPABILITY_REQUIRED');
-  return validateFrozenSession(await adapter.begin({businessDate,windowKey,dataOpsReadSessionId:dataOps.readSessionId,dataOpsTokenDigest:dataOps.tokenDigest}),'ORDERQ',now);
+  return validateFrozenSession(await adapter.begin({businessDate,windowKey,dataOpsReadSessionId:dataOps.readSessionId,dataOpsTokenDigest:dataOps.tokenDigest,...(closeContext?{readPurpose:'DATAOPS_CLOSE',closeSeriesId,closeContextDigest:closeContext.contextDigest}: {})}),'ORDERQ',now);
 }
 async function readOrderQFrozenPages(adapter,begin) {
   const pages=[];for(const item of begin.pageManifest?.pages||begin.pageManifest||[])pages.push(await adapter.page({readSessionId:begin.readSessionId,tokenDigest:begin.tokenDigest,pageIndex:item.pageIndex}));
@@ -24,8 +24,8 @@ function assembleOrderQSnapshot(begin,pages,head) {
   const inventoryMovements=byType('INVENTORY_MOVEMENT'),purchaseDocuments=byType('PURCHASE_DOCUMENT'),purchaseIds=new Set(purchaseDocuments.map(row=>row.purchaseDocumentId||row.documentId));
   return {session:begin,head,pages,...(begin.entityManifest||{}),ledgerUpperBound:begin.ledgerUpperBound,entities,movements:inventoryMovements,products:byType('PRODUCT'),warehouses:byType('WAREHOUSE'),orderLines,purchaseDocuments,purchaseMovements:inventoryMovements.filter(row=>purchaseIds.has(row.sourceDocumentId||row.purchaseDocumentId))};
 }
-export async function readOrderQFrozenSnapshot({adapter,dataOps,businessDate,windowKey,now=Date.now()}) {
-  const session=dataOps.session||dataOps,begin=await beginOrderQFrozenRead({adapter,dataOps:session,businessDate,windowKey,now}),pages=await readOrderQFrozenPages(adapter,begin),head=await confirmOrderQFrozenHead(adapter,begin);
+export async function readOrderQFrozenSnapshot({adapter,dataOps,businessDate,windowKey,closeContext=null,closeSeriesId='',now=Date.now()}) {
+  const session=dataOps.session||dataOps,begin=await beginOrderQFrozenRead({adapter,dataOps:session,businessDate,windowKey,closeContext,closeSeriesId,now}),pages=await readOrderQFrozenPages(adapter,begin),head=await confirmOrderQFrozenHead(adapter,begin);
   return assembleOrderQSnapshot(begin,pages,head);
 }
 export async function runCurrentSituation(options) {

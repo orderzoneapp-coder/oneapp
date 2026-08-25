@@ -785,7 +785,7 @@ function doPost(e) {
       }));
     }
 
-    if (/^dataops_close_(ping|seal|prepare|write_chunks|commit|abort)$/.test(action)) {
+    if (/^dataops_close_(ping|context|seal|prepare|write_chunks|commit|abort)$/.test(action)) {
       return withScriptLock(() => jsonResponse({ status:'success', action, data:dataOpsCloseHandleAction(ss,action,payload) }));
     }
 

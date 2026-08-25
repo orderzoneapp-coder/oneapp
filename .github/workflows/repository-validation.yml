@@ -206,6 +206,8 @@ jobs:
           node scripts/test-dataops-stage6-sheets-staging-failure.mjs
           node scripts/test-dataops-stage6-db-v16.mjs
           node scripts/test-dataops-stage6-close-ui-product-path.mjs
+          node scripts/test-dataops-stage6-close-purpose-o1.mjs
+          node scripts/test-dataops-stage6-authoritative-product-bridge.mjs
 
       - name: Test DataOps zero and negative stock preservation
         run: node scripts/test-dataops-zero-stock-contract.mjs

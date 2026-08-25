@@ -24,3 +24,12 @@ export async function saveCloseProjection(bundle={}){
 
 export async function loadCloseSeries(closeSeriesId){const db=await openOrderQDb();return requestToPromise(db.transaction(STORE.CLOSE_SERIES).objectStore(STORE.CLOSE_SERIES).get(closeSeriesId));}
 export async function listCloseRevisions(closeSeriesId){const db=await openOrderQDb(),rows=await requestToPromise(db.transaction(STORE.CLOSE_REVISIONS).objectStore(STORE.CLOSE_REVISIONS).index('bySeriesStatus').getAll(IDBKeyRange.bound([closeSeriesId,''],[closeSeriesId,'\uffff'])));return rows.sort((a,b)=>a.revision-b.revision);}
+
+export async function loadClosePreparationContext(closeSeriesId,companyId){
+  const db=await openOrderQDb(),names=[STORE.APPROVED_CLOSE_BASELINES,STORE.CLOSE_SERIES,STORE.CLOSE_REVISIONS,STORE.CLOSE_INVENTORY_ROWS],tx=db.transaction(names);
+  const [allBaselines,series]=await Promise.all([requestToPromise(tx.objectStore(STORE.APPROVED_CLOSE_BASELINES).getAll()),requestToPromise(tx.objectStore(STORE.CLOSE_SERIES).get(closeSeriesId))]);
+  let priorRows=[],priorRevision=null;
+  if(series?.currentEffectiveRevisionId){priorRevision=await requestToPromise(tx.objectStore(STORE.CLOSE_REVISIONS).get(series.currentEffectiveRevisionId));priorRows=await requestToPromise(tx.objectStore(STORE.CLOSE_INVENTORY_ROWS).index('byRevisionId').getAll(series.currentEffectiveRevisionId));}
+  await transactionDone(tx);
+  return {series:series||null,priorRevision,priorRows,baselines:allBaselines.filter(row=>row.companyId===companyId&&row.status==='APPROVED')};
+}

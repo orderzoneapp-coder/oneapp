@@ -4,7 +4,7 @@ import { seal } from './dataops-stage6-test-fixtures.mjs';
 
 const id1=await closeSeriesIdentity('ONEAPP','2026-08-25','KRW','SCOPE1');
 const id2=await closeSeriesIdentity('ONEAPP','2026-08-25','KRW','SCOPE1');
-assert.equal(id1,id2);assert.notEqual(id1,await closeSeriesIdentity('ONEAPP','2026-08-25','KRW','SCOPE2'));
+assert.equal(id1,id2);assert.equal(id1,await closeSeriesIdentity('ONEAPP','2026-08-25','KRW','SCOPE2'),'scope/algorithm evidence must not fork the company/date/currency series');
 const source={...seal,closeSeriesId:id1,receiptFingerprint:'a'.repeat(64)};
 const post=await planCloseRevision({actionType:'POST_CLOSE',sourceSealReceipt:source,sourceADigest:'b'.repeat(64),resultBDigest:'c'.repeat(64),issueDecisionDigest:'d'.repeat(64),actorId:'ADMIN',commandId:'C1',idempotencyKey:'I1'});
 assert.equal(post.revision.revision,1);
