@@ -598,7 +598,7 @@ assert.match(html, /id="catalogComposeButton"[^>]*>선택 상품 불러오기<\/
 assert.doesNotMatch(html, /id="catalogSelect"|id="catalogDeleteButton"|id="catalogBatchButton"/);
 assert.match(html, /견적서 선택 · 상품 조합/);
 assert.match(html, /선택 항목은 상품 불러오기·카톡·Excel에 함께 사용됩니다/);
-assert.match(html, /id="catalogSaveButton"[^>]*>저장<\/button>/);
+assert.match(html, /id="catalogSaveButton"[^>]*hidden>양식 저장<\/button>/);
 assert.doesNotMatch(html, /카탈로그 · 거래처 자동 지정|카탈로그 선택|카탈로그 저장/);
 assert.match(html, /class="app-bar__primary"[\s\S]*class="brand"[\s\S]*class="app-voucher-switcher"/,
   'the SmartInput logo and voucher selector must share one movement group');
@@ -611,8 +611,11 @@ assert.match(css, /\.app-bar__primary\[data-table-aligned="true"\] \{[^}]*positi
   'the logo and voucher selector group must follow the main workbench boundary together');
 assert.match(html, /class="document-fields__left"[\s\S]*id="deliveryDateInput"[\s\S]*id="warehouseInput"[\s\S]*id="transactionTypeInput"/,
   'delivery date, warehouse, and transaction type must share the left side of the unified header');
-assert.match(html, /class="document-fields__right"[\s\S]*id="customerInput"[\s\S]*id="catalogPickerButton"[\s\S]*id="estimateNoticeButton"/,
-  'customer, estimate selection, and Kakao copy must share the right side of the unified header');
+const documentFieldsHtml = html.slice(html.indexOf('class="document-fields"'), html.indexOf('<section class="grid-card"'));
+assert.match(documentFieldsHtml, /class="document-fields__right"[\s\S]*id="customerInput"[\s\S]*id="catalogPickerButton"[\s\S]*id="catalogSaveButton"/,
+  'customer, estimate selection, and dynamic template save must share the right side of the unified header');
+assert.doesNotMatch(documentFieldsHtml, /id="estimateNoticeButton"|id="estimateExcelButton"/,
+  'estimate output actions must move out of the document fields');
 assert.doesNotMatch(html, /class="grid-card__header"|id="gridTitle"|>표준 입력표</,
   'the duplicate table title header must be removed to expose more rows');
 assert.doesNotMatch(html, /id="referenceStatus"|class="reference-status"/,
@@ -622,8 +625,14 @@ assert.doesNotMatch(css, /\.reference-status/,
 assert.match(html, /id="selectAllRows"/);
 assert.match(html, /id="deleteSelectedRows"/);
 assert.match(html, /class="col-unit"/);
-assert.match(html, /class="voucher-footer-actions"[\s\S]*id="resetDraftButton"[^>]*>[\s\S]*전표 초기화[\s\S]*id="saveDraftButton"[^>]*>저장<\/button>/,
-  'voucher reset and save controls must live below the input table');
+const voucherFooterHtml = html.slice(html.indexOf('<footer class="voucher-footer-actions"'), html.indexOf('</footer>', html.indexOf('<footer class="voucher-footer-actions"')) + 9);
+assert.match(voucherFooterHtml, /voucher-footer-actions__left[\s\S]*id="saveDraftButton"[^>]*>전표 저장<\/button>/,
+  'the common voucher save action must remain visible in the footer left group');
+assert.match(voucherFooterHtml, /voucher-footer-actions__right[\s\S]*id="estimateNoticeButton"[\s\S]*id="estimateExcelButton"[\s\S]*id="resetDraftButton"/,
+  'estimate output and reset actions must keep the required footer-right order');
+assert.ok(voucherFooterHtml.indexOf('id="saveDraftButton"') < voucherFooterHtml.indexOf('id="estimateNoticeButton"'));
+assert.ok(voucherFooterHtml.indexOf('id="estimateNoticeButton"') < voucherFooterHtml.indexOf('id="estimateExcelButton"'));
+assert.ok(voucherFooterHtml.indexOf('id="estimateExcelButton"') < voucherFooterHtml.indexOf('id="resetDraftButton"'));
 const appBarHtml = html.slice(html.indexOf('<header class="app-bar">'), html.indexOf('</header>') + 9);
 assert.doesNotMatch(appBarHtml, /id="resetDraftButton"|id="saveDraftButton"/,
   'voucher reset and save controls must not remain in the top application bar');
@@ -861,6 +870,14 @@ assert.match(appSource, /function openEstimateNoticePreview\(\)/);
 assert.match(appSource, /function exportEstimateExcel\(\)/);
 assert.match(appSource, /function openEstimateSaveDialog\(\)/);
 assert.match(appSource, /function openEstimateManageDialog\(record\)/);
+assert.match(appSource, /catalogSaveButton'\)\.addEventListener\('click', openEstimateSaveDialog\)/);
+assert.match(appSource, /const newSession = Boolean\(modeUi\(\)\.catalogSessionStarted\)[\s\S]*catalogSaveButton'\)\.hidden = !newSession && !currentRecord/,
+  'template save must stay hidden until a new session starts or a stored template is loaded');
+assert.match(appSource, /catalogSaveButton'\)\.textContent = currentRecord \? '양식 수정 저장' : '새 양식 저장'/);
+assert.match(appSource, /function startNewCatalog\(\)[\s\S]*modeUi\(\)\.catalogSessionStarted = true/);
+assert.match(appSource, /function loadCatalogRecord\(record\)[\s\S]*modeUi\(\)\.catalogSessionStarted = false/);
+assert.doesNotMatch(appSource, /saveDraftButton'\)\.hidden|saveDraftButton\.hidden/,
+  'the common voucher save action must not be hidden in any voucher mode');
 assert.match(appSource, /from '\.\/estimate-order\.js\?v=0\.1\.0'/);
 assert.match(dataStoreSource, /async function saveEstimatesAtomically|export async function saveEstimatesAtomically/);
 assert.match(dataStoreSource, /db\.transaction\(DATA_STORES\.ESTIMATES, 'readwrite'\)[\s\S]*records\.forEach\(record => store\.put\(record\)\)[\s\S]*transactionDone\(transaction\)/,
@@ -951,7 +968,7 @@ assert.match(appSource, /parserCard\.contains\(event\.target\) && pastedText/,
   'plain-text paste must work anywhere inside the parser, including after photo input');
 assert.match(appSource, /updateMethod\('text', \{ persist: false \}\)/,
   'clearing a photo source must return the parser to direct text input');
-assert.match(css, /\.voucher-footer-actions \{[^}]*justify-content: flex-end;[^}]*border-top: 1px solid var\(--border\)/,
+assert.match(css, /\.voucher-footer-actions \{[^}]*justify-content: space-between;[^}]*border-top: 1px solid var\(--border\)/,
   '전표 작업 버튼은 입력표 하단의 독립 작업줄에 배치해야 한다.');
 assert.match(appSource, /거래처정보/);
 assert.match(appSource, /부가정보 · 사용자지정/);
@@ -1102,7 +1119,7 @@ assert.ok(errorSheetAppendAt >= 0 && errorSheetAppendAt < shopSheetAppendAt && s
   'Excel 시트는 오류정보, 쇼핑몰업로드, ERP업데이트 순서여야 한다.');
 assert.doesNotMatch(appSource, /if \(!output\.ok\)/, '오류 정보로 Excel 생성을 차단하면 안 된다.');
 assert.match(html, /smartinput-contract\.js\?v=0\.4\.16/);
-assert.match(html, /smartinput\.js\?v=0\.4\.38/);
+assert.match(html, /smartinput\.js\?v=0\.4\.39/);
 assert.match(appSource, /structured-sheet-parser\.js\?v=0\.1\.1/);
 assert.match(appSource, /estimate-output\.js\?v=0\.1\.4/);
 assert.match(appSource, /const sourceRows = selectedRecords\.length \? combinedEstimateRows\(selectedRecords\) : modeDraft\(\)\.rows/,

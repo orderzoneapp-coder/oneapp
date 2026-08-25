@@ -2447,8 +2447,8 @@ function renderCatalogControls() {
   const visible = state.draft.activeMode === 'estimate';
   $('catalogFilter').hidden = !visible;
   $('catalogNewButton').hidden = !visible;
-  $('catalogSaveButton').hidden = !visible;
   if (!visible) {
+    $('catalogSaveButton').hidden = true;
     closeCatalogPicker();
     return;
   }
@@ -2458,6 +2458,9 @@ function renderCatalogControls() {
   const availableIds = new Set(records.map(record => record.estimateId));
   state.noticeEstimateIds = state.noticeEstimateIds.filter(estimateId => availableIds.has(estimateId));
   const currentRecord = records.find(record => record.estimateId === current.catalogRecordId);
+  const newSession = Boolean(modeUi().catalogSessionStarted);
+  $('catalogSaveButton').hidden = !newSession && !currentRecord;
+  $('catalogSaveButton').textContent = currentRecord ? '양식 수정 저장' : '새 양식 저장';
   const selectedCount = state.noticeEstimateIds.length;
   $('catalogPickerButton').textContent = currentRecord
     ? `${estimateTitle(currentRecord)} · 선택 ${selectedCount}`
@@ -2762,6 +2765,7 @@ function loadCatalogRecord(record) {
   catalogDraft.header.customerName = customerName(linkedCustomer) || catalogCustomerName(record);
   catalogDraft.header.customerMappingSource = 'CATALOG';
   state.draft.modes.estimate = catalogDraft;
+  modeUi().catalogSessionStarted = false;
   state.sourceImages.estimate = null;
   state.selectedRowIds.clear();
   clearTimeout(state.autoAnalyzeTimer);
@@ -2788,6 +2792,7 @@ function startNewCatalog() {
   fallback.catalogBaselinePrices = {};
   fallback.catalogPreviousPrices = {};
   state.draft.modes.estimate = fallback;
+  modeUi().catalogSessionStarted = true;
   state.sourceImages.estimate = null;
   state.selectedRowIds.clear();
   resetPhotoView();
@@ -5174,6 +5179,7 @@ function resetCurrentMode(requireConfirmation = true, successMessage = '새 입�
   fallback.header.warehouseName = current.header.warehouseName;
   fallback.header.transactionType = current.header.transactionType;
   state.draft.modes[state.draft.activeMode] = fallback;
+  if (state.draft.activeMode === 'estimate') modeUi().catalogSessionStarted = false;
   state.gridPasteUndo = null;
   state.sourceImages[state.draft.activeMode] = null;
   state.selectedRowIds.clear();

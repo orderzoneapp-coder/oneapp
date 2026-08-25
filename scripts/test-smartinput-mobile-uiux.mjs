@@ -18,8 +18,8 @@ function functionBlock(name) {
   return app.slice(start, next < 0 ? app.length : next);
 }
 
-assert.match(html, /smartinput\.css\?v=0\.4\.32/, 'mobile CSS cache key must invalidate the pre-split asset');
-assert.match(html, /smartinput\.js\?v=0\.4\.38/, 'mobile JS cache key must invalidate the pre-split asset');
+assert.match(html, /smartinput\.css\?v=0\.4\.33/, 'mobile CSS cache key must invalidate the pre-split asset');
+assert.match(html, /smartinput\.js\?v=0\.4\.39/, 'mobile JS cache key must invalidate the pre-split asset');
 assert.doesNotMatch(html, /smartinput\.(?:css|js)\?v=0\.4\.(?:30|36)/,
   'the deployed page must not reuse the stale mobile asset cache keys');
 
