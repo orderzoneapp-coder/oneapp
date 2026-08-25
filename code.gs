@@ -770,6 +770,14 @@ function doPost(e) {
       }));
     }
 
+    if (/^situation_dataops_(ping|publish|begin|page|head)$/.test(action)) {
+      return withScriptLock(() => jsonResponse({
+        status: 'success',
+        action,
+        data: dataOpsSituationHandleAction(ss, action, payload)
+      }));
+    }
+
     if (action === 'dataops_snapshot_commit') {
       return withScriptLock(() => {
         const saved = commitDataOpsSnapshot(ss, payload.snapshot);

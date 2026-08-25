@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:nexus:orderq:dataops-situation-read-v2",
+  "title": "DataOps Situation Read V2",
+  "type": "object",
+  "required": ["manifest", "rows"],
+  "additionalProperties": false,
+  "properties": {
+    "manifest": { "$ref": "#/$defs/manifest" },
+    "rows": { "type": "array", "items": { "$ref": "#/$defs/row" } }
+  },
+  "$defs": {
+    "row": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["snapshotId", "rowId", "rowRevision", "productId", "productMasterRevision", "warehouseId", "warehouseMasterRevision", "baseUnit", "baseUnitRuleVersion", "signedBaseQuantity", "includedOrderQLedgerSequence", "sourceRowDigest", "status"],
+      "properties": {
+        "snapshotId": { "type": "string", "minLength": 1 },
+        "rowId": { "type": "string", "minLength": 1 },
+        "rowRevision": { "type": "integer", "minimum": 1 },
+        "productId": { "type": "string", "minLength": 1 },
+        "productMasterRevision": { "type": "integer", "minimum": 1 },
+        "warehouseId": { "type": "string", "minLength": 1 },
+        "warehouseMasterRevision": { "type": "integer", "minimum": 1 },
+        "baseUnit": { "type": "string", "minLength": 1 },
+        "baseUnitRuleVersion": { "type": "string", "minLength": 1 },
+        "signedBaseQuantity": { "type": "number" },
+        "includedOrderQLedgerSequence": { "type": "integer", "minimum": 0 },
+        "sourceRowDigest": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "status": { "enum": ["ACTIVE", "TOMBSTONED"] }
+      }
+    },
+    "manifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "snapshotId", "snapshotRevision", "basisDate", "publishedAt", "producerDeploymentId", "producerDeploymentVersion", "producerGitCommit", "producerHandshakeDigest", "rowCount", "activeRowCount", "tombstoneCount", "inventoryKeys", "rowDigest", "tombstoneDigest", "pageManifestDigest", "sourceDigest", "status"],
+      "properties": {
+        "schemaVersion": { "const": "DATAOPS_SITUATION_READ_V2" },
+        "snapshotId": { "type": "string", "minLength": 1 },
+        "snapshotRevision": { "type": "integer", "minimum": 1 },
+        "basisDate": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+        "publishedAt": { "type": "string", "format": "date-time" },
+        "producerDeploymentId": { "type": "string", "minLength": 1 },
+        "producerDeploymentVersion": { "type": "string", "minLength": 1 },
+        "producerGitCommit": { "type": "string", "minLength": 7 },
+        "producerHandshakeDigest": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "rowCount": { "type": "integer", "minimum": 0 },
+        "activeRowCount": { "type": "integer", "minimum": 0 },
+        "tombstoneCount": { "type": "integer", "minimum": 0 },
+        "inventoryKeys": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 5 } },
+        "rowDigest": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "tombstoneDigest": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "pageManifestDigest": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "sourceDigest": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "status": { "const": "PUBLISHED" }
+      }
+    }
+  }
+}
