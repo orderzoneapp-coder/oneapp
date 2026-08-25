@@ -65,6 +65,7 @@ import {
   evaluateReferenceReadiness,
   preserveReferenceRows
 } from './reference-readiness.js?v=0.1.0';
+import { loadCustomerReferenceRows } from './reference-bootstrap.js?v=0.1.0';
 
 const contract = window.SMART_INPUT_CONTRACT;
 if (!contract) throw new Error('SMART_INPUT_CONTRACT_NOT_LOADED');
@@ -1163,14 +1164,17 @@ function currentSourceType() {
 
 async function refreshCustomers({ syncIfEmpty = true } = {}) {
   try {
-    if (syncIfEmpty) {
-      await withTimeout(ensureCustomerMasterReady(), 7000, '거래처 마스터 동기화가 지연되고 있습니다.');
-    }
-    const customers = normalizedCustomerCandidates(await withTimeout(
-      listCustomers({ includeInactive: false }),
-      3500,
-      '거래처 기준정보를 불러오지 못했습니다.'
-    ));
+    const customers = normalizedCustomerCandidates(syncIfEmpty
+      ? await loadCustomerReferenceRows({
+        ensureReady: ensureCustomerMasterReady,
+        listRows: () => listCustomers({ includeInactive: false }),
+        withTimeout
+      })
+      : await withTimeout(
+        listCustomers({ includeInactive: false }),
+        5000,
+        '거래처 기준정보를 불러오지 못했습니다.'
+      ));
     const readiness = applyReferenceLoad({
       customers,
       productResult: { ...state.catalogSummary, products: state.products }
@@ -4588,14 +4592,12 @@ function saveAndStartNextVoucher() {
 }
 
 async function loadCustomerReferences() {
-  await withTimeout(ensureCustomerMasterReady({
-    onLoading: message => setAppStatus(message || '거래처 정보를 불러오는 중...')
-  }), 7000, '거래처 마스터 동기화가 지연되고 있습니다.');
-  return withTimeout(
-    listCustomers({ includeInactive: false }),
-    3500,
-    '거래처 기준정보를 불러오지 못했습니다.'
-  );
+  return loadCustomerReferenceRows({
+    ensureReady: ensureCustomerMasterReady,
+    listRows: () => listCustomers({ includeInactive: false }),
+    withTimeout,
+    onLoading: () => setAppStatus('거래처 기준정보를 동기화하고 있습니다. 최초 연결은 최대 1분 정도 걸릴 수 있습니다.')
+  });
 }
 
 async function hydrateReferences() {

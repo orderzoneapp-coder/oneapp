@@ -21,6 +21,11 @@ import {
   evaluateReferenceReadiness,
   preserveReferenceRows
 } from '../smartinput/reference-readiness.js';
+import {
+  CUSTOMER_REFERENCE_BOOTSTRAP_TIMEOUT_MS,
+  CUSTOMER_REFERENCE_READ_TIMEOUT_MS,
+  loadCustomerReferenceRows
+} from '../smartinput/reference-bootstrap.js';
 
 const root = process.cwd();
 const read = file => fs.readFileSync(path.join(root, file), 'utf8');
@@ -72,6 +77,41 @@ const lastProducts = [{ productId: 'PR-LAST' }];
 assert.strictEqual(preserveReferenceRows(lastCustomers, [], false), lastCustomers, '빈 거래처 동기화 결과가 마지막 정상 목록을 덮어쓰면 안 된다.');
 assert.strictEqual(preserveReferenceRows(lastProducts, [], false), lastProducts, '빈 상품 동기화 결과가 마지막 정상 목록을 덮어쓰면 안 된다.');
 assert.deepEqual(preserveReferenceRows(lastProducts, [{ productId: 'PR-NEXT' }], true), [{ productId: 'PR-NEXT' }]);
+
+const slowCustomerRows = [{ customerId: 'CU-SLOW' }];
+const timeoutCalls = [];
+assert.strictEqual(await loadCustomerReferenceRows({
+  ensureReady: async ({ onLoading }) => {
+    onLoading?.('loading');
+    return { source: 'CLOUD_REQUIRED', customers: slowCustomerRows, sync: { pullError: null } };
+  },
+  listRows: async () => { throw new Error('ready rows must avoid a second read'); },
+  withTimeout: async (promise, timeoutMs) => {
+    timeoutCalls.push(timeoutMs);
+    return promise;
+  },
+  onLoading: () => {}
+}), slowCustomerRows);
+assert.deepEqual(timeoutCalls, [CUSTOMER_REFERENCE_BOOTSTRAP_TIMEOUT_MS],
+  'cold customer sync must receive the Cloud request window instead of the former 7 second cutoff');
+
+const listedCustomerRows = [{ customerId: 'CU-LISTED' }];
+const fallbackTimeoutCalls = [];
+assert.strictEqual(await loadCustomerReferenceRows({
+  ensureReady: async () => ({ source: 'CLOUD_REQUIRED', customers: [], sync: { pullError: null } }),
+  listRows: async () => listedCustomerRows,
+  withTimeout: async (promise, timeoutMs) => {
+    fallbackTimeoutCalls.push(timeoutMs);
+    return promise;
+  }
+}), listedCustomerRows);
+assert.deepEqual(fallbackTimeoutCalls, [CUSTOMER_REFERENCE_BOOTSTRAP_TIMEOUT_MS, CUSTOMER_REFERENCE_READ_TIMEOUT_MS]);
+
+await assert.rejects(loadCustomerReferenceRows({
+  ensureReady: async () => ({ source: 'CLOUD_REQUIRED', customers: [], sync: { pullError: new Error('cloud pull failed') } }),
+  listRows: async () => [],
+  withTimeout: async promise => promise
+}), /cloud pull failed/, 'an actual Cloud failure must remain blocking instead of being treated as ready');
 
 assert.equal(contract.APP_ID, 'smart-input');
 assert.equal(contract.SCHEMA_VERSION, 'ONEAPP_SMART_INPUT_DRAFT_V1');
@@ -769,6 +809,9 @@ assert.match(appSource, /const isTax = hasRelationship && group\?\.taxCustomerId
 assert.match(appSource, /dialog\.showModal\(\);[\s\S]*refreshCustomers\(\{ syncIfEmpty: true \}\)/, 'customer dialog must open before background master refresh completes');
 assert.match(appSource, /async function loadCustomerReferences\(\)[\s\S]*ensureCustomerMasterReady[\s\S]*listCustomers\(\{ includeInactive: false \}\)/,
   'startup must complete empty-local customer cloud recovery before finalizing the active customer list');
+assert.match(appSource, /reference-bootstrap\.js\?v=0\.1\.0/);
+assert.doesNotMatch(appSource, /ensureCustomerMasterReady\([^)]*\)[\s\S]{0,80}7000/,
+  'customer master recovery must not be cut off at seven seconds');
 assert.match(appSource, /customer-master\.js\?v=0\.19\.0/);
 assert.match(appSource, /product-master-search\.js\?v=0\.8\.4/);
 assert.match(appSource, /orderq-sync-engine\.js\?v=0\.18\.1/);
@@ -1015,7 +1058,7 @@ assert.ok(errorSheetAppendAt >= 0 && errorSheetAppendAt < shopSheetAppendAt && s
   'Excel 시트는 오류정보, 쇼핑몰업로드, ERP업데이트 순서여야 한다.');
 assert.doesNotMatch(appSource, /if \(!output\.ok\)/, '오류 정보로 Excel 생성을 차단하면 안 된다.');
 assert.match(html, /smartinput-contract\.js\?v=0\.4\.16/);
-assert.match(html, /smartinput\.js\?v=0\.4\.34/);
+assert.match(html, /smartinput\.js\?v=0\.4\.35/);
 assert.match(appSource, /structured-sheet-parser\.js\?v=0\.1\.1/);
 assert.match(appSource, /estimate-output\.js\?v=0\.1\.4/);
 assert.match(appSource, /const sourceRows = selectedRecords\.length \? combinedEstimateRows\(selectedRecords\) : modeDraft\(\)\.rows/,
