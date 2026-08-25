@@ -3,7 +3,11 @@
 
   const SCHEMA_VERSION = 'DATAOPS_SITUATION_READ_V2';
   const CAPABILITY_VERSION = 'DATAOPS_SITUATION_V2';
-  const EXPECTED_DEPLOYMENT = Object.freeze({ deploymentId: '', deploymentVersion: '', gitCommit: '' });
+  const EXPECTED_DEPLOYMENT = Object.freeze({
+    deploymentId: 'AKfycbzOUOIu_bP7NkiFVziDR0Og1da1KO1ePoU09Q3pSlPr-9uD-WkdCpWN7nidO5hlrJi6Qw',
+    deploymentVersion: '28',
+    gitCommit: '0c8d4a276d4289c51241fd50881dad5372242e38'
+  });
   const REQUIRED_CAPABILITY = Object.freeze({ schemaVersion: SCHEMA_VERSION, capabilityVersion: CAPABILITY_VERSION,
     readSessionTtlSeconds: 120, canonicalHash: 'SHA-256', publishMode: 'ATOMIC_POINTER_LAST' });
   const ROW_KEYS = Object.freeze(['snapshotId', 'rowId', 'rowRevision', 'productId', 'productMasterRevision', 'warehouseId',

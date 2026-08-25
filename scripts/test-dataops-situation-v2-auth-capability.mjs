@@ -25,8 +25,16 @@ const browser = loadBrowserModule();
 assert.throws(() => browser.DATAOPS_SITUATION_V2_MODULE.setRuntimeCredential({ token: 'x', actorId: 'A' }), /DATAOPS_SITUATION_ACCESS_DENIED/);
 const expected = { deploymentId: 'DEPLOY-V2', deploymentVersion: '1', gitCommit: 'commit-v2' };
 assert.equal(browser.DATAOPS_SITUATION_V2_MODULE.evaluateCapability(ping, expected).ready, true);
-for (const field of ['deploymentId', 'deploymentVersion', 'gitCommit', 'capabilityVersion', 'schemaVersion', 'readSessionTtlSeconds']) {
+for (const field of ['deploymentId', 'deploymentVersion', 'gitCommit', 'capabilityVersion', 'schemaVersion', 'readSessionTtlSeconds', 'canonicalHash', 'publishMode']) {
   assert.equal(browser.DATAOPS_SITUATION_V2_MODULE.evaluateCapability({ ...ping, [field]: 'wrong' }, expected).ready, false, `${field} mismatch blocks`);
+}
+assert.equal(browser.DATAOPS_SITUATION_V2_MODULE.evaluateCapability({ ...ping, actions: [...ping.actions].reverse() }, expected).ready, false, 'actions mutation blocks');
+const releaseBrowser = loadBrowserModule();
+const releaseExpected = releaseBrowser.DATAOPS_SITUATION_V2_MODULE.EXPECTED_DEPLOYMENT;
+const releasePing = { ...ping, ...releaseExpected };
+assert.equal(releaseBrowser.DATAOPS_SITUATION_V2_MODULE.evaluateCapability(releasePing).ready, true, 'exact release ping enables capability');
+for (const field of ['deploymentId', 'deploymentVersion', 'gitCommit']) {
+  assert.equal(releaseBrowser.DATAOPS_SITUATION_V2_MODULE.evaluateCapability({ ...releasePing, [field]: '' }).ready, false, `${field} blank blocks release`);
 }
 
 const browserSource = readFileSync(new URL('../DataOps_situation_v2.js', import.meta.url), 'utf8');

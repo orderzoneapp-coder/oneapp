@@ -16,7 +16,10 @@ assert.match(built.rows[0].sourceRowDigest, /^[a-f0-9]{64}$/);
 assert.deepEqual(Object.keys(built).sort(), ['manifest', 'rows']);
 
 const browser = loadBrowserModule();
-assert.deepEqual(JSON.parse(JSON.stringify(browser.DATAOPS_SITUATION_V2_MODULE.EXPECTED_DEPLOYMENT)), { deploymentId: '', deploymentVersion: '', gitCommit: '' });
+assert.deepEqual(JSON.parse(JSON.stringify(browser.DATAOPS_SITUATION_V2_MODULE.EXPECTED_DEPLOYMENT)), {
+  deploymentId: 'AKfycbzOUOIu_bP7NkiFVziDR0Og1da1KO1ePoU09Q3pSlPr-9uD-WkdCpWN7nidO5hlrJi6Qw',
+  deploymentVersion: '28', gitCommit: '0c8d4a276d4289c51241fd50881dad5372242e38'
+});
 assert.equal(browser.DATAOPS_SITUATION_V2_MODULE.evaluateCapability({}).ready, false);
 const browserBuilt = await browser.DATAOPS_SITUATION_V2_MODULE.buildSnapshot(source);
 assert.equal(browserBuilt.snapshot.rows[0].sourceRowDigest, built.rows[0].sourceRowDigest, 'browser and Apps Script canonical row digest parity');
