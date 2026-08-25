@@ -509,8 +509,8 @@ export async function ensureCustomerMasterReady({ onLoading = null } = {}) {
   const local = await getAll(STORE.CUSTOMERS);
   if (!local.length) {
     onLoading?.('거래처 정보를 불러오는 중...');
-    await synchronizeCustomerMaster();
-    return { source: 'CLOUD_REQUIRED', customers: await listCustomers() };
+    const sync = await synchronizeCustomerMaster();
+    return { source: 'CLOUD_REQUIRED', customers: await listCustomers(), sync };
   }
   const syncPromise = synchronizeCustomerMaster();
   return { source: 'LOCAL_CACHE', customers: local.map(row => normalizeCustomer(row, row)), syncPromise };
