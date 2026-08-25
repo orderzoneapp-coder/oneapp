@@ -7,7 +7,7 @@ import { extractOrderProductLines } from '../orderq/smartparser/order-text-extra
 import { createOrder } from '../orderq/order-intake-engine.js?v=0.15.2';
 import { syncAfterLocalMutation } from '../orderq/orderq-sync-engine.js?v=0.18.1';
 import { createLiveCustomer, ensureCustomerMasterReady, listCustomers } from '../orderq/customer-master.js?v=0.19.0';
-import { isSelectableMasterProduct, loadProductCatalog, searchProductCatalog } from '../orderq/product-master-search.js?v=0.8.4';
+import { isSelectableMasterProduct, loadProductCatalog, searchProductCatalog } from '../orderq/product-master-search.js?v=0.8.5';
 import { loadWarehouseCatalog, matchWarehouseInput, warehouseDisplayName } from '../orderq/warehouse-master.js?v=0.8.0';
 import { recognizeOcrDocument, verifiedRowsToParserLines } from './ocr-document-parser.js?v=0.1.1';
 import { parseStructuredSheet } from './structured-sheet-parser.js?v=0.1.1';
@@ -65,7 +65,8 @@ import {
   evaluateReferenceReadiness,
   preserveReferenceRows
 } from './reference-readiness.js?v=0.1.0';
-import { loadCustomerReferenceRows } from './reference-bootstrap.js?v=0.1.0';
+import { loadCustomerReferenceRows } from './reference-bootstrap.js?v=0.1.1';
+import { createReferenceDiagnostics, REFERENCE_PHASE, runReferencePhase } from './reference-diagnostics.js?v=0.1.0';
 
 const contract = window.SMART_INPUT_CONTRACT;
 if (!contract) throw new Error('SMART_INPUT_CONTRACT_NOT_LOADED');
@@ -131,6 +132,7 @@ const state = {
   ,purchaseCapability: { ready: false, code: 'ORDERQ_PURCHASE_STAGE3_CAPABILITY_UNAVAILABLE', detail: 'loading' }
   ,saleCapability: { ready: false, code: 'ORDERQ_SALE_STAGE4_CAPABILITY_UNAVAILABLE', detail: 'loading' }
 };
+const referenceDiagnostics = createReferenceDiagnostics();
 
 const ACTIVITY_LABELS = {
   direct: '직접입력',
@@ -5049,8 +5051,23 @@ async function loadCustomerReferences() {
     ensureReady: ensureCustomerMasterReady,
     listRows: () => listCustomers({ includeInactive: false }),
     withTimeout,
+    diagnostics: referenceDiagnostics,
+    referencePhase: REFERENCE_PHASE.CUSTOMER,
     onLoading: () => setAppStatus('거래처 기준정보를 동기화하고 있습니다. 최초 연결은 최대 1분 정도 걸릴 수 있습니다.')
   });
+}
+
+async function loadProductReferences() {
+  try {
+    return await withTimeout(
+      loadProductCatalog({ diagnostics: referenceDiagnostics, referencePhase: REFERENCE_PHASE }),
+      7000,
+      '상품 기준자료 로딩 시간 초과'
+    );
+  } catch (error) {
+    referenceDiagnostics.timeoutActive([REFERENCE_PHASE.COMMON_PRODUCT, REFERENCE_PHASE.ORDERQ_PRODUCT], error);
+    throw error;
+  }
 }
 
 async function hydrateReferences() {
@@ -5062,9 +5079,13 @@ async function hydrateReferences() {
   setAppStatus(state.referenceMessage);
   const results = await Promise.allSettled([
     loadCustomerReferences(),
-    withTimeout(loadProductCatalog(), 7000, '상품 기준자료 로딩 시간 초과'),
-    withTimeout(loadWarehouseCatalog(), 5000, '창고 기준자료 로딩 시간 초과'),
-    withTimeout(loadSmartInputData(), 5000, '스마트입력 설정 로딩 시간 초과'),
+    loadProductReferences(),
+    runReferencePhase(referenceDiagnostics, REFERENCE_PHASE.SHIPPING, 'ORDERQ_DB',
+      () => withTimeout(loadWarehouseCatalog(), 5000, '창고 기준자료 로딩 시간 초과'),
+      value => Array.isArray(value) ? value.length : (value?.warehouses?.length || 0)),
+    runReferencePhase(referenceDiagnostics, REFERENCE_PHASE.SETTINGS, 'SMARTINPUT_DB',
+      () => withTimeout(loadSmartInputData(), 5000, '스마트입력 설정 로딩 시간 초과'),
+      value => Number(Boolean(value))),
     withTimeout(loadPurchaseStage3Capability(), 5000, '구매 저장 계약 확인 시간 초과'),
     withTimeout(loadSaleStage4Capability(), 5000, '판매 저장 계약 확인 시간 초과')
   ]);

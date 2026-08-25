@@ -251,19 +251,28 @@ function readCommonMasterLocalStorage() {
   return [];
 }
 
-export async function loadProductCatalog() {
+export async function loadProductCatalog({ diagnostics = null, referencePhase = null } = {}) {
   const errors = [];
   let commonProducts = [];
-  try { commonProducts = await readCommonMasterIndexedDb(); }
-  catch (error) { errors.push(error.message || String(error)); }
-  if (!commonProducts.length) commonProducts = readCommonMasterLocalStorage();
+  const commonSpan = diagnostics?.start?.(referencePhase?.COMMON_PRODUCT || 'COMMON_PRODUCT', 'MERCHOPS_DB_OR_SNAPSHOT');
+  try {
+    commonProducts = await readCommonMasterIndexedDb();
+    if (!commonProducts.length) commonProducts = readCommonMasterLocalStorage();
+    commonSpan?.end(commonProducts.length);
+  } catch (error) {
+    commonSpan?.fail(error);
+    errors.push(error.message || String(error));
+  }
 
   let orderQProducts = [];
+  const orderQSpan = diagnostics?.start?.(referencePhase?.ORDERQ_PRODUCT || 'ORDERQ_PRODUCT', 'ORDERQ_DB');
   try {
     orderQProducts = (await getAll(STORE.PRODUCTS))
       .map(product => normalizeMasterProduct(product, product.itemCode, 'ORDERQ_HISTORY'))
       .filter(Boolean);
+    orderQSpan?.end(orderQProducts.length);
   } catch (error) {
+    orderQSpan?.fail(error);
     errors.push(error.message || String(error));
   }
   return {
