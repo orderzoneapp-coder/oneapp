@@ -156,6 +156,7 @@ const MOBILE_PARSER_COLLAPSED_HEIGHT = 68;
 const MOBILE_PARSER_DEFAULT_RATIO = .325;
 const MOBILE_PARSER_EXPANDED_RATIO = .65;
 const MOBILE_GRID_MIN_HEIGHT = 185;
+const MOBILE_STAGES = new Set(['info', 'source', 'grid']);
 
 function esc(value) {
   return String(value ?? '').replace(/[&<>"']/g, character => ({
@@ -227,6 +228,10 @@ function mobileUi() {
   current.infoCollapsed = Boolean(current.infoCollapsed);
   current.parserPreset = presets.has(current.parserPreset) ? current.parserPreset : 'default';
   current.parserRatio = Math.max(.08, Math.min(MOBILE_PARSER_EXPANDED_RATIO, Number(current.parserRatio) || MOBILE_PARSER_DEFAULT_RATIO));
+  current.stageByMode = current.stageByMode && typeof current.stageByMode === 'object' ? current.stageByMode : {};
+  Object.keys(contract.MODES).forEach(mode => {
+    if (!MOBILE_STAGES.has(current.stageByMode[mode])) current.stageByMode[mode] = 'info';
+  });
   current.sourceByMode = current.sourceByMode && typeof current.sourceByMode === 'object' ? current.sourceByMode : {};
   state.draft.ui.mobile = current;
   return current;
@@ -249,6 +254,42 @@ function mobileSourceUi(mode = state.draft.activeMode) {
 
 function isMobileLayout() {
   return window.matchMedia(MOBILE_LAYOUT_QUERY).matches;
+}
+
+function currentMobileStage(mode = state.draft.activeMode) {
+  return mobileUi().stageByMode[mode] || 'info';
+}
+
+function syncMobileStage(active = isMobileLayout()) {
+  const nav = $('mobileStageNav');
+  nav.hidden = !active;
+  if (!active) {
+    document.body.removeAttribute('data-mobile-stage');
+    return;
+  }
+  const stage = currentMobileStage();
+  document.body.dataset.mobileStage = stage;
+  nav.querySelectorAll('[data-mobile-stage]').forEach(button => {
+    const selected = button.dataset.mobileStage === stage;
+    button.classList.toggle('is-active', selected);
+    if (selected) button.setAttribute('aria-current', 'step');
+    else button.removeAttribute('aria-current');
+  });
+}
+
+function setMobileStage(stage, { focus = true, persist = true } = {}) {
+  if (!MOBILE_STAGES.has(stage)) return;
+  if (currentMobileStage() === 'source') captureMobileSourceView();
+  mobileUi().stageByMode[state.draft.activeMode] = stage;
+  syncMobileStage();
+  scheduleMobileViewportLayout();
+  if (persist) scheduleSave();
+  if (!focus) return;
+  window.requestAnimationFrame(() => {
+    const target = stage === 'info' ? $('deliveryDateInput')
+      : (stage === 'source' ? sourceTextInput : $('gridSearchInput'));
+    target?.focus({ preventScroll: true });
+  });
 }
 
 function mobileOrientation() {
@@ -413,8 +454,9 @@ function syncMobileViewportLayout() {
   const active = isMobileLayout();
   state.mobileLayout.active = active;
   placeDocumentFieldsForLayout(active);
+  syncMobileStage(active);
   $('mobileParserToolbar').hidden = !active;
-  $('mobileParserResizer').hidden = !active;
+  $('mobileParserResizer').hidden = true;
   document.documentElement.classList.toggle('smartinput-mobile-layout', active);
   if (!active) {
     if (state.mobileLayout.fullscreen) closeSourceFullscreen();
@@ -5532,6 +5574,10 @@ $('catalogPickerButton').addEventListener('click', toggleCatalogPicker);
 $('catalogPickerMenu').addEventListener('toggle', event => {
   $('catalogPickerButton').setAttribute('aria-expanded', String(event.newState === 'open'));
   if (event.newState !== 'open') cancelEstimateOrderDrag();
+});
+$('mobileStageNav').addEventListener('click', event => {
+  const button = event.target.closest('[data-mobile-stage]');
+  if (button) setMobileStage(button.dataset.mobileStage);
 });
 $('catalogPickerList').addEventListener('pointerdown', beginEstimateOrderDrag);
 $('catalogPickerList').addEventListener('keydown', moveEstimateOrderWithKeyboard);

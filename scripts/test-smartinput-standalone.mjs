@@ -636,7 +636,8 @@ assert.ok(voucherFooterHtml.indexOf('id="estimateExcelButton"') < voucherFooterH
 const appBarHtml = html.slice(html.indexOf('<header class="app-bar">'), html.indexOf('</header>') + 9);
 assert.doesNotMatch(appBarHtml, /id="resetDraftButton"|id="saveDraftButton"/,
   'voucher reset and save controls must not remain in the top application bar');
-assert.doesNotMatch(html, /작업 단계|\d+\s*\/\s*5|data-stage=/);
+assert.match(html, /id="mobileStageNav"[\s\S]*data-mobile-stage="info"[\s\S]*data-mobile-stage="source"[\s\S]*data-mobile-stage="grid"/,
+  'mobile must use explicit basic-info, source-analysis and item-entry stages');
 const parserColumnAt = html.indexOf('<section class="parser-card"');
 const workbenchColumnAt = html.indexOf('<section class="workbench"');
 const relatedColumnAt = html.indexOf('<aside class="related-panel"');
@@ -1119,7 +1120,7 @@ assert.ok(errorSheetAppendAt >= 0 && errorSheetAppendAt < shopSheetAppendAt && s
   'Excel 시트는 오류정보, 쇼핑몰업로드, ERP업데이트 순서여야 한다.');
 assert.doesNotMatch(appSource, /if \(!output\.ok\)/, '오류 정보로 Excel 생성을 차단하면 안 된다.');
 assert.match(html, /smartinput-contract\.js\?v=0\.4\.16/);
-assert.match(html, /smartinput\.js\?v=0\.4\.39/);
+assert.match(html, /smartinput\.js\?v=0\.4\.40/);
 assert.match(appSource, /structured-sheet-parser\.js\?v=0\.1\.1/);
 assert.match(appSource, /estimate-output\.js\?v=0\.1\.4/);
 assert.match(appSource, /const sourceRows = selectedRecords\.length \? combinedEstimateRows\(selectedRecords\) : modeDraft\(\)\.rows/,
