@@ -13,10 +13,7 @@
   <script src="orderq/canonical-hash.js?v=0.1.0"></script>
   <script src="orderFulfillmentWorkbook.js"></script>
   <script src="orderops/orderops-source-adapter.js?v=1.64.0"></script>
-  <script type="module">
-    import { connectSaleStage4ForAnalysis } from './orderops/orderops-stage4-analysis-bridge.js?v=0.1.0';
-    window.ORDERQ_STAGE4_SALE_BRIDGE = Object.freeze({ connectSaleStage4Workspace: connectSaleStage4ForAnalysis });
-  </script>
+  <script type="module" src="./orderops/orderops-stage4-analysis-bridge.js?v=0.1.0"></script>
   <style>
     :root {
       color-scheme: light;

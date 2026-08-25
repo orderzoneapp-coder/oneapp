@@ -5,7 +5,10 @@ const text = value => String(value ?? '').trim();
 
 export function isDeferredOrderQAccessError(error) {
   const message = text(error?.message || error);
-  return /ORDERQ_ACCESS_(?:DENIED|NOT_CONFIGURED)/.test(message);
+  const code = text(error?.code);
+  return /ORDERQ_ACCESS_(?:DENIED|NOT_CONFIGURED)/.test(message)
+    || ['CLOUD_URL_MISSING', 'CLOUD_TIMEOUT', 'CLOUD_NETWORK_ERROR', 'CLOUD_HTTP_ERROR',
+      'CLOUD_RESPONSE_INVALID', 'CLOUD_ACTION_FAILED'].includes(code);
 }
 
 export async function connectSaleStage4ForAnalysis(workspace = {}, options = {}) {
@@ -27,12 +30,17 @@ export async function connectSaleStage4ForAnalysis(workspace = {}, options = {})
     return {
       ...workspace,
       saleStage4ConnectionError: {
-        code: text(error?.message || error).includes('NOT_CONFIGURED') ? 'ORDERQ_ACCESS_NOT_CONFIGURED' : 'ORDERQ_ACCESS_DENIED',
+        code: text(error?.code) || (text(error?.message || error).includes('NOT_CONFIGURED')
+          ? 'ORDERQ_ACCESS_NOT_CONFIGURED' : 'ORDERQ_ACCESS_DENIED'),
         retryable: true,
         action: 'orderq_m9_pull'
       }
     };
   }
+}
+
+if (typeof window !== 'undefined') {
+  window.ORDERQ_STAGE4_SALE_BRIDGE = Object.freeze({ connectSaleStage4Workspace: connectSaleStage4ForAnalysis });
 }
 
 export default Object.freeze({ connectSaleStage4ForAnalysis, isDeferredOrderQAccessError });

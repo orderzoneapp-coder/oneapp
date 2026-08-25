@@ -11,8 +11,15 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const require = createRequire(import.meta.url);
 const orderOpsHtml = fs.readFileSync(path.join(ROOT, "orderops_list.html"), "utf8");
 const ordersEntryHtml = fs.readFileSync(path.join(ROOT, "orders.html"), "utf8");
+const canonicalOrderOpsHtml = fs.readFileSync(path.join(ROOT, "orderops/list.html"), "utf8");
 assert.equal(ordersEntryHtml, orderOpsHtml,
   "orders.html must deploy the complete public ORDER Q source without route-only divergence");
+assert.match(canonicalOrderOpsHtml, /orderops-stage4-analysis-bridge\.js\?v=0\.1\.0/,
+  "the live /orderops/list.html product route must use the non-blocking Stage4 connection bridge");
+assert.match(canonicalOrderOpsHtml, /\.\/orderops-stage4-analysis-bridge\.js/,
+  "the canonical nested route must use its own relative module path rather than a root-mirror path");
+assert.match(canonicalOrderOpsHtml, /accessToken:\s*elements\.cloudTokenInput\.value,\s*allowDeferredAuth:\s*true/,
+  "the canonical route must preserve local analysis when its optional central read is unavailable");
 assert.doesNotMatch(orderOpsHtml, /tokens truncated|…\d+ tokens truncated…/,
   "the public OrderOps mirror must not contain a truncated source fragment");
 assert.match(orderOpsHtml, /<body>[\s\S]*<\/body>\s*<\/html>/,
@@ -2901,6 +2908,17 @@ assert.doesNotMatch(JSON.stringify(deferredAuth), /operator-token|example\.inval
   "local save/export workspace must not contain token, endpoint, or storage-key material");
 assert.deepEqual(configured, [["url", "https://example.invalid/exec", true], ["token", "operator-token", false]],
   "the visible Cloud credential must configure the exact ORDER Q client keys with a session-only token");
+for (const code of ["CLOUD_NETWORK_ERROR", "CLOUD_TIMEOUT", "CLOUD_HTTP_ERROR"]) {
+  const deferredTransport = await connectSaleStage4ForAnalysis(authBridgeWorkspace, {
+    setCloudUrl: () => {}, setCloudAccessToken: () => {}, allowDeferredAuth: true,
+    connect: async () => { const error = new Error("sanitized transport failure"); error.code = code; throw error; },
+  });
+  assert.equal(deferredTransport.saleStage4ConnectionError.code, code,
+    `${code} from the optional central read must preserve the completed local analysis`);
+  const { saleStage4ConnectionError: _transportMarker, ...transportBusinessState } = deferredTransport;
+  assert.deepEqual(transportBusinessState, authBridgeWorkspace,
+    `${code} may add only a sanitized retry marker`);
+}
 const retriedAuth = await connectSaleStage4ForAnalysis(deferredAuth, {
   setCloudUrl: () => {}, setCloudAccessToken: () => {}, allowDeferredAuth: false,
   connect: async workspace => ({ ...workspace, saleStage4Sidecar: { schemaVersion: "ORDERQ_SALE_SIDECAR_V1", rows: [] } }),
