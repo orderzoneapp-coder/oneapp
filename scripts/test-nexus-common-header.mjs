@@ -269,4 +269,6 @@ for (const [file, appId] of [
   assert.match(read(file), new RegExp(`appId: ['"]${appId}['"]`), `${file} must report its own status to NEXUS`);
 }
 
+await import('./test-nexus-operational-darkmode.mjs');
+
 console.log(`NEXUS common header v3 navigation and theme contract tests passed. ${contrastSummary.join(', ')}`);
