@@ -41,6 +41,9 @@ jobs:
       - name: Test standalone SmartInput contract
         run: node scripts/test-smartinput-standalone.mjs
 
+      - name: Test SmartInput reference diagnostics
+        run: node scripts/test-smartinput-reference-diagnostics.mjs
+
       - name: Test SmartInput structured spreadsheet field mapping
         run: node scripts/test-smartinput-structured-sheet-parser.mjs
 

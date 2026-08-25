@@ -60,7 +60,7 @@
 
   const navigationMode = (requestedMode) => {
     if (requestedMode === 'dark' || requestedMode === 'light') return requestedMode;
-    const rootMode = document.documentElement.dataset.nexusColorMode || document.documentElement.dataset.nexusTheme;
+    const rootMode = document.documentElement.dataset.nexusTheme || document.documentElement.dataset.nexusColorMode;
     return rootMode === 'dark' ? 'dark' : 'light';
   };
 
@@ -129,6 +129,60 @@
     const normalized = aliases[value] || value;
     return Object.hasOwn(STATUS_PRIORITY, normalized) ? normalized : 'normal';
   };
+
+  const ensureThemeController = () => {
+    const existing = window.ONEAPP_NEXUS_THEME_INIT;
+    if (existing && typeof existing.normalize === 'function' && typeof existing.readMode === 'function' && typeof existing.apply === 'function') {
+      return existing;
+    }
+
+    const parseStoredValue = (raw) => {
+      if (raw == null) return '';
+      try {
+        const parsed = JSON.parse(raw);
+        return typeof parsed === 'string' ? parsed : '';
+      } catch {
+        return String(raw);
+      }
+    };
+    const normalize = (mode) => mode === 'dark' ? 'dark' : 'light';
+    const persist = (mode) => {
+      try {
+        localStorage.setItem(STORAGE.colorMode, JSON.stringify(mode));
+      } catch {
+        // The header keeps the selected value in its existing in-memory retry queue.
+      }
+    };
+    const readMode = () => {
+      try {
+        const saved = parseStoredValue(localStorage.getItem(STORAGE.colorMode));
+        const legacy = parseStoredValue(localStorage.getItem(LEGACY.colorMode));
+        const next = normalize(saved || legacy);
+        if (saved !== next) persist(next);
+        return next;
+      } catch {
+        return 'light';
+      }
+    };
+    const apply = (mode, options = {}) => {
+      const next = normalize(mode);
+      const root = document.documentElement;
+      root.dataset.nexusTheme = next;
+      // Compatibility alias for the existing shadow-DOM header stylesheet.
+      root.dataset.nexusColorMode = next;
+      root.style.colorScheme = next;
+      if (options.emit === true) {
+        const detail = { theme: next, colorMode: next };
+        if (options.source) detail.source = String(options.source);
+        window.dispatchEvent(new CustomEvent('nexus-theme-change', { detail }));
+      }
+      return next;
+    };
+    const fallback = Object.freeze({ normalize, readMode, apply });
+    window.ONEAPP_NEXUS_THEME_INIT = fallback;
+    return fallback;
+  };
+  const themeController = ensureThemeController();
 
   const api = window.NEXUS_TOP && typeof window.NEXUS_TOP === 'object' ? window.NEXUS_TOP : {};
   api.version = VERSION;
@@ -319,10 +373,9 @@
       const hiddenApps = asArray(this.readPreference(STORAGE.hiddenApps, defaultHiddenApps)).filter((id) => appIds.includes(id));
       const favoriteApps = asArray(this.readPreference(STORAGE.favoriteApps, [])).filter((id) => appIds.includes(id));
 
-      const savedColorMode = this.readValue(STORAGE.colorMode);
-      const requestedColorMode = savedColorMode === undefined ? this.readValue(LEGACY.colorMode) : savedColorMode;
-      const colorMode = requestedColorMode === 'dark' ? 'dark' : 'light';
-      if (savedColorMode !== colorMode) this.writePreference(STORAGE.colorMode, colorMode);
+      const colorMode = this.memory.has(STORAGE.colorMode)
+        ? themeController.normalize(this.memory.get(STORAGE.colorMode))
+        : themeController.readMode();
       return { groupOrder, hiddenGroups, hiddenGlobalActions, hiddenApps, favoriteApps, colorMode };
     }
 
@@ -535,12 +588,9 @@
     applyEnvironment() {
       const { colorMode } = this.preferences();
       const root = document.documentElement;
-      root.dataset.nexusColorMode = colorMode;
-      root.dataset.nexusTheme = colorMode;
-      root.style.colorScheme = colorMode;
+      themeController.apply(colorMode, { emit: true, source: 'header' });
       root.style.setProperty('--nexus-top-height', '44px');
       root.style.setProperty('--nexus-content-gutter', '24px');
-      window.dispatchEvent(new CustomEvent('nexus-theme-change', { detail: { theme: colorMode, colorMode } }));
     }
 
     bind() {

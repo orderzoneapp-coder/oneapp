@@ -12,6 +12,8 @@ const componentSource = read('nexus/common/nexus-top.js');
 const cssSource = read('nexus/common/nexus-top.css');
 const navigationCssSource = read('nexus/common/nexus-top-navigation.css');
 const themeSource = read('nexus/common/nexus-theme-init.js');
+const tokenSource = read('nexus/common/oneapp-design-tokens.css');
+const headerDocumentation = read('nexus/common/README.md');
 const nexusHome = read('nexus/index.html');
 const logoDocumentation = read('nexus/assets/brand/apps/README.md');
 const manifest = JSON.parse(read('app-manifest.json'));
@@ -85,7 +87,10 @@ assert.match(componentSource, /workflow-divider/);
 assert.match(componentSource, /management-entries[\s\S]*workflow-divider[\s\S]*global-entries[\s\S]*operation-entries/);
 assert.match(componentSource, /nexus-top-navigation\.css/);
 assert.match(componentSource, /const colorOptions = \[\['light', '일반'\], \['dark', '다크'\]\]/);
-assert.match(componentSource, /requestedColorMode === 'dark' \? 'dark' : 'light'/);
+assert.match(componentSource, /const themeController = ensureThemeController\(\)/);
+assert.match(componentSource, /themeController\.apply\(colorMode, \{ emit: true, source: 'header' \}\)/);
+assert.match(componentSource, /dataset\.nexusTheme \|\| document\.documentElement\.dataset\.nexusColorMode/,
+  'data-nexus-theme must be the authoritative navigation-cover mode');
 assert.doesNotMatch(componentSource, /\['system', '시스템'\]|prefers-color-scheme|onSystemThemeChange|colorSchemeMedia/);
 assert.doesNotMatch(componentSource, /화면 밀도|data-density|nexus-density-change|nexusDensity|STORAGE\.density|preferences\.density/);
 assert.match(cssSource, /--nexus-top-height, 44px/);
@@ -101,8 +106,120 @@ assert.match(themeSource, /var VALID_MODES = \["light", "dark"\]/);
 assert.match(themeSource, /return mode === "dark" \? "dark" : "light"/);
 assert.match(themeSource, /global\.localStorage\.setItem\(STORAGE_KEY, JSON\.stringify\(mode\)\)/);
 assert.doesNotMatch(themeSource, /prefers-color-scheme|"system"/);
+assert.match(themeSource, /root\.dataset\.nexusTheme = next/);
+assert.match(themeSource, /new global\.CustomEvent\("nexus-theme-change", \{ detail: detail \}\)/);
+assert.match(themeSource, /var detail = \{ theme: next, colorMode: next \}/,
+  'the existing event payload fields must remain backward compatible');
+assert.doesNotMatch(themeSource, /reload|location\./,
+  'theme application must not reload or navigate the application');
+assert.doesNotMatch(tokenSource, /prefers-color-scheme|data-nexus-theme="system"/);
+assert.doesNotMatch(tokenSource, /!important|\.bg-white|\.text-slate|\.border-slate/,
+  'semantic tokens must not become a global Tailwind palette override');
+for (const token of ['nexus-price-up', 'nexus-price-down', 'nexus-negative-margin', 'nexus-stock-shortage', 'nexus-order-conflict', 'nexus-reconciliation-diff']) {
+  assert.match(tokenSource, new RegExp(`--${token}:`), `${token} must remain separate from common status semantics`);
+}
+assert.match(headerDocumentation, /data-nexus-theme.*유일한 테마 입력/);
+assert.match(headerDocumentation, /화면 reload, 업무 데이터 재조회/);
+assert.match(headerDocumentation, /Excel·ERP·인쇄·카카오 이미지 컨테이너/);
 assert.match(nexusHome, /data-nexus-color-mode="light"/);
 assert.doesNotMatch(nexusHome, /data-nexus-color-mode="system"|prefers-color-scheme/);
+assert.ok(nexusHome.indexOf('nexus-theme-init.js') < nexusHome.indexOf('<style>'),
+  'the synchronous theme initializer must run before first-paint styles');
+
+const createThemeHarness = (initialStorage = {}) => {
+  const values = new Map(Object.entries(initialStorage));
+  const events = [];
+  const root = { dataset: {}, style: {} };
+  const applicationState = {
+    search: 'fresh produce',
+    filters: ['open', 'today'],
+    selection: 'order-1042',
+    editing: { field: 'quantity', value: '12' },
+    scrollTop: 428,
+    sync: 'saving',
+  };
+  class HarnessCustomEvent {
+    constructor(type, options = {}) {
+      this.type = type;
+      this.detail = options.detail;
+    }
+  }
+  const themeWindow = {
+    document: { documentElement: root, applicationState },
+    localStorage: {
+      getItem: (key) => values.has(key) ? values.get(key) : null,
+      setItem: (key, value) => values.set(key, String(value)),
+    },
+    CustomEvent: HarnessCustomEvent,
+    dispatchEvent: (event) => { events.push(event); return true; },
+  };
+  vm.runInNewContext(themeSource, { window: themeWindow });
+  return { applicationState, controller: themeWindow.ONEAPP_NEXUS_THEME_INIT, events, root, values };
+};
+
+const darkHarness = createThemeHarness({ 'oneapp.nexus.v1.colorMode': JSON.stringify('dark') });
+assert.equal(darkHarness.root.dataset.nexusTheme, 'dark');
+assert.equal(darkHarness.root.dataset.nexusColorMode, 'dark');
+assert.equal(darkHarness.root.style.colorScheme, 'dark');
+assert.equal(darkHarness.events.length, 0, 'bootstrap applies before consumers without emitting a late event');
+assert.deepEqual(Array.from(darkHarness.controller.validModes), ['light', 'dark']);
+const preservedState = JSON.stringify(darkHarness.applicationState);
+darkHarness.controller.apply('light', { emit: true, source: 'contract-test' });
+assert.equal(JSON.stringify(darkHarness.applicationState), preservedState,
+  'theme changes must not mutate search, filters, selection, editing, scroll, or sync state');
+assert.equal(darkHarness.events.length, 1);
+assert.equal(darkHarness.events[0].type, 'nexus-theme-change');
+assert.equal(darkHarness.events[0].detail.theme, 'light');
+assert.equal(darkHarness.events[0].detail.colorMode, 'light');
+assert.equal(darkHarness.events[0].detail.source, 'contract-test');
+
+const invalidHarness = createThemeHarness({ 'oneapp.nexus.v1.colorMode': JSON.stringify('system') });
+assert.equal(invalidHarness.root.dataset.nexusTheme, 'light');
+assert.equal(invalidHarness.values.get('oneapp.nexus.v1.colorMode'), JSON.stringify('light'));
+
+const legacyHarness = createThemeHarness({ 'oneapp.nexus.theme': JSON.stringify('dark') });
+assert.equal(legacyHarness.root.dataset.nexusTheme, 'dark');
+assert.equal(legacyHarness.values.get('oneapp.nexus.v1.colorMode'), JSON.stringify('dark'));
+
+const cssVariables = (selector) => {
+  const start = tokenSource.indexOf(selector);
+  assert.ok(start >= 0, `missing CSS selector ${selector}`);
+  const open = tokenSource.indexOf('{', start);
+  let depth = 0;
+  for (let index = open; index < tokenSource.length; index += 1) {
+    if (tokenSource[index] === '{') depth += 1;
+    if (tokenSource[index] === '}') depth -= 1;
+    if (depth === 0) {
+      const block = tokenSource.slice(open + 1, index);
+      return Object.fromEntries([...block.matchAll(/--([\w-]+):\s*(#[0-9a-f]{6})\s*;/gi)].map((match) => [match[1], match[2]]));
+    }
+  }
+  throw new Error(`unterminated CSS selector ${selector}`);
+};
+const relativeLuminance = (hex) => {
+  const channels = [1, 3, 5].map((start) => Number.parseInt(hex.slice(start, start + 2), 16) / 255);
+  const linear = channels.map((value) => value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4);
+  return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2];
+};
+const contrastRatio = (foreground, background) => {
+  const values = [relativeLuminance(foreground), relativeLuminance(background)].sort((left, right) => right - left);
+  return (values[0] + 0.05) / (values[1] + 0.05);
+};
+const lightTokens = cssVariables(':root');
+const darkTokens = cssVariables('html[data-nexus-theme="dark"]');
+const contrastPairs = [
+  ['nexus-success', 'nexus-success-bg'],
+  ['nexus-warning', 'nexus-warning-bg'],
+  ['nexus-danger', 'nexus-danger-bg'],
+];
+const contrastSummary = [];
+for (const [mode, tokens] of [['light', lightTokens], ['dark', darkTokens]]) {
+  for (const [foregroundToken, backgroundToken] of contrastPairs) {
+    const ratio = contrastRatio(tokens[foregroundToken], tokens[backgroundToken]);
+    assert.ok(ratio >= 4.5, `${mode} ${foregroundToken}/${backgroundToken} contrast ${ratio.toFixed(2)} must be at least 4.5`);
+    contrastSummary.push(`${mode}:${foregroundToken.replace('nexus-', '')}=${ratio.toFixed(2)}:1`);
+  }
+}
 for (const directory of ['foundation', 'pricing', 'smart-input', 'shipping', 'inventory']) {
   assert.ok(fs.existsSync(path.join(root, `nexus/assets/brand/apps/${directory}/.gitkeep`)), `${directory} logo slot must exist`);
 }
@@ -152,4 +269,6 @@ for (const [file, appId] of [
   assert.match(read(file), new RegExp(`appId: ['"]${appId}['"]`), `${file} must report its own status to NEXUS`);
 }
 
-console.log('NEXUS common header v3 navigation and theme contract tests passed.');
+await import('./test-nexus-operational-darkmode.mjs');
+
+console.log(`NEXUS common header v3 navigation and theme contract tests passed. ${contrastSummary.join(', ')}`);

@@ -809,11 +809,11 @@ assert.match(appSource, /const isTax = hasRelationship && group\?\.taxCustomerId
 assert.match(appSource, /dialog\.showModal\(\);[\s\S]*refreshCustomers\(\{ syncIfEmpty: true \}\)/, 'customer dialog must open before background master refresh completes');
 assert.match(appSource, /async function loadCustomerReferences\(\)[\s\S]*ensureCustomerMasterReady[\s\S]*listCustomers\(\{ includeInactive: false \}\)/,
   'startup must complete empty-local customer cloud recovery before finalizing the active customer list');
-assert.match(appSource, /reference-bootstrap\.js\?v=0\.1\.0/);
+assert.match(appSource, /reference-bootstrap\.js\?v=0\.1\.1/);
 assert.doesNotMatch(appSource, /ensureCustomerMasterReady\([^)]*\)[\s\S]{0,80}7000/,
   'customer master recovery must not be cut off at seven seconds');
 assert.match(appSource, /customer-master\.js\?v=0\.19\.0/);
-assert.match(appSource, /product-master-search\.js\?v=0\.8\.4/);
+assert.match(appSource, /product-master-search\.js\?v=0\.8\.5/);
 assert.match(appSource, /orderq-sync-engine\.js\?v=0\.18\.1/);
 assert.match(appSource, /reference-readiness\.js\?v=0\.1\.0/);
 assert.match(appSource, /function requireReferenceReady\(actionLabel,[\s\S]*saveDraftNow\(\)[\s\S]*기준정보를 다시 불러오세요/,
@@ -1058,7 +1058,7 @@ assert.ok(errorSheetAppendAt >= 0 && errorSheetAppendAt < shopSheetAppendAt && s
   'Excel 시트는 오류정보, 쇼핑몰업로드, ERP업데이트 순서여야 한다.');
 assert.doesNotMatch(appSource, /if \(!output\.ok\)/, '오류 정보로 Excel 생성을 차단하면 안 된다.');
 assert.match(html, /smartinput-contract\.js\?v=0\.4\.16/);
-assert.match(html, /smartinput\.js\?v=0\.4\.35/);
+assert.match(html, /smartinput\.js\?v=0\.4\.37/);
 assert.match(appSource, /structured-sheet-parser\.js\?v=0\.1\.1/);
 assert.match(appSource, /estimate-output\.js\?v=0\.1\.4/);
 assert.match(appSource, /const sourceRows = selectedRecords\.length \? combinedEstimateRows\(selectedRecords\) : modeDraft\(\)\.rows/,
