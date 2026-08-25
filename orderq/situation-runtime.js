@@ -1,5 +1,5 @@
 import { getCloudUrl,pingCentralAuthority } from './orderq-cloud-adapter.js?v=0.20.0';
-import { evaluateOrderQSituationCapability,orderQSituationCloudAdapter } from './orderq-situation-cloud-adapter.js?v=0.1.0';
+import { evaluateOrderQSituationCapability,orderQSituationCloudAdapter } from './orderq-situation-cloud-adapter.js?v=0.1.1';
 
 let ephemeralDataOpsCredential=null;
 const today=()=>new Date().toISOString().slice(0,10);

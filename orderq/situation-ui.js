@@ -1,5 +1,5 @@
 import { runCurrentSituation } from './situation-orchestrator.js?v=0.1.0';
-import { defaultSituationRuntime,situationCapabilityReady } from './situation-runtime.js?v=0.1.0';
+import { defaultSituationRuntime,situationCapabilityReady } from './situation-runtime.js?v=0.1.1';
 
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const qty=value=>Number(value||0).toLocaleString('ko-KR',{maximumFractionDigits:3});

@@ -1,6 +1,10 @@
 import { beginOrderQSituationRead,readOrderQSituationPage,readOrderQSituationHead } from './orderq-cloud-adapter.js?v=0.20.0';
 
-export const ORDERQ_SITUATION_EXPECTED_DEPLOYMENT=Object.freeze({deploymentId:'',deploymentVersion:'',gitCommit:''});
+export const ORDERQ_SITUATION_EXPECTED_DEPLOYMENT=Object.freeze({
+  deploymentId:'AKfycbzOUOIu_bP7NkiFVziDR0Og1da1KO1ePoU09Q3pSlPr-9uD-WkdCpWN7nidO5hlrJi6Qw',
+  deploymentVersion:'30',
+  gitCommit:'05804562f87cdb9cc952b63930cf403bb7f4e658'
+});
 export function evaluateOrderQSituationCapability(ping={}){
   const expected=ORDERQ_SITUATION_EXPECTED_DEPLOYMENT;
   return Boolean(expected.deploymentId&&expected.deploymentVersion&&expected.gitCommit
