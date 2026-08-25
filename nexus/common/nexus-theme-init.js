@@ -40,16 +40,28 @@
     }
   }
 
-  function apply(mode) {
-    var next = VALID_MODES.indexOf(mode) >= 0 ? mode : "light";
+  function apply(mode, options) {
+    var settings = options && typeof options === "object" ? options : {};
+    var next = VALID_MODES.indexOf(mode) >= 0 ? mode : normalize(mode);
     var root = global.document.documentElement;
-    root.dataset.nexusColorMode = next;
     root.dataset.nexusTheme = next;
+    // Compatibility alias for existing NEXUS header styles. Applications must
+    // consume data-nexus-theme as the authoritative visual state.
+    root.dataset.nexusColorMode = next;
     root.style.colorScheme = next;
+    if (settings.emit === true && typeof global.dispatchEvent === "function" && typeof global.CustomEvent === "function") {
+      var detail = { theme: next, colorMode: next };
+      if (settings.source) detail.source = String(settings.source);
+      global.dispatchEvent(new global.CustomEvent("nexus-theme-change", { detail: detail }));
+    }
     return next;
   }
 
   global.ONEAPP_NEXUS_THEME_INIT = Object.freeze({
+    storageKey: STORAGE_KEY,
+    legacyStorageKey: LEGACY_STORAGE_KEY,
+    validModes: Object.freeze(VALID_MODES.slice()),
+    normalize: normalize,
     readMode: readMode,
     apply: apply
   });
