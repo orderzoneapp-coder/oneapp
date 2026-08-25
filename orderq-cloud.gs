@@ -26,6 +26,10 @@ const ORDERQ_STAGE3_GIT_COMMIT_PROPERTY = 'ONEAPP_ORDERQ_STAGE3_GIT_COMMIT';
 const ORDERQ_STAGE4_DEPLOYMENT_ID_PROPERTY = 'ONEAPP_ORDERQ_STAGE4_DEPLOYMENT_ID';
 const ORDERQ_STAGE4_DEPLOYMENT_VERSION_PROPERTY = 'ONEAPP_ORDERQ_STAGE4_DEPLOYMENT_VERSION';
 const ORDERQ_STAGE4_GIT_COMMIT_PROPERTY = 'ONEAPP_ORDERQ_STAGE4_GIT_COMMIT';
+const ORDERQ_STAGE5_DEPLOYMENT_ID_PROPERTY = 'ONEAPP_ORDERQ_STAGE5_DEPLOYMENT_ID';
+const ORDERQ_STAGE5_DEPLOYMENT_VERSION_PROPERTY = 'ONEAPP_ORDERQ_STAGE5_DEPLOYMENT_VERSION';
+const ORDERQ_STAGE5_GIT_COMMIT_PROPERTY = 'ONEAPP_ORDERQ_STAGE5_GIT_COMMIT';
+const ORDERQ_SITUATION_SESSION_TTL_SECONDS = 120;
 
 function orderQM10CutoverMode() {
   const properties = PropertiesService.getScriptProperties();
@@ -3219,6 +3223,81 @@ function orderQM9Ping(ss, payload) {
     gitCommit: String(properties.getProperty(ORDERQ_STAGE3_GIT_COMMIT_PROPERTY) || ''),
     saleDeploymentId: String(properties.getProperty(ORDERQ_STAGE4_DEPLOYMENT_ID_PROPERTY) || ''),
     saleDeploymentVersion: String(properties.getProperty(ORDERQ_STAGE4_DEPLOYMENT_VERSION_PROPERTY) || ''),
-    saleGitCommit: String(properties.getProperty(ORDERQ_STAGE4_GIT_COMMIT_PROPERTY) || '')
+    saleGitCommit: String(properties.getProperty(ORDERQ_STAGE4_GIT_COMMIT_PROPERTY) || ''),
+    situationSchemaVersion: 'ORDERQ_SITUATION_READ_V1',
+    situationCapabilityVersion: 'ORDERQ_SITUATION_V1',
+    situationDbSchemaVersion: '15',
+    situationActions: ['situation_orderq_begin','situation_orderq_page','situation_orderq_head'],
+    situationDeploymentId: String(properties.getProperty(ORDERQ_STAGE5_DEPLOYMENT_ID_PROPERTY) || ''),
+    situationDeploymentVersion: String(properties.getProperty(ORDERQ_STAGE5_DEPLOYMENT_VERSION_PROPERTY) || ''),
+    situationGitCommit: String(properties.getProperty(ORDERQ_STAGE5_GIT_COMMIT_PROPERTY) || '')
   };
+}
+
+function orderQM9SituationCacheKey(kind, readSessionId, pageIndex) {
+  return ['ORDERQ_SITUATION_V1', kind, orderQM9Text(readSessionId), pageIndex === undefined ? '' : Number(pageIndex)].join(':');
+}
+
+function orderQM9SituationReadCached(kind, readSessionId, pageIndex) {
+  const value = CacheService.getScriptCache().get(orderQM9SituationCacheKey(kind, readSessionId, pageIndex));
+  if (!value) throw new Error('SITUATION_READ_TOKEN_EXPIRED');
+  return orderQM9ParseJson(value, 'SITUATION_READ_TOKEN_INVALID');
+}
+
+function orderQM9SituationHeadState(ss) {
+  const rows = orderQM9ReadAllEntities(ss);
+  return { revision: orderQM9MetaNumber(ss, 'ledgerSequence'), digest: orderQM9EntityDigest(rows), rows: rows };
+}
+
+function orderQM9SituationBegin(ss, payload) {
+  orderQM9RequireSchema(payload);
+  const actorId = orderQM9Text(payload.actorId), device = orderQM9Text(payload.device), environment = orderQM9Text(payload.environment), companyId = orderQM9Text(payload.scope && payload.scope.companyId);
+  if (!actorId || !device || !environment || companyId !== 'ONEAPP') throw new Error('ORDERQ_SITUATION_ACCESS_DENIED');
+  const dataOpsTokenDigest = orderQM9Text(payload.dataOpsTokenDigest);
+  const inventoryKeyDigest = orderQM9Text(payload.inventoryKeyDigest);
+  const perKeyCutoffDigest = orderQM9Text(payload.perKeyCutoffDigest);
+  if (!dataOpsTokenDigest || !inventoryKeyDigest || !perKeyCutoffDigest) throw new Error('SITUATION_DATAOPS_HANDSHAKE_REQUIRED');
+  const properties = PropertiesService.getScriptProperties();
+  const head = orderQM9SituationHeadState(ss);
+  const readSessionId = `OQS-${Utilities.getUuid()}`;
+  const allowed = { ORDER:true, ORDER_ITEM:true, ORDER_EVENT:true, INVENTORY_MOVEMENT:true, PURCHASE_DOCUMENT:true, PRODUCT:true, WAREHOUSE:true };
+  const rows = head.rows.filter(row => allowed[orderQM9Text(row.entityType).toUpperCase()]).sort((a,b) => orderQM9Text(a.entityType).localeCompare(orderQM9Text(b.entityType)) || orderQM9Text(a.entityId).localeCompare(orderQM9Text(b.entityId)));
+  const movements = rows.filter(row => orderQM9Text(row.entityType).toUpperCase() === 'INVENTORY_MOVEMENT').map(row => row.payload || {}).filter(row => Number(row.ledgerSequence || 0) <= head.revision);
+  const movementIds = movements.map(row => orderQM9Text(row.movementId)).sort();
+  const effectKeys = movements.map(row => orderQM9Text(row.effectKey)).filter(Boolean).sort();
+  const chunks = [];
+  for (let index=0; index<rows.length; index+=25) chunks.push(rows.slice(index,index+25));
+  if (!chunks.length) chunks.push([]);
+  const pages = chunks.map((chunk,pageIndex) => ({ pageIndex:pageIndex, rowCount:chunk.length, pageDigest:orderQM9Digest(chunk) }));
+  const movementManifest = { manifestVersion:'SITUATION_MOVEMENT_MANIFEST_V1', ledgerUpperBound:head.revision, movementCount:movementIds.length, movementIds:movementIds, effectKeys:effectKeys, tombstoneIds:[], pageCount:pages.length, pages:pages, manifestDigest:orderQM9Digest({movementIds:movementIds,effectKeys:effectKeys,ledgerUpperBound:head.revision}) };
+  const issuedAt = new Date();
+  const token = { readSessionId:readSessionId, authority:'ORDERQ', tokenVersion:'ORDERQ_SITUATION_TOKEN_V1', deploymentId:String(properties.getProperty(ORDERQ_STAGE5_DEPLOYMENT_ID_PROPERTY)||''), deploymentVersion:String(properties.getProperty(ORDERQ_STAGE5_DEPLOYMENT_VERSION_PROPERTY)||''), gitCommit:String(properties.getProperty(ORDERQ_STAGE5_GIT_COMMIT_PROPERTY)||''), capabilityVersion:'ORDERQ_SITUATION_V1', actorId:actorId, device:device, environment:environment, roleIds:['ORDERQ_SITUATION_READ'], scopeDigest:orderQM9Digest({companyId:companyId}), issuedAt:issuedAt.toISOString(), expiresAt:new Date(issuedAt.getTime()+ORDERQ_SITUATION_SESSION_TTL_SECONDS*1000).toISOString(), headRevision:head.revision, headDigest:head.digest, pageManifest:{pages:pages}, entityManifest:{movementManifest:movementManifest,ledgerUpperBound:head.revision}, movementManifestDigest:movementManifest.manifestDigest, ledgerUpperBound:head.revision, status:'OPEN' };
+  token.tokenDigest = orderQM9Digest(token);
+  token.crossAuthorityHandshakeDigest = orderQM9Digest([dataOpsTokenDigest,inventoryKeyDigest,perKeyCutoffDigest,token.tokenDigest,movementManifest.manifestDigest,head.revision]);
+  const cache = CacheService.getScriptCache();
+  cache.put(orderQM9SituationCacheKey('SESSION',readSessionId),JSON.stringify(token),ORDERQ_SITUATION_SESSION_TTL_SECONDS);
+  chunks.forEach((chunk,index) => cache.put(orderQM9SituationCacheKey('PAGE',readSessionId,index),JSON.stringify({pageIndex:index,rowCount:chunk.length,pageDigest:pages[index].pageDigest,entities:chunk,movements:chunk.filter(row=>orderQM9Text(row.entityType).toUpperCase()==='INVENTORY_MOVEMENT').map(row=>row.payload||{})}),ORDERQ_SITUATION_SESSION_TTL_SECONDS));
+  console.info(JSON.stringify({event:'ORDERQ_SITUATION_BEGIN',actorId:actorId,device:device,environment:environment,readSessionDigest:orderQM9Digest(readSessionId),tokenDigest:token.tokenDigest,rowCount:rows.length,pageCount:pages.length,issuedAt:token.issuedAt,expiresAt:token.expiresAt}));
+  return token;
+}
+
+function orderQM9SituationRequireIdentity(session,payload) {
+  if (orderQM9Text(payload.actorId)!==session.actorId || orderQM9Text(payload.device)!==session.device || orderQM9Text(payload.environment)!==session.environment || orderQM9Digest({companyId:orderQM9Text(payload.scope&&payload.scope.companyId)})!==session.scopeDigest) throw new Error('ORDERQ_SITUATION_ACCESS_DENIED');
+}
+
+function orderQM9SituationPage(ss, payload) {
+  orderQM9RequireSchema(payload);
+  const session = orderQM9SituationReadCached('SESSION',payload.readSessionId);
+  orderQM9SituationRequireIdentity(session,payload);
+  if (orderQM9Text(payload.tokenDigest) !== session.tokenDigest || new Date(session.expiresAt).getTime() <= Date.now()) throw new Error('SITUATION_READ_TOKEN_EXPIRED');
+  return orderQM9SituationReadCached('PAGE',payload.readSessionId,payload.pageIndex);
+}
+
+function orderQM9SituationHead(ss, payload) {
+  orderQM9RequireSchema(payload);
+  const session = orderQM9SituationReadCached('SESSION',payload.readSessionId);
+  orderQM9SituationRequireIdentity(session,payload);
+  if (orderQM9Text(payload.tokenDigest) !== session.tokenDigest || new Date(session.expiresAt).getTime() <= Date.now()) throw new Error('SITUATION_READ_TOKEN_EXPIRED');
+  const head = orderQM9SituationHeadState(ss);
+  return { frozenTokenDigest:session.tokenDigest, currentHeadRevision:head.revision, currentHeadDigest:head.digest };
 }
