@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = '1.5.1';
+  const VERSION = '1.6.0';
   const STORAGE = Object.freeze({
     colorMode: 'oneapp.nexus.v1.colorMode',
     groupOrder: 'oneapp.nexus.v1.groupOrder',
@@ -21,6 +21,28 @@
     master: 'foundation',
   });
   const LEGACY_DEFAULT_GROUP_ORDER = Object.freeze(['shipping', 'inventory', 'pricing', 'foundation']);
+  const TAB_BUTTONS = Object.freeze({
+    foundation: Object.freeze({
+      active: '/nexus/assets/navigation-tabs/foundation-active.png',
+      inactive: '/nexus/assets/navigation-tabs/foundation-inactive.png',
+    }),
+    pricing: Object.freeze({
+      active: '/nexus/assets/navigation-tabs/pricing-active.png',
+      inactive: '/nexus/assets/navigation-tabs/pricing-inactive.png',
+    }),
+    'smart-input': Object.freeze({
+      active: '/nexus/assets/navigation-tabs/smart-input-active.png',
+      inactive: '/nexus/assets/navigation-tabs/smart-input-inactive.png',
+    }),
+    shipping: Object.freeze({
+      active: '/nexus/assets/navigation-tabs/shipping-active.png',
+      inactive: '/nexus/assets/navigation-tabs/shipping-inactive.png',
+    }),
+    inventory: Object.freeze({
+      active: '/nexus/assets/navigation-tabs/inventory-active.png',
+      inactive: '/nexus/assets/navigation-tabs/inventory-inactive.png',
+    }),
+  });
   const SECTION_LABEL = Object.freeze({ management: '기준·관리', operations: '운영 흐름' });
   const STATUS_PRIORITY = Object.freeze({ normal: 0, progress: 1, warning: 2, error: 3 });
   const STATUS_LABEL = Object.freeze({ normal: '정상', progress: '진행 중', warning: '주의', error: '오류' });
@@ -119,6 +141,12 @@
   const asArray = (value) => Array.isArray(value) ? value : [];
   const unique = (values) => [...new Set(values)];
   const sameOrder = (left, right) => left.length === right.length && left.every((value, index) => value === right[index]);
+  const preloadTabButtonImages = () => {
+    for (const asset of Object.values(TAB_BUTTONS).flatMap((states) => [states.active, states.inactive])) {
+      const image = new Image();
+      image.src = asset;
+    }
+  };
   const normalizeLevel = (value) => {
     const aliases = {
       ok: 'normal', success: 'normal', idle: 'normal',
@@ -210,6 +238,7 @@
         this.globalActions = asArray(window.NEXUS_GLOBAL_ACTIONS);
         this.aliases = window.NEXUS_APP_ALIASES || {};
         if (!this.groups.length || !this.apps.length) throw new Error('NEXUS app configuration is unavailable.');
+        preloadTabButtonImages();
 
         this.memory = new Map();
         this.pendingWrites = new Map();
@@ -244,6 +273,7 @@
       window.removeEventListener('storage', this.onStorage);
       window.removeEventListener('nexus:app-status', this.onAppStatus);
       window.removeEventListener('nexus:global-error', this.onGlobalError);
+      window.removeEventListener('pageshow', this.onPageShow);
       if (api._instance === this) api._instance = null;
     }
 
@@ -404,8 +434,13 @@
       return String(preferred || fallback || '');
     }
 
-    navigationLabel(record, colorMode) {
+    navigationLabel(record, active, colorMode) {
       const name = escapeHtml(record.name);
+      const tabButton = TAB_BUTTONS[record?.id];
+      if (tabButton) {
+        const source = active ? tabButton.active : tabButton.inactive;
+        return `<span class="nav-brand nav-tab-button has-logo"><img src="${source}" alt="" data-nav-logo data-tab-button data-active-src="${tabButton.active}" data-inactive-src="${tabButton.inactive}"><span class="nav-text">${name}</span></span>`;
+      }
       const logoPath = this.logoPath(record, colorMode);
       if (!logoPath) return `<span class="nav-text">${name}</span>`;
       return `<span class="nav-brand has-logo"><img src="${escapeHtml(logoPath)}" alt="" data-nav-logo><span class="nav-text">${name}</span></span>`;
@@ -438,7 +473,7 @@
         const active = action.appId === this.currentAppId;
         const temporary = active && hiddenGlobalActions.includes(action.id);
         return `<a class="tab global-entry${active ? ' is-current' : ''}${temporary ? ' temporary' : ''}" href="${escapeHtml(action.url)}" data-navigate data-target-app="${escapeHtml(action.appId)}" ${active ? 'aria-current="page"' : ''}>
-          ${this.navigationLabel(action, colorMode)}${temporary ? '<small>현재 위치</small>' : ''}
+          ${this.navigationLabel(action, active, colorMode)}${temporary ? '<small>현재 위치</small>' : ''}
         </a>`;
       }).join('');
     }
@@ -453,10 +488,32 @@
           const active = group.id === this.currentGroupId;
           const temporary = active && hiddenGroups.includes(group.id);
           return `<a class="tab${temporary ? ' temporary' : ''}" href="${escapeHtml(group.url)}" data-navigate data-target-group="${escapeHtml(group.id)}" ${active ? 'aria-current="page"' : ''}>
-            ${this.navigationLabel(group, colorMode)}${temporary ? '<small>현재 위치</small>' : ''}
+            ${this.navigationLabel(group, active, colorMode)}${temporary ? '<small>현재 위치</small>' : ''}
           </a>`;
         }).join('');
       }
+    }
+
+    setPendingNavigationSelection(targetLink, appId, groupId) {
+      const tabs = [...this.root.querySelectorAll('a.tab[data-navigate]')];
+      const hasDirectAppTab = Boolean(appId && tabs.some((link) => link.dataset.targetApp === appId));
+      let selectedTab = null;
+      tabs.forEach((link) => {
+        const selected = link === targetLink
+          || (hasDirectAppTab ? link.dataset.targetApp === appId : Boolean(groupId && link.dataset.targetGroup === groupId));
+        if (selected) selectedTab = link;
+        link.classList.toggle('is-current', selected);
+        if (selected) link.setAttribute('aria-current', 'page');
+        else link.removeAttribute('aria-current');
+        const image = link.querySelector('img[data-tab-button]');
+        if (image) image.src = selected ? image.dataset.activeSrc : image.dataset.inactiveSrc;
+      });
+      selectedTab?.scrollIntoView({ block: 'nearest', inline: 'center' });
+    }
+
+    restoreCurrentNavigationSelection() {
+      this.navigationPending = false;
+      if (this.isConnected) this.renderHeaderNavigation();
     }
 
     representativeStatus() {
@@ -616,11 +673,13 @@
       };
       this.onAppStatus = (event) => this.receiveStatus(event.detail);
       this.onGlobalError = (event) => this.receiveGlobalError(event.detail);
+      this.onPageShow = () => this.restoreCurrentNavigationSelection();
       document.addEventListener('click', this.onDocumentClick);
       document.addEventListener('keydown', this.onDocumentKeydown);
       window.addEventListener('storage', this.onStorage);
       window.addEventListener('nexus:app-status', this.onAppStatus);
       window.addEventListener('nexus:global-error', this.onGlobalError);
+      window.addEventListener('pageshow', this.onPageShow);
     }
 
     handleClick(event) {
@@ -736,6 +795,7 @@
       this.closePanel({ restoreFocus: false });
       if (this.navigationPending) return;
       this.navigationPending = true;
+      this.setPendingNavigationSelection(link, appId, groupId);
       const label = this.apps.find((app) => app.id === appId)?.name
         || this.groups.find((group) => group.id === groupId)?.name
         || link.getAttribute('aria-label')
@@ -747,10 +807,17 @@
       installNavigationCover(label, mode);
       window.setTimeout(() => {
         if (!this.navigationPending) return;
-        this.navigationPending = false;
+        this.restoreCurrentNavigationSelection();
         clearNavigationCover(true);
       }, 12000);
-      window.setTimeout(() => window.location.assign(link.href), 80);
+      window.setTimeout(() => {
+        try {
+          window.location.assign(link.href);
+        } catch {
+          this.restoreCurrentNavigationSelection();
+          clearNavigationCover(true);
+        }
+      }, 80);
     }
 
     togglePanel(name, trigger) {

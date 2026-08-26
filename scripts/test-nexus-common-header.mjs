@@ -49,6 +49,22 @@ assert.equal(globalActions[0].logo.dark, '/nexus/assets/brand/apps/smart-input/l
 assert.ok(fs.existsSync(path.join(root, 'nexus/assets/brand/apps/smart-input/logo-light.png')));
 assert.ok(fs.existsSync(path.join(root, 'nexus/assets/brand/apps/smart-input/logo-dark.png')));
 
+const tabButtonAssets = {
+  foundation: ['foundation-active.png', 'foundation-inactive.png'],
+  pricing: ['pricing-active.png', 'pricing-inactive.png'],
+  'smart-input': ['smart-input-active.png', 'smart-input-inactive.png'],
+  shipping: ['shipping-active.png', 'shipping-inactive.png'],
+  inventory: ['inventory-active.png', 'inventory-inactive.png'],
+};
+for (const [tabId, files] of Object.entries(tabButtonAssets)) {
+  for (const file of files) {
+    const buffer = fs.readFileSync(path.join(root, 'nexus/assets/navigation-tabs', file));
+    assert.equal(buffer.subarray(1, 4).toString('ascii'), 'PNG', `${tabId} ${file} must be a PNG`);
+    assert.equal(buffer.readUInt32BE(16), 1600, `${tabId} ${file} width must remain 1600px`);
+    assert.equal(buffer.readUInt32BE(20), 400, `${tabId} ${file} height must remain 400px`);
+  }
+}
+
 assert.match(componentSource, /hiddenGroups: 'oneapp\.nexus\.v1\.hiddenGroups'/);
 assert.match(componentSource, /hiddenGlobalActions: 'oneapp\.nexus\.v1\.hiddenGlobalActions'/);
 assert.match(componentSource, /hiddenApps: 'oneapp\.nexus\.v1\.hiddenApps'/);
@@ -62,6 +78,15 @@ assert.match(componentSource, /cover\.id = NAVIGATION_COVER_ID/);
 assert.match(componentSource, /NEXUS WORKSPACE/);
 assert.match(componentSource, /업무 화면을 준비하고 있습니다/);
 assert.match(componentSource, /window\.addEventListener\('load', \(\) => clearNavigationCover\(\)/);
+assert.match(componentSource, /const VERSION = '1\.6\.0'/);
+assert.match(componentSource, /const TAB_BUTTONS = Object\.freeze/);
+assert.match(componentSource, /preloadTabButtonImages\(\)/, 'all active and inactive tab images must be preloaded');
+assert.match(componentSource, /data-active-src=.*data-inactive-src=/, 'each tab image must expose both visual states');
+assert.match(componentSource, /this\.navigationPending = true;\s*this\.setPendingNavigationSelection\(link, appId, groupId\);/,
+  'an allowed tab touch must switch its image before navigation starts');
+assert.match(componentSource, /image\.src = selected \? image\.dataset\.activeSrc : image\.dataset\.inactiveSrc/);
+assert.match(componentSource, /this\.onPageShow = \(\) => this\.restoreCurrentNavigationSelection\(\)/,
+  'back-forward restoration must return selection to the current app ID');
 assert.match(componentSource, /navigationMode = \(requestedMode\)/,
   'the loading cover must resolve the current light or dark mode before rendering');
 assert.match(componentSource, /const marker = \{ label, mode, startedAt: Date\.now\(\), url: link\.href \}/,
@@ -70,7 +95,7 @@ assert.match(componentSource, /\[data-mode="dark"\]/,
   'the loading cover must provide a dedicated dark-mode visual');
 assert.match(componentSource, /background:rgba\(255,255,255,\.88\)/,
   'the default loading cover card must remain light in normal mode');
-assert.match(componentSource, /window\.setTimeout\(\(\) => window\.location\.assign\(link\.href\), 80\)/,
+assert.match(componentSource, /window\.setTimeout\(\(\) => \{[\s\S]*window\.location\.assign\(link\.href\);[\s\S]*\}, 80\)/,
   'same-tab navigation must paint the loading cover before changing documents');
 assert.doesNotMatch(componentSource, /nexus-navigation-cover__mark[^`]*<img/,
   'the navigation cover must not depend on another image request');
@@ -101,6 +126,7 @@ assert.match(cssSource, /@media \(max-width: 680px\)/);
 assert.match(navigationCssSource, /\.workflow-divider/);
 assert.match(navigationCssSource, /grid-template-columns: auto minmax\(0, 1fr\) auto/);
 assert.match(navigationCssSource, /\.nav-brand\.has-logo:not\(\.logo-missing\) \.nav-text/);
+assert.match(navigationCssSource, /\.nav-tab-button/);
 assert.match(navigationCssSource, /\.segments\.two/);
 assert.match(themeSource, /var VALID_MODES = \["light", "dark"\]/);
 assert.match(themeSource, /return mode === "dark" \? "dark" : "light"/);
@@ -236,7 +262,7 @@ assert.equal(manifestContract.resources.navigationLoadingSession, 'oneapp.nexus.
 for (const file of manifestContract.consumers) {
   const source = read(file);
   assert.match(source, /apps-config\.js\?v=1\.4\.0/, `${file} must load the current NEXUS configuration`);
-  assert.match(source, /nexus-top\.js\?v=1\.5\.1/, `${file} must load the current NEXUS component`);
+  assert.match(source, /nexus-top\.js\?v=1\.6\.0/, `${file} must load the current NEXUS component`);
 }
 
 const entries = [
@@ -254,7 +280,7 @@ for (const [file, appId] of entries) {
   const source = read(file);
   assert.match(source, new RegExp(`<nexus-top app-id="${appId}">[\\s\\S]*?<\\/nexus-top>`), `${file} must declare its canonical NEXUS app ID`);
   assert.match(source, /apps-config\.js\?v=1\.4\.0/);
-  assert.match(source, /nexus-top\.js\?v=1\.5\.1/);
+  assert.match(source, /nexus-top\.js\?v=1\.6\.0/);
   assert.match(source, /NEXUS 메뉴를 불러오지 못했습니다/);
 }
 
