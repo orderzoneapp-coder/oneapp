@@ -166,6 +166,62 @@ for (const testCase of fixture.preflightCases) {
   assert.ok(issue.reason, `${testCase.type}: 오류 사유가 필요합니다`);
   assert.ok(issue.action, `${testCase.type}: 확인 조치가 필요합니다`);
 }
+const expectedSeverities = {
+  UNALLOCATED_LOT: "REVIEW",
+  MISSING_INBOUND_COST: "REVIEW",
+  TOTAL_COST_MISMATCH: "BLOCKING",
+  WAREHOUSE_02_MISMATCH: "REVIEW",
+  UNIT_CONVERSION_FAILURE: "BLOCKING",
+};
+for (const [type, severity] of Object.entries(expectedSeverities)) {
+  const issue = preflight.issues.find((candidate) => candidate.type === type);
+  assert.equal(issue.severity, severity, `${type}: 업무 의미별 심각도`);
+}
+assert.equal(preflight.presentationCounts.BLOCKING, 2);
+assert.equal(preflight.presentationCounts.REVIEW, 3);
+assert.deepEqual(
+  Array.from(preflight.presentationIssues, (issue) => issue.severity),
+  ["BLOCKING", "BLOCKING", "REVIEW", "REVIEW", "REVIEW"],
+  "F9 화면은 실제 처리 차단을 먼저, 관리자 확인 항목을 다음에 보여줘야 합니다",
+);
+
+const adjustedCost = context.preflightModule.run({
+  productData: [{
+    batchKey: "ADMIN-ADJUSTMENT",
+    코드: "P-ADMIN",
+    품명: "관리자 원가 판단",
+    기초: 1,
+    입고: 0,
+    출고: 0,
+    전산잔량: 1,
+    단가: 0,
+    출고내역: {},
+    이슈: ["수기조정"],
+    _operationType: "MANUAL_COST_REVIEW",
+  }],
+  substHistory: [{ sourceKey: "ADMIN-ADJUSTMENT" }],
+});
+assert.equal(adjustedCost.issues[0].severity, "ADJUSTMENT");
+assert.equal(adjustedCost.presentationCounts.ADJUSTMENT, 1);
+const confirmedCost = context.preflightModule.run({
+  productData: [{
+    batchKey: "ADMIN-CONFIRMED",
+    코드: "P-CONFIRMED",
+    품명: "관리자 확인 완료",
+    기초: 1,
+    입고: 0,
+    출고: 0,
+    전산잔량: 1,
+    단가: 0,
+    출고내역: {},
+    이슈: ["수기조정"],
+    _operationType: "MANUAL_COST_REVIEW",
+    수기확인완료: true,
+  }],
+  substHistory: [{ sourceKey: "ADMIN-CONFIRMED" }],
+});
+assert.equal(confirmedCost.issues[0].severity, "CONFIRMED");
+assert.equal(confirmedCost.presentationCounts.CONFIRMED, 1);
 const missingCostIssue = preflight.issues.find(
   (issue) => issue.type === "MISSING_INBOUND_COST",
 );
@@ -447,8 +503,18 @@ assert.equal(warningReportGrid[1][1], "입고단가 누락");
 
 assert.match(source, /해당 상품으로 이동/);
 assert.match(source, /다시 점검/);
-assert.match(source, /엑셀은 생성되었습니다\. 확인 필요 항목은 보고서 시트에도 포함했습니다\./);
-assert.match(source, /엑셀 생성을 차단하지 않습니다\./);
+assert.match(source, /엑셀 생성 완료/);
+assert.match(source, /실제 처리 차단과 관리자 확인 항목을 구분해 확인하세요\./);
+assert.match(source, /관측된 차이를 업무 의미별로 분류했습니다\. 엑셀 생성 자체는 차단하지 않습니다\./);
+assert.match(source, /dataops-f9-header/);
+assert.match(source, /dataops-f9-summary-chip/);
+assert.match(source, /dataops-f9-severity-chip/);
+assert.match(source, /dataops-f9-group/);
+assert.match(source, /issueGroups\.map/);
+assert.match(source, /React\.createElement\("details"/);
+assert.match(source, /group\.severity === 'BLOCKING' \|\| group\.severity === 'REVIEW'/);
+assert.doesNotMatch(source, /className: "px-6 py-4 bg-rose-600 text-white/);
+assert.doesNotMatch(source, /id: "f9-preflight-recheck-btn"[^\n]+bg-rose-600/);
 assert.doesNotMatch(source, /오류를 해결하기 전에는 workbook을 생성하지 않습니다/);
 assert.match(source, /salesSourceEvidenceByProductKey/);
 assert.match(source, /NO_CODE\|\$\{safeStr\(evidenceName, '이름없음'\)\}/);

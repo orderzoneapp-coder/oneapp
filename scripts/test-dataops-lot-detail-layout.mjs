@@ -53,6 +53,14 @@ assert.match(source, /qtyForPrice = \(row = \{\}\) => Math\.max\(0, DATAOPS_VIEW
 assert.match(source, /선택원가 통합/);
 assert.match(source, /평균가 통합/);
 assert.match(source, /detail-merge-average/);
+assert.match(source, /const label = isLotDetailMergeButtonRow \? '선택'/);
+assert.match(source, /dataops-merge-button--selected/);
+assert.match(source, /dataops-merge-button--average/);
+assert.match(source, /className: "dataops-merge-button--average[^"]*"[^\n]+}, "평균가"/);
+assert.match(source, /dataops-date-chip/);
+assert.match(source, /dataops-filter-button--view/);
+assert.match(source, /dataops-filter-button--category/);
+assert.match(source, /dataops-filter-button--unit/);
 
 const mergeModuleStart = source.indexOf("const DATAOPS_CODE_MERGE_OVERRIDE_MODULE");
 const mergeModuleEnd = source.indexOf("const DATAOPS_VIEW_LAYER_MODULE", mergeModuleStart);
