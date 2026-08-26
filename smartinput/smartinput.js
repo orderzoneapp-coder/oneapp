@@ -51,23 +51,23 @@ import {
 import {
   createRecordId,
   createEstimateAtomically,
+  deleteEstimateAtomically,
   loadSmartInputData,
   normalizeAliasName,
-  deleteEstimate,
+  renameEstimateAtomically,
+  reorderEstimatesAtomically,
   saveAliasMapping,
-  saveEstimatesAtomically,
   saveLinkGroup,
   saveSettings,
   saveSourceImage,
   saveTemporaryCustomer,
   updateEstimateAtomically
-} from './smartinput-data-store.js?v=0.3.3';
+} from './smartinput-data-store.js?v=0.3.4';
 import {
   normalizeEstimateOrder,
-  normalizeEstimateSequence,
   reorderEstimateRecords
 } from './estimate-order.js?v=0.1.0';
-import { estimateContentDigest, estimateRevision } from './estimate-save-contract.js?v=0.1.0';
+import { estimateContentDigest, estimateRevision } from './estimate-save-contract.js?v=0.1.1';
 import {
   REFERENCE_STATUS,
   evaluateReferenceReadiness,
@@ -2556,13 +2556,6 @@ function composeSelectedEstimates() {
   toast(`${records.length}개 견적서에서 중복을 제외한 ${rows.length}개 상품을 불러왔습니다.`, 'success');
 }
 
-async function persistEstimateLibrary(records = state.estimates, { preserveSequence = false } = {}) {
-  const normalized = preserveSequence ? normalizeEstimateSequence(records) : normalizeEstimateOrder(records);
-  await saveEstimatesAtomically(normalized);
-  state.estimates = normalized;
-  return normalized;
-}
-
 function updateEstimateDropTarget(clientY) {
   const drag = state.estimateOrderDrag;
   if (!drag) return;
@@ -2617,7 +2610,8 @@ async function commitEstimateOrder(records, estimateId, message) {
   list.setAttribute('aria-busy', 'true');
   list.querySelectorAll('[data-drag-estimate]').forEach(button => { button.disabled = true; });
   try {
-    await persistEstimateLibrary(records, { preserveSequence: true });
+    const result = await reorderEstimatesAtomically(records.map(record => record.estimateId));
+    state.estimates = normalizeEstimateOrder(result.records);
     renderCatalogControls();
     window.requestAnimationFrame(() => {
       const row = [...$('catalogPickerList').querySelectorAll('[data-estimate-id]')]
@@ -2734,6 +2728,8 @@ function openEstimateManageDialog(record) {
     <footer><button type="button" class="button button--danger" data-delete-estimate>삭제</button><button type="button" class="button button--quiet" data-close>취소</button><button type="button" class="button button--primary" data-save-estimate>저장</button></footer>
   </div>`;
   document.body.append(dialog);
+  const expectedRevision = estimateRevision(record);
+  const renameAttemptId = createRecordId('SIRENAME');
   const finish = () => { dialog.close(); dialog.remove(); };
   dialog.querySelectorAll('[data-close]').forEach(button => button.addEventListener('click', finish));
   dialog.addEventListener('cancel', event => { event.preventDefault(); finish(); });
@@ -2743,24 +2739,34 @@ function openEstimateManageDialog(record) {
       dialog.querySelector('[data-estimate-name]').focus();
       return toast('견적서명을 입력하세요.', 'error');
     }
-    const updatedRecord = { ...record, catalogName, updatedAt: new Date().toISOString() };
-    const next = availableCatalogs().map(item => item.estimateId === record.estimateId ? updatedRecord : item);
     try {
-      await persistEstimateLibrary(next, { preserveSequence: true });
+      const result = await renameEstimateAtomically(
+        record.estimateId,
+        expectedRevision,
+        catalogName,
+        renameAttemptId,
+        new Date().toISOString()
+      );
+      state.estimates = normalizeEstimateOrder(result.records);
+      if (modeDraft().catalogRecordId === record.estimateId) {
+        const saveUi = estimateSaveUi();
+        saveUi.estimateExpectedRevision = estimateRevision(result.record);
+        saveUi.estimateSuggestedName = estimateTitle(result.record);
+        saveDraftNow();
+      }
       finish();
       renderCatalogControls();
       toast('견적서명을 저장했습니다.', 'success');
     } catch (error) {
-      toast(error.message || '견적서 관리를 저장하지 못했습니다.', 'error');
+      toast(estimateSaveErrorMessage(error), 'error');
     }
   });
   dialog.querySelector('[data-delete-estimate]').addEventListener('click', async () => {
     if (!window.confirm(`${estimateTitle(record)} 견적서를 삭제하시겠습니까?`)) return;
     try {
-      await deleteEstimate(record.estimateId);
+      const result = await deleteEstimateAtomically(record.estimateId);
+      state.estimates = normalizeEstimateOrder(result.records);
       state.noticeEstimateIds = state.noticeEstimateIds.filter(estimateId => estimateId !== record.estimateId);
-      const next = state.estimates.filter(item => item.estimateId !== record.estimateId);
-      await persistEstimateLibrary(next);
       finish();
       if (modeDraft().catalogRecordId === record.estimateId) startNewCatalog();
       else renderCatalogControls();

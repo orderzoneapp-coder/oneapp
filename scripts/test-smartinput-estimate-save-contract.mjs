@@ -4,6 +4,8 @@ import {
   estimateRevision,
   normalizeEstimateNameKey,
   planEstimateCreate,
+  planEstimateRename,
+  planEstimateReorder,
   planEstimateUpdate
 } from '../smartinput/estimate-save-contract.js';
 
@@ -86,6 +88,50 @@ assert.equal(estimateRevision(legacy), 0);
 const legacyUpdated = planEstimateUpdate([legacy], legacy.estimateId, 0, { ...legacy, draft: editedDraft }, { saveAttemptId: 'SAVE-LEGACY-1' });
 assert.equal(legacyUpdated.record.revision, 1);
 
+const renamed = planEstimateRename(library, 'SIEST-A', 4, '다른 탭 이름', {
+  saveAttemptId: 'RENAME-A-1',
+  updatedAt: '2026-08-26T03:00:00.000Z'
+});
+assert.equal(renamed.record.catalogName, '다른 탭 이름');
+assert.equal(renamed.record.revision, 5);
+assert.equal(renamed.record.contentDigest, originalA.contentDigest);
+assert.deepEqual(renamed.record.draft, originalA.draft);
+const renamedRetry = planEstimateRename(renamed.records, 'SIEST-A', 4, '다른 탭 이름', {
+  saveAttemptId: 'RENAME-A-1',
+  updatedAt: '2026-08-26T03:00:00.000Z'
+});
+assert.equal(renamedRetry.recovered, true);
+assert.equal(renamedRetry.record.revision, 5, 'the same rename attempt must not increment the revision twice');
+const renamedBytes = JSON.stringify(renamed.records);
+assert.throws(
+  () => planEstimateUpdate(renamed.records, 'SIEST-A', 4, updateCandidate, { saveAttemptId: 'STALE-BOTTOM-UPDATE' }),
+  error => error.code === 'ESTIMATE_REVISION_CONFLICT'
+);
+assert.equal(JSON.stringify(renamed.records), renamedBytes, 'a stale bottom update must preserve the renamed record');
+
+const reorderSource = [
+  { ...clone(originalA), sortOrder: 1 },
+  { ...clone(copyCandidate), revision: 1, contentDigest: estimateContentDigest(copyCandidate.draft), sortOrder: 2 }
+];
+const reordered = planEstimateReorder(reorderSource, ['SIEST-B', 'SIEST-A']);
+assert.deepEqual(reordered.records.map(record => record.estimateId), ['SIEST-B', 'SIEST-A']);
+assert.equal(reordered.records.find(record => record.estimateId === 'SIEST-A').revision, 4);
+assert.equal(reordered.records.find(record => record.estimateId === 'SIEST-A').contentDigest, originalA.contentDigest);
+assert.deepEqual(reordered.records.find(record => record.estimateId === 'SIEST-A').draft, originalA.draft);
+const reorderedRetry = planEstimateReorder(reordered.records, ['SIEST-B', 'SIEST-A']);
+assert.equal(reorderedRetry.recovered, true);
+assert.equal(reorderedRetry.recordsToWrite.length, 0, 'retrying the same order must not write records');
+for (const invalidIds of [
+  ['SIEST-A'],
+  ['SIEST-A', 'SIEST-A'],
+  ['SIEST-A', 'SIEST-B', 'SIEST-C']
+]) {
+  assert.throws(
+    () => planEstimateReorder(reorderSource, invalidIds),
+    error => error.code === 'ESTIMATE_ORDER_ID_SET_MISMATCH'
+  );
+}
+
 const fallbackValues = new Map();
 globalThis.localStorage = {
   getItem: key => fallbackValues.get(key) ?? null,
@@ -93,6 +139,8 @@ globalThis.localStorage = {
 };
 const {
   createEstimateAtomically,
+  renameEstimateAtomically,
+  reorderEstimatesAtomically,
   updateEstimateAtomically
 } = await import('../smartinput/smartinput-data-store.js');
 
@@ -114,5 +162,66 @@ await assert.rejects(
 );
 assert.equal(fallbackValues.values().next().value, beforeStoreConflict,
   'the product data-store path must not write partial state after a conflict');
+
+const storeRenamedA = await renameEstimateAtomically(
+  'SIEST-A',
+  2,
+  '다른 탭 이름',
+  'STORE-RENAME-A',
+  '2026-08-26T04:00:00.000Z'
+);
+assert.equal(storeRenamedA.record.revision, 3);
+assert.equal(storeRenamedA.record.catalogName, '다른 탭 이름');
+const storeRenamedRetry = await renameEstimateAtomically(
+  'SIEST-A',
+  2,
+  '다른 탭 이름',
+  'STORE-RENAME-A',
+  '2026-08-26T04:00:00.000Z'
+);
+assert.equal(storeRenamedRetry.recovered, true);
+assert.equal(storeRenamedRetry.record.revision, 3);
+const beforeStaleBottomUpdate = fallbackValues.values().next().value;
+await assert.rejects(
+  updateEstimateAtomically('SIEST-A', 2, { ...clone(originalA), draft: editedDraft }, 'STORE-STALE-AFTER-RENAME'),
+  error => error.code === 'ESTIMATE_REVISION_CONFLICT'
+);
+assert.equal(fallbackValues.values().next().value, beforeStaleBottomUpdate,
+  'rename must make a stale bottom update fail without reverting the name');
+
+const latestDraft = { rows: [row('P-1', '사과', 9, 1250)], header: { customerName: 'A 거래처' } };
+const latestA = await updateEstimateAtomically('SIEST-A', 3, {
+  ...clone(storeRenamedA.record),
+  catalogName: '다른 탭 이름',
+  draft: latestDraft
+}, 'STORE-CONTENT-AFTER-RENAME');
+assert.equal(latestA.record.revision, 4);
+assert.equal(latestA.record.draft.rows[0].quantity, 9);
+const latestDigest = latestA.record.contentDigest;
+const storeReordered = await reorderEstimatesAtomically(['SIEST-B', 'SIEST-A']);
+const reorderedLatestA = storeReordered.records.find(record => record.estimateId === 'SIEST-A');
+assert.equal(reorderedLatestA.draft.rows[0].quantity, 9,
+  'reorder must re-read and preserve the latest estimate content');
+assert.equal(reorderedLatestA.contentDigest, latestDigest);
+assert.equal(reorderedLatestA.revision, 4);
+assert.equal(reorderedLatestA.catalogName, '다른 탭 이름');
+const storeReorderRetry = await reorderEstimatesAtomically(['SIEST-B', 'SIEST-A']);
+assert.equal(storeReorderRetry.recovered, true);
+assert.equal(storeReorderRetry.records.find(record => record.estimateId === 'SIEST-A').revision, 4,
+  'same-order retry must not increment estimate revisions');
+
+for (const invalidIds of [
+  ['SIEST-A'],
+  ['SIEST-A', 'SIEST-A'],
+  ['SIEST-A', 'SIEST-B', 'SIEST-C']
+]) {
+  const beforeFailedReorder = fallbackValues.values().next().value;
+  await assert.rejects(
+    reorderEstimatesAtomically(invalidIds),
+    error => error.code === 'ESTIMATE_ORDER_ID_SET_MISMATCH'
+  );
+  assert.equal(fallbackValues.values().next().value, beforeFailedReorder,
+    'an invalid reorder must roll back without changing stored estimates');
+}
 
 console.log('SmartInput estimate save contract fixtures passed.');

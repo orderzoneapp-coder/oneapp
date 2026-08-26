@@ -19,7 +19,7 @@ function functionBlock(name) {
 }
 
 assert.match(html, /smartinput\.css\?v=0\.4\.35/, 'mobile CSS cache key must invalidate the previous combined-screen asset');
-assert.match(html, /smartinput\.js\?v=0\.4\.41/, 'mobile JS cache key must invalidate the previous combined-screen asset');
+assert.match(html, /smartinput\.js\?v=0\.4\.42/, 'mobile JS cache key must invalidate the previous combined-screen asset');
 assert.doesNotMatch(html, /smartinput\.(?:css|js)\?v=0\.4\.(?:30|36)/,
   'the deployed page must not reuse the stale mobile asset cache keys');
 

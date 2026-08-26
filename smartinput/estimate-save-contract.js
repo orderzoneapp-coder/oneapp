@@ -139,3 +139,98 @@ export function planEstimateUpdate(records = [], estimateIdValue = '', expectedR
     recovered: false
   };
 }
+
+export function planEstimateRename(records = [], estimateIdValue = '', expectedRevisionValue = 0, catalogNameValue = '', {
+  saveAttemptId = '',
+  updatedAt = ''
+} = {}) {
+  const source = Array.isArray(records) ? records : [];
+  const estimateId = text(estimateIdValue);
+  const catalogName = normalizeEstimateName(catalogNameValue);
+  const normalizedNameKey = normalizeEstimateNameKey(catalogName);
+  const attemptId = text(saveAttemptId);
+  const existing = source.find(record => record.estimateId === estimateId);
+  if (!existing) throw contractError('ESTIMATE_NOT_FOUND', '저장된 견적서를 찾지 못했습니다.');
+  if (!normalizedNameKey) throw contractError('ESTIMATE_NAME_REQUIRED', '견적서명을 입력하세요.');
+  if (!attemptId) throw contractError('ESTIMATE_ATTEMPT_REQUIRED', '저장을 다시 시작해 주세요.');
+
+  const recovered = existing.lastRenameAttemptId === attemptId
+    && normalizeEstimateNameKey(existing.catalogName) === normalizedNameKey;
+  if (recovered) return { records: clone(source), record: clone(existing), recovered: true };
+
+  const expectedRevision = Number(expectedRevisionValue);
+  if (!Number.isInteger(expectedRevision) || expectedRevision < 0 || estimateRevision(existing) !== expectedRevision) {
+    throw contractError('ESTIMATE_REVISION_CONFLICT', '다른 화면에서 이 견적서가 먼저 변경되었습니다.');
+  }
+  if (duplicateName(source, normalizedNameKey, estimateId)) {
+    throw contractError('ESTIMATE_NAME_CONFLICT', '같은 이름의 견적서가 이미 있습니다.');
+  }
+
+  const record = clone({
+    ...existing,
+    estimateId,
+    catalogName,
+    normalizedNameKey,
+    revision: expectedRevision + 1,
+    lastRenameAttemptId: attemptId,
+    updatedAt: text(updatedAt) || existing.updatedAt
+  });
+  return {
+    records: clone(source).map(item => item.estimateId === estimateId ? record : item),
+    record,
+    recovered: false
+  };
+}
+
+export function planEstimateReorder(records = [], orderedEstimateIds = []) {
+  const source = Array.isArray(records) ? records : [];
+  const orderedIds = Array.isArray(orderedEstimateIds) ? orderedEstimateIds.map(text) : [];
+  const sourceIds = source.map(record => text(record.estimateId));
+  const sourceIdSet = new Set(sourceIds);
+  const orderedIdSet = new Set(orderedIds);
+  const validSet = sourceIds.every(Boolean)
+    && sourceIdSet.size === sourceIds.length
+    && orderedIds.every(Boolean)
+    && orderedIdSet.size === orderedIds.length
+    && orderedIds.length === sourceIds.length
+    && orderedIds.every(estimateId => sourceIdSet.has(estimateId));
+  if (!validSet) {
+    throw contractError('ESTIMATE_ORDER_ID_SET_MISMATCH', '견적서 목록이 다른 화면에서 변경되었습니다. 목록을 다시 열어 주세요.');
+  }
+
+  const byId = new Map(source.map(record => [text(record.estimateId), record]));
+  const recordsToWrite = [];
+  const reordered = orderedIds.map((estimateId, index) => {
+    const current = byId.get(estimateId);
+    const sortOrder = index + 1;
+    if (Number(current.sortOrder) === sortOrder) return clone(current);
+    const record = clone({ ...current, sortOrder });
+    recordsToWrite.push(record);
+    return record;
+  });
+  return {
+    records: reordered,
+    recordsToWrite,
+    recovered: recordsToWrite.length === 0
+  };
+}
+
+export function planEstimateDelete(records = [], estimateIdValue = '') {
+  const source = Array.isArray(records) ? records : [];
+  const estimateId = text(estimateIdValue);
+  if (!source.some(record => record.estimateId === estimateId)) {
+    throw contractError('ESTIMATE_NOT_FOUND', '저장된 견적서를 찾지 못했습니다.');
+  }
+  const survivors = source
+    .filter(record => record.estimateId !== estimateId)
+    .sort((left, right) => Number(left.sortOrder || 0) - Number(right.sortOrder || 0));
+  const recordsToWrite = [];
+  const remainingRecords = survivors.map((current, index) => {
+    const sortOrder = index + 1;
+    if (Number(current.sortOrder) === sortOrder) return clone(current);
+    const record = clone({ ...current, sortOrder });
+    recordsToWrite.push(record);
+    return record;
+  });
+  return { records: remainingRecords, recordsToWrite, deleteIds: [estimateId], recovered: false };
+}

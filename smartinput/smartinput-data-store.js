@@ -1,5 +1,11 @@
 import { normalizeEstimateOrder } from './estimate-order.js?v=0.1.0';
-import { planEstimateCreate, planEstimateUpdate } from './estimate-save-contract.js?v=0.1.0';
+import {
+  planEstimateCreate,
+  planEstimateDelete,
+  planEstimateRename,
+  planEstimateReorder,
+  planEstimateUpdate
+} from './estimate-save-contract.js?v=0.1.1';
 
 const DB_NAME = 'oneapp-smartinput';
 const DB_VERSION = 3;
@@ -203,7 +209,11 @@ async function mutateEstimatesAtomically(planner) {
   try {
     const records = await requestResult(store.getAll());
     const result = planner(records);
-    store.put(result.record);
+    const recordsToWrite = Array.isArray(result.recordsToWrite)
+      ? result.recordsToWrite
+      : (result.record ? [result.record] : []);
+    recordsToWrite.forEach(record => store.put(record));
+    (result.deleteIds || []).forEach(estimateId => store.delete(estimateId));
     await done;
     db.close();
     return result;
@@ -223,24 +233,19 @@ export function updateEstimateAtomically(estimateId, expectedRevision, estimate,
   return mutateEstimatesAtomically(records => planEstimateUpdate(records, estimateId, expectedRevision, estimate, { saveAttemptId }));
 }
 
-export async function saveEstimatesAtomically(estimates = []) {
-  const records = Array.isArray(estimates) ? estimates : [];
-  const db = await openDatabase();
-  if (!db) {
-    const value = readFallback();
-    const stored = { ...(value[DATA_STORES.ESTIMATES] || {}) };
-    records.forEach(record => { stored[record.estimateId] = record; });
-    value[DATA_STORES.ESTIMATES] = stored;
-    writeFallback(value);
-    return records;
-  }
+export function renameEstimateAtomically(estimateId, expectedRevision, catalogName, saveAttemptId, updatedAt) {
+  return mutateEstimatesAtomically(records => planEstimateRename(records, estimateId, expectedRevision, catalogName, {
+    saveAttemptId,
+    updatedAt
+  }));
+}
 
-  const transaction = db.transaction(DATA_STORES.ESTIMATES, 'readwrite');
-  const store = transaction.objectStore(DATA_STORES.ESTIMATES);
-  records.forEach(record => store.put(record));
-  await transactionDone(transaction);
-  db.close();
-  return records;
+export function reorderEstimatesAtomically(orderedEstimateIds) {
+  return mutateEstimatesAtomically(records => planEstimateReorder(records, orderedEstimateIds));
+}
+
+export function deleteEstimateAtomically(estimateId) {
+  return mutateEstimatesAtomically(records => planEstimateDelete(normalizeEstimateOrder(records), estimateId));
 }
 
 export function deleteEstimate(estimateId) {

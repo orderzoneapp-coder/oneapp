@@ -887,11 +887,21 @@ assert.match(appSource, /function loadCatalogRecord\(record\)[\s\S]*estimateSave
 assert.doesNotMatch(appSource, /saveDraftButton'\)\.hidden|saveDraftButton\.hidden/,
   'the common voucher save action must not be hidden in any voucher mode');
 assert.match(appSource, /from '\.\/estimate-order\.js\?v=0\.1\.0'/);
-assert.match(dataStoreSource, /async function saveEstimatesAtomically|export async function saveEstimatesAtomically/);
 assert.match(dataStoreSource, /export function createEstimateAtomically/);
 assert.match(dataStoreSource, /export function updateEstimateAtomically/);
-assert.match(dataStoreSource, /db\.transaction\(DATA_STORES\.ESTIMATES, 'readwrite'\)[\s\S]*records\.forEach\(record => store\.put\(record\)\)[\s\S]*transactionDone\(transaction\)/,
-  'reorder persistence must put every normalized estimate in one IndexedDB transaction');
+assert.match(dataStoreSource, /export function renameEstimateAtomically/);
+assert.match(dataStoreSource, /export function reorderEstimatesAtomically/);
+assert.doesNotMatch(dataStoreSource, /saveEstimatesAtomically/,
+  'no estimate path may bulk put stale caller records');
+assert.match(dataStoreSource, /db\.transaction\(DATA_STORES\.ESTIMATES, 'readwrite'\)[\s\S]*store\.getAll\(\)[\s\S]*recordsToWrite\.forEach\(record => store\.put\(record\)\)/,
+  'estimate mutations must re-read current records and write only planned fields in one transaction');
+assert.match(appSource, /reorderEstimatesAtomically\(records\.map\(record => record\.estimateId\)\)/,
+  'reorder persistence must send only the ordered estimate identities');
+assert.match(appSource, /renameEstimateAtomically\([\s\S]*record\.estimateId,[\s\S]*expectedRevision,[\s\S]*renameAttemptId/,
+  'estimate rename must use revision CAS and an idempotent attempt identity');
+assert.match(appSource, /saveUi\.estimateExpectedRevision = estimateRevision\(result\.record\)/,
+  'the open edit screen must advance its expected revision after its own rename');
+assert.doesNotMatch(appSource, /persistEstimateLibrary|saveEstimatesAtomically/);
 assert.doesNotMatch(appSource, /data-estimate-position/,
   'the broken position select must not remain alongside direct reorder controls');
 for (const contractPattern of [
@@ -1134,7 +1144,7 @@ assert.ok(errorSheetAppendAt >= 0 && errorSheetAppendAt < shopSheetAppendAt && s
   'Excel 시트는 오류정보, 쇼핑몰업로드, ERP업데이트 순서여야 한다.');
 assert.doesNotMatch(appSource, /if \(!output\.ok\)/, '오류 정보로 Excel 생성을 차단하면 안 된다.');
 assert.match(html, /smartinput-contract\.js\?v=0\.4\.16/);
-assert.match(html, /smartinput\.js\?v=0\.4\.41/);
+assert.match(html, /smartinput\.js\?v=0\.4\.42/);
 assert.match(appSource, /structured-sheet-parser\.js\?v=0\.1\.1/);
 assert.match(appSource, /estimate-output\.js\?v=0\.1\.4/);
 assert.match(appSource, /const sourceRows = selectedRecords\.length \? combinedEstimateRows\(selectedRecords\) : modeDraft\(\)\.rows/,
