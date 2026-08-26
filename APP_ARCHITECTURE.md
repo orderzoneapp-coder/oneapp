@@ -120,7 +120,7 @@ Production files must not be reorganized into folders without first updating and
 
 ### 5.2 NEXUS common header
 
-`nexus/common/nexus-top.js` is the shared `<nexus-top>` web component. `nexus/common/apps-config.js` is the single runtime mapping from application IDs to the four work groups and the SmartInput global entry. The default group order is Shipping (`출고관리`), Inventory (`재고관리`), Pricing (`시세관리`), then Foundation (`기초등록`). SmartInput keeps its fixed position immediately after the brand, while its visibility is managed in the same header-settings list as the work groups. Display names and filenames are not app identity contracts.
+`nexus/common/nexus-top.js` is the shared `<nexus-top>` web component. `nexus/common/apps-config.js` is the single runtime mapping from application IDs to the four work groups and the SmartInput global entry. The default header flow is Foundation (`기준정보`), Pricing (`가격·시세`), SmartInput, Shipping (`주문·출고`), then Inventory (`재고·정산`), with the existing management/operations divider between Pricing and SmartInput. SmartInput remains the fixed first entry in the operations section, while its visibility is managed in the same header-settings list as the work groups. The five entries render preloaded active/inactive navigation images while preserving `aria-current`, ordering, hiding, mobile current-entry visibility, and application identity contracts. Display names and filenames are not app identity contracts.
 
 Header preferences are local display state under the `oneapp.nexus.v1.` prefix. Work-group order and visibility are stored separately from per-application favorites and hidden state. A hidden current work group is rendered temporarily without changing the stored preference.
 
