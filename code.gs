@@ -785,6 +785,17 @@ function doPost(e) {
       }));
     }
 
+    if (/^dataops_close_(ping|context|seal|prepare|write_chunks|commit|abort)$/.test(action)) {
+      return withScriptLock(() => jsonResponse({ status:'success', action, data:dataOpsCloseHandleAction(ss,action,payload) }));
+    }
+
+    if (action === 'dataops_v1_security_ping') {
+      return jsonResponse({ status:'success', action, data:dataOpsV1SecurityCapability(PropertiesService.getScriptProperties()) });
+    }
+
+    typeof dataOpsV1PreflightAction !== 'undefined'
+      && dataOpsV1PreflightAction(action,payload,PropertiesService.getScriptProperties());
+
     if (/^situation_dataops_(ping|publish|begin|page|head)$/.test(action)) {
       return withScriptLock(() => jsonResponse({
         status: 'success',

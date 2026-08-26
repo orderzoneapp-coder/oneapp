@@ -482,7 +482,7 @@ function businessSnapshot(kind, document, lines, tombstones = []) {
   return {
     documentContract: text(document.documentContract), documentType: kind, [idField]: text(document[idField]),
     sourceType: text(document.sourceType), sourceDocumentKey: text(document.sourceDocumentKey), revision: Number(document.revision || 0),
-    businessStatus: text(document.businessStatus || document.status), partnerId: text(document[partnerField]), warehouseId: text(document.warehouseId),
+    businessStatus: text(document.businessStatus || document.status), businessDate: text(document.businessDate || (kind === 'PURCHASE' ? document.purchaseDate : document.saleDate)), partnerId: text(document[partnerField]), warehouseId: text(document.warehouseId),
     supplyAmount: Number(document.supplyAmount ?? document.supplyAmountWon ?? 0), totalAmount: Number(document.totalAmount ?? document.totalAmountWon ?? 0),
     taxType: text(document.taxType), vatAmount: document.vatAmount ?? null, currency: text(document.currency),
     lines: [...lines.map(line => snapshotLine(kind, line)), ...tombstones.map(line => snapshotLine(kind, line, true))]

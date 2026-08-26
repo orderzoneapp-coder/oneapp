@@ -12,6 +12,7 @@
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="coreEngine.js"></script>
+    <script src="./dataops/v1-security-client.js?v=0.1.2"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <script>
     // ONEAPP MerchOps - Main Workspace [v2.1.203_F8ShopInboundDefaults]: F8 쇼핑몰업로드의 비재고 상품은 입고가가 있으면 판매여부 1·재고수량 999로 출력하고 테마는 그대로 유지한다.
@@ -3519,25 +3520,27 @@
                 catch (e) {
                     throw new Error('클라우드 주소가 올바르지 않습니다. 환경설정의 Apps Script 웹앱 주소를 확인하세요.');
                 }
-                let response;
+                const readClient = window.DATAOPS_V1_SECURITY_CLIENT && window.DATAOPS_V1_SECURITY_CLIENT.readClient;
+                if (!readClient || !readClient.released())
+                    throw new Error('DATAOPS_V1_SECURITY_NOT_RELEASED');
+                let readCredential;
+                if (!readClient.ready()) {
+                    const actorId = window.prompt('DataOps V1 재고 읽기 작업자 ID', 'ADMIN');
+                    const token = window.prompt('DataOps V1 읽기 전용 토큰 (현재 화면 메모리에만 유지)', '');
+                    if (!actorId || !token)
+                        throw new Error('DATAOPS_V1_READ_CREDENTIAL_REQUIRED');
+                    readCredential = { token, actorId, deviceId: 'MERCHOPS_BROWSER', environment: 'PRODUCTION', scope: { companyId: 'ONEAPP' } };
+                }
+                let snapshot;
                 try {
-                    response = await fetch(url, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                        body: JSON.stringify({ action: 'dataops_snapshot_get' })
-                    });
+                    snapshot = await readClient.getSnapshot({ url, readCredential });
                 }
                 catch (e) {
                     throw new Error('클라우드 서버에 연결할 수 없습니다. 환경설정의 Apps Script 주소와 네트워크를 확인하세요.');
                 }
-                let result;
-                try { result = await response.json(); }
-                catch (e) { throw new Error(`클라우드 응답을 JSON으로 해석할 수 없습니다 (HTTP ${response.status || '-'}). Apps Script 배포 URL을 확인하세요.`); }
-                if (!response.ok || !result || result.status !== 'success')
-                    throw new Error(window.MERCH_DATAOPS_SNAPSHOT_MODULE.mapReadError(result?.message, response.ok ? 0 : response.status));
-                if (!result.data)
+                if (!snapshot)
                     throw new Error('확정된 DataOps 클라우드 재고자료가 없습니다. DataOps에서 F9 저장을 먼저 실행하세요.');
-                return window.MERCH_DATAOPS_SNAPSHOT_MODULE.validate(result.data);
+                return window.MERCH_DATAOPS_SNAPSHOT_MODULE.validate(snapshot);
             },
             toWorkbookFile: (snapshot) => {
                 const title = `회사명 : 원앱 / 1창고 / ${String(snapshot.basisDate).replace(/-/g, '/')} / 전체재고`;

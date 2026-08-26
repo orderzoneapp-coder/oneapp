@@ -196,6 +196,22 @@ jobs:
           node scripts/test-orderq-stage5-cloud-e2e.mjs
           node scripts/test-orderq-stage5-ui-gate.mjs
 
+      - name: Test ORDER Q stage 6 close and AR/AP foundation
+        run: |
+          node scripts/test-dataops-stage6-ledger-opening-bridge.mjs
+          node scripts/test-dataops-stage6-business-date-cohort.mjs
+          node scripts/test-dataops-stage6-source-seal-commit-head.mjs
+          node scripts/test-dataops-stage6-company-close-scope.mjs
+          node scripts/test-dataops-stage6-close-series-revision.mjs
+          node scripts/test-dataops-stage6-official-chain-net.mjs
+          node scripts/test-dataops-stage6-v12-financial-entry.mjs
+          node scripts/test-dataops-stage6-security-cutover.mjs
+          node scripts/test-dataops-stage6-sheets-staging-failure.mjs
+          node scripts/test-dataops-stage6-db-v16.mjs
+          node scripts/test-dataops-stage6-close-ui-product-path.mjs
+          node scripts/test-dataops-stage6-close-purpose-o1.mjs
+          node scripts/test-dataops-stage6-authoritative-product-bridge.mjs
+
       - name: Test DataOps zero and negative stock preservation
         run: node scripts/test-dataops-zero-stock-contract.mjs
 

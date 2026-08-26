@@ -54,17 +54,22 @@ await assert.rejects(
   "a tampered DataOps snapshot must be rejected",
 );
 
-let requestBody = null;
+let readRequest = null;
+const readCredential = { token: "READ-ONLY", actorId: "ADMIN", deviceId: "TEST", environment: "TEST", scope: { companyId: "ONEAPP" } };
 const fetched = await adapter.fetchLatestDataOpsSnapshot("https://example.com/exec", {
   cryptoImpl: crypto.webcrypto,
-  fetchImpl: async (_url, init) => {
-    requestBody = JSON.parse(init.body);
-    return { ok: true, status: 200, json: async () => ({ status: "success", data: snapshot }) };
-  },
+  readCredential,
+  securityClient: { released: () => true, ready: () => false, getSnapshot: async request => { readRequest = request; return snapshot; } },
 });
-assert.deepEqual(requestBody, { action: "dataops_snapshot_get" },
-  "DataOps read must remain tokenless and send only the read action");
+assert.equal(readRequest.readCredential.token, "READ-ONLY", "DataOps read must use the dedicated ephemeral READ credential");
+assert.equal(readRequest.readCredential.scope.companyId, "ONEAPP");
 assert.equal(fetched.revision, 7);
+let prereleaseNetwork = 0;
+await assert.rejects(() => adapter.fetchLatestDataOpsSnapshot("https://example.com/exec", {
+  cryptoImpl: crypto.webcrypto,
+  securityClient: { released: () => false, getSnapshot: async () => { prereleaseNetwork += 1; } },
+}), /DATAOPS_V1_SECURITY_NOT_RELEASED/);
+assert.equal(prereleaseNetwork, 0, "unreleased authenticated transport must not fall back to anonymous network");
 
 const smartOrders = [
   {

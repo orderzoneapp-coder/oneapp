@@ -40,7 +40,9 @@ assert.doesNotMatch(orderOpsHtml, /<strong class="brand-product">ORDER Q · 출�
   "the public APP BAR must not duplicate the logo with the former text brand");
 assert.match(orderOpsHtml, /ORDER Q v1\.65 · 출고관리/,
   "the public footer must use the ORDER Q product concept");
-assert.match(orderOpsHtml, /orderops\/orderops-source-adapter\.js\?v=1\.64\.0/,
+assert.match(orderOpsHtml, /dataops\/v1-security-client\.js\?v=0\.1\.2/,
+  "the public page must load the authenticated DataOps V1 read client");
+assert.match(orderOpsHtml, /orderops\/orderops-source-adapter\.js\?v=1\.64\.1/,
   "the public page must load the DataOps and SmartInput source adapter");
 assert.match(orderOpsHtml, /function loadDataOpsInventory\(\)[\s\S]*fetchLatestDataOpsSnapshot/,
   "the warehouse card must load and validate the latest DataOps snapshot");
