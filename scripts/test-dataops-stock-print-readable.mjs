@@ -22,6 +22,7 @@ const printRows = [
     code: "101020116",
     name: "대파 서울 10단",
     spec: "BOX",
+    unit: "BOX",
     finalQty: 123,
     baseQty: 100,
     inQty: 123,
@@ -36,6 +37,7 @@ const printRows = [
     code: "1010201170",
     name: "팽이버섯 국내산 5개입 상품",
     spec: "EA",
+    unit: "EA",
     finalQty: -123,
     baseQty: -123,
     inQty: 0,
@@ -50,7 +52,8 @@ const printRows = [
   {
     code: "202030405",
     name: "냉동 수산 가공품 1kg",
-    spec: "BOX",
+    spec: "1kg",
+    unit: "소분",
     finalQty: 8,
     baseQty: 5,
     inQty: 3,
@@ -123,6 +126,8 @@ assert.match(renderedHtml, /td\{[^}]*padding:3\.5px 3px;[^}]*text-overflow:ellip
 assert.match(renderedHtml, /\.code\{[^}]*font-size:11px/);
 assert.match(renderedHtml, /\.qty\{padding-left:1px;padding-right:1px\}/);
 assert.match(renderedHtml, /\.purchase-date\{text-align:center;padding-left:1px;padding-right:1px\}/);
+assert.match(renderedHtml, /\.print-unit-alert\{color:#b91c1c!important;font-weight:900\}/);
+assert.match(renderedHtml, /print-color-adjust:exact/);
 assert.doesNotMatch(renderedHtml, /\.code\{[^}]*font-size:15\.5px/);
 
 const expectedWidths = {
@@ -191,8 +196,17 @@ assert.ok(renderedHtml.includes(expectedColgroup));
 assert.ok(renderedHtml.includes(expectedHeader));
 assert.match(
   renderedHtml,
-  /<td class="spec">BOX<\/td>\s*<td class="price">123,456<\/td>\s*<td class="qty final divider-core [^"]*">123<\/td>/,
+  /<td class="spec"><span class="print-unit ">BOX<\/span><\/td>\s*<td class="price">123,456<\/td>\s*<td class="qty final divider-core [^"]*">123<\/td>/,
 );
+assert.match(
+  renderedHtml,
+  /<span class="print-unit print-unit-alert">EA<\/span>/,
+);
+assert.match(
+  renderedHtml,
+  /1kg <span class="print-unit print-unit-alert">소분<\/span>/,
+);
+assert.doesNotMatch(renderedHtml, /print-unit-alert">BOX<\/span>/);
 
 assert.equal((renderedHtml.match(/<tr class="/g) || []).length, printRows.length);
 assert.match(renderedHtml, /101020116/);

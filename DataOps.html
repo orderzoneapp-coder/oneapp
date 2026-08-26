@@ -46,6 +46,211 @@
     <script src="/nexus/common/apps-config.js?v=1.4.0"></script>
     <script src="/nexus/common/nexus-top.js?v=1.5.1"></script>
     <link rel="stylesheet" href="/nexus/common/nexus-operational-theme.css?v=1.0.0">
+    <style>
+        /* DataOps local visual contract: keep selected controls clear without neon saturation. */
+        .dataops-filter-button {
+            border: 1px solid #cbd5e1;
+            background: #fff;
+            color: #475569;
+        }
+        .dataops-filter-button:hover { background: #f1f5f9; }
+        .dataops-filter-button--view.is-active {
+            border-color: #747a96;
+            background: #575d78;
+            color: #f8fafc;
+        }
+        .dataops-filter-button--category.is-active {
+            border-color: #58799a;
+            background: #3f607f;
+            color: #f8fafc;
+        }
+        .dataops-filter-button--unit.is-active {
+            border-color: #51796f;
+            background: #3d6259;
+            color: #f8fafc;
+        }
+        .dataops-merge-button--selected {
+            border-color: #557881;
+            background: #3c6068;
+            color: #f8fafc;
+        }
+        .dataops-merge-button--selected:hover { background: #344f56; }
+        .dataops-merge-button--average {
+            border-color: #5c7865;
+            background: #46614d;
+            color: #f8fafc;
+        }
+        .dataops-merge-button--average:hover { background: #3d5543; }
+        .dataops-date-chip {
+            display: inline-block;
+            padding: 1px 4px;
+            border: 1px solid #cbd5e1;
+            border-radius: 4px;
+            background: #f8fafc;
+            color: #475569;
+            font-weight: 800;
+            line-height: 1.25;
+        }
+        .dataops-date-chip.is-current {
+            border-color: #7894b2;
+            background: #dbe7f2;
+            color: #203b55;
+        }
+        .dataops-f9-modal {
+            border: 1px solid #cbd5e1;
+            background: #fff;
+            color: #0f172a;
+        }
+        .dataops-f9-header {
+            border-bottom: 1px solid #cbd5e1;
+            background: #e8edf3;
+            color: #1e293b;
+        }
+        .dataops-f9-summary-chip,
+        .dataops-f9-severity-chip {
+            border: 1px solid #cbd5e1;
+            background: #f8fafc;
+            color: #475569;
+        }
+        .dataops-f9-group {
+            border-bottom: 1px solid #dbe2ea;
+            background: #fff;
+        }
+        .dataops-f9-group:last-child { border-bottom: 0; }
+        .dataops-f9-group > summary {
+            cursor: pointer;
+            list-style: none;
+            background: #f8fafc;
+            color: #334155;
+        }
+        .dataops-f9-group > summary::-webkit-details-marker { display: none; }
+        .dataops-f9-group > summary::before {
+            content: '▸';
+            margin-right: 7px;
+            color: #64748b;
+        }
+        .dataops-f9-group[open] > summary::before { content: '▾'; }
+        .dataops-f9-summary-chip[data-severity="BLOCKING"],
+        .dataops-f9-severity-chip[data-severity="BLOCKING"] {
+            border-color: #d7a0a0;
+            background: #f8e8e8;
+            color: #8f3030;
+        }
+        .dataops-f9-summary-chip[data-severity="REVIEW"],
+        .dataops-f9-severity-chip[data-severity="REVIEW"] {
+            border-color: #d0b184;
+            background: #f4ecdf;
+            color: #775522;
+        }
+        .dataops-f9-summary-chip[data-severity="ADJUSTMENT"],
+        .dataops-f9-severity-chip[data-severity="ADJUSTMENT"],
+        .dataops-f9-summary-chip[data-severity="REFERENCE"],
+        .dataops-f9-severity-chip[data-severity="REFERENCE"] {
+            border-color: #91aabd;
+            background: #e7eef3;
+            color: #36556c;
+        }
+        .dataops-f9-summary-chip[data-severity="CONFIRMED"],
+        .dataops-f9-severity-chip[data-severity="CONFIRMED"] {
+            border-color: #91b29f;
+            background: #e6efe9;
+            color: #365f47;
+        }
+        .dataops-f9-action[data-severity="BLOCKING"] { color: #9a3c3c; }
+        .dataops-f9-action[data-severity="REVIEW"] { color: #866024; }
+        .dataops-f9-action[data-severity="ADJUSTMENT"],
+        .dataops-f9-action[data-severity="REFERENCE"] { color: #49697f; }
+        .dataops-f9-action[data-severity="CONFIRMED"] { color: #3f6b50; }
+        html[data-nexus-theme="dark"][data-nexus-app="dataops"] .dataops-filter-button {
+            border-color: #4a5668;
+            background: #202733;
+            color: #aeb8c7;
+        }
+        html[data-nexus-theme="dark"][data-nexus-app="dataops"] .dataops-filter-button:hover {
+            background: #293241;
+            color: #d7dee8;
+        }
+        html[data-nexus-theme="dark"][data-nexus-app="dataops"] .dataops-filter-button--view.is-active {
+            border-color: #69708d;
+            background: #3b3f55;
+            color: #eef0f7;
+        }
+        html[data-nexus-theme="dark"][data-nexus-app="dataops"] .dataops-filter-button--category.is-active {
+            border-color: #58738d;
+            background: #31485f;
+            color: #e6eef6;
+        }
+        html[data-nexus-theme="dark"][data-nexus-app="dataops"] .dataops-filter-button--unit.is-active {
+            border-color: #56736c;
+            background: #304b45;
+            color: #e5f1ed;
+        }
+        html[data-nexus-theme="dark"][data-nexus-app="dataops"] .dataops-merge-button--selected {
+            border-color: #56737a;
+            background: #30494f;
+            color: #e7f0f1;
+        }
+        html[data-nexus-theme="dark"][data-nexus-app="dataops"] .dataops-merge-button--average {
+            border-color: #5e7362;
+            background: #35483a;
+            color: #e9f0ea;
+        }
+        html[data-nexus-theme="dark"][data-nexus-app="dataops"] .dataops-date-chip {
+            border-color: #4f5e72;
+            background: #232c38;
+            color: #c4cfdd;
+        }
+        html[data-nexus-theme="dark"][data-nexus-app="dataops"] .dataops-date-chip.is-current {
+            border-color: #6686a5;
+            background: #2b4258;
+            color: #edf6ff;
+        }
+        html[data-nexus-theme="dark"][data-nexus-app="dataops"] .dataops-f9-modal {
+            border-color: var(--nexus-border-strong);
+            background: var(--nexus-panel-bg);
+            color: var(--nexus-text);
+        }
+        html[data-nexus-theme="dark"][data-nexus-app="dataops"] .dataops-f9-header {
+            border-color: var(--nexus-border);
+            background: #252e3a;
+            color: var(--nexus-text);
+        }
+        html[data-nexus-theme="dark"][data-nexus-app="dataops"] .dataops-f9-group {
+            border-color: var(--nexus-border);
+            background: var(--nexus-panel-bg);
+        }
+        html[data-nexus-theme="dark"][data-nexus-app="dataops"] .dataops-f9-group > summary {
+            background: #202833;
+            color: var(--nexus-text);
+        }
+        html[data-nexus-theme="dark"][data-nexus-app="dataops"] .dataops-f9-summary-chip,
+        html[data-nexus-theme="dark"][data-nexus-app="dataops"] .dataops-f9-severity-chip {
+            border-color: #566171;
+            background: #29313c;
+            color: #c5ceda;
+        }
+        html[data-nexus-theme="dark"][data-nexus-app="dataops"] :is(.dataops-f9-summary-chip,.dataops-f9-severity-chip)[data-severity="BLOCKING"] {
+            border-color: #7d5454;
+            background: #3c2e31;
+            color: #e1b5b5;
+        }
+        html[data-nexus-theme="dark"][data-nexus-app="dataops"] :is(.dataops-f9-summary-chip,.dataops-f9-severity-chip)[data-severity="REVIEW"] {
+            border-color: #746448;
+            background: #39342a;
+            color: #dbc697;
+        }
+        html[data-nexus-theme="dark"][data-nexus-app="dataops"] :is(.dataops-f9-summary-chip,.dataops-f9-severity-chip)[data-severity="ADJUSTMENT"],
+        html[data-nexus-theme="dark"][data-nexus-app="dataops"] :is(.dataops-f9-summary-chip,.dataops-f9-severity-chip)[data-severity="REFERENCE"] {
+            border-color: #566d80;
+            background: #2b3844;
+            color: #bfd0df;
+        }
+        html[data-nexus-theme="dark"][data-nexus-app="dataops"] :is(.dataops-f9-summary-chip,.dataops-f9-severity-chip)[data-severity="CONFIRMED"] {
+            border-color: #577161;
+            background: #2d3c33;
+            color: #bdd4c4;
+        }
+    </style>
     <style>:root{--nexus-top-height:44px}nexus-top{display:block;min-height:var(--nexus-top-height)}.nexus-top-fallback{height:var(--nexus-top-height);padding:0 14px;display:flex;align-items:center;gap:12px;background:#0b1021;color:#fff;font:12px Pretendard,"Noto Sans KR",sans-serif}.nexus-top-fallback strong{letter-spacing:.08em}.nexus-top-fallback span{color:#cbd5e1}.nexus-top-fallback button{margin-left:auto;border:1px solid #64748b;border-radius:6px;padding:5px 9px;background:transparent;color:#fff;cursor:pointer}body>#root>.h-screen{height:calc(100vh - var(--nexus-top-height))!important}</style>
   <link rel="icon" type="image/png" href="/nexus/assets/nexus-favicon.png">
 </head>
@@ -657,6 +862,22 @@ const DATAOPS_F9_PREFLIGHT_MODULE = Object.freeze({
         WAREHOUSE_02_MISMATCH: '02창고 오차',
         UNIT_CONVERSION_FAILURE: '단위 변환 실패'
     }),
+    SEVERITY_LABELS: Object.freeze({
+        BLOCKING: '처리 차단',
+        REVIEW: '확인 필요',
+        ADJUSTMENT: '관리자 조정',
+        CONFIRMED: '확인 완료',
+        REFERENCE: '참고'
+    }),
+    TYPE_SEVERITIES: Object.freeze({
+        VENDOR_CHIP_MISMATCH: 'BLOCKING',
+        TOTAL_COST_MISMATCH: 'BLOCKING',
+        UNIT_CONVERSION_FAILURE: 'BLOCKING',
+        UNALLOCATED_LOT: 'REVIEW',
+        MISSING_INBOUND_COST: 'REVIEW',
+        WAREHOUSE_02_MISMATCH: 'REVIEW'
+    }),
+    SEVERITY_ORDER: Object.freeze(['BLOCKING', 'REVIEW', 'ADJUSTMENT', 'CONFIRMED', 'REFERENCE']),
     numberOrBlank: (value) => value === '' || value === null || value === undefined ? '' : safeNum(value),
     getSourceEvidence: (item = {}, preferredRoles = []) => {
         const salesSources = Array.isArray(item._salesSourceEvidence) ? item._salesSourceEvidence : [];
@@ -703,7 +924,7 @@ const DATAOPS_F9_PREFLIGHT_MODULE = Object.freeze({
             ...overrides
         };
     },
-    run: ({ productData = [], transferClosingCheck = null } = {}) => {
+    run: ({ productData = [], transferClosingCheck = null, substHistory = [] } = {}) => {
         const issues = DATAOPS_VENDOR_CHIP_MODULE.buildIntegrityErrors({ productData }).map(error => ({
             ...DATAOPS_F9_PREFLIGHT_MODULE.buildItemIssue('VENDOR_CHIP_MISMATCH', (productData || []).find(item => safeStr(item.batchKey) === safeStr(error.batchKey)) || {}, {
                 id: error.id,
@@ -822,9 +1043,52 @@ const DATAOPS_F9_PREFLIGHT_MODULE = Object.freeze({
             seen.add(key);
             deduped.push(issue);
         });
+        const historyKeys = new Set((substHistory || []).flatMap(history => [
+            safeStr(history && history.sourceKey),
+            safeStr(history && history.targetKey)
+        ]).filter(Boolean));
+        const itemByKey = new Map();
+        (productData || []).forEach(item => {
+            if (!item) return;
+            [safeStr(item.batchKey), DATAOPS_VENDOR_CHIP_MODULE.normalizeCode(item.코드)].filter(Boolean).forEach(key => itemByKey.set(key, item));
+        });
+        const classifiedIssues = deduped.map(issue => {
+            const item = itemByKey.get(safeStr(issue.batchKey)) || itemByKey.get(DATAOPS_VENDOR_CHIP_MODULE.normalizeCode(issue.code)) || {};
+            const evidenceText = `${safeStr(item.메모)} ${(Array.isArray(item.이슈) ? item.이슈 : []).map(value => safeStr(value)).join(' ')} ${safeStr(item._operationType)}`;
+            const hasAdminEvidence = historyKeys.has(safeStr(issue.batchKey))
+                || item._manualLotOverrideApplied === true
+                || !!safeStr(item._operationType)
+                || /수기(?:치환|조정|보정)?|관리자\s*(?:판단|조정)|로스/.test(evidenceText);
+            const isAdminConfirmed = item.수기확인완료 === true
+                || item._legacyAdminComplete === true
+                || !!safeStr(item._adminCompletedAt)
+                || /관리자확인완료|확인완료/.test(evidenceText);
+            const baseSeverity = DATAOPS_F9_PREFLIGHT_MODULE.TYPE_SEVERITIES[issue.type] || 'REFERENCE';
+            const severity = baseSeverity === 'BLOCKING'
+                ? 'BLOCKING'
+                : (hasAdminEvidence ? (isAdminConfirmed ? 'CONFIRMED' : 'ADJUSTMENT') : baseSeverity);
+            return {
+                ...issue,
+                severity,
+                severityLabel: DATAOPS_F9_PREFLIGHT_MODULE.SEVERITY_LABELS[severity]
+            };
+        });
         const counts = {};
-        deduped.forEach(issue => { counts[issue.type] = safeNum(counts[issue.type]) + 1; });
-        return { ok: deduped.length === 0, issues: deduped, counts, generatedAt: new Date().toISOString() };
+        const presentationCounts = Object.fromEntries(DATAOPS_F9_PREFLIGHT_MODULE.SEVERITY_ORDER.map(severity => [severity, 0]));
+        classifiedIssues.forEach(issue => {
+            counts[issue.type] = safeNum(counts[issue.type]) + 1;
+            presentationCounts[issue.severity] = safeNum(presentationCounts[issue.severity]) + 1;
+        });
+        const presentationIssues = [...classifiedIssues].sort((a, b) => DATAOPS_F9_PREFLIGHT_MODULE.SEVERITY_ORDER.indexOf(a.severity) - DATAOPS_F9_PREFLIGHT_MODULE.SEVERITY_ORDER.indexOf(b.severity));
+        return {
+            ok: classifiedIssues.length === 0,
+            hasBlocking: presentationCounts.BLOCKING > 0,
+            issues: classifiedIssues,
+            presentationIssues,
+            counts,
+            presentationCounts,
+            generatedAt: new Date().toISOString()
+        };
     }
 });
 window.DATAOPS_F9_PREFLIGHT_MODULE = DATAOPS_F9_PREFLIGHT_MODULE;
@@ -4192,7 +4456,8 @@ const EXPORT_MODULE = Object.freeze({
             return {
                 code: code && code !== 'NO_CODE' ? code : '',
                 name: productFields.name || safeStr(item.품명),
-                spec: productFields.spec || productFields.unit || stockUnit,
+                spec: productFields.spec || '',
+                unit: productFields.unit || stockUnit,
                 categoryCode: standard.categoryCode || safeStr(item.코드).slice(0, 2),
                 category2Code: standard.category2Code || DATA_MODEL_MODULE.getCategory2Code(standard.code || item.코드),
                 baseQty: safeNum(item.기초),
@@ -4238,11 +4503,17 @@ const EXPORT_MODULE = Object.freeze({
                 const purchaseVendorClass = r.purchaseVendor ? '' : 'purchase-empty';
                 const purchasePrice = safeNum(r.price) > 0 ? formatMoney(r.price) : '—';
                 const systemText = r.systemText || '—';
+                const unitText = safeStr(r.unit, '');
+                const specText = safeStr(r.spec, '');
+                const unitIsAlert = /^(EA|소분)$/i.test(unitText.trim());
+                const specAndUnit = specText && unitText && specText.trim().toUpperCase() !== unitText.trim().toUpperCase()
+                    ? `${EXPORT_MODULE.escapeHtml(specText)} <span class="print-unit ${unitIsAlert ? 'print-unit-alert' : ''}">${EXPORT_MODULE.escapeHtml(unitText)}</span>`
+                    : `<span class="print-unit ${unitIsAlert ? 'print-unit-alert' : ''}">${EXPORT_MODULE.escapeHtml(unitText || specText || '—')}</span>`;
                 return `
                     <tr class="${categoryClass} ${todayRowClass}">
                         <td class="code">${EXPORT_MODULE.escapeHtml(r.code || '—')}</td>
                         <td class="name">${EXPORT_MODULE.escapeHtml(r.name || '—')}</td>
-                        <td class="spec">${EXPORT_MODULE.escapeHtml(r.spec || '—')}</td>
+                        <td class="spec">${specAndUnit}</td>
                         <td class="price">${purchasePrice}</td>
                         <td class="qty final divider-core ${finalClass}">${formatPrintQty(r.finalQty)}</td>
                         <td class="qty">${formatPrintQty(r.baseQty)}</td>
@@ -4270,7 +4541,7 @@ const EXPORT_MODULE = Object.freeze({
                         thead{display:table-header-group}
                         th{background:#e8edf3;border:1px solid #9aa8ba;padding:3.5px 1px;text-align:center;white-space:nowrap;font-size:10px;font-weight:900;color:#1f2937}
                         td{border:1px solid #cbd5e1;padding:3.5px 3px;vertical-align:middle;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-                        .code{text-align:left;color:#1d4ed8;font-size:11px}.name{text-align:left;font-weight:800}.spec{text-align:left;color:#334155}
+                        .code{text-align:left;color:#1d4ed8;font-size:11px}.name{text-align:left;font-weight:800}.spec{text-align:left;color:#334155}.print-unit{color:inherit}.print-unit-alert{color:#b91c1c!important;font-weight:900}
                         .qty,.price{text-align:right;font-variant-numeric:tabular-nums}.qty{padding-left:1px;padding-right:1px}.final{font-weight:900}.vendor{text-align:left}.purchase-date{text-align:center;padding-left:1px;padding-right:1px}
                         .divider-core,.divider-check{border-right:2px solid #64748b!important}
                         .inbound-value{color:#0f766e;font-weight:800}.outbound-value{color:#c2410c;font-weight:800}
@@ -4278,7 +4549,7 @@ const EXPORT_MODULE = Object.freeze({
                         .today-purchase-row td{background:#fff8e7}.today-purchase-row .purchase-date{color:#1d4ed8;font-weight:900}
                         .purchase-empty{color:#94a3b8;text-align:center}.system{text-align:left;color:#64748b}.system.active{color:#334155;font-weight:700}
                         tr.category-break td{border-top:3px solid #334155!important}
-                        @media print{button{display:none}body{-webkit-print-color-adjust:exact;print-color-adjust:exact}thead{display:table-header-group}tr{break-inside:avoid;page-break-inside:avoid}table{break-after:auto;page-break-after:auto}}
+                        @media print{button{display:none}body,.print-unit-alert{-webkit-print-color-adjust:exact;print-color-adjust:exact}.print-unit-alert{color:#b91c1c!important}thead{display:table-header-group}tr{break-inside:avoid;page-break-inside:avoid}table{break-after:auto;page-break-after:auto}}
                     </style></head><body><div class="print-head"><h1>${EXPORT_MODULE.escapeHtml(title)}</h1><div class="meta"><span>마감일자: ${EXPORT_MODULE.escapeHtml(targetDateStr || '—')}</span><span>출력시각: ${EXPORT_MODULE.escapeHtml(new Date().toLocaleString())}</span></div></div>
                     <div class="summary">전체 ${rows.length}행 · 오차 ${diffCount}행 · 마이너스 ${negativeCount}행 · 시스템 ${systemCount}행</div>
                     ${htmlTable}
@@ -8607,20 +8878,20 @@ const ProductRow = React.memo(({ item, idx, isLinked, isActiveMulti, isMultiGrou
                             const isMergeAction = isMergeDisabledRow || isLotDetailMergeButtonRow;
                             const action = isDetailMergedViewRow ? 'detail-split' : (isLotDetailMergeButtonRow ? 'detail-merge' : (isMergeDisabledRow ? 'merge' : 'split'));
                             const representativeKey = isMergeAction ? safeStr(item.batchKey || '') : '';
-                            const label = isLotDetailMergeButtonRow ? '선택원가 통합' : (isMergeAction ? '통합' : '해제');
+                            const label = isLotDetailMergeButtonRow ? '선택' : (isMergeAction ? '통합' : '해제');
                             const title = isLotDetailMergeButtonRow
                                 ? '이 행의 구매일자·구매처·단가를 대표 기준으로 선택하여, 재고가 남은 LOT을 1행으로 통합합니다.'
                                 : (isDetailMergedViewRow ? '통합한 Lot 상품을 다시 상세행으로 풉니다.' : (isMergeDisabledRow ? '이 Lot 기준으로 다시 통합합니다.' : '이 상품을 Lot별 상세행으로 풉니다.'));
                             const buttonClass = isMergeAction
-                                ? 'bg-cyan-600 text-white border-cyan-700 hover:bg-cyan-700'
+                                ? 'dataops-merge-button--selected'
                                 : 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100';
                             return React.createElement(React.Fragment, null,
                                 React.createElement("button", { type: "button", onClick: (e) => { e.preventDefault(); e.stopPropagation(); onToggleCodeMerge(item._mergeOverrideCode || item.코드, representativeKey, action); }, className: `ml-2 shrink-0 px-2 py-[3px] rounded border text-[11px] font-black ${buttonClass}`, title }, label),
-                                isLotDetailMergeButtonRow && isLotReviewGroupStart && React.createElement("button", { type: "button", onClick: (e) => { e.preventDefault(); e.stopPropagation(); onToggleCodeMerge(item._mergeOverrideCode || item.코드, '', 'detail-merge-average'); }, className: "ml-1 shrink-0 px-2 py-[3px] rounded border text-[11px] font-black bg-emerald-600 text-white border-emerald-700 hover:bg-emerald-700", title: "재고가 남은 LOT 수량을 합산하고, 양수 잔량·양수 단가 LOT의 수량가중 평균원가를 마지막에 한 번만 100원 단위로 반올림하여 적용합니다." }, "평균가 통합"));
+                                isLotDetailMergeButtonRow && isLotReviewGroupStart && React.createElement("button", { type: "button", onClick: (e) => { e.preventDefault(); e.stopPropagation(); onToggleCodeMerge(item._mergeOverrideCode || item.코드, '', 'detail-merge-average'); }, className: "dataops-merge-button--average ml-1 shrink-0 px-2 py-[3px] rounded border text-[11px] font-black", title: "재고가 남은 LOT 수량을 합산하고, 양수 잔량·양수 단가 LOT의 수량가중 평균원가를 마지막에 한 번만 100원 단위로 반올림하여 적용합니다." }, "평균가"));
                         })()),
                     React.createElement("div", { className: "text-[10px] text-slate-500 truncate font-medium tracking-tight flex items-center" },
                         item.코드 !== '-' && item.코드 !== 'NO_CODE' ? React.createElement("span", { className: "mr-1" }, item.코드) : '',
-                        React.createElement("span", { title: item._dateDisplayMemo || (item.일자 ? item.일자 : '미상(과거처리)'), className: isToday ? "text-blue-700 bg-blue-100 px-1 rounded border border-blue-200 font-bold" : (item._dateDisplayMemo && item._dateDisplayMemo.includes('과거처리') ? "text-slate-500 bg-slate-100 px-1 rounded border border-slate-200 font-bold" : "") }, item.일자 || '미상'),
+                        React.createElement("span", { title: item._dateDisplayMemo || (item.일자 ? item.일자 : '미상(과거처리)'), className: `dataops-date-chip ${isToday ? 'is-current' : ''}` }, item.일자 || '미상'),
                         React.createElement("span", { className: "mx-1 text-slate-300" }, "|"),
                         React.createElement("span", { className: `truncate ${isToday ? 'text-blue-700 font-bold' : ''}`, title: displayPurchaseVendor }, displayPurchaseVendor),
                         item.대체입고 > 0 && React.createElement("span", { className: "text-[9px] text-blue-500 font-semibold whitespace-nowrap ml-1 shrink-0" }, "(\uC870\uC815\uB428)")),
@@ -12070,7 +12341,8 @@ ${balanceText}
         const latestProductData = productDataRef.current || productData;
         const preflightResult = DATAOPS_F9_PREFLIGHT_MODULE.run({
             productData: latestProductData,
-            transferClosingCheck: transferClosingAlert
+            transferClosingCheck: transferClosingAlert,
+            substHistory
         });
         // V1.a22.114: 사전점검은 관리자 작업을 막는 승인 게이트가 아니라 결과 보고다.
         // 오류가 있어도 workbook을 즉시 생성하고 상세 근거는 보고서 시트와 결과 창에 남긴다.
@@ -12210,7 +12482,8 @@ ${balanceText}
         if (flushed) await new Promise(resolve => setTimeout(resolve, 0));
         const result = DATAOPS_F9_PREFLIGHT_MODULE.run({
             productData: productDataRef.current || productData,
-            transferClosingCheck: transferClosingAlert
+            transferClosingCheck: transferClosingAlert,
+            substHistory
         });
         if (result.ok) {
             setF9PreflightResult(null);
@@ -12218,7 +12491,7 @@ ${balanceText}
             return;
         }
         setF9PreflightResult({ ...result, workbookGenerated: false });
-    }, [productData, transferClosingAlert, setAlertMsg]);
+    }, [productData, substHistory, transferClosingAlert, setAlertMsg]);
     // 🌟 성능 최적화: 전역 이벤트 리스너의 잦은 재생성을 막기 위한 콜백 참조 저장
     const latestHandlers = useRef({ handleIssueJump, handleRunAnalysis, handleRunTransferCheck, handleCombinedExport, handlePrintOutput, flushFocusedTableEdit, moveMergeCandidate });
     useEffect(() => {
@@ -12728,31 +13001,43 @@ ${balanceText}
                                             React.createElement("div", null, `수량 ${formatQty(detail.qty)}${detail.price ? ` / 단가 ${formatMoney(detail.price)}` : ''}${detail.note ? ` / ${detail.note}` : ''}`)))
                                             : React.createElement("div", { className: "px-3 py-3 text-xs text-slate-400" }, "판매내역 없음")))))))),
                 React.createElement("button", { id: "transfer-closing-alert-confirm-btn", autoFocus: true, onClick: () => setTransferClosingAlert(null), className: "mt-5 px-6 py-2.5 bg-slate-800 text-white rounded-lg text-sm font-bold hover:bg-slate-900 transition shadow-md w-full" }, "확인")))),
-        f9PreflightResult && !confirmModal.isOpen && (React.createElement("div", { className: "fixed inset-0 z-[370] bg-slate-900 bg-opacity-70 flex items-center justify-center p-4" },
-            React.createElement("div", { className: "bg-white rounded-xl shadow-2xl w-full max-w-5xl modal-bounce overflow-hidden" },
-                React.createElement("div", { className: "px-6 py-4 bg-rose-600 text-white flex flex-wrap items-center justify-between gap-3" },
-                    React.createElement("div", null,
-                        React.createElement("h3", { className: "text-lg font-black" }, `F9 결과 보고 ${f9PreflightResult.issues.length}건`),
-                        React.createElement("p", { className: "text-xs text-rose-100 mt-1" }, f9PreflightResult.workbookGenerated ? "엑셀은 생성되었습니다. 확인 필요 항목은 보고서 시트에도 포함했습니다." : "확인 필요 항목을 보고합니다. 엑셀 생성을 차단하지 않습니다.")),
-                    React.createElement("div", { className: "flex flex-wrap gap-1.5 justify-end" }, Object.entries(f9PreflightResult.counts || {}).map(([type, count]) => React.createElement("span", { key: type, className: "px-2 py-1 rounded bg-white/15 border border-white/25 text-[11px] font-bold" }, `${DATAOPS_F9_PREFLIGHT_MODULE.TYPE_LABELS[type] || type} ${count}`)))),
-                React.createElement("div", { className: "max-h-[65vh] overflow-y-auto divide-y divide-slate-200" },
-                    f9PreflightResult.issues.map((issue, issueIndex) => React.createElement("div", { key: issue.id || issueIndex, className: "p-4 bg-white hover:bg-slate-50" },
-                        React.createElement("div", { className: "flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3" },
-                            React.createElement("div", { className: "min-w-0 flex-1" },
-                                React.createElement("div", { className: "flex flex-wrap items-center gap-2" },
-                                    React.createElement("span", { className: "px-2 py-0.5 rounded bg-rose-100 text-rose-700 text-[11px] font-black" }, issue.typeLabel),
-                                    React.createElement("span", { className: "font-black text-slate-900" }, `${issue.code || '코드없음'}  ${issue.name || ''}`),
-                                    issue.vendorOrLot && React.createElement("span", { className: "text-xs text-slate-500" }, issue.vendorOrLot)),
-                                React.createElement("div", { className: "grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-2 mt-3 text-xs" },
-                                    React.createElement("div", { className: "bg-slate-100 rounded px-2.5 py-2" }, React.createElement("span", { className: "font-bold text-slate-500" }, "수량  "), `${issue.sourceQty === '' ? '-' : formatQty(issue.sourceQty)} → ${issue.calculatedQty === '' ? '-' : formatQty(issue.calculatedQty)}${issue.differenceQty === '' ? '' : ` / 차이 ${formatQty(issue.differenceQty)}`}`),
-                                    React.createElement("div", { className: "bg-slate-100 rounded px-2.5 py-2" }, React.createElement("span", { className: "font-bold text-slate-500" }, "원가  "), `${issue.sourcePrice === '' ? '-' : formatMoney(issue.sourcePrice)} → ${issue.calculatedCost === '' ? '-' : formatMoney(issue.calculatedCost)}${issue.differenceAmount === '' ? '' : ` / 차이 ${formatMoney(issue.differenceAmount)}`}`),
-                                    React.createElement("div", { className: "bg-slate-100 rounded px-2.5 py-2 md:col-span-2" }, React.createElement("span", { className: "font-bold text-slate-500" }, "원본  "), [issue.fileName, issue.sheetName, issue.rowNumber ? `${issue.rowNumber}행` : ''].filter(Boolean).join(' / ') || '기존 저장본·작업이력 없음')),
-                                React.createElement("p", { className: "mt-2 text-sm font-bold text-slate-700" }, issue.reason),
-                                React.createElement("p", { className: "mt-1 text-xs text-rose-600" }, issue.action)),
-                            React.createElement("button", { type: "button", onClick: () => focusF9PreflightIssue(issue), className: "shrink-0 px-3 py-2 rounded-lg bg-slate-800 text-white text-xs font-black hover:bg-slate-900" }, "해당 상품으로 이동"))))),
-                React.createElement("div", { className: "px-6 py-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-2" },
-                    React.createElement("button", { type: "button", onClick: () => setF9PreflightResult(null), className: "px-4 py-2 rounded-lg bg-white border border-slate-300 text-slate-600 text-sm font-bold hover:bg-slate-100" }, "닫기"),
-                    React.createElement("button", { id: "f9-preflight-recheck-btn", type: "button", onClick: handleF9PreflightRecheck, className: "px-5 py-2 rounded-lg bg-rose-600 text-white text-sm font-black hover:bg-rose-700 shadow-sm" }, "다시 점검"))))),
+        f9PreflightResult && !confirmModal.isOpen && (() => {
+            const presentationCounts = f9PreflightResult.presentationCounts || {};
+            const presentationIssues = f9PreflightResult.presentationIssues || f9PreflightResult.issues || [];
+            const issueGroups = DATAOPS_F9_PREFLIGHT_MODULE.SEVERITY_ORDER.map(severity => ({
+                severity,
+                label: DATAOPS_F9_PREFLIGHT_MODULE.SEVERITY_LABELS[severity],
+                issues: presentationIssues.filter(issue => (issue.severity || 'REFERENCE') === severity)
+            })).filter(group => group.issues.length > 0);
+            const renderIssue = (issue, issueIndex) => React.createElement("div", { key: issue.id || issueIndex, className: "p-4 bg-white hover:bg-slate-50" },
+                React.createElement("div", { className: "flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3" },
+                    React.createElement("div", { className: "min-w-0 flex-1" },
+                        React.createElement("div", { className: "flex flex-wrap items-center gap-2" },
+                            React.createElement("span", { "data-severity": issue.severity || 'REFERENCE', className: "dataops-f9-severity-chip px-2 py-0.5 rounded text-[11px] font-black" }, issue.typeLabel),
+                            React.createElement("span", { className: "font-black text-slate-900" }, `${issue.code || '코드없음'}  ${issue.name || ''}`),
+                            issue.vendorOrLot && React.createElement("span", { className: "text-xs text-slate-500" }, issue.vendorOrLot)),
+                        React.createElement("div", { className: "grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-2 mt-3 text-xs" },
+                            React.createElement("div", { className: "bg-slate-100 rounded px-2.5 py-2" }, React.createElement("span", { className: "font-bold text-slate-500" }, "수량  "), `${issue.sourceQty === '' ? '-' : formatQty(issue.sourceQty)} → ${issue.calculatedQty === '' ? '-' : formatQty(issue.calculatedQty)}${issue.differenceQty === '' ? '' : ` / 차이 ${formatQty(issue.differenceQty)}`}`),
+                            React.createElement("div", { className: "bg-slate-100 rounded px-2.5 py-2" }, React.createElement("span", { className: "font-bold text-slate-500" }, "원가  "), `${issue.sourcePrice === '' ? '-' : formatMoney(issue.sourcePrice)} → ${issue.calculatedCost === '' ? '-' : formatMoney(issue.calculatedCost)}${issue.differenceAmount === '' ? '' : ` / 차이 ${formatMoney(issue.differenceAmount)}`}`),
+                            React.createElement("div", { className: "bg-slate-100 rounded px-2.5 py-2 md:col-span-2" }, React.createElement("span", { className: "font-bold text-slate-500" }, "원본  "), [issue.fileName, issue.sheetName, issue.rowNumber ? `${issue.rowNumber}행` : ''].filter(Boolean).join(' / ') || '기존 저장본·작업이력 없음')),
+                        React.createElement("p", { className: "mt-2 text-sm font-bold text-slate-700" }, issue.reason),
+                        React.createElement("p", { "data-severity": issue.severity || 'REFERENCE', className: "dataops-f9-action mt-1 text-xs" }, issue.action)),
+                    React.createElement("button", { type: "button", onClick: () => focusF9PreflightIssue(issue), className: "shrink-0 px-3 py-2 rounded-lg bg-slate-800 text-white text-xs font-black hover:bg-slate-900" }, "해당 상품으로 이동")));
+            return React.createElement("div", { className: "fixed inset-0 z-[370] bg-slate-900 bg-opacity-70 flex items-center justify-center p-4" },
+                React.createElement("div", { className: "dataops-f9-modal rounded-xl shadow-2xl w-full max-w-5xl modal-bounce overflow-hidden" },
+                    React.createElement("div", { className: "dataops-f9-header px-6 py-4 flex flex-wrap items-center justify-between gap-3" },
+                        React.createElement("div", null,
+                            React.createElement("h3", { className: "text-lg font-black" }, f9PreflightResult.workbookGenerated ? "엑셀 생성 완료" : "F9 검토 결과"),
+                            React.createElement("p", { className: "text-xs text-slate-600 mt-1" }, f9PreflightResult.workbookGenerated ? "발견사항은 보고서에 기록했습니다. 실제 처리 차단과 관리자 확인 항목을 구분해 확인하세요." : "관측된 차이를 업무 의미별로 분류했습니다. 엑셀 생성 자체는 차단하지 않습니다.")),
+                        React.createElement("div", { className: "flex flex-wrap gap-1.5 justify-end" }, DATAOPS_F9_PREFLIGHT_MODULE.SEVERITY_ORDER.map(severity => React.createElement("span", { key: severity, "data-severity": severity, className: "dataops-f9-summary-chip px-2 py-1 rounded text-[11px] font-bold" }, `${DATAOPS_F9_PREFLIGHT_MODULE.SEVERITY_LABELS[severity]} ${safeNum(presentationCounts[severity])}`)))),
+                    React.createElement("div", { className: "max-h-[65vh] overflow-y-auto" },
+                        issueGroups.map(group => React.createElement("details", { key: group.severity, "data-severity": group.severity, open: group.severity === 'BLOCKING' || group.severity === 'REVIEW', className: "dataops-f9-group" },
+                            React.createElement("summary", { className: "px-4 py-3 text-sm font-black" }, `${group.label} ${group.issues.length}건`),
+                            React.createElement("div", { className: "divide-y divide-slate-200" }, group.issues.map(renderIssue))))),
+                    React.createElement("div", { className: "px-6 py-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-2" },
+                        React.createElement("button", { type: "button", onClick: () => setF9PreflightResult(null), className: "px-4 py-2 rounded-lg bg-slate-800 text-white text-sm font-bold hover:bg-slate-900" }, "닫기"),
+                        React.createElement("button", { id: "f9-preflight-recheck-btn", type: "button", onClick: handleF9PreflightRecheck, className: "px-4 py-2 rounded-lg bg-white border border-slate-300 text-slate-600 text-sm font-bold hover:bg-slate-100" }, "다시 점검"))));
+        })(),
         closePanelOpen && ['REVIEW', 'COMMITTED'].includes(closeUiState.phase) && (React.createElement("div", { id: "dataops-close-review", className: "fixed inset-0 z-[320] bg-slate-900 bg-opacity-60 flex items-center justify-center p-4" },
             React.createElement("div", { className: "bg-white rounded-xl shadow-2xl w-full max-w-3xl max-h-[85vh] overflow-hidden flex flex-col modal-bounce border border-slate-200" },
                 React.createElement("div", { className: "px-6 py-4 bg-slate-900 text-white flex items-center justify-between" },
@@ -12978,7 +13263,7 @@ ${balanceText}
                                                 issueFocusTimersRef.current = [];
                                                 setFilters(f => ({ ...f, reviewType: null, sortMode: 'DEFAULT', sortDesc: false }));
                                             };
-                                            return React.createElement("button", { key: mode, onClick: handleModeClick, title: mode === 'LOT_DETAIL' ? 'Lot별 상세행으로 봅니다. 재고가 남은 Lot이 2개 이상인 상품은 테두리와 통합 버튼을 항상 표시합니다.' : '같은 품목코드를 한 행으로 봅니다.', className: `px-2.5 py-1 rounded border transition font-black ${isActive ? 'bg-indigo-600 text-white border-indigo-700 shadow-sm' : 'bg-white text-indigo-600 border-indigo-200 hover:bg-indigo-50'}` }, label);
+                                            return React.createElement("button", { key: mode, onClick: handleModeClick, title: mode === 'LOT_DETAIL' ? 'Lot별 상세행으로 봅니다. 재고가 남은 Lot이 2개 이상인 상품은 테두리와 통합 버튼을 항상 표시합니다.' : '같은 품목코드를 한 행으로 봅니다.', className: `dataops-filter-button dataops-filter-button--view px-2.5 py-1 rounded transition font-black ${isActive ? 'is-active shadow-sm' : ''}` }, label);
                                         })),
                                     viewMode === 'CODE_SUMMARY' && React.createElement("div", { className: "flex items-center gap-1 whitespace-nowrap ml-0.5", title: "통합후보 이동: Tab 다음 / Shift+Tab 이전" },
                                         React.createElement("button", { type: "button", onClick: () => moveMergeCandidate('prev'), className: "px-2 py-1 rounded border border-amber-300 bg-white text-amber-700 hover:bg-amber-50 font-black", title: "이전 통합후보 (Shift+Tab)" }, "◀"),
@@ -13000,17 +13285,17 @@ ${balanceText}
                                             return { ...f, category: next, favoriteVendorOnly: false };
                                         });
                                         return React.createElement("div", { className: "flex items-center gap-1 whitespace-nowrap", title: "카테고리 필터는 중복 선택 가능합니다. 기존 구매잔량/기타상품·BOX/EA/소분·검색 필터와 교차 적용됩니다." },
-                                            React.createElement("button", { onClick: () => toggleCategory('ALL'), className: `px-2 py-1 rounded border transition ${selectedCategories.length === 0 ? 'bg-blue-600 text-white border-blue-700 shadow-sm' : 'bg-white text-blue-600 border-blue-200 hover:bg-blue-50'}` }, "전체"),
+                                            React.createElement("button", { onClick: () => toggleCategory('ALL'), className: `dataops-filter-button dataops-filter-button--category px-2 py-1 rounded transition ${selectedCategories.length === 0 ? 'is-active shadow-sm' : ''}` }, "전체"),
                                             [['10', '10'], ['20', '20'], ['30', '30'], ['40', '40'], ['50', '50']].map(([code, label]) => {
                                                 const isActive = selectedCategories.includes(code);
-                                                return React.createElement("button", { key: code, onClick: () => toggleCategory(code), className: `px-2 py-1 rounded border transition ${isActive ? 'bg-blue-600 text-white border-blue-700 shadow-sm' : 'bg-white text-blue-600 border-blue-200 hover:bg-blue-50'}` }, label);
+                                                return React.createElement("button", { key: code, onClick: () => toggleCategory(code), className: `dataops-filter-button dataops-filter-button--category px-2 py-1 rounded transition ${isActive ? 'is-active shadow-sm' : ''}` }, label);
                                             })
                                         );
                                     })(),
                                     React.createElement("div", { className: "w-px h-5 bg-slate-200 mx-0.5" }),
                                     [['PURCHASE_BALANCE', '구매잔량'], ['OTHER_STOCK', '기타상품']].map(([type, label]) => (React.createElement("button", { key: type, onClick: () => setFilters(f => ({ ...f, stockListType: f.stockListType === type ? 'ALL' : type })), title: `${label}만 보기. 기존 BOX/EA/소분·카테고리·검색 필터와 중복 적용됩니다.`, className: `px-2 py-1 rounded border whitespace-nowrap transition ${filters.stockListType === type ? 'bg-sky-600 text-white border-sky-700 shadow-sm' : 'bg-white text-sky-600 border-sky-200 hover:bg-sky-50'}` }, label))),
                                     React.createElement("div", { className: "w-px h-5 bg-slate-200 mx-0.5" }),
-                                    ['BOX', 'EA', 'SPLIT'].map(unit => (React.createElement("button", { key: unit, onClick: () => setFilters(f => ({ ...f, unit: { ...f.unit, [unit]: !f.unit[unit] } })), title: `${unit === 'SPLIT' ? '소분' : unit} 단위 상품 노출`, className: `px-2 py-1 rounded border transition ${filters.unit[unit] ? 'bg-emerald-600 text-white border-emerald-700' : 'bg-white text-slate-400 border-slate-300 hover:bg-slate-50'}` }, unit === 'SPLIT' ? '소분' : unit))),
+                                    ['BOX', 'EA', 'SPLIT'].map(unit => (React.createElement("button", { key: unit, onClick: () => setFilters(f => ({ ...f, unit: { ...f.unit, [unit]: !f.unit[unit] } })), title: `${unit === 'SPLIT' ? '소분' : unit} 단위 상품 노출`, className: `dataops-filter-button dataops-filter-button--unit px-2 py-1 rounded transition ${filters.unit[unit] ? 'is-active' : ''}` }, unit === 'SPLIT' ? '소분' : unit))),
                                     React.createElement("button", { onClick: () => setFilters(f => ({ ...f, excludeZeroActual: !f.excludeZeroActual })), title: "\uC794\uB7C9/\uC2E4\uC0AC \uC218\uB7C9\uC774 0\uC778 \uC0C1\uD488 \uC81C\uC678", className: `px-2 py-1 rounded border whitespace-nowrap transition ${filters.excludeZeroActual ? 'bg-blue-600 text-white border-blue-700 shadow-sm' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}` }, "\uC2E4\uC0AC 0 \uC81C\uC678"),
                                     hiddenMovedSourceCount > 0 && React.createElement("button", { onClick: () => setFilters(f => ({ ...f, showHiddenMoveRows: !f.showHiddenMoveRows })), title: "드래그 매칭으로 비워진 원본 행을 표시/숨김합니다. 원본값은 삭제하지 않고 내부 이력으로 보관됩니다.", className: `px-2 py-1 rounded border whitespace-nowrap transition ${filters.showHiddenMoveRows ? 'bg-amber-500 text-white border-amber-600 shadow-sm' : 'bg-white text-slate-500 border-slate-300 hover:bg-slate-50'}` }, "매칭원본 ", hiddenMovedSourceCount),
                                     React.createElement("button", { onClick: resetTableFilters, title: "필터와 정렬을 기본값으로 되돌립니다. 기본 정렬은 품목 오름차순입니다.", className: "ml-auto px-2 py-1 rounded border whitespace-nowrap bg-slate-50 text-slate-500 border-slate-300 hover:bg-slate-100" }, "\u21BA \uD544\uD130 \uCD08\uAE30\uD654"))),
