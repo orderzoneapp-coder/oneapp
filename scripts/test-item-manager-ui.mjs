@@ -89,6 +89,10 @@ assert.doesNotMatch(js, /renderMobileEditor|mobileRowId|mobile-editor/);
 assert.match(master, /params\.get\('mode'\) === 'manage'/);
 assert.match(master, /window\.location\.replace\(new URL\('Item_manager\.html'/);
 assert.match(master, />\+ 상품 등록<\/button>/);
-assert.match(master, />일괄 관리<\/button>/);
+assert.match(master, /\[\['list', '조회'\], \['batch', '일괄관리'\]\]/);
+assert.match(html, /oneapp-app-header-content/);
+assert.match(html, /aria-label="상품 하위 기능"/);
+assert.match(html, />등록·수정<\/a>/);
+assert.doesNotMatch(html, /MASTER ·/);
 
 console.log("Item manager UI contract tests passed.");

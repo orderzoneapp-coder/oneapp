@@ -13,6 +13,23 @@
   letter-spacing: -.025em;
 }
 
+.oneapp-title-link {
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.oneapp-inline-tabs {
+  height: var(--nexus-app-header-height, 56px);
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+}
+
+.oneapp-inline-tabs .oneapp-tab {
+  min-height: var(--nexus-app-header-height, 56px);
+  padding-inline: 14px;
+}
+
 .oneapp-description {
   margin: 5px 0 0;
   color: var(--oneapp-muted);
@@ -175,6 +192,15 @@
 .oneapp-subtabs .oneapp-tab {
   min-height: var(--nexus-target-tab-height, 42px);
   font-size: 12px;
+}
+
+.oneapp-subtab-parent {
+  min-height: var(--nexus-target-tab-height, 42px);
+  display: inline-flex;
+  align-items: center;
+  color: var(--oneapp-text);
+  font-size: 12px;
+  font-weight: 800;
 }
 
 .oneapp-popover {

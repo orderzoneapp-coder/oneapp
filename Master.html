@@ -42,12 +42,48 @@
 
         .custom-scrollbar { scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent; }
 
+        .master-app-header-bar {
+            display: grid !important;
+            grid-template-columns: minmax(0, 1fr) auto;
+            padding-inline: 16px !important;
+        }
+        .master-target-tabs { justify-self: start; }
         .master-work-tools { gap: 12px; }
-        .master-work-search { min-width: min(360px, 42vw); }
+        .master-work-left,
+        .master-work-right { display: flex; align-items: center; gap: 8px; min-width: 0; }
+        .master-work-right { margin-left: auto; justify-content: flex-end; }
+        .master-work-search { width: clamp(240px, 31vw, 420px); flex: 0 1 420px; }
+        .master-subnav-link {
+            position: relative;
+            height: 36px;
+            display: inline-flex;
+            align-items: center;
+            padding: 0 10px;
+            border: 0;
+            background: transparent;
+            color: var(--oneapp-muted);
+            font-size: 12px;
+            font-weight: 800;
+        }
+        .master-subnav-link[aria-current="page"] { color: var(--oneapp-master-accent); }
+        .master-subnav-link[aria-current="page"]::after {
+            content: "";
+            position: absolute;
+            right: 8px;
+            bottom: 0;
+            left: 8px;
+            height: 2px;
+            background: var(--oneapp-master-accent);
+        }
         .master-data-workspace { min-width: 840px; height: 100%; min-height: 100%; }
         .master-data-scroll { overflow: hidden; }
         @media (max-width: 760px) {
-            .master-work-search { order: -1; width: 100% !important; min-width: 100%; }
+            .master-app-header-bar { grid-template-columns: minmax(0, 1fr) auto; padding-inline: 12px !important; }
+            .master-app-header-actions .master-header-count { display: none; }
+            .master-work-left,
+            .master-work-right { width: 100%; }
+            .master-work-right { flex-wrap: wrap; }
+            .master-work-search { order: 10; width: 100%; max-width: none; flex-basis: 100%; }
             .master-data-scroll { overflow-x: auto; overflow-y: hidden; }
         }
     </style>
@@ -473,10 +509,10 @@
         const GlobalHeader = ({ view, itemCount, onSelectView, onOpenSettings, onPush, onPull, showCloudActions = true }) => {
             return (
                 <div className="nexus-app-work-header shrink-0 z-40 relative w-full bg-white border-b border-slate-200 shadow-sm">
-                    <header className="nexus-app-work-header__bar nexus-app-content flex items-center justify-between gap-4 relative z-20">
+                    <header className="nexus-app-work-header__bar nexus-app-header-content master-app-header-bar gap-4 relative z-20">
                         <div className="flex items-center h-full min-w-0 gap-5">
                             <strong className="text-[17px] font-black text-slate-900 whitespace-nowrap">기초등록</strong>
-                            <div className="flex items-center h-full gap-1" role="tablist" aria-label="상품 또는 거래처 선택">
+                            <div className="master-target-tabs flex items-center h-full gap-1" role="tablist" aria-label="상품 또는 거래처 선택">
                                 {[['products', '상품'], ['customers', '거래처']].map(([targetView, label]) => (
                                     <button key={targetView} type="button" role="tab" aria-selected={view === targetView} aria-current={view === targetView ? 'page' : undefined}
                                         onClick={() => onSelectView(targetView)}
@@ -487,9 +523,9 @@
                             </div>
                         </div>
 
-                        <div className="flex items-center gap-3 h-full">
+                        <div className="master-app-header-actions flex items-center gap-3 h-full">
                             {showCloudActions && (
-                                <div className="flex items-center gap-1.5 text-slate-500 h-9 px-3 rounded-lg bg-slate-50 border border-slate-200" title="마스터 DB 기준 상품 수">
+                                <div className="master-header-count flex items-center gap-1.5 text-slate-500 h-9 px-3 rounded-lg bg-slate-50 border border-slate-200" title="마스터 DB 기준 상품 수">
                                     <SafeIcon name="database" size={12} className="text-slate-400" />
                                     <span className="text-[11px] font-mono font-bold tracking-tight">{itemCount ? itemCount.toLocaleString() : 0}</span>
                                 </div>
@@ -509,6 +545,18 @@
                 </div>
             );
         };
+
+        const MasterSubnav = ({ view, mode, onSelectMode }) => (
+            <div className="master-work-left" aria-label={`${view === 'customers' ? '거래처' : '상품'} 하위 기능`}>
+                <strong className="text-[12px] font-black text-slate-800 whitespace-nowrap">{view === 'customers' ? '거래처' : '상품'}</strong>
+                {[['list', '조회'], ['batch', '일괄관리']].map(([targetMode, label]) => (
+                    <button key={targetMode} type="button" onClick={() => onSelectMode(targetMode)} aria-current={mode === targetMode ? 'page' : undefined}
+                        className="master-subnav-link focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-inset">
+                        {label}
+                    </button>
+                ))}
+            </div>
+        );
 
         const IframeSettingsModal = ({ isOpen, onClose }) => {
             if (!isOpen) return null;
@@ -944,6 +992,7 @@
             };
             const [masterRoute, setMasterRoute] = useState(readMasterRoute);
             const [customerFrameInitialMode] = useState(() => readMasterRoute().mode);
+            const [masterTheme, setMasterTheme] = useState(() => document.documentElement.dataset.nexusTheme === 'dark' ? 'dark' : 'light');
             const isCustomerView = masterRoute.view === 'customers';
             const isBatchMode = masterRoute.mode === 'batch';
             const [masterProducts, setMasterProducts] = useState({});
@@ -1024,11 +1073,24 @@
             }, []);
 
             useEffect(() => {
+                const readCurrentTheme = () => document.documentElement.dataset.nexusTheme === 'dark' ? 'dark' : 'light';
+                const handleThemeChange = (event) => setMasterTheme(event?.detail?.theme === 'dark' ? 'dark' : readCurrentTheme());
+                const themeObserver = new MutationObserver(() => setMasterTheme(readCurrentTheme()));
+                window.addEventListener('nexus-theme-change', handleThemeChange);
+                themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-nexus-theme'] });
+                return () => {
+                    window.removeEventListener('nexus-theme-change', handleThemeChange);
+                    themeObserver.disconnect();
+                };
+            }, []);
+
+            useEffect(() => {
                 const frame = document.getElementById('customerMasterFrame');
                 if (frame?.contentWindow) {
                     frame.contentWindow.postMessage({ type: 'ONEAPP_MASTER_MODE', mode: masterRoute.mode }, window.location.origin);
+                    frame.contentWindow.postMessage({ type: 'ONEAPP_NEXUS_THEME', theme: masterTheme }, window.location.origin);
                 }
-            }, [masterRoute.mode]);
+            }, [masterRoute.mode, masterTheme]);
 
             const discardAddUpdateAnalysis = () => {
                 setAddUpdateAnalysis(null);
@@ -1322,12 +1384,11 @@
                     />
 
                     <main className={`nexus-app-content ${isCustomerView ? 'flex' : 'hidden'} flex-1 flex-col overflow-hidden bg-slate-50`} aria-hidden={!isCustomerView}>
-                            <div className="nexus-work-tools flex items-center justify-between border-b border-slate-200 bg-white shrink-0">
-                                <span className="text-[12px] font-bold text-slate-500">거래처 {isBatchMode ? '일괄 관리' : '조회'}</span>
-                                <button type="button" onClick={() => selectMasterRoute({ view: 'customers', mode: isBatchMode ? 'list' : 'batch' })}
-                                    className="h-9 px-4 rounded-lg text-[12px] font-bold bg-white text-slate-700 hover:bg-slate-100 border border-slate-300 shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2">
-                                    {isBatchMode ? '조회로 돌아가기' : '일괄 관리'}
-                                </button>
+                            <div className="nexus-work-tools master-work-tools flex flex-wrap items-center justify-between border-b border-slate-200 bg-white shrink-0">
+                                <MasterSubnav view="customers" mode={masterRoute.mode} onSelectMode={(mode) => selectMasterRoute({ view: 'customers', mode })} />
+                                <div className="master-work-right">
+                                    <span className="text-[12px] font-bold text-slate-500">{isBatchMode ? 'ERP·쇼핑몰 Excel 등록·수정' : '검색·필터·단건 등록'}</span>
+                                </div>
                             </div>
                             <iframe
                                 id="customerMasterFrame"
@@ -1336,34 +1397,35 @@
                                 title={isBatchMode ? '거래처 일괄 등록·수정' : '거래처 목록'}
                                 onLoad={(event) => {
                                     event.currentTarget.contentWindow?.postMessage({ type: 'ONEAPP_MASTER_MODE', mode: masterRoute.mode }, window.location.origin);
+                                    event.currentTarget.contentWindow?.postMessage({ type: 'ONEAPP_NEXUS_THEME', theme: masterTheme }, window.location.origin);
                                 }}
                             ></iframe>
                     </main>
                     <main className={`nexus-app-content ${isCustomerView ? 'hidden' : 'flex'} flex-1 flex-col overflow-hidden bg-slate-50 border-x border-slate-200`} aria-hidden={isCustomerView}>
-                        <div className="nexus-work-tools master-work-tools bg-white border-b border-slate-200 flex items-center justify-between shrink-0 z-10 shadow-sm">
-                            {!isBatchMode && (
-                                <div className="master-work-search relative flex-1 h-9">
-                                    <input type="text" aria-label="상품 통합검색" placeholder="상품코드, 상품명, 규격 통합검색" value={globalSearch} onChange={(e) => setGlobalSearch(e.target.value)} className="w-full h-full pl-9 pr-4 bg-slate-100 border-none rounded-lg text-[13px] outline-none focus:ring-1 focus:ring-indigo-400 transition-all shadow-inner" />
-                                    <SafeIcon name="search" size={14} className="absolute left-3 top-2.5 text-slate-400 pointer-events-none" />
-                                </div>
-                            )}
-                            <span className="text-[12px] font-bold text-slate-500 whitespace-nowrap">
-                                {isBatchMode ? '상품 일괄 관리' : `결과 ${displayRows.length.toLocaleString()}건`} · 전체 {Object.keys(masterProducts).length.toLocaleString()}건
-                            </span>
-                            {Object.keys(masterProducts).length === 0 && (
-                                <span className="text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5 whitespace-nowrap">
-                                    최초 등록은 별도 승인 전까지 사용할 수 없습니다.
+                        <div className="nexus-work-tools master-work-tools bg-white border-b border-slate-200 flex flex-wrap items-center justify-between shrink-0 z-10 shadow-sm">
+                            <MasterSubnav view="products" mode={masterRoute.mode} onSelectMode={(mode) => selectMasterRoute({ view: 'products', mode })} />
+                            <div className="master-work-right">
+                                <span className="text-[12px] font-bold text-slate-500 whitespace-nowrap">
+                                    {isBatchMode ? '상품 일괄 관리' : `결과 ${displayRows.length.toLocaleString()}건`} · 전체 {Object.keys(masterProducts).length.toLocaleString()}건
                                 </span>
-                            )}
-                            <div className="flex items-center gap-2 ml-auto">
+                                {Object.keys(masterProducts).length === 0 && (
+                                    <span className="text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5 whitespace-nowrap">
+                                        최초 등록은 별도 승인 전까지 사용할 수 없습니다.
+                                    </span>
+                                )}
+                                {!isBatchMode && (
+                                    <div className="master-work-search relative h-9">
+                                        <input type="text" aria-label="상품 통합검색" placeholder="상품코드, 상품명, 규격 통합검색" value={globalSearch} onChange={(e) => setGlobalSearch(e.target.value)} className="w-full h-full pl-9 pr-4 bg-slate-100 border-none rounded-lg text-[13px] outline-none focus:ring-1 focus:ring-indigo-400 transition-all shadow-inner" />
+                                        <SafeIcon name="search" size={14} className="absolute left-3 top-2.5 text-slate-400 pointer-events-none" />
+                                    </div>
+                                )}
+                                <div className="flex items-center gap-2">
                                 {!isBatchMode ? (
                                     <>
-                                        <button type="button" onClick={() => selectMasterRoute({ view: 'products', mode: 'batch' })} className="h-9 px-4 rounded-lg text-[12px] font-bold bg-white text-slate-700 hover:bg-slate-100 border border-slate-300 shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2">일괄 관리</button>
                                         <button type="button" onClick={(e) => handleNavigate(e, 'Item_manager.html', true)} className="h-9 px-4 rounded-lg text-[12px] font-bold bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2">+ 상품 등록</button>
                                     </>
                                 ) : (
                                     <>
-                                        <button type="button" onClick={() => selectMasterRoute({ view: 'products', mode: 'list' })} className="h-9 px-4 rounded-lg text-[12px] font-bold bg-white text-slate-700 hover:bg-slate-100 border border-slate-300 shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2">조회로 돌아가기</button>
                                         <select aria-label="일괄 관리 방식" value="add-update" onChange={() => {}} className="h-9 px-3 rounded-lg text-[12px] font-bold bg-slate-100 text-slate-700 border border-slate-300 outline-none">
                                             <option value="add-update">추가·갱신</option>
                                             <option value="initial" disabled>최초 등록 · 미지원</option>
@@ -1378,6 +1440,7 @@
                                         )}
                                     </>
                                 )}
+                                </div>
                             </div>
                         </div>
 

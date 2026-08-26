@@ -15,14 +15,16 @@
       window.location.replace(`./Master.html?view=customers&mode=${initialCustomerMasterMode}&release=customer-completeness-022`);
     }
   </script>
+  <script src="/nexus/common/nexus-theme-init.js?v=1.0.0"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;600;800;900&family=Noto+Serif+KR:wght@700;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/nexus/common/oneapp-design-tokens.css?v=1.2.0">
   <link rel="stylesheet" href="/nexus/common/nexus-app-ui.css?v=2.0.0">
-  <link rel="stylesheet" href="./orderq/customer-master.css?v=0.19.0">
+  <link rel="stylesheet" href="./orderq/customer-master.css?v=0.20.0">
   <style>
     :root { --nexus-ink: #0b1021; --nexus-panel: #151b2b; --nexus-accent: #6366f1; }
-    body.customer-master-page { background: #f1f5f9; }
+    body.customer-master-page { background: var(--oneapp-bg); }
     .nexus-shell { min-height: 100vh; }
     .nexus-header { position: sticky; top: 0; z-index: 50; color: #fff; background: var(--nexus-ink); box-shadow: 0 2px 10px rgba(15, 23, 42, .2); }
     .nexus-header-main { min-height: 72px; padding: 0 24px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid rgba(148, 163, 184, .18); }
@@ -208,6 +210,11 @@
 
   <script>
     (() => {
+      const applyCustomerMasterTheme = (rawTheme) => {
+        const theme = rawTheme === 'dark' ? 'dark' : 'light';
+        document.documentElement.dataset.nexusTheme = theme;
+        document.documentElement.style.colorScheme = theme;
+      };
       const applyCustomerMasterMode = (rawMode) => {
         const mode = rawMode === 'batch' ? 'batch' : 'list';
         document.documentElement.dataset.masterMode = mode;
@@ -222,6 +229,7 @@
       window.addEventListener('message', (event) => {
         if (event.origin !== window.location.origin) return;
         if (event.data?.type === 'ONEAPP_MASTER_MODE') applyCustomerMasterMode(event.data.mode);
+        if (event.data?.type === 'ONEAPP_NEXUS_THEME') applyCustomerMasterTheme(event.data.theme);
       });
     })();
   </script>

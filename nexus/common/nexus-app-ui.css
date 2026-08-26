@@ -19,6 +19,11 @@
   margin-inline: auto;
 }
 
+.nexus-app-header-content {
+  width: 100%;
+  margin-inline: 0;
+}
+
 .nexus-app-gutter {
   padding-inline: var(--nexus-content-gutter, 24px) !important;
 }
