@@ -78,7 +78,7 @@ assert.match(componentSource, /cover\.id = NAVIGATION_COVER_ID/);
 assert.match(componentSource, /NEXUS WORKSPACE/);
 assert.match(componentSource, /업무 화면을 준비하고 있습니다/);
 assert.match(componentSource, /window\.addEventListener\('load', \(\) => clearNavigationCover\(\)/);
-assert.match(componentSource, /const VERSION = '1\.6\.0'/);
+assert.match(componentSource, /const VERSION = '1\.6\.1'/);
 assert.match(componentSource, /const TAB_BUTTONS = Object\.freeze/);
 assert.match(componentSource, /preloadTabButtonImages\(\)/, 'all active and inactive tab images must be preloaded');
 assert.match(componentSource, /data-active-src=.*data-inactive-src=/, 'each tab image must expose both visual states');
@@ -125,6 +125,12 @@ assert.doesNotMatch(cssSource, /data-nexus-density/);
 assert.match(cssSource, /@media \(max-width: 680px\)/);
 assert.match(navigationCssSource, /\.workflow-divider/);
 assert.match(navigationCssSource, /grid-template-columns: auto minmax\(0, 1fr\) auto/);
+assert.match(navigationCssSource, /\.brand \{[\s\S]*width: 144px;[\s\S]*justify-content: center;/,
+  'the ONEAPP NEXUS logo must remain centered in a stable header slot');
+assert.match(navigationCssSource, /\.management-entries \.tab \+ \.tab::before,[\s\S]*\.global-entries:not\(:empty\) \+ \.operation-entries \.tab:first-child::before,[\s\S]*\.operation-entries \.tab \+ \.tab::before \{[\s\S]*height: 24px;[\s\S]*background:/,
+  'each adjacent desktop tab must have one divider');
+assert.match(navigationCssSource, /@media \(max-width: 680px\)[\s\S]*content: none;/,
+  'a divider must not remain beside the single visible mobile tab');
 assert.match(navigationCssSource, /\.nav-brand\.has-logo:not\(\.logo-missing\) \.nav-text/);
 assert.match(navigationCssSource, /\.nav-tab-button/);
 assert.match(navigationCssSource, /\.segments\.two/);
@@ -262,7 +268,7 @@ assert.equal(manifestContract.resources.navigationLoadingSession, 'oneapp.nexus.
 for (const file of manifestContract.consumers) {
   const source = read(file);
   assert.match(source, /apps-config\.js\?v=1\.4\.0/, `${file} must load the current NEXUS configuration`);
-  assert.match(source, /nexus-top\.js\?v=1\.6\.0/, `${file} must load the current NEXUS component`);
+  assert.match(source, /nexus-top\.js\?v=1\.6\.1/, `${file} must load the current NEXUS component`);
 }
 
 const entries = [
@@ -280,7 +286,7 @@ for (const [file, appId] of entries) {
   const source = read(file);
   assert.match(source, new RegExp(`<nexus-top app-id="${appId}">[\\s\\S]*?<\\/nexus-top>`), `${file} must declare its canonical NEXUS app ID`);
   assert.match(source, /apps-config\.js\?v=1\.4\.0/);
-  assert.match(source, /nexus-top\.js\?v=1\.6\.0/);
+  assert.match(source, /nexus-top\.js\?v=1\.6\.1/);
   assert.match(source, /NEXUS 메뉴를 불러오지 못했습니다/);
 }
 

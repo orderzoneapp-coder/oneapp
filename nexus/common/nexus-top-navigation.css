@@ -1,6 +1,12 @@
-/* NEXUS header navigation policy v1.6.0 */
+/* NEXUS header navigation policy v1.6.1 */
 .top {
   grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.brand {
+  width: 144px;
+  justify-content: center;
+  padding-inline: 10px;
 }
 
 .track,
@@ -24,10 +30,28 @@
   gap: 0;
 }
 
+.management-entries .tab + .tab,
+.global-entries:not(:empty) + .operation-entries .tab:first-child,
+.operation-entries .tab + .tab {
+  border-inline-start: 0;
+}
+
+.management-entries .tab + .tab::before,
+.global-entries:not(:empty) + .operation-entries .tab:first-child::before,
+.operation-entries .tab + .tab::before {
+  content: "";
+  position: absolute;
+  inset-inline-start: 0;
+  top: 10px;
+  width: 1px;
+  height: 24px;
+  background: rgb(255 255 255 / 17%);
+}
+
 .workflow-divider {
   width: 1px;
-  height: 20px;
-  margin: 12px 6px;
+  height: 24px;
+  margin: 10px 0;
   flex: 0 0 auto;
   background: rgb(255 255 255 / 17%);
 }
@@ -107,8 +131,9 @@
 }
 
 @media (max-width: 900px) {
-  .workflow-divider {
-    margin-inline: 3px;
+  .brand {
+    width: 128px;
+    padding-inline: 8px;
   }
 
   .track .global-entry {
@@ -124,6 +149,12 @@
 @media (max-width: 680px) {
   .workflow-divider {
     display: none;
+  }
+
+  .management-entries .tab + .tab::before,
+  .global-entries:not(:empty) + .operation-entries .tab:first-child::before,
+  .operation-entries .tab + .tab::before {
+    content: none;
   }
 
   .track .global-entry {
@@ -144,5 +175,12 @@
     overflow: visible;
     clip: auto;
     white-space: nowrap;
+  }
+}
+
+@media (max-width: 480px) {
+  .brand {
+    width: 104px;
+    padding-inline: 6px;
   }
 }
