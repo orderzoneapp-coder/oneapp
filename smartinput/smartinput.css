@@ -853,6 +853,7 @@ html[data-nexus-theme="dark"] .app-voucher-switcher .mode-tab:hover { color: var
 html[data-nexus-theme="dark"] .app-voucher-switcher .mode-tab kbd { color: var(--text-faint); border-color: var(--border-strong); background: rgba(255,255,255,.04); }
 html[data-nexus-theme="dark"] .app-bar .button--quiet { color: var(--text); border-color: var(--border-strong); background: rgba(255,255,255,.03); }
 html[data-nexus-theme="dark"] .app-bar .button--quiet:hover { background: rgba(255,255,255,.1); }
+html[data-nexus-theme="dark"] .button--primary { color: #1c2026; }
 html[data-nexus-theme="dark"] .aside-heading strong, html[data-nexus-theme="dark"] .parser-card h2, html[data-nexus-theme="dark"] .grid-stats strong, html[data-nexus-theme="dark"] tfoot td { color: var(--text); }
 html[data-nexus-theme="dark"] .mode-tab.is-active { color: #1c2026; background: #b2c6c8; }
 html[data-nexus-theme="dark"] th, html[data-nexus-theme="dark"] tfoot td { background: #292f37; }

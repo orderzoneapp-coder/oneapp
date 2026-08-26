@@ -1,4 +1,5 @@
 import { normalizeEstimateOrder } from './estimate-order.js?v=0.1.0';
+import { planEstimateCreate, planEstimateUpdate } from './estimate-save-contract.js?v=0.1.0';
 
 const DB_NAME = 'oneapp-smartinput';
 const DB_VERSION = 3;
@@ -179,6 +180,47 @@ export function deleteAliasMapping(aliasMappingId) {
 
 export function saveEstimate(estimate) {
   return put(DATA_STORES.ESTIMATES, estimate, 'estimateId');
+}
+
+function estimateRecordMap(records = []) {
+  return Object.fromEntries(records.map(record => [record.estimateId, record]));
+}
+
+async function mutateEstimatesAtomically(planner) {
+  const db = await openDatabase();
+  if (!db) {
+    const value = readFallback();
+    const records = Object.values(value[DATA_STORES.ESTIMATES] || {});
+    const result = planner(records);
+    value[DATA_STORES.ESTIMATES] = estimateRecordMap(result.records);
+    writeFallback(value);
+    return result;
+  }
+
+  const transaction = db.transaction(DATA_STORES.ESTIMATES, 'readwrite');
+  const done = transactionDone(transaction);
+  const store = transaction.objectStore(DATA_STORES.ESTIMATES);
+  try {
+    const records = await requestResult(store.getAll());
+    const result = planner(records);
+    store.put(result.record);
+    await done;
+    db.close();
+    return result;
+  } catch (error) {
+    try { transaction.abort(); } catch (_) {}
+    await done.catch(() => {});
+    db.close();
+    throw error;
+  }
+}
+
+export function createEstimateAtomically(estimate, saveAttemptId) {
+  return mutateEstimatesAtomically(records => planEstimateCreate(records, estimate, { saveAttemptId }));
+}
+
+export function updateEstimateAtomically(estimateId, expectedRevision, estimate, saveAttemptId) {
+  return mutateEstimatesAtomically(records => planEstimateUpdate(records, estimateId, expectedRevision, estimate, { saveAttemptId }));
 }
 
 export async function saveEstimatesAtomically(estimates = []) {

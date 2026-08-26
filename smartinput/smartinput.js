@@ -50,6 +50,7 @@ import {
 } from './estimate-output.js?v=0.1.4';
 import {
   createRecordId,
+  createEstimateAtomically,
   loadSmartInputData,
   normalizeAliasName,
   deleteEstimate,
@@ -58,13 +59,15 @@ import {
   saveLinkGroup,
   saveSettings,
   saveSourceImage,
-  saveTemporaryCustomer
-} from './smartinput-data-store.js?v=0.3.2';
+  saveTemporaryCustomer,
+  updateEstimateAtomically
+} from './smartinput-data-store.js?v=0.3.3';
 import {
   normalizeEstimateOrder,
   normalizeEstimateSequence,
   reorderEstimateRecords
 } from './estimate-order.js?v=0.1.0';
+import { estimateContentDigest, estimateRevision } from './estimate-save-contract.js?v=0.1.0';
 import {
   REFERENCE_STATUS,
   evaluateReferenceReadiness,
@@ -589,7 +592,6 @@ function renderReferenceControls() {
   $('saveDraftButton').disabled = blocked || state.busy;
   $('estimateNoticeButton').disabled = blocked || state.busy;
   $('estimateExcelButton').disabled = blocked || state.busy;
-  $('catalogSaveButton').disabled = blocked || state.busy;
   $('catalogComposeButton').disabled = blocked || !state.noticeEstimateIds.length;
 }
 
@@ -2405,6 +2407,26 @@ function estimateTitle(record) {
   return String(record?.catalogName || '').trim() || catalogCustomerName(record) || '견적서명 미지정';
 }
 
+function estimateSaveUi() {
+  const ui = modeUi();
+  const validModes = new Set(['NEW', 'UPDATE', 'COPY']);
+  const currentRecord = state.estimates.find(record => record.estimateId === modeDraft().catalogRecordId);
+  if (!validModes.has(ui.estimateSaveMode)) ui.estimateSaveMode = currentRecord ? 'UPDATE' : 'NEW';
+  if (ui.estimateSaveMode === 'UPDATE' && currentRecord && !Number.isInteger(Number(ui.estimateExpectedRevision))) {
+    ui.estimateExpectedRevision = estimateRevision(currentRecord);
+  }
+  ui.estimateSourceRecordId = String(ui.estimateSourceRecordId || '');
+  ui.estimateSuggestedName = String(ui.estimateSuggestedName || '');
+  ui.estimatePendingId = String(ui.estimatePendingId || '');
+  ui.estimateSaveAttemptId = String(ui.estimateSaveAttemptId || '');
+  return ui;
+}
+
+function resetEstimateSaveAttempt(ui = estimateSaveUi()) {
+  ui.estimatePendingId = '';
+  ui.estimateSaveAttemptId = '';
+}
+
 function catalogCustomerId(record) {
   return String(record?.customerId || record?.draft?.header?.customerId || '').trim();
 }
@@ -2490,7 +2512,6 @@ function renderCatalogControls() {
   $('catalogFilter').hidden = !visible;
   $('catalogNewButton').hidden = !visible;
   if (!visible) {
-    $('catalogSaveButton').hidden = true;
     closeCatalogPicker();
     return;
   }
@@ -2500,13 +2521,11 @@ function renderCatalogControls() {
   const availableIds = new Set(records.map(record => record.estimateId));
   state.noticeEstimateIds = state.noticeEstimateIds.filter(estimateId => availableIds.has(estimateId));
   const currentRecord = records.find(record => record.estimateId === current.catalogRecordId);
-  const newSession = Boolean(modeUi().catalogSessionStarted);
-  $('catalogSaveButton').hidden = !newSession && !currentRecord;
-  $('catalogSaveButton').textContent = currentRecord ? '양식 수정 저장' : '새 양식 저장';
+  const saveUi = estimateSaveUi();
   const selectedCount = state.noticeEstimateIds.length;
   $('catalogPickerButton').textContent = currentRecord
-    ? `${estimateTitle(currentRecord)} · 선택 ${selectedCount}`
-    : `견적서 선택 · 선택 ${selectedCount}`;
+    ? `${estimateTitle(currentRecord)}${estimateContentDigest(current) !== String(currentRecord.contentDigest || estimateContentDigest(currentRecord.draft)) ? ' · 수정 중' : ''} · 선택 ${selectedCount}`
+    : `${saveUi.estimateSaveMode === 'COPY' ? '새 전표로 저장' : (saveUi.estimateSaveMode === 'NEW' && current.rows.length ? '새 견적서 작성 중' : '견적서 선택')} · 선택 ${selectedCount}`;
   $('catalogPickerList').setAttribute('aria-busy', String(state.estimateOrderSaving));
   $('catalogPickerList').innerHTML = records.length ? records.map(record => `
     <div class="catalog-picker__row ${record.estimateId === current.catalogRecordId ? 'is-current' : ''}" data-estimate-id="${esc(record.estimateId)}" role="listitem">
@@ -2525,7 +2544,7 @@ function composeSelectedEstimates() {
   const rows = combinedEstimateRows(records);
   if (!rows.length) return toast('선택한 견적서에 불러올 상품이 없습니다.', 'error');
   closeCatalogPicker();
-  startNewCatalog();
+  startNewCatalog({ preserveLoaded: false });
   const current = modeDraft();
   current.rows = rows;
   current.catalogRecordId = '';
@@ -2807,7 +2826,12 @@ function loadCatalogRecord(record) {
   catalogDraft.header.customerName = customerName(linkedCustomer) || catalogCustomerName(record);
   catalogDraft.header.customerMappingSource = 'CATALOG';
   state.draft.modes.estimate = catalogDraft;
-  modeUi().catalogSessionStarted = false;
+  const saveUi = estimateSaveUi();
+  saveUi.estimateSaveMode = 'UPDATE';
+  saveUi.estimateExpectedRevision = estimateRevision(record);
+  saveUi.estimateSourceRecordId = record.estimateId;
+  saveUi.estimateSuggestedName = estimateTitle(record);
+  resetEstimateSaveAttempt(saveUi);
   state.sourceImages.estimate = null;
   state.selectedRowIds.clear();
   clearTimeout(state.autoAnalyzeTimer);
@@ -2826,21 +2850,39 @@ function loadCatalogRecord(record) {
   toast(`${estimateTitle(record)}과 배송 거래처를 불러왔습니다.`, 'success');
 }
 
-function startNewCatalog() {
+function startNewCatalog({ preserveLoaded = true } = {}) {
   const current = modeDraft();
+  const loadedRecord = state.estimates.find(record => record.estimateId === current.catalogRecordId);
+  const saveUi = estimateSaveUi();
+  if (preserveLoaded && loadedRecord) {
+    current.catalogRecordId = '';
+    current.delivery = { status: 'PENDING', targetId: '', targetRecordId: '', deliveredAt: '' };
+    saveUi.estimateSaveMode = 'COPY';
+    saveUi.estimateSourceRecordId = loadedRecord.estimateId;
+    saveUi.estimateSuggestedName = `${estimateTitle(loadedRecord)} 복사본`;
+    resetEstimateSaveAttempt(saveUi);
+    saveDraftNow();
+    renderMode();
+    return 'COPY';
+  }
   const fallback = contract.createDraft().modes.estimate;
   fallback.header = { ...fallback.header, ...current.header, customValues: { ...(current.header.customValues || {}) } };
   fallback.activeMethod = 'direct';
   fallback.catalogBaselinePrices = {};
   fallback.catalogPreviousPrices = {};
   state.draft.modes.estimate = fallback;
-  modeUi().catalogSessionStarted = true;
+  saveUi.estimateSaveMode = 'NEW';
+  saveUi.estimateExpectedRevision = 0;
+  saveUi.estimateSourceRecordId = '';
+  saveUi.estimateSuggestedName = '';
+  resetEstimateSaveAttempt(saveUi);
   state.sourceImages.estimate = null;
   state.selectedRowIds.clear();
   resetPhotoView();
   saveDraftNow();
   renderMode();
   window.requestAnimationFrame(() => inputRows.querySelector('[data-product-search]')?.focus());
+  return 'NEW';
 }
 
 async function rematchRowsForCustomer(customer) {
@@ -4666,19 +4708,20 @@ function validateEstimateDocument() {
   return true;
 }
 
-function openEstimateSaveDialog() {
-  if (!requireReferenceReady('견적서 저장')) return;
+function openEstimateNameDialog() {
+  if (!requireReferenceReady('전표 저장')) return;
   if (!validateEstimateDocument()) return;
   const current = modeDraft();
-  const loadedRecord = state.estimates.find(record => record.estimateId === current.catalogRecordId);
-  const defaultName = loadedRecord ? estimateTitle(loadedRecord) : (current.header.customerName || '새 견적서');
+  const saveUi = estimateSaveUi();
+  const copyMode = saveUi.estimateSaveMode === 'COPY';
+  const defaultName = saveUi.estimateSuggestedName || current.header.customerName || '새 견적서';
   const dialog = document.createElement('dialog');
   dialog.className = 'smart-dialog estimate-save-dialog';
   dialog.innerHTML = `<div class="smart-dialog__shell">
-    <header><div><small>Estimate Save</small><h2>견적서 저장</h2></div><button type="button" data-close aria-label="닫기">×</button></header>
-    <div class="smart-dialog__message">현재 이름을 유지하면 같은 견적서를 수정하고, 다른 이름으로 저장하면 새 견적서를 목록 최하단에 생성합니다.</div>
+    <header><div><small>Estimate Save</small><h2>${copyMode ? '새 전표로 저장' : '새 견적서 저장'}</h2></div><button type="button" data-close aria-label="닫기">×</button></header>
+    <div class="smart-dialog__message">${copyMode ? '현재 화면 내용으로 새 견적서를 만듭니다. 기존 견적서는 바뀌지 않습니다.' : '현재 화면 내용을 새 견적서로 저장합니다.'}</div>
     <div class="estimate-dialog-form"><label><span>견적서명</span><input type="text" data-estimate-name maxlength="80" value="${esc(defaultName)}"></label></div>
-    <footer><button type="button" class="button button--quiet" data-close>취소</button><button type="button" class="button button--primary" data-confirm-save>저장</button></footer>
+    <footer><button type="button" class="button button--quiet" data-close>취소</button><button type="button" class="button button--primary" data-confirm-save>전표 저장</button></footer>
   </div>`;
   document.body.append(dialog);
   const finish = () => { dialog.close(); dialog.remove(); };
@@ -4706,30 +4749,51 @@ function openEstimateSaveDialog() {
   dialog.querySelector('[data-estimate-name]').select();
 }
 
+function estimateSaveErrorMessage(error) {
+  if (error?.code === 'ESTIMATE_REVISION_CONFLICT') return '다른 화면에서 이 견적서가 먼저 변경되었습니다. 다시 불러오거나 새 전표로 저장하세요.';
+  if (error?.code === 'ESTIMATE_NAME_CONFLICT') return '같은 이름의 견적서가 있습니다. 다른 이름을 입력하세요.';
+  if (error?.code === 'ESTIMATE_NOT_FOUND') return '저장된 견적서를 찾지 못했습니다. 목록을 다시 확인하거나 새 전표로 저장하세요.';
+  return error?.message || '견적서 저장에 실패했습니다.';
+}
+
 async function saveEstimateDocument(catalogName) {
-  if (!requireReferenceReady('견적서 저장')) return false;
+  if (!requireReferenceReady('전표 저장')) return false;
   if (!validateEstimateDocument()) return false;
   const current = modeDraft();
   const requestedName = String(catalogName || '').trim();
   if (!requestedName) return false;
+  const saveUi = estimateSaveUi();
+  const loadedRecord = state.estimates.find(item => item.estimateId === current.catalogRecordId);
+  const updateLoadedRecord = saveUi.estimateSaveMode === 'UPDATE' && Boolean(loadedRecord);
+  const sourceRecord = updateLoadedRecord
+    ? loadedRecord
+    : state.estimates.find(item => item.estimateId === saveUi.estimateSourceRecordId);
+  if (!updateLoadedRecord) saveUi.estimatePendingId ||= createRecordId('SIEST');
+  saveUi.estimateSaveAttemptId ||= createRecordId('SISAVE');
+  const estimateId = updateLoadedRecord ? loadedRecord.estimateId : saveUi.estimatePendingId;
+  const expectedRevision = updateLoadedRecord
+    ? Number(saveUi.estimateExpectedRevision ?? estimateRevision(loadedRecord))
+    : 0;
+  saveDraftNow();
   state.busy = true;
   renderDelivery();
-  setAppStatus('견적서를 저장하고 있습니다.');
+  renderReferenceControls();
+  $('saveDraftButton').textContent = '저장 중…';
+  setAppStatus(updateLoadedRecord ? '견적서 수정을 저장하고 있습니다.' : '새 견적서를 저장하고 있습니다.');
   try {
     const timestamp = new Date().toISOString();
-    const loadedRecord = state.estimates.find(item => item.estimateId === current.catalogRecordId);
-    const updateLoadedRecord = Boolean(loadedRecord && requestedName === estimateTitle(loadedRecord));
-    const estimateId = updateLoadedRecord ? loadedRecord.estimateId : createRecordId('SIEST');
-    const storedPrices = buildCatalogPriceSnapshot(loadedRecord?.draft?.rows || []);
+    const currentSnapshot = JSON.parse(JSON.stringify(current));
+    const storedPrices = buildCatalogPriceSnapshot(sourceRecord?.draft?.rows || []);
     const priorPrices = Object.keys(current.catalogBaselinePrices || {}).length
       ? { ...current.catalogBaselinePrices }
       : storedPrices;
-    current.catalogPreviousPrices = { ...priorPrices };
-    current.catalogBaselinePrices = buildCatalogPriceSnapshot(current.rows);
-    current.catalogRecordId = estimateId;
-    current.updatedAt = timestamp;
-    current.delivery = { status: 'SAVED', targetId: 'smart-input-estimates', targetRecordId: estimateId, deliveredAt: timestamp };
+    const baselinePrices = buildCatalogPriceSnapshot(current.rows);
     const summary = contract.summarizeRows(current.rows);
+    const draft = createCatalogOnlyDraft(currentSnapshot, estimateId);
+    draft.catalogPreviousPrices = { ...priorPrices };
+    draft.catalogBaselinePrices = { ...baselinePrices };
+    draft.updatedAt = timestamp;
+    draft.delivery = { status: 'SAVED', targetId: 'smart-input-estimates', targetRecordId: estimateId, deliveredAt: timestamp };
     const record = {
       estimateId,
       catalogName: requestedName,
@@ -4741,25 +4805,52 @@ async function saveEstimateDocument(catalogName) {
       sortOrder: updateLoadedRecord ? Number(loadedRecord.sortOrder || 1) : state.estimates.length + 1,
       createdAt: updateLoadedRecord ? (loadedRecord.createdAt || timestamp) : timestamp,
       updatedAt: timestamp,
-      draft: JSON.parse(JSON.stringify(createCatalogOnlyDraft(current, estimateId)))
+      draft
     };
-    await persistEstimateLibrary(updateLoadedRecord
-      ? state.estimates.map(item => item.estimateId === estimateId ? record : item)
-      : [...state.estimates, record]);
+    const result = updateLoadedRecord
+      ? await updateEstimateAtomically(estimateId, expectedRevision, record, saveUi.estimateSaveAttemptId)
+      : await createEstimateAtomically(record, saveUi.estimateSaveAttemptId);
+    state.estimates = normalizeEstimateOrder(result.records);
+    const savedRecord = result.record;
+    current.catalogPreviousPrices = { ...priorPrices };
+    current.catalogBaselinePrices = { ...baselinePrices };
+    current.catalogRecordId = savedRecord.estimateId;
+    current.updatedAt = savedRecord.updatedAt || timestamp;
+    current.delivery = { status: 'SAVED', targetId: 'smart-input-estimates', targetRecordId: savedRecord.estimateId, deliveredAt: savedRecord.updatedAt || timestamp };
+    saveUi.estimateSaveMode = 'UPDATE';
+    saveUi.estimateExpectedRevision = estimateRevision(savedRecord);
+    saveUi.estimateSourceRecordId = savedRecord.estimateId;
+    saveUi.estimateSuggestedName = estimateTitle(savedRecord);
+    resetEstimateSaveAttempt(saveUi);
     saveDraftNow();
     renderCatalogControls();
     renderDelivery();
-    setAppStatus(`${estimateTitle(record)} · ${summary.total}품목 견적 저장 완료`);
-    toast(updateLoadedRecord ? '견적서를 수정했습니다.' : '새 견적서를 목록 최하단에 저장했습니다.', 'success');
+    setAppStatus(`${estimateTitle(savedRecord)} · ${summary.total}품목 견적 저장 완료`);
+    toast(updateLoadedRecord ? '현재 견적서의 수정을 저장했습니다.' : '새 견적서를 목록 최하단에 저장했습니다.', 'success');
     return true;
   } catch (error) {
     setAppStatus('견적서를 저장하지 못했습니다. 입력 내용은 유지됩니다.', 'error');
-    toast(error.message || '견적서 저장에 실패했습니다.', 'error');
+    toast(estimateSaveErrorMessage(error), 'error');
     return false;
   } finally {
     state.busy = false;
+    $('saveDraftButton').textContent = '전표 저장';
     renderDelivery();
+    renderReferenceControls();
   }
+}
+
+function saveEstimateFromVoucher() {
+  if (!requireReferenceReady('전표 저장')) return;
+  if (!validateEstimateDocument()) return;
+  const current = modeDraft();
+  const saveUi = estimateSaveUi();
+  const loadedRecord = state.estimates.find(record => record.estimateId === current.catalogRecordId);
+  if (saveUi.estimateSaveMode === 'UPDATE' && loadedRecord) {
+    void saveEstimateDocument(estimateTitle(loadedRecord));
+    return;
+  }
+  openEstimateNameDialog();
 }
 
 async function completeOrder() {
@@ -5041,7 +5132,7 @@ function buildVoucherGroupKeyForCurrentRow(row) {
 
 async function completeOrderLegacy() {
   const current = modeDraft();
-  if (state.draft.activeMode === 'estimate') return openEstimateSaveDialog();
+  if (state.draft.activeMode === 'estimate') return saveEstimateFromVoucher();
   if (state.draft.activeMode !== 'order') {
     toast('구매·판매 전달 대상은 확정 후 활성화합니다.', 'error');
     return;
@@ -5221,7 +5312,14 @@ function resetCurrentMode(requireConfirmation = true, successMessage = '새 입�
   fallback.header.warehouseName = current.header.warehouseName;
   fallback.header.transactionType = current.header.transactionType;
   state.draft.modes[state.draft.activeMode] = fallback;
-  if (state.draft.activeMode === 'estimate') modeUi().catalogSessionStarted = false;
+  if (state.draft.activeMode === 'estimate') {
+    const saveUi = estimateSaveUi();
+    saveUi.estimateSaveMode = 'NEW';
+    saveUi.estimateExpectedRevision = 0;
+    saveUi.estimateSourceRecordId = '';
+    saveUi.estimateSuggestedName = '';
+    resetEstimateSaveAttempt(saveUi);
+  }
   state.gridPasteUndo = null;
   state.sourceImages[state.draft.activeMode] = null;
   state.selectedRowIds.clear();
@@ -5243,6 +5341,11 @@ function saveAndStartNextVoucher() {
     return;
   }
   resetCurrentMode(false, '전표를 저장하고 다음 입력을 시작합니다.');
+}
+
+function saveCurrentVoucher() {
+  if (state.draft.activeMode === 'estimate') return saveEstimateFromVoucher();
+  return saveAndStartNextVoucher();
 }
 
 async function loadCustomerReferences() {
@@ -5566,7 +5669,7 @@ $('warehouseInput').addEventListener('input', applyWarehouseMatch);
 $('warehouseInput').addEventListener('change', applyWarehouseMatch);
 $('transactionTypeInput').addEventListener('change', event => { modeDraft().header.transactionType = event.target.value; scheduleSave(); });
 $('completeButton').addEventListener('click', completeOrder);
-$('saveDraftButton').addEventListener('click', saveAndStartNextVoucher);
+$('saveDraftButton').addEventListener('click', saveCurrentVoucher);
 $('draftListButton').addEventListener('click', openDraftListDialog);
 $('estimateNoticeButton').addEventListener('click', openEstimateNoticePreview);
 $('estimateExcelButton').addEventListener('click', exportEstimateExcel);
@@ -5612,10 +5715,9 @@ $('catalogPickerList').addEventListener('change', event => {
 $('catalogComposeButton').addEventListener('click', composeSelectedEstimates);
 $('catalogNewButton').addEventListener('click', () => {
   closeCatalogPicker();
-  startNewCatalog();
-  toast('새 견적서를 시작했습니다.', 'success');
+  const saveMode = startNewCatalog();
+  toast(saveMode === 'COPY' ? '현재 내용을 새 전표로 저장할 준비가 되었습니다.' : '새 견적서를 시작했습니다.', 'success');
 });
-$('catalogSaveButton').addEventListener('click', openEstimateSaveDialog);
 $('settingsButton').addEventListener('click', openSettingsDialog);
 $('resetDraftButton').addEventListener('click', () => resetCurrentMode(false));
 $('relatedCollapseButton').addEventListener('click', event => {
