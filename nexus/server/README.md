@@ -2,16 +2,16 @@
 
 ## 운영 배포
 
-- 현재 운영 배포 계약: `NEXUS_AUTH_V1` (버전 8, 변경하지 않음)
-- 저장소 구현 계약: `NEXUS_AUTH_V2` (로컬 구현·검증 단계)
+- 현재 운영 배포 계약: `NEXUS_AUTH_V2` (버전 11)
+- 직전 운영 복구 버전: `NEXUS_AUTH_V1` (버전 8)
 - Apps Script 프로젝트 ID: `1KNiTNpNRqPYM7XM5MSzGObwfUd303bZRcjgm16MVG3xNqcQpymYXaPI5`
 - Web App 배포 ID: `AKfycbwIaouo6kzff1J3H3B0K5bWuAEJAcp4K21tyEkL2BuM-SiNsPDGGYVBEXIkBeUGwp4i`
 - Web App URL: `https://script.google.com/macros/s/AKfycbwIaouo6kzff1J3H3B0K5bWuAEJAcp4K21tyEkL2BuM-SiNsPDGGYVBEXIkBeUGwp4i/exec`
-- 최종 초기 배포 버전: `8`
+- 현재 운영 배포 버전: `11`
 - 실행 주체: 배포 소유자
 - 접근 설정: 익명 포함 모든 사용자. 실제 보호는 모든 비공개 액션의 NEXUS 세션·권한 검사로 수행한다.
 
-버전 7의 1회용 마스터 코드 회전 진입점은 버전 8에서 제거됐다. 운영 배포는 버전 8을 가리키며 저장된 현재 소스에도 해당 진입점이 없다.
+버전 7의 1회용 마스터 코드 회전 진입점은 버전 8에서 제거됐다. 버전 11은 기존 배포 ID를 유지한 채 V2 Gateway로 전환했으며, 이상 발생 시 버전 8로 복구한다.
 
 ## 최초 마스터
 
