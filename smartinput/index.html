@@ -9,7 +9,7 @@
   <link rel="icon" type="image/png" href="../nexus/assets/nexus-favicon.png">
   <script src="../nexus/common/nexus-theme-init.js?v=1.0.0"></script>
   <link rel="stylesheet" href="../orderq/customer-master.css?v=0.12.1" data-customer-picker-style>
-  <link rel="stylesheet" href="./smartinput.css?v=0.4.31">
+  <link rel="stylesheet" href="./smartinput.css?v=0.4.35">
   <script src="../nexus/common/apps-config.js?v=1.4.0"></script>
   <script src="../nexus/common/nexus-top.js?v=1.5.1"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
@@ -51,6 +51,11 @@
   <main class="app-shell">
     <h1 class="sr-only">스마트입력</h1>
     <div class="workspace">
+      <nav class="mobile-stage-nav" id="mobileStageNav" aria-label="모바일 입력 단계" hidden>
+        <button type="button" data-mobile-stage="info"><span aria-hidden="true">1</span><strong>기본정보</strong></button>
+        <button type="button" data-mobile-stage="source"><span aria-hidden="true">2</span><strong>원본 분석</strong></button>
+        <button type="button" data-mobile-stage="grid"><span aria-hidden="true">3</span><strong>품목 입력</strong></button>
+      </nav>
       <section class="parser-card" aria-label="원본 자료 입력">
         <div class="mobile-parser-toolbar" id="mobileParserToolbar" role="toolbar" aria-label="모바일 파서 작업" hidden>
           <strong class="mobile-source-type" id="mobileSourceType">직접 입력</strong>
@@ -153,18 +158,13 @@
               <div class="catalog-picker" id="catalogPicker">
                 <button class="catalog-picker__toggle" id="catalogPickerButton" type="button" aria-haspopup="true" aria-expanded="false">견적서 선택</button>
                 <div class="catalog-picker__menu" id="catalogPickerMenu" popover="auto">
-                  <div class="catalog-picker__heading"><span>견적서명</span><span>선택</span><span>관리</span></div>
-                  <div class="catalog-picker__list" id="catalogPickerList"></div>
+                  <div class="catalog-picker__heading"><span>순서</span><span>견적서명</span><span>선택</span><span>관리</span></div>
+                  <div class="catalog-picker__list" id="catalogPickerList" role="list" aria-label="저장 견적서"></div>
                   <div class="catalog-picker__footer"><span>선택 항목은 상품 불러오기·카톡·Excel에 함께 사용됩니다.</span><button class="button button--primary button--small" id="catalogComposeButton" type="button">선택 상품 불러오기</button></div>
                 </div>
               </div>
             </div>
             <button class="button button--quiet button--small" id="catalogNewButton" type="button" hidden>새 견적서</button>
-            <button class="button button--primary button--small" id="catalogSaveButton" type="button" hidden>저장</button>
-            <div class="estimate-output-actions" id="estimateOutputActions" hidden>
-              <button class="button button--quiet button--small" id="estimateNoticeButton" type="button">카톡 복사</button>
-              <button class="button button--quiet button--small" id="estimateExcelButton" type="button">견적 Excel</button>
-            </div>
           </div>
         </div>
 
@@ -187,8 +187,16 @@
             </table>
           </div>
           <footer class="voucher-footer-actions" aria-label="전표 작업">
-            <button class="button button--quiet" id="resetDraftButton" type="button"><span aria-hidden="true">↻</span> 전표 초기화</button>
-            <button class="button button--primary" id="saveDraftButton" type="button">저장</button>
+            <div class="voucher-footer-actions__left">
+              <button class="button button--primary" id="saveDraftButton" type="button">전표 저장</button>
+            </div>
+            <div class="voucher-footer-actions__right">
+              <div class="estimate-output-actions" id="estimateOutputActions" hidden>
+                <button class="button button--quiet button--small" id="estimateNoticeButton" type="button">카톡 복사</button>
+                <button class="button button--quiet button--small" id="estimateExcelButton" type="button">견적 Excel</button>
+              </div>
+              <button class="button button--quiet" id="resetDraftButton" type="button"><span aria-hidden="true">↻</span> 전표 초기화</button>
+            </div>
           </footer>
         </section>
       </section>
@@ -213,6 +221,6 @@
 
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
   <script src="./smartinput-contract.js?v=0.4.16"></script>
-  <script type="module" src="./smartinput.js?v=0.4.37"></script>
+  <script type="module" src="./smartinput.js?v=0.4.42"></script>
 </body>
 </html>

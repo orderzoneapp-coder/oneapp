@@ -26,6 +26,10 @@ import {
   CUSTOMER_REFERENCE_READ_TIMEOUT_MS,
   loadCustomerReferenceRows
 } from '../smartinput/reference-bootstrap.js';
+import {
+  normalizeEstimateOrder,
+  reorderEstimateRecords
+} from '../smartinput/estimate-order.js';
 
 const root = process.cwd();
 const read = file => fs.readFileSync(path.join(root, file), 'utf8');
@@ -41,6 +45,33 @@ const css = read('smartinput/smartinput.css');
 const readme = read('smartinput/README.md');
 const architecture = read('APP_ARCHITECTURE.md');
 const manifest = JSON.parse(read('app-manifest.json'));
+
+const orderFixtures = [
+  { estimateId: 'EST-A', catalogName: 'A', sortOrder: 1, createdAt: '2026-01-01T00:00:00.000Z', draft: { rows: [{ itemCode: 'A' }] } },
+  { estimateId: 'EST-B', catalogName: 'B', sortOrder: 2, createdAt: '2026-01-02T00:00:00.000Z', draft: { rows: [{ itemCode: 'B' }] } },
+  { estimateId: 'EST-C', catalogName: 'C', sortOrder: 3, createdAt: '2026-01-03T00:00:00.000Z', draft: { rows: [{ itemCode: 'C' }] } }
+];
+const legacySplice = orderFixtures.filter(record => record.estimateId !== 'EST-C');
+legacySplice.splice(0, 0, orderFixtures[2]);
+assert.deepEqual(normalizeEstimateOrder(legacySplice).map(record => record.estimateId), ['EST-A', 'EST-B', 'EST-C'],
+  'legacy normalization must reproduce the defect where stale sortOrder cancels a splice move');
+const reorderedFixtures = reorderEstimateRecords(orderFixtures, 'EST-C', 0);
+assert.deepEqual(reorderedFixtures.map(record => record.estimateId), ['EST-C', 'EST-A', 'EST-B']);
+assert.deepEqual(reorderedFixtures.map(record => record.sortOrder), [1, 2, 3]);
+for (const source of orderFixtures) {
+  const reordered = reorderedFixtures.find(record => record.estimateId === source.estimateId);
+  const { sortOrder: sourceOrder, ...sourceStable } = source;
+  const { sortOrder: reorderedOrder, ...reorderedStable } = reordered;
+  assert.deepEqual(reorderedStable, sourceStable, 'reorder must preserve every estimate field except sortOrder');
+}
+const legacyOrderA = normalizeEstimateOrder([
+  { estimateId: 'EST-MISSING', catalogName: 'Missing', createdAt: '2026-01-03T00:00:00.000Z' },
+  { estimateId: 'EST-DUP-B', catalogName: 'Duplicate B', sortOrder: 1, createdAt: '2026-01-02T00:00:00.000Z' },
+  { estimateId: 'EST-DUP-A', catalogName: 'Duplicate A', sortOrder: 1, createdAt: '2026-01-01T00:00:00.000Z' }
+]);
+const legacyOrderB = normalizeEstimateOrder([...legacyOrderA].reverse());
+assert.deepEqual(legacyOrderA.map(record => record.estimateId), legacyOrderB.map(record => record.estimateId),
+  'duplicate and missing legacy sortOrder values must normalize deterministically');
 
 const context = { window: {}, globalThis: {}, Date, Math, String, Number, Boolean, Object, Array, Map, Set };
 vm.runInNewContext(contractSource, context);
@@ -561,13 +592,13 @@ assert.match(html, /id="estimateExcelButton"[^>]*>견적 Excel</);
 assert.match(html, /id="catalogPickerButton"/);
 assert.match(html, /id="catalogPickerMenu"[^>]*popover="auto"/);
 assert.match(html, /id="catalogPickerList"/);
-assert.match(html, /id="catalogSaveButton"/);
+assert.doesNotMatch(html, /id="catalogSaveButton"|>새 양식 저장<|>양식 수정 저장</,
+  'the estimate header must not expose a competing template-save primary action');
 assert.match(html, /id="catalogNewButton"[^>]*>새 견적서<\/button>/);
 assert.match(html, /id="catalogComposeButton"[^>]*>선택 상품 불러오기<\/button>/);
 assert.doesNotMatch(html, /id="catalogSelect"|id="catalogDeleteButton"|id="catalogBatchButton"/);
 assert.match(html, /견적서 선택 · 상품 조합/);
 assert.match(html, /선택 항목은 상품 불러오기·카톡·Excel에 함께 사용됩니다/);
-assert.match(html, /id="catalogSaveButton"[^>]*>저장<\/button>/);
 assert.doesNotMatch(html, /카탈로그 · 거래처 자동 지정|카탈로그 선택|카탈로그 저장/);
 assert.match(html, /class="app-bar__primary"[\s\S]*class="brand"[\s\S]*class="app-voucher-switcher"/,
   'the SmartInput logo and voucher selector must share one movement group');
@@ -580,8 +611,13 @@ assert.match(css, /\.app-bar__primary\[data-table-aligned="true"\] \{[^}]*positi
   'the logo and voucher selector group must follow the main workbench boundary together');
 assert.match(html, /class="document-fields__left"[\s\S]*id="deliveryDateInput"[\s\S]*id="warehouseInput"[\s\S]*id="transactionTypeInput"/,
   'delivery date, warehouse, and transaction type must share the left side of the unified header');
-assert.match(html, /class="document-fields__right"[\s\S]*id="customerInput"[\s\S]*id="catalogPickerButton"[\s\S]*id="estimateNoticeButton"/,
-  'customer, estimate selection, and Kakao copy must share the right side of the unified header');
+const documentFieldsHtml = html.slice(html.indexOf('class="document-fields"'), html.indexOf('<section class="grid-card"'));
+assert.match(documentFieldsHtml, /class="document-fields__right"[\s\S]*id="customerInput"[\s\S]*id="catalogPickerButton"/,
+  'customer and estimate selection must share the right side of the unified header');
+assert.doesNotMatch(documentFieldsHtml, /id="catalogSaveButton"|>새 양식 저장<|>양식 수정 저장</,
+  'template saving must be dispatched only from the footer voucher save action');
+assert.doesNotMatch(documentFieldsHtml, /id="estimateNoticeButton"|id="estimateExcelButton"/,
+  'estimate output actions must move out of the document fields');
 assert.doesNotMatch(html, /class="grid-card__header"|id="gridTitle"|>표준 입력표</,
   'the duplicate table title header must be removed to expose more rows');
 assert.doesNotMatch(html, /id="referenceStatus"|class="reference-status"/,
@@ -591,12 +627,19 @@ assert.doesNotMatch(css, /\.reference-status/,
 assert.match(html, /id="selectAllRows"/);
 assert.match(html, /id="deleteSelectedRows"/);
 assert.match(html, /class="col-unit"/);
-assert.match(html, /class="voucher-footer-actions"[\s\S]*id="resetDraftButton"[^>]*>[\s\S]*전표 초기화[\s\S]*id="saveDraftButton"[^>]*>저장<\/button>/,
-  'voucher reset and save controls must live below the input table');
+const voucherFooterHtml = html.slice(html.indexOf('<footer class="voucher-footer-actions"'), html.indexOf('</footer>', html.indexOf('<footer class="voucher-footer-actions"')) + 9);
+assert.match(voucherFooterHtml, /voucher-footer-actions__left[\s\S]*id="saveDraftButton"[^>]*>전표 저장<\/button>/,
+  'the common voucher save action must remain visible in the footer left group');
+assert.match(voucherFooterHtml, /voucher-footer-actions__right[\s\S]*id="estimateNoticeButton"[\s\S]*id="estimateExcelButton"[\s\S]*id="resetDraftButton"/,
+  'estimate output and reset actions must keep the required footer-right order');
+assert.ok(voucherFooterHtml.indexOf('id="saveDraftButton"') < voucherFooterHtml.indexOf('id="estimateNoticeButton"'));
+assert.ok(voucherFooterHtml.indexOf('id="estimateNoticeButton"') < voucherFooterHtml.indexOf('id="estimateExcelButton"'));
+assert.ok(voucherFooterHtml.indexOf('id="estimateExcelButton"') < voucherFooterHtml.indexOf('id="resetDraftButton"'));
 const appBarHtml = html.slice(html.indexOf('<header class="app-bar">'), html.indexOf('</header>') + 9);
 assert.doesNotMatch(appBarHtml, /id="resetDraftButton"|id="saveDraftButton"/,
   'voucher reset and save controls must not remain in the top application bar');
-assert.doesNotMatch(html, /작업 단계|\d+\s*\/\s*5|data-stage=/);
+assert.match(html, /id="mobileStageNav"[\s\S]*data-mobile-stage="info"[\s\S]*data-mobile-stage="source"[\s\S]*data-mobile-stage="grid"/,
+  'mobile must use explicit basic-info, source-analysis and item-entry stages');
 const parserColumnAt = html.indexOf('<section class="parser-card"');
 const workbenchColumnAt = html.indexOf('<section class="workbench"');
 const relatedColumnAt = html.indexOf('<aside class="related-panel"');
@@ -693,6 +736,8 @@ assert.match(css, /\.parser-card, \.related-panel, \.workbench, \.document-field
   'nested workspace cards must be allowed to shrink inside the responsive grid');
 assert.match(css, /html\[data-nexus-theme="dark"\] \.brand__logo--light \{ display: none; \}/);
 assert.match(css, /html\[data-nexus-theme="dark"\] \.brand__logo--dark \{ display: block; \}/);
+assert.match(css, /html\[data-nexus-theme="dark"\] \.button--primary \{ color: #1c2026; \}/,
+  'dark primary buttons must use readable text on the light muted accent background');
 assert.doesNotMatch(css, /prefers-color-scheme: dark/);
 assert.match(css, /prefers-reduced-motion: reduce/);
 
@@ -776,8 +821,10 @@ assert.match(appSource, /if \(foundProducts\[selectedIndex\]\) finish\(foundProd
 assert.match(appSource, /resetCurrentMode\(false\)/);
 assert.match(appSource, /function saveAndStartNextVoucher\(\)[\s\S]*if \(!saveDraftNow\(\)\)[\s\S]*resetCurrentMode\(false, '전표를 저장하고 다음 입력을 시작합니다\.'/,
   'saving a voucher must preserve its draft snapshot before opening a fresh voucher');
-assert.match(appSource, /saveDraftButton'\)\.addEventListener\('click', saveAndStartNextVoucher\)/,
-  'the voucher save action must immediately prepare the next voucher entry');
+assert.match(appSource, /function saveCurrentVoucher\(\)[\s\S]*activeMode === 'estimate'[\s\S]*saveEstimateFromVoucher\(\)[\s\S]*saveAndStartNextVoucher\(\)/,
+  'the one voucher save action must dispatch estimate persistence without changing other voucher save behavior');
+assert.match(appSource, /saveDraftButton'\)\.addEventListener\('click', saveCurrentVoucher\)/,
+  'the footer voucher save button must have one shared event binding');
 assert.match(appSource, /function clearParserWorkspace\(\)/);
 assert.match(appSource, /current\.batches = \(current\.batches \|\| \[\]\)\.filter\(batch => batch\.sourceType === 'MANUAL'\)/,
   'parser clear must preserve direct-entry batches while dropping parser batches');
@@ -818,20 +865,58 @@ assert.match(appSource, /orderq-sync-engine\.js\?v=0\.18\.1/);
 assert.match(appSource, /reference-readiness\.js\?v=0\.1\.0/);
 assert.match(appSource, /function requireReferenceReady\(actionLabel,[\s\S]*saveDraftNow\(\)[\s\S]*기준정보를 다시 불러오세요/,
   'the common reference guard must preserve the current draft before blocking an operation');
-for (const guardedAction of ['자료 분석', '입력 완료', '전표 저장', '견적서 저장', '견적 Excel 생성']) {
+for (const guardedAction of ['자료 분석', '입력 완료', '전표 저장', '견적 Excel 생성']) {
   assert.match(appSource, new RegExp(`requireReferenceReady\\('${guardedAction}`), `${guardedAction} must use the common reference guard`);
 }
-assert.match(appSource, /function renderReferenceControls\(\)[\s\S]*analyzeButton'[\s\S]*saveDraftButton'[\s\S]*estimateExcelButton'[\s\S]*catalogSaveButton'/,
+assert.match(appSource, /function renderReferenceControls\(\)[\s\S]*analyzeButton'[\s\S]*saveDraftButton'[\s\S]*estimateExcelButton'/,
   'reference-dependent operation controls must remain disabled until both masters are ready');
+assert.doesNotMatch(appSource, /\$\('catalogSaveButton'\)/,
+  'removed top template save control must have no stale DOM access');
 assert.doesNotMatch(appSource, /직접입력은 계속 사용할 수 있습니다|거래처 찾기 창은 계속 사용할 수 있습니다/,
   'missing reference data must not be presented as a normal continue state');
 assert.doesNotMatch(appSource, /function openEstimateListDialog\(\)/);
 assert.match(appSource, /function openEstimateNoticePreview\(\)/);
 assert.match(appSource, /function exportEstimateExcel\(\)/);
-assert.match(appSource, /function openEstimateSaveDialog\(\)/);
+assert.match(appSource, /function openEstimateNameDialog\(\)/);
 assert.match(appSource, /function openEstimateManageDialog\(record\)/);
-assert.match(appSource, /function normalizeEstimateOrder\(records = state\.estimates\)/);
+assert.doesNotMatch(appSource, /catalogSaveButton|openEstimateSaveDialog|catalogSessionStarted/);
+assert.match(appSource, /function startNewCatalog\(\{ preserveLoaded = true \} = \{\}\)[\s\S]*estimateSaveMode = 'COPY'[\s\S]*estimateSourceRecordId = loadedRecord\.estimateId/,
+  'starting a new estimate from a loaded record must preserve the screen and enter copy mode');
+assert.match(appSource, /function loadCatalogRecord\(record\)[\s\S]*estimateSaveMode = 'UPDATE'[\s\S]*estimateExpectedRevision = estimateRevision\(record\)/,
+  'loading an estimate must pin its identity and expected revision for update');
+assert.doesNotMatch(appSource, /saveDraftButton'\)\.hidden|saveDraftButton\.hidden/,
+  'the common voucher save action must not be hidden in any voucher mode');
+assert.match(appSource, /from '\.\/estimate-order\.js\?v=0\.1\.0'/);
+assert.match(dataStoreSource, /export function createEstimateAtomically/);
+assert.match(dataStoreSource, /export function updateEstimateAtomically/);
+assert.match(dataStoreSource, /export function renameEstimateAtomically/);
+assert.match(dataStoreSource, /export function reorderEstimatesAtomically/);
+assert.doesNotMatch(dataStoreSource, /saveEstimatesAtomically/,
+  'no estimate path may bulk put stale caller records');
+assert.match(dataStoreSource, /db\.transaction\(DATA_STORES\.ESTIMATES, 'readwrite'\)[\s\S]*store\.getAll\(\)[\s\S]*recordsToWrite\.forEach\(record => store\.put\(record\)\)/,
+  'estimate mutations must re-read current records and write only planned fields in one transaction');
+assert.match(appSource, /reorderEstimatesAtomically\(records\.map\(record => record\.estimateId\)\)/,
+  'reorder persistence must send only the ordered estimate identities');
+assert.match(appSource, /renameEstimateAtomically\([\s\S]*record\.estimateId,[\s\S]*expectedRevision,[\s\S]*renameAttemptId/,
+  'estimate rename must use revision CAS and an idempotent attempt identity');
+assert.match(appSource, /saveUi\.estimateExpectedRevision = estimateRevision\(result\.record\)/,
+  'the open edit screen must advance its expected revision after its own rename');
+assert.doesNotMatch(appSource, /persistEstimateLibrary|saveEstimatesAtomically/);
+assert.doesNotMatch(appSource, /data-estimate-position/,
+  'the broken position select must not remain alongside direct reorder controls');
+for (const contractPattern of [
+  /data-drag-estimate/,
+  /pointercancel/,
+  /runEstimateOrderAutoScroll/,
+  /reorderEstimateRecords/,
+  /ArrowUp/,
+  /ArrowDown/
+]) assert.match(appSource, contractPattern);
 assert.match(appSource, /async function saveEstimateDocument\(catalogName\)/);
+assert.match(appSource, /updateEstimateAtomically\(estimateId, expectedRevision, record, saveUi\.estimateSaveAttemptId\)/);
+assert.match(appSource, /createEstimateAtomically\(record, saveUi\.estimateSaveAttemptId\)/);
+assert.match(appSource, /current\.catalogRecordId = savedRecord\.estimateId/,
+  'the active identity must change only after atomic persistence succeeds');
 assert.doesNotMatch(appSource, /data-settings-group="estimate-notice"/,
   'Kakao notice price filters must not remain buried in environment settings');
 assert.match(appSource, /data-notice-price-primary/);
@@ -848,16 +933,16 @@ assert.doesNotMatch(appSource, /\$\('referenceStatus'\)/,
   'reference status must be reported through the single app status surface');
 assert.match(appSource, /const readiness = applyReferenceLoad\([\s\S]*renderMode\(\);[\s\S]*setAppStatus\(state\.referenceMessage, readiness\.ready \? '' : 'error'\)/,
   'REFERENCE_ERROR must remain visible in the app status after mode rendering');
-assert.match(appSource, /function composeSelectedEstimates\(\)[\s\S]*startNewCatalog\(\)[\s\S]*current\.rows = rows/,
+assert.match(appSource, /function composeSelectedEstimates\(\)[\s\S]*startNewCatalog\(\{ preserveLoaded: false \}\)[\s\S]*current\.rows = rows/,
   'selected saved estimates must compose a new editable estimate');
 assert.match(appSource, /noticeSources\.flatMap/,
   'Kakao notice preview must render selected companies in sequence');
-assert.match(css, /\.catalog-picker__heading, \.catalog-picker__row \{[^}]*grid-template-columns: minmax\(0, 1fr\) 76px 48px/,
+assert.match(css, /\.catalog-picker__heading, \.catalog-picker__row \{[^}]*grid-template-columns: 44px minmax\(0, 1fr\) 76px 48px/,
   'the estimate picker must expose name, bulk-output checkbox, and management controls');
 assert.match(css, /\.estimate-notice-filters \{[^}]*position: absolute;/,
   'Kakao notice price filters must be placed over the preview header');
 const saveEstimateSource = appSource.match(/function validateEstimateDocument\(\)[\s\S]*?(?=\nasync function completeOrder\(\))/)?.[0] || '';
-const validateEstimateSource = appSource.match(/function validateEstimateDocument\(\)[\s\S]*?(?=\nfunction openEstimateSaveDialog\(\))/)?.[0] || '';
+const validateEstimateSource = appSource.match(/function validateEstimateDocument\(\)[\s\S]*?(?=\nfunction openEstimateNameDialog\(\))/)?.[0] || '';
 assert.match(saveEstimateSource, /current\.rows\.findIndex\(row => !row\.itemCode && !row\.itemName\)/,
   'estimate saving must require a product identity');
 assert.doesNotMatch(saveEstimateSource, /row\.quantity/,
@@ -907,7 +992,7 @@ assert.match(appSource, /parserCard\.contains\(event\.target\) && pastedText/,
   'plain-text paste must work anywhere inside the parser, including after photo input');
 assert.match(appSource, /updateMethod\('text', \{ persist: false \}\)/,
   'clearing a photo source must return the parser to direct text input');
-assert.match(css, /\.voucher-footer-actions \{[^}]*justify-content: flex-end;[^}]*border-top: 1px solid var\(--border\)/,
+assert.match(css, /\.voucher-footer-actions \{[^}]*justify-content: space-between;[^}]*border-top: 1px solid var\(--border\)/,
   '전표 작업 버튼은 입력표 하단의 독립 작업줄에 배치해야 한다.');
 assert.match(appSource, /거래처정보/);
 assert.match(appSource, /부가정보 · 사용자지정/);
@@ -1039,14 +1124,15 @@ assert.match(appSource, /function masterFieldValue\(product, field\)/,
   'selected master products must populate fields from the complete master field dictionary');
 assert.match(appSource, /function startNewCatalog\(/);
 assert.match(appSource, /function availableCatalogs\(/);
-assert.match(appSource, /const defaultName = loadedRecord \? estimateTitle\(loadedRecord\) : \(current\.header\.customerName \|\| '새 견적서'\)/,
+assert.match(appSource, /const defaultName = saveUi\.estimateSuggestedName \|\| current\.header\.customerName \|\| '새 견적서'/,
   'a customer-free estimate must receive an editable new-estimate default name');
-assert.match(appSource, /requestedName === estimateTitle\(loadedRecord\)/,
-  'saving a loaded estimate under the same name must update that record');
+assert.match(appSource, /const updateLoadedRecord = saveUi\.estimateSaveMode === 'UPDATE' && Boolean\(loadedRecord\)/,
+  'update versus create must be selected from explicit business context, not inferred from a name');
 assert.match(appSource, /sortOrder: updateLoadedRecord \? Number\(loadedRecord\.sortOrder/);
 assert.match(appSource, /: state\.estimates\.length \+ 1/,
-  'a differently named copy must append to the bottom of the estimate library');
-assert.match(appSource, /state\.estimates = normalizeEstimateOrder\(updateLoadedRecord[\s\S]*: \[\.\.\.state\.estimates, record\]\)/);
+  'a new or copied estimate must append to the bottom of the estimate library');
+assert.match(appSource, /updateEstimateAtomically[\s\S]*: await createEstimateAtomically/,
+  'the footer save dispatcher must select one atomic update or create path');
 assert.match(appSource, /previousPrices: priorPrices/);
 assert.match(appSource, /buildCatalogPriceSnapshot\(current\.rows\)/);
 assert.match(appSource, /'쇼핑몰업로드'/);
@@ -1058,14 +1144,16 @@ assert.ok(errorSheetAppendAt >= 0 && errorSheetAppendAt < shopSheetAppendAt && s
   'Excel 시트는 오류정보, 쇼핑몰업로드, ERP업데이트 순서여야 한다.');
 assert.doesNotMatch(appSource, /if \(!output\.ok\)/, '오류 정보로 Excel 생성을 차단하면 안 된다.');
 assert.match(html, /smartinput-contract\.js\?v=0\.4\.16/);
-assert.match(html, /smartinput\.js\?v=0\.4\.37/);
+assert.match(html, /smartinput\.js\?v=0\.4\.42/);
 assert.match(appSource, /structured-sheet-parser\.js\?v=0\.1\.1/);
 assert.match(appSource, /estimate-output\.js\?v=0\.1\.4/);
 assert.match(appSource, /const sourceRows = selectedRecords\.length \? combinedEstimateRows\(selectedRecords\) : modeDraft\(\)\.rows/,
   'Excel export must combine only the selected estimate product sets');
 assert.match(appSource, /const records = availableCatalogs\(\)/);
 assert.match(appSource, /견적서 선택 · 선택/);
-assert.match(appSource, /현재 이름을 유지하면 같은 견적서를 수정하고/);
+assert.match(appSource, /현재 화면 내용으로 새 견적서를 만듭니다\. 기존 견적서는 바뀌지 않습니다/);
+assert.doesNotMatch(appSource, /현재 이름을 유지하면 같은 견적서를 수정하고/,
+  'save intent must never be inferred by comparing a user-editable name');
 assert.match(appSource, /새 견적서를 목록 최하단에 저장했습니다/);
 assert.doesNotMatch(appSource, /카탈로그 선택|카탈로그 저장|삭제할 카탈로그|새 카탈로그를 생성/);
 assert.match(appSource, /String\(record\?\.catalogName \|\| ''\)\.trim\(\)/,
@@ -1082,7 +1170,7 @@ assert.match(appSource, /rawOrdererName: ''[\s\S]*aliasMappingId: ''[\s\S]*custo
   'catalog headers must not retain parser orderer matching evidence');
 assert.match(appSource, /const catalogDraft = createCatalogOnlyDraft\(record\.draft, record\.estimateId\)[\s\S]*state\.sourceImages\.estimate = null[\s\S]*state\.pendingImageEvidence = null[\s\S]*state\.pendingOcrReview = null[\s\S]*resetPhotoView\(\)/,
   'loading legacy catalogs must detach any previously saved parser photo');
-assert.match(appSource, /draft: JSON\.parse\(JSON\.stringify\(createCatalogOnlyDraft\(current, estimateId\)\)\)/,
+assert.match(appSource, /const draft = createCatalogOnlyDraft\(currentSnapshot, estimateId\)/,
   'saving a catalog must persist the catalog-only projection');
 assert.match(appSource, /function isParserArtifactLine\(/);
 assert.match(appSource, /lines = lines\.filter\(line => !isParserArtifactLine\(line\)\)/);

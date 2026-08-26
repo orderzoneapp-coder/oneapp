@@ -9,21 +9,21 @@
 html[data-nexus-theme="dark"][data-nexus-app="orderq"],
 html[data-nexus-theme="dark"][data-nexus-app="dataops"],
 html[data-nexus-theme="dark"][data-nexus-app="merchops"] {
-  --nexus-info: #93c5fd;
-  --nexus-info-bg: #172f52;
-  --nexus-info-border: #3b82f6;
-  --nexus-accent: #a5b4fc;
-  --nexus-accent-bg: #272a55;
-  --nexus-accent-border: #6366f1;
-  --nexus-purple: #d8b4fe;
-  --nexus-purple-bg: #32204f;
-  --nexus-purple-border: #8b5cf6;
-  --nexus-cyan: #67e8f9;
-  --nexus-cyan-bg: #123746;
-  --nexus-cyan-border: #06b6d4;
-  --nexus-orange: #fdba74;
-  --nexus-orange-bg: #3b2816;
-  --nexus-orange-border: #f97316;
+  --nexus-info: #b3c4d4;
+  --nexus-info-bg: #2a323a;
+  --nexus-info-border: #687b8d;
+  --nexus-accent: #bbbdd0;
+  --nexus-accent-bg: #302f39;
+  --nexus-accent-border: #737383;
+  --nexus-purple: #c1b6ca;
+  --nexus-purple-bg: #332f37;
+  --nexus-purple-border: #776d7d;
+  --nexus-cyan: #b2c6c8;
+  --nexus-cyan-bg: #293435;
+  --nexus-cyan-border: #687c7e;
+  --nexus-orange: #c4b8aa;
+  --nexus-orange-bg: #342f2a;
+  --nexus-orange-border: #786e61;
   background-color: var(--nexus-page-bg);
 }
 

@@ -1,3 +1,12 @@
+import { normalizeEstimateOrder } from './estimate-order.js?v=0.1.0';
+import {
+  planEstimateCreate,
+  planEstimateDelete,
+  planEstimateRename,
+  planEstimateReorder,
+  planEstimateUpdate
+} from './estimate-save-contract.js?v=0.1.1';
+
 const DB_NAME = 'oneapp-smartinput';
 const DB_VERSION = 3;
 const FALLBACK_KEY = 'oneapp.smartinput.relationships.v1';
@@ -146,13 +155,7 @@ export async function loadSmartInputData() {
     linkGroups,
     temporaryCustomers,
     aliasMappings,
-    estimates: estimates.sort((left, right) => {
-      const leftOrder = Number(left.sortOrder);
-      const rightOrder = Number(right.sortOrder);
-      if (Number.isFinite(leftOrder) && Number.isFinite(rightOrder) && leftOrder !== rightOrder) return leftOrder - rightOrder;
-      if (Number.isFinite(leftOrder) !== Number.isFinite(rightOrder)) return Number.isFinite(leftOrder) ? -1 : 1;
-      return String(left.createdAt || left.updatedAt || '').localeCompare(String(right.createdAt || right.updatedAt || ''));
-    }),
+    estimates: normalizeEstimateOrder(estimates),
     sourceImages
   };
 }
@@ -183,6 +186,66 @@ export function deleteAliasMapping(aliasMappingId) {
 
 export function saveEstimate(estimate) {
   return put(DATA_STORES.ESTIMATES, estimate, 'estimateId');
+}
+
+function estimateRecordMap(records = []) {
+  return Object.fromEntries(records.map(record => [record.estimateId, record]));
+}
+
+async function mutateEstimatesAtomically(planner) {
+  const db = await openDatabase();
+  if (!db) {
+    const value = readFallback();
+    const records = Object.values(value[DATA_STORES.ESTIMATES] || {});
+    const result = planner(records);
+    value[DATA_STORES.ESTIMATES] = estimateRecordMap(result.records);
+    writeFallback(value);
+    return result;
+  }
+
+  const transaction = db.transaction(DATA_STORES.ESTIMATES, 'readwrite');
+  const done = transactionDone(transaction);
+  const store = transaction.objectStore(DATA_STORES.ESTIMATES);
+  try {
+    const records = await requestResult(store.getAll());
+    const result = planner(records);
+    const recordsToWrite = Array.isArray(result.recordsToWrite)
+      ? result.recordsToWrite
+      : (result.record ? [result.record] : []);
+    recordsToWrite.forEach(record => store.put(record));
+    (result.deleteIds || []).forEach(estimateId => store.delete(estimateId));
+    await done;
+    db.close();
+    return result;
+  } catch (error) {
+    try { transaction.abort(); } catch (_) {}
+    await done.catch(() => {});
+    db.close();
+    throw error;
+  }
+}
+
+export function createEstimateAtomically(estimate, saveAttemptId) {
+  return mutateEstimatesAtomically(records => planEstimateCreate(records, estimate, { saveAttemptId }));
+}
+
+export function updateEstimateAtomically(estimateId, expectedRevision, estimate, saveAttemptId) {
+  return mutateEstimatesAtomically(records => planEstimateUpdate(records, estimateId, expectedRevision, estimate, { saveAttemptId }));
+}
+
+export function renameEstimateAtomically(estimateId, expectedRevision, catalogName, saveAttemptId, updatedAt) {
+  return mutateEstimatesAtomically(records => planEstimateRename(records, estimateId, expectedRevision, catalogName, {
+    saveAttemptId,
+    updatedAt
+  }));
+}
+
+export function reorderEstimatesAtomically(orderedEstimateIds) {
+  return mutateEstimatesAtomically(records => planEstimateReorder(records, orderedEstimateIds));
+}
+
+export function deleteEstimateAtomically(estimateId) {
+  return mutateEstimatesAtomically(records => planEstimateDelete(normalizeEstimateOrder(records), estimateId));
 }
 
 export function deleteEstimate(estimateId) {

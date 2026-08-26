@@ -41,6 +41,9 @@ jobs:
       - name: Test standalone SmartInput contract
         run: node scripts/test-smartinput-standalone.mjs
 
+      - name: Test SmartInput estimate save identity and retry contracts
+        run: node scripts/test-smartinput-estimate-save-contract.mjs
+
       - name: Test SmartInput reference diagnostics
         run: node scripts/test-smartinput-reference-diagnostics.mjs
 
