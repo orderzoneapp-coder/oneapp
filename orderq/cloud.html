@@ -6,8 +6,8 @@
   <meta name="google" content="notranslate">
   <title>ONEAPP ORDER Q vNext · 클라우드</title>
   <link rel="stylesheet" href="./orderq.css">
-  <script src="/nexus/common/nexus-auth-config.js?v=1.0.0"></script>
-  <script src="/nexus/common/nexus-auth.js?v=1.0.0"></script>
+  <script src="/nexus/common/nexus-auth-config.js?v=2.0.0"></script>
+  <script src="/nexus/common/nexus-auth.js?v=2.0.0"></script>
 </head>
 <body>
   <div class="shell">
@@ -32,11 +32,7 @@
       <div id="message" class="message"></div>
 
       <section class="form-grid">
-        <div class="field wide">
-          <label for="cloudUrl">기존 ONEAPP Apps Script Web App URL</label>
-          <input class="control" id="cloudUrl" type="url" placeholder="https://script.google.com/macros/s/.../exec">
-        </div>
-        <div class="field wide"><label>인증 방식</label><div class="control">NEXUS 로그인 자동 연결</div><input id="cloudToken" type="hidden" value="NEXUS_GATEWAY_ORDERQ"></div>
+        <div class="field wide"><label>업무 연결</label><div class="control">NEXUS Gateway 자동 연결</div><input id="cloudUrl" type="hidden" value="NEXUS_GATEWAY"></div>
         <div class="field">
           <label>Device ID</label>
           <div class="control" id="deviceId"></div>
@@ -103,12 +99,11 @@
   </div>
 
   <script type="module">
-    import { getCloudUrl, setCloudUrl, getCloudAccessToken, setCloudAccessToken, previewCustomerMasterReset, executeCustomerMasterReset } from './orderq-cloud-adapter.js?v=0.11.0';
+    import { getCloudUrl, previewCustomerMasterReset, executeCustomerMasterReset } from './orderq-cloud-adapter.js?v=0.11.0';
     import { getSyncState, syncNow, acceptRemoteOrder } from './orderq-sync-engine.js?v=0.18.0';
     import { pullCentralOfficialState } from './central-command-gateway.js?v=0.9.0';
 
     const cloudUrl = document.getElementById('cloudUrl');
-    const cloudToken = document.getElementById('cloudToken');
     const message = document.getElementById('message');
     const syncBtn = document.getElementById('syncBtn');
     const conflictRows = document.getElementById('conflictRows');
@@ -126,8 +121,7 @@
 
     async function render() {
       const state = await getSyncState();
-      cloudUrl.value = state.cloudUrl || '';
-      cloudToken.value = getCloudAccessToken();
+      cloudUrl.value = 'NEXUS_GATEWAY';
       document.getElementById('deviceId').textContent = state.deviceId;
       document.getElementById('cursor').textContent = String(state.cursor);
       document.getElementById('stateText').textContent = `대기 ${state.pending}건 · 완료 ${state.acked}건 · 충돌 ${state.conflicts.length}건`;
@@ -147,9 +141,7 @@
 
     document.getElementById('saveUrlBtn').addEventListener('click', async () => {
       try {
-        setCloudUrl(cloudUrl.value);
-        setCloudAccessToken(cloudToken.value, true);
-        show('클라우드 URL을 저장했습니다. 업무 인증은 NEXUS 로그인이 자동 처리합니다.', 'info');
+        show('NEXUS Gateway 연결을 확인했습니다.', 'info');
         await render();
       } catch (error) { show(error.message || String(error), 'error'); }
     });

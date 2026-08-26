@@ -1878,7 +1878,7 @@
   // - 기본 URL은 최초 실행/복원용 fallback으로만 사용한다.
   // ============================================================
   const ONEAPP_CLOUD_URL_KEY = 'oneapp_cloud_sync_url_v1';
-  const ONEAPP_DEFAULT_CLOUD_SYNC_URL = 'https://script.google.com/macros/s/AKfycbzOUOIu_bP7NkiFVziDR0Og1da1KO1ePoU09Q3pSlPr-9uD-WkdCpWN7nidO5hlrJi6Qw/exec';
+  const ONEAPP_DEFAULT_CLOUD_SYNC_URL = 'NEXUS_GATEWAY';
   const DATAOPS_MASTER_CACHE_KEY = 'dataops_merch_master_cache_v1';
   const DATAOPS_MASTER_SUMMARY_KEY = 'dataops_merch_master_summary_v1';
   const DATAOPS_RAW_SUBDIVISION_KEY = 'dataops_raw_subdivision_cache_v1';
@@ -1891,43 +1891,33 @@
   };
 
   CLOUD.fetchJson = async (url, options = {}, label = '클라우드 요청') => {
-    const response = await fetch(url, options);
-    const rawText = await response.text();
-    let result = null;
-    try { result = rawText ? JSON.parse(rawText) : null; }
-    catch (e) { throw new Error(`${label} 응답이 JSON 형식이 아닙니다.`); }
-    if (!response.ok) throw new Error(result?.message || `${label} 네트워크 오류 (${response.status})`);
-    if (!result || result.status !== 'success') throw new Error(result?.message || `${label} 실패`);
-    return result;
+    await global.ONEAPP_AUTH?.ready;
+    if (!global.ONEAPP_AUTH?.gateway) throw new Error('NEXUS_AUTH_SESSION_REQUIRED');
+    let parsed = {}; try { parsed = JSON.parse(String(options.body || '{}')); } catch (_) {}
+    const queryAction = String(url || '').match(/[?&]action=([^&#]+)/)?.[1] || '';
+    const action = parsed.action || decodeURIComponent(queryAction || 'full');
+    const operations = { full:'foundation.full_read',master_only:'foundation.master_read',config_only:'foundation.config_read',config:'foundation.config_write' };
+    if (!operations[action]) throw new Error('NEXUS_GATEWAY_OPERATION_DENIED');
+    return { status:'success', data:await global.ONEAPP_AUTH.gateway(operations[action], action === 'config' ? {data:parsed.data || {}} : {}) };
   };
 
   CLOUD.getDefaultCloudSyncUrl = () => ONEAPP_DEFAULT_CLOUD_SYNC_URL;
 
   CLOUD.getCloudSyncUrl = () => {
     try {
-      const saved = String(global.localStorage.getItem(ONEAPP_CLOUD_URL_KEY) || '').trim();
-      return saved || ONEAPP_DEFAULT_CLOUD_SYNC_URL;
+      return ONEAPP_DEFAULT_CLOUD_SYNC_URL;
     } catch (e) {
       return ONEAPP_DEFAULT_CLOUD_SYNC_URL;
     }
   };
 
   CLOUD.setCloudSyncUrl = (url) => {
-    const safeUrl = String(url || '').trim().replace(/([?&])action=[^&#]*/g, '$1').replace(/[?&]$/, '');
-    if (!safeUrl) throw new Error('클라우드 URL이 비어 있습니다.');
-    try {
-      global.localStorage.setItem(ONEAPP_CLOUD_URL_KEY, safeUrl);
-      global.localStorage.setItem('merchCloudUrl_v870', safeUrl);
-    } catch (e) {
-      throw new Error('클라우드 URL 저장에 실패했습니다.');
-    }
-    return safeUrl;
+    return ONEAPP_DEFAULT_CLOUD_SYNC_URL;
   };
 
   CLOUD.ensureDefaultCloudSyncUrl = () => {
     try {
-      const current = String(global.localStorage.getItem(ONEAPP_CLOUD_URL_KEY) || '').trim();
-      if (!current) global.localStorage.setItem(ONEAPP_CLOUD_URL_KEY, ONEAPP_DEFAULT_CLOUD_SYNC_URL);
+      return ONEAPP_DEFAULT_CLOUD_SYNC_URL;
     } catch (e) {}
     return CLOUD.getCloudSyncUrl();
   };
@@ -2191,35 +2181,13 @@
     const targetUrl = String(url || CLOUD.getCloudSyncUrl() || '').trim();
     if (!targetUrl) throw new Error('클라우드 URL이 없습니다.');
 
-    if (typeof onProgress === 'function') onProgress({ step: 'init', message: '서버 초기화 중...' });
-    await CLOUD.fetchJson(targetUrl, {
-      method: 'POST',
-      body: JSON.stringify({ action: 'initSync' })
-    }, '클라우드 초기화');
-
     const masterItems = Array.isArray(masterProducts) ? masterProducts : Object.values(masterProducts || {});
-    await CLOUD.chunkUpload({
-      url: targetUrl,
-      action: 'chunk_master',
-      data: masterItems,
-      chunkSize,
-      onProgress: p => onProgress && onProgress({ ...p, step: 'master', message: `마스터 데이터 업로드 중... (${p.sent} / ${p.total}건)` })
-    });
-
     const safeHistory = Array.isArray(historyLogs) ? historyLogs : [];
-    await CLOUD.chunkUpload({
-      url: targetUrl,
-      action: 'chunk_history',
-      data: safeHistory,
-      chunkSize,
-      onProgress: p => onProgress && onProgress({ ...p, step: 'history', message: `히스토리 업로드 중... (${p.sent} / ${p.total}건)` })
-    });
-
-    if (typeof onProgress === 'function') onProgress({ step: 'config', message: '환경설정 및 대기열 업로드 중...' });
+    if (typeof onProgress === 'function') onProgress({ step: 'replace', message: '안전한 전체교체 검증 및 반영 중...' });
     const configPayload = await CLOUD.buildCloudConfigPayload(config);
-    await CLOUD.pushConfigBackup({ url: targetUrl, data: configPayload });
-
-    return { status: 'success', masterCount: masterItems.length, historyCount: safeHistory.length };
+    await global.ONEAPP_AUTH?.ready;
+    const receipt=await global.ONEAPP_AUTH.gateway('foundation.replace_all',{master:masterItems,history:safeHistory,config:configPayload});
+    return { status:'success',masterCount:masterItems.length,historyCount:safeHistory.length,receipt };
   };
 
   CLOUD.restoreCloudData = async (result = {}, hooks = {}) => {
@@ -3407,39 +3375,20 @@
         // 역할: MerchOps/DataOps가 같은 Apps Script 웹앱 URL을 사용하도록 저장키를 통일한다.
         // 정책: 새 공통키(oneapp_cloud_sync_url_v1)를 우선하고, 기존 merchCloudUrl_v870은 호환 보관한다.
         // ============================================================
-        window.ONEAPP_DEFAULT_CLOUD_SYNC_URL = window.ONEAPP_DEFAULT_CLOUD_SYNC_URL || 'https://script.google.com/macros/s/AKfycbzOUOIu_bP7NkiFVziDR0Og1da1KO1ePoU09Q3pSlPr-9uD-WkdCpWN7nidO5hlrJi6Qw/exec';
+        window.ONEAPP_DEFAULT_CLOUD_SYNC_URL = 'NEXUS_GATEWAY';
         window.ONEAPP_CLOUD_URL_KEY = window.ONEAPP_CLOUD_URL_KEY || 'oneapp_cloud_sync_url_v1';
         window.MERCH_LEGACY_CLOUD_URL_KEY = window.MERCH_LEGACY_CLOUD_URL_KEY || 'merchCloudUrl_v870';
 
         window.normalizeOneAppCloudSyncUrl = (url = '') => {
-            const raw = String(url || '').trim();
-            if (!raw) return '';
-            return raw.replace(/\?action=[^&#]*/g, '').replace(/&action=[^&#]*/g, '');
+            return window.ONEAPP_DEFAULT_CLOUD_SYNC_URL;
         };
 
         window.getOneAppCloudSyncUrl = (fallback = '') => {
-            try {
-                const current = window.normalizeOneAppCloudSyncUrl(localStorage.getItem(window.ONEAPP_CLOUD_URL_KEY) || '');
-                if (current) return current;
-                const legacy = window.normalizeOneAppCloudSyncUrl(localStorage.getItem(window.MERCH_LEGACY_CLOUD_URL_KEY) || '');
-                if (legacy) return legacy;
-                const fb = window.normalizeOneAppCloudSyncUrl(fallback || '');
-                if (fb) return fb;
-                return window.ONEAPP_DEFAULT_CLOUD_SYNC_URL;
-            } catch (e) {
-                return window.normalizeOneAppCloudSyncUrl(fallback || '') || window.ONEAPP_DEFAULT_CLOUD_SYNC_URL;
-            }
+            return window.ONEAPP_DEFAULT_CLOUD_SYNC_URL;
         };
 
         window.setOneAppCloudSyncUrl = (url = '') => {
-            const safeUrl = window.normalizeOneAppCloudSyncUrl(url || window.ONEAPP_DEFAULT_CLOUD_SYNC_URL);
-            if (!safeUrl) throw new Error('클라우드 URL이 비어 있습니다.');
-            try {
-                localStorage.setItem(window.ONEAPP_CLOUD_URL_KEY, safeUrl);
-                localStorage.setItem(window.MERCH_LEGACY_CLOUD_URL_KEY, safeUrl);
-                localStorage.setItem('config_sync_trigger', Date.now().toString());
-            } catch (e) {}
-            return safeUrl;
+            return window.ONEAPP_DEFAULT_CLOUD_SYNC_URL;
         };
 
         window.ensureOneAppCloudSyncUrl = () => {
@@ -3448,9 +3397,7 @@
         };
 
         window.appendOneAppCloudAction = (url = '', action = '') => {
-            const base = window.normalizeOneAppCloudSyncUrl(url || window.getOneAppCloudSyncUrl());
-            if (!action) return base;
-            return base.includes('?') ? `${base}&action=${encodeURIComponent(action)}` : `${base}?action=${encodeURIComponent(action)}`;
+            return window.ONEAPP_DEFAULT_CLOUD_SYNC_URL;
         };
 
         try { window.ensureOneAppCloudSyncUrl(); } catch (e) {}
@@ -3513,12 +3460,14 @@
             },
             fetchLatest: async (fallbackUrl = '') => {
                 const url = window.getOneAppCloudSyncUrl(fallbackUrl);
-                try {
-                    const parsedUrl = new URL(url);
-                    if (!/^https?:$/.test(parsedUrl.protocol)) throw new Error('INVALID_CLOUD_URL');
-                }
-                catch (e) {
-                    throw new Error('클라우드 주소가 올바르지 않습니다. 환경설정의 Apps Script 웹앱 주소를 확인하세요.');
+                if (url !== 'NEXUS_GATEWAY') {
+                    try {
+                        const parsedUrl = new URL(url);
+                        if (!/^https?:$/.test(parsedUrl.protocol)) throw new Error('INVALID_CLOUD_URL');
+                    }
+                    catch (e) {
+                        throw new Error('클라우드 주소가 올바르지 않습니다. 환경설정의 Apps Script 웹앱 주소를 확인하세요.');
+                    }
                 }
                 const readClient = window.DATAOPS_V1_SECURITY_CLIENT && window.DATAOPS_V1_SECURITY_CLIENT.readClient;
                 if (!readClient || !readClient.released())
@@ -3528,7 +3477,7 @@
                     await window.ONEAPP_AUTH?.ready;
                     if (!window.ONEAPP_AUTH?.session)
                         throw new Error('NEXUS_AUTH_SESSION_REQUIRED');
-                    readCredential = window.ONEAPP_AUTH.businessCredential('DATAOPS_READ');
+                    readCredential = {};
                 }
                 let snapshot;
                 try {
@@ -5341,8 +5290,8 @@
             return { status: '등록가능', canRegister: true, message: '필수/권장 입력 완료' };
         };
     </script>
-    <script src="/nexus/common/nexus-auth-config.js?v=1.0.0"></script>
-    <script src="/nexus/common/nexus-auth.js?v=1.0.0"></script>
+    <script src="/nexus/common/nexus-auth-config.js?v=2.0.0"></script>
+    <script src="/nexus/common/nexus-auth.js?v=2.0.0"></script>
     <script src="/nexus/common/apps-config.js?v=1.4.0"></script>
     <script src="/nexus/common/nexus-top.js?v=1.6.1"></script>
     <link rel="stylesheet" href="/nexus/common/nexus-operational-theme.css?v=1.0.0">
@@ -8247,70 +8196,31 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
         ui.setIsProcessing(true);
         try {
             if (type === 'upload') {
-                const postCloudAction = async (payload, label) => {
-                    const response = await fetch(targetCloudUrl, { method: 'POST', body: JSON.stringify(payload) });
-                    let result = null;
-                    try {
-                        result = await response.json();
-                    } catch (parseError) {
-                        throw new Error(`${label} 응답 해석 실패 (HTTP ${response.status || '-'})`);
-                    }
-                    if (!response.ok)
-                        throw new Error(`${label} HTTP 오류 ${response.status}`);
-                    if (!result || result.status !== 'success')
-                        throw new Error(`${label} 실패: ${result?.message || result?.error || '서버 성공 응답 없음'}`);
-                    return result;
-                };
-
-                ui.setProcessMsg('서버 초기화 중...');
-                await postCloudAction({ action: 'initSync' }, '서버 초기화');
                 const masterItems = Object.values(data.masterProducts);
-                const chunkSize = 500;
-                let uploadedMasterCount = 0;
-                for (let i = 0; i < masterItems.length; i += chunkSize) {
-                    const chunk = masterItems.slice(i, i + chunkSize);
-                    const chunkNo = Math.floor(i / chunkSize) + 1;
-                    ui.setProcessMsg(`마스터 데이터 업로드 중... (${Math.min(i + chunkSize, masterItems.length)} / ${masterItems.length}건)`);
-                    await postCloudAction({ action: 'chunk_master', data: chunk }, `마스터 ${chunkNo}번 청크`);
-                    uploadedMasterCount += chunk.length;
-                }
                 const historyItems = data.historyLogs || [];
-                let uploadedHistoryCount = 0;
-                for (let i = 0; i < historyItems.length; i += chunkSize) {
-                    const chunk = historyItems.slice(i, i + chunkSize);
-                    const chunkNo = Math.floor(i / chunkSize) + 1;
-                    ui.setProcessMsg(`히스토리 업로드 중... (${Math.min(i + chunkSize, historyItems.length)} / ${historyItems.length}건)`);
-                    await postCloudAction({ action: 'chunk_history', data: chunk }, `히스토리 ${chunkNo}번 청크`);
-                    uploadedHistoryCount += chunk.length;
-                }
-                ui.setProcessMsg('환경설정 및 AI 매핑 사전 업로드 중...');
                 const dict = JSON.parse(localStorage.getItem('parserDict_v870') || '{}');
                 const configPayload = {
-                    action: 'config',
-                    data: {
-                        dict: dict,
-                        rules: config.marginRules,
-                        appConfig: {
-                            mappings: config.mappings,
-                            masterLinks: config.masterLinks,
-                            visibleUploadCols: config.visibleUploadCols,
-                            visibleMasterCols: config.visibleMasterCols,
-                            tableViewPresets: config.tableViewPresets,
-                            activeTableTarget: config.activeTableTarget,
-                            activeTableViewId: config.activeTableViewId,
-                            cloudUrl: targetCloudUrl
-                        }
+                    dict: dict,
+                    rules: config.marginRules,
+                    appConfig: {
+                        mappings: config.mappings,
+                        masterLinks: config.masterLinks,
+                        visibleUploadCols: config.visibleUploadCols,
+                        visibleMasterCols: config.visibleMasterCols,
+                        tableViewPresets: config.tableViewPresets,
+                        activeTableTarget: config.activeTableTarget,
+                        activeTableViewId: config.activeTableViewId
                     }
                 };
-                await postCloudAction(configPayload, '환경설정 업로드');
-                ui.showToast(`✅ 클라우드 백업 성공: 마스터 ${uploadedMasterCount}건 / 히스토리 ${uploadedHistoryCount}건`);
+                ui.setProcessMsg('안전한 전체교체 검증 및 반영 중...');
+                await window.ONEAPP_AUTH.ready;
+                await window.ONEAPP_AUTH.gateway('foundation.replace_all', { master: masterItems, history: historyItems, config: configPayload });
+                ui.showToast(`✅ 클라우드 백업 성공: 마스터 ${masterItems.length}건 / 히스토리 ${historyItems.length}건`);
             }
             else {
                 ui.setProcessMsg('클라우드 데이터 수신 중...');
-                const res = await fetch(targetCloudUrl, { method: 'GET' });
-                if (!res.ok)
-                    throw new Error("Network Error");
-                const result = await res.json();
+                await window.ONEAPP_AUTH.ready;
+                const result = { status:'success', data:await window.ONEAPP_AUTH.gateway('foundation.full_read', {}) };
                 if (result.status === 'success' && result.data) {
                     if (result.data.master && Object.keys(result.data.master).length > 0) {
                         const masterRestored = await data.setMasterProducts(result.data.master, { allowStaleBase: true });

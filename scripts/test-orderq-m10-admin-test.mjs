@@ -68,7 +68,8 @@ assert.doesNotMatch(source, /ERP_POSTED|erpPostingStatus\s*=\s*['"]POSTED/);
 
 assert.match(dbSource, /adminTestDatabaseName/);
 assert.match(cloudSource, /ADMIN_TEST_CLOUD_URL_KEY/);
-assert.match(cloudSource, /sessionStorage/);
+assert.match(cloudSource, /ONEAPP_AUTH\.gateway\(operationId, body/);
+assert.doesNotMatch(cloudSource, /sessionStorage|localStorage\.getItem\([^\n]*token/i);
 assert.match(cutoverSource, /runtimeStorageKey/);
 assert.match(syncSource, /runtimeStorageKey/);
 

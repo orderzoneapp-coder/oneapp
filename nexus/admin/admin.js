@@ -1,7 +1,9 @@
 (() => {
   const auth = window.ONEAPP_AUTH;
   const permissionCatalog = [
-    ['foundation.read','기준정보 조회'],['foundation.write','기준정보 변경'],['merchops.read','가격·시세 조회'],['merchops.write','가격·시세 변경'],
+    ['foundation.read','기준정보 조회'],['foundation.write','기준정보 변경'],['foundation.replace','Master·History 전체 교체'],
+    ['customer.read','거래처 조회'],['customer.write','거래처 변경'],['shipping.read','출고·발주 조회'],['shipping.write','출고·발주 변경'],
+    ['merchops.read','가격·시세 조회'],['merchops.write','가격·시세 변경'],
     ['dataops.read','DataOps 조회'],['dataops.write','재고 갱신'],['dataops.publish','V2 발행'],['dataops.close','일마감'],
     ['orderq.read','ORDER Q 조회'],['orderq.write','ORDER Q 변경'],['orderq.admin','ORDER Q 관리'],['smartinput.use','스마트입력']
   ];
@@ -53,7 +55,7 @@
   }
 
   async function loadServiceStatus() {
-    const labels = {upstream:'업무 서버',dataOpsRead:'DataOps 읽기',dataOpsWrite:'DataOps 쓰기',dataOpsPublish:'V2 발행',orderQ:'ORDER Q',shipping:'발주계획'};
+    const labels = {upstream:'업무 서버',foundationRead:'Foundation READ',foundationWrite:'Foundation WRITE',dataOpsRead:'DataOps READ',dataOpsWrite:'DataOps WRITE',orderQRead:'ORDER Q READ',orderQWrite:'ORDER Q WRITE',shippingRead:'Shipping READ',shippingWrite:'Shipping WRITE'};
     try {
       const status = await auth.admin.serviceStatus();
       document.getElementById('serviceStatus').innerHTML = Object.entries(labels).map(([key,label]) => `<span><b>${label}</b> <i class="${status[key] ? 'ready' : 'missing'}">${status[key] ? '연결됨' : '미연결'}</i></span>`).join('');
@@ -118,19 +120,6 @@
   document.getElementById('copyInviteCode').addEventListener('click', async () => {
     await navigator.clipboard.writeText(document.getElementById('issuedInviteCode').value);
     document.getElementById('copyInviteCode').textContent = '복사됨';
-  });
-
-  document.getElementById('servicesForm').addEventListener('submit', async event => {
-    event.preventDefault();
-    const map = {upstreamUrl:'serviceUpstream',dataOpsRead:'serviceDataOpsRead',dataOpsWrite:'serviceDataOpsWrite',dataOpsPublish:'serviceDataOpsPublish',orderQ:'serviceOrderQ',shipping:'serviceShipping'};
-    const services = {};
-    Object.entries(map).forEach(([key,id]) => { const value = document.getElementById(id).value.trim(); if (value) services[key] = value; });
-    message('servicesMessage','서버에 안전하게 저장 중…',true);
-    try {
-      await auth.admin.configureServices(services);
-      Object.values(map).filter(id => id !== 'serviceUpstream').forEach(id => { document.getElementById(id).value = ''; });
-      message('servicesMessage','업무 연결을 저장했습니다. 토큰 값은 다시 표시되지 않습니다.',true); await loadServiceStatus();
-    } catch (error) { message('servicesMessage',error.message); }
   });
 
   renderPermissionChecks('invitePermissionChecks',[]); applyProfileState('inviteRole','invitePermissionChecks');

@@ -7,7 +7,9 @@
  * retained business Web App with server-held credentials.
  */
 
-var NEXUS_AUTH_VERSION = 'NEXUS_AUTH_V1';
+var NEXUS_AUTH_VERSION = 'NEXUS_AUTH_V2';
+var NEXUS_AUTH_LEGACY_VERSION = 'LEGACY_V1';
+var NEXUS_AUTH_APP_CONTEXT_VERSION = 'NEXUS_APP_CONTEXT_V1';
 var NEXUS_AUTH_DEFAULT_UPSTREAM_URL = 'https://script.google.com/macros/s/AKfycbzOUOIu_bP7NkiFVziDR0Og1da1KO1ePoU09Q3pSlPr-9uD-WkdCpWN7nidO5hlrJi6Qw/exec';
 var NEXUS_AUTH_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 var NEXUS_AUTH_INVITE_TTL_MS = 72 * 60 * 60 * 1000;
@@ -20,11 +22,17 @@ var NEXUS_AUTH_PROPERTIES = Object.freeze({
   BOOTSTRAP_DIGEST: 'NEXUS_AUTH_BOOTSTRAP_DIGEST',
   BOOTSTRAP_EXPIRES_AT: 'NEXUS_AUTH_BOOTSTRAP_EXPIRES_AT',
   UPSTREAM_URL: 'NEXUS_AUTH_UPSTREAM_URL',
+  FOUNDATION_READ: 'NEXUS_AUTH_SECRET_FOUNDATION_READ',
+  FOUNDATION_WRITE: 'NEXUS_AUTH_SECRET_FOUNDATION_WRITE',
   DATAOPS_READ: 'NEXUS_AUTH_SECRET_DATAOPS_READ',
   DATAOPS_WRITE: 'NEXUS_AUTH_SECRET_DATAOPS_WRITE',
-  DATAOPS_PUBLISH: 'NEXUS_AUTH_SECRET_DATAOPS_PUBLISH',
-  ORDERQ: 'NEXUS_AUTH_SECRET_ORDERQ',
-  SHIPPING: 'NEXUS_AUTH_SECRET_SHIPPING'
+  ORDERQ_READ: 'NEXUS_AUTH_SECRET_ORDERQ_READ',
+  ORDERQ_WRITE: 'NEXUS_AUTH_SECRET_ORDERQ_WRITE',
+  SHIPPING_READ: 'NEXUS_AUTH_SECRET_SHIPPING_READ',
+  SHIPPING_WRITE: 'NEXUS_AUTH_SECRET_SHIPPING_WRITE',
+  LEGACY_DATAOPS_PUBLISH: 'NEXUS_AUTH_SECRET_DATAOPS_PUBLISH',
+  LEGACY_ORDERQ: 'NEXUS_AUTH_SECRET_ORDERQ',
+  LEGACY_SHIPPING: 'NEXUS_AUTH_SECRET_SHIPPING'
 });
 var NEXUS_AUTH_SHEETS = Object.freeze({
   USERS: 'Users',
@@ -39,7 +47,8 @@ var NEXUS_AUTH_HEADERS = Object.freeze({
   RateLimits: ['key', 'windowStart', 'count', 'blockedUntil']
 });
 var NEXUS_AUTH_ALL_PERMISSIONS = Object.freeze([
-  'foundation.read', 'foundation.write',
+  'foundation.read', 'foundation.write', 'foundation.replace',
+  'customer.read', 'customer.write', 'shipping.read', 'shipping.write',
   'merchops.read', 'merchops.write',
   'dataops.read', 'dataops.write', 'dataops.publish', 'dataops.close',
   'orderq.read', 'orderq.write', 'orderq.admin',
@@ -50,7 +59,7 @@ var NEXUS_AUTH_BUSINESS_PERMISSIONS = Object.freeze(NEXUS_AUTH_ALL_PERMISSIONS.f
 }));
 var NEXUS_AUTH_PROFILE_PERMISSIONS = Object.freeze({
   FULL_ACCESS: NEXUS_AUTH_BUSINESS_PERMISSIONS,
-  VIEWER: ['foundation.read', 'merchops.read', 'dataops.read', 'orderq.read', 'smartinput.use'],
+  VIEWER: ['foundation.read', 'customer.read', 'merchops.read', 'dataops.read', 'orderq.read', 'shipping.read', 'smartinput.use'],
   CUSTOM: []
 });
 
@@ -59,6 +68,7 @@ function doPost(e) {
     var payload = nexusAuthParseBody_(e);
     var action = nexusAuthText_(payload.action);
     if (!action) throw new Error('NEXUS_AUTH_ACTION_REQUIRED');
+    if (action === 'nexus_gateway') return nexusAuthGateway_(payload);
     if (action === 'nexus_proxy') return nexusAuthProxy_(payload);
     var data = nexusAuthDispatch_(action, payload);
     return nexusAuthJson_({ status: 'success', action: action, data: data });
@@ -118,13 +128,13 @@ function nexusAuthDispatch_(action, payload) {
   if (action === 'nexus_auth_logout') return nexusAuthLogout_(payload);
 
   var session = nexusAuthRequireSession_(payload.sessionToken);
+  if (action === 'nexus_auth_app_context') return nexusAuthIssueAppContext_(session, payload);
   if (action === 'nexus_admin_users') return nexusAuthAdminUsers_(session);
   if (action === 'nexus_admin_invite') return nexusAuthAdminInvite_(session, payload);
   if (action === 'nexus_admin_permissions') return nexusAuthAdminPermissions_(session, payload);
   if (action === 'nexus_admin_delete_user') return nexusAuthAdminDelete_(session, payload);
   if (action === 'nexus_admin_recover_user') return nexusAuthAdminRecover_(session, payload);
   if (action === 'nexus_admin_service_status') return nexusAuthServiceStatus_(session);
-  if (action === 'nexus_admin_configure_services') return nexusAuthConfigureServices_(session, payload);
   if (action === 'nexus_admin_audit') return nexusAuthAdminAudit_(session, payload);
   throw new Error('NEXUS_AUTH_ACTION_UNSUPPORTED');
 }
@@ -268,6 +278,63 @@ function nexusAuthRequireSession_(rawToken) {
   return { user: user, session: session };
 }
 
+function nexusAuthAppPermissions_() {
+  return {
+    master: ['foundation.read'],
+    'item-manager': ['foundation.write'],
+    'customer-manager': ['customer.read'],
+    merchops: ['merchops.read'],
+    'smart-parser': ['merchops.read'],
+    dataops: ['dataops.read'],
+    orderq: ['orderq.read'],
+    orderops: ['orderq.read', 'shipping.read'],
+    orderin: ['orderq.write'],
+    'smart-input': ['smartinput.use'],
+    settings: ['foundation.read'],
+    history: ['foundation.read'],
+    'export-center': ['foundation.read']
+  };
+}
+
+function nexusAuthIssueAppContext_(context, payload) {
+  var appId = nexusAuthText_(payload.appId).toLowerCase();
+  var required = nexusAuthAppPermissions_()[appId];
+  if (!required) throw new Error('NEXUS_AUTH_APP_CONTEXT_DENIED');
+  required.forEach(function (permission) { nexusAuthRequirePermission_(context.user, permission); });
+  var now = Date.now();
+  var expiresAt = Math.min(Date.parse(context.session.expiresAt || ''), now + NEXUS_AUTH_SESSION_TTL_MS);
+  if (!Number.isFinite(expiresAt) || expiresAt <= now) throw new Error('NEXUS_AUTH_SESSION_EXPIRED');
+  var claims = {
+    version: NEXUS_AUTH_APP_CONTEXT_VERSION,
+    appId: appId,
+    userId: context.user.userId,
+    sessionDigest: context.session.sessionDigest,
+    issuedAt: new Date(now).toISOString(),
+    expiresAt: new Date(expiresAt).toISOString()
+  };
+  var encoded = encodeURIComponent(JSON.stringify(claims));
+  return { appId: appId, appContextToken: encoded + '.' + nexusAuthHmac_(encoded), expiresAt: claims.expiresAt };
+}
+
+function nexusAuthRequireAppContext_(rawToken, context, definition) {
+  var token = nexusAuthText_(rawToken);
+  var separator = token.lastIndexOf('.');
+  if (separator < 1) throw new Error('NEXUS_AUTH_APP_CONTEXT_REQUIRED');
+  var encoded = token.slice(0, separator);
+  var suppliedSignature = token.slice(separator + 1);
+  var expectedSignature = nexusAuthHmac_(encoded);
+  if (!/^[a-f0-9]{64}$/.test(suppliedSignature) || !nexusAuthConstantTime_(suppliedSignature, expectedSignature)) throw new Error('NEXUS_AUTH_APP_CONTEXT_DENIED');
+  var claims;
+  try { claims = JSON.parse(decodeURIComponent(encoded)); }
+  catch (error) { throw new Error('NEXUS_AUTH_APP_CONTEXT_DENIED'); }
+  if (!claims || claims.version !== NEXUS_AUTH_APP_CONTEXT_VERSION || claims.userId !== context.user.userId
+      || claims.sessionDigest !== context.session.sessionDigest || Date.parse(claims.expiresAt || '') <= Date.now()) {
+    throw new Error('NEXUS_AUTH_APP_CONTEXT_EXPIRED');
+  }
+  if (!definition || !Array.isArray(definition.allowedApps) || definition.allowedApps.indexOf(claims.appId) < 0) throw new Error('NEXUS_AUTH_APP_OPERATION_DENIED');
+  return claims;
+}
+
 function nexusAuthSessionView_(context) {
   var user = context.user;
   return {
@@ -360,36 +427,268 @@ function nexusAuthServiceStatus_(context) {
   return nexusAuthServiceBooleans_();
 }
 
-function nexusAuthConfigureServices_(context, payload) {
-  nexusAuthRequirePermission_(context.user, 'admin.services');
-  var properties = PropertiesService.getScriptProperties();
-  var allowed = {
-    upstreamUrl: NEXUS_AUTH_PROPERTIES.UPSTREAM_URL,
-    dataOpsRead: NEXUS_AUTH_PROPERTIES.DATAOPS_READ,
-    dataOpsWrite: NEXUS_AUTH_PROPERTIES.DATAOPS_WRITE,
-    dataOpsPublish: NEXUS_AUTH_PROPERTIES.DATAOPS_PUBLISH,
-    orderQ: NEXUS_AUTH_PROPERTIES.ORDERQ,
-    shipping: NEXUS_AUTH_PROPERTIES.SHIPPING
-  };
-  var changed = [];
-  Object.keys(allowed).forEach(function (key) {
-    if (!Object.prototype.hasOwnProperty.call(payload.services || {}, key)) return;
-    var value = nexusAuthText_(payload.services[key]);
-    if (!value) return;
-    if (key === 'upstreamUrl' && !/^https:\/\/script\.google\.com\/macros\/s\//i.test(value)) throw new Error('NEXUS_AUTH_UPSTREAM_URL_INVALID');
-    properties.setProperty(allowed[key], value);
-    changed.push(key);
-  });
-  nexusAuthAudit_('SERVICE_CONFIG', context.user.userId, '', 'SUCCESS', { changed: changed });
-  return nexusAuthServiceBooleans_();
-}
-
 function nexusAuthAdminAudit_(context, payload) {
   nexusAuthRequirePermission_(context.user, 'admin.audit');
   var limit = Math.max(1, Math.min(200, Number(payload.limit || 100)));
   return nexusAuthRows_(NEXUS_AUTH_SHEETS.AUDIT).slice(-limit).reverse().map(function (row) {
     return { auditId: row.auditId, at: row.at, actorUserId: row.actorUserId, action: row.action, targetUserId: row.targetUserId, result: row.result, detail: nexusAuthParseJson_(row.detailJson, {}) };
   });
+}
+
+function nexusAuthGatewayRegistry_() {
+  var foundationApps = ['master', 'item-manager', 'customer-manager', 'merchops', 'smart-parser', 'dataops', 'settings', 'history', 'export-center'];
+  var orderApps = ['orderq', 'orderops', 'orderin', 'smart-input', 'dataops'];
+  var definitions = [
+    ['foundation.full_read', foundationApps, ['foundation.read'], 'nexus_gateway_foundation_full_get', 'FOUNDATION', 'READ', [], 'foundation', 'master'],
+    ['foundation.master_read', foundationApps, ['foundation.read'], 'nexus_gateway_foundation_master_get', 'FOUNDATION', 'READ', [], 'foundation', 'master'],
+    ['foundation.config_read', foundationApps, ['foundation.read'], 'nexus_gateway_foundation_config_get', 'FOUNDATION', 'READ', [], 'foundation', 'config'],
+    ['foundation.config_write', ['settings', 'master', 'merchops'], ['foundation.write'], 'nexus_gateway_foundation_config_write', 'FOUNDATION', 'WRITE', ['data'], 'foundation', 'config'],
+    ['foundation.history_read', ['history', 'master', 'item-manager', 'merchops'], ['foundation.read'], 'nexus_gateway_foundation_history_get', 'FOUNDATION', 'READ', ['limit', 'days', 'code', 'field'], 'foundation', 'history'],
+    ['foundation.replace_all', ['master', 'item-manager', 'merchops'], ['foundation.write', 'foundation.replace'], 'nexus_gateway_foundation_replace_all', 'FOUNDATION', 'WRITE', ['master', 'history', 'config', 'sourceRevision'], 'foundation', 'replace'],
+    ['dataops.security_ping', ['dataops', 'merchops', 'orderops'], ['dataops.read'], 'dataops_v1_security_ping', 'DATAOPS', 'READ', [], 'dataops', 'generic'],
+    ['dataops.snapshot.get', ['dataops', 'merchops', 'orderops'], ['dataops.read'], 'dataops_snapshot_get', 'DATAOPS', 'READ', [], 'dataops', 'generic'],
+    ['dataops.snapshot.commit', ['dataops'], [], 'dataops_snapshot_commit', 'DATAOPS', 'WRITE', ['snapshot'], 'dataops', 'generic'],
+    ['dataops.situation.ping', ['dataops', 'orderq', 'orderops'], ['dataops.read'], 'situation_dataops_ping', 'DATAOPS', 'READ', [], 'dataops', 'generic'],
+    ['dataops.situation.begin', ['dataops', 'orderq', 'orderops'], ['dataops.read'], 'situation_dataops_begin', 'DATAOPS', 'READ', ['businessDate'], 'dataops', 'generic'],
+    ['dataops.situation.page', ['dataops', 'orderq', 'orderops'], ['dataops.read'], 'situation_dataops_page', 'DATAOPS', 'READ', ['readSessionId', 'tokenDigest', 'dataOpsTokenDigest', 'pageIndex'], 'dataops', 'generic'],
+    ['dataops.situation.head', ['dataops', 'orderq', 'orderops'], ['dataops.read'], 'situation_dataops_head', 'DATAOPS', 'READ', ['readSessionId', 'tokenDigest', 'dataOpsTokenDigest'], 'dataops', 'generic'],
+    ['dataops.situation.publish', ['dataops'], [], 'situation_dataops_publish', 'DATAOPS', 'WRITE', ['snapshot', 'producerEvidence', 'prepareOperationalRequest', 'rollbackRequest'], 'dataops', 'generic'],
+    ['dataops.close.ping', ['dataops'], ['dataops.read'], 'dataops_close_ping', 'DATAOPS', 'READ', [], 'dataops', 'generic'],
+    ['dataops.close.context', ['dataops'], [], 'dataops_close_context', 'DATAOPS', 'READ', ['closeSeriesId', 'companyId', 'closeBusinessDate'], 'dataops', 'generic'],
+    ['dataops.close.seal', ['dataops'], [], 'dataops_close_seal', 'DATAOPS', 'READ', ['closeSeriesId', 'closeSnapshotA', 'sourceADigest', 'capabilityDigest', 'orderqReadRequest', 'dataopsReadTokenDigest'], 'dataops', 'generic'],
+    ['dataops.close.prepare', ['dataops'], [], 'dataops_close_prepare', 'DATAOPS', 'WRITE', ['intent'], 'dataops', 'generic'],
+    ['dataops.close.write_chunks', ['dataops'], [], 'dataops_close_write_chunks', 'DATAOPS', 'WRITE', ['stageId', 'commandId', 'kind', 'chunks'], 'dataops', 'generic'],
+    ['dataops.close.commit', ['dataops'], [], 'dataops_close_commit', 'DATAOPS', 'WRITE', ['intent'], 'dataops', 'generic'],
+    ['dataops.close.abort', ['dataops'], [], 'dataops_close_abort', 'DATAOPS', 'WRITE', ['closeSeriesId', 'commandId'], 'dataops', 'generic'],
+    ['orderq.sync.pull', orderApps, ['orderq.read'], 'orderq_sync_pull', 'ORDERQ', 'READ', ['schemaVersion', 'afterSequence', 'limit'], 'orderq', 'generic'],
+    ['orderq.sync.push', ['orderq', 'orderin', 'smart-input'], ['orderq.write'], 'orderq_sync_push', 'ORDERQ', 'WRITE', ['schemaVersion', 'deviceId', 'changes', 'customerResetGeneration'], 'orderq', 'generic'],
+    ['customer.master.pull', ['customer-manager'], ['customer.read'], 'orderq_customer_master_pull', 'ORDERQ', 'READ', ['schemaVersion', 'afterSequence', 'limit'], 'customer', 'generic'],
+    ['customer.master.push', ['customer-manager'], ['customer.write'], 'orderq_customer_master_push', 'ORDERQ', 'WRITE', ['schemaVersion', 'deviceId', 'changes', 'customerResetGeneration'], 'customer', 'generic'],
+    ['orderq.customer.reset_preview', ['orderq'], ['orderq.admin', 'customer.read'], 'orderq_customer_reset_preview', 'ORDERQ', 'READ', [], 'orderq', 'generic'],
+    ['orderq.customer.reset_execute', ['orderq'], ['orderq.admin', 'customer.write'], 'orderq_customer_reset_execute', 'ORDERQ', 'WRITE', ['confirmation'], 'orderq', 'generic'],
+    ['orderq.order.head', orderApps, ['orderq.read'], 'orderq_order_head', 'ORDERQ', 'READ', ['schemaVersion', 'orderId'], 'orderq', 'generic'],
+    ['orderq.central.ping', orderApps, ['orderq.read'], 'orderq_m9_ping', 'ORDERQ', 'READ', ['schemaVersion'], 'orderq', 'generic'],
+    ['orderq.central.migrate', ['orderq'], ['orderq.write'], 'orderq_m9_migrate', 'ORDERQ', 'WRITE', ['schemaVersion', 'deviceId', 'idempotencyKey', 'entities'], 'orderq', 'generic'],
+    ['orderq.central.prepare', ['orderq', 'orderin', 'smart-input'], ['orderq.write'], 'orderq_m9_command_prepare', 'ORDERQ', 'WRITE', ['schemaVersion', 'commandId', 'idempotencyKey', 'commandType', 'aggregateId', 'expectedRevision', 'deviceId', 'intent'], 'orderq', 'generic'],
+    ['orderq.central.commit', ['orderq', 'orderin', 'smart-input'], ['orderq.write'], 'orderq_m9_command_commit', 'ORDERQ', 'WRITE', ['schemaVersion', 'idempotencyKey', 'leaseToken', 'fingerprint', 'mutations'], 'orderq', 'generic'],
+    ['orderq.central.abort', ['orderq', 'orderin', 'smart-input'], ['orderq.write'], 'orderq_m9_command_abort', 'ORDERQ', 'WRITE', ['schemaVersion', 'idempotencyKey', 'leaseToken', 'reason'], 'orderq', 'generic'],
+    ['orderq.central.pull', orderApps, ['orderq.read'], 'orderq_m9_pull', 'ORDERQ', 'READ', ['schemaVersion', 'afterSequence', 'limit'], 'orderq', 'generic'],
+    ['orderq.situation.begin', orderApps, ['orderq.read'], 'situation_orderq_begin', 'ORDERQ', 'READ', ['schemaVersion', 'businessDate', 'windowKey', 'operationWindow', 'dataOps'], 'orderq', 'generic'],
+    ['orderq.situation.page', orderApps, ['orderq.read'], 'situation_orderq_page', 'ORDERQ', 'READ', ['schemaVersion', 'readSessionId', 'tokenDigest', 'pageIndex'], 'orderq', 'generic'],
+    ['orderq.situation.head', orderApps, ['orderq.read'], 'situation_orderq_head', 'ORDERQ', 'READ', ['schemaVersion', 'readSessionId', 'tokenDigest'], 'orderq', 'generic'],
+    ['shipping.plan.list', ['orderops'], ['shipping.read'], 'shipping_plan_list', 'SHIPPING', 'READ', ['limit'], 'shipping', 'generic'],
+    ['shipping.plan.get', ['orderops'], ['shipping.read'], 'shipping_plan_get', 'SHIPPING', 'READ', ['planId', 'revision'], 'shipping', 'generic'],
+    ['shipping.plan.save', ['orderops'], ['shipping.write'], 'shipping_plan_save', 'SHIPPING', 'WRITE', ['snapshot'], 'shipping', 'generic']
+  ];
+  return definitions.reduce(function (registry, definition) {
+    var operationId = definition[0];
+    var allowedApps = definition[1];
+    var requiredUserPermissions = definition[2].slice();
+    var upstreamAction = definition[3];
+    var serviceBoundary = definition[4];
+    var serviceCredentialMode = definition[5];
+    var allowedFields = definition[6].slice();
+    var requiredPurposePermissions = [];
+    var operationClass = serviceCredentialMode === 'READ' ? 'READ_ONLY_DERIVED' : 'BUSINESS_DATA';
+    var writableFields = serviceCredentialMode === 'WRITE' ? allowedFields.slice() : [];
+    var serverComputedFields = [];
+    var preconditionFields = allowedFields.filter(function (field) {
+      return /(revision|hash|digest|sequence|fingerprint|version)$/i.test(field);
+    });
+    var systemFields = ['action', 'actorId', 'appId', 'credentialMode', 'credential', 'token', 'requestId', 'nexusRequest', 'roleIds', 'scope'];
+    var enforceImmutableFields = false;
+
+    if (/^foundation\.(config_write|replace_all)$/.test(operationId) || /^orderq\.customer\.reset_/.test(operationId)) {
+      operationClass = 'SYSTEM_ADMIN';
+    }
+    if (operationId === 'dataops.snapshot.commit') {
+      // DataOps 앱 사용 권한을 가진 비-VIEWER 사용자의 기존 작업 저장은 별도 dataops.write 사용자 권한을 요구하지 않는다.
+      requiredUserPermissions = [];
+      writableFields = ['기초', '주문', '입고', '출고', '실사', '단가'];
+      serverComputedFields = ['전산잔량', '예상잔량', '로스', 'savedAt', 'revision'];
+      preconditionFields = ['hash'];
+      enforceImmutableFields = true;
+    }
+    if (operationId === 'dataops.situation.publish') {
+      requiredUserPermissions = [];
+      requiredPurposePermissions = ['dataops.publish'];
+      writableFields = [];
+    }
+    if (/^dataops\.close\.(context|seal|prepare|write_chunks|commit|abort)$/.test(operationId)) {
+      requiredUserPermissions = [];
+      requiredPurposePermissions = ['dataops.close'];
+      writableFields = [];
+    }
+
+    registry[operationId] = {
+      operationId: operationId,
+      allowedApps: allowedApps,
+      requiredAppAccess: allowedApps.slice(),
+      requiredUserPermissions: requiredUserPermissions,
+      requiredPurposePermissions: requiredPurposePermissions,
+      operationClass: operationClass,
+      upstreamAction: upstreamAction,
+      securityBoundary: serviceBoundary,
+      serviceBoundary: serviceBoundary,
+      access: serviceCredentialMode,
+      serviceCredentialMode: serviceCredentialMode,
+      allowedFields: allowedFields,
+      writableFields: writableFields,
+      serverComputedFields: serverComputedFields,
+      systemFields: systemFields,
+      preconditionFields: preconditionFields,
+      enforceImmutableFields: enforceImmutableFields,
+      auditCategory: definition[7],
+      responseSanitizer: definition[8]
+    };
+    return registry;
+  }, {});
+}
+
+function nexusAuthGateway_(payload) {
+  var started = Date.now();
+  var requestId = 'REQ-' + Utilities.getUuid();
+  var operationId = nexusAuthText_(payload.operationId);
+  var definition = nexusAuthGatewayRegistry_()[operationId];
+  var context = null;
+  var credentialId = '';
+  try {
+    if (!definition) throw new Error('NEXUS_GATEWAY_OPERATION_DENIED');
+    context = nexusAuthRequireSession_(payload.sessionToken);
+    var appContext = nexusAuthRequireAppContext_(payload.appContextToken, context, definition);
+    definition = Object.assign({}, definition, { verifiedAppId: appContext.appId });
+    nexusAuthRequireOperationAccess_(context, definition);
+    var body = nexusAuthGatewayValidatePayload_(definition, payload.payload);
+    var credential = nexusAuthGatewayCredential_(definition.securityBoundary, definition.access);
+    credentialId = credential.credentialId;
+    var forwarded = nexusAuthGatewayEnvelope_(definition, body, credential, context, requestId);
+    var parsed = nexusAuthGatewayFetch_(forwarded);
+    if (!parsed || parsed.status !== 'success') throw new Error(nexusAuthGatewayUpstreamError_(parsed));
+    var data = nexusAuthGatewaySanitize_(parsed.data === undefined ? parsed : parsed.data);
+    nexusAuthGatewayAudit_(requestId, context, definition, credentialId, started, 'SUCCESS', '', parsed && parsed.correlationId);
+    return nexusAuthJson_({ status: 'success', contractVersion: NEXUS_AUTH_VERSION, operationId: operationId, data: data });
+  } catch (error) {
+    var safeError = nexusAuthPublicError_(error);
+    nexusAuthGatewayAudit_(requestId, context, definition || { operationId: operationId, securityBoundary: '', access: '', auditCategory: 'gateway' }, credentialId, started, nexusAuthGatewayFailureResult_(safeError), safeError, '');
+    throw error;
+  }
+}
+
+function nexusAuthGatewayFailureResult_(safeError) {
+  var code = nexusAuthText_(safeError);
+  if (code === 'IMMUTABLE_FIELD' || /_(DENIED|REQUIRED|EXPIRED|REVOKED|READ_ONLY)$/.test(code)) return 'DENIED';
+  return 'FAILURE';
+}
+
+function nexusAuthRequireOperationAccess_(context, definition) {
+  var user = context && context.user;
+  if (!user) throw new Error('NEXUS_AUTH_SESSION_REQUIRED');
+  if (user.role === 'VIEWER' && definition.serviceCredentialMode === 'WRITE') throw new Error('NEXUS_AUTH_VIEWER_READ_ONLY');
+  (definition.requiredUserPermissions || []).forEach(function (permission) { nexusAuthRequirePermission_(user, permission); });
+  (definition.requiredPurposePermissions || []).forEach(function (permission) { nexusAuthRequirePermission_(user, permission); });
+  return true;
+}
+
+function nexusAuthGatewayValidatePayload_(definition, value) {
+  var payload = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  var reserved = ['action', 'operationId', 'sessionToken', 'targetUrl', 'upstreamUrl', 'token', 'actorId', 'userId', 'loginId', 'appId', 'requestId', 'credential'];
+  Object.keys(payload).forEach(function (key) {
+    if (reserved.indexOf(key) >= 0 || definition.allowedFields.indexOf(key) < 0) throw new Error('NEXUS_GATEWAY_SCHEMA_DENIED');
+  });
+  if (definition.enforceImmutableFields) {
+    nexusAuthRejectImmutableFields_(payload, (definition.serverComputedFields || []).concat(definition.systemFields || []));
+  }
+  return JSON.parse(JSON.stringify(payload));
+}
+
+function nexusAuthRejectImmutableFields_(value, immutableFields) {
+  var denied = {};
+  (immutableFields || []).forEach(function (field) { denied[String(field)] = true; });
+  function inspect(current) {
+    if (Array.isArray(current)) {
+      current.forEach(inspect);
+      return;
+    }
+    if (!current || typeof current !== 'object') return;
+    Object.keys(current).forEach(function (key) {
+      if (denied[key]) throw new Error('IMMUTABLE_FIELD');
+      inspect(current[key]);
+    });
+  }
+  inspect(value);
+  return true;
+}
+
+function nexusAuthGatewayCredential_(boundary, access) {
+  var key = String(boundary || '').toUpperCase() + '_' + String(access || '').toUpperCase();
+  var propertyName = NEXUS_AUTH_PROPERTIES[key];
+  if (!propertyName) throw new Error('NEXUS_GATEWAY_CREDENTIAL_ROUTE_DENIED');
+  var rawToken = nexusAuthText_(PropertiesService.getScriptProperties().getProperty(propertyName));
+  if (!rawToken) throw new Error('NEXUS_AUTH_SERVICE_NOT_CONNECTED');
+  return { token: rawToken, credentialId: propertyName, version: 'V2' };
+}
+
+function nexusAuthGatewayEnvelope_(definition, body, credential, context, requestId) {
+  var forwarded = JSON.parse(JSON.stringify(body));
+  forwarded.action = definition.upstreamAction;
+  forwarded.token = credential.token;
+  forwarded.actorId = 'NEXUS_GATEWAY';
+  forwarded.roleIds = [definition.securityBoundary + '_READ'];
+  if (definition.access === 'WRITE') forwarded.roleIds.push(definition.securityBoundary + '_WRITE');
+  if (definition.operationId === 'foundation.replace_all') forwarded.roleIds.push('FOUNDATION_REPLACE');
+  forwarded.deviceId = 'NEXUS_GATEWAY';
+  forwarded.device = 'NEXUS_GATEWAY';
+  forwarded.environment = 'PRODUCTION';
+  forwarded.scope = { companyId: 'ONEAPP' };
+  forwarded.requestId = requestId;
+  if (definition.operationId === 'foundation.replace_all') forwarded.transactionId = 'NXTX-' + Utilities.getUuid();
+  forwarded.nexusRequest = {
+    requestId: requestId, subjectUserId: context.user.userId, subjectLoginId: context.user.loginId,
+    appId: definition.verifiedAppId, operationId: definition.operationId, contractVersion: NEXUS_AUTH_VERSION
+  };
+  return forwarded;
+}
+
+function nexusAuthGatewayFetch_(forwarded) {
+  var properties = PropertiesService.getScriptProperties();
+  var upstreamUrl = nexusAuthText_(properties.getProperty(NEXUS_AUTH_PROPERTIES.UPSTREAM_URL) || NEXUS_AUTH_DEFAULT_UPSTREAM_URL);
+  if (!/^https:\/\/script\.google\.com\/macros\/s\//i.test(upstreamUrl)) throw new Error('NEXUS_AUTH_UPSTREAM_URL_INVALID');
+  var response = UrlFetchApp.fetch(upstreamUrl, {
+    method: 'post', contentType: 'text/plain;charset=utf-8', payload: JSON.stringify(forwarded), muteHttpExceptions: true, followRedirects: true
+  });
+  try { return JSON.parse(response.getContentText()); }
+  catch (error) { throw new Error('NEXUS_GATEWAY_RESPONSE_INVALID'); }
+}
+
+function nexusAuthGatewayUpstreamError_(parsed) {
+  var code = nexusAuthText_(parsed && parsed.message);
+  if (/^[A-Z0-9_]{3,100}$/.test(code)) return code;
+  return 'NEXUS_GATEWAY_UPSTREAM_DENIED';
+}
+
+function nexusAuthGatewaySanitize_(value) {
+  if (Array.isArray(value)) return value.map(nexusAuthGatewaySanitize_);
+  if (!value || typeof value !== 'object') return value;
+  return Object.keys(value).reduce(function (result, key) {
+    if (/(token|password|secret|credential|rawbody|actorid)/i.test(key)) return result;
+    result[key] = nexusAuthGatewaySanitize_(value[key]);
+    return result;
+  }, {});
+}
+
+function nexusAuthGatewayAudit_(requestId, context, definition, credentialId, started, result, safeError, correlationId) {
+  if (!nexusAuthIsInitialized_()) return;
+  try {
+    var ended = Date.now();
+    nexusAuthAudit_('GATEWAY', context && context.user ? context.user.userId : '', '', result, {
+      requestId: requestId, userId: context && context.user ? context.user.userId : '', loginId: context && context.user ? context.user.loginId : '',
+      appId: definition.verifiedAppId || '', operationId: definition.operationId || '', upstreamAction: definition.upstreamAction || '',
+      requiredUserPermissions: definition.requiredUserPermissions || [], requiredPurposePermissions: definition.requiredPurposePermissions || [],
+      operationClass: definition.operationClass || '', securityBoundary: definition.securityBoundary || '', access: definition.access || '',
+      credentialId: credentialId || '', protocol: NEXUS_AUTH_VERSION, startedAt: new Date(started).toISOString(), endedAt: new Date(ended).toISOString(),
+      durationMs: ended - started, result: result, safeError: safeError || '', correlationId: nexusAuthText_(correlationId)
+    });
+  } catch (ignored) {}
 }
 
 function nexusAuthProxy_(payload) {
@@ -401,44 +700,42 @@ function nexusAuthProxy_(payload) {
   if (!action) throw new Error('NEXUS_PROXY_ACTION_REQUIRED');
   var permission = nexusAuthPermissionForAction_(action, method);
   nexusAuthRequirePermission_(context.user, permission);
+  if (/^(initSync|chunk_master|chunk_history)$/.test(action)) nexusAuthRequirePermission_(context.user, 'foundation.replace');
 
   var properties = PropertiesService.getScriptProperties();
   var upstreamUrl = nexusAuthText_(properties.getProperty(NEXUS_AUTH_PROPERTIES.UPSTREAM_URL) || NEXUS_AUTH_DEFAULT_UPSTREAM_URL);
   if (!/^https:\/\/script\.google\.com\/macros\/s\//i.test(upstreamUrl)) throw new Error('NEXUS_AUTH_UPSTREAM_URL_INVALID');
-  var options;
-  if (method === 'GET') {
-    var query = '?action=' + encodeURIComponent(action);
-    options = { method: 'get', muteHttpExceptions: true, followRedirects: true };
-    upstreamUrl += query;
-  } else if (method === 'POST') {
-    var forwarded = JSON.parse(JSON.stringify(body));
-    forwarded.action = action;
-    delete forwarded.sessionToken;
-    var secretProperty = nexusAuthSecretPropertyForAction_(action);
-    if (secretProperty) {
-      var secret = nexusAuthText_(properties.getProperty(secretProperty));
-      if (!secret) throw new Error('NEXUS_AUTH_SERVICE_NOT_CONNECTED');
-      forwarded.token = secret;
-    } else {
-      delete forwarded.token;
-    }
-    forwarded.actorId = context.user.loginId;
-    forwarded.deviceId = nexusAuthText_(forwarded.deviceId || 'NEXUS_GATEWAY');
-    forwarded.device = nexusAuthText_(forwarded.device || forwarded.deviceId);
-    forwarded.environment = 'PRODUCTION';
-    forwarded.scope = { companyId: 'ONEAPP' };
-    options = {
-      method: 'post', contentType: 'text/plain;charset=utf-8',
-      payload: JSON.stringify(forwarded), muteHttpExceptions: true, followRedirects: true
-    };
+  if (method !== 'GET' && method !== 'POST') throw new Error('NEXUS_PROXY_METHOD_DENIED');
+  var forwarded = JSON.parse(JSON.stringify(body));
+  forwarded.action = action;
+  delete forwarded.sessionToken;
+  var secretProperty = nexusAuthSecretPropertyForAction_(action);
+  if (secretProperty) {
+    var secret = nexusAuthText_(properties.getProperty(secretProperty));
+    if (!secret) throw new Error('NEXUS_AUTH_SERVICE_NOT_CONNECTED');
+    forwarded.token = secret;
   } else {
-    throw new Error('NEXUS_PROXY_METHOD_DENIED');
+    delete forwarded.token;
   }
+  var legacyFoundationRead = /^(full|master_only|config_only)$/.test(action);
+  var legacyFoundationWrite = /^(initSync|chunk_master|chunk_history|config)$/.test(action);
+  forwarded.actorId = legacyFoundationRead || legacyFoundationWrite ? 'NEXUS_GATEWAY' : context.user.loginId;
+  if (legacyFoundationRead) forwarded.roleIds = ['FOUNDATION_READ'];
+  if (legacyFoundationWrite) forwarded.roleIds = ['FOUNDATION_READ', 'FOUNDATION_WRITE'].concat(action === 'config' ? [] : ['FOUNDATION_REPLACE']);
+  forwarded.deviceId = nexusAuthText_(forwarded.deviceId || 'NEXUS_GATEWAY');
+  forwarded.device = nexusAuthText_(forwarded.device || forwarded.deviceId);
+  forwarded.environment = 'PRODUCTION';
+  forwarded.scope = { companyId: 'ONEAPP' };
+  forwarded.nexusRequest = { requestId: 'REQ-' + Utilities.getUuid(), subjectUserId: context.user.userId, subjectLoginId: context.user.loginId, protocol: NEXUS_AUTH_LEGACY_VERSION };
+  var options = {
+    method: 'post', contentType: 'text/plain;charset=utf-8',
+    payload: JSON.stringify(forwarded), muteHttpExceptions: true, followRedirects: true
+  };
   var response = UrlFetchApp.fetch(upstreamUrl, options);
   var parsed;
   try { parsed = JSON.parse(response.getContentText()); }
   catch (error) { throw new Error('NEXUS_PROXY_RESPONSE_INVALID'); }
-  nexusAuthAudit_('PROXY', context.user.userId, '', parsed && parsed.status === 'success' ? 'SUCCESS' : 'FAILURE', { action: action, permission: permission });
+  nexusAuthAudit_('PROXY', context.user.userId, '', parsed && parsed.status === 'success' ? 'SUCCESS' : 'FAILURE', { action: action, permission: permission, protocol: NEXUS_AUTH_LEGACY_VERSION });
   return nexusAuthJson_(parsed);
 }
 
@@ -457,23 +754,27 @@ function nexusAuthPermissionForAction_(action, method) {
   if (/^(orderq_sync_pull|orderq_order_head|orderq_m9_ping|orderq_m9_pull|situation_orderq_(begin|page|head))$/.test(action)) return 'orderq.read';
   if (/^(orderq_sync_push|orderq_m9_migrate|orderq_m9_command_(prepare|commit|abort))$/.test(action)) return 'orderq.write';
   if (/^orderq_customer_reset_(preview|execute)$/.test(action)) return 'orderq.admin';
-  if (/^shipping_plan_(list|get)$/.test(action)) return 'orderq.read';
-  if (/^shipping_plan_save$/.test(action)) return 'orderq.write';
+  if (/^shipping_plan_(list|get)$/.test(action)) return 'shipping.read';
+  if (/^shipping_plan_save$/.test(action)) return 'shipping.write';
   throw new Error('NEXUS_PROXY_ACTION_DENIED');
 }
 
 function nexusAuthSecretPropertyForAction_(action) {
+  if (/^(full|master_only|config_only)$/.test(action)) return NEXUS_AUTH_PROPERTIES.FOUNDATION_READ;
+  if (/^(initSync|chunk_master|chunk_history|config)$/.test(action)) return NEXUS_AUTH_PROPERTIES.FOUNDATION_WRITE;
   if (action === 'dataops_snapshot_get' || /^situation_dataops_(ping|begin|page|head)$/.test(action) || /^dataops_close_(context|seal)$/.test(action)) return NEXUS_AUTH_PROPERTIES.DATAOPS_READ;
   if (action === 'dataops_snapshot_commit' || /^dataops_close_(prepare|write_chunks|commit|abort)$/.test(action)) return NEXUS_AUTH_PROPERTIES.DATAOPS_WRITE;
-  if (action === 'situation_dataops_publish') return NEXUS_AUTH_PROPERTIES.DATAOPS_PUBLISH;
-  if (/^orderq_/.test(action) || /^situation_orderq_/.test(action)) return NEXUS_AUTH_PROPERTIES.ORDERQ;
-  if (/^shipping_plan_/.test(action)) return NEXUS_AUTH_PROPERTIES.SHIPPING;
+  if (action === 'situation_dataops_publish') return NEXUS_AUTH_PROPERTIES.LEGACY_DATAOPS_PUBLISH;
+  if (/^orderq_/.test(action) || /^situation_orderq_/.test(action)) return NEXUS_AUTH_PROPERTIES.LEGACY_ORDERQ;
+  if (/^shipping_plan_/.test(action)) return NEXUS_AUTH_PROPERTIES.LEGACY_SHIPPING;
   return '';
 }
 
 function nexusAuthRequirePermission_(user, permission) {
   if (user.role === 'OWNER_MASTER') return true;
-  if (nexusAuthPermissions_(user).indexOf(permission) < 0) throw new Error('NEXUS_AUTH_PERMISSION_DENIED');
+  var permissions = nexusAuthPermissions_(user);
+  var impliedWrite = permission.replace(/\.read$/, '.write');
+  if (permissions.indexOf(permission) < 0 && (impliedWrite === permission || permissions.indexOf(impliedWrite) < 0)) throw new Error('NEXUS_AUTH_PERMISSION_DENIED');
   return true;
 }
 
@@ -510,11 +811,14 @@ function nexusAuthServiceBooleans_() {
   var properties = PropertiesService.getScriptProperties();
   return {
     upstream: Boolean(properties.getProperty(NEXUS_AUTH_PROPERTIES.UPSTREAM_URL) || NEXUS_AUTH_DEFAULT_UPSTREAM_URL),
+    foundationRead: Boolean(properties.getProperty(NEXUS_AUTH_PROPERTIES.FOUNDATION_READ)),
+    foundationWrite: Boolean(properties.getProperty(NEXUS_AUTH_PROPERTIES.FOUNDATION_WRITE)),
     dataOpsRead: Boolean(properties.getProperty(NEXUS_AUTH_PROPERTIES.DATAOPS_READ)),
     dataOpsWrite: Boolean(properties.getProperty(NEXUS_AUTH_PROPERTIES.DATAOPS_WRITE)),
-    dataOpsPublish: Boolean(properties.getProperty(NEXUS_AUTH_PROPERTIES.DATAOPS_PUBLISH)),
-    orderQ: Boolean(properties.getProperty(NEXUS_AUTH_PROPERTIES.ORDERQ)),
-    shipping: Boolean(properties.getProperty(NEXUS_AUTH_PROPERTIES.SHIPPING))
+    orderQRead: Boolean(properties.getProperty(NEXUS_AUTH_PROPERTIES.ORDERQ_READ)),
+    orderQWrite: Boolean(properties.getProperty(NEXUS_AUTH_PROPERTIES.ORDERQ_WRITE)),
+    shippingRead: Boolean(properties.getProperty(NEXUS_AUTH_PROPERTIES.SHIPPING_READ)),
+    shippingWrite: Boolean(properties.getProperty(NEXUS_AUTH_PROPERTIES.SHIPPING_WRITE))
   };
 }
 
@@ -689,6 +993,10 @@ function nexusAuthPasswordHash_(verifier) {
   return nexusAuthHexBytes_(Utilities.computeHmacSha256Signature(verifier, nexusAuthPepper_(), Utilities.Charset.UTF_8));
 }
 
+function nexusAuthHmac_(value) {
+  return nexusAuthHexBytes_(Utilities.computeHmacSha256Signature(String(value || ''), nexusAuthPepper_(), Utilities.Charset.UTF_8));
+}
+
 function nexusAuthSha256_(value) {
   return nexusAuthHexBytes_(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, nexusAuthText_(value), Utilities.Charset.UTF_8));
 }
@@ -719,6 +1027,6 @@ function nexusAuthConstantTime_(left, right) {
 
 function nexusAuthPublicError_(error) {
   var code = nexusAuthText_(error && error.message ? error.message : error);
-  if (/^(NEXUS_AUTH|NEXUS_PROXY)_/.test(code)) return code;
+  if (code === 'IMMUTABLE_FIELD' || /^(NEXUS_AUTH|NEXUS_PROXY|NEXUS_GATEWAY|ONEAPP_NEXUS)_/.test(code)) return code;
   return 'NEXUS_AUTH_REQUEST_FAILED';
 }

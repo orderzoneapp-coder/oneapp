@@ -182,8 +182,8 @@ for (const path of [
 }
 
 const cloudAdapter = await readFile(new URL('../orderq/orderq-cloud-adapter.js', import.meta.url), 'utf8');
-assert.match(cloudAdapter, /oneapp_orderq_access_token_v1/);
-assert.match(cloudAdapter, /token:\s*getCloudAccessToken\(\)/);
+assert.match(cloudAdapter, /ONEAPP_AUTH\.gateway\(operationId, body/);
+assert.doesNotMatch(cloudAdapter, /oneapp_orderq_access_token_v1|token:\s*getCloudAccessToken\(\)/);
 assert.match(cloudAdapter, /controller\.abort\(\), 60000/, 'first Apps Script sync must tolerate cold-start sheet creation');
 const cloudServer = await readFile(new URL('../orderq-cloud.gs', import.meta.url), 'utf8');
 assert.match(cloudServer, /ORDER_TXN_LOG/);
