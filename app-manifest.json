@@ -1,6 +1,6 @@
 {
-  "schemaVersion": "1.3.0",
-  "updatedAt": "2026-08-23",
+  "schemaVersion": "1.4.0",
+  "updatedAt": "2026-08-26",
   "repository": {
     "fullName": "orderzoneapp-coder/oneapp",
     "defaultBranch": "main",
@@ -20,7 +20,22 @@
       "path": "nexus/index.html",
       "kind": "web-entry",
       "status": "production",
-      "purpose": "Provide the shared ONEAPP application header and navigation entry point without adding dashboard content or production data writes.",
+      "purpose": "Provide the public NEXUS login, first-owner bootstrap, and invitation activation entry; authenticated users continue to a permission-filtered work home.",
+      "navigatesTo": [
+        "nexus-work-home",
+        "nexus-admin"
+      ],
+      "sharedContracts": [
+        "nexus-auth"
+      ]
+    },
+    {
+      "id": "nexus-work-home",
+      "name": "NEXUS Work Home",
+      "path": "nexus/home/index.html",
+      "kind": "web-entry",
+      "status": "production",
+      "purpose": "Show each signed-in user only the applications permitted by the server-issued session and provide the normal work entry after login.",
       "navigatesTo": [
         "orderops",
         "orderq-vnext",
@@ -28,10 +43,46 @@
         "merchops",
         "smart-parser",
         "master-lookup",
-        "item-manager"
+        "item-manager",
+        "nexus-admin"
       ],
       "sharedContracts": [
+        "nexus-auth",
         "nexus-header"
+      ]
+    },
+    {
+      "id": "nexus-admin",
+      "name": "NEXUS Master Administration",
+      "path": "nexus/admin/index.html",
+      "kind": "web-entry",
+      "status": "production",
+      "purpose": "Give the unique owner master a separate user, permission, service-secret, recovery, and audit administration screen.",
+      "productionWrites": true,
+      "navigatesTo": [
+        "nexus-work-home"
+      ],
+      "services": [
+        "nexus-auth-gateway"
+      ],
+      "sharedContracts": [
+        "nexus-auth",
+        "nexus-header"
+      ]
+    },
+    {
+      "id": "nexus-auth-gateway",
+      "name": "NEXUS Authentication Gateway",
+      "path": "nexus/server/nexus-auth-gateway.gs",
+      "kind": "google-apps-script-service",
+      "status": "production",
+      "purpose": "Own password verifiers, opaque sessions, users, permissions, audit records, and server-only business credentials while proxying approved actions to the retained ONEAPP cloud service.",
+      "productionWrites": true,
+      "services": [
+        "cloud-sync"
+      ],
+      "sharedContracts": [
+        "nexus-auth"
       ]
     },
     {
@@ -51,6 +102,7 @@
         "cloud-sync"
       ],
       "sharedContracts": [
+        "nexus-auth",
         "nexus-header",
         "product-master",
         "change-history",
@@ -77,6 +129,7 @@
         "cloud-sync"
       ],
       "sharedContracts": [
+        "nexus-auth",
         "nexus-header",
         "product-master",
         "change-history",
@@ -100,6 +153,7 @@
         "history-viewer"
       ],
       "sharedContracts": [
+        "nexus-auth",
         "nexus-header",
         "product-master",
         "change-history",
@@ -120,6 +174,7 @@
         "merchops"
       ],
       "sharedContracts": [
+        "nexus-auth",
         "product-master",
         "change-history"
       ]
@@ -141,6 +196,7 @@
         "cloud-sync"
       ],
       "sharedContracts": [
+        "nexus-auth",
         "product-master",
         "change-history",
         "parser-dictionary",
@@ -162,6 +218,7 @@
         "core-engine"
       ],
       "sharedContracts": [
+        "nexus-auth",
         "nexus-header",
         "nexus-app-ui",
         "product-master",
@@ -180,6 +237,7 @@
         "core-engine"
       ],
       "sharedContracts": [
+        "nexus-auth",
         "nexus-header",
         "nexus-app-ui",
         "product-master",
@@ -200,6 +258,7 @@
         "cloud-sync"
       ],
       "sharedContracts": [
+        "nexus-auth",
         "product-master",
         "change-history",
         "cloud-url"
@@ -240,6 +299,7 @@
         "cloud-sync"
       ],
       "sharedContracts": [
+        "nexus-auth",
         "nexus-header",
         "cloud-url",
         "dataops-inventory-snapshot",
@@ -267,6 +327,7 @@
         "cloud-sync"
       ],
       "sharedContracts": [
+        "nexus-auth",
         "nexus-header",
         "cloud-url",
         "orderq-vnext-sync",
@@ -293,6 +354,7 @@
         "cloud-sync"
       ],
       "sharedContracts": [
+        "nexus-auth",
         "nexus-header",
         "orderq-vnext-sync",
         "product-master"
@@ -342,10 +404,53 @@
   ],
   "sharedDataContracts": [
     {
+      "id": "nexus-auth",
+      "owner": "nexus-auth-gateway",
+      "consumers": [
+        "nexus/index.html",
+        "nexus/home/index.html",
+        "nexus/admin/index.html",
+        "Master.html",
+        "Item_manager.html",
+        "MerchOps.html",
+        "SmartParser.html",
+        "DataOps.html",
+        "export_center.html",
+        "settings.html",
+        "history_viewer.html",
+        "orders.html",
+        "orderops_list.html",
+        "orderops/list.html",
+        "orderops/input.html",
+        "orderq/index.html",
+        "orderq/input.html",
+        "orderq/parser.html",
+        "orderq/collector.html",
+        "orderq/cloud.html",
+        "smartinput/index.html"
+      ],
+      "schemaVersion": "NEXUS_AUTH_V1",
+      "resources": {
+        "gateway": "nexus/server/nexus-auth-gateway.gs",
+        "client": "nexus/common/nexus-auth.js",
+        "configuration": "nexus/common/nexus-auth-config.js",
+        "scriptProjectId": "1KNiTNpNRqPYM7XM5MSzGObwfUd303bZRcjgm16MVG3xNqcQpymYXaPI5",
+        "productionWebApp": "https://script.google.com/macros/s/AKfycbwIaouo6kzff1J3H3B0K5bWuAEJAcp4K21tyEkL2BuM-SiNsPDGGYVBEXIkBeUGwp4i/exec",
+        "deployedVersion": 8,
+        "sessionStorage": "oneapp.nexus.auth.session.v1",
+        "sessionTtlHours": 12,
+        "inviteTtlHours": 72,
+        "deletedUserRecoveryDays": 30,
+        "uniqueMasterRole": "OWNER_MASTER",
+        "businessCredentials": "Apps Script ScriptProperties only"
+      }
+    },
+    {
       "id": "nexus-header",
       "owner": "nexus",
       "consumers": [
-        "nexus/index.html",
+        "nexus/home/index.html",
+        "nexus/admin/index.html",
         "Master.html",
         "Item_manager.html",
         "MerchOps.html",

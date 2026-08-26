@@ -137,11 +137,9 @@
     if (!securityClient?.released?.()) throw new Error("DATAOPS_V1_SECURITY_NOT_RELEASED");
     let readCredential = options.readCredential;
     if (!securityClient.ready?.() && !readCredential) {
-      if (typeof root.prompt !== "function") throw new Error("DATAOPS_V1_READ_CREDENTIAL_REQUIRED");
-      const actorId = cleanText(root.prompt("DataOps V1 재고 읽기 작업자 ID", "ADMIN"));
-      const token = cleanText(root.prompt("DataOps V1 읽기 전용 토큰 (현재 화면 메모리에만 유지)", ""));
-      if (!actorId || !token) throw new Error("DATAOPS_V1_READ_CREDENTIAL_REQUIRED");
-      readCredential = { token, actorId, deviceId: "ORDERQ_BROWSER", environment: "PRODUCTION", scope: { companyId: "ONEAPP" } };
+      await root.ONEAPP_AUTH?.ready;
+      if (!root.ONEAPP_AUTH?.session) throw new Error("NEXUS_AUTH_SESSION_REQUIRED");
+      readCredential = root.ONEAPP_AUTH.businessCredential("DATAOPS_READ");
     }
     let snapshot;
     try {

@@ -40,7 +40,7 @@ export function setCloudUrl(url, remember = true) {
 
 export function getCloudAccessToken() {
   if (isAdminTestRuntime()) return String(sessionStorage.getItem(ADMIN_TEST_ACCESS_TOKEN_KEY) || '').trim();
-  return String(sessionStorage.getItem(CLOUD_ACCESS_TOKEN_KEY) || localStorage.getItem(CLOUD_ACCESS_TOKEN_KEY) || '').trim();
+  return globalThis.ONEAPP_AUTH?.session ? globalThis.ONEAPP_AUTH.businessCredential('ORDERQ').token : '';
 }
 
 export function setCloudAccessToken(token, remember = true) {
@@ -50,10 +50,7 @@ export function setCloudAccessToken(token, remember = true) {
     if (value) sessionStorage.setItem(ADMIN_TEST_ACCESS_TOKEN_KEY, value);
     return value;
   }
-  sessionStorage.removeItem(CLOUD_ACCESS_TOKEN_KEY);
-  localStorage.removeItem(CLOUD_ACCESS_TOKEN_KEY);
-  if (!value) return '';
-  (remember ? localStorage : sessionStorage).setItem(CLOUD_ACCESS_TOKEN_KEY, value);
+  if (globalThis.ONEAPP_AUTH?.session) return globalThis.ONEAPP_AUTH.businessCredential('ORDERQ').token;
   return value;
 }
 

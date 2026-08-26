@@ -6,6 +6,8 @@
   <meta name="google" content="notranslate">
   <title>ONEAPP ORDER Q vNext · 클라우드</title>
   <link rel="stylesheet" href="./orderq.css">
+  <script src="/nexus/common/nexus-auth-config.js?v=1.0.0"></script>
+  <script src="/nexus/common/nexus-auth.js?v=1.0.0"></script>
 </head>
 <body>
   <div class="shell">
@@ -34,10 +36,7 @@
           <label for="cloudUrl">기존 ONEAPP Apps Script Web App URL</label>
           <input class="control" id="cloudUrl" type="url" placeholder="https://script.google.com/macros/s/.../exec">
         </div>
-        <div class="field wide">
-          <label for="cloudToken">ORDER Q Cloud 접근 토큰</label>
-          <input class="control" id="cloudToken" type="password" autocomplete="off" placeholder="Apps Script Property의 ORDER Q 또는 Shipping 전용 토큰">
-        </div>
+        <div class="field wide"><label>인증 방식</label><div class="control">NEXUS 로그인 자동 연결</div><input id="cloudToken" type="hidden" value="NEXUS_GATEWAY_ORDERQ"></div>
         <div class="field">
           <label>Device ID</label>
           <div class="control" id="deviceId"></div>
@@ -150,7 +149,7 @@
       try {
         setCloudUrl(cloudUrl.value);
         setCloudAccessToken(cloudToken.value, true);
-        show('클라우드 URL과 ORDER Q 접근 토큰을 저장했습니다.', 'info');
+        show('클라우드 URL을 저장했습니다. 업무 인증은 NEXUS 로그인이 자동 처리합니다.', 'info');
         await render();
       } catch (error) { show(error.message || String(error), 'error'); }
     });
