@@ -35,7 +35,7 @@ for (const source of [tokens, commonCss, master, customerHtml, customerUi]) {
   assert.doesNotMatch(source, /data-nexus-density|nexus-density-change|ONEAPP_NEXUS_DENSITY|oneapp:nexus-density-applied/);
 }
 
-for (const hook of ['nexus-app-work-header', 'nexus-target-tabs', 'nexus-work-tools', 'nexus-data-table', 'nexus-app-content']) {
+for (const hook of ['nexus-app-work-header', 'nexus-app-header-content', 'nexus-target-tabs', 'nexus-work-tools', 'nexus-data-table', 'nexus-app-content']) {
   assert.ok(commonCss.includes(`.${hook}`), `${hook} fixed-layout hook must exist`);
 }
 assert.match(commonCss, /\.nexus-app-content[\s\S]*max-width, 1440px/);
@@ -65,11 +65,15 @@ for (const source of [master, itemHtml]) {
 }
 assert.match(master, /data-nexus-ui-app="master-lookup"/);
 assert.match(itemHtml, /data-nexus-ui-app="item-manager"/);
-assert.match(master, /nexus-app-work-header__bar nexus-app-content/);
+assert.match(master, /nexus-app-work-header__bar nexus-app-header-content/);
 assert.match(master, />기초등록<\/strong>/);
 assert.doesNotMatch(master, /MASTER ·/);
-assert.match(master, />일괄 관리<\/button>/);
+assert.match(master, /\[\['list', '조회'\], \['batch', '일괄관리'\]\]/);
 assert.match(master, />\+ 상품 등록<\/button>/);
+assert.match(master, /ONEAPP_NEXUS_THEME/);
+assert.match(customerHtml, /ONEAPP_NEXUS_THEME/);
+assert.match(itemHtml, /oneapp-app-header-content/);
+assert.match(itemHtml, />등록·수정<\/a>/);
 assert.equal((itemHtml.match(/oneapp-button-primary/g) || []).length, 1, 'Item Manager must expose one highlighted action outside modal overlays');
 
 assert.doesNotMatch(itemJs, /renderMobileEditor|mobileRowId/, 'Item Manager must not create mobile cards');

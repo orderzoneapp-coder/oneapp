@@ -82,7 +82,12 @@ assert.match(ui, /async function initializeCustomerMaster\(\) \{\s+const pending
 assert.match(ui, /await reload\(\);[\s\S]*ensureCustomerMasterReady/, 'Local Customer Master must render before Cloud synchronization');
 assert.match(ui, /fallbackFileHash/, 'Excel import must continue with a deterministic file hash when Web Crypto stalls');
 assert.match(ui, /chunkSize: 50/, 'Excel import must persist visible progress in small chunks');
-assert.match(html, /customer-master\.css\?v=0\.19\.0/, 'Customer Master Workbench styles must invalidate the deployed cache');
+assert.match(html, /customer-master\.css\?v=0\.20\.0/, 'Customer Master Workbench styles must invalidate the deployed cache');
+assert.match(html, /nexus-theme-init\.js/, 'Customer Master must resolve the NEXUS theme before rendering');
+assert.match(html, /oneapp-design-tokens\.css/, 'Customer Master must consume shared design tokens');
+assert.match(html, /ONEAPP_NEXUS_THEME/, 'embedded Customer Master must accept live theme updates');
+assert.match(css, /--cm-panel:\s*var\(--oneapp-surface\)/, 'Customer Master panels must use semantic surfaces');
+assert.match(css, /\.cm-search[^\n]+margin-left:\s*auto/, 'Customer search must align with the right-side work group');
 assert.match(html, /Master\.html\?view=customers&mode=\$\{initialCustomerMasterMode\}&release=customer-completeness-022/, 'Standalone route must invalidate the cached Master shell');
 assert.match(masterShell, /partner_db\.html\?embedded=1&mode=\$\{customerFrameInitialMode\}&release=customer-completeness-022/, 'Master shell must invalidate the cached customer iframe');
 assert.match(ui, /customer-master\.js\?v=0\.18\.0/, 'Customer Master Workbench service must invalidate the deployed cache');

@@ -60,6 +60,21 @@ select {
   padding-bottom: 8px;
 }
 
+.oneapp-app-header-content {
+  width: 100%;
+  max-width: none;
+  margin-inline: 0;
+  padding-inline: 16px;
+}
+
+.oneapp-app-identity {
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  gap: 22px;
+}
+
 .oneapp-main {
   min-height: 0;
   flex: 1;
@@ -84,5 +99,9 @@ select {
     min-height: var(--nexus-app-header-height, 56px);
     padding-top: 6px;
     padding-bottom: 6px;
+  }
+
+  .oneapp-app-header-content {
+    padding-inline: 12px;
   }
 }

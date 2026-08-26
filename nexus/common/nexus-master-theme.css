@@ -13,12 +13,35 @@ body {
 }
 
 .nexus-app-shell .bg-slate-50,
-.nexus-app-shell .bg-slate-100 {
+.nexus-app-shell .bg-slate-100,
+.nexus-app-shell .bg-slate-200 {
   background-color: var(--oneapp-surface-subtle) !important;
 }
 
 .nexus-app-shell .bg-slate-200\/50 {
   background-color: color-mix(in srgb, var(--oneapp-surface-subtle) 76%, var(--oneapp-border)) !important;
+}
+
+html[data-nexus-theme="dark"] .nexus-app-shell .bg-slate-300\/50,
+html[data-nexus-theme="dark"] .nexus-app-shell .bg-indigo-50,
+html[data-nexus-theme="dark"] .nexus-app-shell .bg-indigo-50\/50,
+html[data-nexus-theme="dark"] .nexus-app-shell .bg-indigo-50\/60,
+html[data-nexus-theme="dark"] .nexus-app-shell .bg-indigo-100 {
+  background-color: var(--oneapp-master-soft) !important;
+}
+
+html[data-nexus-theme="dark"] .nexus-app-shell .bg-amber-50,
+html[data-nexus-theme="dark"] .nexus-app-shell .bg-amber-100 {
+  background-color: var(--oneapp-warning-soft) !important;
+}
+
+html[data-nexus-theme="dark"] .nexus-app-shell .bg-emerald-50 {
+  background-color: var(--oneapp-success-soft) !important;
+}
+
+html[data-nexus-theme="dark"] .nexus-app-shell .bg-rose-50,
+html[data-nexus-theme="dark"] .nexus-app-shell .bg-rose-100 {
+  background-color: var(--oneapp-danger-soft) !important;
 }
 
 .nexus-app-shell .text-slate-900,
@@ -33,12 +56,36 @@ body {
   color: var(--oneapp-muted) !important;
 }
 
+html[data-nexus-theme="dark"] .nexus-app-shell :is(.text-indigo-500,.text-indigo-600,.text-indigo-700,.text-indigo-800) {
+  color: #aebce8 !important;
+}
+
+html[data-nexus-theme="dark"] .nexus-app-shell :is(.text-amber-500,.text-amber-700,.text-amber-800,.text-amber-900) {
+  color: var(--oneapp-warning) !important;
+}
+
+html[data-nexus-theme="dark"] .nexus-app-shell :is(.text-emerald-700,.text-emerald-800,.text-emerald-900) {
+  color: var(--oneapp-success) !important;
+}
+
+html[data-nexus-theme="dark"] .nexus-app-shell :is(.text-rose-500,.text-rose-600,.text-rose-700,.text-rose-800,.text-rose-900) {
+  color: var(--oneapp-danger) !important;
+}
+
 .nexus-app-shell .border-slate-100,
 .nexus-app-shell .border-slate-200 {
   border-color: var(--oneapp-border) !important;
 }
 
 .nexus-app-shell .border-slate-300 {
+  border-color: var(--oneapp-border-strong) !important;
+}
+
+html[data-nexus-theme="dark"] .nexus-app-shell :is(.border-indigo-100,.border-indigo-200,.border-indigo-500,.border-indigo-600) {
+  border-color: var(--nexus-selection-border) !important;
+}
+
+html[data-nexus-theme="dark"] .nexus-app-shell :is(.border-amber-200,.border-emerald-200,.border-emerald-300,.border-emerald-400,.border-rose-200,.border-rose-300,.border-rose-400) {
   border-color: var(--oneapp-border-strong) !important;
 }
 
@@ -76,4 +123,8 @@ body {
 
 .nexus-app-shell .custom-scrollbar {
   scrollbar-color: var(--oneapp-border-strong) transparent;
+}
+
+.nexus-app-shell iframe {
+  background-color: var(--oneapp-bg) !important;
 }

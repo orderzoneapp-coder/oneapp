@@ -27,8 +27,14 @@
 
   <div id="app" class="oneapp-shell" data-nexus-ui-app="item-manager" aria-busy="true">
     <header class="oneapp-app-header">
-      <div class="oneapp-content oneapp-app-header-inner">
-        <h1 class="oneapp-title">MASTER · 상품 기초정보 관리</h1>
+      <div class="oneapp-app-header-inner oneapp-app-header-content">
+        <div class="oneapp-app-identity">
+          <a class="oneapp-title oneapp-title-link" href="Master.html?view=products&mode=list">기초등록</a>
+          <nav class="oneapp-inline-tabs" aria-label="기초등록 대상">
+            <a class="oneapp-tab" href="Master.html?view=products&mode=list" aria-current="page">상품</a>
+            <a class="oneapp-tab" href="Master.html?view=customers&mode=list">거래처</a>
+          </nav>
+        </div>
         <div class="oneapp-actions">
           <div class="menu-anchor">
             <button id="excel-menu-button" type="button" class="oneapp-button" aria-haspopup="menu" aria-expanded="false">
@@ -63,10 +69,12 @@
       </div>
     </header>
 
-    <nav class="oneapp-tabs" aria-label="기초등록 대상">
+    <nav class="oneapp-subtabs" aria-label="상품 하위 기능">
       <div class="oneapp-content oneapp-tab-row">
-        <a class="oneapp-tab" href="Master.html?view=products&mode=list" aria-current="page">상품</a>
-        <a class="oneapp-tab" href="Master.html?view=customers&mode=list">거래처</a>
+        <strong class="oneapp-subtab-parent">상품</strong>
+        <a class="oneapp-tab" href="Master.html?view=products&mode=list">조회</a>
+        <a class="oneapp-tab" href="Master.html?view=products&mode=batch">일괄관리</a>
+        <a class="oneapp-tab" href="Item_manager.html" aria-current="page">등록·수정</a>
       </div>
     </nav>
     <main class="oneapp-main">
