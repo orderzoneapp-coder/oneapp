@@ -6,7 +6,7 @@ const api = globalThis.DATAOPS_CLOSE_UI_MODULE;
 assert.ok(api?.createDataOpsCloseOperator, 'first-party close UI module must load');
 
 const html = readFileSync(new URL('../DataOps.html', import.meta.url), 'utf8');
-assert.match(html, /dataops\/close-ui\.js\?v=0\.1\.1/);
+assert.match(html, /dataops\/close-ui\.js\?v=0\.1\.2/);
 assert.equal((html.match(/id: "dataops-close-start"/g) || []).length, 1, 'exactly one start button');
 assert.equal((html.match(/id: "dataops-close-confirm"/g) || []).length, 1, 'exactly one confirm button');
 assert.match(html, /id: "dataops-close-review"/);
@@ -20,11 +20,17 @@ const sources = {
 const credential = { token: 'memory-only-read-token', actorId: 'ADMIN', deviceId: 'TEST', environment: 'TEST', scope: { companyId: 'ONEAPP' } };
 const writeCredential = { ...credential, token: 'memory-only-write-token' };
 const orderQCredential = { ...credential, token: 'separate-orderq-memory-token' };
+const productionExpected = { deploymentId: 'AKfycbzOUOIu_bP7NkiFVziDR0Og1da1KO1ePoU09Q3pSlPr-9uD-WkdCpWN7nidO5hlrJi6Qw', deploymentVersion: '31', gitCommit: '48a52ec34fa938cd60fe965b795083539460627f' };
+assert.deepEqual(api.EXPECTED_DEPLOYMENT, productionExpected);
+const productionPing = { ...productionExpected, capabilityVersion: 'DATAOPS_CLOSE_V1', actions: api.ACTIONS };
+assert.equal(api.evaluateCapability(productionPing), true);
+for (const key of ['deploymentId', 'deploymentVersion', 'gitCommit', 'capabilityVersion']) assert.equal(api.evaluateCapability({ ...productionPing, [key]: 'MUTATED' }), false);
+assert.equal(api.evaluateCapability({ ...productionPing, actions: api.ACTIONS.slice(0, -1) }), false);
 const expected = { deploymentId: 'DEPLOY', deploymentVersion: '31', gitCommit: 'abcdef123456' };
 const ping = { ...expected, capabilityVersion: 'DATAOPS_CLOSE_V1', actions: api.ACTIONS };
 
 let prereleaseCalls = 0;
-const prerelease = api.createDataOpsCloseOperator({ post: async () => { prereleaseCalls += 1; } });
+const prerelease = api.createDataOpsCloseOperator({ expectedDeployment: { deploymentId: '', deploymentVersion: '', gitCommit: '' }, post: async () => { prereleaseCalls += 1; } });
 assert.equal(prerelease.state().releaseEnabled, false);
 await assert.rejects(() => prerelease.start({ productData, businessDate: '2026-08-26' }), /DEPLOYMENT_NOT_RELEASED/);
 assert.equal(prereleaseCalls, 0, 'pre-release path must perform zero network or mutation');

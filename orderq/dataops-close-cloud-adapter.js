@@ -1,4 +1,4 @@
-export const DATAOPS_CLOSE_EXPECTED_DEPLOYMENT=Object.freeze({deploymentId:'',deploymentVersion:'',gitCommit:''});
+export const DATAOPS_CLOSE_EXPECTED_DEPLOYMENT=Object.freeze({deploymentId:'AKfycbzOUOIu_bP7NkiFVziDR0Og1da1KO1ePoU09Q3pSlPr-9uD-WkdCpWN7nidO5hlrJi6Qw',deploymentVersion:'31',gitCommit:'48a52ec34fa938cd60fe965b795083539460627f'});
 export const DATAOPS_CLOSE_CAPABILITY='DATAOPS_CLOSE_V1';
 export const DATAOPS_CLOSE_ACTIONS=Object.freeze(['dataops_close_ping','dataops_close_context','dataops_close_seal','dataops_close_prepare','dataops_close_write_chunks','dataops_close_commit','dataops_close_abort']);
 const text=value=>String(value??'').trim();

@@ -1,6 +1,6 @@
 (function(global){
   'use strict';
-  const EXPECTED_DEPLOYMENT=Object.freeze({deploymentId:'',deploymentVersion:'',gitCommit:''});
+  const EXPECTED_DEPLOYMENT=Object.freeze({deploymentId:'AKfycbzOUOIu_bP7NkiFVziDR0Og1da1KO1ePoU09Q3pSlPr-9uD-WkdCpWN7nidO5hlrJi6Qw',deploymentVersion:'31',gitCommit:'48a52ec34fa938cd60fe965b795083539460627f'});
   const CAPABILITY='DATAOPS_SNAPSHOT_V1_SECURITY_V1',CUTOVER='SERVER_FIRST_V1';
   const text=value=>String(value??'').trim();
   const released=expected=>['deploymentId','deploymentVersion','gitCommit'].every(key=>text(expected[key]));

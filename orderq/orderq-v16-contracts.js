@@ -65,6 +65,6 @@ export const V16_META_DEFAULTS = Object.freeze({
   currentClosePointers: Object.freeze({}),
   lastCloseAuditSequence: 0,
   closeProjectionVersion: '1',
-  expectedDataOpsDeployment: Object.freeze({ deploymentId:'', deploymentVersion:'', gitCommit:'' }),
-  expectedOrderQDeployment: Object.freeze({ deploymentId:'', deploymentVersion:'', gitCommit:'' })
+  expectedDataOpsDeployment: Object.freeze({ deploymentId:'AKfycbzOUOIu_bP7NkiFVziDR0Og1da1KO1ePoU09Q3pSlPr-9uD-WkdCpWN7nidO5hlrJi6Qw', deploymentVersion:'31', gitCommit:'48a52ec34fa938cd60fe965b795083539460627f' }),
+  expectedOrderQDeployment: Object.freeze({ deploymentId:'AKfycbzOUOIu_bP7NkiFVziDR0Og1da1KO1ePoU09Q3pSlPr-9uD-WkdCpWN7nidO5hlrJi6Qw', deploymentVersion:'31', gitCommit:'48a52ec34fa938cd60fe965b795083539460627f' })
 });
