@@ -10,7 +10,7 @@ import {
   rollbackImportBatchByContract
 } from './history-collector/collector-contracts.js?v=0.12.1';
 import { syncNow } from './orderq-sync-engine.js?v=0.8.0';
-import { getCloudUrl, getCloudAccessToken } from './orderq-cloud-adapter.js?v=0.8.0';
+import { getCloudUrl } from './orderq-cloud-adapter.js?v=0.8.0';
 import { resolveCustomerInput } from './customer-master.js?v=0.12.1';
 import { openCustomerPicker } from './customer-picker.js?v=0.12.1';
 
@@ -137,7 +137,7 @@ function applyWorkTab(work){
   if(isCollection){ const c=WORK[work]; $('#workTitle').textContent=c.label; $('#workDescription').textContent=c.description; $('#dropTitle').textContent=`${c.label} 파일을 여기에 놓으세요`; $('#commitBtn').textContent=c.action; $('#orderMethodTabs').classList.toggle('hidden',work!=='order'); if(work!=='order'){activeOrderMethod='excel';showOrderMethod();} renderPrepared(); renderSnapshot().catch(e=>show(e.message||String(e),'error')); }
 }
 function showOrderMethod(){ const isOrder=activeWork==='order'; $('#fileCollector').classList.toggle('hidden',isOrder&&activeOrderMethod!=='excel'); $('#textCollector').classList.toggle('hidden',!isOrder||activeOrderMethod!=='text'); $('#photoCollector').classList.toggle('hidden',!isOrder||activeOrderMethod!=='photo'); document.querySelectorAll('[data-order-method]').forEach(b=>b.classList.toggle('active',b.dataset.orderMethod===activeOrderMethod)); }
-async function bestEffortSync(){ if(!getCloudUrl()||!getCloudAccessToken())return; try{await syncNow();}catch(e){show(`수집은 완료됐지만 클라우드 동기화가 남았습니다: ${e.message||e}`,'warn');} }
+async function bestEffortSync(){ if(!getCloudUrl()||!globalThis.ONEAPP_AUTH?.session)return; try{await syncNow();}catch(e){show(`수집은 완료됐지만 클라우드 동기화가 남았습니다: ${e.message||e}`,'warn');} }
 async function maybeRebuildAfterSourceChange(sourceTypes){ const relevant=sourceTypes.some(t=>[COLLECTOR_SOURCE.ORDER,COLLECTOR_SOURCE.KAKAO,COLLECTOR_SOURCE.SALES].includes(t)); if(!relevant)return null; const s=await getCollectorSnapshot(); if(!matchingReady(s))return null; return rebuildFulfillmentEvidence(); }
 
 async function resolvePreparedCustomers(items){

@@ -3,9 +3,7 @@ import { isAdminTestRuntime } from './admin-test-runtime.js?v=0.10.2';
 export const ORDERQ_SYNC_SCHEMA = 'ONEAPP_ORDERQ_SYNC_V1';
 export const CLOUD_URL_KEY = 'oneapp_cloud_sync_url_v1';
 export const LEGACY_CLOUD_URL_KEY = 'merchCloudUrl_v870';
-export const CLOUD_ACCESS_TOKEN_KEY = 'oneapp_orderq_access_token_v1';
-export const ADMIN_TEST_CLOUD_URL_KEY = 'oneapp_orderq_admin_test_cloud_url_v1';
-export const ADMIN_TEST_ACCESS_TOKEN_KEY = 'oneapp_orderq_admin_test_access_token_v1';
+export const ADMIN_TEST_CLOUD_URL_KEY = '';
 
 export class OrderQCloudError extends Error {
   constructor(message, details = {}) {
@@ -16,81 +14,51 @@ export class OrderQCloudError extends Error {
 }
 
 export function getCloudUrl() {
-  if (isAdminTestRuntime()) return String(sessionStorage.getItem(ADMIN_TEST_CLOUD_URL_KEY) || '').trim();
-  return String(localStorage.getItem(CLOUD_URL_KEY) || localStorage.getItem(LEGACY_CLOUD_URL_KEY) || '').trim();
+  return 'NEXUS_GATEWAY';
 }
 
 export function setCloudUrl(url, remember = true) {
-  const value = String(url || '').trim();
-  if (isAdminTestRuntime()) {
-    sessionStorage.removeItem(ADMIN_TEST_CLOUD_URL_KEY);
-    if (!value) return '';
-    if (!/^https:\/\//i.test(value)) throw new Error('클라우드 URL은 https:// 주소여야 합니다.');
-    sessionStorage.setItem(ADMIN_TEST_CLOUD_URL_KEY, value);
-    return value;
-  }
-  if (!value) {
-    localStorage.removeItem(CLOUD_URL_KEY);
-    return '';
-  }
-  if (!/^https:\/\//i.test(value)) throw new Error('클라우드 URL은 https:// 주소여야 합니다.');
-  localStorage.setItem(CLOUD_URL_KEY, value);
-  return value;
+  return 'NEXUS_GATEWAY';
 }
 
-export function getCloudAccessToken() {
-  if (isAdminTestRuntime()) return String(sessionStorage.getItem(ADMIN_TEST_ACCESS_TOKEN_KEY) || '').trim();
-  return globalThis.ONEAPP_AUTH?.session ? globalThis.ONEAPP_AUTH.businessCredential('ORDERQ').token : '';
-}
+const OPERATION_BY_ACTION = Object.freeze({
+  orderq_sync_push: 'orderq.sync.push', orderq_sync_pull: 'orderq.sync.pull',
+  orderq_customer_reset_preview: 'orderq.customer.reset_preview', orderq_customer_reset_execute: 'orderq.customer.reset_execute',
+  orderq_order_head: 'orderq.order.head', orderq_m9_migrate: 'orderq.central.migrate',
+  orderq_m9_command_prepare: 'orderq.central.prepare', orderq_m9_command_commit: 'orderq.central.commit',
+  orderq_m9_command_abort: 'orderq.central.abort', orderq_m9_pull: 'orderq.central.pull', orderq_m9_ping: 'orderq.central.ping',
+  situation_orderq_begin: 'orderq.situation.begin', situation_orderq_page: 'orderq.situation.page', situation_orderq_head: 'orderq.situation.head'
+});
 
-export function setCloudAccessToken(token, remember = true) {
-  const value = String(token || '').trim();
-  if (isAdminTestRuntime()) {
-    sessionStorage.removeItem(ADMIN_TEST_ACCESS_TOKEN_KEY);
-    if (value) sessionStorage.setItem(ADMIN_TEST_ACCESS_TOKEN_KEY, value);
-    return value;
+function operationForAction(action) {
+  if (globalThis.ONEAPP_AUTH?.appId === 'customer-manager') {
+    if (action === 'orderq_sync_push') return 'customer.master.push';
+    if (action === 'orderq_sync_pull') return 'customer.master.pull';
   }
-  if (globalThis.ONEAPP_AUTH?.session) return globalThis.ONEAPP_AUTH.businessCredential('ORDERQ').token;
-  return value;
+  return OPERATION_BY_ACTION[action];
 }
 
 async function post(action, body = {}) {
-  const url = getCloudUrl();
-  if (!url) throw new OrderQCloudError('클라우드 URL이 설정되지 않았습니다.', { code: 'CLOUD_URL_MISSING' });
-  let response;
-  const controller = new AbortController();
-  // Apps Script may need extra time on the first call while purpose sheets are created.
-  const timeout = setTimeout(() => controller.abort(), 60000);
+  const operationId = operationForAction(action);
+  if (!operationId) throw new OrderQCloudError('허용되지 않은 Gateway 작업입니다.', { code: 'GATEWAY_OPERATION_DENIED' });
+  const controller = new AbortController(), timeout = setTimeout(() => controller.abort(), 60000);
   try {
-    response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ action, token: getCloudAccessToken(), ...body }),
-      redirect: 'follow',
-      cache: 'no-store',
-      signal: controller.signal
-    });
+    await globalThis.ONEAPP_AUTH?.ready;
+    if (!globalThis.ONEAPP_AUTH?.gateway) throw new Error('NEXUS_AUTH_SESSION_REQUIRED');
+    return await globalThis.ONEAPP_AUTH.gateway(operationId, body, { signal: controller.signal });
   } catch (error) {
     if (error?.name === 'AbortError') throw new OrderQCloudError('클라우드 응답 시간이 초과되었습니다. 로컬 저장값은 유지되며 다시 동기화할 수 있습니다.', { code: 'CLOUD_TIMEOUT', cause: error });
-    throw new OrderQCloudError('클라우드에 연결할 수 없습니다.', { code: 'CLOUD_NETWORK_ERROR', cause: error });
+    if (error instanceof OrderQCloudError) throw error;
+    throw new OrderQCloudError(error?.message || 'Gateway에 연결할 수 없습니다.', { code: 'GATEWAY_REQUEST_FAILED', cause: error });
   } finally {
     clearTimeout(timeout);
   }
-  if (!response.ok) throw new OrderQCloudError(`클라우드 응답 오류 (${response.status})`, { code: 'CLOUD_HTTP_ERROR', status: response.status });
-  let data;
-  try { data = await response.json(); }
-  catch (error) { throw new OrderQCloudError('클라우드 응답 형식이 올바르지 않습니다.', { code: 'CLOUD_RESPONSE_INVALID', cause: error }); }
-  if (!data || data.status !== 'success') {
-    throw new OrderQCloudError(data?.message || '클라우드 요청이 실패했습니다.', { code: 'CLOUD_ACTION_FAILED', response: data });
-  }
-  return data.data;
 }
 
 export function pushCloudChanges(deviceId, changes, requestId = '', customerResetGeneration = 0) {
   return post('orderq_sync_push', {
     schemaVersion: ORDERQ_SYNC_SCHEMA,
     deviceId,
-    requestId,
     changes,
     customerResetGeneration: Number(customerResetGeneration || 0)
   });
