@@ -18,8 +18,8 @@ function functionBlock(name) {
   return app.slice(start, next < 0 ? app.length : next);
 }
 
-assert.match(html, /smartinput\.css\?v=0\.4\.31/, 'mobile CSS cache key must invalidate the pre-split asset');
-assert.match(html, /smartinput\.js\?v=0\.4\.37/, 'mobile JS cache key must invalidate the pre-split asset');
+assert.match(html, /smartinput\.css\?v=0\.4\.35/, 'mobile CSS cache key must invalidate the previous combined-screen asset');
+assert.match(html, /smartinput\.js\?v=0\.4\.42/, 'mobile JS cache key must invalidate the previous combined-screen asset');
 assert.doesNotMatch(html, /smartinput\.(?:css|js)\?v=0\.4\.(?:30|36)/,
   'the deployed page must not reuse the stale mobile asset cache keys');
 
@@ -30,6 +30,7 @@ assert.match(functionBlock('placeDocumentFieldsForLayout'), /captureFocusedField
 assert.match(functionBlock('placeDocumentFieldsForLayout'), /restoreFocusedField\(focus\)/);
 
 for (const id of [
+  'mobileStageNav',
   'mobileInfoToggle',
   'mobileInfoSummary',
   'mobileParserToolbar',
@@ -38,6 +39,9 @@ for (const id of [
   'sourceFullscreenButton',
   'mobileParserDragHandle'
 ]) assert.match(html, new RegExp(`id="${id}"`));
+for (const stage of ['info', 'source', 'grid']) {
+  assert.match(html, new RegExp(`data-mobile-stage="${stage}"`));
+}
 for (const preset of ['collapsed', 'default', 'expanded']) {
   assert.match(html, new RegExp(`data-mobile-parser-preset="${preset}"`));
 }
@@ -46,6 +50,13 @@ assert.match(functionBlock('mobileUi'), /state\.draft\.ui\.mobile/);
 assert.match(functionBlock('mobileUi'), /infoCollapsed/);
 assert.match(functionBlock('mobileUi'), /parserPreset/);
 assert.match(functionBlock('mobileUi'), /parserRatio/);
+assert.match(functionBlock('mobileUi'), /stageByMode/);
+assert.match(functionBlock('currentMobileStage'), /stageByMode/);
+assert.match(functionBlock('setMobileStage'), /mobileUi\(\)\.stageByMode\[state\.draft\.activeMode\] = stage/);
+assert.match(functionBlock('syncMobileStage'), /document\.body\.dataset\.mobileStage = stage/);
+assert.doesNotMatch(functionBlock('setMobileStage'), /analyzeSource|renderRows|replaceRows|\.rows\s*=/,
+  'mobile stage changes must preserve source, analysis results and item rows');
+assert.match(app, /mobileStageNav'\)\.addEventListener\('click'/);
 assert.doesNotMatch(app, /localStorage\.(?:getItem|setItem)\([^\n]*(?:mobile|parserPreset|infoCollapsed)/i,
   'mobile UI state must not use a separate storage key');
 assert.match(app, /MOBILE_PARSER_COLLAPSED_HEIGHT = 68/);
@@ -104,6 +115,17 @@ assert.match(css, /\.source-highlight, \.source-editor textarea[^}]*font-size:\s
 assert.match(css, /\.table-scroll, \.workspace\.has-photo-source \.table-scroll[^}]*overflow:\s*auto/);
 assert.match(css, /\.workbench, \.workspace\.has-photo-source \.workbench[^}]*min-height:\s*var\(--smartinput-mobile-grid-min-height/);
 assert.match(css, /@media \(max-width: 820px\), \(max-width: 1024px\) and \(max-height: 540px\)/);
+assert.match(css, /\.mobile-stage-nav:not\(\[hidden\]\)[^}]*grid-template-columns: repeat\(3, minmax\(0, 1fr\)\)/);
+assert.match(css, /body\[data-mobile-stage="info"\][\s\S]*\.parser-card[\s\S]*\.workbench \{ display: none; \}/);
+assert.match(css, /body\[data-mobile-stage="source"\][\s\S]*\.document-fields[\s\S]*\.workbench \{ display: none; \}/);
+assert.match(css, /body\[data-mobile-stage="grid"\][\s\S]*\.document-fields[\s\S]*\.parser-card[\s\S]*display: none/);
+assert.match(css, /body\[data-mobile-stage="grid"\] \.workspace\.has-photo-source \.document-fields/,
+  'photo mode must obey the same exclusive mobile stage visibility');
+assert.match(css, /body\[data-mobile-stage="grid"\] \.workspace\.has-photo-source \.parser-card/,
+  'photo parser must not leak into the item-entry stage');
+assert.match(css, /body:not\(\[data-mobile-stage="grid"\]\) #completeButton \{ display: none; \}/);
+assert.match(css, /\.voucher-footer-actions \{ min-height: 0;[^}]*display: grid/,
+  'mobile grid stage must expose voucher save/output/reset actions without horizontal overflow');
 assert.match(css, /@media \(min-width: 1481px\)/, 'desktop fixed-height layout must remain present');
 assert.match(css, /html\[data-nexus-theme="dark"\]/, 'mobile must consume the existing theme contract');
 
