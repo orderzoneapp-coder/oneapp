@@ -88,14 +88,13 @@ const contrast = (first, second) => {
 };
 const darkTokens = cssVariables('html[data-nexus-theme="dark"]');
 
-const dataOpsScope = operationalCss.match(/html\[data-nexus-theme="dark"\]\[data-nexus-app="dataops"\] \{([\s\S]*?)\n\}/);
-assert.ok(dataOpsScope, 'DataOps needs a dedicated low-chroma dark table palette');
+const maintainedScope = operationalCss.match(/html\[data-nexus-theme="dark"\]\[data-nexus-app="orderq"\],[\s\S]*?\{([\s\S]*?)\n\}/);
+assert.ok(maintainedScope, 'Maintained apps need a shared low-chroma dark palette');
 for (const token of [
-  '--nexus-page-bg', '--nexus-panel-bg', '--nexus-table-row-bg',
-  '--nexus-info', '--nexus-info-bg', '--nexus-success', '--nexus-success-bg',
-  '--nexus-warning', '--nexus-warning-bg', '--nexus-danger', '--nexus-danger-bg'
+  '--nexus-info', '--nexus-info-bg', '--nexus-accent', '--nexus-accent-bg',
+  '--nexus-cyan', '--nexus-cyan-bg', '--nexus-orange', '--nexus-orange-bg'
 ]) {
-  assert.match(dataOpsScope[1], new RegExp(`${token}:\\s*#[0-9a-f]{6}`, 'i'), `DataOps palette must define ${token}`);
+  assert.match(maintainedScope[1], new RegExp(`${token}:\\s*#[0-9a-f]{6}`, 'i'), `Maintained palette must define ${token}`);
 }
 const contrastEvidence = [
   ['nexus-text', 'nexus-page-bg'],
