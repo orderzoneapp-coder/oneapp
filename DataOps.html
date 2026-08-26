@@ -100,8 +100,8 @@
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="./DataOps_situation_v2.js?v=0.2.2"></script>
-    <script src="./dataops/close-ui.js?v=0.1.0"></script>
-    <script src="./dataops/v1-security-client.js?v=0.1.0"></script>
+    <script src="./dataops/close-ui.js?v=0.1.1"></script>
+    <script src="./dataops/v1-security-client.js?v=0.1.1"></script>
     <script>
         window.DATAOPS_SITUATION_V2_OPERATOR_MODULE = (() => {
             let connection = null;
@@ -8953,9 +8953,12 @@ function App() {
             return;
         setIsProcessing(true);
         try {
-            const dataOpsToken = window.prompt('DataOps V2·일마감 권한 토큰을 입력하세요. 현재 화면 메모리에만 유지됩니다.', '');
-            if (!dataOpsToken)
+            const dataOpsReadToken = window.prompt('DataOps V2·일마감 읽기 전용 토큰을 입력하세요. 현재 화면 메모리에만 유지됩니다.', '');
+            if (!dataOpsReadToken)
                 throw new Error('DATAOPS_CLOSE_ACCESS_DENIED');
+            const dataOpsWriteToken = window.prompt('DataOps 일마감 쓰기 전용 토큰을 별도로 입력하세요. 읽기 토큰과 달라야 하며 현재 화면 메모리에만 유지됩니다.', '');
+            if (!dataOpsWriteToken || dataOpsWriteToken === dataOpsReadToken)
+                throw new Error('DATAOPS_CLOSE_CREDENTIAL_SEPARATION_REQUIRED');
             const orderQToken = window.prompt('ORDER Q 읽기 권한 토큰을 별도로 입력하세요. 저장된 ORDER Q 설정은 사용하지 않습니다.', '');
             if (!orderQToken)
                 throw new Error('DATAOPS_CLOSE_ORDERQ_ACCESS_DENIED');
@@ -8966,7 +8969,7 @@ function App() {
             if (!companyId)
                 throw new Error('DATAOPS_CLOSE_ACCESS_DENIED');
             const identity = { actorId, deviceId: navigator.userAgent || 'BROWSER', environment: location.hostname || 'BROWSER', scope: { companyId } };
-            await closeOperator.connect({ url: DATAOPS_CLOUD_MODULE.getCloudUrl(), dataOpsCredential: { token: dataOpsToken, ...identity }, orderQCredential: { token: orderQToken, ...identity } });
+            await closeOperator.connect({ url: DATAOPS_CLOUD_MODULE.getCloudUrl(), dataOpsReadCredential: { token: dataOpsReadToken, ...identity }, dataOpsWriteCredential: { token: dataOpsWriteToken, ...identity }, orderQCredential: { token: orderQToken, ...identity } });
             await closeOperator.start({ productData, businessDate: targetDateStr });
             setClosePanelOpen(true);
         }

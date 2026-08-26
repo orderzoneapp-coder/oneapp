@@ -133,32 +133,26 @@
       throw new Error("클라우드 주소가 올바르지 않습니다. 환경설정의 Apps Script 웹앱 주소를 확인하세요.");
     }
 
-    const fetchImpl = options.fetchImpl || root.fetch;
-    if (typeof fetchImpl !== "function") throw new Error("클라우드 요청 기능을 사용할 수 없습니다.");
-    let response;
+    const securityClient = options.securityClient || root.DATAOPS_V1_SECURITY_CLIENT?.readClient;
+    if (!securityClient?.released?.()) throw new Error("DATAOPS_V1_SECURITY_NOT_RELEASED");
+    let readCredential = options.readCredential;
+    if (!securityClient.ready?.() && !readCredential) {
+      if (typeof root.prompt !== "function") throw new Error("DATAOPS_V1_READ_CREDENTIAL_REQUIRED");
+      const actorId = cleanText(root.prompt("DataOps V1 재고 읽기 작업자 ID", "ADMIN"));
+      const token = cleanText(root.prompt("DataOps V1 읽기 전용 토큰 (현재 화면 메모리에만 유지)", ""));
+      if (!actorId || !token) throw new Error("DATAOPS_V1_READ_CREDENTIAL_REQUIRED");
+      readCredential = { token, actorId, deviceId: "ORDERQ_BROWSER", environment: "PRODUCTION", scope: { companyId: "ONEAPP" } };
+    }
+    let snapshot;
     try {
-      response = await fetchImpl(targetUrl.href, {
-        method: "POST",
-        headers: { "Content-Type": "text/plain;charset=utf-8" },
-        body: JSON.stringify({ action: "dataops_snapshot_get" }),
-      });
+      snapshot = await securityClient.getSnapshot({ url: targetUrl.href, readCredential });
     } catch (_) {
       throw new Error("클라우드 서버에 연결할 수 없습니다. 환경설정의 Apps Script 주소와 네트워크를 확인하세요.");
     }
-
-    let result;
-    try {
-      result = await response.json();
-    } catch (_) {
-      throw new Error(`클라우드 응답을 JSON으로 해석할 수 없습니다 (HTTP ${response.status || "-"}). Apps Script 배포 URL을 확인하세요.`);
-    }
-    if (!response.ok || !result || result.status !== "success") {
-      throw new Error(mapDataOpsReadError(result?.message, response.ok ? 0 : response.status));
-    }
-    if (!result.data) {
+    if (!snapshot) {
       throw new Error("확정된 DataOps 클라우드 재고자료가 없습니다. DataOps에서 작업 저장 또는 F9 저장을 먼저 실행하세요.");
     }
-    return validateDataOpsSnapshot(result.data, options);
+    return validateDataOpsSnapshot(snapshot, options);
   }
 
   function aggregateDataOpsRows(snapshot) {

@@ -4,6 +4,8 @@
   const EXPECTED_DEPLOYMENT = Object.freeze({ deploymentId: '', deploymentVersion: '', gitCommit: '' });
   const CAPABILITY = 'DATAOPS_CLOSE_V1';
   const ACTIONS = Object.freeze(['dataops_close_ping', 'dataops_close_context', 'dataops_close_seal', 'dataops_close_prepare', 'dataops_close_write_chunks', 'dataops_close_commit', 'dataops_close_abort']);
+  const READ_ACTIONS = Object.freeze(['dataops_close_context', 'dataops_close_seal']);
+  const WRITE_ACTIONS = Object.freeze(['dataops_close_prepare', 'dataops_close_write_chunks', 'dataops_close_commit', 'dataops_close_abort']);
   const text = value => String(value ?? '').trim();
   const canonical = value => {
     if (value === null || value === undefined) return null;
@@ -35,9 +37,12 @@
     if (kind === 'ORDERQ' && (!credential.deviceId || !credential.environment)) throw new Error('DATAOPS_CLOSE_ORDERQ_ACCESS_DENIED');
     return Object.freeze(credential);
   }
-  async function defaultPost({ url, dataOpsCredential }, action, body = {}) {
+  async function defaultPost({ url, dataOpsReadCredential, dataOpsWriteCredential }, action, body = {}) {
     if (!ACTIONS.includes(action)) throw new Error('DATAOPS_CLOSE_ACTION_FORBIDDEN');
-    const response = await global.fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action, ...body, ...dataOpsCredential, scope: dataOpsCredential.scope }) });
+    const credential = action === 'dataops_close_ping' ? null : READ_ACTIONS.includes(action) ? dataOpsReadCredential : WRITE_ACTIONS.includes(action) ? dataOpsWriteCredential : null;
+    if (action !== 'dataops_close_ping' && !credential) throw new Error('DATAOPS_CLOSE_CREDENTIAL_ROUTE_INVALID');
+    const envelope = credential ? { action, ...body, ...credential, scope: credential.scope } : { action, ...body };
+    const response = await global.fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(envelope) });
     const json = await response.json();
     if (!response.ok || json?.status !== 'success' || json.action !== action) throw new Error(text(json?.message) || 'DATAOPS_CLOSE_REQUEST_FAILED');
     return json.data;
@@ -64,10 +69,10 @@
       import('../orderq/dataops-situation-read-adapter.js?v=0.1.0'),
       import('../orderq/situation-orchestrator.js?v=0.1.0')
     ]);
-    const dataOpsBegin = await beginDataOpsFrozenRead({ url: context.url, credential: context.dataOpsCredential, businessDate: context.businessDate });
-    const dataOpsPages = await readDataOpsFrozenPages({ url: context.url, credential: context.dataOpsCredential }, dataOpsBegin);
+    const dataOpsBegin = await beginDataOpsFrozenRead({ url: context.url, credential: context.dataOpsReadCredential, businessDate: context.businessDate });
+    const dataOpsPages = await readDataOpsFrozenPages({ url: context.url, credential: context.dataOpsReadCredential }, dataOpsBegin);
     const orderq = await readOrderQFrozenSnapshot({ adapter: context.orderQAdapter, dataOps: dataOpsBegin, businessDate: context.businessDate, windowKey: `DAY:${context.businessDate}`, closeContext:context.authoritativeContext,closeSeriesId:context.closeSeriesId });
-    const dataOpsHead = await confirmDataOpsFrozenHead({ url: context.url, credential: context.dataOpsCredential }, dataOpsBegin);
+    const dataOpsHead = await confirmDataOpsFrozenHead({ url: context.url, credential: context.dataOpsReadCredential }, dataOpsBegin);
     return { dataops: { session: dataOpsBegin, pages: dataOpsPages, head: dataOpsHead, rows: dataOpsPages.flatMap(page => page.rows || []) }, orderq };
   }
   async function defaultReview({ sources, businessDate, closeSeriesId, companyId, authoritativeContext }) {
@@ -94,9 +99,11 @@
     const fail = error => { publish({ busy: false, error: text(error?.message || error) }); throw error; };
     async function connect(input = {}) {
       if (!released(expected)) throw new Error('DATAOPS_CLOSE_DEPLOYMENT_NOT_RELEASED');
-      const dataOpsCredential = requireCredential(input.dataOpsCredential, 'DATAOPS'), orderQCredential = requireCredential(input.orderQCredential, 'ORDERQ');
-      if (dataOpsCredential.actorId !== orderQCredential.actorId || canonicalJson(dataOpsCredential.scope) !== canonicalJson(orderQCredential.scope)) throw new Error('DATAOPS_CLOSE_AUTHORITY_SCOPE_MISMATCH');
-      connection = { url: text(input.url), dataOpsCredential, orderQCredential };
+      const dataOpsReadCredential = requireCredential(input.dataOpsReadCredential, 'DATAOPS'), dataOpsWriteCredential = requireCredential(input.dataOpsWriteCredential, 'DATAOPS'), orderQCredential = requireCredential(input.orderQCredential, 'ORDERQ');
+      if (dataOpsReadCredential.token === dataOpsWriteCredential.token) throw new Error('DATAOPS_CLOSE_CREDENTIAL_SEPARATION_REQUIRED');
+      const identities = [dataOpsReadCredential, dataOpsWriteCredential, orderQCredential];
+      if (identities.some(credential => credential.actorId !== dataOpsReadCredential.actorId || canonicalJson(credential.scope) !== canonicalJson(dataOpsReadCredential.scope))) throw new Error('DATAOPS_CLOSE_AUTHORITY_SCOPE_MISMATCH');
+      connection = { url: text(input.url), dataOpsReadCredential, dataOpsWriteCredential, orderQCredential };
       if (!connection.url) throw new Error('DATAOPS_CLOSE_URL_REQUIRED');
       connection.orderQAdapter = createOrderQReadAdapter(connection);
       const ping = await post(connection, 'dataops_close_ping');
@@ -111,14 +118,14 @@
         const businessDate = text(context.businessDate), productData = Array.isArray(context.productData) ? context.productData : [];
         if (!/^\d{4}-\d{2}-\d{2}$/.test(businessDate) || !productData.length) throw new Error('DATAOPS_CLOSE_SOURCE_REQUIRED');
         const { closeSeriesIdentity } = await import('../orderq/dataops-close-core.js?v=0.2.0');
-        const closeSeriesId = await closeSeriesIdentity(connection.dataOpsCredential.scope.companyId, businessDate, 'KRW');
-        const authoritativeContext = await post(connection, 'dataops_close_context', { closeSeriesId, companyId: connection.dataOpsCredential.scope.companyId, closeBusinessDate: businessDate });
+        const closeSeriesId = await closeSeriesIdentity(connection.dataOpsReadCredential.scope.companyId, businessDate, 'KRW');
+        const authoritativeContext = await post(connection, 'dataops_close_context', { closeSeriesId, companyId: connection.dataOpsReadCredential.scope.companyId, closeBusinessDate: businessDate });
         const sources = await loadFrozenSources({ ...context, ...connection, businessDate,closeSeriesId,authoritativeContext });
-        const closeSnapshotA = canonical({ businessDate, scope: connection.dataOpsCredential.scope, contextDigest: authoritativeContext.contextDigest, dataops: { session: sources.dataops.session, head: sources.dataops.head, rows: sources.dataops.rows }, orderq: { session: sources.orderq.session, head: sources.orderq.head, entities: sources.orderq.entities || [] } });
+        const closeSnapshotA = canonical({ businessDate, scope: connection.dataOpsReadCredential.scope, contextDigest: authoritativeContext.contextDigest, dataops: { session: sources.dataops.session, head: sources.dataops.head, rows: sources.dataops.rows }, orderq: { session: sources.orderq.session, head: sources.orderq.head, entities: sources.orderq.entities || [] } });
         const sourceADigest = await sha256(closeSnapshotA), capabilityDigest = await sha256({ expected, actions: ACTIONS });
         const seal = await post(connection, 'dataops_close_seal', { closeSeriesId, closeSnapshotA, sourceADigest, capabilityDigest,
           orderqReadRequest: { readSessionId: sources.orderq.session.readSessionId, tokenDigest: sources.orderq.session.tokenDigest }, dataopsReadTokenDigest: sources.dataops.session.tokenDigest });
-        const review = await buildReview({ productData, sources, businessDate, closeSeriesId, companyId: connection.dataOpsCredential.scope.companyId, seal, authoritativeContext });
+        const review = await buildReview({ productData, sources, businessDate, closeSeriesId, companyId: connection.dataOpsReadCredential.scope.companyId, seal, authoritativeContext });
         const hasEffective=Number(authoritativeContext.series?.currentEffectiveRevision||0)>0,availableActions=hasEffective?['CORRECT_CLOSE','REVERSE_CLOSE']:['POST_CLOSE'],actionType=hasEffective?'CORRECT_CLOSE':'POST_CLOSE';
         draft = { businessDate, productData, sources, closeSeriesId, closeSnapshotA, sourceADigest, capabilityDigest, seal, review, authoritativeContext, actionType };
         return publish({ busy: false, phase: 'REVIEW', issues: review.issues || [], report: {...(review.report||{}),seriesHeadRevision:Number(authoritativeContext.series?.seriesHeadRevision||0),currentEffectiveRevision:Number(authoritativeContext.series?.currentEffectiveRevision||0)}, openingBaselineRequired:Boolean(review.openingBaselineRequired),openingBaselineApproved:false,actionType, availableActions, reviewed: false });
@@ -139,14 +146,14 @@
         const commandId = draft.commandId||(draft.commandId=`CLOSE-CMD-${randomId()}`), stageId = draft.stageId||(draft.stageId=`CLOSE-STAGE-${randomId()}`);
         const freshVerification={orderqHeadDigest:draft.seal.orderqHeadDigestAtSeal,dataopsHeadDigest:draft.seal.dataopsHeadDigestAtSeal,capabilityDigest:draft.capabilityDigest,orderqDeployment:draft.seal.orderqDeployment,dataopsDeployment:draft.seal.dataopsDeployment};
         const bridge = await import('../orderq/dataops-close-product-bridge.js?v=0.1.0'),finalizeClose=options.finalizeClose||bridge.finalizeAuthoritativeClose;
-        const finalized=draft.finalized||(draft.finalized=await finalizeClose({review:draft.review,sourceSealReceipt:draft.seal,sourceADigest:draft.sourceADigest,actorId:connection.dataOpsCredential.actorId,reviewReason:state.reviewReason,commandId,idempotencyKey:commandId,freshVerification,actionType:draft.actionType,targetRevision:draft.actionType==='REVERSE_CLOSE'?Number(draft.authoritativeContext.series?.currentEffectiveRevision||0):null,openingBaselineApproved:state.openingBaselineApproved}));
+        const finalized=draft.finalized||(draft.finalized=await finalizeClose({review:draft.review,sourceSealReceipt:draft.seal,sourceADigest:draft.sourceADigest,actorId:connection.dataOpsWriteCredential.actorId,reviewReason:state.reviewReason,commandId,idempotencyKey:commandId,freshVerification,actionType:draft.actionType,targetRevision:draft.actionType==='REVERSE_CLOSE'?Number(draft.authoritativeContext.series?.currentEffectiveRevision||0):null,openingBaselineApproved:state.openingBaselineApproved}));
         const resultB=finalized.resultSnapshot,resultBDigest=resultB.resultBDigest,issueDecisionDigest=finalized.decisionDigest;
         const sealedVerification = { orderqHeadDigest: draft.seal.orderqHeadDigestAtSeal, dataopsHeadDigest: draft.seal.dataopsHeadDigestAtSeal, capabilityDigest: draft.capabilityDigest, issueDecisionDigest, resultBDigest };
         const staged=[];for(const [kind,value] of [['A',draft.closeSnapshotA],['B',resultB],['ISSUES',draft.review.issues||[]],['DECISIONS',finalized.decisions],['AUDIT',resultB.auditEvents||[]],['REPORT',finalized.reportManifest],['BASELINES',finalized.approvedOpeningBaselines||[]]]){const prepared=await Promise.all(chunks(kind,value).map(async chunk=>({chunkIndex:chunk.chunkIndex,content:chunk.content,chunkDigest:await sha256(chunk.content)})));staged.push({kind,value,chunks:prepared});}
         const stageManifest=[];for(const item of staged)stageManifest.push({kind:item.kind,chunkCount:item.chunks.length,totalBytes:item.chunks.reduce((sum,row)=>sum+new TextEncoder().encode(row.content).length,0),payloadDigest:await sha256(item.value),chunkDigests:item.chunks.map(row=>row.chunkDigest)});
         const series=draft.authoritativeContext.series||{};
         const revisionCore={...finalized.intentPlan.revision};delete revisionCore.finalReceiptFingerprint;
-        const intentCore = { ...revisionCore, companyId:connection.dataOpsCredential.scope.companyId,closeBusinessDate:draft.businessDate,closeSeriesId: draft.closeSeriesId, closeRevisionId: finalized.intentPlan.revision.closeRevisionId, revision: finalized.intentPlan.revision.revision, actionType: draft.actionType, expectedSeriesHeadRevision: Number(series.seriesHeadRevision||0), expectedEffectiveRevision:Number(series.currentEffectiveRevision||0),targetRevision: draft.actionType==='REVERSE_CLOSE'?Number(series.currentEffectiveRevision||0):0,previousEffectiveRevision:Number(series.previousEffectiveRevision||0),previousEffectiveRevisionId:text(series.previousEffectiveRevisionId),currentEffectiveRevisionId:finalized.intentPlan.series.currentEffectiveRevisionId||'',closeCloudDeployment:expected,commandId, idempotencyKey: commandId, stageId, sourceSealId:draft.seal.sourceSealId,sourceSealReceiptFingerprint:draft.seal.receiptFingerprint, sourceADigest: draft.sourceADigest, resultBDigest, issueDecisionDigest, reportDigest:finalized.reportManifest.fileDigest, stageManifest, sealedVerification };
+        const intentCore = { ...revisionCore, companyId:connection.dataOpsWriteCredential.scope.companyId,closeBusinessDate:draft.businessDate,closeSeriesId: draft.closeSeriesId, closeRevisionId: finalized.intentPlan.revision.closeRevisionId, revision: finalized.intentPlan.revision.revision, actionType: draft.actionType, expectedSeriesHeadRevision: Number(series.seriesHeadRevision||0), expectedEffectiveRevision:Number(series.currentEffectiveRevision||0),targetRevision: draft.actionType==='REVERSE_CLOSE'?Number(series.currentEffectiveRevision||0):0,previousEffectiveRevision:Number(series.previousEffectiveRevision||0),previousEffectiveRevisionId:text(series.previousEffectiveRevisionId),currentEffectiveRevisionId:finalized.intentPlan.series.currentEffectiveRevisionId||'',closeCloudDeployment:expected,commandId, idempotencyKey: commandId, stageId, sourceSealId:draft.seal.sourceSealId,sourceSealReceiptFingerprint:draft.seal.receiptFingerprint, sourceADigest: draft.sourceADigest, resultBDigest, issueDecisionDigest, reportDigest:finalized.reportManifest.fileDigest, stageManifest, sealedVerification };
         const fingerprint = await sha256(intentCore), finalReceiptFingerprint = await sha256({ ...intentCore, fingerprint });
         const intent = { ...intentCore, fingerprint, finalReceiptFingerprint };
         let receipt=draft.committedReceipt;if(!receipt){await post(connection, 'dataops_close_prepare', { intent });for(const item of staged)await post(connection,'dataops_close_write_chunks',{stageId,commandId,kind:item.kind,chunks:item.chunks});receipt=await post(connection, 'dataops_close_commit', { intent });draft.committedReceipt=receipt;}

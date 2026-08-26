@@ -6,7 +6,7 @@ const api = globalThis.DATAOPS_CLOSE_UI_MODULE;
 assert.ok(api?.createDataOpsCloseOperator, 'first-party close UI module must load');
 
 const html = readFileSync(new URL('../DataOps.html', import.meta.url), 'utf8');
-assert.match(html, /dataops\/close-ui\.js\?v=0\.1\.0/);
+assert.match(html, /dataops\/close-ui\.js\?v=0\.1\.1/);
 assert.equal((html.match(/id: "dataops-close-start"/g) || []).length, 1, 'exactly one start button');
 assert.equal((html.match(/id: "dataops-close-confirm"/g) || []).length, 1, 'exactly one confirm button');
 assert.match(html, /id: "dataops-close-review"/);
@@ -17,7 +17,8 @@ const sources = {
   dataops: { session: { readSessionId: 'D-SESSION', tokenDigest: 'd'.repeat(64) }, head: { currentHeadDigest: 'D-HEAD' }, rows: [{ rowId: 'D1' }], pages: [] },
   orderq: { session: { readSessionId: 'O-SESSION', tokenDigest: 'o'.repeat(64) }, head: { currentHeadDigest: 'O-HEAD' }, entities: [{ entityType: 'ORDER' }] }
 };
-const credential = { token: 'memory-only-token', actorId: 'ADMIN', deviceId: 'TEST', environment: 'TEST', scope: { companyId: 'ONEAPP' } };
+const credential = { token: 'memory-only-read-token', actorId: 'ADMIN', deviceId: 'TEST', environment: 'TEST', scope: { companyId: 'ONEAPP' } };
+const writeCredential = { ...credential, token: 'memory-only-write-token' };
 const orderQCredential = { ...credential, token: 'separate-orderq-memory-token' };
 const expected = { deploymentId: 'DEPLOY', deploymentVersion: '31', gitCommit: 'abcdef123456' };
 const ping = { ...expected, capabilityVersion: 'DATAOPS_CLOSE_V1', actions: api.ACTIONS };
@@ -28,7 +29,7 @@ assert.equal(prerelease.state().releaseEnabled, false);
 await assert.rejects(() => prerelease.start({ productData, businessDate: '2026-08-26' }), /DEPLOYMENT_NOT_RELEASED/);
 assert.equal(prereleaseCalls, 0, 'pre-release path must perform zero network or mutation');
 const missingOrderQ = api.createDataOpsCloseOperator({ expectedDeployment: expected, post: async () => { prereleaseCalls += 1; } });
-await assert.rejects(() => missingOrderQ.connect({ url: 'https://example.invalid/exec', dataOpsCredential: credential }), /ORDERQ_ACCESS_DENIED|ACCESS_DENIED/);
+await assert.rejects(() => missingOrderQ.connect({ url: 'https://example.invalid/exec', dataOpsReadCredential: credential, dataOpsWriteCredential: writeCredential }), /ORDERQ_ACCESS_DENIED|ACCESS_DENIED/);
 assert.equal(prereleaseCalls, 0, 'missing ORDER Q credential must perform zero network');
 
 const calls = [];
@@ -48,7 +49,7 @@ const operator = api.createDataOpsCloseOperator({ expectedDeployment: expected, 
   buildReview: async () => reviewFixture, finalizeClose: finalizeFixture, persistProjection: async () => true,
   randomId: (() => { let id = 0; return () => String(++id); })() });
 assert.equal(operator.state().releaseEnabled, true);
-await operator.connect({ url: 'https://example.invalid/exec', dataOpsCredential: credential, orderQCredential });
+await operator.connect({ url: 'https://example.invalid/exec', dataOpsReadCredential: credential, dataOpsWriteCredential: writeCredential, orderQCredential });
 await operator.start({ productData, businessDate: '2026-08-26' });
 assert.equal(operator.state().phase, 'REVIEW');
 assert.equal(operator.state().report.issueCount, 1);
@@ -62,7 +63,7 @@ const mismatchCalls = [];
 const mismatch = api.createDataOpsCloseOperator({ expectedDeployment: expected,
   post: async (_connection, action) => { mismatchCalls.push(action); if (action === 'dataops_close_ping') return ping; if (action === 'dataops_close_context') return { series: null, priorInventoryRows: [], approvedBaselines: [], contextDigest: 'c'.repeat(64) }; if (action === 'dataops_close_seal') return { sourceSealId: 'SEAL-2' }; throw new Error('MUTATION_FORBIDDEN'); },
   loadFrozenSources: async () => sources, buildReview: async () => reviewFixture, finalizeClose: finalizeFixture, verifyFresh: async () => { throw new Error('CLOSE_SOURCE_CHANGED_AFTER_SEAL'); }, persistProjection: async () => true });
-await mismatch.connect({ url: 'https://example.invalid/exec', dataOpsCredential: credential, orderQCredential });
+await mismatch.connect({ url: 'https://example.invalid/exec', dataOpsReadCredential: credential, dataOpsWriteCredential: writeCredential, orderQCredential });
 await mismatch.start({ productData, businessDate: '2026-08-26' });
 mismatch.setReviewReason('fixture review'); mismatch.markReviewed(true);
 await assert.rejects(() => mismatch.confirm(), /CLOSE_SOURCE_CHANGED_AFTER_SEAL/);
@@ -92,9 +93,32 @@ assert.deepEqual(fetchEnvelopes.map(row => row.action), ['situation_orderq_begin
 assert.ok(fetchEnvelopes.every(row => row.token === orderQCredential.token && row.actorId === credential.actorId && row.scope.companyId === credential.scope.companyId));
 assert.ok(fetchEnvelopes.every(row => !String(row.action).includes('publish') && !String(row.action).includes('rollback')));
 
-const revisionCalls=[];let finalizedAction='';const revisionContext={series:{seriesHeadRevision:2,seriesHeadRevisionId:'R2',currentEffectiveRevision:2,currentEffectiveRevisionId:'R2',previousEffectiveRevision:1,previousEffectiveRevisionId:'R1'},priorInventoryRows:[{inventoryKey:'K'}],approvedBaselines:[],contextDigest:'c'.repeat(64)},revisionOperator=api.createDataOpsCloseOperator({expectedDeployment:expected,post:async(_connection,action,body={})=>{revisionCalls.push(action);if(action==='dataops_close_ping')return ping;if(action==='dataops_close_context')return revisionContext;if(action==='dataops_close_seal')return{sourceSealId:'S3',receiptFingerprint:'f'.repeat(64)};if(action==='dataops_close_prepare'||action==='dataops_close_write_chunks')return{};if(action==='dataops_close_commit')return{status:'COMMITTED',finalReceiptFingerprint:body.intent.finalReceiptFingerprint};throw new Error(action);},loadFrozenSources:async()=>sources,buildReview:async()=>({...reviewFixture,context:{series:revisionContext.series}}),finalizeClose:async input=>{finalizedAction=input.actionType;return finalizeFixture(input);},persistProjection:async()=>true,randomId:()=>String(revisionCalls.length)});await revisionOperator.connect({url:'https://example.invalid/exec',dataOpsCredential:credential,orderQCredential});await revisionOperator.start({productData,businessDate:'2026-08-26'});assert.equal(revisionOperator.state().actionType,'CORRECT_CLOSE');assert.deepEqual(revisionOperator.state().availableActions,['CORRECT_CLOSE','REVERSE_CLOSE']);revisionOperator.selectAction('REVERSE_CLOSE');revisionOperator.setReviewReason('reverse explicit');revisionOperator.markReviewed(true);await revisionOperator.confirm();assert.equal(finalizedAction,'REVERSE_CLOSE');
+const revisionCalls=[];let finalizedAction='';const revisionContext={series:{seriesHeadRevision:2,seriesHeadRevisionId:'R2',currentEffectiveRevision:2,currentEffectiveRevisionId:'R2',previousEffectiveRevision:1,previousEffectiveRevisionId:'R1'},priorInventoryRows:[{inventoryKey:'K'}],approvedBaselines:[],contextDigest:'c'.repeat(64)},revisionOperator=api.createDataOpsCloseOperator({expectedDeployment:expected,post:async(_connection,action,body={})=>{revisionCalls.push(action);if(action==='dataops_close_ping')return ping;if(action==='dataops_close_context')return revisionContext;if(action==='dataops_close_seal')return{sourceSealId:'S3',receiptFingerprint:'f'.repeat(64)};if(action==='dataops_close_prepare'||action==='dataops_close_write_chunks')return{};if(action==='dataops_close_commit')return{status:'COMMITTED',finalReceiptFingerprint:body.intent.finalReceiptFingerprint};throw new Error(action);},loadFrozenSources:async()=>sources,buildReview:async()=>({...reviewFixture,context:{series:revisionContext.series}}),finalizeClose:async input=>{finalizedAction=input.actionType;return finalizeFixture(input);},persistProjection:async()=>true,randomId:()=>String(revisionCalls.length)});await revisionOperator.connect({url:'https://example.invalid/exec',dataOpsReadCredential:credential,dataOpsWriteCredential:writeCredential,orderQCredential});await revisionOperator.start({productData,businessDate:'2026-08-26'});assert.equal(revisionOperator.state().actionType,'CORRECT_CLOSE');assert.deepEqual(revisionOperator.state().availableActions,['CORRECT_CLOSE','REVERSE_CLOSE']);revisionOperator.selectAction('REVERSE_CLOSE');revisionOperator.setReviewReason('reverse explicit');revisionOperator.markReviewed(true);await revisionOperator.confirm();assert.equal(finalizedAction,'REVERSE_CLOSE');
 
-let openingApproved=false;const openingReview={...reviewFixture,openingBaselineRequired:true,proposedOpeningBaselines:[{baselineId:'B1'}]},openingOperator=api.createDataOpsCloseOperator({expectedDeployment:expected,post:async(_connection,action)=>action==='dataops_close_ping'?ping:action==='dataops_close_context'?{series:null,priorInventoryRows:[],approvedBaselines:[],contextDigest:'c'.repeat(64)}:action==='dataops_close_seal'?{sourceSealId:'SB',receiptFingerprint:'f'.repeat(64)}:{status:'OK'},loadFrozenSources:async()=>sources,buildReview:async()=>openingReview,finalizeClose:async input=>{openingApproved=input.openingBaselineApproved;return{...(await finalizeFixture(input)),approvedOpeningBaselines:[{baselineId:'B1'}]};},persistProjection:async()=>true});await openingOperator.connect({url:'https://example.invalid/exec',dataOpsCredential:credential,orderQCredential});await openingOperator.start({productData,businessDate:'2026-08-26'});openingOperator.setReviewReason('explicit opening');openingOperator.markReviewed(true);await assert.rejects(()=>openingOperator.confirm(),/REVIEW_REQUIRED/);openingOperator.approveOpeningBaseline(true);openingOperator.markReviewed(true);await openingOperator.confirm();assert.equal(openingApproved,true);
+let openingApproved=false;const openingReview={...reviewFixture,openingBaselineRequired:true,proposedOpeningBaselines:[{baselineId:'B1'}]},openingOperator=api.createDataOpsCloseOperator({expectedDeployment:expected,post:async(_connection,action)=>action==='dataops_close_ping'?ping:action==='dataops_close_context'?{series:null,priorInventoryRows:[],approvedBaselines:[],contextDigest:'c'.repeat(64)}:action==='dataops_close_seal'?{sourceSealId:'SB',receiptFingerprint:'f'.repeat(64)}:{status:'OK'},loadFrozenSources:async()=>sources,buildReview:async()=>openingReview,finalizeClose:async input=>{openingApproved=input.openingBaselineApproved;return{...(await finalizeFixture(input)),approvedOpeningBaselines:[{baselineId:'B1'}]};},persistProjection:async()=>true});await openingOperator.connect({url:'https://example.invalid/exec',dataOpsReadCredential:credential,dataOpsWriteCredential:writeCredential,orderQCredential});await openingOperator.start({productData,businessDate:'2026-08-26'});openingOperator.setReviewReason('explicit opening');openingOperator.markReviewed(true);await assert.rejects(()=>openingOperator.confirm(),/REVIEW_REQUIRED/);openingOperator.approveOpeningBaseline(true);openingOperator.markReviewed(true);await openingOperator.confirm();assert.equal(openingApproved,true);
+
+const routedEnvelopes=[];
+globalThis.fetch=async(_url,request)=>{
+  const body=JSON.parse(request.body);routedEnvelopes.push(body);
+  const data=body.action==='dataops_close_ping'?ping
+    :body.action==='dataops_close_context'?{series:null,priorInventoryRows:[],approvedBaselines:[],contextDigest:'c'.repeat(64)}
+      :body.action==='dataops_close_seal'?{sourceSealId:'ROUTE-SEAL',receiptFingerprint:'f'.repeat(64)}
+        :body.action==='dataops_close_commit'?{status:'COMMITTED',closeRevisionId:body.intent.closeRevisionId}
+          :{status:'OK'};
+  return{ok:true,json:async()=>({status:'success',action:body.action,data})};
+};
+try{
+  const routed=api.createDataOpsCloseOperator({expectedDeployment:expected,loadFrozenSources:async()=>sources,buildReview:async()=>reviewFixture,finalizeClose:finalizeFixture,persistProjection:async()=>true,randomId:(()=>{let n=0;return()=>`R${++n}`;})()});
+  await assert.rejects(()=>routed.connect({url:'https://example.invalid/exec',dataOpsReadCredential:credential,dataOpsWriteCredential:credential,orderQCredential}),/CREDENTIAL_SEPARATION_REQUIRED/);
+  assert.equal(routedEnvelopes.length,0,'same read/write token must fail before network');
+  await routed.connect({url:'https://example.invalid/exec',dataOpsReadCredential:credential,dataOpsWriteCredential:writeCredential,orderQCredential});
+  await routed.start({productData,businessDate:'2026-08-26'});routed.setReviewReason('route review');routed.markReviewed(true);await routed.confirm();
+}finally{globalThis.fetch=originalFetch;}
+const routedByAction=Object.fromEntries(routedEnvelopes.map(row=>[row.action,row]));
+assert.equal(routedByAction.dataops_close_ping.token,undefined,'ping must be anonymous and sanitized');
+for(const action of ['dataops_close_context','dataops_close_seal'])assert.equal(routedByAction[action].token,credential.token,`${action} must use READ token`);
+for(const action of ['dataops_close_prepare','dataops_close_write_chunks','dataops_close_commit'])assert.equal(routedByAction[action].token,writeCredential.token,`${action} must use WRITE token`);
+assert.ok(routedEnvelopes.every(row=>row.action==='dataops_close_ping'||(row.actorId===credential.actorId&&row.scope.companyId===credential.scope.companyId)));
 
 let referenceErrors = 0;
 try {
@@ -108,4 +132,4 @@ try {
   assert.ok(nodes.every(node => node.props.disabled));
 } catch (error) { if (error instanceof ReferenceError) referenceErrors += 1; else throw error; }
 assert.equal(referenceErrors, 0, 'DataOps product render must have zero ReferenceError');
-console.log('DataOps Stage6 close UI product path PASS disabled/mutation0 + start/seal/review/prepare/chunks/commit/report + head mismatch');
+console.log('DataOps Stage6 close UI product path PASS disabled/mutation0 + distinct READ/WRITE routing + start/seal/review/prepare/chunks/commit/report + head mismatch');
