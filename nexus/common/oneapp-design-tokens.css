@@ -74,42 +74,42 @@
 }
 
 html[data-nexus-theme="dark"] {
-  --nexus-page-bg: #0f172a;
-  --nexus-panel-bg: #111c30;
-  --nexus-panel-subtle-bg: #172238;
-  --nexus-table-header-bg: #172238;
-  --nexus-table-row-bg: #111c30;
-  --nexus-table-row-hover-bg: #1d2a43;
-  --nexus-input-bg: #172238;
-  --nexus-border: #29364d;
-  --nexus-border-strong: #3a4860;
-  --nexus-text: #e8edf6;
-  --nexus-text-muted: #9aa8be;
-  --nexus-text-inverse: #0f172a;
+  --nexus-page-bg: #15181d;
+  --nexus-panel-bg: #1c2026;
+  --nexus-panel-subtle-bg: #22272e;
+  --nexus-table-header-bg: #292f37;
+  --nexus-table-row-bg: #1d2228;
+  --nexus-table-row-hover-bg: #282e36;
+  --nexus-input-bg: #262c33;
+  --nexus-border: #343b44;
+  --nexus-border-strong: #444d58;
+  --nexus-text: #d6d9de;
+  --nexus-text-muted: #9299a3;
+  --nexus-text-inverse: #1c2026;
 
-  --nexus-selection-bg: #1e3a5f;
-  --nexus-selection-border: #67e8f9;
-  --nexus-edit-border: #67e8f9;
-  --nexus-focus-ring: #67e8f9;
-  --nexus-disabled-bg: #172238;
-  --nexus-disabled-text: #9aa8be;
+  --nexus-selection-bg: #303842;
+  --nexus-selection-border: #778b9e;
+  --nexus-edit-border: #778b9e;
+  --nexus-focus-ring: #778b9e;
+  --nexus-disabled-bg: #22272e;
+  --nexus-disabled-text: #9299a3;
 
-  --nexus-success: #6ee7b7;
-  --nexus-success-bg: #0f352c;
-  --nexus-success-border: #34d399;
-  --nexus-warning: #fbbf24;
-  --nexus-warning-bg: #3b2b11;
-  --nexus-warning-border: #f59e0b;
-  --nexus-danger: #fda4af;
-  --nexus-danger-bg: #3d1d26;
-  --nexus-danger-border: #fb7185;
+  --nexus-success: #b3c8ba;
+  --nexus-success-bg: #2b342f;
+  --nexus-success-border: #6d8174;
+  --nexus-warning: #c4b8a8;
+  --nexus-warning-bg: #342f2a;
+  --nexus-warning-border: #786d60;
+  --nexus-danger: #c7b1b4;
+  --nexus-danger-bg: #352d2f;
+  --nexus-danger-border: #7d686c;
 
-  --nexus-price-up: #fb7185;
-  --nexus-price-down: #7dd3fc;
-  --nexus-negative-margin: #fbbf24;
-  --nexus-stock-shortage: #fdba74;
-  --nexus-order-conflict: #fda4af;
-  --nexus-reconciliation-diff: #fbbf24;
+  --nexus-price-up: #c7b1b4;
+  --nexus-price-down: #b3c4d4;
+  --nexus-negative-margin: #c4b8a8;
+  --nexus-stock-shortage: #c4b8aa;
+  --nexus-order-conflict: #c7b1b4;
+  --nexus-reconciliation-diff: #c4b8a8;
 
   --oneapp-master-soft: var(--nexus-selection-bg);
   color-scheme: dark;

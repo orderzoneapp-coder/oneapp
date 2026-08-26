@@ -103,7 +103,7 @@
               failures.push(`${app}: ${part} remained light (${value})`);
             }
           }
-          if (dark.body !== 'rgb(15, 23, 42)') failures.push(`${app}: dark body ${dark.body}`);
+          if (dark.body !== 'rgb(21, 24, 29)') failures.push(`${app}: dark body ${dark.body}`);
           setMode('light');
           const lightAfter = { body: bodyRgb(), panel: rgb('panel'), table: rgb('table'), input: rgb('input') };
           if (!same(lightBefore, lightAfter)) failures.push(`${app}: Light did not restore exactly`);
