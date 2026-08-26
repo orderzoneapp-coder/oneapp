@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="ko" data-nexus-color-mode="dark">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow">
+  <title>NEXUS 마스터 관리</title>
+  <link rel="icon" type="image/png" href="../assets/nexus-favicon.png">
+  <link rel="stylesheet" href="../common/nexus-auth.css?v=1.0.0">
+  <script src="../common/nexus-auth-config.js?v=1.0.0"></script>
+  <script src="../common/nexus-auth.js?v=1.0.0"></script>
+  <script src="../common/apps-config.js?v=1.4.0"></script>
+  <script src="../common/nexus-top.js?v=1.6.1"></script>
+  <script src="./admin.js?v=1.0.0" defer></script>
+</head>
+<body class="portal-page">
+  <nexus-top></nexus-top>
+  <main class="portal-main">
+    <header class="portal-hero">
+      <div><span class="auth-kicker">OWNER MASTER CONTROL</span><h1>마스터 관리</h1><p>사용자, 권한, 서버 업무 연결과 감사기록을 한곳에서 관리합니다.</p></div>
+      <div class="portal-actions"><a class="portal-link primary" href="/nexus/home/">일반 업무화면</a><button id="logoutButton" class="portal-link" type="button">로그아웃</button></div>
+    </header>
+    <div class="admin-layout">
+      <nav class="admin-nav" aria-label="마스터 관리 메뉴">
+        <button class="is-active" data-panel-target="users">사용자 관리</button>
+        <button data-panel-target="invite">사용자 추가</button>
+        <button data-panel-target="services">업무 연결</button>
+        <button data-panel-target="audit">감사 기록</button>
+      </nav>
+      <div>
+        <section class="admin-panel" data-panel="users">
+          <div class="admin-panel-head"><div><h2>사용자와 권한</h2><p>삭제 즉시 모든 세션이 회수되며 30일 동안 복구할 수 있습니다.</p></div><button id="refreshUsers" class="admin-button" type="button">새로고침</button></div>
+          <div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>사용자</th><th>역할</th><th>상태</th><th>최종 변경</th><th>관리</th></tr></thead><tbody id="usersBody"></tbody></table></div>
+          <form id="permissionEditor" class="invite-result" hidden>
+            <div class="admin-panel-head"><div><h2 id="permissionUserTitle">권한 편집</h2><p>저장 즉시 기존 로그인 세션이 종료됩니다.</p></div><button class="admin-button" type="button" id="closePermissionEditor">닫기</button></div>
+            <label class="admin-field"><span>권한 프로필</span><select id="permissionRole" class="admin-select"><option value="FULL_ACCESS">전체 사용</option><option value="VIEWER">조회 전용</option><option value="CUSTOM">직접 선택</option></select></label>
+            <div id="permissionChecks" class="permission-grid"></div>
+            <div class="auth-message" id="permissionMessage"></div><button class="admin-button primary" type="submit">권한 저장</button>
+          </form>
+        </section>
+
+        <section class="admin-panel" data-panel="invite" hidden>
+          <div class="admin-panel-head"><div><h2>사용자 초대</h2><p>초대 코드는 한 번만 표시되며 72시간 동안 유효합니다.</p></div></div>
+          <form id="inviteForm">
+            <div class="admin-form-grid">
+              <label class="admin-field"><span>로그인 아이디</span><input id="inviteLoginId" class="admin-input" required placeholder="영문 소문자·숫자 3자 이상"></label>
+              <label class="admin-field"><span>표시 이름</span><input id="inviteDisplayName" class="admin-input" required maxlength="60"></label>
+              <label class="admin-field full"><span>권한 프로필</span><select id="inviteRole" class="admin-select"><option value="VIEWER">조회 전용</option><option value="FULL_ACCESS">전체 사용</option><option value="CUSTOM">직접 선택</option></select></label>
+            </div>
+            <div id="invitePermissionChecks" class="permission-grid"></div>
+            <div id="inviteMessage" class="auth-message"></div><button class="admin-button primary" type="submit">초대 코드 발급</button>
+          </form>
+          <div id="inviteResult" class="invite-result" hidden><strong>초대 코드</strong><p>이 코드는 사용자에게 안전하게 전달하세요. 다시 표시되지 않습니다.</p><div class="portal-actions"><input id="issuedInviteCode" class="admin-input" readonly><button id="copyInviteCode" class="admin-button" type="button">복사</button></div></div>
+        </section>
+
+        <section class="admin-panel" data-panel="services" hidden>
+          <div class="admin-panel-head"><div><h2>업무 서버 연결</h2><p>값은 서버 Script Properties에만 저장되며 브라우저로 다시 반환되지 않습니다.</p></div></div>
+          <div id="serviceStatus" class="connection-strip"></div>
+          <form id="servicesForm"><div class="admin-form-grid">
+            <label class="admin-field full"><span>기존 ONEAPP Apps Script URL</span><input id="serviceUpstream" class="admin-input" placeholder="비워두면 현재 운영 URL 유지"></label>
+            <label class="admin-field"><span>DataOps 읽기 토큰</span><input id="serviceDataOpsRead" type="password" class="admin-input" autocomplete="off" placeholder="변경할 때만 입력"></label>
+            <label class="admin-field"><span>DataOps 쓰기 토큰</span><input id="serviceDataOpsWrite" type="password" class="admin-input" autocomplete="off" placeholder="변경할 때만 입력"></label>
+            <label class="admin-field"><span>DataOps V2 발행 토큰</span><input id="serviceDataOpsPublish" type="password" class="admin-input" autocomplete="off" placeholder="선택 기능"></label>
+            <label class="admin-field"><span>ORDER Q 토큰</span><input id="serviceOrderQ" type="password" class="admin-input" autocomplete="off" placeholder="변경할 때만 입력"></label>
+            <label class="admin-field"><span>Shipping 발주계획 토큰</span><input id="serviceShipping" type="password" class="admin-input" autocomplete="off" placeholder="변경할 때만 입력"></label>
+          </div><div id="servicesMessage" class="auth-message"></div><button class="admin-button primary" type="submit">서버 연결 저장</button></form>
+        </section>
+
+        <section class="admin-panel" data-panel="audit" hidden>
+          <div class="admin-panel-head"><div><h2>감사 기록</h2><p>로그인, 사용자 변경, 토큰 대행 결과를 최근 순서로 확인합니다.</p></div><button id="refreshAudit" class="admin-button" type="button">새로고침</button></div>
+          <div id="auditList" class="audit-list"></div>
+        </section>
+      </div>
+    </div>
+  </main>
+</body>
+</html>

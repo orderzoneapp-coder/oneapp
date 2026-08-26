@@ -1,8 +1,8 @@
 # ONEAPP Application Architecture
 
 - Repository: orderzoneapp-coder/oneapp
-- Architecture document version: 1.4.3
-- Last reviewed: 2026-08-13
+- Architecture document version: 1.5.0
+- Last reviewed: 2026-08-26
 - Machine-readable companion: app-manifest.json
 
 ## 1. Purpose
@@ -83,7 +83,10 @@ Shared storage or navigation does not make their business meaning identical.
 
 | Component | Type | Status | Primary responsibility |
 |---|---|---|---|
-| `nexus/index.html` | Web entry | Production | Shared ONEAPP application header and navigation entry point without dashboard content or production data writes |
+| `nexus/index.html` | Web entry | Production | Public login, first-owner bootstrap, and invitation activation entry; no business token is entered here |
+| `nexus/home/index.html` | Web entry | Production | Permission-filtered normal-user work home shown after authentication |
+| `nexus/admin/index.html` | Web entry | Production | Owner-master-only user, permission, service-secret, recovery, and audit administration |
+| `nexus/server/nexus-auth-gateway.gs` | Apps Script service | Production | Authentication database, opaque sessions, permission enforcement, audit logging, and server-only credential proxy to the retained cloud service |
 | `MerchOps.html` | Web entry | Production | Product master review, pricing, promotion, and Excel-based product-information application workflow; stopped-product state is consumed only for worktable protection and compatibility reads |
 | `DataOps.html` | Web entry | Production | Purchase, sales, inventory, stock ledger, cost, and performance analysis; administrator-reviewed out-of-list inventory product selection and positive-count sale resume |
 | `SmartParser.html` | Web entry | Production | Parse external documents, resolve duplicate mappings, own supplier exclusions and stopped/sold-out product management, apply approved changes directly to the product master, and record change history |
@@ -118,7 +121,17 @@ Production files must not be reorganized into folders without first updating and
 - navigation regression tests;
 - external bookmarks or operational links where applicable.
 
-### 5.2 NEXUS common header
+### 5.2 NEXUS authentication and authorization
+
+`nexus/index.html` is the only public application entry. The first completed bootstrap creates exactly one `OWNER_MASTER`; no later request can create or transfer that role. The owner master invites users, assigns `FULL_ACCESS`, `VIEWER`, or non-administrative `CUSTOM` permissions, soft-deletes users, restores them for 30 days, configures business service credentials, and inspects the audit trail from the separate `nexus/admin/index.html` screen. Signed-in users enter `nexus/home/index.html`, where only permitted applications are shown.
+
+`nexus/server/nexus-auth-gateway.gs` is deployed as a standalone Apps Script Web App executing as its owner. Its private spreadsheet stores users, password verifiers, sessions, rate limits, and audit records. Passwords are transformed in the browser with PBKDF2-SHA-256 before transmission and are never stored as entered. The gateway adds its own private HMAC pepper, issues random opaque 12-hour sessions, revokes all user sessions on deletion, and rejects every protected request whose session or permission is invalid. Authentication state is held only in per-tab `sessionStorage`; persistent browser storage must not contain an authentication session or a business credential.
+
+The gateway is also the only browser-facing route to protected Apps Script business actions. Existing DataOps, ORDER Q, and Shipping clients pass their action through `nexus/common/nexus-auth.js`; the gateway ignores any client credential, selects the required credential from Apps Script `ScriptProperties`, and forwards only an allowlisted action to the fixed retained cloud-service URL. Raw read, write, publish, ORDER Q, and Shipping values are never returned to the browser. A user therefore signs in once per tab and does not paste V1, V2, close, ORDER Q, or Shipping tokens during ordinary work.
+
+The owner master is the only administrative authority. `FULL_ACCESS` means all business permissions and explicitly excludes `admin.users`, `admin.services`, and `admin.audit`; custom profiles cannot contain an `admin.*` permission. The server, not the menu, is authoritative. UI filtering is convenience only, and every proxy or administration request is independently authorized by the gateway.
+
+### 5.2.1 NEXUS common header
 
 `nexus/common/nexus-top.js` is the shared `<nexus-top>` web component. `nexus/common/apps-config.js` is the single runtime mapping from application IDs to the four work groups and the SmartInput global entry. The default header flow is Foundation (`기준정보`), Pricing (`가격·시세`), SmartInput, Shipping (`주문·출고`), then Inventory (`재고·정산`), with the existing management/operations divider between Pricing and SmartInput. SmartInput remains the fixed first entry in the operations section, while its visibility is managed in the same header-settings list as the work groups. The five entries render preloaded active/inactive navigation images while preserving `aria-current`, ordering, hiding, mobile current-entry visibility, and application identity contracts. Display names and filenames are not app identity contracts.
 
@@ -130,7 +143,7 @@ Every consumer reserves `--nexus-top-height` and includes a light-DOM fallback. 
 
 `smartinput/index.html` is a NEXUS-header consumer during its standalone pilot. Its public route is `/smartinput/`; it is registered in the all-apps list and as the fixed-position SmartInput global entry. SmartInput remains part of the Shipping application group for application-list organization and status routing.
 
-### 5.2.1 NEXUS application fixed layout
+### 5.2.2 NEXUS application fixed layout
 
 `nexus/common/nexus-app-ui.css` is the fixed application-layout interface under the common header. The common header spans the browser width; supported application workspaces use the shared `--nexus-content-max-width` and fixed component dimensions. No alternate spacing preference, event, or saved value is read or applied. `nexus/common/nexus-ui-contract.js` is the code registry for application rollout status and registered exceptions; `nexus/common/NEXUS_APP_UI_CONTRACT.md` is the matching operator and regression record.
 

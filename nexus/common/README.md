@@ -1,6 +1,19 @@
 # NEXUS 공통헤더 계약
 
-각 앱은 `apps-config.js`, `nexus-top.js`를 불러온 뒤 앱 ID를 선언한다.
+모든 업무 앱은 공통헤더보다 먼저 인증 설정과 클라이언트를 동기 로드한다. 인증 클라이언트는 화면이 그려지기 전에 세션을 확인하고, 비로그인 사용자를 `/nexus/`로 돌려보내며, 허용된 Apps Script 업무 요청만 NEXUS 게이트웨이로 전달한다.
+
+```html
+<script src="/nexus/common/nexus-auth-config.js"></script>
+<script src="/nexus/common/nexus-auth.js"></script>
+<script src="/nexus/common/apps-config.js"></script>
+<script src="/nexus/common/nexus-top.js"></script>
+```
+
+로그인 세션은 현재 탭의 `sessionStorage` 키 `oneapp.nexus.auth.session.v1`에만 둔다. V1 읽기/쓰기, V2 게시, 마감, ORDER Q, Shipping 토큰은 브라우저 저장소·프롬프트·업무 화면에 두지 않는다. 마스터가 `nexus/admin/index.html`에서 한 번 등록하면 Apps Script `ScriptProperties`에만 저장되고, 게이트웨이가 서버에서 권한별로 선택한다.
+
+`OWNER_MASTER`만 사용자·서비스·감사 관리 권한을 가진다. `FULL_ACCESS`는 모든 업무 권한을 뜻하지만 관리자 권한은 포함하지 않는다. 메뉴 숨김은 보조 표시이고 실제 허용/거부는 게이트웨이에서 다시 판정한다.
+
+인증 후 각 앱은 앱 ID를 선언한다.
 
 ```html
 <nexus-top app-id="dataops"></nexus-top>

@@ -43,6 +43,8 @@
         .loader-text { font-family: 'Pretendard', sans-serif; font-size: 14px; font-weight: 700; color: #475569; letter-spacing: -0.5px; animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
     </style>
+    <script src="/nexus/common/nexus-auth-config.js?v=1.0.0"></script>
+    <script src="/nexus/common/nexus-auth.js?v=1.0.0"></script>
     <script src="/nexus/common/apps-config.js?v=1.4.0"></script>
     <script src="/nexus/common/nexus-top.js?v=1.6.1"></script>
     <link rel="stylesheet" href="/nexus/common/nexus-operational-theme.css?v=1.0.0">
@@ -336,14 +338,9 @@
                     return true;
                 },
                 async configureEphemeral() {
-                    const token = window.prompt('DataOps V2 발행 권한 토큰을 입력하세요. 브라우저에 저장하지 않습니다.', '');
-                    if (!token) throw new Error('DATAOPS_SITUATION_ACCESS_DENIED');
-                    const actorId = window.prompt('발행 작업자 ID를 입력하세요.', 'ADMIN');
-                    if (!actorId) throw new Error('DATAOPS_SITUATION_ACCESS_DENIED');
-                    const companyId = window.prompt('회사 범위를 입력하세요.', 'ONEAPP');
-                    if (!companyId) throw new Error('DATAOPS_SITUATION_ACCESS_DENIED');
-                    return this.configure({ credential: { token, actorId, companyId,
-                        deviceId: navigator.userAgent || 'BROWSER', environment: location.hostname || 'BROWSER', scope: { companyId } } });
+                    await window.ONEAPP_AUTH?.ready;
+                    if (!window.ONEAPP_AUTH?.session) throw new Error('NEXUS_AUTH_SESSION_REQUIRED');
+                    return this.configure({ credential: window.ONEAPP_AUTH.businessCredential('DATAOPS_PUBLISH') });
                 },
                 async publishCurrent(context) {
                     if (!this.canPublish(context)) throw new Error('DATAOPS_V2_OPERATIONAL_SOURCE_REQUIRED');
@@ -5423,13 +5420,13 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
             const v1Client = window.DATAOPS_V1_SECURITY_CLIENT && window.DATAOPS_V1_SECURITY_CLIENT.client;
             let v1Credentials = {};
             if (v1Client && v1Client.released() && !v1Client.ready()) {
-                const actorId = window.prompt('DataOps V1 재고 스냅샷 작업자 ID', 'ADMIN');
-                const readToken = window.prompt('DataOps V1 읽기 전용 토큰 (메모리에만 유지)', '');
-                const writeToken = window.prompt('DataOps V1 쓰기 전용 토큰 (메모리에만 유지)', '');
-                if (!actorId || !readToken || !writeToken)
-                    throw new Error('DataOps V1 서버 우선 보안 연결이 필요합니다.');
-                const common = { actorId, deviceId: 'DATAOPS_BROWSER', environment: 'PRODUCTION', scope: { companyId: 'ONEAPP' } };
-                v1Credentials = { readCredential: { token: readToken, ...common }, writeCredential: { token: writeToken, ...common } };
+                await window.ONEAPP_AUTH?.ready;
+                if (!window.ONEAPP_AUTH?.session)
+                    throw new Error('NEXUS_AUTH_SESSION_REQUIRED');
+                v1Credentials = {
+                    readCredential: window.ONEAPP_AUTH.businessCredential('DATAOPS_READ'),
+                    writeCredential: window.ONEAPP_AUTH.businessCredential('DATAOPS_WRITE')
+                };
             }
             const cloudResult = v1Client ? await v1Client.commitSnapshot({ legacyModule: DATAOPS_MERCH_STOCK_SYNC_MODULE, productData, targetDateStr, url: DATAOPS_CLOUD_MODULE.getCloudUrl(), ...v1Credentials }) : await DATAOPS_MERCH_STOCK_SYNC_MODULE.commit({ productData, targetDateStr });
             const saved = cloudResult.saved || {};
@@ -5477,7 +5474,7 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
         setIsProcessing(true);
         try {
             await window.DATAOPS_SITUATION_V2_OPERATOR_MODULE.configureEphemeral();
-            setAlertMsg('DataOps V2 발행 연결이 준비되었습니다. 권한은 현재 화면 메모리에만 유지됩니다.');
+            setAlertMsg('DataOps V2 발행 연결이 준비되었습니다. NEXUS 로그인 권한으로 자동 연결되었습니다.');
         }
         catch (error) {
             setAlertMsg(`DataOps V2 연결 불가\n\n${error && error.message ? error.message : String(error)}`);
@@ -9224,23 +9221,15 @@ function App() {
             return;
         setIsProcessing(true);
         try {
-            const dataOpsReadToken = window.prompt('DataOps V2·일마감 읽기 전용 토큰을 입력하세요. 현재 화면 메모리에만 유지됩니다.', '');
-            if (!dataOpsReadToken)
-                throw new Error('DATAOPS_CLOSE_ACCESS_DENIED');
-            const dataOpsWriteToken = window.prompt('DataOps 일마감 쓰기 전용 토큰을 별도로 입력하세요. 읽기 토큰과 달라야 하며 현재 화면 메모리에만 유지됩니다.', '');
-            if (!dataOpsWriteToken || dataOpsWriteToken === dataOpsReadToken)
-                throw new Error('DATAOPS_CLOSE_CREDENTIAL_SEPARATION_REQUIRED');
-            const orderQToken = window.prompt('ORDER Q 읽기 권한 토큰을 별도로 입력하세요. 저장된 ORDER Q 설정은 사용하지 않습니다.', '');
-            if (!orderQToken)
-                throw new Error('DATAOPS_CLOSE_ORDERQ_ACCESS_DENIED');
-            const actorId = window.prompt('일마감 작업자 ID를 입력하세요.', 'ADMIN');
-            if (!actorId)
-                throw new Error('DATAOPS_CLOSE_ACCESS_DENIED');
-            const companyId = window.prompt('회사 범위를 입력하세요.', 'ONEAPP');
-            if (!companyId)
-                throw new Error('DATAOPS_CLOSE_ACCESS_DENIED');
-            const identity = { actorId, deviceId: navigator.userAgent || 'BROWSER', environment: location.hostname || 'BROWSER', scope: { companyId } };
-            await closeOperator.connect({ url: DATAOPS_CLOUD_MODULE.getCloudUrl(), dataOpsReadCredential: { token: dataOpsReadToken, ...identity }, dataOpsWriteCredential: { token: dataOpsWriteToken, ...identity }, orderQCredential: { token: orderQToken, ...identity } });
+            await window.ONEAPP_AUTH?.ready;
+            if (!window.ONEAPP_AUTH?.session)
+                throw new Error('NEXUS_AUTH_SESSION_REQUIRED');
+            await closeOperator.connect({
+                url: DATAOPS_CLOUD_MODULE.getCloudUrl(),
+                dataOpsReadCredential: window.ONEAPP_AUTH.businessCredential('DATAOPS_CLOSE_READ'),
+                dataOpsWriteCredential: window.ONEAPP_AUTH.businessCredential('DATAOPS_CLOSE_WRITE'),
+                orderQCredential: window.ONEAPP_AUTH.businessCredential('ORDERQ_READ')
+            });
             await closeOperator.start({ productData, businessDate: targetDateStr });
             setClosePanelOpen(true);
         }

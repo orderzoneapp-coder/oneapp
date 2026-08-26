@@ -153,10 +153,13 @@ for (const token of ['nexus-price-up', 'nexus-price-down', 'nexus-negative-margi
 assert.match(headerDocumentation, /data-nexus-theme.*유일한 테마 입력/);
 assert.match(headerDocumentation, /화면 reload, 업무 데이터 재조회/);
 assert.match(headerDocumentation, /Excel·ERP·인쇄·카카오 이미지 컨테이너/);
-assert.match(nexusHome, /data-nexus-color-mode="light"/);
+assert.match(nexusHome, /data-nexus-color-mode="dark"/);
 assert.doesNotMatch(nexusHome, /data-nexus-color-mode="system"|prefers-color-scheme/);
-assert.ok(nexusHome.indexOf('nexus-theme-init.js') < nexusHome.indexOf('<style>'),
-  'the synchronous theme initializer must run before first-paint styles');
+assert.match(nexusHome, /nexus-auth-config\.js\?v=1\.0\.0/);
+assert.match(nexusHome, /nexus-auth\.js\?v=1\.0\.0/);
+assert.match(nexusHome, /ONE LOGIN · ALL OPERATIONS/);
+assert.doesNotMatch(nexusHome, /<nexus-top/,
+  'the public login entry must not render authenticated navigation before session validation');
 
 const createThemeHarness = (initialStorage = {}) => {
   const values = new Map(Object.entries(initialStorage));
@@ -269,6 +272,7 @@ for (const file of manifestContract.consumers) {
   const source = read(file);
   assert.match(source, /apps-config\.js\?v=1\.4\.0/, `${file} must load the current NEXUS configuration`);
   assert.match(source, /nexus-top\.js\?v=1\.6\.1/, `${file} must load the current NEXUS component`);
+  assert.match(source, /nexus-auth\.js\?v=1\.0\.0/, `${file} must enforce the NEXUS login session`);
 }
 
 const entries = [
@@ -287,6 +291,7 @@ for (const [file, appId] of entries) {
   assert.match(source, new RegExp(`<nexus-top app-id="${appId}">[\\s\\S]*?<\\/nexus-top>`), `${file} must declare its canonical NEXUS app ID`);
   assert.match(source, /apps-config\.js\?v=1\.4\.0/);
   assert.match(source, /nexus-top\.js\?v=1\.6\.1/);
+  assert.match(source, /nexus-auth\.js\?v=1\.0\.0/);
   assert.match(source, /NEXUS 메뉴를 불러오지 못했습니다/);
 }
 

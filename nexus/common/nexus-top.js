@@ -233,9 +233,12 @@
       if (this.initialized) return;
       this.initialized = true;
       try {
-        this.groups = asArray(window.NEXUS_GROUPS);
-        this.apps = asArray(window.NEXUS_APPS);
-        this.globalActions = asArray(window.NEXUS_GLOBAL_ACTIONS);
+        this.allGroups = asArray(window.NEXUS_GROUPS);
+        this.allApps = asArray(window.NEXUS_APPS);
+        this.allGlobalActions = asArray(window.NEXUS_GLOBAL_ACTIONS);
+        this.groups = this.allGroups.slice();
+        this.apps = this.allApps.slice();
+        this.globalActions = this.allGlobalActions.slice();
         this.aliases = window.NEXUS_APP_ALIASES || {};
         if (!this.groups.length || !this.apps.length) throw new Error('NEXUS app configuration is unavailable.');
         preloadTabButtonImages();
@@ -258,6 +261,15 @@
         this.bind();
         this.renderAll();
         this.applyEnvironment();
+        this.applyAuthAccess();
+
+        if (window.ONEAPP_AUTH?.ready) {
+          window.ONEAPP_AUTH.ready.then(() => {
+            this.applyAuthAccess();
+            this.renderAll();
+            this.renderAuth();
+          });
+        }
 
         api._instance = this;
         api._statusQueue.splice(0).forEach((detail) => this.receiveStatus(detail));
@@ -285,6 +297,36 @@
       return LEGACY_GROUP_IDS[value] || (this.groups.some((group) => group.id === value) ? value : '');
     }
 
+    applyAuthAccess() {
+      const auth = window.ONEAPP_AUTH;
+      if (!auth?.session?.user) return;
+      this.groups = this.allGroups.filter((group) => auth.canUseGroup(group.id));
+      this.apps = this.allApps.filter((app) => auth.canUseApp(app.id));
+      const allowedAppIds = new Set(this.apps.map((app) => app.id));
+      this.globalActions = this.allGlobalActions.filter((action) => allowedAppIds.has(action.appId));
+      this.currentApp = this.apps.find((app) => app.id === this.currentAppId) || null;
+      this.currentGlobalAction = this.globalActions.find((action) => action.appId === this.currentAppId) || null;
+      this.currentGroupId = this.currentGlobalAction ? '' : (this.currentApp?.groupId || this.resolveLegacyGroup(this.declaredAppId));
+    }
+
+    renderAuth() {
+      const user = window.ONEAPP_AUTH?.session?.user;
+      const userAction = this.root.querySelector('.auth-user');
+      const adminAction = this.root.querySelector('.auth-admin');
+      const logoutAction = this.root.querySelector('.auth-logout');
+      if (!user) {
+        userAction.hidden = true;
+        adminAction.hidden = true;
+        logoutAction.hidden = true;
+        return;
+      }
+      userAction.hidden = false;
+      logoutAction.hidden = false;
+      adminAction.hidden = user.role !== 'OWNER_MASTER';
+      userAction.querySelector('.action-label').textContent = user.displayName || user.loginId;
+      userAction.title = `${user.displayName || user.loginId} · ${user.role === 'OWNER_MASTER' ? '마스터' : '사용자'}`;
+    }
+
     shellMarkup() {
       const stylesheet = new URL(`nexus-top.css?v=${VERSION}`, base);
       const policyStylesheet = new URL(`nexus-top-navigation.css?v=${VERSION}`, base);
@@ -292,7 +334,7 @@
         <link rel="stylesheet" href="${stylesheet}">
         <link rel="stylesheet" href="${policyStylesheet}">
         <header class="top" aria-label="NEXUS 공통 헤더">
-          <a class="brand" href="https://oneapp.orderz.co.kr/nexus/" aria-label="NEXUS 홈" data-navigate data-target-app="">
+          <a class="brand" href="https://oneapp.orderz.co.kr/nexus/home/" aria-label="NEXUS 업무 홈" data-navigate data-target-app="">
             <img src="/nexus/assets/brand/oneapp-nexus-dark.svg" alt="ONEAPP NEXUS">
           </a>
           <nav class="nav" aria-label="업무 메뉴">
@@ -316,6 +358,9 @@
             <button class="action" type="button" data-open="settings" aria-label="설정" aria-haspopup="dialog" aria-expanded="false">
               <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M19 13v-2l2-2-2-3-3 1-2-1-1-3h-3L9 6 7 7 4 6 2 9l2 2v2l-2 2 2 3 3-1 2 1 1 3h3l1-3 2-1 3 1 2-3-2-2zm-7 2a3 3 0 110-6 3 3 0 010 6z"/></svg><span class="action-label">설정</span>
             </button>
+            <a class="action auth-admin" href="https://oneapp.orderz.co.kr/nexus/admin/" aria-label="마스터 관리" data-navigate hidden><span class="action-label">마스터 관리</span></a>
+            <a class="action auth-user" href="https://oneapp.orderz.co.kr/nexus/home/" aria-label="업무 홈" data-navigate hidden><span class="action-label">사용자</span></a>
+            <button class="action auth-logout" type="button" aria-label="로그아웃" hidden><span class="action-label">로그아웃</span></button>
           </div>
         </header>
 
@@ -424,6 +469,7 @@
       this.renderStatus();
       this.renderApps();
       this.renderSettings();
+      this.renderAuth();
     }
 
     logoPath(record, colorMode) {
@@ -683,6 +729,10 @@
     }
 
     handleClick(event) {
+      if (event.target.closest('.auth-logout')) {
+        window.ONEAPP_AUTH?.logout();
+        return;
+      }
       const openButton = event.target.closest('[data-open]');
       if (openButton) {
         this.togglePanel(openButton.dataset.open, openButton);

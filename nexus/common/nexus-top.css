@@ -141,9 +141,14 @@ button, a { -webkit-tap-highlight-color: transparent; }
   cursor: pointer;
   font-size: 11px;
   white-space: nowrap;
+  text-decoration: none;
 }
 .action:hover, .action[aria-expanded="true"] { color: #fff; background: rgb(255 255 255 / 5%); }
 .action svg { width: 14px; height: 14px; fill: currentColor; }
+.auth-admin { color: #9ee6d7; }
+.auth-user { max-width: 112px; overflow: hidden; text-overflow: ellipsis; }
+.auth-user .action-label { overflow: hidden; text-overflow: ellipsis; }
+.auth-logout { min-width: 58px; }
 .status-action { min-width: 86px; }
 .status-dot {
   width: 8px;
