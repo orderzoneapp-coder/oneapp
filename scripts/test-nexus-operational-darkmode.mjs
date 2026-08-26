@@ -23,7 +23,7 @@ for (const [file, app] of maintainedPages) {
   assert.match(source, new RegExp(`<html[^>]+data-nexus-app="${app}"`), `${file} must opt into its maintained application scope`);
   assert.match(source, /\/nexus\/common\/nexus-theme-init\.js/);
   assert.match(source, /\/nexus\/common\/oneapp-design-tokens\.css/);
-  assert.match(source, /\/nexus\/common\/nexus-operational-theme\.css\?v=1\.0\.0/);
+  assert.match(source, /\/nexus\/common\/nexus-operational-theme\.css\?v=1\.0\.\d+/);
   assert.ok(source.indexOf('nexus-theme-init.js') < source.indexOf('<style'), `${file} must resolve the saved theme before first-paint styles`);
   const tailwindIndex = source.indexOf('cdn.tailwindcss.com');
   if (tailwindIndex >= 0) {
@@ -87,6 +87,15 @@ const contrast = (first, second) => {
   return (bright + 0.05) / (dark + 0.05);
 };
 const darkTokens = cssVariables('html[data-nexus-theme="dark"]');
+
+const maintainedScope = operationalCss.match(/html\[data-nexus-theme="dark"\]\[data-nexus-app="orderq"\],[\s\S]*?\{([\s\S]*?)\n\}/);
+assert.ok(maintainedScope, 'Maintained apps need a shared low-chroma dark palette');
+for (const token of [
+  '--nexus-info', '--nexus-info-bg', '--nexus-accent', '--nexus-accent-bg',
+  '--nexus-cyan', '--nexus-cyan-bg', '--nexus-orange', '--nexus-orange-bg'
+]) {
+  assert.match(maintainedScope[1], new RegExp(`${token}:\\s*#[0-9a-f]{6}`, 'i'), `Maintained palette must define ${token}`);
+}
 const contrastEvidence = [
   ['nexus-text', 'nexus-page-bg'],
   ['nexus-text', 'nexus-panel-bg'],
