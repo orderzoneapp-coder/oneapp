@@ -19,6 +19,14 @@ function bridge(authority, calls = []) {
 
 const authority = makeAuthority({ entities: baseEntities() });
 const credentials = configureAuthority(authority);
+authority.context.oneappNexusGatewayRequire = () => ({ actorId: 'NEXUS_GATEWAY', roleIds: ['DATAOPS_WRITE'],
+  tokenDigest: 'a'.repeat(64), allowedScope: { companyId: 'ONEAPP' }, scopeDigest: 'b'.repeat(64), deviceId: 'NEXUS_GATEWAY', environment: 'PRODUCTION' });
+const gatewayPublishAuth = authority.context.dataOpsSituationRequireAuth({
+  actorId: 'NEXUS_GATEWAY', nexusRequest: { contractVersion: 'NEXUS_AUTH_V2' }
+}, 'DATAOPS_SITUATION_PUBLISH', authority.properties);
+assert.deepEqual([...gatewayPublishAuth.roleIds], ['DATAOPS_SITUATION_PUBLISH', 'DATAOPS_SITUATION_READ', 'DATAOPS_WRITE'],
+  'a verified Gateway WRITE credential derives both publish and required read-evidence roles');
+delete authority.context.oneappNexusGatewayRequire;
 const calls = [];
 const browser = loadBrowserModule({ fetch: bridge(authority, calls), expected, serviceCredential: credentials });
 assert.equal(browser.DATAOPS_SITUATION_V2_MODULE.hasRuntimeCredential(), false, 'reload starts without credential');
