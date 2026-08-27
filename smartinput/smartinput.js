@@ -13,6 +13,16 @@ import { recognizeOcrDocument, verifiedRowsToParserLines } from './ocr-document-
 import { parseStructuredSheet } from './structured-sheet-parser.js?v=0.1.1';
 import { buildGridPastePlan } from './grid-clipboard.js?v=0.1.0';
 import {
+  calculateColumnHide,
+  createSelection,
+  insertRowsAbove,
+  moveRangeEnd,
+  removeRowsById,
+  restoreColumnLeft,
+  selectRange,
+  trimSelection
+} from './worktable-core.js?v=0.1.0';
+import {
   isPurchaseMetaSheet,
   joinPurchaseMeta,
   readPurchaseMeta,
@@ -85,8 +95,9 @@ const methodButtons = [...document.querySelectorAll('[data-method]')];
 const sourceTextInput = $('sourceTextInput');
 const inputRows = $('inputRows');
 const parserCard = document.querySelector('.parser-card');
+const initialDraft = loadDraft();
 const state = {
-  draft: loadDraft(),
+  draft: initialDraft,
   customers: [],
   products: [],
   catalogStatus: 'LOADING',
@@ -110,7 +121,9 @@ const state = {
   gridSearch: '',
   sourceImages: { order: null, purchase: null, sale: null, estimate: null },
   sourceImageRecords: new Map(),
-  selectedRowIds: new Set(),
+  worktableSelection: createSelection(initialDraft.activeMode),
+  worktableRowDrag: null,
+  worktableColumnSelectionDrag: null,
   photoView: { zoom: 1, rotation: 0, activeRegion: null, detailColumns: false, ocrOpen: false },
   saveTimer: null,
   draftDirty: false,
@@ -154,6 +167,16 @@ const ACTIVITY_LABELS = {
 };
 
 const DEFAULT_INPUT_ROW_ID = '__SMARTINPUT_DEFAULT_ROW__';
+const WORKTABLE_PROTECTED_COLUMN_KEYS = Object.freeze(['productSearch', 'itemCode', 'status', 'rowAction']);
+const WORKTABLE_GROUP_CONTEXT_FIELDS = Object.freeze([
+  'sourceBatchId', 'sourceDocumentKey', 'sourceVoucherIndex', 'sourceSheetName', 'manualSplitKey',
+  'rowCustomerCode', 'rowCustomerId', 'rowCustomerName',
+  'deliveryCustomerId', 'deliveryCustomerCode', 'deliveryCustomerName',
+  'billingCustomerId', 'billingCustomerCode', 'billingCustomerName',
+  'supplierCustomerId', 'supplierCustomerCode', 'supplierCustomerName',
+  'salesCustomerId', 'salesCustomerCode', 'salesCustomerName',
+  'rowVoucherDate', 'rowDeliveryDate', 'rowWarehouseId', 'rowWarehouseCode', 'rowVoucherNo'
+]);
 const MOBILE_LAYOUT_QUERY = '(max-width: 820px), (max-width: 1024px) and (max-height: 540px)';
 const MOBILE_PARSER_COLLAPSED_HEIGHT = 68;
 const MOBILE_PARSER_DEFAULT_RATIO = .325;
@@ -238,6 +261,232 @@ function mobileUi() {
   current.sourceByMode = current.sourceByMode && typeof current.sourceByMode === 'object' ? current.sourceByMode : {};
   state.draft.ui.mobile = current;
   return current;
+}
+
+function visibleWorktableRows() {
+  return filterVoucherRows(modeDraft().rows, state.gridSearch);
+}
+
+function visibleWorktableRowIds() {
+  return visibleWorktableRows().map(row => row.rowId);
+}
+
+function visibleWorktableColumnKeys() {
+  return [...document.querySelectorAll('#tableScroll thead th[data-worktable-column]')]
+    .filter(header => !header.classList.contains('is-column-hidden'))
+    .map(header => header.dataset.worktableColumn);
+}
+
+function selectedWorktableRowIds() {
+  return new Set(state.worktableSelection.type === 'ROW' ? state.worktableSelection.selectedRowIds : []);
+}
+
+function selectedWorktableColumnKeys() {
+  return new Set(state.worktableSelection.type === 'COLUMN' ? state.worktableSelection.selectedColumnKeys : []);
+}
+
+function worktableColumnLabel(columnKey) {
+  if (columnKey === 'productSearch') return '상품 검색';
+  if (columnKey === 'status') return '상태';
+  if (columnKey === 'rowAction') return '행 작업';
+  return layoutDefinitions('voucher').find(field => field.id === columnKey)?.label || columnKey;
+}
+
+function hiddenVoucherColumnDefinitions() {
+  const visible = new Set(voucherColumnsForMode());
+  return layoutDefinitions('voucher').filter(field => !visible.has(field.id));
+}
+
+function closeHiddenColumnMenu() {
+  const menu = $('hiddenColumnMenu');
+  const button = $('addHiddenColumnButton');
+  if (menu) menu.hidden = true;
+  if (button) button.setAttribute('aria-expanded', 'false');
+}
+
+function renderHiddenColumnMenu() {
+  const menu = $('hiddenColumnMenu');
+  if (!menu) return;
+  const definitions = hiddenVoucherColumnDefinitions();
+  menu.innerHTML = definitions.map(field => (
+    `<button type="button" role="menuitem" data-restore-column="${esc(field.id)}">${esc(field.label)}</button>`
+  )).join('');
+  $('addHiddenColumnButton').disabled = definitions.length === 0;
+  $('addHiddenColumnButton').title = definitions.length ? '숨긴 기존 열 한 개를 복원합니다.' : '추가할 숨김 열이 없습니다';
+}
+
+function applyWorktableSelectionHighlights() {
+  document.querySelectorAll('#tableScroll .is-worktable-column-selected')
+    .forEach(element => element.classList.remove('is-worktable-column-selected'));
+  inputRows.querySelectorAll('.is-worktable-row-selected')
+    .forEach(element => element.classList.remove('is-worktable-row-selected'));
+  inputRows.querySelectorAll('[data-row-header]').forEach(button => button.setAttribute('aria-pressed', 'false'));
+  document.querySelectorAll('#tableScroll .column-select-target').forEach(button => button.setAttribute('aria-pressed', 'false'));
+
+  if (state.worktableSelection.type === 'ROW') {
+    selectedWorktableRowIds().forEach(rowId => {
+      const row = inputRows.querySelector(`[data-row-id="${CSS.escape(rowId)}"]`);
+      row?.classList.add('is-worktable-row-selected');
+      row?.querySelector('[data-row-header]')?.setAttribute('aria-pressed', 'true');
+    });
+  } else if (state.worktableSelection.type === 'COLUMN') {
+    selectedWorktableColumnKeys().forEach(columnKey => {
+      document.querySelectorAll(`#tableScroll [data-column="${CSS.escape(columnKey)}"], #tableScroll [data-worktable-column="${CSS.escape(columnKey)}"]`)
+        .forEach(element => element.classList.add('is-worktable-column-selected'));
+      document.querySelector(`#tableScroll .column-select-target[data-select-column="${CSS.escape(columnKey)}"]`)
+        ?.setAttribute('aria-pressed', 'true');
+    });
+  }
+}
+
+function syncWorktableSelectionControls() {
+  state.worktableSelection = trimSelection(state.worktableSelection, {
+    mode: state.draft.activeMode,
+    visibleRowIds: visibleWorktableRowIds(),
+    visibleColumnKeys: visibleWorktableColumnKeys()
+  });
+  const selection = state.worktableSelection;
+  const rowCount = selection.type === 'ROW' ? selection.selectedRowIds.length : 0;
+  const columnCount = selection.type === 'COLUMN' ? selection.selectedColumnKeys.length : 0;
+  const bar = $('worktableSelectionBar');
+  const rowInsert = $('insertSelectedRows');
+  const rowDelete = $('deleteSelectedRows');
+  const columnPicker = $('hiddenColumnPicker');
+  const columnDelete = $('hideSelectedColumns');
+  const notice = $('worktableSelectionNotice');
+  const corner = $('selectAllRows');
+  const visibleRowIds = visibleWorktableRowIds();
+
+  bar.hidden = !selection.type;
+  rowInsert.hidden = selection.type !== 'ROW';
+  rowDelete.hidden = selection.type !== 'ROW';
+  columnPicker.hidden = selection.type !== 'COLUMN';
+  columnDelete.hidden = selection.type !== 'COLUMN';
+  corner.disabled = visibleRowIds.length === 0;
+  corner.setAttribute('aria-pressed', String(Boolean(visibleRowIds.length && rowCount === visibleRowIds.length)));
+  if (selection.type === 'ROW') {
+    $('worktableSelectionLabel').textContent = `${rowCount.toLocaleString('ko-KR')}개 행 선택`;
+    rowInsert.textContent = `행 추가(${rowCount.toLocaleString('ko-KR')})`;
+    rowDelete.textContent = `선택 행 삭제(${rowCount.toLocaleString('ko-KR')})`;
+    notice.textContent = '선택 범위의 첫 행 바로 위에 같은 수의 수동 입력행을 추가합니다.';
+    closeHiddenColumnMenu();
+  } else if (selection.type === 'COLUMN') {
+    $('worktableSelectionLabel').textContent = `${columnCount.toLocaleString('ko-KR')}개 열 선택`;
+    columnDelete.textContent = `선택 열 삭제(${columnCount.toLocaleString('ko-KR')})`;
+    notice.textContent = '열 삭제는 현재 전표 화면에서만 숨기며 행 데이터와 저장 payload는 유지합니다.';
+    renderHiddenColumnMenu();
+  } else {
+    $('worktableSelectionLabel').textContent = '선택 없음';
+    notice.textContent = '';
+    closeHiddenColumnMenu();
+  }
+  applyWorktableSelectionHighlights();
+}
+
+function clearWorktableSelection({ sync = true } = {}) {
+  state.worktableSelection = createSelection(state.draft.activeMode);
+  state.worktableRowDrag = null;
+  state.worktableColumnSelectionDrag = null;
+  closeHiddenColumnMenu();
+  if (sync) syncWorktableSelectionControls();
+}
+
+function selectWorktableRow(rowId, { extend = false, anchorRowId } = {}) {
+  const order = visibleWorktableRowIds();
+  state.worktableSelection = selectRange(extend ? state.worktableSelection : createSelection(state.draft.activeMode), {
+    mode: state.draft.activeMode,
+    type: 'ROW',
+    orderedKeys: order,
+    endKey: rowId,
+    anchorKey: extend ? anchorRowId : (anchorRowId || rowId)
+  });
+  closeHiddenColumnMenu();
+  syncWorktableSelectionControls();
+}
+
+function selectWorktableColumn(columnKey, { extend = false, anchorColumnKey } = {}) {
+  const order = visibleWorktableColumnKeys();
+  state.worktableSelection = selectRange(extend ? state.worktableSelection : createSelection(state.draft.activeMode), {
+    mode: state.draft.activeMode,
+    type: 'COLUMN',
+    orderedKeys: order,
+    endKey: columnKey,
+    anchorKey: extend ? anchorColumnKey : (anchorColumnKey || columnKey)
+  });
+  syncWorktableSelectionControls();
+}
+
+function beginWorktableRowSelection(event) {
+  const button = event.target.closest('[data-row-header]');
+  if (!button || button.disabled || (event.pointerType === 'mouse' && event.button !== 0)) return;
+  event.preventDefault();
+  const rowId = button.dataset.rowHeader;
+  selectWorktableRow(rowId, { extend: event.shiftKey });
+  state.worktableRowDrag = { pointerId: event.pointerId, anchorRowId: state.worktableSelection.anchorRowId };
+  button.focus({ preventScroll: true });
+}
+
+function extendWorktableRowSelection(event) {
+  const drag = state.worktableRowDrag;
+  const target = document.elementFromPoint?.(event.clientX, event.clientY) || event.target;
+  const button = target?.closest?.('[data-row-header]');
+  if (!button || !drag || button.disabled || event.pointerId !== drag.pointerId) return;
+  selectWorktableRow(button.dataset.rowHeader, { extend: true, anchorRowId: drag.anchorRowId });
+}
+
+function beginWorktableColumnSelection(event) {
+  const button = event.target.closest('.column-select-target[data-select-column]');
+  if (!button || (event.pointerType === 'mouse' && event.button !== 0)) return;
+  event.preventDefault();
+  const columnKey = button.dataset.selectColumn;
+  selectWorktableColumn(columnKey, { extend: event.shiftKey });
+  state.worktableColumnSelectionDrag = { pointerId: event.pointerId, anchorColumnKey: state.worktableSelection.anchorColumnKey };
+  button.focus({ preventScroll: true });
+}
+
+function extendWorktableColumnSelection(event) {
+  const drag = state.worktableColumnSelectionDrag;
+  const target = document.elementFromPoint?.(event.clientX, event.clientY) || event.target;
+  const button = target?.closest?.('.column-select-target[data-select-column]');
+  if (!button || !drag || event.pointerId !== drag.pointerId) return;
+  selectWorktableColumn(button.dataset.selectColumn, { extend: true, anchorColumnKey: drag.anchorColumnKey });
+}
+
+function finishWorktableSelectionDrag(event) {
+  if (!event || !state.worktableRowDrag || event.pointerId === state.worktableRowDrag.pointerId) state.worktableRowDrag = null;
+  if (!event || !state.worktableColumnSelectionDrag || event.pointerId === state.worktableColumnSelectionDrag.pointerId) state.worktableColumnSelectionDrag = null;
+}
+
+function handleWorktableRowHeaderKeydown(event) {
+  const button = event.target.closest('[data-row-header]');
+  if (!button || button.disabled) return;
+  const rowId = button.dataset.rowHeader;
+  if (event.shiftKey && ['ArrowUp', 'ArrowDown'].includes(event.key)) {
+    event.preventDefault();
+    const target = moveRangeEnd(visibleWorktableRowIds(), rowId, event.key === 'ArrowUp' ? -1 : 1);
+    if (!target) return;
+    selectWorktableRow(target, { extend: true });
+    inputRows.querySelector(`[data-row-header="${CSS.escape(target)}"]`)?.focus({ preventScroll: true });
+  } else if (event.key === 'Enter' || event.key === ' ') {
+    event.preventDefault();
+    selectWorktableRow(rowId, { anchorRowId: rowId });
+  }
+}
+
+function handleWorktableColumnHeaderKeydown(event) {
+  const button = event.target.closest('.column-select-target[data-select-column]');
+  if (!button) return;
+  const columnKey = button.dataset.selectColumn;
+  if (event.shiftKey && ['ArrowLeft', 'ArrowRight'].includes(event.key)) {
+    event.preventDefault();
+    const target = moveRangeEnd(visibleWorktableColumnKeys(), columnKey, event.key === 'ArrowLeft' ? -1 : 1);
+    if (!target) return;
+    selectWorktableColumn(target, { extend: true });
+    document.querySelector(`.column-select-target[data-select-column="${CSS.escape(target)}"]`)?.focus({ preventScroll: true });
+  } else if (event.key === 'Enter' || event.key === ' ') {
+    event.preventDefault();
+    selectWorktableColumn(columnKey, { anchorColumnKey: columnKey });
+  }
 }
 
 function mobileSourceUi(mode = state.draft.activeMode) {
@@ -819,26 +1068,49 @@ function columnWidth(fieldId) {
 }
 
 function ensureColumnResizeHandles() {
-  document.querySelectorAll('#tableScroll thead th[data-column]').forEach(th => {
+  document.querySelectorAll('#tableScroll thead th[data-column], #tableScroll thead th[data-worktable-column="rowAction"]').forEach(th => {
+    const columnKey = th.dataset.column || th.dataset.worktableColumn;
+    const label = th.dataset.columnLabel || worktableColumnLabel(columnKey);
+    th.dataset.columnLabel = label;
+    th.dataset.worktableColumn = columnKey;
+    th.draggable = false;
+
+    if (!th.querySelector('.column-select-target')) {
+      th.replaceChildren();
+      const body = document.createElement('button');
+      body.type = 'button';
+      body.className = 'column-select-target';
+      body.dataset.selectColumn = columnKey;
+      body.setAttribute('aria-label', `${label} 열 선택`);
+      body.setAttribute('aria-pressed', 'false');
+      body.textContent = columnKey === 'rowAction' ? '⋯' : label;
+      th.append(body);
+    }
+
+    if (!th.dataset.column) return;
     th.classList.add('column-resizable');
-    if (th.dataset.column === 'productSearch') {
-      th.classList.add('column-fixed');
-      th.classList.remove('column-draggable');
-      th.draggable = false;
-      delete th.dataset.columnDrag;
-    } else if (th.dataset.column !== 'status') {
-      th.classList.remove('column-fixed');
-      th.classList.add('column-draggable');
-      th.draggable = true;
-      th.dataset.columnDrag = th.dataset.column;
+    const reorderable = !['productSearch', 'status'].includes(columnKey);
+    th.classList.toggle('column-fixed', !reorderable);
+    th.classList.toggle('column-draggable', reorderable);
+    th.classList.toggle('column-has-drag', reorderable);
+    if (reorderable && !th.querySelector('.column-drag-handle')) {
+      const dragHandle = document.createElement('button');
+      dragHandle.type = 'button';
+      dragHandle.className = 'column-drag-handle';
+      dragHandle.dataset.columnDrag = columnKey;
+      dragHandle.draggable = true;
+      dragHandle.setAttribute('aria-label', `${label} 열 순서 이동`);
+      dragHandle.title = `${label} 열 순서 이동`;
+      dragHandle.textContent = '⋮⋮';
+      th.append(dragHandle);
     }
     if (th.querySelector('.column-resize-handle')) return;
     const handle = document.createElement('span');
     handle.className = 'column-resize-handle';
-    handle.dataset.resizeColumn = th.dataset.column;
+    handle.dataset.resizeColumn = columnKey;
     handle.setAttribute('role', 'separator');
     handle.setAttribute('tabindex', '0');
-    handle.setAttribute('aria-label', `${th.textContent.trim()} 열 너비 조정`);
+    handle.setAttribute('aria-label', `${label} 열 너비 조정`);
     handle.setAttribute('aria-orientation', 'vertical');
     th.append(handle);
   });
@@ -884,19 +1156,20 @@ function clearColumnDragMarkers() {
 }
 
 function beginColumnDrag(event) {
-  const header = event.target.closest('th[data-column-drag]');
-  if (!header || event.target.closest('.column-resize-handle') || header.classList.contains('is-column-hidden')) {
+  const handle = event.target.closest('.column-drag-handle[data-column-drag]');
+  const header = handle?.closest('th[data-column]');
+  if (!handle || !header || header.classList.contains('is-column-hidden')) {
     event.preventDefault();
     return;
   }
-  state.columnDrag = { mode: state.draft.activeMode, fieldId: header.dataset.columnDrag };
+  state.columnDrag = { mode: state.draft.activeMode, fieldId: handle.dataset.columnDrag };
   header.classList.add('column-dragging');
   event.dataTransfer.effectAllowed = 'move';
-  event.dataTransfer.setData('text/plain', header.dataset.columnDrag);
+  event.dataTransfer.setData('text/plain', handle.dataset.columnDrag);
 }
 
 function moveColumnDrag(event) {
-  const header = event.target.closest('th[data-column-drag]');
+  const header = event.target.closest('th[data-column]');
   if (!header || !state.columnDrag || state.columnDrag.mode !== state.draft.activeMode || header.classList.contains('is-column-hidden')) return;
   event.preventDefault();
   document.querySelectorAll('#tableScroll .column-drop-before, #tableScroll .column-drop-after')
@@ -907,12 +1180,12 @@ function moveColumnDrag(event) {
 }
 
 async function finishColumnDrop(event) {
-  const header = event.target.closest('th[data-column-drag]');
+  const header = event.target.closest('th[data-column]');
   const drag = state.columnDrag;
   if (!header || !drag || drag.mode !== state.draft.activeMode) return;
   event.preventDefault();
   const sourceId = drag.fieldId;
-  const targetId = header.dataset.columnDrag;
+  const targetId = header.dataset.column;
   const order = [...voucherColumnsForMode()];
   if (sourceId === targetId || !order.includes(sourceId) || !order.includes(targetId)) {
     clearColumnDragMarkers();
@@ -1059,6 +1332,7 @@ function applyFormLayout() {
   $('detailColumnsButton').hidden = !photoActive;
   $('detailColumnsButton').textContent = state.photoView.detailColumns ? '기본 열' : '상세 열';
   $('detailColumnsButton').setAttribute('aria-pressed', String(state.photoView.detailColumns));
+  syncWorktableSelectionControls();
 }
 
 function updateMethod(method, { persist = true } = {}) {
@@ -2382,7 +2656,7 @@ function openDraftListDialog() {
         state.draft.activeMode = item.mode;
         state.draft.modes[item.mode] = contract.normalizeModeDraft(item.mode, item);
         restoreSourceImageForMode(item.mode);
-        state.selectedRowIds.clear();
+        clearWorktableSelection({ sync: false });
         saveDraftNow();
         renderMode();
         dialog.close();
@@ -2839,7 +3113,7 @@ function loadCatalogRecord(record) {
   saveUi.estimateSuggestedName = estimateTitle(record);
   resetEstimateSaveAttempt(saveUi);
   state.sourceImages.estimate = null;
-  state.selectedRowIds.clear();
+  clearWorktableSelection({ sync: false });
   clearTimeout(state.autoAnalyzeTimer);
   state.analysisRequestId += 1;
   state.pendingImageEvidence = null;
@@ -2883,7 +3157,7 @@ function startNewCatalog({ preserveLoaded = true } = {}) {
   saveUi.estimateSuggestedName = '';
   resetEstimateSaveAttempt(saveUi);
   state.sourceImages.estimate = null;
-  state.selectedRowIds.clear();
+  clearWorktableSelection({ sync: false });
   resetPhotoView();
   saveDraftNow();
   renderMode();
@@ -2972,7 +3246,8 @@ function captureGridPasteUndo() {
     mode: state.draft.activeMode,
     rows: cloneGridValue(current.rows),
     batches: cloneGridValue(current.batches),
-    selectedRowIds: [...state.selectedRowIds],
+    worktableSelection: cloneGridValue(state.worktableSelection),
+    selectedRowIds: state.worktableSelection.type === 'ROW' ? [...state.worktableSelection.selectedRowIds] : [],
     activeCellId: modeUi().activeCellId || ''
   };
   syncGridPasteUndoButton();
@@ -2984,7 +3259,14 @@ function undoGridPaste() {
   const current = modeDraft();
   current.rows = snapshot.rows.map(row => contract.normalizeRow(row));
   current.batches = cloneGridValue(snapshot.batches);
-  state.selectedRowIds = new Set(snapshot.selectedRowIds);
+  state.worktableSelection = snapshot.worktableSelection
+    ? cloneGridValue(snapshot.worktableSelection)
+    : {
+        ...createSelection(state.draft.activeMode),
+        type: snapshot.selectedRowIds?.length ? 'ROW' : null,
+        anchorRowId: snapshot.selectedRowIds?.[0] || null,
+        selectedRowIds: [...(snapshot.selectedRowIds || [])]
+      };
   modeUi().activeCellId = snapshot.activeCellId;
   state.gridPasteUndo = null;
   renderRows();
@@ -2994,25 +3276,148 @@ function undoGridPaste() {
 }
 
 function syncRowSelectionControls() {
-  const rowIds = modeDraft().rows.map(row => row.rowId);
-  state.selectedRowIds = new Set([...state.selectedRowIds].filter(rowId => rowIds.includes(rowId)));
-  const selectedCount = state.selectedRowIds.size;
-  const selectAll = $('selectAllRows');
-  selectAll.checked = Boolean(rowIds.length && selectedCount === rowIds.length);
-  selectAll.indeterminate = selectedCount > 0 && selectedCount < rowIds.length;
-  selectAll.disabled = !rowIds.length;
-  $('deleteSelectedRows').disabled = !selectedCount;
+  syncWorktableSelectionControls();
 }
 
 function deleteSelectedGridRows() {
-  if (!state.selectedRowIds.size) return;
+  const selectedIds = state.worktableSelection.type === 'ROW'
+    ? state.worktableSelection.selectedRowIds.filter(rowId => modeDraft().rows.some(row => row.rowId === rowId))
+    : [];
+  if (!selectedIds.length) return;
+  if (!window.confirm(`현재 작업테이블에서 ${selectedIds.length.toLocaleString('ko-KR')}개 행을 삭제합니다.`)) return;
   invalidateGridPasteUndo();
-  modeDraft().rows = modeDraft().rows.filter(row => !state.selectedRowIds.has(row.rowId));
+  modeDraft().rows = removeRowsById(modeDraft().rows, selectedIds);
   modeDraft().rows = contract.markDuplicatePossibilities(modeDraft().rows);
-  state.selectedRowIds.clear();
+  clearWorktableSelection({ sync: false });
   renderRows();
   saveDraftNow();
-  toast('선택한 품목을 삭제했습니다.', 'success');
+  toast(`현재 작업테이블에서 ${selectedIds.length.toLocaleString('ko-KR')}개 행을 삭제했습니다.`, 'success');
+}
+
+function selectedManualGroupContext(selectedRows = []) {
+  if (!selectedRows.length) return {};
+  const groups = groupVoucherRows(state.draft.activeMode, selectedRows, modeDraft().header);
+  const first = selectedRows[0];
+  const hasExplicitContext = WORKTABLE_GROUP_CONTEXT_FIELDS.some(field => field !== 'sourceVoucherIndex' && String(first[field] ?? '').trim());
+  if (!hasExplicitContext || groups.length !== 1) return {};
+  return Object.fromEntries(WORKTABLE_GROUP_CONTEXT_FIELDS
+    .filter(field => first[field] !== undefined && first[field] !== null && first[field] !== '')
+    .map(field => [field, cloneGridValue(first[field])]));
+}
+
+function insertSelectedGridRows() {
+  const selection = state.worktableSelection;
+  if (selection.type !== 'ROW' || !selection.selectedRowIds.length) return;
+  invalidateGridPasteUndo();
+  const current = modeDraft();
+  const selectedSet = new Set(selection.selectedRowIds);
+  const selectedRows = current.rows.filter(row => selectedSet.has(row.rowId));
+  const count = selectedRows.length;
+  if (!count) return clearWorktableSelection();
+  const groupContext = selectedManualGroupContext(selectedRows);
+  const batch = contract.createBatch({
+    sequence: current.batches.length + 1,
+    method: 'direct',
+    sourceType: 'MANUAL',
+    sourceName: '작업테이블 직접입력',
+    sourceRole: 'MANUAL_WORKTABLE',
+    sourceDocumentKey: groupContext.sourceDocumentKey || ''
+  });
+  const sourceBatchId = groupContext.sourceBatchId || batch.batchId;
+  const lines = Array.from({ length: count }, () => ({
+    ...groupContext,
+    sourceBatchId,
+    sourceType: 'MANUAL',
+    rawText: '',
+    itemName: '',
+    quantity: null,
+    inputOwnership: 'USER'
+  }));
+  const manualRows = contract.applyParserResults([], batch, lines);
+  current.batches.push(batch);
+  current.rows = contract.markDuplicatePossibilities(insertRowsAbove(current.rows, selection.selectedRowIds, manualRows));
+  state.worktableSelection = selectRange(createSelection(state.draft.activeMode), {
+    mode: state.draft.activeMode,
+    type: 'ROW',
+    orderedKeys: current.rows.map(row => row.rowId),
+    endKey: manualRows[manualRows.length - 1].rowId,
+    anchorKey: manualRows[0].rowId
+  });
+  renderRows({ restoreFocus: false });
+  saveDraftNow();
+  gridInput(manualRows[0].rowId, 'productSearch')?.focus({ preventScroll: true });
+  toast(`선택 범위 위에 수동 입력행 ${count.toLocaleString('ko-KR')}개를 추가했습니다.`, 'success');
+}
+
+async function persistVoucherColumnsForCurrentMode(nextOrder, successMessage) {
+  const mode = state.draft.activeMode;
+  const previousSettings = state.settings;
+  const voucherColumnsByMode = { ...(state.settings.voucherColumnsByMode || {}), [mode]: [...nextOrder] };
+  state.settings = contract.normalizeSettings({
+    ...state.settings,
+    voucherColumns: mode === 'order' ? [...nextOrder] : state.settings.voucherColumns,
+    voucherColumnsByMode
+  });
+  renderRows({ restoreFocus: false });
+  try {
+    await saveSettings(state.settings);
+    setSaveState('저장됨', 'saved');
+    toast(successMessage, 'success');
+    return true;
+  } catch (_) {
+    state.settings = previousSettings;
+    renderRows({ restoreFocus: false });
+    toast('열 표시 설정을 저장하지 못해 이전 상태로 복원했습니다.', 'error');
+    return false;
+  }
+}
+
+async function hideSelectedWorktableColumns() {
+  if (state.worktableSelection.type !== 'COLUMN') return;
+  const selectedKeys = [...state.worktableSelection.selectedColumnKeys];
+  const editableKeys = layoutDefinitions('voucher').filter(field => field.editable !== false).map(field => field.id);
+  const result = calculateColumnHide({
+    visibleOrder: voucherColumnsForMode(),
+    selectedColumnKeys: selectedKeys,
+    protectedColumnKeys: WORKTABLE_PROTECTED_COLUMN_KEYS,
+    editableColumnKeys: editableKeys,
+    minimumEditableColumns: 1
+  });
+  const messages = [];
+  if (result.protectedSelectedKeys.length) {
+    messages.push(`${result.protectedSelectedKeys.map(worktableColumnLabel).join(', ')} 열은 보호되어 유지했습니다.`);
+  }
+  if (result.retainedForMinimum.length) messages.push('편집 가능한 데이터 열은 최소 1개를 유지했습니다.');
+  if (!result.hiddenKeys.length) {
+    toast(messages.join(' ') || '숨길 수 있는 열이 없습니다.', 'normal');
+    return;
+  }
+  clearWorktableSelection({ sync: false });
+  await persistVoucherColumnsForCurrentMode(
+    result.visibleOrder,
+    [
+      `${result.hiddenKeys.length.toLocaleString('ko-KR')}개 열을 화면에서 숨겼습니다. 데이터는 유지됩니다.`,
+      ...messages
+    ].join(' ')
+  );
+}
+
+async function restoreHiddenWorktableColumn(columnKey) {
+  const hidden = hiddenVoucherColumnDefinitions();
+  if (!hidden.some(field => field.id === columnKey)) return;
+  const nextOrder = restoreColumnLeft({
+    visibleOrder: voucherColumnsForMode(),
+    columnKey,
+    selectedColumnKeys: state.worktableSelection.type === 'COLUMN' ? state.worktableSelection.selectedColumnKeys : []
+  });
+  state.worktableSelection = {
+    ...createSelection(state.draft.activeMode),
+    type: 'COLUMN',
+    anchorColumnKey: columnKey,
+    selectedColumnKeys: [columnKey]
+  };
+  closeHiddenColumnMenu();
+  await persistVoucherColumnsForCurrentMode(nextOrder, `${worktableColumnLabel(columnKey)} 열을 선택 범위 왼쪽에 복원했습니다.`);
 }
 
 function renderRows({ restoreFocus = true } = {}) {
@@ -3028,7 +3433,8 @@ function renderRows({ restoreFocus = true } = {}) {
   };
   const displayedRows = rows.length ? rows : [defaultRow];
   const renderedRows = rows.length ? visibleRows : displayedRows;
-  inputRows.innerHTML = renderedRows.map(row => {
+  const selectedRowIds = selectedWorktableRowIds();
+  inputRows.innerHTML = renderedRows.map((row, displayIndex) => {
     const isDefault = row.rowId === DEFAULT_INPUT_ROW_ID;
     const orderQProductMismatch = row.sourceType === 'ORDER_Q' && (
       (row.metaProductId && row.productId && row.metaProductId !== row.productId)
@@ -3044,8 +3450,9 @@ function renderRows({ restoreFocus = true } = {}) {
     const customCells = customFieldsFor('voucher').map(field => (
       `<td data-column="${esc(field.id)}"><input data-custom-row-field="${esc(field.id)}" type="${field.valueType === 'NUMBER' ? 'number' : 'text'}"${field.valueType === 'NUMBER' ? ' step="any"' : ''} value="${esc(row.customValues?.[field.id] || '')}" aria-label="${esc(field.label)}"></td>`
     )).join('');
-    return `<tr data-row-id="${esc(row.rowId)}" ${isDefault ? 'data-default-row="true"' : ''} data-status="${esc(row.matchStatus)}" class="${row.duplicatePossible ? 'is-duplicate' : ''}">
-      <td class="row-select-cell"><input type="checkbox" data-select-row="${isDefault ? '' : esc(row.rowId)}" aria-label="행 선택" ${isDefault ? 'disabled' : (state.selectedRowIds.has(row.rowId) ? 'checked' : '')}></td>
+    const rowClasses = [row.duplicatePossible ? 'is-duplicate' : '', selectedRowIds.has(row.rowId) ? 'is-worktable-row-selected' : ''].filter(Boolean).join(' ');
+    return `<tr data-row-id="${esc(row.rowId)}" ${isDefault ? 'data-default-row="true"' : ''} data-status="${esc(row.matchStatus)}" class="${rowClasses}">
+      <td class="row-select-cell" role="rowheader"><button type="button" data-row-header="${isDefault ? '' : esc(row.rowId)}" aria-label="${isDefault ? '첫 입력행' : `${displayIndex + 1}행 선택`}" aria-pressed="${String(!isDefault && selectedRowIds.has(row.rowId))}" ${isDefault ? 'disabled tabindex="-1"' : ''}>${isDefault ? '+' : (displayIndex + 1).toLocaleString('ko-KR')}</button></td>
       <td data-column="productSearch" class="product-search-cell"><input data-product-search type="search" enterkeyhint="search" value="${esc(row.itemName || row.itemCode || '')}" placeholder="코드·품명·검색어" aria-label="상품 검색" title="상품코드, 품명 또는 검색어 입력 후 Enter"></td>
       <td data-column="itemCode"><input data-field="itemCode" type="search" enterkeyhint="search" value="${esc(row.itemCode)}" aria-label="품목코드" title="입력 후 Enter로 상품 검색"></td>
       <td data-column="itemName"><input data-field="itemName" type="search" enterkeyhint="search" value="${esc(row.itemName)}" aria-label="품목명" title="입력 후 Enter로 상품 검색"></td>
@@ -3060,10 +3467,9 @@ function renderRows({ restoreFocus = true } = {}) {
       ${productCells}
       ${customCells}
       <td data-column="status"><div class="row-status"><span>${orderQProductMismatch ? 'ORDER Q 상품 불일치' : rowStatusText(row.matchStatus)}</span>${orderQProductMismatch ? `<button type="button" data-detach-orderq="${esc(row.rowId)}" title="ORDER Q 연결을 해제한 뒤 새 상품을 직접 선택합니다.">DIRECT로 연결 해제</button>` : ''}</div></td>
-      <td><button type="button" class="row-remove" data-remove-row="${isDefault ? '' : esc(row.rowId)}" aria-label="행 삭제" ${isDefault ? 'disabled tabindex="-1"' : ''}>×</button></td>
+      <td data-worktable-column="rowAction"><button type="button" class="row-remove" data-remove-row="${isDefault ? '' : esc(row.rowId)}" aria-label="행 삭제" ${isDefault ? 'disabled tabindex="-1"' : ''}>×</button></td>
     </tr>`;
   }).join('');
-  syncRowSelectionControls();
   syncGridPasteUndoButton();
   updateSummaries();
   applyFormLayout();
@@ -3202,7 +3608,7 @@ function setMode(mode) {
   state.gridPasteUndo = null;
   state.draft.activeMode = mode;
   restoreSourceImageForMode(mode);
-  state.selectedRowIds.clear();
+  clearWorktableSelection({ sync: false });
   state.activeActivity = '';
   state.pendingImageEvidence = null;
   state.pendingOcrReview = null;
@@ -3255,10 +3661,14 @@ function materializeDefaultRow(tr) {
     remove.disabled = false;
     remove.removeAttribute('tabindex');
   }
-  const selector = tr.querySelector('[data-select-row]');
-  if (selector) {
-    selector.dataset.selectRow = row.rowId;
-    selector.disabled = false;
+  const rowHeader = tr.querySelector('[data-row-header]');
+  if (rowHeader) {
+    rowHeader.dataset.rowHeader = row.rowId;
+    rowHeader.disabled = false;
+    rowHeader.removeAttribute('tabindex');
+    rowHeader.setAttribute('aria-label', '1행 선택');
+    rowHeader.setAttribute('aria-pressed', 'false');
+    rowHeader.textContent = '1';
   }
   modeUi().activeCellId = `${row.rowId}|${gridFieldId(document.activeElement) || 'productSearch'}`;
   state.draft.ui.selectedRowId = row.rowId;
@@ -3504,7 +3914,14 @@ function applyGridPaste(rawText, startRowId, startFieldId) {
     if (snapshot?.mode === state.draft.activeMode) {
       current.rows = snapshot.rows.map(row => contract.normalizeRow(row));
       current.batches = cloneGridValue(snapshot.batches);
-      state.selectedRowIds = new Set(snapshot.selectedRowIds);
+      state.worktableSelection = snapshot.worktableSelection
+        ? cloneGridValue(snapshot.worktableSelection)
+        : {
+            ...createSelection(state.draft.activeMode),
+            type: snapshot.selectedRowIds?.length ? 'ROW' : null,
+            anchorRowId: snapshot.selectedRowIds?.[0] || null,
+            selectedRowIds: [...(snapshot.selectedRowIds || [])]
+          };
       modeUi().activeCellId = snapshot.activeCellId;
     }
     state.gridPasteUndo = null;
@@ -3586,7 +4003,7 @@ function clearParserWorkspace() {
   $('fileInput').value = '';
   $('photoInput').value = '';
   state.sourceImages[state.draft.activeMode] = null;
-  state.selectedRowIds.clear();
+  clearWorktableSelection({ sync: false });
   state.pendingImageEvidence = null;
   state.pendingOcrReview = null;
   state.pendingSourceName = '';
@@ -5120,7 +5537,7 @@ async function saveOrderGroups(current, groups, submittedAt) {
   state.draft.modes.order = next;
   state.gridPasteUndo = null;
   state.sourceImages.order = null;
-  state.selectedRowIds.clear();
+  clearWorktableSelection({ sync: false });
   resetPhotoView();
   state.pendingImageEvidence = null;
   state.pendingOcrReview = null;
@@ -5289,7 +5706,7 @@ async function completeOrderLegacy() {
     state.draft.modes.order = next;
     state.gridPasteUndo = null;
     state.sourceImages.order = null;
-    state.selectedRowIds.clear();
+    clearWorktableSelection({ sync: false });
     resetPhotoView();
     state.pendingImageEvidence = null;
     state.pendingOcrReview = null;
@@ -5328,7 +5745,7 @@ function resetCurrentMode(requireConfirmation = true, successMessage = '새 입�
   }
   state.gridPasteUndo = null;
   state.sourceImages[state.draft.activeMode] = null;
-  state.selectedRowIds.clear();
+  clearWorktableSelection({ sync: false });
   resetPhotoView();
   state.pendingImageEvidence = null;
   state.pendingOcrReview = null;
@@ -5737,11 +6154,21 @@ $('relatedCollapseButton').addEventListener('click', event => {
 
 const voucherTableHead = document.querySelector('#tableScroll thead');
 voucherTableHead.addEventListener('pointerdown', beginColumnResize);
+voucherTableHead.addEventListener('pointerdown', beginWorktableColumnSelection);
+voucherTableHead.addEventListener('pointerover', extendWorktableColumnSelection);
+voucherTableHead.addEventListener('pointermove', extendWorktableColumnSelection);
 voucherTableHead.addEventListener('keydown', resizeColumnWithKeyboard);
+voucherTableHead.addEventListener('keydown', handleWorktableColumnHeaderKeydown);
 voucherTableHead.addEventListener('dragstart', beginColumnDrag);
 voucherTableHead.addEventListener('dragover', moveColumnDrag);
 voucherTableHead.addEventListener('drop', finishColumnDrop);
 voucherTableHead.addEventListener('dragend', finishColumnDrag);
+inputRows.addEventListener('pointerdown', beginWorktableRowSelection);
+inputRows.addEventListener('pointerover', extendWorktableRowSelection);
+inputRows.addEventListener('pointermove', extendWorktableRowSelection);
+inputRows.addEventListener('keydown', handleWorktableRowHeaderKeydown);
+document.addEventListener('pointerup', finishWorktableSelectionDrag);
+document.addEventListener('pointercancel', finishWorktableSelectionDrag);
 
 document.querySelector('.document-fields').addEventListener('input', event => {
   updateMobileInfoSummary();
@@ -5845,13 +6272,6 @@ inputRows.addEventListener('focusout', event => {
   confirmUnitPriceReview(event.target.closest('[data-row-id]'));
 });
 inputRows.addEventListener('change', event => {
-  const selector = event.target.closest('[data-select-row]');
-  if (selector) {
-    if (selector.checked) state.selectedRowIds.add(selector.dataset.selectRow);
-    else state.selectedRowIds.delete(selector.dataset.selectRow);
-    syncRowSelectionControls();
-    return;
-  }
   const input = event.target.closest('[data-field]');
   const tr = event.target.closest('[data-row-id]');
   if (!input || !tr || !['itemCode', 'itemName'].includes(input.dataset.field)) return;
@@ -5870,7 +6290,6 @@ inputRows.addEventListener('click', event => {
   const remove = event.target.closest('[data-remove-row]');
   if (remove) {
     invalidateGridPasteUndo();
-    state.selectedRowIds.delete(remove.dataset.removeRow);
     modeDraft().rows = modeDraft().rows.filter(row => row.rowId !== remove.dataset.removeRow);
     modeDraft().rows = contract.markDuplicatePossibilities(modeDraft().rows);
     renderRows();
@@ -5895,13 +6314,38 @@ inputRows.addEventListener('click', event => {
   }
 });
 
-$('selectAllRows').addEventListener('change', event => {
-  state.selectedRowIds = event.target.checked
-    ? new Set(modeDraft().rows.map(row => row.rowId))
-    : new Set();
-  renderRows({ restoreFocus: false });
+$('selectAllRows').addEventListener('click', () => {
+  const rowIds = visibleWorktableRowIds();
+  const selected = selectedWorktableRowIds();
+  const allSelected = Boolean(rowIds.length && rowIds.every(rowId => selected.has(rowId)));
+  state.worktableSelection = allSelected || !rowIds.length
+    ? createSelection(state.draft.activeMode)
+    : {
+        ...createSelection(state.draft.activeMode),
+        type: 'ROW',
+        anchorRowId: rowIds[0],
+        selectedRowIds: rowIds
+      };
+  syncWorktableSelectionControls();
 });
+$('insertSelectedRows').addEventListener('click', insertSelectedGridRows);
 $('deleteSelectedRows').addEventListener('click', deleteSelectedGridRows);
+$('hideSelectedColumns').addEventListener('click', hideSelectedWorktableColumns);
+$('clearWorktableSelection').addEventListener('click', () => clearWorktableSelection());
+$('addHiddenColumnButton').addEventListener('click', event => {
+  event.stopPropagation();
+  const menu = $('hiddenColumnMenu');
+  if (event.currentTarget.disabled) return;
+  menu.hidden = !menu.hidden;
+  event.currentTarget.setAttribute('aria-expanded', String(!menu.hidden));
+});
+$('hiddenColumnMenu').addEventListener('click', event => {
+  const button = event.target.closest('[data-restore-column]');
+  if (button) void restoreHiddenWorktableColumn(button.dataset.restoreColumn);
+});
+document.addEventListener('click', event => {
+  if (!$('hiddenColumnPicker').contains(event.target)) closeHiddenColumnMenu();
+});
 
 inputRows.addEventListener('paste', event => {
   const searchInput = event.target.closest('[data-product-search]');
@@ -5944,6 +6388,11 @@ document.addEventListener('keydown', event => {
   if (state.mobileLayout.fullscreen && event.key === 'Escape') {
     event.preventDefault();
     closeSourceFullscreen();
+    return;
+  }
+  if (event.key === 'Escape' && state.worktableSelection.type) {
+    event.preventDefault();
+    clearWorktableSelection();
     return;
   }
   trapSourceFullscreenFocus(event);

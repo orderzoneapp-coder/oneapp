@@ -626,6 +626,8 @@ assert.doesNotMatch(css, /\.reference-status/,
   'the removed reference status row must not reserve table height');
 assert.match(html, /id="selectAllRows"/);
 assert.match(html, /id="deleteSelectedRows"/);
+assert.match(html, /id="worktableSelectionBar"[\s\S]*id="insertSelectedRows"[\s\S]*id="addHiddenColumnButton"[\s\S]*id="hideSelectedColumns"/,
+  'the shared grid must expose Excel-style row and column commands in one selection toolbar');
 assert.match(html, /class="col-unit"/);
 const voucherFooterHtml = html.slice(html.indexOf('<footer class="voucher-footer-actions"'), html.indexOf('</footer>', html.indexOf('<footer class="voucher-footer-actions"')) + 9);
 assert.match(voucherFooterHtml, /voucher-footer-actions__left[\s\S]*id="saveDraftButton"[^>]*>전표 저장<\/button>/,
@@ -720,7 +722,10 @@ assert.match(css, /\.parser-card > \*, \.parser-input-row, \.parser-toolbar, \.p
   'parser controls and photo viewer must shrink within their parent width');
 assert.match(css, /table \{[^}]*width: var\(--table-render-width, 1103px\);[^}]*min-width: 0;[^}]*max-width: none;/,
   'the input table must use the visible-column sum and leave unused space blank');
-assert.match(css, /\.column-draggable \{ cursor: grab; \}/);
+assert.match(css, /\.column-drag-handle \{[^}]*cursor: grab;/,
+  'column reorder must use its dedicated drag handle');
+assert.match(css, /\.column-select-target \{[^}]*cursor: cell;/,
+  'the ordinary header body must be reserved for column selection');
 assert.match(css, /\.smart-dialog footer\[hidden\] \{ display: none; \}/,
   'hidden customer dialog footer must override the generic flex footer rule');
 assert.match(css, /\.column-drop-before \{[^}]*inset 3px 0 0 var\(--accent\)/);
@@ -1071,7 +1076,8 @@ assert.match(appSource, /input\.select\?\.\(\);\s*revealGridInput\(input\);/,
   'mouse, touch, and keyboard focus must reveal the active standard-input cell');
 assert.doesNotMatch(appSource, /activeCellId = `\$\{row\.rowId\}\|quantity`/,
   'product matching must not skip populated product-information cells');
-assert.match(appSource, /data-select-row/);
+assert.match(appSource, /data-row-header/);
+assert.match(appSource, /worktableSelection: createSelection\(initialDraft\.activeMode\)/);
 assert.match(appSource, /function deleteSelectedGridRows\(\)/);
 assert.match(appSource, /function beginColumnResize\(/);
 assert.match(appSource, /await saveSettings\(state\.settings\)/,
@@ -1144,7 +1150,7 @@ assert.ok(errorSheetAppendAt >= 0 && errorSheetAppendAt < shopSheetAppendAt && s
   'Excel 시트는 오류정보, 쇼핑몰업로드, ERP업데이트 순서여야 한다.');
 assert.doesNotMatch(appSource, /if \(!output\.ok\)/, '오류 정보로 Excel 생성을 차단하면 안 된다.');
 assert.match(html, /smartinput-contract\.js\?v=0\.4\.16/);
-assert.match(html, /smartinput\.js\?v=0\.4\.42/);
+assert.match(html, /smartinput\.js\?v=0\.4\.43/);
 assert.match(appSource, /structured-sheet-parser\.js\?v=0\.1\.1/);
 assert.match(appSource, /estimate-output\.js\?v=0\.1\.4/);
 assert.match(appSource, /const sourceRows = selectedRecords\.length \? combinedEstimateRows\(selectedRecords\) : modeDraft\(\)\.rows/,
