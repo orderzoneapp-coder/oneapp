@@ -24,9 +24,9 @@ assert.equal((html.match(/id: "dataops-close-confirm"/g) || []).length, 1);
 assert.match(source, /ONEAPP_AUTH\.gateway/);
 assert.doesNotMatch(source, /businessCredential|localStorage|sessionStorage|\.token\b|token\s*:/, 'browser close path must not handle a raw service credential');
 
-const productionExpected = { deploymentId: 'AKfycbzOUOIu_bP7NkiFVziDR0Og1da1KO1ePoU09Q3pSlPr-9uD-WkdCpWN7nidO5hlrJi6Qw', deploymentVersion: '31', gitCommit: '48a52ec34fa938cd60fe965b795083539460627f' };
+const productionExpected = { deploymentId: 'AKfycbzOUOIu_bP7NkiFVziDR0Og1da1KO1ePoU09Q3pSlPr-9uD-WkdCpWN7nidO5hlrJi6Qw' };
 assert.deepEqual(api.EXPECTED_DEPLOYMENT, productionExpected);
-const productionPing = { ...productionExpected, capabilityVersion: 'DATAOPS_CLOSE_V1', actions: api.ACTIONS };
+const productionPing = { ...productionExpected, deploymentVersion: 'production-version', gitCommit: 'production-commit', capabilityVersion: 'DATAOPS_CLOSE_V1', actions: api.ACTIONS };
 assert.equal(api.evaluateCapability(productionPing), true);
 
 const orderq = api.createOrderQReadAdapter({ url: 'NEXUS_GATEWAY' });

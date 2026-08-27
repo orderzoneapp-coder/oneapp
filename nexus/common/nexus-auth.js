@@ -1,12 +1,13 @@
 (() => {
   'use strict';
 
-  const VERSION = '2.0.0';
+  const VERSION = '2.1.0';
   const CONTRACT_VERSION = 'NEXUS_AUTH_V2';
   const config = window.NEXUS_AUTH_CONFIG || {};
   const endpoint = String(config.endpoint || '').trim();
   const nativeFetch = window.fetch.bind(window);
-  const SESSION_KEY = 'oneapp.nexus.auth.session.v1';
+  const SESSION_BUNDLE_KEY = 'oneapp.nexus.auth.bundle.v2';
+  const LEGACY_SESSION_KEY = 'oneapp.nexus.auth.session.v1';
   const LOGIN_PATHS = new Set(['/nexus/', '/nexus/index.html']);
   const PUBLIC_PATH = LOGIN_PATHS.has(location.pathname);
   const APP_PERMISSIONS = Object.freeze({
@@ -20,16 +21,23 @@
   });
   let currentSession = null;
   let currentAppContext = null;
+  let currentBundle = null;
+  let sessionRefreshPromise = null;
+  const appContextPromises = new Map();
+  const authChannel = typeof BroadcastChannel === 'function' ? new BroadcastChannel('oneapp.nexus.auth.v2') : null;
 
   if (!PUBLIC_PATH) {
-    document.documentElement.dataset.nexusAuthPending = 'true';
+    document.documentElement.dataset.nexusLoaderDeferred = 'true';
     const style = document.createElement('style');
-    style.dataset.nexusAuthGuard = 'true';
-    style.textContent = `html[data-nexus-auth-pending="true"] body{visibility:hidden!important}#nexusAuthGate{visibility:visible!important;position:fixed;z-index:2147483647;inset:0;display:grid;place-items:center;background:#07111e;color:#eaf2ff;font:700 13px Inter,Pretendard,"Noto Sans KR",sans-serif}#nexusAuthGate span{display:block;margin-top:10px;color:#8fa2b9;font-weight:500}`;
+    style.dataset.nexusLoaderDeferral = 'true';
+    style.textContent = 'html[data-nexus-loader-deferred="true"] #initial-loader{visibility:hidden!important;opacity:0!important}';
     document.documentElement.appendChild(style);
+    window.setTimeout(() => { delete document.documentElement.dataset.nexusLoaderDeferred; }, 300);
   }
 
   const text = value => String(value ?? '').trim();
+  const future = (value, margin = 0) => Number.isFinite(Date.parse(value || '')) && Date.parse(value) > Date.now() + margin;
+  const signedContext = value => /\.[a-f0-9]{64}$/.test(text(value));
   const bytesToBase64Url = bytes => {
     let binary = '';
     bytes.forEach(byte => { binary += String.fromCharCode(byte); });
@@ -40,27 +48,39 @@
     const binary = atob(normalized + '='.repeat((4 - normalized.length % 4) % 4));
     return Uint8Array.from(binary, character => character.charCodeAt(0));
   };
-  const sessionToken = () => {
-    try { return text(sessionStorage.getItem(SESSION_KEY)); }
-    catch { return ''; }
-  };
-  const saveSessionToken = value => {
+
+  function readStoredBundle() {
     try {
-      if (value) sessionStorage.setItem(SESSION_KEY, value);
-      else sessionStorage.removeItem(SESSION_KEY);
+      const parsed = JSON.parse(sessionStorage.getItem(SESSION_BUNDLE_KEY) || 'null');
+      if (parsed && typeof parsed === 'object' && text(parsed.sessionToken)) return parsed;
+      const legacyToken = text(sessionStorage.getItem(LEGACY_SESSION_KEY));
+      return legacyToken ? { version: 1, sessionToken: legacyToken, appContexts: {} } : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function storeBundle(bundle) {
+    try {
+      if (bundle && text(bundle.sessionToken)) {
+        sessionStorage.setItem(SESSION_BUNDLE_KEY, JSON.stringify(bundle));
+        sessionStorage.removeItem(LEGACY_SESSION_KEY);
+      } else {
+        sessionStorage.removeItem(SESSION_BUNDLE_KEY);
+        sessionStorage.removeItem(LEGACY_SESSION_KEY);
+      }
     } catch {}
-  };
+    currentBundle = bundle || null;
+  }
+
+  const sessionToken = () => text((currentBundle || readStoredBundle())?.sessionToken);
 
   async function call(action, body = {}, options = {}) {
     if (!endpoint) throw new Error('NEXUS_AUTH_ENDPOINT_NOT_CONFIGURED');
     if (config.contractVersion !== CONTRACT_VERSION) throw new Error('NEXUS_AUTH_MIXED_CACHE_DENIED');
     const response = await nativeFetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ action, ...body }),
-      redirect: 'follow',
-      cache: 'no-store',
-      signal: options.signal
+      method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action, ...body }), redirect: 'follow', cache: 'no-store', signal: options.signal
     });
     if (!response.ok) throw new Error(`NEXUS_AUTH_HTTP_${response.status}`);
     const result = await response.json();
@@ -76,32 +96,141 @@
     return payload;
   }
 
+  function clearAuth({ broadcast = false } = {}) {
+    storeBundle(null);
+    currentSession = null;
+    currentAppContext = null;
+    if (broadcast) authChannel?.postMessage({ type: 'logout' });
+  }
+
+  function redirectToLogin() {
+    const returnUrl = `${location.pathname}${location.search}${location.hash}`;
+    location.replace(`${config.loginUrl || '/nexus/'}?return=${encodeURIComponent(returnUrl)}`);
+  }
+
+  function handleSessionFailure(error) {
+    const code = text(error?.message || error);
+    if (/NEXUS_AUTH_(SESSION|APP_CONTEXT)_(REQUIRED|EXPIRED|REVOKED|DENIED)/.test(code)) {
+      clearAuth({ broadcast: true });
+      if (!PUBLIC_PATH) redirectToLogin();
+    }
+    return error;
+  }
+
+  function inferAppId() {
+    const pathname = String(location.pathname || '').toLowerCase();
+    if (pathname.includes('/partner_db')) return 'customer-manager';
+    if (pathname.includes('/orderops/') || pathname.endsWith('/orders.html') || pathname.endsWith('/orderops_list.html')) return 'orderops';
+    if (pathname.includes('/orderq/')) return pathname.endsWith('/parser.html') ? 'orderin' : 'orderq';
+    if (pathname.includes('/smartinput/')) return 'smart-input';
+    if (pathname.endsWith('/dataops.html')) return 'dataops';
+    if (pathname.endsWith('/merchops.html')) return 'merchops';
+    if (pathname.endsWith('/smartparser.html')) return 'smart-parser';
+    if (pathname.endsWith('/item_manager.html')) return 'item-manager';
+    if (pathname.endsWith('/settings.html')) return 'settings';
+    if (pathname.endsWith('/history_viewer.html')) return 'history';
+    if (pathname.endsWith('/export_center.html')) return 'export-center';
+    if (pathname.endsWith('/master.html')) return 'master';
+    return '';
+  }
+
+  function declaredAppId() {
+    return text(document.documentElement.dataset.nexusAppId || document.querySelector('nexus-top')?.getAttribute('app-id') || inferAppId()).toLowerCase();
+  }
+
+  function permissions() { return Array.isArray(currentSession?.user?.permissions) ? currentSession.user.permissions : []; }
+  function hasPermission(permission) {
+    if (currentSession?.user?.role === 'OWNER_MASTER' || permissions().includes(permission)) return true;
+    const impliedWrite = String(permission || '').replace(/\.read$/, '.write');
+    return impliedWrite !== permission && permissions().includes(impliedWrite);
+  }
+  function canUseApp(appId) {
+    const required = APP_PERMISSIONS[appId] || 'foundation.read';
+    return (Array.isArray(required) ? required : [required]).every(hasPermission);
+  }
+  function canUseGroup(groupId) { return hasPermission(GROUP_PERMISSIONS[groupId] || 'foundation.read'); }
+
+  function applyAuthResult(result, tokenOverride = '') {
+    if (!result?.session?.user) throw new Error('NEXUS_AUTH_RESPONSE_INVALID');
+    const token = text(result.sessionToken || tokenOverride || sessionToken());
+    if (!token) throw new Error('NEXUS_AUTH_RESPONSE_INVALID');
+    currentSession = result.session;
+    currentBundle = {
+      version: 2, sessionToken: token, session: result.session,
+      sessionContextToken: text(result.sessionContextToken), contextExpiresAt: text(result.contextExpiresAt),
+      appContexts: result.appContexts && typeof result.appContexts === 'object' ? result.appContexts : {}
+    };
+    const appId = declaredAppId();
+    currentAppContext = appId ? currentBundle.appContexts[appId] || null : null;
+    storeBundle(currentBundle);
+    window.dispatchEvent(new CustomEvent('nexus-auth-ready', { detail: currentSession }));
+    authChannel?.postMessage({ type: 'refresh', contextExpiresAt: currentBundle.contextExpiresAt });
+    return currentSession;
+  }
+
+  function hydrateCachedSession() {
+    const bundle = readStoredBundle();
+    if (!bundle?.session?.user || !signedContext(bundle.sessionContextToken) || !future(bundle.contextExpiresAt)
+      || !future(bundle.session.expiresAt)) return false;
+    const appId = declaredAppId();
+    const appContext = appId ? bundle.appContexts?.[appId] : null;
+    if (appId && (!appContext || appContext.appId !== appId || !signedContext(appContext.appContextToken) || !future(appContext.expiresAt))) return false;
+    currentBundle = bundle;
+    currentSession = bundle.session;
+    currentAppContext = appContext || null;
+    window.dispatchEvent(new CustomEvent('nexus-auth-ready', { detail: currentSession }));
+    return true;
+  }
+
+  async function ensureAppContext(appId = declaredAppId()) {
+    const normalized = text(appId).toLowerCase();
+    if (!normalized) return null;
+    if (currentAppContext?.appId === normalized && signedContext(currentAppContext.appContextToken) && future(currentAppContext.expiresAt, 15000)) return currentAppContext;
+    const cached = currentBundle?.appContexts?.[normalized];
+    if (cached?.appId === normalized && signedContext(cached.appContextToken) && future(cached.expiresAt, 15000)) {
+      currentAppContext = cached;
+      return cached;
+    }
+    if (appContextPromises.has(normalized)) return appContextPromises.get(normalized);
+    const pending = call('nexus_auth_app_context', { sessionToken: sessionToken(), appId: normalized })
+      .then(context => {
+        if (context?.appId !== normalized || !signedContext(context.appContextToken)) throw new Error('NEXUS_AUTH_APP_CONTEXT_DENIED');
+        currentAppContext = context;
+        currentBundle = currentBundle || readStoredBundle() || { sessionToken: sessionToken(), appContexts: {} };
+        currentBundle.appContexts = { ...(currentBundle.appContexts || {}), [normalized]: context };
+        storeBundle(currentBundle);
+        return context;
+      })
+      .catch(error => { throw handleSessionFailure(error); })
+      .finally(() => appContextPromises.delete(normalized));
+    appContextPromises.set(normalized, pending);
+    return pending;
+  }
+
   async function gateway(operationId, payload = {}, options = {}) {
     const operation = text(operationId);
     if (!/^[a-z][a-z0-9_.-]{2,79}$/.test(operation)) throw new Error('NEXUS_GATEWAY_OPERATION_INVALID');
     validateGatewayPayload(payload);
     await ready;
-    const token = sessionToken();
-    if (!currentSession || !token) throw new Error('NEXUS_AUTH_SESSION_REQUIRED');
-    const response = await nativeFetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({
-        action: 'nexus_gateway', sessionToken: token,
-        appContextToken: currentAppContext?.appContextToken || '', operationId: operation, payload
-      }),
-      redirect: 'follow',
-      cache: 'no-store',
-      signal: options.signal
-    });
-    if (!response.ok) throw new Error(`NEXUS_GATEWAY_HTTP_${response.status}`);
-    let result;
-    try { result = await response.json(); }
-    catch { throw new Error('NEXUS_GATEWAY_RESPONSE_INVALID'); }
-    if (!result || result.status !== 'success' || result.contractVersion !== CONTRACT_VERSION || result.operationId !== operation) {
-      throw new Error(text(result?.message) || 'NEXUS_GATEWAY_REQUEST_FAILED');
+    if (!currentSession || !sessionToken()) throw new Error('NEXUS_AUTH_SESSION_REQUIRED');
+    const context = await ensureAppContext();
+    try {
+      const response = await nativeFetch(endpoint, {
+        method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action: 'nexus_gateway', sessionToken: sessionToken(),
+          appContextToken: context?.appContextToken || '', operationId: operation, payload }),
+        redirect: 'follow', cache: 'no-store', signal: options.signal
+      });
+      if (!response.ok) throw new Error(`NEXUS_GATEWAY_HTTP_${response.status}`);
+      let result;
+      try { result = await response.json(); } catch { throw new Error('NEXUS_GATEWAY_RESPONSE_INVALID'); }
+      if (!result || result.status !== 'success' || result.contractVersion !== CONTRACT_VERSION || result.operationId !== operation) {
+        throw new Error(text(result?.message) || 'NEXUS_GATEWAY_REQUEST_FAILED');
+      }
+      return result.data;
+    } catch (error) {
+      throw handleSessionFailure(error);
     }
-    return result.data;
   }
 
   function validatePassword(password) {
@@ -123,15 +252,6 @@
     const bytes = new Uint8Array(16);
     crypto.getRandomValues(bytes);
     return bytesToBase64Url(bytes);
-  }
-
-  function applyAuthResult(result) {
-    if (!result?.sessionToken || !result?.session?.user) throw new Error('NEXUS_AUTH_RESPONSE_INVALID');
-    saveSessionToken(result.sessionToken);
-    currentSession = result.session;
-    currentAppContext = null;
-    window.dispatchEvent(new CustomEvent('nexus-auth-ready', { detail: currentSession }));
-    return currentSession;
   }
 
   async function login(loginId, password, device = navigator.userAgent) {
@@ -157,116 +277,64 @@
     }));
   }
 
-  async function readSession() {
+  function readSession() {
+    if (sessionRefreshPromise) return sessionRefreshPromise;
     const token = sessionToken();
-    if (!token) throw new Error('NEXUS_AUTH_SESSION_REQUIRED');
-    currentSession = await call('nexus_auth_session', { sessionToken: token });
-    currentAppContext = null;
-    window.dispatchEvent(new CustomEvent('nexus-auth-ready', { detail: currentSession }));
-    return currentSession;
+    if (!token) return Promise.reject(new Error('NEXUS_AUTH_SESSION_REQUIRED'));
+    sessionRefreshPromise = call('nexus_auth_session', { sessionToken: token })
+      .then(result => applyAuthResult(result, token))
+      .catch(error => { throw handleSessionFailure(error); })
+      .finally(() => { sessionRefreshPromise = null; });
+    return sessionRefreshPromise;
   }
 
   async function logout() {
     const token = sessionToken();
-    saveSessionToken('');
-    currentSession = null;
-    currentAppContext = null;
-    if (token) {
-      try { await call('nexus_auth_logout', { sessionToken: token }); } catch {}
-    }
+    clearAuth({ broadcast: true });
+    if (token) { try { await call('nexus_auth_logout', { sessionToken: token }); } catch {} }
     location.assign(config.loginUrl || '/nexus/');
   }
 
-  function permissions() { return Array.isArray(currentSession?.user?.permissions) ? currentSession.user.permissions : []; }
-  function hasPermission(permission) {
-    if (currentSession?.user?.role === 'OWNER_MASTER' || permissions().includes(permission)) return true;
-    const impliedWrite = String(permission || '').replace(/\.read$/, '.write');
-    return impliedWrite !== permission && permissions().includes(impliedWrite);
-  }
-  function canUseApp(appId) {
-    const required = APP_PERMISSIONS[appId] || 'foundation.read';
-    return (Array.isArray(required) ? required : [required]).every(hasPermission);
-  }
-  function canUseGroup(groupId) { return hasPermission(GROUP_PERMISSIONS[groupId] || 'foundation.read'); }
-  function inferAppId() {
-    const pathname = String(location.pathname || '').toLowerCase();
-    if (pathname.includes('/partner_db')) return 'customer-manager';
-    if (pathname.includes('/orderops/') || pathname.endsWith('/orders.html') || pathname.endsWith('/orderops_list.html')) return 'orderops';
-    if (pathname.includes('/orderq/')) return pathname.endsWith('/parser.html') ? 'orderin' : 'orderq';
-    if (pathname.includes('/smartinput/')) return 'smart-input';
-    if (pathname.endsWith('/dataops.html')) return 'dataops';
-    if (pathname.endsWith('/merchops.html')) return 'merchops';
-    if (pathname.endsWith('/smartparser.html')) return 'smart-parser';
-    if (pathname.endsWith('/item_manager.html')) return 'item-manager';
-    if (pathname.endsWith('/settings.html')) return 'settings';
-    if (pathname.endsWith('/history_viewer.html')) return 'history';
-    if (pathname.endsWith('/export_center.html')) return 'export-center';
-    if (pathname.endsWith('/master.html')) return 'master';
-    return '';
-  }
-  function declaredAppId() {
-    return text(document.documentElement.dataset.nexusAppId || document.querySelector('nexus-top')?.getAttribute('app-id') || inferAppId()).toLowerCase();
-  }
-  function gateMessage(message) {
-    let gate = document.getElementById('nexusAuthGate');
-    if (!gate) {
-      gate = document.createElement('div');
-      gate.id = 'nexusAuthGate';
-      document.documentElement.appendChild(gate);
+  function releaseGate() { document.documentElement.dataset.nexusAuthReady = 'true'; }
+
+  function enforcePageAccess() {
+    const appId = declaredAppId();
+    if (appId && !canUseApp(appId)) {
+      location.replace(config.homeUrl || '/nexus/home/');
+      return false;
     }
-    gate.innerHTML = `<div>NEXUS 보안 세션 확인 중<span>${String(message || '로그인 상태를 확인합니다.')}</span></div>`;
-  }
-
-  function releaseGate() {
-    delete document.documentElement.dataset.nexusAuthPending;
-    document.documentElement.dataset.nexusAuthReady = 'true';
-    document.getElementById('nexusAuthGate')?.remove();
-  }
-
-  function redirectToLogin() {
-    const returnUrl = `${location.pathname}${location.search}${location.hash}`;
-    location.replace(`${config.loginUrl || '/nexus/'}?return=${encodeURIComponent(returnUrl)}`);
+    if (location.pathname.startsWith('/nexus/admin/') && currentSession?.user?.role !== 'OWNER_MASTER') {
+      location.replace(config.homeUrl || '/nexus/home/');
+      return false;
+    }
+    return true;
   }
 
   async function initialize() {
-    if (!endpoint) {
-      if (!PUBLIC_PATH) gateMessage('인증 서버 배포 주소가 아직 설정되지 않았습니다.');
+    if (!endpoint) return null;
+    if (!sessionToken()) {
+      if (!PUBLIC_PATH) redirectToLogin();
       return null;
     }
     try {
-      if (!sessionToken()) {
-        if (!PUBLIC_PATH) redirectToLogin();
-        return null;
-      }
-      const session = await readSession();
+      if (!hydrateCachedSession()) await readSession();
       if (!PUBLIC_PATH) {
-        const declaredApp = declaredAppId();
-        if (declaredApp && !canUseApp(declaredApp)) {
-          location.replace(config.homeUrl || '/nexus/home/');
-          return session;
-        }
-        if (declaredApp) {
-          currentAppContext = await call('nexus_auth_app_context', {
-            sessionToken: sessionToken(), appId: declaredApp
-          });
-          if (currentAppContext?.appId !== declaredApp || !currentAppContext?.appContextToken) throw new Error('NEXUS_AUTH_APP_CONTEXT_DENIED');
-        }
-        if (location.pathname.startsWith('/nexus/admin/') && session.user.role !== 'OWNER_MASTER') {
-          location.replace(config.homeUrl || '/nexus/home/');
-          return session;
-        }
+        if (!enforcePageAccess()) return currentSession;
+        await ensureAppContext();
         releaseGate();
       }
-      return session;
+      return currentSession;
     } catch (error) {
-      saveSessionToken('');
-      currentSession = null;
-      if (!PUBLIC_PATH) redirectToLogin();
+      handleSessionFailure(error);
       return null;
     }
   }
 
-  if (!PUBLIC_PATH) gateMessage();
+  authChannel?.addEventListener('message', event => {
+    if (event.data?.type === 'logout') clearAuth();
+    if (event.data?.type === 'refresh' && !future(currentBundle?.contextExpiresAt)) currentBundle = readStoredBundle();
+  });
+
   const ready = initialize();
   const adminCall = (action, body = {}) => ready.then(() => call(action, { sessionToken: sessionToken(), ...body }));
 
@@ -276,13 +344,11 @@
     get session() { return currentSession; },
     get appId() { return currentAppContext?.appId || ''; },
     admin: Object.freeze({
-      users: () => adminCall('nexus_admin_users'),
-      invite: payload => adminCall('nexus_admin_invite', payload),
+      users: () => adminCall('nexus_admin_users'), invite: payload => adminCall('nexus_admin_invite', payload),
       permissions: payload => adminCall('nexus_admin_permissions', payload),
       deleteUser: userId => adminCall('nexus_admin_delete_user', { userId }),
       recoverUser: userId => adminCall('nexus_admin_recover_user', { userId }),
-      serviceStatus: () => adminCall('nexus_admin_service_status'),
-      audit: (limit = 100) => adminCall('nexus_admin_audit', { limit })
+      serviceStatus: () => adminCall('nexus_admin_service_status'), audit: (limit = 100) => adminCall('nexus_admin_audit', { limit })
     })
   });
 })();

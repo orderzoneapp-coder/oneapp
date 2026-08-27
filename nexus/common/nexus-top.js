@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = '1.6.1';
+  const VERSION = '1.7.0';
   const STORAGE = Object.freeze({
     colorMode: 'oneapp.nexus.v1.colorMode',
     groupOrder: 'oneapp.nexus.v1.groupOrder',
@@ -49,7 +49,9 @@
   const base = new URL('.', document.currentScript?.src || '/nexus/common/nexus-top.js');
   const NAVIGATION_STORAGE_KEY = 'oneapp.nexus.v1.navigation';
   const NAVIGATION_COVER_ID = 'nexusNavigationCover';
-  let navigationCoverShownAt = 0;
+  const NAVIGATION_COVER_DELAY_MS = 300;
+  let navigationCoverTimer = 0;
+  const prefetchedRoutes = new Set();
 
   const navigationCoverStyle = `
     #${NAVIGATION_COVER_ID}{--nexus-loading-text:#12233f;--nexus-loading-muted:#62728a;--nexus-loading-accent:#0baa91;--nexus-loading-grid:rgba(35,78,125,.1);--nexus-loading-track:rgba(53,79,111,.12);position:fixed;z-index:2147483647;inset:0;display:grid;place-items:center;overflow:hidden;color:var(--nexus-loading-text);background:radial-gradient(circle at 50% 36%,rgba(91,181,211,.2),transparent 34%),linear-gradient(145deg,#f7fbff,#eef5fb 56%,#e8f1f9);font-family:Inter,Pretendard,"Noto Sans KR",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;opacity:1;transition:opacity .22s ease}
@@ -104,15 +106,20 @@
     cover.classList.remove('is-leaving');
     cover.hidden = false;
     document.documentElement.dataset.nexusNavigating = 'true';
-    navigationCoverShownAt = Date.now();
     return cover;
   };
 
   const clearNavigationCover = (immediate = false) => {
+    if (navigationCoverTimer) {
+      window.clearTimeout(navigationCoverTimer);
+      navigationCoverTimer = 0;
+    }
     const cover = document.getElementById(NAVIGATION_COVER_ID);
-    if (!cover) return;
-    const marker = readNavigationMarker();
-    const minimumWait = immediate ? 0 : Math.max(0, 420 - (Date.now() - Number(marker?.startedAt || navigationCoverShownAt)));
+    if (!cover) {
+      delete document.documentElement.dataset.nexusNavigating;
+      try { sessionStorage.removeItem(NAVIGATION_STORAGE_KEY); } catch {}
+      return;
+    }
     window.setTimeout(() => {
       cover.classList.add('is-leaving');
       window.setTimeout(() => {
@@ -120,14 +127,36 @@
         cover.classList.remove('is-leaving');
         delete document.documentElement.dataset.nexusNavigating;
         try { sessionStorage.removeItem(NAVIGATION_STORAGE_KEY); } catch {}
-      }, immediate ? 0 : 230);
-    }, minimumWait);
+      }, immediate ? 0 : 120);
+    }, 0);
+  };
+
+  const scheduleNavigationCover = (label, mode, startedAt = Date.now()) => {
+    if (navigationCoverTimer) window.clearTimeout(navigationCoverTimer);
+    const delay = Math.max(0, NAVIGATION_COVER_DELAY_MS - (Date.now() - Number(startedAt || Date.now())));
+    navigationCoverTimer = window.setTimeout(() => {
+      navigationCoverTimer = 0;
+      installNavigationCover(label, mode);
+    }, delay);
+  };
+
+  const prefetchRoute = (url) => {
+    try {
+      const resolved = new URL(url, location.href);
+      if (resolved.origin !== location.origin || prefetchedRoutes.has(resolved.href)) return;
+      prefetchedRoutes.add(resolved.href);
+      const link = document.createElement('link');
+      link.rel = 'prefetch';
+      link.as = 'document';
+      link.href = resolved.href;
+      document.head.appendChild(link);
+    } catch {}
   };
 
   const initialNavigationMarker = readNavigationMarker();
   if (initialNavigationMarker) {
-    installNavigationCover(initialNavigationMarker.label, initialNavigationMarker.mode);
-    window.addEventListener('load', () => clearNavigationCover(), { once: true });
+    scheduleNavigationCover(initialNavigationMarker.label, initialNavigationMarker.mode, initialNavigationMarker.startedAt);
+    window.addEventListener('load', () => clearNavigationCover(true), { once: true });
     window.setTimeout(() => clearNavigationCover(true), 12000);
   }
   window.addEventListener('pageshow', (event) => { if (event.persisted) clearNavigationCover(true); });
@@ -698,6 +727,14 @@
 
     bind() {
       this.root.addEventListener('click', (event) => this.handleClick(event));
+      this.root.addEventListener('pointerover', (event) => {
+        const link = event.target.closest('a[data-navigate]');
+        if (link) prefetchRoute(link.href);
+      }, { passive: true });
+      this.root.addEventListener('focusin', (event) => {
+        const link = event.target.closest('a[data-navigate]');
+        if (link) prefetchRoute(link.href);
+      });
       this.onDocumentClick = (event) => {
         if (this.openPanel === 'status' && !event.composedPath().includes(this)) this.closePanel();
       };
@@ -854,20 +891,18 @@
       const mode = navigationMode();
       const marker = { label, mode, startedAt: Date.now(), url: link.href };
       try { sessionStorage.setItem(NAVIGATION_STORAGE_KEY, JSON.stringify(marker)); } catch {}
-      installNavigationCover(label, mode);
+      scheduleNavigationCover(label, mode, marker.startedAt);
       window.setTimeout(() => {
         if (!this.navigationPending) return;
         this.restoreCurrentNavigationSelection();
         clearNavigationCover(true);
       }, 12000);
-      window.setTimeout(() => {
-        try {
-          window.location.assign(link.href);
-        } catch {
-          this.restoreCurrentNavigationSelection();
-          clearNavigationCover(true);
-        }
-      }, 80);
+      try {
+        window.location.assign(link.href);
+      } catch {
+        this.restoreCurrentNavigationSelection();
+        clearNavigationCover(true);
+      }
     }
 
     togglePanel(name, trigger) {

@@ -44,9 +44,9 @@
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
     </style>
     <script src="/nexus/common/nexus-auth-config.js?v=2.0.1"></script>
-    <script src="/nexus/common/nexus-auth.js?v=2.0.1"></script>
+    <script src="/nexus/common/nexus-auth.js?v=2.1.0"></script>
     <script src="/nexus/common/apps-config.js?v=1.4.0"></script>
-    <script src="/nexus/common/nexus-top.js?v=1.6.1"></script>
+    <script src="/nexus/common/nexus-top.js?v=1.7.0"></script>
     <link rel="stylesheet" href="/nexus/common/nexus-operational-theme.css?v=1.0.0">
     <style>
         /* DataOps local visual contract: keep selected controls clear without neon saturation. */
@@ -4682,7 +4682,7 @@ const DATAOPS_MERCH_STOCK_SYNC_MODULE = Object.freeze({
             saved = await window.ONEAPP_AUTH.gateway('dataops.snapshot.commit', { snapshot });
         }
         catch (error) {
-            throw new Error('클라우드 서버에 연결할 수 없습니다. 네트워크와 Apps Script 배포 URL을 확인하세요.');
+            throw new Error(DATAOPS_MERCH_STOCK_SYNC_MODULE.mapCommitError(error && error.message ? error.message : error));
         }
         if (!saved) throw new Error(DATAOPS_MERCH_STOCK_SYNC_MODULE.mapCommitError('DATAOPS_WRITE_FAILED'));
         if (String(saved.hash || '').toLowerCase() !== snapshot.hash ||
@@ -4729,6 +4729,7 @@ const DATAOPS_WORK_STATE_MODULE = Object.freeze({
     DB_NAME: 'oneapp_dataops_work_v1',
     STORE_NAME: 'workspaces',
     CURRENT_KEY: 'current',
+    DELIVERY_KEY: 'cloud-delivery',
     VERSION: 1,
     openDb: () => new Promise((resolve, reject) => {
         if (typeof indexedDB === 'undefined') {
@@ -4794,6 +4795,26 @@ const DATAOPS_WORK_STATE_MODULE = Object.freeze({
         finally {
             db.close();
         }
+    },
+    loadDelivery: async () => {
+        const db = await DATAOPS_WORK_STATE_MODULE.openDb();
+        try {
+            return await new Promise((resolve, reject) => {
+                const transaction = db.transaction(DATAOPS_WORK_STATE_MODULE.STORE_NAME, 'readonly');
+                const request = transaction.objectStore(DATAOPS_WORK_STATE_MODULE.STORE_NAME).get(DATAOPS_WORK_STATE_MODULE.DELIVERY_KEY);
+                request.onsuccess = () => resolve(request.result || null);
+                request.onerror = () => reject(request.error || new Error('클라우드 전송상태 확인 실패'));
+            });
+        }
+        finally {
+            db.close();
+        }
+    },
+    saveDelivery: async (delivery = {}) => {
+        const record = { ...delivery, updatedAt: new Date().toISOString() };
+        await enqueueDataOpsWorkStateWrite(() =>
+            DATAOPS_WORK_STATE_MODULE.withStore('readwrite', store => store.put(record, DATAOPS_WORK_STATE_MODULE.DELIVERY_KEY)));
+        return record;
     },
     clear: async () => {
         try {
@@ -5419,6 +5440,7 @@ const useInventoryEngine = ({ mappings, grouping, activeTemplate, setAlertMsg, s
         if (!DATAOPS_ACCESS_POLICY_MODULE.requireWrite(setAlertMsg))
             return false;
         let localSnapshot = null;
+        let deliveryAttemptCount = 1;
         setIsProcessing(true);
         try {
             localSnapshot = await DATAOPS_WORK_STATE_MODULE.save({
@@ -5427,6 +5449,14 @@ const useInventoryEngine = ({ mappings, grouping, activeTemplate, setAlertMsg, s
                 ackMultiCodes: Array.from(ackMultiCodes),
                 analysisPeriod,
                 targetDateStr
+            });
+            const previousDelivery = await DATAOPS_WORK_STATE_MODULE.loadDelivery().catch(() => null);
+            deliveryAttemptCount = previousDelivery?.status === 'PENDING' ? safeNum(previousDelivery.attemptCount) + 1 : 1;
+            await DATAOPS_WORK_STATE_MODULE.saveDelivery({
+                status: 'PENDING',
+                localSavedAt: localSnapshot.savedAt,
+                attemptCount: deliveryAttemptCount,
+                lastError: ''
             });
         }
         catch (error) {
@@ -5449,6 +5479,11 @@ const useInventoryEngine = ({ mappings, grouping, activeTemplate, setAlertMsg, s
             }
             const cloudResult = v1Client ? await v1Client.commitSnapshot({ legacyModule: DATAOPS_MERCH_STOCK_SYNC_MODULE, productData, targetDateStr, url: DATAOPS_CLOUD_MODULE.getCloudUrl(), ...v1Credentials }) : await DATAOPS_MERCH_STOCK_SYNC_MODULE.commit({ productData, targetDateStr });
             const saved = cloudResult.saved || {};
+            await DATAOPS_WORK_STATE_MODULE.saveDelivery({
+                status: 'DELIVERED', localSavedAt: localSnapshot.savedAt, deliveredAt: saved.savedAt || new Date().toISOString(),
+                revision: saved.revision || '', hash: saved.hash || '', duplicate: saved.duplicate === true,
+                attemptCount: deliveryAttemptCount, lastError: ''
+            });
             setAlertMsg(
                 `✅ DataOps 작업 저장 완료 · MerchOps 재고 갱신 완료\n\n` +
                 `로컬 저장시각: ${localSnapshot.savedAt}\n` +
@@ -5461,11 +5496,17 @@ const useInventoryEngine = ({ mappings, grouping, activeTemplate, setAlertMsg, s
         }
         catch (error) {
             console.error('DataOps MerchOps 재고 클라우드 갱신 실패', error);
+            const safeError = safeStr(error && error.message ? error.message : String(error), 'DATAOPS_WRITE_FAILED').slice(0, 160);
+            const previousDelivery = await DATAOPS_WORK_STATE_MODULE.loadDelivery().catch(() => null);
+            await DATAOPS_WORK_STATE_MODULE.saveDelivery({
+                ...(previousDelivery || {}), status: 'PENDING', localSavedAt: localSnapshot.savedAt,
+                attemptCount: Math.max(1, safeNum(previousDelivery?.attemptCount)), lastError: safeError
+            }).catch(() => undefined);
             setAlertMsg(
                 `⚠️ DataOps 작업은 로컬에 저장했습니다.\n` +
                 `다만 MerchOps 재고 갱신은 실패했습니다.\n\n` +
                 `로컬 저장시각: ${localSnapshot.savedAt}\n` +
-                `원인: ${error && error.message ? error.message : String(error)}\n\n` +
+                `원인: ${safeError}\n\n` +
                 `네트워크/Apps Script 배포 상태를 확인한 뒤 [작업 저장]을 다시 누르면 재전송됩니다.`
             );
             return false;
@@ -9169,16 +9210,11 @@ function App() {
     const [guideModalOpen, setGuideModalOpen] = useState(false);
     const [splitModal, setSplitModal] = useState({ isOpen: false, payload: null });
     const [systemUiCollapsed, setSystemUiCollapsed] = useState(false);
-    // 🌟 렌더링 안정성 강화: React 앱이 완전히 켜진 직후에만 초기 로딩 화면을 제거하도록 수정
+    // React 첫 화면이 준비되는 즉시 제거한다. 표시시간을 맞추기 위한 인위적인 지연은 두지 않는다.
     useEffect(() => {
         const loader = document.getElementById('initial-loader');
-        if (loader) {
-            // 약간의 지연을 주어 UI가 완전히 자리잡을 시간을 확보
-            setTimeout(() => {
-                loader.style.opacity = '0';
-                setTimeout(() => loader.remove(), 500); // CSS 애니메이션이 끝난 후 DOM에서 완전히 삭제
-            }, 100);
-        }
+        if (loader)
+            loader.remove();
     }, []);
     // 🌟 성능 최적화: 검색창 디바운스(Debounce) 처리를 위한 로컬 상태 분리
     const [searchInputVal, setSearchInputVal] = useState('');

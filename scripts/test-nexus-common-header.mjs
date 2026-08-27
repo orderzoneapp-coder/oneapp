@@ -77,8 +77,9 @@ assert.match(componentSource, /oneapp\.nexus\.v1\.navigation/);
 assert.match(componentSource, /cover\.id = NAVIGATION_COVER_ID/);
 assert.match(componentSource, /NEXUS WORKSPACE/);
 assert.match(componentSource, /업무 화면을 준비하고 있습니다/);
-assert.match(componentSource, /window\.addEventListener\('load', \(\) => clearNavigationCover\(\)/);
-assert.match(componentSource, /const VERSION = '1\.6\.1'/);
+assert.match(componentSource, /window\.addEventListener\('load', \(\) => clearNavigationCover\(true\)/);
+assert.match(componentSource, /const NAVIGATION_COVER_DELAY_MS = 300/);
+assert.match(componentSource, /const VERSION = '1\.7\.0'/);
 assert.match(componentSource, /const TAB_BUTTONS = Object\.freeze/);
 assert.match(componentSource, /preloadTabButtonImages\(\)/, 'all active and inactive tab images must be preloaded');
 assert.match(componentSource, /data-active-src=.*data-inactive-src=/, 'each tab image must expose both visual states');
@@ -95,8 +96,12 @@ assert.match(componentSource, /\[data-mode="dark"\]/,
   'the loading cover must provide a dedicated dark-mode visual');
 assert.match(componentSource, /background:rgba\(255,255,255,\.88\)/,
   'the default loading cover card must remain light in normal mode');
-assert.match(componentSource, /window\.setTimeout\(\(\) => \{[\s\S]*window\.location\.assign\(link\.href\);[\s\S]*\}, 80\)/,
-  'same-tab navigation must paint the loading cover before changing documents');
+assert.match(componentSource, /scheduleNavigationCover\(label, mode, marker\.startedAt\)/,
+  'same-tab navigation must defer the loading cover until actual waiting exceeds the threshold');
+assert.match(componentSource, /window\.location\.assign\(link\.href\)/,
+  'same-tab navigation must start immediately after the leave guard passes');
+assert.doesNotMatch(componentSource, /\}, 80\)/,
+  'same-tab navigation must not add an artificial paint delay');
 assert.doesNotMatch(componentSource, /nexus-navigation-cover__mark[^`]*<img/,
   'the navigation cover must not depend on another image request');
 assert.match(componentSource, /이 기기에만 적용됨/);
@@ -156,7 +161,7 @@ assert.match(headerDocumentation, /Excel·ERP·인쇄·카카오 이미지 컨�
 assert.match(nexusHome, /data-nexus-color-mode="dark"/);
 assert.doesNotMatch(nexusHome, /data-nexus-color-mode="system"|prefers-color-scheme/);
 assert.match(nexusHome, /nexus-auth-config\.js\?v=2\.0\.1/);
-assert.match(nexusHome, /nexus-auth\.js\?v=2\.0\.1/);
+assert.match(nexusHome, /nexus-auth\.js\?v=2\.1\.0/);
 assert.match(nexusHome, /ONE LOGIN · ALL OPERATIONS/);
 assert.doesNotMatch(nexusHome, /<nexus-top/,
   'the public login entry must not render authenticated navigation before session validation');
@@ -271,8 +276,8 @@ assert.equal(manifestContract.resources.navigationLoadingSession, 'oneapp.nexus.
 for (const file of manifestContract.consumers) {
   const source = read(file);
   assert.match(source, /apps-config\.js\?v=1\.4\.0/, `${file} must load the current NEXUS configuration`);
-  assert.match(source, /nexus-top\.js\?v=1\.6\.1/, `${file} must load the current NEXUS component`);
-  assert.match(source, /nexus-auth\.js\?v=2\.0\.1/, `${file} must enforce the NEXUS V2 login session`);
+  assert.match(source, /nexus-top\.js\?v=1\.7\.0/, `${file} must load the current NEXUS component`);
+  assert.match(source, /nexus-auth\.js\?v=2\.1\.0/, `${file} must enforce the NEXUS V2 login session`);
 }
 
 const entries = [
@@ -290,8 +295,8 @@ for (const [file, appId] of entries) {
   const source = read(file);
   assert.match(source, new RegExp(`<nexus-top app-id="${appId}">[\\s\\S]*?<\\/nexus-top>`), `${file} must declare its canonical NEXUS app ID`);
   assert.match(source, /apps-config\.js\?v=1\.4\.0/);
-  assert.match(source, /nexus-top\.js\?v=1\.6\.1/);
-  assert.match(source, /nexus-auth\.js\?v=2\.0\.1/);
+  assert.match(source, /nexus-top\.js\?v=1\.7\.0/);
+  assert.match(source, /nexus-auth\.js\?v=2\.1\.0/);
   assert.match(source, /NEXUS 메뉴를 불러오지 못했습니다/);
 }
 

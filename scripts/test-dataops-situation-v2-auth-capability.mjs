@@ -31,7 +31,7 @@ for (const field of ['deploymentId', 'deploymentVersion', 'gitCommit', 'capabili
 assert.equal(browser.DATAOPS_SITUATION_V2_MODULE.evaluateCapability({ ...ping, actions: [...ping.actions].reverse() }, expected).ready, false, 'actions mutation blocks');
 const releaseBrowser = loadBrowserModule();
 const releaseExpected = releaseBrowser.DATAOPS_SITUATION_V2_MODULE.EXPECTED_DEPLOYMENT;
-const releasePing = { ...ping, ...releaseExpected };
+const releasePing = { ...ping, ...releaseExpected, deploymentVersion: 'production-version', gitCommit: 'production-commit' };
 assert.equal(releaseBrowser.DATAOPS_SITUATION_V2_MODULE.evaluateCapability(releasePing).ready, true, 'exact release ping enables capability');
 for (const field of ['deploymentId', 'deploymentVersion', 'gitCommit']) {
   assert.equal(releaseBrowser.DATAOPS_SITUATION_V2_MODULE.evaluateCapability({ ...releasePing, [field]: '' }).ready, false, `${field} blank blocks release`);
