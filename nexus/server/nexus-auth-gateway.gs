@@ -54,7 +54,7 @@ var NEXUS_AUTH_ALL_PERMISSIONS = Object.freeze([
   'merchops.read', 'merchops.write',
   'dataops.read', 'dataops.write', 'dataops.publish', 'dataops.close',
   'orderq.read', 'orderq.write', 'orderq.admin',
-  'smartinput.use', 'admin.users', 'admin.services', 'admin.audit'
+  'smartinput.use', 'admin.users', 'admin.services', 'admin.audit', 'admin.company'
 ]);
 var NEXUS_AUTH_BUSINESS_PERMISSIONS = Object.freeze(NEXUS_AUTH_ALL_PERMISSIONS.filter(function (permission) {
   return permission.indexOf('admin.') !== 0;
@@ -284,6 +284,8 @@ function nexusAuthRequireSession_(rawToken) {
 
 function nexusAuthAppPermissions_() {
   return {
+    'nexus-home': ['foundation.read'],
+    company: ['foundation.read'],
     master: ['foundation.read'],
     'item-manager': ['foundation.write'],
     'customer-manager': ['customer.read'],
@@ -477,7 +479,7 @@ function nexusAuthAdminAudit_(context, payload) {
 }
 
 function nexusAuthGatewayRegistry_() {
-  var foundationApps = ['master', 'item-manager', 'customer-manager', 'merchops', 'smart-parser', 'dataops', 'settings', 'history', 'export-center'];
+  var foundationApps = ['nexus-home', 'company', 'master', 'item-manager', 'customer-manager', 'merchops', 'smart-parser', 'dataops', 'settings', 'history', 'export-center'];
   var orderApps = ['orderq', 'orderops', 'orderin', 'smart-input', 'dataops'];
   var definitions = [
     ['foundation.full_read', foundationApps, ['foundation.read'], 'nexus_gateway_foundation_full_get', 'FOUNDATION', 'READ', [], 'foundation', 'master'],
@@ -488,6 +490,13 @@ function nexusAuthGatewayRegistry_() {
     ['foundation.metadata_read', ['master', 'item-manager', 'customer-manager'], ['foundation.read'], 'nexus_gateway_foundation_metadata_get', 'FOUNDATION', 'READ', ['schemaVersion', 'entityType', 'includeDisabled'], 'foundation', 'generic'],
     ['foundation.metadata_write', ['master', 'item-manager', 'customer-manager'], ['foundation.write'], 'nexus_gateway_foundation_metadata_write', 'FOUNDATION', 'WRITE', ['schemaVersion', 'expectedRevision', 'changes'], 'foundation', 'generic'],
     ['foundation.replace_all', ['master', 'item-manager', 'merchops'], ['foundation.write', 'foundation.replace'], 'nexus_gateway_foundation_replace_all', 'FOUNDATION', 'WRITE', ['master', 'history', 'config', 'sourceRevision'], 'foundation', 'replace'],
+    ['company.profile_read', ['nexus-home', 'company'], ['foundation.read'], 'nexus_gateway_company_profile_get', 'FOUNDATION', 'READ', [], 'company', 'profile'],
+    ['company.profile_write', ['company'], ['admin.company'], 'nexus_gateway_company_profile_write', 'FOUNDATION', 'WRITE', ['expectedRevision', 'changes'], 'company', 'profile'],
+    ['company.accounting_period_read', ['company'], ['foundation.read'], 'nexus_gateway_company_accounting_period_get', 'FOUNDATION', 'READ', [], 'company', 'accounting'],
+    ['company.accounting_period_write', ['company'], ['admin.company'], 'nexus_gateway_company_accounting_period_write', 'FOUNDATION', 'WRITE', ['expectedRevision', 'operation', 'period'], 'company', 'accounting'],
+    ['company.certificate_extract', ['company'], ['admin.company'], 'nexus_gateway_company_certificate_extract', 'FOUNDATION', 'READ', ['extraction'], 'company', 'certificate'],
+    ['company.backup_create', ['company'], ['admin.company'], 'nexus_gateway_company_backup_create', 'FOUNDATION', 'WRITE', [], 'company', 'backup'],
+    ['company.migrate_oneapp', ['company'], ['admin.company'], 'nexus_gateway_company_migrate_oneapp', 'FOUNDATION', 'WRITE', ['taskId', 'deploymentCommit'], 'company', 'migration'],
     ['dataops.security_ping', ['dataops', 'merchops', 'orderops'], ['dataops.read'], 'dataops_v1_security_ping', 'DATAOPS', 'READ', [], 'dataops', 'generic'],
     ['dataops.snapshot.get', ['dataops', 'merchops', 'orderops'], ['dataops.read'], 'dataops_snapshot_get', 'DATAOPS', 'READ', [], 'dataops', 'generic'],
     ['dataops.snapshot.commit', ['dataops'], [], 'dataops_snapshot_commit', 'DATAOPS', 'WRITE', ['snapshot'], 'dataops', 'generic'],
@@ -542,6 +551,9 @@ function nexusAuthGatewayRegistry_() {
     var enforceImmutableFields = false;
 
     if (/^foundation\.(config_write|replace_all)$/.test(operationId) || /^orderq\.customer\.reset_/.test(operationId)) {
+      operationClass = 'SYSTEM_ADMIN';
+    }
+    if (/^company\.(profile_write|accounting_period_write|certificate_extract|backup_create|migrate_oneapp)$/.test(operationId)) {
       operationClass = 'SYSTEM_ADMIN';
     }
     if (operationId === 'dataops.snapshot.commit') {
@@ -705,6 +717,7 @@ function nexusAuthGatewayEnvelope_(definition, body, credential, context, reques
   forwarded.roleIds = [definition.securityBoundary + '_READ'];
   if (definition.access === 'WRITE') forwarded.roleIds.push(definition.securityBoundary + '_WRITE');
   if (definition.operationId === 'foundation.replace_all') forwarded.roleIds.push('FOUNDATION_REPLACE');
+  if (/^company\.(profile_write|accounting_period_write|certificate_extract|backup_create|migrate_oneapp)$/.test(definition.operationId)) forwarded.roleIds.push('COMPANY_ADMIN');
   forwarded.deviceId = 'NEXUS_GATEWAY';
   forwarded.device = 'NEXUS_GATEWAY';
   forwarded.environment = 'PRODUCTION';

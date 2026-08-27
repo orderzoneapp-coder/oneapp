@@ -1,5 +1,5 @@
 {
-  "schemaVersion": "1.4.0",
+  "schemaVersion": "1.5.0",
   "updatedAt": "2026-08-27",
   "repository": {
     "fullName": "orderzoneapp-coder/oneapp",
@@ -37,6 +37,7 @@
       "status": "production",
       "purpose": "Show each signed-in user only the applications permitted by the server-issued session and provide the normal work entry after login.",
       "navigatesTo": [
+        "nexus-company",
         "orderops",
         "orderq-vnext",
         "dataops",
@@ -48,7 +49,29 @@
       ],
       "sharedContracts": [
         "nexus-auth",
-        "nexus-header"
+        "nexus-header",
+        "company-profile"
+      ]
+    },
+    {
+      "id": "nexus-company",
+      "name": "NEXUS Company Profile",
+      "path": "nexus/company.html",
+      "kind": "web-entry",
+      "status": "production",
+      "purpose": "Show the authenticated company profile to all permitted users and let the unique owner master maintain company fields, accounting periods, addresses, and locally extracted business-certificate values.",
+      "productionWrites": true,
+      "navigatesTo": [
+        "nexus-work-home"
+      ],
+      "services": [
+        "nexus-auth-gateway",
+        "cloud-sync"
+      ],
+      "sharedContracts": [
+        "nexus-auth",
+        "nexus-header",
+        "company-profile"
       ]
     },
     {
@@ -368,6 +391,14 @@
       "kind": "google-apps-script-service",
       "status": "production",
       "purpose": "Back up and restore product master, history, shared configuration, the finalized DataOps inventory snapshot, explicitly saved Shipping purchase-plan revisions, and token-protected ORDER Q vNext incremental records.",
+      "sourceModules": [
+        "code.gs",
+        "foundation-metadata.gs",
+        "company-profile.gs",
+        "orderq-cloud.gs",
+        "dataops-situation-v2.gs",
+        "dataops-close-stage6.gs"
+      ],
       "apiActions": {
         "post": [
           "initSync",
@@ -381,7 +412,14 @@
           "shipping_plan_get",
           "orderq_sync_push",
           "orderq_sync_pull",
-          "orderq_order_head"
+          "orderq_order_head",
+          "nexus_gateway_company_profile_get",
+          "nexus_gateway_company_profile_write",
+          "nexus_gateway_company_accounting_period_get",
+          "nexus_gateway_company_accounting_period_write",
+          "nexus_gateway_company_certificate_extract",
+          "nexus_gateway_company_backup_create",
+          "nexus_gateway_company_migrate_oneapp"
         ],
         "get": [
           "full",
@@ -398,7 +436,8 @@
         "table-view-config",
         "cloud-url",
         "dataops-inventory-snapshot",
-        "shipping-purchase-plan"
+        "shipping-purchase-plan",
+        "company-profile"
       ]
     }
   ],
@@ -409,6 +448,7 @@
       "consumers": [
         "nexus/index.html",
         "nexus/home/index.html",
+        "nexus/company.html",
         "nexus/admin/index.html",
         "Master.html",
         "Item_manager.html",
@@ -449,8 +489,8 @@
         "configuration": "nexus/common/nexus-auth-config.js",
         "scriptProjectId": "1KNiTNpNRqPYM7XM5MSzGObwfUd303bZRcjgm16MVG3xNqcQpymYXaPI5",
         "productionWebApp": "https://script.google.com/macros/s/AKfycbwIaouo6kzff1J3H3B0K5bWuAEJAcp4K21tyEkL2BuM-SiNsPDGGYVBEXIkBeUGwp4i/exec",
-        "deployedVersion": 8,
-        "deployedContractVersion": "NEXUS_AUTH_V1",
+        "deployedVersion": 18,
+        "deployedContractVersion": "NEXUS_AUTH_V2",
         "sourceContractVersion": "NEXUS_AUTH_V2",
         "cacheVersion": "2.1.0",
         "sessionStorage": "oneapp.nexus.auth.session.v1",
@@ -482,6 +522,7 @@
       "owner": "nexus",
       "consumers": [
         "nexus/home/index.html",
+        "nexus/company.html",
         "nexus/admin/index.html",
         "Master.html",
         "Item_manager.html",
@@ -499,6 +540,7 @@
       "schemaVersion": "NEXUS_HEADER_V3",
       "resources": {
         "component": "nexus/common/nexus-top.js",
+        "componentVersion": "1.9.0",
         "configuration": "nexus/common/apps-config.js",
         "globalActions": "window.NEXUS_GLOBAL_ACTIONS",
         "globalActionVisibilityPreference": "oneapp.nexus.v1.hiddenGlobalActions",
@@ -506,6 +548,37 @@
         "leaveGuardEvent": "nexus:before-navigate",
         "navigationLoadingSession": "oneapp.nexus.v1.navigation",
         "preferencePrefix": "oneapp.nexus.v1."
+      }
+    },
+    {
+      "id": "company-profile",
+      "owner": "nexus-company",
+      "consumers": [
+        "nexus/home/index.html",
+        "nexus/company.html",
+        "nexus/server/nexus-auth-gateway.gs",
+        "code.gs"
+      ],
+      "schemaVersion": "NEXUS_COMPANY_PROFILE_V1",
+      "writerPolicy": "All signed-in users with Foundation read access may read. Only OWNER_MASTER through admin.company may write, extract reviewed certificate fields, create deployment backups, or run the task-scoped one-time migration.",
+      "resources": {
+        "serverModule": "company-profile.gs",
+        "profileSheet": "CompanyProfile_NEXUS",
+        "accountingPeriodSheet": "CompanyAccountingPeriods_NEXUS",
+        "auditSheet": "CompanyAudit_NEXUS",
+        "backupSheet": "CompanyBackups_NEXUS",
+        "migrationSheet": "CompanyMigrations_NEXUS",
+        "migrationTaskId": "NEXUS-COMPANY-20260827-01",
+        "companyId": "ONEAPP",
+        "oneappScriptProjectId": "1wdjJqg_b5SlYDTqt33oNLjxd4OXq5apNwrJ5JQqpr8W2XsxZINLbSXdX",
+        "oneappProductionWebApp": "https://script.google.com/macros/s/AKfycbzOUOIu_bP7NkiFVziDR0Og1da1KO1ePoU09Q3pSlPr-9uD-WkdCpWN7nidO5hlrJi6Qw/exec",
+        "oneappDeployedVersion": 40,
+        "oneappRollbackVersion": 39,
+        "gatewayDeployedVersion": 18,
+        "gatewayRollbackVersion": 17,
+        "postalCode1": "05699",
+        "rawCertificateStorage": false,
+        "representativeBirthDateStorage": false
       }
     },
     {

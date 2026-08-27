@@ -170,9 +170,10 @@ assert.doesNotMatch(read('nexus/admin/index.html'), /type=["']password["']/i, 'a
 const manifest = JSON.parse(read('app-manifest.json'));
 const authContract = manifest.sharedDataContracts.find(contract => contract.id === 'nexus-auth');
 assert.equal(authContract.schemaVersion, 'NEXUS_AUTH_V2');
-assert.equal(authContract.resources.deployedContractVersion, 'NEXUS_AUTH_V1');
+assert.equal(authContract.resources.deployedContractVersion, 'NEXUS_AUTH_V2');
 assert.equal(authContract.resources.sourceContractVersion, 'NEXUS_AUTH_V2');
 assert.equal(authContract.resources.cacheVersion, '2.1.0');
+assert.equal(authContract.resources.deployedVersion, 18);
 assert.equal(authContract.resources.businessCredentials.length, 8);
 assert.equal(authContract.resources.oneappBindings.length, 4);
 assert.match(authContract.resources.legacyCompatibility, /LEGACY_V1/);

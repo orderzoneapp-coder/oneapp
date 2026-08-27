@@ -1,8 +1,8 @@
 # ONEAPP Application Architecture
 
 - Repository: orderzoneapp-coder/oneapp
-- Architecture document version: 1.5.0
-- Last reviewed: 2026-08-26
+- Architecture document version: 1.6.0
+- Last reviewed: 2026-08-27
 - Machine-readable companion: app-manifest.json
 
 ## 1. Purpose
@@ -85,6 +85,7 @@ Shared storage or navigation does not make their business meaning identical.
 |---|---|---|---|
 | `nexus/index.html` | Web entry | Production | Public login, first-owner bootstrap, and invitation activation entry; no business token is entered here |
 | `nexus/home/index.html` | Web entry | Production | Permission-filtered normal-user work home shown after authentication |
+| `nexus/company.html` | Web entry | Production | Authenticated company-profile lookup for every permitted user and owner-master-only maintenance of company fields, accounting periods, addresses, and reviewed local OCR results |
 | `nexus/admin/index.html` | Web entry | Production | Owner-master-only user, permission, service-secret, recovery, and audit administration |
 | `nexus/server/nexus-auth-gateway.gs` | Apps Script service | Production | Authentication database, opaque sessions, permission enforcement, audit logging, and server-only credential proxy to the retained cloud service |
 | `MerchOps.html` | Web entry | Production | Product master review, pricing, promotion, and Excel-based product-information application workflow; stopped-product state is consumed only for worktable protection and compatibility reads |
@@ -99,7 +100,7 @@ Shared storage or navigation does not make their business meaning identical.
 | `orderq/index.html` (`input.html`, `parser.html`, `collector.html`, `cloud.html`) | Web entry group | Pilot | ORDER Q vNext manual/text order intake, source-preserving historical collection, order-to-sales fulfillment evidence, parser evidence review, and token-protected revisioned cloud sync; existing `orderops/` remains an independent compatibility route |
 | `smartinput/index.html` | Web entry | Pilot | Standalone SmartInput workbench for order, purchase, sale, and estimate source capture through direct, file, text, clipboard, photo OCR, and voice STT inputs; source-preserving automatic analysis; configurable entry fields; local estimate catalog; and order delivery to the ORDER Q vNext ledger |
 | `coreEngine.js` | Shared library | Production | Storage, pricing, history, export, cloud synchronization, and master-data utilities |
-| `code.gs` | Cloud service | Production | Google Apps Script API for master, history, configuration, the finalized DataOps inventory snapshot, and immutable Shipping purchase-plan revisions |
+| `code.gs` (`company-profile.gs`) | Cloud service | Production | Google Apps Script API for master, history, configuration, the finalized DataOps inventory snapshot, immutable Shipping purchase-plan revisions, and revisioned server-owned company profile data |
 
 ---
 
@@ -131,7 +132,7 @@ The gateway is also the only browser-facing route to protected Apps Script busin
 
 `foundation.replace_all` is the only V2 full-replacement operation. It requires both `foundation.write` and `foundation.replace`; the ONEAPP server writes Master, History, and Config to the inactive A/B slot under a script lock, verifies the complete staged dataset, and only then switches the active pointer. A timeout or write failure before activation leaves the previous slot active. V2 browser consumers cannot invoke the legacy `initSync`, `chunk_master`, or `chunk_history` sequence; the authenticated `LEGACY_V1` Gateway compatibility path stages the same inactive slot and activates it only after the final config verification.
 
-The owner master is the only administrative authority. `FULL_ACCESS` means all business permissions and explicitly excludes `admin.users`, `admin.services`, and `admin.audit`; custom profiles cannot contain an `admin.*` permission. The server, not the menu, is authoritative. UI filtering is convenience only, and every proxy or administration request is independently authorized by the gateway.
+The owner master is the only administrative authority. `FULL_ACCESS` means all business permissions and explicitly excludes `admin.users`, `admin.services`, `admin.audit`, and `admin.company`; custom profiles cannot contain an `admin.*` permission. The server, not the menu, is authoritative. UI filtering is convenience only, and every proxy or administration request is independently authorized by the gateway.
 
 ### 5.2.1 NEXUS common header
 
@@ -143,9 +144,21 @@ The current application reports only its own save, synchronization, warning, and
 
 Every consumer reserves `--nexus-top-height`; the shared component fixes it at 64px on desktop and 104px at 680px and below, and each consumer includes a light-DOM fallback. Failure to load or initialize the header must leave the application boot path independent and show only the retryable NEXUS fallback. The complete event and API examples are documented in `nexus/common/README.md` and registered as the `nexus-header` shared contract in `app-manifest.json`.
 
+The authenticated user action opens a compact account panel. `내 회사정보` opens the read route for every user, `업무 홈` returns to the permission-filtered home, and the separate logout control remains available. This panel does not grant write authority; the company application and both server layers independently require `OWNER_MASTER` through `admin.company` for writes.
+
 `smartinput/index.html` is a NEXUS-header consumer during its standalone pilot. Its public route is `/smartinput/`; it is registered in the all-apps list and as the fixed-position SmartInput global entry. SmartInput remains part of the Shipping application group for application-list organization and status routing.
 
-### 5.2.2 NEXUS application fixed layout
+### 5.2.2 NEXUS company profile
+
+`nexus/home/index.html` reads the company summary through `company.profile_read` and renders explicit `LOADING`, `EMPTY`, `READY`, or `ERROR` states. `nexus/company.html` owns the view/edit experience. Every authenticated Foundation reader can view the profile and accounting periods; only the unique owner master can write, manage accounting periods, review OCR extraction, create a deployment backup, or run the task-scoped migration. `FULL_ACCESS`, `VIEWER`, and `CUSTOM` roles never receive `admin.company`.
+
+The canonical state is server-owned by `company-profile.gs` in `CompanyProfile_NEXUS`, `CompanyAccountingPeriods_NEXUS`, `CompanyAudit_NEXUS`, `CompanyBackups_NEXUS`, and `CompanyMigrations_NEXUS`. Browser `localStorage`, `sessionStorage`, defaults, and per-load seeding are not company data stores. Profile and accounting writes require the current company revision, run under the common script lock, append an audit record, verify the saved snapshot, and restore every affected sheet snapshot if any step fails.
+
+The one-time migration is identified by `NEXUS-COMPANY-20260827-01`. It updates only approved source fields, records explicit unknowns as `null`, preserves `false`, stores business types/items as arrays, keeps every unprovided existing value, and records an immutable applied marker so reruns and later deployments cannot overwrite user changes. A deployment backup is recorded before the first production application. Rollback uses that backup plus the pre-deployment Apps Script immutable version; records are not silently deleted.
+
+Business-certificate images and PDFs are validated by file signatures and processed locally with PDF.js and Tesseract.js. Only the extracted allow-listed field values, field confidence, source labels, and document signals may cross the gateway for validation. The source file, raw OCR text, representative birth date, resident number, and other sensitive document content are never persisted or logged. Address lookup reuses the existing Daum Postcode service and keeps address 1 and address 2 independent.
+
+### 5.2.3 NEXUS application fixed layout
 
 `nexus/common/nexus-app-ui.css` is the fixed application-layout interface under the common header. The common header spans the browser width; supported application workspaces use the shared `--nexus-content-max-width` and fixed component dimensions. No alternate spacing preference, event, or saved value is read or applied. `nexus/common/nexus-ui-contract.js` is the code registry for application rollout status and registered exceptions; `nexus/common/NEXUS_APP_UI_CONTRACT.md` is the matching operator and regression record.
 
@@ -155,10 +168,13 @@ Foundation is the first pilot consumer. `Master.html`, its embedded `partner_db.
 
 The current applications share the browser database `MerchOpsDB` and a set of `localStorage` keys.
 
+The NEXUS company profile is an explicit exception to browser-owned state: its canonical record, revisions, accounting periods, audit, backups, and migration marker exist only in the protected server sheets described in 5.2.2.
+
 Important contracts include:
 
 | Contract | Current key or resource | Main consumers |
 |---|---|---|
+| Company profile | Protected Apps Script sheets owned by `company-profile.gs`; no browser storage key | NEXUS work home and `nexus/company.html` through the authenticated gateway |
 | Product master | `merchMaster_v870`, `MerchOpsDB` / `master_products` | MerchOps, SmartParser, DataOps synchronization, export center, settings, history viewer, ORDER Q 수기입력(읽기 전용 검색) |
 | Master change notification | `merchMaster_sync_trigger` | SmartParser, DataOps, export center, and settings; MerchOps reloads master values on a full page refresh and keeps an open worktable unchanged |
 | Change history | `merchHistory_v870` | MerchOps, SmartParser, DataOps, history viewer, cloud backup |
