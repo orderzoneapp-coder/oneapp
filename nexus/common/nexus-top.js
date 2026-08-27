@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = '1.7.0';
+  const VERSION = '1.7.1';
   const STORAGE = Object.freeze({
     colorMode: 'oneapp.nexus.v1.colorMode',
     groupOrder: 'oneapp.nexus.v1.groupOrder',
@@ -106,6 +106,7 @@
     cover.classList.remove('is-leaving');
     cover.hidden = false;
     document.documentElement.dataset.nexusNavigating = 'true';
+    document.documentElement.dataset.nexusNavigationCoverCount = String(Number(document.documentElement.dataset.nexusNavigationCoverCount || 0) + 1);
     return cover;
   };
 
@@ -155,8 +156,12 @@
 
   const initialNavigationMarker = readNavigationMarker();
   if (initialNavigationMarker) {
+    document.documentElement.dataset.nexusNavigationCoverCount = '0';
     scheduleNavigationCover(initialNavigationMarker.label, initialNavigationMarker.mode, initialNavigationMarker.startedAt);
-    window.addEventListener('load', () => clearNavigationCover(true), { once: true });
+    window.addEventListener('load', () => {
+      document.documentElement.dataset.nexusNavigationReadyMs = String(Math.max(0, Date.now() - Number(initialNavigationMarker.startedAt || Date.now())));
+      clearNavigationCover(true);
+    }, { once: true });
     window.setTimeout(() => clearNavigationCover(true), 12000);
   }
   window.addEventListener('pageshow', (event) => { if (event.persisted) clearNavigationCover(true); });

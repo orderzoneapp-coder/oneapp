@@ -66,7 +66,12 @@
     document.getElementById('refreshAudit').disabled = true;
     try {
       const rows = await auth.admin.audit(120);
-      document.getElementById('auditList').innerHTML = rows.length ? rows.map(row => `<article class="audit-row"><time>${escapeHtml(row.at)}</time><strong>${escapeHtml(row.action)}</strong><span>${escapeHtml(row.result)} · actor ${escapeHtml(row.actorUserId || '-')} · target ${escapeHtml(row.targetUserId || '-')}</span></article>`).join('') : '<div class="empty-state">감사 기록이 없습니다.</div>';
+      document.getElementById('auditList').innerHTML = rows.length ? rows.map(row => {
+        const detail = row.detail && typeof row.detail === 'object' ? row.detail : {};
+        const operation = [detail.appId, detail.operationId].filter(Boolean).join(' · ');
+        const failure = detail.safeError ? ` · ${detail.safeError}` : '';
+        return `<article class="audit-row"><time>${escapeHtml(row.at)}</time><strong>${escapeHtml(row.action)}</strong><span>${escapeHtml(row.result)} · actor ${escapeHtml(detail.loginId || row.actorUserId || '-')} · app/operation ${escapeHtml(operation || '-')} · target ${escapeHtml(row.targetUserId || '-')}${escapeHtml(failure)}</span></article>`;
+      }).join('') : '<div class="empty-state">감사 기록이 없습니다.</div>';
     } catch (error) { document.getElementById('auditList').innerHTML = `<div class="empty-state">${escapeHtml(error.message)}</div>`; }
     finally { document.getElementById('refreshAudit').disabled = false; }
   }

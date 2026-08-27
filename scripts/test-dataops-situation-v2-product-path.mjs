@@ -45,9 +45,19 @@ await assert.rejects(() => reloaded.DATAOPS_SITUATION_V2_MODULE.publishProductSt
 reloaded.DATAOPS_SITUATION_V2_MODULE.createDefaultOperatorConnection({ url: 'mock://dataops' });
 assert.equal(reloaded.DATAOPS_SITUATION_V2_MODULE.hasRuntimeCredential(), true, 'operator explicitly reconfigures ephemeral credential');
 
+const defaultWarehouseAuthority = makeAuthority({ entities: baseEntities([
+  { entityType: 'WAREHOUSE', entityId: '01', revision: 6, status: 'ACTIVE', payload: { revision: 6, status: 'ACTIVE' } }
+]) });
+const defaultWarehouseCredentials = configureAuthority(defaultWarehouseAuthority);
+const defaultWarehouseBrowser = loadBrowserModule({ fetch: bridge(defaultWarehouseAuthority), expected, serviceCredential: defaultWarehouseCredentials });
+const defaultWarehouseConnection = defaultWarehouseBrowser.DATAOPS_SITUATION_V2_MODULE.createDefaultOperatorConnection({ url: 'mock://dataops' });
+const defaultWarehousePublished = await defaultWarehouseConnection.publish({
+  productData: [{ 품목코드: 'P1', 전산잔량: 7 }], targetDateStr: '2026-08-25'
+});
+assert.equal(defaultWarehousePublished.rows[0].warehouseId, '01', 'existing DataOps forms without a warehouse column use the established 01 warehouse default');
+
 for (const badProductData of [
   [{ 품목코드: 'UNKNOWN', 창고코드: 'W1', 실사: 1 }],
-  [{ 품목코드: 'P1', 창고코드: '', 실사: 1 }],
   [{ 품목코드: 'P1', 창고코드: 'W1', 실사: '' , 전산잔량: '' }]
 ]) {
   const invalid = makeAuthority({ entities: baseEntities() });

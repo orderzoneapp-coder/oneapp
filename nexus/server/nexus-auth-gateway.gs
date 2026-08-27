@@ -1068,6 +1068,8 @@ function nexusAuthConstantTime_(left, right) {
 
 function nexusAuthPublicError_(error) {
   var code = nexusAuthText_(error && error.message ? error.message : error);
-  if (code === 'IMMUTABLE_FIELD' || /^(NEXUS_AUTH|NEXUS_PROXY|NEXUS_GATEWAY|ONEAPP_NEXUS)_/.test(code)) return code;
+  // Upstream business errors are already reduced to an uppercase code by nexusAuthGatewayUpstreamError_.
+  // Returning that code gives operators an actionable failure without exposing a payload, token, stack, or raw response.
+  if (code === 'IMMUTABLE_FIELD' || /^(NEXUS_AUTH|NEXUS_PROXY|NEXUS_GATEWAY|ONEAPP_NEXUS|DATAOPS|ORDERQ|SHIPPING|FOUNDATION|CLOSE)_/.test(code)) return code;
   return 'NEXUS_AUTH_REQUEST_FAILED';
 }
