@@ -2914,7 +2914,6 @@ assert.deepEqual((referenceWorkspace || authBridgeWorkspace).allocations, authBr
 void unresolvedOptionalConnection;
 const configured = [];
 const deferredAuth = await connectSaleStage4ForAnalysis(authBridgeWorkspace, {
-  cloudUrl: "https://example.invalid/exec", accessToken: "operator-token",
   setCloudUrl: (value, remember) => configured.push(["url", value, remember]),
   setCloudAccessToken: (value, remember) => configured.push(["token", value, remember]),
   connect: async () => { throw new Error("ORDERQ_ACCESS_DENIED"); }, allowDeferredAuth: true,
@@ -2927,10 +2926,10 @@ assert.deepEqual(deferredBusinessState, authBridgeWorkspace,
   "auth failure may add only the retry marker and must preserve all ORDER Q business state exactly");
 assert.equal(engine.containsCloudTokenKey(deferredAuth), false,
   "the retry marker saved with local workspace must never contain a raw credential");
-assert.doesNotMatch(JSON.stringify(deferredAuth), /operator-token|example\.invalid|oneapp_orderq_access_token/i,
-  "local save/export workspace must not contain token, endpoint, or storage-key material");
-assert.deepEqual(configured, [["url", "https://example.invalid/exec", true], ["token", "operator-token", false]],
-  "the visible Cloud credential must configure the exact ORDER Q client keys with a session-only token");
+assert.doesNotMatch(JSON.stringify(deferredAuth), /oneapp_orderq_access_token/i,
+  "local save/export workspace must not contain legacy credential storage-key material");
+assert.deepEqual(configured, [],
+  "the NEXUS Gateway bridge must not configure a browser URL or raw ORDER Q credential");
 for (const code of ["CLOUD_NETWORK_ERROR", "CLOUD_TIMEOUT", "CLOUD_HTTP_ERROR"]) {
   const deferredTransport = await connectSaleStage4ForAnalysis(authBridgeWorkspace, {
     setCloudUrl: () => {}, setCloudAccessToken: () => {}, allowDeferredAuth: true,

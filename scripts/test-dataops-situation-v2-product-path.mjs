@@ -20,13 +20,13 @@ function bridge(authority, calls = []) {
 const authority = makeAuthority({ entities: baseEntities() });
 const credentials = configureAuthority(authority);
 const calls = [];
-const browser = loadBrowserModule({ fetch: bridge(authority, calls), expected });
+const browser = loadBrowserModule({ fetch: bridge(authority, calls), expected, serviceCredential: credentials });
 assert.equal(browser.DATAOPS_SITUATION_V2_MODULE.hasRuntimeCredential(), false, 'reload starts without credential');
 assert.equal(browser.DATAOPS_SITUATION_V2_MODULE.operationalSourceReady(context), true);
 await assert.rejects(() => browser.DATAOPS_SITUATION_V2_MODULE.publishProductState('mock://dataops', context), /DATAOPS_V2_CAPABILITY_REQUIRED/);
 assert.equal(authority.values.has('ONEAPP_DATAOPS_SITUATION_CURRENT_POINTER'), false);
 
-const connection = browser.DATAOPS_SITUATION_V2_MODULE.createDefaultOperatorConnection({ url: 'mock://dataops', credential: credentials });
+const connection = browser.DATAOPS_SITUATION_V2_MODULE.createDefaultOperatorConnection({ url: 'mock://dataops' });
 assert.equal((await connection.capability()).ready, true);
 assert.equal(connection.operationalSourceReady(context), true);
 const published = await connection.publish(context);
@@ -39,10 +39,10 @@ assert.deepEqual(calls.map(row => row.action), ['situation_dataops_ping', 'situa
 assert.ok(calls[2].prepareOperationalRequest, 'first party path asks Cloud to prepare authoritative source');
 assert.ok(calls[3].snapshot && calls[3].producerEvidence, 'prepared envelope is then atomically published');
 
-const reloaded = loadBrowserModule({ fetch: bridge(authority), expected });
+const reloaded = loadBrowserModule({ fetch: bridge(authority), expected, serviceCredential: credentials });
 assert.equal(reloaded.DATAOPS_SITUATION_V2_MODULE.hasRuntimeCredential(), false, 'credential is not persisted across reload');
 await assert.rejects(() => reloaded.DATAOPS_SITUATION_V2_MODULE.publishProductState('mock://dataops', context), /DATAOPS_V2_CAPABILITY_REQUIRED/);
-reloaded.DATAOPS_SITUATION_V2_MODULE.createDefaultOperatorConnection({ url: 'mock://dataops', credential: credentials });
+reloaded.DATAOPS_SITUATION_V2_MODULE.createDefaultOperatorConnection({ url: 'mock://dataops' });
 assert.equal(reloaded.DATAOPS_SITUATION_V2_MODULE.hasRuntimeCredential(), true, 'operator explicitly reconfigures ephemeral credential');
 
 for (const badProductData of [
@@ -52,8 +52,8 @@ for (const badProductData of [
 ]) {
   const invalid = makeAuthority({ entities: baseEntities() });
   const invalidCredentials = configureAuthority(invalid);
-  const invalidBrowser = loadBrowserModule({ fetch: bridge(invalid), expected });
-  const invalidConnection = invalidBrowser.DATAOPS_SITUATION_V2_MODULE.createDefaultOperatorConnection({ url: 'mock://dataops', credential: invalidCredentials });
+  const invalidBrowser = loadBrowserModule({ fetch: bridge(invalid), expected, serviceCredential: invalidCredentials });
+  const invalidConnection = invalidBrowser.DATAOPS_SITUATION_V2_MODULE.createDefaultOperatorConnection({ url: 'mock://dataops' });
   await assert.rejects(() => invalidConnection.publish({ productData: badProductData, targetDateStr: '2026-08-25' }));
   assert.equal(invalid.values.has('ONEAPP_DATAOPS_SITUATION_CURRENT_POINTER'), false, 'missing product/warehouse/quantity has publish mutation0');
 }

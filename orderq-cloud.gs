@@ -18,6 +18,10 @@ const ORDERQ_CUSTOMER_RESET_GENERATION_PROPERTY = 'ONEAPP_ORDERQ_CUSTOMER_RESET_
 const ORDERQ_CUSTOMER_RESET_AT_PROPERTY = 'ONEAPP_ORDERQ_CUSTOMER_RESET_AT';
 const ORDERQ_CUSTOMER_RESET_CONFIRMATION = 'RESET_CUSTOMER_MASTER_ONLY';
 const ORDERQ_CUSTOMER_MUTABLE_TYPES = Object.freeze(['CUSTOMER', 'CUSTOMER_ALIAS', 'CUSTOMER_SOURCE_LINK']);
+const ORDERQ_CUSTOMER_MANAGER_SYNC_TYPES = Object.freeze([
+  'CUSTOMER', 'CUSTOMER_ALIAS', 'CUSTOMER_SOURCE_LINK', 'CUSTOMER_SOURCE_LINK_EVENT',
+  'CUSTOMER_HEADER_MAPPING', 'CUSTOMER_USER_FIELD_DEFINITION', 'IMPORT_BATCH'
+]);
 const ORDERQ_CUSTOMER_IMPORT_TYPES = Object.freeze(['CUSTOMER_EXCEL', 'CUSTOMER_CODE_UPSERT', 'CUSTOMER_SOURCE_IMPORT']);
 const ORDERQ_CUSTOMER_INCOMPLETE_IMPORT_STATUSES = Object.freeze(['PREPARED', 'PARTIAL', 'PENDING', 'RETRY', 'FAILED', 'CONFLICT']);
 const ORDERQ_STAGE3_DEPLOYMENT_ID_PROPERTY = 'ONEAPP_ORDERQ_STAGE3_DEPLOYMENT_ID';
@@ -884,6 +888,25 @@ function orderQSyncPull(ss, payload) {
     nextCursor,
     hasMore: pending.length > selected.length,
     customerReset: orderQCustomerResetState()
+  };
+}
+
+function orderQCustomerMasterPush(ss, payload) {
+  const changes = Array.isArray(payload && payload.changes) ? payload.changes : [];
+  const allowed = new Set(ORDERQ_CUSTOMER_MANAGER_SYNC_TYPES);
+  if (changes.some(change => !allowed.has(String(change && change.entityType || '')))) {
+    throw new Error('ORDERQ_CUSTOMER_BOUNDARY_DENIED');
+  }
+  return orderQSyncPush(ss, payload);
+}
+
+function orderQCustomerMasterPull(ss, payload) {
+  const result = orderQSyncPull(ss, payload);
+  const allowed = new Set(ORDERQ_CUSTOMER_MANAGER_SYNC_TYPES);
+  return {
+    ...result,
+    changes: (Array.isArray(result && result.changes) ? result.changes : [])
+      .filter(change => allowed.has(String(change && change.entityType || '')))
   };
 }
 
