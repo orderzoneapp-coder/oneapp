@@ -9,7 +9,8 @@ const master = fs.readFileSync(path.join(root, 'Master.html'), 'utf8');
 const customer = fs.readFileSync(path.join(root, 'partner_db.html'), 'utf8');
 
 assert.match(master, /rawView === 'customers' \? 'customers' : 'products'/, 'invalid and missing view must default to products');
-assert.match(master, /rawMode === 'batch' \? 'batch' : 'list'/, 'invalid and missing mode must default to list');
+assert.match(master, /rawMode === 'batch' \? 'edit' : \(rawMode === 'edit' \|\| rawMode === 'mapping' \? rawMode : 'list'\)/, 'batch must normalize to edit and invalid or missing modes must default to list');
+assert.match(master, /window\.history\.replaceState/, 'normalized routes must replace the invalid URL');
 assert.match(master, /window\.history\.pushState/, 'tab changes must update the URL without reloading');
 assert.match(master, /window\.addEventListener\('popstate'/, 'back and forward navigation must restore tab state');
 assert.match(master, /\[\['products', '상품'\], \['customers', '거래처'\]\]/, 'primary product/customer tabs must exist');
@@ -17,7 +18,7 @@ assert.match(master, /role="tablist"/, 'tab lists must use tab semantics');
 assert.match(master, /role="tab" aria-selected=/, 'tabs must expose selected state');
 assert.match(master, /aria-current=.*'page'/, 'active tabs must expose aria-current');
 assert.match(master, /focus-visible:ring-2/, 'tabs and actions must have visible keyboard focus');
-assert.match(master, /\[\['list', '조회'\], \['batch', '일괄관리'\]\]/, 'lookup and batch management must be persistent child routes');
+assert.match(master, /\[\['list', '조회'\], \['edit', '등록·수정'\], \['mapping', '매핑·관리'\]\]/, 'lookup, edit and mapping must be persistent child routes');
 assert.match(master, /MasterSubnav/, 'product and customer work rows must share one child-navigation component');
 assert.match(master, /master-subnav-link[\s\S]*aria-current=/, 'active child routes must expose aria-current');
 assert.match(master, />\+ 상품 등록<\/button>/, 'product registration must be a work-entry action');
@@ -32,14 +33,15 @@ assert.match(master, /master-work-right[\s\S]*master-work-search/, 'product sear
 assert.match(master, /nexus-app-content.*isCustomerView[\s\S]*?<main className={`nexus-app-content/, 'product and customer workspaces must share the centered width');
 
 assert.match(customer, /initialCustomerMasterMode/, 'customer page must read mode from its URL');
-assert.match(customer, /Master\.html\?view=customers&mode=/, 'legacy customer entry must redirect to the compatible Master route');
+assert.doesNotMatch(customer, /window\.location\.replace\(/, 'direct customer entry must remain compatible instead of redirecting');
+assert.match(customer, /rawCustomerMasterMode === 'batch' \? 'edit'/, 'legacy customer batch mode must normalize to edit');
 assert.match(customer, /data-master-mode="list"/, 'customer list visibility must be mode-scoped');
-assert.match(customer, /data-master-mode="batch"/, 'customer batch visibility must be mode-scoped');
+assert.match(customer, /document\.documentElement\.dataset\.masterMode = mode/, 'customer edit visibility must be mode-scoped');
 assert.match(customer, /거래처 목록/, 'customer list title must exist');
-assert.match(customer, /거래처 일괄 등록·수정/, 'customer batch title must exist');
+assert.match(customer, /거래처 등록·수정/, 'customer edit title must exist');
 assert.match(customer, /cm-batch-only[^>]*id="openErpImportButton"/, 'ERP Excel action must be batch-only');
 assert.match(customer, /cm-batch-only[^>]*id="openShopImportButton"/, 'shop Excel action must be batch-only');
-assert.match(customer, /cm-list-only[^>]*id="newCustomerButton"/, 'single customer registration must be list-only');
+assert.match(customer, /cm-list-only[^>]*id="newCustomerButton"/, 'single customer registration must remain available');
 assert.match(customer, /ONEAPP_MASTER_MODE/, 'customer iframe must accept in-place mode changes');
 assert.match(customer, /nexus-theme-init\.js/, 'customer iframe must resolve the theme before body rendering');
 assert.match(customer, /oneapp-design-tokens\.css/, 'customer iframe must consume common design tokens');

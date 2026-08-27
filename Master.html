@@ -8,9 +8,15 @@
     <script>
         (function () {
             var params = new URLSearchParams(window.location.search);
-            var view = params.get('view') || 'products';
-            if (view === 'products' && params.get('mode') === 'manage') {
-                window.location.replace(new URL('Item_manager.html', window.location.href).href);
+            var rawView = params.get('view');
+            var rawMode = params.get('mode');
+            var view = rawView === 'customers' ? 'customers' : 'products';
+            var mode = rawMode === 'batch' ? 'edit' : (rawMode === 'edit' || rawMode === 'mapping' ? rawMode : 'list');
+            if (rawView !== view || rawMode !== mode) {
+                var url = new URL(window.location.href);
+                url.searchParams.set('view', view);
+                url.searchParams.set('mode', mode);
+                window.history.replaceState({ view: view, mode: mode }, '', url.pathname + url.search + url.hash);
             }
         })();
     </script>
@@ -27,6 +33,7 @@
     <link rel="stylesheet" href="/nexus/common/oneapp-design-tokens.css?v=1.2.0">
     <link rel="stylesheet" href="/nexus/common/nexus-app-ui.css?v=2.0.0">
     <link rel="stylesheet" href="/nexus/common/nexus-master-theme.css?v=1.0.0">
+    <link rel="stylesheet" href="/nexus/foundation/foundation-metadata.css?v=1.0.0">
     
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; -webkit-user-select: none; user-select: none; background-color: #f1f5f9; margin: 0; }
@@ -89,6 +96,8 @@
     </style>
     <script src="/nexus/common/nexus-auth-config.js?v=2.0.1"></script>
     <script src="/nexus/common/nexus-auth.js?v=2.1.0"></script>
+    <script src="/nexus/foundation/foundation-metadata.js?v=1.0.0"></script>
+    <script src="/nexus/foundation/foundation-metadata-ui.js?v=1.0.0"></script>
     <script src="/nexus/common/apps-config.js?v=1.4.0"></script>
 <script src="/nexus/common/nexus-top.js?v=1.8.1"></script>
     <script src="/nexus/common/nexus-ui-contract.js?v=2.0.0"></script>
@@ -152,7 +161,7 @@
 
     <script type="text/babel">
         if (!window.React || !window.ReactDOM) { throw new Error('React/ReactDOM 라이브러리 로드 실패'); }
-        const { useState, useMemo, useEffect, useCallback, Fragment } = React;
+        const { useState, useMemo, useEffect, useCallback, useRef, Fragment } = React;
 
         // ==========================================
         // 🔑 Global Storage Keys & Constants
@@ -481,7 +490,7 @@
         const MasterSubnav = ({ view, mode, onSelectMode }) => (
             <div className="master-work-left" aria-label={`${view === 'customers' ? '거래처' : '상품'} 하위 기능`}>
                 <strong className="text-[12px] font-black text-slate-800 whitespace-nowrap">{view === 'customers' ? '거래처' : '상품'}</strong>
-                {[['list', '조회'], ['batch', '일괄관리']].map(([targetMode, label]) => (
+                {[['list', '조회'], ['edit', '등록·수정'], ['mapping', '매핑·관리']].map(([targetMode, label]) => (
                     <button key={targetMode} type="button" onClick={() => onSelectMode(targetMode)} aria-current={mode === targetMode ? 'page' : undefined}
                         className="master-subnav-link focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-inset">
                         {label}
@@ -489,6 +498,15 @@
                 ))}
             </div>
         );
+
+        const FoundationMetadataWorkspace = ({ entityType }) => {
+            const hostRef = useRef(null);
+            useEffect(() => {
+                if (!hostRef.current || !window.NEXUS_FOUNDATION_UI) return undefined;
+                return window.NEXUS_FOUNDATION_UI.mount(hostRef.current, { entityType });
+            }, [entityType]);
+            return <div ref={hostRef} className="w-full h-full" aria-label={`${entityType === 'CUSTOMER' ? '거래처' : '상품'} 필드·매핑 관리`}></div>;
+        };
 
         const IframeSettingsModal = ({ isOpen, onClose }) => {
             if (!isOpen) return null;
@@ -577,6 +595,11 @@
                         <div className="px-6 py-5 bg-amber-50 border-b border-amber-200">
                             <h2 className="text-lg font-black text-amber-900">추가·갱신 확인요청</h2>
                             <p className="text-xs text-amber-800 mt-1">아직 master에는 아무 값도 저장하지 않았습니다. 이슈 화면에서 승인 범위를 결정하세요.</p>
+                            {analysis.foundationMapping && (
+                                <p className="text-[11px] font-bold text-indigo-700 mt-2">
+                                    매핑 양식: {analysis.foundationMapping.mappingSetName} · 연결 {analysis.foundationMapping.summary.mapped} · 제외 {analysis.foundationMapping.summary.ignored + analysis.foundationMapping.summary.disabled + analysis.foundationMapping.summary.unmapped} · 행 실패 {analysis.foundationMapping.summary.rowFailures}
+                                </p>
+                            )}
                         </div>
                         <div className="p-6 grid grid-cols-3 gap-3">
                             {rows.map(([label, count]) => (
@@ -714,6 +737,22 @@
 
                     {errorMessage && (
                         <div className="px-5 py-3 bg-rose-100 border-b border-rose-300 text-xs font-bold text-rose-900 shrink-0">{errorMessage}</div>
+                    )}
+
+                    {analysis.foundationMapping?.issues?.length > 0 && (
+                        <div className="px-5 py-3 bg-amber-50 border-b border-amber-200 shrink-0 max-h-40 overflow-y-auto">
+                            <div className="text-xs font-black text-amber-900 mb-2">매핑 제외·실패 근거 · 원본 헤더 / 원본값 / 이유</div>
+                            <div className="grid gap-1 text-[10px] text-amber-950">
+                                {analysis.foundationMapping.issues.slice(0, 100).map((issue, index) => (
+                                    <div key={`${issue.rowIndex}-${issue.columnIndex}-${index}`} className="grid grid-cols-[70px_150px_minmax(120px,1fr)_230px] gap-2 rounded bg-white/80 border border-amber-200 px-2 py-1">
+                                        <b>Excel {Number(analysis.foundationMapping.headerRowNumber || 1) + Number(issue.rowIndex || 0) + 1}행</b>
+                                        <span>{issue.originalHeader || issue.fieldId || '(헤더 없음)'}</span>
+                                        <span className="break-all">{formatReviewValue(issue.rawValue)}</span>
+                                        <code>{issue.reasonCode}{issue.rowFailed ? ' · 행 실패' : ' · 필드 제외'}</code>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
                     )}
 
                     <div className="flex-1 overflow-y-auto p-5 space-y-4">
@@ -919,14 +958,15 @@
                 const rawMode = params.get('mode');
                 return {
                     view: rawView === 'customers' ? 'customers' : 'products',
-                    mode: rawMode === 'batch' ? 'batch' : 'list'
+                    mode: rawMode === 'batch' ? 'edit' : (rawMode === 'edit' || rawMode === 'mapping' ? rawMode : 'list')
                 };
             };
             const [masterRoute, setMasterRoute] = useState(readMasterRoute);
             const [customerFrameInitialMode] = useState(() => readMasterRoute().mode);
             const [masterTheme, setMasterTheme] = useState(() => document.documentElement.dataset.nexusTheme === 'dark' ? 'dark' : 'light');
             const isCustomerView = masterRoute.view === 'customers';
-            const isBatchMode = masterRoute.mode === 'batch';
+            const isBatchMode = masterRoute.mode === 'edit';
+            const isMappingMode = masterRoute.mode === 'mapping';
             const [masterProducts, setMasterProducts] = useState({});
             const config = useMerchConfig();
             const [toastMsg, setToastMsg] = useState("");
@@ -955,7 +995,7 @@
             const selectMasterRoute = useCallback((nextRoute) => {
                 const normalized = {
                     view: nextRoute.view === 'customers' ? 'customers' : 'products',
-                    mode: nextRoute.mode === 'batch' ? 'batch' : 'list'
+                    mode: nextRoute.mode === 'edit' || nextRoute.mode === 'mapping' ? nextRoute.mode : 'list'
                 };
                 const url = new URL(window.location.href);
                 url.searchParams.set('view', normalized.view);
@@ -995,7 +1035,16 @@
                         });
                     }
                 };
-                const handlePopState = () => setMasterRoute(readMasterRoute());
+                const handlePopState = () => {
+                    const normalized = readMasterRoute();
+                    const url = new URL(window.location.href);
+                    if (url.searchParams.get('view') !== normalized.view || url.searchParams.get('mode') !== normalized.mode) {
+                        url.searchParams.set('view', normalized.view);
+                        url.searchParams.set('mode', normalized.mode);
+                        window.history.replaceState(normalized, '', `${url.pathname}${url.search}${url.hash}`);
+                    }
+                    setMasterRoute(normalized);
+                };
                 window.addEventListener('message', handleMessage);
                 window.addEventListener('popstate', handlePopState);
                 return () => {
@@ -1056,18 +1105,42 @@
                 const reader = new FileReader();
                 reader.onload = async (loadEvent) => {
                     try {
-                        const parsed = parseMasterAddUpdateWorkbook(loadEvent.target.result);
+                        const foundationMetadata = await window.NEXUS_FOUNDATION.load('PRODUCT', { includeDisabled: true });
+                        const parsed = window.NEXUS_FOUNDATION.parseWorkbook(loadEvent.target.result, {
+                            metadata: foundationMetadata,
+                            entityType: 'PRODUCT',
+                            sourceSystem: 'ERP',
+                            XLSX: window.XLSX
+                        });
+                        const mapped = window.NEXUS_FOUNDATION.mapWorkbook(foundationMetadata, {
+                            entityType: 'PRODUCT',
+                            sourceSystem: 'ERP',
+                            headers: parsed.headers,
+                            rows: parsed.rows,
+                            existingByIdentifier: masterProducts
+                        });
                         const analysis = window.ONEAPP_MASTER_ADD_UPDATE.analyzeUploadRows({
-                            ...parsed,
+                            headers: mapped.headers,
+                            rows: mapped.rows,
                             currentMaster: masterProducts,
                             revision: masterPageRevision,
                             fileName: file.name
                         });
+                        analysis.foundationMapping = {
+                            mappingSetId: mapped.mappingSet?.mappingSetId || '',
+                            mappingSetName: mapped.mappingSet?.name || '시스템 별칭 임시 양식',
+                            columns: mapped.columns,
+                            issues: mapped.issues,
+                            summary: mapped.summary,
+                            headerRowNumber: Number(parsed.headerRowNumber || 1)
+                        };
                         const hasReviewIssue = analysis.summary.newCount > 0
                             || analysis.summary.changedCount > 0
                             || analysis.summary.missingCount > 0
                             || analysis.summary.duplicateCount > 0
-                            || analysis.summary.blockingCount > 0;
+                            || analysis.summary.blockingCount > 0
+                            || mapped.summary.fieldExclusions > 0
+                            || mapped.summary.rowFailures > 0;
                         if (!hasReviewIssue) {
                             showToast(`ℹ️ 업로드 ${analysis.summary.sameCount.toLocaleString()}건이 현재 master와 동일하여 저장 대상이 없습니다.`);
                             return;
@@ -1312,33 +1385,41 @@
                         onOpenSettings={() => setShowSettingsModal(true)}
                         onPush={handlePush}
                         onPull={handlePull}
-                        showCloudActions={!isCustomerView}
+                        showCloudActions={!isCustomerView && !isMappingMode}
                     />
 
-                    <main className={`nexus-app-content ${isCustomerView ? 'flex' : 'hidden'} flex-1 flex-col overflow-hidden bg-slate-50`} aria-hidden={!isCustomerView}>
+                    <main className={`nexus-app-content ${isMappingMode ? 'flex' : 'hidden'} flex-1 flex-col overflow-hidden bg-slate-50`} aria-hidden={!isMappingMode}>
+                        <div className="nexus-work-tools master-work-tools flex flex-wrap items-center justify-between border-b border-slate-200 bg-white shrink-0">
+                            <MasterSubnav view={masterRoute.view} mode={masterRoute.mode} onSelectMode={(mode) => selectMasterRoute({ view: masterRoute.view, mode })} />
+                            <div className="master-work-right"><span className="text-[12px] font-bold text-slate-500">회사 범위 필드 레지스트리 · 매핑 양식 · 감사 저장</span></div>
+                        </div>
+                        <FoundationMetadataWorkspace entityType={isCustomerView ? 'CUSTOMER' : 'PRODUCT'} />
+                    </main>
+
+                    <main className={`nexus-app-content ${isCustomerView && !isMappingMode ? 'flex' : 'hidden'} flex-1 flex-col overflow-hidden bg-slate-50`} aria-hidden={!isCustomerView || isMappingMode}>
                             <div className="nexus-work-tools master-work-tools flex flex-wrap items-center justify-between border-b border-slate-200 bg-white shrink-0">
                                 <MasterSubnav view="customers" mode={masterRoute.mode} onSelectMode={(mode) => selectMasterRoute({ view: 'customers', mode })} />
                                 <div className="master-work-right">
-                                    <span className="text-[12px] font-bold text-slate-500">{isBatchMode ? 'ERP·쇼핑몰 Excel 등록·수정' : '검색·필터·단건 등록'}</span>
+                                    <span className="text-[12px] font-bold text-slate-500">{isBatchMode ? '단건 등록·수정 · ERP·쇼핑몰 Excel 작업대' : '검색·필터·조회'}</span>
                                 </div>
                             </div>
                             <iframe
                                 id="customerMasterFrame"
-                                src={`./partner_db.html?embedded=1&mode=${customerFrameInitialMode}&release=customer-completeness-022`}
+                                src={`./partner_db.html?embedded=1&mode=${customerFrameInitialMode}&release=foundation-metadata-110`}
                                 className="w-full h-full border-0 bg-slate-50"
-                                title={isBatchMode ? '거래처 일괄 등록·수정' : '거래처 목록'}
+                                title={isBatchMode ? '거래처 등록·수정' : '거래처 조회'}
                                 onLoad={(event) => {
                                     event.currentTarget.contentWindow?.postMessage({ type: 'ONEAPP_MASTER_MODE', mode: masterRoute.mode }, window.location.origin);
                                     event.currentTarget.contentWindow?.postMessage({ type: 'ONEAPP_NEXUS_THEME', theme: masterTheme }, window.location.origin);
                                 }}
                             ></iframe>
                     </main>
-                    <main className={`nexus-app-content ${isCustomerView ? 'hidden' : 'flex'} flex-1 flex-col overflow-hidden bg-slate-50 border-x border-slate-200`} aria-hidden={isCustomerView}>
+                    <main className={`nexus-app-content ${!isCustomerView && !isMappingMode ? 'flex' : 'hidden'} flex-1 flex-col overflow-hidden bg-slate-50 border-x border-slate-200`} aria-hidden={isCustomerView || isMappingMode}>
                         <div className="nexus-work-tools master-work-tools bg-white border-b border-slate-200 flex flex-wrap items-center justify-between shrink-0 z-10 shadow-sm">
                             <MasterSubnav view="products" mode={masterRoute.mode} onSelectMode={(mode) => selectMasterRoute({ view: 'products', mode })} />
                             <div className="master-work-right">
                                 <span className="text-[12px] font-bold text-slate-500 whitespace-nowrap">
-                                    {isBatchMode ? '상품 일괄 관리' : `결과 ${displayRows.length.toLocaleString()}건`} · 전체 {Object.keys(masterProducts).length.toLocaleString()}건
+                                    {isBatchMode ? '상품 등록·수정' : `결과 ${displayRows.length.toLocaleString()}건`} · 전체 {Object.keys(masterProducts).length.toLocaleString()}건
                                 </span>
                                 {Object.keys(masterProducts).length === 0 && (
                                     <span className="text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5 whitespace-nowrap">
@@ -1358,6 +1439,7 @@
                                     </>
                                 ) : (
                                     <>
+                                        <button type="button" onClick={(e) => handleNavigate(e, 'Item_manager.html', true)} className="h-9 px-4 rounded-lg text-[12px] font-bold bg-white text-slate-700 hover:bg-slate-100 border border-slate-300 shadow-sm">직접 편집</button>
                                         <select aria-label="일괄 관리 방식" value="add-update" onChange={() => {}} className="h-9 px-3 rounded-lg text-[12px] font-bold bg-slate-100 text-slate-700 border border-slate-300 outline-none">
                                             <option value="add-update">추가·갱신</option>
                                             <option value="initial" disabled>최초 등록 · 미지원</option>

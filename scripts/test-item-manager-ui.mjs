@@ -86,13 +86,17 @@ assert.match(css, /@media \(max-width: 760px\)/);
 assert.match(css, /\.table-scroll[\s\S]*display:\s*block/);
 assert.doesNotMatch(js, /renderMobileEditor|mobileRowId|mobile-editor/);
 
-assert.match(master, /params\.get\('mode'\) === 'manage'/);
-assert.match(master, /window\.location\.replace\(new URL\('Item_manager\.html'/);
+assert.match(master, /rawMode === 'batch' \? 'edit'/);
+assert.match(master, /FoundationMetadataWorkspace/);
 assert.match(master, />\+ 상품 등록<\/button>/);
-assert.match(master, /\[\['list', '조회'\], \['batch', '일괄관리'\]\]/);
+assert.match(master, /\[\['list', '조회'\], \['edit', '등록·수정'\], \['mapping', '매핑·관리'\]\]/);
 assert.match(html, /oneapp-app-header-content/);
 assert.match(html, /aria-label="상품 하위 기능"/);
 assert.match(html, />등록·수정<\/a>/);
+assert.match(html, /Master\.html\?view=products&mode=mapping/);
+assert.match(html, /foundation-metadata\.js/);
+assert.match(js, /loadFoundationFieldDefinitions/);
+assert.match(js, /def\.dataType === "TIME"/);
 assert.doesNotMatch(html, /MASTER ·/);
 
 console.log("Item manager UI contract tests passed.");

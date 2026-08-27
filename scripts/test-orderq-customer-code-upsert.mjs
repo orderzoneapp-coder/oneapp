@@ -65,7 +65,9 @@ assert.match(core, /customerImportId/, 'T15 every upload queue row retains its o
 assert.match(core, /acked\.length === owned\.length/, 'T15 completion requires every owned queue row ACK');
 assert.match(ui, /scheduleCloudRetry/, 'T15 pending Cloud work has automatic retry');
 assert.match(ui, /addEventListener\('online'/, 'T15 retry resumes immediately when connectivity returns');
-assert.match(page, /customer-code-upsert-ui\.js\?v=0\.17\.0/, 'T15 retry patch has an explicit browser cache version');
+assert.match(page, /customer-code-upsert-ui\.js\?v=0\.18\.0/, 'Foundation adapter has an explicit browser cache version');
+assert.match(ui, /prepareCustomerLegacyUpsert/, 'Foundation mapping must feed the unchanged customer code upsert core through an adapter');
+assert.match(ui, /state\.mappingPreview\.legacyMappings/, 'only Foundation-generated compatibility mappings are persisted into the unchanged core adapter');
 assert.match(ui, /로컬 저장/, 'T15 UI separates local state');
 assert.match(ui, /Cloud 동기화/, 'T15 UI separates Cloud state');
 assert.match(cloud, /ORDERQ_SHEET_SCHEMA_VERSION = '8'/, 'T15 Cloud schema advances');

@@ -77,7 +77,7 @@ assert.match(ui, /getLatestCustomerSourceImportWork/, 'Pending Excel work must r
 assert.match(ui, /importStatusFilter: 'ISSUES'/, 'Workbench must default to unresolved customer rows');
 assert.match(html, /erpCustomerExcelFile/);
 assert.match(html, /거래처 DB/);
-assert.match(html, /customer-master-ui\.js\?v=0\.22\.0/, 'Customer Master entry module must invalidate the deployed cache');
+assert.match(html, /customer-master-ui\.js\?v=0\.23\.0/, 'Customer Master entry module must invalidate the deployed cache');
 assert.match(ui, /async function initializeCustomerMaster\(\) \{\s+const pending = await getLatestCustomerSourceImportWork\(\)/, 'Saved Excel work must render before Cloud Master synchronization');
 assert.match(ui, /await reload\(\);[\s\S]*ensureCustomerMasterReady/, 'Local Customer Master must render before Cloud synchronization');
 assert.match(ui, /fallbackFileHash/, 'Excel import must continue with a deterministic file hash when Web Crypto stalls');
@@ -88,9 +88,11 @@ assert.match(html, /oneapp-design-tokens\.css/, 'Customer Master must consume sh
 assert.match(html, /ONEAPP_NEXUS_THEME/, 'embedded Customer Master must accept live theme updates');
 assert.match(css, /--cm-panel:\s*var\(--oneapp-surface\)/, 'Customer Master panels must use semantic surfaces');
 assert.match(css, /\.cm-search[^\n]+margin-left:\s*auto/, 'Customer search must align with the right-side work group');
-assert.match(html, /Master\.html\?view=customers&mode=\$\{initialCustomerMasterMode\}&release=customer-completeness-022/, 'Standalone route must invalidate the cached Master shell');
-assert.match(masterShell, /partner_db\.html\?embedded=1&mode=\$\{customerFrameInitialMode\}&release=customer-completeness-022/, 'Master shell must invalidate the cached customer iframe');
-assert.match(ui, /customer-master\.js\?v=0\.18\.0/, 'Customer Master Workbench service must invalidate the deployed cache');
+assert.doesNotMatch(html, /window\.location\.replace\(/, 'Standalone customer route must remain directly usable');
+assert.match(masterShell, /partner_db\.html\?embedded=1&mode=\$\{customerFrameInitialMode\}&release=foundation-metadata-110/, 'Master shell must invalidate the cached customer iframe');
+assert.match(ui, /customer-master\.js\?v=0\.19\.0/, 'Customer Master Workbench service must invalidate the deployed cache');
+assert.match(service, /'priceGroupCode', 'priceGroup'/, 'priceGroup compatibility storage must remain intact');
+assert.doesNotMatch(service, /priceGroupName/, 'the incompatible priceGroupName key must not be introduced');
 assert.doesNotMatch(html, /문제 거래처만 보기/);
 assert.match(ui, /data-import-status/, 'Import counts must act as status filters');
 assert.match(sourceImport, /newDraftConfirmed: status === CUSTOMER_IMPORT_STATUS\.NEW/, 'Unmatched source rows must be prepared for bulk draft creation');

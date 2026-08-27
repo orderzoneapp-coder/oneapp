@@ -10,6 +10,7 @@
  * - ORDER Q vNext는 목적별 시트와 revision 기반 증분 동기화를 사용
  * - ORDER Q API 접근토큰과 주문 bundle 복구 transaction log를 사용
  * - 이력수집 원본·판매·구매·재고·주문·출고연결·파서근거를 목적별 시트에 보존
+ * - 기준정보 필드·매핑 메타데이터는 Config와 분리된 revision snapshot으로 보존
  */
 
 const SHEET_NAMES = {
@@ -967,6 +968,22 @@ function doPost(e) {
       const history = oneappNexusFoundationHistory(ss, payload);
       return jsonResponse({ status: 'success', action, data: { history, summary: { historyCount: history.length } } });
     }
+    if (action === 'nexus_gateway_foundation_metadata_get') {
+      const foundationAuth = oneappNexusGatewayRequire(payload, 'FOUNDATION', 'READ');
+      return withScriptLock(() => jsonResponse({
+        status: 'success',
+        action,
+        data: foundationMetadataRead(ss, payload, foundationAuth)
+      }));
+    }
+    if (action === 'nexus_gateway_foundation_metadata_write') {
+      const foundationAuth = oneappNexusGatewayRequire(payload, 'FOUNDATION', 'WRITE');
+      return withScriptLock(() => jsonResponse({
+        status: 'success',
+        action,
+        data: foundationMetadataWrite(ss, payload, foundationAuth)
+      }));
+    }
     if (action === 'nexus_gateway_foundation_config_write') {
       if (!oneappNexusGatewayRequire(payload, 'FOUNDATION', 'WRITE')) throw new Error('ONEAPP_NEXUS_GATEWAY_ACCESS_DENIED');
       return withScriptLock(() => jsonResponse({ status: 'success', action, data: saveConfigData(oneappNexusFoundationSheet(ss, 'CONFIG', oneappNexusFoundationActiveSlot()), payload.data || {}) }));
@@ -1208,7 +1225,9 @@ function doPost(e) {
 
     throw new Error('알 수 없는 Action입니다: ' + action);
   } catch (error) {
-    return jsonResponse({ status: 'error', message: String(error && error.message ? error.message : error) });
+    const response = { status: 'error', message: String(error && error.message ? error.message : error) };
+    if (Number.isFinite(Number(error && error.latestRevision))) response.latestRevision = Number(error.latestRevision);
+    return jsonResponse(response);
   }
 }
 

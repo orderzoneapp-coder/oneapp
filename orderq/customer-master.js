@@ -36,8 +36,9 @@ export const CUSTOMER_FIELDS = Object.freeze([
   'customerCode', 'customerName', 'representativeName', 'businessNumber', 'businessType',
   'businessItem', 'phone', 'fax', 'mobile', 'email', 'postalCode', 'address',
   'addressDetail', 'contactName', 'contactPhone',
-  'group1Code', 'group1Name', 'group2Code', 'group2Name', 'priceGroup',
-  'paymentDay', 'bankAccountText', 'memo', 'searchText', 'groupName',
+  'group1Code', 'group1Name', 'group2Code', 'group2Name', 'priceGroupCode', 'priceGroup',
+  'paymentDay', 'creditLimitAmount', 'creditPeriodDays', 'bankAccountText', 'transferInfo',
+  'memo', 'searchText', 'groupName',
   ...Array.from({ length: 10 }, (_, index) => `userText${String(index + 1).padStart(2, '0')}`),
   ...Array.from({ length: 10 }, (_, index) => `userNumber${String(index + 1).padStart(2, '0')}`)
 ]);
@@ -169,9 +170,16 @@ export function normalizeCustomer(input = {}, previous = null) {
   };
   CUSTOMER_FIELDS.forEach(field => {
     if (field === 'customerCode' || field === 'customerName') return;
-    if (/^userNumber\d{2}$/.test(field)) {
+    if (/^userNumber\d{2}$/.test(field) || ['creditLimitAmount', 'creditPeriodDays'].includes(field)) {
       const value = input[field] ?? previous?.[field];
-      normalized[field] = value === '' || value == null ? '' : Number(value);
+      const number = Number(value);
+      normalized[field] = value === '' || value == null ? '' : (Number.isFinite(number) && number >= 0 && (field !== 'creditPeriodDays' || Number.isInteger(number)) ? number : clean(value));
+      return;
+    }
+    if (field === 'paymentDay') {
+      const value = input[field] ?? previous?.[field];
+      const number = Number(value);
+      normalized[field] = value === '' || value == null ? '' : (Number.isInteger(number) && number >= 1 && number <= 31 ? number : clean(value));
       return;
     }
     normalized[field] = clean(input[field] ?? previous?.[field]);

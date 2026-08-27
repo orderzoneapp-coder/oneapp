@@ -7,7 +7,7 @@ import {
   searchCustomers,
   synchronizeCustomerMaster,
   updateCustomer
-} from './customer-master.js?v=0.18.0';
+} from './customer-master.js?v=0.19.0';
 import {
   CUSTOMER_SOURCE_MATCH_METHOD,
   CUSTOMER_SOURCE_MAPPING_VERSION,
@@ -71,8 +71,9 @@ const IMPORT_FIELD_LABELS = Object.freeze({
   contactPhone: '담당자연락처',
   group1Code: '거래처그룹1코드', group1Name: '그룹1',
   group2Code: '거래처그룹2코드', group2Name: '거래처그룹2명',
-  priceGroup: '단가그룹', paymentDay: '결제일', bankAccountText: '계좌',
-  memo: '적요', searchText: '검색창내용'
+  priceGroupCode: '단가그룹코드', priceGroup: '단가그룹', paymentDay: '결제일',
+  creditLimitAmount: '여신한도금액', creditPeriodDays: '여신기간(일)',
+  bankAccountText: '계좌', transferInfo: '이체정보', memo: '적요', searchText: '검색창내용'
 });
 const ISSUE_STATUSES = new Set([
   CUSTOMER_IMPORT_STATUS.CHANGED, CUSTOMER_IMPORT_STATUS.REVIEW_REQUIRED,
@@ -275,8 +276,9 @@ async function openEditor(customer = null) {
     'customerId', 'revision', 'customerName', 'customerCode', 'representativeName',
     'businessNumber', 'businessType', 'businessItem', 'phone', 'fax', 'mobile',
     'email', 'postalCode', 'address', 'addressDetail', 'contactName', 'contactPhone',
-    'group1Code', 'group1Name', 'group2Code', 'group2Name', 'priceGroup',
-    'paymentDay', 'bankAccountText', 'memo', 'searchText', 'status'
+    'group1Code', 'group1Name', 'group2Code', 'group2Name', 'priceGroupCode', 'priceGroup',
+    'paymentDay', 'creditLimitAmount', 'creditPeriodDays', 'bankAccountText', 'transferInfo',
+    'memo', 'searchText', 'status'
   ];
   fields.forEach(field => {
     const input = elements.form.elements.namedItem(field);

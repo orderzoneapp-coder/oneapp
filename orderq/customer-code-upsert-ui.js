@@ -9,7 +9,7 @@ import {
   runCustomerCodeUpsert,
   saveCustomerHeaderMapping,
   saveCustomerUserFieldDefinition,
-} from './customer-code-upsert.js?v=0.16.2';
+} from './customer-code-upsert.js?v=0.18.0';
 import { getByKey, STORE } from './orderq-db.js?v=0.16.0';
 import { pushPending } from './orderq-sync-engine.js?v=0.16.1';
 
@@ -27,6 +27,8 @@ const state = {
   definitions: [],
   cloudRetryTimer: 0,
   syncingCloud: false,
+  foundationMetadata: null,
+  mappingPreview: null,
 };
 
 const byId = id => document.getElementById(id);
@@ -275,12 +277,25 @@ function renderFatal(error, processed = 0, total = 0) {
 async function selectHeaderRow(matrix) {
   const candidates = await Promise.all(matrix.slice(0, 30).map(async (row, index) => {
     const headers = (row || []).map(clean);
+    if (state.foundationMetadata && window.NEXUS_FOUNDATION) {
+      try {
+        const mapping = window.NEXUS_FOUNDATION.resolveHeaders(state.foundationMetadata, {
+          entityType: 'CUSTOMER', sourceSystem: state.sourceSystem, headers
+        });
+        return { index, headers, mapping, score: mapping.resolved.filter(column => column.status === 'MAPPED').length, hasCustomerCode: true };
+      } catch (error) {
+        return { index, headers, mapping: null, score: 0, hasCustomerCode: false, error };
+      }
+    }
     const mapping = await buildCustomerHeaderMapping(headers, state.sourceSystem);
-    return { index, headers, mapping, score: mapping.matched.length };
+    return { index, headers, mapping, score: mapping.matched.length, hasCustomerCode: mapping.hasCustomerCode };
   }));
-  const valid = candidates.filter(candidate => candidate.mapping.hasCustomerCode)
+  const valid = candidates.filter(candidate => candidate.hasCustomerCode)
     .sort((a, b) => b.score - a.score || a.index - b.index);
   if (valid.length) return valid[0];
+  const blocked = candidates.filter(candidate => candidate.error)
+    .sort((a, b) => b.headers.filter(Boolean).length - a.headers.filter(Boolean).length || a.index - b.index)[0];
+  if (blocked) throw blocked.error;
   const error = new Error('거래처코드 열을 찾지 못해 등록·수정 0건으로 종료했습니다.');
   error.code = 'CUSTOMER_CODE_COLUMN_NOT_FOUND';
   error.detectedHeaders = candidates.slice(0, 10).map(row => ({ excelRow: row.index + 1, headers: row.headers }));
@@ -296,9 +311,26 @@ function rowsAfterHeader(matrix, header) {
 function renderPreview() {
   showWorkbench();
   const previewRows = state.rawRows.slice(0, 100);
+  const displayHeaders = state.mappingPreview
+    ? state.mappingPreview.columns.map(column => column.originalHeader).filter(Boolean)
+    : state.headers;
+  const displayRows = state.mappingPreview
+    ? previewRows.map(row => row.__foundationOriginalRow || {})
+    : previewRows;
+  const mappingSummary = state.mappingPreview
+    ? `<p>매핑 양식 ${escapeHtml(state.mappingPreview.mappingSet?.name || '시스템 별칭 임시 양식')} · 연결 ${state.mappingPreview.summary.mapped} · 제외 ${state.mappingPreview.summary.ignored + state.mappingPreview.summary.disabled + state.mappingPreview.summary.unmapped} · 행 실패 ${state.mappingPreview.summary.rowFailures}</p>`
+    : '';
+  const mappingColumns = state.mappingPreview
+    ? `<div class="customer-upsert-mapping-evidence"><strong>헤더 연결 근거</strong><ul>${state.mappingPreview.columns.map(column =>
+      `<li><b>${escapeHtml(column.originalHeader || '(빈 열)')}</b><span>→ ${escapeHtml(column.field?.displayName || column.status)}</span><code>${escapeHtml(column.reasonCode || column.source || column.status)}</code></li>`
+    ).join('')}</ul></div>` : '';
+  const mappingIssues = state.mappingPreview?.issues?.length
+    ? `<div class="customer-upsert-mapping-evidence"><strong>필드 제외·행 실패 근거</strong><ul>${state.mappingPreview.issues.slice(0, 100).map(issue =>
+      `<li><b>Excel ${Number(state.headerRowNumber || 1) + Number(issue.rowIndex || 0) + 1}행 · ${escapeHtml(issue.originalHeader || issue.fieldId || '(헤더 없음)')}</b><span>${escapeHtml(issue.rawValue)}</span><code>${escapeHtml(issue.reasonCode)} · ${issue.rowFailed ? '행 실패' : '필드 제외'}</code></li>`
+    ).join('')}</ul></div>` : '';
   byId('importSummary').innerHTML = `<div class="customer-upsert-progress"><strong>${escapeHtml(state.fileName)}</strong><span>${escapeHtml(state.sheetName)} · ${state.rawRows.length.toLocaleString()}행</span></div>`;
   byId('importGate').textContent = '미리보기 단계입니다. 아직 거래처 Master와 Cloud에는 기록하지 않았습니다.';
-  byId('importReview').innerHTML = `<div class="customer-upsert-preview"><table><thead><tr>${state.headers.map(header => `<th>${escapeHtml(header)}</th>`).join('')}</tr></thead><tbody>${previewRows.map(row => `<tr>${state.headers.map(header => `<td>${escapeHtml(row[header])}</td>`).join('')}</tr>`).join('')}</tbody></table>${state.rawRows.length > previewRows.length ? `<p>화면에는 최초 ${previewRows.length}행을 표시하며 실행 시 전체 ${state.rawRows.length.toLocaleString()}행을 처리합니다.</p>` : ''}</div>`;
+  byId('importReview').innerHTML = `<div class="customer-upsert-preview">${mappingSummary}${mappingColumns}${mappingIssues}<table><thead><tr>${displayHeaders.map(header => `<th>${escapeHtml(header)}</th>`).join('')}</tr></thead><tbody>${displayRows.map(row => `<tr>${displayHeaders.map(header => `<td>${escapeHtml(row[header])}</td>`).join('')}</tr>`).join('')}</tbody></table>${state.rawRows.length > previewRows.length ? `<p>화면에는 최초 ${previewRows.length}행을 표시하며 실행 시 전체 ${state.rawRows.length.toLocaleString()}행을 처리합니다.</p>` : ''}</div>`;
   const apply = byId('applyImportButton');
   if (apply) apply.hidden = false;
 }
@@ -334,6 +366,11 @@ async function runStoredRows({ resetFilter = true } = {}) {
   let processed = 0;
   try {
     progressView({ total: state.rawRows.length, message: '거래처 코드 기준으로 분석·저장 중입니다.' });
+    if (state.mappingPreview) {
+      for (const mapping of state.mappingPreview.legacyMappings) {
+        await saveCustomerHeaderMapping({ sourceSystem: state.sourceSystem, ...mapping });
+      }
+    }
     const work = await runCustomerCodeUpsert({
       rawRows: state.rawRows,
       headers: state.headers,
@@ -346,11 +383,21 @@ async function runStoredRows({ resetFilter = true } = {}) {
         progressView({ ...progress, message: '거래처 코드 기준으로 분석·저장 중입니다.' });
       }
     });
+    if (state.mappingPreview) {
+      work.records.forEach(record => {
+        const rowIndex = Number(record.excelRowNumber || 0) - Number(state.headerRowNumber || 1) - 1;
+        const mappingIssues = state.mappingPreview.issues.filter(issue => issue.rowIndex === rowIndex);
+        record.fieldExclusions = [...(record.fieldExclusions || []), ...mappingIssues.map(issue => ({
+          fieldKey: issue.fieldId || '', header: issue.originalHeader || '', rawValue: issue.rawValue,
+          reasonCode: issue.reasonCode, reasonMessage: issue.rowFailed ? '식별자 또는 필수값 오류로 행을 적용할 수 없습니다.' : '값 형식 오류로 이 필드만 제외했습니다.'
+        }))];
+      });
+    }
     if (resetFilter) state.filter = 'SUMMARY';
     renderWork(work);
     await syncCustomerImportCloud(work);
     const refreshKey = `customer-upsert-list-refreshed:${work.job.importId}`;
-    if (!sessionStorage.getItem(refreshKey)) {
+    if (!state.mappingPreview && !sessionStorage.getItem(refreshKey)) {
       sessionStorage.setItem(refreshKey, '1');
       location.reload();
     }
@@ -369,6 +416,8 @@ async function processFile(file, sourceSystem) {
   state.fileHash = await hashFile(file);
   progressView({ message: 'Excel 내용을 읽고 있습니다.' });
   try {
+    if (!window.NEXUS_FOUNDATION) throw new Error('FOUNDATION_METADATA_GATEWAY_UNAVAILABLE');
+    state.foundationMetadata = await window.NEXUS_FOUNDATION.load('CUSTOMER', { includeDisabled: true });
     const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array', raw: false, cellDates: false });
     const selected = await selectWorkbookSheet(workbook);
     const { matrix, header } = selected;
@@ -377,10 +426,16 @@ async function processFile(file, sourceSystem) {
       const proceed = confirm(`거래처 파일이 아닌 ${detection.suspectedType} 파일일 가능성이 있습니다.\n\n판정 근거 헤더: ${detection.evidence.join(', ')}\n\n그래도 거래처 등록을 진행하시겠습니까?`);
       if (!proceed) return;
     }
-    state.headers = header.headers;
+    const mapped = window.NEXUS_FOUNDATION.prepareCustomerLegacyUpsert(state.foundationMetadata, {
+      sourceSystem: state.sourceSystem,
+      headers: header.headers,
+      rows: rowsAfterHeader(matrix, header)
+    });
+    state.mappingPreview = mapped;
+    state.headers = mapped.headers;
     state.sheetName = selected.name;
     state.headerRowNumber = header.index + 1;
-    state.rawRows = rowsAfterHeader(matrix, header);
+    state.rawRows = mapped.rows;
     renderPreview();
   } catch (error) {
     renderFatal(error, 0, state.rawRows.length);
@@ -403,6 +458,22 @@ function createFieldManagerDialog() {
 }
 
 async function loadDefinitions() {
+  if (window.NEXUS_FOUNDATION) {
+    state.foundationMetadata = await window.NEXUS_FOUNDATION.load('CUSTOMER', { includeDisabled: true });
+    state.definitions = (state.foundationMetadata.fields || []).filter(field => field.entityType === 'CUSTOMER' && field.systemField === false)
+      .map(field => ({
+        fieldId: field.fieldId,
+        fieldKey: field.storageKey,
+        fieldType: field.dataType,
+        displayName: field.displayName,
+        headerAliases: field.legacyAliases || [],
+        enabled: field.enabled,
+        displayOrder: field.sortOrder,
+        recordRevision: field.recordRevision
+      }))
+      .sort((left, right) => Number(left.displayOrder) - Number(right.displayOrder));
+    return state.definitions;
+  }
   await ensureCustomerUserFieldDefinitions();
   state.definitions = await listCustomerUserFieldDefinitions();
   return state.definitions;
@@ -424,6 +495,28 @@ async function openFieldManager() {
 async function saveFieldManager(dialog) {
   const status = dialog.querySelector('[data-field-manager-status]');
   status.textContent = '저장 중...';
+  if (state.foundationMetadata) {
+    if (state.foundationMetadata.readOnly) throw new Error('FOUNDATION_METADATA_READ_ONLY');
+    const changes = [];
+    for (const definition of state.definitions) {
+      const fieldKey = definition.fieldKey;
+      const displayName = clean(dialog.querySelector(`[data-field-name="${fieldKey}"]`)?.value);
+      const headerAliases = clean(dialog.querySelector(`[data-field-aliases="${fieldKey}"]`)?.value).split(',').map(clean).filter(Boolean);
+      const enabled = Boolean(dialog.querySelector(`[data-field-enabled="${fieldKey}"]`)?.checked && displayName);
+      if (displayName === definition.displayName && enabled === definition.enabled && JSON.stringify(headerAliases) === JSON.stringify(definition.headerAliases || [])) continue;
+      changes.push({
+        changeId: `CUSTOM-FIELD-${fieldKey}-${Date.now()}`,
+        op: 'PATCH_FIELD', entityType: 'CUSTOMER', fieldId: definition.fieldId,
+        patch: { displayName, headerAliases, enabled, sortOrder: Number(definition.displayOrder) }
+      });
+    }
+    if (changes.length) await window.NEXUS_FOUNDATION.save(state.foundationMetadata.metadataRevision, changes);
+    await loadDefinitions();
+    await renderCustomerCustomFields();
+    status.textContent = changes.length ? '저장 완료' : '변경 없음';
+    setTimeout(() => dialog.close(), 350);
+    return;
+  }
   for (const definition of state.definitions) {
     const fieldKey = definition.fieldKey;
     const displayName = clean(dialog.querySelector(`[data-field-name="${fieldKey}"]`)?.value);
@@ -465,6 +558,7 @@ async function mapHeader(select) {
     targetFieldKey: select.value,
     targetType: definition?.fieldType || 'TEXT'
   });
+  state.mappingPreview = null;
   state.rawRows = state.work.records.map(record => record.rawRow);
   state.headers = state.work.job.detectedHeaders;
   state.headerRowNumber = state.work.job.headerRowNumber;

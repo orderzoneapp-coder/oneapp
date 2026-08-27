@@ -32,6 +32,40 @@
   var FIELD_MAP = Object.create(null);
   FIELD_DEFS.forEach(function (def) { FIELD_MAP[def.key] = def; });
 
+  async function loadFoundationFieldDefinitions() {
+    if (!window.NEXUS_FOUNDATION) return;
+    var metadata = await window.NEXUS_FOUNDATION.load("PRODUCT", { includeDisabled: true });
+    if (metadata.readOnly) throw new Error("FOUNDATION_METADATA_READ_ONLY");
+    var legacy = Object.create(null);
+    FIELD_DEFS.forEach(function (def) { legacy[def.key] = def; });
+    var fields = (metadata.fields || []).filter(function (field) {
+      return field.entityType === "PRODUCT" && field.systemField !== false;
+    }).sort(function (a, b) {
+      return Number(a.sortOrder) - Number(b.sortOrder) || compareText(a.fieldId, b.fieldId);
+    });
+    if (!fields.length) return;
+    FIELD_DEFS = fields.map(function (field) {
+      var previous = legacy[field.storageKey] || {};
+      var type = previous.type || (field.dataType === "NUMBER" || field.dataType === "INTEGER" ? "number" : "text");
+      if (field.fieldId === "product.tax_type") type = "tax";
+      if (field.fieldId === "product.status") type = "status";
+      return {
+        key: field.storageKey,
+        fieldId: field.fieldId,
+        label: field.displayName || field.storageKey,
+        type: type,
+        dataType: field.dataType,
+        width: previous.width || (field.dataType === "TEXT" ? 150 : 108),
+        required: Boolean(field.requirements && field.requirements.createRequired),
+        numeric: field.dataType === "NUMBER" || field.dataType === "INTEGER",
+        css: previous.css || "",
+        name: field.fieldId === "product.name"
+      };
+    });
+    FIELD_MAP = Object.create(null);
+    FIELD_DEFS.forEach(function (def) { FIELD_MAP[def.key] = def; });
+  }
+
   var state = {
     revision: undefined,
     masterOriginal: {},
@@ -60,6 +94,7 @@
   var els = {};
   var toastTimer = null;
   var dialogActions = [];
+  var eventsBound = false;
 
   function $(id) {
     return document.getElementById(id);
@@ -334,6 +369,14 @@
 
   function normalizeInput(def, raw, rowId) {
     var value = raw;
+    if (def.dataType === "TIME") {
+      if (!trimmed(raw)) return { ok: true, value: "" };
+      var time = trimmed(raw).match(/^(\d{1,2}):(\d{2})$/);
+      if (!time || Number(time[1]) > 23 || Number(time[2]) > 59) {
+        return { ok: false, value: text(raw), error: "마감시간은 HH:mm 형식으로 입력하세요." };
+      }
+      return { ok: true, value: String(Number(time[1])).padStart(2, "0") + ":" + time[2] };
+    }
     if (def.type === "text") {
       value = def.key === "코드" ? trimmed(raw) : text(raw).trim();
       return { ok: true, value: value };
@@ -344,6 +387,9 @@
       var number = Number(clean);
       if (!Number.isFinite(number) || number < 0) {
         return { ok: false, value: text(raw), error: "0 이상의 숫자로 입력하세요." };
+      }
+      if (def.dataType === "INTEGER" && !Number.isInteger(number)) {
+        return { ok: false, value: text(raw), error: "0 이상의 정수로 입력하세요." };
       }
       return { ok: true, value: number };
     }
@@ -1757,6 +1803,8 @@
   }
 
   function bindEvents() {
+    if (eventsBound) return;
+    eventsBound = true;
     els["excel-menu-button"].addEventListener("click", function (event) {
       event.stopPropagation();
       toggleMenu(els["excel-menu-button"], els["excel-menu"]);
@@ -1777,7 +1825,7 @@
       if (button.dataset.excelAction === "template") downloadTemplate();
       if (button.dataset.excelAction === "batch") {
         guardUnsaved(function () {
-          window.location.href = "Master.html?view=products&mode=batch";
+          window.location.href = "Master.html?view=products&mode=edit";
         });
       }
     });
@@ -1943,6 +1991,11 @@
 
   async function initialize() {
     cacheElements();
+    try {
+      await loadFoundationFieldDefinitions();
+    } catch (metadataError) {
+      console.warn("[FoundationMetadata] 서버 필드 레지스트리를 불러오지 못해 기존 화면 필드로 계속합니다.", metadataError);
+    }
     bindEvents();
     try {
       state.masterOriginal = await readLocalMaster();

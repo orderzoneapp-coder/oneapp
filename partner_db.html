@@ -7,14 +7,14 @@
   <title>거래처 DB</title>
   <script src="/nexus/common/nexus-auth-config.js?v=2.0.1"></script>
   <script src="/nexus/common/nexus-auth.js?v=2.1.0"></script>
+  <script src="/nexus/foundation/foundation-metadata.js?v=1.0.0"></script>
   <script>
     const customerMasterParams = new URLSearchParams(window.location.search);
-    const initialCustomerMasterMode = customerMasterParams.get('mode') === 'batch' ? 'batch' : 'list';
+    const rawCustomerMasterMode = customerMasterParams.get('mode');
+    const initialCustomerMasterMode = rawCustomerMasterMode === 'batch' ? 'edit' : (rawCustomerMasterMode === 'edit' ? 'edit' : 'list');
     if (customerMasterParams.get('embedded') === '1') {
       document.documentElement.classList.add('cm-embedded');
       document.documentElement.dataset.masterMode = initialCustomerMasterMode;
-    } else {
-      window.location.replace(`./Master.html?view=customers&mode=${initialCustomerMasterMode}&release=customer-completeness-022`);
     }
   </script>
   <script src="/nexus/common/nexus-theme-init.js?v=1.0.0"></script>
@@ -57,8 +57,7 @@
     html.cm-embedded .partner-main .cm-hero h1 { margin: 0 0 6px; font-family: "Noto Sans KR", sans-serif; font-size: 30px; line-height: 1.25; letter-spacing: -.025em; }
     html.cm-embedded .partner-main .cm-hero p { margin-top: 6px; font-size: 14px; }
     html.cm-embedded body { overflow-y: auto; }
-    html[data-master-mode="list"] .cm-batch-only,
-    html[data-master-mode="batch"] .cm-list-only { display: none !important; }
+    html[data-master-mode="list"] .cm-batch-only { display: none !important; }
     html.cm-embedded .cm-toolbar { min-height: var(--nexus-work-tools-height, 50px); padding: 7px; }
     html.cm-embedded .cm-list-head { height: var(--nexus-table-header-height, 40px); }
     html.cm-embedded .cm-row { height: var(--nexus-table-row-height, 48px); }
@@ -195,9 +194,13 @@
         <label>그룹1<input name="group1Name"></label>
         <label>거래처그룹2코드<input name="group2Code"></label>
         <label>거래처그룹2명<input name="group2Name"></label>
+        <label>단가그룹코드<input name="priceGroupCode"></label>
         <label>단가그룹<input name="priceGroup"></label>
         <label>결제일<input name="paymentDay"></label>
+        <label>여신한도금액<input name="creditLimitAmount" type="number" min="0"></label>
+        <label>여신기간(일)<input name="creditPeriodDays" type="number" min="0" step="1"></label>
         <label>계좌<input name="bankAccountText"></label>
+        <label>이체정보<input name="transferInfo"></label>
         <label>상태<select name="status"><option value="ACTIVE">사용중</option><option value="INACTIVE">거래중단</option></select></label>
         <label>주소<input name="address"></label>
         <label>상세주소<input name="addressDetail"></label>
@@ -218,14 +221,14 @@
         document.documentElement.style.colorScheme = theme;
       };
       const applyCustomerMasterMode = (rawMode) => {
-        const mode = rawMode === 'batch' ? 'batch' : 'list';
+        const mode = rawMode === 'batch' || rawMode === 'edit' ? 'edit' : 'list';
         document.documentElement.dataset.masterMode = mode;
         const title = document.getElementById('customerMasterTitle');
         const description = document.getElementById('customerMasterDescription');
-        if (title) title.textContent = mode === 'batch' ? '거래처 일괄 등록·수정' : '거래처 목록';
-        if (description) description.textContent = mode === 'batch'
-          ? 'ERP 거래처 또는 쇼핑몰 회원 Excel을 분석해 거래처 코드 기준으로 등록·수정합니다.'
-          : '거래처를 검색하고 신규 등록하거나 기존 거래처를 단건 수정합니다.';
+        if (title) title.textContent = mode === 'edit' ? '거래처 등록·수정' : '거래처 조회';
+        if (description) description.textContent = mode === 'edit'
+          ? '단건 편집과 ERP·쇼핑몰 Excel 작업을 같은 문맥에서 처리합니다.'
+          : '거래처를 검색하고 현재 기준정보를 조회합니다.';
       };
       applyCustomerMasterMode(initialCustomerMasterMode);
       window.addEventListener('message', (event) => {
@@ -237,7 +240,7 @@
   </script>
 
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script type="module" src="./orderq/customer-master-ui.js?v=0.22.0"></script>
-  <script type="module" src="./orderq/customer-code-upsert-ui.js?v=0.17.0"></script>
+  <script type="module" src="./orderq/customer-master-ui.js?v=0.23.0"></script>
+  <script type="module" src="./orderq/customer-code-upsert-ui.js?v=0.18.0"></script>
 </body>
 </html>
