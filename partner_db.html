@@ -1,12 +1,10 @@
 <!doctype html>
-<html lang="ko" translate="no" data-nexus-app-id="customer-manager">
+<html lang="ko" translate="no">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="google" content="notranslate">
   <title>거래처 DB</title>
-  <script src="/nexus/common/nexus-auth-config.js?v=2.0.0"></script>
-  <script src="/nexus/common/nexus-auth.js?v=2.0.0"></script>
   <script>
     const customerMasterParams = new URLSearchParams(window.location.search);
     const initialCustomerMasterMode = customerMasterParams.get('mode') === 'batch' ? 'batch' : 'list';

@@ -1,4 +1,5 @@
 import { connectSaleStage4Workspace } from '../orderq/sale-stage4-source-adapter.js?v=0.2.0';
+import { setCloudUrl, setCloudAccessToken } from '../orderq/orderq-cloud-adapter.js?v=0.16.0';
 
 const text = value => String(value ?? '').trim();
 
@@ -11,6 +12,10 @@ export function isDeferredOrderQAccessError(error) {
 }
 
 export async function connectSaleStage4ForAnalysis(workspace = {}, options = {}) {
+  const cloudUrl = text(options.cloudUrl);
+  const accessToken = text(options.accessToken);
+  if (cloudUrl) (options.setCloudUrl || setCloudUrl)(cloudUrl, true);
+  if (accessToken) (options.setCloudAccessToken || setCloudAccessToken)(accessToken, false);
   const connect = options.connect || connectSaleStage4Workspace;
   try {
     const linked = await connect(workspace, {

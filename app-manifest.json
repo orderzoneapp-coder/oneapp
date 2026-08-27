@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.4.0",
-  "updatedAt": "2026-08-27",
+  "updatedAt": "2026-08-26",
   "repository": {
     "fullName": "orderzoneapp-coder/oneapp",
     "defaultBranch": "main",
@@ -418,31 +418,18 @@
         "export_center.html",
         "settings.html",
         "history_viewer.html",
-        "partner_db.html",
         "orders.html",
-    "orderops_list.html",
-    "orderops/list.html",
-    "orderops/list1.html",
-    "orderops/input.html",
-    "orderops/smartparser.html",
-    "orderq/index.html",
-    "orderq/input.html",
-    "orderq/parser.html",
-    "orderq/collector.html",
-    "orderq/cloud.html",
-    "orderq/dispatch.html",
-    "orderq/erp.html",
-    "orderq/operations.html",
-    "orderq/products.html",
-    "orderq/purchase.html",
-    "orderq/reconciliation.html",
-    "orderq/sale.html",
-    "orderq/transition.html",
-    "orderq/admin-test.html",
-    "orderq/admin-test-guide.html",
-    "smartinput/index.html"
+        "orderops_list.html",
+        "orderops/list.html",
+        "orderops/input.html",
+        "orderq/index.html",
+        "orderq/input.html",
+        "orderq/parser.html",
+        "orderq/collector.html",
+        "orderq/cloud.html",
+        "smartinput/index.html"
       ],
-      "schemaVersion": "NEXUS_AUTH_V2",
+      "schemaVersion": "NEXUS_AUTH_V1",
       "resources": {
         "gateway": "nexus/server/nexus-auth-gateway.gs",
         "client": "nexus/common/nexus-auth.js",
@@ -450,31 +437,12 @@
         "scriptProjectId": "1KNiTNpNRqPYM7XM5MSzGObwfUd303bZRcjgm16MVG3xNqcQpymYXaPI5",
         "productionWebApp": "https://script.google.com/macros/s/AKfycbwIaouo6kzff1J3H3B0K5bWuAEJAcp4K21tyEkL2BuM-SiNsPDGGYVBEXIkBeUGwp4i/exec",
         "deployedVersion": 8,
-        "deployedContractVersion": "NEXUS_AUTH_V1",
-        "sourceContractVersion": "NEXUS_AUTH_V2",
-        "cacheVersion": "2.0.0",
         "sessionStorage": "oneapp.nexus.auth.session.v1",
         "sessionTtlHours": 12,
         "inviteTtlHours": 72,
         "deletedUserRecoveryDays": 30,
         "uniqueMasterRole": "OWNER_MASTER",
-        "businessCredentials": [
-          "NEXUS_AUTH_SECRET_FOUNDATION_READ",
-          "NEXUS_AUTH_SECRET_FOUNDATION_WRITE",
-          "NEXUS_AUTH_SECRET_DATAOPS_READ",
-          "NEXUS_AUTH_SECRET_DATAOPS_WRITE",
-          "NEXUS_AUTH_SECRET_ORDERQ_READ",
-          "NEXUS_AUTH_SECRET_ORDERQ_WRITE",
-          "NEXUS_AUTH_SECRET_SHIPPING_READ",
-          "NEXUS_AUTH_SECRET_SHIPPING_WRITE"
-        ],
-        "oneappBindings": [
-          "ONEAPP_NEXUS_GATEWAY_FOUNDATION_BINDINGS_JSON",
-          "ONEAPP_NEXUS_GATEWAY_DATAOPS_BINDINGS_JSON",
-          "ONEAPP_NEXUS_GATEWAY_ORDERQ_BINDINGS_JSON",
-          "ONEAPP_NEXUS_GATEWAY_SHIPPING_BINDINGS_JSON"
-        ],
-        "legacyCompatibility": "LEGACY_V1 server route retained; V2 application consumers do not load a fetch interceptor"
+        "businessCredentials": "Apps Script ScriptProperties only"
       }
     },
     {

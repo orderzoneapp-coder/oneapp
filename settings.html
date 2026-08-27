@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
     <title>환경설정</title>
-    <script src="/nexus/common/nexus-auth-config.js?v=2.0.0"></script>
-    <script src="/nexus/common/nexus-auth.js?v=2.0.0"></script>
+    <script src="/nexus/common/nexus-auth-config.js?v=1.0.0"></script>
+    <script src="/nexus/common/nexus-auth.js?v=1.0.0"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -400,7 +400,10 @@ const getDefaultMasterLinks = () => ({
 });
 const getDefaultUploadColumnMeta = () => ({ catalog: {}, estimate: {}, purchase: {}, sales: {}, inventory: {}, info: {} });
 const useMerchConfig = () => {
-    const [cloudUrl, setCloudUrl] = useState(() => 'NEXUS_GATEWAY');
+    const [cloudUrl, setCloudUrl] = useState(() => {
+        const sharedUrl = typeof window.getOneAppCloudSyncUrl === 'function' ? window.getOneAppCloudSyncUrl() : '';
+        return sharedUrl || localStorage.getItem('oneapp_cloud_sync_url_v1') || localStorage.getItem('merchCloudUrl_v870') || '';
+    });
     const [visibleMasterCols, setVisibleMasterCols] = useState(() => migrateVisibleMasterDefaults(safeJSONParse('merchVisMaster_v870', {}) || {}));
     const [visibleUploadCols, setVisibleUploadCols] = useState(() => mergeConfigDefaults(safeJSONParse('merchVisUpload_v870', {}), getDefaultVisibleUploadCols()));
     const [mappings, setMappings] = useState(() => mergeConfigDefaults(safeJSONParse('merchMappings_v870', {}), getDefaultMappings()));
@@ -787,6 +790,7 @@ const App = () => {
         settingsKeys['merchMarginRules_v878'] = JSON.stringify(config.marginRules || []);
         settingsKeys['parserCatalogWarehouseMap_v1'] = JSON.stringify(config.catalogWarehouseMap || {});
         return {
+            action: 'config',
             data: {
                 schemaVersion: 'Settings_v1.7.0_ParserWarehousePricing',
                 updatedAt: new Date().toISOString(),
@@ -898,7 +902,18 @@ const App = () => {
     };
 
     const resolveSettingsCloudUrl = () => {
-        return 'NEXUS_GATEWAY';
+        const sharedUrl = typeof window.getOneAppCloudSyncUrl === 'function'
+            ? window.getOneAppCloudSyncUrl(config.cloudUrl)
+            : config.cloudUrl;
+        const targetUrl = String(sharedUrl || config.cloudUrl || '').trim();
+        if (!targetUrl) throw new Error('클라우드 URL이 설정되지 않았습니다.');
+        if (typeof window.setOneAppCloudSyncUrl === 'function') window.setOneAppCloudSyncUrl(targetUrl);
+        else {
+            localStorage.setItem('oneapp_cloud_sync_url_v1', targetUrl);
+            localStorage.setItem('merchCloudUrl_v870', targetUrl);
+        }
+        if (targetUrl !== config.cloudUrl) config.setCloudUrl(targetUrl);
+        return targetUrl;
     };
     const appendSettingsCloudAction = (url, action) => {
         const baseUrl = String(url || '').replace(/([?&])action=[^&#]*/g, '$1').replace(/[?&]$/, '');
@@ -926,8 +941,8 @@ const App = () => {
                 if (window.ONEAPP?.CLOUD?.pushConfigBackup) {
                     await window.ONEAPP.CLOUD.pushConfigBackup({ url: targetUrl, data: configPayload.data });
                 } else {
-                    await window.ONEAPP_AUTH.ready;
-                    await window.ONEAPP_AUTH.gateway('foundation.config_write', {data:configPayload.data});
+                    const res = await fetch(targetUrl, { method: 'POST', body: JSON.stringify(configPayload) });
+                    await parseSettingsCloudResponse(res, '환경설정 백업');
                 }
                 showToast(`✅ 환경설정 백업 완료 (${payloadChars.toLocaleString()}자)`);
             }
@@ -938,8 +953,8 @@ const App = () => {
                 if (window.ONEAPP?.CLOUD?.pullConfigBackup) {
                     result = await window.ONEAPP.CLOUD.pullConfigBackup({ url: targetUrl });
                 } else {
-                    await window.ONEAPP_AUTH.ready;
-                    result={status:'success',data:await window.ONEAPP_AUTH.gateway('foundation.config_read',{})};
+                    const res = await fetch(appendSettingsCloudAction(targetUrl, 'config_only'), { method: 'GET' });
+                    result = await parseSettingsCloudResponse(res, '환경설정 복원');
                 }
                 if (!result?.data) throw new Error('환경설정 복원 데이터가 없습니다.');
                 applySettingsCloudData(result.data);
@@ -1528,10 +1543,10 @@ const App = () => {
                     React.createElement("h3", { className: "text-[15px] font-black text-indigo-900 mb-4 pb-2 border-b border-indigo-200 flex items-center" },
                         React.createElement("span", null,
                             React.createElement("i", { className: "fas fa-cloud text-indigo-500 mr-2" }),
-                            "\uD074\uB77C\uC6B0\uB4DC \uB3D9\uAE30\uD654 (NEXUS Gateway)")),
+                            "\uD074\uB77C\uC6B0\uB4DC \uB3D9\uAE30\uD654 (Apps Script \uBD84\uD560 \uC804\uC1A1)")),
                     React.createElement("div", { className: "mb-4" },
-                        React.createElement("label", { className: "text-[12px] font-bold text-indigo-800 mb-1 block" }, "\uC5C5\uBB34 \uC5F0\uACB0"),
-                        React.createElement("div", { className: "w-full border border-indigo-200 rounded-xl px-4 py-3 text-[13px] bg-white shadow-sm font-bold text-indigo-800" }, "NEXUS Gateway \uC790\uB3D9 \uC5F0\uACB0")),
+                        React.createElement("label", { className: "text-[12px] font-bold text-indigo-800 mb-1 block" }, "\uD0C0\uAC9F URL \uC138\uD305"),
+                        React.createElement("input", { type: "text", value: config.cloudUrl, onChange: e => config.setCloudUrl(e.target.value), placeholder: "https://script.google.com/macros/...", className: "w-full border border-indigo-200 rounded-xl px-4 py-3 text-[13px] outline-none focus:border-indigo-500 bg-white shadow-sm" })),
                     React.createElement("div", { className: "flex gap-3 pt-2 border-t border-indigo-200/50" },
                         React.createElement("button", { onClick: () => handleCloudSync('upload'), disabled: isProcessing, className: "flex-1 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-3.5 rounded-xl text-[13px] font-bold transition-colors shadow-md flex items-center justify-center" },
                             React.createElement("i", { className: "fas fa-cloud-upload-alt mr-2 text-[16px]" }),

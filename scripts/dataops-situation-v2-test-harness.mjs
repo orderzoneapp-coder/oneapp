@@ -143,30 +143,9 @@ export function snapshotEnvelope(context, overrides = {}) {
   return { snapshot: { manifest, rows }, producerEvidence: { authorityHead: source.authorityHead, rows: evidenceRows, pages, scope: source.scope }, scope: source.scope };
 }
 
-export function loadBrowserModule({ fetch: fetchImpl, expected, serviceCredential = {} } = {}) {
+export function loadBrowserModule({ fetch: fetchImpl, expected } = {}) {
   const window = { crypto: webcrypto, TextEncoder, fetch: fetchImpl || (async () => { throw new Error('FETCH_NOT_CONFIGURED'); }) };
   window.window = window;
-  const actionByOperation = Object.freeze({
-    'dataops.situation.ping': 'situation_dataops_ping',
-    'dataops.situation.begin': 'situation_dataops_begin',
-    'dataops.situation.page': 'situation_dataops_page',
-    'dataops.situation.head': 'situation_dataops_head',
-    'dataops.situation.publish': 'situation_dataops_publish'
-  });
-  window.ONEAPP_AUTH = Object.freeze({
-    ready: Promise.resolve(),
-    gateway: async (operationId, payload = {}) => {
-      const action = actionByOperation[operationId];
-      if (!action) throw new Error('NEXUS_GATEWAY_OPERATION_DENIED');
-      const response = await window.fetch('mock://nexus-gateway', {
-        method: 'POST',
-        body: JSON.stringify({ ...structuredClone(payload), ...structuredClone(serviceCredential), action })
-      });
-      const parsed = await response.json();
-      if (!response.ok || parsed.status !== 'success') throw new Error(parsed.message || 'NEXUS_GATEWAY_UPSTREAM_DENIED');
-      return parsed.data;
-    }
-  });
   vm.createContext(window);
   let source = readFileSync(new URL('../DataOps_situation_v2.js', import.meta.url), 'utf8');
   if (expected) source = source.replace(/Object\.freeze\(\{\s*deploymentId:\s*'[^']*',\s*deploymentVersion:\s*'[^']*',\s*gitCommit:\s*'[^']*'\s*\}\)/,

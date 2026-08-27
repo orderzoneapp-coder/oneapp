@@ -1826,8 +1826,8 @@
 
   </style>
   <style>:root{--nexus-top-height:44px}nexus-top{display:block;min-height:var(--nexus-top-height)}.nexus-top-fallback{height:var(--nexus-top-height);padding:0 14px;display:flex;align-items:center;gap:12px;background:#0b1021;color:#fff;font:12px Pretendard,"Noto Sans KR",sans-serif}.nexus-top-fallback strong{letter-spacing:.08em}.nexus-top-fallback span{color:#cbd5e1}.nexus-top-fallback button{margin-left:auto;border:1px solid #64748b;border-radius:6px;padding:5px 9px;background:transparent;color:#fff;cursor:pointer}</style>
-    <script src="/nexus/common/nexus-auth-config.js?v=2.0.0"></script>
-    <script src="/nexus/common/nexus-auth.js?v=2.0.0"></script>
+    <script src="/nexus/common/nexus-auth-config.js?v=1.0.0"></script>
+    <script src="/nexus/common/nexus-auth.js?v=1.0.0"></script>
     <script src="/nexus/common/apps-config.js?v=1.4.0"></script>
     <script src="/nexus/common/nexus-top.js?v=1.6.1"></script>
   <link rel="stylesheet" href="/nexus/common/nexus-operational-theme.css?v=1.0.0">
@@ -2077,7 +2077,8 @@
       <section class="settings-section" data-settings-section="cloud">
         <h3>클라우드 완료본</h3>
         <div class="cloud-grid">
-          <label>업무 연결<input id="cloudUrlInput" type="hidden" value="NEXUS_GATEWAY"><span>NEXUS Gateway 자동 연결</span></label>
+          <label>Cloud URL<input id="cloudUrlInput" type="url" autocomplete="off" placeholder="Apps Script /exec URL"></label>
+          <label>인증 방식<input id="cloudTokenInput" type="hidden" value="NEXUS_GATEWAY_SHIPPING"><span>NEXUS 로그인 자동 연결</span></label>
           <label>저장자/담당<input id="cloudSavedByInput" type="text" autocomplete="off" placeholder="이름 또는 담당"></label>
           <label class="cloud-revision-field">Cloud revision
             <select id="cloudRevisionSelect" aria-label="클라우드 발주계획 revision"><option value="">저장 이력 선택</option></select>
@@ -2400,6 +2401,7 @@
         discardRecoveryButton: document.getElementById("discardRecoveryButton"),
         localResetButton: document.getElementById("localResetButton"),
         cloudUrlInput: document.getElementById("cloudUrlInput"),
+        cloudTokenInput: document.getElementById("cloudTokenInput"),
         cloudSavedByInput: document.getElementById("cloudSavedByInput"),
         cloudListButton: document.getElementById("cloudListButton"),
         cloudSaveButton: document.getElementById("cloudSaveButton"),
@@ -6169,9 +6171,20 @@
 
       async function postCloudAction(action, body) {
         await window.ONEAPP_AUTH?.ready;
-        const operations={shipping_plan_list:"shipping.plan.list",shipping_plan_get:"shipping.plan.get",shipping_plan_save:"shipping.plan.save"};
-        if(!operations[action]||!window.ONEAPP_AUTH?.gateway)throw new Error("NEXUS Gateway 로그인이 필요합니다.");
-        return window.ONEAPP_AUTH.gateway(operations[action],body||{});
+        const url = normalizeCloudUrl(elements.cloudUrlInput.value);
+        const token = window.ONEAPP_AUTH?.businessCredential("SHIPPING").token;
+        if (!token) throw new Error("NEXUS 로그인이 필요합니다.");
+        const response = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body: JSON.stringify({ action, token, ...(body || {}) }),
+        });
+        if (!response.ok) throw new Error(`Cloud 요청 실패: HTTP ${response.status}`);
+        const json = await response.json();
+        if (!json || json.status !== "success") {
+          throw new Error(json?.message || "Cloud 요청이 실패했습니다.");
+        }
+        return json.data;
       }
 
       function renderCloudRevisions(revisions) {
@@ -6235,9 +6248,11 @@
       }
 
       function ensureCloudConfiguration() {
-        if (window.ONEAPP_AUTH?.session) return true;
+        const hasUrl = Boolean(elements.cloudUrlInput.value.trim());
+        if (hasUrl && window.ONEAPP_AUTH?.session) return true;
         toggleWorkspaceStorage(true);
-        showToast("NEXUS 로그인이 필요합니다.", true);
+        elements.cloudUrlInput.focus();
+        showToast(hasUrl ? "NEXUS 로그인이 필요합니다." : "Cloud URL을 확인하세요.", true);
         return false;
       }
 
@@ -7132,7 +7147,8 @@
         else reviews[occurrenceKey] = { ...(reviews[occurrenceKey] || {}), unlinkDirect:true };
         state.workspace = { ...state.workspace, saleStage4Reviews:reviews };
         window.ORDERQ_STAGE4_SALE_BRIDGE.connectSaleStage4Workspace(state.workspace, { reviews, actor:"ORDER_Q_ADMIN",
-          allowDeferredAuth:false })
+          cloudUrl: normalizeCloudUrl(elements.cloudUrlInput.value || localStorage.getItem("oneapp_cloud_sync_url_v1") || ""),
+          accessToken: elements.cloudTokenInput.value, allowDeferredAuth:false })
           .then(workspace => { state.workspace = workspace; renderResults(); scheduleLocalSave(); })
           .catch(error => showToast(error.message || "판매 연결을 변경하지 못했습니다.", true));
       });
@@ -7377,17 +7393,23 @@
       [elements.cloudUrlInput, elements.cloudSavedByInput].forEach((input) => {
         input.addEventListener("input", scheduleLocalSave);
       });
-      elements.cloudStatus.textContent = "완료본 저장 · NEXUS Gateway 연결";
+      [elements.cloudUrlInput, elements.cloudTokenInput].forEach((input) => {
+        input.addEventListener("input", () => {
+          const ready = elements.cloudUrlInput.value.trim() && elements.cloudTokenInput.value;
+          elements.cloudStatus.textContent = ready ? "완료본 저장 · 연결 정보 입력됨" : "완료본 저장 · 미연결";
+        });
+      });
       FILE_KINDS.forEach(bindDropZone);
       bindLedgerViewCard();
       bindIntegratedFileCard();
       bindBundleDropSurface();
 
       try {
-        elements.cloudUrlInput.value = "NEXUS_GATEWAY";
+        elements.cloudUrlInput.value = localStorage.getItem("oneapp_cloud_sync_url_v1") || "https://script.google.com/macros/s/AKfycbzOUOIu_bP7NkiFVziDR0Og1da1KO1ePoU09Q3pSlPr-9uD-WkdCpWN7nidO5hlrJi6Qw/exec";
       } catch (error) {}
       window.ONEAPP_AUTH?.ready.then((authSession) => {
         if (!authSession) return;
+        elements.cloudTokenInput.value = window.ONEAPP_AUTH.businessCredential("SHIPPING").token;
         if (!elements.cloudSavedByInput.value) elements.cloudSavedByInput.value = authSession.user.displayName || authSession.user.loginId;
       });
 

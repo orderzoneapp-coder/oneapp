@@ -109,7 +109,7 @@
 ## 9. Cloud 2.1 안전화
 
 - ORDER Q Push/Pull/Head는 별도 접근 토큰을 요구한다.
-- 브라우저는 업무 토큰을 보관하지 않으며, 주문·복구·동기화는 `ONEAPP_AUTH.gateway()`의 고정 operation만 사용한다.
+- 토큰은 Apps Script Property와 브라우저 로컬 설정에만 보관하고 주문·복구·동기화 payload에는 넣지 않는다.
 - 주문과 주문행 저장은 사전 staging, 저장 후 재검증, 실패 시 이전 bundle 복구, 미완료 transaction 자동복구를 거친다.
 - 수집 원장은 목적별 공통 시트에 증분 동기화하며 고객별 시트를 만들지 않는다.
 

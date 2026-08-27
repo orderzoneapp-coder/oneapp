@@ -1,180 +1,133 @@
 #!/usr/bin/env node
 
 import assert from 'node:assert/strict';
-import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import vm from 'node:vm';
 
 const root = process.cwd();
 const read = relativePath => fs.readFileSync(path.join(root, relativePath), 'utf8');
+
 const gatewaySource = read('nexus/server/nexus-auth-gateway.gs');
 const clientSource = read('nexus/common/nexus-auth.js');
 const configSource = read('nexus/common/nexus-auth-config.js');
-const oneappSource = read('code.gs');
+const loginHtml = read('nexus/index.html');
+const adminHtml = read('nexus/admin/index.html');
+const homeHtml = read('nexus/home/index.html');
 
+// Apps Script source must remain parseable and its pure authorization helpers
+// must be testable independently of Google-hosted services.
 const context = vm.createContext({});
 new vm.Script(gatewaySource, { filename: 'nexus-auth-gateway.gs' }).runInContext(context);
-const registry = context.nexusAuthGatewayRegistry_();
-const requiredOperations = [
-  'foundation.full_read', 'foundation.master_read', 'foundation.config_read', 'foundation.config_write',
-  'foundation.history_read', 'foundation.replace_all', 'dataops.snapshot.get', 'dataops.snapshot.commit',
-  'dataops.situation.publish', 'dataops.close.commit', 'orderq.sync.pull', 'orderq.sync.push',
-  'orderq.customer.reset_execute', 'orderq.central.prepare', 'orderq.central.commit',
-  'shipping.plan.list', 'shipping.plan.get', 'shipping.plan.save'
+
+const permissionCases = [
+  ['full', 'GET', 'foundation.read'],
+  ['config', 'POST', 'foundation.write'],
+  ['dataops_snapshot_get', 'POST', 'dataops.read'],
+  ['dataops_snapshot_commit', 'POST', 'dataops.write'],
+  ['situation_dataops_publish', 'POST', 'dataops.publish'],
+  ['dataops_close_commit', 'POST', 'dataops.close'],
+  ['orderq_sync_pull', 'POST', 'orderq.read'],
+  ['orderq_sync_push', 'POST', 'orderq.write'],
+  ['orderq_customer_reset_execute', 'POST', 'orderq.admin'],
+  ['shipping_plan_list', 'POST', 'orderq.read'],
+  ['shipping_plan_save', 'POST', 'orderq.write']
 ];
-for (const operationId of requiredOperations) {
-  const operation = registry[operationId];
-  assert(operation, `${operationId} registry`);
-  assert.equal(operation.operationId, operationId);
-  assert(Array.isArray(operation.allowedApps) && operation.allowedApps.length > 0);
-  assert(Array.isArray(operation.requiredAppAccess) && operation.requiredAppAccess.length > 0);
-  assert(Array.isArray(operation.requiredUserPermissions));
-  assert(Array.isArray(operation.requiredPurposePermissions));
-  assert(['BUSINESS_DATA', 'SYSTEM_ADMIN', 'READ_ONLY_DERIVED'].includes(operation.operationClass));
-  assert(/^[A-Z]+$/.test(operation.securityBoundary));
-  assert.equal(operation.serviceBoundary, operation.securityBoundary);
-  assert(['READ', 'WRITE'].includes(operation.access));
-  assert.equal(operation.serviceCredentialMode, operation.access);
-  assert(Array.isArray(operation.allowedFields));
-  assert(Array.isArray(operation.writableFields));
-  assert(Array.isArray(operation.serverComputedFields));
-  assert(Array.isArray(operation.systemFields));
-  assert(Array.isArray(operation.preconditionFields));
-  assert(operation.responseSanitizer && operation.auditCategory);
+for (const [action, method, expected] of permissionCases) {
+  assert.equal(context.nexusAuthPermissionForAction_(action, method), expected, `${action} permission`);
 }
-assert.equal(registry['dataops.situation.publish'].access, 'WRITE', 'PUBLISH must use DataOps WRITE');
-assert.deepEqual(Array.from(registry['dataops.situation.publish'].requiredUserPermissions), []);
-assert.deepEqual(Array.from(registry['dataops.situation.publish'].requiredPurposePermissions), ['dataops.publish']);
-assert.deepEqual(Array.from(registry['dataops.close.commit'].requiredUserPermissions), []);
-assert.deepEqual(Array.from(registry['dataops.close.commit'].requiredPurposePermissions), ['dataops.close']);
-assert.deepEqual(Array.from(registry['dataops.snapshot.commit'].requiredUserPermissions), []);
-assert.deepEqual(Array.from(registry['dataops.snapshot.commit'].requiredPurposePermissions), []);
-assert.deepEqual(Array.from(registry['dataops.snapshot.commit'].writableFields), ['기초', '주문', '입고', '출고', '실사', '단가']);
-assert(registry['dataops.snapshot.commit'].serverComputedFields.includes('전산잔량'));
-assert(registry['dataops.snapshot.commit'].serverComputedFields.includes('예상잔량'));
-assert(registry['dataops.snapshot.commit'].serverComputedFields.includes('로스'));
-assert.deepEqual(Array.from(registry['foundation.replace_all'].requiredUserPermissions), ['foundation.write', 'foundation.replace']);
-assert.equal(registry['shipping.plan.get'].securityBoundary, 'SHIPPING');
-assert.equal(registry['orderq.sync.pull'].securityBoundary, 'ORDERQ');
-assert.equal(registry.arbitrary_remote_action, undefined);
+assert.throws(() => context.nexusAuthPermissionForAction_('arbitrary_remote_action', 'POST'), /NEXUS_PROXY_ACTION_DENIED/);
+assert.throws(() => context.nexusAuthPermissionForAction_('full', 'DELETE'), /NEXUS_PROXY_ACTION_DENIED/);
 
-assert.deepEqual(JSON.parse(JSON.stringify(context.nexusAuthGatewayValidatePayload_(registry['shipping.plan.get'], { planId: 'P', revision: 'R' }))), { planId: 'P', revision: 'R' });
-for (const field of ['action', 'operationId', 'sessionToken', 'targetUrl', 'upstreamUrl', 'token', 'actorId', 'userId', 'loginId', 'appId', 'requestId', 'credential']) {
-  assert.throws(() => context.nexusAuthGatewayValidatePayload_(registry['shipping.plan.get'], { [field]: 'forged' }), /NEXUS_GATEWAY_SCHEMA_DENIED/);
-}
-assert.throws(() => context.nexusAuthGatewayValidatePayload_(registry['shipping.plan.get'], { extra: true }), /NEXUS_GATEWAY_SCHEMA_DENIED/);
-assert.doesNotThrow(() => context.nexusAuthGatewayValidatePayload_(registry['dataops.snapshot.commit'], { snapshot: { hash: 'a'.repeat(64) } }));
-assert.throws(() => context.nexusAuthGatewayValidatePayload_(registry['dataops.snapshot.commit'], { snapshot: { savedAt: new Date().toISOString() } }), /IMMUTABLE_FIELD/);
-assert.throws(() => context.nexusAuthGatewayValidatePayload_(registry['dataops.snapshot.commit'], { snapshot: { rows: [{ 로스: 1 }] } }), /IMMUTABLE_FIELD/);
-assert.throws(() => context.nexusAuthGatewayValidatePayload_(registry['dataops.snapshot.commit'], { snapshot: { rows: [{ 예상잔량: 1 }] } }), /IMMUTABLE_FIELD/);
-
-const secretValues = Object.fromEntries([
-  'FOUNDATION_READ', 'FOUNDATION_WRITE', 'DATAOPS_READ', 'DATAOPS_WRITE',
-  'ORDERQ_READ', 'ORDERQ_WRITE', 'SHIPPING_READ', 'SHIPPING_WRITE'
-].map(name => [`NEXUS_AUTH_SECRET_${name}`, crypto.randomBytes(32).toString('hex')]));
-context.PropertiesService = { getScriptProperties: () => ({ getProperty: key => secretValues[key] || '' }) };
-for (const boundary of ['FOUNDATION', 'DATAOPS', 'ORDERQ', 'SHIPPING']) {
-  const readCredential = context.nexusAuthGatewayCredential_(boundary, 'READ');
-  const writeCredential = context.nexusAuthGatewayCredential_(boundary, 'WRITE');
-  assert.notEqual(readCredential.token, writeCredential.token, `${boundary} READ/WRITE separation`);
-  assert.equal(readCredential.credentialId, `NEXUS_AUTH_SECRET_${boundary}_READ`);
-  assert.equal(writeCredential.credentialId, `NEXUS_AUTH_SECRET_${boundary}_WRITE`);
-}
-assert.equal(new Set(Object.values(secretValues)).size, 8, 'all eight boundary/access credentials must remain distinct');
-
-context.Utilities = { getUuid: () => '12345678-1234-1234-1234-123456789abc' };
-const ephemeralEnvelopeSecret = crypto.randomBytes(32).toString('hex');
-const envelope = context.nexusAuthGatewayEnvelope_({ ...registry['foundation.replace_all'], verifiedAppId: 'master' }, { master: [] }, { token: ephemeralEnvelopeSecret, credentialId: 'id' }, { user: { userId: 'USR-1', loginId: 'person' } }, 'REQ-1');
-assert.equal(envelope.actorId, 'NEXUS_GATEWAY');
-assert.equal(envelope.token, ephemeralEnvelopeSecret);
-assert.equal(envelope.action, 'nexus_gateway_foundation_replace_all');
-assert.equal(envelope.requestId, 'REQ-1');
-assert.equal(envelope.nexusRequest.subjectUserId, 'USR-1');
-assert.equal(envelope.nexusRequest.appId, 'master');
-assert.match(envelope.transactionId, /^NXTX-/);
-assert(envelope.roleIds.includes('FOUNDATION_WRITE') && envelope.roleIds.includes('FOUNDATION_READ') && envelope.roleIds.includes('FOUNDATION_REPLACE'));
-
-assert.deepEqual(
-  JSON.parse(JSON.stringify(context.nexusAuthGatewaySanitize_({ ok: 1, token: 'x', nested: { passwordHash: 'x', value: 2 }, rows: [{ credentialId: 'x', keep: true }] }))),
-  { ok: 1, nested: { value: 2 }, rows: [{ keep: true }] }
-);
+assert.equal(context.nexusAuthSecretPropertyForAction_('dataops_snapshot_get'), 'NEXUS_AUTH_SECRET_DATAOPS_READ');
+assert.equal(context.nexusAuthSecretPropertyForAction_('dataops_snapshot_commit'), 'NEXUS_AUTH_SECRET_DATAOPS_WRITE');
+assert.equal(context.nexusAuthSecretPropertyForAction_('situation_dataops_publish'), 'NEXUS_AUTH_SECRET_DATAOPS_PUBLISH');
+assert.equal(context.nexusAuthSecretPropertyForAction_('orderq_sync_pull'), 'NEXUS_AUTH_SECRET_ORDERQ');
+assert.equal(context.nexusAuthSecretPropertyForAction_('shipping_plan_save'), 'NEXUS_AUTH_SECRET_SHIPPING');
 
 const ownerPermissions = Array.from(context.nexusAuthPermissions_({ role: 'OWNER_MASTER' }));
-const fullPermissions = Array.from(context.nexusAuthPermissions_({ role: 'FULL_ACCESS' }));
-for (const permission of ['foundation.replace', 'customer.read', 'customer.write', 'shipping.read', 'shipping.write', 'admin.services', 'admin.audit']) assert(ownerPermissions.includes(permission));
-assert(fullPermissions.includes('foundation.replace') && fullPermissions.includes('shipping.write'));
-assert(!fullPermissions.some(permission => permission.startsWith('admin.')));
-assert.doesNotThrow(() => context.nexusAuthRequirePermission_({ role: 'CUSTOM', permissionsJson: '["shipping.write"]' }, 'shipping.read'), 'WRITE implies READ');
-assert.throws(() => context.nexusAuthRequirePermission_({ role: 'CUSTOM', permissionsJson: '["shipping.read"]' }, 'shipping.write'), /NEXUS_AUTH_PERMISSION_DENIED/);
-assert.equal(context.nexusAuthPermissionForAction_('shipping_plan_list', 'POST'), 'shipping.read', 'legacy Shipping read remains in the Shipping user boundary');
-assert.equal(context.nexusAuthPermissionForAction_('shipping_plan_save', 'POST'), 'shipping.write', 'legacy Shipping write remains in the Shipping user boundary');
+const fullAccessPermissions = Array.from(context.nexusAuthPermissions_({ role: 'FULL_ACCESS' }));
+assert(ownerPermissions.includes('admin.users') && ownerPermissions.includes('admin.services') && ownerPermissions.includes('admin.audit'));
+assert(fullAccessPermissions.includes('dataops.close') && fullAccessPermissions.includes('orderq.admin'));
+assert(!fullAccessPermissions.some(permission => permission.startsWith('admin.')), 'FULL_ACCESS must exclude NEXUS administration');
+assert.deepEqual(
+  Array.from(context.nexusAuthValidatePermissions_(['foundation.read', 'admin.users'], 'CUSTOM')),
+  ['foundation.read'],
+  'CUSTOM must strip administrator permissions'
+);
 
-assert.match(clientSource, /const CONTRACT_VERSION = 'NEXUS_AUTH_V2'/);
-assert.match(clientSource, /async function gateway\(operationId, payload/);
-assert.match(clientSource, /action: 'nexus_gateway'/);
-assert.match(clientSource, /NEXUS_AUTH_MIXED_CACHE_DENIED/);
-assert.match(clientSource, /replace\(\/\\\.read\$\/, '\.write'\)/, 'client navigation mirrors server WRITE-implies-READ behavior');
-assert.doesNotMatch(clientSource, /window\.fetch\s*=|businessCredential|nexus_proxy/);
-assert.match(configSource, /contractVersion: 'NEXUS_AUTH_V2'/);
+assert.match(gatewaySource, /role === 'OWNER_MASTER'.*NEXUS_AUTH_MASTER_IMMUTABLE/s);
+assert.match(gatewaySource, /NEXUS_AUTH_MASTER_DELETE_DENIED/);
+assert.match(gatewaySource, /NEXUS_AUTH_RECOVERY_TTL_MS = 30 \* 24/);
+assert.match(gatewaySource, /nexusAuthRevokeUserSessions_\(user\.userId\)/);
+assert.match(gatewaySource, /PBKDF2.*SHA-256.*310000/s);
+assert.match(gatewaySource, /PropertiesService\.getScriptProperties\(\)/);
+assert.match(gatewaySource, /delete forwarded\.sessionToken/);
+assert.match(gatewaySource, /forwarded\.token = secret/);
+assert.match(gatewaySource, /NEXUS_AUTH_DEFAULT_UPSTREAM_URL/);
+assert.doesNotMatch(gatewaySource, /request\.targetUrl|payload\.targetUrl/, 'clients must not select an arbitrary upstream URL');
+
+assert.match(clientSource, /sessionStorage\.getItem\(SESSION_KEY\)/);
+assert.match(clientSource, /sessionStorage\.setItem\(SESSION_KEY/);
+assert.doesNotMatch(clientSource, /localStorage/, 'authentication and business credentials must not use persistent browser storage');
+assert.match(clientSource, /PBKDF2/);
+assert.match(clientSource, /iterations = 310000/);
+assert.match(clientSource, /window\.fetch = proxyFetch/);
+assert.match(clientSource, /action: 'nexus_proxy'/);
+assert.match(clientSource, /request: \{ method, action, body \}/);
+assert.doesNotMatch(clientSource, /request: \{[^}]*url/, 'proxy request must not carry an upstream URL');
+assert.match(clientSource, /location\.pathname\.startsWith\('\/nexus\/admin\/'\).*OWNER_MASTER/s);
+assert.match(configSource, /contractVersion: 'NEXUS_AUTH_V1'/);
+assert.match(configSource, /endpoint: 'https:\/\/script\.google\.com\/macros\/s\/AKfycb[a-zA-Z0-9_-]+\/exec'/);
+assert.doesNotMatch(configSource, /endpoint:\s*''/, 'production auth endpoint must be configured');
+
+assert.match(loginHtml, /NEXUS 로그인/);
+assert.match(loginHtml, /data-auth-mode="login"/);
+assert.match(loginHtml, /data-auth-mode="activate"/);
+assert.match(loginHtml, /data-auth-mode="bootstrap"/);
+assert.doesNotMatch(loginHtml, /<nexus-top\b/, 'the public login screen must not render the authenticated header');
+assert.match(adminHtml, /마스터 관리/);
+assert.match(adminHtml, /사용자 관리/);
+assert.match(adminHtml, /업무 서버 연결/);
+assert.match(adminHtml, /감사 기록/);
+assert.match(homeHtml, /NEXUS 업무 홈/);
+assert.match(homeHtml, /id="adminLink"[^>]*hidden/);
 
 const protectedEntries = [
   'DataOps.html', 'MerchOps.html', 'SmartParser.html', 'Master.html', 'Item_manager.html',
-  'settings.html', 'export_center.html', 'history_viewer.html', 'partner_db.html', 'orders.html', 'orderops_list.html',
+  'settings.html', 'export_center.html', 'history_viewer.html', 'orders.html', 'orderops_list.html',
   'orderops/input.html', 'orderops/list.html', 'orderops/list1.html', 'orderops/smartparser.html',
   'orderq/index.html', 'orderq/input.html', 'orderq/parser.html', 'orderq/collector.html',
   'orderq/cloud.html', 'orderq/dispatch.html', 'orderq/erp.html', 'orderq/operations.html',
   'orderq/products.html', 'orderq/purchase.html', 'orderq/reconciliation.html', 'orderq/sale.html',
-  'orderq/transition.html', 'orderq/admin-test.html', 'orderq/admin-test-guide.html',
-  'smartinput/index.html', 'nexus/home/index.html', 'nexus/admin/index.html'
+  'orderq/transition.html', 'smartinput/index.html', 'nexus/home/index.html', 'nexus/admin/index.html'
 ];
 for (const relativePath of protectedEntries) {
   const html = read(relativePath);
-  assert.match(html, /nexus-auth-config\.js\?v=2\.0\.0/, `${relativePath} V2 config`);
-  assert.match(html, /nexus-auth\.js\?v=2\.0\.0/, `${relativePath} V2 guard`);
-  assert(html.indexOf('nexus-auth.js') < html.search(/<body\b/i), `${relativePath} guard before body`);
+  assert.match(html, /nexus-auth-config\.js\?v=1\.0\.0/, `${relativePath} auth config`);
+  assert.match(html, /nexus-auth\.js\?v=1\.0\.0/, `${relativePath} auth guard`);
+  assert(
+    html.indexOf('nexus-auth.js') < html.search(/<body\b/i),
+    `${relativePath} must load the auth guard before body content`
+  );
 }
 
-const consumerFiles = [
-  'coreEngine.js', 'DataOps_situation_v2.js', 'DataOps.html', 'dataops/close-ui.js', 'dataops/v1-security-client.js',
-  'history_viewer.html', 'Item_manager.js', 'Master.html', 'MerchOps.html', 'orders.html', 'orderops_list.html',
-  'orderops/list.html', 'orderops/list1.html', 'orderops/orderops-source-adapter.js',
-  'orderq/dataops-situation-read-adapter.js', 'orderq/orderq-cloud-adapter.js', 'orderq/situation-runtime.js',
-  'settings.html'
-];
-const consumers = consumerFiles.map(relativePath => `\n/* ${relativePath} */\n${read(relativePath)}`).join('');
-assert.doesNotMatch(consumers, /\bfetch\s*\(/, 'direct business fetches must be zero');
-assert.doesNotMatch(consumers, /script\.google\.com\/macros\/s/i, 'business upstream URLs must be zero');
-assert.doesNotMatch(consumers, /businessCredential\s*\(/, 'browser credentials must be zero');
-assert.doesNotMatch(consumers, /id=["'][^"']*token[^"']*["'][^>]*type=["']hidden["']|type=["']hidden["'][^>]*id=["'][^"']*token/i, 'hidden token inputs must be zero');
-
-assert.match(oneappSource, /ONEAPP_NEXUS_GATEWAY_FOUNDATION_BINDINGS_JSON/);
-assert.match(oneappSource, /ONEAPP_NEXUS_GATEWAY_DATAOPS_BINDINGS_JSON/);
-assert.match(oneappSource, /ONEAPP_NEXUS_GATEWAY_ORDERQ_BINDINGS_JSON/);
-assert.match(oneappSource, /ONEAPP_NEXUS_GATEWAY_SHIPPING_BINDINGS_JSON/);
-assert.match(oneappSource, /requiredFields = \['credentialId', 'version', 'tokenDigest', 'actorId', 'roleIds', 'allowedScope', 'status', 'createdAt', 'activatedAt', 'retiredAt'\]/);
-assert.match(oneappSource, /\['ACTIVE', 'RETIRING', 'RETIRED'\]\.includes\(status\)/);
-assert.match(oneappSource, /status === 'RETIRED'/);
-assert.match(oneappSource, /ONEAPP_NEXUS_GATEWAY_BINDING_RETIRED/);
-assert.match(oneappSource, /String\(binding\.version \|\| ''\) !== 'V2'/);
-assert.match(oneappSource, /\^\[a-f0-9\]\{64\}\$/);
-assert.match(oneappSource, /constantTimeTextEquals\(String\(row\.tokenDigest\), suppliedDigest\)/);
-assert.match(oneappSource, /ONEAPP_NEXUS_GATEWAY_ACTOR = 'NEXUS_GATEWAY'/);
-assert.match(oneappSource, /oneappNexusFoundationInactiveSlot/);
-assert.match(oneappSource, /oneappNexusFoundationActivate\(stagingSlot\)/);
-assert.match(oneappSource, /ONEAPP_NEXUS_REPLACE_VERIFY_FAILED/);
-assert.match(oneappSource, /status: 'ACTIVATED'/);
-assert.match(oneappSource, /function doGet\(\) \{\s*return jsonResponse\(\{ status: 'error', message: 'ONEAPP_NEXUS_GATEWAY_ACCESS_REQUIRED'/s);
-assert.doesNotMatch(read('nexus/admin/index.html'), /type=["']password["']/i, 'admin screen must not accept raw service credentials');
+for (const relativePath of ['DataOps.html', 'MerchOps.html', 'orders.html', 'orderops_list.html', 'orderops/list.html']) {
+  const source = read(relativePath);
+  assert.doesNotMatch(source, /prompt\([^)]*(?:V1|V2|ORDER\s*Q|Shipping)[^)]*(?:token|토큰)/is, `${relativePath} must not prompt for a business token`);
+}
+assert.match(read('orders.html'), /id="cloudTokenInput"[^>]*type="hidden"|type="hidden"[^>]*id="cloudTokenInput"/);
+assert.match(read('orderops_list.html'), /id="cloudTokenInput"[^>]*type="hidden"|type="hidden"[^>]*id="cloudTokenInput"/);
+assert.match(read('orderops/list.html'), /id="cloudTokenInput"[^>]*type="hidden"|type="hidden"[^>]*id="cloudTokenInput"/);
 
 const manifest = JSON.parse(read('app-manifest.json'));
 const authContract = manifest.sharedDataContracts.find(contract => contract.id === 'nexus-auth');
-assert.equal(authContract.schemaVersion, 'NEXUS_AUTH_V2');
-assert.equal(authContract.resources.deployedContractVersion, 'NEXUS_AUTH_V1');
-assert.equal(authContract.resources.sourceContractVersion, 'NEXUS_AUTH_V2');
-assert.equal(authContract.resources.cacheVersion, '2.0.0');
-assert.equal(authContract.resources.businessCredentials.length, 8);
-assert.equal(authContract.resources.oneappBindings.length, 4);
-assert.match(authContract.resources.legacyCompatibility, /LEGACY_V1/);
+assert(authContract, 'nexus-auth manifest contract');
+assert.equal(authContract.owner, 'nexus-auth-gateway');
+assert.equal(authContract.schemaVersion, 'NEXUS_AUTH_V1');
+assert.equal(authContract.resources.sessionStorage, 'oneapp.nexus.auth.session.v1');
+assert.equal(authContract.resources.uniqueMasterRole, 'OWNER_MASTER');
+assert.match(authContract.resources.productionWebApp, /^https:\/\/script\.google\.com\/macros\/s\/.+\/exec$/);
+assert.equal(authContract.resources.deployedVersion, 8);
 
-console.log(`NEXUS_AUTH_V2 static and authorization contract passed (${Object.keys(registry).length} operations, ${protectedEntries.length} protected entries).`);
+console.log(`NEXUS auth system contract passed (${protectedEntries.length} protected entries).`);

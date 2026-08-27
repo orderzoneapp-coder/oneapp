@@ -1,8 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '2.0.0';
-  const CONTRACT_VERSION = 'NEXUS_AUTH_V2';
+  const VERSION = '1.0.0';
   const config = window.NEXUS_AUTH_CONFIG || {};
   const endpoint = String(config.endpoint || '').trim();
   const nativeFetch = window.fetch.bind(window);
@@ -10,16 +9,14 @@
   const LOGIN_PATHS = new Set(['/nexus/', '/nexus/index.html']);
   const PUBLIC_PATH = LOGIN_PATHS.has(location.pathname);
   const APP_PERMISSIONS = Object.freeze({
-    master: 'foundation.read', 'item-manager': 'foundation.write', 'customer-manager': 'customer.read',
+    master: 'foundation.read', 'item-manager': 'foundation.write', 'customer-manager': 'foundation.write',
     merchops: 'merchops.read', 'smart-parser': 'merchops.read', dataops: 'dataops.read',
-    orderq: 'orderq.read', orderops: ['orderq.read', 'shipping.read'], orderin: 'orderq.write', 'smart-input': 'smartinput.use',
-    settings: 'foundation.read', history: 'foundation.read', 'export-center': 'foundation.read'
+    orderq: 'orderq.read', orderops: 'orderq.read', orderin: 'orderq.write', 'smart-input': 'smartinput.use'
   });
   const GROUP_PERMISSIONS = Object.freeze({
-    foundation: 'foundation.read', pricing: 'merchops.read', shipping: 'shipping.read', inventory: 'dataops.read'
+    foundation: 'foundation.read', pricing: 'merchops.read', shipping: 'orderq.read', inventory: 'dataops.read'
   });
   let currentSession = null;
-  let currentAppContext = null;
 
   if (!PUBLIC_PATH) {
     document.documentElement.dataset.nexusAuthPending = 'true';
@@ -30,6 +27,7 @@
   }
 
   const text = value => String(value ?? '').trim();
+  const normalizeEndpoint = value => text(value).replace(/\/+$/, '');
   const bytesToBase64Url = bytes => {
     let binary = '';
     bytes.forEach(byte => { binary += String.fromCharCode(byte); });
@@ -53,7 +51,6 @@
 
   async function call(action, body = {}, options = {}) {
     if (!endpoint) throw new Error('NEXUS_AUTH_ENDPOINT_NOT_CONFIGURED');
-    if (config.contractVersion !== CONTRACT_VERSION) throw new Error('NEXUS_AUTH_MIXED_CACHE_DENIED');
     const response = await nativeFetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
@@ -65,42 +62,6 @@
     if (!response.ok) throw new Error(`NEXUS_AUTH_HTTP_${response.status}`);
     const result = await response.json();
     if (!result || result.status !== 'success') throw new Error(text(result?.message) || 'NEXUS_AUTH_REQUEST_FAILED');
-    return result.data;
-  }
-
-  function validateGatewayPayload(payload) {
-    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw new Error('NEXUS_GATEWAY_PAYLOAD_INVALID');
-    const reserved = new Set(['action', 'operationId', 'sessionToken', 'targetUrl', 'upstreamUrl', 'token', 'actorId', 'userId', 'loginId', 'appId', 'requestId', 'credential']);
-    const forbidden = Object.keys(payload).find(key => reserved.has(key));
-    if (forbidden) throw new Error('NEXUS_GATEWAY_RESERVED_FIELD_DENIED');
-    return payload;
-  }
-
-  async function gateway(operationId, payload = {}, options = {}) {
-    const operation = text(operationId);
-    if (!/^[a-z][a-z0-9_.-]{2,79}$/.test(operation)) throw new Error('NEXUS_GATEWAY_OPERATION_INVALID');
-    validateGatewayPayload(payload);
-    await ready;
-    const token = sessionToken();
-    if (!currentSession || !token) throw new Error('NEXUS_AUTH_SESSION_REQUIRED');
-    const response = await nativeFetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({
-        action: 'nexus_gateway', sessionToken: token,
-        appContextToken: currentAppContext?.appContextToken || '', operationId: operation, payload
-      }),
-      redirect: 'follow',
-      cache: 'no-store',
-      signal: options.signal
-    });
-    if (!response.ok) throw new Error(`NEXUS_GATEWAY_HTTP_${response.status}`);
-    let result;
-    try { result = await response.json(); }
-    catch { throw new Error('NEXUS_GATEWAY_RESPONSE_INVALID'); }
-    if (!result || result.status !== 'success' || result.contractVersion !== CONTRACT_VERSION || result.operationId !== operation) {
-      throw new Error(text(result?.message) || 'NEXUS_GATEWAY_REQUEST_FAILED');
-    }
     return result.data;
   }
 
@@ -129,7 +90,6 @@
     if (!result?.sessionToken || !result?.session?.user) throw new Error('NEXUS_AUTH_RESPONSE_INVALID');
     saveSessionToken(result.sessionToken);
     currentSession = result.session;
-    currentAppContext = null;
     window.dispatchEvent(new CustomEvent('nexus-auth-ready', { detail: currentSession }));
     return currentSession;
   }
@@ -161,7 +121,6 @@
     const token = sessionToken();
     if (!token) throw new Error('NEXUS_AUTH_SESSION_REQUIRED');
     currentSession = await call('nexus_auth_session', { sessionToken: token });
-    currentAppContext = null;
     window.dispatchEvent(new CustomEvent('nexus-auth-ready', { detail: currentSession }));
     return currentSession;
   }
@@ -170,7 +129,6 @@
     const token = sessionToken();
     saveSessionToken('');
     currentSession = null;
-    currentAppContext = null;
     if (token) {
       try { await call('nexus_auth_logout', { sessionToken: token }); } catch {}
     }
@@ -179,34 +137,48 @@
 
   function permissions() { return Array.isArray(currentSession?.user?.permissions) ? currentSession.user.permissions : []; }
   function hasPermission(permission) {
-    if (currentSession?.user?.role === 'OWNER_MASTER' || permissions().includes(permission)) return true;
-    const impliedWrite = String(permission || '').replace(/\.read$/, '.write');
-    return impliedWrite !== permission && permissions().includes(impliedWrite);
+    return currentSession?.user?.role === 'OWNER_MASTER' || permissions().includes(permission);
   }
-  function canUseApp(appId) {
-    const required = APP_PERMISSIONS[appId] || 'foundation.read';
-    return (Array.isArray(required) ? required : [required]).every(hasPermission);
-  }
+  function canUseApp(appId) { return hasPermission(APP_PERMISSIONS[appId] || 'foundation.read'); }
   function canUseGroup(groupId) { return hasPermission(GROUP_PERMISSIONS[groupId] || 'foundation.read'); }
-  function inferAppId() {
-    const pathname = String(location.pathname || '').toLowerCase();
-    if (pathname.includes('/partner_db')) return 'customer-manager';
-    if (pathname.includes('/orderops/') || pathname.endsWith('/orders.html') || pathname.endsWith('/orderops_list.html')) return 'orderops';
-    if (pathname.includes('/orderq/')) return pathname.endsWith('/parser.html') ? 'orderin' : 'orderq';
-    if (pathname.includes('/smartinput/')) return 'smart-input';
-    if (pathname.endsWith('/dataops.html')) return 'dataops';
-    if (pathname.endsWith('/merchops.html')) return 'merchops';
-    if (pathname.endsWith('/smartparser.html')) return 'smart-parser';
-    if (pathname.endsWith('/item_manager.html')) return 'item-manager';
-    if (pathname.endsWith('/settings.html')) return 'settings';
-    if (pathname.endsWith('/history_viewer.html')) return 'history';
-    if (pathname.endsWith('/export_center.html')) return 'export-center';
-    if (pathname.endsWith('/master.html')) return 'master';
-    return '';
+  function businessCredential(purpose = 'GENERAL') {
+    const user = currentSession?.user;
+    if (!user) throw new Error('NEXUS_AUTH_SESSION_REQUIRED');
+    return {
+      token: `NEXUS_GATEWAY_${text(purpose).toUpperCase().replace(/[^A-Z0-9_]/g, '_')}`, actorId: user.loginId, deviceId: 'NEXUS_BROWSER',
+      device: 'NEXUS_BROWSER', environment: 'PRODUCTION', scope: { companyId: 'ONEAPP' }
+    };
   }
-  function declaredAppId() {
-    return text(document.documentElement.dataset.nexusAppId || document.querySelector('nexus-top')?.getAttribute('app-id') || inferAppId()).toLowerCase();
+
+  function shouldProxy(input) {
+    const url = text(typeof input === 'string' || input instanceof URL ? input : input?.url);
+    if (!/^https:\/\/script\.google\.com\/macros\/s\//i.test(url)) return false;
+    return normalizeEndpoint(url) !== normalizeEndpoint(endpoint);
   }
+
+  async function proxyFetch(input, init = {}) {
+    if (!shouldProxy(input)) return nativeFetch(input, init);
+    await ready;
+    if (!currentSession) throw new Error('NEXUS_AUTH_SESSION_REQUIRED');
+    const url = new URL(text(typeof input === 'string' || input instanceof URL ? input : input.url));
+    const method = text(init.method || input?.method || 'GET').toUpperCase();
+    let body = {};
+    if (method === 'POST') {
+      let rawBody = init.body;
+      if (rawBody === undefined && input instanceof Request) rawBody = await input.clone().text();
+      try { body = JSON.parse(String(rawBody || '{}')); }
+      catch { throw new Error('NEXUS_PROXY_PAYLOAD_INVALID'); }
+    }
+    const action = text(body.action || url.searchParams.get('action') || (method === 'GET' ? 'full' : ''));
+    return nativeFetch(endpoint, {
+      method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action: 'nexus_proxy', sessionToken: sessionToken(), request: { method, action, body } }),
+      redirect: 'follow', cache: 'no-store', signal: init.signal
+    });
+  }
+
+  window.fetch = proxyFetch;
+
   function gateMessage(message) {
     let gate = document.getElementById('nexusAuthGate');
     if (!gate) {
@@ -240,16 +212,10 @@
       }
       const session = await readSession();
       if (!PUBLIC_PATH) {
-        const declaredApp = declaredAppId();
+        const declaredApp = document.querySelector('nexus-top')?.getAttribute('app-id');
         if (declaredApp && !canUseApp(declaredApp)) {
           location.replace(config.homeUrl || '/nexus/home/');
           return session;
-        }
-        if (declaredApp) {
-          currentAppContext = await call('nexus_auth_app_context', {
-            sessionToken: sessionToken(), appId: declaredApp
-          });
-          if (currentAppContext?.appId !== declaredApp || !currentAppContext?.appContextToken) throw new Error('NEXUS_AUTH_APP_CONTEXT_DENIED');
         }
         if (location.pathname.startsWith('/nexus/admin/') && session.user.role !== 'OWNER_MASTER') {
           location.replace(config.homeUrl || '/nexus/home/');
@@ -272,9 +238,8 @@
 
   window.ONEAPP_AUTH = Object.freeze({
     version: VERSION, ready, status: () => call('nexus_auth_status'), login, bootstrap, activate,
-    readSession, logout, hasPermission, canUseApp, canUseGroup, gateway,
+    readSession, logout, hasPermission, canUseApp, canUseGroup, businessCredential,
     get session() { return currentSession; },
-    get appId() { return currentAppContext?.appId || ''; },
     admin: Object.freeze({
       users: () => adminCall('nexus_admin_users'),
       invite: payload => adminCall('nexus_admin_invite', payload),
@@ -282,6 +247,7 @@
       deleteUser: userId => adminCall('nexus_admin_delete_user', { userId }),
       recoverUser: userId => adminCall('nexus_admin_recover_user', { userId }),
       serviceStatus: () => adminCall('nexus_admin_service_status'),
+      configureServices: services => adminCall('nexus_admin_configure_services', { services }),
       audit: (limit = 100) => adminCall('nexus_admin_audit', { limit })
     })
   });

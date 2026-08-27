@@ -32,25 +32,31 @@
       && text(ping?.capabilityVersion) === CAPABILITY && JSON.stringify(ping?.actions || []) === JSON.stringify(ACTIONS));
   }
   function requireCredential(value, kind = 'DATAOPS') {
-    if (!global.ONEAPP_AUTH?.gateway) throw new Error('DATAOPS_CLOSE_ACCESS_DENIED');
-    return Object.freeze({ actorId: 'NEXUS_GATEWAY', deviceId: 'NEXUS_GATEWAY', environment: 'PRODUCTION', scope: { companyId: 'ONEAPP' } });
+    const credential = { token: text(value?.token), actorId: text(value?.actorId), deviceId: text(value?.deviceId || value?.device), environment: text(value?.environment), scope: { companyId: text(value?.scope?.companyId) } };
+    if (!credential.token || !credential.actorId || !credential.scope.companyId) throw new Error('DATAOPS_CLOSE_ACCESS_DENIED');
+    if (kind === 'ORDERQ' && (!credential.deviceId || !credential.environment)) throw new Error('DATAOPS_CLOSE_ORDERQ_ACCESS_DENIED');
+    return Object.freeze(credential);
   }
   async function defaultPost({ url, dataOpsReadCredential, dataOpsWriteCredential }, action, body = {}) {
     if (!ACTIONS.includes(action)) throw new Error('DATAOPS_CLOSE_ACTION_FORBIDDEN');
-    const operations = { dataops_close_ping:'dataops.close.ping',dataops_close_context:'dataops.close.context',dataops_close_seal:'dataops.close.seal',
-      dataops_close_prepare:'dataops.close.prepare',dataops_close_write_chunks:'dataops.close.write_chunks',dataops_close_commit:'dataops.close.commit',dataops_close_abort:'dataops.close.abort' };
-    if (!operations[action] || !global.ONEAPP_AUTH?.gateway) throw new Error('DATAOPS_CLOSE_CREDENTIAL_ROUTE_INVALID');
-    await global.ONEAPP_AUTH.ready;
-    return global.ONEAPP_AUTH.gateway(operations[action], body);
+    const credential = action === 'dataops_close_ping' ? null : READ_ACTIONS.includes(action) ? dataOpsReadCredential : WRITE_ACTIONS.includes(action) ? dataOpsWriteCredential : null;
+    if (action !== 'dataops_close_ping' && !credential) throw new Error('DATAOPS_CLOSE_CREDENTIAL_ROUTE_INVALID');
+    const envelope = credential ? { action, ...body, ...credential, scope: credential.scope } : { action, ...body };
+    const response = await global.fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(envelope) });
+    const json = await response.json();
+    if (!response.ok || json?.status !== 'success' || json.action !== action) throw new Error(text(json?.message) || 'DATAOPS_CLOSE_REQUEST_FAILED');
+    return json.data;
   }
   function createOrderQReadAdapter({ url, orderQCredential }) {
     const allowed = Object.freeze(['situation_orderq_begin', 'situation_orderq_page', 'situation_orderq_head']);
     async function read(action, body = {}) {
       if (!allowed.includes(action)) throw new Error('DATAOPS_CLOSE_ORDERQ_ACTION_FORBIDDEN');
-      const operations={situation_orderq_begin:'orderq.situation.begin',situation_orderq_page:'orderq.situation.page',situation_orderq_head:'orderq.situation.head'};
-      if(!operations[action]||!global.ONEAPP_AUTH?.gateway)throw new Error('DATAOPS_CLOSE_ORDERQ_READ_FAILED');
-      await global.ONEAPP_AUTH.ready;
-      return global.ONEAPP_AUTH.gateway(operations[action],{schemaVersion:'ONEAPP_ORDERQ_CENTRAL_V1',...body});
+      const response = await global.fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, redirect: 'follow', cache: 'no-store',
+        body: JSON.stringify({ action, token: orderQCredential.token, schemaVersion: 'ONEAPP_ORDERQ_CENTRAL_V1', ...body,
+          actorId: orderQCredential.actorId, device: orderQCredential.deviceId, environment: orderQCredential.environment, scope: orderQCredential.scope }) });
+      const json = await response.json(), keys = json && typeof json === 'object' && !Array.isArray(json) ? Object.keys(json).sort() : [];
+      if (!response.ok || JSON.stringify(keys) !== JSON.stringify(['action', 'data', 'status']) || json.status !== 'success' || json.action !== action || !json.data || typeof json.data !== 'object' || Array.isArray(json.data)) throw new Error('DATAOPS_CLOSE_ORDERQ_READ_FAILED');
+      return json.data;
     }
     return Object.freeze({
       begin: request => read('situation_orderq_begin', request),
@@ -94,6 +100,7 @@
     async function connect(input = {}) {
       if (!released(expected)) throw new Error('DATAOPS_CLOSE_DEPLOYMENT_NOT_RELEASED');
       const dataOpsReadCredential = requireCredential(input.dataOpsReadCredential, 'DATAOPS'), dataOpsWriteCredential = requireCredential(input.dataOpsWriteCredential, 'DATAOPS'), orderQCredential = requireCredential(input.orderQCredential, 'ORDERQ');
+      if (dataOpsReadCredential.token === dataOpsWriteCredential.token) throw new Error('DATAOPS_CLOSE_CREDENTIAL_SEPARATION_REQUIRED');
       const identities = [dataOpsReadCredential, dataOpsWriteCredential, orderQCredential];
       if (identities.some(credential => credential.actorId !== dataOpsReadCredential.actorId || canonicalJson(credential.scope) !== canonicalJson(dataOpsReadCredential.scope))) throw new Error('DATAOPS_CLOSE_AUTHORITY_SCOPE_MISMATCH');
       connection = { url: text(input.url), dataOpsReadCredential, dataOpsWriteCredential, orderQCredential };

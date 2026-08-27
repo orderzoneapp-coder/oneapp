@@ -59,8 +59,8 @@ function bridge(authority, actionLog = []) {
 const e2eAuthority = makeAuthority({ entities: baseEntities() });
 const e2eCredentials = configureAuthority(e2eAuthority);
 const actionLog = [];
-const e2eBrowser = loadBrowserModule({ fetch: bridge(e2eAuthority, actionLog), expected, serviceCredential: e2eCredentials });
-e2eBrowser.DATAOPS_SITUATION_V2_MODULE.setRuntimeCredential();
+const e2eBrowser = loadBrowserModule({ fetch: bridge(e2eAuthority, actionLog), expected });
+e2eBrowser.DATAOPS_SITUATION_V2_MODULE.setRuntimeCredential(e2eCredentials);
 const e2eSource = snapshotInput(e2eAuthority.context);
 const officialState = { authorityHead: e2eSource.authorityHead, movements: e2eSource.rows[0].sourceEvidence.map(item => ({ ...item,
   productId: 'P1', warehouseId: 'W1', baseUnit: 'EA' })) };
@@ -80,7 +80,7 @@ const stablePointer = e2eAuthority.values.get('ONEAPP_DATAOPS_SITUATION_CURRENT_
 await assert.rejects(() => e2eBrowser.DATAOPS_SITUATION_V2_MODULE.publishOperationalState('mock://dataops', {
   operationalRows: e2eSource.rows, officialState, basisDate: e2eSource.basisDate, snapshotId: 'MISMATCH', snapshotRevision: 2,
   publishedAt: e2eSource.publishedAt, producer: e2eSource.producer, scope: { companyId: 'OTHER-COMPANY' }
-}));
+}), /DATAOPS_SITUATION_SCOPE_NOT_ALLOWED/);
 assert.equal(e2eAuthority.values.get('ONEAPP_DATAOPS_SITUATION_CURRENT_POINTER'), stablePointer);
 
 await e2eBrowser.DATAOPS_SITUATION_V2_MODULE.publishOperationalState('mock://dataops', {
@@ -104,8 +104,8 @@ assert.match(readFileSync(new URL('../code.gs', import.meta.url), 'utf8'), /situ
 for (const candidateExpected of [null, { deploymentId: 'WRONG', deploymentVersion: '1', gitCommit: 'commit-v2' }]) {
   const disabledAuthority = makeAuthority({ entities: baseEntities() });
   const disabledCredentials = configureAuthority(disabledAuthority);
-  const disabledBrowser = loadBrowserModule({ fetch: bridge(disabledAuthority), serviceCredential: disabledCredentials, ...(candidateExpected ? { expected: candidateExpected } : {}) });
-  disabledBrowser.DATAOPS_SITUATION_V2_MODULE.setRuntimeCredential();
+  const disabledBrowser = loadBrowserModule({ fetch: bridge(disabledAuthority), ...(candidateExpected ? { expected: candidateExpected } : {}) });
+  disabledBrowser.DATAOPS_SITUATION_V2_MODULE.setRuntimeCredential(disabledCredentials);
   const disabledSource = snapshotInput(disabledAuthority.context);
   await assert.rejects(() => disabledBrowser.DATAOPS_SITUATION_V2_MODULE.publish('mock://dataops', disabledSource), /DATAOPS_V2_CAPABILITY_REQUIRED/);
   assert.equal(disabledAuthority.values.has('ONEAPP_DATAOPS_SITUATION_CURRENT_POINTER'), false, 'blank/wrong expected deployment has publish mutation0');
@@ -113,8 +113,8 @@ for (const candidateExpected of [null, { deploymentId: 'WRONG', deploymentVersio
 
 const otherAuthority = makeAuthority({ entities: baseEntities() });
 const otherCredentials = configureAuthority(otherAuthority);
-const otherBrowser = loadBrowserModule({ fetch: bridge(otherAuthority), expected, serviceCredential: { ...otherCredentials, scope: { companyId: 'OTHER-COMPANY' } } });
-otherBrowser.DATAOPS_SITUATION_V2_MODULE.setRuntimeCredential();
+const otherBrowser = loadBrowserModule({ fetch: bridge(otherAuthority), expected });
+otherBrowser.DATAOPS_SITUATION_V2_MODULE.setRuntimeCredential({ ...otherCredentials, scope: { companyId: 'OTHER-COMPANY' } });
 await assert.rejects(() => otherBrowser.DATAOPS_SITUATION_V2_MODULE.publish('mock://dataops', {
   ...snapshotInput(otherAuthority.context), scope: { companyId: 'OTHER-COMPANY' }
 }), /DATAOPS_V2_CAPABILITY_REQUIRED/);
