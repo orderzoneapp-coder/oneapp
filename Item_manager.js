@@ -11,7 +11,7 @@
     FILTERS: "oneapp_master_item_manager_filters_v2"
   };
 
-  var DEFAULT_CLOUD_URL = "https://script.google.com/macros/s/AKfycbzOUOIu_bP7NkiFVziDR0Og1da1KO1ePoU09Q3pSlPr-9uD-WkdCpWN7nidO5hlrJi6Qw/exec";
+  var DEFAULT_CLOUD_URL = "NEXUS_GATEWAY";
 
   var FIELD_DEFS = [
     { key: "코드", label: "상품코드", type: "text", width: 132, required: true, css: "grid-code" },
@@ -149,29 +149,11 @@
   }
 
   function getCloudUrl() {
-    var keys = [STORAGE_KEYS.CLOUD_URL, STORAGE_KEYS.LEGACY_CLOUD_URL, STORAGE_KEYS.OLD_CLOUD_URL];
-    try {
-      for (var i = 0; i < keys.length; i += 1) {
-        var value = normalizeCloudUrl(localStorage.getItem(keys[i]) || "");
-        if (value) return value;
-      }
-    } catch (error) {
-      return DEFAULT_CLOUD_URL;
-    }
     return DEFAULT_CLOUD_URL;
   }
 
   function setCloudUrl(value) {
-    var url = normalizeCloudUrl(value || DEFAULT_CLOUD_URL);
-    if (!url) throw new Error("클라우드 연결 주소가 비어 있습니다.");
-    try {
-      localStorage.setItem(STORAGE_KEYS.CLOUD_URL, url);
-      localStorage.setItem(STORAGE_KEYS.LEGACY_CLOUD_URL, url);
-      localStorage.setItem(STORAGE_KEYS.OLD_CLOUD_URL, url);
-    } catch (error) {
-      return url;
-    }
-    return url;
+    return DEFAULT_CLOUD_URL;
   }
 
   function buildCloudUrl(url, params) {
@@ -1573,12 +1555,7 @@
   }
 
   async function postCloud(url, payload) {
-    var response = await fetch(url, { method: "POST", body: JSON.stringify(payload) });
-    var json = await response.json();
-    if (!response.ok || !json || json.status !== "success") {
-      throw new Error(json && json.message ? json.message : "클라우드 요청에 실패했습니다.");
-    }
-    return json;
+    throw new Error("NEXUS_GATEWAY_DIRECT_ACTION_DENIED");
   }
 
   async function uploadChunks(url, action, items, progressLabel) {
@@ -1600,22 +1577,18 @@
     renderSaveState();
     try {
       var url = setCloudUrl(getCloudUrl());
-      var previousResponse = await fetch(url, { method: "GET" });
-      var previous = previousResponse.ok ? await previousResponse.json() : {};
+      await window.ONEAPP_AUTH.ready;
+      var previous = {status:"success",data:await window.ONEAPP_AUTH.gateway("foundation.full_read",{})};
       var previousData = previous && previous.data ? previous.data : {};
       var localHistory = safeJson(localStorage.getItem("merchHistory_v870"), []);
       var history = Array.isArray(localHistory) && localHistory.length
         ? localHistory
         : (Array.isArray(previousData.history) ? previousData.history : []);
-      await postCloud(url, { action: "initSync" });
-      await uploadChunks(url, "chunk_master", Object.values(state.masterOriginal), "상품 DB 반영 중");
-      await uploadChunks(url, "chunk_history", history, "변경 이력 유지 중");
-      await postCloud(url, {
-        action: "config",
-        data: {
+      await window.ONEAPP_AUTH.gateway("foundation.replace_all", {
+        master:Object.values(state.masterOriginal), history:history, config:{
           dict: safeJson(localStorage.getItem("parserDict_v870"), previousData.dict || {}),
           rules: previousData.rules || [],
-          appConfig: Object.assign({}, previousData.appConfig || {}, { cloudUrl: url })
+          appConfig: Object.assign({}, previousData.appConfig || {})
         }
       });
       try {
@@ -1653,22 +1626,8 @@
     renderSaveState();
     try {
       var url = setCloudUrl(getCloudUrl());
-      var candidates = [
-        url,
-        buildCloudUrl(url, { action: "master_only" }),
-        buildCloudUrl(url, { action: "pull", sheet: "마스터" })
-      ];
-      var master = {};
-      for (var i = 0; i < candidates.length; i += 1) {
-        try {
-          var response = await fetch(candidates[i], { method: "GET" });
-          if (!response.ok) continue;
-          master = extractCloudMaster(await response.json());
-          if (Object.keys(master).length) break;
-        } catch (error) {
-          continue;
-        }
-      }
+      await window.ONEAPP_AUTH.ready;
+      var master = extractCloudMaster({status:"success",data:await window.ONEAPP_AUTH.gateway("foundation.master_read",{})});
       if (!Object.keys(master).length) throw new Error("클라우드에 상품 DB가 없습니다.");
       var result = await commitMaster(master);
       state.revision = result.revision;

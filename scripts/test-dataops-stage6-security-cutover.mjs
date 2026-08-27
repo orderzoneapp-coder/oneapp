@@ -3,21 +3,73 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 import { closeWriteEnabled, evaluateDataOpsCloseCapability, DATAOPS_CLOSE_ACTIONS, DATAOPS_CLOSE_EXPECTED_DEPLOYMENT } from '../orderq/dataops-close-cloud-adapter.js';
 
-const releaseIdentity={deploymentId:'AKfycbzOUOIu_bP7NkiFVziDR0Og1da1KO1ePoU09Q3pSlPr-9uD-WkdCpWN7nidO5hlrJi6Qw',deploymentVersion:'31',gitCommit:'48a52ec34fa938cd60fe965b795083539460627f'};
-assert.deepEqual(DATAOPS_CLOSE_EXPECTED_DEPLOYMENT,releaseIdentity);const closePing={...releaseIdentity,capabilityVersion:'DATAOPS_CLOSE_V1',actions:DATAOPS_CLOSE_ACTIONS};assert.equal(closeWriteEnabled(closePing),true);for(const key of ['deploymentId','deploymentVersion','gitCommit','capabilityVersion'])assert.equal(evaluateDataOpsCloseCapability({...closePing,[key]:'MUTATED'}).ready,false);assert.equal(evaluateDataOpsCloseCapability({...closePing,actions:DATAOPS_CLOSE_ACTIONS.slice(0,-1)}).ready,false);
-assert.deepEqual(DATAOPS_CLOSE_ACTIONS,['dataops_close_ping','dataops_close_context','dataops_close_seal','dataops_close_prepare','dataops_close_write_chunks','dataops_close_commit','dataops_close_abort']);
-const code=fs.readFileSync(new URL('../code.gs',import.meta.url),'utf8'),cloud=fs.readFileSync(new URL('../dataops-close-stage6.gs',import.meta.url),'utf8');
-assert.match(code,/dataops_snapshot_commit/);assert.match(code,/ONEAPP_DATAOPS_SNAPSHOT_V1/);assert.match(code,/dataOpsV1PreflightAction\(action,payload/);
-const legacyCommitBody=code.match(/if \(action === 'dataops_snapshot_commit'\)([\s\S]*?)if \(action === 'dataops_snapshot_get'/)?.[1]||'';assert.match(legacyCommitBody,/commitDataOpsSnapshot\(ss, payload\.snapshot\)/);assert.doesNotMatch(legacyCommitBody,/columns\s*=|ONEAPP_DATAOPS_SNAPSHOT_V2/);assert.match(code,/const DATAOPS_SNAPSHOT_COLUMNS = \['단위', '품목코드', '품명', '규격', '재고', '기록', '거래', '구매가', '기본', '적요', '행사가'\]/);assert.match(code,/ONEAPP_DATAOPS_CURRENT_SLOT/);
-const context={Object,String,Array,JSON,dataOpsSituationRequireAuth(payload,role){if(!(payload.roles||[]).includes(role))throw new Error('DATAOPS_SITUATION_ROLE_FORBIDDEN');return{actorId:'A',roleIds:payload.roles};}};
-vm.createContext(context);vm.runInContext(`${cloud}\nglobalThis.security={mode:dataOpsV1SecurityMode,capability:dataOpsV1SecurityCapability,require:dataOpsV1RequireAccess};`,context);
-const legacyProps={getProperty:()=>''};assert.equal(context.security.require({},'WRITE',legacyProps).legacyCompatible,true);assert.equal(context.security.capability(legacyProps).writeAuthRequired,false);
-const cutoverProps={getProperty:key=>key==='ONEAPP_DATAOPS_V1_SECURITY_MODE'?'SERVER_FIRST_V1':''};assert.throws(()=>context.security.require({roles:['DATAOPS_SNAPSHOT_V1_READ']},'WRITE',cutoverProps),/ROLE_FORBIDDEN/);assert.throws(()=>context.security.require({roles:['DATAOPS_SITUATION_PUBLISH']},'READ',cutoverProps),/ROLE_FORBIDDEN/);assert.equal(context.security.require({roles:['DATAOPS_SNAPSHOT_V1_WRITE']},'WRITE',cutoverProps).actorId,'A');assert.equal(context.security.require({roles:['DATAOPS_SNAPSHOT_V1_READ']},'READ',cutoverProps).actorId,'A');
-let mutationCount=0;const securedAction=(operation,payload)=>{context.security.require(payload,operation,cutoverProps);mutationCount+=1;return true;};assert.throws(()=>securedAction('READ',{}),/ROLE_FORBIDDEN/);assert.throws(()=>securedAction('WRITE',{}),/ROLE_FORBIDDEN/);assert.throws(()=>securedAction('WRITE',{roles:['DATAOPS_SNAPSHOT_V1_READ']}),/ROLE_FORBIDDEN/);assert.throws(()=>securedAction('READ',{roles:['DATAOPS_SNAPSHOT_V1_WRITE']}),/ROLE_FORBIDDEN/);assert.equal(mutationCount,0,'anonymous and wrong-role requests must mutate nothing');assert.equal(securedAction('READ',{roles:['DATAOPS_SNAPSHOT_V1_READ']}),true);assert.equal(securedAction('WRITE',{roles:['DATAOPS_SNAPSHOT_V1_WRITE']}),true);assert.equal(mutationCount,2);
-const client=fs.readFileSync(new URL('../orderq/dataops-close-cloud-adapter.js',import.meta.url),'utf8'),dataOpsHtml=fs.readFileSync(new URL('../DataOps.html',import.meta.url),'utf8');assert.doesNotMatch(client,/localStorage|accessToken|secret/i);assert.match(dataOpsHtml,/dataops\/v1-security-client\.js\?v=0\.1\.2/);
-await import(new URL(`../dataops/v1-security-client.js?test=${Date.now()}`,import.meta.url));const v1=globalThis.DATAOPS_V1_SECURITY_CLIENT;assert.deepEqual(v1.EXPECTED_DEPLOYMENT,releaseIdentity);const releaseSecurityPing={...releaseIdentity,capabilityVersion:'DATAOPS_SNAPSHOT_V1_SECURITY_V1',mode:'SERVER_FIRST_V1',readAuthRequired:true,writeAuthRequired:true,roles:['DATAOPS_SNAPSHOT_V1_READ','DATAOPS_SNAPSHOT_V1_WRITE'],actions:['dataops_snapshot_get','dataops_snapshot_commit']};assert.equal(v1.evaluate(releaseSecurityPing),true);for(const key of ['deploymentId','deploymentVersion','gitCommit','mode','capabilityVersion'])assert.equal(v1.evaluate({...releaseSecurityPing,[key]:'MUTATED'}),false);let network=0,legacyFallback=0;const disabled=v1.createClient({expectedDeployment:{deploymentId:'',deploymentVersion:'',gitCommit:''},fetchImpl:async()=>{network+=1;}});await assert.rejects(()=>disabled.connect({url:'x'}),/NOT_RELEASED/);await assert.rejects(()=>disabled.commitSnapshot({legacyModule:{commit:async()=>{legacyFallback+=1;}},productData:[],targetDateStr:'2026-08-26',url:'x'}),/NOT_RELEASED/);assert.equal(network,0);assert.equal(legacyFallback,0,'server-first client must not fall back to anonymous V1');
-const expected={deploymentId:'D',deploymentVersion:'1',gitCommit:'G'},ping={...expected,capabilityVersion:'DATAOPS_SNAPSHOT_V1_SECURITY_V1',mode:'SERVER_FIRST_V1',readAuthRequired:true,writeAuthRequired:true,roles:['DATAOPS_SNAPSHOT_V1_READ','DATAOPS_SNAPSHOT_V1_WRITE'],actions:['dataops_snapshot_get','dataops_snapshot_commit']},secured=v1.createClient({expectedDeployment:expected,fetchImpl:async()=>({ok:true,json:async()=>({status:'success',action:'dataops_v1_security_ping',data:ping})})}),common={actorId:'ADMIN',deviceId:'D',environment:'P',scope:{companyId:'ONEAPP'}};await secured.connect({url:'x',readCredential:{token:'READ',...common},writeCredential:{token:'WRITE',...common}});assert.equal(secured.envelope('READ').token,'READ');assert.equal(secured.envelope('WRITE').token,'WRITE');assert.notEqual(secured.envelope('READ').token,secured.envelope('WRITE').token);assert.doesNotMatch(fs.readFileSync(new URL('../dataops/v1-security-client.js',import.meta.url),'utf8'),/localStorage|sessionStorage/);
-const sameToken=v1.createClient({expectedDeployment:expected,fetchImpl:async()=>{throw new Error('NETWORK_FORBIDDEN');}});await assert.rejects(()=>sameToken.connect({url:'x',readCredential:{token:'SAME',...common},writeCredential:{token:'SAME',...common}}),/CREDENTIAL_SEPARATION_REQUIRED/);
-const readCalls=[],snapshot={schemaVersion:'ONEAPP_DATAOPS_SNAPSHOT_V1',revision:1};const readClient=v1.createReadClient({expectedDeployment:expected,fetchImpl:async(_url,init)=>{const body=JSON.parse(init.body);readCalls.push(body);return{ok:true,json:async()=>body.action==='dataops_v1_security_ping'?{status:'success',action:body.action,data:ping}:{status:'success',action:body.action,data:snapshot}};}});assert.deepEqual(await readClient.getSnapshot({url:'x',readCredential:{token:'READ',...common}}),snapshot);assert.deepEqual(readCalls.map(row=>row.action),['dataops_v1_security_ping','dataops_snapshot_get']);assert.equal(readCalls[0].token,undefined,'capability ping is sanitized');assert.equal(readCalls[1].token,'READ');assert.equal(readCalls[1].actorId,'ADMIN');assert.equal(readCalls[1].scope.companyId,'ONEAPP');
-const merch=fs.readFileSync(new URL('../MerchOps.html',import.meta.url),'utf8'),sourceAdapter=fs.readFileSync(new URL('../orderops/orderops-source-adapter.js',import.meta.url),'utf8'),orders=fs.readFileSync(new URL('../orders.html',import.meta.url),'utf8'),ordersMirror=fs.readFileSync(new URL('../orderops_list.html',import.meta.url),'utf8'),deletionPlannedLegacy=fs.readFileSync(new URL('../orderops/list.html',import.meta.url),'utf8');assert.match(merch,/dataops\/v1-security-client\.js\?v=0\.1\.2/);assert.match(merch,/readClient\.getSnapshot/);assert.doesNotMatch(merch,/body: JSON\.stringify\(\{ action: 'dataops_snapshot_get' \}\)/);assert.match(sourceAdapter,/DATAOPS_V1_SECURITY_CLIENT\?\.readClient/);assert.doesNotMatch(sourceAdapter,/body: JSON\.stringify\(\{ action: "dataops_snapshot_get" \}\)/);assert.match(orders,/dataops\/v1-security-client\.js\?v=0\.1\.2/);assert.equal(ordersMirror,orders,'the root ORDER Q mirror must stay byte-identical');assert.doesNotMatch(deletionPlannedLegacy,/dataops\/v1-security-client\.js|orderops-source-adapter\.js\?v=1\.64\.1/,'the deletion-planned legacy route must remain outside the V1 cutover');
-console.log('PASS stage6 V1 legacy/cutover role isolation and close gate');
+const releaseIdentity = { deploymentId: 'AKfycbzOUOIu_bP7NkiFVziDR0Og1da1KO1ePoU09Q3pSlPr-9uD-WkdCpWN7nidO5hlrJi6Qw', deploymentVersion: '31', gitCommit: '48a52ec34fa938cd60fe965b795083539460627f' };
+assert.deepEqual(DATAOPS_CLOSE_EXPECTED_DEPLOYMENT, releaseIdentity);
+const closePing = { ...releaseIdentity, capabilityVersion: 'DATAOPS_CLOSE_V1', actions: DATAOPS_CLOSE_ACTIONS };
+assert.equal(closeWriteEnabled(closePing), true);
+for (const key of ['deploymentId', 'deploymentVersion', 'gitCommit', 'capabilityVersion']) {
+  assert.equal(evaluateDataOpsCloseCapability({ ...closePing, [key]: 'MUTATED' }).ready, false);
+}
+assert.deepEqual(DATAOPS_CLOSE_ACTIONS, ['dataops_close_ping', 'dataops_close_context', 'dataops_close_seal', 'dataops_close_prepare', 'dataops_close_write_chunks', 'dataops_close_commit', 'dataops_close_abort']);
+
+const code = fs.readFileSync(new URL('../code.gs', import.meta.url), 'utf8');
+const cloud = fs.readFileSync(new URL('../dataops-close-stage6.gs', import.meta.url), 'utf8');
+assert.match(code, /dataops_snapshot_commit/);
+assert.match(code, /ONEAPP_DATAOPS_SNAPSHOT_V1/);
+assert.match(code, /dataOpsV1PreflightAction\(action,payload/);
+assert.match(code, /const DATAOPS_SNAPSHOT_COLUMNS = \['단위', '품목코드', '품명', '규격', '재고', '기록', '거래', '구매가', '기본', '적요', '행사가'\]/);
+assert.match(code, /ONEAPP_DATAOPS_CURRENT_SLOT/);
+assert.match(code, /oneappNexusGatewayRequire\(payload, 'DATAOPS'/);
+
+const context = { Object, String, Array, JSON, dataOpsSituationRequireAuth(payload, role) {
+  if (!(payload.roles || []).includes(role)) throw new Error('DATAOPS_SITUATION_ROLE_FORBIDDEN');
+  return { actorId: 'A', roleIds: payload.roles };
+} };
+vm.createContext(context);
+vm.runInContext(`${cloud}\nglobalThis.security={mode:dataOpsV1SecurityMode,capability:dataOpsV1SecurityCapability,require:dataOpsV1RequireAccess};`, context);
+const legacyProps = { getProperty: () => '' };
+assert.equal(context.security.require({}, 'WRITE', legacyProps).legacyCompatible, true, 'LEGACY_V1 remains supported');
+const cutoverProps = { getProperty: key => key === 'ONEAPP_DATAOPS_V1_SECURITY_MODE' ? 'SERVER_FIRST_V1' : '' };
+assert.throws(() => context.security.require({ roles: ['DATAOPS_SNAPSHOT_V1_READ'] }, 'WRITE', cutoverProps), /ROLE_FORBIDDEN/);
+
+const gatewayCalls = [];
+const securityPing = { ...releaseIdentity, capabilityVersion: 'DATAOPS_SNAPSHOT_V1_SECURITY_V1', mode: 'SERVER_FIRST_V1', readAuthRequired: true,
+  writeAuthRequired: true, roles: ['DATAOPS_SNAPSHOT_V1_READ', 'DATAOPS_SNAPSHOT_V1_WRITE'], actions: ['dataops_snapshot_get', 'dataops_snapshot_commit'] };
+const snapshot = { schemaVersion: 'ONEAPP_DATAOPS_SNAPSHOT_V1', revision: 1 };
+globalThis.ONEAPP_AUTH = Object.freeze({
+  ready: Promise.resolve(),
+  gateway: async (operationId, payload = {}) => {
+    gatewayCalls.push({ operationId, payload: structuredClone(payload) });
+    if (operationId === 'dataops.security_ping') return securityPing;
+    if (operationId === 'dataops.snapshot.get') return snapshot;
+    if (operationId === 'dataops.snapshot.commit') return { revision: 2, hash: payload.snapshot.hash };
+    throw new Error(`UNEXPECTED_OPERATION:${operationId}`);
+  }
+});
+await import(new URL(`../dataops/v1-security-client.js?test=${Date.now()}`, import.meta.url));
+const v1 = globalThis.DATAOPS_V1_SECURITY_CLIENT;
+assert.equal(v1.evaluate(securityPing), true);
+
+const readClient = v1.createReadClient();
+assert.deepEqual(await readClient.getSnapshot({ url: 'NEXUS_GATEWAY' }), snapshot);
+const legacyModule = { buildSnapshot: async () => ({ hash: 'a'.repeat(64), canonicalJson: '{}', rowCount: 0, cellCount: 0 }) };
+const client = v1.createClient();
+const committed = await client.commitSnapshot({ legacyModule, productData: [], targetDateStr: '2026-08-26', url: 'NEXUS_GATEWAY' });
+assert.equal(committed.saved.revision, 2);
+assert.deepEqual(gatewayCalls.map(row => row.operationId), [
+  'dataops.security_ping', 'dataops.snapshot.get', 'dataops.security_ping', 'dataops.snapshot.commit'
+]);
+assert.ok(gatewayCalls.every(row => !Object.hasOwn(row.payload, 'token') && !Object.hasOwn(row.payload, 'actorId')));
+assert.deepEqual(client.envelope('READ'), {});
+
+const clientSource = fs.readFileSync(new URL('../dataops/v1-security-client.js', import.meta.url), 'utf8');
+assert.match(clientSource, /ONEAPP_AUTH\.gateway/);
+assert.doesNotMatch(clientSource, /localStorage|sessionStorage|businessCredential|token\s*:/);
+const merch = fs.readFileSync(new URL('../MerchOps.html', import.meta.url), 'utf8');
+const sourceAdapter = fs.readFileSync(new URL('../orderops/orderops-source-adapter.js', import.meta.url), 'utf8');
+const orders = fs.readFileSync(new URL('../orders.html', import.meta.url), 'utf8');
+const ordersMirror = fs.readFileSync(new URL('../orderops_list.html', import.meta.url), 'utf8');
+assert.match(merch, /dataops\/v1-security-client\.js\?v=0\.1\.2/);
+assert.match(sourceAdapter, /DATAOPS_V1_SECURITY_CLIENT\?\.readClient/);
+assert.equal(ordersMirror, orders, 'the root ORDER Q mirror must stay byte-identical');
+console.log('PASS stage6 V2 Gateway cutover, V1 business compatibility, and role isolation');

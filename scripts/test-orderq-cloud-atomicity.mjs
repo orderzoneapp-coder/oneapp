@@ -11,7 +11,7 @@ const source = ["code.gs", "orderq-cloud.gs"]
   .map((fileName) => fs.readFileSync(path.join(rootDir, fileName), "utf8"))
   .join("\n");
 
-const TOKEN = "shipping-plan-fallback-token";
+const TOKEN = crypto.randomBytes(32).toString("hex");
 
 class MockTextFinder {
   constructor(range, text) {

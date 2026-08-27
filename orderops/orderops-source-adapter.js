@@ -125,13 +125,7 @@
   }
 
   async function fetchLatestDataOpsSnapshot(url, options = {}) {
-    let targetUrl;
-    try {
-      targetUrl = new URL(cleanText(url));
-      if (!/^https?:$/.test(targetUrl.protocol)) throw new Error("INVALID_CLOUD_URL");
-    } catch (_) {
-      throw new Error("클라우드 주소가 올바르지 않습니다. 환경설정의 Apps Script 웹앱 주소를 확인하세요.");
-    }
+    const targetUrl = "NEXUS_GATEWAY";
 
     const securityClient = options.securityClient || root.DATAOPS_V1_SECURITY_CLIENT?.readClient;
     if (!securityClient?.released?.()) throw new Error("DATAOPS_V1_SECURITY_NOT_RELEASED");
@@ -139,11 +133,11 @@
     if (!securityClient.ready?.() && !readCredential) {
       await root.ONEAPP_AUTH?.ready;
       if (!root.ONEAPP_AUTH?.session) throw new Error("NEXUS_AUTH_SESSION_REQUIRED");
-      readCredential = root.ONEAPP_AUTH.businessCredential("DATAOPS_READ");
+      readCredential = {};
     }
     let snapshot;
     try {
-      snapshot = await securityClient.getSnapshot({ url: targetUrl.href, readCredential });
+      snapshot = await securityClient.getSnapshot({ url: targetUrl, readCredential });
     } catch (_) {
       throw new Error("클라우드 서버에 연결할 수 없습니다. 환경설정의 Apps Script 주소와 네트워크를 확인하세요.");
     }

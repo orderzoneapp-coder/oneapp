@@ -16,7 +16,7 @@
     'producerDeploymentId', 'producerDeploymentVersion', 'producerGitCommit', 'producerHandshakeDigest', 'rowCount',
     'activeRowCount', 'tombstoneCount', 'inventoryKeys', 'rowDigest', 'tombstoneDigest', 'pageManifestDigest', 'sourceDigest', 'status']);
   const PAGE_SIZE = 200;
-  let runtimeCredential = null;
+  let gatewayReady = false;
 
   const text = value => String(value ?? '').trim();
   const canonical = value => {
@@ -79,21 +79,19 @@
   }
 
   function setRuntimeCredential(value = {}) {
-    const token = text(value.token); const actorId = text(value.actorId); const scope = canonical(value.scope || {});
-    if (!token || !actorId || !text(scope.companyId)) throw new Error('DATAOPS_SITUATION_ACCESS_DENIED');
-    runtimeCredential = Object.freeze({ token, actorId, deviceId: text(value.deviceId), environment: text(value.environment), scope });
+    if (value && typeof value === 'object' && Object.keys(value).length) throw new Error('DATAOPS_SITUATION_ACCESS_DENIED');
+    if (!global.ONEAPP_AUTH?.gateway) throw new Error('DATAOPS_SITUATION_ACCESS_DENIED');
+    gatewayReady = true;
     return true;
   }
-  function clearRuntimeCredential() { runtimeCredential = null; }
-  function hasRuntimeCredential() { return Boolean(runtimeCredential?.token && runtimeCredential?.actorId && text(runtimeCredential?.scope?.companyId)); }
+  function clearRuntimeCredential() { gatewayReady = false; }
+  function hasRuntimeCredential() { return Boolean(gatewayReady && global.ONEAPP_AUTH?.gateway); }
   async function post(url, action, body = {}) {
-    if (!hasRuntimeCredential()) throw new Error('DATAOPS_SITUATION_ACCESS_DENIED');
-    const response = await global.fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ action, ...body, scope: runtimeCredential.scope, token: runtimeCredential.token, actorId: runtimeCredential.actorId,
-        deviceId: runtimeCredential.deviceId, environment: runtimeCredential.environment }) });
-    const json = await response.json();
-    if (!response.ok || json?.status !== 'success') throw new Error(text(json?.message) || `DATAOPS_SITUATION_HTTP_${response.status}`);
-    return json.data;
+    const operations = Object.freeze({ situation_dataops_ping: 'dataops.situation.ping', situation_dataops_begin: 'dataops.situation.begin',
+      situation_dataops_page: 'dataops.situation.page', situation_dataops_head: 'dataops.situation.head', situation_dataops_publish: 'dataops.situation.publish' });
+    if (!operations[action] || !hasRuntimeCredential()) throw new Error('DATAOPS_SITUATION_ACCESS_DENIED');
+    await global.ONEAPP_AUTH.ready;
+    return global.ONEAPP_AUTH.gateway(operations[action], body);
   }
   async function loadCapability(url) {
     try { return evaluateCapability(await post(url, 'situation_dataops_ping')); }
@@ -158,10 +156,10 @@
       authorityHead: officialState.authorityHead, basisDate, snapshotId, snapshotRevision, publishedAt, producer, scope };
   }
   async function publish(url, source) {
-    if (!hasRuntimeCredential() || canonicalJson(source.scope || {}) !== canonicalJson(runtimeCredential.scope)) throw new Error('DATAOPS_SITUATION_SCOPE_NOT_ALLOWED');
+    if (!hasRuntimeCredential()) throw new Error('DATAOPS_SITUATION_ACCESS_DENIED');
     const gate = await loadCapability(url); if (!gate.ready) throw new Error('DATAOPS_V2_CAPABILITY_REQUIRED');
     const envelope = await buildSnapshot(source);
-    return post(url, 'situation_dataops_publish', { ...envelope, scope: source.scope || {} });
+    return post(url, 'situation_dataops_publish', envelope);
   }
   async function publishOperationalState(url, input) { return publish(url, buildOperationalSource(input)); }
   function buildProductOperationalRequest({ productData = [], targetDateStr = '' } = {}) {
@@ -188,8 +186,7 @@
   }
   async function publishProductState(url, context) {
     const prepared = await prepareProductOperationalSource(url, context);
-    if (canonicalJson(prepared.scope || {}) !== canonicalJson(runtimeCredential.scope)) throw new Error('DATAOPS_SITUATION_SCOPE_NOT_ALLOWED');
-    return post(url, 'situation_dataops_publish', prepared);
+    return post(url, 'situation_dataops_publish', { snapshot: prepared.snapshot, producerEvidence: prepared.producerEvidence });
   }
   async function rollback(url, { expectedCurrentRevision, reason } = {}) {
     const gate = await loadCapability(url); if (!gate.ready) throw new Error('DATAOPS_V2_CAPABILITY_REQUIRED');
