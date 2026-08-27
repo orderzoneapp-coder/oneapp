@@ -446,9 +446,12 @@ function beginWorktableColumnSelection(event) {
 
 function extendWorktableColumnSelection(event) {
   const drag = state.worktableColumnSelectionDrag;
+  if (!drag) return;
   const target = document.elementFromPoint?.(event.clientX, event.clientY) || event.target;
-  const button = target?.closest?.('.column-select-target[data-select-column]');
-  if (!button || !drag || event.pointerId !== drag.pointerId) return;
+  const header = target?.closest?.('th[data-worktable-column]');
+  const button = target?.closest?.('.column-select-target[data-select-column]')
+    || header?.querySelector('.column-select-target[data-select-column]');
+  if (!button || event.pointerId !== drag.pointerId) return;
   selectWorktableColumn(button.dataset.selectColumn, { extend: true, anchorColumnKey: drag.anchorColumnKey });
 }
 
@@ -6156,7 +6159,6 @@ const voucherTableHead = document.querySelector('#tableScroll thead');
 voucherTableHead.addEventListener('pointerdown', beginColumnResize);
 voucherTableHead.addEventListener('pointerdown', beginWorktableColumnSelection);
 voucherTableHead.addEventListener('pointerover', extendWorktableColumnSelection);
-voucherTableHead.addEventListener('pointermove', extendWorktableColumnSelection);
 voucherTableHead.addEventListener('keydown', resizeColumnWithKeyboard);
 voucherTableHead.addEventListener('keydown', handleWorktableColumnHeaderKeydown);
 voucherTableHead.addEventListener('dragstart', beginColumnDrag);
@@ -6167,6 +6169,7 @@ inputRows.addEventListener('pointerdown', beginWorktableRowSelection);
 inputRows.addEventListener('pointerover', extendWorktableRowSelection);
 inputRows.addEventListener('pointermove', extendWorktableRowSelection);
 inputRows.addEventListener('keydown', handleWorktableRowHeaderKeydown);
+document.addEventListener('pointermove', extendWorktableColumnSelection);
 document.addEventListener('pointerup', finishWorktableSelectionDrag);
 document.addEventListener('pointercancel', finishWorktableSelectionDrag);
 
