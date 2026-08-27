@@ -63,6 +63,10 @@ for (const immutable of ['actorId', 'appId', 'credentialMode', 'credential', 'to
 }
 assert.equal(gateway.nexusAuthPublicError_(new Error('IMMUTABLE_FIELD')), 'IMMUTABLE_FIELD',
   'the browser must receive the safe immutable-field error code');
+assert.equal(gateway.nexusAuthPublicError_(new Error('CLOSE_SOURCE_DIGEST_INVALID')), 'CLOSE_SOURCE_DIGEST_INVALID',
+  'safe uppercase DataOps/close errors must remain actionable without exposing raw upstream responses');
+assert.equal(gateway.nexusAuthPublicError_(new Error('private detail: token=secret')), 'NEXUS_AUTH_REQUEST_FAILED',
+  'unstructured upstream details must remain hidden');
 
 const properties = new Map();
 const oneapp = vm.createContext({

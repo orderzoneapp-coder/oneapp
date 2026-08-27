@@ -77,9 +77,11 @@ assert.match(componentSource, /oneapp\.nexus\.v1\.navigation/);
 assert.match(componentSource, /cover\.id = NAVIGATION_COVER_ID/);
 assert.match(componentSource, /NEXUS WORKSPACE/);
 assert.match(componentSource, /업무 화면을 준비하고 있습니다/);
-assert.match(componentSource, /window\.addEventListener\('load', \(\) => clearNavigationCover\(true\)/);
+assert.match(componentSource, /window\.addEventListener\('load', \(\) => \{[\s\S]*dataset\.nexusNavigationReadyMs[\s\S]*clearNavigationCover\(true\)/);
 assert.match(componentSource, /const NAVIGATION_COVER_DELAY_MS = 300/);
-assert.match(componentSource, /const VERSION = '1\.7\.0'/);
+assert.match(componentSource, /const VERSION = '1\.7\.1'/);
+assert.match(componentSource, /dataset\.nexusNavigationReadyMs/);
+assert.match(componentSource, /dataset\.nexusNavigationCoverCount/);
 assert.match(componentSource, /const TAB_BUTTONS = Object\.freeze/);
 assert.match(componentSource, /preloadTabButtonImages\(\)/, 'all active and inactive tab images must be preloaded');
 assert.match(componentSource, /data-active-src=.*data-inactive-src=/, 'each tab image must expose both visual states');
@@ -276,7 +278,7 @@ assert.equal(manifestContract.resources.navigationLoadingSession, 'oneapp.nexus.
 for (const file of manifestContract.consumers) {
   const source = read(file);
   assert.match(source, /apps-config\.js\?v=1\.4\.0/, `${file} must load the current NEXUS configuration`);
-  assert.match(source, /nexus-top\.js\?v=1\.7\.0/, `${file} must load the current NEXUS component`);
+  assert.match(source, /nexus-top\.js\?v=1\.7\.1/, `${file} must load the current NEXUS component`);
   assert.match(source, /nexus-auth\.js\?v=2\.1\.0/, `${file} must enforce the NEXUS V2 login session`);
 }
 
@@ -295,7 +297,7 @@ for (const [file, appId] of entries) {
   const source = read(file);
   assert.match(source, new RegExp(`<nexus-top app-id="${appId}">[\\s\\S]*?<\\/nexus-top>`), `${file} must declare its canonical NEXUS app ID`);
   assert.match(source, /apps-config\.js\?v=1\.4\.0/);
-  assert.match(source, /nexus-top\.js\?v=1\.7\.0/);
+  assert.match(source, /nexus-top\.js\?v=1\.7\.1/);
   assert.match(source, /nexus-auth\.js\?v=2\.1\.0/);
   assert.match(source, /NEXUS 메뉴를 불러오지 못했습니다/);
 }

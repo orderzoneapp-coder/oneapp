@@ -167,7 +167,9 @@
     if (!Array.isArray(productData) || !productData.length || !/^\d{4}-\d{2}-\d{2}$/.test(text(targetDateStr))) throw new Error('DATAOPS_V2_OPERATIONAL_SOURCE_REQUIRED');
     const rows = productData.map((item, index) => {
       const productCode = text(item?.품목코드 || item?.코드 || item?.productCode);
-      const warehouseCode = text(item?.창고코드 || item?.warehouseCode || item?.창고);
+      // DataOps의 기존 실사/재고 출력은 창고 열이 없는 일반 양식을 01 창고로 확정한다.
+      // V2 발행도 같은 업무 규칙을 사용해 기존 양식이 인증 복구 후 별도 입력 없이 발행되도록 한다.
+      const warehouseCode = text(item?.창고코드 || item?.warehouseCode || item?.창고 || item?._raw?.창고코드 || item?._raw?.창고 || '01');
       const actual = item?.실사;
       const rawQuantity = actual === '' || actual === null || actual === undefined ? item?.전산잔량 : actual;
       if (!productCode || !warehouseCode || rawQuantity === '' || rawQuantity === null || rawQuantity === undefined || !Number.isFinite(Number(rawQuantity))) {
