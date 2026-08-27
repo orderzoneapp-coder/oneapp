@@ -75,7 +75,9 @@ function doPost(e) {
     var data = nexusAuthDispatch_(action, payload);
     return nexusAuthJson_({ status: 'success', action: action, data: data });
   } catch (error) {
-    return nexusAuthJson_({ status: 'error', message: nexusAuthPublicError_(error) });
+    var response = { status: 'error', message: nexusAuthPublicError_(error) };
+    if (Number.isFinite(Number(error && error.latestRevision))) response.latestRevision = Number(error.latestRevision);
+    return nexusAuthJson_(response);
   }
 }
 
@@ -483,6 +485,8 @@ function nexusAuthGatewayRegistry_() {
     ['foundation.config_read', foundationApps, ['foundation.read'], 'nexus_gateway_foundation_config_get', 'FOUNDATION', 'READ', [], 'foundation', 'config'],
     ['foundation.config_write', ['settings', 'master', 'merchops'], ['foundation.write'], 'nexus_gateway_foundation_config_write', 'FOUNDATION', 'WRITE', ['data'], 'foundation', 'config'],
     ['foundation.history_read', ['history', 'master', 'item-manager', 'merchops'], ['foundation.read'], 'nexus_gateway_foundation_history_get', 'FOUNDATION', 'READ', ['limit', 'days', 'code', 'field'], 'foundation', 'history'],
+    ['foundation.metadata_read', ['master', 'item-manager', 'customer-manager'], ['foundation.read'], 'nexus_gateway_foundation_metadata_get', 'FOUNDATION', 'READ', ['schemaVersion', 'entityType', 'includeDisabled'], 'foundation', 'generic'],
+    ['foundation.metadata_write', ['master', 'item-manager', 'customer-manager'], ['foundation.write'], 'nexus_gateway_foundation_metadata_write', 'FOUNDATION', 'WRITE', ['schemaVersion', 'expectedRevision', 'changes'], 'foundation', 'generic'],
     ['foundation.replace_all', ['master', 'item-manager', 'merchops'], ['foundation.write', 'foundation.replace'], 'nexus_gateway_foundation_replace_all', 'FOUNDATION', 'WRITE', ['master', 'history', 'config', 'sourceRevision'], 'foundation', 'replace'],
     ['dataops.security_ping', ['dataops', 'merchops', 'orderops'], ['dataops.read'], 'dataops_v1_security_ping', 'DATAOPS', 'READ', [], 'dataops', 'generic'],
     ['dataops.snapshot.get', ['dataops', 'merchops', 'orderops'], ['dataops.read'], 'dataops_snapshot_get', 'DATAOPS', 'READ', [], 'dataops', 'generic'],
@@ -604,7 +608,11 @@ function nexusAuthGateway_(payload) {
     credentialId = credential.credentialId;
     var forwarded = nexusAuthGatewayEnvelope_(definition, body, credential, context, requestId);
     var parsed = nexusAuthGatewayFetch_(forwarded);
-    if (!parsed || parsed.status !== 'success') throw new Error(nexusAuthGatewayUpstreamError_(parsed));
+    if (!parsed || parsed.status !== 'success') {
+      var upstreamError = new Error(nexusAuthGatewayUpstreamError_(parsed));
+      if (Number.isFinite(Number(parsed && parsed.latestRevision))) upstreamError.latestRevision = Number(parsed.latestRevision);
+      throw upstreamError;
+    }
     var data = nexusAuthGatewaySanitize_(parsed.data === undefined ? parsed : parsed.data);
     nexusAuthGatewayAudit_(requestId, context, definition, credentialId, started, 'SUCCESS', '', parsed && parsed.correlationId);
     return nexusAuthJson_({ status: 'success', contractVersion: NEXUS_AUTH_VERSION, operationId: operationId, data: data });
@@ -639,7 +647,27 @@ function nexusAuthGatewayValidatePayload_(definition, value) {
   if (definition.enforceImmutableFields) {
     nexusAuthRejectImmutableFields_(payload, (definition.serverComputedFields || []).concat(definition.systemFields || []));
   }
+  if (/^foundation\.metadata_(read|write)$/.test(definition.operationId)) nexusAuthRejectFoundationMetadataReserved_(payload);
   return JSON.parse(JSON.stringify(payload));
+}
+
+function nexusAuthRejectFoundationMetadataReserved_(value) {
+  var reserved = {
+    actorId: true, userId: true, loginId: true, requestId: true, credential: true, credentialId: true,
+    token: true, scope: true, companyId: true, nexusRequest: true, metadataRevision: true,
+    recordRevision: true, updatedAt: true, audit: true, idempotency: true, snapshotId: true,
+    targetUrl: true, upstreamUrl: true
+  };
+  function inspect(current) {
+    if (Array.isArray(current)) return current.forEach(inspect);
+    if (!current || typeof current !== 'object') return;
+    Object.keys(current).forEach(function (key) {
+      if (reserved[key]) throw new Error('NEXUS_GATEWAY_SCHEMA_DENIED');
+      inspect(current[key]);
+    });
+  }
+  inspect(value);
+  return true;
 }
 
 function nexusAuthRejectImmutableFields_(value, immutableFields) {
@@ -1073,6 +1101,6 @@ function nexusAuthPublicError_(error) {
   var code = nexusAuthText_(error && error.message ? error.message : error);
   // Upstream business errors are already reduced to an uppercase code by nexusAuthGatewayUpstreamError_.
   // Returning that code gives operators an actionable failure without exposing a payload, token, stack, or raw response.
-  if (code === 'IMMUTABLE_FIELD' || /^(NEXUS_AUTH|NEXUS_PROXY|NEXUS_GATEWAY|ONEAPP_NEXUS|DATAOPS|ORDERQ|SHIPPING|FOUNDATION|CLOSE)_/.test(code)) return code;
+  if (code === 'IMMUTABLE_FIELD' || /^(NEXUS_AUTH|NEXUS_PROXY|NEXUS_GATEWAY|ONEAPP_NEXUS|DATAOPS|ORDERQ|SHIPPING|FOUNDATION|METADATA|MAPPING|FIELD|REQUIRED|CUSTOMER_LEGACY|CLOSE)_/.test(code)) return code;
   return 'NEXUS_AUTH_REQUEST_FAILED';
 }

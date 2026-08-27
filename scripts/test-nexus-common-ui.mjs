@@ -68,7 +68,7 @@ assert.match(itemHtml, /data-nexus-ui-app="item-manager"/);
 assert.match(master, /nexus-app-work-header__bar nexus-app-header-content/);
 assert.match(master, />기초등록<\/strong>/);
 assert.doesNotMatch(master, /MASTER ·/);
-assert.match(master, /\[\['list', '조회'\], \['batch', '일괄관리'\]\]/);
+assert.match(master, /\[\['list', '조회'\], \['edit', '등록·수정'\], \['mapping', '매핑·관리'\]\]/);
 assert.match(master, />\+ 상품 등록<\/button>/);
 assert.match(master, /ONEAPP_NEXUS_THEME/);
 assert.match(customerHtml, /ONEAPP_NEXUS_THEME/);
