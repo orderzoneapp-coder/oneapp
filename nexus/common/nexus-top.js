@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = '1.7.1';
+  const VERSION = '1.8.0';
   const STORAGE = Object.freeze({
     colorMode: 'oneapp.nexus.v1.colorMode',
     groupOrder: 'oneapp.nexus.v1.groupOrder',
@@ -21,28 +21,6 @@
     master: 'foundation',
   });
   const LEGACY_DEFAULT_GROUP_ORDER = Object.freeze(['shipping', 'inventory', 'pricing', 'foundation']);
-  const TAB_BUTTONS = Object.freeze({
-    foundation: Object.freeze({
-      active: '/nexus/assets/navigation-tabs/foundation-active.png',
-      inactive: '/nexus/assets/navigation-tabs/foundation-inactive.png',
-    }),
-    pricing: Object.freeze({
-      active: '/nexus/assets/navigation-tabs/pricing-active.png',
-      inactive: '/nexus/assets/navigation-tabs/pricing-inactive.png',
-    }),
-    'smart-input': Object.freeze({
-      active: '/nexus/assets/navigation-tabs/smart-input-active.png',
-      inactive: '/nexus/assets/navigation-tabs/smart-input-inactive.png',
-    }),
-    shipping: Object.freeze({
-      active: '/nexus/assets/navigation-tabs/shipping-active.png',
-      inactive: '/nexus/assets/navigation-tabs/shipping-inactive.png',
-    }),
-    inventory: Object.freeze({
-      active: '/nexus/assets/navigation-tabs/inventory-active.png',
-      inactive: '/nexus/assets/navigation-tabs/inventory-inactive.png',
-    }),
-  });
   const SECTION_LABEL = Object.freeze({ management: '기준·관리', operations: '운영 흐름' });
   const STATUS_PRIORITY = Object.freeze({ normal: 0, progress: 1, warning: 2, error: 3 });
   const STATUS_LABEL = Object.freeze({ normal: '정상', progress: '진행 중', warning: '주의', error: '오류' });
@@ -50,8 +28,18 @@
   const NAVIGATION_STORAGE_KEY = 'oneapp.nexus.v1.navigation';
   const NAVIGATION_COVER_ID = 'nexusNavigationCover';
   const NAVIGATION_COVER_DELAY_MS = 300;
+  const HEADER_HEIGHT_STYLE_ID = 'nexusTopHeightContract';
   let navigationCoverTimer = 0;
   const prefetchedRoutes = new Set();
+
+  const installHeaderHeightContract = () => {
+    if (document.getElementById(HEADER_HEIGHT_STYLE_ID)) return;
+    const style = document.createElement('style');
+    style.id = HEADER_HEIGHT_STYLE_ID;
+    style.textContent = 'html:root{--nexus-top-height:64px}@media(max-width:680px){html:root{--nexus-top-height:104px}}';
+    (document.head || document.documentElement).appendChild(style);
+  };
+  installHeaderHeightContract();
 
   const navigationCoverStyle = `
     #${NAVIGATION_COVER_ID}{--nexus-loading-text:#12233f;--nexus-loading-muted:#62728a;--nexus-loading-accent:#0baa91;--nexus-loading-grid:rgba(35,78,125,.1);--nexus-loading-track:rgba(53,79,111,.12);position:fixed;z-index:2147483647;inset:0;display:grid;place-items:center;overflow:hidden;color:var(--nexus-loading-text);background:radial-gradient(circle at 50% 36%,rgba(91,181,211,.2),transparent 34%),linear-gradient(145deg,#f7fbff,#eef5fb 56%,#e8f1f9);font-family:Inter,Pretendard,"Noto Sans KR",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;opacity:1;transition:opacity .22s ease}
@@ -175,12 +163,6 @@
   const asArray = (value) => Array.isArray(value) ? value : [];
   const unique = (values) => [...new Set(values)];
   const sameOrder = (left, right) => left.length === right.length && left.every((value, index) => value === right[index]);
-  const preloadTabButtonImages = () => {
-    for (const asset of Object.values(TAB_BUTTONS).flatMap((states) => [states.active, states.inactive])) {
-      const image = new Image();
-      image.src = asset;
-    }
-  };
   const normalizeLevel = (value) => {
     const aliases = {
       ok: 'normal', success: 'normal', idle: 'normal',
@@ -275,8 +257,6 @@
         this.globalActions = this.allGlobalActions.slice();
         this.aliases = window.NEXUS_APP_ALIASES || {};
         if (!this.groups.length || !this.apps.length) throw new Error('NEXUS app configuration is unavailable.');
-        preloadTabButtonImages();
-
         this.memory = new Map();
         this.pendingWrites = new Map();
         this.statusSignals = new Map();
@@ -369,7 +349,8 @@
         <link rel="stylesheet" href="${policyStylesheet}">
         <header class="top" aria-label="NEXUS 공통 헤더">
           <a class="brand" href="https://oneapp.orderz.co.kr/nexus/home/" aria-label="NEXUS 업무 홈" data-navigate data-target-app="">
-            <img src="/nexus/assets/brand/oneapp-nexus-dark.svg" alt="ONEAPP NEXUS">
+            <img class="brand-logo brand-logo-light" src="/nexus/assets/brand/oneapp-nexus-light.svg" alt="">
+            <img class="brand-logo brand-logo-dark" src="/nexus/assets/brand/oneapp-nexus-dark.svg" alt="">
           </a>
           <nav class="nav" aria-label="업무 메뉴">
             <div class="track">
@@ -380,6 +361,13 @@
             </div>
           </nav>
           <div class="actions">
+            <div class="theme-control" role="group" aria-label="화면 모드">
+              <svg class="theme-icon theme-icon-sun" aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.5"/><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.42-1.42M17.66 6.34l1.41-1.41"/></svg>
+              <button class="theme-toggle" type="button" role="switch" data-theme-toggle aria-checked="false" aria-label="다크 모드 켜기">
+                <span class="theme-toggle-track" aria-hidden="true"><span></span></span>
+              </button>
+              <svg class="theme-icon theme-icon-moon" aria-hidden="true" viewBox="0 0 24 24"><path d="M20.2 15.4A8.5 8.5 0 018.6 3.8 8.5 8.5 0 1020.2 15.4z"/></svg>
+            </div>
             <button class="action global-alert" type="button" aria-label="NEXUS 전역 오류" hidden>
               <span class="alert-icon" aria-hidden="true">!</span><span class="action-label">전역 오류</span>
             </button>
@@ -409,7 +397,7 @@
         </section>
 
         <aside class="panel settings-panel" data-panel="settings" role="dialog" aria-modal="true" aria-label="공통헤더 설정" hidden>
-          <div class="heading"><div><span class="eyebrow">NEXUS</span><h2>공통헤더 설정</h2><p>상단 메뉴와 화면 모드를 설정합니다.</p></div><button class="close" type="button" aria-label="설정 닫기">×</button></div>
+          <div class="heading"><div><span class="eyebrow">NEXUS</span><h2>공통헤더 설정</h2><p>상단 메뉴의 노출과 순서를 설정합니다.</p></div><button class="close" type="button" aria-label="설정 닫기">×</button></div>
           <div class="settings-content"></div>
         </aside>
 
@@ -421,10 +409,9 @@
       console.error('[NEXUS TOP] initialization failed', error);
       const root = this.shadowRoot || this.attachShadow({ mode: 'open' });
       root.innerHTML = `
-        <style>:host{display:block;height:44px;font-family:Pretendard,"Noto Sans KR",sans-serif}.fallback{height:44px;padding:0 14px;display:flex;align-items:center;gap:12px;background:#0b1021;color:#fff;font-size:12px}.fallback strong{letter-spacing:.08em}.fallback span{color:#cbd5e1}.fallback button{margin-left:auto;border:1px solid #64748b;border-radius:6px;padding:5px 9px;background:transparent;color:#fff;cursor:pointer}</style>
+        <style>:host{display:block;height:var(--nexus-top-height,64px);font-family:Pretendard,"Noto Sans KR",sans-serif}.fallback{height:var(--nexus-top-height,64px);padding:0 14px;display:flex;align-items:center;gap:12px;background:#101722;color:#fff;font-size:12px}.fallback strong{letter-spacing:.08em}.fallback span{color:#a7b2c1}.fallback button{margin-left:auto;border:1px solid #789bc2;border-radius:6px;padding:5px 9px;background:transparent;color:#fff;cursor:pointer}</style>
         <div class="fallback" role="status"><strong>NEXUS</strong><span>NEXUS 메뉴를 불러오지 못했습니다.</span><button type="button">재시도</button></div>`;
       root.querySelector('button').addEventListener('click', () => window.location.reload());
-      document.documentElement.style.setProperty('--nexus-top-height', '44px');
     }
 
     readValue(key) {
@@ -503,37 +490,13 @@
       this.renderStatus();
       this.renderApps();
       this.renderSettings();
+      this.renderThemeToggle();
       this.renderAuth();
     }
 
-    logoPath(record, colorMode) {
-      const logo = record?.logo;
-      if (!logo || typeof logo !== 'object') return '';
-      const preferred = colorMode === 'dark' ? logo.dark : logo.light;
-      const fallback = colorMode === 'dark' ? logo.light : logo.dark;
-      return String(preferred || fallback || '');
-    }
-
-    navigationLabel(record, active, colorMode) {
+    navigationLabel(record) {
       const name = escapeHtml(record.name);
-      const tabButton = TAB_BUTTONS[record?.id];
-      if (tabButton) {
-        const source = active ? tabButton.active : tabButton.inactive;
-        return `<span class="nav-brand nav-tab-button has-logo"><img src="${source}" alt="" data-nav-logo data-tab-button data-active-src="${tabButton.active}" data-inactive-src="${tabButton.inactive}"><span class="nav-text">${name}</span></span>`;
-      }
-      const logoPath = this.logoPath(record, colorMode);
-      if (!logoPath) return `<span class="nav-text">${name}</span>`;
-      return `<span class="nav-brand has-logo"><img src="${escapeHtml(logoPath)}" alt="" data-nav-logo><span class="nav-text">${name}</span></span>`;
-    }
-
-    bindLogoFallback(container) {
-      container.querySelectorAll('img[data-nav-logo]:not([data-fallback-bound])').forEach((image) => {
-        image.dataset.fallbackBound = 'true';
-        image.addEventListener('error', () => {
-          image.hidden = true;
-          image.closest('.nav-brand')?.classList.add('logo-missing');
-        }, { once: true });
-      });
+      return `<span class="nav-text">${name}</span>`;
     }
 
     renderHeaderNavigation() {
@@ -542,24 +505,23 @@
       const hasManagement = Boolean(this.root.querySelector('.management-entries a'));
       const hasOperations = Boolean(this.root.querySelector('.global-entries a, .operation-entries a'));
       this.root.querySelector('.workflow-divider').hidden = !(hasManagement && hasOperations);
-      this.bindLogoFallback(this.root.querySelector('.track'));
       requestAnimationFrame(() => this.root.querySelector('a[aria-current="page"]')?.scrollIntoView({ block: 'nearest', inline: 'center' }));
     }
 
     renderGlobalEntries() {
-      const { hiddenGlobalActions, colorMode } = this.preferences();
+      const { hiddenGlobalActions } = this.preferences();
       const actions = this.globalActions.filter((action) => !hiddenGlobalActions.includes(action.id) || action.appId === this.currentAppId);
       this.root.querySelector('.global-entries').innerHTML = actions.map((action) => {
         const active = action.appId === this.currentAppId;
         const temporary = active && hiddenGlobalActions.includes(action.id);
         return `<a class="tab global-entry${active ? ' is-current' : ''}${temporary ? ' temporary' : ''}" href="${escapeHtml(action.url)}" data-navigate data-target-app="${escapeHtml(action.appId)}" ${active ? 'aria-current="page"' : ''}>
-          ${this.navigationLabel(action, active, colorMode)}${temporary ? '<small>현재 위치</small>' : ''}
+          ${this.navigationLabel(action)}${temporary ? '<small>현재 위치</small>' : ''}
         </a>`;
       }).join('');
     }
 
     renderNavigation() {
-      const { hiddenGroups, colorMode } = this.preferences();
+      const { hiddenGroups } = this.preferences();
       for (const section of ['management', 'operations']) {
         const groups = this.groupsForSection(section);
         const visibleGroups = groups.filter((group) => !hiddenGroups.includes(group.id) || group.id === this.currentGroupId);
@@ -568,7 +530,7 @@
           const active = group.id === this.currentGroupId;
           const temporary = active && hiddenGroups.includes(group.id);
           return `<a class="tab${temporary ? ' temporary' : ''}" href="${escapeHtml(group.url)}" data-navigate data-target-group="${escapeHtml(group.id)}" ${active ? 'aria-current="page"' : ''}>
-            ${this.navigationLabel(group, active, colorMode)}${temporary ? '<small>현재 위치</small>' : ''}
+            ${this.navigationLabel(group)}${temporary ? '<small>현재 위치</small>' : ''}
           </a>`;
         }).join('');
       }
@@ -585,8 +547,6 @@
         link.classList.toggle('is-current', selected);
         if (selected) link.setAttribute('aria-current', 'page');
         else link.removeAttribute('aria-current');
-        const image = link.querySelector('img[data-tab-button]');
-        if (image) image.src = selected ? image.dataset.activeSrc : image.dataset.inactiveSrc;
       });
       selectedTab?.scrollIntoView({ block: 'nearest', inline: 'center' });
     }
@@ -712,9 +672,7 @@
 
     renderSettings() {
       const preferences = this.preferences();
-      const colorOptions = [['light', '일반'], ['dark', '다크']];
       this.root.querySelector('.settings-content').innerHTML = `
-        <section class="settings-section"><h3>화면 모드</h3><div class="segments two" role="group" aria-label="화면 모드">${colorOptions.map(([id, label]) => `<button type="button" data-color-mode="${id}" aria-pressed="${preferences.colorMode === id}">${label}</button>`).join('')}</div></section>
         <section class="settings-section"><div class="section-title"><div><h3>상단 메뉴</h3><p>기준·관리와 운영 흐름의 노출·순서를 관리합니다.</p></div><button type="button" class="reset" data-reset-groups>초기화</button></div>
           <div class="group-settings">${this.settingsRows('management', preferences)}${this.settingsRows('operations', preferences)}</div>
         </section>
@@ -722,12 +680,21 @@
         <p class="settings-note">개별 앱의 즐겨찾기·숨김은 <strong>전체 앱</strong>에서 설정합니다.</p>`;
     }
 
+    renderThemeToggle() {
+      const toggle = this.root.querySelector('[data-theme-toggle]');
+      if (!toggle) return;
+      const dark = this.preferences().colorMode === 'dark';
+      toggle.setAttribute('aria-checked', String(dark));
+      toggle.setAttribute('aria-label', dark ? '일반 모드로 전환' : '다크 모드로 전환');
+      toggle.title = dark ? '일반 모드로 전환' : '다크 모드로 전환';
+    }
+
     applyEnvironment() {
       const { colorMode } = this.preferences();
       const root = document.documentElement;
       themeController.apply(colorMode, { emit: true, source: 'header' });
-      root.style.setProperty('--nexus-top-height', '44px');
       root.style.setProperty('--nexus-content-gutter', '24px');
+      this.renderThemeToggle();
     }
 
     bind() {
@@ -790,13 +757,12 @@
         this.navigate(link);
         return;
       }
-      const colorButton = event.target.closest('[data-color-mode]');
-      if (colorButton) {
-        const colorMode = colorButton.dataset.colorMode === 'dark' ? 'dark' : 'light';
+      const themeToggle = event.target.closest('[data-theme-toggle]');
+      if (themeToggle) {
+        const colorMode = this.preferences().colorMode === 'dark' ? 'light' : 'dark';
         this.writePreference(STORAGE.colorMode, colorMode);
         this.applyEnvironment();
         this.renderHeaderNavigation();
-        this.renderSettings();
         return;
       }
       const globalVisibility = event.target.closest('[data-global-visible]');

@@ -14,6 +14,7 @@ const navigationCssSource = read('nexus/common/nexus-top-navigation.css');
 const themeSource = read('nexus/common/nexus-theme-init.js');
 const tokenSource = read('nexus/common/oneapp-design-tokens.css');
 const headerDocumentation = read('nexus/common/README.md');
+const browserFixture = read('scripts/test-nexus-common-header-browser.html');
 const nexusHome = read('nexus/index.html');
 const logoDocumentation = read('nexus/assets/brand/apps/README.md');
 const manifest = JSON.parse(read('app-manifest.json'));
@@ -49,21 +50,8 @@ assert.equal(globalActions[0].logo.dark, '/nexus/assets/brand/apps/smart-input/l
 assert.ok(fs.existsSync(path.join(root, 'nexus/assets/brand/apps/smart-input/logo-light.png')));
 assert.ok(fs.existsSync(path.join(root, 'nexus/assets/brand/apps/smart-input/logo-dark.png')));
 
-const tabButtonAssets = {
-  foundation: ['foundation-active.png', 'foundation-inactive.png'],
-  pricing: ['pricing-active.png', 'pricing-inactive.png'],
-  'smart-input': ['smart-input-active.png', 'smart-input-inactive.png'],
-  shipping: ['shipping-active.png', 'shipping-inactive.png'],
-  inventory: ['inventory-active.png', 'inventory-inactive.png'],
-};
-for (const [tabId, files] of Object.entries(tabButtonAssets)) {
-  for (const file of files) {
-    const buffer = fs.readFileSync(path.join(root, 'nexus/assets/navigation-tabs', file));
-    assert.equal(buffer.subarray(1, 4).toString('ascii'), 'PNG', `${tabId} ${file} must be a PNG`);
-    assert.equal(buffer.readUInt32BE(16), 1600, `${tabId} ${file} width must remain 1600px`);
-    assert.equal(buffer.readUInt32BE(20), 400, `${tabId} ${file} height must remain 400px`);
-  }
-}
+assert.ok(fs.existsSync(path.join(root, 'nexus/assets/brand/oneapp-nexus-light.svg')),
+  'the light header must use a readable NEXUS wordmark');
 
 assert.match(componentSource, /hiddenGroups: 'oneapp\.nexus\.v1\.hiddenGroups'/);
 assert.match(componentSource, /hiddenGlobalActions: 'oneapp\.nexus\.v1\.hiddenGlobalActions'/);
@@ -79,15 +67,13 @@ assert.match(componentSource, /NEXUS WORKSPACE/);
 assert.match(componentSource, /업무 화면을 준비하고 있습니다/);
 assert.match(componentSource, /window\.addEventListener\('load', \(\) => \{[\s\S]*dataset\.nexusNavigationReadyMs[\s\S]*clearNavigationCover\(true\)/);
 assert.match(componentSource, /const NAVIGATION_COVER_DELAY_MS = 300/);
-assert.match(componentSource, /const VERSION = '1\.7\.1'/);
+assert.match(componentSource, /const VERSION = '1\.8\.0'/);
 assert.match(componentSource, /dataset\.nexusNavigationReadyMs/);
 assert.match(componentSource, /dataset\.nexusNavigationCoverCount/);
-assert.match(componentSource, /const TAB_BUTTONS = Object\.freeze/);
-assert.match(componentSource, /preloadTabButtonImages\(\)/, 'all active and inactive tab images must be preloaded');
-assert.match(componentSource, /data-active-src=.*data-inactive-src=/, 'each tab image must expose both visual states');
+assert.doesNotMatch(componentSource, /TAB_BUTTONS|preloadTabButtonImages|data-active-src|data-inactive-src|new Image\(/,
+  'CSS text tabs must not preload the former ten navigation images');
 assert.match(componentSource, /this\.navigationPending = true;\s*this\.setPendingNavigationSelection\(link, appId, groupId\);/,
-  'an allowed tab touch must switch its image before navigation starts');
-assert.match(componentSource, /image\.src = selected \? image\.dataset\.activeSrc : image\.dataset\.inactiveSrc/);
+  'an allowed tab touch must switch its selected background before navigation starts');
 assert.match(componentSource, /this\.onPageShow = \(\) => this\.restoreCurrentNavigationSelection\(\)/,
   'back-forward restoration must return selection to the current app ID');
 assert.match(componentSource, /navigationMode = \(requestedMode\)/,
@@ -118,29 +104,51 @@ assert.match(componentSource, /action\.appId === this\.currentAppId/);
 assert.match(componentSource, /workflow-divider/);
 assert.match(componentSource, /management-entries[\s\S]*workflow-divider[\s\S]*global-entries[\s\S]*operation-entries/);
 assert.match(componentSource, /nexus-top-navigation\.css/);
-assert.match(componentSource, /const colorOptions = \[\['light', '일반'\], \['dark', '다크'\]\]/);
+assert.match(componentSource, /class="theme-toggle"[^>]*role="switch"[^>]*data-theme-toggle[^>]*aria-checked="false"/);
+assert.match(componentSource, /const colorMode = this\.preferences\(\)\.colorMode === 'dark' \? 'light' : 'dark'/);
+assert.match(componentSource, /toggle\.setAttribute\('aria-checked', String\(dark\)\)/);
+const renderSettingsSource = componentSource.slice(componentSource.indexOf('    renderSettings() {'), componentSource.indexOf('    renderThemeToggle() {'));
+assert.doesNotMatch(renderSettingsSource, /화면 모드|data-color-mode|colorOptions/,
+  'the settings drawer must not duplicate the always-visible Light/Dark control');
 assert.match(componentSource, /const themeController = ensureThemeController\(\)/);
 assert.match(componentSource, /themeController\.apply\(colorMode, \{ emit: true, source: 'header' \}\)/);
 assert.match(componentSource, /dataset\.nexusTheme \|\| document\.documentElement\.dataset\.nexusColorMode/,
   'data-nexus-theme must be the authoritative navigation-cover mode');
 assert.doesNotMatch(componentSource, /\['system', '시스템'\]|prefers-color-scheme|onSystemThemeChange|colorSchemeMedia/);
 assert.doesNotMatch(componentSource, /화면 밀도|data-density|nexus-density-change|nexusDensity|STORAGE\.density|preferences\.density/);
-assert.match(cssSource, /--nexus-top-height, 44px/);
+assert.match(componentSource, /html:root\{--nexus-top-height:64px\}@media\(max-width:680px\)\{html:root\{--nexus-top-height:104px\}\}/,
+  'the pre-render height contract must reserve 64px desktop and 104px mobile');
+assert.match(cssSource, /--nexus-top-height, 64px/);
 assert.match(cssSource, /\.top \{\s*width: 100%/);
 assert.match(cssSource, /\.global-entries/);
 assert.doesNotMatch(cssSource, /data-nexus-density/);
+assert.doesNotMatch(cssSource, /prefers-color-scheme|data-nexus-color-mode="system"/);
 assert.match(cssSource, /@media \(max-width: 680px\)/);
 assert.match(navigationCssSource, /\.workflow-divider/);
 assert.match(navigationCssSource, /grid-template-columns: auto minmax\(0, 1fr\) auto/);
 assert.match(navigationCssSource, /\.brand \{[\s\S]*width: 144px;[\s\S]*justify-content: center;/,
   'the ONEAPP NEXUS logo must remain centered in a stable header slot');
-assert.match(navigationCssSource, /\.management-entries \.tab \+ \.tab::before,[\s\S]*\.global-entries:not\(:empty\) \+ \.operation-entries \.tab:first-child::before,[\s\S]*\.operation-entries \.tab \+ \.tab::before \{[\s\S]*height: 24px;[\s\S]*background:/,
-  'each adjacent desktop tab must have one divider');
-assert.match(navigationCssSource, /@media \(max-width: 680px\)[\s\S]*content: none;/,
-  'a divider must not remain beside the single visible mobile tab');
-assert.match(navigationCssSource, /\.nav-brand\.has-logo:not\(\.logo-missing\) \.nav-text/);
-assert.match(navigationCssSource, /\.nav-tab-button/);
-assert.match(navigationCssSource, /\.segments\.two/);
+assert.match(navigationCssSource, /\.track \.tab,[\s\S]*min-width: 96px;[\s\S]*height: 38px;[\s\S]*border-radius: 8px;[\s\S]*font-size: 13px;[\s\S]*font-weight: 600;[\s\S]*150ms/,
+  'desktop tabs must implement the fixed size, radius, typography, and transition contract');
+assert.match(navigationCssSource, /\.track \.tab\[aria-current="page"\]::after,[\s\S]*content: none;/,
+  'selected tabs must not render an underline');
+assert.match(navigationCssSource, /@media \(max-width: 680px\)[\s\S]*\.track \.tab,[\s\S]*height: 44px;/,
+  'mobile tabs must retain a 44px touch target');
+assert.doesNotMatch(navigationCssSource, /navigation-tabs|\.nav-tab-button|\.segments\.two/);
+for (const [token, light, dark] of [
+  ['header-bg', '#ffffff', '#101722'],
+  ['header-border', '#dde3ea', '#283446'],
+  ['header-tab-group-bg', '#f1f4f7', '#1a2330'],
+  ['header-text', '#667085', '#8f9aaa'],
+  ['header-selected-text', '#24364d', '#f4f7fb'],
+  ['header-selected-bg', '#dfe7f0', '#354153'],
+  ['header-hover-bg', '#e9eef4', '#283343'],
+  ['header-icon', '#667085', '#a7b2c1'],
+  ['header-focus', '#6489b2', '#789bc2'],
+]) {
+  assert.match(cssSource, new RegExp(`--${token}: ${light}`), `light ${token} must match the approved palette`);
+  assert.match(cssSource, new RegExp(`--${token}: ${dark}`), `dark ${token} must match the approved palette`);
+}
 assert.match(themeSource, /var VALID_MODES = \["light", "dark"\]/);
 assert.match(themeSource, /return mode === "dark" \? "dark" : "light"/);
 assert.match(themeSource, /global\.localStorage\.setItem\(STORAGE_KEY, JSON\.stringify\(mode\)\)/);
@@ -158,6 +166,11 @@ for (const token of ['nexus-price-up', 'nexus-price-down', 'nexus-negative-margi
   assert.match(tokenSource, new RegExp(`--${token}:`), `${token} must remain separate from common status semantics`);
 }
 assert.match(headerDocumentation, /data-nexus-theme.*유일한 테마 입력/);
+assert.match(headerDocumentation, /데스크톱에서 64px.*모바일에서 104px/);
+assert.match(headerDocumentation, /설정 서랍 안에 두지 않고/);
+assert.match(browserFixture, /<nexus-top app-id="orderq">/);
+assert.match(browserFixture, /nexus-theme-init\.js/);
+assert.match(browserFixture, /nexus-top\.js/);
 assert.match(headerDocumentation, /화면 reload, 업무 데이터 재조회/);
 assert.match(headerDocumentation, /Excel·ERP·인쇄·카카오 이미지 컨테이너/);
 assert.match(nexusHome, /data-nexus-color-mode="dark"/);
@@ -247,6 +260,15 @@ const contrastRatio = (foreground, background) => {
   const values = [relativeLuminance(foreground), relativeLuminance(background)].sort((left, right) => right - left);
   return (values[0] + 0.05) / (values[1] + 0.05);
 };
+for (const [label, foreground, background] of [
+  ['light default tab', '#667085', '#f1f4f7'],
+  ['light selected tab', '#24364d', '#dfe7f0'],
+  ['dark default tab', '#8f9aaa', '#1a2330'],
+  ['dark selected tab', '#f4f7fb', '#354153'],
+]) {
+  const ratio = contrastRatio(foreground, background);
+  assert.ok(ratio >= 4.5, `${label} contrast ${ratio.toFixed(2)} must be at least 4.5`);
+}
 const lightTokens = cssVariables(':root');
 const darkTokens = cssVariables('html[data-nexus-theme="dark"]');
 const contrastPairs = [
@@ -267,7 +289,7 @@ for (const directory of ['foundation', 'pricing', 'smart-input', 'shipping', 'in
 }
 assert.match(logoDocumentation, /logo-light\.png/);
 assert.match(logoDocumentation, /logo-dark\.png/);
-assert.match(logoDocumentation, /파일 로드에 실패하면 공통헤더는 탭 명칭을 표시한다/);
+assert.match(logoDocumentation, /상단 업무 탭은 로고 유무와 관계없이.*텍스트 버튼/);
 
 const manifestContract = manifest.sharedDataContracts.find((contract) => contract.id === 'nexus-header');
 assert.ok(manifestContract, 'the shared NEXUS header contract must be registered');
