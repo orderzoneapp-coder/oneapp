@@ -372,7 +372,16 @@ button, a { -webkit-tap-highlight-color: transparent; }
   }
   .brand { width: 104px; height: 59px; padding-inline: 6px; }
   .brand-logo { max-width: 92px; height: 28px; }
-  .actions { min-width: 0; height: 59px; justify-self: end; overflow-x: auto; scrollbar-width: none; }
+  .actions {
+    grid-column: 2;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    height: 59px;
+    justify-self: stretch;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
   .actions::-webkit-scrollbar { display: none; }
   .theme-control { flex: 0 0 auto; }
   .nav { width: calc(100vw - 16px); height: 44px; grid-column: 1 / -1; grid-row: 2; align-self: start; overflow-x: auto; }

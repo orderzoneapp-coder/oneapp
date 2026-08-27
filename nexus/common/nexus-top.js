@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = '1.8.0';
+  const VERSION = '1.8.1';
   const STORAGE = Object.freeze({
     colorMode: 'oneapp.nexus.v1.colorMode',
     groupOrder: 'oneapp.nexus.v1.groupOrder',
