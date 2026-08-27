@@ -984,6 +984,47 @@ function doPost(e) {
         data: foundationMetadataWrite(ss, payload, foundationAuth)
       }));
     }
+    if (action === 'nexus_gateway_foundation_backup_head_read') {
+      const foundationAuth = oneappNexusGatewayRequire(payload, 'FOUNDATION', 'READ');
+      return withScriptLock(() => jsonResponse({ status: 'success', action, data: foundationBackupHeadRead(ss, payload, foundationAuth) }));
+    }
+    if (action === 'nexus_gateway_foundation_backup_product_write') {
+      const foundationAuth = oneappNexusGatewayRequire(payload, 'FOUNDATION', 'WRITE');
+      return withScriptLock(() => jsonResponse({ status: 'success', action, data: foundationBackupWrite(ss, payload, foundationAuth, 'PRODUCT_SNAPSHOT') }));
+    }
+    if (action === 'nexus_gateway_foundation_backup_customer_events_write') {
+      const foundationAuth = oneappNexusGatewayRequire(payload, 'FOUNDATION', 'WRITE');
+      return withScriptLock(() => jsonResponse({ status: 'success', action, data: foundationBackupWrite(ss, payload, foundationAuth, 'CUSTOMER_EVENTS') }));
+    }
+    if (action === 'nexus_gateway_foundation_backup_customer_snapshot_write') {
+      const foundationAuth = oneappNexusGatewayRequire(payload, 'FOUNDATION', 'WRITE');
+      return withScriptLock(() => jsonResponse({ status: 'success', action, data: foundationBackupWrite(ss, payload, foundationAuth, 'CUSTOMER_SNAPSHOT') }));
+    }
+    if (action === 'nexus_gateway_foundation_backup_version_list') {
+      const foundationAuth = oneappNexusGatewayRequire(payload, 'FOUNDATION', 'READ');
+      return withScriptLock(() => jsonResponse({ status: 'success', action, data: foundationBackupVersionList(ss, payload, foundationAuth) }));
+    }
+    if (action === 'nexus_gateway_foundation_backup_version_read') {
+      const foundationAuth = oneappNexusGatewayRequire(payload, 'FOUNDATION', 'READ');
+      return withScriptLock(() => jsonResponse({ status: 'success', action, data: foundationBackupVersionRead(ss, payload, foundationAuth) }));
+    }
+    if (action === 'nexus_gateway_foundation_backup_restore_audit_write') {
+      const foundationAuth = oneappNexusGatewayRequire(payload, 'FOUNDATION', 'WRITE');
+      return withScriptLock(() => jsonResponse({ status: 'success', action, data: foundationBackupRestoreAuditWrite(ss, payload, foundationAuth) }));
+    }
+    if (action === 'nexus_gateway_foundation_device_status_read') {
+      const foundationAuth = oneappNexusGatewayRequire(payload, 'FOUNDATION', 'READ');
+      return withScriptLock(() => jsonResponse({ status: 'success', action, data: foundationBackupDeviceStatus(ss, payload, foundationAuth) }));
+    }
+    if (action === 'nexus_gateway_foundation_device_register') {
+      const foundationAuth = oneappNexusGatewayRequire(payload, 'FOUNDATION', 'WRITE');
+      return withScriptLock(() => jsonResponse({ status: 'success', action, data: foundationBackupDeviceRegister(ss, payload, foundationAuth) }));
+    }
+    if (action === 'nexus_gateway_foundation_device_promote') {
+      const foundationAuth = oneappNexusGatewayRequire(payload, 'FOUNDATION', 'WRITE');
+      if (!foundationAuth || !foundationAuth.roleIds.includes('FOUNDATION_WRITE')) throw new Error('ONEAPP_NEXUS_GATEWAY_ROLE_DENIED');
+      return withScriptLock(() => jsonResponse({ status: 'success', action, data: foundationBackupDevicePromote(ss, payload, foundationAuth) }));
+    }
     if (action === 'nexus_gateway_foundation_config_write') {
       if (!oneappNexusGatewayRequire(payload, 'FOUNDATION', 'WRITE')) throw new Error('ONEAPP_NEXUS_GATEWAY_ACCESS_DENIED');
       return withScriptLock(() => jsonResponse({ status: 'success', action, data: saveConfigData(oneappNexusFoundationSheet(ss, 'CONFIG', oneappNexusFoundationActiveSlot()), payload.data || {}) }));

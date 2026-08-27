@@ -8,11 +8,17 @@ import {
   openOrderQDb,
   requestToPromise,
   transactionDone
-} from './orderq-db.js?v=0.17.0';
+} from './orderq-db.js?v=0.21.0';
 import { getCloudUrl } from './orderq-cloud-adapter.js?v=0.11.0';
-import { pullRemote, pushPending } from './orderq-sync-engine.js?v=0.18.1';
-import { createCustomerMasterSyncCoordinator } from './customer-master-sync.js?v=0.1.0';
 import { createSyncIdentity } from './sync-identity.js?v=0.1.0';
+import {
+  backupCustomerEventsNow,
+  backupCustomerSnapshotNow,
+  getCustomerFoundationState,
+  notifyCustomerFoundationMutation,
+  prepareCustomerFoundationEvent,
+  quarantineLegacyCustomerQueue
+} from './customer-foundation-backup.js?v=0.1.0';
 
 export const CUSTOMER_STATUS = Object.freeze({ ACTIVE: 'ACTIVE', INACTIVE: 'INACTIVE', DELETED: 'DELETED' });
 export const CUSTOMER_QUALITY = Object.freeze({
@@ -102,7 +108,8 @@ function queueItem(entityType, entityId, payload, timestamp = nowIso()) {
     baseRevision: Math.max(0, revision - 1),
     ...identity,
     payload,
-    status: 'PENDING',
+    status: 'BPLUS_REPLACED',
+    localOnly: true,
     attempts: 0,
     createdAt: timestamp,
     updatedAt: timestamp
@@ -320,7 +327,7 @@ export async function resolveCustomerInput({ customerId = '', customerCode = '',
 
 async function writeCustomerMutation({ customer, aliases = [], event, expectedRevision = null }) {
   const db = await openOrderQDb();
-  const stores = [STORE.CUSTOMERS, STORE.CUSTOMER_ALIASES, STORE.CUSTOMER_EVENTS, STORE.SYNC_QUEUE];
+  const stores = [STORE.CUSTOMERS, STORE.CUSTOMER_ALIASES, STORE.CUSTOMER_EVENTS, STORE.SYNC_QUEUE, STORE.FOUNDATION_BACKUP_OUTBOX, STORE.META];
   const tx = db.transaction(stores, 'readwrite');
   const customerStore = tx.objectStore(STORE.CUSTOMERS);
   const existing = await requestToPromise(customerStore.get(customer.customerId));
@@ -333,9 +340,11 @@ async function writeCustomerMutation({ customer, aliases = [], event, expectedRe
     tx.objectStore(STORE.CUSTOMER_ALIASES).put(alias);
     tx.objectStore(STORE.SYNC_QUEUE).put(queueItem('CUSTOMER_ALIAS', alias.mappingId, alias, event.occurredAt));
   });
-  tx.objectStore(STORE.CUSTOMER_EVENTS).put(event);
+  const foundationEvent = await prepareCustomerFoundationEvent(tx, event);
+  tx.objectStore(STORE.CUSTOMER_EVENTS).put(foundationEvent);
   tx.objectStore(STORE.SYNC_QUEUE).put(queueItem('CUSTOMER', customer.customerId, customer, event.occurredAt));
   await transactionDone(tx);
+  notifyCustomerFoundationMutation();
   return customer;
 }
 
@@ -407,7 +416,7 @@ export async function retireCustomer(customerId, { expectedRevision, actorId = '
     updatedAt: timestamp
   }, previous);
   const db = await openOrderQDb();
-  const stores = [STORE.CUSTOMERS, STORE.CUSTOMER_ALIASES, STORE.CUSTOMER_SOURCE_LINKS, STORE.CUSTOMER_EVENTS, STORE.SYNC_QUEUE];
+  const stores = [STORE.CUSTOMERS, STORE.CUSTOMER_ALIASES, STORE.CUSTOMER_SOURCE_LINKS, STORE.CUSTOMER_EVENTS, STORE.SYNC_QUEUE, STORE.FOUNDATION_BACKUP_OUTBOX, STORE.META];
   const tx = db.transaction(stores, 'readwrite');
   const aliasStore = tx.objectStore(STORE.CUSTOMER_ALIASES);
   const sourceLinkStore = tx.objectStore(STORE.CUSTOMER_SOURCE_LINKS);
@@ -433,10 +442,12 @@ export async function retireCustomer(customerId, { expectedRevision, actorId = '
     before: previous,
     after: customer
   }, actorId, timestamp);
-  tx.objectStore(STORE.CUSTOMER_EVENTS).put(event);
+  const foundationEvent = await prepareCustomerFoundationEvent(tx, event);
+  tx.objectStore(STORE.CUSTOMER_EVENTS).put(foundationEvent);
   queueStore.put(queueItem('CUSTOMER', customerId, customer, timestamp));
   await transactionDone(tx);
-  return { customer, event, affectedOrderCount: event.payload.affectedOrderCount, alreadyDeleted: false };
+  notifyCustomerFoundationMutation();
+  return { customer, event: foundationEvent, affectedOrderCount: event.payload.affectedOrderCount, alreadyDeleted: false };
 }
 
 export async function mergeCustomers(canonicalCustomerId, supersededCustomerIds, { actorId = 'administrator', reason = '' } = {}) {
@@ -450,7 +461,7 @@ export async function mergeCustomers(canonicalCustomerId, supersededCustomerIds,
   }
   const timestamp = nowIso();
   const db = await openOrderQDb();
-  const tx = db.transaction([STORE.CUSTOMERS, STORE.CUSTOMER_EVENTS, STORE.SYNC_QUEUE], 'readwrite');
+  const tx = db.transaction([STORE.CUSTOMERS, STORE.CUSTOMER_EVENTS, STORE.SYNC_QUEUE, STORE.FOUNDATION_BACKUP_OUTBOX, STORE.META], 'readwrite');
   for (const id of ids) {
     const source = byId.get(id);
     if (!source) throw new Error(`통합 대상 거래처를 찾을 수 없습니다: ${id}`);
@@ -465,10 +476,12 @@ export async function mergeCustomers(canonicalCustomerId, supersededCustomerIds,
     }, source);
     const event = customerEvent(id, 'MERGED', { canonicalCustomerId: canonical.customerId, reason, before: source, after: updated }, actorId, timestamp);
     tx.objectStore(STORE.CUSTOMERS).put(updated);
-    tx.objectStore(STORE.CUSTOMER_EVENTS).put(event);
+    const foundationEvent = await prepareCustomerFoundationEvent(tx, event);
+    tx.objectStore(STORE.CUSTOMER_EVENTS).put(foundationEvent);
     tx.objectStore(STORE.SYNC_QUEUE).put(queueItem('CUSTOMER', id, updated, timestamp));
   }
   await transactionDone(tx);
+  notifyCustomerFoundationMutation();
   return { canonicalCustomer: canonical, supersededCustomerIds: ids };
 }
 
@@ -514,39 +527,28 @@ export async function getUnifiedCustomerLedger(customerId) {
 }
 
 export async function ensureCustomerMasterReady({ onLoading = null } = {}) {
+  await quarantineLegacyCustomerQueue();
   const local = await getAll(STORE.CUSTOMERS);
   if (!local.length) {
-    onLoading?.('거래처 정보를 불러오는 중...');
-    const sync = await synchronizeCustomerMaster();
-    return { source: 'CLOUD_REQUIRED', customers: await listCustomers(), sync };
+    onLoading?.('로컬 거래처가 없습니다. 관리자 서버 복구가 필요합니다.');
+    return { source: 'RESTORE_REQUIRED', customers: [], sync: null };
   }
-  const syncPromise = synchronizeCustomerMaster();
-  return { source: 'LOCAL_CACHE', customers: local.map(row => normalizeCustomer(row, row)), syncPromise };
+  return { source: 'LOCAL_PRIMARY', customers: local.map(row => normalizeCustomer(row, row)), syncPromise: null };
 }
 
 const CUSTOMER_SYNC_ENTITY_TYPES = new Set([
   'CUSTOMER', 'CUSTOMER_ALIAS', 'CUSTOMER_SOURCE_LINK', 'CUSTOMER_SOURCE_LINK_EVENT',
   'CUSTOMER_HEADER_MAPPING', 'CUSTOMER_USER_FIELD_DEFINITION'
 ]);
-const customerSyncCoordinator = createCustomerMasterSyncCoordinator({
-  isConfigured: () => Boolean(getCloudUrl()),
-  push: () => pushPending(),
-  pull: () => pullRemote()
-});
-
 export async function getCustomerCloudSyncState() {
-  const queue = await getAll(STORE.SYNC_QUEUE);
-  const customerQueue = queue.filter(item => CUSTOMER_SYNC_ENTITY_TYPES.has(item.entityType) && item.localOnly !== true);
-  return {
-    configured: Boolean(getCloudUrl()),
-    pending: customerQueue.filter(item => item.status === 'PENDING' && !item.lastError).length,
-    retry: customerQueue.filter(item => item.status === 'RETRY' || (item.status === 'PENDING' && item.lastError)).length,
-    conflicts: customerQueue.filter(item => item.status === 'CONFLICT').length
-  };
+  return getCustomerFoundationState();
 }
 
-export function synchronizeCustomerMaster({ onStatus = null } = {}) {
-  return customerSyncCoordinator.synchronize({ onStatus });
+export async function synchronizeCustomerMaster({ onStatus = null } = {}) {
+  onStatus?.({ phase: 'BACKUP' });
+  const eventResult = await backupCustomerEventsNow();
+  if (['DIVERGED', 'REVISION_AHEAD_INVALID', 'NON_PRIMARY'].includes(eventResult?.status)) return eventResult;
+  return backupCustomerSnapshotNow(true);
 }
 
 export function mapCustomerExcelRow(row = {}) {

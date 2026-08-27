@@ -77,12 +77,12 @@ assert.match(ui, /getLatestCustomerSourceImportWork/, 'Pending Excel work must r
 assert.match(ui, /importStatusFilter: 'ISSUES'/, 'Workbench must default to unresolved customer rows');
 assert.match(html, /erpCustomerExcelFile/);
 assert.match(html, /거래처 DB/);
-assert.match(html, /customer-master-ui\.js\?v=0\.23\.0/, 'Customer Master entry module must invalidate the deployed cache');
-assert.match(ui, /async function initializeCustomerMaster\(\) \{\s+const pending = await getLatestCustomerSourceImportWork\(\)/, 'Saved Excel work must render before Cloud Master synchronization');
+assert.match(html, /customer-master-ui\.js\?v=0\.24\.0/, 'Customer Master entry module must invalidate the deployed cache');
+assert.match(ui, /async function initializeCustomerMaster\(\) \{\s+await startCustomerFoundationWorker\(\);\s+const pending = await getLatestCustomerSourceImportWork\(\)/, 'Legacy quarantine and the local-only backup worker must start before saved Excel work renders');
 assert.match(ui, /await reload\(\);[\s\S]*ensureCustomerMasterReady/, 'Local Customer Master must render before Cloud synchronization');
 assert.match(ui, /fallbackFileHash/, 'Excel import must continue with a deterministic file hash when Web Crypto stalls');
 assert.match(ui, /chunkSize: 50/, 'Excel import must persist visible progress in small chunks');
-assert.match(html, /customer-master\.css\?v=0\.20\.0/, 'Customer Master Workbench styles must invalidate the deployed cache');
+assert.match(html, /customer-master\.css\?v=0\.21\.0/, 'Customer Master Workbench styles must invalidate the deployed cache');
 assert.match(html, /nexus-theme-init\.js/, 'Customer Master must resolve the NEXUS theme before rendering');
 assert.match(html, /oneapp-design-tokens\.css/, 'Customer Master must consume shared design tokens');
 assert.match(html, /ONEAPP_NEXUS_THEME/, 'embedded Customer Master must accept live theme updates');
@@ -90,7 +90,7 @@ assert.match(css, /--cm-panel:\s*var\(--oneapp-surface\)/, 'Customer Master pane
 assert.match(css, /\.cm-search[^\n]+margin-left:\s*auto/, 'Customer search must align with the right-side work group');
 assert.doesNotMatch(html, /window\.location\.replace\(/, 'Standalone customer route must remain directly usable');
 assert.match(masterShell, /partner_db\.html\?embedded=1&mode=\$\{customerFrameInitialMode\}&release=foundation-metadata-110/, 'Master shell must invalidate the cached customer iframe');
-assert.match(ui, /customer-master\.js\?v=0\.19\.0/, 'Customer Master Workbench service must invalidate the deployed cache');
+assert.match(ui, /customer-master\.js\?v=0\.20\.0/, 'Customer Master Workbench service must invalidate the deployed cache');
 assert.match(service, /'priceGroupCode', 'priceGroup'/, 'priceGroup compatibility storage must remain intact');
 assert.doesNotMatch(service, /priceGroupName/, 'the incompatible priceGroupName key must not be introduced');
 assert.doesNotMatch(html, /문제 거래처만 보기/);
@@ -106,7 +106,7 @@ assert.match(ui, /openErpImportButton[\s\S]*openFilePicker\(elements\.erpFile\)/
 assert.match(ui, /openShopImportButton[\s\S]*openFilePicker\(elements\.shopFile\)/, 'SHOP upload must open the file picker directly');
 assert.match(ui, /input\.value = ''/, 'Excel input must reset so the same file can be selected again');
 assert.match(ui, /findHeaderRow[\s\S]*아이디와 이름\(거래처명\) 열을 찾을 수 없습니다/, 'Source import must validate ERP and SHOP headers');
-assert.match(service, /orderq-db\.js\?v=0\.17\.0/, 'Customer Master must load the v12 DB module URL');
+assert.match(service, /orderq-db\.js\?v=0\.21\.0/, 'Customer Master must load the deployed DB module URL');
 assert.match(css, /\.cm-viewport/);
 assert.match(html, /data-customer-summary-filter="ACTIVE_ALL"/);
 assert.match(html, /data-customer-summary-filter="COMPLETE"[\s\S]*정보 완료/);
@@ -202,7 +202,7 @@ assert.match(sourceImport, /sourceLinkRevision: Number\(existingLink\?\.revision
 assert.match(sourceImport, /actualSourceLinkRevision !== expectedSourceLinkRevision/, 'Import apply must reject a stale Source Link decision');
 assert.match(sourceImport, /expectedRevision = null[\s\S]*CUSTOMER_SOURCE_LINK_EXPECTED_REVISION_REQUIRED/, 'Source Link mutations must require expectedRevision');
 assert.match(sourceImport, /CUSTOMER_SOURCE_LINK_REVISION_CONFLICT/, 'Source Link mutations must report revision conflicts');
-assert.match(ui, /customer-source-import\.js\?v=0\.15\.0/, 'Chunked Source Import must invalidate the module cache');
+assert.match(ui, /customer-source-import\.js\?v=0\.16\.0/, 'Chunked Source Import must invalidate the module cache');
 assert.match(sourceImport, /ERP_CUSTOMER_17COL_V1/, 'ERP imports must be versioned against the verified 17-column source contract');
 for (const header of ['담당자명', '거래처그룹1코드', '그룹1', '거래처그룹2코드', '거래처그룹2명', '거래처코드', '거래처명', '적요', '결제일', '계좌', '단가그룹', '핸드폰번호', '대표자명', '주소1', '전화', '검색창내용', 'Email']) {
   assert.match(sourceImport, new RegExp(header), `ERP 17-column mapping must include ${header}`);

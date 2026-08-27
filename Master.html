@@ -97,6 +97,7 @@
     <script src="/nexus/common/nexus-auth-config.js?v=2.0.1"></script>
     <script src="/nexus/common/nexus-auth.js?v=2.1.0"></script>
     <script src="/nexus/foundation/foundation-metadata.js?v=1.0.0"></script>
+    <script src="/nexus/foundation/foundation-backup.js?v=1.0.0"></script>
     <script src="/nexus/foundation/foundation-metadata-ui.js?v=1.0.0"></script>
     <script src="/nexus/common/apps-config.js?v=1.4.0"></script>
 <script src="/nexus/common/nexus-top.js?v=1.9.0"></script>
@@ -284,13 +285,14 @@
             return map;
         };
 
-        const saveMasterLocal = async (masterMap = {}) => {
+        const saveMasterLocal = async (masterMap = {}, options = {}) => {
             const safeMap = masterArrayToMap(masterMap);
             if (!window.ONEAPP?.STORAGE?.commitMasterStateOrThrow) {
                 throw new Error('공통 마스터 저장 엔진을 불러오지 못했습니다.');
             }
             const result = await window.ONEAPP.STORAGE.commitMasterStateOrThrow(safeMap, {
-                expectedRevision: masterPageRevision
+                expectedRevision: masterPageRevision,
+                ...options
             });
             masterPageRevision = result.revision;
             try { localStorage.setItem(STORAGE_KEYS.SYNC_TRIGGER, Date.now().toString()); } catch (e) {}
@@ -327,12 +329,40 @@
         };
 
         const pullMerchOpsCloudMaster = async (cloudUrl) => {
-            await window.ONEAPP_AUTH.ready;
-            const result={status:'success',data:await window.ONEAPP_AUTH.gateway('foundation.master_read',{})};
-            const masterMap=extractMasterFromCloudResult(result);
+            const versions = await window.NEXUS_FOUNDATION_BACKUP.listVersions('PRODUCT', 1);
+            if (!versions.length) throw new Error('복구 가능한 상품 백업이 없습니다.');
+            const version = await window.NEXUS_FOUNDATION_BACKUP.readVersion('PRODUCT', versions[0].serverRevision);
+            const products = Array.isArray(version.payload?.products) ? version.payload.products : [];
+            const masterMap=masterArrayToMap(products);
             if(!Object.keys(masterMap).length)throw new Error('마스터 데이터 없음');
-            await saveMasterLocal(masterMap);
-            return {masterMap,count:Object.keys(masterMap).length,result};
+            const localState = await window.ONEAPP.STORAGE.readMasterSnapshotState();
+            const comparison = window.NEXUS_FOUNDATION_BACKUP.compareSnapshots(localState.items || [], products, 'productId');
+            if (comparison.destructive && !window.confirm('복구하면 상품 수가 크게 감소하거나 0건이 됩니다. 비교 결과를 확인했고 계속하시겠습니까?')) {
+                return { cancelled: true, masterMap: localState.masterMap || {}, count: (localState.items || []).length, version };
+            }
+            const restoreId = window.NEXUS_FOUNDATION_BACKUP.uuid('RST-PRODUCT');
+            const localProducts = [...(localState.items || [])].sort((a, b) => String(a.productId || '').localeCompare(String(b.productId || '')));
+            const safetySnapshot = {
+                snapshotId: window.NEXUS_FOUNDATION_BACKUP.uuid('SAFE-PRODUCT'),
+                restoreId,
+                products: localState.items || [],
+                contentHash: await window.NEXUS_FOUNDATION_BACKUP.sha256({ products: localProducts }),
+                createdAt: new Date().toISOString()
+            };
+            const restoreAudit = {
+                restoreId, domainType: 'PRODUCT', serverRevision: Number(version.serverRevision),
+                deviceId: window.NEXUS_FOUNDATION_BACKUP.getDeviceId(), result: 'APPLIED',
+                localHashBefore: safetySnapshot.contentHash, localHashAfter: version.contentHash,
+                recordCountBefore: localProducts.length, recordCountAfter: products.length,
+                status: 'PENDING', createdAt: new Date().toISOString()
+            };
+            await saveMasterLocal(masterMap, { foundationBackupContext: { baseServerRevision: version.serverRevision, safetySnapshot, restoreAudit } });
+            const after = await window.ONEAPP.STORAGE.readMasterSnapshotState();
+            const afterProducts = [...(after.items || [])].sort((a, b) => String(a.productId || '').localeCompare(String(b.productId || '')));
+            const afterHash = await window.NEXUS_FOUNDATION_BACKUP.sha256({ products: afterProducts });
+            if (afterHash !== version.contentHash) throw new Error('상품 복구 후 해시 검증에 실패했습니다.');
+            await window.NEXUS_FOUNDATION_BACKUP.flushProductRestoreAudits();
+            return {masterMap:after.masterMap || masterMap,count:afterProducts.length,version,restoreId};
         };
 
         const safeJSONParseRaw = (raw, defaultVal) => {
@@ -348,25 +378,17 @@
         };
 
         const pushMerchOpsCloudMaster = async (masterMap = {}, { cloudUrl, onProgress } = {}) => {
-            const targetUrl = setOneAppCloudSyncUrl(cloudUrl || getOneAppCloudSyncUrl());
-            const safeMaster = await saveMasterLocal(masterMap);
-            const previous = await readCloudFullPayload(targetUrl).catch(() => null);
-            const previousData = previous && previous.data ? previous.data : {};
-            const localHistory = safeJSONParseRaw(localStorage.getItem('merchHistory_v870'), []);
-            const historyItems = Array.isArray(localHistory) && localHistory.length > 0 ? localHistory : (Array.isArray(previousData.history) ? previousData.history : []);
-            const previousConfig = previousData.appConfig || {};
-            const masterItems = Object.values(safeMaster);
-            if (typeof onProgress === 'function') onProgress('안전한 전체교체 검증 및 반영 중...');
-            const configPayload = {
-                dict: safeJSONParseRaw(localStorage.getItem('parserDict_v870'), previousData.dict || {}),
-                rules: previousData.rules || [],
-                appConfig: { ...previousConfig }
-            };
-            await window.ONEAPP_AUTH.ready;
-            await window.ONEAPP_AUTH.gateway('foundation.replace_all',{master:masterItems,history:historyItems,config:configPayload});
-
+            const masterItems = Object.values(masterMap || {});
+            if (typeof onProgress === 'function') onProgress('불변 Revision 백업 검증 중...');
+            let result = await window.NEXUS_FOUNDATION_BACKUP.backupProductNow();
+            if (result.status === 'NON_PRIMARY' && window.confirm('현재 장치는 Primary가 아닙니다. 관리자 권한으로 이 장치를 Primary로 승격할까요?')) {
+                const primaryEpoch = Number(result.device?.primary?.primaryEpoch || 0);
+                await window.NEXUS_FOUNDATION_BACKUP.promoteDevice(primaryEpoch, '상품 마스터 화면 승인');
+                result = await window.NEXUS_FOUNDATION_BACKUP.backupProductNow();
+            }
+            if (result.status !== 'ACKED' && !result.skipped) throw new Error(result.code || result.status || '상품 백업이 승인되지 않았습니다.');
             try { localStorage.setItem(STORAGE_KEYS.SYNC_TRIGGER, Date.now().toString()); } catch (e) {}
-            return { count: masterItems.length, historyCount: historyItems.length };
+            return { count: masterItems.length, serverRevision: result.serverRevision || null };
         };
 
 
@@ -475,8 +497,8 @@
                             <div className="flex items-center gap-2">
                                 {showCloudActions && (
                                     <>
-                                        <button onClick={onPull} className="w-9 h-9 rounded-lg bg-white hover:bg-slate-50 flex items-center justify-center border border-slate-300 transition-colors text-indigo-600" title="데이터 불러오기(Pull)" aria-label="클라우드 상품정보 불러오기"><SafeIcon name="cloud-download" size={17} /></button>
-                                        <button onClick={onPush} className="w-9 h-9 rounded-lg bg-white hover:bg-slate-50 flex items-center justify-center border border-slate-300 transition-colors text-indigo-600" title="데이터 백업하기(Push)" aria-label="클라우드에 상품정보 반영"><SafeIcon name="cloud-upload" size={17} /></button>
+                                        <button onClick={onPull} className="w-9 h-9 rounded-lg bg-white hover:bg-slate-50 flex items-center justify-center border border-slate-300 transition-colors text-indigo-600" title="관리자 승인 서버 복구" aria-label="서버 백업에서 상품정보 복구"><SafeIcon name="cloud-download" size={17} /></button>
+                                        <button onClick={onPush} className="w-9 h-9 rounded-lg bg-white hover:bg-slate-50 flex items-center justify-center border border-slate-300 transition-colors text-indigo-600" title="지금 불변 백업" aria-label="상품정보를 서버에 백업"><SafeIcon name="cloud-upload" size={17} /></button>
                                     </>
                                 )}
                                 <button onClick={onOpenSettings} className="w-9 h-9 rounded-lg bg-white hover:bg-slate-50 flex items-center justify-center border border-slate-300 transition-colors text-slate-500 hover:text-slate-800" title="기초등록 환경설정 열기" aria-label="기초등록 환경설정 열기"><SafeIcon name="settings" size={17} /></button>
@@ -1246,38 +1268,41 @@
             // [M-CLOUD-01] MerchOps 공통 클라우드 Push
             const handlePush = async () => {
                 const targetUrl = getOneAppCloudSyncUrl(config.cloudUrl);
-                if (!targetUrl) return showToast("⚠️ 클라우드 URL 설정 필요");
-                setIsProcessing(true); setProcessMsg("MerchOps 클라우드 전송 중...");
-                window.NEXUS_TOP?.reportStatus({ appId: 'master', taskId: 'master-cloud', level: 'progress', message: '클라우드에 상품 기초정보를 전송하고 있습니다.' });
+                setIsProcessing(true); setProcessMsg("상품 불변 백업 중...");
+                window.NEXUS_TOP?.reportStatus({ appId: 'master', taskId: 'master-cloud', level: 'progress', message: '상품 기준정보 불변 Revision을 백업하고 있습니다.' });
                 try {
                     const result = await pushMerchOpsCloudMaster(masterProducts, {
                         cloudUrl: targetUrl,
                         onProgress: (msg) => setProcessMsg(msg)
                     });
-                    showToast(`✅ MerchOps 클라우드 백업 완료! 마스터 ${result.count.toLocaleString()}건`);
-                    window.NEXUS_TOP?.reportStatus({ appId: 'master', taskId: 'master-cloud', level: 'normal', active: false, message: '클라우드 전송이 완료되었습니다.' });
+                    showToast(`✅ 상품 불변 백업 완료: ${result.count.toLocaleString()}건`);
+                    window.NEXUS_TOP?.reportStatus({ appId: 'master', taskId: 'master-cloud', level: 'normal', active: false, message: '상품 기준정보 백업이 완료되었습니다.' });
                 } catch (e) {
                     console.error(e);
                     showToast("❌ 실패: " + e.message);
-                    window.NEXUS_TOP?.reportStatus({ appId: 'master', taskId: 'master-cloud', level: 'error', message: e?.message || '클라우드 전송에 실패했습니다.' });
+                    window.NEXUS_TOP?.reportStatus({ appId: 'master', taskId: 'master-cloud', level: 'error', message: e?.message || '서버 백업에 실패했습니다. 로컬 업무 데이터는 유지됩니다.' });
                 } finally { setIsProcessing(false); setProcessMsg(""); }
             };
 
             // [M-CLOUD-02] MerchOps 공통 클라우드 Pull
             const handlePull = async () => {
                 const targetUrl = getOneAppCloudSyncUrl(config.cloudUrl);
-                if (!targetUrl) return showToast("⚠️ 클라우드 URL 설정 필요");
-                setIsProcessing(true); setProcessMsg("MerchOps 클라우드 수신 중...");
-                window.NEXUS_TOP?.reportStatus({ appId: 'master', taskId: 'master-cloud', level: 'progress', message: '클라우드 상품 기초정보를 불러오고 있습니다.' });
+                setIsProcessing(true); setProcessMsg("서버 백업 비교·검증 중...");
+                window.NEXUS_TOP?.reportStatus({ appId: 'master', taskId: 'master-cloud', level: 'progress', message: '관리자 복구를 위해 서버 Revision을 비교하고 있습니다.' });
                 try {
                     const result = await pullMerchOpsCloudMaster(targetUrl);
+                    if (result.cancelled) {
+                        showToast('서버 복구를 취소했습니다. 로컬 상품 DB는 유지됩니다.');
+                        window.NEXUS_TOP?.reportStatus({ appId: 'master', taskId: 'master-cloud', level: 'normal', active: false, message: '서버 복구가 취소되었습니다.' });
+                        return;
+                    }
                     setMasterProducts(result.masterMap);
-                    showToast(`✅ MerchOps 클라우드 동기화 완료: ${result.count.toLocaleString()}건`);
-                    window.NEXUS_TOP?.reportStatus({ appId: 'master', taskId: 'master-cloud', level: 'normal', active: false, message: '클라우드 동기화가 완료되었습니다.' });
+                    showToast(`✅ 관리자 승인 복구 완료: ${result.count.toLocaleString()}건`);
+                    window.NEXUS_TOP?.reportStatus({ appId: 'master', taskId: 'master-cloud', level: 'normal', active: false, message: '관리자 승인 서버 복구가 완료되었습니다.' });
                 } catch (e) {
                     console.error(e);
                     showToast("❌ 실패: " + e.message);
-                    window.NEXUS_TOP?.reportStatus({ appId: 'master', taskId: 'master-cloud', level: 'error', message: e?.message || '클라우드 동기화에 실패했습니다.' });
+                    window.NEXUS_TOP?.reportStatus({ appId: 'master', taskId: 'master-cloud', level: 'error', message: e?.message || '서버 복구에 실패했습니다. 로컬 업무 데이터는 유지됩니다.' });
                 } finally { setIsProcessing(false); setProcessMsg(""); }
             };
 
@@ -1568,6 +1593,7 @@
             const root = ReactDOM.createRoot(mountNode);
             // 💡 전체 앱을 ErrorBoundary로 감싸서 하얀 화면 완전 차단
             root.render(<ErrorBoundary><App /></ErrorBoundary>);
+            window.NEXUS_FOUNDATION_BACKUP?.startProductWorker?.();
         } catch (err) {
             if (window.__showBootError) window.__showBootError('React 렌더링 초기화 실패', err && err.stack ? err.stack : String(err));
             else throw err;

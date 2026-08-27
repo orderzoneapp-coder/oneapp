@@ -489,6 +489,16 @@ function nexusAuthGatewayRegistry_() {
     ['foundation.history_read', ['history', 'master', 'item-manager', 'merchops'], ['foundation.read'], 'nexus_gateway_foundation_history_get', 'FOUNDATION', 'READ', ['limit', 'days', 'code', 'field'], 'foundation', 'history'],
     ['foundation.metadata_read', ['master', 'item-manager', 'customer-manager'], ['foundation.read'], 'nexus_gateway_foundation_metadata_get', 'FOUNDATION', 'READ', ['schemaVersion', 'entityType', 'includeDisabled'], 'foundation', 'generic'],
     ['foundation.metadata_write', ['master', 'item-manager', 'customer-manager'], ['foundation.write'], 'nexus_gateway_foundation_metadata_write', 'FOUNDATION', 'WRITE', ['schemaVersion', 'expectedRevision', 'changes'], 'foundation', 'generic'],
+    ['foundation.backup.head_read', foundationApps, ['foundation.read'], 'nexus_gateway_foundation_backup_head_read', 'FOUNDATION', 'READ', ['schemaVersion', 'domainType'], 'foundation', 'generic'],
+    ['foundation.backup.product_write', foundationApps, ['foundation.write'], 'nexus_gateway_foundation_backup_product_write', 'FOUNDATION', 'WRITE', ['schemaVersion', 'domainType', 'backupKind', 'backupId', 'deviceId', 'baseServerRevision', 'localRevision', 'primaryEpoch', 'recordCount', 'contentHash', 'snapshot'], 'foundation', 'generic'],
+    ['foundation.backup.customer_events_write', ['customer-manager'], ['customer.write'], 'nexus_gateway_foundation_backup_customer_events_write', 'FOUNDATION', 'WRITE', ['schemaVersion', 'domainType', 'backupKind', 'backupId', 'deviceId', 'baseServerRevision', 'localRevision', 'primaryEpoch', 'recordCount', 'contentHash', 'events'], 'foundation', 'generic'],
+    ['foundation.backup.customer_snapshot_write', ['customer-manager'], ['customer.write'], 'nexus_gateway_foundation_backup_customer_snapshot_write', 'FOUNDATION', 'WRITE', ['schemaVersion', 'domainType', 'backupKind', 'backupId', 'deviceId', 'baseServerRevision', 'localRevision', 'primaryEpoch', 'recordCount', 'contentHash', 'snapshot'], 'foundation', 'generic'],
+    ['foundation.backup.version_list', ['master', 'item-manager', 'customer-manager'], ['foundation.read'], 'nexus_gateway_foundation_backup_version_list', 'FOUNDATION', 'READ', ['schemaVersion', 'domainType', 'limit'], 'foundation', 'generic'],
+    ['foundation.backup.version_read', ['master', 'item-manager', 'customer-manager'], ['foundation.read'], 'nexus_gateway_foundation_backup_version_read', 'FOUNDATION', 'READ', ['schemaVersion', 'domainType', 'serverRevision'], 'foundation', 'generic'],
+    ['foundation.backup.restore_audit_write', ['master', 'item-manager', 'customer-manager'], ['foundation.write'], 'nexus_gateway_foundation_backup_restore_audit_write', 'FOUNDATION', 'WRITE', ['schemaVersion', 'restoreId', 'domainType', 'serverRevision', 'deviceId', 'result', 'localHashBefore', 'localHashAfter', 'recordCountBefore', 'recordCountAfter'], 'foundation', 'generic'],
+    ['foundation.device.status_read', foundationApps, ['foundation.read'], 'nexus_gateway_foundation_device_status_read', 'FOUNDATION', 'READ', ['schemaVersion', 'deviceId'], 'foundation', 'generic'],
+    ['foundation.device.register', foundationApps, ['foundation.write'], 'nexus_gateway_foundation_device_register', 'FOUNDATION', 'WRITE', ['schemaVersion', 'deviceId', 'displayName'], 'foundation', 'generic'],
+    ['foundation.device.promote', ['master', 'item-manager', 'customer-manager'], ['admin.company'], 'nexus_gateway_foundation_device_promote', 'FOUNDATION', 'WRITE', ['schemaVersion', 'deviceId', 'expectedPrimaryEpoch', 'reason'], 'foundation', 'generic'],
     ['foundation.replace_all', ['master', 'item-manager', 'merchops'], ['foundation.write', 'foundation.replace'], 'nexus_gateway_foundation_replace_all', 'FOUNDATION', 'WRITE', ['master', 'history', 'config', 'sourceRevision'], 'foundation', 'replace'],
     ['company.profile_read', ['nexus-home', 'company'], ['foundation.read'], 'nexus_gateway_company_profile_get', 'FOUNDATION', 'READ', [], 'company', 'profile'],
     ['company.profile_write', ['company'], ['admin.company'], 'nexus_gateway_company_profile_write', 'FOUNDATION', 'WRITE', ['expectedRevision', 'changes'], 'company', 'profile'],
@@ -550,7 +560,7 @@ function nexusAuthGatewayRegistry_() {
     var systemFields = ['action', 'actorId', 'appId', 'credentialMode', 'credential', 'token', 'requestId', 'nexusRequest', 'roleIds', 'scope'];
     var enforceImmutableFields = false;
 
-    if (/^foundation\.(config_write|replace_all)$/.test(operationId) || /^orderq\.customer\.reset_/.test(operationId)) {
+    if (/^foundation\.(config_write|replace_all|device\.promote)$/.test(operationId) || /^orderq\.customer\.reset_/.test(operationId)) {
       operationClass = 'SYSTEM_ADMIN';
     }
     if (/^company\.(profile_write|accounting_period_write|certificate_extract|backup_create|migrate_oneapp)$/.test(operationId)) {

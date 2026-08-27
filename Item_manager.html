@@ -22,6 +22,7 @@
   <script src="coreEngine.js"></script>
   <script src="masterAddUpdate.js"></script>
   <script src="/nexus/foundation/foundation-metadata.js?v=1.0.0"></script>
+  <script src="/nexus/foundation/foundation-backup.js?v=1.0.0"></script>
 </head>
 <body>
   <div id="nexus-common-header" data-app-id="master">
@@ -51,16 +52,16 @@
             </div>
           </div>
           <div class="menu-anchor">
-            <button id="sync-menu-button" type="button" class="oneapp-button oneapp-icon-button sync-button" aria-label="저장 및 클라우드 상태" aria-haspopup="dialog" aria-expanded="false">
+            <button id="sync-menu-button" type="button" class="oneapp-button oneapp-icon-button sync-button" aria-label="로컬 저장 및 서버 백업 상태" aria-haspopup="dialog" aria-expanded="false">
               <span id="sync-dot" class="sync-dot" aria-hidden="true"></span>
               <span aria-hidden="true">ⓘ</span>
             </button>
-            <div id="sync-menu" class="oneapp-popover sync-popover" role="dialog" aria-label="저장 및 동기화 상태" hidden>
-              <strong>저장 및 동기화</strong>
+            <div id="sync-menu" class="oneapp-popover sync-popover" role="dialog" aria-label="로컬 저장 및 서버 백업 상태" hidden>
+              <strong>로컬 저장 및 서버 백업</strong>
               <p id="sync-message">상품 DB를 확인하고 있습니다.</p>
               <div class="sync-actions">
-                <button id="cloud-pull-button" type="button" class="oneapp-button">클라우드 새로고침</button>
-                <button id="cloud-push-button" type="button" class="oneapp-button">클라우드에 반영</button>
+                <button id="cloud-pull-button" type="button" class="oneapp-button">관리자 서버 복구</button>
+                <button id="cloud-push-button" type="button" class="oneapp-button">지금 백업</button>
               </div>
             </div>
           </div>

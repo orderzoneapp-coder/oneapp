@@ -7,7 +7,7 @@ import {
   searchCustomers,
   synchronizeCustomerMaster,
   updateCustomer
-} from './customer-master.js?v=0.19.0';
+} from './customer-master.js?v=0.20.0';
 import {
   CUSTOMER_SOURCE_MATCH_METHOD,
   CUSTOMER_SOURCE_MAPPING_VERSION,
@@ -18,13 +18,18 @@ import {
   listCustomerSourceLinks,
   prepareCustomerSourceImport,
   setCustomerSourceImportDecision
-} from './customer-source-import.js?v=0.15.0';
+} from './customer-source-import.js?v=0.16.0';
 import { openCustomerPicker } from './customer-picker.js?v=0.12.1';
 import {
   CUSTOMER_COMPLETENESS_FIELDS,
   customerDisplayStatus,
   missingCustomerFields
 } from './customer-completeness.js?v=0.1.0';
+import {
+  applyCustomerRestore,
+  previewCustomerRestore,
+  startCustomerFoundationWorker
+} from './customer-foundation-backup.js?v=0.1.0';
 
 const rowHeight = 48;
 const BUFFER_ROWS = 8;
@@ -61,7 +66,10 @@ const elements = {
   importReview: document.querySelector('#importReview'),
   importGate: document.querySelector('#importGate'),
   applyImport: document.querySelector('#applyImportButton'),
-  syncState: document.querySelector('#customerCloudSyncState')
+  syncState: document.querySelector('#customerCloudSyncState'),
+  backupNow: document.querySelector('#customerBackupNow'),
+  restore: document.querySelector('#customerRestoreFromServer'),
+  promote: document.querySelector('#customerPromoteDevice')
 };
 
 const IMPORT_FIELD_LABELS = Object.freeze({
@@ -249,24 +257,31 @@ function syncErrorText(error) {
 
 async function renderCloudSyncState(result = null) {
   const sync = await getCustomerCloudSyncState();
-  let label = sync.configured ? 'Cloud 연결됨' : 'Cloud 미설정 · 로컬 저장';
-  if (result?.pushError || result?.pullError) label = `Cloud 동기화 오류 · 로컬 저장 유지 (${syncErrorText(result.pushError || result.pullError)})`;
-  else if (result?.configured && (result?.push?.errors || result?.push?.conflicts)) label = 'Cloud 일부 대기 · 로컬 저장 유지';
-  elements.syncState.dataset.state = result?.pushError || result?.pullError || sync.retry ? 'error' : sync.conflicts ? 'conflict' : sync.configured ? 'online' : 'local';
-  elements.syncState.innerHTML = `<strong>${escapeHtml(label)}</strong><span>대기 ${sync.pending} · 재시도/실패 ${sync.retry} · 충돌 ${sync.conflicts}</span>`;
+  const status = result?.status || sync.status || 'LOCAL_OK_BACKUP_PENDING';
+  const labels = {
+    LOCAL_OK_BACKUP_OK: '로컬 정상 · 백업 완료',
+    LOCAL_OK_BACKUP_PENDING: `로컬 정상 · 변경 ${sync.pending}건 백업 대기`,
+    BACKUP_IN_PROGRESS: '백업 진행 중 · 로컬 업무 정상',
+    BACKUP_FAILED: '서버 백업 실패 · 로컬 업무 정상',
+    DIVERGED: '서버에 더 최신 버전 있음 · 관리자 확인 필요',
+    REVISION_AHEAD_INVALID: '서버 또는 계보 이상 · 별도 복구 필요',
+    NON_PRIMARY: '조회 전용 · 주 운영 장치가 아님',
+    RESTORE_REQUIRED: '로컬 거래처 없음 · 관리자 서버 복구 필요'
+  };
+  const label = labels[status] || labels.LOCAL_OK_BACKUP_PENDING;
+  elements.syncState.dataset.state = ['BACKUP_FAILED'].includes(status) || sync.retry ? 'error'
+    : ['DIVERGED', 'REVISION_AHEAD_INVALID', 'NON_PRIMARY', 'RESTORE_REQUIRED'].includes(status) || sync.conflicts ? 'conflict'
+      : status === 'BACKUP_IN_PROGRESS' ? 'syncing' : 'online';
+  const labelNode = elements.syncState.querySelector('#customerBackupLabel');
+  const detailNode = elements.syncState.querySelector('#customerBackupDetail');
+  if (labelNode) labelNode.textContent = label;
+  if (detailNode) detailNode.textContent = `백업 대기 ${sync.pending} · 재시도 ${sync.retry} · 계보 문제 ${sync.conflicts} · 기존 큐 격리 ${sync.quarantineCount || 0}`;
 }
 
 async function syncAndReload() {
-  await renderCloudSyncState();
-  const result = await synchronizeCustomerMaster({
-    onStatus: ({ phase }) => {
-      elements.syncState.dataset.state = 'syncing';
-      elements.syncState.querySelector('strong').textContent = phase === 'PUSHING' ? 'Cloud로 로컬 변경 전송 중' : 'Cloud 공통 거래처 병합 중';
-    }
-  });
   await reload();
-  await renderCloudSyncState(result);
-  return result;
+  await renderCloudSyncState();
+  return { status: 'LOCAL_OK_BACKUP_PENDING' };
 }
 
 async function openEditor(customer = null) {
@@ -659,7 +674,7 @@ async function saveIssueDrafts(moveToNext = false) {
     if (savedCount) await syncAndReload();
     else await reload();
   } catch (error) {
-    alert(`Cloud 동기화 실패: ${error.message || error}`);
+    alert(`로컬 저장 후 화면 갱신 실패: ${error.message || error}`);
     await reload();
   }
   if (moveToNext && state.filtered.length) {
@@ -757,6 +772,7 @@ elements.applyImport.addEventListener('click', async () => {
 });
 
 async function initializeCustomerMaster() {
+  await startCustomerFoundationWorker();
   const pending = await getLatestCustomerSourceImportWork();
   if (pending) {
     state.importBatch = pending.batch;
@@ -769,12 +785,55 @@ async function initializeCustomerMaster() {
   const ready = await ensureCustomerMasterReady({ onLoading: message => { elements.empty.hidden = false; elements.empty.textContent = message; } });
   if (ready.syncPromise) {
     ready.syncPromise.then(async result => { await reload(); await renderCloudSyncState(result); })
-      .catch(async error => { console.warn('Customer Master background sync deferred', error); await renderCloudSyncState({ pullError: error }); });
+      .catch(async error => { console.warn('Customer Master background backup deferred', error); await renderCloudSyncState({ status: 'BACKUP_FAILED', error }); });
   } else {
     await reload();
     await renderCloudSyncState();
   }
 }
+
+globalThis.addEventListener('ONEAPP_FOUNDATION_BACKUP_STATE', () => {
+  renderCloudSyncState().catch(error => console.warn('Foundation backup state render deferred', error));
+});
+elements.backupNow?.addEventListener('click', async () => {
+  elements.backupNow.disabled = true;
+  try {
+    elements.syncState.dataset.state = 'syncing';
+    elements.syncState.querySelector('#customerBackupLabel').textContent = '백업 진행 중 · 로컬 업무 정상';
+    await synchronizeCustomerMaster();
+    await renderCloudSyncState();
+  } catch (error) {
+    console.warn('Customer backup failed; local data retained', error);
+    await renderCloudSyncState({ status: 'BACKUP_FAILED' });
+  } finally { elements.backupNow.disabled = false; }
+});
+elements.restore?.addEventListener('click', async () => {
+  elements.restore.disabled = true;
+  try {
+    const preview = await previewCustomerRestore();
+    if (!preview.valid) throw new Error(`복구 검증 실패: 중복 코드 ${preview.duplicateCodes.length} · 참조 오류 ${preview.referenceErrors.length}`);
+    const summary = `서버 Revision ${preview.serverRevision}\n로컬 ${preview.comparison.localCount}건 → 서버 ${preview.comparison.serverCount}건\n신규 ${preview.comparison.added} · 변경 ${preview.comparison.changed} · 제거 ${preview.comparison.removed}`;
+    if (!window.confirm(`${summary}\n\n현재 로컬 안전 Snapshot을 만든 뒤 관리자 복구를 적용할까요?`)) return;
+    if (preview.comparison.destructive && !window.confirm('20% 이상 감소 또는 0건 복구입니다. 파괴적 복구 경고를 확인했고 계속하시겠습니까?')) return;
+    await applyCustomerRestore(preview, preview.approvalToken);
+    await reload();
+    await renderCloudSyncState();
+  } catch (error) {
+    window.alert(`거래처 복구 실패: ${error.message || error}`);
+  } finally { elements.restore.disabled = false; }
+});
+elements.promote?.addEventListener('click', async () => {
+  elements.promote.disabled = true;
+  try {
+    await globalThis.NEXUS_FOUNDATION_BACKUP.registerDevice();
+    const status = await globalThis.NEXUS_FOUNDATION_BACKUP.deviceStatus();
+    if (!window.confirm(`현재 장치를 회사 Primary로 승격합니다. Primary Epoch ${Number(status?.primary?.primaryEpoch || 0)} → ${Number(status?.primary?.primaryEpoch || 0) + 1}`)) return;
+    await globalThis.NEXUS_FOUNDATION_BACKUP.promoteDevice(Number(status?.primary?.primaryEpoch || 0), '거래처 관리자 화면 승인');
+    await renderCloudSyncState();
+  } catch (error) {
+    window.alert(`Primary 승격 실패: ${error.message || error}`);
+  } finally { elements.promote.disabled = false; }
+});
 
 initializeCustomerMaster().catch(error => {
   elements.empty.hidden = false;

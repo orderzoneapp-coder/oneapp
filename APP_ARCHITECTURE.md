@@ -2,7 +2,7 @@
 
 - Repository: orderzoneapp-coder/oneapp
 - Architecture document version: 1.6.0
-- Last reviewed: 2026-08-27
+- Last reviewed: 2026-08-28
 - Machine-readable companion: app-manifest.json
 
 ## 1. Purpose
@@ -175,7 +175,7 @@ Important contracts include:
 | Contract | Current key or resource | Main consumers |
 |---|---|---|
 | Company profile | Protected Apps Script sheets owned by `company-profile.gs`; no browser storage key | NEXUS work home and `nexus/company.html` through the authenticated gateway |
-| Product master | `merchMaster_v870`, `MerchOpsDB` / `master_products` | MerchOps, SmartParser, DataOps synchronization, export center, settings, history viewer, ORDER Q 수기입력(읽기 전용 검색) |
+| Product master | `merchMaster_v870`, `MerchOpsDB` / `master_products`; B+ state `oneapp.foundation.product-backup-state.v1` is committed atomically with each master replacement | MerchOps, SmartParser, DataOps synchronization, export center, settings, history viewer, ORDER Q 수기입력(읽기 전용 검색) |
 | Master change notification | `merchMaster_sync_trigger` | SmartParser, DataOps, export center, and settings; MerchOps reloads master values on a full page refresh and keeps an open worktable unchanged |
 | Change history | `merchHistory_v870` | MerchOps, SmartParser, DataOps, history viewer, cloud backup |
 | Parser dictionary | `parserDict_v870` | SmartParser, MerchOps, settings, cloud configuration |
@@ -196,7 +196,8 @@ Important contracts include:
 | OrderOps Excel aliases | `oneapp.orderops.excel-mappings.v1` | OrderOps local parser preference only; administrator filename, sheet, and column aliases are excluded from workspace recovery and cloud plans |
 | OrderOps purchase-name history | `oneapp.orderops.purchase-history.v1` | OrderOps local input convenience only; up to 30 recent nonblank purchase-place names are excluded from workspace recovery and cloud plans |
 | OrderOps order-view presets | `oneapp.orderops.order-view-presets.v1` | ORDER Q per-view local display preferences only; named search/filter/sort conditions, visible columns, column order, and saved widths may be captured, and one preset per view may be marked as the access-time default. Presets remain excluded from workspace recovery and cloud plans |
-| ORDER Q vNext local ledger | IndexedDB `oneapp-orderq-vnext` v4 | ORDER Q vNext and standalone SmartInput order delivery; operational orders, historical source batches, sales/purchase/ledger/inventory facts, fulfillment links, parser evidence, and sync queue |
+| ORDER Q vNext local ledger | IndexedDB `oneapp-orderq-vnext` v17 | ORDER Q vNext and standalone SmartInput order delivery; operational orders, historical source batches, sales/purchase/ledger/inventory facts, fulfillment links, parser evidence, the legacy sync queue, and additive Foundation B+ outbox/recovery/quarantine stores |
+| Foundation B+ device identity | `oneapp.foundation.device-id.v1` | Product and Customer backup clients; identifies the originating browser installation without replacing product/customer IDs |
 | ORDER Q vNext access token | `oneapp_orderq_access_token_v1` | Local cloud request credential only; excluded from IndexedDB records, imports, recovery payloads, and sync entities |
 | ORDER Q manual-entry defaults | `oneapp.orderq.manual-defaults.v1` | ORDER Q vNext only; restores the last shipment warehouse and transaction type for the next new manual order in the same browser |
 | SmartInput local draft | `oneapp.smartinput.draft.v1` | SmartInput only; preserves target tab, source batches, source-to-row links, administrator edits, matching state, responsive panel state, and delivery result. It is not a final order ledger or a cloud backup contract. |
@@ -234,6 +235,13 @@ It must:
 | POST | `orderq_sync_push` | Token-protected incremental ORDER Q entity push with revision conflict, source-message duplicate prevention, and recoverable order-bundle writes |
 | POST | `orderq_sync_pull` | Token-protected incremental ORDER Q entity pull after the device cursor |
 | POST | `orderq_order_head` | Token-protected latest ORDER Q order bundle and revision lookup |
+| POST | `nexus_gateway_foundation_backup_head_read` | Return product/customer Head metadata and Primary metadata without returning or applying business payloads |
+| POST | `nexus_gateway_foundation_backup_product_write` | Validate Primary and three-way base Revision CAS, then stage, verify, and publish an immutable Product Snapshot |
+| POST | `nexus_gateway_foundation_backup_customer_events_write` | Validate ordered Customer Events and publish one immutable Customer backup Revision |
+| POST | `nexus_gateway_foundation_backup_customer_snapshot_write` | Validate Customer references and publish a periodic immutable Customer Snapshot |
+| POST | `nexus_gateway_foundation_backup_version_list` / `nexus_gateway_foundation_backup_version_read` | List or read a company-scoped immutable version for administrator restore preview only |
+| POST | `nexus_gateway_foundation_backup_restore_audit_write` | Record the verified outcome of an administrator-approved local restore |
+| POST | `nexus_gateway_foundation_device_status_read` / `register` / `promote` | Read device status, register a device, or promote a new Primary with an incremented Epoch |
 | GET | `full` or omitted | Return master, history, and configuration |
 | GET | `master_only` | Return product master and summary |
 | GET | `config_only` | Return configuration only |
@@ -243,6 +251,21 @@ The DataOps snapshot contract is `ONEAPP_DATAOPS_SNAPSHOT_V1`. Its canonical row
 `dataops_snapshot_commit` writes the inactive `DataOpsSnapshot_A` or `DataOpsSnapshot_B` sheet, verifies schema, SHA-256, row count, cell count, and same-code LOT promotion consistency, then switches the `ONEAPP_DATAOPS_CURRENT_SLOT` Script Property under `LockService`. A failed staging write leaves the previous current slot unchanged. The revision is derived by the server from basis date and canonical hash, so rereading or recommitting the same finalized snapshot returns the same identity.
 
 Both DataOps snapshot actions keep their existing POST action names and snapshot data response shape. `dataops_snapshot_commit` and `dataops_snapshot_get` use the configured shared cloud URL without requesting, storing, sending, or validating an operator token. Existing requests that include a legacy token remain compatible and the server ignores that field. Existing master, history, configuration, and all other API actions, sheets, payloads, and response contracts remain unchanged.
+
+### 5.4.1 Foundation B+ Local Primary backup
+
+`FOUNDATION_BACKUP_V1` unifies the product and Customer operating policy while keeping their local backup engines separate. The browser-local database is the daily operational source. The server is an immutable version, lineage, recovery-transfer, and audit authority; it is not permitted to push or automatically apply product or Customer payloads to a browser.
+
+- Product writes commit the whole product master, permanent `productId`, local Revision, hash, and one coalesced pending Snapshot in the same `MerchOpsDB` transaction. The worker waits for a 30-second quiet period and never waits longer than five minutes.
+- Customer writes commit Customer/Alias/Event data, the local Revision, and a Customer Event outbox row in one `oneapp-orderq-vnext` v17 transaction. The worker uses a 10-second quiet period, sends at 50 events, and never waits longer than 60 seconds. A periodic full Customer Snapshot establishes or compacts the lineage.
+- On the server, `baseServerRevision < Head` returns `DIVERGED`; equality alone may create the next immutable Revision; `baseServerRevision > Head` returns `REVISION_AHEAD_INVALID`. A rejected request never advances Head and the client never rewrites its base Revision automatically.
+- A backup requires a registered current Primary device and matching `primaryEpoch`. Promotion is an explicit administrator operation and increments the Epoch so an earlier Primary can no longer write.
+- Empty local Customer data is `RESTORE_REQUIRED`, not a trigger for Cloud Pull. Populated Customer data renders from local storage and never starts background Pull. Automatic reads are limited to Head, count, hash, version availability, and device metadata.
+- The pre-B+ Customer sync queue is retained, copied into `foundationLegacyQuarantine`, and marked `QUARANTINED_LEGACY_SYNC`/`localOnly`. It is neither deleted nor replayed automatically. The actual quarantined count—not a hard-coded value—is displayed for the recovery inventory.
+- Restore requires a version list/read, SHA-256 verification, local/server comparison, duplicate and reference checks, a local safety Snapshot, explicit administrator approval, an atomic local replacement, reread verification, and local/server audit. A zero-row or 20%-plus reduction requires a second destructive-change confirmation. Unsynced pre-restore outbox rows are retained as `QUARANTINED_PRE_RESTORE`.
+- Feature flags default to backup enabled and automatic Pull disabled. A failure to read flags must preserve local data and must never enable automatic Pull.
+
+Server sheets are append-only `FoundationBackupVersion`, `FoundationBackupChunk`, `FoundationCustomerEvent`, `FoundationDevice`, `FoundationPrimary`, `FoundationOperationResult`, and `FoundationRestoreAudit`; `FoundationBackupHead` is an append-only sequence whose newest verified row is the logical Head. Payload chunks are written and reread before a Version and Head are made visible. A response-loss retry with the same backup ID returns the prior result without consuming another Revision.
 
 The Shipping cloud contract is `ONEAPP_SHIPPING_PURCHASE_PLAN_V1`, and its embedded analysis contract is `shipping-workspace/v2`. `shipping_plan_save` writes `ShippingPlanStaging`, verifies SHA-256 and declared row/cell counts, appends the immutable payload to `ShippingPlanHistory`, rereads it, and only then appends `ShippingPlanIndex`. The index is the sole visibility boundary: an append that is not indexed is an orphan and must never be returned by list/get, while an index failure leaves every previously finalized revision and the previous latest revision unchanged. Revisions are not automatically deleted.
 
@@ -1019,7 +1042,7 @@ After the production MerchOps and DataOps workflows are stable, planned applicat
 ## Customer Master shared boundary (2026-08)
 
 - Customer Master is the shared customer authority for ORDER IN, direct order entry, Collector, and customer history lookup.
-- IndexedDB remains the local cache and draft store. A device with no local customers must pull the Cloud customer revision before search; a populated device may use cache immediately and pull in the background only when no unsynced Customer/Customer Alias mutation exists.
+- IndexedDB is the Local Primary operational source, not a disposable Cloud cache. A device with no local customers reports `RESTORE_REQUIRED`; a populated device reads local data immediately. Neither case performs automatic server-to-local Pull. Server data can be applied only through the administrator restore contract in section 5.4.1.
 - `qualityStatus` owns merge state independently from trading `status`. Non-superseded rows are self-canonical. A `SUPERSEDED` row points to a different ACTIVE canonical customer.
 - New live work uses only the canonical customer ID. Historical document customer IDs are immutable and are expanded to the canonical family at read time for unified history and ledger views.
-- Customer Excel import is `customerCode`-identified immediate create/update and row-atomic. Empty non-code fields preserve the current value, duplicate codes inside one file fail only those duplicate rows, unmatched columns are reported and excluded, and name similarity never blocks a write. Every import-owned sync queue row carries the import ID; the UI reports `CLOUD_SYNCED` only after every owned queue row is `ACKED`, while pending work retries automatically with bounded backoff and resumes on page entry or network recovery. ORDER IN, direct input, Master, and Collector quick-create remain explicit live creates that return a real customer ID immediately.
+- Customer Excel import is `customerCode`-identified immediate create/update and row-atomic. Empty non-code fields preserve the current value, duplicate codes inside one file fail only those duplicate rows, unmatched columns are reported and excluded, and name similarity never blocks a write. Pre-B+ import sync rows are quarantined and never replayed; new Customer mutations create B+ Event outbox records in the same local transaction and retry only one-way backup with bounded backoff. ORDER IN, direct input, Master, and Collector quick-create remain explicit live creates that return a real customer ID immediately.

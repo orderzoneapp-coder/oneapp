@@ -7,7 +7,7 @@ import {
   openOrderQDb,
   requestToPromise,
   transactionDone
-} from './orderq-db.js?v=0.16.0';
+} from './orderq-db.js?v=0.21.0';
 import {
   CUSTOMER_FIELDS,
   CUSTOMER_IMPORT_STATUS,
@@ -15,7 +15,12 @@ import {
   CUSTOMER_STATUS,
   normalizeCustomer,
   resolveCanonicalCustomer
-} from './customer-master.js?v=0.16.0';
+} from './customer-master.js?v=0.20.0';
+import {
+  notifyCustomerFoundationMutation,
+  prepareCustomerFoundationEvent,
+  prepareCustomerFoundationSnapshotMutation
+} from './customer-foundation-backup.js?v=0.1.0';
 
 export const CUSTOMER_SOURCE_SYSTEM = Object.freeze({ ERP: 'ERP', SHOP: 'SHOP' });
 export const CUSTOMER_SOURCE_LINK_STATUS = Object.freeze({
@@ -219,7 +224,8 @@ function queueItem(entityType, entityId, payload, timestamp = nowIso()) {
     revision,
     baseRevision: Math.max(0, revision - 1),
     payload,
-    status: 'PENDING',
+    status: 'BPLUS_REPLACED',
+    localOnly: true,
     attempts: 0,
     createdAt: timestamp,
     updatedAt: timestamp
@@ -816,7 +822,9 @@ async function applyOneRecord(record, actorId) {
     STORE.CUSTOMER_SOURCE_LINKS,
     STORE.CUSTOMER_SOURCE_LINK_EVENTS,
     STORE.SOURCE_RECORDS,
-    STORE.SYNC_QUEUE
+    STORE.SYNC_QUEUE,
+    STORE.FOUNDATION_BACKUP_OUTBOX,
+    STORE.META
   ];
   const tx = db.transaction(stores, 'readwrite');
   const customerStore = tx.objectStore(STORE.CUSTOMERS);
@@ -862,7 +870,8 @@ async function applyOneRecord(record, actorId) {
       updatedAt: timestamp
     });
     customerStore.put(customer);
-    tx.objectStore(STORE.CUSTOMER_EVENTS).put(customerEvent(customer.customerId, 'CREATED', { source: `${record.sourceSystem}_IMPORT`, customer }, actorId, timestamp));
+    const event = await prepareCustomerFoundationEvent(tx, customerEvent(customer.customerId, 'CREATED', { source: `${record.sourceSystem}_IMPORT`, customer }, actorId, timestamp));
+    tx.objectStore(STORE.CUSTOMER_EVENTS).put(event);
     tx.objectStore(STORE.SYNC_QUEUE).put(queueItem('CUSTOMER', customer.customerId, customer, timestamp));
     customerWasChanged = true;
   } else {
@@ -884,7 +893,8 @@ async function applyOneRecord(record, actorId) {
       const next = normalizeCustomer({ ...patch, customerId: customer.customerId, revision: Number(customer.revision || 1) + 1, updatedAt: timestamp }, customer);
       if (JSON.stringify(CUSTOMER_FIELDS.map(field => before[field] || '')) !== JSON.stringify(CUSTOMER_FIELDS.map(field => next[field] || ''))) {
         customerStore.put(next);
-        tx.objectStore(STORE.CUSTOMER_EVENTS).put(customerEvent(customer.customerId, 'UPDATED', { source: `${record.sourceSystem}_IMPORT`, before, after: next }, actorId, timestamp));
+        const event = await prepareCustomerFoundationEvent(tx, customerEvent(customer.customerId, 'UPDATED', { source: `${record.sourceSystem}_IMPORT`, before, after: next }, actorId, timestamp));
+        tx.objectStore(STORE.CUSTOMER_EVENTS).put(event);
         tx.objectStore(STORE.SYNC_QUEUE).put(queueItem('CUSTOMER', next.customerId, next, timestamp));
         if (before.customerName !== next.customerName) await addAliasIfNeeded(tx, next.customerId, before.customerName, 'PREVIOUS_NAME', record.sourceLinkKey, timestamp);
         customer = next;
@@ -929,6 +939,7 @@ async function applyOneRecord(record, actorId) {
   for (const value of searchAliases) {
     await addAliasIfNeeded(tx, customer.customerId, value, `${record.sourceSystem}_SOURCE_SEARCH`, record.sourceLinkKey, timestamp);
   }
+  await prepareCustomerFoundationSnapshotMutation(tx, 'CUSTOMER_RELATED_DATA_CHANGED');
 
   const appliedRecord = {
     ...(persistedRecord || record),
@@ -942,6 +953,7 @@ async function applyOneRecord(record, actorId) {
   };
   recordStore.put(appliedRecord);
   await transactionDone(tx);
+  notifyCustomerFoundationMutation();
   return { sourceRecordId: record.sourceRecordId, status: CUSTOMER_IMPORT_STATUS.APPLIED, customerId: customer.customerId, linkId: link.linkId };
 }
 
@@ -993,7 +1005,7 @@ export async function applyCustomerSourceImport(importBatchId, { actorId = 'admi
 async function mutateSourceLink(sourceSystem, sourceCustomerCode, mutate, { actorId = 'administrator', reason = '', expectedRevision = null } = {}) {
   const key = makeCustomerSourceLinkKey(sourceSystem, sourceCustomerCode);
   const db = await openOrderQDb();
-  const tx = db.transaction([STORE.CUSTOMERS, STORE.CUSTOMER_SOURCE_LINKS, STORE.CUSTOMER_SOURCE_LINK_EVENTS, STORE.SYNC_QUEUE], 'readwrite');
+  const tx = db.transaction([STORE.CUSTOMERS, STORE.CUSTOMER_SOURCE_LINKS, STORE.CUSTOMER_SOURCE_LINK_EVENTS, STORE.SYNC_QUEUE, STORE.META], 'readwrite');
   const linkStore = tx.objectStore(STORE.CUSTOMER_SOURCE_LINKS);
   const link = await requestToPromise(linkStore.index('bySourceLinkKey').get(key));
   if (!link) {
@@ -1021,7 +1033,9 @@ async function mutateSourceLink(sourceSystem, sourceCustomerCode, mutate, { acto
     tx.objectStore(STORE.CUSTOMER_SOURCE_LINK_EVENTS).put(event);
     tx.objectStore(STORE.SYNC_QUEUE).put(queueItem('CUSTOMER_SOURCE_LINK_EVENT', event.eventId, event, timestamp));
   }
+  await prepareCustomerFoundationSnapshotMutation(tx, 'CUSTOMER_SOURCE_LINK_CHANGED');
   await transactionDone(tx);
+  notifyCustomerFoundationMutation();
   return changed.link;
 }
 

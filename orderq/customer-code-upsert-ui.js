@@ -9,8 +9,8 @@ import {
   runCustomerCodeUpsert,
   saveCustomerHeaderMapping,
   saveCustomerUserFieldDefinition,
-} from './customer-code-upsert.js?v=0.18.0';
-import { getByKey, STORE } from './orderq-db.js?v=0.16.0';
+} from './customer-code-upsert.js?v=0.19.0';
+import { getByKey, STORE } from './orderq-db.js?v=0.21.0';
 import { pushPending } from './orderq-sync-engine.js?v=0.16.1';
 
 const state = {

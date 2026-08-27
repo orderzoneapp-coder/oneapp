@@ -8,6 +8,7 @@
   <script src="/nexus/common/nexus-auth-config.js?v=2.0.1"></script>
   <script src="/nexus/common/nexus-auth.js?v=2.1.0"></script>
   <script src="/nexus/foundation/foundation-metadata.js?v=1.0.0"></script>
+  <script src="/nexus/foundation/foundation-backup.js?v=1.0.0"></script>
   <script>
     const customerMasterParams = new URLSearchParams(window.location.search);
     const rawCustomerMasterMode = customerMasterParams.get('mode');
@@ -23,7 +24,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;600;800;900&family=Noto+Serif+KR:wght@700;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/nexus/common/oneapp-design-tokens.css?v=1.2.0">
   <link rel="stylesheet" href="/nexus/common/nexus-app-ui.css?v=2.0.0">
-  <link rel="stylesheet" href="./orderq/customer-master.css?v=0.20.0">
+  <link rel="stylesheet" href="./orderq/customer-master.css?v=0.21.0">
   <style>
     :root { --nexus-ink: #0b1021; --nexus-panel: #151b2b; --nexus-accent: #6366f1; }
     body.customer-master-page { background: var(--oneapp-bg); }
@@ -140,7 +141,8 @@
       </section>
 
       <section class="cm-sync-state cm-list-only" id="customerCloudSyncState" data-state="local" aria-live="polite">
-        <strong>Cloud 상태 확인 중</strong><span>대기 0 · 재시도/실패 0 · 충돌 0</span>
+        <strong id="customerBackupLabel">로컬 기준정보 확인 중</strong><span id="customerBackupDetail">백업 대기 0 · 재시도 0 · 계보 문제 0 · 기존 큐 격리 0</span>
+        <span class="cm-sync-actions"><button class="cm-button" id="customerBackupNow" type="button">지금 백업</button><button class="cm-button" id="customerRestoreFromServer" type="button">서버에서 복구</button><button class="cm-button" id="customerPromoteDevice" type="button">현재 장치를 Primary로</button></span>
       </section>
 
       <section class="cm-panel cm-list-only">
@@ -240,7 +242,7 @@
   </script>
 
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script type="module" src="./orderq/customer-master-ui.js?v=0.23.0"></script>
-  <script type="module" src="./orderq/customer-code-upsert-ui.js?v=0.18.0"></script>
+  <script type="module" src="./orderq/customer-master-ui.js?v=0.24.0"></script>
+  <script type="module" src="./orderq/customer-code-upsert-ui.js?v=0.19.0"></script>
 </body>
 </html>
