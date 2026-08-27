@@ -679,7 +679,7 @@ const restoreSmartParserColumn = (order = [], hidden = [], columnKey, selectedCo
     if (!hidden.includes(columnKey)) return { order: [...order], hidden: [...hidden] };
     const withoutColumn = order.filter(key => key !== columnKey);
     const selectedSet = new Set(selectedColumnKeys || []);
-    let insertionIndex = withoutColumn.findIndex(key => selectedSet.has(key) && !hidden.includes(key) && SMART_PARSER_WORKTABLE_DATA_KEYS.includes(key));
+    let insertionIndex = withoutColumn.findIndex(key => selectedSet.has(key) && !hidden.includes(key));
     if (insertionIndex < 0)
         insertionIndex = withoutColumn.findIndex(key => !hidden.includes(key) && SMART_PARSER_WORKTABLE_DATA_KEYS.includes(key));
     if (insertionIndex < 0) insertionIndex = withoutColumn.length;

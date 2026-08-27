@@ -117,6 +117,8 @@ const hiddenOne = helpers.getSmartParserColumnHideResult(defaultOrder, [], ["pro
 const restored = helpers.restoreSmartParserColumn(defaultOrder, hiddenOne.hidden, "productCode", ["parsedProduct"]);
 assert.equal(restored.hidden.includes("productCode"), false);
 assert.equal(restored.order.indexOf("productCode") + 1, restored.order.indexOf("parsedProduct"), "restored column must be inserted immediately before the selected leftmost data column");
+const restoredBeforeManagement = helpers.restoreSmartParserColumn(defaultOrder, hiddenOne.hidden, "productCode", ["management"]);
+assert.equal(restoredBeforeManagement.order.indexOf("productCode") + 1, restoredBeforeManagement.order.indexOf("management"), "restored column must be inserted immediately before a selected protected management column");
 assert.deepEqual(clone(afterDelete), rowSnapshotBeforeColumnEdit, "column hide/restore must not mutate parserBuffer or F7 data");
 
 const rowDeleteHandler = sliceBetween(
