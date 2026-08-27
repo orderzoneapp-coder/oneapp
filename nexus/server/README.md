@@ -2,16 +2,16 @@
 
 ## 운영 배포
 
-- 현재 운영 배포 계약: `NEXUS_AUTH_V2` (버전 18)
+- 현재 운영 배포 계약: `NEXUS_AUTH_V2` (버전 19)
 - 직전 운영 복구 버전: `NEXUS_AUTH_V2` (버전 17)
 - Apps Script 프로젝트 ID: `1KNiTNpNRqPYM7XM5MSzGObwfUd303bZRcjgm16MVG3xNqcQpymYXaPI5`
 - Web App 배포 ID: `AKfycbwIaouo6kzff1J3H3B0K5bWuAEJAcp4K21tyEkL2BuM-SiNsPDGGYVBEXIkBeUGwp4i`
 - Web App URL: `https://script.google.com/macros/s/AKfycbwIaouo6kzff1J3H3B0K5bWuAEJAcp4K21tyEkL2BuM-SiNsPDGGYVBEXIkBeUGwp4i/exec`
-- 현재 운영 배포 버전: `18`
+- 현재 운영 배포 버전: `19`
 - 실행 주체: 배포 소유자
 - 접근 설정: 익명 포함 모든 사용자. 실제 보호는 모든 비공개 액션의 NEXUS 세션·권한 검사로 수행한다.
 
-버전 7의 1회용 마스터 코드 회전 진입점은 버전 8에서 제거됐다. 버전 18은 기존 배포 ID를 유지한 채 회사정보 조회와 `admin.company` 전용 쓰기 registry를 추가한다. 이 변경에 이상이 발생하면 같은 배포 ID를 버전 17로 복구한다.
+버전 7의 1회용 마스터 코드 회전 진입점은 버전 8에서 제거됐다. 버전 19는 기존 배포 ID를 유지한 채 Foundation B+ Local Primary 백업·버전 조회·관리자 복구 감사·장치 registry를 추가한다. 이 변경에 이상이 발생하면 같은 배포 ID를 버전 18로 복구한다.
 
 ## 최초 마스터
 
