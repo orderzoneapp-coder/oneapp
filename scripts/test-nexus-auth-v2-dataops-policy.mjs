@@ -67,6 +67,10 @@ assert.equal(gateway.nexusAuthPublicError_(new Error('CLOSE_SOURCE_DIGEST_INVALI
   'safe uppercase DataOps/close errors must remain actionable without exposing raw upstream responses');
 assert.equal(gateway.nexusAuthPublicError_(new Error('private detail: token=secret')), 'NEXUS_AUTH_REQUEST_FAILED',
   'unstructured upstream details must remain hidden');
+assert.equal(gateway.nexusAuthGatewayUpstreamError_({ message: 'DATAOPS_V2_OPERATIONAL_MASTER_REQUIRED:PRODUCT:101020114' }),
+  'DATAOPS_V2_OPERATIONAL_MASTER_REQUIRED', 'structured business details must be reduced to the safe code prefix');
+assert.equal(gateway.nexusAuthGatewayUpstreamError_({ message: 'failure included token=secret' }), 'NEXUS_GATEWAY_UPSTREAM_DENIED',
+  'unstructured upstream details must never cross the Gateway boundary');
 
 const properties = new Map();
 const oneapp = vm.createContext({

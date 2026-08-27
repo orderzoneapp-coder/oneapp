@@ -704,6 +704,9 @@ function nexusAuthGatewayFetch_(forwarded) {
 function nexusAuthGatewayUpstreamError_(parsed) {
   var code = nexusAuthText_(parsed && parsed.message);
   if (/^[A-Z0-9_]{3,100}$/.test(code)) return code;
+  // 행번호·업무키가 붙은 오류는 상세값을 버리고 안전한 대문자 코드만 전달한다.
+  var structured = code.match(/^([A-Z0-9_]{3,100})(?::[^\s:]{1,120})+$/);
+  if (structured) return structured[1];
   return 'NEXUS_GATEWAY_UPSTREAM_DENIED';
 }
 
