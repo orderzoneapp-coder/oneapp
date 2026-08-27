@@ -134,8 +134,10 @@ const html = fs.readFileSync('smartinput/index.html', 'utf8');
 const app = fs.readFileSync('smartinput/smartinput.js', 'utf8');
 assert.ok(html.indexOf('data-column="productSearch"') < html.indexOf('data-column="itemCode"'), 'product search must be the first editable grid column');
 assert.match(html, /id="undoGridPasteButton"/);
-assert.match(app, /th\.classList\.add\('column-resizable'\);[\s\S]*?th\.dataset\.column === 'productSearch'[\s\S]*?th\.classList\.remove\('column-draggable'\)/,
-  'the fixed product-search column must be resizable without becoming draggable');
+assert.match(app, /th\.classList\.add\('column-resizable'\);[\s\S]*?const reorderable = !\['productSearch', 'status'\]\.includes\(columnKey\);[\s\S]*?if \(reorderable && !th\.querySelector\('\.column-drag-handle'\)\)/,
+  'the fixed product-search column must remain resizable while reorder uses a dedicated handle only for reorderable columns');
+assert.match(app, /handle\.className = 'column-resize-handle'/);
+assert.match(app, /dragHandle\.className = 'column-drag-handle'/);
 assert.match(app, /if \(searchInput\) \{[\s\S]*?preventDefault\(\)[\s\S]*?상품 검색 열에는 붙여넣을 수 없습니다/);
 assert.match(app, /requireHeaders:\s*true/);
 assert.match(app, /trySearchProductRow[\s\S]*?applyProduct\(row, candidates\[0\], \{ forceIdentityFields: true \}\)/);

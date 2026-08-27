@@ -18,10 +18,12 @@ function functionBlock(name) {
   return app.slice(start, next < 0 ? app.length : next);
 }
 
-assert.match(html, /smartinput\.css\?v=0\.4\.35/, 'mobile CSS cache key must invalidate the previous combined-screen asset');
-assert.match(html, /smartinput\.js\?v=0\.4\.42/, 'mobile JS cache key must invalidate the previous combined-screen asset');
-assert.doesNotMatch(html, /smartinput\.(?:css|js)\?v=0\.4\.(?:30|36)/,
-  'the deployed page must not reuse the stale mobile asset cache keys');
+assert.match(html, /smartinput\.css\?v=0\.4\.36/, 'worktable CSS cache key must invalidate the previous combined-screen asset');
+assert.match(html, /smartinput\.js\?v=0\.4\.43/, 'worktable JS cache key must invalidate the previous combined-screen asset');
+assert.doesNotMatch(html, /smartinput\.css\?v=0\.4\.(?:30|35)/,
+  'the deployed page must not reuse a stale CSS cache key');
+assert.doesNotMatch(html, /smartinput\.js\?v=0\.4\.(?:36|42)/,
+  'the deployed page must not reuse a stale JS cache key');
 
 assert.equal(occurrences(html, /class="document-fields"/g), 1, 'mobile must move, not clone, the document information DOM');
 assert.match(html, /id="documentFieldsAnchor"/);

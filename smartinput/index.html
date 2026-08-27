@@ -9,7 +9,7 @@
   <link rel="icon" type="image/png" href="../nexus/assets/nexus-favicon.png">
   <script src="../nexus/common/nexus-theme-init.js?v=1.0.0"></script>
   <link rel="stylesheet" href="../orderq/customer-master.css?v=0.12.1" data-customer-picker-style>
-  <link rel="stylesheet" href="./smartinput.css?v=0.4.35">
+  <link rel="stylesheet" href="./smartinput.css?v=0.4.36">
   <script src="../nexus/common/nexus-auth-config.js?v=2.0.1"></script>
   <script src="../nexus/common/nexus-auth.js?v=2.1.0"></script>
   <script src="../nexus/common/apps-config.js?v=1.4.0"></script>
@@ -178,12 +178,26 @@
               <div class="grid-stats"><strong id="gridRowCount">0행</strong><span id="gridSearchCount" hidden>검색 0행</span><span id="matchedCount">일치 0</span><span id="similarCount">확인 0</span><span id="failedCount">미인식 0</span><span id="duplicateCount">중복 가능 0</span></div>
               <small id="voucherGroupSummary" class="voucher-group-summary"></small>
             </div>
-            <div class="grid-toolbar__actions"><button class="button button--quiet button--small" id="uploadTemplateButton" type="button">업로드 양식</button><button class="button button--quiet button--small" id="undoGridPasteButton" type="button" disabled>붙여넣기 취소</button><button class="button button--quiet button--small" id="deleteSelectedRows" type="button" disabled>선택 삭제</button><button class="button button--quiet button--small" id="detailColumnsButton" type="button" hidden>상세 열</button><button class="button button--quiet button--small" id="addRowButton" type="button">빈 행 추가</button></div>
+            <div class="grid-toolbar__actions"><button class="button button--quiet button--small" id="uploadTemplateButton" type="button">업로드 양식</button><button class="button button--quiet button--small" id="undoGridPasteButton" type="button" disabled>붙여넣기 취소</button><button class="button button--quiet button--small" id="detailColumnsButton" type="button" hidden>상세 열</button><button class="button button--quiet button--small" id="addRowButton" type="button">빈 행 추가</button></div>
+          </div>
+          <div class="worktable-selection-bar" id="worktableSelectionBar" hidden aria-live="polite">
+            <strong id="worktableSelectionLabel">선택 없음</strong>
+            <div class="worktable-selection-bar__actions">
+              <button class="button button--quiet button--small" id="insertSelectedRows" type="button" hidden>행 추가</button>
+              <button class="button button--danger button--small" id="deleteSelectedRows" type="button" hidden>선택 행 삭제</button>
+              <div class="hidden-column-picker" id="hiddenColumnPicker" hidden>
+                <button class="button button--quiet button--small" id="addHiddenColumnButton" type="button" aria-haspopup="menu" aria-expanded="false">열 추가</button>
+                <div class="hidden-column-picker__menu" id="hiddenColumnMenu" role="menu" hidden></div>
+              </div>
+              <button class="button button--danger button--small" id="hideSelectedColumns" type="button" hidden>선택 열 삭제</button>
+              <button class="button button--quiet button--small" id="clearWorktableSelection" type="button">선택 해제</button>
+            </div>
+            <small id="worktableSelectionNotice"></small>
           </div>
           <div class="table-scroll" id="tableScroll" tabindex="0">
             <table>
               <colgroup><col class="col-select"><col class="col-product-search" data-column="productSearch"><col class="col-code" data-column="itemCode"><col class="col-name" data-column="itemName"><col class="col-spec" data-column="specification"><col class="col-qty" data-column="quantity"><col class="col-unit" data-column="unit"><col class="col-price" data-column="unitPrice"><col class="col-supply" data-column="supplyAmount"><col class="col-memo" data-column="memo"><col class="col-description" data-column="description"><col class="col-notice" data-column="noticePrice"><col class="col-status" data-column="status"><col class="col-action"></colgroup>
-              <thead><tr><th class="select-column"><input id="selectAllRows" type="checkbox" aria-label="전체 행 선택"></th><th data-column="productSearch">상품 검색</th><th data-column="itemCode">품목코드</th><th data-column="itemName">품목명</th><th data-column="specification">규격</th><th data-column="quantity">수량</th><th data-column="unit">단위</th><th data-column="unitPrice">단가</th><th data-column="supplyAmount">공급가액</th><th data-column="memo">메모</th><th data-column="description">적요(직원)</th><th data-column="noticePrice">공지단가</th><th data-column="status">상태</th><th><span class="sr-only">행 작업</span></th></tr></thead>
+              <thead><tr><th class="select-column worktable-corner"><button id="selectAllRows" type="button" aria-label="현재 작업행 전체 선택" aria-pressed="false">▦</button></th><th data-column="productSearch">상품 검색</th><th data-column="itemCode">품목코드</th><th data-column="itemName">품목명</th><th data-column="specification">규격</th><th data-column="quantity">수량</th><th data-column="unit">단위</th><th data-column="unitPrice">단가</th><th data-column="supplyAmount">공급가액</th><th data-column="memo">메모</th><th data-column="description">적요(직원)</th><th data-column="noticePrice">공지단가</th><th data-column="status">상태</th><th data-worktable-column="rowAction"><span class="sr-only">행 작업</span></th></tr></thead>
               <tbody id="inputRows"></tbody>
               <tfoot><tr><td></td><td data-column="productSearch"></td><td data-column="itemCode"></td><td data-column="itemName">합계</td><td data-column="specification"></td><td data-column="quantity" id="totalQuantity">0</td><td data-column="unit"></td><td data-column="unitPrice"></td><td data-column="supplyAmount" id="totalAmount">0원</td><td data-column="memo"></td><td data-column="description"></td><td data-column="noticePrice"></td><td data-column="status"></td><td></td></tr></tfoot>
             </table>
@@ -223,6 +237,6 @@
 
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
   <script src="./smartinput-contract.js?v=0.4.16"></script>
-  <script type="module" src="./smartinput.js?v=0.4.42"></script>
+  <script type="module" src="./smartinput.js?v=0.4.43"></script>
 </body>
 </html>
