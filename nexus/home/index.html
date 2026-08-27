@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ko" data-nexus-color-mode="dark">
+<html lang="ko" data-nexus-color-mode="dark" data-nexus-app-id="nexus-home">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow">
   <title>NEXUS 업무 홈</title>
@@ -8,8 +8,9 @@
   <script src="../common/nexus-auth-config.js?v=2.0.1"></script>
   <script src="../common/nexus-auth.js?v=2.1.0"></script>
   <script src="../common/apps-config.js?v=1.4.0"></script>
-<script src="../common/nexus-top.js?v=1.8.1"></script>
-  <script src="./home.js?v=1.0.0" defer></script>
+  <link rel="stylesheet" href="./home.css?v=1.1.0">
+<script src="../common/nexus-top.js?v=1.9.0"></script>
+  <script src="./home.js?v=1.1.0" defer></script>
 </head>
 <body class="portal-page">
   <nexus-top></nexus-top>
@@ -19,6 +20,10 @@
       <div class="portal-actions"><a id="adminLink" class="portal-link primary" href="/nexus/admin/" hidden>마스터 관리</a><button id="logoutButton" class="portal-link" type="button">로그아웃</button></div>
     </header>
     <div id="connectionStrip" class="connection-strip" aria-label="업무 서비스 연결 상태"></div>
+    <section id="companyCard" class="company-home-card" data-state="LOADING" aria-label="회사정보" aria-live="polite">
+      <div><small>COMPANY</small><h2>회사정보를 불러오고 있습니다.</h2><p>서버에서 최신 정보를 확인합니다.</p></div>
+      <span class="company-home-state">LOADING</span>
+    </section>
     <section id="appGrid" class="portal-grid" aria-label="사용 가능한 업무 앱"></section>
   </main>
 </body>

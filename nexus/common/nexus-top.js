@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = '1.8.1';
+  const VERSION = '1.9.0';
   const STORAGE = Object.freeze({
     colorMode: 'oneapp.nexus.v1.colorMode',
     groupOrder: 'oneapp.nexus.v1.groupOrder',
@@ -339,6 +339,8 @@
       adminAction.hidden = user.role !== 'OWNER_MASTER';
       userAction.querySelector('.action-label').textContent = user.displayName || user.loginId;
       userAction.title = `${user.displayName || user.loginId} · ${user.role === 'OWNER_MASTER' ? '마스터' : '사용자'}`;
+      this.root.querySelector('.user-panel-name').textContent = user.displayName || user.loginId;
+      this.root.querySelector('.user-panel-role').textContent = user.role === 'OWNER_MASTER' ? '마스터 관리자' : '일반 사용자 · 회사정보 읽기 전용';
     }
 
     shellMarkup() {
@@ -381,7 +383,7 @@
               <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M19 13v-2l2-2-2-3-3 1-2-1-1-3h-3L9 6 7 7 4 6 2 9l2 2v2l-2 2 2 3 3-1 2 1 1 3h3l1-3 2-1 3 1 2-3-2-2zm-7 2a3 3 0 110-6 3 3 0 010 6z"/></svg><span class="action-label">설정</span>
             </button>
             <a class="action auth-admin" href="https://oneapp.orderz.co.kr/nexus/admin/" aria-label="마스터 관리" data-navigate hidden><span class="action-label">마스터 관리</span></a>
-            <a class="action auth-user" href="https://oneapp.orderz.co.kr/nexus/home/" aria-label="업무 홈" data-navigate hidden><span class="action-label">사용자</span></a>
+            <button class="action auth-user" type="button" data-open="user" aria-label="사용자 메뉴" aria-haspopup="dialog" aria-expanded="false" hidden><span class="action-label">사용자</span></button>
             <button class="action auth-logout" type="button" aria-label="로그아웃" hidden><span class="action-label">로그아웃</span></button>
           </div>
         </header>
@@ -389,6 +391,12 @@
         <section class="panel status-panel" data-panel="status" role="dialog" aria-label="현재 앱 상태" hidden>
           <div class="heading"><div><span class="eyebrow">CURRENT APP</span><h2>현재 앱 상태</h2></div><button class="close" type="button" aria-label="상태 닫기">×</button></div>
           <div class="current-status"></div>
+        </section>
+
+        <section class="panel user-panel" data-panel="user" role="dialog" aria-label="사용자 메뉴" hidden>
+          <div class="user-panel-profile"><strong class="user-panel-name">사용자</strong><span class="user-panel-role">일반 사용자</span></div>
+          <a href="https://oneapp.orderz.co.kr/nexus/company.html?mode=view" data-navigate data-target-app="company">내 회사정보</a>
+          <a href="https://oneapp.orderz.co.kr/nexus/home/" data-navigate data-target-app="">업무 홈</a>
         </section>
 
         <section class="panel apps-panel" data-panel="apps" role="dialog" aria-modal="true" aria-label="전체 앱" hidden>
@@ -708,7 +716,7 @@
         if (link) prefetchRoute(link.href);
       });
       this.onDocumentClick = (event) => {
-        if (this.openPanel === 'status' && !event.composedPath().includes(this)) this.closePanel();
+        if (['status', 'user'].includes(this.openPanel) && !event.composedPath().includes(this)) this.closePanel();
       };
       this.onDocumentKeydown = (event) => {
         if (event.key === 'Escape' && this.openPanel) {

@@ -994,6 +994,35 @@ function doPost(e) {
       return withScriptLock(() => jsonResponse({ status: 'success', action, data: oneappNexusFoundationReplaceAll(ss, payload) }));
     }
 
+    if (action === 'nexus_gateway_company_profile_get') {
+      oneappNexusGatewayRequire(payload, 'FOUNDATION', 'READ');
+      return withScriptLock(() => jsonResponse({ status: 'success', action, data: companyProfileGet(ss, payload) }));
+    }
+    if (action === 'nexus_gateway_company_profile_write') {
+      const companyAuth = oneappNexusGatewayRequire(payload, 'FOUNDATION', 'WRITE');
+      return withScriptLock(() => jsonResponse({ status: 'success', action, data: companyProfileWrite(ss, payload, companyAuth) }));
+    }
+    if (action === 'nexus_gateway_company_accounting_period_get') {
+      oneappNexusGatewayRequire(payload, 'FOUNDATION', 'READ');
+      return withScriptLock(() => jsonResponse({ status: 'success', action, data: companyProfileAccountingRead(ss, payload) }));
+    }
+    if (action === 'nexus_gateway_company_accounting_period_write') {
+      const companyAuth = oneappNexusGatewayRequire(payload, 'FOUNDATION', 'WRITE');
+      return withScriptLock(() => jsonResponse({ status: 'success', action, data: companyProfileAccountingWrite(ss, payload, companyAuth) }));
+    }
+    if (action === 'nexus_gateway_company_certificate_extract') {
+      const companyAuth = oneappNexusGatewayRequire(payload, 'FOUNDATION', 'READ');
+      return jsonResponse({ status: 'success', action, data: companyProfileCertificateExtract(payload, companyAuth) });
+    }
+    if (action === 'nexus_gateway_company_backup_create') {
+      const companyAuth = oneappNexusGatewayRequire(payload, 'FOUNDATION', 'WRITE');
+      return withScriptLock(() => jsonResponse({ status: 'success', action, data: companyProfileBackupCreate(ss, payload, companyAuth) }));
+    }
+    if (action === 'nexus_gateway_company_migrate_oneapp') {
+      const companyAuth = oneappNexusGatewayRequire(payload, 'FOUNDATION', 'WRITE');
+      return withScriptLock(() => jsonResponse({ status: 'success', action, data: companyProfileMigrateOneapp(ss, payload, companyAuth) }));
+    }
+
     if (action === 'orderq_customer_reset_preview') {
       requireOrderQAccess(payload, 'READ');
       return withScriptLock(() => jsonResponse({ status: 'success', action, data: {
