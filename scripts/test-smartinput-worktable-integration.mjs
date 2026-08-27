@@ -46,6 +46,20 @@ assert.match(css, /\.worktable-selection-bar\[hidden\] \{ display: grid; visibil
   'showing the selection toolbar must not shift the table during a pointer drag');
 assert.match(css, /\.is-worktable-column-selected/);
 assert.match(css, /\.is-worktable-row-selected/);
+assert.match(css, /html\[data-nexus-theme="dark"\] \{[\s\S]*--worktable-selection-accent: #38bdf8;[\s\S]*--worktable-selection-tint: rgba\(56, 189, 248, \.055\);/,
+  'dark mode must define a subtle NEXUS cyan WorkTable selection palette');
+assert.match(css, /html\[data-nexus-theme="dark"\] \.worktable-selection-bar \{[^}]*background: linear-gradient\([^}]*var\(--surface-muted\);/,
+  'dark selection toolbar must continue the existing dark surface');
+assert.match(css, /html\[data-nexus-theme="dark"\] tbody tr\.is-worktable-row-selected > td \{[^}]*background: var\(--worktable-selection-tint\);[^}]*1px/,
+  'dark row selection must use a subtle tint and one-pixel boundaries');
+assert.match(css, /html\[data-nexus-theme="dark"\] td\.is-worktable-column-selected \{[^}]*background: var\(--worktable-selection-tint\);[^}]*1px/,
+  'dark column cells must keep data readable under a subtle tint');
+assert.match(css, /html\[data-nexus-theme="dark"\] th\.is-worktable-column-selected \{[^}]*background: var\(--worktable-selection-header\);[^}]*var\(--worktable-selection-accent\);/,
+  'dark selected headers must use a dark face with a cyan accent edge');
+assert.match(css, /html\[data-nexus-theme="dark"\] \.worktable-selection-bar \.button:disabled \{[^}]*opacity: \.72;/,
+  'dark selection toolbar disabled actions must remain legible');
+assert.ok(css.indexOf('html[data-nexus-theme="dark"] .worktable-selection-bar') > css.indexOf('.worktable-selection-bar {'),
+  'dark selection overrides must follow and isolate the unchanged light-mode rules');
 assert.doesNotMatch(app, /SmartParser\.html|SMART_PARSER_WORKTABLE/,
   'SmartInput WorkTable must not depend on the misplaced SmartParser implementation');
 
