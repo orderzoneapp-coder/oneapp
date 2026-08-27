@@ -85,12 +85,6 @@ function dataOpsSituationRequireDeployment(properties) {
 }
 
 function dataOpsSituationRequireAuth(payload, requiredRole, properties) {
-  if (typeof oneappNexusGatewayRequire === 'function' && dataOpsSituationText(payload && payload.actorId) === 'NEXUS_GATEWAY'
-    && dataOpsSituationText(payload && payload.nexusRequest && payload.nexusRequest.contractVersion) === 'NEXUS_AUTH_V2') {
-    const access = /(PUBLISH|WRITE|COMMIT|RECONCILE|CORRECT|REVERSE)/.test(dataOpsSituationText(requiredRole).toUpperCase()) ? 'WRITE' : 'READ';
-    const gatewayAuth = oneappNexusGatewayRequire(payload, 'DATAOPS', access);
-    if (gatewayAuth) return { ...gatewayAuth, roleIds: [...new Set([...(gatewayAuth.roleIds || []), requiredRole])].sort() };
-  }
   const rawToken = dataOpsSituationText(payload && payload.token);
   const actorId = dataOpsSituationText(payload && payload.actorId);
   if (!rawToken || !actorId) throw new Error('DATAOPS_SITUATION_ACCESS_DENIED');

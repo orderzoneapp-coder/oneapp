@@ -62,15 +62,16 @@ assert.equal(envelope.cellCount, 11);
 assert.equal(envelope.hash, crypto.createHash('sha256').update(envelope.canonicalJson).digest('hex'));
 assert.match(dataOpsContext.DATAOPS_MERCH_STOCK_SYNC_MODULE.mapCommitError('DATAOPS_HASH_MISMATCH'), /스냅샷 검증 실패/, 'snapshot validation errors must remain explicit');
 let dataOpsCommitBody = null;
-dataOpsContext.ONEAPP_AUTH = {
-  ready: Promise.resolve(),
-  gateway: async (operationId, body) => {
-    dataOpsCommitBody = { operationId, ...structuredClone(body) };
-    return { revision: 'R1', hash: envelope.hash, rowCount: envelope.rowCount, cellCount: envelope.cellCount, basisDate: envelope.basisDate };
-  }
+dataOpsContext.fetch = async (_url, options) => {
+  dataOpsCommitBody = JSON.parse(options.body);
+  return {
+  ok: true,
+  status: 200,
+  json: async () => ({ status: 'success', data: { revision: 'R1', hash: envelope.hash, rowCount: envelope.rowCount, cellCount: envelope.cellCount, basisDate: envelope.basisDate } })
+  };
 };
 await dataOpsContext.DATAOPS_MERCH_STOCK_SYNC_MODULE.commit({ productData: rawRows, targetDateStr: '2026-08-04' });
-assert.equal(dataOpsCommitBody.operationId, 'dataops.snapshot.commit');
+assert.equal(dataOpsCommitBody.action, 'dataops_snapshot_commit');
 assert.equal(dataOpsCommitBody.snapshot.canonicalJson, envelope.canonicalJson, 'DataOps commit must preserve the canonical 11-column V1 payload');
 assert.equal(dataOpsCommitBody.snapshot.hash, envelope.hash);
 assert.equal(Object.prototype.hasOwnProperty.call(dataOpsCommitBody, 'token'), false, 'the legacy-compatible producer must not invent a credential field');
@@ -290,14 +291,6 @@ assert.notEqual(unicodeChunks[0].charCodeAt(unicodeChunks[0].length - 1), 0xD83D
 
 const post = payload => JSON.parse(serverContext.doPost({ postData: { contents: JSON.stringify(payload) } }).text);
 const get = action => JSON.parse(serverContext.doGet({ parameter: { action } }).text);
-const legacyFoundationToken = crypto.randomBytes(32).toString('hex');
-properties.set('ONEAPP_NEXUS_GATEWAY_FOUNDATION_BINDINGS_JSON', JSON.stringify([{
-  credentialId: 'TEST-FOUNDATION-WRITE', version: 'V2', tokenDigest: crypto.createHash('sha256').update(legacyFoundationToken).digest('hex'),
-  actorId: 'NEXUS_GATEWAY', roleIds: ['FOUNDATION_READ', 'FOUNDATION_WRITE', 'FOUNDATION_REPLACE'], allowedScope: { companyId: 'ONEAPP' },
-  status: 'ACTIVE', createdAt: '2026-08-01T00:00:00.000Z', activatedAt: '2026-08-01T00:00:00.000Z', retiredAt: ''
-}]));
-const legacyFoundation = payload => ({ ...payload, token: legacyFoundationToken, actorId: 'NEXUS_GATEWAY', scope: { companyId: 'ONEAPP' },
-  nexusRequest: { protocol: 'LEGACY_V1', requestId: 'TEST-LEGACY-1', subjectUserId: 'TEST', subjectLoginId: 'test' } });
 const canonicalRows = [
   ['BOX', '100', '상품A', '10kg', 3, '2026-08-03', '공급사A', 10000, '1', '', 2500],
   ['EA', '200', '상품B', '', 0, '', '', 0, '', '', 0],
@@ -306,7 +299,7 @@ const canonicalRows = [
 const makeSnapshot = (rows, basisDate = '2026-08-04') => {
   const canonicalJson = JSON.stringify({ schemaVersion: 'ONEAPP_DATAOPS_SNAPSHOT_V1', basisDate, columns: ['단위', '품목코드', '품명', '규격', '재고', '기록', '거래', '구매가', '기본', '적요', '행사가'], rows });
   return {
-    schemaVersion: 'ONEAPP_DATAOPS_SNAPSHOT_V1', basisDate,
+    schemaVersion: 'ONEAPP_DATAOPS_SNAPSHOT_V1', basisDate, savedAt: '2026-08-04T01:00:00.000Z',
     hashAlgorithm: 'SHA-256', hash: crypto.createHash('sha256').update(canonicalJson).digest('hex'),
     rowCount: rows.length, cellCount: rows.length * 11, canonicalJson
   };
@@ -324,10 +317,6 @@ assert.equal(post({ action: 'dataops_snapshot_commit', snapshot: badHashSnapshot
 const badCountSnapshot = makeSnapshot(canonicalRows);
 badCountSnapshot.cellCount--;
 assert.equal(post({ action: 'dataops_snapshot_commit', snapshot: badCountSnapshot }).status, 'error', 'cell count mismatch must be rejected');
-const forgedSavedAtSnapshot = makeSnapshot(canonicalRows);
-forgedSavedAtSnapshot.savedAt = '2026-08-04T01:00:00.000Z';
-assert.match(post({ action: 'dataops_snapshot_commit', snapshot: forgedSavedAtSnapshot }).message, /IMMUTABLE_FIELD/,
-  'browser-provided savedAt must be rejected instead of trusted');
 const firstCommit = post({ action: 'dataops_snapshot_commit', snapshot: makeSnapshot(canonicalRows) });
 assert.equal(firstCommit.status, 'success');
 assert.match(firstCommit.data.revision, /^DATAOPS-20260804-[0-9a-f]{16}$/);
@@ -339,23 +328,21 @@ assert.equal(firstRead.data.rowCount, firstCommit.data.rowCount, 'tokenless get 
 assert.equal(firstRead.data.cellCount, firstCommit.data.cellCount, 'tokenless get must return the committed cell count');
 assert.equal(firstRead.data.rows[1][10], 0, 'server must preserve explicit numeric promo zero');
 assert.equal(firstRead.data.rows[2][10], '', 'server must preserve blank promo independently from equivalent zero semantics');
-assert.equal(post({ action: 'initSync' }).status, 'error', 'direct anonymous initSync must be blocked');
-assert.equal(post(legacyFoundation({ action: 'initSync' })).status, 'success', 'authenticated LEGACY_V1 initSync remains available');
-assert.equal(post(legacyFoundation({ action: 'chunk_master', data: [{ 코드: 'M1', 품목명: '기존상품' }] })).status, 'success', 'authenticated legacy master action remains available');
-assert.equal(post(legacyFoundation({ action: 'chunk_history', data: [{ id: 'H1', action: 'legacy' }] })).status, 'success', 'authenticated legacy history action remains available');
+assert.equal(post({ action: 'initSync' }).status, 'success', 'legacy initSync action must remain available');
+assert.equal(post({ action: 'chunk_master', data: [{ 코드: 'M1', 품목명: '기존상품' }] }).status, 'success', 'legacy master action must remain available');
+assert.equal(post({ action: 'chunk_history', data: [{ id: 'H1', action: 'legacy' }] }).status, 'success', 'legacy history action must remain available');
 const legacyConfig = {
   schemaVersion: 'LEGACY_CONFIG',
   dict: { preserved: true },
   rules: [{ id: 'R1' }],
   appConfig: { cloudUrl: 'https://example.invalid' }
 };
-assert.equal(post(legacyFoundation({ action: 'config', data: legacyConfig })).status, 'success', 'authenticated legacy config action must remain available');
-assert.equal(get('master_only').status, 'error', 'anonymous Foundation doGet must remain blocked');
-const legacyMaster = post(legacyFoundation({ action: 'master_only' }));
+assert.equal(post({ action: 'config', data: legacyConfig }).status, 'success', 'legacy config action must remain available');
+const legacyMaster = get('master_only');
 assert.equal(legacyMaster.data.master.M1.품목명, '기존상품', 'legacy master data must remain readable');
-const legacyConfigRead = post(legacyFoundation({ action: 'config_only' }));
+const legacyConfigRead = get('config_only');
 assert.deepEqual(legacyConfigRead.data.dict, { preserved: true }, 'legacy config data must remain readable');
-const legacyFull = post(legacyFoundation({ action: 'full' }));
+const legacyFull = get('full');
 assert.equal(legacyFull.data.history[0].id, 'H1', 'legacy history data must remain readable');
 assert.equal(legacyFull.data.appConfig.cloudUrl, 'https://example.invalid', 'legacy full response contract must remain readable');
 const readAfterLegacySync = post({ action: 'dataops_snapshot_get', token: 'legacy-ignored' });

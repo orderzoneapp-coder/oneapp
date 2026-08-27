@@ -11,7 +11,6 @@ const codeSource = fs.readFileSync(path.join(rootDir, "code.gs"), "utf8");
 
 const SHIPPING_TOKEN = "shipping-token";
 const DATAOPS_TOKEN = "dataops-token";
-const FOUNDATION_TOKEN = crypto.randomBytes(32).toString("hex");
 const SHIPPING_FORMAT = "ONEAPP_SHIPPING_PURCHASE_PLAN_V1";
 const WORKSPACE_SCHEMA = "shipping-workspace/v2";
 const PLAN_FINGERPRINT = "a".repeat(64);
@@ -245,6 +244,7 @@ function buildDataOpsSnapshot() {
   return {
     schemaVersion: "ONEAPP_DATAOPS_SNAPSHOT_V1",
     basisDate: "2026-08-04",
+    savedAt: "2026-08-04T01:00:00.000Z",
     hashAlgorithm: "SHA-256",
     hash: crypto.createHash("sha256").update(canonicalJson, "utf8").digest("hex"),
     rowCount: rows.length,
@@ -256,18 +256,6 @@ function buildDataOpsSnapshot() {
 const spreadsheet = new MockSpreadsheet();
 const properties = new Map([
   ["ONEAPP_SHIPPING_PLAN_ACCESS_TOKEN", SHIPPING_TOKEN],
-  ["ONEAPP_NEXUS_GATEWAY_FOUNDATION_BINDINGS_JSON", JSON.stringify([{
-    credentialId: "TEST-FOUNDATION-WRITE",
-    version: "V2",
-    tokenDigest: crypto.createHash("sha256").update(FOUNDATION_TOKEN).digest("hex"),
-    actorId: "NEXUS_GATEWAY",
-    roleIds: ["FOUNDATION_READ", "FOUNDATION_WRITE", "FOUNDATION_REPLACE"],
-    allowedScope: { companyId: "ONEAPP" },
-    status: "ACTIVE",
-    createdAt: "2026-08-01T00:00:00.000Z",
-    activatedAt: "2026-08-01T00:00:00.000Z",
-    retiredAt: "",
-  }])],
 ]);
 let uuidCounter = 0;
 const context = vm.createContext({
@@ -313,21 +301,6 @@ function post(payload) {
 
 function shippingPost(action, extra = {}) {
   return post({ action, token: SHIPPING_TOKEN, ...extra });
-}
-
-function legacyFoundation(payload) {
-  return {
-    ...payload,
-    token: FOUNDATION_TOKEN,
-    actorId: "NEXUS_GATEWAY",
-    scope: { companyId: "ONEAPP" },
-    nexusRequest: {
-      protocol: "LEGACY_V1",
-      requestId: `TEST-LEGACY-${payload.action}`,
-      subjectUserId: "TEST",
-      subjectLoginId: "test",
-    },
-  };
 }
 
 function shippingList() {
@@ -467,9 +440,6 @@ const shippingStateBeforeSharedActions = JSON.stringify({
   history: historySheet.snapshot(),
 });
 const dataOpsSnapshot = buildDataOpsSnapshot();
-const forgedDataOpsSnapshot = { ...dataOpsSnapshot, revision: "FORGED" };
-assert.match(post({ action: "dataops_snapshot_commit", snapshot: forgedDataOpsSnapshot }).message, /IMMUTABLE_FIELD/,
-  "DataOps revision must remain server-generated even on the shared legacy route");
 const dataOpsCommit = post({ action: "dataops_snapshot_commit", snapshot: dataOpsSnapshot });
 assert.equal(dataOpsCommit.status, "success", dataOpsCommit.message);
 const dataOpsLegacyCommit = post({ action: "dataops_snapshot_commit", token: SHIPPING_TOKEN, snapshot: dataOpsSnapshot });
@@ -485,14 +455,13 @@ assert.equal(
   shippingStateBeforeSharedActions,
   "DataOps tokenless commit/get must not mutate Shipping plan history or index",
 );
-assert.equal(post({ action: "initSync" }).status, "error", "anonymous Foundation replacement must be blocked");
 for (const payload of [
   { action: "initSync" },
   { action: "chunk_master", data: [{ 코드: "M001", 품명: "마스터" }] },
   { action: "chunk_history", data: [{ action: "history" }] },
   { action: "config", data: { schemaVersion: "shared-config-test" } },
 ]) {
-  const response = post(legacyFoundation(payload));
+  const response = post(payload);
   assert.equal(response.status, "success", `${payload.action}: ${response.message}`);
 }
 assert.equal(

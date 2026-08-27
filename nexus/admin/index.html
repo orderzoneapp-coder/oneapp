@@ -4,9 +4,9 @@
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow">
   <title>NEXUS 마스터 관리</title>
   <link rel="icon" type="image/png" href="../assets/nexus-favicon.png">
-  <link rel="stylesheet" href="../common/nexus-auth.css?v=2.0.0">
-  <script src="../common/nexus-auth-config.js?v=2.0.0"></script>
-  <script src="../common/nexus-auth.js?v=2.0.0"></script>
+  <link rel="stylesheet" href="../common/nexus-auth.css?v=1.0.0">
+  <script src="../common/nexus-auth-config.js?v=1.0.0"></script>
+  <script src="../common/nexus-auth.js?v=1.0.0"></script>
   <script src="../common/apps-config.js?v=1.4.0"></script>
   <script src="../common/nexus-top.js?v=1.6.1"></script>
   <script src="./admin.js?v=1.0.0" defer></script>
@@ -52,8 +52,16 @@
         </section>
 
         <section class="admin-panel" data-panel="services" hidden>
-          <div class="admin-panel-head"><div><h2>업무 서버 연결</h2><p>이 화면은 연결 여부만 표시합니다. 원문 자격증명은 승인된 배포 절차에서 서버 Script Properties에만 설정합니다.</p></div></div>
+          <div class="admin-panel-head"><div><h2>업무 서버 연결</h2><p>값은 서버 Script Properties에만 저장되며 브라우저로 다시 반환되지 않습니다.</p></div></div>
           <div id="serviceStatus" class="connection-strip"></div>
+          <form id="servicesForm"><div class="admin-form-grid">
+            <label class="admin-field full"><span>기존 ONEAPP Apps Script URL</span><input id="serviceUpstream" class="admin-input" placeholder="비워두면 현재 운영 URL 유지"></label>
+            <label class="admin-field"><span>DataOps 읽기 토큰</span><input id="serviceDataOpsRead" type="password" class="admin-input" autocomplete="off" placeholder="변경할 때만 입력"></label>
+            <label class="admin-field"><span>DataOps 쓰기 토큰</span><input id="serviceDataOpsWrite" type="password" class="admin-input" autocomplete="off" placeholder="변경할 때만 입력"></label>
+            <label class="admin-field"><span>DataOps V2 발행 토큰</span><input id="serviceDataOpsPublish" type="password" class="admin-input" autocomplete="off" placeholder="선택 기능"></label>
+            <label class="admin-field"><span>ORDER Q 토큰</span><input id="serviceOrderQ" type="password" class="admin-input" autocomplete="off" placeholder="변경할 때만 입력"></label>
+            <label class="admin-field"><span>Shipping 발주계획 토큰</span><input id="serviceShipping" type="password" class="admin-input" autocomplete="off" placeholder="변경할 때만 입력"></label>
+          </div><div id="servicesMessage" class="auth-message"></div><button class="admin-button primary" type="submit">서버 연결 저장</button></form>
         </section>
 
         <section class="admin-panel" data-panel="audit" hidden>

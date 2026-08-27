@@ -80,7 +80,9 @@ function parseConfig() {
     }
   }
   const value = JSON.parse(sessionStorage.getItem(CONFIG_KEY) || 'null');
-  if (!value) throw new Error('테스트 연결정보가 없습니다. 전달받은 TEST 시작 링크를 다시 여세요.');
+  if (!value || !/^https:\/\/script\.google\.com\/macros\/s\/.+\/exec$/.test(text(value.cloudUrl)) || !text(value.accessToken)) {
+    throw new Error('테스트 연결정보가 없습니다. 전달받은 TEST 시작 링크를 다시 여세요.');
+  }
   validateAdminTestBuildId(value.buildId);
   const profile = text(new URLSearchParams(location.search).get('profile') || value.profile || 'A').toUpperCase();
   if (!['A', 'B'].includes(profile)) throw new Error('테스트 프로필이 올바르지 않습니다.');
@@ -169,6 +171,8 @@ function assertWriter() {
 }
 
 async function connect() {
+  cloud.setCloudUrl(config.cloudUrl, false);
+  cloud.setCloudAccessToken(config.accessToken, false);
   const ping = await cloud.pingCentralAuthority();
   if (config.profile === 'A') setLocalPilot();
   await gateway.pullCentralOfficialState();

@@ -48,8 +48,7 @@ assert.match(adapter, /merchCloudUrl_v870/, 'legacy cloud URL fallback must rema
 for (const action of ['orderq_sync_push', 'orderq_sync_pull', 'orderq_order_head']) {
   assert.ok(adapter.includes(`'${action}'`), `client adapter missing ${action}`);
 }
-assert.match(adapter, /ONEAPP_AUTH\.gateway\(operationId, body/, 'ORDER Q must use the NEXUS V2 operation gateway');
-assert.doesNotMatch(adapter, /Content-Type': 'text\/plain;charset=utf-8'|token:\s*getCloudAccessToken\(\)/, 'browser must not build an upstream credential envelope');
+assert.match(adapter, /Content-Type': 'text\/plain;charset=utf-8'/, 'Apps Script POST should avoid unnecessary CORS preflight');
 
 assert.match(intake, /baseRevision/, 'sync queue must retain baseRevision');
 assert.doesNotMatch(intake, /customerStore\.add\(customer\)/, 'direct order entry must not create a customer implicitly');

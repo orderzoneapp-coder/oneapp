@@ -1,15 +1,16 @@
 import { validateFrozenSession, validatePageManifest } from './situation-read-token.js?v=0.1.0';
 
-const requiredCredential = () => {
-  if (!globalThis.ONEAPP_AUTH?.gateway) throw new Error('DATAOPS_SITUATION_ACCESS_DENIED');
-  return true;
+const requiredCredential = credential => {
+  if (!credential?.token || !credential?.actorId || !credential?.scope?.companyId) throw new Error('DATAOPS_SITUATION_ACCESS_DENIED');
+  return credential;
 };
 async function post(url, action, credential, body={}) {
-  requiredCredential();
-  const operations={situation_dataops_ping:'dataops.situation.ping',situation_dataops_begin:'dataops.situation.begin',situation_dataops_page:'dataops.situation.page',situation_dataops_head:'dataops.situation.head'};
-  if(!operations[action])throw new Error('DATAOPS_SITUATION_READ_ACTION_FORBIDDEN');
-  await globalThis.ONEAPP_AUTH.ready;
-  return globalThis.ONEAPP_AUTH.gateway(operations[action],body);
+  requiredCredential(credential);
+  if (!['situation_dataops_ping','situation_dataops_begin','situation_dataops_page','situation_dataops_head'].includes(action)) throw new Error('DATAOPS_SITUATION_READ_ACTION_FORBIDDEN');
+  const response=await fetch(url,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action,...body,...credential,scope:credential.scope})});
+  const json=await response.json();
+  if (!response.ok || json?.status !== 'success' || json.action !== action) throw new Error(String(json?.message||'DATAOPS_SITUATION_READ_FAILED'));
+  return json.data;
 }
 export async function beginDataOpsFrozenRead({url,credential,businessDate,now=Date.now()}) {
   return validateFrozenSession(await post(url,'situation_dataops_begin',credential,{businessDate}),'DATAOPS',now);
