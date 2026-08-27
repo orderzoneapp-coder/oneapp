@@ -702,6 +702,17 @@
   }
 
   function normalizeModeDraft(mode, input = {}, fallback = createModeDraft(mode)) {
+    const inputTemplate = input.inputTemplate && typeof input.inputTemplate === 'object'
+      ? {
+          sessionMode: ['CREATE_TEMPLATE', 'FILL_EXISTING_TEMPLATE'].includes(input.inputTemplate.sessionMode)
+            ? input.inputTemplate.sessionMode
+            : '',
+          templateId: text(input.inputTemplate.templateId),
+          templateName: text(input.inputTemplate.templateName),
+          templateRevision: Number(input.inputTemplate.templateRevision || 0),
+          templateStructureHash: text(input.inputTemplate.templateStructureHash)
+        }
+      : null;
     return {
       documentId: text(input.documentId) || fallback.documentId,
       catalogRecordId: text(input.catalogRecordId),
@@ -717,6 +728,7 @@
       activeMethod: INPUT_METHODS.some(method => method.id === input.activeMethod) ? input.activeMethod : 'text',
       batches: Array.isArray(input.batches) ? input.batches.map(batch => ({ ...batch, rawText: String(batch.rawText ?? '') })) : [],
       rows: Array.isArray(input.rows) ? input.rows.map(row => normalizeRow(row)) : [],
+      inputTemplate,
       voucherGroups: Array.isArray(input.voucherGroups) ? input.voucherGroups.map(group => ({ ...group })) : [],
       purchaseSubmissions: Array.isArray(input.purchaseSubmissions) ? input.purchaseSubmissions.map(pointer => ({
         purchaseDocumentId: text(pointer.purchaseDocumentId),
@@ -772,6 +784,13 @@
       ocrConfidence: numberOrNull(input.ocrConfidence),
       ocrVariant: text(input.ocrVariant),
       ocrTotals: input.ocrTotals && typeof input.ocrTotals === 'object' ? { ...input.ocrTotals } : null,
+      templateId: text(input.templateId),
+      templateRevision: Number(input.templateRevision || 0),
+      templateStructureHash: text(input.templateStructureHash),
+      importContentHash: text(input.importContentHash),
+      mappingDigest: text(input.mappingDigest),
+      importSourceKind: ['FILE', 'CLIPBOARD'].includes(input.importSourceKind) ? input.importSourceKind : '',
+      importIdempotencyKey: text(input.importIdempotencyKey),
       createdAt: new Date(input.now || Date.now()).toISOString()
     };
   }

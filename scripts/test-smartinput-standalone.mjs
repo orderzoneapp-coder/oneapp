@@ -45,6 +45,12 @@ const css = read('smartinput/smartinput.css');
 const readme = read('smartinput/README.md');
 const architecture = read('APP_ARCHITECTURE.md');
 const manifest = JSON.parse(read('app-manifest.json'));
+const functionBlock = (source, name, nextName) => {
+  const start = source.indexOf(`function ${name}`);
+  const end = source.indexOf(`function ${nextName}`, start + 1);
+  assert.ok(start >= 0 && end > start, `${name} function block missing`);
+  return source.slice(start, end);
+};
 
 const orderFixtures = [
   { estimateId: 'EST-A', catalogName: 'A', sortOrder: 1, createdAt: '2026-01-01T00:00:00.000Z', draft: { rows: [{ itemCode: 'A' }] } },
@@ -1149,9 +1155,27 @@ const erpSheetAppendAt = appSource.indexOf("'ERP업데이트'");
 assert.ok(errorSheetAppendAt >= 0 && errorSheetAppendAt < shopSheetAppendAt && shopSheetAppendAt < erpSheetAppendAt,
   'Excel 시트는 오류정보, 쇼핑몰업로드, ERP업데이트 순서여야 한다.');
 assert.doesNotMatch(appSource, /if \(!output\.ok\)/, '오류 정보로 Excel 생성을 차단하면 안 된다.');
-assert.match(html, /smartinput-contract\.js\?v=0\.4\.16/);
-assert.match(html, /smartinput\.js\?v=0\.4\.43/);
-assert.match(appSource, /structured-sheet-parser\.js\?v=0\.1\.1/);
+assert.match(html, /smartinput-contract\.js\?v=0\.4\.17/);
+assert.match(html, /smartinput\.css\?v=0\.5\.0/);
+assert.match(html, /smartinput\.js\?v=0\.5\.0/);
+assert.match(appSource, /structured-sheet-parser\.js\?v=0\.2\.0/);
+assert.match(appSource, /grid-clipboard\.js\?v=0\.2\.0/);
+assert.match(appSource, /smartinput-data-store\.js\?v=0\.4\.0/);
+assert.match(appSource, /input-template-core\.js\?v=1\.0\.0/);
+assert.match(appSource, /input-template-draft-adapter\.js\?v=1\.0\.0/);
+assert.match(html, /id="inputTemplateFieldSearch"[^>]*type="search"/);
+assert.match(appSource, /inputTemplateFieldSearch[\s\S]*renderTemplateMappings/);
+const existingTemplateSelectionSource = functionBlock(appSource, 'selectExistingInputTemplate', 'releaseInputTemplate');
+assert.doesNotMatch(existingTemplateSelectionSource, /createInputTemplate|updateInputTemplateStructure|saveSettings/,
+  'selecting an existing template must not issue any structure write');
+const persistTemplateStructureSource = functionBlock(appSource, 'persistTemplateStructure', 'queueTemplateStructureSave');
+assert.match(persistTemplateStructureSource,
+  /session\.sessionMode !== TEMPLATE_SESSION_MODES\.CREATE[\s\S]*updateInputTemplateStructure/,
+  'template structure persistence must be gated to CREATE_TEMPLATE before the store call');
+const applyInputTemplateSource = functionBlock(appSource, 'applyInputTemplateData', 'loadDraft');
+assert.doesNotMatch(applyInputTemplateSource,
+  /createInputTemplate|updateInputTemplateStructure|saveSettings|createOrder|postPurchaseGroup|postSaleGroup|updateEstimateAtomically/,
+  'template data input must update draft values only and must not call structure or official voucher writers');
 assert.match(appSource, /estimate-output\.js\?v=0\.1\.4/);
 assert.match(appSource, /const sourceRows = selectedRecords\.length \? combinedEstimateRows\(selectedRecords\) : modeDraft\(\)\.rows/,
   'Excel export must combine only the selected estimate product sets');
@@ -1188,6 +1212,14 @@ assert.equal(app.status, 'pilot');
 assert.ok(app.sharedContracts.includes('nexus-header'), 'SmartInput must display the existing NEXUS header');
 assert.ok(app.sharedContracts.includes('orderq-vnext-sync'));
 assert.ok(app.sharedContracts.includes('product-master'));
+assert.ok(app.sharedContracts.includes('smartinput-local-data'));
+const smartInputLocalData = manifest.sharedDataContracts.find(item => item.id === 'smartinput-local-data');
+assert.equal(smartInputLocalData.schemaVersion, 'ONEAPP_SMARTINPUT_LOCAL_V4');
+assert.equal(smartInputLocalData.resources.indexedDb.version, 4);
+assert.deepEqual(smartInputLocalData.resources.indexedDb.stores, [
+  'settings', 'customerLinkGroups', 'temporaryCustomers', 'customerAliasMappings',
+  'estimates', 'sourceImages', 'inputTemplates'
+]);
 const orderLedger = manifest.sharedDataContracts.find(item => item.id === 'orderq-vnext-sync');
 assert.ok(orderLedger.consumers.includes('smartinput/index.html'));
 assert.ok(orderLedger.consumers.includes('orders.html'), 'ORDER Q shipment must be registered as a read-only ledger consumer');
@@ -1201,5 +1233,7 @@ assert.match(architecture, /tapping the order-status card before analysis invoke
 assert.match(architecture, /does not create a second order store, mutate the ledger, or trigger cloud synchronization/);
 assert.match(architecture, /Customer linking is relational, never canonical merging/);
 assert.match(architecture, /same-day cutoff/);
+assert.match(architecture, /IndexedDB `oneapp-smartinput` v4/);
+assert.match(architecture, /Existing-template imports are structurally read-only/);
 
 console.log('SmartInput standalone contract PASS');

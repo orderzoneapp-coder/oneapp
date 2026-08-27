@@ -9,7 +9,7 @@
   <link rel="icon" type="image/png" href="../nexus/assets/nexus-favicon.png">
   <script src="../nexus/common/nexus-theme-init.js?v=1.0.0"></script>
   <link rel="stylesheet" href="../orderq/customer-master.css?v=0.12.1" data-customer-picker-style>
-  <link rel="stylesheet" href="./smartinput.css?v=0.4.36">
+  <link rel="stylesheet" href="./smartinput.css?v=0.5.0">
   <script src="../nexus/common/nexus-auth-config.js?v=2.0.1"></script>
   <script src="../nexus/common/nexus-auth.js?v=2.1.0"></script>
   <script src="../nexus/common/apps-config.js?v=1.4.0"></script>
@@ -76,6 +76,49 @@
             <span class="activity-trail__current" id="activityCurrent" hidden><i aria-hidden="true"></i><strong id="activityCurrentText"></strong></span><ol id="activityItems" aria-label="누적 입력현황"></ol>
           </div>
         </div>
+        <section class="input-template-bar" id="inputTemplateBar" aria-label="Excel 입력 양식">
+          <div class="input-template-bar__status">
+            <span>Excel 입력 양식</span>
+            <strong id="inputTemplateStatus">양식 없음</strong>
+          </div>
+          <div class="input-template-bar__actions" role="toolbar" aria-label="양식 작업">
+            <button class="button button--quiet button--small" id="createTemplateButton" type="button">새 작업</button>
+            <button class="button button--quiet button--small" id="existingTemplateButton" type="button">기존 양식</button>
+            <label class="input-template-name" id="inputTemplateNameField" hidden><span class="sr-only">양식명</span><input id="inputTemplateName" type="text" maxlength="80" placeholder="양식명 입력"></label>
+            <label class="input-template-select" id="inputTemplateSelectField" hidden><span class="sr-only">기존 양식 선택</span><select id="inputTemplateSelect"><option value="">기존 양식 선택</option></select></label>
+            <button class="button button--quiet button--small" id="templateFileButton" type="button" disabled>Excel 불러오기</button>
+            <button class="button button--quiet button--small" id="templatePasteButton" type="button" disabled>Excel 붙여넣기</button>
+            <button class="button button--quiet button--small" id="releaseTemplateButton" type="button" disabled>양식 해제</button>
+          </div>
+        </section>
+        <section class="input-template-panel" id="inputTemplatePanel" aria-label="Excel 열 분석과 매핑" hidden>
+          <header class="input-template-panel__header">
+            <div><strong>Excel 열 분석</strong><span id="inputTemplateSourceSummary">자료를 선택하세요.</span></div>
+            <div>
+              <label>시트<select id="inputTemplateSheet"></select></label>
+              <label>헤더 행<input id="inputTemplateHeaderRow" type="number" min="1" max="80" value="1"></label>
+              <button class="button button--quiet button--small" id="closeInputTemplatePanel" type="button" aria-label="열 분석 닫기">닫기</button>
+            </div>
+          </header>
+          <div class="input-template-result" id="inputTemplateResult" role="status" aria-live="polite"></div>
+          <label class="input-template-field-search"><span>표준 필드 검색</span><input id="inputTemplateFieldSearch" type="search" placeholder="필드명 또는 fieldKey"></label>
+          <div class="input-template-mapping-scroll">
+            <table class="input-template-mapping-table">
+              <thead><tr><th>Excel 열</th><th>표본값</th><th>SmartInput 표준 필드</th><th>매핑 결과</th></tr></thead>
+              <tbody id="inputTemplateMappings"></tbody>
+            </table>
+          </div>
+          <section class="input-template-columns" id="inputTemplateColumns" hidden>
+            <header><strong>테이블 필드명·순서</strong><span>표시명만 바뀌며 저장 의미는 fieldKey로 유지됩니다.</span></header>
+            <ol id="inputTemplateColumnList"></ol>
+          </section>
+          <footer class="input-template-panel__footer">
+            <span id="inputTemplateError" role="alert"></span>
+            <button class="button button--quiet button--small" id="copySystemTemplateButton" type="button" hidden>새 작업으로 복사</button>
+            <button class="button button--quiet button--small" id="saveInputTemplateButton" type="button">양식 저장</button>
+            <button class="button button--primary button--small" id="applyInputTemplateButton" type="button" disabled>데이터 입력</button>
+          </footer>
+        </section>
         <div class="parser-input-row">
           <div class="source-editor" id="sourceEditor">
             <div class="source-editor__body">
@@ -236,7 +279,7 @@
   </main>
 
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
-  <script src="./smartinput-contract.js?v=0.4.16"></script>
-  <script type="module" src="./smartinput.js?v=0.4.43"></script>
+  <script src="./smartinput-contract.js?v=0.4.17"></script>
+  <script type="module" src="./smartinput.js?v=0.5.0"></script>
 </body>
 </html>

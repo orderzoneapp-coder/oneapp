@@ -10,8 +10,14 @@ import { createLiveCustomer, ensureCustomerMasterReady, listCustomers } from '..
 import { isSelectableMasterProduct, loadProductCatalog, searchProductCatalog } from '../orderq/product-master-search.js?v=0.8.5';
 import { loadWarehouseCatalog, matchWarehouseInput, warehouseDisplayName } from '../orderq/warehouse-master.js?v=0.8.0';
 import { recognizeOcrDocument, verifiedRowsToParserLines } from './ocr-document-parser.js?v=0.1.1';
-import { parseStructuredSheet } from './structured-sheet-parser.js?v=0.1.1';
-import { buildGridPastePlan } from './grid-clipboard.js?v=0.1.0';
+import {
+  analyzeImportMatrices,
+  clipboardToImportMatrix,
+  parseMappedMatrix,
+  parseStructuredSheet,
+  workbookToImportMatrices
+} from './structured-sheet-parser.js?v=0.2.0';
+import { buildGridPastePlan } from './grid-clipboard.js?v=0.2.0';
 import {
   calculateColumnHide,
   createSelection,
@@ -59,9 +65,11 @@ import {
   KAKAO_NOTICE_ROWS_PER_PAGE
 } from './estimate-output.js?v=0.1.4';
 import {
+  createInputTemplate,
   createRecordId,
   createEstimateAtomically,
   deleteEstimateAtomically,
+  getInputTemplate,
   loadSmartInputData,
   normalizeAliasName,
   renameEstimateAtomically,
@@ -71,8 +79,20 @@ import {
   saveSettings,
   saveSourceImage,
   saveTemporaryCustomer,
+  updateInputTemplateStructure,
   updateEstimateAtomically
-} from './smartinput-data-store.js?v=0.3.4';
+} from './smartinput-data-store.js?v=0.4.0';
+import {
+  TEMPLATE_SESSION_MODES,
+  buildImportIdempotencyKey,
+  buildTemplateFieldRegistry,
+  mappingDigest,
+  normalizeInputTemplate,
+  systemInputTemplate,
+  templateColumnsFromMappings,
+  validateTemplateMappings
+} from './input-template-core.js?v=1.0.0';
+import { replaceLiveTemplateImport } from './input-template-draft-adapter.js?v=1.0.0';
 import {
   normalizeEstimateOrder,
   reorderEstimateRecords
@@ -111,6 +131,7 @@ const state = {
   temporaryCustomers: [],
   aliasMappings: [],
   estimates: [],
+  inputTemplates: [],
   noticeEstimateIds: [],
   smartDataReady: false,
   pendingImageEvidence: null,
@@ -118,6 +139,24 @@ const state = {
   pendingOcrReview: null,
   pendingSourceName: '',
   pendingStructuredImport: null,
+  templateSession: {
+    sessionMode: '',
+    template: null,
+    frozenRecordBytes: '',
+    templateName: '',
+    matrices: [],
+    analysis: null,
+    selectedCandidate: null,
+    draftMappings: [],
+    columns: [],
+    sessionColumns: null,
+    preview: null,
+    pasteArmed: false,
+    purchaseMetaRows: null,
+    salesMetaRows: null,
+    structureSaveTimer: null,
+    structureSavePromise: null
+  },
   gridSearch: '',
   sourceImages: { order: null, purchase: null, sale: null, estimate: null },
   sourceImageRecords: new Map(),
@@ -188,6 +227,670 @@ function esc(value) {
   return String(value ?? '').replace(/[&<>"']/g, character => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
   }[character]));
+}
+
+function emptyTemplateSession() {
+  return {
+    sessionMode: '', template: null, copySourceTemplate: null, frozenRecordBytes: '', templateName: '', matrices: [],
+    analysis: null, selectedCandidate: null, candidateConfirmed: true, draftMappings: [], columns: [], sessionColumns: null,
+    columnWidths: {}, preview: null, pasteArmed: false, purchaseMetaRows: null, salesMetaRows: null,
+    structureSaveTimer: null, structureSavePromise: null
+  };
+}
+
+function templateFieldRegistry(mode = state.draft.activeMode) {
+  return buildTemplateFieldRegistry(
+    mode,
+    structuredFieldsForMode(mode, contract.PRODUCT_FIELD_DEFINITIONS),
+    (state.settings.customFields || []).filter(field => field.scope === 'voucher').map(field => ({ ...field, custom: true }))
+  );
+}
+
+function templatesForMode(mode = state.draft.activeMode) {
+  const system = systemInputTemplate(mode, templateFieldRegistry(mode));
+  return [system, ...state.inputTemplates.filter(template => template.mode === mode && template.status === 'ACTIVE')];
+}
+
+function activeTemplateSession() {
+  return state.templateSession?.sessionMode ? state.templateSession : null;
+}
+
+function activeTemplateColumns() {
+  const session = activeTemplateSession();
+  if (!session) return null;
+  return (session.sessionColumns || session.columns || session.template?.columns || [])
+    .map((column, index) => ({ ...column, order: Number.isFinite(Number(column.order)) ? Number(column.order) : index }))
+    .sort((left, right) => left.order - right.order);
+}
+
+function templateColumnDefinition(field) {
+  const column = activeTemplateColumns()?.find(item => item.fieldKey === field.id);
+  return column ? { ...field, label: column.displayLabel || field.label } : field;
+}
+
+function templateMappingRecords() {
+  const session = activeTemplateSession();
+  if (!session) return [];
+  if (session.sessionMode === TEMPLATE_SESSION_MODES.FILL) return session.selectedCandidate?.mappingPlan?.mappings || [];
+  const registry = new Map(templateFieldRegistry().map(field => [field.fieldKey, field]));
+  return (session.draftMappings || []).filter(mapping => mapping.targetFieldKey).map(mapping => {
+    const field = registry.get(mapping.targetFieldKey) || {};
+    return {
+      sourceHeader: mapping.sourceHeader,
+      normalizedSourceHeader: mapping.normalizedSourceHeader,
+      sourceAliases: mapping.sourceAliases || [],
+      targetFieldKey: mapping.targetFieldKey,
+      valueType: field.valueType || mapping.valueType || 'TEXT',
+      ...(field.requiredRole ? { requiredRole: field.requiredRole } : {})
+    };
+  });
+}
+
+function templateErrorText(code) {
+  return ({
+    TEMPLATE_NAME_REQUIRED: '양식명을 입력하세요.',
+    TEMPLATE_NAME_DUPLICATE: '같은 전표에 동일한 양식명이 있습니다.',
+    TEMPLATE_STRUCTURE_LOCKED: '기존 양식에서는 구조를 저장할 수 없습니다.',
+    TEMPLATE_REVISION_CONFLICT: '양식 revision이 변경되었습니다. 양식을 다시 선택하세요.',
+    IMPORT_HEADER_NOT_FOUND: '표의 헤더를 찾지 못했습니다. 시트와 헤더 행을 확인하세요.',
+    DUPLICATE_SOURCE_HEADER: '같은 Excel 열 제목이 중복되어 있습니다.',
+    DUPLICATE_TARGET_FIELD: '하나의 표준 필드에 여러 열을 연결할 수 없습니다.',
+    ITEM_IDENTITY_MISSING: '품목코드 또는 품목명 열을 하나 이상 연결하세요.'
+  }[code] || code || '양식 입력을 확인하세요.');
+}
+
+function setTemplateError(code = '') {
+  $('inputTemplateError').textContent = code ? templateErrorText(code) : '';
+}
+
+function renderTemplateSelectOptions() {
+  const select = $('inputTemplateSelect');
+  const currentId = state.templateSession.template?.templateId || '';
+  select.innerHTML = '<option value="">기존 양식 선택</option>' + templatesForMode().map(template => (
+    `<option value="${esc(template.templateId)}" ${template.templateId === currentId ? 'selected' : ''}>${esc(template.name)} · r${template.revision}${template.system ? ' · 기본' : ''}</option>`
+  )).join('');
+}
+
+function renderInputTemplateBar() {
+  const session = activeTemplateSession();
+  const createMode = session?.sessionMode === TEMPLATE_SESSION_MODES.CREATE;
+  const fillMode = session?.sessionMode === TEMPLATE_SESSION_MODES.FILL;
+  $('inputTemplateStatus').textContent = !session
+    ? '양식 없음'
+    : (createMode
+      ? (session.template ? `새 양식 · ${session.template.name} · r${session.template.revision}` : '새 양식 작성 중')
+      : `기존 양식 · ${session.template?.name || '선택'} · r${session.template?.revision || 0}`);
+  $('inputTemplateNameField').hidden = !createMode;
+  $('inputTemplateSelectField').hidden = !fillMode;
+  const templateName = createMode ? session.templateName : '';
+  if ($('inputTemplateName').value !== templateName) $('inputTemplateName').value = templateName;
+  renderTemplateSelectOptions();
+  const sourceReady = createMode ? Boolean(session.templateName.trim()) : Boolean(session.template);
+  $('templateFileButton').disabled = !sourceReady;
+  $('templatePasteButton').disabled = !sourceReady;
+  $('releaseTemplateButton').disabled = !session;
+  $('inputTemplateBar').classList.toggle('is-paste-armed', Boolean(session?.pasteArmed));
+  $('createTemplateButton').setAttribute('aria-pressed', String(createMode));
+  $('existingTemplateButton').setAttribute('aria-pressed', String(fillMode));
+}
+
+function templateFieldOptions(selectedKey = '') {
+  const query = String($('inputTemplateFieldSearch')?.value || '').normalize('NFKC').trim().toLowerCase();
+  const groups = [
+    ['CUSTOMER', '거래처'], ['VOUCHER', '전표'], ['PRODUCT', '품목'],
+    ['QUANTITY_PRICE', '수량·단가'], ['ETC', '기타']
+  ];
+  return '<option value="">미매핑</option>' + groups.map(([category, label]) => {
+    const options = templateFieldRegistry().filter(field => field.category === category
+      && field.editable !== false
+      && (!query || field.fieldKey === selectedKey
+        || `${field.label} ${field.fieldKey} ${(field.aliases || []).join(' ')}`.toLowerCase().includes(query))).map(field => (
+      `<option value="${esc(field.fieldKey)}" ${field.fieldKey === selectedKey ? 'selected' : ''}>${esc(field.label)} · ${esc(field.fieldKey)}</option>`
+    )).join('');
+    return options ? `<optgroup label="${esc(label)}">${options}</optgroup>` : '';
+  }).join('');
+}
+
+function renderTemplateMappings() {
+  const session = activeTemplateSession();
+  const candidate = session?.selectedCandidate;
+  if (!session || !candidate) { $('inputTemplateMappings').innerHTML = ''; return; }
+  const headers = candidate.importMatrix.matrix[candidate.headerRowIndex] || [];
+  const samples = headers.map((_, columnIndex) => candidate.importMatrix.matrix.slice(candidate.headerRowIndex + 1)
+    .map(row => String(row?.[columnIndex] ?? '').trim()).filter(Boolean).slice(0, 3).join(' · '));
+  const sourceMappings = session.sessionMode === TEMPLATE_SESSION_MODES.CREATE
+    ? session.draftMappings
+    : headers.map((sourceHeader, columnIndex) => {
+        const mapping = candidate.mappingPlan.mappings.find(item => item.columnIndex === columnIndex);
+        return { columnIndex, sourceHeader, targetFieldKey: mapping?.targetFieldKey || '', recommendation: mapping ? 'EXACT' : 'UNMAPPED' };
+      });
+  $('inputTemplateMappings').innerHTML = sourceMappings.map(mapping => {
+    const status = mapping.targetFieldKey ? (mapping.recommendation === 'EXACT' ? '정확 일치' : '확정') : '미매핑';
+    return `<tr data-template-column-index="${mapping.columnIndex}">
+      <td><strong>${esc(mapping.sourceHeader || `열 ${mapping.columnIndex + 1}`)}</strong></td>
+      <td title="${esc(samples[mapping.columnIndex])}">${esc(samples[mapping.columnIndex] || '공란')}</td>
+      <td><select data-template-map ${session.sessionMode === TEMPLATE_SESSION_MODES.FILL || session.template ? 'disabled' : ''}>${templateFieldOptions(mapping.targetFieldKey)}</select></td>
+      <td><span class="template-map-status template-map-status--${mapping.targetFieldKey ? 'mapped' : 'unmapped'}">${status}</span></td>
+    </tr>`;
+  }).join('');
+}
+
+function renderTemplateColumns() {
+  const session = activeTemplateSession();
+  const columns = activeTemplateColumns() || [];
+  const show = Boolean((session?.template || session?.copySourceTemplate) && columns.length);
+  $('inputTemplateColumns').hidden = !show;
+  if (!show) { $('inputTemplateColumnList').innerHTML = ''; return; }
+  $('inputTemplateColumnList').innerHTML = columns.map((column, index) => (
+    `<li data-template-field-key="${esc(column.fieldKey)}">
+      <input value="${esc(column.displayLabel)}" aria-label="${esc(column.fieldKey)} 표시명" ${session.sessionMode === TEMPLATE_SESSION_MODES.FILL ? 'disabled' : ''}>
+      <button type="button" data-template-move="-1" aria-label="왼쪽으로 이동" ${index === 0 ? 'disabled' : ''}>←</button>
+      <button type="button" data-template-move="1" aria-label="오른쪽으로 이동" ${index === columns.length - 1 ? 'disabled' : ''}>→</button>
+    </li>`
+  )).join('');
+}
+
+function refreshTemplatePreview() {
+  const session = activeTemplateSession();
+  const candidate = session?.selectedCandidate;
+  session.preview = null;
+  if (!candidate) {
+    $('applyInputTemplateButton').disabled = true;
+    return;
+  }
+  const mappings = session.template
+    ? candidate.mappingPlan.mappings
+    : session.sessionMode === TEMPLATE_SESSION_MODES.CREATE
+      ? templateMappingRecords().map(mapping => ({
+        ...mapping,
+        columnIndex: session.draftMappings.find(item => item.normalizedSourceHeader === mapping.normalizedSourceHeader)?.columnIndex
+      }))
+      : candidate.mappingPlan.mappings;
+  const validation = validateTemplateMappings(mappings);
+  const blocking = session.template || session.sessionMode === TEMPLATE_SESSION_MODES.FILL
+    ? candidate.mappingPlan.blockingErrors || []
+    : validation.errors;
+  if (blocking.length) {
+    setTemplateError(blocking[0].code);
+    $('applyInputTemplateButton').disabled = true;
+    $('inputTemplateResult').textContent = `적용 차단 · ${templateErrorText(blocking[0].code)}`;
+    return;
+  }
+  const parsed = parseMappedMatrix(candidate.importMatrix.matrix, {
+    headerRowIndex: candidate.headerRowIndex,
+    mappings,
+    numberParser: contract.numberOrNull,
+    sheetName: candidate.sheetName
+  });
+  session.preview = parsed;
+  setTemplateError('');
+  const unmappedCount = candidate.mappingPlan.unmappedHeaders?.length || 0;
+  $('inputTemplateResult').textContent = `${session.candidateConfirmed ? '' : '동점 시트·헤더를 선택하세요 · '}입력 예정 ${parsed.rows.length}행 · 제외 ${parsed.excludedRowCount || 0}행 · 적용 필드 ${mappings.length}개 · 미매핑 ${unmappedCount}열 · 오류 셀 ${parsed.invalidCells.length}개`;
+  $('applyInputTemplateButton').disabled = !session.candidateConfirmed || !parsed.rows.length || (session.sessionMode === TEMPLATE_SESSION_MODES.CREATE && !session.template);
+}
+
+function renderTemplateAnalysis() {
+  const session = activeTemplateSession();
+  const panel = $('inputTemplatePanel');
+  panel.hidden = !session || (!session.matrices.length && !session.template && !session.copySourceTemplate);
+  renderInputTemplateBar();
+  if (!session) return;
+  const candidate = session.selectedCandidate;
+  $('saveInputTemplateButton').hidden = session.sessionMode !== TEMPLATE_SESSION_MODES.CREATE || Boolean(session.template);
+  $('copySystemTemplateButton').hidden = !session.template?.system;
+  $('inputTemplateSheet').innerHTML = [...new Set(session.matrices.map(matrix => matrix.sheetName))]
+    .map(sheetName => `<option value="${esc(sheetName)}" ${candidate?.sheetName === sheetName ? 'selected' : ''}>${esc(sheetName)}</option>`).join('');
+  $('inputTemplateHeaderRow').value = String((candidate?.headerRowIndex ?? 0) + 1);
+  $('inputTemplateSourceSummary').textContent = candidate
+    ? `${candidate.importMatrix.sourceName} · ${candidate.sheetName} · 헤더 ${candidate.headerRowNumber}행`
+    : (session.template ? '저장된 열 구조를 작업테이블에 적용했습니다.' : '자료를 선택하세요.');
+  renderTemplateMappings();
+  renderTemplateColumns();
+  refreshTemplatePreview();
+}
+
+function analyzeTemplateMatrices({ sheetName = '', headerRowIndex = null } = {}) {
+  const session = activeTemplateSession();
+  if (!session?.matrices.length) return;
+  session.analysis = analyzeImportMatrices(session.matrices, {
+    sessionMode: session.template ? TEMPLATE_SESSION_MODES.FILL : session.sessionMode,
+    template: session.template,
+    fieldRegistry: templateFieldRegistry(),
+    selectedSheetName: sheetName,
+    selectedHeaderRowIndex: headerRowIndex
+  });
+  session.selectedCandidate = session.analysis.best;
+  session.candidateConfirmed = !session.analysis.requiresSelection || Boolean(sheetName) || Number.isInteger(headerRowIndex);
+  if (!session.selectedCandidate) {
+    session.draftMappings = [];
+    session.preview = null;
+    setTemplateError('IMPORT_HEADER_NOT_FOUND');
+    $('inputTemplatePanel').hidden = false;
+    $('inputTemplateResult').textContent = templateErrorText('IMPORT_HEADER_NOT_FOUND');
+    $('applyInputTemplateButton').disabled = true;
+    renderInputTemplateBar();
+    return;
+  }
+  if (session.sessionMode === TEMPLATE_SESSION_MODES.CREATE) {
+    session.draftMappings = session.selectedCandidate.mappingPlan.mappings.map(mapping => ({ ...mapping, sourceAliases: [] }));
+    if (!session.template) session.columns = templateColumnsFromMappings(templateMappingRecords(), templateFieldRegistry());
+  }
+  renderTemplateAnalysis();
+}
+
+function rememberTemplateOnDraft() {
+  const session = activeTemplateSession();
+  modeDraft().inputTemplate = session?.template ? {
+    sessionMode: session.sessionMode,
+    templateId: session.template.templateId,
+    templateName: session.template.name,
+    templateRevision: session.template.revision,
+    templateStructureHash: session.template.structureHash
+  } : null;
+}
+
+function startCreateTemplate() {
+  clearTimeout(state.templateSession.structureSaveTimer);
+  state.templateSession = { ...emptyTemplateSession(), sessionMode: TEMPLATE_SESSION_MODES.CREATE };
+  $('inputTemplateFieldSearch').value = '';
+  modeDraft().inputTemplate = null;
+  renderTemplateAnalysis();
+  $('inputTemplateName').focus();
+  saveDraftNow();
+}
+
+function startExistingTemplateSelection() {
+  clearTimeout(state.templateSession.structureSaveTimer);
+  state.templateSession = { ...emptyTemplateSession(), sessionMode: TEMPLATE_SESSION_MODES.FILL };
+  $('inputTemplateFieldSearch').value = '';
+  modeDraft().inputTemplate = null;
+  renderTemplateAnalysis();
+  $('inputTemplateSelect').focus();
+  saveDraftNow();
+}
+
+function copySystemInputTemplate() {
+  const source = activeTemplateSession()?.template;
+  if (!source?.system) return;
+  $('inputTemplateFieldSearch').value = '';
+  state.templateSession = {
+    ...emptyTemplateSession(),
+    sessionMode: TEMPLATE_SESSION_MODES.CREATE,
+    copySourceTemplate: cloneGridValue(source),
+    templateName: `${source.name} 복사`,
+    draftMappings: source.mappings.map((mapping, columnIndex) => ({
+      ...cloneGridValue(mapping), columnIndex, recommendation: 'EXACT'
+    })),
+    columns: cloneGridValue(source.columns),
+    sessionColumns: cloneGridValue(source.columns)
+  };
+  modeDraft().inputTemplate = null;
+  renderTemplateAnalysis();
+  $('inputTemplateName').focus();
+  $('inputTemplateName').select();
+  saveDraftNow();
+}
+
+function selectExistingInputTemplate(templateId) {
+  const template = templatesForMode().find(item => item.templateId === templateId);
+  if (!template) return;
+  const frozen = normalizeInputTemplate(cloneGridValue(template));
+  state.templateSession = {
+    ...emptyTemplateSession(), sessionMode: TEMPLATE_SESSION_MODES.FILL,
+    template: frozen, frozenRecordBytes: JSON.stringify(frozen),
+    columns: cloneGridValue(frozen.columns), sessionColumns: cloneGridValue(frozen.columns)
+  };
+  rememberTemplateOnDraft();
+  clearWorktableSelection({ sync: false });
+  renderRows({ restoreFocus: false });
+  renderTemplateAnalysis();
+  saveDraftNow();
+  setAppStatus(`${frozen.name} r${frozen.revision} 구조를 즉시 적용했습니다.`);
+}
+
+function releaseInputTemplate({ silent = false } = {}) {
+  clearTimeout(state.templateSession.structureSaveTimer);
+  state.templateSession = emptyTemplateSession();
+  modeDraft().inputTemplate = null;
+  $('inputTemplatePanel').hidden = true;
+  renderRows({ restoreFocus: false });
+  renderInputTemplateBar();
+  saveDraftNow();
+  if (!silent) toast('Excel 입력 양식을 해제했습니다.', 'success');
+}
+
+function restoreTemplateSessionForMode() {
+  const pointer = modeDraft().inputTemplate;
+  if (!pointer?.templateId) {
+    state.templateSession = emptyTemplateSession();
+    renderInputTemplateBar();
+    return;
+  }
+  const template = templatesForMode().find(item => item.templateId === pointer.templateId);
+  if (!template) {
+    modeDraft().inputTemplate = null;
+    state.templateSession = emptyTemplateSession();
+    renderInputTemplateBar();
+    return;
+  }
+  const normalized = normalizeInputTemplate(cloneGridValue(template));
+  state.templateSession = {
+    ...emptyTemplateSession(),
+    sessionMode: pointer.sessionMode === TEMPLATE_SESSION_MODES.CREATE && !normalized.system
+      ? TEMPLATE_SESSION_MODES.CREATE
+      : TEMPLATE_SESSION_MODES.FILL,
+    template: normalized,
+    templateName: normalized.name,
+    frozenRecordBytes: JSON.stringify(normalized),
+    columns: cloneGridValue(normalized.columns),
+    sessionColumns: cloneGridValue(normalized.columns)
+  };
+  renderInputTemplateBar();
+}
+
+function replaceInputTemplateRecord(record) {
+  const index = state.inputTemplates.findIndex(item => item.templateId === record.templateId);
+  if (index >= 0) state.inputTemplates[index] = record;
+  else state.inputTemplates.push(record);
+}
+
+async function persistTemplateStructure() {
+  const session = activeTemplateSession();
+  if (!session?.template || session.sessionMode !== TEMPLATE_SESSION_MODES.CREATE || session.template.system) return session?.template || null;
+  const result = await updateInputTemplateStructure(
+    session.template.templateId,
+    session.template.revision,
+    { mappings: session.template.mappings, columns: session.columns },
+    { sessionMode: TEMPLATE_SESSION_MODES.CREATE }
+  );
+  session.template = result.record;
+  session.columns = cloneGridValue(result.record.columns);
+  session.sessionColumns = cloneGridValue(result.record.columns);
+  session.templateName = result.record.name;
+  replaceInputTemplateRecord(result.record);
+  rememberTemplateOnDraft();
+  renderInputTemplateBar();
+  saveDraftNow();
+  return result.record;
+}
+
+function queueTemplateStructureSave() {
+  const session = activeTemplateSession();
+  if (!session?.template || session.sessionMode !== TEMPLATE_SESSION_MODES.CREATE) return;
+  clearTimeout(session.structureSaveTimer);
+  session.structureSavePromise = new Promise((resolve, reject) => {
+    session.structureSaveTimer = window.setTimeout(() => {
+      session.structureSaveTimer = null;
+      persistTemplateStructure().then(resolve, reject).finally(() => { session.structureSavePromise = null; });
+    }, 500);
+  });
+}
+
+async function flushTemplateStructureSave() {
+  const session = activeTemplateSession();
+  if (!session?.template || session.sessionMode !== TEMPLATE_SESSION_MODES.CREATE) return session?.template || null;
+  if (session.structureSaveTimer) {
+    clearTimeout(session.structureSaveTimer);
+    session.structureSaveTimer = null;
+    session.structureSavePromise = persistTemplateStructure().finally(() => { session.structureSavePromise = null; });
+  }
+  if (session.structureSavePromise) await session.structureSavePromise;
+  return session.template;
+}
+
+async function saveCurrentInputTemplate() {
+  const session = activeTemplateSession();
+  if (!session || session.sessionMode !== TEMPLATE_SESSION_MODES.CREATE || session.template) return;
+  if (!session.candidateConfirmed) { setTemplateError('IMPORT_HEADER_NOT_FOUND'); return; }
+  session.templateName = $('inputTemplateName').value.trim();
+  if (!session.templateName) { setTemplateError('TEMPLATE_NAME_REQUIRED'); $('inputTemplateName').focus(); return; }
+  const mappings = templateMappingRecords();
+  const validation = validateTemplateMappings(mappings);
+  if (!validation.valid) { setTemplateError(validation.errors[0].code); return; }
+  const columns = session.copySourceTemplate
+    ? cloneGridValue(session.columns)
+    : templateColumnsFromMappings(mappings, templateFieldRegistry());
+  try {
+    const result = await createInputTemplate({
+      mode: state.draft.activeMode,
+      name: session.templateName,
+      mappings,
+      columns
+    }, { sessionMode: TEMPLATE_SESSION_MODES.CREATE });
+    session.template = result.record;
+    session.copySourceTemplate = null;
+    session.columns = cloneGridValue(result.record.columns);
+    session.sessionColumns = cloneGridValue(result.record.columns);
+    replaceInputTemplateRecord(result.record);
+    rememberTemplateOnDraft();
+    renderRows({ restoreFocus: false });
+    renderTemplateAnalysis();
+    saveDraftNow();
+    toast(`${result.record.name} r1 양식을 저장했습니다.`, 'success');
+  } catch (error) {
+    setTemplateError(error.code || 'TEMPLATE_SAVE_FAILED');
+    toast(templateErrorText(error.code || error.message), 'error');
+  }
+}
+
+async function sha256Bytes(bytes) {
+  if (!crypto?.subtle) return sha256Text(String(bytes));
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('');
+}
+
+function setTemplateMatrices(matrices, { purchaseMetaRows = null, salesMetaRows = null } = {}) {
+  const session = activeTemplateSession();
+  if (!session) return;
+  session.matrices = matrices;
+  session.purchaseMetaRows = purchaseMetaRows;
+  session.salesMetaRows = salesMetaRows;
+  session.pasteArmed = false;
+  analyzeTemplateMatrices();
+}
+
+async function handleTemplateFile(file) {
+  const session = activeTemplateSession();
+  if (!file || !session) return;
+  if (!/\.(?:xlsx?|csv|tsv)$/i.test(file.name || '')) {
+    toast('양식 입력은 xlsx, xls, csv, tsv 파일을 지원합니다.', 'error');
+    return;
+  }
+  if (!window.XLSX) { toast('Excel 처리 모듈을 불러오지 못했습니다.', 'error'); return; }
+  try {
+    setActiveActivity('양식 Excel 열 분석 중');
+    const fileBytes = new Uint8Array(await file.arrayBuffer());
+    const digest = await sha256Bytes(fileBytes);
+    const workbook = window.XLSX.read(fileBytes, { type: 'array', cellDates: false, cellText: true });
+    const matrices = await workbookToImportMatrices(workbook, window.XLSX, { sourceName: file.name, contentHash: digest });
+    let purchaseMetaRows = null;
+    let salesMetaRows = null;
+    matrices.forEach(importMatrix => {
+      if (state.draft.activeMode === 'purchase' && isPurchaseMetaSheet(importMatrix.sheetName, importMatrix.matrix)) {
+        purchaseMetaRows = readPurchaseMeta(importMatrix.matrix);
+      }
+      if (state.draft.activeMode === 'sale' && isSalesMetaSheet(importMatrix.sheetName, importMatrix.matrix)) {
+        salesMetaRows = readSalesMeta(importMatrix.matrix);
+      }
+    });
+    setTemplateMatrices(matrices, { purchaseMetaRows, salesMetaRows });
+    setAppStatus(`${file.name}의 Excel 열을 분석했습니다.`);
+  } catch (error) {
+    setTemplateError('IMPORT_HEADER_NOT_FOUND');
+    toast(error.message || 'Excel 파일을 분석하지 못했습니다.', 'error');
+  } finally {
+    setActiveActivity('');
+    $('fileInput').value = '';
+  }
+}
+
+async function handleTemplateClipboard(clipboardData) {
+  const session = activeTemplateSession();
+  if (!session) return false;
+  const html = clipboardData?.getData?.('text/html') || '';
+  const plainText = clipboardData?.getData?.('text/plain') || '';
+  const looksTabular = /<table\b/i.test(html) || (plainText.includes('\t') && plainText.includes('\n'));
+  if (!looksTabular) return false;
+  const importMatrix = await clipboardToImportMatrix({ html, text: plainText });
+  setTemplateMatrices([importMatrix]);
+  updateMethod('excel');
+  setAppStatus('붙여넣은 Excel 표의 열을 분석했습니다.');
+  return true;
+}
+
+function prepareTemplateRowsForMode(rows, importMatrix) {
+  const sourceKind = importMatrix.sourceKind;
+  const originSystem = sourceKind === 'FILE' ? 'SMARTINPUT_FILE' : 'SMARTINPUT_CLIPBOARD';
+  const transactionId = importMatrix.contentHash;
+  if (state.draft.activeMode === 'purchase' && state.templateSession.purchaseMetaRows) {
+    return joinPurchaseMeta({
+      visibleSheetName: importMatrix.sheetName,
+      visibleRows: rows.map(row => ({ ...row, directOriginSystem: originSystem, directOriginTransactionId: transactionId })),
+      metaRows: state.templateSession.purchaseMetaRows
+    });
+  }
+  if (state.draft.activeMode === 'purchase') {
+    return rows.map(row => ({
+      ...row,
+      sourceType: 'DIRECT', contractKind: 'PURCHASE_STAGE3_V1', originSystem,
+      originTransactionId: transactionId, sourceFingerprint: transactionId,
+      sourceDocumentKey: row.sourceDocumentKey || stableDirectDocumentKey({
+        originSystem, originTransactionId: transactionId,
+        externalDocumentNo: row.rowVoucherNo, sourceVoucherIndex: row.sourceVoucherIndex
+      }),
+      metaStatus: 'DIRECT_NO_META'
+    }));
+  }
+  if (state.draft.activeMode === 'sale' && state.templateSession.salesMetaRows) {
+    return joinSalesMeta({
+      visibleSheetName: importMatrix.sheetName,
+      visibleRows: rows.map(row => ({ ...row, directOriginSystem: originSystem, directOriginTransactionId: transactionId })),
+      metaRows: state.templateSession.salesMetaRows
+    });
+  }
+  if (state.draft.activeMode === 'sale') {
+    return rows.map(row => ({
+      ...row,
+      sourceType: 'DIRECT', contractKind: 'SALE_STAGE4_V1', originSystem,
+      originTransactionId: transactionId, sourceFingerprint: transactionId,
+      actualToBaseFactor: 1, actualToRecognizedFactor: 0,
+      actualUnit: row.unit || '', baseUnit: row.unit || '', recognizedUnit: row.unit || '',
+      conversionSource: 'DIRECT_SAME_UNIT', conversionRuleId: 'DIRECT_1_TO_1',
+      conversionRuleVersion: 'DIRECT_1_TO_1_V1', metaStatus: 'DIRECT_NO_META'
+    }));
+  }
+  return rows;
+}
+
+async function applyInputTemplateData() {
+  const session = activeTemplateSession();
+  if (!session?.template || !session.preview || !session.selectedCandidate) return;
+  if (!requireReferenceReady('양식 데이터 입력')) return;
+  try {
+    if (session.sessionMode === TEMPLATE_SESSION_MODES.CREATE) await flushTemplateStructureSave();
+    const template = session.template;
+    if (session.sessionMode === TEMPLATE_SESSION_MODES.FILL && !template.system) {
+      const persistedBefore = await getInputTemplate(template.templateId);
+      if (JSON.stringify(persistedBefore) !== session.frozenRecordBytes) {
+        const conflict = new Error(templateErrorText('TEMPLATE_REVISION_CONFLICT'));
+        conflict.code = 'TEMPLATE_REVISION_CONFLICT';
+        throw conflict;
+      }
+    }
+    const importMatrix = session.selectedCandidate.importMatrix;
+    const mappings = session.selectedCandidate.mappingPlan.mappings;
+    const parsed = parseMappedMatrix(importMatrix.matrix, {
+      headerRowIndex: session.selectedCandidate.headerRowIndex,
+      mappings,
+      numberParser: contract.numberOrNull,
+      sheetName: importMatrix.sheetName
+    });
+    const idempotencyKey = buildImportIdempotencyKey({
+      mode: state.draft.activeMode,
+      templateId: template.templateId,
+      templateRevision: template.revision,
+      importContentHash: importMatrix.contentHash,
+      sheetName: importMatrix.sheetName
+    });
+    const current = modeDraft();
+    captureGridPasteUndo();
+    state.applyingGridPaste = true;
+    const batch = contract.createBatch({
+      sequence: visibleActivityBatches(current).length + 1,
+      method: 'excel-template',
+      sourceType: importMatrix.sourceKind === 'FILE' ? 'STRUCTURED_FILE' : 'CLIPBOARD',
+      sourceName: `${importMatrix.sourceName} · ${importMatrix.sheetName}`,
+      sourceRole: 'LIVE_SOURCE',
+      sourceDocumentKey: idempotencyKey,
+      sourceSheetName: importMatrix.sheetName,
+      rawText: parsed.rawText,
+      contentHash: importMatrix.contentHash,
+      templateId: template.templateId,
+      templateRevision: template.revision,
+      templateStructureHash: template.structureHash,
+      importContentHash: importMatrix.contentHash,
+      mappingDigest: mappingDigest(template.mappings),
+      importSourceKind: importMatrix.sourceKind,
+      importIdempotencyKey: idempotencyKey
+    });
+    const customFieldKeys = new Set(templateFieldRegistry().filter(field => field.custom).map(field => field.fieldKey));
+    let rows = parsed.rows.map(row => ({
+      ...row,
+      customValues: Object.fromEntries([...customFieldKeys]
+        .filter(fieldKey => Object.prototype.hasOwnProperty.call(row, fieldKey))
+        .map(fieldKey => [fieldKey, row[fieldKey]]))
+    }));
+    rows = prepareTemplateRowsForMode(rows, importMatrix);
+    rows = decorateStructuredRows(rows, {
+      sourceBatchId: batch.batchId,
+      sourceSheetName: importMatrix.sheetName,
+      sourceFingerprint: importMatrix.contentHash,
+      sourceDocumentKey: idempotencyKey
+    }).map((row, index) => ({
+      ...row,
+      sourceDocumentKey: row.sourceDocumentKey || `${idempotencyKey}:${row.sourceVoucherIndex || 1}`,
+      sourceLineKey: `${idempotencyKey}:sheet:${row.sourceLineNo || index + 1}`
+    }));
+    const applied = replaceLiveTemplateImport(current, { batch, rows, contract });
+    current.batches = applied.batches;
+    current.rows = applied.rows;
+    const alreadyApplied = applied.alreadyApplied;
+    current.rows.forEach(row => enrichRowFromUnifiedCatalog(row));
+    resolveStage1RowReferences(current.rows);
+    current.rows = contract.markDuplicatePossibilities(current.rows);
+    current.sourceText = parsed.rawText;
+    sourceTextInput.value = parsed.rawText;
+    current.activeMethod = 'excel';
+    current.delivery = { status: 'DRAFT', targetId: '', targetRecordId: '', deliveredAt: '' };
+    rememberTemplateOnDraft();
+    if (session.sessionMode === TEMPLATE_SESSION_MODES.FILL) {
+      const inMemoryBytes = JSON.stringify(session.template);
+      const persistedAfter = template.system ? null : await getInputTemplate(template.templateId);
+      if (inMemoryBytes !== session.frozenRecordBytes
+        || (!template.system && JSON.stringify(persistedAfter) !== session.frozenRecordBytes)) {
+        const locked = new Error(templateErrorText('TEMPLATE_STRUCTURE_LOCKED'));
+        locked.code = 'TEMPLATE_STRUCTURE_LOCKED';
+        throw locked;
+      }
+    }
+    renderRows({ restoreFocus: false });
+    renderDelivery();
+    saveDraftNow();
+    setAppStatus(`${template.name} r${template.revision} · ${parsed.rows.length}행 입력 완료${alreadyApplied ? ' · 중복 없이 재적용' : ''}`);
+    toast(alreadyApplied ? '같은 입력을 중복 없이 다시 적용했습니다.' : `${parsed.rows.length}행을 작업테이블에 입력했습니다.`, 'success');
+    $('inputTemplatePanel').hidden = true;
+  } catch (error) {
+    const snapshot = state.gridPasteUndo;
+    if (snapshot?.mode === state.draft.activeMode) {
+      modeDraft().rows = snapshot.rows.map(row => contract.normalizeRow(row));
+      modeDraft().batches = cloneGridValue(snapshot.batches);
+    }
+    state.gridPasteUndo = null;
+    toast(error.message || '양식 데이터를 입력하지 못했습니다.', 'error');
+  } finally {
+    state.applyingGridPaste = false;
+    syncGridPasteUndoButton();
+  }
 }
 
 function loadDraft() {
@@ -961,6 +1664,9 @@ function headerFieldsForMode(mode = state.draft.activeMode) {
 }
 
 function voucherColumnsForMode(mode = state.draft.activeMode) {
+  if (mode === state.draft.activeMode && activeTemplateSession()) {
+    return (activeTemplateColumns() || []).filter(column => column.visible !== false).map(column => column.fieldKey);
+  }
   return state.settings.voucherColumnsByMode?.[mode]
     || state.settings.voucherColumns
     || contract.DEFAULT_SETTINGS.voucherColumnsByMode?.[mode]
@@ -982,8 +1688,8 @@ function layoutDefinitions(scope, customFields = state.settings.customFields || 
     ? new Map(structuredFieldsForMode(state.draft.activeMode, []).map(field => [field.id, field]))
     : new Map();
   return [
-    ...builtIn.map(field => modeFields.has(field.id) ? { ...field, label: modeFields.get(field.id).label } : field),
-    ...customFields.filter(field => field.scope === scope).map(field => ({
+    ...builtIn.map(field => templateColumnDefinition(modeFields.has(field.id) ? { ...field, label: modeFields.get(field.id).label } : field)),
+    ...customFields.filter(field => field.scope === scope).map(field => templateColumnDefinition({
       ...field,
       group: scope === 'voucher' ? 'ADDITIONAL' : field.group,
       custom: true,
@@ -1062,6 +1768,7 @@ const DEFAULT_COLUMN_WIDTHS = Object.freeze({
 });
 
 function columnWidth(fieldId) {
+  if (activeTemplateSession()?.columnWidths?.[fieldId]) return Number(activeTemplateSession().columnWidths[fieldId]);
   return Number(
     state.settings.columnWidthsByMode?.[state.draft.activeMode]?.[fieldId]
     || state.settings.columnWidths?.[fieldId]
@@ -1199,6 +1906,16 @@ async function finishColumnDrop(event) {
   const bounds = header.getBoundingClientRect();
   const after = event.clientX >= bounds.left + bounds.width / 2;
   order.splice(order.indexOf(targetId) + (after ? 1 : 0), 0, sourceId);
+  if (activeTemplateSession()) {
+    applyTemplateVisibleColumnOrder(order);
+    state.columnDrag = null;
+    clearColumnDragMarkers();
+    applyFormLayout();
+    toast(activeTemplateSession().sessionMode === TEMPLATE_SESSION_MODES.FILL
+      ? '현재 작업에서만 열 순서를 변경했습니다.'
+      : '양식 열 순서를 변경했습니다.', 'success');
+    return;
+  }
   const voucherColumnsByMode = { ...(state.settings.voucherColumnsByMode || {}), [state.draft.activeMode]: order };
   state.settings = contract.normalizeSettings({
     ...state.settings,
@@ -1230,9 +1947,13 @@ function visibleVoucherColumnIds() {
 
 function setVoucherColumnWidth(fieldId, width) {
   const nextWidth = Math.max(56, Math.min(480, Math.round(Number(width) || columnWidth(fieldId))));
+  if (activeTemplateSession()) {
+    activeTemplateSession().columnWidths[fieldId] = nextWidth;
+  } else {
   state.settings.columnWidthsByMode ||= {};
   state.settings.columnWidthsByMode[state.draft.activeMode] ||= {};
   state.settings.columnWidthsByMode[state.draft.activeMode][fieldId] = nextWidth;
+  }
   const col = document.querySelector(`#tableScroll col[data-column="${CSS.escape(fieldId)}"]`);
   if (col) col.style.width = `${nextWidth}px`;
   const handle = document.querySelector(`#tableScroll .column-resize-handle[data-resize-column="${CSS.escape(fieldId)}"]`);
@@ -1242,6 +1963,7 @@ function setVoucherColumnWidth(fieldId, width) {
 }
 
 async function persistVoucherColumnWidths() {
+  if (activeTemplateSession()) return;
   state.settings = contract.normalizeSettings({
     ...state.settings,
     columnWidths: { ...(state.settings.columnWidths || {}) },
@@ -1256,6 +1978,24 @@ async function persistVoucherColumnWidths() {
   } catch (_) {
     toast('열 너비를 저장하지 못했습니다.', 'error');
   }
+}
+
+function applyTemplateVisibleColumnOrder(nextVisibleOrder) {
+  const session = activeTemplateSession();
+  if (!session) return false;
+  const visibleSet = new Set(nextVisibleOrder);
+  const current = activeTemplateColumns() || [];
+  const byKey = new Map(current.map(column => [column.fieldKey, column]));
+  const visible = nextVisibleOrder.map(fieldKey => ({ ...(byKey.get(fieldKey) || { fieldKey, displayLabel: worktableColumnLabel(fieldKey) }), visible: true }));
+  const hidden = current.filter(column => !visibleSet.has(column.fieldKey)).map(column => ({ ...column, visible: false }));
+  const next = [...visible, ...hidden].map((column, order) => ({ ...column, order }));
+  session.sessionColumns = cloneGridValue(next);
+  if (session.sessionMode === TEMPLATE_SESSION_MODES.CREATE) {
+    session.columns = cloneGridValue(next);
+    queueTemplateStructureSave();
+  }
+  renderTemplateColumns();
+  return true;
 }
 
 function finishColumnResize(event) {
@@ -3353,6 +4093,14 @@ function insertSelectedGridRows() {
 }
 
 async function persistVoucherColumnsForCurrentMode(nextOrder, successMessage) {
+  if (activeTemplateSession()) {
+    applyTemplateVisibleColumnOrder(nextOrder);
+    renderRows({ restoreFocus: false });
+    toast(activeTemplateSession().sessionMode === TEMPLATE_SESSION_MODES.FILL
+      ? `${successMessage} 현재 작업에만 적용했습니다.`
+      : successMessage, 'success');
+    return true;
+  }
   const mode = state.draft.activeMode;
   const previousSettings = state.settings;
   const voucherColumnsByMode = { ...(state.settings.voucherColumnsByMode || {}), [mode]: [...nextOrder] };
@@ -3585,6 +4333,7 @@ function renderMode() {
   resizeSource();
   renderSourceAnalysis();
   applyFormLayout();
+  renderTemplateAnalysis();
   updateMobileInfoSummary();
   syncMobileParserToolbar();
   scheduleMobileViewportLayout();
@@ -3610,6 +4359,7 @@ function setMode(mode) {
   syncSourceText();
   state.gridPasteUndo = null;
   state.draft.activeMode = mode;
+  restoreTemplateSessionForMode();
   restoreSourceImageForMode(mode);
   clearWorktableSelection({ sync: false });
   state.activeActivity = '';
@@ -4315,6 +5065,7 @@ async function analyzeSource({ automatic = false } = {}) {
 
 async function handleFile(file) {
   if (!file) return;
+  if (activeTemplateSession()) return handleTemplateFile(file);
   invalidateGridPasteUndo();
   state.pendingStructuredImport = null;
   try {
@@ -5835,10 +6586,12 @@ async function hydrateReferences() {
     state.temporaryCustomers = results[3].value.temporaryCustomers || [];
     state.aliasMappings = results[3].value.aliasMappings || [];
     state.estimates = normalizeEstimateOrder(results[3].value.estimates || []);
+    state.inputTemplates = (results[3].value.inputTemplates || []).map(normalizeInputTemplate);
     state.sourceImageRecords = new Map((results[3].value.sourceImages || []).map(sourceImage => [sourceImage.documentId, sourceImage]));
     Object.keys(state.sourceImages).forEach(mode => restoreSourceImageForMode(mode));
     state.customers = normalizedCustomerCandidates(state.customers);
     state.smartDataReady = true;
+    restoreTemplateSessionForMode();
   }
   state.purchaseCapability = results[4].status === 'fulfilled'
     ? results[4].value
@@ -5857,6 +6610,83 @@ async function hydrateReferences() {
 }
 
 tabs.forEach(tab => tab.addEventListener('click', () => setMode(tab.dataset.mode)));
+$('createTemplateButton').addEventListener('click', startCreateTemplate);
+$('existingTemplateButton').addEventListener('click', startExistingTemplateSelection);
+$('releaseTemplateButton').addEventListener('click', () => releaseInputTemplate());
+$('inputTemplateName').addEventListener('input', event => {
+  if (state.templateSession.sessionMode !== TEMPLATE_SESSION_MODES.CREATE || state.templateSession.template) return;
+  state.templateSession.templateName = event.target.value;
+  renderInputTemplateBar();
+});
+$('inputTemplateSelect').addEventListener('change', event => selectExistingInputTemplate(event.target.value));
+$('templateFileButton').addEventListener('click', () => $('fileInput').click());
+$('templatePasteButton').addEventListener('click', () => {
+  if (!activeTemplateSession()) return;
+  state.templateSession.pasteArmed = true;
+  renderInputTemplateBar();
+  sourceTextInput.focus();
+  $('sourceNotice').textContent = 'Excel 표 범위를 Ctrl+V로 붙여넣으세요. HTML 표를 우선 인식합니다.';
+});
+$('saveInputTemplateButton').addEventListener('click', () => { void saveCurrentInputTemplate(); });
+$('copySystemTemplateButton').addEventListener('click', copySystemInputTemplate);
+$('applyInputTemplateButton').addEventListener('click', () => { void applyInputTemplateData(); });
+$('closeInputTemplatePanel').addEventListener('click', () => { $('inputTemplatePanel').hidden = true; });
+$('inputTemplateSheet').addEventListener('change', event => analyzeTemplateMatrices({ sheetName: event.target.value }));
+$('inputTemplateHeaderRow').addEventListener('change', event => {
+  const headerRowIndex = Math.max(0, Math.min(79, Number(event.target.value || 1) - 1));
+  analyzeTemplateMatrices({ sheetName: $('inputTemplateSheet').value, headerRowIndex });
+});
+$('inputTemplateMappings').addEventListener('change', event => {
+  const select = event.target.closest('[data-template-map]');
+  if (!select || state.templateSession.sessionMode !== TEMPLATE_SESSION_MODES.CREATE || state.templateSession.template) return;
+  const row = select.closest('[data-template-column-index]');
+  const mapping = state.templateSession.draftMappings.find(item => item.columnIndex === Number(row.dataset.templateColumnIndex));
+  if (!mapping) return;
+  mapping.targetFieldKey = select.value;
+  mapping.recommendation = select.value ? 'CONFIRMED' : 'UNMAPPED';
+  const field = templateFieldRegistry().find(item => item.fieldKey === select.value);
+  mapping.valueType = field?.valueType || 'TEXT';
+  mapping.requiredRole = field?.requiredRole;
+  state.templateSession.columns = templateColumnsFromMappings(templateMappingRecords(), templateFieldRegistry());
+  state.templateSession.sessionColumns = cloneGridValue(state.templateSession.columns);
+  renderTemplateMappings();
+  renderTemplateColumns();
+  refreshTemplatePreview();
+});
+$('inputTemplateFieldSearch').addEventListener('input', renderTemplateMappings);
+$('inputTemplateColumnList').addEventListener('input', event => {
+  const input = event.target.closest('input');
+  const row = input?.closest('[data-template-field-key]');
+  const session = activeTemplateSession();
+  if (!row || !session || session.sessionMode !== TEMPLATE_SESSION_MODES.CREATE || !session.template) return;
+  const update = columns => columns.map(column => column.fieldKey === row.dataset.templateFieldKey
+    ? { ...column, displayLabel: input.value.trim() || column.fieldKey }
+    : column);
+  session.columns = update(session.columns);
+  session.sessionColumns = update(session.sessionColumns || session.columns);
+  queueTemplateStructureSave();
+  renderRows({ restoreFocus: false });
+});
+$('inputTemplateColumnList').addEventListener('click', event => {
+  const button = event.target.closest('[data-template-move]');
+  const row = button?.closest('[data-template-field-key]');
+  const session = activeTemplateSession();
+  if (!button || !row || !session) return;
+  const columns = activeTemplateColumns() || [];
+  const index = columns.findIndex(column => column.fieldKey === row.dataset.templateFieldKey);
+  const target = Math.max(0, Math.min(columns.length - 1, index + Number(button.dataset.templateMove)));
+  if (index < 0 || index === target) return;
+  const [moved] = columns.splice(index, 1);
+  columns.splice(target, 0, moved);
+  const next = columns.map((column, order) => ({ ...column, order }));
+  session.sessionColumns = cloneGridValue(next);
+  if (session.sessionMode === TEMPLATE_SESSION_MODES.CREATE) {
+    session.columns = cloneGridValue(next);
+    queueTemplateStructureSave();
+  }
+  renderRows({ restoreFocus: false });
+  renderTemplateColumns();
+});
 methodButtons.forEach(button => button.addEventListener('click', () => {
   const method = updateMethod(button.dataset.method);
   if (method.id === 'direct') addDirectRow();
@@ -6376,6 +7206,16 @@ document.addEventListener('paste', event => {
     event.preventDefault();
     recognizeImage(image);
     return;
+  }
+  if (activeTemplateSession()) {
+    const clipboardHtml = event.clipboardData?.getData('text/html') || '';
+    const clipboardPlain = event.clipboardData?.getData('text/plain') || '';
+    if (/<table\b/i.test(clipboardHtml) || (clipboardPlain.includes('\t') && clipboardPlain.includes('\n'))) {
+      event.preventDefault();
+      state.templateSession.pasteArmed = false;
+      void handleTemplateClipboard(event.clipboardData);
+      return;
+    }
   }
   const pastedText = event.clipboardData?.getData('text/plain') || '';
   if (event.target === sourceTextInput && pastedText) {

@@ -1,7 +1,8 @@
 import {
   buildStructuredFieldIndex,
-  normalizeStructuredFieldName
-} from './structured-sheet-parser.js';
+  normalizeStructuredFieldName,
+  parseTabularText
+} from './structured-sheet-parser.js?v=0.2.0';
 
 function cellText(value) {
   return String(value ?? '');
@@ -15,43 +16,7 @@ function normalizedNumber(value, numberParser) {
 }
 
 export function parseClipboardMatrix(rawText = '') {
-  const source = String(rawText ?? '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-  const rows = [];
-  let row = [];
-  let cell = '';
-  let quoted = false;
-
-  for (let index = 0; index < source.length; index += 1) {
-    const character = source[index];
-    if (quoted) {
-      if (character === '"' && source[index + 1] === '"') {
-        cell += '"';
-        index += 1;
-      } else if (character === '"') {
-        quoted = false;
-      } else {
-        cell += character;
-      }
-      continue;
-    }
-    if (character === '"' && cell === '') {
-      quoted = true;
-    } else if (character === '\t') {
-      row.push(cell);
-      cell = '';
-    } else if (character === '\n') {
-      row.push(cell);
-      rows.push(row);
-      row = [];
-      cell = '';
-    } else {
-      cell += character;
-    }
-  }
-  row.push(cell);
-  rows.push(row);
-  if (source.endsWith('\n') && rows.length > 1 && rows.at(-1).length === 1 && rows.at(-1)[0] === '') rows.pop();
-  return rows;
+  return parseTabularText(rawText);
 }
 
 export function buildGridPastePlan(rawText = '', {
