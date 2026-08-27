@@ -363,7 +363,7 @@
       "path": "smartinput/index.html",
       "kind": "web-entry",
       "status": "pilot",
-      "purpose": "Capture order, purchase, sale, and estimate source material through direct, file, text, clipboard, photo OCR, and voice STT inputs; preserve and visually annotate original source text; configure entry fields; save a device-local estimate catalog; and deliver completed orders to the ORDER Q vNext ledger.",
+      "purpose": "Capture order, purchase, sale, and estimate source material through direct, file, text, clipboard, photo OCR, and voice STT inputs; normalize Excel and pasted tables through one matrix mapping core; preserve revisioned device-local input templates and original source evidence; configure entry fields; save a device-local estimate catalog; and deliver completed orders to the ORDER Q vNext ledger.",
       "owner": "smart-input",
       "productionWrites": true,
       "publicEntries": [
@@ -380,7 +380,8 @@
         "nexus-auth",
         "nexus-header",
         "orderq-vnext-sync",
-        "product-master"
+        "product-master",
+        "smartinput-local-data"
       ],
       "integrationNote": "SmartInput is available from the fixed-position NEXUS global entry, the common-header settings list, and the full application list at /smartinput/. ORDER Q vNext is the common order ledger; the validated read-only orders.html adapter loads active SMART_INPUT orders without creating another order store or triggering cloud synchronization."
     },
@@ -442,6 +443,37 @@
     }
   ],
   "sharedDataContracts": [
+    {
+      "id": "smartinput-local-data",
+      "owner": "smart-input",
+      "consumers": [
+        "smartinput/index.html"
+      ],
+      "schemaVersion": "ONEAPP_SMARTINPUT_LOCAL_V4",
+      "purpose": "Preserve SmartInput device-local settings, relationships, estimates, source images, and revisioned input templates. Upgrading from v3 creates only inputTemplates. Existing-template imports are value-only and all structural writes are rejected before an IndexedDB transaction begins.",
+      "resources": {
+        "indexedDb": {
+          "database": "oneapp-smartinput",
+          "version": 4,
+          "stores": [
+            "settings",
+            "customerLinkGroups",
+            "temporaryCustomers",
+            "customerAliasMappings",
+            "estimates",
+            "sourceImages",
+            "inputTemplates"
+          ]
+        },
+        "localStorage": [
+          "oneapp.smartinput.relationships.v1",
+          "oneapp.smartinput.draft.v1",
+          "oneapp.smartinput.drafts.v1",
+          "oneapp.smartinput.delivery-history.v1"
+        ]
+      },
+      "rollback": "A code rollback to v3 leaves the additive inputTemplates store unused while every pre-v4 store remains readable and unchanged. Do not delete or downgrade the database; a later v4 load can resume the saved templates."
+    },
     {
       "id": "nexus-auth",
       "owner": "nexus-auth-gateway",

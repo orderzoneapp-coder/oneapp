@@ -18,8 +18,8 @@ function functionBlock(name) {
   return app.slice(start, next < 0 ? app.length : next);
 }
 
-assert.match(html, /smartinput\.css\?v=0\.4\.36/, 'worktable CSS cache key must invalidate the previous combined-screen asset');
-assert.match(html, /smartinput\.js\?v=0\.4\.43/, 'worktable JS cache key must invalidate the previous combined-screen asset');
+assert.match(html, /smartinput\.css\?v=0\.5\.0/, 'worktable CSS cache key must invalidate the previous combined-screen asset');
+assert.match(html, /smartinput\.js\?v=0\.5\.0/, 'worktable JS cache key must invalidate the previous combined-screen asset');
 assert.doesNotMatch(html, /smartinput\.css\?v=0\.4\.(?:30|35)/,
   'the deployed page must not reuse a stale CSS cache key');
 assert.doesNotMatch(html, /smartinput\.js\?v=0\.4\.(?:36|42)/,
