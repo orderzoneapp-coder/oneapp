@@ -89,7 +89,13 @@ function dataOpsSituationRequireAuth(payload, requiredRole, properties) {
     && dataOpsSituationText(payload && payload.nexusRequest && payload.nexusRequest.contractVersion) === 'NEXUS_AUTH_V2') {
     const access = /(PUBLISH|WRITE|COMMIT|RECONCILE|CORRECT|REVERSE)/.test(dataOpsSituationText(requiredRole).toUpperCase()) ? 'WRITE' : 'READ';
     const gatewayAuth = oneappNexusGatewayRequire(payload, 'DATAOPS', access);
-    if (gatewayAuth) return { ...gatewayAuth, roleIds: [...new Set([...(gatewayAuth.roleIds || []), requiredRole])].sort() };
+    if (gatewayAuth) {
+      const operationRoles = [...(gatewayAuth.roleIds || []), requiredRole];
+      // 발행은 같은 요청 안에서 공식 원장 읽기 증거도 검증하므로 READ 역할을 함께 부여한다.
+      // 이 역할은 검증된 Gateway WRITE 자격증명에서만 서버가 파생하며 브라우저 입력은 사용하지 않는다.
+      if (requiredRole === DATAOPS_SITUATION_V2_ROLE_PUBLISH) operationRoles.push(DATAOPS_SITUATION_V2_ROLE_READ);
+      return { ...gatewayAuth, roleIds: [...new Set(operationRoles)].sort() };
+    }
   }
   const rawToken = dataOpsSituationText(payload && payload.token);
   const actorId = dataOpsSituationText(payload && payload.actorId);
