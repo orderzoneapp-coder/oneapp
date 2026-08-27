@@ -360,8 +360,11 @@ assert.equal(legacyFull.data.history[0].id, 'H1', 'legacy history data must rema
 assert.equal(legacyFull.data.appConfig.cloudUrl, 'https://example.invalid', 'legacy full response contract must remain readable');
 const readAfterLegacySync = post({ action: 'dataops_snapshot_get', token: 'legacy-ignored' });
 assert.equal(readAfterLegacySync.data.revision, firstCommit.data.revision, 'legacy initSync must not clear DataOps snapshot slots');
+const slotBeforeRetry = properties.get('ONEAPP_DATAOPS_CURRENT_SLOT');
 const sameCommit = post({ action: 'dataops_snapshot_commit', token: 'legacy-ignored', snapshot: makeSnapshot(canonicalRows) });
 assert.equal(sameCommit.data.revision, firstCommit.data.revision, 'same finalized snapshot must retain immutable revision');
+assert.equal(sameCommit.data.duplicate, true, 'same pending snapshot retry must be acknowledged as an idempotent duplicate');
+assert.equal(properties.get('ONEAPP_DATAOPS_CURRENT_SLOT'), slotBeforeRetry, 'idempotent retry must not flip the active cloud slot');
 
 const currentSlot = properties.get('ONEAPP_DATAOPS_CURRENT_SLOT');
 const inactiveName = currentSlot === 'A' ? 'DataOpsSnapshot_B' : 'DataOpsSnapshot_A';

@@ -4,9 +4,7 @@
   const SCHEMA_VERSION = 'DATAOPS_SITUATION_READ_V2';
   const CAPABILITY_VERSION = 'DATAOPS_SITUATION_V2';
   const EXPECTED_DEPLOYMENT = Object.freeze({
-    deploymentId: 'AKfycbzOUOIu_bP7NkiFVziDR0Og1da1KO1ePoU09Q3pSlPr-9uD-WkdCpWN7nidO5hlrJi6Qw',
-    deploymentVersion: '28',
-    gitCommit: '0c8d4a276d4289c51241fd50881dad5372242e38'
+    deploymentId: 'AKfycbzOUOIu_bP7NkiFVziDR0Og1da1KO1ePoU09Q3pSlPr-9uD-WkdCpWN7nidO5hlrJi6Qw'
   });
   const REQUIRED_CAPABILITY = Object.freeze({ schemaVersion: SCHEMA_VERSION, capabilityVersion: CAPABILITY_VERSION,
     readSessionTtlSeconds: 120, canonicalHash: 'SHA-256', publishMode: 'ATOMIC_POINTER_LAST' });
@@ -72,7 +70,10 @@
 
   function evaluateCapability(ping = {}, expected = EXPECTED_DEPLOYMENT) {
     const mismatch = Object.entries(REQUIRED_CAPABILITY).find(([key, value]) => String(ping[key] ?? '') !== String(value));
-    const evidenceReady = ['deploymentId', 'deploymentVersion', 'gitCommit'].every(key => text(expected[key]) && text(ping[key]) === text(expected[key]));
+    const evidenceReady = text(expected.deploymentId) && text(ping.deploymentId) === text(expected.deploymentId)
+      && text(ping.deploymentVersion) && text(ping.gitCommit)
+      && (!text(expected.deploymentVersion) || text(ping.deploymentVersion) === text(expected.deploymentVersion))
+      && (!text(expected.gitCommit) || text(ping.gitCommit) === text(expected.gitCommit));
     const actionsReady = JSON.stringify(ping.actions || []) === JSON.stringify(['situation_dataops_begin', 'situation_dataops_page', 'situation_dataops_head']);
     return mismatch || !evidenceReady || !actionsReady ? { ready: false, code: 'DATAOPS_V2_CAPABILITY_REQUIRED', detail: mismatch?.[0] || (!actionsReady ? 'actions' : 'deploymentEvidence') }
       : { ready: true, code: '', deploymentId: text(ping.deploymentId), deploymentVersion: text(ping.deploymentVersion), gitCommit: text(ping.gitCommit) };

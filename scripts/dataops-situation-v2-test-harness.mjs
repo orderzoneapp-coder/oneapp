@@ -169,8 +169,8 @@ export function loadBrowserModule({ fetch: fetchImpl, expected, serviceCredentia
   });
   vm.createContext(window);
   let source = readFileSync(new URL('../DataOps_situation_v2.js', import.meta.url), 'utf8');
-  if (expected) source = source.replace(/Object\.freeze\(\{\s*deploymentId:\s*'[^']*',\s*deploymentVersion:\s*'[^']*',\s*gitCommit:\s*'[^']*'\s*\}\)/,
-    `Object.freeze(${JSON.stringify(expected)})`);
+  if (expected) source = source.replace(/const EXPECTED_DEPLOYMENT = Object\.freeze\(\{[\s\S]*?\}\);/,
+    `const EXPECTED_DEPLOYMENT = Object.freeze(${JSON.stringify(expected)});`);
   vm.runInContext(source, window);
   return window;
 }

@@ -38,14 +38,12 @@ assert.deepEqual(checkedPermissions.splice(0), [], 'ordinary save must not check
 assert.throws(() => gateway.nexusAuthRequireOperationAccess_(viewer(['dataops.read']), commit), /NEXUS_AUTH_VIEWER_READ_ONLY/);
 
 const publish = registry['dataops.situation.publish'];
-assert.throws(() => gateway.nexusAuthRequireOperationAccess_(custom(['dataops.read']), publish), /NEXUS_AUTH_PERMISSION_DENIED/);
-assert.doesNotThrow(() => gateway.nexusAuthRequireOperationAccess_(custom(['dataops.read', 'dataops.publish']), publish));
-assert.deepEqual(Array.from(publish.requiredPurposePermissions), ['dataops.publish']);
+assert.doesNotThrow(() => gateway.nexusAuthRequireOperationAccess_(custom(['dataops.read']), publish));
+assert.deepEqual(Array.from(publish.requiredPurposePermissions), []);
 
 const close = registry['dataops.close.commit'];
-assert.throws(() => gateway.nexusAuthRequireOperationAccess_(custom(['dataops.read']), close), /NEXUS_AUTH_PERMISSION_DENIED/);
-assert.doesNotThrow(() => gateway.nexusAuthRequireOperationAccess_(custom(['dataops.read', 'dataops.close']), close));
-assert.deepEqual(Array.from(close.requiredPurposePermissions), ['dataops.close']);
+assert.doesNotThrow(() => gateway.nexusAuthRequireOperationAccess_(custom(['dataops.read']), close));
+assert.deepEqual(Array.from(close.requiredPurposePermissions), []);
 assert(!close.requiredPurposePermissions.includes('dataops.write'), 'close must not redundantly require dataops.write');
 
 assert.doesNotThrow(() => gateway.nexusAuthGatewayValidatePayload_(commit, { snapshot: { hash: 'a'.repeat(64) } }));
@@ -93,4 +91,4 @@ const buildSnapshotBlock = dataOpsSource.slice(
 );
 assert.doesNotMatch(buildSnapshotBlock, /savedAt\s*:/, 'browser snapshot must not submit server-generated savedAt');
 
-console.log('NEXUS_AUTH_V2 DataOps policy passed (existing edits, VIEWER read-only, purpose permissions, immutable fields).');
+console.log('NEXUS_AUTH_V2 DataOps policy passed (existing edits/publish/close, VIEWER read-only, immutable fields).');

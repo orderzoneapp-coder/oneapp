@@ -452,7 +452,7 @@
         "deployedVersion": 8,
         "deployedContractVersion": "NEXUS_AUTH_V1",
         "sourceContractVersion": "NEXUS_AUTH_V2",
-        "cacheVersion": "2.0.0",
+        "cacheVersion": "2.1.0",
         "sessionStorage": "oneapp.nexus.auth.session.v1",
         "sessionTtlHours": 12,
         "inviteTtlHours": 72,

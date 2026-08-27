@@ -816,6 +816,16 @@ function readDataOpsSnapshotSlot(sheet) {
 function commitDataOpsSnapshot(ss, snapshot) {
   oneappNexusRejectDataOpsSnapshotImmutableFields(snapshot);
   const validated = validateDataOpsSnapshotEnvelope(snapshot);
+  // 동일한 로컬 미전송 작업을 재시도해도 원장 포인터를 다시 뒤집거나 새 revision을 만들지 않는다.
+  try {
+    const current = readCurrentDataOpsSnapshot(ss);
+    if (current && current.hash === validated.hash && current.basisDate === validated.basisDate
+      && Number(current.rowCount) === validated.rowCount && Number(current.cellCount) === validated.cellCount) {
+      return { ...current, duplicate: true };
+    }
+  } catch (ignored) {
+    // 기존 슬롯이 불완전하면 아래 staging 검증 경로로 정상 복구한다.
+  }
   // 저장시각은 클라이언트 시각이 아니라 확정 commit을 수행한 서버 시각으로 고정한다.
   validated.savedAt = new Date().toISOString();
   const properties = PropertiesService.getScriptProperties();
@@ -1123,7 +1133,8 @@ function doPost(e) {
             savedAt: saved.savedAt,
             hash: saved.hash,
             rowCount: saved.rowCount,
-            cellCount: saved.cellCount
+            cellCount: saved.cellCount,
+            duplicate: Boolean(saved.duplicate)
           }
         });
       });

@@ -10,8 +10,10 @@
 var NEXUS_AUTH_VERSION = 'NEXUS_AUTH_V2';
 var NEXUS_AUTH_LEGACY_VERSION = 'LEGACY_V1';
 var NEXUS_AUTH_APP_CONTEXT_VERSION = 'NEXUS_APP_CONTEXT_V1';
+var NEXUS_AUTH_SESSION_CONTEXT_VERSION = 'NEXUS_SESSION_CONTEXT_V1';
 var NEXUS_AUTH_DEFAULT_UPSTREAM_URL = 'https://script.google.com/macros/s/AKfycbzOUOIu_bP7NkiFVziDR0Og1da1KO1ePoU09Q3pSlPr-9uD-WkdCpWN7nidO5hlrJi6Qw/exec';
 var NEXUS_AUTH_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
+var NEXUS_AUTH_CLIENT_CONTEXT_TTL_MS = 5 * 60 * 1000;
 var NEXUS_AUTH_INVITE_TTL_MS = 72 * 60 * 60 * 1000;
 var NEXUS_AUTH_RECOVERY_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 var NEXUS_AUTH_LOGIN_WINDOW_MS = 10 * 60 * 1000;
@@ -124,7 +126,7 @@ function nexusAuthDispatch_(action, payload) {
   if (action === 'nexus_auth_bootstrap') return nexusAuthBootstrap_(payload);
   if (action === 'nexus_auth_activate') return nexusAuthActivate_(payload);
   if (action === 'nexus_auth_login') return nexusAuthLogin_(payload);
-  if (action === 'nexus_auth_session') return nexusAuthSessionView_(nexusAuthRequireSession_(payload.sessionToken));
+  if (action === 'nexus_auth_session') return nexusAuthIssueClientBundle_(nexusAuthRequireSession_(payload.sessionToken));
   if (action === 'nexus_auth_logout') return nexusAuthLogout_(payload);
 
   var session = nexusAuthRequireSession_(payload.sessionToken);
@@ -259,7 +261,7 @@ function nexusAuthIssueSession_(user, device) {
     lastSeenAt: now.toISOString(), revokedAt: '', device: nexusAuthText_(device).slice(0, 240)
   };
   nexusAuthAppend_(NEXUS_AUTH_SHEETS.SESSIONS, session);
-  return { sessionToken: rawToken, session: nexusAuthSessionView_({ user: user, session: session }) };
+  return Object.assign({ sessionToken: rawToken }, nexusAuthIssueClientBundle_({ user: user, session: session }));
 }
 
 function nexusAuthRequireSession_(rawToken) {
@@ -302,7 +304,7 @@ function nexusAuthIssueAppContext_(context, payload) {
   if (!required) throw new Error('NEXUS_AUTH_APP_CONTEXT_DENIED');
   required.forEach(function (permission) { nexusAuthRequirePermission_(context.user, permission); });
   var now = Date.now();
-  var expiresAt = Math.min(Date.parse(context.session.expiresAt || ''), now + NEXUS_AUTH_SESSION_TTL_MS);
+  var expiresAt = Math.min(Date.parse(context.session.expiresAt || ''), now + NEXUS_AUTH_CLIENT_CONTEXT_TTL_MS);
   if (!Number.isFinite(expiresAt) || expiresAt <= now) throw new Error('NEXUS_AUTH_SESSION_EXPIRED');
   var claims = {
     version: NEXUS_AUTH_APP_CONTEXT_VERSION,
@@ -314,6 +316,43 @@ function nexusAuthIssueAppContext_(context, payload) {
   };
   var encoded = encodeURIComponent(JSON.stringify(claims));
   return { appId: appId, appContextToken: encoded + '.' + nexusAuthHmac_(encoded), expiresAt: claims.expiresAt };
+}
+
+function nexusAuthCanUseApp_(user, appId) {
+  var required = nexusAuthAppPermissions_()[appId];
+  if (!required) return false;
+  try {
+    required.forEach(function (permission) { nexusAuthRequirePermission_(user, permission); });
+    return true;
+  } catch (error) {
+    return false;
+  }
+}
+
+function nexusAuthIssueClientBundle_(context) {
+  var now = Date.now();
+  var expiresAt = Math.min(Date.parse(context.session.expiresAt || ''), now + NEXUS_AUTH_CLIENT_CONTEXT_TTL_MS);
+  if (!Number.isFinite(expiresAt) || expiresAt <= now) throw new Error('NEXUS_AUTH_SESSION_EXPIRED');
+  var appContexts = Object.keys(nexusAuthAppPermissions_()).reduce(function (result, appId) {
+    if (nexusAuthCanUseApp_(context.user, appId)) result[appId] = nexusAuthIssueAppContext_(context, { appId: appId });
+    return result;
+  }, {});
+  var claims = {
+    version: NEXUS_AUTH_SESSION_CONTEXT_VERSION,
+    userId: context.user.userId,
+    userVersion: Number(context.user.version || 0),
+    sessionDigest: context.session.sessionDigest,
+    permissionsDigest: nexusAuthSha256_(JSON.stringify(nexusAuthPermissions_(context.user).slice().sort())),
+    issuedAt: new Date(now).toISOString(),
+    expiresAt: new Date(expiresAt).toISOString()
+  };
+  var encoded = encodeURIComponent(JSON.stringify(claims));
+  return {
+    session: nexusAuthSessionView_(context),
+    sessionContextToken: encoded + '.' + nexusAuthHmac_(encoded),
+    contextExpiresAt: claims.expiresAt,
+    appContexts: appContexts
+  };
 }
 
 function nexusAuthRequireAppContext_(rawToken, context, definition) {
@@ -511,12 +550,14 @@ function nexusAuthGatewayRegistry_() {
     }
     if (operationId === 'dataops.situation.publish') {
       requiredUserPermissions = [];
-      requiredPurposePermissions = ['dataops.publish'];
+      // 발행은 DataOps 앱 사용 권한과 WRITE 서비스 경계로 통제한다. 기존 일반 사용자의 업무 흐름을 축소하지 않는다.
+      requiredPurposePermissions = [];
       writableFields = [];
     }
     if (/^dataops\.close\.(context|seal|prepare|write_chunks|commit|abort)$/.test(operationId)) {
       requiredUserPermissions = [];
-      requiredPurposePermissions = ['dataops.close'];
+      // 마감도 별도 사용자 목적 권한을 추가하지 않으며, VIEWER의 WRITE 요청은 공통 정책에서 차단한다.
+      requiredPurposePermissions = [];
       writableFields = [];
     }
 
