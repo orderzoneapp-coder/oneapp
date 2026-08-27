@@ -603,6 +603,90 @@ const getSmartParserDuplicateSummary = (rows = []) => {
     });
     return { rows: duplicateRows, groups: Array.from(groups.values()) };
 };
+// SmartParser 일치 작업테이블의 행·열 편집은 저장 계약과 분리된 화면 계산만 사용한다.
+const SMART_PARSER_WORKTABLE_COLUMNS = Object.freeze([
+    { key: 'rowNumber', label: '행 번호', hideable: false },
+    { key: 'apply', label: '적용 체크', hideable: false },
+    { key: 'productCode', label: '상품코드', hideable: true },
+    { key: 'masterProduct', label: '마스터 품목명(규격)', hideable: true },
+    { key: 'parsedProduct', label: '파싱 품목명·규격·단위', hideable: true },
+    { key: 'currentInPrice', label: '기존 입고가', hideable: true },
+    { key: 'newInPrice', label: '새 입고가', hideable: true },
+    { key: 'management', label: '관리', hideable: false }
+]);
+const SMART_PARSER_WORKTABLE_DEFAULT_ORDER = Object.freeze(SMART_PARSER_WORKTABLE_COLUMNS.map(column => column.key));
+const SMART_PARSER_WORKTABLE_DATA_KEYS = Object.freeze(SMART_PARSER_WORKTABLE_COLUMNS.filter(column => column.hideable).map(column => column.key));
+const getSmartParserWorktableColumn = (columnKey) => SMART_PARSER_WORKTABLE_COLUMNS.find(column => column.key === columnKey);
+const getSmartParserContiguousRange = (orderedKeys = [], anchorKey, endKey) => {
+    const startIndex = orderedKeys.indexOf(anchorKey);
+    const endIndex = orderedKeys.indexOf(endKey);
+    if (startIndex < 0 || endIndex < 0) return endIndex >= 0 ? [endKey] : [];
+    const from = Math.min(startIndex, endIndex);
+    const to = Math.max(startIndex, endIndex);
+    return orderedKeys.slice(from, to + 1);
+};
+const createSmartParserManualRows = (count, context = {}, uuidFactory = generateUUID) => {
+    const rowCount = Math.max(0, Number(count) || 0);
+    return Array.from({ length: rowCount }, () => ({
+        _id: uuidFactory(),
+        _manualAdded: true,
+        _apply: false,
+        _matchCode: '',
+        _matchStatus: '🔴 수동추가·매핑필요',
+        _duplicateType: '',
+        _duplicateCandidates: [],
+        _hasParsedInPrice: false,
+        _catalogWarehouse: String(context.catalogWarehouse || ''),
+        _catalogPriceRule: context.priceRule || null,
+        _catalogPriceRuleStatus: context.priceRuleStatus || '',
+        _catalogPriceRuleReason: context.priceRuleReason || '',
+        코드: '',
+        품목명: '',
+        규격: '',
+        단위: '',
+        입고가: '',
+        finalData: {}
+    }));
+};
+const insertSmartParserRowsAbove = (rows = [], selectedRowIds = [], rowsToInsert = []) => {
+    const sourceRows = Array.isArray(rows) ? rows : [];
+    const selectedIds = new Set(selectedRowIds || []);
+    const insertionIndex = sourceRows.findIndex(row => row && selectedIds.has(row._id));
+    const safeIndex = insertionIndex >= 0 ? insertionIndex : sourceRows.length;
+    return [...sourceRows.slice(0, safeIndex), ...(rowsToInsert || []), ...sourceRows.slice(safeIndex)];
+};
+const removeSmartParserRowsById = (rows = [], selectedRowIds = []) => {
+    const selectedIds = new Set(selectedRowIds || []);
+    return (Array.isArray(rows) ? rows : []).filter(row => !row || !selectedIds.has(row._id));
+};
+const getSmartParserColumnHideResult = (order = [], hidden = [], selectedColumnKeys = []) => {
+    const hiddenSet = new Set(hidden || []);
+    const selectedSet = new Set(selectedColumnKeys || []);
+    const visibleDataKeys = order.filter(key => SMART_PARSER_WORKTABLE_DATA_KEYS.includes(key) && !hiddenSet.has(key));
+    const hideableSelected = order.filter(key => selectedSet.has(key) && SMART_PARSER_WORKTABLE_DATA_KEYS.includes(key) && !hiddenSet.has(key));
+    const protectedSelected = order.filter(key => selectedSet.has(key) && !SMART_PARSER_WORKTABLE_DATA_KEYS.includes(key));
+    const maxHideCount = Math.max(0, visibleDataKeys.length - 1);
+    const hiddenNow = hideableSelected.slice(0, maxHideCount);
+    hiddenNow.forEach(key => hiddenSet.add(key));
+    return {
+        hidden: order.filter(key => hiddenSet.has(key)),
+        hiddenNow,
+        protectedSelected,
+        retainedForMinimum: hideableSelected.slice(hiddenNow.length)
+    };
+};
+const restoreSmartParserColumn = (order = [], hidden = [], columnKey, selectedColumnKeys = []) => {
+    if (!hidden.includes(columnKey)) return { order: [...order], hidden: [...hidden] };
+    const withoutColumn = order.filter(key => key !== columnKey);
+    const selectedSet = new Set(selectedColumnKeys || []);
+    let insertionIndex = withoutColumn.findIndex(key => selectedSet.has(key) && !hidden.includes(key) && SMART_PARSER_WORKTABLE_DATA_KEYS.includes(key));
+    if (insertionIndex < 0)
+        insertionIndex = withoutColumn.findIndex(key => !hidden.includes(key) && SMART_PARSER_WORKTABLE_DATA_KEYS.includes(key));
+    if (insertionIndex < 0) insertionIndex = withoutColumn.length;
+    withoutColumn.splice(insertionIndex, 0, columnKey);
+    return { order: withoutColumn, hidden: hidden.filter(key => key !== columnKey) };
+};
+const isSmartParserApplyCandidate = (row) => !!(row && !row._excluded && row._apply && row._matchCode && !String(row._matchStatus || '').includes('매핑제외'));
 const normalizeSmartParserStoppedProducts = (input = {}) => {
     const result = {};
     const entries = Array.isArray(input)
@@ -1434,7 +1518,7 @@ const useParserActions = (appState) => {
             setActiveTab('duplicate');
             return false;
         }
-        const toApply = reconciledRows.filter(r => r && !r._excluded && r._apply && r._matchCode && !String(r._matchStatus || '').includes('매핑제외'));
+        const toApply = reconciledRows.filter(isSmartParserApplyCandidate);
         if (toApply.length === 0) {
             showToast("⚠️ 적용할 항목이 없습니다.");
             return false;
@@ -2420,6 +2504,12 @@ const ParserApp = () => {
     const appState = useParserApp();
     const actions = useParserActions(appState);
     const { masterProducts, parserBuffer, currentTag, activeTab, setActiveTab, showInputModal, setShowInputModal, showReviewModal, setShowReviewModal, showErpModal, setShowErpModal, toastMsg, showToast, isProcessing, processMsg, globalSearch, setGlobalSearch, targetId, setTargetId, selectedMissingCodes, setSelectedMissingCodes, processedCodes, parserExcludeDict, stoppedProducts, showStopManager, setShowStopManager, catalogUpdatedAt, catalogWarehouseMap, marginRules, lastExcludedCount } = appState;
+    const emptyWorktableSelection = () => ({ type: null, anchorRowId: null, selectedRowIds: [], anchorColumnKey: null, selectedColumnKeys: [] });
+    const [worktableSelection, setWorktableSelection] = useState(emptyWorktableSelection);
+    const [worktableColumns, setWorktableColumns] = useState(() => ({ order: [...SMART_PARSER_WORKTABLE_DEFAULT_ORDER], hidden: [] }));
+    const [showColumnAddMenu, setShowColumnAddMenu] = useState(false);
+    const rowDragRef = useRef({ active: false, anchorId: null });
+    const columnDragRef = useRef({ active: false, anchorKey: null });
     const availableTags = useMemo(() => { const counts = {}; Object.values(masterProducts).forEach(m => String(m['카탈로그'] || '').split(',').forEach(t => { const r = t.trim(); if (r)
         counts[r] = (counts[r] || 0) + 1; })); Object.keys(catalogWarehouseMap || {}).forEach(tag => { if (!Object.prototype.hasOwnProperty.call(counts, tag)) counts[tag] = 0; }); return Object.keys(counts)
             .map(tag => ({ name: tag, count: counts[tag], updatedAt: catalogUpdatedAt[tag] || '' }))
@@ -2428,9 +2518,13 @@ const ParserApp = () => {
     const duplicateRows = parserBuffer.filter(r => r && (r._duplicateType || String(r._matchStatus || '').includes('중복')));
     const duplicateIds = new Set(duplicateRows.map(row => row._id));
     const matchedRows = parserBuffer.filter(r => r._matchCode && !duplicateIds.has(r._id));
+    const matchedWorkRows = parserBuffer.filter(r => !duplicateIds.has(r._id) && (r._matchCode || r._manualAdded));
     const similarRows = parserBuffer.filter(r => !r._matchCode && String(r._matchStatus || '').includes('유사') && !duplicateIds.has(r._id));
     const combinedSimilarRows = similarRows;
-    const unmatchedRows = parserBuffer.filter(r => !r._matchCode && r._matchStatus.includes('불일치'));
+    const unmatchedRows = parserBuffer.filter(r => !r._matchCode && (String(r._matchStatus || '').includes('불일치') || r._manualAdded) && !duplicateIds.has(r._id));
+    const visibleWorktableColumnKeys = useMemo(() => worktableColumns.order.filter(key => !worktableColumns.hidden.includes(key)), [worktableColumns]);
+    const selectableWorktableColumnKeys = useMemo(() => visibleWorktableColumnKeys.filter(key => key !== 'rowNumber' && key !== 'apply'), [visibleWorktableColumnKeys]);
+    const hiddenWorktableColumnKeys = useMemo(() => worktableColumns.order.filter(key => worktableColumns.hidden.includes(key)), [worktableColumns]);
     const missingRows = useMemo(() => {
         if (!currentTag)
             return [];
@@ -2475,7 +2569,7 @@ const ParserApp = () => {
         const kw = appState.missingSearch.toLowerCase().trim();
         return missingRows.filter(m => (m.품목명 || '').toLowerCase().includes(kw) || (m.코드 || '').toLowerCase().includes(kw));
     }, [missingRows, appState.missingSearch]);
-    const pendingApplyRows = useMemo(() => matchedRows.filter(r => r._apply && r._matchCode), [matchedRows]);
+    const pendingApplyRows = useMemo(() => matchedRows.filter(isSmartParserApplyCandidate), [matchedRows]);
     const unresolvedQueueCount = combinedSimilarRows.length + unmatchedRows.length + duplicateRows.length + (currentTag ? missingRows.length : 0);
     const [autoCompletionShown, setAutoCompletionShown] = useState(false);
     useEffect(() => {
@@ -2530,6 +2624,175 @@ const ParserApp = () => {
             return nextRow;
         }));
     }, [appState.setParserBuffer, catalogWarehouseMap, marginRules, currentTag, masterProducts]);
+    const selectWorktableRowRange = useCallback((endRowId, explicitAnchorId = null) => {
+        const orderedIds = matchedWorkRows.map(row => row._id);
+        setWorktableSelection(previous => {
+            const anchorId = explicitAnchorId || (previous.type === 'ROW' && orderedIds.includes(previous.anchorRowId) ? previous.anchorRowId : endRowId);
+            return {
+                type: 'ROW',
+                anchorRowId: anchorId,
+                selectedRowIds: getSmartParserContiguousRange(orderedIds, anchorId, endRowId),
+                anchorColumnKey: null,
+                selectedColumnKeys: []
+            };
+        });
+        setShowColumnAddMenu(false);
+    }, [matchedWorkRows]);
+    const selectWorktableColumnRange = useCallback((endColumnKey, explicitAnchorKey = null) => {
+        setWorktableSelection(previous => {
+            const anchorKey = explicitAnchorKey || (previous.type === 'COLUMN' && selectableWorktableColumnKeys.includes(previous.anchorColumnKey) ? previous.anchorColumnKey : endColumnKey);
+            return {
+                type: 'COLUMN',
+                anchorRowId: null,
+                selectedRowIds: [],
+                anchorColumnKey: anchorKey,
+                selectedColumnKeys: getSmartParserContiguousRange(selectableWorktableColumnKeys, anchorKey, endColumnKey)
+            };
+        });
+    }, [selectableWorktableColumnKeys]);
+    const handleWorktableRowMouseDown = useCallback((event, rowId) => {
+        if (event.button !== 0) return;
+        event.preventDefault();
+        if (event.shiftKey) {
+            rowDragRef.current = { active: false, anchorId: null };
+            selectWorktableRowRange(rowId);
+            return;
+        }
+        rowDragRef.current = { active: true, anchorId: rowId };
+        selectWorktableRowRange(rowId, rowId);
+    }, [selectWorktableRowRange]);
+    const handleWorktableColumnMouseDown = useCallback((event, columnKey) => {
+        if (event.button !== 0) return;
+        event.preventDefault();
+        if (event.shiftKey) {
+            columnDragRef.current = { active: false, anchorKey: null };
+            selectWorktableColumnRange(columnKey);
+            return;
+        }
+        columnDragRef.current = { active: true, anchorKey: columnKey };
+        selectWorktableColumnRange(columnKey, columnKey);
+    }, [selectWorktableColumnRange]);
+    const handleWorktableRowKeyDown = useCallback((event, rowId) => {
+        const orderedIds = matchedWorkRows.map(row => row._id);
+        const rowIndex = orderedIds.indexOf(rowId);
+        if (event.shiftKey && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
+            event.preventDefault();
+            const nextIndex = Math.max(0, Math.min(orderedIds.length - 1, rowIndex + (event.key === 'ArrowUp' ? -1 : 1)));
+            selectWorktableRowRange(orderedIds[nextIndex]);
+            requestAnimationFrame(() => document.querySelector(`[data-worktable-row-id="${orderedIds[nextIndex]}"]`)?.focus());
+        }
+        else if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            selectWorktableRowRange(rowId, rowId);
+        }
+    }, [matchedWorkRows, selectWorktableRowRange]);
+    const handleWorktableColumnKeyDown = useCallback((event, columnKey) => {
+        const columnIndex = selectableWorktableColumnKeys.indexOf(columnKey);
+        if (event.shiftKey && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')) {
+            event.preventDefault();
+            const nextIndex = Math.max(0, Math.min(selectableWorktableColumnKeys.length - 1, columnIndex + (event.key === 'ArrowLeft' ? -1 : 1)));
+            selectWorktableColumnRange(selectableWorktableColumnKeys[nextIndex]);
+            requestAnimationFrame(() => document.querySelector(`[data-worktable-column-key="${selectableWorktableColumnKeys[nextIndex]}"]`)?.focus());
+        }
+        else if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            selectWorktableColumnRange(columnKey, columnKey);
+        }
+    }, [selectableWorktableColumnKeys, selectWorktableColumnRange]);
+    const addSmartParserManualRows = useCallback((count, selectedRowIds = []) => {
+        if (!currentTag) {
+            showToast('⚠️ 수동 행을 추가하려면 먼저 작업 카탈로그를 선택하세요.');
+            return;
+        }
+        const warehouse = String(catalogWarehouseMap?.[normalizeParserCatalogName(currentTag)] ?? '').trim();
+        const priceRule = getParserPriceSelection(warehouse, '', marginRules);
+        const manualRows = createSmartParserManualRows(count, {
+            catalogWarehouse: warehouse,
+            priceRule: priceRule.rule,
+            priceRuleStatus: priceRule.matchType,
+            priceRuleReason: priceRule.matchType === 'exact' ? '창고+단위 정확 일치' : '*/* 기본 룰'
+        });
+        appState.setParserBuffer(previous => insertSmartParserRowsAbove(previous, selectedRowIds, manualRows));
+        setWorktableSelection({
+            type: 'ROW',
+            anchorRowId: manualRows[0]?._id || null,
+            selectedRowIds: manualRows.map(row => row._id),
+            anchorColumnKey: null,
+            selectedColumnKeys: []
+        });
+        showToast(`✅ 수동 작업행 ${manualRows.length}개를 추가했습니다. 매핑 전에는 저장 대상에서 제외됩니다.`);
+    }, [currentTag, catalogWarehouseMap, marginRules, appState.setParserBuffer, showToast]);
+    const deleteSmartParserWorkRows = useCallback((rowIds) => {
+        const requestedIds = Array.from(new Set(rowIds || []));
+        const existingIds = requestedIds.filter(rowId => parserBuffer.some(row => row && row._id === rowId));
+        if (existingIds.length === 0) {
+            showToast('⚠️ 삭제할 작업행이 없습니다.');
+            return;
+        }
+        if (!window.confirm(`선택한 ${existingIds.length}개 행을 현재 파싱 작업에서 삭제합니다. 마스터 상품과 공급사 제외목록은 변경되지 않습니다.`)) return;
+        try {
+            const nextRows = reconcileSmartParserDuplicateRows(removeSmartParserRowsById(parserBuffer, existingIds), masterProducts);
+            appState.setParserBuffer(nextRows);
+            if (targetId && existingIds.includes(targetId)) {
+                setTargetId(null);
+                setGlobalSearch('');
+            }
+            setWorktableSelection(emptyWorktableSelection());
+            showToast(`✅ 현재 파싱 작업에서 ${existingIds.length}개 행을 삭제했습니다. 마스터 데이터는 변경되지 않았습니다.`);
+        }
+        catch (error) {
+            console.error('SmartParser worktable row deletion failed', error);
+            showToast(`❌ 행 삭제 재조정에 실패해 기존 작업을 유지했습니다: ${error?.message || '알 수 없는 오류'}`);
+        }
+    }, [parserBuffer, masterProducts, appState.setParserBuffer, targetId, setTargetId, setGlobalSearch, showToast]);
+    const hideSelectedSmartParserColumns = useCallback(() => {
+        const result = getSmartParserColumnHideResult(worktableColumns.order, worktableColumns.hidden, worktableSelection.selectedColumnKeys);
+        if (result.hiddenNow.length > 0)
+            setWorktableColumns(previous => ({ ...previous, hidden: result.hidden }));
+        const messages = [];
+        if (result.hiddenNow.length > 0) messages.push(`${result.hiddenNow.length}개 열을 화면에서 숨겼습니다. 데이터와 F7 저장값은 유지됩니다.`);
+        if (result.protectedSelected.length > 0) messages.push(`${result.protectedSelected.map(key => getSmartParserWorktableColumn(key)?.label || key).join(', ')} 열은 보호되어 숨기지 않았습니다.`);
+        if (result.retainedForMinimum.length > 0) messages.push('데이터 열은 최소 1개가 보여야 하므로 마지막 열은 유지했습니다.');
+        showToast((result.hiddenNow.length > 0 ? '✅ ' : '⚠️ ') + (messages.join(' ') || '숨길 수 있는 열이 없습니다.'));
+        setWorktableSelection(emptyWorktableSelection());
+        setShowColumnAddMenu(false);
+    }, [worktableColumns, worktableSelection.selectedColumnKeys, showToast]);
+    const restoreHiddenSmartParserColumn = useCallback((columnKey) => {
+        setWorktableColumns(previous => restoreSmartParserColumn(previous.order, previous.hidden, columnKey, worktableSelection.selectedColumnKeys));
+        setWorktableSelection({ type: 'COLUMN', anchorRowId: null, selectedRowIds: [], anchorColumnKey: columnKey, selectedColumnKeys: [columnKey] });
+        setShowColumnAddMenu(false);
+        showToast(`✅ ${getSmartParserWorktableColumn(columnKey)?.label || columnKey} 열을 복원했습니다. 기존 데이터와 편집값은 그대로입니다.`);
+    }, [worktableSelection.selectedColumnKeys, showToast]);
+    const beginManualRowMapping = useCallback((row) => {
+        setTargetId(row._id);
+        setGlobalSearch(String(row['품목명'] || '').replace(/[()[\]{},./]/g, ' ').replace(/\s+/g, ' ').trim());
+        setActiveTab('unmatched');
+    }, [setTargetId, setGlobalSearch, setActiveTab]);
+    useEffect(() => {
+        const stopDragging = () => {
+            rowDragRef.current = { active: false, anchorId: null };
+            columnDragRef.current = { active: false, anchorKey: null };
+        };
+        window.addEventListener('mouseup', stopDragging);
+        return () => window.removeEventListener('mouseup', stopDragging);
+    }, []);
+    useEffect(() => {
+        setWorktableSelection(emptyWorktableSelection());
+        setShowColumnAddMenu(false);
+    }, [activeTab]);
+    useEffect(() => {
+        const availableRowIds = new Set(matchedWorkRows.map(row => row._id));
+        setWorktableSelection(previous => {
+            if (previous.type !== 'ROW') return previous;
+            const selectedRowIds = previous.selectedRowIds.filter(rowId => availableRowIds.has(rowId));
+            if (selectedRowIds.length === 0) return emptyWorktableSelection();
+            const anchorRowId = availableRowIds.has(previous.anchorRowId) ? previous.anchorRowId : selectedRowIds[0];
+            if (anchorRowId === previous.anchorRowId && selectedRowIds.length === previous.selectedRowIds.length) return previous;
+            return { ...previous, anchorRowId, selectedRowIds };
+        });
+    }, [parserBuffer]);
+    const selectedWorktableRowIds = new Set(worktableSelection.selectedRowIds);
+    const selectedWorktableColumnKeys = new Set(worktableSelection.selectedColumnKeys);
     const safeGoToMain = async () => {
         const toApply = appState.parserBuffer.filter(r => r._apply && r._matchCode);
         if (toApply.length > 0) {
@@ -2575,7 +2838,12 @@ const ParserApp = () => {
     useEffect(() => {
         const handleGlobalKeyDown = (e) => {
             const isInput = ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName);
-            if (e.key === 'F7') {
+            if (e.key === 'Escape' && worktableSelection.type) {
+                e.preventDefault();
+                setWorktableSelection(emptyWorktableSelection());
+                setShowColumnAddMenu(false);
+            }
+            else if (e.key === 'F7') {
                 e.preventDefault();
                 if (isInput)
                     document.activeElement.blur();
@@ -2597,7 +2865,91 @@ const ParserApp = () => {
         };
         window.addEventListener('keydown', handleGlobalKeyDown);
         return () => window.removeEventListener('keydown', handleGlobalKeyDown);
-    }, [appState.isProcessing, appState.parserBuffer.length, actions]);
+    }, [appState.isProcessing, appState.parserBuffer.length, actions, worktableSelection.type]);
+    const renderMatchedWorktableHeader = (columnKey) => {
+        if (columnKey === 'rowNumber')
+            return React.createElement("th", { key: columnKey, scope: "col", className: "sticky left-0 z-20 w-11 min-w-[44px] py-2.5 px-2 text-center bg-[#ece9e1] border-r border-[#d8d2c7]", title: "화면 표시 순서" }, "행");
+        if (columnKey === 'apply')
+            return React.createElement("th", { key: columnKey, scope: "col", className: "sticky left-[44px] z-20 w-12 min-w-[48px] py-2.5 px-3 text-center bg-[#f5f4f0] border-r border-[#e8e4db]", title: "마스터 적용 선택 (행 선택과 별도)" },
+                React.createElement("input", { type: "checkbox", "aria-label": "일치 행 전체 적용 선택", className: "rounded", checked: matchedRows.length > 0 && matchedRows.every(r => r._apply), onChange: () => { const all = matchedRows.every(r => r._apply); appState.setParserBuffer(p => p.map(r => r._matchCode && !duplicateIds.has(r._id) ? { ...r, _apply: !all } : r)); } }));
+        const column = getSmartParserWorktableColumn(columnKey);
+        const isSelected = worktableSelection.type === 'COLUMN' && selectedWorktableColumnKeys.has(columnKey);
+        const alignment = columnKey === 'currentInPrice' || columnKey === 'newInPrice' ? 'text-right' : columnKey === 'management' ? 'text-center' : '';
+        const emphasis = columnKey === 'parsedProduct' || columnKey === 'newInPrice' ? 'text-emerald-700 bg-emerald-50/50' : '';
+        return React.createElement("th", {
+            key: columnKey,
+            scope: "col",
+            tabIndex: 0,
+            "data-worktable-column-key": columnKey,
+            "aria-label": `${column?.label || columnKey} 열 선택`,
+            "aria-selected": isSelected,
+            onMouseDown: event => handleWorktableColumnMouseDown(event, columnKey),
+            onMouseEnter: () => { if (columnDragRef.current.active) selectWorktableColumnRange(columnKey, columnDragRef.current.anchorKey); },
+            onKeyDown: event => handleWorktableColumnKeyDown(event, columnKey),
+            className: `py-2.5 px-3 cursor-cell select-none focus:outline-none ${alignment} ${emphasis} ${isSelected ? 'bg-sky-100 text-sky-900 outline outline-2 outline-sky-500 -outline-offset-2' : 'hover:bg-sky-50'}`,
+            title: column?.hideable ? "열 선택 · 화면에서만 숨기며 데이터는 유지됩니다" : "보호 열 · 선택할 수 있지만 숨길 수 없습니다"
+        }, column?.label || columnKey);
+    };
+    const renderMatchedWorktableCell = (columnKey, row, rowIndex, rowContext) => {
+        const { mItem, rowWarehouse, rowRuleMatch, rowPrices, rowExpectedSale, mIn, pIn, isDiff, manualNeedsMapping } = rowContext;
+        const isColumnSelected = worktableSelection.type === 'COLUMN' && selectedWorktableColumnKeys.has(columnKey);
+        const selectedColumnClass = isColumnSelected ? 'outline outline-1 outline-sky-400 -outline-offset-1' : '';
+        if (columnKey === 'rowNumber') {
+            const isRowSelected = worktableSelection.type === 'ROW' && selectedWorktableRowIds.has(row._id);
+            return React.createElement("th", {
+                key: columnKey,
+                scope: "row",
+                tabIndex: 0,
+                "data-worktable-row-id": row._id,
+                "aria-label": `${rowIndex + 1}번 행 선택`,
+                "aria-selected": isRowSelected,
+                onMouseDown: event => handleWorktableRowMouseDown(event, row._id),
+                onMouseEnter: () => { if (rowDragRef.current.active) selectWorktableRowRange(row._id, rowDragRef.current.anchorId); },
+                onKeyDown: event => handleWorktableRowKeyDown(event, row._id),
+                className: `sticky left-0 z-[5] w-11 min-w-[44px] py-2 px-2 text-center font-black cursor-row-resize select-none border-r focus:outline-none ${isRowSelected ? 'bg-indigo-200 text-indigo-900 outline outline-2 outline-indigo-500 -outline-offset-2' : 'bg-[#f7f6f2] text-slate-500 hover:bg-indigo-50 border-[#e8e4db]'}`
+            }, rowIndex + 1);
+        }
+        if (columnKey === 'apply')
+            return React.createElement("td", { key: columnKey, className: "sticky left-[44px] z-[4] py-2 px-3 text-center bg-white border-r border-slate-100" },
+                React.createElement("input", { type: "checkbox", "aria-label": `${rowIndex + 1}번 행 마스터 적용`, className: "rounded text-emerald-600 focus:ring-emerald-500", checked: !!row._apply, disabled: !row._matchCode, title: manualNeedsMapping ? "매핑 후 적용할 수 있습니다" : "마스터 적용 선택", onChange: () => appState.setParserBuffer(p => p.map(r => r._id === row._id ? { ...r, _apply: !r._apply } : r)) }));
+        if (columnKey === 'productCode')
+            return React.createElement("td", { key: columnKey, className: `py-2 px-3 font-mono text-[11px] text-slate-500 ${selectedColumnClass}` }, row._matchCode || '-');
+        if (columnKey === 'masterProduct')
+            return React.createElement("td", { key: columnKey, className: `py-2 px-3 ${selectedColumnClass}` }, manualNeedsMapping
+                ? React.createElement("span", { className: "text-[10px] font-black text-rose-600 bg-rose-50 border border-rose-100 rounded px-2 py-1" }, "수동 추가 · 매핑 필요")
+                : React.createElement("div", { className: "flex flex-col leading-tight" },
+                    React.createElement("span", { className: "font-bold text-slate-800" }, mItem.품목명 || row['품목명']),
+                    (mItem.규격 || row['규격']) && React.createElement("span", { className: "text-[11px] text-slate-400 mt-0.5" }, "(", mItem.규격 || row['규격'], ")")));
+        if (columnKey === 'parsedProduct')
+            return React.createElement("td", { key: columnKey, className: `py-2 px-3 text-emerald-800 bg-emerald-50/20 font-bold min-w-[280px] ${selectedColumnClass}` },
+                React.createElement("div", { className: "flex items-center gap-1.5" },
+                    React.createElement("input", { type: "text", value: row['품목명'] || '', onChange: e => handleUpdateMatchedText(row._id, '품목명', e.target.value), className: "h-7 min-w-0 flex-1 rounded border border-emerald-200 bg-white px-2 text-[11px] font-black text-emerald-900 outline-none focus:border-emerald-500", title: manualNeedsMapping ? "매핑 검색에 사용할 품목명" : "저장할 품목명 수정" }),
+                    row._isSoldOut && React.createElement("span", { className: "shrink-0 bg-rose-100 text-rose-600 px-1.5 py-0.5 rounded text-[10px] font-black" }, "품절")),
+                React.createElement("div", { className: "mt-1 flex items-center gap-1" },
+                    React.createElement("input", { type: "text", value: row['규격'] || '', onChange: e => handleUpdateMatchedText(row._id, '규격', e.target.value), placeholder: "규격", className: "h-7 min-w-0 flex-1 rounded border border-slate-200 bg-white px-2 text-[10px] font-bold text-slate-700 outline-none focus:border-emerald-400", title: manualNeedsMapping ? "매핑 검색에 사용할 규격" : "저장할 규격 수정" }),
+                    React.createElement("input", { type: "text", value: row['단위'] || '', onChange: e => handleUpdateMatchedText(row._id, '단위', e.target.value), placeholder: "단위", className: "h-7 w-[64px] rounded border border-slate-200 bg-white px-2 text-[10px] font-bold text-slate-700 outline-none focus:border-emerald-400", title: manualNeedsMapping ? "매핑 후 가격 계산에 사용할 단위" : "저장할 단위 수정" })),
+                manualNeedsMapping
+                    ? React.createElement("div", { className: "mt-1 text-[10px] font-black text-rose-600" }, row._matchStatus)
+                    : React.createElement("div", { className: "mt-1 text-[10px] font-black text-indigo-600 whitespace-normal" }, `창고 ${rowWarehouse || '공란'} · 단위 ${row['단위'] || '공란'} · ${rowRuleMatch.matchType} · ${rowRuleMatch.marginRate}% ${rowRuleMatch.calculationType === 'divide' ? '나누기' : '곱하기'} · 출고 ${rowExpectedSale ? rowExpectedSale.toLocaleString() : 0} · 시중 ${parseNum(rowPrices['시중가']).toLocaleString()} · 소분 ${parseNum(rowPrices['1입고']).toLocaleString()}/${parseNum(rowPrices['1출고']).toLocaleString()}`));
+        if (columnKey === 'currentInPrice')
+            return React.createElement("td", { key: columnKey, className: `py-2 px-3 text-right text-slate-500 font-bold ${selectedColumnClass}` }, manualNeedsMapping ? '-' : (mIn ? mIn.toLocaleString() : '-'));
+        if (columnKey === 'newInPrice')
+            return React.createElement("td", { key: columnKey, className: `py-2 px-3 text-right font-black ${isDiff ? 'text-rose-500 bg-rose-50/30' : 'text-emerald-700 bg-emerald-50/20'} ${selectedColumnClass}` }, manualNeedsMapping
+                ? React.createElement("span", { className: "text-[10px] text-slate-400", title: "매핑 후 새 입고가를 입력할 수 있습니다" }, "매핑 후 입력")
+                : React.createElement(EditablePriceCell, { rowId: row._id, initialVal: (row.finalData || {})['입고가'], onUpdate: handleUpdateMatchedPrice }));
+        if (columnKey === 'management')
+            return React.createElement("td", { key: columnKey, className: `py-2 px-3 text-center ${selectedColumnClass}` },
+                React.createElement("div", { className: "flex justify-center gap-1" }, manualNeedsMapping
+                    ? [
+                        React.createElement("button", { key: "map", onClick: () => beginManualRowMapping(row), className: "h-7 px-2 rounded border bg-indigo-50 text-indigo-700 border-indigo-200 text-[10px] font-black", title: "기존 마스터 검색·매핑 흐름 열기" }, "매핑"),
+                        React.createElement("button", { key: "delete", onClick: () => deleteSmartParserWorkRows([row._id]), className: "h-7 px-2 rounded border bg-rose-50 text-rose-700 border-rose-200 text-[10px] font-black", title: "현재 파싱 작업에서만 삭제" }, "현재 작업에서 삭제")
+                    ]
+                    : [
+                        React.createElement("button", { key: "cancel", onClick: () => actions.handleCancelMapping(row._id), className: "h-7 px-2 rounded border bg-slate-50 text-slate-600 text-[10px] font-black", title: "연결 취소 후 불일치로 이동" }, "연결취소"),
+                        React.createElement("button", { key: "exclude", onClick: () => actions.handleExcludeParsedItem(row._id), className: "h-7 px-2 rounded border bg-rose-50 text-rose-700 text-[10px] font-black", title: "다음 파싱부터 공급사 제외" }, "공급사 제외")
+                    ]));
+        return null;
+    };
     return (React.createElement("div", { className: "h-screen w-full bg-slate-100 flex justify-center overflow-hidden font-sans" },
         React.createElement("style", null, `@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css'); body { font-family: 'Pretendard', sans-serif; background-color: #f1f5f9; overflow: hidden; } ::-webkit-scrollbar { width: 8px; height: 8px; } ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; } .custom-scrollbar::-webkit-scrollbar-track { background: #f8fafc; } .fade-in { animation: fadeIn 0.3s ease-out; } @media (max-height: 650px) { .parser-review-insight { height: 36px !important; margin-bottom: .25rem !important; padding: .125rem .5rem !important; overflow: hidden; } .parser-review-insight > div { height: 100%; align-items: center; } .parser-review-insight > div > div:first-child { display: none; } .parser-review-insight > div > div:last-child, .parser-review-insight button { height: 100%; } .parser-review-insight button { padding: 0 .25rem !important; } .parser-review-insight button > div { line-height: .75rem !important; font-size: .625rem !important; } .parser-review-price-cards { height: 30px !important; gap: .25rem !important; margin-bottom: .25rem !important; } .parser-review-price-cards > div { padding: .125rem !important; border-radius: .5rem !important; flex-direction: row !important; justify-content: center; gap: .25rem; } .parser-review-price-cards > div > div { margin: 0 !important; font-size: .625rem !important; line-height: .75rem !important; } } @keyframes fadeIn { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }`),
         toastMsg && React.createElement("div", { className: "fixed bottom-6 right-6 z-[1000] bg-slate-800 text-white px-6 py-3 rounded-xl shadow-2xl flex items-center gap-3 fade-in text-sm font-bold border border-slate-700" },
@@ -2641,7 +2993,7 @@ const ParserApp = () => {
                     React.createElement("div", { className: "flex gap-1.5 shrink-0 bg-slate-100/80 p-1.5 rounded-xl border border-slate-200" },
                         React.createElement("button", { onClick: () => setActiveTab('matched'), className: `px-4 py-1.5 rounded-lg text-[12px] font-black ${activeTab === 'matched' ? 'bg-white text-emerald-600 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700'}` },
                             "\uD83D\uDFE2 \uC77C\uCE58 (",
-                            matchedRows.length,
+                            matchedWorkRows.length,
                             ")"),
                         React.createElement("button", { onClick: () => setActiveTab('similar'), className: `px-4 py-1.5 rounded-lg text-[12px] font-black ${activeTab === 'similar' ? 'bg-white text-amber-600 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700'}` },
                             "\uD83D\uDFE1 \uC720\uC0AC (",
@@ -2679,7 +3031,7 @@ const ParserApp = () => {
                             React.createElement("i", { className: "fas fa-user-lock mr-1.5 text-[12px]" }),
                             "품절/정지",
                             Object.keys(stoppedProducts || {}).length > 0 && React.createElement("span", { className: "ml-1.5 bg-amber-100 text-amber-700 px-1.5 rounded text-[10px] font-black" }, Object.keys(stoppedProducts || {}).length)),
-                        React.createElement("button", { onClick: actions.handleResetParser, disabled: parserBuffer.length === 0, className: `w-9 h-9 rounded-lg flex items-center justify-center border shadow-sm shrink-0 transition-colors ${parserBuffer.length > 0 ? 'bg-white border-slate-300 text-slate-500 hover:text-slate-800 hover:bg-slate-100' : 'bg-slate-50 border-slate-200 text-slate-300 cursor-not-allowed'}`, title: "\uC791\uC5C5 \uCD08\uAE30\uD654 (\uC138\uC158 \uBE44\uC6B0\uAE30)" },
+                        React.createElement("button", { onClick: () => { setWorktableSelection(emptyWorktableSelection()); setShowColumnAddMenu(false); actions.handleResetParser(); }, disabled: parserBuffer.length === 0, className: `w-9 h-9 rounded-lg flex items-center justify-center border shadow-sm shrink-0 transition-colors ${parserBuffer.length > 0 ? 'bg-white border-slate-300 text-slate-500 hover:text-slate-800 hover:bg-slate-100' : 'bg-slate-50 border-slate-200 text-slate-300 cursor-not-allowed'}`, title: "\uC791\uC5C5 \uCD08\uAE30\uD654 (\uC138\uC158 \uBE44\uC6B0\uAE30)" },
                             React.createElement("i", { className: "fas fa-redo-alt text-[13px]" })),
                         React.createElement("button", { onClick: () => setShowInputModal(true), className: "h-9 px-4 rounded-lg text-[12px] font-bold bg-indigo-50 text-indigo-600 border border-indigo-200 hover:bg-indigo-100 shadow-sm" },
                             React.createElement("i", { className: "fas fa-magic mr-1.5 text-[13px]" }),
@@ -2704,54 +3056,46 @@ const ParserApp = () => {
                 React.createElement("i", { className: "fas fa-robot text-6xl text-slate-300 mb-4" }),
                 React.createElement("h2", { className: "text-xl font-black text-slate-600 mb-2" }, "Smart Parser \uB300\uAE30\uC911"),
                 React.createElement("p", { className: "text-[13px] font-bold" }, "\uC0C1\uB2E8 [\uC0C8 \uD14D\uC2A4\uD2B8 \uD30C\uC2F1] \uBC84\uD2BC\uC744 \uB20C\uB7EC \uC791\uC5C5\uC744 \uC2DC\uC791\uD558\uC138\uC694."))) : activeTab === 'matched' ? (React.createElement("div", { className: "bg-white border border-slate-200 rounded-xl shadow-sm h-full flex flex-col overflow-hidden fade-in" },
+                React.createElement("div", { className: "relative h-11 min-h-[44px] px-3 border-b border-slate-200 bg-slate-50 flex items-center justify-between gap-3 shrink-0" },
+                    React.createElement("div", { className: "flex items-center gap-2 min-w-0" }, worktableSelection.type === 'ROW'
+                        ? [
+                            React.createElement("span", { key: "label", className: "text-[11px] font-black text-indigo-700" }, `${worktableSelection.selectedRowIds.length}개 행 선택`),
+                            React.createElement("button", { key: "add", onClick: () => addSmartParserManualRows(worktableSelection.selectedRowIds.length, worktableSelection.selectedRowIds), className: "h-7 px-2.5 rounded border border-indigo-200 bg-indigo-50 text-indigo-700 text-[10px] font-black", title: "선택 범위의 첫 행 위에 같은 수의 수동 작업행 추가" }, `행 추가(${worktableSelection.selectedRowIds.length})`),
+                            React.createElement("button", { key: "delete", onClick: () => deleteSmartParserWorkRows(worktableSelection.selectedRowIds), className: "h-7 px-2.5 rounded border border-rose-200 bg-rose-50 text-rose-700 text-[10px] font-black", title: "현재 parserBuffer 작업행만 제거" }, `선택 행 삭제(${worktableSelection.selectedRowIds.length})`),
+                            React.createElement("button", { key: "clear", onClick: () => setWorktableSelection(emptyWorktableSelection()), className: "h-7 px-2 text-[10px] font-bold text-slate-500 hover:text-slate-800" }, "선택 해제")
+                        ]
+                        : worktableSelection.type === 'COLUMN'
+                            ? [
+                                React.createElement("span", { key: "label", className: "text-[11px] font-black text-sky-700" }, `${worktableSelection.selectedColumnKeys.length}개 열 선택`),
+                                React.createElement("div", { key: "add-wrap", className: "relative" },
+                                    React.createElement("button", { onClick: () => setShowColumnAddMenu(value => !value), disabled: hiddenWorktableColumnKeys.length === 0, className: `h-7 px-2.5 rounded border text-[10px] font-black ${hiddenWorktableColumnKeys.length > 0 ? 'border-sky-200 bg-sky-50 text-sky-700' : 'border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed'}`, title: hiddenWorktableColumnKeys.length > 0 ? "숨긴 기존 열 한 개 복원" : "추가할 숨김 열이 없습니다" }, "열 추가"),
+                                    showColumnAddMenu && hiddenWorktableColumnKeys.length > 0 && React.createElement("div", { className: "absolute top-8 left-0 z-50 min-w-[210px] rounded-lg border border-slate-200 bg-white shadow-xl p-1" }, hiddenWorktableColumnKeys.map(columnKey => React.createElement("button", { key: columnKey, onClick: () => restoreHiddenSmartParserColumn(columnKey), className: "block w-full text-left px-3 py-2 rounded text-[11px] font-bold text-slate-700 hover:bg-sky-50 hover:text-sky-700" }, getSmartParserWorktableColumn(columnKey)?.label || columnKey)))),
+                                React.createElement("button", { key: "delete", onClick: hideSelectedSmartParserColumns, className: "h-7 px-2.5 rounded border border-rose-200 bg-rose-50 text-rose-700 text-[10px] font-black", title: "화면에서만 숨기며 데이터는 유지됩니다" }, `선택 열 삭제(${worktableSelection.selectedColumnKeys.length})`),
+                                React.createElement("button", { key: "clear", onClick: () => { setWorktableSelection(emptyWorktableSelection()); setShowColumnAddMenu(false); }, className: "h-7 px-2 text-[10px] font-bold text-slate-500 hover:text-slate-800" }, "선택 해제")
+                            ]
+                            : React.createElement("span", { className: "text-[11px] font-bold text-slate-500" }, "행 또는 열 머리글을 선택하세요")),
+                    React.createElement("span", { className: "shrink-0 text-[10px] font-black text-slate-500" }, `현재 작업 ${matchedWorkRows.length}건 · 매핑완료 ${matchedRows.length}건`)),
                 React.createElement("div", { className: "flex-1 overflow-auto custom-scrollbar" },
                     React.createElement("table", { className: "w-full text-left text-[12px] whitespace-nowrap" },
                         React.createElement("thead", { className: "bg-[#f5f4f0] text-[#5c554d] font-bold sticky top-0 z-10 border-b border-[#e8e4db]" },
-                            React.createElement("tr", null,
-                                React.createElement("th", { className: "py-2.5 px-4 w-12 text-center" },
-                                    React.createElement("input", { type: "checkbox", className: "rounded", checked: matchedRows.length > 0 && matchedRows.every(r => r._apply), onChange: () => { const all = matchedRows.every(r => r._apply); appState.setParserBuffer(p => p.map(r => r._matchCode && !duplicateIds.has(r._id) ? { ...r, _apply: !all } : r)); } })),
-                                React.createElement("th", { className: "py-2.5 px-3" }, "\uC0C1\uD488\uCF54\uB4DC"),
-                                React.createElement("th", { className: "py-2.5 px-3" }, "\uB9C8\uC2A4\uD130 \uD488\uBAA9\uBA85 (\uADDC\uACA9)"),
-                                React.createElement("th", { className: "py-2.5 px-3 text-emerald-700 bg-emerald-50/50" }, "\uD30C\uC2F1 \uD488\uBAA9\uBA85"),
-                                React.createElement("th", { className: "py-2.5 px-3 text-right" }, "\uAE30\uC874 \uC785\uACE0\uAC00"),
-                                React.createElement("th", { className: "py-2.5 px-3 text-right text-emerald-700 bg-emerald-50/50" }, "\uC0C8 \uC785\uACE0\uAC00"),
-                                React.createElement("th", { className: "py-2.5 px-3 text-center" }, "관리"))),
-                        React.createElement("tbody", { className: "divide-y divide-slate-100" }, matchedRows.length === 0 ? React.createElement("tr", null,
-                            React.createElement("td", { colSpan: "7", className: "p-10 text-center text-slate-400" }, "\uB370\uC774\uD130\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4.")) : matchedRows.map(row => {
+                            React.createElement("tr", null, visibleWorktableColumnKeys.map(renderMatchedWorktableHeader))),
+                        React.createElement("tbody", { className: "divide-y divide-slate-100" }, matchedWorkRows.length === 0 ? React.createElement("tr", null,
+                            React.createElement("td", { colSpan: visibleWorktableColumnKeys.length, className: "p-10 text-center text-slate-400" },
+                                React.createElement("div", { className: "flex flex-col items-center gap-3" },
+                                    React.createElement("span", null, "일치 작업행이 없습니다."),
+                                    currentTag && React.createElement("button", { onClick: () => addSmartParserManualRows(1, []), className: "h-8 px-4 rounded-lg border border-indigo-200 bg-indigo-50 text-indigo-700 text-[11px] font-black", title: "현재 카탈로그에 수동 작업행 추가" }, "첫 행 추가")))) : matchedWorkRows.map((row, rowIndex) => {
                             const mItem = masterProducts[row._matchCode] || {};
                             const rowWarehouse = String(catalogWarehouseMap?.[normalizeParserCatalogName(currentTag)] ?? '').trim();
                             const rowRuleMatch = getParserPriceSelection(rowWarehouse, row['단위'], marginRules);
                             const rowPrices = hasParserRowInPrice(row) ? calculateParserCatalogPrices(getParserRowInPrice(row), mItem, row.finalData || {}, { catalogWarehouse: rowWarehouse, unit: row['단위'], marginRules }) : {};
                             const rowExpectedSale = parseNum(rowPrices['출고가']);
                             const mIn = parseNum(mItem['입고가']);
-                            const pIn = parseNum(row.finalData['입고가']);
+                            const pIn = parseNum((row.finalData || {})['입고가']);
                             const isDiff = mIn > 0 && mIn !== pIn;
-                            return (React.createElement("tr", { key: row._id, className: "hover:bg-slate-50 transition-colors" },
-                                React.createElement("td", { className: "py-2 px-4 text-center" },
-                                    React.createElement("input", { type: "checkbox", className: "rounded text-emerald-600 focus:ring-emerald-500", checked: row._apply, onChange: () => appState.setParserBuffer(p => p.map(r => r._id === row._id ? { ...r, _apply: !r._apply } : r)) })),
-                                React.createElement("td", { className: "py-2 px-3 font-mono text-[11px] text-slate-500" }, row._matchCode),
-                                React.createElement("td", { className: "py-2 px-3" },
-                                    React.createElement("div", { className: "flex flex-col leading-tight" },
-                                        React.createElement("span", { className: "font-bold text-slate-800" }, mItem.품목명 || row['품목명']),
-                                        (mItem.규격 || row['규격']) && React.createElement("span", { className: "text-[11px] text-slate-400 mt-0.5" },
-                                            "(",
-                                            mItem.규격 || row['규격'],
-                                            ")"))),
-                                React.createElement("td", { className: "py-2 px-3 text-emerald-800 bg-emerald-50/20 font-bold min-w-[280px]" },
-                                    React.createElement("div", { className: "flex items-center gap-1.5" },
-                                        React.createElement("input", { type: "text", value: row['품목명'] || '', onChange: e => handleUpdateMatchedText(row._id, '품목명', e.target.value), className: "h-7 min-w-0 flex-1 rounded border border-emerald-200 bg-white px-2 text-[11px] font-black text-emerald-900 outline-none focus:border-emerald-500", title: "저장할 품목명 수정" }),
-                                        row._isSoldOut && React.createElement("span", { className: "shrink-0 bg-rose-100 text-rose-600 px-1.5 py-0.5 rounded text-[10px] font-black" }, "\uD488\uC808")),
-                                    React.createElement("div", { className: "mt-1 flex items-center gap-1" },
-                                        React.createElement("input", { type: "text", value: row['규격'] || '', onChange: e => handleUpdateMatchedText(row._id, '규격', e.target.value), placeholder: "규격", className: "h-7 min-w-0 flex-1 rounded border border-slate-200 bg-white px-2 text-[10px] font-bold text-slate-700 outline-none focus:border-emerald-400", title: "저장할 규격 수정" }),
-                                        React.createElement("input", { type: "text", value: row['단위'] || '', onChange: e => handleUpdateMatchedText(row._id, '단위', e.target.value), placeholder: "단위", className: "h-7 w-[64px] rounded border border-slate-200 bg-white px-2 text-[10px] font-bold text-slate-700 outline-none focus:border-emerald-400", title: "저장할 단위 수정" })),
-                                    React.createElement("div", { className: "mt-1 text-[10px] font-black text-indigo-600 whitespace-normal" }, `창고 ${rowWarehouse || '공란'} · 단위 ${row['단위'] || '공란'} · ${rowRuleMatch.matchType} · ${rowRuleMatch.marginRate}% ${rowRuleMatch.calculationType === 'divide' ? '나누기' : '곱하기'} · 출고 ${rowExpectedSale ? rowExpectedSale.toLocaleString() : 0} · 시중 ${parseNum(rowPrices['시중가']).toLocaleString()} · 소분 ${parseNum(rowPrices['1입고']).toLocaleString()}/${parseNum(rowPrices['1출고']).toLocaleString()}`)),
-                                React.createElement("td", { className: "py-2 px-3 text-right text-slate-500 font-bold" }, mIn ? mIn.toLocaleString() : '-'),
-                                React.createElement("td", { className: `py-2 px-3 text-right font-black ${isDiff ? 'text-rose-500 bg-rose-50/30' : 'text-emerald-700 bg-emerald-50/20'}` },
-                                    React.createElement(EditablePriceCell, { rowId: row._id, initialVal: row.finalData['입고가'], onUpdate: handleUpdateMatchedPrice })),
-                                React.createElement("td", { className: "py-2 px-3 text-center" },
-                                    React.createElement("div", { className: "flex justify-center gap-1" },
-                                        React.createElement("button", { onClick: () => actions.handleCancelMapping(row._id), className: "h-7 px-2 rounded border bg-slate-50 text-slate-600 text-[10px] font-black", title: "연결 취소 후 불일치로 이동" }, "연결취소"),
-                                        React.createElement("button", { onClick: () => actions.handleExcludeParsedItem(row._id), className: "h-7 px-2 rounded border bg-rose-50 text-rose-700 text-[10px] font-black", title: "다음 파싱부터 공급사 제외" }, "공급사 제외")))));
+                            const manualNeedsMapping = !!(row._manualAdded && !row._matchCode);
+                            const isRowSelected = worktableSelection.type === 'ROW' && selectedWorktableRowIds.has(row._id);
+                            const rowContext = { mItem, rowWarehouse, rowRuleMatch, rowPrices, rowExpectedSale, mIn, pIn, isDiff, manualNeedsMapping };
+                            return React.createElement("tr", { key: row._id, className: `transition-colors ${isRowSelected ? 'bg-indigo-50/60 outline outline-2 outline-indigo-400 -outline-offset-2' : 'hover:bg-slate-50'}` }, visibleWorktableColumnKeys.map(columnKey => renderMatchedWorktableCell(columnKey, row, rowIndex, rowContext)));
                         })))))) : activeTab === 'missing' ? (!currentTag ? React.createElement("div", { className: "h-full flex flex-col items-center justify-center text-slate-400 bg-white border border-slate-200 rounded-xl shadow-sm fade-in" },
                 React.createElement("i", { className: "fas fa-folder-open text-6xl text-slate-200 mb-4" }),
                 React.createElement("h2", { className: "text-xl font-black text-slate-600 mb-2" }, "\uB204\uB77D \uACC4\uC0B0 \uC0DD\uB7B5\uB428")) : (React.createElement("div", { className: "bg-white border border-slate-200 rounded-xl shadow-sm h-full flex flex-col overflow-hidden fade-in" },
