@@ -85,10 +85,12 @@ const contract = context.window.SMART_INPUT_CONTRACT;
 
 assert.match(productMasterSearchSource, /orderq-db\.js\?v=0\.17\.0/,
   'SmartInput product search must load the current v12 ORDER Q DB module URL');
-assert.match(customerMasterSource, /orderq-db\.js\?v=0\.17\.0/,
-  'SmartInput customer master must load the current v12 ORDER Q DB module URL');
-assert.match(customerMasterSource, /orderq-sync-engine\.js\?v=0\.18\.1/,
-  'SmartInput customer recovery must invalidate the sync-engine module graph');
+assert.match(customerMasterSource, /orderq-db\.js\?v=0\.21\.0/,
+  'SmartInput customer master must load the Foundation B+ ORDER Q DB module URL');
+assert.match(customerMasterSource, /customer-foundation-backup\.js\?v=0\.1\.0/,
+  'SmartInput customer master must load the Foundation B+ Local Primary backup boundary');
+assert.doesNotMatch(customerMasterSource, /orderq-sync-engine\.js/,
+  'SmartInput customer master must not re-enter the retired automatic cloud sync path');
 assert.match(orderQSyncEngineSource, /orderq-db\.js\?v=0\.17\.0/,
   'SmartInput customer recovery and delivery sync must not re-enter a pre-v12 DB module URL');
 
