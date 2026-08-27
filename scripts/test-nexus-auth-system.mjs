@@ -130,8 +130,8 @@ const protectedEntries = [
 ];
 for (const relativePath of protectedEntries) {
   const html = read(relativePath);
-  assert.match(html, /nexus-auth-config\.js\?v=2\.0\.0/, `${relativePath} V2 config`);
-  assert.match(html, /nexus-auth\.js\?v=2\.0\.0/, `${relativePath} V2 guard`);
+  assert.match(html, /nexus-auth-config\.js\?v=2\.0\.1/, `${relativePath} V2 config`);
+  assert.match(html, /nexus-auth\.js\?v=2\.0\.1/, `${relativePath} V2 guard`);
   assert(html.indexOf('nexus-auth.js') < html.search(/<body\b/i), `${relativePath} guard before body`);
 }
 
