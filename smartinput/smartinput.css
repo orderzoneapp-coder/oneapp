@@ -292,7 +292,7 @@ body.is-estimate-order-dragging { user-select: none; }
 .grid-stats { display: flex; align-items: center; gap: 10px; color: var(--text-soft); font-size: 11px; }
 .grid-stats strong { color: var(--navy); font-size: 12px; }
 .worktable-selection-bar { position: relative; min-height: 42px; padding: 6px 12px; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 6px 12px; border-bottom: 1px solid #b9d5ef; background: #edf6ff; }
-.worktable-selection-bar[hidden] { display: none; }
+.worktable-selection-bar[hidden] { display: grid; visibility: hidden; pointer-events: none; }
 .worktable-selection-bar > strong { color: #165b91; font-size: 12px; white-space: nowrap; }
 .worktable-selection-bar__actions { min-width: 0; display: flex; align-items: center; gap: 5px; }
 .worktable-selection-bar > small { max-width: 390px; color: var(--text-soft); font-size: 10px; line-height: 1.4; text-align: right; }

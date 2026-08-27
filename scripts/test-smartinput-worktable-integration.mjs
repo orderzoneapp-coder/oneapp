@@ -36,10 +36,14 @@ assert.match(app, /className = 'column-drag-handle'[\s\S]*dragHandle\.draggable 
 assert.match(app, /className = 'column-resize-handle'/);
 assert.match(app, /className = 'column-select-target'/);
 assert.match(app, /inputRows\.addEventListener\('pointermove', extendWorktableRowSelection\)/);
-assert.match(app, /voucherTableHead\.addEventListener\('pointermove', extendWorktableColumnSelection\)/);
+assert.match(app, /document\.addEventListener\('pointermove', extendWorktableColumnSelection\)/);
 assert.match(app, /document\.elementFromPoint\?\.\(event\.clientX, event\.clientY\)/,
   'drag selection must follow the row or column header currently under the pointer');
+assert.match(app, /header\?\.querySelector\('\.column-select-target\[data-select-column\]'\)/,
+  'column drag selection must cross reorder and resize handles without losing the header range');
 assert.match(css, /\.worktable-selection-bar/);
+assert.match(css, /\.worktable-selection-bar\[hidden\] \{ display: grid; visibility: hidden; pointer-events: none; \}/,
+  'showing the selection toolbar must not shift the table during a pointer drag');
 assert.match(css, /\.is-worktable-column-selected/);
 assert.match(css, /\.is-worktable-row-selected/);
 assert.doesNotMatch(app, /SmartParser\.html|SMART_PARSER_WORKTABLE/,
