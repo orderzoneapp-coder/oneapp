@@ -74,6 +74,15 @@ jobs:
       - name: Test ORDER Q Customer Master, canonical and quick-create contracts
         run: node scripts/test-orderq-customer-master.mjs
 
+      - name: Test Foundation B+ immutable backup and restore contracts
+        run: node scripts/test-foundation-backup-bplus.mjs
+
+      - name: Test Foundation product client concurrent backup contract
+        run: node scripts/test-foundation-product-client.mjs
+
+      - name: Test Customer Master Local Primary backup boundary
+        run: node scripts/test-orderq-customer-cloud-sync.mjs
+
       - name: Test ORDER Q customerCode Excel upsert architecture
         run: node scripts/test-orderq-customer-code-upsert.mjs
 

@@ -60,7 +60,7 @@ assert.match(html, /<script src="masterAddUpdate\.js"><\/script>/);
 assert.match(js, /commitSelectedProductDeletion/);
 assert.match(js, /selectedExistingIds/);
 assert.match(js, /변경사항을 저장하거나 취소한 뒤 선택 상품을 삭제/);
-assert.match(js, /클라우드 공용 DB에는 아직 반영하지 않았습니다/);
+assert.match(js, /서버 불변 백업은 백그라운드에서 진행됩니다/);
 assert.match(js, /expectedRevision:\s*state\.revision/);
 assert.match(js, /plan\.valid/);
 assert.match(js, /plan\.invalid/);

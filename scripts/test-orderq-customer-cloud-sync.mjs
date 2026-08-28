@@ -2,79 +2,50 @@
 
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { createCustomerMasterSyncCoordinator, shouldPreserveLocalEntityChange } from '../orderq/customer-master-sync.js';
 
-const localPending = { customerId: 'LOCAL-1', customerName: '진주8번' };
-const cloudCustomers = Array.from({ length: 140 }, (_, index) => ({
-  entityType: 'CUSTOMER', entityId: index === 0 ? 'LOCAL-1' : `CLOUD-${index}`,
-  payload: { customerId: index === 0 ? 'LOCAL-1' : `CLOUD-${index}`, customerName: `Cloud ${index}` }
-}));
-for (const status of ['PENDING', 'RETRY', 'CONFLICT']) {
-  const queue = [{ entityType: 'CUSTOMER', entityId: 'LOCAL-1', status }];
-  const safelyPulled = cloudCustomers.filter(change => !shouldPreserveLocalEntityChange(queue, change)).map(change => change.payload);
-  const merged = [localPending, ...safelyPulled];
-  assert.equal(merged.length, 140, `local ${status} + Cloud 140 must produce the shared 140-customer list`);
-  assert.equal(merged.find(row => row.customerId === 'LOCAL-1').customerName, '진주8번', `${status} local-only value must not be overwritten`);
-}
-
-const calls = [];
-let releasePush;
-const firstPush = new Promise(resolve => { releasePush = resolve; });
-let pushCount = 0;
-const coordinator = createCustomerMasterSyncCoordinator({
-  isConfigured: () => true,
-  push: async () => { calls.push('push'); pushCount++; if (pushCount === 1) await firstPush; return { applied: 1, errors: 0, conflicts: 0 }; },
-  pull: async () => { calls.push('pull'); return { applied: 139 }; }
-});
-const first = coordinator.synchronize();
-const second = coordinator.synchronize();
-assert.equal(first, second, 'concurrent requests must share one flight');
-releasePush();
-await first;
-assert.deepEqual(calls, ['push', 'pull', 'push', 'pull'], 'a request during a flight must receive one trailing push/pull pass');
-
-const failureCalls = [];
-const failedPush = new Error('offline push');
-const failureCoordinator = createCustomerMasterSyncCoordinator({
-  isConfigured: () => true,
-  push: async () => { failureCalls.push('push'); throw failedPush; },
-  pull: async () => { failureCalls.push('pull'); return { applied: 140 }; }
-});
-const failure = await failureCoordinator.synchronize();
-assert.equal(failure.pushError, failedPush);
-assert.equal(failure.pull.applied, 140, 'safe Cloud rows must still pull after a push failure');
-assert.deepEqual(failureCalls, ['push', 'pull']);
-
-const pullFailure = new Error('offline pull');
-const pullFailureResult = await createCustomerMasterSyncCoordinator({
-  isConfigured: () => true,
-  push: async () => ({ applied: 1, conflicts: 1 }),
-  pull: async () => { throw pullFailure; }
-}).synchronize();
-assert.equal(pullFailureResult.pullError, pullFailure);
-assert.equal(pullFailureResult.push.conflicts, 1, 'conflict result must be preserved when pull fails');
-
-let offlineCalled = false;
-const offline = await createCustomerMasterSyncCoordinator({
-  isConfigured: () => false,
-  push: async () => { offlineCalled = true; },
-  pull: async () => { offlineCalled = true; }
-}).synchronize();
-assert.equal(offline.configured, false);
-assert.equal(offlineCalled, false, 'Cloud-unconfigured mode must remain local-only');
-
-const [service, engine, ui, html] = await Promise.all([
-  readFile(new URL('../orderq/customer-master.js', import.meta.url), 'utf8'),
-  readFile(new URL('../orderq/orderq-sync-engine.js', import.meta.url), 'utf8'),
-  readFile(new URL('../orderq/customer-master-ui.js', import.meta.url), 'utf8'),
-  readFile(new URL('../partner_db.html', import.meta.url), 'utf8')
+const read = path => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
+const [service, engine, ui, html, backup, db, contract] = await Promise.all([
+  read('orderq/customer-master.js'),
+  read('orderq/orderq-sync-engine.js'),
+  read('orderq/customer-master-ui.js'),
+  read('partner_db.html'),
+  read('orderq/customer-foundation-backup.js'),
+  read('orderq/orderq-db.js'),
+  import('../orderq/orderq-v17-contracts.js')
 ]);
-assert.match(engine, /shouldPreserveLocalEntityChange/, 'pending/retry/conflict records must guard local entities');
-assert.match(engine, /if \(await entityHasUnsyncedChange\(change\.entityType, change\.entityId\)\) return false/, 'pull must not overwrite an unsynced local entity');
-assert.match(service, /synchronizeCustomerMaster/);
-assert.match(ui, /await reload\(\);[\s\S]*ensureCustomerMasterReady/, 'local cache must render before entry synchronization');
-assert.match(ui, /await syncAndReload\(\)/, 'manual and Excel applies must synchronize and reload');
-assert.match(html, /customerCloudSyncState/);
-assert.match(html, /대기 0 · 재시도\/실패 0 · 충돌 0/);
 
-console.log('ORDER Q Customer Cloud synchronization: PASS');
+assert.doesNotMatch(service, /pullRemote/, 'Customer Master service must not import or invoke automatic server Pull');
+assert.doesNotMatch(service, /syncPromise = synchronizeCustomerMaster/, 'populated local cache must not start background Pull');
+assert.doesNotMatch(service, /const sync = await synchronizeCustomerMaster/, 'empty local cache must not use server data automatically');
+assert.match(service, /source: 'RESTORE_REQUIRED'/, 'empty local cache must require explicit administrator restore');
+assert.match(service, /source: 'LOCAL_PRIMARY'/, 'local Customer Master must remain the operational source');
+assert.match(service, /backupCustomerEventsNow/, 'manual synchronization entry must mean one-way backup only');
+
+assert.match(backup, /QUARANTINED_LEGACY_SYNC/, 'legacy Customer synchronization rows must be quarantined');
+assert.match(backup, /localOnly: true/, 'quarantined legacy rows must never be replayed by the old push engine');
+assert.match(backup, /prepareCustomerFoundationEvent/, 'Customer mutation and B+ Outbox preparation must share one transaction');
+assert.match(backup, /CUSTOMER_EVENTS/);
+assert.match(backup, /CUSTOMER_SNAPSHOT/);
+assert.match(backup, /previewCustomerRestore/);
+assert.match(backup, /CUSTOMER_RESTORE_ADMIN_APPROVAL_REQUIRED/);
+assert.match(backup, /QUARANTINED_PRE_RESTORE/, 'unsynced local changes must be preserved during an approved restore');
+assert.match(backup, /backupCustomerSnapshotNow\(true\)/, 'a new server lineage must start from a verified Customer Snapshot');
+
+assert.match(engine, /if \(await entityHasUnsyncedChange\(change\.entityType, change\.entityId\)\) return false/, 'non-Customer legacy pulls must still preserve unsynced entities');
+assert.equal(contract.ORDERQ_DB_VERSION, 17);
+for (const name of ['foundationBackupOutbox', 'foundationRecoverySnapshots', 'foundationRecoveryAudit', 'foundationLegacyQuarantine']) {
+  assert.ok(contract.V17_STORE_DEFINITIONS.some(row => row.name === name), `missing v17 store ${name}`);
+}
+assert.match(db, /\.\.\.V17_STORE/);
+
+assert.match(ui, /startCustomerFoundationWorker/);
+assert.match(ui, /서버에 더 최신 버전 있음 · 관리자 확인 필요/);
+assert.match(ui, /서버 또는 계보 이상 · 별도 복구 필요/);
+assert.match(ui, /previewCustomerRestore/);
+assert.match(ui, /applyCustomerRestore/);
+assert.match(html, /customerBackupNow/);
+assert.match(html, /customerRestoreFromServer/);
+assert.match(html, /customerPromoteDevice/);
+assert.doesNotMatch(html, /Cloud 연결됨/);
+
+console.log('ORDER Q Customer B+ local-primary backup and administrator restore: PASS');

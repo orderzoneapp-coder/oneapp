@@ -7,7 +7,7 @@ import { V9_STORE_DEFINITIONS } from '../orderq/orderq-v9-contracts.js';
 import { V10_STORE_DEFINITIONS } from '../orderq/orderq-v10-contracts.js';
 import { V11_STORE_DEFINITIONS } from '../orderq/orderq-v11-contracts.js';
 import { readFileSync } from 'node:fs';
-import { ORDERQ_DB_VERSION as CURRENT_DB_VERSION } from '../orderq/orderq-v16-contracts.js';
+import { ORDERQ_DB_VERSION as CURRENT_DB_VERSION } from '../orderq/orderq-v17-contracts.js';
 assert.equal(ORDERQ_DB_VERSION, 12);
 assert.deepEqual(V12_STORE_DEFINITIONS.map(row => row.name), ['voucherEvents','receivableEntries','payableEntries']);
 for (const row of V12_STORE_DEFINITIONS) assert.ok(row.options.keyPath && row.indexes.some(index => index.name === 'byLedgerSequence' && index.options.unique));
@@ -46,3 +46,4 @@ for(const oldVersion of [0,7,8,9,10,11]) {
   assert.equal(result.meta.filter(row=>row.key==='schemaVersion').at(-1)?.value,CURRENT_DB_VERSION,`v${oldVersion} metadata`);
 }
 console.log('ORDER Q v12 schema contract tests passed');
+

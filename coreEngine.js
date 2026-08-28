@@ -1050,15 +1050,26 @@
       return await STORAGE.withStorageLock(MASTER_LOCK_NAME, async (lease) => {
         let rollbackOk = false;
         let staleRollbackSkipped = false;
-        const extraStoreEntries = options.extraStoreEntries && typeof options.extraStoreEntries === 'object'
-          ? options.extraStoreEntries
+        let extraStoreEntries = options.extraStoreEntries && typeof options.extraStoreEntries === 'object'
+          ? { ...options.extraStoreEntries }
           : {};
-        const extraKeys = Object.keys(extraStoreEntries);
+        const foundationBackup = global.NEXUS_FOUNDATION_BACKUP;
+        const foundationStateKey = foundationBackup?.PRODUCT_STATE_KEY || '';
+        const extraKeys = [...new Set([...Object.keys(extraStoreEntries), ...(foundationStateKey ? [foundationStateKey] : [])])];
         try {
           previousState = await STORAGE.readMasterState(extraKeys);
           if (Object.prototype.hasOwnProperty.call(options, 'expectedRevision')
             && previousState.revision !== options.expectedRevision) {
             throw STORAGE.createMasterRevisionConflictError();
+          }
+          if (foundationBackup?.prepareProductCommit && foundationStateKey && options.foundationBackup !== false) {
+            const prepared = await foundationBackup.prepareProductCommit(
+              data,
+              previousState.extraStoreEntries?.[foundationStateKey],
+              options.foundationBackupContext
+            );
+            data = prepared.masterMap;
+            extraStoreEntries[foundationStateKey] = prepared.state;
           }
           const items = STORAGE.getMasterItems(data, { allowEmpty: options.allowEmpty === true });
           revision = STORAGE.createMasterRevision();
@@ -1071,7 +1082,7 @@
               throw new Error(options.afterVerifiedError || '마스터 후속 저장 검증 실패');
             }
           }
-          return {
+          const result = {
             ok: true,
             verified: true,
             count: verified.count,
@@ -1079,6 +1090,14 @@
             rollbackOk: false,
             staleRollbackSkipped: false
           };
+          if (foundationStateKey && extraStoreEntries[foundationStateKey]) {
+            try {
+              global.dispatchEvent?.(new CustomEvent('ONEAPP_FOUNDATION_PRODUCT_COMMITTED', {
+                detail: { state: extraStoreEntries[foundationStateKey], revision }
+              }));
+            } catch (_) {}
+          }
+          return result;
         } catch (error) {
           if (error?.code === 'MERCH_LOCK_FENCE_LOST') {
             staleRollbackSkipped = true;
@@ -2723,5 +2742,25 @@
   global.applyMasterExcelUpload = global.applyMasterExcelUpload || MASTER.applyMasterExcelUpload;
   global.getMasterBackups = global.getMasterBackups || MASTER.getMasterBackups;
   global.restoreMasterBackup = global.restoreMasterBackup || MASTER.restoreMasterBackup;
+
+  // Master/Item Manager load the B+ client explicitly because they expose restore controls.
+  // Other product writers load it after the document is ready; the client then snapshots any
+  // master state that was committed during boot, so no business save depends on network timing.
+  const ensureFoundationBackupClient = () => {
+    if (!global.document || global.NEXUS_FOUNDATION_BACKUP) return;
+    const page = String(global.location?.pathname || '').split('/').pop().toLowerCase();
+    if (page === 'master.html' || page === 'item_manager.html') return;
+    if (global.document.querySelector('script[data-foundation-backup-client]')) return;
+    const script = global.document.createElement('script');
+    script.src = '/nexus/foundation/foundation-backup.js?v=1.0.0';
+    script.dataset.foundationBackupClient = '1';
+    script.async = true;
+    global.document.head.appendChild(script);
+  };
+  if (global.document?.readyState === 'loading') {
+    global.document.addEventListener('DOMContentLoaded', ensureFoundationBackupClient, { once: true });
+  } else {
+    ensureFoundationBackupClient();
+  }
 
 })(window);

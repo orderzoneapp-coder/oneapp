@@ -268,13 +268,13 @@
     return {};
   }
 
-  function commitMaster(masterMap) {
+  function commitMaster(masterMap, options) {
     if (!window.ONEAPP || !window.ONEAPP.STORAGE || !window.ONEAPP.STORAGE.commitMasterStateOrThrow) {
       return Promise.reject(new Error("공통 상품 저장 모듈을 불러오지 못했습니다."));
     }
-    return window.ONEAPP.STORAGE.commitMasterStateOrThrow(masterMap, {
+    return window.ONEAPP.STORAGE.commitMasterStateOrThrow(masterMap, Object.assign({
       expectedRevision: state.revision
-    });
+    }, options || {}));
   }
 
   function isStopped(value) {
@@ -1308,7 +1308,7 @@
       }
       saveFilters();
       state.processing = false;
-      setSync("pending", "기기 삭제 완료 · 클라우드 동기화 대기");
+      setSync("pending", "기기 삭제 완료 · 서버 백업 대기");
       renderAll();
       window.NEXUS_TOP?.reportStatus({
         appId: "item-manager",
@@ -1319,7 +1319,7 @@
       });
       openDialog(
         "상품 삭제 완료",
-        result.deletedCount + "개 상품을 Master에서 삭제하고 공식 이력과 연결 상태를 확인했습니다.\n클라우드 공용 DB에는 아직 반영하지 않았습니다.",
+        result.deletedCount + "개 상품을 Master에서 삭제하고 공식 이력과 연결 상태를 확인했습니다.\n서버 불변 백업은 백그라운드에서 진행됩니다.",
         [{ label: "확인", primary: true, onClick: closeDialog }]
       );
     } catch (error) {
@@ -1456,7 +1456,7 @@
       try {
         localStorage.setItem(STORAGE_KEYS.SYNC_TRIGGER, Date.now().toString());
       } catch (error) {}
-      setSync("pending", "기기 저장 완료 · 클라우드 동기화 대기");
+      setSync("pending", "기기 저장 완료 · 서버 백업 대기");
       state.processing = false;
       renderAll();
       var resultCopy = "저장 완료 " + plan.valid.length + "건";
@@ -1474,7 +1474,7 @@
       setSync("error", "저장하지 못했습니다. 변경사항은 현재 표에 그대로 보존했습니다.");
       renderAll();
       var message = error && error.code === "MERCH_MASTER_REVISION_CONFLICT"
-        ? "다른 화면에서 상품 DB가 먼저 변경되었습니다. 클라우드 또는 최신 기기 DB를 새로고침한 뒤 다시 확인해 주세요."
+        ? "다른 화면에서 상품 DB가 먼저 변경되었습니다. 최신 로컬 상품 DB를 새로고침한 뒤 다시 확인해 주세요."
         : "상품 DB에 저장하지 못했습니다. 변경사항은 현재 표에 남아 있습니다.";
       openDialog("저장 확인 필요", message, [{ label: "확인", primary: true, onClick: closeDialog }]);
     }
@@ -1619,24 +1619,18 @@
       return;
     }
     state.processing = true;
-    setSync("working", "클라우드에 반영할 상품 DB를 준비하고 있습니다.");
+    setSync("working", "상품 불변 Revision 백업을 준비하고 있습니다.");
     renderSaveState();
     try {
-      var url = setCloudUrl(getCloudUrl());
-      await window.ONEAPP_AUTH.ready;
-      var previous = {status:"success",data:await window.ONEAPP_AUTH.gateway("foundation.full_read",{})};
-      var previousData = previous && previous.data ? previous.data : {};
-      var localHistory = safeJson(localStorage.getItem("merchHistory_v870"), []);
-      var history = Array.isArray(localHistory) && localHistory.length
-        ? localHistory
-        : (Array.isArray(previousData.history) ? previousData.history : []);
-      await window.ONEAPP_AUTH.gateway("foundation.replace_all", {
-        master:Object.values(state.masterOriginal), history:history, config:{
-          dict: safeJson(localStorage.getItem("parserDict_v870"), previousData.dict || {}),
-          rules: previousData.rules || [],
-          appConfig: Object.assign({}, previousData.appConfig || {})
-        }
-      });
+      var backupResult = await window.NEXUS_FOUNDATION_BACKUP.backupProductNow();
+      if (backupResult.status === "NON_PRIMARY" && window.confirm("현재 장치는 Primary가 아닙니다. 관리자 권한으로 이 장치를 Primary로 승격할까요?")) {
+        var primaryEpoch = Number(backupResult.device && backupResult.device.primary && backupResult.device.primary.primaryEpoch || 0);
+        await window.NEXUS_FOUNDATION_BACKUP.promoteDevice(primaryEpoch, "상품 관리 화면 승인");
+        backupResult = await window.NEXUS_FOUNDATION_BACKUP.backupProductNow();
+      }
+      if (backupResult.status !== "ACKED" && !backupResult.skipped) {
+        throw new Error(backupResult.code || backupResult.status || "상품 백업이 승인되지 않았습니다.");
+      }
       try {
         localStorage.setItem(STORAGE_KEYS.SYNC_TRIGGER, Date.now().toString());
       } catch (error) {
@@ -1644,14 +1638,14 @@
       } finally {
         state.processing = false;
       }
-      setSync("synced", "클라우드 동기화 완료 · " + new Date().toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" }));
+      setSync("synced", "로컬 정상 · 백업 완료 · " + new Date().toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" }));
       renderAll();
-      showToast("상품 DB " + Object.keys(state.masterOriginal).length + "건을 클라우드에 반영했습니다.");
+      showToast("상품 DB " + Object.keys(state.masterOriginal).length + "건의 불변 백업을 확인했습니다.");
     } catch (error) {
       state.processing = false;
-      setSync("error", "클라우드 반영에 실패했습니다. 기기에 저장된 상품 DB는 유지됩니다.");
+      setSync("error", "서버 백업에 실패했습니다. 기기에 저장된 상품 DB는 유지됩니다.");
       renderAll();
-      showToast("클라우드 반영을 완료하지 못했습니다.");
+      showToast("서버 백업을 완료하지 못했습니다.");
     }
   }
 
@@ -1668,17 +1662,62 @@
 
   async function pullCloudNow() {
     state.processing = true;
-    setSync("working", "클라우드 상품 DB를 불러오고 있습니다.");
+    setSync("working", "서버 백업 Revision을 비교·검증하고 있습니다.");
     renderSaveState();
     try {
-      var url = setCloudUrl(getCloudUrl());
-      await window.ONEAPP_AUTH.ready;
-      var master = extractCloudMaster({status:"success",data:await window.ONEAPP_AUTH.gateway("foundation.master_read",{})});
-      if (!Object.keys(master).length) throw new Error("클라우드에 상품 DB가 없습니다.");
-      var result = await commitMaster(master);
+      var versions = await window.NEXUS_FOUNDATION_BACKUP.listVersions("PRODUCT", 1);
+      if (!versions.length) throw new Error("복구 가능한 상품 백업이 없습니다.");
+      var version = await window.NEXUS_FOUNDATION_BACKUP.readVersion("PRODUCT", versions[0].serverRevision);
+      var products = Array.isArray(version.payload && version.payload.products) ? version.payload.products : [];
+      var master = normalizeMasterMap(products);
+      if (!Object.keys(master).length) throw new Error("서버 백업에 상품 DB가 없습니다.");
+      var comparison = window.NEXUS_FOUNDATION_BACKUP.compareSnapshots(Object.values(state.masterOriginal), products, "productId");
+      if (comparison.destructive && !window.confirm("복구하면 상품 수가 크게 감소하거나 0건이 됩니다. 비교 결과를 확인했고 계속하시겠습니까?")) {
+        state.processing = false;
+        setSync("pending", "복구 취소 · 로컬 상품 DB 유지");
+        renderAll();
+        return;
+      }
+      var restoreId = window.NEXUS_FOUNDATION_BACKUP.uuid("RST-PRODUCT");
+      var localProducts = Object.values(state.masterOriginal).slice().sort(function (a, b) {
+        return String(a.productId || "").localeCompare(String(b.productId || ""));
+      });
+      var safetySnapshot = {
+        snapshotId: window.NEXUS_FOUNDATION_BACKUP.uuid("SAFE-PRODUCT"),
+        restoreId: restoreId,
+        products: Object.values(state.masterOriginal),
+        contentHash: await window.NEXUS_FOUNDATION_BACKUP.sha256({ products: localProducts }),
+        createdAt: new Date().toISOString()
+      };
+      var restoreAudit = {
+        restoreId: restoreId,
+        domainType: "PRODUCT",
+        serverRevision: Number(version.serverRevision),
+        deviceId: window.NEXUS_FOUNDATION_BACKUP.getDeviceId(),
+        result: "APPLIED",
+        localHashBefore: safetySnapshot.contentHash,
+        localHashAfter: version.contentHash,
+        recordCountBefore: localProducts.length,
+        recordCountAfter: products.length,
+        status: "PENDING",
+        createdAt: new Date().toISOString()
+      };
+      var result = await commitMaster(master, { foundationBackupContext: {
+        baseServerRevision: version.serverRevision,
+        safetySnapshot: safetySnapshot,
+        restoreAudit: restoreAudit
+      } });
       state.revision = result.revision;
-      state.masterOriginal = master;
-      state.working = deepClone(master);
+      var after = await window.ONEAPP.STORAGE.readMasterSnapshotState();
+      var afterProducts = (after.items || []).slice().sort(function (a, b) {
+        return String(a.productId || "").localeCompare(String(b.productId || ""));
+      });
+      var afterHash = await window.NEXUS_FOUNDATION_BACKUP.sha256({ products: afterProducts });
+      if (afterHash !== version.contentHash) throw new Error("PRODUCT_RESTORE_VERIFY_FAILED");
+      await window.NEXUS_FOUNDATION_BACKUP.flushProductRestoreAudits();
+      var restoredMaster = normalizeMasterMap(after.items || master);
+      state.masterOriginal = restoredMaster;
+      state.working = deepClone(restoredMaster);
       state.newIds.clear();
       state.selected.clear();
       state.undoStack = [];
@@ -1686,14 +1725,14 @@
       populateQueryOptions();
       if (state.loaded) loadProductsNow();
       state.processing = false;
-      setSync("synced", "클라우드 새로고침 완료 · 상품 " + Object.keys(master).length + "건");
+      setSync("synced", "관리자 복구 완료 · 상품 " + Object.keys(restoredMaster).length + "건");
       renderAll();
-      showToast("클라우드 상품 DB " + Object.keys(master).length + "건을 불러왔습니다.");
+      showToast("서버 Revision " + version.serverRevision + "을 관리자 승인으로 복구했습니다.");
     } catch (error) {
       state.processing = false;
-      setSync("error", "클라우드 새로고침에 실패했습니다. 현재 기기 DB는 유지됩니다.");
+      setSync("error", "서버 복구에 실패했습니다. 현재 기기 DB는 유지됩니다.");
       renderAll();
-      showToast("클라우드 상품 DB를 불러오지 못했습니다.");
+      showToast("서버 상품 백업을 복구하지 못했습니다. 로컬 DB는 유지됩니다.");
     }
   }
 
@@ -1704,12 +1743,12 @@
       return;
     }
     openDialog(
-      "클라우드에 반영할까요?",
-      "현재 기기에 저장된 상품 DB " + Object.keys(state.masterOriginal).length + "건을 공용 클라우드에 반영합니다.",
+      "지금 서버에 백업할까요?",
+      "현재 기기의 상품 DB " + Object.keys(state.masterOriginal).length + "건을 새 불변 Revision으로 백업합니다.",
       [
         { label: "취소", onClick: closeDialog },
         {
-          label: "클라우드에 반영",
+          label: "지금 백업",
           primary: true,
           onClick: function () {
             closeDialog();
@@ -1724,12 +1763,12 @@
     closeMenus();
     guardUnsaved(function () {
       openDialog(
-        "클라우드 상품 DB를 불러올까요?",
-        "현재 기기 상품 DB를 클라우드의 최신 상품 DB로 갱신합니다.",
+        "서버 백업에서 복구할까요?",
+        "최신 서버 Revision과 로컬 DB를 비교한 뒤 관리자 승인으로만 적용합니다. 자동 덮어쓰기는 하지 않습니다.",
         [
           { label: "취소", onClick: closeDialog },
           {
-            label: "새로고침",
+            label: "비교 후 복구",
             primary: true,
             onClick: function () {
               closeDialog();
@@ -1857,6 +1896,22 @@
     els["discard-button"].addEventListener("click", confirmDiscard);
     els["cloud-push-button"].addEventListener("click", requestCloudPush);
     els["cloud-pull-button"].addEventListener("click", requestCloudPull);
+    window.addEventListener("ONEAPP_FOUNDATION_BACKUP_STATE", function (event) {
+      var backup = event.detail || {};
+      if (backup.domainType !== "PRODUCT") return;
+      var labels = {
+        LOCAL_OK_BACKUP_OK: "로컬 정상 · 서버 백업 완료",
+        LOCAL_OK_BACKUP_PENDING: "로컬 정상 · 서버 백업 대기",
+        BACKUP_IN_PROGRESS: "서버 백업 진행 중 · 로컬 업무 정상",
+        BACKUP_FAILED: "서버 백업 실패 · 로컬 업무 정상",
+        DIVERGED: "서버가 더 최신 · 관리자 비교 필요",
+        REVISION_AHEAD_INVALID: "Revision 계보 이상 · 별도 복구 필요",
+        NON_PRIMARY: "로컬 정상 · Primary 확인 필요"
+      };
+      var status = backup.status || "LOCAL_OK_BACKUP_PENDING";
+      setSync(status === "LOCAL_OK_BACKUP_OK" ? "synced" : status === "BACKUP_FAILED" ? "error" : "pending", labels[status] || labels.LOCAL_OK_BACKUP_PENDING);
+      renderSaveState();
+    });
 
     els["dialog-actions"].addEventListener("click", function (event) {
       var button = event.target.closest("[data-dialog-action]");
@@ -1997,6 +2052,7 @@
       console.warn("[FoundationMetadata] 서버 필드 레지스트리를 불러오지 못해 기존 화면 필드로 계속합니다.", metadataError);
     }
     bindEvents();
+    window.NEXUS_FOUNDATION_BACKUP?.startProductWorker?.();
     try {
       state.masterOriginal = await readLocalMaster();
       state.working = deepClone(state.masterOriginal);
@@ -2006,7 +2062,13 @@
       } else {
         renderAll();
       }
-      setSync("pending", "기기 상품 DB " + Object.keys(state.masterOriginal).length + "건 · 클라우드 동기화 상태 미확인");
+      var foundationState = await window.NEXUS_FOUNDATION_BACKUP.productState().catch(function () { return null; });
+      var foundationLabel = foundationState && foundationState.status === "LOCAL_OK_BACKUP_OK"
+        ? "로컬 정상 · 서버 백업 완료"
+        : foundationState && foundationState.status === "NON_PRIMARY"
+          ? "로컬 정상 · Primary 확인 필요"
+          : "로컬 정상 · 서버 백업 대기";
+      setSync(foundationState && foundationState.status === "LOCAL_OK_BACKUP_OK" ? "synced" : "pending", foundationLabel + " · 상품 " + Object.keys(state.masterOriginal).length + "건");
       renderAll();
       els.app.setAttribute("aria-busy", "false");
     } catch (error) {

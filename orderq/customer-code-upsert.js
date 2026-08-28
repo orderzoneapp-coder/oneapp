@@ -7,13 +7,18 @@ import {
   openOrderQDb,
   requestToPromise,
   transactionDone
-} from './orderq-db.js?v=0.16.0';
+} from './orderq-db.js?v=0.21.0';
 import {
   CUSTOMER_QUALITY,
   CUSTOMER_STATUS,
   normalizeCustomer
-} from './customer-master.js?v=0.16.0';
+} from './customer-master.js?v=0.20.0';
 import { createSyncIdentity } from './sync-identity.js?v=0.1.0';
+import {
+  notifyCustomerFoundationMutation,
+  prepareCustomerFoundationEvent,
+  prepareCustomerFoundationSnapshotMutation
+} from './customer-foundation-backup.js?v=0.1.0';
 
 export const CUSTOMER_UPSERT_SOURCE_TYPE = 'CUSTOMER_CODE_UPSERT';
 export const CUSTOMER_UPSERT_MAPPING_VERSION = 'CUSTOMER_CODE_UPSERT_V1';
@@ -103,7 +108,8 @@ function queueItem(entityType, entityId, payload, timestamp = nowIso(), customer
     ...identity,
     payload,
     customerImportId: clean(customerImportId),
-    status: 'PENDING',
+    status: 'BPLUS_REPLACED',
+    localOnly: true,
     attempts: 0,
     createdAt: timestamp,
     updatedAt: timestamp
@@ -183,14 +189,16 @@ export async function ensureCustomerUserFieldDefinitions() {
   if (!missing.length) return existing;
   const timestamp = nowIso();
   const db = await openOrderQDb();
-  const tx = db.transaction(STORE.CUSTOMER_USER_FIELD_DEFINITIONS, 'readwrite');
+  const tx = db.transaction([STORE.CUSTOMER_USER_FIELD_DEFINITIONS, STORE.META], 'readwrite');
   missing.forEach(row => tx.objectStore(STORE.CUSTOMER_USER_FIELD_DEFINITIONS).put({
     ...row,
     revision: 1,
     createdAt: timestamp,
     updatedAt: timestamp
   }));
+  await prepareCustomerFoundationSnapshotMutation(tx, 'CUSTOMER_USER_FIELD_DEFINITION_SEEDED');
   await transactionDone(tx);
+  notifyCustomerFoundationMutation();
   return [...existing, ...missing];
 }
 
@@ -202,7 +210,7 @@ export async function listCustomerUserFieldDefinitions() {
 export async function saveCustomerUserFieldDefinition(fieldKey, patch = {}) {
   await ensureCustomerUserFieldDefinitions();
   const db = await openOrderQDb();
-  const tx = db.transaction([STORE.CUSTOMER_USER_FIELD_DEFINITIONS, STORE.SYNC_QUEUE], 'readwrite');
+  const tx = db.transaction([STORE.CUSTOMER_USER_FIELD_DEFINITIONS, STORE.SYNC_QUEUE, STORE.META], 'readwrite');
   const store = tx.objectStore(STORE.CUSTOMER_USER_FIELD_DEFINITIONS);
   const previous = await requestToPromise(store.get(fieldKey));
   if (!previous) throw new Error('사용자 정의 필드 슬롯을 찾을 수 없습니다.');
@@ -218,7 +226,9 @@ export async function saveCustomerUserFieldDefinition(fieldKey, patch = {}) {
   };
   store.put(definition);
   tx.objectStore(STORE.SYNC_QUEUE).put(queueItem('CUSTOMER_USER_FIELD_DEFINITION', definition.fieldKey, definition, timestamp));
+  await prepareCustomerFoundationSnapshotMutation(tx, 'CUSTOMER_USER_FIELD_DEFINITION_CHANGED');
   await transactionDone(tx);
+  notifyCustomerFoundationMutation();
   return definition;
 }
 
@@ -231,7 +241,7 @@ export async function saveCustomerHeaderMapping({ sourceSystem = 'ERP', header, 
   if (!normalizedHeader || !targetFieldKey) throw new Error('헤더와 대상 항목이 필요합니다.');
   const mappingId = `${clean(sourceSystem).toUpperCase()}::${normalizedHeader}`;
   const db = await openOrderQDb();
-  const tx = db.transaction([STORE.CUSTOMER_HEADER_MAPPINGS, STORE.SYNC_QUEUE], 'readwrite');
+  const tx = db.transaction([STORE.CUSTOMER_HEADER_MAPPINGS, STORE.SYNC_QUEUE, STORE.META], 'readwrite');
   const store = tx.objectStore(STORE.CUSTOMER_HEADER_MAPPINGS);
   const previous = await requestToPromise(store.get(mappingId));
   const timestamp = nowIso();
@@ -252,7 +262,9 @@ export async function saveCustomerHeaderMapping({ sourceSystem = 'ERP', header, 
   };
   store.put(mapping);
   tx.objectStore(STORE.SYNC_QUEUE).put(queueItem('CUSTOMER_HEADER_MAPPING', mapping.mappingId, mapping, timestamp));
+  await prepareCustomerFoundationSnapshotMutation(tx, 'CUSTOMER_HEADER_MAPPING_CHANGED');
   await transactionDone(tx);
+  notifyCustomerFoundationMutation();
   return mapping;
 }
 
@@ -515,7 +527,7 @@ async function applyUpsertRow(record, mapping, duplicateRowsByCode) {
   const stores = [
     STORE.CUSTOMERS, STORE.CUSTOMER_ALIASES, STORE.CUSTOMER_EVENTS,
     STORE.CUSTOMER_SOURCE_LINKS, STORE.CUSTOMER_SOURCE_LINK_EVENTS,
-    STORE.SOURCE_RECORDS, STORE.SYNC_QUEUE
+    STORE.SOURCE_RECORDS, STORE.SYNC_QUEUE, STORE.FOUNDATION_BACKUP_OUTBOX, STORE.META
   ];
   const tx = db.transaction(stores, 'readwrite');
   try {
@@ -602,7 +614,8 @@ async function applyUpsertRow(record, mapping, duplicateRowsByCode) {
         after: customer,
         changedFields
       }, timestamp);
-      tx.objectStore(STORE.CUSTOMER_EVENTS).put(event);
+      const foundationEvent = await prepareCustomerFoundationEvent(tx, event);
+      tx.objectStore(STORE.CUSTOMER_EVENTS).put(foundationEvent);
       tx.objectStore(STORE.SYNC_QUEUE).put(queueItem('CUSTOMER', customer.customerId, customer, timestamp, record.importId));
       if (previous?.customerName && previous.customerName !== customer.customerName) await addAlias(tx, customer.customerId, previous.customerName, key, timestamp, sourceSystem, record.importId);
     }
@@ -636,6 +649,7 @@ async function applyUpsertRow(record, mapping, duplicateRowsByCode) {
       tx.objectStore(STORE.CUSTOMER_SOURCE_LINK_EVENTS).put(linkEvent);
       tx.objectStore(STORE.SYNC_QUEUE).put(queueItem('CUSTOMER_SOURCE_LINK_EVENT', linkEvent.eventId, linkEvent, timestamp, record.importId));
     }
+    await prepareCustomerFoundationSnapshotMutation(tx, 'CUSTOMER_RELATED_DATA_CHANGED');
 
     const updatedRecord = {
       ...record,
@@ -662,6 +676,7 @@ async function applyUpsertRow(record, mapping, duplicateRowsByCode) {
     };
     tx.objectStore(STORE.SOURCE_RECORDS).put(updatedRecord);
     await transactionDone(tx);
+    notifyCustomerFoundationMutation();
     return updatedRecord;
   } catch (error) {
     try { tx.abort(); } catch (_) {}

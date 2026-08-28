@@ -143,6 +143,8 @@ html.cm-embedded .cm-issue-scroll { height: auto; min-height: 0; max-height: non
 .cm-change-grid select { border: 1px solid var(--cm-line); border-radius: 9px; background: var(--nexus-input-bg); color: var(--cm-ink); padding: 7px; }
 .cm-import-empty { padding: 42px; text-align: center; color: var(--cm-muted); }
 .cm-load-more { width: 100%; border: 0; border-top: 1px solid var(--cm-line); background: var(--oneapp-surface-subtle); padding: 14px; color: var(--cm-green); font-weight: 900; }
+.cm-sync-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-left: auto; }
+.cm-sync-actions .cm-button { padding: 7px 10px; font-size: 12px; }
 .cm-modal, .customer-picker-dialog { border: 0; border-radius: 22px; padding: 0; width: min(620px, calc(100vw - 28px)); background: var(--cm-panel); box-shadow: 0 30px 100px rgba(16, 35, 30, .32); color: var(--cm-ink); }
 .cm-modal::backdrop, .customer-picker-dialog::backdrop { background: rgba(12, 29, 25, .56); backdrop-filter: blur(4px); }
 .cm-form, .customer-picker-shell { padding: 22px; background: var(--cm-panel); }
@@ -170,6 +172,7 @@ html.cm-embedded .cm-issue-scroll { height: auto; min-height: 0; max-height: non
   .cm-toolbar, .cm-issue-actions { align-items: stretch; flex-direction: column; }
   .cm-issue-actions > span { margin-right: 0; }
   .cm-sync-state { align-items: flex-start; flex-direction: column; }
+  .cm-sync-actions { margin-left: 0; }
   .cm-list-head { display: none; }
   .cm-row { grid-template-columns: 78px 1fr 100px; gap: 8px; height: 86px; }
   .cm-row > :nth-child(3) { grid-column: 2 / 4; }

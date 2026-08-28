@@ -3,7 +3,7 @@ import { buildPurchasePostDraft } from '../smartinput/purchase-official-stage3.j
 import { canonicalSha256 } from '../orderq/official-voucher-core.js';
 import { STORE, upgradeOrderQDbSchema } from '../orderq/orderq-db.js';
 import { V13_PURCHASE_DOCUMENT_INDEXES } from '../orderq/orderq-v13-contracts.js';
-import { ORDERQ_DB_VERSION } from '../orderq/orderq-v16-contracts.js';
+import { ORDERQ_DB_VERSION } from '../orderq/orderq-v17-contracts.js';
 import { V7_STORE_DEFINITIONS } from '../orderq/orderq-v7-contracts.js';
 import { V8_STORE_DEFINITIONS } from '../orderq/orderq-v8-contracts.js';
 import { V9_STORE_DEFINITIONS } from '../orderq/orderq-v9-contracts.js';
@@ -52,3 +52,4 @@ assert.equal(officialPurchaseReviewCandidate(prior,{contractKind:'PURCHASE_STAGE
 assert.equal(officialPurchaseReviewCandidate(prior,{contractKind:'PURCHASE_STAGE3_V1',sourceDocumentKey:'DOC2',purchasePlanId:'PLAN1',sourceVoucherIndex:2}),null,'planned sibling voucher is not a split/merge candidate');
 assert.equal(officialPurchaseReviewCandidate(prior,{contractKind:'PURCHASE_STAGE3_V1',sourceDocumentKey:'DOC2',externalDocumentNo:'EXT1'})?.purchaseDocumentId,'PD1');
 console.log('ORDER Q stage3 purchase identity tests passed');
+

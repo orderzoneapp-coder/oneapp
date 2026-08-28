@@ -1,6 +1,6 @@
 {
-  "schemaVersion": "1.5.0",
-  "updatedAt": "2026-08-27",
+  "schemaVersion": "1.6.0",
+  "updatedAt": "2026-08-28",
   "repository": {
     "fullName": "orderzoneapp-coder/oneapp",
     "defaultBranch": "main",
@@ -245,7 +245,8 @@
         "nexus-header",
         "nexus-app-ui",
         "product-master",
-        "change-history"
+        "change-history",
+        "foundation-bplus-backup"
       ]
     },
     {
@@ -264,7 +265,8 @@
         "nexus-header",
         "nexus-app-ui",
         "product-master",
-        "change-history"
+        "change-history",
+        "foundation-bplus-backup"
       ]
     },
     {
@@ -354,7 +356,8 @@
         "nexus-header",
         "cloud-url",
         "orderq-vnext-sync",
-        "product-master"
+        "product-master",
+        "foundation-bplus-backup"
       ]
     },
     {
@@ -395,6 +398,7 @@
       "sourceModules": [
         "code.gs",
         "foundation-metadata.gs",
+        "foundation-backup.gs",
         "company-profile.gs",
         "orderq-cloud.gs",
         "dataops-situation-v2.gs",
@@ -420,7 +424,17 @@
           "nexus_gateway_company_accounting_period_write",
           "nexus_gateway_company_certificate_extract",
           "nexus_gateway_company_backup_create",
-          "nexus_gateway_company_migrate_oneapp"
+          "nexus_gateway_company_migrate_oneapp",
+          "nexus_gateway_foundation_backup_head_read",
+          "nexus_gateway_foundation_backup_product_write",
+          "nexus_gateway_foundation_backup_customer_events_write",
+          "nexus_gateway_foundation_backup_customer_snapshot_write",
+          "nexus_gateway_foundation_backup_version_list",
+          "nexus_gateway_foundation_backup_version_read",
+          "nexus_gateway_foundation_backup_restore_audit_write",
+          "nexus_gateway_foundation_device_status_read",
+          "nexus_gateway_foundation_device_register",
+          "nexus_gateway_foundation_device_promote"
         ],
         "get": [
           "full",
@@ -438,11 +452,76 @@
         "cloud-url",
         "dataops-inventory-snapshot",
         "shipping-purchase-plan",
-        "company-profile"
+        "company-profile",
+        "foundation-bplus-backup"
       ]
     }
   ],
   "sharedDataContracts": [
+    {
+      "id": "foundation-bplus-backup",
+      "owner": "cloud-sync",
+      "consumers": [
+        "Master.html",
+        "Item_manager.html",
+        "partner_db.html",
+        "coreEngine.js",
+        "orderq/customer-master.js",
+        "orderq/customer-source-import.js",
+        "orderq/customer-code-upsert.js"
+      ],
+      "schemaVersion": "FOUNDATION_BACKUP_V1",
+      "purpose": "Keep product and customer work Local Primary while writing immutable server revisions, blocking stale or ahead lineages, quarantining the legacy Customer sync queue, and allowing only administrator-previewed restore application.",
+      "writerPolicy": "Product and Customer local commits are authoritative for daily work. Automatic traffic is one-way backup only. Server payloads may change local data only after version verification, comparison, safety snapshot creation, explicit administrator approval, atomic replacement, and reread verification.",
+      "resources": {
+        "client": "nexus/foundation/foundation-backup.js",
+        "customerClient": "orderq/customer-foundation-backup.js",
+        "serverModule": "foundation-backup.gs",
+        "gateway": "nexus/server/nexus-auth-gateway.gs",
+        "productStateKey": "oneapp.foundation.product-backup-state.v1",
+        "deviceKey": "oneapp.foundation.device-id.v1",
+        "orderqDatabase": {
+          "database": "oneapp-orderq-vnext",
+          "version": 17,
+          "stores": [
+            "foundationBackupOutbox",
+            "foundationRecoverySnapshots",
+            "foundationRecoveryAudit",
+            "foundationLegacyQuarantine"
+          ]
+        },
+        "serverSheets": [
+          "FoundationBackupHead",
+          "FoundationBackupVersion",
+          "FoundationBackupChunk",
+          "FoundationCustomerEvent",
+          "FoundationDevice",
+          "FoundationPrimary",
+          "FoundationOperationResult",
+          "FoundationRestoreAudit"
+        ],
+        "gatewayOperations": [
+          "foundation.backup.head_read",
+          "foundation.backup.product_write",
+          "foundation.backup.customer_events_write",
+          "foundation.backup.customer_snapshot_write",
+          "foundation.backup.version_list",
+          "foundation.backup.version_read",
+          "foundation.backup.restore_audit_write",
+          "foundation.device.status_read",
+          "foundation.device.register",
+          "foundation.device.promote"
+        ],
+        "featureFlags": [
+          "BPLUS_BACKUP_ENABLED",
+          "BPLUS_AUTO_PULL_DISABLED",
+          "BPLUS_PRIMARY_GUARD_MODE",
+          "BPLUS_CUSTOMER_RECOVERY_COMPLETED",
+          "BPLUS_SHADOW_COMPARE_ENABLED"
+        ]
+      },
+      "rollback": "Disable BPLUS_BACKUP_ENABLED and restore the previous static and Apps Script immutable versions. Never re-enable automatic Customer Pull, delete immutable versions/events, or regenerate productId/customerId. Additive OrderQ v17 stores remain readable and may be ignored by earlier code."
+    },
     {
       "id": "smartinput-local-data",
       "owner": "smart-input",
@@ -604,10 +683,10 @@
         "companyId": "ONEAPP",
         "oneappScriptProjectId": "1wdjJqg_b5SlYDTqt33oNLjxd4OXq5apNwrJ5JQqpr8W2XsxZINLbSXdX",
         "oneappProductionWebApp": "https://script.google.com/macros/s/AKfycbzOUOIu_bP7NkiFVziDR0Og1da1KO1ePoU09Q3pSlPr-9uD-WkdCpWN7nidO5hlrJi6Qw/exec",
-        "oneappDeployedVersion": 40,
-        "oneappRollbackVersion": 39,
-        "gatewayDeployedVersion": 18,
-        "gatewayRollbackVersion": 17,
+        "oneappDeployedVersion": 41,
+        "oneappRollbackVersion": 40,
+        "gatewayDeployedVersion": 19,
+        "gatewayRollbackVersion": 18,
         "postalCode1": "05699",
         "rawCertificateStorage": false,
         "representativeBirthDateStorage": false
@@ -781,7 +860,8 @@
           "database": "MerchOpsDB",
           "store": "master_products",
           "keys": [
-            "merchMaster_v870"
+            "merchMaster_v870",
+            "oneapp.foundation.product-backup-state.v1"
           ]
         },
         "localStorage": [
@@ -791,7 +871,10 @@
         "cloud": [
           "master",
           "master_only",
-          "chunk_master"
+          "chunk_master",
+          "foundation.backup.product_write",
+          "foundation.backup.version_list",
+          "foundation.backup.version_read"
         ]
       }
     },

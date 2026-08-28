@@ -19,7 +19,7 @@ import {
   requireActor,
   requireCapability
 } from '../orderq/orderq-v7-contracts.js';
-import { ORDERQ_DB_VERSION as CURRENT_ORDERQ_DB_VERSION } from '../orderq/orderq-v16-contracts.js';
+import { ORDERQ_DB_VERSION as CURRENT_ORDERQ_DB_VERSION } from '../orderq/orderq-v17-contracts.js';
 import {
   ORDERQ_BACKUP_FORMAT,
   ORDERQ_BACKUP_FORMAT_VERSION,
@@ -146,5 +146,5 @@ console.log(JSON.stringify({
   legacyCases,
   blankAndZeroIdentity: identity,
   actorBoundary: 'ADMIN default; explicit blank rejected',
-  backupSchemasAccepted: '1..8 (v7 contract remains readable)'
+  backupSchemasAccepted: `1..${CURRENT_ORDERQ_DB_VERSION} (v7 contract remains readable)`
 }, null, 2));
