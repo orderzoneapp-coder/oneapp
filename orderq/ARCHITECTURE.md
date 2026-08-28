@@ -23,7 +23,7 @@ Later, only the Cloud Adapter boundary is intended to change to `Server API → 
 
 ## 2. Ownership and source of truth
 
-- Current phase: IndexedDB `oneapp-orderq-vnext` is the local working database.
+- Current phase: IndexedDB `oneapp-orderq-pre-m1-v6` is the isolated local working database. The previous M1~M10 database remains preserved and is not opened by this rollback build.
 - SmartParser immutable input: `rawInputs`; message decisions and confirmed values: `parseResults`.
 - Duplicate boundary: unique `sourceMessageKey` indexes on `parseResults` and `orders`.
 - Google Sheet cloud is a central synchronization and recovery layer, not an ERP ledger.

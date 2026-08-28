@@ -19,7 +19,7 @@ Date: 2026-08-14
 
 - `/orderq/index.html` 신규 주문현황
 - `/orderq/input.html` 신규 수기 주문서
-- IndexedDB `oneapp-orderq-vnext` 구축
+- IndexedDB `oneapp-orderq-pre-m1-v6` 구축(기존 M1~M10 DB와 분리)
 - Customer / Order / OrderItem / Event / Mapping / SyncQueue 스키마 생성
 - Order Intake Engine 구축
 - 신규 주문 저장

@@ -1,4 +1,5 @@
-const DB_NAME = 'oneapp-orderq-vnext';
+// M1~M10 DB(v17)을 보존하면서 롤백 기준(v6)을 독립 실행한다.
+const DB_NAME = 'oneapp-orderq-pre-m1-v6';
 const DB_VERSION = 6;
 
 export const STORE = Object.freeze({

@@ -14,7 +14,7 @@
 
 ## 데이터와 처리 원칙
 
-브라우저 IndexedDB `oneapp-orderq-vnext` v6를 로컬 업무 DB로 사용하고, Apps Script Web App을 통해 목적별 Google Sheet와 증분 동기화한다.
+브라우저 IndexedDB `oneapp-orderq-pre-m1-v6` v6를 로컬 업무 DB로 사용하고, Apps Script Web App을 통해 목적별 Google Sheet와 증분 동기화한다. 기존 M1~M10 DB는 삭제하지 않고 별도 보존한다.
 
 업무 흐름은 `주문서 입력 → 주문현황(전표관리) → ORDER Q(운영관리)`로 구분한다. 직접입력·ORDER IN·Excel·쇼핑몰·외부연동은 모두 공통 `createOrder`를 호출하며 입력경로는 `inputChannel`로 기록한다. 저장 후 주문현황으로 이동해 방금 저장한 전표를 최상단에서 자동으로 펼친다.
 
