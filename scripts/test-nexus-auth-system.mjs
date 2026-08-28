@@ -137,7 +137,7 @@ for (const relativePath of protectedEntries) {
 
 const consumerFiles = [
   'coreEngine.js', 'DataOps_situation_v2.js', 'DataOps.html', 'dataops/close-ui.js', 'dataops/v1-security-client.js',
-  'history_viewer.html', 'Item_manager.js', 'Master.html', 'MerchOps.html', 'orders.html', 'orderops_list.html',
+  'history_viewer.html', 'Item_manager.js', 'Master.html', 'nexus/master/master-app.jsx', 'nexus/master/master-app.js', 'MerchOps.html', 'orders.html', 'orderops_list.html',
   'orderops/list.html', 'orderops/list1.html', 'orderops/orderops-source-adapter.js',
   'orderq/dataops-situation-read-adapter.js', 'orderq/orderq-cloud-adapter.js', 'orderq/situation-runtime.js',
   'settings.html'

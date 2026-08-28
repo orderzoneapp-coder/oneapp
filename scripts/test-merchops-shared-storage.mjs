@@ -604,6 +604,7 @@ const files = Object.fromEntries(
     "settings.html",
     "export_center.html",
     "Master.html",
+    "nexus/master/master-app.jsx",
     "Item_manager.html",
     "Item_manager.js",
     "DataOps.html",
@@ -614,6 +615,7 @@ const files = Object.fromEntries(
   ]
     .map((name) => [name, fs.readFileSync(path.join(ROOT, name), "utf8")]),
 );
+const masterSource = `${files["Master.html"]}\n${files["nexus/master/master-app.jsx"]}`;
 const dataOpsPersistStart = files["DataOps.html"].indexOf("const persistDataOpsMasterCache =");
 const dataOpsPersistEnd = files["DataOps.html"].indexOf("const DATAOPS_MASTER_ITEM_HELPER", dataOpsPersistStart);
 assert.ok(dataOpsPersistStart >= 0 && dataOpsPersistEnd > dataOpsPersistStart);
@@ -742,11 +744,11 @@ for (const name of [
   "SmartParser.html",
   "settings.html",
   "export_center.html",
-  "Master.html",
   "Item_manager.html",
 ]) {
   assert.match(files[name], /<script src="coreEngine\.js"><\/script>/, `${name} must load the shared storage engine`);
 }
+assert.match(files["Master.html"], /<script defer src="\/coreEngine\.js\?v=20260828\.1"><\/script>/, "Master.html must defer the shared storage engine");
 assert.match(files["SmartParser.html"], /afterVerified: \(\) => \{\s*saveMerchHistoryWithRetry\(logs\)/);
 assert.match(files["SmartParser.html"], /await commitSmartParserMaster\(data, storeEntries, historyLogs/);
 assert.match(files["settings.html"], /commitMasterStateOrThrow\(newMaster, \{\s*expectedRevision: settingsMasterRevision/);
@@ -762,14 +764,14 @@ assert.doesNotMatch(files["settings.html"], /bulkPutIDB\('master_products'/);
 assert.doesNotMatch(files["settings.html"], /setIDB\('merchMaster_v870'/);
 assert.doesNotMatch(files["export_center.html"], /bulkPutIDB\('master_products'/);
 assert.doesNotMatch(files["export_center.html"], /setIDB\('merchMaster_v870'/);
-for (const name of ["Master.html"]) {
-  const saveMasterLocal = files[name].match(/const saveMasterLocal = async[\s\S]*?\n        };/)?.[0] || "";
+for (const [name, source] of [["Master.html", masterSource]]) {
+  const saveMasterLocal = source.match(/const saveMasterLocal = async[\s\S]*?\n        };/)?.[0] || "";
   assert.match(saveMasterLocal, /commitMasterStateOrThrow\(safeMap, \{\s*expectedRevision:/, `${name} must use the revision-checked shared writer`);
   assert.doesNotMatch(saveMasterLocal, /setIDB\(/, `${name} must not split the snapshot write`);
   assert.doesNotMatch(saveMasterLocal, /bulkPutMasterIDB\(/, `${name} must not split the row write`);
-  assert.doesNotMatch(files[name], /bulkPutMasterIDB/, `${name} must not retain an alternate master writer`);
+  assert.doesNotMatch(source, /bulkPutMasterIDB/, `${name} must not retain an alternate master writer`);
   assert.match(
-    files[name],
+    source,
     /\[STORAGE_KEYS\.MASTER_DB, 'merchMaster_revision_v870'\]\.includes\(key\)/,
     `${name} must reject direct snapshot and revision writes`,
   );
@@ -805,14 +807,14 @@ assert.match(
   files["MerchOps.html"],
   /const migration = await window\.commitMerchMasterState\(state\.snapshot, \{\s*expectedRevision: state\.revision/,
 );
-for (const [name, source] of [["Master.html", files["Master.html"]], ["Item_manager.js", files["Item_manager.js"]]]) {
+for (const [name, source] of [["Master.html", masterSource], ["Item_manager.js", files["Item_manager.js"]]]) {
   assert.doesNotMatch(source, /ROW-\$\{idx\}/);
   assert.match(source, /상품코드가 중복되어 있습니다|마스터 중복 코드가 있습니다/);
   assert.match(source, /Object\.keys\(legacy\)\.length/);
 }
-assert.match(files["Master.html"], /ONEAPP_MASTER_ADD_UPDATE\.analyzeUploadRows/);
-assert.match(files["Master.html"], /ONEAPP_MASTER_ADD_UPDATE\.commitApprovedChanges/);
-assert.doesNotMatch(files["Master.html"], /saveMasterLocal\(newMaster\)/);
+assert.match(masterSource, /ONEAPP_MASTER_ADD_UPDATE\.analyzeUploadRows/);
+assert.match(masterSource, /ONEAPP_MASTER_ADD_UPDATE\.commitApprovedChanges/);
+assert.doesNotMatch(masterSource, /saveMasterLocal\(newMaster\)/);
 assert.match(files["masterAddUpdate.js"], /commitMasterStateOrThrow\(plan\.nextMaster/);
 assert.match(files["masterAddUpdate.js"], /afterVerifiedError: 'Master 추가·갱신 master\/history 검증 실패'/);
 assert.match(files["app-manifest.json"], /"F7": "Apply current work to the MerchOps master/);

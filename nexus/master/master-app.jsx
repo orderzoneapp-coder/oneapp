@@ -1,0 +1,1556 @@
+        if (!window.React || !window.ReactDOM) { throw new Error('React/ReactDOM 라이브러리 로드 실패'); }
+        const { useState, useMemo, useEffect, useCallback, useRef, Fragment } = React;
+
+        const MASTER_EXCEL_DEPENDENCIES = Object.freeze([
+            {
+                id: 'sheetjs',
+                src: 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js',
+                ready: () => Boolean(window.XLSX?.utils),
+                label: 'Excel 분석 엔진'
+            },
+            {
+                id: 'master-add-update',
+                src: '/masterAddUpdate.js?v=20260828.1',
+                ready: () => Boolean(window.ONEAPP_MASTER_ADD_UPDATE?.analyzeUploadRows),
+                label: 'Master 추가·갱신 모듈'
+            }
+        ]);
+        let masterExcelRuntimePromise = null;
+
+        const loadMasterDependency = ({ id, src, ready, label }) => {
+            if (ready()) return Promise.resolve();
+            const existing = document.querySelector(`script[data-master-dependency="${id}"]`);
+            if (existing) existing.remove();
+            return new Promise((resolve, reject) => {
+                const script = document.createElement('script');
+                const timeout = window.setTimeout(() => {
+                    script.remove();
+                    reject(new Error(`${label} 로드 시간이 초과되었습니다.`));
+                }, 15000);
+                script.src = src;
+                script.async = true;
+                script.dataset.masterDependency = id;
+                script.onload = () => {
+                    window.clearTimeout(timeout);
+                    if (ready()) resolve();
+                    else {
+                        script.remove();
+                        reject(new Error(`${label} 초기화 결과를 확인할 수 없습니다.`));
+                    }
+                };
+                script.onerror = () => {
+                    window.clearTimeout(timeout);
+                    script.remove();
+                    reject(new Error(`${label}을(를) 불러오지 못했습니다.`));
+                };
+                document.head.appendChild(script);
+            });
+        };
+
+        const ensureMasterExcelRuntime = async () => {
+            if (MASTER_EXCEL_DEPENDENCIES.every(dependency => dependency.ready())) return;
+            if (!masterExcelRuntimePromise) {
+                masterExcelRuntimePromise = Promise.all(MASTER_EXCEL_DEPENDENCIES.map(loadMasterDependency))
+                    .catch(error => {
+                        masterExcelRuntimePromise = null;
+                        throw error;
+                    });
+            }
+            await masterExcelRuntimePromise;
+        };
+
+        // ==========================================
+        // 🔑 Global Storage Keys & Constants
+        // ==========================================
+        const STORAGE_KEYS = {
+            // MerchOps 공통 클라우드/마스터 저장키
+            MASTER_DB: 'merchMaster_v870',
+            MASTER_STORE: 'master_products',
+            CLOUD_URL: 'oneapp_cloud_sync_url_v1',
+            LEGACY_CLOUD_URL: 'merchCloudUrl_v870',
+            OLD_CLOUD_URL: 'skuSyncCloudUrl_v6',
+            SYNC_TRIGGER: 'merchMaster_sync_trigger',
+            CONFIG_TRIGGER: 'config_sync_trigger'
+        };
+
+        const ONEAPP_DEFAULT_CLOUD_SYNC_URL = 'NEXUS_GATEWAY';
+
+        const normalizeOneAppCloudSyncUrl = (url = '') => {
+            const raw = String(url || '').trim();
+            if (!raw) return '';
+            return raw
+                .replace(/\?action=[^&#]*/g, '')
+                .replace(/&action=[^&#]*/g, '')
+                .replace(/\?sheet=[^&#]*/g, '')
+                .replace(/&sheet=[^&#]*/g, '');
+        };
+
+        const getOneAppCloudSyncUrl = (fallback = '') => {
+            return ONEAPP_DEFAULT_CLOUD_SYNC_URL;
+        };
+
+        const setOneAppCloudSyncUrl = (url = '') => {
+            return ONEAPP_DEFAULT_CLOUD_SYNC_URL;
+        };
+
+        const buildCloudUrl = (url = '', params = {}) => {
+            const base = normalizeOneAppCloudSyncUrl(url || getOneAppCloudSyncUrl());
+            const query = Object.entries(params).filter(([_, v]) => v !== undefined && v !== null && v !== '').map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&');
+            if (!query) return base;
+            return base.includes('?') ? `${base}&${query}` : `${base}?${query}`;
+        };
+
+        window.ONEAPP_DEFAULT_CLOUD_SYNC_URL = window.ONEAPP_DEFAULT_CLOUD_SYNC_URL || ONEAPP_DEFAULT_CLOUD_SYNC_URL;
+        window.getOneAppCloudSyncUrl = window.getOneAppCloudSyncUrl || getOneAppCloudSyncUrl;
+        window.setOneAppCloudSyncUrl = window.setOneAppCloudSyncUrl || setOneAppCloudSyncUrl;
+        try { setOneAppCloudSyncUrl(getOneAppCloudSyncUrl()); } catch (e) {}
+
+
+        const NUMERIC_HEADERS = [
+            "안전재고", "출고가", "입고가", "입고B", "도매A", "도매B", "상장가", "최종전송", "최종입고",
+            "단가H", "단가I", "시중가", "행사가", "1종연산", "1당수량", "2종연산", "외주비", "노무비", "경비"
+        ];
+
+        // ==========================================
+        // 🛠 Utility Functions
+        // ==========================================
+        const initIDB = () => new Promise((resolve, reject) => {
+            const request = indexedDB.open('MerchOpsDB', 2);
+            request.onupgradeneeded = (e) => {
+                const db = e.target.result;
+                if (!db.objectStoreNames.contains('store')) db.createObjectStore('store');
+                if (!db.objectStoreNames.contains(STORAGE_KEYS.MASTER_STORE)) db.createObjectStore(STORAGE_KEYS.MASTER_STORE, { keyPath: '코드' });
+            };
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+        });
+        const setIDB = async (key, val) => {
+            if ([STORAGE_KEYS.MASTER_DB, 'merchMaster_revision_v870'].includes(key)) {
+                throw new Error(`${key}는 공통 원자 저장 경로만 사용할 수 있습니다.`);
+            }
+            const db = await initIDB();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction('store', 'readwrite');
+                tx.objectStore('store').put(val, key);
+                tx.oncomplete = () => resolve();
+                tx.onerror = () => reject(tx.error);
+            });
+        };
+        const getIDB = async (key) => { const db = await initIDB(); return new Promise((resolve, reject) => { const tx = db.transaction('store', 'readonly'); const req = tx.objectStore('store').get(key); req.onsuccess = () => resolve(req.result); req.onerror = () => reject(tx.error); }); };
+
+        const getAllMasterIDB = async () => {
+            const db = await initIDB();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(STORAGE_KEYS.MASTER_STORE, 'readonly');
+                const req = tx.objectStore(STORAGE_KEYS.MASTER_STORE).getAll();
+                req.onsuccess = () => resolve(req.result || []);
+                req.onerror = () => reject(tx.error);
+            });
+        };
+        let masterPageRevision = undefined;
+
+        const normalizeMasterItem = (item = {}, fallbackCode = '') => {
+            const code = safeStr(item['코드'] || item['품목코드'] || fallbackCode).trim();
+            const themeValue = normalizePromotionThemeValue(item);
+            const next = {
+                ...item,
+                코드: code,
+                품목코드: safeStr(item['품목코드'] || code).trim(),
+                행사테마: themeValue
+            };
+            [1, 2, 3, 4, 5].forEach(n => { next[`테마${n}`] = themeValue.split(',').includes(String(n)) ? '1' : ''; });
+            return next;
+        };
+
+        const masterArrayToMap = (items = []) => {
+            const map = {};
+            const entries = Array.isArray(items)
+                ? items.map((item, idx) => [String(idx + 1), item, ''])
+                : Object.entries(items || {}).map(([key, item], idx) => [String(idx + 1), item, key]);
+            entries.forEach(([rowNumber, item, objectKey]) => {
+                const normalized = normalizeMasterItem(item, objectKey);
+                if (!normalized.코드) {
+                    throw new Error(`마스터 ${rowNumber}행에 코드가 없습니다.`);
+                }
+                if (map[normalized.코드]) {
+                    throw new Error(`마스터 중복 코드가 있습니다: ${normalized.코드}`);
+                }
+                map[normalized.코드] = normalized;
+            });
+            return map;
+        };
+
+        const saveMasterLocal = async (masterMap = {}, options = {}) => {
+            const safeMap = masterArrayToMap(masterMap);
+            if (!window.ONEAPP?.STORAGE?.commitMasterStateOrThrow) {
+                throw new Error('공통 마스터 저장 엔진을 불러오지 못했습니다.');
+            }
+            const result = await window.ONEAPP.STORAGE.commitMasterStateOrThrow(safeMap, {
+                expectedRevision: masterPageRevision,
+                ...options
+            });
+            masterPageRevision = result.revision;
+            try { localStorage.setItem(STORAGE_KEYS.SYNC_TRIGGER, Date.now().toString()); } catch (e) {}
+            return safeMap;
+        };
+
+        const loadMasterLocal = async () => {
+            const state = await window.ONEAPP.STORAGE.readMasterSnapshotState();
+            masterPageRevision = state.revision;
+            const items = state.items;
+            if (items && items.length > 0) return masterArrayToMap(items);
+            const legacy = await getIDB(STORAGE_KEYS.MASTER_DB).catch(() => null);
+            if (legacy && typeof legacy === 'object' && Object.keys(legacy).length > 0) {
+                const safeMap = await saveMasterLocal(legacy);
+                return safeMap;
+            }
+            return {};
+        };
+
+        const extractMasterFromCloudResult = (result = {}) => {
+            if (!result) return {};
+            if (result.status === 'success' && result.data) {
+                if (result.data.master) return masterArrayToMap(result.data.master);
+                if (Array.isArray(result.data)) return masterArrayToMap(result.data);
+            }
+            if (Array.isArray(result.data)) return masterArrayToMap(result.data);
+            if (Array.isArray(result)) return masterArrayToMap(result);
+            return {};
+        };
+
+        const readCloudFullPayload = async (cloudUrl) => {
+            await window.ONEAPP_AUTH.ready;
+            return { status:'success', data:await window.ONEAPP_AUTH.gateway('foundation.full_read', {}) };
+        };
+
+        const pullMerchOpsCloudMaster = async (cloudUrl) => {
+            const versions = await window.NEXUS_FOUNDATION_BACKUP.listVersions('PRODUCT', 1);
+            if (!versions.length) throw new Error('복구 가능한 상품 백업이 없습니다.');
+            const version = await window.NEXUS_FOUNDATION_BACKUP.readVersion('PRODUCT', versions[0].serverRevision);
+            const products = Array.isArray(version.payload?.products) ? version.payload.products : [];
+            const masterMap=masterArrayToMap(products);
+            if(!Object.keys(masterMap).length)throw new Error('마스터 데이터 없음');
+            const localState = await window.ONEAPP.STORAGE.readMasterSnapshotState();
+            const comparison = window.NEXUS_FOUNDATION_BACKUP.compareSnapshots(localState.items || [], products, 'productId');
+            if (comparison.destructive && !window.confirm('복구하면 상품 수가 크게 감소하거나 0건이 됩니다. 비교 결과를 확인했고 계속하시겠습니까?')) {
+                return { cancelled: true, masterMap: localState.masterMap || {}, count: (localState.items || []).length, version };
+            }
+            const restoreId = window.NEXUS_FOUNDATION_BACKUP.uuid('RST-PRODUCT');
+            const localProducts = [...(localState.items || [])].sort((a, b) => String(a.productId || '').localeCompare(String(b.productId || '')));
+            const safetySnapshot = {
+                snapshotId: window.NEXUS_FOUNDATION_BACKUP.uuid('SAFE-PRODUCT'),
+                restoreId,
+                products: localState.items || [],
+                contentHash: await window.NEXUS_FOUNDATION_BACKUP.sha256({ products: localProducts }),
+                createdAt: new Date().toISOString()
+            };
+            const restoreAudit = {
+                restoreId, domainType: 'PRODUCT', serverRevision: Number(version.serverRevision),
+                deviceId: window.NEXUS_FOUNDATION_BACKUP.getDeviceId(), result: 'APPLIED',
+                localHashBefore: safetySnapshot.contentHash, localHashAfter: version.contentHash,
+                recordCountBefore: localProducts.length, recordCountAfter: products.length,
+                status: 'PENDING', createdAt: new Date().toISOString()
+            };
+            await saveMasterLocal(masterMap, { foundationBackupContext: { baseServerRevision: version.serverRevision, safetySnapshot, restoreAudit } });
+            const after = await window.ONEAPP.STORAGE.readMasterSnapshotState();
+            const afterProducts = [...(after.items || [])].sort((a, b) => String(a.productId || '').localeCompare(String(b.productId || '')));
+            const afterHash = await window.NEXUS_FOUNDATION_BACKUP.sha256({ products: afterProducts });
+            if (afterHash !== version.contentHash) throw new Error('상품 복구 후 해시 검증에 실패했습니다.');
+            await window.NEXUS_FOUNDATION_BACKUP.flushProductRestoreAudits();
+            return {masterMap:after.masterMap || masterMap,count:afterProducts.length,version,restoreId};
+        };
+
+        const safeJSONParseRaw = (raw, defaultVal) => {
+            try {
+                if (!raw || raw === 'undefined' || raw === 'null') return defaultVal;
+                const parsed = JSON.parse(raw);
+                return parsed === undefined || parsed === null ? defaultVal : parsed;
+            } catch (e) { return defaultVal; }
+        };
+
+        const chunkUploadCloud = async ({ url, action, data = [], chunkSize = 500, onProgress }) => {
+            throw new Error('NEXUS_GATEWAY_DIRECT_CHUNK_DENIED');
+        };
+
+        const pushMerchOpsCloudMaster = async (masterMap = {}, { cloudUrl, onProgress } = {}) => {
+            const masterItems = Object.values(masterMap || {});
+            if (typeof onProgress === 'function') onProgress('불변 Revision 백업 검증 중...');
+            let result = await window.NEXUS_FOUNDATION_BACKUP.backupProductNow();
+            if (result.status === 'NON_PRIMARY' && window.confirm('현재 장치는 Primary가 아닙니다. 관리자 권한으로 이 장치를 Primary로 승격할까요?')) {
+                const primaryEpoch = Number(result.device?.primary?.primaryEpoch || 0);
+                await window.NEXUS_FOUNDATION_BACKUP.promoteDevice(primaryEpoch, '상품 마스터 화면 승인');
+                result = await window.NEXUS_FOUNDATION_BACKUP.backupProductNow();
+            }
+            if (result.status !== 'ACKED' && !result.skipped) throw new Error(result.code || result.status || '상품 백업이 승인되지 않았습니다.');
+            try { localStorage.setItem(STORAGE_KEYS.SYNC_TRIGGER, Date.now().toString()); } catch (e) {}
+            return { count: masterItems.length, serverRevision: result.serverRevision || null };
+        };
+
+
+        // 💡 하얀 화면(크래시) 방지용 강제 문자열 변환 유틸리티
+        const safeStr = (val, def = '') => (val !== undefined && val !== null && val !== '') ? String(val) : def;
+
+        const PROMOTION_THEMES = [
+            { code: '1', label: '오늘의행사', type: '탭' },
+            { code: '2', label: '매장행사', type: '탭' },
+            { code: '3', label: '특가상품', type: '탭' },
+            { code: '4', label: '실사진', type: '뱃지' },
+            { code: '5', label: '행사', type: '뱃지' }
+        ];
+
+        const normalizePromotionThemeValue = (item = {}) => {
+            const out = [];
+            const push = (v) => {
+                const s = String(v ?? '').trim();
+                if (!s) return;
+                s.split(/[,/|\s]+/).forEach(part => {
+                    const n = String(part || '').replace(/[^1-5]/g, '');
+                    if (n && /^[1-5]$/.test(n) && !out.includes(n)) out.push(n);
+                });
+            };
+            push(item['행사테마']);
+            push(item['테마']);
+            push(item['promoTheme']);
+            push(item['_theme']);
+            [1, 2, 3, 4, 5].forEach(n => {
+                const raw = item[`테마${n}`];
+                const s = String(raw ?? '').trim();
+                if (s && s !== '0' && s !== 'false' && s !== 'FALSE' && !out.includes(String(n))) out.push(String(n));
+            });
+            return out.sort((a, b) => Number(a) - Number(b)).join(',');
+        };
+
+        const parseMasterAddUpdateWorkbook = (arrayBuffer) => {
+            const api = window.ONEAPP_MASTER_ADD_UPDATE;
+            if (!api || typeof api.parseWorkbook !== 'function') {
+                throw new Error('Master 추가·갱신 Excel 분석 모듈을 불러오지 못했습니다.');
+            }
+            return api.parseWorkbook(arrayBuffer, window.XLSX);
+        };
+
+
+        // ==========================================
+        // 🧩 [아이콘 시스템] SafeIcon
+        // ==========================================
+        const MASTER_ICON_PATHS = Object.freeze({
+            'database': [
+                { tag: 'ellipse', cx: 12, cy: 5, rx: 9, ry: 3 },
+                { tag: 'path', d: 'M3 5v14c0 1.7 4 3 9 3s9-1.3 9-3V5' },
+                { tag: 'path', d: 'M3 12c0 1.7 4 3 9 3s9-1.3 9-3' }
+            ],
+            'cloud-download': [
+                { tag: 'path', d: 'M17.5 19H6a4 4 0 0 1-.4-7.98A6 6 0 0 1 17 8a4.5 4.5 0 0 1 .5 9' },
+                { tag: 'path', d: 'M12 12v8m-3-3 3 3 3-3' }
+            ],
+            'cloud-upload': [
+                { tag: 'path', d: 'M17.5 19H6a4 4 0 0 1-.4-7.98A6 6 0 0 1 17 8a4.5 4.5 0 0 1 .5 9' },
+                { tag: 'path', d: 'M12 20v-8m-3 3 3-3 3 3' }
+            ],
+            'settings': [
+                { tag: 'circle', cx: 12, cy: 12, r: 3 },
+                { tag: 'path', d: 'M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.86 2.86-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21H9.6v-.1A1.7 1.7 0 0 0 8 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.86-2.86.06-.06A1.7 1.7 0 0 0 3.6 15a1.7 1.7 0 0 0-1.6-1H2V10h.1A1.7 1.7 0 0 0 3.6 8a1.7 1.7 0 0 0-.34-1.88l-.06-.06L6.06 3.2l.06.06A1.7 1.7 0 0 0 8 3.6a1.7 1.7 0 0 0 1-1.6V2h4v.1A1.7 1.7 0 0 0 15 3.6a1.7 1.7 0 0 0 1.88-.34l.06-.06 2.86 2.86-.06.06A1.7 1.7 0 0 0 19.4 8a1.7 1.7 0 0 0 1.6 1.6h.1v4H21a1.7 1.7 0 0 0-1.6 1.4Z' }
+            ],
+            'x': [{ tag: 'path', d: 'm18 6-12 12M6 6l12 12' }],
+            'check-circle-2': [
+                { tag: 'path', d: 'M22 11.1V12a10 10 0 1 1-5.9-9.1' },
+                { tag: 'path', d: 'm9 11 3 3L22 4' }
+            ],
+            'search': [
+                { tag: 'circle', cx: 11, cy: 11, r: 8 },
+                { tag: 'path', d: 'm21 21-4.35-4.35' }
+            ],
+            'upload': [
+                { tag: 'path', d: 'M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4' },
+                { tag: 'path', d: 'm17 8-5-5-5 5M12 3v12' }
+            ],
+            'file-spreadsheet': [
+                { tag: 'path', d: 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z' },
+                { tag: 'path', d: 'M14 2v6h6M8 13h8M8 17h8M12 13v4' }
+            ],
+            'circle-notch': [
+                { tag: 'circle', cx: 12, cy: 12, r: 9, strokeOpacity: .25 },
+                { tag: 'path', d: 'M21 12a9 9 0 0 0-9-9' }
+            ],
+            'exclamation-triangle': [
+                { tag: 'path', d: 'M10.3 3.7 2.2 18a2 2 0 0 0 1.8 3h16a2 2 0 0 0 1.8-3L13.7 3.7a2 2 0 0 0-3.4 0Z' },
+                { tag: 'path', d: 'M12 9v4M12 17h.01' }
+            ],
+            'redo-alt': [
+                { tag: 'path', d: 'M21 12a9 9 0 1 1-2.64-6.36L21 8' },
+                { tag: 'path', d: 'M21 3v5h-5' }
+            ],
+            'chevron-right': [{ tag: 'path', d: 'm9 18 6-6-6-6' }],
+            'unknown': [
+                { tag: 'circle', cx: 12, cy: 12, r: 9 },
+                { tag: 'path', d: 'M9.1 9a3 3 0 1 1 5.8 1c0 2-3 2-3 4M12 18h.01' }
+            ]
+        });
+
+        const SafeIcon = React.memo(function SafeIconComponent({ name, size = 18, className = "" }) {
+            const icons = MASTER_ICON_PATHS[name] || MASTER_ICON_PATHS.unknown;
+            return (
+                <svg
+                    aria-hidden="true"
+                    focusable="false"
+                    viewBox="0 0 24 24"
+                    width={size}
+                    height={size}
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className={`inline-block shrink-0 ${className}`}
+                >
+                    {icons.map((icon, index) => React.createElement(icon.tag, { ...icon, tag: undefined, key: `${name}-${index}` }))}
+                </svg>
+            );
+        });
+
+        // ==========================================
+        // 🧩 Master app work header
+        // ==========================================
+        const GlobalHeader = ({ view, itemCount, onSelectView, onOpenSettings, onPush, onPull, showCloudActions = true }) => {
+            return (
+                <div className="nexus-app-work-header shrink-0 z-40 relative w-full bg-white border-b border-slate-200 shadow-sm">
+                    <header className="nexus-app-work-header__bar nexus-app-header-content master-app-header-bar gap-4 relative z-20">
+                        <div className="flex items-center h-full min-w-0 gap-5">
+                            <strong className="text-[17px] font-black text-slate-900 whitespace-nowrap">기초등록</strong>
+                            <div className="master-target-tabs flex items-center h-full gap-1" role="tablist" aria-label="상품 또는 거래처 선택">
+                                {[['products', '상품'], ['customers', '거래처']].map(([targetView, label]) => (
+                                    <button key={targetView} type="button" role="tab" aria-selected={view === targetView} aria-current={view === targetView ? 'page' : undefined}
+                                        onClick={() => onSelectView(targetView)}
+                                        className={`nexus-target-tab h-full px-5 border-b-[3px] text-[13px] font-black focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-inset ${view === targetView ? 'border-indigo-600 text-indigo-700 bg-indigo-50/60' : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50'}`}>
+                                        {label}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="master-app-header-actions flex items-center gap-3 h-full">
+                            {showCloudActions && (
+                                <div className="master-header-count flex items-center gap-1.5 text-slate-500 h-9 px-3 rounded-lg bg-slate-50 border border-slate-200" title="마스터 DB 기준 상품 수">
+                                    <SafeIcon name="database" size={12} className="text-slate-400" />
+                                    <span className="text-[11px] font-mono font-bold tracking-tight">{itemCount ? itemCount.toLocaleString() : 0}</span>
+                                </div>
+                            )}
+
+                            <div className="flex items-center gap-2">
+                                {showCloudActions && (
+                                    <>
+                                        <button onClick={onPull} className="w-9 h-9 rounded-lg bg-white hover:bg-slate-50 flex items-center justify-center border border-slate-300 transition-colors text-indigo-600" title="관리자 승인 서버 복구" aria-label="서버 백업에서 상품정보 복구"><SafeIcon name="cloud-download" size={17} /></button>
+                                        <button onClick={onPush} className="w-9 h-9 rounded-lg bg-white hover:bg-slate-50 flex items-center justify-center border border-slate-300 transition-colors text-indigo-600" title="지금 불변 백업" aria-label="상품정보를 서버에 백업"><SafeIcon name="cloud-upload" size={17} /></button>
+                                    </>
+                                )}
+                                <button onClick={onOpenSettings} className="w-9 h-9 rounded-lg bg-white hover:bg-slate-50 flex items-center justify-center border border-slate-300 transition-colors text-slate-500 hover:text-slate-800" title="기초등록 환경설정 열기" aria-label="기초등록 환경설정 열기"><SafeIcon name="settings" size={17} /></button>
+                            </div>
+                        </div>
+                    </header>
+                </div>
+            );
+        };
+
+        const MasterSubnav = ({ view, mode, onSelectMode }) => (
+            <div className="master-work-left" aria-label={`${view === 'customers' ? '거래처' : '상품'} 하위 기능`}>
+                <strong className="text-[12px] font-black text-slate-800 whitespace-nowrap">{view === 'customers' ? '거래처' : '상품'}</strong>
+                {[['list', '조회'], ['edit', '등록·수정'], ['mapping', '매핑·관리']].map(([targetMode, label]) => (
+                    <button key={targetMode} type="button" onClick={() => onSelectMode(targetMode)} aria-current={mode === targetMode ? 'page' : undefined}
+                        className="master-subnav-link focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-inset">
+                        {label}
+                    </button>
+                ))}
+            </div>
+        );
+
+        const FoundationMetadataWorkspace = ({ entityType }) => {
+            const hostRef = useRef(null);
+            useEffect(() => {
+                if (!hostRef.current || !window.NEXUS_FOUNDATION_UI) return undefined;
+                return window.NEXUS_FOUNDATION_UI.mount(hostRef.current, { entityType });
+            }, [entityType]);
+            return <div ref={hostRef} className="w-full h-full" aria-label={`${entityType === 'CUSTOMER' ? '거래처' : '상품'} 필드·매핑 관리`}></div>;
+        };
+
+        const IframeSettingsModal = ({ isOpen, onClose }) => {
+            if (!isOpen) return null;
+            return (
+                <div className="fixed inset-0 z-[500] flex bg-slate-900/60 backdrop-blur-sm fade-in">
+                    <div className="w-full max-w-[1400px] h-full bg-white shadow-[-10px_0_40px_rgba(0,0,0,0.3)] flex flex-col slide-in-right border-l border-slate-300 relative overflow-hidden ml-auto">
+                        <div className="bg-[#0f172a] px-6 py-4 flex justify-between items-center text-white shrink-0 border-b border-slate-700 shadow-md relative z-10">
+                            <div className="flex items-center gap-3">
+                                <SafeIcon name="settings" size={20} className="text-indigo-400"/>
+                                <h2 className="font-black text-[17px] tracking-wide">통합 환경설정 센터</h2>
+                                <span className="bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded text-[10px] font-bold border border-indigo-500/30 ml-2">Wide Overlay</span>
+                            </div>
+                            <div className="flex items-center gap-4">
+                                <span className="text-[12px] text-slate-400 font-medium hidden md:inline-block">설정을 변경하고 창을 닫으면 작업 화면에 즉시 반영됩니다.</span>
+                                <button onClick={onClose} className="text-slate-300 hover:text-white transition-colors bg-slate-800 hover:bg-rose-500 w-8 h-8 rounded-lg flex items-center justify-center shadow-sm border border-slate-700 hover:border-rose-400">
+                                    <SafeIcon name="x" size={18} />
+                                </button>
+                            </div>
+                        </div>
+                        <div className="flex-1 w-full bg-slate-100 relative">
+                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                <div className="text-slate-300 flex flex-col items-center">
+                                    <SafeIcon name="circle-notch" size={30} className="animate-spin mb-3" />
+                                    <span className="font-bold text-sm">설정 모듈을 불러오는 중입니다...</span>
+                                </div>
+                            </div>
+                            <iframe src="settings.html?mode=iframe" className="absolute inset-0 w-full h-full border-0 bg-white relative z-10" title="Settings Center"></iframe>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // ==========================================
+        // 🧩 Read-Only 설정 훅
+        // ==========================================
+        const useMerchConfig = () => {
+            const loadConfig = () => {
+                const cloudUrl = getOneAppCloudSyncUrl();
+                let visibleMasterColsRaw = localStorage.getItem('merchVisMaster_v870');
+                let visibleMasterCols = { estimate: ['카탈로그', '견적서', '입고가', '출고가', '입고B', '도매A'] };
+                try {
+                    if (visibleMasterColsRaw) {
+                        const parsed = JSON.parse(visibleMasterColsRaw);
+                        if (parsed && parsed.estimate) visibleMasterCols = parsed;
+                    }
+                } catch(e) { console.warn("Config Load Fail", e); }
+                return { cloudUrl, visibleMasterCols };
+            };
+            const [config, setConfig] = useState(loadConfig());
+            useEffect(() => {
+                const handleStorageChange = () => setConfig(loadConfig());
+                window.addEventListener('storage', handleStorageChange);
+                return () => window.removeEventListener('storage', handleStorageChange);
+            }, []);
+            return config;
+        };
+
+        const formatReviewValue = (value, present = true) => {
+            if (!present) return '(업로드 컬럼 없음)';
+            if (value === '') return '(공란)';
+            if (value === 0) return '0 (숫자)';
+            if (value === undefined) return '(없음)';
+            if (value === null) return '(null)';
+            return safeStr(value);
+        };
+
+        const MasterAddUpdateConfirmModal = ({ analysis, onReview, onCancel, onDiscard }) => {
+            if (!analysis) return null;
+            const summary = analysis.summary;
+            const rows = [
+                ['신규 상품', summary.newCount],
+                ['기존 상품 변경', summary.changedCount],
+                ['누락 상품 · 기존 유지', summary.missingCount],
+                ['필수값 누락', summary.requiredMissingCount],
+                ['중복코드', summary.duplicateCount],
+                ['품명 불일치', summary.nameMismatchCount],
+                ['규격 변경', summary.specChangeCount],
+                ['단위 변경·누락', summary.unitChangeMissingCount],
+                ['기타 주요 필드 변경', summary.otherImportantCount],
+                ['저장 차단 이슈', summary.blockingCount]
+            ];
+            return (
+                <div className="fixed inset-0 z-[120] bg-slate-950/55 flex items-center justify-center p-5">
+                    <div className="w-full max-w-xl bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
+                        <div className="px-6 py-5 bg-amber-50 border-b border-amber-200">
+                            <h2 className="text-lg font-black text-amber-900">추가·갱신 확인요청</h2>
+                            <p className="text-xs text-amber-800 mt-1">아직 master에는 아무 값도 저장하지 않았습니다. 이슈 화면에서 승인 범위를 결정하세요.</p>
+                            {analysis.foundationMapping && (
+                                <p className="text-[11px] font-bold text-indigo-700 mt-2">
+                                    매핑 양식: {analysis.foundationMapping.mappingSetName} · 연결 {analysis.foundationMapping.summary.mapped} · 제외 {analysis.foundationMapping.summary.ignored + analysis.foundationMapping.summary.disabled + analysis.foundationMapping.summary.unmapped} · 행 실패 {analysis.foundationMapping.summary.rowFailures}
+                                </p>
+                            )}
+                        </div>
+                        <div className="p-6 grid grid-cols-3 gap-3">
+                            {rows.map(([label, count]) => (
+                                <div key={label} className={`rounded-xl border p-3 ${label === '저장 차단 이슈' && count > 0 ? 'bg-rose-50 border-rose-200' : 'bg-slate-50 border-slate-200'}`}>
+                                    <div className="text-[11px] font-bold text-slate-500">{label}</div>
+                                    <div className="text-xl font-black text-slate-900 mt-1">{count.toLocaleString()}건</div>
+                                </div>
+                            ))}
+                        </div>
+                        <div className="px-6 pb-6 flex justify-end gap-2">
+                            <button onClick={onDiscard} className="px-4 py-2 rounded-lg border border-rose-200 text-rose-700 text-xs font-bold hover:bg-rose-50">비교 결과 폐기</button>
+                            <button onClick={onCancel} className="px-4 py-2 rounded-lg border border-slate-300 text-slate-600 text-xs font-bold hover:bg-slate-50">업로드 취소</button>
+                            <button onClick={onReview} className="px-5 py-2 rounded-lg bg-indigo-600 text-white text-xs font-black hover:bg-indigo-700">이슈 확인 화면으로 이동</button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const MasterAddUpdateResultModal = ({ result, onClose }) => {
+            if (!result) return null;
+            const counts = result.counts;
+            const rows = [
+                ['신규 생성', counts.createCount],
+                ['기존 상품 갱신', counts.updateCount],
+                ['실제 반영 필드', counts.appliedFieldCount],
+                ['동일하여 미변경', counts.sameCount],
+                ['관리자 제외', counts.excludedCount],
+                ['누락되어 기존 master 유지', counts.missingRetainedCount],
+                ['저장 차단', counts.blockedCount],
+                ['저장 실패', counts.failedCount]
+            ];
+            return (
+                <div className="fixed inset-0 z-[125] bg-slate-950/55 flex items-center justify-center p-5">
+                    <div className="w-full max-w-2xl bg-white rounded-2xl shadow-2xl overflow-hidden">
+                        <div className="px-6 py-5 bg-emerald-50 border-b border-emerald-200">
+                            <h2 className="text-lg font-black text-emerald-900">추가·갱신 저장·검증 완료</h2>
+                            <p className="text-xs text-emerald-800 mt-1">master와 공식 history를 저장한 뒤 다시 읽어 일치 여부를 확인했습니다.</p>
+                        </div>
+                        <div className="p-6">
+                            <div className="grid grid-cols-4 gap-3">
+                                {rows.map(([label, count]) => (
+                                    <div key={label} className="rounded-xl bg-slate-50 border border-slate-200 p-3">
+                                        <div className="text-[11px] font-bold text-slate-500">{label}</div>
+                                        <div className="text-lg font-black text-slate-900 mt-1">{count.toLocaleString()}건</div>
+                                    </div>
+                                ))}
+                            </div>
+                            <div className="mt-4 rounded-lg bg-slate-900 text-slate-100 px-4 py-3 text-[11px] font-mono break-all">
+                                실행 ID: {result.executionId}
+                            </div>
+                            {result.actorStatus === 'identity-system-unavailable' && (
+                                <div className="mt-3 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
+                                    관리자 식별체계가 연결되지 않아 실행자는 임의 값 없이 미식별 상태로 기록했습니다.
+                                </div>
+                            )}
+                        </div>
+                        <div className="px-6 pb-6 text-right">
+                            <button onClick={onClose} className="px-5 py-2 rounded-lg bg-slate-900 text-white text-xs font-bold">확인</button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const MasterAddUpdateReview = ({
+            analysis,
+            onChange,
+            onClose,
+            onDiscard,
+            onSave,
+            isSaving,
+            errorMessage
+        }) => {
+            const api = window.ONEAPP_MASTER_ADD_UPDATE;
+            const [selectedTags, setSelectedTags] = useState([]);
+            const [includeSame, setIncludeSame] = useState(false);
+            if (!analysis || !api) return null;
+            const tags = [
+                api.ISSUE_TAGS.NEW, api.ISSUE_TAGS.CHANGED, api.ISSUE_TAGS.NAME,
+                api.ISSUE_TAGS.SPEC_CHANGED, api.ISSUE_TAGS.SPEC_MISSING,
+                api.ISSUE_TAGS.UNIT_CHANGED, api.ISSUE_TAGS.UNIT_MISSING,
+                api.ISSUE_TAGS.DUPLICATE_SAME, api.ISSUE_TAGS.DUPLICATE_DIFFERENT,
+                api.ISSUE_TAGS.BLANK, api.ISSUE_TAGS.ZERO, api.ISSUE_TAGS.SALE,
+                api.ISSUE_TAGS.INTEGRATION, api.ISSUE_TAGS.SPOT, api.ISSUE_TAGS.TAX,
+                api.ISSUE_TAGS.MASTER_MISMATCH, api.ISSUE_TAGS.BLOCKING,
+                api.ISSUE_TAGS.MISSING
+            ];
+            const visible = api.filterCandidates(analysis, selectedTags, { includeSame });
+            const toggleTag = (tag) => setSelectedTags(current => current.includes(tag)
+                ? current.filter(item => item !== tag)
+                : [...current, tag]);
+            const updateField = (candidateId, field, decision) => {
+                onChange(api.setFieldDecision(analysis, candidateId, field, decision));
+            };
+            return (
+                <div className="fixed inset-0 z-[110] bg-slate-100 flex flex-col">
+                    <div className="h-16 px-6 bg-slate-900 text-white flex items-center justify-between shrink-0 shadow-lg">
+                        <div>
+                            <h2 className="text-lg font-black">Master 추가·갱신 이슈 확인</h2>
+                            <p className="text-[11px] text-slate-300">{analysis.fileName} · 선택 필터는 모두 포함(AND) 조건입니다.</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <button onClick={onDiscard} disabled={isSaving} className="px-3 py-2 rounded-lg border border-rose-400/60 text-rose-200 text-xs font-bold">비교 폐기</button>
+                            <button onClick={onClose} disabled={isSaving} className="px-3 py-2 rounded-lg border border-slate-500 text-slate-200 text-xs font-bold">조회 화면으로</button>
+                            <button onClick={onSave} disabled={isSaving || analysis.masterMismatch} className="px-5 py-2 rounded-lg bg-emerald-500 disabled:bg-slate-600 text-white text-xs font-black">
+                                {isSaving ? '저장·검증 중...' : '승인 범위 저장'}
+                            </button>
+                        </div>
+                    </div>
+
+                    <div className="px-5 py-3 bg-white border-b border-slate-200 shrink-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                            {tags.map(tag => {
+                                const count = analysis.candidates.filter(candidate => (candidate.issueTags || []).includes(tag)).length;
+                                return (
+                                    <button key={tag} onClick={() => toggleTag(tag)} className={`px-2.5 py-1.5 rounded-full border text-[11px] font-bold ${selectedTags.includes(tag) ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white border-slate-300 text-slate-600'}`}>
+                                        {tag} {count}
+                                    </button>
+                                );
+                            })}
+                            <label className="ml-auto flex items-center gap-2 text-[11px] font-bold text-slate-600">
+                                <input type="checkbox" checked={includeSame} onChange={e => setIncludeSame(e.target.checked)} />
+                                동일 상품 표시
+                            </label>
+                        </div>
+                    </div>
+
+                    {analysis.masterMismatch && (
+                        <div className="px-5 py-3 bg-rose-50 border-b border-rose-200 flex items-center justify-between shrink-0">
+                            <div className="text-xs font-bold text-rose-800">비교 후 master revision이 변경되었습니다. 최신 master로 비교를 다시 생성했으며 이전 승인은 모두 폐기했습니다.</div>
+                            <button onClick={() => onChange(api.clearMasterMismatch(analysis))} className="px-4 py-2 rounded-lg bg-rose-700 text-white text-xs font-black">최신 비교 결과 재검토 시작</button>
+                        </div>
+                    )}
+
+                    {errorMessage && (
+                        <div className="px-5 py-3 bg-rose-100 border-b border-rose-300 text-xs font-bold text-rose-900 shrink-0">{errorMessage}</div>
+                    )}
+
+                    {analysis.foundationMapping?.issues?.length > 0 && (
+                        <div className="px-5 py-3 bg-amber-50 border-b border-amber-200 shrink-0 max-h-40 overflow-y-auto">
+                            <div className="text-xs font-black text-amber-900 mb-2">매핑 제외·실패 근거 · 원본 헤더 / 원본값 / 이유</div>
+                            <div className="grid gap-1 text-[10px] text-amber-950">
+                                {analysis.foundationMapping.issues.slice(0, 100).map((issue, index) => (
+                                    <div key={`${issue.rowIndex}-${issue.columnIndex}-${index}`} className="grid grid-cols-[70px_150px_minmax(120px,1fr)_230px] gap-2 rounded bg-white/80 border border-amber-200 px-2 py-1">
+                                        <b>Excel {Number(analysis.foundationMapping.headerRowNumber || 1) + Number(issue.rowIndex || 0) + 1}행</b>
+                                        <span>{issue.originalHeader || issue.fieldId || '(헤더 없음)'}</span>
+                                        <span className="break-all">{formatReviewValue(issue.rawValue)}</span>
+                                        <code>{issue.reasonCode}{issue.rowFailed ? ' · 행 실패' : ' · 필드 제외'}</code>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    <div className="flex-1 overflow-y-auto p-5 space-y-4">
+                        <div className="text-xs font-bold text-slate-500">표시 {visible.length.toLocaleString()}건 / 전체 비교 {analysis.summary.compareCount.toLocaleString()}건 / 누락 유지 {analysis.summary.missingCount.toLocaleString()}건</div>
+                        {visible.map(candidate => {
+                            const fieldRows = Object.values(candidate.fields || {}).filter(field => (
+                                candidate.status === 'new' || field.changed || field.issueTags.length > 0
+                            ));
+                            const hardBlocked = candidate.blockingReasons.some(reason => ![
+                                'new_required_value_missing',
+                                'new_required_approval_incomplete'
+                            ].includes(reason));
+                            const requiredValueMissing = candidate.blockingReasons.includes('new_required_value_missing');
+                            return (
+                                <section key={candidate.id} className={`bg-white rounded-xl border shadow-sm overflow-hidden ${candidate.blockingReasons.length > 0 ? 'border-rose-300' : 'border-slate-200'}`}>
+                                    <div className="px-4 py-3 bg-slate-50 border-b border-slate-200 flex items-start gap-3">
+                                        <div className="min-w-[150px]">
+                                            <div className="text-[10px] font-bold text-slate-400">상품코드 · 읽기 전용</div>
+                                            <div className="text-sm font-black text-slate-900">{candidate.code || `(공란 / ${candidate.rowNumber}행)`}</div>
+                                        </div>
+                                        <div className="flex-1 flex flex-wrap gap-1">
+                                            {candidate.issueTags.map(tag => (
+                                                <span key={tag} className={`px-2 py-1 rounded text-[10px] font-bold ${tag === api.ISSUE_TAGS.BLOCKING ? 'bg-rose-100 text-rose-800' : 'bg-indigo-50 text-indigo-700'}`}>{tag}</span>
+                                            ))}
+                                        </div>
+                                        {!['same', 'missing', 'blocked'].includes(candidate.status) && (
+                                            <div className="flex items-center gap-2">
+                                                <button
+                                                    disabled={hardBlocked || requiredValueMissing}
+                                                    onClick={() => onChange(api.setProductApproved(analysis, candidate.id, !candidate.productApproved))}
+                                                    className={`px-3 py-1.5 rounded-lg text-[11px] font-bold disabled:opacity-40 ${candidate.productApproved ? 'bg-emerald-600 text-white' : 'border border-emerald-300 text-emerald-700'}`}
+                                                >상품 전체 승인</button>
+                                                <button
+                                                    disabled={hardBlocked}
+                                                    onClick={() => onChange(api.setProductExcluded(analysis, candidate.id, !candidate.productExcluded))}
+                                                    className={`px-3 py-1.5 rounded-lg text-[11px] font-bold disabled:opacity-40 ${candidate.productExcluded ? 'bg-slate-700 text-white' : 'border border-slate-300 text-slate-600'}`}
+                                                >상품 전체 제외</button>
+                                                <label className="flex items-center gap-1.5 text-[11px] font-bold text-slate-700">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={candidate.adminComplete}
+                                                        disabled={candidate.blockingReasons.length > 0}
+                                                        onChange={e => onChange(api.setAdminComplete(analysis, candidate.id, e.target.checked))}
+                                                    />
+                                                    관리자 확인 완료
+                                                </label>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {candidate.status === 'new' && candidate.blockingReasons.some(reason => reason.startsWith('new_required_')) && !candidate.productExcluded && (
+                                        <div className="px-4 py-3 bg-rose-50 border-b border-rose-200 text-[11px] font-bold text-rose-900">
+                                            신규 상품은 품목명·규격·단위의 최종값이 모두 있어야 하며, 세 필드가 상품 승인 또는 필드별 승인 범위에 포함되어야 저장할 수 있습니다.
+                                        </div>
+                                    )}
+
+                                    {candidate.duplicateRows.length > 0 && (
+                                        <div className="p-4 bg-amber-50 border-b border-amber-200">
+                                            <div className="text-xs font-black text-amber-900 mb-2">중복 행을 자동 병합하지 않습니다. 관리자가 사용할 한 행을 명시적으로 선택하세요.</div>
+                                            <div className="grid grid-cols-2 gap-2">
+                                                {candidate.duplicateRows.map(entry => (
+                                                    <button
+                                                        key={entry.rowNumber}
+                                                        onClick={() => onChange(api.resolveDuplicate(analysis, candidate.id, entry.rowNumber))}
+                                                        className={`text-left rounded-lg border p-3 ${candidate.selectedDuplicateRowNumber === entry.rowNumber ? 'bg-emerald-50 border-emerald-400' : 'bg-white border-amber-200'}`}
+                                                    >
+                                                        <div className="text-[11px] font-black text-slate-800">Excel {entry.rowNumber}행 {candidate.selectedDuplicateRowNumber === entry.rowNumber ? '· 선택됨' : '· 이 행 선택'}</div>
+                                                        <div className="mt-1 text-[10px] text-slate-600 break-all">
+                                                            {analysis.headers.filter(header => !api.CODE_FIELDS.includes(header)).map(header => `${header}: ${formatReviewValue(entry.row[header], Object.prototype.hasOwnProperty.call(entry.row, header))}`).join(' / ')}
+                                                        </div>
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {candidate.status === 'missing' ? (
+                                        <div className="p-4 text-xs font-bold text-slate-600">업로드 파일에 없지만 삭제·수정하지 않고 기존 master를 유지합니다.</div>
+                                    ) : fieldRows.length === 0 ? (
+                                        <div className="p-4 text-xs text-slate-500">변경된 필드가 없습니다.</div>
+                                    ) : (
+                                        <div className="overflow-x-auto">
+                                            <table className="w-full text-[11px]">
+                                                <thead className="bg-slate-100 text-slate-500">
+                                                    <tr>
+                                                        <th className="px-3 py-2 text-left min-w-[110px]">필드</th>
+                                                        <th className="px-3 py-2 text-left min-w-[150px]">기존 master</th>
+                                                        <th className="px-3 py-2 text-left min-w-[150px]">업로드 원본</th>
+                                                        <th className="px-3 py-2 text-left min-w-[180px]">관리자 값 / 선택</th>
+                                                        <th className="px-3 py-2 text-left min-w-[140px]">최종 반영값</th>
+                                                        <th className="px-3 py-2 text-left min-w-[170px]">승인·제외</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {fieldRows.map(field => {
+                                                        const finalValue = api.getFieldFinalValue(field);
+                                                        const canDirectEdit = api.EDITABLE_FIELDS.includes(field.field);
+                                                        return (
+                                                            <tr key={field.field} className={`border-t border-slate-100 ${field.excluded ? 'bg-slate-100 opacity-70' : ''}`}>
+                                                                <td className="px-3 py-3 align-top">
+                                                                    <div className="font-black text-slate-800">{field.field}</div>
+                                                                    <div className="mt-1 flex flex-wrap gap-1">{field.issueTags.map(tag => <span key={tag} className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-[9px] font-bold">{tag}</span>)}</div>
+                                                                </td>
+                                                                <td className="px-3 py-3 align-top break-all">{formatReviewValue(field.oldValue, Object.prototype.hasOwnProperty.call(candidate.existing, field.field))}</td>
+                                                                <td className="px-3 py-3 align-top break-all">{formatReviewValue(field.uploadRaw, field.uploadPresent)}</td>
+                                                                <td className="px-3 py-3 align-top">
+                                                                    {canDirectEdit && (
+                                                                        <input
+                                                                            type="text"
+                                                                            value={field.adminEdited ? safeStr(field.adminValue) : ''}
+                                                                            placeholder="직접 입력"
+                                                                            disabled={hardBlocked}
+                                                                            onChange={e => updateField(candidate.id, field.field, { adminValue: e.target.value })}
+                                                                            className="w-full border border-slate-300 rounded px-2 py-1.5 mb-2 outline-none focus:border-indigo-500 disabled:bg-slate-100"
+                                                                        />
+                                                                    )}
+                                                                    <div className="flex flex-wrap gap-1">
+                                                                        <button disabled={!field.uploadPresent || hardBlocked} onClick={() => updateField(candidate.id, field.field, { source: 'upload' })} className="px-2 py-1 rounded border border-slate-300 disabled:opacity-30">업로드값</button>
+                                                                        <button disabled={hardBlocked} onClick={() => updateField(candidate.id, field.field, { source: 'old' })} className="px-2 py-1 rounded border border-slate-300 disabled:opacity-30">기존값</button>
+                                                                        <button disabled={hardBlocked} onClick={() => updateField(candidate.id, field.field, { source: 'blank' })} className="px-2 py-1 rounded border border-slate-300 disabled:opacity-30">공란</button>
+                                                                    </div>
+                                                                </td>
+                                                                <td className="px-3 py-3 align-top font-bold break-all">{formatReviewValue(finalValue, finalValue !== undefined)}</td>
+                                                                <td className="px-3 py-3 align-top">
+                                                                    <div className="flex gap-1">
+                                                                        <button
+                                                                            disabled={hardBlocked}
+                                                                            onClick={() => updateField(candidate.id, field.field, { approved: !field.approved, excluded: false })}
+                                                                            className={`px-2.5 py-1.5 rounded font-bold disabled:opacity-40 ${field.approved ? 'bg-emerald-600 text-white' : 'border border-emerald-300 text-emerald-700'}`}
+                                                                        >필드 승인</button>
+                                                                        <button
+                                                                            disabled={hardBlocked}
+                                                                            onClick={() => updateField(candidate.id, field.field, { excluded: !field.excluded })}
+                                                                            className={`px-2.5 py-1.5 rounded font-bold disabled:opacity-40 ${field.excluded ? 'bg-slate-700 text-white' : 'border border-slate-300 text-slate-600'}`}
+                                                                        >반영 제외</button>
+                                                                    </div>
+                                                                    {candidate.productApproved && !field.excluded && <div className="mt-1 text-[9px] font-bold text-emerald-700">상품 승인 적용</div>}
+                                                                    {candidate.productApproved && field.excluded && <div className="mt-1 text-[9px] font-bold text-slate-600">필드 제외 우선</div>}
+                                                                </td>
+                                                            </tr>
+                                                        );
+                                                    })}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    )}
+                                </section>
+                            );
+                        })}
+                    </div>
+                </div>
+            );
+        };
+
+        // ==========================================
+        // 🚨 Error Boundary (하얀 화면 방지 시스템)
+        // ==========================================
+        class ErrorBoundary extends React.Component {
+            constructor(props) {
+                super(props);
+                this.state = { hasError: false, error: null };
+            }
+            static getDerivedStateFromError(error) {
+                return { hasError: true, error };
+            }
+            render() {
+                if (this.state.hasError) {
+                    return (
+                        <div className="h-screen w-full flex flex-col items-center justify-center bg-slate-50 p-6">
+                            <SafeIcon name="exclamation-triangle" size={60} className="text-rose-500 mb-6" />
+                            <h1 className="text-2xl font-black text-slate-800 mb-2">화면 렌더링 오류 발생 (Crash)</h1>
+                            <p className="text-slate-500 mb-6 text-center">
+                                불러온 엑셀 데이터 중 문자(글자)가 아닌 형식(숫자 등)이 섞여있어 화면이 중단되었습니다.<br/>
+                                아래 [초기화] 버튼을 눌러 복구해 주세요.
+                            </p>
+                            <div className="bg-white border border-rose-200 p-4 rounded-lg text-xs font-mono text-rose-600 w-full max-w-2xl overflow-auto mb-8 shadow-sm">
+                                {this.state.error && this.state.error.toString()}
+                            </div>
+                            <button
+                                onClick={() => {
+                                    indexedDB.deleteDatabase('MerchOpsDB');
+                                    localStorage.removeItem('merchMaster_v870');
+                                    window.location.reload();
+                                }}
+                                className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold transition-colors shadow-lg flex items-center gap-2"
+                            >
+                                <SafeIcon name="redo-alt" size={16} /> 로컬 데이터 초기화 및 복구하기
+                            </button>
+                        </div>
+                    );
+                }
+                return this.props.children;
+            }
+        }
+
+        // ==========================================
+        // 📊 Main App Container
+        // ==========================================
+        function App() {
+            const readMasterRoute = () => {
+                const params = new URLSearchParams(window.location.search);
+                const rawView = params.get('view');
+                const rawMode = params.get('mode');
+                return {
+                    view: rawView === 'customers' ? 'customers' : 'products',
+                    mode: rawMode === 'batch' ? 'edit' : (rawMode === 'edit' || rawMode === 'mapping' ? rawMode : 'list')
+                };
+            };
+            const [masterRoute, setMasterRoute] = useState(readMasterRoute);
+            const [customerFrameInitialMode] = useState(() => readMasterRoute().mode);
+            const [masterTheme, setMasterTheme] = useState(() => document.documentElement.dataset.nexusTheme === 'dark' ? 'dark' : 'light');
+            const isCustomerView = masterRoute.view === 'customers';
+            const isBatchMode = masterRoute.mode === 'edit';
+            const isMappingMode = masterRoute.mode === 'mapping';
+            const [masterProducts, setMasterProducts] = useState({});
+            const config = useMerchConfig();
+            const [toastMsg, setToastMsg] = useState("");
+
+            const visMasterCols = useMemo(() => {
+                const cols = config?.visibleMasterCols?.estimate || [];
+                return cols.filter(h => !['품목코드', '품목명', '규격'].includes(h));
+            }, [config.visibleMasterCols]);
+
+            const [isProcessing, setIsProcessing] = useState(false);
+            const [processMsg, setProcessMsg] = useState('');
+            const [showSettingsModal, setShowSettingsModal] = useState(false);
+            const [globalSearch, setGlobalSearch] = useState('');
+            const [addUpdateAnalysis, setAddUpdateAnalysis] = useState(null);
+            const [showAddUpdateConfirm, setShowAddUpdateConfirm] = useState(false);
+            const [showAddUpdateReview, setShowAddUpdateReview] = useState(false);
+            const [addUpdateError, setAddUpdateError] = useState('');
+            const [addUpdateResult, setAddUpdateResult] = useState(null);
+
+            const [activeC1, setActiveC1] = useState('');
+            const [activeC2, setActiveC2] = useState('');
+            const [activeC3, setActiveC3] = useState('');
+
+            const showToast = useCallback((msg) => { setToastMsg(msg); setTimeout(() => setToastMsg(""), 3000); }, []);
+
+            const selectMasterRoute = useCallback((nextRoute) => {
+                const normalized = {
+                    view: nextRoute.view === 'customers' ? 'customers' : 'products',
+                    mode: nextRoute.mode === 'edit' || nextRoute.mode === 'mapping' ? nextRoute.mode : 'list'
+                };
+                const url = new URL(window.location.href);
+                url.searchParams.set('view', normalized.view);
+                url.searchParams.set('mode', normalized.mode);
+                window.history.pushState(normalized, '', `${url.pathname}${url.search}${url.hash}`);
+                setMasterRoute(normalized);
+            }, []);
+
+            const handleNavigate = useCallback((e, path, isReady = true) => {
+                if (e && e.preventDefault) e.preventDefault();
+                if (!isReady || path === '#') { showToast(`⚠️ [${path}] 페이지는 아직 준비 중입니다.`); return; }
+                try {
+                    const protocol = window.location.protocol;
+                    if (protocol === 'about:' || protocol === 'blob:' || protocol === 'data:') {
+                        showToast(`💡 미리보기 환경: [${path}] 로 이동을 시뮬레이션 합니다.`);
+                    } else {
+                        window.location.href = path;
+                    }
+                } catch (err) {
+                    showToast(`💡 미리보기 환경: [${path}] 로 이동을 시뮬레이션 합니다.`);
+                }
+            }, [showToast]);
+
+            useEffect(() => {
+                loadMasterLocal().then(data => {
+                    if (data && typeof data === 'object') setMasterProducts(data);
+                }).catch(console.error);
+
+                const handleMessage = (e) => {
+                    if (e.data && e.data.type === 'CLOSE_SETTINGS') {
+                        setShowSettingsModal(false);
+                        loadMasterLocal().then(data => {
+                            if (data && typeof data === 'object') setMasterProducts(data);
+                        }).catch(error => {
+                            console.error(error);
+                            showToast(`❌ 마스터 다시 불러오기 실패: ${error.message}`);
+                        });
+                    }
+                };
+                const handlePopState = () => {
+                    const normalized = readMasterRoute();
+                    const url = new URL(window.location.href);
+                    if (url.searchParams.get('view') !== normalized.view || url.searchParams.get('mode') !== normalized.mode) {
+                        url.searchParams.set('view', normalized.view);
+                        url.searchParams.set('mode', normalized.mode);
+                        window.history.replaceState(normalized, '', `${url.pathname}${url.search}${url.hash}`);
+                    }
+                    setMasterRoute(normalized);
+                };
+                window.addEventListener('message', handleMessage);
+                window.addEventListener('popstate', handlePopState);
+                return () => {
+                    window.removeEventListener('message', handleMessage);
+                    window.removeEventListener('popstate', handlePopState);
+                };
+            }, []);
+
+            useEffect(() => {
+                const readCurrentTheme = () => document.documentElement.dataset.nexusTheme === 'dark' ? 'dark' : 'light';
+                const handleThemeChange = (event) => setMasterTheme(event?.detail?.theme === 'dark' ? 'dark' : readCurrentTheme());
+                const themeObserver = new MutationObserver(() => setMasterTheme(readCurrentTheme()));
+                window.addEventListener('nexus-theme-change', handleThemeChange);
+                themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-nexus-theme'] });
+                return () => {
+                    window.removeEventListener('nexus-theme-change', handleThemeChange);
+                    themeObserver.disconnect();
+                };
+            }, []);
+
+            useEffect(() => {
+                const frame = document.getElementById('customerMasterFrame');
+                if (frame?.contentWindow) {
+                    frame.contentWindow.postMessage({ type: 'ONEAPP_MASTER_MODE', mode: masterRoute.mode }, window.location.origin);
+                    frame.contentWindow.postMessage({ type: 'ONEAPP_NEXUS_THEME', theme: masterTheme }, window.location.origin);
+                }
+            }, [masterRoute.mode, masterTheme]);
+
+            const discardAddUpdateAnalysis = () => {
+                setAddUpdateAnalysis(null);
+                setShowAddUpdateConfirm(false);
+                setShowAddUpdateReview(false);
+                setAddUpdateError('');
+            };
+
+            const handleExcelUpload = async (event) => {
+                const file = event.target.files[0];
+                if (!file) return;
+                event.target.value = '';
+                if (Object.keys(masterProducts || {}).length === 0) {
+                    showToast('⚠️ 기존 master가 0건입니다. 이번 1차 범위에서 최초 등록은 차단되어 있습니다.');
+                    return;
+                }
+                const extension = safeStr(file.name).toLowerCase().split('.').pop();
+                if (!['xlsx', 'xls'].includes(extension)) {
+                    showToast('❌ 추가·갱신은 xlsx 또는 xls 파일만 사용할 수 있습니다.');
+                    return;
+                }
+                if (file.size > 25 * 1024 * 1024) {
+                    showToast('❌ Excel 파일은 25MB를 초과할 수 없습니다.');
+                    return;
+                }
+                setIsProcessing(true); setProcessMsg("Excel 분석 구성요소 준비 중...");
+                try {
+                    await ensureMasterExcelRuntime();
+                } catch (error) {
+                    setIsProcessing(false);
+                    setProcessMsg('');
+                    showToast(`❌ ${error.message} 네트워크를 확인한 뒤 파일을 다시 선택하면 재시도합니다.`);
+                    return;
+                }
+                setProcessMsg("분석 중...");
+                const reader = new FileReader();
+                reader.onload = async (loadEvent) => {
+                    try {
+                        const foundationMetadata = await window.NEXUS_FOUNDATION.load('PRODUCT', { includeDisabled: true });
+                        const parsed = window.NEXUS_FOUNDATION.parseWorkbook(loadEvent.target.result, {
+                            metadata: foundationMetadata,
+                            entityType: 'PRODUCT',
+                            sourceSystem: 'ERP',
+                            XLSX: window.XLSX
+                        });
+                        const mapped = window.NEXUS_FOUNDATION.mapWorkbook(foundationMetadata, {
+                            entityType: 'PRODUCT',
+                            sourceSystem: 'ERP',
+                            headers: parsed.headers,
+                            rows: parsed.rows,
+                            existingByIdentifier: masterProducts
+                        });
+                        const analysis = window.ONEAPP_MASTER_ADD_UPDATE.analyzeUploadRows({
+                            headers: mapped.headers,
+                            rows: mapped.rows,
+                            currentMaster: masterProducts,
+                            revision: masterPageRevision,
+                            fileName: file.name
+                        });
+                        analysis.foundationMapping = {
+                            mappingSetId: mapped.mappingSet?.mappingSetId || '',
+                            mappingSetName: mapped.mappingSet?.name || '시스템 별칭 임시 양식',
+                            columns: mapped.columns,
+                            issues: mapped.issues,
+                            summary: mapped.summary,
+                            headerRowNumber: Number(parsed.headerRowNumber || 1)
+                        };
+                        const hasReviewIssue = analysis.summary.newCount > 0
+                            || analysis.summary.changedCount > 0
+                            || analysis.summary.missingCount > 0
+                            || analysis.summary.duplicateCount > 0
+                            || analysis.summary.blockingCount > 0
+                            || mapped.summary.fieldExclusions > 0
+                            || mapped.summary.rowFailures > 0;
+                        if (!hasReviewIssue) {
+                            showToast(`ℹ️ 업로드 ${analysis.summary.sameCount.toLocaleString()}건이 현재 master와 동일하여 저장 대상이 없습니다.`);
+                            return;
+                        }
+                        setAddUpdateAnalysis(analysis);
+                        setAddUpdateError('');
+                        setShowAddUpdateReview(false);
+                        setShowAddUpdateConfirm(true);
+                    } catch(err) {
+                        showToast("❌ 분석 실패: " + err.message);
+                    } finally {
+                        setIsProcessing(false);
+                        setProcessMsg("");
+                    }
+                };
+                reader.onerror = () => {
+                    setIsProcessing(false);
+                    setProcessMsg('');
+                    showToast('❌ Excel 파일 읽기에 실패했습니다.');
+                };
+                reader.readAsArrayBuffer(file);
+            };
+
+            const handleSaveAddUpdate = async () => {
+                if (!addUpdateAnalysis || !window.ONEAPP_MASTER_ADD_UPDATE) return;
+                setIsProcessing(true);
+                setProcessMsg('승인 범위 master·history 저장 및 재검증 중...');
+                setAddUpdateError('');
+                window.NEXUS_TOP?.reportStatus({ appId: 'master', taskId: 'master-save', level: 'progress', message: '상품 기초정보를 저장하고 검증하고 있습니다.' });
+                try {
+                    const result = await window.ONEAPP_MASTER_ADD_UPDATE.commitApprovedChanges({
+                        analysis: addUpdateAnalysis,
+                        currentMaster: masterProducts,
+                        expectedRevision: addUpdateAnalysis.baseRevision,
+                        storage: window.ONEAPP?.STORAGE,
+                        historyApi: window.ONEAPP?.HISTORY,
+                        localStorageRef: window.localStorage,
+                        actor: null
+                    });
+                    masterPageRevision = result.revision;
+                    setMasterProducts(result.masterMap);
+                    try { localStorage.setItem(STORAGE_KEYS.SYNC_TRIGGER, Date.now().toString()); } catch (e) {}
+                    setAddUpdateResult(result);
+                    setAddUpdateAnalysis(null);
+                    setShowAddUpdateReview(false);
+                    setShowAddUpdateConfirm(false);
+                    window.NEXUS_TOP?.reportStatus({ appId: 'master', taskId: 'master-save', level: 'normal', active: false, message: '상품 기초정보 저장·검증이 완료되었습니다.' });
+                } catch (error) {
+                    console.error(error);
+                    window.NEXUS_TOP?.reportStatus({ appId: 'master', taskId: 'master-save', level: 'error', message: error?.message || '상품 기초정보 저장에 실패했습니다.' });
+                    if (error?.code === 'MERCH_MASTER_REVISION_CONFLICT') {
+                        try {
+                            const latest = await window.ONEAPP.STORAGE.readMasterSnapshotState();
+                            masterPageRevision = latest.revision;
+                            setMasterProducts(latest.masterMap);
+                            const refreshed = window.ONEAPP_MASTER_ADD_UPDATE.analyzeUploadRows({
+                                headers: addUpdateAnalysis.headers,
+                                rows: addUpdateAnalysis.rows,
+                                currentMaster: latest.masterMap,
+                                revision: latest.revision,
+                                fileName: addUpdateAnalysis.fileName,
+                                masterMismatch: true
+                            });
+                            setAddUpdateAnalysis(refreshed);
+                            setShowAddUpdateReview(true);
+                            setAddUpdateError('비교 이후 master가 변경되어 저장을 차단했습니다. 최신 master 기준으로 비교를 다시 만들었고 이전 승인 상태는 모두 폐기했습니다.');
+                        } catch (reloadError) {
+                            if (reloadError?.code === 'MASTER_ADD_UPDATE_INITIAL_REGISTRATION_REQUIRED') {
+                                setAddUpdateAnalysis(null);
+                                setShowAddUpdateReview(false);
+                                setShowAddUpdateConfirm(false);
+                                setAddUpdateError(`revision 충돌 후 최신 master가 0건으로 확인되어 추가·갱신을 중단했습니다. ${reloadError.message}`);
+                            } else {
+                                setAddUpdateError(`revision 충돌 후 최신 master 재조회에도 실패했습니다: ${reloadError.message}`);
+                            }
+                        }
+                    } else if (error?.code === 'MASTER_ADD_UPDATE_INITIAL_REGISTRATION_REQUIRED') {
+                        setAddUpdateAnalysis(null);
+                        setShowAddUpdateReview(false);
+                        setShowAddUpdateConfirm(false);
+                        setAddUpdateError(error.message);
+                        try {
+                            const restored = await loadMasterLocal();
+                            setMasterProducts(restored);
+                        } catch (reloadError) {
+                            setAddUpdateError(`${error.message} / master 상태 재조회 실패: ${reloadError.message}`);
+                        }
+                    } else {
+                        setAddUpdateError(error.message);
+                        try {
+                            const restored = await loadMasterLocal();
+                            setMasterProducts(restored);
+                        } catch (reloadError) {
+                            setAddUpdateError(`${error.message} / rollback 상태 재조회 실패: ${reloadError.message}`);
+                        }
+                    }
+                } finally {
+                    setIsProcessing(false);
+                    setProcessMsg('');
+                }
+            };
+
+            // [M-CLOUD-01] MerchOps 공통 클라우드 Push
+            const handlePush = async () => {
+                const targetUrl = getOneAppCloudSyncUrl(config.cloudUrl);
+                setIsProcessing(true); setProcessMsg("상품 불변 백업 중...");
+                window.NEXUS_TOP?.reportStatus({ appId: 'master', taskId: 'master-cloud', level: 'progress', message: '상품 기준정보 불변 Revision을 백업하고 있습니다.' });
+                try {
+                    const result = await pushMerchOpsCloudMaster(masterProducts, {
+                        cloudUrl: targetUrl,
+                        onProgress: (msg) => setProcessMsg(msg)
+                    });
+                    showToast(`✅ 상품 불변 백업 완료: ${result.count.toLocaleString()}건`);
+                    window.NEXUS_TOP?.reportStatus({ appId: 'master', taskId: 'master-cloud', level: 'normal', active: false, message: '상품 기준정보 백업이 완료되었습니다.' });
+                } catch (e) {
+                    console.error(e);
+                    showToast("❌ 실패: " + e.message);
+                    window.NEXUS_TOP?.reportStatus({ appId: 'master', taskId: 'master-cloud', level: 'error', message: e?.message || '서버 백업에 실패했습니다. 로컬 업무 데이터는 유지됩니다.' });
+                } finally { setIsProcessing(false); setProcessMsg(""); }
+            };
+
+            // [M-CLOUD-02] MerchOps 공통 클라우드 Pull
+            const handlePull = async () => {
+                const targetUrl = getOneAppCloudSyncUrl(config.cloudUrl);
+                setIsProcessing(true); setProcessMsg("서버 백업 비교·검증 중...");
+                window.NEXUS_TOP?.reportStatus({ appId: 'master', taskId: 'master-cloud', level: 'progress', message: '관리자 복구를 위해 서버 Revision을 비교하고 있습니다.' });
+                try {
+                    const result = await pullMerchOpsCloudMaster(targetUrl);
+                    if (result.cancelled) {
+                        showToast('서버 복구를 취소했습니다. 로컬 상품 DB는 유지됩니다.');
+                        window.NEXUS_TOP?.reportStatus({ appId: 'master', taskId: 'master-cloud', level: 'normal', active: false, message: '서버 복구가 취소되었습니다.' });
+                        return;
+                    }
+                    setMasterProducts(result.masterMap);
+                    showToast(`✅ 관리자 승인 복구 완료: ${result.count.toLocaleString()}건`);
+                    window.NEXUS_TOP?.reportStatus({ appId: 'master', taskId: 'master-cloud', level: 'normal', active: false, message: '관리자 승인 서버 복구가 완료되었습니다.' });
+                } catch (e) {
+                    console.error(e);
+                    showToast("❌ 실패: " + e.message);
+                    window.NEXUS_TOP?.reportStatus({ appId: 'master', taskId: 'master-cloud', level: 'error', message: e?.message || '서버 복구에 실패했습니다. 로컬 업무 데이터는 유지됩니다.' });
+                } finally { setIsProcessing(false); setProcessMsg(""); }
+            };
+
+            // 💡 safeStr을 적용하여 숫자 데이터로 인한 에러 방어 및 카테고리 로직 복구
+            const c1List = useMemo(() => {
+                const map = new Map();
+                Object.values(masterProducts || {}).forEach(p => {
+                    if (!p) return;
+                    const code = safeStr(p['1코드'], 'etc');
+                    const name = safeStr(p['1그룹명'], '미분류');
+                    if (!map.has(code)) map.set(code, name);
+                });
+                return Array.from(map.entries()).map(([code, name]) => ({ code, name })).sort((a,b) => a.code.localeCompare(b.code));
+            }, [masterProducts]);
+
+            const c2List = useMemo(() => {
+                if (!activeC1) return [];
+                const map = new Map();
+                Object.values(masterProducts || {}).forEach(p => {
+                    if (!p) return;
+                    if (safeStr(p['1코드'], 'etc') === activeC1) {
+                        const code = safeStr(p['2코드'], 'etc');
+                        const name = safeStr(p['2그룹명'], '미분류');
+                        if (!map.has(code)) map.set(code, name);
+                    }
+                });
+                return Array.from(map.entries()).map(([code, name]) => ({ code, name })).sort((a,b) => a.code.localeCompare(b.code));
+            }, [masterProducts, activeC1]);
+
+            const c3List = useMemo(() => {
+                if (!activeC1 || !activeC2) return [];
+                const map = new Map();
+                Object.values(masterProducts || {}).forEach(p => {
+                    if (!p) return;
+                    if (safeStr(p['1코드'], 'etc') === activeC1 && safeStr(p['2코드'], 'etc') === activeC2) {
+                        const code = safeStr(p['3코드'] || p['오더즈'], 'etc');
+                        const name = safeStr(p['3그룹명'], '미분류');
+                        if (!map.has(code)) map.set(code, { code, name, count: 0 });
+                        map.get(code).count++;
+                    }
+                });
+                return Array.from(map.values()).sort((a,b) => a.code.localeCompare(b.code));
+            }, [masterProducts, activeC1, activeC2]);
+
+            // 💡 [핵심] 하위 카테고리 자동 선택 로직 (이게 없으면 상품이 안 나옴)
+            useEffect(() => { if (c1List.length > 0 && !c1List.find(c => c.code === activeC1)) setActiveC1(c1List[0].code); }, [c1List, activeC1]);
+            useEffect(() => { if (c2List.length > 0 && !c2List.find(c => c.code === activeC2)) setActiveC2(c2List[0].code); else if (c2List.length === 0) setActiveC2(''); }, [c2List, activeC2]);
+            useEffect(() => { if (c3List.length > 0 && !c3List.find(c => c.code === activeC3)) setActiveC3(c3List[0].code); else if (c3List.length === 0) setActiveC3(''); }, [c3List, activeC3]);
+
+            const displayRows = useMemo(() => {
+                const arr = Object.values(masterProducts || {}).filter(p => p);
+                if (globalSearch.trim()) {
+                    const kw = globalSearch.toLowerCase().replace(/\s+/g, '');
+                    return arr.filter(item => {
+                        const target = (safeStr(item['코드']) + safeStr(item['품목코드']) + safeStr(item['품목명']) + safeStr(item['규격']) + safeStr(item['행사테마'])).toLowerCase();
+                        return target.includes(kw);
+                    }).slice(0, 500);
+                }
+                if (activeC3) {
+                    return arr.filter(p =>
+                        safeStr(p['1코드'], 'etc') === activeC1 &&
+                        safeStr(p['2코드'], 'etc') === activeC2 &&
+                        safeStr(p['3코드'] || p['오더즈'], 'etc') === activeC3
+                    ).slice(0, 500);
+                }
+                return [];
+            }, [masterProducts, globalSearch, activeC1, activeC2, activeC3]);
+
+            return (
+                <div className="nexus-app-shell h-screen w-full flex flex-col font-sans overflow-hidden bg-slate-100 relative select-none" data-nexus-ui-app="master-lookup">
+                    {toastMsg && (
+                        <div className="fixed bottom-10 right-10 z-[100] bg-slate-900 text-white px-6 py-3 rounded-xl shadow-2xl flex items-center gap-3 fade-in border border-slate-700">
+                            <SafeIcon name="check-circle-2" size={18} className="text-emerald-400" />
+                            <span className="text-sm font-bold tracking-tight">{toastMsg}</span>
+                        </div>
+                    )}
+
+                    {showAddUpdateConfirm && (
+                        <MasterAddUpdateConfirmModal
+                            analysis={addUpdateAnalysis}
+                            onReview={() => { setShowAddUpdateConfirm(false); setShowAddUpdateReview(true); }}
+                            onCancel={discardAddUpdateAnalysis}
+                            onDiscard={discardAddUpdateAnalysis}
+                        />
+                    )}
+
+                    {showAddUpdateReview && (
+                        <MasterAddUpdateReview
+                            analysis={addUpdateAnalysis}
+                            onChange={setAddUpdateAnalysis}
+                            onClose={() => setShowAddUpdateReview(false)}
+                            onDiscard={discardAddUpdateAnalysis}
+                            onSave={handleSaveAddUpdate}
+                            isSaving={isProcessing}
+                            errorMessage={addUpdateError}
+                        />
+                    )}
+
+                    <MasterAddUpdateResultModal result={addUpdateResult} onClose={() => setAddUpdateResult(null)} />
+
+                    <GlobalHeader
+                        view={masterRoute.view}
+                        itemCount={isCustomerView ? 0 : Object.keys(masterProducts).length}
+                        onSelectView={(view) => selectMasterRoute({ view, mode: masterRoute.mode })}
+                        onOpenSettings={() => setShowSettingsModal(true)}
+                        onPush={handlePush}
+                        onPull={handlePull}
+                        showCloudActions={!isCustomerView && !isMappingMode}
+                    />
+
+                    <main className={`nexus-app-content ${isMappingMode ? 'flex' : 'hidden'} flex-1 flex-col overflow-hidden bg-slate-50`} aria-hidden={!isMappingMode}>
+                        <div className="nexus-work-tools master-work-tools flex flex-wrap items-center justify-between border-b border-slate-200 bg-white shrink-0">
+                            <MasterSubnav view={masterRoute.view} mode={masterRoute.mode} onSelectMode={(mode) => selectMasterRoute({ view: masterRoute.view, mode })} />
+                            <div className="master-work-right"><span className="text-[12px] font-bold text-slate-500">회사 범위 필드 레지스트리 · 매핑 양식 · 감사 저장</span></div>
+                        </div>
+                        <FoundationMetadataWorkspace entityType={isCustomerView ? 'CUSTOMER' : 'PRODUCT'} />
+                    </main>
+
+                    <main className={`nexus-app-content ${isCustomerView && !isMappingMode ? 'flex' : 'hidden'} flex-1 flex-col overflow-hidden bg-slate-50`} aria-hidden={!isCustomerView || isMappingMode}>
+                            <div className="nexus-work-tools master-work-tools flex flex-wrap items-center justify-between border-b border-slate-200 bg-white shrink-0">
+                                <MasterSubnav view="customers" mode={masterRoute.mode} onSelectMode={(mode) => selectMasterRoute({ view: 'customers', mode })} />
+                                <div className="master-work-right">
+                                    <span className="text-[12px] font-bold text-slate-500">{isBatchMode ? '단건 등록·수정 · ERP·쇼핑몰 Excel 작업대' : '검색·필터·조회'}</span>
+                                </div>
+                            </div>
+                            <iframe
+                                id="customerMasterFrame"
+                                src={`./partner_db.html?embedded=1&mode=${customerFrameInitialMode}&release=foundation-metadata-110`}
+                                className="w-full h-full border-0 bg-slate-50"
+                                title={isBatchMode ? '거래처 등록·수정' : '거래처 조회'}
+                                onLoad={(event) => {
+                                    event.currentTarget.contentWindow?.postMessage({ type: 'ONEAPP_MASTER_MODE', mode: masterRoute.mode }, window.location.origin);
+                                    event.currentTarget.contentWindow?.postMessage({ type: 'ONEAPP_NEXUS_THEME', theme: masterTheme }, window.location.origin);
+                                }}
+                            ></iframe>
+                    </main>
+                    <main className={`nexus-app-content ${!isCustomerView && !isMappingMode ? 'flex' : 'hidden'} flex-1 flex-col overflow-hidden bg-slate-50 border-x border-slate-200`} aria-hidden={isCustomerView || isMappingMode}>
+                        <div className="nexus-work-tools master-work-tools bg-white border-b border-slate-200 flex flex-wrap items-center justify-between shrink-0 z-10 shadow-sm">
+                            <MasterSubnav view="products" mode={masterRoute.mode} onSelectMode={(mode) => selectMasterRoute({ view: 'products', mode })} />
+                            <div className="master-work-right">
+                                <span className="text-[12px] font-bold text-slate-500 whitespace-nowrap">
+                                    {isBatchMode ? '상품 등록·수정' : `결과 ${displayRows.length.toLocaleString()}건`} · 전체 {Object.keys(masterProducts).length.toLocaleString()}건
+                                </span>
+                                {Object.keys(masterProducts).length === 0 && (
+                                    <span className="text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5 whitespace-nowrap">
+                                        최초 등록은 별도 승인 전까지 사용할 수 없습니다.
+                                    </span>
+                                )}
+                                {!isBatchMode && (
+                                    <div className="master-work-search relative h-9">
+                                        <input type="text" aria-label="상품 통합검색" placeholder="상품코드, 상품명, 규격 통합검색" value={globalSearch} onChange={(e) => setGlobalSearch(e.target.value)} className="w-full h-full pl-9 pr-4 bg-slate-100 border-none rounded-lg text-[13px] outline-none focus:ring-1 focus:ring-indigo-400 transition-all shadow-inner" />
+                                        <SafeIcon name="search" size={14} className="absolute left-3 top-2.5 text-slate-400 pointer-events-none" />
+                                    </div>
+                                )}
+                                <div className="flex items-center gap-2">
+                                {!isBatchMode ? (
+                                    <>
+                                        <button type="button" onClick={(e) => handleNavigate(e, 'Item_manager.html', true)} className="h-9 px-4 rounded-lg text-[12px] font-bold bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2">+ 상품 등록</button>
+                                    </>
+                                ) : (
+                                    <>
+                                        <button type="button" onClick={(e) => handleNavigate(e, 'Item_manager.html', true)} className="h-9 px-4 rounded-lg text-[12px] font-bold bg-white text-slate-700 hover:bg-slate-100 border border-slate-300 shadow-sm">직접 편집</button>
+                                        <select aria-label="일괄 관리 방식" value="add-update" onChange={() => {}} className="h-9 px-3 rounded-lg text-[12px] font-bold bg-slate-100 text-slate-700 border border-slate-300 outline-none">
+                                            <option value="add-update">추가·갱신</option>
+                                            <option value="initial" disabled>최초 등록 · 미지원</option>
+                                            <option value="replace" disabled>전체교체 · 미지원</option>
+                                        </select>
+                                        <label title={Object.keys(masterProducts).length === 0 ? '기존 Master가 0건이면 추가·갱신을 사용할 수 없습니다.' : '추가·갱신 Excel을 선택합니다.'} className={`h-9 px-4 rounded-lg text-[12px] font-bold border transition-colors flex items-center shadow-sm ${Object.keys(masterProducts).length === 0 || isProcessing ? 'cursor-not-allowed bg-slate-100 text-slate-400 border-slate-200' : addUpdateAnalysis ? 'cursor-pointer bg-white text-slate-700 hover:bg-slate-100 border-slate-300' : 'cursor-pointer bg-indigo-600 text-white hover:bg-indigo-700 border-indigo-600'}`}>
+                                            <SafeIcon name="upload" size={14} className="mr-2" /> Excel 비교
+                                            <input type="file" className="hidden" accept=".xlsx,.xls" onChange={handleExcelUpload} disabled={isProcessing || Object.keys(masterProducts).length === 0} />
+                                        </label>
+                                        {addUpdateAnalysis && !showAddUpdateConfirm && !showAddUpdateReview && (
+                                            <button onClick={() => setShowAddUpdateReview(true)} className="h-9 px-4 rounded-lg text-[12px] font-black bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm">검토 이어보기</button>
+                                        )}
+                                    </>
+                                )}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className={`${isBatchMode ? 'flex' : 'hidden'} flex-1 items-start bg-slate-100 nexus-app-gutter py-4`}>
+                            <div className="w-full rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+                                <div className="flex items-center gap-3">
+                                    <SafeIcon name="file-spreadsheet" size={24} className="text-indigo-500" />
+                                    <h2 className="text-base font-black text-slate-800">상품 추가·갱신 비교</h2>
+                                </div>
+                                <p className="mt-2 text-sm leading-6 text-slate-500">상단의 Excel 비교에서 대상을 분석한 뒤 선택, 검증, 적용합니다. 조회 상태로 돌아가도 진행 중인 검토는 유지됩니다.</p>
+                            </div>
+                        </div>
+
+                        <div className={`${isBatchMode ? 'hidden' : 'flex'} flex-1 flex-col overflow-hidden`}>
+                        {/* 💡 [복구됨] 3단 카테고리 레이아웃 원본 복구 */}
+                        <div className="master-category-tabs flex items-end nexus-app-gutter pt-3 border-b border-slate-200 bg-slate-200/50 shrink-0 h-[50px]">
+                            <div className="flex overflow-x-auto custom-scrollbar h-full items-end w-full gap-1">
+                                {c1List.map(c1 => (
+                                    <button key={c1.code} onClick={() => { setActiveC1(c1.code); setActiveC2(''); setActiveC3(''); setGlobalSearch(''); }} className={`px-5 py-2.5 text-[13px] font-bold rounded-t-lg transition-colors border-b-[3px] ${activeC1 === c1.code ? 'border-indigo-600 text-indigo-700 bg-white shadow-[0_-2px_5px_rgba(0,0,0,0.02)] z-10' : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-300/50'}`}>
+                                        {c1.name}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="master-data-scroll flex-1">
+                        <div className="master-data-workspace min-h-full flex">
+                            <div className="master-data-sidebar w-[180px] bg-white border-r border-slate-200 overflow-y-auto py-2 shrink-0 custom-scrollbar z-10 shadow-[2px_0_10px_rgba(0,0,0,0.02)]">
+                                {c2List.map(c2 => (
+                                    <button key={c2.code} onClick={() => { setActiveC2(c2.code); setActiveC3(''); setGlobalSearch(''); }} className={`w-full text-left px-5 py-3 text-[12px] font-bold transition-all border-l-4 ${activeC2 === c2.code ? 'bg-indigo-50/50 text-indigo-700 border-indigo-600' : 'border-transparent text-slate-600 hover:bg-slate-50'}`}>
+                                        {c2.name}
+                                    </button>
+                                ))}
+                            </div>
+
+                            <div className="master-data-sidebar w-[200px] bg-slate-50 border-r border-slate-200 flex flex-col overflow-hidden shrink-0 z-10">
+                                <div className="px-4 py-3 border-b border-slate-200 bg-white shrink-0">
+                                    <h3 className="text-[12px] font-black text-slate-800">소분류 (3차)</h3>
+                                </div>
+                                <div className="flex-1 overflow-y-auto custom-scrollbar p-2 space-y-1">
+                                    {c3List.map(c3 => (
+                                        <button key={c3.code} onClick={() => { setActiveC3(c3.code); setGlobalSearch(''); }} className={`w-full text-left px-3 py-2 rounded-md text-[12px] font-bold transition-all flex justify-between items-center ${activeC3 === c3.code ? 'bg-white text-indigo-700 border border-indigo-200 shadow-sm' : 'border border-transparent text-slate-600 hover:bg-white hover:border-slate-200'}`}>
+                                            <span className="truncate pr-2">{c3.name}</span>
+                                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${activeC3 === c3.code ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-200 text-slate-500'}`}>{c3.count}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div className="flex-1 bg-white flex flex-col overflow-hidden relative z-0">
+                                {globalSearch ? (
+                                    <div className="px-4 py-2 bg-amber-50 border-b border-amber-200 text-[12px] font-bold text-amber-800 flex items-center shrink-0">
+                                        <SafeIcon name="search" size={14} className="mr-2 text-amber-500" /> 전체 검색 결과입니다.
+                                    </div>
+                                ) : (
+                                    <div className="px-4 py-2 bg-indigo-50/50 border-b border-indigo-100 text-[12px] font-bold text-indigo-800 flex justify-between items-center shrink-0">
+                                        <span>
+                                            {c1List.find(c=>c.code===activeC1)?.name || '선택안됨'} <SafeIcon name="chevron-right" size={10} className="mx-1 text-indigo-300" />
+                                            {c2List.find(c=>c.code===activeC2)?.name || '선택안됨'} <SafeIcon name="chevron-right" size={10} className="mx-1 text-indigo-300" />
+                                            {c3List.find(c=>c.code===activeC3)?.name || '선택안됨'}
+                                        </span>
+                                        <span className="text-slate-500 font-medium">총 {displayRows.length}건 표시됨</span>
+                                    </div>
+                                )}
+                                <div className="flex-1 overflow-auto custom-scrollbar relative">
+                                    <table className="nexus-data-table w-full text-left text-[12px] whitespace-nowrap">
+                                        <thead className="bg-slate-50 sticky top-0 z-10 border-b border-slate-200 shadow-sm">
+                                            <tr>
+                                                <th className="py-2.5 px-4 w-20 text-slate-600">코드</th>
+                                                <th className="py-2.5 px-4 text-slate-600">품목명</th>
+                                                <th className="py-2.5 px-3 text-slate-600">규격</th>
+                                                {visMasterCols.map(h => <th key={h} className={`py-2.5 px-3 text-slate-600 ${NUMERIC_HEADERS.includes(h) ? 'text-right' : 'text-left'}`}>{h}</th>)}
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100">
+                                            {displayRows.length > 0 ? displayRows.map((row, idx) => {
+                                                const code = safeStr(row['코드'] || row['품목코드'], `key-${idx}`);
+                                                return (
+                                                    <tr key={code} className="hover:bg-slate-50 transition-colors">
+                                                        <td className="py-2 px-4 font-mono text-slate-400">{safeStr(row['코드'] || row['품목코드'], '—')}</td>
+                                                        <td className="py-2 px-4 font-bold">{safeStr(row['품목명'], '—')}</td>
+                                                        <td className="py-2 px-3 text-slate-500">{safeStr(row['규격'], '—')}</td>
+                                                        {visMasterCols.map(h => <td key={h} className={`py-2 px-3 text-slate-500 ${NUMERIC_HEADERS.includes(h) ? 'text-right tabular-nums' : 'text-left'}`}>{safeStr(row[h], '—')}</td>)}
+                                                    </tr>
+                                                );
+                                            }) : (
+                                                <tr>
+                                                    <td colSpan={visMasterCols.length + 3} className="py-20 text-center text-slate-400">해당 카테고리에 데이터가 없거나 검색 결과가 없습니다.</td>
+                                                </tr>
+                                            )}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                        </div>
+                        </div>
+                    </main>
+
+                    <IframeSettingsModal
+                        isOpen={showSettingsModal}
+                        onClose={() => setShowSettingsModal(false)}
+                    />
+                </div>
+            );
+        }
+
+        try {
+            const mountNode = document.getElementById('root');
+            if (!mountNode) throw new Error('#root 요소를 찾을 수 없습니다.');
+            const root = ReactDOM.createRoot(mountNode);
+            // 💡 전체 앱을 ErrorBoundary로 감싸서 하얀 화면 완전 차단
+            root.render(<ErrorBoundary><App /></ErrorBoundary>);
+            window.NEXUS_FOUNDATION_BACKUP?.startProductWorker?.();
+            Promise.resolve(window.ONEAPP_AUTH?.ready).then(session => {
+                if (!session || document.documentElement.dataset.nexusAuthReady !== 'true') return;
+                window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
+                    window.dispatchEvent(new CustomEvent('nexus:app-ready', {
+                        detail: { appId: 'master', phase: 'interactive' }
+                    }));
+                }));
+            }).catch(() => {
+                // The authentication client owns redirects and visible errors.
+            });
+        } catch (err) {
+            if (window.__showBootError) window.__showBootError('React 렌더링 초기화 실패', err && err.stack ? err.stack : String(err));
+            else throw err;
+        }

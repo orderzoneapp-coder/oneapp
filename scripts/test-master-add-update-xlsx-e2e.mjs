@@ -11,6 +11,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const moduleSource = fs.readFileSync(path.join(ROOT, "masterAddUpdate.js"), "utf8");
 const foundationSource = fs.readFileSync(path.join(ROOT, "nexus/foundation/foundation-metadata.js"), "utf8");
 const masterHtml = fs.readFileSync(path.join(ROOT, "Master.html"), "utf8");
+const masterApp = fs.readFileSync(path.join(ROOT, "nexus/master/master-app.jsx"), "utf8");
 const sheetJsUrl = "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
 const expectedSheetJsSha256 = "c9506197caf809a075b6dee1da0d36fb19da7158ffe8a88e7b0c96c5d8623c99";
 
@@ -100,12 +101,12 @@ const createStorage = (initialMaster, localStorageRef) => {
 };
 
 assert.match(
-  masterHtml,
+  masterApp,
   /NEXUS_FOUNDATION\.parseWorkbook\(loadEvent\.target\.result/,
   "Master.html must resolve arbitrary saved headers before the legacy analyzer",
 );
-assert.match(masterHtml, /ONEAPP_MASTER_ADD_UPDATE\.analyzeUploadRows/);
-assert.match(masterHtml, /ONEAPP_MASTER_ADD_UPDATE\.commitApprovedChanges/);
+assert.match(masterApp, /ONEAPP_MASTER_ADD_UPDATE\.analyzeUploadRows/);
+assert.match(masterApp, /ONEAPP_MASTER_ADD_UPDATE\.commitApprovedChanges/);
 
 const context = makeBrowserContext();
 const api = context.ONEAPP_MASTER_ADD_UPDATE;

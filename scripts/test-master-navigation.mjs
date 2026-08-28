@@ -5,7 +5,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const root = process.cwd();
-const master = fs.readFileSync(path.join(root, 'Master.html'), 'utf8');
+const masterHtml = fs.readFileSync(path.join(root, 'Master.html'), 'utf8');
+const masterApp = fs.readFileSync(path.join(root, 'nexus/master/master-app.jsx'), 'utf8');
+const master = `${masterHtml}\n${masterApp}`;
 const customer = fs.readFileSync(path.join(root, 'partner_db.html'), 'utf8');
 
 assert.match(master, /rawView === 'customers' \? 'customers' : 'products'/, 'invalid and missing view must default to products');

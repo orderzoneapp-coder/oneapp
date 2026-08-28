@@ -651,12 +651,14 @@
       "schemaVersion": "NEXUS_HEADER_V3",
       "resources": {
         "component": "nexus/common/nexus-top.js",
-        "componentVersion": "1.9.0",
+        "componentVersion": "1.9.1",
         "configuration": "nexus/common/apps-config.js",
         "globalActions": "window.NEXUS_GLOBAL_ACTIONS",
         "globalActionVisibilityPreference": "oneapp.nexus.v1.hiddenGlobalActions",
         "statusApi": "window.NEXUS_TOP.reportStatus",
         "leaveGuardEvent": "nexus:before-navigate",
+        "appReadyEvent": "nexus:app-ready",
+        "appReadyStrategyAttribute": "data-nexus-ready-strategy=app",
         "navigationLoadingSession": "oneapp.nexus.v1.navigation",
         "preferencePrefix": "oneapp.nexus.v1."
       }

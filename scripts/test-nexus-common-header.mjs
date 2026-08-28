@@ -65,9 +65,12 @@ assert.match(componentSource, /oneapp\.nexus\.v1\.navigation/);
 assert.match(componentSource, /cover\.id = NAVIGATION_COVER_ID/);
 assert.match(componentSource, /NEXUS WORKSPACE/);
 assert.match(componentSource, /업무 화면을 준비하고 있습니다/);
-assert.match(componentSource, /window\.addEventListener\('load', \(\) => \{[\s\S]*dataset\.nexusNavigationReadyMs[\s\S]*clearNavigationCover\(true\)/);
+assert.match(componentSource, /window\.addEventListener\('nexus:app-ready'/);
+assert.match(componentSource, /dataset\.nexusReadyStrategy === 'app'/);
+assert.match(componentSource, /if \(!appReadyStrategy\) completeNavigation\('window-load'\)/);
+assert.match(componentSource, /completeNavigation\('safety-timeout'\), 12000/);
 assert.match(componentSource, /const NAVIGATION_COVER_DELAY_MS = 300/);
-assert.match(componentSource, /const VERSION = '1\.9\.0'/);
+assert.match(componentSource, /const VERSION = '1\.9\.1'/);
 assert.match(componentSource, /dataset\.nexusNavigationReadyMs/);
 assert.match(componentSource, /dataset\.nexusNavigationCoverCount/);
 assert.doesNotMatch(componentSource, /TAB_BUTTONS|preloadTabButtonImages|data-active-src|data-inactive-src|new Image\(/,
@@ -301,10 +304,13 @@ assert.equal(manifestContract.owner, 'nexus');
 assert.equal(manifestContract.schemaVersion, 'NEXUS_HEADER_V3');
 assert.equal(manifestContract.resources.globalActionVisibilityPreference, 'oneapp.nexus.v1.hiddenGlobalActions');
 assert.equal(manifestContract.resources.navigationLoadingSession, 'oneapp.nexus.v1.navigation');
+assert.equal(manifestContract.resources.componentVersion, '1.9.1');
+assert.equal(manifestContract.resources.appReadyEvent, 'nexus:app-ready');
+assert.equal(manifestContract.resources.appReadyStrategyAttribute, 'data-nexus-ready-strategy=app');
 for (const file of manifestContract.consumers) {
   const source = read(file);
   assert.match(source, /apps-config\.js\?v=1\.4\.0/, `${file} must load the current NEXUS configuration`);
-  assert.match(source, /nexus-top\.js\?v=1\.9\.0/, `${file} must load the current NEXUS component`);
+  assert.match(source, /nexus-top\.js\?v=1\.9\.1/, `${file} must load the current NEXUS component`);
   assert.match(source, /nexus-auth\.js\?v=2\.1\.0/, `${file} must enforce the NEXUS V2 login session`);
 }
 
@@ -323,20 +329,20 @@ for (const [file, appId] of entries) {
   const source = read(file);
   assert.match(source, new RegExp(`<nexus-top app-id="${appId}">[\\s\\S]*?<\\/nexus-top>`), `${file} must declare its canonical NEXUS app ID`);
   assert.match(source, /apps-config\.js\?v=1\.4\.0/);
-  assert.match(source, /nexus-top\.js\?v=1\.9\.0/);
+  assert.match(source, /nexus-top\.js\?v=1\.9\.1/);
   assert.match(source, /nexus-auth\.js\?v=2\.1\.0/);
   assert.match(source, /NEXUS 메뉴를 불러오지 못했습니다/);
 }
 
-for (const [file, appId] of [
-  ['Master.html', 'master'],
+for (const [file, appId, statusSource = file] of [
+  ['Master.html', 'master', 'nexus/master/master-app.jsx'],
   ['Item_manager.js', 'item-manager'],
   ['MerchOps.html', 'merchops'],
   ['SmartParser.html', 'smart-parser'],
   ['DataOps.html', 'dataops'],
   ['orders.html', 'orderq'],
 ]) {
-  assert.match(read(file), new RegExp(`appId: ['"]${appId}['"]`), `${file} must report its own status to NEXUS`);
+  assert.match(read(statusSource), new RegExp(`appId: ['"]${appId}['"]`), `${file} must report its own status to NEXUS`);
 }
 
 await import('./test-nexus-operational-darkmode.mjs');
