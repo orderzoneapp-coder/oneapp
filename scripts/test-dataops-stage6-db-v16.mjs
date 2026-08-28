@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { ORDERQ_DB_VERSION, V16_STORE_DEFINITIONS, V16_META_DEFAULTS } from '../orderq/orderq-v16-contracts.js';
+import { ORDERQ_DB_VERSION as CURRENT_DB_VERSION } from '../orderq/orderq-v17-contracts.js';
 import { upgradeOrderQDbSchema } from '../orderq/orderq-db.js';
+
 
 assert.equal(ORDERQ_DB_VERSION, 16);
 assert.ok(V16_STORE_DEFINITIONS.length >= 13);
@@ -8,6 +10,7 @@ assert.equal(V16_META_DEFAULTS.closeContractVersion, 'DATAOPS_CLOSE_V1');
 const releaseIdentity={ deploymentId:'AKfycbzOUOIu_bP7NkiFVziDR0Og1da1KO1ePoU09Q3pSlPr-9uD-WkdCpWN7nidO5hlrJi6Qw', deploymentVersion:'31', gitCommit:'48a52ec34fa938cd60fe965b795083539460627f' };
 assert.deepEqual(V16_META_DEFAULTS.expectedDataOpsDeployment, releaseIdentity);
 assert.deepEqual(V16_META_DEFAULTS.expectedOrderQDeployment, releaseIdentity);
+
 
 class Names {
   constructor(source=[]){ this.values=[...source]; }
@@ -45,7 +48,8 @@ for(const version of [0,7,8,9,10,11,12,13,14,15]){
   }
   if(version>0)assert.equal(stores.get('situationAnalyses').records.some(row=>row.analysisId===`PRESERVED-${version}`),true);
   const meta=stores.get('meta').records;
-  assert.equal(meta.find(row=>row.key==='schemaVersion')?.value,16);
+  assert.equal(meta.find(row=>row.key==='schemaVersion')?.value,CURRENT_DB_VERSION);
   assert.equal(meta.find(row=>row.key==='closeContractVersion')?.value,'DATAOPS_CLOSE_V1');
 }
 console.log('PASS stage6 DB v16 fresh/v7-v15 metadata and preservation');
+
