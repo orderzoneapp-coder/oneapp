@@ -10,7 +10,7 @@ const header = read('nexus/common/nexus-top.js');
 const dataOps = read('DataOps.html');
 const oneapp = read('code.gs');
 
-assert.match(client, /const VERSION = '2\.1\.1'/);
+assert.match(client, /const VERSION = '2\.1\.2'/);
 assert.match(client, /CONTEXT_REFRESH_LEAD_MS = 90 \* 1000/);
 assert.match(client, /refreshIfNeeded/);
 assert.match(client, /oneapp\.nexus\.auth\.bundle\.v2/);

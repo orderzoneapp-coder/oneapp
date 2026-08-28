@@ -6,10 +6,10 @@
   <link rel="icon" type="image/png" href="../assets/nexus-favicon.png">
   <link rel="stylesheet" href="../common/nexus-auth.css?v=2.0.0">
   <script src="../common/nexus-auth-config.js?v=2.0.1"></script>
-  <script src="../common/nexus-auth.js?v=2.1.1"></script>
+  <script src="../common/nexus-auth.js?v=2.1.2"></script>
   <script src="../common/apps-config.js?v=1.4.0"></script>
   <link rel="stylesheet" href="./home.css?v=1.1.0">
-<script src="../common/nexus-top.js?v=1.9.2"></script>
+<script src="../common/nexus-top.js?v=1.10.0"></script>
   <script src="./home.js?v=1.1.0" defer></script>
 </head>
 <body class="portal-page">
@@ -20,9 +20,9 @@
       <div class="portal-actions"><a id="adminLink" class="portal-link primary" href="/nexus/admin/" hidden>마스터 관리</a><button id="logoutButton" class="portal-link" type="button">로그아웃</button></div>
     </header>
     <div id="connectionStrip" class="connection-strip" aria-label="업무 서비스 연결 상태"></div>
-    <section id="companyCard" class="company-home-card" data-state="LOADING" aria-label="회사정보" aria-live="polite">
-      <div><small>COMPANY</small><h2>회사정보를 불러오고 있습니다.</h2><p>서버에서 최신 정보를 확인합니다.</p></div>
-      <span class="company-home-state">LOADING</span>
+    <section id="companyCard" class="company-home-card" data-state="STATIC" aria-label="공개 회사 기본정보" aria-live="polite">
+      <div><small>COMPANY · PUBLIC</small><h2>회사 기본정보를 준비하고 있습니다.</h2><p>배포된 공개정보를 표시합니다.</p></div>
+      <span class="company-home-state">PUBLIC</span>
     </section>
     <section id="appGrid" class="portal-grid" aria-label="사용 가능한 업무 앱"></section>
   </main>

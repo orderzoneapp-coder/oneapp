@@ -304,7 +304,7 @@ const protectedEntries = [
 for (const relativePath of protectedEntries) {
   const html = read(relativePath);
   assert.match(html, /nexus-auth-config\.js\?v=2\.0\.1/, `${relativePath} V2 config`);
-  assert.match(html, /nexus-auth\.js\?v=2\.1\.1/, `${relativePath} V2 guard`);
+  assert.match(html, /nexus-auth\.js\?v=2\.1\.2/, `${relativePath} V2 guard`);
   assert(html.indexOf('nexus-auth.js') < html.search(/<body\b/i), `${relativePath} guard before body`);
 }
 
@@ -345,11 +345,12 @@ const authContract = manifest.sharedDataContracts.find(contract => contract.id =
 assert.equal(authContract.schemaVersion, 'NEXUS_AUTH_V2');
 assert.equal(authContract.resources.deployedContractVersion, 'NEXUS_AUTH_V2');
 assert.equal(authContract.resources.sourceContractVersion, 'NEXUS_AUTH_V2');
-assert.equal(authContract.resources.cacheVersion, '2.1.1');
+assert.equal(authContract.resources.cacheVersion, '2.1.2');
 assert.equal(authContract.resources.contextRefreshLeadSeconds, 90);
 assert.equal(authContract.resources.contextRefreshRetrySeconds, 15);
 assert.match(authContract.resources.contextRefreshMode, /full server verification remains mandatory/);
-assert.equal(authContract.resources.deployedVersion, 18);
+assert.equal(authContract.resources.deployedVersion, 21);
+assert.equal(authContract.resources.rollbackVersion, 19);
 assert.equal(authContract.resources.businessCredentials.length, 8);
 assert.equal(authContract.resources.oneappBindings.length, 4);
 assert.match(authContract.resources.legacyCompatibility, /LEGACY_V1/);

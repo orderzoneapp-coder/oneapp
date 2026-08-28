@@ -55,6 +55,11 @@ const request = (overrides = {}) => ({
 });
 const admin = { roleIds: ['FOUNDATION_READ', 'FOUNDATION_WRITE'] };
 const reader = { roleIds: ['FOUNDATION_READ'] };
+const profileReadRequest = () => request({ nexusRequest: {
+  requestId: `REQ-${String(uuidSequence + 1).padStart(36, '0')}`,
+  subjectUserId: 'USR-OWNER', subjectLoginId: 'owner', appId: 'company',
+  operationId: 'company.profile_read', contractVersion: 'NEXUS_AUTH_V2'
+} });
 
 assert.equal(context.companyProfileValidBusinessNumber_('380-14-01523'), true);
 assert.equal(context.companyProfileValidBusinessNumber_('380-14-01524'), false);
@@ -73,24 +78,45 @@ assert.equal(migrationValues.address1, '서울특별시 송파구 양재대로 9
 assert(!Object.hasOwn(migrationValues, 'establishedDate'), 'unprovided values must not be part of the migration patch');
 
 const ss = new MockSpreadsheet();
-assert.deepEqual(plain(context.companyProfileGet(ss, request())), { schemaVersion: 'NEXUS_COMPANY_PROFILE_V1', status: 'EMPTY', profile: null, accountingPeriods: [] });
+assert.deepEqual(plain(context.companyProfilePublicGet(ss, request())), { schemaVersion: 'NEXUS_COMPANY_PUBLIC_FOOTER_V1', status: 'EMPTY', snapshot: null });
+assert.deepEqual(plain(context.companyProfileGet(ss, profileReadRequest(), admin)), { schemaVersion: 'NEXUS_COMPANY_PROFILE_V1', status: 'EMPTY', profile: null, accountingPeriods: [] });
+assert.throws(() => context.companyProfileGet(ss, { ...profileReadRequest(), roleIds: ['FOUNDATION_READ'] }, admin), /COMPANY_ADMIN_REQUIRED/);
 assert.throws(() => context.companyProfileWrite(ss, request({ expectedRevision: 0, changes: { companyName: '원앱' } }), reader), /COMPANY_ADMIN_REQUIRED/);
 
-let written = context.companyProfileWrite(ss, request({ expectedRevision: 0, changes: {
+let writeResult = context.companyProfileWrite(ss, request({ expectedRevision: 0, changes: {
   companyName: '원앱', businessNumber: '380-14-01523', representativeName: '이무철', establishedDate: '2020-02-03',
-  businessTypes: ['도매 및 소매업'], businessItems: ['전자상거래 소매업', '상품 중개업'], jointBusinessEnabled: null, unitTaxationEnabled: false
-} }), admin).profile;
+  businessTypes: ['도매 및 소매업'], businessItems: ['전자상거래 소매업', '상품 중개업'], jointBusinessEnabled: null, unitTaxationEnabled: false,
+  address1: '서울특별시 송파구 양재대로 932, 9층 19호', address2: '(가락동, 가락동 농수산물도매시장)'
+} }), admin);
+let written = writeResult.profile;
 assert.equal(written.revision, 1);
 assert.equal(written.businessNumber, '3801401523');
 assert.equal(written.unitTaxationEnabled, false);
 assert.equal(written.jointBusinessEnabled, null);
-assert.equal(context.companyProfileGet(ss, request()).status, 'READY');
+assert.deepEqual(Object.keys(writeResult.publicSnapshot).sort(), ['companyName', 'businessNumber', 'representativeName', 'companyPhone', 'businessAddress', 'homepage', 'revision'].sort());
+assert.equal(writeResult.publicSnapshot.businessAddress, '서울특별시 송파구 양재대로 932, 9층 19호 (가락동, 가락동 농수산물도매시장)');
+for (const denied of ['openingDate', 'taxationType', 'businessTypes', 'businessItems', 'homePhone', 'mobile', 'email', 'accountingPeriods']) {
+  assert(!Object.hasOwn(writeResult.publicSnapshot, denied), `${denied} must not enter publicSnapshot`);
+}
+assert.equal(context.companyProfileGet(ss, profileReadRequest(), admin).status, 'READY');
+assert.deepEqual(plain(context.companyProfilePublicGet(ss, request({ knownRevision: 0 })).snapshot), plain(writeResult.publicSnapshot));
+assert.deepEqual(plain(context.companyProfilePublicGet(ss, request({ knownRevision: 1 }))), {
+  schemaVersion: 'NEXUS_COMPANY_PUBLIC_FOOTER_V1', status: 'UNCHANGED', revision: 1
+});
+assert.deepEqual(plain(context.companyProfilePublicGet(ss, request({ knownRevision: 2 }))), {
+  schemaVersion: 'NEXUS_COMPANY_PUBLIC_FOOTER_V1', status: 'STALE_SERVER', revision: 1
+});
+assert.throws(() => context.companyProfilePublicGet(ss, request({ knownRevision: -1 })), /COMPANY_PUBLIC_REVISION_INVALID/);
+assert.throws(() => context.companyProfilePublicGet(ss, request({ knownRevision: 'invalid' })), /COMPANY_PUBLIC_REVISION_INVALID/);
 assert.throws(() => context.companyProfileWrite(ss, request({ expectedRevision: 0, changes: { companyName: '충돌' } }), admin), /COMPANY_REVISION_CONFLICT/);
 
-written = context.companyProfileWrite(ss, request({ expectedRevision: 1, changes: { companyPhone: '02-1234-5678' } }), admin).profile;
+const secondWriteResult = context.companyProfileWrite(ss, request({ expectedRevision: 1, changes: { companyPhone: '02-1234-5678' } }), admin);
+written = secondWriteResult.profile;
 assert.equal(written.revision, 2);
 assert.equal(written.establishedDate, '2020-02-03', 'partial writes preserve unprovided fields');
 assert.deepEqual(plain(written.businessItems), ['전자상거래 소매업', '상품 중개업']);
+assert.deepEqual(plain(context.companyProfilePublicGet(ss, request({ knownRevision: 1 })).snapshot), plain(secondWriteResult.publicSnapshot),
+  'only a higher server revision returns the exact seven-key Snapshot');
 
 let periodResult = context.companyProfileAccountingWrite(ss, request({ nexusRequest: { requestId: 'REQ-PERIOD-1', subjectUserId: 'USR-OWNER', subjectLoginId: 'owner', appId: 'company', operationId: 'company.accounting_period_write', contractVersion: 'NEXUS_AUTH_V2' }, expectedRevision: 2, operation: 'UPSERT', period: { periodId: '', revision: 0, periodNumber: 1, startDate: '2026-01-01', endDate: '2026-12-31', enabled: true } }), admin);
 assert.equal(periodResult.profileRevision, 3);
@@ -128,7 +154,7 @@ assert.equal(afterUserEdit.revision, 3);
 const duplicateMigration = context.companyProfileMigrateOneapp(migrationSs, migrationPayload, admin);
 assert.equal(duplicateMigration.status, 'ALREADY_APPLIED');
 assert.equal(duplicateMigration.revision, 2, 'ledger reports the originally applied revision');
-const afterDuplicate = context.companyProfileGet(migrationSs, request()).profile;
+const afterDuplicate = context.companyProfileGet(migrationSs, profileReadRequest(), admin).profile;
 assert.equal(afterDuplicate.revision, 3, 'rerun must not increment revision');
 assert.equal(afterDuplicate.companyName, '사용자 수정명', 'rerun must not overwrite later user changes');
 assert.equal(afterDuplicate.companyPhone, '02-8888-0000');
@@ -138,7 +164,7 @@ context.companyProfileWrite(migrationFailureSs, request({ expectedRevision: 0, c
 const migrationSheet = context.companyProfileSheet_(migrationFailureSs, 'MIGRATIONS');
 migrationSheet.failNextAppend = true;
 assert.throws(() => context.companyProfileMigrateOneapp(migrationFailureSs, migrationPayload, admin), /MOCK_APPEND_FAILURE/);
-const migrationFailureRestored = context.companyProfileGet(migrationFailureSs, request()).profile;
+const migrationFailureRestored = context.companyProfileGet(migrationFailureSs, profileReadRequest(), admin).profile;
 assert.equal(migrationFailureRestored.companyName, '마이그레이션 전', 'failed migration restores the previous profile');
 assert.equal(migrationFailureRestored.revision, 1, 'failed migration does not advance revision');
 assert.equal(migrationSheet.getLastRow(), 1, 'failed migration leaves no applied marker');
@@ -148,7 +174,7 @@ context.companyProfileWrite(atomicSs, request({ expectedRevision: 0, changes: { 
 const auditSheet = atomicSs.getSheetByName('CompanyAudit_NEXUS');
 auditSheet.failNextAppend = true;
 assert.throws(() => context.companyProfileWrite(atomicSs, request({ expectedRevision: 1, changes: { companyName: '실패값' } }), admin), /MOCK_APPEND_FAILURE/);
-const restored = context.companyProfileGet(atomicSs, request()).profile;
+const restored = context.companyProfileGet(atomicSs, profileReadRequest(), admin).profile;
 assert.equal(restored.companyName, '원본', 'failed write must restore the prior profile snapshot');
 assert.equal(restored.revision, 1, 'failed write must not advance revision');
 assert.equal(auditSheet.getLastRow(), 2, 'failed audit append must leave no partial row');

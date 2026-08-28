@@ -38,6 +38,15 @@ jobs:
       - name: Test NEXUS authentication, authorization, and token gateway contract
         run: node scripts/test-nexus-auth-system.mjs
 
+      - name: Test NEXUS public company Footer and cache isolation
+        run: node scripts/test-nexus-company-public-footer.mjs
+
+      - name: Test NEXUS protected company management UI and gateway contract
+        run: node scripts/test-nexus-company-ui.mjs
+
+      - name: Test NEXUS company profile projection, revision, and atomicity
+        run: node scripts/test-nexus-company-profile.mjs
+
       - name: Test NEXUS common fixed application UI contract
         run: node scripts/test-nexus-common-ui.mjs
 

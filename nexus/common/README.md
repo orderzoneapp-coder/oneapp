@@ -33,7 +33,7 @@ V2 앱은 `window.fetch` 가로채기를 사용하지 않는다. V1 `nexus_proxy
 
 스마트입력은 운영 흐름의 고정 시작 위치를 사용하지만 공통헤더 설정의 `상단 메뉴` 목록에 표시되며 노출 여부를 변경할 수 있다. 업무군 메뉴의 순서·노출 설정과 개별 앱의 즐겨찾기·숨김 설정은 서로 독립적이다. 숨긴 스마트입력 화면에 직접 진입하면 현재 위치로만 임시 표시된다.
 
-인증된 사용자 이름 버튼은 계정 패널을 열어 `내 회사정보`와 `업무 홈`을 제공한다. 회사정보 링크는 모든 사용자에게 조회 경로로 열리며 일반 사용자의 수정 동작은 화면과 서버 양쪽에서 차단한다. 로그아웃은 계정 패널과 분리된 기존 버튼으로 유지한다.
+인증된 사용자 이름 버튼은 계정 패널을 열어 `업무 홈`을 제공한다. 보호된 회사정보 수정 경로는 OWNER_MASTER의 마스터 관리 화면에서만 동적으로 추가하며 일반 사용자 DOM에는 만들지 않는다. 로그아웃은 계정 패널과 분리된 기존 버튼으로 유지한다.
 
 ## 상단 탭 버튼
 
@@ -110,6 +110,14 @@ window.dispatchEvent(new CustomEvent('nexus:app-ready', {
   detail: { appId: 'master', phase: 'interactive' }
 }));
 ```
+
+## 공개 회사정보 Footer
+
+공통 `nexus-auth.js` bootstrap은 공개 로그인 화면을 제외한 모든 보호 업무화면에서 `nexus-company-footer.js` 한 자산만 불러온다. 이 자산이 배포 기본 Snapshot, 현재 사용자 범위의 마지막 정상 local Snapshot, background revision 확인과 `<nexus-company-footer>` 렌더를 함께 소유한다. 개별 HTML과 앱 코드는 회사 값을 복사하지 않는다.
+
+공개 Snapshot은 `NEXUS_COMPANY_PUBLIC_FOOTER_V1`이며 `companyName`, `businessNumber`, `representativeName`, `companyPhone`, `businessAddress`, `homepage`, `revision` 7개 키만 허용한다. user/schema/company scope는 Snapshot 바깥 저장 envelope와 key에 둔다. 회사전화와 홈페이지가 공란이면 해당 항목을 그리지 않는다. 보호된 회사 레코드, 회계기수, OCR·사업자등록증, 감사정보, 개업일자, 과세유형, 업태·종목, 자택전화, 개인 모바일과 이메일은 저장하거나 렌더하지 않는다.
+
+Footer는 인증이나 네트워크를 기다리지 않고 마지막 정상 Snapshot 또는 배포 기본 Snapshot으로 먼저 렌더한다. 그 뒤 현재 `knownRevision`을 포함한 `company.public_profile_read`를 탭 단위로 중복 억제해 호출한다. 같은 revision은 Snapshot 없이 확인 결과만 받고, 서버 revision이 더 낮으면 무시하며, 더 높을 때만 local Snapshot 저장과 화면 갱신을 한 단위로 수행한다. 실패하면 기존 Footer를 유지하며 인증 게이트나 `nexus:app-ready`를 지연시키지 않는다. Footer는 fixed/sticky bar가 아닌 document flow의 마지막 요소이며 짧은 화면에서만 flex minimum-height로 페이지 하단에 놓인다.
 
 ## 전역 오류
 

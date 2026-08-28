@@ -1,8 +1,9 @@
 (() => {
   'use strict';
 
-  const VERSION = '2.1.1';
+  const VERSION = '2.1.2';
   const CONTRACT_VERSION = 'NEXUS_AUTH_V2';
+  const COMPANY_FOOTER_VERSION = '1.0.0';
   const CONTEXT_REFRESH_LEAD_MS = 90 * 1000;
   const CONTEXT_REFRESH_RETRY_MS = 15 * 1000;
   const config = window.NEXUS_AUTH_CONFIG || {};
@@ -12,6 +13,7 @@
   const LEGACY_SESSION_KEY = 'oneapp.nexus.auth.session.v1';
   const LOGIN_PATHS = new Set(['/nexus/', '/nexus/index.html']);
   const PUBLIC_PATH = LOGIN_PATHS.has(location.pathname);
+  const authScriptSource = String(document.currentScript?.src || '/nexus/common/nexus-auth.js');
   const APP_PERMISSIONS = Object.freeze({
     master: 'foundation.read', 'item-manager': 'foundation.write', 'customer-manager': 'customer.read',
     merchops: 'merchops.read', 'smart-parser': 'merchops.read', dataops: 'dataops.read',
@@ -28,6 +30,17 @@
   let contextRefreshTimer = 0;
   const appContextPromises = new Map();
   const authChannel = typeof BroadcastChannel === 'function' ? new BroadcastChannel('oneapp.nexus.auth.v2') : null;
+
+  function installCompanyFooter() {
+    if (PUBLIC_PATH || window.ONEAPP_COMPANY_PUBLIC || typeof document.createElement !== 'function'
+        || typeof document.getElementById !== 'function' || document.getElementById('nexusCompanyFooterAsset')) return;
+    const script = document.createElement('script');
+    script.id = 'nexusCompanyFooterAsset';
+    script.src = authScriptSource.replace(/[^/]*(?:\?.*)?$/, `nexus-company-footer.js?v=${COMPANY_FOOTER_VERSION}`);
+    script.async = true;
+    (document.head || document.documentElement).appendChild(script);
+  }
+  installCompanyFooter();
 
   if (!PUBLIC_PATH) {
     document.documentElement.dataset.nexusLoaderDeferred = 'true';

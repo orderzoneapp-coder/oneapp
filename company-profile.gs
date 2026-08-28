@@ -4,6 +4,7 @@
  */
 
 const COMPANY_PROFILE_SCHEMA_VERSION = 'NEXUS_COMPANY_PROFILE_V1';
+const COMPANY_PUBLIC_FOOTER_SCHEMA_VERSION = 'NEXUS_COMPANY_PUBLIC_FOOTER_V1';
 const COMPANY_PROFILE_TASK_ID = 'NEXUS-COMPANY-20260827-01';
 const COMPANY_PROFILE_DEFAULT_COMPANY_ID = 'ONEAPP';
 const COMPANY_PROFILE_SERVICE_ACTOR = 'DEPLOYMENT_SERVICE:NEXUS_GATEWAY';
@@ -32,6 +33,9 @@ const COMPANY_PROFILE_FIELDS = Object.freeze([
 const COMPANY_PROFILE_ARRAY_FIELDS = Object.freeze(['businessTypes', 'businessItems']);
 const COMPANY_PROFILE_BOOLEAN_FIELDS = Object.freeze(['jointBusinessEnabled', 'unitTaxationEnabled']);
 const COMPANY_PROFILE_DATE_FIELDS = Object.freeze(['establishedDate', 'openingDate', 'certificateIssuedDate']);
+const COMPANY_PUBLIC_FOOTER_FIELDS = Object.freeze([
+  'companyName', 'businessNumber', 'representativeName', 'companyPhone', 'businessAddress', 'homepage', 'revision'
+]);
 const COMPANY_PROFILE_MIGRATION_VALUES = Object.freeze({
   companyName: '원앱',
   businessNumber: '3801401523',
@@ -89,12 +93,15 @@ function companyProfileRequireAdmin_(auth, payload) {
   const request = payload && payload.nexusRequest || {};
   const operationId = companyProfileText_(request.operationId);
   const allowedOperations = [
-    'company.profile_write', 'company.accounting_period_write', 'company.certificate_extract',
+    'company.profile_read', 'company.profile_write', 'company.accounting_period_read',
+    'company.accounting_period_write', 'company.certificate_extract',
     'company.backup_create', 'company.migrate_oneapp'
   ];
   const boundRoles = auth && Array.isArray(auth.roleIds) ? auth.roleIds : [];
   const gatewayRoles = payload && Array.isArray(payload.roleIds) ? payload.roleIds : [];
-  const requiredBoundaryRole = operationId === 'company.certificate_extract' ? 'FOUNDATION_READ' : 'FOUNDATION_WRITE';
+  const requiredBoundaryRole = ['company.profile_read', 'company.accounting_period_read', 'company.certificate_extract'].includes(operationId)
+    ? 'FOUNDATION_READ'
+    : 'FOUNDATION_WRITE';
   if (request.contractVersion !== 'NEXUS_AUTH_V2' || request.appId !== 'company' || !allowedOperations.includes(operationId)
       || !boundRoles.includes(requiredBoundaryRole) || !gatewayRoles.includes('COMPANY_ADMIN')) throw new Error('COMPANY_ADMIN_REQUIRED');
   return auth;
@@ -301,7 +308,45 @@ function companyProfilePersist_(sheets, companyId, current, changes, actor, oper
   return verified;
 }
 
-function companyProfileGet(ss, payload) {
+function companyProfilePublicSnapshot_(profile) {
+  if (!profile) return null;
+  const snapshot = {
+    companyName: companyProfileText_(profile.companyName),
+    businessNumber: companyProfileText_(profile.businessNumber),
+    representativeName: companyProfileText_(profile.representativeName),
+    companyPhone: companyProfileText_(profile.companyPhone),
+    businessAddress: [profile.address1, profile.address2].map(companyProfileText_).filter(Boolean).join(' '),
+    homepage: companyProfileText_(profile.homepage),
+    revision: Number(profile.revision || 0)
+  };
+  if (Object.keys(snapshot).length !== COMPANY_PUBLIC_FOOTER_FIELDS.length
+      || Object.keys(snapshot).some(key => !COMPANY_PUBLIC_FOOTER_FIELDS.includes(key))) {
+    throw new Error('COMPANY_PUBLIC_PROJECTION_DENIED');
+  }
+  return snapshot;
+}
+
+function companyProfilePublicGet(ss, payload) {
+  const companyId = companyProfileCompanyId_(payload);
+  const profile = companyProfileReadStored_(companyProfileSheet_(ss, 'PROFILE'), companyId).profile;
+  const knownRevision = Number(payload && payload.knownRevision || 0);
+  if (!Number.isInteger(knownRevision) || knownRevision < 0) throw new Error('COMPANY_PUBLIC_REVISION_INVALID');
+  const revision = Number(profile && profile.revision || 0);
+  if (profile && revision === knownRevision) {
+    return { schemaVersion: COMPANY_PUBLIC_FOOTER_SCHEMA_VERSION, status: 'UNCHANGED', revision };
+  }
+  if (profile && revision < knownRevision) {
+    return { schemaVersion: COMPANY_PUBLIC_FOOTER_SCHEMA_VERSION, status: 'STALE_SERVER', revision };
+  }
+  return {
+    schemaVersion: COMPANY_PUBLIC_FOOTER_SCHEMA_VERSION,
+    status: profile ? 'READY' : 'EMPTY',
+    snapshot: companyProfilePublicSnapshot_(profile)
+  };
+}
+
+function companyProfileGet(ss, payload, auth) {
+  companyProfileRequireAdmin_(auth, payload);
   const companyId = companyProfileCompanyId_(payload);
   const profileSheet = companyProfileSheet_(ss, 'PROFILE');
   const periodSheet = companyProfileSheet_(ss, 'PERIODS');
@@ -337,11 +382,13 @@ function companyProfileWrite(ss, payload, auth) {
       if (duplicate) throw new Error('COMPANY_BUSINESS_NUMBER_DUPLICATE');
     }
     const actor = companyProfileActor_(payload, 'USER');
-    return { profile: companyProfilePersist_(sheets, companyId, current, changes, actor, 'PROFILE_WRITE', new Date().toISOString()) };
+    const profile = companyProfilePersist_(sheets, companyId, current, changes, actor, 'PROFILE_WRITE', new Date().toISOString());
+    return { profile, publicSnapshot: companyProfilePublicSnapshot_(profile) };
   });
 }
 
-function companyProfileAccountingRead(ss, payload) {
+function companyProfileAccountingRead(ss, payload, auth) {
+  companyProfileRequireAdmin_(auth, payload);
   const companyId = companyProfileCompanyId_(payload);
   return { accountingPeriods: companyProfileReadPeriods_(companyProfileSheet_(ss, 'PERIODS'), companyId) };
 }

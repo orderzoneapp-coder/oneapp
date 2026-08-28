@@ -481,6 +481,7 @@ function nexusAuthAdminAudit_(context, payload) {
 function nexusAuthGatewayRegistry_() {
   var foundationApps = ['nexus-home', 'company', 'master', 'item-manager', 'customer-manager', 'merchops', 'smart-parser', 'dataops', 'settings', 'history', 'export-center'];
   var orderApps = ['orderq', 'orderops', 'orderin', 'smart-input', 'dataops'];
+  var companyFooterApps = foundationApps.concat(orderApps.filter(function (appId) { return foundationApps.indexOf(appId) < 0; }));
   var definitions = [
     ['foundation.full_read', foundationApps, ['foundation.read'], 'nexus_gateway_foundation_full_get', 'FOUNDATION', 'READ', [], 'foundation', 'master'],
     ['foundation.master_read', foundationApps, ['foundation.read'], 'nexus_gateway_foundation_master_get', 'FOUNDATION', 'READ', [], 'foundation', 'master'],
@@ -500,9 +501,10 @@ function nexusAuthGatewayRegistry_() {
     ['foundation.device.register', foundationApps, ['foundation.write'], 'nexus_gateway_foundation_device_register', 'FOUNDATION', 'WRITE', ['schemaVersion', 'deviceId', 'displayName'], 'foundation', 'generic'],
     ['foundation.device.promote', ['master', 'item-manager', 'customer-manager'], ['admin.company'], 'nexus_gateway_foundation_device_promote', 'FOUNDATION', 'WRITE', ['schemaVersion', 'deviceId', 'expectedPrimaryEpoch', 'reason'], 'foundation', 'generic'],
     ['foundation.replace_all', ['master', 'item-manager', 'merchops'], ['foundation.write', 'foundation.replace'], 'nexus_gateway_foundation_replace_all', 'FOUNDATION', 'WRITE', ['master', 'history', 'config', 'sourceRevision'], 'foundation', 'replace'],
-    ['company.profile_read', ['nexus-home', 'company'], ['foundation.read'], 'nexus_gateway_company_profile_get', 'FOUNDATION', 'READ', [], 'company', 'profile'],
+    ['company.public_profile_read', companyFooterApps, [], 'nexus_gateway_company_public_profile_get', 'FOUNDATION', 'READ', ['knownRevision'], 'company', 'public-profile'],
+    ['company.profile_read', ['company'], ['admin.company'], 'nexus_gateway_company_profile_get', 'FOUNDATION', 'READ', [], 'company', 'profile'],
     ['company.profile_write', ['company'], ['admin.company'], 'nexus_gateway_company_profile_write', 'FOUNDATION', 'WRITE', ['expectedRevision', 'changes'], 'company', 'profile'],
-    ['company.accounting_period_read', ['company'], ['foundation.read'], 'nexus_gateway_company_accounting_period_get', 'FOUNDATION', 'READ', [], 'company', 'accounting'],
+    ['company.accounting_period_read', ['company'], ['admin.company'], 'nexus_gateway_company_accounting_period_get', 'FOUNDATION', 'READ', [], 'company', 'accounting'],
     ['company.accounting_period_write', ['company'], ['admin.company'], 'nexus_gateway_company_accounting_period_write', 'FOUNDATION', 'WRITE', ['expectedRevision', 'operation', 'period'], 'company', 'accounting'],
     ['company.certificate_extract', ['company'], ['admin.company'], 'nexus_gateway_company_certificate_extract', 'FOUNDATION', 'READ', ['extraction'], 'company', 'certificate'],
     ['company.backup_create', ['company'], ['admin.company'], 'nexus_gateway_company_backup_create', 'FOUNDATION', 'WRITE', [], 'company', 'backup'],
@@ -727,7 +729,7 @@ function nexusAuthGatewayEnvelope_(definition, body, credential, context, reques
   forwarded.roleIds = [definition.securityBoundary + '_READ'];
   if (definition.access === 'WRITE') forwarded.roleIds.push(definition.securityBoundary + '_WRITE');
   if (definition.operationId === 'foundation.replace_all') forwarded.roleIds.push('FOUNDATION_REPLACE');
-  if (/^company\.(profile_write|accounting_period_write|certificate_extract|backup_create|migrate_oneapp)$/.test(definition.operationId)) forwarded.roleIds.push('COMPANY_ADMIN');
+  if (/^company\.(profile_read|profile_write|accounting_period_read|accounting_period_write|certificate_extract|backup_create|migrate_oneapp)$/.test(definition.operationId)) forwarded.roleIds.push('COMPANY_ADMIN');
   forwarded.deviceId = 'NEXUS_GATEWAY';
   forwarded.device = 'NEXUS_GATEWAY';
   forwarded.environment = 'PRODUCTION';
