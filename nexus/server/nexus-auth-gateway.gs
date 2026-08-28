@@ -501,7 +501,7 @@ function nexusAuthGatewayRegistry_() {
     ['foundation.device.register', foundationApps, ['foundation.write'], 'nexus_gateway_foundation_device_register', 'FOUNDATION', 'WRITE', ['schemaVersion', 'deviceId', 'displayName'], 'foundation', 'generic'],
     ['foundation.device.promote', ['master', 'item-manager', 'customer-manager'], ['admin.company'], 'nexus_gateway_foundation_device_promote', 'FOUNDATION', 'WRITE', ['schemaVersion', 'deviceId', 'expectedPrimaryEpoch', 'reason'], 'foundation', 'generic'],
     ['foundation.replace_all', ['master', 'item-manager', 'merchops'], ['foundation.write', 'foundation.replace'], 'nexus_gateway_foundation_replace_all', 'FOUNDATION', 'WRITE', ['master', 'history', 'config', 'sourceRevision'], 'foundation', 'replace'],
-    ['company.public_profile_read', companyFooterApps, [], 'nexus_gateway_company_public_profile_get', 'FOUNDATION', 'READ', [], 'company', 'public-profile'],
+    ['company.public_profile_read', companyFooterApps, [], 'nexus_gateway_company_public_profile_get', 'FOUNDATION', 'READ', ['knownRevision'], 'company', 'public-profile'],
     ['company.profile_read', ['company'], ['admin.company'], 'nexus_gateway_company_profile_get', 'FOUNDATION', 'READ', [], 'company', 'profile'],
     ['company.profile_write', ['company'], ['admin.company'], 'nexus_gateway_company_profile_write', 'FOUNDATION', 'WRITE', ['expectedRevision', 'changes'], 'company', 'profile'],
     ['company.accounting_period_read', ['company'], ['admin.company'], 'nexus_gateway_company_accounting_period_get', 'FOUNDATION', 'READ', [], 'company', 'accounting'],

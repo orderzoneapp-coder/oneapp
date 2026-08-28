@@ -117,7 +117,7 @@ window.dispatchEvent(new CustomEvent('nexus:app-ready', {
 
 공개 Snapshot은 `NEXUS_COMPANY_PUBLIC_FOOTER_V1`이며 `companyName`, `businessNumber`, `representativeName`, `companyPhone`, `businessAddress`, `homepage`, `revision` 7개 키만 허용한다. user/schema/company scope는 Snapshot 바깥 저장 envelope와 key에 둔다. 회사전화와 홈페이지가 공란이면 해당 항목을 그리지 않는다. 보호된 회사 레코드, 회계기수, OCR·사업자등록증, 감사정보, 개업일자, 과세유형, 업태·종목, 자택전화, 개인 모바일과 이메일은 저장하거나 렌더하지 않는다.
 
-Footer는 인증이나 네트워크를 기다리지 않고 마지막 정상 Snapshot 또는 배포 기본 Snapshot으로 먼저 렌더한다. 그 뒤 `company.public_profile_read`를 탭 단위로 중복 억제해 호출하고 revision이 다를 때만 local Snapshot 저장과 화면 갱신을 한 단위로 수행한다. 실패하면 기존 Footer를 유지하며 인증 게이트나 `nexus:app-ready`를 지연시키지 않는다.
+Footer는 인증이나 네트워크를 기다리지 않고 마지막 정상 Snapshot 또는 배포 기본 Snapshot으로 먼저 렌더한다. 그 뒤 현재 `knownRevision`을 포함한 `company.public_profile_read`를 탭 단위로 중복 억제해 호출한다. 같은 revision은 Snapshot 없이 확인 결과만 받고, 서버 revision이 더 낮으면 무시하며, 더 높을 때만 local Snapshot 저장과 화면 갱신을 한 단위로 수행한다. 실패하면 기존 Footer를 유지하며 인증 게이트나 `nexus:app-ready`를 지연시키지 않는다. Footer는 fixed/sticky bar가 아닌 document flow의 마지막 요소이며 짧은 화면에서만 flex minimum-height로 페이지 하단에 놓인다.
 
 ## 전역 오류
 

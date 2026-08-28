@@ -98,7 +98,7 @@
   };
   const commitSnapshot = (candidate, source = 'server') => {
     const next = normalizeSnapshot(candidate);
-    if (!currentUserScope || !next || next.revision === currentSnapshot.revision) return false;
+    if (!currentUserScope || !next || next.revision <= currentSnapshot.revision) return false;
     try {
       localStorage.setItem(storageKey(currentUserScope), JSON.stringify({
         schemaVersion: SCHEMA_VERSION,
@@ -153,7 +153,7 @@
         applySessionScope(session);
         if (!force && recentlyChecked(session)) return currentSnapshot;
         setSyncState('checking');
-        return auth.gateway('company.public_profile_read', {})
+        return auth.gateway('company.public_profile_read', { knownRevision: currentSnapshot.revision })
           .then(result => {
             markChecked(session);
             acceptGatewayResult(result, 'server');
@@ -178,7 +178,7 @@
       this.root = this.attachShadow({ mode: 'open' });
       this.root.innerHTML = `
         <style>
-          :host{position:fixed;z-index:70;inset:auto 0 0;display:block;color:#45556c;background:#f8fafc;border-top:1px solid #dce3eb;box-shadow:0 -8px 28px rgba(28,45,67,.08);font:11px/1.45 Inter,Pretendard,"Noto Sans KR",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+          :host{display:block;flex:0 0 auto;width:100%;margin-top:auto;color:#45556c;background:#f8fafc;border-top:1px solid #dce3eb;box-shadow:0 -8px 28px rgba(28,45,67,.08);font:11px/1.45 Inter,Pretendard,"Noto Sans KR",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
           .wrap{min-height:58px;padding:9px max(16px,calc((100vw - 1360px)/2));display:grid;gap:4px;align-content:center}
           .line{display:flex;flex-wrap:wrap;align-items:center;gap:4px 14px}.line strong{color:#17283e;font-size:13px}.item{display:inline-flex;align-items:center;gap:5px;white-space:nowrap}.item b{color:#6b7b90;font-size:9px;letter-spacing:.04em}.address{min-width:0;white-space:normal}.address span{word-break:keep-all}.homepage{color:#315f91;text-decoration:none}.homepage:hover{text-decoration:underline}
           .sync{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
@@ -246,7 +246,7 @@
     if (!document.getElementById(LAYOUT_STYLE_ID)) {
       const style = document.createElement('style');
       style.id = LAYOUT_STYLE_ID;
-      style.textContent = ':root{--nexus-company-footer-height:58px}body.nexus-company-footer-mounted{padding-bottom:var(--nexus-company-footer-height)!important}body.nexus-company-footer-mounted>#root>.h-screen{height:calc(100vh - var(--nexus-top-height,0px) - var(--nexus-company-footer-height))!important}@media(max-width:680px){:root{--nexus-company-footer-height:82px}}@media print{body.nexus-company-footer-mounted{padding-bottom:0!important}}';
+      style.textContent = 'html{min-height:100%}:root{--nexus-company-footer-height:58px}body.nexus-company-footer-mounted{min-height:100vh;display:flex;flex-direction:column}body.nexus-company-footer-mounted>nexus-company-footer{margin-top:auto}body.nexus-company-footer-mounted>#root>.h-screen,body.nexus-company-footer-mounted>#root.h-screen{height:calc(100vh - var(--nexus-top-height,0px) - var(--nexus-company-footer-height))!important}@media(max-width:680px){:root{--nexus-company-footer-height:82px}}';
       (document.head || document.documentElement).appendChild(style);
     }
     document.body.classList.add('nexus-company-footer-mounted');

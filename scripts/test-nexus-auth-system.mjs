@@ -349,7 +349,7 @@ assert.equal(authContract.resources.cacheVersion, '2.1.2');
 assert.equal(authContract.resources.contextRefreshLeadSeconds, 90);
 assert.equal(authContract.resources.contextRefreshRetrySeconds, 15);
 assert.match(authContract.resources.contextRefreshMode, /full server verification remains mandatory/);
-assert.equal(authContract.resources.deployedVersion, 20);
+assert.equal(authContract.resources.deployedVersion, 21);
 assert.equal(authContract.resources.rollbackVersion, 19);
 assert.equal(authContract.resources.businessCredentials.length, 8);
 assert.equal(authContract.resources.oneappBindings.length, 4);

@@ -34,8 +34,10 @@ assert.match(company, /ONEAPP_COMPANY_PUBLIC\?\.acceptGatewayResult\(result, 'ad
   'an administrator profile save must update the public Snapshot from the verified response');
 assert.match(component, /window\.setTimeout\(\(\) => \{ void revalidate\(\); \}, 0\)/,
   'background verification must start only after the synchronous Footer mount');
-assert.match(component, /body\.nexus-company-footer-mounted>#root>\.h-screen/,
-  'fixed-height workspaces must reserve Footer height instead of losing bottom controls beneath the Footer');
+assert.match(component, /body\.nexus-company-footer-mounted\{min-height:100vh;display:flex;flex-direction:column\}/,
+  'short business pages must place the common Footer at the document bottom through normal flex flow');
+assert.doesNotMatch(component, /:host\{[^}]*position:(?:fixed|sticky)/,
+  'the shopping-mall Footer must stay in document flow and never cover the business workspace');
 assert.doesNotMatch(component, /await\s+window\.ONEAPP_AUTH\.ready|await\s+auth\.ready/,
   'Footer initial rendering must never await authentication readiness');
 
@@ -58,16 +60,18 @@ const server = http.createServer((request, response) => {
     const scenario = url.searchParams.get('scenario') || 'updated';
     const userId = url.searchParams.get('user') || 'USR-1';
     const result = scenario === 'same-revision'
-      ? { status: 'READY', snapshot: { revision: 3, companyName: '서버가 바꾸면 안 됨', businessNumber: '3801401523', representativeName: '서버값', companyPhone: '', businessAddress: '서버 주소', homepage: '' } }
+      ? { status: 'UNCHANGED', revision: 3 }
       : { status: 'READY', snapshot: { revision: 2, companyName: '원앱 최신', businessNumber: '3801401523', representativeName: '이무철', companyPhone: '', businessAddress: '서울특별시 송파구 양재대로 932, 9층 19호', homepage: '' } };
     response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
     response.end(`<!doctype html><html lang="ko"><head><meta charset="utf-8"><script>
       window.__gatewayCalls = 0;
+      window.__knownRevisions = [];
       window.ONEAPP_AUTH = {
         session: { user: { userId: ${JSON.stringify(userId)}, role: 'VIEWER' } },
         ready: Promise.resolve({ user: { userId: ${JSON.stringify(userId)}, role: 'VIEWER' } }),
-        gateway: () => {
+        gateway: (operationId, payload) => {
           window.__gatewayCalls += 1;
+          window.__knownRevisions.push(payload.knownRevision);
           ${scenario === 'error' ? "return Promise.reject(new Error('OFFLINE'));" : `return new Promise(resolve => setTimeout(() => resolve(${JSON.stringify(result)}), 25));`}
         }
       };
@@ -78,10 +82,14 @@ const server = http.createServer((request, response) => {
           calls: window.__gatewayCalls,
           text: footer?.shadowRoot?.textContent || '',
           revision: footer?.dataset?.revision || '',
-          keys: Object.keys(window.ONEAPP_COMPANY_PUBLIC.snapshot)
+          keys: Object.keys(window.ONEAPP_COMPANY_PUBLIC.snapshot),
+          position: getComputedStyle(footer).position,
+          footerBottom: footer.getBoundingClientRect().bottom,
+          viewportHeight: innerHeight,
+          bodyDisplay: getComputedStyle(document.body).display
         };
       }));
-    </script></head><body><main>업무 화면</main></body></html>`);
+    </script></head><body style="margin:0"><main>업무 화면</main></body></html>`);
     return;
   }
   const relative = decodeURIComponent(url.pathname).replace(/^\/+/, '');
@@ -116,15 +124,20 @@ try {
   assert.match(initial.text, /이무철/);
   assert.match(initial.text, /서울특별시 송파구 양재대로 932/);
   assert.equal(initial.revision, '1');
+  assert.equal(initial.position, 'static');
+  assert.equal(initial.bodyDisplay, 'flex');
+  assert(Math.abs(initial.footerBottom - initial.viewportHeight) < 1, 'a short page Footer must rest at the viewport bottom in normal flow');
   assert.deepEqual(initial.keys.sort(), expectedFields.slice().sort());
   for (const field of forbiddenPublicFields) assert(!initial.keys.includes(field), `${field} must not enter the public Snapshot`);
   await page.waitForFunction(() => document.querySelector('nexus-company-footer')?.dataset.revision === '2');
   const updated = await page.evaluate(() => ({
     calls: window.__gatewayCalls,
+    knownRevisions: window.__knownRevisions,
     text: document.querySelector('nexus-company-footer').shadowRoot.textContent,
     stored: JSON.parse(localStorage.getItem(window.ONEAPP_COMPANY_PUBLIC.storageKey))
   }));
   assert.equal(updated.calls, 1);
+  assert.deepEqual(updated.knownRevisions, [1]);
   assert.match(updated.text, /원앱 최신/);
   assert(!updated.text.includes('회사전화'), 'blank companyPhone must be omitted');
   assert(!updated.text.includes('홈페이지'), 'blank homepage must be omitted');
@@ -150,9 +163,24 @@ try {
   assert.match(warmInitial.text, /02-1234-5678/);
   assert.match(warmInitial.text, /홈페이지/);
   await warm.waitForTimeout(80);
-  const sameRevision = await warm.evaluate(() => document.querySelector('nexus-company-footer').shadowRoot.textContent);
-  assert.match(sameRevision, /로컬 정상 Snapshot/);
-  assert(!sameRevision.includes('서버가 바꾸면 안 됨'), 'same revision must not replace the atomic local Snapshot');
+  const sameRevision = await warm.evaluate(() => ({
+    text: document.querySelector('nexus-company-footer').shadowRoot.textContent,
+    knownRevisions: window.__knownRevisions
+  }));
+  assert.match(sameRevision.text, /로컬 정상 Snapshot/);
+  assert.deepEqual(sameRevision.knownRevisions, [3]);
+
+  const rollback = await warm.evaluate(() => {
+    const accepted = window.ONEAPP_COMPANY_PUBLIC.acceptGatewayResult({ snapshot: {
+      revision: 2, companyName: '낮은 revision', businessNumber: '3801401523', representativeName: '공격자',
+      companyPhone: '', businessAddress: '과거 주소', homepage: ''
+    } }, 'stale-server');
+    return { accepted, revision: window.ONEAPP_COMPANY_PUBLIC.snapshot.revision, text: document.querySelector('nexus-company-footer').shadowRoot.textContent };
+  });
+  assert.equal(rollback.accepted, false);
+  assert.equal(rollback.revision, 3);
+  assert.match(rollback.text, /로컬 정상 Snapshot/);
+  assert(!rollback.text.includes('낮은 revision'), 'a lower server revision must never roll back the last-known-good Footer');
 
   const corrupt = await browser.newPage();
   await corrupt.addInitScript(({ key }) => localStorage.setItem(key, JSON.stringify({

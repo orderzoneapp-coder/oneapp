@@ -99,13 +99,24 @@ for (const denied of ['openingDate', 'taxationType', 'businessTypes', 'businessI
   assert(!Object.hasOwn(writeResult.publicSnapshot, denied), `${denied} must not enter publicSnapshot`);
 }
 assert.equal(context.companyProfileGet(ss, profileReadRequest(), admin).status, 'READY');
-assert.deepEqual(plain(context.companyProfilePublicGet(ss, request()).snapshot), plain(writeResult.publicSnapshot));
+assert.deepEqual(plain(context.companyProfilePublicGet(ss, request({ knownRevision: 0 })).snapshot), plain(writeResult.publicSnapshot));
+assert.deepEqual(plain(context.companyProfilePublicGet(ss, request({ knownRevision: 1 }))), {
+  schemaVersion: 'NEXUS_COMPANY_PUBLIC_FOOTER_V1', status: 'UNCHANGED', revision: 1
+});
+assert.deepEqual(plain(context.companyProfilePublicGet(ss, request({ knownRevision: 2 }))), {
+  schemaVersion: 'NEXUS_COMPANY_PUBLIC_FOOTER_V1', status: 'STALE_SERVER', revision: 1
+});
+assert.throws(() => context.companyProfilePublicGet(ss, request({ knownRevision: -1 })), /COMPANY_PUBLIC_REVISION_INVALID/);
+assert.throws(() => context.companyProfilePublicGet(ss, request({ knownRevision: 'invalid' })), /COMPANY_PUBLIC_REVISION_INVALID/);
 assert.throws(() => context.companyProfileWrite(ss, request({ expectedRevision: 0, changes: { companyName: '충돌' } }), admin), /COMPANY_REVISION_CONFLICT/);
 
-written = context.companyProfileWrite(ss, request({ expectedRevision: 1, changes: { companyPhone: '02-1234-5678' } }), admin).profile;
+const secondWriteResult = context.companyProfileWrite(ss, request({ expectedRevision: 1, changes: { companyPhone: '02-1234-5678' } }), admin);
+written = secondWriteResult.profile;
 assert.equal(written.revision, 2);
 assert.equal(written.establishedDate, '2020-02-03', 'partial writes preserve unprovided fields');
 assert.deepEqual(plain(written.businessItems), ['전자상거래 소매업', '상품 중개업']);
+assert.deepEqual(plain(context.companyProfilePublicGet(ss, request({ knownRevision: 1 })).snapshot), plain(secondWriteResult.publicSnapshot),
+  'only a higher server revision returns the exact seven-key Snapshot');
 
 let periodResult = context.companyProfileAccountingWrite(ss, request({ nexusRequest: { requestId: 'REQ-PERIOD-1', subjectUserId: 'USR-OWNER', subjectLoginId: 'owner', appId: 'company', operationId: 'company.accounting_period_write', contractVersion: 'NEXUS_AUTH_V2' }, expectedRevision: 2, operation: 'UPSERT', period: { periodId: '', revision: 0, periodNumber: 1, startDate: '2026-01-01', endDate: '2026-12-31', enabled: true } }), admin);
 assert.equal(periodResult.profileRevision, 3);

@@ -97,7 +97,10 @@ for (const id of ['company.public_profile_read', ...protectedOperations]) assert
 assert.deepEqual(Array.from(registry['company.profile_read'].allowedApps), ['company']);
 assert.deepEqual(Array.from(registry['company.accounting_period_read'].allowedApps), ['company']);
 assert.deepEqual(Array.from(registry['company.public_profile_read'].requiredUserPermissions), []);
+assert.deepEqual(Array.from(registry['company.public_profile_read'].allowedFields), ['knownRevision']);
 assert.equal(registry['company.public_profile_read'].upstreamAction, 'nexus_gateway_company_public_profile_get');
+assert.deepEqual(JSON.parse(JSON.stringify(context.nexusAuthGatewayValidatePayload_(registry['company.public_profile_read'], { knownRevision: 7 }))), { knownRevision: 7 });
+assert.throws(() => context.nexusAuthGatewayValidatePayload_(registry['company.public_profile_read'], { snapshot: {} }), /NEXUS_GATEWAY_SCHEMA_DENIED/);
 for (const id of protectedOperations) {
   assert.deepEqual(Array.from(registry[id].requiredUserPermissions), ['admin.company'], `${id} must recheck admin.company`);
 }

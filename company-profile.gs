@@ -329,6 +329,15 @@ function companyProfilePublicSnapshot_(profile) {
 function companyProfilePublicGet(ss, payload) {
   const companyId = companyProfileCompanyId_(payload);
   const profile = companyProfileReadStored_(companyProfileSheet_(ss, 'PROFILE'), companyId).profile;
+  const knownRevision = Number(payload && payload.knownRevision || 0);
+  if (!Number.isInteger(knownRevision) || knownRevision < 0) throw new Error('COMPANY_PUBLIC_REVISION_INVALID');
+  const revision = Number(profile && profile.revision || 0);
+  if (profile && revision === knownRevision) {
+    return { schemaVersion: COMPANY_PUBLIC_FOOTER_SCHEMA_VERSION, status: 'UNCHANGED', revision };
+  }
+  if (profile && revision < knownRevision) {
+    return { schemaVersion: COMPANY_PUBLIC_FOOTER_SCHEMA_VERSION, status: 'STALE_SERVER', revision };
+  }
   return {
     schemaVersion: COMPANY_PUBLIC_FOOTER_SCHEMA_VERSION,
     status: profile ? 'READY' : 'EMPTY',
