@@ -1035,17 +1035,21 @@ function doPost(e) {
       return withScriptLock(() => jsonResponse({ status: 'success', action, data: oneappNexusFoundationReplaceAll(ss, payload) }));
     }
 
-    if (action === 'nexus_gateway_company_profile_get') {
+    if (action === 'nexus_gateway_company_public_profile_get') {
       oneappNexusGatewayRequire(payload, 'FOUNDATION', 'READ');
-      return withScriptLock(() => jsonResponse({ status: 'success', action, data: companyProfileGet(ss, payload) }));
+      return jsonResponse({ status: 'success', action, data: companyProfilePublicGet(ss, payload) });
+    }
+    if (action === 'nexus_gateway_company_profile_get') {
+      const companyAuth = oneappNexusGatewayRequire(payload, 'FOUNDATION', 'READ');
+      return withScriptLock(() => jsonResponse({ status: 'success', action, data: companyProfileGet(ss, payload, companyAuth) }));
     }
     if (action === 'nexus_gateway_company_profile_write') {
       const companyAuth = oneappNexusGatewayRequire(payload, 'FOUNDATION', 'WRITE');
       return withScriptLock(() => jsonResponse({ status: 'success', action, data: companyProfileWrite(ss, payload, companyAuth) }));
     }
     if (action === 'nexus_gateway_company_accounting_period_get') {
-      oneappNexusGatewayRequire(payload, 'FOUNDATION', 'READ');
-      return withScriptLock(() => jsonResponse({ status: 'success', action, data: companyProfileAccountingRead(ss, payload) }));
+      const companyAuth = oneappNexusGatewayRequire(payload, 'FOUNDATION', 'READ');
+      return withScriptLock(() => jsonResponse({ status: 'success', action, data: companyProfileAccountingRead(ss, payload, companyAuth) }));
     }
     if (action === 'nexus_gateway_company_accounting_period_write') {
       const companyAuth = oneappNexusGatewayRequire(payload, 'FOUNDATION', 'WRITE');

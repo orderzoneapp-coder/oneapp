@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = '1.9.2';
+  const VERSION = '1.10.0';
   const STORAGE = Object.freeze({
     colorMode: 'oneapp.nexus.v1.colorMode',
     groupOrder: 'oneapp.nexus.v1.groupOrder',
@@ -355,7 +355,7 @@
       userAction.querySelector('.action-label').textContent = user.displayName || user.loginId;
       userAction.title = `${user.displayName || user.loginId} · ${user.role === 'OWNER_MASTER' ? '마스터' : '사용자'}`;
       this.root.querySelector('.user-panel-name').textContent = user.displayName || user.loginId;
-      this.root.querySelector('.user-panel-role').textContent = user.role === 'OWNER_MASTER' ? '마스터 관리자' : '일반 사용자 · 회사정보 읽기 전용';
+      this.root.querySelector('.user-panel-role').textContent = user.role === 'OWNER_MASTER' ? '마스터 관리자' : '일반 사용자';
     }
 
     shellMarkup() {
@@ -410,7 +410,6 @@
 
         <section class="panel user-panel" data-panel="user" role="dialog" aria-label="사용자 메뉴" hidden>
           <div class="user-panel-profile"><strong class="user-panel-name">사용자</strong><span class="user-panel-role">일반 사용자</span></div>
-          <a href="https://oneapp.orderz.co.kr/nexus/company.html?mode=view" data-navigate data-target-app="company">내 회사정보</a>
           <a href="https://oneapp.orderz.co.kr/nexus/home/" data-navigate data-target-app="">업무 홈</a>
         </section>
 

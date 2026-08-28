@@ -1,14 +1,14 @@
 <!doctype html>
-<html lang="ko" data-nexus-color-mode="dark">
+<html lang="ko" data-nexus-color-mode="dark" data-nexus-app-id="company">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow">
   <title>NEXUS 마스터 관리</title>
   <link rel="icon" type="image/png" href="../assets/nexus-favicon.png">
   <link rel="stylesheet" href="../common/nexus-auth.css?v=2.0.0">
   <script src="../common/nexus-auth-config.js?v=2.0.1"></script>
-  <script src="../common/nexus-auth.js?v=2.1.1"></script>
+  <script src="../common/nexus-auth.js?v=2.1.2"></script>
   <script src="../common/apps-config.js?v=1.4.0"></script>
-<script src="../common/nexus-top.js?v=1.9.2"></script>
+<script src="../common/nexus-top.js?v=1.10.0"></script>
   <script src="./admin.js?v=1.1.0" defer></script>
 </head>
 <body class="portal-page">
@@ -16,7 +16,7 @@
   <main class="portal-main">
     <header class="portal-hero">
       <div><span class="auth-kicker">OWNER MASTER CONTROL</span><h1>마스터 관리</h1><p>사용자, 권한, 서버 업무 연결과 감사기록을 한곳에서 관리합니다.</p></div>
-      <div class="portal-actions"><a class="portal-link primary" href="/nexus/home/">일반 업무화면</a><button id="logoutButton" class="portal-link" type="button">로그아웃</button></div>
+      <div id="adminHeaderActions" class="portal-actions"><a class="portal-link primary" href="/nexus/home/">일반 업무화면</a><button id="logoutButton" class="portal-link" type="button">로그아웃</button></div>
     </header>
     <div class="admin-layout">
       <nav class="admin-nav" aria-label="마스터 관리 메뉴">

@@ -1,5 +1,51 @@
 import { recognizeBusinessCertificate, certificateFieldLabels } from './company-certificate.js?v=1.0.0';
 
+const ADMIN_MARKUP = `
+  <header class="company-hero">
+    <div><span class="company-kicker">OWNER MASTER · COMPANY PROFILE</span><h1>회사정보 관리</h1><p>보호된 회사정보, 회계기수, 연락처, 주소와 사업자등록증 검토값을 관리합니다.</p></div>
+    <div class="company-actions">
+      <button id="certificateButton" class="button secondary" type="button">사업자등록증 인식</button>
+      <button id="editButton" class="button primary" type="button">회사정보 수정</button>
+    </div>
+  </header>
+  <div id="companyNotice" class="notice" role="status" aria-live="polite">서버에서 관리자용 회사정보를 확인하고 있습니다.</div>
+  <section id="companyView" class="company-content" hidden>
+    <article class="profile-section"><div class="section-heading"><div><span>BASIC</span><h2>기본정보</h2></div></div><dl id="basicView" class="detail-grid"></dl></article>
+    <article class="profile-section"><div class="section-heading"><div><span>ACCOUNTING</span><h2>회계기수</h2></div><button id="periodAddButton" class="text-button" type="button">기수 등록</button></div><div id="periodView" class="period-list"></div></article>
+    <article class="profile-section"><div class="section-heading"><div><span>CONTACT</span><h2>연락처</h2></div></div><dl id="contactView" class="detail-grid"></dl></article>
+    <article class="profile-section"><div class="section-heading"><div><span>ADDRESS</span><h2>주소</h2></div></div><dl id="addressView" class="detail-grid"></dl></article>
+    <details class="certificate-details"><summary>사업자등록증 세부정보</summary><dl id="certificateView" class="detail-grid"></dl></details>
+    <footer id="profileMeta" class="profile-meta"></footer>
+  </section>
+  <form id="companyForm" class="company-content" hidden novalidate>
+    <article class="profile-section"><div class="section-heading"><div><span>BASIC</span><h2>기본정보</h2></div></div><div id="basicFields" class="field-grid"></div></article>
+    <article class="profile-section"><div class="section-heading"><div><span>CONTACT</span><h2>연락처</h2></div></div><div id="contactFields" class="field-grid"></div></article>
+    <article class="profile-section"><div class="section-heading"><div><span>ADDRESS</span><h2>주소</h2></div></div><div id="addressFields" class="field-grid"></div></article>
+    <article class="profile-section"><div class="section-heading"><div><span>CERTIFICATE</span><h2>사업자등록증 세부정보</h2></div></div><div id="certificateFields" class="field-grid"></div></article>
+    <div class="form-footer"><button id="cancelButton" class="button secondary" type="button">취소</button><button id="saveButton" class="button primary" type="submit">저장</button></div>
+  </form>
+  <dialog id="periodDialog" class="company-dialog">
+    <form id="periodForm" method="dialog">
+      <div class="dialog-heading"><div><span>ACCOUNTING PERIOD</span><h2>회계기수 등록</h2></div><button type="button" data-dialog-close aria-label="닫기">×</button></div>
+      <input id="periodId" type="hidden"><input id="periodRevision" type="hidden" value="0">
+      <label>기수 <input id="periodNumber" type="number" min="1" max="999" required></label>
+      <label>시작일 <input id="periodStartDate" type="date" required></label>
+      <label>종료일 <input id="periodEndDate" type="date" required></label>
+      <label class="check-row"><input id="periodEnabled" type="checkbox" checked> 사용</label>
+      <div class="dialog-actions"><button id="periodDeleteButton" class="button danger" type="button" hidden>삭제</button><span></span><button class="button secondary" type="button" data-dialog-close>취소</button><button class="button primary" type="submit">저장</button></div>
+    </form>
+  </dialog>
+  <dialog id="certificateDialog" class="company-dialog certificate-dialog">
+    <div class="dialog-heading"><div><span>LOCAL OCR</span><h2>사업자등록증 인식</h2><p>원본은 이 브라우저에서만 처리되며 서버에 저장하거나 전송하지 않습니다.</p></div><button type="button" data-dialog-close aria-label="닫기">×</button></div>
+    <div id="certificateDropzone" class="certificate-dropzone" tabindex="0">
+      <strong>사진 또는 PDF를 놓으세요</strong><span>JPG · PNG · PDF, 최대 12MB</span>
+      <div><label class="button secondary">파일 선택<input id="certificateFile" type="file" accept="image/jpeg,image/png,application/pdf" hidden></label><label class="button secondary">카메라 촬영<input id="certificateCamera" type="file" accept="image/*" capture="environment" hidden></label></div>
+    </div>
+    <div id="ocrProgress" class="ocr-progress" hidden><span></span><progress max="1" value="0"></progress></div>
+    <section id="ocrReview" class="ocr-review" hidden><h3>인식 결과 확인</h3><p>낮은 신뢰도의 항목은 직접 확인해 주세요.</p><div id="ocrFields" class="ocr-field-list"></div></section>
+    <div class="dialog-actions"><button id="ocrRetryButton" class="button secondary" type="button" hidden>다시 촬영</button><span></span><button id="ocrConfirmButton" class="button primary" type="button" hidden>확인하고 등록</button></div>
+  </dialog>`;
+
 const PROFILE_FIELDS = Object.freeze({
   basic: [
     ['companyName','회사명','text',true],['companyNameEn','회사명(영문)','text'],['businessNumber','사업자등록번호','business',true],['representativeName','대표자','text',true],
@@ -35,7 +81,7 @@ const formatBusinessNumber = value => {
   const digits = text(value).replace(/\D/g,'');
   return /^\d{10}$/.test(digits) ? `${digits.slice(0,3)}-${digits.slice(3,5)}-${digits.slice(5)}` : display(value);
 };
-const elements = Object.fromEntries(['companyNotice','companyView','companyForm','editButton','certificateButton','basicView','contactView','addressView','certificateView','periodView','periodAddButton','profileMeta','cancelButton','saveButton','periodDialog','periodForm','periodDeleteButton','certificateDialog','certificateDropzone','certificateFile','certificateCamera','ocrProgress','ocrReview','ocrFields','ocrRetryButton','ocrConfirmButton'].map(id => [id, document.getElementById(id)]));
+let elements = {};
 let session = null;
 let profile = null;
 let accountingPeriods = [];
@@ -43,7 +89,7 @@ let dirty = false;
 let saving = false;
 let ocrResult = null;
 
-function isAdmin() { return session?.user?.role === 'OWNER_MASTER'; }
+function isAdmin() { return session?.user?.role === 'OWNER_MASTER' && window.ONEAPP_AUTH.hasPermission('admin.company'); }
 function notice(message, level = 'normal') { elements.companyNotice.textContent = message; elements.companyNotice.dataset.level = level; }
 function setBusy(value) { saving = value; elements.companyForm.setAttribute('aria-busy', String(value)); elements.saveButton.disabled = value; }
 
@@ -128,6 +174,7 @@ async function loadCompany() {
   const data = await window.ONEAPP_AUTH.gateway('company.profile_read', {});
   profile = data.profile || null;
   accountingPeriods = Array.isArray(data.accountingPeriods) ? data.accountingPeriods : [];
+  window.ONEAPP_COMPANY_PUBLIC?.acceptGatewayResult(data, 'admin-read');
   elements.editButton.textContent = profile ? '회사정보 수정' : '회사정보 등록';
   elements.editButton.hidden = !isAdmin(); elements.certificateButton.hidden = !isAdmin(); elements.periodAddButton.hidden = !isAdmin();
   renderView();
@@ -146,14 +193,28 @@ async function saveProfile(event) {
   setBusy(true); notice('회사정보를 저장하고 있습니다.');
   try {
     const result = await window.ONEAPP_AUTH.gateway('company.profile_write', { expectedRevision: Number(profile?.revision || 0), changes });
-    profile = result.profile; dirty = false; renderView(); showView(); notice('회사정보를 저장했습니다.', 'success');
+    profile = result.profile;
+    window.ONEAPP_COMPANY_PUBLIC?.acceptGatewayResult(result, 'admin-save');
+    dirty = false; renderView(); showView(); notice('회사정보와 공개 Footer Snapshot을 저장했습니다.', 'success');
   } catch (error) {
     if (error.message === 'COMPANY_REVISION_CONFLICT') await loadCompany();
     notice(error.message === 'COMPANY_REVISION_CONFLICT' ? '다른 사용자가 먼저 수정했습니다. 최신 내용을 불러왔습니다.' : `저장하지 못했습니다: ${error.message}`, 'error');
   } finally { setBusy(false); }
 }
 
-function openAddressSearch(suffix) {
+function loadExternalScript(id, src) {
+  if (document.getElementById(id)) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.id = id; script.src = src; script.onload = resolve;
+    script.onerror = () => reject(new Error('EXTERNAL_SCRIPT_LOAD_FAILED'));
+    document.head.append(script);
+  });
+}
+
+async function openAddressSearch(suffix) {
+  try { await loadExternalScript('companyPostcodeApi', 'https://t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js'); }
+  catch { notice('주소검색 서비스를 불러오지 못했습니다.', 'error'); return; }
   if (!window.daum?.Postcode) { notice('주소검색 서비스를 불러오지 못했습니다.', 'error'); return; }
   new window.daum.Postcode({ oncomplete(data) {
     const postal = document.querySelector(`[data-field="postalCode${suffix}"]`);
@@ -222,6 +283,7 @@ async function processCertificate(file) {
   elements.certificateDropzone.hidden = true; elements.ocrProgress.hidden = false; elements.ocrProgress.querySelector('span').textContent = '문서 형식을 확인하고 있습니다.';
   elements.ocrProgress.querySelector('progress').value = 0;
   try {
+    await loadExternalScript('companyTesseractApi', 'https://cdn.jsdelivr.net/npm/tesseract.js@6/dist/tesseract.min.js');
     const local = await recognizeBusinessCertificate(file, { Tesseract: window.Tesseract, onProgress({status,progress}) { elements.ocrProgress.querySelector('span').textContent = `문서를 인식하고 있습니다: ${status}`; elements.ocrProgress.querySelector('progress').value = progress; } });
     ocrResult = await window.ONEAPP_AUTH.gateway('company.certificate_extract', { extraction: local });
     renderOcr(ocrResult);
@@ -256,10 +318,20 @@ function bind() {
   window.addEventListener('nexus:before-navigate', event => { if (dirty && !window.confirm('저장하지 않은 변경이 있습니다. 이동하시겠습니까?')) event.preventDefault(); });
 }
 
-installFields(); bind();
 window.ONEAPP_AUTH.ready.then(async currentSession => {
   session = currentSession;
   if (!session) return;
+  if (!isAdmin()) {
+    location.replace('/nexus/home/');
+    return;
+  }
+  const root = document.getElementById('companyAdminRoot');
+  root.innerHTML = ADMIN_MARKUP;
+  root.hidden = false;
+  root.setAttribute('aria-busy', 'false');
+  elements = Object.fromEntries(['companyNotice','companyView','companyForm','editButton','certificateButton','basicView','contactView','addressView','certificateView','periodView','periodAddButton','profileMeta','cancelButton','saveButton','periodDialog','periodForm','periodDeleteButton','certificateDialog','certificateDropzone','certificateFile','certificateCamera','ocrProgress','ocrReview','ocrFields','ocrRetryButton','ocrConfirmButton'].map(id => [id, document.getElementById(id)]));
+  installFields();
+  bind();
   try { await loadCompany(); }
-  catch (error) { notice(`회사정보를 불러오지 못했습니다: ${error.message}`, 'error'); elements.companyView.hidden = false; }
+  catch (error) { notice(`관리자용 회사정보를 불러오지 못했습니다: ${error.message}`, 'error'); elements.companyView.hidden = false; }
 });

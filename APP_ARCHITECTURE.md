@@ -1,7 +1,7 @@
 # ONEAPP Application Architecture
 
 - Repository: orderzoneapp-coder/oneapp
-- Architecture document version: 1.6.0
+- Architecture document version: 1.6.1
 - Last reviewed: 2026-08-28
 - Machine-readable companion: app-manifest.json
 
@@ -84,8 +84,8 @@ Shared storage or navigation does not make their business meaning identical.
 | Component | Type | Status | Primary responsibility |
 |---|---|---|---|
 | `nexus/index.html` | Web entry | Production | Public login, first-owner bootstrap, and invitation activation entry; no business token is entered here |
-| `nexus/home/index.html` | Web entry | Production | Permission-filtered normal-user work home shown after authentication |
-| `nexus/company.html` | Web entry | Production | Authenticated company-profile lookup for every permitted user and owner-master-only maintenance of company fields, accounting periods, addresses, and reviewed local OCR results |
+| `nexus/home/index.html` | Web entry | Production | Permission-filtered normal-user work home shown after authentication with the shared public company projection rendered without a profile-read gate |
+| `nexus/company.html` | Web entry | Production | Owner-master-only maintenance of protected company fields, accounting periods, addresses, and reviewed local OCR results |
 | `nexus/admin/index.html` | Web entry | Production | Owner-master-only user, permission, service-secret, recovery, and audit administration |
 | `nexus/server/nexus-auth-gateway.gs` | Apps Script service | Production | Authentication database, opaque sessions, permission enforcement, audit logging, and server-only credential proxy to the retained cloud service |
 | `MerchOps.html` | Web entry | Production | Product master review, pricing, promotion, and Excel-based product-information application workflow; stopped-product state is consumed only for worktable protection and compatibility reads |
@@ -144,13 +144,17 @@ The current application reports only its own save, synchronization, warning, and
 
 Every consumer reserves `--nexus-top-height`; the shared component fixes it at 64px on desktop and 104px at 680px and below, and each consumer includes a light-DOM fallback. Failure to load or initialize the header must leave the application boot path independent and show only the retryable NEXUS fallback. The complete event and API examples are documented in `nexus/common/README.md` and registered as the `nexus-header` shared contract in `app-manifest.json`.
 
-The authenticated user action opens a compact account panel. `내 회사정보` opens the read route for every user, `업무 홈` returns to the permission-filtered home, and the separate logout control remains available. This panel does not grant write authority; the company application and both server layers independently require `OWNER_MASTER` through `admin.company` for writes.
+The authenticated user action opens a compact account panel. `업무 홈` returns to the permission-filtered home and the separate logout control remains available. Protected company maintenance is linked only from the owner-master administration screen; the company application and both server layers independently require `OWNER_MASTER` through `admin.company` for every protected company read or management operation.
+
+`nexus/common/nexus-company-footer.js` owns both the single `NEXUS_COMPANY_PUBLIC_FOOTER_V1` Snapshot and the shared `<nexus-company-footer>` component. The common protected-screen `nexus-auth.js` bootstrap loads this same-origin asset on every NEXUS business screen while excluding the public login; individual HTML files never copy company values. The component synchronously renders the last valid user/company/schema-scoped local Snapshot or the deployed default Snapshot, and only after that starts a deduplicated background `company.public_profile_read`. A different server revision is committed to the current user's local envelope before the mounted Footer and other public consumers update. A failed refresh leaves the last valid Footer intact and never blocks authentication, `nexus:app-ready`, or the business workspace.
+
+The public Snapshot contains exactly company name, business registration number, representative, company telephone, business address, homepage, and revision. Schema and company scope stay in the storage envelope outside the Snapshot. Blank company telephone or homepage values are omitted from display. Opening date, taxation type, business type/items, home telephone, personal mobile, personal email, the protected company record, accounting periods, certificate/OCR data, audit data, and operational metadata are prohibited from this projection.
 
 `smartinput/index.html` is a NEXUS-header consumer during its standalone pilot. Its public route is `/smartinput/`; it is registered in the all-apps list and as the fixed-position SmartInput global entry. SmartInput remains part of the Shipping application group for application-list organization and status routing.
 
 ### 5.2.2 NEXUS company profile
 
-`nexus/home/index.html` reads the company summary through `company.profile_read` and renders explicit `LOADING`, `EMPTY`, `READY`, or `ERROR` states. `nexus/company.html` owns the view/edit experience. Every authenticated Foundation reader can view the profile and accounting periods; only the unique owner master can write, manage accounting periods, review OCR extraction, create a deployment backup, or run the task-scoped migration. `FULL_ACCESS`, `VIEWER`, and `CUSTOM` roles never receive `admin.company`.
+`nexus/home/index.html` renders its company summary from `NEXUS_COMPANY_PUBLIC_FOOTER_V1` and does not call or await `company.profile_read`. `nexus/company.html` is the owner-master maintenance route; it does not install its protected form, OCR, or accounting-period DOM until the authenticated session has `OWNER_MASTER` and `admin.company`. `FULL_ACCESS`, `VIEWER`, and `CUSTOM` roles never receive `admin.company`, and the gateway plus ONEAPP service recheck that authority for every protected company read and management operation.
 
 The canonical state is server-owned by `company-profile.gs` in `CompanyProfile_NEXUS`, `CompanyAccountingPeriods_NEXUS`, `CompanyAudit_NEXUS`, `CompanyBackups_NEXUS`, and `CompanyMigrations_NEXUS`. Browser `localStorage`, `sessionStorage`, defaults, and per-load seeding are not company data stores. Profile and accounting writes require the current company revision, run under the common script lock, append an audit record, verify the saved snapshot, and restore every affected sheet snapshot if any step fails.
 
@@ -168,13 +172,14 @@ Foundation is the first pilot consumer. `Master.html`, its embedded `partner_db.
 
 The current applications share the browser database `MerchOpsDB` and a set of `localStorage` keys.
 
-The NEXUS company profile is an explicit exception to browser-owned state: its canonical record, revisions, accounting periods, audit, backups, and migration marker exist only in the protected server sheets described in 5.2.2.
+The NEXUS protected company profile is an explicit exception to browser-owned state: its canonical record, revisions, accounting periods, audit, backups, and migration marker exist only in the protected server sheets described in 5.2.2. The separately allow-listed public Footer projection may retain one user/company/schema-scoped local Snapshot for immediate rendering; it is not a writable company-profile store and a different authenticated user never hydrates that envelope.
 
 Important contracts include:
 
 | Contract | Current key or resource | Main consumers |
 |---|---|---|
-| Company profile | Protected Apps Script sheets owned by `company-profile.gs`; no browser storage key | NEXUS work home and `nexus/company.html` through the authenticated gateway |
+| Company profile | Protected Apps Script sheets owned by `company-profile.gs`; no browser storage key | Owner-master `nexus/company.html` through the authenticated gateway |
+| Public company Footer | `oneapp.nexus.company-public.ONEAPP.NEXUS_COMPANY_PUBLIC_FOOTER_V1.<userScope>` envelope scoped by user/schema/company, containing a Snapshot with six public fields plus revision only | Every protected NEXUS business screen through the common auth bootstrap and shared Footer component |
 | Product master | `merchMaster_v870`, `MerchOpsDB` / `master_products`; B+ state `oneapp.foundation.product-backup-state.v1` is committed atomically with each master replacement | MerchOps, SmartParser, DataOps synchronization, export center, settings, history viewer, ORDER Q 수기입력(읽기 전용 검색) |
 | Master change notification | `merchMaster_sync_trigger` | SmartParser, DataOps, export center, and settings; MerchOps reloads master values on a full page refresh and keeps an open worktable unchanged |
 | Change history | `merchHistory_v870` | MerchOps, SmartParser, DataOps, history viewer, cloud backup |

@@ -1,5 +1,5 @@
 {
-  "schemaVersion": "1.6.0",
+  "schemaVersion": "1.6.1",
   "updatedAt": "2026-08-28",
   "repository": {
     "fullName": "orderzoneapp-coder/oneapp",
@@ -50,7 +50,7 @@
       "sharedContracts": [
         "nexus-auth",
         "nexus-header",
-        "company-profile"
+        "company-public-footer"
       ]
     },
     {
@@ -59,7 +59,7 @@
       "path": "nexus/company.html",
       "kind": "web-entry",
       "status": "production",
-      "purpose": "Show the authenticated company profile to all permitted users and let the unique owner master maintain company fields, accounting periods, addresses, and locally extracted business-certificate values.",
+      "purpose": "Let only the unique owner master maintain the protected company profile, accounting periods, addresses, and locally extracted business-certificate values; ordinary users receive only the public footer projection.",
       "productionWrites": true,
       "navigatesTo": [
         "nexus-work-home"
@@ -419,6 +419,7 @@
           "orderq_sync_pull",
           "orderq_order_head",
           "nexus_gateway_company_profile_get",
+          "nexus_gateway_company_public_profile_get",
           "nexus_gateway_company_profile_write",
           "nexus_gateway_company_accounting_period_get",
           "nexus_gateway_company_accounting_period_write",
@@ -597,13 +598,15 @@
       "resources": {
         "gateway": "nexus/server/nexus-auth-gateway.gs",
         "client": "nexus/common/nexus-auth.js",
+        "protectedScreenFooterBootstrap": "nexus/common/nexus-company-footer.js?v=1.0.0",
         "configuration": "nexus/common/nexus-auth-config.js",
         "scriptProjectId": "1KNiTNpNRqPYM7XM5MSzGObwfUd303bZRcjgm16MVG3xNqcQpymYXaPI5",
         "productionWebApp": "https://script.google.com/macros/s/AKfycbwIaouo6kzff1J3H3B0K5bWuAEJAcp4K21tyEkL2BuM-SiNsPDGGYVBEXIkBeUGwp4i/exec",
-        "deployedVersion": 18,
+        "deployedVersion": 20,
+        "rollbackVersion": 19,
         "deployedContractVersion": "NEXUS_AUTH_V2",
         "sourceContractVersion": "NEXUS_AUTH_V2",
-        "cacheVersion": "2.1.1",
+        "cacheVersion": "2.1.2",
         "contextRefreshLeadSeconds": 90,
         "contextRefreshRetrySeconds": 15,
         "contextRefreshMode": "active-tab background refresh; full server verification remains mandatory before app-ready and gateway access",
@@ -654,7 +657,7 @@
       "schemaVersion": "NEXUS_HEADER_V3",
       "resources": {
         "component": "nexus/common/nexus-top.js",
-        "componentVersion": "1.9.2",
+        "componentVersion": "1.10.0",
         "configuration": "nexus/common/apps-config.js",
         "globalActions": "window.NEXUS_GLOBAL_ACTIONS",
         "globalActionVisibilityPreference": "oneapp.nexus.v1.hiddenGlobalActions",
@@ -670,13 +673,12 @@
       "id": "company-profile",
       "owner": "nexus-company",
       "consumers": [
-        "nexus/home/index.html",
         "nexus/company.html",
         "nexus/server/nexus-auth-gateway.gs",
         "code.gs"
       ],
       "schemaVersion": "NEXUS_COMPANY_PROFILE_V1",
-      "writerPolicy": "All signed-in users with Foundation read access may read. Only OWNER_MASTER through admin.company may write, extract reviewed certificate fields, create deployment backups, or run the task-scoped one-time migration.",
+      "writerPolicy": "Only OWNER_MASTER through admin.company may read or write the protected record, manage accounting periods, extract reviewed certificate fields, create deployment backups, or run the task-scoped one-time migration. Ordinary business screens consume only company-public-footer.",
       "resources": {
         "serverModule": "company-profile.gs",
         "profileSheet": "CompanyProfile_NEXUS",
@@ -688,14 +690,76 @@
         "companyId": "ONEAPP",
         "oneappScriptProjectId": "1wdjJqg_b5SlYDTqt33oNLjxd4OXq5apNwrJ5JQqpr8W2XsxZINLbSXdX",
         "oneappProductionWebApp": "https://script.google.com/macros/s/AKfycbzOUOIu_bP7NkiFVziDR0Og1da1KO1ePoU09Q3pSlPr-9uD-WkdCpWN7nidO5hlrJi6Qw/exec",
-        "oneappDeployedVersion": 41,
-        "oneappRollbackVersion": 40,
-        "gatewayDeployedVersion": 19,
-        "gatewayRollbackVersion": 18,
+        "oneappDeployedVersion": 42,
+        "oneappRollbackVersion": 41,
+        "gatewayDeployedVersion": 20,
+        "gatewayRollbackVersion": 19,
         "postalCode1": "05699",
         "rawCertificateStorage": false,
         "representativeBirthDateStorage": false
       }
+    },
+    {
+      "id": "company-public-footer",
+      "owner": "nexus",
+      "consumers": [
+        "nexus/home/index.html",
+        "nexus/admin/index.html",
+        "nexus/company.html",
+        "settings.html",
+        "history_viewer.html",
+        "export_center.html",
+        "Master.html",
+        "Item_manager.html",
+        "partner_db.html",
+        "MerchOps.html",
+        "SmartParser.html",
+        "DataOps.html",
+        "orders.html",
+        "orderops_list.html",
+        "orderops/list.html",
+        "orderops/list1.html",
+        "orderops/input.html",
+        "orderops/smartparser.html",
+        "orderq/index.html",
+        "orderq/input.html",
+        "orderq/parser.html",
+        "orderq/collector.html",
+        "orderq/cloud.html",
+        "orderq/operations.html",
+        "orderq/products.html",
+        "orderq/dispatch.html",
+        "orderq/purchase.html",
+        "orderq/sale.html",
+        "orderq/reconciliation.html",
+        "orderq/erp.html",
+        "orderq/transition.html",
+        "orderq/admin-test.html",
+        "orderq/admin-test-guide.html",
+        "smartinput/index.html"
+      ],
+      "schemaVersion": "NEXUS_COMPANY_PUBLIC_FOOTER_V1",
+      "purpose": "Render one immediate public company-information projection on every NEXUS business screen, then refresh it in the background without blocking authentication or app readiness.",
+      "publicFields": [
+        "companyName",
+        "businessNumber",
+        "representativeName",
+        "companyPhone",
+        "businessAddress",
+        "homepage",
+        "revision"
+      ],
+      "resources": {
+        "component": "nexus/common/nexus-company-footer.js",
+        "componentVersion": "1.0.0",
+        "companyId": "ONEAPP",
+        "storageKeyPrefix": "oneapp.nexus.company-public.ONEAPP.NEXUS_COMPANY_PUBLIC_FOOTER_V1.<userScope>",
+        "gatewayOperation": "company.public_profile_read",
+        "upstreamAction": "nexus_gateway_company_public_profile_get",
+        "refreshTtlSeconds": 120
+      },
+      "privacyPolicy": "The Snapshot contains exactly the six allow-listed public fields and revision. User, schema, and company scope stay in the storage key/envelope outside the Snapshot. A user can hydrate only that user's envelope. The projection excludes the protected profile, accounting periods, certificate/OCR data, audit data, opening date, taxation type, business type/items, private phone numbers, mobile numbers, and email addresses.",
+      "rollback": "Revert the static component and gateway/upstream public projection together. The protected company profile and its revisioned writes are not migrated or deleted."
     },
     {
       "id": "nexus-app-ui",

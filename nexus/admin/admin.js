@@ -128,5 +128,13 @@
   });
 
   renderPermissionChecks('invitePermissionChecks',[]); applyProfileState('inviteRole','invitePermissionChecks');
-  auth.ready.then(session => { if (session?.user?.role === 'OWNER_MASTER') loadUsers(); });
+  auth.ready.then(session => {
+    if (session?.user?.role !== 'OWNER_MASTER') return;
+    const companyLink = document.createElement('a');
+    companyLink.className = 'portal-link';
+    companyLink.href = '/nexus/company.html?mode=edit';
+    companyLink.textContent = '회사정보 수정';
+    document.getElementById('adminHeaderActions').prepend(companyLink);
+    loadUsers();
+  });
 })();
