@@ -24,8 +24,7 @@ parseInlineScripts(parser, "SmartParser");
 JSON.parse(manifest);
 
 assert.match(merch, /ONEAPP MerchOps - Main Workspace \[v\d+\.\d+\.\d+_[^\]]+\]/);
-assert.match(parser, /<title>Smart Parser<\/title>/);
-assert.match(parser, /v3\.\d+\.\d+ CatalogWarehousePricing/);
+assert.match(parser, /ONEAPP MerchOps - Smart Parser \[v3\.\d+\.\d+/);
 
 assert.match(merch, /window\.hasMerchExistingWorktableRows =/);
 assert.match(merch, /const preserveExistingWorktable = window\.hasMerchExistingWorktableRows/);
@@ -75,28 +74,14 @@ assert.equal(displayBrowser.getMerchDisplayBaseRows({
   P003: { 코드: "P003", sources: { estimate: {} }, finalData: {} },
 }, resetMaster, { suppressMasterFallback: true })[0].코드, "P003",
   "Newly loaded work rows must display even before the reset guard state effect settles");
-const editedCategoryRows = displayBrowser.getMerchDisplayBaseRows({
-  MASTER_LOOKUP__P001: { 코드: "P001", _managedKey: "MASTER_LOOKUP__P001", finalData: { 행사가: 0 }, sources: {} },
-}, resetMaster, { suppressMasterFallback: true, masterLookupMode: "category" });
-assert.equal(editedCategoryRows.length, 2,
-  "editing one category row must keep the complete category master worktable available");
-assert.equal(editedCategoryRows.find(row => row.코드 === "P001").finalData.행사가, 0,
-  "the edited category row must overlay its untouched master lookup row without losing numeric zero");
 assert.equal(displayBrowser.isMerchUnmodifiedMasterLookupRow(explicitAllRows[0]), true,
   "An untouched master lookup row must not be eligible for F7");
 assert.equal(displayBrowser.isMerchUnmodifiedMasterLookupRow({
   ...explicitAllRows[0],
   finalData: { 입고가: 1234, _editedFields: { 입고가: true } },
 }), false, "An edited master lookup row must become eligible for F7");
-assert.match(merch, /const \[suppressMasterFallback, setSuppressMasterFallback\] = useState\(false\);/);
-const managedLookupEffectStart = merch.indexOf("if (Object.keys(managedItems || {}).length === 0) return;");
-const managedLookupEffectEnd = merch.indexOf("}, [managedItems, suppressMasterFallback, masterLookupMode]);", managedLookupEffectStart);
-const managedLookupEffect = merch.slice(managedLookupEffectStart, managedLookupEffectEnd);
-assert.doesNotMatch(managedLookupEffect, /setMasterLookupMode\(''\)/,
-  "editing a master lookup row must not clear its category/all lookup scope");
-assert.match(merch, /if \(hasSavedWork\)[\s\S]*if \(savedLookupMode\)[\s\S]*data\.setMasterLookupMode\(savedLookupMode === 'category'/,
-  "session restore must retain the category lookup scope together with edited rows");
-assert.match(merch, /data\.setSuppressMasterFallback\(false\);\s*data\.setMasterLookupMode\('all'\);\s*data\.setManagedItems\(\{\}\);/);
+assert.match(merch, /const \[suppressMasterFallback, setSuppressMasterFallback\] = useState\(true\);/);
+assert.match(merch, /data\.setSuppressMasterFallback\(true\);\s*data\.setMasterLookupMode\(''\);\s*data\.setManagedItems\(\{\}\);/);
 assert.match(merch, /handleMasterLookup\?\.\(\[\]\)/);
 assert.match(merch, /handleMasterLookup\?\.\(nextCategories\)/);
 assert.match(merch, /suppressMasterFallback: data\.suppressMasterFallback/);
@@ -124,17 +109,16 @@ const loadTools = merch.indexOf('data-merch-toolbar-group": "parser-catalog"');
 const excelTools = merch.indexOf('data-merch-toolbar-group": "excel"', loadTools);
 const tableView = merch.indexOf("showTableViewSelect && commonExcelTableViewOptions.length > 0", excelTools);
 const operationTools = merch.indexOf('data-merch-toolbar-group": "operations"', tableView);
-const mainFilter = merch.indexOf('title: "필터·조회: 조건을 선택한 뒤 우측 액션을 실행합니다."', operationTools);
-const mainReset = merch.indexOf("onClick: handleReset", operationTools);
-const fixedTools = merch.indexOf('title: "출고가·제외·필터 초기화·검색"', mainFilter);
-const autoRule = merch.indexOf('"aria-label": "파일 불러오기 시 출고가 자동적용"', fixedTools);
+const autoRule = merch.indexOf('"aria-label": "파일 불러오기 시 출고가 자동적용"', operationTools);
 const manualRule = merch.indexOf("onClick: handleForceApplyMarginRules", autoRule);
-assert.ok(loadTools >= 0 && excelTools > loadTools && tableView > excelTools && operationTools > tableView && mainReset > operationTools && mainReset < mainFilter && fixedTools > mainFilter && autoRule > fixedTools && manualRule > autoRule,
-  "The table view must stay in the Excel group, reset in the top operation group, and out-price controls in the lower-right group");
+const mainReset = merch.indexOf("onClick: handleReset", manualRule);
+assert.ok(loadTools >= 0 && excelTools > loadTools && tableView > excelTools && operationTools > tableView && autoRule > operationTools && manualRule > autoRule && mainReset > manualRule,
+  "The table view must stay in the Excel group while auto-rule, manual out-price, and reset stay in the operation group");
+const fixedTools = merch.indexOf('title: "기본 판매가·필터 초기화·검색"');
 const filterReset = merch.indexOf("onClick: handleFilterResetOnly", fixedTools);
 const searchBar = merch.indexOf("React.createElement(SearchBar", fixedTools);
-assert.ok(fixedTools >= 0 && filterReset > manualRule && searchBar > filterReset,
-  "The moved out-price controls must precede filter reset and search");
+assert.ok(fixedTools >= 0 && filterReset > fixedTools && searchBar > filterReset,
+  "Filter reset must remain immediately left of search");
 assert.equal((merch.match(/onClick: handleForceApplyMarginRules/g) || []).length, 1,
   "Rule apply must appear once and must not remain in the promotion workbench");
 assert.match(merch, /출고가: 선택행 또는 현재 화면에 기존 마진룰을 수동 적용합니다/);

@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import {
-  isSelectableMasterProduct,
   mergeProductCatalog,
   normalizeManualPriceOptions,
   normalizeMasterProduct,
@@ -39,26 +38,12 @@ const history = [normalizeMasterProduct({ itemCode: '101020114', itemName: '이�
 const catalog = mergeProductCatalog(common, history);
 
 assert.equal(catalog.length, 2, '공통 마스터가 동일 코드의 이력 상품보다 우선해야 한다.');
-assert.equal(catalog[0].masterProductId, catalog[0].itemCode, '공통 마스터의 실제 코드 기본키를 masterProductId로 보존해야 한다.');
 assert.equal(searchProductCatalog('101020114', catalog)[0].itemName, '대파_단', '품목코드 정확일치 검색');
-assert.equal(searchProductCatalog('101020114', catalog)[0].masterProductId, '101020114', '상품검색 결과에 실제 공통 마스터 ID가 포함되어야 한다.');
 assert.equal(searchProductCatalog('대파', catalog)[0].itemCode, '101020114', '품목명 부분검색');
 assert.equal(searchProductCatalog('한단', catalog)[0].itemCode, '101020114', '제2품명·약칭 검색');
 assert.equal(searchProductCatalog('채소', catalog)[0].itemCode, '101020114', '검색창정보 검색');
 assert.equal(searchProductCatalog('무우', catalog)[0].itemCode, '101010111', '유사 품명 검색');
 assert.equal(productCategoryCode('101010111'), '101010', '품목코드 앞 6자리는 상품 카테고리다.');
-const keyedMaster = normalizeMasterProduct({ 품목명: '공통 마스터 전용상품' }, 'MASTER-ONLY-1', 'COMMON_MASTER', 'MASTER-ONLY-1');
-assert.equal(keyedMaster.masterProductId, 'MASTER-ONLY-1', 'IndexedDB 커서의 실제 기본키를 마스터 ID로 사용해야 한다.');
-assert.equal(normalizeMasterProduct({ 코드: 'MASTER-ONLY-1', masterProductId: 'STALE-ID', 품목명: '공통상품' }, '', 'COMMON_MASTER', 'MASTER-ONLY-1').masterProductId, 'MASTER-ONLY-1',
-  '공통 마스터 레코드의 임의 필드보다 IndexedDB 실제 기본키가 우선해야 한다.');
-assert.equal(normalizeMasterProduct({ itemCode: 'HISTORY-1', itemName: '이력상품' }, '', 'ORDERQ_HISTORY').masterProductId, '',
-  'ORDER Q 이력 상품에는 공통 마스터 ID를 합성하면 안 된다.');
-assert.equal(isSelectableMasterProduct(common[0]), true, '실제 공통 마스터의 완전한 상품만 선택할 수 있어야 한다.');
-assert.equal(isSelectableMasterProduct(normalizeMasterProduct({
-  itemCode: 'HISTORY-STALE', itemName: '삭제된 이력상품', productId: 'PRD-HISTORY-STALE', masterProductId: 'DELETED-MASTER'
-}, '', 'ORDERQ_HISTORY')), false, '삭제된 마스터를 가리키는 ORDER Q 이력 상품은 후보에서 제외해야 한다.');
-assert.equal(isSelectableMasterProduct(normalizeMasterProduct({ 품목코드: 'EMPTY-NAME' }, '', 'COMMON_MASTER')), false,
-  '품목명이 비어 있는 불완전한 마스터 행은 후보에서 제외해야 한다.');
 
 assert.equal(normalizeWarehouseCode('1'), '01', '숫자 창고코드는 선행 0을 포함한 정식 코드로 정규화해야 한다.');
 assert.deepEqual(warehouseIdentity({ warehouse: '1창고' }), {
@@ -143,10 +128,9 @@ assert.match(input, /loadProductCatalog/);
 assert.match(input, /searchProductCatalog/);
 assert.match(input, /row\.dataset\.productId \? MATCH_STATUS\.MATCHED : MATCH_STATUS\.MATCH_FAILED/);
 assert.match(input, /productId:\s*row\.dataset\.productId \|\| null/);
-assert.match(input, /order_in_logo_header_white_bg\.svg/);
-assert.match(input, /<nexus-top app-id="orderin">[\s\S]*?<\/nexus-top>/);
-assert.match(input, /orderq-db\.js\?v=0\.12\.1|order-intake-engine\.js\?v=0\.15\.0/,
-  'IndexedDB 화면은 이전 캐시 모듈과 섞이지 않도록 릴리스 쿼리를 사용해야 한다.');
+assert.match(input, /vNext 0\.7\.1/);
+assert.match(input, /orderq-db\.js\?v=0\.7\.1|order-intake-engine\.js\?v=0\.7\.1/,
+  'IndexedDB v6 화면은 이전 캐시 모듈과 섞이지 않도록 릴리스 쿼리를 사용해야 한다.');
 for (const contract of [
   "const MANUAL_DEFAULTS_KEY = 'oneapp.orderq.manual-defaults.v1'",
   "customerNameInput.addEventListener('keydown'",
@@ -252,26 +236,17 @@ assert.match(intake, /vatAmount: asNumberOrNull\(input\.vatAmount\)/,
   '부가세 수정값은 ORDER_ITEM에 보존해야 한다.');
 assert.match(intake, /priceType: String\(input\.priceType \?\? ''\)\.trim\(\)/,
   '선택한 단가 항목명은 ORDER_ITEM에 보존해야 한다.');
-assert.match(intake, /masterProductId: String\(input\.masterProductId \?\? ''\)\.trim\(\) \|\| null/,
-  '공통 마스터의 실제 ID는 ORDER_ITEM에 보존해야 한다.');
 assert.match(intake, /resolveWarehouseInTransaction/,
   '수기주문 저장은 창고 문자열을 창고 마스터 핵심키로 해결해야 한다.');
 assert.match(intake, /warehouseSnapshot\(payload, warehouse\)/,
   '주문에는 창고 ID·코드·명칭 스냅샷과 기존 문자열을 함께 보존해야 한다.');
 
 const dbSource = await readFile(new URL('../orderq/orderq-db.js', import.meta.url), 'utf8');
-assert.match(dbSource, /export const DB_VERSION = ORDERQ_DB_VERSION/);
+assert.match(dbSource, /const DB_VERSION = 6/);
 assert.match(dbSource, /WAREHOUSES: 'warehouses'/);
 assert.match(dbSource, /WAREHOUSE_ALIASES: 'warehouseAliases'/);
 const warehouseSource = await readFile(new URL('../orderq/warehouse-master.js', import.meta.url), 'utf8');
 assert.match(warehouseSource, /migrateLegacyOrderWarehouses/,
-  'DB v7은 기존 v6 주문의 warehouse 문자열을 창고 마스터 핵심키로 지연 마이그레이션해야 한다.');
-
-const productSearchSource = await readFile(new URL('../orderq/product-master-search.js', import.meta.url), 'utf8');
-assert.match(productSearchSource, /objectStore\(COMMON_MASTER_STORE\)\.openCursor\(\)/,
-  '공통 마스터 조회는 값뿐 아니라 IndexedDB 실제 기본키를 함께 읽어야 한다.');
-const intakeIdentitySource = await readFile(new URL('../orderq/intake-identity.js', import.meta.url), 'utf8');
-assert.match(intakeIdentitySource, /masterProductId: pick\(item, \['masterProductId'\]\)/,
-  '원문 멱등성 비교에도 실제 마스터 ID가 포함되어야 한다.');
+  'DB v6는 기존 주문의 warehouse 문자열을 창고 마스터 핵심키로 지연 마이그레이션해야 한다.');
 
 console.log('PASS: ORDER Q 수기입력 공통 마스터 검색·선택·미매칭 저장 계약');

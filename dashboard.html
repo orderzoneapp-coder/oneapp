@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP NEXES - Dashboard [v2.1 AppRoutes]</title>
+    <title>ONEAPP NEXES - Dashboard [v2.0]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -99,15 +99,15 @@
                 
                 { id: 'item-info', label: '마스터 DB', icon: "database", path: 'Master.html', group: 'master', isReady: true },
                 { id: 'item-manage', label: '상품 관리', icon: "package-search", path: 'Item_manager.html', group: 'master', isReady: true },
-                { id: 'pipeline', label: '시세 관리', icon: "file-spreadsheet", path: 'MerchOps.html', group: 'master', isReady: true },
-                { id: 'parser', label: '스마트 파서', icon: "zap", path: 'SmartParser.html', group: 'master', isReady: true },
+                { id: 'pipeline', label: '시세 관리', icon: "file-spreadsheet", path: 'Pipeline.html', group: 'master', isReady: true },
+                { id: 'parser', label: '스마트 파서', icon: "zap", path: 'Parser.html', group: 'master', isReady: true },
                 { id: 'partner-db', label: '거래처 DB', icon: "book-open", path: 'partner_db.html', group: 'master', isReady: true },
                 { id: 'partners', label: '거래처 관리', icon: "users", path: 'partners.html', group: 'master', isReady: true },
 
                 { id: 'orders', label: '주문 관리', icon: "shopping-bag", path: 'orders.html', group: 'ops', isReady: true },
                 { id: 'purchases', label: '구매 관리', icon: "credit-card", path: 'purchases.html', group: 'ops', isReady: true },
                 { id: 'sales', label: '판매 관리', icon: "line-chart", path: 'sales.html', group: 'ops', isReady: true },
-                { id: 'inventory', label: '재고 관리', icon: "boxes", path: 'DataOps.html', group: 'ops', isReady: true },
+                { id: 'inventory', label: '재고 마감', icon: "boxes", path: 'inventory.html', group: 'ops', isReady: true },
                 { id: 'print-center', label: '출력 센터', icon: "printer", path: 'print_center.html', group: 'ops', isReady: true },
 
                 { id: 'insight', label: '경영 보고서', icon: "pie-chart", path: 'Report.html', group: 'admin', isReady: true },
@@ -136,7 +136,7 @@
                                 <div className="flex flex-col border-l-2 border-slate-700/70 pl-4 py-0.5">
                                     <div className="flex items-center">
                                         <span className="font-black text-[16px] leading-none text-indigo-400 tracking-widest uppercase mt-0.5">NEXES</span>
-                                        <span className="ml-2.5 bg-emerald-500/10 border border-emerald-400/30 text-emerald-400 px-[5px] py-[2px] rounded text-[9px] font-black tracking-wider shadow-sm leading-none">v2.1</span>
+                                        <span className="ml-2.5 bg-emerald-500/10 border border-emerald-400/30 text-emerald-400 px-[5px] py-[2px] rounded text-[9px] font-black tracking-wider shadow-sm leading-none">v2.0</span>
                                     </div>
                                     <span className="text-[10px] text-slate-400/90 font-medium tracking-[0.15em] mt-1 uppercase">One Board</span>
                                 </div>

@@ -1,16 +1,12 @@
 const UNIT_ALIASES = Object.freeze({
-  box: 'BOX', 박스: '박스', 상자: '상자', ea: 'EA', 개: '개', 봉: '봉', 팩: '팩', 단: '단', 망: '망', 묶음: '묶음',
+  box: 'BOX', 박스: '박스', ea: 'EA', 개: '개', 봉: '봉', 팩: '팩', 단: '단', 망: '망', 묶음: '묶음',
   kg: 'kg', 키로: '키로', 통: '통', 병: '병', 포: '포', 롤: '롤', 장: '장', 대: '대', 판: '판'
 });
 const UNIT_SOURCE = Object.keys(UNIT_ALIASES).sort((a, b) => b.length - a.length).join('|');
 const ACK_LINE = /^(?:[/.]|ㅇ|네|넵|예|확인|감사|감사합니다|알겠습니다)$/i;
 
 function cleanLine(value) {
-  return String(value ?? '').normalize('NFKC').trim()
-    .replace(/^[\-•·*]+\s*/, '')
-    .replace(/^\d+[.)]\s+/, '')
-    .replace(/[.,，。,:;!?]+$/g, '')
-    .trim();
+  return String(value ?? '').normalize('NFKC').trim().replace(/^[\-•·*]+\s*/, '').replace(/^\d+[.)]\s+/, '');
 }
 
 export function parseOrderLine(rawLine) {
@@ -62,7 +58,7 @@ export function parseOrderLine(rawLine) {
     quantity,
     rawUnit,
     finalUnit: rawUnit,
-    excluded: quantity === null || (!productText && !contextReference),
+    excluded: quantity === null && !productText,
     reason: quantity === null ? 'QUANTITY_UNRESOLVED' : (productText ? 'PARSED' : 'CONTEXT_PRODUCT_UNRESOLVED')
   };
 }
@@ -70,6 +66,6 @@ export function parseOrderLine(rawLine) {
 export function parseOrderLines(rawText) {
   return String(rawText ?? '').replace(/\r\n?/g, '\n').split('\n')
     .map(parseOrderLine)
-    .filter(line => line.rawText && !line.excluded);
+    .filter(line => line.rawText && !(line.excluded && line.reason === 'ACK_OR_EMPTY'));
 }
 

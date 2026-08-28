@@ -132,15 +132,6 @@ assert.equal(resolve(promoReset, master, "행사가").origin, "generated");
 assert.equal(resolve(promoReset, master, "행사테마").isExplicitBlank, true);
 assert.equal(browser.ONEAPP.EXPORT.buildWorkingPayload(promoReset, master).행사가, 0);
 
-const promoPriceReset = {
-  ...sourceRow,
-  finalData: { ...sourceRow.finalData, 행사가: 0, _promoPriceResetRequested: true },
-};
-assert.equal(resolve(promoPriceReset, master, "행사가").origin, "generated",
-  "price-only promo reset must own the zero promo price");
-assert.equal(resolve(promoPriceReset, master, "행사테마").origin, "master-reference",
-  "price-only promo reset must leave the master theme as a reference");
-
 const resumed = { ...sourceRow, finalData: { _salesResumeRequested: true } };
 assert.equal(browser.ONEAPP.EXPORT.buildWorkingPayload(resumed, master).판매여부, 1);
 
@@ -210,7 +201,6 @@ assert.match(merchSource.slice(f9Start, f9End), /ONEAPP\.EXPORT\.buildWorkingPay
 assert.match(merchSource, /String\(v\) === String\(initialVal\) && !\(isMasterReferenceCell && userEdited\)/, "same-value edits on gray references must be recorded");
 assert.match(merchSource.slice(f8Start, f8End), /explicitSale\.hasValue && explicitSale\.isExplicitBlank\) return ''/, "F8 must preserve an explicit blank sale cell");
 assert.match(merchSource.slice(f7Start, f7End), /newMaster\[item\.코드\]\['판매여부'\] = explicitSale\.isExplicitBlank \? ''/, "F7 must preserve an explicit blank sale cell");
-assert.match(merchSource.slice(f7Start, f7End), /promoPriceResetRequested[\s\S]*newMaster\[item\.코드\]\['행사가'\] = 0/, "F7 must commit the price-only promo reset");
 assert.match(merchSource.slice(f7Start, f7End), /commitCandidateFields = new Set\(\[\.\.\.Object\.keys\(activeSourceForCommit\), \.\.\.Object\.keys\(item\.finalData\)\]\)/, "F7 must inspect source-owned fields even when finalData omits them");
 
 assert.doesNotMatch(exportSource, /working\.품목명 \|\| master\['품목명'\]/, "Export Center must not mix master reference into working name");
@@ -220,10 +210,8 @@ assert.doesNotMatch(exportSource, /saleIsGenerated/, "F9 must not generate sale 
 assert.match(exportSource, /'검색어등록', '창고', '단위', '1종코드'/, "F9 must preserve actual warehouse and unit working values");
 assert.doesNotMatch(exportSource, /if \(!hasStockValue\(working\.재고수량\)\) return DEFAULT_EXPORT_STOCK_QTY/, "F9 must not generate stock 999 when the source column is missing");
 assert.doesNotMatch(merchSource.slice(f8Start, f8End), /shopUploadStock = !window\.isBlankCell\(finalStockRaw\) \? window\.parseNum\(finalStockRaw\) : 999/, "F8 must not generate stock 999 when the source column is missing");
-assert.match(merchSource.slice(f8Start, f8End), /const erpData = \[\['품목코드', '입고가', '0', '출고가', '0', '입고B', 'n', '도매A', 'n', '도매B', 'n'\]\]/,
-  "F8 ERP output must use the approved 11-column header");
-assert.doesNotMatch(merchSource.slice(f8Start, f8End), /finalTransmission|erpBasicFlag|subErpBasicFlag/,
-  "F8 ERP output must not retain removed final-transmission, promotion, or basic tail values");
+assert.match(merchSource.slice(f8Start, f8End), /finalTransmission = getBestNumByAliases\(row, \['최종전송', '최종\(전송\)', '최종입고'\], ''\)/, "F8 missing final-transmission must use an explicit blank default");
+assert.doesNotMatch(merchSource.slice(f8Start, f8End), /finalTransmission = getBestNumByAliases\(row, \['최종전송', '최종\(전송\)', '최종입고'\], inPrice\)/, "F8 must not copy inbound price into a missing final-transmission column");
 assert.match(merchSource.slice(f8Start, f8End), /const subName = String\(subMaster\['품목명'\] \|\| subMaster\['상품명'\] \|\| ''\)\.trim\(\)/, "F8 may use registered master name metadata only when a calculated subdivision product is absent from the working list");
 assert.doesNotMatch(dataOpsSource, /merch_export_draft/, "DataOps is not a consumer of the MerchOps F9 draft contract");
 

@@ -2,26 +2,19 @@
 
 신규 ORDER Q 개발 경로. 기존 `orderops/` 및 `orderops_list.html`은 변경하지 않는다.
 
-## vNext 0.9.0 URL
-
-M9 central rule: local DRAFT editing remains available, but RELEASED/READY_TO_CONFIRM/CONFIRMED dispatch, purchase confirmation, reversal, correction, reservation, inventory movement, and ERP-state changes require the central authority endpoint. The server owns revision CAS, expiring leases, cross-ledger quantity/link validation, and global ledger sequence; an unavailable server blocks the official command before local business stores are changed. Expired and aborted lease tokens are terminal and cannot commit later.
-
-M10 hardens the same central boundary without changing business effects. A large official command stores bounded transaction summaries and digest-verified chunk rows instead of whole before/after payloads in one `ORDERQ_M9_TXN_LOG` cell. `PREPARED`/`RECOVERY_REQUIRED` blocks pull and every official command until the server deterministically verifies the complete commit or restores entities, changes, command, cursor, and ledger sequence. Duplicate success requires a `COMMITTED` official transaction plus matching mutation key-set/change digests; M9 migration V2 and official-command recovery use distinct schemas.
-
-ERP remains a separate confirmed accounting system. `/orderq/erp.html` exports operational READY facts to XLSX and reconciles returned exact identifiers and complete row contents. Every expected row must match exactly once before a document advances; partial, missing, duplicate, conflicting, similar, or multiple candidates keep the whole document `REVIEW_REQUIRED`. ORDER Q never posts, cancels, or merges ERP vouchers automatically.
+## vNext 0.7.1 URL
 
 - `/orderq/` 또는 `/orderq/index.html`: 주문현황(전표 목록·펼침·상품상세·수정·출력)
 - `/orderq/input.html`: 주문서 직접입력·수정
 - `/orderq/parser.html`: ORDER IN(카카오/일반 텍스트 SmartParser)
 - `/orderq/operations.html`: ORDER Q 운영관리(전표조건 선필터·상품집계·재고·판매이관·미출고)
-- `/orderq/dispatch.html`: 출고 DRAFT 판단·다중 재고출처·동일 PC 작업목록·예약·작업사실 입력·정상/부분 출고확정
 - `/orderops/list.html`: 기존 Excel 기반 출고관리(호환 유지)
 - `/orderq/collector.html`: 과거 주문·판매·구매·재고·거래처원장·카카오 이력수집과 주문↔판매 연결
 - `/orderq/cloud.html`: Cloud Sync 설정·충돌 처리
 
 ## 데이터와 처리 원칙
 
-브라우저 IndexedDB `oneapp-orderq-vnext` v7을 로컬 업무 DB로 사용한다. 기존 v6 주문·Collector 자료는 행을 다시 쓰지 않고 그대로 읽는다. 기존 주문·이벤트는 Apps Script Web App을 통해 목적별 Google Sheet와 증분 동기화하지만, M1의 신규 v7 엔티티는 동기화 계약만 정의하고 실제 서버 동기화는 아직 수행하지 않는다.
+브라우저 IndexedDB `oneapp-orderq-vnext` v6를 로컬 업무 DB로 사용하고, Apps Script Web App을 통해 목적별 Google Sheet와 증분 동기화한다.
 
 업무 흐름은 `주문서 입력 → 주문현황(전표관리) → ORDER Q(운영관리)`로 구분한다. 직접입력·ORDER IN·Excel·쇼핑몰·외부연동은 모두 공통 `createOrder`를 호출하며 입력경로는 `inputChannel`로 기록한다. 저장 후 주문현황으로 이동해 방금 저장한 전표를 최상단에서 자동으로 펼친다.
 
@@ -47,19 +40,7 @@ ERP remains a separate confirmed accounting system. `/orderq/erp.html` exports o
 - `salesDocuments`, `salesLines`, `purchaseDocuments`, `purchaseLines`
 - `ledgerDocuments`, `ledgerLines`, `inventorySnapshots`, `inventoryLines`
 - `historicalOrderGroups`, `historicalOrderLines`, `fulfillmentLinks`, `fulfillmentBalances`, `parserEvidence`
-- `dispatchDecisions`, `dispatchLines`, `dispatchStockAllocations`, `dispatchApprovals`
-- `inventoryReservations`, `inventoryMovements`, `dispatchReconciliations`
 - `syncQueue`, `meta`
-
-M8은 DataOps에 ORDER Q 출고 대사 패널을 연결한다. 확정된 출고·판매·재고 Movement·주문이행은 화면과 저장소 모두에서 직접 덮어쓰지 않는다. 현장 확인값은 `dispatchReconciliations`에 기대값·실제값·차이수량과 원 dispatch/sales/movement/orderItem 연결로 저장하며, 정정은 `adjustDispatchAfterShipment()`의 단일 IndexedDB transaction 안에서 원 출고 전체 역분개와 수정 `DRAFT` 생성을 함께 처리한다. 수정 DRAFT는 기존 `RELEASED → READY_TO_CONFIRM → CONFIRMED` 경계를 다시 통과해야 한다. ERP `POSTED` 출고는 원 ERP 전표번호를 보존한 `CORRECTION_REQUIRED` 근거만 추가하며 ERP 전표를 자동 취소하거나 자동 재전송하지 않는다. M9 전 History와 Outbox는 계속 `LOCAL_ONLY`이다.
-
-M1은 외부 거래 식별자와 ERP 반영상태를 분리하고, 최소 감사자 `actorId`를 보존한다. 브라우저 DB 업그레이드 실패는 IndexedDB 버전 트랜잭션으로 자동 롤백되며, 백업 복원은 전체 입력을 먼저 검증한 뒤 하나의 원자적 트랜잭션으로 실행한다.
-
-M2의 `inventoryMovements`는 ORDER Q 운영재고의 부호 있는 불변 원장이다. 구매는 양수, 판매는 음수, 창고이동은 출발 음수·도착 양수로 기록하며 역분개는 원거래와 반대 부호를 추가한다. 최신 스냅샷의 `snapshotLastSequence` 이후 movement만 합산하고 음수 현재고를 0으로 보정하지 않는다.
-
-M3의 출고 작업대는 `DRAFT → RELEASED`까지만 처리한다. 일반 제안수량은 원 주문 전체가 아니라 부분취소·기존 이행·이행 역분개를 반영한 현재 미출고수량이다. DRAFT에서는 실제 작업상품·수량·창고별 allocation을 반복 수정하고 revision 충돌을 차단하며, 저장 버튼 전의 편집값도 로컬 초안버퍼에서 중단복원한다. RELEASED는 동일 PC 작업목록과 `inventoryReservations`를 만들지만 on-hand를 바꾸지 않고 available만 줄인다. 예약 충돌·음수 가용재고를 그대로 표시하며 회수·만료 시 예약을 해제한다. 작업자의 수량·상품·예외 입력은 작업사실로만 보존하고 판매전표·InventoryMovement·주문이행 확정은 M4 전까지 생성하지 않는다. M3 엔티티의 SyncQueue 상태는 `LOCAL_ONLY`이며 기존 Cloud 동기화의 전송·대기건 집계에서 제외한다. 여러 PC 작업배포는 M9 이전에는 지원하지 않는다.
-
-M4는 `RELEASED → READY_TO_CONFIRM → CONFIRMED` 경계를 사용한다. 관리자가 행과 창고별 실제수량을 저장해야만 `READY_TO_CONFIRM`이 되며 계획수량이나 작업자 보고값을 실제수량으로 묵시 대체하지 않는다. `confirmDispatch()`는 저장된 실제값만 다시 검증하고 판매전표·음수 `SALE_ISSUE` movement·정상 주문이행 이벤트·예약 소비·History·Outbox를 같은 IndexedDB 트랜잭션에서 처리한다. 실제수량이 계획보다 적으면 확정분만 반영하고 잔량은 다시 출고 제안할 수 있다. 다중 창고 부분출고는 창고별 실제수량을 명시해야 하며 시스템이 재고출처를 추정하지 않는다. 일괄확정도 `READY_TO_CONFIRM`만 대상으로 하며 DispatchDecision별로 독립 처리한다. READY 예약이 만료되거나 관리자가 회수하면 활성예약과 저장 실제값을 함께 무효화하고 편집 가능한 DRAFT로 원자 복구한다. 같은 idempotency key 재시도는 기존 결과를 반환하고 내용이 달라지면 거부한다. 음수재고는 차단하거나 0으로 자르지 않고 원값과 `NEGATIVE_INVENTORY` 대사 이슈를 함께 남긴다. `reverseDispatch()`는 원 확정자료를 바꾸지 않고 전체·부분 반대 판매행, 양수 reversal movement, 주문이행 역분개와 필요 시 주문 재개 이력을 한 transaction에 추가하며 누적 역분개는 원 수량·공급가·VAT·총액을 넘을 수 없다. 반복 부분 역분개의 마지막 잔량은 남은 금액을 정확히 사용해 누적 반대합계가 원 판매와 일치한다. 예약은 복구하지 않는다. ERP 상태는 `READY`까지만 설정하며 M9 전 확정·역분개 Outbox도 `LOCAL_ONLY`로 유지한다. 대체·소분·실제계량·초과출고는 M5 범위다.
 
 주문 수정은 `revision` 비교를 사용한다. 같은 주문을 두 탭에서 열고 한쪽이 먼저 저장하면, 다른 쪽의 오래된 revision 저장은 차단한다.
 
@@ -76,5 +57,3 @@ M4는 `RELEASED → READY_TO_CONFIRM → CONFIRMED` 경계를 사용한다. 관�
 단가 헤더는 클릭 가능한 드롭다운이며 기본값은 `판매가`다. 판매가는 행사가가 있으면 행사가, 없거나 0이면 출고가를 자동 적용한다. 헤더 선택이나 단가 셀의 ▲▼·키보드 위·아래 화살표로 `판매가 → 출고가 → 도매A → 도매B → 상장가 → 시중가 → 행사가`를 전환하면 헤더명과 전체 단가열이 함께 바뀐다. 직접 금액을 수정한 행은 `직접입력`, 서로 다른 단가가 섞인 주문은 `혼합단가`로 헤더에 표시한다. 선택한 단가 종류는 주문 품목의 `priceType`으로 보존한다.
 
 SmartParser는 원문을 `rawInputs`, 메시지별 판정·후보·관리자 확정값을 `parseResults`에 분리 저장한다. 신규 주문으로 확정할 때만 공통 `createOrder`를 호출한다. 부분 변경·취소 메시지는 주문 전체를 자동 변경하지 않고 수기 검수 대기로 남긴다. 동일 `sourceMessageKey`는 기존 결과를 다시 보여주며 신규 주문을 중복 생성하지 않는다.
-
-M10 관리자 직접 테스트는 `admin-test.html`에서만 실행된다. 이 경로는 `oneapp-orderq-admin-test-` 접두사의 별도 IndexedDB, 별도 세션 중앙 URL·토큰·deviceId·cutover 키를 강제해 운영 프로필과 섞이지 않는다. 화면은 `주문 확인 → 출고 준비 → 실제 출고수량 입력 → 출고 확정 → 결과 확인`의 정상 주문 1건만 안내하고, 판매 기록·재고 차감 기록·주문 처리 결과와 동일키 재시도 중복 0건을 한 화면에서 확인한다. `다시 시작`은 TEST 환경에서만 원 확정자료를 지우지 않고 append-only 역분개 후 새 주문을 시작하며 운영 데이터 초기화 기능은 제공하지 않는다.

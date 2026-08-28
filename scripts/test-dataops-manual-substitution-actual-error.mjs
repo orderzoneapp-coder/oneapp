@@ -26,20 +26,6 @@ assert.ok(
   inventoryEngineEnd > inventoryEngineStart,
   "Missing useInventoryEngine runtime end marker",
 );
-const inventoryEngineSource = mainScriptSource.slice(
-  inventoryEngineStart,
-  inventoryEngineEnd,
-);
-assert.doesNotMatch(
-  inventoryEngineSource,
-  /수기치환 보류|확정 환산관계가 없습니다|출처\/대상 판정이 애매합니다/,
-  "administrator-directed substitution must not contain policy-based blocking paths",
-);
-assert.match(
-  source,
-  /V1\.a22\.115_InputPerformance/,
-  "the deployed UI version must identify the administrator-action recovery release",
-);
 
 function createRuntime() {
   const hookState = [];
@@ -196,14 +182,12 @@ assert.ok(
   "actual source error +9 must produce source manual-substitution quantity -9",
 );
 assert.ok(
-  targetAfter.이슈.includes("🔄수기치환오차(+0)"),
-  "the target must report its own actual error without inferred quantity",
+  targetAfter.이슈.includes("🔄수기치환오차(+9)"),
+  "actual error +9 must win over unrelated Lot outbound quantity 2",
 );
 assert.equal(representative.history.length, 1);
 assert.equal(representative.history[0].sQty, 9);
-assert.equal(representative.history[0].tQty, 0);
-assert.equal(representative.history[0].administratorDirected, true);
-assert.equal(representative.history[0].costStatus, "UNAVAILABLE");
+assert.equal(representative.history[0].tQty, 9);
 assert.deepEqual(representative.alerts, []);
 
 const decimalSource = makeRow({
@@ -250,11 +234,11 @@ assert.ok(
 assert.ok(
   decimalResult.rows
     .find((row) => row.batchKey === decimalTarget.batchKey)
-    .이슈.includes("🔄수기치환오차(+0)"),
-  "a master conversion rate must not replace the administrator-visible target error",
+    .이슈.includes("🔄수기치환오차(+2.5)"),
+  "confirmed 1:2 conversion must derive decimal target quantity from actual error",
 );
 assert.equal(decimalResult.history[0].sQty, 1.25);
-assert.equal(decimalResult.history[0].tQty, 0);
+assert.equal(decimalResult.history[0].tQty, 2.5);
 
 const reverseSource = makeRow({
   ...actualSource,
@@ -294,11 +278,9 @@ const reverseResult = createRuntime().run(
 assert.equal(reverseResult.history[0].sQty, 4);
 assert.equal(
   reverseResult.history[0].tQty,
-  0,
-  "the system must not infer a target quantity or reverse the administrator selection",
+  2,
+  "confirmed raw-to-sub rate must be inverted when operational source/target roles are reversed",
 );
-assert.equal(reverseResult.history[0].sourceKey, reverseSource.batchKey);
-assert.equal(reverseResult.history[0].targetKey, reverseTarget.batchKey);
 
 const bothActualSource = makeRow({
   ...decimalSource,
@@ -373,9 +355,8 @@ const targetOnlyResult = createRuntime().run(
   targetOnlySource.batchKey,
   targetOnlyTarget.batchKey,
 );
-assert.equal(targetOnlyResult.history[0].sQty, 0);
+assert.equal(targetOnlyResult.history[0].sQty, 2.5);
 assert.equal(targetOnlyResult.history[0].tQty, 5);
-assert.equal(targetOnlyResult.history[0].costStatus, "UNAVAILABLE");
 
 const mismatchedSource = makeRow({
   ...actualSource,
@@ -409,20 +390,22 @@ const mismatchResult = createRuntime().run(
   mismatchedSource.batchKey,
   mismatchedTarget.batchKey,
 );
-assert.equal(mismatchResult.history.length, 1);
-assert.equal(mismatchResult.history[0].sQty, 4);
-assert.equal(mismatchResult.history[0].tQty, 7);
+assert.equal(mismatchResult.history.length, 0);
 assert.equal(
-  mismatchResult.rows.every((row) => row._manualSubstitutionResolved === true),
-  true,
-  "conversion disagreement must be reported without blocking the administrator action",
+  mismatchResult.rows.some((row) => row._manualSubstitutionResolved === true),
+  false,
+  "actual errors that disagree with the confirmed conversion must stay unresolved",
 );
 assert.equal(
   mismatchResult.rows.every((row) => row.수기확인완료 === false),
   true,
-  "the resulting error remains visible for subsequent review",
+  "conversion mismatch must preserve administrator-confirmation state",
 );
-assert.deepEqual(mismatchResult.alerts, []);
+assert.match(
+  mismatchResult.alerts.join("\n"),
+  /관리자 확인/,
+  "conversion mismatch must remain in administrator-confirmation state",
+);
 
 const noActualSource = makeRow({
   ...actualSource,
@@ -457,16 +440,13 @@ const noActualResult = createRuntime().run(
   noActualSource.batchKey,
   noActualTarget.batchKey,
 );
-assert.equal(noActualResult.history.length, 1);
-assert.equal(noActualResult.history[0].sQty, 0);
-assert.equal(noActualResult.history[0].tQty, 0);
+assert.equal(noActualResult.history.length, 0);
 assert.equal(
-  noActualResult.rows.every((row) => row._manualSubstitutionResolved === true),
-  true,
-  "a zero-error administrator link must still be recorded",
+  noActualResult.rows.some((row) => row._manualSubstitutionResolved === true),
+  false,
+  "Lot outbound and targetNeedQty must not replace a missing actual error",
 );
-assert.equal(noActualResult.history[0].costStatus, "UNAVAILABLE");
-assert.deepEqual(noActualResult.alerts, []);
+assert.match(noActualResult.alerts.join("\n"), /관리자 확인/);
 
 const unconfirmedSource = makeRow({
   ...actualSource,
@@ -491,133 +471,12 @@ const unconfirmedResult = createRuntime().run(
   unconfirmedSource.batchKey,
   unconfirmedTarget.batchKey,
 );
-assert.equal(unconfirmedResult.history.length, 1);
-assert.equal(unconfirmedResult.history[0].sQty, 3);
-assert.equal(unconfirmedResult.history[0].tQty, 0);
+assert.equal(unconfirmedResult.history.length, 0);
 assert.equal(
-  unconfirmedResult.rows.every((row) => row._manualSubstitutionResolved === true),
-  true,
-  "a missing master relation must not block administrator-directed substitution",
+  unconfirmedResult.rows.some((row) => row._manualSubstitutionResolved === true),
+  false,
+  "equal units or quantities alone must not invent a conversion relationship",
 );
-assert.deepEqual(unconfirmedResult.alerts, []);
+assert.match(unconfirmedResult.alerts.join("\n"), /관리자 확인/);
 
-const missingCostSource = makeRow({
-  batchKey: "MISSING_COST_SOURCE",
-  코드: "MISSING_COST_SOURCE",
-  품명: "원가미확인 출처",
-  단가: 0,
-  실사: -2,
-  로스: -2,
-  이슈: ["🚨단가없음", "🚨실사오차"],
-});
-const missingCostTarget = makeRow({
-  batchKey: "MISSING_COST_TARGET",
-  코드: "MISSING_COST_TARGET",
-  품명: "원가미확인 대상",
-  단가: 0,
-  실사: 1,
-  로스: 1,
-  이슈: ["🚨단가없음", "🚨실사오차"],
-});
-const missingCostResult = createRuntime().run(
-  [missingCostSource, missingCostTarget],
-  missingCostSource.batchKey,
-  missingCostTarget.batchKey,
-);
-const missingCostTargetAfter = missingCostResult.rows.find(
-  (row) => row.batchKey === missingCostTarget.batchKey,
-);
-assert.equal(missingCostResult.history.length, 1);
-assert.equal(missingCostResult.history[0].costStatus, "UNAVAILABLE");
-assert.ok(missingCostTargetAfter.이슈.includes("🚨단가없음"));
-assert.ok(missingCostTargetAfter.이슈.includes("🚨수기치환원가미계산"));
-assert.match(missingCostTargetAfter.메모, /원가 계산 근거 없음/);
-assert.deepEqual(missingCostResult.alerts, []);
-
-const tenToOneSource = makeRow({
-  batchKey: "TEST_SOURCE_1KG",
-  코드: "TEST_SOURCE",
-  품명: "테스트출처_kg",
-  단가: 1500,
-  기초: 10,
-  전산잔량: 10,
-  실사: 0,
-  로스: -10,
-  이슈: ["🚨실사오차", "🚨과다로스"],
-  _orig: { 기초: 10, 입고: 0, 출고: 0, 단가: 1500 },
-});
-const tenToOneTarget = makeRow({
-  batchKey: "TEST_TARGET_10KG",
-  코드: "TEST_TARGET",
-  품명: "테스트대상_10kg",
-  단가: 0,
-  출고: 1,
-  전산잔량: -1,
-  실사: 0,
-  로스: 1,
-  이슈: ["🚨Lot", "🚨신규", "🚨단가", "🚨실사오차"],
-  _orig: { 기초: 0, 입고: 0, 출고: 1, 단가: 0 },
-});
-const tenToOneResult = createRuntime().run(
-  [tenToOneSource, tenToOneTarget],
-  tenToOneSource.batchKey,
-  tenToOneTarget.batchKey,
-);
-assert.equal(tenToOneResult.history.length, 1);
-assert.equal(tenToOneResult.history[0].sourceKey, tenToOneSource.batchKey);
-assert.equal(tenToOneResult.history[0].targetKey, tenToOneTarget.batchKey);
-assert.equal(tenToOneResult.history[0].sQty, 10);
-assert.equal(tenToOneResult.history[0].tQty, 1);
-assert.equal(tenToOneResult.history[0].costStatus, "CALCULATED");
-assert.equal(
-  tenToOneResult.rows.find((row) => row.batchKey === tenToOneTarget.batchKey).단가,
-  15000,
-  "administrator-directed 10 to 1 substitution must calculate and report the resulting unit cost",
-);
-assert.deepEqual(tenToOneResult.alerts, []);
-
-const reverseSelectedSplit = makeRow({
-  ...tenToOneTarget,
-  batchKey: "TEST_SPLIT_SELECTED_FIRST",
-  코드: "TEST_SPLIT",
-  _masterLink: {
-    productType: "소분",
-    masterCode: "TEST_SPLIT",
-    rawCode: "TEST_RAW",
-    conversionRate: 10,
-  },
-});
-const reverseSelectedRaw = makeRow({
-  ...tenToOneSource,
-  batchKey: "TEST_RAW_SELECTED_SECOND",
-  코드: "TEST_RAW",
-  _masterLink: {
-    productType: "원물",
-    masterCode: "TEST_RAW",
-    subCode: "TEST_SPLIT",
-    conversionRate: 10,
-  },
-});
-const reverseSelectedCostResult = createRuntime().run(
-  [reverseSelectedSplit, reverseSelectedRaw],
-  reverseSelectedSplit.batchKey,
-  reverseSelectedRaw.batchKey,
-);
-const reverseSelectedSplitAfter = reverseSelectedCostResult.rows.find(
-  (row) => row.batchKey === reverseSelectedSplit.batchKey,
-);
-const reverseSelectedRawAfter = reverseSelectedCostResult.rows.find(
-  (row) => row.batchKey === reverseSelectedRaw.batchKey,
-);
-assert.equal(reverseSelectedCostResult.history[0].sourceKey, reverseSelectedSplit.batchKey);
-assert.equal(reverseSelectedCostResult.history[0].targetKey, reverseSelectedRaw.batchKey);
-assert.equal(reverseSelectedCostResult.history[0].costSourceKey, reverseSelectedRaw.batchKey);
-assert.equal(reverseSelectedCostResult.history[0].costTargetKey, reverseSelectedSplit.batchKey);
-assert.match(reverseSelectedCostResult.history[0].costDirectionReason, /^MASTER_/);
-assert.equal(reverseSelectedCostResult.history[0].costStatus, "CALCULATED");
-assert.equal(reverseSelectedSplitAfter.단가, 15000, "split cost must be restored regardless of administrator selection order");
-assert.equal(reverseSelectedRawAfter.단가, 1500, "raw-material cost must remain unchanged");
-assert.match(reverseSelectedSplitAfter.메모, /\[소분단가\]/);
-assert.deepEqual(reverseSelectedCostResult.alerts, []);
-
-console.log("DataOps administrator-directed manual substitution contract passed.");
+console.log("DataOps manual substitution actual-error contract passed.");

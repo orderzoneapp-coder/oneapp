@@ -6,22 +6,16 @@ import {
   newId,
   nowIso,
   normalizeText
-} from './orderq-db.js?v=0.12.1';
-import { resolveWarehouseInTransaction, warehouseSnapshot } from './warehouse-master.js?v=0.8.0';
+} from './orderq-db.js?v=0.7.1';
+import { resolveWarehouseInTransaction, warehouseSnapshot } from './warehouse-master.js?v=0.7.1';
 import {
   ORDER_STATUS, ADMIN_STATUS, OPS_STATUS, INPUT_CHANNEL,
   normalizeOrderStatus, normalizeAdminStatus, normalizeOpsStatus, inferInputChannel,
   initialAdminStatus,
   orderDateKey, formatOrderNo, orderSequenceFromNo, assigneeIdentity, externalOrderSnapshot,
-  normalizedOrderView, documentFieldChanges, orderItemChanges,
-  orderIntakeProvenanceSnapshot, orderItemIdentitySnapshot
-} from './order-document-model.js?v=0.8.1';
-import { deriveOrderLifecycle, TRANSFER_EVENT_TYPE } from './order-fulfillment-lifecycle.js?v=0.8.0';
-import { INTAKE_CONTRACT_VERSION, PRODUCT_IDENTITY_STATUS } from './orderq-v8-contracts.js?v=0.11.0';
-import {
-  buildOrderSourceDocumentCanonicalProjection,
-  canonicalStringify
-} from './intake-identity.js?v=0.11.1';
+  normalizedOrderView, documentFieldChanges, orderItemChanges
+} from './order-document-model.js?v=0.7.1';
+import { deriveOrderLifecycle, TRANSFER_EVENT_TYPE } from './order-fulfillment-lifecycle.js?v=0.7.1';
 
 export { ORDER_STATUS, ADMIN_STATUS, OPS_STATUS, INPUT_CHANNEL };
 
@@ -53,15 +47,6 @@ export class DuplicateSourceMessageError extends Error {
     super('이미 처리한 원문입니다. 기존 주문을 확인해 주세요.');
     this.name = 'DuplicateSourceMessageError';
     this.code = 'ORDER_SOURCE_MESSAGE_DUPLICATE';
-    this.existingOrder = existingOrder;
-  }
-}
-
-export class IntakeDocumentIdempotencyConflictError extends Error {
-  constructor(existingOrder) {
-    super('같은 원본 전표키에 서로 다른 주문내용이 요청되었습니다.');
-    this.name = 'IntakeDocumentIdempotencyConflictError';
-    this.code = 'ORDERQ_INTAKE_DOCUMENT_IDEMPOTENCY_CONFLICT';
     this.existingOrder = existingOrder;
   }
 }
@@ -101,19 +86,12 @@ function normalizeItem(input, orderId, previous = null) {
   const matchStatus = requestedStatus === MATCH_STATUS.EXCLUDED
     ? MATCH_STATUS.EXCLUDED
     : (hasProductIdentity ? MATCH_STATUS.MATCHED : MATCH_STATUS.MATCH_FAILED);
-  const identity = orderItemIdentitySnapshot(input, hasProductIdentity);
-  if (identity.productIdentityStatus === PRODUCT_IDENTITY_STATUS.TEMPORARY_CONFIRMED) {
-    if (!itemName) throw new Error('ORDERQ_INTAKE_TEMPORARY_NAME_REQUIRED');
-    if (productId || itemCode) throw new Error('ORDERQ_INTAKE_TEMPORARY_MASTER_IDENTITY_FORBIDDEN');
-    if (identity.reviewStatus !== 'CONFIRMED') throw new Error('ORDERQ_INTAKE_TEMPORARY_REVIEW_REQUIRED');
-  }
 
   return {
     orderItemId: previous?.orderItemId || input.orderItemId || newId('OI'),
     orderId,
     lineNo: Number(input.lineNo) || 0,
     productId,
-    masterProductId: String(input.masterProductId ?? '').trim() || null,
     itemCode,
     itemName,
     specification: String(input.specification ?? '').trim(),
@@ -130,9 +108,7 @@ function normalizeItem(input, orderId, previous = null) {
     memo: String(input.memo ?? '').trim(),
     description: String(input.description ?? '').trim(),
     noticePrice: asNumberOrNull(input.noticePrice),
-    customValues: input.customValues && typeof input.customValues === 'object' ? { ...input.customValues } : {},
     matchStatus,
-    ...identity,
     matchSource: input.matchSource || (hasProductIdentity ? 'MASTER_SELECTED' : 'UNRESOLVED'),
     updatedAt: nowIso(),
     createdAt: previous?.createdAt || nowIso()
@@ -163,20 +139,44 @@ async function resolveCustomerInTransaction(tx, customerInput) {
   const normalizedName = normalizeText(customerName);
 
   if (customerInput.customerId) {
-    let existing = await requestToPromise(customerStore.get(customerInput.customerId));
-    if (existing?.qualityStatus === 'SUPERSEDED') {
-      existing = await requestToPromise(customerStore.get(existing.canonicalCustomerId || existing.supersededByCustomerId));
-    }
-    if (existing?.status === 'ACTIVE') return existing;
+    const existing = await requestToPromise(customerStore.get(customerInput.customerId));
+    if (existing && existing.normalizedName === normalizedName) return existing;
   }
 
   const byName = customerStore.index('byName');
-  let sameName = await requestToPromise(byName.get(normalizedName));
-  if (sameName?.qualityStatus === 'SUPERSEDED') {
-    sameName = await requestToPromise(customerStore.get(sameName.canonicalCustomerId || sameName.supersededByCustomerId));
-  }
-  if (sameName?.status === 'ACTIVE') return sameName;
-  throw new Error('미등록 거래처입니다. 거래처 찾기 / 간편등록으로 등록 후 계속해 주세요.');
+  const sameName = await requestToPromise(byName.get(normalizedName));
+  if (sameName) return sameName;
+
+  const customerId = newId('CUS');
+  const timestamp = nowIso();
+  const customer = {
+    customerId,
+    customerName,
+    normalizedName,
+    erpCustomerCode: String(customerInput.erpCustomerCode ?? '').trim(),
+    status: 'ACTIVE',
+    source: 'MANUAL',
+    createdAt: timestamp,
+    updatedAt: timestamp
+  };
+  const alias = {
+    mappingId: newId('CAM'),
+    rawText: customerName,
+    normalizedText: normalizedName,
+    customerId,
+    sourceType: 'MANUAL',
+    sourceId: '',
+    confirmed: true,
+    useCount: 1,
+    lastUsedAt: timestamp,
+    createdAt: timestamp,
+    updatedAt: timestamp
+  };
+  customerStore.add(customer);
+  aliasStore.add(alias);
+  enqueue(tx, 'CUSTOMER', customer.customerId, 'UPSERT', 1, customer, 0);
+  enqueue(tx, 'CUSTOMER_ALIAS', alias.mappingId, 'UPSERT', 1, alias, 0);
+  return customer;
 }
 
 function summarizeAmounts(items) {
@@ -231,21 +231,6 @@ function orderWorkflowSnapshot(payload, previous = null) {
   };
 }
 
-function customerSnapshot(customer) {
-  return {
-    customerCode: String(customer?.customerCode || customer?.erpCustomerCode || '').trim(),
-    customerName: String(customer?.customerName || '').trim(),
-    phone: String(customer?.phone || '').trim(),
-    mobile: String(customer?.mobile || '').trim(),
-    contactName: String(customer?.contactName || '').trim(),
-    address: String(customer?.address || '').trim(),
-    addressDetail: String(customer?.addressDetail || '').trim(),
-    group1Name: String(customer?.group1Name || customer?.groupName || '').trim(),
-    group2Name: String(customer?.group2Name || '').trim(),
-    priceGroup: String(customer?.priceGroup || '').trim()
-  };
-}
-
 function appendEvent(tx, order, eventType, detail = {}) {
   const event = {
     eventId: newId('OE'),
@@ -278,8 +263,7 @@ export async function createOrder(payload) {
   const db = await openOrderQDb();
   const tx = db.transaction([
     STORE.CUSTOMERS, STORE.CUSTOMER_ALIASES, STORE.WAREHOUSES, STORE.WAREHOUSE_ALIASES, STORE.ORDERS, STORE.ORDER_ITEMS,
-    STORE.ORDER_EVENTS, STORE.SYNC_QUEUE, STORE.META,
-    ...(payload.intakeCommit ? [STORE.INTAKE_SESSIONS, STORE.INTAKE_DOCUMENTS, STORE.INTAKE_LINES, STORE.INTAKE_EVENTS] : [])
+    STORE.ORDER_EVENTS, STORE.SYNC_QUEUE, STORE.META
   ], 'readwrite');
 
   try {
@@ -287,12 +271,12 @@ export async function createOrder(payload) {
     const warehouse = await resolveWarehouseInTransaction(tx, payload, { sourceType: payload.sourceType || 'MANUAL' });
     const orderStore = tx.objectStore(STORE.ORDERS);
     const sourceMessageKey = String(payload.sourceMessageKey || '').trim();
-    const sourceDocumentKey = String(payload.sourceDocumentKey || '').trim();
-    if (!sourceDocumentKey && sourceMessageKey) {
+    if (sourceMessageKey) {
       const existingSourceOrder = await requestToPromise(orderStore.index('bySourceMessageKey').get(sourceMessageKey));
       if (existingSourceOrder) throw new DuplicateSourceMessageError(existingSourceOrder);
     }
     const orderId = newId('ORD');
+    const orderNo = await allocateOrderNoInTransaction(tx, payload.orderDate, payload.orderNo);
     let items = (payload.items || [])
       .filter(item => item.itemCode || item.itemName || item.quantity || item.rawText)
       .map((item, index) => normalizeItem({ ...item, lineNo: index + 1 }, orderId));
@@ -307,25 +291,17 @@ export async function createOrder(payload) {
     const matchingStatus = workflow.orderStatus === ORDER_STATUS.FULL_CANCEL ? MATCHING_STATUS.CANCELLED : summarizeStatus(items);
     let order = {
       orderId,
-      orderNo: String(payload.orderNo || '').trim(),
+      orderNo,
       revision: 1,
       orderDate: payload.orderDate,
       customerId: customer.customerId,
       customerName: customer.customerName,
-      customerSnapshot: customerSnapshot(customer),
       ...warehouseSnapshot(payload, warehouse),
       orderMessage: String(payload.orderMessage ?? '').trim(),
       transactionType: String(payload.transactionType ?? '').trim(),
-      customValues: payload.customValues && typeof payload.customValues === 'object' ? { ...payload.customValues } : {},
-      formLayoutSnapshot: payload.formLayoutSnapshot && typeof payload.formLayoutSnapshot === 'object' ? { ...payload.formLayoutSnapshot } : null,
       sourceType: payload.sourceType || 'MANUAL',
       sourceId: payload.sourceId || '',
       sourceMessageKey: sourceMessageKey || undefined,
-      ...orderIntakeProvenanceSnapshot({
-        ...payload,
-        sourceDocumentKey,
-        intakeContractVersion: payload.intakeContractVersion || (sourceDocumentKey ? INTAKE_CONTRACT_VERSION : '')
-      }),
       ...workflow,
       status: matchingStatus,
       matchingStatus,
@@ -335,26 +311,6 @@ export async function createOrder(payload) {
       createdAt: timestamp,
       updatedAt: timestamp
     };
-
-    if (sourceDocumentKey) {
-      const existingSourceOrder = await requestToPromise(orderStore.index('bySourceDocumentKey').get(sourceDocumentKey));
-      if (existingSourceOrder) {
-        const existingItems = await requestToPromise(tx.objectStore(STORE.ORDER_ITEMS).index('byOrderId').getAll(existingSourceOrder.orderId));
-        const existingCanonical = canonicalStringify(buildOrderSourceDocumentCanonicalProjection({
-          order: existingSourceOrder,
-          items: existingItems
-        }));
-        const requestedCanonical = canonicalStringify(buildOrderSourceDocumentCanonicalProjection({ order, items }));
-        if (existingCanonical !== requestedCanonical) throw new IntakeDocumentIdempotencyConflictError(existingSourceOrder);
-        await new Promise((resolve, reject) => {
-          tx.addEventListener('abort', () => resolve(), { once: true });
-          try { tx.abort(); } catch (error) { reject(error); }
-        });
-        return { order: existingSourceOrder, items: existingItems, customer, warehouse, duplicate: true };
-      }
-    }
-
-    order.orderNo = await allocateOrderNoInTransaction(tx, payload.orderDate, payload.orderNo);
     order = { ...order, opsStatus: deriveOrderLifecycle(order, items, []).operationStatus };
 
     await requestToPromise(orderStore.add(order));
@@ -381,26 +337,9 @@ export async function createOrder(payload) {
     enqueue(tx, 'ORDER_EVENT', event.eventId, 'UPSERT', event.revision, event, 0);
     if (transition) enqueue(tx, 'ORDER_EVENT', transition.eventId, 'UPSERT', transition.revision, transition, 0);
 
-    if (payload.intakeCommit) {
-      const commit = payload.intakeCommit;
-      if (commit.injectFailureAt === 'ORDER_WRITTEN') throw new Error('ORDERQ_INTAKE_INJECTED_FAILURE:ORDER_WRITTEN');
-      const sessions = tx.objectStore(STORE.INTAKE_SESSIONS), documents = tx.objectStore(STORE.INTAKE_DOCUMENTS);
-      const session = await requestToPromise(sessions.get(commit.intakeSessionId));
-      const document = await requestToPromise(documents.get(commit.intakeDocumentId));
-      if (!session || !document) throw new Error('ORDERQ_INTAKE_DOCUMENT_NOT_FOUND');
-      if (Number(document.revision || 0) !== Number(commit.expectedRevision || 0)) throw new Error('ORDERQ_INTAKE_REVISION_CONFLICT');
-      const intakeLines = await requestToPromise(tx.objectStore(STORE.INTAKE_LINES).index('byDocument').getAll(document.intakeDocumentId));
-      const active = intakeLines.filter(line => line.reviewStatus !== 'EXCLUDED' && line.matchStatus !== 'EXCLUDED');
-      if (!active.length || active.some(line => line.reviewStatus !== 'CONFIRMED' || !['MASTER_LINKED','TEMPORARY_CONFIRMED'].includes(line.productIdentityStatus))) throw new Error('ORDERQ_INTAKE_REVIEW_INCOMPLETE');
-      const committedAt = nowIso(), actorId = commit.actor?.actorId || 'LOCAL_USER';
-      documents.put({ ...document, stage:'COMMITTED', reviewStatus:'CONFIRMED', orderId, revision:Number(document.revision||0)+1, updatedBy:actorId, updatedAt:committedAt });
-      sessions.put({ ...session, stage:'COMMITTED', status:'COMMITTED', revision:Number(session.revision||0)+1, updatedBy:actorId, updatedAt:committedAt });
-      tx.objectStore(STORE.INTAKE_EVENTS).add({ eventId:newId('IEV'), intakeSessionId:session.intakeSessionId, intakeDocumentId:document.intakeDocumentId, intakeLineId:'', eventType:'INTAKE_ORDER_COMMITTED', reasonCode:'SINGLE_DOCUMENT_ORDER_SAVED', before:{stage:document.stage}, after:{stage:'COMMITTED',orderId}, actorId, actorName:commit.actor?.actorName||'ORDER IN 관리자', occurredAt:committedAt, createdAt:committedAt });
-    }
-
     await transactionDone(tx);
     broadcast('ORDER_CREATED', order);
-    return { order, items, customer, warehouse, duplicate: false };
+    return { order, items, customer, warehouse };
   } catch (error) {
     try { tx.abort(); } catch (_) {}
     throw error;
@@ -450,7 +389,6 @@ export async function updateOrder(orderId, expectedRevision, payload) {
       orderDate: payload.orderDate,
       customerId: customer.customerId,
       customerName: customer.customerName,
-      customerSnapshot: customerSnapshot(customer),
       ...warehouseSnapshot(payload, warehouse),
       orderMessage: String(payload.orderMessage ?? '').trim(),
       transactionType: String(payload.transactionType ?? '').trim(),

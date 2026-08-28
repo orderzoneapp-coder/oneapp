@@ -60,8 +60,6 @@ const VALID_ORDER_STATUS = new Set(Object.values(ORDER_STATUS));
 const VALID_ADMIN_STATUS = new Set(Object.values(ADMIN_STATUS));
 const VALID_OPS_STATUS = new Set(Object.values(OPS_STATUS));
 const VALID_INPUT_CHANNEL = new Set(Object.values(INPUT_CHANNEL));
-const VALID_REVIEW_STATUS = new Set(['PENDING', 'CONFIRMED', 'EXCLUDED']);
-const VALID_PRODUCT_IDENTITY_STATUS = new Set(['MASTER_LINKED', 'TEMPORARY_CONFIRMED', 'UNRESOLVED']);
 
 export function normalizeOrderStatus(value, legacyStatus = '') {
   const normalized = String(value || '').trim().toUpperCase();
@@ -156,64 +154,6 @@ export function externalOrderSnapshot(payload = {}, previous = {}) {
   };
 }
 
-export function orderIntakeProvenanceSnapshot(payload = {}, previous = {}) {
-  const pick = key => Object.prototype.hasOwnProperty.call(payload, key) ? payload[key] : previous[key];
-  const value = key => {
-    const source = pick(key);
-    const normalized = source === undefined || source === null ? '' : String(source).trim();
-    return normalized || undefined;
-  };
-  return {
-    intakeSessionId: value('intakeSessionId'),
-    intakeDocumentId: value('intakeDocumentId'),
-    sourceOccurrenceKey: value('sourceOccurrenceKey'),
-    sourceDocumentKey: value('sourceDocumentKey'),
-    rawFingerprint: value('rawFingerprint'),
-    intakeContractVersion: value('intakeContractVersion')
-  };
-}
-
-export function validateOrderItemIdentityState(input = {}) {
-  const reviewStatus = String(input.reviewStatus || '').trim().toUpperCase();
-  const productIdentityStatus = String(input.productIdentityStatus || '').trim().toUpperCase();
-  if (!VALID_REVIEW_STATUS.has(reviewStatus)) throw new Error(`ORDERQ_INTAKE_REVIEW_STATUS_INVALID:${reviewStatus}`);
-  if (!VALID_PRODUCT_IDENTITY_STATUS.has(productIdentityStatus)) throw new Error(`ORDERQ_INTAKE_PRODUCT_IDENTITY_INVALID:${productIdentityStatus}`);
-
-  const productId = String(input.productId ?? '').trim();
-  const itemCode = String(input.itemCode ?? '').trim();
-  const itemName = String(input.itemName ?? '').trim();
-  const completeMasterIdentity = Boolean(productId && !productId.startsWith('CODE:') && itemCode && itemName);
-
-  if (productIdentityStatus === 'MASTER_LINKED' && !completeMasterIdentity) {
-    throw new Error('ORDERQ_INTAKE_MASTER_IDENTITY_REQUIRED');
-  }
-  if (productIdentityStatus === 'TEMPORARY_CONFIRMED') {
-    if (!itemName) throw new Error('ORDERQ_INTAKE_TEMPORARY_NAME_REQUIRED');
-    if (productId || itemCode) throw new Error('ORDERQ_INTAKE_TEMPORARY_MASTER_IDENTITY_FORBIDDEN');
-    if (!['CONFIRMED', 'EXCLUDED'].includes(reviewStatus)) throw new Error('ORDERQ_INTAKE_TEMPORARY_REVIEW_REQUIRED');
-  }
-  if (productIdentityStatus === 'UNRESOLVED' && reviewStatus === 'CONFIRMED') {
-    throw new Error('ORDERQ_INTAKE_CONFIRMED_UNRESOLVED_FORBIDDEN');
-  }
-  return { reviewStatus, productIdentityStatus };
-}
-
-export function orderItemIdentitySnapshot(input = {}, hasMasterIdentity = false) {
-  const requestedReview = String(input.reviewStatus || '').trim().toUpperCase();
-  const requestedIdentity = String(input.productIdentityStatus || '').trim().toUpperCase();
-  if (requestedReview && !VALID_REVIEW_STATUS.has(requestedReview)) throw new Error(`ORDERQ_INTAKE_REVIEW_STATUS_INVALID:${requestedReview}`);
-  if (requestedIdentity && !VALID_PRODUCT_IDENTITY_STATUS.has(requestedIdentity)) throw new Error(`ORDERQ_INTAKE_PRODUCT_IDENTITY_INVALID:${requestedIdentity}`);
-  const reviewStatus = requestedReview || (hasMasterIdentity ? 'CONFIRMED' : 'PENDING');
-  const productIdentityStatus = requestedIdentity || (hasMasterIdentity ? 'MASTER_LINKED' : 'UNRESOLVED');
-  validateOrderItemIdentityState({ ...input, reviewStatus, productIdentityStatus });
-  return {
-    intakeLineId: String(input.intakeLineId || '').trim(),
-    sourceLineKey: String(input.sourceLineKey || '').trim(),
-    reviewStatus,
-    productIdentityStatus
-  };
-}
-
 export function normalizedOrderView(order = {}) {
   const orderStatus = normalizeOrderStatus(order.orderStatus, order.status);
   const sourceType = String(order.sourceType || 'MANUAL').trim();
@@ -229,8 +169,7 @@ export function normalizedOrderView(order = {}) {
     assigneeName: String(order.assigneeName || '').trim(),
     deliveryExpectedDate: String(order.deliveryExpectedDate || '').trim(),
     matchingStatus: String(order.matchingStatus || order.status || '').trim(),
-    ...externalOrderSnapshot(order, order),
-    ...orderIntakeProvenanceSnapshot(order, order)
+    ...externalOrderSnapshot(order, order)
   };
 }
 
@@ -249,7 +188,6 @@ export function documentFieldChanges(before = {}, after = {}) {
 }
 
 const ITEM_CHANGE_FIELDS = Object.freeze({
-  masterProductId: '마스터상품ID',
   itemCode: '품목코드',
   itemName: '상품',
   specification: '규격',

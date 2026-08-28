@@ -9,9 +9,7 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const moduleSource = fs.readFileSync(path.join(ROOT, "masterAddUpdate.js"), "utf8");
-const foundationSource = fs.readFileSync(path.join(ROOT, "nexus/foundation/foundation-metadata.js"), "utf8");
 const masterHtml = fs.readFileSync(path.join(ROOT, "Master.html"), "utf8");
-const masterApp = fs.readFileSync(path.join(ROOT, "nexus/master/master-app.jsx"), "utf8");
 const sheetJsUrl = "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
 const expectedSheetJsSha256 = "c9506197caf809a075b6dee1da0d36fb19da7158ffe8a88e7b0c96c5d8623c99";
 
@@ -47,7 +45,6 @@ const makeBrowserContext = () => {
   context.crypto = { randomUUID: () => crypto.randomUUID() };
   vm.runInContext(sheetJsSource.toString("utf8"), context, { filename: "xlsx.full.min.js" });
   vm.runInContext(moduleSource, context, { filename: "masterAddUpdate.js" });
-  vm.runInContext(foundationSource, context, { filename: "foundation-metadata.js" });
   assert.ok(context.XLSX?.utils, "SheetJS did not initialize");
   assert.ok(context.ONEAPP_MASTER_ADD_UPDATE?.parseWorkbook, "Master workbook parser did not initialize");
   return context;
@@ -101,12 +98,12 @@ const createStorage = (initialMaster, localStorageRef) => {
 };
 
 assert.match(
-  masterApp,
-  /NEXUS_FOUNDATION\.parseWorkbook\(loadEvent\.target\.result/,
-  "Master.html must resolve arbitrary saved headers before the legacy analyzer",
+  masterHtml,
+  /parseMasterAddUpdateWorkbook[\s\S]{0,500}api\.parseWorkbook\(arrayBuffer,\s*window\.XLSX\)/,
+  "Master.html must use the tested production workbook parser",
 );
-assert.match(masterApp, /ONEAPP_MASTER_ADD_UPDATE\.analyzeUploadRows/);
-assert.match(masterApp, /ONEAPP_MASTER_ADD_UPDATE\.commitApprovedChanges/);
+assert.match(masterHtml, /ONEAPP_MASTER_ADD_UPDATE\.analyzeUploadRows/);
+assert.match(masterHtml, /ONEAPP_MASTER_ADD_UPDATE\.commitApprovedChanges/);
 
 const context = makeBrowserContext();
 const api = context.ONEAPP_MASTER_ADD_UPDATE;
@@ -134,31 +131,6 @@ try {
   );
   assert.equal(parsed.rows.length, 2);
   assert.equal(parsed.rows[0].시중가, 0, "numeric zero must survive actual XLSX reading");
-
-  const mappedWorkbook = context.XLSX.utils.book_new();
-  const mappedSheet = context.XLSX.utils.aoa_to_sheet([
-    ["ERP 기준정보 파일"],
-    ["ERP 상품번호", "ERP 상품명", "ERP 규격", "ERP 단위"],
-    ["P-900", "매핑상품", "3kg", "BOX"],
-  ]);
-  context.XLSX.utils.book_append_sheet(mappedWorkbook, mappedSheet, "ERP상품");
-  const mappedBytes = context.XLSX.write(mappedWorkbook, { type: "array", bookType: "xlsx" });
-  const metadata = {
-    schemaVersion: "FOUNDATION_METADATA_V1", companyId: "ONEAPP", metadataRevision: 1,
-    fields: [
-      { entityType: "PRODUCT", fieldId: "product.code", displayName: "상품코드", storageKey: "코드", writeMirrorKeys: ["품목코드"], legacyAliases: ["코드"], dataType: "TEXT", requirements: { createRequired: true, batchIdentifier: true }, enabled: true, systemField: true },
-      { entityType: "PRODUCT", fieldId: "product.name", displayName: "상품명", storageKey: "품목명", writeMirrorKeys: [], legacyAliases: ["ERP 상품명"], dataType: "TEXT", requirements: { createRequired: true }, enabled: true, systemField: true },
-      { entityType: "PRODUCT", fieldId: "product.spec", displayName: "규격", storageKey: "규격", writeMirrorKeys: [], legacyAliases: ["ERP 규격"], dataType: "TEXT", requirements: { createRequired: true }, enabled: true, systemField: true },
-      { entityType: "PRODUCT", fieldId: "product.unit", displayName: "단위", storageKey: "단위", writeMirrorKeys: [], legacyAliases: ["ERP 단위"], dataType: "TEXT", requirements: { createRequired: true }, enabled: true, systemField: true },
-    ],
-    mappingSets: [{ mappingSetId: "MS-ERP", entityType: "PRODUCT", name: "ERP 기본", sourceSystem: "ERP", enabled: true, isDefault: true }],
-    mappings: [{ mappingSetId: "MS-ERP", entityType: "PRODUCT", originalHeader: "ERP 상품번호", normalizedHeader: "erp상품번호", action: "MAP", targetFieldId: "product.code", enabled: true }],
-  };
-  const foundationParsed = context.NEXUS_FOUNDATION.parseWorkbook(mappedBytes, { metadata, entityType: "PRODUCT", sourceSystem: "ERP", XLSX: context.XLSX });
-  const foundationMapped = context.NEXUS_FOUNDATION.mapWorkbook(metadata, { ...foundationParsed, entityType: "PRODUCT", sourceSystem: "ERP", existingByIdentifier: {} });
-  assert.equal(foundationParsed.headerRowNumber, 2, "arbitrary mapped header row was not detected in real XLSX");
-  assert.equal(foundationMapped.rows[0].코드, "P-900");
-  assert.equal(foundationMapped.rows[0].품목코드, "P-900", "new product code mirror must survive the real XLSX path");
 
   const baseMaster = {
     "001": { 코드: "001", 품목코드: "001", 품목명: "사과", 규격: "1kg", 단위: "EA", 시중가: 1000, 유지필드: "보존" },

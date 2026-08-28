@@ -7,7 +7,7 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  const ENGINE_VERSION = "3.20.0";
+  const ENGINE_VERSION = "3.18.0";
   const WORKSPACE_SCHEMA_VERSION = "shipping-workspace/v2";
   const INVENTORY_OVERRIDE_SCHEMA_VERSION = "shipping-inventory-overrides/v1";
   const HEADER_SCAN_LIMIT = 30;
@@ -592,8 +592,6 @@
         rows.push({
           inputOrder: rows.length + 1,
           sourceRowNumber: rowIndex + 1,
-          sourceOccurrence: 1,
-          sourceRowKey: `ORDER_ROW:${rowIndex + 1}`,
           orderNumber: cleanText(orderNumberValue),
           basisDate: rowBasisDateStatus === "valid" ? rowBasisDates[0] : "",
           basisDateStatus: rowBasisDateStatus,
@@ -1186,7 +1184,6 @@
       productCode: inventory.productCode,
       productName: inventory.productName,
       specification: inventory.specification,
-      unit: inventory.unit,
       inventoryMatched: true,
       matchStatus: "매칭완료",
       wholeStockRaw: inventory.wholeStockRaw,
@@ -1387,7 +1384,6 @@
     const columns = getInventoryColumnDescriptors(workspace);
     const overrideMap = getInventoryOverrideMap(workspace, columns);
     const purchaseInputs = getPurchaseInputs(workspace);
-    const purchaseQuantityInputs = getPurchaseQuantityInputs(workspace);
     const inventoryAliasLookup = createAliasLookup(INVENTORY_CANONICAL_ALIASES);
     const orderProducts = new Map();
     (Array.isArray(workspace?.orders) ? workspace.orders : []).forEach((order) => {
@@ -1429,16 +1425,12 @@
         productCode,
         productName: cleanText(inventory.productName),
         specification: cleanText(inventory.specification),
-        unit: cleanText(inventory.unit),
         values,
         inventoryTotal: stockTotal,
         stockTotal,
         orderQuantity,
         remainingQuantity,
         purchaseNeed: remainingQuantity < 0 ? roundQuantity(Math.abs(remainingQuantity)) : 0,
-        purchaseQuantityOverride: Object.prototype.hasOwnProperty.call(purchaseQuantityInputs, productCode)
-          ? purchaseQuantityInputs[productCode]
-          : null,
         purchase: String(purchaseInputs[productCode] || ""),
         suppliers: inventorySupplierDisplay(workspace, productCode),
         orderInformation: orderInformationDisplay(workspace, productCode),
@@ -1475,16 +1467,12 @@
         productCode,
         productName: product.productName,
         specification: product.specification,
-        unit: product.unit,
         values,
         inventoryTotal: stockTotal,
         stockTotal,
         orderQuantity,
         remainingQuantity,
         purchaseNeed: null,
-        purchaseQuantityOverride: Object.prototype.hasOwnProperty.call(purchaseQuantityInputs, productCode)
-          ? purchaseQuantityInputs[productCode]
-          : null,
         purchase: String(purchaseInputs[productCode] || ""),
         suppliers: inventorySupplierDisplay(workspace, productCode),
         orderInformation: orderInformationDisplay(workspace, productCode),
@@ -1754,7 +1742,6 @@
 
   function rebuildWorkspaceFromOrders(workspace) {
     const purchaseInputs = getPurchaseInputs(workspace);
-    const purchaseQuantityInputs = getPurchaseQuantityInputs(workspace);
     const inventoryOverrides = JSON.parse(JSON.stringify(
       workspace.inventoryOverrides || { schemaVersion: INVENTORY_OVERRIDE_SCHEMA_VERSION, cells: [] },
     ));
@@ -1800,41 +1787,10 @@
     Object.keys(workspace).forEach((key) => { delete workspace[key]; });
     Object.assign(workspace, rebuilt);
     applyPurchaseInputs(workspace, purchaseInputs);
-    applyPurchaseQuantityInputs(workspace, purchaseQuantityInputs);
     const noticeState = ensureNoticeState(workspace);
     const validNoticeIds = new Set(workspace.notices.map((notice) => notice.noticeId));
     noticeState.acknowledgedIds = acknowledgedIds.filter((noticeId) => validNoticeIds.has(noticeId));
     getInventoryViewRows(workspace);
-    return workspace;
-  }
-
-  function setCustomerManager(workspace, customer, manager) {
-    if (!workspace || workspace.schemaVersion !== WORKSPACE_SCHEMA_VERSION) {
-      throw new Error("지원하지 않는 Shipping Management 작업공간입니다.");
-    }
-    const targetCustomer = cleanText(customer);
-    const nextManager = cleanText(manager);
-    if (!targetCustomer) throw new Error("담당자를 변경할 거래처가 없습니다.");
-    if (!nextManager) throw new Error("변경할 담당자를 선택하세요.");
-    const acknowledgedIds = new Set(ensureNoticeState(workspace).acknowledgedIds);
-    const acknowledgedSourceRows = new Set(
-      (workspace.notices || [])
-        .filter((notice) => acknowledgedIds.has(notice.noticeId))
-        .map((notice) => Number(notice.sourceRowNumber))
-        .filter(Number.isFinite),
-    );
-    const targets = (workspace.orders || []).filter((row) => cleanText(row?.customer) === targetCustomer);
-    if (targets.length === 0) throw new Error("담당자를 변경할 거래처 주문을 찾지 못했습니다.");
-    targets.forEach((order) => { order.manager = nextManager; });
-    rebuildWorkspaceFromOrders(workspace);
-    if (acknowledgedSourceRows.size > 0) {
-      const noticeState = ensureNoticeState(workspace);
-      const restored = new Set(noticeState.acknowledgedIds);
-      (workspace.notices || []).forEach((notice) => {
-        if (acknowledgedSourceRows.has(Number(notice.sourceRowNumber))) restored.add(notice.noticeId);
-      });
-      noticeState.acknowledgedIds = [...restored];
-    }
     return workspace;
   }
 
@@ -1927,7 +1883,6 @@
         : null;
       allocations.push({
         ...order,
-        unit: cleanText(inventory?.unit || order.sourceUnit),
         noticeId: order.note || order.note1 ? buildNoticeId(order) : "",
         inventoryMatched: matched,
         inventoryProductName: inventory?.productName || "",
@@ -1963,7 +1918,6 @@
           productCode: allocation.productCode,
           productName: allocation.productName,
           specification: allocation.specification,
-          unit: allocation.unit,
           inventoryMatched: allocation.inventoryMatched,
           matchStatus: allocation.matchStatus,
           wholeStockRaw: allocation.wholeStockRaw,
@@ -2077,7 +2031,6 @@
               productCode: inventory.productCode,
               productName: inventory.productName,
               specification: inventory.specification,
-              unit: inventory.unit,
               inventoryMatched: true,
               matchStatus: "매칭완료",
               wholeStockRaw: inventory.wholeStockRaw,
@@ -2381,50 +2334,6 @@
     return result;
   }
 
-  function setPurchaseQuantityValue(workspace, productCode, value) {
-    if (!workspace || workspace.schemaVersion !== WORKSPACE_SCHEMA_VERSION) {
-      throw new Error("지원하지 않는 Shipping Management 작업공간입니다.");
-    }
-    ensureInventoryPurchaseRows(workspace);
-    const code = normalizeProductCode(productCode);
-    const blank = value === undefined || value === null || String(value).trim() === "";
-    let quantity = null;
-    if (!blank) {
-      const parsed = parseNumericCell(value);
-      if (!parsed.ok || parsed.blank || parsed.value < 0) {
-        throw new Error("구매수량은 0 이상의 숫자이거나 빈값이어야 합니다.");
-      }
-      quantity = roundQuantity(parsed.value);
-    }
-    (workspace.purchaseManagement || []).forEach((row) => {
-      if (row.rowType !== "main" || normalizeProductCode(row.productCode) !== code) return;
-      if (quantity === null) delete row.purchaseQuantityOverride;
-      else row.purchaseQuantityOverride = quantity;
-    });
-    return quantity;
-  }
-
-  function applyPurchaseQuantityInputs(workspace, inputs) {
-    ensureInventoryPurchaseRows(workspace);
-    Object.entries(inputs && typeof inputs === "object" ? inputs : {}).forEach(([code, value]) => {
-      setPurchaseQuantityValue(workspace, code, value);
-    });
-    return workspace;
-  }
-
-  function getPurchaseQuantityInputs(workspace) {
-    ensureInventoryPurchaseRows(workspace);
-    const result = {};
-    (workspace?.purchaseManagement || []).forEach((row) => {
-      if (row.rowType !== "main" || !Object.prototype.hasOwnProperty.call(row, "purchaseQuantityOverride")) return;
-      const value = row.purchaseQuantityOverride;
-      if (typeof value === "number" && Number.isFinite(value) && value >= 0) {
-        result[normalizeProductCode(row.productCode)] = value;
-      }
-    });
-    return result;
-  }
-
   function getPurchaseUploadSelection(workspace) {
     if (!workspace || workspace.schemaVersion !== WORKSPACE_SCHEMA_VERSION) {
       throw new Error("지원하지 않는 Shipping Management 작업공간입니다.");
@@ -2444,14 +2353,11 @@
         return;
       }
       const productCode = normalizeProductCode(row.productCode);
-      const hasOverride = Object.prototype.hasOwnProperty.call(row, "purchaseQuantityOverride") &&
-        typeof row.purchaseQuantityOverride === "number" && Number.isFinite(row.purchaseQuantityOverride) &&
-        row.purchaseQuantityOverride >= 0;
-      if (!hasOverride && !purchaseNeedByCode.has(productCode)) {
+      if (!purchaseNeedByCode.has(productCode)) {
         excluded.push({ productCode: row.productCode, reason: "재고정보 없음·구매수량 근거 없음" });
         return;
       }
-      const purchaseNeed = hasOverride ? row.purchaseQuantityOverride : purchaseNeedByCode.get(productCode);
+      const purchaseNeed = purchaseNeedByCode.get(productCode);
       if (!(purchaseNeed > 0)) {
         excluded.push({ productCode: row.productCode, reason: "창고별재고 부족 수량 없음" });
         return;
@@ -2500,9 +2406,6 @@
     setPurchaseValue,
     applyPurchaseInputs,
     getPurchaseInputs,
-    setPurchaseQuantityValue,
-    applyPurchaseQuantityInputs,
-    getPurchaseQuantityInputs,
     getPurchaseUploadSelection,
     ensureInventoryPurchaseRows,
     getInventoryColumnDescriptors,
@@ -2510,7 +2413,6 @@
     getShortageCategoryContext,
     getStockLedgerView,
     setOrderValue,
-    setCustomerManager,
     setInventoryOverride,
     getAllocationInventoryView,
   });

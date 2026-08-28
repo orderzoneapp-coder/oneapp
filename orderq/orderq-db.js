@@ -1,41 +1,5 @@
-import {
-  CAPABILITY,
-  DISPATCH_STAGE_POLICY,
-  MVP_ACTOR_ID,
-  V7_EXISTING_STORE_INDEXES,
-  V7_STORE,
-  V7_STORE_DEFINITIONS
-} from './orderq-v7-contracts.js?v=0.8.0';
-import { V8_STORE, V8_STORE_DEFINITIONS } from './orderq-v8-contracts.js?v=0.11.0';
-import { V9_STORE, V9_STORE_DEFINITIONS } from './orderq-v9-contracts.js?v=0.12.1';
-import {
-  V10_STORE,
-  V10_STORE_DEFINITIONS
-} from './orderq-v10-contracts.js?v=0.14.0';
-import { V11_STORE, V11_STORE_DEFINITIONS } from './orderq-v11-contracts.js?v=0.16.0';
-import {
-  V12_STORE,
-  V12_STORE_DEFINITIONS
-} from './orderq-v12-contracts.js?v=0.17.0';
-import { V13_PURCHASE_DOCUMENT_INDEXES } from './orderq-v13-contracts.js?v=0.1.0';
-import { V14_INDEXES } from './orderq-v14-contracts.js?v=0.1.0';
-import { V15_STORE, V15_STORE_DEFINITIONS } from './orderq-v15-contracts.js?v=0.1.0';
-import { V16_STORE, V16_STORE_DEFINITIONS, V16_META_DEFAULTS } from './orderq-v16-contracts.js?v=0.1.0';
-import { ORDERQ_DB_VERSION, V17_STORE, V17_STORE_DEFINITIONS, V17_META_DEFAULTS } from './orderq-v17-contracts.js?v=0.1.0';
-import { adminTestDatabaseName } from './admin-test-runtime.js?v=0.10.2';
-
-function databaseNameForRuntime() {
-  const location = globalThis.location;
-  const adminTestName = adminTestDatabaseName(location);
-  if (adminTestName) return adminTestName;
-  const localTestName = location && ['127.0.0.1', 'localhost'].includes(String(location.hostname || '').toLowerCase())
-    ? new URLSearchParams(location.search || '').get('orderqTestDb')
-    : '';
-  return localTestName && /^[a-z0-9._-]{1,100}$/i.test(localTestName) ? localTestName : 'oneapp-orderq-vnext';
-}
-
-export const DB_NAME = databaseNameForRuntime();
-export const DB_VERSION = ORDERQ_DB_VERSION;
+const DB_NAME = 'oneapp-orderq-vnext';
+const DB_VERSION = 6;
 
 export const STORE = Object.freeze({
   CUSTOMERS: 'customers',
@@ -43,14 +7,6 @@ export const STORE = Object.freeze({
   WAREHOUSES: 'warehouses',
   WAREHOUSE_ALIASES: 'warehouseAliases',
   CUSTOMER_ALIASES: 'customerAliases',
-  CUSTOMER_EVENTS: V9_STORE.CUSTOMER_EVENTS,
-  CUSTOMER_SOURCE_LINKS: V10_STORE.CUSTOMER_SOURCE_LINKS,
-  CUSTOMER_SOURCE_LINK_EVENTS: V10_STORE.CUSTOMER_SOURCE_LINK_EVENTS,
-  CUSTOMER_HEADER_MAPPINGS: V11_STORE.CUSTOMER_HEADER_MAPPINGS,
-  CUSTOMER_USER_FIELD_DEFINITIONS: V11_STORE.CUSTOMER_USER_FIELD_DEFINITIONS,
-  VOUCHER_EVENTS: V12_STORE.VOUCHER_EVENTS,
-  RECEIVABLE_ENTRIES: V12_STORE.RECEIVABLE_ENTRIES,
-  PAYABLE_ENTRIES: V12_STORE.PAYABLE_ENTRIES,
   PRODUCT_MAPPINGS: 'productMappings',
   UNIT_MAPPINGS: 'unitMappings',
   RAW_INPUTS: 'rawInputs',
@@ -76,12 +32,7 @@ export const STORE = Object.freeze({
   PARSER_EVIDENCE: 'parserEvidence',
   COLLECTOR_SETTINGS: 'collectorSettings',
   SYNC_QUEUE: 'syncQueue',
-  META: 'meta',
-  ...V7_STORE,
-  ...V8_STORE,
-  ...V15_STORE,
-  ...V16_STORE,
-  ...V17_STORE
+  META: 'meta'
 });
 
 let dbPromise = null;
@@ -90,19 +41,7 @@ function ensureIndex(store, name, keyPath, options = {}) {
   if (!store.indexNames.contains(name)) store.createIndex(name, keyPath, options);
 }
 
-function ensureExactIndex(store, name, keyPath, options = {}) {
-  if (store.indexNames.contains(name)) {
-    const current=store.index(name);
-    const sameKeyPath=JSON.stringify(current.keyPath)===JSON.stringify(keyPath);
-    const sameUnique=Boolean(current.unique)===Boolean(options.unique);
-    const sameMultiEntry=Boolean(current.multiEntry)===Boolean(options.multiEntry);
-    if (!sameKeyPath||!sameUnique||!sameMultiEntry) store.deleteIndex(name);
-    else return current;
-  }
-  return store.createIndex(name,keyPath,options);
-}
-
-export function upgradeOrderQDbSchema(db, transaction, oldVersion = 0) {
+function upgrade(db, transaction, oldVersion = 0) {
   const ensureStore = (name, options) => {
     if (!db.objectStoreNames.contains(name)) return db.createObjectStore(name, options);
     return transaction.objectStore(name);
@@ -112,9 +51,6 @@ export function upgradeOrderQDbSchema(db, transaction, oldVersion = 0) {
   ensureIndex(store, 'byName', 'normalizedName');
   ensureIndex(store, 'byErpCode', 'erpCustomerCode');
   ensureIndex(store, 'byUpdatedAt', 'updatedAt');
-  ensureIndex(store, 'byCanonicalCustomerId', 'canonicalCustomerId');
-  ensureIndex(store, 'byCustomerCode', 'normalizedCustomerCode');
-  ensureIndex(store, 'byStatusQuality', ['status', 'qualityStatus']);
 
   store = ensureStore(STORE.PRODUCTS, { keyPath: 'productId' });
   ensureIndex(store, 'byCode', 'itemCode', { unique: false });
@@ -278,204 +214,6 @@ export function upgradeOrderQDbSchema(db, transaction, oldVersion = 0) {
 
   const metaStore = ensureStore(STORE.META, { keyPath: 'key' });
 
-  if (oldVersion < 17) {
-    V17_STORE_DEFINITIONS.forEach(definition => {
-      const v17Store = ensureStore(definition.name, { keyPath: definition.keyPath });
-      definition.indexes.forEach(entry => ensureExactIndex(v17Store, entry.name, entry.keyPath, entry.options));
-    });
-    const updatedAt=nowIso();
-    Object.entries(V17_META_DEFAULTS).forEach(([key,value])=>metaStore.put({key,value,updatedAt}));
-    metaStore.put({ key:'schemaVersion', value:17, updatedAt });
-  }
-
-  if (oldVersion < 16) {
-    V16_STORE_DEFINITIONS.forEach(definition => {
-      const v16Store = ensureStore(definition.name, { keyPath: definition.keyPath });
-      definition.indexes.forEach(entry => ensureExactIndex(v16Store, entry.name, entry.keyPath, entry.options));
-    });
-    const updatedAt=nowIso();
-    Object.entries(V16_META_DEFAULTS).forEach(([key,value])=>metaStore.put({key,value,updatedAt}));
-    metaStore.put({ key:'schemaVersion', value:16, updatedAt });
-  }
-
-  if (oldVersion < 15) {
-    V15_STORE_DEFINITIONS.forEach(definition => {
-      const v15Store = ensureStore(definition.name, { keyPath: definition.keyPath });
-      definition.indexes.forEach(index => ensureExactIndex(v15Store,index.name,index.keyPath,index.options));
-    });
-    metaStore.put({ key:'schemaVersion', value:15, updatedAt:nowIso() });
-  }
-
-  if (oldVersion < 14) {
-    const targets = {
-      salesDocuments:transaction.objectStore(STORE.SALES_DOCUMENTS),
-      salesLines:transaction.objectStore(STORE.SALES_LINES),
-      orderEvents:transaction.objectStore(STORE.ORDER_EVENTS)
-    };
-    Object.entries(V14_INDEXES).forEach(([name, indexes]) => indexes.forEach(entry => ensureIndex(targets[name], entry.name, entry.keyPath, entry.options)));
-    metaStore.put({ key:'schemaVersion', value:14, updatedAt:nowIso() });
-  }
-
-  if (oldVersion < 13) {
-    const purchaseDocumentStore = transaction.objectStore(STORE.PURCHASE_DOCUMENTS);
-    V13_PURCHASE_DOCUMENT_INDEXES.forEach(entry => ensureIndex(purchaseDocumentStore, entry.name, entry.keyPath, entry.options));
-    metaStore.put({ key: 'schemaVersion', value: 13, updatedAt: nowIso() });
-  }
-
-  if (oldVersion < 12) {
-    // inventoryMovements is a v7 store.  A fresh (or pre-v7) database reaches
-    // this block before the historical v7 migration below, so create the v7
-    // stores first.  ensureStore/ensureIndex make the later v7 block harmless.
-    if (oldVersion < 7) {
-      for (const definition of V7_STORE_DEFINITIONS) {
-        const v7Store = ensureStore(definition.name, { keyPath: definition.keyPath });
-        for (const entry of definition.indexes) ensureIndex(v7Store, entry.name, entry.keyPath, entry.options);
-      }
-      for (const [storeName, indexes] of Object.entries(V7_EXISTING_STORE_INDEXES)) {
-        const existingStore = transaction.objectStore(storeName);
-        for (const entry of indexes) ensureIndex(existingStore, entry.name, entry.keyPath, entry.options);
-      }
-    }
-    V12_STORE_DEFINITIONS.forEach(definition => {
-      const v12Store = ensureStore(definition.name, definition.options);
-      definition.indexes.forEach(index => ensureIndex(v12Store, index.name, index.keyPath, index.options || {}));
-    });
-    const purchaseDocumentStore = transaction.objectStore(STORE.PURCHASE_DOCUMENTS);
-    const salesDocumentStore = transaction.objectStore(STORE.SALES_DOCUMENTS);
-    const purchaseLineStore = transaction.objectStore(STORE.PURCHASE_LINES);
-    const salesLineStore = transaction.objectStore(STORE.SALES_LINES);
-    const inventoryMovementStore = transaction.objectStore(STORE.INVENTORY_MOVEMENTS);
-    const orderEventStore = transaction.objectStore(STORE.ORDER_EVENTS);
-    [purchaseDocumentStore, salesDocumentStore].forEach(documentStore => {
-      ensureIndex(documentStore, 'byCommandId', 'commandId');
-      ensureIndex(documentStore, 'byDocumentContractSourceKey', ['documentContract', 'sourceDocumentKey'], { unique: true });
-      ensureIndex(documentStore, 'byRevisionStatus', ['revision', 'businessStatus']);
-      ensureIndex(documentStore, 'byProjectionStatus', 'projectionStatus');
-      ensureIndex(documentStore, 'bySourceType', 'sourceType');
-    });
-    ensureIndex(purchaseLineStore, 'byDocumentRevision', ['purchaseDocumentId', 'revision']);
-    ensureIndex(purchaseLineStore, 'byLineIdentity', ['purchaseDocumentId', 'lineIdentityId'], { unique: true });
-    ensureIndex(purchaseLineStore, 'byCommandId', 'commandId');
-    ensureIndex(purchaseLineStore, 'bySourceLineKey', ['purchaseDocumentId', 'sourceLineKey'], { unique: true });
-    ensureIndex(salesLineStore, 'byDocumentRevision', ['salesDocumentId', 'revision']);
-    ensureIndex(salesLineStore, 'byLineIdentity', ['salesDocumentId', 'lineIdentityId'], { unique: true });
-    ensureIndex(salesLineStore, 'byCommandId', 'commandId');
-    ensureIndex(salesLineStore, 'bySourceLineKey', ['salesDocumentId', 'sourceLineKey'], { unique: true });
-    ensureIndex(inventoryMovementStore, 'byCommandRevision', ['commandId', 'sourceDocumentRevision']);
-    ensureIndex(inventoryMovementStore, 'byReversalOf', 'reversalOf');
-    ensureIndex(orderEventStore, 'byCommandRevision', ['commandId', 'sourceDocumentRevision']);
-    ensureIndex(orderEventStore, 'byLedgerSequence', 'ledgerSequence', { unique: true });
-    metaStore.put({ key: 'schemaVersion', value: 12, updatedAt: nowIso() });
-  }
-
-  if (oldVersion < 11) {
-    V11_STORE_DEFINITIONS.forEach(definition => {
-      const v11Store = ensureStore(definition.name, definition.options);
-      definition.indexes.forEach(index => ensureIndex(v11Store, index.name, index.keyPath, index.options || {}));
-    });
-    metaStore.put({ key: 'schemaVersion', value: 11, updatedAt: nowIso() });
-  }
-
-  if (oldVersion < 10) {
-    V10_STORE_DEFINITIONS.forEach(definition => {
-      const v10Store = ensureStore(definition.name, definition.options);
-      definition.indexes.forEach(index => ensureIndex(v10Store, index.name, index.keyPath, index.options || {}));
-    });
-    metaStore.put({ key: 'schemaVersion', value: 10, updatedAt: nowIso() });
-  }
-
-  if (oldVersion < 9) {
-    V9_STORE_DEFINITIONS.forEach(definition => {
-      const v9Store = ensureStore(definition.name, definition.options);
-      definition.indexes.forEach(index => ensureIndex(v9Store, index.name, index.keyPath, index.options || {}));
-    });
-
-    const customerStore = transaction.objectStore(STORE.CUSTOMERS);
-    ensureIndex(customerStore, 'byCanonicalCustomerId', 'canonicalCustomerId');
-    ensureIndex(customerStore, 'byCustomerCode', 'normalizedCustomerCode');
-    ensureIndex(customerStore, 'byStatusQuality', ['status', 'qualityStatus']);
-    const cursorRequest = customerStore.openCursor();
-    cursorRequest.onsuccess = () => {
-      const cursor = cursorRequest.result;
-      if (!cursor) return;
-      const customer = cursor.value || {};
-      const customerId = String(customer.customerId || '').trim();
-      const qualityStatus = customer.qualityStatus || 'UNVERIFIED';
-      const customerCode = String(customer.customerCode || customer.erpCustomerCode || '').trim();
-      const normalizedName = customer.normalizedName || normalizeText(customer.customerName);
-      cursor.update({
-        ...customer,
-        customerId,
-        customerCode,
-        normalizedCustomerCode: normalizeText(customerCode),
-        normalizedName,
-        looseNormalizedName: normalizeText(normalizedName).replace(/[()주식회사유한회사\s]/g, ''),
-        status: customer.status || 'ACTIVE',
-        qualityStatus,
-        canonicalCustomerId: qualityStatus === 'SUPERSEDED'
-          ? String(customer.canonicalCustomerId || customer.supersededByCustomerId || '')
-          : customerId,
-        revision: Math.max(1, Number(customer.revision || 1)),
-        updatedAt: customer.updatedAt || nowIso()
-      });
-      cursor.continue();
-    };
-
-    metaStore.put({ key: 'schemaVersion', value: 9, updatedAt: nowIso() });
-  }
-
-  if (oldVersion < 10) metaStore.put({ key: 'schemaVersion', value: 10, updatedAt: nowIso() });
-
-  if (oldVersion < 8) {
-    for (const definition of V8_STORE_DEFINITIONS) {
-      const v8Store = ensureStore(definition.name, { keyPath: definition.keyPath });
-      for (const entry of definition.indexes) {
-        ensureIndex(v8Store, entry.name, entry.keyPath, entry.options);
-      }
-    }
-
-    const orderStore = transaction.objectStore(STORE.ORDERS);
-    if (orderStore.indexNames.contains('bySourceMessageKey')) orderStore.deleteIndex('bySourceMessageKey');
-    orderStore.createIndex('bySourceMessageKey', 'sourceMessageKey', { unique: false });
-    ensureIndex(orderStore, 'bySourceDocumentKey', 'sourceDocumentKey', { unique: true });
-
-    const cursorRequest = orderStore.openCursor();
-    cursorRequest.onsuccess = () => {
-      const cursor = cursorRequest.result;
-      if (!cursor) return;
-      const order = cursor.value;
-      const sourceMessageKey = String(order.sourceMessageKey || '').trim();
-      if (!String(order.sourceDocumentKey || '').trim() && sourceMessageKey) {
-        cursor.update({ ...order, sourceDocumentKey: `LEGACY:${sourceMessageKey}` });
-      }
-      cursor.continue();
-    };
-    metaStore.put({ key: 'schemaVersion', value: ORDERQ_DB_VERSION, updatedAt: new Date().toISOString() });
-  }
-
-  if (oldVersion < 7) {
-    for (const definition of V7_STORE_DEFINITIONS) {
-      const v7Store = ensureStore(definition.name, { keyPath: definition.keyPath });
-      for (const entry of definition.indexes) {
-        ensureIndex(v7Store, entry.name, entry.keyPath, entry.options);
-      }
-    }
-    for (const [storeName, indexes] of Object.entries(V7_EXISTING_STORE_INDEXES)) {
-      const existingStore = transaction.objectStore(storeName);
-      for (const entry of indexes) {
-        ensureIndex(existingStore, entry.name, entry.keyPath, entry.options);
-      }
-    }
-    const updatedAt = new Date().toISOString();
-    metaStore.put({ key: 'schemaVersion', value: ORDERQ_DB_VERSION, updatedAt });
-    metaStore.put({ key: 'dispatchStagePolicyCatalog', value: DISPATCH_STAGE_POLICY, updatedAt });
-    metaStore.put({
-      key: 'mvpActorCapabilityContract',
-      value: { defaultActorId: MVP_ACTOR_ID, capabilities: Object.values(CAPABILITY) },
-      updatedAt
-    });
-  }
-
   if (oldVersion < 6) {
     const orderStore = transaction.objectStore(STORE.ORDERS);
     const orderRequest = orderStore.getAll();
@@ -529,32 +267,18 @@ export function upgradeOrderQDbSchema(db, transaction, oldVersion = 0) {
     orderRequest.onsuccess = () => { migrationOrders = orderRequest.result || []; migrate(); };
     itemRequest.onsuccess = () => { migrationItems = itemRequest.result || []; migrate(); };
   }
-  // Intermediate migrations intentionally remain independently runnable, but
-  // the persisted metadata must always describe the database version that was
-  // actually opened, including fresh and v7-v11 upgrades.
-  metaStore.put({ key: 'schemaVersion', value: ORDERQ_DB_VERSION, updatedAt: nowIso() });
 }
 
 export function openOrderQDb() {
   if (dbPromise) return dbPromise;
-  const pending = new Promise((resolve, reject) => {
+  dbPromise = new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
-    request.onupgradeneeded = event => upgradeOrderQDbSchema(request.result, request.transaction, event.oldVersion);
+    request.onupgradeneeded = event => upgrade(request.result, request.transaction, event.oldVersion);
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
     request.onblocked = () => reject(new Error('ORDER Q DB 업그레이드가 다른 탭에 의해 차단되었습니다. 다른 ORDER Q 탭을 닫고 다시 시도하세요.'));
   });
-  dbPromise = pending.catch(error => {
-    dbPromise = null;
-    throw error;
-  });
   return dbPromise;
-}
-
-export function closeOrderQDb() {
-  if (!dbPromise) return;
-  dbPromise.then(db => db.close()).catch(() => {});
-  dbPromise = null;
 }
 
 export function requestToPromise(request) {

@@ -5,8 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="google" content="notranslate">
   <title>ONEAPP ORDER Q vNext · 출고 운영</title>
-  <script src="/nexus/common/nexus-auth-config.js?v=2.0.1"></script><script src="/nexus/common/nexus-auth.js?v=2.1.2"></script>
-  <link rel="stylesheet" href="./orderq.css?v=0.11.0">
+  <link rel="stylesheet" href="./orderq.css?v=0.7.1">
 </head>
 <body class="operations-page">
   <div class="shell">
@@ -14,23 +13,21 @@
       <div class="brand">
         <strong>ONEAPP</strong>
         <span class="logo-frame" aria-hidden="true"><img src="../assets/order-q-logo.png" alt=""></span>
-        <span class="badge">vNext 0.8.0</span>
+        <span class="badge">vNext 0.7.1</span>
         <span>ORDER Q · 출고 운영</span>
       </div>
       <div class="top-actions">
         <a class="btn dark" href="./">주문현황</a>
         <a class="btn dark" href="./collector.html">이력수집</a>
         <a class="btn dark" href="./cloud.html">클라우드</a>
-        <a class="btn dark" href="./dispatch.html">출고 작업대</a>
         <a class="btn primary" href="./input.html">+ 주문서 입력</a>
       </div>
     </header>
     <main class="panel">
-      <p class="notice">아직 출고하지 않은 주문과 재고를 한눈에 확인하세요. 주문번호를 누르면 주문 내용을 다시 확인할 수 있습니다.</p>
+      <p class="notice">전표 조건을 먼저 적용한 뒤 상품코드별 주문·판매이관·미출고를 집계합니다. 전표 수정은 주문번호를 눌러 주문현황에서 진행합니다.</p>
       <div id="message" class="message page-message"></div>
       <div class="toolbar document-filters operations-filters">
-        <button class="btn primary" id="currentSituationBtn" type="button">현재상황 불러오기</button>
-        <button class="btn" id="refreshBtn" type="button">화면 새로고침</button>
+        <button class="btn" id="refreshBtn" type="button">새로고침</button>
         <button class="btn" id="syncBtn" type="button">클라우드 동기화</button>
         <label>주문상태
           <select id="orderStatusFilter">
@@ -42,8 +39,8 @@
         <label>관리자상태
           <select id="adminStatusFilter"><option value="">전체</option><option value="UNCHECKED">미확인</option><option value="CHECKED">확인</option><option value="HOLD">보류</option></select>
         </label>
-        <label>처리상태
-          <select id="transferStatusFilter"><option value="">전체</option><option value="UNTRANSFERRED">미처리</option><option value="PARTIAL">일부처리</option><option value="TRANSFERRED">처리완료</option><option value="OVER_TRANSFERRED">초과처리</option></select>
+        <label>이관상태
+          <select id="transferStatusFilter"><option value="">전체</option><option value="UNTRANSFERRED">미이관</option><option value="PARTIAL">부분이관</option><option value="TRANSFERRED">이관완료</option><option value="OVER_TRANSFERRED">초과이관</option></select>
         </label>
         <label>업무상태
           <select id="operationStatusFilter"><option value="">전체</option><option value="ACTIVE">운영중</option><option value="CLOSED">종결</option></select>
@@ -56,26 +53,24 @@
         <span class="spacer"></span>
         <span class="status" id="summaryText">불러오는 중...</span>
       </div>
-      <div class="operations-alerts" id="alertSummary" data-situation-dashboard="single"></div>
+      <div class="operations-alerts" id="alertSummary"></div>
       <div class="table-wrap operations-table-wrap">
         <table class="operations-table">
           <thead><tr>
             <th>품목코드</th><th>품명</th><th>규격</th><th>단위</th>
-            <th>주문수량</th><th>처리수량</th><th>미출고</th><th>재고</th><th>출고 후 예상</th>
-            <th>처리상태</th><th>담당자</th><th>주문번호</th>
+            <th>유효주문</th><th>이관</th><th>미출고</th><th>재고</th><th>재고-미출고</th>
+            <th>이관상태</th><th>담당자</th><th>주문번호</th>
           </tr></thead>
           <tbody id="operationRows"></tbody>
         </table>
       </div>
     </main>
   </div>
-  <script type="module" src="./workflow-guide.js?v=0.11.0"></script>
   <script type="module">
-    import { getOperationsSnapshot } from './order-operations-repository.js?v=0.8.0';
-    import { TRANSFER_STATUS_LABEL } from './order-fulfillment-lifecycle.js?v=0.8.0';
-    import { syncNow } from './orderq-sync-engine.js?v=0.8.0';
-    import { getCloudUrl } from './orderq-cloud-adapter.js?v=0.8.0';
-    import { attachSituationUi } from './situation-ui.js?v=0.1.1';
+    import { getOperationsSnapshot } from './order-operations-repository.js?v=0.7.1';
+    import { TRANSFER_STATUS_LABEL } from './order-fulfillment-lifecycle.js?v=0.7.1';
+    import { syncNow } from './orderq-sync-engine.js?v=0.7.1';
+    import { getCloudUrl } from './orderq-cloud-adapter.js?v=0.7.1';
 
     const CURRENT_ASSIGNEE_KEY = 'oneapp.orderq.current-assignee.v1';
     const rows = document.getElementById('operationRows');
@@ -91,7 +86,6 @@
       search: document.getElementById('productSearch')
     };
     let latestSnapshot = null;
-    let currentDashboardMode = 'LEGACY_EVIDENCE';
 
     const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
     const qty = value => Number(value || 0).toLocaleString('ko-KR', { maximumFractionDigits: 3 });
@@ -124,8 +118,7 @@
     }
 
     function transferBadge(status) {
-      const labels = { UNTRANSFERRED:'미처리', PARTIAL:'일부처리', TRANSFERRED:'처리완료', OVER_TRANSFERRED:'초과처리' };
-      return `<span class="document-badge transfer-${esc(String(status).toLowerCase())}">${esc(labels[status] || TRANSFER_STATUS_LABEL[status] || status)}</span>`;
+      return `<span class="document-badge transfer-${esc(String(status).toLowerCase())}">${esc(TRANSFER_STATUS_LABEL[status] || status)}</span>`;
     }
 
     function rowHtml(row) {
@@ -144,7 +137,6 @@
       latestSnapshot = await getOperationsSnapshot(currentFilters());
       populateAssignees(latestSnapshot.bundles);
       if (filters.assignee.value !== currentFilters().assigneeId) latestSnapshot = await getOperationsSnapshot(currentFilters());
-      if (currentDashboardMode === 'OFFICIAL_SITUATION') return;
       const query = filters.search.value.trim().toLowerCase();
       const visible = latestSnapshot.rows.filter(row => !query || [row.productCode, row.productName, row.specification].some(value => String(value || '').toLowerCase().includes(query)));
       const unchecked = latestSnapshot.filteredBundles.filter(bundle => bundle.order.adminStatus === 'UNCHECKED').length;
@@ -152,7 +144,7 @@
       const over = visible.filter(row => row.hasOverTransfer).length;
       const shortages = visible.filter(row => row.availableAfterOrders < 0).length;
       summary.textContent = `전표 ${latestSnapshot.filteredBundles.length}/${latestSnapshot.bundles.length}건 · 상품 ${visible.length}개`;
-      alertSummary.innerHTML = `<span>미확인 <b>${unchecked}</b></span><span>보류 <b>${holds}</b></span><span class="${over ? 'danger' : ''}">초과처리 <b>${over}</b></span><span class="${shortages ? 'warn' : ''}">재고부족 <b>${shortages}</b></span>`;
+      alertSummary.innerHTML = `<span>미확인 <b>${unchecked}</b></span><span>보류 <b>${holds}</b></span><span class="${over ? 'danger' : ''}">초과이관 <b>${over}</b></span><span class="${shortages ? 'warn' : ''}">재고부족 <b>${shortages}</b></span>`;
       rows.innerHTML = visible.length ? visible.map(rowHtml).join('') : '<tr><td colspan="12" class="empty">조건에 맞는 운영 상품이 없습니다.</td></tr>';
     }
 
@@ -173,7 +165,6 @@
       render().catch(error => showMessage(error.message || String(error), 'error'));
     });
     document.getElementById('refreshBtn').addEventListener('click', () => render().catch(error => showMessage(error.message || String(error), 'error')));
-    attachSituationUi({button:document.getElementById('currentSituationBtn'),summary,alerts:alertSummary,rows,message:showMessage,onRendered:()=>{currentDashboardMode='OFFICIAL_SITUATION';}});
     document.getElementById('syncBtn').addEventListener('click', async event => {
       if (!getCloudUrl()) return showMessage('클라우드 URL을 먼저 설정하세요.', 'warn');
       event.currentTarget.disabled = true;

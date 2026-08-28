@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>Smart Parser</title>
+    <title>ONEAPP MerchOps - Smart Parser [v3.2.0 CatalogWarehousePricing]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -133,15 +133,8 @@
         };
 
     </script>
-    <script src="/nexus/common/nexus-auth-config.js?v=2.0.1"></script>
-    <script src="/nexus/common/nexus-auth.js?v=2.1.2"></script>
-    <script src="/nexus/common/apps-config.js?v=1.4.0"></script>
-<script src="/nexus/common/nexus-top.js?v=1.10.0"></script>
-    <style>:root{--nexus-top-height:44px}nexus-top{display:block;min-height:var(--nexus-top-height)}.nexus-top-fallback{height:var(--nexus-top-height);padding:0 14px;display:flex;align-items:center;gap:12px;background:#0b1021;color:#fff;font:12px Pretendard,"Noto Sans KR",sans-serif}.nexus-top-fallback strong{letter-spacing:.08em}.nexus-top-fallback span{color:#cbd5e1}.nexus-top-fallback button{margin-left:auto;border:1px solid #64748b;border-radius:6px;padding:5px 9px;background:transparent;color:#fff;cursor:pointer}body>#root>.h-screen{height:calc(100vh - var(--nexus-top-height))!important}</style>
-  <link rel="icon" type="image/png" href="/nexus/assets/nexus-favicon.png">
 </head>
 <body>
-    <nexus-top app-id="smart-parser"><div class="nexus-top-fallback" role="status"><strong>NEXUS</strong><span>NEXUS 메뉴를 불러오지 못했습니다.</span><button type="button" onclick="window.location.reload()">재시도</button></div></nexus-top>
     <div id="root"></div>
 
     <script type="text/javascript">
@@ -1343,19 +1336,6 @@ const useParserApp = () => {
     const [showMappingExcludeModal, setShowMappingExcludeModal] = useState(false);
     const [lastExcludedCount, setLastExcludedCount] = useState(0);
     const showToast = useCallback((msg) => { setToastMsg(msg); setTimeout(() => setToastMsg(''), 3000); }, []);
-    useEffect(() => {
-        const message = String(processMsg || toastMsg || '').trim();
-        if (!message || !/(저장|마스터 적용|동기화|히스토리)/.test(message)) return;
-        const failed = /(실패|오류|차단|❌)/.test(message);
-        const completed = !failed && /(완료|반영|✅)/.test(message);
-        window.NEXUS_TOP?.reportStatus({
-            appId: 'smart-parser',
-            taskId: 'smart-parser-storage',
-            level: failed ? 'error' : completed ? 'normal' : isProcessing ? 'progress' : 'warning',
-            active: !completed,
-            message
-        });
-    }, [isProcessing, processMsg, toastMsg]);
     return { masterProducts, saveMaster, parserDict, saveDict, parserExcludeDict, saveParserExcludeDict, stoppedProducts, setStoppedProducts, showStopManager, setShowStopManager, catalogUpdatedAt, setCatalogUpdatedAt, catalogWarehouseMap, saveCatalogWarehouse, marginRules, parserBuffer, setParserBuffer, currentTag, setCurrentTag, activeTab, setActiveTab, showInputModal, setShowInputModal, showReviewModal, setShowReviewModal, showErpModal, setShowErpModal, toastMsg, showToast, isProcessing, setIsProcessing, processMsg, setProcessMsg, globalSearch, setGlobalSearch, targetId, setTargetId, selectedMissingCodes, setSelectedMissingCodes, processedCodes, setProcessedCodes, missingSearch, setMissingSearch, showExcludeModal, setShowExcludeModal, excludeTarget, setExcludeTarget, showMappingExcludeModal, setShowMappingExcludeModal, lastExcludedCount, setLastExcludedCount };
 };
 const useParserActions = (appState) => {
@@ -2609,8 +2589,8 @@ const ParserApp = () => {
                     React.createElement("div", { className: "bg-[#0f172a] rounded-xl shadow-lg border border-slate-800 flex flex-col overflow-hidden" },
                         React.createElement("div", { className: "px-5 py-3 flex justify-between items-center border-b border-slate-800/80 bg-[#0b1120] gap-4" },
                             React.createElement("div", { className: "flex items-center group shrink-0" },
-                                React.createElement("span", { className: "text-[14px] font-black text-slate-100 mr-3 whitespace-nowrap" }, "ORDER IN · 주문입력"),
-                                React.createElement("div", { className: "hidden" },
+                                React.createElement("span", { className: "text-xl font-black text-emerald-400 mr-3" }, "ONEAPP"),
+                                React.createElement("div", { className: "flex flex-col border-l-2 border-slate-700 pl-3" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "Smart Parser"),
                                         React.createElement("span", { className: "ml-2 bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 px-1.5 py-0.5 rounded text-[9px] font-bold" }, "v3.2.0 CatalogWarehousePricing")),

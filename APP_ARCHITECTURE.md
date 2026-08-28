@@ -1,8 +1,8 @@
 # ONEAPP Application Architecture
 
 - Repository: orderzoneapp-coder/oneapp
-- Architecture document version: 1.6.1
-- Last reviewed: 2026-08-28
+- Architecture document version: 1.4.3
+- Last reviewed: 2026-08-13
 - Machine-readable companion: app-manifest.json
 
 ## 1. Purpose
@@ -83,11 +83,6 @@ Shared storage or navigation does not make their business meaning identical.
 
 | Component | Type | Status | Primary responsibility |
 |---|---|---|---|
-| `nexus/index.html` | Web entry | Production | Public login, first-owner bootstrap, and invitation activation entry; no business token is entered here |
-| `nexus/home/index.html` | Web entry | Production | Permission-filtered normal-user work home shown after authentication with the shared public company projection rendered without a profile-read gate |
-| `nexus/company.html` | Web entry | Production | Owner-master-only maintenance of protected company fields, accounting periods, addresses, and reviewed local OCR results |
-| `nexus/admin/index.html` | Web entry | Production | Owner-master-only user, permission, service-secret, recovery, and audit administration |
-| `nexus/server/nexus-auth-gateway.gs` | Apps Script service | Production | Authentication database, opaque sessions, permission enforcement, audit logging, and server-only credential proxy to the retained cloud service |
 | `MerchOps.html` | Web entry | Production | Product master review, pricing, promotion, and Excel-based product-information application workflow; stopped-product state is consumed only for worktable protection and compatibility reads |
 | `DataOps.html` | Web entry | Production | Purchase, sales, inventory, stock ledger, cost, and performance analysis; administrator-reviewed out-of-list inventory product selection and positive-count sale resume |
 | `SmartParser.html` | Web entry | Production | Parse external documents, resolve duplicate mappings, own supplier exclusions and stopped/sold-out product management, apply approved changes directly to the product master, and record change history |
@@ -96,11 +91,10 @@ Shared storage or navigation does not make their business meaning identical.
 | `history_viewer.html` | Web entry | Production | Inspect product-change history and price trends |
 | `Master.html` | Web entry | Pilot | Product-master lookup and administrator-reviewed add/update; initial registration and full replacement are not active in the first phase |
 | `Item_manager.html` | Web entry | Pilot / transition | Existing category lookup and product-management route retained until approved feature migration and result verification are complete |
-| `orders.html` (`orderops_list.html`, `orderops/list.html`) | Web entry | Pilot | ORDER Q shipment management: `orders.html` is the primary public entry and deploys the complete root ORDER Q source; the existing root mirror and canonical compatibility route remain synchronized. The app provides four-way structure-first Excel intake, read-only DataOps finalized-inventory and SmartInput order-ledger adapters, editable order status and order-aware inventory balance/stock-ledger review, purchase-plan editing and recovery, explicit revisioned cloud sharing, and integrated Excel output |
+| `orderops/list.html` | Web entry | Pilot | ORDER Q shipment management: four-way structure-first Excel intake, editable order status and order-aware inventory balance/stock-ledger review, purchase-plan editing and recovery, explicit revisioned cloud sharing, and integrated Excel output |
 | `orderq/index.html` (`input.html`, `parser.html`, `collector.html`, `cloud.html`) | Web entry group | Pilot | ORDER Q vNext manual/text order intake, source-preserving historical collection, order-to-sales fulfillment evidence, parser evidence review, and token-protected revisioned cloud sync; existing `orderops/` remains an independent compatibility route |
-| `smartinput/index.html` | Web entry | Pilot | Standalone SmartInput workbench for order, purchase, sale, and estimate source capture through direct, file, text, clipboard, photo OCR, and voice STT inputs; source-preserving automatic analysis; configurable entry fields; local estimate catalog; and order delivery to the ORDER Q vNext ledger |
 | `coreEngine.js` | Shared library | Production | Storage, pricing, history, export, cloud synchronization, and master-data utilities |
-| `code.gs` (`company-profile.gs`) | Cloud service | Production | Google Apps Script API for master, history, configuration, the finalized DataOps inventory snapshot, immutable Shipping purchase-plan revisions, and revisioned server-owned company profile data |
+| `code.gs` | Cloud service | Production | Google Apps Script API for master, history, configuration, the finalized DataOps inventory snapshot, and immutable Shipping purchase-plan revisions |
 
 ---
 
@@ -122,65 +116,15 @@ Production files must not be reorganized into folders without first updating and
 - navigation regression tests;
 - external bookmarks or operational links where applicable.
 
-### 5.2 NEXUS authentication and authorization
-
-`nexus/index.html` is the only public application entry. The first completed bootstrap creates exactly one `OWNER_MASTER`; no later request can create or transfer that role. The owner master invites users, assigns `FULL_ACCESS`, `VIEWER`, or non-administrative `CUSTOM` permissions, soft-deletes users, restores them for 30 days, configures business service credentials, and inspects the audit trail from the separate `nexus/admin/index.html` screen. Signed-in users enter `nexus/home/index.html`, where only permitted applications are shown.
-
-`nexus/server/nexus-auth-gateway.gs` is deployed as a standalone Apps Script Web App executing as its owner. Its private spreadsheet stores users, password verifiers, sessions, rate limits, and audit records. Passwords are transformed in the browser with PBKDF2-SHA-256 before transmission and are never stored as entered. The gateway adds its own private HMAC pepper, issues random opaque 12-hour sessions, revokes all user sessions on deletion, and rejects every protected request whose session or permission is invalid. Authentication state is held only in per-tab `sessionStorage`; persistent browser storage must not contain an authentication session or a business credential.
-
-The gateway is also the only browser-facing route to protected Apps Script business actions. Under `NEXUS_AUTH_V2`, application clients call `ONEAPP_AUTH.gateway(operationId, payload)` with POST only. The server registry fixes allowed applications, required user permission, upstream action, Foundation/DataOps/ORDER Q/Shipping boundary, READ/WRITE credential, allowed payload fields, response sanitizer, and audit category. Browser input cannot select an upstream URL, raw action, actor, user, application, request identity, or credential. Eight boundary credentials remain in NEXUS Script Properties and four binding sets in ONEAPP validate fixed-length SHA-256 digests, service roles, scope, status, and rotation metadata. The upstream actor is always `NEXUS_GATEWAY`; the signed-in user is an audit subject only. V1 remains a separate `LEGACY_V1` server compatibility path and is not used by V2 application consumers.
-
-`foundation.replace_all` is the only V2 full-replacement operation. It requires both `foundation.write` and `foundation.replace`; the ONEAPP server writes Master, History, and Config to the inactive A/B slot under a script lock, verifies the complete staged dataset, and only then switches the active pointer. A timeout or write failure before activation leaves the previous slot active. V2 browser consumers cannot invoke the legacy `initSync`, `chunk_master`, or `chunk_history` sequence; the authenticated `LEGACY_V1` Gateway compatibility path stages the same inactive slot and activates it only after the final config verification.
-
-The owner master is the only administrative authority. `FULL_ACCESS` means all business permissions and explicitly excludes `admin.users`, `admin.services`, `admin.audit`, and `admin.company`; custom profiles cannot contain an `admin.*` permission. The server, not the menu, is authoritative. UI filtering is convenience only, and every proxy or administration request is independently authorized by the gateway.
-
-### 5.2.1 NEXUS common header
-
-`nexus/common/nexus-top.js` is the shared `<nexus-top>` web component. `nexus/common/apps-config.js` is the single runtime mapping from application IDs to the four work groups and the SmartInput global entry. The default header flow is Foundation (`기준정보`), Pricing (`가격·시세`), SmartInput, Shipping (`주문·출고`), then Inventory (`재고·정산`), with the existing management/operations divider between Pricing and SmartInput. SmartInput remains the fixed first entry in the operations section, while its visibility is managed in the same header-settings list as the work groups. The five entries render as text tabs with a desaturated selected background and no underline while preserving `aria-current`, ordering, hiding, mobile horizontal access, and application identity contracts. The Light/Dark switch is always available beside the tabs and is not duplicated in the settings drawer. Display names and filenames are not app identity contracts.
-
-Header preferences are local display state under the `oneapp.nexus.v1.` prefix. Work-group order and visibility are stored separately from per-application favorites and hidden state. A hidden current work group is rendered temporarily without changing the stored preference.
-
-The current application reports only its own save, synchronization, warning, and error state through `window.NEXUS_TOP.reportStatus`. Concurrent signals use the fixed priority `error > warning > progress > normal`; snapshots from other applications are historical and must include their last-check time rather than appear live. `nexus:before-navigate` is the cancelable leave-guard event owned by the current application. After navigation is allowed, the shared header owns a same-tab loading cover that uses no external image assets and carries the current light or dark mode in a short-lived destination marker in `sessionStorage`. Existing consumers clear it after the destination `load`; an opt-in consumer with `data-nexus-ready-strategy="app"` clears it only after full server authentication, current authorization context, and its minimum interactive shell are ready and it dispatches `nexus:app-ready`. Cached or expired authorization must never expose the data shell. To avoid a cold refresh on normal navigation without weakening that gate, the authentication client refreshes its five-minute client bundle 90 seconds before expiry while the tab is active and rechecks freshness on `pageshow`, visibility return, and header-link intent. BroadcastChannel refresh signals never copy the tab-scoped session token. The bounded 12-second safety timeout remains the final recovery path.
-
-Every consumer reserves `--nexus-top-height`; the shared component fixes it at 64px on desktop and 104px at 680px and below, and each consumer includes a light-DOM fallback. Failure to load or initialize the header must leave the application boot path independent and show only the retryable NEXUS fallback. The complete event and API examples are documented in `nexus/common/README.md` and registered as the `nexus-header` shared contract in `app-manifest.json`.
-
-The authenticated user action opens a compact account panel. `업무 홈` returns to the permission-filtered home and the separate logout control remains available. Protected company maintenance is linked only from the owner-master administration screen; the company application and both server layers independently require `OWNER_MASTER` through `admin.company` for every protected company read or management operation.
-
-`nexus/common/nexus-company-footer.js` owns both the single `NEXUS_COMPANY_PUBLIC_FOOTER_V1` Snapshot and the shared `<nexus-company-footer>` component. The common protected-screen `nexus-auth.js` bootstrap loads this same-origin asset on every NEXUS business screen while excluding the public login; individual HTML files never copy company values. The component synchronously renders the last valid user/company/schema-scoped local Snapshot or the deployed default Snapshot, and only after that starts a deduplicated background `company.public_profile_read` with `knownRevision`. An equal revision returns metadata only, a lower server revision is ignored, and only a higher server revision is committed to the current user's local envelope before the Footer and other public consumers update. A failed refresh leaves the last valid Footer intact and never blocks authentication, `nexus:app-ready`, or the business workspace. The Footer remains the final element in normal document flow; a flex-column minimum page height places it at the bottom of short pages without a fixed or sticky overlay.
-
-The public Snapshot contains exactly company name, business registration number, representative, company telephone, business address, homepage, and revision. Schema and company scope stay in the storage envelope outside the Snapshot. Blank company telephone or homepage values are omitted from display. Opening date, taxation type, business type/items, home telephone, personal mobile, personal email, the protected company record, accounting periods, certificate/OCR data, audit data, and operational metadata are prohibited from this projection.
-
-`smartinput/index.html` is a NEXUS-header consumer during its standalone pilot. Its public route is `/smartinput/`; it is registered in the all-apps list and as the fixed-position SmartInput global entry. SmartInput remains part of the Shipping application group for application-list organization and status routing.
-
-### 5.2.2 NEXUS company profile
-
-`nexus/home/index.html` renders its company summary from `NEXUS_COMPANY_PUBLIC_FOOTER_V1` and does not call or await `company.profile_read`. `nexus/company.html` is the owner-master maintenance route; it does not install its protected form, OCR, or accounting-period DOM until the authenticated session has `OWNER_MASTER` and `admin.company`. `FULL_ACCESS`, `VIEWER`, and `CUSTOM` roles never receive `admin.company`, and the gateway plus ONEAPP service recheck that authority for every protected company read and management operation.
-
-The canonical state is server-owned by `company-profile.gs` in `CompanyProfile_NEXUS`, `CompanyAccountingPeriods_NEXUS`, `CompanyAudit_NEXUS`, `CompanyBackups_NEXUS`, and `CompanyMigrations_NEXUS`. Browser `localStorage`, `sessionStorage`, defaults, and per-load seeding are not company data stores. Profile and accounting writes require the current company revision, run under the common script lock, append an audit record, verify the saved snapshot, and restore every affected sheet snapshot if any step fails.
-
-The one-time migration is identified by `NEXUS-COMPANY-20260827-01`. It updates only approved source fields, records explicit unknowns as `null`, preserves `false`, stores business types/items as arrays, keeps every unprovided existing value, and records an immutable applied marker so reruns and later deployments cannot overwrite user changes. A deployment backup is recorded before the first production application. Rollback uses that backup plus the pre-deployment Apps Script immutable version; records are not silently deleted.
-
-Business-certificate images and PDFs are validated by file signatures and processed locally with PDF.js and Tesseract.js. Only the extracted allow-listed field values, field confidence, source labels, and document signals may cross the gateway for validation. The source file, raw OCR text, representative birth date, resident number, and other sensitive document content are never persisted or logged. Address lookup reuses the existing Daum Postcode service and keeps address 1 and address 2 independent.
-
-### 5.2.3 NEXUS application fixed layout
-
-`nexus/common/nexus-app-ui.css` is the fixed application-layout interface under the common header. The common header spans the browser width; supported application workspaces use the shared `--nexus-content-max-width` and fixed component dimensions. No alternate spacing preference, event, or saved value is read or applied. `nexus/common/nexus-ui-contract.js` is the code registry for application rollout status and registered exceptions; `nexus/common/NEXUS_APP_UI_CONTRACT.md` is the matching operator and regression record.
-
-Foundation is the first pilot consumer. `Master.html`, its embedded `partner_db.html`, and `Item_manager.html` consume the contract. Master uses one light application header containing the Foundation title and product/customer target tabs; the former black `MASTER · target` bar is prohibited. The application header spans the browser width independently from the centered `--nexus-content-max-width` workspace. A second tool row always exposes the current parent and the `조회`/`일괄관리` child routes; search, counts, and work actions occupy the right-side group. Product/customer lookup remains the default route, while new registration is a work action and batch management is a persistent child route. The embedded customer workbench consumes the same theme tokens and accepts same-origin `ONEAPP_NEXUS_THEME` updates without reload. Product and customer tables remain horizontally scrollable data structures on narrow screens instead of converting to cards. MerchOps, DataOps, ORDER Q, and Smart Parser retain their current UI as registered staged exceptions until their separate rollout gates pass.
-
-### 5.3 Shared browser state
+### 5.2 Shared browser state
 
 The current applications share the browser database `MerchOpsDB` and a set of `localStorage` keys.
-
-The NEXUS protected company profile is an explicit exception to browser-owned state: its canonical record, revisions, accounting periods, audit, backups, and migration marker exist only in the protected server sheets described in 5.2.2. The separately allow-listed public Footer projection may retain one user/company/schema-scoped local Snapshot for immediate rendering; it is not a writable company-profile store and a different authenticated user never hydrates that envelope.
 
 Important contracts include:
 
 | Contract | Current key or resource | Main consumers |
 |---|---|---|
-| Company profile | Protected Apps Script sheets owned by `company-profile.gs`; no browser storage key | Owner-master `nexus/company.html` through the authenticated gateway |
-| Public company Footer | `oneapp.nexus.company-public.ONEAPP.NEXUS_COMPANY_PUBLIC_FOOTER_V1.<userScope>` envelope scoped by user/schema/company, containing a Snapshot with six public fields plus revision only | Every protected NEXUS business screen through the common auth bootstrap and shared Footer component |
-| Product master | `merchMaster_v870`, `MerchOpsDB` / `master_products`; B+ state `oneapp.foundation.product-backup-state.v1` is committed atomically with each master replacement | MerchOps, SmartParser, DataOps synchronization, export center, settings, history viewer, ORDER Q 수기입력(읽기 전용 검색) |
+| Product master | `merchMaster_v870`, `MerchOpsDB` / `master_products` | MerchOps, SmartParser, DataOps synchronization, export center, settings, history viewer, ORDER Q 수기입력(읽기 전용 검색) |
 | Master change notification | `merchMaster_sync_trigger` | SmartParser, DataOps, export center, and settings; MerchOps reloads master values on a full page refresh and keeps an open worktable unchanged |
 | Change history | `merchHistory_v870` | MerchOps, SmartParser, DataOps, history viewer, cloud backup |
 | Parser dictionary | `parserDict_v870` | SmartParser, MerchOps, settings, cloud configuration |
@@ -201,14 +145,9 @@ Important contracts include:
 | OrderOps Excel aliases | `oneapp.orderops.excel-mappings.v1` | OrderOps local parser preference only; administrator filename, sheet, and column aliases are excluded from workspace recovery and cloud plans |
 | OrderOps purchase-name history | `oneapp.orderops.purchase-history.v1` | OrderOps local input convenience only; up to 30 recent nonblank purchase-place names are excluded from workspace recovery and cloud plans |
 | OrderOps order-view presets | `oneapp.orderops.order-view-presets.v1` | ORDER Q per-view local display preferences only; named search/filter/sort conditions, visible columns, column order, and saved widths may be captured, and one preset per view may be marked as the access-time default. Presets remain excluded from workspace recovery and cloud plans |
-| ORDER Q vNext local ledger | IndexedDB `oneapp-orderq-vnext` v17 | ORDER Q vNext and standalone SmartInput order delivery; operational orders, historical source batches, sales/purchase/ledger/inventory facts, fulfillment links, parser evidence, the legacy sync queue, and additive Foundation B+ outbox/recovery/quarantine stores |
-| Foundation B+ device identity | `oneapp.foundation.device-id.v1` | Product and Customer backup clients; identifies the originating browser installation without replacing product/customer IDs |
+| ORDER Q vNext local ledger | IndexedDB `oneapp-orderq-vnext` v4 | ORDER Q vNext only; operational orders, historical source batches, sales/purchase/ledger/inventory facts, fulfillment links, parser evidence, and sync queue |
 | ORDER Q vNext access token | `oneapp_orderq_access_token_v1` | Local cloud request credential only; excluded from IndexedDB records, imports, recovery payloads, and sync entities |
 | ORDER Q manual-entry defaults | `oneapp.orderq.manual-defaults.v1` | ORDER Q vNext only; restores the last shipment warehouse and transaction type for the next new manual order in the same browser |
-| SmartInput local draft | `oneapp.smartinput.draft.v1` | SmartInput only; preserves target tab, ordered source records and active source, per-source staging rows, the source-row application ledger, source batches and source-to-row links, administrator edits, matching state, responsive panel state, and delivery result. It is not a final order ledger or a cloud backup contract. |
-| SmartInput delivery history | `oneapp.smartinput.delivery-history.v1` | SmartInput only; retains the latest 30 local delivery references for operator continuity. Final order state and durable business history remain owned by ORDER Q. |
-| SmartInput local data and input templates | IndexedDB `oneapp-smartinput` v4 | SmartInput pilot only; stores tax-to-delivery link groups, temporary-delivery metadata, confirmed source-orderer mappings, delivery-policy and form-layout settings, device-local estimate documents, source images, and revisioned `inputTemplates`. A v3-to-v4 upgrade adds only the template store and preserves every existing record. Existing-template imports are structurally read-only: they stage values without changing mappings, display names, order, or template revision, and reach the work table only after explicit application. It is not customer canonicalization and does not merge orders. |
-| SmartInput recent drafts | `oneapp.smartinput.drafts.v1` | SmartInput only; retains up to 30 device-local mode drafts for reopen and split-order continuity. ORDER Q remains the owner after delivery. |
 
 A storage-key rename is a schema migration.
 
@@ -222,7 +161,7 @@ It must:
 6. include a rollback plan;
 7. confirm production behavior after deployment.
 
-### 5.4 Cloud synchronization
+### 5.3 Cloud synchronization
 
 `code.gs` exposes the following current API actions:
 
@@ -240,13 +179,6 @@ It must:
 | POST | `orderq_sync_push` | Token-protected incremental ORDER Q entity push with revision conflict, source-message duplicate prevention, and recoverable order-bundle writes |
 | POST | `orderq_sync_pull` | Token-protected incremental ORDER Q entity pull after the device cursor |
 | POST | `orderq_order_head` | Token-protected latest ORDER Q order bundle and revision lookup |
-| POST | `nexus_gateway_foundation_backup_head_read` | Return product/customer Head metadata and Primary metadata without returning or applying business payloads |
-| POST | `nexus_gateway_foundation_backup_product_write` | Validate Primary and three-way base Revision CAS, then stage, verify, and publish an immutable Product Snapshot |
-| POST | `nexus_gateway_foundation_backup_customer_events_write` | Validate ordered Customer Events and publish one immutable Customer backup Revision |
-| POST | `nexus_gateway_foundation_backup_customer_snapshot_write` | Validate Customer references and publish a periodic immutable Customer Snapshot |
-| POST | `nexus_gateway_foundation_backup_version_list` / `nexus_gateway_foundation_backup_version_read` | List or read a company-scoped immutable version for administrator restore preview only |
-| POST | `nexus_gateway_foundation_backup_restore_audit_write` | Record the verified outcome of an administrator-approved local restore |
-| POST | `nexus_gateway_foundation_device_status_read` / `register` / `promote` | Read device status, register a device, or promote a new Primary with an incremented Epoch |
 | GET | `full` or omitted | Return master, history, and configuration |
 | GET | `master_only` | Return product master and summary |
 | GET | `config_only` | Return configuration only |
@@ -257,28 +189,11 @@ The DataOps snapshot contract is `ONEAPP_DATAOPS_SNAPSHOT_V1`. Its canonical row
 
 Both DataOps snapshot actions keep their existing POST action names and snapshot data response shape. `dataops_snapshot_commit` and `dataops_snapshot_get` use the configured shared cloud URL without requesting, storing, sending, or validating an operator token. Existing requests that include a legacy token remain compatible and the server ignores that field. Existing master, history, configuration, and all other API actions, sheets, payloads, and response contracts remain unchanged.
 
-### 5.4.1 Foundation B+ Local Primary backup
-
-`FOUNDATION_BACKUP_V1` unifies the product and Customer operating policy while keeping their local backup engines separate. The browser-local database is the daily operational source. The server is an immutable version, lineage, recovery-transfer, and audit authority; it is not permitted to push or automatically apply product or Customer payloads to a browser.
-
-- Product writes commit the whole product master, permanent `productId`, local Revision, hash, and one coalesced pending Snapshot in the same `MerchOpsDB` transaction. The worker waits for a 30-second quiet period and never waits longer than five minutes.
-- Customer writes commit Customer/Alias/Event data, the local Revision, and a Customer Event outbox row in one `oneapp-orderq-vnext` v17 transaction. The worker uses a 10-second quiet period, sends at 50 events, and never waits longer than 60 seconds. A periodic full Customer Snapshot establishes or compacts the lineage.
-- On the server, `baseServerRevision < Head` returns `DIVERGED`; equality alone may create the next immutable Revision; `baseServerRevision > Head` returns `REVISION_AHEAD_INVALID`. A rejected request never advances Head and the client never rewrites its base Revision automatically.
-- A backup requires a registered current Primary device and matching `primaryEpoch`. Promotion is an explicit administrator operation and increments the Epoch so an earlier Primary can no longer write.
-- Empty local Customer data is `RESTORE_REQUIRED`, not a trigger for Cloud Pull. Populated Customer data renders from local storage and never starts background Pull. Automatic reads are limited to Head, count, hash, version availability, and device metadata.
-- The pre-B+ Customer sync queue is retained, copied into `foundationLegacyQuarantine`, and marked `QUARANTINED_LEGACY_SYNC`/`localOnly`. It is neither deleted nor replayed automatically. The actual quarantined count—not a hard-coded value—is displayed for the recovery inventory.
-- Restore requires a version list/read, SHA-256 verification, local/server comparison, duplicate and reference checks, a local safety Snapshot, explicit administrator approval, an atomic local replacement, reread verification, and local/server audit. A zero-row or 20%-plus reduction requires a second destructive-change confirmation. Unsynced pre-restore outbox rows are retained as `QUARANTINED_PRE_RESTORE`.
-- Feature flags default to backup enabled and automatic Pull disabled. A failure to read flags must preserve local data and must never enable automatic Pull.
-
-Server sheets are append-only `FoundationBackupVersion`, `FoundationBackupChunk`, `FoundationCustomerEvent`, `FoundationDevice`, `FoundationPrimary`, `FoundationOperationResult`, and `FoundationRestoreAudit`; `FoundationBackupHead` is an append-only sequence whose newest verified row is the logical Head. Payload chunks are written and reread before a Version and Head are made visible. A response-loss retry with the same backup ID returns the prior result without consuming another Revision.
-
 The Shipping cloud contract is `ONEAPP_SHIPPING_PURCHASE_PLAN_V1`, and its embedded analysis contract is `shipping-workspace/v2`. `shipping_plan_save` writes `ShippingPlanStaging`, verifies SHA-256 and declared row/cell counts, appends the immutable payload to `ShippingPlanHistory`, rereads it, and only then appends `ShippingPlanIndex`. The index is the sole visibility boundary: an append that is not indexed is an orphan and must never be returned by list/get, while an index failure leaves every previously finalized revision and the previous latest revision unchanged. Revisions are not automatically deleted.
 
 All Shipping plan actions use POST bodies and the separate `ONEAPP_SHIPPING_PLAN_ACCESS_TOKEN`. They do not read or write DataOps A/B snapshots, `ONEAPP_DATAOPS_CURRENT_SLOT`, `MasterDB`, `HistoryLogs`, or `AppConfig`. Local autosave is not cloud transfer; another computer can retrieve only revisions saved through the explicit cloud-save action.
 
 ORDER Q vNext actions use `ONEAPP_ORDERQ_ACCESS_TOKEN`, with the existing Shipping token as a compatibility fallback when a separate ORDER Q token has not been configured. Order and order-item writes are staged in `ORDER_TXN_LOG`, verified as a bundle, and restored to the previous bundle after a partial failure. Historical import facts are synchronized in shared purpose sheets; customer-specific sheets are prohibited.
-
-M9/M10 official ORDER Q commands use `ORDERQ_M9_TXN_LOG` as a bounded recovery journal. Full before/mutation payloads are split into digest-verified chunk rows below the Google Sheets per-cell limit; the durable primary row stores only count, key-set digest, content digest, cursor, ledger, and command linkage. A non-terminal official transaction blocks pull and further official commands until complete commit verification or complete rollback. Migration V2 and official-command journals have separate schema identifiers and recovery scanners.
 
 Changing any action name, payload shape, response shape, authentication rule, or field normalization requires coordinated updates to:
 
@@ -289,7 +204,7 @@ Changing any action name, payload shape, response shape, authentication rule, or
 - backup and restore validation;
 - rollback procedures.
 
-### 5.5 Shared engine status
+### 5.4 Shared engine status
 
 `coreEngine.js` defines the intended ONEAPP shared modules:
 
@@ -317,7 +232,7 @@ Treat `coreEngine.js` as the intended shared contract, but do not remove duplica
 
 A shared-engine consolidation must not be performed as incidental refactoring during an unrelated feature or bug fix.
 
-### 5.6 Client-side safety baseline
+### 5.5 Client-side safety baseline
 
 The master Excel workflow in `settings.html` uses the shared core engine and applies these controls before production data changes:
 
@@ -395,7 +310,7 @@ Equivalent safety controls must be preserved when another application writes the
 5. Backup success must not be assumed from request completion alone.
 6. Restored data must be re-read and checked for expected counts and structure.
 
-### 6.5 Master add/update and selected deletion review
+### 6.5 Master add/update review
 
 1. Master accepts an Excel workbook only as an add/update comparison source when an existing master is present.
 2. The operator reviews:
@@ -428,11 +343,6 @@ Equivalent safety controls must be preserved when another application writes the
 18. Initial registration and full replacement remain unavailable until separate approval, backup, and recovery workflows are implemented.
 19. `Item_manager.html` remains available during the transition.
 20. `Item_manager.html` is not removed by this phase.
-21. Product deletion is available only for explicitly selected, already-saved products in `Item_manager.html`; unsaved edits must be saved or discarded first.
-22. Deleting every remaining product is prohibited. Initial registration, full replacement, and full reset retain their separate approval and recovery boundary.
-23. A selected deletion removes the product master rows, matching stopped-product metadata, and matching pending shop-status rows as one revision-checked operation. Official deletion history and local compatibility mirrors are verified in the same success unit, and any failure restores the prior state.
-24. Product deletion does not erase historical orders, sales, purchases, ledgers, or prior audit records. Those records keep their snapshotted product identity.
-25. A successful local deletion is not represented as a cloud deletion until the operator explicitly runs the existing cloud synchronization action.
 
 ### 6.6 ORDER Q smart file intake
 
@@ -457,28 +367,6 @@ Equivalent safety controls must be preserved when another application writes the
 19. Named view presets persist local display conditions for order status, stock ledger, warehouse inventory, purchases, and sales: search and filters, sort, visible columns, column order, and explicitly saved column widths. One preset per view may be marked as the default and is applied automatically when that result view opens. Applying a preset discards keys absent from the current workbook and never changes analyzed rows, editable business values, workspace recovery, cloud plans, or color assignments. Header-body clicks do not sort; sorting remains available only inside the header filter control.
 20. The small folder-shaped `통합` picker beside `데이터 소스` is a batch wrapper for the existing order, inventory, purchase, and sales inputs, not a sixth result tab or a new business-data type; no full-width integrated-upload panel is shown. The five result tabs are ordered as order, stock ledger, inventory, purchase, and sales. In `환경설정 > 통합 Excel 시트명 매칭`, administrators may register comma-separated per-kind aliases. An identical normalized alias assigned to more than one kind blocks saving with a warning. Each workbook sheet is classified by a ranked alias match: exact normalized sheet-name matches win over contained aliases, then the sheet must pass required-header and structure validation. This lets `판매입력` resolve to the exact sales alias instead of the contained purchase alias `매입`, while a configured `미출고` alias can still recognize `미출고현황`. Valid sheets replace only their active kind; a later valid sheet or individual upload of the same kind wins. Missing, ignored, or invalid sheets never clear the previously active kind, so one bad sheet cannot block valid sheets in the same workbook.
 
-### 6.7 Standalone SmartInput intake
-
-1. The public pilot route is `/smartinput/` with stable application ID `smart-input`. NEXUS exposes SmartInput as a fixed-position global entry immediately after the brand and also lists it as a shipping application. Its visibility is controlled from the common-header settings independently from the Shipping work-group preference; when SmartInput is the current hidden entry, it is temporarily shown as the current location. The page retains an independent header-failure fallback.
-2. The NEXUS header always spans the browser width. The SmartInput application bar and three-column work area use a centered maximum width of `1360px`; the left column reports independent data states, the center owns intake, and the right contains related apps. Order links open `orderq/index.html` and `orders.html` in new tabs so the draft remains mounted.
-3. The first input contract includes direct entry, Excel/file import, text, clipboard text/image paste, photo OCR, and browser voice STT. Unsupported OCR, speech, or external-library states leave manual entry available and do not erase the source text.
-4. Each capture creates an ordered source record whose `sourceId` is SHA-256 of the raw payload bytes; an Excel table paste hashes the received bytes together with its HTML/TSV input kind. Analysis writes only per-source staging; it must leave existing work-table bytes unchanged and call no voucher writer. Selected staging rows append only after the explicit `테이블에 추가` action; identical products are not merged and receive only a duplicate-possibility marker.
-5. Applied rows retain `sourceId`, the voucher-group/table/source-position/normalized-value logical `sourceRowKey`, `batchId`, `sourceLineKey`, and, when created by the ORDER Q intake engine, `intakeLineId`. The application ledger blocks a repeated source/logical-row application across parser versions. Re-analysis refreshes staging independently and cannot restore a deleted work row without explicit reapply authorization.
-6. ORDER Q candidate generation must use the unified read-only catalog, not only `STORE.PRODUCTS`. The catalog merges common-master products before ORDER Q history products, so a product that exists only in the common master can still become an exact matched row. The behavioral contract fixture must keep that product absent from ORDER Q and verify an actual `MATCHED` result. Kakao date separators and message metadata never become product rows; only lines with a parsed quantity structure enter matching, while excluded conversation remains preserved in the immutable source message. SmartParser and SmartInput fallback use the same extractor, including terminal punctuation cleanup and the `상자` unit. Rows are displayed as `일치 N · 확인 M · 미인식 K`; customer rematching recalculates those counts from the resulting rows.
-7. The ORDER Q vNext IndexedDB `oneapp-orderq-vnext` and `createOrder()` are the common order ledger. SmartInput creates revisioned order and order-item records with source-line evidence, then reuses the existing sync queue; it does not create a parallel final-order store.
-8. `orderq/index.html` reads the common order ledger directly. In `orders.html`, tapping the order-status card before analysis invokes the separately validated read-only adapter and converts device-local `SMART_INPUT` orders from the same vNext ledger into the existing shipment input contract. Completed and fully cancelled orders and cancelled or excluded item rows are not reintroduced into shipment work. The adapter does not create a second order store, mutate the ledger, or trigger cloud synchronization.
-9. Purchase and sale tabs preserve independent drafts and the complete input contract, but DataOps delivery remains disabled until target schemas and ownership are approved. An unrelated app is never substituted as a delivery target.
-10. After a successful order save, the completed order remains owned by ORDER Q. SmartInput starts the next draft while retaining a bounded local delivery reference; modification, cancellation, shipment judgment, and ledger state are not owned by SmartInput.
-11. Customer linking is relational, never canonical merging: one confirmed link group has one tax customer and may contain multiple registered or temporary delivery customers. The tax customer is never an order-aggregation key, and orders remain separate by delivery customer and delivery site.
-12. A manually confirmed source-orderer alias maps first to a delivery customer. Exact unambiguous repeats may auto-select that delivery customer; similar or conflicting aliases remain review candidates. The linked tax customer is resolved after delivery-customer selection and is snapshotted with the SmartInput draft and delivery reference.
-13. SmartInput-owned IndexedDB `oneapp-smartinput` v4 stores device-local customer link groups, temporary-delivery metadata, source-orderer mappings, delivery settings, estimate documents, source images, and revisioned input templates. Its v3-to-v4 migration creates only `inputTemplates` and preserves all prior records byte-for-byte. Official customer creation continues through the Customer Master mutation contract, and temporary-delivery status does not make a customer eligible for the single tax-customer role.
-14. Delivery dates are validated from the selected delivery customer's weekday override or the app default weekdays, recurring and dated holidays, and the Asia/Seoul same-day cutoff. A post-cutoff same-day draft remains visible but cannot be delivered to ORDER Q until the date is corrected.
-15. SmartInput does not expose an editable order-date field. Each draft records an immutable current-time `recordedAt`, derives the internal ORDER Q compatibility `orderDate` from that timestamp in Asia/Seoul, records successful delivery time separately, and exposes only the delivery date to the operator.
-16. SmartInput never shows ordered workflow progress such as `3/5`, step numbers, or a fabricated current stage. Its left rail derives source presence, row count, match counts, and ORDER Q delivery readiness independently from current data.
-17. Excel files and HTML-table or TSV clipboard input are normalized into the same `ImportMatrix` contract before header detection and mapping. A new-template session may create and revise the field mapping, display names, and column order. An existing-template session applies the stored structure immediately and updates values only; unmapped source columns are ignored, and the store rejects every structure-write command before opening a transaction so the saved record and revision remain unchanged.
-18. The left parser is one uninterrupted active-source review window. Excel template controls are a default-closed compact trigger and modal overlay, never an in-flow panel that reduces the source viewport. Image object URLs render before byte hashing or OCR, and source zoom, scroll, and switching remain available while analysis runs.
-19. Multiple sources use one list with previous/next activation and per-source `REGISTERED`, `ANALYZING`, `STAGED`, `PARTIALLY_APPLIED`, `APPLIED`, or `FAILED` recovery state. Activating or registering a source does not replace other staging or work rows. Source removal discards only its unapplied staging and preserves applied rows and ledger; work-row deletion preserves source and analysis history and never auto-restores the row.
-
 ---
 
 ## 7. Change-impact rules
@@ -498,7 +386,6 @@ Equivalent safety controls must be preserved when another application writes the
 | DataOps out-of-list inventory master add or post-close sale resume | DataOps F6 location/search/duplicate/zero rules, masterAddUpdate single-product API, coreEngine revision and rollback, Master/SmartParser canonical `판매여부`, stop-management linked state, history, finalized snapshot boundary, and retry idempotency |
 | DataOps file classification or parsing | DataOps required/optional file policy, parsing errors, representative operational files, generated workbook, and regression tests |
 | OrderOps file classification or parsing | OrderOps four-way structural classification, administrator aliases, required order/inventory validation, current allocation calculations, local recovery exclusion, and integrated workbook regression tests |
-| SmartInput source, parser, draft, or order delivery | SmartInput single-source review viewport, raw-byte identity, per-source staging and explicit application, source-row ledger deduplication, deletion separation, administrator-edit protection, duplicate marking, product/customer master reads, ORDER Q vNext ledger creation and sync queue, and the read-only `orders.html` consumer adapter including completed/cancelled exclusion and source fingerprinting |
 | Planned app promotion to production | Manifest update, architecture review, navigation review, and PR validation |
 | Function-key behavior | Review only the owning application's workflow; do not assume the same function key has the same meaning in another application |
 | Shared approval or audit rule | Every writer and reader of the affected data and history contract |
@@ -569,9 +456,7 @@ They do not receive feature expansion during the current MerchOps and DataOps de
 
 Planned applications must not write production master data until they are promoted through architecture review.
 
-ORDER Q is registered as a Pilot with `orders.html` as its primary public entry. `orders.html` and `orderops_list.html` deploy the same root-level source, while `orderops/list.html` remains the canonical compatibility route. It owns the isolated `shipping-purchase-plan` local/cloud contract and uses `orderops/orderops-source-adapter.js` only to read and verify the existing DataOps finalized snapshot and device-local SmartInput order rows. It does not call `coreEngine.js`, write either source contract, trigger ORDER Q cloud sync, or change MerchOps or DataOps business behavior. Disabling the public entries and reverting their PR is the code rollback path; already finalized cloud revisions remain append-only operational records and are not deleted by rollback.
-
-SmartInput is registered as a standalone Pilot at `smartinput/index.html`. It is not a production NEXUS dependency during independent validation. Reverting the SmartInput files removes the pilot entry without changing existing input routes or final ORDER Q records already created through the shared ledger.
+ORDER Q is registered as a Pilot on the existing `orderops/list.html` compatibility route. It owns the isolated `shipping-purchase-plan` local/cloud contract, does not call `coreEngine.js`, and does not change MerchOps or DataOps business behavior. Disabling the route and reverting its PR is the code rollback path; already finalized cloud revisions remain append-only operational records and are not deleted by rollback.
 
 ---
 
@@ -968,9 +853,6 @@ Roadmap work is delivered as separate pull requests and verified after each merg
 
 #### DataOps
 
-- `dataops/template-engine.js` owns the local `DATAOPS_TEMPLATE_V1` contract. `DATAOPS_DEFAULT_V1` is always available and cannot be overwritten or deleted; custom templates preserve role-specific header mappings, required-field rules, purpose, working-column order, version, and revision.
-- Excel intake analyzes the header row before the existing parser, excludes server-computed/system fields, and reuses a saved role mapping without migrating existing DataOps data. Missing administrator-required fields block with `TEMPLATE_REQUIRED_FIELD_MISSING`; stale template edits block with `TEMPLATE_VERSION_CONFLICT`.
-- Stock-ledger templates preserve the existing balance calculation and ignore order quantity. Unshipped-status templates add editable order/planned-outbound quantity and expose read-only `예상잔량 = 전산잔량 - 주문`; existing `전산잔량` and `로스` remain server-computed fields.
 - F6 opens one out-of-list product search row below the selected inventory row and uses only the confirmed local master snapshot.
 - F9 downloads the combined inventory, ledger, and analysis workbook.
 - After F9 finalizes the FULL inventory snapshot, stopped products with positive newly counted inventory are resumed through the shared atomic master/history path. Resume failure is retried separately and never repeats the finalized closing.
@@ -1045,11 +927,3 @@ Confirm that critical development:
 - does not merge on assumptions.
 
 After the production MerchOps and DataOps workflows are stable, planned applications may be reviewed individually for promotion to Pilot status.
-
-## Customer Master shared boundary (2026-08)
-
-- Customer Master is the shared customer authority for ORDER IN, direct order entry, Collector, and customer history lookup.
-- IndexedDB is the Local Primary operational source, not a disposable Cloud cache. A device with no local customers reports `RESTORE_REQUIRED`; a populated device reads local data immediately. Neither case performs automatic server-to-local Pull. Server data can be applied only through the administrator restore contract in section 5.4.1.
-- `qualityStatus` owns merge state independently from trading `status`. Non-superseded rows are self-canonical. A `SUPERSEDED` row points to a different ACTIVE canonical customer.
-- New live work uses only the canonical customer ID. Historical document customer IDs are immutable and are expanded to the canonical family at read time for unified history and ledger views.
-- Customer Excel import is `customerCode`-identified immediate create/update and row-atomic. Empty non-code fields preserve the current value, duplicate codes inside one file fail only those duplicate rows, unmatched columns are reported and excluded, and name similarity never blocks a write. Pre-B+ import sync rows are quarantined and never replayed; new Customer mutations create B+ Event outbox records in the same local transaction and retry only one-way backup with bounded backoff. ORDER IN, direct input, Master, and Collector quick-create remain explicit live creates that return a real customer ID immediately.
