@@ -776,7 +776,7 @@ for (const name of ["Master.html"]) {
 }
 assert.match(
   files["Item_manager.js"],
-  /function commitMaster\(masterMap\)[\s\S]*?commitMasterStateOrThrow\(masterMap, \{\s*expectedRevision: state\.revision/,
+  /function commitMaster\(masterMap(?:, options)?\)[\s\S]*?commitMasterStateOrThrow\(masterMap, (?:Object\.assign\()?\{\s*expectedRevision: state\.revision/,
   "Item manager must use the revision-checked shared writer",
 );
 assert.doesNotMatch(files["Item_manager.js"], /setIDB\(|bulkPutMasterIDB|bulkPutIDB\(/);
