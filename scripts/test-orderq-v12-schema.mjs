@@ -14,7 +14,6 @@ for (const row of V12_STORE_DEFINITIONS) assert.ok(row.options.keyPath && row.in
 const dbSource = readFileSync(new URL('../orderq/orderq-db.js', import.meta.url), 'utf8');
 for (const token of ['oldVersion < 12','byDocumentContractSourceKey','byLineIdentity','byCommandRevision']) assert.ok(dbSource.includes(token));
 
-
 function schemaHarness(oldVersion) {
   const stores=new Map();
   const meta=[];
@@ -35,3 +34,16 @@ function schemaHarness(oldVersion) {
   const transaction={objectStore:name=>{if(!stores.has(name)) throw new Error(`MISSING_STORE:${name}`);return stores.get(name);}};
   upgradeOrderQDbSchema(db,transaction,oldVersion);
   return {stores,meta};
+}
+for(const oldVersion of [0,7,8,9,10,11]) {
+  const result=schemaHarness(oldVersion);
+  assert.ok(result.stores.has(STORE.INVENTORY_MOVEMENTS),`v${oldVersion} inventory store`);
+  for(const definition of V12_STORE_DEFINITIONS) assert.ok(result.stores.has(definition.name),`v${oldVersion} ${definition.name}`);
+  for(const definition of V12_STORE_DEFINITIONS) {
+    const store=result.stores.get(definition.name); assert.equal(store.keyPath,definition.options.keyPath);
+    for(const index of definition.indexes) assert.deepEqual(store._indexes.get(index.name),{path:index.keyPath,options:index.options});
+  }
+  assert.equal(result.meta.filter(row=>row.key==='schemaVersion').at(-1)?.value,CURRENT_DB_VERSION,`v${oldVersion} metadata`);
+}
+console.log('ORDER Q v12 schema contract tests passed');
+
