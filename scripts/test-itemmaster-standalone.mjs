@@ -1,9 +1,16 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '..');
 const html = readFileSync(resolve(root, 'ItemMaster.html'), 'utf8');
+const destructiveSeedPage = resolve(root, 'scripts', 'fixtures', 'itemmaster-isolated-seed.html');
+
+assert.equal(
+  existsSync(destructiveSeedPage),
+  false,
+  'destructive ItemMaster seed page must never be published with the application'
+);
 
 const required = [
   ['ItemMaster title', '<title>ONEAPP ItemMaster · 독립 상품관리</title>'],
