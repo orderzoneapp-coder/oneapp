@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = '1.9.0';
+  const VERSION = '1.9.1';
   const STORAGE = Object.freeze({
     colorMode: 'oneapp.nexus.v1.colorMode',
     groupOrder: 'oneapp.nexus.v1.groupOrder',
@@ -144,13 +144,28 @@
 
   const initialNavigationMarker = readNavigationMarker();
   if (initialNavigationMarker) {
+    let navigationCompleted = false;
+    const appReadyStrategy = document.documentElement.dataset.nexusReadyStrategy === 'app';
+    const completeNavigation = (source) => {
+      if (navigationCompleted) return;
+      navigationCompleted = true;
+      document.documentElement.dataset.nexusNavigationReadyMs = String(Math.max(0, Date.now() - Number(initialNavigationMarker.startedAt || Date.now())));
+      document.documentElement.dataset.nexusNavigationReadySource = source;
+      clearNavigationCover(true);
+    };
     document.documentElement.dataset.nexusNavigationCoverCount = '0';
     scheduleNavigationCover(initialNavigationMarker.label, initialNavigationMarker.mode, initialNavigationMarker.startedAt);
-    window.addEventListener('load', () => {
-      document.documentElement.dataset.nexusNavigationReadyMs = String(Math.max(0, Date.now() - Number(initialNavigationMarker.startedAt || Date.now())));
-      clearNavigationCover(true);
+    window.addEventListener('nexus:app-ready', (event) => {
+      if (!appReadyStrategy) return;
+      const declaredAppId = String(document.documentElement.dataset.nexusAppId || '').trim();
+      const readyAppId = String(event.detail?.appId || '').trim();
+      if (declaredAppId && readyAppId && declaredAppId !== readyAppId) return;
+      completeNavigation('app-ready');
     }, { once: true });
-    window.setTimeout(() => clearNavigationCover(true), 12000);
+    window.addEventListener('load', () => {
+      if (!appReadyStrategy) completeNavigation('window-load');
+    }, { once: true });
+    window.setTimeout(() => completeNavigation('safety-timeout'), 12000);
   }
   window.addEventListener('pageshow', (event) => { if (event.persisted) clearNavigationCover(true); });
 

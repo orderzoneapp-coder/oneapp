@@ -380,7 +380,7 @@ await test('Gateway operation allowlist and recursive reserved-field rejection',
 });
 
 await test('routes, UI modes, server actions and allowed compatibility connections', () => {
-  const master = read('Master.html');
+  const master = `${read('Master.html')}\n${read('nexus/master/master-app.jsx')}`;
   const customerHtml = read('partner_db.html');
   const itemHtml = read('Item_manager.html');
   const code = read('code.gs');

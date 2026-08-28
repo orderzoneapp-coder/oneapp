@@ -62,6 +62,9 @@ jobs:
       - name: Test Master target navigation and work-entry actions
         run: node scripts/test-master-navigation.mjs
 
+      - name: Test Master production boot performance contract
+        run: node scripts/test-master-performance.mjs
+
       - name: Test client-side import and storage safety
         run: node scripts/test-client-safety.mjs
 

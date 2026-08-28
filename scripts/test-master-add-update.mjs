@@ -770,13 +770,16 @@ await scenario("26. SmartParser 반영 경로 회귀검사", () => {
   assert.match(smartParser, /afterVerifiedError:\s*'SmartParser 히스토리\/공유상태 저장 실패'/);
 });
 
-const masterHtml = fs.readFileSync(path.join(ROOT, "Master.html"), "utf8");
-assert.match(masterHtml, /masterAddUpdate\.js/);
-assert.match(masterHtml, /ONEAPP_MASTER_ADD_UPDATE\.analyzeUploadRows/);
-assert.match(masterHtml, /ONEAPP_MASTER_ADD_UPDATE\.commitApprovedChanges/);
-assert.match(masterHtml, /api\.parseWorkbook\(arrayBuffer,\s*window\.XLSX\)/);
-assert.doesNotMatch(masterHtml, /const newMaster = \{\};[\s\S]{0,1500}saveMasterLocal\(newMaster\)/);
-assert.match(masterHtml, /기존 master가 0건입니다[\s\S]*최초 등록은 차단/);
-assert.match(masterHtml, /MASTER_ADD_UPDATE_INITIAL_REGISTRATION_REQUIRED/);
+const masterSource = [
+  fs.readFileSync(path.join(ROOT, "Master.html"), "utf8"),
+  fs.readFileSync(path.join(ROOT, "nexus/master/master-app.jsx"), "utf8"),
+].join("\n");
+assert.match(masterSource, /masterAddUpdate\.js/);
+assert.match(masterSource, /ONEAPP_MASTER_ADD_UPDATE\.analyzeUploadRows/);
+assert.match(masterSource, /ONEAPP_MASTER_ADD_UPDATE\.commitApprovedChanges/);
+assert.match(masterSource, /api\.parseWorkbook\(arrayBuffer,\s*window\.XLSX\)/);
+assert.doesNotMatch(masterSource, /const newMaster = \{\};[\s\S]{0,1500}saveMasterLocal\(newMaster\)/);
+assert.match(masterSource, /기존 master가 0건입니다[\s\S]*최초 등록은 차단/);
+assert.match(masterSource, /MASTER_ADD_UPDATE_INITIAL_REGISTRATION_REQUIRED/);
 
 console.log(`Master add/update tests passed (${scenarios.length} required scenarios).`);

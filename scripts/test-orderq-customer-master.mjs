@@ -29,7 +29,7 @@ const [
   read('orderq/collector.html'),
   read('orderq-cloud.gs'),
   read('orderq/orderq-sync-engine.js'),
-  read('Master.html')
+  Promise.all([read('Master.html'), read('nexus/master/master-app.jsx')]).then(parts => parts.join('\n'))
 ]);
 
 new vm.Script(cloud, { filename: 'orderq-cloud.gs' });

@@ -94,7 +94,7 @@ window.NEXUS_TOP.clearStatus('inventory-save-42', 'dataops');
 
 다른 앱으로 이동하기 전에 취소 가능한 `nexus:before-navigate` 이벤트를 발생시킨다. 미저장 내용을 보유한 앱은 이벤트를 취소하고 자체 저장·폐기 확인 절차를 실행한다.
 
-이동이 허용되면 외부 이미지에 의존하지 않는 NEXUS 전환 화면을 즉시 표시한다. 전환 화면은 이동을 시작한 시점의 일반·다크 화면 모드를 함께 보관해 목적지 첫 화면까지 같은 밝기를 유지한다. 이동 대상 이름과 진행 상태를 보여 주고, 다음 앱의 이미지·스타일을 포함한 전체 로드가 끝난 뒤 전환 화면을 제거한다. 뒤로가기 복원과 12초 안전 해제를 지원하며 새 탭·보조키 이동에는 개입하지 않는다. 전환 상태는 현재 탭의 `sessionStorage` 키 `oneapp.nexus.v1.navigation`에만 임시 보관한다.
+이동이 허용되면 외부 이미지에 의존하지 않는 NEXUS 전환 화면을 즉시 표시한다. 전환 화면은 이동을 시작한 시점의 일반·다크 화면 모드를 함께 보관해 목적지 첫 화면까지 같은 밝기를 유지한다. 기본 소비자는 전체 `load` 뒤 전환 화면을 제거한다. 인증·권한 확인과 앱 셸 준비를 별도로 관리하는 소비자는 `<html data-nexus-app-id="..." data-nexus-ready-strategy="app">`를 선언하고 최소 상호작용 가능 시점에 `nexus:app-ready`를 발생시켜 제거한다. 뒤로가기 복원과 12초 안전 해제를 지원하며 새 탭·보조키 이동에는 개입하지 않는다. 전환 상태는 현재 탭의 `sessionStorage` 키 `oneapp.nexus.v1.navigation`에만 임시 보관한다.
 
 ```js
 window.addEventListener('nexus:before-navigate', (event) => {
@@ -102,6 +102,11 @@ window.addEventListener('nexus:before-navigate', (event) => {
   event.preventDefault();
   openLeaveDialog(event.detail.url);
 });
+
+await window.ONEAPP_AUTH.ready;
+window.dispatchEvent(new CustomEvent('nexus:app-ready', {
+  detail: { appId: 'master', phase: 'interactive' }
+}));
 ```
 
 ## 전역 오류

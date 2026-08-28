@@ -8,7 +8,10 @@ const root = path.resolve(here, "..");
 const html = readFileSync(path.join(root, "Item_manager.html"), "utf8");
 const js = readFileSync(path.join(root, "Item_manager.js"), "utf8");
 const css = readFileSync(path.join(root, "Item_manager.css"), "utf8");
-const master = readFileSync(path.join(root, "Master.html"), "utf8");
+const master = [
+  readFileSync(path.join(root, "Master.html"), "utf8"),
+  readFileSync(path.join(root, "nexus/master/master-app.jsx"), "utf8"),
+].join("\n");
 const themeInit = readFileSync(path.join(root, "nexus/common/nexus-theme-init.js"), "utf8");
 const masterTheme = readFileSync(path.join(root, "nexus/common/nexus-master-theme.css"), "utf8");
 const uiContract = readFileSync(path.join(root, "nexus/common/NEXUS_APP_UI_CONTRACT.md"), "utf8");
