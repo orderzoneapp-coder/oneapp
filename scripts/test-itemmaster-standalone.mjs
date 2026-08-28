@@ -18,7 +18,14 @@ const required = [
   ['revision conflict protection', "error?.code === 'ITEMMASTER_REVISION_CONFLICT'"],
   ['Excel upload input', 'accept=".xlsx,.xls"'],
   ['standalone header', 'ITEMMASTER'],
-  ['standalone label', '격리 상품관리']
+  ['standalone label', '독립 상품관리'],
+  ['initial Excel import builder', 'buildInitialMasterImport'],
+  ['initial import confirmation', 'ItemMaster 최초 Excel 등록'],
+  ['initial import save', 'saveMasterLocal(initialImportDraft.masterMap, initialImportDraft.baseRevision)'],
+  ['single product editor', 'ProductEditorModal'],
+  ['single product validation', 'validateSingleProductInput(form)'],
+  ['single product save', 'handleSaveProduct'],
+  ['single product edit action', 'setEditingProduct(row)']
 ];
 
 for (const [label, value] of required) {
@@ -39,7 +46,9 @@ const forbidden = [
   ['Pipeline feature', /\bPipeline\b/],
   ['BOM feature', /\bBOM\b/],
   ['catalog feature', /카탈로그|\bcatalog\b/i],
-  ['cloud action', /handlePush|handlePull|pullMerchOpsCloudMaster|pushMerchOpsCloudMaster/]
+  ['cloud action', /handlePush|handlePull|pullMerchOpsCloudMaster|pushMerchOpsCloudMaster/],
+  ['blocked initial import copy', /최초 등록은 1차 미구현|최초 등록 · 1차 미구현/],
+  ['disabled empty Excel upload', /disabled=\{isProcessing \|\| Object\.keys\(masterProducts\)\.length === 0\}/]
 ];
 
 for (const [label, pattern] of forbidden) {
