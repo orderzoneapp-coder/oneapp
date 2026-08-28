@@ -3,14 +3,12 @@ import { ORDERQ_DB_VERSION, V16_STORE_DEFINITIONS, V16_META_DEFAULTS } from '../
 import { ORDERQ_DB_VERSION as CURRENT_DB_VERSION } from '../orderq/orderq-v17-contracts.js';
 import { upgradeOrderQDbSchema } from '../orderq/orderq-db.js';
 
-
 assert.equal(ORDERQ_DB_VERSION, 16);
 assert.ok(V16_STORE_DEFINITIONS.length >= 13);
 assert.equal(V16_META_DEFAULTS.closeContractVersion, 'DATAOPS_CLOSE_V1');
 const releaseIdentity={ deploymentId:'AKfycbzOUOIu_bP7NkiFVziDR0Og1da1KO1ePoU09Q3pSlPr-9uD-WkdCpWN7nidO5hlrJi6Qw', deploymentVersion:'31', gitCommit:'48a52ec34fa938cd60fe965b795083539460627f' };
 assert.deepEqual(V16_META_DEFAULTS.expectedDataOpsDeployment, releaseIdentity);
 assert.deepEqual(V16_META_DEFAULTS.expectedOrderQDeployment, releaseIdentity);
-
 
 class Names {
   constructor(source=[]){ this.values=[...source]; }
