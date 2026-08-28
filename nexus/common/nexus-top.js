@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = '1.9.1';
+  const VERSION = '1.9.2';
   const STORAGE = Object.freeze({
     colorMode: 'oneapp.nexus.v1.colorMode',
     groupOrder: 'oneapp.nexus.v1.groupOrder',
@@ -724,11 +724,17 @@
       this.root.addEventListener('click', (event) => this.handleClick(event));
       this.root.addEventListener('pointerover', (event) => {
         const link = event.target.closest('a[data-navigate]');
-        if (link) prefetchRoute(link.href);
+        if (link) {
+          prefetchRoute(link.href);
+          window.ONEAPP_AUTH?.refreshIfNeeded?.({ minValidityMs: 120000 }).catch(() => {});
+        }
       }, { passive: true });
       this.root.addEventListener('focusin', (event) => {
         const link = event.target.closest('a[data-navigate]');
-        if (link) prefetchRoute(link.href);
+        if (link) {
+          prefetchRoute(link.href);
+          window.ONEAPP_AUTH?.refreshIfNeeded?.({ minValidityMs: 120000 }).catch(() => {});
+        }
       });
       this.onDocumentClick = (event) => {
         if (['status', 'user'].includes(this.openPanel) && !event.composedPath().includes(this)) this.closePanel();

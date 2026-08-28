@@ -114,9 +114,182 @@ assert.match(clientSource, /const CONTRACT_VERSION = 'NEXUS_AUTH_V2'/);
 assert.match(clientSource, /async function gateway\(operationId, payload/);
 assert.match(clientSource, /action: 'nexus_gateway'/);
 assert.match(clientSource, /NEXUS_AUTH_MIXED_CACHE_DENIED/);
+assert.match(clientSource, /const CONTEXT_REFRESH_LEAD_MS = 90 \* 1000/);
+assert.match(clientSource, /const CONTEXT_REFRESH_RETRY_MS = 15 \* 1000/);
+assert.match(clientSource, /function scheduleSessionRefresh\(\)/);
+assert.match(clientSource, /function refreshIfNeeded\(/);
+assert.match(clientSource, /contextRefreshTimer = window\.setTimeout\([\s\S]{0,180}CONTEXT_REFRESH_RETRY_MS/,
+  'a transient proactive refresh failure must retain a bounded retry');
+assert.match(clientSource, /window\.addEventListener\('pageshow', refreshOnActive\)/);
+assert.match(clientSource, /document\.addEventListener\('visibilitychange', refreshOnActive\)/);
+assert.match(clientSource, /event\.data\?\.type === 'refresh'[\s\S]{0,160}refreshIfNeeded/,
+  'another tab refresh signal must validate this tab with its own session token');
+assert.doesNotMatch(clientSource, /event\.data\?\.type === 'refresh'[\s\S]{0,240}currentBundle = readStoredBundle/,
+  'BroadcastChannel must not pretend that tab-scoped sessionStorage contains another tab bundle');
+assert.match(clientSource, /async function gateway[\s\S]*?await ready;/,
+  'privileged gateway calls must continue to await full server verification');
+assert.doesNotMatch(clientSource, /shellReady|nexusAuthShellReady/,
+  'expired authorization must never expose a cached Master data shell');
 assert.match(clientSource, /replace\(\/\\\.read\$\/, '\.write'\)/, 'client navigation mirrors server WRITE-implies-READ behavior');
 assert.doesNotMatch(clientSource, /window\.fetch\s*=|businessCredential|nexus_proxy/);
 assert.match(configSource, /contractVersion: 'NEXUS_AUTH_V2'/);
+
+const revokedStorage = new Map();
+const signedFixture = value => `${value}.${'a'.repeat(64)}`;
+revokedStorage.set('oneapp.nexus.auth.bundle.v2', JSON.stringify({
+  version: 2,
+  sessionToken: 'SESSION-REVOKED',
+  session: {
+    user: { userId: 'USR-REVOKED', role: 'CUSTOM', permissions: ['foundation.read'] },
+    expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString()
+  },
+  sessionContextToken: signedFixture('session-context'),
+  contextExpiresAt: new Date(Date.now() - 1000).toISOString(),
+  appContexts: {
+    master: {
+      appId: 'master', appContextToken: signedFixture('master-context'),
+      expiresAt: new Date(Date.now() - 1000).toISOString()
+    }
+  }
+}));
+let revokedRedirect = '';
+const revokedEvents = [];
+const revokedSandbox = {
+  console,
+  Date,
+  JSON,
+  Math,
+  Promise,
+  Map,
+  Set,
+  Object,
+  Array,
+  String,
+  Number,
+  RegExp,
+  Error,
+  URLSearchParams,
+  TextEncoder,
+  Uint8Array,
+  sessionStorage: {
+    getItem: key => revokedStorage.get(key) ?? null,
+    setItem: (key, value) => revokedStorage.set(key, String(value)),
+    removeItem: key => revokedStorage.delete(key)
+  },
+  location: {
+    pathname: '/Master.html', search: '?view=products&mode=list', hash: '',
+    replace: value => { revokedRedirect = String(value); },
+    assign: () => {}
+  },
+  document: {
+    visibilityState: 'visible',
+    documentElement: { dataset: { nexusAppId: 'master' }, appendChild: () => {} },
+    createElement: () => ({ dataset: {}, style: {}, textContent: '' }),
+    querySelector: () => null,
+    addEventListener: () => {}
+  },
+  CustomEvent: class CustomEvent { constructor(type, options = {}) { this.type = type; this.detail = options.detail; } },
+  BroadcastChannel: class BroadcastChannel {
+    addEventListener() {}
+    postMessage() {}
+  },
+  setTimeout: () => 1,
+  clearTimeout: () => {},
+  addEventListener: () => {},
+  dispatchEvent: event => { revokedEvents.push(event.type); return true; },
+  fetch: async () => ({
+    ok: true,
+    json: async () => ({ status: 'error', message: 'NEXUS_AUTH_SESSION_REVOKED' })
+  }),
+  NEXUS_AUTH_CONFIG: {
+    contractVersion: 'NEXUS_AUTH_V2', endpoint: 'https://auth.invalid/exec', loginUrl: '/nexus/'
+  }
+};
+revokedSandbox.window = revokedSandbox;
+new vm.Script(clientSource, { filename: 'nexus-auth.js' }).runInContext(vm.createContext(revokedSandbox));
+assert.equal(await revokedSandbox.ONEAPP_AUTH.ready, null, 'revoked session must not become ready');
+assert.match(revokedRedirect, /^\/nexus\/\?return=/, 'revoked session must return to login');
+assert.equal(revokedSandbox.document.documentElement.dataset.nexusAuthReady, undefined,
+  'revoked session must not release the authenticated screen gate');
+assert.equal(revokedStorage.has('oneapp.nexus.auth.bundle.v2'), false,
+  'revoked session must clear the cached bundle');
+assert.equal(revokedEvents.includes('nexus-auth-ready'), false,
+  'revoked session must not emit a cached authorization event');
+
+const freshStorage = new Map();
+const freshSession = {
+  user: { userId: 'USR-ACTIVE', role: 'CUSTOM', permissions: ['foundation.read'] },
+  expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString()
+};
+const freshContextExpiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+const freshBundle = {
+  version: 2,
+  sessionToken: 'SESSION-ACTIVE',
+  session: freshSession,
+  sessionContextToken: signedFixture('fresh-session-context'),
+  contextExpiresAt: freshContextExpiresAt,
+  appContexts: {
+    master: {
+      appId: 'master', appContextToken: signedFixture('fresh-master-context'),
+      expiresAt: freshContextExpiresAt
+    }
+  }
+};
+freshStorage.set('oneapp.nexus.auth.bundle.v2', JSON.stringify(freshBundle));
+const scheduledRefreshDelays = [];
+let activeFetchCount = 0;
+const freshDocument = {
+  visibilityState: 'visible',
+  documentElement: { dataset: { nexusAppId: 'master' }, appendChild: () => {} },
+  createElement: () => ({ dataset: {}, style: {}, textContent: '' }),
+  querySelector: () => null,
+  addEventListener: () => {}
+};
+const freshSandbox = {
+  ...revokedSandbox,
+  document: freshDocument,
+  sessionStorage: {
+    getItem: key => freshStorage.get(key) ?? null,
+    setItem: (key, value) => freshStorage.set(key, String(value)),
+    removeItem: key => freshStorage.delete(key)
+  },
+  setTimeout: (_handler, delay = 0) => {
+    scheduledRefreshDelays.push(Number(delay));
+    return scheduledRefreshDelays.length;
+  },
+  clearTimeout: () => {},
+  dispatchEvent: () => true,
+  fetch: async () => {
+    activeFetchCount += 1;
+    const refreshedExpiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+    return {
+      ok: true,
+      json: async () => ({
+        status: 'success',
+        data: {
+          session: freshSession,
+          sessionContextToken: signedFixture('refreshed-session-context'),
+          contextExpiresAt: refreshedExpiresAt,
+          appContexts: {
+            master: {
+              appId: 'master', appContextToken: signedFixture('refreshed-master-context'),
+              expiresAt: refreshedExpiresAt
+            }
+          }
+        }
+      })
+    };
+  }
+};
+freshSandbox.window = freshSandbox;
+new vm.Script(clientSource, { filename: 'nexus-auth.js' }).runInContext(vm.createContext(freshSandbox));
+assert.equal((await freshSandbox.ONEAPP_AUTH.ready)?.user?.userId, 'USR-ACTIVE');
+assert.equal(freshDocument.documentElement.dataset.nexusAuthReady, 'true');
+assert.equal(activeFetchCount, 0, 'fresh cached authorization must avoid an initial network refresh');
+assert(scheduledRefreshDelays.some(delay => delay >= 200000 && delay <= 215000),
+  'five-minute client context must schedule refresh about 90 seconds before expiry');
+await freshSandbox.ONEAPP_AUTH.refreshIfNeeded({ minValidityMs: 6 * 60 * 1000 });
+assert.equal(activeFetchCount, 1, 'freshness demand beyond the current lease must use this tab session for one refresh');
 
 const protectedEntries = [
   'DataOps.html', 'MerchOps.html', 'SmartParser.html', 'Master.html', 'Item_manager.html',
@@ -131,7 +304,7 @@ const protectedEntries = [
 for (const relativePath of protectedEntries) {
   const html = read(relativePath);
   assert.match(html, /nexus-auth-config\.js\?v=2\.0\.1/, `${relativePath} V2 config`);
-  assert.match(html, /nexus-auth\.js\?v=2\.1\.0/, `${relativePath} V2 guard`);
+  assert.match(html, /nexus-auth\.js\?v=2\.1\.1/, `${relativePath} V2 guard`);
   assert(html.indexOf('nexus-auth.js') < html.search(/<body\b/i), `${relativePath} guard before body`);
 }
 
@@ -172,7 +345,10 @@ const authContract = manifest.sharedDataContracts.find(contract => contract.id =
 assert.equal(authContract.schemaVersion, 'NEXUS_AUTH_V2');
 assert.equal(authContract.resources.deployedContractVersion, 'NEXUS_AUTH_V2');
 assert.equal(authContract.resources.sourceContractVersion, 'NEXUS_AUTH_V2');
-assert.equal(authContract.resources.cacheVersion, '2.1.0');
+assert.equal(authContract.resources.cacheVersion, '2.1.1');
+assert.equal(authContract.resources.contextRefreshLeadSeconds, 90);
+assert.equal(authContract.resources.contextRefreshRetrySeconds, 15);
+assert.match(authContract.resources.contextRefreshMode, /full server verification remains mandatory/);
 assert.equal(authContract.resources.deployedVersion, 18);
 assert.equal(authContract.resources.businessCredentials.length, 8);
 assert.equal(authContract.resources.oneappBindings.length, 4);

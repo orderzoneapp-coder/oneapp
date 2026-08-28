@@ -1,8 +1,10 @@
 (() => {
   'use strict';
 
-  const VERSION = '2.1.0';
+  const VERSION = '2.1.1';
   const CONTRACT_VERSION = 'NEXUS_AUTH_V2';
+  const CONTEXT_REFRESH_LEAD_MS = 90 * 1000;
+  const CONTEXT_REFRESH_RETRY_MS = 15 * 1000;
   const config = window.NEXUS_AUTH_CONFIG || {};
   const endpoint = String(config.endpoint || '').trim();
   const nativeFetch = window.fetch.bind(window);
@@ -23,6 +25,7 @@
   let currentAppContext = null;
   let currentBundle = null;
   let sessionRefreshPromise = null;
+  let contextRefreshTimer = 0;
   const appContextPromises = new Map();
   const authChannel = typeof BroadcastChannel === 'function' ? new BroadcastChannel('oneapp.nexus.auth.v2') : null;
 
@@ -97,6 +100,8 @@
   }
 
   function clearAuth({ broadcast = false } = {}) {
+    if (contextRefreshTimer) window.clearTimeout(contextRefreshTimer);
+    contextRefreshTimer = 0;
     storeBundle(null);
     currentSession = null;
     currentAppContext = null;
@@ -163,6 +168,7 @@
     const appId = declaredAppId();
     currentAppContext = appId ? currentBundle.appContexts[appId] || null : null;
     storeBundle(currentBundle);
+    scheduleSessionRefresh();
     window.dispatchEvent(new CustomEvent('nexus-auth-ready', { detail: currentSession }));
     authChannel?.postMessage({ type: 'refresh', contextExpiresAt: currentBundle.contextExpiresAt });
     return currentSession;
@@ -178,6 +184,7 @@
     currentBundle = bundle;
     currentSession = bundle.session;
     currentAppContext = appContext || null;
+    scheduleSessionRefresh();
     window.dispatchEvent(new CustomEvent('nexus-auth-ready', { detail: currentSession }));
     return true;
   }
@@ -288,6 +295,35 @@
     return sessionRefreshPromise;
   }
 
+  function scheduleSessionRefresh() {
+    if (contextRefreshTimer) window.clearTimeout(contextRefreshTimer);
+    contextRefreshTimer = 0;
+    if (PUBLIC_PATH || !currentSession || !sessionToken()) return;
+    const contextExpiresAt = Date.parse(currentBundle?.contextExpiresAt || '');
+    if (!Number.isFinite(contextExpiresAt)) return;
+    const delay = Math.max(1000, contextExpiresAt - Date.now() - CONTEXT_REFRESH_LEAD_MS);
+    contextRefreshTimer = window.setTimeout(() => {
+      contextRefreshTimer = 0;
+      refreshIfNeeded({ minValidityMs: CONTEXT_REFRESH_LEAD_MS }).catch(() => {
+        if (!sessionToken()) return;
+        contextRefreshTimer = window.setTimeout(() => {
+          contextRefreshTimer = 0;
+          scheduleSessionRefresh();
+        }, CONTEXT_REFRESH_RETRY_MS);
+      });
+    }, delay);
+  }
+
+  function refreshIfNeeded({ minValidityMs = CONTEXT_REFRESH_LEAD_MS } = {}) {
+    if (PUBLIC_PATH || !sessionToken()) return Promise.resolve(currentSession);
+    const margin = Math.max(15000, Number(minValidityMs) || CONTEXT_REFRESH_LEAD_MS);
+    if (future(currentBundle?.contextExpiresAt, margin)) {
+      scheduleSessionRefresh();
+      return Promise.resolve(currentSession);
+    }
+    return readSession();
+  }
+
   async function logout() {
     const token = sessionToken();
     clearAuth({ broadcast: true });
@@ -332,15 +368,24 @@
 
   authChannel?.addEventListener('message', event => {
     if (event.data?.type === 'logout') clearAuth();
-    if (event.data?.type === 'refresh' && !future(currentBundle?.contextExpiresAt)) currentBundle = readStoredBundle();
+    if (event.data?.type === 'refresh') {
+      refreshIfNeeded({ minValidityMs: CONTEXT_REFRESH_LEAD_MS }).catch(() => {});
+    }
   });
+
+  const refreshOnActive = () => {
+    if (document.visibilityState && document.visibilityState !== 'visible') return;
+    refreshIfNeeded({ minValidityMs: CONTEXT_REFRESH_LEAD_MS }).catch(() => {});
+  };
+  window.addEventListener('pageshow', refreshOnActive);
+  document.addEventListener('visibilitychange', refreshOnActive);
 
   const ready = initialize();
   const adminCall = (action, body = {}) => ready.then(() => call(action, { sessionToken: sessionToken(), ...body }));
 
   window.ONEAPP_AUTH = Object.freeze({
     version: VERSION, ready, status: () => call('nexus_auth_status'), login, bootstrap, activate,
-    readSession, logout, hasPermission, canUseApp, canUseGroup, gateway,
+    readSession, refreshIfNeeded, logout, hasPermission, canUseApp, canUseGroup, gateway,
     get session() { return currentSession; },
     get appId() { return currentAppContext?.appId || ''; },
     admin: Object.freeze({

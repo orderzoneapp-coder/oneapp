@@ -13,6 +13,7 @@ const html = read('Master.html');
 const source = read('nexus/master/master-app.jsx');
 const compiled = read('nexus/master/master-app.js');
 const component = read('nexus/common/nexus-top.js');
+const authClient = read('nexus/common/nexus-auth.js');
 const compiledCss = read('nexus/master/master-app.css');
 
 assert.ok(Buffer.byteLength(html) < 20_000, 'Master document shell must stay below 20 KB');
@@ -52,6 +53,10 @@ assert.match(source, /xlsx\/0\.18\.5\/xlsx\.full\.min\.js/);
 assert.match(source, /masterExcelRuntimePromise = null/);
 assert.match(source, /파일을 다시 선택하면 재시도합니다/);
 assert.match(source, /window\.ONEAPP_AUTH\?\.ready/);
+assert.doesNotMatch(source, /shellReady|nexusAuthShellReady/);
+assert.match(authClient, /const CONTEXT_REFRESH_LEAD_MS = 90 \* 1000/);
+assert.match(authClient, /refreshIfNeeded\(\{ minValidityMs: CONTEXT_REFRESH_LEAD_MS \}\)/);
+assert.match(component, /refreshIfNeeded\?\.\(\{ minValidityMs: 120000 \}\)/);
 assert.match(source, /window\.dispatchEvent\(new CustomEvent\('nexus:app-ready'/);
 assert.match(component, /dataset\.nexusReadyStrategy === 'app'/);
 assert.match(component, /completeNavigation\('app-ready'\)/);
