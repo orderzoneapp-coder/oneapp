@@ -16,7 +16,7 @@ const topJs = read('nexus/common/nexus-top.js');
 const gatewaySource = read('nexus/server/nexus-auth-gateway.gs');
 
 assert.match(companyHtml, /data-nexus-app-id="company"/);
-assert.match(companyHtml, /nexus-auth\.js\?v=2\.1\.0/);
+assert.match(companyHtml, /nexus-auth\.js\?v=2\.1\.1/);
 assert(companyHtml.indexOf('nexus-auth.js') < companyHtml.search(/<body\b/i), 'auth guard loads before company body');
 for (const label of ['기본정보','회계기수','연락처','주소','사업자등록증 세부정보','사업자등록증 인식','다시 촬영','확인하고 등록']) assert(companyHtml.includes(label), `missing UI label: ${label}`);
 assert.match(companyHtml, /postcode\.v2\.js/);

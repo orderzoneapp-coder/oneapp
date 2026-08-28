@@ -70,7 +70,7 @@ assert.match(componentSource, /dataset\.nexusReadyStrategy === 'app'/);
 assert.match(componentSource, /if \(!appReadyStrategy\) completeNavigation\('window-load'\)/);
 assert.match(componentSource, /completeNavigation\('safety-timeout'\), 12000/);
 assert.match(componentSource, /const NAVIGATION_COVER_DELAY_MS = 300/);
-assert.match(componentSource, /const VERSION = '1\.9\.1'/);
+assert.match(componentSource, /const VERSION = '1\.9\.2'/);
 assert.match(componentSource, /dataset\.nexusNavigationReadyMs/);
 assert.match(componentSource, /dataset\.nexusNavigationCoverCount/);
 assert.doesNotMatch(componentSource, /TAB_BUTTONS|preloadTabButtonImages|data-active-src|data-inactive-src|new Image\(/,
@@ -183,7 +183,7 @@ assert.match(headerDocumentation, /Excel·ERP·인쇄·카카오 이미지 컨�
 assert.match(nexusHome, /data-nexus-color-mode="dark"/);
 assert.doesNotMatch(nexusHome, /data-nexus-color-mode="system"|prefers-color-scheme/);
 assert.match(nexusHome, /nexus-auth-config\.js\?v=2\.0\.1/);
-assert.match(nexusHome, /nexus-auth\.js\?v=2\.1\.0/);
+assert.match(nexusHome, /nexus-auth\.js\?v=2\.1\.1/);
 assert.match(nexusHome, /ONE LOGIN · ALL OPERATIONS/);
 assert.doesNotMatch(nexusHome, /<nexus-top/,
   'the public login entry must not render authenticated navigation before session validation');
@@ -304,14 +304,14 @@ assert.equal(manifestContract.owner, 'nexus');
 assert.equal(manifestContract.schemaVersion, 'NEXUS_HEADER_V3');
 assert.equal(manifestContract.resources.globalActionVisibilityPreference, 'oneapp.nexus.v1.hiddenGlobalActions');
 assert.equal(manifestContract.resources.navigationLoadingSession, 'oneapp.nexus.v1.navigation');
-assert.equal(manifestContract.resources.componentVersion, '1.9.1');
+assert.equal(manifestContract.resources.componentVersion, '1.9.2');
 assert.equal(manifestContract.resources.appReadyEvent, 'nexus:app-ready');
 assert.equal(manifestContract.resources.appReadyStrategyAttribute, 'data-nexus-ready-strategy=app');
 for (const file of manifestContract.consumers) {
   const source = read(file);
   assert.match(source, /apps-config\.js\?v=1\.4\.0/, `${file} must load the current NEXUS configuration`);
-  assert.match(source, /nexus-top\.js\?v=1\.9\.1/, `${file} must load the current NEXUS component`);
-  assert.match(source, /nexus-auth\.js\?v=2\.1\.0/, `${file} must enforce the NEXUS V2 login session`);
+  assert.match(source, /nexus-top\.js\?v=1\.9\.2/, `${file} must load the current NEXUS component`);
+  assert.match(source, /nexus-auth\.js\?v=2\.1\.1/, `${file} must enforce the NEXUS V2 login session`);
 }
 
 const entries = [
@@ -329,8 +329,8 @@ for (const [file, appId] of entries) {
   const source = read(file);
   assert.match(source, new RegExp(`<nexus-top app-id="${appId}">[\\s\\S]*?<\\/nexus-top>`), `${file} must declare its canonical NEXUS app ID`);
   assert.match(source, /apps-config\.js\?v=1\.4\.0/);
-  assert.match(source, /nexus-top\.js\?v=1\.9\.1/);
-  assert.match(source, /nexus-auth\.js\?v=2\.1\.0/);
+  assert.match(source, /nexus-top\.js\?v=1\.9\.2/);
+  assert.match(source, /nexus-auth\.js\?v=2\.1\.1/);
   assert.match(source, /NEXUS 메뉴를 불러오지 못했습니다/);
 }
 

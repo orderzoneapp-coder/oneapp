@@ -96,6 +96,8 @@ window.NEXUS_TOP.clearStatus('inventory-save-42', 'dataops');
 
 이동이 허용되면 외부 이미지에 의존하지 않는 NEXUS 전환 화면을 즉시 표시한다. 전환 화면은 이동을 시작한 시점의 일반·다크 화면 모드를 함께 보관해 목적지 첫 화면까지 같은 밝기를 유지한다. 기본 소비자는 전체 `load` 뒤 전환 화면을 제거한다. 인증·권한 확인과 앱 셸 준비를 별도로 관리하는 소비자는 `<html data-nexus-app-id="..." data-nexus-ready-strategy="app">`를 선언하고 최소 상호작용 가능 시점에 `nexus:app-ready`를 발생시켜 제거한다. 뒤로가기 복원과 12초 안전 해제를 지원하며 새 탭·보조키 이동에는 개입하지 않는다. 전환 상태는 현재 탭의 `sessionStorage` 키 `oneapp.nexus.v1.navigation`에만 임시 보관한다.
 
+`ONEAPP_AUTH.ready`는 서버 세션과 현재 앱 context가 모두 유효한 뒤에만 완료된다. 만료된 context나 과거 권한으로 데이터 셸을 먼저 공개하는 우회 promise는 두지 않는다. 대신 인증 클라이언트가 5분 context 만료 90초 전에 active tab에서 전체 client bundle을 백그라운드 갱신하고, `pageshow`·가시성 복귀·공통헤더 링크 hover/focus에서도 freshness를 확인한다. BroadcastChannel은 갱신 사실만 알리고 세션 토큰을 다른 탭에 복제하지 않는다. 수신 탭은 자기 탭의 session token으로 `refreshIfNeeded()`를 실행하며 이미 유효한 요청과 중복 네트워크 요청은 합친다. 로그아웃·세션 회수·권한 거부는 기존처럼 캐시와 예약 갱신을 즉시 제거하고 `nexus:app-ready`보다 먼저 차단한다.
+
 ```js
 window.addEventListener('nexus:before-navigate', (event) => {
   if (!hasUnsavedChanges()) return;

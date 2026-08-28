@@ -10,7 +10,9 @@ const header = read('nexus/common/nexus-top.js');
 const dataOps = read('DataOps.html');
 const oneapp = read('code.gs');
 
-assert.match(client, /const VERSION = '2\.1\.0'/);
+assert.match(client, /const VERSION = '2\.1\.1'/);
+assert.match(client, /CONTEXT_REFRESH_LEAD_MS = 90 \* 1000/);
+assert.match(client, /refreshIfNeeded/);
 assert.match(client, /oneapp\.nexus\.auth\.bundle\.v2/);
 assert.match(client, /sessionStorage\.setItem\(SESSION_BUNDLE_KEY/);
 assert.doesNotMatch(client, /localStorage\.(?:setItem|getItem)[\s\S]{0,120}(?:sessionToken|SESSION_BUNDLE_KEY)/,
