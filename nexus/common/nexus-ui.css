@@ -1,0 +1,305 @@
+:root {
+  --nexus-ui-header-height: 54px;
+  --nexus-ui-navy: #081225;
+  --nexus-ui-teal: #05ae94;
+  --nexus-ui-page-bg: #f4f7fb;
+  --nexus-ui-panel-bg: #ffffff;
+  --nexus-ui-panel-subtle: #f8fafc;
+  --nexus-ui-border: #dbe3ec;
+  --nexus-ui-border-strong: #cbd5e1;
+  --nexus-ui-text: #172033;
+  --nexus-ui-muted: #64748b;
+  --nexus-ui-input-bg: #ffffff;
+  --nexus-ui-shadow: 0 6px 18px rgb(15 23 42 / 10%);
+}
+
+html[data-nexus-ui-theme="dark"] {
+  --nexus-ui-page-bg: #11151a;
+  --nexus-ui-panel-bg: #1b2026;
+  --nexus-ui-panel-subtle: #222830;
+  --nexus-ui-border: #343c46;
+  --nexus-ui-border-strong: #46515e;
+  --nexus-ui-text: #e4e8ed;
+  --nexus-ui-muted: #a0a9b5;
+  --nexus-ui-input-bg: #242b33;
+  --nexus-ui-shadow: 0 8px 22px rgb(0 0 0 / 32%);
+}
+
+body.nexus-ui-mounted {
+  box-sizing: border-box;
+  padding-top: calc(var(--nexus-ui-original-padding-top, 0px) + var(--nexus-ui-header-height)) !important;
+}
+
+.nexus-ui-header,
+.nexus-ui-header * {
+  box-sizing: border-box;
+}
+
+.nexus-ui-header {
+  position: fixed;
+  z-index: 2147483000;
+  inset: 0 0 auto;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  width: 100%;
+  height: var(--nexus-ui-header-height);
+  margin: 0;
+  padding: 0 14px;
+  border: 0;
+  border-bottom: 1px solid var(--nexus-ui-border);
+  background: rgb(255 255 255 / 96%);
+  box-shadow: var(--nexus-ui-shadow);
+  color: var(--nexus-ui-text);
+  font-family: Inter, Pretendard, "Noto Sans KR", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  line-height: 1;
+  backdrop-filter: blur(12px);
+}
+
+html[data-nexus-ui-theme="dark"] .nexus-ui-header {
+  border-bottom-color: #253246;
+  background: rgb(7 17 30 / 97%);
+  color: #f7fbff;
+}
+
+.nexus-ui-brand {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  height: 100%;
+  gap: 10px;
+  padding-right: 12px;
+}
+
+.nexus-ui-brand__logo {
+  position: relative;
+  display: block;
+  flex: 0 0 127px;
+  width: 127px;
+  height: 32px;
+}
+
+.nexus-ui-logo {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 127px;
+  height: 32px;
+  object-fit: contain;
+  background: transparent;
+}
+
+.nexus-ui-logo--dark,
+html[data-nexus-ui-theme="dark"] .nexus-ui-logo--light {
+  display: none;
+}
+
+html[data-nexus-ui-theme="dark"] .nexus-ui-logo--dark {
+  display: block;
+}
+
+.nexus-ui-brand__current {
+  max-width: 110px;
+  overflow: hidden;
+  padding: 5px 8px;
+  border: 1px solid var(--nexus-ui-border);
+  border-radius: 999px;
+  color: var(--nexus-ui-muted);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: -.02em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+html[data-nexus-ui-theme="dark"] .nexus-ui-brand__current {
+  border-color: #34465f;
+  color: #afbdcc;
+}
+
+.nexus-ui-nav {
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+  height: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-inline: contain;
+  scrollbar-width: none;
+  touch-action: pan-x;
+  white-space: nowrap;
+}
+
+.nexus-ui-nav::-webkit-scrollbar {
+  display: none;
+}
+
+.nexus-ui-nav__link {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 0 11px;
+  color: #536276;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: -.02em;
+  text-decoration: none;
+}
+
+.nexus-ui-nav__link::after {
+  position: absolute;
+  right: 10px;
+  bottom: 5px;
+  left: 10px;
+  height: 2px;
+  border-radius: 99px;
+  background: transparent;
+  content: "";
+}
+
+.nexus-ui-nav__link:hover,
+.nexus-ui-nav__link:focus-visible {
+  color: #0f766e;
+  background: #edf9f6;
+  outline: none;
+}
+
+.nexus-ui-nav__link.is-current {
+  color: #075f52;
+  background: #e7f8f3;
+}
+
+.nexus-ui-nav__link.is-current::after {
+  background: var(--nexus-ui-teal);
+}
+
+html[data-nexus-ui-theme="dark"] .nexus-ui-nav__link {
+  color: #adbac9;
+}
+
+html[data-nexus-ui-theme="dark"] .nexus-ui-nav__link:hover,
+html[data-nexus-ui-theme="dark"] .nexus-ui-nav__link:focus-visible,
+html[data-nexus-ui-theme="dark"] .nexus-ui-nav__link.is-current {
+  color: #72ddc5;
+  background: #102c2d;
+}
+
+.nexus-ui-theme {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 2px;
+  margin-left: 10px;
+  padding: 3px;
+  border: 1px solid var(--nexus-ui-border);
+  border-radius: 8px;
+  background: var(--nexus-ui-panel-subtle);
+}
+
+.nexus-ui-theme__button {
+  min-height: 34px;
+  margin: 0;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--nexus-ui-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.nexus-ui-theme__button:hover,
+.nexus-ui-theme__button:focus-visible {
+  color: var(--nexus-ui-text);
+  outline: 2px solid color-mix(in srgb, var(--nexus-ui-teal) 45%, transparent);
+  outline-offset: -2px;
+}
+
+.nexus-ui-theme__button.is-active {
+  background: var(--nexus-ui-panel-bg);
+  box-shadow: 0 1px 4px rgb(15 23 42 / 12%);
+  color: #087565;
+}
+
+html[data-nexus-ui-theme="dark"] .nexus-ui-theme {
+  border-color: #34465f;
+  background: #0d1b2d;
+}
+
+html[data-nexus-ui-theme="dark"] .nexus-ui-theme__button {
+  color: #9faebf;
+}
+
+html[data-nexus-ui-theme="dark"] .nexus-ui-theme__button.is-active {
+  background: #18324a;
+  color: #72ddc5;
+}
+
+@media (max-width: 760px) {
+  .nexus-ui-header {
+    grid-template-columns: auto minmax(120px, 1fr) auto;
+    padding-inline: 8px;
+  }
+
+  .nexus-ui-brand {
+    gap: 0;
+    padding-right: 7px;
+  }
+
+  .nexus-ui-brand__logo {
+    flex-basis: 98px;
+    width: 98px;
+    height: 26px;
+  }
+
+  .nexus-ui-logo {
+    width: 98px;
+    height: 26px;
+  }
+
+  .nexus-ui-brand__current {
+    display: none;
+  }
+
+  .nexus-ui-nav__link {
+    min-height: 44px;
+    padding-inline: 10px;
+  }
+
+  .nexus-ui-theme {
+    margin-left: 6px;
+  }
+
+  .nexus-ui-theme__button {
+    min-width: 34px;
+    padding-inline: 6px;
+    font-size: 0;
+  }
+
+  .nexus-ui-theme__button::before {
+    font-size: 15px;
+    line-height: 1;
+  }
+
+  .nexus-ui-theme__button[data-nexus-ui-theme-value="light"]::before {
+    content: "☀";
+  }
+
+  .nexus-ui-theme__button[data-nexus-ui-theme-value="dark"]::before {
+    content: "☾";
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .nexus-ui-header *,
+  .nexus-ui-header *::before,
+  .nexus-ui-header *::after {
+    scroll-behavior: auto !important;
+    transition: none !important;
+  }
+}
