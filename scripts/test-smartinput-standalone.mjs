@@ -564,8 +564,8 @@ assert.doesNotMatch(html, /id="orderDateInput"/);
 assert.doesNotMatch(html, /class="stage-rail"/);
 assert.match(html, /id="activityTrail"[^>]*aria-live="polite"[^>]*hidden/);
 assert.match(html, /id="activityItems" aria-label="누적 입력현황"/);
-assert.match(html, /id="clearParserButton"[^>]*>[^<]*<span[^>]*>↻<\/span> 지우기<\/button>/,
-  'the parser must expose an explicit clear control beside its activity history');
+assert.match(html, /id="clearParserButton"[^>]*title="활성 원본 제거"[^>]*>[^<]*<span[^>]*>×<\/span> 지우기<\/button>/,
+  'the parser must expose an explicit active-source removal control');
 assert.doesNotMatch(html, /class="parser-card__header"/);
 assert.doesNotMatch(html, /<th>원문<\/th>|class="col-source"/);
 assert.doesNotMatch(html, /<th>차수<\/th>|<th>상태<\/th>/);
@@ -699,7 +699,10 @@ assert.match(css, /\.document-fields__right > \.catalog-filter \{ grid-template-
   'estimate controls must keep the unified document header at the same height as other vouchers');
 assert.match(css, /\.workbench \{[^}]*gap: 10px/,
   'the unified header must reduce vertical spacing above the table');
-assert.match(css, /\.workspace\.has-photo-source \.parser-card, \.workspace\.has-photo-source \.workbench \{[^}]*height: calc\(100vh - var\(--nexus-top-height\) - 88px\)/);
+assert.doesNotMatch(css, /\.workspace\.has-photo-source \.parser-card, \.workspace\.has-photo-source \.workbench \{[^}]*height: calc\(100vh - var\(--nexus-top-height\) - 88px\)/,
+  'the restored source review window must not carry the obsolete photo-only fixed height');
+assert.match(css, /\.parser-card \{[^}]*display: flex;[^}]*flex-direction: column/,
+  'the parser must present one continuous source-review column');
 assert.match(css, /\.photo-ocr-panel \{/);
 assert.match(css, /\.photo-resizer \{/);
 assert.match(css, /\.row-status \{/);
@@ -755,10 +758,11 @@ assert.doesNotMatch(css, /prefers-color-scheme: dark/);
 assert.match(css, /prefers-reduced-motion: reduce/);
 
 for (const required of [
-  'captureTextIntake',
   'extractOrderProductLines',
-  'analyzeSingleOrderDocument',
   'rematchExtractedLinesForCustomer',
+  'sourceIdFromBytes',
+  'stageSourceRows',
+  'recordSourceApplications',
   'createOrder',
   'syncAfterLocalMutation',
   'loadProductCatalog',
@@ -770,7 +774,7 @@ for (const required of [
   'deliveryCustomerWeekdays',
   'window.Tesseract',
   'SpeechRecognition',
-  'captureOccurrenceId',
+  'sourceRowKey',
   'looksLikeKakaoText',
   'appendDeliveryHistory'
 ]) assert.match(appSource, new RegExp(required));
@@ -782,7 +786,6 @@ assert.match(appSource, /customerInput'\)\.focus\(\)/);
 assert.match(appSource, /SMART_INPUT:\$\{current\.batches\[0\]/);
 assert.match(appSource, /editedFields/);
 assert.match(appSource, /다음 가능일은 \$\{nextAvailable\.date\}입니다/);
-assert.match(appSource, /mappingSource: 'PARSER_CONFIRMED', learnAlias: false/);
 assert.match(appSource, /row\.masterProductId = String\(product\.masterProductId/);
 assert.match(appSource, /masterProductId: masterLinked \? row\.masterProductId : null/);
 assert.match(appSource, /commonMasterProducts\(\)/);
@@ -799,7 +802,11 @@ assert.match(appSource, /analyzeSource\(\{ automatic: true \}\)/);
 assert.match(appSource, /current\.sourceText = rawText/);
 const analyzeSourceBlock = appSource.slice(appSource.indexOf('async function analyzeSource'), appSource.indexOf('async function handleFile'));
 assert.doesNotMatch(analyzeSourceBlock, /current\.sourceText = '';/, 'ordinary parser analysis must not clear the preserved source text');
-assert.match(appSource, /sourceRole: 'LIVE_SOURCE'/);
+assert.doesNotMatch(analyzeSourceBlock, /applyCustomer\(|customerMappingSource\s*=|header\.customer/,
+  'analysis completion must not auto-apply customer or header changes before explicit table application');
+assert.match(analyzeSourceBlock, /sourceRole: 'STAGED_SOURCE'/);
+assert.match(appSource, /sourceRole: 'APPLIED_SOURCE'/,
+  'only the explicit staging application path may create applied source batches');
 assert.match(appSource, /function renderSourceAnalysis\(\)/);
 assert.match(appSource, /source-token--user/);
 assert.match(appSource, /source-token--time/);
@@ -839,10 +846,13 @@ assert.match(appSource, /function saveCurrentVoucher\(\)[\s\S]*activeMode === 'e
 assert.match(appSource, /saveDraftButton'\)\.addEventListener\('click', saveCurrentVoucher\)/,
   'the footer voucher save button must have one shared event binding');
 assert.match(appSource, /function clearParserWorkspace\(\)/);
-assert.match(appSource, /current\.batches = \(current\.batches \|\| \[\]\)\.filter\(batch => batch\.sourceType === 'MANUAL'\)/,
-  'parser clear must preserve direct-entry batches while dropping parser batches');
-assert.match(appSource, /state\.sourceImages\[state\.draft\.activeMode\] = null/,
-  'parser clear must detach the current source photo');
+const clearParserSource = functionBlock(appSource, 'clearParserWorkspace', 'sha256Text');
+assert.match(clearParserSource, /const workTableBytesBefore = JSON\.stringify\(current\.rows\)/);
+assert.match(clearParserSource, /removeSource\(current, source\.sourceId, \{ discardPending: true \}\)/);
+assert.match(clearParserSource, /SOURCE_REMOVE_CHANGED_WORKTABLE/,
+  'source removal must prove that it does not mutate the worktable');
+assert.doesNotMatch(clearParserSource, /current\.rows\s*=|current\.batches\s*=|sourceApplicationLedger\s*=/,
+  'source removal must preserve applied work rows, batches, and application history');
 assert.match(appSource, /const PARSER_ERROR_LABEL = [^;]+/);
 assert.match(appSource, /if \(PARSER_ERROR_LABEL\.test\(productText\)\) return true/,
   'short bracketed parser error labels must not become product-name rows');
@@ -1003,8 +1013,10 @@ assert.match(appSource, /isParserDocumentFile\(file\)/);
 assert.match(appSource, /isImageFile\(file\)/);
 assert.match(appSource, /parserCard\.contains\(event\.target\) && pastedText/,
   'plain-text paste must work anywhere inside the parser, including after photo input');
-assert.match(appSource, /updateMethod\('text', \{ persist: false \}\)/,
-  'clearing a photo source must return the parser to direct text input');
+assert.match(clearParserSource, /if \(result\.nextSourceId\)[\s\S]*activateSourceInView\(result\.nextSourceId/,
+  'removing the active source must switch to another retained source when available');
+assert.match(clearParserSource, /else \{[\s\S]*current\.activeMethod = 'text'/,
+  'removing the last source must return the empty review surface to text input');
 assert.match(css, /\.voucher-footer-actions \{[^}]*justify-content: space-between;[^}]*border-top: 1px solid var\(--border\)/,
   '전표 작업 버튼은 입력표 하단의 독립 작업줄에 배치해야 한다.');
 assert.match(appSource, /거래처정보/);
@@ -1118,8 +1130,11 @@ assert.match(appSource, /function restoreSourceImageForMode\(/);
 assert.match(appSource, /function renderCatalogControls\(/);
 assert.match(appSource, /photoViewer\.classList\.toggle\('has-image', showPhoto\)/);
 assert.match(appSource, /\$\('photoEmptySelectButton'\)\.addEventListener\('click'/);
-assert.match(appSource, /state\.sourceImages\[state\.draft\.activeMode\] = imageEvidence;[\s\S]*renderSourceSurface\(\);[\s\S]*if \(state\.busy\)/,
-  '붙여넣은 원본 사진은 진행 중인 파서보다 먼저 뷰어에 표시해야 한다.');
+const recognizeImageSource = functionBlock(appSource, 'recognizeImage', 'toggleVoice');
+assert.match(recognizeImageSource, /URL\.createObjectURL\(file\)[\s\S]*activateSourceInView\(provisional\.sourceId\)[\s\S]*renderSourceSurface\(\);[\s\S]*await fileToImageEvidence\(file, previewUrl\)/,
+  'the raw image preview must render before byte loading, SHA-256 finalization, and OCR');
+assert.ok(recognizeImageSource.indexOf('renderSourceSurface();') < recognizeImageSource.indexOf('if (state.busy)'),
+  'the image viewer must remain available while another parser task is still busy');
 assert.match(appSource, /if \(event\.target === sourceTextInput && pastedText\)[\s\S]*else if \(parserCard\.contains\(event\.target\) && pastedText\)/,
   'plain-text paste may switch photo mode only when the event belongs to the parser, never a standard-input cell');
 assert.match(appSource, /if \(status === 'SIMILAR'\) return '유사';[\s\S]*return '불일치';/);
@@ -1157,16 +1172,22 @@ const erpSheetAppendAt = appSource.indexOf("'ERP업데이트'");
 assert.ok(errorSheetAppendAt >= 0 && errorSheetAppendAt < shopSheetAppendAt && shopSheetAppendAt < erpSheetAppendAt,
   'Excel 시트는 오류정보, 쇼핑몰업로드, ERP업데이트 순서여야 한다.');
 assert.doesNotMatch(appSource, /if \(!output\.ok\)/, '오류 정보로 Excel 생성을 차단하면 안 된다.');
-assert.match(html, /smartinput-contract\.js\?v=0\.4\.17/);
-assert.match(html, /smartinput\.css\?v=0\.5\.0/);
-assert.match(html, /smartinput\.js\?v=0\.5\.0/);
+assert.match(html, /smartinput-contract\.js\?v=0\.4\.18/);
+assert.match(html, /smartinput\.css\?v=0\.6\.0/);
+assert.match(html, /smartinput\.js\?v=0\.6\.0/);
 assert.match(appSource, /structured-sheet-parser\.js\?v=0\.2\.0/);
 assert.match(appSource, /grid-clipboard\.js\?v=0\.2\.0/);
 assert.match(appSource, /smartinput-data-store\.js\?v=0\.4\.0/);
 assert.match(appSource, /input-template-core\.js\?v=1\.0\.0/);
-assert.match(appSource, /input-template-draft-adapter\.js\?v=1\.0\.0/);
+assert.match(appSource, /source-staging-core\.js\?v=1\.0\.0/);
+assert.doesNotMatch(appSource, /input-template-draft-adapter/,
+  'Excel and clipboard imports must enter the common source-staging core, not a worktable-writing adapter');
 assert.match(html, /id="inputTemplateFieldSearch"[^>]*type="search"/);
+assert.match(html, /id="inputTemplateOpenButton"[^>]*aria-controls="inputTemplateOverlay"/);
+assert.match(html, /id="inputTemplateOverlay"[^>]*hidden/);
 assert.match(appSource, /inputTemplateFieldSearch[\s\S]*renderTemplateMappings/);
+assert.match(appSource, /typedSourceIdentityBytes\(html \? 'HTML_TABLE' : 'TSV', new TextEncoder\(\)\.encode\(rawClipboard\)\)/,
+  'pasted table source identity must hash raw clipboard bytes together with the HTML/TSV input kind');
 const existingTemplateSelectionSource = functionBlock(appSource, 'selectExistingInputTemplate', 'releaseInputTemplate');
 assert.doesNotMatch(existingTemplateSelectionSource, /createInputTemplate|updateInputTemplateStructure|saveSettings/,
   'selecting an existing template must not issue any structure write');
@@ -1176,8 +1197,10 @@ assert.match(persistTemplateStructureSource,
   'template structure persistence must be gated to CREATE_TEMPLATE before the store call');
 const applyInputTemplateSource = functionBlock(appSource, 'applyInputTemplateData', 'loadDraft');
 assert.doesNotMatch(applyInputTemplateSource,
-  /createInputTemplate|updateInputTemplateStructure|saveSettings|createOrder|postPurchaseGroup|postSaleGroup|updateEstimateAtomically/,
-  'template data input must update draft values only and must not call structure or official voucher writers');
+  /createInputTemplate|updateInputTemplateStructure|saveSettings|createOrder|postPurchaseGroup|postSaleGroup|updateEstimateAtomically|applyParserResults|current\.rows\s*=/,
+  'template data input must stage values only and must not call structure, worktable, or official voucher writers');
+assert.match(applyInputTemplateSource, /stageSourceRows\([\s\S]*WORKTABLE_CHANGED_BEFORE_EXPLICIT_APPLY/,
+  'template mapping must feed the common source staging core and prove that the worktable stayed byte-equivalent');
 assert.match(appSource, /estimate-output\.js\?v=0\.1\.4/);
 assert.match(appSource, /const sourceRows = selectedRecords\.length \? combinedEstimateRows\(selectedRecords\) : modeDraft\(\)\.rows/,
   'Excel export must combine only the selected estimate product sets');
@@ -1196,6 +1219,9 @@ assert.match(appSource, /catalogDraft\.header\.customerName = customerName\(link
 assert.match(appSource, /customerMappingSource = 'CATALOG'/);
 assert.match(appSource, /function createCatalogOnlyDraft\(source = \{\}, catalogRecordId = ''\)[\s\S]*sourceText: ''[\s\S]*activeMethod: 'direct'[\s\S]*batches: \[\]/,
   'catalog records must keep product content without parser text or input batches');
+const catalogProjectionSource = functionBlock(appSource, 'createCatalogOnlyDraft', 'loadCatalogRecord');
+assert.match(catalogProjectionSource, /sources: \[\][\s\S]*activeSourceId: ''[\s\S]*stagedSourceRows: \[\][\s\S]*sourceApplicationLedger: \[\]/,
+  'estimate catalog projection must not retain source review, staging, or application-ledger provenance');
 assert.match(appSource, /batchId: ''[\s\S]*sourceRegion: null[\s\S]*rawText: ''[\s\S]*candidateProducts: \[\][\s\S]*editedFields: \{\}/,
   'catalog product rows must not retain parser provenance or photo regions');
 assert.match(appSource, /rawOrdererName: ''[\s\S]*aliasMappingId: ''[\s\S]*customerMappingSource: 'CATALOG'/,

@@ -366,7 +366,7 @@
       "path": "smartinput/index.html",
       "kind": "web-entry",
       "status": "pilot",
-      "purpose": "Capture order, purchase, sale, and estimate source material through direct, file, text, clipboard, photo OCR, and voice STT inputs; normalize Excel and pasted tables through one matrix mapping core; preserve revisioned device-local input templates and original source evidence; configure entry fields; save a device-local estimate catalog; and deliver completed orders to the ORDER Q vNext ledger.",
+      "purpose": "Capture order, purchase, sale, and estimate source material through one active-source review window; stage direct, file, text, clipboard, photo OCR, and voice STT analysis per source until explicit work-table application; normalize Excel and pasted tables through one matrix mapping core; preserve raw-byte source identity, application history, revisioned device-local input templates, and original source evidence; configure entry fields; save a device-local estimate catalog; and deliver completed orders to the ORDER Q vNext ledger.",
       "owner": "smart-input",
       "productionWrites": true,
       "publicEntries": [
@@ -386,7 +386,7 @@
         "product-master",
         "smartinput-local-data"
       ],
-      "integrationNote": "SmartInput is available from the fixed-position NEXUS global entry, the common-header settings list, and the full application list at /smartinput/. ORDER Q vNext is the common order ledger; the validated read-only orders.html adapter loads active SMART_INPUT orders without creating another order store or triggering cloud synchronization."
+      "integrationNote": "SmartInput is available from the fixed-position NEXUS global entry, the common-header settings list, and the full application list at /smartinput/. Source registration and analysis are draft-only; only the explicit per-source apply action changes its work table, after which existing mode writers retain ownership. ORDER Q vNext is the common order ledger; the validated read-only orders.html adapter loads active SMART_INPUT orders without creating another order store or triggering cloud synchronization."
     },
     {
       "id": "cloud-sync",
@@ -529,7 +529,7 @@
         "smartinput/index.html"
       ],
       "schemaVersion": "ONEAPP_SMARTINPUT_LOCAL_V4",
-      "purpose": "Preserve SmartInput device-local settings, relationships, estimates, source images, and revisioned input templates. Upgrading from v3 creates only inputTemplates. Existing-template imports are value-only and all structural writes are rejected before an IndexedDB transaction begins.",
+      "purpose": "Preserve SmartInput device-local settings, relationships, estimates, source images, and revisioned input templates. Source order, active source, staging, and the application ledger remain in the existing local draft contract, so IndexedDB stays at v4. Upgrading from v3 creates only inputTemplates and preserves prior records. Existing-template imports are value-only and all structural writes are rejected before an IndexedDB transaction begins.",
       "resources": {
         "indexedDb": {
           "database": "oneapp-smartinput",

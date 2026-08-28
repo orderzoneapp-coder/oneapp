@@ -1,8 +1,4 @@
-import {
-  captureTextIntake,
-  analyzeSingleOrderDocument,
-  rematchExtractedLinesForCustomer
-} from '../orderq/intake-engine.js?v=0.12.3';
+import { rematchExtractedLinesForCustomer } from '../orderq/intake-engine.js?v=0.12.3';
 import { extractOrderProductLines } from '../orderq/smartparser/order-text-extractor.js?v=0.1.0';
 import { createOrder } from '../orderq/order-intake-engine.js?v=0.15.2';
 import { syncAfterLocalMutation } from '../orderq/orderq-sync-engine.js?v=0.18.1';
@@ -92,7 +88,30 @@ import {
   templateColumnsFromMappings,
   validateTemplateMappings
 } from './input-template-core.js?v=1.0.0';
-import { replaceLiveTemplateImport } from './input-template-draft-adapter.js?v=1.0.0';
+import {
+  SOURCE_STATUSES,
+  SOURCE_STATUS_LABELS,
+  STAGED_ROW_STATES,
+  activateSource,
+  activeSource,
+  adjacentSource,
+  authorizeDeletedRowsForReapply,
+  ensureSourceWorkspace,
+  finalizeSourceIdentity,
+  markWorkRowsDeleted,
+  pendingRowsForSource,
+  recordSourceApplications,
+  registerProvisionalSource,
+  removeSource,
+  setSourceStatus,
+  sourceIdFromBytes,
+  sourceKindForMethod,
+  sourceSummary,
+  stageSourceRows,
+  stagedRowsForSource,
+  typedSourceIdentityBytes,
+  visibleSources
+} from './source-staging-core.js?v=1.0.0';
 import {
   normalizeEstimateOrder,
   reorderEstimateRecords
@@ -160,6 +179,11 @@ const state = {
   gridSearch: '',
   sourceImages: { order: null, purchase: null, sale: null, estimate: null },
   sourceImageRecords: new Map(),
+  sourceImageBySourceId: new Map(),
+  sourceContexts: new Map(),
+  selectedStagedRowKeys: new Set(),
+  templateOverlayOpen: false,
+  sourceTextProgrammatic: false,
   worktableSelection: createSelection(initialDraft.activeMode),
   worktableRowDrag: null,
   worktableColumnSelectionDrag: null,
@@ -217,10 +241,6 @@ const WORKTABLE_GROUP_CONTEXT_FIELDS = Object.freeze([
   'rowVoucherDate', 'rowDeliveryDate', 'rowWarehouseId', 'rowWarehouseCode', 'rowVoucherNo'
 ]);
 const MOBILE_LAYOUT_QUERY = '(max-width: 820px), (max-width: 1024px) and (max-height: 540px)';
-const MOBILE_PARSER_COLLAPSED_HEIGHT = 68;
-const MOBILE_PARSER_DEFAULT_RATIO = .325;
-const MOBILE_PARSER_EXPANDED_RATIO = .65;
-const MOBILE_GRID_MIN_HEIGHT = 185;
 const MOBILE_STAGES = new Set(['info', 'source', 'grid']);
 
 function esc(value) {
@@ -234,6 +254,7 @@ function emptyTemplateSession() {
     sessionMode: '', template: null, copySourceTemplate: null, frozenRecordBytes: '', templateName: '', matrices: [],
     analysis: null, selectedCandidate: null, candidateConfirmed: true, draftMappings: [], columns: [], sessionColumns: null,
     columnWidths: {}, preview: null, pasteArmed: false, purchaseMetaRows: null, salesMetaRows: null,
+    sourceId: '', sourceKind: '', sourceRawBytes: null,
     structureSaveTimer: null, structureSavePromise: null
   };
 }
@@ -303,6 +324,26 @@ function setTemplateError(code = '') {
   $('inputTemplateError').textContent = code ? templateErrorText(code) : '';
 }
 
+function openInputTemplateOverlay() {
+  state.templateOverlayOpen = true;
+  $('inputTemplateOverlay').hidden = false;
+  $('inputTemplateOpenButton').setAttribute('aria-expanded', 'true');
+  renderTemplateAnalysis();
+  window.requestAnimationFrame(() => {
+    const target = activeTemplateSession()
+      ? $('inputTemplatePanel').querySelector('button:not([disabled]), input:not([disabled]), select:not([disabled])')
+      : $('createTemplateButton');
+    target?.focus();
+  });
+}
+
+function closeInputTemplateOverlay() {
+  state.templateOverlayOpen = false;
+  $('inputTemplateOverlay').hidden = true;
+  $('inputTemplateOpenButton').setAttribute('aria-expanded', 'false');
+  $('inputTemplateOpenButton').focus({ preventScroll: true });
+}
+
 function renderTemplateSelectOptions() {
   const select = $('inputTemplateSelect');
   const currentId = state.templateSession.template?.templateId || '';
@@ -316,10 +357,13 @@ function renderInputTemplateBar() {
   const createMode = session?.sessionMode === TEMPLATE_SESSION_MODES.CREATE;
   const fillMode = session?.sessionMode === TEMPLATE_SESSION_MODES.FILL;
   $('inputTemplateStatus').textContent = !session
-    ? '양식 없음'
+    ? '없음'
     : (createMode
-      ? (session.template ? `새 양식 · ${session.template.name} · r${session.template.revision}` : '새 양식 작성 중')
-      : `기존 양식 · ${session.template?.name || '선택'} · r${session.template?.revision || 0}`);
+      ? (session.template ? `${session.template.name} r${session.template.revision}` : '새 양식')
+      : `${session.template?.name || '기존 선택'}${session.template ? ` r${session.template.revision}` : ''}`);
+  $('inputTemplateOpenButton').title = !session
+    ? 'Excel 입력 양식 열기'
+    : `Excel 입력 양식 · ${$('inputTemplateStatus').textContent}`;
   $('inputTemplateNameField').hidden = !createMode;
   $('inputTemplateSelectField').hidden = !fillMode;
   const templateName = createMode ? session.templateName : '';
@@ -329,7 +373,7 @@ function renderInputTemplateBar() {
   $('templateFileButton').disabled = !sourceReady;
   $('templatePasteButton').disabled = !sourceReady;
   $('releaseTemplateButton').disabled = !session;
-  $('inputTemplateBar').classList.toggle('is-paste-armed', Boolean(session?.pasteArmed));
+  document.querySelector('.input-template-dialog')?.classList.toggle('is-paste-armed', Boolean(session?.pasteArmed));
   $('createTemplateButton').setAttribute('aria-pressed', String(createMode));
   $('existingTemplateButton').setAttribute('aria-pressed', String(fillMode));
 }
@@ -425,7 +469,7 @@ function refreshTemplatePreview() {
   session.preview = parsed;
   setTemplateError('');
   const unmappedCount = candidate.mappingPlan.unmappedHeaders?.length || 0;
-  $('inputTemplateResult').textContent = `${session.candidateConfirmed ? '' : '동점 시트·헤더를 선택하세요 · '}입력 예정 ${parsed.rows.length}행 · 제외 ${parsed.excludedRowCount || 0}행 · 적용 필드 ${mappings.length}개 · 미매핑 ${unmappedCount}열 · 오류 셀 ${parsed.invalidCells.length}개`;
+  $('inputTemplateResult').textContent = `${session.candidateConfirmed ? '' : '동점 시트·헤더를 선택하세요 · '}추가 예정 ${parsed.rows.length}행 · 제외 ${parsed.excludedRowCount || 0}행 · 적용 필드 ${mappings.length}개 · 미매핑 ${unmappedCount}열 · 오류 셀 ${parsed.invalidCells.length}개`;
   $('applyInputTemplateButton').disabled = !session.candidateConfirmed || !parsed.rows.length || (session.sessionMode === TEMPLATE_SESSION_MODES.CREATE && !session.template);
 }
 
@@ -679,14 +723,25 @@ async function sha256Bytes(bytes) {
   return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('');
 }
 
-function setTemplateMatrices(matrices, { purchaseMetaRows = null, salesMetaRows = null } = {}) {
+function setTemplateMatrices(matrices, { purchaseMetaRows = null, salesMetaRows = null, sourceId = '', sourceKind = '' } = {}) {
   const session = activeTemplateSession();
   if (!session) return;
   session.matrices = matrices;
   session.purchaseMetaRows = purchaseMetaRows;
   session.salesMetaRows = salesMetaRows;
+  session.sourceId = sourceId;
+  session.sourceKind = sourceKind;
   session.pasteArmed = false;
   analyzeTemplateMatrices();
+  const source = modeDraft().sources.find(item => item.sourceId === sourceId);
+  if (source && session.selectedCandidate) {
+    source.previewText = session.selectedCandidate.importMatrix.rawText || session.selectedCandidate.importMatrix.matrix.map(row => row.join('\t')).join('\n');
+    source.status = SOURCE_STATUSES.ANALYZING;
+    modeDraft().sourceText = source.previewText;
+    if (modeDraft().activeSourceId === sourceId) setSourceTextProgrammatically(source.previewText);
+    renderSourceWorkspace();
+    scheduleSave();
+  }
 }
 
 async function handleTemplateFile(file) {
@@ -697,10 +752,14 @@ async function handleTemplateFile(file) {
     return;
   }
   if (!window.XLSX) { toast('Excel 처리 모듈을 불러오지 못했습니다.', 'error'); return; }
+  const provisional = registerSourcePreview({ kind: 'EXCEL_FILE', displayName: file.name });
+  renderSourceWorkspace();
   try {
     setActiveActivity('양식 Excel 열 분석 중');
     const fileBytes = new Uint8Array(await file.arrayBuffer());
-    const digest = await sha256Bytes(fileBytes);
+    const identity = await finalizeRegisteredSource(provisional, fileBytes, { kind: 'EXCEL_FILE', displayName: file.name });
+    const sourceId = identity.source.sourceId;
+    const digest = sourceId.replace('src:sha256:', '');
     const workbook = window.XLSX.read(fileBytes, { type: 'array', cellDates: false, cellText: true });
     const matrices = await workbookToImportMatrices(workbook, window.XLSX, { sourceName: file.name, contentHash: digest });
     let purchaseMetaRows = null;
@@ -713,9 +772,11 @@ async function handleTemplateFile(file) {
         salesMetaRows = readSalesMeta(importMatrix.matrix);
       }
     });
-    setTemplateMatrices(matrices, { purchaseMetaRows, salesMetaRows });
+    setTemplateMatrices(matrices, { purchaseMetaRows, salesMetaRows, sourceId, sourceKind: 'EXCEL_FILE' });
     setAppStatus(`${file.name}의 Excel 열을 분석했습니다.`);
   } catch (error) {
+    setSourceStatus(modeDraft(), modeDraft().activeSourceId, SOURCE_STATUSES.FAILED, { failureMessage: error.message || 'Excel 파일을 분석하지 못했습니다.' });
+    renderSourceWorkspace();
     setTemplateError('IMPORT_HEADER_NOT_FOUND');
     toast(error.message || 'Excel 파일을 분석하지 못했습니다.', 'error');
   } finally {
@@ -731,8 +792,14 @@ async function handleTemplateClipboard(clipboardData) {
   const plainText = clipboardData?.getData?.('text/plain') || '';
   const looksTabular = /<table\b/i.test(html) || (plainText.includes('\t') && plainText.includes('\n'));
   if (!looksTabular) return false;
+  const rawClipboard = html || plainText;
+  const provisional = registerSourcePreview({ kind: 'EXCEL_PASTE', displayName: '붙여넣은 Excel 표', previewText: plainText });
+  renderSourceWorkspace();
+  const identityBytes = typedSourceIdentityBytes(html ? 'HTML_TABLE' : 'TSV', new TextEncoder().encode(rawClipboard));
+  const identity = await finalizeRegisteredSource(provisional, identityBytes, { kind: 'EXCEL_PASTE', displayName: '붙여넣은 Excel 표', previewText: plainText });
   const importMatrix = await clipboardToImportMatrix({ html, text: plainText });
-  setTemplateMatrices([importMatrix]);
+  importMatrix.contentHash = identity.source.sourceId.replace('src:sha256:', '');
+  setTemplateMatrices([importMatrix], { sourceId: identity.source.sourceId, sourceKind: 'EXCEL_PASTE' });
   updateMethod('excel');
   setAppStatus('붙여넣은 Excel 표의 열을 분석했습니다.');
   return true;
@@ -813,14 +880,15 @@ async function applyInputTemplateData() {
       sheetName: importMatrix.sheetName
     });
     const current = modeDraft();
-    captureGridPasteUndo();
-    state.applyingGridPaste = true;
+    const workTableBytesBefore = JSON.stringify(current.rows);
+    const sourceId = session.sourceId || current.activeSourceId;
+    if (!sourceId?.startsWith('src:sha256:')) throw new Error('원본 SHA-256 확인이 끝나지 않았습니다.');
     const batch = contract.createBatch({
       sequence: visibleActivityBatches(current).length + 1,
       method: 'excel-template',
       sourceType: importMatrix.sourceKind === 'FILE' ? 'STRUCTURED_FILE' : 'CLIPBOARD',
       sourceName: `${importMatrix.sourceName} · ${importMatrix.sheetName}`,
-      sourceRole: 'LIVE_SOURCE',
+      sourceRole: 'STAGED_SOURCE',
       sourceDocumentKey: idempotencyKey,
       sourceSheetName: importMatrix.sheetName,
       rawText: parsed.rawText,
@@ -851,17 +919,29 @@ async function applyInputTemplateData() {
       sourceDocumentKey: row.sourceDocumentKey || `${idempotencyKey}:${row.sourceVoucherIndex || 1}`,
       sourceLineKey: `${idempotencyKey}:sheet:${row.sourceLineNo || index + 1}`
     }));
-    const applied = replaceLiveTemplateImport(current, { batch, rows, contract });
-    current.batches = applied.batches;
-    current.rows = applied.rows;
-    const alreadyApplied = applied.alreadyApplied;
-    current.rows.forEach(row => enrichRowFromUnifiedCatalog(row));
-    resolveStage1RowReferences(current.rows);
-    current.rows = contract.markDuplicatePossibilities(current.rows);
+    let stagedValues = rows.map((row, index) => contract.normalizeRow({
+      ...row,
+      sourceId,
+      batchId: batch.batchId,
+      batchSequence: batch.sequence,
+      sourceBatchId: batch.batchId,
+      sourceLineNo: row.sourceLineNo || index + 1
+    }, batch.batchId));
+    stagedValues.forEach(row => enrichRowFromUnifiedCatalog(row));
+    resolveStage1RowReferences(stagedValues);
+    stagedValues = contract.markDuplicatePossibilities(stagedValues);
+    const staged = await stageSourceRows(current, sourceId, stagedValues, {
+      parserVersion: `SMARTINPUT_TEMPLATE_${template.structureHash || template.revision}`,
+      analysisMeta: { batchSeed: cloneGridValue(batch), templateId: template.templateId, templateRevision: template.revision }
+    });
     current.sourceText = parsed.rawText;
-    sourceTextInput.value = parsed.rawText;
     current.activeMethod = 'excel';
-    current.delivery = { status: 'DRAFT', targetId: '', targetRecordId: '', deliveredAt: '' };
+    const source = current.sources.find(item => item.sourceId === sourceId);
+    if (source) {
+      source.previewText = parsed.rawText;
+      source.displayName = `${importMatrix.sourceName} · ${importMatrix.sheetName}`;
+    }
+    if (current.activeSourceId === sourceId) setSourceTextProgrammatically(parsed.rawText);
     rememberTemplateOnDraft();
     if (session.sessionMode === TEMPLATE_SESSION_MODES.FILL) {
       const inMemoryBytes = JSON.stringify(session.template);
@@ -873,23 +953,16 @@ async function applyInputTemplateData() {
         throw locked;
       }
     }
-    renderRows({ restoreFocus: false });
-    renderDelivery();
+    if (JSON.stringify(current.rows) !== workTableBytesBefore) throw new Error('WORKTABLE_CHANGED_BEFORE_EXPLICIT_APPLY');
+    state.selectedStagedRowKeys = new Set(staged.filter(row => row.state === STAGED_ROW_STATES.PENDING).map(row => row.sourceRowKey));
     saveDraftNow();
-    setAppStatus(`${template.name} r${template.revision} · ${parsed.rows.length}행 입력 완료${alreadyApplied ? ' · 중복 없이 재적용' : ''}`);
-    toast(alreadyApplied ? '같은 입력을 중복 없이 다시 적용했습니다.' : `${parsed.rows.length}행을 작업테이블에 입력했습니다.`, 'success');
-    $('inputTemplatePanel').hidden = true;
+    renderSourceSurface();
+    renderSourceWorkspace();
+    setAppStatus(`${template.name} r${template.revision} · ${parsed.rows.length}행 추가 예정`);
+    toast(`${parsed.rows.length}행을 추가 예정으로 준비했습니다. 테이블에 추가를 눌러 반영하세요.`, 'success');
+    closeInputTemplateOverlay();
   } catch (error) {
-    const snapshot = state.gridPasteUndo;
-    if (snapshot?.mode === state.draft.activeMode) {
-      modeDraft().rows = snapshot.rows.map(row => contract.normalizeRow(row));
-      modeDraft().batches = cloneGridValue(snapshot.batches);
-    }
-    state.gridPasteUndo = null;
     toast(error.message || '양식 데이터를 입력하지 못했습니다.', 'error');
-  } finally {
-    state.applyingGridPaste = false;
-    syncGridPasteUndoButton();
   }
 }
 
@@ -916,6 +989,9 @@ function hasMeaningfulDraftContent(draft) {
     String(draft?.sourceText || '').trim()
     || Number(draft?.rows?.length || 0)
     || Number(draft?.batches?.length || 0)
+    || Number(draft?.sources?.length || 0)
+    || Number(draft?.stagedSourceRows?.length || 0)
+    || Number(draft?.sourceApplicationLedger?.length || 0)
     || String(header.customerId || header.customerName || '').trim()
     || String(header.taxCustomerId || header.taxCustomerName || '').trim()
     || String(header.warehouseId || header.warehouseName || '').trim()
@@ -938,8 +1014,73 @@ function saveModeDraftSnapshot() {
   localStorage.setItem(contract.DRAFT_LIST_STORAGE_KEY, JSON.stringify(next));
 }
 
-function modeDraft() {
-  return state.draft.modes[state.draft.activeMode];
+function modeDraft(mode = state.draft.activeMode) {
+  const current = state.draft.modes[mode];
+  return ensureSourceWorkspace(current);
+}
+
+function currentSourceRecord(mode = state.draft.activeMode) {
+  return activeSource(modeDraft(mode));
+}
+
+function sourceContext(sourceId = currentSourceRecord()?.sourceId) {
+  if (!sourceId) return null;
+  if (!state.sourceContexts.has(sourceId)) state.sourceContexts.set(sourceId, {});
+  return state.sourceContexts.get(sourceId);
+}
+
+function methodForSourceKind(kind) {
+  if (kind === 'IMAGE') return 'photo';
+  if (kind === 'VOICE') return 'voice';
+  if (kind === 'EXCEL_FILE' || kind === 'EXCEL_PASTE') return 'excel';
+  return 'text';
+}
+
+function registerSourcePreview({ kind = 'TEXT', displayName = '원본', previewText = '', previewRef = '', context = null } = {}, mode = state.draft.activeMode) {
+  const current = modeDraft(mode);
+  const source = registerProvisionalSource(current, { kind, displayName, previewText, previewRef });
+  if (context) state.sourceContexts.set(source.sourceId, context);
+  state.selectedStagedRowKeys.clear();
+  return source;
+}
+
+function moveSourceRuntimeIdentity(previousId, sourceId) {
+  if (!previousId || previousId === sourceId) return;
+  if (state.sourceContexts.has(previousId)) {
+    const context = state.sourceContexts.get(previousId);
+    state.sourceContexts.delete(previousId);
+    if (!state.sourceContexts.has(sourceId)) state.sourceContexts.set(sourceId, context);
+  }
+  if (state.sourceImageBySourceId.has(previousId)) {
+    const image = state.sourceImageBySourceId.get(previousId);
+    state.sourceImageBySourceId.delete(previousId);
+    if (!state.sourceImageBySourceId.has(sourceId)) state.sourceImageBySourceId.set(sourceId, image);
+  }
+}
+
+async function finalizeRegisteredSource(source, bytes, patch = {}, mode = state.draft.activeMode) {
+  if (!source) throw new Error('SOURCE_NOT_FOUND');
+  const sourceId = await sourceIdFromBytes(bytes);
+  const current = modeDraft(mode);
+  const result = finalizeSourceIdentity(current, source.sourceId, sourceId, patch);
+  moveSourceRuntimeIdentity(source.sourceId, result.source.sourceId);
+  if (result.duplicate) {
+    setAppStatus(`${result.source.displayName}은 이미 등록된 원본입니다. 기존 원본으로 이동했습니다.`, 'warn');
+  }
+  return result;
+}
+
+function setSourceTextProgrammatically(value) {
+  state.sourceTextProgrammatic = true;
+  sourceTextInput.value = String(value ?? '');
+  modeDraft().sourceText = sourceTextInput.value;
+  state.sourceTextProgrammatic = false;
+  resizeSource();
+  renderSourceAnalysis();
+}
+
+function activeSourceMethod() {
+  return methodForSourceKind(currentSourceRecord()?.kind || 'TEXT');
 }
 
 function modeUi() {
@@ -953,10 +1094,7 @@ function mobileUi() {
   const current = state.draft.ui.mobile && typeof state.draft.ui.mobile === 'object'
     ? state.draft.ui.mobile
     : {};
-  const presets = new Set(['collapsed', 'default', 'expanded', 'custom']);
   current.infoCollapsed = Boolean(current.infoCollapsed);
-  current.parserPreset = presets.has(current.parserPreset) ? current.parserPreset : 'default';
-  current.parserRatio = Math.max(.08, Math.min(MOBILE_PARSER_EXPANDED_RATIO, Number(current.parserRatio) || MOBILE_PARSER_DEFAULT_RATIO));
   current.stageByMode = current.stageByMode && typeof current.stageByMode === 'object' ? current.stageByMode : {};
   Object.keys(contract.MODES).forEach(mode => {
     if (!MOBILE_STAGES.has(current.stageByMode[mode])) current.stageByMode[mode] = 'info';
@@ -1299,110 +1437,6 @@ function updateMobileInfoSummary() {
   $('mobileInfoSummary').hidden = !collapsed;
 }
 
-function mobileParserBounds() {
-  const viewport = window.visualViewport;
-  const viewportHeight = Math.max(1, Number(viewport?.height || window.innerHeight || 1));
-  const workspace = document.querySelector('.workspace');
-  const infoHeight = document.querySelector('.document-fields')?.getBoundingClientRect().height || 0;
-  const handleHeight = $('mobileParserResizer')?.getBoundingClientRect().height || 44;
-  const gridMinimum = document.body.classList.contains('is-mobile-keyboard-open')
-    ? 96
-    : (mobileOrientation() === 'landscape' ? 80 : MOBILE_GRID_MIN_HEIGHT);
-  const layoutMaximum = Math.max(56, (workspace?.clientHeight || viewportHeight) - infoHeight - handleHeight - gridMinimum - 12);
-  return {
-    viewportHeight,
-    minimum: 56,
-    maximum: Math.max(56, Math.min(viewportHeight * MOBILE_PARSER_EXPANDED_RATIO, layoutMaximum))
-  };
-}
-
-function applyMobileParserHeight({ requestedHeight = null, persist = false } = {}) {
-  if (!isMobileLayout()) return 0;
-  const mobile = mobileUi();
-  const bounds = mobileParserBounds();
-  let requested = requestedHeight === null ? Number.NaN : Number(requestedHeight);
-  if (!Number.isFinite(requested)) {
-    if (mobile.parserPreset === 'collapsed') requested = MOBILE_PARSER_COLLAPSED_HEIGHT;
-    else if (mobile.parserPreset === 'expanded') requested = bounds.viewportHeight * MOBILE_PARSER_EXPANDED_RATIO;
-    else if (mobile.parserPreset === 'custom') requested = bounds.viewportHeight * mobile.parserRatio;
-    else requested = bounds.viewportHeight * MOBILE_PARSER_DEFAULT_RATIO;
-  }
-  const height = Math.round(Math.max(bounds.minimum, Math.min(bounds.maximum, requested)));
-  document.documentElement.style.setProperty('--smartinput-mobile-parser-height', `${height}px`);
-  $('mobileParserDragHandle').setAttribute('aria-valuemax', String(Math.round(bounds.maximum)));
-  $('mobileParserDragHandle').setAttribute('aria-valuenow', String(height));
-  if (persist && mobile.parserPreset === 'custom') mobile.parserRatio = Math.max(.08, Math.min(MOBILE_PARSER_EXPANDED_RATIO, height / bounds.viewportHeight));
-  document.querySelectorAll('[data-mobile-parser-preset]').forEach(button => {
-    button.classList.toggle('is-active', button.dataset.mobileParserPreset === mobile.parserPreset);
-  });
-  if (persist) scheduleSave();
-  return height;
-}
-
-function setMobileParserPreset(preset) {
-  if (!['collapsed', 'default', 'expanded'].includes(preset)) return;
-  mobileUi().parserPreset = preset;
-  applyMobileParserHeight({ persist: true });
-}
-
-function beginMobileParserDrag(event) {
-  if (!isMobileLayout() || (event.pointerType === 'mouse' && event.button !== 0)) return;
-  event.preventDefault();
-  const handle = $('mobileParserDragHandle');
-  state.mobileLayout.drag = {
-    pointerId: event.pointerId,
-    startY: event.clientY,
-    startHeight: parserCard.getBoundingClientRect().height
-  };
-  mobileUi().parserPreset = 'custom';
-  handle.classList.add('is-dragging');
-  try { handle.setPointerCapture(event.pointerId); } catch (_) {}
-}
-
-function moveMobileParserDrag(event) {
-  const drag = state.mobileLayout.drag;
-  if (!drag || drag.pointerId !== event.pointerId) return;
-  event.preventDefault();
-  const requested = drag.startHeight + event.clientY - drag.startY;
-  const bounds = mobileParserBounds();
-  mobileUi().parserRatio = Math.max(.08, Math.min(MOBILE_PARSER_EXPANDED_RATIO, requested / bounds.viewportHeight));
-  applyMobileParserHeight({ requestedHeight: requested });
-}
-
-function finishMobileParserDrag(event) {
-  const drag = state.mobileLayout.drag;
-  if (!drag || drag.pointerId !== event.pointerId) return;
-  const handle = $('mobileParserDragHandle');
-  state.mobileLayout.drag = null;
-  try { if (handle.hasPointerCapture(event.pointerId)) handle.releasePointerCapture(event.pointerId); } catch (_) {}
-  handle.classList.remove('is-dragging');
-  applyMobileParserHeight();
-  scheduleSave();
-}
-
-function resizeMobileParserWithKeyboard(event) {
-  if (!isMobileLayout()) return;
-  if (event.key === 'Home') {
-    event.preventDefault();
-    setMobileParserPreset('collapsed');
-    return;
-  }
-  if (event.key === 'End') {
-    event.preventDefault();
-    setMobileParserPreset('expanded');
-    return;
-  }
-  if (!['ArrowUp', 'ArrowDown'].includes(event.key)) return;
-  event.preventDefault();
-  const step = event.shiftKey ? 24 : 8;
-  const requested = parserCard.getBoundingClientRect().height + (event.key === 'ArrowDown' ? step : -step);
-  const bounds = mobileParserBounds();
-  const mobile = mobileUi();
-  mobile.parserPreset = 'custom';
-  mobile.parserRatio = Math.max(.08, Math.min(MOBILE_PARSER_EXPANDED_RATIO, requested / bounds.viewportHeight));
-  applyMobileParserHeight({ requestedHeight: requested, persist: true });
-}
-
 function syncMobileParserToolbar() {
   const method = contract.INPUT_METHODS.find(item => item.id === modeDraft().activeMethod);
   $('mobileSourceType').textContent = method?.label || '원본';
@@ -1414,13 +1448,11 @@ function syncMobileViewportLayout() {
   placeDocumentFieldsForLayout(active);
   syncMobileStage(active);
   $('mobileParserToolbar').hidden = !active;
-  $('mobileParserResizer').hidden = true;
   document.documentElement.classList.toggle('smartinput-mobile-layout', active);
   if (!active) {
     if (state.mobileLayout.fullscreen) closeSourceFullscreen();
     document.documentElement.style.removeProperty('--smartinput-mobile-viewport-height');
     document.documentElement.style.removeProperty('--smartinput-visual-offset-top');
-    document.documentElement.style.removeProperty('--smartinput-mobile-parser-height');
     document.body.classList.remove('is-mobile-keyboard-open');
     return;
   }
@@ -1439,7 +1471,6 @@ function syncMobileViewportLayout() {
   document.documentElement.style.setProperty('--smartinput-visual-offset-top', `${Math.round(Number(viewport?.offsetTop || 0))}px`);
   updateMobileInfoSummary();
   syncMobileParserToolbar();
-  applyMobileParserHeight();
   const activeCell = document.activeElement?.closest?.('#tableScroll input');
   if (activeCell) revealGridInput(activeCell);
 }
@@ -1610,7 +1641,7 @@ function renderSourceAnalysis() {
     paint(timeBracketStart + 1, timeBracketStart + 1 + timeToken.length, 'source-token--time', 5);
   }
   const occupied = [];
-  modeDraft().rows.forEach(row => {
+  stagedRowsForSource(modeDraft(), modeDraft().activeSourceId).map(row => row.values).forEach(row => {
     const token = String(row.rawText || '').trim();
     if (!token) return;
     let start = source.indexOf(token);
@@ -2092,7 +2123,10 @@ function updateMethod(method, { persist = true } = {}) {
 }
 
 function currentSourceImage() {
-  return state.sourceImages[state.draft.activeMode] || null;
+  const source = currentSourceRecord();
+  return (source ? state.sourceImageBySourceId.get(source.sourceId) : null)
+    || state.sourceImages[state.draft.activeMode]
+    || null;
 }
 
 function captureMobileSourceView({ persist = false } = {}) {
@@ -2180,18 +2214,115 @@ function renderPhotoTransform() {
   renderPhotoRegion();
 }
 
+function renderSourceNavigator() {
+  const current = modeDraft();
+  const sources = visibleSources(current);
+  const source = currentSourceRecord();
+  const index = source ? sources.findIndex(item => item.sourceId === source.sourceId) : -1;
+  $('sourceSelect').innerHTML = sources.length
+    ? sources.map(item => `<option value="${esc(item.sourceId)}" ${item.sourceId === source?.sourceId ? 'selected' : ''}>${esc(item.displayName)} · ${esc(SOURCE_STATUS_LABELS[item.status] || item.status)}</option>`).join('')
+    : '<option value="">원본 없음</option>';
+  $('sourceSelect').disabled = !sources.length;
+  $('sourcePosition').textContent = `${index < 0 ? 0 : index + 1} / ${sources.length}`;
+  $('previousSourceButton').disabled = index <= 0;
+  $('nextSourceButton').disabled = index < 0 || index >= sources.length - 1;
+  $('sourceStatus').textContent = source ? (SOURCE_STATUS_LABELS[source.status] || source.status) : '원본 대기';
+  $('clearParserButton').disabled = !source;
+}
+
+function stagedRowLabel(row, index) {
+  const values = row.values || {};
+  const item = values.itemName || values.productText || values.itemCode || values.rawText || `분석행 ${index + 1}`;
+  const quantity = values.quantity === null || values.quantity === undefined || values.quantity === '' ? '' : ` · ${values.quantity}${values.unit || ''}`;
+  return `${item}${quantity}`;
+}
+
+function renderSourceStaging() {
+  const current = modeDraft();
+  const source = currentSourceRecord();
+  const summary = source ? sourceSummary(current, source.sourceId) : { total: 0, pending: 0, applied: 0, alreadyApplied: 0, errors: 0, deleted: 0 };
+  const parts = source
+    ? [`분석 결과 ${summary.total}행`, summary.pending ? `추가 예정 ${summary.pending}` : '', summary.applied ? `추가 완료 ${summary.applied}` : '', summary.alreadyApplied ? `이미 추가됨 ${summary.alreadyApplied}` : '', summary.errors ? `오류 ${summary.errors}` : ''].filter(Boolean)
+    : ['분석 결과 없음'];
+  $('sourceStagingSummary').textContent = parts.join(' · ');
+  const rows = source ? stagedRowsForSource(current, source.sourceId) : [];
+  const pendingKeys = rows.filter(row => row.state === STAGED_ROW_STATES.PENDING).map(row => row.sourceRowKey);
+  state.selectedStagedRowKeys = new Set([...state.selectedStagedRowKeys].filter(key => pendingKeys.includes(key)));
+  if (pendingKeys.length && !state.selectedStagedRowKeys.size) pendingKeys.forEach(key => state.selectedStagedRowKeys.add(key));
+  $('sourceStagingRows').innerHTML = rows.length ? rows.map((row, index) => {
+    const pending = row.state === STAGED_ROW_STATES.PENDING;
+    const checked = pending && state.selectedStagedRowKeys.has(row.sourceRowKey);
+    const stateLabel = ({ PENDING: '추가 예정', ERROR: '오류', ALREADY_APPLIED: '이미 추가됨', EXCLUDED: '제외', APPLIED: '추가 완료' })[row.state] || row.state;
+    return `<label class="source-staging-row" data-source-row-key="${esc(row.sourceRowKey)}">
+      <input type="checkbox" data-staged-row-select ${checked ? 'checked' : ''} ${pending ? '' : 'disabled'}>
+      <span title="${esc(stagedRowLabel(row, index))}">${esc(stagedRowLabel(row, index))}</span>
+      <em>${esc(stateLabel)}</em>
+    </label>`;
+  }).join('') : '<p class="empty-copy">분석을 완료하면 추가할 행이 여기에 표시됩니다.</p>';
+  $('toggleStagedRowsButton').disabled = !rows.length;
+  $('applyStagedRowsButton').disabled = !pendingKeys.some(key => state.selectedStagedRowKeys.has(key));
+  $('authorizeReapplyButton').hidden = !summary.deleted;
+}
+
+function renderSourceWorkspace() {
+  const source = currentSourceRecord();
+  renderSourceNavigator();
+  renderSourceStaging();
+  const analyzing = source?.status === SOURCE_STATUSES.ANALYZING;
+  $('parserProgress').hidden = !analyzing;
+  if (analyzing) $('parserProgress').querySelector('strong').textContent = source.kind === 'IMAGE' ? '사진에서 문자를 추출하고 있습니다.' : '원본을 분석하고 있습니다.';
+  if (!source) {
+    $('sourceNotice').textContent = '텍스트·이미지·Excel 원본을 붙여넣거나 불러오세요.';
+  } else if (source.status === SOURCE_STATUSES.FAILED) {
+    $('sourceNotice').textContent = source.failureMessage || '분석에 실패했습니다. 원본은 유지됩니다.';
+  } else if (source.status !== SOURCE_STATUSES.ANALYZING) {
+    const summary = sourceSummary(modeDraft(), source.sourceId);
+    $('sourceNotice').textContent = `${source.displayName} · ${SOURCE_STATUS_LABELS[source.status] || source.status}${summary.pending ? ` · 추가 예정 ${summary.pending}행` : ''}`;
+  }
+  syncMobileParserToolbar();
+}
+
+function syncActiveSourceContext() {
+  const source = currentSourceRecord();
+  const context = source ? sourceContext(source.sourceId) : null;
+  state.pendingImageEvidence = context?.imageEvidence || null;
+  state.pendingOcrReview = context?.ocrReview || null;
+  state.pendingSourceName = source?.displayName || '';
+  state.pendingStructuredImport = context?.structuredImport || null;
+}
+
+function activateSourceInView(sourceId, { persist = true } = {}) {
+  const current = modeDraft();
+  const source = activateSource(current, sourceId);
+  if (!source) return null;
+  state.selectedStagedRowKeys.clear();
+  current.sourceText = source.previewText || '';
+  current.activeMethod = methodForSourceKind(source.kind);
+  setSourceTextProgrammatically(current.sourceText);
+  syncActiveSourceContext();
+  state.sourceImages[state.draft.activeMode] = state.sourceImageBySourceId.get(source.sourceId) || null;
+  resetPhotoView(source.previewRef || source.sourceId);
+  methodButtons.forEach(button => button.classList.toggle('is-active', button.dataset.method === current.activeMethod));
+  renderSourceSurface();
+  renderSourceWorkspace();
+  if (persist) scheduleSave();
+  return source;
+}
+
 function renderSourceSurface() {
+  const source = currentSourceRecord();
   const evidence = currentSourceImage();
-  const photoMode = modeDraft().activeMethod === 'photo';
-  const showPhoto = photoMode && Boolean(evidence?.dataUrl);
+  const photoMode = source?.kind === 'IMAGE' || (!source && modeDraft().activeMethod === 'photo');
+  const showPhoto = photoMode && Boolean(evidence?.previewUrl || evidence?.dataUrl);
   const workspace = document.querySelector('.workspace');
   const photoViewer = $('photoViewer');
   const photoStateChanged = workspace.classList.contains('has-photo-source') !== photoMode;
   workspace.classList.toggle('has-photo-source', photoMode);
-  workspace.classList.toggle('has-tabular-source', modeDraft().activeMethod === 'excel');
+  workspace.classList.toggle('has-tabular-source', ['EXCEL_FILE', 'EXCEL_PASTE'].includes(source?.kind));
   const savedWidth = Number(state.draft.ui.parserPaneWidth || state.draft.ui.photoPaneWidth || 0);
   if (savedWidth > 0) workspace.style.setProperty('--parser-pane-width', `${savedWidth}px`);
   $('sourceEditor').hidden = photoMode;
+  sourceTextInput.readOnly = ['EXCEL_FILE', 'EXCEL_PASTE'].includes(source?.kind);
   photoViewer.hidden = !photoMode;
   photoViewer.classList.toggle('has-image', showPhoto);
   $('photoViewerToolbar').hidden = !showPhoto;
@@ -2220,7 +2351,7 @@ function renderSourceSurface() {
   image.hidden = false;
   if (image.dataset.sourceImageId !== evidence.sourceImageId) {
     image.dataset.sourceImageId = evidence.sourceImageId;
-    image.src = evidence.dataUrl;
+    image.src = evidence.previewUrl || evidence.dataUrl;
     resetPhotoView(evidence.sourceImageId);
   }
   $('photoOcrPanel').hidden = !state.photoView.ocrOpen;
@@ -3799,7 +3930,15 @@ function openEstimateManageDialog(record) {
 
 function restoreSourceImageForMode(mode) {
   const documentId = state.draft.modes[mode]?.documentId;
-  state.sourceImages[mode] = state.sourceImageRecords.get(documentId) || null;
+  const record = state.sourceImageRecords.get(documentId) || null;
+  const items = Array.isArray(record?.sourceItems) ? record.sourceItems : [];
+  items.forEach(item => {
+    if (!item?.sourceId || !item.dataUrl) return;
+    state.sourceImageBySourceId.set(item.sourceId, { ...item });
+  });
+  const activeId = modeDraft(mode).activeSourceId;
+  state.sourceImages[mode] = state.sourceImageBySourceId.get(activeId)
+    || (record?.dataUrl ? record : null);
 }
 
 function createCatalogOnlyDraft(source = {}, catalogRecordId = '') {
@@ -3810,6 +3949,8 @@ function createCatalogOnlyDraft(source = {}, catalogRecordId = '') {
     batchSequence: 0,
     sourceLineNo: 0,
     sourceLineKey: '',
+    sourceId: '',
+    sourceRowKey: '',
     intakeLineId: '',
     sourceRegion: null,
     rawText: '',
@@ -3829,6 +3970,10 @@ function createCatalogOnlyDraft(source = {}, catalogRecordId = '') {
     },
     sourceText: '',
     activeMethod: 'direct',
+    sources: [],
+    activeSourceId: '',
+    stagedSourceRows: [],
+    sourceApplicationLedger: [],
     batches: [],
     rows,
     delivery: { ...fallback.delivery }
@@ -3863,6 +4008,7 @@ function loadCatalogRecord(record) {
   state.pendingOcrReview = null;
   state.pendingSourceName = '';
   state.pendingStructuredImport = null;
+  state.selectedStagedRowKeys.clear();
   setActiveActivity('');
   resetPhotoView();
   saveDraftNow();
@@ -4029,10 +4175,12 @@ function deleteSelectedGridRows() {
   if (!selectedIds.length) return;
   if (!window.confirm(`현재 작업테이블에서 ${selectedIds.length.toLocaleString('ko-KR')}개 행을 삭제합니다.`)) return;
   invalidateGridPasteUndo();
+  markWorkRowsDeleted(modeDraft(), selectedIds);
   modeDraft().rows = removeRowsById(modeDraft().rows, selectedIds);
   modeDraft().rows = contract.markDuplicatePossibilities(modeDraft().rows);
   clearWorktableSelection({ sync: false });
   renderRows();
+  renderSourceWorkspace();
   saveDraftNow();
   toast(`현재 작업테이블에서 ${selectedIds.length.toLocaleString('ko-KR')}개 행을 삭제했습니다.`, 'success');
 }
@@ -4323,9 +4471,17 @@ function renderMode() {
   hydrateHeader();
   $('gridSearchInput').value = state.gridSearch;
   if (removeParserArtifactRows(modeDraft())) scheduleSave();
-  sourceTextInput.value = modeDraft().sourceText;
+  const source = currentSourceRecord();
+  if (source) {
+    modeDraft().sourceText = source.previewText || '';
+    modeDraft().activeMethod = methodForSourceKind(source.kind);
+    syncActiveSourceContext();
+    state.sourceImages[state.draft.activeMode] = state.sourceImageBySourceId.get(source.sourceId) || state.sourceImages[state.draft.activeMode];
+  }
+  setSourceTextProgrammatically(modeDraft().sourceText);
   state.photoView.detailColumns = Boolean(modeUi().detailColumns);
   updateMethod(modeDraft().activeMethod, { persist: false });
+  renderSourceWorkspace();
   renderRows();
   renderCatalogControls();
   renderDelivery();
@@ -4367,17 +4523,43 @@ function setMode(mode) {
   state.pendingOcrReview = null;
   state.pendingSourceName = '';
   state.pendingStructuredImport = null;
+  state.selectedStagedRowKeys.clear();
   state.gridSearch = '';
   saveDraftNow();
   renderMode();
 }
 
 function syncSourceText() {
-  if (state.pendingStructuredImport?.rawText !== sourceTextInput.value) state.pendingStructuredImport = null;
-  modeDraft().sourceText = sourceTextInput.value;
+  if (state.sourceTextProgrammatic) return;
+  const current = modeDraft();
+  const value = sourceTextInput.value;
+  let source = currentSourceRecord();
+  if (!source && !value) {
+    current.sourceText = '';
+    resizeSource();
+    renderSourceWorkspace();
+    return;
+  }
+  if (!source || (source.sourceId.startsWith('src:sha256:') && source.previewText !== value)) {
+    source = registerSourcePreview({
+      kind: sourceKindForMethod(current.activeMethod),
+      displayName: activityLabel(current.activeMethod),
+      previewText: value
+    });
+  } else if (source.previewText !== value) {
+    source.previewText = value;
+    source.status = SOURCE_STATUSES.REGISTERED;
+    source.failureMessage = '';
+  }
+  const context = sourceContext(source.sourceId);
+  if (context?.structuredImport?.rawText !== value) context.structuredImport = null;
+  current.sourceText = value;
   scheduleSave();
   resizeSource();
   renderSourceAnalysis();
+  renderSourceWorkspace();
+  renderSourceNavigator();
+  renderSourceStaging();
   scheduleAutoAnalysis();
 }
 
@@ -4727,59 +4909,41 @@ function removeParserArtifactRows(current) {
 }
 
 function clearParserWorkspace() {
-  invalidateGridPasteUndo();
   const current = modeDraft();
-  const parserBatchIds = new Set((current.batches || [])
-    .filter(batch => batch.sourceType !== 'MANUAL')
-    .map(batch => batch.batchId));
-  const removedRows = (current.rows || []).filter(row => parserBatchIds.has(row.batchId)).length;
+  const source = currentSourceRecord();
+  if (!source) return;
+  const summary = sourceSummary(current, source.sourceId);
+  if (summary.pending && !window.confirm(`추가 예정 ${summary.pending}행은 폐기됩니다. 원본만 제거할까요?\n이미 테이블에 추가된 행은 유지됩니다.`)) return;
+  const workTableBytesBefore = JSON.stringify(current.rows);
   clearTimeout(state.autoAnalyzeTimer);
   state.analysisRequestId += 1;
-  state.photoCaptureSequence += 1;
+  if (source.kind === 'IMAGE') state.photoCaptureSequence += 1;
   state.busy = false;
-  if (state.listening && state.recognition) {
-    const recognition = state.recognition;
-    recognition.onend = null;
-    state.recognition = null;
-    state.listening = false;
-    try {
-      recognition.stop();
-    } catch (_) {
-      // 이미 종료된 음성 세션은 파서 초기화를 막지 않는다.
-    }
-  }
-  current.batches = (current.batches || []).filter(batch => batch.sourceType === 'MANUAL');
-  current.rows = contract.markDuplicatePossibilities((current.rows || []).filter(row => !parserBatchIds.has(row.batchId)));
-  current.sourceText = '';
-  current.delivery = { status: 'DRAFT', targetId: '', targetRecordId: '', deliveredAt: '' };
-  sourceTextInput.value = '';
+  const result = removeSource(current, source.sourceId, { discardPending: true });
+  if (JSON.stringify(current.rows) !== workTableBytesBefore) throw new Error('SOURCE_REMOVE_CHANGED_WORKTABLE');
   $('fileInput').value = '';
   $('photoInput').value = '';
-  state.sourceImages[state.draft.activeMode] = null;
-  clearWorktableSelection({ sync: false });
   state.pendingImageEvidence = null;
   state.pendingOcrReview = null;
   state.pendingSourceName = '';
   state.pendingStructuredImport = null;
   state.activeActivity = '';
-  state.draft.ui.selectedRowId = '';
-  modeUi().scrollTop = 0;
-  modeUi().scrollLeft = 0;
-  modeUi().activeCellId = '';
-  resetPhotoView();
-  updateMethod('text', { persist: false });
+  state.selectedStagedRowKeys.clear();
   setActiveActivity('');
-  renderReferenceControls();
-  $('parserProgress').hidden = true;
-  $('parserProgress').querySelector('strong').textContent = '자료를 분석하고 있습니다.';
-  $('sourceNotice').textContent = '직접 입력과 Ctrl+V도 지원합니다.';
+  if (result.nextSourceId) {
+    activateSourceInView(result.nextSourceId, { persist: false });
+  } else {
+    current.sourceText = '';
+    current.activeMethod = 'text';
+    state.sourceImages[state.draft.activeMode] = null;
+    setSourceTextProgrammatically('');
+    resetPhotoView();
+    renderSourceSurface();
+    renderSourceWorkspace();
+  }
   saveDraftNow();
-  renderMode();
-  if (!referencesReady()) setAppStatus(referenceStatusMessage(), state.referenceStatus === REFERENCE_STATUS.ERROR ? 'error' : 'warn');
-  else setAppStatus(removedRows ? `파서 원문과 분석 결과 ${removedRows}행을 지웠습니다.` : '파서 입력창을 비웠습니다.');
-  if (modeDraft().activeMethod === 'photo') $('photoEmptySelectButton').focus();
-  else sourceTextInput.focus();
-  toast(removedRows ? `파서 원문과 분석 결과 ${removedRows}행을 지웠습니다.` : '파서 입력창을 비웠습니다.', 'success');
+  setAppStatus(`원본을 제거했습니다${result.discarded ? ` · 추가 예정 ${result.discarded}행 폐기` : ''}. 작업테이블 행은 유지됩니다.`);
+  toast('원본만 제거했습니다. 이미 추가된 작업행은 유지됩니다.', 'success');
 }
 
 async function sha256Text(value) {
@@ -4803,68 +4967,74 @@ function fallbackLines(rawText, batch) {
     }));
 }
 
-async function analyzeSource({ automatic = false } = {}) {
+const SOURCE_PARSER_VERSION = 'SMARTINPUT_SOURCE_PARSER_V1';
+
+async function analyzeSource({ automatic = false, sourceId = '', mode = state.draft.activeMode } = {}) {
   invalidateGridPasteUndo();
   if (state.busy) {
     if (automatic) scheduleAutoAnalysis(600);
     return;
   }
-  const modeId = state.draft.activeMode;
-  const current = modeDraft();
-  const rawText = sourceTextInput.value;
-  if (!rawText.trim()) {
+  const modeId = mode;
+  const current = modeDraft(modeId);
+  let source = sourceId ? current.sources.find(item => item.sourceId === sourceId) : currentSourceRecord();
+  const rawText = source?.previewText ?? sourceTextInput.value;
+  if (!String(rawText).trim()) {
     if (automatic) return;
     sourceTextInput.focus();
     return toast('분석할 원문을 입력하세요.', 'error');
   }
   if (!requireReferenceReady('자료 분석', { automatic })) return;
-  const contentHash = await sha256Text(rawText);
-  if (state.busy || state.draft.activeMode !== modeId || sourceTextInput.value !== rawText) {
-    if (automatic && sourceTextInput.value.trim()) scheduleAutoAnalysis(420);
+  if (!source) {
+    source = registerSourcePreview({
+      kind: sourceKindForMethod(current.activeMethod),
+      displayName: activityLabel(current.activeMethod),
+      previewText: rawText
+    }, modeId);
+  }
+  if (!source.sourceId.startsWith('src:sha256:')) {
+    const identity = await finalizeRegisteredSource(source, new TextEncoder().encode(String(rawText)), {
+      kind: source.kind,
+      displayName: source.displayName,
+      previewText: rawText
+    }, modeId);
+    source = identity.source;
+    if (identity.duplicate && automatic && source.analysisRevision > 0) {
+      if (modeId === state.draft.activeMode) activateSourceInView(source.sourceId);
+      return;
+    }
+  } else if (automatic && source.analysisRevision > 0 && source.status !== SOURCE_STATUSES.FAILED) {
     return;
   }
-  let existingLiveBatch = current.batches.find(batch => batch.sourceRole === 'LIVE_SOURCE');
-  if (!existingLiveBatch && current.sourceText === rawText) {
-    existingLiveBatch = [...current.batches].reverse().find(batch => batch.rawText === rawText) || null;
-    if (existingLiveBatch) existingLiveBatch.sourceRole = 'LIVE_SOURCE';
-  }
-  if (existingLiveBatch?.contentHash && existingLiveBatch.contentHash === contentHash) {
-    renderSourceAnalysis();
-    return;
-  }
-  const requestId = ++state.analysisRequestId;
-  const method = contract.INPUT_METHODS.find(item => item.id === current.activeMethod) || contract.INPUT_METHODS[2];
-  const pendingOcr = method.sourceType === 'IMAGE_OCR' && state.pendingOcrReview?.rawText === rawText
-    ? state.pendingOcrReview
-    : null;
-  const structuredImport = method.id === 'excel'
-    && state.pendingStructuredImport?.modeId === modeId
-    && state.pendingStructuredImport?.rawText === rawText
-    ? state.pendingStructuredImport
+  const context = sourceContext(source.sourceId) || {};
+  const pendingOcr = source.kind === 'IMAGE' && context.ocrReview?.rawText === rawText ? context.ocrReview : null;
+  const structuredImport = ['EXCEL_FILE', 'EXCEL_PASTE'].includes(source.kind)
+    && context.structuredImport?.rawText === rawText
+    ? context.structuredImport
     : null;
   if (pendingOcr && pendingOcr.status !== 'VERIFIED') {
     const reason = pendingOcr.warnings.includes('TOTAL_NOT_FOUND')
       ? '합계 수량·금액을 인식하지 못했습니다.'
       : '행 산식 또는 합계 검증이 일치하지 않습니다.';
-    setAppStatus(`OCR 확인 필요 · ${reason}`, 'error');
-    $('sourceNotice').textContent = `OCR 확인 필요 · 검증 ${pendingOcr.validRows.length}행 · 오류 ${pendingOcr.invalidRows.length}행`;
-    if (!automatic) toast('OCR 검증이 끝나지 않아 상품행을 생성하지 않았습니다.', 'error');
-    renderSourceAnalysis();
+    setSourceStatus(current, source.sourceId, SOURCE_STATUSES.FAILED, { failureMessage: `OCR 확인 필요 · ${reason}` });
+    saveDraftNow();
+    if (current.activeSourceId === source.sourceId && modeId === state.draft.activeMode) renderSourceWorkspace();
+    if (!automatic) toast('OCR 검증이 끝나지 않아 추가 예정 행을 만들지 않았습니다.', 'error');
     return;
   }
+  const methodId = methodForSourceKind(source.kind);
+  const contentHash = source.sourceId.replace('src:sha256:', '');
   const detectedSourceType = structuredImport
     ? 'STRUCTURED_FILE'
     : (looksLikeKakaoText(rawText)
-    ? 'KAKAO_TEXT'
-    : (pendingOcr?.status === 'VERIFIED'
-      ? 'IMAGE_OCR'
-      : (['CLIPBOARD', 'IMAGE_OCR'].includes(method.sourceType) ? 'GENERAL_TEXT' : method.sourceType)));
+      ? 'KAKAO_TEXT'
+      : (pendingOcr?.status === 'VERIFIED' ? 'IMAGE_OCR' : (methodId === 'paste' ? 'CLIPBOARD' : 'GENERAL_TEXT')));
   const batch = contract.createBatch({
     sequence: visibleActivityBatches(current).length + 1,
-    method: method.id,
+    method: methodId,
     sourceType: detectedSourceType,
-    sourceName: state.pendingSourceName || currentSourceImage()?.fileName,
-    sourceRole: 'LIVE_SOURCE',
+    sourceName: source.displayName,
+    sourceRole: 'STAGED_SOURCE',
     automatic,
     rawText,
     contentHash
@@ -4875,192 +5045,172 @@ async function analyzeSource({ automatic = false } = {}) {
     batch.ocrVariant = pendingOcr.variant;
     batch.ocrTotals = { ...pendingOcr.calculatedTotal };
   }
+  const workTableBytesBefore = JSON.stringify(current.rows);
+  const requestId = ++state.analysisRequestId;
   state.busy = true;
+  setSourceStatus(current, source.sourceId, SOURCE_STATUSES.ANALYZING);
   $('analyzeButton').disabled = true;
   $('mobileAnalyzeButton').disabled = true;
-  $('parserProgress').hidden = false;
-  setActiveActivity(`${batch.sequence}. ${activityLabel(method.id)} 분석 중`);
-  setAppStatus(`${batch.sequence}차 입력을 분석하고 있습니다.`);
+  setActiveActivity(`${source.displayName} 분석 중`);
+  if (current.activeSourceId === source.sourceId && modeId === state.draft.activeMode) renderSourceWorkspace();
+  setAppStatus(`${source.displayName}을 분석하고 있습니다.`);
   try {
     let lines = [];
-    let analyzedDocument = null;
-    const rawOrdererName = structuredImport ? '' : extractOrdererName(rawText);
-    current.header.rawOrdererName = rawOrdererName;
-    if (!structuredImport) {
-      const aliasResolution = resolveAliasCustomer(rawOrdererName, batch.sourceType);
-      if (current.header.customerId && aliasResolution?.customer?.customerId && aliasResolution.customer.customerId !== current.header.customerId) {
-        throw new Error(`현재 배송처와 다른 주문자명입니다. 주문을 합치지 않고 새로 작성으로 분리하세요: ${customerName(aliasResolution.customer)}`);
-      }
-      if (!current.header.customerId && aliasResolution) {
-        current.header.aliasMappingId = aliasResolution.mapping.aliasMappingId;
-        applyCustomer(aliasResolution.customer, { rematch: false, mappingSource: 'CONFIRMED_ALIAS', learnAlias: false });
-      } else if (!current.header.customerId) {
-        const inferred = inferCustomer(rawText);
-        if (inferred) applyCustomer(inferred, { rematch: false, mappingSource: 'MASTER_EXACT', learnAlias: false });
-      }
-    }
-
     if (structuredImport) {
       batch.sourceSheetName = structuredImport.sheetName;
-      batch.sourceDocumentKey = `${structuredImport.fileName || batch.batchId}:${structuredImport.sheetName}`;
+      batch.sourceDocumentKey = `${structuredImport.fileName || source.sourceId}:${structuredImport.sheetName}`;
       lines = decorateStructuredRows(structuredImport.rows, {
         sourceBatchId: batch.batchId,
         sourceSheetName: structuredImport.sheetName,
-        sourceFingerprint: batch.contentHash
+        sourceFingerprint: contentHash
       }).map((row, index) => ({
         ...row,
-        sourceLineKey: row.sourceLineKey || `${batch.batchId}:sheet:${row.sourceLineNo || index + 1}`
+        sourceLineKey: row.sourceLineKey || `${source.sourceId}:sheet:${row.sourceLineNo || index + 1}`
       }));
-      if (state.draft.activeMode === 'order') {
-        try {
-          const captured = await captureTextIntake({
-            sourceType: batch.sourceType,
-            sourceId: 'SMART_INPUT',
-            captureOccurrenceId: `${state.draft.draftId}:${state.draft.activeMode}:${batch.sequence}`,
-            rawText
-          });
-          batch.intakeSessionId = captured.session.intakeSessionId;
-        } catch (_) {
-          // 구조화 행은 원본 표에서 이미 검증했으므로 수집 이력 실패가 입력표 생성을 막지 않는다.
-        }
-      }
     } else if (pendingOcr?.status === 'VERIFIED') {
       lines = verifiedRowsToParserLines(pendingOcr, batch.batchId);
-      if (state.draft.activeMode === 'order') {
-        const captured = await captureTextIntake({
-          sourceType: batch.sourceType,
-          sourceId: 'SMART_INPUT',
-          captureOccurrenceId: `${state.draft.draftId}:${state.draft.activeMode}:${batch.sequence}`,
-          rawText,
-          imageEvidence: state.pendingImageEvidence || state.sourceImages[modeId]
-        });
-        batch.intakeSessionId = captured.session.intakeSessionId;
-        batch.sourceImageId = captured.imagePart?.sourcePartId || state.sourceImages[modeId]?.sourceImageId || '';
-        batch.sourceImageHash = state.sourceImages[modeId]?.contentHash || '';
-      }
-    } else if (state.draft.activeMode === 'order') {
-      try {
-        const captured = await captureTextIntake({
-          sourceType: batch.sourceType,
-          sourceId: 'SMART_INPUT',
-          captureOccurrenceId: `${state.draft.draftId}:${state.draft.activeMode}:${batch.sequence}`,
-          rawText,
-          imageEvidence: state.pendingImageEvidence || state.sourceImages[modeId]
-        });
-        const selectedCustomer = current.header.customerId && current.header.customerName
-          ? { customerId: current.header.customerId, customerName: current.header.customerName }
-          : null;
-        const analyzed = await analyzeSingleOrderDocument({
-          session: captured.session,
-          sourcePart: captured.sourcePart,
-          rawText,
-          customerOverride: selectedCustomer,
-          headerDraft: {
-            orderDate: current.header.orderDate,
-            deliveryExpectedDate: current.header.deliveryDate,
-            warehouseName: current.header.warehouseName
-          }
-        });
-        batch.intakeSessionId = captured.session.intakeSessionId;
-        batch.sourceImageId = captured.imagePart?.sourcePartId || state.sourceImages[modeId]?.sourceImageId || '';
-        batch.sourceImageHash = state.sourceImages[modeId]?.contentHash || '';
-        batch.intakeDocumentId = analyzed.document.intakeDocumentId;
-        analyzedDocument = analyzed.document;
-        lines = analyzed.lines;
-      } catch (error) {
-        lines = fallbackLines(rawText, batch);
-        if (!lines.length) throw error;
-        if (!automatic) toast('자동 파서가 인식하지 못한 원문은 직접 확인할 행으로 추가했습니다.', 'error');
-      }
+      batch.sourceImageId = context.imageEvidence?.sourceImageId || '';
+      batch.sourceImageHash = contentHash;
     } else {
       lines = fallbackLines(rawText, batch);
     }
-
     lines = lines.filter(line => !isParserArtifactLine(line));
-    if (['purchase','sale'].includes(state.draft.activeMode) && !structuredImport && method.id === 'paste') {
-      const sale = state.draft.activeMode === 'sale';
-      lines = lines.map(line => ({ ...line, sourceType: 'DIRECT', contractKind: sale ? 'SALE_STAGE4_V1' : 'PURCHASE_STAGE3_V1',
-        originSystem: 'SMARTINPUT_CLIPBOARD', originTransactionId: contentHash, sourceFingerprint: contentHash,
-        ...(sale ? { actualToBaseFactor:1, actualToRecognizedFactor:0, actualUnit:line.unit || '', baseUnit:line.unit || '', recognizedUnit:line.unit || '',
-          conversionSource:'DIRECT_SAME_UNIT', conversionRuleId:'DIRECT_1_TO_1', conversionRuleVersion:'DIRECT_1_TO_1_V1' } : {}), metaStatus: 'DIRECT' }));
+    if (['purchase', 'sale'].includes(modeId) && !structuredImport && source.kind !== 'IMAGE') {
+      const sale = modeId === 'sale';
+      lines = lines.map(line => ({
+        ...line,
+        sourceType: 'DIRECT',
+        contractKind: sale ? 'SALE_STAGE4_V1' : 'PURCHASE_STAGE3_V1',
+        originSystem: 'SMARTINPUT_CLIPBOARD',
+        originTransactionId: contentHash,
+        sourceFingerprint: contentHash,
+        ...(sale ? {
+          actualToBaseFactor: 1, actualToRecognizedFactor: 0, actualUnit: line.unit || '', baseUnit: line.unit || '', recognizedUnit: line.unit || '',
+          conversionSource: 'DIRECT_SAME_UNIT', conversionRuleId: 'DIRECT_1_TO_1', conversionRuleVersion: 'DIRECT_1_TO_1_V1'
+        } : {}),
+        metaStatus: 'DIRECT'
+      }));
     }
     if (!lines.length) throw new Error('상품 행을 인식하지 못했습니다. 상품명과 수량을 확인해 주세요.');
-    if (requestId !== state.analysisRequestId || state.draft.activeMode !== modeId || sourceTextInput.value !== rawText) return;
-    const liveBatchIds = new Set(current.batches.filter(item => item.sourceRole === 'LIVE_SOURCE').map(item => item.batchId));
-    const previousLiveRows = current.rows.filter(row => liveBatchIds.has(row.batchId));
-    const firstLiveRowIndex = current.rows.findIndex(row => liveBatchIds.has(row.batchId));
-    const insertionIndex = firstLiveRowIndex < 0
-      ? current.rows.length
-      : current.rows.slice(0, firstLiveRowIndex).filter(row => !liveBatchIds.has(row.batchId)).length;
-    current.batches = current.batches.filter(item => item.sourceRole !== 'LIVE_SOURCE');
-    current.rows = current.rows.filter(row => !liveBatchIds.has(row.batchId));
-    current.batches.push(batch);
-    current.rows = contract.applyParserResults(current.rows, batch, lines);
-    current.rows.filter(row => row.batchId === batch.batchId).forEach(row => {
-      const previous = previousLiveRows.find(item => String(item.rawText || '').trim() === String(row.rawText || '').trim());
-      if (!previous) return;
-      contract.ROW_FIELDS.forEach(field => {
-        if (previous.editedFields?.[field]) row[field] = previous[field];
-      });
-      if (previous.editedFields?.unitPrice) row.sourceUnitPrice = previous.sourceUnitPrice;
-      row.editedFields = { ...(previous.editedFields || {}) };
-      if (previous.unitPriceReviewStatus === 'CONFIRMED' && Number(previous.unitPrice) === Number(row.unitPrice)) {
-        row.unitPriceReviewStatus = 'CONFIRMED';
-      }
+    if (requestId !== state.analysisRequestId) return;
+    let stagedValues = lines.map((line, index) => contract.normalizeRow({
+      ...line,
+      sourceId: source.sourceId,
+      batchId: batch.batchId,
+      batchSequence: batch.sequence,
+      sourceBatchId: batch.batchId,
+      sourceLineNo: line.sourceLineNo || index + 1,
+      sourceLineKey: line.sourceLineKey || `${source.sourceId}:line:${line.sourceLineNo || index + 1}`
+    }, batch.batchId));
+    stagedValues.forEach(row => enrichRowFromUnifiedCatalog(row));
+    resolveStage1RowReferences(stagedValues);
+    stagedValues = contract.markDuplicatePossibilities(stagedValues);
+    const staged = await stageSourceRows(current, source.sourceId, stagedValues, {
+      parserVersion: SOURCE_PARSER_VERSION,
+      analysisMeta: { batchSeed: cloneGridValue(batch) }
     });
-    const liveRows = current.rows.filter(row => row.batchId === batch.batchId);
-    const otherRows = current.rows.filter(row => row.batchId !== batch.batchId);
-    current.rows = [...otherRows.slice(0, insertionIndex), ...liveRows, ...otherRows.slice(insertionIndex)];
-    current.rows.forEach(row => enrichRowFromUnifiedCatalog(row));
-    resolveStage1RowReferences(current.rows);
-    current.rows = contract.markDuplicatePossibilities(current.rows);
-    current.sourceText = rawText;
-    current.delivery = { status: 'DRAFT', targetId: '', targetRecordId: '', deliveredAt: '' };
-    state.pendingImageEvidence = null;
-    state.pendingOcrReview = null;
-    state.pendingSourceName = '';
-    state.pendingStructuredImport = null;
-    resizeSource();
-    if (!current.header.customerId && analyzedDocument?.confirmedCustomerId) {
-      applyCustomer(
-        { customerId: analyzedDocument.confirmedCustomerId, customerName: analyzedDocument.confirmedCustomerName },
-        { rematch: false, mappingSource: 'PARSER_CONFIRMED', learnAlias: false }
-      );
-    }
-    renderRows();
-    renderDelivery();
+    if (JSON.stringify(current.rows) !== workTableBytesBefore) throw new Error('WORKTABLE_CHANGED_BEFORE_EXPLICIT_APPLY');
+    source.previewText = rawText;
+    if (current.activeSourceId === source.sourceId) current.sourceText = rawText;
+    state.selectedStagedRowKeys = new Set(staged.filter(row => row.state === STAGED_ROW_STATES.PENDING).map(row => row.sourceRowKey));
     saveDraftNow();
-    const summary = contract.summarizeRows(current.rows);
-    const structuredSummary = structuredImport
-      ? ` · 헤더 ${structuredImport.headerRowNumber}행 · 필드 ${structuredImport.mappings.length}개`
-      : '';
-    setAppStatus(`${activityLabel(method.id)} 분석 완료 · ${lines.length}행${structuredSummary} · 일치 ${summary.matched} · 확인 ${summary.similar} · 미인식 ${summary.unresolved}`);
-    $('sourceNotice').textContent = structuredImport
-      ? `${structuredImport.sheetName} · ${structuredImport.mappings.map(mapping => mapping.sourceHeader).join(' · ')} 필드를 입력표에 반영했습니다.`
-      : '노랑: 수집된 상품 · 빨강: 마스터 미확정 · 주문자명/시간: 고정 구분색';
-    if (!current.header.customerId) {
-      $('customerHint').textContent = '거래처를 인식하지 못했습니다. 등록 거래처를 선택하세요.';
-      if (!automatic) {
-        $('customerInput').focus();
-        toast('거래처를 인식하지 못해 거래처 입력란으로 이동했습니다.', 'error');
-      }
-    }
+    const summary = contract.summarizeRows(staged.map(row => row.values));
+    const structuredSummary = structuredImport ? ` · 헤더 ${structuredImport.headerRowNumber}행 · 필드 ${structuredImport.mappings.length}개` : '';
+    setAppStatus(`${source.displayName} 분석 완료 · ${lines.length}행${structuredSummary} · 일치 ${summary.matched} · 확인 ${summary.similar} · 미인식 ${summary.unresolved} · 추가 예정`);
+    if (!automatic) toast(`${lines.length}행을 추가 예정으로 준비했습니다.`, 'success');
   } catch (error) {
+    setSourceStatus(current, source.sourceId, SOURCE_STATUSES.FAILED, { failureMessage: error.message || '분석에 실패했습니다.' });
+    saveDraftNow();
     if (!automatic) {
-      setAppStatus('분석을 완료하지 못했습니다. 원문은 그대로 유지됩니다.', 'error');
+      setAppStatus('분석을 완료하지 못했습니다. 원본과 기존 작업테이블은 유지됩니다.', 'error');
       toast(error.message || '자료 분석에 실패했습니다.', 'error');
-    } else {
-      $('sourceNotice').textContent = '상품명과 수량을 입력하면 자동으로 다시 분석합니다.';
     }
   } finally {
     state.busy = false;
     setActiveActivity('');
     renderReferenceControls();
-    $('parserProgress').hidden = true;
+    if (modeId === state.draft.activeMode) {
+      renderSourceSurface();
+      renderSourceWorkspace();
+      renderSourceAnalysis();
+      renderDelivery();
+    }
+  }
+}
+
+function applyActiveSourceStaging() {
+  const current = modeDraft();
+  const source = currentSourceRecord();
+  if (!source) return;
+  const selectedKeys = [...state.selectedStagedRowKeys];
+  const staged = pendingRowsForSource(current, source.sourceId, selectedKeys);
+  if (!staged.length) {
+    toast('추가할 예정 행을 선택하세요.', 'error');
+    return;
+  }
+  const existingRowIds = new Set(current.rows.map(row => row.rowId));
+  const seed = source.analysisMeta?.batchSeed || {};
+  const batch = contract.createBatch({
+    ...cloneGridValue(seed),
+    batchId: '',
+    sequence: current.batches.length + 1,
+    sourceRole: 'APPLIED_SOURCE',
+    sourceName: source.displayName,
+    rawText: source.previewText,
+    contentHash: source.sourceId.replace('src:sha256:', '')
+  });
+  const lines = staged.map((row, index) => ({
+    ...cloneGridValue(row.values),
+    sourceId: source.sourceId,
+    sourceRowKey: row.sourceRowKey,
+    sourceLineKey: row.sourceRowKey,
+    sourceBatchId: batch.batchId,
+    batchId: batch.batchId,
+    batchSequence: batch.sequence,
+    sourceLineNo: row.values.sourceLineNo || index + 1
+  }));
+  const rowsBefore = cloneGridValue(current.rows);
+  const batchesBefore = cloneGridValue(current.batches);
+  const ledgerBefore = cloneGridValue(current.sourceApplicationLedger);
+  const stagedBefore = cloneGridValue(current.stagedSourceRows);
+  try {
+    current.rows = contract.applyParserResults(current.rows, batch, lines);
+    const addedRows = current.rows.filter(row => !existingRowIds.has(row.rowId) && row.batchId === batch.batchId);
+    if (addedRows.length !== staged.length) throw new Error('STAGED_APPLICATION_ROW_COUNT_MISMATCH');
+    current.batches.push(batch);
+    recordSourceApplications(current, source.sourceId, staged.map((row, index) => ({
+      sourceRowKey: row.sourceRowKey,
+      workRowId: addedRows[index].rowId
+    })));
+    current.delivery = { status: 'DRAFT', targetId: '', targetRecordId: '', deliveredAt: '' };
+    state.selectedStagedRowKeys.clear();
+    clearWorktableSelection({ sync: false });
+    renderRows({ restoreFocus: false });
     renderDelivery();
     renderSourceAnalysis();
-    if (sourceTextInput.value !== rawText) scheduleAutoAnalysis(420);
+    renderSourceWorkspace();
+    saveDraftNow();
+    setAppStatus(`${source.displayName} · ${addedRows.length}행을 작업테이블에 추가했습니다.`);
+    toast(`${addedRows.length}행을 테이블에 추가했습니다.`, 'success');
+  } catch (error) {
+    current.rows = rowsBefore.map(row => contract.normalizeRow(row));
+    current.batches = batchesBefore;
+    current.sourceApplicationLedger = ledgerBefore;
+    current.stagedSourceRows = stagedBefore;
+    renderRows({ restoreFocus: false });
+    renderSourceWorkspace();
+    toast(error.message || '추가 예정 행을 테이블에 반영하지 못했습니다.', 'error');
   }
+}
+
+function retryActiveSourceAnalysis() {
+  const source = currentSourceRecord();
+  const context = source ? sourceContext(source.sourceId) : null;
+  if (source?.kind === 'IMAGE' && source.status === SOURCE_STATUSES.FAILED && context?.file) {
+    void recognizeImage(context.file);
+    return;
+  }
+  void analyzeSource({ automatic: false, sourceId: source?.sourceId || '' });
 }
 
 async function handleFile(file) {
@@ -5068,16 +5218,26 @@ async function handleFile(file) {
   if (activeTemplateSession()) return handleTemplateFile(file);
   invalidateGridPasteUndo();
   state.pendingStructuredImport = null;
+  state.selectedStagedRowKeys.clear();
+  updateMethod('excel');
+  const provisional = registerSourcePreview({ kind: 'EXCEL_FILE', displayName: file.name });
+  renderSourceWorkspace();
+  let registeredSource = provisional;
   try {
-    updateMethod('excel');
     setActiveActivity('Excel·파일 불러오는 중');
     setAppStatus(`${file.name} 파일을 읽고 있습니다.`);
+    const fileBytes = new Uint8Array(await file.arrayBuffer());
+    const identity = await finalizeRegisteredSource(provisional, fileBytes, { kind: 'EXCEL_FILE', displayName: file.name });
+    registeredSource = identity.source;
+    if (identity.duplicate && registeredSource.analysisRevision > 0) {
+      activateSourceInView(registeredSource.sourceId);
+      toast('같은 원본이 이미 등록되어 기존 원본으로 이동했습니다.', 'warn');
+      return;
+    }
+    const fileDigest = registeredSource.sourceId.replace('src:sha256:', '');
     let rawText = '';
     if (/\.(xlsx|xls)$/i.test(file.name)) {
       if (!window.XLSX) throw new Error('Excel 처리 모듈을 불러오지 못했습니다.');
-      const fileBytes = new Uint8Array(await file.arrayBuffer());
-      const fileHashBuffer = await crypto.subtle.digest('SHA-256', fileBytes);
-      const fileDigest = [...new Uint8Array(fileHashBuffer)].map(byte => byte.toString(16).padStart(2, '0')).join('');
       const workbook = window.XLSX.read(fileBytes, { type: 'array', cellDates: false, cellText: true });
       let firstReadable = null;
       let structured = null;
@@ -5152,27 +5312,31 @@ async function handleFile(file) {
           conversionSource:'DIRECT_SAME_UNIT', conversionRuleId:'DIRECT_1_TO_1', conversionRuleVersion:'DIRECT_1_TO_1_V1', metaStatus:'DIRECT_NO_META' })) };
       }
       rawText = selected.rawText;
-      state.pendingSourceName = `${file.name} · ${selected.sheetName}`;
-      state.pendingStructuredImport = structured
+      registeredSource.displayName = `${file.name} · ${selected.sheetName}`;
+      const structuredImport = structured
         ? { ...structured, rawText, modeId: state.draft.activeMode, fileName: file.name }
         : null;
+      state.sourceContexts.set(registeredSource.sourceId, { structuredImport, rawBytes: fileBytes });
     } else {
-      rawText = await file.text();
-      state.pendingSourceName = file.name;
-      state.pendingStructuredImport = null;
+      rawText = new TextDecoder().decode(fileBytes);
+      state.sourceContexts.set(registeredSource.sourceId, { structuredImport: null, rawBytes: fileBytes });
     }
-    sourceTextInput.value = rawText;
-    syncSourceText();
-    if (state.pendingStructuredImport) {
-      const imported = state.pendingStructuredImport;
+    registeredSource.previewText = rawText;
+    registeredSource.status = SOURCE_STATUSES.REGISTERED;
+    activateSourceInView(registeredSource.sourceId);
+    const imported = sourceContext(registeredSource.sourceId)?.structuredImport;
+    if (imported) {
       const warning = imported.invalidCells.length ? ` · 숫자 확인 ${imported.invalidCells.length}셀` : '';
       setAppStatus(`${file.name} · ${imported.sheetName} ${imported.headerRowNumber}행에서 필드 ${imported.mappings.length}개를 찾았습니다${warning}.`);
-      toast(`필드명을 찾아 상품 ${imported.rows.length}행을 자동 입력합니다.`, 'success');
+      toast(`필드명을 찾아 상품 ${imported.rows.length}행을 추가 예정으로 분석합니다.`, 'success');
     } else {
       setAppStatus(`${file.name}을 불러왔습니다. 자동 분석을 시작합니다.`);
       toast('표 필드를 찾지 못해 기존 텍스트 방식으로 자동 분석합니다.', 'success');
     }
+    void analyzeSource({ automatic: true, sourceId: registeredSource.sourceId });
   } catch (error) {
+    setSourceStatus(modeDraft(), registeredSource.sourceId, SOURCE_STATUSES.FAILED, { failureMessage: error.message || '파일을 읽지 못했습니다.' });
+    renderSourceWorkspace();
     toast(error.message || '파일을 읽지 못했습니다.', 'error');
     setAppStatus('파일을 읽지 못했습니다.', 'error');
   } finally {
@@ -5192,9 +5356,13 @@ function isParserDocumentFile(file) {
 function appendParserText(text, method = 'text') {
   if (!text) return;
   updateMethod(method);
-  const separator = sourceTextInput.value && !sourceTextInput.value.endsWith('\n') ? '\n' : '';
-  sourceTextInput.value += `${separator}${text}`;
-  syncSourceText();
+  const source = registerSourcePreview({
+    kind: sourceKindForMethod(method),
+    displayName: activityLabel(method),
+    previewText: String(text)
+  });
+  activateSourceInView(source.sourceId);
+  scheduleAutoAnalysis(80);
 }
 
 async function acceptParserDrop(event) {
@@ -5210,10 +5378,8 @@ async function acceptParserDrop(event) {
   appendParserText(droppedText);
 }
 
-async function fileToImageEvidence(file) {
+async function fileToImageEvidence(file, previewUrl = '') {
   const buffer = await file.arrayBuffer();
-  const digest = crypto?.subtle ? await crypto.subtle.digest('SHA-256', buffer) : null;
-  const contentHash = digest ? [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('') : '';
   const dataUrl = await new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result || ''));
@@ -5221,13 +5387,15 @@ async function fileToImageEvidence(file) {
     reader.readAsDataURL(file);
   });
   return {
-    sourceImageId: contentHash ? `SIIMG-${contentHash}` : createRecordId('SIIMG'),
+    sourceImageId: createRecordId('SIIMG'),
     fileName: file.name || '붙여넣은 이미지',
     mimeType: file.type || 'image/png',
     byteLength: file.size || buffer.byteLength,
-    contentHash,
+    contentHash: '',
+    previewUrl,
     dataUrl,
-    binaryBase64: dataUrl.split(',')[1] || ''
+    binaryBase64: dataUrl.split(',')[1] || '',
+    rawBytes: new Uint8Array(buffer)
   };
 }
 
@@ -5235,10 +5403,24 @@ async function persistSourceImageForMode(mode = state.draft.activeMode) {
   const sourceImage = state.sourceImages[mode];
   const documentId = state.draft.modes[mode]?.documentId;
   if (!sourceImage?.dataUrl || !documentId) return;
+  const persistentEvidence = evidence => {
+    if (!evidence) return null;
+    const { rawBytes, previewUrl, file, ...record } = evidence;
+    return record;
+  };
+  const sourceItems = modeDraft(mode).sources
+    .filter(source => source.kind === 'IMAGE')
+    .map(source => {
+      const evidence = state.sourceImageBySourceId.get(source.sourceId);
+      return evidence?.dataUrl ? { sourceId: source.sourceId, ...persistentEvidence(evidence) } : null;
+    })
+    .filter(Boolean);
   const record = {
-    ...sourceImage,
+    ...persistentEvidence(sourceImage),
     documentId,
     mode,
+    activeSourceId: modeDraft(mode).activeSourceId,
+    sourceItems,
     updatedAt: new Date().toISOString()
   };
   state.sourceImages[mode] = record;
@@ -5254,50 +5436,101 @@ async function persistSourceImageForMode(mode = state.draft.activeMode) {
 async function recognizeImage(file) {
   if (!isImageFile(file)) return;
   invalidateGridPasteUndo();
+  const modeId = state.draft.activeMode;
   const captureSequence = ++state.photoCaptureSequence;
   updateMethod('photo');
-  let imageEvidence;
+  const previewUrl = typeof URL?.createObjectURL === 'function' ? URL.createObjectURL(file) : '';
+  const provisional = registerSourcePreview({ kind: 'IMAGE', displayName: file.name || '붙여넣은 이미지' }, modeId);
+  let imageEvidence = {
+    sourceImageId: provisional.sourceId,
+    sourceId: provisional.sourceId,
+    fileName: file.name || '붙여넣은 이미지',
+    mimeType: file.type || 'image/png',
+    byteLength: file.size || 0,
+    contentHash: '',
+    previewUrl,
+    dataUrl: '',
+    notice: '원본을 표시했습니다. SHA-256 확인과 OCR을 준비하고 있습니다.'
+  };
+  state.sourceImageBySourceId.set(provisional.sourceId, imageEvidence);
+  state.sourceImages[modeId] = imageEvidence;
+  state.sourceContexts.set(provisional.sourceId, { file, imageEvidence });
+  activateSourceInView(provisional.sourceId);
+  renderSourceSurface();
+  renderSourceWorkspace();
+  setAppStatus('원본 사진을 표시했습니다. 분석을 준비하고 있습니다.');
+  let registeredSource = provisional;
   try {
-    imageEvidence = await fileToImageEvidence(file);
-  } catch (error) {
-    if (captureSequence === state.photoCaptureSequence) {
-      toast(error.message || '원본 사진을 불러오지 못했습니다.', 'error');
-      setAppStatus('원본 사진을 불러오지 못했습니다.', 'error');
+    const loadedEvidence = await fileToImageEvidence(file, previewUrl);
+    const identity = await finalizeRegisteredSource(provisional, loadedEvidence.rawBytes, {
+      kind: 'IMAGE', displayName: loadedEvidence.fileName
+    }, modeId);
+    registeredSource = identity.source;
+    const stableId = registeredSource.sourceId;
+    if (identity.duplicate && registeredSource.analysisRevision > 0) {
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+      if (state.draft.activeMode === modeId) activateSourceInView(stableId);
+      $('photoInput').value = '';
+      toast('같은 사진 원본이 이미 등록되어 기존 원본으로 이동했습니다.', 'warn');
+      return;
     }
+    if (identity.duplicate && state.sourceImageBySourceId.has(stableId)) {
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+      imageEvidence = state.sourceImageBySourceId.get(stableId);
+    } else {
+      imageEvidence = {
+        ...loadedEvidence,
+        sourceId: stableId,
+        sourceImageId: `SIIMG-${stableId.replace('src:sha256:', '')}`,
+        contentHash: stableId.replace('src:sha256:', ''),
+        notice: '원본을 유지한 채 상품표를 분석하고 있습니다.'
+      };
+      state.sourceImageBySourceId.set(stableId, imageEvidence);
+    }
+    registeredSource.previewRef = imageEvidence.sourceImageId;
+    registeredSource.status = SOURCE_STATUSES.REGISTERED;
+    state.sourceContexts.set(stableId, { file, imageEvidence });
+    state.sourceImages[modeId] = imageEvidence;
+  } catch (error) {
+    setSourceStatus(modeDraft(modeId), registeredSource.sourceId, SOURCE_STATUSES.FAILED, { failureMessage: error.message || '원본 사진을 불러오지 못했습니다.' });
+    toast(error.message || '원본 사진을 불러오지 못했습니다.', 'error');
+    setAppStatus('원본 사진을 불러오지 못했습니다.', 'error');
+    renderSourceWorkspace();
     $('photoInput').value = '';
     return;
   }
-  if (captureSequence !== state.photoCaptureSequence) return;
+  if (captureSequence !== state.photoCaptureSequence && modeDraft(modeId).activeSourceId === registeredSource.sourceId) return;
   state.pendingImageEvidence = imageEvidence;
-  state.sourceImages[state.draft.activeMode] = imageEvidence;
+  state.sourceImages[modeId] = imageEvidence;
   state.pendingSourceName = imageEvidence.fileName;
-  imageEvidence.notice = '원본 사진을 유지한 채 상품표를 분석하고 있습니다.';
-  renderSourceSurface();
-  void persistSourceImageForMode();
+  if (state.draft.activeMode === modeId && modeDraft(modeId).activeSourceId === registeredSource.sourceId) {
+    activateSourceInView(registeredSource.sourceId);
+    renderSourceSurface();
+  }
+  void persistSourceImageForMode(modeId);
   $('photoInput').value = '';
-  if (!modeDraft().rows.length) renderRows({ restoreFocus: false });
   if (state.busy) {
     setAppStatus('원본 사진을 불러왔습니다. 진행 중인 분석이 끝나면 사진 분석을 시작합니다.');
-    while (state.busy && currentSourceImage()?.sourceImageId === imageEvidence.sourceImageId) {
+    while (state.busy) {
       await new Promise(resolve => window.setTimeout(resolve, 120));
     }
   }
-  if (captureSequence !== state.photoCaptureSequence || currentSourceImage()?.sourceImageId !== imageEvidence.sourceImageId) return;
-  state.pendingImageEvidence = imageEvidence;
+  const sourceId = registeredSource.sourceId;
+  const requestId = ++state.analysisRequestId;
   state.busy = true;
+  setSourceStatus(modeDraft(modeId), sourceId, SOURCE_STATUSES.ANALYZING);
   $('analyzeButton').disabled = true;
   $('mobileAnalyzeButton').disabled = true;
-  $('parserProgress').hidden = false;
-  $('parserProgress').querySelector('strong').textContent = '사진에서 문자를 추출하고 있습니다.';
   setActiveActivity('사진 OCR 처리 중');
+  if (state.draft.activeMode === modeId && modeDraft(modeId).activeSourceId === sourceId) renderSourceWorkspace();
   let shouldAnalyze = false;
   try {
-    await persistSourceImageForMode();
-    renderSourceSurface();
+    await persistSourceImageForMode(modeId);
     if (!window.Tesseract?.createWorker && !window.Tesseract?.recognize) throw new Error('사진 OCR 모듈을 불러오지 못했습니다.');
     const analysis = await recognizeOcrDocument(file, {
       Tesseract: window.Tesseract,
       onProgress: progress => {
+        if (state.draft.activeMode !== modeId || modeDraft(modeId).activeSourceId !== sourceId) return;
         const percent = Math.round(Number(progress.progress || 0) * 100);
         if (progress.status === 'preprocessing') {
           $('parserProgress').querySelector('strong').textContent = `${progress.variant || '사진'} 전처리 중`;
@@ -5308,44 +5541,38 @@ async function recognizeImage(file) {
         }
       }
     });
+    if (requestId !== state.analysisRequestId || registeredSource.status === SOURCE_STATUSES.REMOVED) return;
     const text = String(analysis.rawText || '').replace(/\r/g, '');
     if (!text.trim()) throw new Error('사진에서 문자를 찾지 못했습니다.');
-    state.pendingOcrReview = { ...analysis, rawText: text };
-    sourceTextInput.value = text;
-    modeDraft().sourceText = text;
-    scheduleSave();
-    resizeSource();
-    renderSourceAnalysis();
+    const context = sourceContext(sourceId);
+    context.ocrReview = { ...analysis, rawText: text };
+    context.imageEvidence = imageEvidence;
+    registeredSource.previewText = text;
+    if (state.draft.activeMode === modeId && modeDraft(modeId).activeSourceId === sourceId) {
+      state.pendingOcrReview = context.ocrReview;
+      setSourceTextProgrammatically(text);
+    }
     if (analysis.status === 'VERIFIED') {
       shouldAnalyze = true;
       const totals = analysis.calculatedTotal;
-      $('sourceNotice').textContent = `OCR 검증 완료 · ${analysis.validRows.length}행 · 수량 ${totals.quantity.toLocaleString('ko-KR')} · 금액 ${totals.amount.toLocaleString('ko-KR')}원`;
-      state.sourceImages[state.draft.activeMode].notice = `검증 완료 · ${analysis.validRows.length}행 · 수량 ${totals.quantity.toLocaleString('ko-KR')} · 금액 ${totals.amount.toLocaleString('ko-KR')}원`;
-      await persistSourceImageForMode();
-      renderSourceSurface();
-      setAppStatus('사진의 행 산식과 합계가 일치했습니다. 검증된 상품만 자동 분석합니다.');
-      toast('OCR 검증을 통과한 상품행만 입력합니다.', 'success');
+      imageEvidence.notice = `검증 완료 · ${analysis.validRows.length}행 · 수량 ${totals.quantity.toLocaleString('ko-KR')} · 금액 ${totals.amount.toLocaleString('ko-KR')}원`;
+      await persistSourceImageForMode(modeId);
+      setAppStatus('사진의 행 산식과 합계가 일치했습니다. 검증된 상품을 추가 예정으로 준비합니다.');
+      toast('OCR 검증을 통과한 상품행을 추가 예정으로 준비합니다.', 'success');
     } else {
-      const current = modeDraft();
-      const liveBatchIds = new Set(current.batches.filter(batch => batch.sourceRole === 'LIVE_SOURCE').map(batch => batch.batchId));
-      current.batches = current.batches.filter(batch => batch.sourceRole !== 'LIVE_SOURCE');
-      current.rows = current.rows.filter(row => !liveBatchIds.has(row.batchId));
-      renderRows();
       const totals = analysis.calculatedTotal;
-      $('sourceNotice').textContent = `OCR 확인 필요 · 검증 ${analysis.validRows.length}행 · 오류 ${analysis.invalidRows.length}행 · 계산 ${totals.amount.toLocaleString('ko-KR')}원`;
-      state.sourceImages[state.draft.activeMode].notice = `확인 필요 · 검증 ${analysis.validRows.length}행 · 오류 ${analysis.invalidRows.length}행`;
-      await persistSourceImageForMode();
-      renderSourceSurface();
-      setAppStatus('OCR 산식·합계 검증이 일치하지 않아 상품행을 생성하지 않았습니다.', 'error');
-      toast('OCR 확인이 필요합니다. 원문은 유지되고 상품행은 생성하지 않았습니다.', 'error');
+      imageEvidence.notice = `확인 필요 · 검증 ${analysis.validRows.length}행 · 오류 ${analysis.invalidRows.length}행`;
+      setSourceStatus(modeDraft(modeId), sourceId, SOURCE_STATUSES.FAILED, { failureMessage: `OCR 확인 필요 · 검증 ${analysis.validRows.length}행 · 오류 ${analysis.invalidRows.length}행 · 계산 ${totals.amount.toLocaleString('ko-KR')}원` });
+      await persistSourceImageForMode(modeId);
+      setAppStatus('OCR 산식·합계 검증이 일치하지 않아 추가 예정 행을 만들지 않았습니다.', 'error');
+      toast('OCR 확인이 필요합니다. 원본과 기존 작업테이블은 유지됩니다.', 'error');
     }
   } catch (error) {
-    state.pendingOcrReview = null;
-    if (state.sourceImages[state.draft.activeMode]) {
-      state.sourceImages[state.draft.activeMode].notice = '자동 인식에 실패했습니다. 원본 사진을 보면서 직접 입력할 수 있습니다.';
-      void persistSourceImageForMode();
-      renderSourceSurface();
-    }
+    const context = sourceContext(sourceId);
+    if (context) context.ocrReview = null;
+    imageEvidence.notice = '자동 인식에 실패했습니다. 원본 사진을 보면서 직접 입력할 수 있습니다.';
+    setSourceStatus(modeDraft(modeId), sourceId, SOURCE_STATUSES.FAILED, { failureMessage: error.message || '사진 문자를 추출하지 못했습니다.' });
+    void persistSourceImageForMode(modeId);
     toast(error.message || '사진 문자를 추출하지 못했습니다.', 'error');
     setAppStatus('사진 OCR을 완료하지 못했습니다. 직접 입력할 수 있습니다.', 'warn');
   } finally {
@@ -5353,10 +5580,12 @@ async function recognizeImage(file) {
     setActiveActivity('');
     $('photoInput').value = '';
     renderReferenceControls();
-    $('parserProgress').hidden = true;
-    $('parserProgress').querySelector('strong').textContent = '자료를 분석하고 있습니다.';
-    if (!modeDraft().rows.length) renderRows({ restoreFocus: false });
-    if (shouldAnalyze) scheduleAutoAnalysis(80);
+    saveDraftNow();
+    if (state.draft.activeMode === modeId) {
+      renderSourceSurface();
+      renderSourceWorkspace();
+    }
+    if (shouldAnalyze) void analyzeSource({ automatic: true, sourceId, mode: modeId });
   }
 }
 
@@ -6610,6 +6839,11 @@ async function hydrateReferences() {
 }
 
 tabs.forEach(tab => tab.addEventListener('click', () => setMode(tab.dataset.mode)));
+$('inputTemplateOpenButton').addEventListener('click', openInputTemplateOverlay);
+$('inputTemplateOverlayClose').addEventListener('click', closeInputTemplateOverlay);
+$('inputTemplateOverlay').addEventListener('pointerdown', event => {
+  if (event.target === $('inputTemplateOverlay')) closeInputTemplateOverlay();
+});
 $('createTemplateButton').addEventListener('click', startCreateTemplate);
 $('existingTemplateButton').addEventListener('click', startExistingTemplateSelection);
 $('releaseTemplateButton').addEventListener('click', () => releaseInputTemplate());
@@ -6692,8 +6926,20 @@ methodButtons.forEach(button => button.addEventListener('click', () => {
   if (method.id === 'direct') addDirectRow();
   else if (method.id === 'excel') $('fileInput').click();
   else if (method.id === 'photo') $('photoInput').click();
-  else if (method.id === 'voice') toggleVoice();
+  else if (method.id === 'voice') {
+    const current = currentSourceRecord();
+    if (!current || current.kind !== 'VOICE' || current.sourceId.startsWith('src:sha256:')) {
+      const source = registerSourcePreview({ kind: 'VOICE', displayName: '음성 STT', previewText: '' });
+      activateSourceInView(source.sourceId);
+    }
+    toggleVoice();
+  }
   else {
+    const current = currentSourceRecord();
+    if (!current || current.kind !== 'TEXT' || current.sourceId.startsWith('src:sha256:')) {
+      const source = registerSourcePreview({ kind: 'TEXT', displayName: activityLabel(method.id), previewText: '' });
+      activateSourceInView(source.sourceId);
+    }
     sourceTextInput.focus();
     $('sourceNotice').textContent = method.id === 'paste'
       ? '텍스트 또는 이미지를 Ctrl+V로 붙여넣으세요.'
@@ -6704,6 +6950,41 @@ methodButtons.forEach(button => button.addEventListener('click', () => {
 sourceTextInput.addEventListener('input', syncSourceText);
 sourceTextInput.addEventListener('compositionstart', () => { state.sourceComposing = true; });
 sourceTextInput.addEventListener('compositionend', () => { state.sourceComposing = false; syncSourceText(); });
+$('previousSourceButton').addEventListener('click', () => {
+  const source = adjacentSource(modeDraft(), -1);
+  if (source) activateSourceInView(source.sourceId);
+});
+$('nextSourceButton').addEventListener('click', () => {
+  const source = adjacentSource(modeDraft(), 1);
+  if (source) activateSourceInView(source.sourceId);
+});
+$('sourceSelect').addEventListener('change', event => {
+  if (event.target.value) activateSourceInView(event.target.value);
+});
+$('toggleStagedRowsButton').addEventListener('click', event => {
+  const rows = $('sourceStagingRows');
+  rows.hidden = !rows.hidden;
+  event.currentTarget.setAttribute('aria-expanded', String(!rows.hidden));
+  event.currentTarget.textContent = rows.hidden ? '행 선택' : '행 선택 닫기';
+});
+$('sourceStagingRows').addEventListener('change', event => {
+  const checkbox = event.target.closest('[data-staged-row-select]');
+  const row = checkbox?.closest('[data-source-row-key]');
+  if (!checkbox || !row) return;
+  if (checkbox.checked) state.selectedStagedRowKeys.add(row.dataset.sourceRowKey);
+  else state.selectedStagedRowKeys.delete(row.dataset.sourceRowKey);
+  renderSourceStaging();
+});
+$('applyStagedRowsButton').addEventListener('click', applyActiveSourceStaging);
+$('authorizeReapplyButton').addEventListener('click', () => {
+  const source = currentSourceRecord();
+  if (!source) return;
+  const count = authorizeDeletedRowsForReapply(modeDraft(), source.sourceId);
+  state.selectedStagedRowKeys.clear();
+  renderSourceWorkspace();
+  saveDraftNow();
+  toast(count ? `${count}개 삭제 행을 다시 추가할 수 있습니다.` : '다시 추가할 삭제 행이 없습니다.', count ? 'success' : 'warn');
+});
 sourceTextInput.addEventListener('scroll', () => {
   const highlight = $('sourceHighlight');
   if (!highlight) return;
@@ -6845,9 +7126,9 @@ photoResizer.addEventListener('keydown', event => {
   applyParserPaneWidth(currentWidth + (event.key === 'ArrowRight' ? step : -step));
   scheduleSave();
 });
-$('analyzeButton').addEventListener('click', () => analyzeSource({ automatic: false }));
+$('analyzeButton').addEventListener('click', retryActiveSourceAnalysis);
 $('clearParserButton').addEventListener('click', clearParserWorkspace);
-$('mobileAnalyzeButton').addEventListener('click', () => analyzeSource({ automatic: false }));
+$('mobileAnalyzeButton').addEventListener('click', retryActiveSourceAnalysis);
 $('mobileClearParserButton').addEventListener('click', clearParserWorkspace);
 $('sourceFullscreenButton').addEventListener('click', () => {
   if (state.mobileLayout.fullscreen) closeSourceFullscreen();
@@ -6858,14 +7139,6 @@ $('mobileInfoToggle').addEventListener('click', () => {
   updateMobileInfoSummary();
   scheduleMobileViewportLayout();
   scheduleSave();
-});
-$('mobileParserDragHandle').addEventListener('pointerdown', beginMobileParserDrag, { passive: false });
-$('mobileParserDragHandle').addEventListener('pointermove', moveMobileParserDrag, { passive: false });
-$('mobileParserDragHandle').addEventListener('pointerup', finishMobileParserDrag);
-$('mobileParserDragHandle').addEventListener('pointercancel', finishMobileParserDrag);
-$('mobileParserDragHandle').addEventListener('keydown', resizeMobileParserWithKeyboard);
-document.querySelectorAll('[data-mobile-parser-preset]').forEach(button => {
-  button.addEventListener('click', () => setMobileParserPreset(button.dataset.mobileParserPreset));
 });
 $('undoGridPasteButton').addEventListener('click', undoGridPaste);
 $('gridSearchInput').addEventListener('input', event => {
@@ -7123,9 +7396,11 @@ inputRows.addEventListener('click', event => {
   const remove = event.target.closest('[data-remove-row]');
   if (remove) {
     invalidateGridPasteUndo();
+    markWorkRowsDeleted(modeDraft(), [remove.dataset.removeRow]);
     modeDraft().rows = modeDraft().rows.filter(row => row.rowId !== remove.dataset.removeRow);
     modeDraft().rows = contract.markDuplicatePossibilities(modeDraft().rows);
     renderRows();
+    renderSourceWorkspace();
     saveDraftNow();
     return;
   }
@@ -7228,6 +7503,11 @@ document.addEventListener('paste', event => {
 });
 
 document.addEventListener('keydown', event => {
+  if (state.templateOverlayOpen && event.key === 'Escape') {
+    event.preventDefault();
+    closeInputTemplateOverlay();
+    return;
+  }
   if (state.mobileLayout.fullscreen && event.key === 'Escape') {
     event.preventDefault();
     closeSourceFullscreen();

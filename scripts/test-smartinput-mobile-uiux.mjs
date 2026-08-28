@@ -18,8 +18,8 @@ function functionBlock(name) {
   return app.slice(start, next < 0 ? app.length : next);
 }
 
-assert.match(html, /smartinput\.css\?v=0\.5\.0/, 'worktable CSS cache key must invalidate the previous combined-screen asset');
-assert.match(html, /smartinput\.js\?v=0\.5\.0/, 'worktable JS cache key must invalidate the previous combined-screen asset');
+assert.match(html, /smartinput\.css\?v=0\.6\.0/, 'single-source review CSS cache key must invalidate the previous asset');
+assert.match(html, /smartinput\.js\?v=0\.6\.0/, 'single-source staging JS cache key must invalidate the previous asset');
 assert.doesNotMatch(html, /smartinput\.css\?v=0\.4\.(?:30|35)/,
   'the deployed page must not reuse a stale CSS cache key');
 assert.doesNotMatch(html, /smartinput\.js\?v=0\.4\.(?:36|42)/,
@@ -38,21 +38,19 @@ for (const id of [
   'mobileParserToolbar',
   'mobileAnalyzeButton',
   'mobileClearParserButton',
-  'sourceFullscreenButton',
-  'mobileParserDragHandle'
+  'sourceFullscreenButton'
 ]) assert.match(html, new RegExp(`id="${id}"`));
 for (const stage of ['info', 'source', 'grid']) {
   assert.match(html, new RegExp(`data-mobile-stage="${stage}"`));
 }
-for (const preset of ['collapsed', 'default', 'expanded']) {
-  assert.match(html, new RegExp(`data-mobile-parser-preset="${preset}"`));
-}
+assert.doesNotMatch(html, /mobileParserDragHandle|data-mobile-parser-preset/,
+  'the restored source review window must not expose height presets or a drag handle');
 
 assert.match(functionBlock('mobileUi'), /state\.draft\.ui\.mobile/);
 assert.match(functionBlock('mobileUi'), /infoCollapsed/);
-assert.match(functionBlock('mobileUi'), /parserPreset/);
-assert.match(functionBlock('mobileUi'), /parserRatio/);
 assert.match(functionBlock('mobileUi'), /stageByMode/);
+assert.doesNotMatch(functionBlock('mobileUi'), /parserPreset|parserRatio/,
+  'obsolete parser split-height state must not survive draft normalization');
 assert.match(functionBlock('currentMobileStage'), /stageByMode/);
 assert.match(functionBlock('setMobileStage'), /mobileUi\(\)\.stageByMode\[state\.draft\.activeMode\] = stage/);
 assert.match(functionBlock('syncMobileStage'), /document\.body\.dataset\.mobileStage = stage/);
@@ -61,31 +59,15 @@ assert.doesNotMatch(functionBlock('setMobileStage'), /analyzeSource|renderRows|r
 assert.match(app, /mobileStageNav'\)\.addEventListener\('click'/);
 assert.doesNotMatch(app, /localStorage\.(?:getItem|setItem)\([^\n]*(?:mobile|parserPreset|infoCollapsed)/i,
   'mobile UI state must not use a separate storage key');
-assert.match(app, /MOBILE_PARSER_COLLAPSED_HEIGHT = 68/);
-assert.match(app, /MOBILE_PARSER_DEFAULT_RATIO = \.325/);
-assert.match(app, /MOBILE_PARSER_EXPANDED_RATIO = \.65/);
-assert.match(app, /MOBILE_GRID_MIN_HEIGHT = 185/);
-assert.match(app, /parserPreset === 'custom'[\s\S]*viewportHeight \* mobile\.parserRatio/);
+assert.doesNotMatch(app, /MOBILE_PARSER_(?:COLLAPSED_HEIGHT|DEFAULT_RATIO|EXPANDED_RATIO)|mobileParserBounds|applyMobileParserHeight|beginMobileParserDrag|parserPreset|parserRatio/,
+  'source review height must be owned by responsive layout, not an independent split controller');
+assert.doesNotMatch(functionBlock('syncMobileViewportLayout'), /analyzeSource|scheduleAutoAnalysis|renderSourceSurface|renderRows|replaceRows|\.rows\s*=/,
+  'viewport changes must not affect source analysis, staging, or worktable data');
 
-const forbiddenHeightSideEffects = /analyzeSource|scheduleAutoAnalysis|renderSourceSurface|renderRows|replaceRows|\.rows\s*=/;
-for (const name of [
-  'mobileParserBounds',
-  'applyMobileParserHeight',
-  'setMobileParserPreset',
-  'beginMobileParserDrag',
-  'moveMobileParserDrag',
-  'finishMobileParserDrag',
-  'resizeMobileParserWithKeyboard',
-  'syncMobileViewportLayout'
-]) {
-  assert.doesNotMatch(functionBlock(name), forbiddenHeightSideEffects,
-    `${name} must change layout/state only`);
-}
-
-assert.match(app, /mobileParserDragHandle'\)\.addEventListener\('pointercancel', finishMobileParserDrag\)/);
 assert.match(app, /photoViewport'\)\.addEventListener\('pointercancel', finishPhotoGesture\)/);
-assert.match(css, /\.mobile-parser-drag-handle[^}]*min-height:\s*44px/);
-assert.match(css, /\.mobile-parser-resizer:not\(\[hidden\]\)[^}]*height:\s*44px/);
+assert.doesNotMatch(css, /mobile-parser-drag-handle|mobile-parser-resizer/);
+assert.match(css, /\.parser-input-row, \.workspace\.has-photo-source \.parser-input-row[^}]*flex-direction:\s*column/,
+  'narrow layouts must keep one uninterrupted source review surface');
 assert.match(css, /\.photo-viewer__viewport[^}]*touch-action:\s*none/);
 assert.match(css, /\.workspace\.has-tabular-source[^}]*touch-action:\s*pan-x pan-y/);
 assert.equal(occurrences(app, /addEventListener\('pointerdown', beginPhotoGesture/g), 1,
