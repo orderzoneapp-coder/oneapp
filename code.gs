@@ -10,7 +10,6 @@
  * - ORDER Q vNext는 목적별 시트와 revision 기반 증분 동기화를 사용
  * - ORDER Q API 접근토큰과 주문 bundle 복구 transaction log를 사용
  * - 이력수집 원본·판매·구매·재고·주문·출고연결·파서근거를 목적별 시트에 보존
- * - 기준정보 필드·매핑 메타데이터는 Config와 분리된 revision snapshot으로 보존
  */
 
 const SHEET_NAMES = {
@@ -31,12 +30,6 @@ const DATAOPS_SNAPSHOT_COLUMNS = ['단위', '품목코드', '품명', '규격', 
 const DATAOPS_SNAPSHOT_CHUNK_SIZE = 45000;
 const DATAOPS_SNAPSHOT_MAX_ROWS = 100000;
 const DATAOPS_CURRENT_SLOT_PROPERTY = 'ONEAPP_DATAOPS_CURRENT_SLOT';
-const FOUNDATION_ACTIVE_SLOT_PROPERTY = 'ONEAPP_NEXUS_FOUNDATION_ACTIVE_SLOT';
-const FOUNDATION_LEGACY_STAGING_SLOT_PROPERTY = 'ONEAPP_NEXUS_FOUNDATION_LEGACY_STAGING_SLOT';
-const FOUNDATION_SLOT_SHEETS = Object.freeze({
-  A: Object.freeze({ MASTER: 'MasterDB', HISTORY: 'HistoryLogs', CONFIG: 'AppConfig' }),
-  B: Object.freeze({ MASTER: 'MasterDB_NEXUS_B', HISTORY: 'HistoryLogs_NEXUS_B', CONFIG: 'AppConfig_NEXUS_B' })
-});
 const SHIPPING_PLAN_FORMAT = 'ONEAPP_SHIPPING_PURCHASE_PLAN_V1';
 const SHIPPING_PLAN_WORKSPACE_SCHEMA = 'shipping-workspace/v2';
 const SHIPPING_PLAN_CHUNK_SIZE = 45000;
@@ -44,13 +37,6 @@ const SHIPPING_PLAN_MAX_ROWS = 300000;
 const SHIPPING_PLAN_MAX_CELLS = 5000000;
 const SHIPPING_PLAN_ACCESS_TOKEN_PROPERTY = 'ONEAPP_SHIPPING_PLAN_ACCESS_TOKEN';
 const ORDERQ_ACCESS_TOKEN_PROPERTY = 'ONEAPP_ORDERQ_ACCESS_TOKEN';
-const ONEAPP_NEXUS_GATEWAY_ACTOR = 'NEXUS_GATEWAY';
-const ONEAPP_NEXUS_GATEWAY_BINDING_PROPERTIES = Object.freeze({
-  FOUNDATION: 'ONEAPP_NEXUS_GATEWAY_FOUNDATION_BINDINGS_JSON',
-  DATAOPS: 'ONEAPP_NEXUS_GATEWAY_DATAOPS_BINDINGS_JSON',
-  ORDERQ: 'ONEAPP_NEXUS_GATEWAY_ORDERQ_BINDINGS_JSON',
-  SHIPPING: 'ONEAPP_NEXUS_GATEWAY_SHIPPING_BINDINGS_JSON'
-});
 const SHIPPING_PLAN_INDEX_COLUMNS = [
   'format', 'planId', 'revision', 'basisDate', 'savedAt', 'sourceFileName', 'savedBy',
   'productRowCount', 'purchaseUploadRowCount', 'hash', 'rowCount', 'cellCount',
@@ -67,80 +53,6 @@ function getOrCreateSheet(ss, sheetName) {
   let sheet = ss.getSheetByName(sheetName);
   if (!sheet) sheet = ss.insertSheet(sheetName);
   return sheet;
-}
-
-function oneappNexusFoundationActiveSlot() {
-  return String(PropertiesService.getScriptProperties().getProperty(FOUNDATION_ACTIVE_SLOT_PROPERTY) || 'A') === 'B' ? 'B' : 'A';
-}
-
-function oneappNexusFoundationInactiveSlot() {
-  return oneappNexusFoundationActiveSlot() === 'A' ? 'B' : 'A';
-}
-
-function oneappNexusFoundationSheet(ss, kind, slot, create) {
-  const normalizedSlot = slot === 'B' ? 'B' : 'A';
-  const name = FOUNDATION_SLOT_SHEETS[normalizedSlot][kind];
-  if (!name) throw new Error('ONEAPP_NEXUS_FOUNDATION_SHEET_KIND_INVALID');
-  return create === false ? ss.getSheetByName(name) : getOrCreateSheet(ss, name);
-}
-
-function oneappNexusFoundationActivate(slot) {
-  const normalizedSlot = slot === 'B' ? 'B' : 'A';
-  PropertiesService.getScriptProperties().setProperty(FOUNDATION_ACTIVE_SLOT_PROPERTY, normalizedSlot);
-  return normalizedSlot;
-}
-
-function oneappNexusFoundationConfig(ss, slot) {
-  return loadConfigData(oneappNexusFoundationSheet(ss, 'CONFIG', slot || oneappNexusFoundationActiveSlot(), false));
-}
-
-function oneappNexusFoundationLegacyStageState() {
-  const properties = PropertiesService.getScriptProperties();
-  const raw = String(properties.getProperty(FOUNDATION_LEGACY_STAGING_SLOT_PROPERTY) || '');
-  if (!raw) return null;
-  let state;
-  try { state = JSON.parse(raw); }
-  catch (_) { state = { slot: raw, startedAt: '' }; }
-  const slot = state && state.slot === 'B' ? 'B' : (state && state.slot === 'A' ? 'A' : '');
-  const startedAt = Date.parse(state && state.startedAt || '');
-  if (!slot || !Number.isFinite(startedAt) || Date.now() - startedAt > 30 * 60 * 1000) {
-    properties.setProperty(FOUNDATION_LEGACY_STAGING_SLOT_PROPERTY, '');
-    return null;
-  }
-  return { slot, startedAt: new Date(startedAt).toISOString() };
-}
-
-function oneappNexusFoundationBeginLegacyStage(ss) {
-  const slot = oneappNexusFoundationInactiveSlot();
-  ['MASTER', 'HISTORY', 'CONFIG'].forEach(kind => oneappNexusFoundationSheet(ss, kind, slot).clearContents());
-  PropertiesService.getScriptProperties().setProperty(FOUNDATION_LEGACY_STAGING_SLOT_PROPERTY, JSON.stringify({
-    slot,
-    startedAt: new Date().toISOString()
-  }));
-  return slot;
-}
-
-function oneappNexusFoundationRequireLegacyStage() {
-  const state = oneappNexusFoundationLegacyStageState();
-  if (!state) throw new Error('ONEAPP_NEXUS_LEGACY_STAGE_REQUIRED');
-  return state.slot;
-}
-
-function oneappNexusFoundationFinalizeLegacyStage(ss, configData) {
-  const slot = oneappNexusFoundationRequireLegacyStage();
-  const masterSheet = oneappNexusFoundationSheet(ss, 'MASTER', slot);
-  const historySheet = oneappNexusFoundationSheet(ss, 'HISTORY', slot);
-  const configSheet = oneappNexusFoundationSheet(ss, 'CONFIG', slot);
-  saveConfigData(configSheet, configData || {});
-  const master = readMasterData(ss, slot);
-  const history = readHistoryData(ss, slot);
-  const masterRowCount = masterSheet.getLastRow();
-  const historyRowCount = historySheet.getLastRow();
-  oneappNexusFoundationConfig(ss, slot);
-  if (Object.keys(master).length !== masterRowCount || history.length !== historyRowCount) throw new Error('ONEAPP_NEXUS_LEGACY_STAGE_VERIFY_FAILED');
-  oneappNexusFoundationActivate(slot);
-  PropertiesService.getScriptProperties().setProperty(FOUNDATION_LEGACY_STAGING_SLOT_PROPERTY, '');
-  return { activeSlot: slot, masterCount: masterRowCount, historyCount: historyRowCount };
 }
 
 function splitTextBySize(text, size) {
@@ -183,9 +95,9 @@ function loadConfigData(sheet) {
   return legacyJson ? JSON.parse(String(legacyJson)) : {};
 }
 
-function readMasterData(ss, slot) {
+function readMasterData(ss) {
   const master = {};
-  const sheet = oneappNexusFoundationSheet(ss, 'MASTER', slot || oneappNexusFoundationActiveSlot(), false);
+  const sheet = ss.getSheetByName(SHEET_NAMES.MASTER);
   if (!sheet || sheet.getLastRow() < 1) return master;
   const rows = sheet.getRange(1, 1, sheet.getLastRow(), 2).getValues();
   rows.forEach(row => {
@@ -195,9 +107,9 @@ function readMasterData(ss, slot) {
   return master;
 }
 
-function readHistoryData(ss, slot) {
+function readHistoryData(ss) {
   const history = [];
-  const sheet = oneappNexusFoundationSheet(ss, 'HISTORY', slot || oneappNexusFoundationActiveSlot(), false);
+  const sheet = ss.getSheetByName(SHEET_NAMES.HISTORY);
   if (!sheet || sheet.getLastRow() < 1) return history;
   const rows = sheet.getRange(1, 1, sheet.getLastRow(), 1).getValues();
   rows.forEach(row => {
@@ -267,92 +179,16 @@ function sha256Hex(text) {
   }).join('');
 }
 
-function oneappNexusGatewayCanonicalJson(value) {
-  if (value === null || value === undefined) return 'null';
-  if (Array.isArray(value)) return '[' + value.map(oneappNexusGatewayCanonicalJson).join(',') + ']';
-  if (typeof value === 'object') return '{' + Object.keys(value).sort().map(key => JSON.stringify(key) + ':' + oneappNexusGatewayCanonicalJson(value[key])).join(',') + '}';
-  return JSON.stringify(value);
-}
-
-function oneappNexusGatewayAudit(payload, boundary, access, result, code, credentialId) {
-  const request = payload && payload.nexusRequest || {};
-  console.info(JSON.stringify({
-    event: 'ONEAPP_NEXUS_GATEWAY_AUDIT', protocol: String(request.contractVersion || request.protocol || 'LEGACY_V1'),
-    requestId: String(request.requestId || ''), userId: String(request.subjectUserId || ''), loginId: String(request.subjectLoginId || ''),
-    appId: String(request.appId || ''), operationId: String(request.operationId || ''), action: String(payload && payload.action || ''),
-    actorId: ONEAPP_NEXUS_GATEWAY_ACTOR, boundary, access, credentialId: String(credentialId || ''), result,
-    safeError: String(code || '').replace(/[^A-Z0-9_]/g, '').slice(0, 100), at: new Date().toISOString()
-  }));
-}
-
-function oneappNexusLegacyUsageAudit(payload, boundary, access) {
-  const request = payload && payload.nexusRequest || {};
-  console.info(JSON.stringify({
-    event: 'ONEAPP_NEXUS_GATEWAY_AUDIT', protocol: 'LEGACY_V1', requestId: String(request.requestId || ''),
-    userId: String(request.subjectUserId || ''), loginId: String(request.subjectLoginId || ''), appId: '', operationId: '',
-    action: String(payload && payload.action || ''), actorId: String(payload && payload.actorId || ''), boundary, access,
-    credentialId: 'LEGACY', result: 'SUCCESS', safeError: '', at: new Date().toISOString()
-  }));
-}
-
-function oneappNexusGatewayRequire(payload, boundary, access) {
-  const normalizedBoundary = String(boundary || '').toUpperCase();
-  const normalizedAccess = String(access || '').toUpperCase();
-  const request = payload && payload.nexusRequest || {};
-  const protocol = String(request.contractVersion || request.protocol || '');
-  if (protocol !== 'NEXUS_AUTH_V2' && protocol !== 'LEGACY_V1') return null;
-  let credentialId = '';
-  try {
-    if (String(payload && payload.actorId || '') !== ONEAPP_NEXUS_GATEWAY_ACTOR) throw new Error('ONEAPP_NEXUS_GATEWAY_ACTOR_DENIED');
-    const propertyName = ONEAPP_NEXUS_GATEWAY_BINDING_PROPERTIES[normalizedBoundary];
-    if (!propertyName || !/^(READ|WRITE)$/.test(normalizedAccess)) throw new Error('ONEAPP_NEXUS_GATEWAY_ROUTE_DENIED');
-    let bindings;
-    try { bindings = JSON.parse(String(PropertiesService.getScriptProperties().getProperty(propertyName) || '[]')); }
-    catch (_) { throw new Error('ONEAPP_NEXUS_GATEWAY_BINDINGS_INVALID'); }
-    if (!Array.isArray(bindings) || !bindings.length) throw new Error('ONEAPP_NEXUS_GATEWAY_NOT_CONFIGURED');
-    const suppliedToken = String(payload && payload.token || '');
-    if (!suppliedToken) throw new Error('ONEAPP_NEXUS_GATEWAY_ACCESS_DENIED');
-    const suppliedDigest = sha256Hex(suppliedToken);
-    const binding = bindings.find(row => row && /^[a-f0-9]{64}$/.test(String(row.tokenDigest || '')) && constantTimeTextEquals(String(row.tokenDigest), suppliedDigest));
-    if (!binding) throw new Error('ONEAPP_NEXUS_GATEWAY_ACCESS_DENIED');
-    credentialId = String(binding.credentialId || '');
-    const requiredFields = ['credentialId', 'version', 'tokenDigest', 'actorId', 'roleIds', 'allowedScope', 'status', 'createdAt', 'activatedAt', 'retiredAt'];
-    if (requiredFields.some(key => !Object.prototype.hasOwnProperty.call(binding, key))) throw new Error('ONEAPP_NEXUS_GATEWAY_BINDING_SCHEMA_INVALID');
-    const status = String(binding.status || '').toUpperCase();
-    if (!credentialId || String(binding.version || '') !== 'V2' || binding.actorId !== ONEAPP_NEXUS_GATEWAY_ACTOR || !['ACTIVE', 'RETIRING', 'RETIRED'].includes(status)) throw new Error('ONEAPP_NEXUS_GATEWAY_BINDING_DENIED');
-    const retiringUntil = Date.parse(binding.retiredAt || '');
-    if (Number.isNaN(Date.parse(binding.createdAt)) || Number.isNaN(Date.parse(binding.activatedAt))
-        || (status !== 'ACTIVE' && Number.isNaN(retiringUntil))) throw new Error('ONEAPP_NEXUS_GATEWAY_BINDING_TIME_INVALID');
-    if (status === 'RETIRED' || (status === 'RETIRING' && retiringUntil <= Date.now())) throw new Error('ONEAPP_NEXUS_GATEWAY_BINDING_RETIRED');
-    const roles = Array.isArray(binding.roleIds) ? binding.roleIds.map(value => String(value || '').toUpperCase()) : [];
-    const requiredRole = `${normalizedBoundary}_${normalizedAccess}`;
-    const writeImpliesRead = normalizedAccess === 'READ' && roles.includes(`${normalizedBoundary}_WRITE`);
-    if (!roles.includes(requiredRole) && !writeImpliesRead) throw new Error('ONEAPP_NEXUS_GATEWAY_ROLE_DENIED');
-    const allowedScope = binding.allowedScope && typeof binding.allowedScope === 'object' ? binding.allowedScope : {};
-    const requestedScope = payload && payload.scope && typeof payload.scope === 'object' ? payload.scope : {};
-    if (!String(allowedScope.companyId || '') || oneappNexusGatewayCanonicalJson(allowedScope) !== oneappNexusGatewayCanonicalJson(requestedScope)) throw new Error('ONEAPP_NEXUS_GATEWAY_SCOPE_DENIED');
-    oneappNexusGatewayAudit(payload, normalizedBoundary, normalizedAccess, 'SUCCESS', '', credentialId);
-    return { actorId: ONEAPP_NEXUS_GATEWAY_ACTOR, roleIds: roles, tokenDigest: suppliedDigest, allowedScope,
-      scopeDigest: sha256Hex(oneappNexusGatewayCanonicalJson(allowedScope)), deviceId: 'NEXUS_GATEWAY', environment: 'PRODUCTION', credentialId };
-  } catch (error) {
-    oneappNexusGatewayAudit(payload, normalizedBoundary, normalizedAccess, 'DENIED', error && error.message, credentialId);
-    throw error;
-  }
-}
-
-function requireShippingPlanAccess(payload, access) {
-  if (oneappNexusGatewayRequire(payload, 'SHIPPING', access || 'READ')) return;
+function requireShippingPlanAccess(payload) {
   const configuredToken = String(PropertiesService.getScriptProperties().getProperty(SHIPPING_PLAN_ACCESS_TOKEN_PROPERTY) || '');
   if (!configuredToken) throw new Error('SHIPPING_PLAN_ACCESS_NOT_CONFIGURED');
   const suppliedToken = String((payload && payload.token) || '');
   if (!suppliedToken || !constantTimeTextEquals(configuredToken, suppliedToken)) {
     throw new Error('SHIPPING_PLAN_ACCESS_DENIED');
   }
-  oneappNexusLegacyUsageAudit(payload, 'SHIPPING', access || 'READ');
 }
 
-function requireOrderQAccess(payload, access) {
-  if (oneappNexusGatewayRequire(payload, 'ORDERQ', access || 'READ')) return;
+function requireOrderQAccess(payload) {
   const properties = PropertiesService.getScriptProperties();
   const configuredToken = String(
     properties.getProperty(ORDERQ_ACCESS_TOKEN_PROPERTY)
@@ -364,7 +200,6 @@ function requireOrderQAccess(payload, access) {
   if (!suppliedToken || !constantTimeTextEquals(configuredToken, suppliedToken)) {
     throw new Error('ORDERQ_ACCESS_DENIED');
   }
-  oneappNexusLegacyUsageAudit(payload, 'ORDERQ', access || 'READ');
 }
 
 function buildShippingPlanId(basisDate, sourceFingerprint) {
@@ -403,14 +238,11 @@ function countShippingPlanRows(canonical) {
 }
 
 function countShippingPurchaseUploadRows(workspace) {
-  return (Array.isArray(workspace && workspace.purchaseManagement) ? workspace.purchaseManagement : []).filter(row => {
-    if (!row || row.rowType === 'reference' || row.purchase === '대체' || row.purchase === '소분') return false;
-    const hasOverride = typeof row.purchaseQuantityOverride === 'number' &&
-      Number.isFinite(row.purchaseQuantityOverride) && row.purchaseQuantityOverride >= 0;
-    const purchaseNeed = hasOverride ? row.purchaseQuantityOverride : row.purchaseNeed;
-    return (hasOverride || row.inventoryMatched === true) &&
-      typeof purchaseNeed === 'number' && Number.isFinite(purchaseNeed) && purchaseNeed > 0;
-  }).length;
+  return (Array.isArray(workspace && workspace.purchaseManagement) ? workspace.purchaseManagement : []).filter(row =>
+    row && row.rowType !== 'reference' && row.inventoryMatched === true &&
+    typeof row.purchaseNeed === 'number' && Number.isFinite(row.purchaseNeed) && row.purchaseNeed > 0 &&
+    row.purchase !== '대체' && row.purchase !== '소분'
+  ).length;
 }
 
 function validateShippingPlanEnvelope(snapshot) {
@@ -706,6 +538,7 @@ function validateDataOpsSnapshotEnvelope(snapshot) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(basisDate) || Number.isNaN(basisTime) || new Date(basisTime).toISOString().slice(0, 10) !== basisDate) {
     throw new Error('DATAOPS_BASIS_DATE_INVALID');
   }
+  if (!snapshot.savedAt || Number.isNaN(new Date(snapshot.savedAt).getTime())) throw new Error('DATAOPS_SAVED_AT_INVALID');
   if (String(snapshot.hashAlgorithm || '').toUpperCase() !== 'SHA-256') throw new Error('DATAOPS_HASH_ALGORITHM_INVALID');
   const canonicalJson = String(snapshot.canonicalJson || '');
   if (!canonicalJson) throw new Error('DATAOPS_CANONICAL_JSON_REQUIRED');
@@ -751,7 +584,7 @@ function validateDataOpsSnapshotEnvelope(snapshot) {
     schemaVersion: DATAOPS_SNAPSHOT_FORMAT,
     revision: expectedRevision,
     basisDate: snapshot.basisDate,
-    savedAt: snapshot.savedAt || '',
+    savedAt: snapshot.savedAt,
     hashAlgorithm: 'SHA-256',
     hash: actualHash,
     rowCount,
@@ -759,23 +592,6 @@ function validateDataOpsSnapshotEnvelope(snapshot) {
     canonicalJson,
     canonical
   };
-}
-
-function oneappNexusRejectDataOpsSnapshotImmutableFields(snapshot) {
-  const immutable = new Set(['savedAt', 'revision', '전산잔량', '로스']);
-  const inspect = value => {
-    if (Array.isArray(value)) {
-      value.forEach(inspect);
-      return;
-    }
-    if (!value || typeof value !== 'object') return;
-    Object.keys(value).forEach(key => {
-      if (immutable.has(key)) throw new Error('IMMUTABLE_FIELD');
-      inspect(value[key]);
-    });
-  };
-  inspect(snapshot);
-  return true;
 }
 
 function writeDataOpsSnapshotSlot(sheet, validated) {
@@ -815,18 +631,7 @@ function readDataOpsSnapshotSlot(sheet) {
 }
 
 function commitDataOpsSnapshot(ss, snapshot) {
-  oneappNexusRejectDataOpsSnapshotImmutableFields(snapshot);
   const validated = validateDataOpsSnapshotEnvelope(snapshot);
-  // 동일한 로컬 미전송 작업을 재시도해도 원장 포인터를 다시 뒤집거나 새 revision을 만들지 않는다.
-  try {
-    const current = readCurrentDataOpsSnapshot(ss);
-    if (current && current.hash === validated.hash && current.basisDate === validated.basisDate
-      && Number(current.rowCount) === validated.rowCount && Number(current.cellCount) === validated.cellCount) {
-      return { ...current, duplicate: true };
-    }
-  } catch (ignored) {
-    // 기존 슬롯이 불완전하면 아래 staging 검증 경로로 정상 복구한다.
-  }
   // 저장시각은 클라이언트 시각이 아니라 확정 commit을 수행한 서버 시각으로 고정한다.
   validated.savedAt = new Date().toISOString();
   const properties = PropertiesService.getScriptProperties();
@@ -862,71 +667,6 @@ function readCurrentDataOpsSnapshot(ss) {
   };
 }
 
-function oneappNexusSheetSnapshot(sheet) {
-  if (!sheet || sheet.getLastRow() < 1 || sheet.getLastColumn() < 1) return [];
-  return sheet.getRange(1, 1, sheet.getLastRow(), sheet.getLastColumn()).getValues();
-}
-
-function oneappNexusRestoreSheet(sheet, values) {
-  sheet.clearContents();
-  if (Array.isArray(values) && values.length && values[0].length) sheet.getRange(1, 1, values.length, values[0].length).setValues(values);
-}
-
-function oneappNexusFoundationReplaceAll(ss, payload) {
-  const transactionId = String(payload.transactionId || '');
-  if (!/^NXTX-[0-9a-f-]{36}$/i.test(transactionId)) throw new Error('ONEAPP_NEXUS_TRANSACTION_ID_INVALID');
-  const masterInput = payload.master && typeof payload.master === 'object' ? payload.master : {};
-  const masterRows = (Array.isArray(masterInput) ? masterInput : Object.values(masterInput))
-    .filter(item => item && (item.코드 || item.품목코드))
-    .map(item => [String(item.코드 || item.품목코드), JSON.stringify(item)]);
-  if (new Set(masterRows.map(row => row[0])).size !== masterRows.length) throw new Error('ONEAPP_NEXUS_MASTER_DUPLICATE_CODE');
-  const historyRows = (Array.isArray(payload.history) ? payload.history : []).map(item => [JSON.stringify(item)]);
-  const activeSlot = oneappNexusFoundationActiveSlot();
-  const stagingSlot = activeSlot === 'A' ? 'B' : 'A';
-  const masterSheet = oneappNexusFoundationSheet(ss, 'MASTER', stagingSlot);
-  const historySheet = oneappNexusFoundationSheet(ss, 'HISTORY', stagingSlot);
-  const configSheet = oneappNexusFoundationSheet(ss, 'CONFIG', stagingSlot);
-  const activeConfigSheet = oneappNexusFoundationSheet(ss, 'CONFIG', activeSlot, false);
-  const configData = Object.prototype.hasOwnProperty.call(payload, 'config')
-    ? (payload.config || {}) : loadConfigData(activeConfigSheet);
-  try {
-    masterSheet.clearContents();
-    historySheet.clearContents();
-    configSheet.clearContents();
-    for (let offset = 0; offset < masterRows.length; offset += 500) {
-      const chunk = masterRows.slice(offset, offset + 500);
-      if (chunk.length) masterSheet.getRange(offset + 1, 1, chunk.length, 2).setValues(chunk);
-    }
-    for (let offset = 0; offset < historyRows.length; offset += 500) {
-      const chunk = historyRows.slice(offset, offset + 500);
-      if (chunk.length) historySheet.getRange(offset + 1, 1, chunk.length, 1).setValues(chunk);
-    }
-    saveConfigData(configSheet, configData);
-    const verifiedMaster = readMasterData(ss, stagingSlot);
-    const verifiedHistory = readHistoryData(ss, stagingSlot);
-    loadConfigData(configSheet);
-    if (Object.keys(verifiedMaster).length !== masterRows.length || verifiedHistory.length !== historyRows.length) throw new Error('ONEAPP_NEXUS_REPLACE_VERIFY_FAILED');
-    PropertiesService.getScriptProperties().setProperty(FOUNDATION_LEGACY_STAGING_SLOT_PROPERTY, '');
-    oneappNexusFoundationActivate(stagingSlot);
-    return { transactionId, status: 'ACTIVATED', activeSlot: stagingSlot, masterCount: masterRows.length, historyCount: historyRows.length, activatedAt: new Date().toISOString() };
-  } catch (error) {
-    throw new Error(/^ONEAPP_NEXUS_/.test(String(error && error.message || '')) ? error.message : 'ONEAPP_NEXUS_REPLACE_STAGING_FAILED');
-  }
-}
-
-function oneappNexusFoundationHistory(ss, payload) {
-  const limit = Math.max(1, Math.min(5000, Number(payload.limit || 5000)));
-  const code = String(payload.code || '');
-  const field = String(payload.field || '');
-  const cutoff = Date.now() - Math.max(1, Math.min(3650, Number(payload.days || 365))) * 86400000;
-  return readHistoryData(ss).filter(item => {
-    if (code && String(item.code || item.코드 || item.productCode || item.품목코드 || '') !== code) return false;
-    if (field && String(item.field || item.path || item.column || '') !== field) return false;
-    const at = Date.parse(item.timestamp || item.at || item.createdAt || '');
-    return !at || at >= cutoff;
-  }).slice(-limit);
-}
-
 // [POST] 클라이언트 데이터 수신
 function doPost(e) {
   try {
@@ -935,231 +675,29 @@ function doPost(e) {
     const action = String(payload.action || '');
     const ss = SpreadsheetApp.getActiveSpreadsheet();
 
-    if (/^(full|master_only|config_only)$/.test(action)) {
-      if (!oneappNexusGatewayRequire(payload, 'FOUNDATION', 'READ')) throw new Error('ONEAPP_NEXUS_GATEWAY_ACCESS_DENIED');
-      if (action === 'config_only') {
-        return jsonResponse({ status: 'success', action, data: normalizeConfigResult(oneappNexusFoundationConfig(ss)) });
-      }
-      if (action === 'master_only') {
-        const master = readMasterData(ss);
-        return jsonResponse({ status: 'success', action, data: { master, summary: { masterCount: Object.keys(master).length } } });
-      }
-      const master = readMasterData(ss);
-      const history = readHistoryData(ss);
-      return jsonResponse({ status: 'success', action, data: { master, history, ...normalizeConfigResult(oneappNexusFoundationConfig(ss)) } });
-    }
-
-    if (action === 'nexus_gateway_foundation_full_get') {
-      if (!oneappNexusGatewayRequire(payload, 'FOUNDATION', 'READ')) throw new Error('ONEAPP_NEXUS_GATEWAY_ACCESS_DENIED');
-      const config = normalizeConfigResult(oneappNexusFoundationConfig(ss));
-      return jsonResponse({ status: 'success', action, data: { master: readMasterData(ss), history: readHistoryData(ss), ...config } });
-    }
-    if (action === 'nexus_gateway_foundation_master_get') {
-      if (!oneappNexusGatewayRequire(payload, 'FOUNDATION', 'READ')) throw new Error('ONEAPP_NEXUS_GATEWAY_ACCESS_DENIED');
-      const master = readMasterData(ss);
-      return jsonResponse({ status: 'success', action, data: { master, summary: { masterCount: Object.keys(master).length } } });
-    }
-    if (action === 'nexus_gateway_foundation_config_get') {
-      if (!oneappNexusGatewayRequire(payload, 'FOUNDATION', 'READ')) throw new Error('ONEAPP_NEXUS_GATEWAY_ACCESS_DENIED');
-      return jsonResponse({ status: 'success', action, data: normalizeConfigResult(oneappNexusFoundationConfig(ss)) });
-    }
-    if (action === 'nexus_gateway_foundation_history_get') {
-      if (!oneappNexusGatewayRequire(payload, 'FOUNDATION', 'READ')) throw new Error('ONEAPP_NEXUS_GATEWAY_ACCESS_DENIED');
-      const history = oneappNexusFoundationHistory(ss, payload);
-      return jsonResponse({ status: 'success', action, data: { history, summary: { historyCount: history.length } } });
-    }
-    if (action === 'nexus_gateway_foundation_metadata_get') {
-      const foundationAuth = oneappNexusGatewayRequire(payload, 'FOUNDATION', 'READ');
-      return withScriptLock(() => jsonResponse({
-        status: 'success',
-        action,
-        data: foundationMetadataRead(ss, payload, foundationAuth)
-      }));
-    }
-    if (action === 'nexus_gateway_foundation_metadata_write') {
-      const foundationAuth = oneappNexusGatewayRequire(payload, 'FOUNDATION', 'WRITE');
-      return withScriptLock(() => jsonResponse({
-        status: 'success',
-        action,
-        data: foundationMetadataWrite(ss, payload, foundationAuth)
-      }));
-    }
-    if (action === 'nexus_gateway_foundation_backup_head_read') {
-      const foundationAuth = oneappNexusGatewayRequire(payload, 'FOUNDATION', 'READ');
-      return withScriptLock(() => jsonResponse({ status: 'success', action, data: foundationBackupHeadRead(ss, payload, foundationAuth) }));
-    }
-    if (action === 'nexus_gateway_foundation_backup_product_write') {
-      const foundationAuth = oneappNexusGatewayRequire(payload, 'FOUNDATION', 'WRITE');
-      return withScriptLock(() => jsonResponse({ status: 'success', action, data: foundationBackupWrite(ss, payload, foundationAuth, 'PRODUCT_SNAPSHOT') }));
-    }
-    if (action === 'nexus_gateway_foundation_backup_customer_events_write') {
-      const foundationAuth = oneappNexusGatewayRequire(payload, 'FOUNDATION', 'WRITE');
-      return withScriptLock(() => jsonResponse({ status: 'success', action, data: foundationBackupWrite(ss, payload, foundationAuth, 'CUSTOMER_EVENTS') }));
-    }
-    if (action === 'nexus_gateway_foundation_backup_customer_snapshot_write') {
-      const foundationAuth = oneappNexusGatewayRequire(payload, 'FOUNDATION', 'WRITE');
-      return withScriptLock(() => jsonResponse({ status: 'success', action, data: foundationBackupWrite(ss, payload, foundationAuth, 'CUSTOMER_SNAPSHOT') }));
-    }
-    if (action === 'nexus_gateway_foundation_backup_version_list') {
-      const foundationAuth = oneappNexusGatewayRequire(payload, 'FOUNDATION', 'READ');
-      return withScriptLock(() => jsonResponse({ status: 'success', action, data: foundationBackupVersionList(ss, payload, foundationAuth) }));
-    }
-    if (action === 'nexus_gateway_foundation_backup_version_read') {
-      const foundationAuth = oneappNexusGatewayRequire(payload, 'FOUNDATION', 'READ');
-      return withScriptLock(() => jsonResponse({ status: 'success', action, data: foundationBackupVersionRead(ss, payload, foundationAuth) }));
-    }
-    if (action === 'nexus_gateway_foundation_backup_restore_audit_write') {
-      const foundationAuth = oneappNexusGatewayRequire(payload, 'FOUNDATION', 'WRITE');
-      return withScriptLock(() => jsonResponse({ status: 'success', action, data: foundationBackupRestoreAuditWrite(ss, payload, foundationAuth) }));
-    }
-    if (action === 'nexus_gateway_foundation_device_status_read') {
-      const foundationAuth = oneappNexusGatewayRequire(payload, 'FOUNDATION', 'READ');
-      return withScriptLock(() => jsonResponse({ status: 'success', action, data: foundationBackupDeviceStatus(ss, payload, foundationAuth) }));
-    }
-    if (action === 'nexus_gateway_foundation_device_register') {
-      const foundationAuth = oneappNexusGatewayRequire(payload, 'FOUNDATION', 'WRITE');
-      return withScriptLock(() => jsonResponse({ status: 'success', action, data: foundationBackupDeviceRegister(ss, payload, foundationAuth) }));
-    }
-    if (action === 'nexus_gateway_foundation_device_promote') {
-      const foundationAuth = oneappNexusGatewayRequire(payload, 'FOUNDATION', 'WRITE');
-      if (!foundationAuth || !foundationAuth.roleIds.includes('FOUNDATION_WRITE')) throw new Error('ONEAPP_NEXUS_GATEWAY_ROLE_DENIED');
-      return withScriptLock(() => jsonResponse({ status: 'success', action, data: foundationBackupDevicePromote(ss, payload, foundationAuth) }));
-    }
-    if (action === 'nexus_gateway_foundation_config_write') {
-      if (!oneappNexusGatewayRequire(payload, 'FOUNDATION', 'WRITE')) throw new Error('ONEAPP_NEXUS_GATEWAY_ACCESS_DENIED');
-      return withScriptLock(() => jsonResponse({ status: 'success', action, data: saveConfigData(oneappNexusFoundationSheet(ss, 'CONFIG', oneappNexusFoundationActiveSlot()), payload.data || {}) }));
-    }
-    if (action === 'nexus_gateway_foundation_replace_all') {
-      const foundationAuth = oneappNexusGatewayRequire(payload, 'FOUNDATION', 'WRITE');
-      if (!foundationAuth || !foundationAuth.roleIds.includes('FOUNDATION_REPLACE')) throw new Error('ONEAPP_NEXUS_GATEWAY_ROLE_DENIED');
-      return withScriptLock(() => jsonResponse({ status: 'success', action, data: oneappNexusFoundationReplaceAll(ss, payload) }));
-    }
-
-    if (action === 'nexus_gateway_company_public_profile_get') {
-      oneappNexusGatewayRequire(payload, 'FOUNDATION', 'READ');
-      return jsonResponse({ status: 'success', action, data: companyProfilePublicGet(ss, payload) });
-    }
-    if (action === 'nexus_gateway_company_profile_get') {
-      const companyAuth = oneappNexusGatewayRequire(payload, 'FOUNDATION', 'READ');
-      return withScriptLock(() => jsonResponse({ status: 'success', action, data: companyProfileGet(ss, payload, companyAuth) }));
-    }
-    if (action === 'nexus_gateway_company_profile_write') {
-      const companyAuth = oneappNexusGatewayRequire(payload, 'FOUNDATION', 'WRITE');
-      return withScriptLock(() => jsonResponse({ status: 'success', action, data: companyProfileWrite(ss, payload, companyAuth) }));
-    }
-    if (action === 'nexus_gateway_company_accounting_period_get') {
-      const companyAuth = oneappNexusGatewayRequire(payload, 'FOUNDATION', 'READ');
-      return withScriptLock(() => jsonResponse({ status: 'success', action, data: companyProfileAccountingRead(ss, payload, companyAuth) }));
-    }
-    if (action === 'nexus_gateway_company_accounting_period_write') {
-      const companyAuth = oneappNexusGatewayRequire(payload, 'FOUNDATION', 'WRITE');
-      return withScriptLock(() => jsonResponse({ status: 'success', action, data: companyProfileAccountingWrite(ss, payload, companyAuth) }));
-    }
-    if (action === 'nexus_gateway_company_certificate_extract') {
-      const companyAuth = oneappNexusGatewayRequire(payload, 'FOUNDATION', 'READ');
-      return jsonResponse({ status: 'success', action, data: companyProfileCertificateExtract(payload, companyAuth) });
-    }
-    if (action === 'nexus_gateway_company_backup_create') {
-      const companyAuth = oneappNexusGatewayRequire(payload, 'FOUNDATION', 'WRITE');
-      return withScriptLock(() => jsonResponse({ status: 'success', action, data: companyProfileBackupCreate(ss, payload, companyAuth) }));
-    }
-    if (action === 'nexus_gateway_company_migrate_oneapp') {
-      const companyAuth = oneappNexusGatewayRequire(payload, 'FOUNDATION', 'WRITE');
-      return withScriptLock(() => jsonResponse({ status: 'success', action, data: companyProfileMigrateOneapp(ss, payload, companyAuth) }));
-    }
-
-    if (action === 'orderq_customer_reset_preview') {
-      requireOrderQAccess(payload, 'READ');
-      return withScriptLock(() => jsonResponse({ status: 'success', action, data: {
-        schemaVersion: ORDERQ_SYNC_SCHEMA,
-        spreadsheet: { id: ss.getId(), name: ss.getName() },
-        plan: orderQCustomerResetPlan(ss)
-      } }));
-    }
-
-    if (action === 'orderq_customer_reset_execute') {
-      requireOrderQAccess(payload, 'WRITE');
-      return withScriptLock(() => jsonResponse({ status: 'success', action, data: orderQCustomerMasterReset(ss, payload) }));
-    }
-
-    if (action === 'orderq_customer_master_push') {
-      requireOrderQAccess(payload, 'WRITE');
-      return withScriptLock(() => jsonResponse({ status: 'success', action, data: orderQCustomerMasterPush(ss, payload) }));
-    }
-
-    if (action === 'orderq_customer_master_pull') {
-      requireOrderQAccess(payload, 'READ');
-      return withScriptLock(() => jsonResponse({ status: 'success', action, data: orderQCustomerMasterPull(ss, payload) }));
-    }
-
     if (action === 'orderq_sync_push') {
-      requireOrderQAccess(payload, 'WRITE');
+      requireOrderQAccess(payload);
       return withScriptLock(() => jsonResponse({
         status: 'success', action, data: orderQSyncPush(ss, payload)
       }));
     }
 
     if (action === 'orderq_sync_pull') {
-      requireOrderQAccess(payload, 'READ');
+      requireOrderQAccess(payload);
       return withScriptLock(() => jsonResponse({
         status: 'success', action, data: orderQSyncPull(ss, payload)
       }));
     }
 
     if (action === 'orderq_order_head') {
-      requireOrderQAccess(payload, 'READ');
+      requireOrderQAccess(payload);
       return withScriptLock(() => jsonResponse({
         status: 'success', action, data: orderQOrderHead(ss, payload)
       }));
     }
 
-    if (action === 'orderq_m9_ping') {
-      requireOrderQAccess(payload, 'READ');
-      return withScriptLock(() => jsonResponse({ status: 'success', action, data: orderQM9Ping(ss, payload) }));
-    }
-
-    if (action === 'orderq_m9_migrate') {
-      requireOrderQAccess(payload, 'WRITE');
-      return withScriptLock(() => jsonResponse({ status: 'success', action, data: orderQM9Migrate(ss, payload) }));
-    }
-
-    if (action === 'orderq_m9_command_prepare') {
-      requireOrderQAccess(payload, 'WRITE');
-      return withScriptLock(() => jsonResponse({ status: 'success', action, data: orderQM9Prepare(ss, payload) }));
-    }
-
-    if (action === 'orderq_m9_command_commit') {
-      requireOrderQAccess(payload, 'WRITE');
-      return withScriptLock(() => jsonResponse({ status: 'success', action, data: orderQM9Commit(ss, payload) }));
-    }
-
-    if (action === 'orderq_m9_command_abort') {
-      requireOrderQAccess(payload, 'WRITE');
-      return withScriptLock(() => jsonResponse({ status: 'success', action, data: orderQM9Abort(ss, payload) }));
-    }
-
-    if (action === 'orderq_m9_pull') {
-      requireOrderQAccess(payload, 'READ');
-      return withScriptLock(() => jsonResponse({ status: 'success', action, data: orderQM9Pull(ss, payload) }));
-    }
-
-    if (action === 'situation_orderq_begin') {
-      requireOrderQAccess(payload, 'READ');
-      return withScriptLock(() => jsonResponse({ status:'success', action, data:orderQM9SituationBegin(ss,payload) }));
-    }
-
-    if (action === 'situation_orderq_page') {
-      requireOrderQAccess(payload, 'READ');
-      return withScriptLock(() => jsonResponse({ status:'success', action, data:orderQM9SituationPage(ss,payload) }));
-    }
-
-    if (action === 'situation_orderq_head') {
-      requireOrderQAccess(payload, 'READ');
-      return withScriptLock(() => jsonResponse({ status:'success', action, data:orderQM9SituationHead(ss,payload) }));
-    }
-
     if (action === 'shipping_plan_save') {
-      requireShippingPlanAccess(payload, 'WRITE');
+      requireShippingPlanAccess(payload);
       return withScriptLock(() => {
         const validated = validateShippingPlanEnvelope(payload.snapshot);
         const saved = appendShippingPlanRevision(ss, validated);
@@ -1168,7 +706,7 @@ function doPost(e) {
     }
 
     if (action === 'shipping_plan_list') {
-      requireShippingPlanAccess(payload, 'READ');
+      requireShippingPlanAccess(payload);
       return withScriptLock(() => jsonResponse({
         status: 'success',
         action,
@@ -1177,37 +715,11 @@ function doPost(e) {
     }
 
     if (action === 'shipping_plan_get') {
-      requireShippingPlanAccess(payload, 'READ');
+      requireShippingPlanAccess(payload);
       return withScriptLock(() => jsonResponse({
         status: 'success',
         action,
         data: getShippingPlanRevision(ss, payload)
-      }));
-    }
-
-    if (payload.nexusRequest && payload.nexusRequest.contractVersion === 'NEXUS_AUTH_V2' && (/^dataops_/.test(action) || /^situation_dataops_/.test(action))) {
-      const dataOpsAccess = /(_commit|_publish|_prepare|_write_chunks|_abort)$/.test(action) ? 'WRITE' : 'READ';
-      oneappNexusGatewayRequire(payload, 'DATAOPS', dataOpsAccess);
-    } else if (/^dataops_/.test(action) || /^situation_dataops_/.test(action)) {
-      oneappNexusLegacyUsageAudit(payload, 'DATAOPS', /(_commit|_publish|_prepare|_write_chunks|_abort)$/.test(action) ? 'WRITE' : 'READ');
-    }
-
-    if (/^dataops_close_(ping|context|seal|prepare|write_chunks|commit|abort)$/.test(action)) {
-      return withScriptLock(() => jsonResponse({ status:'success', action, data:dataOpsCloseHandleAction(ss,action,payload) }));
-    }
-
-    if (action === 'dataops_v1_security_ping') {
-      return jsonResponse({ status:'success', action, data:dataOpsV1SecurityCapability(PropertiesService.getScriptProperties()) });
-    }
-
-    typeof dataOpsV1PreflightAction !== 'undefined'
-      && dataOpsV1PreflightAction(action,payload,PropertiesService.getScriptProperties());
-
-    if (/^situation_dataops_(ping|publish|begin|page|head)$/.test(action)) {
-      return withScriptLock(() => jsonResponse({
-        status: 'success',
-        action,
-        data: dataOpsSituationHandleAction(ss, action, payload)
       }));
     }
 
@@ -1224,8 +736,7 @@ function doPost(e) {
             savedAt: saved.savedAt,
             hash: saved.hash,
             rowCount: saved.rowCount,
-            cellCount: saved.cellCount,
-            duplicate: Boolean(saved.duplicate)
+            cellCount: saved.cellCount
           }
         });
       });
@@ -1239,22 +750,16 @@ function doPost(e) {
     }
 
     if (action === 'initSync') {
-      const legacyFoundationAuth = oneappNexusGatewayRequire(payload, 'FOUNDATION', 'WRITE');
-      if (!legacyFoundationAuth || !legacyFoundationAuth.roleIds.includes('FOUNDATION_REPLACE')) throw new Error('ONEAPP_NEXUS_GATEWAY_ROLE_DENIED');
-      oneappNexusLegacyUsageAudit(payload, 'FOUNDATION', 'WRITE');
       return withScriptLock(() => {
-        const stagingSlot = oneappNexusFoundationBeginLegacyStage(ss);
-        return jsonResponse({ status: 'success', action, data: { stagingSlot } });
+        getOrCreateSheet(ss, SHEET_NAMES.MASTER).clearContents();
+        getOrCreateSheet(ss, SHEET_NAMES.HISTORY).clearContents();
+        return jsonResponse({ status: 'success', action });
       });
     }
 
     if (action === 'chunk_master') {
-      const legacyFoundationAuth = oneappNexusGatewayRequire(payload, 'FOUNDATION', 'WRITE');
-      if (!legacyFoundationAuth || !legacyFoundationAuth.roleIds.includes('FOUNDATION_REPLACE')) throw new Error('ONEAPP_NEXUS_GATEWAY_ROLE_DENIED');
-      oneappNexusLegacyUsageAudit(payload, 'FOUNDATION', 'WRITE');
       return withScriptLock(() => {
-        const stagingSlot = oneappNexusFoundationRequireLegacyStage();
-        const sheet = oneappNexusFoundationSheet(ss, 'MASTER', stagingSlot);
+        const sheet = getOrCreateSheet(ss, SHEET_NAMES.MASTER);
         const data = Array.isArray(payload.data) ? payload.data : [];
         if (data.length > 0) {
           const rows = data
@@ -1267,12 +772,8 @@ function doPost(e) {
     }
 
     if (action === 'chunk_history') {
-      const legacyFoundationAuth = oneappNexusGatewayRequire(payload, 'FOUNDATION', 'WRITE');
-      if (!legacyFoundationAuth || !legacyFoundationAuth.roleIds.includes('FOUNDATION_REPLACE')) throw new Error('ONEAPP_NEXUS_GATEWAY_ROLE_DENIED');
-      oneappNexusLegacyUsageAudit(payload, 'FOUNDATION', 'WRITE');
       return withScriptLock(() => {
-        const stagingSlot = oneappNexusFoundationRequireLegacyStage();
-        const sheet = oneappNexusFoundationSheet(ss, 'HISTORY', stagingSlot);
+        const sheet = getOrCreateSheet(ss, SHEET_NAMES.HISTORY);
         const data = Array.isArray(payload.data) ? payload.data : [];
         if (data.length > 0) {
           const rows = data.map(log => [JSON.stringify(log)]);
@@ -1283,15 +784,8 @@ function doPost(e) {
     }
 
     if (action === 'config') {
-      if (!oneappNexusGatewayRequire(payload, 'FOUNDATION', 'WRITE')) throw new Error('ONEAPP_NEXUS_GATEWAY_ACCESS_DENIED');
-      oneappNexusLegacyUsageAudit(payload, 'FOUNDATION', 'WRITE');
       return withScriptLock(() => {
-        const stage = oneappNexusFoundationLegacyStageState();
-        if (stage) {
-          const summary = oneappNexusFoundationFinalizeLegacyStage(ss, payload.data || {});
-          return jsonResponse({ status: 'success', action, summary });
-        }
-        const sheet = oneappNexusFoundationSheet(ss, 'CONFIG', oneappNexusFoundationActiveSlot());
+        const sheet = getOrCreateSheet(ss, SHEET_NAMES.CONFIG);
         const summary = saveConfigData(sheet, payload.data || {});
         return jsonResponse({ status: 'success', action, summary });
       });
@@ -1299,32 +793,44 @@ function doPost(e) {
 
     throw new Error('알 수 없는 Action입니다: ' + action);
   } catch (error) {
-    const response = { status: 'error', message: String(error && error.message ? error.message : error) };
-    if (Number.isFinite(Number(error && error.latestRevision))) response.latestRevision = Number(error.latestRevision);
-    return jsonResponse(response);
+    return jsonResponse({ status: 'error', message: String(error && error.message ? error.message : error) });
   }
 }
 
-// [GET] 공개 직접 조회는 금지한다. Foundation 조회는 NEXUS Gateway의 인증된 POST 경로만 사용한다.
-function doGet() {
-  return jsonResponse({ status: 'error', message: 'ONEAPP_NEXUS_GATEWAY_ACCESS_REQUIRED' });
-}
+// [GET] 클라이언트 데이터 전송
+function doGet(e) {
+  try {
+    const action = String((e && e.parameter && e.parameter.action) || 'full');
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const configSheet = ss.getSheetByName(SHEET_NAMES.CONFIG);
+    const configData = normalizeConfigResult(loadConfigData(configSheet));
 
-// Phase 2 compatibility guard: keep the frozen V1 snapshot implementation byte-identical while
-// extending the ONEAPP server boundary with the template-derived expected-balance field.
-function oneappNexusRejectDataOpsSnapshotImmutableFields(snapshot) {
-  const immutable = new Set(['savedAt', 'revision', '전산잔량', '예상잔량', '로스']);
-  const inspect = value => {
-    if (Array.isArray(value)) {
-      value.forEach(inspect);
-      return;
+    if (action === 'config_only') {
+      return jsonResponse({ status: 'success', data: configData });
     }
-    if (!value || typeof value !== 'object') return;
-    Object.keys(value).forEach(key => {
-      if (immutable.has(key)) throw new Error('IMMUTABLE_FIELD');
-      inspect(value[key]);
+
+    if (action === 'master_only') {
+      const master = readMasterData(ss);
+      return jsonResponse({
+        status: 'success',
+        data: {
+          master,
+          summary: { masterCount: Object.keys(master).length }
+        }
+      });
+    }
+
+    const master = readMasterData(ss);
+    const history = readHistoryData(ss);
+    return jsonResponse({
+      status: 'success',
+      data: {
+        master,
+        history,
+        ...configData
+      }
     });
-  };
-  inspect(snapshot);
-  return true;
+  } catch (error) {
+    return jsonResponse({ status: 'error', message: String(error && error.message ? error.message : error) });
+  }
 }

@@ -182,28 +182,6 @@ td input:focus, td select:focus { outline: none; background: #f0fdfa; border-col
 .cloud-card strong { display: block; margin-bottom: 8px; font-size: 12px; }
 .meta-lines { display: flex; flex-direction: column; gap: 5px; font-size: 11px; color: var(--muted); }
 
-.business-flow { display: grid; grid-template-columns: minmax(220px, 1fr) minmax(460px, 2.2fr) auto; gap: 14px; align-items: center; padding: 12px 14px; border-bottom: 1px solid #bfdbfe; background: linear-gradient(90deg, #eff6ff, #f8fafc); }
-.business-flow-copy { display: grid; gap: 2px; min-width: 0; }
-.business-flow-copy > span { color: #2563eb; font-size: 10px; font-weight: 900; letter-spacing: .08em; }
-.business-flow-copy > strong { color: #0f172a; font-size: 14px; }
-.business-flow-copy > small { color: #64748b; font-size: 10px; line-height: 1.45; }
-.business-flow-steps { display: grid; grid-template-columns: repeat(6, minmax(72px, 1fr)); gap: 4px; margin: 0; padding: 0; list-style: none; }
-.business-flow-steps li { position: relative; min-width: 0; }
-.business-flow-steps li:not(:last-child)::after { position: absolute; z-index: 0; top: 14px; right: -5px; width: 7px; height: 1px; background: #cbd5e1; content: ''; }
-.business-flow-steps a { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; color: #64748b; font-size: 9px; font-weight: 800; text-decoration: none; white-space: nowrap; }
-.business-flow-steps b { display: grid; width: 28px; height: 28px; place-items: center; border: 1px solid #cbd5e1; border-radius: 50%; background: white; color: #64748b; font-size: 10px; }
-.business-flow-steps .active b { border-color: #2563eb; background: #2563eb; color: white; box-shadow: 0 0 0 3px #dbeafe; }
-.business-flow-steps .active span { color: #1d4ed8; }
-.business-flow-actions { display: flex; align-items: center; gap: 7px; }
-.business-next { display: inline-flex; min-height: 36px; align-items: center; gap: 8px; padding: 0 12px; border-radius: 7px; background: #2563eb; color: white; font-size: 11px; font-weight: 900; text-decoration: none; white-space: nowrap; }
-.business-next:hover { background: #1d4ed8; }
-.admin-tools { position: relative; }
-.admin-tools > summary { min-height: 34px; padding: 0 10px; border: 1px solid #cbd5e1; border-radius: 7px; background: white; color: #475569; cursor: pointer; font-size: 10px; font-weight: 800; line-height: 34px; list-style: none; white-space: nowrap; }
-.admin-tools > summary::-webkit-details-marker { display: none; }
-.admin-tools-menu { position: absolute; z-index: 40; top: calc(100% + 5px); right: 0; display: grid; min-width: 170px; padding: 6px; border: 1px solid #cbd5e1; border-radius: 8px; background: white; box-shadow: 0 12px 28px #0f172a24; }
-.admin-tool-link { display: flex; min-height: 32px; align-items: center; padding: 0 9px; border: 0; border-radius: 5px; background: white; color: #334155; font-size: 10px; font-weight: 800; text-decoration: none; white-space: nowrap; }
-.admin-tool-link:hover { background: #eff6ff; color: #1d4ed8; }
-
 .operations-filters { padding-top: 9px; padding-bottom: 9px; }
 .operations-alerts { display: flex; gap: 8px; padding: 8px 14px; border-bottom: 1px solid var(--line); background: #f8fafc; }
 .operations-alerts span { padding: 4px 8px; border-radius: 6px; background: white; color: #475569; font-size: 11px; font-weight: 800; }
@@ -265,9 +243,6 @@ td input:focus, td select:focus { outline: none; background: #f0fdfa; border-col
 .manual-order-page #orderTable td:first-child { padding-left: 3px; padding-right: 3px; }
 .manual-order-page #orderTable input[data-role="select"] { width: 16px; min-height: 16px; height: 16px; margin: 0; vertical-align: middle; }
 @media (max-width: 900px) {
-  .business-flow { grid-template-columns: 1fr; }
-  .business-flow-steps { grid-template-columns: repeat(6, minmax(64px, 1fr)); overflow-x: auto; padding: 3px; }
-  .business-flow-actions { justify-content: flex-end; }
   .form-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }
   .manual-order-page .form-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .external-order-grid { grid-template-columns: repeat(3, minmax(0,1fr)); }
@@ -280,9 +255,6 @@ td input:focus, td select:focus { outline: none; background: #f0fdfa; border-col
   .inline-edit-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 600px) {
-  .business-flow-steps { grid-template-columns: repeat(6, 74px); justify-content: flex-start; }
-  .business-flow-actions { align-items: stretch; flex-direction: column; }
-  .business-next, .admin-tools > summary { justify-content: center; text-align: center; }
   .shell { width: calc(100% - 14px); margin-top: 7px; }
   .form-grid { grid-template-columns: 1fr; }
   .manual-order-page .form-grid { grid-template-columns: 1fr; }

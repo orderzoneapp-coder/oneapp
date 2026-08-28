@@ -1,5 +1,3 @@
-import { PRODUCT_LINE_CONTEXT, applyProductSelection } from '../product-line-common.js?v=0.8.0';
-
 export function matchParsedLine(parsedLine, candidates = []) {
   if (parsedLine.excluded) return { ...parsedLine, candidateProducts: candidates, matchStatus: 'EXCLUDED', matchSource: parsedLine.reason || 'EXCLUDED' };
   const best = candidates[0] || null;
@@ -15,13 +13,17 @@ export function matchParsedLine(parsedLine, candidates = []) {
       itemName: ''
     };
   }
-  return applyProductSelection(PRODUCT_LINE_CONTEXT.SMARTPARSER, {
+  return {
     ...parsedLine,
     candidateProducts: candidates,
-  }, best, {
+    matchStatus: 'MATCHED',
     matchSource: best.source,
+    confirmedProductId: best.productId,
+    productId: best.productId,
+    itemCode: best.itemCode,
+    itemName: best.itemName,
     specification: parsedLine.specText || best.specification || '',
-    rawUnit: parsedLine.rawUnit || ''
-  });
+    finalUnit: best.finalUnit || parsedLine.rawUnit || ''
+  };
 }
 

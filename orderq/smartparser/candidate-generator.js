@@ -1,7 +1,6 @@
-import { STORE, getAll, normalizeText } from '../orderq-db.js?v=0.8.0';
-import { loadProductCatalog } from '../product-master-search.js?v=0.8.0';
+import { STORE, getAll, normalizeText } from '../orderq-db.js?v=0.7.1';
 
-export function productTextSimilarity(left, right) {
+function similarity(left, right) {
   const a = normalizeText(left);
   const b = normalizeText(right);
   if (!a || !b) return 0;
@@ -31,104 +30,46 @@ function productShape(product = {}, mapping = {}) {
 }
 
 function mappingIsActive(mapping = {}) {
+  // v0.4 이전 매핑에는 status가 없으므로 최초 로드에서는 ACTIVE로 호환한다.
   return (mapping.status || 'ACTIVE') === 'ACTIVE';
 }
 
-function fuzzyMappingScore(kind, similarityScore, useCount = 0) {
-  const usageBonus = Math.min(10, Number(useCount || 0)) * 0.002;
-  if (kind === 'CUSTOMER') return Math.min(0.97, 0.80 + similarityScore * 0.18 + usageBonus);
-  if (kind === 'SOURCE') return Math.min(0.93, 0.74 + similarityScore * 0.18 + usageBonus);
-  return Math.min(0.90, 0.70 + similarityScore * 0.18 + usageBonus);
-}
-
-export async function loadCandidateContext({ readStore = getAll, loadCatalog = loadProductCatalog } = {}) {
-  const [mappings, catalog, orders, items] = await Promise.all([
-    readStore(STORE.PRODUCT_MAPPINGS),
-    loadCatalog(),
-    readStore(STORE.ORDERS),
-    readStore(STORE.ORDER_ITEMS)
-  ]);
-  const products = Array.isArray(catalog) ? catalog : (catalog?.products || []);
-  return {
-    mappings,
-    products,
-    orders,
-    items,
-    catalogSummary: Array.isArray(catalog) ? null : {
-      commonCount: Number(catalog?.commonCount || 0),
-      orderQCount: Number(catalog?.orderQCount || 0),
-      errors: Array.isArray(catalog?.errors) ? catalog.errors : []
-    },
-    productById: new Map(products.map(product => [product.productId, product]))
-  };
-}
-
-export async function generateProductCandidates({ productText, customerId = '', sourceId = '', itemCodeHint = '', context = null } = {}) {
+export async function generateProductCandidates({ productText, customerId = '', sourceId = '' } = {}) {
   const normalized = normalizeText(productText);
-  const normalizedCodeHint = normalizeText(itemCodeHint);
-  if (!normalized && !normalizedCodeHint) return [];
-  const loaded = context || await loadCandidateContext();
-  const mappings = loaded.mappings || [];
-  const products = loaded.products || [];
-  const orders = loaded.orders || [];
-  const items = loaded.items || [];
-  const productById = loaded.productById || new Map(products.map(product => [product.productId, product]));
+  if (!normalized) return [];
+  const [mappings, products, orders, items] = await Promise.all([
+    getAll(STORE.PRODUCT_MAPPINGS),
+    getAll(STORE.PRODUCTS),
+    getAll(STORE.ORDERS),
+    getAll(STORE.ORDER_ITEMS)
+  ]);
+  const productById = new Map(products.map(product => [product.productId, product]));
   const candidates = [];
-  const add = (shape, score, source, evidenceText = '') => {
+  const add = (shape, score, source) => {
     if (!shape.productId && !shape.itemCode && !shape.itemName) return;
-    candidates.push({ ...shape, score, source, evidenceText });
+    candidates.push({ ...shape, score, source });
   };
-
-  if (normalizedCodeHint) {
-    const exactCodeProduct = products.find(product => normalizeText(product.itemCode || product.productCode || product.productId) === normalizedCodeHint);
-    if (exactCodeProduct) add(productShape(exactCodeProduct), 1.02, 'MASTER_CODE', itemCodeHint);
-  }
 
   mappings.filter(mappingIsActive).forEach(mapping => {
-    const mappingText = mapping.normalizedText || mapping.rawText || '';
-    const mappedNormalized = normalizeText(mappingText);
-    if (!mappedNormalized || !normalized) return;
+    if (normalizeText(mapping.normalizedText || mapping.rawText) !== normalized) return;
     const product = productById.get(mapping.productId) || {};
-    const exact = mappedNormalized === normalized;
-    const similarityScore = exact ? 1 : productTextSimilarity(productText, mappingText);
-
-    if (exact) {
-      if (customerId && mapping.customerId === customerId) add(productShape(product, mapping), 1, 'CUSTOMER_MAPPING', mapping.rawText);
-      else if (sourceId && mapping.sourceId === sourceId) add(productShape(product, mapping), 0.98, 'SOURCE_MAPPING', mapping.rawText);
-      else if (!mapping.customerId && !mapping.sourceId) add(productShape(product, mapping), 0.96, 'COMMON_MAPPING', mapping.rawText);
-      return;
-    }
-
-    if (similarityScore < 0.68) return;
-    if (customerId && mapping.customerId === customerId) {
-      add(productShape(product, mapping), fuzzyMappingScore('CUSTOMER', similarityScore, mapping.useCount), 'CUSTOMER_MAPPING_FUZZY', mapping.rawText);
-    } else if (sourceId && mapping.sourceId === sourceId) {
-      add(productShape(product, mapping), fuzzyMappingScore('SOURCE', similarityScore, mapping.useCount), 'SOURCE_MAPPING_FUZZY', mapping.rawText);
-    } else if (!mapping.customerId && !mapping.sourceId) {
-      add(productShape(product, mapping), fuzzyMappingScore('COMMON', similarityScore, mapping.useCount), 'COMMON_MAPPING_FUZZY', mapping.rawText);
-    }
+    if (customerId && mapping.customerId === customerId) add(productShape(product, mapping), 1, 'CUSTOMER_MAPPING');
+    else if (sourceId && mapping.sourceId === sourceId) add(productShape(product, mapping), 0.98, 'SOURCE_MAPPING');
+    else if (!mapping.customerId && !mapping.sourceId) add(productShape(product, mapping), 0.96, 'COMMON_MAPPING');
   });
 
-  if (customerId && normalized) {
+  if (customerId) {
     const customerOrderIds = new Set(orders.filter(order => order.customerId === customerId).map(order => order.orderId));
     items.filter(item => customerOrderIds.has(item.orderId)).forEach(item => {
-      const score = productTextSimilarity(productText, item.itemName);
-      if (score >= 0.72) add(productShape(item, item), Math.min(0.94, 0.78 + score * 0.16), 'CUSTOMER_HISTORY', item.rawText || item.itemName || '');
+      const score = similarity(productText, item.itemName);
+      if (score >= 0.72) add(productShape(item, item), Math.min(0.94, 0.78 + score * 0.16), 'CUSTOMER_HISTORY');
     });
   }
 
-  if (normalized) {
-    products.forEach(product => {
-      const fields = [product.itemName, product.productName, product.secondaryName, product.secondName, product.alias, product.searchInfo, product.specification].filter(Boolean);
-      let score = 0;
-      let matchedField = '';
-      fields.forEach(field => {
-        const current = productTextSimilarity(productText, field);
-        if (current > score) { score = current; matchedField = field; }
-      });
-      if (score >= 0.58) add(productShape(product), score === 1 ? 0.94 : 0.52 + score * 0.38, score === 1 ? 'MASTER_EXACT' : 'MASTER_FUZZY', matchedField);
-    });
-  }
+  products.forEach(product => {
+    const score = similarity(productText, product.itemName || product.productName);
+    if (score >= 0.58) add(productShape(product), score === 1 ? 0.94 : 0.52 + score * 0.38, score === 1 ? 'MASTER_EXACT' : 'MASTER_FUZZY');
+  });
 
   const byIdentity = new Map();
   candidates.forEach(candidate => {
@@ -138,3 +79,4 @@ export async function generateProductCandidates({ productText, customerId = '', 
   });
   return [...byIdentity.values()].sort((a, b) => b.score - a.score).slice(0, 8);
 }
+

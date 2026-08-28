@@ -1,5 +1,4 @@
-import { STORE, getAll, normalizeText } from '../orderq-db.js?v=0.12.1';
-import { resolveCustomerInput } from '../customer-master.js?v=0.12.1';
+import { STORE, getAll, normalizeText } from '../orderq-db.js?v=0.7.1';
 
 function similarity(left, right) {
   const a = normalizeText(left);
@@ -14,23 +13,6 @@ function similarity(left, right) {
 }
 
 export async function resolveCustomer({ senderRaw = '', sourceId = '' } = {}) {
-  const masterResolution = await resolveCustomerInput({ senderRaw });
-  if (masterResolution.status === 'MATCHED') {
-    return {
-      status: 'MATCHED',
-      customer: masterResolution.customer,
-      candidates: masterResolution.candidates,
-      matchSource: masterResolution.matchMethod || 'CUSTOMER_MASTER'
-    };
-  }
-  if (['INACTIVE', 'AMBIGUOUS'].includes(masterResolution.status)) {
-    return {
-      status: 'UNRESOLVED',
-      customer: null,
-      candidates: masterResolution.candidates,
-      matchSource: masterResolution.status
-    };
-  }
   const normalized = normalizeText(senderRaw);
   if (!normalized) return { status: 'UNRESOLVED', customer: null, candidates: [], matchSource: 'NO_SENDER' };
   const [aliases, customers] = await Promise.all([

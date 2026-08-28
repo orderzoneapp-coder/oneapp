@@ -4,29 +4,22 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="google" content="notranslate">
-  <title>ORDER IN · 직접입력</title>
-  <link rel="stylesheet" href="./orderq.css?v=0.11.0">
-  <link rel="stylesheet" href="./order-draft-editor.css?v=0.1.0">
-  <style>:root{--nexus-top-height:44px}nexus-top{display:block;min-height:var(--nexus-top-height)}.nexus-top-fallback{height:var(--nexus-top-height);padding:0 14px;display:flex;align-items:center;gap:12px;background:#0b1021;color:#fff;font:12px Pretendard,"Noto Sans KR",sans-serif}.nexus-top-fallback strong{letter-spacing:.08em}.nexus-top-fallback span{color:#cbd5e1}.nexus-top-fallback button{margin-left:auto;border:1px solid #64748b;border-radius:6px;padding:5px 9px;background:transparent;color:#fff;cursor:pointer}</style>
-  <script src="https://oneapp.orderz.co.kr/nexus/common/nexus-auth-config.js?v=2.0.1"></script>
-  <script src="https://oneapp.orderz.co.kr/nexus/common/nexus-auth.js?v=2.1.2"></script>
-  <script src="https://oneapp.orderz.co.kr/nexus/common/apps-config.js?v=1.4.0"></script>
-<script src="https://oneapp.orderz.co.kr/nexus/common/nexus-top.js?v=1.10.0"></script>
-  <style>.manual-order-logo{display:block;width:200px;max-width:100%;height:auto;flex:0 0 auto;border-radius:6px}</style>
-  <link rel="icon" type="image/png" href="/nexus/assets/nexus-favicon.png">
+  <title>ONEAPP ORDER Q vNext · 주문서 입력</title>
+  <link rel="stylesheet" href="./orderq.css?v=0.7.1">
 </head>
 <body class="manual-order-page">
-  <nexus-top app-id="orderin"><div class="nexus-top-fallback" role="status"><strong>NEXUS</strong><span>NEXUS 메뉴를 불러오지 못했습니다.</span><button type="button" onclick="window.location.reload()">재시도</button></div></nexus-top>
   <div class="shell">
     <header class="topbar manual-topbar">
       <div class="brand">
-        <img class="manual-order-logo" src="../assets/order_in_logo_header_white_bg.svg" alt="ORDER IN">
+        <strong>ONEAPP</strong>
+        <span class="logo-frame" aria-hidden="true"><img src="../assets/order-q-logo.png" alt=""></span>
+        <span class="badge">vNext 0.7.1</span>
         <span id="pageMode">주문서 입력</span>
       </div>
       <div class="top-system" aria-live="polite">
         <div class="top-system-line">
           <strong>System.IO</strong>
-          <span id="orderMeta" title="관리자용 주문번호입니다.">신규 주문전표 · 저장 전</span>
+          <span id="orderMeta" title="관리자용 주문번호와 시스템 ID·Revision입니다.">신규 주문전표 · 저장 전</span>
         </div>
         <span class="top-system-help">품목코드 입력 후 마스터 매칭 결과를 표시합니다.</span>
         <div id="message" class="message"></div>
@@ -37,8 +30,7 @@
         <a class="btn dark" href="./parser.html">ORDER IN</a>
         <a class="btn dark" href="./operations.html">ORDER Q 운영</a>
         <a class="btn dark" href="./index.html">주문현황</a>
-        <a class="btn dark" href="./products.html">간편상품</a>
-        <button class="btn primary" id="saveTopBtn" type="button">주문 저장</button>
+        <button class="btn primary" id="saveTopBtn" type="button">저장</button>
       </div>
     </header>
     <main class="panel">
@@ -220,32 +212,26 @@
   </div>
   <div id="productSuggestions" class="product-suggestions" role="listbox" hidden></div>
 
-    <script type="module" src="./workflow-guide.js?v=0.11.0"></script>
-    <script type="module">
+  <script type="module">
     import {
       createOrder, updateOrder, cancelOrder, getOrder, listOrders, subscribeOrderChanges,
       OrderRevisionConflictError, MATCH_STATUS
-    } from './order-intake-engine.js?v=0.15.0';
+    } from './order-intake-engine.js?v=0.7.1';
     import {
       syncBeforeOrderMutation, syncAfterLocalMutation, getSyncState,
       CloudOrderConflictError
-    } from './orderq-sync-engine.js?v=0.8.0';
-    import { loadProductCatalog } from './product-master-search.js?v=0.8.0';
-    import {
-      PRODUCT_LINE_CONTEXT, applyProductSelection, editProductLine, searchLineProducts as searchProductCatalog
-    } from './product-line-common.js?v=0.8.0';
-    import { loadWarehouseCatalog, matchWarehouseInput, warehouseDisplayName } from './warehouse-master.js?v=0.8.0';
+    } from './orderq-sync-engine.js?v=0.7.1';
+    import { loadProductCatalog, searchProductCatalog } from './product-master-search.js?v=0.7.1';
+    import { loadWarehouseCatalog, matchWarehouseInput, warehouseDisplayName } from './warehouse-master.js?v=0.7.1';
     import {
       calculateLineTotal, calculateVatAmount, compareManualRows, cycleManualPriceOption, numberOrNull, shiftIsoDate
-    } from './manual-order-grid.js?v=0.8.0';
-    import { createOrderDraftEditor } from './order-draft-editor.js?v=0.1.0';
-    import { INPUT_CHANNEL_LABEL } from './order-document-model.js?v=0.8.0';
+    } from './manual-order-grid.js?v=0.7.1';
+    import { INPUT_CHANNEL_LABEL } from './order-document-model.js?v=0.7.1';
 
     const params = new URLSearchParams(location.search);
     const editingOrderId = params.get('orderId');
     let loadedRevision = null;
     let loadedCustomerId = null;
-    let loadedCustomerName = '';
     let loadedAssigneeId = '';
     let loadedSourceType = 'MANUAL';
     let loadedInputChannel = 'DIRECT';
@@ -287,7 +273,6 @@
     const warehouseInput = document.getElementById('warehouse');
     const warehouseOptions = document.getElementById('warehouseOptions');
     const transactionTypeInput = document.getElementById('transactionType');
-    const directOrderDraftEditor = createOrderDraftEditor({ root: document.getElementById('itemRows'), context: { mode: 'adopt', productContext: 'ORDER', consumer: 'DIRECT_INPUT' }, initialDraft: { header: {}, lines: [] } });
     const assigneeNameInput = document.getElementById('assigneeName');
     const orderStatusInput = document.getElementById('orderStatus');
     const adminStatusInput = document.getElementById('adminStatus');
@@ -811,16 +796,15 @@
     function applyProduct(input, product) {
       const row = input.closest('tr');
       if (!row || !product) return;
-      const selected = applyProductSelection(PRODUCT_LINE_CONTEXT.ORDER, {}, product);
       const originalText = row.querySelector('[data-field="itemName"]').value.trim() || input.value.trim();
-      row.dataset.productId = selected.productId;
+      row.dataset.productId = product.productId;
       row.dataset.matchSource = product.source === 'COMMON_MASTER' ? 'MANUAL_COMMON_MASTER' : 'MANUAL_ORDERQ_MASTER';
       row.dataset.rawText = originalText || product.itemName;
-      row.querySelector('[data-field="itemCode"]').value = selected.itemCode || '';
-      row.querySelector('[data-field="itemName"]').value = selected.itemName || '';
-      row.querySelector('[data-field="specification"]').value = selected.specification || '';
+      row.querySelector('[data-field="itemCode"]').value = product.itemCode || '';
+      row.querySelector('[data-field="itemName"]').value = product.itemName || '';
+      row.querySelector('[data-field="specification"]').value = product.specification || '';
       row.querySelector('[data-field="boxQuantity"]').value = product.boxQuantity ?? '';
-      row.querySelector('[data-field="finalUnit"]').value = selected.finalUnit || '';
+      row.querySelector('[data-field="finalUnit"]').value = product.finalUnit || '';
       setRowPriceOptions(row, product.priceOptions || []);
       const selectedPriceType = activeMasterPriceKey();
       const defaultPrice = product.priceOptions?.find(option => option.key === selectedPriceType);
@@ -973,15 +957,13 @@
       const { order, items } = data;
       loadedRevision = order.revision;
       loadedCustomerId = order.customerId;
-      loadedCustomerName = order.customerName || '';
       loadedAssigneeId = order.assigneeId || '';
       loadedSourceType = order.sourceType || 'MANUAL';
       loadedInputChannel = order.inputChannel || 'DIRECT';
       pageMode.textContent = '주문서 수정';
-      orderMeta.textContent = `${order.orderNo || order.orderId}`;
+      orderMeta.textContent = `${order.orderNo || order.orderId} · Revision ${order.revision} · ${order.orderId}`;
       orderDateInput.value = order.orderDate || todayLocal();
       customerNameInput.value = order.customerName || '';
-      customerNameInput.dataset.customerId = loadedCustomerId || '';
       selectedWarehouseId = order.warehouseId || '';
       warehouseInput.value = order.warehouseName || order.warehouse || order.warehouseCode || '';
       transactionTypeInput.value = order.transactionType || '기타';
@@ -1017,9 +999,10 @@
       await syncBeforeOrderMutation(editingOrderId, loadedRevision);
     }
 
-    function showConflict() {
-      showMessage('다른 곳에서 이 주문을 먼저 수정했습니다. 현재 입력내용은 유지됩니다. 최신 내용을 불러온 뒤 다시 저장하세요.', 'warn');
-      orderMeta.textContent = `${editingOrderId} · 다른 곳에서 먼저 수정됨`;
+    function showConflict(error) {
+      const latest = error.serverRevision || error.latestOrder?.revision || '?';
+      showMessage('이 주문은 다른 곳에서 이미 수정되었습니다. 현재 입력내용은 유지됩니다. [클라우드]에서 최신본을 적용한 후 주문서를 다시 열어 입력·저장하세요.', 'warn');
+      orderMeta.textContent = `${editingOrderId} · 현재 화면 r${loadedRevision} / 최신 r${latest}`;
     }
 
     async function initializeAssigneeOptions() {
@@ -1056,13 +1039,13 @@
           const result = await updateOrder(editingOrderId, loadedRevision, payload);
           loadedRevision = result.order.revision;
           loadedCustomerId = result.order.customerId;
-          orderMeta.textContent = `${result.order.orderNo || result.order.orderId}`;
+          orderMeta.textContent = `${result.order.orderNo || result.order.orderId} · Revision ${result.order.revision}`;
           try {
             const sync = await syncAfterLocalMutation(result.order.orderId);
-            showMessage(sync.online ? '주문 저장 완료' : '주문은 저장됐습니다 · 중앙 반영 대기', sync.online ? 'info' : 'warn');
+            showMessage(sync.online ? `저장 및 클라우드 동기화 완료 · Revision ${result.order.revision}` : `로컬 저장 완료 · Revision ${result.order.revision} · 클라우드 동기화 대기`, sync.online ? 'info' : 'warn');
           } catch (syncError) {
             if (syncError instanceof CloudOrderConflictError || syncError.code === 'ORDER_CLOUD_REVISION_CONFLICT') return showConflict(syncError);
-            showMessage('주문은 저장됐지만 중앙 반영이 지연됩니다. 관리자 설정에서 연결 상태를 확인하세요.', 'warn');
+            showMessage(`로컬 저장 완료 · Revision ${result.order.revision} · 클라우드 동기화 실패: ${syncError.message || syncError}`, 'warn');
           }
           openSavedDocument(result.order.orderId);
         } else {
@@ -1211,11 +1194,11 @@
         await cloudPreflight();
         const result = await cancelOrder(editingOrderId, loadedRevision);
         loadedRevision = result.order.revision;
-        orderMeta.textContent = `${result.order.orderNo || result.order.orderId} · 전체취소`;
+        orderMeta.textContent = `${result.order.orderNo || result.order.orderId} · Revision ${result.order.revision} · 전체취소`;
         try { await syncAfterLocalMutation(result.order.orderId); } catch (syncError) {
           if (syncError instanceof CloudOrderConflictError || syncError.code === 'ORDER_CLOUD_REVISION_CONFLICT') return showConflict(syncError);
         }
-        showMessage('주문이 취소되었습니다. 변경 이력은 보존되고 중앙 반영 대상에 포함됩니다.', 'warn');
+        showMessage('주문이 취소되었습니다. 이력은 보존되며 클라우드 동기화 대상에 반영됩니다.', 'warn');
         cancelButton.hidden = true;
         document.getElementById('saveTopBtn').disabled = true;
         document.getElementById('saveBottomBtn').disabled = true;
@@ -1225,19 +1208,6 @@
       }
     });
 
-    customerNameInput.addEventListener('customer:selected', event => {
-      const customer = event.detail?.customer;
-      if (!customer) return;
-      loadedCustomerId = customer.customerId || '';
-      loadedCustomerName = customer.customerName || '';
-      customerNameInput.value = loadedCustomerName;
-      customerNameInput.dataset.customerId = loadedCustomerId;
-    });
-    customerNameInput.addEventListener('input', () => {
-      if (customerNameInput.value.trim() === loadedCustomerName) return;
-      loadedCustomerId = null;
-      customerNameInput.dataset.customerId = '';
-    });
     customerNameInput.addEventListener('keydown', event => {
       if (event.key !== 'Enter' || event.isComposing) return;
       event.preventDefault();
@@ -1291,7 +1261,7 @@
     subscribeOrderChanges(change => {
       if (!editingOrderId || change.orderId !== editingOrderId) return;
       if (change.revision > (loadedRevision || 0)) {
-        showMessage('다른 곳에서 이 주문을 먼저 수정했습니다. 현재 입력내용은 유지되지만 저장 전에 최신 내용을 확인하세요.', 'warn');
+        showMessage(`다른 화면에서 이 주문이 Revision ${change.revision}으로 변경되었습니다. 현재 입력내용은 유지되지만 저장 시 최신본 확인이 필요합니다.`, 'warn');
       }
     });
 
@@ -1305,6 +1275,5 @@
       })
       .catch(error => showMessage(error.message || String(error), 'error'));
   </script>
-  <script type="module" src="./customer-picker-bootstrap.js?v=0.15.0"></script>
 </body>
 </html>

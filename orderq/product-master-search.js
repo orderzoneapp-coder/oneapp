@@ -1,4 +1,4 @@
-import { STORE, getAll, normalizeText } from './orderq-db.js?v=0.17.0';
+import { STORE, getAll, normalizeText } from './orderq-db.js?v=0.7.1';
 
 const COMMON_MASTER_DB = 'MerchOpsDB';
 const COMMON_MASTER_STORE = 'master_products';
@@ -11,12 +11,7 @@ export const MANUAL_PRICE_FIELDS = Object.freeze([
   { key: 'wholesaleB', label: '도매B', aliases: ['wholesaleB', '도매B', 'B판매', 'B판매가', 'B도매', 'B도매가'] },
   { key: 'listingPrice', label: '상장가', aliases: ['listingPrice', '상장가'] },
   { key: 'marketPrice', label: '시중가', aliases: ['marketPrice', '시중가', '시중가격'] },
-  { key: 'promoPrice', label: '행사가', aliases: ['promoPrice', '행사가', '특가'] },
-  { key: 'purchasePriceB', label: '입고B', aliases: ['purchasePriceB', '입고B'] },
-  { key: 'priceD', label: '단가D', aliases: ['priceD', '단가D'] },
-  { key: 'lastPurchasePrice', label: '최종입고', aliases: ['lastPurchasePrice', '최종입고'] },
-  { key: 'priceH', label: '단가H', aliases: ['priceH', '단가H'] },
-  { key: 'priceI', label: '단가I', aliases: ['priceI', '단가I'] }
+  { key: 'promoPrice', label: '행사가', aliases: ['promoPrice', '행사가', '특가'] }
 ]);
 
 function firstValue(source, keys, fallback = '') {
@@ -62,16 +57,7 @@ export function productCategoryCode(itemCode) {
   return String(itemCode || '').trim().slice(0, 6);
 }
 
-export function isSelectableMasterProduct(product = {}) {
-  return String(product.source || '').trim() === 'COMMON_MASTER'
-    && String(product.masterProductId || '').trim() !== ''
-    && String(product.productId || '').trim() !== ''
-    && String(product.itemCode || '').trim() !== ''
-    && String(product.itemName || '').trim() !== ''
-    && String(product.status || 'ACTIVE').trim().toUpperCase() !== 'INACTIVE';
-}
-
-export function normalizeMasterProduct(raw = {}, fallbackCode = '', source = 'COMMON_MASTER', primaryKey = '') {
+export function normalizeMasterProduct(raw = {}, fallbackCode = '', source = 'COMMON_MASTER') {
   const itemCode = firstValue(raw, ['itemCode', 'productCode', '코드', '품목코드', '상품코드'], fallbackCode);
   const itemName = firstValue(raw, ['itemName', 'productName', '품목명', '상품명', '제품명', '품명']);
   const specification = firstValue(raw, ['specification', 'spec', '규격', '규격명']);
@@ -81,9 +67,6 @@ export function normalizeMasterProduct(raw = {}, fallbackCode = '', source = 'CO
   const searchInfo = firstValue(raw, ['searchInfo', 'searchKeywords', '검색창정보', '검색어등록', '검색어', '간단설명']);
   const priceOptions = normalizeManualPriceOptions(raw, source);
   const outPrice = priceOptions.find(option => option.key === 'outPrice')?.value ?? null;
-  const masterProductId = source === 'COMMON_MASTER'
-    ? (String(primaryKey ?? '').trim() || firstValue(raw, ['코드', 'itemCode', 'productCode', '품목코드', '상품코드'], fallbackCode))
-    : firstValue(raw, ['masterProductId']);
   if (!itemCode && !itemName) return null;
   return {
     productId: firstValue(raw, ['productId']) || stableProductId(itemCode, itemName, specification),
@@ -97,9 +80,6 @@ export function normalizeMasterProduct(raw = {}, fallbackCode = '', source = 'CO
     outPrice,
     priceOptions,
     status: firstValue(raw, ['status', '상태'], 'ACTIVE'),
-    productIdentityType: firstValue(raw, ['productIdentityType']),
-    registrationStatus: firstValue(raw, ['registrationStatus']),
-    masterProductId,
     source,
     raw
   };
@@ -117,7 +97,6 @@ export function mergeProductCatalog(commonProducts = [], orderQProducts = []) {
   const catalog = new Map();
   const add = product => {
     if (!product || String(product.status || 'ACTIVE').toUpperCase() === 'INACTIVE') return;
-    if (product.productIdentityType === 'TEMPORARY' && product.registrationStatus === 'LINKED') return;
     const key = normalizeText(product.itemCode) || `${normalizeText(product.itemName)}|${normalizeText(product.specification)}`;
     if (!key || catalog.has(key)) return;
     catalog.set(key, product);
@@ -219,18 +198,10 @@ async function readCommonMasterIndexedDb() {
         return;
       }
       const transaction = db.transaction(COMMON_MASTER_STORE, 'readonly');
-      const products = [];
-      const read = transaction.objectStore(COMMON_MASTER_STORE).openCursor();
+      const read = transaction.objectStore(COMMON_MASTER_STORE).getAll();
       read.onsuccess = () => {
-        const cursor = read.result;
-        if (cursor) {
-          const product = normalizeMasterProduct(cursor.value, String(cursor.primaryKey ?? ''), 'COMMON_MASTER', cursor.primaryKey);
-          if (product) products.push(product);
-          cursor.continue();
-          return;
-        }
         db.close();
-        resolve(products);
+        resolve(normalizeCollection(read.result, 'COMMON_MASTER'));
       };
       read.onerror = () => {
         db.close();
@@ -251,28 +222,19 @@ function readCommonMasterLocalStorage() {
   return [];
 }
 
-export async function loadProductCatalog({ diagnostics = null, referencePhase = null } = {}) {
+export async function loadProductCatalog() {
   const errors = [];
   let commonProducts = [];
-  const commonSpan = diagnostics?.start?.(referencePhase?.COMMON_PRODUCT || 'COMMON_PRODUCT', 'MERCHOPS_DB_OR_SNAPSHOT');
-  try {
-    commonProducts = await readCommonMasterIndexedDb();
-    if (!commonProducts.length) commonProducts = readCommonMasterLocalStorage();
-    commonSpan?.end(commonProducts.length);
-  } catch (error) {
-    commonSpan?.fail(error);
-    errors.push(error.message || String(error));
-  }
+  try { commonProducts = await readCommonMasterIndexedDb(); }
+  catch (error) { errors.push(error.message || String(error)); }
+  if (!commonProducts.length) commonProducts = readCommonMasterLocalStorage();
 
   let orderQProducts = [];
-  const orderQSpan = diagnostics?.start?.(referencePhase?.ORDERQ_PRODUCT || 'ORDERQ_PRODUCT', 'ORDERQ_DB');
   try {
     orderQProducts = (await getAll(STORE.PRODUCTS))
       .map(product => normalizeMasterProduct(product, product.itemCode, 'ORDERQ_HISTORY'))
       .filter(Boolean);
-    orderQSpan?.end(orderQProducts.length);
   } catch (error) {
-    orderQSpan?.fail(error);
     errors.push(error.message || String(error));
   }
   return {

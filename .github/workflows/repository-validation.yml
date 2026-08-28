@@ -32,71 +32,11 @@ jobs:
       - name: Validate manifest, files, and contracts
         run: node scripts/validate-repository.mjs
 
-      - name: Test NEXUS common header contract
-        run: node scripts/test-nexus-common-header.mjs
-
-      - name: Test NEXUS authentication, authorization, and token gateway contract
-        run: node scripts/test-nexus-auth-system.mjs
-
-      - name: Test NEXUS public company Footer and cache isolation
-        run: node scripts/test-nexus-company-public-footer.mjs
-
-      - name: Test NEXUS protected company management UI and gateway contract
-        run: node scripts/test-nexus-company-ui.mjs
-
-      - name: Test NEXUS company profile projection, revision, and atomicity
-        run: node scripts/test-nexus-company-profile.mjs
-
-      - name: Test NEXUS common fixed application UI contract
-        run: node scripts/test-nexus-common-ui.mjs
-
-      - name: Test standalone SmartInput contract
-        run: node scripts/test-smartinput-standalone.mjs
-
-      - name: Test SmartInput estimate save identity and retry contracts
-        run: node scripts/test-smartinput-estimate-save-contract.mjs
-
-      - name: Test SmartInput reference diagnostics
-        run: node scripts/test-smartinput-reference-diagnostics.mjs
-
-      - name: Test SmartInput structured spreadsheet field mapping
-        run: node scripts/test-smartinput-structured-sheet-parser.mjs
-
-      - name: Test SmartInput Excel grid clipboard input
-        run: node scripts/test-smartinput-grid-clipboard.mjs
-
-      - name: Test SmartInput OCR arithmetic and total validation
-        run: node scripts/test-smartinput-ocr.mjs
-
-      - name: Test Master target navigation and work-entry actions
-        run: node scripts/test-master-navigation.mjs
-
-      - name: Test Master production boot performance contract
-        run: node scripts/test-master-performance.mjs
-
       - name: Test client-side import and storage safety
         run: node scripts/test-client-safety.mjs
 
       - name: Test ORDER Q vNext cloud sync contracts
         run: node scripts/test-orderq-vnext-cloud-contract.mjs
-
-      - name: Test ORDER IN Stage 1 Intake DB and identity contracts
-        run: node scripts/test-orderq-stage1-intake-db.mjs
-
-      - name: Test ORDER Q Customer Master, canonical and quick-create contracts
-        run: node scripts/test-orderq-customer-master.mjs
-
-      - name: Test Foundation B+ immutable backup and restore contracts
-        run: node scripts/test-foundation-backup-bplus.mjs
-
-      - name: Test Foundation product client concurrent backup contract
-        run: node scripts/test-foundation-product-client.mjs
-
-      - name: Test Customer Master Local Primary backup boundary
-        run: node scripts/test-orderq-customer-cloud-sync.mjs
-
-      - name: Test ORDER Q customerCode Excel upsert architecture
-        run: node scripts/test-orderq-customer-code-upsert.mjs
 
       - name: Test ORDER Q order-document workflow
         run: node scripts/test-orderq-order-workflow.mjs
@@ -113,128 +53,8 @@ jobs:
       - name: Test ORDER Q history collection and fulfillment stabilization
         run: node scripts/test-orderq-history-collector.mjs
 
-      - name: Test ORDER Q collector tab isolation and duplicate v2 contracts
-        run: node scripts/test-orderq-collector-contracts.mjs
-
       - name: Test ORDER Q cloud transaction atomicity
         run: node scripts/test-orderq-cloud-atomicity.mjs
-
-      - name: Test ORDER Q M1 DB v7 and compatibility contracts
-        run: node scripts/test-orderq-m1-foundation.mjs
-
-      - name: Test ORDER Q M2 inventory ledger and shadow projection
-        run: node scripts/test-orderq-m2-inventory-ledger.mjs
-
-      - name: Test ORDER Q M3 dispatch workbench and reservation contracts
-        run: node scripts/test-orderq-m3-dispatch-workbench.mjs
-
-      - name: Test ORDER Q M4 atomic dispatch confirmation contracts
-        run: node scripts/test-orderq-m4-dispatch-confirmation.mjs
-
-      - name: Test ORDER Q M5 substitution and conversion contracts
-        run: node scripts/test-orderq-m5-substitution-conversion.mjs
-
-      - name: Test ORDER Q M6 purchase decision and receipt contracts
-        run: node scripts/test-orderq-m6-purchase-decision.mjs
-
-      - name: Test ORDER Q M7 quick product and common line contracts
-        run: node scripts/test-orderq-m7-common-products.mjs
-
-      - name: Test ORDER Q M8 post-dispatch reconciliation contracts
-        run: node scripts/test-orderq-m8-post-dispatch-reconciliation.mjs
-
-      - name: Test ORDER Q M9 central authority and ERP boundary contracts
-        run: node scripts/test-orderq-m9-central-sync-erp.mjs
-
-      - name: Test ORDER Q M10 shadow comparison and cutover contracts
-        run: node scripts/test-orderq-m10-operational-transition.mjs
-
-      - name: Test ORDER Q M10 administrator direct-test isolation
-        run: node scripts/test-orderq-m10-admin-test.mjs
-
-      - name: Test ORDER Q v12 schema
-        run: node scripts/test-orderq-v12-schema.mjs
-
-      - name: Test ORDER Q voucher core
-        run: node scripts/test-orderq-voucher-core.mjs
-
-      - name: Test ORDER Q voucher zero and negative quantities
-        run: node scripts/test-orderq-voucher-zero-negative.mjs
-
-      - name: Test ORDER Q voucher financial ledger
-        run: node scripts/test-orderq-voucher-financial-ledger.mjs
-
-      - name: Test ORDER Q voucher order links
-        run: node scripts/test-orderq-voucher-order-link.mjs
-
-      - name: Test ORDER Q voucher central parity
-        run: node scripts/test-orderq-voucher-central-parity.mjs
-
-      - name: Test ORDER Q voucher projection recovery
-        run: node scripts/test-orderq-voucher-projection-recovery.mjs
-
-      - name: Test ORDER Q voucher cloud contract
-        run: node scripts/test-orderq-voucher-cloud-contract.mjs
-
-      - name: Test ORDER Q stage 3 purchase operations
-        run: |
-          node scripts/test-orderq-stage3-purchase-identity.mjs
-          node scripts/test-orderq-stage3-purchase-meta.mjs
-          node scripts/test-orderq-stage3-purchase-command-state.mjs
-          node scripts/test-orderq-stage3-purchase-master-capability.mjs
-          node scripts/test-orderq-stage3-purchase-ui.mjs
-          node scripts/test-orderq-stage3-purchase-workbook-e2e.mjs
-          node scripts/test-orderq-stage3-purchase-legacy-boundary.mjs
-          node scripts/test-orderq-stage3-purchase-correction.mjs
-
-      - name: Test ORDER Q stage 4 sale operations
-        run: |
-          node scripts/test-orderq-v14-schema.mjs
-          node scripts/test-orderq-stage4-sale-identity-meta.mjs
-          node scripts/test-orderq-stage4-sale-roles.mjs
-          node scripts/test-orderq-stage4-sale-quantity-axes.mjs
-          node scripts/test-orderq-stage4-sale-allocation-split.mjs
-          node scripts/test-orderq-stage4-sale-negative-voucher.mjs
-          node scripts/test-orderq-stage4-sale-master-link.mjs
-          node scripts/test-orderq-stage4-sale-command-recovery.mjs
-          node scripts/test-orderq-stage4-sale-query-correction.mjs
-          node scripts/test-orderq-stage4-sale-legacy-origin.mjs
-          node scripts/test-orderq-stage4-sale-workbook-e2e.mjs
-          node scripts/test-orderq-stage4-sale-product-flow.mjs
-          node scripts/test-orderq-stage4-sale-blocker-resolution.mjs
-          node scripts/test-orderq-stage4-sale-cloud-parity.mjs
-          node scripts/test-orderq-stage4-sale-source-claims.mjs
-          node scripts/test-orderq-stage4-sale-capability.mjs
-
-      - name: Test ORDER Q stage 5 current situation consumer
-        run: |
-          node scripts/test-orderq-stage5-dataops-v2-read-contract.mjs
-          node scripts/test-orderq-stage5-movement-manifest.mjs
-          node scripts/test-orderq-stage5-frozen-read-session.mjs
-          node scripts/test-orderq-stage5-demand-conversion-packaging.mjs
-          node scripts/test-orderq-stage5-purchase-cohort.mjs
-          node scripts/test-orderq-stage5-db-v15.mjs
-          node scripts/test-orderq-stage5-single-entrypoint.mjs
-          node scripts/test-orderq-stage5-cloud-contract.mjs
-          node scripts/test-orderq-stage5-owner-bridge.mjs
-          node scripts/test-orderq-stage5-cloud-e2e.mjs
-          node scripts/test-orderq-stage5-ui-gate.mjs
-
-      - name: Test ORDER Q stage 6 close and AR/AP foundation
-        run: |
-          node scripts/test-dataops-stage6-ledger-opening-bridge.mjs
-          node scripts/test-dataops-stage6-business-date-cohort.mjs
-          node scripts/test-dataops-stage6-source-seal-commit-head.mjs
-          node scripts/test-dataops-stage6-company-close-scope.mjs
-          node scripts/test-dataops-stage6-close-series-revision.mjs
-          node scripts/test-dataops-stage6-official-chain-net.mjs
-          node scripts/test-dataops-stage6-v12-financial-entry.mjs
-          node scripts/test-dataops-stage6-security-cutover.mjs
-          node scripts/test-dataops-stage6-sheets-staging-failure.mjs
-          node scripts/test-dataops-stage6-db-v16.mjs
-          node scripts/test-dataops-stage6-close-ui-product-path.mjs
-          node scripts/test-dataops-stage6-close-purpose-o1.mjs
-          node scripts/test-dataops-stage6-authoritative-product-bridge.mjs
 
       - name: Test DataOps zero and negative stock preservation
         run: node scripts/test-dataops-zero-stock-contract.mjs
@@ -242,17 +62,8 @@ jobs:
       - name: Test DataOps operational integrity contracts
         run: node scripts/test-dataops-operational-integrity.mjs
 
-      - name: Test DataOps average-cost initialization
-        run: node scripts/test-dataops-average-cost.mjs
-
-      - name: Test DataOps administrator-directed manual substitution
+      - name: Test DataOps manual substitution actual-error quantity
         run: node scripts/test-dataops-manual-substitution-actual-error.mjs
-
-      - name: Test DataOps LOT merge cost choices
-        run: node scripts/test-dataops-lot-detail-layout.mjs
-
-      - name: Test DataOps average-merge 100-won rounding
-        run: node scripts/test-dataops-average-merge-rounding.mjs
 
       - name: Test DataOps evidence report and F9 preflight
         run: node scripts/test-dataops-evidence-report-preflight.mjs
@@ -277,17 +88,6 @@ jobs:
 
       - name: Test DataOps stock print readability
         run: node scripts/test-dataops-stock-print-readable.mjs
-
-      - name: Test DataOps Situation V2 owner authority
-        run: |
-          node scripts/test-dataops-situation-v2-legacy-v1.mjs
-          node scripts/test-dataops-situation-v2-producer.mjs
-          node scripts/test-dataops-situation-v2-auth-capability.mjs
-          node scripts/test-dataops-situation-v2-frozen-read.mjs
-          node scripts/test-dataops-situation-v2-storage-recovery.mjs
-          node scripts/test-dataops-situation-v2-cloud-parity.mjs
-          node scripts/test-dataops-situation-v2-product-path.mjs
-          node scripts/test-dataops-situation-v2-render-runtime.mjs
 
       - name: Test MerchOps sale availability pipeline
         run: node scripts/test-merchops-sale-pipeline.mjs
@@ -316,14 +116,8 @@ jobs:
       - name: Test shared master writers, CAS rollback, and mixed locks
         run: node scripts/test-merchops-shared-storage.mjs
 
-      - name: Test NEXES application tab routing
-        run: node scripts/test-nexes-app-routing.mjs
-
       - name: Test Master add/update review and rollback workflow
         run: node scripts/test-master-add-update.mjs
-
-      - name: Test Master item manager UI and interaction contracts
-        run: node scripts/test-item-manager-ui.mjs
 
       - name: Read a real Master XLSX and verify approval persistence
         run: node scripts/test-master-add-update-xlsx-e2e.mjs

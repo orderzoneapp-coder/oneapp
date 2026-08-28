@@ -5,61 +5,25 @@ import path from "node:path";
 import vm from "node:vm";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
-import { connectSaleStage4ForAnalysis } from "../orderops/orderops-stage4-analysis-bridge.js";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const require = createRequire(import.meta.url);
 const orderOpsHtml = fs.readFileSync(path.join(ROOT, "orderops_list.html"), "utf8");
-const ordersEntryHtml = fs.readFileSync(path.join(ROOT, "orders.html"), "utf8");
-const legacyOrderOpsHtml = fs.readFileSync(path.join(ROOT, "orderops/list.html"), "utf8");
-const appsConfig = fs.readFileSync(path.join(ROOT, "nexus/common/apps-config.js"), "utf8");
-assert.equal(ordersEntryHtml, orderOpsHtml,
-  "orders.html must deploy the complete public ORDER Q source without route-only divergence");
-assert.match(appsConfig,
-  /id:\s*'orderq'[\s\S]{0,180}?url:\s*`\$\{base\}\/orders\.html`/,
-  "the NEXUS shipping group must route ORDER Q to /orders.html");
-assert.match(appsConfig,
-  /id:\s*'orderops'[\s\S]{0,180}?url:\s*`\$\{base\}\/orderops\/list\.html`/,
-  "the separately named OrderOps compatibility entry must remain isolated from ORDER Q");
-assert.doesNotMatch(legacyOrderOpsHtml, /orderops-stage4-analysis-bridge\.js/,
-  "the deletion-planned /orderops/list.html legacy route must not receive the ORDER Q Stage4 bridge");
-assert.doesNotMatch(legacyOrderOpsHtml, /data-sale-stage4-link/,
-  "the deletion-planned legacy route must not receive the ORDER Q sale-link listener");
 assert.doesNotMatch(orderOpsHtml, /tokens truncated|…\d+ tokens truncated…/,
   "the public OrderOps mirror must not contain a truncated source fragment");
 assert.match(orderOpsHtml, /<body>[\s\S]*<\/body>\s*<\/html>/,
   "the public OrderOps mirror must remain a complete HTML document");
-assert.match(orderOpsHtml, /brand-badge">v1\.65</, "ORDER Q visible version must be v1.65");
-assert.match(orderOpsHtml, /<title>ORDER Q<\/title>/,
-  "the public page title must use the approved ORDER Q name");
-assert.match(orderOpsHtml, /<nexus-top app-id="orderq">[\s\S]*?<\/nexus-top>/,
-  "the public page must load NEXUS TOP with the ORDER Q app id");
-assert.match(orderOpsHtml, /<img class="brand-logo" src="assets\/order-q-logo\.png" alt="ORDER Q">/,
-  "the public APP BAR must use the approved ORDER Q logo");
-assert.doesNotMatch(orderOpsHtml, /<strong class="brand-product">ORDER Q · 출고관리<\/strong>/,
-  "the public APP BAR must not duplicate the logo with the former text brand");
-assert.match(orderOpsHtml, /ORDER Q v1\.65 · 출고관리/,
+assert.match(orderOpsHtml, /brand-badge">v1\.55</, "ORDER Q visible version must be v1.55");
+assert.match(orderOpsHtml, /<title>ONEAPP ORDER Q · 출고관리<\/title>/,
+  "the public page title must establish ORDER Q as shipment management");
+assert.match(orderOpsHtml, /aria-label="ONEAPP ORDER Q 출고관리"/,
+  "the public brand must identify ONEAPP ORDER Q shipment management");
+assert.match(orderOpsHtml, /class="brand-logo" src="assets\/order-q-logo\.png"/,
+  "the public header must use the approved ORDER Q logo asset");
+assert.match(orderOpsHtml, /\.brand-logo-frame\s*\{[\s\S]*?width:\s*120px;[\s\S]*?height:\s*20px;/,
+  "the public ORDER Q logo must match the ONEAPP wordmark height");
+assert.match(orderOpsHtml, /ORDER Q v1\.55 · 출고관리/,
   "the public footer must use the ORDER Q product concept");
-assert.match(orderOpsHtml, /dataops\/v1-security-client\.js\?v=0\.1\.2/,
-  "the public page must load the authenticated DataOps V1 read client");
-assert.match(orderOpsHtml, /orderops\/orderops-source-adapter\.js\?v=1\.64\.1/,
-  "the public page must load the DataOps and SmartInput source adapter");
-assert.match(orderOpsHtml, /function loadDataOpsInventory\(\)[\s\S]*fetchLatestDataOpsSnapshot/,
-  "the warehouse card must load and validate the latest DataOps snapshot");
-assert.match(orderOpsHtml, /function loadSmartInputOrders\(\)[\s\S]*sourceAdapter\.loadSmartInputOrders/,
-  "the order card must read SmartInput orders from the ORDER Q ledger");
-assert.match(orderOpsHtml, /orderops-stage4-analysis-bridge\.js\?v=0\.1\.0/,
-  "the actual /orders.html ORDER Q route must use the auth-aware Stage4 bridge");
-assert.match(orderOpsHtml,
-  /state\.workspace = await analyzeCurrentInputs\(\);\s*state\.activePreview = "validation";[\s\S]{0,220}renderResults\(\);\s*scheduleLocalSave\(\);/,
-  "the actual ORDER Q route must render and persist local analysis before any explicit Stage4 connection");
-assert.doesNotMatch(orderOpsHtml,
-  /state\.workspace = await window\.ORDERQ_STAGE4_SALE_BRIDGE\.connectSaleStage4Workspace/,
-  "the actual ORDER Q route must not restore the former unconditional Cloud wait");
-assert.match(orderOpsHtml, /kind === "inventory"[\s\S]*loadDataOpsInventory\(\)/,
-  "the warehouse card surface must invoke the DataOps loader");
-assert.match(orderOpsHtml, /kind === "orders"[\s\S]*loadSmartInputOrders\(\)/,
-  "the order card surface must invoke the SmartInput loader");
 assert.doesNotMatch(
   orderOpsHtml.slice(orderOpsHtml.indexOf('<header class="global-header">'), orderOpsHtml.indexOf('</header>')),
   /NEXUS|OrderOps/,
@@ -165,19 +129,6 @@ for (const requiredWarehouseColorContract of [
   assert.ok(orderOpsHtml.includes(requiredWarehouseColorContract),
     `public OrderOps warehouse color contract is missing: ${requiredWarehouseColorContract}`);
 }
-for (const purchaseQuantityContract of [
-  'key: "shipping:inventory:purchase-quantity"',
-  'header: "구매수량"',
-  'role: "purchaseQuantity"',
-  'data-purchase-quantity-code',
-  'engine.setPurchaseQuantityValue(',
-  'const cellFill = warehouseFill ||',
-  'style="${cellFill ? `background:${cellFill}` : ""}"',
-  '!saved.includes(purchaseQuantityKey)',
-]) {
-  assert.ok(orderOpsHtml.includes(purchaseQuantityContract),
-    `public purchase quantity and warehouse print-color contract is missing: ${purchaseQuantityContract}`);
-}
 for (const requiredInteractionContract of [
   'id="managerColorOptions"',
   'id="sourceSelector"',
@@ -206,11 +157,6 @@ for (const requiredInteractionContract of [
   'function rowMatchesColumnFilters',
   'function comparePreviewPairs',
   'function layeredColumnSortSettings',
-  'function setColumnSortSetting',
-  'function applyAllocationSegmentAggregates',
-  'oneapp.orderops.sort-settings.v1',
-  'data-manager-assignment-customer',
-  'data-manager-assignment',
   'allocations.columns[1].role = "customer"',
   'allocations.columns[2].role = "group"',
   'await restoreLocalRecord(candidate.record)',
@@ -224,8 +170,8 @@ for (const requiredInteractionContract of [
   'id="viewPresetSaveButton"',
   'id="viewPresetDefaultButton"',
   'oneapp.orderops.order-view-presets.v1',
-  'orderops-order-view-presets/v5',
-  'const PREVIOUS_ORDER_VIEW_PRESETS_SCHEMA = "orderops-order-view-presets/v4"',
+  'orderops-order-view-presets/v4',
+  'const PREVIOUS_ORDER_VIEW_PRESETS_SCHEMA = "orderops-order-view-presets/v3"',
   'const VIEW_PRESET_TABS = new Set(["allocations", "ledger", "inventory", "purchases", "sales"])',
   'columnWidths: normalizeStoredColumnWidths(value.view.columnWidths)',
   'columnOrder: normalizeStoredColumnOrder(value.view.columnOrder)',
@@ -259,14 +205,8 @@ const publicHeaderSource = orderOpsHtml.slice(
   orderOpsHtml.indexOf('<header class="global-header">'),
   orderOpsHtml.indexOf('</header>'),
 );
-assert.match(publicHeaderSource, /class="brand-logo" src="assets\/order-q-logo\.png" alt="ORDER Q"/,
-  "the public APP BAR must retain the application identity with the approved logo");
-assert.doesNotMatch(publicHeaderSource, /master-brand-link|NEXES|GOLDEN RECORD/,
-  "the public APP BAR must remove the duplicated global master lockup");
 assert.ok(publicHeaderSource.indexOf('id="smartInputButton"') < publicHeaderSource.indexOf('id="printButton"'),
   "Smart input F4 must sit immediately before screen print in the global header");
-assert.match(publicHeaderSource, /id="smartInputButton" href="orderops\/input\.html"/,
-  "root ORDER Q entries must open the canonical manual-order page without a 404");
 assert.equal(orderOpsHtml.split('id="smartInputButton"').length - 1, 1,
   "Smart input F4 must not remain duplicated inside the execution panel");
 assert.match(orderOpsHtml, /\.print-area table\s*\{[\s\S]*?font-size:\s*10\.6px;/,
@@ -301,9 +241,6 @@ const publicViewControls = orderOpsHtml.slice(
   orderOpsHtml.indexOf('<div class="view-controls"'),
   orderOpsHtml.indexOf('<div class="warehouse-color-bar"'),
 );
-assert.ok(publicViewControls.indexOf('id="shortageFocusButton"') < publicViewControls.indexOf('id="viewPresetSelect"') &&
-  publicViewControls.indexOf('id="viewPresetDeleteButton"') < publicViewControls.indexOf('id="unitFilterGroup"'),
-  "the public saved-layout group must sit immediately after shortage focus and before the remaining tools");
 assert.ok(publicViewControls.indexOf('id="columnWidthResetButton"') < publicViewControls.indexOf('id="warehouseFilterToggle"'),
   "warehouse and manager filter buttons must sit at the far right after column-width reset");
 assert.ok(publicViewControls.indexOf('id="tableSearchInput"') < publicViewControls.indexOf('id="resultFilterResetButton"'),
@@ -328,9 +265,8 @@ for (const shortcutContract of [
 assert.doesNotMatch(orderOpsHtml, /F12|새로고침 F5|aria-keyshortcuts="F5"[^>]*refreshButton/,
   "retired F12 and refresh-F5 shortcuts must not remain");
 assert.ok(orderOpsHtml.includes(
-  'headers: ["창고", "거래처", "그룹", "담당자", "상품코드", "품명", "규격", "정보", "주문", "단가", ...allocationWarehouseHeaders, "전달사항", "구매", "판매연결"]',
+  'headers: ["창고", "거래처", "그룹", "담당자", "상품코드", "품명", "규격", "정보", "주문", "단가", ...allocationWarehouseHeaders, "전달사항", "구매"]',
 ), "the public order table must include the source customer group in the approved sequence");
-assert.match(orderOpsHtml, /data-sale-stage4-link/, "the public order table must expose the reviewed ORDER Q/direct sale link action");
 assert.doesNotMatch(orderOpsHtml, /allocations\.columns\[0\]\.orderField\s*=\s*"warehouse"/,
   "the order warehouse column must remain read-only");
 assert.match(orderOpsHtml, /table\s*\{[^}]*border-collapse:\s*collapse;[^}]*border:\s*1px solid #d9e2ec;/,
@@ -750,8 +686,8 @@ const edgeWorkspace = engine.analyze(edgeOrders, edgeInventory, {
   createdAt: "2026-07-30T00:00:00.000Z",
   sourceFingerprint: "a".repeat(64),
 });
-assert.equal(engine.ENGINE_VERSION, "3.20.0");
-assert.equal(workbookTools.WORKBOOK_VERSION, "4.9.0");
+assert.equal(engine.ENGINE_VERSION, "3.18.0");
+assert.equal(workbookTools.WORKBOOK_VERSION, "4.8.0");
 assert.equal(edgeWorkspace.schemaVersion, "shipping-workspace/v2");
 const edgeShortageContext = engine.getShortageCategoryContext(edgeWorkspace);
 assert.deepEqual(edgeShortageContext, {
@@ -793,28 +729,6 @@ assert.deepEqual(
   edgeInventoryView.columns.filter((column) => column.role === "warehouseQuantity").map(() => 0),
   "every warehouse quantity cell for an order-only product must begin at numeric zero",
 );
-const unitSemanticsWorkspace = engine.analyze(
-  parseOrders(buildOrderMatrix([
-    { code: "UNIT-BOX-SPEC-EA", unit: "BOX", spec: "EA", quantity: 1 },
-    { code: "UNIT-EA-SPEC-BOX", unit: "EA", spec: "BOX", quantity: 1 },
-    { code: "UNIT-SPLIT-SPEC-ETC", unit: "소분", spec: "기타", quantity: 1 },
-  ])),
-  parseInventory(buildInventoryMatrix([
-    { code: "UNIT-BOX-SPEC-EA", unit: "BOX", spec: "EA", whole: 2, seoul: 0, transfer: 0 },
-    { code: "UNIT-EA-SPEC-BOX", unit: "EA", spec: "BOX", whole: 2, seoul: 0, transfer: 0 },
-    { code: "UNIT-SPLIT-SPEC-ETC", unit: "소분", spec: "기타", whole: 2, seoul: 0, transfer: 0 },
-  ])),
-  { sourceFingerprint: "c".repeat(64) },
-);
-assert.deepEqual(
-  engine.getInventoryViewRows(unitSemanticsWorkspace).rows.map((row) => [row.productCode, row.unit, row.specification]),
-  [
-    ["UNIT-BOX-SPEC-EA", "BOX", "EA"],
-    ["UNIT-EA-SPEC-BOX", "EA", "BOX"],
-    ["UNIT-SPLIT-SPEC-ETC", "소분", "기타"],
-  ],
-  "inventory view rows must expose unit independently from specification for UI filtering and emphasis",
-);
 assert.equal(
   engine.getPurchaseUploadSelection(edgeWorkspace).included.find((row) => row.productCode === "NO-STOCK")?.purchaseNeed,
   3,
@@ -836,26 +750,6 @@ assert.equal(
   2,
   "the corrected order-only stock must immediately recalculate the purchase-upload quantity",
 );
-const orderOnlyManualWorkspace = JSON.parse(JSON.stringify(edgeWorkspace));
-engine.setPurchaseQuantityValue(orderOnlyManualWorkspace, "NO-STOCK", "7.5");
-assert.equal(
-  engine.getPurchaseUploadSelection(orderOnlyManualWorkspace).included
-    .find((row) => row.productCode === "NO-STOCK")?.purchaseNeed,
-  7.5,
-  "a valid manual quantity must override automatic shortage for an inventory-missing product",
-);
-assert.equal(
-  workbookTools.getPurchaseUploadRows(orderOnlyManualWorkspace)
-    .find((row) => row.productCode === "NO-STOCK")?.purchaseNeed,
-  7.5,
-  "manual positive quantity must permit an inventory-missing product in the purchase workbook",
-);
-engine.setPurchaseValue(orderOnlyManualWorkspace, "NO-STOCK", "대체");
-assert.equal(engine.getPurchaseUploadSelection(orderOnlyManualWorkspace).included
-  .some((row) => row.productCode === "NO-STOCK"), false);
-assert.equal(workbookTools.getPurchaseUploadRows(orderOnlyManualWorkspace)
-  .some((row) => row.productCode === "NO-STOCK"), false,
-  "대체 must remain excluded even when a positive manual quantity exists");
 
 const signedOrders = parseOrders(buildOrderMatrix([
   { code: "SIGNED-001", quantity: 0, customer: "제로거래처", note: "0 수량 전달" },
@@ -898,7 +792,6 @@ assert.equal(signedInventoryView.rows[0].orderNotes, "0 수량 전달\n음수 �
 const signedWorkbook = workbookTools.buildWorkbook(signedWorkspace, XLSX);
 assert.deepEqual(Array.from(signedWorkbook.SheetNames), [
   "전달사항(적요보기)", "주문현황", "재고수불부", "창고별재고", "구매업로드", "판매업로드",
-  "_NEXUS_META", "_NEXUS_SALES_META",
 ]);
 const signedNoticeSheet = signedWorkbook.Sheets["전달사항(적요보기)"];
 assert.deepEqual(
@@ -919,8 +812,8 @@ assert.equal(sheetCellByHeader(signedWorkbook.Sheets["주문현황"], "주문수
 assert.equal(XLSX.utils.decode_range(signedWorkbook.Sheets["구매업로드"]["!ref"]).e.c, 19);
 assert.equal(XLSX.utils.decode_range(signedWorkbook.Sheets["구매업로드"]["!ref"]).e.r, 0);
 assert.equal(XLSX.utils.decode_range(signedWorkbook.Sheets["판매업로드"]["!ref"]).e.c, 21);
-assert.equal(XLSX.utils.decode_range(signedWorkbook.Sheets["판매업로드"]["!ref"]).e.r, 3,
-  "sales upload must preserve positive, zero, and negative order quantities");
+assert.equal(XLSX.utils.decode_range(signedWorkbook.Sheets["판매업로드"]["!ref"]).e.r, 2,
+  "sales upload must preserve negative order quantities and omit zero quantities");
 assert.equal(edgeWorkspace.basisDate, "2026-08-04");
 assert.equal(edgeWorkspace.uploadDate, "20260804");
 assert.equal(edgeWorkspace.planId, `SHIPPLAN-20260804-${"a".repeat(16)}`);
@@ -1143,30 +1036,6 @@ assert.deepEqual(
 assert.equal(engine.getInventoryViewRows(editableWorkspace).rows[0].remainingQuantity, -2);
 assert.equal(engine.getPurchaseUploadSelection(editableWorkspace).included[0].purchaseNeed, 2);
 assert.equal(editableWorkspace.notices[0].warehouse, "1창고");
-engine.setPurchaseQuantityValue(editableWorkspace, "EDIT-001", "4.5");
-assert.deepEqual(engine.getPurchaseQuantityInputs(editableWorkspace), { "EDIT-001": 4.5 });
-assert.equal(engine.getInventoryViewRows(editableWorkspace).rows[0].purchaseQuantityOverride, 4.5);
-assert.equal(engine.getPurchaseUploadSelection(editableWorkspace).included[0].purchaseNeed, 4.5);
-engine.setOrderValue(editableWorkspace, editableOrderRow, "quantity", "8");
-assert.equal(
-  engine.getPurchaseQuantityInputs(editableWorkspace)["EDIT-001"],
-  4.5,
-  "manual purchase quantity must survive order-driven workspace rebuild",
-);
-const recoveryWithPurchaseQuantity = engine.buildLocalRecoveryPayload(editableWorkspace);
-assert.equal(recoveryWithPurchaseQuantity.workspace.purchaseManagement
-  .find((row) => row.productCode === "EDIT-001" && row.rowType === "main").purchaseQuantityOverride, 4.5);
-engine.setPurchaseQuantityValue(editableWorkspace, "EDIT-001", 0);
-assert.equal(engine.getPurchaseQuantityInputs(editableWorkspace)["EDIT-001"], 0,
-  "manual zero must remain distinguishable from a blank override");
-assert.equal(engine.getPurchaseUploadSelection(editableWorkspace).included.length, 0,
-  "manual zero must suppress the automatic purchase-upload row");
-assert.throws(() => engine.setPurchaseQuantityValue(editableWorkspace, "EDIT-001", "-1"), /0 이상의 숫자/);
-assert.throws(() => engine.setPurchaseQuantityValue(editableWorkspace, "EDIT-001", "수량"), /0 이상의 숫자/);
-engine.setPurchaseQuantityValue(editableWorkspace, "EDIT-001", "");
-assert.equal(Object.hasOwn(engine.getPurchaseQuantityInputs(editableWorkspace), "EDIT-001"), false);
-assert.equal(engine.getPurchaseUploadSelection(editableWorkspace).included[0].purchaseNeed, 3,
-  "clearing the manual value must restore the automatic shortage quantity");
 assert.equal(
   dynamicView.rows[0].orderInformation,
   "거래처 1(2)1,000\n반복거래처(1)1,000",
@@ -1335,8 +1204,8 @@ assert.notEqual(
 const dynamicWorkbook = workbookTools.buildWorkbook(dynamicWorkspace, XLSX);
 const dynamicInventorySheet = dynamicWorkbook.Sheets["창고별재고"];
 assert.deepEqual(
-  Array.from(XLSX.utils.sheet_to_json(dynamicInventorySheet, { header: 1, raw: true, range: "A1:O1" })[0]),
-  [...dynamicView.headers, "구매", "구매수량", "정보", "적요"],
+  Array.from(XLSX.utils.sheet_to_json(dynamicInventorySheet, { header: 1, raw: true, range: "A1:N1" })[0]),
+  [...dynamicView.headers, "구매", "정보", "적요"],
 );
 assert.equal(dynamicInventorySheet["B1"].v, "품목명");
 assert.equal(dynamicInventorySheet["I1"].v, "신규창고");
@@ -1350,21 +1219,20 @@ assert.deepEqual([dynamicInventorySheet["J2"].t, dynamicInventorySheet["J2"].v],
 assert.equal(dynamicInventorySheet["J2"].s.numFmt, "@");
 assert.notEqual(dynamicInventorySheet["J2"].s.fill.fgColor.rgb, "FFF200");
 assert.equal(dynamicInventorySheet["L1"].v, "구매", "reserved purchase descriptor must be appended exactly once after source columns");
-assert.equal(dynamicInventorySheet["M1"].v, "구매수량");
-assert.equal(dynamicInventorySheet["N1"].v, "정보");
-assert.equal(dynamicInventorySheet["O1"].v, "적요");
-assert.equal(dynamicInventorySheet["N2"].v, "거래처 1(2)1,000\n반복거래처(1)1,000");
-assert.equal(dynamicInventorySheet["O2"].v, "긴급출고\n오전배송");
-assert.equal(dynamicInventorySheet["N3"].v, "거래처 3(1)1,000", "nonnegative balance must retain order information");
-assert.equal(dynamicInventorySheet["!ref"], "A1:O3", "inventory rows must remain one row per inventory product despite repeated orders");
+assert.equal(dynamicInventorySheet["M1"].v, "정보");
+assert.equal(dynamicInventorySheet["N1"].v, "적요");
+assert.equal(dynamicInventorySheet["M2"].v, "거래처 1(2)1,000\n반복거래처(1)1,000");
+assert.equal(dynamicInventorySheet["N2"].v, "긴급출고\n오전배송");
+assert.equal(dynamicInventorySheet["M3"].v, "거래처 3(1)1,000", "nonnegative balance must retain order information");
+assert.equal(dynamicInventorySheet["!ref"], "A1:N3", "inventory rows must remain one row per inventory product despite repeated orders");
 const overrideInventorySheet = workbookTools.buildWorkbook(overrideWorkspace, XLSX).Sheets["창고별재고"];
 assert.deepEqual(
-  ["F2", "H2", "L2", "M2", "N2", "O2", "Q2"].map((address) => overrideInventorySheet[address].v),
+  ["F2", "H2", "L2", "M2", "N2", "O2", "P2"].map((address) => overrideInventorySheet[address].v),
   [-22, -20, "검수기본", "검수전송", 4321, "검수구매", "같은거래처(4)1,000\n같은거래처(4)1,200\n거래처 3(2)1,000"],
   "general Excel must carry every effective override, automatic quantity, purchase, and order information",
 );
-assert.equal(overrideInventorySheet["Q2"].s.alignment.wrapText, true, "Excel information must use full wrapped lines");
-assert.equal(overrideInventorySheet["R2"].v, "원문 적요\n원문 적요 / 원문 적요1");
+assert.equal(overrideInventorySheet["P2"].s.alignment.wrapText, true, "Excel information must use full wrapped lines");
+assert.equal(overrideInventorySheet["Q2"].v, "원문 적요\n원문 적요 / 원문 적요1");
 assert.equal(overrideInventorySheet["F2"].s.fill.fgColor.rgb, "FFF200", "negative automatic balance must be highlighted");
 const purchaseContractWorkspace = JSON.parse(JSON.stringify(edgeWorkspace));
 const purchaseShapeBeforeOverride = XLSX.utils.sheet_to_json(
@@ -1390,7 +1258,7 @@ assert.deepEqual(
 const edgeWorkbook = workbookTools.buildWorkbook(edgeWorkspace, XLSX);
 assert.deepEqual(
   Array.from(edgeWorkbook.SheetNames),
-  [...Array.from(workbookTools.REQUIRED_SHEETS), "_NEXUS_META", "_NEXUS_SALES_META"],
+  Array.from(workbookTools.REQUIRED_SHEETS),
   "workbook sheet contract changed",
 );
 assert.deepEqual(Array.from(workbookTools.REQUIRED_SHEETS), [
@@ -1433,27 +1301,6 @@ engine.setPurchaseValue(edgeWorkspace, "000100", "거래처A");
 assert.ok(edgeWorkspace.allocations.filter((row) => row.productCode === "000100").every((row) => row.purchase === "거래처A"));
 assert.equal(edgeWorkspace.productSummaries.find((row) => row.productCode === "000100").purchase, "거래처A");
 assert.equal(edgeWorkspace.purchaseManagement.find((row) => row.productCode === "000100" && row.rowType === "main").purchase, "거래처A");
-
-const managerAssignmentWorkspace = JSON.parse(JSON.stringify(edgeWorkspace));
-const managerAssignmentCustomer = managerAssignmentWorkspace.orders[0].customer;
-const managerAssignmentRows = managerAssignmentWorkspace.orders.filter(
-  (row) => row.customer === managerAssignmentCustomer,
-);
-assert.ok(managerAssignmentRows.length >= 2, "manager assignment fixture must contain repeated customer rows");
-engine.setCustomerManager(managerAssignmentWorkspace, managerAssignmentCustomer, "담당변경");
-assert.ok(
-  managerAssignmentWorkspace.orders
-    .filter((row) => row.customer === managerAssignmentCustomer)
-    .every((row) => row.manager === "담당변경"),
-  "customer manager assignment must update every order row for the selected customer",
-);
-assert.ok(
-  managerAssignmentWorkspace.allocations
-    .filter((row) => row.customer === managerAssignmentCustomer)
-    .every((row) => row.manager === "담당변경"),
-  "customer manager assignment must rebuild allocation rows with the selected manager",
-);
-
 const linkedPurchaseWorkbook = workbookTools.buildWorkbook(edgeWorkspace, XLSX);
 assert.deepEqual(
   [
@@ -1476,26 +1323,11 @@ assert.deepEqual(
 );
 assert.equal(sheetCellByHeader(linkedPurchaseWorkbook.Sheets["주문현황"], "구매", 2).v, "거래처A");
 assert.equal(linkedPurchaseWorkbook.Sheets["창고별재고"].O2.v, "거래처A");
-assert.equal(linkedPurchaseWorkbook.Sheets["창고별재고"].P2.v, "");
-assert.equal(linkedPurchaseWorkbook.Sheets["창고별재고"].Q2.v, "같은거래처(4)1,000\n같은거래처(4)1,200\n거래처 3(2)1,000");
-assert.equal(linkedPurchaseWorkbook.Sheets["창고별재고"].R2.v, "원문 적요\n원문 적요 / 원문 적요1");
-
-const manualPurchaseQuantityWorkbookWorkspace = JSON.parse(JSON.stringify(edgeWorkspace));
-engine.setPurchaseQuantityValue(manualPurchaseQuantityWorkbookWorkspace, "000100", 6.25);
-const manualPurchaseQuantityWorkbook = workbookTools.buildWorkbook(manualPurchaseQuantityWorkbookWorkspace, XLSX);
-assert.equal(
-  sheetCellByHeader(manualPurchaseQuantityWorkbook.Sheets["창고별재고"], "구매수량", 2).v,
-  6.25,
-  "integrated warehouse inventory sheet must expose the manual purchase quantity after purchase",
-);
-assert.equal(
-  sheetCellByHeader(manualPurchaseQuantityWorkbook.Sheets["구매업로드"], "수량", 2).v,
-  6.25,
-  "integrated purchase upload must prefer the valid manual quantity",
-);
+assert.equal(linkedPurchaseWorkbook.Sheets["창고별재고"].P2.v, "같은거래처(4)1,000\n같은거래처(4)1,200\n거래처 3(2)1,000");
+assert.equal(linkedPurchaseWorkbook.Sheets["창고별재고"].Q2.v, "원문 적요\n원문 적요 / 원문 적요1");
 
 const purchaseUploadWorkbook = workbookTools.buildPurchaseUploadWorkbook(edgeWorkspace, XLSX);
-assert.deepEqual(Array.from(purchaseUploadWorkbook.SheetNames), ["구매입력", "_NEXUS_META"]);
+assert.deepEqual(Array.from(purchaseUploadWorkbook.SheetNames), ["구매입력"]);
 const purchaseUploadSheet = purchaseUploadWorkbook.Sheets["구매입력"];
 assert.deepEqual(
   Array.from(XLSX.utils.sheet_to_json(purchaseUploadSheet, { header: 1, raw: true, range: "A1:T1" })[0]),
@@ -1541,12 +1373,12 @@ Object.assign(salesUploadWorkspace.allocations[3], {
 });
 salesUploadWorkspace.sourceFiles.sales = { rows: [{ productCode: "HISTORY-ONLY", quantity: 99 }] };
 const salesUploadRows = workbookTools.getSalesUploadRows(salesUploadWorkspace);
-assert.equal(salesUploadRows.length, 4, "sales upload must preserve current positive, zero, and negative allocation rows");
+assert.equal(salesUploadRows.length, 3, "sales upload must contain only current nonzero allocation rows");
 assert.equal(salesUploadRows.some((row) => row.productCode === "HISTORY-ONLY"), false,
   "historical sales evidence must not be re-exported as a new sales voucher");
 assert.deepEqual(
   salesUploadRows.map((row) => row.customer),
-  ["가거래처", "가거래처", "같은거래처", "나거래처"],
+  ["가거래처", "가거래처", "나거래처"],
   "sales upload rows must be grouped in ascending customer order while retaining source order inside each customer",
 );
 const salesUploadSheet = workbookTools.buildSalesUploadSheet(salesUploadWorkspace, XLSX);
@@ -1616,21 +1448,21 @@ assert.deepEqual(edgeWorkbook.Sheets["주문현황"]["!freeze"], { xSplit: 0, yS
 
 const formatOrders = parseOrders(
   buildOrderMatrix([
-    { code: "PURCHASE", quantity: 2, manager: "담당A", unit: "BOX", spec: "EA" },
-    { code: "ADDITIONAL", quantity: 2, manager: "담당B", unit: "EA", spec: "BOX" },
-    { code: "SEOUL", quantity: 2, manager: "담당A", unit: "소분", spec: "기타" },
-    { code: "STOCK", quantity: 2, manager: "담당C", unit: "BOX", spec: "BOX" },
-    { code: "MIXED", quantity: 2, manager: "담당C", unit: "EA", spec: "EA" },
-    { code: "NO-STOCK", quantity: 1, manager: "담당D", unit: "BOX", spec: "BOX" },
+    { code: "PURCHASE", quantity: 2, manager: "담당A", spec: "BOX" },
+    { code: "ADDITIONAL", quantity: 2, manager: "담당B", spec: "EA" },
+    { code: "SEOUL", quantity: 2, manager: "담당A", spec: "소분" },
+    { code: "STOCK", quantity: 2, manager: "담당C", spec: "BOX" },
+    { code: "MIXED", quantity: 2, manager: "담당C", spec: "EA" },
+    { code: "NO-STOCK", quantity: 1, manager: "담당D", spec: "BOX" },
   ]),
 );
 const formatInventory = parseInventory(
   buildInventoryMatrix([
-    { code: "PURCHASE", unit: "BOX", spec: "EA", quantity: -4, whole: 0, seoul: 0, transfer: 0, jinyeong: -4, warehousePrice: 6000 },
-    { code: "ADDITIONAL", unit: "EA", spec: "BOX", quantity: 4, whole: 1, seoul: 0, transfer: 0, transfer2: 3, warehousePrice: 2000 },
-    { code: "SEOUL", unit: "소분", spec: "기타", quantity: 2, whole: 0, seoul: 3, transfer: -1, warehousePrice: 17000 },
-    { code: "STOCK", unit: "BOX", spec: "BOX", quantity: 5, whole: 5, seoul: 0, transfer: 0, warehousePrice: 15000 },
-    { code: "MIXED", unit: "EA", spec: "EA", quantity: 2, whole: 1, seoul: 1, transfer: 0, warehousePrice: 8100 },
+    { code: "PURCHASE", spec: "BOX", quantity: -4, whole: 0, seoul: 0, transfer: 0, jinyeong: -4, warehousePrice: 6000 },
+    { code: "ADDITIONAL", spec: "EA", quantity: 4, whole: 1, seoul: 0, transfer: 0, transfer2: 3, warehousePrice: 2000 },
+    { code: "SEOUL", spec: "소분", quantity: 2, whole: 0, seoul: 3, transfer: -1, warehousePrice: 17000 },
+    { code: "STOCK", spec: "BOX", quantity: 5, whole: 5, seoul: 0, transfer: 0, warehousePrice: 15000 },
+    { code: "MIXED", spec: "EA", quantity: 2, whole: 1, seoul: 1, transfer: 0, warehousePrice: 8100 },
   ]),
 );
 const formatValidation = engine.validateInputs(formatOrders, formatInventory);
@@ -1774,12 +1606,12 @@ assert.deepEqual(printNames, [
 const inventorySheet = formatWorkbook.Sheets["창고별재고"];
 assert.deepEqual(
   Array.from(
-    XLSX.utils.sheet_to_json(inventorySheet, { header: 1, raw: true, range: "A1:R1" })[0],
+    XLSX.utils.sheet_to_json(inventorySheet, { header: 1, raw: true, range: "A1:Q1" })[0],
   ),
   [...INVENTORY_HEADERS.filter((header) => header !== "사용")
     .flatMap((header) => header === "수량"
       ? ["주문수량", "잔량"]
-      : [header === "창고" ? "창고단가" : header]), "구매", "구매수량", "정보", "적요"],
+      : [header === "창고" ? "창고단가" : header]), "구매", "정보", "적요"],
 );
 for (let row = 2; row <= 6; row += 1) {
   assert.equal(inventorySheet[`O${row}`].v, "", "purchase column must default to blank text");
@@ -1791,7 +1623,7 @@ assert.equal(inventorySheet["F2"].v, -6);
 assert.equal(inventorySheet["K2"].v, -4);
 assert.equal(inventorySheet["F2"].s.fill.fgColor.rgb, "FFF200");
 assert.equal(inventorySheet["K2"].s.fill.fgColor.rgb, "FFF200");
-for (const address of ["A2", "B2", "C2", "D2", "E2", "G2", "H2", "I2", "J2", "L2", "M2", "N2", "O2", "P2", "Q2", "R2"]) {
+for (const address of ["A2", "B2", "C2", "D2", "E2", "G2", "H2", "I2", "J2", "L2", "M2", "N2", "O2", "P2", "Q2"]) {
   assert.equal(inventorySheet[address].s.fill.fgColor.rgb, "FFFFFF", `${address} must have no warehouse/manager fill`);
 }
 assert.equal(inventorySheet["A3"].s.font.color.rgb, "B91C1C");
@@ -1802,8 +1634,7 @@ const inventoryHeaderRow = Array.from(
   XLSX.utils.sheet_to_json(inventorySheet, { header: 1, raw: true, range: 0 })[0],
 );
 assert.equal(inventoryHeaderRow.includes("2전송"), true, "all nonblank source inventory headers must be retained");
-assert.equal(inventoryHeaderRow.at(-4), "구매", "purchase must follow all dynamic source inventory columns");
-assert.equal(inventoryHeaderRow.at(-3), "구매수량", "purchase quantity must immediately follow purchase");
+assert.equal(inventoryHeaderRow.at(-3), "구매", "purchase must follow all dynamic source inventory columns");
 assert.equal(inventoryHeaderRow.at(-2), "정보", "customer, quantity, and unit price must be grouped in the information column");
 assert.equal(inventoryHeaderRow.at(-1), "적요", "order notes must be the rightmost inventory column");
 for (let row = 1; row <= 6; row += 1) {
@@ -1944,13 +1775,9 @@ const html = fs.readFileSync(path.join(ROOT, "orderops", "list.html"), "utf8");
 const inlineScriptMatch = html.match(/<script>\s*([\s\S]*?)<\/script>\s*<\/body>/);
 assert.ok(inlineScriptMatch, "canonical ORDER Q inline application script must exist");
 new vm.Script(inlineScriptMatch[1], { filename: "orderops/list.html:inline" });
-assert.match(html, /brand-badge">v1\.65</, "canonical ORDER Q visible version must be v1.65");
-assert.match(html, /orderops-source-adapter\.js\?v=1\.64\.0/,
-  "the canonical route must load the shared source adapter");
-assert.match(html, /<nexus-top app-id="orderq">[\s\S]*?<\/nexus-top>/,
-  "the canonical route must load NEXUS TOP with the ORDER Q app id");
-assert.doesNotMatch(html, /class="brand-logo" src="\.\.\/assets\/order-q-logo\.png"/,
-  "the canonical APP BAR must not duplicate the former ORDER Q logo");
+assert.match(html, /brand-badge">v1\.55</, "canonical ORDER Q visible version must be v1.55");
+assert.match(html, /class="brand-logo" src="\.\.\/assets\/order-q-logo\.png"/,
+  "the canonical header must use the shared ORDER Q logo asset");
 assert.match(html, /<h2 id="settingsModalTitle">ORDER Q 환경설정<\/h2>/,
   "the settings title must use the ORDER Q brand");
 assert.match(
@@ -2070,11 +1897,6 @@ for (const requiredInteractionContract of [
   'state.sortSettings = Object.create(null)',
   'state.columnFilters = Object.create(null)',
   'function layeredColumnSortSettings',
-  'function setColumnSortSetting',
-  'function applyAllocationSegmentAggregates',
-  'oneapp.orderops.sort-settings.v1',
-  'data-manager-assignment-customer',
-  'data-manager-assignment',
   'allocations.columns[1].role = "customer"',
   'allocations.columns[2].role = "group"',
   'await restoreLocalRecord(candidate.record)',
@@ -2088,8 +1910,8 @@ for (const requiredInteractionContract of [
   'id="viewPresetSaveButton"',
   'id="viewPresetDefaultButton"',
   'oneapp.orderops.order-view-presets.v1',
-  'orderops-order-view-presets/v5',
-  'const PREVIOUS_ORDER_VIEW_PRESETS_SCHEMA = "orderops-order-view-presets/v4"',
+  'orderops-order-view-presets/v4',
+  'const PREVIOUS_ORDER_VIEW_PRESETS_SCHEMA = "orderops-order-view-presets/v3"',
   'const VIEW_PRESET_TABS = new Set(["allocations", "ledger", "inventory", "purchases", "sales"])',
   'columnWidths: normalizeStoredColumnWidths(value.view.columnWidths)',
   'columnOrder: normalizeStoredColumnOrder(value.view.columnOrder)',
@@ -2116,13 +1938,6 @@ const canonicalViewControls = html.slice(
   html.indexOf('<div class="view-controls"'),
   html.indexOf('<div class="warehouse-color-bar"'),
 );
-assert.ok(canonicalViewControls.indexOf('id="shortageFocusButton"') < canonicalViewControls.indexOf('id="viewPresetSelect"') &&
-  canonicalViewControls.indexOf('id="viewPresetDeleteButton"') < canonicalViewControls.indexOf('id="unitFilterGroup"'),
-  "the canonical saved-layout group must sit immediately after shortage focus and before the remaining tools");
-assert.match(html, /id="smartInputButton" href="input\.html"/,
-  "canonical orderops route must retain its directory-relative manual-order link");
-assert.doesNotMatch(html.slice(html.indexOf('<header class="global-header">'), html.indexOf('</header>')), /master-brand-link|NEXES|GOLDEN RECORD/,
-  "the canonical APP BAR must remove the duplicated global master lockup");
 assert.ok(canonicalViewControls.indexOf('id="columnWidthResetButton"') < canonicalViewControls.indexOf('id="warehouseFilterToggle"'),
   "canonical filter buttons must remain at the right edge after the column tools");
 assert.match(combinedCss, /body\s*\{[^}]*font-size:\s*14px;/,
@@ -2303,34 +2118,11 @@ assert.match(combinedCss, /\.purchase-input\[data-negative-balance="true"\]\s*\{
   "negative purchase cells must retain only the pale fill without an internal horizontal rule");
 assert.match(combinedCss, /td\.ledger-negative-cell \.inventory-total-frame\s*\{[^}]*background:\s*#fef9c3\s*!important;[^}]*box-shadow:\s*none;/,
   "negative balance cells must retain only the pale fill without an internal vertical rule");
-assert.ok(html.includes('<legend>단위</legend>') &&
-  html.includes('const unit = normalizedSourceUnit(pair.sourceRow);') &&
-  html.includes('if (!state.unitFilters.has(unit)) return false;'),
-  "BOX, EA, and 소분 quick filters must use the source unit instead of specification");
-assert.ok(html.includes("const unitByProductCode = new Map();") &&
-  html.includes('unit: normalizedSourceUnit(row) || unitByProductCode.get(engine.normalizeProductCode(row?.productCode)) || ""'),
-  "purchase and sales previews must inherit unit data by product code before applying the unit filter");
-const unitEmphasisSource = html.slice(
-  html.indexOf("function normalizedSourceUnit"),
-  html.indexOf("function previewRowFill"),
-);
-const unitEmphasisContext = {};
-vm.runInNewContext(`${unitEmphasisSource}
-  this.results = {
-    specEaUnitBox: exactWarningUnit({ specification: "EA", unit: "BOX" }),
-    specBoxUnitEa: exactWarningUnit({ specification: "BOX", unit: "ea" }),
-    splitUnit: exactWarningUnit({ specification: "기타", unit: "소분" }),
-    exactBox: exactBoxUnit({ specification: "EA", sourceUnit: "BOX" })
-  };`, unitEmphasisContext);
-assert.deepEqual(
-  JSON.parse(JSON.stringify(unitEmphasisContext.results)),
-  { specEaUnitBox: false, specBoxUnitEa: true, splitUnit: true, exactBox: true },
-  "EA, 소분, and BOX emphasis must be decided only from unit data",
-);
-assert.ok(html.includes('const warningUnitContext = exactWarningUnit(sourceRow)') &&
+assert.ok(html.includes('specification === "EA" || specification === "소분"') &&
+  html.includes('const warningUnitContext = exactWarningUnit(sourceRow)') &&
   html.includes('["productName", "specification"].includes(column.role) || quantityColumn') &&
   html.includes('warningUnitContext ? "unit-alert-cell"'),
-  "unit EA and 소분 rows must use red text for product name, specification, order, stock, and balance quantities");
+  "EA and 소분 rows must use red text for product name, specification, order, stock, and balance quantities");
 assert.match(combinedCss, /td\.unit-alert-cell \.inventory-total-frame\s*\{[^}]*color:\s*#b91c1c\s*!important;/,
   "EA and 소분 quantity frames must keep red text even when quantity-zero styling is also present");
 assert.match(combinedCss, /td\.unit-alert-cell[\s\S]*?\.inventory-total-frame\s*\{[^}]*font-weight:\s*400\s*!important;/,
@@ -2466,10 +2258,7 @@ vm.runInNewContext(`const TABLE_WIDTH_MIN = 32;
 assert.equal(presetContext.normalizedPreset.name, "부족상품");
 assert.equal(presetContext.normalizedPreset.previewId, "inventory");
 assert.equal(presetContext.normalizedPreset.isDefault, true);
-assert.deepEqual(Array.from(presetContext.normalizedPreset.view.unitFilters), ["BOX"],
-  "legacy specificationFilters must migrate to the unit-filter runtime contract");
-assert.deepEqual(Array.from(presetContext.normalizedPreset.view.specificationFilters), ["BOX"],
-  "the legacy preset field must remain for rollback compatibility");
+assert.deepEqual(Array.from(presetContext.normalizedPreset.view.specificationFilters), ["BOX"]);
 assert.equal(presetContext.normalizedPreset.view.sortSetting.direction, "desc");
 assert.equal(presetContext.normalizedPreset.view.columnWidths["shipping:inventory:1:품명"], 245);
 assert.deepEqual(Array.from(presetContext.normalizedPreset.view.columnOrder), [
@@ -2657,20 +2446,6 @@ assert.ok(purchaseCompletionSource.includes("previewTable.scrollTo") &&
   purchaseCompletionSource.includes("window.scrollTo") &&
   purchaseCompletionSource.includes("showPurchaseCompletionCoachmark"),
   "completed purchase entry must scroll both views to the top and show temporary guidance");
-const purchaseTabStart = html.indexOf("function handleInventoryPurchaseNavigation");
-const purchaseTabEnd = html.indexOf("function handleInventoryGridArrowNavigation", purchaseTabStart);
-assert.ok(purchaseTabStart >= 0 && purchaseTabEnd > purchaseTabStart,
-  "purchase-place tab navigation must exist");
-const purchaseTabSource = html.slice(purchaseTabStart, purchaseTabEnd);
-assert.ok(purchaseTabSource.includes("purchase-quantity-input[data-purchase-quantity-code]") &&
-  purchaseTabSource.includes("focusPurchaseQuantityInput(purchaseQuantityInput)"),
-  "Tab from an inventory purchase place must move to the same row purchase quantity");
-assert.ok(purchaseTabSource.includes("function handlePurchaseQuantityNavigation") &&
-  purchaseTabSource.includes("requiredInputs[requiredIndex + 1].dataset.purchaseCode") &&
-  purchaseTabSource.includes("commitPurchaseQuantityInput(input, { render: false })"),
-  "Tab from purchase quantity must save it and move to the next required purchase place");
-assert.ok(html.includes('addEventListener("keydown", handlePurchaseQuantityNavigation)'),
-  "purchase quantity tab navigation must be bound to the inventory table");
 assert.ok(html.includes('id="warehouseColorResetButton" type="button">전체 다시보기</button>'),
   "filter reset must be presented as returning to the full view");
 assert.ok(html.includes("색 선택 즉시 저장·적용"),
@@ -2824,7 +2599,7 @@ if (referenceFilesEnabled && fs.existsSync(referenceInventoryPath)) {
   const actualInventorySheet = workbookTools.buildWorkbook(inventoryReferenceWorkspace, XLSX).Sheets["창고별재고"];
   const actualPurchaseColumn = XLSX.utils.encode_col(actualInventoryView.headers.length);
   const actualSupplierColumn = XLSX.utils.encode_col(actualInventoryView.headers.length + 1);
-  const actualOrderCustomerColumn = XLSX.utils.encode_col(actualInventoryView.headers.length + 3);
+  const actualOrderCustomerColumn = XLSX.utils.encode_col(actualInventoryView.headers.length + 2);
   assert.equal(actualInventorySheet["!ref"], `A1:${actualOrderCustomerColumn}${referenceInventoryOnly.rowCount + 1}`);
   assert.equal(actualInventorySheet[`${actualPurchaseColumn}${referenceInventoryOnly.rowCount + 1}`].v, "실재고입력검증");
 }
@@ -2885,72 +2660,7 @@ if (referenceFilesEnabled && fs.existsSync(referenceOrdersPath) && fs.existsSync
     }),
     "every real order-only product must display zero stock and its full negative remaining quantity",
   );
-  const deferredActual = await connectSaleStage4ForAnalysis(referenceWorkspace, {
-    connect: async () => { throw new Error("ORDERQ_ACCESS_DENIED"); },
-    setCloudUrl: () => {}, setCloudAccessToken: () => {}, allowDeferredAuth: true,
-  });
-  assert.equal(deferredActual.planId, referenceWorkspace.planId,
-    "real workbook analysis must survive a Stage4 ORDER Q auth failure");
-  assert.deepEqual(deferredActual.stats, referenceWorkspace.stats,
-    "real workbook totals must remain unchanged when only the Stage4 Cloud read is denied");
-  assert.deepEqual(deferredActual.allocations, referenceWorkspace.allocations,
-    "real workbook allocations must remain unchanged when only the Stage4 Cloud read is denied");
-  assert.deepEqual(deferredActual.saleStage4ConnectionError,
-    { code: "ORDERQ_ACCESS_DENIED", retryable: true, action: "orderq_m9_pull" });
 }
-
-const authBridgeWorkspace = referenceWorkspace || inventoryReferenceWorkspace || formatWorkspace;
-let pendingConnectionStarted = false;
-const unresolvedOptionalConnection = connectSaleStage4ForAnalysis(authBridgeWorkspace, {
-  setCloudUrl: () => {}, setCloudAccessToken: () => {},
-  connect: async () => { pendingConnectionStarted = true; return new Promise(() => {}); },
-});
-await Promise.resolve();
-assert.equal(pendingConnectionStarted, true, "the explicit optional connection fixture must remain unresolved");
-assert.deepEqual((referenceWorkspace || authBridgeWorkspace).stats, authBridgeWorkspace.stats,
-  "an unresolved optional Cloud connection must not delay or mutate the already rendered totals");
-assert.deepEqual((referenceWorkspace || authBridgeWorkspace).allocations, authBridgeWorkspace.allocations,
-  "an unresolved optional Cloud connection must not delay or mutate persisted allocations");
-void unresolvedOptionalConnection;
-const configured = [];
-const deferredAuth = await connectSaleStage4ForAnalysis(authBridgeWorkspace, {
-  setCloudUrl: (value, remember) => configured.push(["url", value, remember]),
-  setCloudAccessToken: (value, remember) => configured.push(["token", value, remember]),
-  connect: async () => { throw new Error("ORDERQ_ACCESS_DENIED"); }, allowDeferredAuth: true,
-});
-assert.equal(deferredAuth.saleStage4ConnectionError.action, "orderq_m9_pull");
-assert.equal(deferredAuth.saleStage4Sidecar, authBridgeWorkspace.saleStage4Sidecar,
-  "auth failure must not create or replace the immutable sale sidecar");
-const { saleStage4ConnectionError: _deferredMarker, ...deferredBusinessState } = deferredAuth;
-assert.deepEqual(deferredBusinessState, authBridgeWorkspace,
-  "auth failure may add only the retry marker and must preserve all ORDER Q business state exactly");
-assert.equal(engine.containsCloudTokenKey(deferredAuth), false,
-  "the retry marker saved with local workspace must never contain a raw credential");
-assert.doesNotMatch(JSON.stringify(deferredAuth), /oneapp_orderq_access_token/i,
-  "local save/export workspace must not contain legacy credential storage-key material");
-assert.deepEqual(configured, [],
-  "the NEXUS Gateway bridge must not configure a browser URL or raw ORDER Q credential");
-for (const code of ["CLOUD_NETWORK_ERROR", "CLOUD_TIMEOUT", "CLOUD_HTTP_ERROR"]) {
-  const deferredTransport = await connectSaleStage4ForAnalysis(authBridgeWorkspace, {
-    setCloudUrl: () => {}, setCloudAccessToken: () => {}, allowDeferredAuth: true,
-    connect: async () => { const error = new Error("sanitized transport failure"); error.code = code; throw error; },
-  });
-  assert.equal(deferredTransport.saleStage4ConnectionError.code, code,
-    `${code} from the optional central read must preserve the completed local analysis`);
-  const { saleStage4ConnectionError: _transportMarker, ...transportBusinessState } = deferredTransport;
-  assert.deepEqual(transportBusinessState, authBridgeWorkspace,
-    `${code} may add only a sanitized retry marker`);
-}
-const retriedAuth = await connectSaleStage4ForAnalysis(deferredAuth, {
-  setCloudUrl: () => {}, setCloudAccessToken: () => {}, allowDeferredAuth: false,
-  connect: async workspace => ({ ...workspace, saleStage4Sidecar: { schemaVersion: "ORDERQ_SALE_SIDECAR_V1", rows: [] } }),
-});
-assert.equal(retriedAuth.saleStage4ConnectionError, undefined,
-  "a successful explicit retry must clear the deferred auth marker");
-await assert.rejects(() => connectSaleStage4ForAnalysis(authBridgeWorkspace, {
-  setCloudUrl: () => {}, setCloudAccessToken: () => {}, allowDeferredAuth: true,
-  connect: async () => { throw new Error("ORDERQ_SOURCE_CORRUPT"); },
-}), /ORDERQ_SOURCE_CORRUPT/, "non-auth failures must remain blocking");
 
 const outputWorkspace = referenceWorkspace || inventoryReferenceWorkspace || formatWorkspace;
 const tempDir = fs.mkdtempSync(path.join(ROOT, ".tmp-shipping-management-"));
@@ -3009,7 +2719,7 @@ try {
   });
   assert.deepEqual(
     Array.from(reopened.SheetNames),
-    [...Array.from(workbookTools.REQUIRED_SHEETS), "_NEXUS_META", "_NEXUS_SALES_META"],
+    Array.from(workbookTools.REQUIRED_SHEETS),
     "reopened workbook sheet contract changed",
   );
   assert.equal(
@@ -3045,8 +2755,8 @@ try {
     cellText: true,
   });
   assert.deepEqual(
-    Array.from(XLSX.utils.sheet_to_json(reopenedDynamic.Sheets["창고별재고"], { header: 1, raw: true, range: "A1:O1" })[0]),
-    [...dynamicView.headers, "구매", "구매수량", "정보", "적요"],
+    Array.from(XLSX.utils.sheet_to_json(reopenedDynamic.Sheets["창고별재고"], { header: 1, raw: true, range: "A1:N1" })[0]),
+    [...dynamicView.headers, "구매", "정보", "적요"],
   );
   assert.deepEqual(
     [reopenedDynamic.Sheets["창고별재고"].I2.t, reopenedDynamic.Sheets["창고별재고"].I2.v],
@@ -3063,8 +2773,7 @@ try {
     cellStyles: true,
     cellText: true,
   });
-  assert.deepEqual(Array.from(reopenedPurchase.SheetNames), ["구매입력", "_NEXUS_META"]);
-  assert.equal(reopenedPurchase.Workbook.Sheets.find(row => row.name === "_NEXUS_META").Hidden, 2);
+  assert.deepEqual(Array.from(reopenedPurchase.SheetNames), ["구매입력"]);
   assert.equal(reopenedPurchase.Sheets["구매입력"].A2.t, "s");
   assert.equal(reopenedPurchase.Sheets["구매입력"].A2.v, "20260804");
   assert.equal(reopenedPurchase.Sheets["구매입력"].E2.t, "s");
@@ -3122,3 +2831,4 @@ console.log(
       ? `OrderOps tests passed, including the real ${inventoryReferenceWorkspace.stats.inventoryRowCount}-inventory reference file.`
       : "OrderOps tests passed. Real reference files were not present and were skipped.",
 );
+

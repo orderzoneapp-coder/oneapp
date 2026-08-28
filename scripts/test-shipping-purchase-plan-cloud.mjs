@@ -11,7 +11,6 @@ const codeSource = fs.readFileSync(path.join(rootDir, "code.gs"), "utf8");
 
 const SHIPPING_TOKEN = "shipping-token";
 const DATAOPS_TOKEN = "dataops-token";
-const FOUNDATION_TOKEN = crypto.randomBytes(32).toString("hex");
 const SHIPPING_FORMAT = "ONEAPP_SHIPPING_PURCHASE_PLAN_V1";
 const WORKSPACE_SCHEMA = "shipping-workspace/v2";
 const PLAN_FINGERPRINT = "a".repeat(64);
@@ -149,21 +148,16 @@ function countRows(canonical) {
   ].reduce((sum, rows) => sum + rows.length, 0);
 }
 
-function buildSnapshot(purchase, savedBy, options = {}) {
-  const inventoryMatched = options.inventoryMatched !== false;
-  const purchaseNeed = options.purchaseNeed === undefined ? 2 : options.purchaseNeed;
+function buildSnapshot(purchase, savedBy) {
   const purchaseRow = {
     rowType: "main",
     productCode: "000100",
     productName: "테스트 상품",
     spec: "BOX",
-    purchaseNeed,
+    purchaseNeed: 2,
     purchase,
-    inventoryMatched,
+    inventoryMatched: true,
   };
-  if (options.purchaseQuantityOverride !== undefined) {
-    purchaseRow.purchaseQuantityOverride = options.purchaseQuantityOverride;
-  }
   const inventoryShadowRow = {
     rowType: "main",
     inventoryShadow: true,
@@ -213,10 +207,7 @@ function buildSnapshot(purchase, savedBy, options = {}) {
     },
     savedBy,
     productRowCount: 1,
-    purchaseUploadRowCount: purchase === "대체" || purchase === "소분" ? 0 :
-      ((typeof options.purchaseQuantityOverride === "number" && options.purchaseQuantityOverride >= 0
-        ? options.purchaseQuantityOverride
-        : inventoryMatched ? purchaseNeed : 0) > 0 ? 1 : 0),
+    purchaseUploadRowCount: purchase === "대체" || purchase === "소분" ? 0 : 1,
     purchaseInputs: { "000100": purchase, "000200": "재고전용거래처" },
     activePreview: "purchases",
     workspace,
@@ -245,6 +236,7 @@ function buildDataOpsSnapshot() {
   return {
     schemaVersion: "ONEAPP_DATAOPS_SNAPSHOT_V1",
     basisDate: "2026-08-04",
+    savedAt: "2026-08-04T01:00:00.000Z",
     hashAlgorithm: "SHA-256",
     hash: crypto.createHash("sha256").update(canonicalJson, "utf8").digest("hex"),
     rowCount: rows.length,
@@ -256,18 +248,6 @@ function buildDataOpsSnapshot() {
 const spreadsheet = new MockSpreadsheet();
 const properties = new Map([
   ["ONEAPP_SHIPPING_PLAN_ACCESS_TOKEN", SHIPPING_TOKEN],
-  ["ONEAPP_NEXUS_GATEWAY_FOUNDATION_BINDINGS_JSON", JSON.stringify([{
-    credentialId: "TEST-FOUNDATION-WRITE",
-    version: "V2",
-    tokenDigest: crypto.createHash("sha256").update(FOUNDATION_TOKEN).digest("hex"),
-    actorId: "NEXUS_GATEWAY",
-    roleIds: ["FOUNDATION_READ", "FOUNDATION_WRITE", "FOUNDATION_REPLACE"],
-    allowedScope: { companyId: "ONEAPP" },
-    status: "ACTIVE",
-    createdAt: "2026-08-01T00:00:00.000Z",
-    activatedAt: "2026-08-01T00:00:00.000Z",
-    retiredAt: "",
-  }])],
 ]);
 let uuidCounter = 0;
 const context = vm.createContext({
@@ -313,21 +293,6 @@ function post(payload) {
 
 function shippingPost(action, extra = {}) {
   return post({ action, token: SHIPPING_TOKEN, ...extra });
-}
-
-function legacyFoundation(payload) {
-  return {
-    ...payload,
-    token: FOUNDATION_TOKEN,
-    actorId: "NEXUS_GATEWAY",
-    scope: { companyId: "ONEAPP" },
-    nexusRequest: {
-      protocol: "LEGACY_V1",
-      requestId: `TEST-LEGACY-${payload.action}`,
-      subjectUserId: "TEST",
-      subjectLoginId: "test",
-    },
-  };
 }
 
 function shippingList() {
@@ -429,32 +394,6 @@ assert.equal(latestAfterRetry.data.metadata.hash, failedSnapshot.hash);
 assert.equal(latestAfterRetry.data.metadata.rowCount, failedSnapshot.rowCount);
 assert.equal(latestAfterRetry.data.metadata.cellCount, failedSnapshot.cellCount);
 
-const manualMissingSnapshot = buildSnapshot("거래처C", "담당C", {
-  inventoryMatched: false,
-  purchaseNeed: null,
-  purchaseQuantityOverride: 4.5,
-});
-const manualMissingSave = shippingPost("shipping_plan_save", { snapshot: manualMissingSnapshot });
-assert.equal(manualMissingSave.status, "success", manualMissingSave.message);
-const manualMissingGet = shippingPost("shipping_plan_get", { planId: PLAN_ID });
-assert.equal(manualMissingGet.data.metadata.purchaseUploadRowCount, 1,
-  "Cloud row-count validation must accept a positive manual quantity without inventory matching");
-assert.equal(
-  manualMissingGet.data.plan.workspace.purchaseManagement[0].purchaseQuantityOverride,
-  4.5,
-  "Cloud save/get must preserve the optional manual purchase quantity inside workspace v2",
-);
-const manualZeroSnapshot = buildSnapshot("거래처C", "담당C", { purchaseQuantityOverride: 0 });
-const manualZeroSave = shippingPost("shipping_plan_save", { snapshot: manualZeroSnapshot });
-assert.equal(manualZeroSave.status, "success", manualZeroSave.message);
-assert.equal(shippingPost("shipping_plan_get", { planId: PLAN_ID }).data.metadata.purchaseUploadRowCount, 0,
-  "Cloud row-count validation must let manual zero suppress an automatic purchase row");
-const excludedManualSnapshot = buildSnapshot("대체", "담당C", { purchaseQuantityOverride: 9 });
-const excludedManualSave = shippingPost("shipping_plan_save", { snapshot: excludedManualSnapshot });
-assert.equal(excludedManualSave.status, "success", excludedManualSave.message);
-assert.equal(shippingPost("shipping_plan_get", { planId: PLAN_ID }).data.metadata.purchaseUploadRowCount, 0,
-  "Cloud row-count validation must preserve the 대체 exclusion for manual quantities");
-
 const dataOpsGetWithLegacyToken = post({ action: "dataops_snapshot_get", token: SHIPPING_TOKEN });
 assert.equal(dataOpsGetWithLegacyToken.status, "success");
 assert.equal(dataOpsGetWithLegacyToken.data, null);
@@ -467,9 +406,6 @@ const shippingStateBeforeSharedActions = JSON.stringify({
   history: historySheet.snapshot(),
 });
 const dataOpsSnapshot = buildDataOpsSnapshot();
-const forgedDataOpsSnapshot = { ...dataOpsSnapshot, revision: "FORGED" };
-assert.match(post({ action: "dataops_snapshot_commit", snapshot: forgedDataOpsSnapshot }).message, /IMMUTABLE_FIELD/,
-  "DataOps revision must remain server-generated even on the shared legacy route");
 const dataOpsCommit = post({ action: "dataops_snapshot_commit", snapshot: dataOpsSnapshot });
 assert.equal(dataOpsCommit.status, "success", dataOpsCommit.message);
 const dataOpsLegacyCommit = post({ action: "dataops_snapshot_commit", token: SHIPPING_TOKEN, snapshot: dataOpsSnapshot });
@@ -485,14 +421,13 @@ assert.equal(
   shippingStateBeforeSharedActions,
   "DataOps tokenless commit/get must not mutate Shipping plan history or index",
 );
-assert.equal(post({ action: "initSync" }).status, "error", "anonymous Foundation replacement must be blocked");
 for (const payload of [
   { action: "initSync" },
   { action: "chunk_master", data: [{ 코드: "M001", 품명: "마스터" }] },
   { action: "chunk_history", data: [{ action: "history" }] },
   { action: "config", data: { schemaVersion: "shared-config-test" } },
 ]) {
-  const response = post(legacyFoundation(payload));
+  const response = post(payload);
   assert.equal(response.status, "success", `${payload.action}: ${response.message}`);
 }
 assert.equal(

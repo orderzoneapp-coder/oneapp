@@ -5,8 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="google" content="notranslate">
   <title>ONEAPP ORDER Q vNext · 주문현황</title>
-  <script src="/nexus/common/nexus-auth-config.js?v=2.0.1"></script><script src="/nexus/common/nexus-auth.js?v=2.1.2"></script>
-  <link rel="stylesheet" href="./orderq.css?v=0.11.0">
+  <link rel="stylesheet" href="./orderq.css?v=0.7.1">
 </head>
 <body class="order-history-page">
   <div class="shell">
@@ -14,7 +13,7 @@
       <div class="brand">
         <strong>ONEAPP</strong>
         <span class="logo-frame" aria-hidden="true"><img src="../assets/order-q-logo.png" alt=""></span>
-        <span class="badge">vNext 0.8.0</span>
+        <span class="badge">vNext 0.7.1</span>
         <span>주문현황 · 전표관리</span>
       </div>
       <div class="top-actions">
@@ -22,16 +21,11 @@
         <a class="btn dark" href="./cloud.html">클라우드</a>
         <a class="btn dark" href="./parser.html">ORDER IN</a>
         <a class="btn dark" href="./operations.html">ORDER Q 운영</a>
-        <a class="btn dark" href="./dispatch.html">출고 작업대</a>
-        <a class="btn dark" href="./purchase.html">구매 작업대</a>
-        <a class="btn dark" href="./sale.html">판매 조회</a>
-        <a class="btn dark" href="./products.html">간편상품</a>
-        <a class="btn dark" href="./transition.html">관리자 설정</a>
         <a class="btn primary" href="./input.html">+ 주문서 입력</a>
       </div>
     </header>
     <main class="panel">
-      <p class="notice">처리할 주문의 상품·수량·전달사항을 확인하세요. 확인이 끝나면 위의 ‘출고 준비로 이동’을 누릅니다.</p>
+      <p class="notice">주문전표를 펼쳐 상품·금액·변경이력을 확인하고 수정하거나 출력합니다. 재고·부족·발주·출고·미출고 처리는 ORDER Q 운영에서 진행합니다.</p>
       <div id="message" class="message page-message"></div>
       <div class="toolbar document-filters">
         <button class="btn" id="refreshBtn" type="button">새로고침</button>
@@ -56,7 +50,7 @@
         <input class="history-search" id="orderSearch" type="search" placeholder="주문번호·외부번호·거래처 검색">
         <span class="spacer"></span>
         <span class="status" id="summaryText">불러오는 중...</span>
-        <span class="status" id="syncText" hidden></span>
+        <span class="status" id="syncText">동기화 상태 확인 중...</span>
       </div>
       <div class="table-wrap document-list-wrap">
         <table class="document-list">
@@ -83,20 +77,19 @@
     </main>
   </div>
   <datalist id="inlineAssigneeOptions"></datalist>
-    <script type="module" src="./workflow-guide.js?v=0.11.0"></script>
-    <script type="module">
+  <script type="module">
     import {
       listOrders, getOrder, updateOrder, cancelOrder, subscribeOrderChanges,
       OrderRevisionConflictError
-    } from './order-intake-engine.js?v=0.15.0';
+    } from './order-intake-engine.js?v=0.7.1';
     import {
       syncNow, getSyncState, syncBeforeOrderMutation, syncAfterLocalMutation,
       CloudOrderConflictError
-    } from './orderq-sync-engine.js?v=0.8.0';
-    import { getCloudUrl } from './orderq-cloud-adapter.js?v=0.8.0';
+    } from './orderq-sync-engine.js?v=0.7.1';
+    import { getCloudUrl } from './orderq-cloud-adapter.js?v=0.7.1';
     import {
       ORDER_STATUS_LABEL, ADMIN_STATUS_LABEL, OPS_STATUS_LABEL, INPUT_CHANNEL_LABEL
-    } from './order-document-model.js?v=0.8.0';
+    } from './order-document-model.js?v=0.7.1';
 
     const rows = document.getElementById('orderRows');
     const summary = document.getElementById('summaryText');
@@ -219,7 +212,7 @@
       return `<ol class="change-history">${events.slice(0, 12).map(event => {
         const changes = Array.isArray(event.detail?.changes) && event.detail.changes.length
           ? event.detail.changes.map(change => `${change.label}: ${historyValue(change.field, change.before)} → ${historyValue(change.field, change.after)}`).join(' · ')
-          : event.eventType === 'ORDER_CREATED' ? '주문전표 생성' : event.eventType === 'ORDER_CANCELLED' ? '주문 전체취소' : '주문 내용 변경';
+          : event.eventType === 'ORDER_CREATED' ? '주문전표 생성' : event.eventType === 'ORDER_CANCELLED' ? '주문 전체취소' : `Revision ${event.revision}`;
         return `<li><time>${esc(formatTime(event.createdAt))}</time><b>${esc(event.actor || 'LOCAL_USER')}</b><span>${esc(changes)}</span></li>`;
       }).join('')}</ol>`;
     }
@@ -279,7 +272,7 @@
       const readOnly = cancelled ? 'disabled' : '';
       return `<form class="inline-edit-form" data-edit-form="${esc(order.orderId)}">
         <div class="document-detail-head">
-          <div><strong>${esc(order.orderNo || order.orderId)} 수정</strong><span>현재 펼친 주문을 바로 수정하고 저장합니다.</span></div>
+          <div><strong>${esc(order.orderNo || order.orderId)} 수정</strong><span>현재 펼침 영역에서 저장하며 Revision ${esc(order.revision)}을 확인합니다.</span></div>
           <div class="document-actions">
             <button class="btn primary" type="button" data-save-inline="${esc(order.orderId)}">저장</button>
             <button class="btn" type="button" data-cancel-edit="${esc(order.orderId)}">편집 취소</button>
@@ -423,8 +416,9 @@
       };
     }
 
-    function showConflict() {
-      showMessage('저장되지 않았습니다. 다른 곳에서 이 주문을 먼저 수정했습니다. 최신 내용을 불러온 뒤 다시 저장하세요.', 'warn');
+    function showConflict(error, orderId, revision) {
+      const latest = error.serverRevision || error.latestOrder?.revision || '?';
+      showMessage(`저장되지 않았습니다. ${orderId}의 현재 화면 Revision ${revision}, 최신 Revision ${latest}입니다. 클라우드에서 최신본을 적용한 후 다시 수정하세요.`, 'warn');
     }
 
     async function saveInlineOrder(orderId, button) {
@@ -447,16 +441,16 @@
         let syncMessage = '';
         try {
           const synced = await syncAfterLocalMutation(orderId);
-          syncMessage = synced.online ? '' : ' · 중앙 반영 대기';
+          syncMessage = synced.online ? ' · 클라우드 동기화 완료' : ' · 클라우드 동기화 대기';
         } catch (syncError) {
           if (syncError instanceof CloudOrderConflictError || syncError.code === 'ORDER_CLOUD_REVISION_CONFLICT') {
             showConflict(syncError, orderId, result.order.revision);
-          } else syncMessage = ' · 중앙 반영이 지연됩니다';
+          } else syncMessage = ` · 클라우드 동기화 실패: ${syncError.message || syncError}`;
         }
         editModeOrders.delete(orderId);
         detailCache.delete(orderId);
         await render();
-        showMessage(`주문을 저장했습니다${syncMessage}`, syncMessage ? 'warn' : 'info');
+        showMessage(`주문전표를 저장했습니다. Revision ${result.order.revision}${syncMessage}`, syncMessage.includes('실패') ? 'warn' : 'info');
       } catch (error) {
         if (error instanceof OrderRevisionConflictError || error.code === 'ORDER_REVISION_CONFLICT'
           || error instanceof CloudOrderConflictError || error.code === 'ORDER_CLOUD_REVISION_CONFLICT') {
@@ -479,7 +473,7 @@
         editModeOrders.delete(orderId);
         detailCache.delete(orderId);
         await render();
-        showMessage('주문을 전체취소했습니다. 변경 이력은 보존됩니다.', 'warn');
+        showMessage(`주문을 전체취소했습니다. Revision ${result.order.revision} · 이력 보존`, 'warn');
       } catch (error) {
         if (error instanceof OrderRevisionConflictError || error.code === 'ORDER_REVISION_CONFLICT'
           || error instanceof CloudOrderConflictError || error.code === 'ORDER_CLOUD_REVISION_CONFLICT') {
@@ -490,12 +484,7 @@
 
     async function renderSyncState() {
       const state = await getSyncState();
-      const conflicts = Number(state.conflicts.length || 0);
-      const pending = Number(state.pending || 0);
-      syncText.hidden = !state.cloudUrl || (conflicts === 0 && pending === 0);
-      syncText.textContent = conflicts > 0
-        ? '다른 곳에서 먼저 수정된 주문이 있습니다.'
-        : pending > 0 ? '중앙 반영을 기다리는 주문이 있습니다.' : '';
+      syncText.textContent = state.cloudUrl ? `대기 ${state.pending}건 · 충돌 ${state.conflicts.length}건` : '클라우드 URL 미설정';
       return state;
     }
 
@@ -608,15 +597,15 @@
     }
 
     async function runSync(showSuccess = true) {
-      if (!getCloudUrl()) return showMessage('중앙 연결이 설정되지 않았습니다. 관리자 설정에서 확인하세요.', 'warn');
-      syncButton.disabled = true; syncText.hidden = false; syncText.textContent = '중앙 내용을 확인하는 중입니다.';
+      if (!getCloudUrl()) return showMessage('클라우드 URL이 없습니다. 클라우드 화면에서 등록하세요.', 'warn');
+      syncButton.disabled = true; syncText.textContent = '동기화 중...';
       try {
         const result = await syncNow();
         detailCache.clear(); await render();
         const conflicts = result?.push?.conflicts || result?.pull?.conflicts || 0;
-        if (conflicts) showMessage('다른 곳에서 먼저 수정된 주문이 있습니다. 최신 내용을 확인하세요.', 'warn');
-        else if (showSuccess) showMessage('중앙 내용을 확인했습니다.', 'info');
-      } catch (error) { showMessage('중앙 연결을 확인하지 못했습니다. 관리자 설정에서 연결 상태를 확인하세요.', 'error'); await renderSyncState(); }
+        if (conflicts) showMessage(`동기화 완료 · 충돌 ${conflicts}건을 확인하세요.`, 'warn');
+        else if (showSuccess) showMessage('클라우드 동기화가 완료되었습니다.', 'info');
+      } catch (error) { showMessage(`클라우드 동기화 실패: ${error.message || error}`, 'error'); await renderSyncState(); }
       finally { syncButton.disabled = false; }
     }
 
@@ -677,7 +666,7 @@
     syncButton.addEventListener('click', () => runSync(true));
     subscribeOrderChanges(() => {
       if (editModeOrders.size) {
-        showMessage('다른 화면에서 주문이 변경되었습니다. 현재 편집내용은 유지되며 저장할 때 최신 변경내용을 다시 확인합니다.', 'warn');
+        showMessage('다른 화면에서 주문이 변경되었습니다. 현재 편집내용은 유지되며 저장 시 Revision을 다시 확인합니다.', 'warn');
         return;
       }
       detailCache.clear();

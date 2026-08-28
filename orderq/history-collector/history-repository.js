@@ -8,13 +8,13 @@ import {
   newId,
   nowIso,
   normalizeText
-} from '../orderq-db.js?v=0.12.1';
-import { resolveWarehouseInTransaction, warehouseSnapshot } from '../warehouse-master.js?v=0.8.0';
-import { assigneeIdentity } from '../order-document-model.js?v=0.8.0';
-import { COLLECTOR_SOURCE } from './collector-schema.js?v=0.8.0';
-import { buildFulfillmentLinks } from './fulfillment-matcher.js?v=0.8.0';
-import { buildParserEvidence } from './parser-evidence.js?v=0.8.0';
-import { deactivateEvidenceMapping, reconcileEvidenceMappings } from './mapping-lifecycle.js?v=0.8.0';
+} from '../orderq-db.js?v=0.7.1';
+import { resolveWarehouseInTransaction, warehouseSnapshot } from '../warehouse-master.js?v=0.7.1';
+import { assigneeIdentity } from '../order-document-model.js?v=0.7.1';
+import { COLLECTOR_SOURCE } from './collector-schema.js?v=0.7.1';
+import { buildFulfillmentLinks } from './fulfillment-matcher.js?v=0.7.1';
+import { buildParserEvidence } from './parser-evidence.js?v=0.7.1';
+import { deactivateEvidenceMapping, reconcileEvidenceMappings } from './mapping-lifecycle.js?v=0.7.1';
 
 const DEFAULT_SETTINGS = Object.freeze({
   key: 'ACTIVE',
@@ -105,21 +105,15 @@ async function putCustomerAndProduct(tx, row, role, timestamp) {
   let customer = null;
   if (customerName) {
     const store = tx.objectStore(STORE.CUSTOMERS);
-    const normalizedName = normalizeText(customerName);
-    customer = row.customerId ? await requestToPromise(store.get(row.customerId)) : null;
-    if (!customer) customer = await requestToPromise(store.index('byName').get(normalizedName));
+    const candidate = customerShape(customerName, role, timestamp);
+    customer = await requestToPromise(store.index('byName').get(candidate.normalizedName));
     if (customer) {
-      if (customer.qualityStatus === 'SUPERSEDED') {
-        customer = await requestToPromise(store.get(customer.canonicalCustomerId || customer.supersededByCustomerId));
-      }
-      if (!customer || customer.status !== 'ACTIVE') {
-        throw new Error(`거래처를 사용할 수 없습니다: ${customerName}`);
-      }
       const roles = [...new Set([...(customer.roles || []), role])];
       customer = { ...customer, roles, updatedAt: timestamp };
       store.put(customer);
     } else {
-      throw new Error(`미등록 거래처입니다. 거래처를 찾거나 간편등록한 뒤 계속해 주세요: ${customerName}`);
+      customer = candidate;
+      store.put(customer);
     }
   }
   let product = null;
@@ -169,25 +163,11 @@ export async function commitPreparedImport(prepared, importedBy = 'administrator
     STORE.WAREHOUSES, STORE.WAREHOUSE_ALIASES,
     STORE.SALES_DOCUMENTS, STORE.SALES_LINES, STORE.PURCHASE_DOCUMENTS, STORE.PURCHASE_LINES,
     STORE.LEDGER_DOCUMENTS, STORE.LEDGER_LINES, STORE.INVENTORY_SNAPSHOTS, STORE.INVENTORY_LINES,
-    STORE.HISTORICAL_ORDER_GROUPS, STORE.HISTORICAL_ORDER_LINES, STORE.SYNC_QUEUE,
-    STORE.INVENTORY_MOVEMENTS, STORE.META
+    STORE.HISTORICAL_ORDER_GROUPS, STORE.HISTORICAL_ORDER_LINES, STORE.SYNC_QUEUE
   ];
   const db = await openOrderQDb();
   const tx = db.transaction(stores, 'readwrite');
   tx.objectStore(STORE.IMPORT_BATCHES).put(batch);
-  const inventoryLedgerMeta = prepared.sourceType === COLLECTOR_SOURCE.INVENTORY
-    ? await requestToPromise(tx.objectStore(STORE.META).get('inventoryLedgerSequence'))
-    : null;
-  const latestMovement = prepared.sourceType === COLLECTOR_SOURCE.INVENTORY
-    ? await requestToPromise(tx.objectStore(STORE.INVENTORY_MOVEMENTS).index('byLedgerSequence').openCursor(null, 'prev'))
-    : null;
-  const metaSequence = Number(inventoryLedgerMeta?.value || 0);
-  const movementSequence = Number(latestMovement?.value?.ledgerSequence || 0);
-  const snapshotLastSequence = Math.max(
-    0,
-    Number.isInteger(metaSequence) && metaSequence >= 0 ? metaSequence : 0,
-    Number.isInteger(movementSequence) && movementSequence >= 0 ? movementSequence : 0
-  );
   const existingFingerprints = new Set((await requestToPromise(tx.objectStore(STORE.SOURCE_RECORDS).getAll())).filter(row => !row.disabledAt).map(row => row.rowFingerprint));
   const documentCache = new Map();
   const queuedReferences = new Set();
@@ -292,7 +272,6 @@ export async function commitPreparedImport(prepared, importedBy = 'administrator
       if (!snapshot) {
         snapshot = {
           inventorySnapshotId: stableId('IS', [importBatchId, key]), importBatchId, basisDate,
-          snapshotLastSequence,
           ...warehouseFields, sourceRecordIds: [], status: 'ACTIVE', createdAt: timestamp, updatedAt: timestamp
         };
         documentCache.set(key, snapshot);

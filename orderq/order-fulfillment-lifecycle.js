@@ -1,4 +1,4 @@
-import { ADMIN_STATUS, OPS_STATUS, ORDER_STATUS } from './order-document-model.js?v=0.8.0';
+import { ADMIN_STATUS, OPS_STATUS, ORDER_STATUS } from './order-document-model.js?v=0.7.1';
 
 export const TRANSFER_EVENT_TYPE = Object.freeze({
   ALLOCATED: 'SALES_TRANSFER_ALLOCATED',
@@ -105,7 +105,7 @@ export function effectiveOrderQuantity(order = {}, item = {}) {
   if (order.orderStatus === ORDER_STATUS.FULL_CANCEL || item.matchStatus === 'CANCELLED' || item.active === false) return 0;
   const ordered = finiteNumber(item.finalQuantity ?? item.rawQuantity ?? item.quantity);
   const cancelled = Math.max(0, finiteNumber(item.cancelledQuantity));
-  return Math.max(0, ordered - cancelled);
+  return ordered - cancelled;
 }
 
 export function effectiveTransferredQuantity(orderItemId, events = []) {

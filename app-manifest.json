@@ -1,6 +1,6 @@
 {
-  "schemaVersion": "1.6.1",
-  "updatedAt": "2026-08-28",
+  "schemaVersion": "1.3.0",
+  "updatedAt": "2026-08-08",
   "repository": {
     "fullName": "orderzoneapp-coder/oneapp",
     "defaultBranch": "main",
@@ -14,100 +14,6 @@
     "archived": "Retained in Git history or releases and not deployed as an active entry point."
   },
   "applications": [
-    {
-      "id": "nexus",
-      "name": "NEXUS",
-      "path": "nexus/index.html",
-      "kind": "web-entry",
-      "status": "production",
-      "purpose": "Provide the public NEXUS login, first-owner bootstrap, and invitation activation entry; authenticated users continue to a permission-filtered work home.",
-      "navigatesTo": [
-        "nexus-work-home",
-        "nexus-admin"
-      ],
-      "sharedContracts": [
-        "nexus-auth"
-      ]
-    },
-    {
-      "id": "nexus-work-home",
-      "name": "NEXUS Work Home",
-      "path": "nexus/home/index.html",
-      "kind": "web-entry",
-      "status": "production",
-      "purpose": "Show each signed-in user only the applications permitted by the server-issued session and provide the normal work entry after login.",
-      "navigatesTo": [
-        "nexus-company",
-        "orderops",
-        "orderq-vnext",
-        "dataops",
-        "merchops",
-        "smart-parser",
-        "master-lookup",
-        "item-manager",
-        "nexus-admin"
-      ],
-      "sharedContracts": [
-        "nexus-auth",
-        "nexus-header",
-        "company-public-footer"
-      ]
-    },
-    {
-      "id": "nexus-company",
-      "name": "NEXUS Company Profile",
-      "path": "nexus/company.html",
-      "kind": "web-entry",
-      "status": "production",
-      "purpose": "Let only the unique owner master maintain the protected company profile, accounting periods, addresses, and locally extracted business-certificate values; ordinary users receive only the public footer projection.",
-      "productionWrites": true,
-      "navigatesTo": [
-        "nexus-work-home"
-      ],
-      "services": [
-        "nexus-auth-gateway",
-        "cloud-sync"
-      ],
-      "sharedContracts": [
-        "nexus-auth",
-        "nexus-header",
-        "company-profile"
-      ]
-    },
-    {
-      "id": "nexus-admin",
-      "name": "NEXUS Master Administration",
-      "path": "nexus/admin/index.html",
-      "kind": "web-entry",
-      "status": "production",
-      "purpose": "Give the unique owner master a separate user, permission, service-secret, recovery, and audit administration screen.",
-      "productionWrites": true,
-      "navigatesTo": [
-        "nexus-work-home"
-      ],
-      "services": [
-        "nexus-auth-gateway"
-      ],
-      "sharedContracts": [
-        "nexus-auth",
-        "nexus-header"
-      ]
-    },
-    {
-      "id": "nexus-auth-gateway",
-      "name": "NEXUS Authentication Gateway",
-      "path": "nexus/server/nexus-auth-gateway.gs",
-      "kind": "google-apps-script-service",
-      "status": "production",
-      "purpose": "Own password verifiers, opaque sessions, users, permissions, audit records, and server-only business credentials while proxying approved actions to the retained ONEAPP cloud service.",
-      "productionWrites": true,
-      "services": [
-        "cloud-sync"
-      ],
-      "sharedContracts": [
-        "nexus-auth"
-      ]
-    },
     {
       "id": "merchops",
       "name": "MerchOps",
@@ -125,8 +31,6 @@
         "cloud-sync"
       ],
       "sharedContracts": [
-        "nexus-auth",
-        "nexus-header",
         "product-master",
         "change-history",
         "parser-dictionary",
@@ -152,8 +56,6 @@
         "cloud-sync"
       ],
       "sharedContracts": [
-        "nexus-auth",
-        "nexus-header",
         "product-master",
         "change-history",
         "pricing-rules",
@@ -176,8 +78,6 @@
         "history-viewer"
       ],
       "sharedContracts": [
-        "nexus-auth",
-        "nexus-header",
         "product-master",
         "change-history",
         "parser-dictionary",
@@ -197,7 +97,6 @@
         "merchops"
       ],
       "sharedContracts": [
-        "nexus-auth",
         "product-master",
         "change-history"
       ]
@@ -219,7 +118,6 @@
         "cloud-sync"
       ],
       "sharedContracts": [
-        "nexus-auth",
         "product-master",
         "change-history",
         "parser-dictionary",
@@ -235,18 +133,14 @@
       "path": "Master.html",
       "kind": "web-entry",
       "status": "pilot",
-      "purpose": "Provide centered product and customer foundation-data workspaces with controlled registration, update, selected product deletion, and cloud synchronization workflows.",
+      "purpose": "Provide product-master lookup and a controlled, administrator-reviewed add/update workflow with cloud synchronization.",
       "productionWrites": true,
       "runtimeDependencies": [
         "core-engine"
       ],
       "sharedContracts": [
-        "nexus-auth",
-        "nexus-header",
-        "nexus-app-ui",
         "product-master",
-        "change-history",
-        "foundation-bplus-backup"
+        "change-history"
       ]
     },
     {
@@ -261,12 +155,8 @@
         "core-engine"
       ],
       "sharedContracts": [
-        "nexus-auth",
-        "nexus-header",
-        "nexus-app-ui",
         "product-master",
-        "change-history",
-        "foundation-bplus-backup"
+        "change-history"
       ]
     },
     {
@@ -283,7 +173,6 @@
         "cloud-sync"
       ],
       "sharedContracts": [
-        "nexus-auth",
         "product-master",
         "change-history",
         "cloud-url"
@@ -315,20 +204,11 @@
       "purpose": "Manage the shipment workflow from customer order through available inventory, purchasing, staged shipment completion, and reviewed outbound workbooks.",
       "owner": "shipping-operations",
       "productionWrites": true,
-      "publicEntries": [
-        "orders.html",
-        "orderops_list.html",
-        "orderops/list.html"
-      ],
       "services": [
         "cloud-sync"
       ],
       "sharedContracts": [
-        "nexus-auth",
-        "nexus-header",
         "cloud-url",
-        "dataops-inventory-snapshot",
-        "orderq-vnext-sync",
         "shipping-purchase-plan"
       ]
     },
@@ -352,41 +232,10 @@
         "cloud-sync"
       ],
       "sharedContracts": [
-        "nexus-auth",
-        "nexus-header",
         "cloud-url",
         "orderq-vnext-sync",
-        "product-master",
-        "foundation-bplus-backup"
+        "product-master"
       ]
-    },
-    {
-      "id": "smart-input",
-      "name": "스마트입력",
-      "path": "smartinput/index.html",
-      "kind": "web-entry",
-      "status": "pilot",
-      "purpose": "Capture order, purchase, sale, and estimate source material through one active-source review window; stage direct, file, text, clipboard, photo OCR, and voice STT analysis per source until explicit work-table application; normalize Excel and pasted tables through one matrix mapping core; preserve raw-byte source identity, application history, revisioned device-local input templates, and original source evidence; configure entry fields; save a device-local estimate catalog; and deliver completed orders to the ORDER Q vNext ledger.",
-      "owner": "smart-input",
-      "productionWrites": true,
-      "publicEntries": [
-        "smartinput/index.html"
-      ],
-      "navigatesTo": [
-        "orderq-vnext",
-        "orderops"
-      ],
-      "services": [
-        "cloud-sync"
-      ],
-      "sharedContracts": [
-        "nexus-auth",
-        "nexus-header",
-        "orderq-vnext-sync",
-        "product-master",
-        "smartinput-local-data"
-      ],
-      "integrationNote": "SmartInput is available from the fixed-position NEXUS global entry, the common-header settings list, and the full application list at /smartinput/. Source registration and analysis are draft-only; only the explicit per-source apply action changes its work table, after which existing mode writers retain ownership. ORDER Q vNext is the common order ledger; the validated read-only orders.html adapter loads active SMART_INPUT orders without creating another order store or triggering cloud synchronization."
     },
     {
       "id": "cloud-sync",
@@ -395,15 +244,6 @@
       "kind": "google-apps-script-service",
       "status": "production",
       "purpose": "Back up and restore product master, history, shared configuration, the finalized DataOps inventory snapshot, explicitly saved Shipping purchase-plan revisions, and token-protected ORDER Q vNext incremental records.",
-      "sourceModules": [
-        "code.gs",
-        "foundation-metadata.gs",
-        "foundation-backup.gs",
-        "company-profile.gs",
-        "orderq-cloud.gs",
-        "dataops-situation-v2.gs",
-        "dataops-close-stage6.gs"
-      ],
       "apiActions": {
         "post": [
           "initSync",
@@ -417,25 +257,7 @@
           "shipping_plan_get",
           "orderq_sync_push",
           "orderq_sync_pull",
-          "orderq_order_head",
-          "nexus_gateway_company_profile_get",
-          "nexus_gateway_company_public_profile_get",
-          "nexus_gateway_company_profile_write",
-          "nexus_gateway_company_accounting_period_get",
-          "nexus_gateway_company_accounting_period_write",
-          "nexus_gateway_company_certificate_extract",
-          "nexus_gateway_company_backup_create",
-          "nexus_gateway_company_migrate_oneapp",
-          "nexus_gateway_foundation_backup_head_read",
-          "nexus_gateway_foundation_backup_product_write",
-          "nexus_gateway_foundation_backup_customer_events_write",
-          "nexus_gateway_foundation_backup_customer_snapshot_write",
-          "nexus_gateway_foundation_backup_version_list",
-          "nexus_gateway_foundation_backup_version_read",
-          "nexus_gateway_foundation_backup_restore_audit_write",
-          "nexus_gateway_foundation_device_status_read",
-          "nexus_gateway_foundation_device_register",
-          "nexus_gateway_foundation_device_promote"
+          "orderq_order_head"
         ],
         "get": [
           "full",
@@ -452,344 +274,11 @@
         "table-view-config",
         "cloud-url",
         "dataops-inventory-snapshot",
-        "shipping-purchase-plan",
-        "company-profile",
-        "foundation-bplus-backup"
+        "shipping-purchase-plan"
       ]
     }
   ],
   "sharedDataContracts": [
-    {
-      "id": "foundation-bplus-backup",
-      "owner": "cloud-sync",
-      "consumers": [
-        "Master.html",
-        "Item_manager.html",
-        "partner_db.html",
-        "coreEngine.js",
-        "orderq/customer-master.js",
-        "orderq/customer-source-import.js",
-        "orderq/customer-code-upsert.js"
-      ],
-      "schemaVersion": "FOUNDATION_BACKUP_V1",
-      "purpose": "Keep product and customer work Local Primary while writing immutable server revisions, blocking stale or ahead lineages, quarantining the legacy Customer sync queue, and allowing only administrator-previewed restore application.",
-      "writerPolicy": "Product and Customer local commits are authoritative for daily work. Automatic traffic is one-way backup only. Server payloads may change local data only after version verification, comparison, safety snapshot creation, explicit administrator approval, atomic replacement, and reread verification.",
-      "resources": {
-        "client": "nexus/foundation/foundation-backup.js",
-        "customerClient": "orderq/customer-foundation-backup.js",
-        "serverModule": "foundation-backup.gs",
-        "gateway": "nexus/server/nexus-auth-gateway.gs",
-        "productStateKey": "oneapp.foundation.product-backup-state.v1",
-        "deviceKey": "oneapp.foundation.device-id.v1",
-        "orderqDatabase": {
-          "database": "oneapp-orderq-vnext",
-          "version": 17,
-          "stores": [
-            "foundationBackupOutbox",
-            "foundationRecoverySnapshots",
-            "foundationRecoveryAudit",
-            "foundationLegacyQuarantine"
-          ]
-        },
-        "serverSheets": [
-          "FoundationBackupHead",
-          "FoundationBackupVersion",
-          "FoundationBackupChunk",
-          "FoundationCustomerEvent",
-          "FoundationDevice",
-          "FoundationPrimary",
-          "FoundationOperationResult",
-          "FoundationRestoreAudit"
-        ],
-        "gatewayOperations": [
-          "foundation.backup.head_read",
-          "foundation.backup.product_write",
-          "foundation.backup.customer_events_write",
-          "foundation.backup.customer_snapshot_write",
-          "foundation.backup.version_list",
-          "foundation.backup.version_read",
-          "foundation.backup.restore_audit_write",
-          "foundation.device.status_read",
-          "foundation.device.register",
-          "foundation.device.promote"
-        ],
-        "featureFlags": [
-          "BPLUS_BACKUP_ENABLED",
-          "BPLUS_AUTO_PULL_DISABLED",
-          "BPLUS_PRIMARY_GUARD_MODE",
-          "BPLUS_CUSTOMER_RECOVERY_COMPLETED",
-          "BPLUS_SHADOW_COMPARE_ENABLED"
-        ]
-      },
-      "rollback": "Disable BPLUS_BACKUP_ENABLED and restore the previous static and Apps Script immutable versions. Never re-enable automatic Customer Pull, delete immutable versions/events, or regenerate productId/customerId. Additive OrderQ v17 stores remain readable and may be ignored by earlier code."
-    },
-    {
-      "id": "smartinput-local-data",
-      "owner": "smart-input",
-      "consumers": [
-        "smartinput/index.html"
-      ],
-      "schemaVersion": "ONEAPP_SMARTINPUT_LOCAL_V4",
-      "purpose": "Preserve SmartInput device-local settings, relationships, estimates, source images, and revisioned input templates. Source order, active source, staging, and the application ledger remain in the existing local draft contract, so IndexedDB stays at v4. Upgrading from v3 creates only inputTemplates and preserves prior records. Existing-template imports are value-only and all structural writes are rejected before an IndexedDB transaction begins.",
-      "resources": {
-        "indexedDb": {
-          "database": "oneapp-smartinput",
-          "version": 4,
-          "stores": [
-            "settings",
-            "customerLinkGroups",
-            "temporaryCustomers",
-            "customerAliasMappings",
-            "estimates",
-            "sourceImages",
-            "inputTemplates"
-          ]
-        },
-        "localStorage": [
-          "oneapp.smartinput.relationships.v1",
-          "oneapp.smartinput.draft.v1",
-          "oneapp.smartinput.drafts.v1",
-          "oneapp.smartinput.delivery-history.v1"
-        ]
-      },
-      "rollback": "A code rollback to v3 leaves the additive inputTemplates store unused while every pre-v4 store remains readable and unchanged. Do not delete or downgrade the database; a later v4 load can resume the saved templates."
-    },
-    {
-      "id": "nexus-auth",
-      "owner": "nexus-auth-gateway",
-      "consumers": [
-        "nexus/index.html",
-        "nexus/home/index.html",
-        "nexus/company.html",
-        "nexus/admin/index.html",
-        "Master.html",
-        "Item_manager.html",
-        "MerchOps.html",
-        "SmartParser.html",
-        "DataOps.html",
-        "export_center.html",
-        "settings.html",
-        "history_viewer.html",
-        "partner_db.html",
-        "orders.html",
-    "orderops_list.html",
-    "orderops/list.html",
-    "orderops/list1.html",
-    "orderops/input.html",
-    "orderops/smartparser.html",
-    "orderq/index.html",
-    "orderq/input.html",
-    "orderq/parser.html",
-    "orderq/collector.html",
-    "orderq/cloud.html",
-    "orderq/dispatch.html",
-    "orderq/erp.html",
-    "orderq/operations.html",
-    "orderq/products.html",
-    "orderq/purchase.html",
-    "orderq/reconciliation.html",
-    "orderq/sale.html",
-    "orderq/transition.html",
-    "orderq/admin-test.html",
-    "orderq/admin-test-guide.html",
-    "smartinput/index.html"
-      ],
-      "schemaVersion": "NEXUS_AUTH_V2",
-      "resources": {
-        "gateway": "nexus/server/nexus-auth-gateway.gs",
-        "client": "nexus/common/nexus-auth.js",
-        "protectedScreenFooterBootstrap": "nexus/common/nexus-company-footer.js?v=1.0.0",
-        "configuration": "nexus/common/nexus-auth-config.js",
-        "scriptProjectId": "1KNiTNpNRqPYM7XM5MSzGObwfUd303bZRcjgm16MVG3xNqcQpymYXaPI5",
-        "productionWebApp": "https://script.google.com/macros/s/AKfycbwIaouo6kzff1J3H3B0K5bWuAEJAcp4K21tyEkL2BuM-SiNsPDGGYVBEXIkBeUGwp4i/exec",
-        "deployedVersion": 21,
-        "rollbackVersion": 19,
-        "deployedContractVersion": "NEXUS_AUTH_V2",
-        "sourceContractVersion": "NEXUS_AUTH_V2",
-        "cacheVersion": "2.1.2",
-        "contextRefreshLeadSeconds": 90,
-        "contextRefreshRetrySeconds": 15,
-        "contextRefreshMode": "active-tab background refresh; full server verification remains mandatory before app-ready and gateway access",
-        "sessionStorage": "oneapp.nexus.auth.session.v1",
-        "sessionTtlHours": 12,
-        "inviteTtlHours": 72,
-        "deletedUserRecoveryDays": 30,
-        "uniqueMasterRole": "OWNER_MASTER",
-        "businessCredentials": [
-          "NEXUS_AUTH_SECRET_FOUNDATION_READ",
-          "NEXUS_AUTH_SECRET_FOUNDATION_WRITE",
-          "NEXUS_AUTH_SECRET_DATAOPS_READ",
-          "NEXUS_AUTH_SECRET_DATAOPS_WRITE",
-          "NEXUS_AUTH_SECRET_ORDERQ_READ",
-          "NEXUS_AUTH_SECRET_ORDERQ_WRITE",
-          "NEXUS_AUTH_SECRET_SHIPPING_READ",
-          "NEXUS_AUTH_SECRET_SHIPPING_WRITE"
-        ],
-        "oneappBindings": [
-          "ONEAPP_NEXUS_GATEWAY_FOUNDATION_BINDINGS_JSON",
-          "ONEAPP_NEXUS_GATEWAY_DATAOPS_BINDINGS_JSON",
-          "ONEAPP_NEXUS_GATEWAY_ORDERQ_BINDINGS_JSON",
-          "ONEAPP_NEXUS_GATEWAY_SHIPPING_BINDINGS_JSON"
-        ],
-        "legacyCompatibility": "LEGACY_V1 server route retained; V2 application consumers do not load a fetch interceptor"
-      }
-    },
-    {
-      "id": "nexus-header",
-      "owner": "nexus",
-      "consumers": [
-        "nexus/home/index.html",
-        "nexus/company.html",
-        "nexus/admin/index.html",
-        "Master.html",
-        "Item_manager.html",
-        "MerchOps.html",
-        "SmartParser.html",
-        "DataOps.html",
-        "orders.html",
-        "orderops_list.html",
-        "orderops/list.html",
-        "orderops/input.html",
-        "orderq/input.html",
-        "orderq/parser.html",
-        "smartinput/index.html"
-      ],
-      "schemaVersion": "NEXUS_HEADER_V3",
-      "resources": {
-        "component": "nexus/common/nexus-top.js",
-        "componentVersion": "1.10.0",
-        "configuration": "nexus/common/apps-config.js",
-        "globalActions": "window.NEXUS_GLOBAL_ACTIONS",
-        "globalActionVisibilityPreference": "oneapp.nexus.v1.hiddenGlobalActions",
-        "statusApi": "window.NEXUS_TOP.reportStatus",
-        "leaveGuardEvent": "nexus:before-navigate",
-        "appReadyEvent": "nexus:app-ready",
-        "appReadyStrategyAttribute": "data-nexus-ready-strategy=app",
-        "navigationLoadingSession": "oneapp.nexus.v1.navigation",
-        "preferencePrefix": "oneapp.nexus.v1."
-      }
-    },
-    {
-      "id": "company-profile",
-      "owner": "nexus-company",
-      "consumers": [
-        "nexus/company.html",
-        "nexus/server/nexus-auth-gateway.gs",
-        "code.gs"
-      ],
-      "schemaVersion": "NEXUS_COMPANY_PROFILE_V1",
-      "writerPolicy": "Only OWNER_MASTER through admin.company may read or write the protected record, manage accounting periods, extract reviewed certificate fields, create deployment backups, or run the task-scoped one-time migration. Ordinary business screens consume only company-public-footer.",
-      "resources": {
-        "serverModule": "company-profile.gs",
-        "profileSheet": "CompanyProfile_NEXUS",
-        "accountingPeriodSheet": "CompanyAccountingPeriods_NEXUS",
-        "auditSheet": "CompanyAudit_NEXUS",
-        "backupSheet": "CompanyBackups_NEXUS",
-        "migrationSheet": "CompanyMigrations_NEXUS",
-        "migrationTaskId": "NEXUS-COMPANY-20260827-01",
-        "companyId": "ONEAPP",
-        "oneappScriptProjectId": "1wdjJqg_b5SlYDTqt33oNLjxd4OXq5apNwrJ5JQqpr8W2XsxZINLbSXdX",
-        "oneappProductionWebApp": "https://script.google.com/macros/s/AKfycbzOUOIu_bP7NkiFVziDR0Og1da1KO1ePoU09Q3pSlPr-9uD-WkdCpWN7nidO5hlrJi6Qw/exec",
-        "oneappDeployedVersion": 43,
-        "oneappRollbackVersion": 41,
-        "gatewayDeployedVersion": 21,
-        "gatewayRollbackVersion": 19,
-        "postalCode1": "05699",
-        "rawCertificateStorage": false,
-        "representativeBirthDateStorage": false
-      }
-    },
-    {
-      "id": "company-public-footer",
-      "owner": "nexus",
-      "consumers": [
-        "nexus/home/index.html",
-        "nexus/admin/index.html",
-        "nexus/company.html",
-        "settings.html",
-        "history_viewer.html",
-        "export_center.html",
-        "Master.html",
-        "Item_manager.html",
-        "partner_db.html",
-        "MerchOps.html",
-        "SmartParser.html",
-        "DataOps.html",
-        "orders.html",
-        "orderops_list.html",
-        "orderops/list.html",
-        "orderops/list1.html",
-        "orderops/input.html",
-        "orderops/smartparser.html",
-        "orderq/index.html",
-        "orderq/input.html",
-        "orderq/parser.html",
-        "orderq/collector.html",
-        "orderq/cloud.html",
-        "orderq/operations.html",
-        "orderq/products.html",
-        "orderq/dispatch.html",
-        "orderq/purchase.html",
-        "orderq/sale.html",
-        "orderq/reconciliation.html",
-        "orderq/erp.html",
-        "orderq/transition.html",
-        "orderq/admin-test.html",
-        "orderq/admin-test-guide.html",
-        "smartinput/index.html"
-      ],
-      "schemaVersion": "NEXUS_COMPANY_PUBLIC_FOOTER_V1",
-      "purpose": "Render one immediate public company-information projection on every NEXUS business screen, then refresh it in the background without blocking authentication or app readiness.",
-      "publicFields": [
-        "companyName",
-        "businessNumber",
-        "representativeName",
-        "companyPhone",
-        "businessAddress",
-        "homepage",
-        "revision"
-      ],
-      "resources": {
-        "component": "nexus/common/nexus-company-footer.js",
-        "componentVersion": "1.0.0",
-        "companyId": "ONEAPP",
-        "storageKeyPrefix": "oneapp.nexus.company-public.ONEAPP.NEXUS_COMPANY_PUBLIC_FOOTER_V1.<userScope>",
-        "gatewayOperation": "company.public_profile_read",
-        "upstreamAction": "nexus_gateway_company_public_profile_get",
-        "revisionRequestField": "knownRevision",
-        "unchangedResponse": "status=UNCHANGED with revision and no Snapshot",
-        "layoutMode": "final element in normal document flow; no fixed or sticky overlay",
-        "refreshTtlSeconds": 120
-      },
-      "privacyPolicy": "The Snapshot contains exactly the six allow-listed public fields and revision. User, schema, and company scope stay in the storage key/envelope outside the Snapshot. A user can hydrate only that user's envelope. The projection excludes the protected profile, accounting periods, certificate/OCR data, audit data, opening date, taxation type, business type/items, private phone numbers, mobile numbers, and email addresses.",
-      "rollback": "Revert the static component and gateway/upstream public projection together. The protected company profile and its revisioned writes are not migrated or deleted."
-    },
-    {
-      "id": "nexus-app-ui",
-      "owner": "nexus",
-      "consumers": [
-        "Master.html",
-        "Item_manager.html",
-        "partner_db.html"
-      ],
-      "schemaVersion": "NEXUS_APP_UI_V2",
-      "applicationStatus": {
-        "master-lookup": "pilot",
-        "item-manager": "pilot",
-        "merchops": "planned",
-        "dataops": "planned",
-        "orderq": "planned",
-        "smart-parser": "planned"
-      },
-      "resources": {
-        "styles": "nexus/common/nexus-app-ui.css",
-        "themeInitializer": "nexus/common/nexus-theme-init.js",
-        "masterThemeStyles": "nexus/common/nexus-master-theme.css",
-        "registry": "nexus/common/nexus-ui-contract.js",
-        "documentation": "nexus/common/NEXUS_APP_UI_CONTRACT.md",
-        "contentMaxWidthToken": "--nexus-content-max-width"
-      }
-    },
     {
       "id": "orderq-vnext-sync",
       "owner": "orderq-vnext",
@@ -798,11 +287,7 @@
         "orderq/input.html",
         "orderq/parser.html",
         "orderq/collector.html",
-        "orderq/cloud.html",
-        "smartinput/index.html",
-        "orders.html",
-        "orderops_list.html",
-        "orderops/list.html"
+        "orderq/cloud.html"
       ],
       "schemaVersion": "ONEAPP_ORDERQ_SYNC_V1",
       "localDatabase": "oneapp-orderq-vnext",
@@ -844,8 +329,6 @@
       "id": "shipping-purchase-plan",
       "owner": "orderops",
       "consumers": [
-        "orders.html",
-        "orderops_list.html",
         "orderops/list.html"
       ],
       "schemaVersion": "ONEAPP_SHIPPING_PURCHASE_PLAN_V1",
@@ -876,10 +359,7 @@
       "owner": "dataops",
       "consumers": [
         "DataOps.html",
-        "MerchOps.html",
-        "orders.html",
-        "orderops_list.html",
-        "orderops/list.html"
+        "MerchOps.html"
       ],
       "schemaVersion": "ONEAPP_DATAOPS_SNAPSHOT_V1",
       "columns": [
@@ -924,16 +404,14 @@
       "id": "product-master",
       "owner": "merchops",
       "consumers": [
-        "orderq/input.html",
-        "smartinput/index.html"
+        "orderq/input.html"
       ],
       "resources": {
         "indexedDb": {
           "database": "MerchOpsDB",
           "store": "master_products",
           "keys": [
-            "merchMaster_v870",
-            "oneapp.foundation.product-backup-state.v1"
+            "merchMaster_v870"
           ]
         },
         "localStorage": [
@@ -943,10 +421,7 @@
         "cloud": [
           "master",
           "master_only",
-          "chunk_master",
-          "foundation.backup.product_write",
-          "foundation.backup.version_list",
-          "foundation.backup.version_read"
+          "chunk_master"
         ]
       }
     },

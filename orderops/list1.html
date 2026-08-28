@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="google" content="notranslate">
   <title>ONEAPP orderops</title>
-  <script src="/nexus/common/nexus-auth-config.js?v=2.0.1"></script><script src="/nexus/common/nexus-auth.js?v=2.1.2"></script>
   <link rel="preconnect" href="https://cdn.jsdelivr.net">
   <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
   <script src="orderFulfillmentEngine.js"></script>
@@ -440,7 +439,8 @@
         <button type="button" id="replaceRecoveryButton">교체</button>
         <button type="button" id="discardRecoveryButton">초기화</button>
       </div>
-      <input id="cloudUrlInput" type="hidden" value="NEXUS_GATEWAY">
+      <input id="cloudUrlInput" type="hidden">
+      <input id="cloudTokenInput" type="hidden">
       <input id="cloudSavedByInput" type="hidden">
       <button type="button" id="cloudListButton" class="hidden"></button>
       <button type="button" id="cloudSaveButton" class="hidden"></button>
@@ -511,6 +511,7 @@
         discardRecoveryButton: document.getElementById("discardRecoveryButton"),
         localResetButton: document.getElementById("localResetButton"),
         cloudUrlInput: document.getElementById("cloudUrlInput"),
+        cloudTokenInput: document.getElementById("cloudTokenInput"),
         cloudSavedByInput: document.getElementById("cloudSavedByInput"),
         cloudListButton: document.getElementById("cloudListButton"),
         cloudSaveButton: document.getElementById("cloudSaveButton"),
@@ -682,7 +683,8 @@
           workspace: state.workspace,
           ui: { activePreview: state.activePreview },
           settings: {
-            cloudRoute: "NEXUS_GATEWAY",
+            cloudUrl: elements.cloudUrlInput.value.trim(),
+            cloudToken: elements.cloudTokenInput.value,
             savedBy: elements.cloudSavedByInput.value.trim(),
           },
         };
@@ -713,7 +715,8 @@
         if (!validRecoveryRecord(record)) throw new Error("복구 자료의 schemaVersion 또는 source fingerprint가 올바르지 않습니다.");
         state.workspace = record.workspace;
         state.activePreview = record.ui?.activePreview || "purchases";
-        elements.cloudUrlInput.value = "NEXUS_GATEWAY";
+        elements.cloudUrlInput.value = record.settings?.cloudUrl || "";
+        elements.cloudTokenInput.value = record.settings?.cloudToken || "";
         elements.cloudSavedByInput.value = record.settings?.savedBy || "";
         renderRecoveryBanner(null);
         renderResults();

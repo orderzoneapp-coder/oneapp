@@ -4,10 +4,10 @@ import {
   expandInventoryWarehouseRows,
   COLLECTOR_SOURCE,
   excelDateToIso
-} from './collector-schema.js?v=0.8.0';
-import { parseOrderLines } from '../smartparser/order-line-parser.js?v=0.8.1';
-import { detectOrderEvent, EVENT_TYPE } from '../smartparser/order-event-detector.js?v=0.8.1';
-import { createSourceMessageKey, normalizeSourceText } from '../smartparser/source-parser.js?v=0.8.1';
+} from './collector-schema.js?v=0.7.1';
+import { parseOrderLines } from '../smartparser/order-line-parser.js?v=0.7.1';
+import { detectOrderEvent, EVENT_TYPE } from '../smartparser/order-event-detector.js?v=0.7.1';
+import { createSourceMessageKey, normalizeSourceText } from '../smartparser/source-parser.js?v=0.7.1';
 
 export async function sha256File(file) {
   const buffer = await file.arrayBuffer();

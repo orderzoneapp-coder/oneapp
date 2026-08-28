@@ -507,13 +507,13 @@ assert.match(
   /Object\.values\(pData\)\.forEach\(applyRepresentativeProductName\)/,
 );
 const expectedDisplayVersion =
-  "V1.a22.115_InputPerformance · 2026-08-21 KST";
+  "V1.a22.112_EvidenceReportPreflight · 2026-08-12 KST";
 assert.equal(
   source.split(expectedDisplayVersion).length - 1,
-  2,
-  "dated V113 version must appear at loader and application header",
+  3,
+  "dated V112 version must appear at title, loader, and header",
 );
-assert.match(source, /version:\s*'V1\.a22\.115_InputPerformance'/);
+assert.match(source, /version:\s*'V1\.a22\.112_EvidenceReportPreflight'/);
 
 console.log(
   "DataOps actual executeAnalysis code-primary product-name merge contract passed.",

@@ -2,167 +2,80 @@
 <html lang="ko" translate="no">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="google" content="notranslate">
-  <title>ONEAPP · ORDER IN</title>
-  <link rel="stylesheet" href="./orderq.css?v=0.11.0">
-  <link rel="stylesheet" href="./order-draft-editor.css?v=0.2.0">
-  <link rel="stylesheet" href="./intake-workbench.css?v=0.3.0">
-  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@6/dist/tesseract.min.js"></script>
-  <style>:root{--nexus-top-height:44px}nexus-top{display:block;min-height:var(--nexus-top-height)}.nexus-top-fallback{height:var(--nexus-top-height);padding:0 14px;display:flex;align-items:center;gap:12px;background:#0b1021;color:#fff;font:12px Pretendard,"Noto Sans KR",sans-serif}.nexus-top-fallback strong{letter-spacing:.08em}.nexus-top-fallback span{color:#cbd5e1}.nexus-top-fallback button{margin-left:auto;border:1px solid #64748b;border-radius:6px;padding:5px 9px;background:transparent;color:#fff;cursor:pointer}</style>
-  <script src="https://oneapp.orderz.co.kr/nexus/common/nexus-auth-config.js?v=2.0.1"></script>
-  <script src="https://oneapp.orderz.co.kr/nexus/common/nexus-auth.js?v=2.1.2"></script>
-  <script src="https://oneapp.orderz.co.kr/nexus/common/apps-config.js?v=1.4.0"></script>
-<script src="https://oneapp.orderz.co.kr/nexus/common/nexus-top.js?v=1.10.0"></script>
-  <link rel="icon" type="image/png" href="/nexus/assets/nexus-favicon.png">
+  <title>ONEAPP ORDER Q vNext · ORDER IN</title>
+  <link rel="stylesheet" href="./orderq.css">
+  <link rel="stylesheet" href="./parser.css">
 </head>
-<body class="order-in-page">
-  <nexus-top app-id="orderin"><div class="nexus-top-fallback" role="status"><strong>NEXUS</strong><span>NEXUS 메뉴를 불러오지 못했습니다.</span><button type="button" onclick="window.location.reload()">재시도</button></div></nexus-top>
-  <header class="topbar order-in-topbar">
-    <div class="order-in-brand" aria-label="ORDER IN">
-      <img class="order-in-logo" src="../assets/order_in_logo_header_white_bg.svg" alt="ORDER IN">
-      <span class="order-in-subtitle">단일전표</span>
-    </div>
-    <nav class="order-in-global-nav" aria-label="주요 기능">
-      <a class="order-in-nav-primary" href="./parser.html">새 입력</a>
-      <a href="./input.html">직접입력</a>
-      <a href="./index.html">주문현황</a>
-      <a href="./operations.html">ORDER Q 운영</a>
-    </nav>
-  </header>
-
-  <main class="intake-layout">
-    <aside class="intake-context-rail" aria-label="현재 업무 경로">
-      <div class="rail-brand">ORDER IN</div>
-      <button class="rail-step active" data-rail-step="0" type="button" disabled>
-        <span class="rail-index">01</span>
-        <strong>추출 확인</strong>
-        <span class="rail-tags">주문내용 · 거래처 · 상품·수량</span>
-      </button>
-      <button class="rail-step" data-rail-step="1" type="button" hidden>
-        <span class="rail-index">02</span>
-        <strong>매칭 확인</strong>
-        <span class="rail-tags">상품 확인 · Master 연결 · 미등록 상품</span>
-      </button>
-      <button class="rail-step" data-rail-step="2" type="button" hidden>
-        <span class="rail-index">03</span>
-        <strong>주문 완성</strong>
-        <span class="rail-tags">거래처 · 배송정보 · 수량·단가</span>
-      </button>
-    </aside>
-
-    <div class="intake-workspace">
-      <p id="intakeMessage" class="intake-message" aria-live="polite"></p>
-
-      <section class="intake-panel intake-source-panel" id="sourcePanel">
-        <div class="stage-heading">
-          <span class="stage-eyebrow">새 주문</span>
-          <h1>주문자료를 넣고 분석하세요.</h1>
-          <p>카카오·일반 텍스트는 그대로 붙여넣고, 사진은 붙여넣거나 파일을 선택하세요. 거래처가 정해져 있으면 먼저 선택하면 거래처별 상품 매칭을 우선 적용합니다.</p>
+<body>
+  <div class="shell parser-shell">
+    <header class="topbar">
+      <div class="brand">
+        <strong>ONEAPP</strong>
+        <span class="logo-frame" aria-hidden="true"><img src="../assets/order-q-logo.png" alt=""></span>
+        <span class="badge">vNext 0.7.1</span>
+        <span>ORDER IN · SmartParser</span>
+      </div>
+      <div class="top-actions">
+        <a class="btn dark" href="./collector.html">이력수집</a>
+        <a class="btn dark" href="./cloud.html">클라우드</a>
+        <a class="btn dark" href="./operations.html">ORDER Q 운영</a>
+        <a class="btn dark" href="./input.html">주문서 입력</a>
+        <a class="btn primary" href="./index.html">주문현황</a>
+      </div>
+    </header>
+    <main class="panel">
+      <p class="notice">원문은 그대로 보존합니다. 주문 여부를 먼저 판정하고 확정 가능한 결과만 기존 Order Intake로 등록합니다.</p>
+      <div id="message" class="message"></div>
+      <section class="parser-input-grid">
+        <div class="field">
+          <label for="sourceType">입력방식</label>
+          <select class="control" id="sourceType">
+            <option value="KAKAO_TEXT">카카오 대화</option>
+            <option value="GENERAL_TEXT">일반 텍스트</option>
+          </select>
         </div>
-
-        <div class="source-meta-grid customer-first-grid">
-          <label class="intake-field customer-preset-field">
-            <span>거래처 <small>선택 권장</small></span>
-            <input id="customerPreset" list="customerOptions" placeholder="거래처명 검색 / 선택" autocomplete="off">
-            <datalist id="customerOptions"></datalist>
-            <input id="customerPresetId" type="hidden">
-          </label>
-          <label class="intake-field">
-            <span>출하창고</span>
-            <input id="warehouse" placeholder="코드 또는 창고명" autocomplete="off">
-          </label>
+        <div class="field source-field">
+          <label for="sourceId">출처 ID</label>
+          <input class="control" id="sourceId" type="text" value="KAKAO_MANUAL" placeholder="카카오방 또는 입력원 이름">
         </div>
-
-        <div class="input-detection-note" id="inputDetectionNote">입력 종류는 자동으로 판단합니다.</div>
-
-        <label class="intake-field raw-entry-field drop-ready" id="rawEntryField">
-          <span>주문내용</span>
-          <textarea id="rawText" rows="10" placeholder="텍스트를 붙여넣거나 사진을 Ctrl+V로 붙여넣으세요.&#10;&#10;예)&#10;진주170&#10;수입양상추 2&#10;대파 3"></textarea>
-        </label>
-
-        <div class="capture-tools">
-          <label class="intake-file-button">사진 선택<input id="imageInput" type="file" accept="image/*" capture="environment" hidden></label>
-          <span id="imageStatus" class="capture-status">사진을 붙여넣어도 됩니다.</span>
+        <div class="field warehouse-field">
+          <label for="parserWarehouse">출하창고</label>
+          <input class="control" id="parserWarehouse" type="text" list="parserWarehouseOptions" placeholder="코드 또는 창고명" autocomplete="off">
+          <datalist id="parserWarehouseOptions"></datalist>
         </div>
-        <div id="imagePreview" class="image-preview" hidden>
-          <img id="imagePreviewImg" alt="붙여넣은 주문사진 미리보기">
-          <div><strong id="imagePreviewName"></strong><span id="imageOcrStatus"></span></div>
+        <div class="field raw-field">
+          <label for="rawText">원문 붙여넣기</label>
+          <textarea class="control raw-input" id="rawText" placeholder="[진주170] [오전 8:31] 수입양상추1"></textarea>
         </div>
-
-        <div class="intake-actions">
-          <button class="intake-primary" id="captureBtn" type="button">분석 실행 <span aria-hidden="true">→</span></button>
+        <div class="parser-actions">
+          <label class="check"><input id="forceReanalyze" type="checkbox"> 주문 미등록 기존결과 다시 분석</label>
+          <button class="btn primary analyze-btn" id="analyzeBtn" type="button">분석</button>
         </div>
       </section>
 
-      <section class="intake-panel" data-panel hidden>
-        <div class="stage-heading">
-          <span class="stage-eyebrow">추출 확인</span>
-          <h1>받은 주문 내용이 맞는지 확인하세요.</h1>
-          <p>원문은 그대로 보존됩니다. 거래처·상품·수량이 잘못 읽힌 부분만 고치면 됩니다.</p>
-        </div>
-
-        <div class="extraction-review-layout">
-          <div class="source-review-block">
-            <div class="section-caption">원문</div>
-            <div id="rawPreview" class="intake-raw"></div>
-          </div>
-
-          <div class="extraction-review-block extraction-fields-block">
-            <label class="intake-field customer-expression-field">
-              <span>거래처</span>
-              <small>이 거래처 기준으로 상품 매핑사전과 주문이력을 우선 적용합니다.</small>
-              <input id="customerExpression" list="customerOptions" autocomplete="off">
-            </label>
-
-            <div class="extraction-list">
-              <div class="extraction-list-head" aria-hidden="true">
-                <span>상품내용</span><span>규격</span><span>수량</span><span>단위</span><span>제외</span>
-              </div>
-              <div id="extractionRows"></div>
-            </div>
-          </div>
-        </div>
-
-        <div class="intake-actions">
-          <button class="intake-primary" id="confirmExtractionBtn" type="button">확인 완료 <span aria-hidden="true">→</span></button>
-        </div>
+      <section id="summarySection" class="parser-summary" hidden>
+        <div><strong id="sumOrders">0</strong><span>신규 주문</span></div>
+        <div><strong id="sumItems">0</strong><span>주문상품</span></div>
+        <div><strong id="sumMatched">0</strong><span>매칭완료</span></div>
+        <div class="issue"><strong id="sumFailed">0</strong><span>매칭실패</span></div>
+        <div><strong id="sumExcluded">0</strong><span>비주문 메시지</span></div>
+        <div><strong id="sumDuplicates">0</strong><span>기존 메시지</span></div>
       </section>
 
-      <section class="intake-panel" data-panel hidden>
-        <div class="stage-heading">
-          <span class="stage-eyebrow">매칭 확인</span>
-          <h1>주문상품이 실제 상품과 맞는지 확인하세요.</h1>
-          <p>거래처별 매핑과 주문이력을 우선 사용합니다. Master 상품을 연결하거나 미등록 상품을 관리자 확인 상품으로 확정할 수 있습니다.</p>
+      <section class="result-section">
+        <div class="toolbar result-toolbar">
+          <strong>분석 결과</strong>
+          <span class="status">문제 항목 우선 · 원문은 수정되지 않습니다.</span>
         </div>
-
-        <div id="draftEditor" class="order-draft-editor"></div>
-
-        <div class="intake-actions split-actions">
-          <button class="intake-back" id="editExtractionBtn" type="button"><span aria-hidden="true">←</span> 추출 수정</button>
-          <button class="intake-primary" id="confirmMatchingBtn" type="button">매칭 완료 <span aria-hidden="true">→</span></button>
+        <div id="resultList" class="result-list">
+          <div class="empty">카카오 대화 또는 일반 주문 텍스트를 붙여넣고 분석하세요.</div>
         </div>
       </section>
-
-      <section class="intake-panel" data-panel hidden>
-        <div class="stage-heading">
-          <span class="stage-eyebrow">주문 완성</span>
-          <h1>최종 주문 내용을 확인하세요.</h1>
-          <p>수량과 상품정보를 마지막으로 확인한 뒤 주문을 저장합니다.</p>
-        </div>
-
-        <div id="completionEditor" class="order-draft-editor"></div>
-
-        <div class="intake-actions split-actions">
-          <button class="intake-back" id="editMatchingBtn" type="button"><span aria-hidden="true">←</span> 매칭 수정</button>
-          <button class="intake-primary commit" id="commitBtn" type="button">주문 저장</button>
-        </div>
-      </section>
-    </div>
-  </main>
-
-  <script type="module" src="./workflow-guide.js?v=0.11.0"></script>
-  <script type="module" src="./intake-workbench.js?v=0.12.2"></script>
-  <script type="module" src="./customer-picker-bootstrap.js?v=0.12.1"></script>
+    </main>
+  </div>
+  <script type="module" src="./parser-ui.js?v=0.7.1"></script>
 </body>
 </html>
+

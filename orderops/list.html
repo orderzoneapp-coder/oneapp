@@ -1,17 +1,14 @@
 <!DOCTYPE html>
-<html lang="ko" translate="no" data-nexus-app="orderq">
+<html lang="ko" translate="no">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="google" content="notranslate">
-  <title>ORDER Q</title>
-  <script src="/nexus/common/nexus-theme-init.js"></script>
-  <link rel="stylesheet" href="/nexus/common/oneapp-design-tokens.css">
+  <title>ONEAPP ORDER Q · 출고관리</title>
   <link rel="preconnect" href="https://cdn.jsdelivr.net">
   <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
   <script src="../orderFulfillmentEngine.js"></script>
   <script src="../orderFulfillmentWorkbook.js"></script>
-  <script src="orderops-source-adapter.js?v=1.64.0"></script>
   <style>
     :root {
       color-scheme: light;
@@ -81,34 +78,6 @@
       font-weight: 900;
       letter-spacing: -0.04em;
     }
-    .master-brand-link {
-      display: inline-flex;
-      align-items: center;
-      gap: 7px;
-      min-height: 34px;
-      padding: 2px 3px 2px 0;
-      border-radius: 5px;
-      color: inherit;
-      text-decoration: none;
-    }
-    .master-brand-link:hover .brand-mark,
-    .master-brand-link:focus-visible .brand-mark { color: #1d4ed8; }
-    .master-brand-link:focus-visible { outline: 2px solid #60a5fa; outline-offset: 2px; }
-    .master-brand-separator { width: 1px; height: 27px; background: var(--slate-300); }
-    .master-brand-lockup { display: flex; flex-direction: column; justify-content: center; gap: 2px; line-height: 1; }
-    .master-brand-heading { display: flex; align-items: center; gap: 5px; }
-    .master-brand-name { color: #1e3a8a; font-size: 12px; font-weight: 950; letter-spacing: .12em; }
-    .master-brand-version {
-      padding: 2px 4px;
-      border: 1px solid #a7f3d0;
-      border-radius: 4px;
-      color: #047857;
-      background: #ecfdf5;
-      font-size: 7px;
-      font-weight: 900;
-      letter-spacing: .04em;
-    }
-    .master-brand-subtitle { color: #64748b; font-size: 7px; font-weight: 800; letter-spacing: .14em; }
     .brand-divider {
       width: 1px;
       height: 18px;
@@ -699,7 +668,7 @@
     }
     .search-field { display: block; flex: 1 1 360px; min-width: 260px; }
     .search-field span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-    .unit-filter legend { color: var(--slate-500); font-size: 11px; font-weight: 900; }
+    .spec-filter legend { color: var(--slate-500); font-size: 11px; font-weight: 900; }
     .search-field input {
       width: 100%;
       min-height: 31px;
@@ -713,11 +682,11 @@
     }
     .search-field input:focus { border-color: var(--teal-600); box-shadow: 0 0 0 2px rgba(13,148,136,.12); }
     .view-controls .preview-tabs,
-    .view-controls .unit-filter,
+    .view-controls .spec-filter,
     .view-controls .preview-count { flex: 0 0 auto; }
     .view-controls .preview-tabs { padding: 0; }
     .view-controls .preview-count { white-space: nowrap; }
-    .unit-filter {
+    .spec-filter {
       display: flex;
       align-items: center;
       gap: 4px;
@@ -726,8 +695,8 @@
       padding: 0;
       border: 0;
     }
-    .unit-filter legend { float: left; margin-right: 2px; }
-    .unit-filter label {
+    .spec-filter legend { float: left; margin-right: 2px; }
+    .spec-filter label {
       display: inline-flex;
       align-items: center;
       gap: 3px;
@@ -741,7 +710,7 @@
       font-weight: 800;
       white-space: nowrap;
     }
-    .unit-filter:disabled { opacity: .42; }
+    .spec-filter:disabled { opacity: .42; }
     .shortage-focus-button {
       min-height: 31px;
       padding: 0 10px;
@@ -874,9 +843,7 @@
     .table-tool-button:hover { border-color: var(--teal-700); color: var(--teal-700); background: #f0fdfa; }
     .table-tool-button.dirty { border-color: #4f46e5; color: #fff; background: #4f46e5; }
     .table-tool-button.active { border-color: var(--teal-700); color: #fff; background: var(--teal-700); }
-    /* ORDER Q v1.65: 단위 기준 필터와 EA·소분 행 강조 판정 교정. */
-    /* ORDER Q v1.59: 저장 양식 그룹을 재고부족 바로 뒤에 고정. */
-    .view-preset-tools { display: flex; flex: 0 0 auto; align-items: center; gap: 4px; }
+    .view-preset-tools { display: flex; align-items: center; gap: 4px; }
     .view-preset-select {
       min-width: 104px;
       max-width: 150px;
@@ -1118,13 +1085,6 @@
     .purchase-input[data-negative-balance="true"] { color: #854d0e; background: #fef9c3; box-shadow: none; }
     .purchase-input:focus { outline: 0; background: transparent; }
     .purchase-input[data-negative-balance="true"]:focus { background: #fef08a; box-shadow: none; }
-    .purchase-quantity-input {
-      width: 100%; min-width: 0; height: 25px; padding: 1px 6px;
-      border: 0; border-radius: 0; color: var(--slate-900);
-      background: transparent; font-size: 12px; outline: 0; box-shadow: none;
-      text-align: right; font-variant-numeric: tabular-nums;
-    }
-    .purchase-quantity-input:focus { outline: 0; background: transparent; }
     .order-edit-input {
       width: 100%; min-width: 0; height: 25px; padding: 1px 6px;
       border: 0; border-radius: 0; color: var(--slate-900);
@@ -1541,7 +1501,7 @@
       .operator-note { min-height: 42px; }
       .primary-button { width: 100%; min-width: 0; min-height: 36px; }
       .view-controls { align-items: center; }
-      .unit-filter { flex-wrap: wrap; }
+      .spec-filter { flex-wrap: wrap; }
       .table-view-tools { flex-wrap: nowrap; }
       .warehouse-color-bar { align-items: flex-start; flex-wrap: wrap; }
       .warehouse-color-options { order: 3; width: 100%; }
@@ -1788,69 +1748,17 @@
       .data-source-label { min-height: 22px; }
       .view-controls .preview-tabs { display: flex; }
     }
-
-    /* ORDER Q v1.57: 거래처 담당자 변경 */
-    .manager-assignment-trigger {
-      width: 100%;
-      min-height: 24px;
-      padding: 2px 5px;
-      border: 1px solid transparent;
-      border-radius: 4px;
-      color: inherit;
-      background: transparent;
-      font: inherit;
-      text-align: left;
-    }
-    .manager-assignment-trigger:hover,
-    .manager-assignment-trigger:focus-visible {
-      border-color: #0d9488;
-      color: #0f766e;
-      background: #f0fdfa;
-      outline: none;
-    }
-    .manager-assignment-guide {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      width: 100%;
-      padding: 3px 4px 6px;
-      color: #334155;
-      font-size: 11px;
-    }
-    .manager-assignment-guide strong { color: #0f766e; }
-    .manager-assignment-guide button { margin-left: auto; }
-    .manager-assignment-option {
-      width: 100%;
-      min-height: 29px;
-      padding: 4px 8px;
-      border: 1px solid #cbd5e1;
-      border-radius: 4px;
-      color: #334155;
-      background: #fff;
-      font: inherit;
-      font-weight: 800;
-      text-align: left;
-    }
-    .manager-assignment-option:hover,
-    .manager-assignment-option.active {
-      border-color: #0d9488;
-      color: #0f766e;
-      background: #f0fdfa;
-    }
-
   </style>
-  <style>:root{--nexus-top-height:44px}nexus-top{display:block;min-height:var(--nexus-top-height)}.nexus-top-fallback{height:var(--nexus-top-height);padding:0 14px;display:flex;align-items:center;gap:12px;background:#0b1021;color:#fff;font:12px Pretendard,"Noto Sans KR",sans-serif}.nexus-top-fallback strong{letter-spacing:.08em}.nexus-top-fallback span{color:#cbd5e1}.nexus-top-fallback button{margin-left:auto;border:1px solid #64748b;border-radius:6px;padding:5px 9px;background:transparent;color:#fff;cursor:pointer}</style>
-    <script src="/nexus/common/nexus-auth-config.js?v=2.0.1"></script>
-    <script src="/nexus/common/nexus-auth.js?v=2.1.2"></script>
-    <script src="/nexus/common/apps-config.js?v=1.4.0"></script>
-<script src="/nexus/common/nexus-top.js?v=1.10.0"></script>
-  <link rel="stylesheet" href="/nexus/common/nexus-operational-theme.css?v=1.0.0">
-  <link rel="icon" type="image/png" href="/nexus/assets/nexus-favicon.png">
 </head>
 <body>
-  <nexus-top app-id="orderq"><div class="nexus-top-fallback" role="status"><strong>NEXUS</strong><span>NEXUS 메뉴를 불러오지 못했습니다.</span><button type="button" onclick="window.location.reload()">재시도</button></div></nexus-top>
   <header class="global-header">
-    <div class="brand" aria-label="ORDER Q 출고관리"><span class="brand-logo-frame"><img class="brand-logo" src="assets/order-q-logo.png" alt="ORDER Q"></span><span class="brand-divider" aria-hidden="true"></span><strong class="brand-product">출고관리</strong><span class="brand-badge">v1.65</span></div>
+    <div class="brand" aria-label="ONEAPP ORDER Q 출고관리">
+      <div class="brand-mark">ONEAPP</div>
+      <div class="brand-divider" aria-hidden="true"></div>
+      <span class="brand-logo-frame" aria-hidden="true"><img class="brand-logo" src="../assets/order-q-logo.png" alt=""></span>
+      <span class="brand-badge">v1.55</span>
+      <span class="brand-product">출고관리</span>
+    </div>
     <div class="header-actions">
       <a class="header-link header-smart-input" id="smartInputButton" href="input.html"
         aria-label="스마트 전표입력 화면 열기 F4" aria-keyshortcuts="F4">
@@ -1998,18 +1906,8 @@
         <div class="preview-tabs" id="previewTabs" role="tablist" aria-label="결과 미리보기"></div>
         <button class="shortage-focus-button hidden" id="shortageFocusButton" type="button"
           aria-pressed="false" aria-label="재고부족 상품 모아보기">재고부족 0</button>
-        <div class="view-preset-tools" aria-label="현재 화면 저장 양식">
-          <select class="view-preset-select" id="viewPresetSelect" aria-label="저장한 현재 화면 양식 선택" disabled>
-            <option value="">저장 양식</option>
-          </select>
-          <button class="table-tool-button" id="viewPresetSaveButton" type="button" disabled>양식저장</button>
-          <button class="table-tool-button view-preset-default-button" id="viewPresetDefaultButton" type="button"
-            aria-pressed="false" disabled>기본지정</button>
-          <button class="table-tool-button view-preset-delete-button" id="viewPresetDeleteButton" type="button"
-            aria-label="선택한 현재 화면 양식 삭제" disabled>×</button>
-        </div>
-        <fieldset class="unit-filter" id="unitFilterGroup">
-          <legend>단위</legend>
+        <fieldset class="spec-filter" id="specFilterGroup">
+          <legend>규격</legend>
           <label><input type="checkbox" value="BOX">BOX</label>
           <label><input type="checkbox" value="EA">EA</label>
           <label><input type="checkbox" value="소분">소분</label>
@@ -2023,6 +1921,16 @@
           </div>
           <button class="table-tool-button" id="columnWidthSaveButton" type="button">열폭 저장</button>
           <button class="table-tool-button" id="columnWidthResetButton" type="button">열폭 초기화</button>
+          <div class="view-preset-tools" aria-label="현재 화면 저장 양식">
+            <select class="view-preset-select" id="viewPresetSelect" aria-label="저장한 현재 화면 양식 선택" disabled>
+              <option value="">저장 양식</option>
+            </select>
+            <button class="table-tool-button" id="viewPresetSaveButton" type="button" disabled>양식저장</button>
+            <button class="table-tool-button view-preset-default-button" id="viewPresetDefaultButton" type="button"
+              aria-pressed="false" disabled>기본지정</button>
+            <button class="table-tool-button view-preset-delete-button" id="viewPresetDeleteButton" type="button"
+              aria-label="선택한 현재 화면 양식 삭제" disabled>×</button>
+          </div>
         </div>
         <div class="preview-count" id="previewCount"></div>
         <button class="filter-toggle-button" id="warehouseFilterToggle" type="button"
@@ -2056,7 +1964,7 @@
     </section>
 
     <footer class="page-footer">
-      <span>ORDER Q v1.65 · 출고관리 · workspace shipping-workspace/v2 · cloud plan v1</span>
+      <span>ORDER Q v1.55 · 출고관리 · workspace shipping-workspace/v2 · cloud plan v1</span>
       <a href="../SHIPPING_MANAGEMENT_GUIDANCE.md">개발·운영 기준 보기</a>
     </footer>
   </main>
@@ -2091,7 +1999,8 @@
       <section class="settings-section" data-settings-section="cloud">
         <h3>클라우드 완료본</h3>
         <div class="cloud-grid">
-          <label>업무 연결<input id="cloudUrlInput" type="hidden" value="NEXUS_GATEWAY"><span>NEXUS Gateway 자동 연결</span></label>
+          <label>Cloud URL<input id="cloudUrlInput" type="url" autocomplete="off" placeholder="Apps Script /exec URL"></label>
+          <label>전용 Token<input id="cloudTokenInput" type="password" autocomplete="off" placeholder="Shipping 전용 토큰"></label>
           <label>저장자/담당<input id="cloudSavedByInput" type="text" autocomplete="off" placeholder="이름 또는 담당"></label>
           <label class="cloud-revision-field">Cloud revision
             <select id="cloudRevisionSelect" aria-label="클라우드 발주계획 revision"><option value="">저장 이력 선택</option></select>
@@ -2102,7 +2011,7 @@
             <button type="button" id="cloudLoadButton" disabled>불러오기</button>
           </div>
         </div>
-        <p class="storage-note">작업 중 변경은 이 컴퓨터에 임시저장되며 자동 전송되지 않습니다. 완료 후 저장 버튼을 누른 확정본만 다른 컴퓨터에서 조회·불러오기 할 수 있습니다. 업무 인증은 NEXUS 로그인 세션이 자동으로 처리합니다.</p>
+        <p class="storage-note">작업 중 변경은 이 컴퓨터에 임시저장되며 자동 전송되지 않습니다. 완료 후 저장 버튼을 누른 확정본만 다른 컴퓨터에서 조회·불러오기 할 수 있습니다. Token은 복구자료와 Cloud 저장내용에 포함되지 않습니다.</p>
       </section>
 
       <section class="settings-section" data-settings-section="excel-mapping">
@@ -2173,7 +2082,6 @@
 
       const engine = window.ShippingManagementEngine;
       const workbookTools = window.ShippingManagementWorkbook;
-      const sourceAdapter = window.OrderOpsSourceAdapter;
       const MAX_FILE_SIZE = 25 * 1024 * 1024;
       const LOCAL_DB_NAME = "ONEAPPShippingRecoveryDB";
       const LOCAL_DB_VERSION = 1;
@@ -2200,14 +2108,11 @@
       const EXCEL_MAPPING_KEY = "oneapp.orderops.excel-mappings.v1";
       const EXCEL_MAPPING_SCHEMA = "orderops-excel-mappings/v1";
       const PURCHASE_HISTORY_KEY = "oneapp.orderops.purchase-history.v1";
-      const SORT_SETTINGS_KEY = "oneapp.orderops.sort-settings.v1";
-      const SORT_SETTINGS_SCHEMA = "orderops-sort-settings/v1";
       const ORDER_VIEW_PRESETS_KEY = "oneapp.orderops.order-view-presets.v1";
-      const ORDER_VIEW_PRESETS_SCHEMA = "orderops-order-view-presets/v5";
-      const PREVIOUS_ORDER_VIEW_PRESETS_SCHEMA = "orderops-order-view-presets/v4";
-      const LEGACY_ORDER_VIEW_PRESETS_SCHEMA = "orderops-order-view-presets/v3";
-      const ORIGINAL_ORDER_VIEW_PRESETS_SCHEMA = "orderops-order-view-presets/v2";
-      const FIRST_ORDER_VIEW_PRESETS_SCHEMA = "orderops-order-view-presets/v1";
+      const ORDER_VIEW_PRESETS_SCHEMA = "orderops-order-view-presets/v4";
+      const PREVIOUS_ORDER_VIEW_PRESETS_SCHEMA = "orderops-order-view-presets/v3";
+      const LEGACY_ORDER_VIEW_PRESETS_SCHEMA = "orderops-order-view-presets/v2";
+      const ORIGINAL_ORDER_VIEW_PRESETS_SCHEMA = "orderops-order-view-presets/v1";
       const ORDER_VIEW_PRESET_LIMIT = 20;
       const VIEW_PRESET_TABS = new Set(["allocations", "ledger", "inventory", "purchases", "sales"]);
       const VIEW_PRESET_LABELS = Object.freeze({
@@ -2248,36 +2153,6 @@
       const TABLE_WIDTH_MAX = 720;
       const TABLE_WIDTH_TABS = new Set(["validation", "inventory", "allocations", "notices", "ledger", "purchases", "sales"]);
       const CLOUD_PLAN_SCHEMA = "ONEAPP_SHIPPING_PURCHASE_PLAN_V1";
-      function loadSortSettings() {
-        const result = Object.create(null);
-        try {
-          const parsed = JSON.parse(localStorage.getItem(SORT_SETTINGS_KEY) || "null");
-          if (!isPlainRecord(parsed) || parsed.schemaVersion !== SORT_SETTINGS_SCHEMA || !isPlainRecord(parsed.tabs)) {
-            return result;
-          }
-          Object.entries(parsed.tabs).forEach(([previewId, settings]) => {
-            const normalized = (Array.isArray(settings) ? settings : [settings])
-              .filter((setting) => isPlainRecord(setting) && isSafeColumnKey(setting.columnKey) &&
-                ["asc", "desc"].includes(setting.direction))
-              .map((setting) => ({ columnKey: setting.columnKey, direction: setting.direction }));
-            if (normalized.length > 0) result[previewId] = normalized;
-          });
-        } catch (error) {}
-        return result;
-      }
-
-      function saveSortSettings() {
-        const tabs = Object.create(null);
-        Object.entries(state.sortSettings || {}).forEach(([previewId, settings]) => {
-          const normalized = (Array.isArray(settings) ? settings : [settings])
-            .filter((setting) => isPlainRecord(setting) && isSafeColumnKey(setting.columnKey) &&
-              ["asc", "desc"].includes(setting.direction))
-            .map((setting) => ({ columnKey: setting.columnKey, direction: setting.direction }));
-          if (normalized.length > 0) tabs[previewId] = normalized;
-        });
-        localStorage.setItem(SORT_SETTINGS_KEY, JSON.stringify({ schemaVersion: SORT_SETTINGS_SCHEMA, tabs }));
-      }
-
       const state = {
         orders: null,
         inventory: null,
@@ -2288,7 +2163,7 @@
         activePreview: "validation",
         searchQuery: "",
         shortageFocus: false,
-        unitFilters: new Set(),
+        specificationFilters: new Set(),
         loading: { orders: false, inventory: false, purchases: false, sales: false, integrated: false },
         integratedFile: null,
         db: null,
@@ -2310,8 +2185,7 @@
         warehouseFilters: new Set(),
         managerColorSettings: { schemaVersion: MANAGER_COLORS_SCHEMA, colors: Object.create(null) },
         managerFilters: new Set(),
-        managerAssignmentCustomer: "",
-        sortSettings: loadSortSettings(),
+        sortSettings: Object.create(null),
         columnFilters: Object.create(null),
         activeColumnMenu: null,
         activeFilterPanel: "",
@@ -2367,7 +2241,7 @@
         tableSearchInput: document.getElementById("tableSearchInput"),
         resultFilterResetButton: document.getElementById("resultFilterResetButton"),
         shortageFocusButton: document.getElementById("shortageFocusButton"),
-        unitFilterGroup: document.getElementById("unitFilterGroup"),
+        specFilterGroup: document.getElementById("specFilterGroup"),
         warehouseColorBar: document.getElementById("warehouseColorBar"),
         warehouseFilterToggle: document.getElementById("warehouseFilterToggle"),
         managerFilterToggle: document.getElementById("managerFilterToggle"),
@@ -2414,6 +2288,7 @@
         discardRecoveryButton: document.getElementById("discardRecoveryButton"),
         localResetButton: document.getElementById("localResetButton"),
         cloudUrlInput: document.getElementById("cloudUrlInput"),
+        cloudTokenInput: document.getElementById("cloudTokenInput"),
         cloudSavedByInput: document.getElementById("cloudSavedByInput"),
         cloudListButton: document.getElementById("cloudListButton"),
         cloudSaveButton: document.getElementById("cloudSaveButton"),
@@ -2615,18 +2490,6 @@
 
       function setSystemMessage(message) {
         elements.systemMessage.textContent = message;
-        if (/(저장|클라우드|복구|revision|동기화)/i.test(message)) {
-          const failed = /(실패|오류|차단)/.test(message);
-          const completed = !failed && /(완료|준비 완료|revision \d+)/.test(message);
-          const waiting = !failed && !completed && /(대기|확인)/.test(message);
-          window.NEXUS_TOP?.reportStatus({
-            appId: "orderq",
-            taskId: "orderq-storage",
-            level: failed ? "error" : completed ? "normal" : waiting ? "warning" : "progress",
-            active: !completed,
-            message: message
-          });
-        }
       }
 
       async function sha256Hex(value) {
@@ -3083,16 +2946,15 @@
         state.activePreview = payload.ui?.activePreview || "validation";
         state.searchQuery = "";
         state.shortageFocus = false;
-        state.unitFilters.clear();
+        state.specificationFilters.clear();
         state.warehouseFilters.clear();
         state.managerFilters.clear();
-        state.managerAssignmentCustomer = "";
-        state.sortSettings = loadSortSettings();
+        state.sortSettings = Object.create(null);
         state.columnFilters = Object.create(null);
         state.selectedOrderViewPresetId = "";
         closeColumnSortMenu();
         elements.tableSearchInput.value = "";
-        elements.unitFilterGroup.querySelectorAll("input[type='checkbox']").forEach((input) => {
+        elements.specFilterGroup.querySelectorAll("input[type='checkbox']").forEach((input) => {
           input.checked = false;
         });
         applyDefaultOrderViewPreset(state.activePreview, { render: false });
@@ -3553,57 +3415,6 @@
         }
       }
 
-      async function loadDataOpsInventory() {
-        if (state.loading.inventory) return;
-        if (!sourceAdapter) {
-          showToast("DataOps 재고 연결 모듈을 불러오지 못했습니다. 페이지를 새로고침하세요.", true);
-          return;
-        }
-        const previous = state.inventory;
-        resetResults();
-        setLoading("inventory", true);
-        elements.inventoryFileName.textContent = "DataOps 확정재고를 불러오는 중...";
-        setSystemMessage("DataOps 재고 불러오는 중 · 최신 확정본의 무결성을 검증합니다");
-        try {
-          const cloudUrl = normalizeCloudUrl(
-            elements.cloudUrlInput.value || localStorage.getItem("oneapp_cloud_sync_url_v1") || "",
-          );
-          const snapshot = await sourceAdapter.fetchLatestDataOpsSnapshot(cloudUrl);
-          state.inventory = sourceAdapter.buildDataOpsInventoryParsed(snapshot, engine);
-          showToast(`DataOps 확정재고 ${snapshot.revision} · ${state.inventory.rowCount.toLocaleString("ko-KR")}행을 불러왔습니다.`);
-        } catch (error) {
-          state.inventory = previous;
-          showToast(error.message || "DataOps 확정재고를 불러오지 못했습니다.", true);
-        } finally {
-          setLoading("inventory", false);
-          refreshInputState();
-        }
-      }
-
-      async function loadSmartInputOrders() {
-        if (state.loading.orders) return;
-        if (!sourceAdapter) {
-          showToast("스마트입력 주문 연결 모듈을 불러오지 못했습니다. 페이지를 새로고침하세요.", true);
-          return;
-        }
-        const previous = state.orders;
-        resetResults();
-        setLoading("orders", true);
-        elements.ordersFileName.textContent = "스마트입력 주문 원장을 불러오는 중...";
-        setSystemMessage("스마트입력 주문 불러오는 중 · ORDER Q 주문 원장을 조회합니다");
-        try {
-          state.orders = await sourceAdapter.loadSmartInputOrders(engine);
-          const source = state.orders.dataSource || {};
-          showToast(`스마트입력 주문 ${Number(source.orderCount || 0).toLocaleString("ko-KR")}건 · ${state.orders.rowCount.toLocaleString("ko-KR")}행을 불러왔습니다.`);
-        } catch (error) {
-          state.orders = previous;
-          showToast(error.message || "스마트입력 주문을 불러오지 못했습니다.", true);
-        } finally {
-          setLoading("orders", false);
-          refreshInputState();
-        }
-      }
-
       async function handleIntegratedFile(file) {
         if (!file) return;
         if (!isSupportedFile(file)) {
@@ -3808,22 +3619,11 @@
         const name = String(value.name || "").trim().slice(0, 40);
         if (!/^[a-z0-9._:-]{1,80}$/i.test(id) || !name) return null;
         const previewId = VIEW_PRESET_TABS.has(value.previewId) ? value.previewId : "allocations";
-        const rawSortSettings = Array.isArray(value.view.sortSettings)
-          ? value.view.sortSettings
-          : isPlainRecord(value.view.sortSetting) ? [value.view.sortSetting] : [];
-        const sortSettings = [];
-        const seenSortColumns = new Set();
-        rawSortSettings.forEach((setting) => {
-          if (!isPlainRecord(setting) || !isSafeColumnKey(setting.columnKey) ||
-              !["asc", "desc"].includes(setting.direction) || seenSortColumns.has(setting.columnKey)) return;
-          seenSortColumns.add(setting.columnKey);
-          sortSettings.push({ columnKey: setting.columnKey, direction: setting.direction });
-        });
-        const sortSetting = sortSettings[0] || null;
-        const unitFilters = normalizeStringList(
-          Array.isArray(value.view.unitFilters) ? value.view.unitFilters : value.view.specificationFilters,
-          20,
-        );
+        const sortSetting = isPlainRecord(value.view.sortSetting) &&
+          isSafeColumnKey(value.view.sortSetting.columnKey) &&
+          ["asc", "desc"].includes(value.view.sortSetting.direction)
+          ? { columnKey: value.view.sortSetting.columnKey, direction: value.view.sortSetting.direction }
+          : null;
         return {
           id,
           name,
@@ -3833,12 +3633,10 @@
           view: {
             searchQuery: String(value.view.searchQuery || "").slice(0, 300),
             shortageFocus: value.view.shortageFocus === true,
-            unitFilters,
-            specificationFilters: [...unitFilters],
+            specificationFilters: normalizeStringList(value.view.specificationFilters, 20),
             warehouseFilters: normalizeStringList(value.view.warehouseFilters, 100),
             managerFilters: normalizeStringList(value.view.managerFilters, 100),
             sortSetting,
-            sortSettings,
             columnFilters: normalizeStoredColumnFilters(value.view.columnFilters),
             layoutCaptured: value.view.layoutCaptured === true ||
               isPlainRecord(value.view.columnWidths) || Array.isArray(value.view.columnOrder),
@@ -3859,8 +3657,7 @@
           const supportedSchema = parsed?.schemaVersion === ORDER_VIEW_PRESETS_SCHEMA ||
             parsed?.schemaVersion === PREVIOUS_ORDER_VIEW_PRESETS_SCHEMA ||
             parsed?.schemaVersion === LEGACY_ORDER_VIEW_PRESETS_SCHEMA ||
-            parsed?.schemaVersion === ORIGINAL_ORDER_VIEW_PRESETS_SCHEMA ||
-            parsed?.schemaVersion === FIRST_ORDER_VIEW_PRESETS_SCHEMA;
+            parsed?.schemaVersion === ORIGINAL_ORDER_VIEW_PRESETS_SCHEMA;
           if (!isPlainRecord(parsed) || !supportedSchema || !Array.isArray(parsed.presets)) {
             return [];
           }
@@ -3911,7 +3708,7 @@
       function captureOrderViewPreset() {
         const previewId = state.activePreview;
         const preview = getPreviewDefinitions(state.workspace)[previewId];
-        const sortSettings = columnSortSettings(previewId, preview);
+        const sortSetting = state.sortSettings[previewId];
         const columnWidths = Object.create(null);
         preview.columns.forEach((column) => {
           columnWidths[column.key] = currentColumnWidth(previewId, column);
@@ -3919,12 +3716,10 @@
         return {
           searchQuery: state.searchQuery,
           shortageFocus: state.shortageFocus,
-          unitFilters: [...state.unitFilters],
-          specificationFilters: [...state.unitFilters],
+          specificationFilters: [...state.specificationFilters],
           warehouseFilters: [...state.warehouseFilters],
           managerFilters: [...state.managerFilters],
-          sortSetting: sortSettings[0] ? { ...sortSettings[0] } : null,
-          sortSettings: sortSettings.map((setting) => ({ ...setting })),
+          sortSetting: sortSetting ? { ...sortSetting } : null,
           columnFilters: normalizeStoredColumnFilters(state.columnFilters[previewId]),
           layoutCaptured: true,
           columnWidths,
@@ -3968,20 +3763,14 @@
           .map((row) => String(row?.manager || "").trim()).filter(Boolean));
         state.searchQuery = preset.view.searchQuery;
         state.shortageFocus = ["allocations", "ledger", "inventory"].includes(previewId) && preset.view.shortageFocus;
-        state.unitFilters = new Set(preset.view.unitFilters);
+        state.specificationFilters = new Set(preset.view.specificationFilters);
         state.warehouseFilters = new Set(preset.view.warehouseFilters.filter((key) => warehouseKeys.has(key)));
         state.managerFilters = new Set(preset.view.managerFilters.filter((name) => managerNames.has(name)));
-        const presetSortSettings = (Array.isArray(preset.view.sortSettings)
-          ? preset.view.sortSettings
-          : preset.view.sortSetting ? [preset.view.sortSetting] : [])
-          .filter((setting) => previewKeys.has(setting.columnKey) && ["asc", "desc"].includes(setting.direction))
-          .map((setting) => ({ columnKey: setting.columnKey, direction: setting.direction }));
-        if (presetSortSettings.length > 0) {
-          state.sortSettings[previewId] = previewId === "allocations" ? presetSortSettings : [presetSortSettings[0]];
+        if (preset.view.sortSetting && previewKeys.has(preset.view.sortSetting.columnKey)) {
+          state.sortSettings[previewId] = { ...preset.view.sortSetting };
         } else {
           delete state.sortSettings[previewId];
         }
-        saveSortSettings();
         const previewFilters = Object.create(null);
         Object.entries(preset.view.columnFilters).forEach(([columnKey, setting]) => {
           if (previewKeys.has(columnKey)) previewFilters[columnKey] = { ...setting };
@@ -4024,8 +3813,8 @@
         state.activePreview = previewId;
         state.selectedOrderViewPresetId = preset.id;
         elements.tableSearchInput.value = state.searchQuery;
-        elements.unitFilterGroup.querySelectorAll("input[type='checkbox']").forEach((input) => {
-          input.checked = state.unitFilters.has(input.value);
+        elements.specFilterGroup.querySelectorAll("input[type='checkbox']").forEach((input) => {
+          input.checked = state.specificationFilters.has(input.value);
         });
         setActiveFilterPanel("");
         if (options.render !== false) renderPreview();
@@ -4228,31 +4017,16 @@
               </label>
             </div>`;
         }).join("");
-        const assignmentCustomer = String(state.managerAssignmentCustomer || "").trim();
-        const availableManagers = managerNames(allocationsPreview);
-        const assignmentRows = assignmentCustomer
-          ? (allocationsPreview?.sourceRows || []).filter((row) => String(row?.customer || "").trim() === assignmentCustomer)
-          : [];
-        const currentAssignmentManager = assignmentRows.map((row) => String(row?.manager || "").trim()).find(Boolean) || "";
-        const managerTitle = elements.managerFilterPanel.querySelector(".warehouse-color-title");
-        if (managerTitle) managerTitle.textContent = assignmentCustomer ? `담당자 변경 · ${assignmentCustomer}` : "담당자 보기";
-        elements.managerColorOptions.innerHTML = assignmentCustomer
-          ? `<div class="manager-assignment-guide"><span>거래처 <strong>${escapeHtml(assignmentCustomer)}</strong> · 담당자 선택</span><button type="button" data-manager-assignment-cancel>취소</button></div>` +
-            availableManagers.map((manager) => `
-              <div class="warehouse-color-option">
-                <button class="manager-assignment-option ${manager === currentAssignmentManager ? "active" : ""}" type="button"
-                  data-manager-assignment="${escapeHtml(manager)}" aria-pressed="${manager === currentAssignmentManager}">${escapeHtml(manager)}</button>
-              </div>`).join("")
-          : availableManagers.map((manager) => {
-              const checked = state.managerFilters.has(manager);
-              return `
-                <div class="warehouse-color-option">
-                  <label>
-                    <input type="checkbox" data-manager-filter="${escapeHtml(manager)}" ${checked ? "checked" : ""}>
-                    <span>${escapeHtml(manager)}</span>
-                  </label>
-                </div>`;
-            }).join("");
+        elements.managerColorOptions.innerHTML = managerNames(allocationsPreview).map((manager) => {
+          const checked = state.managerFilters.has(manager);
+          return `
+            <div class="warehouse-color-option">
+              <label>
+                <input type="checkbox" data-manager-filter="${escapeHtml(manager)}" ${checked ? "checked" : ""}>
+                <span>${escapeHtml(manager)}</span>
+              </label>
+            </div>`;
+        }).join("");
 
         const targetType = state.activeFilterPanel;
         const targets = colorTargetDefinitions(definitions, targetType);
@@ -4266,7 +4040,7 @@
           ? targets.map((target) => `<option value="${escapeHtml(target.key)}" ${target.key === currentTargetKey ? "selected" : ""}>${escapeHtml(target.label)}</option>`).join("")
           : '<option value="">대상 없음</option>';
         elements.colorTargetSelect.disabled = targets.length === 0;
-        elements.colorAssignmentPanel.classList.toggle("hidden", !targetType || Boolean(state.managerAssignmentCustomer));
+        elements.colorAssignmentPanel.classList.toggle("hidden", !targetType);
         elements.pastelColorPalette.innerHTML = colorSwatchMarkup([COLOR_CANCEL_COLOR, ...PASTEL_COLOR_PALETTE], selectedColor, "파스텔 색상");
         elements.vividColorPalette.innerHTML = colorSwatchMarkup(VIVID_COLOR_PALETTE, selectedColor, "원색");
         elements.vividColorPalette.classList.toggle("hidden", !state.vividPaletteExpanded);
@@ -4517,13 +4291,6 @@
         preview.columns.forEach((column) => {
           if (!included.has(column.key)) ordered.push(column);
         });
-        const purchaseQuantityKey = "shipping:inventory:purchase-quantity";
-        if (tabId === "inventory" && byKey.has(purchaseQuantityKey) && !saved.includes(purchaseQuantityKey)) {
-          const quantityIndex = ordered.findIndex((column) => column.key === purchaseQuantityKey);
-          if (quantityIndex >= 0) ordered.splice(quantityIndex, 1);
-          const purchaseIndex = ordered.findIndex((column) => column.key === "shipping:inventory:purchase");
-          ordered.splice(purchaseIndex >= 0 ? purchaseIndex + 1 : ordered.length, 0, byKey.get(purchaseQuantityKey));
-        }
         return ordered;
       }
 
@@ -4828,14 +4595,6 @@
           role: "purchase",
           defaultWidth: 88,
         });
-        const purchaseQuantityIndex = purchaseIndex + 1;
-        columns.splice(purchaseQuantityIndex, 0, {
-          key: "shipping:inventory:purchase-quantity",
-          header: "구매수량",
-          numeric: true,
-          role: "purchaseQuantity",
-          defaultWidth: 92,
-        });
         columns.push({
           key: "shipping:inventory:order-information",
           header: "정보",
@@ -4869,7 +4628,6 @@
           }
           values.splice(statusIndex, 0, row?.rowState ?? "");
           values.splice(purchaseIndex, 0, row?.purchase ?? "");
-          values.splice(purchaseQuantityIndex, 0, row?.purchaseQuantityOverride ?? "");
           values.push(row?.orderInformation ?? "");
           values.push(row?.orderNotes ?? "");
           return values;
@@ -4883,8 +4641,6 @@
             .filter((index) => index >= 0),
           purchase: purchaseIndex,
           purchaseEditable: true,
-          purchaseQuantity: purchaseQuantityIndex,
-          purchaseQuantityEditable: true,
           status: statusIndex,
           sourceRows,
           rows,
@@ -4922,23 +4678,9 @@
 
       function buildTransactionPreview(workspace, kind) {
         const isPurchase = kind === "purchases";
-        const unitByProductCode = new Map();
-        (Array.isArray(workspace.inventory) ? workspace.inventory : []).forEach((row) => {
-          const productCode = engine.normalizeProductCode(row?.productCode);
-          if (productCode && normalizedSourceUnit(row)) unitByProductCode.set(productCode, normalizedSourceUnit(row));
-        });
-        (Array.isArray(workspace.orders) ? workspace.orders : []).forEach((row) => {
-          const productCode = engine.normalizeProductCode(row?.productCode);
-          if (productCode && !unitByProductCode.has(productCode) && normalizedSourceUnit(row)) {
-            unitByProductCode.set(productCode, normalizedSourceUnit(row));
-          }
-        });
-        const sourceRows = (Array.isArray(workspace.orderOpsInputs?.[kind]?.rows)
+        const sourceRows = Array.isArray(workspace.orderOpsInputs?.[kind]?.rows)
           ? workspace.orderOpsInputs[kind].rows
-          : []).map((row) => ({
-            ...row,
-            unit: normalizedSourceUnit(row) || unitByProductCode.get(engine.normalizeProductCode(row?.productCode)) || "",
-          }));
+          : [];
         const preview = {
           label: isPurchase ? "구매현황" : "판매현황",
           headers: ["원본행", "상품코드", "품명", isPurchase ? "구매처" : "거래처", "수량"],
@@ -5191,21 +4933,13 @@
         return text ? "good" : "";
       }
 
-      function normalizedSourceUnit(sourceRow) {
-        for (const value of [sourceRow?.unit, sourceRow?.sourceUnit, sourceRow?.sourceRow?.unit]) {
-          const unit = String(value ?? "").trim().toUpperCase();
-          if (unit) return unit;
-        }
-        return "";
-      }
-
       function exactWarningUnit(sourceRow) {
-        const unit = normalizedSourceUnit(sourceRow);
-        return unit === "EA" || unit === "소분";
+        const specification = String(sourceRow?.specification || sourceRow?.spec || "").trim();
+        return specification === "EA" || specification === "소분";
       }
 
       function exactBoxUnit(sourceRow) {
-        return normalizedSourceUnit(sourceRow) === "BOX";
+        return String(sourceRow?.specification || sourceRow?.spec || "").trim() === "BOX";
       }
 
       function previewRowFill(previewId, sourceRow) {
@@ -5251,9 +4985,11 @@
           const manager = String(pair.sourceRow?.manager || "").trim();
           if (!state.managerFilters.has(manager)) return false;
         }
-        if (previewId !== "validation" && previewId !== "notices" && state.unitFilters.size > 0) {
-          const unit = normalizedSourceUnit(pair.sourceRow);
-          if (!state.unitFilters.has(unit)) return false;
+        if (previewId !== "validation" && previewId !== "notices" && state.specificationFilters.size > 0) {
+          const specification = String(
+            pair.sourceRow?.specification ?? pair.sourceRow?.spec ?? pair.row?.[2] ?? "",
+          ).trim();
+          if (!state.specificationFilters.has(specification)) return false;
         }
         return rowMatchesColumnFilters(previewId, pair, preview);
       }
@@ -5265,74 +5001,39 @@
         return compared || left.index - right.index;
       }
 
-      function columnSortSettings(previewId, preview) {
-        const stored = state.sortSettings[previewId];
-        const rawSettings = Array.isArray(stored) ? stored : stored ? [stored] : [];
-        const validColumns = new Set((preview?.columns || []).map((column) => column.key));
-        const result = [];
-        const seen = new Set();
-        rawSettings.forEach((setting) => {
-          if (!setting || !["asc", "desc"].includes(setting.direction) ||
-              !validColumns.has(setting.columnKey) || seen.has(setting.columnKey)) return;
-          seen.add(setting.columnKey);
-          result.push({ columnKey: setting.columnKey, direction: setting.direction });
-        });
-        return result;
-      }
-
-      function columnSortSetting(previewId, preview, columnKey = "") {
-        const settings = columnSortSettings(previewId, preview);
-        return columnKey
-          ? settings.find((setting) => setting.columnKey === columnKey) || null
-          : settings[0] || null;
-      }
-
-      function setColumnSortSetting(previewId, preview, columnKey, direction) {
-        let settings = previewId === "allocations" ? columnSortSettings(previewId, preview) : [];
-        settings = settings.filter((setting) => setting.columnKey !== columnKey);
-        if (["asc", "desc"].includes(direction)) settings.push({ columnKey, direction });
-        if (settings.length > 0) state.sortSettings[previewId] = settings;
-        else delete state.sortSettings[previewId];
-        saveSortSettings();
-      }
-
-      function removeColumnSortSetting(previewId, preview, columnKey) {
-        const settings = columnSortSettings(previewId, preview)
-          .filter((setting) => setting.columnKey !== columnKey);
-        if (settings.length > 0) state.sortSettings[previewId] = settings;
-        else delete state.sortSettings[previewId];
-        saveSortSettings();
+      function columnSortSetting(previewId, preview) {
+        const setting = state.sortSettings[previewId];
+        if (!setting || !["asc", "desc"].includes(setting.direction) ||
+            !preview?.columns?.some((column) => column.key === setting.columnKey)) return null;
+        return setting;
       }
 
       function layeredColumnSortSettings(previewId, preview) {
-        const selected = columnSortSettings(previewId, preview);
-        if (previewId !== "allocations") return selected.slice(0, 1);
+        const primary = columnSortSetting(previewId, preview);
+        if (previewId !== "allocations") return primary ? [primary] : [];
         const columnsByRole = new Map((preview?.columns || [])
           .filter((column) => column?.role).map((column) => [column.role, column]));
-        const selectedByRole = new Map();
-        selected.forEach((setting) => {
-          const column = preview.columns.find((candidate) => candidate.key === setting.columnKey);
-          if (column?.role) selectedByRole.set(column.role, setting);
-        });
         const criteria = [];
-        const appendSetting = (setting) => {
-          if (!setting || criteria.some((candidate) => candidate.columnKey === setting.columnKey)) return;
-          criteria.push({ columnKey: setting.columnKey, direction: setting.direction });
+        const appendRole = (role, direction = "asc") => {
+          const column = columnsByRole.get(role);
+          if (!column || criteria.some((setting) => setting.columnKey === column.key)) return;
+          criteria.push({ columnKey: column.key, direction });
         };
-        ["manager", "group", "customer"].forEach((role) => appendSetting(selectedByRole.get(role)));
-        if (selectedByRole.has("group") && !selectedByRole.has("customer")) {
-          const customerColumn = columnsByRole.get("customer");
-          if (customerColumn) appendSetting({ columnKey: customerColumn.key, direction: "asc" });
-        }
-        selected.forEach((setting) => {
-          const column = preview.columns.find((candidate) => candidate.key === setting.columnKey);
-          if (!["manager", "group", "customer", "productCode"].includes(column?.role)) appendSetting(setting);
-        });
-        const selectedProductCode = selectedByRole.get("productCode");
-        if (selectedProductCode) appendSetting(selectedProductCode);
-        else {
-          const productCodeColumn = columnsByRole.get("productCode");
-          if (productCodeColumn) appendSetting({ columnKey: productCodeColumn.key, direction: "asc" });
+        const primaryColumn = primary
+          ? preview.columns.find((column) => column.key === primary.columnKey)
+          : null;
+        if (primaryColumn?.role === "group") {
+          appendRole("group", primary.direction);
+          appendRole("customer");
+          appendRole("productCode");
+        } else if (primaryColumn?.role === "customer") {
+          appendRole("customer", primary.direction);
+          appendRole("productCode");
+        } else if (primaryColumn) {
+          criteria.push(primary);
+          appendRole("productCode");
+        } else {
+          appendRole("productCode");
         }
         return criteria;
       }
@@ -5447,38 +5148,6 @@
         return left.index - right.index;
       }
 
-      function applyAllocationSegmentAggregates(previewId, preview, pairs) {
-        if (previewId !== "allocations" || !Array.isArray(pairs) || pairs.length === 0) return pairs;
-        const informationIndex = preview.columns.findIndex((column) => column.role === "productAggregateQuantity");
-        if (informationIndex < 0) return pairs;
-        const hierarchyRoles = layeredColumnSortSettings(previewId, preview)
-          .map((setting) => preview.columns.find((column) => column.key === setting.columnKey)?.role)
-          .filter((role) => ["manager", "group", "customer"].includes(role));
-        const segmentKey = (pair) => JSON.stringify([
-          ...hierarchyRoles.map((role) => String(pair.sourceRow?.[role] || "")),
-          engine.normalizeProductCode(pair.sourceRow?.productCode),
-        ]);
-        const result = [];
-        let start = 0;
-        while (start < pairs.length) {
-          const key = segmentKey(pairs[start]);
-          let end = start + 1;
-          while (end < pairs.length && segmentKey(pairs[end]) === key) end += 1;
-          const total = Math.round(pairs.slice(start, end).reduce((sum, pair) => {
-            const parsed = engine.parseNumericCell(pair.sourceRow?.quantity);
-            return sum + (parsed.ok ? parsed.value : 0);
-          }, 0) * 1000000) / 1000000;
-          for (let index = start; index < end; index += 1) {
-            const pair = pairs[index];
-            const row = [...pair.row];
-            row[informationIndex] = index === start ? total : "";
-            result.push({ ...pair, row });
-          }
-          start = end;
-        }
-        return result;
-      }
-
       function filteredSortedPreviewPairs(previewId, preview) {
         const pairs = preview.rows.map((row, index) => ({
           row,
@@ -5501,7 +5170,7 @@
           blocks.sort((left, right) => comparePreviewPairs(previewId, preview, left.main, right.main));
 
           return blocks.flatMap((block) => {
-            if (!state.searchQuery.trim() && state.unitFilters.size === 0 && !hasColumnFilters(previewId)) return block.pairs;
+            if (!state.searchQuery.trim() && state.specificationFilters.size === 0 && !hasColumnFilters(previewId)) return block.pairs;
             const matching = block.pairs.filter((pair) => rowMatchesView(previewId, pair, preview));
             if (matching.length === 0) return [];
             if (matching.includes(block.main)) return block.pairs;
@@ -5510,10 +5179,10 @@
         }
 
         const filtered = pairs.filter((pair) => rowMatchesView(previewId, pair, preview));
-        if (columnSortSettings(previewId, preview).length > 0 || preview.sortByProductCode) {
+        if (columnSortSetting(previewId, preview) || preview.sortByProductCode) {
           filtered.sort((left, right) => comparePreviewPairs(previewId, preview, left, right));
         }
-        return applyAllocationSegmentAggregates(previewId, preview, filtered);
+        return filtered;
       }
 
       function previewDefinitionById(previewId) {
@@ -5537,7 +5206,7 @@
           closeColumnSortMenu();
           return;
         }
-        const sort = columnSortSetting(context.previewId, preview, context.columnKey);
+        const sort = columnSortSetting(context.previewId, preview);
         const filter = columnFilterSetting(context.previewId, context.columnKey);
         const numericColumn = Boolean(column.numeric);
         elements.columnSortMenuTitle.textContent = `${column.header} · ${numericColumn ? "숫자" : "텍스트"} 정렬 및 필터`;
@@ -5684,9 +5353,9 @@
         const headers = visibleEntries.map(({ column }) => {
           const width = widthFor(column);
           const draggable = resizable && COLUMN_ORDER_TABS.has(previewId);
-          const sort = columnSortSetting(previewId, preview, column.key);
+          const sort = columnSortSetting(previewId, preview);
           const filter = columnFilterSetting(previewId, column.key);
-          const isSorted = Boolean(sort);
+          const isSorted = sort?.columnKey === column.key;
           const hasFilter = columnFilterIsActive(filter);
           const ariaSort = isSorted ? (sort.direction === "asc" ? "ascending" : "descending") : "none";
           const sortControl = sortable
@@ -5791,23 +5460,16 @@
                     ].filter(Boolean).join(" ");
                     const editablePurchase = editable && preview.purchaseEditable === true &&
                       preview.purchase === index && !referenceRow && !(previewId === "ledger" && sourceRow?.salesOnly);
-                    const editablePurchaseQuantity = editable && previewId === "inventory" &&
-                      preview.purchaseQuantityEditable === true && preview.purchaseQuantity === index && !referenceRow;
                     const noticeLink = preview.notice === index && sourceRow?.noticeId;
                     const noticeText = preview.noticeText === index;
                     const acknowledgement = editable && preview.acknowledgement === index && sourceRow?.noticeId;
                     const editableOrder = editable && previewId === "allocations" && column.orderField && sourceRow?.sourceRowNumber;
-                    const managerAssignment = editable && previewId === "allocations" && column.role === "manager" && sourceRow?.customer;
                     const content = editablePurchase
                       ? `<input class="purchase-input" data-purchase-code="${escapeHtml(sourceRow?.productCode || "")}"
                           data-grid-column="${escapeHtml(column.key)}" data-negative-balance="${negativeBalance ? "true" : "false"}"
                           autocomplete="off"
                           tabindex="${negativeBalance || previewId === "allocations" ? "0" : "-1"}"
                           value="${escapeHtml(displayValue)}" aria-label="${escapeHtml(sourceRow?.productCode || "")} 구매처">`
-                      : editablePurchaseQuantity
-                        ? `<input class="purchase-quantity-input" data-purchase-quantity-code="${escapeHtml(sourceRow?.productCode || "")}"
-                            data-grid-column="${escapeHtml(column.key)}" inputmode="decimal" autocomplete="off"
-                            value="${escapeHtml(displayValue)}" aria-label="${escapeHtml(sourceRow?.productCode || "")} 구매수량">`
                       : editableLedgerPrice
                         ? `<input class="inventory-input ledger-price-input" data-inventory-code="${escapeHtml(sourceRow?.productCode || "")}"
                             data-inventory-column="${escapeHtml(column.inventoryColumnKey)}" data-grid-column="${escapeHtml(column.key)}"
@@ -5819,10 +5481,6 @@
                             ${["quantity", "unitPrice"].includes(column.orderField) ? 'inputmode="decimal"' : ""}
                             autocomplete="off" value="${escapeHtml(displayValue)}"
                             aria-label="${escapeHtml(sourceRow?.productCode || "")} ${escapeHtml(column.header)} 수정">`
-                      : managerAssignment
-                        ? `<button class="manager-assignment-trigger" type="button"
-                            data-manager-assignment-customer="${escapeHtml(sourceRow.customer)}"
-                            title="${escapeHtml(sourceRow.customer)} 거래처 담당자 변경">${escapeHtml(displayValue || "미지정")}</button>`
                       : noticeLink
                         ? `<button class="notice-link" type="button" data-open-notice-id="${escapeHtml(sourceRow.noticeId)}">${escapeHtml(value)}</button>`
                         : acknowledgement
@@ -5840,8 +5498,7 @@
                             : orderQuantity || calculatedQuantity
                               ? `<span class="inventory-total-frame" data-negative-value="${negativeNumericValue ? "true" : "false"}">${escapeHtml(displayValue === "" ? "" : isNumber ? formatNumber(displayValue) : displayValue)}</span>`
                               : `<span class="${noticeText ? "notice-text" : ""}">${escapeHtml(displayValue === "" ? "" : isNumber ? formatNumber(displayValue) : displayValue)}</span>`;
-                    const cellFill = warehouseFill || (rowFill ? `#${rowFill.replace(/^#/, "")}` : "");
-                    return `<td class="${classes}" style="${cellFill ? `background:${cellFill}` : ""}"
+                    return `<td class="${classes}" style="${rowFill ? `background:#${rowFill.replace(/^#/, "")}` : ""}"
                       ${isStatus ? `data-tone="${statusTone(value)}"` : ""}>${content}</td>`;
                   }).join("")}
                 </tr>`;
@@ -5916,7 +5573,7 @@
         elements.systemViewNote.classList.toggle("hidden", viewNotes.length === 0);
         elements.previewCount.textContent = `${formatNumber(pairs.length)}/${formatNumber(preview.rows.length)}행`;
 
-        elements.unitFilterGroup.disabled = state.activePreview === "validation" || state.activePreview === "notices";
+        elements.specFilterGroup.disabled = state.activePreview === "validation" || state.activePreview === "notices";
         renderColumnVisibilityMenu(preview);
         const previewMarkup = renderTableMarkup(preview, pairs, { editable: true, resizable: true });
         if (state.activePreview === "validation") {
@@ -6027,15 +5684,15 @@
       function resetResultViewFilters() {
         state.searchQuery = "";
         state.shortageFocus = false;
-        state.unitFilters.clear();
+        state.specificationFilters.clear();
         state.warehouseFilters.clear();
         state.managerFilters.clear();
-        state.managerAssignmentCustomer = "";
+        state.sortSettings = Object.create(null);
         state.columnFilters = Object.create(null);
         state.selectedOrderViewPresetId = "";
         closeColumnSortMenu();
         elements.tableSearchInput.value = "";
-        elements.unitFilterGroup.querySelectorAll("input[type='checkbox']").forEach((input) => {
+        elements.specFilterGroup.querySelectorAll("input[type='checkbox']").forEach((input) => {
           input.checked = false;
         });
         setActiveFilterPanel("");
@@ -6043,8 +5700,6 @@
 
       function runResultFilterReset() {
         if (!state.workspace) return;
-        state.sortSettings = Object.create(null);
-        saveSortSettings();
         resetResultViewFilters();
         markOrderViewPresetCustom();
         renderPreview();
@@ -6190,10 +5845,20 @@
       }
 
       async function postCloudAction(action, body) {
-        await window.ONEAPP_AUTH?.ready;
-        const operations={shipping_plan_list:"shipping.plan.list",shipping_plan_get:"shipping.plan.get",shipping_plan_save:"shipping.plan.save"};
-        if(!operations[action]||!window.ONEAPP_AUTH?.gateway)throw new Error("NEXUS Gateway 로그인이 필요합니다.");
-        return window.ONEAPP_AUTH.gateway(operations[action],body||{});
+        const url = normalizeCloudUrl(elements.cloudUrlInput.value);
+        const token = elements.cloudTokenInput.value;
+        if (!token) throw new Error("Shipping 전용 Cloud token을 입력하세요.");
+        const response = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body: JSON.stringify({ action, token, ...(body || {}) }),
+        });
+        if (!response.ok) throw new Error(`Cloud 요청 실패: HTTP ${response.status}`);
+        const json = await response.json();
+        if (!json || json.status !== "success") {
+          throw new Error(json?.message || "Cloud 요청이 실패했습니다.");
+        }
+        return json.data;
       }
 
       function renderCloudRevisions(revisions) {
@@ -6257,9 +5922,13 @@
       }
 
       function ensureCloudConfiguration() {
-        if (window.ONEAPP_AUTH?.session) return true;
+        const hasUrl = Boolean(elements.cloudUrlInput.value.trim());
+        const hasToken = Boolean(elements.cloudTokenInput.value);
+        if (hasUrl && hasToken) return true;
         toggleWorkspaceStorage(true);
-        showToast("NEXUS 로그인이 필요합니다.", true);
+        const missingInput = hasUrl ? elements.cloudTokenInput : elements.cloudUrlInput;
+        missingInput.focus();
+        showToast("처음 한 번 Cloud URL과 전용 Token을 설정하세요.", true);
         return false;
       }
 
@@ -6307,12 +5976,11 @@
           state.activePreview = plan.activePreview || "validation";
           state.searchQuery = "";
           state.shortageFocus = false;
-          state.unitFilters.clear();
+          state.specificationFilters.clear();
           state.warehouseFilters.clear();
           state.managerFilters.clear();
-        state.managerAssignmentCustomer = "";
           elements.tableSearchInput.value = "";
-          elements.unitFilterGroup.querySelectorAll("input[type='checkbox']").forEach((input) => {
+          elements.specFilterGroup.querySelectorAll("input[type='checkbox']").forEach((input) => {
             input.checked = false;
           });
           state.selectedOrderViewPresetId = "";
@@ -6335,14 +6003,6 @@
         const fileButton = elements[kind + "FileButton"];
         drop.addEventListener("click", () => {
           if (activatePreview(FILE_KIND_PREVIEWS[kind])) return;
-          if (kind === "inventory") {
-            loadDataOpsInventory();
-            return;
-          }
-          if (kind === "orders") {
-            loadSmartInputOrders();
-            return;
-          }
           showToast("출고분석을 완료하면 이 카드에서 해당 화면을 볼 수 있습니다.");
         });
         fileButton.addEventListener("click", () => input.click());
@@ -6463,18 +6123,7 @@
         runAnalysis();
       }, true);
 
-      // ORDER Q v1.58: 구매처 → 구매수량 → 다음 구매처 키보드 흐름.
       function focusPurchaseInput(input) {
-        if (!input) return;
-        const row = input.closest("tr") || input;
-        row.scrollIntoView({ block: "center", inline: "nearest" });
-        window.requestAnimationFrame(() => {
-          input.focus({ preventScroll: true });
-          input.select();
-        });
-      }
-
-      function focusPurchaseQuantityInput(input) {
         if (!input) return;
         const row = input.closest("tr") || input;
         row.scrollIntoView({ block: "center", inline: "nearest" });
@@ -6490,24 +6139,6 @@
         rememberPurchaseName(input.value);
         scheduleLocalSave();
         return true;
-      }
-
-      function commitPurchaseQuantityInput(input, { render = true } = {}) {
-        if (!input || !state.workspace || state.activePreview !== "inventory") return false;
-        try {
-          engine.setPurchaseQuantityValue(
-            state.workspace,
-            input.dataset.purchaseQuantityCode,
-            input.value,
-          );
-          scheduleLocalSave();
-          if (render) renderPreview();
-          return true;
-        } catch (error) {
-          renderPreview();
-          showToast(error.message, true);
-          return false;
-        }
       }
 
       function commitOrderInput(input) {
@@ -6747,16 +6378,6 @@
 
         if (event.key !== "Tab") return;
         commitPurchaseInput(input);
-        if (!event.shiftKey && state.activePreview === "inventory") {
-          const purchaseQuantityInput = input.closest("tr")
-            ?.querySelector(".purchase-quantity-input[data-purchase-quantity-code]");
-          if (purchaseQuantityInput) {
-            event.preventDefault();
-            closePurchaseAutocomplete();
-            focusPurchaseQuantityInput(purchaseQuantityInput);
-            return;
-          }
-        }
         const negatives = inputs.filter((candidate) => candidate.dataset.negativeBalance === "true");
         if (negatives.length === 0) {
           event.preventDefault();
@@ -6783,54 +6404,6 @@
           target = [...negatives].reverse().find((candidate) => inputs.indexOf(candidate) < currentIndex)
             || negatives[negatives.length - 1];
         }
-        focusPurchaseInput(target);
-      }
-
-      function handlePurchaseQuantityNavigation(event) {
-        const input = event.target.closest?.(".purchase-quantity-input[data-purchase-quantity-code]");
-        if (!input || !state.workspace || state.activePreview !== "inventory" || event.isComposing) return;
-        if (event.key !== "Tab") return;
-
-        const purchaseInputs = Array.from(
-          elements.previewTable.querySelectorAll(".purchase-input[data-purchase-code]"),
-        );
-        const currentPurchaseInput = input.closest("tr")
-          ?.querySelector(".purchase-input[data-purchase-code]");
-        const currentIndex = purchaseInputs.indexOf(currentPurchaseInput);
-        if (currentIndex < 0) return;
-
-        event.preventDefault();
-        const negatives = purchaseInputs.filter((candidate) => candidate.dataset.negativeBalance === "true");
-        const requiredInputs = negatives.length > 0 ? negatives : purchaseInputs;
-        const requiredIndex = requiredInputs.indexOf(currentPurchaseInput);
-        let targetProductCode = "";
-        let finish = false;
-
-        if (event.shiftKey) {
-          targetProductCode = currentPurchaseInput.dataset.purchaseCode;
-        } else if (requiredIndex >= 0) {
-          if (requiredIndex === requiredInputs.length - 1) finish = true;
-          else targetProductCode = requiredInputs[requiredIndex + 1].dataset.purchaseCode;
-        } else {
-          const target = requiredInputs.find((candidate) => purchaseInputs.indexOf(candidate) > currentIndex);
-          if (target) targetProductCode = target.dataset.purchaseCode;
-          else finish = true;
-        }
-
-        if (!commitPurchaseQuantityInput(input, { render: false })) return;
-        renderPreview();
-        const refreshedInputs = Array.from(
-          elements.previewTable.querySelectorAll(".purchase-input[data-purchase-code]"),
-        );
-        const refreshedRequiredInputs = refreshedInputs.filter(
-          (candidate) => candidate.dataset.negativeBalance === "true",
-        );
-        const completionInputs = refreshedRequiredInputs.length > 0 ? refreshedRequiredInputs : refreshedInputs;
-        if (finish) {
-          finishPurchaseEntry(completionInputs);
-          return;
-        }
-        const target = refreshedInputs.find((candidate) => candidate.dataset.purchaseCode === targetProductCode);
         focusPurchaseInput(target);
       }
 
@@ -6935,11 +6508,11 @@
         markOrderViewPresetCustom();
         if (state.workspace) renderPreview();
       });
-      elements.unitFilterGroup.addEventListener("change", (event) => {
+      elements.specFilterGroup.addEventListener("change", (event) => {
         const input = event.target.closest("input[type='checkbox']");
         if (!input) return;
-        if (input.checked) state.unitFilters.add(input.value);
-        else state.unitFilters.delete(input.value);
+        if (input.checked) state.specificationFilters.add(input.value);
+        else state.specificationFilters.delete(input.value);
         markOrderViewPresetCustom();
         if (state.workspace) renderPreview();
       });
@@ -6947,11 +6520,6 @@
         setActiveFilterPanel(state.activeFilterPanel === "warehouse" ? "" : "warehouse");
       });
       elements.managerFilterToggle.addEventListener("click", () => {
-        if (state.managerAssignmentCustomer) {
-          state.managerAssignmentCustomer = "";
-          setActiveFilterPanel("manager");
-          return;
-        }
         setActiveFilterPanel(state.activeFilterPanel === "manager" ? "" : "manager");
       });
       function handleFixedFilterChange(event) {
@@ -6974,27 +6542,6 @@
       }
       [elements.warehouseColorOptions, elements.managerColorOptions].forEach((container) => {
         container.addEventListener("change", handleFixedFilterChange);
-      });
-      elements.managerColorOptions.addEventListener("click", (event) => {
-        if (event.target.closest("[data-manager-assignment-cancel]")) {
-          state.managerAssignmentCustomer = "";
-          if (state.workspace) renderWarehouseColorBar(getPreviewDefinitions(state.workspace));
-          return;
-        }
-        const option = event.target.closest("[data-manager-assignment]");
-        const customer = String(state.managerAssignmentCustomer || "").trim();
-        if (!option || !customer || !state.workspace) return;
-        const manager = String(option.dataset.managerAssignment || "").trim();
-        try {
-          engine.setCustomerManager(state.workspace, customer, manager);
-          state.managerAssignmentCustomer = "";
-          setActiveFilterPanel("manager");
-          renderResults();
-          scheduleLocalSave();
-          showToast(`${customer} 담당자를 ${manager}로 변경했습니다.`);
-        } catch (error) {
-          showToast(error.message || "담당자를 변경하지 못했습니다.", true);
-        }
       });
       elements.colorTargetSelect.addEventListener("change", () => {
         if (!state.activeFilterPanel) return;
@@ -7031,7 +6578,6 @@
       });
       elements.warehouseColorResetButton.addEventListener("click", () => {
         state.managerFilters.clear();
-        state.managerAssignmentCustomer = "";
         state.warehouseFilters.clear();
         markOrderViewPresetCustom();
         if (state.workspace) renderPreview();
@@ -7146,15 +6692,6 @@
         activatePreview(button.dataset.preview);
       });
       elements.previewTable.addEventListener("click", (event) => {
-        const managerButton = event.target.closest("[data-manager-assignment-customer]");
-        if (!managerButton || !state.workspace || state.activePreview !== "allocations") return;
-        const customer = String(managerButton.dataset.managerAssignmentCustomer || "").trim();
-        if (!customer) return;
-        state.managerAssignmentCustomer = customer;
-        setActiveFilterPanel("manager");
-        showToast(`${customer} 거래처의 담당자를 선택하세요.`);
-      });
-      elements.previewTable.addEventListener("click", (event) => {
         const trigger = event.target.closest(".column-sort-trigger[data-sort-preview-id][data-sort-column-key]");
         if (trigger && state.workspace) {
           event.preventDefault();
@@ -7183,14 +6720,17 @@
         const sortButton = event.target.closest("[data-sort-direction]");
         if (sortButton) {
           const direction = sortButton.dataset.sortDirection;
-          setColumnSortSetting(context.previewId, previewDefinitionById(context.previewId), context.columnKey, direction);
+          if (direction === "default") delete state.sortSettings[context.previewId];
+          else state.sortSettings[context.previewId] = { columnKey: context.columnKey, direction };
           if (VIEW_PRESET_TABS.has(context.previewId)) markOrderViewPresetCustom();
           closeColumnSortMenu();
           renderPreview();
           return;
         }
         if (event.target.closest("[data-clear-column-filter]")) {
-          removeColumnSortSetting(context.previewId, previewDefinitionById(context.previewId), context.columnKey);
+          if (state.sortSettings[context.previewId]?.columnKey === context.columnKey) {
+            delete state.sortSettings[context.previewId];
+          }
           if (state.columnFilters[context.previewId]) {
             delete state.columnFilters[context.previewId][context.columnKey];
             if (Object.keys(state.columnFilters[context.previewId]).length === 0) delete state.columnFilters[context.previewId];
@@ -7297,11 +6837,6 @@
         renderPurchaseAutocomplete(input);
       });
       elements.previewTable.addEventListener("change", (event) => {
-        const purchaseQuantityInput = event.target.closest(".purchase-quantity-input[data-purchase-quantity-code]");
-        if (purchaseQuantityInput) {
-          commitPurchaseQuantityInput(purchaseQuantityInput);
-          return;
-        }
         const orderInput = event.target.closest(".order-edit-input[data-order-row][data-order-field]");
         if (orderInput) {
           commitOrderInput(orderInput);
@@ -7328,12 +6863,6 @@
         commitPurchaseInput(input);
       });
       elements.previewTable.addEventListener("keydown", (event) => {
-        const purchaseQuantityInput = event.target.closest?.(".purchase-quantity-input[data-purchase-quantity-code]");
-        if (purchaseQuantityInput && event.key === "Enter" && !event.isComposing) {
-          event.preventDefault();
-          purchaseQuantityInput.blur();
-          return;
-        }
         const input = event.target.closest?.(".order-edit-input[data-order-row][data-order-field]");
         if (!input || event.key !== "Enter" || event.isComposing) return;
         event.preventDefault();
@@ -7347,7 +6876,6 @@
       elements.previewTable.addEventListener("keydown", handlePurchaseAutocompleteKeyboard, true);
       elements.previewTable.addEventListener("keydown", handleInventoryGridArrowNavigation);
       elements.previewTable.addEventListener("keydown", handleInventoryQuantityNavigation);
-      elements.previewTable.addEventListener("keydown", handlePurchaseQuantityNavigation);
       elements.previewTable.addEventListener("keydown", handleInventoryPurchaseNavigation);
       elements.previewTable.addEventListener("keydown", handleColumnResizeKeydown);
       elements.recoveryRecordList.addEventListener("change", (event) => {
@@ -7386,19 +6914,20 @@
       [elements.cloudUrlInput, elements.cloudSavedByInput].forEach((input) => {
         input.addEventListener("input", scheduleLocalSave);
       });
-      elements.cloudStatus.textContent = "완료본 저장 · NEXUS Gateway 연결";
+      [elements.cloudUrlInput, elements.cloudTokenInput].forEach((input) => {
+        input.addEventListener("input", () => {
+          const ready = elements.cloudUrlInput.value.trim() && elements.cloudTokenInput.value;
+          elements.cloudStatus.textContent = ready ? "완료본 저장 · 연결 정보 입력됨" : "완료본 저장 · 미연결";
+        });
+      });
       FILE_KINDS.forEach(bindDropZone);
       bindLedgerViewCard();
       bindIntegratedFileCard();
       bindBundleDropSurface();
 
       try {
-        elements.cloudUrlInput.value = "NEXUS_GATEWAY";
+        elements.cloudUrlInput.value = localStorage.getItem("oneapp_cloud_sync_url_v1") || "";
       } catch (error) {}
-      window.ONEAPP_AUTH?.ready.then((authSession) => {
-        if (!authSession) return;
-        if (!elements.cloudSavedByInput.value) elements.cloudSavedByInput.value = authSession.user.displayName || authSession.user.loginId;
-      });
 
       if (!engine || !workbookTools || !window.XLSX) {
         setSystemMessage("실행 불가 · 필수 라이브러리를 불러오지 못했습니다");
