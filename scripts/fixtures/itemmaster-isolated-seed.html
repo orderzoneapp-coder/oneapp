@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="ko">
+<meta charset="utf-8">
+<title>ItemMaster isolated seed</title>
+<body>
+<main id="result">격리 테스트 데이터 준비 중</main>
+<script>
+  const products = [
+    { '코드': 'TEST-001', '품목코드': 'TEST-001', '품목명': '격리 테스트 상품 A', '규격': '1EA', '단위': 'EA', '1코드': 'T1', '1그룹명': '테스트', '2코드': 'T2', '2그룹명': '기본', '3코드': 'T3', '3그룹명': '상품' },
+    { '코드': 'TEST-002', '품목코드': 'TEST-002', '품목명': '격리 테스트 상품 B', '규격': '2EA', '단위': 'EA', '1코드': 'T1', '1그룹명': '테스트', '2코드': 'T2', '2그룹명': '기본', '3코드': 'T3', '3그룹명': '상품' }
+  ];
+  const snapshot = Object.fromEntries(products.map(item => [item['코드'], item]));
+  const request = indexedDB.open('oneapp-itemmaster-isolated-v1', 1);
+  request.onupgradeneeded = event => {
+    const db = event.target.result;
+    if (!db.objectStoreNames.contains('store')) db.createObjectStore('store');
+    if (!db.objectStoreNames.contains('products')) db.createObjectStore('products', { keyPath: '코드' });
+  };
+  request.onerror = () => { document.getElementById('result').textContent = `FAIL: ${request.error}`; };
+  request.onsuccess = () => {
+    const db = request.result;
+    const tx = db.transaction(['products', 'store'], 'readwrite');
+    const productStore = tx.objectStore('products');
+    const stateStore = tx.objectStore('store');
+    productStore.clear();
+    products.forEach(item => productStore.put(item));
+    stateStore.put(snapshot, 'itemMasterSnapshot_v1');
+    stateStore.put(1, 'itemMasterRevision_v1');
+    tx.oncomplete = () => { document.getElementById('result').textContent = 'PASS: 2 products / REV 1'; };
+    tx.onerror = () => { document.getElementById('result').textContent = `FAIL: ${tx.error}`; };
+  };
+</script>
+</html>
