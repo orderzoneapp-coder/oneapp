@@ -332,33 +332,79 @@
         // ==========================================
         // 🧩 [아이콘 시스템] SafeIcon
         // ==========================================
-        const SafeIcon = React.memo(function SafeIconComponent({ name, size = 18, className = "" }) {
-            const [svg, setSvg] = useState("");
-            useEffect(() => {
-                const renderIcon = () => {
-                    if (window.lucide && window.lucide.icons) {
-                        const kebabName = name.replace(/([a-z])([A-Z])/g, '$1-$2').toLowerCase();
-                        const possibleNames = [
-                            kebabName, name, 
-                            name === 'cloud-download' ? 'download-cloud' : name,
-                            name === 'cloud-upload' ? 'upload-cloud' : name,
-                            name === 'bar-chart-3' ? 'bar-chart' : name
-                        ];
-                        for (const pName of possibleNames) {
-                            if (window.lucide.icons[pName]) {
-                                setSvg(window.lucide.icons[pName].toSvg({ width: size, height: size, class: className, 'stroke-width': 2.5 })); return;
-                            }
-                        }
-                    }
-                }; renderIcon();
-            }, [name, size, className]);
+        const MASTER_ICON_PATHS = Object.freeze({
+            'database': [
+                { tag: 'ellipse', cx: 12, cy: 5, rx: 9, ry: 3 },
+                { tag: 'path', d: 'M3 5v14c0 1.7 4 3 9 3s9-1.3 9-3V5' },
+                { tag: 'path', d: 'M3 12c0 1.7 4 3 9 3s9-1.3 9-3' }
+            ],
+            'cloud-download': [
+                { tag: 'path', d: 'M17.5 19H6a4 4 0 0 1-.4-7.98A6 6 0 0 1 17 8a4.5 4.5 0 0 1 .5 9' },
+                { tag: 'path', d: 'M12 12v8m-3-3 3 3 3-3' }
+            ],
+            'cloud-upload': [
+                { tag: 'path', d: 'M17.5 19H6a4 4 0 0 1-.4-7.98A6 6 0 0 1 17 8a4.5 4.5 0 0 1 .5 9' },
+                { tag: 'path', d: 'M12 20v-8m-3 3 3-3 3 3' }
+            ],
+            'settings': [
+                { tag: 'circle', cx: 12, cy: 12, r: 3 },
+                { tag: 'path', d: 'M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.86 2.86-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21H9.6v-.1A1.7 1.7 0 0 0 8 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.86-2.86.06-.06A1.7 1.7 0 0 0 3.6 15a1.7 1.7 0 0 0-1.6-1H2V10h.1A1.7 1.7 0 0 0 3.6 8a1.7 1.7 0 0 0-.34-1.88l-.06-.06L6.06 3.2l.06.06A1.7 1.7 0 0 0 8 3.6a1.7 1.7 0 0 0 1-1.6V2h4v.1A1.7 1.7 0 0 0 15 3.6a1.7 1.7 0 0 0 1.88-.34l.06-.06 2.86 2.86-.06.06A1.7 1.7 0 0 0 19.4 8a1.7 1.7 0 0 0 1.6 1.6h.1v4H21a1.7 1.7 0 0 0-1.6 1.4Z' }
+            ],
+            'x': [{ tag: 'path', d: 'm18 6-12 12M6 6l12 12' }],
+            'check-circle-2': [
+                { tag: 'path', d: 'M22 11.1V12a10 10 0 1 1-5.9-9.1' },
+                { tag: 'path', d: 'm9 11 3 3L22 4' }
+            ],
+            'search': [
+                { tag: 'circle', cx: 11, cy: 11, r: 8 },
+                { tag: 'path', d: 'm21 21-4.35-4.35' }
+            ],
+            'upload': [
+                { tag: 'path', d: 'M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4' },
+                { tag: 'path', d: 'm17 8-5-5-5 5M12 3v12' }
+            ],
+            'file-spreadsheet': [
+                { tag: 'path', d: 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z' },
+                { tag: 'path', d: 'M14 2v6h6M8 13h8M8 17h8M12 13v4' }
+            ],
+            'circle-notch': [
+                { tag: 'circle', cx: 12, cy: 12, r: 9, strokeOpacity: .25 },
+                { tag: 'path', d: 'M21 12a9 9 0 0 0-9-9' }
+            ],
+            'exclamation-triangle': [
+                { tag: 'path', d: 'M10.3 3.7 2.2 18a2 2 0 0 0 1.8 3h16a2 2 0 0 0 1.8-3L13.7 3.7a2 2 0 0 0-3.4 0Z' },
+                { tag: 'path', d: 'M12 9v4M12 17h.01' }
+            ],
+            'redo-alt': [
+                { tag: 'path', d: 'M21 12a9 9 0 1 1-2.64-6.36L21 8' },
+                { tag: 'path', d: 'M21 3v5h-5' }
+            ],
+            'chevron-right': [{ tag: 'path', d: 'm9 18 6-6-6-6' }],
+            'unknown': [
+                { tag: 'circle', cx: 12, cy: 12, r: 9 },
+                { tag: 'path', d: 'M9.1 9a3 3 0 1 1 5.8 1c0 2-3 2-3 4M12 18h.01' }
+            ]
+        });
 
-            if (!svg) {
-                const faMap = { 'cloud-download':'fa-cloud-download-alt', 'cloud-upload':'fa-cloud-upload-alt', 'settings':'fa-cogs', 'layout-dashboard':'fa-th-large', 'package-search':'fa-box-open', 'file-spreadsheet':'fa-table', 'zap':'fa-bolt', 'truck':'fa-truck', 'boxes':'fa-boxes', 'bar-chart-3':'fa-chart-bar', 'check-circle-2':'fa-check-circle', 'x':'fa-times', 'database':'fa-database', 'upload':'fa-upload', 'pie-chart':'fa-chart-pie', 'shopping-cart':'fa-shopping-cart', 'users':'fa-users', 'megaphone':'fa-bullhorn', 'book-open':'fa-address-book', 'shopping-bag':'fa-shopping-bag', 'credit-card':'fa-credit-card', 'line-chart':'fa-chart-line', 'printer':'fa-print', 'search':'fa-search', 'plus':'fa-plus', 'trash-alt':'fa-trash-alt', 'edit':'fa-edit', 'save':'fa-save', 'file-excel':'fa-file-excel', 'link':'fa-link', 'ban':'fa-ban', 'layer-group':'fa-layer-group', 'desktop':'fa-desktop', 'sign-in-alt':'fa-sign-in-alt', 'calculator':'fa-calculator', 'tags':'fa-tags', 'broom':'fa-broom', 'info-circle':'fa-info-circle', 'lock':'fa-lock', 'key':'fa-key', 'folder-open':'fa-folder-open', 'file-invoice':'fa-file-invoice', 'history':'fa-history', 'redo-alt': 'fa-redo-alt' };
-                const faName = faMap[name] || `fa-${name}`;
-                return <i className={`fas ${faName} ${className}`} style={{ fontSize: size }} />;
-            }
-            return <span className="inline-flex shrink-0 items-center justify-center" dangerouslySetInnerHTML={{ __html: svg }} />;
+        const SafeIcon = React.memo(function SafeIconComponent({ name, size = 18, className = "" }) {
+            const icons = MASTER_ICON_PATHS[name] || MASTER_ICON_PATHS.unknown;
+            return (
+                <svg
+                    aria-hidden="true"
+                    focusable="false"
+                    viewBox="0 0 24 24"
+                    width={size}
+                    height={size}
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className={`inline-block shrink-0 ${className}`}
+                >
+                    {icons.map((icon, index) => React.createElement(icon.tag, { ...icon, tag: undefined, key: `${name}-${index}` }))}
+                </svg>
+            );
         });
 
         // ==========================================
@@ -446,7 +492,7 @@
                         <div className="flex-1 w-full bg-slate-100 relative">
                             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                                 <div className="text-slate-300 flex flex-col items-center">
-                                    <i className="fas fa-circle-notch fa-spin text-3xl mb-3"></i>
+                                    <SafeIcon name="circle-notch" size={30} className="animate-spin mb-3" />
                                     <span className="font-bold text-sm">설정 모듈을 불러오는 중입니다...</span>
                                 </div>
                             </div>
@@ -839,7 +885,7 @@
                 if (this.state.hasError) {
                     return (
                         <div className="h-screen w-full flex flex-col items-center justify-center bg-slate-50 p-6">
-                            <i className="fas fa-exclamation-triangle text-rose-500 text-6xl mb-6"></i>
+                            <SafeIcon name="exclamation-triangle" size={60} className="text-rose-500 mb-6" />
                             <h1 className="text-2xl font-black text-slate-800 mb-2">화면 렌더링 오류 발생 (Crash)</h1>
                             <p className="text-slate-500 mb-6 text-center">
                                 불러온 엑셀 데이터 중 문자(글자)가 아닌 형식(숫자 등)이 섞여있어 화면이 중단되었습니다.<br/>
@@ -848,15 +894,15 @@
                             <div className="bg-white border border-rose-200 p-4 rounded-lg text-xs font-mono text-rose-600 w-full max-w-2xl overflow-auto mb-8 shadow-sm">
                                 {this.state.error && this.state.error.toString()}
                             </div>
-                            <button 
-                                onClick={() => { 
+                            <button
+                                onClick={() => {
                                     indexedDB.deleteDatabase('MerchOpsDB');
-                                    localStorage.removeItem('merchMaster_v870'); 
-                                    window.location.reload(); 
-                                }} 
+                                    localStorage.removeItem('merchMaster_v870');
+                                    window.location.reload();
+                                }}
                                 className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold transition-colors shadow-lg flex items-center gap-2"
                             >
-                                <i className="fas fa-redo-alt"></i> 로컬 데이터 초기화 및 복구하기
+                                <SafeIcon name="redo-alt" size={16} /> 로컬 데이터 초기화 및 복구하기
                             </button>
                         </div>
                     );
@@ -887,12 +933,12 @@
             const [masterProducts, setMasterProducts] = useState({});
             const config = useMerchConfig();
             const [toastMsg, setToastMsg] = useState("");
-            
+
             const visMasterCols = useMemo(() => {
                 const cols = config?.visibleMasterCols?.estimate || [];
                 return cols.filter(h => !['품목코드', '품목명', '규격'].includes(h));
             }, [config.visibleMasterCols]);
-            
+
             const [isProcessing, setIsProcessing] = useState(false);
             const [processMsg, setProcessMsg] = useState('');
             const [showSettingsModal, setShowSettingsModal] = useState(false);
@@ -1262,9 +1308,9 @@
                     }).slice(0, 500);
                 }
                 if (activeC3) {
-                    return arr.filter(p => 
-                        safeStr(p['1코드'], 'etc') === activeC1 && 
-                        safeStr(p['2코드'], 'etc') === activeC2 && 
+                    return arr.filter(p =>
+                        safeStr(p['1코드'], 'etc') === activeC1 &&
+                        safeStr(p['2코드'], 'etc') === activeC2 &&
                         safeStr(p['3코드'] || p['오더즈'], 'etc') === activeC3
                     ).slice(0, 500);
                 }
@@ -1432,13 +1478,13 @@
                             <div className="flex-1 bg-white flex flex-col overflow-hidden relative z-0">
                                 {globalSearch ? (
                                     <div className="px-4 py-2 bg-amber-50 border-b border-amber-200 text-[12px] font-bold text-amber-800 flex items-center shrink-0">
-                                        <i className="fas fa-search mr-2 text-amber-500"></i> 전체 검색 결과입니다.
+                                        <SafeIcon name="search" size={14} className="mr-2 text-amber-500" /> 전체 검색 결과입니다.
                                     </div>
                                 ) : (
                                     <div className="px-4 py-2 bg-indigo-50/50 border-b border-indigo-100 text-[12px] font-bold text-indigo-800 flex justify-between items-center shrink-0">
                                         <span>
-                                            {c1List.find(c=>c.code===activeC1)?.name || '선택안됨'} <i className="fas fa-chevron-right mx-1 text-[10px] text-indigo-300"></i> 
-                                            {c2List.find(c=>c.code===activeC2)?.name || '선택안됨'} <i className="fas fa-chevron-right mx-1 text-[10px] text-indigo-300"></i> 
+                                            {c1List.find(c=>c.code===activeC1)?.name || '선택안됨'} <SafeIcon name="chevron-right" size={10} className="mx-1 text-indigo-300" />
+                                            {c2List.find(c=>c.code===activeC2)?.name || '선택안됨'} <SafeIcon name="chevron-right" size={10} className="mx-1 text-indigo-300" />
                                             {c3List.find(c=>c.code===activeC3)?.name || '선택안됨'}
                                         </span>
                                         <span className="text-slate-500 font-medium">총 {displayRows.length}건 표시됨</span>
@@ -1479,9 +1525,9 @@
                         </div>
                     </main>
 
-                    <IframeSettingsModal 
-                        isOpen={showSettingsModal} 
-                        onClose={() => setShowSettingsModal(false)} 
+                    <IframeSettingsModal
+                        isOpen={showSettingsModal}
+                        onClose={() => setShowSettingsModal(false)}
                     />
                 </div>
             );
@@ -1508,4 +1554,3 @@
             if (window.__showBootError) window.__showBootError('React 렌더링 초기화 실패', err && err.stack ? err.stack : String(err));
             else throw err;
         }
-
