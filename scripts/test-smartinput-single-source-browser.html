@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="ko" translate="no">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SmartInput 단일 원본 확인창 시각 회귀</title>
+  <link rel="stylesheet" href="/smartinput/smartinput.css?v=0.6.0">
+  <style>
+    .fixture-brand { flex: 0 0 176px; color: var(--accent-strong); font-size: 20px; font-weight: 950; letter-spacing: -.04em; }
+    .fixture-brand small { margin-left: 5px; color: var(--text-faint); font-size: 10px; letter-spacing: .04em; }
+    .fixture-controls { display: flex; align-items: center; gap: 5px; }
+    .fixture-controls .button[aria-pressed="true"] { color: #fff; border-color: var(--accent); background: var(--accent); }
+    .fixture-table-input { width: 100%; min-width: 70px; height: 32px; padding: 0 7px; border: 1px solid transparent; border-radius: 5px; }
+    .fixture-row-status { padding: 4px 7px; border-radius: 999px; color: var(--success); background: var(--success-soft); font-size: 10px; font-weight: 900; }
+    .fixture-receipt { width: 540px; min-height: 560px; margin: auto; padding: 34px 30px; color: #172033; background: #fff; box-shadow: 0 12px 34px rgba(16,37,63,.18); }
+    #fixturePhotoSource .photo-viewer__layer { width: 540px; transform: translate(-50%, -50%) scale(.56); }
+    .fixture-receipt h3 { margin: 0 0 22px; font-size: 25px; letter-spacing: .18em; text-align: center; }
+    .fixture-receipt p { margin: 8px 0; }
+    .fixture-receipt table { width: 100%; margin-top: 24px; border-collapse: collapse; }
+    .fixture-receipt th, .fixture-receipt td { padding: 10px 8px; border: 1px solid #aeb8c5; text-align: left; }
+    .fixture-receipt th:nth-child(n+3), .fixture-receipt td:nth-child(n+3) { text-align: right; }
+    .fixture-receipt footer { margin-top: 28px; color: #667085; text-align: right; }
+    .fixture-analysis-tag { display: inline-flex; align-items: center; gap: 6px; color: var(--accent-strong); font-size: 11px; font-weight: 900; }
+    .fixture-analysis-tag::before { width: 7px; height: 7px; border: 2px solid color-mix(in srgb, var(--accent) 30%, transparent); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; content: ""; }
+    @media (max-width: 720px) {
+      .fixture-controls { display: none; }
+      .fixture-brand { flex-basis: auto; font-size: 16px; }
+      .fixture-brand small { display: none; }
+      .fixture-receipt { min-height: 500px; padding: 22px 14px; }
+      .fixture-receipt h3 { font-size: 19px; }
+    }
+  </style>
+</head>
+<body data-mobile-stage="source">
+  <nexus-top><div class="nexus-top-fallback"><strong>NEXUS</strong><span>SmartInput 시각 회귀 환경</span></div></nexus-top>
+  <header class="app-bar">
+    <div class="app-bar__inner">
+      <div class="app-status"><span class="app-status__dot"></span><span id="fixtureAppStatus">원본을 확인하고 필요한 행만 테이블에 추가하세요.</span></div>
+      <div class="app-bar__primary">
+        <div class="fixture-brand">스마트입력 <small>SINGLE SOURCE REVIEW</small></div>
+        <div class="app-voucher-switcher">
+          <nav class="mode-tabs" aria-label="전표 선택">
+            <button type="button" class="mode-tab is-active"><span>주문서</span><kbd>Alt+1</kbd></button>
+            <button type="button" class="mode-tab"><span>구매</span><kbd>Alt+2</kbd></button>
+            <button type="button" class="mode-tab"><span>판매</span><kbd>Alt+3</kbd></button>
+            <button type="button" class="mode-tab"><span>견적서</span><kbd>Alt+4</kbd></button>
+          </nav>
+        </div>
+      </div>
+      <div class="app-bar__actions fixture-controls" aria-label="시각 회귀 상태">
+        <button class="button button--quiet button--small" data-fixture-state="default" type="button">기본</button>
+        <button class="button button--quiet button--small" data-fixture-state="analyzing" type="button">분석 중</button>
+        <button class="button button--quiet button--small" data-fixture-state="staged" type="button">추가 예정</button>
+        <button class="button button--quiet button--small" id="fixtureThemeButton" type="button">다크</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="app-shell">
+    <h1 class="sr-only">SmartInput 단일 원본 확인창 시각 회귀</h1>
+    <div class="workspace" id="fixtureWorkspace">
+      <nav class="mobile-stage-nav" aria-label="모바일 입력 단계">
+        <button type="button"><span>1</span><strong>기본정보</strong></button>
+        <button type="button" class="is-active"><span>2</span><strong>원본 분석</strong></button>
+        <button type="button"><span>3</span><strong>품목 입력</strong></button>
+      </nav>
+
+      <section class="parser-card" aria-label="원본 자료 입력">
+        <div class="mobile-parser-toolbar" role="toolbar" aria-label="모바일 파서 작업">
+          <strong class="mobile-source-type">Excel 원본</strong>
+          <div class="mobile-parser-counts"><span>일치 <b>3</b></span><span>유사 <b>0</b></span><span>불일치 <b>0</b></span></div>
+          <button class="button button--quiet button--small" type="button">다시 분석</button>
+          <button class="button button--quiet button--small" type="button">지우기</button>
+          <button class="button button--quiet button--small" type="button">전체보기</button>
+        </div>
+        <div class="parser-toolbar" role="toolbar" aria-label="파서 작업">
+          <button class="button button--quiet button--small parser-voice-button" type="button"><span>●</span> 음성</button>
+          <div class="legend"><span class="legend--matched">일치</span><span class="legend--similar">유사</span><span class="legend--failed">불일치</span></div>
+          <div class="parser-toolbar__end">
+            <button class="button button--quiet button--small input-template-open" id="fixtureTemplateOpen" type="button" aria-expanded="false">Excel 양식 <strong>납품 기본</strong></button>
+            <button class="button button--quiet button--small parser-clear-button" type="button"><span>×</span> 지우기</button>
+          </div>
+        </div>
+        <div class="source-navigator" aria-label="원본 전환">
+          <button class="button button--quiet button--small" id="fixturePrevious" type="button">이전</button>
+          <label><span class="sr-only">원본 목록</span><select id="fixtureSourceSelect" aria-label="원본 목록"><option value="0">거래명세서_8월.xlsx</option><option value="1">현장사진_0828.jpg</option><option value="2">추가주문_메신저.txt</option></select></label>
+          <strong id="fixtureSourcePosition">1 / 3</strong>
+          <button class="button button--quiet button--small" id="fixtureNext" type="button">다음</button>
+          <span class="source-status" id="fixtureSourceStatus">등록</span>
+        </div>
+
+        <div class="input-template-overlay" id="fixtureTemplateOverlay" hidden>
+          <section class="input-template-dialog" role="dialog" aria-modal="true" aria-labelledby="fixtureTemplateTitle">
+            <header class="input-template-dialog__header">
+              <div><strong id="fixtureTemplateTitle">Excel 입력 양식</strong><span>원본 확인창을 유지한 채 양식과 열 매핑을 설정합니다.</span></div>
+              <button class="button button--quiet button--small" id="fixtureTemplateClose" type="button">닫기</button>
+            </header>
+            <div class="input-template-bar__actions">
+              <button class="button button--quiet button--small" type="button">새 작업</button>
+              <button class="button button--quiet button--small" type="button">기존 양식</button>
+              <label class="input-template-select"><span class="sr-only">기존 양식</span><select><option>납품 기본 양식 · rev.4</option></select></label>
+              <button class="button button--quiet button--small" type="button">Excel 불러오기</button>
+              <button class="button button--quiet button--small" type="button">Excel 붙여넣기</button>
+            </div>
+            <section class="input-template-panel">
+              <header class="input-template-panel__header"><div><strong>Excel 열 분석</strong><span>Sheet1 · 헤더 1행 · 5열</span></div><div><label>시트<select><option>Sheet1</option></select></label><label>헤더 행<input type="number" value="1"></label></div></header>
+              <div class="input-template-result">기존 양식의 저장된 필드명·순서·매핑을 읽기 전용으로 적용했습니다.</div>
+              <div class="input-template-mapping-scroll">
+                <table class="input-template-mapping-table"><thead><tr><th>Excel 열</th><th>표본값</th><th>SmartInput 표준 필드</th><th>매핑 결과</th></tr></thead><tbody>
+                  <tr><td>품목명</td><td>프리미엄 사과</td><td>품목명 (itemName)</td><td>일치</td></tr>
+                  <tr><td>수량</td><td>4</td><td>수량 (quantity)</td><td>일치</td></tr>
+                  <tr><td>공급가</td><td>120000</td><td>공급가액 (supplyAmount)</td><td>일치</td></tr>
+                </tbody></table>
+              </div>
+              <footer class="input-template-panel__footer"><span>양식 revision은 변경되지 않습니다.</span><button class="button button--primary button--small" type="button">추가 예정 만들기</button></footer>
+            </section>
+          </section>
+        </div>
+
+        <div class="parser-input-row">
+          <div class="source-editor" id="fixtureTextSource">
+            <div class="source-editor__body"><pre class="source-highlight" aria-hidden="true">거래처    품목명          수량    단가      공급가액
+<span class="source-token--collected">바른유통  프리미엄 사과    4      30000     120000</span>
+<span class="source-token--collected">바른유통  제주 감귤        2      18000      36000</span>
+<span class="source-token--collected">바른유통  유기농 배        3      25000      75000</span></pre><textarea aria-label="활성 원본 텍스트" spellcheck="false">거래처    품목명          수량    단가      공급가액
+바른유통  프리미엄 사과    4      30000     120000
+바른유통  제주 감귤        2      18000      36000
+바른유통  유기농 배        3      25000      75000</textarea></div>
+            <div class="source-editor__meta"><span>132자</span><span>원본은 수정하지 않고 분석 결과만 staging합니다.</span></div>
+          </div>
+          <div class="photo-viewer has-image" id="fixturePhotoSource" hidden>
+            <div class="photo-viewer__toolbar"><strong>원본 사진</strong><div><button type="button">−</button><button type="button">맞춤 100%</button><button type="button">＋</button><button type="button">↺</button><button type="button">↻</button></div></div>
+            <div class="photo-viewer__viewport" tabindex="0"><div class="photo-viewer__stage"><div class="photo-viewer__layer"><article class="fixture-receipt"><h3>거 래 명 세 서</h3><p><strong>공급자</strong> 바른유통 주식회사</p><p><strong>거래일</strong> 2026-08-28</p><table><thead><tr><th>품목</th><th>규격</th><th>수량</th><th>금액</th></tr></thead><tbody><tr><td>프리미엄 사과</td><td>10kg</td><td>4</td><td>120,000</td></tr><tr><td>제주 감귤</td><td>5kg</td><td>2</td><td>36,000</td></tr><tr><td>유기농 배</td><td>7.5kg</td><td>3</td><td>75,000</td></tr></tbody></table><footer>합계 231,000원</footer></article></div></div></div>
+            <div class="photo-viewer__meta"><span>현장사진_0828.jpg</span><span>이미지는 분석보다 먼저 표시되었습니다.</span></div>
+          </div>
+          <button class="analyze-button" type="button"><span>✦</span><strong>다시 분석</strong><small>원문은 그대로 유지</small></button>
+        </div>
+        <div class="parser-progress" id="fixtureProgress" hidden><span></span><strong>자료를 분석하고 있습니다. 원본 확인과 전환은 계속할 수 있습니다.</strong></div>
+        <section class="source-staging" aria-label="원본 분석 결과">
+          <div class="source-staging__summary"><p id="fixtureStagingSummary">분석 결과 없음 · 작업테이블 2행 유지</p><div><button class="button button--quiet button--small" type="button">행 선택</button><button class="button button--primary button--small" id="fixtureApply" type="button" disabled>테이블에 추가</button></div></div>
+        </section>
+      </section>
+
+      <button class="photo-resizer" type="button" aria-label="원본 확인창과 입력표 폭 조절"><span></span></button>
+
+      <section class="workbench" aria-label="스마트입력 본문">
+        <div class="document-fields"><div class="document-fields__left"><label class="field"><span>배송일자</span><input type="date" value="2026-08-29"></label><label class="field"><span>출하창고 <em>필수</em></span><input value="본사 창고"></label><label class="field"><span>거래유형</span><select><option>기타</option></select></label></div><div class="document-fields__right"><label class="field field--customer"><span>배송 거래처 <em>필수</em></span><div class="input-action"><input value="바른유통"><button type="button">찾기</button></div></label></div></div>
+        <section class="grid-card" aria-label="입력표">
+          <div class="grid-toolbar"><div class="grid-review-tools"><label class="grid-search"><span class="sr-only">입력표 검색</span><input placeholder="상품명·코드·규격 검색"><button type="button">×</button></label><div class="grid-stats"><strong>2행</strong><span>일치 2</span><span>확인 0</span><span>미인식 0</span></div><small class="voucher-group-summary">기존 작업행 · 자동 변경 없음</small></div><div class="grid-toolbar__actions"><button class="button button--quiet button--small" type="button">빈 행 추가</button></div></div>
+          <div class="table-scroll" tabindex="0"><table><thead><tr><th>품목코드</th><th>품목명</th><th>규격</th><th>수량</th><th>단가</th><th>공급가액</th><th>상태</th></tr></thead><tbody><tr><td><input class="fixture-table-input" value="OLD-001"></td><td><input class="fixture-table-input" value="기존 작업행 A"></td><td><input class="fixture-table-input" value="1박스"></td><td><input class="fixture-table-input" value="2"></td><td><input class="fixture-table-input" value="18000"></td><td><input class="fixture-table-input" value="36000"></td><td><span class="fixture-row-status">기존</span></td></tr><tr><td><input class="fixture-table-input" value="OLD-002"></td><td><input class="fixture-table-input" value="기존 작업행 B"></td><td><input class="fixture-table-input" value="1팩"></td><td><input class="fixture-table-input" value="5"></td><td><input class="fixture-table-input" value="8000"></td><td><input class="fixture-table-input" value="40000"></td><td><span class="fixture-row-status">기존</span></td></tr></tbody><tfoot><tr><td></td><td>합계</td><td></td><td>7</td><td></td><td>76,000원</td><td></td></tr></tfoot></table></div>
+          <footer class="voucher-footer-actions"><button class="button button--primary" type="button">전표 저장</button><button class="button button--quiet" type="button">전표 초기화</button></footer>
+        </section>
+      </section>
+
+      <aside class="related-panel"><div class="aside-heading"><span>원본 적용 계약</span><strong>주문서</strong></div><div class="delivery-card"><span>현재 작업테이블</span><strong>2행 그대로 유지</strong><p>분석 완료만으로 행을 추가하거나 갱신하지 않습니다.</p><div class="delivery-state"><span></span><em>명시적 추가 대기</em></div></div></aside>
+    </div>
+  </main>
+
+  <output id="fixtureResult" class="sr-only" aria-live="polite"></output>
+  <script>
+    (() => {
+      const root = document.documentElement;
+      const workspace = document.getElementById('fixtureWorkspace');
+      const overlay = document.getElementById('fixtureTemplateOverlay');
+      const sourceSelect = document.getElementById('fixtureSourceSelect');
+      const textSource = document.getElementById('fixtureTextSource');
+      const photoSource = document.getElementById('fixturePhotoSource');
+      const status = document.getElementById('fixtureSourceStatus');
+      const summary = document.getElementById('fixtureStagingSummary');
+      const progress = document.getElementById('fixtureProgress');
+      const applyButton = document.getElementById('fixtureApply');
+      let currentState = 'default';
+      const baselineRows = Array.from(document.querySelectorAll('.table-scroll tbody tr')).map((row) => row.textContent.trim()).join('|');
+
+      const applySource = (index) => {
+        sourceSelect.selectedIndex = index;
+        document.getElementById('fixtureSourcePosition').textContent = `${index + 1} / 3`;
+        const isPhoto = index === 1;
+        textSource.hidden = isPhoto;
+        photoSource.hidden = !isPhoto;
+        workspace.classList.toggle('has-photo-source', isPhoto);
+        status.textContent = index === 2 ? '추가 완료' : currentState === 'analyzing' ? '분석 중' : currentState === 'staged' ? '추가 예정' : '등록';
+      };
+
+      const setState = (next) => {
+        currentState = next;
+        progress.hidden = next !== 'analyzing';
+        summary.textContent = next === 'staged' ? '추가 예정 3행 · 작업테이블 2행 유지' : next === 'analyzing' ? '분석 중 · 작업테이블 2행 유지' : '분석 결과 없음 · 작업테이블 2행 유지';
+        applyButton.disabled = next !== 'staged';
+        document.getElementById('fixtureAppStatus').textContent = next === 'staged' ? '3행이 추가 예정입니다. 검토 후 테이블에 추가하세요.' : next === 'analyzing' ? '분석 중에도 원본을 확대·스크롤·전환할 수 있습니다.' : '원본을 확인하고 필요한 행만 테이블에 추가하세요.';
+        applySource(sourceSelect.selectedIndex);
+        document.querySelectorAll('[data-fixture-state]').forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.fixtureState === next)));
+      };
+
+      const setOverlay = (open) => {
+        const before = document.querySelector('.parser-card').getBoundingClientRect();
+        overlay.hidden = !open;
+        document.getElementById('fixtureTemplateOpen').setAttribute('aria-expanded', String(open));
+        requestAnimationFrame(() => {
+          const after = document.querySelector('.parser-card').getBoundingClientRect();
+          window.SMARTINPUT_VISUAL_FIXTURE.overlayGeometryStable = before.width === after.width && before.height === after.height;
+        });
+      };
+
+      document.querySelectorAll('[data-fixture-state]').forEach((button) => button.addEventListener('click', () => setState(button.dataset.fixtureState)));
+      document.getElementById('fixtureThemeButton').addEventListener('click', () => {
+        const dark = root.dataset.nexusTheme !== 'dark';
+        root.dataset.nexusTheme = dark ? 'dark' : 'light';
+        document.getElementById('fixtureThemeButton').textContent = dark ? '라이트' : '다크';
+      });
+      document.getElementById('fixtureTemplateOpen').addEventListener('click', () => setOverlay(true));
+      document.getElementById('fixtureTemplateClose').addEventListener('click', () => setOverlay(false));
+      document.getElementById('fixturePrevious').addEventListener('click', () => applySource((sourceSelect.selectedIndex + 2) % 3));
+      document.getElementById('fixtureNext').addEventListener('click', () => applySource((sourceSelect.selectedIndex + 1) % 3));
+      sourceSelect.addEventListener('change', () => applySource(sourceSelect.selectedIndex));
+
+      window.SMARTINPUT_VISUAL_FIXTURE = {
+        baselineRows,
+        overlayGeometryStable: null,
+        snapshot: () => ({
+          state: currentState,
+          activeSource: sourceSelect.value,
+          visibleReviewWindows: [textSource, photoSource].filter((element) => !element.hidden).length,
+          worktableRowsUnchanged: baselineRows === Array.from(document.querySelectorAll('.table-scroll tbody tr')).map((row) => row.textContent.trim()).join('|'),
+          overlayOpen: !overlay.hidden,
+          overlayPosition: getComputedStyle(overlay).position,
+          parserOverflowY: getComputedStyle(document.querySelector('.parser-card')).overflowY,
+          sourceEditorHeight: Math.round((textSource.hidden ? photoSource : textSource).getBoundingClientRect().height),
+          viewport: { width: innerWidth, height: innerHeight },
+          theme: root.dataset.nexusTheme || 'light',
+        }),
+      };
+
+      const params = new URLSearchParams(location.search);
+      root.dataset.nexusTheme = params.get('theme') === 'dark' ? 'dark' : 'light';
+      applySource(Math.max(0, Math.min(2, Number(params.get('source') || 0))));
+      setState(params.get('state') || 'default');
+      if (params.get('overlay') === '1') setOverlay(true);
+      const initial = window.SMARTINPUT_VISUAL_FIXTURE.snapshot();
+      document.getElementById('fixtureResult').textContent = JSON.stringify(initial);
+    })();
+  </script>
+</body>
+</html>
