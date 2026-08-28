@@ -125,6 +125,9 @@ jobs:
       - name: Read a real Master XLSX and verify approval persistence
         run: node scripts/test-master-add-update-xlsx-e2e.mjs
 
+      - name: Test ItemMaster registration, edit, and reload persistence
+        run: node scripts/test-itemmaster-browser-e2e.mjs
+
       - name: Test MerchOps rule placement and SmartParser direct information apply
         run: node scripts/test-merchops-direct-info.mjs
 
