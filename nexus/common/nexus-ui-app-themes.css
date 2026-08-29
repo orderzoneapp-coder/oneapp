@@ -44,9 +44,11 @@ html[data-nexus-ui-theme="dark"] body :is(
   .bg-zinc-100,
   .bg-neutral-50,
   .bg-neutral-100,
+  .bg-white\/60,
   .bg-white\/70,
   .bg-white\/80,
   .bg-white\/90,
+  .bg-white\/95,
   .panel,
   .card,
   .modal-content,
@@ -56,8 +58,11 @@ html[data-nexus-ui-theme="dark"] body :is(
 }
 
 html[data-nexus-ui-theme="dark"] body :is(
+  .bg-slate-50\/50,
   .bg-slate-50\/60,
   .bg-slate-50\/70,
+  .bg-slate-100\/80,
+  .bg-slate-200\/50,
   .bg-blue-50,
   .bg-blue-50\/60,
   .bg-indigo-50,
@@ -220,6 +225,15 @@ html[data-nexus-ui-theme="dark"][data-nexus-ui-app="orderops"] body :is(
   border-color: var(--nexus-ui-border) !important;
   background-color: var(--nexus-ui-panel-bg) !important;
   color: var(--nexus-ui-text) !important;
+}
+
+/* Keep form and table hierarchy above utility-class remaps. */
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app] body :is(input, select, textarea) {
+  background-color: var(--nexus-ui-input-bg) !important;
+}
+
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app] body th {
+  background-color: var(--nexus-ui-panel-subtle) !important;
 }
 
 html[data-nexus-ui-theme="dark"] body :is(

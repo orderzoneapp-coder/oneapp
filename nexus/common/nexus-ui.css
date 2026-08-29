@@ -1,5 +1,5 @@
 :root {
-  --nexus-ui-header-height: 54px;
+  --nexus-ui-header-height: 64px;
   --nexus-ui-navy: #081225;
   --nexus-ui-teal: #05ae94;
   --nexus-ui-page-bg: #f4f7fb;
@@ -10,19 +10,37 @@
   --nexus-ui-text: #172033;
   --nexus-ui-muted: #64748b;
   --nexus-ui-input-bg: #ffffff;
-  --nexus-ui-shadow: 0 6px 18px rgb(15 23 42 / 10%);
+  --nexus-ui-shadow: none;
+  --nexus-ui-header-bg: #ffffff;
+  --nexus-ui-header-border: #dde3ea;
+  --nexus-ui-tab-group-bg: #f1f4f7;
+  --nexus-ui-tab-text: #667085;
+  --nexus-ui-tab-active-text: #24364d;
+  --nexus-ui-tab-active-bg: #dfe7f0;
+  --nexus-ui-tab-hover-bg: #e9eef4;
+  --nexus-ui-header-icon: #667085;
+  --nexus-ui-focus: #6489b2;
 }
 
 html[data-nexus-ui-theme="dark"] {
-  --nexus-ui-page-bg: #11151a;
-  --nexus-ui-panel-bg: #1b2026;
-  --nexus-ui-panel-subtle: #222830;
-  --nexus-ui-border: #343c46;
-  --nexus-ui-border-strong: #46515e;
-  --nexus-ui-text: #e4e8ed;
-  --nexus-ui-muted: #a0a9b5;
-  --nexus-ui-input-bg: #242b33;
-  --nexus-ui-shadow: 0 8px 22px rgb(0 0 0 / 32%);
+  --nexus-ui-page-bg: #15181d;
+  --nexus-ui-panel-bg: #1c2026;
+  --nexus-ui-panel-subtle: #22272e;
+  --nexus-ui-border: #343b44;
+  --nexus-ui-border-strong: #4a535e;
+  --nexus-ui-text: #d6d9de;
+  --nexus-ui-muted: #9299a3;
+  --nexus-ui-input-bg: #262c33;
+  --nexus-ui-shadow: none;
+  --nexus-ui-header-bg: #101722;
+  --nexus-ui-header-border: #283446;
+  --nexus-ui-tab-group-bg: #1a2330;
+  --nexus-ui-tab-text: #8f9aaa;
+  --nexus-ui-tab-active-text: #f4f7fb;
+  --nexus-ui-tab-active-bg: #354153;
+  --nexus-ui-tab-hover-bg: #283343;
+  --nexus-ui-header-icon: #a7b2c1;
+  --nexus-ui-focus: #789bc2;
 }
 
 body.nexus-ui-mounted {
@@ -45,21 +63,14 @@ body.nexus-ui-mounted {
   width: 100%;
   height: var(--nexus-ui-header-height);
   margin: 0;
-  padding: 0 14px;
+  padding: 0 10px;
   border: 0;
-  border-bottom: 1px solid var(--nexus-ui-border);
-  background: rgb(255 255 255 / 96%);
+  border-bottom: 1px solid var(--nexus-ui-header-border);
+  background: var(--nexus-ui-header-bg);
   box-shadow: var(--nexus-ui-shadow);
   color: var(--nexus-ui-text);
   font-family: Inter, Pretendard, "Noto Sans KR", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   line-height: 1;
-  backdrop-filter: blur(12px);
-}
-
-html[data-nexus-ui-theme="dark"] .nexus-ui-header {
-  border-bottom-color: #253246;
-  background: rgb(7 17 30 / 97%);
-  color: #f7fbff;
 }
 
 .nexus-ui-brand {
@@ -102,26 +113,21 @@ html[data-nexus-ui-theme="dark"] .nexus-ui-logo--dark {
   max-width: 110px;
   overflow: hidden;
   padding: 5px 8px;
-  border: 1px solid var(--nexus-ui-border);
+  border: 1px solid var(--nexus-ui-header-border);
   border-radius: 999px;
-  color: var(--nexus-ui-muted);
+  color: var(--nexus-ui-tab-text);
   font-size: 10px;
-  font-weight: 900;
+  font-weight: 600;
   letter-spacing: -.02em;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-html[data-nexus-ui-theme="dark"] .nexus-ui-brand__current {
-  border-color: #34465f;
-  color: #afbdcc;
-}
-
 .nexus-ui-nav {
   display: flex;
-  align-items: stretch;
+  align-items: center;
   min-width: 0;
-  height: 100%;
+  height: 44px;
   overflow-x: auto;
   overflow-y: hidden;
   overscroll-behavior-inline: contain;
@@ -134,165 +140,233 @@ html[data-nexus-ui-theme="dark"] .nexus-ui-brand__current {
   display: none;
 }
 
+.nexus-ui-nav__track {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  height: 44px;
+  gap: 4px;
+  padding: 3px;
+  border-radius: 11px;
+  background: var(--nexus-ui-tab-group-bg);
+}
+
 .nexus-ui-nav__link {
   position: relative;
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
-  min-height: 44px;
-  padding: 0 11px;
-  color: #536276;
-  font-size: 11px;
-  font-weight: 800;
+  width: auto;
+  min-width: 96px;
+  height: 38px;
+  min-height: 38px;
+  padding: 0 12px;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--nexus-ui-tab-text);
+  font-size: 13px;
+  font-weight: 600;
   letter-spacing: -.02em;
   text-decoration: none;
+  transition: color 150ms ease, background-color 150ms ease;
 }
 
-.nexus-ui-nav__link::after {
-  position: absolute;
-  right: 10px;
-  bottom: 5px;
-  left: 10px;
-  height: 2px;
-  border-radius: 99px;
-  background: transparent;
-  content: "";
+.nexus-ui-nav__link:hover {
+  background: var(--nexus-ui-tab-hover-bg);
+  color: var(--nexus-ui-tab-active-text);
 }
 
-.nexus-ui-nav__link:hover,
 .nexus-ui-nav__link:focus-visible {
-  color: #0f766e;
-  background: #edf9f6;
-  outline: none;
+  outline: 2px solid var(--nexus-ui-focus);
+  outline-offset: -2px;
+  background: var(--nexus-ui-tab-hover-bg);
+  color: var(--nexus-ui-tab-active-text);
 }
 
 .nexus-ui-nav__link.is-current {
-  color: #075f52;
-  background: #e7f8f3;
-}
-
-.nexus-ui-nav__link.is-current::after {
-  background: var(--nexus-ui-teal);
-}
-
-html[data-nexus-ui-theme="dark"] .nexus-ui-nav__link {
-  color: #adbac9;
-}
-
-html[data-nexus-ui-theme="dark"] .nexus-ui-nav__link:hover,
-html[data-nexus-ui-theme="dark"] .nexus-ui-nav__link:focus-visible,
-html[data-nexus-ui-theme="dark"] .nexus-ui-nav__link.is-current {
-  color: #72ddc5;
-  background: #102c2d;
+  background: var(--nexus-ui-tab-active-bg);
+  color: var(--nexus-ui-tab-active-text);
 }
 
 .nexus-ui-theme {
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
-  gap: 2px;
+  justify-content: center;
+  gap: 6px;
+  height: 44px;
   margin-left: 10px;
-  padding: 3px;
-  border: 1px solid var(--nexus-ui-border);
-  border-radius: 8px;
-  background: var(--nexus-ui-panel-subtle);
+  color: var(--nexus-ui-header-icon);
 }
 
-.nexus-ui-theme__button {
-  min-height: 34px;
+.nexus-ui-theme__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  color: inherit;
+  font-size: 16px;
+  line-height: 1;
+  user-select: none;
+}
+
+.nexus-ui-theme__switch {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 42px;
+  align-items: center;
+  width: 42px;
+  height: 28px;
   margin: 0;
-  padding: 0 9px;
+  padding: 0;
   border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--nexus-ui-muted);
+  border-radius: 999px;
+  background: var(--nexus-ui-tab-active-bg);
+  color: inherit;
   cursor: pointer;
-  font: inherit;
-  font-size: 10px;
-  font-weight: 900;
-  white-space: nowrap;
+  transition: background-color 150ms ease;
 }
 
-.nexus-ui-theme__button:hover,
-.nexus-ui-theme__button:focus-visible {
-  color: var(--nexus-ui-text);
-  outline: 2px solid color-mix(in srgb, var(--nexus-ui-teal) 45%, transparent);
-  outline-offset: -2px;
+.nexus-ui-theme__switch::after {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgb(15 23 42 / 24%);
+  content: "";
+  transition: transform 150ms ease;
 }
 
-.nexus-ui-theme__button.is-active {
-  background: var(--nexus-ui-panel-bg);
-  box-shadow: 0 1px 4px rgb(15 23 42 / 12%);
-  color: #087565;
+.nexus-ui-theme__switch[aria-checked="true"] {
+  background: #3776a8;
 }
 
-html[data-nexus-ui-theme="dark"] .nexus-ui-theme {
-  border-color: #34465f;
-  background: #0d1b2d;
+.nexus-ui-theme__switch[aria-checked="true"]::after {
+  transform: translateX(14px);
 }
 
-html[data-nexus-ui-theme="dark"] .nexus-ui-theme__button {
-  color: #9faebf;
+.nexus-ui-theme__switch:hover {
+  background: var(--nexus-ui-tab-hover-bg);
 }
 
-html[data-nexus-ui-theme="dark"] .nexus-ui-theme__button.is-active {
-  background: #18324a;
-  color: #72ddc5;
+.nexus-ui-theme__switch[aria-checked="true"]:hover {
+  background: #416f96;
+}
+
+.nexus-ui-theme__switch:focus-visible {
+  outline: 2px solid var(--nexus-ui-focus);
+  outline-offset: 2px;
 }
 
 @media (max-width: 760px) {
+  :root {
+    --nexus-ui-header-height: 104px;
+  }
+
   .nexus-ui-header {
-    grid-template-columns: auto minmax(120px, 1fr) auto;
-    padding-inline: 8px;
+    grid-template:
+      "brand theme" 60px
+      "nav nav" 44px
+      / minmax(0, 1fr) auto;
+    align-items: center;
+    padding: 0 8px;
   }
 
   .nexus-ui-brand {
+    grid-area: brand;
+    min-width: 112px;
     gap: 0;
-    padding-right: 7px;
+    padding-right: 8px;
   }
 
   .nexus-ui-brand__logo {
-    flex-basis: 98px;
-    width: 98px;
-    height: 26px;
+    flex-basis: 104px;
+    width: 104px;
+    height: 27px;
   }
 
   .nexus-ui-logo {
-    width: 98px;
-    height: 26px;
+    width: 104px;
+    height: 27px;
   }
 
   .nexus-ui-brand__current {
     display: none;
   }
 
+  .nexus-ui-nav {
+    grid-area: nav;
+    align-self: end;
+    width: 100%;
+    height: 44px;
+  }
+
+  .nexus-ui-nav__track {
+    height: 44px;
+    padding: 0;
+    border-radius: 9px;
+  }
+
   .nexus-ui-nav__link {
+    min-width: 96px;
+    height: 44px;
     min-height: 44px;
-    padding-inline: 10px;
+    padding-inline: 12px;
   }
 
   .nexus-ui-theme {
-    margin-left: 6px;
+    grid-area: theme;
+    min-width: 96px;
+    height: 60px;
+    margin-left: 8px;
   }
 
-  .nexus-ui-theme__button {
-    min-width: 34px;
-    padding-inline: 6px;
-    font-size: 0;
+  .nexus-ui-theme__switch {
+    flex-basis: 44px;
+    width: 44px;
+    height: 44px;
+    background: transparent;
   }
 
-  .nexus-ui-theme__button::before {
-    font-size: 15px;
-    line-height: 1;
+  .nexus-ui-theme__switch::before {
+    position: absolute;
+    top: 12px;
+    left: 5px;
+    width: 34px;
+    height: 20px;
+    border-radius: 999px;
+    background: var(--nexus-ui-tab-active-bg);
+    content: "";
+    transition: background-color 150ms ease;
   }
 
-  .nexus-ui-theme__button[data-nexus-ui-theme-value="light"]::before {
-    content: "☀";
+  .nexus-ui-theme__switch::after {
+    top: 14px;
+    left: 7px;
+    width: 16px;
+    height: 16px;
   }
 
-  .nexus-ui-theme__button[data-nexus-ui-theme-value="dark"]::before {
-    content: "☾";
+  .nexus-ui-theme__switch[aria-checked="true"] {
+    background: transparent;
+  }
+
+  .nexus-ui-theme__switch[aria-checked="true"]::before {
+    background: #3776a8;
+  }
+
+  .nexus-ui-theme__switch[aria-checked="true"]::after {
+    transform: translateX(14px);
+  }
+
+  .nexus-ui-theme__switch:hover,
+  .nexus-ui-theme__switch[aria-checked="true"]:hover {
+    background: transparent;
   }
 }
 @media (prefers-reduced-motion: reduce) {
