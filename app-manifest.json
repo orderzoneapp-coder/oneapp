@@ -20,7 +20,7 @@
       "path": "nexus/index.html",
       "kind": "web-entry",
       "status": "production",
-      "purpose": "Identify the master or delegated user, record login and logout through the deployed authentication service, and launch independent work apps without gating their local execution.",
+      "purpose": "Identify the master or delegated user, show the revision-checked company Snapshot, record login and logout through the deployed authentication service, and launch independent work apps without gating their local execution.",
       "productionWrites": true,
       "navigatesTo": [
         "master-lookup",
@@ -34,20 +34,56 @@
         "settings",
         "item-manager",
         "history-viewer",
-        "orderq-vnext"
+        "orderq-vnext",
+        "nexus-company"
       ],
       "coreCapabilities": [
         "basic login and logout",
         "master or delegated-user identification",
-        "independent work-app launcher"
+        "independent work-app launcher",
+        "authenticated company profile read with public-field projection and background revision verification"
       ],
       "dependencyMode": {
         "cachedSessionDisplay": "LOCAL_OPERATION",
         "sessionRefresh": "BACKGROUND_SYNC",
         "login": "SERVER_FINALIZE",
-        "logoutAudit": "BACKGROUND_SYNC"
+        "logoutAudit": "BACKGROUND_SYNC",
+        "companySnapshotDisplay": "LOCAL_OPERATION",
+        "companyRevisionRefresh": "BACKGROUND_SYNC"
       },
-      "offlinePolicy": "A cached unexpired home session remains visible while server verification is delayed, and work apps do not load the login runtime or wait for the authentication service."
+      "offlinePolicy": "A cached unexpired home session and last normal company Snapshot remain visible while server verification is delayed, and work apps do not load the login runtime or wait for the authentication service.",
+      "services": [
+        "nexus-auth-gateway"
+      ],
+      "sharedContracts": [
+        "nexus-auth",
+        "company-profile"
+      ]
+    },
+    {
+      "id": "nexus-company",
+      "name": "NEXUS Company Profile",
+      "path": "nexus/company.html",
+      "kind": "web-entry",
+      "status": "production",
+      "purpose": "Let only OWNER_MASTER users with admin.company read and revise the server-authoritative company profile while preserving revision conflicts and audit writes.",
+      "productionWrites": true,
+      "navigatesTo": [
+        "nexus-home"
+      ],
+      "services": [
+        "nexus-auth-gateway"
+      ],
+      "sharedContracts": [
+        "nexus-auth",
+        "company-profile"
+      ],
+      "dependencyMode": {
+        "profileRead": "SERVER_FINALIZE",
+        "profileWrite": "SERVER_FINALIZE",
+        "addressLookup": "BACKGROUND_SYNC"
+      },
+      "offlinePolicy": "Server failure leaves the last NEXUS home Snapshot unchanged and is never converted into an empty company record."
     },
     {
       "id": "merchops",
@@ -340,6 +376,20 @@
       ]
     },
     {
+      "id": "nexus-auth-gateway",
+      "name": "NEXUS Auth Gateway Transport",
+      "path": "nexus/company-transport.js",
+      "kind": "external-service-transport",
+      "status": "production",
+      "purpose": "Call the deployed NEXUS_AUTH_V2 Apps Script endpoint with scoped app contexts; the server implementation deployed at the endpoint was not present in main at baseline 24429a1.",
+      "productionWrites": true,
+      "sourceStatus": "DEPLOYED_SERVER_SOURCE_NOT_PRESENT_ON_BASELINE_MAIN",
+      "sharedContracts": [
+        "nexus-auth",
+        "company-profile"
+      ]
+    },
+    {
       "id": "cloud-sync",
       "name": "ONEAPP Cloud Sync",
       "path": "code.gs",
@@ -381,6 +431,54 @@
     }
   ],
   "sharedDataContracts": [
+    {
+      "id": "nexus-auth",
+      "owner": "nexus-auth-gateway",
+      "consumers": [
+        "nexus/index.html",
+        "nexus/company.html"
+      ],
+      "schemaVersion": "NEXUS_AUTH_V2",
+      "resources": {
+        "productionWebApp": "https://script.google.com/macros/s/AKfycbwIaouo6kzff1J3H3B0K5bWuAEJAcp4K21tyEkL2BuM-SiNsPDGGYVBEXIkBeUGwp4i/exec",
+        "sessionStorageKey": "oneapp.nexus.home.session.v1",
+        "appContextAction": "nexus_auth_app_context",
+        "gatewayAction": "nexus_gateway",
+        "baselineMain": "24429a1cdb53bbe084ef08b6516d012737a01808",
+        "serverSourceOnBaselineMain": false
+      }
+    },
+    {
+      "id": "company-profile",
+      "owner": "nexus-company",
+      "consumers": [
+        "nexus/index.html",
+        "nexus/company.html",
+        "nexus/company-transport.js"
+      ],
+      "schemaVersion": "NEXUS_COMPANY_PROFILE_V1",
+      "writerPolicy": "The server requires a current Session, OWNER_MASTER/admin.company, an app-scoped Gateway context, and expectedRevision for every profile write.",
+      "resources": {
+        "homeReadOperation": "company.profile_read",
+        "homeReadAppId": "nexus-home",
+        "homeReadPayload": {},
+        "homeProjectionFields": [
+          "companyName",
+          "businessNumber",
+          "representativeName",
+          "companyPhone",
+          "businessAddress",
+          "homepage",
+          "revision"
+        ],
+        "homeProjectionAudience": "authenticated NEXUS users",
+        "adminReadOperation": "company.profile_read",
+        "adminWriteOperation": "company.profile_write",
+        "companyId": "ONEAPP",
+        "snapshotStorage": "sessionStorage-only non-authoritative public-field projection; full profile is never cached",
+        "serverRevisionAndAudit": true
+      }
+    },
     {
       "id": "customer-master",
       "owner": "customer-master",
@@ -682,6 +780,14 @@
     }
   ],
   "navigationEdges": [
+    [
+      "nexus-home",
+      "nexus-company"
+    ],
+    [
+      "nexus-company",
+      "nexus-home"
+    ],
     [
       "merchops",
       "smart-parser"

@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="ko" data-nexus-ui-app="company">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>회사정보 - NEXUS</title>
+  <link rel="icon" type="image/svg+xml" href="/nexus/assets/nexus-favicon.svg">
+  <script src="/nexus/common/nexus-ui-theme-init.js?v=1.3.1"></script>
+  <link rel="stylesheet" href="/nexus/common/nexus-ui.css?v=1.3.1">
+  <link rel="stylesheet" href="/nexus/common/nexus-ui-app-themes.css?v=1.3.1">
+  <link rel="stylesheet" href="/nexus/company.css?v=1.0.0">
+  <script defer src="/nexus/common/nexus-ui.js?v=1.3.1"></script>
+  <script type="module" src="/nexus/company.js?v=1.0.0"></script>
+</head>
+<body>
+  <header class="AppHeader company-app-header">
+    <div>
+      <strong>회사정보</strong>
+      <span>서버 원본과 revision을 기준으로 조회·수정합니다.</span>
+    </div>
+    <div class="company-header-actions">
+      <span id="companyRevision" class="company-revision">revision -</span>
+      <button id="editCompanyButton" class="company-button company-button--primary" type="button" hidden>회사정보 수정</button>
+    </div>
+  </header>
+
+  <main class="company-shell">
+    <div id="companyPageNotice" class="company-notice" data-level="normal" role="status" aria-live="polite">
+      로그인과 관리자 권한을 확인하고 있습니다.
+    </div>
+
+    <section id="companyView" class="company-view" hidden aria-labelledby="companyViewTitle">
+      <div class="company-section-heading">
+        <div><p>SERVER PROFILE</p><h1 id="companyViewTitle">등록 회사정보</h1></div>
+      </div>
+      <div id="companyDetails" class="company-detail-sections"></div>
+      <section class="company-panel" aria-labelledby="accountingTitle">
+        <div class="company-panel-title"><h2 id="accountingTitle">회계기수</h2><span>조회</span></div>
+        <div id="accountingPeriods" class="company-periods"></div>
+      </section>
+      <p id="companyMeta" class="company-meta"></p>
+    </section>
+
+    <form id="companyForm" class="company-form" hidden novalidate>
+      <div class="company-section-heading">
+        <div><p>REVISION WRITE</p><h1>회사정보 수정</h1></div>
+        <p>저장 시 서버가 관리자 권한과 현재 revision을 다시 검사합니다.</p>
+      </div>
+      <div id="companyFields" class="company-field-sections"></div>
+      <div class="company-form-actions">
+        <button id="cancelCompanyButton" class="company-button" type="button">취소</button>
+        <button id="saveCompanyButton" class="company-button company-button--primary" type="submit">저장</button>
+      </div>
+    </form>
+  </main>
+</body>
+</html>
