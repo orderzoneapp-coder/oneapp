@@ -1,7 +1,9 @@
 (() => {
   'use strict';
 
-  const VERSION = '1.3.1';
+  const VERSION = '1.4.0';
+  const VISIBILITY_STORAGE_KEY = 'oneapp.nexus.ui.visibility.v1';
+  const VISIBILITY_SCHEMA = 'NEXUS_UI_VISIBILITY_V1';
   const root = document.documentElement;
   const controller = window.ONEAPP_NEXUS_UI_THEME;
   const scriptUrl = new URL(document.currentScript?.src || '/nexus/common/nexus-ui.js', location.href);
@@ -21,6 +23,21 @@
     Object.freeze({ id: 'history-viewer', label: '변경이력', path: 'history_viewer.html' }),
     Object.freeze({ id: 'orderq-vnext', label: '주문현황', path: 'orderq/index.html' }),
   ]);
+
+  const visibleApps = () => {
+    try {
+      const projection = JSON.parse(window.sessionStorage.getItem(VISIBILITY_STORAGE_KEY) || 'null');
+      if (!projection || projection.schemaVersion !== VISIBILITY_SCHEMA || projection.configured !== true) return APPS;
+      if (!Array.isArray(projection.visibleAppIds)) return APPS;
+      const ids = projection.visibleAppIds;
+      const valid = ids.every((id, index) => typeof id === 'string'
+        && APPS.some((app) => app.id === id)
+        && ids.indexOf(id) === index);
+      return valid ? APPS.filter((app) => ids.includes(app.id)) : APPS;
+    } catch {
+      return APPS;
+    }
+  };
 
   const element = (tag, className, text) => {
     const node = document.createElement(tag);
@@ -81,7 +98,7 @@
     const nav = element('nav', 'nexus-ui-nav');
     nav.setAttribute('aria-label', '앱 이동');
     const navTrack = element('div', 'nexus-ui-nav__track');
-    APPS.forEach((app) => {
+    visibleApps().forEach((app) => {
       const link = element('a', 'nexus-ui-nav__link', app.label);
       link.href = asset(app.path);
       link.dataset.nexusUiAppTarget = app.id;

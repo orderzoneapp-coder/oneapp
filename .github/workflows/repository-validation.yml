@@ -54,6 +54,11 @@ jobs:
       - name: Test NEXUS basic login and home contracts
         run: node scripts/test-nexus-basic-login-home.mjs
 
+      - name: Test NEXUS minimal user-control contracts
+        run: |
+          node scripts/test-nexus-auth-min-control-server.mjs
+          node scripts/test-nexus-auth-min-control-ui.mjs
+
       - name: Test NEXUS company profile contracts
         run: node scripts/test-nexus-company-profile.mjs
 

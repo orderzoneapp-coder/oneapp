@@ -1,9 +1,9 @@
 # ONEAPP Application Architecture
 
 - Repository: orderzoneapp-coder/oneapp
-- Architecture document version: 2.1.6
-- Last reviewed: 2026-08-29
-- Current-source baseline: `2e164ef924bb42e7c76bcf640dd03c55c1bdbeab`
+- Architecture document version: 2.1.8
+- Last reviewed: 2026-08-30
+- Current-source baseline: `b6073103ca5068f957d8f4a1218bd59182dbc596`
 - Machine-readable companion: app-manifest.json
 
 ## 1. 문서 목적
@@ -57,11 +57,12 @@ ONEAPP은 여러 업무 앱을 한 화면에 묶는 단일 거대 앱이 아니�
 - `Item_manager.html`은 manifest의 `item-manager`로 등록된 별도 상품 관리 파일럿이다. `Master.html`, `ItemMaster.html`과 현재 경로·저장계약을 각각 유지한다.
 - `customer-master/index.html`은 독립 거래처관리 파일럿이다. `oneapp-customermaster-v1` DB의 거래처 원본·별칭·외부코드 매핑·변경이력·Excel 작업을 소유하고 읽기 전용 Snapshot Adapter를 제공한다. SmartInput과 ORDER Q는 아직 이 계약의 필수 소비자로 전환하지 않는다.
 - ORDER Q의 `orderops`와 `orderq-vnext`는 파일럿이며 각자의 로컬·클라우드 계약을 유지한다.
-- NEXUS 기본 로그인 홈은 `nexus/index.html`에서 운영한다. 배포된 `NEXUS_AUTH_V2` 서비스로 사용자 식별과 로그인·로그아웃 기록을 처리하며, 저장된 홈 Session은 즉시 표시한 뒤 서버 상태를 백그라운드에서 확인한다.
-- NEXUS 홈 회사정보 카드는 탭 Session에 저장한 마지막 정상 공개필드 Snapshot을 즉시 표시하고, 인증 사용자용 활성 계약 `company.profile_read`를 `nexus-home` 앱 컨텍스트로 호출해 revision을 백그라운드 확인한다. 전체 응답에서는 회사명·사업자등록번호·대표자·회사전화·주소1/주소2 결합·홈페이지·revision만 명시 투영하며 자택전화·휴대전화·개인 이메일·세금계산서 이메일과 전체 profile은 캐시하지 않는다. 서버 실패는 `ERROR` 또는 `STALE`이며 `EMPTY`나 0건으로 바꾸지 않는다.
+- NEXUS 기본 로그인 홈은 `nexus/index.html`에서 운영한다. 배포된 `NEXUS_AUTH_V2` 서비스로 사용자 식별, 최초 활성화와 로그인·로그아웃 기록을 처리하며, 저장된 홈 Session은 즉시 표시한 뒤 서버 상태를 백그라운드에서 확인한다. `OWNER_MASTER`의 최소 사용자 관리는 `nexus/admin/index.html`에 한정하고 사용자 삭제·기능권한·서비스 연결·승인 UI를 두지 않는다.
+- NEXUS 홈은 회사정보 카드·상태·Snapshot·Gateway 조회 없이 하단에 `원앱 | NEXUS 사내 업무 시스템`이라는 고정 소유 표시만 렌더링한다. 이 Footer는 Session Token·사용자 식별·회사정보 revision·서버 상태에 의존하지 않으며, 회사정보 장애가 홈 초기 표시와 앱 카드에 영향을 주지 않는다.
 - `nexus/company.html`은 서버 권위 회사정보의 관리자 조회·수정 화면이다. `OWNER_MASTER`와 `admin.company`, 앱 컨텍스트, `expectedRevision`은 서버 Gateway가 최종 강제하며 성공한 쓰기는 revision과 감사이력을 남긴 뒤 재조회한다.
+- 운영 NEXUS Gateway v24에서 읽기 전용으로 확보한 정확한 서버 기준본은 `nexus/server/nexus-auth-gateway.gs`와 같은 폴더의 Apps Script manifest에 보존한다. 최소 사용자 통제 변경은 이 기준본 위에서만 수행하며 회사정보·업무 Gateway 레지스트리를 삭제하거나 과거 과잉 소스로 교체하지 않는다.
 - 기준 main `24429a1cdb53bbe084ef08b6516d012737a01808`에는 운영 중인 NEXUS Gateway·회사정보 Apps Script 서버 소스가 없었고, 상류 ONEAPP Apps Script v44 롤백은 회사정보 모듈과 라우트를 포함하지 않아 인증된 `company.profile_read`를 처리하지 못했다. `code.gs`와 `company-profile.gs`는 기존 Foundation Gateway binding, revision, 감사, 원자적 백업, 1회 migration ledger 계약을 복원한다. 공식 배포는 기존 상류 deployment ID를 유지하고 v44를 롤백 기준으로 보존한다.
-- 업무 앱 공통헤더는 사용자 정보를 표시하거나 인증 Runtime을 로드하지 않는다. 기존 권한별 앱 차단, 업무 Gateway 프록시와 앱 실행 통제 Runtime은 계속 롤백 상태다.
+- 업무 앱 공통헤더는 사용자 정보를 표시하거나 인증 Runtime을 로드하지 않는다. 같은 탭의 `NEXUS_UI_VISIBILITY_V1` 비민감 투영을 동기식으로 읽어 탭만 숨길 수 있으며, 투영 부재·오류 시 전체 정적 목록으로 복구한다. 기존 권한별 앱 차단, 업무 Gateway 프록시와 앱 실행 통제 Runtime은 계속 롤백 상태다.
 - `coreEngine.js`는 여러 앱이 사용하는 현행 공유 라이브러리지만, 앱 Core를 부팅시키거나 전체 앱 준비 상태를 결정하는 상위 Runtime으로 확대하지 않는다.
 - GitHub Pages는 현재 저장소 단위로 배포된다. 앱 독립 배포 목표는 우선 앱별 변경·검증·PR·롤백 범위를 분리하는 것이며, 물리적 배포 단위 분리는 별도 호스팅 변경이 승인될 때만 수행한다.
 
@@ -113,8 +114,8 @@ NEXUS 공통 UI ── 정적 이동·테마·공통 상태 ──> 각 독립 �
 
 | 앱·영역 | 현재 상태 | 현재 사실 | 목표 역할 |
 |---|---|---|---|
-| NEXUS 홈·공통 UI | 운영 | 기본 로그인·로그아웃과 앱 홈, 마지막 정상 회사정보 Snapshot·백그라운드 revision 확인, 정적 헤더·로고 홈 이동·일반/다크 테마. 권한별 업무 앱 차단·전역 Gateway Runtime은 롤백 상태 | 사용자 식별과 앱 연결을 제공하되 업무 앱 실행은 통제하지 않음 |
-| NEXUS 회사정보 | 운영 | 홈은 인증 사용자에게 `company.profile_read` 응답의 공개필드 projection만 읽기 전용 표시하고 관리자에게만 수정 진입을 표시. 관리 화면의 보호 조회·쓰기·revision·감사는 서버 Gateway가 확정 | 회사 원본과 공개필드 Snapshot의 독립 경계를 유지하고 다른 업무 앱 저장소를 수정하지 않음 |
+| NEXUS 홈·공통 UI | 운영 | 기본 로그인·최초 활성화·로그아웃과 앱 홈, `OWNER_MASTER` 최소 사용자 관리, 사용자별 비민감 카드·탭 노출, 서버 비의존 고정 소유 Footer, 정적 헤더·로고 홈 이동·일반/다크 테마. 권한별 업무 앱 차단·전역 Gateway Runtime은 롤백 상태 | 사용자 식별과 앱 연결을 제공하되 업무 앱 실행은 통제하지 않음 |
+| NEXUS 회사정보 | 운영 | 전용 상세 화면의 보호 조회·쓰기·revision·감사는 서버 Gateway가 확정하며, 홈·공통헤더·업무 앱은 회사정보 서버를 조회하지 않음 | 회사 원본과 전용 관리 경계를 유지하고 다른 업무 앱 저장소를 수정하지 않음 |
 | 상품관리 (`Master.html`) | 파일럿·공식 | manifest의 `master-lookup` 공식 경로이며 기존 운영 상품 저장·revision·history·Cloud 계약을 사용 | 유일한 공식 상품관리 구현으로 유지 |
 | ItemMaster (`ItemMaster.html`) | 폐기·호환 | 중복 앱 기능 없이 `Master.html`을 안내하는 정적 호환 주소 | 레거시 주소 호환만 유지하고 운영 쓰기 금지 |
 | Item Manager (`Item_manager.html`) | 파일럿·유지 | 기존 `product-master` 계약을 사용하는 별도 상품 기초정보 관리 화면 | Master 교체와 무관하게 별도 상품 관리 화면으로 유지 |
@@ -144,6 +145,7 @@ NEXUS 공통 UI ── 정적 이동·테마·공통 상태 ──> 각 독립 �
 | 앱 ID | 현재 경로 | 상태 | 현재 책임 |
 |---|---|---|---|
 | `nexus-home` | `nexus/index.html` | 운영 | 기본 로그인·로그아웃 기록, 사용자 식별과 독립 업무 앱 이동 |
+| `nexus-admin` | `nexus/admin/index.html` | 운영 | `OWNER_MASTER`의 일반 사용자 추가·이름·사용상태·비민감 앱 노출과 최소 감사 조회. 삭제·기능권한·서비스 연결은 소유하지 않음 |
 | `merchops` | `MerchOps.html` | 운영 | 상품정보 가공·가격·프로모션과 현재 product-master 계약 |
 | `dataops` | `DataOps.html` | 운영 | 매입·매출·재고·원가·성과 분석 |
 | `smart-parser` | `SmartParser.html` | 운영 | 외부 문서 해석, 공급자 제외, 현재 상품정보·중지상태 반영 |
@@ -191,11 +193,11 @@ Production files must not be reorganized into folders without first updating and
 - navigation regression tests;
 - external bookmarks or operational links where applicable.
 
-현재 `nexus/common/nexus-ui.js`와 관련 정적 자산은 앱 이동·NEXUS 홈 이동·현재 앱 표시·테마만 제공한다. 사용자명·계정 유형·Session 상태는 업무 앱 공통헤더에 표시하지 않는다. 공통 UI는 실행 중 manifest, 인증 서버, Gateway 또는 업무 저장소를 조회하지 않으며, 로드 실패가 각 앱의 업무 스크립트 실행을 차단해서는 안 된다.
+현재 `nexus/common/nexus-ui.js`와 관련 정적 자산은 앱 이동·NEXUS 홈 이동·현재 앱 표시·테마와 비권위 앱 탭 노출만 제공한다. 사용자명·계정 유형·Session 상태는 업무 앱 공통헤더에 표시하지 않는다. 공통 UI는 `oneapp.nexus.ui.visibility.v1`의 `schemaVersion`, `configured`, `visibleAppIds`만 동기식으로 읽고 수정하지 않으며, 실행 중 manifest, 인증 서버, Gateway 또는 업무 저장소를 조회하지 않는다. 투영 부재·오류는 전체 탭 표시로 복구하고 공통 UI 로드 실패가 각 앱의 업무 스크립트 실행을 차단해서는 안 된다.
 
-`nexus/index.html`과 `nexus/nexus.js`는 기본 로그인 홈 경계다. 로그인 성공 시 NEXUS 홈에서만 사용자명과 `MASTER` 또는 `위임 사용자` 구분을 표시하고, 업무 앱 이동에는 권한별 필터나 서버 재검사를 적용하지 않는다. 유효기간이 남은 탭 Session은 홈을 즉시 표시하는 데 사용하며 서버 최신 상태는 백그라운드에서 확인한다. 로그인 서버 장애가 업무 앱의 직접 진입·화면 표시·로컬 기본 작업으로 확산되어서는 안 된다. 앱별 권한, 연동 허용, 업무이력 Adapter와 Gateway 정책은 별도 확정 전 구현하지 않는다.
+`nexus/index.html`과 `nexus/nexus.js`는 기본 로그인 홈 경계다. 로그인 전·후 모두 하단에 `원앱 | NEXUS 사내 업무 시스템`을 고정 표시하며, 이 문구는 서버 조회·Session Token·사용자 정보·revision을 사용하지 않는다. 로그인 성공 시 NEXUS 홈에서만 사용자명과 `MASTER` 또는 `위임 사용자` 구분을 표시한다. 서버가 제공한 `visibleAppsConfigured`와 검증된 12개 `visibleAppIds`를 식별정보 없이 `NEXUS_UI_VISIBILITY_V1`으로 같은 탭에 투영해 홈 카드와 공통헤더 탭에만 적용하며, 직접 URL과 앱 실행권한에는 사용하지 않는다. 유효기간이 남은 탭 Session은 홈을 즉시 표시하는 데 사용하며 서버 최신 상태는 백그라운드에서 확인한다. 로그인 서버 장애가 업무 앱의 직접 진입·화면 표시·로컬 기본 작업으로 확산되어서는 안 된다. 앱별 권한, 연동 허용, 업무이력 Adapter와 Gateway 정책은 별도 확정 전 구현하지 않는다.
 
-회사정보는 이 일반 원칙의 승인된 독립 경계다. `nexus/company-transport.js`는 NEXUS 홈과 회사관리 화면에서만 배포된 Gateway를 호출하며 전역 `fetch`, 공통헤더 또는 업무 앱 부팅을 바꾸지 않는다. 홈 공개 Snapshot cache는 `sessionStorage`의 비권위 표시 가속 자료일 뿐 서버 원본·기본값·매 로드 seed가 아니다. 관리 쓰기는 변경된 필드만 보내고 `expectedRevision` 충돌 시 최신 서버 원본을 다시 읽는다. 사업자등록증 원본과 대표자 생년월일은 이 경계에서 수집·저장·로그하지 않는다.
+회사정보는 이 일반 원칙의 승인된 독립 경계다. `nexus/company-transport.js`는 회사관리 화면에서만 배포된 Gateway를 호출하며 홈·전역 `fetch`·공통헤더·업무 앱 부팅을 바꾸지 않는다. 홈은 회사정보 Snapshot을 저장하거나 읽지 않는다. 관리 쓰기는 변경된 필드만 보내고 `expectedRevision` 충돌 시 최신 서버 원본을 다시 읽는다. 사업자등록증 원본과 대표자 생년월일은 이 경계에서 수집·저장·로그하지 않는다.
 
 #### 5.1.1 NEXUS 공통 UI/UX 단일 계약
 

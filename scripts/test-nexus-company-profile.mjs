@@ -55,18 +55,11 @@ await assert.rejects(
   'an unauthenticated write must not reach the Gateway',
 );
 
-assert.match(homeHtml, /id="companyStatus"[\s\S]*READY|data-status="STALE"/, 'home must expose company status semantics');
-assert.match(homeSource, /appId: 'nexus-home',[\s\S]*operationId: 'company\.profile_read',[\s\S]*payload: \{\}/, 'home must use the active v21 authenticated profile read contract');
-assert.match(homeSource, /const cachedRevision = Number\(cached\?\.snapshot\?\.revision \|\| 0\)/, 'home must compare the cached revision in background');
-assert.match(homeSource, /snapshot\.revision < cachedRevision[\s\S]*setCompanyState\('STALE'/, 'a lower server revision must preserve the last normal Snapshot');
-assert.match(homeSource, /snapshot\.revision === cachedRevision[\s\S]*setCompanyState\('READY'/, 'an equal server revision must become READY without rewriting the cache');
-assert.match(homeSource, /businessAddress: \[cleanText\(profile\.address1\), cleanText\(profile\.address2\)\]\.filter\(Boolean\)\.join\(' '\)/, 'home must project only non-empty address values');
-for (const forbidden of ['homePhone', 'mobile', 'taxInvoiceEmail', "profile.email"]) {
-  assert.doesNotMatch(homeSource.slice(homeSource.indexOf('const publicCompanyProjection'), homeSource.indexOf('const validCompanySnapshot')), new RegExp(forbidden.replace('.', '\\.')), `${forbidden} must not enter the cached projection`);
-}
-assert.match(homeSource, /if \(cached\)[\s\S]*setCompanyState\('STALE'/, 'a server failure must preserve the last normal Snapshot');
-assert.match(homeSource, /companyEditLink\.hidden = !isCompanyAdministrator\(session\)/, 'only a company administrator may see the edit entry');
-assert.doesNotMatch(homeSource, /localStorage/, 'the company Snapshot must not be persisted in localStorage');
+assert.match(homeHtml, /<footer class="nexus-footer">원앱 \| NEXUS 사내 업무 시스템<\/footer>/, 'home must expose the fixed ownership Footer');
+assert.doesNotMatch(homeHtml, /nexus-company-card|companyStatus|companyName|companySummary|companyAddress|companyNotice|companyEditLink|READY|ERROR/, 'home must not retain company-card or company-state DOM');
+assert.doesNotMatch(homeHtml, /사업자번호|대표자|주소|연락처/, 'the Footer must not expose company fields');
+assert.doesNotMatch(homeSource, /company-transport|callCompanyGateway|company\.profile_read|COMPANY_SNAPSHOT|refreshCompany|revision/i, 'home startup must remain independent from the company service');
+assert.doesNotMatch(homeSource, /localStorage/, 'home authentication state must not be persisted in localStorage');
 
 assert.match(companyHtml, /nexus-ui-theme-init\.js\?v=1\.3\.1/, 'company management must consume the current common UI contract');
 assert.match(companyHtml, /company\.js\?v=1\.0\.1/, 'company management must cache-bust the app-local header correction');
@@ -113,4 +106,4 @@ assert.match(serverSource, /companyProfileAtomic_\(ss, \['PROFILE', 'AUDIT', 'MI
 assert.match(serverSource, /\(image\|file\|blob\|base64\|rawtext\|ocrtext\|birth\|생년월일\|주민등록\)[\s\S]*COMPANY_CERTIFICATE_SENSITIVE_DATA_DENIED/, 'the server must reject certificate originals, raw OCR text, and representative birth data');
 assert.doesNotMatch(serverSource, /FileReader|localStorage/i, 'the server module must not use browser file or storage APIs');
 
-console.log('NEXUS company profile contracts passed (55 checks).');
+console.log('NEXUS company profile contracts passed (47 checks).');

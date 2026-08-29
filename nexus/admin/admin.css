@@ -1,0 +1,279 @@
+.nexus-admin-shell {
+  padding-bottom: 80px;
+}
+
+.nexus-admin-panel,
+.nexus-admin-empty {
+  padding-top: 56px;
+}
+
+.nexus-admin-heading,
+.nexus-admin-section__heading,
+.nexus-user-card__heading,
+.nexus-audit-item__heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.nexus-admin-heading h1 {
+  margin: 8px 0 10px;
+  font-size: clamp(34px, 5vw, 52px);
+  letter-spacing: -.045em;
+}
+
+.nexus-admin-heading p,
+.nexus-admin-section__heading p,
+.nexus-admin-empty p,
+.nexus-user-card__note,
+.nexus-activation-result p {
+  margin: 0;
+  color: var(--nexus-muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.nexus-admin-message {
+  margin: 14px 0;
+}
+
+.nexus-admin-section {
+  margin-top: 24px;
+  padding: 24px;
+  border: 1px solid var(--nexus-border);
+  border-radius: 16px;
+  background: rgb(18 27 40 / 90%);
+}
+
+.nexus-admin-section__heading {
+  align-items: end;
+  margin-bottom: 22px;
+}
+
+.nexus-admin-section h2 {
+  margin: 0 0 6px;
+  font-size: 21px;
+}
+
+.nexus-admin-form,
+.nexus-user-edit {
+  display: grid;
+  gap: 16px;
+}
+
+.nexus-admin-form {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.nexus-admin-form label,
+.nexus-user-edit > label {
+  display: grid;
+  gap: 7px;
+  color: #c6d0dd;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.nexus-admin-form input,
+.nexus-user-edit input {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--nexus-border);
+  border-radius: 9px;
+  background: #0d1520;
+  color: var(--nexus-text);
+}
+
+.nexus-app-picker {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.nexus-app-picker legend {
+  margin-bottom: 10px;
+  color: #c6d0dd;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.nexus-app-picker__grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.nexus-app-choice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 42px;
+  padding: 0 10px;
+  border: 1px solid var(--nexus-border);
+  border-radius: 8px;
+  color: #c5cfdd;
+  font-size: 12px;
+}
+
+.nexus-app-choice:has(input:checked) {
+  border-color: #417567;
+  background: rgb(5 174 148 / 10%);
+  color: var(--nexus-text);
+}
+
+.nexus-app-choice input {
+  width: 16px;
+  min-height: 16px;
+  margin: 0;
+  accent-color: var(--nexus-accent);
+}
+
+.nexus-admin-submit {
+  width: min(220px, 100%);
+  margin: 0;
+}
+
+.nexus-activation-result {
+  margin-top: 18px;
+  padding: 18px;
+  border: 1px solid rgb(5 174 148 / 55%);
+  border-radius: 12px;
+  background: rgb(5 174 148 / 8%);
+}
+
+.nexus-activation-result output {
+  display: block;
+  margin: 10px 0;
+  padding: 12px;
+  overflow-wrap: anywhere;
+  border-radius: 8px;
+  background: #0a121b;
+  color: #a9eadf;
+  font: 700 14px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace;
+  user-select: all;
+}
+
+.nexus-user-list {
+  display: grid;
+  gap: 12px;
+}
+
+.nexus-user-card {
+  padding: 18px;
+  border: 1px solid var(--nexus-border);
+  border-radius: 12px;
+  background: #101925;
+}
+
+.nexus-user-card__heading {
+  margin-bottom: 16px;
+}
+
+.nexus-user-card__heading > div {
+  display: grid;
+  gap: 4px;
+}
+
+.nexus-user-card__heading span {
+  color: var(--nexus-muted);
+  font-size: 12px;
+}
+
+.nexus-user-status {
+  padding: 6px 9px;
+  border: 1px solid var(--nexus-border);
+  border-radius: 999px;
+  font-size: 11px !important;
+  font-weight: 800;
+}
+
+.nexus-user-status[data-status="ACTIVE"] {
+  border-color: rgb(5 174 148 / 55%);
+  color: #72dfce;
+}
+
+.nexus-user-status[data-status="SUSPENDED"] {
+  border-color: rgb(220 176 84 / 52%);
+  color: #dec382;
+}
+
+.nexus-user-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.nexus-user-save {
+  width: auto;
+  height: 44px;
+  margin: 0;
+  padding: 0 16px;
+}
+
+.nexus-audit-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.nexus-audit-item {
+  min-width: 0;
+  padding: 13px 14px;
+  border: 1px solid var(--nexus-border);
+  border-radius: 9px;
+  background: #101925;
+}
+
+.nexus-audit-item time,
+.nexus-audit-item p {
+  color: var(--nexus-muted);
+  font-size: 12px;
+}
+
+.nexus-audit-item__heading {
+  min-width: 0;
+}
+
+.nexus-audit-item__heading strong,
+.nexus-audit-item p {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.nexus-audit-item time {
+  flex: 0 0 auto;
+}
+
+.nexus-audit-item p {
+  margin: 6px 0 0;
+}
+
+@media (max-width: 760px) {
+  .nexus-admin-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .nexus-admin-form {
+    grid-template-columns: 1fr;
+  }
+
+  .nexus-app-picker__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 480px) {
+  .nexus-admin-section {
+    padding: 18px 14px;
+  }
+
+  .nexus-app-picker__grid {
+    grid-template-columns: 1fr;
+  }
+}

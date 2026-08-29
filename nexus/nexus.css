@@ -45,6 +45,8 @@ a {
 }
 
 .nexus-shell {
+  display: flex;
+  flex-direction: column;
   width: min(1180px, calc(100% - 40px));
   min-height: 100vh;
   margin: 0 auto;
@@ -74,6 +76,7 @@ a {
 
 .nexus-home-logo:focus-visible,
 .nexus-quiet-button:focus-visible,
+.nexus-quiet-link:focus-visible,
 .nexus-primary-button:focus-visible,
 .nexus-app-card:focus-visible,
 input:focus-visible {
@@ -122,6 +125,25 @@ input:focus-visible {
   cursor: pointer;
 }
 
+.nexus-quiet-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid var(--nexus-border);
+  border-radius: 9px;
+  color: #c2ccda;
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.nexus-quiet-link:hover {
+  border-color: var(--nexus-border-strong);
+  background: var(--nexus-panel-soft);
+  color: var(--nexus-text);
+}
+
 .nexus-quiet-button:hover {
   border-color: var(--nexus-border-strong);
   background: var(--nexus-panel-soft);
@@ -130,10 +152,10 @@ input:focus-visible {
 
 .nexus-login-panel {
   display: grid;
+  flex: 1;
   grid-template-columns: minmax(0, 1fr) minmax(320px, 420px);
   gap: clamp(56px, 10vw, 140px);
   align-items: center;
-  min-height: calc(100vh - 78px);
   padding: 64px 5vw 100px;
 }
 
@@ -177,6 +199,30 @@ input:focus-visible {
   color: #c6d0dd;
   font-size: 13px;
   font-weight: 700;
+}
+
+.nexus-form-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 4px;
+}
+
+.nexus-text-button {
+  min-height: 36px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #9dc6e5;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.nexus-text-button:hover {
+  color: #d5eafb;
+  text-decoration: underline;
 }
 
 .nexus-login-card input {
@@ -227,6 +273,7 @@ input:focus-visible {
 }
 
 .nexus-home-panel {
+  flex: 1;
   padding: 72px 0 100px;
 }
 
@@ -236,94 +283,6 @@ input:focus-visible {
   justify-content: space-between;
   gap: 30px;
   margin-bottom: 38px;
-}
-
-.nexus-company-card {
-  margin-bottom: 28px;
-  padding: 24px;
-  border: 1px solid var(--nexus-border);
-  border-radius: 16px;
-  background: rgb(18 27 40 / 90%);
-}
-
-.nexus-company-card__heading,
-.nexus-company-card__body {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 22px;
-}
-
-.nexus-company-card__heading h2 {
-  margin: 6px 0 0;
-  font-size: 21px;
-  letter-spacing: -.025em;
-}
-
-.nexus-company-card__body {
-  align-items: end;
-  margin-top: 22px;
-}
-
-.nexus-company-card__body strong {
-  font-size: 24px;
-}
-
-.nexus-company-card__body p,
-.nexus-company-notice {
-  margin: 8px 0 0;
-  color: var(--nexus-muted);
-  font-size: 13px;
-  line-height: 1.6;
-}
-
-.nexus-company-status {
-  min-width: 64px;
-  padding: 6px 9px;
-  border: 1px solid var(--nexus-border);
-  border-radius: 999px;
-  color: #b9c6d5;
-  font-size: 11px;
-  font-weight: 800;
-  text-align: center;
-}
-
-.nexus-company-status[data-status="READY"] {
-  border-color: rgb(5 174 148 / 55%);
-  color: #72dfce;
-}
-
-.nexus-company-status[data-status="ERROR"] {
-  border-color: rgb(240 166 174 / 55%);
-  color: var(--nexus-danger);
-}
-
-.nexus-company-status[data-status="STALE"] {
-  border-color: rgb(220 176 84 / 52%);
-  color: #dec382;
-}
-
-.nexus-company-edit {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 44px;
-  padding: 0 16px;
-  border: 1px solid var(--nexus-border-strong);
-  border-radius: 9px;
-  color: var(--nexus-text);
-  font-size: 13px;
-  font-weight: 800;
-  text-decoration: none;
-}
-
-.nexus-company-edit:hover {
-  background: var(--nexus-panel-soft);
-}
-
-.nexus-company-edit:focus-visible {
-  outline: 2px solid #6da7d7;
-  outline-offset: 3px;
 }
 
 .nexus-home-heading h1 {
@@ -383,6 +342,15 @@ input:focus-visible {
   font-size: 12px;
 }
 
+.nexus-footer {
+  flex: 0 0 auto;
+  padding: 22px 0 26px;
+  border-top: 1px solid rgb(77 97 123 / 45%);
+  color: var(--nexus-muted);
+  font-size: 12px;
+  text-align: center;
+}
+
 noscript {
   position: fixed;
   inset: auto 20px 20px;
@@ -425,7 +393,6 @@ noscript {
   }
 
   .nexus-login-panel {
-    min-height: calc(100vh - 68px);
     padding: 42px 0 72px;
   }
 
@@ -439,15 +406,6 @@ noscript {
 
   .nexus-home-heading {
     display: block;
-  }
-
-  .nexus-company-card__body {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .nexus-company-edit {
-    align-self: flex-start;
   }
 
   .nexus-session-notice {
