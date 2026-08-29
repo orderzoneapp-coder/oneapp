@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { readFile, readdir } from 'node:fs/promises';
-import { extname, join, relative, resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { dirname, extname, join, relative, resolve } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
-const root = resolve(new URL('..', import.meta.url).pathname.replace(/^\/(?:[A-Za-z]:)/, (value) => value.slice(1)));
+const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const importRepo = (path) => import(`${pathToFileURL(join(root, path)).href}?test=${Date.now()}-${Math.random()}`);
 const contract = await importRepo('reference-data/change-request-contract.js');
 const product = await importRepo('reference-data/product-master-read-adapter.js');
